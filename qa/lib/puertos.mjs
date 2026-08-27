@@ -74,3 +74,31 @@ export async function esperarPuertoLibre(port, { maxMs = 15_000, intervaloMs = 2
   }
   return false;
 }
+
+/** `n` puertos que el sistema declara libres AHORA MISMO.
+ *
+ *  Se los pide al kernel (bind al puerto 0, mirar cuál tocó, soltarlo) en vez
+ *  de fijarlos a mano. La diferencia importa desde que en esta máquina puede
+ *  haber dos baterías de QA a la vez: un guion que necesita su propio bridge y
+ *  se lo clava en :9977 hace que la segunda corrida muera al arrancarlo, y ese
+ *  rojo no es del juego.
+ *
+ *  Queda una ventana entre soltarlo y volver a tomarlo — inevitable sin
+ *  heredar el socket—, así que quien lo use sigue teniendo que fallar claro si
+ *  el puerto se le ha llevado alguien; lo que esto quita es la colisión
+ *  SEGURA de dos números escritos a mano. */
+export function puertosLibres(n = 1) {
+  const abrir = () =>
+    new Promise((res, rej) => {
+      const srv = net.createServer();
+      srv.once("error", rej);
+      srv.listen(0, "127.0.0.1", () => res(srv));
+    });
+  return (async () => {
+    const abiertos = [];
+    for (let i = 0; i < n; i++) abiertos.push(await abrir());
+    const puertos = abiertos.map((s) => s.address().port);
+    await Promise.all(abiertos.map((s) => new Promise((r) => s.close(r))));
+    return puertos;
+  })();
+}

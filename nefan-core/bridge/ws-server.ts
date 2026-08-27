@@ -136,6 +136,7 @@ createStateHttpServer({
   npcDirector,
   gamesDir: GAMES_DIR,
   sessionStorage,
+  aiServerUrl: AI_SERVER_URL,
   onMutation: async () => {
     await narrative.save();
   },

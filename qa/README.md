@@ -13,11 +13,27 @@ node qa/run.mjs                  # todos
 node qa/run.mjs colision hud     # los que casen con esos nombres
 node qa/run.mjs --headed         # con ventana, para mirar qué hace
 node qa/run.mjs --keep           # deja el stack arriba al terminar
-node qa/run.mjs --url http://…   # contra un stack ya arrancado
+node qa/run.mjs --url http://…   # contra un stack ya arrancado, en esa URL
+node qa/run.mjs --adoptar        # contra el stack que ya esté en los puertos del catálogo
 ```
 
-Si no hay nada en `:3000`, el runner levanta el preset **`e2e-sin-creditos`** (`./start.sh --preset e2e-sin-creditos`:
-fake-ai-server + bridge + cliente) — cero créditos. Las capturas quedan en `qa/capturas/`.
+El runner levanta él mismo el preset **`e2e-sin-creditos`** (`./start.sh --preset e2e-sin-creditos`:
+fake-ai-server + bridge + cliente) — cero créditos — y **elige un bloque de puertos libre**
+(`NEFAN_PORT_OFFSET` 0, +100 … +900, con reserva atómica en `qa/.tmp/.bloques/`), así que dos
+corridas a la vez conviven sin pisarse. Todo lo que la corrida posee cuelga de su `RUN_ID`: el
+disco efímero (`qa/.tmp/<run>/{saves,games,logs}`), las capturas (`qa/capturas/<run>/`, con
+`qa/capturas/ultima` apuntando a la última) y los logs del stack (`NEFAN_LOG_DIR`).
+
+**Engancharse a un stack ajeno es opt-in.** Encontrarse los puertos ocupados ya no es una
+comodidad: puede ser el stack de otro agente de la máquina, y medirlo sale VERDE midiendo otro
+código. Sin `--adoptar` (o `--url`), el runner busca otro bloque; si no queda ninguno, lo dice.
+
+Dos guiones sueltos, fuera de la batería, que van con esto:
+
+```bash
+node qa/guardarrail-sin-creditos.mjs   # ¿se NIEGA el guardarraíl de gasto en los 7 casos malos?
+node qa/dos-corridas.mjs               # ¿terminan DOS baterías a la vez, midiendo cada una lo suyo?
+```
 
 ## Cómo se escribe un guion
 
@@ -29,7 +45,7 @@ Un fichero en `guiones/` que exporta `async (ctx) => {}`. El contexto ofrece:
 | `ctx.waitFor(desc, fn, ms, arg)` | espera a que `fn` (en la página) devuelva algo truthy |
 | `ctx.holdUntil(key, desc, fn, ms, arg)` | mantiene una tecla hasta que se cumple `fn`, y la suelta siempre |
 | `ctx.expect(desc, cond, detalle)` | apunta un criterio; los fallos deciden el veredicto |
-| `ctx.shot(label)` | captura a `qa/capturas/` |
+| `ctx.shot(label)` | captura a `qa/capturas/<RUN_ID>/` |
 | `ctx.page` | la página de Playwright, para lo que no cubra lo anterior |
 
 Reglas que hacen que un guion valga algo:

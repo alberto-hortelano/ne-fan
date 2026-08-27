@@ -34,6 +34,10 @@ import { sessionRoutes } from "../bridge/state-http/session-routes.js";
 const GAMES_DIR = fileURLToPath(new URL("../data/games", import.meta.url));
 
 /** Un contexto de handlers a pelo: ni servidor, ni puerto, ni sockets. */
+/** A qué motor narrativo dice apuntar el bridge de estas pruebas. GET /health
+ *  lo publica: es la vía de gasto que el `?ai=` del cliente nunca cubrió. */
+const MOTOR_DE_PRUEBA = "http://127.0.0.1:18765";
+
 function makeCtx(): { ctx: StateHttpContext; progreso: string[] } {
   const { narrative, storage } = makeNarrativeState();
   narrative.startNewSession("plugtest");
@@ -43,6 +47,7 @@ function makeCtx(): { ctx: StateHttpContext; progreso: string[] } {
     npcDirector: new NpcDirector(narrative),
     gamesDir: GAMES_DIR,
     sessionStorage: storage,
+    aiServerUrl: MOTOR_DE_PRUEBA,
     onProgress: (m) => progreso.push(m),
     plugins: {
       register: () => {
@@ -424,6 +429,10 @@ describe("dispatchStateRequest · sesión, ruta y body, sin abrir un puerto", ()
       readBody: NO_LEER,
     });
     assert.equal(salud.status, 200);
+    // Y publica A QUÉ MOTOR habla el bridge (criterio 5 bis): sin esto, la
+    // única vía de gasto observable desde fuera era el `?ai=` del cliente, y
+    // las escenas las pide el bridge por su cuenta.
+    assert.equal((salud.body as { ai_server_url?: string }).ai_server_url, MOTOR_DE_PRUEBA);
     const propia = await dispatchStateRequest(ctx, {
       method: "GET",
       url: "/story",

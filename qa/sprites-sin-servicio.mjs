@@ -55,8 +55,13 @@ const REUSAR = process.argv.includes("--reusar");
 const CONFIG = JSON.parse(readFileSync(join(repoRoot, "nefan-core/data/runtime_config.json"), "utf8"));
 const FORGE_URL = String(CONFIG.ai_server?.sprite_forge_url ?? "");
 if (!FORGE_URL) throw new Error("runtime_config.json no trae ai_server.sprite_forge_url");
-const FORGE_PORT = Number(new URL(FORGE_URL).port || 8770);
-const RGEN_PORT = Number(CONFIG.ports?.remote_gen ?? 8768);
+// El puerto sale de la URL del snapshot; sin él no hay a quién llamar.
+const FORGE_PORT = Number(new URL(FORGE_URL).port);
+if (!FORGE_PORT) throw new Error(`sprite_forge_url sin puerto: ${FORGE_URL}`);
+// Sin `?? 8768`: un snapshot que no declara el puerto es un error, no un
+// número inventado que apunta a saber qué proceso.
+const RGEN_PORT = Number(CONFIG.ports?.remote_gen);
+if (!RGEN_PORT) throw new Error("runtime_config.json no trae ports.remote_gen");
 const SKINS_DIR = join(repoRoot, "cache/sprite_sheets");
 const INDEX = join(SKINS_DIR, "_base_keys.json");
 const FORGE_DIR = process.env.NEFAN_SPRITE_FORGE_DIR ?? join(process.env.HOME ?? "", "code/sprite-forge");

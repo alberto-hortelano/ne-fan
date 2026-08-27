@@ -10,7 +10,7 @@
 // Cero dependencias: Node v22+ trae `WebSocket` global (undici) y `node:http`.
 //
 // Arquitectura:
-//   [este proceso] --WS:9877--> bridge --HTTP:8765--> ai_server --WS:3737--> [motor]
+//   [este proceso] --WS--> bridge --HTTP--> ai_server --WS--> [motor]
 //
 // Uso:
 //   node labs/narrative/game-emulator.mjs            # arranca en foreground
@@ -25,18 +25,22 @@
 //   GET  /health                                    -> { connected, eventCount, run }
 //
 // Variables de entorno:
-//   BRIDGE_URL   (default ws://127.0.0.1:9877)
+//   BRIDGE_URL   (default: ports.bridge del runtime config)
 //   CTRL_PORT    (default 9899)
 //   RUN_DIR      (default labs/narrative/runs/<timestamp>)
 
 import http from "node:http";
-import { mkdirSync, appendFileSync } from "node:fs";
+import { mkdirSync, appendFileSync, readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const BRIDGE_URL = process.env.BRIDGE_URL ?? "ws://127.0.0.1:9877";
+/** El gateway, de la fuente única del repo. `BRIDGE_URL` del entorno manda. */
+const RUNTIME_CONFIG = JSON.parse(
+  readFileSync(new URL("../../nefan-core/data/runtime_config.json", import.meta.url), "utf8"),
+);
+const BRIDGE_URL = process.env.BRIDGE_URL ?? `ws://127.0.0.1:${RUNTIME_CONFIG.ports.bridge}`;
 const CTRL_PORT = Number(process.env.CTRL_PORT ?? 9899);
 
 // Sello de tiempo legible para el nombre del run (el script no usa Date.now en

@@ -125,12 +125,26 @@ export interface NefanConfig {
     state_api: number;
     /** WebSocket del narrative-mcp (ai_server ↔ motor). */
     narrative_ws: number;
+    /** HTTP del ai_server (S3 narrative-llm). Mismo número que
+     *  `ai_server.port`, que es el que lee el Python: aquí está para que el
+     *  bloque de puertos del stack esté COMPLETO en un solo sitio — `start.sh`
+     *  los lee todos de aquí y ya no declara ninguno. */
+    ai_server: number;
     /** Vite dev server del cliente HTML 2D. */
     html: number;
     /** asset-store (S6): blobs content-addressed + manifest SQLite (F2). */
     asset_store: number;
     /** remote-gen (S5): adaptador Meshy/fal — repintados, sheets, SAM2 (F4). */
     remote_gen: number;
+    /** fake-ai-server (labs/narrative): emula S3–S6 con 0 créditos. No es un
+     *  servicio del registro —no existe en producción— pero SÍ es un puerto
+     *  del stack que arranca `start.sh` y que el bench de QA necesita citar.
+     *  Estaba escrito a mano en `start.sh` y en `qa/run.mjs`, y esa constante
+     *  duplicada era lo único que protegía de verdad al guardarraíl de gasto. */
+    fake_ai: number;
+    /** sprite-forge: hojas de sprites de personaje. Vive en OTRO repo, así que
+     *  aquí solo se declara DÓNDE se le pide que escuche (`--port`). */
+    sprite_forge: number;
   };
   /** Contenido de juego compartido entre bridge y ai_server (paths relativos
    *  a la raíz del repo). El bridge los usa para listar/arrancar juegos; el
@@ -142,6 +156,16 @@ export interface NefanConfig {
     styles_dir: string;
   };
 }
+
+/** Puertos que NO son servicios del registro y que, aun así, forman parte del
+ *  stack que arranca `start.sh`. Se declaran aquí arriba porque los consume
+ *  más de un campo del objeto de abajo (`sprite_forge_url` deriva del suyo) y
+ *  porque un literal repetido dentro del mismo fichero es la primera grieta
+ *  por la que un puerto se vuelve a escribir a mano en otro sitio. */
+const PORT_NARRATIVE_WS = 3737;
+const PORT_HTML = 3000;
+const PORT_FAKE_AI = 18765;
+const PORT_SPRITE_FORGE = 8770;
 
 export const CONFIG: NefanConfig = {
   graphics: {
@@ -173,7 +197,7 @@ export const CONFIG: NefanConfig = {
     segment_cache_dir: "cache/segments",
     surface_cache_dir: "cache/surfaces",
     sprite_skin_model: "gpt-image-2",
-    sprite_forge_url: "http://127.0.0.1:8770",
+    sprite_forge_url: `http://127.0.0.1:${PORT_SPRITE_FORGE}`,
     // Atlas de superficies de la vista fps (bench labs/fps): nano-banana-pro
     // para las celdas tileables (cohesión pintada a mano) y gpt-image-2 para
     // las celdas hero (techo de calidad en piezas únicas).
@@ -187,10 +211,13 @@ export const CONFIG: NefanConfig = {
   ports: {
     bridge: SERVICES["game-gateway"].currentPort,
     state_api: SERVICES["world-state"].currentPort,
-    narrative_ws: 3737,
-    html: 3000,
+    narrative_ws: PORT_NARRATIVE_WS,
+    ai_server: SERVICES["narrative-llm"].currentPort,
+    html: PORT_HTML,
     asset_store: SERVICES["asset-store"].currentPort,
     remote_gen: SERVICES["remote-gen"].currentPort,
+    fake_ai: PORT_FAKE_AI,
+    sprite_forge: PORT_SPRITE_FORGE,
   },
   content: {
     games_dir: "nefan-core/data/games",

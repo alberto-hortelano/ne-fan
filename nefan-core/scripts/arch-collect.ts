@@ -64,11 +64,27 @@ function importsOf(text: string): ImportRef[] {
 
 export function loadArchFiles(): SourceFile[] {
   const out: SourceFile[] = [];
+  const añadir = (abs: string): void => {
+    const text = readFileSync(abs, "utf-8");
+    const path = relative(repoRoot, abs).split(sep).join("/");
+    out.push({ path, text, imports: abs.endsWith(".ts") ? importsOf(text) : undefined });
+  };
   for (const root of archConfig.scan.roots) {
-    for (const abs of walk(join(repoRoot, root.dir), root.ext, archConfig.scan.ignore)) {
-      const text = readFileSync(abs, "utf-8");
-      const path = relative(repoRoot, abs).split(sep).join("/");
-      out.push({ path, text, imports: abs.endsWith(".ts") ? importsOf(text) : undefined });
+    for (const abs of walk(join(repoRoot, root.dir), root.ext, archConfig.scan.ignore)) añadir(abs);
+  }
+  // Ficheros sueltos por ruta exacta. Un fichero que ya no existe es un ERROR y
+  // no un escaneo silenciosamente más pequeño: si `start.sh` se renombra, las
+  // reglas que lo vigilan tienen que quejarse, no quedarse sin sujeto.
+  for (const rel of archConfig.scan.files) {
+    const abs = join(repoRoot, rel);
+    try {
+      añadir(abs);
+    } catch (err) {
+      throw new Error(
+        `arch-rules.json declara scan.files "${rel}" y no se puede leer. ` +
+          `Si el fichero se movió, mueve también la entrada — si no, sus reglas dejan de vigilar nada.`,
+        { cause: err },
+      );
     }
   }
   return out;

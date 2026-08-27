@@ -26,7 +26,11 @@
  *    node qa/run.mjs colision hud     solo los que casen con esos nombres
  *    node qa/run.mjs --headed         con ventana, para mirar qué hace
  *    node qa/run.mjs --keep           deja el stack arriba y el tmp sin borrar
- *    node qa/run.mjs --url URL        usa un stack ya arrancado
+ *    node qa/run.mjs --url URL        usa un stack ya arrancado, en esa URL
+ *    node qa/run.mjs --adoptar        usa el stack que ya esté en los puertos
+ *                                     del catálogo (sin esto, encontrárselos
+ *                                     ocupados es un error: puede ser el de
+ *                                     otro agente de la máquina)
  *    node qa/run.mjs --orden inverso  al revés (criterio: mismo veredicto)
  *    node qa/run.mjs --diag           una línea de diagnóstico por guion
  *
@@ -39,8 +43,18 @@
  */
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
+import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 import { spawn } from "node:child_process";
-import { readdirSync, mkdirSync, rmSync, cpSync, existsSync, readFileSync } from "node:fs";
+import {
+  readdirSync,
+  mkdirSync,
+  rmSync,
+  cpSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  symlinkSync,
+} from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -48,7 +62,8 @@ import net from "node:net";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
-const SHOTS = join(here, "capturas");
+/** Raíz de capturas; las de ESTA corrida cuelgan de `SHOTS` (ver `RUN_ID`). */
+const RAIZ_SHOTS = join(here, "capturas");
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -63,11 +78,123 @@ const filters = args.filter((a, i) => !a.startsWith("--") && !CON_VALOR.has(args
 const HEADED = flag("--headed");
 const KEEP = flag("--keep");
 const DIAG = flag("--diag");
+/** Adoptar un stack que ya estaba arriba. Ver `ensureStack`: dejó de ser el
+ *  comportamiento por defecto porque con dos agentes en la máquina "ya hay un
+ *  stack" no significa "el mío". */
+const ADOPTAR = flag("--adoptar");
 const ORDEN = opt("--orden", "alfabetico");
-const BASE = opt("--url", "http://localhost:3000");
-const FAKE_AI = "http://127.0.0.1:18765";
-const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
+
+/** ¿Hay alguien escuchando? (versión mínima, antes de tener el bloque.) */
+function ocupado(port) {
+  return new Promise((resolve) => {
+    const sock = net.connect({ port, host: "127.0.0.1" });
+    const done = (v) => {
+      sock.destroy();
+      resolve(v);
+    };
+    sock.once("connect", () => done(true));
+    sock.once("error", () => done(false));
+    setTimeout(() => done(false), 800);
+  });
+}
+
+/** ¿Sigue vivo ese pid? (señal 0: no manda nada, solo pregunta.) */
+function pidVivo(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Reserva EXCLUSIVA de un bloque de puertos, o null si es de otro.
+ *
+ *  Hace falta además del sondeo de puertos porque el sondeo tiene una carrera
+ *  que se ve justo en el caso que esto viene a permitir: dos corridas que
+ *  arrancan a la vez sondean el bloque +0, las dos lo ven libre y las dos
+ *  intentan levantarlo. El fichero se crea con `wx` (falla si existe), que es
+ *  atómico en el sistema de ficheros — la carrera la resuelve el kernel, no la
+ *  suerte. Un lock cuyo dueño ya murió se reclama. */
+const DIR_BLOQUES = join(here, ".tmp", ".bloques");
+function reservarBloque(off) {
+  mkdirSync(DIR_BLOQUES, { recursive: true });
+  const f = join(DIR_BLOQUES, `${off}.lock`);
+  const tomar = () => {
+    try {
+      writeFileSync(f, `${process.pid}\n`, { flag: "wx" });
+      return f;
+    } catch {
+      return null;
+    }
+  };
+  const tomado = tomar();
+  if (tomado) return tomado;
+  const dueño = Number(readFileSync(f, "utf8").trim());
+  if (pidVivo(dueño)) return null;
+  rmSync(f, { force: true }); // lock huérfano: su corrida murió a lo bruto
+  return tomar();
+}
+
+/** El bloque de puertos de ESTA corrida.
+ *
+ *  El launcher NO elige solo —una persona quiere URLs predecibles y prefiere
+ *  que se le diga «ocupado»—, pero el banco sí: es una máquina que solo quiere
+ *  terminar, y con dos agentes trabajando a la vez «los puertos de siempre»
+ *  puede ser el stack del otro. Se prueban 0, +100 … +900 y se coge el primero
+ *  que esté LIBRE (puertos sin nadie) y RESERVABLE (nadie más lo ha pedido).
+ *
+ *  Se respeta un `NEFAN_PORT_OFFSET` que ya venga del entorno (quien lo pone
+ *  sabe lo que quiere) y no se busca nada al adoptar un stack ajeno. */
+let lockDelBloque = null;
+async function elegirBloque() {
+  if (process.env.NEFAN_PORT_OFFSET) return offsetActual();
+  if (ADOPTAR || flag("--url")) return 0;
+  const claves = ["fake_ai", "bridge", "html"];
+  for (let off = 0; off <= 900; off += 100) {
+    const lock = reservarBloque(off);
+    if (!lock) continue; // otra corrida ya lo pidió
+    const libres = [];
+    for (const k of claves) libres.push(!(await ocupado(PUERTOS_BASE[k] + off)));
+    if (libres.every(Boolean)) {
+      lockDelBloque = lock;
+      return off;
+    }
+    rmSync(lock, { force: true }); // reservado pero ocupado por alguien de fuera
+  }
+  throw new Error(
+    "los diez bloques de puertos (+0…+900) están ocupados: hay demasiados stacks arriba en esta máquina",
+  );
+}
+
+const OFFSET = await elegirBloque();
+// Se pone en el entorno de ESTE proceso para que lo hereden los guiones (que
+// leen `URLS`/`PUERTOS` al importarse, más abajo) y el `./start.sh` que se
+// lanza a continuación. Es el único sitio donde se decide.
+process.env.NEFAN_PORT_OFFSET = String(OFFSET);
+if (OFFSET) console.log(`· bloque de puertos +${OFFSET} (bridge :${PUERTOS.bridge}, HTML :${PUERTOS.html})`);
+
+const BASE = opt("--url", URLS.html);
+/** El motor falso al que se apunta la página. NO es el guardarraíl de gasto —
+ *  eso lo decide ahora `stackSinCreditos` preguntándole al backend—: es
+ *  simplemente a dónde se manda al cliente, y sale de la fuente única de
+ *  puertos, no de un literal escrito aquí. */
+const MOTOR_FALSO = URLS.fake_ai;
+/** Identidad de la corrida. Lleva el PID además del reloj porque dos corridas
+ *  simultáneas pueden nacer en el mismo milisegundo, y todo lo que esta
+ *  corrida POSEE —tmp, saves, capturas, logs— cuelga de este nombre. */
+const RUN_ID = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 const TMP = join(here, ".tmp", RUN_ID);
+/** Capturas de ESTA corrida. Antes eran `qa/capturas/` a secas, se borraba
+ *  entera al arrancar y los nombres no llevaban corrida: dos baterías a la vez
+ *  se pisaban los ficheros y la primera se quedaba sin sus pruebas. */
+const SHOTS = join(RAIZ_SHOTS, RUN_ID);
+/** Los nueve logs del stack, dentro del disco efímero. `NEFAN_LOG_DIR` existía
+ *  desde siempre en `start.sh` y no lo ponía nadie, así que las dos corridas
+ *  escribían en los MISMOS `/tmp/nefan-*.log`, truncándolos, y cruzando
+ *  worktrees. */
+const TMP_LOGS = join(TMP, "logs");
 const TMP_SAVES = join(TMP, "saves");
 const TMP_GAMES = join(TMP, "games");
 /** Los plugins COMUNES a todos los mundos viven al lado de `games/`, y el
@@ -79,7 +206,14 @@ const GAMES_ORIGEN = join(repoRoot, "nefan-core", "data", "games");
 const PLUGINS_ORIGEN = join(repoRoot, "nefan-core", "data", "plugins");
 /** ?raf=timer: en headless la pestaña no está "visible" y el rAF se pausaría;
  *  el pump por Web Worker mantiene el game loop vivo. */
-const URL_QS = `?input=scripted&ai=${encodeURIComponent(FAKE_AI)}&raf=timer`;
+/** `&offset=`: el navegador no tiene entorno, así que el bloque de puertos de
+ *  esta corrida viaja en la URL. Sin él, la página resolvería la State API
+ *  —que no tiene override propio como `?ai=` o `?bridge=`— al bloque de
+ *  siempre, o sea al stack del otro agente. Con offset 0 no se escribe: la URL
+ *  del uso de una sola persona no cambia ni un carácter. */
+const URL_QS =
+  `?input=scripted&ai=${encodeURIComponent(MOTOR_FALSO)}&raf=timer` +
+  (OFFSET ? `&offset=${OFFSET}` : "");
 
 /** Los TRES veredictos posibles de un guion, que hasta #272 eran dos.
  *
@@ -120,10 +254,10 @@ async function waitPort(port, label, timeoutMs = 90_000) {
  *  créditos) por el mismo camino que usaría una persona:
  *  `./start.sh --preset e2e-sin-creditos`. Si el stack ya está arriba, no toca
  *  nada. Por SLUG y no por número: el número se desplaza al morir un preset. */
-const PUERTOS = [
-  [18765, "fake-ai-server"],
-  [9877, "bridge"],
-  [3000, "cliente HTML"],
+const PUERTOS_DEL_STACK = [
+  [PUERTOS.fake_ai, "fake-ai-server"],
+  [PUERTOS.bridge, "bridge"],
+  [PUERTOS.html, "cliente HTML"],
 ];
 
 /** Los servicios del stack que NO contestan. Vacío = stack en pie.
@@ -134,23 +268,45 @@ const PUERTOS = [
  *  conexiones TCP que, con el puerto vivo, resuelven en el acto. */
 async function serviciosCaidos() {
   const caidos = [];
-  for (const [port, label] of PUERTOS) if (!(await portBusy(port))) caidos.push(`${label} (:${port})`);
+  for (const [port, label] of PUERTOS_DEL_STACK) if (!(await portBusy(port))) caidos.push(`${label} (:${port})`);
   return caidos;
 }
 
 async function ensureStack() {
   const vivos = [];
-  for (const [port, label] of PUERTOS) if (await portBusy(port)) vivos.push(label);
-  if (vivos.length === PUERTOS.length) {
-    console.log("· stack ya arriba — no lo toco");
+  const ocupados = [];
+  for (const [port, label] of PUERTOS_DEL_STACK) {
+    if (await portBusy(port)) {
+      vivos.push(label);
+      ocupados.push(`${label} (:${port})`);
+    }
+  }
+  if (vivos.length === PUERTOS_DEL_STACK.length) {
+    // Adoptar un stack que ya estaba dejó de ser el defecto. Cuando en la
+    // máquina trabaja un solo agente, "los tres puertos están arriba" y "el
+    // stack es mío" son la misma frase; con dos agentes deja de serlo, y el
+    // desenlace es el peor de todos: la batería sale VERDE midiendo el código
+    // del otro, con su disco y su motor. Se pide explícitamente o es un error
+    // que dice quién ocupa cada puerto.
+    if (!ADOPTAR && !flag("--url")) {
+      throw new Error(
+        `los puertos del stack ya están ocupados (${ocupados.join(", ")}) y esta corrida no ` +
+          `los arrancó. Puede ser tu stack de desarrollo, el huérfano de una corrida que murió, ` +
+          `o el de OTRO agente en esta máquina: desde aquí no se distingue.\n` +
+          `  · para medir contra él a propósito:  node qa/run.mjs --adoptar   (o --url <URL>)\n` +
+          `  · para tener stack propio: párale el suyo a quien sea suyo, o arranca esta corrida ` +
+          `en otro bloque de puertos.`,
+      );
+    }
+    console.log("· stack ya arriba — lo adopto (--adoptar/--url), no lo toco");
     return null;
   }
   if (vivos.length > 0) {
     // Medio stack en pie no es un stack: arrancar encima daría fallos raros
     // (puerto ocupado, cliente sin backend) en vez de un error claro.
     throw new Error(
-      `hay servicios sueltos arriba (${vivos.join(", ")}) pero el stack está incompleto. ` +
-        `Párralo del todo (Ctrl+C en su terminal, o ./start.sh y tecla k) y vuelve a lanzar.`,
+      `hay servicios sueltos arriba (${ocupados.join(", ")}) pero el stack está incompleto. ` +
+        `Párralo del todo (Ctrl+C en su terminal, o ./start.sh --parar) y vuelve a lanzar.`,
     );
   }
   // Por SLUG, no por número: los números de preset se renumeran cuando muere
@@ -167,11 +323,22 @@ async function ensureStack() {
     // distinto para la N+1 (medido: el snapshot de mundo cambiaba de md5 cada
     // vez). El bridge respeta las dos variables (ws-server.ts:46,52) y
     // start.sh las hereda del entorno.
-    env: { ...process.env, NEFAN_SAVES_DIR: TMP_SAVES, NEFAN_GAMES_DIR: TMP_GAMES },
+    //
+    // NEFAN_LOG_DIR entra por el mismo motivo y llevaba desde siempre sin que
+    // nadie la pusiera: los nueve logs del stack son nombres FIJOS y truncan,
+    // así que dos corridas —o dos worktrees— se sobreescribían el diagnóstico
+    // la una a la otra justo cuando hacía falta leerlo.
+    env: {
+      ...process.env,
+      NEFAN_SAVES_DIR: TMP_SAVES,
+      NEFAN_GAMES_DIR: TMP_GAMES,
+      NEFAN_LOG_DIR: TMP_LOGS,
+      NEFAN_PORT_OFFSET: String(OFFSET),
+    },
   });
   child.stdout.on("data", (b) => process.env.QA_VERBOSE && process.stdout.write(`  | ${b}`));
   child.stderr.on("data", (b) => process.env.QA_VERBOSE && process.stderr.write(`  ! ${b}`));
-  for (const [port, label] of PUERTOS) await waitPort(port, label);
+  for (const [port, label] of PUERTOS_DEL_STACK) await waitPort(port, label);
   console.log("· stack listo");
   return child;
 }
@@ -201,6 +368,9 @@ function salir(code, motivo) {
   }
   if (!KEEP) rmSync(TMP, { recursive: true, force: true });
   else console.log(`· disco efímero sin borrar: ${TMP}`);
+  // El bloque de puertos vuelve al pozo aunque la corrida muera mal. Si no
+  // llegara a soltarse, la siguiente lo reclama al ver que su dueño no existe.
+  if (lockDelBloque) rmSync(lockDelBloque, { force: true });
   process.exit(code);
 }
 
@@ -225,15 +395,32 @@ for (const evento of ["unhandledRejection", "uncaughtException"]) {
   });
 }
 
-/** Restos de corridas anteriores que murieron a lo bruto. Se borran cuando el
- *  stack es NUESTRO (dos baterías a la vez no pueden convivir: comparten
- *  puertos), nunca antes de saberlo: ver `main()`. */
+/** ¿Sigue vivo el proceso que escribió este `vivo.pid`? */
+function corridaViva(dir) {
+  const marca = join(dir, "vivo.pid");
+  if (!existsSync(marca)) return false; // sin marca no hay dueño: es basura
+  return pidVivo(Number(readFileSync(marca, "utf8").trim()));
+}
+
+/** Restos de corridas que murieron a lo bruto — y SOLO esos.
+ *
+ *  Antes esto borraba todo `qa/.tmp/*` que no fuera el suyo, con el argumento
+ *  de que «dos baterías a la vez no pueden convivir: comparten puertos». Ese
+ *  argumento es justo el que esta tanda deroga: con dos agentes en la máquina,
+ *  el directorio que se borraba podía ser el disco VIVO del otro, arrancado
+ *  bajo los pies de una corrida en marcha. Ahora cada corrida deja su
+ *  `vivo.pid` y aquí solo se barre lo que ya no tiene dueño. */
 function limpiarTmpViejos() {
   const raiz = join(here, ".tmp");
   if (!existsSync(raiz)) return;
-  const viejos = readdirSync(raiz).filter((d) => join(raiz, d) !== TMP);
-  for (const d of viejos) rmSync(join(raiz, d), { recursive: true, force: true });
-  if (viejos.length) console.log(`· ${viejos.length} tmp de corridas muertas borrados`);
+  const candidatos = readdirSync(raiz)
+    .filter((d) => !d.startsWith(".")) // .bloques: los locks de puertos, no son corridas
+    .filter((d) => join(raiz, d) !== TMP);
+  const muertos = candidatos.filter((d) => !corridaViva(join(raiz, d)));
+  const vivos = candidatos.length - muertos.length;
+  for (const d of muertos) rmSync(join(raiz, d), { recursive: true, force: true });
+  if (muertos.length) console.log(`· ${muertos.length} tmp de corridas muertas borrados`);
+  if (vivos) console.log(`· ${vivos} tmp de corridas VIVAS respetados (otra batería está corriendo)`);
 }
 
 /** Disco efímero de la corrida: copia REAL de `data/games` (lo mismo que tiene
@@ -243,6 +430,10 @@ function limpiarTmpViejos() {
 function prepararDisco() {
   rmSync(TMP, { recursive: true, force: true });
   mkdirSync(TMP_SAVES, { recursive: true });
+  mkdirSync(TMP_LOGS, { recursive: true });
+  // La marca de propiedad: mientras este proceso viva, este directorio tiene
+  // dueño y ninguna otra corrida puede borrarlo (ver `limpiarTmpViejos`).
+  writeFileSync(join(TMP, "vivo.pid"), `${process.pid}\n`, "utf8");
   cpSync(GAMES_ORIGEN, TMP_GAMES, { recursive: true });
   if (existsSync(PLUGINS_ORIGEN)) cpSync(PLUGINS_ORIGEN, TMP_PLUGINS, { recursive: true });
   limpiarMundos();
@@ -270,7 +461,7 @@ function limpiarMundos() {
 /** Reset del estado de PROCESO del motor falso (tiles servidos, atlas
  *  "pintados", turnos de diálogo). Es lo que pide `aisla: ["fake-ai"]`. */
 async function resetFakeAi() {
-  const res = await fetch(`${FAKE_AI}/dev/reset`, { method: "POST" });
+  const res = await fetch(`${MOTOR_FALSO}/dev/reset`, { method: "POST" });
   if (!res.ok) throw new Error(`/dev/reset HTTP ${res.status}`);
   return res.json();
 }
@@ -290,7 +481,7 @@ async function aislar(nombre, aisla, propio) {
   if (!propio && deDisco.length) {
     throw new Error(
       `necesita [${deDisco.join(", ")}] virgen y el stack no lo arrancó esta corrida ` +
-        `(no sé dónde tiene el disco). Párala del todo —./start.sh y tecla k— y vuelve a lanzar.`,
+        `(no sé dónde tiene el disco). Párala del todo —./start.sh --parar— y vuelve a lanzar.`,
     );
   }
   const hechos = [];
@@ -321,7 +512,7 @@ async function aislar(nombre, aisla, propio) {
  *  y crece con cada save que se acumula. */
 function medirListSessions() {
   return new Promise((resolve) => {
-    const ws = new WebSocket("ws://127.0.0.1:9877");
+    const ws = new WebSocket(URLS.bridge_ws);
     const fin = (v) => { try { ws.close(); } catch { /* ya cerrado */ } resolve(v); };
     const t = setTimeout(() => fin(null), 10_000);
     ws.onerror = () => { clearTimeout(t); fin(null); };
@@ -346,7 +537,7 @@ async function diagnostico() {
     const f = join(TMP_GAMES, juego, "world", "tile.json");
     if (existsSync(f)) mundos[juego] = createHash("sha256").update(readFileSync(f)).digest("hex").slice(0, 8);
   }
-  const fake = await fetch(`${FAKE_AI}/dev/counters`).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+  const fake = await fetch(`${MOTOR_FALSO}/dev/counters`).then((r) => r.json()).catch((e) => ({ error: String(e) }));
   const list = await medirListSessions();
   return { saves, mundos, fake, list };
 }
@@ -436,8 +627,21 @@ async function main() {
     process.exit(2);
   }
 
+  // Capturas de ESTA corrida, y solo se borran las de ESTA corrida. La versión
+  // anterior vaciaba `qa/capturas/` entera al arrancar: con dos baterías a la
+  // vez, la segunda le borraba a la primera las pruebas de lo que acababa de
+  // medir. El enlace `ultima` conserva la costumbre de mirar siempre al mismo
+  // sitio; poda por antigüedad, nunca por «no es mío».
   rmSync(SHOTS, { recursive: true, force: true });
   mkdirSync(SHOTS, { recursive: true });
+  try {
+    rmSync(join(RAIZ_SHOTS, "ultima"), { force: true });
+    symlinkSync(RUN_ID, join(RAIZ_SHOTS, "ultima"));
+  } catch (err) {
+    // Un enlace que no se puede crear no invalida la corrida: las capturas
+    // están en su sitio y se dice dónde. Pero se dice, no se traga.
+    console.log(`· sin enlace qa/capturas/ultima (${err.message}) — están en ${SHOTS}`);
+  }
 
   prepararDisco();
   const stack = await ensureStack();
@@ -450,6 +654,13 @@ async function main() {
   // corrida se lo hacía a sí misma— y de ahí salían los `Timeout 30000ms` sin
   // causa. Con stack propio, en cambio, no hay nadie leyéndolos: son basura.
   if (stack) limpiarTmpViejos();
+  // `QA_RUN_TMP` es cómo `qa/lib/saves.mjs` sabe CUÁL de los `qa/.tmp/*` es el
+  // disco observable. Se pone SOLO con stack propio, que es el único caso en
+  // que este directorio es de verdad el que el juego está usando. Antes no
+  // existía y `directoriosDeSaves()` recorría todos los tmp del repo
+  // quedándose con el primero alfabético —el RUN_ID más ANTIGUO, o sea el
+  // disco de la corrida de al lado—: un verde midiendo los saves de otro.
+  if (stack) process.env.QA_RUN_TMP = TMP;
   if (!stack) {
     // El stack que ya estaba no sabe de nuestro disco efímero, así que la
     // corrida NO es hermética. Puede ser de otra persona o el huérfano de una
@@ -563,7 +774,7 @@ async function main() {
   }
   const partes = [`${verdes} en verde`, `${rojos} en rojo`];
   if (sinMedir) partes.push(`${sinMedir} SIN MEDIR`);
-  console.log(`${partes.join(" · ")} de ${resultados.length} · capturas en qa/capturas/`);
+  console.log(`${partes.join(" · ")} de ${resultados.length} · capturas en ${SHOTS}`);
 
   // El veredicto de la CORRIDA, que no es la suma de los veredictos de los
   // guiones: si algo no llegó a medirse, esto no dice si el juego está bien.

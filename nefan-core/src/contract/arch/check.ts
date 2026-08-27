@@ -74,6 +74,17 @@ export const ArchConfigSchema = z
     $comment: z.string().optional(),
     scan: z.object({
       roots: z.array(z.object({ dir: z.string(), ext: z.array(z.string()).min(1) })).min(1),
+      /** Ficheros SUELTOS, por ruta exacta relativa a la raíz del repo.
+       *
+       *  Existe porque hay invariantes cuyo sujeto es un fichero que no vive
+       *  dentro de ningún root: `start.sh` está en la raíz del repo (7 GB con
+       *  `cache/`, `saves/`, `.venv/`, `vendor/`…, así que recorrerla entera
+       *  buscando `.sh` sería caro y frágil — el `ignore` es por NOMBRE de
+       *  directorio y se queda corto solo) y `nefan-html/vite.config.ts` queda
+       *  fuera de `nefan-html/src`. Nombrarlos es más barato y más exacto que
+       *  ensanchar el escaneo, y un fichero que desaparece se nota: el
+       *  colector LANZA en vez de escanear de menos en silencio. */
+      files: z.array(z.string()).default([]),
       ignore: z.array(z.string()).default([]),
     }),
     rules: z.array(RuleSchema).min(1),

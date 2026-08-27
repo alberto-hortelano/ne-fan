@@ -11,14 +11,97 @@
  */
 import { esperarPartidaEnDisco } from "./saves.mjs";
 
-/** ¿La página está apuntada a un backend de IA falso? Los guiones que pueden
- *  DISPARAR generación (el batch de estilo) se niegan a correr sin esto: el
- *  mismo click contra un stack real cuesta dólares. */
-export async function backendEsFalso(ctx) {
-  return ctx.page.evaluate(() => {
-    const ai = new URLSearchParams(location.search).get("ai") ?? "";
-    return /:18765(\/|$)/.test(ai);
-  });
+/** ¿Puede este stack disparar generación SIN gastar un céntimo?
+ *
+ *  Lo que había aquí antes se llamaba `backendEsFalso` y no medía nada: leía
+ *  el `?ai=` de la página y comprobaba si contenía el puerto 18765 — o sea,
+ *  leía de vuelta la constante que el propio runner acababa de escribir en esa
+ *  URL (`run.mjs` fijaba `FAKE_AI`, la metía en la query y era la única
+ *  navegación del banco). Una tautología: siempre decía «sí». Los tres guiones
+ *  que se protegían con ella (07, 15, 21) llevaban meses creyéndose guardados
+ *  por un `if` que no podía dar `false`.
+ *
+ *  Ahora la respuesta la dan los BACKENDS, y hacen falta LAS DOS VÍAS de gasto:
+ *
+ *   (a) **la del cliente** — la URL a la que la página resuelve `narrative-llm`
+ *       de verdad (`window.__nefan.servicios()`, ya con los overrides de la
+ *       query aplicados; jamás una constante de este proceso) declara
+ *       `fake: true` en su `/health`;
+ *   (b) **la del bridge** — el `/health` de la State API publica
+ *       `ai_server_url`, y ESA url declara `fake: true`. Es la vía que el
+ *       `?ai=` nunca cubrió: las escenas y las consecuencias las pide el
+ *       bridge por su cuenta, así que un cliente apuntado al fake con un
+ *       bridge apuntado al motor real gasta igual.
+ *
+ *  Cualquier otra cosa es `false`: campo ausente, `fake: false`, respuesta
+ *  ilegible, timeout, puerto muerto, CORS que no deja leer. No existe una rama
+ *  que devuelva `true` sin dos afirmaciones leídas del backend — el desenlace
+ *  caro (bendecir como gratis algo que cobra) es inexpresable, y el barato
+ *  (negarse con un fake legítimo) solo cuesta un guion que no corre y lo dice.
+ *
+ *  El fetch va DENTRO de la página a propósito: es el navegador del jugador
+ *  quien tiene que poder hablar con esos backends, y así el CORS forma parte
+ *  de lo que se comprueba. Devuelve `{ ok, motivo, cliente, bridge }` para que
+ *  el guion pueda decir POR QUÉ no corre; `stackSinCreditos` es el booleano. */
+export async function diagnosticoDeCreditos(ctx, timeoutMs = 5000) {
+  return ctx.page.evaluate(async (ms) => {
+    /** `/health` de un backend, o el motivo por el que no se pudo leer. */
+    const salud = async (url) => {
+      if (!url) return { url, fake: false, motivo: "sin URL" };
+      const corte = AbortSignal.timeout(ms);
+      try {
+        const r = await fetch(`${url.replace(/\/+$/, "")}/health`, { signal: corte });
+        if (!r.ok) return { url, fake: false, motivo: `HTTP ${r.status}` };
+        const body = await r.json();
+        // `=== true` y no truthy: un `"fake": "no"` o un `1` que se colaran por
+        // un serializador descuidado NO son una declaración de gratuidad.
+        if (body?.fake === true) return { url, fake: true, motivo: "declara fake:true" };
+        return {
+          url,
+          fake: false,
+          motivo: body?.fake === false ? "declara fake:false (backend real)" : "no declara `fake`",
+        };
+      } catch (e) {
+        return { url, fake: false, motivo: `no contesta (${String(e).slice(0, 80)})` };
+      }
+    };
+
+    const hook = window.__nefan;
+    if (!hook?.servicios) {
+      return { ok: false, motivo: "la página no publica __nefan.servicios()", cliente: null, bridge: null };
+    }
+    const urls = hook.servicios();
+    const cliente = await salud(urls["narrative-llm"]);
+
+    // La segunda vía: a quién habla el BRIDGE. Se pregunta a la State API, que
+    // es quien lo sabe; si no contesta o no lo publica, no es falso.
+    let bridge = { url: null, fake: false, motivo: "la State API no contesta" };
+    try {
+      const base = String(urls["world-state"] ?? "").replace(/\/+$/, "");
+      const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(ms) });
+      const body = r.ok ? await r.json() : null;
+      const motor = typeof body?.ai_server_url === "string" ? body.ai_server_url : "";
+      bridge = motor
+        ? await salud(motor)
+        : { url: null, fake: false, motivo: "la State API no publica ai_server_url" };
+    } catch (e) {
+      bridge = { url: null, fake: false, motivo: `State API ilegible (${String(e).slice(0, 80)})` };
+    }
+
+    const ok = cliente.fake === true && bridge.fake === true;
+    const motivo = ok
+      ? `cliente y bridge declaran fake:true (${cliente.url} · ${bridge.url})`
+      : `cliente: ${cliente.motivo} · bridge: ${bridge.motivo}`;
+    return { ok, motivo, cliente, bridge };
+  }, timeoutMs);
+}
+
+/** El booleano del guardarraíl: `true` solo si las dos vías declaran ser
+ *  falsas. Lo que se escribe en un `if` de guion. */
+export async function stackSinCreditos(ctx) {
+  const d = await diagnosticoDeCreditos(ctx);
+  if (!d.ok) ctx.log(`⛔ guardarraíl de gasto: ${d.motivo}`);
+  return d.ok;
 }
 
 /** El título está en pantalla y su botón de partida nueva, pintado.
@@ -83,10 +166,13 @@ export async function abrirSelectorDeMundos(ctx) {
  *  harness sin respuesta. Y el bridge sigue siendo el único escritor del save:
  *  `delete_session` es su propia ruta (`bridge/router.ts`), la misma que usa
  *  la UI. */
-export async function borrarSaveComoOtroCliente(ctx, sessionId, wsUrl = "ws://127.0.0.1:9877") {
+export async function borrarSaveComoOtroCliente(ctx, sessionId, wsUrl = null) {
   const ok = await ctx.page.evaluate(
-    ([url, id]) =>
+    ([urlPedida, id]) =>
       new Promise((res, rej) => {
+        // Sin URL explícita, la del juego: el gateway que la página está
+        // usando de verdad, con su `?bridge=` ya aplicado.
+        const url = urlPedida ?? window.__nefan.servicios()["game-gateway"];
         const ws = new WebSocket(url);
         let contestado = false;
         ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));

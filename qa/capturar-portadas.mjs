@@ -32,6 +32,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nuevaPartida, comenzar, celdaAMundo } from "./lib/sesion.mjs";
+import { URLS, PUERTOS_TODOS } from "./lib/stack.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -41,7 +42,7 @@ const opt = (name, fallback) => {
 };
 const opts = (name) => args.flatMap((a, i) => (args[i - 1] === name ? [a] : []));
 
-const BASE = opt("--url", "http://localhost:3000");
+const BASE = opt("--url", URLS.html);
 const OUT = opt("--out", "/tmp/claude-1000/-home-al-code-ne-fan/portadas");
 const GAMES = opt("--games", "alta_fantasia,colonia_aster,cuentos_oscuros,toledo_1200").split(",");
 const YAWS = opt("--yaws", "0,45,90,135,180,225,270,315").split(",").map(Number);
@@ -50,7 +51,7 @@ const YAWS = opt("--yaws", "0,45,90,135,180,225,270,315").split(",").map(Number)
 const POSES = opts("--pose").map((s) => s.split(",").map(Number));
 /** `--celda col,row` (repetible): barre los yaws desde esa celda del plan. */
 const CELDAS = opts("--celda").map((s) => s.split(",").map(Number));
-const REMOTE_GEN = opt("--remote-gen", "http://127.0.0.1:8768");
+const REMOTE_GEN = opt("--remote-gen", `http://127.0.0.1:${PUERTOS_TODOS.remote_gen}`);
 /** `--headed` abre ventana real (GPU del equipo). Exige escritorio activo. */
 const HEADED = args.includes("--headed");
 /** El motor narrativo de esta corrida soy yo por MCP: el bootstrap tarda lo
@@ -143,7 +144,7 @@ async function capturarMundo(browser, gameId) {
   const errores = [];
   page.on("pageerror", (e) => errores.push(String(e).split("\n")[0]));
 
-  // Sin `?ai=`: los servicios REALES (remote-gen :8768, asset-store :8767).
+  // Sin `?ai=`: los servicios REALES (remote-gen y asset-store del catálogo).
   // `raf=timer` mantiene vivo el game loop aunque la ventana pierda foco.
   await page.goto(`${BASE}/?input=scripted&raf=timer`, { waitUntil: "domcontentloaded" });
   await ctx.waitFor("window.__nefan disponible", () => Boolean(window.__nefan));

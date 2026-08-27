@@ -67,6 +67,10 @@
         ]
       }
     ],
+    "files": [
+      "start.sh",
+      "nefan-html/vite.config.ts"
+    ],
     "ignore": [
       "node_modules",
       "dist",
@@ -471,6 +475,34 @@
         "pattern": "\\b(?:deriveVolumesFromSchema|composeTilePlan)\\b"
       },
       "exceptions": []
+    },
+    {
+      "id": "nadie-inventa-un-puerto",
+      "desc": "Los puertos del stack no se escriben a mano fuera de su fuente única",
+      "why": "Los nueve puertos del catálogo estaban declarados CINCO veces: `start.sh` (una vez en variables y otra a mano dentro de SERVICE_LABELS, que es de donde los leía qa/presets.mjs), `nefan-html/vite.config.ts`, `qa/run.mjs` (BASE, FAKE_AI, la tabla de espera y un ws:// suelto), `qa/lib/saves.mjs` y los benches de labs/narrative — mientras `nefan-core/src/config.ts` decía por escrito, en su cabecera, ser «la fuente única de puertos». El hallazgo no era que faltara una fuente única: era que sobraba todo lo que la ignoraba. Y la copia no era solo duplicación: el guardarraíl de cero créditos del banco reconocía al motor falso por su número de puerto contra una constante que el propio runner había escrito en la URL, así que era una tautología que nunca miró un backend. Dos consecuencias medidas: tocar solo las variables de `start.sh` dejaba a `qa/presets.mjs` validando los números viejos, y cualquier desplazamiento de bloque —lo que permite que dos agentes trabajen a la vez en esta máquina— deja ciego a todo lo que copió el número. Hoy la fuente es `src/config.ts` (que deriva del registro de servicios) y viaja a los procesos no-TS por `data/runtime_config.json`; el desplazamiento lo suma `portOffset`. El patrón busca los nueve números precedidos de `:` o `=`, que es como se escribe un puerto (`:3000`, `PORT_HTML=3000`, `http://127.0.0.1:9877`) y no como se escribe un milisegundo (`?? 3000`, `timeout: 30000` — el `\\b` final los deja fuera). Los ficheros de la FUENTE no entran en `files` a propósito: `src/config.ts`, `src/contracts/service-registry.ts` y el snapshot son donde los números tienen que estar.",
+      "severity": "error",
+      "files": [
+        "start.sh",
+        "nefan-html/vite.config.ts",
+        "qa/**/*.mjs",
+        "labs/**/*.mjs"
+      ],
+      "text": {
+        "pattern": "[:=]\\s*(?:9877|9878|3000|8765|3737|8767|8768|18765|8770)\\b"
+      }
+    },
+    {
+      "id": "solo-se-mata-el-puerto-propio",
+      "desc": "`kill_port` solo se llama en la bajada, y con dueño demostrado",
+      "why": "En esta máquina trabajan varios agentes a la vez y la restricción del usuario es literal: «no le cerreis sus servers». Hasta 2026-08-27 las NUEVE funciones `start_*` de start.sh hacían `port_busy && kill_port` — mataban al ocupante de su puerto antes de arrancar, sin preguntar de quién era—, así que el preset más tonto (html-fixtures) se llevaba por delante el cliente de otro agente, o el narrative-mcp que posee el terminal del motor. Lo curioso es que la intención correcta ya estaba escrita en el MISMO fichero, en la bajada: `cleanup` recorre solo STARTED_PORTS y lo dice. Lo que faltaba era aplicarla a la subida, y eso ya no se puede volver a perder: arrancar usa `require_port_free`, que se niega y dice quién ocupa el puerto. Quedan TRES `kill_port`: la definición, la tecla `k`/`--parar` (que mata lo de ESTE worktree, comprobando `/proc/<pid>/cwd`, y enumera lo ajeno sin tocarlo) y el `trap EXIT` (solo STARTED_PORTS). Una cuarta llamada pone rojo el test, que es exactamente lo que hay que revisar a mano: matar por puerto solo vale cuando se ha demostrado el dueño. La regla es `warn` con max=3 y no `error` porque su sujeto es un CONTEO —las tres llamadas legítimas—, no una prohibición absoluta; si alguna desaparece, el aviso de «mejorable» pide bajar el número. El patrón exige el paréntesis de la definición o el espacio de una llamada (`kill_port(` / `kill_port \"$port\"`), no el nombre suelto: si contara las MENCIONES, el comentario que explica por qué la subida ya no mata a nadie contaría como una llamada más y el candado se leería al revés de lo que dice.",
+      "severity": "warn",
+      "max": 3,
+      "files": [
+        "start.sh"
+      ],
+      "text": {
+        "pattern": "kill_port[ (]"
+      }
     }
   ]
 }

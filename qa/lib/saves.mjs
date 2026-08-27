@@ -25,37 +25,48 @@
  *  dice de dónde salió el dato vale menos.
  */
 import { existsSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-const RAIZ_TMP = join(dirname(fileURLToPath(import.meta.url)), "..", ".tmp");
-
-/** Directorios `saves/` del disco efímero (el runner deja uno por corrida y
- *  borra los muertos al empezar). Vacío = no hay disco observable. */
-function directoriosDeSaves() {
-  if (!existsSync(RAIZ_TMP)) return [];
-  return readdirSync(RAIZ_TMP)
-    .map((corrida) => join(RAIZ_TMP, corrida, "saves"))
-    .filter((d) => existsSync(d));
+/** El `saves/` del disco efímero de ESTA corrida, o null si no hay ninguno
+ *  observable (stack adoptado: su disco no lo conocemos).
+ *
+ *  `QA_RUN_TMP` la pone `qa/run.mjs`, y SOLO cuando el stack lo arrancó él.
+ *  Antes esto recorría todos los `qa/.tmp/*` sin filtrar y `listarSaves` se
+ *  quedaba con `const [dir] = …`: el primero alfabético, que es el RUN_ID más
+ *  ANTIGUO — o sea, con dos baterías a la vez, el disco de la OTRA corrida.
+ *  Es el «sale verde midiendo otra cosa» en la capa que nadie miraba: no falla,
+ *  afirma sobre los saves del vecino. */
+function dirDeSaves() {
+  const tmp = process.env.QA_RUN_TMP;
+  if (!tmp) return null; // sin corrida propia: se pregunta al bridge
+  const dir = join(tmp, "saves");
+  if (!existsSync(dir)) {
+    throw new Error(
+      `QA_RUN_TMP apunta a ${tmp} pero ahí no hay saves/. El runner declara un disco ` +
+        `efímero que no existe: no se puede afirmar nada sobre las partidas en disco.`,
+    );
+  }
+  return dir;
 }
 
 /** Ruta del `state.json` de una sesión en el disco efímero, o null. */
 export function rutaDelSave(sessionId) {
-  for (const dir of directoriosDeSaves()) {
-    const f = join(dir, sessionId, "state.json");
-    if (existsSync(f)) return f;
-  }
-  return null;
+  const dir = dirDeSaves();
+  if (!dir) return null;
+  const f = join(dir, sessionId, "state.json");
+  return existsSync(f) ? f : null;
 }
 
 /** Las partidas que el bridge dice tener, por su propio cable. Se abre el
- *  socket DESDE LA PÁGINA para heredar su `?bridge=` (el guion 20 levanta el
- *  suyo en otro puerto). */
+ *  socket DESDE LA PÁGINA, y la URL la da el propio juego
+ *  (`__nefan.servicios()`): así hereda su `?bridge=` (el guion 20 levanta el
+ *  suyo en otro puerto) sin que este fichero tenga que saberse ningún puerto,
+ *  que era lo que hacía el `?? "ws://127.0.0.1:<bridge>"` de antes. */
 async function listarPorElBridge(ctx) {
   return ctx.page.evaluate(
     () =>
       new Promise((res, rej) => {
-        const url = new URLSearchParams(location.search).get("bridge") ?? "ws://127.0.0.1:9877";
+        const url = window.__nefan.servicios()["game-gateway"];
         const ws = new WebSocket(url);
         let contestado = false;
         ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
@@ -76,7 +87,7 @@ async function listarPorElBridge(ctx) {
 
 /** Las partidas que existen AHORA MISMO: `{ fuente, ids }`. */
 export async function listarSaves(ctx) {
-  const [dir] = directoriosDeSaves();
+  const dir = dirDeSaves();
   if (dir) return { fuente: `disco (${dir})`, ids: readdirSync(dir).sort() };
   return { fuente: "bridge (list_sessions)", ids: (await listarPorElBridge(ctx)).sort() };
 }

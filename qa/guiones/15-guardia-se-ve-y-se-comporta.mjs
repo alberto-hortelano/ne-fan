@@ -25,7 +25,7 @@
  *  Se juega por el camino real y con el motor falso del preset
  *  `e2e-sin-creditos` (cero créditos): título → mundo → partida → tile de
  *  entrada (un mercader) → salida del panel «Salidas» (un guardia). El `role`
- *  que guardó el bridge se contrasta además contra el State API :9878, que es
+ *  que guardó el bridge se contrasta además contra el State API, que es
  *  el mismo cable por el que el motor lee sus entidades (`entity_get`).
  *
  *  GOTCHA del bench, y por eso la parte 1 se mide al final y con la fixture:
@@ -39,7 +39,8 @@
  *  no. Misma función y mismo camino de datos que en sesión
  *  (Format D → `formatDToWorld` → cliente).
  */
-import { backendEsFalso, nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
+import { stackSinCreditos, nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
+import { URLS } from "../lib/stack.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
  *   · `mundo`   — el viaje del panel «Salidas» necesita un destino SIN
@@ -53,7 +54,9 @@ export const aisla = ["mundo", "saves", "fake-ai"];
 
 const GAME_ID = "alta_fantasia";
 const FIXTURE = "robledo_tile";
-const API = "http://127.0.0.1:9878";
+/** El State API del bridge. Sale de la fuente única de puertos, no de un
+ *  literal: dos corridas a la vez no comparten stack. */
+const API = URLS.state_api;
 /** Distancia a la que se sitúa el jugador para atacar: dentro del radio de
  *  percepción de los dos oficios (mercader 12 m, guardia 16 m) y bien fuera
  *  de los 2 m a los que el guardia SE PLANTA — si se ataca desde más cerca,
@@ -234,8 +237,12 @@ const enElLibro = (ctx, npc) =>
   ).catch(() => null);
 
 export default async function (ctx) {
-  const falso = await backendEsFalso(ctx);
-  ctx.expect("el backend de IA es el falso del preset `e2e-sin-creditos`", falso, "este guion dispara generación de skins");
+  const falso = await stackSinCreditos(ctx);
+  ctx.expect(
+    "cliente Y bridge declaran motor falso (`e2e-sin-creditos`)",
+    falso,
+    "este guion dispara generación de skins: sin las dos declaraciones no se ejecuta",
+  );
   if (!falso) return;
 
   await regenerarMundo(ctx, GAME_ID);

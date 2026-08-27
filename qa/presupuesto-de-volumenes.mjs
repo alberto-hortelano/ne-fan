@@ -39,10 +39,11 @@ import { writeFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { abrirNavegador } from "./lib/navegador.mjs";
+import { URLS } from "./lib/stack.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SCENES = join(here, "..", "nefan-core", "data", "scenes");
-const BASE = process.env.NEFAN_URL ?? "http://localhost:3000";
+const BASE = process.env.NEFAN_URL ?? URLS.html;
 const NIVELES = process.argv.slice(2).map(Number).filter((n) => Number.isFinite(n) && n > 0);
 const ESCALERA = NIVELES.length > 0 ? NIVELES : [120, 160, 200, 240];
 const TILES = [[0, 0], [1, 0], [0, 1], [1, 1]];

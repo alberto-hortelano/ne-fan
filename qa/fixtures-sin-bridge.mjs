@@ -31,13 +31,14 @@ import { fileURLToPath } from "node:url";
 import net from "node:net";
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
+import { PUERTOS } from "./lib/stack.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
 const SHOTS = join(here, "capturas");
 const HEADED = process.argv.includes("--headed");
 const KEEP = process.argv.includes("--keep");
-const PORT = 3000;
+const PORT = PUERTOS.html;
 
 function portBusy(port) {
   return new Promise((resolve) => {

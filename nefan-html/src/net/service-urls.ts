@@ -21,6 +21,15 @@ function envFromQuery(search: string = location.search): Record<string, string |
     NEFAN_URL_REMOTE_GEN: ai,
     NEFAN_URL_ASSET_STORE: ai,
     NEFAN_URL_GAME_GATEWAY: q.get("bridge") ?? undefined,
+    // `?offset=N` — el bloque de puertos del stack al que pertenece esta
+    // pestaña. En la máquina puede haber varios a la vez (varios agentes, dos
+    // corridas del banco) y el navegador no tiene entorno donde leerlo, así
+    // que viaja en la URL. Sin él, 0: los puertos de siempre.
+    //
+    // Hace falta aunque ya existan `?ai=` y `?bridge=`, porque hay un servicio
+    // que ninguno de los dos cubre: la State API (`world-state`), que es
+    // justamente a quien el banco le pregunta con qué motor habla el bridge.
+    NEFAN_PORT_OFFSET: q.get("offset") ?? undefined,
   };
 }
 

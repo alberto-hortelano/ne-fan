@@ -93,15 +93,33 @@ Sin argumentos, presenta un menú con presets que respetan dependencias entre se
 | 7 · HTML fixtures | `html-fixtures` | solo el cliente | Iterar renderer/UI con las fixtures del selector Room, cero backend |
 | 8 · Custom | `custom` | toggle por servicio | Combinaciones puntuales (ai_server solo, replay solo…) |
 | s · Status | — | — | Listar puertos arriba/abajo (incluye State API :9878) |
-| k · Stop | — | — | Matar todo el stack |
+| k · Stop | — | — | Parar el stack de ESTE worktree (lo ajeno se enumera y NO se toca) |
+| K · Stop TODO | — | — | Barrido del catálogo entero, sea de quien sea. Bajo bandera explícita |
 
 Cosas a tener en cuenta:
 - El preflight es condicional: solo comprueba las dependencias de los servicios seleccionados (elegir "HTML fixtures" no exige el `.venv` ni las deps del bridge).
 - Cada servicio espera al puerto del anterior (`wait_for_port` real, no `sleep` ciego).
+- **Arrancar no mata a nadie.** Si un puerto del catálogo está ocupado, el servicio NO
+  arranca: se dice quién lo tiene (`port_owner`) y se sale con 1. Antes las nueve
+  funciones `start_*` mataban al ocupante sin preguntar, así que el preset más tonto se
+  llevaba por delante el stack de otro agente de la máquina.
 - Ctrl+C para **solo lo que arrancó este launcher** (`trap EXIT` → el proceso y su
-  descendencia). Un servicio ajeno en un puerto del catálogo —el narrative-mcp que posee
-  otro terminal, el stack de otra persona— no se toca. La tecla `k` sí mata por puerto lo
-  que no arrancó: es lo que se le pide, y por eso enumera qué está matando antes de hacerlo.
+  descendencia). La tecla `k` (= `./start.sh --parar`) para lo de **este worktree**:
+  `STARTED_PORTS` ∪ los puertos cuyo proceso vive bajo `$PROJECT_DIR` (`/proc/<pid>/cwd`;
+  ilegible = ajeno, nunca al revés). Lo ajeno lo enumera y lo deja. El barrido del
+  catálogo entero sigue existiendo pero hay que pedirlo: tecla `K` o `--parar-todo`.
+- **`NEFAN_PORT_OFFSET`** desplaza el bloque de puertos entero para que quepan varios
+  stacks en la máquina (varios agentes, dos corridas del banco). 0 —el defecto— son
+  EXACTAMENTE los puertos de siempre. Es explícito, nunca derivado del nombre del
+  worktree. No lo honran ai_server, remote-gen, narrative-mcp ni sprite-forge (leen el
+  snapshot, que es uno por checkout, o viven en otro repo): con offset ≠ 0 el launcher se
+  NIEGA a arrancarlos en vez de ponerlos donde nadie los busca. `qa/run.mjs` sí elige
+  bloque libre solo (con lock atómico en `qa/.tmp/.bloques/`), y el cliente lo recibe por
+  `?offset=N`.
+- **`start.sh` ya no declara ningún puerto**: los lee de `nefan-core/data/runtime_config.json`,
+  el snapshot de la fuente única (`src/config.ts` → registro de servicios). Lo canda
+  `nadie-inventa-un-puerto` en `arch-rules.json`, que cubre `start.sh`, `qa/**`, `labs/**`
+  y `vite.config.ts`.
 - `NEFAN_EAGER_BIND=0 ./start.sh` no arranca el placeholder de narrative-mcp: el terminal de Claude Code del motor posee `:3737` (flujo de `labs/narrative/README.md`). `NEFAN_GAMES_DIR` se respeta y llega al bridge (juegos de bench aislados).
 - Antes de arrancar el bridge se refresca `data/runtime_config.json` (`scripts/dump-config.ts`), como hacen los hooks `predev` de nefan-core.
 - `./start.sh --preset <slug>` arranca sin TUI. **Cítalo por slug, no por número**: los números se desplazan cuando muere un preset, y un runner que cite el número acaba levantando otro stack y fallando por timeout sin decir por qué. `./start.sh --list` los enumera.

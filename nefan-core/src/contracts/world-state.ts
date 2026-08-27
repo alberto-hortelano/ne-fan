@@ -37,6 +37,14 @@ export interface WorldStateHealthResponse {
   session_id: string | null;
   has_session: boolean;
   game_id: string | null;
+  /** A qué motor narrativo habla ESTE bridge (`AI_SERVER_URL` de
+   *  ws-server.ts). Es la SEGUNDA vía de dinero del banco de pruebas y hasta
+   *  hoy no salía del proceso: el `?ai=` de la página solo gobierna lo que
+   *  pide el CLIENTE, mientras que las escenas y las consecuencias las pide el
+   *  bridge por su cuenta. Un guion podía comprobar que la página apuntaba al
+   *  motor falso y disparar igualmente generación de pago a través del bridge.
+   *  Publicarlo es lo que permite al guardarraíl exigir las DOS vías. */
+  ai_server_url: string;
 }
 
 export interface PlaceDetailResponse {

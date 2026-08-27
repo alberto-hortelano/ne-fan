@@ -41,8 +41,11 @@
  */
 import { esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
 import { esperarPartidaEnDisco, listarSaves } from "../lib/saves.mjs";
+import { URLS } from "../lib/stack.mjs";
 
-const API = "http://127.0.0.1:9878";
+/** El State API del bridge. Sale de la fuente única de puertos, no de un
+ *  literal: dos corridas a la vez no comparten stack. */
+const API = URLS.state_api;
 
 /** Los sistemas de juego que el bridge tiene ACTIVOS para el motor. Es lo que
  *  se pierde si un resume fallido los vacía, y NO se ve en el save: el slice

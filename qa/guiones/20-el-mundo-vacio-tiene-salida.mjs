@@ -37,14 +37,18 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { esperarPuertoArriba, esperarPuertoLibre, puertoOcupado } from "../lib/puertos.mjs";
+import { esperarPuertoArriba, esperarPuertoLibre, puertoOcupado, puertosLibres } from "../lib/puertos.mjs";
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const GAME_ID = "alta_fantasia";
-/** Puertos FUERA del catálogo de `start.sh` (bridge 9877 · state 9878): este
- *  bridge no puede suplantar al de la batería. */
-const PUERTO_WS = 9977;
-const PUERTO_STATE = 9978;
+/** Puertos LIBRES pedidos al sistema, fuera del catálogo de `start.sh`: este
+ *  bridge no puede suplantar al de la batería.
+ *
+ *  Eran dos literales (9977/9978), y con eso este guion era el único de los
+ *  treinta que impedía correr DOS baterías a la vez: las dos pedían los mismos
+ *  dos puertos y la segunda moría diciendo «ocupado». Se piden al kernel
+ *  (bind :0), que es quien sabe cuáles están libres. */
+const [PUERTO_WS, PUERTO_STATE] = await puertosLibres(2);
 /** Un puerto donde NO hay nada: el motor "caído" sin matar a nadie. */
 const MOTOR_MUERTO = "http://127.0.0.1:9";
 

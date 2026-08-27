@@ -75,6 +75,8 @@ function levantar(opts: { conStorage: boolean; gamesDir: string }): Promise<Harn
   const activePlugins = new Map<string, PluginManifest>();
   let mutaciones = 0;
   const server = createStateHttpServer({
+    // El motor al que apuntaría el bridge: GET /health lo publica.
+    aiServerUrl: "http://127.0.0.1:0",
     port: 0,
     narrative,
     npcDirector: new NpcDirector(narrative),

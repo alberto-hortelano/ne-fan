@@ -71,10 +71,45 @@ export const SERVICES = {
   },
 } as const satisfies Record<ServiceName, ServiceSpec>;
 
+/** Desplazamiento del bloque de puertos, declarado en `NEFAN_PORT_OFFSET`.
+ *
+ *  Existe porque en una máquina puede haber varios stacks a la vez (varios
+ *  agentes, varios worktrees, dos corridas del banco de pruebas) y los nueve
+ *  puertos del catálogo son los mismos para todos. Con 0 —el defecto— los
+ *  puertos son EXACTAMENTE los de siempre: nadie que trabaje solo tiene que
+ *  saber que esto existe.
+ *
+ *  Es EXPLÍCITO a propósito, nunca derivado del nombre del worktree: dos
+ *  worktrees de nombre parecido colisionarían y nadie se enteraría.
+ *
+ *  Fail-loud: un valor que no sea un entero en rango LANZA. Un `Number("cien")`
+ *  que colapsa a NaN y de ahí a 0 sería un stack arrancando encima del vecino
+ *  justo cuando el usuario creía haberlo separado. */
+export function portOffset(env: Record<string, string | undefined> = {}): number {
+  const raw = env.NEFAN_PORT_OFFSET;
+  if (raw === undefined || raw === "") return 0;
+  // Dígitos decimales y nada más. `Number()` a secas acepta " " como 0 y
+  // "0x10" como 16: dos formas de pedir un bloque y llevarse otro.
+  const n = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isInteger(n) || n < 0 || n > 40000) {
+    throw new Error(
+      `NEFAN_PORT_OFFSET inválido: ${JSON.stringify(raw)}. Debe ser un entero entre 0 y 40000 ` +
+        `(el desplazamiento del bloque de puertos; 0 = los puertos de siempre).`,
+    );
+  }
+  return n;
+}
+
+/** Puerto donde escucha HOY un servicio, ya desplazado. Es la ÚNICA función
+ *  que suma el offset en TypeScript. */
+export function portOf(name: ServiceName, env: Record<string, string | undefined> = {}): number {
+  return SERVICES[name].currentPort + portOffset(env);
+}
+
 /** URL base de un servicio. Orden: override por env (`NEFAN_URL_REMOTE_GEN`,
- *  `NEFAN_URL_ASSET_STORE`…) → loopback con el puerto ACTUAL. `env` se inyecta
- *  (process.env en Node, un env sintético desde query params en el navegador)
- *  para que el módulo siga siendo puro. */
+ *  `NEFAN_URL_ASSET_STORE`…) → loopback con el puerto ACTUAL ya desplazado.
+ *  `env` se inyecta (process.env en Node, un env sintético desde query params
+ *  en el navegador) para que el módulo siga siendo puro. */
 export function resolveServiceUrl(
   name: ServiceName,
   env: Record<string, string | undefined> = {},
@@ -83,5 +118,5 @@ export function resolveServiceUrl(
   if (override) return override.replace(/\/+$/, "");
   const spec = SERVICES[name];
   const scheme = spec.protocol === "ws" ? "ws" : "http";
-  return `${scheme}://127.0.0.1:${spec.currentPort}`;
+  return `${scheme}://127.0.0.1:${portOf(name, env)}`;
 }
