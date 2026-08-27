@@ -98,8 +98,13 @@ const GOAL_REACHED = 1.5;
 const MAX_GOTO_DIST = 128;
 /** Segundos sin eventos de combate cerca para volver a la rutina. */
 const COMBAT_CLEAR_SECONDS = 4;
-/** Margen extra sobre perception_radius al que el que huye se detiene. */
-const FLEE_EXTRA_DIST = 4;
+/** Margen extra sobre perception_radius al que el que huye se detiene.
+ *  EXPORTADA a propósito: el objetivo de la huida es `perception_radius +
+ *  FLEE_EXTRA_DIST`, y un test que escriba ese número a mano deja de proteger
+ *  nada en cuanto alguien cambia el margen —#262 se pasó semanas leyéndose como
+ *  «la huida está rota» con un aserto de `> 3 m` que habría pasado igual con el
+ *  tope puesto en 4. Quien mida la huida deriva su meta de aquí. */
+export const FLEE_EXTRA_DIST = 4;
 /** Distancia a la que el guardia se planta frente al hostil. */
 const INTERVENE_STOP_DIST = 2;
 /** Ciclo de amenaza del guardia: periodo y ventana con anim "quick". */
