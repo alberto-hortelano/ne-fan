@@ -460,3 +460,42 @@ guardarraíl que nadie exige (H2, medido: 7 peticiones a un backend que declara 
 de `nadie-inventa-un-puerto`, que promete cazar los puertos del bloque «los escriba como los
 escriba» cuando la tabla que esta tanda borró vuelve a entrar sin que salte nada. Esa frase hay que
 bajarla a lo que el regex hace, porque es la que alguien citará como garantía.
+
+---
+
+## Nota de cierre del coordinador (2026-08-27)
+
+Este informe valida hasta `536c284`. **Después hubo un commit más**, `8238354` («Las dos reglas
+dicen lo que hacen, y hacen más de lo que decían»), que cierra las cuatro evasiones que este
+mismo informe destapó en su segunda vuelta:
+
+| Evasión encontrada por QA | Estado tras `8238354` |
+|---|---|
+| la tabla de puertos que la tanda borró, reintroducida palabra por palabra | **cazada** |
+| `PORT_HTML_QA="3000"` (asignación entrecomillada, como se escribe en bash) | **cazada** |
+| `fuser --kill` (forma larga de `-k`) | **cazada** |
+| `kill -9 $(pids_del_puerto …)` | **declarada fuera** en el `why`, con sus palabras |
+
+Y, lo que más pesaba: los dos `why` se bajaron a lo que el regex hace de verdad. Cada uno
+empieza por «LO QUE ESTA REGLA CAZA, exactamente» y termina por «LO QUE NO CAZA, dicho para que
+nadie lo cite como garantía». La prosa que promete cobertura que el patrón no da es peor que una
+modesta, porque desarma al siguiente que se la crea.
+
+**Ese commit no lo re-verificó QA.** Lo comprobó el coordinador de forma independiente sobre la
+evasión que más pesaba —reintroducir la tabla borrada en `qa/run.mjs` y correr
+`test/architecture.test.ts`— y la regla salta:
+
+```
+✖ [error] nadie-inventa-un-puerto
+  Los puertos del bloque no se escriben a mano; y un identificador «port»
+  no se inicializa con un literal
+ℹ pass 43 · fail 1
+```
+
+Los otros tres casos quedan afirmados solo por el informe del ingeniero, que sí los reprodujo en
+verde antes de arreglarlos. Se dice para que nadie lea este documento como si cubriera el HEAD
+entero.
+
+Mergeado en `1aa0de1`. Issues abiertos desde aquí: **#295** (el prólogo del guardarraíl que nadie
+exige, con la medida de 7 peticiones a un backend de pago), **#296** (`qa/presets.mjs` atribuye a
+un preset un puerto ajeno) y **#297** (la ventana del enlace `ultima`).
