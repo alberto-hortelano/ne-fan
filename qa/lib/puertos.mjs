@@ -21,8 +21,18 @@
 import net from "node:net";
 
 /** ¿Hay alguien escuchando? Una conexión que abre y se cierra: no manda nada,
- *  así que vale igual para un WebSocket que para un HTTP. */
-export function puertoOcupado(port, host = "127.0.0.1") {
+ *  así que vale igual para un WebSocket que para un HTTP.
+ *
+ *  ES LA ÚNICA COPIA, y eso importa más de lo que parece. Llegó a haber CINCO
+ *  —esta, dos en `run.mjs`, una en `dos-corridas.mjs` y otra en `presets.mjs`—
+ *  y los cortafuegos ya habían divergido: 500 ms aquí, 800 ms allí. La que
+ *  elige el bloque de puertos de una corrida decide si dos baterías colisionan,
+ *  o sea el criterio 3 entero: no puede ser una copia con otro reloj.
+ *
+ *  `timeoutMs` es un cortafuegos, no la condición: la respuesta normal llega
+ *  por `connect` o por `error` en microsegundos sobre loopback. Solo se agota
+ *  con un puerto filtrado por firewall, y entonces «no contesta» = «no está». */
+export function puertoOcupado(port, { host = "127.0.0.1", timeoutMs = 500 } = {}) {
   return new Promise((res) => {
     const s = net.connect({ port, host });
     const fin = (v) => {
@@ -31,7 +41,7 @@ export function puertoOcupado(port, host = "127.0.0.1") {
     };
     s.once("connect", () => fin(true));
     s.once("error", () => fin(false));
-    setTimeout(() => fin(false), 500);
+    setTimeout(() => fin(false), timeoutMs);
   });
 }
 
@@ -73,4 +83,32 @@ export async function esperarPuertoLibre(port, { maxMs = 15_000, intervaloMs = 2
     await new Promise((r) => setTimeout(r, intervaloMs));
   }
   return false;
+}
+
+/** `n` puertos que el sistema declara libres AHORA MISMO.
+ *
+ *  Se los pide al kernel (bind al puerto 0, mirar cuál tocó, soltarlo) en vez
+ *  de fijarlos a mano. La diferencia importa desde que en esta máquina puede
+ *  haber dos baterías de QA a la vez: un guion que necesita su propio bridge y
+ *  se lo clava en :9977 hace que la segunda corrida muera al arrancarlo, y ese
+ *  rojo no es del juego.
+ *
+ *  Queda una ventana entre soltarlo y volver a tomarlo — inevitable sin
+ *  heredar el socket—, así que quien lo use sigue teniendo que fallar claro si
+ *  el puerto se le ha llevado alguien; lo que esto quita es la colisión
+ *  SEGURA de dos números escritos a mano. */
+export function puertosLibres(n = 1) {
+  const abrir = () =>
+    new Promise((res, rej) => {
+      const srv = net.createServer();
+      srv.once("error", rej);
+      srv.listen(0, "127.0.0.1", () => res(srv));
+    });
+  return (async () => {
+    const abiertos = [];
+    for (let i = 0; i < n; i++) abiertos.push(await abrir());
+    const puertos = abiertos.map((s) => s.address().port);
+    await Promise.all(abiertos.map((s) => new Promise((r) => s.close(r))));
+    return puertos;
+  })();
 }

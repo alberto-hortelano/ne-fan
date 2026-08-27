@@ -10,7 +10,7 @@
  *    npx tsx ../labs/narrative/check-scene.ts --file escena.json
  *    npx tsx ../labs/narrative/check-scene.ts --run ../labs/narrative/runs/<ts>
  *    npx tsx ../labs/narrative/check-scene.ts --save ../saves/<session_id>
- *    ... [--state-api http://127.0.0.1:9878]   # añade la regla de link exterior
+ *    ... [--state-api <url de la State API>]   # añade la regla de link exterior
  */
 
 import { readFileSync } from "node:fs";

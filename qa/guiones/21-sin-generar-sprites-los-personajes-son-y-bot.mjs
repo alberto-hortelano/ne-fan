@@ -35,7 +35,7 @@
  *  Cero créditos: el `?ai=` apunta al motor falso y las peticiones de skin
  *  ni siquiera llegan a él — las corta este guion.
  */
-import { backendEsFalso, nuevaPartida, comenzar, esperarRegistro } from "../lib/sesion.mjs";
+import { stackSinCreditos, nuevaPartida, comenzar, esperarRegistro } from "../lib/sesion.mjs";
 
 /** Los cuatro endpoints del gpu-worker (#199) y el puerto en el que vivía.
  *  Se escriben aquí porque lo que se canda es que NO aparezcan: si alguien
@@ -50,12 +50,14 @@ const HOJA_BASE = /\/sprites\/([^/]+)\//;
 const HOJA_VESTIDA = /\/sprite_sheets\/|\/cache\/skin/;
 
 export default async function (ctx) {
+  // Una sola pregunta, guardada: el guardarraíl sale a la red (dos /health).
+  const sinCreditos = await stackSinCreditos(ctx);
   ctx.expect(
-    "el backend de IA es el falso del preset e2e (esta partida arranca generación)",
-    await backendEsFalso(ctx),
-    "sin fake-ai-server este guion gastaría créditos: no se ejecuta",
+    "cliente Y bridge declaran motor falso (`e2e-sin-creditos`)",
+    sinCreditos,
+    "esta partida arranca generación: sin las dos declaraciones no se ejecuta",
   );
-  if (!(await backendEsFalso(ctx))) return;
+  if (!sinCreditos) return;
 
   // Se escucha ANTES de navegar y se recarga: el runner ya había abierto la
   // página, y lo que se afirma abajo es que NO hubo cierta petición. Contar

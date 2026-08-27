@@ -103,8 +103,31 @@ export interface BackendStatusResponse {
   ai_vision: BackendState;
 }
 
-export interface AiServerHealthResponse {
+/** Lo que declara de sí mismo CUALQUIER motor narrativo en `GET /health` —
+ *  el real (`ai_server/main.py`) y el falso (`labs/narrative/fake-ai-server.mjs`).
+ *
+ *  `fake` es el campo del que cuelga el guardarraíl de cero créditos del banco
+ *  de pruebas, y por eso es OBLIGATORIO y AFIRMATIVO. La versión anterior no
+ *  existía: el guion miraba si la URL del `?ai=` contenía el puerto 18765, o
+ *  sea leía de vuelta la constante que el propio runner acababa de escribir en
+ *  esa URL — una tautología que siempre decía «sí, es falso» y que nunca llegó
+ *  a mirar el backend. Aquí la regla es la contraria y no admite término medio:
+ *
+ *   - `fake: true`  → lo dice el backend, y solo lo dice quien no puede gastar.
+ *   - `fake: false` → un backend real, que sí cobra.
+ *   - campo ausente, respuesta ilegible, timeout, puerto muerto → **no es
+ *     falso**. Nunca «no lo sé, sigo»: el desenlace caro es bendecir como
+ *     gratis algo que cobra.
+ *
+ *  Queda descartado a propósito discriminar por AUSENCIA de los campos del
+ *  real (`mode`, `cache_*`): eso bendeciría como falso a cualquier cosa que
+ *  conteste poco — un proxy, un 404 con JSON, un servicio a medio arrancar. */
+export interface NarrativeHealthResponse {
   status: "ready" | "loading";
+  fake: boolean;
+}
+
+export interface AiServerHealthResponse extends NarrativeHealthResponse {
   mode: "narrative";
   cache_total_bytes: number;
   cache_max_bytes: number;

@@ -1,5 +1,5 @@
 {
-  "$comment": "Fronteras arquitectónicas de ne-fan, verificadas por test/architecture.test.ts. Cada regla sustituye a un invariante que antes solo vivía como prosa en CLAUDE.md. severity=error: verde hoy, no puede volver a romperse. severity=warn: deuda YA existente, congelada en `max` — el test falla si CRECE. Toda excepción lleva motivo obligatorio.",
+  "$comment": "Fronteras arquitectónicas de ne-fan, verificadas por test/architecture.test.ts. Cada regla sustituye a un invariante que antes solo vivía como prosa en CLAUDE.md. severity=error: verde hoy, no puede volver a romperse. severity=warn: deuda YA existente, congelada en `max` — el test falla si CRECE. Toda excepción lleva motivo obligatorio. El `ignore` es por NOMBRE de directorio y cubre además los árboles REGENERABLES que ningún escaneo debe recorrer: `capturas` (qa/capturas/<corrida>/ — desde 2026-08-27 se acumula por corrida en vez de vaciarse, y una sola deja ~75 ficheros), `.tmp`, `coverage` y `reports`. Nada de ahí se recolecta nunca, y recorrerlo lo paga cada `npm test`.",
   "scan": {
     "roots": [
       {
@@ -67,12 +67,20 @@
         ]
       }
     ],
+    "files": [
+      "start.sh",
+      "nefan-html/vite.config.ts"
+    ],
     "ignore": [
       "node_modules",
       "dist",
       ".venv",
       "__pycache__",
-      "archivo"
+      "archivo",
+      "capturas",
+      ".tmp",
+      "coverage",
+      "reports"
     ]
   },
   "rules": [
@@ -471,6 +479,36 @@
         "pattern": "\\b(?:deriveVolumesFromSchema|composeTilePlan)\\b"
       },
       "exceptions": []
+    },
+    {
+      "id": "nadie-inventa-un-puerto",
+      "desc": "Los puertos del bloque no se escriben a mano; y un identificador «port» no se inicializa con un literal",
+      "why": "LO QUE ESTA REGLA CAZA, exactamente, y nada más:\n  (a) los NUEVE números del bloque que son inequívocamente puertos (9877 9878 8765 8767 8768 8770 3737 18765 9899) escritos EN CUALQUIER SITIO —código, cadena, tabla, comentario—, porque en este repo ninguno de los nueve significa otra cosa (medido: cero ocurrencias legítimas en el ámbito);\n  (b) el 3000, que SÍ es un milisegundo plausible, solo cuando va detrás de `:` o `=` (con comillas opcionales): `port: 3000`, `PORT_HTML=3000`, `PORT_X=\"3000\"`. `HOLD_MS ?? 3000` es legítimo y no se caza a propósito;\n  (c) la FORMA de un puerto aunque el número sea nuevo: un identificador que contiene «port» o «puerto» inicializado con 4-5 cifras, o 4-5 cifras detrás de `127.0.0.1:`, `localhost:`, `ws://…:` o `http://…:`.\n\nLO QUE NO CAZA, dicho para que nadie lo cite como garantía: un puerto NUEVO, fuera del bloque, con un nombre que no contenga «port» ni «puerto» y sin URL delante — `const CTRL = 9955` pasa. No se puede cerrar con un patrón de texto sin cazar toda constante de cuatro cifras del repo, y una regla que cazara `timeout: 30000` enseñaría a añadir excepciones, que es peor. El candado de ESA clase no es un regex más ancho: es que el puerto entre en `CONFIG.ports`, que es lo que se hizo con el 9899 cuando la primera versión de esta regla lo dejó pasar.\n\nPOR QUÉ EXISTE. Los nueve puertos del catálogo estaban declarados CINCO veces —`start.sh` dos veces (las variables y otra vez a mano dentro de SERVICE_LABELS, de donde los leía qa/presets.mjs), `vite.config.ts`, `qa/run.mjs`, `qa/lib/saves.mjs` y los benches de labs— mientras `nefan-core/src/config.ts` decía por escrito, en su cabecera, ser «la fuente única de puertos». El hallazgo no era que faltara una fuente única: era que sobraba todo lo que la ignoraba. Y la copia no era solo duplicación: el guardarraíl de cero créditos reconocía al motor falso por su número de puerto contra una constante que el propio runner había escrito en la URL — una tautología que nunca miró un backend.\n\nTRES VECES SE HA TENIDO QUE APRETAR, y las tres las encontró alguien probándola, no leyéndola: enumerar los nueve dejaba entrar al décimo (`CTRL_PORT ?? 9899`); cazar solo la forma dejaba pasar `const MOTOR_QA = 18765`; y exigir `:`/`=` delante del número dejaba pasar la tabla que esta misma tanda borró, reintroducida palabra por palabra (`[[18765,\"fake-ai-server\"],…]`) y la asignación entrecomillada de bash. Los ficheros de la FUENTE (`src/config.ts`, `src/contracts/service-registry.ts`, el snapshot) no entran en `files`: ahí es donde los números tienen que estar.",
+      "severity": "error",
+      "files": [
+        "start.sh",
+        "nefan-html/vite.config.ts",
+        "qa/**/*.mjs",
+        "labs/**/*.mjs"
+      ],
+      "text": {
+        "pattern": "(\\b[A-Za-z_]*([Pp][Oo][Rr][Tt]|[Pp][Uu][Ee][Rr][Tt][Oo])[A-Za-z_]*\\s*[?:=|]{1,3}\\s*\"?|127\\.0\\.0\\.1:|localhost:|ws://[^ ]*:|http://[^ ]*:)[0-9]{4,5}\\b|\\b(9877|9878|8765|8767|8768|8770|3737|18765|9899)\\b|[:=]\\s*\"?3000\\b"
+      }
+    },
+    {
+      "id": "solo-se-mata-el-puerto-propio",
+      "desc": "Matar por PUERTO (`fuser -k`) o por NOMBRE (`pkill`/`killall`) ocurre en UN solo sitio",
+      "why": "LO QUE ESTA REGLA CAZA, exactamente: dos formas de matar que son CIEGAS AL DUEÑO —por PUERTO (`fuser -k`, y también su forma larga `fuser --kill`) y por NOMBRE (`pkill`, `killall`)— y las acota a UNA aparición en todo el ámbito (`start.sh`, `qa/**`, `labs/**`). Esa una es la definición de `kill_port`, el único sitio donde el acto tiene permiso: sus dos llamadas —la tecla `k`/`--parar`, que comprueba `/proc/<pid>/cwd`, y el `trap EXIT`, que solo recorre STARTED_PORTS— han demostrado el dueño ANTES de llegar. `pkill` entra por su nombre porque es lo que la restricción del usuario prohíbe expresamente («pkill vite / pkill node / pkill python están prohibidos») y no aparecía en ninguna de las 24 reglas.\n\nLO QUE NO CAZA, y es deliberado: matar por PID. `kill -TERM \"$p\"` y `kill -KILL \"$p\"` sobre los PIDs que este proceso arrancó (`cleanup`, `kill_tree`) son el camino CORRECTO —el que sabe de quién es lo que mata— y prohibirlos rompería la bajada. El corolario incómodo, dicho porque QA lo probó: `kill -9 $(pids_del_puerto \"$PORT_HTML\")` —sacar los pids de un puerto y matarlos por PID— PASA esta regla. Es matar a ciegas escrito en dos pasos, y no se puede separar de la bajada legítima con un patrón de texto: las dos terminan en `kill` sobre una variable. Queda fuera y queda escrito.\n\nPOR QUÉ EXISTE. Hasta 2026-08-27 las NUEVE funciones `start_*` de start.sh mataban al ocupante de su puerto antes de arrancar, sin preguntar de quién era: el preset más tonto se llevaba por delante el cliente de otro agente de la máquina, o el narrative-mcp que posee el terminal del motor. Hoy arrancar usa `require_port_free`, que se niega y dice quién ocupa el puerto.\n\nSE HA TENIDO QUE APRETAR DOS VECES, las dos porque alguien la atacó: la primera versión contaba llamadas al helper `kill_port`, y un `fuser -k` EN LÍNEA dentro de `start_html` —el defecto exacto que este texto describe— salía 44/44 en verde; la segunda cazaba `-k` y no `--kill`. Contar llamadas a un helper no es lo mismo que impedir el acto. Es `warn` y no `error` porque su sujeto es un CONTEO: el acto no está prohibido, está acotado a un sitio.",
+      "severity": "warn",
+      "max": 1,
+      "files": [
+        "start.sh",
+        "qa/**/*.mjs",
+        "labs/**/*.mjs"
+      ],
+      "text": {
+        "pattern": "fuser\\s+-{1,2}k|\\bpkill\\b|\\bkillall\\b"
+      }
     }
   ]
 }

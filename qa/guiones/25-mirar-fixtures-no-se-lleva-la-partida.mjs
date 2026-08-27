@@ -67,11 +67,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { nuevaPartida, comenzar, esperarTituloListo, esperarListaDeSaves } from "../lib/sesion.mjs";
+import { URLS } from "../lib/stack.mjs";
 
 export const aisla = ["saves"];
 
 const GAME_ID = "alta_fantasia";
-const API = "http://127.0.0.1:9878";
+/** El State API del bridge. Sale de la fuente única de puertos, no de un
+ *  literal: dos corridas a la vez no comparten stack. */
+const API = URLS.state_api;
 
 /** Llamada al State API tal cual la hace narrative-mcp. */
 async function api(method, path, body) {

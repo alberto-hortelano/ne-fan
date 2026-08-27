@@ -74,6 +74,17 @@ export const ArchConfigSchema = z
     $comment: z.string().optional(),
     scan: z.object({
       roots: z.array(z.object({ dir: z.string(), ext: z.array(z.string()).min(1) })).min(1),
+      /** Ficheros SUELTOS, por ruta exacta relativa a la raíz del repo.
+       *
+       *  Existe porque hay invariantes cuyo sujeto es un fichero que no vive
+       *  dentro de ningún root: `start.sh` está en la raíz del repo (7 GB con
+       *  `cache/`, `saves/`, `.venv/`, `vendor/`…, así que recorrerla entera
+       *  buscando `.sh` sería caro y frágil — el `ignore` es por NOMBRE de
+       *  directorio y se queda corto solo) y `nefan-html/vite.config.ts` queda
+       *  fuera de `nefan-html/src`. Nombrarlos es más barato y más exacto que
+       *  ensanchar el escaneo, y un fichero que desaparece se nota: el
+       *  colector LANZA en vez de escanear de menos en silencio. */
+      files: z.array(z.string()).default([]),
       ignore: z.array(z.string()).default([]),
     }),
     rules: z.array(RuleSchema).min(1),
@@ -83,9 +94,21 @@ export const ArchConfigSchema = z
 export type ArchRule = z.infer<typeof RuleSchema>;
 export type ArchConfig = z.infer<typeof ArchConfigSchema>;
 
+/** Globs ya compilados. Un glob es función PURA de su cadena, así que la
+ *  misma entrada da siempre la misma regex y cachearla es seguro.
+ *
+ *  No es micro-optimización: `checkArchitecture` llama a `matchesAny` por cada
+ *  par (regla, fichero) y hoy son 24 reglas × 639 ficheros, o sea ~15.000
+ *  compilaciones de regex por pasada. Medido: de los ~163 ms de una pasada,
+ *  ~120 ms eran solo eso. Lo paga `npm test` en cada vuelta y `npm run deuda`
+ *  cada vez que alguien mira la cola. */
+const globCache = new Map<string, RegExp>();
+
 /** Glob a regex: soporta `**` (cualquier profundidad), `*` (dentro de un
  *  segmento) y `?`. Todo lo demás se escapa — nada de sorpresas. */
 export function globToRegExp(glob: string): RegExp {
+  const cacheado = globCache.get(glob);
+  if (cacheado) return cacheado;
   let out = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
@@ -108,7 +131,9 @@ export function globToRegExp(glob: string): RegExp {
       out += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
     }
   }
-  return new RegExp(`^${out}$`);
+  const re = new RegExp(`^${out}$`);
+  globCache.set(glob, re);
+  return re;
 }
 
 export function matchesAny(path: string, globs: readonly string[]): boolean {

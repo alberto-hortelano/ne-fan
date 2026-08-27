@@ -48,6 +48,12 @@ export interface StateHttpContext {
    *  saves para construir la keep-list del prune del asset-store. Opcional:
    *  sin él la ruta no existe (404). */
   sessionStorage?: SessionStorage;
+  /** A qué motor narrativo habla este bridge. Se publica en GET /health
+   *  porque es la vía de gasto que NO pasa por el `?ai=` del cliente. */
+  aiServerUrl: string;
+  /** El gateway WS de este mismo proceso: la IDENTIDAD de esa vía. Sin ella,
+   *  quien pregunta no puede saber si está hablando con SU bridge. */
+  gatewayUrl: string;
 }
 
 /** El request ya despiezado: el handler no vuelve a mirar la URL. */

@@ -1,5 +1,9 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
+// El puerto del dev server sale de la fuente única del repo, no de un literal
+// aquí: `nefan-core/src/config.ts` (que a su vez deriva del registro de
+// servicios). Era la quinta copia del número 3000.
+import { CONFIG } from "../nefan-core/src/config.js";
 
 export default defineConfig({
   // Sin fallback SPA (#217). Con `appType: "spa"` (el defecto), el dev server
@@ -23,7 +27,14 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: Number(process.env.NEFAN_HTML_PORT ?? CONFIG.ports.html),
+    // Sin esto vite SE DESPLAZA SOLO al puerto siguiente cuando el suyo está
+    // ocupado, y lo dice en una línea de su log que nadie lee. El efecto con
+    // dos stacks a la vez es el peor de los posibles: la segunda instancia
+    // sirve en el puerto siguiente, el banco sigue abriendo el suyo — y mide el
+    // cliente de la PRIMERA, en verde y sin una sola pista. Que no arranque es
+    // la respuesta correcta: el puerto tiene dueño.
+    strictPort: true,
     // SIN recarga automática al tocar código: el cliente no acepta HMR
     // módulo a módulo, así que cada cambio disparaba un full-reload que mata
     // la partida en curso (sesión, posición, escena cargada). Con hmr:false

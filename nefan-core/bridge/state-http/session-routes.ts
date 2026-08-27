@@ -13,6 +13,8 @@ export const sessionRoutes = {
       session_id: ctx.narrative.session_id,
       has_session: Boolean(ctx.narrative.session_id),
       game_id: ctx.narrative.game_id,
+      ai_server_url: ctx.aiServerUrl,
+      gateway_url: ctx.gatewayUrl,
     } satisfies WorldStateHealthResponse),
 
   /** Keep-list del asset-store (F2): unión de hashes referenciados por

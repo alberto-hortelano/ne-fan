@@ -126,6 +126,13 @@ async def health():
     cache_max = int(deps.config.get("cache_max_bytes", 0)) if deps.config else 0
     return {
         "status": "ready" if deps.llm_client else "loading",
+        # Este servidor COBRA: cada escena y cada imagen que pasa por aquí son
+        # créditos reales. Lo declara AFIRMATIVAMENTE para que el guardarraíl
+        # de cero créditos del banco (qa/lib/sesion.mjs) pueda negarse en vez
+        # de tener que deducirlo de un número de puerto. El único que contesta
+        # `true` es labs/narrative/fake-ai-server.mjs. Contrato:
+        # NarrativeHealthResponse (nefan-core/src/contracts/narrative-llm.ts).
+        "fake": False,
         "mode": "narrative",
         "cache_total_bytes": cache_total,
         "cache_max_bytes": cache_max,

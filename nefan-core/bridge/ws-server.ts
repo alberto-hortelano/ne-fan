@@ -136,6 +136,8 @@ createStateHttpServer({
   npcDirector,
   gamesDir: GAMES_DIR,
   sessionStorage,
+  aiServerUrl: AI_SERVER_URL,
+  gatewayUrl: `ws://127.0.0.1:${PORT}`,
   onMutation: async () => {
     await narrative.save();
   },

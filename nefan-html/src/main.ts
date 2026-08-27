@@ -521,6 +521,17 @@ const nefanHook: Record<string, unknown> = {
    *  el cliente idéntico»: se lee de vuelta en el título y tiene que salir el
    *  mismo objeto por los dos. */
   sesion: () => session.facets,
+  /** A qué URL resuelve AHORA MISMO cada servicio, ya aplicados los overrides
+   *  de la query (`?ai=`, `?bridge=`). No es un adorno de diagnóstico: es lo
+   *  que permite al banco de pruebas preguntarle al BACKEND si cobra, en vez
+   *  de deducirlo de la URL que el propio runner escribió. Solo lectura. */
+  servicios: () => ({
+    "game-gateway": serviceUrl("game-gateway"),
+    "world-state": serviceUrl("world-state"),
+    "narrative-llm": serviceUrl("narrative-llm"),
+    "remote-gen": serviceUrl("remote-gen"),
+    "asset-store": serviceUrl("asset-store"),
+  }),
   /** Trazas de los pipelines de imagen/colisión (dev/debug-log.ts): apagadas
    *  por defecto; también `?debug=1` en la URL. */
   debug(on: boolean) { setDebugLog(on); },

@@ -98,6 +98,9 @@ describe("POST /vocabulary (State API)", () => {
     });
     let mutations = 0;
     const server: Server = createStateHttpServer({
+      // El motor al que apuntaría el bridge: GET /health lo publica.
+      aiServerUrl: "http://127.0.0.1:0",
+    gatewayUrl: "ws://127.0.0.1:0",
       port: 0,
       narrative,
       npcDirector: new NpcDirector(narrative),
@@ -138,6 +141,9 @@ describe("POST /vocabulary (State API)", () => {
   /** Levanta el State API sobre un narrative dado y devuelve su URL. */
   async function servidor(narrative: Parameters<typeof createStateHttpServer>[0]["narrative"], gamesDir: string) {
     const server: Server = createStateHttpServer({
+      // El motor al que apuntaría el bridge: GET /health lo publica.
+      aiServerUrl: "http://127.0.0.1:0",
+    gatewayUrl: "ws://127.0.0.1:0",
       port: 0,
       narrative,
       npcDirector: new NpcDirector(narrative),

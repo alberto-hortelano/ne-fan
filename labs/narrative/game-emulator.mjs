@@ -10,13 +10,13 @@
 // Cero dependencias: Node v22+ trae `WebSocket` global (undici) y `node:http`.
 //
 // Arquitectura:
-//   [este proceso] --WS:9877--> bridge --HTTP:8765--> ai_server --WS:3737--> [motor]
+//   [este proceso] --WS--> bridge --HTTP--> ai_server --WS--> [motor]
 //
 // Uso:
 //   node labs/narrative/game-emulator.mjs            # arranca en foreground
 //   (recomendado: lanzarlo en background y conducirlo por su API HTTP de control)
 //
-// API de control (HTTP en CTRL_PORT, default 9899) — conducir con curl:
+// API de control (HTTP en CTRL_PORT, del bloque del stack) — conducir con curl:
 //   POST /send      body = mensaje de bridge JSON   -> { ok, sentSeq }
 //   GET  /events?since=N                            -> { events:[{seq,ts,dir,msg}], cursor }
 //   GET  /wait?since=N&type=narrative_event&timeoutMs=240000
@@ -25,19 +25,25 @@
 //   GET  /health                                    -> { connected, eventCount, run }
 //
 // Variables de entorno:
-//   BRIDGE_URL   (default ws://127.0.0.1:9877)
-//   CTRL_PORT    (default 9899)
+//   BRIDGE_URL   (default: ports.bridge del runtime config)
+//   CTRL_PORT    (default: ports.game_emulator del runtime config)
 //   RUN_DIR      (default labs/narrative/runs/<timestamp>)
 
 import http from "node:http";
 import { mkdirSync, appendFileSync } from "node:fs";
+import { PUERTOS_TODOS } from "../../qa/lib/stack.mjs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const BRIDGE_URL = process.env.BRIDGE_URL ?? "ws://127.0.0.1:9877";
-const CTRL_PORT = Number(process.env.CTRL_PORT ?? 9899);
+/** El gateway y la API de control, de la fuente única del repo por el único
+ *  lector que hay en JS (que aplica `NEFAN_PORT_OFFSET`, así que dos benches a
+ *  la vez no se pisan el puerto de control como hacían hasta hoy).
+ *  `BRIDGE_URL` y
+ *  `CTRL_PORT` del entorno siguen mandando. */
+const BRIDGE_URL = process.env.BRIDGE_URL ?? `ws://127.0.0.1:${PUERTOS_TODOS.bridge}`;
+const CTRL_PORT = Number(process.env.CTRL_PORT ?? PUERTOS_TODOS.game_emulator);
 
 // Sello de tiempo legible para el nombre del run (el script no usa Date.now en
 // hot paths; aquí es solo para nombrar la carpeta una vez al arrancar).

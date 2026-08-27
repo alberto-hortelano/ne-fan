@@ -36,6 +36,9 @@ before(async () => {
   narrative.startNewSession("plugtest");
   activePlugins = new Map();
   server = createStateHttpServer({
+    // El motor al que apuntaría el bridge: GET /health lo publica.
+    aiServerUrl: "http://127.0.0.1:0",
+    gatewayUrl: "ws://127.0.0.1:0",
     port: 0, // efímero
     narrative,
     npcDirector: new NpcDirector(narrative),

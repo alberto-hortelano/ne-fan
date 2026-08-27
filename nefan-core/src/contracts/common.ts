@@ -28,6 +28,8 @@ export const CONTRACTS_VERSION = 1;
 export {
   SERVICES,
   resolveServiceUrl,
+  portOf,
+  portOffset,
   type ServiceName,
   type ServiceSpec,
 } from "./service-registry.js";

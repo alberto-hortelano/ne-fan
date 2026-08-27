@@ -23,10 +23,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdirSync } from "node:fs";
 import { abrirNavegador } from "./lib/navegador.mjs";
+import { URLS } from "./lib/stack.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SHOTS = join(here, "capturas");
-const BASE = process.env.NEFAN_URL ?? "http://localhost:3000";
+const BASE = process.env.NEFAN_URL ?? URLS.html;
 const [fixture, etiqueta, col = "64", fila = "64", yaw = String(Math.PI)] = process.argv.slice(2);
 if (!fixture || !etiqueta) {
   console.error("uso: node qa/captura-de-fixture.mjs <fixture> <etiqueta> [col] [fila] [yaw]");

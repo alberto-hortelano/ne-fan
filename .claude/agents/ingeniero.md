@@ -20,8 +20,13 @@ está medido por herramientas que no puedes convencer. En qué orden llegas ahí
 
 1. **Implementa** siguiendo el plan. Lógica en `nefan-core`; los clientes solo pintan.
 2. **Itera hasta que las herramientas den verde**, no hasta que a ti te parezca terminado:
-   - `cd nefan-core && npm run verify` (build + lint + test, incluye el checker de fronteras).
-   - `npm run crap -- --check`: la deuda del módulo que tocas no puede crecer.
+   - `cd nefan-core && npm run verify` (build + typecheck + lint + test, incluye el checker de
+     fronteras). ~13 s. Sigue con `npm test` y NO con `coverage` por decisión del usuario
+     (2026-08-27): el bucle interno vale más barato que la cobertura en cada vuelta.
+   - `npm run coverage && npm run crap -- --check`: la deuda del módulo que tocas no puede
+     crecer. **El `coverage` no es opcional**: `crap` lee `coverage/lcov.info` y sin regenerarlo
+     te contesta sobre el árbol de la semana pasada. Corolario de sacar `coverage` del bucle:
+     la cobertura ya no se mide en cada vuelta, así que quien toque umbrales lo corre a mano.
    - **Mutación: `npm run mutacion -- local <id>` para el módulo que tocas, y nunca
      `npm run mutate`.** El verbo `local` mide UN módulo con dos núcleos (medido: techo real de
      2 procesos de test) y **rechaza** el que pase del tope (`tope_local`, hoy 120 mutantes ≈ 70 s):

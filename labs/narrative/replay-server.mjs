@@ -4,7 +4,7 @@
 // Reproduce una sesión grabada (events.ndjson) como "película" para el cliente
 // 2D (nefan-html), SIN motor narrativo, SIN ai_server y SIN jugador.
 //
-// Suplanta al bridge en :9877: el cliente se conecta igual que siempre, y
+// Suplanta al bridge en su puerto: el cliente se conecta igual que siempre, y
 // este servidor le va sirviendo los frames `in` que el bridge real le mandó en
 // la sesión grabada. Material ideal para depurar el renderer 2D (terreno,
 // layout de objetos/NPCs, exits, UI de diálogo) de forma determinista.
@@ -19,7 +19,7 @@
 //   - El input por frame, load_room, dialogue_choice, etc. del cliente se
 //     ignoran: la película auto-avanza sola.
 //
-// Requisitos: que el bridge real NO esté en :9877 (lo suplantamos). No hace
+// Requisitos: que el bridge real NO esté en ese puerto (lo suplantamos). No hace
 // falta ai_server: los eventos se reemiten TAL CUAL como se grabaron —la
 // escena viaja ya normalizada— así que no hay nada que generar.
 //
@@ -34,13 +34,14 @@
 //
 // Variables de entorno:
 //   LOG          ruta a events.ndjson (default: runs/session-2026-06-25/...)
-//   PORT         puerto WS (default 9877, el del bridge)
+//   PORT         puerto WS (default: ports.bridge del runtime config)
 //   HOLD_MS      ms que se mantiene cada escena/diálogo (default 3000)
 //   FLASH_MS     ms del loader "generando" antes de cada escena (default 200)
 //   REAL_TIMING  =1 respeta los deltas de tiempo reales (clamp 150..HOLD_MS)
 //   LOOP         =1 reinicia la película al terminar
 
 import { readFileSync } from "node:fs";
+import { PUERTOS_TODOS } from "../../qa/lib/stack.mjs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 // Import relativo a ESTE fichero (labs/narrative/ → raíz del repo → nefan-core).
@@ -51,7 +52,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOG =
   process.env.LOG ??
   resolve(__dirname, "runs", "session-2026-06-25", "events.ndjson");
-const PORT = Number(process.env.PORT ?? 9877);
+/** Puerto del gateway, de la fuente única del repo por el único lector que hay
+ *  en JS (que aplica el offset y falla diciendo cómo regenerar el snapshot).
+ *  `PORT` del entorno manda: por ahí le llega el bloque desde `start.sh`. */
+const PORT = Number(process.env.PORT ?? PUERTOS_TODOS.bridge);
 const HOLD_MS = Number(process.env.HOLD_MS ?? 3000);
 const FLASH_MS = Number(process.env.FLASH_MS ?? 200);
 const REAL_TIMING = process.env.REAL_TIMING === "1";

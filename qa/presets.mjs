@@ -10,10 +10,10 @@
  *  correctas—, así que esto lo arranca de verdad y mira los puertos, que es lo
  *  que hace la tecla `s` (status) del menú.
  *
- *  No copia ni un dato del launcher: SERVICES, los puertos de SERVICE_LABELS,
- *  PRESET_SLUGS y PRESET_PROFILES se leen de `start.sh`. Si alguien añade un
- *  servicio y olvida una columna, la fila sale con ancho distinto y esto lo
- *  dice antes de arrancar nada.
+ *  No copia ni un dato del launcher: SERVICES, SERVICE_PORT_KEYS, PRESET_SLUGS
+ *  y PRESET_PROFILES se leen de `start.sh` (y los NÚMEROS, de la misma fuente
+ *  única que él). Si alguien añade un servicio y olvida una columna, la fila
+ *  sale con ancho distinto y esto lo dice antes de arrancar nada.
  *
  *  Uso:
  *    node qa/presets.mjs                    todos los presets (~2-3 min)
@@ -22,17 +22,22 @@
  *
  *  Cero créditos: arrancar un servicio no llama a ningún generador de pago.
  *
- *  AVISO (comportamiento PREEXISTENTE de start.sh, no de este guion): su
- *  `cleanup` mata TODOS los puertos de ALL_PORTS, incluido :3737, aunque no
- *  los haya arrancado él. Si corres esto con un terminal de Claude Code que
- *  posea el narrative-mcp, se lo lleva por delante. Ese hallazgo está en
- *  `docs/agents/2026-08-22-retirar-godot/qa.md`.
+ *  Lo que SÍ hace falta saber antes de lanzarlo: necesita los nueve puertos
+ *  del catálogo LIBRES, y arranca y para ocho presets seguidos. Con otro stack
+ *  en la máquina no se ejecuta —lo dice y sale con 2— porque desde 2026-08-27
+ *  `start.sh` ya no mata al ocupante de un puerto: se niega a arrancar, y
+ *  entonces este guion mediría «no levantó» sin que eso diga nada del preset.
+ *  (El aviso anterior, que decía que `cleanup` barría el puerto del MCP aunque
+ *  no lo hubiera arrancado, era FALSO desde que `cleanup` pasó a recorrer solo
+ *  STARTED_PORTS; el barrido de verdad vivía en la tecla `k`, que hoy tampoco
+ *  toca lo ajeno.)
  */
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import net from "node:net";
+import { PUERTOS, PUERTOS_TODOS } from "./lib/stack.mjs";
+import { puertoOcupado as portBusy } from "./lib/puertos.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const START_SH = join(repoRoot, "start.sh");
@@ -53,21 +58,24 @@ const SERVICES = (src.match(/^SERVICES=\(([^)]*)\)/m) ?? [])[1]?.trim().split(/\
 if (!SERVICES?.length) throw new Error("no encuentro SERVICES en start.sh");
 
 /** clave de servicio → puertos que debe dejar escuchando.
- *  El puerto sale de SERVICE_LABELS ("bridge          :9877"), no de una
- *  constante copiada aquí. La State API (:9878) la levanta el propio bridge y
- *  no tiene slot: se lee de PORT_STATE. */
-const PORT_STATE = Number((src.match(/^PORT_STATE=(\d+)/m) ?? [])[1]);
-const labels = bashArray("SERVICE_LABELS").map((l) => l.replace(/^"|"$/g, ""));
-if (labels.length !== SERVICES.length) {
-  throw new Error(`SERVICE_LABELS tiene ${labels.length} entradas y SERVICES ${SERVICES.length}`);
+ *
+ *  Sigue derivando de `start.sh` y no de una tabla copiada aquí, pero por otro
+ *  sitio: `start.sh` ya no escribe ningún número. Declara qué CLAVE del bloque
+ *  de puertos le toca a cada servicio (`SERVICE_PORT_KEYS`, en el orden de
+ *  SERVICES) y el número lo pone la fuente única, igual que él. La State API la
+ *  levanta el propio bridge y no tiene slot. */
+const claves = (src.match(/^SERVICE_PORT_KEYS=\(([^)]*)\)/m) ?? [])[1]?.trim().split(/\s+/);
+if (!claves?.length) throw new Error("no encuentro SERVICE_PORT_KEYS en start.sh");
+if (claves.length !== SERVICES.length) {
+  throw new Error(`SERVICE_PORT_KEYS tiene ${claves.length} entradas y SERVICES ${SERVICES.length}`);
 }
 const portsOf = {};
 SERVICES.forEach((key, i) => {
-  const p = labels[i].match(/:(\d+)/);
-  if (!p) throw new Error(`la etiqueta de ${key} no declara puerto: ${labels[i]}`);
-  portsOf[key] = [Number(p[1])];
+  const p = PUERTOS_TODOS[claves[i]];
+  if (!p) throw new Error(`${key} declara la clave de puerto "${claves[i]}", que no está en el bloque`);
+  portsOf[key] = [p];
 });
-portsOf.bridge.push(PORT_STATE);
+portsOf.bridge.push(PUERTOS.state_api);
 
 const slugs = bashArray("PRESET_SLUGS").map((l) => l.replace(/^"|"$/g, ""));
 const profiles = bashArray("PRESET_PROFILES").map((l) => l.replace(/^"|"$/g, "").trim().split(/\s+/));
@@ -99,18 +107,6 @@ const soloLista = args.includes("--lista");
 const filtros = args.filter((a) => !a.startsWith("--"));
 const elegidos = casos.filter((c) => filtros.length === 0 || filtros.some((f) => c.slug.includes(f)));
 
-function portBusy(port) {
-  return new Promise((resolve) => {
-    const sock = net.connect({ port, host: "127.0.0.1" });
-    const done = (v) => {
-      sock.destroy();
-      resolve(v);
-    };
-    sock.once("connect", () => done(true));
-    sock.once("error", () => done(false));
-    setTimeout(() => done(false), 800);
-  });
-}
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function puertosArriba(ports) {
@@ -134,7 +130,8 @@ const sucios = await puertosArriba(ALL_PORTS);
 if (sucios.length) {
   console.error(
     `❌ hay puertos ocupados antes de empezar (${sucios.join(", ")}). Párralo todo ` +
-      `(./start.sh y tecla k) y vuelve a lanzar: si no, no se sabe quién levantó qué.`,
+      `(./start.sh --parar, o --parar-todo si hay algo ajeno) y vuelve a lanzar: si no, no se ` +
+      `sabe quién levantó qué.`,
   );
   process.exit(2);
 }
@@ -172,10 +169,11 @@ for (const c of elegidos) {
   resultados.push({ slug: c.slug, ok, faltan, colados });
 
   // Parar y ESPERAR A QUE EL LAUNCHER MUERA, no solo a que los puertos queden
-  // libres. Su `cleanup` recorre ALL_PORTS con `fuser -k` (SIGKILL) y una
-  // pausa por puerto: si el siguiente preset arranca mientras esa pasada sigue
-  // viva, el launcher moribundo mata el servicio recién nacido del siguiente
-  // (medido: el fake-ai-server salía "Killed" en :18765). Es la misma trampa
+  // libres. Su `cleanup` mata por PID lo que arrancó, y libera después el
+  // puerto que sobreviva a su proceso, con una pausa por puerto: si el
+  // siguiente preset arranca mientras esa pasada sigue viva, el launcher
+  // moribundo mata el servicio recién nacido del siguiente
+  // (medido: el fake-ai-server salía "Killed"). Es la misma trampa
   // que le espera a una persona que para un preset y arranca otro seguido.
   const muerto = new Promise((r) => child.once("exit", r));
   try {

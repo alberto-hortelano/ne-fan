@@ -1,7 +1,7 @@
 // Fake ai_server para bench E2E del bridge SIN LLM ni GPU.
 //
 // Imita los endpoints que consume nefan-core AiClient:
-//   GET  /health                → { status: "ready" }
+//   GET  /health                → { status: "ready", fake: true }
 //   POST /notify_session        → { ok: true }
 //   POST /generate_scene        → escena según el request (ver abajo)
 //   POST /report_player_choice  → { consequences: [] }
@@ -13,17 +13,24 @@
 //     "suelta" y el plató proscenio se retiraron.
 //
 // Env:
-//   PORT          puerto HTTP (default 18765)
-//   STATE_API     State API del bridge (default http://127.0.0.1:9878)
+//   PORT          puerto HTTP (default: ports.fake_ai del runtime config)
+//   STATE_API     State API del bridge (default: ports.state_api)
 
 import http from "node:http";
 import zlib from "node:zlib";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
+import { PUERTOS_TODOS } from "../../qa/lib/stack.mjs";
 import { fileURLToPath } from "node:url";
 
-const PORT = Number(process.env.PORT ?? 18765);
-const STATE_API = process.env.STATE_API ?? "http://127.0.0.1:9878";
+/** Los puertos salen de la fuente única del repo (`nefan-core/src/config.ts` →
+ *  `data/runtime_config.json`) a través del ÚNICO lector que hay en JS, que
+ *  además aplica `NEFAN_PORT_OFFSET` y falla con un mensaje que dice cómo
+ *  regenerar el snapshot (aquí había un `readFileSync` a mano que en un clon
+ *  limpio reventaba con un ENOENT crudo). `PORT`/`STATE_API` del entorno
+ *  siguen mandando: es por ahí por donde `start.sh` pasa el bloque. */
+const PORT = Number(process.env.PORT ?? PUERTOS_TODOS.fake_ai);
+const STATE_API = process.env.STATE_API ?? `http://127.0.0.1:${PUERTOS_TODOS.state_api}`;
 // Retardo artificial de TODO /generate_scene (ms), ANTES de responder nada
 // (ni cabeceras): reproduce las esperas de minutos del motor real. Regresión
 // del headersTimeout de undici (300 s) en el fetch del bridge.
@@ -491,7 +498,14 @@ const server = http.createServer((req, res) => {
     res.writeHead(204, cors);
     return res.end();
   }
-  if (req.method === "GET" && req.url === "/health") return send(200, { status: "ready" });
+  // `fake: true` es una DECLARACIÓN, no una pista. De ella cuelga el
+  // guardarraíl de cero créditos del banco de pruebas (qa/lib/sesion.mjs):
+  // ningún guion que pueda disparar generación corre si el backend no dice
+  // esto de sí mismo. Contrato: NarrativeHealthResponse
+  // (nefan-core/src/contracts/narrative-llm.ts). NO se toca sin leerlo.
+  if (req.method === "GET" && req.url === "/health") {
+    return send(200, { status: "ready", fake: true });
+  }
   // Unpin fake (batch "aplicar estilo" — el re-pin va por POST /assets/pin).
   if (req.method === "DELETE" && (req.url ?? "").startsWith("/assets/pin/")) {
     return send(200, { ok: true, ref: decodeURIComponent((req.url ?? "").slice("/assets/pin/".length)), removed: 0 });
