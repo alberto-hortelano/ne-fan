@@ -317,13 +317,47 @@ export function casosDeValidacion(): CasoValidacion[] {
         entry: { edge: "west", at: 41 },
       },
     },
+    // Las TRES caras de «este NPC no puede estar ahí», que son tres arreglos
+    // distintos para el motor y por eso tres mensajes. La sala sellada sube de
+    // tamaño en cada una: bajo la máscara del plan, el anillo de muro se come
+    // media celda por lado, así que una 3×3 no deja NI UNA celda pisable, una
+    // 5×5 deja una (donde el cuerpo no cabe) y una 7×7 deja 3×3 (donde cabe,
+    // pero no conecta con nada).
     {
-      name: "npc-inalcanzable",
-      cubre: "flood: NPC encerrado en una sala sin puertas → aviso",
+      name: "npc-en-celda-solida",
+      cubre: "flood: NPC empotrado en un sólido → error, aunque tenga vecina libre",
+      // El residuo de #262 que ya ocurrió: el tabernero nació dentro del prop
+      // `mostrador` y se leyó durante semanas como «la huida está rota». Se
+      // le podía hablar desde al lado, así que el validador lo daba por bueno.
       scene: () => {
         const s = escenaBootstrap();
         (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 3, 3], doors: [] });
         (s.entities as Record<string, unknown>[])[0].cell = [41, 91];
+        return s;
+      },
+      ctx: BOOTSTRAP,
+    },
+    {
+      name: "npc-sin-sitio-para-el-cuerpo",
+      cubre: "flood: NPC en una celda pisable donde su CUERPO no cabe → error",
+      // El nicho de UNA celda: `isWalkable` decía que sí y la tolerancia de
+      // ±1 celda encontraba vecina alcanzable, así que pasaba. Es el «cuarto
+      // de 5×5» del issue #289.
+      scene: () => {
+        const s = escenaBootstrap();
+        (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 5, 5], doors: [] });
+        (s.entities as Record<string, unknown>[])[0].cell = [42, 92];
+        return s;
+      },
+      ctx: BOOTSTRAP,
+    },
+    {
+      name: "npc-inalcanzable",
+      cubre: "flood: NPC encerrado en una sala sin puertas (el cuerpo cabe, pero no conecta) → error",
+      scene: () => {
+        const s = escenaBootstrap();
+        (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 7, 7], doors: [] });
+        (s.entities as Record<string, unknown>[])[0].cell = [43, 93];
         return s;
       },
       ctx: BOOTSTRAP,
@@ -353,10 +387,14 @@ export function casosDeValidacion(): CasoValidacion[] {
             { side: "west", at: 5 }, { side: "east", at: 5 },
           ],
         };
+        // Vanos de 3 celdas: el mínimo que admite el cuerpo mayor (#289). Con
+        // los 2 de antes el volume ni siquiera pasaba el zod, así que el caso
+        // dejaba de ejercer los cuatro lados y solo probaba el suelo nuevo
+        // —que tiene sus propios casos en `scene-schema.test.ts`.
         s.volumes = [
           {
             id: "granero", label: "granero", type: "building", rect: [60, 60, 12, 12], cutaway: true,
-            doors: [{ edge: "n", at: 4, w: 2 }, { edge: "s", at: 4, w: 2 }, { edge: "w", at: 4, w: 2 }, { edge: "e", at: 4, w: 2 }],
+            doors: [{ edge: "n", at: 4, w: 3 }, { edge: "s", at: 4, w: 3 }, { edge: "w", at: 4, w: 3 }, { edge: "e", at: 4, w: 3 }],
           },
         ];
         return s;
@@ -382,7 +420,23 @@ export function casosDeValidacion(): CasoValidacion[] {
     },
     {
       name: "ninguna-puerta-alcanzable",
-      cubre: "puertas: el player arranca encerrado, ninguna puerta se alcanza",
+      cubre: "puertas: el player arranca encerrado (con sitio para su cuerpo), el vano de la posada no se cruza",
+      scene: () => {
+        const s = escenaBootstrap();
+        (s.structures as Record<string, unknown>[]).push({
+          type: "room", rect: [60, 60, 7, 7], wall_char: "W", floor_char: "o", doors: [],
+        });
+        (s.entities as Record<string, unknown>[])[1].cell = [63, 63];
+        return s;
+      },
+      ctx: BOOTSTRAP,
+    },
+    {
+      name: "entrada-sin-sitio-para-el-cuerpo",
+      cubre: "flood: el arranque es pisable pero no admite un cuerpo → se nombra la causa, no se lista media escena",
+      // La misma sala de 5×5, con el PLAYER dentro: su única celda pisable no
+      // admite un cuerpo. Antes el flood salía vacío y el informe era una
+      // avalancha (todos los cruces, todos los NPCs) sin nombrar la causa.
       scene: () => {
         const s = escenaBootstrap();
         (s.structures as Record<string, unknown>[]).push({

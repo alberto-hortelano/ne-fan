@@ -9,7 +9,29 @@
  *  `data-label`: guía del clasificador de visión). */
 
 import { z } from "zod";
-import { TILE_CELLS } from "../tile.js";
+import { TILE_CELLS, TILE_MPC } from "../tile.js";
+import { BODY_RADIUS_M, celdasLibresParaRadio } from "../terrain-collision.js";
+
+/** Celdas LIBRES mínimas de un VANO declarado (`doors[].w`, `gate.w`) para
+ *  que el cuerpo mayor lo cruce. Derivado del collider real, no escrito a
+ *  mano: a mpc 0,5 son 3 celdas = 1,5 m, y una puerta de 2 celdas (1,0 m) la
+ *  cruza el jugador y NUNCA un NPC (issue #289).
+ *
+ *  Este suelo es el fail-fast BARATO: rechaza al declarar. La garantía de
+ *  verdad la da el flood con cuerpo de `scene-validate`, que es agnóstico del
+ *  productor — `prop`, `rock`, `tower`, `prism`, `custom` y `wall` estampan
+ *  sólidos sin ninguna regla de separación entre ellos, y dos de ellos a 1,2 m
+ *  pinzan un paso igual que una puerta estrecha. */
+export const MIN_VANO_CELDAS = celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC);
+
+/** El mínimo en METROS, con coma decimal: el mensaje viaja al motor
+ *  narrativo, que declara en celdas pero razona el mundo en metros. */
+const enMetros = (m: number): string => String(m).replace(".", ",");
+
+const vanoMinimo = (campo: string): string =>
+  `${campo}: un vano de menos de ${MIN_VANO_CELDAS} celdas (${enMetros(MIN_VANO_CELDAS * TILE_MPC)} m) ` +
+  `no lo cruza un NPC (su cuerpo mide ${enMetros(2 * BODY_RADIUS_M)} m y la colisión bloquea por ` +
+  "solape de celda); ensancha el vano";
 
 /** Coordenada de celda (admite fracción — media celda importa en props). */
 const cell = z.number().min(-8).max(TILE_CELLS + 8);
@@ -124,7 +146,11 @@ export const BuildingSchema = z
       .optional(),
     /** Puertas: hueco en el muro. `at` = celdas desde la esquina NO del lado. */
     doors: z
-      .array(z.object({ edge: DoorEdgeSchema, at: z.number().min(0).max(TILE_CELLS), w: z.number().positive().max(16).optional() }))
+      .array(z.object({
+        edge: DoorEdgeSchema,
+        at: z.number().min(0).max(TILE_CELLS),
+        w: z.number().min(MIN_VANO_CELDAS, vanoMinimo("doors[].w")).max(16).optional(),
+      }))
       .max(8)
       .optional(),
     /** Cutaway (edificio interactivo): sin techo y muros frontales bajos —
@@ -172,7 +198,7 @@ export const GateSchema = z
     type: z.literal("gate"),
     at,
     /** Ancho del vano en celdas (default 8). */
-    w: z.number().positive().max(24).optional(),
+    w: z.number().min(MIN_VANO_CELDAS, vanoMinimo("gate.w")).max(24).optional(),
     h: z.number().positive().max(24).optional(),
     /** Orientación del muro que atraviesa: "x" = muro que corre a lo largo
      *  de col (el vano se cruza andando en fila), "y" = a lo largo de row. */

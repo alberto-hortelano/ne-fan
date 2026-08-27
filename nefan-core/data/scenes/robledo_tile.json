@@ -330,7 +330,7 @@
       "id": "halmar_molinero",
       "kind": "npc",
       "name": "Halmar el Molinero",
-      "cell": [104, 52],
+      "cell": [104, 53],
       "footprint": [1, 1],
       "glyph": "n",
       "role": "peasant",

@@ -120,7 +120,9 @@ limited to the presets. Types:
   "flat"|"none", axis?:"x"|"y", material?:"slate"|"tile"|"thatch"|"wood",
   color?:"#rrggbb"}, walls?:{material:"timber"|"stone"|"wood"|"plaster",
   color?}, doors?:[{edge:"n"|"s"|"e"|"w", at:<cells from the NW corner along
-  that edge>, w?=4}], angle?, cutaway?:true }
+  that edge>, w?=4 (MINIMUM 3 cells = 1.5 m: an NPC body is 1 m wide and
+  collision blocks by cell overlap, so a 2-cell doorway is crossed by the
+  player and NEVER by an NPC — it is rejected)}], angle?, cutaway?:true }
   cutaway=true = ENTERABLE building: no roof, low front walls, interior
   visible from the camera; a roofed building is sealed scenery (see
   COLLISION below). angle (DEGREES −180..180, CCW seen from above; not
@@ -130,9 +132,10 @@ limited to the presets. Types:
   person a LOW wall (h <= 2.4) renders as a wooden picket fence (posts +
   rails); a label mentioning stone ("tapia de piedra") keeps the solid slab.
 - tower { at:[c,r], r?=6, h?=11, crenellated? }
-- gate { at:[c,r], w?=8, h?=10, orient:"x"|"y", banners? } — an arched
-  opening ON a wall run; its passage is collision-FREE (orient = the axis
-  the host wall runs along). A wall without a gate is impassable.
+- gate { at:[c,r], w?=8 (MINIMUM 3 cells, same reason as doors), h?=10,
+  orient:"x"|"y", banners? } — an arched opening ON a wall run; its passage
+  is collision-FREE (orient = the axis the host wall runs along). A wall
+  without a gate is impassable.
 - tree { at, s?=1 (0.4..1.8 — bigger is clamped), species? } ·
   bush { at, s? } · rock { at, s? } · fountain { at, r?=5 }
 - prop { at | rect, shape:"box"|"cylinder", h?=2, color?:"#rrggbb",
@@ -192,6 +195,15 @@ can never walk in. A cutaway building is enterable through its doors, and
 with no door it is a sealed box; doors/gates ARE the openings. Trees block
 only at the trunk. The validator rejects a tile whose entry or required
 neighbour crossings cannot reach walkable ground.
+
+EVERY GAP MUST ADMIT THE LARGEST BODY that may want to cross it. Bodies are
+1 m wide (NPCs) and collision blocks by CELL OVERLAP, so a gap needs 3 FREE
+CELLS (1.5 m) — 2 cells is crossed by the player and NEVER by an NPC, which
+then stays trapped forever. This is not only about declared doors: any two
+solids you place (props, rocks, towers, walls, prisms) pinch a passage the
+same way. The validator walks the tile WITH THAT BODY and rejects a tile
+where an NPC is unreachable, or is born on a solid cell (inside a prop,
+under a roofed building) — from there it could never move.
 
 Engine facts: `ground` paths follow their declared points exactly and
 volumes keep their footprints (plan = truth for collision and the vision

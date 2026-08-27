@@ -20,6 +20,10 @@
 import type { Vec3, CombatEvent } from "../types.js";
 import type { EntityRecord } from "../narrative/types.js";
 import { SeededRng } from "../rng.js";
+// El radio del NPC vive junto a la colisión que lo consulta, no aquí: es el
+// cuerpo MAYOR del juego y quien decide cuánto hueco dejar tiene que poder
+// leerlo (issue #289).
+import { NPC_RADIUS_M } from "../scene/terrain-collision.js";
 import { resolveRoleParams, type NpcRoleParams } from "./npc-roles.js";
 
 export type NpcMode = "idle" | "wander" | "goto" | "visit" | "flee" | "intervene" | "react";
@@ -83,10 +87,6 @@ export interface NpcBehaviorDeps {
   world: NpcWorldAdapter;
 }
 
-/** Radio de colisión del NPC — mayor que el del jugador (PLAYER_RADIUS_M):
- *  margen de seguridad contra las fuentes que el server aproxima por celdas.
- *  Constante propia a propósito (los NPCs ocupan algo más). */
-const NPC_RADIUS = 0.5;
 /** Cadencia de decisión (re-lectura de directiva, proximidad del jugador). */
 const DECIDE_INTERVAL = 0.25;
 /** Umbral de llegada a un waypoint de wander. */
@@ -490,7 +490,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     }
     const px = rt.record.position[0];
     const pz = rt.record.position[2];
-    if (distXZ(px, pz, target.x, target.z) <= GOAL_REACHED + NPC_RADIUS) {
+    if (distXZ(px, pz, target.x, target.z) <= GOAL_REACHED + NPC_RADIUS_M) {
       if (rt.reachedGoal !== `npc:${targetId}`) {
         rt.reachedGoal = `npc:${targetId}`;
         events.push({ type: "npc_reached_npc", npcId: rt.record.id, targetId });
@@ -658,7 +658,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       const d = angle === 0 ? dir : rotate(dir, angle);
       const nx = px + d.x * step;
       const nz = pz + d.z * step;
-      if (this.world.blocksMove(px, pz, nx, nz, NPC_RADIUS)) continue;
+      if (this.world.blocksMove(px, pz, nx, nz, NPC_RADIUS_M)) continue;
       rt.record.position[0] = nx;
       rt.record.position[2] = nz;
       rt.lastDeflection = angle;
@@ -710,7 +710,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       const r = Math.min(1, radius) + this.rng.next() * Math.max(0, radius - 1);
       const x = rt.home.x + Math.cos(angle) * r;
       const z = rt.home.z + Math.sin(angle) * r;
-      if (!this.world.blocksCircle(x, z, NPC_RADIUS)) return { x, z };
+      if (!this.world.blocksCircle(x, z, NPC_RADIUS_M)) return { x, z };
     }
     return null;
   }

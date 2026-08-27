@@ -18,9 +18,48 @@
  *  dos consumidores se fueron con sus vistas: el inflado de las zonas de salida
  *  del plató y el tamaño de dibujo del cuerpo en el renderer oblicuo.
  *  Cambiarlo aquí los mueve a todos a la vez. Los NPCs usan su propio radio
- *  (`NPC_RADIUS` en npc-behavior); el servidor NO colisiona al jugador (el
+ *  (`NPC_RADIUS_M`, aquí al lado); el servidor NO colisiona al jugador (el
  *  cliente es autoritativo de su movimiento). */
 export const PLAYER_RADIUS_M = 0.4;
+
+/** Radio físico del NPC en METROS — FUENTE ÚNICA. Mayor que el del jugador a
+ *  propósito: margen de seguridad contra las fuentes que el server aproxima
+ *  por celdas.
+ *
+ *  Vive AQUÍ, junto a `blocksCircle` y al radio del jugador, y no en
+ *  `npc-behavior.ts`, porque la pregunta que contesta —«¿cabe este cuerpo por
+ *  este hueco?»— se responde con los dos radios a la vez. Mientras fue
+ *  privada de su módulo, el cuerpo MAYOR del juego era inconsultable desde el
+ *  resto del core: cada sitio que necesitaba «cuánto hueco hace falta» lo
+ *  razonaba desde el jugador y dejaba fuera justo al cuerpo que no cabe. */
+export const NPC_RADIUS_M = 0.5;
+
+/** El cuerpo MAYOR que el simulador mueve por el mundo. Quien decida cuánto
+ *  hueco hay que dejar deriva de aquí, no del jugador.
+ *
+ *  LO QUE NO GARANTIZA: el sim mueve a TODAS las criaturas con este radio —
+ *  `footprint` de la entity no se lee ni una vez en `src/simulation/` ni en
+ *  `bridge/`, y el contrato le pone `minimum: 1` sin máximo. O sea que una
+ *  criatura declarada `footprint:[8,8]` se sigue moviendo como un círculo de
+ *  0,5 m, y este número no la cubre. No es un olvido de este módulo: es que
+ *  hoy el cuerpo mayor QUE EL SIM HONRA es este. El día que el sim derive el
+ *  radio del `footprint`, quien llame a `celdasLibresParaRadio` pasa el `max`
+ *  sobre las entities de la escena y nada más cambia. */
+export const BODY_RADIUS_M = Math.max(PLAYER_RADIUS_M, NPC_RADIUS_M);
+
+/** Celdas LIBRES consecutivas que necesita un cuerpo de radio `radioM` para
+ *  cruzar un hueco, sobre un grid de `mpc` metros por celda.
+ *
+ *  Es el INVERSO EXACTO de `blocksCircle`: su AABB se recorre con `floor()`
+ *  INCLUSIVE (`c0 = floor((x−r−o)/mpc) … c1 = floor((x+r−o)/mpc)`), así que un
+ *  hueco de n celdas admite radio R solo si `n·mpc > 2R` — estrictamente
+ *  mayor, no «mayor o igual». De ahí el `+1`: `floor` y no `ceil`, porque con
+ *  `ceil` un hueco de exactamente `2R` saldría transitable y no lo es. A mpc
+ *  0,5: jugador (0,4) → 2 celdas; NPC (0,5) → 3. Esa celda de diferencia es
+ *  toda la puerta de 1 m del issue #289. */
+export function celdasLibresParaRadio(radioM: number, mpc: number): number {
+  return Math.floor((2 * radioM) / mpc) + 1;
+}
 
 export interface TerrainGridData {
   grid: string[];

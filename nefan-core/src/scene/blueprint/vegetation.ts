@@ -33,7 +33,7 @@
 
 import { z } from "zod";
 import { TILE_CELLS, TILE_MPC } from "../tile.js";
-import { PLAYER_RADIUS_M } from "../terrain-collision.js";
+import { BODY_RADIUS_M, celdasLibresParaRadio } from "../terrain-collision.js";
 import { treeTrunkRadiusCells } from "./collision.js";
 
 /** Escala de los ejemplares que planta el scatter (rango del sorteo). Los
@@ -44,13 +44,25 @@ export const VEG_TREE_S_MAX = 1.2;
 export const VEG_BUSH_S_MIN = 0.7;
 export const VEG_BUSH_S_MAX = 1.1;
 
-/** Celdas LIBRES que necesita el jugador para pasar entre dos troncos.
+/** Celdas LIBRES que necesita el CUERPO MAYOR para pasar entre dos troncos.
  *
- *  Su AABB mide `2·PLAYER_RADIUS_M` (0,80 m = 1,6 celdas) y el collider
- *  bloquea por SOLAPE de celda, así que hacen falta 2 celdas libres enteras;
- *  la tercera es la que se come el redondeo del rasterizado (los bordes de la
- *  región marcada caen en aristas de celda, hasta media celda por lado). */
-export const PASO_LIBRE_CELDAS = Math.ceil((2 * PLAYER_RADIUS_M) / TILE_MPC) + 1;
+ *  La MISMA regla que usa el validador (`celdasLibresParaRadio`), y a
+ *  propósito: el productor y el verificador no pueden tener dos ideas de
+ *  cuánto hueco hace falta o el bosque se planta con una y se juzga con otra.
+ *  El collider bloquea por SOLAPE de celda, así que un hueco de n celdas
+ *  admite radio R solo si `n·mpc > 2R`.
+ *
+ *  Antes esto era `ceil(2R/mpc) + 1` y se derivaba solo de `PLAYER_RADIUS_M`.
+ *  Lo segundo era el agujero (#289): dos árboles podían dejar un paso que el
+ *  jugador cruzaba y un NPC no. Lo primero no era ni más laxo ni más estricto
+ *  —`ceil(x)+1 ≥ floor(x)+1` para todo x, así que nunca puede aprobar un
+ *  hueco que el collider bloquee—, solo era una segunda fórmula sin motivo. A
+ *  mpc 0,5 las dos dan 3; con una sola, no hay que comprobar cuál gana.
+ *
+ *  La holgura de rasterizado —la región marcada se redondea hasta media celda
+ *  por lado— NO vive aquí: la lleva el radio del tronco
+ *  (`treeTrunkRadiusCells`), que es lo que se rasteriza. */
+export const PASO_LIBRE_CELDAS = celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC);
 
 /** Distancia mínima (celdas) entre los CENTROS de dos ejemplares para que el
  *  jugador quepa entre sus troncos. Un arbusto no colisiona (radio 0), así que

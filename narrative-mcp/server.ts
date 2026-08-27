@@ -625,7 +625,14 @@ into context:
       } catch {
         return { content: [{ type: 'text', text: 'scene_json is not valid JSON' }], isError: true };
       }
-      return reportBridge(await bridgePost('/scene/validate', { scene }));
+      const result = await bridgePost('/scene/validate', { scene });
+      const report = reportBridge(result);
+      // `reportBridge` deriva isError del ESTADO HTTP, y /scene/validate
+      // contesta 200 también cuando la escena es injugable: sin esto el
+      // dry-run devolvía isError:false para una escena que el pre-flight de
+      // narrative_respond rechaza. El veredicto está en el cuerpo.
+      const veredicto = result.ok ? (result.data as { ok?: boolean }).ok : undefined;
+      return veredicto === false ? { ...report, isError: true } : report;
     },
   );
 

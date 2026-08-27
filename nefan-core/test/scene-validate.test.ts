@@ -58,15 +58,33 @@ describe("validateScene", () => {
     assert.ok(r.errors.some((e) => e.includes("sin declarar") && e.includes('"X"')), r.errors.join(" | "));
   });
 
-  it("avisa (no da error) de un NPC inalcanzable", () => {
+  it("un NPC encerrado en una sala sin puertas es ERROR, no aviso", () => {
+    // Hasta esta tanda era un aviso, y los avisos no rechazan: el motor
+    // entregaba la escena que encierra al NPC. La sala es 7×7 porque el
+    // anillo de muro del plan se come media celda por lado: es el tamaño
+    // mínimo cuyo interior admite un CUERPO, y así el caso mide lo que dice
+    // —encerrado— y no «no cabe», que tiene su propio mensaje y su caso.
     const s = makeScene();
-    // NPC encerrado en una segunda sala sin puertas.
-    (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 3, 3], doors: [] });
-    (s.entities as Record<string, unknown>[])[0].cell = [41, 91];
+    (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 7, 7], doors: [] });
+    (s.entities as Record<string, unknown>[])[0].cell = [43, 93];
     const r = validateScene(s, bootstrap);
-    assert.equal(r.ok, true, r.errors.join(" | "));
-    assert.ok(r.warnings.some((w) => w.includes("barkeep")), r.warnings.join(" | "));
+    assert.equal(r.ok, false, "una escena que encierra a un NPC no se entrega");
+    assert.deepEqual(r.errors, ['el NPC "barkeep" en [43, 93] no es alcanzable desde el player']);
+    assert.deepEqual(r.warnings, []);
     assert.equal(r.stats.npcs_reachable, 0);
+  });
+
+  it("y el «cuarto de 5×5» del issue, donde el cuerpo NO cabe, lo dice con otro mensaje", () => {
+    // Son dos arreglos distintos para el motor: abrir un paso vs. ensanchar.
+    const s = makeScene();
+    (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 5, 5], doors: [] });
+    (s.entities as Record<string, unknown>[])[0].cell = [42, 92];
+    const r = validateScene(s, bootstrap);
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.errors, [
+      'el NPC "barkeep" nace en [42, 92], un hueco donde su cuerpo no cabe: hacen falta 3 celdas ' +
+        "libres seguidas en cada eje y ahí no las hay, así que no podría moverse",
+    ]);
   });
 
   it("convierte una primitiva imposible en error legible (sin throw)", () => {
@@ -267,5 +285,141 @@ describe("validateScene — telemetría del plan", () => {
     // `density` cambió de significado en esta tanda y un "density inválida" a
     // secas le dejaría adivinando entre tres semánticas viejas.
     assert.ok(r.errors.some((e) => e.includes("EJEMPLARES POR m²")), r.errors.join(" | "));
+  });
+});
+
+/** #289 · TODO HUECO ADMITE EL CUERPO MAYOR, sobre el tile de verdad.
+ *
+ *  El validador comprobaba la transitabilidad para un PUNTO sin dimensión.
+ *  Un hueco de 2 celdas mide 1,00 m: lo cruza el jugador (radio 0,4) y NUNCA
+ *  un NPC (0,5) — y desde #232 el bridge colisiona con esos muros, así que un
+ *  NPC al otro lado queda encerrado para siempre.
+ *
+ *  El candado NO enumera productores. `doors[].w` y `gate.w` tienen suelo en
+ *  el zod (fail-fast barato, `scene-schema.test.ts`), pero `prop`, `rock`,
+ *  `tower`, `fountain`, `prism`, `custom` y `wall` estampan sólidos SIN
+ *  ninguna regla de separación entre ellos: dos props a 1,2 m pinzan un paso
+ *  exactamente igual que una puerta estrecha, y ninguna constante por
+ *  productor los cubriría. Por eso el caso de aquí abajo —vano legal de 4
+ *  celdas pinzado por dos barriles— es el que mide lo que compra la tanda. */
+describe("validateScene — el hueco tiene que admitir el cuerpo mayor", () => {
+  /** Posada CUTAWAY con puerta legal al sur (w:4 = 2 m) y dos barriles que la
+   *  pinzan: libres las columnas de `libres`. Dentro, un NPC. */
+  const conBarriles = (oesteFin: number, esteIni: number): Record<string, unknown> => ({
+    tile: { tx: 0, ty: 0 },
+    scene_id: "tile_0_0",
+    scene_description: "Una posada con dos barriles en la puerta.",
+    biome: "meadow",
+    volumes: [
+      { id: "posada", label: "posada", type: "building", rect: [52, 48, 24, 16], cutaway: true, doors: [{ edge: "s", at: 11, w: 4 }] },
+      { id: "barril_o", label: "barril", type: "prop", shape: "box", rect: [oesteFin - 2, 62, 2, 3] },
+      { id: "barril_e", label: "barril", type: "prop", shape: "box", rect: [esteIni, 62, 2, 3] },
+    ],
+    entities: [
+      { id: "posadero", kind: "npc", name: "Posadero", cell: [60, 55], footprint: [1, 1], glyph: "n" },
+      { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
+    ],
+  });
+
+  it("dos props que dejan 1 m entre ellos encierran al NPC, y eso es ERROR", () => {
+    const r = validateScene(conBarriles(63, 65), bootstrap);
+    assert.equal(r.ok, false, "una escena que encierra a un NPC no es «jugable, pero revísala»");
+    assert.deepEqual(r.errors, [
+      'el vano de la puerta "s" de "posada" no lo cruza un cuerpo: ninguna de sus 4 celda(s) es ' +
+        "alcanzable desde la entrada del tile (¿lo tapa un volumen, o es más estrecho que un NPC?)",
+      'el NPC "posadero" en [60, 55] no es alcanzable desde el player',
+    ]);
+    assert.equal(r.stats.npcs_reachable, 0);
+  });
+
+  it("con 1,5 m entre los mismos props, el mismo tile es jugable", () => {
+    const r = validateScene(conBarriles(63, 66), bootstrap);
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.ok, true);
+    assert.equal(r.stats.npcs_reachable, 1);
+  });
+
+  it("un NPC DENTRO del pinzamiento de 1 m es ERROR, aunque su celda sea pisable y la vecina alcanzable", () => {
+    // El caso literal de la crítica que reencuadró la tanda, extremo a
+    // extremo: el NPC no está detrás del hueco, está EN él. Su celda es
+    // pisable y tiene vecina alcanzable, así que con el predicado viejo
+    // —`isWalkable` con ±1 celda de tolerancia— pasaba, y no podía moverse.
+    const escena = conBarriles(63, 65);
+    (escena.entities as Record<string, unknown>[])[0] = {
+      id: "posadero", kind: "npc", name: "Posadero", cell: [64, 63], footprint: [1, 1], glyph: "n",
+    };
+    const r = validateScene(escena, bootstrap);
+    assert.equal(r.ok, false);
+    assert.ok(
+      r.errors.some((e) => e.includes('el NPC "posadero" nace en [64, 63], un hueco donde su cuerpo no cabe')),
+      r.errors.join(" | "),
+    );
+    assert.equal(r.stats.npcs_reachable, 0);
+  });
+
+  it("y el cuerpo se juzga TAMBIÉN en un tile sin costuras ni entrada (el prefetch del anillo)", () => {
+    // El caso donde el candado callaba: «¿cabe su cuerpo?» vivía detrás del
+    // `return` temprano de `checkReachability`, así que un tile sin entrada
+    // declarada —los que `game-gen.ts` genera para el anillo 3×3, SIN
+    // `approachEdge`— se iba con un aviso que no rechaza y a su NPC empotrado
+    // no se le miraba nada. Medido: 3 de los 8 tiles del anillo de un mundo
+    // embarcado no recibieron ni un chequeo de cuerpo.
+    const enElAnillo = {
+      tile: { tx: 9, ty: 9 },
+      scene_id: "tile_9_9",
+      scene_description: "Un prado con un carro.",
+      biome: "meadow",
+      volumes: [{ id: "carro", label: "carro", type: "prop", shape: "box", rect: [60, 60, 6, 4] }],
+      entities: [{ id: "carretero", kind: "npc", name: "Carretero", cell: [62, 61], footprint: [1, 1], glyph: "n" }],
+    };
+    const r = validateScene(enElAnillo, { required_crossings: [] });
+    assert.equal(r.ok, false, "sin entrada declarada el cuerpo se juzga igual");
+    assert.deepEqual(r.errors, [
+      'el NPC "carretero" nace en [62, 61], celda no transitable (muro, agua o huella de un volumen): ' +
+        "no podría moverse de ahí",
+    ]);
+    // La alcanzabilidad sí sigue sin verificarse: no hay desde dónde. Son dos
+    // preguntas distintas y solo una necesita el flood.
+    assert.deepEqual(r.warnings, ["tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"]);
+  });
+
+  it("…y el mismo tile del anillo con el NPC bien puesto pasa", () => {
+    const sano = {
+      tile: { tx: 9, ty: 9 },
+      scene_id: "tile_9_9",
+      scene_description: "Un prado con un carro.",
+      biome: "meadow",
+      volumes: [{ id: "carro", label: "carro", type: "prop", shape: "box", rect: [60, 60, 6, 4] }],
+      entities: [{ id: "carretero", kind: "npc", name: "Carretero", cell: [68, 61], footprint: [1, 1], glyph: "n" }],
+    };
+    const r = validateScene(sano, { required_crossings: [] });
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.ok, true);
+  });
+
+  it("un NPC empotrado en un prop es ERROR, aunque se le pueda hablar desde al lado", () => {
+    // El residuo de #262 que YA ocurrió: el tabernero de alta_fantasia nació
+    // dentro del prop `mostrador` y avanzó 0,72 m en 60 s. `validateScene`
+    // daba el mismo veredicto que para un tile sano: ok:true, npcs 1/1.
+    const escena = conBarriles(63, 66);
+    (escena.volumes as Record<string, unknown>[]).push({
+      id: "mostrador", label: "mostrador", type: "prop", shape: "box", rect: [58, 54, 6, 2],
+    });
+    const r = validateScene(escena, bootstrap);
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.errors, [
+      'el NPC "posadero" nace en [60, 55], celda no transitable (muro, agua o huella de un volumen): no podría moverse de ahí',
+    ]);
+    assert.equal(r.stats.npcs_reachable, 0);
+  });
+
+  it("un mostrador declarado `passable` no encierra a nadie (el candado no es «hay un prop cerca»)", () => {
+    const escena = conBarriles(63, 66);
+    (escena.volumes as Record<string, unknown>[]).push({
+      id: "alfombra", label: "alfombra", type: "prop", shape: "box", rect: [58, 54, 6, 2], passable: true,
+    });
+    const r = validateScene(escena, bootstrap);
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.stats.npcs_reachable, 1);
   });
 });

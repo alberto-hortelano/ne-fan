@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { join, relative, resolve } from "node:path";
 
 import { FormatDSceneSchema } from "../src/contract/model-io/scene-schema.js";
+import { validateScene } from "../src/scene/scene-validate.js";
 
 const SCENES = fileURLToPath(new URL("../data/scenes", import.meta.url));
 
@@ -139,5 +140,40 @@ describe("fixtures de data/scenes — solo tiles", () => {
     assert.equal(hallazgos.length, 1, JSON.stringify(hallazgos));
     assert.equal(hallazgos[0].file, join("sub", "roto.json"));
     assert.match(hallazgos[0].error, /size/);
+  });
+});
+
+/** BIEN FORMADA no es JUGABLE. `auditarEscenas` pasa el gate estructural
+ *  (zod); esto pasa el validador de jugabilidad completo, que es lo que
+ *  contesta la pregunta que le importa a quien juega: ¿se puede recorrer
+ *  esto CON UN CUERPO? (#289)
+ *
+ *  Nació con #289 y encontró trabajo el primer día: `zorder_test` tenía un
+ *  NPC dentro del muro sur de la cabaña, y la clase de fallo llevaba semanas
+ *  leyéndose como ambiente (#262/#284).
+ *
+ *  SOLO las fixtures de `data/scenes/`, que van commiteadas. Los snapshots de
+ *  mundo (`data/games/<juego>/world/tile.json`) NO se versionan —`.gitignore`
+ *  los deja fuera por regenerables desde el título—, así que un `it` que los
+ *  recorriera sería verde vacío en CI y en cualquier clon limpio: el
+ *  `readdirSync` no encuentra ninguno y el aserto compara dos listas vacías.
+ *  Un test que no puede ponerse rojo es peor que ninguno. Lo que SÍ se canda,
+ *  y en el sitio donde de verdad se para la clase, es que el bridge rechace un
+ *  tile así al generarlo —antes de que llegue a save o snapshot—:
+ *  `bridge-tile.test.ts`, «un tile con un NPC que no cabe donde nace». */
+describe("las fixtures de data/scenes son jugables, no solo bien formadas", () => {
+  it("las 3 del selector «Room» se pueden recorrer con el cuerpo mayor", () => {
+    const escenas = escenasDe(SCENES);
+    assert.ok(escenas.length >= 3, `esperaba ≥3 fixtures, encontré ${escenas.length}`);
+    const injugables = escenas.flatMap((path) => {
+      const scene = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+      const entities = Array.isArray(scene.entities) ? (scene.entities as Record<string, unknown>[]) : [];
+      const r = validateScene(scene, {
+        required_crossings: [],
+        bootstrap: entities.some((e) => e?.kind === "player"),
+      });
+      return r.ok ? [] : [`${relative(SCENES, path)}: ${r.errors.join(" · ")}`];
+    });
+    assert.deepEqual(injugables, []);
   });
 });

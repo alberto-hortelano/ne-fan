@@ -26,7 +26,7 @@ import {
   zoneAreaM2,
   type VegetationZone,
 } from "../src/scene/blueprint/vegetation.js";
-import { PLAYER_RADIUS_M } from "../src/scene/terrain-collision.js";
+import { BODY_RADIUS_M, NPC_RADIUS_M, PLAYER_RADIUS_M, celdasLibresParaRadio } from "../src/scene/terrain-collision.js";
 import { TILE_CELLS, TILE_MPC, tileWorldRect } from "../src/scene/tile.js";
 import type { Volume } from "../src/scene/blueprint/volumes.js";
 
@@ -99,9 +99,14 @@ describe("vegetation_zones · density es ejemplares/m² y se entrega EXACTA", ()
 
 describe("vegetation_zones · la cota deja SIEMPRE un camino", () => {
   /** La distancia mínima entre dos troncos sale de la geometría, no de una
-   *  constante: dos radios de tronco más el paso libre del jugador. */
-  it("MIN_SEP_TREE se deriva del tronco y del jugador, y el techo de él", () => {
-    assert.equal(PASO_LIBRE_CELDAS, Math.ceil((2 * PLAYER_RADIUS_M) / TILE_MPC) + 1);
+   *  constante: dos radios de tronco más el paso libre del CUERPO MAYOR. Se
+   *  derivaba solo del jugador (#289), o sea que dos árboles podían dejar un
+   *  paso que él cruzaba y un NPC no. A mpc 0,5 el número no se mueve, pero la
+   *  derivación sí, y es la derivación la que protege. */
+  it("MIN_SEP_TREE se deriva del tronco y del CUERPO MAYOR, con la MISMA regla que el validador", () => {
+    assert.equal(PASO_LIBRE_CELDAS, celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC));
+    assert.equal(BODY_RADIUS_M, NPC_RADIUS_M, "el cuerpo mayor es el del NPC, no el del jugador");
+    assert.ok(BODY_RADIUS_M > PLAYER_RADIUS_M);
     assert.equal(MIN_SEP_TREE, 2 * treeTrunkRadiusCells(VEG_TREE_S_MAX) + PASO_LIBRE_CELDAS);
     // El techo es la densidad cuya separación es exactamente ese suelo: por
     // encima, el suelo mandaría y el motor pediría lo que no se le puede dar.
