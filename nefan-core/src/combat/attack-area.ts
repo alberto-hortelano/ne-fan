@@ -104,8 +104,7 @@ export function attackFlashQuality(
     const dz = t.z - from.z;
     const avance = forward.x * dx + forward.z * dz;
     const lateral = forward.x * dz - forward.z * dx;
-    const q = attackAreaQuality(p, avance, lateral);
-    if (q > mejor) mejor = q;
+    mejor = Math.max(mejor, attackAreaQuality(p, avance, lateral));
   }
   return mejor;
 }
