@@ -148,7 +148,7 @@
         "cols": 128,
         "rows": 128,
         "walkable_cells": 16313,
-        "reachable_cells": 16313,
+        "reachable_cells": 16311,
         "border_reachable": true,
         "doors_total": 6,
         "doors_reachable": 6,
@@ -684,11 +684,38 @@
       }
     },
     "npc-inalcanzable": {
-      "ok": true,
-      "errors": [],
-      "warnings": [
-        "el NPC \"barkeep\" en [41, 91] no es alcanzable desde el player"
+      "ok": false,
+      "errors": [
+        "el NPC \"barkeep\" en [42, 92] no es alcanzable desde el player"
       ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 16314,
+        "reachable_cells": 16313,
+        "border_reachable": true,
+        "doors_total": 3,
+        "doors_reachable": 3,
+        "npcs_total": 1,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "volumes_total": 2,
+        "volumes_total_cap": 200,
+        "ground_features": 1,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "npc-en-celda-solida": {
+      "ok": false,
+      "errors": [
+        "el NPC \"barkeep\" nace en [41, 91], celda no transitable (muro, agua o huella de un volumen): no podría moverse de ahí"
+      ],
+      "warnings": [],
       "stats": {
         "cols": 128,
         "rows": 128,
@@ -742,11 +769,11 @@
       "stats": {
         "cols": 128,
         "rows": 128,
-        "walkable_cells": 16264,
-        "reachable_cells": 16264,
+        "walkable_cells": 16272,
+        "reachable_cells": 16272,
         "border_reachable": true,
-        "doors_total": 20,
-        "doors_reachable": 20,
+        "doors_total": 24,
+        "doors_reachable": 24,
         "npcs_total": 1,
         "npcs_reachable": 1,
         "volumes_declared": 1,
@@ -788,16 +815,15 @@
     "ninguna-puerta-alcanzable": {
       "ok": false,
       "errors": [
-        "ninguna puerta de las structures es alcanzable desde el player"
-      ],
-      "warnings": [
+        "ninguna puerta de las structures es alcanzable desde el player",
         "el NPC \"barkeep\" en [14, 73] no es alcanzable desde el player"
       ],
+      "warnings": [],
       "stats": {
         "cols": 128,
         "rows": 128,
         "walkable_cells": 16314,
-        "reachable_cells": 1,
+        "reachable_cells": 0,
         "border_reachable": true,
         "doors_total": 3,
         "doors_reachable": 0,

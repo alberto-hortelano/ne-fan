@@ -319,7 +319,27 @@ export function casosDeValidacion(): CasoValidacion[] {
     },
     {
       name: "npc-inalcanzable",
-      cubre: "flood: NPC encerrado en una sala sin puertas → aviso",
+      cubre: "flood: NPC encerrado en una sala sin puertas → error",
+      // El «cuarto de 5×5» del issue #289: su interior deja UNA celda pisable
+      // (el anillo de muro del plan se come media celda por lado), así que el
+      // NPC está de pie en sitio legal y no puede ir a ninguna parte. Antes
+      // esta sala era 3×3, que bajo el plan no deja ni una celda pisable: ese
+      // caso pasó a ejercer la comprobación NUEVA (celda de nacimiento
+      // sólida) y tiene el suyo propio aquí abajo.
+      scene: () => {
+        const s = escenaBootstrap();
+        (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 5, 5], doors: [] });
+        (s.entities as Record<string, unknown>[])[0].cell = [42, 92];
+        return s;
+      },
+      ctx: BOOTSTRAP,
+    },
+    {
+      name: "npc-en-celda-solida",
+      cubre: "flood: NPC empotrado en un sólido → error, aunque tenga vecina libre",
+      // El residuo de #262 que ya ocurrió: el tabernero nació dentro del prop
+      // `mostrador` y se leyó durante semanas como «la huida está rota». Se
+      // le podía hablar desde al lado, así que el validador lo daba por bueno.
       scene: () => {
         const s = escenaBootstrap();
         (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 3, 3], doors: [] });
@@ -353,10 +373,14 @@ export function casosDeValidacion(): CasoValidacion[] {
             { side: "west", at: 5 }, { side: "east", at: 5 },
           ],
         };
+        // Vanos de 3 celdas: el mínimo que admite el cuerpo mayor (#289). Con
+        // los 2 de antes el volume ni siquiera pasaba el zod, así que el caso
+        // dejaba de ejercer los cuatro lados y solo probaba el suelo nuevo
+        // —que tiene sus propios casos en `scene-schema.test.ts`.
         s.volumes = [
           {
             id: "granero", label: "granero", type: "building", rect: [60, 60, 12, 12], cutaway: true,
-            doors: [{ edge: "n", at: 4, w: 2 }, { edge: "s", at: 4, w: 2 }, { edge: "w", at: 4, w: 2 }, { edge: "e", at: 4, w: 2 }],
+            doors: [{ edge: "n", at: 4, w: 3 }, { edge: "s", at: 4, w: 3 }, { edge: "w", at: 4, w: 3 }, { edge: "e", at: 4, w: 3 }],
           },
         ];
         return s;

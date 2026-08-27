@@ -34,9 +34,10 @@ import { planCollisionGrid } from "./blueprint/plan-collision.js";
 import { parseScatter } from "./blueprint/scatter.js";
 import { MAX_VOLUMES } from "./blueprint/volumes.js";
 import { resolveTerrainLegend } from "./scene-normalize.js";
+import { BODY_RADIUS_M, celdasLibresParaRadio } from "./terrain-collision.js";
 import { composeTilePlan, MAX_TILE_VOLUMES } from "./tile-plan.js";
 import { COMPATIBLE, computeTileEdges, matchCrossings, type EdgeCrossing, type TileEdges } from "./tile-edges.js";
-import { TILE_CELLS, tileWorldRect } from "./tile.js";
+import { TILE_CELLS, TILE_MPC, tileWorldRect } from "./tile.js";
 import type { Edge } from "../world-map/types.js";
 
 export interface SceneValidationResult {
@@ -589,38 +590,96 @@ export function reportPlanBudget(view: TileView, found: Findings): void {
 
 // ═══ Pasada 8 · alcanzabilidad ══════════════════════════════════════════════
 
-/** Flood-fill 4-conexo sobre la máscara walkable desde las semillas dadas.
- *  Algoritmo puro: se prueba con un grid de seis filas, sin fabricar un tile
- *  que sobreviva a las siete pasadas anteriores. */
-export function floodFill(dims: GridDims, map: WalkableMap, starts: Cell[]): Reach {
-  const { cols, rows } = dims;
-  const reachable = new Uint8Array(cols * rows);
-  const queue: number[] = [];
-  for (const [c, r] of starts) {
-    const idx = r * cols + c;
-    if (!reachable[idx]) {
-      reachable[idx] = 1;
-      queue.push(idx);
+/** Máscara de ANCLAS de tamaño `k`: 1 donde el bloque k×k con esquina NO en
+ *  (c, r) es enteramente pisable. Es la EROSIÓN de la máscara walkable, y con
+ *  `k = 1` es la máscara walkable misma.
+ *
+ *  Dimensiones `(cols−k+1) × (rows−k+1)`: un ancla que se saliera del grid no
+ *  existe, y el borde del tile no es transitable por definición (lo gobierna
+ *  el soft-clamp del cliente). */
+function anchorMask({ cols, rows }: GridDims, walkable: boolean[], k: number): Uint8Array {
+  const aCols = cols - k + 1;
+  const anchors = new Uint8Array(Math.max(0, aCols) * Math.max(0, rows - k + 1));
+  for (let r = 0; r + k <= rows; r++) {
+    for (let c = 0; c + k <= cols; c++) {
+      let libre = true;
+      for (let dr = 0; dr < k && libre; dr++) {
+        for (let dc = 0; dc < k; dc++) {
+          if (!walkable[(r + dr) * cols + c + dc]) { libre = false; break; }
+        }
+      }
+      if (libre) anchors[r * aCols + c] = 1;
     }
+  }
+  return anchors;
+}
+
+/** Flood-fill 4-conexo CON CUERPO sobre la máscara walkable desde las
+ *  semillas dadas. Algoritmo puro: se prueba con un grid de seis filas, sin
+ *  fabricar un tile que sobreviva a las siete pasadas anteriores.
+ *
+ *  `k` = celdas libres consecutivas que exige el cuerpo que recorre el mapa
+ *  (`celdasLibresParaRadio`). No tiene default A PROPÓSITO: un default invita
+ *  a llamarlo «como antes», y «como antes» es un punto sin dimensión que
+ *  declara transitable la puerta de 1 m que el collider bloquea. Quien llama
+ *  DERIVA su `k` de un radio; `k = 1` es exactamente el algoritmo de siempre,
+ *  así que no hay dos.
+ *
+ *  Lo que recorre no son celdas sino ANCLAS —posiciones donde el cuerpo cabe
+ *  entero— y una celda queda alcanzada si alguna ancla del flood la cubre. Un
+ *  corredor más estrecho que el cuerpo no tiene ni un ancla: no se cruza, que
+ *  es justo lo que pasa en juego.
+ *
+ *  Una semilla que no sea pisable no siembra nada (antes se marcaba alcanzada
+ *  por decreto): con cuerpo la pregunta es si CABE ahí, y las tres fuentes de
+ *  arranque ya filtran por transitable antes de llegar aquí. */
+export function floodFill(dims: GridDims, map: WalkableMap, starts: Cell[], k: number): Reach {
+  const { cols, rows } = dims;
+  const covered = new Uint8Array(cols * rows);
+  const aCols = cols - k + 1;
+  const aRows = rows - k + 1;
+  if (k < 1 || aCols < 1 || aRows < 1) {
+    // El cuerpo no cabe ni en el tile entero: nada es alcanzable.
+    return { count: 0, has: () => false };
+  }
+  const anchors = anchorMask(dims, map.walkable, k);
+  const seen = new Uint8Array(aCols * aRows);
+  const queue: number[] = [];
+  const sembrar = (c: number, r: number): void => {
+    if (c < 0 || r < 0 || c >= aCols || r >= aRows) return;
+    const idx = r * aCols + c;
+    if (seen[idx] || !anchors[idx]) return;
+    seen[idx] = 1;
+    queue.push(idx);
+  };
+  // El cuerpo puede estar plantado de cualquier forma sobre la semilla: vale
+  // cualquiera de las k×k anclas que la cubren.
+  for (const [c, r] of starts) {
+    for (let dr = 0; dr < k; dr++) for (let dc = 0; dc < k; dc++) sembrar(c - dc, r - dr);
   }
   let head = 0;
+  let count = 0;
   while (head < queue.length) {
     const idx = queue[head++];
-    const c = idx % cols;
-    const r = (idx - c) / cols;
-    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-      const cc = c + dc;
-      const rr = r + dr;
-      if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
-      const nidx = rr * cols + cc;
-      if (reachable[nidx] || !map.walkable[nidx]) continue;
-      reachable[nidx] = 1;
-      queue.push(nidx);
+    const c = idx % aCols;
+    const r = (idx - c) / aCols;
+    for (let dr = 0; dr < k; dr++) {
+      for (let dc = 0; dc < k; dc++) {
+        const ci = (r + dr) * cols + c + dc;
+        if (!covered[ci]) {
+          covered[ci] = 1;
+          count++;
+        }
+      }
     }
+    sembrar(c + 1, r);
+    sembrar(c - 1, r);
+    sembrar(c, r + 1);
+    sembrar(c, r - 1);
   }
   return {
-    count: queue.length,
-    has: ([c, r]: Cell): boolean => c >= 0 && r >= 0 && c < cols && r < rows && reachable[r * cols + c] === 1,
+    count,
+    has: ([c, r]: Cell): boolean => c >= 0 && r >= 0 && c < cols && r < rows && covered[r * cols + c] === 1,
   };
 }
 
@@ -649,16 +708,46 @@ function checkDoorsReachable(doorCells: Cell[], reach: Reach, found: Findings): 
   }
 }
 
-/** NPCs alcanzables: su celda o una adyacente (se les habla desde al lado). */
-function checkNpcsReachable(npcs: PlacedNpc[], reach: Reach, found: Findings): void {
+/** NPCs: primero que puedan estar donde nacen, después que se llegue a ellos.
+ *
+ *  Las dos son ERROR, no aviso. Un NPC que no puede moverse de su celda no es
+ *  «jugable, pero revísalo»: es el bug que se leyó durante semanas como
+ *  ambiente —el tabernero de `alta_fantasia` nació dentro del prop
+ *  `mostrador` y avanzó 0,72 m en 60 s, contaminando #247, #262 y #284—. Con
+ *  severidad de aviso el motor entrega la escena igual (narrative-mcp los
+ *  rotula «playable, but review»), así que el flood con cuerpo no cerraría
+ *  nada. Como error, el pre-flight de `narrative_respond` devuelve isError y
+ *  el motor RE-RESPONDE; no hace falta maquinaria nueva.
+ *
+ *  1. **Celda de nacimiento sólida** — `checkNpcsReachable` se conformaba con
+ *     que una celda VECINA fuera transitable, así que un NPC empotrado en un
+ *     prop daba el mismo veredicto que uno bien puesto (`ok:true`, «1/1
+ *     alcanzables»). Se le habla desde al lado, sí, pero él no puede salir.
+ *  2. **Alcanzable** — su celda o una adyacente en el flood CON CUERPO: se
+ *     les habla desde al lado, y quien va a hablarles también tiene cuerpo.
+ *
+ *  La celda se lee con `floor`: el contrato la declara entera
+ *  (`generate_scene.json`) pero el zod admite fracción, y un índice
+ *  fraccionario daba `undefined` en la máscara — o sea «inalcanzable» para un
+ *  NPC plantado en mitad de un prado. Con severidad de error, esa mentira
+ *  rechazaría el tile entero. */
+function checkNpcsReachable(npcs: PlacedNpc[], map: WalkableMap, reach: Reach, found: Findings): void {
   let reachableNpcs = 0;
   for (const npc of npcs) {
     const [c, r] = npc.cell;
+    const celda: Cell = [Math.floor(c), Math.floor(r)];
+    if (!map.isWalkable(celda)) {
+      found.errors.push(
+        `el NPC "${npc.id}" nace en [${c}, ${r}], celda no transitable (muro, agua o huella de un ` +
+          "volumen): no podría moverse de ahí",
+      );
+      continue;
+    }
     const near = ([[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const).some(([dc, dr]) =>
-      reach.has([c + dc, r + dr]),
+      reach.has([celda[0] + dc, celda[1] + dr]),
     );
     if (near) reachableNpcs++;
-    else found.warnings.push(`el NPC "${npc.id}" en [${c}, ${r}] no es alcanzable desde el player`);
+    else found.errors.push(`el NPC "${npc.id}" en [${c}, ${r}] no es alcanzable desde el player`);
   }
   found.stats.npcs_reachable = reachableNpcs;
 }
@@ -694,11 +783,16 @@ export function checkReachability(
   }
   if (starts.length === 0) return;
 
-  const reach = floodFill(view, map, starts);
+  // El flood recorre el tile con el CUERPO MAYOR que el sim mueve, no con un
+  // punto sin dimensión: una puerta de 1 m la cruza el jugador (radio 0,4) y
+  // NUNCA un NPC (0,5), y con el punto salía verde. `k` se deriva del radio y
+  // del mpc del tile — no se escribe a mano y no es el AABB (2 celdas), que
+  // haría nacer el candado verde sobre su propio caso.
+  const reach = floodFill(view, map, starts, celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC));
   found.stats.reachable_cells = reach.count;
   checkCrossingsReachable(seams.crossingTargets, reach, found);
   checkDoorsReachable(doorCells, reach, found);
-  checkNpcsReachable(map.npcs, reach, found);
+  checkNpcsReachable(map.npcs, map, reach, found);
 
   // Proporción jugable del mapa.
   const walkableRatio = map.walkableCells / (view.cols * view.rows);

@@ -1,8 +1,16 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { createTerrainCollider, type TerrainGridData } from "../src/scene/terrain-collision.js";
+import {
+  BODY_RADIUS_M,
+  NPC_RADIUS_M,
+  PLAYER_RADIUS_M,
+  celdasLibresParaRadio,
+  createTerrainCollider,
+  type TerrainGridData,
+} from "../src/scene/terrain-collision.js";
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
+import { TILE_MPC } from "../src/scene/tile.js";
 
 /** Interior de taberna estilo del ejemplo del prompt: borde W sólido con
  *  puerta "_" al sur, suelo "o". 8×6 celdas, mpc 0.5 ⇒ 4m × 3m, origen en el
@@ -126,6 +134,57 @@ describe("createTerrainCollider", () => {
     const tg = conLegend({ w: { name: "vado poco profundo", solid: false } }, ["wg"]);
     assert.ok(!tg.solid_chars.includes("w"));
     assert.ok(tg.solid_chars.includes("W"));
+  });
+});
+
+/** El cuerpo mayor y la regla que lo convierte en celdas. Es la pieza de la
+ *  que cuelga todo lo demás (el suelo de los vanos en el zod, la erosión del
+ *  flood): si se escribe a mano en cualquiera de esos sitios, el día que
+ *  cambie un radio la garantía se rompe en silencio. */
+describe("el cuerpo mayor que transita el mundo", () => {
+  it("BODY_RADIUS_M es el MAYOR de los dos cuerpos, no uno elegido a mano", () => {
+    assert.equal(BODY_RADIUS_M, Math.max(PLAYER_RADIUS_M, NPC_RADIUS_M));
+    assert.equal(BODY_RADIUS_M, NPC_RADIUS_M, "hoy el mayor es el del NPC");
+    assert.ok(NPC_RADIUS_M > PLAYER_RADIUS_M, "si dejan de diferir, el bug de la puerta de 1 m ya no existe");
+  });
+
+  it("celdas libres = floor(2R/mpc)+1, que es el INVERSO de blocksCircle", () => {
+    // La celda de diferencia entre estos dos números ES el issue #289: por un
+    // hueco de 2 celdas (1 m) pasa el jugador y no pasa el NPC.
+    assert.equal(celdasLibresParaRadio(NPC_RADIUS_M, TILE_MPC), 3);
+    assert.equal(celdasLibresParaRadio(PLAYER_RADIUS_M, TILE_MPC), 2);
+  });
+
+  it("y lo es EN EL BORDE: `n·mpc > 2R` estricto, no `>=`", () => {
+    // Con `ceil` en vez de `floor` un hueco de exactamente 2R saldría
+    // transitable, y no lo es: el AABB de blocksCircle se recorre con floor()
+    // INCLUSIVE. mpc 0,5 es justo ese borde para el NPC (2 celdas = 1,00 m =
+    // 2R), así que un pelo por debajo pide 3 celdas y un pelo por encima, 2.
+    assert.equal(celdasLibresParaRadio(0.5, 0.49), 3, "2 celdas serían 0,98 m < 1,00 m");
+    assert.equal(celdasLibresParaRadio(0.5, 0.51), 2, "2 celdas ya son 1,02 m > 1,00 m");
+    assert.equal(celdasLibresParaRadio(0.5, 0.5), 3, "exactamente 1,00 m NO basta");
+  });
+
+  it("y el collider real dice lo mismo: el hueco de n celdas admite el radio o no", () => {
+    // El candado que cierra el círculo: la fórmula no se compara con otra
+    // fórmula, sino con `blocksCircle` sobre un pasillo de verdad. Un pasillo
+    // de `n` celdas libres en un muro, y el cuerpo centrado en él.
+    const pasillo = (n: number): TerrainGridData => ({
+      grid: ["W".repeat(4) + ".".repeat(n) + "W".repeat(4)],
+      cols: 8 + n,
+      rows: 1,
+      meters_per_cell: TILE_MPC,
+      origin: [0, 0],
+      solid_chars: ["W"],
+    });
+    for (const [radio, minimo] of [[PLAYER_RADIUS_M, 2], [NPC_RADIUS_M, 3]] as const) {
+      assert.equal(celdasLibresParaRadio(radio, TILE_MPC), minimo);
+      const centro = (n: number): number => (4 + n / 2) * TILE_MPC;
+      const justo = createTerrainCollider(pasillo(minimo))!;
+      assert.equal(justo.blocksCircle(centro(minimo), 0.25, radio), false, `radio ${radio} cabe en ${minimo} celdas`);
+      const escaso = createTerrainCollider(pasillo(minimo - 1))!;
+      assert.equal(escaso.blocksCircle(centro(minimo - 1), 0.25, radio), true, `radio ${radio} NO cabe en ${minimo - 1}`);
+    }
   });
 });
 

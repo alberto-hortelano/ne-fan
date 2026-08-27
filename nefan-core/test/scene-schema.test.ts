@@ -13,6 +13,9 @@ import { resolve } from "node:path";
 
 import { FormatDSceneSchema } from "../src/contract/model-io/scene-schema.js";
 import { validateContract } from "../src/contract/model-io/validate.js";
+import { MIN_VANO_CELDAS } from "../src/scene/blueprint/volumes.js";
+import { BODY_RADIUS_M, celdasLibresParaRadio } from "../src/scene/terrain-collision.js";
+import { TILE_MPC } from "../src/scene/tile.js";
 import { NPC_ROLES } from "../src/simulation/npc-roles.js";
 
 const SCENES = fileURLToPath(new URL("../data/scenes", import.meta.url));
@@ -88,6 +91,53 @@ describe("FormatDSceneSchema — rechaza lo que el saneador degradaba", () => {
   it("tolera campos legacy por passthrough (no rechaza)", () => {
     assert.equal(accepts({ ...base, ambient_event: "viento", exits: [] }), true);
   });
+});
+
+/** El suelo de los VANOS declarados. Es el fail-fast barato del cuerpo mayor
+ *  (#289): un vano de 2 celdas lo cruza el jugador y NUNCA un NPC, así que ni
+ *  siquiera llega al collider. La garantía completa la da el flood con cuerpo
+ *  de `validateScene`, que además cubre los huecos que no declara nadie (dos
+ *  props que pinzan un paso); esto solo rechaza antes y más barato.
+ *
+ *  El MENSAJE es contrato: viaja al motor por el pre-flight de
+ *  `narrative_respond` y tiene que decir el mínimo EN METROS, que es como el
+ *  motor razona el mundo (declara en celdas, piensa en metros). */
+describe("FormatDSceneSchema — un vano más estrecho que el cuerpo mayor no llega al collider", () => {
+  const conVolume = (v: Record<string, unknown>): unknown => ({
+    scene_id: "tile_0_0",
+    scene_description: "una escena de prueba",
+    tile: { tx: 0, ty: 0 },
+    biome: "grass",
+    entities: [{ id: "p", kind: "player", name: "Tú", cell: [1, 1], footprint: [1, 1], glyph: "@" }],
+    volumes: [v],
+  });
+  const posada = (w: number): unknown =>
+    conVolume({ id: "posada", label: "posada", type: "building", rect: [10, 10, 12, 10], cutaway: true, doors: [{ edge: "s", at: 4, w }] });
+  const arco = (w: number): unknown =>
+    conVolume({ id: "arco", label: "portillo", type: "gate", at: [30, 30], w, orient: "x" });
+
+  it(`el mínimo son ${MIN_VANO_CELDAS} celdas, y sale del cuerpo mayor y del mpc del tile`, () => {
+    assert.equal(MIN_VANO_CELDAS, celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC));
+    assert.equal(MIN_VANO_CELDAS, 3, "a mpc 0,5 son 1,5 m");
+  });
+
+  for (const [campo, escena] of [["doors[].w", posada], ["gate.w", arco]] as const) {
+    it(`${campo}: 2 celdas (1 m) se rechaza diciendo el mínimo EN METROS`, () => {
+      const r = FormatDSceneSchema.safeParse(escena(2));
+      assert.equal(r.success, false, "un vano de 1 m no puede pasar el gate");
+      const msg = r.success ? "" : r.error.issues.map((i) => i.message).join(" | ");
+      assert.match(msg, /1,5 m/, `el mensaje debe decir el mínimo en metros: ${msg}`);
+      assert.match(msg, new RegExp(campo.replace(/[[\].]/g, "\\$&")), `y de qué campo habla: ${msg}`);
+    });
+
+    it(`${campo}: ${MIN_VANO_CELDAS} celdas (1,5 m) se acepta`, () => {
+      assert.equal(accepts(escena(MIN_VANO_CELDAS)), true);
+    });
+
+    it(`${campo}: y el borde es estricto — un pelo por debajo del mínimo se rechaza`, () => {
+      assert.equal(FormatDSceneSchema.safeParse(escena(MIN_VANO_CELDAS - 0.01)).success, false);
+    });
+  }
 });
 
 /** CANDADO de las variantes retiradas. La escena "suelta" —grid propio, sin

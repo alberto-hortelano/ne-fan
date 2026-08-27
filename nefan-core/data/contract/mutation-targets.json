@@ -235,13 +235,14 @@
         "test/plan-collision.test.ts",
         "test/prism-volume.test.ts",
         "test/scatter.test.ts",
+        "test/scene-schema.test.ts",
         "test/surfaces.test.ts",
         "test/tile-greybox.test.ts",
         "test/vegetation-density.test.ts",
         "test/volume-metrics.test.ts"
       ],
       "break": 73,
-      "porque": "El vocabulario de volúmenes que el motor narrativo declara y el greybox construye. Va SOLO en su módulo justamente por su batería de trece: es el fichero con más fan-in del blueprint y arrastrar a nadie más con él sale caro. Dos de esos trece llegan por el barril."
+      "porque": "El vocabulario de volúmenes que el motor narrativo declara y el greybox construye. Va SOLO en su módulo justamente por su batería de catorce: es el fichero con más fan-in del blueprint y arrastrar a nadie más con él sale caro. Dos de esos catorce llegan por el barril; `scene-schema` entra con el suelo de los vanos (#289), que es la única regla de volumes que un mutante puede matar sin tocar geometría."
     },
     {
       "id": "blueprint-huella",

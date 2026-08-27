@@ -34,6 +34,13 @@ import {
   type WalkableMap,
 } from "../src/scene/scene-validate.js";
 import type { TileEdges } from "../src/scene/tile-edges.js";
+import {
+  BODY_RADIUS_M,
+  celdasLibresParaRadio,
+  createTerrainCollider,
+  type TerrainCollider,
+} from "../src/scene/terrain-collision.js";
+import { TILE_MPC } from "../src/scene/tile.js";
 
 /** Tile de mentira desde un grid ASCII: "W" muro, "~" agua, lo demás pisable. */
 function vista(filas: string[], over: Partial<TileView> = {}): TileView {
@@ -689,7 +696,7 @@ describe("floodFill", () => {
 
   it("solo alcanza lo conectado por celdas pisables", () => {
     const { view, map } = mapaDe(MAPA);
-    const reach = floodFill(view, map, [[0, 0]]);
+    const reach = floodFill(view, map, [[0, 0]], 1);
     assert.equal(reach.has([6, 0]), true, "se rodea por el vano de la fila 2");
     assert.equal(reach.has([3, 0]), false, "el muro no");
     assert.equal(reach.count, map.walkableCells);
@@ -697,14 +704,14 @@ describe("floodFill", () => {
 
   it("con el vano tapiado quedan dos mitades", () => {
     const { view, map } = mapaDe(MAPA.map((f, r) => (r === 2 ? "gggWggg" : f)));
-    const reach = floodFill(view, map, [[0, 0]]);
+    const reach = floodFill(view, map, [[0, 0]], 1);
     assert.equal(reach.has([6, 0]), false, "ya no hay paso");
     assert.equal(reach.count, 18, "solo la mitad izquierda");
   });
 
   it("varias semillas siembran a la vez y no se cuentan dos veces", () => {
     const { view, map } = mapaDe(MAPA.map((f, r) => (r === 2 ? "gggWggg" : f)));
-    const reach = floodFill(view, map, [[0, 0], [6, 0], [0, 0]]);
+    const reach = floodFill(view, map, [[0, 0], [6, 0], [0, 0]], 1);
     assert.equal(reach.count, 36, "las dos mitades enteras");
   });
 
@@ -715,17 +722,101 @@ describe("floodFill", () => {
     // «alcanzable» — el fallo más caro posible en un validador de
     // alcanzabilidad, porque aprueba mapas injugables en silencio.
     const { view, map } = mapaDe(["Wgg", "gWW"]);
-    const reach = floodFill(view, map, [[2, 0]]);
+    const reach = floodFill(view, map, [[2, 0]], 1);
     assert.equal(reach.count, 2, "solo las dos celdas del tramo de arriba");
     assert.equal(reach.has([0, 1]), false, "la esquina de abajo queda aislada");
   });
 
   it("fuera del grid nunca está alcanzado", () => {
     const { view, map } = mapaDe(MAPA);
-    const reach = floodFill(view, map, [[0, 0]]);
+    const reach = floodFill(view, map, [[0, 0]], 1);
     for (const fuera of [[-1, 0], [0, -1], [7, 0], [0, 6]] as Cell[]) {
       assert.equal(reach.has(fuera), false, `[${fuera}]`);
     }
+  });
+
+  it("una semilla que no es pisable no siembra nada", () => {
+    // Antes se marcaba alcanzada por decreto (sin mirar la máscara). Con
+    // cuerpo la pregunta es si CABE ahí, y un flood que arranca dentro de una
+    // roca aprueba el mapa entero desde una posición imposible.
+    const { view, map } = mapaDe(MAPA);
+    assert.equal(floodFill(view, map, [[3, 0]], 1).count, 0, "el muro no siembra");
+  });
+});
+
+/** LA TRAMPA DE #289, en el algoritmo. Un corredor de 2 celdas mide 1,00 m:
+ *  lo cruza el jugador (radio 0,4) y NUNCA un NPC (0,5), porque el AABB de
+ *  `blocksCircle` se recorre con floor() INCLUSIVE y hace falta `n·mpc > 2R`.
+ *
+ *  Si la erosión se escribe con el AABB (`2R/mpc` = 2 celdas) en vez de con
+ *  `floor(2R/mpc)+1` (3), el candado NACE VERDE sobre el caso que dice
+ *  impedir. Por eso el `k=2` de aquí abajo no es redundante: es el criterio
+ *  que más pesa de la tanda, y su aserto es que k=2 PASA. */
+describe("floodFill con cuerpo · la puerta de 1 m", () => {
+  /** Dos salas de 3 columnas separadas por un muro de 3 celdas de grosor
+   *  (cols 3-5) con un VANO de `hueco` filas. `hueco` es exactamente lo que
+   *  mide la puerta: 2 celdas = 1,00 m, 3 = 1,50 m. Grid 9×9 en los dos
+   *  casos, para que el destino sea la misma celda. */
+  const conVano = (hueco: number): string[] => {
+    const desde = Math.floor((9 - hueco) / 2);
+    return Array.from({ length: 9 }, (_, r) =>
+      "ggg" + (r >= desde && r < desde + hueco ? "ggg" : "WWW") + "ggg");
+  };
+  const IZQ: Cell = [0, 4];
+  const DER: Cell = [8, 4];
+
+  for (const [hueco, metros, cabe] of [[2, "1,00", false], [3, "1,50", true]] as const) {
+    it(`un vano de ${hueco} celdas (${metros} m): el cuerpo mayor ${cabe ? "pasa" : "NO pasa"}`, () => {
+      const { view, map } = mapaDe(conVano(hueco));
+      const k = celdasLibresParaRadio(BODY_RADIUS_M, TILE_MPC);
+      assert.equal(k, 3, "la erosión del cuerpo mayor son 3 celdas, no el AABB");
+      assert.equal(floodFill(view, map, [IZQ], k).has(DER), cabe, "la sala del otro lado");
+    });
+  }
+
+  it("EN NEGATIVO: con la erosión del AABB (k=2) el vano de 1 m PASA — el candado nacería verde", () => {
+    const { view, map } = mapaDe(conVano(2));
+    assert.equal(
+      floodFill(view, map, [IZQ], 2).has(DER),
+      true,
+      "k=2 aprueba el vano que el collider bloquea: ESTE es el error que hay que evitar",
+    );
+    assert.equal(
+      floodFill(view, map, [IZQ], 3).has(DER),
+      false,
+      "k=3 (floor(2R/mpc)+1) es el único que lo ve",
+    );
+    // Y el punto sin dimensión de siempre lo aprobaba igual que k=2.
+    assert.equal(floodFill(view, map, [IZQ], 1).has(DER), true, "k=1 = el flood de antes");
+  });
+
+  it("y el collider real dice lo mismo sobre ese vano, no solo el flood", () => {
+    // Cierra el círculo: la erosión no se compara con otra erosión, sino con
+    // `blocksCircle` sobre el mismo vano. El cuerpo centrado en el hueco de 2
+    // celdas choca; en el de 3, no.
+    const colisionador = (hueco: number): TerrainCollider =>
+      createTerrainCollider({
+        grid: conVano(hueco),
+        cols: 9,
+        rows: 9,
+        meters_per_cell: TILE_MPC,
+        origin: [0, 0],
+        solid_chars: ["W"],
+      })!;
+    const centroY = (hueco: number): number => (Math.floor((9 - hueco) / 2) + hueco / 2) * TILE_MPC;
+    assert.equal(colisionador(2).blocksCircle(4.5 * TILE_MPC, centroY(2), BODY_RADIUS_M), true, "1,00 m no");
+    assert.equal(colisionador(3).blocksCircle(4.5 * TILE_MPC, centroY(3), BODY_RADIUS_M), false, "1,50 m sí");
+  });
+
+  it("el cuerpo que no cabe en el grid entero no alcanza nada (no revienta)", () => {
+    const { view, map } = mapaDe(["ggg", "ggg"]);
+    assert.equal(floodFill(view, map, [[0, 0]], 3).count, 0, "3 celdas no caben en 2 filas");
+    assert.equal(floodFill(view, map, [[0, 0]], 3).has([0, 0]), false);
+  });
+
+  it("k=1 es EXACTAMENTE el flood de siempre, así que no hay dos algoritmos", () => {
+    const { view, map } = mapaDe(conVano(2));
+    assert.equal(floodFill(view, map, [IZQ], 1).count, map.walkableCells, "sin cuerpo, alcanzable = pisable y conectado");
   });
 });
 
@@ -781,29 +872,79 @@ describe("checkReachability", () => {
     assert.equal(found.stats.border_reachable, false);
   });
 
+  /** Dos mitades de 3 columnas separadas por un muro: la mínima que admite el
+   *  cuerpo mayor a los dos lados (3 celdas = 1,5 m). Los grids de 2-3
+   *  columnas de antes cabían para un punto sin dimensión y para nadie más. */
+  const PARTIDO = ["gggWggg", "gggWggg", "gggWggg", "gggWggg", "gggWggg"];
+
   it("ninguna puerta alcanzable es error; algunas, aviso", () => {
-    const { view, map, found } = mapaDe(["gWg", "gWg"]);
-    checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [[2, 0], [2, 1]], { required_crossings: [] }, found);
+    const { view, map, found } = mapaDe(PARTIDO);
+    checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [[5, 0], [5, 1]], { required_crossings: [] }, found);
     assert.deepEqual(found.errors, ["ninguna puerta de las structures es alcanzable desde el player"]);
     assert.equal(found.stats.doors_total, 0, "contarlas es de la pasada de puertas, no de esta");
 
-    const b = mapaDe(["gWg", "gWg"]);
-    checkReachability(b.view, b.map, { startCells: [[0, 0]], crossingTargets: [] }, [[0, 1], [2, 1]], { required_crossings: [] }, b.found);
+    const b = mapaDe(PARTIDO);
+    checkReachability(b.view, b.map, { startCells: [[0, 0]], crossingTargets: [] }, [[1, 1], [5, 1]], { required_crossings: [] }, b.found);
     assert.deepEqual(b.found.errors, []);
     assert.deepEqual(b.found.warnings, ["1 celda(s) de puerta no alcanzables desde el player"]);
     assert.equal(b.found.stats.doors_reachable, 1);
   });
 
-  it("un NPC vale con que se le llegue AL LADO", () => {
-    const { view, map, found } = mapaDe(["ggWg", "ggWg"], {
+  /** Sala abierta de 5×6, un nicho de UNA celda al que el cuerpo no entra
+   *  ([5,5]) y un tramo aislado de 2 columnas al este (donde el cuerpo no
+   *  cabe ni aunque llegara). */
+  const CON_NICHO = [
+    "gggggWWgg",
+    "gggggWWgg",
+    "gggggWWgg",
+    "gggggWWgg",
+    "gggggWWgg",
+    "ggggggWgg",
+  ];
+
+  it("un NPC vale con que se le llegue AL LADO, aunque el cuerpo no quepa en su celda", () => {
+    // El herrero está en un nicho de una celda: el flood con cuerpo no lo
+    // cubre, pero se le habla desde al lado y de ahí puede salir. Al ermitaño
+    // no se llega ni al lado.
+    const { view, map, found } = mapaDe(CON_NICHO, {
       entities: [
-        { id: "herrero", kind: "npc", cell: [1, 1] },
-        { id: "ermitaño", kind: "npc", cell: [3, 0] },
+        { id: "herrero", kind: "npc", cell: [5, 5] },
+        { id: "ermitaño", kind: "npc", cell: [8, 0] },
       ],
     });
     checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [], { required_crossings: [] }, found);
     assert.equal(found.stats.npcs_reachable, 1);
-    assert.deepEqual(found.warnings, ['el NPC "ermitaño" en [3, 0] no es alcanzable desde el player']);
+    assert.deepEqual(found.warnings, [], "un NPC inalcanzable ya no es «jugable, pero revísalo»");
+    assert.deepEqual(found.errors, ['el NPC "ermitaño" en [8, 0] no es alcanzable desde el player']);
+  });
+
+  it("un NPC que nace en celda SÓLIDA es error aunque tenga vecina libre", () => {
+    // El residuo de #262 que ya ocurrió: el tabernero empotrado en el prop
+    // `mostrador` daba «ok:true · npcs 1/1» porque bastaba una vecina
+    // transitable. Él no podía salir de ahí, y su parálisis se leyó durante
+    // semanas como ambiente.
+    const { view, map, found } = mapaDe(CON_NICHO, {
+      entities: [{ id: "tabernero", kind: "npc", cell: [5, 0] }],
+    });
+    assert.equal(map.isWalkable([4, 0]), true, "la vecina oeste SÍ es transitable");
+    checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [], { required_crossings: [] }, found);
+    assert.equal(found.stats.npcs_reachable, 0);
+    assert.deepEqual(found.errors, [
+      'el NPC "tabernero" nace en [5, 0], celda no transitable (muro, agua o huella de un volumen): no podría moverse de ahí',
+    ]);
+  });
+
+  it("una celda fraccionaria se lee donde el NPC está de pie, no como índice roto", () => {
+    // El contrato la declara entera (`generate_scene.json`) pero el zod admite
+    // fracción; un índice fraccionario daba `undefined` en la máscara, o sea
+    // «inalcanzable» para un NPC plantado en mitad de un prado. Con severidad
+    // de error eso rechazaría el tile entero por una mentira.
+    const { view, map, found } = mapaDe(CON_NICHO, {
+      entities: [{ id: "arbol_w", kind: "npc", cell: [2.5, 1] }],
+    });
+    checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [], { required_crossings: [] }, found);
+    assert.deepEqual(found.errors, []);
+    assert.equal(found.stats.npcs_reachable, 1);
   });
 
   it("por debajo del 20% pisable, avisa de que el mapa es casi todo muro", () => {
