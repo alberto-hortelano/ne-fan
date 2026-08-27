@@ -37,6 +37,8 @@ const GAMES_DIR = fileURLToPath(new URL("../data/games", import.meta.url));
 /** A qué motor narrativo dice apuntar el bridge de estas pruebas. GET /health
  *  lo publica: es la vía de gasto que el `?ai=` del cliente nunca cubrió. */
 const MOTOR_DE_PRUEBA = "http://127.0.0.1:18765";
+/** Y con qué gateway está emparejada esa State API: la IDENTIDAD de la vía. */
+const GATEWAY_DE_PRUEBA = "ws://127.0.0.1:9877";
 
 function makeCtx(): { ctx: StateHttpContext; progreso: string[] } {
   const { narrative, storage } = makeNarrativeState();
@@ -48,6 +50,7 @@ function makeCtx(): { ctx: StateHttpContext; progreso: string[] } {
     gamesDir: GAMES_DIR,
     sessionStorage: storage,
     aiServerUrl: MOTOR_DE_PRUEBA,
+    gatewayUrl: GATEWAY_DE_PRUEBA,
     onProgress: (m) => progreso.push(m),
     plugins: {
       register: () => {
@@ -433,6 +436,9 @@ describe("dispatchStateRequest · sesión, ruta y body, sin abrir un puerto", ()
     // única vía de gasto observable desde fuera era el `?ai=` del cliente, y
     // las escenas las pide el bridge por su cuenta.
     assert.equal((salud.body as { ai_server_url?: string }).ai_server_url, MOTOR_DE_PRUEBA);
+    // Y de QUIÉN es esa respuesta: sin `gateway_url`, la State API del bloque
+    // base podía avalar a un bridge que la página no estaba usando.
+    assert.equal((salud.body as { gateway_url?: string }).gateway_url, GATEWAY_DE_PRUEBA);
     const propia = await dispatchStateRequest(ctx, {
       method: "GET",
       url: "/story",

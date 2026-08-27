@@ -169,9 +169,10 @@ for (const c of elegidos) {
   resultados.push({ slug: c.slug, ok, faltan, colados });
 
   // Parar y ESPERAR A QUE EL LAUNCHER MUERA, no solo a que los puertos queden
-  // libres. Su `cleanup` recorre ALL_PORTS con `fuser -k` (SIGKILL) y una
-  // pausa por puerto: si el siguiente preset arranca mientras esa pasada sigue
-  // viva, el launcher moribundo mata el servicio recién nacido del siguiente
+  // libres. Su `cleanup` mata por PID lo que arrancó, y libera después el
+  // puerto que sobreviva a su proceso, con una pausa por puerto: si el
+  // siguiente preset arranca mientras esa pasada sigue viva, el launcher
+  // moribundo mata el servicio recién nacido del siguiente
   // (medido: el fake-ai-server salía "Killed"). Es la misma trampa
   // que le espera a una persona que para un preset y arranca otro seguido.
   const muerto = new Promise((r) => child.once("exit", r));

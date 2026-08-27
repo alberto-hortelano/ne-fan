@@ -31,7 +31,7 @@
  *  Cero créditos: las dos corridas usan el preset `e2e-sin-creditos`.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUERTOS_BASE } from "./lib/stack.mjs";
@@ -179,6 +179,45 @@ for (const [et, id] of [["A", idA], ["B", idB]]) {
   } else {
     mal(`${et} conserva sus capturas`, `no hay nada en ${dir ?? "(sin RUN_ID)"}`);
   }
+}
+
+// ── 4 bis. `qa/capturas/ultima`, el QUINTO recurso compartido ───────────
+//
+// Es un puntero GLOBAL ÚNICO: solo puede señalar a una corrida, así que con
+// dos a la vez no hay reparto posible — lo que sí hay es una respuesta
+// DECIDIDA y afirmable. Queda: `ultima` es la última corrida que TERMINÓ, y
+// quien tuvo compañía lo avisa. Sin esta afirmación, el candado del criterio 3
+// miraba cuatro recursos compartidos y dejaba el quinto sin vigilar, que es
+// exactamente lo que el crítico fue a buscar y encontró cuatro veces.
+const enlace = join(RAIZ_SHOTS, "ultima");
+let apunta = null;
+try {
+  apunta = readlinkSync(enlace);
+} catch (err) {
+  mal("qa/capturas/ultima existe tras dos corridas", err.code);
+}
+if (apunta) {
+  if (apunta === idA || apunta === idB) {
+    ok(`ultima apunta a UNA de las dos corridas (${apunta}), nunca a una tercera`);
+  } else {
+    // El fallo que esto caza: hasta 2026-08-27 el enlace se congelaba en la
+    // primera corrida que lo creaba —`rmSync` sobre un symlink-a-directorio
+    // lanza EISDIR— y toda revisión visual posterior miraba otra corrida.
+    mal("ultima apunta a una de las dos corridas", `apunta a "${apunta}", que no es ni A ni B`);
+  }
+  if (existsSync(enlace) && readdirSync(enlace).length > 0) {
+    ok(`ultima resuelve a un directorio con capturas (${readdirSync(enlace).length})`);
+  } else {
+    mal("ultima resuelve a capturas de verdad", "el enlace cuelga o el directorio está vacío");
+  }
+}
+// Y la otra mitad: que la ambigüedad se DIGA. Un puntero único con dos dueños
+// miente para uno de los dos; lo que no puede es mentir en silencio.
+const avisos = [a, b].filter((r) => /qa\/capturas\/ultima apunta a la ÚLTIMA en terminar/.test(r.salida));
+if (avisos.length >= 1) {
+  ok(`${avisos.length} de 2 avisaron de que ultima puede no ser suya`);
+} else {
+  mal("alguna corrida avisa de que ultima puede no ser suya", "las dos callaron");
 }
 
 // ── 5. Cada stack escribió SUS logs, no los del otro ────────────────────

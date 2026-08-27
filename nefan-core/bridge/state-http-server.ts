@@ -47,6 +47,10 @@ export interface StateHttpServerOptions {
    *  pueda comprobar la vía de gasto que no pasa por el `?ai=` del cliente, y
    *  un default vacío la haría invisible otra vez sin que nadie lo notara. */
   aiServerUrl: string;
+  /** El gateway WS de este proceso. Obligatorio por el mismo motivo que
+   *  `aiServerUrl`: es lo que permite comprobar que la State API a la que se
+   *  pregunta es la del bridge que uno está usando, y no la del vecino. */
+  gatewayUrl: string;
 }
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -61,6 +65,7 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
     onProgress: opts.onProgress,
     sessionStorage: opts.sessionStorage,
     aiServerUrl: opts.aiServerUrl,
+    gatewayUrl: opts.gatewayUrl,
   };
 
   const server = createServer((req, res) => {

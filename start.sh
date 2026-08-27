@@ -660,7 +660,7 @@ PRESET_DESCS=(
     "bridge + HTML + asset-store + remote-gen (fps/estilos operativos) — solo gasta si activas Imagen IA en el juego"
     "fake-ai-server + bridge + HTML — todo mockeado, 0 créditos (bench E2E)"
     "motor narrativo con los servicios de imagen APAGADOS (sin remote-gen ni sprite-forge): imposible gastar en imágenes — juega en Maqueta 3D / y_bot"
-    "bridge + ai_server + asset-store, SIN placeholder de narrative-mcp: el terminal del motor posee el puerto MCP (labs/narrative; conduce con game-emulator :9899)"
+    "bridge + ai_server + asset-store, SIN placeholder de narrative-mcp: el terminal del motor posee el puerto MCP (labs/narrative; conduce con game-emulator)"
     "replay-server + HTML: reproduce una sesión grabada como película, sin motor ni ai_server — renderer determinista (LOG=runs/…/events.ndjson)"
     "solo el cliente web: fixtures del selector Room + teclas dev, cero backend"
     "Lo que tengas seleccionado"
@@ -1129,7 +1129,7 @@ EOF
         cat <<EOF
 
   🧪 Bench narrativo (labs/narrative): emula el juego con
-     node labs/narrative/game-emulator.mjs   # API de control HTTP :9899
+     node labs/narrative/game-emulator.mjs   # API de control HTTP (CTRL_PORT)
      y condúcelo con curl (ver labs/narrative/README.md).
 EOF
     fi

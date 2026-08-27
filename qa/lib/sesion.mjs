@@ -27,8 +27,10 @@ import { esperarPartidaEnDisco } from "./saves.mjs";
  *       de verdad (`window.__nefan.servicios()`, ya con los overrides de la
  *       query aplicados; jamás una constante de este proceso) declara
  *       `fake: true` en su `/health`;
- *   (b) **la del bridge** — el `/health` de la State API publica
- *       `ai_server_url`, y ESA url declara `fake: true`. Es la vía que el
+ *   (b) **la del bridge** — el `/health` de la State API declara `gateway_url`
+ *       (y tiene que ser EL MISMO gateway que la página usa: si no, se está
+ *       preguntando al bridge de al lado) y publica `ai_server_url`, y ESA url
+ *       declara `fake: true`. Es la vía que el
  *       `?ai=` nunca cubrió: las escenas y las consecuencias las pide el
  *       bridge por su cuenta, así que un cliente apuntado al fake con un
  *       bridge apuntado al motor real gasta igual.
@@ -79,6 +81,27 @@ export async function diagnosticoDeCreditos(ctx, timeoutMs = 5000) {
         const base = String(urls["world-state"] ?? "").replace(/\/+$/, "");
         const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(ms) });
         const body = r.ok ? await r.json() : null;
+
+        // PRIMERO la identidad, y solo después el motor. `?bridge=` mueve el
+        // gateway y NO mueve `world-state`, así que preguntar «¿con qué motor
+        // hablas?» sin comprobar A QUIÉN se lo estás preguntando permitía que
+        // la State API del bloque base avalara a un bridge que la página no
+        // estaba usando — y un bridge sin `NEFAN_AI_SERVER` apunta por defecto
+        // al ai_server REAL, que cobra. Publicar el motor no sirve de nada si
+        // no se sabe de quién es la respuesta.
+        const suyo = typeof body?.gateway_url === "string" ? body.gateway_url.replace(/\/+$/, "") : "";
+        const nuestro = String(urls["game-gateway"] ?? "").replace(/\/+$/, "");
+        if (!suyo) {
+          return { url: null, fake: false, motivo: "la State API no publica gateway_url (no sé de quién es)" };
+        }
+        if (suyo !== nuestro) {
+          return {
+            url: null,
+            fake: false,
+            motivo: `la State API es de OTRO bridge (${suyo}), la página usa ${nuestro}`,
+          };
+        }
+
         const motor = typeof body?.ai_server_url === "string" ? body.ai_server_url : "";
         if (!motor) return { url: null, fake: false, motivo: "la State API no publica ai_server_url" };
         return salud(motor);

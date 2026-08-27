@@ -58,6 +58,7 @@ import {
   readFileSync,
   writeFileSync,
   symlinkSync,
+  unlinkSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -322,6 +323,53 @@ async function ensureStack() {
  *  «puertos arriba», se saltaba TODOS los `aisla` y daba rojos falsos. */
 let stackPropio = null;
 let saliendo = false;
+/** ¿Había otra batería viva cuando ésta arrancó? Gobierna el aviso de que
+ *  `qa/capturas/ultima` puede no ser la de esta corrida. */
+let huboOtraCorrida = false;
+
+/** `qa/capturas/ultima` → las capturas de ESTA corrida.
+ *
+ *  DOS FALLOS distintos vivían aquí, y los dos los introdujo esta tanda:
+ *
+ *  1. `rmSync(enlace, {force:true})` SIGUE el enlace, y sobre uno que apunta a
+ *     un directorio lanza `ERR_FS_EISDIR`. El `symlinkSync` de la línea
+ *     siguiente no llegaba a ejecutarse nunca y el `catch` lo degradaba a un
+ *     aviso, así que el enlace se congeló en la PRIMERA corrida que lo creó y
+ *     ninguna posterior lo movió. Quien mirara ahí para una revisión visual
+ *     estaba viendo otra corrida sin que nada se lo dijera — el «verde que mide
+ *     otra cosa» mudado al trabajo de QA. `unlinkSync` retira el ENLACE sin
+ *     seguirlo, que es la primitiva correcta; y si algún día `ultima` fuera un
+ *     directorio de verdad, lanza en vez de borrar las capturas de alguien.
+ *
+ *  2. Es un puntero GLOBAL: solo puede señalar a una corrida, así que con dos a
+ *     la vez una de las dos miente por definición. No hay forma de arreglarlo
+ *     —un puntero único no puede tener dos dueños—, así que lo que se hace es
+ *     DECIDIR qué significa y decirlo: `ultima` es **la última corrida que
+ *     TERMINÓ** en este checkout. Por eso se repunta desde `salir()` y no al
+ *     arrancar. Y cuando la corrida sabe que había otra viva, lo AVISA: quien
+ *     revise capturas necesita saber que ese enlace puede no ser el suyo.
+ *     `qa/dos-corridas.mjs` afirma las dos mitades. */
+function apuntarUltima() {
+  const enlace = join(RAIZ_SHOTS, "ultima");
+  try {
+    try {
+      unlinkSync(enlace);
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+    symlinkSync(RUN_ID, enlace);
+    if (huboOtraCorrida) {
+      console.log(
+        `· OJO: había otra corrida viva. qa/capturas/ultima apunta a la ÚLTIMA en terminar,\n` +
+          `       que puede no ser ésta. Las tuyas están en ${SHOTS}`,
+      );
+    }
+  } catch (err) {
+    // Un enlace que no se puede poner no invalida la corrida: las capturas
+    // están en su sitio y se dice dónde. Pero se dice, no se traga.
+    console.log(`· sin enlace qa/capturas/ultima (${err.message}) — están en ${SHOTS}`);
+  }
+}
 
 /** Única salida del runner: apaga lo que arrancó esta corrida y borra su tmp.
  *  La llaman el final feliz, el error y las señales — un Ctrl+C no puede dejar
@@ -341,6 +389,7 @@ function salir(code, motivo) {
   }
   if (!KEEP) rmSync(TMP, { recursive: true, force: true });
   else console.log(`· disco efímero sin borrar: ${TMP}`);
+  apuntarUltima();
   // El bloque de puertos vuelve al pozo aunque la corrida muera mal. Si no
   // llegara a soltarse, la siguiente lo reclama al ver que su dueño no existe.
   if (lockDelBloque) rmSync(lockDelBloque, { force: true });
@@ -393,7 +442,10 @@ function limpiarTmpViejos() {
   const vivos = candidatos.length - muertos.length;
   for (const d of muertos) rmSync(join(raiz, d), { recursive: true, force: true });
   if (muertos.length) console.log(`· ${muertos.length} tmp de corridas muertas borrados`);
-  if (vivos) console.log(`· ${vivos} tmp de corridas VIVAS respetados (otra batería está corriendo)`);
+  if (vivos) {
+    huboOtraCorrida = true;
+    console.log(`· ${vivos} tmp de corridas VIVAS respetados (otra batería está corriendo)`);
+  }
 }
 
 /** Disco efímero de la corrida: copia REAL de `data/games` (lo mismo que tiene
@@ -617,14 +669,6 @@ async function main() {
   // era quien pagaba el crecimiento en cada `npm test`.
   rmSync(SHOTS, { recursive: true, force: true });
   mkdirSync(SHOTS, { recursive: true });
-  try {
-    rmSync(join(RAIZ_SHOTS, "ultima"), { force: true });
-    symlinkSync(RUN_ID, join(RAIZ_SHOTS, "ultima"));
-  } catch (err) {
-    // Un enlace que no se puede crear no invalida la corrida: las capturas
-    // están en su sitio y se dice dónde. Pero se dice, no se traga.
-    console.log(`· sin enlace qa/capturas/ultima (${err.message}) — están en ${SHOTS}`);
-  }
 
   prepararDisco();
   const stack = await ensureStack();

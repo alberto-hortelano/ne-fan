@@ -45,6 +45,19 @@ export interface WorldStateHealthResponse {
    *  motor falso y disparar igualmente generación de pago a través del bridge.
    *  Publicarlo es lo que permite al guardarraíl exigir las DOS vías. */
   ai_server_url: string;
+  /** El gateway (WS) que vive en ESTE MISMO proceso.
+   *
+   *  Es la IDENTIDAD de la vía: sin ella, publicar a qué motor apunta el bridge
+   *  no sirve de nada, porque quien pregunta no puede saber si le está
+   *  preguntando al bridge que su página usa o al de al lado. Medido con el
+   *  cliente real: `?bridge=ws://127.0.0.1:19877` mueve el gateway y **no**
+   *  mueve `world-state` (`envFromQuery` solo mapea `NEFAN_URL_GAME_GATEWAY`),
+   *  así que el guardarraíl de gasto interrogaba a la State API del bloque base
+   *  mientras el juego hablaba con otro bridge — y ese otro, arrancado sin
+   *  `NEFAN_AI_SERVER`, apunta por defecto al ai_server REAL, que cobra.
+   *  Comparando esto con el gateway que la página usa de verdad, el desajuste
+   *  deja de ser invisible. */
+  gateway_url: string;
 }
 
 export interface PlaceDetailResponse {

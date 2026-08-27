@@ -29,13 +29,21 @@ import http from "node:http";
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
 import { diagnosticoDeCreditos } from "./lib/sesion.mjs";
+import { PUERTOS } from "./lib/stack.mjs";
 
 const HEADED = process.argv.includes("--headed");
 const fallos = [];
 const servidores = [];
+/** Cuántos desenlaces se han ejercido de verdad. Se cuenta y no se escribe a
+ *  mano: la versión anterior decía «siete» cuando eran ocho. */
+let ejercidos = 0;
 
-const ok = (t) => console.log(`  ✔ ${t}`);
+const ok = (t) => {
+  ejercidos++;
+  console.log(`  ✔ ${t}`);
+};
 const mal = (t, detalle) => {
+  ejercidos++;
   console.log(`  ✘ ${t}${detalle ? ` — ${detalle}` : ""}`);
   fallos.push(t);
 };
@@ -114,7 +122,19 @@ async function main() {
   const muerto = await puertoMuerto();
   const pagina = await paginaConServicios();
 
-  /** La State API del bridge: declara a qué motor habla (criterio 5 bis). */
+  /** El gateway que la página dice usar. Los casos lo mueven para ejercer la
+   *  identidad de la vía del bridge. */
+  // Derivados, no escritos: la regla `nadie-inventa-un-puerto` cazó estos
+  // literales en cuanto los escribí, que es exactamente su trabajo. El «otro»
+  // gateway solo tiene que ser DISTINTO — modela el `?bridge=` de un guion que
+  // levanta el suyo.
+  const GATEWAY = `ws://127.0.0.1:${PUERTOS.bridge}`;
+  const OTRO_GATEWAY = `ws://127.0.0.1:${PUERTOS.bridge + 10000}`;
+  let gatewayDelBridge = GATEWAY;
+  let gatewayDeLaPagina = GATEWAY;
+
+  /** La State API del bridge: declara a qué motor habla (criterio 5 bis) y con
+   *  qué gateway está emparejada (la identidad de esa vía). */
   let motorDelBridge = falso.url;
   const stateApi = await servidor(() => ({
     ok: true,
@@ -122,9 +142,16 @@ async function main() {
     has_session: false,
     game_id: null,
     ai_server_url: motorDelBridge,
+    gateway_url: gatewayDelBridge,
   }));
-  /** Una State API que NO publica el campo (un bridge anterior a esta tanda). */
-  const stateApiMuda = await servidor({ ok: true, session_id: null, has_session: false, game_id: null });
+  /** Una State API que NO publica el motor (un bridge anterior a esta tanda). */
+  const stateApiMuda = await servidor(() => ({
+    ok: true, session_id: null, has_session: false, game_id: null, gateway_url: gatewayDelBridge,
+  }));
+  /** Una que no dice DE QUIÉN es: publica el motor pero no su gateway. */
+  const stateApiSinIdentidad = await servidor(() => ({
+    ok: true, session_id: null, has_session: false, game_id: null, ai_server_url: motorDelBridge,
+  }));
 
   const browser = await abrirNavegador(chromium, { headed: HEADED });
   const page = await browser.newPage();
@@ -137,7 +164,7 @@ async function main() {
       (v) => {
         document.getElementById("u").textContent = JSON.stringify(v);
       },
-      { "narrative-llm": cliente, "world-state": state },
+      { "narrative-llm": cliente, "world-state": state, "game-gateway": gatewayDeLaPagina },
     );
     return diagnosticoDeCreditos(ctx, 2500);
   }
@@ -206,10 +233,43 @@ async function main() {
       motor: parco.url,
       espera: false,
     },
+    {
+      // H3, el agujero que QA midió con el cliente real: `?bridge=` mueve el
+      // gateway y NO mueve `world-state`, así que la State API del bloque base
+      // avalaba a un bridge que la página no estaba usando — y un bridge sin
+      // `NEFAN_AI_SERVER` apunta por defecto al ai_server REAL, que cobra.
+      titulo: "la State API es de OTRO bridge que el que la página usa → se niega",
+      cliente: falso.url,
+      state: stateApi.url,
+      motor: falso.url,
+      gatewayPagina: OTRO_GATEWAY,
+      gatewayBridge: GATEWAY,
+      espera: false,
+    },
+    {
+      titulo: "la State API no dice de qué gateway es → se niega",
+      cliente: falso.url,
+      state: stateApiSinIdentidad.url,
+      motor: falso.url,
+      espera: false,
+    },
+    {
+      // Y la contraparte: con `?bridge=` a un bridge que SÍ es el que contesta,
+      // el guardarraíl no estorba. Si no, el arreglo sería un «niégate siempre».
+      titulo: "con `?bridge=` a un bridge que SÍ es el suyo y es falso → CORRE",
+      cliente: falso.url,
+      state: stateApi.url,
+      motor: falso.url,
+      gatewayPagina: OTRO_GATEWAY,
+      gatewayBridge: OTRO_GATEWAY,
+      espera: true,
+    },
   ];
 
   for (const c of casos) {
     motorDelBridge = c.motor;
+    gatewayDelBridge = c.gatewayBridge ?? GATEWAY;
+    gatewayDeLaPagina = c.gatewayPagina ?? GATEWAY;
     const d = await preguntar(c);
     const bien = d.ok === c.espera;
     (bien ? ok : mal)(c.titulo, bien ? "" : `devolvió ${d.ok} · ${d.motivo}`);
@@ -239,5 +299,5 @@ try {
   await Promise.all(servidores.map((s) => new Promise((r) => s.close(r))));
 }
 
-console.log(`\n${fallos.length === 0 ? "✔ el guardarraíl se niega en los siete desenlaces malos" : `✘ ${fallos.length} fallo(s)`}`);
+console.log(`\n${fallos.length === 0 ? `✔ el guardarraíl decide bien en los ${ejercidos} desenlaces (${ejercidos - 2} malos, 2 buenos)` : `✘ ${fallos.length} fallo(s)`}`);
 process.exit(fallos.length === 0 ? 0 : 1);

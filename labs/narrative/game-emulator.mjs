@@ -39,7 +39,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /** El gateway y la API de control, de la fuente única del repo por el único
  *  lector que hay en JS (que aplica `NEFAN_PORT_OFFSET`, así que dos benches a
- *  la vez no se pisan la :9899 como hacían hasta hoy). `BRIDGE_URL` y
+ *  la vez no se pisan el puerto de control como hacían hasta hoy).
+ *  `BRIDGE_URL` y
  *  `CTRL_PORT` del entorno siguen mandando. */
 const BRIDGE_URL = process.env.BRIDGE_URL ?? `ws://127.0.0.1:${PUERTOS_TODOS.bridge}`;
 const CTRL_PORT = Number(process.env.CTRL_PORT ?? PUERTOS_TODOS.game_emulator);
