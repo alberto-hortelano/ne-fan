@@ -5,6 +5,8 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  FRONT_COS,
+  isInFront,
   calculateDistanceFactor,
   calculatePrecisionFactor,
   calculateOffsetFromAttackCenter,
@@ -12,7 +14,7 @@ import {
   applyDefensiveReduction,
 } from "../src/combat/combat-resolver.js";
 import { getEffectiveParams, loadConfig } from "../src/combat/combat-data.js";
-import type { CombatConfig, Vec3 } from "../src/types.js";
+import type { CombatConfig, EffectiveParams, Vec3 } from "../src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const configPath = resolve(__dirname, "../data/combat_config.json");
@@ -157,6 +159,101 @@ describe("resolveAttack integration", () => {
       "medium",
     );
     assert.ok(damage > 0, `esperaba daño frontal > 0, fue ${damage}`);
+  });
+});
+
+describe("el borde exacto del cono frontal", () => {
+  // El cono es de ±60°, y su borde tiene que caer del MISMO lado en las dos
+  // mitades del combate: `isInFront` decide el daño y `conoMargin` dibuja el
+  // arco (`attack-area.ts`). Ambas dicen FUERA justo en el filo. La barrida
+  // punto por punto de `attack-area.test.ts` no lo ve porque nunca aterriza en
+  // el filo EXACTO: hay que construirlo.
+  const atacante: Vec3 = { x: 0, y: 0, z: 0 };
+  const mirandoA: Vec3 = { x: 0, y: 0, z: 1 };
+  // A 60° del forward y a distancia 3: el coseno sale EXACTAMENTE FRONT_COS.
+  const enElFilo: Vec3 = { x: 1.5 * Math.sqrt(3), y: 0, z: 1.5 };
+
+  it("el punto de prueba está en el filo, no cerca de él", () => {
+    // La precondición se AFIRMA: si un día la aritmética flotante deja de dar
+    // el 0.5 clavado, este test tiene que ponerse rojo diciendo que ya no está
+    // midiendo el borde — no seguir verde midiendo un punto cualquiera.
+    const dirZ = enElFilo.z / Math.hypot(enElFilo.x, enElFilo.z);
+    assert.equal(dirZ, FRONT_COS, "el punto de prueba ya no cae en el borde del cono");
+  });
+
+  it("justo en el filo NO se golpea: el borde es de fuera", () => {
+    assert.equal(isInFront(mirandoA, atacante, enElFilo), false);
+  });
+
+  it("un pelo por dentro sí", () => {
+    assert.equal(isInFront(mirandoA, atacante, { x: 1.4 * Math.sqrt(3), y: 0, z: 1.5 }), true);
+  });
+});
+
+describe("un config degenerado no produce NaN", () => {
+  // `distance_tolerance` sale tal cual del JSON y `area_radius` de multiplicar
+  // por un modificador del arma: los dos son editables sin recompilar, así que
+  // un 0 es escribible. Sin la guarda, la fórmula divide por él y el daño sale
+  // NaN — que no es 0 ni es un número, y viaja hasta los puntos de vida.
+  it("tolerancia de distancia nula: 0 de calidad, no NaN", () => {
+    assert.equal(calculateDistanceFactor(5, 5, 0), 0);
+    assert.equal(calculateDistanceFactor(7, 5, 0), 0);
+  });
+
+  it("radio de área nulo: 0 de calidad, no NaN", () => {
+    assert.equal(calculatePrecisionFactor(0, 0), 0);
+    assert.equal(calculatePrecisionFactor(3, 0), 0);
+  });
+
+  it("y el ataque entero sale 0, con el objetivo clavado delante", () => {
+    const params: EffectiveParams = {
+      optimal_distance: 2,
+      distance_tolerance: 1,
+      area_radius: 0,
+      base_damage: 40,
+      damage_reduction: 0,
+      wind_up_time: 0,
+    };
+    const damage = resolveAttack(
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: -1 },
+      { x: 0, y: 0, z: -2 },
+      "idle",
+      params,
+      { quick: { idle: 1 } },
+      "quick",
+    );
+    assert.equal(Number.isNaN(damage), false, "el daño no puede ser NaN");
+    assert.equal(damage, 0);
+  });
+});
+
+describe("el daño es el PRODUCTO de los cuatro factores", () => {
+  // Los tests de integración de arriba solo miran el signo (>0 / ===0), y con
+  // eso una fórmula que dividiera por el daño base o por el factor táctico
+  // seguiría dando un número positivo. Aquí se afirma el valor exacto, con los
+  // cuatro factores distintos de 1 para que ninguno pueda esconderse.
+  const params: EffectiveParams = {
+    optimal_distance: 2,
+    distance_tolerance: 1,
+    area_radius: 1,
+    base_damage: 40,
+    damage_reduction: 0,
+    wind_up_time: 0,
+  };
+
+  it("distancia × precisión × táctica × daño base", () => {
+    const damage = resolveAttack(
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 0, z: -1 },
+      { x: 0, y: 0, z: -2.5 }, // desviación 0.5 de tolerancia 1 ⇒ distancia 0.5
+      "block",
+      params,
+      { quick: { block: 0.5 } }, // táctica 0.5
+      "quick",
+    );
+    // 0.5 (distancia) × 1 (precisión, offset 0) × 0.5 (táctica) × 40 = 10
+    assert.equal(damage, 10);
   });
 });
 

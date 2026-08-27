@@ -243,6 +243,15 @@ describe("calidad del destello de impacto", () => {
         attackFlashQuality(p, from, forward, [lejos]),
       "con dos objetivos manda el mejor, no el primero",
     );
+    // Y NO es "manda el último": con el bueno DELANTE el destello es el mismo.
+    // Sin esta mitad, quedarse siempre con el último objetivo pasaba el test
+    // de arriba —allí el mejor ya era el último— y teñía el destello con lo
+    // que golpeó un enemigo cualquiera en vez de con el mejor golpe.
+    assert.equal(
+      attackFlashQuality(p, from, forward, [clavado, lejos]),
+      attackFlashQuality(p, from, forward, [lejos, clavado]),
+      "el orden en que llegan los objetivos no cambia el destello",
+    );
     assert.equal(attackFlashQuality(p, from, forward, []), 0, "sin objetivos, gris");
   });
 

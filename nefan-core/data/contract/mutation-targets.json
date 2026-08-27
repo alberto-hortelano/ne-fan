@@ -216,8 +216,8 @@
         "test/attack-area.test.ts",
         "test/combat-resolver.test.ts"
       ],
-      "break": 92,
-      "porque": "La fórmula de daño y esa MISMA fórmula vista como área en el suelo (attack-area: lo que dibuja el telegraph del ataque). Van en el mismo módulo porque son una sola verdad — el telegraph tenía copia propia y podía divergir del resolver sin que nada fallara. Los tests de sistemas y de simulación las alcanzan por transitividad pero no las ejercen: los únicos que las importan son estos dos."
+      "break": 100,
+      "porque": "La fórmula de daño y esa MISMA fórmula vista como área en el suelo (attack-area: lo que dibuja el telegraph del ataque). Van en el mismo módulo porque son una sola verdad — el telegraph tenía copia propia y podía divergir del resolver sin que nada fallara. Los tests de sistemas y de simulación las alcanzan por transitividad pero no las ejercen: los únicos que las importan son estos dos. SUELO 100 desde el 2026-08-27: los 7 supervivientes de la corrida 32970154557 eran cuatro huecos reales de test —el filo exacto del cono de ±60°, un `distance_tolerance` o un `area_radius` a 0 (escribibles en el JSON editable, y sin la guarda dan NaN de daño), el daño como PRODUCTO (los tests de integración solo miraban el signo, así que dividir por el daño base o por el factor táctico seguía dando un número positivo) y el destello quedándose con el ÚLTIMO objetivo en vez de con el mejor (el test tenía al mejor el último)— más un equivalente que se fue solo al decir el máximo sin rama. Cada uno se comprobó en negativo antes de medir."
     },
     {
       "id": "blueprint-volumenes",
