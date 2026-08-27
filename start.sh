@@ -11,14 +11,6 @@
 set -uo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# Los nueve logs son nombres FIJOS (`nefan-bridge.log`…) y se TRUNCAN al
-# arrancar. Con `/tmp` a secas eso los hacía globales de máquina: dos stacks
-# —dos worktrees, dos agentes, o una batería de QA y una persona— se pisaban el
-# diagnóstico justo cuando hacía falta leerlo. El default pasa a colgar del
-# nombre del worktree; `NEFAN_LOG_DIR` sigue mandando (qa/run.mjs lo pone al
-# disco efímero de su corrida) y ya no es una variable que no usa nadie.
-LOG_DIR="${NEFAN_LOG_DIR:-/tmp/nefan-$(basename "$PROJECT_DIR")}"
-mkdir -p "$LOG_DIR" || { echo "❌ no puedo crear el directorio de logs $LOG_DIR"; exit 1; }
 SAVES_DIR_NEW="${NEFAN_SAVES_DIR:-$PROJECT_DIR/saves}"
 
 # ─── Puertos ───────────────────────────────────────────────────
@@ -86,6 +78,24 @@ eval "$PORTS_DECL"
 # vuelve «arbitrario» en un mes.
 SERVICIOS_SIN_OFFSET=(ai_server remote-gen narrative-mcp sprite-forge)
 
+# Los nueve logs son nombres FIJOS (`nefan-bridge.log`…) y se TRUNCAN al
+# arrancar. Con `/tmp` a secas eso los hacía globales de MÁQUINA: dos stacks se
+# pisaban el diagnóstico justo cuando hacía falta leerlo.
+#
+# Y la identidad de un stack no es el worktree: es el par (worktree, offset).
+# Indexar solo por worktree movía el bug de global-de-máquina a
+# global-de-worktree — dos bloques desplazados en el MISMO checkout, que es
+# justo lo que el offset existe para permitir, seguían truncando los mismos
+# nueve ficheros. El banco no lo veía porque pone `NEFAN_LOG_DIR` explícito;
+# una persona con dos terminales, sí.
+# `${PORT_OFFSET:+…}` NO vale aquí: "0" es una cadena no vacía, así que el
+# sufijo saldría también en el caso de una sola persona y le cambiaría la ruta
+# de los logs sin motivo. El bloque de siempre no lleva sufijo.
+SUFIJO_BLOQUE=""
+(( PORT_OFFSET != 0 )) && SUFIJO_BLOQUE="-$PORT_OFFSET"
+LOG_DIR="${NEFAN_LOG_DIR:-/tmp/nefan-$(basename "$PROJECT_DIR")$SUFIJO_BLOQUE}"
+mkdir -p "$LOG_DIR" || { echo "❌ no puedo crear el directorio de logs $LOG_DIR"; exit 1; }
+
 # sprite-forge vive fuera de este repo (lo usa más de un proyecto). Sin él,
 # remote-gen devuelve 503 en /skin_sprite_sheet y los NPC salen en maniquí.
 SPRITE_FORGE_DIR="${NEFAN_SPRITE_FORGE_DIR:-$HOME/code/sprite-forge}"
@@ -116,13 +126,50 @@ have_cmd()  { command -v "$1" >/dev/null 2>&1; }
 port_busy() { fuser "$1/tcp" >/dev/null 2>&1; }
 kill_port() { fuser -k "$1/tcp" 2>/dev/null; sleep 0.5; }
 
-# Quién escucha en un puerto, para poder decirlo antes de matarlo.
-port_owner() {
-    local pids
-    pids=$(fuser "$1/tcp" 2>/dev/null) || return 1
-    # shellcheck disable=SC2086
-    ps -o comm=,args= -p $pids 2>/dev/null | head -1 | cut -c1-60
+# ─── Quién escucha, en UNA foto ────────────────────────────────
+#
+# `fuser` lanza un proceso por puerto y recorre /proc entero buscando quién lo
+# tiene: ~8 ms cada uno, y la mayor parte en tiempo de SISTEMA. Con nueve
+# puertos no se nota; el día que hubo que mirar diez bloques (90 puertos) para
+# que `k` encontrara un stack desplazado, sí: 0,77 s de reloj y 0,70 s de
+# sistema en el camino que un agente pisa en CADA teardown. Eso es justo lo que
+# esta tanda venía a mejorar, así que no puede pagarse así.
+#
+# `ss -H -ltn` saca la tabla ENTERA de sockets a la escucha de una vez en
+# ~0,03 s — 25× más barato que una sola pasada de nueve `fuser`— y de propina
+# ve sockets de otros usuarios que `fuser` no ve (ahí `fuser` calla y el puerto
+# parecería libre). `fuser` se reserva para los POCOS puertos que salgan
+# ocupados, y sus pids se capturan UNA vez para alimentar a la vez el «quién
+# es» y el «¿es de este worktree?».
+#
+# OJO al parseo: en `ss -H -ltn` la dirección LOCAL es el campo 4
+# (`LISTEN 0 128 0.0.0.0:22 0.0.0.0:*`). El campo 5 es el PEER, que en un
+# socket a la escucha es siempre `0.0.0.0:*` — leerlo por error metería la
+# clave `*` en la tabla y dejaría todos los puertos como libres.
+declare -A ESCUCHANDO=()
+snapshot_escuchando() {
+    ESCUCHANDO=()
+    local local_addr
+    while read -r _ _ _ local_addr _; do
+        [[ -n "$local_addr" ]] && ESCUCHANDO[${local_addr##*:}]=1
+    done < <(ss -H -ltn 2>/dev/null)
 }
+
+# ¿Escucha alguien en $1, según la última foto? (No lanza procesos.)
+port_en_foto() { [[ -v "ESCUCHANDO[$1]" ]]; }
+
+# Los pids que tienen el puerto $1, en una sola llamada a fuser.
+pids_del_puerto() { fuser "$1/tcp" 2>/dev/null; }
+
+# Quién escucha, a partir de unos pids YA capturados: así el mismo `fuser` sirve
+# para decirlo y para decidir si es nuestro.
+owner_de_pids() {
+    # shellcheck disable=SC2086
+    [[ -n "${1// /}" ]] && ps -o comm=,args= -p $1 2>/dev/null | head -1 | cut -c1-60
+}
+
+# Quién escucha en un puerto, para poder decirlo antes de matarlo.
+port_owner() { owner_de_pids "$(pids_del_puerto "$1")"; }
 
 # ¿El proceso que escucha en $1 vive en ESTE worktree?
 #
@@ -142,14 +189,15 @@ port_owner() {
 # el suyo, así que `k` no lo toca aunque lo haya arrancado este launcher (sí lo
 # hace el `trap EXIT`, que va por PID). Es lo correcto: lo comparten varios
 # proyectos de esta máquina.
-port_de_este_worktree() {
+worktree_de_pids() {
     local pid cwd
-    for pid in $(fuser "$1/tcp" 2>/dev/null); do
+    for pid in $1; do
         cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || continue
         [[ "$cwd" == "$PROJECT_DIR" || "$cwd" == "$PROJECT_DIR"/* ]] && return 0
     done
     return 1
 }
+port_de_este_worktree() { worktree_de_pids "$(pids_del_puerto "$1")"; }
 
 # El puerto tiene que estar LIBRE para arrancar. Si no lo está, se dice quién
 # lo ocupa y se para.
@@ -165,12 +213,15 @@ port_de_este_worktree() {
 # Negarse en vez de saltar a otro puerto es deliberado: así la URL que sale por
 # pantalla es la que uno espera, y quien quiera otro bloque lo pide.
 require_port_free() {
-    local port=$1 label=$2 quien
-    port_busy "$port" || return 0
-    quien=$(port_owner "$port") || quien=""
+    local port=$1 label=$2 quien pids
+    # Un solo `fuser`, y sus pids sirven para las dos preguntas que vienen
+    # detrás («quién es» y «¿es de este worktree?»). Eran tres llamadas.
+    pids=$(pids_del_puerto "$port")
+    [[ -n "${pids// /}" ]] || return 0
+    quien=$(owner_de_pids "$pids")
     echo "❌ :$port ocupado — $label NO arranca (este launcher no mata lo que no arrancó)."
     echo "   lo tiene: ${quien:-(no se puede leer: proceso de otro usuario)}"
-    if port_de_este_worktree "$port"; then
+    if worktree_de_pids "$pids"; then
         echo "   · es de ESTE worktree: párale con la tecla k del menú, o ./start.sh --parar"
     else
         echo "   · NO es de este worktree: puede ser otro agente de la máquina, o el"
@@ -240,6 +291,7 @@ wait_for_http_health() {
 preflight_tools() {
     local missing=()
     have_cmd node || missing+=("node — hace falta para leer el bloque de puertos de nefan-core/data/runtime_config.json")
+    have_cmd ss   || missing+=("ss (iproute2) — la foto de puertos a la escucha; sudo apt install iproute2")
     have_cmd nc   || missing+=("netcat (nc) — sudo apt install netcat-openbsd")
     have_cmd curl || missing+=("curl — sudo apt install curl")
     have_cmd tput || missing+=("tput (ncurses) — sudo apt install ncurses-bin")
@@ -1100,11 +1152,12 @@ cmd_status() {
         "fake-ai:$PORT_FAKE"
         "HTML:$PORT_HTML"
     )
+    snapshot_escuchando
     local pair name port
     for pair in "${pairs[@]}"; do
         name=${pair%:*}
         port=${pair#*:}
-        if port_busy "$port"; then
+        if port_en_foto "$port"; then
             printf "    ✅  %-15s :%d\n" "$name" "$port"
         else
             printf "    ⬜  %-15s :%d\n" "$name" "$port"
@@ -1123,13 +1176,6 @@ cmd_status() {
 # Todos los puertos que el launcher puede haber ocupado — compartido por
 # cmd_stop y el fallback de cleanup para que ningún servicio quede colgado.
 ALL_PORTS=("$PORT_BRIDGE" "$PORT_STATE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_RGEN" "$PORT_FORGE" "$PORT_FAKE")
-
-# ¿Está este puerto en STARTED_PORTS (lo arrancó ESTE proceso)?
-port_iniciado_aqui() {
-    local p
-    for p in "${STARTED_PORTS[@]}"; do [[ "$p" == "$1" ]] && return 0; done
-    return 1
-}
 
 # La tecla `k`: parar el stack de ESTE worktree.
 #
@@ -1167,11 +1213,16 @@ cmd_stop() {
             for base in "${ALL_PORTS[@]}"; do puertos+=("$(( base - PORT_OFFSET + off ))"); done
         done
     fi
-    local port who alguno=0 saltados=0
+    # UNA foto de toda la tabla de sockets, y a partir de ahí solo se lanza un
+    # proceso por puerto que de verdad esté ocupado. Antes eran 90 `fuser` en
+    # serie (0,77 s) más otros dos por cada ocupado.
+    snapshot_escuchando
+    local port who pids alguno=0 saltados=0
     for port in "${puertos[@]}"; do
-        port_busy "$port" || continue
-        who=$(port_owner "$port")
-        if [[ "$todo" != "todo" ]] && ! port_iniciado_aqui "$port" && ! port_de_este_worktree "$port"; then
+        port_en_foto "$port" || continue
+        pids=$(pids_del_puerto "$port")
+        who=$(owner_de_pids "$pids")
+        if [[ "$todo" != "todo" ]] && ! worktree_de_pids "$pids"; then
             echo "    ⏭  :$port  ${who:-(desconocido)}  — AJENO, no se toca"
             saltados=1
             continue

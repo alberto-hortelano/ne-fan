@@ -94,9 +94,21 @@ export const ArchConfigSchema = z
 export type ArchRule = z.infer<typeof RuleSchema>;
 export type ArchConfig = z.infer<typeof ArchConfigSchema>;
 
+/** Globs ya compilados. Un glob es función PURA de su cadena, así que la
+ *  misma entrada da siempre la misma regex y cachearla es seguro.
+ *
+ *  No es micro-optimización: `checkArchitecture` llama a `matchesAny` por cada
+ *  par (regla, fichero) y hoy son 24 reglas × 639 ficheros, o sea ~15.000
+ *  compilaciones de regex por pasada. Medido: de los ~163 ms de una pasada,
+ *  ~120 ms eran solo eso. Lo paga `npm test` en cada vuelta y `npm run deuda`
+ *  cada vez que alguien mira la cola. */
+const globCache = new Map<string, RegExp>();
+
 /** Glob a regex: soporta `**` (cualquier profundidad), `*` (dentro de un
  *  segmento) y `?`. Todo lo demás se escapa — nada de sorpresas. */
 export function globToRegExp(glob: string): RegExp {
+  const cacheado = globCache.get(glob);
+  if (cacheado) return cacheado;
   let out = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
@@ -119,7 +131,9 @@ export function globToRegExp(glob: string): RegExp {
       out += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
     }
   }
-  return new RegExp(`^${out}$`);
+  const re = new RegExp(`^${out}$`);
+  globCache.set(glob, re);
+  return re;
 }
 
 export function matchesAny(path: string, globs: readonly string[]): boolean {

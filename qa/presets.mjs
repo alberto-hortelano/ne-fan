@@ -36,8 +36,8 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import net from "node:net";
 import { PUERTOS, PUERTOS_TODOS } from "./lib/stack.mjs";
+import { puertoOcupado as portBusy } from "./lib/puertos.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const START_SH = join(repoRoot, "start.sh");
@@ -107,18 +107,6 @@ const soloLista = args.includes("--lista");
 const filtros = args.filter((a) => !a.startsWith("--"));
 const elegidos = casos.filter((c) => filtros.length === 0 || filtros.some((f) => c.slug.includes(f)));
 
-function portBusy(port) {
-  return new Promise((resolve) => {
-    const sock = net.connect({ port, host: "127.0.0.1" });
-    const done = (v) => {
-      sock.destroy();
-      resolve(v);
-    };
-    sock.once("connect", () => done(true));
-    sock.once("error", () => done(false));
-    setTimeout(() => done(false), 800);
-  });
-}
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function puertosArriba(ports) {

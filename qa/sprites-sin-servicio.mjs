@@ -42,7 +42,8 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import net from "node:net";
+import { PUERTOS_TODOS } from "./lib/stack.mjs";
+import { puertoOcupado } from "./lib/puertos.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
@@ -50,18 +51,16 @@ const KEEP = process.argv.includes("--keep");
 /** Reutilizar un remote-gen que ya esté arriba. Por defecto NO: ver abajo. */
 const REUSAR = process.argv.includes("--reusar");
 
-/** Nada de constantes copiadas: los puertos y la URL del servicio salen de
- *  donde los lee el propio juego. */
-const CONFIG = JSON.parse(readFileSync(join(repoRoot, "nefan-core/data/runtime_config.json"), "utf8"));
-const FORGE_URL = String(CONFIG.ai_server?.sprite_forge_url ?? "");
-if (!FORGE_URL) throw new Error("runtime_config.json no trae ai_server.sprite_forge_url");
-// El puerto sale de la URL del snapshot; sin él no hay a quién llamar.
-const FORGE_PORT = Number(new URL(FORGE_URL).port);
-if (!FORGE_PORT) throw new Error(`sprite_forge_url sin puerto: ${FORGE_URL}`);
-// Sin `?? 8768`: un snapshot que no declara el puerto es un error, no un
-// número inventado que apunta a saber qué proceso.
-const RGEN_PORT = Number(CONFIG.ports?.remote_gen);
-if (!RGEN_PORT) throw new Error("runtime_config.json no trae ports.remote_gen");
+/** Nada de constantes copiadas: los puertos salen del mismo lector que usa el
+ *  resto del banco, que además aplica `NEFAN_PORT_OFFSET`.
+ *
+ *  Que lo honre no es cosmética: era el ÚNICO consumidor de `qa/` que leía el
+ *  snapshot a pelo, así que en un stack desplazado arrancaba su remote-gen en
+ *  el puerto BASE — el del vecino— y medía contra el servicio de otro. Es
+ *  literalmente el desenlace que esta tanda cierra. */
+const FORGE_PORT = PUERTOS_TODOS.sprite_forge;
+const RGEN_PORT = PUERTOS_TODOS.remote_gen;
+const FORGE_URL = `http://127.0.0.1:${FORGE_PORT}`;
 const SKINS_DIR = join(repoRoot, "cache/sprite_sheets");
 const INDEX = join(SKINS_DIR, "_base_keys.json");
 const FORGE_DIR = process.env.NEFAN_SPRITE_FORGE_DIR ?? join(process.env.HOME ?? "", "code/sprite-forge");
@@ -72,19 +71,17 @@ const hijos = [];
 function ok(t) { console.log(`  ✔ ${t}`); }
 function mal(t) { console.log(`  ✘ ${t}`); fallos.push(t); }
 
-function portBusy(port) {
-  return new Promise((res) => {
-    const s = net.connect({ port, host: "127.0.0.1" });
-    s.on("connect", () => (s.destroy(), res(true)));
-    s.on("error", () => res(false));
-    setTimeout(() => (s.destroy(), res(false)), 800);
-  });
-}
-
+/** Espera a que el puerto esté ocupado (`quiero=true`) o libre (`quiero=false`).
+ *
+ *  El SONDEO ya no es propio —es `puertoOcupado` de `lib/puertos.mjs`, la única
+ *  copia—, pero la espera sí se queda aquí y devolviendo booleano a propósito:
+ *  este guion apaga servicios a media prueba y necesita AFIRMAR sobre el
+ *  resultado (`mal("sprite-forge no se murió")`), no morir con una excepción
+ *  que se llevaría por delante el resto del veredicto. */
 async function waitPort(port, ms, quiero = true) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
-    if ((await portBusy(port)) === quiero) return true;
+    if ((await puertoOcupado(port)) === quiero) return true;
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
@@ -154,7 +151,7 @@ async function main() {
   const nuevo = { ...cuerpo, prompt: `personaje que no existe ${Date.now()}` };
 
   // ── sprite-forge, SIN worker de repintado: no hay nada que pueda gastar ──
-  if (await portBusy(FORGE_PORT)) {
+  if (await puertoOcupado(FORGE_PORT)) {
     console.log(`ROJO — el puerto ${FORGE_PORT} ya está ocupado; este guion necesita matarlo a media prueba.`);
     return 1;
   }
@@ -176,7 +173,7 @@ async function main() {
   // proceso de hace dos minutos hizo que el guion diera VERDE con el bug
   // reintroducido a propósito. Un candado que da fe de un fichero que no es el
   // que corre es peor que no tener candado.
-  if (await portBusy(RGEN_PORT)) {
+  if (await puertoOcupado(RGEN_PORT)) {
     if (!REUSAR) {
       console.log(`ROJO — ya hay algo escuchando en :${RGEN_PORT} y no lo he arrancado yo.`);
       console.log("  Ese proceso cargó el adaptador cuando arrancó: si has tocado");

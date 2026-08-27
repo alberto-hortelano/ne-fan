@@ -44,6 +44,10 @@
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
 import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
+// El sondeo y la espera por puerto viven en UN sitio: llegó a haber cinco
+// copias con relojes ya divergidos (500 ms / 800 ms), y la que elige el
+// bloque decide si dos corridas colisionan — el criterio 3 entero.
+import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
 import { spawn } from "node:child_process";
 import {
   readdirSync,
@@ -58,7 +62,6 @@ import {
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import net from "node:net";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
@@ -83,20 +86,6 @@ const DIAG = flag("--diag");
  *  stack" no significa "el mío". */
 const ADOPTAR = flag("--adoptar");
 const ORDEN = opt("--orden", "alfabetico");
-
-/** ¿Hay alguien escuchando? (versión mínima, antes de tener el bloque.) */
-function ocupado(port) {
-  return new Promise((resolve) => {
-    const sock = net.connect({ port, host: "127.0.0.1" });
-    const done = (v) => {
-      sock.destroy();
-      resolve(v);
-    };
-    sock.once("connect", () => done(true));
-    sock.once("error", () => done(false));
-    setTimeout(() => done(false), 800);
-  });
-}
 
 /** ¿Sigue vivo ese pid? (señal 0: no manda nada, solo pregunta.) */
 function pidVivo(pid) {
@@ -155,9 +144,17 @@ async function elegirBloque() {
   for (let off = 0; off <= 900; off += 100) {
     const lock = reservarBloque(off);
     if (!lock) continue; // otra corrida ya lo pidió
-    const libres = [];
-    for (const k of claves) libres.push(!(await ocupado(PUERTOS_BASE[k] + off)));
-    if (libres.every(Boolean)) {
+    // Al PRIMER puerto ocupado se abandona el bloque: los otros dos ya no
+    // pueden cambiar la respuesta, y con varios stacks arriba eran hasta 27
+    // conexiones en serie para contestar lo mismo.
+    let libre = true;
+    for (const k of claves) {
+      if (await puertoOcupado(PUERTOS_BASE[k] + off)) {
+        libre = false;
+        break;
+      }
+    }
+    if (libre) {
       lockDelBloque = lock;
       return off;
     }
@@ -228,28 +225,6 @@ const ROJO = "rojo";
 const SIN_MEDIR = "sin-medir";
 const ICONO = { [VERDE]: "✔", [ROJO]: "✘", [SIN_MEDIR]: "⊘" };
 
-function portBusy(port, host = "127.0.0.1") {
-  return new Promise((resolve) => {
-    const sock = net.connect({ port, host });
-    const done = (v) => {
-      sock.destroy();
-      resolve(v);
-    };
-    sock.once("connect", () => done(true));
-    sock.once("error", () => done(false));
-    setTimeout(() => done(false), 800);
-  });
-}
-
-async function waitPort(port, label, timeoutMs = 90_000) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < timeoutMs) {
-    if (await portBusy(port)) return;
-    await new Promise((r) => setTimeout(r, 400));
-  }
-  throw new Error(`${label} (:${port}) no respondió en ${timeoutMs / 1000}s`);
-}
-
 /** Arranca el preset `e2e-sin-creditos` (fake-ai + bridge + cliente, cero
  *  créditos) por el mismo camino que usaría una persona:
  *  `./start.sh --preset e2e-sin-creditos`. Si el stack ya está arriba, no toca
@@ -268,20 +243,18 @@ const PUERTOS_DEL_STACK = [
  *  conexiones TCP que, con el puerto vivo, resuelven en el acto. */
 async function serviciosCaidos() {
   const caidos = [];
-  for (const [port, label] of PUERTOS_DEL_STACK) if (!(await portBusy(port))) caidos.push(`${label} (:${port})`);
+  for (const [port, label] of PUERTOS_DEL_STACK) if (!(await puertoOcupado(port))) caidos.push(`${label} (:${port})`);
   return caidos;
 }
 
 async function ensureStack() {
-  const vivos = [];
+  // `vivos` y `ocupados` eran la misma lista con dos nombres, y de `vivos`
+  // solo se leía `.length`.
   const ocupados = [];
   for (const [port, label] of PUERTOS_DEL_STACK) {
-    if (await portBusy(port)) {
-      vivos.push(label);
-      ocupados.push(`${label} (:${port})`);
-    }
+    if (await puertoOcupado(port)) ocupados.push(`${label} (:${port})`);
   }
-  if (vivos.length === PUERTOS_DEL_STACK.length) {
+  if (ocupados.length === PUERTOS_DEL_STACK.length) {
     // Adoptar un stack que ya estaba dejó de ser el defecto. Cuando en la
     // máquina trabaja un solo agente, "los tres puertos están arriba" y "el
     // stack es mío" son la misma frase; con dos agentes deja de serlo, y el
@@ -301,7 +274,7 @@ async function ensureStack() {
     console.log("· stack ya arriba — lo adopto (--adoptar/--url), no lo toco");
     return null;
   }
-  if (vivos.length > 0) {
+  if (ocupados.length > 0) {
     // Medio stack en pie no es un stack: arrancar encima daría fallos raros
     // (puerto ocupado, cliente sin backend) en vez de un error claro.
     throw new Error(
@@ -338,7 +311,7 @@ async function ensureStack() {
   });
   child.stdout.on("data", (b) => process.env.QA_VERBOSE && process.stdout.write(`  | ${b}`));
   child.stderr.on("data", (b) => process.env.QA_VERBOSE && process.stderr.write(`  ! ${b}`));
-  for (const [port, label] of PUERTOS_DEL_STACK) await waitPort(port, label);
+  for (const [port, label] of PUERTOS_DEL_STACK) await esperarPuertoArriba(port, { quien: label });
   console.log("· stack listo");
   return child;
 }
@@ -631,7 +604,17 @@ async function main() {
   // anterior vaciaba `qa/capturas/` entera al arrancar: con dos baterías a la
   // vez, la segunda le borraba a la primera las pruebas de lo que acababa de
   // medir. El enlace `ultima` conserva la costumbre de mirar siempre al mismo
-  // sitio; poda por antigüedad, nunca por «no es mío».
+  // sitio.
+  //
+  // OJO — esto NO poda nada, y decir que sí lo hacía era la clase de comentario
+  // que se convierte en una creencia: `qa/capturas/<corrida>` se acumula sin
+  // límite (una corrida deja ~75 ficheros / 14 MB) mientras que `main` borraba
+  // el directorio entero y lo mantenía acotado. Es deuda ASUMIDA con la tanda,
+  // no un descuido: el precio de que dos corridas no se pisen las pruebas. La
+  // poda por antigüedad —nunca por «no es mío»— está en el backlog del plan
+  // (§6e) y no se hace aquí. Lo que sí se hizo el mismo día es que el escaneo
+  // de arquitectura deje de recorrerlo (`scan.ignore` en arch-rules.json), que
+  // era quien pagaba el crecimiento en cada `npm test`.
   rmSync(SHOTS, { recursive: true, force: true });
   mkdirSync(SHOTS, { recursive: true });
   try {

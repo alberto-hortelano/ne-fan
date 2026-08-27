@@ -145,6 +145,12 @@ export interface NefanConfig {
     /** sprite-forge: hojas de sprites de personaje. Vive en OTRO repo, así que
      *  aquí solo se declara DÓNDE se le pide que escuche (`--port`). */
     sprite_forge: number;
+    /** API de control del emulador de juego (`labs/narrative/game-emulator.mjs`):
+     *  el bench narrativo se conduce con curl contra ella. No lo arranca
+     *  `start.sh`, pero es un puerto del stack igual, y estaba escrito a mano
+     *  en el único sitio donde la regla `nadie-inventa-un-puerto` no miraba —
+     *  el décimo servicio entrando solo por la puerta de atrás. */
+    game_emulator: number;
   };
   /** Contenido de juego compartido entre bridge y ai_server (paths relativos
    *  a la raíz del repo). El bridge los usa para listar/arrancar juegos; el
@@ -166,6 +172,7 @@ const PORT_NARRATIVE_WS = 3737;
 const PORT_HTML = 3000;
 const PORT_FAKE_AI = 18765;
 const PORT_SPRITE_FORGE = 8770;
+const PORT_GAME_EMULATOR = 9899;
 
 export const CONFIG: NefanConfig = {
   graphics: {
@@ -218,6 +225,7 @@ export const CONFIG: NefanConfig = {
     remote_gen: SERVICES["remote-gen"].currentPort,
     fake_ai: PORT_FAKE_AI,
     sprite_forge: PORT_SPRITE_FORGE,
+    game_emulator: PORT_GAME_EMULATOR,
   },
   content: {
     games_dir: "nefan-core/data/games",

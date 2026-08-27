@@ -39,7 +39,8 @@
     "asset_store": 8767,
     "remote_gen": 8768,
     "fake_ai": 18765,
-    "sprite_forge": 8770
+    "sprite_forge": 8770,
+    "game_emulator": 9899
   },
   "content": {
     "games_dir": "nefan-core/data/games",

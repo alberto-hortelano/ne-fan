@@ -34,8 +34,8 @@ import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import net from "node:net";
 import { PUERTOS_BASE } from "./lib/stack.mjs";
+import { puertoOcupado as ocupado } from "./lib/puertos.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
@@ -51,19 +51,6 @@ const mal = (t, d) => {
   console.log(`  ✘ ${t}${d ? ` — ${d}` : ""}`);
   fallos.push(t);
 };
-
-function ocupado(port) {
-  return new Promise((res) => {
-    const s = net.connect({ port, host: "127.0.0.1" });
-    const fin = (v) => {
-      s.destroy();
-      res(v);
-    };
-    s.once("connect", () => fin(true));
-    s.once("error", () => fin(false));
-    setTimeout(() => fin(false), 800);
-  });
-}
 
 /** Lanza una batería y devuelve su promesa de `{code, salida}`. */
 function lanzar(etiqueta) {

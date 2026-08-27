@@ -41,6 +41,7 @@
 //   LOOP         =1 reinicia la película al terminar
 
 import { readFileSync } from "node:fs";
+import { PUERTOS_TODOS } from "../../qa/lib/stack.mjs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 // Import relativo a ESTE fichero (labs/narrative/ → raíz del repo → nefan-core).
@@ -51,12 +52,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOG =
   process.env.LOG ??
   resolve(__dirname, "runs", "session-2026-06-25", "events.ndjson");
-/** Puerto del gateway, de la fuente única del repo (no un literal). `PORT` del
- *  entorno manda: por ahí le llega el bloque desplazado desde `start.sh`. */
-const RUNTIME_CONFIG = JSON.parse(
-  readFileSync(new URL("../../nefan-core/data/runtime_config.json", import.meta.url), "utf8"),
-);
-const PORT = Number(process.env.PORT ?? RUNTIME_CONFIG.ports.bridge);
+/** Puerto del gateway, de la fuente única del repo por el único lector que hay
+ *  en JS (que aplica el offset y falla diciendo cómo regenerar el snapshot).
+ *  `PORT` del entorno manda: por ahí le llega el bloque desde `start.sh`. */
+const PORT = Number(process.env.PORT ?? PUERTOS_TODOS.bridge);
 const HOLD_MS = Number(process.env.HOLD_MS ?? 3000);
 const FLASH_MS = Number(process.env.FLASH_MS ?? 200);
 const REAL_TIMING = process.env.REAL_TIMING === "1";

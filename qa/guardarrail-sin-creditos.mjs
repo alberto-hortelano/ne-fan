@@ -40,12 +40,14 @@ const mal = (t, detalle) => {
   fallos.push(t);
 };
 
-/** Un servidor de pega que contesta `body` en /health, con CORS abierto (que
- *  es lo que hacen tanto el motor falso como la State API del bridge). */
-function servidor(body, { corsAbierto = true } = {}) {
+/** Un servidor de pega que contesta `body` en /health, con CORS abierto — que
+ *  es lo que hacen tanto el motor falso como la State API del bridge, así que
+ *  no hay caso que necesite cerrarlo. (El desenlace «el CORS no deja leer» ya
+ *  está cubierto: se resuelve por la misma rama que «no contesta».) */
+function servidor(body) {
   return new Promise((res) => {
     const srv = http.createServer((req, resp) => {
-      const cors = corsAbierto ? { "Access-Control-Allow-Origin": "*" } : {};
+      const cors = { "Access-Control-Allow-Origin": "*" };
       if (req.method === "OPTIONS") {
         resp.writeHead(204, cors);
         return resp.end();
@@ -65,12 +67,7 @@ function servidor(body, { corsAbierto = true } = {}) {
  *  Publica `__nefan.servicios()` exactamente como el cliente. */
 function paginaConServicios() {
   return new Promise((res) => {
-    let urls = {};
-    const srv = http.createServer((req, resp) => {
-      if (req.url.startsWith("/servicios")) {
-        resp.writeHead(200, { "Content-Type": "application/json" });
-        return resp.end(JSON.stringify(urls));
-      }
+    const srv = http.createServer((_req, resp) => {
       resp.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       resp.end(
         `<!doctype html><title>guardarrail</title><script>
@@ -80,12 +77,7 @@ function paginaConServicios() {
     });
     srv.listen(0, "127.0.0.1", () => {
       servidores.push(srv);
-      res({
-        url: `http://127.0.0.1:${srv.address().port}/`,
-        set: (v) => {
-          urls = v;
-        },
-      });
+      res({ url: `http://127.0.0.1:${srv.address().port}/` });
     });
   });
 }

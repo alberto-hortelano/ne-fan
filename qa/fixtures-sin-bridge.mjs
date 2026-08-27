@@ -28,7 +28,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import net from "node:net";
+import { puertoOcupado } from "./lib/puertos.mjs";
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
 import { PUERTOS } from "./lib/stack.mjs";
@@ -40,19 +40,12 @@ const HEADED = process.argv.includes("--headed");
 const KEEP = process.argv.includes("--keep");
 const PORT = PUERTOS.html;
 
-function portBusy(port) {
-  return new Promise((resolve) => {
-    const s = net.connect({ port, host: "127.0.0.1" });
-    s.on("connect", () => (s.destroy(), resolve(true)));
-    s.on("error", () => resolve(false));
-    setTimeout(() => (s.destroy(), resolve(false)), 800);
-  });
-}
-
+/** Espera booleana (no lanza): este guion afirma sobre el arranque en vez de
+ *  morir con una excepción. El sondeo es el compartido. */
 async function waitPort(port, ms) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
-    if (await portBusy(port)) return true;
+    if (await puertoOcupado(port)) return true;
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
@@ -73,7 +66,7 @@ async function main() {
   const fallos = [];
   let child = null;
 
-  if (await portBusy(PORT)) {
+  if (await puertoOcupado(PORT)) {
     console.log(`· :${PORT} ya está arriba — lo uso tal cual, no arranco nada`);
   } else {
     // Por SLUG, no por número: los números de preset se renumeran.

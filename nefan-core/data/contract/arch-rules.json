@@ -1,5 +1,5 @@
 {
-  "$comment": "Fronteras arquitectónicas de ne-fan, verificadas por test/architecture.test.ts. Cada regla sustituye a un invariante que antes solo vivía como prosa en CLAUDE.md. severity=error: verde hoy, no puede volver a romperse. severity=warn: deuda YA existente, congelada en `max` — el test falla si CRECE. Toda excepción lleva motivo obligatorio.",
+  "$comment": "Fronteras arquitectónicas de ne-fan, verificadas por test/architecture.test.ts. Cada regla sustituye a un invariante que antes solo vivía como prosa en CLAUDE.md. severity=error: verde hoy, no puede volver a romperse. severity=warn: deuda YA existente, congelada en `max` — el test falla si CRECE. Toda excepción lleva motivo obligatorio. El `ignore` es por NOMBRE de directorio y cubre además los árboles REGENERABLES que ningún escaneo debe recorrer: `capturas` (qa/capturas/<corrida>/ — desde 2026-08-27 se acumula por corrida en vez de vaciarse, y una sola deja ~75 ficheros), `.tmp`, `coverage` y `reports`. Nada de ahí se recolecta nunca, y recorrerlo lo paga cada `npm test`.",
   "scan": {
     "roots": [
       {
@@ -76,7 +76,11 @@
       "dist",
       ".venv",
       "__pycache__",
-      "archivo"
+      "archivo",
+      "capturas",
+      ".tmp",
+      "coverage",
+      "reports"
     ]
   },
   "rules": [
@@ -479,7 +483,7 @@
     {
       "id": "nadie-inventa-un-puerto",
       "desc": "Los puertos del stack no se escriben a mano fuera de su fuente única",
-      "why": "Los nueve puertos del catálogo estaban declarados CINCO veces: `start.sh` (una vez en variables y otra a mano dentro de SERVICE_LABELS, que es de donde los leía qa/presets.mjs), `nefan-html/vite.config.ts`, `qa/run.mjs` (BASE, FAKE_AI, la tabla de espera y un ws:// suelto), `qa/lib/saves.mjs` y los benches de labs/narrative — mientras `nefan-core/src/config.ts` decía por escrito, en su cabecera, ser «la fuente única de puertos». El hallazgo no era que faltara una fuente única: era que sobraba todo lo que la ignoraba. Y la copia no era solo duplicación: el guardarraíl de cero créditos del banco reconocía al motor falso por su número de puerto contra una constante que el propio runner había escrito en la URL, así que era una tautología que nunca miró un backend. Dos consecuencias medidas: tocar solo las variables de `start.sh` dejaba a `qa/presets.mjs` validando los números viejos, y cualquier desplazamiento de bloque —lo que permite que dos agentes trabajen a la vez en esta máquina— deja ciego a todo lo que copió el número. Hoy la fuente es `src/config.ts` (que deriva del registro de servicios) y viaja a los procesos no-TS por `data/runtime_config.json`; el desplazamiento lo suma `portOffset`. El patrón busca los nueve números precedidos de `:` o `=`, que es como se escribe un puerto (`:3000`, `PORT_HTML=3000`, `http://127.0.0.1:9877`) y no como se escribe un milisegundo (`?? 3000`, `timeout: 30000` — el `\\b` final los deja fuera). Los ficheros de la FUENTE no entran en `files` a propósito: `src/config.ts`, `src/contracts/service-registry.ts` y el snapshot son donde los números tienen que estar.",
+      "why": "Los nueve puertos del catálogo estaban declarados CINCO veces: `start.sh` (una vez en variables y otra a mano dentro de SERVICE_LABELS, que es de donde los leía qa/presets.mjs), `nefan-html/vite.config.ts`, `qa/run.mjs` (BASE, FAKE_AI, la tabla de espera y un ws:// suelto), `qa/lib/saves.mjs` y los benches de labs/narrative — mientras `nefan-core/src/config.ts` decía por escrito, en su cabecera, ser «la fuente única de puertos». El hallazgo no era que faltara una fuente única: era que sobraba todo lo que la ignoraba. Y la copia no era solo duplicación: el guardarraíl de cero créditos del banco reconocía al motor falso por su número de puerto contra una constante que el propio runner había escrito en la URL, así que era una tautología que nunca miró un backend. Dos consecuencias medidas: tocar solo las variables de `start.sh` dejaba a `qa/presets.mjs` validando los números viejos, y cualquier desplazamiento de bloque —lo que permite que dos agentes trabajen a la vez en esta máquina— deja ciego a todo lo que copió el número. Hoy la fuente es `src/config.ts` (que deriva del registro de servicios) y viaja a los procesos no-TS por `data/runtime_config.json`; el desplazamiento lo suma `portOffset`. Los ficheros de la FUENTE no entran en `files` a propósito: `src/config.ts`, `src/contracts/service-registry.ts` y el snapshot son donde los números tienen que estar. El patrón NO enumera los nueve números, y esa fue la primera versión: enumerar protege exactamente lo que ya se limpió y deja entrar al décimo servicio solo. Se comprobó midiendo — `labs/narrative/game-emulator.mjs` declaraba `CTRL_PORT ?? 9899` en un fichero que la regla YA escaneaba y pasaba por delante de ella sin que nadie lo notara. Ahora se caza la FORMA de un puerto: un identificador que contiene «port» o «puerto» seguido de una asignación/default, o un número de 4-5 dígitos detrás de `127.0.0.1:`, `localhost:`, `ws://…:` o `http://…:`. Medido sobre los 58 ficheros del ámbito: 1 acierto (el 9899, que entró en el bloque como `ports.game_emulator`) y CERO falsos positivos — ni `width: 1280`, ni `timeout: 30000`, ni `maxMs = 90_000`, ni `HOLD_MS ?? 3000`, que son los milisegundos que un patrón de números sueltos sí habría cazado. La variante en español está a propósito: en esta casa las variables se llaman `puerto` tan a menudo como `port`.",
       "severity": "error",
       "files": [
         "start.sh",
@@ -488,7 +492,7 @@
         "labs/**/*.mjs"
       ],
       "text": {
-        "pattern": "[:=]\\s*(?:9877|9878|3000|8765|3737|8767|8768|18765|8770)\\b"
+        "pattern": "(\\b[A-Za-z_]*([Pp][Oo][Rr][Tt]|[Pp][Uu][Ee][Rr][Tt][Oo])[A-Za-z_]*\\s*[?:=|]{1,3}\\s*|127\\.0\\.0\\.1:|localhost:|ws://[^ ]*:|http://[^ ]*:)[0-9]{4,5}\\b"
       }
     },
     {

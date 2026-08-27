@@ -21,8 +21,18 @@
 import net from "node:net";
 
 /** ¿Hay alguien escuchando? Una conexión que abre y se cierra: no manda nada,
- *  así que vale igual para un WebSocket que para un HTTP. */
-export function puertoOcupado(port, host = "127.0.0.1") {
+ *  así que vale igual para un WebSocket que para un HTTP.
+ *
+ *  ES LA ÚNICA COPIA, y eso importa más de lo que parece. Llegó a haber CINCO
+ *  —esta, dos en `run.mjs`, una en `dos-corridas.mjs` y otra en `presets.mjs`—
+ *  y los cortafuegos ya habían divergido: 500 ms aquí, 800 ms allí. La que
+ *  elige el bloque de puertos de una corrida decide si dos baterías colisionan,
+ *  o sea el criterio 3 entero: no puede ser una copia con otro reloj.
+ *
+ *  `timeoutMs` es un cortafuegos, no la condición: la respuesta normal llega
+ *  por `connect` o por `error` en microsegundos sobre loopback. Solo se agota
+ *  con un puerto filtrado por firewall, y entonces «no contesta» = «no está». */
+export function puertoOcupado(port, { host = "127.0.0.1", timeoutMs = 500 } = {}) {
   return new Promise((res) => {
     const s = net.connect({ port, host });
     const fin = (v) => {
@@ -31,7 +41,7 @@ export function puertoOcupado(port, host = "127.0.0.1") {
     };
     s.once("connect", () => fin(true));
     s.once("error", () => fin(false));
-    setTimeout(() => fin(false), 500);
+    setTimeout(() => fin(false), timeoutMs);
   });
 }
 

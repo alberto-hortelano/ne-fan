@@ -71,22 +71,27 @@ export async function diagnosticoDeCreditos(ctx, timeoutMs = 5000) {
       return { ok: false, motivo: "la página no publica __nefan.servicios()", cliente: null, bridge: null };
     }
     const urls = hook.servicios();
-    const cliente = await salud(urls["narrative-llm"]);
 
-    // La segunda vía: a quién habla el BRIDGE. Se pregunta a la State API, que
-    // es quien lo sabe; si no contesta o no lo publica, no es falso.
-    let bridge = { url: null, fake: false, motivo: "la State API no contesta" };
-    try {
-      const base = String(urls["world-state"] ?? "").replace(/\/+$/, "");
-      const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(ms) });
-      const body = r.ok ? await r.json() : null;
-      const motor = typeof body?.ai_server_url === "string" ? body.ai_server_url : "";
-      bridge = motor
-        ? await salud(motor)
-        : { url: null, fake: false, motivo: "la State API no publica ai_server_url" };
-    } catch (e) {
-      bridge = { url: null, fake: false, motivo: `State API ilegible (${String(e).slice(0, 80)})` };
-    }
+    /** La segunda vía: a quién habla el BRIDGE. Se pregunta a la State API, que
+     *  es quien lo sabe; si no contesta o no lo publica, no es falso. */
+    const viaDelBridge = async () => {
+      try {
+        const base = String(urls["world-state"] ?? "").replace(/\/+$/, "");
+        const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(ms) });
+        const body = r.ok ? await r.json() : null;
+        const motor = typeof body?.ai_server_url === "string" ? body.ai_server_url : "";
+        if (!motor) return { url: null, fake: false, motivo: "la State API no publica ai_server_url" };
+        return salud(motor);
+      } catch (e) {
+        return { url: null, fake: false, motivo: `State API ilegible (${String(e).slice(0, 80)})` };
+      }
+    };
+
+    // EN PARALELO, y no en serie: las dos cadenas no comparten un solo dato. En
+    // el camino feliz da igual (2-4 ms), pero el desenlace que importa es el
+    // otro — con un backend colgado, en serie se pagaban DOS timeouts enteros
+    // antes de poder decir que no.
+    const [cliente, bridge] = await Promise.all([salud(urls["narrative-llm"]), viaDelBridge()]);
 
     const ok = cliente.fake === true && bridge.fake === true;
     const motivo = ok

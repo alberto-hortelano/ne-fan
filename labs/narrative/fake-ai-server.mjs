@@ -20,18 +20,17 @@ import http from "node:http";
 import zlib from "node:zlib";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
+import { PUERTOS_TODOS } from "../../qa/lib/stack.mjs";
 import { fileURLToPath } from "node:url";
 
 /** Los puertos salen de la fuente única del repo (`nefan-core/src/config.ts` →
- *  `data/runtime_config.json`), no de un literal aquí. `PORT`/`STATE_API` del
- *  entorno siguen mandando, y es por ahí por donde `start.sh` le pasa el bloque
- *  cuando el stack va desplazado (varias corridas en la misma máquina); un
- *  arranque a mano usa el bloque de siempre. */
-const RUNTIME_CONFIG = JSON.parse(
-  readFileSync(new URL("../../nefan-core/data/runtime_config.json", import.meta.url), "utf8"),
-);
-const PORT = Number(process.env.PORT ?? RUNTIME_CONFIG.ports.fake_ai);
-const STATE_API = process.env.STATE_API ?? `http://127.0.0.1:${RUNTIME_CONFIG.ports.state_api}`;
+ *  `data/runtime_config.json`) a través del ÚNICO lector que hay en JS, que
+ *  además aplica `NEFAN_PORT_OFFSET` y falla con un mensaje que dice cómo
+ *  regenerar el snapshot (aquí había un `readFileSync` a mano que en un clon
+ *  limpio reventaba con un ENOENT crudo). `PORT`/`STATE_API` del entorno
+ *  siguen mandando: es por ahí por donde `start.sh` pasa el bloque. */
+const PORT = Number(process.env.PORT ?? PUERTOS_TODOS.fake_ai);
+const STATE_API = process.env.STATE_API ?? `http://127.0.0.1:${PUERTOS_TODOS.state_api}`;
 // Retardo artificial de TODO /generate_scene (ms), ANTES de responder nada
 // (ni cabeceras): reproduce las esperas de minutos del motor real. Regresión
 // del headersTimeout de undici (300 s) en el fetch del bridge.
