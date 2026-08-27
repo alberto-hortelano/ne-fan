@@ -357,6 +357,46 @@ describe("validateScene — el hueco tiene que admitir el cuerpo mayor", () => {
     assert.equal(r.stats.npcs_reachable, 0);
   });
 
+  it("y el cuerpo se juzga TAMBIÉN en un tile sin costuras ni entrada (el prefetch del anillo)", () => {
+    // El caso donde el candado callaba: «¿cabe su cuerpo?» vivía detrás del
+    // `return` temprano de `checkReachability`, así que un tile sin entrada
+    // declarada —los que `game-gen.ts` genera para el anillo 3×3, SIN
+    // `approachEdge`— se iba con un aviso que no rechaza y a su NPC empotrado
+    // no se le miraba nada. Medido: 3 de los 8 tiles del anillo de un mundo
+    // embarcado no recibieron ni un chequeo de cuerpo.
+    const enElAnillo = {
+      tile: { tx: 9, ty: 9 },
+      scene_id: "tile_9_9",
+      scene_description: "Un prado con un carro.",
+      biome: "meadow",
+      volumes: [{ id: "carro", label: "carro", type: "prop", shape: "box", rect: [60, 60, 6, 4] }],
+      entities: [{ id: "carretero", kind: "npc", name: "Carretero", cell: [62, 61], footprint: [1, 1], glyph: "n" }],
+    };
+    const r = validateScene(enElAnillo, { required_crossings: [] });
+    assert.equal(r.ok, false, "sin entrada declarada el cuerpo se juzga igual");
+    assert.deepEqual(r.errors, [
+      'el NPC "carretero" nace en [62, 61], celda no transitable (muro, agua o huella de un volumen): ' +
+        "no podría moverse de ahí",
+    ]);
+    // La alcanzabilidad sí sigue sin verificarse: no hay desde dónde. Son dos
+    // preguntas distintas y solo una necesita el flood.
+    assert.deepEqual(r.warnings, ["tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"]);
+  });
+
+  it("…y el mismo tile del anillo con el NPC bien puesto pasa", () => {
+    const sano = {
+      tile: { tx: 9, ty: 9 },
+      scene_id: "tile_9_9",
+      scene_description: "Un prado con un carro.",
+      biome: "meadow",
+      volumes: [{ id: "carro", label: "carro", type: "prop", shape: "box", rect: [60, 60, 6, 4] }],
+      entities: [{ id: "carretero", kind: "npc", name: "Carretero", cell: [68, 61], footprint: [1, 1], glyph: "n" }],
+    };
+    const r = validateScene(sano, { required_crossings: [] });
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.ok, true);
+  });
+
   it("un NPC empotrado en un prop es ERROR, aunque se le pueda hablar desde al lado", () => {
     // El residuo de #262 que YA ocurrió: el tabernero de alta_fantasia nació
     // dentro del prop `mostrador` y avanzó 0,72 m en 60 s. `validateScene`
