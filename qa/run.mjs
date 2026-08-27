@@ -367,7 +367,17 @@ function apuntarUltima() {
   } catch (err) {
     // Un enlace que no se puede poner no invalida la corrida: las capturas
     // están en su sitio y se dice dónde. Pero se dice, no se traga.
-    console.log(`· sin enlace qa/capturas/ultima (${err.message}) — están en ${SHOTS}`);
+    //
+    // `EEXIST` es su propio caso y NO es un fallo: entre el `unlink` y el
+    // `symlink` hay dos syscalls, y con dos corridas terminando a la vez la
+    // otra puede colarse justo ahí. Decir «sin enlace» cuando el enlace existe
+    // —apuntando a la otra corrida— sería la misma mentira que este arreglo
+    // viene a quitar, en el mensaje en vez de en el enlace.
+    if (err.code === "EEXIST") {
+      console.log(`· otra corrida se llevó qa/capturas/ultima por unos ms — las tuyas están en ${SHOTS}`);
+    } else {
+      console.log(`· sin enlace qa/capturas/ultima (${err.message}) — están en ${SHOTS}`);
+    }
   }
 }
 
