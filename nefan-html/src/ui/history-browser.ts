@@ -3,6 +3,8 @@
  * Bound to the H key. Pulls a fresh snapshot from the bridge every time it is
  * opened, so the timeline reflects the last state written.
  */
+import { alPulsarTecla } from "../input/puerta-de-teclado.js";
+import { paso } from "./async-ui.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
 import type {
   SessionData,
@@ -48,13 +50,21 @@ export class HistoryBrowser {
 
     (header.querySelector("#hb-close") as HTMLButtonElement).addEventListener("click", () => this.hide());
 
-    window.addEventListener("keydown", (e) => {
+    // Por la PUERTA (#285). Con el título delante, `H` abría este panel dentro
+    // de `#game-ui`, que ahí mide cero píxeles: el libro se abría, pedía
+    // `resume_session` de una partida que a lo mejor aún no existe en disco, y
+    // el jugador no veía nada. La guarda no es «si el libro se ve» sino la
+    // MISMA fuente que apaga los píxeles, así que no pueden divergir.
+    alPulsarTecla((e) => {
       if (e.key === "h" || e.key === "H") {
         // Don't toggle while typing in an input/textarea
         const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
         if (tag === "input" || tag === "textarea") return;
         if (this._visible) this.hide();
-        else void this.show();
+        // `paso` y no `void`: abrir el libro habla con el bridge y puede
+        // rechazar (bridge caído, takeover). Con el `void` pelado ese rechazo
+        // no llegaba a ningún sitio — el modo de fallo mudo de #181.
+        else paso(this.show(), "history", "abrir el libro de historia");
         e.preventDefault();
       } else if (e.key === "Escape" && this._visible) {
         this.hide();

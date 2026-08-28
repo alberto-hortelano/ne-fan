@@ -686,10 +686,11 @@ export async function handleSetRenderMode(
       renderMode: msg.renderMode,
     });
     // Push para el resto de clientes de la sesión (el requester ya tiene el
-    // eco en la respuesta; re-aplicarlo es idempotente).
+    // eco en la respuesta; re-aplicarlo es idempotente). El sello lo pone el
+    // transporte: esta rama es la de la partida ACTIVA (lo comprueba el `if`
+    // de arriba), así que es el mismo id que escribiría aquí.
     ctx.broadcastNarrative({
       type: "render_mode_changed",
-      sessionId: msg.sessionId,
       facet,
       renderMode: msg.renderMode,
     });

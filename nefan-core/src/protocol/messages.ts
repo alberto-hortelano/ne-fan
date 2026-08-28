@@ -298,6 +298,17 @@ export interface SessionStartedMessage {
 
 export interface NarrativeEventMessage {
   type: "narrative_event";
+  /** EL SELLO: de qué partida es este evento. Lo estampa un solo escritor
+   *  (`broadcastNarrative`) con la sesión que el bridge tiene activa AL
+   *  EMITIR, y por eso es requerido y no opcional — un evento sin sello no es
+   *  expresable. `""` = sin partida (el bridge difundiendo desde el título, o
+   *  una pre-generación de mundo) y es un valor legítimo, no un hueco.
+   *
+   *  Existe porque el broadcast va a TODOS los suscriptores y hasta #282 no
+   *  decía de quién era: el cliente que acababa de abandonar una partida
+   *  instalaba igual el tile que esa partida había pedido, y el intento
+   *  siguiente heredaba su mundo. «De quién es» no era expresable. */
+  sessionId: string;
   eventId: string;
   consequences: Consequence[];
   effects: ConsequenceEffect[];
@@ -308,6 +319,11 @@ export interface NarrativeEventMessage {
  *  "error" (LLM call failed — surfaced verbatim, no silent placeholder). */
 export interface NarrativeStatusMessage {
   type: "narrative_status";
+  /** El mismo sello que el evento, y por el mismo escritor. Viaja pero NO se
+   *  filtra en el cliente: descartar un `phase:"error"` de una sesión recién
+   *  muerta sería el silencio que prohíbe el fail-loud de esta casa. Está
+   *  aquí para que quien depure sepa de qué partida hablaba el status. */
+  sessionId: string;
   /** "progress" = latido del motor narrativo mientras genera (una tool MCP
    *  llamada, un paso dado): resetea el timeout de inactividad de ai_server
    *  y alimenta el texto del loader del cliente. */
@@ -493,3 +509,19 @@ export type ServerMessage =
   | SessionDeletedMessage
   | RenderModeSetMessage
   | RenderModeChangedMessage;
+
+/** Un mensaje de difusión TAL COMO LO ESCRIBE quien lo emite: sin el sello de
+ *  sesión, que pone el único escritor que hay (`broadcastNarrative`).
+ *
+ *  Es DISTRIBUTIVA a propósito (`T extends unknown ? … : never`): un `Omit`
+ *  liso sobre la unión la colapsa en un objeto con los campos comunes y el
+ *  discriminante deja de estrechar, así que los 23 literales de los emisores
+ *  dejarían de comprobarse. Así siguen siendo la misma unión discriminada, un
+ *  campo más corta.
+ *
+ *  Por qué el sello no lo escribe cada emisor: son 23 llamadas repartidas por
+ *  ocho ficheros y basta olvidarse de UNA para que el cliente tire un tile
+ *  bueno. Aquí el tipo obliga: quien difunda no puede poner el sello (excess
+ *  property) y `broadcastNarrative` no puede no ponerlo (el campo es
+ *  requerido en `ServerMessage`). */
+export type SinSelloDeSesion<T> = T extends unknown ? Omit<T, "sessionId"> : never;

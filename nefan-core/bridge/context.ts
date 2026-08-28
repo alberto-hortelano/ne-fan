@@ -39,7 +39,12 @@ import { projectEnemiesFromEntities } from "../src/store/state-projection.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
 import { resolveExitEdge } from "../src/world-map/edges.js";
-import type { SceneExit, ServerMessage, StateUpdateMessage } from "../src/protocol/messages.js";
+import type {
+  SceneExit,
+  ServerMessage,
+  SinSelloDeSesion,
+  StateUpdateMessage,
+} from "../src/protocol/messages.js";
 import type { WorldClaim } from "./world-claim.js";
 
 /** Superficie mínima de socket que usan los handlers — un WebSocket de `ws`
@@ -98,8 +103,20 @@ export interface BridgeContext {
   world: WorldClaim;
   /** Añade el socket a los suscriptores de eventos narrativos. */
   subscribe(ws: ClientSocket): void;
-  send(ws: ClientSocket, msg: ServerMessage): void;
-  broadcastNarrative(msg: ServerMessage): void;
+  /** Respuesta a UN socket. NO admite los mensajes que llevan sello: para
+   *  esos está `enviarNarrativo`, y así «el sello lo escribe el transporte»
+   *  es inexpresablemente falso en vez de cierto por costumbre. */
+  send(ws: ClientSocket, msg: SinSello): void;
+  /** Difunde a todos los suscriptores SELLANDO la sesión vigente. El mensaje
+   *  llega sin `sessionId` y sale con él: ninguno de los 23 emisores puede
+   *  olvidarse de ponerlo ni ponerlo mal (#282). */
+  broadcastNarrative(msg: SinSelloDeSesion<ServerMessage>): void;
+  /** Lo mismo a UN socket. Existe para que «el sello lo escribe el
+   *  transporte» sea cierto también en el unicast: el rechazo de un frame
+   *  inválido contesta un `narrative_status`, y con `send` a secas el
+   *  `sessionId` se escribía a mano — o sea, un segundo escritor. Que hoy
+   *  hubiera solo uno era un accidente, no un mecanismo. */
+  enviarNarrativo(ws: ClientSocket, msg: SinSelloDeSesion<ServerMessage>): void;
 }
 
 /** Escribe el snapshot de mundo de la sesión actual como artefacto del juego
@@ -224,6 +241,32 @@ export function enrichSceneWithExits(ctx: BridgeContext, scene: Record<string, u
       edge: resolveExitEdge(ctx.narrative.worldMap, placeId, l) ?? undefined,
     };
   });
+}
+
+/** Los mensajes de servidor que NO llevan sello de sesión: lo que `send`
+ *  puede mandar sin pasar por el sellador. Se deriva del propio tipo, así que
+ *  un mensaje nuevo con `sessionId` requerido queda fuera solo. */
+export type SinSello = Exclude<ServerMessage, { sessionId: string }>;
+
+/** Estampa el sello de sesión en un mensaje que sale hacia un cliente (#282).
+ *
+ *  NO existe por el tipado. Comprobado el 2026-08-28: el spread en línea
+ *  —`{ ...msg, sessionId }`, sin cast y sin función— compila, es asignable a
+ *  `ServerMessage` y `SinSelloDeSesion` sigue rechazando al emisor que escriba
+ *  el sello por su cuenta. Lo que NO valía era el `as ServerMessage`: ese sí
+ *  deja pasar un difusor que se olvide del sello, y también está medido.
+ *
+ *  Existe porque hay TRES sitios que sellan —el broadcast y el unicast de
+ *  `ws-server.ts` y el doble de `test/helpers.ts`— y tienen que hacerlo
+ *  EXACTAMENTE igual: si el doble sellara distinto, los tests de bridge
+ *  medirían un cable que no existe y el sello se podría romper en producción
+ *  con todo en verde. Una función es lo que hace que «igual» no dependa de
+ *  que alguien copie bien. */
+export function sellarSesion<T extends { type: string }>(
+  msg: T,
+  sessionId: string,
+): T & { sessionId: string } {
+  return { ...msg, sessionId };
 }
 
 /** Push a freshly loaded/realized scene to every narrative subscriber, reusing

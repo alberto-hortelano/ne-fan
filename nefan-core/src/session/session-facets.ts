@@ -54,6 +54,25 @@ export const NO_SESSION: SessionFacets = {
  *  transición, con los valores de la sesión al entrar y con los neutros al
  *  salir: el sink no sabe en qué sentido va, y por eso no puede divergir. */
 export interface FacetSinks {
+  /** El MUNDO pintado: a qué partida pertenecen los tiles que hay instalados.
+   *  Se aplica el primero de todos (ver `APLICADORES`) porque las demás
+   *  facetas arman cosas sobre el mundo —el atlas de superficies pide el
+   *  layout del tile activo— y hacerlo sobre el mundo anterior es pagar arte
+   *  de una partida que ya no está.
+   *
+   *  Es una faceta y no una llamada suelta a `resetWorld()` por lo mismo que
+   *  las otras seis: la rama `new_game` del cliente NO la llamaba (solo la de
+   *  `resume`), así que un segundo intento heredaba los tiles del primero
+   *  (#282, segunda mitad). Un tercer camino de vuelta al título tendría el
+   *  mismo agujero mientras el reset fuera algo que hay que acordarse de
+   *  hacer; aquí no hay nada que recordar.
+   *
+   *  Recibe el id POR VALOR como las demás, y el sink lo LEE: vaciar el mundo
+   *  es destructivo, y el módulo promete que aplicar las mismas facetas dos
+   *  veces no cambia nada. Un sink que vaciara sin mirar rompería esa promesa
+   *  justo aquí — el primero que quisiera refrescar una faceta a mitad de
+   *  partida se llevaría el mundo por delante. */
+  mundo(sessionId: string): void;
   /** Estilo visual → generadores de imagen (atlas de superficies, skins). */
   style(styleId: string): void;
   /** Tema de UI → custom properties de #game-ui. */
@@ -84,6 +103,18 @@ export interface ClientSession {
   /** Copia de las facetas vigentes (para el hook de bench/QA: es lo que hace
    *  MEDIBLE «los dos caminos de vuelta al título dejan el cliente igual»). */
   readonly facets: SessionFacets;
+  /** ¿El sello de un mensaje del bridge es el de LA partida aplicada aquí?
+   *
+   *  «De quién es esto» vive donde ya vive «cuál es la mía», que es este
+   *  módulo: el cliente no tiene que comparar ids a mano en el embudo de
+   *  eventos, y la decisión se prueba sin navegador (#282).
+   *
+   *  `""` compara igual que cualquier otro id, y eso es lo correcto en las dos
+   *  direcciones: sin partida aplicada, lo que el bridge difunda de UNA
+   *  partida no es mío (el caso del issue: se abandona y el tile llega
+   *  después); y lo que difunda sin partida —el título, una pre-generación de
+   *  mundo— sí lo es. */
+  esMio(sessionId: string): boolean;
   /** Entra en una partida: aplica sus facetas. */
   enter(facets: SessionFacets): void;
   /** Sale al título: aplica los neutros. Mismo camino, mismos sinks. */
@@ -103,6 +134,12 @@ export interface ClientSession {
 const APLICADORES: {
   [K in keyof FacetSinks]: (sinks: FacetSinks, f: SessionFacets) => void;
 } = {
+  // PRIMERO, y el orden aquí es el orden de aplicación (`apply` recorre este
+  // record): el mundo de la partida anterior se va antes de que nadie arme
+  // nada encima. Con el orden al revés, el despertador del atlas veía el tile
+  // activo del mundo que se está yendo y pedía su imagen con el estilo de la
+  // partida nueva.
+  mundo: (s, f) => s.mundo(f.sessionId),
   style: (s, f) => s.style(f.styleId),
   theme: (s, f) => s.theme(f.uiTheme),
   renderModes: (s, f) => s.renderModes(f.renderMode, f.characterMode),
@@ -136,6 +173,9 @@ export function createClientSession(sinks: FacetSinks): ClientSession {
     },
     get facets() {
       return { ...vigentes };
+    },
+    esMio(sessionId: string) {
+      return sessionId === vigentes.sessionId;
     },
     enter(facets: SessionFacets) {
       apply(facets);

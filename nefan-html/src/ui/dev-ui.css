@@ -24,6 +24,11 @@
   flex-wrap: wrap;
   flex-shrink: 0;
   white-space: nowrap;
+  /* Acotado: lo que sobra se desplaza DENTRO del panel en vez de empujar
+     hacia abajo lo que tenga debajo. La variable —y el porqué de su valor—
+     viven en `base.css`, junto al hueco que el título reserva con ella. */
+  max-height: var(--dev-status-alto);
+  overflow-y: auto;
 }
 #dev-status .ds-gen { color: #9a8; }
 #dev-status .ds-gen.working { color: #da6; font-weight: bold; animation: ds-pulse 1s ease-in-out infinite; }

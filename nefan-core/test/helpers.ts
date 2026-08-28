@@ -18,7 +18,12 @@ import { createSimCollisionProvider } from "../bridge/sim-collision.js";
 import { SceneGenQueue } from "../bridge/scene-gen-queue.js";
 import { createWorldClaim } from "../bridge/world-claim.js";
 import { routeMessage } from "../bridge/router.js";
-import type { BridgeContext, ClientSocket, NarrativeAiClient } from "../bridge/context.js";
+import {
+  sellarSesion,
+  type BridgeContext,
+  type ClientSocket,
+  type NarrativeAiClient,
+} from "../bridge/context.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -85,6 +90,12 @@ export function fakeBootstrapTile(over: Record<string, unknown> = {}): Record<st
 /** BridgeContext completo con fakes: sim determinista (seed 12345), storage
  *  en memoria, AiClient falso (respuestas mínimas, overrides vía opts.ai) y
  *  broadcast capturado en `broadcasts`. */
+/** Espejo del escritor crudo de `ws-server.ts`: `send` no admite mensajes con
+ *  sello, así que el doble tampoco puede escribirlos a mano. */
+function escribir(ws: ClientSocket, msg: ServerMessage): void {
+  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
+}
+
 export function makeCtx(
   opts: { gamesDir?: string; stylesDir?: string; ai?: FakeAi; persistWorldSnapshots?: boolean } = {},
 ) {
@@ -154,11 +165,19 @@ export function makeCtx(
       subscribers.add(ws);
     },
     send(ws, msg) {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
+      escribir(ws, msg);
     },
+    // Sella por la MISMA función que `ws-server.ts` (#282). No es una copia
+    // por comodidad: si el doble no sellara igual, los tests de bridge
+    // medirían un cable que no existe y el sello se podría romper en
+    // producción con todo en verde.
     broadcastNarrative(msg) {
-      broadcasts.push(msg);
-      for (const ws of subscribers) ctx.send(ws, msg);
+      const sellado = sellarSesion(msg, narrative.session_id);
+      broadcasts.push(sellado);
+      for (const ws of subscribers) escribir(ws, sellado);
+    },
+    enviarNarrativo(ws, msg) {
+      escribir(ws, sellarSesion(msg, narrative.session_id));
     },
   };
   return { ctx, broadcasts, storage, narrative, store, sim, aiCalls, subscribers };

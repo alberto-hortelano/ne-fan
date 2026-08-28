@@ -39,4 +39,58 @@ export default tseslint.config(
       "@typescript-eslint/no-floating-promises": "error",
     },
   },
+  // EL INPUT DE JUEGO SOLO SE REGISTRA EN LA PUERTA (#285), mirando la
+  // LLAMADA y no el texto.
+  //
+  // El candado hermano de `arch-rules.json`
+  // (`teclas-de-juego-pasan-por-la-puerta`) es un patrón sobre el texto, y un
+  // patrón sobre el texto es una lista de formas de escribir: tres pasadas
+  // sucesivas encontraron ocho —comillas simples, `document.`,
+  // `document.body.`, `window.onkeydown =`, la forma multilínea de prettier,
+  // `addEventListener` a secas con el `window` implícito y
+  // `globalThis.`—, y siempre queda una más. Esta regla mira el AST: el
+  // receptor, el nombre del método y el primer argumento. Da igual cómo se
+  // escriba.
+  //
+  // LO QUE NO VE, dicho porque tampoco lo ve un AST sin tipos: el receptor
+  // por ALIAS (`const w = window; w.addEventListener("keydown", …)`).
+  // Reconocerlo exige seguir el tipo de una variable. No tiene ocupante hoy.
+  //
+  // La puerta se exime abajo: es donde se DEFINE el registro.
+  {
+    files: ["src/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.property.name='addEventListener'][callee.object.name=/^(window|globalThis|document)$/][arguments.0.value=/^(keydown|mousedown)$/]",
+          message:
+            "El input de juego se registra SOLO en input/puerta-de-teclado.ts (alPulsarTecla / alPulsarRaton): con el título delante el mundo no se ve y la tecla no debe responder (#285).",
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='addEventListener'][callee.object.property.name='body'][arguments.0.value=/^(keydown|mousedown)$/]",
+          message:
+            "El input de juego se registra SOLO en input/puerta-de-teclado.ts (#285). `document.body` no es una excepción.",
+        },
+        {
+          selector:
+            "CallExpression[callee.type='Identifier'][callee.name='addEventListener'][arguments.0.value=/^(keydown|mousedown)$/]",
+          message:
+            "El input de juego se registra SOLO en input/puerta-de-teclado.ts (#285). `addEventListener` a secas es `window.addEventListener`.",
+        },
+        {
+          selector: "AssignmentExpression[left.property.name=/^on(keydown|mousedown)$/]",
+          message:
+            "El input de juego se registra SOLO en input/puerta-de-teclado.ts (#285). Asignar `onkeydown`/`onmousedown` es lo mismo con otra sintaxis.",
+        },
+      ],
+    },
+  },
+  {
+    // La puerta: prohibirlo aquí sería prohibir que exista.
+    files: ["src/input/puerta-de-teclado.ts"],
+    rules: { "no-restricted-syntax": "off" },
+  },
 );

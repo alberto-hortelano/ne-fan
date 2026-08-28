@@ -24,13 +24,22 @@
  *  que lo manda: la partida simplemente no se guardaría nunca, y el rojo
  *  saldría lejos del sitio del fallo.
  *
- *  El bloque 3 es el criterio 5 EN VIVO: con la partida aún provisional —el
- *  mundo ya pintado y el jugador todavía sin vestir— la tecla `H` pide
- *  `resume_session` de una partida que aún no está en disco. El bridge
- *  contesta `session_not_found`, y antes de esta tanda eso vaciaba
- *  `ctx.activePlugins` ANTES del load fallido: la partida viva se quedaba sin
- *  sistemas de juego para el motor el resto de la sesión. Se mide donde se ve,
- *  que es el catálogo que el bridge le ofrece al motor (`GET /plugins`).
+ *  El bloque 1 mide además #282: el tile que el bridge difunde para la partida
+ *  que ya se abandonó LLEGA y el cliente lo descarta, así que el título no se
+ *  queda con el mundo de una partida muerta detrás. Se espera al DESCARTE y no
+ *  al tile —`__nefan.descartados()`—, porque esperar un tile que ya no se
+ *  instala da un verde que solo dice «aún no ha llegado».
+ *
+ *  El bloque 3 es la ventana provisional —el mundo ya pintado y el jugador
+ *  todavía sin vestir, con el título delante— y mide #285: ahí la tecla `H` no
+ *  responde. Antes de esta tanda abría el libro dentro de `#game-ui`, que con
+ *  el título delante mide cero píxeles (#246), y de paso pedía
+ *  `resume_session` de una partida que aún no existe en disco. Se mide un
+ *  NO-evento, así que va con control (el mismo espía sí vio el
+ *  `start_session`) y con su recíproco (con el título fuera, la misma tecla
+ *  abre el libro). Lo que ese `resume_session` fallido no puede hacerle al
+ *  bridge —vaciarle los plugins a la partida viva, #279— se canda donde puede
+ *  ponerse rojo ahora que la tecla no llega: `test/bridge-session.test.ts`.
  *
  *  Ninguna de las tres esperas es un reloj: el 404 sale al instante, la
  *  retención de las hojas se suelta cuando el guion ha terminado su bloque, y
@@ -39,46 +48,46 @@
  *
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
-import { esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import { nuevaPartida, recargarAlTitulo } from "../lib/sesion.mjs";
 import { esperarPartidaEnDisco, listarSaves } from "../lib/saves.mjs";
-import { URLS } from "../lib/stack.mjs";
 
-/** El State API del bridge. Sale de la fuente única de puertos, no de un
- *  literal: dos corridas a la vez no comparten stack. */
-const API = URLS.state_api;
-
-/** Los sistemas de juego que el bridge tiene ACTIVOS para el motor. Es lo que
- *  se pierde si un resume fallido los vacía, y NO se ve en el save: el slice
- *  sigue escrito; lo que desaparece es el catálogo vivo. */
-async function pluginsActivos() {
-  const res = await fetch(`${API}/plugins`);
-  const body = await res.json().catch(() => null);
-  return (body?.plugins ?? []).map((p) => p.name ?? p.id).sort();
-}
-
-/** Instala el espía del ack ANTES de que cargue la app (se re-instala en cada
- *  navegación, así que cada bloque empieza con la cuenta a cero). No toca el
- *  juego: envuelve `WebSocket.prototype.send` y deja pasar el frame. */
-async function espiarElAck(ctx) {
+/** Instala el espía de lo que el cliente MANDA, antes de que cargue la app (se
+ *  re-instala en cada navegación, así que cada bloque empieza a cero). No toca
+ *  el juego: envuelve `WebSocket.prototype.send` y deja pasar el frame.
+ *
+ *  Anota TODOS los frames y no solo el ack porque el bloque 3 mide un
+ *  NO-EVENTO —que la tecla `H` no pida `resume_session`— y eso solo vale algo
+ *  con un control al lado: el mismo espía tiene que haber registrado el
+ *  `start_session` que sí ocurrió. Sin el control, un espía roto se lee igual
+ *  que un cliente que se calla. */
+async function espiarLoQueSeManda(ctx) {
   await ctx.page.addInitScript(() => {
-    window.__qaAcks = [];
+    window.__qaFrames = [];
     const send = WebSocket.prototype.send;
     WebSocket.prototype.send = function (data) {
       try {
-        if (typeof data === "string" && data.includes("session_entered")) {
+        if (typeof data === "string") {
           const m = JSON.parse(data);
-          if (m?.type === "session_entered") window.__qaAcks.push(m.sessionId);
+          if (m?.type) window.__qaFrames.push({ type: m.type, sessionId: m.sessionId ?? "" });
         }
       } catch {
-        /* un frame que no es JSON no es el ack */
+        /* un frame que no es JSON no es del protocolo */
       }
       return send.call(this, data);
     };
   });
 }
 
+/** Los tipos de frame mandados, en orden. */
+async function mandados(ctx) {
+  return ctx.page.evaluate(() => (window.__qaFrames ?? []).map((f) => f.type));
+}
+
+/** Los ids con los que se mandó `session_entered` (el ack de #279). */
 async function acks(ctx) {
-  return ctx.page.evaluate(() => window.__qaAcks ?? []);
+  return ctx.page.evaluate(() =>
+    (window.__qaFrames ?? []).filter((f) => f.type === "session_entered").map((f) => f.sessionId),
+  );
 }
 
 /** ¿Llegó a existir la partida? Envuelve la espera por condición de `qa/lib`
@@ -89,14 +98,6 @@ async function llegaAExistir(ctx, sessionId, maxMs = 30_000) {
     .catch(() => false);
 }
 
-/** Recarga y espera al título listo (los tres bloques empiezan igual). */
-async function volverAlTituloRecargando(ctx) {
-  await ctx.page.reload({ waitUntil: "domcontentloaded" });
-  await ctx.waitFor("el cliente arranca", () => Boolean(window.__nefan));
-  await esperarTituloListo(ctx);
-  await esperarListaDeSaves(ctx);
-}
-
 /** Pulsa «Comenzar» sin esperar al desenlace: cada bloque espera lo suyo. */
 async function pulsarComenzar(ctx) {
   await ctx.page.click("#ts-continue");
@@ -105,7 +106,7 @@ async function pulsarComenzar(ctx) {
 }
 
 export default async function (ctx) {
-  await espiarElAck(ctx);
+  await espiarLoQueSeManda(ctx);
 
   // ── 1 · El clon limpio DE VERDAD: 404 al instante ────────────────────────
   // `public/sprites/` está en .gitignore, así que quien clona el repo arranca
@@ -118,7 +119,7 @@ export default async function (ctx) {
       body: JSON.stringify({ detail: "clon sin hojas (simulado por QA)" }),
     });
   await ctx.page.route("**/sprites/**", cortarLasHojas);
-  await volverAlTituloRecargando(ctx);
+  await recargarAlTitulo(ctx);
 
   const antes1 = await listarSaves(ctx);
   ctx.log(`saves antes del clon limpio: ${antes1.ids.length} · fuente: ${antes1.fuente}`);
@@ -147,24 +148,43 @@ export default async function (ctx) {
     JSON.stringify(desenlace1 ?? "(ni escena ni aviso en 60 s)"),
   );
 
-  // El tile del motor puede llegar DESPUÉS de abandonar la partida: se espera
-  // a que el bridge lo haya servido para no medir el disco antes de que el
-  // camino peligroso se haya recorrido entero. Si no llega, se sigue igual —
-  // lo que se afirma es sobre `saves/`, no sobre el tile.
-  const tilesTrasFallar = await ctx
+  // #282. El tile del motor llega DESPUÉS de abandonar la partida, y hasta
+  // esta tanda se instalaba igual: el mundo de una partida muerta se quedaba
+  // pintado detrás del título y el intento siguiente lo heredaba.
+  //
+  // Se espera al DESCARTE y no al tile, que es la diferencia entre medir y
+  // no medir: esperar el tile que ya no va a instalarse deja el aserto en
+  // verde por «aún no ha llegado», que es un verde indistinguible de un guion
+  // que no comprueba nada. Con el contador, el guion no sigue hasta que el
+  // evento ajeno ha llegado DE VERDAD y se ha tirado.
+  const descarte = await ctx
     .waitFor(
-      "el tile del bootstrap llega (aunque sea tarde)",
+      "el tile de la partida muerta llega y el cliente lo DESCARTA",
       () => {
-        const t = window.__nefan.tiles;
-        return t.length > 0 ? t : null;
+        const d = window.__nefan.descartados();
+        return d.n >= 1 ? d : null;
       },
-      20_000,
+      30_000,
     )
-    .catch(() => []);
-  const sesionTrasFallar = (await ctx.nefan("sesion")).sessionId;
+    .catch(() => ({ n: 0 }));
+  const trasFallar = await ctx.page.evaluate(() => ({
+    tiles: window.__nefan.tiles,
+    sesion: window.__nefan.sesion().sessionId,
+  }));
   ctx.log(
-    `tras volver al título: tiles en el mundo = ${JSON.stringify(tilesTrasFallar)} · ` +
-      `sesión aplicada = ${JSON.stringify(sesionTrasFallar)}`,
+    `tras volver al título: tiles = ${JSON.stringify(trasFallar.tiles)} · ` +
+      `sesión aplicada = ${JSON.stringify(trasFallar.sesion)} · ` +
+      `descartados = ${JSON.stringify(descarte)}`,
+  );
+  ctx.expect(
+    "el tile que el bridge difunde para la partida muerta LLEGA y se descarta (si no, no se mide nada)",
+    descarte.n >= 1,
+    JSON.stringify(descarte),
+  );
+  ctx.expect(
+    "…y el mundo del título se queda VACÍO: la partida que no arrancó no deja tiles detrás (#282)",
+    trasFallar.tiles.length === 0,
+    `quedaron ${JSON.stringify(trasFallar.tiles)} con sesión aplicada ${JSON.stringify(trasFallar.sesion)}`,
   );
 
   const acks1 = await acks(ctx);
@@ -187,7 +207,7 @@ export default async function (ctx) {
 
   // ── 2 · El arranque BUENO manda el ack una vez, y con SU id ──────────────
   await ctx.page.unroute("**/sprites/**", cortarLasHojas);
-  await volverAlTituloRecargando(ctx);
+  await recargarAlTitulo(ctx);
 
   const antes2 = await listarSaves(ctx);
   await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
@@ -223,12 +243,26 @@ export default async function (ctx) {
     `${arrancada.sessionId} no apareció en saves/`,
   );
 
-  // ── 3 · La ventana provisional existe, y la tecla `H` no la desarma ──────
+  // ── 3 · La ventana provisional existe, y con el título delante `H` no hace nada ──
   // Se abre la ventana reteniendo las HOJAS del personaje (no el mundo): el
   // tile llega y se pinta, el vestido se queda esperando y el título sigue
   // delante. Es el mismo borde del bloque 1 —un recurso que tarda— pero sin
   // fallar, y se suelta por ESTADO: cuando el guion ha hecho lo suyo, no
   // cuando pasa un tiempo.
+  //
+  // Lo que se mide aquí es #285: con el título delante, `H` NO responde. Un
+  // no-evento no se puede afirmar a solas —el verde sería el mismo si el
+  // guion no midiera nada—, así que va con dos anclas: el espía de
+  // `WebSocket.send` tiene que NO ver un `resume_session` y SÍ haber visto el
+  // `start_session` de hace dos líneas. El aserto puede ponerse rojo: sin la
+  // guarda de `alPulsarTecla`, `H` manda el frame y abre el libro.
+  //
+  // Lo que este bloque YA NO mide, dicho para que no se busque: que un
+  // `resume_session` fallido no vacíe `ctx.activePlugins` (#279). Al gatear
+  // `H` esa llamada deja de ser alcanzable desde aquí, y afirmarlo igual
+  // sería un verde que no comprueba nada. El mecanismo sigue candado donde
+  // se puede poner rojo: `nefan-core/test/bridge-session.test.ts`, «un resume
+  // que falla NO deja la sesión viva sin plugins».
   let soltarLasHojas = () => {};
   const hojasRetenidas = new Promise((res) => {
     soltarLasHojas = res;
@@ -244,7 +278,7 @@ export default async function (ctx) {
   };
   await ctx.page.route("**/sprites/**", retenerLasHojas);
   try {
-    await volverAlTituloRecargando(ctx);
+    await recargarAlTitulo(ctx);
     const antes3 = await listarSaves(ctx);
     await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
     await pulsarComenzar(ctx);
@@ -262,6 +296,11 @@ export default async function (ctx) {
       120_000,
     );
     ctx.log(`ventana provisional: ${JSON.stringify(ventana)} · antes había ${JSON.stringify(antes3.ids)}`);
+    ctx.expect(
+      "en esta ventana el título SIGUE DELANTE (si no, no se está midiendo #285)",
+      ventana.titulo === true,
+      `status().title = ${JSON.stringify(ventana.titulo)}`,
+    );
 
     const enLaVentana = await listarSaves(ctx);
     ctx.expect(
@@ -270,64 +309,55 @@ export default async function (ctx) {
       `${JSON.stringify(enLaVentana.ids)} contiene ${ventana.sessionId}`,
     );
 
-    const pluginsAntes = await pluginsActivos();
-    ctx.log(`sistemas de juego activos antes de la tecla H: ${JSON.stringify(pluginsAntes)}`);
-
     // La tecla H, por el camino del jugador (el listener vive en `window`).
+    const antesDeLaH = await mandados(ctx);
     await ctx.page.keyboard.press("h");
-    const libro = await ctx.waitFor(
-      "el libro de historia se abre y dice algo",
-      () => {
-        const panel = document.getElementById("history-browser");
-        if (!panel || panel.hidden) return null;
-        const nota = panel.querySelector(".hb-note");
-        const texto = (nota?.textContent ?? "").trim();
-        return texto && texto !== "Cargando…"
-          ? { texto, error: nota.classList.contains("hb-note--error") }
-          : null;
-      },
-      30_000,
-    );
-    ctx.log(`libro con la partida aún provisional: ${JSON.stringify(libro)}`);
-    // …y CUÁNTOS PÍXELES ocupa. En esta variante de la ventana provisional el
-    // título sigue delante, y con el título delante `#game-ui` mide cero
-    // (guion 18, #246): el libro se abre pero no se VE, así que el mensaje
-    // amable que traduce `session_not_found` solo lo lee quien llega a la otra
-    // variante —vestido y sin mundo (#189)—, donde el título ya se fue. Va
-    // como `ctx.log` y no como aserto porque es un hallazgo abierto de QA
-    // (2026-08-26), igual que nació el del guion 24.
-    const seVe = await ctx.page.evaluate(() => {
+    // No hace falta esperar a nada: el manejador de `H` corre SÍNCRONO con el
+    // `keydown`, y `HistoryBrowser.show()` manda su `resume_session` antes de
+    // su primer `await`. Para cuando `keyboard.press` ha vuelto, el frame o se
+    // mandó o no se va a mandar. Aquí hubo un «pulso» —un socket propio al
+    // bridge para esperar un round-trip— que además se tragaba su `onerror`:
+    // con el bridge muerto se leía como pulso completado, o sea catorce líneas
+    // que no podían ponerse rojas esperando algo que ya había ocurrido.
+    const despuesDeLaH = await mandados(ctx);
+    const nuevos = despuesDeLaH.slice(antesDeLaH.length);
+    const libro = await ctx.page.evaluate(() => {
       const panel = document.getElementById("history-browser");
-      const ui = document.getElementById("game-ui");
       const r = panel?.getBoundingClientRect();
-      const ru = ui?.getBoundingClientRect();
       return {
-        libroPx: r ? Math.round(r.width * r.height) : null,
-        gameUiPx: ru ? Math.round(ru.width * ru.height) : null,
+        existe: Boolean(panel),
+        oculto: panel?.hidden ?? null,
+        px: r ? Math.round(r.width * r.height) : null,
         tituloDelante: document.documentElement.dataset.titulo === "1",
       };
     });
-    ctx.log(`…y lo que el JUGADOR ve de él: ${JSON.stringify(seVe)}`);
-    await ctx.shot("libro-durante-la-ventana-provisional");
-    ctx.expect(
-      "…y lo que dice se entiende sin saber qué es un `session_not_found`",
-      !/session_not_found/i.test(libro.texto),
-      libro.texto,
-    );
+    ctx.log(`frames mandados tras la tecla H: ${JSON.stringify(nuevos)}`);
+    ctx.log(`el libro tras la tecla H: ${JSON.stringify(libro)}`);
+    await ctx.shot("la-tecla-h-con-el-titulo-delante");
 
-    const pluginsDespues = await pluginsActivos();
-    ctx.log(`sistemas de juego activos después de la tecla H: ${JSON.stringify(pluginsDespues)}`);
+    // CONTROL, obligatorio: el espía funciona. Sin esto, un espía roto se lee
+    // exactamente igual que un cliente que se calla.
     ctx.expect(
-      "abrir el libro con la partida aún provisional NO deja la sesión viva sin sistemas de juego",
-      pluginsDespues.length > 0 && pluginsDespues.join("|") === pluginsAntes.join("|"),
-      `antes ${JSON.stringify(pluginsAntes)} · después ${JSON.stringify(pluginsDespues)}`,
+      "el espía de frames SÍ registró el `start_session` de este arranque (control del no-evento)",
+      antesDeLaH.includes("start_session"),
+      JSON.stringify(antesDeLaH),
+    );
+    ctx.expect(
+      "con el título delante, la tecla H no pide `resume_session` al bridge (#285)",
+      !nuevos.includes("resume_session"),
+      JSON.stringify(nuevos),
+    );
+    ctx.expect(
+      "…y el libro de historia sigue cerrado, en vez de abrirse midiendo cero píxeles",
+      libro.oculto === true,
+      JSON.stringify(libro),
     );
 
     // Se suelta la retención: el jugador termina de vestirse y la partida se
-    // establece. Si la tecla H hubiera roto algo, aquí se vería.
+    // establece. Si la puerta de teclado hubiera roto algo, aquí se vería.
     soltarLasHojas();
     const arrancada3 = await ctx.waitFor(
-      "tras el libro, la partida termina de arrancar igual",
+      "tras la tecla ignorada, la partida termina de arrancar igual",
       () => {
         if (window.__nefan.status().title) return null;
         const sessionId = window.__nefan.sesion().sessionId;
@@ -341,11 +371,25 @@ export default async function (ctx) {
       existe3,
       `${arrancada3.sessionId} no llegó a existir`,
     );
-    const pluginsFinal = await pluginsActivos();
+
+    // Y con el título FUERA la tecla vuelve a servir: la puerta cierra durante
+    // el título, no para siempre. Sin esto, «H no responde» y «H está rota»
+    // serían el mismo verde.
+    await ctx.page.keyboard.press("h");
+    const libroAbierto = await ctx
+      .waitFor(
+        "ya en la partida, la tecla H abre el libro",
+        () => {
+          const panel = document.getElementById("history-browser");
+          return panel && !panel.hidden ? { abierto: true } : null;
+        },
+        30_000,
+      )
+      .catch(() => null);
     ctx.expect(
-      "…con los sistemas de juego intactos para el motor",
-      pluginsFinal.join("|") === pluginsAntes.join("|"),
-      `antes ${JSON.stringify(pluginsAntes)} · al final ${JSON.stringify(pluginsFinal)}`,
+      "…y con el título fuera la MISMA tecla abre el libro (la puerta cierra durante el título, no siempre)",
+      Boolean(libroAbierto),
+      "H dejó de funcionar también en partida: la puerta se tragó una tecla legítima",
     );
   } finally {
     soltarLasHojas();

@@ -6,6 +6,7 @@
  *  mantener. Al abrirse suelta el pointer lock: con el ratón capturado el
  *  cursor no existe y las opciones serían inclicables. */
 
+import { alPulsarTecla } from "../input/puerta-de-teclado.js";
 import { ActionBar, type GameAction } from "./action-bar.js";
 
 export type DialogueCallback = () => void;
@@ -71,7 +72,10 @@ export class DialoguePanel {
       }
     });
 
-    window.addEventListener("keydown", (e) => {
+    // Por la puerta como todo el input de juego (#285): ninguna tecla se
+    // registra por fuera, sin excepciones por widget — que es lo que #246
+    // decidió para los píxeles.
+    alPulsarTecla((e) => {
       if (!this._visible) return;
       if (this._freeTextOpen) return;  // input element handles its own keys
 

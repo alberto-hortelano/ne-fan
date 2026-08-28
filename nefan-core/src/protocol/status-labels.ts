@@ -154,6 +154,43 @@ export function motivoParaElJugador(err: unknown): string {
   return "El motor narrativo no pudo construirlo; inténtalo de nuevo.";
 }
 
+/** La extensión de los módulos de fixture del glob. En una constante para que
+ *  el corte y la comprobación no puedan discrepar. */
+const EXTENSION_DE_FIXTURE = ".json";
+
+/** La ETIQUETA de una fixture del selector «Room»: lo que la persona eligió
+ *  en el desplegable (`zorder_test`), no la clave del glob con la que se
+ *  importa (`@nefan-core/data/scenes/zorder_test.json`).
+ *
+ *  Vive aquí y no en el cliente por el mismo motivo escrito arriba, y además
+ *  por uno propio: la opción del `<select>` y el mensaje de «no cargó» tienen
+ *  que salir de LA MISMA derivación o divergen. Divergieron —el desplegable
+ *  decía `zorder_test` y el fallo decía la ruta del glob (#269)— porque eran
+ *  dos: un `match(/scenes\/(.+)\.json$/)` al pintar y una interpolación del
+ *  `value` al fallar.
+ *
+ *  Sin `.json` devuelve la clave TAL CUAL, que es lo honesto: si algún día el
+ *  glob cambia de forma, el jugador lee algo raro pero cierto, en vez de una
+ *  cadena vacía. Sin regex por lo mismo: dos cortes de cadena tienen mutantes
+ *  que un test puede matar uno a uno, y un patrón no. */
+export function etiquetaDeFixture(clave: string): string {
+  const nombre = clave.slice(clave.lastIndexOf("/") + 1);
+  return nombre.endsWith(EXTENSION_DE_FIXTURE)
+    ? nombre.slice(0, -EXTENSION_DE_FIXTURE.length)
+    : nombre;
+}
+
+
+/** Lo que lee quien conduce el selector «Room» cuando una fixture no carga.
+ *
+ *  Hermana de `motivoDeSesionParaElJugador`, para el canal de #248: el
+ *  registro de errores y la línea del juego. Nombra la ETIQUETA, nunca la
+ *  ruta; el detalle técnico (la URL, el stack) sigue entero en el `detail` de
+ *  la entrada del error-log, que es donde sirve. */
+export function motivoDeFixtureParaElJugador(etiqueta: string): string {
+  return `No se pudo cargar la escena «${etiqueta}»`;
+}
+
 /** Código del ÚNICO fallo de arranque que no viene del bridge: el set base de
  *  hojas de personaje no está servido (un clon limpio — `public/sprites/` está
  *  en `.gitignore`, #255).

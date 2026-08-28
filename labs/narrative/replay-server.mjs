@@ -151,9 +151,30 @@ const wss = new WebSocketServer({ port: PORT, host: "127.0.0.1" });
 console.error(`[replay] suplantando al bridge en ws://127.0.0.1:${PORT}`);
 console.error(`[replay] arranca el cliente (cd nefan-html && npm run dev) y pulsa "Nueva partida".`);
 
+/** El ÚNICO tipo de frame que hay que reestampar al reemitir (#282).
+ *
+ *  No es «los mensajes que llevan sello» —eso sería una segunda lista de un
+ *  dominio que ya vive en el tipo `ServerMessage` y que se quedaría rancia—
+ *  sino «lo que el cliente FILTRA», que es una sola cosa y está escrita en un
+ *  sitio: `nefan-html/src/net/narrative-client.ts` descarta el
+ *  `narrative_event` cuyo sello no es el de su partida, y el `narrative_status`
+ *  NO lo filtra a propósito (silenciar un error de una sesión muerta sería el
+ *  silencio que prohíbe el fail-loud).
+ *
+ *  Sin reestampar, los frames del log —grabados con otra sesión, o antes de
+ *  que el sello existiera— se descartan enteros y `replay-web` reproduce una
+ *  película en negro.
+ *
+ *  Si algún día el cliente filtra un segundo tipo, este es el sitio que hay
+ *  que ampliar; el comentario de `narrative-client.ts` lo dice desde allí. */
+const TIPO_FILTRADO_POR_EL_CLIENTE = "narrative_event";
+
 wss.on("connection", (ws) => {
   console.error("[replay] cliente conectado");
   let streaming = false;
+  /** El id que el cliente cree estar jugando: el del `session_started` que se
+   *  le sirvió. "" hasta que lo haya (y "" es un sello legítimo). */
+  let sesionServida = "";
   // Copia local de las colas para esta conexión (cada reproducción es limpia).
   const queues = {};
   for (const t of RESPONSE_TYPES) queues[t] = [...responseQueues[t]];
@@ -167,7 +188,11 @@ wss.on("connection", (ws) => {
       for (let i = 0; i < timeline.length; i++) {
         if (ws.readyState !== ws.OPEN) return;
         const frame = timeline[i];
-        sendMsg(frame.msg);
+        sendMsg(
+          frame.msg.type === TIPO_FILTRADO_POR_EL_CLIENTE
+            ? { ...frame.msg, sessionId: sesionServida }
+            : frame.msg,
+        );
         const label =
           frame.msg.type === "narrative_event"
             ? `narrative_event ${frame.msg.eventId ?? ""}`
@@ -205,6 +230,11 @@ wss.on("connection", (ws) => {
         return;
       }
       const reply = { ...recorded, requestId: msg.requestId };
+      // De aquí sale el sello de la película: es el id que el cliente aplica
+      // como sesión suya al recibir el `session_started`.
+      if (respType === "session_started" && typeof reply.sessionId === "string") {
+        sesionServida = reply.sessionId;
+      }
       sendMsg(reply);
       console.error(`[replay] « ${type} → ${respType} (req=${msg.requestId})`);
 

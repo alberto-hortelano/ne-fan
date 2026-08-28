@@ -615,6 +615,99 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Regla NUEVA y a cero: el verde de hoy no demuestra nada, porque no hay
+  // ocupante que la ponga roja. La primera versión del patrón pedía
+  // `window.addEventListener("keydown"` literal y se quedaba verde con SIETE
+  // formas alcanzables — todas las de abajo menos la primera. Cada una es un
+  // manejador de tecla de juego que respondería con el título delante, y las
+  // ocho salieron de tres pasadas sucesivas sobre el mismo patrón: la lista
+  // creció cada vez, que es justo el motivo por el que el candado FUERTE de
+  // este invariante es el `no-restricted-syntax` de `nefan-html`, que mira el
+  // AST. Este test defiende el alcance que la regla DECLARA tener.
+  it("[error] teclas-de-juego-pasan-por-la-puerta: las ocho formas de registrar input saltan", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter(
+        (v) => v.ruleId === "teclas-de-juego-pasan-por-la-puerta",
+      );
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/uno.ts",
+          text: 'window.addEventListener("keydown", f);\n',
+        },
+        // Comillas simples: nada obliga a dobles. `eslint-config-prettier`
+        // desactiva las reglas de estilo y el CI no corre prettier.
+        {
+          path: "nefan-html/src/ui/dos.ts",
+          text: "window.addEventListener('keydown', f);\n",
+        },
+        // El idioma MÁS común, y el que la primera versión no veía.
+        {
+          path: "nefan-html/src/ui/tres.ts",
+          text: 'document.addEventListener("keydown", f);\n',
+        },
+        {
+          path: "nefan-html/src/ui/cuatro.ts",
+          text: 'document.body.addEventListener("mousedown", f);\n',
+        },
+        // La propiedad, sin `addEventListener` de por medio.
+        {
+          path: "nefan-html/src/ui/cinco.ts",
+          text: "window.onkeydown = (e) => manejar(e);\n",
+        },
+        // Multilínea: lo que prettier produce con un manejador de nombre
+        // largo. El patrón admite el salto de línea tras el paréntesis.
+        {
+          path: "nefan-html/src/ui/seis.ts",
+          text: 'window.addEventListener(\n  "mousedown",\n  elManejadorDeAtaqueDelJugador,\n);\n',
+        },
+        // Las dos que encontró QA en la tercera pasada: el `window` implícito
+        // —la forma más corta que alguien escribe sin pensar— y `globalThis`.
+        {
+          path: "nefan-html/src/ui/siete.ts",
+          text: 'addEventListener("keydown", f);\n',
+        },
+        {
+          path: "nefan-html/src/ui/ocho.ts",
+          text: 'globalThis.addEventListener("keydown", f);\n',
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/ui/cinco.ts:1",
+        "nefan-html/src/ui/cuatro.ts:1",
+        "nefan-html/src/ui/dos.ts:1",
+        "nefan-html/src/ui/ocho.ts:1",
+        "nefan-html/src/ui/seis.ts:1",
+        "nefan-html/src/ui/siete.ts:1",
+        "nefan-html/src/ui/tres.ts:1",
+        "nefan-html/src/ui/uno.ts:1",
+      ],
+      "las ocho formas de registrar una tecla de juego por fuera de la puerta tienen que saltar",
+    );
+
+    // Y los inocentes, que son los que la regla declara dejar fuera A
+    // PROPÓSITO: la soltada (gatearla dejaría al jugador andando solo al
+    // volver del título), la mirada, un listener sobre un ELEMENTO con foco
+    // —el texto libre del diálogo— y la propia puerta.
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-html/src/ui/a.ts", text: 'window.addEventListener("keyup", f);\n' },
+        { path: "nefan-html/src/ui/b.ts", text: 'window.addEventListener("mousemove", f);\n' },
+        { path: "nefan-html/src/ui/c.ts", text: 'this.inputEl.addEventListener("keydown", f);\n' },
+        // Un listener sobre un elemento con el receptor CORTO: el `(?<![.\\w])`
+        // de la forma a secas tiene que dejarlo pasar, o la regla se comería
+        // los controles con foco que el título necesita vivos.
+        { path: "nefan-html/src/ui/d.ts", text: 'el.addEventListener("keydown", f);\n' },
+        {
+          path: "nefan-html/src/input/puerta-de-teclado.ts",
+          text: 'window.addEventListener("keydown", conPuerta);\n',
+        },
+      ]),
+      [],
+    );
+  });
+
   // La deuda congelada es la que más fácil se pudre: `max` se baja en la PR
   // que arregla un catch, y nadie vuelve a comprobar que el patrón siga
   // cazando los que quedan. Probado en negativo con las DOS formas que el

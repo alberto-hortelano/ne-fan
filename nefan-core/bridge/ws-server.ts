@@ -30,7 +30,7 @@ import { pluginRegisterBody } from "./state-http/context.js";
 import { routeMessage } from "./router.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
 import { intakeClientMessage } from "./message-intake.js";
-import type { BridgeContext } from "./context.js";
+import { sellarSesion, type BridgeContext, type ClientSocket } from "./context.js";
 import type { CombatConfig } from "../src/types.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
 
@@ -70,6 +70,16 @@ const simCollision = createSimCollisionProvider(narrative);
 // Players currently subscribed to narrative events (broadcast targets).
 const narrativeSubscribers = new Set<WebSocket>();
 
+/** El ÚNICO sitio que escribe en el socket. `send` no admite mensajes con
+ *  sello (el tipo `SinSello` los deja fuera) y los tres que sí lo llevan pasan
+ *  por `sellarSesion`: por eso el sellado no puede saltarse escribiendo a
+ *  mano, y por eso este escritor es crudo (#282). */
+function escribir(ws: ClientSocket, msg: ServerMessage): void {
+  if (ws.readyState === ws.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
 const ctx: BridgeContext = {
   sim,
   combatConfig: config,
@@ -102,13 +112,26 @@ const ctx: BridgeContext = {
   subscribe(ws) {
     narrativeSubscribers.add(ws as WebSocket);
   },
-  send(ws, msg: ServerMessage) {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify(msg));
-    }
+  send(ws, msg) {
+    escribir(ws, msg);
   },
-  broadcastNarrative(msg: ServerMessage) {
-    for (const ws of narrativeSubscribers) ctx.send(ws, msg);
+  // EL TRANSPORTE ESCRIBE EL SELLO, y estas dos funciones son los únicos
+  // sitios del bridge que lo hacen (#282). El mensaje tiene que decir DE
+  // QUIÉN es o el cliente no puede distinguir el tile de su partida del de la
+  // que acaba de abandonar. Se estampa aquí y no en cada emisor porque son 23
+  // llamadas y basta olvidar una para tirar un tile bueno; el tipo
+  // `SinSelloDeSesion` impide que un emisor lo escriba por su cuenta.
+  //
+  // Qué significa EXACTAMENTE, para que nadie lo lea de más: «la sesión que
+  // este bridge tiene activa en el instante de emitir». No es «la sesión que
+  // pidió el trabajo» — eso lo sujeta aparte `sessionChangedError`, que hace
+  // que un job de una sesión relevada ni siquiera llegue a difundirse.
+  broadcastNarrative(msg) {
+    const sellado = sellarSesion(msg, narrative.session_id);
+    for (const ws of narrativeSubscribers) escribir(ws, sellado);
+  },
+  enviarNarrativo(ws, msg) {
+    escribir(ws, sellarSesion(msg, narrative.session_id));
   },
 };
 
@@ -243,7 +266,9 @@ wss.on("connection", (ws: WebSocket) => {
     if (!intake.ok) {
       const preview = raw.toString().slice(0, 200);
       console.error(`Bridge: WS frame rejected (${intake.reason}): ${intake.error} — ${preview}`);
-      ctx.send(ws, {
+      // UNICAST —al socket que mandó la basura, no a todos— pero por el
+      // mismo transporte que sella: aquí el `sessionId` se escribía a mano.
+      ctx.enviarNarrativo(ws, {
         type: "narrative_status",
         phase: "error",
         kind: "scene",
