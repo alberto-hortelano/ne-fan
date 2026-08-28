@@ -319,10 +319,18 @@ export interface NarrativeEventMessage {
  *  "error" (LLM call failed — surfaced verbatim, no silent placeholder). */
 export interface NarrativeStatusMessage {
   type: "narrative_status";
-  /** El mismo sello que el evento, y por el mismo escritor. Viaja pero NO se
-   *  filtra en el cliente: descartar un `phase:"error"` de una sesión recién
-   *  muerta sería el silencio que prohíbe el fail-loud de esta casa. Está
-   *  aquí para que quien depure sepa de qué partida hablaba el status. */
+  /** El mismo sello que el evento, y por el mismo escritor.
+   *
+   *  Desde #312 el cliente lo REPARTE en vez de ignorarlo: `destinoDeStatus`
+   *  (`src/session/session-facets.ts`) manda lo ajeno que es `phase:"error"`
+   *  al registro de errores —callarlo sería el silencio que prohíbe el
+   *  fail-loud de esta casa— y descarta el resto, que es lo que llegaba a
+   *  teletransportar al jugador de la partida viva con su `spawn`.
+   *
+   *  Lo que este campo dice EXACTAMENTE, y hay que leerlo así o el filtro se
+   *  entiende mal: «la sesión que el bridge tenía activa al emitir», no «la
+   *  que pidió el trabajo» (ver `bridge/ws-server.ts`). Por eso la
+   *  pre-generación de mundo (`kind:"game_gen"`) se reparte SIN mirarlo. */
   sessionId: string;
   /** "progress" = latido del motor narrativo mientras genera (una tool MCP
    *  llamada, un paso dado): resetea el timeout de inactividad de ai_server

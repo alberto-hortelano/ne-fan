@@ -21,6 +21,7 @@
  *  los dos sentidos. */
 
 import { BASE_UI_THEME, type UiTheme } from "../games/ui-theme.js";
+import type { NarrativeStatusMessage } from "../protocol/messages.js";
 
 /** Todo lo que una partida imprime en el cliente. Un campo aquí es una cosa
  *  que hay que deshacer al volver al título — por eso viven juntos. */
@@ -92,6 +93,22 @@ export interface FacetSinks {
    *  que no arrancó, esperando a la mitad que falta para anunciar una sesión
    *  que ya no existe. */
   entrada(sessionId: string): void;
+  /** El GATE del diálogo: mientras hay una conversación abierta, el input de
+   *  juego (moverse, atacar) está suprimido y el panel está en pantalla.
+   *
+   *  Cuelga de aquí desde #311 por la razón de siempre: era un espejo a mano
+   *  —`input.dialogueActive`, cuatro escrituras sueltas en el cliente, más
+   *  `dialoguePanel.isVisible`— y `leave()` no lo deshacía. La forma exacta
+   *  del bug de #249, que es para lo que existe este módulo. Va el ÚLTIMO del
+   *  record: no es destructivo del mundo, así que no tiene por qué correr
+   *  antes que nada.
+   *
+   *  HONESTIDAD sobre lo que esto es y lo que no: hoy no diverge, y nadie
+   *  halló un camino alcanzable a la divergencia (`volverAlTitulo` solo sale
+   *  del botón del overlay de carga, y ese overlay no se abre con un diálogo
+   *  delante). Se pone porque el mecanismo que lo impide no puede ser que
+   *  nadie encuentre el camino. */
+  dialogo(sessionId: string): void;
 }
 
 /** La sesión del cliente: un valor y dos verbos que son el mismo acto. */
@@ -146,6 +163,7 @@ const APLICADORES: {
   combat: (s, f) => s.combat(f.combatSystem),
   history: (s, f) => s.history(f.sessionId),
   entrada: (s, f) => s.entrada(f.sessionId),
+  dialogo: (s, f) => s.dialogo(f.sessionId),
 };
 
 /** Los nombres de los sinks, derivados del record de arriba: no hay una
@@ -184,4 +202,57 @@ export function createClientSession(sinks: FacetSinks): ClientSession {
       apply(NO_SESSION);
     },
   };
+}
+
+/** A quién le habla un `narrative_status` que difunde el bridge (#312).
+ *
+ *  `"titulo"` la barra de pre-generación de mundo · `"juego"` la partida que
+ *  se está jugando · `"fallo-ajeno"` el registro de errores, y NADA más ·
+ *  `"descartado"` a nadie, con su contador. */
+export type DestinoDeStatus = "titulo" | "juego" | "fallo-ajeno" | "descartado";
+
+/** Lo único que hace falta saber de un status para repartirlo. Es un `Pick`
+ *  del mensaje del wire y no una forma copiada a mano: un `kind` nuevo en
+ *  `messages.ts` entra aquí solo, y las ramas de abajo dejan de ser
+ *  exhaustivas donde toca. */
+export type StatusRepartible = Pick<NarrativeStatusMessage, "sessionId" | "phase" | "kind">;
+
+/** El reparto, como función pura. Vive aquí porque aquí ya vive «cuál es la
+ *  mía» (`esMio`) y porque en el cliente no hay nada que pueda ponerse rojo:
+ *  `nefan-html` no tiene harness (#241).
+ *
+ *  EL PROBLEMA que resuelve (#312): hasta hoy el embudo del cliente filtraba
+ *  los `narrative_event` por sello y dejaba pasar TODOS los `narrative_status`.
+ *  Un `ready` de una partida abandonada llegaba entero a la viva, y con
+ *  `spawn` le escribía la posición al jugador — teletransporte, no «interfaz
+ *  desbloqueada». `sessionChangedError` (bridge) estrecha la ventana a los
+ *  frames ya en vuelo, pero no la cierra.
+ *
+ *  EL ORDEN DE LAS REGLAS ES EL DISEÑO, y la primera es la que no se puede
+ *  quitar:
+ *
+ *  1. `game_gen` va al TÍTULO SIN MIRAR EL SELLO. No es una excepción
+ *     cosmética: el sello lo estampa el transporte con «la sesión que este
+ *     bridge tiene activa en el instante de emitir» (`bridge/ws-server.ts`, y
+ *     está escrito allí), no con la de quien pidió el trabajo. Tras jugar y
+ *     volver al título el cliente está en `""` y el bridge sigue con la
+ *     partida cargada, así que la pre-generación llega SIEMPRE con sello
+ *     ajeno: filtrar por sello sin esta rama deja la barra girando para
+ *     siempre. Que el sello diga quién PIDIÓ el trabajo es otro arreglo, y
+ *     tiene issue propio.
+ *  2. Lo que es mío, a la partida.
+ *  3. Lo ajeno que es un FALLO no se calla: un error de una sesión recién
+ *     muerta sigue llegando a quien juega. Es el motivo por el que este
+ *     embudo no filtraba nada, y por el que la respuesta no es filtrarlo
+ *     entero sino partirlo en canales.
+ *  4. El resto —un `ready`, un `generating`, un latido de una partida que ya
+ *     no está— no tiene destinatario. */
+export function destinoDeStatus(
+  status: StatusRepartible,
+  esMio: (sessionId: string) => boolean,
+): DestinoDeStatus {
+  if (status.kind === "game_gen") return "titulo";
+  if (esMio(status.sessionId)) return "juego";
+  if (status.phase === "error") return "fallo-ajeno";
+  return "descartado";
 }

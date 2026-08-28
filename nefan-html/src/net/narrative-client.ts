@@ -15,12 +15,27 @@ import type {
   NarrativeEventMessage,
   NarrativeStatusMessage,
 } from "@nefan-core/src/protocol/messages.js";
+import { destinoDeStatus } from "@nefan-core/src/session/session-facets.js";
 
 export type GameInfo = GamesListedMessage["games"][number];
 export type StyleInfo = GamesListedMessage["styles"][number];
 
 export type NarrativeEventListener = (event: NarrativeEventMessage) => void;
 export type NarrativeStatusListener = (status: NarrativeStatusMessage) => void;
+
+/** Un fallo del motor que NO es de esta partida (#312).
+ *
+ *  El tipo ES el candado, y por eso es un `Pick` y no el mensaje entero: sin
+ *  `spawn` y sin `tile`, teletransportar al jugador o falsear el ledger de
+ *  viaje con un mensaje ajeno no es que esté prohibido, es que **no se puede
+ *  escribir**. Lleva `sessionId` porque quien depura necesita saber de qué
+ *  partida muerta venía el fallo que está leyendo. */
+export type FalloAjeno = Pick<
+  NarrativeStatusMessage,
+  "phase" | "kind" | "message" | "placeId" | "sessionId"
+>;
+
+export type FalloAjenoListener = (fallo: FalloAjeno) => void;
 
 /** De quién es lo que llega, y a quién decírselo (#282).
  *
@@ -39,11 +54,21 @@ export interface DeQuienEs {
 
 export class NarrativeClient {
   private listeners = new Set<NarrativeEventListener>();
+  /** La partida viva: tiles, escenas, viajes, consequences. */
   private statusListeners = new Set<NarrativeStatusListener>();
+  /** El título: progreso de la pre-generación de mundo (kind "game_gen"). */
+  private progresoListeners = new Set<NarrativeStatusListener>();
+  /** El registro de errores: fallos de OTRA partida, sin nada más. */
+  private falloAjenoListeners = new Set<FalloAjenoListener>();
   /** Eventos de OTRA partida tirados aquí. Lo lee el bench/QA por
    *  `__nefan.descartados()`: sin contador, «no llegó todavía» y «llegó y se
    *  descartó» son el mismo verde. */
   private tirados = 0;
+  /** Lo mismo para los `narrative_status` ajenos que NO son fallo (#312): un
+   *  `ready` rancio ya no llega a la partida viva, y sin contador «no se
+   *  aplicó» y «no ha llegado» volverían a ser el mismo verde. Va aparte de
+   *  `tirados` porque el guion 29 lee `n` como «eventos». */
+  private statusTirados = 0;
 
   constructor(
     private bridge: BridgeClient,
@@ -71,24 +96,58 @@ export class NarrativeClient {
     });
     this.bridge.on("narrative_status", (msg) => {
       if (!msg) return;
-      // El status LLEVA sello pero NO se filtra, y es deliberado: descartar un
-      // `phase:"error"` de una sesión recién muerta es el silencio que
-      // prohíbe el fail-loud de esta casa. Qué hacer con un `ready` rancio sin
-      // callar los `error` es una pregunta abierta, y va a issue.
+      // EL SEGUNDO EMBUDO (#312). El status lleva sello desde #282 y hasta
+      // hoy no se miraba: un `ready` de una partida abandonada llegaba
+      // entero a la viva y, con `spawn`, le escribía la posición al jugador.
+      // No era «desbloquear la interfaz»: era teletransportarlo.
       //
-      // QUIEN AÑADA AQUÍ UN SEGUNDO FILTRO tiene que tocar también
-      // `labs/narrative/replay-server.mjs`, que reestampa el sello justo de lo
-      // que este embudo descarta: si no, `replay-web` reproduce una película
-      // que el cliente tira entera y se queda en negro.
-      for (const fn of this.statusListeners) fn(msg);
+      // No se filtra ENTERO —eso silenciaría el `phase:"error"` de una sesión
+      // recién muerta, que es lo que esta casa prohíbe— sino que se REPARTE:
+      // la decisión es de `destinoDeStatus` (core, donde ya vive «cuál es la
+      // mía» y donde se puede poner roja), y aquí solo se entrega. El canal
+      // de fallos ajenos entrega un `FalloAjeno`, que no tiene `spawn` ni
+      // `tile`: el desenlace caro no es que esté prohibido, es que no se
+      // puede escribir.
+      //
+      // QUIEN AÑADA AQUÍ UN TERCER TIPO FILTRADO tiene que tocar también
+      // `labs/narrative/replay-server.mjs`, que reestampa el sello justo de
+      // lo que estos embudos descartan: si no, `replay-web` reproduce una
+      // película que el cliente tira entera y se queda en negro.
+      switch (destinoDeStatus(msg, (id) => this.deQuienEs.esMia(id))) {
+        case "titulo":
+          for (const fn of this.progresoListeners) fn(msg);
+          return;
+        case "juego":
+          for (const fn of this.statusListeners) fn(msg);
+          return;
+        case "fallo-ajeno":
+          // Se dice de quién era ANTES de entregarlo: el rótulo que lee quien
+          // juega no lleva sello (ni debe), así que sin esta línea un error
+          // de una partida muerta se lee igual que uno de la suya.
+          this.deQuienEs.log(
+            `⚠ fallo de otra partida (${msg.kind}, sesión «${msg.sessionId}»): se muestra igual`,
+          );
+          for (const fn of this.falloAjenoListeners) fn(msg);
+          return;
+        case "descartado":
+          this.statusTirados++;
+          this.deQuienEs.log(
+            `↩ status de otra partida descartado (${msg.kind}/${msg.phase}, sesión «${msg.sessionId}»)`,
+          );
+          return;
+      }
     });
   }
 
-  /** Cuántos eventos ajenos se ha tirado el embudo. De quién eran lo dice la
-   *  línea del juego, que es donde se depura; aquí solo el CONTADOR, porque
-   *  sin él «no se instaló» y «no ha llegado» son el mismo verde. */
-  descartados(): { n: number } {
-    return { n: this.tirados };
+  /** Cuántos mensajes ajenos se han tirado los embudos. De quién eran lo dice
+   *  la línea del juego, que es donde se depura; aquí solo los CONTADORES,
+   *  porque sin ellos «no se instaló» y «no ha llegado» son el mismo verde.
+   *
+   *  `n` sigue siendo EVENTOS y no la suma: el guion 29 lo lee así, y una
+   *  suma haría que un status ajeno cualquiera diera por bueno su aserto
+   *  sobre el tile. */
+  descartados(): { n: number; status: number } {
+    return { n: this.tirados, status: this.statusTirados };
   }
 
   onNarrativeEvent(fn: NarrativeEventListener): () => void {
@@ -96,9 +155,25 @@ export class NarrativeClient {
     return () => this.listeners.delete(fn);
   }
 
-  onNarrativeStatus(fn: NarrativeStatusListener): () => void {
+  /** Lo que le pasa a LA partida que se está jugando. */
+  onStatusDeLaPartida(fn: NarrativeStatusListener): () => void {
     this.statusListeners.add(fn);
     return () => this.statusListeners.delete(fn);
+  }
+
+  /** Progreso de la pre-generación de mundo, que es cosa del título. Llega
+   *  SIN mirar el sello y el porqué está escrito en `destinoDeStatus`. */
+  onProgresoDeMundo(fn: NarrativeStatusListener): () => void {
+    this.progresoListeners.add(fn);
+    return () => this.progresoListeners.delete(fn);
+  }
+
+  /** Un fallo del motor que era de OTRA partida. Se entrega para que se vea
+   *  —callarlo es el silencio que prohíbe el fail-loud— pero recortado: con
+   *  este tipo no se puede mover al jugador ni tocar el ledger de viaje. */
+  onFalloAjeno(fn: FalloAjenoListener): () => void {
+    this.falloAjenoListeners.add(fn);
+    return () => this.falloAjenoListeners.delete(fn);
   }
 
   async listGames(): Promise<{ games: GameInfo[]; styles: StyleInfo[] }> {
@@ -122,7 +197,7 @@ export class NarrativeClient {
   }
 
   /** Encola la pre-generación del mundo de un juego. Resuelve
-   *  al encolar; el progreso llega por onNarrativeStatus (kind "game_gen"). */
+   *  al encolar; el progreso llega por `onProgresoDeMundo`. */
   async generateGame(gameId: string): Promise<{ queued: string }> {
     const res = await this.bridge.generateGame(gameId);
     if (!res.ok) {

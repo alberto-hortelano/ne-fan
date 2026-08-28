@@ -23,10 +23,22 @@ export default tseslint.config(
   // (el defecto) esta acepta `void p()` sin catch, que es justo lo que el
   // candado del repo persigue.
   //
+  // `no-misused-promises` cierra el tercer hueco (#260): entregar una `async`
+  // a quien espera una función que no devuelve nada — un `addEventListener`,
+  // típicamente. Ahí el rechazo no lo recoge nadie: no hay `void` (así que
+  // `html-sin-promesa-muda` no lo ve) y no hay llamada suelta descartada (así
+  // que `no-floating-promises` tampoco). Las SEIS que había estaban en
+  // `title-screen.ts` y solo UNA perdía algo de verdad —la de subir un estilo,
+  // con el `await` del `FileReader` fuera del `try`, o sea un click mudo—;
+  // las otras cinco tenían el cuerpo entero en `try/catch` y se ajustaron
+  // porque la regla lo pide, no porque mordieran. Coste medido de la regla en
+  // este repo: 2,16 s → 2,68 s el `npm run lint` entero.
+  //
   // `files` acota el bloque a propósito: `vite.config.ts` y este mismo fichero
   // están fuera del `include` del tsconfig, y un `projectService` global los
-  // pondría rojos. `recommendedTypeChecked` entero daría 40 violaciones y es
-  // otra tarea (#260).
+  // pondría rojos. `recommendedTypeChecked` entero seguiría dando decenas de
+  // violaciones y es otra tarea: lo que cierra #260 son estas dos reglas
+  // nombradas, no el preset.
   {
     files: ["src/**/*.ts"],
     languageOptions: {
@@ -37,6 +49,7 @@ export default tseslint.config(
     },
     rules: {
       "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-misused-promises": "error",
     },
   },
   // EL INPUT DE JUEGO SOLO SE REGISTRA EN LA PUERTA (#285), mirando la

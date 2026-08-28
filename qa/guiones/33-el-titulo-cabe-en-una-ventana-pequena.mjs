@@ -212,6 +212,51 @@ export default async function (ctx) {
     JSON.stringify(derivado),
   );
 
+  // ── 1e · #310: se puede CERRAR el título en la ventana estrecha ──────────
+  // El botón «✕ cerrar (modo fixtures, sin sesión)» vivía en `top:12px`, o sea
+  // dentro de la banda que ocupa `#dev-status` — opaco, de y=0 a su cota, y con
+  // `z-index:10000` sobre el título (9999). A 500 px de ancho el panel llena esa
+  // banda entera y lo tapaba al 100 %: no había forma de cerrarlo con el ratón.
+  //
+  // Se mide DONDE el defecto existía y con el panel YA LLENO (el bloque de
+  // arriba acaba de esperarlo): con la barra a media carga el solape podría no
+  // darse y el verde no diría nada. Dos asertos porque son dos cosas: que las
+  // cajas no se cruzan (geometría) y que el click LLEGA al botón
+  // (`elementFromPoint`, que es lo que le pasa al cursor de quien juega — la
+  // geometría sola no sabe de `z-index` ni de `pointer-events`).
+  const cierre = await ctx.page.evaluate(() => {
+    const btn = document.getElementById("ts-close");
+    const dev = document.getElementById("dev-status");
+    if (!btn || !dev) return { existe: false };
+    const b = btn.getBoundingClientRect();
+    const d = dev.getBoundingClientRect();
+    const cx = Math.round(b.left + b.width / 2);
+    const cy = Math.round(b.top + b.height / 2);
+    const golpeado = document.elementFromPoint(cx, cy);
+    return {
+      existe: true,
+      boton: { top: Math.round(b.top), bottom: Math.round(b.bottom) },
+      barra: { top: Math.round(d.top), bottom: Math.round(d.bottom) },
+      // Solape vertical: las dos son de ancho completo por la derecha, así que
+      // cruzarse en Y es cruzarse.
+      solapa: b.top < d.bottom && b.bottom > d.top,
+      dentroDelViewport: b.top >= 0 && b.bottom <= window.innerHeight,
+      golpea: golpeado?.id ?? golpeado?.tagName ?? null,
+      esElBoton: golpeado === btn,
+    };
+  });
+  ctx.log(`el botón de cerrar: ${JSON.stringify(cierre)}`);
+  ctx.expect(
+    "el botón de cerrar el título NO cae bajo la barra de dev (#310)",
+    cierre.existe && !cierre.solapa && cierre.dentroDelViewport,
+    JSON.stringify(cierre),
+  );
+  ctx.expect(
+    "…y un click en su centro LLEGA al botón, no a lo que tenga encima",
+    cierre.esElBoton,
+    `elementFromPoint devolvió "${cierre.golpea}"`,
+  );
+
   // ── 1b · #251 en negativo: sin partidas no hay nada que avisar ───────────
   const sinPartidas = await ctx.page.evaluate(() => {
     const el = document.getElementById("ts-mas");
@@ -346,6 +391,37 @@ export default async function (ctx) {
     "…sin mover «Nueva partida»: la señal se pinta encima, no dentro de la columna",
     Math.abs(conDoce.botonY - yaLleno.botonY) <= 2,
     `${yaLleno.botonY}px sin lista → ${conDoce.botonY}px con doce partidas`,
+  );
+  // #310, el caso difícil: el botón de cerrar bajó a `bottom:12px` y la banda
+  // de «hay más partidas» también vive abajo (`#ts-mas`, `bottom:0`). Se pisan
+  // en geometría A PROPÓSITO —la banda es de ancho completo— y no pasa nada
+  // porque es `pointer-events:none` y el botón se inserta después. Eso hay que
+  // MEDIRLO aquí, que es el único estado donde la banda está en pantalla: con
+  // 0 partidas está `hidden` y el bloque 1e no la ejerce.
+  const cierreConBanda = await ctx.page.evaluate(() => {
+    const btn = document.getElementById("ts-close");
+    const b = btn.getBoundingClientRect();
+    const golpeado = document.elementFromPoint(
+      Math.round(b.left + b.width / 2),
+      Math.round(b.top + b.height / 2),
+    );
+    return {
+      dentroDelViewport: b.top >= 0 && b.bottom <= window.innerHeight,
+      esElBoton: golpeado === btn,
+      golpea: golpeado?.id ?? golpeado?.tagName ?? null,
+      bandaVisible: document.getElementById("ts-mas")?.hidden === false,
+    };
+  });
+  ctx.log(`el botón de cerrar con la banda puesta: ${JSON.stringify(cierreConBanda)}`);
+  ctx.expect(
+    "la banda de «hay más partidas» está puesta (si no, no se mide el caso difícil de #310)",
+    cierreConBanda.bandaVisible,
+    JSON.stringify(cierreConBanda),
+  );
+  ctx.expect(
+    "…y aun así el click llega al botón de cerrar: la banda no roba el cursor (#310)",
+    cierreConBanda.esElBoton && cierreConBanda.dentroDelViewport,
+    `elementFromPoint devolvió "${cierreConBanda.golpea}"`,
   );
   await ctx.shot("titulo-estrecho-con-doce-partidas");
 

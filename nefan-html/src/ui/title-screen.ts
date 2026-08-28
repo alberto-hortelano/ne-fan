@@ -141,8 +141,14 @@ export class TitleScreen {
     // difunde narrative_status kind "game_gen" — el título lo refleja en la
     // tarjeta/panel sin loaders de partida. Suscripción de vida completa
     // (el título vive tanto como la app).
-    this.narrative.onNarrativeStatus((msg) => {
-      if (msg.kind !== "game_gen") return;
+    //
+    // El canal ya viene filtrado por `kind` desde el embudo (#312): aquí
+    // había un `if (msg.kind !== "game_gen") return;` que era el segundo
+    // sitio del cliente que sabía de kinds. Y no se filtra por SELLO, ni
+    // aquí ni allí: el transporte lo estampa con la sesión viva del bridge,
+    // así que tras jugar y volver aquí la pre-generación llega con sello
+    // ajeno y filtrarla dejaría la barra girando para siempre.
+    this.narrative.onProgresoDeMundo((msg) => {
       this.gameGenStatus = msg;
       const line = this.content.querySelector<HTMLElement>("#ts-gen-progress");
       if (line) this.renderGameGenProgress(line);
@@ -242,12 +248,19 @@ export class TitleScreen {
     // `pointer-events:none` para que un «Reanudar» que quede debajo se siga
     // pudiendo pulsar; y `bottom:0`, no 32, porque una banda que flota deja
     // una franja de lista asomando por debajo y vuelve a leerse mal.
+    // El `padding-bottom` deja sitio para `#ts-close`, que desde #310 vive en
+    // esta esquina (`bottom:12px`, ~25 px de alto). Con los 14 px de antes las
+    // dos frases se pintaban EN LA MISMA LÍNEA y se leían una encima de otra —
+    // visto en la captura del bloque 3 de `qa/guiones/33-…`, que es para lo que
+    // sirve mirarlas. No es un hueco a ojo: 12 (el `bottom` del botón) + 25 (su
+    // alto, medido en ese mismo guion: `boton {top:443, bottom:468}`) + 5 de
+    // aire.
     mas.style.cssText = [
       "position: absolute",
       "bottom: 0",
       "left: 0",
       "right: 0",
-      "padding: 34px 16px 14px",
+      "padding: 34px 16px 42px",
       "background: linear-gradient(to bottom, rgba(8,8,12,0) 0%, rgba(8,8,12,0.97) 60%)",
       "text-align: center",
       "font-size: 12px",
@@ -270,9 +283,24 @@ export class TitleScreen {
     close.id = "ts-close";
     close.textContent = "✕ cerrar (modo fixtures, sin sesión)";
     close.title = "Cierra el título sin arrancar sesión: fixtures del selector Room";
+    // ABAJO Y NO ARRIBA (#310). `#dev-status` es opaco, va de `y=0` a su cota
+    // (`--dev-status-alto`, 86 px) y se pinta con `z-index:10000` sobre el
+    // título (9999): a 500 px de ancho el panel llena esa banda entera y
+    // `0..86` contiene el `12..38` que ocupaba este botón — solape del 100 %,
+    // o sea que no había forma de cerrar el título con el ratón. Bajar la cota
+    // no lo arregla (el panel mide ≥54 px siempre, más que los 38 del botón),
+    // y que la barra no se pinte con el título delante re-litiga #250. Lo que
+    // sí lo cierra es sacar el botón de la banda.
+    //
+    // Abajo COMPARTE esquina con la banda de «hay más partidas» (`#ts-mas`,
+    // también absoluta y de ancho completo), y eso está mirado: la banda es
+    // `pointer-events:none`, así que no roba el click, y este botón se inserta
+    // DESPUÉS, así que se pinta encima. Lo que sí hubo que darle es SITIO —el
+    // `padding-bottom` de la banda, arriba—, porque el hit-testing puede estar
+    // bien y las dos frases leerse una sobre otra igualmente.
     close.style.cssText = [
       "position: absolute",
-      "top: 12px",
+      "bottom: 12px",
       "right: 16px",
       "background: none",
       "border: 1px solid #444",
@@ -528,7 +556,7 @@ export class TitleScreen {
         });
       }
       for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-action=delete]")) {
-        btn.addEventListener("click", async () => {
+        const borrarLaPartida = async (): Promise<void> => {
           if (!confirm(`¿Borrar la partida ${btn.dataset.sessionId}?`)) return;
           try {
             await this.narrative.deleteSession(btn.dataset.sessionId!);
@@ -536,7 +564,10 @@ export class TitleScreen {
           } catch (err) {
             alert(`Borrado falló: ${(err as Error).message}`);
           }
-        });
+        };
+        btn.addEventListener("click", () =>
+          paso(borrarLaPartida(), "title", "borrar la partida guardada"),
+        );
       }
       // Los badges de modo son SELECTORES: cambian el modo del save ANTES de
       // cargar (set_render_mode sobre partida inactiva — el bridge escribe el
@@ -848,7 +879,7 @@ export class TitleScreen {
       regenArmedUntil = 0;
       this.renderGameGenProgress(genProgressEl);
     };
-    genWorldBtn.addEventListener("click", async () => {
+    const generarElMundo = async (): Promise<void> => {
       if (contentStatus() === "ready") {
         // Regenerar pisa el mundo actual y deja obsoletos sus estilos
         // aplicados: dos clicks (armed, TTL 5 s), como las acciones de pago.
@@ -867,7 +898,10 @@ export class TitleScreen {
         genProgressEl.innerHTML = `<span style="color:#a44">${escapeHtml((err as Error).message)}</span>`;
         genWorldBtn.disabled = false;
       }
-    });
+    };
+    genWorldBtn.addEventListener("click", () =>
+      paso(generarElMundo(), "title", "encolar la pre-generación del mundo"),
+    );
     applyStyleBtn.addEventListener("click", () => {
       paso(
         this.renderStylePlan(stylePlanEl, selectedGame.game_id, styleSel.value),
@@ -955,7 +989,7 @@ export class TitleScreen {
     cancelBtn.addEventListener("click", () => {
       el.innerHTML = "";
     });
-    runBtn.addEventListener("click", async () => {
+    const aplicarElEstilo = async (): Promise<void> => {
       runBtn.disabled = true;
       cancelBtn.disabled = true;
       try {
@@ -975,7 +1009,10 @@ export class TitleScreen {
         runBtn.disabled = false;
         cancelBtn.disabled = false;
       }
-    });
+    };
+    runBtn.addEventListener("click", () =>
+      paso(aplicarElEstilo(), "title", "aplicar el estilo al mundo pre-generado"),
+    );
   }
 
   /** Subir un estilo propio: nombre + al menos una imagen por categoría; las
@@ -1047,7 +1084,14 @@ export class TitleScreen {
       paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
     );
 
-    uploadBtn.addEventListener("click", async () => {
+    // EL ÚNICO DE LOS SEIS QUE MORDÍA (#260). Aquí el `await` del `FileReader`
+    // va ANTES del `try`, así que un fichero ilegible rechazaba fuera de todo
+    // catch: el rechazo salía del handler `async`, el cliente no tiene handler
+    // de `unhandledrejection` y pulsar «Subir» no hacía nada — #181 otra vez.
+    // Con la función extraída y `paso()` el rechazo tiene canal, y `alFallar`
+    // lo escribe donde ya escriben los demás fallos de este panel: `statusEl`,
+    // porque el registro de errores está oculto con el título delante (#246).
+    const subirElEstilo = async (): Promise<void> => {
       const name = nameEl.value.trim();
       if (name.length < 2) {
         statusEl.innerHTML = `<span style="color:#a44">Ponle un nombre al estilo.</span>`;
@@ -1116,9 +1160,15 @@ export class TitleScreen {
         statusEl.innerHTML = `<span style="color:#a44">Subida fallida: ${escapeHtml((err as Error).message)}</span>`;
         uploadBtn.disabled = false;
       }
-    });
+    };
+    uploadBtn.addEventListener("click", () =>
+      paso(subirElEstilo(), "title", "subir el estilo", (err) => {
+        statusEl.innerHTML = `<span style="color:#a44">Subida fallida: ${escapeHtml((err as Error).message)}</span>`;
+        uploadBtn.disabled = false;
+      }),
+    );
 
-    completeBtn.addEventListener("click", async () => {
+    const generarLasRefsQueFaltan = async (): Promise<void> => {
       completeBtn.disabled = true;
       backBtn.disabled = true;
       statusEl.innerHTML = `<span style="color:#da6">🎨 Generando las refs que faltan (varios minutos)...</span>`;
@@ -1137,7 +1187,10 @@ export class TitleScreen {
         completeBtn.disabled = false;
         backBtn.disabled = false;
       }
-    });
+    };
+    completeBtn.addEventListener("click", () =>
+      paso(generarLasRefsQueFaltan(), "title", "generar las refs que faltan del estilo"),
+    );
   }
 
   /** Crear un mundo propio: textarea o archivo .md/.txt. El borrador se
@@ -1193,7 +1246,7 @@ export class TitleScreen {
     backBtn.addEventListener("click", () =>
       paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
     );
-    createBtn.addEventListener("click", async () => {
+    const crearElMundo = async (): Promise<void> => {
       const draft = draftEl.value.trim();
       if (draft.length < 20) {
         statusEl.innerHTML = `<span style="color:#a44">El borrador es demasiado corto — describe el mundo con al menos unas frases.</span>`;
@@ -1223,7 +1276,10 @@ export class TitleScreen {
         createBtn.disabled = false;
         backBtn.disabled = false;
       }
-    });
+    };
+    createBtn.addEventListener("click", () =>
+      paso(crearElMundo(), "title", "crear el mundo a partir del borrador"),
+    );
   }
 
   private renderCharacterEditor(

@@ -19,8 +19,8 @@ import {
   motivoDeSesionParaElJugador,
   rotuloDeStatus,
   type SalidaDelOverlay,
+  type StatusRotulable,
 } from "@nefan-core/src/protocol/status-labels.js";
-import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.js";
 import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
@@ -246,6 +246,10 @@ const entrada = createEntrada((sessionId) => {
  *  Lo escribe SOLO el sink de la faceta `mundo`, que es quien lo vacía. */
 let mundoPintadoDe = "";
 
+/** De qué sesión es el gate del diálogo que hay puesto ("" = ninguno). Lo
+ *  escribe SOLO el sink de la faceta `dialogo`, hermano del de arriba. */
+let dialogoDeSesion = "";
+
 const session = createClientSession({
   // El mundo pintado es una FACETA, no una llamada que haya que acordarse de
   // hacer (#282, segunda mitad): la rama `new_game` de `unIntentoDeArrancar`
@@ -271,6 +275,26 @@ const session = createClientSession({
   combat: (combatSystem) => applySessionCombatSystem(combatSystem),
   history: (sessionId) => historyBrowser.setSession(sessionId),
   entrada: (sessionId) => entrada.sesion(sessionId),
+  // El gate del diálogo, que hasta #311 era un espejo a mano que `leave()` no
+  // deshacía: `input.dialogueActive` (cuatro escrituras sueltas más abajo) y
+  // `dialoguePanel.isVisible`, dos representaciones de lo mismo. Aquí se
+  // apagan LAS DOS de una vez y por el mismo camino que el resto de la
+  // sesión, así que un tercer retorno al título tampoco tendrá que acordarse.
+  //
+  // POR VALOR y con el argumento LEÍDO, igual que `mundo` y por lo mismo:
+  // cerrar un panel abierto es destructivo, y el módulo promete que aplicar
+  // las mismas facetas dos veces no cambia nada. Sin esta guarda, el primero
+  // que refrescara una faceta a mitad de conversación se la cortaría.
+  //
+  // Lo que esto NO hace, dicho para que no se lea de más: no baja el gate a
+  // `puerta-de-teclado.ts`. El porqué sigue escrito en `puerta-de-teclado.ts`
+  // y no ha cambiado.
+  dialogo: (sessionId) => {
+    if (sessionId === dialogoDeSesion) return;
+    dialogoDeSesion = sessionId;
+    input.dialogueActive = false;
+    dialoguePanel.hide();
+  },
 });
 // Pipeline de imagen de la vista fps: atlas de superficies por tile. Las
 // celdas son assets de la LIBRERÍA (kind "surface") — el server pinta solo
@@ -529,9 +553,11 @@ const nefanHook: Record<string, unknown> = {
    *  el cliente idéntico»: se lee de vuelta en el título y tiene que salir el
    *  mismo objeto por los dos. */
   sesion: () => session.facets,
-  /** Eventos narrativos de OTRA partida que el embudo ha tirado (#282).
-   *  Sin esto, «el tile ajeno no se instaló» y «el tile ajeno no ha llegado
-   *  todavía» son el mismo verde, y el segundo no mide nada. */
+  /** Lo de OTRA partida que los embudos han tirado: `n` son EVENTOS (#282) y
+   *  `status` los `narrative_status` que no eran fallo (#312). Sin esto, «el
+   *  tile ajeno no se instaló» y «el tile ajeno no ha llegado todavía» son el
+   *  mismo verde, y el segundo no mide nada. Van por separado y no sumados
+   *  porque los guiones 29 y 35 afirman cosas distintas con cada uno. */
   descartados: () => narrativeClient.descartados(),
   /** A qué URL resuelve AHORA MISMO cada servicio, ya aplicados los overrides
    *  de la query (`?ai=`, `?bridge=`). No es un adorno de diagnóstico: es lo
@@ -2235,7 +2261,7 @@ if (loaderBack) {
   loaderBack.onclick = () => paso(volverAlTitulo(), "session", "volver a la pantalla de título");
 }
 
-narrativeClient.onNarrativeStatus((status) => {
+narrativeClient.onStatusDeLaPartida((status) => {
   // ── Latido de progreso del motor narrativo ────────────────────────────
   // Un paso observable (petición recogida, tool de estado llamada): el
   // loader deja de ser una espera muda de minutos y narra qué está pasando.
@@ -2328,13 +2354,22 @@ narrativeClient.onNarrativeStatus((status) => {
   }
 });
 
+// Un fallo del motor que era de OTRA partida (#312). Se PINTA —callarlo es el
+// silencio que esta casa prohíbe— y ahí se acaba: ni ledger de viaje, ni
+// frontera, ni `spawn`. No es disciplina, es que el tipo `FalloAjeno` no
+// tiene esos campos: el handler de arriba no se podría escribir con este
+// argumento.
+narrativeClient.onFalloAjeno((fallo) => {
+  pintarFalloDelMotor(fallo);
+});
+
 /** Enseña un fallo del motor donde toque. El TÍTULO ya no se decide aquí:
  *  `main.ts` pintaba «Error al generar el mundo» y «Error al generar la
  *  escena» —jerga de motor— encima de un cuerpo que el bridge ya había
  *  escrito para quien juega (#180). Ahora el rótulo sale de `rotuloDeStatus`
  *  (nefan-core), que además decide si el fallo tapa la pantalla o se queda en
  *  la línea de mensajes; el cliente solo pinta. */
-function pintarFalloDelMotor(status: NarrativeStatusMessage): void {
+function pintarFalloDelMotor(status: StatusRotulable): void {
   const rotulo = rotuloDeStatus(status, {
     mundoVacio: !tileStore.hasGridTiles,
     overlayAbierto: loaderEl?.classList.contains("visible") ?? false,

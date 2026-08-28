@@ -151,23 +151,29 @@ const wss = new WebSocketServer({ port: PORT, host: "127.0.0.1" });
 console.error(`[replay] suplantando al bridge en ws://127.0.0.1:${PORT}`);
 console.error(`[replay] arranca el cliente (cd nefan-html && npm run dev) y pulsa "Nueva partida".`);
 
-/** El ÚNICO tipo de frame que hay que reestampar al reemitir (#282).
+/** Los tipos de frame que hay que reestampar al reemitir (#282, #312).
  *
  *  No es «los mensajes que llevan sello» —eso sería una segunda lista de un
  *  dominio que ya vive en el tipo `ServerMessage` y que se quedaría rancia—
- *  sino «lo que el cliente FILTRA», que es una sola cosa y está escrita en un
- *  sitio: `nefan-html/src/net/narrative-client.ts` descarta el
- *  `narrative_event` cuyo sello no es el de su partida, y el `narrative_status`
- *  NO lo filtra a propósito (silenciar un error de una sesión muerta sería el
- *  silencio que prohíbe el fail-loud).
+ *  sino «lo que el cliente FILTRA», que está escrito en un solo sitio:
+ *  `nefan-html/src/net/narrative-client.ts`.
+ *
+ *  Son DOS desde #312. El `narrative_event` ajeno se descarta desde #282; el
+ *  `narrative_status` ajeno ya no pasa entero: `destinoDeStatus` (core) lo
+ *  reparte, y de una sesión que no es la suya el cliente solo se queda los
+ *  `phase:"error"` —y recortados, sin `spawn` ni `tile`—. O sea que en una
+ *  película sin reestampar el `ready` que retira el overlay de carga y el
+ *  `generating` que narra el progreso se tiran los dos: el mundo se pintaría
+ *  (los `narrative_event` sí se reestampaban) pero el «Generando mundo
+ *  inicial…» no se iría nunca.
  *
  *  Sin reestampar, los frames del log —grabados con otra sesión, o antes de
- *  que el sello existiera— se descartan enteros y `replay-web` reproduce una
- *  película en negro.
+ *  que el sello existiera— se descartan y `replay-web` reproduce una película
+ *  en negro, o con el overlay puesto.
  *
- *  Si algún día el cliente filtra un segundo tipo, este es el sitio que hay
+ *  Si algún día el cliente filtra un tercer tipo, este es el sitio que hay
  *  que ampliar; el comentario de `narrative-client.ts` lo dice desde allí. */
-const TIPO_FILTRADO_POR_EL_CLIENTE = "narrative_event";
+const TIPOS_FILTRADOS_POR_EL_CLIENTE = new Set(["narrative_event", "narrative_status"]);
 
 wss.on("connection", (ws) => {
   console.error("[replay] cliente conectado");
@@ -189,7 +195,7 @@ wss.on("connection", (ws) => {
         if (ws.readyState !== ws.OPEN) return;
         const frame = timeline[i];
         sendMsg(
-          frame.msg.type === TIPO_FILTRADO_POR_EL_CLIENTE
+          TIPOS_FILTRADOS_POR_EL_CLIENTE.has(frame.msg.type)
             ? { ...frame.msg, sessionId: sesionServida }
             : frame.msg,
         );
