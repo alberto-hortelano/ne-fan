@@ -194,6 +194,65 @@ export async function esperarListaDeSaves(ctx, maxMs = 30_000) {
   );
 }
 
+/** Recarga la página y espera al título con su lista de partidas.
+ *
+ *  Los guiones que miden el título empiezan TODOS igual y cada bloque tiene
+ *  que partir del mismo estado. Estaba copiado verbatim en el 29 y el 33. El
+ *  viewport se conserva: `reload` no lo toca. */
+export async function recargarAlTitulo(ctx) {
+  await ctx.page.reload({ waitUntil: "domcontentloaded" });
+  await ctx.waitFor("el cliente arranca", () => Boolean(window.__nefan));
+  await esperarTituloListo(ctx);
+  await esperarListaDeSaves(ctx);
+}
+
+/** Anota lo que devuelva `medir` en el PRIMER pintado de «Nueva partida».
+ *
+ *  Hace falta un espía y no vale medir «cuando el título está listo»: para
+ *  entonces el panel de dev ya se ha rellenado (medido el 2026-08-28: 54 px →
+ *  109 px de contenido), así que un Δ tomado ahí sale 0 aunque el bug esté
+ *  puesto. El instante que importa es aquel en el que el botón aparece y se
+ *  puede pulsar.
+ *
+ *  `medir` viaja como TEXTO (`toString()`) y se inyecta en el init script: es
+ *  la misma función que el guion usa después para la segunda medida, así que
+ *  las dos no pueden divergir. Con dos copias, cambiar una fórmula dejaba el
+ *  aserto verde comparando cosas distintas.
+ *
+ *  Se instala antes de que cargue la app y se re-instala en cada navegación. */
+export async function espiarElPrimerPintado(ctx, medir) {
+  await ctx.page.addInitScript({
+    content: `
+      window.__qaNacimiento = { visto: false };
+      const medir = ${medir.toString()};
+      const obs = new MutationObserver(() => {
+        if (window.__qaNacimiento.visto || !document.getElementById("ts-new")) return;
+        window.__qaNacimiento = { visto: true, ...medir() };
+        obs.disconnect();
+      });
+      obs.observe(document, { childList: true, subtree: true });
+    `,
+  });
+}
+
+/** Lo que anotó el espía de arriba. */
+export function esperarElPrimerPintado(ctx, maxMs = 30_000) {
+  return ctx.waitFor(
+    "el espía mide dónde NACE «Nueva partida»",
+    () => (window.__qaNacimiento?.visto ? window.__qaNacimiento : null),
+    maxMs,
+  );
+}
+
+/** Dos frames para que el layout se asiente antes de volver a medir. No es una
+ *  espera por reloj: `requestAnimationFrame` resuelve cuando el navegador ha
+ *  pintado, que es justo la condición. */
+export function asentarElLayout(ctx) {
+  return ctx.page.evaluate(
+    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+  );
+}
+
 /** Abre el selector de mundos desde el home. ÚNICO sitio donde se pulsa
  *  «Nueva partida». */
 export async function abrirSelectorDeMundos(ctx) {

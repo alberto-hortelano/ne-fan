@@ -14,6 +14,12 @@
  *  sin canal. Ninguna de las dos puede ver lo que aquí se afirma: que el fallo
  *  llegue a la PANTALLA. Ese es el hueco que cubre este guion.
  *
+ *  Desde #269 mide además QUÉ NOMBRA el mensaje: la etiqueta que la persona
+ *  eligió en el desplegable (`zorder_test`) y no la clave del glob con la que
+ *  se importa (`@nefan-core/data/scenes/zorder_test.json`). Las dos salen ya
+ *  de la misma derivación en core (`etiquetaDeFixture`), así que la opción
+ *  pintada y el mensaje de fallo no pueden volver a divergir.
+ *
  *  El fallo se inyecta en el BORDE —la petición del JSON de la fixture se
  *  aborta—, no dentro del cliente: es lo que pasa con una fixture ausente,
  *  corrupta o un dev server que se cayó a mitad. Nada se fuerza ni se stubea
@@ -98,6 +104,19 @@ export default async function (ctx) {
     "el mensaje NOMBRA la fixture que falló (un «algo falló» no sirve para nada)",
     Boolean(dicho?.entrada?.msg.includes(ROTA)) && Boolean(dicho?.linea?.includes(ROTA)),
     JSON.stringify({ entrada: dicho?.entrada?.msg, linea: dicho?.linea }),
+  );
+  // …y la NOMBRA COMO LA ELIGIÓ LA PERSONA (#269). Hasta esta tanda los dos
+  // canales interpolaban el `value` del `<select>`, que es la clave del glob:
+  // se eligió «zorder_test» y se leía «no se pudo cargar la fixture
+  // @nefan-core/data/scenes/zorder_test.json». La ruta del disco no es asunto
+  // de quien juega; el crudo sigue entero en el `detail` de la entrada.
+  const rutaEnLoQueSeLee = [dicho?.entrada?.msg ?? "", dicho?.linea ?? ""].filter((t) =>
+    /\.json|@nefan-core|scenes\//.test(t),
+  );
+  ctx.expect(
+    "…con la ETIQUETA que se eligió, no con la ruta del glob (#269)",
+    rutaEnLoQueSeLee.length === 0,
+    JSON.stringify(rutaEnLoQueSeLee),
   );
   // La OTRA mitad del mismo bug, y la que sobrevivió al primer arreglo: decir
   // «no cargó» y dejar la etiqueta apuntando a la fixture que no cargó cambia

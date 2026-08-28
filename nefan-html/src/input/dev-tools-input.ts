@@ -7,6 +7,8 @@
  *  N (descubrir props) y R (revisar el blueprint por visión) se fueron con el
  *  pipeline de imagen del repintado por tile, que ya no existe. */
 
+import { alPulsarTecla } from "./puerta-de-teclado.js";
+
 export interface DevToolsDeps {
   /** El diálogo suprime también las teclas dev (mismo guard que el provider). */
   isDialogueActive(): boolean;
@@ -16,12 +18,15 @@ export class DevToolsInput {
   private generateRequested = false;
   private collisionDebugRequested = false;
 
-  private readonly onKeyDown: (e: KeyboardEvent) => void;
+  /** Desengancha el listener que registró la puerta. */
+  private readonly desenganchar: () => void;
 
   constructor(deps: DevToolsDeps) {
-    this.onKeyDown = (e) => {
+    const onKeyDown = (e: KeyboardEvent): void => {
       if (deps.isDialogueActive()) return;
-      if (typeof e.key !== "string" || e.repeat) return;
+      // Sin `typeof e.key`: lo descarta la puerta. La repetición sí es de aquí
+      // (G pide el atlas: mantener la tecla no puede pedirlo cien veces).
+      if (e.repeat) return;
       switch (e.key.toLowerCase()) {
         // Generación de escena IA (dev): G pide el atlas de superficies.
         case "g": this.generateRequested = true; break;
@@ -29,7 +34,10 @@ export class DevToolsInput {
         case "b": this.collisionDebugRequested = true; break;
       }
     };
-    window.addEventListener("keydown", this.onKeyDown);
+    // Por la puerta (#285): G pide el atlas de superficies del tile activo y
+    // B cicla la vista de debug del renderer — las dos sobre un mundo que con
+    // el título delante no se ve, y la primera puede GASTAR.
+    this.desenganchar = alPulsarTecla(onKeyDown);
   }
 
   /** True once per G press (pedir el atlas de superficies del tile activo). */
@@ -51,6 +59,6 @@ export class DevToolsInput {
   }
 
   dispose(): void {
-    window.removeEventListener("keydown", this.onKeyDown);
+    this.desenganchar();
   }
 }

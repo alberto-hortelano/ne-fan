@@ -24,7 +24,7 @@
  *  fuente se devuelve siempre para que el guion la registre — un aserto que no
  *  dice de dónde salió el dato vale menos.
  */
-import { existsSync, readdirSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** El `saves/` del disco efímero de ESTA corrida, o null si no hay ninguno
@@ -111,4 +111,42 @@ export async function esperarPartidaEnDisco(ctx, sessionId, maxMs = 60_000) {
       `(hay: ${JSON.stringify(ultima?.ids ?? [])} · ${ultima?.fuente ?? "sin fuente"}). ` +
       `El cliente no mandó el ack «session_entered», o el bridge no lo aceptó.`,
   );
+}
+
+/** Clona un save `n` veces con ids nuevos. Devuelve los ids creados.
+ *
+ *  Existe para el guion que mide QUÉ SE PINTA con muchas partidas (#251): la
+ *  alternativa es jugar doce arranques, y doce bootstraps del motor falso son
+ *  minutos de batería para medir un layout. Lo que se necesita es que el
+ *  bridge tenga doce saves que listar, y `FsSessionStorage.list()` los lee del
+ *  disco tal cual — así que copiar uno REAL doce veces ejerce exactamente el
+ *  mismo camino de lectura que jugarlos.
+ *
+ *  El `session_id` de DENTRO se reescribe además del nombre del directorio:
+ *  `list()` devuelve `data.session_id || name`, así que sin eso las doce
+ *  tarjetas dirían el mismo id y sus botones colisionarían.
+ *
+ *  Vive en `qa/lib` porque toca el disco efímero de la corrida, que es lo que
+ *  este fichero sabe encontrar; un guion no conoce esa ruta. */
+export function clonarSaves(origen, n) {
+  const dir = dirDeSaves();
+  if (!dir) {
+    throw new Error(
+      "clonarSaves necesita el disco efímero de la corrida (QA_RUN_TMP); contra un stack " +
+        "adoptado no se sabe dónde guarda sus partidas.",
+    );
+  }
+  const base = join(dir, origen);
+  if (!existsSync(base)) throw new Error(`no hay save que clonar en ${base}`);
+  const creados = [];
+  for (let i = 0; i < n; i++) {
+    const id = `${origen}_clon${i}`;
+    cpSync(base, join(dir, id), { recursive: true });
+    const f = join(dir, id, "state.json");
+    const data = JSON.parse(readFileSync(f, "utf-8"));
+    data.session_id = id;
+    writeFileSync(f, JSON.stringify(data));
+    creados.push(id);
+  }
+  return creados;
 }

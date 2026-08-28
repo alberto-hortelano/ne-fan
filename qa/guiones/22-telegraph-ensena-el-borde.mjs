@@ -253,7 +253,16 @@ export default async function (ctx) {
   );
   await ctx.nefan("inputDriver.selectAttack", corto);
   const tCorto = await enWindup(ctx);
-  ctx.log(`telegraph "${corto}": alcance ${JSON.stringify(tCorto.alcance)} m · radio ${tCorto.areaRadius} m`);
+  // El borde y la MIRADA, no solo el alcance: este aserto es intermitente
+  // (medido el 2026-08-28 sobre `326b859` sin tocar: 4 rojos de 6 corridas,
+  // siempre con el mismo `y=742`), y sin saber con qué pitch se midió no hay
+  // por dónde empezar. Es diagnóstico, no un aserto: no cambia el veredicto.
+  const mirada = await ctx.nefan("state");
+  ctx.log(
+    `telegraph "${corto}": alcance ${JSON.stringify(tCorto.alcance)} m · radio ${tCorto.areaRadius} m · ` +
+      `borde lejos ${JSON.stringify(tCorto.borde.lejos)} en ${tCorto.viewport.w}×${tCorto.viewport.h} · ` +
+      `pitch ${mirada.pitchDeg?.toFixed(2)}° · pos ${mirada.pos.x.toFixed(2)},${mirada.pos.z.toFixed(2)}`,
+  );
   ctx.expect(
     `"${corto}" llega menos lejos que "${lento}" y el parche lo dice`,
     tCorto.alcance.lejos < tLento.alcance.lejos,

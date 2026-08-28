@@ -86,6 +86,10 @@ const MIXAMO_MODELS: { id: string; name: string }[] = [
 export class TitleScreen {
   private root: HTMLDivElement;
   private content: HTMLDivElement;
+  /** La banda de «hay más partidas» (#251). Campo y no `querySelector`: lo
+   *  crea el constructor, así que buscarlo y comprobar que existe era la misma
+   *  rama inalcanzable que esta tanda borró en `loadSceneFile`. */
+  private readonly aviso = document.createElement("div");
   private resolve: ((action: TitleAction) => void) | null = null;
   /** Notifica show/hide al caller (main.ts oculta el chip de gráficos
    *  mientras el título está abierto). Cubre TODOS los cierres, incluido el
@@ -164,8 +168,8 @@ export class TitleScreen {
       css.id = "title-screen-responsive";
       css.textContent = `
         @media (max-width: 900px) {
-          /* Solo laterales/inferior: el padding-top lo mide
-             reserveDevPanelSpace() del panel de dev real (inline). */
+          /* Solo laterales/inferior: el padding-top lo reserva la expresión
+             de base.css, derivada de --dev-status-alto (#250). */
           #title-screen {
             padding-left: 12px !important;
             padding-right: 12px !important;
@@ -187,9 +191,6 @@ export class TitleScreen {
     }
     // El padding superior sigue al panel de dev también al rotar/redimensionar
     // (una sola suscripción: el título vive tanto como la app).
-    window.addEventListener("resize", () => {
-      if (this.root && this.root.style.display !== "none") this.reserveDevPanelSpace();
-    });
     this.root = document.createElement("div");
     this.root.id = "title-screen";
     this.root.style.cssText = [
@@ -212,9 +213,10 @@ export class TitleScreen {
       // queda clavado en el viewport con 0 o con 200 partidas.
       "justify-content: flex-start",
       "z-index: 9999",
-      // Padding superior mayor que el panel de dev fijo (#dev-status, ~88px),
-      // que se pinta encima: sin él el título nacería debajo del panel.
-      "padding: 96px 32px 32px",
+      // El PADDING no se escribe aquí: sale de `base.css`, pegado a la
+      // variable `--dev-status-alto` de la que se deriva (#250). Aquí vivía
+      // `reserveDevPanelSpace()` —medir el panel, un ResizeObserver y un
+      // listener de resize— para calcular un número que hoy es constante.
     ].join(";");
     this.content = document.createElement("div");
     this.content.style.cssText = [
@@ -224,6 +226,42 @@ export class TitleScreen {
       "overflow-y: auto",
     ].join(";");
     this.root.appendChild(this.content);
+    // La señal de «hay más partidas» (#251). ABSOLUTA y colgando de la raíz:
+    // dentro del flujo volvería a mover «Nueva partida» al aparecer, que es
+    // el bug que #181-c cerró. Sin tematizar, como el resto del título.
+    const mas = this.aviso;
+    mas.id = "ts-mas";
+    mas.hidden = true;
+    // BANDA, no una línea de texto suelta. La primera versión era un texto a
+    // `bottom:32px` y la captura del guion 33 lo enseñó encima de los badges
+    // de una tarjeta a medio cortar: ilegible, dos mensajes pisándose. La
+    // banda trae el fondo del propio overlay con un degradado por arriba, así
+    // que la tarjeta cortada se desvanece dentro de ella —que es además la
+    // señal de «esto sigue»— y la frase se lee sobre color plano.
+    //
+    // `pointer-events:none` para que un «Reanudar» que quede debajo se siga
+    // pudiendo pulsar; y `bottom:0`, no 32, porque una banda que flota deja
+    // una franja de lista asomando por debajo y vuelve a leerse mal.
+    mas.style.cssText = [
+      "position: absolute",
+      "bottom: 0",
+      "left: 0",
+      "right: 0",
+      "padding: 34px 16px 14px",
+      "background: linear-gradient(to bottom, rgba(8,8,12,0) 0%, rgba(8,8,12,0.97) 60%)",
+      "text-align: center",
+      "font-size: 12px",
+      "letter-spacing: 0.5px",
+      "color: #da6",
+      "pointer-events: none",
+    ].join(";");
+    this.root.appendChild(mas);
+    // Re-evaluar cuando la columna cambia de tamaño (llega la lista de saves,
+    // cargan las portadas del selector de mundos) y cuando se desplaza.
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(() => this.actualizarAvisoDeCorte()).observe(this.content);
+    }
+    this.content.addEventListener("scroll", () => this.actualizarAvisoDeCorte());
     // Cierre SIN sesión (modo fixtures/dev): oculta el título y deja el juego
     // en local — el selector "Room" y las teclas dev (G/B…) quedan a mano.
     // No resuelve la promesa de show(): runTitleFlow queda en espera, igual
@@ -297,43 +335,69 @@ export class TitleScreen {
     );
   }
 
-  /** El panel de dev (#dev-status, z-index 10000) queda POR ENCIMA del título
-   *  a propósito (caso de referencia 2026-08-09: coste visible al crear
-   *  mundo/estilo). Su altura varía con el ancho Y con el contenido (se
-   *  rellena async al conectar servicios; en móvil envuelve a varias líneas):
-   *  el padding superior se mide del panel real y se re-mide con un
-   *  ResizeObserver en vez de fijarse. */
-  private devObserver: ResizeObserver | null = null;
-
-  private reserveDevPanelSpace(): void {
-    const dev = document.getElementById("dev-status");
-    if (dev && !this.devObserver && "ResizeObserver" in window) {
-      this.devObserver = new ResizeObserver(() => {
-        if (this.root.style.display !== "none") this.reserveDevPanelSpace();
-      });
-      this.devObserver.observe(dev);
-    }
-    // bottom, no height: el panel no empieza en y=0 (la barra del HUD queda
-    // encima) — lo que hay que despejar es hasta dónde LLEGA.
-    const devBottom = dev ? Math.ceil(dev.getBoundingClientRect().bottom) : 0;
-    // Suelo en FRACCIÓN DEL ALTO, no 96 px fijos: anclado arriba (#181-c) y
-    // con 0 partidas, la columna quedaba pegada al borde superior con más de
-    // la mitad del lienzo negro debajo y se leía inacabada. Un 20 % del alto
-    // la baja lo justo para que se lea deliberada. Es del VIEWPORT y no del
-    // contenido a propósito: cualquier cosa que ceda al crecer la lista
-    // devolvería el botón moviéndose bajo el cursor, que es el bug que C1
-    // cerró. `min(…, 160)` para que en viewports bajos no se coma la lista.
+  /** «Hay más partidas abajo», cuando la columna no cabe (#251).
+   *
+   *  El scroller NO es la lista: `#ts-sessions` solo lleva margen, y quien
+   *  recorta es `this.content` (`max-height:100%; overflow-y:auto`), que se
+   *  lleva la columna ENTERA. Una señal sobre la lista iría al elemento
+   *  equivocado.
+   *
+   *  Lo que AVISA es el texto, y lo que se mide es el texto: un degradado a
+   *  secas solo se nota cuando una tarjeta queda partida, y con el corte justo
+   *  entre dos la columna parece completa. El degradado de la banda no es la
+   *  señal, es lo que hace la señal LEGIBLE — sin él la frase caía encima de
+   *  los badges de la tarjeta cortada y se leían las dos a la vez.
+   *
+   *  Cuelga de `this.root` con `position:absolute`, NO de `this.content`:
+   *  cualquier cosa que aparezca dentro del flujo puede volver a mover
+   *  «Nueva partida», que es #181-c. */
+  private actualizarAvisoDeCorte(): void {
+    // Solo en el HOME. En el selector de mundos, el editor de personaje o la
+    // subida de estilo no hay partidas que contar, y la banda aparecía ahí
+    // diciendo «hay más abajo» sobre una pantalla que no tiene ninguna: un
+    // aviso cierto sobre el desbordamiento y falso sobre su sujeto.
     //
-    // OJO, y esto es lo que hay que leer antes de cerrar nada: hoy este suelo
-    // TAPA el issue #250 (el panel de dev se rellena async, este método
-    // re-mide con un ResizeObserver y el botón se desplazaba +24 px bajo el
-    // cursor en anchos estrechos). Lo tapa porque 160 gana a `devBottom + 10`
-    // ≈ 120 a los tamaños medidos — NO porque esté arreglado. Con un panel más
-    // alto (una ventana aún más estrecha, un chip más) vuelve a ganar
-    // `devBottom` y el desplazamiento reaparece. El verde de esa medida es
-    // circunstancial; #250 sigue abierto.
-    const suelo = Math.min(160, Math.max(96, Math.round(window.innerHeight * 0.2)));
-    this.root.style.paddingTop = `${Math.max(suelo, devBottom + 10)}px`;
+    // Se DERIVA de lo pintado (`#ts-sessions` solo existe en el home) y no de
+    // un flag que los cinco `render*` tengan que acordarse de poner: el que
+    // se olvidara dejaría la banda mintiendo en su pantalla.
+    if (!this.content.querySelector("#ts-sessions")) {
+      this.aviso.hidden = true;
+      return;
+    }
+    // +1 px de tolerancia: el redondeo subpíxel del layout hace que una
+    // columna que cabe justa se declare desbordada.
+    // Guarda BARATA antes de leer geometría: si la columna no desborda, no
+    // puede haber nada fuera. +1 px por el redondeo subpíxel del layout.
+    if (this.content.scrollHeight <= this.content.clientHeight + 1) {
+      this.aviso.hidden = true;
+      return;
+    }
+    // LA CONDICIÓN ES QUE HAYA TARJETAS FUERA, no que la columna desborde. No
+    // es lo mismo, y la diferencia se vio en pantalla: a 1280×800 con cinco
+    // partidas la columna desborda por los 24 px de `margin-bottom` de la
+    // lista, con las CINCO tarjetas a la vista, y el aviso decía «hay 0
+    // partidas más» — avisar a quien no tiene nada que saber, con un número
+    // que es literalmente cero. Es el mismo error que el ternario que se fue
+    // en la limpieza («desborda» no implica «falta algo por ver»), así que
+    // ahora el conteo DECIDE en vez de adornar.
+    //
+    // El `getBoundingClientRect` va después de esa guarda: leerlo en cada
+    // scroll de una columna que cabe era un reflow para nada.
+    const caja = this.content.getBoundingClientRect();
+    const fuera = [...this.content.querySelectorAll<HTMLElement>(".ts-save")].filter(
+      (fila) => fila.getBoundingClientRect().bottom > caja.bottom + 1,
+    ).length;
+    if (fuera === 0) {
+      this.aviso.hidden = true;
+      return;
+    }
+    // Cuántas quedan fuera es el dato que el jugador necesita («¿me falta una
+    // o me faltan diez?») y el que el contador de arriba no da: ese dice
+    // cuántas HAY, no cuántas se están escondiendo. Al llegar abajo del todo
+    // el conteo cae a 0 solo, así que el aviso se retira sin una segunda
+    // condición que mantener.
+    this.aviso.textContent = `↓ hay ${fuera} partida${fuera === 1 ? "" : "s"} más — desplaza la lista`;
+    this.aviso.hidden = false;
   }
 
   /** Abre el título y resuelve con lo que el jugador elija.
@@ -351,7 +415,7 @@ export class TitleScreen {
   async show(opts: { aviso?: string } = {}): Promise<TitleAction> {
     this.root.style.display = "flex";
     this.onVisibilityChange?.(true);
-    this.reserveDevPanelSpace();
+    this.actualizarAvisoDeCorte();
     const eleccion = new Promise<TitleAction>((res) => {
       this.resolve = res;
     });
@@ -485,6 +549,11 @@ export class TitleScreen {
         );
       }
     }
+    // La columna acaba de cambiar de alto: decir si se corta (#251). El
+    // ResizeObserver de `this.content` también lo dispara; esta llamada
+    // explícita es la que hace que el aviso esté puesto en el MISMO frame en
+    // que aparece la lista, sin un parpadeo entre medias.
+    this.actualizarAvisoDeCorte();
   }
 
   /** Badges de modo armados (primer click de encendido) → timestamp. Se
@@ -1343,7 +1412,7 @@ function sessionRowHtml(s: SessionMetadata): string {
     .filter(Boolean)
     .join(" ");
   return `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;margin-bottom:8px;background:#181820;border:1px solid #2a2a30">
+    <div class="ts-save" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;margin-bottom:8px;background:#181820;border:1px solid #2a2a30">
       <div style="flex:1;min-width:0">
         <div style="color:#bdf;font-size:13px">${escapeHtml(s.game_id)} <span style="color:#666;font-size:11px">· ${escapeHtml(s.session_id)}</span>${badges ? " " + badges : ""}</div>
         <div style="color:#999;font-size:12px;margin-top:3px">${escapeHtml(summary)}</div>

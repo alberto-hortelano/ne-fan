@@ -22,19 +22,73 @@ export type StyleInfo = GamesListedMessage["styles"][number];
 export type NarrativeEventListener = (event: NarrativeEventMessage) => void;
 export type NarrativeStatusListener = (status: NarrativeStatusMessage) => void;
 
+/** De quién es lo que llega, y a quién decírselo (#282).
+ *
+ *  Es un argumento del constructor y no una opción con defecto a propósito: un
+ *  defecto «acepta todo» sería el bug de vuelta, y en silencio. */
+export interface DeQuienEs {
+  /** ¿El sello de este mensaje es el de la partida aplicada en el cliente?
+   *  Lo contesta `session-facets.ts` (core), que es el dueño de «cuál es la
+   *  mía». */
+  esMia(sessionId: string): boolean;
+  /** La línea del juego. Un evento descartado no se calla: es el síntoma de
+   *  que un tile llegó tarde, y saberlo es la diferencia entre depurar y
+   *  adivinar. */
+  log(msg: string): void;
+}
+
 export class NarrativeClient {
   private listeners = new Set<NarrativeEventListener>();
   private statusListeners = new Set<NarrativeStatusListener>();
+  /** Eventos de OTRA partida tirados aquí. Lo lee el bench/QA por
+   *  `__nefan.descartados()`: sin contador, «no llegó todavía» y «llegó y se
+   *  descartó» son el mismo verde. */
+  private tirados = 0;
 
-  constructor(private bridge: BridgeClient) {
+  constructor(
+    private bridge: BridgeClient,
+    private deQuienEs: DeQuienEs,
+  ) {
     this.bridge.on("narrative_event", (msg) => {
       if (!msg) return;
+      // EL EMBUDO ÚNICO: todo `narrative_event` pasa por aquí, así que la
+      // guarda está en un solo sitio. El bridge difunde a TODOS los
+      // suscriptores; hasta #282 el mensaje no decía de quién era y el
+      // cliente instalaba el tile de la partida que acababa de abandonar —y
+      // el intento siguiente heredaba ese mundo.
+      //
+      // `addTile` no tiene un solo `await`, así que instala en el mismo
+      // microtask: filtrar aquí llega a tiempo y no hay carrera con el
+      // vaciado del mundo.
+      if (!this.deQuienEs.esMia(msg.sessionId)) {
+        this.tirados++;
+        this.deQuienEs.log(
+          `↩ evento de otra partida descartado (${msg.eventId}, sesión «${msg.sessionId}»)`,
+        );
+        return;
+      }
       for (const fn of this.listeners) fn(msg);
     });
     this.bridge.on("narrative_status", (msg) => {
       if (!msg) return;
+      // El status LLEVA sello pero NO se filtra, y es deliberado: descartar un
+      // `phase:"error"` de una sesión recién muerta es el silencio que
+      // prohíbe el fail-loud de esta casa. Qué hacer con un `ready` rancio sin
+      // callar los `error` es una pregunta abierta, y va a issue.
+      //
+      // QUIEN AÑADA AQUÍ UN SEGUNDO FILTRO tiene que tocar también
+      // `labs/narrative/replay-server.mjs`, que reestampa el sello justo de lo
+      // que este embudo descarta: si no, `replay-web` reproduce una película
+      // que el cliente tira entera y se queda en negro.
       for (const fn of this.statusListeners) fn(msg);
     });
+  }
+
+  /** Cuántos eventos ajenos se ha tirado el embudo. De quién eran lo dice la
+   *  línea del juego, que es donde se depura; aquí solo el CONTADOR, porque
+   *  sin él «no se instaló» y «no ha llegado» son el mismo verde. */
+  descartados(): { n: number } {
+    return { n: this.tirados };
   }
 
   onNarrativeEvent(fn: NarrativeEventListener): () => void {

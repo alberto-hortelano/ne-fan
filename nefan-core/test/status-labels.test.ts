@@ -10,6 +10,8 @@ import assert from "node:assert/strict";
 
 import {
   FALLO_HOJAS_BASE,
+  etiquetaDeFixture,
+  motivoDeFixtureParaElJugador,
   motivoDeSesionParaElJugador,
   motivoParaElJugador,
   rotuloDeStatus,
@@ -384,5 +386,56 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
   it("un fallo que nadie previó sigue siendo una frase, no un volcado", () => {
     const motivo = motivoDeSesionParaElJugador(new Error("EPIPE write"));
     assert.equal(motivo, "El servidor del juego no pudo completarlo; inténtalo de nuevo.");
+  });
+});
+
+
+/** #269: el desplegable de fixtures y el mensaje de «no cargó» salen de LA
+ *  MISMA derivación. Antes eran dos —un `match()` al pintar la opción y una
+ *  interpolación del `value` al fallar— y decían cosas distintas: la persona
+ *  eligió «zorder_test» y leía «no se pudo cargar la fixture
+ *  @nefan-core/data/scenes/zorder_test.json». */
+describe("la etiqueta de una fixture del selector «Room»", () => {
+  it("es lo que la persona eligió, no la clave del glob", () => {
+    assert.equal(
+      etiquetaDeFixture("@nefan-core/data/scenes/zorder_test.json"),
+      "zorder_test",
+    );
+  });
+
+  it("una clave que ya es la etiqueta se devuelve tal cual", () => {
+    // El desplegable no tiene hoy opciones así, pero el mensaje de fallo se
+    // compone con lo que haya: sin esta rama, cambiar la forma del glob
+    // dejaría al jugador leyendo un trozo de ruta.
+    assert.equal(etiquetaDeFixture("zorder_test"), "zorder_test");
+  });
+
+  it("una clave sin nada tampoco inventa un nombre", () => {
+    assert.equal(etiquetaDeFixture(""), "");
+  });
+
+  it("una ruta sin barras pierde la extensión igual", () => {
+    assert.equal(etiquetaDeFixture("robledo_tile.json"), "robledo_tile");
+  });
+
+  it("la clave REAL del glob de Vite también", () => {
+    // Medido en el navegador el 2026-08-28: el `import.meta.glob` del cliente
+    // entrega la clave relativa, no el alias. Los issues la citan como
+    // `@nefan-core/…` y no es lo que se ve; la función no depende de cuál sea,
+    // pero el test tiene que ejercer la de verdad.
+    assert.equal(
+      etiquetaDeFixture("../nefan-core/data/scenes/zorder_test.json"),
+      "zorder_test",
+    );
+  });
+
+  it("el motivo NOMBRA la etiqueta y no lleva ni ruta ni extensión", () => {
+    const motivo = motivoDeFixtureParaElJugador(
+      etiquetaDeFixture("@nefan-core/data/scenes/zorder_test.json"),
+    );
+    assert.equal(motivo, "No se pudo cargar la escena «zorder_test»");
+    // Lo que el guion 24 mide en pantalla, aquí sin navegador: la ruta del
+    // glob no puede colarse en lo que lee quien juega.
+    assert.doesNotMatch(motivo, /\.json|@nefan-core|scenes\//);
   });
 });

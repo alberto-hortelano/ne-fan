@@ -7,6 +7,7 @@
  *  de tile y R pide respawn. Las teclas de DESARROLLO no están aquí — ver
  *  dev-tools-input.ts. */
 
+import { alPulsarRaton, alPulsarTecla } from "./puerta-de-teclado.js";
 import {
   createInputState,
   DEFAULT_ATTACK_IDS,
@@ -33,13 +34,17 @@ export class KeyboardInputProvider implements InputProvider {
   private tileDeclineRequested = false;
   private respawnRequested = false;
 
-  private readonly onKeyDown: (e: KeyboardEvent) => void;
   private readonly onKeyUp: (e: KeyboardEvent) => void;
-  private readonly onMouseDown: (e: MouseEvent) => void;
   private readonly onMouseMove: (e: MouseEvent) => void;
+  /** Lo que hay que llamar para desenganchar TODO, incluidos los dos que
+   *  registra la puerta con un envoltorio propio. Es una lista y no cuatro
+   *  campos porque el envoltorio no es `this.onKeyDown`: guardar el manejador
+   *  y no el registro dejaba `dispose()` haciendo dos `removeEventListener`
+   *  sobre funciones que nadie había registrado — dos no-ops mudos. */
+  private readonly desenganches: (() => void)[] = [];
 
   constructor() {
-    this.onKeyDown = (e) => {
+    const onKeyDown = (e: KeyboardEvent): void => {
       // Dialogue mode suppresses combat/movement keys
       // (dialogue-panel.ts handles its own keys with stopPropagation)
       if (this.dialogueActive) return;
@@ -48,8 +53,8 @@ export class KeyboardInputProvider implements InputProvider {
       // diálogo y apaga dialogueActive en el mismo evento), sin esta guarda
       // la tecla se filtraba al selector de ataque del HUD.
       if (e.defaultPrevented) return;
-      // Synthetic events (autofill, IME, etc.) can fire without `key`.
-      if (typeof e.key !== "string") return;
+      // Los eventos sintéticos sin `key` (autorrelleno, IME) los descarta la
+      // puerta, que es por donde entra este manejador.
 
       switch (e.key.toLowerCase()) {
         case "w": this.state.up = true; break;
@@ -104,7 +109,7 @@ export class KeyboardInputProvider implements InputProvider {
     // canvas: el lock vive en el lienzo WebGL del mundo, que el provider no
     // conoce; el lock solo lo pide nuestro código, así que basta con que
     // haya alguno activo.
-    this.onMouseDown = (e) => {
+    const onMouseDown = (e: MouseEvent): void => {
       // Un click sobre la UI de juego (botones de acción, opciones de
       // diálogo) NO es un ataque: el listener vive en window y llegaría
       // igual. Con pointer lock activo la UI ya es inclicable, pero la
@@ -124,9 +129,12 @@ export class KeyboardInputProvider implements InputProvider {
       }
     };
 
-    window.addEventListener("keydown", this.onKeyDown);
+    // keydown y mousedown por la PUERTA (#285): con el título delante el
+    // mundo no se ve, así que moverse, atacar o cambiar de ataque ahí es
+    // actuar a ciegas. `keyup` va directo a propósito — descartar la soltada
+    // de una tecla dejaría al jugador andando solo al volver del título.
+    this.desenganches.push(alPulsarTecla(onKeyDown), alPulsarRaton(onMouseDown));
     window.addEventListener("keyup", this.onKeyUp);
-    window.addEventListener("mousedown", this.onMouseDown);
     window.addEventListener("mousemove", this.onMouseMove);
   }
 
@@ -215,9 +223,8 @@ export class KeyboardInputProvider implements InputProvider {
   }
 
   dispose(): void {
-    window.removeEventListener("keydown", this.onKeyDown);
+    for (const desenganchar of this.desenganches) desenganchar();
     window.removeEventListener("keyup", this.onKeyUp);
-    window.removeEventListener("mousedown", this.onMouseDown);
     window.removeEventListener("mousemove", this.onMouseMove);
   }
 }

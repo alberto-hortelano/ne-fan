@@ -14,6 +14,60 @@ body {
   overflow: hidden;
 }
 
+/* ALTO MÁXIMO DE LA BARRA DE DEV — y la ÚNICA fuente de ese número.
+   La leen los DOS lados del mismo acuerdo: `#dev-status` (dev-ui.css) para
+   acotarse, y el hueco superior del título (aquí abajo) para reservarlo.
+   Cuando eran dos números en dos ficheros, el del título medía el panel REAL
+   con un `ResizeObserver`, así que crecía mientras el panel se rellenaba y
+   «Nueva partida» se desplazaba +24 px bajo el cursor de quien lo estaba
+   pulsando (#250, medido a 500×480).
+
+   POR QUÉ 86, con las dos medidas que lo fijan (2026-08-28):
+
+   · SUELO — a 500×480 con el panel AVISANDO DE QUE GENERA (el estado en el
+     que hay dinero en juego, no el de reposo) el chip del gasto acaba en
+     y=75. La cota anterior, 72, lo cortaba: el gasto en € dejaba de leerse
+     JUSTO cuando se estaba gastando, que es el defecto que este panel existe
+     para evitar (cabecera de dev-ui.css). Hace falta ≥ 75.
+   · TECHO — el hueco que reserva el título es `max(cota + 10, min(160, 20vh))`
+     y ese segundo término vale 96 en ventanas de 480 de alto. Con la cota en
+     86 el `max` lo sigue ganando el término estético, así que la columna NO
+     pierde un solo píxel. Con 136 —el alto COMPLETO del panel generando— el
+     hueco subía a 146 y se comía 50 px de lista: medido, a 1280×460 dejaba
+     las seis partidas fuera de cuadro.
+
+   86 es el mayor valor que no cuesta columna, y clava el suelo con 11 px de
+   holgura. Lo que queda cortado con el aviso puesto es la línea de config y
+   el botón «Imágenes…», que se desplazan dentro del panel.
+
+   No es un número con margen de gusto, es un número con CANDADO: el guion 33
+   afirma que el chip del gasto se lee entero con el aviso de generación
+   puesto. Un chip nuevo que lo empuje más abajo sale rojo — y la salida
+   entonces es ACORTAR LOS CHIPS, no subir esto por encima de 86, que es donde
+   empieza a costar lista. */
+:root {
+  --dev-status-alto: 86px;
+}
+
+/* EL HUECO QUE EL TÍTULO LE RESERVA A LA BARRA, derivado de la misma variable
+   y no medido del panel real (#250). Vive aquí, pegado a su fuente, y no en
+   el `cssText` inline de `title-screen.ts`: el día que alguien retoque el
+   aspecto de la pantalla, el padding no está donde va a tocar.
+
+   `+ 10px` de aire entre la barra y el texto. El segundo término es ESTÉTICO
+   y no tiene que ver con el panel (#181-c): anclado arriba y con 0 partidas,
+   la columna quedaba pegada al borde superior y se leía inacabada;
+   `min(160px, 20vh)` la baja lo justo, y el `min` evita que en ventanas bajas
+   se coma la lista.
+
+   SIN `var(…, 136px)` de respaldo a propósito: si la variable desaparece, la
+   declaración entera es inválida, el título nace debajo de la barra y el
+   guion 33 lo dice. Un respaldo silencioso sería el tercer sitio donde vive
+   el número. */
+#title-screen {
+  padding: max(calc(var(--dev-status-alto) + 10px), min(160px, 20vh)) 32px 32px;
+}
+
 /* El lienzo y la UI de juego comparten EXACTAMENTE la misma caja: la UI se
    posiciona contra este contenedor, no contra el viewport, así ningún panel
    se mete debajo de la barra de dev ni hace falta reservar huecos a mano. */

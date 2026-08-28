@@ -45,3 +45,23 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
 - La UI de **desarrollo** (barra `#dev-status`, menú de imágenes,
   `#error-log`) vive FUERA de `#game-ui` y no se tematiza nunca: el tema de
   un pack subido por un jugador no puede tocar el panel del gasto.
+- **El título es un INTERRUPTOR** (#246, #285): `titleScreen.onVisibilityChange`
+  llama a `marcarTitulo()` (`ui/titulo-manda.ts`), único escritor de
+  `data-titulo` en `<html>`. Con él delante se apagan los PÍXELES (la regla de
+  `dev-ui.css` que oculta `#game-ui` y `#error-log`) y se descarta el INPUT de
+  juego, que entra por una sola puerta (`input/puerta-de-teclado.ts`,
+  `alPulsarTecla`/`alPulsarRaton`) y lee `elTituloManda()` — el mismo atributo,
+  así que los píxeles y las teclas no pueden discrepar. No es una lista de
+  widgets: un panel o un manejador nuevo nacen ya apagados ahí. Lo canda
+  `teclas-de-juego-pasan-por-la-puerta` en `arch-rules.json`. `keyup` NO pasa
+  por la puerta a propósito (descartar una soltada deja al jugador andando
+  solo), y `#dev-status` se queda visible: vigila el gasto. Ese panel está
+  ACOTADO por `--dev-status-alto` (`base.css`), y el hueco que el título le
+  reserva sale de la misma variable, en el fichero de al lado: un número, un
+  sitio y cero JavaScript — por eso «Nueva partida» no se mueve bajo el cursor
+  cuando el panel se rellena (#250). El valor sale de una medida (el panel
+  entero a 500×480 **mientras avisa de que genera**, que es cuando hay dinero
+  en juego), no del reposo, y lo sujeta el guion 33. El candado fuerte del
+  input es `no-restricted-syntax` en `nefan-html/eslint.config.js`, que mira la
+  llamada; la regla de `arch-rules.json` cubre formas de escritura y lo
+  declara.

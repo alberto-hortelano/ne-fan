@@ -44,8 +44,11 @@
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
 import {
+  asentarElLayout,
   borrarSaveComoOtroCliente,
   comenzar,
+  espiarElPrimerPintado,
+  esperarElPrimerPintado,
   esperarListaDeSaves,
   esperarTituloListo,
   nuevaPartida,
@@ -59,31 +62,27 @@ const GAME_ID = "alta_fantasia";
  *  esa ventana en producción son los 30 s del timeout de request. */
 const RETRASO_MS = 20_000;
 
-/** El espía del pintado: anota dónde NACE el botón, en las dos referencias
- *  —el bloque de contenido y el viewport— y con qué status. */
+/** Dónde está el botón, en las DOS referencias: el bloque de contenido (donde
+ *  el guion 18 ya lo mide) y el VIEWPORT, que es donde vive el cursor de quien
+ *  juega. La misma función la usa el espía del primer pintado y la medida de
+ *  después, así que no pueden divergir. */
+function medida() {
+  const btn = document.getElementById("ts-new");
+  const r = btn.getBoundingClientRect();
+  return {
+    enElBloque: Math.round(r.top - btn.parentElement.getBoundingClientRect().top),
+    enElViewport: Math.round(r.top),
+    status: document.getElementById("ts-status")?.textContent ?? "",
+  };
+}
+
+/** El bridge que TARDA (modo "lento") o que no contesta a `list_games` (modo
+ *  "mudo"). Nada más cambia: el socket sigue vivo y el resto de la sesión va
+ *  por el cable de siempre. El espía del pintado vive en `qa/lib`. */
 function instalarEspia(page) {
   return page.addInitScript(() => {
     const qs = new URLSearchParams(location.search);
     const modo = qs.get("qa19") ?? "";
-    window.__qa19 = { visto: false };
-    const obs = new MutationObserver(() => {
-      const btn = document.getElementById("ts-new");
-      if (!btn || window.__qa19.visto) return;
-      const bloque = btn.parentElement;
-      const r = btn.getBoundingClientRect();
-      window.__qa19 = {
-        visto: true,
-        enElBloque: Math.round(r.top - bloque.getBoundingClientRect().top),
-        enElViewport: Math.round(r.top),
-        status: document.getElementById("ts-status")?.textContent ?? "",
-      };
-      obs.disconnect();
-    });
-    obs.observe(document, { childList: true, subtree: true });
-
-    // Un bridge que TARDA (modo "lento") o que no contesta a `list_games`
-    // (modo "mudo"). Nada más cambia: el socket sigue vivo y el resto de la
-    // sesión va por el cable de siempre.
     if (modo !== "lento" && modo !== "mudo") return;
     const Real = window.WebSocket;
     class Instrumentado extends Real {
@@ -155,6 +154,7 @@ export default async function (ctx) {
   await comenzar(ctx);
   ctx.log("partida sembrada");
   await instalarEspia(ctx.page);
+  await espiarElPrimerPintado(ctx, medida);
 
   // ── 1. «Comenzar» DENTRO de la ventana de carga de saves ────────────────
   await recargar(ctx, { qa19: "lento", qa19ms: RETRASO_MS });
@@ -179,26 +179,17 @@ export default async function (ctx) {
 
   // ── 2. #181-c: el botón no se mueve BAJO EL CURSOR ──────────────────────
   await recargar(ctx);
-  const alNacer = await ctx.waitFor(
-    "el espía mide dónde nace el botón",
-    () => (window.__qa19?.visto ? window.__qa19 : null),
-    30_000,
-  );
+  const alNacer = await esperarElPrimerPintado(ctx);
   const textoLista = await esperarListaDeSaves(ctx);
-  // Dos frames para que el layout se asiente antes de volver a medir.
-  await ctx.page.evaluate(
-    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
-  );
-  const conLaLista = await ctx.page.evaluate(() => {
-    const btn = document.getElementById("ts-new");
-    const r = btn.getBoundingClientRect();
-    return {
-      enElBloque: Math.round(r.top - btn.parentElement.getBoundingClientRect().top),
-      enElViewport: Math.round(r.top),
+  await asentarElLayout(ctx);
+  const conLaLista = {
+    // La MISMA función que midió el nacimiento — se serializa a la página.
+    ...(await ctx.page.evaluate(medida)),
+    ...(await ctx.page.evaluate(() => ({
       partidas: document.querySelectorAll('button[data-action="resume"]').length,
       centrado: getComputedStyle(document.getElementById("title-screen")).justifyContent,
-    };
-  });
+    }))),
+  };
   ctx.log(`«${textoLista}» · ${conLaLista.partidas} partida(s) · justify-content=${conLaLista.centrado}`);
   ctx.log(`    en el bloque : ${alNacer.enElBloque}px → ${conLaLista.enElBloque}px`);
   ctx.log(`    en el viewport: ${alNacer.enElViewport}px → ${conLaLista.enElViewport}px`);

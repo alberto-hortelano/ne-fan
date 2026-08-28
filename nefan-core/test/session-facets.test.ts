@@ -37,6 +37,7 @@ const PARTIDA: SessionFacets = {
 function espia(): { sinks: FacetSinks; llamadas: Array<[string, unknown]> } {
   const llamadas: Array<[string, unknown]> = [];
   const sinks: FacetSinks = {
+    mundo: (sessionId) => llamadas.push(["mundo", sessionId]),
     style: (styleId) => llamadas.push(["style", styleId]),
     theme: (uiTheme) => llamadas.push(["theme", uiTheme]),
     renderModes: (renderMode, characterMode) =>
@@ -65,6 +66,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     assert.equal(s.id, "1787-abc");
     assert.deepEqual(s.facets, PARTIDA);
     assert.deepEqual(llamadas, [
+      ["mundo", "1787-abc"],
       ["style", "acuarela"],
       ["theme", TEMA],
       ["renderModes", "image/vector"],
@@ -94,6 +96,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     }
     assert.equal(NOMBRES_DE_SINK.length, Object.keys(sinks).length, "el doble cubre el record");
     assert.deepEqual(llamadas, [
+      ["mundo", ""],
       ["style", ""],
       ["theme", BASE_UI_THEME],
       ["renderModes", "/"],
@@ -133,6 +136,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     s.enter({ ...NO_SESSION, sessionId: "segunda" });
     assert.deepEqual(s.facets, { ...NO_SESSION, sessionId: "segunda" });
     assert.deepEqual(llamadas, [
+      ["mundo", "segunda"],
       ["style", ""],
       ["theme", BASE_UI_THEME],
       ["renderModes", "/"],
@@ -149,5 +153,61 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     const leidas = s.facets;
     leidas.styleId = "otro";
     assert.equal(s.facets.styleId, "acuarela");
+  });
+
+  /** #282, segunda mitad. El mundo pintado es una faceta como las otras seis,
+   *  y no una llamada que hay que acordarse de hacer: hasta esta tanda la rama
+   *  `new_game` del cliente NO vaciaba el mundo (solo la de `resume`), así que
+   *  un segundo intento heredaba los tiles del primero.
+   *
+   *  Se afirma en las DOS direcciones porque el bug era la asimetría: entrar
+   *  en una partida vacía el mundo igual que salir de ella, y va PRIMERO —el
+   *  atlas de superficies que arman las facetas siguientes pide el layout del
+   *  tile activo, y con el mundo anterior puesto pediría la imagen de una
+   *  partida que ya no está. */
+  it("el mundo se vacía al ENTRAR y al SALIR, y antes que ninguna otra faceta", () => {
+    const { sinks, llamadas } = espia();
+    const s = createClientSession(sinks);
+
+    s.enter(PARTIDA);
+    assert.equal(llamadas[0][0], "mundo", `al entrar mandó primero ${llamadas[0][0]}`);
+    llamadas.length = 0;
+
+    s.leave();
+    assert.equal(llamadas[0][0], "mundo", `al salir mandó primero ${llamadas[0][0]}`);
+    llamadas.length = 0;
+
+    // Y el caso del issue: de una partida a otra SIN pasar por el título.
+    s.enter({ ...PARTIDA, sessionId: "la-segunda" });
+    assert.deepEqual(llamadas[0], ["mundo", "la-segunda"]);
+    assert.equal(NOMBRES_DE_SINK[0], "mundo", "el orden lo fija el record, no este test");
+  });
+
+  /** «De quién es este mensaje» se decide donde vive «cuál es la mía» (#282).
+   *  El bridge difunde a TODOS los suscriptores, así que sin esta pregunta el
+   *  cliente instalaba el tile de la partida que acababa de abandonar. */
+  describe("esMio: el sello del bridge contra la partida aplicada aquí", () => {
+    it("con partida, solo es mío lo que lleva SU id", () => {
+      const { sinks } = espia();
+      const s = createClientSession(sinks);
+      s.enter(PARTIDA);
+      assert.equal(s.esMio("1787-abc"), true);
+      assert.equal(s.esMio("otra-partida"), false);
+      // El caso exacto del issue: se abandonó A, el bridge sigue en A y su
+      // tile llega tarde. Sin partida aplicada NADA de una partida es mío.
+      s.leave();
+      assert.equal(s.esMio("1787-abc"), false);
+    });
+
+    it("sin partida, lo que el bridge difunde sin partida SÍ es mío", () => {
+      // `""` no es un hueco: es el bridge hablando desde el título (una
+      // pre-generación de mundo, un frame rechazado). Descartarlo sería
+      // silenciar al servidor en la pantalla donde el jugador está mirando.
+      const { sinks } = espia();
+      const s = createClientSession(sinks);
+      assert.equal(s.esMio(""), true);
+      s.enter(PARTIDA);
+      assert.equal(s.esMio(""), false, "dentro de una partida, lo de nadie no es mío");
+    });
   });
 });

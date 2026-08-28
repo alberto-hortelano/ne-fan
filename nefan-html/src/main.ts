@@ -14,11 +14,14 @@ import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { pickAimTarget } from "@nefan-core/src/scene/aim.js";
 import {
+  etiquetaDeFixture,
+  motivoDeFixtureParaElJugador,
   motivoDeSesionParaElJugador,
   rotuloDeStatus,
   type SalidaDelOverlay,
 } from "@nefan-core/src/protocol/status-labels.js";
 import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.js";
+import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
 import type { Entity } from "./renderer/types.js";
@@ -239,7 +242,29 @@ const entrada = createEntrada((sessionId) => {
   narrativeClient.sessionEntered(sessionId);
 });
 
+/** De qué sesión es el mundo que hay instalado ahora mismo ("" = ninguno).
+ *  Lo escribe SOLO el sink de la faceta `mundo`, que es quien lo vacía. */
+let mundoPintadoDe = "";
+
 const session = createClientSession({
+  // El mundo pintado es una FACETA, no una llamada que haya que acordarse de
+  // hacer (#282, segunda mitad): la rama `new_game` de `unIntentoDeArrancar`
+  // no vaciaba el mundo —solo la de `resume`—, así que un segundo intento
+  // heredaba los tiles del primero. Va primera en el record de aplicadores,
+  // así que el mundo anterior se va antes de que estilo, tema y atlas armen
+  // nada encima.
+  //
+  // POR VALOR, como los otros seis, y no «vacía siempre»: el módulo promete
+  // que aplicar las mismas facetas dos veces no cambia nada, y un reset
+  // incondicional rompía esa promesa justo en el sink más destructivo —el
+  // primero que quisiera refrescar una faceta a mitad de partida se llevaba
+  // el mundo por delante—. Aquí el argumento se LEE: si el mundo pintado ya
+  // es el de esa sesión, no hay nada que vaciar.
+  mundo: (sessionId) => {
+    if (sessionId === mundoPintadoDe) return;
+    mundoPintadoDe = sessionId;
+    resetWorld();
+  },
   style: (styleId) => applySessionStyle(styleId),
   theme: (uiTheme) => applyUiTheme(uiTheme),
   renderModes: (renderMode, characterMode) => applyRenderModes(renderMode, characterMode),
@@ -383,23 +408,6 @@ async function requestModeChange(
   );
 }
 
-/** Lo único que es de ENTRAR y no tiene simétrico al salir.
- *
- *  La precondición del gasto del atlas de superficies es `session.active`:
- *  entre el broadcast de la escena y la respuesta de start/resume, `style_id`
- *  es "" y `scenesMode` el default del cliente, así que hasta que la sesión
- *  está aplicada el controller solo RESUELVE contra la librería ($0). El
- *  controller se planta solo sin estilo — esto es la re-emisión que lo
- *  despierta cuando ya lo hay. Al salir no hay nada que re-emitir: el mundo
- *  se ha ido. */
-function despiertaElAtlasDeLaSesion(): void {
-  const key = activeTileKey;
-  if (!key) return;
-  void fpsAtlasController.onActiveTile(key).catch((err: unknown) =>
-    errors.push("scene", `el atlas fps de ${key} no arrancó al abrir la sesión`, err),
-  );
-}
-
 const gameUiEl = document.getElementById("game-ui") as HTMLElement;
 
 // Con el ratón capturado ningún botón HTML puede recibir un click: la UI se
@@ -521,6 +529,10 @@ const nefanHook: Record<string, unknown> = {
    *  el cliente idéntico»: se lee de vuelta en el título y tiene que salir el
    *  mismo objeto por los dos. */
   sesion: () => session.facets,
+  /** Eventos narrativos de OTRA partida que el embudo ha tirado (#282).
+   *  Sin esto, «el tile ajeno no se instaló» y «el tile ajeno no ha llegado
+   *  todavía» son el mismo verde, y el segundo no mide nada. */
+  descartados: () => narrativeClient.descartados(),
   /** A qué URL resuelve AHORA MISMO cada servicio, ya aplicados los overrides
    *  de la query (`?ai=`, `?bridge=`). No es un adorno de diagnóstico: es lo
    *  que permite al banco de pruebas preguntarle al BACKEND si cobra, en vez
@@ -700,13 +712,15 @@ let gameClient: GameClient | null = null;
 
 function populateSceneSelector(): void {
   // Scene fixtures (cargados localmente, sin bridge).
-  const scenes: { key: string; label: string }[] = [];
-  for (const path of Object.keys(sceneModules)) {
-    // path like "@nefan-core/data/scenes/robledo_tile.json"
-    const match = path.match(/scenes\/(.+)\.json$/);
-    if (!match) continue;
-    scenes.push({ key: path, label: match[1] });
-  }
+  // La etiqueta sale de core (`etiquetaDeFixture`) y de NINGÚN sitio más: la
+  // opción que se pinta y el mensaje de «no cargó» tienen que nombrar lo
+  // mismo, y cuando eran dos derivaciones decían cosas distintas (#269).
+  const scenes = Object.keys(sceneModules).map((path) => ({
+    // La clave que entrega el glob de Vite, medida en el navegador:
+    // "../nefan-core/data/scenes/robledo_tile.json" (relativa, no el alias).
+    key: path,
+    label: etiquetaDeFixture(path),
+  }));
   if (scenes.length > 0) {
     const sceneGroup = document.createElement("optgroup");
     sceneGroup.label = "Scene";
@@ -720,14 +734,11 @@ function populateSceneSelector(): void {
   }
 }
 
+/** Carga una fixture del selector «Room». RECHAZA si el módulo no llega, y de
+ *  eso depende el `alFallar` de `paso()` para devolver el desplegable a la
+ *  fixture que sí se está viendo (#269). */
 async function loadSceneFile(globKey: string): Promise<void> {
-  const loader = sceneModules[globKey];
-  if (!loader) {
-    log("Scene not found: " + globKey);
-    return;
-  }
-
-  const mod = await loader();
+  const mod = await sceneModules[globKey]();
   // El selector «Room» TOMA EL MUNDO: lo que se carga es una escena de prueba,
   // no la partida de nadie. El bridge necesita oírlo para dejar de escuchar al
   // sim con el save de la partida que hubiera detrás (QA 2026-08-25: sin esto,
@@ -1387,8 +1398,13 @@ sceneSelector.addEventListener("change", () => {
   // mensaje se va del log en ocho líneas mientras la etiqueta se queda.
   const anterior = fixtureCargada;
   fixtureCargada = value;
-  paso(loadSceneFile(value), "scene", `no se pudo cargar la fixture ${value}`, () => {
-    log(`⚠ no se pudo cargar la escena ${value}`);
+  // Lo que lee quien juega nombra LA ETIQUETA que eligió (`zorder_test`), no
+  // la clave del glob (`../nefan-core/data/scenes/zorder_test.json`), que es
+  // lo que se leía en los dos canales hasta #269. El crudo —la URL, el stack—
+  // sigue entero en el `detail` de la entrada del error-log, que es su sitio.
+  const motivo = motivoDeFixtureParaElJugador(etiquetaDeFixture(value));
+  paso(loadSceneFile(value), "scene", motivo, () => {
+    log(`⚠ ${motivo}`);
     // Salvo que mientras tanto se haya elegido otra: revertir por encima de una
     // elección posterior sería mentir en la otra dirección.
     if (sceneSelector.value !== value) return;
@@ -1980,14 +1996,17 @@ populateSceneSelector();
 // El override de bench `?bridge=` (stack E2E de labs/narrative) se resuelve en
 // net/service-urls.ts.
 const sharedBridge = new BridgeClient(serviceUrl("game-gateway"));
-const narrativeClient = new NarrativeClient(sharedBridge);
+const narrativeClient = new NarrativeClient(sharedBridge, {
+  esMia: (sessionId) => session.esMio(sessionId),
+  log: (msg) => log(msg),
+});
 const titleScreen = new TitleScreen(narrativeClient);
 const historyBrowser = new HistoryBrowser(narrativeClient);
 
 // Cambio de modo de render difundido por el bridge (otro cliente de la misma
 // sesión, o el eco de este — re-aplicar es idempotente).
 sharedBridge.on("render_mode_changed", (msg) => {
-  if (msg.sessionId !== session.id) return;
+  if (!session.esMio(msg.sessionId)) return;
   applyRenderModes(
     msg.facet === "scenes" ? msg.renderMode : scenesMode,
     msg.facet === "characters" ? msg.renderMode : charactersMode,
@@ -2075,10 +2094,14 @@ graphicsChip = new GraphicsModeChip({
 // error-log asomaban entre el texto porque la partida seguía pintando detrás
 // (#246). Un interruptor y no una lista de widgets: el motivo lo lleva el
 // propio título, así que quien añada un panel nuevo no tiene que acordarse de
-// nada. `dataset.titulo` es lo que lee la regla de CSS.
+// nada. Desde #285 el interruptor apaga también el INPUT de juego, por la
+// misma lectura: `ui/titulo-manda.ts`.
 titleScreen.onVisibilityChange = (visible) => {
   graphicsChip?.setHidden(visible);
-  document.documentElement.dataset.titulo = visible ? "1" : "0";
+  // El único escritor del interruptor. Lo leen la regla de CSS que apaga los
+  // píxeles y la puerta de teclado que descarta el input (#285): la misma
+  // lectura para las dos, así que no pueden divergir.
+  marcarTitulo(visible);
 };
 // Corrida de «Aplicar estilo» para el bench/QA: lo prometido, lo emitido y si
 // ya terminó. Lo escribe el propio StyleApplyController.
@@ -2567,22 +2590,11 @@ async function runTitleFlow(avisoInicial?: string): Promise<void> {
 async function volverAlTitulo(): Promise<void> {
   const motivo = motivoDelUltimoMuro ?? undefined;
   hideLoader();
-  abandonarLaPartida();
-  await runTitleFlow(motivo);
-}
-
-/** Dejar la partida: el mundo a cero y la sesión soltada. Los DOS caminos de
- *  vuelta al título pasan por aquí — que sean dos llamadas y no una es lo que
- *  producía #249 (uno deshacía cinco cosas y el otro una).
- *
- *  Ojo con lo que esto NO garantiza, para que nadie lo lea de más: que un
- *  TERCER camino de vuelta al título se acuerde de llamarla sigue siendo
- *  responsabilidad de quien lo escriba. Lo inexpresable es la asimetría entre
- *  FACETAS (`session-facets.ts`), no entre caminos; hoy los caminos son dos y
- *  los dos tienen guion en vivo (18 y 20). */
-function abandonarLaPartida(): void {
-  resetWorld();
+  // Soltar la partida ES vaciar el mundo: el mundo es una faceta más
+  // (`session-facets.ts`), así que `leave()` lo deshace todo por el mismo
+  // camino que lo puso.
   session.leave();
+  await runTitleFlow(motivo);
 }
 
 /** Un intento: enseña el título, espera la elección y la ejecuta. Devuelve
@@ -2627,7 +2639,6 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         // Sin tema en la respuesta, el neutro: el mismo que aplica `leave()`.
         uiTheme: res.uiTheme ?? BASE_UI_THEME,
       });
-      despiertaElAtlasDeLaSesion();
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
       await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
     } else {
@@ -2641,12 +2652,12 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         // Sin tema en la respuesta, el neutro: el mismo que aplica `leave()`.
         uiTheme: res.uiTheme ?? BASE_UI_THEME,
       });
-      despiertaElAtlasDeLaSesion();
       log(`Reanudada: ${res.state.session_id}`);
-      // El mundo anterior se va ANTES de vestir al jugador: `resetWorld`
-      // borra también su prompt de skin (es del mundo que se va), y vestirlo
-      // primero lo dejaría desnudo.
-      resetWorld();
+      // El mundo anterior ya se fue —lo vació la faceta `mundo` del
+      // `session.enter` de arriba— y por eso se puede vestir al jugador aquí:
+      // `resetWorld` borra también su prompt de skin, así que vestir primero
+      // dejaría al muñeco desnudo.
+      //
       // resume: trust the save's appearance verbatim. Un model_id sin sheets
       // completos (o vacío) cae a la base y_bot dentro de setPlayerAppearance.
       const desiredModel = res.state.player.appearance.model_id;
@@ -2690,8 +2701,9 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
     // La sesión pudo quedar a medio aplicar (el fallo puede llegar DESPUÉS de
     // `session.enter`): sin esto, el segundo intento arrancaría sobre los
     // tiles del primero. `leave()` es el mismo camino que usa `volverAlTitulo`
-    // — los dos retornos al título dejan el cliente idéntico por construcción.
-    abandonarLaPartida();
+    // — los dos retornos al título dejan el cliente idéntico por construcción,
+    // y eso incluye el mundo, que es una faceta más.
+    session.leave();
     const que =
       action.kind === "new_game"
         ? "No se pudo empezar la partida"
