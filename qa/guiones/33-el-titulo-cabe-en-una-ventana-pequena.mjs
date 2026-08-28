@@ -200,11 +200,15 @@ export default async function (ctx) {
     const raiz = document.documentElement;
     const t = document.getElementById("title-screen");
     const leer = () => Math.round(parseFloat(getComputedStyle(t).paddingTop));
+    // La cota de HOY se lee, no se escribe: copiarla aquí sería el mismo
+    // defecto que este bloque denuncia, y pondría el guion rojo el día que la
+    // variable cambie sin que la derivación se haya roto.
+    const cota = parseFloat(getComputedStyle(raiz).getPropertyValue("--dev-status-alto"));
     const antes = leer();
     raiz.style.setProperty("--dev-status-alto", "240px");
     const despues = leer();
     raiz.style.removeProperty("--dev-status-alto");
-    return { antes, despues, restaurado: leer() };
+    return { cota, antes, despues, restaurado: leer() };
   });
   ctx.log(`hueco del título: ${JSON.stringify(derivado)}`);
   // EL DELTA, no el valor absoluto. Con `=== 250` este aserto se ponía rojo en
@@ -214,7 +218,7 @@ export default async function (ctx) {
   // mueve el hueco exactamente lo mismo, y que se restaura.
   ctx.expect(
     "el hueco superior del título SIGUE a `--dev-status-alto` (no es un número copiado)",
-    derivado.despues === derivado.antes + (240 - 86) &&
+    derivado.despues === derivado.antes + (240 - derivado.cota) &&
       derivado.restaurado === derivado.antes,
     JSON.stringify(derivado),
   );
@@ -252,16 +256,17 @@ export default async function (ctx) {
   const sigueALaVariable = await ctx.page.evaluate(() => {
     const raiz = document.documentElement;
     const leer = () => Math.round(document.getElementById("ts-close").getBoundingClientRect().top);
+    const cota = parseFloat(getComputedStyle(raiz).getPropertyValue("--dev-status-alto"));
     const antes = leer();
     raiz.style.setProperty("--dev-status-alto", "240px");
     const despues = leer();
     raiz.style.removeProperty("--dev-status-alto");
-    return { antes, despues, restaurado: leer() };
+    return { cota, antes, despues, restaurado: leer() };
   });
   ctx.log(`el botón frente a la variable: ${JSON.stringify(sigueALaVariable)}`);
   ctx.expect(
     "la posición de «✕ cerrar» SIGUE a `--dev-status-alto` (no es un número copiado)",
-    sigueALaVariable.despues === sigueALaVariable.antes + (240 - 86) &&
+    sigueALaVariable.despues === sigueALaVariable.antes + (240 - sigueALaVariable.cota) &&
       sigueALaVariable.restaurado === sigueALaVariable.antes,
     JSON.stringify(sigueALaVariable),
   );

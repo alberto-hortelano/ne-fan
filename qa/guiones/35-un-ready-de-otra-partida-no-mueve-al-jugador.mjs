@@ -31,6 +31,19 @@
  *  bloque 2 pasa (el fallo ajeno ya llegaba, que es la mitad que había que
  *  conservar). La salida está pegada en el informe de implementación.
  *
+ *  TODO ASERTO DE AQUÍ TIENE QUE PODER PONERSE ROJO, y dos no podían. QA los
+ *  cazó en la primera versión:
+ *    · «no retira el overlay» comparaba `"" === ""` porque el loader ya estaba
+ *      cerrado — verde incluso con el bug puesto. Ahora el bloque 1 ABRE el
+ *      overlay por el camino del juego (un `generating` propio) antes de
+ *      entregar lo ajeno, así que el `hideLoader()` que teme sí tiene algo que
+ *      cerrar.
+ *    · «el error tampoco mueve al jugador» era infalsificable por
+ *      construcción: un `phase:"error"` no lleva `spawn` y la escritura de
+ *      `playerPos` exige `ready` + `spawn`. Borrado.
+ *  Un aserto que no puede fallar no acompaña: infla el recuento y hace creer
+ *  que algo está cubierto.
+ *
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
 import { comenzar, nuevaPartida, recargarAlTitulo } from "../lib/sesion.mjs";
@@ -117,6 +130,26 @@ export default async function (ctx) {
   const destinoAjeno = { x: Math.round(dondeEsta.x) + 17.25, z: Math.round(dondeEsta.z) + 17.25 };
   ctx.log(`el jugador está en ${JSON.stringify(dondeEsta)}; el spawn ajeno pide ${JSON.stringify(destinoAjeno)}`);
 
+  // EL OVERLAY SE ABRE PRIMERO, y no es decorado: sin él, «el ready ajeno no
+  // retira el loader» comparaba `"" === ""` y salía VERDE CON EL BUG PUESTO —
+  // lo cazó QA en la corrida donde el jugador se teletransportaba 17 m. Se
+  // abre por el camino del juego (un `generating` de MI sesión, que es lo que
+  // hace `showLoader`), no tocando el DOM: así lo que se mide después es lo
+  // que le pasa a quien está esperando de verdad.
+  const conOverlay = await entregar(ctx, {
+    type: "narrative_status",
+    sessionId: partida.sessionId,
+    phase: "generating",
+    kind: "scene",
+    message: "El motor narrativo está construyendo el mundo.",
+  });
+  ctx.log(`tras abrir el overlay con un generating propio: ${JSON.stringify(conOverlay.despues.overlay)}`);
+  ctx.expect(
+    "el overlay de carga está ABIERTO antes de entregar lo ajeno (si no, no se mide nada)",
+    conOverlay.despues.overlay.includes("visible"),
+    `#narrative-loader "${conOverlay.antes.overlay}" → "${conOverlay.despues.overlay}"`,
+  );
+
   const ajeno = await entregar(ctx, readyConSpawn(LA_MUERTA, destinoAjeno));
   ctx.log(`tras el ready ajeno: ${JSON.stringify(ajeno)}`);
 
@@ -133,10 +166,21 @@ export default async function (ctx) {
       `(el spawn ajeno pedía ${JSON.stringify(destinoAjeno)})`,
   );
   ctx.expect(
-    "…y tampoco le retira el overlay de carga por su cuenta",
-    ajeno.despues.overlay === ajeno.antes.overlay,
+    "…y tampoco le retira el overlay al que SÍ está esperando (`hideLoader` del ready ajeno)",
+    ajeno.despues.overlay.includes("visible"),
     `#narrative-loader "${ajeno.antes.overlay}" → "${ajeno.despues.overlay}"`,
   );
+
+  // Se cierra por donde se abrió —un `ready` propio, sin `spawn`— para que el
+  // bloque siguiente mida sobre el mismo estado de pantalla de siempre.
+  const cerrado = await entregar(ctx, {
+    type: "narrative_status",
+    sessionId: partida.sessionId,
+    phase: "ready",
+    kind: "scene",
+    message: "Listo.",
+  });
+  ctx.log(`overlay tras el ready propio: ${JSON.stringify(cerrado.despues.overlay)}`);
 
   // ── 2 · Un ERROR de esa misma partida muerta SÍ llega a quien juega ──────
   // La otra mitad del criterio, y la razón por la que este embudo no filtraba
@@ -160,11 +204,6 @@ export default async function (ctx) {
     "…con el motivo que el motor mandó, no un genérico",
     nuevas.some((m) => m.includes("no pudo construirlo")),
     JSON.stringify(nuevas),
-  );
-  ctx.expect(
-    "…y ese error tampoco mueve al jugador",
-    fallo.despues.pos.x === fallo.antes.pos.x && fallo.despues.pos.z === fallo.antes.pos.z,
-    `${JSON.stringify(fallo.antes.pos)} → ${JSON.stringify(fallo.despues.pos)}`,
   );
   await ctx.shot("tras-el-status-de-la-partida-muerta");
 
