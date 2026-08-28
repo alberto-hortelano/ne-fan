@@ -2,9 +2,9 @@
   "_comment": "GENERADO por `npm run mutacion -- repartir`. Las huellas (7 componentes hasheadas) de los supervivientes de la última corrida de cada fichero: es lo que deja que el delta diga qué es NUEVO, qué YA ESTABA y qué no tiene base. Se commitea a propósito — reports/ está gitignorado y mutate.ts borra el informe antes de correr. No lo edites a mano.",
   "ficheros": {
     "bridge/state-http/dispatch.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "7e0afca10661c20279a6c54da1796fcee4ae0a7c",
       "total": 43,
       "vivos": [],
@@ -12,6 +12,9 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#307",
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -19,16 +22,17 @@
       ]
     },
     "src/combat/attack-area.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "d0f35564b32223c9630b2802469e6c3034a6c153",
       "total": 33,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "incomparable",
+      "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -36,16 +40,17 @@
       ]
     },
     "src/combat/combat-resolver.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "9a1a9e1b86ae3ea070131a97534a300eb02fec39",
       "total": 41,
       "vivos": [],
       "nuevos": [],
-      "resueltos": 5,
+      "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -53,9 +58,9 @@
       ]
     },
     "src/contracts/http.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "2b7b8f089a7d3d2b9c9d7b9a91d136407f0717c5",
       "total": 60,
       "vivos": [],
@@ -63,6 +68,9 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#307",
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -70,9 +78,9 @@
       ]
     },
     "src/plugins/dsl/deep-equal.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "ce633f56a2c12b2e3d88be2f90a1f62a5639e33c",
       "total": 59,
       "vivos": [
@@ -100,6 +108,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -107,9 +116,9 @@
       ]
     },
     "src/plugins/dsl/effects.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "0dc0f48112b8b973127a4738dfe404059a78e938",
       "total": 96,
       "vivos": [
@@ -133,6 +142,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -140,9 +150,9 @@
       ]
     },
     "src/plugins/dsl/errors.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "035b02e90605d1920b948ed84364ca1ab6c66f87",
       "total": 2,
       "vivos": [
@@ -152,6 +162,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -159,9 +170,9 @@
       ]
     },
     "src/plugins/dsl/evaluate.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "a6627cc5a5ecf7a5c733a815e6d316a74b40812b",
       "total": 68,
       "vivos": [
@@ -184,6 +195,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -191,9 +203,9 @@
       ]
     },
     "src/plugins/dsl/paths.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "b2b680b5456a892b3109aa1a2be6b2ce797e9cfd",
       "total": 437,
       "vivos": [
@@ -372,6 +384,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -379,9 +392,9 @@
       ]
     },
     "src/plugins/dsl/predicates.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "cb9d089b0e77ef9ba95585448cf2aaf78d81701b",
       "total": 106,
       "vivos": [
@@ -413,6 +426,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -420,9 +434,9 @@
       ]
     },
     "src/plugins/dsl/values.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "720d5f19166ea6841b2232ddfd2c03a02bf2a6b0",
       "total": 594,
       "vivos": [
@@ -595,6 +609,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -602,16 +617,18 @@
       ]
     },
     "src/protocol/status-labels.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
-      "blob": "51d28ec9c3629e320425dd8b223efb61294bb8f1",
-      "total": 106,
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
+      "blob": "b3a7f659fd5f6998ee4e9a8d8a5ea92e7b487148",
+      "total": 116,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": [
+        "#307",
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -619,9 +636,9 @@
       ]
     },
     "src/scene/blueprint/collision.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "8bfb75dc76fb83e03e77e836c4e3d69e87b3061e",
       "total": 558,
       "vivos": [
@@ -840,8 +857,9 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "incomparable",
+      "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -849,9 +867,9 @@
       ]
     },
     "src/scene/blueprint/derive.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "aa2104df4f73550719805dd7a2cbba6afb826ec6",
       "total": 356,
       "vivos": [
@@ -915,7 +933,6 @@
         "b58565272a5605b1",
         "b5f00ea0ee93f5c9",
         "bc273c17d71b1ff1",
-        "bda8d4db294cd07f",
         "bee2b6c9c7efa1b7",
         "c21548a7cd6e48b7",
         "c71e697f4d1e1e89",
@@ -940,9 +957,11 @@
         "fff428ec3d6dc195"
       ],
       "nuevos": [],
-      "resueltos": 0,
-      "base": "incomparable",
+      "resueltos": 1,
+      "base": "con base",
       "duenos": [
+        "#305",
+        "#304",
         "#294",
         "#292",
         "#288",
@@ -950,9 +969,9 @@
       ]
     },
     "src/scene/blueprint/footprint.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "a3be0a71b743af010cd3e2e20779b59619f46213",
       "total": 227,
       "vivos": [
@@ -1118,9 +1137,10 @@
         "ff2b7773f5faaad7"
       ],
       "nuevos": [],
-      "resueltos": 4,
+      "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -1128,9 +1148,9 @@
       ]
     },
     "src/scene/blueprint/fps-ambience.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "abaef4591b0c52ff0ee976971561d92197147770",
       "total": 172,
       "vivos": [
@@ -1197,6 +1217,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -1204,9 +1225,9 @@
       ]
     },
     "src/scene/blueprint/fps-detail.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "7d1baa9bb44e5d11bfc53db70f28855e906c770f",
       "total": 539,
       "vivos": [
@@ -1566,6 +1587,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -1573,9 +1595,9 @@
       ]
     },
     "src/scene/blueprint/fps-interior.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "28babc2cab50a9583da8651c62ab8d0d8bad9d22",
       "total": 181,
       "vivos": [
@@ -1673,6 +1695,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -1680,9 +1703,9 @@
       ]
     },
     "src/scene/blueprint/fps-relief.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "b9a528fa85e2e7253017e57044b78f6c762fa887",
       "total": 224,
       "vivos": [
@@ -1797,6 +1820,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -1804,9 +1828,9 @@
       ]
     },
     "src/scene/blueprint/fps-spec.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "f0fd225f0aaacbdd8281d2ba122d4281660cbaea",
       "total": 309,
       "vivos": [
@@ -1925,6 +1949,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -1932,9 +1957,9 @@
       ]
     },
     "src/scene/blueprint/greybox.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "1be47f8f7b1ec4da89e1f9c6074e5b1d113e4d45",
       "total": 121,
       "vivos": [
@@ -2028,6 +2053,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -2035,9 +2061,9 @@
       ]
     },
     "src/scene/blueprint/ground-collision.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "194972e7534aff2ab0b6461a877984a192a6b709",
       "total": 166,
       "vivos": [
@@ -2070,6 +2096,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -2077,9 +2104,9 @@
       ]
     },
     "src/scene/blueprint/ground-prims.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "09dbae0d67e1144b2e67db64a74ccbdc3971a8ba",
       "total": 224,
       "vivos": [
@@ -2204,6 +2231,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -2211,9 +2239,9 @@
       ]
     },
     "src/scene/blueprint/ground.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "e27e94ea69071b21d0bab5ec2862bb51238267a2",
       "total": 117,
       "vivos": [
@@ -2245,6 +2273,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -2252,9 +2281,9 @@
       ]
     },
     "src/scene/blueprint/palette.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "b22db38c71920620dc10eac18bf827fb511ef689",
       "total": 78,
       "vivos": [
@@ -2331,6 +2360,8 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
+        "#304",
         "#294",
         "#292",
         "#288",
@@ -2338,9 +2369,9 @@
       ]
     },
     "src/scene/blueprint/plan-collision.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "877a2543c89ce8a192ff24a71a77090706d9449c",
       "total": 41,
       "vivos": [
@@ -2353,6 +2384,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -2360,9 +2392,9 @@
       ]
     },
     "src/scene/blueprint/scatter.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "7139d5b2cc6c23fcc01361bff2c5c35dc5734c0d",
       "total": 1040,
       "vivos": [
@@ -2958,6 +2990,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -2965,9 +2998,9 @@
       ]
     },
     "src/scene/blueprint/time-of-day.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "fa974b06a97395cd9c8c765c3b0924e3f3f0fb4f",
       "total": 15,
       "vivos": [],
@@ -2975,6 +3008,8 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
+        "#304",
         "#294",
         "#292",
         "#288",
@@ -2982,51 +3017,53 @@
       ]
     },
     "src/scene/blueprint/vegetation.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
-      "blob": "199300f24821629e5ec33b149d2e94c8228625a7",
-      "total": 114,
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
+      "blob": "0c92c1baf27e6db19810b30dd01ff4851c3fcad9",
+      "total": 111,
       "vivos": [
-        "010f872fdb918bed",
-        "0dbde63253d187f5",
-        "16024f5427e85d33",
-        "18b96ef7118f306d",
-        "196703c0db6484da",
-        "1bc6181c227b9211",
-        "1c7c70315b271cb9",
-        "1cb347870a78c732",
-        "246da520f03c4ee9",
-        "24b41ada1bc9eb06",
-        "378763b5d4a10af0",
-        "38083e602e9e0599",
-        "3f51d3a6a2c9068f",
-        "473953b7f7b65d28",
-        "654ecfce09c7be2a",
-        "6a2cb970038e4944",
-        "7f4e5ab57b99bad8",
-        "85dc3728440f87ea",
-        "8996d15e6aea45d2",
-        "8a4c9289c6a5a2df",
-        "9027d32ef4a6cd91",
-        "9e2fa781a1390da9",
-        "ab9873eecafc25a6",
-        "bc5e52569d72ee78",
-        "c1daae96e340faea",
-        "c523389c95ccab0e",
-        "d7de9ed2a3a48981",
-        "e0e3da3ad64e4c1d",
-        "e2dd809f6d9a8423",
-        "e553b09e6bcca32a",
-        "e71f5ca684ec6be9",
-        "fc297b8fcc66b98c",
-        "fe1a1fd67b2a7b05",
-        "ffe801f996280be8"
+        "2a9a3fdf404ab70b",
+        "3008a2c4fea2c305",
+        "3112c079b75a90c7",
+        "325af72b519a7b75",
+        "3e2d38ecf6355705",
+        "3ed02f7cd7cf55e2",
+        "404d3a733a73d35e",
+        "407c237e7735dbd3",
+        "426ec5f5d81d023b",
+        "4ccadd9c7392e5e5",
+        "4d6dd0be934f3f9a",
+        "5b4690fa3f4d8145",
+        "5ba73dbb8deb8bf4",
+        "6c39cf48e1d6337a",
+        "7932adf5f2e3bbe4",
+        "7f6f3b18383cf59d",
+        "85bb25e256fb12f3",
+        "877b7bfe14f3649a",
+        "8fd71b5b267cecb2",
+        "953a13c86cd9f397",
+        "9d17945b7c84576d",
+        "9e3605012130adb0",
+        "a3c81ba2023ad50c",
+        "b222752249859808",
+        "b25f7e1d014da201",
+        "b2616364482da15a",
+        "b6e539b9730b71fd",
+        "b729feee29403d55",
+        "bbe6367d63b6ae38",
+        "d181d5ac6ab87282",
+        "d3ea50445ed92070",
+        "dbb8edf8e117606b",
+        "eb1be7d7e988d836",
+        "f3a0a20ed43fa342"
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "sin base",
+      "base": "incomparable",
       "duenos": [
+        "#305",
+        "#304",
         "#294",
         "#292",
         "#288",
@@ -3034,9 +3071,9 @@
       ]
     },
     "src/scene/blueprint/volume-metrics.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "9ca799e2fb61051d1161d1e0e5b42e8b6cde9682",
       "total": 193,
       "vivos": [
@@ -3100,6 +3137,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -3107,112 +3145,116 @@
       ]
     },
     "src/scene/blueprint/volumes.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
-      "blob": "6b78e12cd4acd2f296e79b4bdef66aa16f79f5b3",
-      "total": 362,
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
+      "blob": "6438b51409ebc98612656605424e9934ff2fa628",
+      "total": 375,
       "vivos": [
-        "010970a84a43f2a4",
-        "01b74792f3a3362f",
-        "05193fe32b8b38d1",
-        "0543cbdcb22500a1",
-        "09be86a418cd01f0",
-        "0ac3a1884afa1d77",
-        "114bb4c0ac68af0c",
-        "12c8500cf877fa38",
-        "1577aa59ca35b281",
-        "16c261cc1d001c0d",
-        "195976d2510b7a0c",
-        "1b049d729d7b4d41",
-        "1d58b7d606ab3844",
-        "1efa87145093e660",
-        "1fcf07088472576c",
-        "233c34b5a6994ba0",
-        "295a190407b3ccba",
-        "2bd6b77336d62956",
-        "2d85e4d610e9bf40",
-        "2f080c146d055ced",
-        "2f52eab510e23ac0",
-        "2f5c4265bf13c3a7",
-        "358935fcc43d35ed",
-        "3824f82e411e50fb",
-        "3af71ae7d5c77c9e",
-        "3dd9edad78a8d4f5",
-        "401a5a470d70bd2d",
-        "42739dfa772952bc",
-        "43bf098befce7dfe",
-        "465b01d45b705e8f",
-        "482d9dacc112b1b4",
-        "4852d9d89e172093",
-        "4a41cca98ffbd514",
-        "4c6a0ec121dec728",
-        "4e1a6ad7b6762844",
-        "4f3c54b60793778e",
-        "541a7bdb20d41ffc",
-        "55cfc70a1436cd3a",
-        "5b8891c1cc1cf79e",
-        "5d65ad68853a9811",
-        "5eaa193632151906",
-        "63212964cbfd292e",
-        "69e436f180f8b2db",
-        "6a575fcdb1cb8d1e",
-        "72fd6fa30bd8d92b",
-        "73db9362ef46959d",
-        "7683495b52d0713c",
-        "7b5b31d777c8f895",
-        "7be2cf0251769171",
-        "7eac0f8786acb84b",
-        "80890340ac341a40",
-        "8145826eaf58c101",
-        "824f70efb4310bd4",
-        "8405a18cdc4c1608",
-        "85bcccfec005fcb6",
-        "8ba7d47ede6bf128",
-        "8ced364d615c0814",
-        "8eaf9a6641c9d904",
-        "90030fe89f06f895",
-        "92a567f360212ac2",
-        "95ef32fd607bf03b",
-        "96d5b8392fffe2e8",
-        "9b3729c8ee9288df",
-        "9ced34023894d941",
-        "a44db7701e3f6a06",
-        "a5e371355b9247f8",
-        "a760e3db3dd3a734",
-        "ae7947daee556dfa",
-        "aef349f560e0ab23",
-        "b7d6edb088488eff",
-        "b95fab1776dd212e",
-        "b9c2b13b8ab88090",
-        "bc840d99e1473d92",
-        "bd14846a204746f6",
-        "c020509ce5396f10",
-        "c110d575088ce651",
-        "ca80c0e65c3fd7f0",
-        "cf7145ca017bcf35",
-        "d093710d7112c6c6",
-        "d4fe42d9429c8607",
-        "d662de33bbadafa2",
-        "d6a4a41baeeec33f",
-        "db385deee7b8e2df",
-        "dc1230f5813701f3",
-        "df0397cd69aade44",
-        "e4c69f770522c2f9",
-        "e6e64a6b1b571cdf",
-        "e7eb995b59948094",
-        "ed439ca5c8fc864d",
-        "f8804da22f641141",
-        "f9a95ba67a131781",
-        "fcc66c43c75f6377",
-        "fd9eac5a0fc23217",
-        "fdff43bce3158c2c",
-        "fec46184e792d600"
+        "029e0b2f937b54f9",
+        "0fb90457776bc626",
+        "0fcb974c80668120",
+        "106cf475e058ad20",
+        "1217f58a0ce2c347",
+        "1556db11502953af",
+        "186cb0238a695d5b",
+        "1b56551f0eb86436",
+        "1bfe18574b405075",
+        "1db26d09a7d9cfa8",
+        "1fe818955c067905",
+        "234c0997f171a1e2",
+        "2526e537f9fd3ffd",
+        "266334d5e012430d",
+        "2752d230cca7b114",
+        "28971a9c277d6652",
+        "2beff1b3b3d589cb",
+        "2df38763c81020bc",
+        "31efe58505bf8dda",
+        "36f7a042a30930c2",
+        "3901edb1550047ee",
+        "39e4e221aabc96a8",
+        "3aa28e81cfde63ab",
+        "3c8743d0c8a80978",
+        "3f4765dcee3613a5",
+        "4422fc8f8f34413f",
+        "4b73710fce5f5182",
+        "4ba7733f64888941",
+        "4ceaca0f015707f9",
+        "4fb554d7debf89b2",
+        "50ed97d612b9f79d",
+        "51f90f75f72ee262",
+        "52710f2210604d79",
+        "5330ebba55675702",
+        "5c364e61478ecf92",
+        "5ec1590afefad5f9",
+        "5fbd59114b89d940",
+        "60604955509033c8",
+        "61a1cda289812cc8",
+        "662c4a4236e47482",
+        "6870d9b34bc9f4ba",
+        "69507b19058fe2e4",
+        "6988289c8f185002",
+        "6faa0eef70ece288",
+        "7397c3957a65a546",
+        "779fd6c407ba40f7",
+        "77dab7a000ba9356",
+        "7bb6c4c90bd25d62",
+        "8028ba107c4c93a5",
+        "810bc6b8e65b2d34",
+        "86da088367c34994",
+        "8923bff66311412e",
+        "892dc5cd6505f505",
+        "89ed093689de2bf0",
+        "8cf8a4e7461c9b7c",
+        "90952a4fc38279fc",
+        "916b2c69d060c0be",
+        "91e00ef32fc924b4",
+        "932a42185f09d5cd",
+        "9382c429b9998710",
+        "93904180ecd65237",
+        "949c8a30f1e73354",
+        "97c3c8dbccd4e8c1",
+        "9a463eb435ba47f8",
+        "9c29214ec08a4801",
+        "9e0058e78dc81da3",
+        "a0069235776ce2ce",
+        "a1a3099ba036e79c",
+        "a4e9acf09329fc0b",
+        "a80c1c76df9e7a2d",
+        "a88fd9c7039bfff5",
+        "a94246c6af58438f",
+        "a9aa87ca45887a3f",
+        "a9f98813cc1b370a",
+        "ad0dd96b2bc80318",
+        "af8dc665a6d19890",
+        "b1a118106c690062",
+        "b21255d839c96bfb",
+        "b840e9a27dabfece",
+        "b9ebc3989ee6f9ef",
+        "b9eed1625b031a09",
+        "bc7347c9994320bd",
+        "c3f4e89fec02b524",
+        "c43eb24978bfeeb1",
+        "c4908e0c3920f874",
+        "c5f7ca9c8bad6209",
+        "cb9549c856fce627",
+        "ccb5321c2d3eed5f",
+        "cdfe90044fb71d13",
+        "d179895ec584aa2f",
+        "d7af799b5baeb64c",
+        "dfc06d9adfbbea0c",
+        "e191b2fbee78330c",
+        "e5d9b402eb593659",
+        "e85397a98dc8a59c",
+        "ea7e1cb92871872e",
+        "f5e810e63e0db676",
+        "fe5df8c504996378"
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -3220,9 +3262,9 @@
       ]
     },
     "src/scene/greybox/common.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "82f08fe731d9db4fa9a5363d41f35cb9b40b2b0f",
       "total": 22,
       "vivos": [
@@ -3235,6 +3277,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -3242,9 +3285,9 @@
       ]
     },
     "src/scene/greybox/surfaces.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "6f579e8e09abfc53aa02cea69cf91ae7f823f9e7",
       "total": 516,
       "vivos": [
@@ -3338,6 +3381,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -3345,9 +3389,9 @@
       ]
     },
     "src/scene/greybox/volume-prims.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "d0dad43ee8393886f17f05455ab29acd7cfb96d5",
       "total": 795,
       "vivos": [
@@ -3891,6 +3935,7 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -3898,9 +3943,9 @@
       ]
     },
     "src/scene/scene-normalize.ts": {
-      "sha": "695edeb21be7d97a0636bcc0a1d875916d992119",
-      "run": "33156065300",
-      "fecha": "2026-08-28T08:44:59.167Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "5c47fc7959e5054a692884789851571a7ad6bcbf",
       "total": 277,
       "vivos": [
@@ -3923,14 +3968,14 @@
       ]
     },
     "src/scene/tile-plan.ts": {
-      "sha": "695edeb21be7d97a0636bcc0a1d875916d992119",
-      "run": "33156065300",
-      "fecha": "2026-08-28T08:44:59.167Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "7852237e5c74fe1dd3a4b027a51da97ed6ff5966",
       "total": 82,
       "vivos": [],
       "nuevos": [],
-      "resueltos": 19,
+      "resueltos": 0,
       "base": "con base",
       "duenos": [
         "#305",
@@ -3942,16 +3987,17 @@
       ]
     },
     "src/session/entrada.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "2cdaa8d263ea59b3e90d95e2848991dc3523bf4c",
       "total": 32,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "incomparable",
+      "base": "con base",
       "duenos": [
+        "#305",
         "#294",
         "#292",
         "#291",
@@ -3960,16 +4006,18 @@
       ]
     },
     "src/session/session-facets.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
-      "blob": "c4b25399253ab53de9689654024f75f206b09e69",
-      "total": 29,
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
+      "blob": "1f1466b54dd6dee24cfe0e70f12909e5d3a8c00a",
+      "total": 34,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": [
+        "#307",
+        "#305",
         "#294",
         "#292",
         "#288",
@@ -3977,9 +4025,9 @@
       ]
     },
     "src/store/game-store.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "17c959566bee60c5b87464e1f47f5ce6e05381fc",
       "total": 69,
       "vivos": [
@@ -4029,6 +4077,8 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -4036,9 +4086,9 @@
       ]
     },
     "src/store/reducers.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "38dcdc048e0ccf74813f58b6970514bf7f37c30f",
       "total": 91,
       "vivos": [],
@@ -4046,6 +4096,8 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -4053,9 +4105,9 @@
       ]
     },
     "src/store/state-projection.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "dc4a1febee182f720721c318f901b1bbd71cfa42",
       "total": 63,
       "vivos": [
@@ -4079,6 +4131,8 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -4086,9 +4140,9 @@
       ]
     },
     "src/world-map/bootstrap-place.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "3e4522637bcebcc8fecb06708ac93b8da2dc3ff8",
       "total": 72,
       "vivos": [
@@ -4106,6 +4160,9 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#307",
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -4113,9 +4170,9 @@
       ]
     },
     "src/world-map/edges.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "4ccf764190a54f18b0d172540916a07c6792b850",
       "total": 50,
       "vivos": [
@@ -4128,6 +4185,9 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#307",
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -4135,9 +4195,9 @@
       ]
     },
     "src/world-map/map-triggers.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "4398a3a85f42edf9165d3382cd66c06db12d519e",
       "total": 38,
       "vivos": [
@@ -4153,6 +4213,9 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#307",
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -4160,9 +4223,9 @@
       ]
     },
     "src/world-map/npc-director.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "48aa2705744a41fce0d3830c4bbdf7afe75b080e",
       "total": 118,
       "vivos": [
@@ -4193,6 +4256,9 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#307",
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -4200,9 +4266,9 @@
       ]
     },
     "src/world-map/place-anchor.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "366e9d15feef524fdc863d953571407af61f69eb",
       "total": 36,
       "vivos": [
@@ -4213,6 +4279,9 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#307",
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -4220,9 +4289,9 @@
       ]
     },
     "src/world-map/place-target.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "02cffcbf32ba35c752ed11c7382ae5237f398294",
       "total": 35,
       "vivos": [
@@ -4266,6 +4335,9 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#307",
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -4273,9 +4345,9 @@
       ]
     },
     "src/world-map/types.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "e57c2a7d7c41000d217878f5ee1b2102125eaae6",
       "total": 15,
       "vivos": [
@@ -4296,6 +4368,9 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#307",
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
@@ -4303,9 +4378,9 @@
       ]
     },
     "src/world-map/world-map.ts": {
-      "sha": "8eef3dc6f07a4e9d8a1cca5c568a6a7dcfd1a53e",
-      "run": "33085549182",
-      "fecha": "2026-08-27T17:40:22.985Z",
+      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
+      "run": "33191631830",
+      "fecha": "2026-08-28T19:40:13.651Z",
       "blob": "a6e6827d1239c4c964d102c05fd4adbdf191cb19",
       "total": 254,
       "vivos": [
@@ -4384,6 +4459,9 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
+        "#307",
+        "#305",
+        "#299",
         "#294",
         "#292",
         "#288",
