@@ -275,25 +275,26 @@ const session = createClientSession({
   combat: (combatSystem) => applySessionCombatSystem(combatSystem),
   history: (sessionId) => historyBrowser.setSession(sessionId),
   entrada: (sessionId) => entrada.sesion(sessionId),
-  // El gate del diálogo, que hasta #311 era un espejo a mano que `leave()` no
-  // deshacía: `input.dialogueActive` (cuatro escrituras sueltas más abajo) y
-  // `dialoguePanel.isVisible`, dos representaciones de lo mismo. Aquí se
-  // apagan LAS DOS de una vez y por el mismo camino que el resto de la
-  // sesión, así que un tercer retorno al título tampoco tendrá que acordarse.
+  // El gate del diálogo, que hasta #311 `leave()` no deshacía: volver al
+  // título dejaba puesto lo que abrió la conversación. Llama a
+  // `cerrarDialogo()`, el dueño único del par panel+gate, en vez de repetir
+  // aquí el emparejamiento — que es justo el error que #311 persigue.
   //
-  // POR VALOR y con el argumento LEÍDO, igual que `mundo` y por lo mismo:
-  // cerrar un panel abierto es destructivo, y el módulo promete que aplicar
-  // las mismas facetas dos veces no cambia nada. Sin esta guarda, el primero
-  // que refrescara una faceta a mitad de conversación se la cortaría.
+  // POR VALOR y con el argumento LEÍDO, igual que `mundo`: cerrar un panel
+  // abierto es destructivo y el módulo promete que aplicar las mismas facetas
+  // dos veces no cambia nada. La guarda NO es hipotética — medido el
+  // 2026-08-28 instrumentando este sink y corriendo `qa/guiones/27-…`:
+  // `dialogo("") · vigente="" · repetido=true`, o sea que un arranque que
+  // falla llama a `leave()` con los neutros ya aplicados. Hoy lo que salta es
+  // idempotente; la guarda existe para que el día que no lo sea, no dependa
+  // de que alguien se acuerde.
   //
   // Lo que esto NO hace, dicho para que no se lea de más: no baja el gate a
-  // `puerta-de-teclado.ts`. El porqué sigue escrito en `puerta-de-teclado.ts`
-  // y no ha cambiado.
+  // `puerta-de-teclado.ts`. El porqué sigue escrito allí y no ha cambiado.
   dialogo: (sessionId) => {
     if (sessionId === dialogoDeSesion) return;
     dialogoDeSesion = sessionId;
-    input.dialogueActive = false;
-    dialoguePanel.hide();
+    cerrarDialogo();
   },
 });
 // Pipeline de imagen de la vista fps: atlas de superficies por tile. Las
@@ -1398,8 +1399,49 @@ function getSelectedParams(): EffectiveParams {
 
 // --- Dialogue callbacks ---
 
-dialoguePanel.onAdvanced = () => {
+/** ABRIR Y CERRAR UN DIÁLOGO SON DOS COSAS QUE TIENEN QUE IR JUNTAS (#311).
+ *
+ *  «Hay una conversación abierta» vivía en dos sitios que nadie obligaba a
+ *  coincidir: el panel (`dialoguePanel`) y el gate del input
+ *  (`input.dialogueActive`, que suprime moverse y atacar). Estaban emparejados
+ *  A MANO en cinco sitios, y bastaba un `dialogueActive = false` sin su `hide()`
+ *  —o al revés— para dejar al jugador con el panel puesto y el mundo
+ *  respondiendo, o con el panel fuera y los controles muertos. Eso compilaba,
+ *  pasaba lint y pasaba la batería.
+ *
+ *  Aquí hay un solo dueño de las dos, así que el par no se puede desemparejar
+ *  sin borrar estas funciones. Es el mecanismo que de verdad cierra #311; el
+ *  sink de la faceta `dialogo` va ENCIMA de esto y cubre otra cosa: que volver
+ *  al título lo deshaga aunque nadie se acuerde.
+ *
+ *  Lo que NO unifica, dicho para que no se lea de más: sigue habiendo dos
+ *  representaciones (el flag y el panel), solo que con un dueño. Colapsarlas
+ *  en una es #314. */
+function abrirDialogo(
+  speaker: string,
+  text: string,
+  choices: string[],
+  who?: { id?: string },
+): void {
+  dialoguePanel.show(speaker, text, choices, who);
+  // Suprime movimiento/ataque del InputProvider mientras el panel está
+  // abierto (las teclas 1-3/T las gestiona el propio panel).
+  input.dialogueActive = true;
+}
+
+/** Cierra el diálogo: el panel fuera y el input devuelto al jugador.
+ *
+ *  Idempotente a propósito — el panel se cierra a sí mismo antes de invocar
+ *  sus callbacks (`chooseByIndex`, `advance`), así que este `hide()` suele ser
+ *  el segundo, y `hide()` solo asigna. Poder llamarlo de más es lo que permite
+ *  que el sink de la faceta lo use sin saber si había algo abierto. */
+function cerrarDialogo(): void {
   input.dialogueActive = false;
+  dialoguePanel.hide();
+}
+
+dialoguePanel.onAdvanced = () => {
+  cerrarDialogo();
 };
 
 // --- Scene selector handler ---
@@ -2134,7 +2176,7 @@ titleScreen.onVisibilityChange = (visible) => {
 (nefanHook as { estilo?: unknown }).estilo = () => titleScreen.styleRunState();
 
 dialoguePanel.onChoice = (idx, text) => {
-  input.dialogueActive = false;
+  cerrarDialogo();
   if (!session.active) return;
   const cur = dialoguePanel.current();
   narrativeClient.sendDialogueChoice({
@@ -2147,7 +2189,7 @@ dialoguePanel.onChoice = (idx, text) => {
 };
 
 dialoguePanel.onFreeText = (freeText) => {
-  input.dialogueActive = false;
+  cerrarDialogo();
   if (!session.active) return;
   const cur = dialoguePanel.current();
   narrativeClient.sendDialogueChoice({
@@ -2459,7 +2501,7 @@ narrativeClient.onNarrativeEvent((event) => {
           npcEntities.find((n) => (n.name ?? "") === effect.speaker) ??
           (lastInteractedId ? npcEntities.find((n) => n.id === lastInteractedId) : undefined);
         const skinPrompt = npc?.skinPrompt ?? effect.speakerSkinPrompt;
-        dialoguePanel.show(
+        abrirDialogo(
           effect.speaker,
           effect.text,
           effect.choices.map((c) => (typeof c === "string" ? c : c.text)),
@@ -2471,9 +2513,6 @@ narrativeClient.onNarrativeEvent((event) => {
           baseModel: BASE_MODEL,
         });
         dialoguePanel.setPortrait(portrait.element);
-        // Suprime movimiento/ataque del InputProvider mientras el panel está
-        // abierto (las teclas 1-3/T las gestiona el propio panel).
-        input.dialogueActive = true;
         break;
       }
       case "story_delta":

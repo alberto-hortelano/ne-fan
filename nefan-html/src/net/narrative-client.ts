@@ -16,6 +16,7 @@ import type {
   NarrativeStatusMessage,
 } from "@nefan-core/src/protocol/messages.js";
 import { destinoDeStatus } from "@nefan-core/src/session/session-facets.js";
+import type { StatusRotulable } from "@nefan-core/src/protocol/status-labels.js";
 
 export type GameInfo = GamesListedMessage["games"][number];
 export type StyleInfo = GamesListedMessage["styles"][number];
@@ -25,17 +26,16 @@ export type NarrativeStatusListener = (status: NarrativeStatusMessage) => void;
 
 /** Un fallo del motor que NO es de esta partida (#312).
  *
- *  El tipo ES el candado, y por eso es un `Pick` y no el mensaje entero: sin
- *  `spawn` y sin `tile`, teletransportar al jugador o falsear el ledger de
- *  viaje con un mensaje ajeno no es que esté prohibido, es que **no se puede
- *  escribir**. Lleva `sessionId` porque quien depura necesita saber de qué
- *  partida muerta venía el fallo que está leyendo. */
-export type FalloAjeno = Pick<
-  NarrativeStatusMessage,
-  "phase" | "kind" | "message" | "placeId" | "sessionId"
->;
-
-export type FalloAjenoListener = (fallo: FalloAjeno) => void;
+ *  El tipo ES el candado: sin `spawn` y sin `tile`, teletransportar al jugador
+ *  o falsear el ledger de viaje con un mensaje ajeno no es que esté prohibido,
+ *  es que **no se puede escribir**.
+ *
+ *  Es `StatusRotulable` —lo que `rotuloDeStatus` lee— y no un `Pick` propio: el
+ *  único suscriptor se lo pasa tal cual a esa función, así que un segundo `Pick`
+ *  aquí sería una lista paralela de campos esperando a divergir. Tampoco lleva
+ *  `sessionId`: nadie lo leía, y la traza de quién era la emite el embudo al
+ *  repartir, que es donde se depura. */
+export type FalloAjenoListener = (fallo: StatusRotulable) => void;
 
 /** De quién es lo que llega, y a quién decírselo (#282).
  *
@@ -105,7 +105,7 @@ export class NarrativeClient {
       // recién muerta, que es lo que esta casa prohíbe— sino que se REPARTE:
       // la decisión es de `destinoDeStatus` (core, donde ya vive «cuál es la
       // mía» y donde se puede poner roja), y aquí solo se entrega. El canal
-      // de fallos ajenos entrega un `FalloAjeno`, que no tiene `spawn` ni
+      // de fallos ajenos entrega un `StatusRotulable`, que no tiene `spawn` ni
       // `tile`: el desenlace caro no es que esté prohibido, es que no se
       // puede escribir.
       //
@@ -170,7 +170,8 @@ export class NarrativeClient {
 
   /** Un fallo del motor que era de OTRA partida. Se entrega para que se vea
    *  —callarlo es el silencio que prohíbe el fail-loud— pero recortado: con
-   *  este tipo no se puede mover al jugador ni tocar el ledger de viaje. */
+   *  este tipo no se puede mover al jugador ni tocar el ledger de viaje. De
+   *  quién era lo dice la línea del juego, que la escribe el embudo. */
   onFalloAjeno(fn: FalloAjenoListener): () => void {
     this.falloAjenoListeners.add(fn);
     return () => this.falloAjenoListeners.delete(fn);

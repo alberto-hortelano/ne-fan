@@ -152,6 +152,15 @@ export class TitleScreen {
       this.gameGenStatus = msg;
       const line = this.content.querySelector<HTMLElement>("#ts-gen-progress");
       if (line) this.renderGameGenProgress(line);
+      if (msg.phase === "error") {
+        // AL REGISTRO TAMBIÉN, y no solo a la línea roja de la tarjeta. Antes
+        // de #312 este fallo caía además en el handler de `main.ts`, que hacía
+        // `errors.push`; el reparto en canales se lo llevó por delante y la
+        // pre-generación pasó a fallar sin dejar rastro en ningún sitio
+        // consultable. El texto rojo de `#ts-gen-progress` desaparece en cuanto
+        // se repinta el selector — dos líneas más abajo, precisamente.
+        errors.push("narrative", msg.message ?? "la pre-generación del mundo falló");
+      }
       if (msg.phase === "ready" || msg.phase === "error") {
         // Refrescar chips/botones si el selector de mundo sigue en pantalla.
         const panel = this.content.querySelector("#ts-gen");
@@ -248,19 +257,12 @@ export class TitleScreen {
     // `pointer-events:none` para que un «Reanudar» que quede debajo se siga
     // pudiendo pulsar; y `bottom:0`, no 32, porque una banda que flota deja
     // una franja de lista asomando por debajo y vuelve a leerse mal.
-    // El `padding-bottom` deja sitio para `#ts-close`, que desde #310 vive en
-    // esta esquina (`bottom:12px`, ~25 px de alto). Con los 14 px de antes las
-    // dos frases se pintaban EN LA MISMA LÍNEA y se leían una encima de otra —
-    // visto en la captura del bloque 3 de `qa/guiones/33-…`, que es para lo que
-    // sirve mirarlas. No es un hueco a ojo: 12 (el `bottom` del botón) + 25 (su
-    // alto, medido en ese mismo guion: `boton {top:443, bottom:468}`) + 5 de
-    // aire.
     mas.style.cssText = [
       "position: absolute",
       "bottom: 0",
       "left: 0",
       "right: 0",
-      "padding: 34px 16px 42px",
+      "padding: 34px 16px 14px",
       "background: linear-gradient(to bottom, rgba(8,8,12,0) 0%, rgba(8,8,12,0.97) 60%)",
       "text-align: center",
       "font-size: 12px",
@@ -283,24 +285,16 @@ export class TitleScreen {
     close.id = "ts-close";
     close.textContent = "✕ cerrar (modo fixtures, sin sesión)";
     close.title = "Cierra el título sin arrancar sesión: fixtures del selector Room";
-    // ABAJO Y NO ARRIBA (#310). `#dev-status` es opaco, va de `y=0` a su cota
-    // (`--dev-status-alto`, 86 px) y se pinta con `z-index:10000` sobre el
-    // título (9999): a 500 px de ancho el panel llena esa banda entera y
-    // `0..86` contiene el `12..38` que ocupaba este botón — solape del 100 %,
-    // o sea que no había forma de cerrar el título con el ratón. Bajar la cota
-    // no lo arregla (el panel mide ≥54 px siempre, más que los 38 del botón),
-    // y que la barra no se pinte con el título delante re-litiga #250. Lo que
-    // sí lo cierra es sacar el botón de la banda.
-    //
-    // Abajo COMPARTE esquina con la banda de «hay más partidas» (`#ts-mas`,
-    // también absoluta y de ancho completo), y eso está mirado: la banda es
-    // `pointer-events:none`, así que no roba el click, y este botón se inserta
-    // DESPUÉS, así que se pinta encima. Lo que sí hubo que darle es SITIO —el
-    // `padding-bottom` de la banda, arriba—, porque el hit-testing puede estar
-    // bien y las dos frases leerse una sobre otra igualmente.
+    // SIN `top` AQUÍ, y es el arreglo de #310: lo pone `base.css`, derivado de
+    // `--dev-status-alto` como el hueco que el título le reserva a la barra de
+    // dev. Este botón es `position:absolute` contra la caja de PADDING de
+    // `#title-screen`, así que el `top:12px` que tenía se medía desde el borde
+    // del overlay y caía DENTRO de esa banda: a 500 px de ancho el panel de dev
+    // —opaco, `z-index:10000`— lo tapaba al 100 % y el título no se podía
+    // cerrar con el ratón. Escribirlo inline volvería a sacarlo del mecanismo,
+    // que es de lo que venía el bug; y un inline gana siempre a la hoja.
     close.style.cssText = [
       "position: absolute",
-      "bottom: 12px",
       "right: 16px",
       "background: none",
       "border: 1px solid #444",
@@ -1084,13 +1078,9 @@ export class TitleScreen {
       paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
     );
 
-    // EL ÚNICO DE LOS SEIS QUE MORDÍA (#260). Aquí el `await` del `FileReader`
-    // va ANTES del `try`, así que un fichero ilegible rechazaba fuera de todo
-    // catch: el rechazo salía del handler `async`, el cliente no tiene handler
-    // de `unhandledrejection` y pulsar «Subir» no hacía nada — #181 otra vez.
-    // Con la función extraída y `paso()` el rechazo tiene canal, y `alFallar`
-    // lo escribe donde ya escriben los demás fallos de este panel: `statusEl`,
-    // porque el registro de errores está oculto con el título delante (#246).
+    // EL ÚNICO DE LOS SEIS QUE MORDÍA (#260): el `await` del `FileReader` iba
+    // fuera del `try` (ver abajo). Arreglado en su sitio, este handler queda
+    // como los otros cinco — cuerpo entero en `try/catch`, sin canal especial.
     const subirElEstilo = async (): Promise<void> => {
       const name = nameEl.value.trim();
       if (name.length < 2) {
@@ -1105,34 +1095,40 @@ export class TitleScreen {
         statusEl.innerHTML = `<span style="color:#a44">Elige al menos una etiqueta temática.</span>`;
         return;
       }
-      const rows = [...rowsEl.querySelectorAll<HTMLElement>("[data-upload-row]")];
-      const images: Array<{ folder: string; description: string; image_b64: string }> = [];
-      for (const row of rows) {
-        const file = (row.querySelector("[data-file]") as HTMLInputElement).files?.[0];
-        if (!file) continue;
-        const description = (row.querySelector("[data-desc]") as HTMLInputElement).value.trim();
-        const folder = (row.querySelector("[data-folder]") as HTMLSelectElement).value;
-        // La lámina es la única que puede ir sin descripción: lo que muestra
-        // no lo elige el motor, lo dicta su rol (muestras planas de material).
-        if (!description && folder !== "surfaces") {
-          statusEl.innerHTML = `<span style="color:#a44">Cada imagen necesita su descripción (${escapeHtml(file.name)}).</span>`;
+      // EL `try` EMPIEZA AQUÍ Y NO TRES PASOS MÁS ABAJO, y ese era el bug de
+      // #260: el `await` de este `FileReader` quedaba FUERA, así que un
+      // fichero ilegible rechazaba sin catch — el handler era `async`, el
+      // cliente no tiene `unhandledrejection`, y pulsar «Subir» no hacía nada
+      // (#181 otra vez). Dentro del `try`, el mismo `catch` que ya traduce los
+      // fallos de red escribe también este, sin canal aparte que mantener.
+      try {
+        const rows = [...rowsEl.querySelectorAll<HTMLElement>("[data-upload-row]")];
+        const images: Array<{ folder: string; description: string; image_b64: string }> = [];
+        for (const row of rows) {
+          const file = (row.querySelector("[data-file]") as HTMLInputElement).files?.[0];
+          if (!file) continue;
+          const description = (row.querySelector("[data-desc]") as HTMLInputElement).value.trim();
+          const folder = (row.querySelector("[data-folder]") as HTMLSelectElement).value;
+          // La lámina es la única que puede ir sin descripción: lo que muestra
+          // no lo elige el motor, lo dicta su rol (muestras planas de material).
+          if (!description && folder !== "surfaces") {
+            statusEl.innerHTML = `<span style="color:#a44">Cada imagen necesita su descripción (${escapeHtml(file.name)}).</span>`;
+            return;
+          }
+          const b64 = await new Promise<string>((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(String(r.result ?? ""));
+            r.onerror = () => rej(new Error(`no se pudo leer ${file.name}`));
+            r.readAsDataURL(file);
+          });
+          images.push({ folder, description, image_b64: b64 });
+        }
+        if (images.length === 0) {
+          statusEl.innerHTML = `<span style="color:#a44">Sube al menos una imagen.</span>`;
           return;
         }
-        const b64 = await new Promise<string>((res, rej) => {
-          const r = new FileReader();
-          r.onload = () => res(String(r.result ?? ""));
-          r.onerror = () => rej(new Error(`no se pudo leer ${file.name}`));
-          r.readAsDataURL(file);
-        });
-        images.push({ folder, description, image_b64: b64 });
-      }
-      if (images.length === 0) {
-        statusEl.innerHTML = `<span style="color:#a44">Sube al menos una imagen.</span>`;
-        return;
-      }
-      uploadBtn.disabled = true;
-      statusEl.textContent = "Subiendo imágenes al ai_server...";
-      try {
+        uploadBtn.disabled = true;
+        statusEl.textContent = "Subiendo imágenes al ai_server...";
         const res = await fetch(`${AI_SERVER_HTTP}/styles/upload`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1162,10 +1158,7 @@ export class TitleScreen {
       }
     };
     uploadBtn.addEventListener("click", () =>
-      paso(subirElEstilo(), "title", "subir el estilo", (err) => {
-        statusEl.innerHTML = `<span style="color:#a44">Subida fallida: ${escapeHtml((err as Error).message)}</span>`;
-        uploadBtn.disabled = false;
-      }),
+      paso(subirElEstilo(), "title", "subir el estilo"),
     );
 
     const generarLasRefsQueFaltan = async (): Promise<void> => {

@@ -14,6 +14,11 @@
 import { dlog } from "../dev/debug-log.js";
 import { errors } from "./error-log.js";
 
+/** El aviso de «este navegador no devuelve promesa» se da UNA vez por carga.
+ *  Su ocupante conocido (`requestPointerLock` en Firefox) ocurre en cada click
+ *  sobre el lienzo, y un registro de errores inundado no lo lee nadie. */
+let yaSeAvisoDeUnNavegadorSinPromesa = false;
+
 /** Lanza `promesa` sin esperarla y registra el fallo si lo hay.
  *
  *  `undefined` SE TOLERA y no es un descuido del tipo (#268): hay APIs del DOM
@@ -21,7 +26,9 @@ import { errors } from "./error-log.js";
  *  `requestPointerLock()`, que `lib.dom` tipa `Promise<void>` y Firefox
  *  resuelve devolviendo `undefined`—, así que el `promesa.catch(…)` de aquí
  *  lanzaba un `TypeError` en cada click sobre el lienzo. Eso es un navegador
- *  distinto, no un fallo de quien juega: deja rastro por `dlog` y sigue.
+ *  distinto, no un fallo de quien juega: se avisa UNA vez por carga y sigue.
+ *  Tolerar no es callar — ensanchar esta firma legaliza «no devolvió nada» en
+ *  los 29 llamantes, y eso tiene que dejar rastro donde se lee.
  *
  *  CUALQUIER OTRA COSA que no sea promesa sí grita, y los dos casos no son el
  *  mismo: `paso(42, …)` es un error de programación. Hoy ya lanzaba —`(42).catch`
@@ -45,15 +52,36 @@ export function paso(
   alFallar?: (err: unknown) => void,
 ): void {
   if (promesa === undefined) {
-    // NO va a `errors.push`: el registro de errores es lo que lee quien juega
-    // cuando algo le ha salido mal, y aquí no le ha salido nada mal — sería
-    // una línea roja por cada click en el lienzo. OJO al alcance de este
-    // rastro: `dlog` está APAGADO por defecto (`debug-log.ts`), así que solo
-    // se lee con `?debug=1` o `__nefan.debug(true)`.
+    // UNA VEZ POR SESIÓN, no por llamada, y las dos mitades importan.
+    //
+    // «Una vez» porque el ocupante conocido es `requestPointerLock()` en el
+    // click del lienzo: registrarlo por click inundaría el panel de errores de
+    // quien juegue en Firefox, y un registro que se inunda deja de leerse.
+    //
+    // «Al registro» y no solo a `dlog` porque ensanchar esta firma LEGALIZA
+    // «no devolvió nada» en los 29 llamantes, y `dlog` está apagado por
+    // defecto (`debug-log.ts`): dejarlo ahí solo sería tolerar en silencio,
+    // que es lo que esta función existe para no hacer. Con esto, la primera
+    // vez que ocurre queda dicho dónde y qué se intentaba; las siguientes ya
+    // no aportan nada nuevo.
+    if (!yaSeAvisoDeUnNavegadorSinPromesa) {
+      yaSeAvisoDeUnNavegadorSinPromesa = true;
+      errors.push(
+        fuente,
+        `${que}: este navegador no devuelve promesa aquí, así que no se puede ` +
+          `informar de si falló. Se avisa una vez por sesión.`,
+      );
+    }
     dlog(`[paso] «${que}» (${fuente}) no devolvió promesa: este navegador no la da`);
     return;
   }
-  if (typeof promesa.catch !== "function") {
+  // `promesa?.catch` y no `promesa.catch`: `null` es el valor MÁS probable que
+  // llega aquí desde JavaScript sin comprobar (varias APIs del DOM lo
+  // devuelven), y con el punto pelado esta guarda reventaba con el mismo
+  // `TypeError` genérico que vino a sustituir — justo en el caso para el que
+  // se escribió. `undefined` ya salió arriba, así que aquí `?.` solo puede
+  // cortocircuitar por `null`.
+  if (typeof promesa?.catch !== "function") {
     throw new TypeError(
       `paso() esperaba una promesa para «${que}» (${fuente}) y recibió ${typeof promesa}. ` +
         `El contrato es Promise<unknown> | undefined: undefined se tolera (hay navegadores ` +
