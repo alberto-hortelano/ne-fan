@@ -15,8 +15,10 @@ import {
   NOMBRES_DE_SINK,
   NO_SESSION,
   createClientSession,
+  destinoDeStatus,
   type FacetSinks,
   type SessionFacets,
+  type StatusRepartible,
 } from "../src/session/session-facets.js";
 import { BASE_UI_THEME, type UiTheme } from "../src/games/ui-theme.js";
 
@@ -45,6 +47,7 @@ function espia(): { sinks: FacetSinks; llamadas: Array<[string, unknown]> } {
     combat: (combatSystem) => llamadas.push(["combat", combatSystem]),
     history: (sessionId) => llamadas.push(["history", sessionId]),
     entrada: (sessionId) => llamadas.push(["entrada", sessionId]),
+    dialogo: (sessionId) => llamadas.push(["dialogo", sessionId]),
   };
   return { sinks, llamadas };
 }
@@ -73,6 +76,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       ["combat", "basic"],
       ["history", "1787-abc"],
       ["entrada", "1787-abc"],
+      ["dialogo", "1787-abc"],
     ]);
   });
 
@@ -103,6 +107,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       ["combat", ""],
       ["history", ""],
       ["entrada", ""],
+      ["dialogo", ""],
     ]);
     assert.equal(s.active, false, "el gate del gasto de imagen queda desarmado");
     assert.deepEqual(s.facets, NO_SESSION);
@@ -143,6 +148,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       ["combat", ""],
       ["history", "segunda"],
       ["entrada", "segunda"],
+      ["dialogo", "segunda"],
     ]);
   });
 
@@ -209,5 +215,90 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       s.enter(PARTIDA);
       assert.equal(s.esMio(""), false, "dentro de una partida, lo de nadie no es mío");
     });
+  });
+});
+
+/** #312. Un `narrative_status` de una partida MUERTA no puede tocar a la viva
+ *  —con `spawn` le escribe la posición al jugador: teletransporte— y un
+ *  `error` de esa misma partida muerta tiene que seguir llegando a quien
+ *  juega. Las dos mitades a la vez, que es lo que hacía difícil el issue.
+ *
+ *  Se prueba aquí y no en el cliente porque en el cliente no hay nada que
+ *  pueda ponerse rojo (`nefan-html` no tiene harness, #241). Lo que el
+ *  navegador sí ejerce —que el reparto llega a tiempo y que el jugador no se
+ *  mueve— es `qa/guiones/35-…`. */
+describe("destinoDeStatus: a quién le habla cada narrative_status (#312)", () => {
+  /** El status mínimo: solo lo que el reparto mira. */
+  const status = (
+    kind: StatusRepartible["kind"],
+    phase: StatusRepartible["phase"],
+    sessionId = "la-muerta",
+  ): StatusRepartible => ({ kind, phase, sessionId });
+
+  /** «La mía es 1787-abc». Anota A QUIÉN se le preguntó, que es la mitad del
+   *  caso `game_gen`. */
+  function sello(mia = "1787-abc") {
+    const preguntas: string[] = [];
+    return {
+      preguntas,
+      esMio: (id: string) => {
+        preguntas.push(id);
+        return id === mia;
+      },
+    };
+  }
+
+  it("la pre-generación de mundo va al TÍTULO, y sin preguntar el sello", () => {
+    // La rama que no se puede quitar. El sello lo estampa el transporte con
+    // «la sesión viva del bridge al emitir», así que tras jugar y volver al
+    // título el cliente está en "" y el bridge sigue cargado: la
+    // pre-generación llega SIEMPRE con sello ajeno. Filtrarla por sello deja
+    // la barra de la tarjeta girando para siempre.
+    const s = sello();
+    for (const phase of ["generating", "progress", "ready", "error"] as const) {
+      assert.equal(destinoDeStatus(status("game_gen", phase), s.esMio), "titulo");
+    }
+    assert.deepEqual(s.preguntas, [], "se preguntó el sello de un game_gen");
+  });
+
+  it("lo que lleva MI sello va a la partida, sea de la fase que sea", () => {
+    const s = sello();
+    for (const kind of ["scene", "tile", "consequences"] as const) {
+      for (const phase of ["generating", "progress", "ready", "error"] as const) {
+        assert.equal(destinoDeStatus(status(kind, phase, "1787-abc"), s.esMio), "juego");
+      }
+    }
+  });
+
+  it("un FALLO ajeno no se calla: va al canal de fallos", () => {
+    const s = sello();
+    for (const kind of ["scene", "tile", "consequences"] as const) {
+      assert.equal(destinoDeStatus(status(kind, "error"), s.esMio), "fallo-ajeno");
+    }
+  });
+
+  it("lo ajeno que NO es fallo se descarta: es el ready que teletransportaba", () => {
+    const s = sello();
+    for (const kind of ["scene", "tile", "consequences"] as const) {
+      for (const phase of ["generating", "progress", "ready"] as const) {
+        assert.equal(destinoDeStatus(status(kind, phase), s.esMio), "descartado");
+      }
+    }
+  });
+
+  it("sin partida aplicada, lo que el bridge difunde SIN partida es mío", () => {
+    // El caso de `esMio` puesto a trabajar: con `""` aplicado, el `""` del
+    // bridge es la partida de nadie y le corresponde al juego. Sin esto, el
+    // reparto y `esMio` podrían discrepar sobre el mismo id.
+    const { sinks } = espia();
+    const s = createClientSession(sinks);
+    assert.equal(destinoDeStatus(status("tile", "ready", ""), s.esMio), "juego");
+    s.enter(PARTIDA);
+    assert.equal(destinoDeStatus(status("tile", "ready", ""), s.esMio), "descartado");
+    assert.equal(
+      destinoDeStatus(status("tile", "ready", "1787-abc"), s.esMio),
+      "juego",
+      "la sesión aplicada es la de PARTIDA",
+    );
   });
 });

@@ -19,8 +19,8 @@ import {
   motivoDeSesionParaElJugador,
   rotuloDeStatus,
   type SalidaDelOverlay,
+  type StatusRotulable,
 } from "@nefan-core/src/protocol/status-labels.js";
-import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.js";
 import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
@@ -246,6 +246,10 @@ const entrada = createEntrada((sessionId) => {
  *  Lo escribe SOLO el sink de la faceta `mundo`, que es quien lo vacía. */
 let mundoPintadoDe = "";
 
+/** De qué sesión es el gate del diálogo que hay puesto ("" = ninguno). Lo
+ *  escribe SOLO el sink de la faceta `dialogo`, hermano del de arriba. */
+let dialogoDeSesion = "";
+
 const session = createClientSession({
   // El mundo pintado es una FACETA, no una llamada que haya que acordarse de
   // hacer (#282, segunda mitad): la rama `new_game` de `unIntentoDeArrancar`
@@ -271,6 +275,27 @@ const session = createClientSession({
   combat: (combatSystem) => applySessionCombatSystem(combatSystem),
   history: (sessionId) => historyBrowser.setSession(sessionId),
   entrada: (sessionId) => entrada.sesion(sessionId),
+  // El gate del diálogo, que hasta #311 `leave()` no deshacía: volver al
+  // título dejaba puesto lo que abrió la conversación. Llama a
+  // `cerrarDialogo()`, el dueño único del par panel+gate, en vez de repetir
+  // aquí el emparejamiento — que es justo el error que #311 persigue.
+  //
+  // POR VALOR y con el argumento LEÍDO, igual que `mundo`: cerrar un panel
+  // abierto es destructivo y el módulo promete que aplicar las mismas facetas
+  // dos veces no cambia nada. La guarda NO es hipotética — medido el
+  // 2026-08-28 instrumentando este sink y corriendo `qa/guiones/27-…`:
+  // `dialogo("") · vigente="" · repetido=true`, o sea que un arranque que
+  // falla llama a `leave()` con los neutros ya aplicados. Hoy lo que salta es
+  // idempotente; la guarda existe para que el día que no lo sea, no dependa
+  // de que alguien se acuerde.
+  //
+  // Lo que esto NO hace, dicho para que no se lea de más: no baja el gate a
+  // `puerta-de-teclado.ts`. El porqué sigue escrito allí y no ha cambiado.
+  dialogo: (sessionId) => {
+    if (sessionId === dialogoDeSesion) return;
+    dialogoDeSesion = sessionId;
+    cerrarDialogo();
+  },
 });
 // Pipeline de imagen de la vista fps: atlas de superficies por tile. Las
 // celdas son assets de la LIBRERÍA (kind "surface") — el server pinta solo
@@ -529,9 +554,11 @@ const nefanHook: Record<string, unknown> = {
    *  el cliente idéntico»: se lee de vuelta en el título y tiene que salir el
    *  mismo objeto por los dos. */
   sesion: () => session.facets,
-  /** Eventos narrativos de OTRA partida que el embudo ha tirado (#282).
-   *  Sin esto, «el tile ajeno no se instaló» y «el tile ajeno no ha llegado
-   *  todavía» son el mismo verde, y el segundo no mide nada. */
+  /** Lo de OTRA partida que los embudos han tirado: `n` son EVENTOS (#282) y
+   *  `status` los `narrative_status` que no eran fallo (#312). Sin esto, «el
+   *  tile ajeno no se instaló» y «el tile ajeno no ha llegado todavía» son el
+   *  mismo verde, y el segundo no mide nada. Van por separado y no sumados
+   *  porque los guiones 29 y 35 afirman cosas distintas con cada uno. */
   descartados: () => narrativeClient.descartados(),
   /** A qué URL resuelve AHORA MISMO cada servicio, ya aplicados los overrides
    *  de la query (`?ai=`, `?bridge=`). No es un adorno de diagnóstico: es lo
@@ -1372,8 +1399,49 @@ function getSelectedParams(): EffectiveParams {
 
 // --- Dialogue callbacks ---
 
-dialoguePanel.onAdvanced = () => {
+/** ABRIR Y CERRAR UN DIÁLOGO SON DOS COSAS QUE TIENEN QUE IR JUNTAS (#311).
+ *
+ *  «Hay una conversación abierta» vivía en dos sitios que nadie obligaba a
+ *  coincidir: el panel (`dialoguePanel`) y el gate del input
+ *  (`input.dialogueActive`, que suprime moverse y atacar). Estaban emparejados
+ *  A MANO en cinco sitios, y bastaba un `dialogueActive = false` sin su `hide()`
+ *  —o al revés— para dejar al jugador con el panel puesto y el mundo
+ *  respondiendo, o con el panel fuera y los controles muertos. Eso compilaba,
+ *  pasaba lint y pasaba la batería.
+ *
+ *  Aquí hay un solo dueño de las dos, así que el par no se puede desemparejar
+ *  sin borrar estas funciones. Es el mecanismo que de verdad cierra #311; el
+ *  sink de la faceta `dialogo` va ENCIMA de esto y cubre otra cosa: que volver
+ *  al título lo deshaga aunque nadie se acuerde.
+ *
+ *  Lo que NO unifica, dicho para que no se lea de más: sigue habiendo dos
+ *  representaciones (el flag y el panel), solo que con un dueño. Colapsarlas
+ *  en una es #314. */
+function abrirDialogo(
+  speaker: string,
+  text: string,
+  choices: string[],
+  who?: { id?: string },
+): void {
+  dialoguePanel.show(speaker, text, choices, who);
+  // Suprime movimiento/ataque del InputProvider mientras el panel está
+  // abierto (las teclas 1-3/T las gestiona el propio panel).
+  input.dialogueActive = true;
+}
+
+/** Cierra el diálogo: el panel fuera y el input devuelto al jugador.
+ *
+ *  Idempotente a propósito — el panel se cierra a sí mismo antes de invocar
+ *  sus callbacks (`chooseByIndex`, `advance`), así que este `hide()` suele ser
+ *  el segundo, y `hide()` solo asigna. Poder llamarlo de más es lo que permite
+ *  que el sink de la faceta lo use sin saber si había algo abierto. */
+function cerrarDialogo(): void {
   input.dialogueActive = false;
+  dialoguePanel.hide();
+}
+
+dialoguePanel.onAdvanced = () => {
+  cerrarDialogo();
 };
 
 // --- Scene selector handler ---
@@ -2108,7 +2176,7 @@ titleScreen.onVisibilityChange = (visible) => {
 (nefanHook as { estilo?: unknown }).estilo = () => titleScreen.styleRunState();
 
 dialoguePanel.onChoice = (idx, text) => {
-  input.dialogueActive = false;
+  cerrarDialogo();
   if (!session.active) return;
   const cur = dialoguePanel.current();
   narrativeClient.sendDialogueChoice({
@@ -2121,7 +2189,7 @@ dialoguePanel.onChoice = (idx, text) => {
 };
 
 dialoguePanel.onFreeText = (freeText) => {
-  input.dialogueActive = false;
+  cerrarDialogo();
   if (!session.active) return;
   const cur = dialoguePanel.current();
   narrativeClient.sendDialogueChoice({
@@ -2235,7 +2303,7 @@ if (loaderBack) {
   loaderBack.onclick = () => paso(volverAlTitulo(), "session", "volver a la pantalla de título");
 }
 
-narrativeClient.onNarrativeStatus((status) => {
+narrativeClient.onStatusDeLaPartida((status) => {
   // ── Latido de progreso del motor narrativo ────────────────────────────
   // Un paso observable (petición recogida, tool de estado llamada): el
   // loader deja de ser una espera muda de minutos y narra qué está pasando.
@@ -2328,13 +2396,22 @@ narrativeClient.onNarrativeStatus((status) => {
   }
 });
 
+// Un fallo del motor que era de OTRA partida (#312). Se PINTA —callarlo es el
+// silencio que esta casa prohíbe— y ahí se acaba: ni ledger de viaje, ni
+// frontera, ni `spawn`. No es disciplina, es que el tipo `FalloAjeno` no
+// tiene esos campos: el handler de arriba no se podría escribir con este
+// argumento.
+narrativeClient.onFalloAjeno((fallo) => {
+  pintarFalloDelMotor(fallo);
+});
+
 /** Enseña un fallo del motor donde toque. El TÍTULO ya no se decide aquí:
  *  `main.ts` pintaba «Error al generar el mundo» y «Error al generar la
  *  escena» —jerga de motor— encima de un cuerpo que el bridge ya había
  *  escrito para quien juega (#180). Ahora el rótulo sale de `rotuloDeStatus`
  *  (nefan-core), que además decide si el fallo tapa la pantalla o se queda en
  *  la línea de mensajes; el cliente solo pinta. */
-function pintarFalloDelMotor(status: NarrativeStatusMessage): void {
+function pintarFalloDelMotor(status: StatusRotulable): void {
   const rotulo = rotuloDeStatus(status, {
     mundoVacio: !tileStore.hasGridTiles,
     overlayAbierto: loaderEl?.classList.contains("visible") ?? false,
@@ -2424,7 +2501,7 @@ narrativeClient.onNarrativeEvent((event) => {
           npcEntities.find((n) => (n.name ?? "") === effect.speaker) ??
           (lastInteractedId ? npcEntities.find((n) => n.id === lastInteractedId) : undefined);
         const skinPrompt = npc?.skinPrompt ?? effect.speakerSkinPrompt;
-        dialoguePanel.show(
+        abrirDialogo(
           effect.speaker,
           effect.text,
           effect.choices.map((c) => (typeof c === "string" ? c : c.text)),
@@ -2436,9 +2513,6 @@ narrativeClient.onNarrativeEvent((event) => {
           baseModel: BASE_MODEL,
         });
         dialoguePanel.setPortrait(portrait.element);
-        // Suprime movimiento/ataque del InputProvider mientras el panel está
-        // abierto (las teclas 1-3/T las gestiona el propio panel).
-        input.dialogueActive = true;
         break;
       }
       case "story_delta":

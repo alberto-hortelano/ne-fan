@@ -141,11 +141,26 @@ export class TitleScreen {
     // difunde narrative_status kind "game_gen" — el título lo refleja en la
     // tarjeta/panel sin loaders de partida. Suscripción de vida completa
     // (el título vive tanto como la app).
-    this.narrative.onNarrativeStatus((msg) => {
-      if (msg.kind !== "game_gen") return;
+    //
+    // El canal ya viene filtrado por `kind` desde el embudo (#312): aquí
+    // había un `if (msg.kind !== "game_gen") return;` que era el segundo
+    // sitio del cliente que sabía de kinds. Y no se filtra por SELLO, ni
+    // aquí ni allí: el transporte lo estampa con la sesión viva del bridge,
+    // así que tras jugar y volver aquí la pre-generación llega con sello
+    // ajeno y filtrarla dejaría la barra girando para siempre.
+    this.narrative.onProgresoDeMundo((msg) => {
       this.gameGenStatus = msg;
       const line = this.content.querySelector<HTMLElement>("#ts-gen-progress");
       if (line) this.renderGameGenProgress(line);
+      if (msg.phase === "error") {
+        // AL REGISTRO TAMBIÉN, y no solo a la línea roja de la tarjeta. Antes
+        // de #312 este fallo caía además en el handler de `main.ts`, que hacía
+        // `errors.push`; el reparto en canales se lo llevó por delante y la
+        // pre-generación pasó a fallar sin dejar rastro en ningún sitio
+        // consultable. El texto rojo de `#ts-gen-progress` desaparece en cuanto
+        // se repinta el selector — dos líneas más abajo, precisamente.
+        errors.push("narrative", msg.message ?? "la pre-generación del mundo falló");
+      }
       if (msg.phase === "ready" || msg.phase === "error") {
         // Refrescar chips/botones si el selector de mundo sigue en pantalla.
         const panel = this.content.querySelector("#ts-gen");
@@ -270,9 +285,16 @@ export class TitleScreen {
     close.id = "ts-close";
     close.textContent = "✕ cerrar (modo fixtures, sin sesión)";
     close.title = "Cierra el título sin arrancar sesión: fixtures del selector Room";
+    // SIN `top` AQUÍ, y es el arreglo de #310: lo pone `base.css`, derivado de
+    // `--dev-status-alto` como el hueco que el título le reserva a la barra de
+    // dev. Este botón es `position:absolute` contra la caja de PADDING de
+    // `#title-screen`, así que el `top:12px` que tenía se medía desde el borde
+    // del overlay y caía DENTRO de esa banda: a 500 px de ancho el panel de dev
+    // —opaco, `z-index:10000`— lo tapaba al 100 % y el título no se podía
+    // cerrar con el ratón. Escribirlo inline volvería a sacarlo del mecanismo,
+    // que es de lo que venía el bug; y un inline gana siempre a la hoja.
     close.style.cssText = [
       "position: absolute",
-      "top: 12px",
       "right: 16px",
       "background: none",
       "border: 1px solid #444",
@@ -528,7 +550,7 @@ export class TitleScreen {
         });
       }
       for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-action=delete]")) {
-        btn.addEventListener("click", async () => {
+        const borrarLaPartida = async (): Promise<void> => {
           if (!confirm(`¿Borrar la partida ${btn.dataset.sessionId}?`)) return;
           try {
             await this.narrative.deleteSession(btn.dataset.sessionId!);
@@ -536,7 +558,10 @@ export class TitleScreen {
           } catch (err) {
             alert(`Borrado falló: ${(err as Error).message}`);
           }
-        });
+        };
+        btn.addEventListener("click", () =>
+          paso(borrarLaPartida(), "title", "borrar la partida guardada"),
+        );
       }
       // Los badges de modo son SELECTORES: cambian el modo del save ANTES de
       // cargar (set_render_mode sobre partida inactiva — el bridge escribe el
@@ -848,7 +873,7 @@ export class TitleScreen {
       regenArmedUntil = 0;
       this.renderGameGenProgress(genProgressEl);
     };
-    genWorldBtn.addEventListener("click", async () => {
+    const generarElMundo = async (): Promise<void> => {
       if (contentStatus() === "ready") {
         // Regenerar pisa el mundo actual y deja obsoletos sus estilos
         // aplicados: dos clicks (armed, TTL 5 s), como las acciones de pago.
@@ -867,7 +892,10 @@ export class TitleScreen {
         genProgressEl.innerHTML = `<span style="color:#a44">${escapeHtml((err as Error).message)}</span>`;
         genWorldBtn.disabled = false;
       }
-    });
+    };
+    genWorldBtn.addEventListener("click", () =>
+      paso(generarElMundo(), "title", "encolar la pre-generación del mundo"),
+    );
     applyStyleBtn.addEventListener("click", () => {
       paso(
         this.renderStylePlan(stylePlanEl, selectedGame.game_id, styleSel.value),
@@ -955,7 +983,7 @@ export class TitleScreen {
     cancelBtn.addEventListener("click", () => {
       el.innerHTML = "";
     });
-    runBtn.addEventListener("click", async () => {
+    const aplicarElEstilo = async (): Promise<void> => {
       runBtn.disabled = true;
       cancelBtn.disabled = true;
       try {
@@ -975,7 +1003,10 @@ export class TitleScreen {
         runBtn.disabled = false;
         cancelBtn.disabled = false;
       }
-    });
+    };
+    runBtn.addEventListener("click", () =>
+      paso(aplicarElEstilo(), "title", "aplicar el estilo al mundo pre-generado"),
+    );
   }
 
   /** Subir un estilo propio: nombre + al menos una imagen por categoría; las
@@ -1047,7 +1078,10 @@ export class TitleScreen {
       paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
     );
 
-    uploadBtn.addEventListener("click", async () => {
+    // EL ÚNICO DE LOS SEIS QUE MORDÍA (#260): el `await` del `FileReader` iba
+    // fuera del `try` (ver abajo). Arreglado en su sitio, este handler queda
+    // como los otros cinco — cuerpo entero en `try/catch`, sin canal especial.
+    const subirElEstilo = async (): Promise<void> => {
       const name = nameEl.value.trim();
       if (name.length < 2) {
         statusEl.innerHTML = `<span style="color:#a44">Ponle un nombre al estilo.</span>`;
@@ -1061,34 +1095,40 @@ export class TitleScreen {
         statusEl.innerHTML = `<span style="color:#a44">Elige al menos una etiqueta temática.</span>`;
         return;
       }
-      const rows = [...rowsEl.querySelectorAll<HTMLElement>("[data-upload-row]")];
-      const images: Array<{ folder: string; description: string; image_b64: string }> = [];
-      for (const row of rows) {
-        const file = (row.querySelector("[data-file]") as HTMLInputElement).files?.[0];
-        if (!file) continue;
-        const description = (row.querySelector("[data-desc]") as HTMLInputElement).value.trim();
-        const folder = (row.querySelector("[data-folder]") as HTMLSelectElement).value;
-        // La lámina es la única que puede ir sin descripción: lo que muestra
-        // no lo elige el motor, lo dicta su rol (muestras planas de material).
-        if (!description && folder !== "surfaces") {
-          statusEl.innerHTML = `<span style="color:#a44">Cada imagen necesita su descripción (${escapeHtml(file.name)}).</span>`;
+      // EL `try` EMPIEZA AQUÍ Y NO TRES PASOS MÁS ABAJO, y ese era el bug de
+      // #260: el `await` de este `FileReader` quedaba FUERA, así que un
+      // fichero ilegible rechazaba sin catch — el handler era `async`, el
+      // cliente no tiene `unhandledrejection`, y pulsar «Subir» no hacía nada
+      // (#181 otra vez). Dentro del `try`, el mismo `catch` que ya traduce los
+      // fallos de red escribe también este, sin canal aparte que mantener.
+      try {
+        const rows = [...rowsEl.querySelectorAll<HTMLElement>("[data-upload-row]")];
+        const images: Array<{ folder: string; description: string; image_b64: string }> = [];
+        for (const row of rows) {
+          const file = (row.querySelector("[data-file]") as HTMLInputElement).files?.[0];
+          if (!file) continue;
+          const description = (row.querySelector("[data-desc]") as HTMLInputElement).value.trim();
+          const folder = (row.querySelector("[data-folder]") as HTMLSelectElement).value;
+          // La lámina es la única que puede ir sin descripción: lo que muestra
+          // no lo elige el motor, lo dicta su rol (muestras planas de material).
+          if (!description && folder !== "surfaces") {
+            statusEl.innerHTML = `<span style="color:#a44">Cada imagen necesita su descripción (${escapeHtml(file.name)}).</span>`;
+            return;
+          }
+          const b64 = await new Promise<string>((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(String(r.result ?? ""));
+            r.onerror = () => rej(new Error(`no se pudo leer ${file.name}`));
+            r.readAsDataURL(file);
+          });
+          images.push({ folder, description, image_b64: b64 });
+        }
+        if (images.length === 0) {
+          statusEl.innerHTML = `<span style="color:#a44">Sube al menos una imagen.</span>`;
           return;
         }
-        const b64 = await new Promise<string>((res, rej) => {
-          const r = new FileReader();
-          r.onload = () => res(String(r.result ?? ""));
-          r.onerror = () => rej(new Error(`no se pudo leer ${file.name}`));
-          r.readAsDataURL(file);
-        });
-        images.push({ folder, description, image_b64: b64 });
-      }
-      if (images.length === 0) {
-        statusEl.innerHTML = `<span style="color:#a44">Sube al menos una imagen.</span>`;
-        return;
-      }
-      uploadBtn.disabled = true;
-      statusEl.textContent = "Subiendo imágenes al ai_server...";
-      try {
+        uploadBtn.disabled = true;
+        statusEl.textContent = "Subiendo imágenes al ai_server...";
         const res = await fetch(`${AI_SERVER_HTTP}/styles/upload`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1116,9 +1156,12 @@ export class TitleScreen {
         statusEl.innerHTML = `<span style="color:#a44">Subida fallida: ${escapeHtml((err as Error).message)}</span>`;
         uploadBtn.disabled = false;
       }
-    });
+    };
+    uploadBtn.addEventListener("click", () =>
+      paso(subirElEstilo(), "title", "subir el estilo"),
+    );
 
-    completeBtn.addEventListener("click", async () => {
+    const generarLasRefsQueFaltan = async (): Promise<void> => {
       completeBtn.disabled = true;
       backBtn.disabled = true;
       statusEl.innerHTML = `<span style="color:#da6">🎨 Generando las refs que faltan (varios minutos)...</span>`;
@@ -1137,7 +1180,10 @@ export class TitleScreen {
         completeBtn.disabled = false;
         backBtn.disabled = false;
       }
-    });
+    };
+    completeBtn.addEventListener("click", () =>
+      paso(generarLasRefsQueFaltan(), "title", "generar las refs que faltan del estilo"),
+    );
   }
 
   /** Crear un mundo propio: textarea o archivo .md/.txt. El borrador se
@@ -1193,7 +1239,7 @@ export class TitleScreen {
     backBtn.addEventListener("click", () =>
       paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
     );
-    createBtn.addEventListener("click", async () => {
+    const crearElMundo = async (): Promise<void> => {
       const draft = draftEl.value.trim();
       if (draft.length < 20) {
         statusEl.innerHTML = `<span style="color:#a44">El borrador es demasiado corto — describe el mundo con al menos unas frases.</span>`;
@@ -1223,7 +1269,10 @@ export class TitleScreen {
         createBtn.disabled = false;
         backBtn.disabled = false;
       }
-    });
+    };
+    createBtn.addEventListener("click", () =>
+      paso(crearElMundo(), "title", "crear el mundo a partir del borrador"),
+    );
   }
 
   private renderCharacterEditor(

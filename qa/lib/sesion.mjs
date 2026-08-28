@@ -442,3 +442,51 @@ export function celdaAMundo(scene, col, row) {
   const [ox, oz] = g.origin;
   return [ox + (col + 0.5) * g.meters_per_cell, oz + (row + 0.5) * g.meters_per_cell];
 }
+
+/** ¿Llega el cursor a un elemento del título, y dónde hay que pulsarlo?
+ *
+ *  Tres guiones preguntaban esto con tres copias del mismo `evaluate` (el 33
+ *  dos veces, el 34 una), y las tres se quedaron rancias a la vez cuando #310
+ *  movió `#ts-close`: la del 34 seguía calculando un click de rendija para
+ *  esquivar una barra que ya no lo tapa, así que pasaba por una razón distinta
+ *  de la que decía. Aquí hay UNA.
+ *
+ *  Devuelve la geometría contra `#dev-status` —el único elemento que se pinta
+ *  ENCIMA del título (`z-index` 10000 sobre 9999)— y el veredicto de
+ *  `elementFromPoint`, que es lo que de verdad le pasa al cursor: la geometría
+ *  sola no sabe de `z-index` ni de `pointer-events`.
+ *
+ *  `golpea` es el id (o el tag) de lo que hay en el centro: sirve para que un
+ *  fallo diga QUIÉN tapa, no solo que algo tapa. */
+export async function alcanceDelCursor(ctx, id) {
+  return ctx.page.evaluate((elId) => {
+    const el = document.getElementById(elId);
+    const dev = document.getElementById("dev-status");
+    if (!el) return { existe: false, id: elId };
+    const b = el.getBoundingClientRect();
+    const d = dev?.getBoundingClientRect() ?? null;
+    const centro = {
+      x: Math.round(b.left + b.width / 2),
+      y: Math.round(b.top + b.height / 2),
+    };
+    const golpeado = document.elementFromPoint(centro.x, centro.y);
+    return {
+      existe: true,
+      id: elId,
+      caja: {
+        top: Math.round(b.top),
+        bottom: Math.round(b.bottom),
+        left: Math.round(b.left),
+        right: Math.round(b.right),
+      },
+      barra: d ? { top: Math.round(d.top), bottom: Math.round(d.bottom) } : null,
+      // Las dos son de ancho completo por la derecha, así que cruzarse en Y es
+      // cruzarse. `false` si no hay barra: nada que solapar.
+      solapaLaBarra: d ? b.top < d.bottom && b.bottom > d.top : false,
+      dentroDelViewport: b.top >= 0 && b.bottom <= window.innerHeight,
+      centro,
+      golpea: golpeado?.id || golpeado?.tagName || null,
+      loGolpea: golpeado === el,
+    };
+  }, id);
+}

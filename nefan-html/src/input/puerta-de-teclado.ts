@@ -32,6 +32,17 @@
  *     canal de configuración con un defecto silencioso («no hay diálogo») que
  *     nadie vería fallar. Queda escrito, no olvidado.
  *
+ *     REVISADO EN #311 y la decisión NO cambia. Se midió la alternativa que
+ *     parecía obvia —un `data-dialogo` en la raíz, como `data-titulo`— y mide
+ *     PEOR: `titulo-manda.ts` es seguro porque el CSS lee el mismo atributo
+ *     (`html[data-titulo="1"] #game-ui{display:none}`) y olvidarlo tiene
+ *     síntoma visible; para el diálogo no hay ninguna regla CSS sobre
+ *     atributo de raíz (grep a cero), así que sería una TERCERA
+ *     representación del mismo estado y su olvido volvería a ser silencioso.
+ *     Lo que sí se arregló en #311 es el olvido que sí ocurría: `leave()` no
+ *     deshacía el gate, y ahora es una faceta de `session-facets.ts` que el
+ *     compilador no deja saltarse.
+ *
  *  Se devuelve el desenganche porque `InputProvider` declara `dispose()`. */
 import { elTituloManda } from "../ui/titulo-manda.js";
 

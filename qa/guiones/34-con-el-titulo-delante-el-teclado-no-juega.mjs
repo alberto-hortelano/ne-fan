@@ -31,7 +31,13 @@
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
 import { clonarSaves } from "../lib/saves.mjs";
-import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import {
+  alcanceDelCursor,
+  comenzar,
+  esperarListaDeSaves,
+  esperarTituloListo,
+  nuevaPartida,
+} from "../lib/sesion.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -226,33 +232,24 @@ export default async function (ctx) {
   // por la puerta de atrás no probaría que el botón del título sigue vivo —
   // que es el riesgo que el plan de esta tanda nombró.
   //
-  // OJO al punto de clic: el CENTRO del botón lo tapa la barra de dev
-  // (z-index 10000 sobre el título 9999), así que se pulsa la mitad que asoma.
-  // Eso es un hallazgo del informe, no una comodidad de la prueba: quien juega
-  // se encuentra el mismo obstáculo, y por eso se mide y se registra.
-  const donde = await ctx.page.evaluate(() => {
-    const b = document.getElementById("ts-close").getBoundingClientRect();
-    const d = document.getElementById("dev-status").getBoundingClientRect();
-    const x = Math.round(b.left + b.width / 2);
-    const tapadoElCentro =
-      document.elementFromPoint(x, Math.round(b.top + b.height / 2))?.id === "dev-status";
-    const y = Math.round(Math.max(b.top + 3, Math.min(b.bottom - 3, d.bottom + 3)));
-    return {
-      x,
-      y,
-      alcanzable: y > d.bottom && y < b.bottom,
-      tapadoElCentro,
-      boton: [Math.round(b.top), Math.round(b.bottom)],
-      barra: [Math.round(d.top), Math.round(d.bottom)],
-    };
-  });
+  // Se pulsa el CENTRO del botón, que es donde apunta quien juega. Aquí hubo
+  // que pulsar una rendija: hasta #310 el botón vivía en `top:12px`, dentro de
+  // la banda que el título le reserva a `#dev-status`, y la barra —opaca, con
+  // `z-index` 10000 sobre el título— le tapaba el centro. Ese comentario
+  // sobrevivió al arreglo y describía un obstáculo que ya no existe: el click
+  // seguía pasando, pero por una razón distinta de la que decía.
+  //
+  // El aserto es por tanto que el centro LLEGA, no que exista una rendija. Si
+  // alguien vuelve a meter el botón bajo la barra, esto se pone rojo aquí y en
+  // `qa/guiones/33-…`, que es donde vive el candado de la derivación.
+  const donde = await alcanceDelCursor(ctx, "ts-close");
   ctx.log(`«✕ cerrar» frente a la barra de dev: ${JSON.stringify(donde)}`);
   ctx.expect(
-    "el botón «✕ cerrar» del título tiene algún punto que la barra de dev no tapa",
-    donde.alcanzable,
+    "el cursor llega al centro de «✕ cerrar»: la barra de dev no lo tapa (#310)",
+    donde.loGolpea && !donde.solapaLaBarra,
     JSON.stringify(donde),
   );
-  await ctx.page.mouse.click(donde.x, donde.y);
+  await ctx.page.mouse.click(donde.centro.x, donde.centro.y);
   await ctx.waitFor(
     "el título se cierra por su propio botón (la puerta no se ha tragado el clic)",
     () => (document.documentElement.dataset.titulo === "0" ? { titulo: "0" } : null),

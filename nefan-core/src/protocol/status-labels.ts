@@ -71,13 +71,25 @@ const DETALLE_POR_DEFECTO: Record<NarrativeStatusMessage["kind"], string> = {
   game_gen: "El motor narrativo rechazó la reacción.",
 };
 
+/** Lo que `rotuloDeStatus` LEE de un status, y nada más.
+ *
+ *  Es un `Pick` y no el mensaje entero para que el canal de fallos AJENOS de
+ *  #312 —que entrega un objeto sin `spawn` ni `tile`— pueda pintarse por aquí
+ *  sin ensancharse: rotular un fallo de otra partida es legítimo, moverle el
+ *  jugador con él no. Los llamantes que sí tienen el mensaje completo siguen
+ *  compilando, que es lo que hace un `Pick`. */
+export type StatusRotulable = Pick<
+  NarrativeStatusMessage,
+  "phase" | "kind" | "message" | "placeId"
+>;
+
 /** Título y destino de un `narrative_status` en fase de error.
  *
  *  Lanza si se le pasa un status que no es de error: el rótulo describe un
  *  fallo, y llamarlo con un `ready` o un `generating` es un error de quien
  *  llama, no un caso a inventar (fail-loud). */
 export function rotuloDeStatus(
-  status: NarrativeStatusMessage,
+  status: StatusRotulable,
   ctx: ContextoDeRotulo,
 ): Rotulo {
   if (status.phase !== "error") {

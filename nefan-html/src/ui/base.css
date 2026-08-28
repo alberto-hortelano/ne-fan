@@ -47,6 +47,12 @@ body {
    empieza a costar lista. */
 :root {
   --dev-status-alto: 86px;
+  /* Alto del botón de cerrar del título. Vive aquí, y no en el `cssText` de
+     `title-screen.ts`, porque lo necesitan DOS declaraciones que tienen que
+     coincidir: la altura del propio botón y el hueco que el título reserva
+     para él. Escrito en los dos sitios, el día que cambie la tipografía el
+     botón crece y la reserva no — que es la forma exacta del bug de #310. */
+  --ts-close-alto: 26px;
 }
 
 /* EL HUECO QUE EL TÍTULO LE RESERVA A LA BARRA, derivado de la misma variable
@@ -65,7 +71,41 @@ body {
    guion 33 lo dice. Un respaldo silencioso sería el tercer sitio donde vive
    el número. */
 #title-screen {
-  padding: max(calc(var(--dev-status-alto) + 10px), min(160px, 20vh)) 32px 32px;
+  padding: max(
+      calc(var(--dev-status-alto) + var(--ts-close-alto) + 18px),
+      min(160px, 20vh)
+    )
+    32px 32px;
+}
+
+/* EL BOTÓN DE CERRAR, dentro del MISMO mecanismo derivado (#310).
+   `#ts-close` es `position:absolute` dentro de `#title-screen`, así que su
+   bloque contenedor es la caja de PADDING: su `top` se mide desde el borde
+   superior del overlay, NO desde donde empieza la columna. Con `top:12px`
+   inline caía dentro de la banda que la regla de arriba le reserva a
+   `#dev-status` —opaca, `z-index:10000` sobre el título— y a 500 px de ancho
+   quedaba tapado al 100 %: no había forma de cerrar el título con el ratón.
+   El bug era exactamente ese: un elemento del título que se saltaba la reserva
+   que el título ya deriva.
+
+   Por eso la reserva de arriba suma AHORA los dos: la barra y este botón. No
+   basta con bajarlo de la barra —lo medí: con `top: calc(alto + 22px)` el
+   botón cae en 108..133 y a 500×480 la columna empieza en 96, así que se comía
+   el encabezado «Never Ending Fantasy» y las dos cosas se leían una sobre otra
+   con todo lo demás en verde—. El hueco entre la barra y la columna tenía 10 px
+   y el botón mide 26.
+
+   `height` sale de la variable para que la reserva no pueda mentir: si el botón
+   creciera por su cuenta (otra tipografía, más padding), el hueco reservado
+   seguiría siendo el de antes. Así los dos salen del mismo número.
+
+   COSTE, dicho porque lo tiene: a 500×480 la columna del título empieza 30 px
+   más abajo que antes de #310. En ventanas normales no cambia nada (gana el
+   suelo estético de 160 px). */
+#ts-close {
+  top: calc(var(--dev-status-alto) + 8px);
+  height: var(--ts-close-alto);
+  box-sizing: border-box;
 }
 
 /* El lienzo y la UI de juego comparten EXACTAMENTE la misma caja: la UI se

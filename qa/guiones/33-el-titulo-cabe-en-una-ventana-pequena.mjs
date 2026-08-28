@@ -35,6 +35,7 @@
  */
 import { clonarSaves } from "../lib/saves.mjs";
 import {
+  alcanceDelCursor,
   asentarElLayout,
   comenzar,
   espiarElPrimerPintado,
@@ -199,17 +200,99 @@ export default async function (ctx) {
     const raiz = document.documentElement;
     const t = document.getElementById("title-screen");
     const leer = () => Math.round(parseFloat(getComputedStyle(t).paddingTop));
+    // La cota de HOY se lee, no se escribe: copiarla aquí sería el mismo
+    // defecto que este bloque denuncia, y pondría el guion rojo el día que la
+    // variable cambie sin que la derivación se haya roto.
+    const cota = parseFloat(getComputedStyle(raiz).getPropertyValue("--dev-status-alto"));
     const antes = leer();
     raiz.style.setProperty("--dev-status-alto", "240px");
     const despues = leer();
     raiz.style.removeProperty("--dev-status-alto");
-    return { antes, despues, restaurado: leer() };
+    return { cota, antes, despues, restaurado: leer() };
   });
   ctx.log(`hueco del título: ${JSON.stringify(derivado)}`);
+  // EL DELTA, no el valor absoluto. Con `=== 250` este aserto se ponía rojo en
+  // cuanto cambiaba la COMPOSICIÓN de la reserva sin que la derivación se
+  // hubiera roto — pasó en #310, cuando el hueco pasó a cubrir también el
+  // botón de cerrar. Lo que se afirma es lo que importa: que mover la variable
+  // mueve el hueco exactamente lo mismo, y que se restaura.
   ctx.expect(
     "el hueco superior del título SIGUE a `--dev-status-alto` (no es un número copiado)",
-    derivado.despues === 250 && derivado.restaurado === derivado.antes,
+    derivado.despues === derivado.antes + (240 - derivado.cota) &&
+      derivado.restaurado === derivado.antes,
     JSON.stringify(derivado),
+  );
+
+  // ── 1e · #310: se puede CERRAR el título en la ventana estrecha ──────────
+  // `#ts-close` es `position:absolute` dentro de `#title-screen`, así que su
+  // bloque contenedor es la caja de PADDING: su `top` se mide desde el borde
+  // del overlay y NO desde donde empieza la columna. Con `top:12px` inline caía
+  // dentro de la banda que el título le reserva a `#dev-status` —opaca,
+  // `z-index:10000`— y a 500 px de ancho quedaba tapado al 100 %: no había
+  // forma de cerrar el título con el ratón.
+  //
+  // Se mide con el panel YA LLENO (el bloque de arriba acaba de esperarlo): a
+  // media carga el solape podría no darse y el verde no diría nada.
+  const cierre = await alcanceDelCursor(ctx, "ts-close");
+  ctx.log(`el botón de cerrar: ${JSON.stringify(cierre)}`);
+  ctx.expect(
+    "el botón de cerrar el título NO cae bajo la barra de dev (#310)",
+    cierre.existe && !cierre.solapaLaBarra && cierre.dentroDelViewport,
+    JSON.stringify(cierre),
+  );
+  ctx.expect(
+    "…y un click en su CENTRO llega al botón, no a lo que tenga encima",
+    cierre.loGolpea,
+    `elementFromPoint devolvió "${cierre.golpea}"`,
+  );
+
+  // EL CANDADO DE VERDAD, y es el que faltaba en la primera versión de este
+  // bloque: que la posición del botón se DERIVE de `--dev-status-alto`, la
+  // misma variable que acota el panel y de la que sale el hueco del título.
+  // Comparar los valores de hoy no vale —coincidirían con un número escrito a
+  // mano—, así que se MUEVE la variable y se mira si el botón la sigue, igual
+  // que hace el bloque 1d con el padding. Sin esto, el arreglo de #310 sería
+  // un tercer sitio donde vive el 86 y volvería a descolgarse solo.
+  const sigueALaVariable = await ctx.page.evaluate(() => {
+    const raiz = document.documentElement;
+    const leer = () => Math.round(document.getElementById("ts-close").getBoundingClientRect().top);
+    const cota = parseFloat(getComputedStyle(raiz).getPropertyValue("--dev-status-alto"));
+    const antes = leer();
+    raiz.style.setProperty("--dev-status-alto", "240px");
+    const despues = leer();
+    raiz.style.removeProperty("--dev-status-alto");
+    return { cota, antes, despues, restaurado: leer() };
+  });
+  ctx.log(`el botón frente a la variable: ${JSON.stringify(sigueALaVariable)}`);
+  ctx.expect(
+    "la posición de «✕ cerrar» SIGUE a `--dev-status-alto` (no es un número copiado)",
+    sigueALaVariable.despues === sigueALaVariable.antes + (240 - sigueALaVariable.cota) &&
+      sigueALaVariable.restaurado === sigueALaVariable.antes,
+    JSON.stringify(sigueALaVariable),
+  );
+
+  // Y que no se pise con el TEXTO del título. El hit-testing no lo ve —el
+  // botón se pinta encima, así que `elementFromPoint` diría que sí llega
+  // igualmente— y es el defecto que apareció al probar la otra colocación
+  // (abajo, junto a la banda de «hay más partidas»): las dos frases en la
+  // misma línea, las dos ilegibles, con todo lo demás en verde.
+  const solapeDeTexto = await ctx.page.evaluate(() => {
+    const b = document.getElementById("ts-close").getBoundingClientRect();
+    const cruces = [];
+    for (const el of document.querySelectorAll("#title-screen h1, #ts-mas, #ts-new")) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top) {
+        cruces.push(el.id || el.tagName);
+      }
+    }
+    return { cruces, boton: { top: Math.round(b.top), bottom: Math.round(b.bottom) } };
+  });
+  ctx.log(`solape de texto del botón de cerrar: ${JSON.stringify(solapeDeTexto)}`);
+  ctx.expect(
+    "…y no se pisa con ningún texto del título: el hit-testing puede estar bien y leerse fatal",
+    solapeDeTexto.cruces.length === 0,
+    JSON.stringify(solapeDeTexto),
   );
 
   // ── 1b · #251 en negativo: sin partidas no hay nada que avisar ───────────

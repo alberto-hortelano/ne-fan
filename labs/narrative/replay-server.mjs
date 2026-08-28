@@ -151,23 +151,33 @@ const wss = new WebSocketServer({ port: PORT, host: "127.0.0.1" });
 console.error(`[replay] suplantando al bridge en ws://127.0.0.1:${PORT}`);
 console.error(`[replay] arranca el cliente (cd nefan-html && npm run dev) y pulsa "Nueva partida".`);
 
-/** El ÚNICO tipo de frame que hay que reestampar al reemitir (#282).
+/** Reestampar el sello al reemitir (#282, #312). SIN LISTA DE TIPOS.
  *
- *  No es «los mensajes que llevan sello» —eso sería una segunda lista de un
- *  dominio que ya vive en el tipo `ServerMessage` y que se quedaría rancia—
- *  sino «lo que el cliente FILTRA», que es una sola cosa y está escrita en un
- *  sitio: `nefan-html/src/net/narrative-client.ts` descarta el
- *  `narrative_event` cuyo sello no es el de su partida, y el `narrative_status`
- *  NO lo filtra a propósito (silenciar un error de una sesión muerta sería el
- *  silencio que prohíbe el fail-loud).
+ *  Aquí hubo una lista escrita a mano —«el ÚNICO tipo que el cliente filtra»—
+ *  y era un espejo de la política del cliente que nació ya incompleta: decía
+ *  `narrative_event` cuando los frames sellados del wire son tres
+ *  (`narrative_event`, `narrative_status`, `render_mode_changed`). Es
+ *  exactamente lo que su propio comentario decía querer evitar.
  *
- *  Sin reestampar, los frames del log —grabados con otra sesión, o antes de
- *  que el sello existiera— se descartan enteros y `replay-web` reproduce una
- *  película en negro.
+ *  Tampoco vale derivar de la PROPIEDAD (`"sessionId" in msg`), que es lo
+ *  primero que parece: **falla justo en el caso para el que existe esto**. Los
+ *  logs viejos se grabaron ANTES de que el sello existiera y no traen el campo
+ *  — medido sobre `runs/2026-08-17_17-34-28`: 51 broadcasts sellables, 0 con
+ *  `sessionId`. Con esa condición no se reestamparía ninguno y `replay-web`
+ *  quedaría igual de roto que sin el arreglo.
  *
- *  Si algún día el cliente filtra un segundo tipo, este es el sitio que hay
- *  que ampliar; el comentario de `narrative-client.ts` lo dice desde allí. */
-const TIPO_FILTRADO_POR_EL_CLIENTE = "narrative_event";
+ *  Así que se sella TODO lo que va en la película. `timeline` son solo
+ *  broadcasts (las respuestas correlacionadas van por `queues`, así que
+ *  `session_started` —que es la FUENTE del sello— no pasa por aquí), y ponerle
+ *  el campo a uno que no lo declara es un dato de más que su handler ignora.
+ *  A cambio, el día que un cuarto tipo gane sello ya está cubierto.
+ *
+ *  POR QUÉ HACE FALTA: el cliente descarta el `narrative_event` ajeno desde
+ *  #282 y desde #312 reparte el `narrative_status` —de una sesión que no es la
+ *  suya solo se queda los `phase:"error"`—. Sin sellar, el `ready` que retira
+ *  el overlay de carga y el `generating` que narra el progreso se tiran los
+ *  dos: el mundo se pinta y el «Generando mundo inicial…» no se va nunca. */
+const sellarComoDeEstaReproduccion = (msg, sessionId) => ({ ...msg, sessionId });
 
 wss.on("connection", (ws) => {
   console.error("[replay] cliente conectado");
@@ -189,9 +199,7 @@ wss.on("connection", (ws) => {
         if (ws.readyState !== ws.OPEN) return;
         const frame = timeline[i];
         sendMsg(
-          frame.msg.type === TIPO_FILTRADO_POR_EL_CLIENTE
-            ? { ...frame.msg, sessionId: sesionServida }
-            : frame.msg,
+          sellarComoDeEstaReproduccion(frame.msg, sesionServida),
         );
         const label =
           frame.msg.type === "narrative_event"
