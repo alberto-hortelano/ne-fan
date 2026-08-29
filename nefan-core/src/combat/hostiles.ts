@@ -35,6 +35,17 @@ export const HOSTILE_HEALTH = 60;
  *  sería prometer en el HUD algo que no se ve en el mundo. */
 export const HOSTILE_WEAPON = "unarmed";
 
+/** A qué distancia el hostil se da por enterado del jugador.
+ *
+ *  10 m y no «siempre», que es lo que hacía el sim sin esta puerta: MEDIDO en
+ *  el banco el 2026-08-29, un hostil a 34 m mataba en 27,7 s a un jugador que
+ *  no tocaba una tecla, así que alejarlo no protegía de nada. Y 10 m y no 3:
+ *  el rótulo y la mirilla del cliente alcanzan de sobra a esa distancia, así
+ *  que al jugador le da tiempo a VER lo que se le viene antes de que empiece
+ *  a pegarle. La pelea la elige quien juega acercándose; el enemigo la
+ *  termina. */
+export const HOSTILE_AGGRO_M = 10;
+
 /** Bloque de combate de un rol hostil, o `undefined` si el rol no lo es
  *  (aldeano, guardia, ausente…). Devolver `undefined` y no un bloque vacío es
  *  lo que deja escribir `...(combat ? { combat } : {})` en las dos vías sin
@@ -50,6 +61,6 @@ export function combatForHostileRole(role: unknown): HostileCombat | undefined {
     // declarado a 8 m se queda mirando y "hay contra quién pelear" vuelve a
     // ser mentira — que es exactamente lo que pasó en el único rastro de
     // combate del repositorio.
-    personality: buildPersonality("medium", "aggressive"),
+    personality: buildPersonality("medium", "aggressive", { aggro_radius: HOSTILE_AGGRO_M }),
   };
 }

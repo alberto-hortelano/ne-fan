@@ -31,10 +31,6 @@
       "porque": "Quien orquesta ataques y turnos sobre el sistema activo. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
-      "fichero": "src/combat/enemy-ai.ts",
-      "porque": "La IA de los enemigos: personalidad, agresividad y elección de ataque. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
       "fichero": "src/combat/difficulty-presets.ts",
       "porque": "Los presets de dificultad. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
@@ -235,6 +231,17 @@
           "porque": "Igual que los otros dos: usa `combatForHostileRole` para SEMBRAR un hostil con el combate real y comprobar que `npcSync` lo excluye de la vida ambiental. No afirma ningún número del módulo, así que no puede matar un mutante suyo; y además arranca sesión de bridge, que es la batería más cara del repo."
         }
       ]
+    },
+    {
+      "id": "enemy-ai",
+      "mutate": [
+        "src/combat/enemy-ai.ts"
+      ],
+      "tests": [
+        "test/combat-systems.test.ts"
+      ],
+      "break": 0,
+      "porque": "La IA de los enemigos. Estaba en `sin_mutar` con el motivo «ningún test lo tiene por sujeto», y era verdad hasta el 2026-08-29: sale de ahí porque esa tanda le añadió la PUERTA DE ENGANCHE (`aggroRadius`) y, con ella, el primer bloque de tests que la tiene por sujeto — que un hostil fuera del radio no se mueva ni ataque, que dentro sí, que no se suelte una vez enganchado y que sin la puerta declarada se comporte como siempre. Se ejerce por el SIM entero y no llamando a EnemyAI a mano, que es como corre en partida. BREAK 0 provisional por la misma razón que `hostiles`: `local` se niega sin medida previa, así que el suelo lo pone la primera corrida autorizada."
     },
     {
       "id": "blueprint-volumenes",

@@ -340,6 +340,21 @@ async function pelearContra(
   return { vida0, vida1, linea };
 }
 
+/** Estado de la PUERTA REAL del ataque: pointer lock + diálogo cerrado, leído
+ *  de la misma fuente que `keyboard-input-provider.ts`. El driver de bench
+ *  (`?input=scripted`) NO pasa por ahí, así que sin esto el guion puede pegar
+ *  y ver daño mientras el jugador de verdad aporrea el ratón sin hacer nada. */
+const puertaDelAtaque = (ctx) => ctx.nefan("puedeAtacar");
+
+/** Captura el ratón como lo captura el jugador: un click en el mundo. */
+async function capturarElRaton(ctx) {
+  await ctx.page.click("#fps-canvas, canvas", { position: { x: 200, y: 200 } }).catch(() => null);
+  return ctx
+    .waitFor("el ratón queda capturado (click en el mundo)",
+      () => (window.__nefan.puedeAtacar().raton ? true : null), 10_000)
+    .catch(() => false);
+}
+
 export default async function (ctx) {
   await nuevaPartida(ctx, { gameId: GAME_ID });
   await comenzar(ctx);
@@ -395,6 +410,26 @@ export default async function (ctx) {
     await jugadorVivo(ctx),
     "el bandido mató al jugador durante el primer acto",
   );
+
+  // ── ACTO 1 bis · TRAS HABLAR, ¿se puede devolver el golpe? ─────────────
+  // La puerta real del ataque es `pointer lock && !diálogo`
+  // (`keyboard-input-provider.ts`), y el panel de diálogo SUELTA el pointer
+  // lock al abrirse. Hasta #323 no lo devolvía nadie: quien hablaba con un NPC
+  // se quedaba pegando a un enemigo a 1,5 m SIN HACER DAÑO, y nada se lo
+  // decía (QA lo midió: 50 s a cero de daño y muerto).
+  //
+  // Esto NO se puede medir con `inputDriver.queueAttack()`, que se salta esa
+  // puerta: el guion vería daño donde el jugador no lo ve. Se mide la puerta.
+  const capturado = await capturarElRaton(ctx);
+  ctx.expect(
+    "el jugador puede capturar el ratón haciendo click en el mundo (precondición: sin esto lo de abajo no distingue nada)",
+    capturado === true,
+    JSON.stringify(await puertaDelAtaque(ctx)),
+  );
+  if (capturado) {
+    const antes = await puertaDelAtaque(ctx);
+    ctx.expect("con el ratón capturado y sin diálogo, el jugador PUEDE atacar", antes.ok === true, JSON.stringify(antes));
+  }
 
   // ── ACTO 2 · el hostil que llega por SPAWN EN RUNTIME ──────────────────
   // Sin recargar la escena: el motor lo manda como consequence a mitad de una
@@ -474,10 +509,24 @@ export default async function (ctx) {
         () => (window.__nefan.dialogueVisible ? null : true), 15_000)
       .catch(() => false);
     ctx.expect(
-      "con el enemigo encima, el jugador puede salir del diálogo y pelear",
+      "con el enemigo encima, el jugador puede salir del diálogo",
       cerrado === true,
-      "el panel de diálogo sigue abierto: el cliente no deja atacar",
+      "el panel de diálogo sigue abierto",
     );
+    // Y AQUÍ está el aserto que antes era verde por el driver: cerrar el panel
+    // no basta: hay que poder ATACAR, y eso exige que la conversación devuelva
+    // el ratón que se llevó al abrirse.
+    if (capturado) {
+      const tras = await ctx
+        .waitFor("la conversación DEVUELVE el ratón al cerrarse",
+          () => (window.__nefan.puedeAtacar().ok ? window.__nefan.puedeAtacar() : null), 10_000)
+        .catch(() => null);
+      ctx.expect(
+        "tras hablar, el jugador puede DEVOLVER EL GOLPE por la puerta real (ratón capturado, sin diálogo)",
+        tras?.ok === true,
+        JSON.stringify(tras ?? (await puertaDelAtaque(ctx))),
+      );
+    }
     const acto2 = await pelearContra(ctx, nuevo.id, "spawn-en-runtime", {
       cunaEsPrecondicion: false,
       acercarseAndando: false,

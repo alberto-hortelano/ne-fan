@@ -1120,9 +1120,29 @@ function rebuildEnemyBars(): void {
   for (const ee of enemyEntities) {
     const bar = document.createElement("div");
     bar.className = "nf-vital";
-    bar.innerHTML = `<span class="nf-vital-label" style="color:${ee.color}">${ee.id}</span>
-      <div class="nf-bar"><div class="nf-bar-fill" id="hp-${ee.id}" style="width:100%;background:${ee.color}"></div></div>
-      <span id="hp-text-${ee.id}">${ee.maxHp}</span>`;
+    // El NOMBRE, no el id. Un enemigo de la escena traía un slug legible por
+    // casualidad ("bandido_1") y uno spawneado en runtime llevaba
+    // `narr_npc_1788038791_0` flotando en el HUD del jugador (#323).
+    const nombre = document.createElement("span");
+    nombre.className = "nf-vital-label";
+    nombre.style.color = ee.color;
+    // textContent y no interpolación en innerHTML: `name` es texto libre del
+    // motor narrativo, así que va por el canal que no interpreta marcado.
+    nombre.textContent = ee.name ?? ee.label ?? ee.id;
+    bar.appendChild(nombre);
+    const carril = document.createElement("div");
+    carril.className = "nf-bar";
+    const relleno = document.createElement("div");
+    relleno.className = "nf-bar-fill";
+    relleno.id = `hp-${ee.id}`;
+    relleno.style.width = "100%";
+    relleno.style.background = ee.color;
+    carril.appendChild(relleno);
+    bar.appendChild(carril);
+    const cifra = document.createElement("span");
+    cifra.id = `hp-text-${ee.id}`;
+    cifra.textContent = String(ee.maxHp);
+    bar.appendChild(cifra);
     enemyBarsContainer.appendChild(bar);
   }
 }
@@ -1171,6 +1191,18 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       },
     }),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
+    /** ¿Puede el jugador ATACAR ahora mismo? Es la MISMA condición que lee la
+     *  puerta real (`keyboard-input-provider.ts`: LMB solo cuenta con pointer
+     *  lock y sin diálogo abierto), leída de la misma fuente. Existe porque el
+     *  driver de bench (`?input=scripted`) NO pasa por esa puerta: sin esto,
+     *  un guion puede pegar y ver daño mientras el jugador de verdad aporrea
+     *  el ratón sin hacer nada, que es exactamente lo que pasaba tras hablar
+     *  con alguien (#323). Solo lectura. */
+    puedeAtacar: () => ({
+      raton: document.pointerLockElement !== null,
+      dialogo: input.dialogueActive,
+      ok: document.pointerLockElement !== null && !input.dialogueActive,
+    }),
     /** Los ENEMIGOS que el cliente tiene en escena, con la vida que el sim le
      *  está diciendo. Hermano de `npcs()` y por la misma razón: un guion tiene
      *  que poder acercarse a un combatiente sin leer píxeles, y el enemigo se
@@ -1427,6 +1459,11 @@ function abrirDialogo(
   choices: string[],
   who?: { id?: string },
 ): void {
+  // El panel SUELTA el ratón al abrirse (dialogue-panel.ts: sin cursor no se
+  // pueden clicar las opciones). Hay que apuntar si lo teníamos, porque
+  // devolverlo al cerrar es cosa nuestra y hasta el 2026-08-29 no lo hacía
+  // nadie — ver `cerrarDialogo`.
+  ratonCapturadoAntesDelDialogo = document.pointerLockElement !== null;
   dialoguePanel.show(speaker, text, choices, who);
   // Suprime movimiento/ataque del InputProvider mientras el panel está
   // abierto (las teclas 1-3/T las gestiona el propio panel).
@@ -1442,6 +1479,42 @@ function abrirDialogo(
 function cerrarDialogo(): void {
   input.dialogueActive = false;
   dialoguePanel.hide();
+  devolverElRatonTrasElDialogo();
+}
+
+/** ¿Tenía el jugador el ratón capturado cuando se abrió la conversación? Lo
+ *  apunta `abrirDialogo` porque el panel lo suelta por dentro. */
+let ratonCapturadoAntesDelDialogo = false;
+
+/** DEVOLVER EL RATÓN AL CERRAR ES PARTE DE CERRAR (#323).
+ *
+ *  El panel suelta el pointer lock al abrirse y hasta hoy no lo recuperaba
+ *  nadie. Con NPCs pacíficos eso solo era un click de más; con enemigos es una
+ *  ejecución: atacar con LMB exige el lock
+ *  (`keyboard-input-provider.ts`: «e.button === 0 && document.pointerLockElement
+ *  !== null»), así que tras hablar el jugador se quedaba pegando a un enemigo a
+ *  1,5 m SIN HACER DAÑO y sin que nada se lo dijera. Medido por QA: 50 s a cero
+ *  de daño y muerto; recapturando el ratón a mano, el mismo enemigo cayó en 3 s.
+ *
+ *  Va emparejado con `abrirDialogo` y por el mismo motivo que #311: soltar y
+ *  devolver son las dos mitades de un acto, y separarlas deja al jugador con
+ *  los controles a medias sin que nada falle.
+ *
+ *  Solo se devuelve si lo teníamos: quien estaba en modo cursor (mirando
+ *  fixtures, con el título recién cerrado) no quiere que una conversación le
+ *  capture el ratón por su cuenta. Y el navegador puede NEGARSE (pide gesto
+ *  del usuario, y rechaza un lock pedido demasiado pronto tras soltarlo): por
+ *  eso va por `paso()`, que lo deja escrito en el registro de errores en vez
+ *  de tragárselo. El click sobre el mundo sigue siendo la vía de recuperación. */
+function devolverElRatonTrasElDialogo(): void {
+  if (!ratonCapturadoAntesDelDialogo) return;
+  ratonCapturadoAntesDelDialogo = false;
+  if (document.pointerLockElement !== null) return;
+  paso(
+    fpsRenderer.element.requestPointerLock(),
+    "input",
+    "no se pudo devolver el ratón al cerrar la conversación: haz click en el mundo para volver a atacar",
+  );
 }
 
 dialoguePanel.onAdvanced = () => {
@@ -1579,7 +1652,12 @@ function updateWorldLabels(): void {
     reticleEl.dataset.target = "false";
     return;
   }
-  const personajes = npcEntities.filter((n) => n.alive !== false);
+  // NPCs Y ENEMIGOS. Los hostiles entraban aquí por primera vez el
+  // 2026-08-29 (#323) y este filtro solo miraba `npcEntities`, así que lo
+  // único que el juego acababa de aprender a poner delante del jugador era
+  // justo lo único sin rótulo y sin mirilla: un bulto anónimo que pega. Un
+  // enemigo es la entidad que MÁS necesita nombre — es a lo que apuntas.
+  const personajes = [...npcEntities, ...enemyEntities].filter((n) => n.alive !== false);
   // Solo objetos CON nombre: sin descripción no hay nada que enseñar, y la
   // mirilla debe encenderse únicamente sobre lo que sí se puede nombrar.
   // Los EDIFICIOS quedan fuera: su centro no es un punto al que se pueda

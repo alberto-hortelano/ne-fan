@@ -98,10 +98,16 @@ export function dispatchConsequences(
         // distinto es solo el transporte (effect en vuelo vs world scene),
         // que ya lo era.
         //
-        // El bloque va al `data` del EntityRecord además de al effect: el
-        // ledger narrativo es lo que sobrevive al save y lo que lee el motor,
-        // y un enemigo cuyo combate solo viviera en el effect no existiría
-        // tras recargar la escena.
+        // El bloque va al `data` del EntityRecord además de al effect porque
+        // el ledger es lo que LEE EL MOTOR (`serializeForLlm`, `entity_get`):
+        // sin él, el modelo ve un NPC y no sabe que puso algo hostil.
+        //
+        // Lo que NO hace, dicho aquí para que nadie lo lea de más: NO devuelve
+        // el enemigo al reanudar. Un spawn de runtime no está en el Format D
+        // de ninguna escena, y el cliente materializa enemigos desde `npcs[]`
+        // de la escena que recibe, así que hoy desaparece entero en el resume.
+        // Escribirlo aquí es la mitad que hace falta para arreglarlo, no el
+        // arreglo — ese va aparte.
         const combat = kind === "npc" ? combatForHostileRole(c.role) : undefined;
         const data: Record<string, unknown> = combat
           ? { ...(c as Record<string, unknown>), combat }

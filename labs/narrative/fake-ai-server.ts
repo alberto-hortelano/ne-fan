@@ -375,15 +375,18 @@ function bootstrapTile() {
       // tenía un solo enemigo y por eso ningún guion podía comprobar que algo
       // pierde vida.
       //
-      // La celda está elegida, no puesta a ojo: [72,66] cae al SUR de la
-      // taberna (rect cols 52..75, filas 48..63) y al NORTE de la elipse de
-      // matorrales del scatter (filas 68..108), fuera de la fuente de la plaza
-      // (centro [64,80], r 4,5) y fuera del ancho del camino. O sea, campo
-      // abierto y sin nada sólido entre él y el jugador, que arranca en
-      // [64,70]: 4,5 m en línea recta. Un hostil empotrado en un volumen, o
-      // con un muro por medio, mediría el bug #300 (el sim ignora `footprint`)
-      // en vez de medir si el jugador puede pelear.
-      { id: "bandido_1", kind: "npc", name: "Bandido de camino", cell: [72, 66], footprint: [1, 1], glyph: "b",
+      // La celda está elegida, no puesta a ojo. [88,65] cae al SUR de la
+      // taberna (rect cols 52..75, filas 48..63), al NORTE de la elipse de
+      // matorrales del scatter (filas 68..108) y al SUR de la casa de
+      // entramado (filas 38..51): campo abierto, sin nada sólido entre él y el
+      // jugador, que arranca en [64,70].
+      //
+      // Y a 12,5 m, no a 4,5 como estaba el 2026-08-29 hasta que QA lo jugó:
+      // eso es FUERA del radio de enganche del hostil (10 m,
+      // `HOSTILE_AGGRO_M`), así que una partida nueva no se abre con una pelea
+      // que el jugador no ha pedido — se abre con un bandido a la vista, al
+      // que hay que acercarse. Con 4,5 m el banco medía una ejecución.
+      { id: "bandido_1", kind: "npc", name: "Bandido de camino", cell: [88, 65], footprint: [1, 1], glyph: "b",
         role: "hostile", description: "bandido de camino con cota remendada y la cara marcada" },
       { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
       // Casa declarada como ENTITY (sin volume ni structure): el compositor
