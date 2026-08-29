@@ -1,5 +1,5 @@
 """Tests de validate_scene_response — fail-loud en la FORMA (espejo de
-FormatDSceneSchema) + normalizaciones benignas conservadas.
+EmittedSceneSchema) + normalizaciones benignas conservadas.
 
 Antes esta función no tenía tests y degradaba TODO en silencio (grid rellenado,
 entities clampadas), así que un error de forma del modelo nunca le volvía. Aquí
@@ -82,7 +82,7 @@ class TestSceneValidateAcceptsReal(unittest.TestCase):
 
 
 class TestVariantesRetiradas(unittest.TestCase):
-    """CANDADO (espejo de FormatDSceneSchema): Format D tiene UNA forma —el
+    """CANDADO (espejo de EmittedSceneSchema): Format D tiene UNA forma —el
     tile del mundo continuo—. La "suelta" (grid propio, sin sitio en el plano)
     se retiró con el issue #172 y el PLATÓ proscenio con la vista que lo
     pintaba. El saneador las rechaza con un mensaje que nombra la viva, porque
@@ -232,12 +232,26 @@ class TestEntityRolYDescripcionSobreviven(unittest.TestCase):
         self.assertIn("herrero", str(cm.exception))
         self.assertIn("guard", str(cm.exception))
 
-    def test_una_descripcion_vacia_no_viaja(self):
-        # "" como prompt del skin pediría una imagen sin descripción; el
-        # cliente cae al nombre, que al menos nombra a alguien.
+    def test_una_descripcion_vacia_LANZA_en_vez_de_caerse(self):
+        # Antes se descartaba en silencio y el NPC viajaba SIN prompt de skin,
+        # pintado desde su nombre propio. El zod la rechaza (`.trim().min(1)`),
+        # así que descartarla aquí era dar dos veredictos al mismo NPC según
+        # por dónde entrase (#237): ahora los dos lados lanzan.
         for basura in ("", "   ", 42, None):
             with self.subTest(valor=basura):
-                self.assertNotIn("description", self._npc(description=basura))
+                with self.assertRaises(ValueError) as cm:
+                    self._npc(description=basura)
+                self.assertIn("description", str(cm.exception))
+
+    def test_una_clave_desconocida_LANZA_nombrandola(self):
+        # #259: la allow-list era muda — todo lo que no estuviera entre las 12
+        # se caía por el desagüe. `health` es del bloque de combate de
+        # spawn_entity, no de una entity de escena: vuelve al motor con su
+        # nombre y con los 12 campos que sí valen.
+        with self.assertRaises(ValueError) as cm:
+            self._npc(health=60)
+        self.assertIn("health", str(cm.exception))
+        self.assertIn("glyph", str(cm.exception))
 
 
 class TestSpawnEntityLlevaRolYRef(unittest.TestCase):

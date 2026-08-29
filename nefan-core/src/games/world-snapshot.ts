@@ -20,6 +20,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 
 import { SAFE_ID, loadWorldDoc } from "./loader.js";
+import { ExpandedSceneSchema } from "../contract/model-io/scene-schema.js";
 import type { WorldMap } from "../world-map/types.js";
 
 /** v2: muere el eje de vistas — el snapshot ya no declara `branch` (había
@@ -37,8 +38,14 @@ export const WorldSnapshotSchema = z
     world_doc_hash: z.string().min(1),
     generated_at: z.string().min(1),
     world_map: z.record(z.string(), z.unknown()),
-    /** sceneId → escena Format D EXPANDIDA (expandScenePrimitives ya corrió). */
-    scenes: z.record(z.string(), z.record(z.string(), z.unknown())),
+    /** sceneId → escena Format D EXPANDIDA. Hasta #237 el valor era
+     *  `z.record(z.string(), z.unknown())`: la frontera entre las dos
+     *  poblaciones existía en el dato (`__expanded`) y estaba VACÍA en el
+     *  tipo, así que un snapshot con escenas a medio expandir pasaba el gate
+     *  y reventaba después, al pintar. `ExpandedSceneSchema` es el único
+     *  schema que describe esta población — el otro (`EmittedSceneSchema`)
+     *  describe la contraria y rechaza los 20 tiles del árbol por diseño. */
+    scenes: z.record(z.string(), ExpandedSceneSchema),
     entry_scene_id: z.string().min(1),
   })
   .strict()
@@ -94,7 +101,17 @@ export function loadWorldSnapshot(
         `bórralo o regenera el mundo desde el título`,
     );
   }
-  if (parsed.data.world_doc_hash !== expectedWorldDocHash) {
+  // Se devuelve `raw`, lo que había EN DISCO, y NO `parsed.data`: el zod es la
+  // PUERTA, no un transformador. Devolver la salida del parseo reescribía el
+  // snapshot en silencio por dos caminos independientes, los dos medidos:
+  //   · una `description` de `"  tabernero  "` volvía sin espacios (lo cazó QA);
+  //   · un sub-objeto en modo por defecto —`size`, `tile`— PODA sus claves
+  //     desconocidas, y eso no lo arregla quitar ningún `.trim()`.
+  // Arreglar solo el primero habría dejado el segundo abierto, así que la
+  // regla va donde vale para los dos: quien valida no se queda con el
+  // resultado. Es lo que hace `validateContract` en todo el resto de la casa.
+  const snapshot = raw as WorldSnapshot;
+  if (snapshot.world_doc_hash !== expectedWorldDocHash) {
     console.warn(
       `world snapshot stale para "${gameId}": world.md cambió desde la ` +
         `generación — se ignora (regenera el mundo desde el título)`,
@@ -103,7 +120,7 @@ export function loadWorldSnapshot(
   }
   // El envoltorio va por zod; el world_map lo re-valida
   // WorldMapManager.fromSerialized al restaurarlo (segunda línea).
-  return parsed.data as unknown as WorldSnapshot;
+  return snapshot;
 }
 
 export function writeWorldSnapshot(gamesDir: string, snapshot: WorldSnapshot): void {

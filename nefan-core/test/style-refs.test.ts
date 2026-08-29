@@ -12,7 +12,7 @@ import {
 import { npcSkinStyleRef, styleRoleForNpc } from "../src/games/style-categories.js";
 import { NPC_ROLES, type NpcRole } from "../src/simulation/npc-roles.js";
 import { styleRefCatalog } from "../bridge/handlers/session.js";
-import { FormatDSceneSchema } from "../src/contract/model-io/scene-schema.js";
+import { EmittedSceneSchema } from "../src/contract/model-io/scene-schema.js";
 import type { StyleManifest } from "../src/games/loader.js";
 
 describe("style-refs — carpetas del pack", () => {
@@ -139,7 +139,7 @@ describe("style_ref de escena — retirada fail-loud, no ignorada", () => {
   });
 
   it("una escena con style_ref se RECHAZA nombrando el campo", () => {
-    const r = FormatDSceneSchema.safeParse(tile({ style_ref: "settlement" }));
+    const r = EmittedSceneSchema.safeParse(tile({ style_ref: "settlement" }));
     assert.equal(r.success, false, "un campo retirado no puede colarse por passthrough");
     const issue = r.error!.issues.find((i) => i.path.join(".") === "style_ref");
     assert.ok(issue, "el error apunta al campo, para que el motor sepa qué quitar");
@@ -147,7 +147,7 @@ describe("style_ref de escena — retirada fail-loud, no ignorada", () => {
   });
 
   it("sin ella la misma escena pasa, y la style_ref de NPC sigue viva", () => {
-    assert.equal(FormatDSceneSchema.safeParse(tile()).success, true);
+    assert.equal(EmittedSceneSchema.safeParse(tile()).success, true);
     const conNpc = tile({
       entities: [
         {
@@ -161,6 +161,6 @@ describe("style_ref de escena — retirada fail-loud, no ignorada", () => {
         },
       ],
     });
-    assert.equal(FormatDSceneSchema.safeParse(conNpc).success, true);
+    assert.equal(EmittedSceneSchema.safeParse(conNpc).success, true);
   });
 });

@@ -36,7 +36,7 @@ How you drive it:
 - Reuse the NPC's exact display name as `speaker`, so the line is routed to
   the right character.
 - The player's pick (or free text, verbatim) comes back to you as a
-  player_choice event — ALWAYS answer it (story_update, more dialogue,
+  dialogue_choice event — ALWAYS answer it (story_update, more dialogue,
   spawns…). 2-3 short choices, Spanish, in-world register.
 
 ── 3. INTERACTION PROMPT ──────────────────────────────────────────────────

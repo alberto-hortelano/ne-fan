@@ -434,7 +434,7 @@ class LLMClient:
                     try:
                         validated = validate_scene_response(result)
                     except ValueError as e:
-                        # El pre-flight MCP (FormatDSceneSchema en narrative-mcp)
+                        # El pre-flight MCP (EmittedSceneSchema en narrative-mcp)
                         # ya validó la forma ANTES de "response sent"; si aun así
                         # el saneador la rechaza es una DIVERGENCIA de reglas —
                         # se reporta fail-loud (ni se degrada ni se crashea) para

@@ -76,6 +76,27 @@ def _npc_roles_del_contrato() -> set:
 
 NPC_ROLES = _npc_roles_del_contrato()
 
+
+def _entity_fields_del_contrato() -> list:
+    """Campos que una entity puede traer, LEÍDOS del tool compartido.
+
+    Mismo criterio que `_npc_roles_del_contrato`: el saneador no escribe a mano
+    una decimotercera copia de la lista. Es el espejo de `ENTITY_FIELDS` en
+    nefan-core (derivado a su vez del shape de `EntitySchema`), y el guardia
+    JSON→zod de `contract-prompts.test.ts` canda que los dos conjuntos sean el
+    mismo. Fail-loud al importar si el tool se queda sin properties.
+    """
+    props = GENERATE_SCENE_TOOL["input_schema"]["properties"]["entities"]["items"].get("properties")
+    if not isinstance(props, dict) or not props:
+        raise ValueError(
+            "generate_scene.json: `entities[].properties` vacío — sin la lista de campos "
+            "el saneador no puede rechazar una clave desconocida (espejo de ENTITY_FIELDS)"
+        )
+    return list(props.keys())
+
+
+ENTITY_FIELDS = _entity_fields_del_contrato()
+
 # Tipos de rasgo de suelo del plan de tile (`ground`). Espejo de
 # GroundFeatureSchema en nefan-core/src/scene/blueprint/ground.ts.
 # "hill" = relieve suave declarable (h en metros, ±6, sin colisión).
@@ -460,7 +481,7 @@ def validate_volumes(raw, *, field: str = "volumes"):
 def validate_scene_response(data: dict) -> dict:
     """Valida y normaliza una escena Map Format D del LLM.
 
-    FAIL-LOUD en la FORMA (espejo de FormatDSceneSchema, el gate del pre-flight
+    FAIL-LOUD en la FORMA (espejo de EmittedSceneSchema, el gate del pre-flight
     MCP): un error estructural que el modelo DEBE corregir (grid que no cuadra
     con size, entity con kind fuera del enum o sin glyph/cell/footprint, tile
     sin biome) LANZA `ValueError` con el motivo — antes se rellenaba/clampaba en
@@ -494,11 +515,26 @@ def validate_scene_response(data: dict) -> dict:
         tx, ty = raw_tile["tx"], raw_tile["ty"]
         data["tile"] = {"tx": tx, "ty": ty}
         data["scene_id"] = f"tile_{tx}_{ty}"
-        data.pop("size", None)
+        # `size`/`terrain` en un tile: FAIL-LOUD, no `pop` mudo (#237). El zod
+        # los rechaza con «un tile no lleva `size`» desde que el tile es la
+        # única variante; aquí se tiraban en silencio, así que el mismo tile
+        # recibía dos veredictos según por dónde entrase — y la vía de API
+        # directa (`_generate_scene_via_api`) no tiene pre-flight que lo pare
+        # antes. La base de un tile es `biome` + primitivas; el grid lo
+        # sintetiza el engine (128×128 @0,5 m).
+        #
+        # `terrain: []` sí se tolera y se poda, exactamente como el zod, que
+        # solo se queja del grid NO VACÍO.
+        if "size" in data:
+            raise ValueError("un tile no lleva `size` (la base es `biome` + primitivas)")
+        if "terrain" in data and data["terrain"] != []:
+            raise ValueError(
+                "un tile no lleva grid `terrain` completo (usa `biome` + `ground`/`volumes`)"
+            )
         data.pop("terrain", None)
         cols, rows = 128, 128
         if not isinstance(data.get("biome"), str) or not data["biome"]:
-            # Fail-loud (espejo de FormatDSceneSchema, variante tile): el bioma
+            # Fail-loud (espejo de EmittedSceneSchema, variante tile): el bioma
             # es la base del tile, no un default silencioso.
             raise ValueError(
                 "un tile necesita `biome` (grass|forest_floor|meadow|sand|dirt|stone|snow|swamp)"
@@ -536,7 +572,7 @@ def validate_scene_response(data: dict) -> dict:
         else:
             data.pop("place_anchors", None)
 
-    # ── Candado de las variantes retiradas (espejo de FormatDSceneSchema) ─
+    # ── Candado de las variantes retiradas (espejo de EmittedSceneSchema) ─
     # Format D tiene UNA forma: el tile del mundo continuo. La "suelta"
     # (size/terrain a elección del motor, sin sitio en el plano) se retiró con
     # el issue #172 y el `stage` proscenio con la vista que lo pintaba. El
@@ -610,6 +646,24 @@ def validate_scene_response(data: dict) -> dict:
     # la fuente de verdad con la gramática completa fail-loud): aquí solo la
     # forma gruesa — mal formado se descarta ENTERO con traza (generators y
     # zones van juntos: zonas sin generador no sirven).
+    #
+    # LA REGLA DE LOS BLOQUES DECLARATIVOS, escrita una vez y aquí:
+    # `ground`, `volumes`, `vegetation_zones` y `scatter` son el mismo tipo de
+    # cosa y se validan igual — DURO en el zod, LAXO aquí. No es un descuido,
+    # es la asimetría que quiere el jugador: por la vía MCP el zod rebota y el
+    # motor RE-RESPONDE (barato, y el tile sale mejor); por la vía de API
+    # directa NO hay re-respuesta, así que descartar el bloque malo SALVA el
+    # tile, y perder un macizo de pinos es mucho menos malo que perder el tile
+    # entero y dejar al jugador con `narrative_status: error`.
+    # Lo caro es la dirección contraria — que ai_server rechace lo que el
+    # pre-flight aceptó—, y eso no pasa aquí porque aquí nunca se lanza.
+    # Los CAMPOS de forma (size, terrain, biome, las claves de una entity,
+    # role, description) son el otro eje y ahí sí LANZAN los dos: un
+    # desacuerdo pierde el tile o lo cuela (#237).
+    # Quien vigila las dos reglas es `qa/guiones/40-el-mismo-tile-no-puede-
+    # tener-dos-veredictos.mjs`, que corre los dos gates sobre la misma
+    # rejilla; el set de `data/contract/fixtures/scene/` solo puede contener
+    # casos del eje de CAMPOS, porque exige veredicto idéntico por diseño.
     if "scatter_generators" in data or "scatter_zones" in data:
         gens = data.get("scatter_generators")
         zones = data.get("scatter_zones")
@@ -647,6 +701,23 @@ def validate_scene_response(data: dict) -> dict:
         if eid in seen_ids:
             eid = f"{eid}_{_uuid.uuid4().hex[:4]}"
         seen_ids.add(eid)
+
+        # Clave desconocida → FAIL-LOUD (#259, espejo del `.strict()` de
+        # EntitySchema). Antes este bucle era una allow-list muda: todo lo que
+        # no estuviera en las 12 se caía por el desagüe sin traza, así que un
+        # campo inventado por el modelo se perdía sin que el modelo se enterara.
+        # Medido antes de cerrarlo: 95 entities en las 7 escenas Format D del
+        # árbol, cero claves fuera de las 12 — no hay tráfico legítimo que
+        # proteger. El mensaje nombra la clave y la entity, como el de `role`.
+        desconocidas = [k for k in ent if k not in ENTITY_FIELDS]
+        if desconocidas:
+            raise ValueError(
+                f"entity '{eid}': {'la clave' if len(desconocidas) == 1 else 'las claves'} "
+                f"{', '.join(repr(k) for k in sorted(desconocidas))} no "
+                f"{'existe' if len(desconocidas) == 1 else 'existen'} en el contrato. "
+                f"Una entity tiene EXACTAMENTE estos campos: {' | '.join(ENTITY_FIELDS)}. "
+                "Lo que quisieras contar de ella va en `description`, que es de donde sale su aspecto"
+            )
 
         # Fail-loud en la FORMA (espejo de EntitySchema): kind del enum, cell
         # par numérico, footprint par de enteros ≥1, glyph de 1 char. Se
@@ -726,8 +797,19 @@ def validate_scene_response(data: dict) -> dict:
                     "no en `role` (que es el preset de conducta)"
                 )
             clean_ent["role"] = ent["role"]
-        if isinstance(ent.get("description"), str) and ent["description"].strip():
-            clean_ent["description"] = ent["description"].strip()
+        # `description` vacía: FAIL-LOUD, no descarte mudo (#237). El zod la
+        # exige no vacía (`z.string().trim().min(1)`) y aquí se caía sola, así
+        # que el pre-flight aceptaba un NPC que este saneador dejaba sin prompt
+        # de skin — y el personaje se pintaba desde su nombre propio. Emitir el
+        # campo vacío es peor que no emitirlo: omitirlo sigue siendo legal.
+        if "description" in ent:
+            desc = ent["description"]
+            if not isinstance(desc, str) or not desc.strip():
+                raise ValueError(
+                    f"entity '{eid}': `description` es el PROMPT del skin del personaje y no "
+                    f"puede ir vacía ({desc!r}). Descríbelo (aspecto, ropa, arma) o quita el campo"
+                )
+            clean_ent["description"] = desc.strip()
         # decor puede pedir snap al muro más cercano (lo resuelve el expander TS).
         if ent.get("attach") == "wall":
             clean_ent["attach"] = "wall"

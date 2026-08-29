@@ -72,8 +72,11 @@ export {
   type ContractSpec,
 } from "./contract/model-io/schemas.js";
 export {
-  FormatDSceneSchema,
+  EmittedSceneSchema,
+  ExpandedSceneSchema,
   EntitySchema,
+  ENTITY_FIELDS,
   SceneSizeSchema,
-  type FormatDScene,
+  type EmittedScene,
+  type ExpandedScene,
 } from "./contract/model-io/scene-schema.js";

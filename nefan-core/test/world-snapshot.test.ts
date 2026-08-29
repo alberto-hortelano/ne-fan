@@ -4,12 +4,13 @@
  *  contenido es world_doc_hash, nunca el estilo). */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 
 import { WorldMapManager } from "../src/world-map/world-map.js";
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import {
   WORLD_SNAPSHOT_SCHEMA_VERSION,
   deleteWorldSnapshot,
@@ -56,16 +57,26 @@ function makeSnapshot(gameId: string, worldDocHash: string): WorldSnapshot {
     world_doc_hash: worldDocHash,
     generated_at: "2026-08-18T00:00:00.000Z",
     world_map: wm.serialize(),
+    // Escenas EXPANDIDAS, que es la población que vive en un snapshot: se
+    // construyen pasando un tile emitido por `expandScenePrimitives`, la misma
+    // función que las escribe en producción. Antes eran garabatos —un tile sin
+    // `size` ni `terrain`, con una entity sin `footprint` ni `glyph`— que
+    // ningún camino real produce; pasaban porque `scenes` no tenía tipo (#237).
     scenes: {
-      tile_0_0: {
+      tile_0_0: expandScenePrimitives({
         scene_id: "tile_0_0",
         scene_description: "Tile de arranque del snapshot",
-        entities: [{ id: "player", kind: "player", cell: [4, 4] }],
-      },
-      tile_1_0: {
+        tile: { tx: 0, ty: 0 },
+        biome: "grass",
+        entities: [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1], glyph: "@" }],
+      }),
+      tile_1_0: expandScenePrimitives({
         scene_id: "tile_1_0",
         scene_description: "Vecino este pre-generado",
-      },
+        tile: { tx: 1, ty: 0 },
+        biome: "grass",
+        entities: [],
+      }),
     },
     entry_scene_id: "tile_0_0",
   };
@@ -106,6 +117,135 @@ describe("world-snapshot (módulo puro)", () => {
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }
+  });
+
+  /** El CABLEADO de #237: `WorldSnapshotSchema.scenes` tipado con
+   *  `ExpandedSceneSchema` en vez de `z.record(z.string(), z.unknown())`.
+   *
+   *  Nace de un hallazgo de QA: la separación de poblaciones se podía revertir
+   *  ENTERA —la línea y el import— y `lint`, `build` y los 1629 tests seguían
+   *  verdes. O sea que lo único que hacía que la escena que el juego CARGA
+   *  tuviera tipo no lo miraba nadie, y es justo la mitad del criterio que
+   *  toca el arranque: un snapshot que no carga manda a `start_session` al
+   *  bootstrap vivo, que llama al motor y GASTA.
+   *
+   *  Los tres casos son escenas que el `z.record(z.unknown())` de antes
+   *  aceptaba sin rechistar y que `ExpandedSceneSchema` rechaza, así que
+   *  desconectar el cableado los pone rojos a los tres. El fichero se escribe
+   *  A MANO, sin `writeWorldSnapshot`, porque lo que se prueba es la puerta de
+   *  ENTRADA (un snapshot que ya está en disco, escrito por una versión vieja
+   *  o a medio expandir). */
+  describe("el cableado de las dos poblaciones tiene quien lo mire", () => {
+    const expandida = () => expandScenePrimitives({
+      scene_id: "tile_0_0",
+      scene_description: "Tile de arranque del snapshot",
+      tile: { tx: 0, ty: 0 },
+      biome: "grass",
+      entities: [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1], glyph: "@" }],
+    });
+
+    /** Escribe el snapshot SIN pasar por el validador de escritura. */
+    const aDisco = (gamesDir: string, worldDocHash: string, escena: Record<string, unknown>): void => {
+      const snap = {
+        schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
+        game_id: GAME,
+        world_doc_hash: worldDocHash,
+        generated_at: "2026-08-18T00:00:00.000Z",
+        world_map: new WorldMapManager(WorldMapManager.createEmpty()).serialize(),
+        scenes: { tile_0_0: escena },
+        entry_scene_id: "tile_0_0",
+      };
+      mkdirSync(join(gamesDir, GAME, "world"), { recursive: true });
+      writeFileSync(worldSnapshotPath(gamesDir, GAME), JSON.stringify(snap), "utf-8");
+    };
+
+    const CASOS: Array<[string, () => Record<string, unknown>]> = [
+      ["sin la marca `__expanded` (escena a medio expandir)", () => {
+        const e = expandida();
+        delete e.__expanded;
+        return e;
+      }],
+      ["sin el grid `terrain` (el cliente no tendría qué pintar)", () => {
+        const e = expandida();
+        delete e.terrain;
+        return e;
+      }],
+      ["con una clave desconocida dentro de una entity", () => {
+        const e = expandida();
+        (e.entities as Record<string, unknown>[])[0].health = 60;
+        return e;
+      }],
+    ];
+
+    for (const [que, hacer] of CASOS) {
+      it(`loadWorldSnapshot RECHAZA un snapshot ${que}`, () => {
+        const { gamesDir, worldDocHash } = tmpGamesDir();
+        try {
+          aDisco(gamesDir, worldDocHash, hacer());
+          assert.throws(
+            () => loadWorldSnapshot(gamesDir, GAME, worldDocHash),
+            /inválido/,
+            "una escena que no es de la población EXPANDIDA no puede entrar por la puerta de carga",
+          );
+          // Y el mismo snapshot tampoco se puede ESCRIBIR.
+          assert.throws(
+            () => writeWorldSnapshot(gamesDir, { ...makeSnapshot(GAME, worldDocHash), scenes: { tile_0_0: hacer() } } as WorldSnapshot),
+            /inválido/,
+          );
+        } finally {
+          rmSync(gamesDir, { recursive: true, force: true });
+        }
+      });
+    }
+
+    /** El zod es la PUERTA, no un transformador (#237, hallazgo de QA).
+     *
+     *  `loadWorldSnapshot` devolvía `parsed.data`, así que desde que `scenes`
+     *  pasa por `ExpandedSceneSchema` el schema podía reescribir datos de
+     *  DISCO en silencio. Dos caminos independientes, los dos medidos:
+     *   · un `.trim()` en el schema recortaba `"  tabernero  "`;
+     *   · un sub-objeto en modo por defecto (`size`, `tile`) PODA sus claves
+     *     desconocidas — y eso no lo arregla quitar ningún `.trim()`.
+     *
+     *  Este `it` los canda a los dos por el sitio que importa: lo que sale de
+     *  la puerta de carga es byte a byte lo que había en el fichero. Se pone
+     *  rojo con `return parsed.data`, que es como estaba. */
+    it("devuelve EXACTAMENTE lo que hay en disco: la puerta no reescribe", () => {
+      const { gamesDir, worldDocHash } = tmpGamesDir();
+      try {
+        const escena = expandida();
+        // Vector 1: string con espacios alrededor (válida, y antes se recortaba).
+        (escena.entities as Record<string, unknown>[])[0].description = "  guardia con lanza y capa parda  ";
+        // Vector 2: clave desconocida dentro de un sub-objeto en modo por
+        // defecto — el schema la acepta y, si el llamador se queda con
+        // `parsed.data`, la PIERDE.
+        (escena.size as Record<string, unknown>).comentario = "algo que alguien guardó";
+        aDisco(gamesDir, worldDocHash, escena);
+
+        const enDisco = JSON.parse(readFileSync(worldSnapshotPath(gamesDir, GAME), "utf-8")) as Record<string, unknown>;
+        const cargado = loadWorldSnapshot(gamesDir, GAME, worldDocHash);
+        assert.ok(cargado);
+        assert.deepEqual(
+          cargado.scenes,
+          (enDisco as { scenes: unknown }).scenes,
+          "la ruta de carga ha reescrito el snapshot: el zod valida, no transforma",
+        );
+      } finally {
+        rmSync(gamesDir, { recursive: true, force: true });
+      }
+    });
+
+    it("y la escena BIEN expandida sí entra (el cableado no rechaza de más)", () => {
+      const { gamesDir, worldDocHash } = tmpGamesDir();
+      try {
+        aDisco(gamesDir, worldDocHash, expandida());
+        const cargado = loadWorldSnapshot(gamesDir, GAME, worldDocHash);
+        assert.ok(cargado);
+        assert.equal(Object.keys(cargado.scenes).length, 1);
+      } finally {
+        rmSync(gamesDir, { recursive: true, force: true });
+      }
+    });
   });
 
   it("rechaza entry_scene_id fuera de scenes y versiones de schema desconocidas", () => {
