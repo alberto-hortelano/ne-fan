@@ -59,10 +59,6 @@
       "porque": "Los zod que son la frontera con el modelo: fuente de verdad de los tools. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
-      "fichero": "src/contract/model-io/scene-schema.ts",
-      "porque": "El zod de la escena Format D, el que rechaza una escena sin `tile`. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
       "fichero": "src/contract/model-io/json-schema.ts",
       "porque": "La traducción de zod a JSON Schema para los tools del MCP. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
@@ -73,10 +69,6 @@
     {
       "fichero": "src/contract/model-io/regions.ts",
       "porque": "Las regiones del contrato de escena. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
-      "fichero": "src/contract/model-io/validate.ts",
-      "porque": "El pre-flight fail-loud de la salida del modelo. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
       "fichero": "src/contracts/gateway.ts",
@@ -497,6 +489,23 @@
       ],
       "break": 100,
       "porque": "Cuándo el jugador ha ENTRADO de verdad en la partida: la conjunción «ya se ha vestido Y ha pintado el tile inicial» (#279), que es la frontera literal que eligió el usuario. Módulo propio con batería de un fichero porque es el único test que lo importa (el cliente lo usa desde nefan-html, que no entra en la mutación de core), igual que `session-facets`. Nace con suelo 100 porque cada rama ES el candado, y el estado que lo demuestra no necesita que falle nada: mientras el jugador se viste, el mundo ya está pintado y el título sigue delante — medido en vivo en el bloque 3 de `qa/guiones/29-la-partida-existe-cuando-el-jugador-entra.mjs`. Un mutante que quite la mitad del `mundoPintado` escribe la partida en ESA ventana, y con ella la de cualquier arranque que todavía puede volver al título (la tarjeta fantasma del issue); uno que quite la del `vestido` deja partidas sin mundo (#189), que canda el guion 20; uno que quite el `anunciada` la anuncia dos veces; uno que se cargue la guarda del id vacío la anuncia sin partida; y uno que rompa el olvido al cambiar de sesión es la forma exacta de #249 (media entrada de la partida que no arrancó, esperando a la mitad que falta para anunciar una sesión que ya no existe). OJO con citar el guion 27 como si midiera esto: allí la ventana se CONSTRUYE a propósito (retiene el 404 de las hojas hasta que el mundo está pintado, y afirma esa precondición); en el clon limpio real el orden se invierte y quien impide el save es el reset de la faceta, no esta conjunción. Dejarlo en `sin_mutar` sería tener el candado sin medir."
+    },
+    {
+      "id": "contrato-escena",
+      "mutate": [
+        "src/contract/model-io/scene-schema.ts",
+        "src/contract/model-io/validate.ts"
+      ],
+      "tests": [
+        "test/contract-model-io.test.ts",
+        "test/contract-prompts.test.ts",
+        "test/message-schema.test.ts",
+        "test/scene-fixtures.test.ts",
+        "test/scene-schema.test.ts",
+        "test/style-refs.test.ts"
+      ],
+      "break": 0,
+      "porque": "El gate del contrato de escena y el formateador cuyo error VUELVE AL MODELO. Sale de `sin_mutar` con la tanda #203/#237/#259, que le añade tres candados nuevos justo aquí (guardia de campos JSON→zod, frontera emitida/expandida y `.strict()` de entity): un test que compara conjuntos de nombres es el arquetipo del verde que no comprueba nada, así que sin mutación estos tres no valen su línea. `validate.ts` va con él porque es su único consumidor en el pre-flight y comparte batería — el mensaje formateado es la mitad del valor del gate. `scene-fixtures` entra porque el candado de ida y vuelta de la frontera vive ahí y ejerce los dos schemas contra dato commiteado; `message-schema` y `style-refs` porque importan los ficheros mutados de verdad (el candado de baterías lo obliga, y tiene razón: style-refs ejerce la `style_ref` de NPC y el rechazo de la de escena). NO entra `contract-fixtures`, que es el set compartido con Python: llega al schema a través de `narrative-mcp/validators.ts`, que importa `@nefan/core` — o sea el `dist/` COMPILADO, no estos ficheros. Stryker no instrumenta el dist, así que ese suite no puede matar un solo mutante y se pagaría por cada uno."
     }
   ]
 }

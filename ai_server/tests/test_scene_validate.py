@@ -232,12 +232,26 @@ class TestEntityRolYDescripcionSobreviven(unittest.TestCase):
         self.assertIn("herrero", str(cm.exception))
         self.assertIn("guard", str(cm.exception))
 
-    def test_una_descripcion_vacia_no_viaja(self):
-        # "" como prompt del skin pediría una imagen sin descripción; el
-        # cliente cae al nombre, que al menos nombra a alguien.
+    def test_una_descripcion_vacia_LANZA_en_vez_de_caerse(self):
+        # Antes se descartaba en silencio y el NPC viajaba SIN prompt de skin,
+        # pintado desde su nombre propio. El zod la rechaza (`.trim().min(1)`),
+        # así que descartarla aquí era dar dos veredictos al mismo NPC según
+        # por dónde entrase (#237): ahora los dos lados lanzan.
         for basura in ("", "   ", 42, None):
             with self.subTest(valor=basura):
-                self.assertNotIn("description", self._npc(description=basura))
+                with self.assertRaises(ValueError) as cm:
+                    self._npc(description=basura)
+                self.assertIn("description", str(cm.exception))
+
+    def test_una_clave_desconocida_LANZA_nombrandola(self):
+        # #259: la allow-list era muda — todo lo que no estuviera entre las 12
+        # se caía por el desagüe. `health` es del bloque de combate de
+        # spawn_entity, no de una entity de escena: vuelve al motor con su
+        # nombre y con los 12 campos que sí valen.
+        with self.assertRaises(ValueError) as cm:
+            self._npc(health=60)
+        self.assertIn("health", str(cm.exception))
+        self.assertIn("glyph", str(cm.exception))
 
 
 class TestSpawnEntityLlevaRolYRef(unittest.TestCase):

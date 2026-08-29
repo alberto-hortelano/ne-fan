@@ -11,7 +11,7 @@ import {
   NarrativeReactionSchema,
   WeaponOrientSchema,
   WeaponVerifySchema,
-  FormatDSceneSchema,
+  EmittedSceneSchema,
 } from '@nefan/core';
 
 /** Gate ESTRUCTURAL de una escena Format D (entities, size, terrain, legend,
@@ -20,7 +20,7 @@ import {
  *  modelo: ai_server lo DEGRADABA en silencio (terrain mal → padding, entities
  *  malformadas → clamp). La jugabilidad la valida aparte /scene/validate. */
 export function validateFormatDScene(data: unknown): { ok: true } | { ok: false; error: string } {
-  return validateContract(FormatDSceneSchema, data);
+  return validateContract(EmittedSceneSchema, data);
 }
 
 /** Pre-flight de una respuesta weapon_orient / weapon_verify — delega en el

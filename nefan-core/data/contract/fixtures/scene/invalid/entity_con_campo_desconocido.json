@@ -1,0 +1,46 @@
+{
+  "description": "una entity solo tiene los 12 campos del contrato: el `health` del bloque de combate es de spawn_entity, no de una entity de escena, y vuelve al motor nombrado en vez de podarse en silencio (#259)",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ],
+        "glyph": "@"
+      },
+      {
+        "id": "roric",
+        "kind": "npc",
+        "name": "Guardia Roric",
+        "cell": [
+          60,
+          60
+        ],
+        "footprint": [
+          1,
+          1
+        ],
+        "glyph": "n",
+        "role": "guard",
+        "description": "guardia con lanza y capa parda",
+        "health": 60
+      }
+    ]
+  }
+}

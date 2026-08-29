@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 
 import { WorldMapManager } from "../src/world-map/world-map.js";
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import {
   WORLD_SNAPSHOT_SCHEMA_VERSION,
   deleteWorldSnapshot,
@@ -56,16 +57,26 @@ function makeSnapshot(gameId: string, worldDocHash: string): WorldSnapshot {
     world_doc_hash: worldDocHash,
     generated_at: "2026-08-18T00:00:00.000Z",
     world_map: wm.serialize(),
+    // Escenas EXPANDIDAS, que es la población que vive en un snapshot: se
+    // construyen pasando un tile emitido por `expandScenePrimitives`, la misma
+    // función que las escribe en producción. Antes eran garabatos —un tile sin
+    // `size` ni `terrain`, con una entity sin `footprint` ni `glyph`— que
+    // ningún camino real produce; pasaban porque `scenes` no tenía tipo (#237).
     scenes: {
-      tile_0_0: {
+      tile_0_0: expandScenePrimitives({
         scene_id: "tile_0_0",
         scene_description: "Tile de arranque del snapshot",
-        entities: [{ id: "player", kind: "player", cell: [4, 4] }],
-      },
-      tile_1_0: {
+        tile: { tx: 0, ty: 0 },
+        biome: "grass",
+        entities: [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1], glyph: "@" }],
+      }),
+      tile_1_0: expandScenePrimitives({
         scene_id: "tile_1_0",
         scene_description: "Vecino este pre-generado",
-      },
+        tile: { tx: 1, ty: 0 },
+        biome: "grass",
+        entities: [],
+      }),
     },
     entry_scene_id: "tile_0_0",
   };

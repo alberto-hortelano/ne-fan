@@ -24,6 +24,7 @@ import {
   type WorldSnapshot,
 } from "../src/games/world-snapshot.js";
 import { WorldMapManager } from "../src/world-map/world-map.js";
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { routeMessage } from "../bridge/router.js";
 import type {
   StyleApplicationRecordedMessage,
@@ -69,7 +70,18 @@ function makeSnapshot(worldDocHash: string): WorldSnapshot {
     world_doc_hash: worldDocHash,
     generated_at: "2026-08-18T00:00:00.000Z",
     world_map: new WorldMapManager(WorldMapManager.createEmpty()).serialize(),
-    scenes: { tile_0_0: { scene_id: "tile_0_0", scene_description: "arranque" } },
+    // Escena EXPANDIDA por la función de producción: es la población que vive
+    // en un snapshot, y desde #237 `WorldSnapshotSchema` la tipa (antes bastaba
+    // con dos campos sueltos que ningún camino real produce).
+    scenes: {
+      tile_0_0: expandScenePrimitives({
+        scene_id: "tile_0_0",
+        scene_description: "arranque",
+        tile: { tx: 0, ty: 0 },
+        biome: "grass",
+        entities: [],
+      }),
+    },
     entry_scene_id: "tile_0_0",
   };
 }

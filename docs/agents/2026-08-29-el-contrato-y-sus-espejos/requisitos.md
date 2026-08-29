@@ -154,7 +154,7 @@ motivos prohibidos**.
   #203 lo dejó fuera de alcance con su medida (2.094 líneas generadas frente a 215 a mano, y esa
   prosa le enseña la gramática al modelo).
 - **Verificación barata**: el comando más barato que demuestre lo que toca.
-- La batería de QA es de **39 guiones** desde la tanda anterior. La línea base se mide antes de
+- La batería de QA es de **38 guiones** (el fichero mayor se llama `39-` porque no hay `04-`: el número más alto NO es el recuento — me equivoqué dos veces con esto el mismo día). La línea base se mide antes de
   tocar nada — y **se declara de antemano que NO es estable**: #320 (el guion 34 es intermitente
   bajo carga, 1 rojo de cada 4 baterías) está abierto. Si aparece un 34 rojo, **no es de esta
   tanda**. Dicho antes, no después.

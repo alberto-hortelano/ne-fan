@@ -1,7 +1,7 @@
 /** Candado de las fixtures de escena: en `data/scenes/**` solo hay Format D
  *  VIVO — el tile del mundo continuo, que es la única variante.
  *
- *  El zod (`FormatDSceneSchema`) canda la salida del MOTOR, pero las fixtures
+ *  El zod (`EmittedSceneSchema`) canda la salida del MOTOR, pero las fixtures
  *  del repo no pasan por él: las cargan el selector del cliente y los guiones
  *  de QA. Sin este
  *  test, una escena de una variante retirada (la "suelta" del issue #172, el
@@ -18,7 +18,8 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, relative, resolve } from "node:path";
 
-import { FormatDSceneSchema } from "../src/contract/model-io/scene-schema.js";
+import { EmittedSceneSchema, ExpandedSceneSchema } from "../src/contract/model-io/scene-schema.js";
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { validateScene } from "../src/scene/scene-validate.js";
 
 const SCENES = fileURLToPath(new URL("../data/scenes", import.meta.url));
@@ -61,7 +62,7 @@ export function auditarEscenas(dir: string): Hallazgo[] {
       });
       continue;
     }
-    const parsed = FormatDSceneSchema.safeParse(scene);
+    const parsed = EmittedSceneSchema.safeParse(scene);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
       hallazgos.push({ file, error: `${first.path.join(".") || "(raíz)"}: ${first.message}` });
@@ -140,6 +141,50 @@ describe("fixtures de data/scenes — solo tiles", () => {
     assert.equal(hallazgos.length, 1, JSON.stringify(hallazgos));
     assert.equal(hallazgos[0].file, join("sub", "roto.json"));
     assert.match(hallazgos[0].error, /size/);
+  });
+});
+
+/** El candado de la FRONTERA entre las dos poblaciones (#237), y es de ida y
+ *  vuelta a propósito: comprobar solo un lado deja pasar el error que costó el
+ *  reencuadre — un schema que describe lo que el modelo EMITE apuntado a lo
+ *  que el juego CARGA, que rechaza 20 de 20 snapshots y apaga el arranque.
+ *
+ *  Va sobre las 3 fixtures COMMITEADAS de `data/scenes/`, nunca sobre los
+ *  snapshots de `data/games/<juego>/world/`: esos están en `.gitignore` (ver
+ *  el comentario de abajo), así que un test sobre ellos sería verde vacío en
+ *  CI. La verificación de los 20 es local y se hace con
+ *  `scripts/gate-snapshots.ts`, que NO es un test y lo dice. */
+describe("la frontera entre lo que el motor emite y lo que el juego carga", () => {
+  it("cruda ⇒ EmittedSceneSchema; expandida ⇒ ExpandedSceneSchema (las 3 fixtures)", () => {
+    const escenas = escenasDe(SCENES);
+    assert.ok(escenas.length >= 3, `esperaba ≥3 fixtures, encontré ${escenas.length}`);
+    const fallos: string[] = [];
+    for (const path of escenas) {
+      const file = relative(SCENES, path);
+      const cruda = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+
+      // Ida: la fixture es lo que el motor EMITE, y la población contraria la
+      // rechaza (si no, las dos no están separadas y el schema no dice nada).
+      const emitida = EmittedSceneSchema.safeParse(cruda);
+      if (!emitida.success) fallos.push(`${file}: cruda NO pasa EmittedSceneSchema — ${emitida.error.issues[0].message}`);
+      if (ExpandedSceneSchema.safeParse(cruda).success) {
+        fallos.push(`${file}: una escena CRUDA satisface ExpandedSceneSchema — la frontera no distingue nada`);
+      }
+
+      // Vuelta: expandida por la función de producción, satisface la otra.
+      const expandida = expandScenePrimitives(cruda);
+      const exp = ExpandedSceneSchema.safeParse(expandida);
+      if (!exp.success) {
+        const i = exp.error.issues[0];
+        fallos.push(`${file}: expandida NO pasa ExpandedSceneSchema — ${i.path.join(".") || "(raíz)"}: ${i.message}`);
+      }
+      // …y deja de ser lo que el modelo emite: un tile expandido lleva `size`
+      // y grid `terrain`, que es justo lo que el gate del modelo rechaza.
+      if (EmittedSceneSchema.safeParse(expandida).success) {
+        fallos.push(`${file}: una escena EXPANDIDA sigue pasando EmittedSceneSchema — la frontera se movió`);
+      }
+    }
+    assert.deepEqual(fallos, []);
   });
 });
 

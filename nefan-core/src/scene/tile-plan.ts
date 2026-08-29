@@ -40,7 +40,7 @@ export type TilePlan = FpsTilePlanInput;
  *
  *  Sustituye al viejo cap de 80 volúmenes derivados de entities, que tapaba
  *  media fuga: limitaba las entities pero no la vegetación ni las structures,
- *  y `FormatDSceneSchema` no limita `entities`. El cuello no es la CPU
+ *  y `EmittedSceneSchema` no limita `entities`. El cuello no es la CPU
  *  (componer 328 árboles cuesta 4 ms) sino las DRAW CALLS: cada primitiva del
  *  greybox es un `THREE.Mesh` propio y lo que cuesta es el total de volúmenes
  *  que caen en el FRUSTUM, no los de un tile.

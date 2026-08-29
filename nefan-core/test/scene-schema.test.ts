@@ -1,4 +1,4 @@
-/** Gate estructural de escena Format D (FormatDSceneSchema).
+/** Gate estructural de escena Format D (EmittedSceneSchema).
  *
  *  Verifica que ACEPTA las escenas reales del repo y que RECHAZA con error
  *  preciso justo lo que ai_server/validate_scene_response degradaba en
@@ -11,7 +11,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
-import { FormatDSceneSchema } from "../src/contract/model-io/scene-schema.js";
+import { EmittedSceneSchema, EntitySchema, ENTITY_FIELDS } from "../src/contract/model-io/scene-schema.js";
 import { validateContract } from "../src/contract/model-io/validate.js";
 import { MIN_VANO_CELDAS } from "../src/scene/blueprint/volumes.js";
 import { BODY_RADIUS_M, celdasLibresParaRadio } from "../src/scene/terrain-collision.js";
@@ -22,12 +22,12 @@ const SCENES = fileURLToPath(new URL("../data/scenes", import.meta.url));
 const TOOLS = fileURLToPath(new URL("../data/contract/tools", import.meta.url));
 
 function accepts(scene: unknown): true | string {
-  const r = FormatDSceneSchema.safeParse(scene);
+  const r = EmittedSceneSchema.safeParse(scene);
   if (r.success) return true;
   return `${r.error.issues[0].path.join(".")}: ${r.error.issues[0].message}`;
 }
 
-describe("FormatDSceneSchema — acepta las escenas reales", () => {
+describe("EmittedSceneSchema — acepta las escenas reales", () => {
   const files = readdirSync(SCENES).filter((f) => f.endsWith(".json"));
   for (const f of files) {
     it(f, () => {
@@ -37,7 +37,7 @@ describe("FormatDSceneSchema — acepta las escenas reales", () => {
   }
 });
 
-describe("FormatDSceneSchema — rechaza lo que el saneador degradaba", () => {
+describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
   /** Format D tiene UNA variante: el tile del mundo continuo. */
   const base = {
     scene_id: "tile_0_0",
@@ -52,7 +52,7 @@ describe("FormatDSceneSchema — rechaza lo que el saneador degradaba", () => {
   });
 
   it("entity con kind fuera del enum (antes: → prop)", () => {
-    const r = FormatDSceneSchema.safeParse({
+    const r = EmittedSceneSchema.safeParse({
       ...base,
       entities: [{ id: "x", kind: "monster", name: "X", cell: [0, 0], footprint: [1, 1], glyph: "x" }],
     });
@@ -61,11 +61,11 @@ describe("FormatDSceneSchema — rechaza lo que el saneador degradaba", () => {
 
   it("entity sin glyph / footprint (antes: glifo de reserva / clamp)", () => {
     assert.equal(
-      FormatDSceneSchema.safeParse({ ...base, entities: [{ id: "x", kind: "prop", name: "X", cell: [0, 0], footprint: [1, 1] }] }).success,
+      EmittedSceneSchema.safeParse({ ...base, entities: [{ id: "x", kind: "prop", name: "X", cell: [0, 0], footprint: [1, 1] }] }).success,
       false,
     );
     assert.equal(
-      FormatDSceneSchema.safeParse({ ...base, entities: [{ id: "x", kind: "prop", name: "X", cell: [0, 0], glyph: "x" }] }).success,
+      EmittedSceneSchema.safeParse({ ...base, entities: [{ id: "x", kind: "prop", name: "X", cell: [0, 0], glyph: "x" }] }).success,
       false,
     );
   });
@@ -73,8 +73,8 @@ describe("FormatDSceneSchema — rechaza lo que el saneador degradaba", () => {
   it("entities ausente o no-lista", () => {
     const noEnt: Record<string, unknown> = { ...base };
     delete noEnt.entities;
-    assert.equal(FormatDSceneSchema.safeParse(noEnt).success, false);
-    assert.equal(FormatDSceneSchema.safeParse({ ...base, entities: "nope" }).success, false);
+    assert.equal(EmittedSceneSchema.safeParse(noEnt).success, false);
+    assert.equal(EmittedSceneSchema.safeParse({ ...base, entities: "nope" }).success, false);
   });
 
   it("un tile con size/terrain propios, o sin biome, se rechaza", () => {
@@ -82,10 +82,10 @@ describe("FormatDSceneSchema — rechaza lo que el saneador degradaba", () => {
     // y las primitivas: un grid a mano es un error de contrato, no una escena
     // pequeña. Antes el saneador Python lo rellenaba/truncaba en silencio.
     const conGrid = { ...base, size: { cols: 4, rows: 2, meters_per_cell: 0.5 }, terrain: ["gggg", "gggg"] };
-    assert.equal(FormatDSceneSchema.safeParse(conGrid).success, false);
+    assert.equal(EmittedSceneSchema.safeParse(conGrid).success, false);
     const sinBiome: Record<string, unknown> = { ...base };
     delete sinBiome.biome;
-    assert.equal(FormatDSceneSchema.safeParse(sinBiome).success, false);
+    assert.equal(EmittedSceneSchema.safeParse(sinBiome).success, false);
   });
 
   it("tolera campos legacy por passthrough (no rechaza)", () => {
@@ -102,7 +102,7 @@ describe("FormatDSceneSchema — rechaza lo que el saneador degradaba", () => {
  *  El MENSAJE es contrato: viaja al motor por el pre-flight de
  *  `narrative_respond` y tiene que decir el mínimo EN METROS, que es como el
  *  motor razona el mundo (declara en celdas, piensa en metros). */
-describe("FormatDSceneSchema — un vano más estrecho que el cuerpo mayor no llega al collider", () => {
+describe("EmittedSceneSchema — un vano más estrecho que el cuerpo mayor no llega al collider", () => {
   const conVolume = (v: Record<string, unknown>): unknown => ({
     scene_id: "tile_0_0",
     scene_description: "una escena de prueba",
@@ -123,7 +123,7 @@ describe("FormatDSceneSchema — un vano más estrecho que el cuerpo mayor no ll
 
   for (const [campo, escena] of [["doors[].w", posada], ["gate.w", arco]] as const) {
     it(`${campo}: 2 celdas (1 m) se rechaza diciendo el mínimo EN METROS`, () => {
-      const r = FormatDSceneSchema.safeParse(escena(2));
+      const r = EmittedSceneSchema.safeParse(escena(2));
       assert.equal(r.success, false, "un vano de 1 m no puede pasar el gate");
       const msg = r.success ? "" : r.error.issues.map((i) => i.message).join(" | ");
       assert.match(msg, /1,5 m/, `el mensaje debe decir el mínimo en metros: ${msg}`);
@@ -135,7 +135,7 @@ describe("FormatDSceneSchema — un vano más estrecho que el cuerpo mayor no ll
     });
 
     it(`${campo}: y el borde es estricto — un pelo por debajo del mínimo se rechaza`, () => {
-      assert.equal(FormatDSceneSchema.safeParse(escena(MIN_VANO_CELDAS - 0.01)).success, false);
+      assert.equal(EmittedSceneSchema.safeParse(escena(MIN_VANO_CELDAS - 0.01)).success, false);
     });
   }
 });
@@ -146,7 +146,7 @@ describe("FormatDSceneSchema — un vano más estrecho que el cuerpo mayor no ll
  *  válido. El gate tiene que rechazarlas Y decirle al modelo cuál es la forma
  *  viva, porque el pre-flight de narrative-mcp le devuelve ese texto para que
  *  re-responda. */
-describe("FormatDSceneSchema — solo queda el tile", () => {
+describe("EmittedSceneSchema — solo queda el tile", () => {
   /** Una suelta impecable: nada malformado, solo la variante retirada. */
   const suelta = {
     scene_id: "aldea_suelta",
@@ -170,7 +170,7 @@ describe("FormatDSceneSchema — solo queda el tile", () => {
 
   for (const [nombre, escena] of [["suelta", suelta], ["plató", plato]] as const) {
     it(`rechaza la escena ${nombre} aunque esté perfectamente formada, y nombra la viva`, () => {
-      const r = FormatDSceneSchema.safeParse(escena);
+      const r = EmittedSceneSchema.safeParse(escena);
       assert.equal(r.success, false, `una escena sin tile debe fallar (${nombre})`);
       if (r.success) return;
       const msg = r.error.issues[0].message;
@@ -182,7 +182,7 @@ describe("FormatDSceneSchema — solo queda el tile", () => {
 
   it("el rechazo llega al modelo por la misma vía que el pre-flight MCP", () => {
     // narrative-mcp/validators.ts:validateFormatDScene es exactamente esto.
-    const res = validateContract(FormatDSceneSchema, suelta);
+    const res = validateContract(EmittedSceneSchema, suelta);
     assert.equal(res.ok, false);
     if (res.ok) return;
     assert.match(res.error, /`tile`/, res.error);
@@ -200,7 +200,7 @@ describe("FormatDSceneSchema — solo queda el tile", () => {
  *  re-responde con él delante, en bucle, ANTES de que la escena llegue a
  *  nadie. `formatError` solo le enseña el PRIMER issue, de modo que ese
  *  primero tiene que bastar para arreglarlo sin adivinar. */
-describe("FormatDSceneSchema — un rol inventado vuelve al modelo accionable", () => {
+describe("EmittedSceneSchema — un rol inventado vuelve al modelo accionable", () => {
   const tileCon = (npc: Record<string, unknown>) => ({
     scene_id: "tile_0_0",
     scene_description: "El pueblo, a media mañana.",
@@ -214,7 +214,7 @@ describe("FormatDSceneSchema — un rol inventado vuelve al modelo accionable", 
 
   it("nombra AL NPC por su id, el rol ofensor y los cuatro valores", () => {
     const res = validateContract(
-      FormatDSceneSchema,
+      EmittedSceneSchema,
       tileCon({ id: "boris_herrero", name: "Boris el Herrero", role: "herrero" }),
     );
     assert.equal(res.ok, false, "un oficio en `role` no puede colarse");
@@ -248,5 +248,79 @@ describe("FormatDSceneSchema — un rol inventado vuelve al modelo accionable", 
     }
     // Y sin `role`, que sigue siendo opcional.
     assert.equal(accepts(tileCon({ id: "anon", name: "Aldeano" })), true);
+  });
+});
+
+/** #259 — la entity está CERRADA a sus 12 campos, y lo que importa no es el
+ *  rechazo sino el mensaje: este gate es el único cuyo error vuelve al modelo,
+ *  y `formatError` solo le enseña el PRIMER issue. Antes el campo desconocido
+ *  entraba por `.passthrough()` en el zod y se caía por el desagüe en el
+ *  saneador Python: el modelo describía algo, nadie lo leía y nadie se lo
+ *  decía. */
+describe("EmittedSceneSchema — una clave desconocida en una entity vuelve nombrada", () => {
+  const tileCon = (npc: Record<string, unknown>) => ({
+    scene_id: "tile_0_0",
+    scene_description: "El pueblo, a media mañana.",
+    tile: { tx: 0, ty: 0 },
+    biome: "dirt",
+    entities: [
+      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
+      { kind: "npc", cell: [60, 60], footprint: [1, 1], glyph: "n", ...npc },
+    ],
+  });
+
+  it("nombra la entity, la clave que sobra y las 12 que valen", () => {
+    const res = validateContract(
+      EmittedSceneSchema,
+      tileCon({ id: "boris_herrero", name: "Boris el Herrero", health: 60 }),
+    );
+    assert.equal(res.ok, false, "una clave fuera de las 12 no puede colarse");
+    if (res.ok) return;
+    assert.match(res.error, /boris_herrero/, res.error);
+    assert.match(res.error, /`health`/, res.error);
+    for (const campo of ENTITY_FIELDS) assert.match(res.error, new RegExp(campo), res.error);
+    // Y dónde SÍ cabe lo que quería contar.
+    assert.match(res.error, /`description`/, res.error);
+  });
+
+  it("con varias claves las enumera todas; sin `id` no se inventa uno", () => {
+    const res = validateContract(
+      EmittedSceneSchema,
+      tileCon({ id: "beltran", name: "Beltrán", hp: 3, faction: "azules" }),
+    );
+    assert.equal(res.ok, false);
+    if (res.ok) return;
+    assert.match(res.error, /`hp`/, res.error);
+    assert.match(res.error, /`faction`/, res.error);
+
+    // Sin `id` el mensaje no puede señalar a nadie, y no se lo inventa: dice
+    // "una entity". Se ejerce sobre EntitySchema porque a nivel escena el
+    // PRIMER issue pasa a ser el `id: Required`, y `formatError` solo enseña
+    // ese — que es igual de accionable.
+    const anonima = EntitySchema.safeParse(
+      { kind: "npc", name: "?", cell: [1, 1], footprint: [1, 1], glyph: "n", hp: 3 },
+    );
+    assert.equal(anonima.success, false);
+    if (anonima.success) return;
+    const desconocida = anonima.error.issues.find((i) => i.code === "unrecognized_keys");
+    assert.ok(desconocida, JSON.stringify(anonima.error.issues));
+    assert.match(desconocida.message, /una entity trae la clave `hp`/, desconocida.message);
+  });
+
+  it("las 12 declaradas siguen pasando (el cierre no rechaza de más)", () => {
+    assert.equal(
+      accepts(tileCon({
+        id: "roric", name: "Guardia Roric", role: "guard",
+        description: "guardia con lanza y capa parda", style_ref: "warrior",
+        shape: "box", h: 1.8, attach: "wall",
+      })),
+      true,
+    );
+  });
+
+  it("`description` en blanco se rechaza igual que vacía (espejo del `.strip()` de ai_server)", () => {
+    assert.notEqual(accepts(tileCon({ id: "a", name: "A", description: "" })), true);
+    assert.notEqual(accepts(tileCon({ id: "b", name: "B", description: "   " })), true);
+    assert.equal(accepts(tileCon({ id: "c", name: "C", description: "herrero fornido" })), true);
   });
 });

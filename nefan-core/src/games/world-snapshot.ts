@@ -20,6 +20,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 
 import { SAFE_ID, loadWorldDoc } from "./loader.js";
+import { ExpandedSceneSchema } from "../contract/model-io/scene-schema.js";
 import type { WorldMap } from "../world-map/types.js";
 
 /** v2: muere el eje de vistas — el snapshot ya no declara `branch` (había
@@ -37,8 +38,14 @@ export const WorldSnapshotSchema = z
     world_doc_hash: z.string().min(1),
     generated_at: z.string().min(1),
     world_map: z.record(z.string(), z.unknown()),
-    /** sceneId → escena Format D EXPANDIDA (expandScenePrimitives ya corrió). */
-    scenes: z.record(z.string(), z.record(z.string(), z.unknown())),
+    /** sceneId → escena Format D EXPANDIDA. Hasta #237 el valor era
+     *  `z.record(z.string(), z.unknown())`: la frontera entre las dos
+     *  poblaciones existía en el dato (`__expanded`) y estaba VACÍA en el
+     *  tipo, así que un snapshot con escenas a medio expandir pasaba el gate
+     *  y reventaba después, al pintar. `ExpandedSceneSchema` es el único
+     *  schema que describe esta población — el otro (`EmittedSceneSchema`)
+     *  describe la contraria y rechaza los 20 tiles del árbol por diseño. */
+    scenes: z.record(z.string(), ExpandedSceneSchema),
     entry_scene_id: z.string().min(1),
   })
   .strict()

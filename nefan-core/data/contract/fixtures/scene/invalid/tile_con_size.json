@@ -1,0 +1,34 @@
+{
+  "description": "un tile NO lleva `size`: su base es `biome` + primitivas y el grid lo sintetiza el engine (128×128 @0,5 m). ai_server lo podaba en silencio, así que el mismo tile tenía dos veredictos según por dónde entrase (#237)",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "size": {
+      "cols": 128,
+      "rows": 128,
+      "meters_per_cell": 0.5
+    },
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ],
+        "glyph": "@"
+      }
+    ]
+  }
+}
