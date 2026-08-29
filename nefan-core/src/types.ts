@@ -55,6 +55,10 @@ export interface EnemyPersonality {
   combat_range?: number;
   difficulty?: string;
   aggression_style?: string;
+  /** Distancia (m) a la que el enemigo empieza a hacer caso al jugador.
+   *  Ausente = sin puerta (comportamiento histórico: persigue desde donde
+   *  esté). Ver EnemyAI.aggroRadius. */
+  aggro_radius?: number;
   attack_cooldown_mult?: number;
   block_chance?: number;
   preferred_distance?: number;

@@ -27,6 +27,7 @@ import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js"
 import type { Entity } from "./renderer/types.js";
 import { FPS_DEBUG_VIEW_LABELS, FpsRenderer, type FpsTilePlan } from "./renderer/fps-renderer.js";
 import { FpsAtlasController } from "./scene/fps-atlas.js";
+import { enemigoDesdeCombat } from "./scene/enemigo.js";
 import { CollisionSystem, applyPlanCollision } from "./world/collision.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import {
@@ -653,7 +654,6 @@ characterSprites.setSkinsAllowed(charactersGenerationOn());
 let enemyEntities: Entity[] = [];
 let objectEntities: Entity[] = [];
 let npcEntities: Entity[] = [];
-const ENEMY_COLORS = ["#c44", "#4a4", "#48c", "#ca4"];
 let colorIdx = 0;
 
 // --- Animación por entidad (NPCs/enemigos) ---
@@ -928,12 +928,15 @@ async function addTile(
   const objects = (data.objects ?? []) as Record<string, unknown>[];
   const ids = new Set(objects.map((o) => o.id as string));
   const npcIds = new Set(((data.npcs ?? []) as Record<string, unknown>[]).map((n) => n.id as string));
-  enemyEntities = enemyEntities.filter((e) => !ids.has(e.id) && !inRect(e.pos));
   objectEntities = objectEntities.filter((o) => !ids.has(o.id) && !inRect(o.pos));
-  // NPCs: purga por IDENTIDAD de tile, nunca por rect — un NPC de otro tile
-  // que paseó hasta aquí (vida ambiental del bridge) no debe borrarse. Solo
-  // caen los que pertenecían a ESTE tile y ya no figuran en su scene data.
+  // NPCs y ENEMIGOS: purga por IDENTIDAD de tile, nunca por rect — un NPC de
+  // otro tile que paseó hasta aquí (vida ambiental del bridge) no debe
+  // borrarse, y un enemigo persigue al jugador, así que a la mitad de una
+  // pelea está donde le da la gana. Solo caen los que pertenecían a ESTE tile
+  // y ya no figuran en su scene data. Purgar al enemigo por rect lo devolvía
+  // a su celda de spawn con la vida llena en cada re-emisión del tile.
   npcEntities = npcEntities.filter((n) => !(n.tileKey === key && !npcIds.has(n.id)));
+  enemyEntities = enemyEntities.filter((e) => !(e.tileKey === key && !npcIds.has(e.id)));
   const enemies: RoomEnemy[] = [];
   // Qué tipo de volumen representa a cada objeto del plan: de aquí sale si el
   // greybox ya lo pinta (y entonces no lleva billboard encima).
@@ -952,75 +955,26 @@ async function addTile(
     const sizeY = scale && scale.length >= 3 ? scale[1] : undefined;
     const category = obj.category as string | undefined;
     const shape = obj.shape as string | undefined;
-    const combat = obj.combat as Record<string, unknown> | undefined;
-    if (combat) {
-      // Combat block exists → every field is required. The narrative engine
-      // sets these explicitly; missing values mean the LLM produced a broken
-      // combat record, not a place to default-fill.
-      if (typeof combat.health !== "number" || !Number.isFinite(combat.health)) {
-        throw new Error(`scene object ${obj.id} combat.health must be a finite number, got ${combat.health}`);
-      }
-      if (typeof combat.weapon_id !== "string" || !combat.weapon_id) {
-        throw new Error(`scene object ${obj.id} combat.weapon_id missing`);
-      }
-      const personality = combat.personality as Record<string, unknown> | undefined;
-      if (!personality || typeof personality !== "object") {
-        throw new Error(`scene object ${obj.id} combat.personality missing`);
-      }
-      const requireNum = (key: string): number => {
-        const v = personality[key];
-        if (typeof v !== "number" || !Number.isFinite(v)) {
-          throw new Error(`scene object ${obj.id} combat.personality.${key} must be a finite number, got ${v}`);
-        }
-        return v;
-      };
-      const attacks = personality.preferred_attacks;
-      if (!Array.isArray(attacks) || attacks.length === 0 ||
-          !attacks.every((a) => typeof a === "string")) {
-        throw new Error(`scene object ${obj.id} combat.personality.preferred_attacks must be a non-empty string array`);
-      }
-      enemies.push({
-        id: obj.id as string,
-        position: pos,
-        health: combat.health,
-        weaponId: combat.weapon_id,
-        personality: {
-          aggression: requireNum("aggression"),
-          preferred_attacks: attacks as string[],
-          reaction_time: requireNum("reaction_time"),
-          combat_range: requireNum("combat_range"),
-          ...personality,
-        },
-      });
-      const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
-      const enemyPrompt = (obj.description ?? obj.id) as string;
-      const enemyEntity: Entity = {
-        id: obj.id as string, pos, radius: 8, color,
-        label: enemyPrompt,
-        hp: combat.health as number, maxHp: combat.health as number, alive: true,
-        category: category ?? "creature",
-        sizeXZ,
-        sizeY,
-        skinPrompt: enemyPrompt,
-      };
-      characterSprites.requestSkin(enemyPrompt);
-      enemyEntities.push(enemyEntity);
-    } else {
-      const objectEntity: Entity = {
-        id: obj.id as string, pos, radius: 5,
-        color: category === "item" ? "#aa8" : "#666",
-        label: (obj.description ?? "") as string, alive: true,
-        category: category ?? "prop",
-        sizeXZ,
-        sizeY,
-        shape,
-        // Tipo del volumen que ya la pinta en el greybox (`volume_id` de la
-        // world scene). Presente = no se dibuja billboard encima; `building`
-        // además no se puede mirar (su centro no es un punto al que apuntar).
-        volumeType: typeof obj.volume_id === "string" ? tipoDeVolumen.get(obj.volume_id) : undefined,
-      };
-      objectEntities.push(objectEntity);
-    }
+    // Aquí había una rama `objects[].combat` de 58 líneas que construía
+    // enemigos. Era un fósil de `data/rooms/*.json` (muertas en #209): ningún
+    // dato del árbol llevaba ese campo y `formatDToWorld` nunca lo emitía en
+    // `objects[]`, así que nunca corrió en producción. Los enemigos entran hoy
+    // por `npcs[].combat` (el motor declara `role:"hostile"`) y por
+    // `materializeSpawn`, y las dos vías pasan por `enemigoDesdeCombat`.
+    const objectEntity: Entity = {
+      id: obj.id as string, pos, radius: 5,
+      color: category === "item" ? "#aa8" : "#666",
+      label: (obj.description ?? "") as string, alive: true,
+      category: category ?? "prop",
+      sizeXZ,
+      sizeY,
+      shape,
+      // Tipo del volumen que ya la pinta en el greybox (`volume_id` de la
+      // world scene). Presente = no se dibuja billboard encima; `building`
+      // además no se puede mirar (su centro no es un punto al que apuntar).
+      volumeType: typeof obj.volume_id === "string" ? tipoDeVolumen.get(obj.volume_id) : undefined,
+    };
+    objectEntities.push(objectEntity);
   }
 
   // NPCs from room data (append: los de otros tiles siguen vivos). Un id ya
@@ -1031,9 +985,38 @@ async function addTile(
   const newNpcs: Entity[] = [];
   for (const npc of npcsData) {
     const npcId = npc.id as string;
-    const existing = npcEntities.find((n) => n.id === npcId);
+    const existing = npcEntities.find((n) => n.id === npcId)
+      ?? enemyEntities.find((e) => e.id === npcId);
     if (existing) {
       existing.tileKey = key;
+      continue;
+    }
+    // VÍA (a) al combate: el motor declaró `role:"hostile"` y el core derivó
+    // el bloque (`formatDToWorld` → `combatForHostileRole`). El cliente no
+    // decide quién pelea ni con cuánta vida: solo lo pinta y se lo dice al
+    // sim, que es quien resuelve el daño.
+    if (npc.combat !== undefined) {
+      const nuevo = enemigoDesdeCombat({
+        id: npcId,
+        pos: {
+          x: (npc.position as number[])?.[0] ?? 0,
+          y: (npc.position as number[])?.[1] ?? 0,
+          z: (npc.position as number[])?.[2] ?? 0,
+        },
+        combat: npc.combat,
+        descripcion: typeof npc.description === "string" ? npc.description : undefined,
+        styleRef: typeof npc.style_ref === "string" ? npc.style_ref : undefined,
+        nombre: typeof npc.name === "string" ? npc.name : undefined,
+        indiceColor: colorIdx++,
+        tileKey: key,
+      });
+      if (nuevo) {
+        enemies.push(nuevo.combatiente);
+        enemyEntities.push(nuevo.entidad);
+        characterSprites.requestSkin(nuevo.entidad.skinPrompt ?? npcId, {
+          role: nuevo.entidad.styleRole,
+        });
+      }
       continue;
     }
     const npcPrompt = (npc.description ?? npc.name ?? npc.id) as string;
@@ -1066,7 +1049,12 @@ async function addTile(
   // Fail-loud del contrato de posiciones globales: una entidad de un tile de
   // grid FUERA de su rect delata una conversión celda→mundo rota.
   if (isGridTile) {
-    for (const e of [...newNpcs, ...enemyEntities.filter((en) => ids.has(en.id))]) {
+    // Los enemigos se comprueban RECIÉN nacidos (`enemies`, lo que este tile
+    // acaba de declarar), no barriendo `enemyEntities`: uno que lleva un rato
+    // persiguiendo al jugador puede estar legítimamente fuera del rect de su
+    // tile, y exigirle que siga dentro convertiría el candado de la
+    // conversión celda→mundo en un rojo por perseguir bien.
+    for (const e of [...newNpcs, ...enemies.map((en) => ({ id: en.id, pos: en.position }))]) {
       if (!inRect(e.pos)) {
         errors.push("scene", `entidad "${e.id}" de ${key} fuera de su rect: (${e.pos.x.toFixed(1)}, ${e.pos.z.toFixed(1)})`);
       }
@@ -1132,9 +1120,29 @@ function rebuildEnemyBars(): void {
   for (const ee of enemyEntities) {
     const bar = document.createElement("div");
     bar.className = "nf-vital";
-    bar.innerHTML = `<span class="nf-vital-label" style="color:${ee.color}">${ee.id}</span>
-      <div class="nf-bar"><div class="nf-bar-fill" id="hp-${ee.id}" style="width:100%;background:${ee.color}"></div></div>
-      <span id="hp-text-${ee.id}">${ee.maxHp}</span>`;
+    // El NOMBRE, no el id. Un enemigo de la escena traía un slug legible por
+    // casualidad ("bandido_1") y uno spawneado en runtime llevaba
+    // `narr_npc_1788038791_0` flotando en el HUD del jugador (#323).
+    const nombre = document.createElement("span");
+    nombre.className = "nf-vital-label";
+    nombre.style.color = ee.color;
+    // textContent y no interpolación en innerHTML: `name` es texto libre del
+    // motor narrativo, así que va por el canal que no interpreta marcado.
+    nombre.textContent = ee.name ?? ee.label ?? ee.id;
+    bar.appendChild(nombre);
+    const carril = document.createElement("div");
+    carril.className = "nf-bar";
+    const relleno = document.createElement("div");
+    relleno.className = "nf-bar-fill";
+    relleno.id = `hp-${ee.id}`;
+    relleno.style.width = "100%";
+    relleno.style.background = ee.color;
+    carril.appendChild(relleno);
+    bar.appendChild(carril);
+    const cifra = document.createElement("span");
+    cifra.id = `hp-text-${ee.id}`;
+    cifra.textContent = String(ee.maxHp);
+    bar.appendChild(cifra);
     enemyBarsContainer.appendChild(bar);
   }
 }
@@ -1183,6 +1191,34 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       },
     }),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
+    /** ¿Puede el jugador ATACAR ahora mismo? Es la MISMA condición que lee la
+     *  puerta real (`keyboard-input-provider.ts`: LMB solo cuenta con pointer
+     *  lock y sin diálogo abierto), leída de la misma fuente. Existe porque el
+     *  driver de bench (`?input=scripted`) NO pasa por esa puerta: sin esto,
+     *  un guion puede pegar y ver daño mientras el jugador de verdad aporrea
+     *  el ratón sin hacer nada, que es exactamente lo que pasaba tras hablar
+     *  con alguien (#323). Solo lectura. */
+    puedeAtacar: () => ({
+      raton: document.pointerLockElement !== null,
+      dialogo: input.dialogueActive,
+      ok: document.pointerLockElement !== null && !input.dialogueActive,
+    }),
+    /** Los ENEMIGOS que el cliente tiene en escena, con la vida que el sim le
+     *  está diciendo. Hermano de `npcs()` y por la misma razón: un guion tiene
+     *  que poder acercarse a un combatiente sin leer píxeles, y el enemigo se
+     *  MUEVE (persigue), así que su posición del scene data está vieja en
+     *  cuanto empieza la pelea. La AFIRMACIÓN de que pierde vida sigue yendo
+     *  contra el HUD (`#hp-text-<id>`), que es lo que ve quien juega; esto es
+     *  para saber hacia dónde andar. Solo lectura. */
+    enemies: () =>
+      enemyEntities.map((e) => ({
+        id: e.id,
+        label: e.label,
+        pos: { ...e.pos },
+        hp: e.hp,
+        maxHp: e.maxHp,
+        alive: e.alive,
+      })),
     // Panel de dev (#dev-status): los benches E2E pueden leer/conducir su
     // estado (setPainting/recordGeneration) sin tocar píxeles.
     devPanel,
@@ -1423,6 +1459,11 @@ function abrirDialogo(
   choices: string[],
   who?: { id?: string },
 ): void {
+  // El panel SUELTA el ratón al abrirse (dialogue-panel.ts: sin cursor no se
+  // pueden clicar las opciones). Hay que apuntar si lo teníamos, porque
+  // devolverlo al cerrar es cosa nuestra y hasta el 2026-08-29 no lo hacía
+  // nadie — ver `cerrarDialogo`.
+  ratonCapturadoAntesDelDialogo = document.pointerLockElement !== null;
   dialoguePanel.show(speaker, text, choices, who);
   // Suprime movimiento/ataque del InputProvider mientras el panel está
   // abierto (las teclas 1-3/T las gestiona el propio panel).
@@ -1438,6 +1479,42 @@ function abrirDialogo(
 function cerrarDialogo(): void {
   input.dialogueActive = false;
   dialoguePanel.hide();
+  devolverElRatonTrasElDialogo();
+}
+
+/** ¿Tenía el jugador el ratón capturado cuando se abrió la conversación? Lo
+ *  apunta `abrirDialogo` porque el panel lo suelta por dentro. */
+let ratonCapturadoAntesDelDialogo = false;
+
+/** DEVOLVER EL RATÓN AL CERRAR ES PARTE DE CERRAR (#323).
+ *
+ *  El panel suelta el pointer lock al abrirse y hasta hoy no lo recuperaba
+ *  nadie. Con NPCs pacíficos eso solo era un click de más; con enemigos es una
+ *  ejecución: atacar con LMB exige el lock
+ *  (`keyboard-input-provider.ts`: «e.button === 0 && document.pointerLockElement
+ *  !== null»), así que tras hablar el jugador se quedaba pegando a un enemigo a
+ *  1,5 m SIN HACER DAÑO y sin que nada se lo dijera. Medido por QA: 50 s a cero
+ *  de daño y muerto; recapturando el ratón a mano, el mismo enemigo cayó en 3 s.
+ *
+ *  Va emparejado con `abrirDialogo` y por el mismo motivo que #311: soltar y
+ *  devolver son las dos mitades de un acto, y separarlas deja al jugador con
+ *  los controles a medias sin que nada falle.
+ *
+ *  Solo se devuelve si lo teníamos: quien estaba en modo cursor (mirando
+ *  fixtures, con el título recién cerrado) no quiere que una conversación le
+ *  capture el ratón por su cuenta. Y el navegador puede NEGARSE (pide gesto
+ *  del usuario, y rechaza un lock pedido demasiado pronto tras soltarlo): por
+ *  eso va por `paso()`, que lo deja escrito en el registro de errores en vez
+ *  de tragárselo. El click sobre el mundo sigue siendo la vía de recuperación. */
+function devolverElRatonTrasElDialogo(): void {
+  if (!ratonCapturadoAntesDelDialogo) return;
+  ratonCapturadoAntesDelDialogo = false;
+  if (document.pointerLockElement !== null) return;
+  paso(
+    fpsRenderer.element.requestPointerLock(),
+    "input",
+    "no se pudo devolver el ratón al cerrar la conversación: haz click en el mundo para volver a atacar",
+  );
 }
 
 dialoguePanel.onAdvanced = () => {
@@ -1575,7 +1652,12 @@ function updateWorldLabels(): void {
     reticleEl.dataset.target = "false";
     return;
   }
-  const personajes = npcEntities.filter((n) => n.alive !== false);
+  // NPCs Y ENEMIGOS. Los hostiles entraban aquí por primera vez el
+  // 2026-08-29 (#323) y este filtro solo miraba `npcEntities`, así que lo
+  // único que el juego acababa de aprender a poner delante del jugador era
+  // justo lo único sin rótulo y sin mirilla: un bulto anónimo que pega. Un
+  // enemigo es la entidad que MÁS necesita nombre — es a lo que apuntas.
+  const personajes = [...npcEntities, ...enemyEntities].filter((n) => n.alive !== false);
   // Solo objetos CON nombre: sin descripción no hay nada que enseñar, y la
   // mirilla debe encenderse únicamente sobre lo que sí se puede nombrar.
   // Los EDIFICIOS quedan fuera: su centro no es un punto al que se pueda
@@ -2446,6 +2528,34 @@ function materializeSpawn(effect: {
   const spriteHash = typeof effect.data.sprite_hash === "string" ? effect.data.sprite_hash : undefined;
 
   if (effect.entityKind === "npc") {
+    // VÍA (b) al combate: un `spawn_entity` con `role:"hostile"`. El bloque
+    // `combat` lo puso el core en `dispatchConsequences` (mismo
+    // `combatForHostileRole` que la escena inicial), y aquí se registra por la
+    // MISMA puerta. Sin esto, el enemigo aparecería como un vecino más: se
+    // pintaría y no se le podría pegar.
+    if (effect.data.combat !== undefined) {
+      const nuevo = enemigoDesdeCombat({
+        id: effect.entityId,
+        pos,
+        combat: effect.data.combat,
+        descripcion: effect.description,
+        styleRef: typeof effect.data.style_ref === "string" ? effect.data.style_ref : undefined,
+        nombre: effect.name,
+        indiceColor: colorIdx++,
+      });
+      if (nuevo) {
+        enemyEntities.push(nuevo.entidad);
+        characterSprites.requestSkin(nuevo.entidad.skinPrompt ?? effect.entityId, {
+          role: nuevo.entidad.styleRole,
+        });
+        // El alta en el sim es lo que lo convierte en algo a lo que se puede
+        // pegar; la barra de vida, en algo que el jugador ve perder vida.
+        gameClient?.addEnemies([nuevo.combatiente]);
+        rebuildEnemyBars();
+        log(`⚔ ${effect.name ?? "Enemigo"} ataca`);
+      }
+      return;
+    }
     // El caso central del skin IA: la descripción del motor narrativo es el
     // prompt con el que se repinta la base y_bot frame a frame.
     const npcPrompt = effect.description || (effect.name ?? effect.entityId);

@@ -58,12 +58,15 @@ describe("styleRoleForNpc (transitorio, fase 3 lo elimina)", () => {
   // El vocabulario de `role` es CERRADO (NPC_ROLES) y la tabla lo cubre
   // entero: se recorre aquí para que añadir un rol sin decidir cómo se viste
   // rompa el test además de no compilar.
-  it("cubre los cuatro roles del vocabulario, y solo el guardia va armado", () => {
+  it("cubre los cinco roles del vocabulario, y solo quien pelea va armado", () => {
     const esperado: Record<NpcRole, string> = {
       peasant: "commoner",
       villager: "commoner",
       merchant: "commoner",
       guard: "warrior",
+      // El hostil reusa `warrior`, que ya existe en todos los packs: por eso
+      // el rol nuevo no repaga ninguna clave de caché de skin.
+      hostile: "warrior",
     };
     for (const role of NPC_ROLES) {
       assert.equal(styleRoleForNpc(role), esperado[role], `rol ${role}`);

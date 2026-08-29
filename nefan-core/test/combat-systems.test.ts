@@ -273,3 +273,89 @@ describe("ShootingCombatSystem (específicos)", () => {
     assert.equal(far.health, 60);
   });
 });
+
+/** LA PUERTA DE ENGANCHE (#323). Antes de esta tanda `EnemyAI` no tenía
+ *  ninguna: `findNearestTarget` elegía al jugador estuviera donde estuviera y
+ *  `updateMovement` iba a por él siempre. Nadie lo notó porque nunca hubo
+ *  enemigos — y en cuanto los hubo, medido en el banco, un hostil a 34 m
+ *  mataba en 27,7 s a un jugador que no tocaba una tecla: alejarlo no protegía
+ *  de nada, solo retrasaba la ejecución.
+ *
+ *  Se mide por el SIM entero (mismo camino que la partida), no llamando a
+ *  EnemyAI a mano. */
+describe("EnemyAI — el enemigo no persigue al jugador desde el otro lado del tile", () => {
+  const personalidad = {
+    aggression: 1,
+    preferred_attacks: ["quick"],
+    reaction_time: 0.05,
+    combat_range: 4,
+    move_speed: 2,
+    preferred_distance: 1.5,
+    aggro_radius: 10,
+  };
+  const jugador = () =>
+    createCombatant("player", 100, "unarmed", { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 });
+
+  it("fuera del radio no se mueve NI ataca, por lejos que tenga que venir", () => {
+    const sim = makeSim("standard");
+    const player = jugador();
+    // 30 m: con la puerta anterior habría recorrido 2 m/s × 8 s = 16 m en
+    // estos 500 ticks y estaría a mitad de camino.
+    const enemy = createCombatant("bandido", 60, "unarmed", { x: 0, y: 0, z: 30 }, { x: 0, y: 0, z: -1 });
+    sim.addCombatant(player);
+    sim.addCombatant(enemy, personalidad);
+
+    const events = tickIdle(sim, player, 500);
+    assert.deepEqual({ x: enemy.position.x, z: enemy.position.z }, { x: 0, z: 30 }, "no se ha movido ni un milímetro");
+    assert.equal(events.filter((e) => e.type === "attack_started").length, 0);
+    assert.equal(player.health, 100, "un jugador quieto a 30 m sigue vivo");
+  });
+
+  it("dentro del radio sí viene y pega (la puerta no lo deja inerte)", () => {
+    const sim = makeSim("standard");
+    const player = jugador();
+    const enemy = createCombatant("bandido", 60, "unarmed", { x: 0, y: 0, z: 8 }, { x: 0, y: 0, z: -1 });
+    sim.addCombatant(player);
+    sim.addCombatant(enemy, personalidad);
+
+    // 1500 ticks ≈ 24 s de sim: recorrer 6,5 m a 2 m/s y luego pegar con el
+    // cooldown de la personalidad. Con 500 llegaba y empezaba a atacar, pero
+    // aún no había aterrizado ningún golpe — el número sale de medirlo, no de
+    // redondear hacia arriba hasta que pase.
+    const events = tickIdle(sim, player, 1500);
+    assert.ok(enemy.position.z < 8, `debería haberse acercado, está en z=${enemy.position.z}`);
+    assert.ok(events.some((e) => e.type === "attack_started"), "un enemigo dentro del radio ataca");
+    assert.ok(player.health < 100, "y hace daño");
+  });
+
+  it("una vez enganchado NO se suelta: alejarse no apaga la pelea", () => {
+    const sim = makeSim("standard");
+    const player = jugador();
+    const enemy = createCombatant("bandido", 60, "unarmed", { x: 0, y: 0, z: 8 }, { x: 0, y: 0, z: -1 });
+    sim.addCombatant(player);
+    sim.addCombatant(enemy, personalidad);
+    tickIdle(sim, player, 200);            // engancha
+    const traido = enemy.position.z;
+    player.position = { x: 0, y: 0, z: -40 };  // el jugador huye lejísimos
+    tickIdle(sim, player, 200);
+    assert.ok(
+      enemy.position.z < traido,
+      `debería seguir persiguiendo (z ${traido} → ${enemy.position.z})`,
+    );
+  });
+
+  it("sin `aggro_radius` declarado se comporta como SIEMPRE: persigue desde donde sea", () => {
+    // El default es Infinity a propósito: todo lo dado de alta antes de la
+    // puerta (load_room, tests, benches) no puede cambiar de conducta por
+    // omisión. Si esto se pusiera rojo, la puerta habría roto por defecto.
+    const sim = makeSim("standard");
+    const player = jugador();
+    const enemy = createCombatant("bandido", 60, "unarmed", { x: 0, y: 0, z: 30 }, { x: 0, y: 0, z: -1 });
+    sim.addCombatant(player);
+    const { aggro_radius: _fuera, ...sinPuerta } = personalidad;
+    sim.addCombatant(enemy, sinPuerta);
+
+    tickIdle(sim, player, 500);
+    assert.ok(enemy.position.z < 30, `sin puerta debe acercarse (z=${enemy.position.z})`);
+  });
+});

@@ -25,6 +25,26 @@ export class EnemyAI {
   blockChance: number;
   attackCooldownMult: number;
 
+  /** A qué distancia (m) este enemigo EMPIEZA a hacer caso al jugador.
+   *
+   *  No existía, y hasta el 2026-08-29 nadie lo notó porque no había enemigos.
+   *  Sin él, `findNearestTarget` elige al jugador esté donde esté y
+   *  `updateMovement` va a por él siempre: MEDIDO en el banco, un hostil a
+   *  34 m mata a un jugador que no toca una tecla en 27,7 s — la distancia
+   *  solo compra 12 segundos. Eso no es un enemigo, es una cuenta atrás.
+   *
+   *  `Infinity` por defecto A PROPÓSITO: todo lo que se dio de alta antes de
+   *  esta puerta (tests, `load_room`, benches) se comporta EXACTAMENTE igual,
+   *  así que el cambio no puede romper por omisión. Quien pone hostiles hoy
+   *  —`combatForHostileRole`— la declara. */
+  aggroRadius: number;
+
+  /** Enganchado: una vez que el jugador entra en el radio, el enemigo ya no
+   *  se desentiende aunque se aleje. No hay correa (volver a su sitio y
+   *  desengancharse) a propósito: eso es diseño de encuentro y no lo decide
+   *  esta tanda; lo que aquí se arregla es que la pelea la EMPIECE alguien. */
+  private engaged = false;
+
   // Internal state
   private timer = 0;
   private cooldownTimer = 0;
@@ -56,6 +76,16 @@ export class EnemyAI {
     this.preferredDistance = (merged.preferred_distance as number) ?? 2.5;
     this.blockChance = (merged.block_chance as number) ?? 0.0;
     this.attackCooldownMult = (merged.attack_cooldown_mult as number) ?? 1.0;
+    const aggro = merged.aggro_radius;
+    this.aggroRadius =
+      typeof aggro === "number" && Number.isFinite(aggro) && aggro > 0 ? aggro : Infinity;
+  }
+
+  /** ¿Le hace caso ya al jugador? Se engancha al entrar en el radio y no se
+   *  suelta. Público para que el sim pueda contestarlo sin duplicar la regla. */
+  isEngaged(dist: number): boolean {
+    if (!this.engaged && dist <= this.aggroRadius) this.engaged = true;
+    return this.engaged;
   }
 
   /** Update enemy position — move toward/away from target. */
@@ -68,6 +98,13 @@ export class EnemyAI {
     if (self.state === "winding_up" || self.state === "attacking") return;
 
     const dist = distanceXZ(self.position, target.position);
+    // Fuera del radio de enganche no se mueve: ni persigue ni encara. Un
+    // enemigo que camina hacia ti desde el otro extremo del tile mientras
+    // hablas con el tabernero es una ejecución con retardo, no un encuentro.
+    if (!this.isEngaged(dist)) {
+      Combatant.setMoving(self, false);
+      return;
+    }
     const dir = normalized(sub(target.position, self.position));
 
     // Always face the target
@@ -131,6 +168,7 @@ export class EnemyAI {
 
     // Range check
     const dist = distanceXZ(self.position, target.position);
+    if (!this.isEngaged(dist)) return [];
     if (dist > this.combatRange) return [];
 
     // Aggression roll

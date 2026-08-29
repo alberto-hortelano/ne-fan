@@ -15,6 +15,7 @@
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
 import { composeTilePlan } from "./tile-plan.js";
 import { tileWorldRect } from "./tile.js";
+import { combatForHostileRole } from "../combat/hostiles.js";
 
 /** The world-coordinate scene shape a renderer consumes. Loose by design — the
  *  renderer reads a known subset and ignores the rest (e.g. `__player_start`,
@@ -186,10 +187,17 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       // `ent` viene de un JSON sin validar (save, fixture a mano) y un
       // `role: 42` propagado revienta al derivar la clave del skin.
       const { role, style_ref: styleRef, description } = ent;
+      // Hostilidad → combate, DERIVADO aquí. El motor declara `role:"hostile"`
+      // y el core pone los números (`combatForHostileRole`): así la escena
+      // inicial y el spawn en runtime producen el MISMO bloque, y el cliente
+      // —que solo pinta— no decide nada sobre el balance. Sin esto, un NPC
+      // hostil llegaba como cualquier aldeano y no había con quién pelear.
+      const combat = combatForHostileRole(role);
       npcs.push({
         id: ent.id,
         name: ent.name,
         position: [x, 0, z],
+        ...(combat ? { combat } : {}),
         // Rol del mundo (guard/merchant/…) y ref de personaje elegida por el
         // motor (style_ref, catálogo world.style_refs.characters): el cliente
         // deriva de ellos la ref del skin (npcSkinStyleRef) — deben viajar o

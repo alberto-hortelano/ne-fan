@@ -113,7 +113,7 @@ NarrativeReaction = {
       description: string /* no vacío */;  // Descripción en español de la entidad a materializar
       name?: string;  // Nombre propio (NPCs)
       position_hint?: string;  // Pista de dónde aparece, p.ej. 'junto a la fuente'
-      role?: "peasant"|"guard"|"villager"|"merchant";  // Rol de comportamiento ambiental (NPCs); desconocido degrada a villager
+      role?: "peasant"|"guard"|"villager"|"merchant"|"hostile";  // NPCs: preset de conducta. Los cuatro ambientales (peasant/guard/villager/merchant) deambulan; `hostile` ATACA al jugador y el motor del juego deriva su vida, arma y agresividad — no las declaras tú. No es el oficio: un bandido o un lobo son `hostile` y su identidad va en `name`/`description`. Ausente ⇒ villager
       style_ref?: string;  // NPCs: id de la referencia de personaje de world.style_refs.characters que mejor case con su aspecto (guía el skin IA). Ausente/desconocido cae al default por rol
       character_type?: string;
     }

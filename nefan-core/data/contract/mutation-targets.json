@@ -31,10 +31,6 @@
       "porque": "Quien orquesta ataques y turnos sobre el sistema activo. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
-      "fichero": "src/combat/enemy-ai.ts",
-      "porque": "La IA de los enemigos: personalidad, agresividad y elección de ataque. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
       "fichero": "src/combat/difficulty-presets.ts",
       "porque": "Los presets de dificultad. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
@@ -210,6 +206,42 @@
       ],
       "break": 100,
       "porque": "La fórmula de daño y esa MISMA fórmula vista como área en el suelo (attack-area: lo que dibuja el telegraph del ataque). Van en el mismo módulo porque son una sola verdad — el telegraph tenía copia propia y podía divergir del resolver sin que nada fallara. Los tests de sistemas y de simulación las alcanzan por transitividad pero no las ejercen: los únicos que las importan son estos dos. SUELO 100 desde el 2026-08-27: los 7 supervivientes de la corrida 32970154557 eran cuatro huecos reales de test —el filo exacto del cono de ±60°, un `distance_tolerance` o un `area_radius` a 0 (escribibles en el JSON editable, y sin la guarda dan NaN de daño), el daño como PRODUCTO (los tests de integración solo miraban el signo, así que dividir por el daño base o por el factor táctico seguía dando un número positivo) y el destello quedándose con el ÚLTIMO objetivo en vez de con el mejor (el test tenía al mejor el último)— más un equivalente que se fue solo al decir el máximo sin rama. Cada uno se comprobó en negativo antes de medir."
+    },
+    {
+      "id": "hostiles",
+      "mutate": [
+        "src/combat/hostiles.ts"
+      ],
+      "tests": [
+        "test/hostiles.test.ts"
+      ],
+      "break": 0,
+      "porque": "De dónde salen la vida, el arma y la agresividad de un NPC hostil. Va SOLO y no dentro de `scene-normalize` —el módulo del otro consumidor— porque allí serían 271 mutantes por medir una tabla de tres valores, y el módulo se saldría del `tope_local`: aquí se puede cerrar el bucle en local. Es el único sitio donde vive el balance de un enemigo (el motor declara `role:\"hostile\"` y nada más), así que un mutante que sobreviva aquí es un número que nadie afirma. BREAK 0 A PROPÓSITO y provisional: `npm run mutacion -- local hostiles` se NIEGA mientras no exista medida previa (no se sabe cuánto cuesta), así que el suelo lo pone la primera corrida autorizada. Un 0 no afirma nada; poner aquí un número a ojo sí afirmaría algo que nadie ha medido.",
+      "excluidos": [
+        {
+          "test": "test/scene-normalize.test.ts",
+          "porque": "Importa `combatForHostileRole` para COMPARARSE con él (`deepEqual(combat, combatForHostileRole('hostile'))`): lo que afirma es que la vía que prueba emite EXACTAMENTE lo que deriva el core, no cuánto vale cada número. Un mutante de hostiles.ts mueve los dos lados de esa igualdad a la vez, así que este test no puede matar ni uno — sería CPU quemada una vez por mutante. Quien mide los valores es test/hostiles.test.ts, que los escribe a mano."
+        },
+        {
+          "test": "test/consequence-handler.test.ts",
+          "porque": "Importa `combatForHostileRole` para COMPARARSE con él (`deepEqual(combat, combatForHostileRole('hostile'))`): lo que afirma es que la vía que prueba emite EXACTAMENTE lo que deriva el core, no cuánto vale cada número. Un mutante de hostiles.ts mueve los dos lados de esa igualdad a la vez, así que este test no puede matar ni uno — sería CPU quemada una vez por mutante. Quien mide los valores es test/hostiles.test.ts, que los escribe a mano."
+        },
+        {
+          "test": "test/bridge-npc.test.ts",
+          "porque": "Igual que los otros dos: usa `combatForHostileRole` para SEMBRAR un hostil con el combate real y comprobar que `npcSync` lo excluye de la vida ambiental. No afirma ningún número del módulo, así que no puede matar un mutante suyo; y además arranca sesión de bridge, que es la batería más cara del repo."
+        }
+      ]
+    },
+    {
+      "id": "enemy-ai",
+      "mutate": [
+        "src/combat/enemy-ai.ts"
+      ],
+      "tests": [
+        "test/combat-systems.test.ts"
+      ],
+      "break": 0,
+      "porque": "La IA de los enemigos. Estaba en `sin_mutar` con el motivo «ningún test lo tiene por sujeto», y era verdad hasta el 2026-08-29: sale de ahí porque esa tanda le añadió la PUERTA DE ENGANCHE (`aggroRadius`) y, con ella, el primer bloque de tests que la tiene por sujeto — que un hostil fuera del radio no se mueva ni ataque, que dentro sí, que no se suelte una vez enganchado y que sin la puerta declarada se comporte como siempre. Se ejerce por el SIM entero y no llamando a EnemyAI a mano, que es como corre en partida. BREAK 0 provisional por la misma razón que `hostiles`: `local` se niega sin medida previa, así que el suelo lo pone la primera corrida autorizada."
     },
     {
       "id": "blueprint-volumenes",
@@ -437,12 +469,11 @@
       "tests": [
         "test/combat-systems.test.ts",
         "test/simulation.test.ts",
-        "test/state-projection.test.ts",
         "test/store-immutability.test.ts",
         "test/store-reducers.test.ts"
       ],
       "break": 41,
-      "porque": "El runtime volátil (posición, HP, enemigos) y su ÚNICO camino de escritura, `dispatch()`. El issue #168 nombraba solo `reducers.ts`; va el directorio entero porque ningún test importa el reducer por su nombre —se ejerce a través de game-store.ts— y medir uno sin el otro no diría nada. `store-reducers.test.ts` entra en la batería el día que se borra el estado muerto de sala (#175): al irse `room_changed`/`room_visited` desaparecieron diez mutantes BIEN matados y el módulo cayó por debajo del break sin que el código restante hubiera empeorado. La señal no era el borrado, era que el resto de los `case` no tenía dueño — se ejercían a través del sim, sin un solo aserto sobre lo que escriben."
+      "porque": "El runtime volátil (posición, HP, enemigos) y su ÚNICO camino de escritura, `dispatch()`. El issue #168 nombraba solo `reducers.ts`; va el directorio entero porque ningún test importa el reducer por su nombre —se ejerce a través de game-store.ts— y medir uno sin el otro no diría nada. `store-reducers.test.ts` entra en la batería el día que se borra el estado muerto de sala (#175): al irse `room_changed`/`room_visited` desaparecieron diez mutantes BIEN matados y el módulo cayó por debajo del break sin que el código restante hubiera empeorado. La señal no era el borrado, era que el resto de los `case` no tenía dueño — se ejercían a través del sim, sin un solo aserto sobre lo que escriben. El 2026-08-29 sale `test/state-projection.test.ts` con su sujeto: `src/store/state-projection.ts` se borra entero (#323) porque su único consumidor —el dispatch de `broadcastScene`— era el que borraba del `state_update` a un enemigo vivo en el sim, y porque filtraba por `type:\"enemy\"`, que ninguna vía de producción puede emitir. El `break` se queda en 41 y NO se toca, con la cuenta hecha y no a ojo: `local store` se NIEGA (160 mutantes contra un tope de 120), así que se deriva de la huella commiteada — el módulo pasa de 223 mutantes con 56 vivos (74,9 %) a 160 con 41 (74,4 %), porque el fichero que se va tenía un score parecido al del resto. Y el test que sale de la batería solo importaba a su sujeto, así que no puede resucitar mutantes de game-store ni de reducers. La medida de verdad llega con la corrida autorizada; el precedente de #175 —donde un borrado SÍ hundió el módulo— no se repite aquí y por eso no se baja el suelo."
     },
     {
       "id": "state-http-dispatch",

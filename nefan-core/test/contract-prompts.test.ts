@@ -35,7 +35,15 @@ const CONTRACT_MARKERS: Record<string, string[]> = {
   "tile_instructions.md": ["ground", "volumes", "path", "water", "deck", "terrain", "surface_ref", "fps_faces", "generate_tile.place", "nearby_places"],
   // `role` y `description` de NPC: el motor lee el PROMPT, no el tool JSON. Un
   // campo declarado solo en el JSON es un campo que el motor no emite nunca.
-  "scene_instructions.md": ["scene_id", "terrain", "entities", "volumes", "meters_per_cell", "role", "description"],
+  //
+  // `terrain` y `meters_per_cell` SALEN el 2026-08-29 (#322): eran los dos
+  // campos que el prompt enseñaba y el gate RECHAZA —`EmittedSceneSchema`
+  // rebota `size` y un `terrain[]` no vacío—, así que exigirlos aquí era
+  // exigir que el prompt siguiera mintiéndole al modelo. Los dos siguen
+  // candados donde sí son verdad: `tile_instructions.md`, que es quien
+  // describe la única variante viva. Este marcador se puede cambiar (lo dice
+  // el propio test), pero se cambia con el motivo escrito, no de paso.
+  "scene_instructions.md": ["scene_id", "entities", "volumes", "ground", "role", "description"],
   "weapon_orient.md": ["grip_point_normalized", "blade_direction", "up_direction"],
   "weapon_verify.md": ["suggested_delta_euler"],
   "develop_world.md": ["world_brief", "world_md", "game_id", "style_id", "tags"],

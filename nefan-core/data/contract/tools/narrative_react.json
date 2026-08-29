@@ -90,7 +90,8 @@
                     "peasant",
                     "guard",
                     "villager",
-                    "merchant"
+                    "merchant",
+                    "hostile"
                   ]
                 },
                 "style_ref": {

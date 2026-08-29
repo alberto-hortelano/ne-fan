@@ -321,6 +321,6 @@ BOOTSTRAP (generate_tile.bootstrap === true — first tile of a fresh session):
   world has somewhere to grow.
 
 Everything else (SOLIDITY, DECOR ATTACH, GLYPH/NPC rules, ASSET REUSE, WORLD
-MAP tools) works exactly as in the standard scene reference that follows — but
-IGNORE its "size"/"terrain" schema, grid-size budgets and its examples'
-hand-written grids: tiles never write grids.
+MAP tools) works exactly as in the standard scene reference that follows. It no
+longer carries a "size"/"terrain" schema to ignore: that shape was retired from
+it the day tiles became the only variant.

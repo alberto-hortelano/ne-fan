@@ -1,17 +1,12 @@
 ==== HOW TO RESPOND (kind: "scene") ====
-You generate TOP-DOWN 2D MAPS as a structured grid plus a list of named
-entities. The game renders them; the narrative engine uses them to know where
-everything is. Call narrative_respond with this JSON ("Map Format D"):
+You describe a place as declarative PRIMITIVES plus a list of named entities.
+The game renders them; the narrative engine uses them to know where everything
+is. Call narrative_respond with this JSON ("Map Format D"):
 
 {
   "scene_id": "<slug>",
   "scene_description": "<2-3 Spanish sentences>",
-  "size":  { "cols": <int>, "rows": <int>, "meters_per_cell": <0.5 interior | 2 exterior> },
-  "terrain": [
-    "<string of EXACTLY cols chars>",
-    ...   // EXACTLY rows strings total
-  ],
-  "terrain_legend": { "<char>": "<terrain name>" | { "name": "<terrain name>", "solid": true|false }, ... },
+  "terrain_legend": { "<char>": "<terrain name>" | { "name": "<terrain name>", "solid": true|false }, ... },  // optional: only for custom chars your primitives introduce (see RESERVED TERRAIN CHARS)
   "ground": [ … ],   // flat ground features (paths/plazas/water/decks) — see the MAP PLAN reference in the tile instructions
   "volumes": [ … ],  // everything with HEIGHT: buildings (cutaway for enterable), walls, trees… — same MAP PLAN reference as ground
   "entities": [
@@ -19,7 +14,7 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
       "name": "<spanish>", "cell": [col, row], "footprint": [w, h], "glyph": "<1 ASCII char>",
       "shape": "box"|"cylinder"|"sphere"|"cone",     // optional; default box
       "h": <metres>,                                 // height in METRES — ALWAYS declare it for furniture/props (table 0.75, bench 0.45, barrel 0.9, shelf 2.0…); without it the engine falls back to semantic defaults by label, generic per-kind otherwise
-      "role": "peasant"|"guard"|"villager"|"merchant", // NPCs: BEHAVIOUR preset (see DRESSING AND BEHAVIOUR below). Not the job. Omitted ⇒ villager
+      "role": "peasant"|"guard"|"villager"|"merchant"|"hostile", // NPCs: BEHAVIOUR preset (see DRESSING AND BEHAVIOUR below). Not the job. `hostile` = something to FIGHT; the engine derives its stats. Omitted ⇒ villager
       "description": "<spanish, one line>",          // NPCs: what they LOOK LIKE — the prompt that paints their skin. REQUIRED for every named NPC
       "style_ref": "<character ref id>" },           // NPCs only, optional: id from world.style_refs.characters whose description best matches this NPC's look (guides the AI skin); missing/unknown falls back to a role-derived default
     ...
@@ -28,36 +23,36 @@ everything is. Call narrative_respond with this JSON ("Map Format D"):
 
 COORDINATES: top-left is (0,0). col → east, row → south.
 
-TWO VARIANTS, AND ONLY TWO. The request tells you which one you are answering:
-- `generate_tile` in world_state → a TILE of the continuous world. It carries
-  `tile:{tx,ty}` + `biome` and NO `size`/`terrain`: the engine synthesises the
-  128×128 @0.5 m grid from the biome and your `ground`/`volumes`. Its rules are
-  in the tile instructions, which win over anything here.
-It is the ONLY variant. A scene without it is rejected by the gate before it
-reaches the game: there is no such thing as a free-standing map with a size of
-your choosing.
+ONE VARIANT, AND ONLY ONE: `generate_tile` in world_state → a TILE of the
+continuous world. It carries `tile:{tx,ty}` + `biome`, and you never write
+`size` or a `terrain[]` grid — the engine synthesises the 128×128 @0.5 m grid
+from the biome and your `ground`/`volumes`. The tile instructions carry its
+rules and win over anything here. A scene without `tile` is rejected by the
+gate before it reaches the game: there is no such thing as a free-standing map
+with a size of your choosing.
 
-RESERVED TERRAIN CHARS (you can use without declaring in legend)
+RESERVED TERRAIN CHARS — the engine stamps the grid for you, using these:
 - g grass (default)   _ path/dirt road    s stone/paved
 - w water             b bridge (wood over water)
 - d dirt/tilled       a sand              o wood/dock planks
 - W wall (SOLID)
 
-Any other char you use MUST be declared in terrain_legend.
+They need no legend entry. Any OTHER char your primitives introduce (a
+`structures` wall_char/floor_char of your own) MUST be declared in
+terrain_legend, or the tile is rejected: an undeclared char is terrain nobody
+knows how to paint or whether it can be walked on.
 
 SOLIDITY — collision (the player physically CANNOT cross solid cells)
 - "W" (wall) and "w" (water) BLOCK movement. "b" (bridge) is walkable over water.
 - A custom char is declared solid with the object form of terrain_legend:
   "R": { "name": "roca desprendida", "solid": true }. Plain string values are walkable.
-- Consequence: every walled room NEEDS a door gap (a walkable char like "_" in its
-  W border) or the player is trapped inside — or locked out. Water that crosses the
-  map needs a bridge if the far side matters.
+- Consequence: water that crosses the tile needs a bridge (a `deck` over it) if
+  the far side matters, or you have split the world in two.
 
-ENTERABLE ROOMS & BUILDINGS: don't hand-draw a W border. Declare the shell as a
-`volumes` building with `cutaway:true` (walls, door gaps and interior visible
-from the camera come out deterministically), and write only the BASE terrain
-(grass, paths) in the grid. The volumes schema (rect, walls, roof, doors,
-cutaway) is in the MAP PLAN reference of the tile instructions.
+ENTERABLE ROOMS & BUILDINGS: declare the shell as a `volumes` building with
+`cutaway:true` — walls, door gaps and the interior visible from the camera come
+out deterministically. The volumes schema (rect, walls, roof, doors, cutaway)
+is in the MAP PLAN reference of the tile instructions.
 
 VEGETATION: don't hand-place 20 trees. Declare `vegetation_zones` (the engine
 plants real tree/bush volumes per zone, deterministically, with `density` in
@@ -69,14 +64,14 @@ singular landmarks.
 DECOR ATTACH: a decor entity may add "attach": "wall" — the engine snaps it to
 the nearest wall cell (torches, hanging signs, banners).
 
-LINEAR & ORGANIC GROUND (rivers, roads, plazas) — anything linear or organic
-makes far better maps than cell rows. Declare it as typed `ground` features:
+LINEAR & ORGANIC GROUND (rivers, roads, plazas) — declare anything linear or
+organic as typed `ground` features:
 `path` polylines for roads/trails, `water` shapes for rivers/ponds (NOT
 walkable), `deck` for walkable surfaces over water (bridges), `area` for
 plazas/courtyards. Points are float cell coordinates and curves are smoothed
-(full ground schema in the MAP PLAN reference above). Rule of thumb: a
-river/road in `ground` should follow the same course as its "w"/"_" cells in
-the grid (the grid stays the coarse base; ground refines it with curves).
+(full ground schema in the MAP PLAN reference above). This IS how the ground
+gets made: the biome fills the base and every `ground` feature is stamped over
+it, so a road that is not in `ground` does not exist.
 
 Do NOT emit SVG of any kind (the old "terrain_svg"/"map_ground" fields are
 gone): everything is declarative data — typed "ground" features + "volumes".
@@ -90,13 +85,14 @@ ENTITY RULES
   engine MOVES that record here with all its state (inventory, role,
   directives). A new id would DUPLICATE the character (two records, one
   orphaned in the old scene). Mint new ids only for brand-new characters.
-- cell is the TOP-LEFT of the footprint. cell + footprint must stay inside the grid.
+- cell is the TOP-LEFT of the footprint. cell + footprint must stay inside the
+  tile (cells 0..127).
 - Buildings seen from OUTSIDE: ONE rectangular footprint each — a tavern is one
   rectangle covering its real width in cells, NOT four wall slabs. (Indoors you
   are INSIDE the building, so there is no building entity; the walls come from
   its `volumes` cutaway building.)
-- Props: size them in CELLS from their real size (a 1-cell prop is
-  meters_per_cell metres across). Furniture 1×1/2×1; tables and counters a bit
+- Props: size them in CELLS from their real size (a cell is 0.5 m, so a 1-cell
+  prop is half a metre across). Furniture 1×1/2×1; tables and counters a bit
   bigger; carts/log piles 2×1.
 - NPCs and player are always 1×1.
 - Place NPCs at their workspot (smith near smithy, innkeeper at inn's door).
@@ -109,14 +105,25 @@ DRESSING AND BEHAVIOUR OF AN NPC (`description` + `role`)
   proper name, and "Beltrán" describes nobody: you get the same anonymous
   villager for every person in the world.
 - `role` is the BEHAVIOUR preset the simulation runs, and there are exactly
-  four: `guard` holds its post and steps into a fight nearby; `merchant` stays
-  close to its stall; `peasant` and `villager` wander and flee from combat.
+  five: `guard` holds its post and steps into a fight nearby; `merchant` stays
+  close to its stall; `peasant` and `villager` wander and flee from combat;
+  `hostile` ATTACKS the player.
+- HOSTILES: `role: "hostile"` is how you put something to FIGHT in front of the
+  player — a bandit on the road, a wolf, a cultist. You declare the hostility
+  and nothing else: the engine derives its health, its weapon and how
+  aggressively it closes in, so a fight plays the same way twice. Do NOT invent
+  a `combat` block, hit points or stats — an entity carrying keys outside the
+  documented ones is rejected. Place them at a believable distance; they will
+  come to the player on their own.
 - `role` is NOT the job. A smith, a mayor, a miller or an innkeeper are
   `merchant` or `villager` who happen to have a trade — the trade goes in
-  `name` and `description`, which is where it is actually SEEN. Inventing a
-  role ("herrero", "alcaldesa") is rejected and you will be asked to re-answer.
-- Same four values as `spawn_entity`, so an NPC you spawn later behaves like
-  the one you placed on the map.
+  `name` and `description`, which is where it is actually SEEN. Same for a
+  hostile: "bandido de camino con cota remendada" is a `hostile` whose identity
+  lives in those two fields. Inventing a role ("herrero", "alcaldesa",
+  "bandido") is rejected and you will be asked to re-answer.
+- Same five values as `spawn_entity`, so an NPC you spawn later behaves like
+  the one you placed on the map — including a hostile you send after the
+  player mid-scene.
 - Player starts where the narrative says they enter the scene.
 - "decor" = purely aesthetic set dressing: wall torches, banners, rugs, cobwebs,
   hanging signs, stains. Visible on the map but NO collision and NO interaction.
@@ -137,7 +144,7 @@ SHAPE (optional; hints the rendered footprint — use it, it makes better maps)
 - "box" (or omit): buildings, walls, crates, tables, carts, rectangular things.
 
 GLYPH RULES
-- Single printable ASCII char. NOT equal to any terrain char in the same map.
+- Single printable ASCII char.
 - Glyphs CAN repeat across entities (all trees can be "T") — ids disambiguate.
 
 ASSET REUSE — available_assets is a GROWING LIBRARY of already-painted
@@ -151,12 +158,8 @@ and it works by DESCRIPTION, not by hash:
   existing asset.
 
 VALIDATION before responding:
-- [ ] every terrain row is exactly cols chars
-- [ ] number of terrain rows equals rows
 - [ ] every entity has id/kind/name/cell/footprint/glyph
 - [ ] no two entities share an id
-- [ ] no footprint runs off the grid
-- [ ] every glyph differs from every terrain char
 - [ ] PLAYABILITY: the player spawn is walkable; walking from it you can reach
       every enterable building's door AND the way out — the tile's seams with
       its neighbours

@@ -22,17 +22,47 @@ export interface NpcRoleParams {
   joins_combat: false;
 }
 
-/** Vocabulario de roles con preset de comportamiento — FUENTE ÚNICA. El zod
- *  del SoT (SpawnEntityConsequence.role) y la prosa de narrative-mcp derivan
- *  de esta lista; `Record<NpcRole, …>` obliga a que los presets la cubran
+/** Los roles que vive el sistema AMBIENTAL: gente de fondo que deambula,
+ *  saluda, huye o interviene, pero que NUNCA es un combatiente del sim.
+ *  `Record<AmbientRole, …>` sobre los presets obliga a que la tabla los cubra
  *  exactamente. Orden = el histórico del enum del contrato (minimiza el diff
  *  de gen:contract). */
-export const NPC_ROLES = ["peasant", "guard", "villager", "merchant"] as const;
+export const AMBIENT_ROLES = ["peasant", "guard", "villager", "merchant"] as const;
+export type AmbientRole = (typeof AMBIENT_ROLES)[number];
+
+/** Los roles que declaran HOSTILIDAD. Un NPC con uno de estos no lo mueve la
+ *  vida ambiental: lo mueve la IA de combate del sim, y sus números —vida,
+ *  arma, personalidad— los deriva el core (`combatForHostileRole`), no el
+ *  modelo. El motor declara la INTENCIÓN; el balance es reproducible.
+ *
+ *  Es UN valor y no una lista de oficios («bandido», «lobo», «cultista»)
+ *  por la misma razón que `role` no es el oficio en el lado ambiental: lo
+ *  que se ve —quién es y qué aspecto tiene— va en `name` y `description`. */
+export const HOSTILE_ROLES = ["hostile"] as const;
+export type HostileRole = (typeof HOSTILE_ROLES)[number];
+
+/** Vocabulario COMPLETO de roles — FUENTE ÚNICA. El zod del SoT
+ *  (SpawnEntityConsequence.role), el enum copiado de `generate_scene.json`, el
+ *  espejo Python y la prosa de narrative-mcp derivan de esta lista. */
+export const NPC_ROLES = [...AMBIENT_ROLES, ...HOSTILE_ROLES] as const;
 export type NpcRole = (typeof NPC_ROLES)[number];
 
+/** ¿Declara este `role` hostilidad? Lo preguntan las tres fronteras que no
+ *  pueden equivocarse: `formatDToWorld` y `dispatchConsequences` (para
+ *  producir el bloque `combat`) y `npcSync` (para NO meter al combatiente en
+ *  la vida ambiental, que mutaría su posición en paralelo con el sim). */
+export function isHostileRole(role: unknown): role is HostileRole {
+  return typeof role === "string" && (HOSTILE_ROLES as readonly string[]).includes(role);
+}
+
 /** Velocidades por debajo del jugador (walk 1.9 / sprint 3.8 en
- *  combat_config) para que los NPC se lean como fondo, no como amenaza. */
-export const NPC_ROLE_PRESETS: Record<NpcRole, NpcRoleParams> = {
+ *  combat_config) para que los NPC se lean como fondo, no como amenaza.
+ *
+ *  `Record<AmbientRole, …>` y no `Record<NpcRole, …>` a propósito: el sistema
+ *  ambiental no puede servir a un hostil ni por accidente, y eso lo dice el
+ *  COMPILADOR — escribir aquí una entrada `hostile` no compila, y `npcSync`
+ *  tampoco podría pedirla. */
+export const NPC_ROLE_PRESETS: Record<AmbientRole, NpcRoleParams> = {
   villager: {
     role: "villager",
     wander_radius: 6,

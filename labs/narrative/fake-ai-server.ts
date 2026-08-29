@@ -368,6 +368,26 @@ function bootstrapTile() {
       // 8,3 m, justo la distancia de ataque que el guion busca.
       { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [79, 63], footprint: [1, 1], glyph: "n",
         role: "merchant", description: "tabernero corpulento de mandil manchado" },
+      // Un HOSTIL declarado como lo declara el motor de verdad: `role:"hostile"`
+      // y nada más. Ni bloque `combat`, ni vida, ni `entity_kind` inventado —
+      // los números los deriva el core (`combatForHostileRole`), que es justo
+      // lo que este doble tiene que ejercer. Hasta el 2026-08-29 el bench no
+      // tenía un solo enemigo y por eso ningún guion podía comprobar que algo
+      // pierde vida.
+      //
+      // La celda está elegida, no puesta a ojo. [88,65] cae al SUR de la
+      // taberna (rect cols 52..75, filas 48..63), al NORTE de la elipse de
+      // matorrales del scatter (filas 68..108) y al SUR de la casa de
+      // entramado (filas 38..51): campo abierto, sin nada sólido entre él y el
+      // jugador, que arranca en [64,70].
+      //
+      // Y a 12,5 m, no a 4,5 como estaba el 2026-08-29 hasta que QA lo jugó:
+      // eso es FUERA del radio de enganche del hostil (10 m,
+      // `HOSTILE_AGGRO_M`), así que una partida nueva no se abre con una pelea
+      // que el jugador no ha pedido — se abre con un bandido a la vista, al
+      // que hay que acercarse. Con 4,5 m el banco medía una ejecución.
+      { id: "bandido_1", kind: "npc", name: "Bandido de camino", cell: [88, 65], footprint: [1, 1], glyph: "b",
+        role: "hostile", description: "bandido de camino con cota remendada y la cara marcada" },
       { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
       // Casa declarada como ENTITY (sin volume ni structure): el compositor
       // debe derivarle un edificio con techo — regresión del bug "casas como
@@ -737,8 +757,31 @@ const server = http.createServer((req, res) => {
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         const speaker = String(body.speaker || "Aldeano");
         fakeDialogueTurn += 1;
+        // SEGUNDO turno: además de contestar, el motor MANDA algo hostil. Es
+        // la otra vía por la que aparece un enemigo (spawn en runtime, sin
+        // recargar la escena) y hasta el 2026-08-29 este fichero no emitía un
+        // solo `spawn_entity`: la decisión de diseño central de CLAUDE.md
+        // («las entidades se materializan en runtime») no la ejercía nadie.
+        //
+        // Va en el turno 2 y no en el 1 para que el guion pueda afirmar los
+        // dos actos por separado —el enemigo de la escena inicial primero, el
+        // del spawn después— sin un canal de control nuevo: `fakeDialogueTurn`
+        // ya hace determinista en qué turno pasa, y `/dev/reset` lo devuelve a
+        // cero entre guiones.
+        const spawnHostil =
+          fakeDialogueTurn === 2
+            ? [{
+                type: "spawn_entity" as const,
+                entity_kind: "npc" as const,
+                role: "hostile" as const,
+                name: "Secuaz",
+                description: "secuaz enjuto de capucha parda y daga corta",
+                position_hint: "near_player",
+              }]
+            : [];
         return send(200, {
           consequences: [
+            ...spawnHostil,
             {
               type: "dialogue",
               speaker,

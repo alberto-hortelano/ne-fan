@@ -1,6 +1,6 @@
 {
   "name": "generate_scene",
-  "description": "Generates a map in Map Format D: a terrain grid (ASCII strings) plus a list of named entities with cell + footprint — the DATA is flat top-down cells; the client renders it in first person, at eye level over the tile. The narrative engine reads it to know what is where; the game engine renders it. See system prompt for the full schema and a worked example.",
+  "description": "Generates ONE TILE of the continuous world in Map Format D: declarative primitives (`ground` + `volumes`) plus a list of named entities with cell + footprint. You never write a `size` or a `terrain[]` grid — the engine synthesises the 128x128 @0.5 m grid from the `biome` and your primitives, and a scene that carries either is REJECTED. The narrative engine reads the result to know what is where; the game engine renders it in first person, at eye level over the tile. See system prompt for the full schema and a worked example.",
   "input_schema": {
     "type": "object",
     "properties": {
@@ -36,40 +36,9 @@
         "type": "string",
         "description": "2-3 sentence description of the scene, in Spanish."
       },
-      "size": {
-        "type": "object",
-        "properties": {
-          "cols": {
-            "type": "integer",
-            "minimum": 12,
-            "maximum": 80
-          },
-          "rows": {
-            "type": "integer",
-            "minimum": 8,
-            "maximum": 60
-          },
-          "meters_per_cell": {
-            "type": "number",
-            "description": "0.5 for interiors (furniture-scale), 2 for outdoor scenes. See system prompt."
-          }
-        },
-        "required": [
-          "cols",
-          "rows",
-          "meters_per_cell"
-        ]
-      },
-      "terrain": {
-        "type": "array",
-        "description": "Exactly `rows` strings, each EXACTLY `cols` characters wide. Each char is a terrain glyph (g=grass, w=water, _=path, s=stone, b=bridge, d=dirt, a=sand, o=wood, or any char you define in terrain_legend).",
-        "items": {
-          "type": "string"
-        }
-      },
       "terrain_legend": {
         "type": "object",
-        "description": "Mapping from terrain char to terrain name. Reserved chars don't need to appear here. Add any custom terrain chars you used. A value can also be {\"name\": ..., \"solid\": true|false} to declare that char blocks movement (walls, water). W and w are solid by default; b (bridge) is walkable.",
+        "description": "Mapping from terrain char to terrain name. Only for CUSTOM chars your primitives introduce (a structure's wall_char/floor_char of your own); reserved chars need no entry, and an undeclared char is rejected. A value can also be {\"name\": ..., \"solid\": true|false} to declare that char blocks movement. W and w are solid by default; b (bridge) is walkable.",
         "additionalProperties": {
           "oneOf": [
             {
@@ -162,7 +131,7 @@
             },
             "glyph": {
               "type": "string",
-              "description": "A single printable ASCII char, distinct from terrain chars."
+              "description": "A single printable ASCII char."
             },
             "shape": {
               "type": "string",
@@ -191,9 +160,10 @@
                 "peasant",
                 "guard",
                 "villager",
-                "merchant"
+                "merchant",
+                "hostile"
               ],
-              "description": "NPCs only, optional: BEHAVIOUR preset the simulation runs for this NPC (guard stands its ground and steps into a fight; the rest wander and flee). It is NOT the job — a smith, a mayor or an innkeeper are villagers/merchants who happen to have a trade, and the trade goes in `name` and `description`. Same four values as spawn_entity. Omit and the NPC behaves as a villager."
+              "description": "NPCs only, optional: BEHAVIOUR preset the simulation runs for this NPC (guard stands its ground and steps into a fight; peasant/villager/merchant wander and flee; `hostile` ATTACKS the player — the engine derives its health, weapon and aggression, you do not). It is NOT the job — a smith, a mayor or an innkeeper are villagers/merchants who happen to have a trade, and the trade goes in `name` and `description`; a bandit, a wolf or a cultist are `hostile` and their identity goes there too. Same five values as spawn_entity. Omit and the NPC behaves as a villager."
             },
             "description": {
               "type": "string",
