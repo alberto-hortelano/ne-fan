@@ -31,13 +31,21 @@
  *  no lo hubiera arrancado, era FALSO desde que `cleanup` pasó a recorrer solo
  *  STARTED_PORTS; el barrido de verdad vivía en la tecla `k`, que hoy tampoco
  *  toca lo ajeno.)
+ *
+ *  Y lo que puede pasar AUNQUE se lance con el catálogo limpio: que un agente
+ *  de al lado levante uno de esos puertos a mitad de corrida. Eso ya no se le
+ *  imputa a ningún preset (#296) — se nombra al ocupante, el preset sale ⊘ o
+ *  con su veredicto real, y la corrida entera se marca NO CONCLUYENTE (exit 2).
+ *  El veredicto lo decide `qa/lib/presets-clasifica.mjs`, puro y con el sondeo
+ *  inyectado; aquí vive solo el sondeo.
  */
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUERTOS, PUERTOS_TODOS } from "./lib/stack.mjs";
-import { puertoOcupado as portBusy } from "./lib/puertos.mjs";
+import { puertoOcupado as portBusy, duenyosDeLosPuertos } from "./lib/puertos.mjs";
+import { clasificarPreset, veredictoDeLaCorrida, ICONO, OK, ROJO, AJENO } from "./lib/presets-clasifica.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const START_SH = join(repoRoot, "start.sh");
@@ -136,10 +144,66 @@ if (sucios.length) {
   process.exit(2);
 }
 
+/** ¿Es de OTRO el que ocupa este puerto?
+ *
+ *  Dos señales independientes, y basta una:
+ *
+ *  (1) **Ya estaba** antes de arrancar este preset. La corrida empieza con el
+ *      catálogo entero libre y cada preset se para —y se espera— antes del
+ *      siguiente, así que un puerto ocupado en ese instante no lo puso ninguno
+ *      de los presets que se están midiendo.
+ *
+ *  (2) **No sale de aquí**: `ss` dice qué procesos escuchan y `/proc` de dónde
+ *      salen. Es MÍO si alguno cuelga del grupo del launcher que acabo de
+ *      lanzar (`pgid`, que es como se le manda el SIGINT) o si su cwd está bajo
+ *      este worktree — el mismo criterio que usa `start.sh` para decidir qué
+ *      puede parar. El `pgid` está por sprite-forge, que vive en otro
+ *      repositorio y tiene su propio cwd.
+ *
+ *  Si el sistema no deja ver ni un pid, NO se declara ajeno: se dice lo que se
+ *  sabe. Un ajeno inventado convertiría un rojo legítimo del launcher en un ⊘,
+ *  que es la otra forma de que el banco mienta. */
+function esAjeno(puerto, yaEstaba, duenyos, lanzadorPid) {
+  if (yaEstaba) return { ajeno: true, duenyo: describir(duenyos.get(puerto)) };
+  const info = duenyos.get(puerto);
+  const procesos = info?.procesos ?? [];
+  if (procesos.length === 0) return { ajeno: false, duenyo: null };
+  const mio = procesos.some(
+    (p) => p.pgid === lanzadorPid || (p.cwd !== null && (p.cwd === repoRoot || p.cwd.startsWith(`${repoRoot}/`))),
+  );
+  return { ajeno: !mio, duenyo: mio ? null : describir(info) };
+}
+
+/** El ocupante en una línea, para poder NOMBRARLO. Nunca inventa: si no se
+ *  deja leer, lo dice. */
+function describir(info) {
+  const p = info?.procesos?.[0];
+  if (!p) return "no se deja identificar (ss no publica su pid)";
+  return `pid ${p.pid} · ${p.comando ?? "cmdline ilegible"} · cwd ${p.cwd ?? "ilegible"}`;
+}
+
+/** El sondeo COMPLETO del catálogo, que es la entrada del clasificador. */
+async function sondearCatalogo(yaOcupados, lanzadorPid) {
+  const arriba = new Set(await puertosArriba(ALL_PORTS));
+  const duenyos = duenyosDeLosPuertos();
+  const ocupacion = new Map();
+  for (const p of ALL_PORTS) {
+    const { ajeno, duenyo } = arriba.has(p)
+      ? esAjeno(p, yaOcupados.has(p), duenyos, lanzadorPid)
+      : { ajeno: false, duenyo: null };
+    ocupacion.set(p, { arriba: arriba.has(p), ajeno, duenyo });
+  }
+  return ocupacion;
+}
+
 const resultados = [];
 for (const c of elegidos) {
   process.stdout.write(`\n▶ ${c.slug}\n  esperado: ${c.esperados.sort((a, b) => a - b).join(" ")}\n`);
   const t0 = Date.now();
+  // Foto del catálogo JUSTO antes de arrancar: lo que ya esté ocupado aquí no
+  // es de este preset, pase lo que pase después.
+  const yaOcupados = new Set(await puertosArriba(ALL_PORTS));
+  if (yaOcupados.size) console.log(`  ⚠ ya ocupados antes de arrancar: ${[...yaOcupados].join(" ")}`);
   // stdin cerrado: la pausa de Claude Code de los presets con motor lee EOF y
   // sigue, igual que si alguien pulsara Enter.
   const child = spawn("./start.sh", ["--preset", c.slug], {
@@ -157,16 +221,23 @@ for (const c of elegidos) {
     if (arriba.length === c.esperados.length) break;
     await esperar(500);
   }
-  const faltan = c.esperados.filter((p) => !arriba.includes(p));
-  const colados = await puertosArriba(c.prohibidos);
+  const ocupacion = await sondearCatalogo(yaOcupados, child.pid);
+  const veredicto = clasificarPreset({ ...c, ocupacion });
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(`  arriba  : ${arriba.sort((a, b) => a - b).join(" ") || "(ninguno)"}   [${secs}s]`);
-  const ok = faltan.length === 0 && colados.length === 0;
-  if (faltan.length) console.log(`  ✘ NO levantó: ${faltan.join(" ")}`);
-  if (colados.length) console.log(`  ✘ levantó lo que NO dice: ${colados.join(" ")}`);
-  if (ok) console.log("  ✔ los puertos arriba son exactamente los de su máscara");
-  if (!ok && stderr.trim()) console.log(`  stderr: ${stderr.trim().split("\n").slice(-3).join(" | ")}`);
-  resultados.push({ slug: c.slug, ok, faltan, colados });
+  for (const a of veredicto.ajenos) {
+    console.log(`  ⊘ :${a.puerto} (${a.rol} suyo) lo ocupa OTRO — ${a.duenyo}`);
+  }
+  if (veredicto.faltan.length) console.log(`  ✘ NO levantó: ${veredicto.faltan.join(" ")}`);
+  if (veredicto.colados.length) console.log(`  ✘ levantó lo que NO dice: ${veredicto.colados.join(" ")}`);
+  if (veredicto.estado === AJENO) {
+    console.log("  ⊘ NO SE MIDIÓ: un ocupante ajeno tenía un puerto que este preset necesita");
+  }
+  if (veredicto.estado === OK) console.log("  ✔ los puertos arriba son exactamente los de su máscara");
+  if (veredicto.estado === ROJO && stderr.trim()) {
+    console.log(`  stderr: ${stderr.trim().split("\n").slice(-3).join(" | ")}`);
+  }
+  resultados.push(veredicto);
 
   // Parar y ESPERAR A QUE EL LAUNCHER MUERA, no solo a que los puertos queden
   // libres. Su `cleanup` mata por PID lo que arrancó, y libera después el
@@ -189,11 +260,27 @@ for (const c of elegidos) {
   }
   await esperar(1000);
   const restos = await puertosArriba(ALL_PORTS);
-  if (restos.length) console.log(`  ⚠ quedaron puertos ocupados tras parar: ${restos.join(" ")}`);
+  if (restos.length) {
+    // Quién los tiene, no solo cuáles: si es de otro agente, el preset
+    // siguiente lo verá en su foto previa y no cargará con él.
+    const quien = duenyosDeLosPuertos();
+    console.log(`  ⚠ quedaron puertos ocupados tras parar: ${restos.map((p) => `${p} (${describir(quien.get(p))})`).join(" · ")}`);
+  }
 }
 
 console.log(`\n${"─".repeat(60)}`);
-for (const r of resultados) console.log(`${r.ok ? "✔" : "✘"} ${r.slug}`);
-const ok = resultados.filter((r) => r.ok).length;
-console.log(`${ok}/${resultados.length} presets arrancan exactamente su máscara`);
-process.exit(ok === resultados.length ? 0 : 1);
+for (const r of resultados) console.log(`${ICONO[r.estado]} ${r.slug}`);
+const v = veredictoDeLaCorrida(resultados);
+const partes = [`${v.ok}/${resultados.length} presets arrancan exactamente su máscara`];
+if (v.rojos) partes.push(`${v.rojos} en rojo`);
+if (v.noMedidos) partes.push(`${v.noMedidos} SIN MEDIR`);
+console.log(partes.join(" · "));
+if (!v.concluyente) {
+  console.log(
+    `\n✖ había ocupantes AJENOS en el catálogo durante la corrida: esta corrida NO dice si los ` +
+      `presets arrancan lo suyo.\n` +
+      v.ajenos.map((a) => `  · :${a.puerto} durante «${a.slug}» — ${a.duenyo}`).join("\n") +
+      `\n  No son puertos rotos: son puertos de otro. Vuelve a lanzar con el catálogo libre.`,
+  );
+}
+process.exit(v.exit);
