@@ -2,7 +2,7 @@
 
 Orden pensado para que cada fase deje el juego funcionando y verificable con
 lo que ya existe (~245 tests de nefan-core incl. `bridge-*.test.ts` con
-sockets fake, `labs/narrative/fake-ai-server.mjs`, benches). Cada fase es
+sockets fake, `labs/narrative/fake-ai-server.ts`, benches). Cada fase es
 independiente: se puede parar después de cualquiera con un sistema mejor que
 el anterior.
 

@@ -165,7 +165,7 @@ GET /styles/{style_id}/{file} (desde S2), GET /health.
 preservada como 400, ver contrato).
 
 **Fuera de contrato** (deliberado): los benches y los guiones de QA
-(herramientas de test, no servicios). `labs/narrative/fake-ai-server.mjs` emula
+(herramientas de test, no servicios). `labs/narrative/fake-ai-server.ts` emula
 S3-S6 en :18765 y es la spec ejecutable para validarlos; `qa/run.mjs` conduce
 el cliente real desde fuera.
 

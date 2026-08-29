@@ -1,0 +1,4 @@
+{
+  "//": "Solo declara que labs/ es ESM. Lo era ya —todos sus ficheros usan import y import.meta—, pero node lo deducía de la extensión .mjs y TypeScript, que mira el package.json más cercano, los tomaba por CommonJS y rechazaba cada import de nefan-core con TS1479. Sin esto, tsconfig.labs.json (#309) no puede comprobar nada. No es un paquete: no tiene name, ni deps, ni nadie lo instala.",
+  "type": "module"
+}

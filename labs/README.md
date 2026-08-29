@@ -20,7 +20,7 @@ tests y su bench de paridad, y su material generado quedó archivado en
 | Lab | Qué mide | Entry point | Estado |
 |-----|----------|-------------|--------|
 | `style/` | Referencias de estilo + fidelidad de layout del repintado de blueprints | `python labs/style/gen.py <run>` · `python labs/style/fidelity.py <subcmd>` | cerrado (hallazgos aplicados) |
-| `narrative/` | Motor narrativo sin gráficos: emulador del juego, fake ai_server, replay | `node labs/narrative/{game-emulator,fake-ai-server,replay-server}.mjs` · `check-scene.ts` | activo (tooling de E2E) |
+| `narrative/` | Motor narrativo sin gráficos: emulador del juego, fake ai_server, replay | `node labs/narrative/{game-emulator,replay-server}.mjs` · `npx tsx` desde `nefan-core` para `fake-ai-server.ts` y `check-scene.ts` | activo (tooling de E2E) |
 | `fps/` | Modo 3D primera persona estilo Doom: atlas de superficies IA + sprites y_bot 8-dir | `viewer.html` en :8912 · `python3 labs/fps/gen.py <run>` | activo |
 | `authoring/` | Autoría LIBRE del modelo: run 001 comparativa de motores sobre la misma descripción (medida); run 002 luz de gameplay + scatter procedural declarativo (zonas+densidad+generador de autor) | `three/capture.sh` · veredicto en `authoring/INFORME.md` | activo |
 
