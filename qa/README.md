@@ -66,6 +66,15 @@ Reglas que hacen que un guion valga algo:
    estado, eso es un hallazgo, no un paso de la receta.
 4. **Prueba el guion en negativo.** Rompe a mano lo que dice verificar y comprueba que se pone
    rojo. Un guion que no detecta nada se ve exactamente igual que uno que funciona.
+5. **Declara lo que necesitas y lo que gastas.** Dos `export` en el guion, que el runner ejecuta:
+   `export const aisla = ["saves"|"mundo"|"fake-ai"]` es su PRECONDICIÓN (se ejecuta solo eso, y
+   solo antes de él), y `export const gasta = true` dice que PUEDE disparar generación —escena
+   del motor, página de atlas, skin—. Con `gasta`, el runner ejerce el guardarraíl de cero
+   créditos antes de abrir el guion: si el backend no declara ser falso, el guion sale
+   `⊘ SIN MEDIR` **sin haber mandado ni una petición**. Olvidarse tampoco acaba en verde — el
+   motor falso cuenta sus rutas de pago y el runner compara antes y después (#295) —, pero
+   entonces el aviso llega cuando el dinero ya salió. `gasta` es «PUEDE gastar», no «gastó esta
+   vez»: se declara por lo que el guion puede pedir, no por lo que hizo una corrida.
 
 ## Los guiones sembrados
 
