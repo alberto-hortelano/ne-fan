@@ -53,6 +53,15 @@ console.log(
     `(${juegosConSnapshot} juego(s) con snapshot en el árbol)`,
 );
 if (total === 0) {
-  console.log("  (sin snapshots locales: este gate no ha comprobado NADA — genera un mundo desde el título)");
+  // Salida 2, NO 0. La prosa de arriba ya decía que un 0/0 no comprueba nada,
+  // pero el proceso salía con éxito: quien lo encadenara (`… && algo`, un hook,
+  // un CI futuro) veía verde de un gate que no había mirado un solo tile — y en
+  // un clon limpio eso pasa SIEMPRE, porque los snapshots están gitignorados.
+  // Una prosa honesta con un código de salida que miente es lo peor de las dos.
+  console.error(
+    "  ✖ sin snapshots locales: este gate no ha comprobado NADA. " +
+      "Genera un mundo desde el título (o desde generate_game) y vuelve a correrlo.",
+  );
+  process.exit(2);
 }
 process.exit(ok === total ? 0 : 1);
