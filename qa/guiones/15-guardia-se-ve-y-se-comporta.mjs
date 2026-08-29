@@ -39,7 +39,7 @@
  *  no. Misma función y mismo camino de datos que en sesión
  *  (Format D → `formatDToWorld` → cliente).
  */
-import { stackSinCreditos, nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
@@ -51,6 +51,10 @@ import { URLS } from "../lib/stack.mjs";
  *   · `fake-ai` — el motor falso lleva estado de proceso (tiles servidos); en
  *                 caliente el destino podría llegar ya realizado. */
 export const aisla = ["mundo", "saves", "fake-ai"];
+
+/** Dispara generación (tile del motor + skins del guardia): el runner ejerce
+ *  el guardarraíl de cero créditos antes de lanzarlo (#295). */
+export const gasta = true;
 
 const GAME_ID = "alta_fantasia";
 const FIXTURE = "robledo_tile";
@@ -237,14 +241,6 @@ const enElLibro = (ctx, npc) =>
   ).catch(() => null);
 
 export default async function (ctx) {
-  const falso = await stackSinCreditos(ctx);
-  ctx.expect(
-    "cliente Y bridge declaran motor falso (`e2e-sin-creditos`)",
-    falso,
-    "este guion dispara generación de skins: sin las dos declaraciones no se ejecuta",
-  );
-  if (!falso) return;
-
   await regenerarMundo(ctx, GAME_ID);
   await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image" });
   await comenzar(ctx);

@@ -46,12 +46,19 @@
  *     con el umbral en 0 pasaría siempre.
  */
 
-import { stackSinCreditos, nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
  *   · `saves` — la partida arranca en el tile de entrada, no donde la dejó
  *               otro guion (aquí se mide QUIÉN hay en el tile de entrada). */
 export const aisla = ["saves"];
+
+/** Su segunda mitad arranca una partida REAL (tile generado por el motor), así
+ *  que dispara generación: el runner ejerce el guardarraíl antes de lanzarlo
+ *  (#295). Consecuencia declarada: con un backend que no sea el falso, la
+ *  PRIMERA mitad —que solo mide fixtures— tampoco corre. La obligación vive en
+ *  el runner y el runner decide por guion, no por mitad. */
+export const gasta = true;
 
 /** Las tres fixtures del selector, por su nombre. Se comprueba que están las
  *  tres: si el selector adelgaza, el guion tiene que enterarse, no medir dos. */
@@ -106,14 +113,6 @@ export default async function (ctx) {
   await ctx.shot("fixtures-medidas");
 
   // ── 2 · Una PARTIDA real: el tile que fabrica el motor en vivo ──────────
-  const sinCreditos = await stackSinCreditos(ctx);
-  ctx.expect(
-    "cliente Y bridge declaran motor falso (`e2e-sin-creditos`)",
-    sinCreditos,
-    "esta parte arranca generación de tile: sin las dos declaraciones no se ejecuta",
-  );
-  if (!sinCreditos) return;
-
   await ctx.page.reload();
   await ctx.waitFor("el título vuelve", () => Boolean(document.getElementById("ts-close")));
   await nuevaPartida(ctx, { gameId: "alta_fantasia" });

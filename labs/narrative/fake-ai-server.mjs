@@ -43,6 +43,29 @@ const SCENE_DELAY_MS = Number(process.env.SCENE_DELAY_MS ?? 0);
 // sheet del modelo responden 500, ejercitando la cancelación de la cola de
 // skins del cliente (character-sprites.ts).
 const SKIN_SPRITE_MODEL = process.env.SKIN_SPRITE_MODEL ?? "paladin";
+
+// ── Contador de rutas DE PAGO ────────────────────────────────────────────
+// Cuáles de estas rutas cuestan dinero en el motor REAL lo sabe este fichero y
+// nadie más, así que la marca vive en la MISMA LÍNEA que la ruta: `dePago(...)`
+// junto al `if` que la atiende. La alternativa —una lista blanca en
+// `qa/run.mjs`— es una segunda copia del contrato de gasto, que es justo la
+// clase de fallo que esta tanda persigue.
+//
+// Lo lee `qa/run.mjs` antes y después de cada guion: si el contador SUBE y el
+// guion no declaró `export const gasta = true`, ese guion sale ⊘ y la corrida
+// no es concluyente (#295). Se cuenta AQUÍ y no con `page.on("request")` porque
+// el gasto del bridge no pasa por la página — la misma razón por la que el
+// guardarraíl tiene dos vías.
+const gastoPorRuta = new Map();
+function dePago(ruta) {
+  gastoPorRuta.set(ruta, (gastoPorRuta.get(ruta) ?? 0) + 1);
+}
+/** Lo servido hasta ahora, en la forma que lee el runner. */
+const gastoServido = () => ({
+  total: [...gastoPorRuta.values()].reduce((a, b) => a + b, 0),
+  rutas: Object.fromEntries(gastoPorRuta),
+});
+
 let fakeDevCacheEnabled = false;
 /** Turnos de diálogo servidos (el texto los numera: se ve el ida y vuelta). */
 let fakeDialogueTurn = 0;
@@ -579,6 +602,9 @@ const server = http.createServer((req, res) => {
       surfaces: surfaceImages.size,
       dialogueTurn: fakeDialogueTurn,
       apiCache: fakeDevCacheEnabled,
+      // Peticiones servidas a rutas que en el motor real COBRAN. Es la red que
+      // caza al guion que dispara generación sin declararlo (#295).
+      gasto: gastoServido(),
     });
   }
   // Toggle del dev API cache (espejo trivial del ai_server real, en memoria):
@@ -692,9 +718,11 @@ const server = http.createServer((req, res) => {
           surfaces: surfaceImages.size,
           dialogueTurn: fakeDialogueTurn,
           apiCache: fakeDevCacheEnabled,
+          gasto: gastoServido(),
         };
         tileByKey.clear();
         surfaceImages.clear();
+        gastoPorRuta.clear();
         fakeDialogueTurn = 0;
         fakeDevCacheEnabled = false;
         console.error(`[fake-ai] /dev/reset: ${JSON.stringify(antes)} → todo a cero`);
@@ -731,6 +759,7 @@ const server = http.createServer((req, res) => {
         });
       }
       if (req.method === "POST" && req.url === "/skin_sprite_sheet") {
+        dePago("/skin_sprite_sheet"); // genera una hoja de sprites: cuesta
         let body = {};
         try {
           body = raw ? JSON.parse(raw) : {};
@@ -767,6 +796,7 @@ const server = http.createServer((req, res) => {
         });
       }
       if (req.method === "POST" && req.url === "/generate_surface_atlas") {
+        dePago("/generate_surface_atlas"); // pinta páginas de atlas: cuesta
         let body = {};
         try {
           body = raw ? JSON.parse(raw) : {};
@@ -825,9 +855,11 @@ const server = http.createServer((req, res) => {
       }
       // Completado fake del pack (batch "aplicar estilo" sin créditos).
       if (req.method === "POST" && /^\/styles\/[A-Za-z0-9_.-]+\/complete$/.test(req.url ?? "")) {
+        dePago("/styles/*/complete"); // completa el pack pintando refs: cuesta
         return send(200, { generated: [], cost_usd: 0, message: "fake: pack ya completo" });
       }
       if (req.method === "POST" && req.url === "/generate_scene") {
+        dePago("/generate_scene"); // una llamada al LLM narrativo: cuesta
         if (SCENE_DELAY_MS > 0) {
           console.error(`[fake-ai] /generate_scene retenido ${SCENE_DELAY_MS} ms (SCENE_DELAY_MS)`);
           await new Promise((r) => setTimeout(r, SCENE_DELAY_MS));

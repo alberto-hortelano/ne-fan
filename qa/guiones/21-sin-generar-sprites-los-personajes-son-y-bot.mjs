@@ -35,7 +35,11 @@
  *  Cero créditos: el `?ai=` apunta al motor falso y las peticiones de skin
  *  ni siquiera llegan a él — las corta este guion.
  */
-import { stackSinCreditos, nuevaPartida, comenzar, esperarRegistro } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, esperarRegistro } from "../lib/sesion.mjs";
+
+/** Esta partida arranca generación (el tile del motor): el runner ejerce el
+ *  guardarraíl de cero créditos antes de lanzarla (#295). */
+export const gasta = true;
 
 /** Los cuatro endpoints del gpu-worker (#199) y el puerto en el que vivía.
  *  Se escriben aquí porque lo que se canda es que NO aparezcan: si alguien
@@ -50,15 +54,6 @@ const HOJA_BASE = /\/sprites\/([^/]+)\//;
 const HOJA_VESTIDA = /\/sprite_sheets\/|\/cache\/skin/;
 
 export default async function (ctx) {
-  // Una sola pregunta, guardada: el guardarraíl sale a la red (dos /health).
-  const sinCreditos = await stackSinCreditos(ctx);
-  ctx.expect(
-    "cliente Y bridge declaran motor falso (`e2e-sin-creditos`)",
-    sinCreditos,
-    "esta partida arranca generación: sin las dos declaraciones no se ejecuta",
-  );
-  if (!sinCreditos) return;
-
   // Se escucha ANTES de navegar y se recarga: el runner ya había abierto la
   // página, y lo que se afirma abajo es que NO hubo cierta petición. Contar
   // desde la mitad haría que ese verde no significara nada.

@@ -44,7 +44,10 @@ import { esperarPartidaEnDisco } from "./saves.mjs";
  *  El fetch va DENTRO de la página a propósito: es el navegador del jugador
  *  quien tiene que poder hablar con esos backends, y así el CORS forma parte
  *  de lo que se comprueba. Devuelve `{ ok, motivo, cliente, bridge }` para que
- *  el guion pueda decir POR QUÉ no corre; `stackSinCreditos` es el booleano. */
+ *  quien llama pueda decir POR QUÉ no corre. Lo ejerce el RUNNER —una vez, por
+ *  guion, antes de abrirlo— y no cada guion: la obligación vivía en un prólogo
+ *  copiado a mano en cuatro ficheros, y el guion que se olvidaba de copiarlo
+ *  mandaba peticiones reales y salía verde (#295). */
 export async function diagnosticoDeCreditos(ctx, timeoutMs = 5000) {
   return ctx.page.evaluate(async (ms) => {
     /** `/health` de un backend, o el motivo por el que no se pudo leer. */
@@ -143,13 +146,6 @@ export async function diagnosticoDeCreditos(ctx, timeoutMs = 5000) {
   }, timeoutMs);
 }
 
-/** El booleano del guardarraíl: `true` solo si las dos vías declaran ser
- *  falsas. Lo que se escribe en un `if` de guion. */
-export async function stackSinCreditos(ctx) {
-  const d = await diagnosticoDeCreditos(ctx);
-  if (!d.ok) ctx.log(`⛔ guardarraíl de gasto: ${d.motivo}`);
-  return d.ok;
-}
 
 /** El título está en pantalla y su botón de partida nueva, pintado.
  *

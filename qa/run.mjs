@@ -21,6 +21,13 @@
  *  runner ejecuta SOLO eso antes de lanzarlo — la precondición de cada guion,
  *  escrita, que hasta ahora no existía en ningún sitio.
  *
+ *  Y declara `export const gasta = true` si puede disparar GENERACIÓN (escena,
+ *  atlas, skins, completar un pack de estilo). Eso obliga al runner a ejercer
+ *  el guardarraíl de cero créditos ANTES de lanzarlo, y si el backend no
+ *  declara ser falso el guion sale `⊘ SIN MEDIR` sin haber mandado ni una
+ *  petición. Olvidarse tampoco acaba en verde: el motor falso cuenta sus rutas
+ *  de pago (`/dev/counters`) y el runner compara antes y después (#295).
+ *
  *  Uso:
  *    node qa/run.mjs                  todos los guiones
  *    node qa/run.mjs colision hud     solo los que casen con esos nombres
@@ -43,6 +50,9 @@
  */
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
+// El guardarraíl de gasto lo ejerce el RUNNER, no cada guion (#295): la
+// obligación de preguntar no puede vivir en un prólogo que se copia a mano.
+import { diagnosticoDeCreditos } from "./lib/sesion.mjs";
 import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // El sondeo y la espera por puerto viven en UN sitio: llegó a haber cinco
 // copias con relojes ya divergidos (500 ms / 800 ms), y la que elige el
@@ -175,7 +185,7 @@ if (OFFSET) console.log(`· bloque de puertos +${OFFSET} (bridge :${PUERTOS.brid
 
 const BASE = opt("--url", URLS.html);
 /** El motor falso al que se apunta la página. NO es el guardarraíl de gasto —
- *  eso lo decide ahora `stackSinCreditos` preguntándole al backend—: es
+ *  eso lo decide el guardarraíl del runner preguntándole al backend—: es
  *  simplemente a dónde se manda al cliente, y sale de la fuente única de
  *  puertos, no de un literal escrito aquí. */
 const MOTOR_FALSO = URLS.fake_ai;
@@ -493,6 +503,28 @@ function limpiarMundos() {
   return borrados;
 }
 
+/** Cuántas peticiones a rutas DE PAGO lleva servidas el motor falso.
+ *
+ *  Es la segunda vía del guardarraíl (#295), y la que cubre el olvido: el
+ *  `gasta` de un guion protege al que se acuerda de declararlo, y esto caza al
+ *  que no. La lista de rutas de pago NO vive aquí —sería una segunda copia del
+ *  contrato de gasto—: la marca está en la misma línea que la ruta, dentro del
+ *  motor falso (`dePago(...)` en labs/narrative/fake-ai-server.ts).
+ *
+ *  `null` cuando no se puede preguntar (una corrida `--url`/`--adoptar` contra
+ *  un backend que no es el fake). Eso NO se colapsa con «no gastó»: se dice una
+ *  vez al arrancar que esta red no está puesta. */
+async function gastoDelFake() {
+  try {
+    const r = await fetch(`${MOTOR_FALSO}/dev/counters`);
+    if (!r.ok) return null;
+    const c = await r.json();
+    return typeof c?.gasto?.total === "number" ? c.gasto : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Reset del estado de PROCESO del motor falso (tiles servidos, atlas
  *  "pintados", turnos de diálogo). Es lo que pide `aisla: ["fake-ai"]`. */
 async function resetFakeAi() {
@@ -710,6 +742,15 @@ async function main() {
     );
   }
   console.log(`· orden: ${ORDEN}`);
+  // ¿Está puesta la red que caza el gasto NO declarado? Se pregunta una vez y
+  // se dice, en vez de que su ausencia pase por «ningún guion gastó».
+  const hayContadorDeGasto = (await gastoDelFake()) !== null;
+  if (!hayContadorDeGasto) {
+    console.log(
+      "· OJO: el motor de esta corrida no publica /dev/counters — la red que caza el gasto\n" +
+        "       SIN DECLARAR no está puesta. Sigue el guardarraíl de los guiones que sí declaran `gasta`.",
+    );
+  }
   const browser = await abrirNavegador(chromium, { headed: HEADED });
 
   const resultados = [];
@@ -740,16 +781,31 @@ async function main() {
       });
       continue;
     }
+    const gastoAntes = await gastoDelFake();
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     const errores = [];
     page.on("pageerror", (e) => errores.push(String(e)));
     const ctx = makeCtx(page, nombre);
     let fatal = null;
+    /** Por qué este guion NO llegó a medir (⊘), o null si midió. */
+    let sinMedir = null;
     const t0 = Date.now();
     try {
       await page.goto(`${BASE}/${URL_QS}`, { waitUntil: "domcontentloaded" });
       await ctx.waitFor("window.__nefan disponible", () => Boolean(window.__nefan));
-      await mod.default(ctx);
+      // ── Guardarraíl de gasto (#295) ──────────────────────────────────────
+      // Aquí y no en el guion: la obligación de preguntar vivía en un prólogo
+      // copiado a mano en cuatro ficheros, así que el guion que se olvidaba de
+      // copiarlo mandaba peticiones reales y salía VERDE. Va DESPUÉS del goto
+      // porque `diagnosticoDeCreditos` hace sus dos `/health` desde la página
+      // —con su CORS, que es parte de lo que se comprueba— y ANTES de
+      // `mod.default`, que es lo que lo vuelve una precondición y no un aviso.
+      if (mod.gasta) {
+        const d = await diagnosticoDeCreditos(ctx);
+        if (!d.ok) sinMedir = `declara \`gasta\` y el guardarraíl se niega: ${d.motivo}`;
+        else ctx.log(`⛨ guardarraíl: ${d.motivo}`);
+      }
+      if (!sinMedir) await mod.default(ctx);
     } catch (err) {
       fatal = err;
       console.log(`    ✘ ERROR: ${err.message}`);
@@ -784,6 +840,28 @@ async function main() {
       stackCaido = { nombre, motivo, caidos };
       console.log(`    ⊘ ${motivo}`);
       resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo });
+      continue;
+    }
+
+    // La otra mitad del guardarraíl: el que NO declaró `gasta` y gastó. No se
+    // puede impedir a posteriori —ya se mandó—, pero sí impedir que acabe en
+    // verde, que es lo que pasaba (7 peticiones reales, una de generación, y
+    // la batería en verde). Se pregunta al motor falso, que cuenta sus rutas
+    // de pago con la marca pegada a la ruta.
+    const gastoDespues = await gastoDelFake();
+    if (!mod.gasta && gastoAntes && gastoDespues && gastoDespues.total > gastoAntes.total) {
+      const delta = {};
+      for (const [ruta, n] of Object.entries(gastoDespues.rutas)) {
+        const d = n - (gastoAntes.rutas[ruta] ?? 0);
+        if (d > 0) delta[ruta] = d;
+      }
+      sinMedir =
+        `disparó generación sin declarar \`export const gasta = true\`: ${JSON.stringify(delta)}. ` +
+        `Con un backend REAL delante, esas peticiones habrían costado dinero y esto habría salido verde.`;
+    }
+    if (sinMedir) {
+      console.log(`    ⊘ ${sinMedir}`);
+      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo: sinMedir });
       continue;
     }
 

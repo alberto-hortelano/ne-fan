@@ -146,7 +146,7 @@ export function duenyosDeLosPuertos() {
   }
   for (const linea of salida.split("\n")) {
     if (!linea.trim()) continue;
-    // LISTEN 0 511 127.0.0.1:8767 0.0.0.0:* users:(("node",pid=123,fd=20))
+    // LISTEN 0 511 127.0.0.1:<puerto> 0.0.0.0:* users:(("node",pid=123,fd=20))
     const campos = linea.trim().split(/\s+/);
     const local = campos[3] ?? "";
     const puerto = Number(local.slice(local.lastIndexOf(":") + 1));

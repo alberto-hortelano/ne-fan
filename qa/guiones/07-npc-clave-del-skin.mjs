@@ -18,7 +18,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { stackSinCreditos, nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
 
 /** Precondición DECLARADA (qa/run.mjs la ejecuta antes de lanzar el guion):
  *   · `mundo`   — el batch de estilo lee el snapshot del mundo y deriva de él
@@ -29,6 +29,13 @@ import { stackSinCreditos, nuevaPartida, comenzar, regenerarMundo, esperarRegist
  *                 anterior el plan anuncia menos de lo que anunciaría en frío,
  *                 y este guion compara lo anunciado con lo emitido. */
 export const aisla = ["mundo", "fake-ai"];
+
+/** Este guion DISPARA GENERACIÓN (hojas de sprites del NPC). El runner ejerce
+ *  el guardarraíl de cero créditos antes de lanzarlo y, si el backend no
+ *  declara ser falso, ni siquiera abre el guion: `⊘ SIN MEDIR`, cero
+ *  peticiones. Antes esto era un prólogo copiado a mano en cuatro guiones, y
+ *  copiar a mano una obligación es no tenerla (#295). */
+export const gasta = true;
 
 const GAME_ID = "alta_fantasia";
 const FIXTURE = "robledo_tile";
@@ -49,16 +56,6 @@ const clave = (b) =>
 const claveDePersonaje = (b) => clave({ model: b.model, angle: b.angle, prompt: b.prompt, style_id: b.style_id, style_role: b.style_role });
 
 export default async function (ctx) {
-  // Una sola pregunta, guardada: el guardarraíl sale a la red (dos /health) y
-  // preguntarlo dos veces era pagar el viaje dos veces para el mismo dato.
-  const sinCreditos = await stackSinCreditos(ctx);
-  ctx.expect(
-    "cliente Y bridge declaran motor falso (`e2e-sin-creditos`)",
-    sinCreditos,
-    "este guion dispara generación: sin las dos declaraciones no se ejecuta",
-  );
-  if (!sinCreditos) return;
-
   const peticiones = [];
   ctx.page.on("request", (r) => {
     if (r.url().includes("/skin_sprite_sheet")) {
