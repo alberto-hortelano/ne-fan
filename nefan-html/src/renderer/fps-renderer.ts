@@ -16,7 +16,7 @@ import type { TilePlan } from "@nefan-core/src/scene/tile-plan.js";
 import { buildLayout, type SurfaceLayout } from "@nefan-core/src/scene/greybox/surfaces.js";
 import type { Edge } from "@nefan-core/src/world-map/types.js";
 import { errors } from "../ui/error-log.js";
-import type { AtlasImage, FpsDebugCollision, FpsDebugView, FpsGl } from "./fps-gl.js";
+import type { AtlasImage, FpsDebugCollision, FpsDebugView, FpsGl, FpsGlDebugState } from "./fps-gl.js";
 import type { AttackTelegraph, Entity, PlayerView } from "./types.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 
@@ -252,15 +252,25 @@ export class FpsRenderer {
     return this.gl?.groundYAt(x, z) ?? 0;
   }
 
-  debugState(): Record<string, unknown> {
-    return {
-      ready: this.gl !== null,
-      surfaces: [...this.surfaces.keys()],
-      telegraph: null,
-      veil: null,
-      pitchDeg: 0,
-      ...(this.gl?.debugState() ?? {}),
-    };
+  /** Lo que la vista sabe de sí misma, para los guiones de QA.
+   *
+   *  La unión está discriminada por `ready` a propósito: hasta que el import
+   *  dinámico de three llega, la fachada NO conoce la cámara, y antes rellenaba
+   *  el hueco con `pitchDeg: 0`, `telegraph: null` y `veil: null` (#308). Un
+   *  cero inventado no es «aún no»: `mirarA` (guiones 10/22/23) lo leía como
+   *  «la cámara ya mira al horizonte» y daba por buena una mirada que nadie
+   *  había aplicado. Ahora esos campos NO EXISTEN mientras `ready` es false, y
+   *  el tipo lo hace inexpresable: quien los quiera tiene que preguntar antes.
+   *
+   *  No se sustituyen por `this.lookPitch`/`this.telegraph`/`this.veilEdge`,
+   *  que sí se conocen: sería otra mentira más fina. `pitchDeg` es «lo que la
+   *  CÁMARA tiene aplicado», y el guion 10 compara justamente esa verdad
+   *  contra la del input; publicar aquí la del input las colapsaría en una. */
+  debugState(): { ready: false; surfaces: string[] } | ({ ready: true; surfaces: string[] } & FpsGlDebugState) {
+    const gl = this.gl;
+    const surfaces = [...this.surfaces.keys()];
+    if (!gl) return { ready: false, surfaces };
+    return { ready: true, surfaces, ...gl.debugState() };
   }
 
   dispose(): void {

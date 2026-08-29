@@ -58,7 +58,10 @@ function mirarA(ctx, grados) {
     `la mirada llega a ${grados}°`,
     ({ g, gpp }) => {
       const f = window.__nefan.fps();
-      if (!f) return null;
+      // Sin módulo GL cargado la vista no conoce el pitch y ya no publica un
+      // cero de relleno (#308): se sigue esperando en vez de encolar una
+      // mirada de NaN píxeles contra un pitch desconocido.
+      if (!f?.ready || typeof f.pitchDeg !== "number") return null;
       const falta = g - f.pitchDeg;
       if (Math.abs(falta) <= 1.5) return { pitchDeg: f.pitchDeg };
       window.__nefan.inputDriver.queueLook(0, -Math.max(-30, Math.min(30, falta)) / gpp);
@@ -98,7 +101,12 @@ async function cargarFixture(ctx, fixture) {
 function esperarSinTelegraph(ctx) {
   return ctx.waitFor(
     "el telegraph anterior se apaga",
-    () => (window.__nefan.fps()?.telegraph == null ? true : null),
+    // Con la vista sin cargar el campo NO existe (#308), que no es lo mismo
+    // que estar apagado: se exige presencia antes de leerlo.
+    () => {
+      const f = window.__nefan.fps();
+      return f?.ready && f.telegraph === null ? true : null;
+    },
     20_000,
   );
 }

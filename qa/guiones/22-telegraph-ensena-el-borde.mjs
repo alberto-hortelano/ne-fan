@@ -66,7 +66,10 @@ function mirarA(ctx, grados) {
     `la mirada llega a ${grados}°`,
     ({ g, gpp }) => {
       const f = window.__nefan.fps();
-      if (!f) return null;
+      // Sin módulo GL cargado la vista no conoce el pitch y ya no publica un
+      // cero de relleno (#308): se sigue esperando en vez de encolar una
+      // mirada de NaN píxeles contra un pitch desconocido.
+      if (!f?.ready || typeof f.pitchDeg !== "number") return null;
       const falta = g - f.pitchDeg;
       if (Math.abs(falta) <= 1.5) return { pitchDeg: f.pitchDeg };
       window.__nefan.inputDriver.queueLook(0, -Math.max(-30, Math.min(30, falta)) / gpp);
@@ -108,7 +111,8 @@ async function enWindup(ctx) {
     "el ataque entra en wind-up y el telegraph está en pantalla",
     () => {
       const f = window.__nefan.fps();
-      return f?.telegraph?.mode === "windup" ? { ...f.telegraph, viewport: f.viewport } : null;
+      if (!f?.ready) return null;
+      return f.telegraph?.mode === "windup" ? { ...f.telegraph, viewport: f.viewport } : null;
     },
     10_000,
   );
@@ -248,7 +252,12 @@ export default async function (ctx) {
   // de que el contorno informa del ataque concreto y no es un adorno fijo.
   await ctx.waitFor(
     "el telegraph del ataque anterior se apaga",
-    () => (window.__nefan.fps()?.telegraph === null ? true : null),
+    // Con la vista sin cargar el campo NO existe (#308), que no es lo mismo
+    // que estar apagado: se exige presencia antes de leerlo.
+    () => {
+      const f = window.__nefan.fps();
+      return f?.ready && f.telegraph === null ? true : null;
+    },
     20_000,
   );
   await ctx.nefan("inputDriver.selectAttack", corto);

@@ -37,7 +37,11 @@ function mirarA(ctx, grados) {
     `la mirada llega a ${grados}°`,
     ({ g, gpp }) => {
       const f = window.__nefan.fps();
-      if (!f) return null;
+      // Hasta que three carga, la vista NO conoce el pitch de la cámara y ya
+      // no se lo inventa (#308): se espera, y si no llega, el timeout dice
+      // "la mirada llega a N°" en vez de mentir. Leerlo ausente encolaría una
+      // mirada de NaN píxeles.
+      if (!f?.ready || typeof f.pitchDeg !== "number") return null;
       const falta = g - f.pitchDeg;
       if (Math.abs(falta) <= 1.5) return { pitchDeg: f.pitchDeg };
       // El ratón hacia abajo (dy>0) baja la mirada: signo invertido. Se
