@@ -1,0 +1,36 @@
+{
+  // Tipos de `labs/` (#309). Es el ENTREGABLE del issue, no su impuesto: pasar
+  // el motor falso a TypeScript no comprueba nada por sí solo —`tsx` borra los
+  // tipos sin mirarlos— y `labs/` no entraba en ningún proyecto TS de este
+  // repositorio (`tsconfig.json` = src|bridge|services, `tsconfig.scripts.json`
+  // = scripts/**, `nefan-html` = src/**; el único paso de CI que nombraba
+  // `labs` era `python -m compileall`). Sin esto, un fake `.ts` seguiría
+  // sirviendo `scene_model` en silencio, que es exactamente lo que pasó
+  // durante seis días.
+  //
+  // Vive en `nefan-core/` y no en la raíz para que los `@types` y las rutas
+  // relativas a `src/` se resuelvan solas, igual que hace `tsconfig.scripts.json`
+  // con `scripts/` (#231a, precedente literal).
+  //
+  // `allowJs` + `checkJs: false`: el fake importa `../../qa/lib/stack.mjs`, que
+  // es JS sin tipar. Sin `allowJs` eso es un TS2307 y no hay proyecto; con
+  // `checkJs` se comprobaría todo `qa/lib/*.mjs`, que es otra tanda (backlog).
+  // Lo que sí se comprueba es lo que el fake HACE con lo que importa.
+  //
+  // `strict` como el build, a propósito. Si un día estorba, la salida no es
+  // relajarlo aquí —eso apaga el candado entero para todo `labs/`— sino un
+  // `any` explícito con motivo en la línea concreta, que se ve en revisión.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true
+  },
+  "include": ["../labs/**/*.ts"]
+}

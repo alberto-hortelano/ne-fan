@@ -358,8 +358,15 @@ start_bridge() {
 
 start_fake_ai() {
     require_port_free "$PORT_FAKE" "fake-ai-server" || return 1
-    ( cd "$PROJECT_DIR" && exec env PORT="$PORT_FAKE" STATE_API="http://127.0.0.1:$PORT_STATE" \
-        node labs/narrative/fake-ai-server.mjs ) \
+    # cwd `nefan-core` y `npx tsx`, EXACTAMENTE como start_bridge (#309): el
+    # motor falso es TypeScript desde que importa los contratos en vez de
+    # copiarlos, y `tsx` solo es dependencia DECLARADA (4.21.0) desde aquí.
+    # Lanzado desde la raíz del repo —que no tiene package.json ni
+    # node_modules— `npx tsx` resuelve un tsx GLOBAL de la máquina
+    # (~/.npm/_npx, 4.23.12 hoy): sería regalarle al banco una dependencia que
+    # nadie declara y una segunda versión de tsx.
+    ( cd "$PROJECT_DIR/nefan-core" && exec env PORT="$PORT_FAKE" STATE_API="http://127.0.0.1:$PORT_STATE" \
+        npx tsx ../labs/narrative/fake-ai-server.ts ) \
         >"$LOG_DIR/nefan-fake-ai.log" 2>&1 &
     track_started $! "$PORT_FAKE"
     wait_for_http_health "http://127.0.0.1:$PORT_FAKE/health" 30 "fake-ai-server" || return 1

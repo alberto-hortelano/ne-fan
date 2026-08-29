@@ -84,7 +84,15 @@ export const PUERTOS = {
 };
 
 /** El bloque entero, ya desplazado. Lo usan los guiones sueltos que hablan con
- *  servicios que la batería no levanta (remote-gen, asset-store, sprite-forge). */
+ *  servicios que la batería no levanta (remote-gen, asset-store, sprite-forge).
+ *
+ *  El `@type` no es decoración: un `Proxy` sobre `{}` se tipa como `{}`, así que
+ *  desde TypeScript —el motor falso, desde #309— cualquier `PUERTOS_TODOS.x` es
+ *  un TS2339. La anotación dice lo que este objeto ES de verdad, y es verdad:
+ *  el `get` contesta un número para cualquier clave del snapshot y LANZA para
+ *  las demás, que es lo que hace `puerto()`.
+ *
+ *  @type {Record<string, number>} */
 export const PUERTOS_TODOS = new Proxy(
   {},
   {

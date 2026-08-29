@@ -36,6 +36,13 @@ jobs:
       # error de tipos en una rama no ejecutada de `scripts/` pasa
       # desapercibido — que es como se coló `r.rule.message` en #229.
       - run: npm run typecheck:scripts
+      # `labs/` tampoco entraba en ningún proyecto TS (#309), y ahí vive el
+      # motor falso con el que se verifica todo lo demás: sirvió durante seis
+      # días un `scene_model` que el contrato había renombrado a
+      # `surface_model` y nadie se enteró, porque `tsx` borra los tipos sin
+      # mirarlos y el cliente lo pintaba como la palabra `undefined`. Este paso
+      # ES el candado; la extensión del fichero no candaba nada.
+      - run: npm run typecheck:labs
       - run: npm run lint
       - run: npm run build
       # UNA sola pasada de la suite. Había dos —`npm test` y luego `npm run

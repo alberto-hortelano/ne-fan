@@ -69,13 +69,13 @@ describe("fronteras arquitectónicas", () => {
           imports: [],
         },
         {
-          path: "labs/narrative/fake-ai-server.mjs",
+          path: "labs/narrative/fake-ai-server.ts",
           text: "// linea\n// otra\nif (body.stage_request) return plato();\n",
           imports: [],
         },
       ]).map((v) => `${v.path}:${v.line}`),
       [
-        "labs/narrative/fake-ai-server.mjs:3",
+        "labs/narrative/fake-ai-server.ts:3",
         "narrative-mcp/server.ts:1",
         "nefan-core/src/narrative/types.ts:2",
       ],

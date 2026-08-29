@@ -19,6 +19,8 @@
  *  aquí un sleep de verdad, ya no lo para ningún candado: que se note.
  */
 import net from "node:net";
+import { execFileSync } from "node:child_process";
+import { readFileSync, readlinkSync } from "node:fs";
 
 /** ¿Hay alguien escuchando? Una conexión que abre y se cierra: no manda nada,
  *  así que vale igual para un WebSocket que para un HTTP.
@@ -111,4 +113,72 @@ export function puertosLibres(n = 1) {
     await Promise.all(abiertos.map((s) => new Promise((r) => s.close(r))));
     return puertos;
   })();
+}
+
+/** Quién escucha en cada puerto, hasta donde el sistema deje verlo.
+ *
+ *  Existe porque «este puerto está ocupado» no basta para decidir de QUIÉN es
+ *  el rojo (#296): en esta máquina trabajan varios agentes y los puertos del
+ *  catálogo son los mismos para todos, así que un ocupante ajeno a mitad de
+ *  corrida se le imputaba al preset que estaba pasando por ahí.
+ *
+ *  Mismo par de herramientas que `start.sh` (`ss` para saber quién escucha,
+ *  `/proc/<pid>` para saber de dónde sale) y la misma frontera: se dice lo que
+ *  se puede LEER, nunca lo que se supone. Un `/proc/<pid>/cwd` ilegible no se
+ *  convierte en «ajeno» aquí —a diferencia de `start.sh`, donde el fallo caro
+ *  es matar lo de otro— porque sprite-forge vive en otro repositorio y su cwd
+ *  es el suyo aunque lo haya arrancado este launcher: llamarle ajeno dejaría el
+ *  preset `play` en «no medido» para siempre. Quien decide es el llamador, con
+ *  esto y con lo que ya sabía.
+ *
+ *  Devuelve un Map puerto → { procesos: [{ pid, comando, cwd, pgid }] }. Un
+ *  puerto sin nadie NO aparece; un puerto cuyo dueño no se deja leer aparece
+ *  con `procesos: []`. */
+export function duenyosDeLosPuertos() {
+  const porPuerto = new Map();
+  let salida;
+  try {
+    salida = execFileSync("ss", ["-H", "-ltnp"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    // Sin `ss` no se sabe de quién es ningún puerto. Es una respuesta legítima
+    // ("no lo sé"), no un error: el llamador ya tiene el sondeo TCP.
+    return porPuerto;
+  }
+  for (const linea of salida.split("\n")) {
+    if (!linea.trim()) continue;
+    // LISTEN 0 511 127.0.0.1:<puerto> 0.0.0.0:* users:(("node",pid=123,fd=20))
+    const campos = linea.trim().split(/\s+/);
+    const local = campos[3] ?? "";
+    const puerto = Number(local.slice(local.lastIndexOf(":") + 1));
+    if (!Number.isInteger(puerto)) continue;
+    const pids = [...linea.matchAll(/pid=(\d+)/g)].map((m) => Number(m[1]));
+    const procesos = pids.map((pid) => ({ pid, ...procInfo(pid) }));
+    const previo = porPuerto.get(puerto);
+    if (previo) previo.procesos.push(...procesos);
+    else porPuerto.set(puerto, { procesos });
+  }
+  return porPuerto;
+}
+
+/** Lo que `/proc/<pid>` deja leer de un proceso: comando, cwd y grupo. Cada
+ *  campo por separado, porque cada uno puede faltar por su cuenta. */
+function procInfo(pid) {
+  let comando = null;
+  let cwd = null;
+  let pgid = null;
+  try {
+    comando = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ").slice(0, 80);
+  } catch { /* el proceso murió entre el `ss` y esto, o no es nuestro */ }
+  try {
+    cwd = readlinkSync(`/proc/${pid}/cwd`);
+  } catch { /* cwd ilegible: no se sabe de dónde sale, y eso NO es «ajeno» */ }
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    // El `comm` va entre paréntesis y puede llevar espacios: se corta por el
+    // ÚLTIMO ')'. Tras él: state(3) ppid(4) pgrp(5).
+    const tras = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    const g = Number(tras[2]);
+    if (Number.isInteger(g)) pgid = g;
+  } catch { /* idem */ }
+  return { comando, cwd, pgid };
 }

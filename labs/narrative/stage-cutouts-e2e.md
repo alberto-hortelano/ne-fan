@@ -11,7 +11,7 @@ fake-ai-server — cero créditos.
 bridge con `NEFAN_AI_SERVER` + HTML) e imprime la URL. Manual:
 
 ```bash
-node labs/narrative/fake-ai-server.mjs &                                  # :18765
+(cd nefan-core && npx tsx ../labs/narrative/fake-ai-server.ts) &          # :18765
 cd nefan-core && NEFAN_AI_SERVER=http://127.0.0.1:18765 npx tsx bridge/ws-server.ts &  # :9877 (el sim del movimiento)
 cd nefan-html && npm run dev &                                           # :3000
 ```

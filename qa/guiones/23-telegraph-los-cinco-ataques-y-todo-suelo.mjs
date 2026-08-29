@@ -43,6 +43,14 @@
  *  el watch del inodo). Reinicia el cliente antes de creerte un antes/después.
  */
 
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor =
+  "cierra el título y carga las tres fixtures del selector; nunca arranca " +
+  "partida";
+
 /** ¿Este punto de pantalla está dentro del cuadro? El 15 % inferior lo tapa
  *  la barra de acciones, así que no cuenta como "visible" (mismo criterio
  *  que el guion 22). */
@@ -58,7 +66,10 @@ function mirarA(ctx, grados) {
     `la mirada llega a ${grados}°`,
     ({ g, gpp }) => {
       const f = window.__nefan.fps();
-      if (!f) return null;
+      // Sin módulo GL cargado la vista no conoce el pitch y ya no publica un
+      // cero de relleno (#308): se sigue esperando en vez de encolar una
+      // mirada de NaN píxeles contra un pitch desconocido.
+      if (!f?.ready || typeof f.pitchDeg !== "number") return null;
       const falta = g - f.pitchDeg;
       if (Math.abs(falta) <= 1.5) return { pitchDeg: f.pitchDeg };
       window.__nefan.inputDriver.queueLook(0, -Math.max(-30, Math.min(30, falta)) / gpp);
@@ -98,7 +109,12 @@ async function cargarFixture(ctx, fixture) {
 function esperarSinTelegraph(ctx) {
   return ctx.waitFor(
     "el telegraph anterior se apaga",
-    () => (window.__nefan.fps()?.telegraph == null ? true : null),
+    // Con la vista sin cargar el campo NO existe (#308), que no es lo mismo
+    // que estar apagado: se exige presencia antes de leerlo.
+    () => {
+      const f = window.__nefan.fps();
+      return f?.ready && f.telegraph === null ? true : null;
+    },
     20_000,
   );
 }

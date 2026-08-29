@@ -2086,9 +2086,11 @@ sharedBridge.on("render_mode_changed", (msg) => {
  *  tile o el prompt. */
 function listFakeItems(): FakeItem[] {
   const items: FakeItem[] = [];
-  const textured = new Set(
-    (fpsRenderer.debugState() as { textured?: string[] }).textured ?? [],
-  );
+  // Sin módulo GL cargado no hay tile texturado que descontar: la unión
+  // discriminada lo dice en el tipo, así que ya no hace falta el cast que
+  // fingía que el campo podía estar ahí.
+  const st = fpsRenderer.debugState();
+  const textured = new Set(st.ready ? st.textured : []);
   for (const t of tileStore.entries.values()) {
     if (t.tx === undefined || textured.has(t.key) || !fpsRenderer.getTileSurfaces(t.key)) continue;
     items.push({

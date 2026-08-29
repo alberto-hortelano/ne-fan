@@ -31,6 +31,14 @@
  */
 import { esperarListaDeSaves, esperarTituloListo } from "../lib/sesion.mjs";
 
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor =
+  "cierra el título y ejerce el pointer lock del navegador; no pide nada al " +
+  "motor";
+
 /** Cuántas veces se pulsa el lienzo. Más de una porque la mitad del criterio
  *  es que el aviso NO se repita: con una sola pulsación, «avisa una vez» y
  *  «avisa por click» son el mismo verde. */

@@ -46,7 +46,7 @@
  *     con el umbral en 0 pasaría siempre.
  */
 
-import { stackSinCreditos, nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
  *   · `saves` — la partida arranca en el tile de entrada, no donde la dejó
@@ -106,14 +106,6 @@ export default async function (ctx) {
   await ctx.shot("fixtures-medidas");
 
   // ── 2 · Una PARTIDA real: el tile que fabrica el motor en vivo ──────────
-  const sinCreditos = await stackSinCreditos(ctx);
-  ctx.expect(
-    "cliente Y bridge declaran motor falso (`e2e-sin-creditos`)",
-    sinCreditos,
-    "esta parte arranca generación de tile: sin las dos declaraciones no se ejecuta",
-  );
-  if (!sinCreditos) return;
-
   await ctx.page.reload();
   await ctx.waitFor("el título vuelve", () => Boolean(document.getElementById("ts-close")));
   await nuevaPartida(ctx, { gameId: "alta_fantasia" });

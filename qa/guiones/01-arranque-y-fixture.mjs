@@ -6,6 +6,12 @@
  *  verificación lo mostraba tapado, pero se ocultó el overlay para
  *  fotografiar en vez de leerlo como bug. Aquí el título se cierra por su
  *  botón, como haría una persona; nada de display:none. */
+
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor = "cierra el título y carga una fixture del selector; nunca arranca partida";
 export default async function (ctx) {
   await ctx.waitFor("el título aparece al arrancar", () => {
     const btn = document.getElementById("ts-close");

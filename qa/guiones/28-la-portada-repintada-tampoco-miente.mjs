@@ -25,6 +25,14 @@
  */
 import { abrirSelectorDeMundos } from "../lib/sesion.mjs";
 
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor =
+  "solo pulsa tarjetas y cambia el desplegable del selector; las portadas son " +
+  "ficheros commiteados";
+
 const IMAGENES_DE_ESTILO = /\/styles\/[^/]+\/[^/]+\.(jpg|jpeg|png|webp)$/;
 
 /** Estado de UNA tarjeta: si le queda imagen, qué dice su marcador y qué

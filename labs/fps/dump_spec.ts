@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import { buildTileGreyboxSpec } from "../../nefan-core/src/scene/blueprint/greybox.js";
 import { parseVolumes } from "../../nefan-core/src/scene/blueprint/volumes.js";
-import { parseGround } from "../../nefan-core/src/scene/blueprint/ground.js";
+import { parseGround, type GroundFeature } from "../../nefan-core/src/scene/blueprint/ground.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [planArg, outDirArg, tileIdArg] = process.argv.slice(2);
@@ -38,14 +38,19 @@ if (!parsed.ok) {
 for (const v of parsed.volumes) {
   if (v.type === "building" && v.cutaway) delete (v as { cutaway?: boolean }).cutaway;
 }
-let ground;
+let ground: GroundFeature[] | undefined;
 if (plan.ground !== undefined) {
   const g = parseGround(plan.ground);
   if (!g.ok) {
     console.error("ground inválido:", g.error);
     process.exit(1);
   }
-  ground = g.ground;
+  // `g.features`, no `g.ground`: ese campo NO existe en `ParseGroundResult` y
+  // leerlo daba `undefined`, así que este bench llevaba quién sabe cuánto
+  // volcando specs SIN el arte plano del suelo, en silencio. Lo encontró el
+  // typecheck de `labs/` el primer día que existió (#309), que es exactamente
+  // para lo que se cableó.
+  ground = g.features;
 }
 const spec = buildTileGreyboxSpec(
   { ground, volumes: parsed.volumes, biome: plan.biome ?? "grass" },

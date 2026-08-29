@@ -21,6 +21,16 @@
  *  runner ejecuta SOLO eso antes de lanzarlo — la precondición de cada guion,
  *  escrita, que hasta ahora no existía en ningún sitio.
  *
+ *  El guardarraíl de cero créditos se ejerce para TODOS los guiones, y el que
+ *  no toque el motor lo declara con `export const sinMotor = "<motivo>"`. El
+ *  defecto es el caro a propósito: olvidarse de declarar deja el guion GATEADO
+ *  —`⊘ SIN MEDIR` y cero peticiones DESDE EL GUION si el backend no declara ser
+ *  falso—, no suelto contra un motor que cobra (#295). Cero desde el guion, no
+ *  cero a secas: el gate manda sus dos `/health` y la página ya ha cargado
+ *  (`/dev/status` entre otras). Ninguna de esas es de pago, que es lo que se
+ *  garantiza; el cuerpo del guion, que es quien pediría generación, no llega a
+ *  ejecutarse.
+ *
  *  Uso:
  *    node qa/run.mjs                  todos los guiones
  *    node qa/run.mjs colision hud     solo los que casen con esos nombres
@@ -43,6 +53,9 @@
  */
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
+// El guardarraíl de gasto lo ejerce el RUNNER, no cada guion (#295): la
+// obligación de preguntar no puede vivir en un prólogo que se copia a mano.
+import { diagnosticoDeCreditos } from "./lib/sesion.mjs";
 import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // El sondeo y la espera por puerto viven en UN sitio: llegó a haber cinco
 // copias con relojes ya divergidos (500 ms / 800 ms), y la que elige el
@@ -175,7 +188,7 @@ if (OFFSET) console.log(`· bloque de puertos +${OFFSET} (bridge :${PUERTOS.brid
 
 const BASE = opt("--url", URLS.html);
 /** El motor falso al que se apunta la página. NO es el guardarraíl de gasto —
- *  eso lo decide ahora `stackSinCreditos` preguntándole al backend—: es
+ *  eso lo decide el guardarraíl del runner preguntándole al backend—: es
  *  simplemente a dónde se manda al cliente, y sale de la fuente única de
  *  puertos, no de un literal escrito aquí. */
 const MOTOR_FALSO = URLS.fake_ai;
@@ -493,6 +506,32 @@ function limpiarMundos() {
   return borrados;
 }
 
+/** Cuántas peticiones a rutas DE PAGO lleva servidas el motor falso.
+ *
+ *  Es la red PEQUEÑA del guardarraíl (#295), y conviene no venderla por más de
+ *  lo que es: caza al que declara `sinMotor` y sí gasta — o sea, al que se
+ *  equivoca al declarar. Del que se OLVIDA de declarar no se ocupa esto, sino
+ *  el gate de `main()`, que se ejerce por defecto y no depende de nadie; por
+ *  eso es el gate quien da la garantía y esto solo la complementa.
+ *
+ *  La lista de rutas de pago NO vive aquí —sería una segunda copia del contrato
+ *  de gasto—: la marca está en la misma línea que la ruta, dentro del motor
+ *  falso (`dePago(...)` en labs/narrative/fake-ai-server.ts).
+ *
+ *  `null` cuando no se puede preguntar (una corrida `--url`/`--adoptar` contra
+ *  un backend que no es el fake). Eso NO se colapsa con «no gastó»: se dice una
+ *  vez al arrancar que esta red no está puesta. */
+async function gastoDelFake() {
+  try {
+    const r = await fetch(`${MOTOR_FALSO}/dev/counters`);
+    if (!r.ok) return null;
+    const c = await r.json();
+    return typeof c?.gasto?.total === "number" ? c.gasto : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Reset del estado de PROCESO del motor falso (tiles servidos, atlas
  *  "pintados", turnos de diálogo). Es lo que pide `aisla: ["fake-ai"]`. */
 async function resetFakeAi() {
@@ -540,6 +579,30 @@ async function aislar(nombre, aisla, propio) {
     }
   }
   return hechos;
+}
+
+/** ¿Está este guion EXENTO del guardarraíl de gasto?
+ *
+ *  Solo si declara `export const sinMotor = "<motivo>"`, y el motivo es parte
+ *  de la declaración, no un adorno: un booleano se pone a `true` sin pensar y
+ *  se lee dos veces («¿esto significa que sí o que no?»), mientras que una
+ *  frase hay que escribirla, se ve en la revisión del diff y dice de qué CLASE
+ *  de guion se trata — uno que no le pide nada al motor. Cualquier otra cosa
+ *  (un `true` pelado, una cadena vacía) es un error con nombre y no un
+ *  silencioso «pues no lo eximo»: el desenlace de una declaración mal escrita
+ *  no puede ser el caro.
+ *
+ *  Ausente = NO exento, que es el defecto y es deliberado: el descuido tiene
+ *  que caer del lado que no cuesta dinero. */
+function exentoDeMotor(nombre, sinMotor) {
+  if (sinMotor === undefined) return false;
+  if (typeof sinMotor !== "string" || sinMotor.trim() === "") {
+    throw new Error(
+      `${nombre}: \`export const sinMotor\` tiene que ser el MOTIVO por el que este guion no le ` +
+        `pide nada al motor (una frase), y llegó ${JSON.stringify(sinMotor)}.`,
+    );
+  }
+  return true;
 }
 
 /** Cuánto tarda el título en tener su lista de partidas — el `list_sessions`
@@ -710,6 +773,17 @@ async function main() {
     );
   }
   console.log(`· orden: ${ORDEN}`);
+  // ¿Está puesta la red que caza al que declara `sinMotor` y gasta? Se pregunta
+  // una vez y se dice, en vez de que su ausencia pase por «ninguno gastó». Que
+  // esta red pueda no existir es justo la razón por la que NO puede ser la
+  // protección principal: la principal es el gate, que no depende de nadie.
+  const hayContadorDeGasto = (await gastoDelFake()) !== null;
+  if (!hayContadorDeGasto) {
+    console.log(
+      "· OJO: el motor de esta corrida no publica /dev/counters — la red que caza a un\n" +
+        "       `sinMotor` que sí gasta no está puesta. El guardarraíl de los demás sigue entero.",
+    );
+  }
   const browser = await abrirNavegador(chromium, { headed: HEADED });
 
   const resultados = [];
@@ -725,7 +799,10 @@ async function main() {
     console.log(`\n▶ ${nombre}`);
     const mod = await import(pathToFileURL(join(here, "guiones", file)).href);
     // Precondición DECLARADA del guion, ejecutada antes de abrir su página.
+    let exento = false;
     try {
+      exento = exentoDeMotor(nombre, mod.sinMotor);
+      if (exento) console.log(`    ⛨ sin motor: ${mod.sinMotor}`);
       const hechos = await aislar(nombre, mod.aisla, Boolean(stack));
       if (hechos.length) console.log(`    ⟲ aisla: ${hechos.join(" · ")}`);
     } catch (err) {
@@ -740,16 +817,44 @@ async function main() {
       });
       continue;
     }
+    const gastoAntes = await gastoDelFake();
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     const errores = [];
     page.on("pageerror", (e) => errores.push(String(e)));
     const ctx = makeCtx(page, nombre);
     let fatal = null;
+    /** Por qué este guion NO llegó a medir (⊘), o null si midió. */
+    let sinMedir = null;
     const t0 = Date.now();
     try {
       await page.goto(`${BASE}/${URL_QS}`, { waitUntil: "domcontentloaded" });
       await ctx.waitFor("window.__nefan disponible", () => Boolean(window.__nefan));
-      await mod.default(ctx);
+      // ── Guardarraíl de gasto (#295) ──────────────────────────────────────
+      // Aquí y no en el guion: la obligación de preguntar vivía en un prólogo
+      // copiado a mano en cuatro ficheros, así que el guion que se olvidaba de
+      // copiarlo mandaba peticiones reales y salía VERDE. Va DESPUÉS del goto
+      // porque `diagnosticoDeCreditos` hace sus dos `/health` desde la página
+      // —con su CORS, que es parte de lo que se comprueba— y ANTES de
+      // `mod.default`, que es lo que lo vuelve una precondición y no un aviso.
+      //
+      // Y se ejerce POR DEFECTO, que es la mitad que faltaba. Con la marca al
+      // revés —que el guion declarase que gasta, y el runner solo gateara a
+      // ese— olvidarse la dejaba correr SUELTA contra un motor que cobra, y la
+      // única red era un contador que
+      // vive en el motor falso — o sea, que contra el backend caro no existe.
+      // Invertido, olvidarse deja el guion GATEADO: el desenlace del descuido
+      // es un ⊘ y cero peticiones DESDE EL GUION, no una factura. Cero desde el
+      // guion y no cero a secas, que es lo que de verdad ocurre: por la red han
+      // salido ya la carga de la página y los dos `/health` de aquí abajo,
+      // ninguna de pago. Lo que no llega a ejecutarse es `mod.default`, que es
+      // quien pediría generación. El estado malo deja de ser expresable en vez
+      // de quedar prohibido y vigilado.
+      if (!exento) {
+        const d = await diagnosticoDeCreditos(ctx);
+        if (!d.ok) sinMedir = `el guardarraíl de gasto se niega: ${d.motivo}`;
+        else ctx.log(`⛨ guardarraíl: ${d.motivo}`);
+      }
+      if (!sinMedir) await mod.default(ctx);
     } catch (err) {
       fatal = err;
       console.log(`    ✘ ERROR: ${err.message}`);
@@ -784,6 +889,29 @@ async function main() {
       stackCaido = { nombre, motivo, caidos };
       console.log(`    ⊘ ${motivo}`);
       resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo });
+      continue;
+    }
+
+    // La red pequeña, y conviene no venderla por más de lo que es: caza al que
+    // DECLARA `sinMotor` y sí gasta — o sea, al que se equivoca al declarar, no
+    // al que se olvida. Del que se olvida ya se ocupa el gate de arriba, que es
+    // la protección de verdad porque no depende de nadie; esto vive en el motor
+    // falso y contra el backend caro no existe. Sirve igual: no puede impedir
+    // el gasto a posteriori, pero sí impedir que acabe en verde.
+    const gastoDespues = await gastoDelFake();
+    if (exento && gastoAntes && gastoDespues && gastoDespues.total > gastoAntes.total) {
+      const delta = {};
+      for (const [ruta, n] of Object.entries(gastoDespues.rutas)) {
+        const d = n - (gastoAntes.rutas[ruta] ?? 0);
+        if (d > 0) delta[ruta] = d;
+      }
+      sinMedir =
+        `declara \`sinMotor\` («${mod.sinMotor}») y disparó generación: ${JSON.stringify(delta)}. ` +
+        `La declaración es falsa: quítala y el runner lo gateará como a los demás.`;
+    }
+    if (sinMedir) {
+      console.log(`    ⊘ ${sinMedir}`);
+      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo: sinMedir });
       continue;
     }
 

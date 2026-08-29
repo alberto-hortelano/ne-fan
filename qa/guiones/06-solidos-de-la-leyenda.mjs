@@ -24,6 +24,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor = "cierra el título y carga fixtures del selector; nunca arranca partida";
+
 const FIXTURE = "robledo_tile";
 const FIXTURE_EN_DISCO = join(
   dirname(fileURLToPath(import.meta.url)),

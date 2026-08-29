@@ -12,6 +12,21 @@
 //   - cualquier otra cosa  → 422, igual que el gate del contrato: la escena
 //     "suelta" y el plató proscenio se retiraron.
 //
+// ── POR QUÉ ESTO ES TypeScript (#309) ────────────────────────────────────
+// Este fichero sirvió durante SEIS DÍAS un `scene_model` que el contrato había
+// renombrado a `surface_model`, y nadie se enteró porque el cliente lo pintaba
+// como la palabra `undefined` en la barra de dev: una cadena en pantalla no es
+// un error. La extensión por sí sola no arregla nada —`tsx` borra los tipos sin
+// mirarlos—: el candado es `npm run typecheck:labs` (dentro de `npm run verify`
+// y en CI), que es lo que #309 compra de verdad. Lo que este fichero recibe y
+// lo que emite se declara con los contratos de nefan-core, y una divergencia
+// deja de compilar.
+//
+// Se arranca con `npx tsx` y cwd `nefan-core` (`start_fake_ai` en start.sh),
+// donde tsx es devDependency declarada (4.21.0). Desde la raíz del repo —que no
+// tiene package.json ni node_modules— `npx tsx` resolvería un tsx GLOBAL de la
+// máquina, que es regalarle al banco una dependencia que nadie declara.
+//
 // Env:
 //   PORT          puerto HTTP (default: ports.fake_ai del runtime config)
 //   STATE_API     State API del bridge (default: ports.state_api)
@@ -19,9 +34,67 @@
 import http from "node:http";
 import zlib from "node:zlib";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
-import { PUERTOS_TODOS } from "../../qa/lib/stack.mjs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
+import { PUERTOS_TODOS } from "../../qa/lib/stack.mjs";
+// La ruta GET /styles/{id}/{file} NO se copia: se IMPORTA del asset-store
+// (#280). Antes vivía aquí escrita a mano —con su propio `SAFE_ID`, su tabla de
+// MIME y su `extname` reinventado— y se desvió del original en cuatro casos el
+// mismo día en que alguien midió la paridad. `blob-store` y `http-wire` no
+// arrastran `node:sqlite` ni el manifest: eso cuelga de `http-server.ts`, del
+// que este fichero NO importa nada. Es lo que lo mantiene siendo un servidor
+// sin créditos.
+import { readStyleFile } from "../../nefan-core/services/asset-store/blob-store.js";
+import {
+  matchStylesRoute,
+  parseRequestPath,
+  writeBlob,
+} from "../../nefan-core/services/asset-store/http-wire.js";
+import type { AssetPinRequest, AssetPinResponse } from "../../nefan-core/src/contracts/asset-store.js";
+import type {
+  DevStatus,
+  GenerateSurfaceAtlasRequest,
+  GenerateSurfaceAtlasResponse,
+  SkinSpriteSheetRequest,
+  SkinSpriteSheetResponse,
+  StyleCompleteResponse,
+  StylesMissingResponse,
+  SurfaceCellResult,
+} from "../../nefan-core/src/contracts/remote-gen.js";
+import type {
+  DevelopWorldRequest,
+  DevelopWorldResponse,
+  NarrativeHealthResponse,
+  NotifySessionRequest,
+  NotifySessionResponse,
+  ReportPlayerChoiceRequest,
+  ReportPlayerChoiceResponse,
+} from "../../nefan-core/src/contracts/narrative-llm.js";
+import type { LlmContext } from "../../nefan-core/src/narrative/types.js";
+
+/** Lo que el motor pide cuando pide un TILE, tal como lo declara el contexto
+ *  del LLM. No es una copia: es el mismo tipo que construye el bridge. */
+type GenerateTile = NonNullable<LlmContext["generate_tile"]>;
+type Neighbor = NonNullable<GenerateTile["neighbors"]["north"]>;
+type Edge = "north" | "south" | "east" | "west";
+
+/** El cuerpo JSON de una petición, leído CON EL CONTRATO del endpoint delante.
+ *
+ *  El cast no valida nada en runtime —para eso está el zod del motor real— y no
+ *  pretende: lo que compra es que LEER un campo que el contrato no tiene deje
+ *  de compilar. Así se cazó que este fichero leía `chosenText`/`freeText`
+ *  cuando el wire manda `chosen_text`/`free_text` (`ai-client.ts:123`), o sea
+ *  que llevaba quién sabe cuánto ecoando la cadena vacía en el diálogo del
+ *  bench. `null` = el body no era JSON. */
+function leerBody<T>(raw: string): T | null {
+  if (!raw) return {} as T;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
 
 /** Los puertos salen de la fuente única del repo (`nefan-core/src/config.ts` →
  *  `data/runtime_config.json`) a través del ÚNICO lector que hay en JS, que
@@ -43,6 +116,38 @@ const SCENE_DELAY_MS = Number(process.env.SCENE_DELAY_MS ?? 0);
 // sheet del modelo responden 500, ejercitando la cancelación de la cola de
 // skins del cliente (character-sprites.ts).
 const SKIN_SPRITE_MODEL = process.env.SKIN_SPRITE_MODEL ?? "paladin";
+
+// ── Contador de rutas DE PAGO ────────────────────────────────────────────
+// Cuáles de estas rutas cuestan dinero en el motor REAL lo sabe este fichero y
+// nadie más, así que la marca vive en la MISMA LÍNEA que la ruta: `dePago(...)`
+// junto al `if` que la atiende. La alternativa —una lista blanca en
+// `qa/run.mjs`— es una segunda copia del contrato de gasto, que es justo la
+// clase de fallo que esta tanda persigue.
+//
+// Lo lee `qa/run.mjs` antes y después de cada guion: si el contador SUBE en uno
+// que se declaró EXENTO del guardarraíl (`export const sinMotor`), ese guion
+// sale ⊘ y la corrida no es concluyente (#295). Al que se olvida de declarar no
+// lo caza esto: lo gatea el runner por defecto, que es donde está la garantía.
+// Se cuenta AQUÍ y no con `page.on("request")` porque el gasto del bridge no
+// pasa por la página — la misma razón por la que el guardarraíl tiene dos vías.
+//
+// Lo que se cuenta es lo que HABRÍA COSTADO, no lo que tocó la ruta: un
+// `/generate_surface_atlas` con `resolve_only` o con todas las celdas en caché
+// vale $0 por diseño en el server real (`cost_usd: 0`) y es justo el camino que
+// el cliente usa para NO gastar. Contarlo señalaría como gastadores a guiones
+// que no gastan nada, y un guardarraíl que se dispara de más se acaba
+// desactivando. Por eso el `dePago(...)` de esa ruta va DETRÁS de saber si
+// pintó, y no en el `if` que la atiende.
+const gastoPorRuta = new Map<string, number>();
+function dePago(ruta: string): void {
+  gastoPorRuta.set(ruta, (gastoPorRuta.get(ruta) ?? 0) + 1);
+}
+/** Lo servido hasta ahora, en la forma que lee el runner. */
+const gastoServido = () => ({
+  total: [...gastoPorRuta.values()].reduce((a, b) => a + b, 0),
+  rutas: Object.fromEntries(gastoPorRuta),
+});
+
 let fakeDevCacheEnabled = false;
 /** Turnos de diálogo servidos (el texto los numera: se ve el ida y vuelta). */
 let fakeDialogueTurn = 0;
@@ -51,35 +156,15 @@ const SPRITES_DIR = fileURLToPath(new URL("../../nefan-html/public/sprites/", im
 // del repo, no generación: aquí no se paga ni se inventa nada — se sirve lo
 // mismo que serviría el asset-store con GET /styles/{id}/{file}.
 const STYLES_DIR = fileURLToPath(new URL("../../nefan-core/data/styles/", import.meta.url));
-/** `path.extname` sin importar `node:path`: la extensión en minúsculas, y ""
- *  cuando no hay (incluido el fichero-punto `.jpg`, que para `extname` NO
- *  tiene extensión). El original llama a `extname`; escribirlo «parecido» era
- *  otra vía de desvío, así que se escribe la regla entera. */
-function extension(file) {
-  const base = file.slice(file.lastIndexOf("/") + 1);
-  const i = base.lastIndexOf(".");
-  return i > 0 ? base.slice(i).toLowerCase() : "";
-}
-
-/** Mismos tipos y mismo filtro de nombre que `readStyleFile` / `SAFE_ID`. */
-const STYLE_FILE_MIME = {
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".webp": "image/webp",
-  ".json": "application/json",
-};
-const SAFE_ID = /^[A-Za-z0-9_.-]+$/;
-
 // ── Tiles del plano continuo ─────────────────────────────────────────────
 // TILE_DELAY_MS: retardo por tile (simula el motor real). TILE_MODE=error →
 // HTTP 500 en tiles no-bootstrap (test de reintento del cliente).
 const TILE_DELAY_MS = Number(process.env.TILE_DELAY_MS ?? 0);
 const TILE_MODE = process.env.TILE_MODE ?? "";
-const tileByKey = new Map();
+const tileByKey = new Map<string, ReturnType<typeof makeTile>>();
 
 /** Punto de una feature sobre la línea del borde (celdas, floats ok). */
-function edgePoint(edge, at) {
+function edgePoint(edge: Edge, at: number): [number, number] {
   switch (edge) {
     case "west": return [0, at];
     case "east": return [128, at];
@@ -87,7 +172,7 @@ function edgePoint(edge, at) {
     case "south": return [at, 128];
   }
 }
-const OPP = { west: "east", east: "west", north: "south", south: "north" };
+const OPP: Record<Edge, Edge> = { west: "east", east: "west", north: "south", south: "north" };
 
 /** Plan del bootstrap: arte plano del suelo (camino que copia la feature,
  *  estanque al oeste) + volúmenes tipados (taberna cutaway
@@ -300,7 +385,7 @@ function bootstrapTile() {
 /** Volúmenes del lugar anclado a un tile (generate_tile.place): una casa
  *  grande con puerta al sur y dos anexos, para que se VEA que el tile ES ese
  *  lugar y no campo abierto. */
-function placeVolumes(place) {
+function placeVolumes(place: NonNullable<GenerateTile["place"]>) {
   return [
     {
       id: `${place.id}_principal`,
@@ -322,10 +407,10 @@ function placeVolumes(place) {
  *  un camino oeste↔este por la fila 64. Si el tile lleva un `place` anclado
  *  (viaje desde el panel «Salidas»), se construye ESE lugar.
  *  Determinista y memoizado. */
-function makeTile(gt) {
-  const { tx, ty, neighbors, place } = gt ?? {};
-  const ground = [];
-  for (const [edge, n] of Object.entries(neighbors ?? {})) {
+function makeTile(gt: GenerateTile) {
+  const { tx, ty, neighbors, place } = gt;
+  const ground: Record<string, unknown>[] = [];
+  for (const [edge, n] of Object.entries(neighbors ?? {}) as [Edge, Neighbor][]) {
     for (const c of n.crossings ?? []) {
       const w = Math.max(2, c.width ?? 2);
       const i = ground.length;
@@ -382,7 +467,7 @@ function makeTile(gt) {
   };
 }
 
-async function handleGenerateTile(gt) {
+async function handleGenerateTile(gt: GenerateTile) {
   if (TILE_DELAY_MS > 0 && !gt?.bootstrap) await new Promise((r) => setTimeout(r, TILE_DELAY_MS));
   if (TILE_MODE === "error" && !gt?.bootstrap) {
     throw new Error("fake-ai: TILE_MODE=error — el motor rechazó el tile");
@@ -419,7 +504,7 @@ async function handleGenerateTile(gt) {
   return tileByKey.get(key);
 }
 
-async function statePost(path, body) {
+async function statePost(path: string, body: unknown) {
   const res = await fetch(`${STATE_API}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -434,10 +519,10 @@ async function statePost(path, body) {
 // ── Atlas de superficies fps: celdas como PNG de damero del color base ──
 // (plumbing E2E sin créditos: identidad por desc+estilo, cached en la 2ª
 // petición, servidas por /cache/surface/{hash} como el asset-store real).
-const surfaceImages = new Map();
+const surfaceImages = new Map<string, Buffer>();
 
 /** PNG RGB válido generado a pelo (zlib): damero 2 tonos del color base. */
-function checkerPng(hexColor, size = 64, cells = 8) {
+function checkerPng(hexColor: string, size = 64, cells = 8): Buffer {
   const r = parseInt(hexColor.slice(1, 3), 16);
   const g = parseInt(hexColor.slice(3, 5), 16);
   const b = parseInt(hexColor.slice(5, 7), 16);
@@ -454,11 +539,11 @@ function checkerPng(hexColor, size = 64, cells = 8) {
       raw[o] = cr; raw[o + 1] = cg; raw[o + 2] = cb;
     }
   }
-  const chunk = (type, data) => {
+  const chunk = (type: string, data: Buffer) => {
     const len = Buffer.alloc(4);
     len.writeUInt32BE(data.length);
     const body = Buffer.concat([Buffer.from(type), data]);
-    const crcTable = [];
+    const crcTable: number[] = [];
     for (let n = 0; n < 256; n++) {
       let c = n;
       for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
@@ -490,7 +575,7 @@ const server = http.createServer((req, res) => {
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
-  const send = (status, body) => {
+  const send = (status: number, body: unknown) => {
     res.writeHead(status, { "Content-Type": "application/json", ...cors });
     res.end(JSON.stringify(body));
   };
@@ -504,7 +589,7 @@ const server = http.createServer((req, res) => {
   // esto de sí mismo. Contrato: NarrativeHealthResponse
   // (nefan-core/src/contracts/narrative-llm.ts). NO se toca sin leerlo.
   if (req.method === "GET" && req.url === "/health") {
-    return send(200, { status: "ready", fake: true });
+    return send(200, { status: "ready", fake: true } satisfies NarrativeHealthResponse);
   }
   // Unpin fake (batch "aplicar estilo" — el re-pin va por POST /assets/pin).
   if (req.method === "DELETE" && (req.url ?? "").startsWith("/assets/pin/")) {
@@ -517,7 +602,7 @@ const server = http.createServer((req, res) => {
       missing: [],
       cost_per_image_usd: 0.18,
       estimated_cost_usd: 0,
-    });
+    } satisfies StylesMissingResponse);
   }
   // GET /styles/{style_id}/{file} — la portada del estilo y las refs del pack.
   //
@@ -525,50 +610,17 @@ const server = http.createServer((req, res) => {
   // servicios a la vez, service-urls.ts), así que sin esta ruta las cuatro
   // portadas del selector daban 404 en el bench y el título del preset
   // e2e-sin-creditos se abría con cuatro marcos rotos (#218). Va DESPUÉS de
-  // /styles/{id}/missing, que es otra ruta y no lleva extensión.
+  // /styles/{id}/missing, que es otra ruta y no lleva extensión (y que
+  // `matchStylesRoute` capturaría por tener tres segmentos).
   //
-  // Se COPIA el contrato de `readStyleFile` (nefan-core/services/asset-store/
-  // blob-store.ts), no se importa: el fake es .mjs y el único JS de nefan-core
-  // es `dist/`, que el preset e2e-sin-creditos no construye. Si aquella cambia
-  // (MIME nuevo, dos subcarpetas), esto se queda atrás — lo caza el guion 26,
-  // que exige una portada REAL pintada.
-  if (req.method === "GET" && /^\/styles\//.test(req.url ?? "")) {
-    // Las tres líneas siguientes son las de `http-server.ts:82-85`, COPIADAS
-    // TAL CUAL, y esa literalidad es el arreglo: la primera versión de esta
-    // ruta las escribió «a su manera» (con `decodeURIComponent` por segmento y
-    // sin recortar la barra final) y se desvió del original en dos casos el
-    // mismo día — `cover%2Ejpg` daba 200 donde el real da 400, y una barra
-    // final daba 400 donde el real da 200 (QA C4). `new URL` normaliza además
-    // `..` y `%2e%2e`; los checks por segmento son defensa en profundidad,
-    // como en el original.
-    const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    const path = url.pathname.replace(/\/+$/, "") || "/";
-    const partes = path.split("/").filter(Boolean);
-    if (partes.length === 3 || partes.length === 4) {
-      const [, styleId, ...resto] = partes;
-      const file = resto.join("/");
-      const mime = STYLE_FILE_MIME[extension(file)];
-      const seguro = partes.slice(1).every((s) => SAFE_ID.test(s) && !s.includes(".."));
-      if (!mime || !seguro) {
-        return send(400, { ok: false, error: "expected GET /styles/{style_id}/{file.(jpg|png|webp|json)}" });
-      }
-      const fichero = `${STYLES_DIR}${styleId}/${file}`;
-      if (!existsSync(fichero) || !statSync(fichero).isFile()) {
-        return send(404, { ok: false, error: `style file not found: ${styleId}/${file}` });
-      }
-      const cuerpo = readFileSync(fichero);
-      res.writeHead(200, {
-        "Content-Type": mime,
-        // El real lo manda (`Content-Length: r.body.byteLength`); sin él esto
-        // salía chunked. No lo nota un <img>, pero la ruta existe para
-        // PARECERSE al original, y una diferencia que nadie mide es la que
-        // luego explica una hora de bench.
-        "Content-Length": cuerpo.byteLength,
-        "Cache-Control": "max-age=300",
-        ...cors,
-      });
-      return res.end(cuerpo);
-    }
+  // Aquí NO hay contrato escrito: la lectura, la normalización de la ruta y la
+  // emisión con `Content-Length` son las MISMAS funciones que corren en el
+  // asset-store (#280). El CORS es lo único que pone el fake, porque es lo
+  // único que de verdad es suyo.
+  const estilo = matchStylesRoute(req.method ?? "GET", parseRequestPath(req.url).parts);
+  if (estilo) {
+    writeBlob(res, readStyleFile(STYLES_DIR, estilo.styleId, estilo.file), cors);
+    return;
   }
   // Contadores del estado de proceso del fake (qa/run.mjs --diag): mirar sin
   // tocar. Va aparte de /dev/status a propósito — ese espeja un contrato real
@@ -579,6 +631,9 @@ const server = http.createServer((req, res) => {
       surfaces: surfaceImages.size,
       dialogueTurn: fakeDialogueTurn,
       apiCache: fakeDevCacheEnabled,
+      // Peticiones servidas a rutas que en el motor real COBRAN. Es la red que
+      // caza al guion que dispara generación sin declararlo (#295).
+      gasto: gastoServido(),
     });
   }
   // Toggle del dev API cache (espejo trivial del ai_server real, en memoria):
@@ -593,12 +648,18 @@ const server = http.createServer((req, res) => {
       api_cache: { enabled: fakeDevCacheEnabled, channels: {} },
       spend: { total_usd: 0, call_count: 0, calls: [] },
       config: {
-        scene_model: "fake-scene-model",
+        // `surface_model`, no `scene_model`. El contrato lo renombró el
+        // 2026-08-22 (192037b, que tocó los tres ficheros a la vez) y este
+        // quedó atrás seis días: el cliente lo lee en `dev-status-panel.ts` y
+        // pintaba la palabra `undefined` en la barra de dev. El `satisfies` es
+        // lo que impide que vuelva a pasar — y lo que hace que el typecheck de
+        // `labs/` valga algo (#309).
+        surface_model: "fake-surface-model",
         sprite_skin_model: "fake-skin-model",
         usd_eur_rate: 0.86,
       },
       keys: { meshy: true, fal: true },
-    });
+    } satisfies DevStatus);
   }
   if (req.method === "GET" && req.url?.startsWith("/cache/surface/")) {
     const hash = req.url.slice("/cache/surface/".length);
@@ -634,15 +695,24 @@ const server = http.createServer((req, res) => {
   req.on("end", () => {
     void (async () => {
       console.error(`[fake-ai] ${req.method} ${req.url}`);
-      if (req.method === "POST" && req.url === "/notify_session") return send(200, { ok: true });
+      if (req.method === "POST" && req.url === "/notify_session") {
+        // El contrato manda ECO de la sesión, no un `{ok:true}` pelado: hoy el
+        // cliente solo mira el status, pero un fake que contesta menos de lo
+        // que el contrato promete es un fake que no sirve para probar al
+        // siguiente que sí lo lea. Lo dijo el `satisfies` al entrar (#309).
+        const body = leerBody<NotifySessionRequest>(raw);
+        if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
+        return send(200, {
+          ok: true,
+          session_id: body.session_id ?? "",
+          game_id: body.game_id ?? "",
+          is_resume: body.is_resume === true,
+        } satisfies NotifySessionResponse);
+      }
       // Mundo de usuario fake (E2E de crear mundo + encadenado generate_game).
       if (req.method === "POST" && req.url === "/develop_world") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
+        const body = leerBody<DevelopWorldRequest>(raw);
+        if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         console.error(`[fake-ai] develop_world (${String(body.draft_text ?? "").length} chars)`);
         return send(200, {
           game: {
@@ -652,18 +722,19 @@ const server = http.createServer((req, res) => {
             style_id: "acuarela_luminosa",
             world_brief: "b".repeat(150),
             world_md: "# Mundo del Bench\n\n" + "lore del bench. ".repeat(200),
+            // Obligatorias desde que los estilos se filtran por tema
+            // (`styleCompatibleWithGame`): un mundo sin `tags` no ofrece
+            // ningún pack en el título. El fake las omitía, y el typecheck de
+            // `labs/` lo dijo el primer día (#309).
+            tags: ["fantasia", "medieval", "bench"],
           },
-        });
+        } satisfies DevelopWorldResponse);
       }
       if (req.method === "POST" && req.url === "/report_player_choice") {
         // Responder con una línea de diálogo (no con silencio): es lo que
         // ejercita el panel, el retrato y las opciones en el E2E sin créditos.
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
+        const body = leerBody<ReportPlayerChoiceRequest>(raw);
+        if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         const speaker = String(body.speaker || "Aldeano");
         fakeDialogueTurn += 1;
         return send(200, {
@@ -671,13 +742,18 @@ const server = http.createServer((req, res) => {
             {
               type: "dialogue",
               speaker,
+              // `chosen_text`/`free_text`, no `chosenText`/`freeText`. El wire
+              // es snake_case (`ai-client.ts:123` traduce el camelCase del
+              // protocolo del cliente), así que este eco llevaba quién sabe
+              // cuánto imprimiendo la cadena vacía y el bench del diálogo
+              // parecía funcionar igual. Lo cazó el contrato al entrar (#309).
               text:
                 `(bench ${fakeDialogueTurn}) Te escucho, forastero. ` +
-                `Dijiste: "${String(body.chosenText || body.freeText || "").slice(0, 60)}".`,
+                `Dijiste: "${String(body.chosen_text || body.free_text || "").slice(0, 60)}".`,
               choices: ["Seguir preguntando", "Despedirse"],
             },
           ],
-        });
+        } satisfies ReportPlayerChoiceResponse);
       }
       // Reset del ESTADO DE PROCESO del fake (qa/run.mjs entre guiones). El
       // fake acumula estado que ningún reinicio de página borra —tiles ya
@@ -692,20 +768,20 @@ const server = http.createServer((req, res) => {
           surfaces: surfaceImages.size,
           dialogueTurn: fakeDialogueTurn,
           apiCache: fakeDevCacheEnabled,
+          gasto: gastoServido(),
         };
         tileByKey.clear();
         surfaceImages.clear();
+        gastoPorRuta.clear();
         fakeDialogueTurn = 0;
         fakeDevCacheEnabled = false;
         console.error(`[fake-ai] /dev/reset: ${JSON.stringify(antes)} → todo a cero`);
         return send(200, { ok: true, limpiado: antes });
       }
       if (req.method === "POST" && req.url === "/dev/api_cache") {
-        try {
-          fakeDevCacheEnabled = !!JSON.parse(raw || "{}").enabled;
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
+        const body = leerBody<{ enabled?: boolean }>(raw);
+        if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
+        fakeDevCacheEnabled = !!body.enabled;
         return send(200, { enabled: fakeDevCacheEnabled, channels: {} });
       }
       if (req.method === "GET" && req.url === "/sprite_catalog") {
@@ -731,12 +807,9 @@ const server = http.createServer((req, res) => {
         });
       }
       if (req.method === "POST" && req.url === "/skin_sprite_sheet") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
+        dePago("/skin_sprite_sheet"); // genera una hoja de sprites: cuesta
+        const body = leerBody<SkinSpriteSheetRequest>(raw);
+        if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         const anim = String(body.anim ?? "");
         const angle = String(body.angle ?? "");
         if (!anim || !angle || !body.prompt) {
@@ -762,23 +835,37 @@ const server = http.createServer((req, res) => {
           .digest("hex")
           .slice(0, 16);
         return send(200, {
-          ok: true, cached: false, meta, frame_urls,
-          hero_key: heroKey, hero_url: `/cache/sprite_hero/${heroKey}`,
-        });
+          ok: true,
+          cached: false,
+          // `hash` y `generation_time_ms` son del contrato y aquí no estaban:
+          // el fake contestaba menos de lo que promete `SkinSpriteSheetResponse`
+          // y nadie podía enterarse hasta que alguien los leyera en el cliente.
+          // El `satisfies` los pide (#309). El hash del bench es el del hero:
+          // identifica el sheet igual de bien y no inventa una segunda clave.
+          hash: heroKey,
+          meta,
+          frame_urls,
+          hero_key: heroKey,
+          hero_url: `/cache/sprite_hero/${heroKey}`,
+          generation_time_ms: 5,
+          // `cached` NO está en `SkinSpriteSheetResponse` y aun así el cliente
+          // lo lee (`ui/style-apply.ts:440`, para separar lo pintado de lo
+          // reusado en el batch de estilo). O sea: el contrato se quedó corto,
+          // no el fake. Se emite igual —quitarlo cambiaría en silencio lo que
+          // el bench ejercita— y la desviación queda ESCRITA aquí en vez de
+          // pasar por buena. Arreglarlo es tocar el contrato y el server real:
+          // otra tanda.
+        } satisfies SkinSpriteSheetResponse & { cached: boolean });
       }
       if (req.method === "POST" && req.url === "/generate_surface_atlas") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
+        const body = leerBody<GenerateSurfaceAtlasRequest>(raw);
+        if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         const cells = Array.isArray(body.cells) ? body.cells : [];
         if (cells.length === 0) return send(422, { detail: "fake-ai: cells requerido" });
         // resolve_only ($0, camino del resume y del plan de "aplicar estilo"):
         // solo lo ya pintado, con el recuento de missing — como el server real.
         const resolveOnly = body.resolve_only === true;
-        const out = {};
+        const out: Record<string, SurfaceCellResult> = {};
         let painted = 0;
         let missing = 0;
         for (const cell of cells) {
@@ -797,6 +884,8 @@ const server = http.createServer((req, res) => {
           }
           out[cell.key] = { hash, url: `/cache/surface/${hash}`, cached };
         }
+        // Cuesta solo si PINTÓ: resolve_only y el acierto de caché son $0.
+        if (painted > 0) dePago("/generate_surface_atlas");
         console.error(
           `[fake-ai] surface_atlas: ${painted} nuevas de ${cells.length} celdas` +
           (resolveOnly ? ` (resolve_only, ${missing} missing)` : ""),
@@ -808,42 +897,51 @@ const server = http.createServer((req, res) => {
           cost_usd: 0,
           generation_time_ms: 5,
           missing,
-        });
+        } satisfies GenerateSurfaceAtlasResponse);
       }
       // Pins del asset-store (batch "aplicar estilo"): en memoria, para que
       // el run del bench termine sin el store real.
       if (req.method === "POST" && req.url === "/assets/pin") {
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { ok: false, error: "fake-ai: body no es JSON" });
-        }
+        const body = leerBody<AssetPinRequest>(raw);
+        if (!body) return send(400, { ok: false, error: "fake-ai: body no es JSON" });
         const hashes = Array.isArray(body.hashes) ? body.hashes : [];
         console.error(`[fake-ai] assets/pin ${body.ref}: ${hashes.length} hashes`);
-        return send(200, { ok: true, ref: String(body.ref ?? ""), pinned: hashes.length });
+        return send(200, {
+          ok: true,
+          ref: String(body.ref ?? ""),
+          pinned: hashes.length,
+        } satisfies AssetPinResponse);
       }
       // Completado fake del pack (batch "aplicar estilo" sin créditos).
       if (req.method === "POST" && /^\/styles\/[A-Za-z0-9_.-]+\/complete$/.test(req.url ?? "")) {
-        return send(200, { generated: [], cost_usd: 0, message: "fake: pack ya completo" });
+        // El fake nunca completa nada (`generated: []`, `cost_usd: 0`), así
+        // que esta marca no llega a dispararse HOY. Se escribe igual, y con la
+        // misma condición que tendría el server real —pintar refs es lo que
+        // cuesta—, porque el día que este fake genere algo la marca tiene que
+        // estar donde está la ruta, no en una lista que alguien recuerde.
+        const generated: string[] = [];
+        if (generated.length > 0) dePago("/styles/*/complete");
+        return send(200, {
+          generated,
+          cost_usd: 0,
+          message: "fake: pack ya completo",
+        } satisfies StyleCompleteResponse);
       }
       if (req.method === "POST" && req.url === "/generate_scene") {
+        dePago("/generate_scene"); // una llamada al LLM narrativo: cuesta
         if (SCENE_DELAY_MS > 0) {
           console.error(`[fake-ai] /generate_scene retenido ${SCENE_DELAY_MS} ms (SCENE_DELAY_MS)`);
           await new Promise((r) => setTimeout(r, SCENE_DELAY_MS));
         }
-        let body = {};
-        try {
-          body = raw ? JSON.parse(raw) : {};
-        } catch {
-          return send(400, { detail: "fake-ai: body no es JSON" });
-        }
+        const body = leerBody<LlmContext>(raw);
+        if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         if (body.generate_tile) {
           try {
             return send(200, await handleGenerateTile(body.generate_tile));
           } catch (err) {
-            console.error(`[fake-ai] tile falló:`, err.message);
-            return send(500, { detail: err.message });
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`[fake-ai] tile falló:`, msg);
+            return send(500, { detail: msg });
           }
         }
         // Sin generate_tile no hay escena que servir: la variante "suelta" y

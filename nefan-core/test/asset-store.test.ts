@@ -184,6 +184,43 @@ describe("cable exacto de blobs (cache_assets.py)", () => {
     assert.equal(res.headers.get("content-type"), "application/json");
     assert.equal(res.headers.get("cache-control"), "max-age=300");
   });
+
+  /** Los CUATRO desvíos que midió QA entre este servidor y la copia a mano que
+   *  el motor falso tenía de esta ruta (#280). Ya no hay copia: el fake importa
+   *  `parseRequestPath` + `readStyleFile` + `writeBlob` de aquí mismo, así que
+   *  lo que este test fija es el cable ÚNICO, no una paridad entre dos.
+   *
+   *  Se prueban desde HTTP y no llamando a las funciones porque los dos que se
+   *  escapaban vivían justo fuera del lector: la barra final es de la ruta y el
+   *  `Content-Length` de la emisión. */
+  it("styles: los cuatro bordes del cable (%2E, barra final, Content-Length, fichero-punto)", async () => {
+    // 1 · `%2E` NO es un punto: `new URL` no lo decodifica en el pathname, así
+    //     que el fichero no tiene extensión → 400. (La copia daba 200 con la
+    //     imagen dentro.)
+    assert.equal((await getRaw("/styles/medievo_crudo/cover%2Ejpg")).status, 400);
+
+    // 2 · Una barra final es la MISMA ruta: 200 con la imagen. (La copia daba
+    //     400.)
+    const conBarra = await fetch(`${baseUrl}/styles/medievo_crudo/cover.jpg/`);
+    assert.equal(conBarra.status, 200);
+    assert.equal(conBarra.headers.get("content-type"), "image/jpeg");
+    // 2 bis · Y la barra final se recorta del PATH, no solo de los segmentos:
+    //     `filter(Boolean)` ya se come el segmento vacío, así que la ruta de
+    //     estilos saldría igual con y sin recorte y el aserto de arriba no
+    //     podría ponerse rojo. Quien lo nota es una ruta de igualdad exacta.
+    assert.equal((await getRaw("/health/")).status, 200);
+
+    // 3 · `Content-Length` real, no chunked. Es invisible para un <img>, y por
+    //     eso se escapó: se afirma contra los bytes que de verdad llegan.
+    const bytes = Buffer.from(await conBarra.arrayBuffer());
+    assert.equal(conBarra.headers.get("content-length"), String(bytes.byteLength));
+
+    // 4 · Fichero-punto: `.jpg` a secas no tiene extensión para `extname` → 400.
+    assert.equal((await getRaw("/styles/medievo_crudo/.jpg")).status, 400);
+
+    // Y la subcarpeta de rol sigue viva (3 o 4 segmentos, no más).
+    assert.equal((await getRaw("/styles/medievo_crudo/faces/x/y.jpg")).status, 404);
+  });
 });
 
 describe("registro e índice", () => {

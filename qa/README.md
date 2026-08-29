@@ -66,6 +66,21 @@ Reglas que hacen que un guion valga algo:
    estado, eso es un hallazgo, no un paso de la receta.
 4. **Prueba el guion en negativo.** Rompe a mano lo que dice verificar y comprueba que se pone
    rojo. Un guion que no detecta nada se ve exactamente igual que uno que funciona.
+5. **Declara lo que necesitas, y solo declara el gasto si NO lo hay.** Dos `export` que el runner
+   ejecuta. `export const aisla = ["saves"|"mundo"|"fake-ai"]` es la PRECONDICIÓN del guion: se
+   ejecuta solo eso, y solo antes de él. Y el guardarraíl de cero créditos se ejerce para
+   **todos** los guiones —antes de abrir el tuyo, desde su página, con sus dos `/health`—, así
+   que si el backend no declara ser falso tu guion sale `⊘ SIN MEDIR` y **cero peticiones desde
+   el guion**: su cuerpo no llega a ejecutarse. Cero *desde el guion*, no cero a secas — la
+   página ya ha cargado y el gate manda sus dos `/health`, y ninguna de esas es de pago, que es
+   justo lo que se garantiza.
+   No hay nada que declarar para eso: es el defecto, y el defecto es el caro a
+   propósito, porque el desenlace de un descuido tiene que ser un ⊘ y no una factura.
+   Lo que se declara es la EXCEPCIÓN: `export const sinMotor = "<motivo>"` para el guion que no
+   le pide nada al motor (fixtures del selector, el título, su propio bridge). El motivo va en el
+   valor y es obligatorio: un booleano se pone a `true` sin pensar y se lee dos veces, y una
+   frase hay que escribirla y se ve en el diff. Si te equivocas al declararlo —dices `sinMotor` y
+   el guion gasta— lo caza el contador de rutas de pago del motor falso y sale ⊘ igual (#295).
 
 ## Los guiones sembrados
 

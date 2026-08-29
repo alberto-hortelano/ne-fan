@@ -9,7 +9,7 @@
    Migrar a paquete propio es un `git mv` futuro si hiciera falta publicarlo.
 2. **Contratos types-only** (sin zod nuevo). Donde ya hay zod (plugins) se
    reexporta el schema junto al tipo. La validación cruzada con Python se
-   apoya en los modelos Pydantic + `fake-ai-server.mjs` como spec ejecutable.
+   apoya en los modelos Pydantic + `fake-ai-server.ts` como spec ejecutable.
 3. **El contrato documenta el cable real**: snake_case en los endpoints
    Python, camelCase en el WS del gateway. No se "arregla" el naming en el
    contrato — eso sería un cambio breaking disfrazado.

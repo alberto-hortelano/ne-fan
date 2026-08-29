@@ -69,6 +69,58 @@ export interface FpsDebugCollision {
   size: number;
 }
 
+/** Lo que el módulo GL sabe de sí mismo — la sonda que leen los guiones de QA
+ *  desde `__nefan.fps()`.
+ *
+ *  Está DECLARADO, y no es cosmética: mientras los dos `debugState()`
+ *  devolvían `Record<string, unknown>`, la fachada podía rellenar con ceros
+ *  los campos de la cámara antes de que three llegase y nadie se enteraba
+ *  (#308: `pitchDeg: 0` publicado con `gl === null`, leído por `mirarA` como
+ *  «la cámara mira al horizonte»). Con el tipo escrito, el campo inventado no
+ *  compila: los campos de aquí SOLO existen cuando hay módulo GL, y la unión
+ *  de `FpsRenderer.debugState()` lo discrimina por `ready`.
+ *
+ *  Ojo con las dos fuentes de pitch, que se confunden y son distintas:
+ *  `pitchDeg` de AQUÍ es lo que la CÁMARA tiene aplicado (se lee de su
+ *  rotación), mientras que `__nefan.state().pitchDeg` (`main.ts`) es lo que el
+ *  INPUT acumuló. El guion 10 compara justamente las dos, así que ni se
+ *  colapsan ni una se rellena con la otra. */
+export interface FpsGlDebugState {
+  frames: number;
+  tiles: string[];
+  activeTile: string | null;
+  textured: string[];
+  renderYawDeg: number;
+  pitchDeg: number;
+  billboards: number;
+  billboardsPersonaje: number;
+  debugView: FpsDebugView;
+  suelo: { topY: number; overlayY: number; holguraM: number; calcos: number } | null;
+  viewport: { w: number; h: number };
+  telegraph: {
+    mode: AttackTelegraph["mode"];
+    opacity: number;
+    optimalDistance: number;
+    areaRadius: number;
+    screen: { x: number; y: number } | null;
+    borde: { cerca: { x: number; y: number } | null; lejos: { x: number; y: number } | null };
+    alcance: { cerca: number; lejos: number };
+    impactQuality: number;
+  } | null;
+  telegraphEpisode: {
+    episode: number;
+    windupFrames: number;
+    impactFrames: number;
+    impactQuality: number;
+    unprojectedFrames: number;
+    screenYMin: number | null;
+    screenYMax: number | null;
+    optimalDistance: number;
+    ended: boolean;
+  } | null;
+  veil: { edge: Edge; opacity: number } | null;
+}
+
 /** Altura a la que va cualquier calco sobre el suelo, en metros. NO es un
  *  número de este fichero: sale de la cara alta del stack de rasgos planos que
  *  emite el greybox más su holgura, y ese techo lo fija —y lo canda— el core
@@ -1533,7 +1585,7 @@ export class FpsGl {
     this.renderer.render(this.scene, this.cam);
   }
 
-  debugState(): Record<string, unknown> {
+  debugState(): FpsGlDebugState {
     const t = this.telegraph;
     const v = this.veil;
     return {

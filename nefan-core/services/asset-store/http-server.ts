@@ -25,7 +25,12 @@ import {
 } from "../../src/contracts/request-schemas.js";
 import { formatZodError } from "../../src/contract/model-io/validate.js";
 import type { ManifestDb } from "./manifest-db.js";
-import { readBlob, readSpriteHero, readSpriteSheetFrame, readStyleFile, type BlobResult } from "./blob-store.js";
+import { readBlob, readSpriteHero, readSpriteSheetFrame, readStyleFile } from "./blob-store.js";
+// El cable de la ruta de estilos vive aparte porque lo COMPARTE el motor falso
+// del bench (labs/narrative/fake-ai-server.ts), que antes lo copiaba a mano y
+// se desviaba en cuatro casos (#280). Aquí no cambia nada observable: son las
+// mismas líneas, en un sitio donde se pueden importar.
+import { matchStylesRoute, parseRequestPath, writeBlob } from "./http-wire.js";
 import { fetchKeepList, prune } from "./prune.js";
 
 export interface AssetStoreServerOptions {
@@ -79,10 +84,8 @@ async function handle(
   opts: AssetStoreServerOptions,
 ): Promise<void> {
   const { db } = opts;
-  const url = new URL(req.url ?? "/", "http://127.0.0.1");
-  const path = url.pathname.replace(/\/+$/, "") || "/";
+  const { path, parts, query } = parseRequestPath(req.url);
   const method = req.method ?? "GET";
-  const parts = path.split("/").filter(Boolean);
 
   // ── GET /health (nuevo, aditivo — probe del launcher y del ai_server) ──
   if (method === "GET" && path === "/health") {
@@ -150,20 +153,20 @@ async function handle(
   // Antes del catch-all de /cache/{kind}/{hash}: tiene tres segmentos y
   // caería ahí como un "kind" inexistente.
   if (method === "GET" && parts[0] === "cache" && parts[1] === "sprite_hero" && parts.length === 3) {
-    sendBlob(res, readSpriteHero(opts.spriteSheetsDir, parts[2]));
+    writeBlob(res, readSpriteHero(opts.spriteSheetsDir, parts[2]));
     return;
   }
 
   // ── GET /cache/sprite_sheet/{hash}/{filename} ──
   if (method === "GET" && parts[0] === "cache" && parts[1] === "sprite_sheet" && parts.length === 4) {
-    sendBlob(res, readSpriteSheetFrame(opts.spriteSheetsDir, parts[2], parts[3]));
+    writeBlob(res, readSpriteSheetFrame(opts.spriteSheetsDir, parts[2], parts[3]));
     return;
   }
 
   // ── GET /assets ──
   if (method === "GET" && path === "/assets") {
-    const assetType = url.searchParams.get("asset_type") ?? undefined;
-    const rawLimit = url.searchParams.get("limit");
+    const assetType = query.get("asset_type") ?? undefined;
+    const rawLimit = query.get("limit");
     const limit = rawLimit === null ? 50 : Number(rawLimit);
     if (!Number.isFinite(limit) || limit < 0) {
       sendJson(res, 400, { ok: false, error: `invalid limit "${rawLimit}"` } satisfies ErrorResponse);
@@ -226,20 +229,15 @@ async function handle(
   if (method === "GET" && parts[0] === "cache" && parts.length === 3) {
     const result = readBlob(opts.dirsByType, parts[1], parts[2]);
     if (result.touched) db.touch(result.touched);
-    sendBlob(res, result);
+    writeBlob(res, result);
     return;
   }
 
   // ── GET /styles/{style_id}/{file} (movido desde world-state en F2). El
   //    file admite una subcarpeta de rol (faces/fachada.jpg) ──
-  if (method === "GET" && parts[0] === "styles" && (parts.length === 3 || parts.length === 4)) {
-    const r = readStyleFile(opts.stylesDir, parts[1], parts.slice(2).join("/"));
-    res.writeHead(r.status, {
-      "Content-Type": r.contentType,
-      "Content-Length": r.body.byteLength,
-      ...(r.cacheControl ? { "Cache-Control": r.cacheControl } : {}),
-    });
-    res.end(r.body);
+  const estilo = matchStylesRoute(method, parts);
+  if (estilo) {
+    writeBlob(res, readStyleFile(opts.stylesDir, estilo.styleId, estilo.file));
     return;
   }
 
@@ -264,15 +262,6 @@ function sendText(res: ServerResponse, status: number, msg: string): void {
     "Content-Length": payload.byteLength,
   });
   res.end(payload);
-}
-
-function sendBlob(res: ServerResponse, r: BlobResult): void {
-  res.writeHead(r.status, {
-    "Content-Type": r.contentType,
-    "Content-Length": r.body.byteLength,
-    ...(r.cacheControl ? { "Cache-Control": r.cacheControl } : {}),
-  });
-  res.end(r.body);
 }
 
 function readJson(req: IncomingMessage): Promise<unknown> {
