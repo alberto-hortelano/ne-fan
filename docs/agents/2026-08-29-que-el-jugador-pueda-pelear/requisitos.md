@@ -115,6 +115,59 @@ tile. Hay que separar qué sigue aplicando al mundo continuo y qué murió con l
 
 ---
 
+---
+
+## 3 bis · Reencuadre tras la crítica: la premisa se ejecutó, y mi diagnóstico era erróneo
+
+**El criterio 1 está CUMPLIDO** — el crítico ejecutó una partida real de `alta_fantasia` con
+cero créditos: 0 barras de enemigo, 0 frames `add_combatants`, 4 `state_update` con 0 enemigos,
+y atacar no dañó nada. Las tres formas de declarar algo hostil, rechazadas o descartadas.
+
+**El dato que define la tanda**: rastreados los `runs/`, los saves y **225 capturas**, hay un
+solo rastro de combate en todo el repositorio — `runs/2026-07-10_22-05-00`, con **11
+`attack_landed` del bandido AL jugador**, el enemigo quieto en `hp:200` y el jugador sin atacar
+ni una vez. **Cero `enemy_damaged`. Nadie ha herido nunca a nada.**
+
+### Mis dos errores de trazado, que cambian el arreglo
+
+1. **«`bridge/context.ts:305` es la ÚNICA vía» es falso.** Hay tres dispatchers de
+   `enemies_projected`: `context.ts:303`, `handlers/simulation.ts:143` y `:220`.
+
+2. **Y esa vía ni siquiera es la que importa.** `getEnemyStates` (`context.ts:493-509`) exige
+   *además* que el sim conozca al combatiente (`ctx.sim.getCombatant(e.id)`; sin él no emite
+   nada), y **la proyección narrativa no toca el sim**. O sea que añadir `enemy` al enum —el
+   arreglo que el issue insinuaba— **no habría servido de nada**.
+
+**La vía viva es otra y está entera**: world scene → `objects[].combat` → cliente →
+`add_combatants`. Lo único que falta es que alguien produzca `combat`.
+
+### La dicotomía del §3 no existe: las dos opciones son el mismo fósil
+
+| Commit | Fecha | Qué pasó |
+|---|---|---|
+| `cb8dcf6` | 2026-05-19 | `combat` se diseña como shape de `SpawnEnemyAction` del ScenarioRunner |
+| `fd8ef5c` | 2026-07-06 | se borra el ScenarioRunner y **en el mismo diff se reetiqueta el comentario a «(spawn_entity consequences)»**, sin comprobarlo |
+| `ui_systems.md:54` | un mes después | copia la etiqueta y se la promete al modelo |
+
+El indicio de diseño que yo citaba es **una etiqueta que alguien cambió al borrar su
+productor**. No se elige entre dos verdades: **se elige por dónde está la vía viva**, y es la
+del cliente.
+
+### Conflictos que hay que respetar
+
+- **`EntitySchema` es `.strict()` con 12 campos desde ayer** (PR #324, argumento medido).
+  Añadir un campo ahí no es gratis y hay que justificarlo.
+- **`data/contract/fixtures/reaction/invalid/spawn_kind_invalido.json` exige** que
+  `entity_kind:"creature"` se rechace. Cualquier salida que pase por `creature` choca con ella.
+
+### #322 se queda, pero por barato, no por familia
+
+El crítico tiene razón: su arreglo es prosa de un fichero y **no comparte una línea con #323**.
+Se mantiene porque es barato y está medido, no porque sean la misma cosa. Y su **criterio 3 es
+inalcanzable** — ver el criterio 6 de abajo.
+
+---
+
 ## 4 · Criterios de aceptación
 
 **El 1 es una precondición: si sale que la premisa es falsa, la tanda se para y se dice.**
@@ -133,15 +186,22 @@ tile. Hay que separar qué sigue aplicando al mundo continuo y qué murió con l
    Ese es el defecto exacto de `state-projection.test.ts`: construye la entrada que la
    producción no puede producir.
 
-4. **Un ataque que impacta reduce la vida del objetivo, y eso lo comprueba un test.**
-   *Hoy: ningún guion comprueba que algo pierda vida.*
+4. **Un ataque que impacta reduce la vida del objetivo EN UNA PARTIDA REAL**, no en un test
+   unitario que se fabrica al combatiente.
+   *Corregido tras la crítica: mi redacción anterior **nacía verde** — `test/combat-systems.test.ts:189`
+   ya lo comprueba. Lo que no existe es la comprobación de punta a punta, desde el arranque.*
 
 5. **`scene_instructions.md` dice una sola cosa sobre `size`/`terrain`**, y es la de la línea
    33. La checklist final no pide verificar ningún campo que el gate rechace.
 
-6. **El guardia débil de #203 caza esta clase**, o se dice por qué no puede. Hoy no ve `combat`
-   porque **no filtra lo que no es snake_case** — esa es la razón exacta por la que #323 llegó
-   por un cabo suelto y no por el candado que se acababa de instalar.
+6. **Se dice por escrito por qué el guardia débil de #203 NO caza esta clase**, en vez de
+   arreglarlo.
+   *Corregido tras la crítica: yo había culpado al snake_case y **es la razón equivocada**. El
+   guardia solo comprueba que el token **exista** en el zod, y `combat`, `size` y `terrain`
+   existen a espuertas. Ampliar su regex no cazaría ninguno de los dos issues. Lo que hace falta
+   es un guardia que compare lo que el prompt **promete** con lo que el contrato **acepta**, y
+   eso es otra tarea. El criterio 3 de #322 es inalcanzable por lo mismo y hay que decirlo al
+   cerrarlo.*
 
 7. **Nada de esto gasta créditos**, ni al implementar ni al verificar.
 
@@ -155,8 +215,10 @@ tile. Hay que separar qué sigue aplicando al mundo continuo y qué murió con l
 - **No rediseñar el sistema de combate.** Existe, está probado en sus partes y no es el
   problema. El problema es que nada llega a él.
 - **Pre-producción**: lo que se sustituye se borra el mismo día, `grep` a cero.
-- La batería es de **40 guiones** (`ls qa/guiones/*.mjs | wc -l`, no el número del último
-  fichero — me equivoqué con eso dos veces hoy). La línea base se mide antes de tocar nada.
+- La batería es de **39 guiones**. Escribí 40 y me lo corrigió el crítico: es la **tercera vez
+  el mismo día** que me equivoco en este recuento (35→34, 39→38, 40→39). El comando es
+  `ls qa/guiones/*.mjs | wc -l`; el nombre del último fichero NO es el recuento porque falta
+  el `04-`. La línea base se mide antes de tocar nada.
 - **#320 sigue abierto**: el guion 34 es intermitente bajo carga, 1 rojo de cada 4 baterías. Si
   aparece, no es de esta tanda. Dicho antes, no después.
 
