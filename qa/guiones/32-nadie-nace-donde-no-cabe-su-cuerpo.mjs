@@ -53,13 +53,6 @@ import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
  *               otro guion (aquí se mide QUIÉN hay en el tile de entrada). */
 export const aisla = ["saves"];
 
-/** Su segunda mitad arranca una partida REAL (tile generado por el motor), así
- *  que dispara generación: el runner ejerce el guardarraíl antes de lanzarlo
- *  (#295). Consecuencia declarada: con un backend que no sea el falso, la
- *  PRIMERA mitad —que solo mide fixtures— tampoco corre. La obligación vive en
- *  el runner y el runner decide por guion, no por mitad. */
-export const gasta = true;
-
 /** Las tres fixtures del selector, por su nombre. Se comprueba que están las
  *  tres: si el selector adelgaza, el guion tiene que enterarse, no medir dos. */
 const FIXTURES = ["robledo_tile", "puerto_tile", "zorder_test"];

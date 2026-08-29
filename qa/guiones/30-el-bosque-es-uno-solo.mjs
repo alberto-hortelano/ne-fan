@@ -24,6 +24,12 @@
  *  (`treeTrunkRadiusCells`) lo pone rojo por los pasos 4 y 5.
  */
 
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor = "cierra el título y carga una fixture del selector; nunca arranca partida";
+
 /** Espera a que el renderer EMITA frames nuevos: una captura pedida justo
  *  después de mover al jugador fotografía el frame ANTERIOR. Se espera por el
  *  contador de frames, nunca por reloj. */

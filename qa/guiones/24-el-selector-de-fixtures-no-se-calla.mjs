@@ -27,6 +27,14 @@
  *  (`__nefan.loadFixture` hace `dispatchEvent(new Event("change"))`).
  */
 
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor =
+  "cierra el título y carga fixtures del selector, una de ellas con el JSON " +
+  "abortado a propósito";
+
 /** La fixture que se sabotea. La otra (`robledo_tile`) hace de control: si
  *  ninguna de las dos cargara, el verde de este guion no querría decir nada. */
 const ROTA = "zorder_test";

@@ -4,6 +4,12 @@
  *  comprobaba a ojo. El guion no usa coordenadas mágicas: descubre el borde
  *  del edificio sondeando con probeCollide, así sigue valiendo si la fixture
  *  se reordena. */
+
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor = "cierra el título y carga una fixture del selector; nunca arranca partida";
 export default async function (ctx) {
   await ctx.waitFor("el título aparece", () => Boolean(document.getElementById("ts-close")));
   await ctx.nefan("closeTitle");

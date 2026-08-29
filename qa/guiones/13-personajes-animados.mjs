@@ -38,13 +38,6 @@
  */
 import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
 
-/** Puede disparar GENERACIÓN (escena del motor, página de atlas o skin): el
- *  runner ejerce el guardarraíl de cero créditos antes de lanzarlo y, contra
- *  un backend que no declare ser falso, este guion no corre (#295). Lo señaló
- *  el contador de rutas de pago del motor falso, no una lectura del código:
- *  `gasta` es «PUEDE gastar», no «gastó esta vez». */
-export const gasta = true;
-
 /** Las 10 del set base — `BASE_ANIMS` en renderer/character-sprites.ts, que es
  *  fail-loud: si falta una, el cliente no arranca los personajes. */
 const ANIMS_BASE = [

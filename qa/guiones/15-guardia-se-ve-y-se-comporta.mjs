@@ -52,10 +52,6 @@ import { URLS } from "../lib/stack.mjs";
  *                 caliente el destino podría llegar ya realizado. */
 export const aisla = ["mundo", "saves", "fake-ai"];
 
-/** Dispara generación (tile del motor + skins del guardia): el runner ejerce
- *  el guardarraíl de cero créditos antes de lanzarlo (#295). */
-export const gasta = true;
-
 const GAME_ID = "alta_fantasia";
 const FIXTURE = "robledo_tile";
 /** El State API del bridge. Sale de la fuente única de puertos, no de un

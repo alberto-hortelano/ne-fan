@@ -37,10 +37,6 @@
  */
 import { nuevaPartida, comenzar, esperarRegistro } from "../lib/sesion.mjs";
 
-/** Esta partida arranca generación (el tile del motor): el runner ejerce el
- *  guardarraíl de cero créditos antes de lanzarla (#295). */
-export const gasta = true;
-
 /** Los cuatro endpoints del gpu-worker (#199) y el puerto en el que vivía.
  *  Se escriben aquí porque lo que se canda es que NO aparezcan: si alguien
  *  los resucita, esta lista es la que tiene que ponerse roja. */

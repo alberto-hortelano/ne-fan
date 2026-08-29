@@ -61,13 +61,6 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 export const aisla = ["saves"];
 
-/** Puede disparar GENERACIÓN (escena del motor, página de atlas o skin): el
- *  runner ejerce el guardarraíl de cero créditos antes de lanzarlo y, contra
- *  un backend que no declare ser falso, este guion no corre (#295). Lo señaló
- *  el contador de rutas de pago del motor falso, no una lectura del código:
- *  `gasta` es «PUEDE gastar», no «gastó esta vez». */
-export const gasta = true;
-
 const GAME_ID = "toledo_1200";
 /** El State API del bridge. Sale de la fuente única de puertos, no de un
  *  literal: dos corridas a la vez no comparten stack. */

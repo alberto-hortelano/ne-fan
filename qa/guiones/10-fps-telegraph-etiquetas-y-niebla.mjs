@@ -26,13 +26,6 @@
  */
 import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
 
-/** Puede disparar GENERACIÓN (escena del motor, página de atlas o skin): el
- *  runner ejerce el guardarraíl de cero créditos antes de lanzarlo y, contra
- *  un backend que no declare ser falso, este guion no corre (#295). Lo señaló
- *  el contador de rutas de pago del motor falso, no una lectura del código:
- *  `gasta` es «PUEDE gastar», no «gastó esta vez». */
-export const gasta = true;
-
 /** Grados de mirada por píxel de ratón (MOUSE_SENS_RAD_PER_PX de main.ts). */
 const GRADOS_POR_PX = (0.0025 * 180) / Math.PI;
 

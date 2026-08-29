@@ -43,6 +43,14 @@
  *  el watch del inodo). Reinicia el cliente antes de creerte un antes/después.
  */
 
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor =
+  "cierra el título y carga las tres fixtures del selector; nunca arranca " +
+  "partida";
+
 /** ¿Este punto de pantalla está dentro del cuadro? El 15 % inferior lo tapa
  *  la barra de acciones, así que no cuenta como "visible" (mismo criterio
  *  que el guion 22). */

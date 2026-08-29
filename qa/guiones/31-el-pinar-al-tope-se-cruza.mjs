@@ -59,13 +59,6 @@ import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
  *  tile de bootstrap tiene que venir del motor falso, no de una caché. */
 export const aisla = ["mundo", "saves"];
 
-/** Puede disparar GENERACIÓN (escena del motor, página de atlas o skin): el
- *  runner ejerce el guardarraíl de cero créditos antes de lanzarlo y, contra
- *  un backend que no declare ser falso, este guion no corre (#295). Lo señaló
- *  el contador de rutas de pago del motor falso, no una lectura del código:
- *  `gasta` es «PUEDE gastar», no «gastó esta vez». */
-export const gasta = true;
-
 /** Techo del dial, `MAX_VEG_DENSITY` de
  *  `nefan-core/src/scene/blueprint/vegetation.ts`. Se escribe aquí a
  *  propósito: si el techo se mueve, este guion se pone rojo y obliga a mirar

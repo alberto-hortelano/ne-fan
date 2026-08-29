@@ -39,6 +39,14 @@ import { fileURLToPath } from "node:url";
 
 import { esperarPuertoArriba, esperarPuertoLibre, puertoOcupado, puertosLibres } from "../lib/puertos.mjs";
 
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor =
+  "levanta SU propio bridge con `?bridge=` y le corta el motor a propósito: " +
+  "lo que mide es el fallo, no la generación";
+
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const GAME_ID = "alta_fantasia";
 /** Puertos LIBRES pedidos al sistema, fuera del catálogo de `start.sh`: este

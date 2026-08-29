@@ -190,15 +190,31 @@ Reescritos tras la crítica. Los dos primeros **nacían verdes** y así lo dice 
    se escribe, porque este es el criterio que impide que el arreglo rompa el aparato que
    arregla.
 
-4. **Un guion que puede disparar generación no corre sin que el runner haya comprobado el
-   guardarraíl, y olvidarse de declararlo no acaba en verde.** Verificable reproduciendo la
-   medida de QA: un guion sin declaración, contra un backend que dice `fake:false`, sale
-   `⊘ SIN MEDIR` y hace **cero** peticiones a ese backend.
+4. **Ningún guion corre sin que el runner haya comprobado el guardarraíl, y olvidarse de
+   declarar nada es el caso SEGURO.** Reescrito tras la primera implementación, por decisión
+   del usuario: la marca va INVERTIDA. El runner gatea por defecto y lo que se declara es la
+   excepción — el guion que no le pide nada al motor. El modo de fallo es el argumento entero:
+
+   | | Olvidarse de declarar |
+   |---|---|
+   | Marca directa (`gasta = true` para quien gasta) | el guion corre SUELTO contra un motor que cobra; la única red es un contador que vive en el motor FALSO, o sea que contra el backend caro **no existe** |
+   | Marca invertida (`sinMotor` para quien no gasta) | el guion queda GATEADO: `⊘ SIN MEDIR` y cero peticiones |
+
+   No es una preferencia de estilo: es el principio que este repositorio ya tiene escrito —si
+   se puede cumplir «en verde» sin que ocurra lo que importa, el candado es hacer inexpresable
+   el estado malo, no una red más—. La red del contador se queda, pero cubriendo el caso
+   pequeño y honesto: caza al que **se equivoca al declarar** (dice `sinMotor` y gasta), no al
+   que se olvida.
+
+   Verificable, y ahora se cumple por construcción: un guion **nuevo, sin ninguna declaración**,
+   contra un backend que dice `fake:false`, sale `⊘ SIN MEDIR` y hace **cero** peticiones a ese
+   backend.
    *Hoy: sale verde tras mandar 7 peticiones, una de generación.*
 
 5. **Las CUATRO copias del prólogo desaparecen** (guiones 07, 15, 21 y 32 — el cuerpo de
    #295 dice tres, y la cuarta llegó *después* de abrirse el issue) y la obligación vive en
-   el runner.
+   el runner. Con la marca invertida, **ningún guion declara que gasta**: la obligación no se
+   declara, se ejerce. Lo que queda escrito son las 13 excepciones, con su motivo.
 
 6. **Un ocupante ajeno en un puerto del catálogo a mitad de corrida no se le imputa a
    ningún preset**: `qa/presets.mjs` lo nombra, dice de quién es si puede (`port_owner` ya

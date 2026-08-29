@@ -40,6 +40,14 @@
  */
 import { abrirSelectorDeMundos } from "../lib/sesion.mjs";
 
+/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
+ *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
+ *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
+ *  de guion es. */
+export const sinMotor =
+  "solo abre el selector de mundos y mira las portadas, que son ficheros " +
+  "commiteados del pack";
+
 /** Las imágenes de un pack de estilo (portadas y refs). Deja fuera
  *  `/styles/{id}/missing` y `style.json`, que son otras rutas y las usa el
  *  panel de generación: sabotearlas metería fallos ajenos al sujeto. */

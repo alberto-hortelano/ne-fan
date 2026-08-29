@@ -30,13 +30,6 @@ import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/
  *                 y este guion compara lo anunciado con lo emitido. */
 export const aisla = ["mundo", "fake-ai"];
 
-/** Este guion DISPARA GENERACIÓN (hojas de sprites del NPC). El runner ejerce
- *  el guardarraíl de cero créditos antes de lanzarlo y, si el backend no
- *  declara ser falso, ni siquiera abre el guion: `⊘ SIN MEDIR`, cero
- *  peticiones. Antes esto era un prólogo copiado a mano en cuatro guiones, y
- *  copiar a mano una obligación es no tenerla (#295). */
-export const gasta = true;
-
 const GAME_ID = "alta_fantasia";
 const FIXTURE = "robledo_tile";
 const FIXTURE_EN_DISCO = join(
