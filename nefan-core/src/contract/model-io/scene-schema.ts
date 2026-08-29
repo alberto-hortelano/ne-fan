@@ -95,11 +95,25 @@ const EntityBase = z
     // z-order de zorder_test.json no tienen aspecto que describir ni deben
     // pagar un skin. Sin ella, el prompt del skin es el nombre propio del
     // NPC («Beltrán»), que no describe a nadie.
-    // `.trim().min(1)` y no `.min(1)` a secas: sin el trim, una description de
-    // tres espacios pasaba este gate y el saneador de ai_server la tiraba al
-    // hacer `.strip()` — el mismo NPC aceptado aquí y desvestido allí. Los dos
-    // lados rechazan ahora lo mismo (#237).
-    description: z.string().trim().min(1).optional(),
+    // Rechaza también la description EN BLANCO, que sin esto pasaba el gate
+    // aquí y la tiraba el `.strip()` de ai_server — el mismo NPC aceptado aquí
+    // y desvestido allí (#237).
+    //
+    // `.refine()` y NO `.trim().min(1)`: `trim` no valida, REESCRIBE. Estos
+    // schemas se usan como PREDICADO —`validateContract` tira el resultado del
+    // `safeParse`— y desde #237 `ExpandedSceneSchema` está además en la ruta
+    // de CARGA de los snapshots. Un schema que transforma en esa posición
+    // reescribe datos de disco en silencio, y lo hizo: un `"  tabernero  "`
+    // guardado volvía sin espacios. La regla queda escrita en el tipo — estos
+    // schemas no transforman NUNCA — y la canda `scene-schema.test.ts`
+    // («ninguno de los dos schemas reescribe lo que valida»).
+    description: z
+      .string()
+      .min(1)
+      .refine((d) => d.trim().length > 0, {
+        message: "`description` no puede ser solo espacios: es el PROMPT del skin del personaje",
+      })
+      .optional(),
     // Ref de personaje del catálogo del pack (world.style_refs.characters)
     // ELEGIDA por el motor; sin ella, el default sale del `role`.
     style_ref: z.string().min(1).optional(),

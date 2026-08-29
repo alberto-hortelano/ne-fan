@@ -101,7 +101,17 @@ export function loadWorldSnapshot(
         `bórralo o regenera el mundo desde el título`,
     );
   }
-  if (parsed.data.world_doc_hash !== expectedWorldDocHash) {
+  // Se devuelve `raw`, lo que había EN DISCO, y NO `parsed.data`: el zod es la
+  // PUERTA, no un transformador. Devolver la salida del parseo reescribía el
+  // snapshot en silencio por dos caminos independientes, los dos medidos:
+  //   · una `description` de `"  tabernero  "` volvía sin espacios (lo cazó QA);
+  //   · un sub-objeto en modo por defecto —`size`, `tile`— PODA sus claves
+  //     desconocidas, y eso no lo arregla quitar ningún `.trim()`.
+  // Arreglar solo el primero habría dejado el segundo abierto, así que la
+  // regla va donde vale para los dos: quien valida no se queda con el
+  // resultado. Es lo que hace `validateContract` en todo el resto de la casa.
+  const snapshot = raw as WorldSnapshot;
+  if (snapshot.world_doc_hash !== expectedWorldDocHash) {
     console.warn(
       `world snapshot stale para "${gameId}": world.md cambió desde la ` +
         `generación — se ignora (regenera el mundo desde el título)`,
@@ -110,7 +120,7 @@ export function loadWorldSnapshot(
   }
   // El envoltorio va por zod; el world_map lo re-valida
   // WorldMapManager.fromSerialized al restaurarlo (segunda línea).
-  return parsed.data as unknown as WorldSnapshot;
+  return snapshot;
 }
 
 export function writeWorldSnapshot(gamesDir: string, snapshot: WorldSnapshot): void {

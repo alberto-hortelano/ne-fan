@@ -198,6 +198,43 @@ describe("world-snapshot (módulo puro)", () => {
       });
     }
 
+    /** El zod es la PUERTA, no un transformador (#237, hallazgo de QA).
+     *
+     *  `loadWorldSnapshot` devolvía `parsed.data`, así que desde que `scenes`
+     *  pasa por `ExpandedSceneSchema` el schema podía reescribir datos de
+     *  DISCO en silencio. Dos caminos independientes, los dos medidos:
+     *   · un `.trim()` en el schema recortaba `"  tabernero  "`;
+     *   · un sub-objeto en modo por defecto (`size`, `tile`) PODA sus claves
+     *     desconocidas — y eso no lo arregla quitar ningún `.trim()`.
+     *
+     *  Este `it` los canda a los dos por el sitio que importa: lo que sale de
+     *  la puerta de carga es byte a byte lo que había en el fichero. Se pone
+     *  rojo con `return parsed.data`, que es como estaba. */
+    it("devuelve EXACTAMENTE lo que hay en disco: la puerta no reescribe", () => {
+      const { gamesDir, worldDocHash } = tmpGamesDir();
+      try {
+        const escena = expandida();
+        // Vector 1: string con espacios alrededor (válida, y antes se recortaba).
+        (escena.entities as Record<string, unknown>[])[0].description = "  guardia con lanza y capa parda  ";
+        // Vector 2: clave desconocida dentro de un sub-objeto en modo por
+        // defecto — el schema la acepta y, si el llamador se queda con
+        // `parsed.data`, la PIERDE.
+        (escena.size as Record<string, unknown>).comentario = "algo que alguien guardó";
+        aDisco(gamesDir, worldDocHash, escena);
+
+        const enDisco = JSON.parse(readFileSync(worldSnapshotPath(gamesDir, GAME), "utf-8")) as Record<string, unknown>;
+        const cargado = loadWorldSnapshot(gamesDir, GAME, worldDocHash);
+        assert.ok(cargado);
+        assert.deepEqual(
+          cargado.scenes,
+          (enDisco as { scenes: unknown }).scenes,
+          "la ruta de carga ha reescrito el snapshot: el zod valida, no transforma",
+        );
+      } finally {
+        rmSync(gamesDir, { recursive: true, force: true });
+      }
+    });
+
     it("y la escena BIEN expandida sí entra (el cableado no rechaza de más)", () => {
       const { gamesDir, worldDocHash } = tmpGamesDir();
       try {
