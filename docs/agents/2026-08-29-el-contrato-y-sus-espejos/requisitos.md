@@ -1,7 +1,7 @@
 # El contrato tiene espejos y ninguno manda
 
 **Tanda**: 2026-08-29 (segunda del día) · rama `feature/el-contrato-y-sus-espejos`
-**Issues**: #319, #203, #237, #259
+**Issues**: #203, #237, #259  ·  *#319 salió tras la crítica: es el mismo trabajo que #318 y va con él*
 
 ---
 
@@ -25,150 +25,124 @@ número.
 
 ---
 
-## 2 · El enunciado común
+## 2 · El enunciado común (CORREGIDO por la crítica)
 
-El repo cree tener una fuente única de verdad para el contrato del modelo: el zod
-(`nefan-core/src/contract/model-io/scene-schema.ts`). **No la tiene.** Hay al menos cuatro
-artefactos que describen el mismo contrato y ninguno manda sobre los demás:
+Mi enunciado original decía que hay «cuatro espejos y ninguno manda». **Es falso, y el crítico
+lo midió**: el zod **sí** manda. Python hace `_tool()` tres veces (`narrative_schemas.py:44`,
+`:812`, `:895`) y **dos de los tres JSON los genera el zod** vía `CONTRACTS`, candados por
+`contract-model-io.test.ts:44`. Consumir el JSON derivado **es el diseño correcto** y ya
+funciona en 2 de 3.
 
-| Artefacto | Quién lo consume |
-|---|---|
-| `src/contract/model-io/scene-schema.ts` (zod) | el pre-flight de narrative-mcp |
-| `data/contract/tools/generate_scene.json` | **el motor narrativo** — y `ai_server` |
-| `data/contract/prompts/scene_instructions.md` | el motor narrativo |
-| `ai_server/narrative_schemas.py` | el camino de API directa |
+El problema real, en una frase suya:
 
-**El dato que decide esta tanda, medido hoy**: `ai_server/narrative_schemas.py:44` hace
-`_tool("generate_scene.json")`. O sea que **el proceso Python carga el JSON como fuente de
-verdad, no el zod**. La «fuente única» no lo es en uno de los procesos.
+> `generate_scene.json` es el único artefacto de contrato **escrito a mano y fuera del
+> codegen**, y de él cuelgan cuatro consumidores que nadie compara.
 
-Y la tanda anterior (`el-banco-no-puede-mentir`, PR #321) instaló **media pieza**: ató el motor
-falso al contrato TypeScript y lo metió en CI. Nadie ata el contrato TypeScript a Python. #319
-es esa mitad, y esta tanda existe en gran parte para no dejarla a medias.
+Y hay un **quinto espejo** que yo no había listado, que es el que de verdad muerde: los
+vocabularios a mano de `narrative_schemas.py` (`RESERVED_TERRAIN:47`, `VALID_ENTITY_KINDS:53`,
+`GROUND_KINDS:87`, `VOLUME_TYPES:95`) y la allow-list de `validate_scene_response:460`. **Ese**,
+y no `GENERATE_SCENE_TOOL`, es el espejo de #237.
 
 ---
 
-## 3 · Los cuatro, con su medida de HOY
+## 3 · Los tres, con la medida de la crítica
 
-### #319 — nadie ata el contrato TS al servicio Python
+### #203 — el contrato central fuera del guardia · VIGENTE con alcance corregido
 
-`labs/narrative/fake-ai-server.ts:661` lleva `satisfies DevStatus`, y `typecheck:labs` corre en
-CI. Eso cierra la dirección que produjo #309. **La contraria sigue abierta**: el productor real
-construye la respuesta a mano.
+`CONTRACTS` tiene tres entradas y `generate_scene` no está entre ellas.
 
-```python
-# ai_server/routers/cache_assets.py:52
-for k in ("surface_model", "sprite_skin_model", "usd_eur_rate")
-```
+**El recuento honesto, hecho por el crítico** (mi grep plano estaba inflado, como avisé):
 
-Una tupla de cadenas escritas a mano. Renombrar ahí no rompe nada: ni el typecheck nuevo, ni el
-cliente, ni los tests de Python — que aseveran sobre las mismas cadenas escritas otra vez.
+| Dirección | Resultado |
+|---|---|
+| JSON → zod | **2**, exactos: `scatter_generators`, `scatter_zones` |
+| zod → JSON | **87 rutas**, y las 87 caen dentro de `ground`/`volumes`/`vegetation_zones` |
+| `entities[]` | casa **12 a 12** |
 
-Segunda mitad medida: **el candado cubre formas, no rutas**. `POST /skin_sprite_sheet?x=1` da
-404 en el motor falso y 200 en FastAPI.
+Las 87 no son divergencia: el JSON declara esos tres como **prosa** (666/1502/1124 B de
+`description`, cero `properties`), y esa prosa es lo que le enseña la gramática al modelo — el
+§5 prohíbe tocarla.
 
-### #203 — el guardia de deriva no cubre el contrato central
+**Consecuencia directa sobre el criterio**: un guardia «en ambas direcciones» sin acotar el
+nivel **nace rojo por 87 motivos prohibidos**. Hay que acotarlo al nivel superior y a
+`entities[]`.
 
-`test/contract-model-io.test.ts` recorre `CONTRACTS`, que tiene **tres** entradas
-(`narrative_event`, `weapon_orient`, `weapon_verify`). En `data/contract/` hay ocho prompts y
-cuatro tools. Queda fuera **el contrato central del juego**.
+### #237 — divergencia TS↔Python · REENCUADRADA
 
-**Su reencuadre (crítico, 2026-08-23) sigue siendo la especificación** y evita el error caro: el
-guardia fuerte «JSON == lo que renderiza el zod» **habría borrado campos buenos**. El alcance
-correcto son dos candados baratos:
-
-1. comparar el **conjunto de campos** de los tres artefactos en **ambas** direcciones;
-2. un guardia **débil** sobre los cinco prompts huérfanos: que cada término que el prompt le
-   promete al modelo exista en el zod.
-
-**Ambos nacen rojos**, y cerrarlos —llevando el zod al JSON, no al revés— es parte del trabajo.
-
-**CORRECCIÓN MEDIDA HOY, y el issue no lo sabe**: el reencuadre dice «cuatro campos vivos que el
-zod no tiene». Hoy son **dos**:
-
-```
-EN EL JSON Y NO EN EL ZOD (top):    ['scatter_generators', 'scatter_zones']
-EN EL JSON Y NO EN EL ZOD (entity): []   ← estaba `style_ref`
-```
-
-`vegetation_zones`, `role` y `style_ref` entraron en el zod con **#173**, que ya está cerrado.
-El problema no ha caducado; la cifra sí. **Recontar antes de escribir el criterio.**
-
-**Aviso sobre mi propia medida**: el listado inverso que saqué (`code`, `cols`, `message`,
-`meters_per_cell`, `path`, `rows` en el zod y no en el JSON) sale de un `grep` **plano** sobre un
-schema **anidado**, así que casi con seguridad son campos de sub-objetos y el número está
-inflado. No lo uses sin rehacerlo bien.
-
-### #237 — divergencia medida TS↔Python en el gate de escena
+La divergencia es real y está verificada:
 
 | Entrada | zod (pre-flight MCP) | ai_server |
 |---|---|---|
 | `entities[].description: ""` | RECHAZA (`.min(1)`) | acepta y la descarta en silencio |
 | un tile con `size` | RECHAZA («un tile no lleva size») | acepta y hace `data.pop("size")` |
 
-Hoy es inocuo porque el pre-flight corta antes en la vía MCP. Deja de serlo por la vía de API
-directa (`llm_client.generate_scene`, sin pre-flight). Y el coste no es un rechazo de más: si
-ai_server rechaza lo que el pre-flight aceptó, `llm_client.py` devuelve `None`, **el tile se
-pierde y el jugador ve `narrative_status: error`** sin que el motor llegue a re-responder.
+Coste real cuando muerde: si ai_server rechaza lo que el pre-flight aceptó, `llm_client.py`
+devuelve `None`, **el tile se pierde y el jugador ve `narrative_status: error`**.
 
-**El candado existe y está mal calibrado**: las fixtures compartidas
-(`data/contract/fixtures/scene/`) ejecutan los dos procesos sobre el mismo set —el mecanismo
-correcto— pero sus seis casos **se eligieron entre los que ya coincidían**. Prueban el acuerdo
-donde ya lo había.
+**Lo que cambia la pregunta, y no estaba en el issue**: los dos validadores **no vigilan la
+misma población**. El zod **rechaza 20 de 20** tiles pre-generados de
+`data/games/*/world/tile.json` — por `size` (20×), `terrain` (20×) y `style_ref` de escena
+(18×). Su regla describe lo que el modelo **emite**; los tiles guardados son **post-expansión**.
 
-### #259 — `.passthrough()`: un campo retirado se cae en silencio
+**Alinear «cuál de los dos tiene razón» sin separar antes las dos poblaciones rompe el
+arranque.** Eso es trabajo obligatorio, no un aviso.
 
-`EntitySchema` es `.passthrough()` y del lado Python hay una allow-list. Un campo que el modelo
-emita y ya no exista **se descarta sin error, sin aviso y sin traza** — lo contrario de la
-doctrina escrita del repo para la salida del LLM.
+El candado existe y está mal calibrado: las fixtures de `data/contract/fixtures/scene/`
+ejecutan los dos procesos sobre el mismo set —el mecanismo correcto— pero sus seis casos **se
+eligieron entre los que ya coincidían**.
 
-El candado de #199 protege el **código** (impide que un humano reintroduzca el término). No
-protege del caso real: **el modelo emitiéndolo** porque lo vio en un ejemplo, un dump viejo o su
-propio historial.
+### #259 — `.passthrough()` · VIGENTE, y ENTRA
 
-**Es el arriesgado, y su cuerpo dice por qué**: `.passthrough()` puede estar sosteniendo campos
-que hoy viajan legítimamente sin estar declarados. **Hay que medir qué se cae hoy antes de
-cerrar la puerta**, o el fail-loud nuevo empieza gritando por cosas que funcionan. Medido de
-partida: hay **8 `.passthrough()` vivos** en `nefan-core/src/`.
+El usuario autorizó dejarlo fuera si al medirlo salía caro. **La medida dice que entra**, y es
+la más contundente de la crítica:
 
----
+- **76.293 entities censadas**: ni una clave fuera de las 12 declaradas, salvo `scattered`, que
+  ya está prohibido por `arch-rules`.
+- La allow-list de Python es **idéntica al zod**, diff = ∅.
 
-## 4 · Criterios de aceptación
-
-Escritos para poder salir ROJOS hoy. Cada uno dice cómo se comprueba y qué pasa hoy.
-
-1. **Renombrar un campo en `ai_server/routers/cache_assets.py` rompe algo** —un test, un
-   checker, un typecheck— en vez de dejar al motor falso y al cliente compilando contra un
-   contrato obsoleto. *Hoy: no rompe nada en ningún proceso.*
-
-2. **Un campo declarado en `generate_scene.json` y ausente del zod (o al revés) pone rojo un
-   test**, en **ambas** direcciones. *Hoy: `scatter_generators` y `scatter_zones` están en el
-   JSON, no en el zod, y las suites de contrato están verdes.*
-
-3. **Los dos huecos se cierran llevando el zod al JSON**, no al revés, y no se borra ningún
-   campo vivo. Verificable: los consumidores de esos campos
-   (`scene-expand.ts`, `blueprint/scatter.ts`, `blueprint/fps-spec.ts`) siguen funcionando.
-
-4. **Un término que un prompt le promete al modelo y no existe en el zod pone rojo el guardia
-   débil.** *Hoy: el censo del crítico daba 3 promesas muertas de ~335 — recontar, porque puede
-   haber caducado como caducaron los campos.*
-
-5. **Las dos entradas de la tabla de #237 dan el MISMO veredicto en los dos procesos**, y cada
-   una tiene su fixture en `data/contract/fixtures/scene/`. Decidir cuál de los dos lados tiene
-   razón es parte del trabajo, y hay que escribir por qué.
-
-6. **Las fixtures compartidas dejan de probar solo el acuerdo que ya había.** Verificable: al
-   menos una fixture del set **falla** si se revierte el arreglo de #237.
-
-7. **#259, si entra**: un campo desconocido en una entity produce un **error preciso hacia el
-   modelo** («este campo se retiró, no lo emitas») en vez de una poda muda.
-   **Precondición innegociable**: antes de cerrar la puerta, medir y escribir **qué se cae hoy**
-   por `.passthrough()`. Si esa medida dice que sostiene tráfico legítimo, #259 **sale de la
-   tanda** con el número escrito — el usuario lo autorizó expresamente.
-
-8. **Nada de esto gasta créditos**, ni al implementar ni al verificar.
+O sea que el `.passthrough()` de entity **no sostiene absolutamente nada**. La cláusula de
+escape del §4 no se activa: cerrarlo no puede romper tráfico legítimo, porque no hay.
 
 ---
+
+## 4 · Criterios de aceptación (reescritos tras la crítica)
+
+El criterio 1 anterior salió con #319. El 2 estaba mal acotado y **habría nacido rojo por 87
+motivos prohibidos**.
+
+1. **Un campo declarado en `generate_scene.json` y ausente del zod pone rojo un test**, acotado
+   al **nivel superior y a `entities[]`** — nunca dentro de `ground`/`volumes`/
+   `vegetation_zones`, que el JSON declara como prosa a propósito.
+   *Hoy: `scatter_generators` y `scatter_zones` están en el JSON, no en el zod, y las suites de
+   contrato están verdes.*
+
+2. **Los dos huecos se cierran llevando el zod al JSON**, no al revés, y no se borra ningún
+   campo vivo. Verificable: los consumidores siguen funcionando (`scene-expand.ts:78,353`,
+   `blueprint/scatter.ts:231-239`, `blueprint/fps-spec.ts:244`).
+
+3. **Un término que un prompt le promete al modelo y no existe en el zod pone rojo el guardia
+   débil.** *El censo del crítico anterior daba 3 de ~335; hay que recontarlo, porque las cifras
+   de este issue ya han caducado una vez.*
+
+4. **Las dos entradas de la tabla de #237 dan el MISMO veredicto en los dos procesos**, y cada
+   una tiene su fixture. **Antes hay que separar las dos poblaciones** —lo que el modelo emite
+   frente a lo que se carga de disco— y escribir cuál valida qué. Un arreglo que deje los 20
+   tiles rechazados **rompe el arranque**.
+
+5. **Las fixtures compartidas dejan de probar solo el acuerdo que ya había.** Verificable: al
+   menos una fixture del set **falla** si se revierte el arreglo.
+
+6. **Un campo desconocido en una entity produce un error preciso hacia el modelo** en vez de una
+   poda muda. *Hoy: se cae en silencio. La medida dice que no hay tráfico legítimo que
+   proteger (76.293 entities, cero claves extrañas).*
+
+7. **Nada de esto gasta créditos**, ni al implementar ni al verificar.
+
+8. **El riesgo de arte es cero y está medido, no razonado.** `validateContract`
+   (`validate.ts:32-36`) hace `safeParse` y **tira el resultado**, así que el zod no reescribe
+   ninguna escena. Comprobado además con el plan `varied`: con y sin scatter, `cells` da
+   `23e82540af3acff1` **idéntico**. Si algún cambio de la tanda alterase eso, hay que pararlo y
+   decirlo.
 
 ## 5 · Restricciones
 
@@ -181,7 +155,9 @@ Escritos para poder salir ROJOS hoy. Cada uno dice cómo se comprueba y qué pas
   prosa le enseña la gramática al modelo).
 - **Verificación barata**: el comando más barato que demuestre lo que toca.
 - La batería de QA es de **39 guiones** desde la tanda anterior. La línea base se mide antes de
-  tocar nada.
+  tocar nada — y **se declara de antemano que NO es estable**: #320 (el guion 34 es intermitente
+  bajo carga, 1 rojo de cada 4 baterías) está abierto. Si aparece un 34 rojo, **no es de esta
+  tanda**. Dicho antes, no después.
 
 ---
 
