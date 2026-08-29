@@ -191,9 +191,10 @@
                 "peasant",
                 "guard",
                 "villager",
-                "merchant"
+                "merchant",
+                "hostile"
               ],
-              "description": "NPCs only, optional: BEHAVIOUR preset the simulation runs for this NPC (guard stands its ground and steps into a fight; the rest wander and flee). It is NOT the job — a smith, a mayor or an innkeeper are villagers/merchants who happen to have a trade, and the trade goes in `name` and `description`. Same four values as spawn_entity. Omit and the NPC behaves as a villager."
+              "description": "NPCs only, optional: BEHAVIOUR preset the simulation runs for this NPC (guard stands its ground and steps into a fight; peasant/villager/merchant wander and flee; `hostile` ATTACKS the player — the engine derives its health, weapon and aggression, you do not). It is NOT the job — a smith, a mayor or an innkeeper are villagers/merchants who happen to have a trade, and the trade goes in `name` and `description`; a bandit, a wolf or a cultist are `hostile` and their identity goes there too. Same five values as spawn_entity. Omit and the NPC behaves as a villager."
             },
             "description": {
               "type": "string",

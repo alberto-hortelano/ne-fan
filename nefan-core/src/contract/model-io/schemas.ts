@@ -44,7 +44,12 @@ const SpawnEntityConsequence = z
     role: z
       .enum(NPC_ROLES)
       .optional()
-      .describe("Rol de comportamiento ambiental (NPCs); desconocido degrada a villager"),
+      .describe(
+        "NPCs: preset de conducta. Los cuatro ambientales (peasant/guard/villager/merchant) " +
+          "deambulan; `hostile` ATACA al jugador y el motor del juego deriva su vida, arma y " +
+          "agresividad — no las declaras tú. No es el oficio: un bandido o un lobo son " +
+          "`hostile` y su identidad va en `name`/`description`. Ausente ⇒ villager",
+      ),
     style_ref: z
       .string()
       .optional()

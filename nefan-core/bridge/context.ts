@@ -24,6 +24,7 @@ import type { PluginManifest } from "../src/plugins/types.js";
 import type { SceneRecord, SessionData } from "../src/narrative/types.js";
 import type { NpcBehaviorSystem } from "../src/simulation/npc-behavior.js";
 import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
+import { isHostileRole } from "../src/simulation/npc-roles.js";
 import { seededRng } from "../src/rng.js";
 import { resolvePlaceTarget } from "../src/world-map/place-target.js";
 import type { SimCollisionProvider } from "./sim-collision.js";
@@ -35,7 +36,6 @@ import {
 } from "../src/plugins/dispatcher.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
-import { projectEnemiesFromEntities } from "../src/store/state-projection.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
 import { resolveExitEdge } from "../src/world-map/edges.js";
@@ -294,17 +294,23 @@ export function broadcastScene(
   // crudo). La persistencia (scenes_loaded, saves, serializeForLlm) sigue en
   // Format D crudo — sólo se normaliza el wire.
   const worldScene = formatDToWorld(scene);
-  // Proyección canónica NarrativeState.entities → GameStore.enemies para la
-  // escena que se difunde. Con tiles, la proyección cubre el VECINDARIO 3×3
-  // del tile difundido más la escena activa — los enemigos de los tiles
-  // adyacentes siguen vivos en el sim (el mundo es continuo, no una arena).
-  const sceneIds = new Set<string>([sceneId, ctx.narrative.world.active_scene_id]);
-  addNeighborhoodSceneIds(ctx, ctx.narrative.scenes_loaded[sceneId], sceneIds);
-  ctx.store.dispatch("enemies_projected", {
-    enemies: [...sceneIds].flatMap((id) =>
-      projectEnemiesFromEntities(ctx.narrative.entities, { sceneId: id }),
-    ),
-  });
+  // Aquí vivía una segunda vía a `GameStore.enemies`: una "proyección
+  // canónica" NarrativeState.entities → enemies que REEMPLAZABA la lista
+  // entera en cada broadcast. Se retiró con `state-projection.ts` (#323) y no
+  // vuelve, por dos razones que se descubrieron midiendo:
+  //
+  //  1. Nunca tuvo productor. Filtraba por `type === "enemy"`, y ninguna
+  //     entity del juego lo es: el enum de `spawn_entity` son npc/building/
+  //     object y `EmittedSceneSchema` rechaza `kind:"enemy"`. Su único test
+  //     fabricaba la entrada a mano.
+  //  2. Y estando muerta hacía daño: como `getEnemyStates` ITERA
+  //     `store.state.enemies`, el primer cambio de tile tras un
+  //     `add_combatants` borraba del `state_update` a un enemigo que seguía
+  //     vivo en el sim. La barra de vida se congelaba y el combate se perdía.
+  //
+  // La vía viva —la única— es world scene → `npcs[].combat` → cliente →
+  // `add_combatants` → `sim.addCombatant`, y ésa sí añade combatiente al sim,
+  // que es lo que `getEnemyStates` exige para emitir nada.
   ctx.broadcastNarrative({
     type: "narrative_event",
     eventId: "scene_init",
@@ -462,6 +468,14 @@ export function npcSync(ctx: BridgeContext): void {
   const want = new Set<string>();
   for (const e of ctx.narrative.entities) {
     if (e.type !== "npc" || !sceneIds.has(e.scene_id)) continue;
+    // Un HOSTIL no entra en la vida ambiental. No es higiene: `NpcBehaviorSystem`
+    // MUTA `record.position` in situ cada tick, y a un combatiente lo mueve la
+    // IA de combate del sim. Los dos a la vez son dos dueños de la misma
+    // posición — el enemigo parpadearía entre dos sitios, saldría por los DOS
+    // canales del `state_update` (`getNpcStates` y `getEnemyStates`) y, con
+    // `flees_from_combat`, huiría de su propia pelea. Hasta hoy nada lo
+    // impedía porque nunca hubo enemigos.
+    if (isHostileRole(e.data.role)) continue;
     want.add(e.id);
     behavior.addNpc(e);
   }

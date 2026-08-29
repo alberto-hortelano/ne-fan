@@ -4104,41 +4104,6 @@
         "#286"
       ]
     },
-    "src/store/state-projection.ts": {
-      "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
-      "run": "33191631830",
-      "fecha": "2026-08-28T19:40:13.651Z",
-      "blob": "dc4a1febee182f720721c318f901b1bbd71cfa42",
-      "total": 63,
-      "vivos": [
-        "1290b4c3cdd0a54d",
-        "27a81f66e371290e",
-        "317aa371277082be",
-        "37017045035951c0",
-        "43dad476667ef98b",
-        "524e723636a7ef76",
-        "70126c60b7f49731",
-        "72214ed47502e855",
-        "9cba02fe61164dfd",
-        "a5e71838dea677de",
-        "b5cfb0b7bcb9dfc3",
-        "b78789a5e08f3b12",
-        "fb956f996922367e",
-        "feaab6e429fe080a",
-        "ff046ccb22d35919"
-      ],
-      "nuevos": [],
-      "resueltos": 0,
-      "base": "con base",
-      "duenos": [
-        "#305",
-        "#299",
-        "#294",
-        "#292",
-        "#288",
-        "#286"
-      ]
-    },
     "src/world-map/bootstrap-place.ts": {
       "sha": "cc3cd54801fcfc018e5f136e68dfb0b483e0ce3f",
       "run": "33191631830",

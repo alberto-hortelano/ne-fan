@@ -5,6 +5,7 @@ import type { NarrativeState } from "./narrative-state.js";
 import { resolveSpeaker } from "./speaker-resolve.js";
 import type { Consequence, ConsequenceEffect, Vec3Like } from "./types.js";
 import { toTuple } from "./types.js";
+import { combatForHostileRole } from "../combat/hostiles.js";
 
 export type { ConsequenceEffect };
 
@@ -90,8 +91,23 @@ export function dispatchConsequences(
           opts.generateEntityId?.(kind) ??
           `narr_${kind}_${Math.floor(Date.now() / 1000)}_${spawnOrdinal++}`;
         const sceneId = state.world.active_scene_id;
+        // La SEGUNDA vía a un enemigo, y converge con la primera en
+        // `combatForHostileRole`: un `spawn_entity` con `kind:"npc"` y
+        // `role:"hostile"` sale con el MISMO bloque `combat` que emite
+        // `formatDToWorld` para la escena inicial. Lo que sigue siendo
+        // distinto es solo el transporte (effect en vuelo vs world scene),
+        // que ya lo era.
+        //
+        // El bloque va al `data` del EntityRecord además de al effect: el
+        // ledger narrativo es lo que sobrevive al save y lo que lee el motor,
+        // y un enemigo cuyo combate solo viviera en el effect no existiría
+        // tras recargar la escena.
+        const combat = kind === "npc" ? combatForHostileRole(c.role) : undefined;
+        const data: Record<string, unknown> = combat
+          ? { ...(c as Record<string, unknown>), combat }
+          : (c as Record<string, unknown>);
         const finalId = state.recordEntitySpawned(
-          entityId, kind, sceneId, pos, c, "narrative_request", eventId,
+          entityId, kind, sceneId, pos, data, "narrative_request", eventId,
         );
         result.effects.push({
           kind: "spawn_entity",
@@ -100,7 +116,7 @@ export function dispatchConsequences(
           description,
           name: typeof c.name === "string" ? c.name : undefined,
           position: pos,
-          data: c as Record<string, unknown>,
+          data,
           eventId,
         });
         break;

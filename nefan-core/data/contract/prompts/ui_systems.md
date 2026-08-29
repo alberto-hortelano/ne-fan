@@ -51,7 +51,7 @@ to.
 `{type: "spawn_entity", ...}` consequences materialize IN the live scene,
 no reload:
 - NPCs/creatures: appear with an AI-skinned character sprite from their
-  Spanish description; hostile ones need the `combat` block (see 5).
+  Spanish description; hostile ones carry `role: "hostile"` (see 5).
 - Props/buildings: appear as schematic boxes until the scene is next
   regenerated/repainted. Their footprint blocks movement either way.
 Use spawns to react to choices ("quiero ir a la forja" → spawn the smith),
@@ -64,10 +64,15 @@ them up and narrate around them.
   1-5 + click), weapons (unarmed/short_sword/war_hammer), tactic matrix.
 - "basic": single "Golpe" attack, fixed damage, short reach (HUD shows one
   button).
-How you drive it: give hostile entities a `combat` block —
-`{health, weapon_id, personality: {aggression, preferred_attacks[],
-reaction_time, combat_range}}`. The HUD (health bars, attack selector)
-follows the active system automatically.
+How you drive it: declare the NPC with `role: "hostile"` — in the scene you
+generate, or in a `spawn_entity` consequence mid-scene. That single field is
+the whole interface. The engine derives the hostile's health, weapon and
+aggression from it, so the same encounter plays the same way twice and the
+balance can be tuned in one place; you never write hit points, damage or
+stats, and an entity carrying extra keys is rejected. Who it IS — "bandido de
+camino con la cara marcada", "lobo flaco de invierno" — goes in `name` and
+`description`, exactly like any other NPC. The HUD (health bars, attack
+selector) follows the active system automatically.
 
 ── 6. STORY, AMBIENT & SCHEDULING ─────────────────────────────────────────
 - `story_update` consequences append to story_so_far; the player browses the

@@ -26,6 +26,10 @@ const REF_POR_ROL: Record<NpcRole, NpcStyleRole> = {
   villager: "commoner",
   merchant: "commoner",
   guard: "warrior",
+  // Un hostil se viste de la ref que YA existe en todos los packs: no se
+  // añade ninguna, así que ninguna clave de caché de skin cambia y un
+  // enemigo nuevo paga su skin como cualquier NPC nuevo, ni más ni menos.
+  hostile: "warrior",
 };
 
 /** Rol de estilo de personaje para un rol de mundo de NPC (peasant/guard/…):

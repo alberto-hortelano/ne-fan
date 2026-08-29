@@ -10,7 +10,13 @@ import {
   type NpcWorldAdapter,
 } from "../src/simulation/npc-behavior.js";
 import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
-import { resolveRoleParams, NPC_ROLES, NPC_ROLE_PRESETS } from "../src/simulation/npc-roles.js";
+import {
+  resolveRoleParams,
+  AMBIENT_ROLES,
+  NPC_ROLES,
+  NPC_ROLE_PRESETS,
+  isHostileRole,
+} from "../src/simulation/npc-roles.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
@@ -559,10 +565,41 @@ describe("el rol declarado en la escena llega hasta el preset de conducta", () =
     assert.equal(params.intervenes_in_combat, false);
   });
 
-  it("cada rol del vocabulario resuelve SU preset, no el de al lado", () => {
-    for (const role of NPC_ROLES) {
+  it("cada rol AMBIENTAL resuelve SU preset, no el de al lado", () => {
+    for (const role of AMBIENT_ROLES) {
       const params = resolveRoleParams(recordDe({ id: `npc_${role}`, name: "X", role }).data);
       assert.deepEqual(params, NPC_ROLE_PRESETS[role], `el rol ${role} no resolvió su preset`);
+    }
+  });
+
+  // La partición del vocabulario es la que hace inexpresable el doble dueño
+  // de la posición: un hostil lo mueve la IA de combate del sim, y el sistema
+  // ambiental mutaría `record.position` en paralelo. `NPC_ROLE_PRESETS` es
+  // `Record<AmbientRole, …>` justo para que escribir aquí una entrada
+  // `hostile` no COMPILE; esto comprueba la otra mitad, la que sí es de
+  // ejecución: que la partición cubre el vocabulario entero y que ningún rol
+  // cae en los dos lados.
+  it("el vocabulario se parte en ambientales y hostiles, sin solapes ni huecos", () => {
+    assert.deepEqual(
+      [...NPC_ROLES].sort(),
+      [...AMBIENT_ROLES, "hostile"].sort(),
+      "NPC_ROLES ya no es la unión de las dos particiones",
+    );
+    for (const role of AMBIENT_ROLES) {
+      assert.equal(isHostileRole(role), false, `el rol ambiental ${role} se declara hostil`);
+      assert.ok(NPC_ROLE_PRESETS[role], `el rol ambiental ${role} no tiene preset`);
+    }
+    assert.equal(isHostileRole("hostile"), true);
+    assert.equal(
+      (NPC_ROLE_PRESETS as Record<string, unknown>).hostile,
+      undefined,
+      "un hostil NO puede tener preset ambiental: sería el segundo dueño de su posición",
+    );
+  });
+
+  it("isHostileRole no se cree un rol inventado ni un no-string", () => {
+    for (const x of ["Hostile", "hostil", "enemy", "bandido", "", undefined, null, 1, {}]) {
+      assert.equal(isHostileRole(x), false, `isHostileRole(${JSON.stringify(x)})`);
     }
   });
 });

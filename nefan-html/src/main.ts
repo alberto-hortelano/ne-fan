@@ -27,6 +27,7 @@ import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js"
 import type { Entity } from "./renderer/types.js";
 import { FPS_DEBUG_VIEW_LABELS, FpsRenderer, type FpsTilePlan } from "./renderer/fps-renderer.js";
 import { FpsAtlasController } from "./scene/fps-atlas.js";
+import { enemigoDesdeCombat } from "./scene/enemigo.js";
 import { CollisionSystem, applyPlanCollision } from "./world/collision.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import {
@@ -653,7 +654,6 @@ characterSprites.setSkinsAllowed(charactersGenerationOn());
 let enemyEntities: Entity[] = [];
 let objectEntities: Entity[] = [];
 let npcEntities: Entity[] = [];
-const ENEMY_COLORS = ["#c44", "#4a4", "#48c", "#ca4"];
 let colorIdx = 0;
 
 // --- Animación por entidad (NPCs/enemigos) ---
@@ -928,12 +928,15 @@ async function addTile(
   const objects = (data.objects ?? []) as Record<string, unknown>[];
   const ids = new Set(objects.map((o) => o.id as string));
   const npcIds = new Set(((data.npcs ?? []) as Record<string, unknown>[]).map((n) => n.id as string));
-  enemyEntities = enemyEntities.filter((e) => !ids.has(e.id) && !inRect(e.pos));
   objectEntities = objectEntities.filter((o) => !ids.has(o.id) && !inRect(o.pos));
-  // NPCs: purga por IDENTIDAD de tile, nunca por rect — un NPC de otro tile
-  // que paseó hasta aquí (vida ambiental del bridge) no debe borrarse. Solo
-  // caen los que pertenecían a ESTE tile y ya no figuran en su scene data.
+  // NPCs y ENEMIGOS: purga por IDENTIDAD de tile, nunca por rect — un NPC de
+  // otro tile que paseó hasta aquí (vida ambiental del bridge) no debe
+  // borrarse, y un enemigo persigue al jugador, así que a la mitad de una
+  // pelea está donde le da la gana. Solo caen los que pertenecían a ESTE tile
+  // y ya no figuran en su scene data. Purgar al enemigo por rect lo devolvía
+  // a su celda de spawn con la vida llena en cada re-emisión del tile.
   npcEntities = npcEntities.filter((n) => !(n.tileKey === key && !npcIds.has(n.id)));
+  enemyEntities = enemyEntities.filter((e) => !(e.tileKey === key && !npcIds.has(e.id)));
   const enemies: RoomEnemy[] = [];
   // Qué tipo de volumen representa a cada objeto del plan: de aquí sale si el
   // greybox ya lo pinta (y entonces no lleva billboard encima).
@@ -952,75 +955,26 @@ async function addTile(
     const sizeY = scale && scale.length >= 3 ? scale[1] : undefined;
     const category = obj.category as string | undefined;
     const shape = obj.shape as string | undefined;
-    const combat = obj.combat as Record<string, unknown> | undefined;
-    if (combat) {
-      // Combat block exists → every field is required. The narrative engine
-      // sets these explicitly; missing values mean the LLM produced a broken
-      // combat record, not a place to default-fill.
-      if (typeof combat.health !== "number" || !Number.isFinite(combat.health)) {
-        throw new Error(`scene object ${obj.id} combat.health must be a finite number, got ${combat.health}`);
-      }
-      if (typeof combat.weapon_id !== "string" || !combat.weapon_id) {
-        throw new Error(`scene object ${obj.id} combat.weapon_id missing`);
-      }
-      const personality = combat.personality as Record<string, unknown> | undefined;
-      if (!personality || typeof personality !== "object") {
-        throw new Error(`scene object ${obj.id} combat.personality missing`);
-      }
-      const requireNum = (key: string): number => {
-        const v = personality[key];
-        if (typeof v !== "number" || !Number.isFinite(v)) {
-          throw new Error(`scene object ${obj.id} combat.personality.${key} must be a finite number, got ${v}`);
-        }
-        return v;
-      };
-      const attacks = personality.preferred_attacks;
-      if (!Array.isArray(attacks) || attacks.length === 0 ||
-          !attacks.every((a) => typeof a === "string")) {
-        throw new Error(`scene object ${obj.id} combat.personality.preferred_attacks must be a non-empty string array`);
-      }
-      enemies.push({
-        id: obj.id as string,
-        position: pos,
-        health: combat.health,
-        weaponId: combat.weapon_id,
-        personality: {
-          aggression: requireNum("aggression"),
-          preferred_attacks: attacks as string[],
-          reaction_time: requireNum("reaction_time"),
-          combat_range: requireNum("combat_range"),
-          ...personality,
-        },
-      });
-      const color = ENEMY_COLORS[colorIdx++ % ENEMY_COLORS.length];
-      const enemyPrompt = (obj.description ?? obj.id) as string;
-      const enemyEntity: Entity = {
-        id: obj.id as string, pos, radius: 8, color,
-        label: enemyPrompt,
-        hp: combat.health as number, maxHp: combat.health as number, alive: true,
-        category: category ?? "creature",
-        sizeXZ,
-        sizeY,
-        skinPrompt: enemyPrompt,
-      };
-      characterSprites.requestSkin(enemyPrompt);
-      enemyEntities.push(enemyEntity);
-    } else {
-      const objectEntity: Entity = {
-        id: obj.id as string, pos, radius: 5,
-        color: category === "item" ? "#aa8" : "#666",
-        label: (obj.description ?? "") as string, alive: true,
-        category: category ?? "prop",
-        sizeXZ,
-        sizeY,
-        shape,
-        // Tipo del volumen que ya la pinta en el greybox (`volume_id` de la
-        // world scene). Presente = no se dibuja billboard encima; `building`
-        // además no se puede mirar (su centro no es un punto al que apuntar).
-        volumeType: typeof obj.volume_id === "string" ? tipoDeVolumen.get(obj.volume_id) : undefined,
-      };
-      objectEntities.push(objectEntity);
-    }
+    // Aquí había una rama `objects[].combat` de 58 líneas que construía
+    // enemigos. Era un fósil de `data/rooms/*.json` (muertas en #209): ningún
+    // dato del árbol llevaba ese campo y `formatDToWorld` nunca lo emitía en
+    // `objects[]`, así que nunca corrió en producción. Los enemigos entran hoy
+    // por `npcs[].combat` (el motor declara `role:"hostile"`) y por
+    // `materializeSpawn`, y las dos vías pasan por `enemigoDesdeCombat`.
+    const objectEntity: Entity = {
+      id: obj.id as string, pos, radius: 5,
+      color: category === "item" ? "#aa8" : "#666",
+      label: (obj.description ?? "") as string, alive: true,
+      category: category ?? "prop",
+      sizeXZ,
+      sizeY,
+      shape,
+      // Tipo del volumen que ya la pinta en el greybox (`volume_id` de la
+      // world scene). Presente = no se dibuja billboard encima; `building`
+      // además no se puede mirar (su centro no es un punto al que apuntar).
+      volumeType: typeof obj.volume_id === "string" ? tipoDeVolumen.get(obj.volume_id) : undefined,
+    };
+    objectEntities.push(objectEntity);
   }
 
   // NPCs from room data (append: los de otros tiles siguen vivos). Un id ya
@@ -1031,9 +985,38 @@ async function addTile(
   const newNpcs: Entity[] = [];
   for (const npc of npcsData) {
     const npcId = npc.id as string;
-    const existing = npcEntities.find((n) => n.id === npcId);
+    const existing = npcEntities.find((n) => n.id === npcId)
+      ?? enemyEntities.find((e) => e.id === npcId);
     if (existing) {
       existing.tileKey = key;
+      continue;
+    }
+    // VÍA (a) al combate: el motor declaró `role:"hostile"` y el core derivó
+    // el bloque (`formatDToWorld` → `combatForHostileRole`). El cliente no
+    // decide quién pelea ni con cuánta vida: solo lo pinta y se lo dice al
+    // sim, que es quien resuelve el daño.
+    if (npc.combat !== undefined) {
+      const nuevo = enemigoDesdeCombat({
+        id: npcId,
+        pos: {
+          x: (npc.position as number[])?.[0] ?? 0,
+          y: (npc.position as number[])?.[1] ?? 0,
+          z: (npc.position as number[])?.[2] ?? 0,
+        },
+        combat: npc.combat,
+        descripcion: typeof npc.description === "string" ? npc.description : undefined,
+        styleRef: typeof npc.style_ref === "string" ? npc.style_ref : undefined,
+        nombre: typeof npc.name === "string" ? npc.name : undefined,
+        indiceColor: colorIdx++,
+        tileKey: key,
+      });
+      if (nuevo) {
+        enemies.push(nuevo.combatiente);
+        enemyEntities.push(nuevo.entidad);
+        characterSprites.requestSkin(nuevo.entidad.skinPrompt ?? npcId, {
+          role: nuevo.entidad.styleRole,
+        });
+      }
       continue;
     }
     const npcPrompt = (npc.description ?? npc.name ?? npc.id) as string;
@@ -1066,7 +1049,12 @@ async function addTile(
   // Fail-loud del contrato de posiciones globales: una entidad de un tile de
   // grid FUERA de su rect delata una conversión celda→mundo rota.
   if (isGridTile) {
-    for (const e of [...newNpcs, ...enemyEntities.filter((en) => ids.has(en.id))]) {
+    // Los enemigos se comprueban RECIÉN nacidos (`enemies`, lo que este tile
+    // acaba de declarar), no barriendo `enemyEntities`: uno que lleva un rato
+    // persiguiendo al jugador puede estar legítimamente fuera del rect de su
+    // tile, y exigirle que siga dentro convertiría el candado de la
+    // conversión celda→mundo en un rojo por perseguir bien.
+    for (const e of [...newNpcs, ...enemies.map((en) => ({ id: en.id, pos: en.position }))]) {
       if (!inRect(e.pos)) {
         errors.push("scene", `entidad "${e.id}" de ${key} fuera de su rect: (${e.pos.x.toFixed(1)}, ${e.pos.z.toFixed(1)})`);
       }
@@ -1183,6 +1171,22 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       },
     }),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
+    /** Los ENEMIGOS que el cliente tiene en escena, con la vida que el sim le
+     *  está diciendo. Hermano de `npcs()` y por la misma razón: un guion tiene
+     *  que poder acercarse a un combatiente sin leer píxeles, y el enemigo se
+     *  MUEVE (persigue), así que su posición del scene data está vieja en
+     *  cuanto empieza la pelea. La AFIRMACIÓN de que pierde vida sigue yendo
+     *  contra el HUD (`#hp-text-<id>`), que es lo que ve quien juega; esto es
+     *  para saber hacia dónde andar. Solo lectura. */
+    enemies: () =>
+      enemyEntities.map((e) => ({
+        id: e.id,
+        label: e.label,
+        pos: { ...e.pos },
+        hp: e.hp,
+        maxHp: e.maxHp,
+        alive: e.alive,
+      })),
     // Panel de dev (#dev-status): los benches E2E pueden leer/conducir su
     // estado (setPainting/recordGeneration) sin tocar píxeles.
     devPanel,
@@ -2446,6 +2450,34 @@ function materializeSpawn(effect: {
   const spriteHash = typeof effect.data.sprite_hash === "string" ? effect.data.sprite_hash : undefined;
 
   if (effect.entityKind === "npc") {
+    // VÍA (b) al combate: un `spawn_entity` con `role:"hostile"`. El bloque
+    // `combat` lo puso el core en `dispatchConsequences` (mismo
+    // `combatForHostileRole` que la escena inicial), y aquí se registra por la
+    // MISMA puerta. Sin esto, el enemigo aparecería como un vecino más: se
+    // pintaría y no se le podría pegar.
+    if (effect.data.combat !== undefined) {
+      const nuevo = enemigoDesdeCombat({
+        id: effect.entityId,
+        pos,
+        combat: effect.data.combat,
+        descripcion: effect.description,
+        styleRef: typeof effect.data.style_ref === "string" ? effect.data.style_ref : undefined,
+        nombre: effect.name,
+        indiceColor: colorIdx++,
+      });
+      if (nuevo) {
+        enemyEntities.push(nuevo.entidad);
+        characterSprites.requestSkin(nuevo.entidad.skinPrompt ?? effect.entityId, {
+          role: nuevo.entidad.styleRole,
+        });
+        // El alta en el sim es lo que lo convierte en algo a lo que se puede
+        // pegar; la barra de vida, en algo que el jugador ve perder vida.
+        gameClient?.addEnemies([nuevo.combatiente]);
+        rebuildEnemyBars();
+        log(`⚔ ${effect.name ?? "Enemigo"} ataca`);
+      }
+      return;
+    }
     // El caso central del skin IA: la descripción del motor narrativo es el
     // prompt con el que se repinta la base y_bot frame a frame.
     const npcPrompt = effect.description || (effect.name ?? effect.entityId);

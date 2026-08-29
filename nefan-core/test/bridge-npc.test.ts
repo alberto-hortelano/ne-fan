@@ -11,6 +11,7 @@ import type {
   StateUpdateMessage,
 } from "../src/protocol/messages.js";
 import { NPC_ROLE_PRESETS } from "../src/simulation/npc-roles.js";
+import { combatForHostileRole } from "../src/combat/hostiles.js";
 import {
   makeCtx,
   makeSocket,
@@ -130,5 +131,69 @@ describe("bridge vida ambiental de NPCs", () => {
       `ambient_events debe registrar la huida: ${JSON.stringify(llm.ambient_events)}`,
     );
     assert.equal(narrative.dialogue_history.length, dialoguesBefore, "el log ambiental no contamina el diálogo");
+  });
+
+  /** EL GUARDIA DE EXCLUSIÓN. Hasta #323 nada impedía que un mismo id
+   *  estuviera a la vez en `NpcBehaviorSystem` y en `combatants`, y no dolía
+   *  porque nunca hubo enemigos. Con hostiles serían DOS dueños de la misma
+   *  posición: el behavior muta `record.position` in situ cada tick y el
+   *  combatiente lo mueve la IA de combate, así que el enemigo parpadearía
+   *  entre dos sitios, saldría por los dos canales del `state_update` y —con
+   *  `flees_from_combat` del preset villager al que degradaría— huiría de su
+   *  propia pelea.
+   *
+   *  PROBADO EN NEGATIVO: quitando la línea `if (isHostileRole(e.data.role))
+   *  continue` de `npcSync` (bridge/context.ts), este bloque se pone rojo por
+   *  las tres afirmaciones a la vez. */
+  it("un NPC hostil NO entra en la vida ambiental (un solo dueño de su posición)", async () => {
+    const { ctx, narrative, socket, sent } = await startAmbientSession();
+    const sceneId = narrative.world.active_scene_id;
+    narrative.recordEntitySpawned(
+      "aldeano_1", "npc", sceneId, [5, 0, 5], { name: "Aldeano", role: "peasant" }, "scene_init",
+    );
+    narrative.recordEntitySpawned(
+      "bandido_1", "npc", sceneId, [6, 0, 6],
+      { name: "Bandido", role: "hostile", combat: combatForHostileRole("hostile") },
+      "narrative_request",
+    );
+    npcSync(ctx);
+
+    const gestionados = [...ctx.sim.npcBehaviorSystem!.ids()];
+    assert.deepEqual(gestionados, ["aldeano_1"], "el hostil se coló en el behavior system");
+
+    // Y no sale por el canal de NPCs del state_update: si saliera, el cliente
+    // le movería la Entity desde `npcs` mientras el sim se la mueve desde
+    // `enemies`.
+    sent.length = 0;
+    await tickInput(ctx, socket, 1);
+    const update = sent[0] as StateUpdateMessage;
+    assert.deepEqual((update.npcs ?? []).map((n) => n.id), ["aldeano_1"]);
+
+    // Tercera afirmación, la que cierra el "un solo dueño": el sim NO ha
+    // tocado su posición por la vía ambiental (sigue donde lo puso el motor).
+    assert.deepEqual(narrative.getEntity("bandido_1")!.position, [6, 0, 6]);
+  });
+
+  it("un hostil que ya estaba gestionado se RETIRA del behavior en el siguiente sync", async () => {
+    // Reconciliación, no solo alta: un save viejo o un cambio de rol podría
+    // dejar dentro a alguien que ya no debe estar.
+    //
+    // Entra por `startAmbientSession` y no por `makeCtx()` a secas porque sin
+    // `start_session` no hay behavior system: la primera versión de este test
+    // salía por un `if (!behavior) return` y era un VERDE VACÍO — pasaba
+    // igual con el guardia quitado, comprobado.
+    const { ctx, narrative } = await startAmbientSession();
+    const behavior = ctx.sim.npcBehaviorSystem;
+    assert.ok(behavior, "sin behavior activo este test no puede ponerse rojo");
+    const sceneId = narrative.world.active_scene_id;
+    narrative.recordEntitySpawned(
+      "maton_1", "npc", sceneId, [2, 0, 2], { name: "Matón", role: "villager" }, "scene_init",
+    );
+    npcSync(ctx);
+    assert.ok(behavior.ids().includes("maton_1"), "precondición: entra como ambiental");
+
+    narrative.getEntity("maton_1")!.data.role = "hostile";
+    npcSync(ctx);
+    assert.ok(!behavior.ids().includes("maton_1"), "al volverse hostil sale del behavior");
   });
 });

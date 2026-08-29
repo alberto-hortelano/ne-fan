@@ -126,15 +126,40 @@ export default async function (ctx) {
     120_000,
   );
   ctx.log(`libro de skins de la partida: ${JSON.stringify(libro)}`);
+  // El libro y el cable NO son el mismo conjunto, y hasta el 2026-08-29 lo
+  // parecían porque el tile del bench tenía UN solo personaje. Con dos (el
+  // bandido hostil de #323 entró en el bootstrap) se ve lo que siempre fue
+  // verdad: el libro apunta lo que la partida PIDE y el cable lleva lo que la
+  // cola llega a mandar, y contra el motor falso la cola se corta — el fake
+  // solo tiene hoja `idle` y contesta 500 a `walk`, lo que dispara el
+  // cortacircuitos del cliente (`skinsDisabled`) y deja sin salir todo lo
+  // encolado detrás. Es el mismo gotcha que documenta el guion 15.
+  //
+  // Así que la igualdad se sustituye por las DOS afirmaciones que sí son
+  // ciertas y que son las que pueden cazar el bug que este bloque persigue
+  // («pide por el cable a otro personaje del que apuntó»):
+  //   · el cable no puede llevar un prompt que no esté en el libro, y
+  //   · el libro es exactamente el reparto de la escena.
+  // Lo que se pierde —«y ni uno menos»— no era una garantía: era el número de
+  // NPCs del tile del bench.
+  const libroFinal = await ctx.nefan("skins");
   const partida = peticiones.slice(corte).map((p) => p.body);
   ctx.expect("la partida pide el skin de sus NPCs", partida.length > 0, `${partida.length} peticiones`);
-  // Contenido, no cardinales: dos conjuntos distintos del mismo tamaño pasaban.
   const promptsCable = [...new Set(partida.map((p) => p.prompt))].sort();
-  const promptsLibro = [...new Set(libro.map((sk) => sk.prompt))].sort();
+  const promptsLibro = [...new Set(libroFinal.map((sk) => sk.prompt))].sort();
+  ctx.log(`libro=${JSON.stringify(promptsLibro)} · cable=${JSON.stringify(promptsCable)}`);
   ctx.expect(
-    "y lo que pide por el cable son los MISMOS personajes que apuntó en su libro",
-    JSON.stringify(promptsCable) === JSON.stringify(promptsLibro),
+    "el cable no pide NINGÚN personaje que la partida no haya apuntado en su libro",
+    promptsCable.every((p) => promptsLibro.includes(p)),
     `cable=${JSON.stringify(promptsCable)} libro=${JSON.stringify(promptsLibro)}`,
+  );
+  const npcsDeLaEscena = await ctx.page.evaluate(() =>
+    (window.__nefan.scene?.npcs ?? []).map((n) => n.description ?? n.name ?? n.id),
+  );
+  ctx.expect(
+    "y el libro es exactamente el reparto de la escena: ni se deja a nadie ni se inventa a nadie",
+    JSON.stringify(promptsLibro) === JSON.stringify([...new Set(npcsDeLaEscena)].sort()),
+    `libro=${JSON.stringify(promptsLibro)} escena=${JSON.stringify(npcsDeLaEscena)}`,
   );
   if (!batch.length || !partida.length) return;
 

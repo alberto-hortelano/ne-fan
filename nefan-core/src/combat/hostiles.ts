@@ -1,0 +1,55 @@
+/** El combate de un NPC hostil, DERIVADO en el core de su `role`.
+ *
+ *  Por qué aquí y no en el contrato: el motor narrativo declara HOSTILIDAD
+ *  (`role:"hostile"`), no números. Un bloque `{health, weapon_id,
+ *  personality}` escrito por el LLM sería balance inventado turno a turno —
+ *  irreproducible entre dos partidas del mismo mundo, imposible de ajustar
+ *  desde un sitio, y un campo 13 en un `EntitySchema` que es `.strict()` con
+ *  12 por argumento medido (#324). El modelo conserva toda la expresividad
+ *  donde se ve: `name` y `description`.
+ *
+ *  Esta es la ÚNICA fuente del bloque `combat`, y por eso las dos vías de
+ *  spawn convergen: la escena inicial (`formatDToWorld`) y el spawn en
+ *  runtime (`dispatchConsequences`) llaman aquí. Si mañana el balance cambia,
+ *  cambia para las dos a la vez.
+ */
+import { buildPersonality } from "./difficulty-presets.js";
+import { isHostileRole } from "../simulation/npc-roles.js";
+
+/** Lo que el sim necesita para dar de alta un combatiente. Es la forma que
+ *  viaja en `npcs[].combat` de la world scene y en `data.combat` del spawn,
+ *  y la que el cliente pasa por `add_combatants`. */
+export interface HostileCombat {
+  health: number;
+  weapon_id: string;
+  personality: Record<string, unknown>;
+}
+
+/** Vida de un hostil derivado. Cuatro golpes rápidos con espada corta
+ *  (15 × 1,3 de multiplicador de arma, en distancia y centro óptimos) o dos
+ *  fuertes: se puede matar en un encuentro sin que sea un muñeco de paja. */
+export const HOSTILE_HEALTH = 60;
+
+/** El arma del hostil. `unarmed` a propósito: el catálogo de armas es del
+ *  jugador y el arte de las suyas no existe todavía, así que darle una espada
+ *  sería prometer en el HUD algo que no se ve en el mundo. */
+export const HOSTILE_WEAPON = "unarmed";
+
+/** Bloque de combate de un rol hostil, o `undefined` si el rol no lo es
+ *  (aldeano, guardia, ausente…). Devolver `undefined` y no un bloque vacío es
+ *  lo que deja escribir `...(combat ? { combat } : {})` en las dos vías sin
+ *  que un NPC ambiental acabe con un `combat` de ceros que el cliente
+ *  registraría como combatiente. */
+export function combatForHostileRole(role: unknown): HostileCombat | undefined {
+  if (!isHostileRole(role)) return undefined;
+  return {
+    health: HOSTILE_HEALTH,
+    weapon_id: HOSTILE_WEAPON,
+    // `medium` + `aggressive`: el hostil BUSCA al jugador (preferred_distance
+    // 1,5 m) en vez de esperar a que se le acerque. Sin eso, un enemigo
+    // declarado a 8 m se queda mirando y "hay contra quién pelear" vuelve a
+    // ser mentira — que es exactamente lo que pasó en el único rastro de
+    // combate del repositorio.
+    personality: buildPersonality("medium", "aggressive"),
+  };
+}

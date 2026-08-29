@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 
 import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "../src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "../src/games/style-categories.js";
+import {
+  combatForHostileRole,
+  HOSTILE_HEALTH,
+  HOSTILE_WEAPON,
+} from "../src/combat/hostiles.js";
 
 /** Atajos de lectura: la world scene es un Record suelto por contrato. */
 const objectsOf = (w: Record<string, unknown>) => w.objects as Record<string, unknown>[];
@@ -265,6 +270,52 @@ describe("formatDToWorld — el NPC llega entero a la clave de caché del skin",
       assert.equal(npc.name, "Aldeana", "el name sí viaja: es el prompt del skin sin description");
     });
   }
+});
+
+/** VÍA (a) al combate: la escena inicial. El motor declara `role:"hostile"` y
+ *  el core deriva el bloque `combat` aquí — es lo único que hace que el
+ *  cliente registre un combatiente (`add_combatants` → `sim.addCombatant`) y,
+ *  con él, que `getEnemyStates` emita algo. Sin este bloque el NPC hostil
+ *  llegaba como cualquier aldeano y el jugador no tenía contra quién pelear,
+ *  que es el estado en el que llevaba el juego desde que existe. */
+describe("formatDToWorld — un NPC hostil llega con su combate derivado", () => {
+  it("`role:\"hostile\"` sale con el bloque combat que el cliente exige", () => {
+    const npc = npcsOf(
+      formatDToWorld(
+        conNpc({ id: "bandido_1", role: "hostile", description: "bandido de camino con cota remendada" }),
+      ),
+    )[0];
+    const combat = npc.combat as Record<string, unknown> | undefined;
+    assert.ok(combat, "un hostil sin `combat` es un aldeano: no hay a quién pegar");
+    assert.equal(combat.health, HOSTILE_HEALTH);
+    assert.equal(combat.weapon_id, HOSTILE_WEAPON);
+    // El bloque es EXACTAMENTE el del core: una copia con otros números aquí
+    // haría que la escena inicial y el spawn en runtime dieran peleas
+    // distintas con el mismo enemigo.
+    assert.deepEqual(combat, combatForHostileRole("hostile"));
+    // Y el hostil sigue siendo un NPC a todos los demás efectos: viaja su rol
+    // y su descripción, de donde salen conducta y skin.
+    assert.equal(npc.role, "hostile");
+    assert.equal(npc.description, "bandido de camino con cota remendada");
+    assert.equal(refDelSkin(npc), "warrior");
+  });
+
+  it("un NPC que NO es hostil no lleva combat ni con la clave presente", () => {
+    for (const role of [undefined, "villager", "guard", "merchant", "peasant"]) {
+      const npc = npcsOf(formatDToWorld(conNpc({ id: `pacifico_${role}`, ...(role ? { role } : {}) })))[0];
+      assert.ok(
+        !("combat" in npc),
+        `un ${role ?? "npc sin rol"} salió con combat: el cliente lo daría de alta como combatiente`,
+      );
+    }
+  });
+
+  it("el hostil va a npcs[], no a objects[] (la rama de objects era el fósil)", () => {
+    const world = formatDToWorld(conNpc({ id: "lobo_1", role: "hostile", name: "Lobo flaco" }));
+    const objetos = (world.objects ?? []) as Record<string, unknown>[];
+    assert.ok(!objetos.some((o) => o.id === "lobo_1"), "el hostil no puede salir por objects[]");
+    assert.ok(objetos.every((o) => !("combat" in o)), "ningún object lleva combat");
+  });
 });
 
 /** La cola del literal de retorno es el resto del contrato de render: lo leen

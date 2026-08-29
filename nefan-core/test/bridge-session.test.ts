@@ -1020,45 +1020,13 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     void sent;
   });
 
-  it("broadcastScene proyecta las entities enemy de la escena a store.enemies", async () => {
-    const { ctx, store, narrative } = makeCtx();
-    narrative.startNewSession("plugtest");
-    narrative.worldMap.upsertPlace({
-      id: "camp",
-      kind: "site",
-      parent_id: "world",
-      name: "El Campamento",
-    });
-    narrative.recordSceneLoaded("scene_camp", {
-      scene_id: "scene_camp",
-      place_id: "camp",
-      scene_description: "un campamento",
-    });
-    narrative.recordEntitySpawned(
-      "bandit_1",
-      "enemy",
-      "scene_camp",
-      { x: 2, y: 0, z: 3 },
-      { combat: { health: 70, weapon_id: "short_sword" } },
-      "react_to_player",
-    );
-    narrative.recordEntitySpawned(
-      "merchant_1",
-      "npc",
-      "scene_camp",
-      { x: 1, y: 0, z: 1 },
-      { name: "Boris" },
-      "react_to_player",
-    );
-
-    const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "camp" }, socket, ctx);
-
-    assert.equal(store.state.enemies.length, 1);
-    assert.equal(store.state.enemies[0].id, "bandit_1");
-    assert.equal(store.state.enemies[0].hp, 70);
-    assert.equal(store.state.enemies[0].weapon_id, "short_sword");
-  });
+  // Aquí vivía «broadcastScene proyecta las entities enemy…», que se va con
+  // `state-projection.ts` (#323). Tenía el defecto exacto que esta tanda vino
+  // a corregir: fabricaba a mano una entity `type:"enemy"` que la producción
+  // NO puede producir —el enum de `spawn_entity` es npc/building/object y
+  // `EmittedSceneSchema` rechaza `kind:"enemy"`—, así que pasaba siempre y no
+  // podía ponerse rojo por la razón que importa. Lo que ahora sí se mide, y
+  // en una partida real, es `qa/guiones/41-el-jugador-puede-pelear.mjs`.
 });
 
 

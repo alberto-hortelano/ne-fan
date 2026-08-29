@@ -5,6 +5,7 @@ import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import type { Consequence } from "../src/narrative/types.js";
+import { combatForHostileRole } from "../src/combat/hostiles.js";
 
 function makeState() {
   const s = new NarrativeState(new MemorySessionStorage());
@@ -98,6 +99,66 @@ describe("dispatchConsequences", () => {
     if (r.effects[0].kind === "spawn_entity") {
       assert.equal(r.effects[0].name, "Marcus");
       assert.equal(r.effects[0].entityKind, "npc");
+    }
+  });
+
+  // VÍA (b) al combate: el spawn en RUNTIME, sin recargar la escena. Converge
+  // con `formatDToWorld` en `combatForHostileRole`, así que un bandido que
+  // aparece a mitad de un diálogo pelea exactamente igual que uno que estaba
+  // en el tile desde el principio.
+  it("un spawn_entity hostil sale con combate, en el effect Y en el ledger", () => {
+    const s = makeState();
+    const r = dispatchConsequences(
+      s,
+      "evt_1",
+      [{
+        type: "spawn_entity",
+        entity_kind: "npc",
+        role: "hostile",
+        description: "bandido de camino con la cara marcada",
+        name: "Bandido",
+      }],
+      { generateEntityId: () => "narr_npc_hostil" },
+    );
+    const esperado = combatForHostileRole("hostile");
+    const efecto = r.effects.find((e) => e.kind === "spawn_entity");
+    assert.ok(efecto && efecto.kind === "spawn_entity");
+    assert.deepEqual(efecto.data.combat, esperado, "el cliente materializa desde el effect");
+    // Y en el EntityRecord: es lo que sobrevive al save y lo que lee el motor.
+    // Un enemigo cuyo combate viviera solo en el effect en vuelo dejaría de
+    // serlo en cuanto se recargara la escena.
+    assert.deepEqual(s.entities[0].data.combat, esperado);
+    assert.equal(s.entities[0].data.role, "hostile");
+  });
+
+  it("un spawn NO hostil no lleva combat: ni un aldeano, ni un objeto, ni un edificio", () => {
+    const s = makeState();
+    const r = dispatchConsequences(s, "evt_1", [
+      { type: "spawn_entity", entity_kind: "npc", role: "villager", description: "aldeana" },
+      { type: "spawn_entity", entity_kind: "npc", description: "alguien sin rol" },
+      { type: "spawn_entity", entity_kind: "object", description: "un cofre" },
+      { type: "spawn_entity", entity_kind: "building", description: "una forja" },
+    ]);
+    for (const e of s.entities) {
+      assert.ok(!("combat" in e.data), `${e.id} (${e.type}) salió con combat`);
+    }
+    for (const ef of r.effects) {
+      if (ef.kind !== "spawn_entity") continue;
+      assert.ok(!("combat" in ef.data), `el effect de ${ef.entityId} salió con combat`);
+    }
+  });
+
+  it("`hostile` sobre un objeto o un edificio no lo convierte en combatiente", () => {
+    // `role` es un campo de NPC; el zod lo declara opcional para cualquier
+    // kind, así que sin la guarda `kind === "npc"` una forja hostil entraría
+    // en el sim como algo a lo que pegar y que pega.
+    const s = makeState();
+    dispatchConsequences(s, "evt_1", [
+      { type: "spawn_entity", entity_kind: "building", role: "hostile", description: "forja" },
+      { type: "spawn_entity", entity_kind: "object", role: "hostile", description: "yunque" },
+    ]);
+    for (const e of s.entities) {
+      assert.ok(!("combat" in e.data), `${e.type} hostil salió con combat`);
     }
   });
 

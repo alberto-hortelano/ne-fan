@@ -278,15 +278,15 @@ export class StyleApplyController {
         // del skin diverge (doble pago).
         skins.push({ prompt, role: npcSkinStyleRef(npc) });
       }
-      // Enemigos (objects con bloque combat): mismo prompt que main.ts, sin
-      // rol (el cliente en partida tampoco lo envía — paridad de clave).
-      for (const obj of world.objects ?? []) {
-        if (!obj.combat) continue;
-        const prompt = obj.description ?? obj.id;
-        if (!prompt || skinSeen.has(prompt)) continue;
-        skinSeen.add(prompt);
-        skins.push({ prompt });
-      }
+      // Aquí había un segundo barrido para «enemigos (objects con bloque
+      // combat)». Se va con su hermano de main.ts (#323): era el fósil de
+      // `data/rooms/*.json` y `formatDToWorld` NUNCA emitió `combat` en
+      // `objects[]`, así que no corrió jamás. Un enemigo es hoy un NPC con
+      // `role:"hostile"`, o sea que lo cubre el bucle de arriba — y por el
+      // mismo camino, con lo cual su clave de caché la deriva `npcSkinStyleRef`
+      // igual que en partida (rol `warrior`) en vez de irse sin rol, que es
+      // como el barrido viejo la habría hecho divergir el día que hubiera
+      // llegado a ejecutarse.
     }
     if (skins.length === 0) notes.push("El mundo generado no declara personajes con skin.");
 
