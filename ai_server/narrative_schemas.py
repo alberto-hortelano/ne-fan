@@ -481,7 +481,7 @@ def validate_volumes(raw, *, field: str = "volumes"):
 def validate_scene_response(data: dict) -> dict:
     """Valida y normaliza una escena Map Format D del LLM.
 
-    FAIL-LOUD en la FORMA (espejo de FormatDSceneSchema, el gate del pre-flight
+    FAIL-LOUD en la FORMA (espejo de EmittedSceneSchema, el gate del pre-flight
     MCP): un error estructural que el modelo DEBE corregir (grid que no cuadra
     con size, entity con kind fuera del enum o sin glyph/cell/footprint, tile
     sin biome) LANZA `ValueError` con el motivo — antes se rellenaba/clampaba en
@@ -534,7 +534,7 @@ def validate_scene_response(data: dict) -> dict:
         data.pop("terrain", None)
         cols, rows = 128, 128
         if not isinstance(data.get("biome"), str) or not data["biome"]:
-            # Fail-loud (espejo de FormatDSceneSchema, variante tile): el bioma
+            # Fail-loud (espejo de EmittedSceneSchema, variante tile): el bioma
             # es la base del tile, no un default silencioso.
             raise ValueError(
                 "un tile necesita `biome` (grass|forest_floor|meadow|sand|dirt|stone|snow|swamp)"
@@ -572,7 +572,7 @@ def validate_scene_response(data: dict) -> dict:
         else:
             data.pop("place_anchors", None)
 
-    # ── Candado de las variantes retiradas (espejo de FormatDSceneSchema) ─
+    # ── Candado de las variantes retiradas (espejo de EmittedSceneSchema) ─
     # Format D tiene UNA forma: el tile del mundo continuo. La "suelta"
     # (size/terrain a elección del motor, sin sitio en el plano) se retiró con
     # el issue #172 y el `stage` proscenio con la vista que lo pintaba. El
@@ -646,6 +646,24 @@ def validate_scene_response(data: dict) -> dict:
     # la fuente de verdad con la gramática completa fail-loud): aquí solo la
     # forma gruesa — mal formado se descarta ENTERO con traza (generators y
     # zones van juntos: zonas sin generador no sirven).
+    #
+    # LA REGLA DE LOS BLOQUES DECLARATIVOS, escrita una vez y aquí:
+    # `ground`, `volumes`, `vegetation_zones` y `scatter` son el mismo tipo de
+    # cosa y se validan igual — DURO en el zod, LAXO aquí. No es un descuido,
+    # es la asimetría que quiere el jugador: por la vía MCP el zod rebota y el
+    # motor RE-RESPONDE (barato, y el tile sale mejor); por la vía de API
+    # directa NO hay re-respuesta, así que descartar el bloque malo SALVA el
+    # tile, y perder un macizo de pinos es mucho menos malo que perder el tile
+    # entero y dejar al jugador con `narrative_status: error`.
+    # Lo caro es la dirección contraria — que ai_server rechace lo que el
+    # pre-flight aceptó—, y eso no pasa aquí porque aquí nunca se lanza.
+    # Los CAMPOS de forma (size, terrain, biome, las claves de una entity,
+    # role, description) son el otro eje y ahí sí LANZAN los dos: un
+    # desacuerdo pierde el tile o lo cuela (#237).
+    # Quien vigila las dos reglas es `qa/guiones/40-el-mismo-tile-no-puede-
+    # tener-dos-veredictos.mjs`, que corre los dos gates sobre la misma
+    # rejilla; el set de `data/contract/fixtures/scene/` solo puede contener
+    # casos del eje de CAMPOS, porque exige veredicto idéntico por diseño.
     if "scatter_generators" in data or "scatter_zones" in data:
         gens = data.get("scatter_generators")
         zones = data.get("scatter_zones")

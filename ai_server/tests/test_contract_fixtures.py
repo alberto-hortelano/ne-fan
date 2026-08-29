@@ -69,7 +69,7 @@ class TestContractFixtures(unittest.TestCase):
         self._run("reaction", lambda fx: accepts_reaction(fx["payload"]))
 
     def test_scene(self):
-        """Escena Format D: espejo de FormatDSceneSchema (el gate del
+        """Escena Format D: espejo de EmittedSceneSchema (el gate del
         pre-flight MCP). Es el set que sujeta el VOCABULARIO de `role` — el zod
         con `z.enum(NPC_ROLES)`, este saneador leyendo el enum del tool — para
         que no vuelvan a separarse sin que nadie se entere. `copy.deepcopy`

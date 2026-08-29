@@ -1,5 +1,5 @@
 """Tests de validate_scene_response — fail-loud en la FORMA (espejo de
-FormatDSceneSchema) + normalizaciones benignas conservadas.
+EmittedSceneSchema) + normalizaciones benignas conservadas.
 
 Antes esta función no tenía tests y degradaba TODO en silencio (grid rellenado,
 entities clampadas), así que un error de forma del modelo nunca le volvía. Aquí
@@ -82,7 +82,7 @@ class TestSceneValidateAcceptsReal(unittest.TestCase):
 
 
 class TestVariantesRetiradas(unittest.TestCase):
-    """CANDADO (espejo de FormatDSceneSchema): Format D tiene UNA forma —el
+    """CANDADO (espejo de EmittedSceneSchema): Format D tiene UNA forma —el
     tile del mundo continuo—. La "suelta" (grid propio, sin sitio en el plano)
     se retiró con el issue #172 y el PLATÓ proscenio con la vista que lo
     pintaba. El saneador las rechaza con un mensaje que nombra la viva, porque
