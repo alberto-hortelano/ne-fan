@@ -124,17 +124,18 @@ const SKIN_SPRITE_MODEL = process.env.SKIN_SPRITE_MODEL ?? "paladin";
 // `qa/run.mjs`— es una segunda copia del contrato de gasto, que es justo la
 // clase de fallo que esta tanda persigue.
 //
-// Lo lee `qa/run.mjs` antes y después de cada guion: si el contador SUBE y el
-// guion no declaró `export const gasta = true`, ese guion sale ⊘ y la corrida
-// no es concluyente (#295). Se cuenta AQUÍ y no con `page.on("request")` porque
-// el gasto del bridge no pasa por la página — la misma razón por la que el
-// guardarraíl tiene dos vías.
+// Lo lee `qa/run.mjs` antes y después de cada guion: si el contador SUBE en uno
+// que se declaró EXENTO del guardarraíl (`export const sinMotor`), ese guion
+// sale ⊘ y la corrida no es concluyente (#295). Al que se olvida de declarar no
+// lo caza esto: lo gatea el runner por defecto, que es donde está la garantía.
+// Se cuenta AQUÍ y no con `page.on("request")` porque el gasto del bridge no
+// pasa por la página — la misma razón por la que el guardarraíl tiene dos vías.
 //
 // Lo que se cuenta es lo que HABRÍA COSTADO, no lo que tocó la ruta: un
 // `/generate_surface_atlas` con `resolve_only` o con todas las celdas en caché
 // vale $0 por diseño en el server real (`cost_usd: 0`) y es justo el camino que
-// el cliente usa para NO gastar. Contarlo obligaría a declarar `gasta` a
-// guiones que no gastan nada, y un guardarraíl que se dispara de más se acaba
+// el cliente usa para NO gastar. Contarlo señalaría como gastadores a guiones
+// que no gastan nada, y un guardarraíl que se dispara de más se acaba
 // desactivando. Por eso el `dePago(...)` de esa ruta va DETRÁS de saber si
 // pintó, y no en el `if` que la atiende.
 const gastoPorRuta = new Map<string, number>();

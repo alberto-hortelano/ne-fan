@@ -70,8 +70,11 @@ Reglas que hacen que un guion valga algo:
    ejecuta. `export const aisla = ["saves"|"mundo"|"fake-ai"]` es la PRECONDICIÓN del guion: se
    ejecuta solo eso, y solo antes de él. Y el guardarraíl de cero créditos se ejerce para
    **todos** los guiones —antes de abrir el tuyo, desde su página, con sus dos `/health`—, así
-   que si el backend no declara ser falso tu guion sale `⊘ SIN MEDIR` **sin haber mandado ni una
-   petición**. No hay nada que declarar para eso: es el defecto, y el defecto es el caro a
+   que si el backend no declara ser falso tu guion sale `⊘ SIN MEDIR` y **cero peticiones desde
+   el guion**: su cuerpo no llega a ejecutarse. Cero *desde el guion*, no cero a secas — la
+   página ya ha cargado y el gate manda sus dos `/health`, y ninguna de esas es de pago, que es
+   justo lo que se garantiza.
+   No hay nada que declarar para eso: es el defecto, y el defecto es el caro a
    propósito, porque el desenlace de un descuido tiene que ser un ⊘ y no una factura.
    Lo que se declara es la EXCEPCIÓN: `export const sinMotor = "<motivo>"` para el guion que no
    le pide nada al motor (fixtures del selector, el título, su propio bridge). El motivo va en el

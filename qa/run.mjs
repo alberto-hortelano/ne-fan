@@ -24,8 +24,12 @@
  *  El guardarraíl de cero créditos se ejerce para TODOS los guiones, y el que
  *  no toque el motor lo declara con `export const sinMotor = "<motivo>"`. El
  *  defecto es el caro a propósito: olvidarse de declarar deja el guion GATEADO
- *  —`⊘ SIN MEDIR` y cero peticiones si el backend no declara ser falso—, no
- *  suelto contra un motor que cobra (#295).
+ *  —`⊘ SIN MEDIR` y cero peticiones DESDE EL GUION si el backend no declara ser
+ *  falso—, no suelto contra un motor que cobra (#295). Cero desde el guion, no
+ *  cero a secas: el gate manda sus dos `/health` y la página ya ha cargado
+ *  (`/dev/status` entre otras). Ninguna de esas es de pago, que es lo que se
+ *  garantiza; el cuerpo del guion, que es quien pediría generación, no llega a
+ *  ejecutarse.
  *
  *  Uso:
  *    node qa/run.mjs                  todos los guiones
@@ -504,11 +508,15 @@ function limpiarMundos() {
 
 /** Cuántas peticiones a rutas DE PAGO lleva servidas el motor falso.
  *
- *  Es la segunda vía del guardarraíl (#295), y la que cubre el olvido: el
- *  `gasta` de un guion protege al que se acuerda de declararlo, y esto caza al
- *  que no. La lista de rutas de pago NO vive aquí —sería una segunda copia del
- *  contrato de gasto—: la marca está en la misma línea que la ruta, dentro del
- *  motor falso (`dePago(...)` en labs/narrative/fake-ai-server.ts).
+ *  Es la red PEQUEÑA del guardarraíl (#295), y conviene no venderla por más de
+ *  lo que es: caza al que declara `sinMotor` y sí gasta — o sea, al que se
+ *  equivoca al declarar. Del que se OLVIDA de declarar no se ocupa esto, sino
+ *  el gate de `main()`, que se ejerce por defecto y no depende de nadie; por
+ *  eso es el gate quien da la garantía y esto solo la complementa.
+ *
+ *  La lista de rutas de pago NO vive aquí —sería una segunda copia del contrato
+ *  de gasto—: la marca está en la misma línea que la ruta, dentro del motor
+ *  falso (`dePago(...)` en labs/narrative/fake-ai-server.ts).
  *
  *  `null` cuando no se puede preguntar (una corrida `--url`/`--adoptar` contra
  *  un backend que no es el fake). Eso NO se colapsa con «no gastó»: se dice una
@@ -830,12 +838,17 @@ async function main() {
       // `mod.default`, que es lo que lo vuelve una precondición y no un aviso.
       //
       // Y se ejerce POR DEFECTO, que es la mitad que faltaba. Con la marca al
-      // revés (`gasta = true` para quien gasta), olvidarse la dejaba correr
-      // SUELTA contra un motor que cobra y la única red era un contador que
+      // revés —que el guion declarase que gasta, y el runner solo gateara a
+      // ese— olvidarse la dejaba correr SUELTA contra un motor que cobra, y la
+      // única red era un contador que
       // vive en el motor falso — o sea, que contra el backend caro no existe.
       // Invertido, olvidarse deja el guion GATEADO: el desenlace del descuido
-      // es un ⊘ y cero peticiones, no una factura. El estado malo deja de ser
-      // expresable en vez de quedar prohibido y vigilado.
+      // es un ⊘ y cero peticiones DESDE EL GUION, no una factura. Cero desde el
+      // guion y no cero a secas, que es lo que de verdad ocurre: por la red han
+      // salido ya la carga de la página y los dos `/health` de aquí abajo,
+      // ninguna de pago. Lo que no llega a ejecutarse es `mod.default`, que es
+      // quien pediría generación. El estado malo deja de ser expresable en vez
+      // de quedar prohibido y vigilado.
       if (!exento) {
         const d = await diagnosticoDeCreditos(ctx);
         if (!d.ok) sinMedir = `el guardarraíl de gasto se niega: ${d.motivo}`;
