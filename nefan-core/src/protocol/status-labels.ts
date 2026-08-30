@@ -26,8 +26,15 @@
  *  No inventa nada: el status trae `kind`, `placeId` y `tile{tx,ty}`, y el
  *  contexto de pintado (¿hay mundo?, ¿hay overlay abierto?) lo pone el
  *  cliente, que es su dueño. El detalle TÉCNICO no se pierde: se queda en el
- *  `console.warn` del bridge y en el `detail` del error-log del cliente. */
-import type { NarrativeStatusMessage } from "./messages.js";
+ *  `console.warn` del bridge y en el `detail` del error-log del cliente.
+ *
+ *  LO QUE NO ESTÁ AQUÍ, y estuvo un día: A QUIÉN va el mensaje. Eso es
+ *  `status-reparto.ts`, y son dos decisiones distintas sobre el mismo status
+ *  —qué texto ve el jugador, y a qué canal va— que no comparten ni una llamada.
+ *  Tenerlas juntas sacó a este módulo del conjunto medible en local (133
+ *  mutantes contra un tope de 120); separarlas devuelve a los dos a su bucle
+ *  barato sin tocar ningún umbral. */
+import type { NarrativeStatusDeSesion } from "./messages.js";
 
 /** Lo que el cliente sabe de su propia pantalla en el momento del fallo. */
 export interface ContextoDeRotulo {
@@ -63,12 +70,17 @@ export type Rotulo =
   | { destino: "log"; detalle: string };
 
 /** Cuerpo por defecto cuando el bridge no manda `message`. Por `kind`, porque
- *  «algo falló» sin decir el qué es lo mismo que no decir nada. */
-const DETALLE_POR_DEFECTO: Record<NarrativeStatusMessage["kind"], string> = {
+ *  «algo falló» sin decir el qué es lo mismo que no decir nada.
+ *
+ *  Cuelga de `NarrativeStatusDeSesion` y no del mensaje entero: el rótulo es
+ *  para un fallo de LA PARTIDA, y la pre-generación de mundo ya no comparte
+ *  tipo con ella (#313). Tenía aquí una entrada `game_gen` con el motivo de
+ *  `consequences` —«El motor narrativo rechazó la reacción», que es de otro
+ *  kind—; no la borró nadie a mano: con este `Record` dejarla es `TS2353`. */
+const DETALLE_POR_DEFECTO: Record<NarrativeStatusDeSesion["kind"], string> = {
   tile: "Algo falló generando el tile.",
   scene: "Algo falló en el motor narrativo.",
   consequences: "El motor narrativo rechazó la reacción.",
-  game_gen: "El motor narrativo rechazó la reacción.",
 };
 
 /** Lo que `rotuloDeStatus` LEE de un status, y nada más.
@@ -79,7 +91,7 @@ const DETALLE_POR_DEFECTO: Record<NarrativeStatusMessage["kind"], string> = {
  *  jugador con él no. Los llamantes que sí tienen el mensaje completo siguen
  *  compilando, que es lo que hace un `Pick`. */
 export type StatusRotulable = Pick<
-  NarrativeStatusMessage,
+  NarrativeStatusDeSesion,
   "phase" | "kind" | "message" | "placeId"
 >;
 
@@ -129,10 +141,10 @@ export function rotuloDeStatus(
       : { destino: "overlay", titulo: "No se pudo preparar el lugar", detalle, salida };
   }
 
-  // Consequences y pre-generación de mundo: una reacción narrativa rechazada
-  // (p. ej. 422 por una consequence mal formada). El rótulo es el que ya
-  // había en el cliente — se muda aquí para que NINGÚN rótulo de fallo del
-  // motor quede suelto en `main.ts` y el sexto se escriba en un séptimo sitio.
+  // Consequences: una reacción narrativa rechazada (p. ej. 422 por una
+  // consequence mal formada). El rótulo es el que ya había en el cliente — se
+  // muda aquí para que NINGÚN rótulo de fallo del motor quede suelto en
+  // `main.ts` y el sexto se escriba en un séptimo sitio.
   return {
     destino: "overlay",
     titulo: "El motor narrativo rechazó la respuesta",

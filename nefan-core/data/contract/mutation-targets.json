@@ -500,6 +500,17 @@
       "porque": "El rótulo que lee QUIEN JUEGA cuando el motor falla (#180): decide qué fallo tapa la pantalla, cuál se queda en la línea de mensajes y cuál de los cuatro títulos toca. Módulo propio con batería de un fichero porque es el único test que lo importa: es una función pura de veinte líneas y meterla en cualquier otro módulo obligaría a los mutantes de ESE a pagar su suite, que es el coste que el reparto existe para evitar. Entra al reparto y no a `sin_mutar` porque la decisión ES el sujeto de su test: un mutante que cambie el `destino` de la frontera de `log` a `overlay` interrumpe una partida en curso y ninguna forma de respuesta cambia. Suelo 100 medido el 2026-08-23 sobre 46 mutantes. La primera corrida dio 97,9 % con un vivo, y el vivo señalaba código y no un aserto que faltara: el `titulo` de la rama `log` no lo lee nadie, así que cambiarle el texto no podía romper nada. Se arregló el TIPO —`Rotulo` pasó a ser unión discriminada y la rama de log ya no tiene título— en vez de añadir un aserto sobre algo que no se pinta."
     },
     {
+      "id": "status-reparto",
+      "mutate": [
+        "src/protocol/status-reparto.ts"
+      ],
+      "tests": [
+        "test/status-reparto.test.ts"
+      ],
+      "break": 100,
+      "porque": "A QUIÉN le habla cada `narrative_status`: la partida viva, la barra de pre-generación del título, el registro de errores, o nadie. Nace el 2026-08-30 al trocear `status-labels`, y el troceo no es de tamaño: rotular («qué texto ve el jugador y si tapa la pantalla») y repartir («a qué canal va») son dos decisiones distintas sobre el mismo mensaje que no comparten ni una llamada. Estuvieron juntas el día que #313 tardó en mudar el reparto desde `session/session-facets.ts`, y el módulo lo dijo solo: 116 → 133 mutantes, o sea por encima del `tope_local` de 120 y fuera del conjunto que se puede medir en local sin pedir permiso. Se separó en vez de subir el tope — subir un umbral para que quepa lo que uno acaba de engordar es la trampa de `feedback_metricas_son_sintomas`. Suelo 100 y no menos por lo mismo que `session-facets`: son cuatro líneas sin estado, y sus mutantes interesantes —cambiar el orden de las reglas, o preguntar por el identificador que no es— son EXACTAMENTE los dos bugs que el módulo existe para hacer inexpresables (#312: un `ready` de una partida abandonada teletransportaba al jugador de la viva; #313: el progreso del mundo A se pintaba en la tarjeta del juego B). SIN CORRIDA TODAVÍA, y eso tiene una consecuencia que conviene saber antes de estrenarlo: `costeDe` lee la huella, así que un módulo nuevo no tiene coste conocido y `npm run mutacion -- local status-reparto` lo RECHAZA («no hay medida previa»). Necesita UNA corrida autorizada para entrar en el conjunto medible en local; a partir de ahí es de los baratos. Su coste real se conoce por RESTA, y las dos puntas están medidas el 2026-08-30: el módulo junto medía 133 y `status-labels` mide 115 ya sin el reparto (100 %, 0 vivos), así que son ~18 mutantes — de los más baratos del plan."
+    },
+    {
       "id": "session-facets",
       "mutate": [
         "src/session/session-facets.ts"

@@ -16,7 +16,7 @@ import {
   motivoParaElJugador,
   rotuloDeStatus,
 } from "../src/protocol/status-labels.js";
-import type { NarrativeStatusMessage } from "../src/protocol/messages.js";
+import type { NarrativeStatusDeSesion } from "../src/protocol/messages.js";
 
 /** Lo que el bridge manda en el ARRANQUE del mundo: motivo traducido y SIN
  *  nombre de destino, porque en el arranque no se viaja a ningún sitio.
@@ -28,7 +28,7 @@ import type { NarrativeStatusMessage } from "../src/protocol/messages.js";
  *  failed». El test heredaba la premisa falsa y por eso el hueco no se vio
  *  (QA §3.3). Los casos de VIAJE traen ahora su cuerpo con el destino puesto,
  *  explícitamente, porque son los únicos donde el bridge lo escribe. */
-const fallo = (extra: Partial<NarrativeStatusMessage> = {}): NarrativeStatusMessage => ({
+const fallo = (extra: Partial<NarrativeStatusDeSesion> = {}): NarrativeStatusDeSesion => ({
   type: "narrative_status",
   phase: "error",
   kind: "tile",
@@ -125,7 +125,7 @@ describe("rótulo de un fallo del motor", () => {
   });
 
   it("sin `message` cada kind trae su propio cuerpo, no un «algo falló» genérico", () => {
-    const cuerpo = (kind: NarrativeStatusMessage["kind"]): string =>
+    const cuerpo = (kind: NarrativeStatusDeSesion["kind"]): string =>
       rotuloDeStatus(fallo({ kind, message: undefined }), {
         mundoVacio: true,
         overlayAbierto: true,
@@ -133,7 +133,6 @@ describe("rótulo de un fallo del motor", () => {
     assert.equal(cuerpo("tile"), "Algo falló generando el tile.");
     assert.equal(cuerpo("scene"), "Algo falló en el motor narrativo.");
     assert.equal(cuerpo("consequences"), "El motor narrativo rechazó la reacción.");
-    assert.equal(cuerpo("game_gen"), "El motor narrativo rechazó la reacción.");
   });
 
   it("un `message` vacío NO se sustituye por el de por defecto", () => {
@@ -181,7 +180,7 @@ describe("la salida del overlay: qué puede hacer el jugador con el muro", () =>
     // Sin esto, `salida` podría estar clavada al caso del tile de bootstrap y
     // un fallo de escena en el arranque —el mismo callejón— saldría con la
     // salida equivocada sin que nadie se enterara.
-    for (const kind of ["tile", "scene", "consequences", "game_gen"] as const) {
+    for (const kind of ["tile", "scene", "consequences"] as const) {
       for (const overlayAbierto of [true, false]) {
         const r = rotuloDeStatus(fallo({ kind, placeId: "x" }), { mundoVacio: true, overlayAbierto });
         assert.equal(r.destino, "overlay", `${kind}/${overlayAbierto}`);

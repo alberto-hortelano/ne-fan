@@ -7,12 +7,8 @@
  *  N (descubrir props) y R (revisar el blueprint por visión) se fueron con el
  *  pipeline de imagen del repintado por tile, que ya no existe. */
 
+import type { InputDeps } from "./input-provider.js";
 import { alPulsarTecla } from "./puerta-de-teclado.js";
-
-export interface DevToolsDeps {
-  /** El diálogo suprime también las teclas dev (mismo guard que el provider). */
-  isDialogueActive(): boolean;
-}
 
 export class DevToolsInput {
   private generateRequested = false;
@@ -21,9 +17,14 @@ export class DevToolsInput {
   /** Desengancha el listener que registró la puerta. */
   private readonly desenganchar: () => void;
 
-  constructor(deps: DevToolsDeps) {
+  /** Las mismas `InputDeps` que el proveedor de juego, y no un tipo propio: el
+   *  diálogo suprime las teclas dev por la MISMA razón y con la misma
+   *  respuesta. `DevToolsDeps` existía solo para transportar ese predicado
+   *  desde el campo público del proveedor, y era uno de los espejos que #314
+   *  se lleva. */
+  constructor(deps: InputDeps) {
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (deps.isDialogueActive()) return;
+      if (deps.dialogoAbierto()) return;
       // Sin `typeof e.key`: lo descarta la puerta. La repetición sí es de aquí
       // (G pide el atlas: mantener la tecla no puede pedirlo cien veces).
       if (e.repeat) return;

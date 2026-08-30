@@ -16,7 +16,7 @@ import type { NarrativeClient, GameInfo, StyleInfo } from "../net/narrative-clie
 import type {
   SessionMetadata,
 } from "@nefan-core/src/narrative/types.js";
-import type { NarrativeStatusMessage } from "@nefan-core/src/protocol/messages.js";
+import type { NarrativeStatusDeJuego } from "@nefan-core/src/protocol/messages.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-labels.js";
 import {
@@ -102,15 +102,29 @@ export class TitleScreen {
     return this.styleApply.debugState();
   }
 
-  /** Última línea de progreso de generate_game (kind "game_gen"): la pinta
-   *  el panel de generación del selector de mundo si está en pantalla. */
-  private gameGenStatus: NarrativeStatusMessage | null = null;
+  /** Última línea de progreso de pre-generación POR JUEGO.
+   *
+   *  Era UNA ranura, y ahí estaba el único síntoma de jugador de #313: el panel
+   *  de generación vive dentro de `#ts-gen`, que es el del juego SELECCIONADO, y
+   *  nada impide cambiar de tarjeta mientras se genera (el botón se deshabilita,
+   *  los handlers de tarjeta no). Con el mundo de A generándose y la tarjeta de
+   *  B delante, el jugador leía «Generando el anillo de tiles (3/8)…» y luego
+   *  «Mundo de Miravanda generado» bajo la tarjeta de Valdesombra — reproducido
+   *  en dos clicks. Un mapa por `gameId` no es una optimización: es lo que hace
+   *  falta para poder NO pintar lo que no es de esta tarjeta, y el `gameId` que
+   *  lo indexa es el que trajo el mensaje desde #313. */
+  private readonly gameGenStatus = new Map<string, NarrativeStatusDeJuego>();
   /** Mundo seleccionado la última vez que se pintó el selector — el refresh
-   *  tras un game_gen ready lo conserva. */
+   *  tras un game_gen ready lo conserva, y es la clave con la que se decide
+   *  QUÉ progreso se pinta. */
   private lastSelectedGameId: string | null = null;
 
-  private renderGameGenProgress(line: HTMLElement): void {
-    const s = this.gameGenStatus;
+  /** Pinta el progreso DEL JUEGO SELECCIONADO, o nada si el que se está
+   *  generando es otro. `gameId` se pasa explícito (y no se lee de
+   *  `lastSelectedGameId` aquí dentro) porque el llamante del refresco del panel
+   *  conoce la tarjeta que está pintando en ese momento. */
+  private renderGameGenProgress(line: HTMLElement, gameId: string | null): void {
+    const s = gameId === null ? undefined : this.gameGenStatus.get(gameId);
     if (!s) {
       line.textContent = "";
       line.removeAttribute("data-gen-phase");
@@ -142,16 +156,18 @@ export class TitleScreen {
     // tarjeta/panel sin loaders de partida. Suscripción de vida completa
     // (el título vive tanto como la app).
     //
-    // El canal ya viene filtrado por `kind` desde el embudo (#312): aquí
-    // había un `if (msg.kind !== "game_gen") return;` que era el segundo
-    // sitio del cliente que sabía de kinds. Y no se filtra por SELLO, ni
-    // aquí ni allí: el transporte lo estampa con la sesión viva del bridge,
-    // así que tras jugar y volver aquí la pre-generación llega con sello
-    // ajeno y filtrarla dejaría la barra girando para siempre.
+    // El canal ya viene filtrado desde el embudo (#312): aquí había un
+    // `if (msg.kind !== "game_gen") return;` que era el segundo sitio del
+    // cliente que sabía de kinds. Y no se filtra por SELLO, ni aquí ni allí —
+    // desde #313 este mensaje no TIENE sello: se direcciona por `gameId`, que
+    // es lo que se usa abajo para no pintar el progreso de un mundo en la
+    // tarjeta de otro.
     this.narrative.onProgresoDeMundo((msg) => {
-      this.gameGenStatus = msg;
+      // Se APUNTA siempre, sea de la tarjeta que sea: el jugador puede volver
+      // a ella y tiene que encontrar el estado que dejó.
+      this.gameGenStatus.set(msg.gameId, msg);
       const line = this.content.querySelector<HTMLElement>("#ts-gen-progress");
-      if (line) this.renderGameGenProgress(line);
+      if (line) this.renderGameGenProgress(line, this.lastSelectedGameId);
       if (msg.phase === "error") {
         // AL REGISTRO TAMBIÉN, y no solo a la línea roja de la tarjeta. Antes
         // de #312 este fallo caía además en el handler de `main.ts`, que hacía
@@ -871,7 +887,10 @@ export class TitleScreen {
         : "Genera primero el mundo de este juego";
       stylePlanEl.innerHTML = "";
       regenArmedUntil = 0;
-      this.renderGameGenProgress(genProgressEl);
+      // El progreso que se pinta es el de LA TARJETA que se está enseñando, no
+      // «el último que llegó» (#313). Cambiar de tarjeta repinta este panel, así
+      // que el jugador ve el estado del mundo que está mirando.
+      this.renderGameGenProgress(genProgressEl, selectedGame.game_id);
     };
     const generarElMundo = async (): Promise<void> => {
       if (contentStatus() === "ready") {

@@ -14,7 +14,10 @@ export const inputRegistry = createSystemRegistry<InputProvider, InputDeps>(
   "input",
   "keyboard",
   {
-    keyboard: () => new KeyboardInputProvider(),
+    keyboard: (deps) => new KeyboardInputProvider(deps),
+    // El driver de bench NO pregunta por el diálogo: conduce el juego por su
+    // API programática sin pasar por la puerta del teclado, y es justo esa
+    // diferencia la que hace falta medir (`puedeAtacar()` del hook, #323).
     scripted: () => new ScriptedInputProvider(),
   },
 );

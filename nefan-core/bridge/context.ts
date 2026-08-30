@@ -40,6 +40,7 @@ import { SceneGenQueue } from "./scene-gen-queue.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
 import { resolveExitEdge } from "../src/world-map/edges.js";
 import type {
+  NarrativeStatusDeJuego,
   SceneExit,
   ServerMessage,
   SinSelloDeSesion,
@@ -109,14 +110,32 @@ export interface BridgeContext {
   send(ws: ClientSocket, msg: SinSello): void;
   /** Difunde a todos los suscriptores SELLANDO la sesión vigente. El mensaje
    *  llega sin `sessionId` y sale con él: ninguno de los 23 emisores puede
-   *  olvidarse de ponerlo ni ponerlo mal (#282). */
-  broadcastNarrative(msg: SinSelloDeSesion<ServerMessage>): void;
+   *  olvidarse de ponerlo ni ponerlo mal (#282).
+   *
+   *  Solo acepta lo que SE DIRECCIONA POR SESIÓN (`ConSelloDeSesion`). Lo que
+   *  se direcciona por juego va por `difundirDeJuego` y no pasa por aquí. */
+  broadcastNarrative(msg: SinSelloDeSesion<ConSelloDeSesion>): void;
   /** Lo mismo a UN socket. Existe para que «el sello lo escribe el
    *  transporte» sea cierto también en el unicast: el rechazo de un frame
    *  inválido contesta un `narrative_status`, y con `send` a secas el
    *  `sessionId` se escribía a mano — o sea, un segundo escritor. Que hoy
    *  hubiera solo uno era un accidente, no un mecanismo. */
-  enviarNarrativo(ws: ClientSocket, msg: SinSelloDeSesion<ServerMessage>): void;
+  enviarNarrativo(ws: ClientSocket, msg: SinSelloDeSesion<ConSelloDeSesion>): void;
+  /** Difunde un mensaje que se direcciona POR JUEGO y NO LLEVA SELLO (#313).
+   *
+   *  Es un verbo propio y no una bandera de `broadcastNarrative` porque lo que
+   *  cambia no es una opción del envío: es que este mensaje no tiene sesión que
+   *  sellar. La pre-generación de mundo la pide el título —que no tiene
+   *  partida— y el bridge la corre en una sesión efímera que descarta después,
+   *  así que cualquier `sessionId` que se le estampara sería una mentira: la de
+   *  la partida que el bridge tuviera cargada por casualidad al emitir.
+   *
+   *  El sello de #282 no se afloja con esto, se REPARTE: los mensajes de
+   *  partida siguen sin poder salir sin él (el campo es requerido y el emisor
+   *  no puede escribirlo), y los de juego no pueden salir sin `gameId`. Lo que
+   *  ya no es expresable es un mensaje con el campo de direccionamiento del
+   *  otro esquema. */
+  difundirDeJuego(msg: NarrativeStatusDeJuego): void;
 }
 
 /** Escribe el snapshot de mundo de la sesión actual como artefacto del juego
@@ -243,10 +262,29 @@ export function enrichSceneWithExits(ctx: BridgeContext, scene: Record<string, u
   });
 }
 
+/** Los mensajes que SÍ llevan sello de sesión: lo que el sellador puede
+ *  aceptar. Se deriva del propio `ServerMessage` en vez de enumerarse, así que
+ *  un mensaje nuevo con `sessionId` requerido entra solo — y uno que se
+ *  direcciona de otra forma queda fuera solo, que es lo que hace falta desde
+ *  #313: `NarrativeStatusDeJuego` no tiene `sessionId`, así que sellarlo no es
+ *  que esté desaconsejado, es que NO COMPILA. Sin este estrechamiento el
+ *  sellador seguía aceptándolo (un `Omit<T,"sessionId">` sobre un tipo que no
+ *  lo tiene es el tipo entero) y la pre-generación volvía a salir con un sello
+ *  inventado, con el criterio de #313 cumplido solo por casualidad. */
+export type ConSelloDeSesion = Extract<ServerMessage, { sessionId: string }>;
+
 /** Los mensajes de servidor que NO llevan sello de sesión: lo que `send`
  *  puede mandar sin pasar por el sellador. Se deriva del propio tipo, así que
- *  un mensaje nuevo con `sessionId` requerido queda fuera solo. */
-export type SinSello = Exclude<ServerMessage, { sessionId: string }>;
+ *  un mensaje nuevo con `sessionId` requerido queda fuera solo.
+ *
+ *  Excluye ADEMÁS el arma de juego a mano, y esta es la única entrada
+ *  enumerada del tipo: `NarrativeStatusDeJuego` no tiene `sessionId`, así que
+ *  el `Exclude` de arriba lo dejaría pasar y `send` podría emitir un
+ *  `narrative_status` a un socket suelto — o sea, un segundo camino de salida
+ *  para el mensaje que acaba de ganar el suyo (`difundirDeJuego`). El
+ *  invariante que declara `send` («no admito los mensajes que llevan sello»)
+ *  se habría ensanchado en silencio a «no admito los que llevan ESE sello». */
+export type SinSello = Exclude<ServerMessage, ConSelloDeSesion | NarrativeStatusDeJuego>;
 
 /** Estampa el sello de sesión en un mensaje que sale hacia un cliente (#282).
  *
