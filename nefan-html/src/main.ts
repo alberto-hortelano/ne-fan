@@ -761,6 +761,22 @@ let gameClient: GameClient | null = null;
 
 // --- Scene loading ---
 
+/** La carga que lanzó el ÚLTIMO `change` del selector «Room», para que quien
+ *  lo dispara pueda esperarla.
+ *
+ *  Existe por #308, y el defecto es el mismo que este cliente ya corrigió en
+ *  `debugState`: una superficie de observación que dice «hecho» sin saberlo.
+ *  `loadFixture` ponía el `value`, despachaba `change` y devolvía `undefined`;
+ *  el import perezoso del JSON resolvía después, así que sus llamantes seguían
+ *  midiendo la escena ANTERIOR. `dispatchEvent` es SÍNCRONO —el manejador ha
+ *  corrido entero antes de que vuelva—, así que aquí ya está la promesa puesta
+ *  cuando el hook la recoge.
+ *
+ *  Solo la escribe el manejador del `change`, y solo la lee `loadFixture`
+ *  inmediatamente después de dispararlo: no es un estado que sobreviva a nada,
+ *  es el valor de retorno que el evento del DOM no sabe devolver. */
+let ultimaCargaDeFixture: Promise<void> | undefined;
+
 function populateSceneSelector(): void {
   // Scene fixtures (cargados localmente, sin bridge).
   // La etiqueta sale de core (`etiquetaDeFixture`) y de NINGÚN sitio más: la
@@ -1315,15 +1331,27 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       (btn as HTMLButtonElement).click();
     },
     /** Carga una fixture del selector Room por nombre parcial, conduciendo el
-     *  <select> real. Fail-loud si no existe: un guion que "no encuentra" la
-     *  escena y sigue en verde no vale nada. */
+     *  <select> real, y DEVUELVE la carga. Fail-loud si no existe: un guion que
+     *  "no encuentra" la escena y sigue en verde no vale nada.
+     *
+     *  La promesa es la mitad que faltaba (#308). Sin ella el hook decía
+     *  «hecho» en cuanto despachaba el evento, y sus llamantes medían la escena
+     *  anterior: el guion 22 llegó a publicar «suelo de robledo: 57 calcos»
+     *  —que es el número del PUERTO— en una corrida VERDE. Con la promesa
+     *  devuelta el estado malo deja de ser expresable: los llamantes ya hacen
+     *  `await`, así que no pueden medir antes de que la escena esté puesta.
+     *
+     *  Y RECHAZA si la fixture no llega, que es el mismo canal fail-loud que
+     *  vigila `qa/guiones/24-…`: el `catch` de `paso()` es para lo que ve quien
+     *  juega (registro de errores, línea del juego, desplegable devuelto a su
+     *  sitio), no para tragarse el fallo de vuelta a quien lo pidió. */
     /** Añade un tile MÁS al mundo sin resetearlo, con su Format D crudo.
      *  Es lo que `loadFixture` no puede hacer (toma el mundo y lo vacía), y
      *  sin ello no hay forma de medir desde el árbol el coste de varios tiles
      *  residentes — que es de donde sale `MAX_TILE_VOLUMES`
      *  (`qa/presupuesto-de-volumenes.mjs`). Solo DEV, como el resto del hook. */
     addTileRaw: (raw: Record<string, unknown>) => addTile(raw),
-    loadFixture: (name: string) => {
+    loadFixture: (name: string): Promise<void> => {
       const option = [...sceneSelector.options].find((o) => o.value.includes(name));
       if (!option) {
         throw new Error(
@@ -1332,8 +1360,21 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
             .join(", ")}`,
         );
       }
+      ultimaCargaDeFixture = undefined;
       sceneSelector.value = option.value;
       sceneSelector.dispatchEvent(new Event("change"));
+      const carga = ultimaCargaDeFixture;
+      // LANZA en vez de devolver `undefined`: devolver «nada» aquí sería
+      // exactamente el defecto que este cambio cierra, y lo devolvería mudo.
+      // Solo puede pasar si el manejador del `change` deja de lanzar la carga
+      // (hoy solo con `value` vacío, que este camino no puede producir).
+      if (carga === undefined) {
+        throw new Error(
+          `fixture "${name}": el <select> aceptó el valor pero su manejador de "change" no lanzó ` +
+            `ninguna carga, así que no hay nada que esperar y la escena no va a cambiar`,
+        );
+      }
+      return carga;
     },
     // Driver programático del provider "scripted" (?input=scripted) — API
     // limpia para el bench en vez de sintetizar KeyboardEvents.
@@ -1584,7 +1625,13 @@ sceneSelector.addEventListener("change", () => {
   // lo que se leía en los dos canales hasta #269. El crudo —la URL, el stack—
   // sigue entero en el `detail` de la entrada del error-log, que es su sitio.
   const motivo = motivoDeFixtureParaElJugador(etiquetaDeFixture(value));
-  paso(loadSceneFile(value), "scene", motivo, () => {
+  // La MISMA promesa va a `paso()` (que le pone el canal de error para quien
+  // juega) y a `ultimaCargaDeFixture` (que se la devuelve a quien disparó el
+  // evento). No se duplica la cadena: `paso` deriva su propio `.catch`, así que
+  // el rechazo sigue vivo en `carga` para el que la espere.
+  const carga = loadSceneFile(value);
+  ultimaCargaDeFixture = carga;
+  paso(carga, "scene", motivo, () => {
     log(`⚠ ${motivo}`);
     // Salvo que mientras tanto se haya elegido otra: revertir por encima de una
     // elección posterior sería mentir en la otra dirección.

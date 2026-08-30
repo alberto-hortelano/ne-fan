@@ -43,6 +43,8 @@
  *  el watch del inodo). Reinicia el cliente antes de creerte un antes/después.
  */
 
+import { cargarFixture } from "../lib/fixtures.mjs";
+
 /** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
  *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
  *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
@@ -87,20 +89,6 @@ async function cerrarMuroSiHay(ctx) {
     const muro = document.getElementById("narrative-loader");
     if (muro?.classList.contains("error")) document.getElementById("narrative-loader-dismiss")?.click();
   });
-}
-
-async function cargarFixture(ctx, fixture) {
-  await ctx.nefan("loadFixture", fixture);
-  return ctx.waitFor(
-    `la fixture ${fixture} carga y el mundo 3D la instala`,
-    (f) => {
-      const n = window.__nefan;
-      const g = n.fps();
-      return n.scene?.scene_id === f && g && g.ready && g.activeTile && g.suelo ? g.suelo : null;
-    },
-    20_000,
-    fixture,
-  );
 }
 
 /** Espera a que NO haya telegraph en pantalla: seleccionar tipo de ataque con
@@ -150,7 +138,7 @@ export default async function (ctx) {
 
   const suelos = [];
   for (const f of fixtures) {
-    const suelo = await cargarFixture(ctx, f);
+    const suelo = (await cargarFixture(ctx, f)).suelo;
     suelos.push({ fixture: f, ...suelo });
     ctx.log(`${f}: ${suelo.calcos} calcos · cara alta ${suelo.topY} m · parche a ${suelo.overlayY} m ⇒ holgura ${suelo.holguraM} m`);
     ctx.expect(
@@ -178,7 +166,7 @@ export default async function (ctx) {
   const primera = suelos.find((s) => s.calcos > 0);
   const otra = fixtures.find((f) => f !== primera.fixture);
   await cargarFixture(ctx, otra);
-  const revisita = await cargarFixture(ctx, primera.fixture);
+  const revisita = (await cargarFixture(ctx, primera.fixture)).suelo;
   ctx.log(`${primera.fixture} revisitada: ${revisita.calcos} calcos · cara alta ${revisita.topY} m`);
   ctx.expect(
     "volver a un tile no acumula calcos ni mueve su cara alta",

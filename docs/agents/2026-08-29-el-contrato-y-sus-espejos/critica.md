@@ -54,6 +54,7 @@ El criterio 1 dice: *«Renombrar un campo en `cache_assets.py` rompe algo. Hoy: 
 - **#237 ↔ #302** («nada revalida lo que el juego carga: fixtures commiteadas y snapshots que caducan»). Los 20 tiles rechazados **son exactamente su sujeto**. Tocar el gate sin mirar #302 es arreglar el espejo y dejar el cristal.
 - **#259 ↔ #238**. #238 propone como opción 3 «cerrar `description` a NPCs en el zod y RECHAZARLO en el resto»: eso **es** endurecer `EntitySchema` (#259), y toca la misma entrada que #237. Tres issues sobre el mismo schema.
 - **#320** (guion 34 intermitente, 1 de cada 4 baterías). La línea base de QA de §5 **no es estable**: un 34 rojo aparecerá y se atribuirá a esta tanda. Declararlo antes, no después.
+  *Apostilla 2026-08-30: #308 y #320 CERRADOS — el 22 no era intermitente sino un guion que medía la fixture anterior, y el control del 34 pasaba en verde con tres de las cuatro teclas muertas. Ya no hay ajenos que declarar.*
 
 ## Riesgo de arte: NO en los cuatro, y por construcción
 

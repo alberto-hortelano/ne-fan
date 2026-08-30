@@ -193,6 +193,7 @@ informe.**
 - **Los guiones 34 (#320) y 22 (#308) son intermitentes CONOCIDOS y ajenos** — 1 de cada 4 baterías y
   4 de 6 respectivamente. Una roja suya **no es hallazgo de esta tanda** y no se gasta presupuesto de
   verificación persiguiéndola.
+  *Apostilla 2026-08-30: #308 y #320 CERRADOS — el 22 no era intermitente sino un guion que medía la fixture anterior, y el control del 34 pasaba en verde con tres de las cuatro teclas muertas. Ya no hay ajenos que declarar.*
 - **Cero créditos.** Nada de esta tanda necesita generación de imagen.
 - `npm run verify` verde y CI verde antes de dar nada por hecho.
 - El candado va **en el tipo o en un test que puede ponerse rojo**, nunca en prosa de CLAUDE.md. Y donde
