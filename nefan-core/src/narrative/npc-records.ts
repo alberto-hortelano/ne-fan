@@ -60,8 +60,9 @@ export function registerSceneNpcs(
           `scene ${sceneId}.entities[${i}] (npc ${e.id}) cell must be finite numbers, got [${col}, ${row}]`,
         );
       }
-      // Centro del footprint (los NPC suelen ser 1×1, pero los migrados de
-      // saves v3 escalan su footprint con el re-muestreo).
+      // Centro del footprint. Desde el tope de #300 un NPC declara como mucho
+      // 2 celdas, así que en la práctica es siempre 1×1 o 2×2; la cuenta se
+      // queda genérica porque es la misma para cualquier huella.
       const fp = Array.isArray(e.footprint) ? (e.footprint as [number, number]) : [1, 1];
       const fw = typeof fp[0] === "number" && fp[0] > 0 ? fp[0] : 1;
       const fh = typeof fp[1] === "number" && fp[1] > 0 ? fp[1] : 1;

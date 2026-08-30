@@ -6,6 +6,7 @@ import {
   NPC_RADIUS_M,
   PLAYER_RADIUS_M,
   celdasLibresParaRadio,
+  celdasQueCubreRadio,
   createTerrainCollider,
   type TerrainGridData,
 } from "../src/scene/terrain-collision.js";
@@ -179,6 +180,60 @@ describe("el cuerpo mayor que transita el mundo", () => {
       const escaso = createTerrainCollider(pasillo(minimo - 1))!;
       assert.equal(escaso.blocksCircle(centro(minimo - 1), 0.25, radio), true, `radio ${radio} NO cabe en ${minimo - 1}`);
     }
+  });
+
+  // ── El gemelo: cuánto CUERPO cabe en celdas (#300) ────────────────────────
+  //
+  // `celdasLibresParaRadio` contesta cuánto hueco pide un cuerpo;
+  // `celdasQueCubreRadio` contesta cuánto cuerpo cabe en n celdas. Es de donde
+  // sale el TOPE del `footprint` de una entity móvil, y por eso no puede ser
+  // un número escrito a mano: si lo fuera, mover un radio dejaría al contrato
+  // prometiendo un cuerpo que la colisión no honra, que es exactamente el
+  // agujero de #300.
+  it("celdasQueCubreRadio es el gemelo exacto: un cuerpo tapa una celda menos de las que necesita para pasar", () => {
+    for (const radio of [PLAYER_RADIUS_M, NPC_RADIUS_M, 0.25, 1.75]) {
+      for (const mpc of [TILE_MPC, 0.49, 2]) {
+        assert.equal(
+          celdasQueCubreRadio(radio, mpc),
+          celdasLibresParaRadio(radio, mpc) - 1,
+          `radio ${radio} a mpc ${mpc}: las dos miden el MISMO cuerpo desde los dos lados`,
+        );
+      }
+    }
+  });
+
+  it("y ese ancho es el que el COLLIDER REAL recorre: `tope` celdas no dejan pasar al cuerpo, `tope+1` sí", () => {
+    // Misma sonda que arriba, leída al revés: el tope es el mayor ancho en
+    // celdas que NO basta para que ese cuerpo cruce — o sea, tanto ancho como
+    // cuerpo hay. Un footprint mayor declararía un bicho más ancho que el
+    // círculo que el simulador mueve.
+    const pasillo = (n: number): TerrainGridData => ({
+      grid: ["W".repeat(4) + ".".repeat(n) + "W".repeat(4)],
+      cols: 8 + n,
+      rows: 1,
+      meters_per_cell: TILE_MPC,
+      origin: [0, 0],
+      solid_chars: ["W"],
+    });
+    const centro = (n: number): number => (4 + n / 2) * TILE_MPC;
+    for (const radio of [PLAYER_RADIUS_M, NPC_RADIUS_M]) {
+      const tope = celdasQueCubreRadio(radio, TILE_MPC);
+      assert.ok(tope >= 1, `radio ${radio}: el tope tiene que dejar declarar al menos una celda`);
+      const justo = createTerrainCollider(pasillo(tope))!;
+      assert.equal(justo.blocksCircle(centro(tope), 0.25, radio), true, `radio ${radio}: ${tope} celdas NO le dejan pasar`);
+      const holgado = createTerrainCollider(pasillo(tope + 1))!;
+      assert.equal(holgado.blocksCircle(centro(tope + 1), 0.25, radio), false, `radio ${radio}: ${tope + 1} sí`);
+    }
+  });
+
+  it("los dos cuerpos del juego, en el mpc del tile: NPC 2 celdas (1,0 m), jugador 1 celda (0,5 m)", () => {
+    // Los VALORES de hoy, escritos para que muevan el gate si alguien mueve un
+    // radio: con NPC_RADIUS_M en 0,75 este test se pone rojo y con él los del
+    // tope del contrato.
+    assert.equal(celdasQueCubreRadio(NPC_RADIUS_M, TILE_MPC), 2);
+    assert.equal(celdasQueCubreRadio(PLAYER_RADIUS_M, TILE_MPC), 1);
+    assert.equal(celdasQueCubreRadio(NPC_RADIUS_M, TILE_MPC) * TILE_MPC, 2 * NPC_RADIUS_M, "el NPC cae justo en el borde");
+    assert.ok(celdasQueCubreRadio(PLAYER_RADIUS_M, TILE_MPC) * TILE_MPC < 2 * PLAYER_RADIUS_M, "el jugador no llena su celda");
   });
 });
 

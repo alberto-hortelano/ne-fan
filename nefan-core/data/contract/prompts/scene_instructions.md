@@ -88,6 +88,11 @@ ENTITY RULES
   orphaned in the old scene). Mint new ids only for brand-new characters.
 - cell is the TOP-LEFT of the footprint. cell + footprint must stay inside the
   tile (cells 0..127).
+- footprint is what the thing OCCUPIES, and for anything that moves it cannot
+  exceed the body the simulator moves: an npc declares at most 2 cells per side
+  (1,0 m) and the player at most 1 (0,5 m). A bigger creature is not a bigger
+  footprint — that does not exist today; its size goes in `description`, which
+  is what paints it. Static kinds have no such limit.
 - Buildings seen from OUTSIDE: ONE rectangular footprint each — a tavern is one
   rectangle covering its real width in cells, NOT four wall slabs. (Indoors you
   are INSIDE the building, so there is no building entity; the walls come from

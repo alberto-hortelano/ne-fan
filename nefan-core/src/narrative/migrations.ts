@@ -47,15 +47,37 @@ export function migrateActiveSceneToTile(state: NarrativeState): void {
     for (let k = 0; k < scale; k++) patchRows.push(expanded);
   }
 
+  // El footprint se re-escala SOLO para lo que no se mueve. Para un
+  // `building` es geometría en metros que el remuestreo debe preservar: una
+  // casa de 3×2 celdas a mpc 2 son 6×4 m y tiene que seguir siéndolo. Para un
+  // `npc` o el `player` NO lo es: su cuerpo lo fija el radio del actor EN
+  // METROS (`NPC_RADIUS_M`/`PLAYER_RADIUS_M`), que el remuestreo no cambia, y
+  // el sim no lee el campo. Escalarlo ×4 no agrandaba a nadie, y desde el tope
+  // de #300 el contrato ni siquiera lo admite: un save v3 migrado nacería
+  // rechazado por el gate. No es un clamp silencioso — se declara qué se
+  // conserva y por qué.
+  //
+  // Y con el footprint escalado se va lo que ESTABA HACIENDO sin decirlo:
+  // centrar al actor en su bloque. Una celda vieja se convierte en `scale`×
+  // `scale` celdas nuevas y la entity se ancla en la esquina NW; la posición
+  // sale del CENTRO de la huella (`registerSceneNpcs`, `minX + (col + fw/2)·
+  // mpc`), así que el `fw` grande era lo que devolvía al NPC al centro del
+  // bloque. Sin él se iría (scale−1)/2 celdas al noroeste — 0,75 m en un save
+  // a mpc 2. Lo que centra ahora es la CELDA, que admite fracción por
+  // contrato, y así la posición física es idéntica a la de antes de migrar.
   const entities = Array.isArray(old.entities)
     ? (old.entities as Record<string, unknown>[]).map((e) => {
         const cell = e.cell as [number, number] | undefined;
         const fp = (e.footprint as [number, number] | undefined) ?? [1, 1];
         if (!Array.isArray(cell)) return { ...e };
+        const movil = e.kind === "npc" || e.kind === "player";
+        const centrado = movil ? (scale - 1) / 2 : 0;
         return {
           ...e,
-          cell: [colOff + cell[0] * scale, rowOff + cell[1] * scale],
-          footprint: [Math.max(1, (fp[0] ?? 1) * scale), Math.max(1, (fp[1] ?? 1) * scale)],
+          cell: [colOff + cell[0] * scale + centrado, rowOff + cell[1] * scale + centrado],
+          footprint: movil
+            ? [Math.max(1, fp[0] ?? 1), Math.max(1, fp[1] ?? 1)]
+            : [Math.max(1, (fp[0] ?? 1) * scale), Math.max(1, (fp[1] ?? 1) * scale)],
         };
       })
     : [];

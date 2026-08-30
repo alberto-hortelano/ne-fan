@@ -318,8 +318,75 @@ describe("NarrativeState — migración v3→v4", () => {
       assert.deepEqual(s2.entities.find((e) => e.id === "narr_npc_1748772600")!.position, [3, 0, -2]);
       assert.deepEqual(s2.entities.find((e) => e.id === "vecina")!.position, [-5, 0, -3]);
       assert.ok(s2.hasTile(0, 0));
+
+      // Y su footprint sigue siendo [1,1]: el remuestreo ×4 (mpc 2 → 0,5) no
+      // agranda el cuerpo de nadie. Ver el caso de al lado.
+      const tile = s2.scenes_loaded["tile_0_0"].scene_data;
+      const vecinaEnt = (tile.entities as Record<string, unknown>[]).find((e) => e.id === "vecina")!;
+      assert.deepEqual(vecinaEnt.footprint, [1, 1]);
     } finally {
       await fs.rm(tmp, { recursive: true, force: true });
     }
+  });
+
+  it("el remuestreo escala la huella de lo que NO se mueve, y deja en paz el cuerpo de quien sí (#300)", async () => {
+    // Un save v3 a mpc 2 se remuestrea ×4 al tile (0,5 m/celda). Para un
+    // `building` el footprint es geometría en metros y TIENE que escalar: 3×2
+    // celdas a mpc 2 son 6×4 m y deben seguir siéndolo. Para un npc o el
+    // player no lo es: su cuerpo lo fija el radio del actor en METROS, que el
+    // remuestreo no cambia. Escalarlo hacía que la ÚNICA fuente de footprints
+    // ≠ [1,1] del repo fuese esta migración — y desde el tope de #300 ese
+    // [4,4] ni siquiera sería declarable, así que el save migrado nacía
+    // rechazado por el gate.
+    const storage = new MemorySessionStorage();
+    await storage.write("v3mix", {
+      schema_version: 3,
+      session_id: "v3mix",
+      game_id: "toledo_1200",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      world: { name: "T", atmosphere: "", style_token: "", active_scene_id: "aldea" },
+      player: {
+        level: 1, class: "rogue", health: 100, gold: 0, inventory: [],
+        appearance: { model_id: "pete", skin_path: "" },
+        position: [0, 0, 0], current_scene_id: "aldea",
+      },
+      story_so_far: "",
+      scenes_loaded: {
+        aldea: {
+          scene_id: "aldea",
+          scene_data: {
+            scene_id: "aldea",
+            scene_description: "Aldea",
+            size: { cols: 12, rows: 8, meters_per_cell: 2 },
+            terrain: Array.from({ length: 8 }, () => "g".repeat(12)),
+            terrain_legend: {},
+            entities: [
+              { id: "vecina", kind: "npc", name: "Vecina", cell: [3, 2], footprint: [1, 1], glyph: "n" },
+              { id: "yo", kind: "player", name: "Tú", cell: [6, 4], footprint: [1, 1], glyph: "@" },
+              { id: "granero", kind: "building", name: "granero", cell: [8, 1], footprint: [3, 2], glyph: "B" },
+            ],
+          },
+          loaded_at: "2026-01-01T00:00:00Z",
+        },
+      },
+      entities: [],
+      dialogue_history: [],
+      asset_index_snapshot: [],
+      _next_event_seq: 0,
+    } as never);
+    const s = new NarrativeState(storage);
+    assert.equal(await s.loadSession("v3mix"), true);
+    const ents = s.scenes_loaded["tile_0_0"].scene_data.entities as Record<string, unknown>[];
+    const byId = new Map(ents.map((e) => [e.id, e]));
+    assert.deepEqual(byId.get("granero")!.footprint, [12, 8], "3×2 celdas a mpc 2 = 6×4 m, y siguen siendo 6×4 m");
+    assert.deepEqual(byId.get("vecina")!.footprint, [1, 1], "el cuerpo del NPC no lo fija el grid");
+    assert.deepEqual(byId.get("yo")!.footprint, [1, 1], "ni el del jugador");
+    // Y la POSICIÓN física no se mueve: la celda del móvil se centra en su
+    // bloque remuestreado (era el footprint grande quien lo hacía). Celda (3,2)
+    // de 12×8@2 centrada = mundo (−5, −3), antes y después de migrar.
+    assert.deepEqual(byId.get("vecina")!.cell, [53.5, 57.5]);
+    assert.deepEqual(s.entities.find((e) => e.id === "vecina")!.position, [-5, 0, -3]);
+    assert.deepEqual(byId.get("granero")!.cell, [72, 52], "lo estático se ancla en la esquina, como su rect");
   });
 });

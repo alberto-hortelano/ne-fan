@@ -1,0 +1,23 @@
+{
+  "description": "un NPC declara footprint [8,8] —4 metros— y el simulador lo mueve como un círculo de 0,5 m de radio, que son 2 celdas: lo declarable no puede pasarse de lo simulable. El contrato le ponía `minimum: 1` sin máximo, así que el motor prometía un cuerpo que el juego no honra y nadie se enteraba (#300)",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": { "tx": 0, "ty": 0 },
+    "biome": "dirt",
+    "entities": [
+      { "id": "player", "kind": "player", "name": "Tú", "cell": [64, 64], "footprint": [1, 1], "glyph": "@" },
+      {
+        "id": "ogro",
+        "kind": "npc",
+        "name": "Ogro del vado",
+        "cell": [60, 60],
+        "footprint": [8, 8],
+        "glyph": "O",
+        "role": "hostile",
+        "description": "ogro corpulento de piel gris y maza de piedra"
+      }
+    ]
+  }
+}

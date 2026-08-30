@@ -37,14 +37,17 @@ export const NPC_RADIUS_M = 0.5;
 /** El cuerpo MAYOR que el simulador mueve por el mundo. Quien decida cuánto
  *  hueco hay que dejar deriva de aquí, no del jugador.
  *
- *  LO QUE NO GARANTIZA: el sim mueve a TODAS las criaturas con este radio —
- *  `footprint` de la entity no se lee ni una vez en `src/simulation/` ni en
- *  `bridge/`, y el contrato le pone `minimum: 1` sin máximo. O sea que una
- *  criatura declarada `footprint:[8,8]` se sigue moviendo como un círculo de
- *  0,5 m, y este número no la cubre. No es un olvido de este módulo: es que
- *  hoy el cuerpo mayor QUE EL SIM HONRA es este. El día que el sim derive el
- *  radio del `footprint`, quien llame a `celdasLibresParaRadio` pasa el `max`
- *  sobre las entities de la escena y nada más cambia. */
+ *  El sim mueve a TODAS las criaturas con el radio de su kind y no lee el
+ *  `footprint` de la entity ni una vez (`grep footprint src/simulation/` = 0).
+ *  Hasta #300 eso era un agujero: el contrato le ponía `minimum: 1` sin
+ *  máximo, así que una criatura podía declarar `footprint:[8,8]` —4 metros— y
+ *  seguir moviéndose como un círculo de 0,5 m, con el motor prometiendo un
+ *  cuerpo que el juego no honra. Hoy el contrato no lo deja EXPRESAR: el zod
+ *  de la escena topa el footprint de los kinds móviles con
+ *  `celdasQueCubreRadio` sobre estos mismos radios, así que lo declarable no
+ *  puede pasarse de lo simulable. El día que el sim derive el radio del
+ *  `footprint`, quien llame a `celdasLibresParaRadio` pasa el `max` sobre las
+ *  entities de la escena y nada más cambia. */
 export const BODY_RADIUS_M = Math.max(PLAYER_RADIUS_M, NPC_RADIUS_M);
 
 /** Celdas LIBRES consecutivas que necesita un cuerpo de radio `radioM` para
@@ -59,6 +62,26 @@ export const BODY_RADIUS_M = Math.max(PLAYER_RADIUS_M, NPC_RADIUS_M);
  *  toda la puerta de 1 m del issue #289. */
 export function celdasLibresParaRadio(radioM: number, mpc: number): number {
   return Math.floor((2 * radioM) / mpc) + 1;
+}
+
+/** Celdas de ANCHO que cubre un cuerpo de radio `radioM` sobre un grid de
+ *  `mpc` metros por celda: el mayor `n` con `n·mpc ≤ 2·radioM`.
+ *
+ *  Es el gemelo exacto de `celdasLibresParaRadio` —uno dice cuánto HUECO pide
+ *  un cuerpo, este cuánto CUERPO cabe— y por eso son la misma cuenta con una
+ *  celda de diferencia: el hueco por el que ese cuerpo pasa es, justamente, el
+ *  primero más ancho que él. A mpc 0,5: NPC (0,5) → 2 celdas (1,0 m, su
+ *  diámetro exacto); jugador (0,4) → 1 celda (0,5 m, porque 2 celdas serían
+ *  1,0 m y su cuerpo mide 0,8).
+ *
+ *  De aquí sale el TOPE del `footprint` de una entity móvil
+ *  (`RADIO_SIMULADO_POR_KIND` en `contract/model-io/scene-schema.ts`): lo que
+ *  el motor declara ocupar no puede ser más ancho que el círculo que el
+ *  simulador mueve de verdad. Que no sea un literal es lo que hace el candado:
+ *  mover un radio mueve el contrato con él, en vez de dejarlo prometiendo un
+ *  cuerpo que ya nadie honra. */
+export function celdasQueCubreRadio(radioM: number, mpc: number): number {
+  return Math.floor((2 * radioM) / mpc);
 }
 
 export interface TerrainGridData {

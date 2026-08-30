@@ -126,6 +126,31 @@ TILE_CELLS = 128
 VOLUME_CELL_MARGIN = 8
 GROUND_CELL_MARGIN = 16
 
+# Espejo de nefan-core/src/scene/terrain-collision.ts + tile.ts: los radios de
+# los DOS cuerpos que alguien mueve y los metros por celda del tile. No son
+# números elegidos aquí — son los que la colisión honra, y este bloque existe
+# porque el saneador Python valida el mismo `footprint` que el zod. El candado
+# de que no divergen son las fixtures compartidas de
+# data/contract/fixtures/scene/, que corren en los DOS suites.
+TILE_MPC = 0.5
+NPC_RADIUS_M = 0.5
+PLAYER_RADIUS_M = 0.4
+
+
+def _celdas_que_cubre_radio(radio_m: float, mpc: float) -> int:
+    """Celdas de ancho que cubre un cuerpo de ese radio: el mayor n con
+    n·mpc ≤ 2·radio (espejo de `celdasQueCubreRadio`)."""
+    return int((2 * radio_m) // mpc)
+
+
+# Tope del `footprint` de una entity MÓVIL, en celdas (#300): lo declarado no
+# puede ser más ancho que el círculo que el simulador mueve. Los cinco kinds
+# restantes no se mueven y su footprint es geometría, sin tope.
+FOOTPRINT_MAX_CELLS_POR_KIND = {
+    "npc": _celdas_que_cubre_radio(NPC_RADIUS_M, TILE_MPC),
+    "player": _celdas_que_cubre_radio(PLAYER_RADIUS_M, TILE_MPC),
+}
+
 
 def _num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
@@ -743,6 +768,17 @@ def validate_scene_response(data: dict) -> dict:
             and all(isinstance(v, int) and not isinstance(v, bool) and v >= 1 for v in fp)
         ):
             raise ValueError(f"entity '{eid}': `footprint` debe ser [ancho, alto] de enteros ≥1")
+        tope = FOOTPRINT_MAX_CELLS_POR_KIND.get(kind)
+        if tope is not None and max(fp[0], fp[1]) > tope:
+            # NO se clampa: sería justo el fail-silent que este gate existe
+            # para cerrar. Un cuerpo declarado más ancho que el que el
+            # simulador mueve vuelve al motor con el número delante.
+            raise ValueError(
+                f"entity '{eid}' ({kind}): declara footprint [{fp[0]}, {fp[1]}] "
+                f"({max(fp[0], fp[1]) * TILE_MPC:.1f} m de lado) y el cuerpo que el simulador "
+                f"mueve son {tope} celda(s) ({tope * TILE_MPC:.1f} m): lo declarado no puede ser "
+                f"mayor que lo que la colisión honra"
+            )
         w = max(1, min(int(fp[0]), cols - col))
         h = max(1, min(int(fp[1]), rows - row))
 

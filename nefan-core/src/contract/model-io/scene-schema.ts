@@ -34,9 +34,34 @@ import { VegetationZonesSchema } from "../../scene/blueprint/vegetation.js";
 import { VolumesSchema } from "../../scene/blueprint/volumes.js";
 import { parseScatter } from "../../scene/blueprint/scatter.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
+import { NPC_RADIUS_M, PLAYER_RADIUS_M, celdasQueCubreRadio } from "../../scene/terrain-collision.js";
+import { TILE_MPC } from "../../scene/tile.js";
 
 export const ENTITY_KINDS = ["building", "prop", "item", "tree", "npc", "player", "decor"] as const;
 export const SCENE_BIOMES = ["grass", "forest_floor", "meadow", "sand", "dirt", "stone", "snow", "swamp"] as const;
+
+/** Los kinds que ALGUIEN MUEVE, con el radio del cuerpo que se mueve de
+ *  verdad: `npc` lo mueve el simulador (`npc-behavior.ts`) y `player` lo mueve
+ *  el cliente, que es autoritativo de su posición. Los otros cinco no se
+ *  mueven, así que su `footprint` es geometría y no tiene tope: un granero de
+ *  20×14 celdas es legítimo.
+ *
+ *  Los radios NO se copian aquí: se importan de donde vive la colisión, que es
+ *  quien los honra. */
+export const RADIO_SIMULADO_POR_KIND: Readonly<Record<string, number>> = {
+  npc: NPC_RADIUS_M,
+  player: PLAYER_RADIUS_M,
+};
+
+/** El footprint declarable de un kind móvil, en celdas del tile. `undefined`
+ *  para los cinco kinds que nadie mueve. */
+function topeDeFootprint(kind: string): number | undefined {
+  const radio = RADIO_SIMULADO_POR_KIND[kind];
+  return radio === undefined ? undefined : celdasQueCubreRadio(radio, TILE_MPC);
+}
+
+/** Metros con coma decimal, como el resto de los mensajes que lee el motor. */
+const enMetros = (celdas: number): string => (celdas * TILE_MPC).toFixed(1).replace(".", ",");
 
 /** Mensaje de la clave desconocida. Va por `errorMap` y no por `.strict(msg)`
  *  porque ese solo admite texto fijo: aquí hay que nombrar LA clave que sobra
@@ -130,6 +155,21 @@ export const EntitySchema = EntityBase
   // ai_server hacía lo mismo por el otro lado y es su espejo exacto.
   .strict()
   .superRefine((e, ctx) => {
+    // ── El cuerpo declarado no puede pasarse del simulado (#300) ──────────
+    const tope = topeDeFootprint(e.kind);
+    const lado = Math.max(e.footprint[0], e.footprint[1]);
+    if (tope !== undefined && lado > tope) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["footprint"],
+        message:
+          `la entity "${e.id}" (${e.kind}) declara footprint [${e.footprint[0]}, ${e.footprint[1]}] ` +
+          `(${enMetros(lado)} m de lado) y el cuerpo que el simulador mueve son ${tope} ` +
+          `celda${tope === 1 ? "" : "s"} (${enMetros(tope)} m): lo declarado no puede ser mayor que lo ` +
+          `que la colisión honra. Un bicho más grande no se consigue con un footprint mayor — hoy no ` +
+          `existe—; lo que sí viaja es su aspecto, y eso va en \`description\`.`,
+      });
+    }
     if (e.role === undefined || (NPC_ROLES as readonly string[]).includes(e.role)) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
