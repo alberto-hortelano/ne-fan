@@ -2,10 +2,7 @@
  *
  *  El motor narrativo puede describir la escena con primitivas de alto nivel
  *  en vez de dibujar el ASCII a mano:
- *   - `structures`: habitaciones/edificios enterables — el código estampa el
- *     perímetro de muro CERRADO, el suelo interior y los huecos de puerta.
- *     Garantía por construcción: no hay muros con fugas ni salas selladas por
- *     un typo en una fila de 28 chars.
+ *   - `terrain_patches`: parches ASCII rectangulares sobre el fill del bioma.
  *   - `decor` con `attach: "wall"`: se pega a la celda de muro más cercana.
  *
  *  `vegetation_zones` NO se expande aquí y es a propósito: estampaba una
@@ -31,42 +28,20 @@ import { TILE_CELLS, TILE_MPC, resolveBiome } from "./tile.js";
 import { parseGround } from "./blueprint/ground.js";
 import { shapeContains, GROUND_WATER_CHAR } from "./blueprint/ground-collision.js";
 
-type Rect = [number, number, number, number]; // [col, row, w, h]
-
-interface RoomDoor {
-  side: "north" | "south" | "east" | "west";
-  /** Celdas desde la esquina superior/izquierda del rect a lo largo del lado. */
-  at: number;
-  width?: number;
-  /** Char del hueco (default "_", umbral transitable). */
-  char?: string;
-}
-
-interface RoomStructure {
-  type: "room";
-  rect: Rect;
-  wall_char?: string;
-  floor_char?: string;
-  doors?: RoomDoor[];
-}
-
-function asRect(raw: unknown, ctx: string): Rect {
-  if (!Array.isArray(raw) || raw.length !== 4 || !raw.every((n) => typeof n === "number" && Number.isInteger(n))) {
-    throw new Error(`${ctx}: rect/area debe ser [col,row,w,h] de enteros, got ${JSON.stringify(raw)}`);
-  }
-  return raw as Rect;
-}
+/** Char de muro: el único que el `decor` con `attach:"wall"` busca para
+ *  pegarse. Es el reservado del contrato (`DEFAULT_SOLID_CHARS`), no una
+ *  elección de quien declara la escena: desde que se retiró la primitiva de
+ *  salas (#301) ninguna introduce un char de muro propio. */
+const WALL_CHAR = "W";
 
 /** ¿Tiene la escena primitivas pendientes de expandir? */
 export function hasUnexpandedPrimitives(raw: Record<string, unknown>): boolean {
   if (raw.__expanded === true) return false;
-  // Un tile SIEMPRE se expande (el fill del bioma es obligatorio aunque no
-  // haya structures).
+  // Un tile SIEMPRE se expande: el fill del bioma es obligatorio aunque no
+  // traiga ninguna otra primitiva.
   if (raw.tile !== undefined) return true;
-  const hasStructures = Array.isArray(raw.structures) && raw.structures.length > 0;
-  const hasWallDecor = Array.isArray(raw.entities) &&
+  return Array.isArray(raw.entities) &&
     (raw.entities as Record<string, unknown>[]).some((e) => e && e.attach === "wall");
-  return hasStructures || hasWallDecor;
 }
 
 /** Pinta un camino grueso ("_") sobre el grid mutable: celda pintada si la
@@ -149,7 +124,7 @@ function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
 /** Prepara la BASE de un tile (Format D v3): fill del bioma 128×128 +
  *  terrain_patches + rasterización de los rasgos `ground` al grid. Devuelve
  *  una copia con `size`/`terrain` sintetizados lista para la expansión
- *  compartida (structures/decor). Fail-loud en primitivas
+ *  compartida (el decor con `attach`). Fail-loud en primitivas
  *  imposibles — mismo contrato que el resto del expander. */
 function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> {
   const t = raw.tile as { tx?: unknown; ty?: unknown };
@@ -201,10 +176,10 @@ function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> 
   };
 }
 
-/** Expande structures/decor-attach sobre una escena Format D
- *  cruda y devuelve una copia plana marcada `__expanded`. Escena sin
- *  primitivas (o ya expandida) → se devuelve tal cual. Un tile (Format D v3,
- *  campo `tile`) pasa primero por prepareTileBase (bioma + parches + raster). */
+/** Expande el decor-attach sobre una escena Format D cruda y devuelve una
+ *  copia plana marcada `__expanded`. Escena sin primitivas (o ya expandida) →
+ *  se devuelve tal cual. Un tile (Format D v3, campo `tile`) pasa primero por
+ *  prepareTileBase (bioma + parches + raster). */
 export function expandScenePrimitives(raw: Record<string, unknown>): Record<string, unknown> {
   if (!hasUnexpandedPrimitives(raw)) return raw;
   if (raw.tile !== undefined) raw = prepareTileBase(raw);
@@ -229,79 +204,6 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
     ? (raw.entities as Record<string, unknown>[]).map((e) => ({ ...e }))
     : [];
 
-  // ── Structures: muros cerrados + suelo + puertas, por construcción ────────
-  const wallChars = new Set<string>(["W"]);
-  const structures = Array.isArray(raw.structures)
-    ? (raw.structures as (Partial<RoomStructure> & Record<string, unknown>)[])
-    : [];
-  for (let si = 0; si < structures.length; si++) {
-    const s = structures[si];
-    if (!s || typeof s !== "object") throw new Error(`structures[${si}] no es un objeto`);
-    if (s.type !== "room") throw new Error(`structures[${si}].type="${s.type}" desconocido (solo "room")`);
-    const [c0, r0, w, h] = asRect(s.rect, `structures[${si}]`);
-    if (w < 3 || h < 3) throw new Error(`structures[${si}]: rect ${w}x${h} demasiado pequeño (mínimo 3x3 para tener interior)`);
-    if (c0 < 0 || r0 < 0 || c0 + w > cols || r0 + h > rows) {
-      throw new Error(`structures[${si}]: rect [${c0},${r0},${w},${h}] se sale del grid ${cols}x${rows}`);
-    }
-    const wallChar = typeof s.wall_char === "string" && s.wall_char.length === 1 ? s.wall_char : "W";
-    const floorChar = typeof s.floor_char === "string" && s.floor_char.length === 1 ? s.floor_char : "o";
-    wallChars.add(wallChar);
-
-    // Perímetro de muro + interior de suelo.
-    for (let r = r0; r < r0 + h; r++) {
-      for (let c = c0; c < c0 + w; c++) {
-        const isEdge = r === r0 || r === r0 + h - 1 || c === c0 || c === c0 + w - 1;
-        grid[r][c] = isEdge ? wallChar : floorChar;
-      }
-    }
-
-    // Puertas: huecos transitables en el perímetro. Anchura mínima por
-    // construcción: el jugador (~0.8 m de diámetro) necesita ≥1.1 m de hueco
-    // para pasar sin alinearse al píxel — una puerta más estrecha se
-    // auto-ensancha (a mpc 0.5 eso son 3 celdas; a mpc 2 basta 1).
-    const mpc = (raw.size as { meters_per_cell?: number }).meters_per_cell ?? 2;
-    const minDoorCells = Math.max(1, Math.ceil(1.1 / mpc));
-    const doors = Array.isArray(s.doors) ? (s.doors as RoomDoor[]) : [];
-    for (let di = 0; di < doors.length; di++) {
-      const d = doors[di];
-      const dw = Math.max(Math.max(1, d.width ?? 1), minDoorCells);
-      const dchar = typeof d.char === "string" && d.char.length === 1 ? d.char : "_";
-      const along = d.side === "north" || d.side === "south" ? w : h;
-      if (!["north", "south", "east", "west"].includes(d.side)) {
-        throw new Error(`structures[${si}].doors[${di}]: side="${d.side}" inválido`);
-      }
-      if (!Number.isInteger(d.at) || d.at < 1 || d.at + Math.max(1, d.width ?? 1) > along - 1) {
-        throw new Error(
-          `structures[${si}].doors[${di}]: at=${d.at} width=${d.width ?? 1} no cabe en el lado ${d.side} (1..${along - 2}, las esquinas no pueden ser puerta)`,
-        );
-      }
-      // Si el ensanchado se sale del lado, se desplaza hacia dentro.
-      const at = Math.max(1, Math.min(d.at, along - 1 - dw));
-      if (at + dw > along - 1) {
-        throw new Error(
-          `structures[${si}].doors[${di}]: el lado ${d.side} (${along} celdas) es demasiado corto para una puerta transitable de ${dw} celdas`,
-        );
-      }
-      d.at = at;
-      d.width = dw;
-      for (let k = 0; k < dw; k++) {
-        if (d.side === "north") grid[r0][c0 + d.at + k] = dchar;
-        else if (d.side === "south") grid[r0 + h - 1][c0 + d.at + k] = dchar;
-        else if (d.side === "west") grid[r0 + d.at + k][c0] = dchar;
-        else grid[r0 + d.at + k][c0 + w - 1] = dchar;
-      }
-    }
-    // El char de muro queda declarado sólido si la leyenda no lo hace ya.
-    const entry = legend[wallChar];
-    if (entry === undefined) {
-      legend[wallChar] = { name: "muro", solid: true };
-    } else if (typeof entry === "string") {
-      legend[wallChar] = { name: entry, solid: true };
-    } else if (entry && typeof entry === "object" && (entry as { solid?: unknown }).solid === undefined) {
-      legend[wallChar] = { ...(entry as object), solid: true };
-    }
-  }
-
   // ── Decor attach:"wall" — snap a la celda de muro más cercana (radio 3) ───
   for (const e of entities) {
     if (e.attach !== "wall" || e.kind !== "decor") continue;
@@ -312,7 +214,7 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
     let bestD = Infinity;
     for (let r = Math.max(0, er - 3); r <= Math.min(rows - 1, er + 3); r++) {
       for (let c = Math.max(0, ec - 3); c <= Math.min(cols - 1, ec + 3); c++) {
-        if (!wallChars.has(grid[r][c])) continue;
+        if (grid[r][c] !== WALL_CHAR) continue;
         const d = Math.abs(c - ec) + Math.abs(r - er);
         if (d < bestD) {
           bestD = d;

@@ -2,7 +2,7 @@
  *  colisionable.
  *
  *  Un tile llega del motor como esquema (`ground` + `volumes` declarados, más
- *  las primitivas que el engine desarrolla: `structures`, `vegetation_zones`,
+ *  las primitivas que el engine desarrolla: `vegetation_zones` y las
  *  `entities` estáticas). De ahí sale UNA cosa —el plan— y de ella salen
  *  TODAS las demás: la geometría 3D que pinta el cliente, la colisión del
  *  jugador, la colisión de los NPCs en el bridge, las celdas del atlas de
@@ -39,8 +39,8 @@ export type TilePlan = FpsTilePlanInput;
 /** Presupuesto de volúmenes del plan COMPUESTO (declarados + derivados).
  *
  *  Sustituye al viejo cap de 80 volúmenes derivados de entities, que tapaba
- *  media fuga: limitaba las entities pero no la vegetación ni las structures,
- *  y `EmittedSceneSchema` no limita `entities`. El cuello no es la CPU
+ *  media fuga: limitaba las entities pero no la vegetación, y
+ *  `EmittedSceneSchema` no limita `entities`. El cuello no es la CPU
  *  (componer 328 árboles cuesta 4 ms) sino las DRAW CALLS: cada primitiva del
  *  greybox es un `THREE.Mesh` propio y lo que cuesta es el total de volúmenes
  *  que caen en el FRUSTUM, no los de un tile.
@@ -122,7 +122,6 @@ export function composeTilePlan(raw: Record<string, unknown>): TilePlanCompositi
   const derived = deriveVolumesFromSchema(
     {
       seed,
-      structures: raw.structures as never,
       vegetation_zones: zonas.ok ? zonas.zones : [],
       entities: raw.entities as never,
       ground,

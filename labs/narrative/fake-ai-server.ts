@@ -338,9 +338,12 @@ function bootstrapTile() {
     // bench ejercita el camino explícito además del fallback.
     style_ref: "settlement",
     biome: "grass",
-    structures: [
-      { type: "room", rect: [52, 48, 24, 16], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 11, width: 2 }] },
-    ],
+    // La taberna la declara `BOOTSTRAP_VOLUMES` como building CUTAWAY con el
+    // mismo rect: hasta el 2026-08-30 aquí había además una primitiva de sala
+    // con ese rect exacto, que el derive ya saltaba por estar cubierta por el
+    // volume declarado. Lo único que aportaba era estampar muros y suelo en
+    // el grid ASCII; retirada la primitiva (#301), la geometría de la taberna
+    // no se mueve: la sigue poniendo el cutaway.
     vegetation_zones: [{ type: "pino", area: [4, 4, 40, 30], density: 0.08 }],
     entities: [
       // El NPC va VESTIDO y con oficio, como lo declara el motor de verdad:

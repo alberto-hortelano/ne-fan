@@ -138,9 +138,10 @@ export default async function (ctx) {
     `${par.arboles} árboles · los dos más juntos (${par.a} ↔ ${par.b}) a ${par.d.toFixed(2)} m · ` +
       `hueco continuo para el CUERPO del jugador entre ellos: ${par.huecoContinuo.toFixed(2)} m`,
   );
-  // El cuerpo del jugador mide 0,80 m (PLAYER_RADIUS_M = 0,4). El sondeo ya
-  // lleva el cuerpo puesto: `probeCollide` infla el punto con ese radio, así
-  // que cualquier hueco > 0 es hueco por el que el cuerpo cabe.
+  // El sondeo ya lleva el CUERPO puesto: `probeCollide` infla el punto con el
+  // radio del jugador (`PLAYER_RADIUS_M`, en `src/scene/terrain-collision.ts`,
+  // que es donde vive y de donde nadie debe copiarlo), así que cualquier hueco
+  // > 0 es hueco por el que el cuerpo cabe.
   //
   // OJO AL ORDEN, que no es decorativo: `probeCollide` pregunta por un
   // MOVIMIENTO desde donde está el jugador (`blocksMove`), y esa función tiene

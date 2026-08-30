@@ -1,6 +1,6 @@
-/** Lo que el ESQUEMA del tile implica y el motor no escribió: `structures` →
- *  edificios cutaway, entities estáticas → su primitiva y `vegetation_zones` →
- *  masa forestal. Es la mitad "derivada" del único camino esquema→huella; la
+/** Lo que el ESQUEMA del tile implica y el motor no escribió: entities
+ *  estáticas → su primitiva y `vegetation_zones` → masa forestal. Es la mitad
+ *  "derivada" del único camino esquema→huella; la
  *  composición entera (con presupuesto y avisos) la cubre `tile-plan.test.ts`.
  *
  *  Escrito desde el CONTRATO del módulo: qué promete el tool `generate_scene`
@@ -198,70 +198,11 @@ describe("deriveVolumesFromSchema: vegetation_zones", () => {
   });
 });
 
-/** Las otras dos rutas del derive —`structures` → edificio cutaway y
- *  `entities` estáticas → su volumen equivalente— son las que reconcilian las
- *  DOS representaciones del mismo objeto: la entity del esquema y su volumen.
- *  De ahí sale `representedBy`, que es lo que impide pintar las dos. */
-describe("deriveVolumesFromSchema: structures y entities del tile", () => {
-  it("una room del esquema deriva un edificio cutaway con sus puertas por edge", () => {
-    const out = deriveVolumesFromSchema(
-      {
-        seed: "tile_0_0",
-        structures: [
-          {
-            type: "room",
-            rect: [10, 20, 12, 8],
-            doors: [{ side: "south", at: 4, width: 3 }, { side: "west", at: 2 }],
-          },
-        ],
-      },
-      [],
-    ).volumes;
-    assert.equal(out.length, 1);
-    const b = out[0] as Extract<Volume, { type: "building" }>;
-    assert.equal(b.type, "building");
-    assert.equal(b.cutaway, true, "la room es ENTERABLE: sin cutaway no habría interior ni vano");
-    assert.deepEqual(b.rect, [10, 20, 12, 8]);
-    // side (Format D) → edge (blueprint); sin `width` el vano cae al default.
-    assert.deepEqual(b.doors, [{ edge: "s", at: 4, w: 3 }, { edge: "w", at: 2, w: 4 }]);
-  });
-
-  it("lo que el motor YA declaró manda: una room que solapa un volume no se duplica", () => {
-    const declared = vols([
-      { id: "posada", label: "posada", type: "building", rect: [10, 20, 12, 8], cutaway: true },
-    ]);
-    const solapa = deriveVolumesFromSchema(
-      { seed: "tile_0_0", structures: [{ type: "room", rect: [14, 22, 6, 4], doors: [] }] },
-      declared,
-    );
-    assert.deepEqual(solapa.volumes, [], "el LLM ya cubrió ese rect");
-
-    // Y una room APARTADA sí se deriva: la regla es el solape, no "hay volumes".
-    const aparte = deriveVolumesFromSchema(
-      { seed: "tile_0_0", structures: [{ type: "room", rect: [60, 60, 6, 6], doors: [] }] },
-      declared,
-    );
-    assert.equal(aparte.volumes.length, 1);
-  });
-
-  it("una structure que no es room, o con rect imposible, se ignora sin lanzar", () => {
-    const out = deriveVolumesFromSchema(
-      {
-        seed: "tile_0_0",
-        structures: [
-          { type: "plaza", rect: [10, 10, 4, 4] },
-          { type: "room", rect: [10, 10, 0, 4] },
-          { type: "room", rect: "no es un rect" },
-          { type: "room" },
-        ],
-      },
-      [],
-    );
-    // Es composición, no validación: la escena ya pasó por el zod y por
-    // validateScene, así que una primitiva rota se salta en silencio.
-    assert.deepEqual(out.volumes, []);
-  });
-
+/** La otra ruta del derive —`entities` estáticas → su volumen equivalente— es
+ *  la que reconcilia las DOS representaciones del mismo objeto: la entity del
+ *  esquema y su volumen. De ahí sale `representedBy`, que es lo que impide
+ *  pintar las dos. */
+describe("deriveVolumesFromSchema: entities del tile", () => {
   it("cada kind estático deriva su primitiva y queda MARCADA como representada", () => {
     const out = deriveVolumesFromSchema(
       {
@@ -326,22 +267,24 @@ describe("deriveVolumesFromSchema: structures y entities del tile", () => {
     assert.deepEqual(p.rect, [127, 0, 128, 2]);
   });
 
-  it("una entity que cae sobre algo ya derivado no se apila encima, y el mobiliario sigue visible", () => {
+  it("una entity que cae sobre un volumen DECLARADO no se apila encima, y el mobiliario sigue visible", () => {
+    // Lo que el motor YA declaró manda: la posada ocupa ese rect, así que el
+    // barril de dentro no deriva volumen propio. La regla es el SOLAPE, no
+    // "hay volumes": el de fuera sí lo deriva.
     const out = deriveVolumesFromSchema(
       {
         seed: "tile_0_0",
-        structures: [{ type: "room", rect: [10, 10, 10, 10], doors: [] }],
         entities: [
           { id: "dentro", kind: "prop", name: "barril", cell: [12, 12], footprint: [2, 2] },
           { id: "fuera", kind: "prop", name: "barril", cell: [60, 60], footprint: [2, 2] },
         ],
       },
-      [],
+      vols([{ id: "posada", label: "posada", type: "building", rect: [10, 10, 10, 10], cutaway: true }]),
     );
     assert.deepEqual(
       out.volumes.map((v) => v.id).sort(),
-      ["derived_ent_fuera", "derived_room_0"],
-      "la structure ya ocupa ese rect: el barril de dentro no se deriva",
+      ["derived_ent_fuera"],
+      "la posada ya ocupa ese rect: el barril de dentro no se deriva",
     );
     // Y NO queda marcado como representado: el barril de dentro de la posada
     // es una entity de pleno derecho y hay que verla (el greybox pinta la

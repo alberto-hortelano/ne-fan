@@ -11,10 +11,15 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
-import { EmittedSceneSchema, EntitySchema, ENTITY_FIELDS } from "../src/contract/model-io/scene-schema.js";
+import {
+  EmittedSceneSchema,
+  EntitySchema,
+  ENTITY_FIELDS,
+  RADIO_SIMULADO_POR_KIND,
+} from "../src/contract/model-io/scene-schema.js";
 import { validateContract } from "../src/contract/model-io/validate.js";
 import { MIN_VANO_CELDAS } from "../src/scene/blueprint/volumes.js";
-import { BODY_RADIUS_M, celdasLibresParaRadio } from "../src/scene/terrain-collision.js";
+import { BODY_RADIUS_M, celdasLibresParaRadio, celdasQueCubreRadio } from "../src/scene/terrain-collision.js";
 import { TILE_MPC } from "../src/scene/tile.js";
 import { NPC_ROLES } from "../src/simulation/npc-roles.js";
 
@@ -138,6 +143,87 @@ describe("EmittedSceneSchema — un vano más estrecho que el cuerpo mayor no ll
       assert.equal(EmittedSceneSchema.safeParse(escena(MIN_VANO_CELDAS - 0.01)).success, false);
     });
   }
+});
+
+/** El TOPE del `footprint` de una entity MÓVIL (#300).
+ *
+ *  El contrato dejaba declarar `footprint: [8, 8]` a un NPC —4 metros— mientras
+ *  el simulador lo mueve con un cuerpo de 0,5 m de radio y no lee el campo ni
+ *  una vez (`grep footprint src/simulation/` = 0). Lo declarado y lo que el
+ *  juego honra no estaban atados por nada, así que el motor podía prometer un
+ *  cuerpo que no existe y nadie se enteraba.
+ *
+ *  El arreglo no es un test más: es hacer el estado malo INEXPRESABLE. El tope
+ *  sale de `celdasQueCubreRadio` sobre el radio que el simulador honra para
+ *  ese kind, así que no puede divergir de él ni quedarse atrás cuando alguien
+ *  mueva un radio. Solo tienen tope los DOS kinds que alguien mueve: un
+ *  edificio de 20×14 celdas es geometría legítima y sigue pasando. */
+describe("EmittedSceneSchema — una entity móvil no declara más cuerpo del que el simulador mueve", () => {
+  const conEntity = (e: Record<string, unknown>): unknown => ({
+    scene_id: "tile_0_0",
+    scene_description: "una escena de prueba",
+    tile: { tx: 0, ty: 0 },
+    biome: "grass",
+    entities: [e],
+  });
+  const movil = (kind: string, n: number): unknown =>
+    conEntity({ id: "bicho", kind, name: "Bicho", cell: [10, 10], footprint: [n, n], glyph: "b" });
+
+  it("el tope EFECTIVO del gate es el que sale del cuerpo simulado, no un número escrito a mano", () => {
+    // Se mide probando el gate, no leyendo la constante: si alguien sustituye
+    // la derivación por un literal que hoy coincide, este test se queda verde
+    // pero el de al lado (`los dos kinds, con sus valores`) y los de
+    // terrain-collision se ponen rojos en cuanto se mueva un radio.
+    for (const [kind, radio] of Object.entries(RADIO_SIMULADO_POR_KIND)) {
+      const tope = celdasQueCubreRadio(radio, TILE_MPC);
+      for (let n = 1; n <= 16; n++) {
+        assert.equal(
+          EmittedSceneSchema.safeParse(movil(kind, n)).success,
+          n <= tope,
+          `${kind} con footprint [${n},${n}]: el tope de su cuerpo son ${tope} celdas`,
+        );
+      }
+    }
+  });
+
+  it("los dos kinds móviles, con sus valores de hoy: npc 2 celdas, player 1", () => {
+    assert.deepEqual(Object.keys(RADIO_SIMULADO_POR_KIND).sort(), ["npc", "player"]);
+    assert.equal(accepts(movil("npc", 1)), true);
+    assert.equal(accepts(movil("npc", 2)), true, "1,0 m es exactamente su cuerpo");
+    assert.equal(EmittedSceneSchema.safeParse(movil("npc", 3)).success, false, "1,5 m no lo mueve nadie");
+    assert.equal(accepts(movil("player", 1)), true);
+    assert.equal(EmittedSceneSchema.safeParse(movil("player", 2)).success, false, "1,0 m > los 0,8 m del jugador");
+  });
+
+  it("los cinco kinds ESTÁTICOS no tienen tope: un granero de 20×14 es geometría legítima", () => {
+    for (const kind of ["building", "prop", "item", "tree", "decor"]) {
+      assert.equal(
+        accepts(conEntity({ id: "granero", kind, name: "granero", cell: [10, 10], footprint: [20, 14], glyph: "B" })),
+        true,
+        `${kind} [20,14] tiene que seguir pasando: nadie lo mueve`,
+      );
+    }
+  });
+
+  it("el mensaje nombra al bicho, lo que declaró y el cuerpo que se mueve, en celdas y en metros", () => {
+    const r = EmittedSceneSchema.safeParse(movil("npc", 8));
+    assert.equal(r.success, false);
+    const msg = r.success ? "" : r.error.issues.map((i) => i.message).join(" | ");
+    assert.match(msg, /"bicho"/, `nombra a la entity: ${msg}`);
+    assert.match(msg, /\[8, ?8\]/, `y lo que declaró: ${msg}`);
+    assert.match(msg, /4,0 m/, `y cuánto es eso en metros: ${msg}`);
+    assert.match(msg, /2 celdas/, `y el tope en celdas: ${msg}`);
+    assert.match(msg, /1,0 m/, `y el tope en metros: ${msg}`);
+  });
+
+  it("un footprint rectangular se juzga por su lado MAYOR", () => {
+    assert.equal(accepts(conEntity({ id: "b", kind: "npc", name: "B", cell: [1, 1], footprint: [1, 2], glyph: "b" })), true);
+    assert.equal(
+      EmittedSceneSchema.safeParse(conEntity({ id: "b", kind: "npc", name: "B", cell: [1, 1], footprint: [1, 5], glyph: "b" })).success,
+      false,
+      "5 celdas de fondo son 2,5 m: el bicho no cabe en su propio cuerpo",
+    );
+  });
 });
 
 /** CANDADO de las variantes retiradas. La escena "suelta" —grid propio, sin

@@ -97,20 +97,6 @@ describe("expansión de tiles (Format D v3)", () => {
     assert.throws(() => expandScenePrimitives(badBiome), /desconocido/);
   });
 
-  it("las structures se estampan sobre el tile (interiores en el plano)", () => {
-    const tile = makeForestTile();
-    tile.structures = [
-      { type: "room", rect: [30, 30, 12, 10], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 5, width: 3 }] },
-    ];
-    const out = expandScenePrimitives(tile);
-    const grid = out.terrain as string[];
-    assert.equal(grid[30].slice(30, 42), "W".repeat(12));
-    assert.equal(grid[35][30], "W");
-    assert.equal(grid[33][35], "o");
-    // Puerta al sur (fila 39), 3 celdas desde at=5.
-    assert.equal(grid[39].slice(35, 38), "___");
-  });
-
   it("formatDToWorld emite world_rect global y posiciones globales para tiles", async () => {
     const { formatDToWorld } = await import("../src/scene/scene-normalize.js");
     const { createTerrainCollider } = await import("../src/scene/terrain-collision.js");
@@ -127,9 +113,9 @@ describe("expansión de tiles (Format D v3)", () => {
     const tg = w.terrain_grid as { origin: [number, number] };
     assert.deepEqual(tg.origin, [32, -32]);
     // El collider bloquea en coordenadas GLOBALES: agua/camino… usamos un
-    // muro de structure para probar.
+    // muro escrito con un parche de terreno para probar.
     const tile2 = makeForestTile();
-    tile2.structures = [{ type: "room", rect: [0, 0, 6, 6], doors: [{ side: "south", at: 2, width: 3 }] }];
+    tile2.terrain_patches = [{ at: [0, 0], rows: ["WWWWWW"] }];
     const w2 = formatDToWorld(tile2);
     const col = createTerrainCollider(w2.terrain_grid as never)!;
     // Celda (0,0) del tile (1,0) = mundo [32..32.5): su centro es sólido (muro).

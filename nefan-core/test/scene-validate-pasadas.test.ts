@@ -549,29 +549,6 @@ describe("collectDoorCells", () => {
    *  propio caso abajo (es lo que consume el veredicto, no el orden). */
   const celdasDe = (vanos: ReturnType<typeof collectDoorCells>): Cell[] => vanos.flatMap((v) => v.cells);
 
-  it("los cuatro lados de una structure", () => {
-    const view = vista(["gg"], {
-      scene: {
-        structures: [
-          {
-            type: "room", rect: [10, 20, 6, 4],
-            doors: [{ side: "north", at: 2 }, { side: "south", at: 2 }, { side: "west", at: 1 }, { side: "east", at: 1 }],
-          },
-        ],
-      },
-    });
-    const found = hallazgos(view);
-    assert.deepEqual(celdasDe(collectDoorCells(view, found)), [[12, 20], [12, 23], [10, 21], [15, 21]]);
-    assert.equal(found.stats.doors_total, 4);
-  });
-
-  it("una puerta ancha ocupa tantas celdas como pide", () => {
-    const view = vista(["gg"], {
-      scene: { structures: [{ type: "room", rect: [0, 0, 8, 4], doors: [{ side: "north", at: 2, width: 3 }] }] },
-    });
-    assert.deepEqual(celdasDe(collectDoorCells(view, hallazgos(view))), [[2, 0], [3, 0], [4, 0]]);
-  });
-
   it("los cuatro lados de un building cutaway, con su ancho por defecto", () => {
     const view = vista(["gg"], {
       scene: {
@@ -583,7 +560,9 @@ describe("collectDoorCells", () => {
         ],
       },
     });
-    assert.deepEqual(celdasDe(collectDoorCells(view, hallazgos(view))), [[12, 20], [12, 25], [10, 21], [17, 21]]);
+    const found = hallazgos(view);
+    assert.deepEqual(celdasDe(collectDoorCells(view, found)), [[12, 20], [12, 25], [10, 21], [17, 21]]);
+    assert.equal(found.stats.doors_total, 4);
   });
 
   it("un vano ancho se extiende HACIA DELANTE desde su `at`, en los cuatro lados", () => {
@@ -605,10 +584,6 @@ describe("collectDoorCells", () => {
   it("lo que no tiene forma de vano se salta sin reventar y sin inventarse celdas", () => {
     const view = vista(["gg"], {
       scene: {
-        structures: [
-          { type: "room", doors: [{ side: "north", at: 1 }] },                       // sin rect
-          { type: "room", rect: [0, 0, 4, 4], doors: [{ side: "arriba", at: 1 }] },  // lado inventado
-        ],
         volumes: [
           { id: "a", type: "building", cutaway: true, rect: [0, 0, 4], doors: [{ edge: "n", at: 1 }] },   // rect de 3
           { id: "b", type: "building", cutaway: true, rect: [0, 0, 4, 4], doors: [null, { edge: "n" }] }, // puerta sin `at`

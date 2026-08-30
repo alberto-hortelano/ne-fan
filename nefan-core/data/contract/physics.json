@@ -1,0 +1,12 @@
+{
+  "$comment": "GENERADO por nefan-core/scripts/dump-physics.ts desde src/contract/model-io/physics.ts. NO editar a mano: lo canda test/contract-physics.test.ts, que compara este fichero con la fuente TS y falla si divergen. Lo lee ai_server (narrative_schemas.py) para topar el `footprint` de una entity móvil con el mismo número que el zod, en vez de copiarlo.",
+  "tile_mpc": 0.5,
+  "radio_simulado_m": {
+    "npc": 0.5,
+    "player": 0.4
+  },
+  "footprint_max_cells": {
+    "npc": 2,
+    "player": 1
+  }
+}

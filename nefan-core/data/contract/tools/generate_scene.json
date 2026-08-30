@@ -127,7 +127,7 @@
               },
               "minItems": 2,
               "maxItems": 2,
-              "description": "[width_cells, height_cells]; usually [1,1] for props/NPCs."
+              "description": "[width_cells, height_cells]; usually [1,1] for props/NPCs. HARD LIMIT for anything that MOVES: an npc declares at most 2 cells per side and the player at most 1 — that is the body the simulator actually moves, and the gate rejects anything wider. A bigger creature is NOT a bigger footprint; its size lives in `description`, which is what paints it. The five static kinds (building/prop/item/tree/decor) have no limit: their footprint IS geometry."
             },
             "glyph": {
               "type": "string",

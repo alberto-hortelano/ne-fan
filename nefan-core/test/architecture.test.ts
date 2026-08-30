@@ -349,6 +349,60 @@ describe("fronteras arquitectónicas", () => {
   // El campo `scattered` y las PRIMITIVAS del esquema entran en dos reglas que
   // ya existían; sin verlas saltar sobre el término nuevo, añadirlo al patrón
   // es una lista que nadie ha probado.
+  it("[error] la-fisica-no-se-copia-a-mano: re-declarar un cuerpo salta; leerlo del snapshot no", () => {
+    const fisica = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-fisica-no-se-copia-a-mano");
+
+    // Las cuatro formas de volver a escribir el número, en los dos lenguajes
+    // que no pueden importar de core. Es la copia que hubo que retirar de
+    // narrative_schemas.py, escrita otra vez.
+    assert.deepEqual(
+      fisica([
+        {
+          path: "ai_server/narrative_schemas.py",
+          text: "TILE_MPC = 0.5\nNPC_RADIUS_M = 0.5\nPLAYER_RADIUS_M = 0.4\n",
+          imports: [],
+        },
+        {
+          path: "qa/guiones/99-lo-que-sea.mjs",
+          text: "const BODY_RADIUS_M = 0.5;\n",
+          imports: [],
+        },
+        {
+          path: "labs/narrative/fake-ai-server.ts",
+          text: "const cuerpo = { NPC_RADIUS_M: 0.5 };\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "ai_server/narrative_schemas.py:1",
+        "ai_server/narrative_schemas.py:2",
+        "ai_server/narrative_schemas.py:3",
+        "labs/narrative/fake-ai-server.ts:1",
+        "qa/guiones/99-lo-que-sea.mjs:1",
+      ],
+      "re-declarar un cuerpo del simulador fuera de su fuente salta en los cinco procesos escaneados",
+    );
+
+    // Vecinos inocentes: LEER el snapshot, o nombrar la constante sin
+    // asignarle un número, es justo lo que la regla quiere que se haga.
+    assert.deepEqual(
+      fisica([
+        {
+          path: "ai_server/narrative_schemas.py",
+          text: 'TILE_MPC = _PHYSICS["tile_mpc"]\nFOOTPRINT_MAX = dict(_PHYSICS["footprint_max_cells"])\n',
+          imports: [],
+        },
+        {
+          path: "qa/guiones/99-lo-que-sea.mjs",
+          text: "// el radio del jugador (PLAYER_RADIUS_M) lo infla probeCollide\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   it("[error] scattered y las primitivas del esquema no vuelven al cliente", () => {
     const retirados = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "campos-retirados-no-vuelven");
@@ -389,7 +443,7 @@ describe("fronteras arquitectónicas", () => {
       cliente([
         {
           path: "nefan-html/src/main.ts",
-          text: "const zonas = raw.vegetation_zones;\nconst rooms = raw.structures;\n",
+          text: "const zonas = raw.vegetation_zones;\nconst mpc = raw.meters_per_cell;\n",
           imports: [],
         },
       ]).map((v) => `${v.path}:${v.line}`),

@@ -6,13 +6,13 @@
  *  cliente pintaba las DOS: el volumen (que colisiona) y un billboard de la
  *  entity (que no). Aquí se reconcilian: cada entity estática deriva SU
  *  volumen y sale marcada en `representedBy`, para que quien pinta sepa que ya
- *  está pintada. `structures` → edificios cutaway; `vegetation_zones` →
- *  árboles/matas dispersos, que son ejemplares de pleno derecho.
+ *  está pintada. `vegetation_zones` → árboles/matas dispersos, que son
+ *  ejemplares de pleno derecho.
  *
  *  Determinista: el scatter usa SeededRng derivado del `seed` (la clave del
- *  tile) + índice de zona. Los volúmenes del LLM mandan: una estructura o una
- *  entity cuyo rect ya solapa un volumen declarado no se deriva — la
- *  representa el declarado, y así sale en `representedBy`. */
+ *  tile) + índice de zona. Los volúmenes del LLM mandan: una entity cuyo rect
+ *  ya solapa un volumen declarado no se deriva — la representa el declarado,
+ *  y así sale en `representedBy`. */
 
 import { TILE_CELLS } from "../tile.js";
 import { volumeFootprint } from "./footprint.js";
@@ -35,18 +35,6 @@ import {
 } from "./vegetation.js";
 import { TREE_MAX_S, type Volume } from "./volumes.js";
 
-interface RawDoor {
-  side?: string;
-  at?: number;
-  width?: number;
-}
-
-interface RawStructure {
-  type?: string;
-  rect?: unknown;
-  doors?: RawDoor[];
-}
-
 interface RawEntity {
   id?: string;
   kind?: string;
@@ -62,7 +50,6 @@ export interface DeriveInput {
   /** Semilla del scatter: la CLAVE DEL TILE (`tile_tx_ty`), la misma en el
    *  cliente, el bridge, la pre-generación y el validador. */
   seed?: string;
-  structures?: RawStructure[];
   /** Zonas YA parseadas (el fail-loud vive en el call site — `composeTilePlan`). */
   vegetation_zones?: VegetationZone[];
   /** Rasgos del suelo YA parseados (el fail-loud vive en el call site): el
@@ -75,8 +62,8 @@ export interface DeriveInput {
 }
 
 export interface DeriveResult {
-  /** Adiciones FIJAS: `structures` → edificios cutaway y entities estáticas →
-   *  su primitiva (el caller las concatena tras los del LLM). */
+  /** Adiciones FIJAS: cada entity estática → su primitiva (el caller las
+   *  concatena tras los del LLM). */
   volumes: Volume[];
   /** La masa forestal de `vegetation_zones`, aparte: es lo más prescindible
    *  del plan, así que es lo primero que recorta el presupuesto — y para poder
@@ -84,16 +71,9 @@ export interface DeriveResult {
   vegetation: Volume[];
   /** entityId → id del volumen que la representa. Quien pinta NO la dibuja
    *  aparte: ya está en el plan. Incluye las entities que no derivaron volumen
-   *  porque un volumen declarado (o una structure) ya ocupaba su rect. */
+   *  porque un volumen declarado ya ocupaba su rect. */
   representedBy: Record<string, string>;
 }
-
-const SIDE_TO_EDGE: Record<string, "n" | "s" | "e" | "w"> = {
-  north: "n",
-  south: "s",
-  east: "e",
-  west: "w",
-};
 
 /** Huella que ya está ocupada por un volumen, con quién la ocupa: lo segundo
  *  es lo que permite decir «esta entity ya la representa aquel volumen» en vez
@@ -108,13 +88,6 @@ interface Planted {
   u: number;
   v: number;
   r: number;
-}
-
-function asRect4(raw: unknown): [number, number, number, number] | null {
-  if (!Array.isArray(raw) || raw.length !== 4 || !raw.every((n) => typeof n === "number" && Number.isFinite(n))) return null;
-  const [c, r, w, d] = raw as number[];
-  if (w <= 0 || d <= 0) return null;
-  return [c, r, w, d];
 }
 
 function overlaps(a: [number, number, number, number], b: [number, number, number, number]): boolean {
@@ -132,30 +105,9 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): D
     return { id: v.id, rect: [u0, v0, u1 - u0, v1 - v0] as [number, number, number, number] };
   });
 
-  const structures = Array.isArray(raw.structures) ? raw.structures : [];
-  for (let i = 0; i < structures.length; i++) {
-    const s = structures[i];
-    if (s?.type !== "room") continue;
-    const rect = asRect4(s.rect);
-    if (!rect) continue;
-    if (blockers.some((b) => overlaps(b.rect, rect))) continue; // el LLM ya lo cubrió
-    const doors = (Array.isArray(s.doors) ? s.doors : [])
-      .filter((d) => d && typeof d.at === "number" && typeof d.side === "string" && SIDE_TO_EDGE[d.side])
-      .map((d) => ({ edge: SIDE_TO_EDGE[d.side!], at: d.at!, w: d.width ?? 4 }));
-    out.push({
-      id: `derived_room_${i}`,
-      label: "edificio",
-      type: "building",
-      rect,
-      cutaway: true,
-      doors,
-    });
-    blockers.push({ id: `derived_room_${i}`, rect });
-  }
-
   // ── Entities estáticas del esquema → su volumen equivalente ──────────────
-  // building = edificio NO enterable (con techo — los enterables son
-  // structures); tree/prop/decor = su primitiva. Los ids llevan el id de la
+  // building = edificio NO enterable (con techo — el enterable es un volume
+  // `building` con `cutaway`); tree/prop/decor = su primitiva. Los ids llevan el id de la
   // entity para poder correlacionar (occluders, debug) y para que
   // `representedBy` diga cuál es cuál.
   const entities = (Array.isArray(raw.entities) ? raw.entities : [])
@@ -181,7 +133,7 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): D
     const id = `derived_ent_${ent.id ?? `${c}_${r}`}`;
     const tapada = blockers.find((b) => overlaps(b.rect, rect));
     if (tapada) {
-      // El LLM/structures ya cubren ese rect. Un EDIFICIO es el mismo objeto
+      // El LLM ya cubre ese rect. Un EDIFICIO es el mismo objeto
       // que el volumen que lo tapa (la casa declarada y su entity), así que
       // queda representado por él y no se pinta aparte. El mobiliario de
       // dentro NO: un barril bajo el techo de una posada es una entity de

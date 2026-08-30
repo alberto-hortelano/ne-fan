@@ -20,8 +20,8 @@
  *  `.passthrough()` a nivel ESCENA y `.strict()` en la entity, y la asimetría
  *  está medida, no razonada: el passthrough de escena sostiene campos vivos
  *  que el zod aún no declara (`ambient_event` en las 3 fixtures commiteadas;
- *  `__expanded`, `structures` y `place_anchors` en los snapshots, más
- *  `terrain_patches` en el espejo Python) — declararlos y cerrarlo es otro
+ *  `__expanded` y `place_anchors` en los snapshots, más `terrain_patches` en
+ *  el espejo Python) — declararlos y cerrarlo es otro
  *  issue; el de la entity no sostenía NINGUNO — censadas las 95
  *  entities de las 7 escenas Format D del árbol (fixtures, snapshots, saves,
  *  labs), cero claves fuera de las 12. Un passthrough que no protege tráfico
@@ -34,9 +34,15 @@ import { VegetationZonesSchema } from "../../scene/blueprint/vegetation.js";
 import { VolumesSchema } from "../../scene/blueprint/volumes.js";
 import { parseScatter } from "../../scene/blueprint/scatter.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
+import { enMetros, topeDeFootprint } from "./physics.js";
 
 export const ENTITY_KINDS = ["building", "prop", "item", "tree", "npc", "player", "decor"] as const;
 export const SCENE_BIOMES = ["grass", "forest_floor", "meadow", "sand", "dirt", "stone", "snow", "swamp"] as const;
+
+// El tope del `footprint` de una entity móvil y los cuerpos de los que sale
+// viven en `physics.ts`, que es lo que se vuelca al snapshot que lee
+// ai_server: si estuvieran aquí, el espejo Python tendría que copiarlos.
+export { RADIO_SIMULADO_POR_KIND } from "./physics.js";
 
 /** Mensaje de la clave desconocida. Va por `errorMap` y no por `.strict(msg)`
  *  porque ese solo admite texto fijo: aquí hay que nombrar LA clave que sobra
@@ -130,6 +136,21 @@ export const EntitySchema = EntityBase
   // ai_server hacía lo mismo por el otro lado y es su espejo exacto.
   .strict()
   .superRefine((e, ctx) => {
+    // ── El cuerpo declarado no puede pasarse del simulado (#300) ──────────
+    const tope = topeDeFootprint(e.kind);
+    const lado = Math.max(e.footprint[0], e.footprint[1]);
+    if (tope !== undefined && lado > tope) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["footprint"],
+        message:
+          `la entity "${e.id}" (${e.kind}) declara footprint [${e.footprint[0]}, ${e.footprint[1]}] ` +
+          `(${enMetros(lado)} m de lado) y el cuerpo que el simulador mueve son ${tope} ` +
+          `celda${tope === 1 ? "" : "s"} (${enMetros(tope)} m): lo declarado no puede ser mayor que lo ` +
+          `que la colisión honra. Un bicho más grande no se consigue con un footprint mayor — hoy no ` +
+          `existe—; lo que sí viaja es su aspecto, y eso va en \`description\`.`,
+      });
+    }
     if (e.role === undefined || (NPC_ROLES as readonly string[]).includes(e.role)) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

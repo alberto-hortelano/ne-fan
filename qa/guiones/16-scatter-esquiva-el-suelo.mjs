@@ -203,7 +203,7 @@ export default async function (ctx) {
 
   // ── 5. Lo que el motor colocó A MANO sobre un camino sigue ahí ───────────
   // La exclusión entra SOLO en el bucle de `vegetation_zones`. Si algún día se
-  // aplicara también a `structures`/`entities`, el pozo que el motor puso en
+  // aplicara también a las `entities` estáticas, el pozo que el motor puso en
   // la plaza —declarado a caballo de `camino_plaza` y `camino_herreria`—
   // desaparecería SIN QUE NADA SE PUSIERA ROJO: el camino saldría aún más
   // despejado y los pasos 2 y 3 seguirían verdes. Es la pérdida silenciosa de

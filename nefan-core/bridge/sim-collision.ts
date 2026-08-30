@@ -4,12 +4,12 @@
  *  con lo que el bridge tiene persistido en NarrativeState:
  *  1. terrain_grid del esquema (formatDToWorld — muros W, agua w, leyenda);
  *  2. PLAN COMPUESTO (`__plan` de la world scene: lo declarado por el motor
- *     MÁS lo derivado del esquema — edificios de `structures`, entities
- *     estáticas y la vegetación de masa), rasterizado con la MISMA función de
- *     core que el cliente (planCollisionGrid), no dos colliders OR'd — así
- *     jugador y NPCs colisionan idéntico. Antes aquí solo entraban los
- *     `volumes` DECLARADOS, así que en un tile cuyo pueblo viene de
- *     `structures` los NPCs se metían dentro de las casas.
+ *     MÁS lo derivado del esquema — entities estáticas y la vegetación de
+ *     masa), rasterizado con la MISMA función de core que el cliente
+ *     (planCollisionGrid), no dos colliders OR'd — así jugador y NPCs
+ *     colisionan idéntico. Antes aquí solo entraban los `volumes`
+ *     DECLARADOS, así que en un tile cuyo pueblo se derivaba del esquema los
+ *     NPCs se metían dentro de las casas.
  *
  *  Lazy + caché por sceneId: nada revisa un plan ya emitido, así que la caché
  *  no se invalida. Un grid inconsistente degrada ese tile a "sin esa fuente"

@@ -126,6 +126,51 @@ TILE_CELLS = 128
 VOLUME_CELL_MARGIN = 8
 GROUND_CELL_MARGIN = 16
 
+# Física del contrato: NO se copia, se LEE del snapshot que vuelca
+# nefan-core/scripts/dump-physics.ts desde la fuente única (los radios viven
+# con la colisión, en terrain-collision.ts; el mpc, con el tile). Mismo patrón
+# que runtime_config.json y por la misma razón, aprendida cara: la primera
+# versión de #300 declaró aquí a mano los dos radios y el mpc, y derivó el tope
+# de esa copia. Movido el radio solo en TS, el tope TS pasaba a {npc:3}, este se
+# quedaba en {npc:2} y los 136 tests de aquí seguían en OK — un tope declarado
+# en dos sitios que divergen en silencio, que es literalmente el fallo que #300
+# vino a cerrar.
+#
+# El tope llega YA DERIVADO: repetir la cuenta aquí serían dos fórmulas capaces
+# de divergir. Que el snapshot esté fresco lo canda
+# nefan-core/test/contract-physics.test.ts; que nadie vuelva a escribir estos
+# números a mano, la regla `la-fisica-no-se-copia-a-mano` de arch-rules.json.
+CONTRACT_PHYSICS_PATH = (
+    Path(__file__).resolve().parent.parent / "nefan-core" / "data" / "contract" / "physics.json"
+)
+
+
+def _load_contract_physics(path: Path | None = None) -> dict:
+    """El snapshot de física. Fail-loud: sin él no hay defaults inventados —
+    inventarlos es exactamente cómo se diverge."""
+    p = Path(path) if path else CONTRACT_PHYSICS_PATH
+    if not p.exists():
+        raise FileNotFoundError(
+            f"physics.json not found at {p}. "
+            "Run `cd nefan-core && npm run dump-physics` to regenerate it."
+        )
+    with open(p, encoding="utf-8") as f:
+        data = json.load(f)
+    for key in ("tile_mpc", "footprint_max_cells"):
+        if key not in data:
+            raise ValueError(f"{p} has no `{key}`. Regenerate it with `npm run dump-physics`.")
+    return data
+
+
+_PHYSICS = _load_contract_physics()
+
+TILE_MPC = _PHYSICS["tile_mpc"]
+
+# Tope del `footprint` de una entity MÓVIL, en celdas (#300): lo declarado no
+# puede ser más ancho que el cuerpo que el simulador mueve. Los cinco kinds
+# restantes no se mueven y su footprint es geometría, sin tope.
+FOOTPRINT_MAX_CELLS_POR_KIND = dict(_PHYSICS["footprint_max_cells"])
+
 
 def _num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
@@ -743,6 +788,17 @@ def validate_scene_response(data: dict) -> dict:
             and all(isinstance(v, int) and not isinstance(v, bool) and v >= 1 for v in fp)
         ):
             raise ValueError(f"entity '{eid}': `footprint` debe ser [ancho, alto] de enteros ≥1")
+        tope = FOOTPRINT_MAX_CELLS_POR_KIND.get(kind)
+        if tope is not None and max(fp[0], fp[1]) > tope:
+            # NO se clampa: sería justo el fail-silent que este gate existe
+            # para cerrar. Un cuerpo declarado más ancho que el que el
+            # simulador mueve vuelve al motor con el número delante.
+            raise ValueError(
+                f"entity '{eid}' ({kind}): declara footprint [{fp[0]}, {fp[1]}] "
+                f"({max(fp[0], fp[1]) * TILE_MPC:.1f} m de lado) y el cuerpo que el simulador "
+                f"mueve son {tope} celda(s) ({tope * TILE_MPC:.1f} m): lo declarado no puede ser "
+                f"mayor que lo que la colisión honra"
+            )
         w = max(1, min(int(fp[0]), cols - col))
         h = max(1, min(int(fp[1]), rows - row))
 
@@ -816,28 +872,11 @@ def validate_scene_response(data: dict) -> dict:
         cleaned.append(clean_ent)
     data["entities"] = cleaned
 
-    # ── Primitivas v2 (structures / vegetation_zones) ────────────────────
+    # ── Primitivas v2 (vegetation_zones) ─────────────────────────────────
     # Passthrough con chequeo de forma superficial: la expansión determinista
     # y la validación semántica (rects dentro del grid, puertas válidas…)
     # viven en nefan-core (scene-expand.ts / scene-validate.ts). Una entrada
     # sin la forma mínima se descarta con traza — nunca tumba la escena.
-    raw_structures = data.get("structures")
-    if isinstance(raw_structures, list):
-        clean_structures = []
-        for i, s in enumerate(raw_structures[:16]):
-            if (
-                isinstance(s, dict)
-                and s.get("type") == "room"
-                and isinstance(s.get("rect"), list)
-                and len(s["rect"]) == 4
-                and all(isinstance(v, int) for v in s["rect"])
-            ):
-                clean_structures.append(s)
-            else:
-                print(f"validate_scene_response: structures[{i}] malformada, descartada", flush=True)
-        data["structures"] = clean_structures
-    else:
-        data.pop("structures", None)
 
     # Vegetación de masa: espejo del zod de nefan-core
     # (src/scene/blueprint/vegetation.ts, la fuente de verdad). `density` son

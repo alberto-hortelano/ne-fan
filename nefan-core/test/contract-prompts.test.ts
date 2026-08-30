@@ -13,7 +13,9 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 import { NPC_ROLES } from "../src/simulation/npc-roles.js";
-import { ENTITY_FIELDS, SCENE_FIELDS } from "../src/contract/model-io/scene-schema.js";
+import { ENTITY_FIELDS, SCENE_FIELDS, RADIO_SIMULADO_POR_KIND } from "../src/contract/model-io/scene-schema.js";
+import { celdasQueCubreRadio } from "../src/scene/terrain-collision.js";
+import { TILE_MPC } from "../src/scene/tile.js";
 
 const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.meta.url));
 
@@ -127,6 +129,25 @@ describe("contrato narrativo — tool schemas compartidos", () => {
       [...NPC_ROLES],
       "spawn_entity y generate_scene tienen que pedir el mismo vocabulario",
     );
+  });
+
+  it("el TOPE del footprint móvil que dice el tool es el que aplica el gate (#300)", () => {
+    // El motor lee estos dos textos: si el tope se mueve (alguien toca un radio
+    // o el mpc) y ellos no, el gate rebota escenas por una regla que nadie le
+    // dijo. Los números salen de la MISMA derivación que el zod, así que el
+    // texto a mano no puede quedarse atrás en silencio.
+    const npc = celdasQueCubreRadio(RADIO_SIMULADO_POR_KIND.npc, TILE_MPC);
+    const player = celdasQueCubreRadio(RADIO_SIMULADO_POR_KIND.player, TILE_MPC);
+    const tool = JSON.parse(readFileSync(resolve(TOOLS_DIR, "generate_scene.json"), "utf-8")) as {
+      input_schema: { properties: { entities: { items: { properties: Record<string, { description?: string }> } } } };
+    };
+    const desc = tool.input_schema.properties.entities.items.properties.footprint.description ?? "";
+    assert.match(desc, new RegExp(`npc declares at most ${npc} cells per side`), desc);
+    assert.match(desc, new RegExp(`player at most ${player}\\b`), desc);
+
+    const md = readFileSync(resolve(PROMPTS_DIR, "scene_instructions.md"), "utf-8");
+    assert.match(md, new RegExp(`npc declares at most ${npc} cells per side`), "el prompt lo dice igual");
+    assert.match(md, new RegExp(`player at most ${player} \\(0,5 m\\)`), "y en metros");
   });
 
   it("el prompt de escena EXIGE la descripción del NPC y dice que el rol no es el oficio", () => {

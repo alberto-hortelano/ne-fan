@@ -1,0 +1,23 @@
+{
+  "description": "el BORDE de abajo del tope de #300: 3 celdas son 1,5 m y el cuerpo que el simulador mueve para un npc mide 1,0 m, así que es el PRIMER footprint que no cabe. Existe para que la divergencia entre el zod y su espejo Python no pueda esconderse: con [8,8] los dos rechazan y con [2,2] los dos aceptan, así que un tope movido en un solo lado caía justo en el hueco que ninguna fixture miraba",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": { "tx": 0, "ty": 0 },
+    "biome": "dirt",
+    "entities": [
+      { "id": "player", "kind": "player", "name": "Tú", "cell": [64, 64], "footprint": [1, 1], "glyph": "@" },
+      {
+        "id": "mastin",
+        "kind": "npc",
+        "name": "Mastín del molinero",
+        "cell": [60, 60],
+        "footprint": [3, 3],
+        "glyph": "d",
+        "role": "villager",
+        "description": "mastín de pelaje pardo y collar de cuero claveteado"
+      }
+    ]
+  }
+}

@@ -30,13 +30,19 @@ const AISLADO: TileValidationContext = { required_crossings: [] };
 const pathCrossing = (edge: "north" | "south" | "east" | "west", at: number) =>
   ({ edge, type: "path" as const, at, width: 2 });
 
-/** Camino oeste↔este del fixture + una sala enterable con puerta al sur y un
- *  NPC dentro. Es el tile jugable de referencia. */
+/** Camino oeste↔este del fixture + un edificio enterable con puerta al sur y
+ *  un NPC dentro. Es el tile jugable de referencia.
+ *
+ *  El edificio es un `building` CUTAWAY, que desde #301 es la única forma de
+ *  declarar un interior: la primitiva de salas que ocupaba este sitio
+ *  estampaba además muro `W` y suelo `o` en el grid ASCII, y por eso los casos
+ *  de abajo que sellan a alguien dentro razonan sobre la MÁSCARA DEL PLAN (el
+ *  anillo de muro del cutaway), que es la que sobrevive. */
 function escenaBootstrap(over: Record<string, unknown> = {}): Record<string, unknown> {
   return forestTile({
     scene_id: "claro_val",
-    structures: [
-      { type: "room", rect: [10, 70, 10, 7], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 4, width: 2 }] },
+    volumes: [
+      { id: "posada", label: "posada", type: "building", rect: [10, 70, 10, 7], cutaway: true, doors: [{ edge: "s", at: 4, w: 3 }] },
     ],
     entities: [
       { id: "barkeep", kind: "npc", name: "Tabernero", cell: [14, 73], footprint: [1, 1], glyph: "n" },
@@ -66,7 +72,7 @@ function gridLlano(filas: Record<number, unknown> = {}): unknown[] {
   return Array.from({ length: 128 }, (_, r) => filas[r] ?? "g".repeat(128));
 }
 
-/** Plan declarativo puro (sin structures): el que mide la telemetría. */
+/** Plan declarativo de un tile SIN edificio enterable: el que mide la telemetría. */
 function planDeTile(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     tile: { tx: 0, ty: 0 },
@@ -108,12 +114,10 @@ export function casosDeValidacion(): CasoValidacion[] {
 
     // ── Expansión de primitivas ───────────────────────────────────────────
     {
-      name: "structure-fuera-del-grid",
+      name: "parche-de-terreno-fuera-del-grid",
       cubre: "expansión: el fail-loud del expander se vuelve error legible",
       scene: () =>
-        escenaBootstrap({
-          structures: [{ type: "room", rect: [124, 70, 10, 7], wall_char: "W", floor_char: "o", doors: [] }],
-        }),
+        escenaBootstrap({ terrain_patches: [{ at: [124, 70], rows: ["oooooooooo"] }] }),
       ctx: BOOTSTRAP,
     },
     {
@@ -123,27 +127,28 @@ export function casosDeValidacion(): CasoValidacion[] {
     },
 
     // ── Chars declarados + solidez ────────────────────────────────────────
+    // La pasada de chars se ejerce con `terrain_patches`, que es la primitiva
+    // VIVA que escribe chars en el grid (`scene-expand.ts`, ruta de
+    // migraciones y snapshots). Hasta #301 la ejercía el `floor_char` de la
+    // primitiva de salas; el cutaway que la sustituye no escribe en el grid,
+    // así que un caso sobre él no podría ponerse rojo jamás.
     {
       name: "char-de-terreno-sin-declarar",
-      cubre: "chars declarados: floor_char ausente de terrain_legend",
+      cubre: "chars declarados: un char del grid ausente de terrain_legend",
       scene: () =>
-        escenaBootstrap({
-          structures: [
-            { type: "room", rect: [10, 70, 10, 7], wall_char: "W", floor_char: "X", doors: [{ side: "south", at: 4, width: 2 }] },
-          ],
-        }),
+        escenaBootstrap({ terrain_patches: [{ at: [11, 71], rows: ["XXXXXXXX"] }] }),
       ctx: BOOTSTRAP,
     },
 
     {
       name: "dos-chars-sin-declarar",
       cubre: "chars declarados: se listan TODOS los que faltan, en orden de barrido",
-      // El wall_char lo declara el expander al tallar el muro; el floor_char no.
+      // Dos parches en filas distintas: el de arriba se barre primero.
       scene: () =>
         escenaBootstrap({
-          structures: [
-            { type: "room", rect: [10, 70, 10, 7], wall_char: "W", floor_char: "Y", doors: [{ side: "south", at: 4, width: 2 }] },
-            { type: "room", rect: [40, 90, 6, 6], wall_char: "W", floor_char: "Z", doors: [{ side: "north", at: 2 }] },
+          terrain_patches: [
+            { at: [41, 91], rows: ["ZZZZ"] },
+            { at: [11, 71], rows: ["YYYYYYYY"] },
           ],
         }),
       ctx: BOOTSTRAP,
@@ -173,7 +178,7 @@ export function casosDeValidacion(): CasoValidacion[] {
     // ── Spawn del jugador ─────────────────────────────────────────────────
     {
       name: "bootstrap-jugable",
-      cubre: "el tile completo aceptado: spawn, puertas, NPC y costuras",
+      cubre: "el tile completo aceptado: spawn, el vano del cutaway, NPC y costuras",
       scene: escenaBootstrap,
       ctx: BOOTSTRAP,
     },
@@ -331,7 +336,7 @@ export function casosDeValidacion(): CasoValidacion[] {
       // le podía hablar desde al lado, así que el validador lo daba por bueno.
       scene: () => {
         const s = escenaBootstrap();
-        (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 3, 3], doors: [] });
+        (s.volumes as Record<string, unknown>[]).push({ id: "cubil", label: "cubil", type: "building", rect: [40, 90, 3, 3], cutaway: true });
         (s.entities as Record<string, unknown>[])[0].cell = [41, 91];
         return s;
       },
@@ -345,7 +350,7 @@ export function casosDeValidacion(): CasoValidacion[] {
       // de 5×5» del issue #289.
       scene: () => {
         const s = escenaBootstrap();
-        (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 5, 5], doors: [] });
+        (s.volumes as Record<string, unknown>[]).push({ id: "cubil", label: "cubil", type: "building", rect: [40, 90, 5, 5], cutaway: true });
         (s.entities as Record<string, unknown>[])[0].cell = [42, 92];
         return s;
       },
@@ -356,42 +361,23 @@ export function casosDeValidacion(): CasoValidacion[] {
       cubre: "flood: NPC encerrado en una sala sin puertas (el cuerpo cabe, pero no conecta) → error",
       scene: () => {
         const s = escenaBootstrap();
-        (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 7, 7], doors: [] });
+        (s.volumes as Record<string, unknown>[]).push({ id: "cubil", label: "cubil", type: "building", rect: [40, 90, 7, 7], cutaway: true });
         (s.entities as Record<string, unknown>[])[0].cell = [43, 93];
         return s;
       },
       ctx: BOOTSTRAP,
     },
     {
-      name: "puertas-cutaway-en-volumes",
-      cubre: "puertas: el vano de un building cutaway cuenta y se alcanza",
-      scene: () => {
-        const s = escenaBootstrap();
-        delete s.structures;
-        s.volumes = [
-          { id: "posada", label: "posada", type: "building", rect: [10, 70, 10, 7], cutaway: true, doors: [{ edge: "s", at: 4, w: 3 }] },
-        ];
-        return s;
-      },
-      ctx: BOOTSTRAP,
-    },
-    {
       name: "puertas-en-los-cuatro-lados",
-      cubre: "puertas: los cuatro lados de una structure y los cuatro de un cutaway",
+      cubre: "puertas: los cuatro lados de dos cutaways",
       scene: () => {
         const s = escenaBootstrap();
-        (s.structures as Record<string, unknown>[])[0] = {
-          type: "room", rect: [20, 20, 12, 12], wall_char: "W", floor_char: "o",
-          doors: [
-            { side: "north", at: 5 }, { side: "south", at: 5 },
-            { side: "west", at: 5 }, { side: "east", at: 5 },
-          ],
-        };
-        // Vanos de 3 celdas: el mínimo que admite el cuerpo mayor (#289). Con
-        // los 2 de antes el volume ni siquiera pasaba el zod, así que el caso
-        // dejaba de ejercer los cuatro lados y solo probaba el suelo nuevo
-        // —que tiene sus propios casos en `scene-schema.test.ts`.
+        // Vanos de 3 celdas: el mínimo que admite el cuerpo mayor (#289).
         s.volumes = [
+          {
+            id: "posada", label: "posada", type: "building", rect: [20, 20, 12, 12], cutaway: true,
+            doors: [{ edge: "n", at: 5, w: 3 }, { edge: "s", at: 5, w: 3 }, { edge: "w", at: 5, w: 3 }, { edge: "e", at: 5, w: 3 }],
+          },
           {
             id: "granero", label: "granero", type: "building", rect: [60, 60, 12, 12], cutaway: true,
             doors: [{ edge: "n", at: 4, w: 3 }, { edge: "s", at: 4, w: 3 }, { edge: "w", at: 4, w: 3 }, { edge: "e", at: 4, w: 3 }],
@@ -423,8 +409,8 @@ export function casosDeValidacion(): CasoValidacion[] {
       cubre: "puertas: el player arranca encerrado (con sitio para su cuerpo), el vano de la posada no se cruza",
       scene: () => {
         const s = escenaBootstrap();
-        (s.structures as Record<string, unknown>[]).push({
-          type: "room", rect: [60, 60, 7, 7], wall_char: "W", floor_char: "o", doors: [],
+        (s.volumes as Record<string, unknown>[]).push({
+          id: "cubil", label: "cubil", type: "building", rect: [60, 60, 7, 7], cutaway: true,
         });
         (s.entities as Record<string, unknown>[])[1].cell = [63, 63];
         return s;
@@ -439,8 +425,8 @@ export function casosDeValidacion(): CasoValidacion[] {
       // avalancha (todos los cruces, todos los NPCs) sin nombrar la causa.
       scene: () => {
         const s = escenaBootstrap();
-        (s.structures as Record<string, unknown>[]).push({
-          type: "room", rect: [60, 60, 5, 5], wall_char: "W", floor_char: "o", doors: [],
+        (s.volumes as Record<string, unknown>[]).push({
+          id: "cubil", label: "cubil", type: "building", rect: [60, 60, 5, 5], cutaway: true,
         });
         (s.entities as Record<string, unknown>[])[1].cell = [62, 62];
         return s;
@@ -498,11 +484,7 @@ export function casosDeValidacion(): CasoValidacion[] {
       name: "cuatro-pasadas-fallando-a-la-vez",
       cubre: "orden: chars → scatter → spawn → costuras",
       scene: () => {
-        const s = escenaBootstrap({
-          structures: [
-            { type: "room", rect: [10, 70, 10, 7], wall_char: "W", floor_char: "X", doors: [{ side: "south", at: 4, width: 2 }] },
-          ],
-        });
+        const s = escenaBootstrap({ terrain_patches: [{ at: [11, 71], rows: ["XXXXXXXX"] }] });
         (s.entities as Record<string, unknown>[])[1].cell = [10, 70];
         s.scatter_generators = { guijarro: { parts: [{ shape: "box", size: [0.4, 0.3, 0.4] }] } };
         s.scatter_zones = [{ kind: "fantasma", shape: { type: "rect", x0: 0, z0: 80, x1: 30, z1: 110 }, density: 0.1 }];
