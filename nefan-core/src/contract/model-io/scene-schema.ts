@@ -34,34 +34,15 @@ import { VegetationZonesSchema } from "../../scene/blueprint/vegetation.js";
 import { VolumesSchema } from "../../scene/blueprint/volumes.js";
 import { parseScatter } from "../../scene/blueprint/scatter.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
-import { NPC_RADIUS_M, PLAYER_RADIUS_M, celdasQueCubreRadio } from "../../scene/terrain-collision.js";
-import { TILE_MPC } from "../../scene/tile.js";
+import { enMetros, topeDeFootprint } from "./physics.js";
 
 export const ENTITY_KINDS = ["building", "prop", "item", "tree", "npc", "player", "decor"] as const;
 export const SCENE_BIOMES = ["grass", "forest_floor", "meadow", "sand", "dirt", "stone", "snow", "swamp"] as const;
 
-/** Los kinds que ALGUIEN MUEVE, con el radio del cuerpo que se mueve de
- *  verdad: `npc` lo mueve el simulador (`npc-behavior.ts`) y `player` lo mueve
- *  el cliente, que es autoritativo de su posición. Los otros cinco no se
- *  mueven, así que su `footprint` es geometría y no tiene tope: un granero de
- *  20×14 celdas es legítimo.
- *
- *  Los radios NO se copian aquí: se importan de donde vive la colisión, que es
- *  quien los honra. */
-export const RADIO_SIMULADO_POR_KIND: Readonly<Record<string, number>> = {
-  npc: NPC_RADIUS_M,
-  player: PLAYER_RADIUS_M,
-};
-
-/** El footprint declarable de un kind móvil, en celdas del tile. `undefined`
- *  para los cinco kinds que nadie mueve. */
-function topeDeFootprint(kind: string): number | undefined {
-  const radio = RADIO_SIMULADO_POR_KIND[kind];
-  return radio === undefined ? undefined : celdasQueCubreRadio(radio, TILE_MPC);
-}
-
-/** Metros con coma decimal, como el resto de los mensajes que lee el motor. */
-const enMetros = (celdas: number): string => (celdas * TILE_MPC).toFixed(1).replace(".", ",");
+// El tope del `footprint` de una entity móvil y los cuerpos de los que sale
+// viven en `physics.ts`, que es lo que se vuelca al snapshot que lee
+// ai_server: si estuvieran aquí, el espejo Python tendría que copiarlos.
+export { RADIO_SIMULADO_POR_KIND } from "./physics.js";
 
 /** Mensaje de la clave desconocida. Va por `errorMap` y no por `.strict(msg)`
  *  porque ese solo admite texto fijo: aquí hay que nombrar LA clave que sobra

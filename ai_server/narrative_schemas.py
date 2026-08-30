@@ -126,30 +126,50 @@ TILE_CELLS = 128
 VOLUME_CELL_MARGIN = 8
 GROUND_CELL_MARGIN = 16
 
-# Espejo de nefan-core/src/scene/terrain-collision.ts + tile.ts: los radios de
-# los DOS cuerpos que alguien mueve y los metros por celda del tile. No son
-# números elegidos aquí — son los que la colisión honra, y este bloque existe
-# porque el saneador Python valida el mismo `footprint` que el zod. El candado
-# de que no divergen son las fixtures compartidas de
-# data/contract/fixtures/scene/, que corren en los DOS suites.
-TILE_MPC = 0.5
-NPC_RADIUS_M = 0.5
-PLAYER_RADIUS_M = 0.4
+# Física del contrato: NO se copia, se LEE del snapshot que vuelca
+# nefan-core/scripts/dump-physics.ts desde la fuente única (los radios viven
+# con la colisión, en terrain-collision.ts; el mpc, con el tile). Mismo patrón
+# que runtime_config.json y por la misma razón, aprendida cara: la primera
+# versión de #300 declaró aquí a mano los dos radios y el mpc, y derivó el tope
+# de esa copia. Movido el radio solo en TS, el tope TS pasaba a {npc:3}, este se
+# quedaba en {npc:2} y los 136 tests de aquí seguían en OK — un tope declarado
+# en dos sitios que divergen en silencio, que es literalmente el fallo que #300
+# vino a cerrar.
+#
+# El tope llega YA DERIVADO: repetir la cuenta aquí serían dos fórmulas capaces
+# de divergir. Que el snapshot esté fresco lo canda
+# nefan-core/test/contract-physics.test.ts; que nadie vuelva a escribir estos
+# números a mano, la regla `la-fisica-no-se-copia-a-mano` de arch-rules.json.
+CONTRACT_PHYSICS_PATH = (
+    Path(__file__).resolve().parent.parent / "nefan-core" / "data" / "contract" / "physics.json"
+)
 
 
-def _celdas_que_cubre_radio(radio_m: float, mpc: float) -> int:
-    """Celdas de ancho que cubre un cuerpo de ese radio: el mayor n con
-    n·mpc ≤ 2·radio (espejo de `celdasQueCubreRadio`)."""
-    return int((2 * radio_m) // mpc)
+def _load_contract_physics(path: Path | None = None) -> dict:
+    """El snapshot de física. Fail-loud: sin él no hay defaults inventados —
+    inventarlos es exactamente cómo se diverge."""
+    p = Path(path) if path else CONTRACT_PHYSICS_PATH
+    if not p.exists():
+        raise FileNotFoundError(
+            f"physics.json not found at {p}. "
+            "Run `cd nefan-core && npm run dump-physics` to regenerate it."
+        )
+    with open(p, encoding="utf-8") as f:
+        data = json.load(f)
+    for key in ("tile_mpc", "footprint_max_cells"):
+        if key not in data:
+            raise ValueError(f"{p} has no `{key}`. Regenerate it with `npm run dump-physics`.")
+    return data
 
+
+_PHYSICS = _load_contract_physics()
+
+TILE_MPC = _PHYSICS["tile_mpc"]
 
 # Tope del `footprint` de una entity MÓVIL, en celdas (#300): lo declarado no
 # puede ser más ancho que el cuerpo que el simulador mueve. Los cinco kinds
 # restantes no se mueven y su footprint es geometría, sin tope.
-FOOTPRINT_MAX_CELLS_POR_KIND = {
-    "npc": _celdas_que_cubre_radio(NPC_RADIUS_M, TILE_MPC),
-    "player": _celdas_que_cubre_radio(PLAYER_RADIUS_M, TILE_MPC),
-}
+FOOTPRINT_MAX_CELLS_POR_KIND = dict(_PHYSICS["footprint_max_cells"])
 
 
 def _num(v) -> bool:
