@@ -272,7 +272,7 @@ const session = createClientSession({
   },
   style: ({ styleId }) => applySessionStyle(styleId),
   theme: ({ uiTheme }) => applyUiTheme(uiTheme),
-  renderModes: ({ renderMode, characterMode }) => applyRenderModes(renderMode, characterMode),
+  renderModes: (f) => applyRenderModes(f),
   combat: ({ combatSystem }) => applySessionCombatSystem(combatSystem),
   history: ({ sessionId }) => historyBrowser.setSession(sessionId),
   entrada: ({ sessionId }) => entrada.sesion(sessionId),
@@ -370,7 +370,24 @@ function charactersGenerationOn(): boolean {
   return localStorage.getItem(AICHAR_KEY) === "1";
 }
 
-function applyRenderModes(renderMode: string, characterMode = ""): void {
+/** Aplica los DOS modos de render de la sesión (escenarios y personajes).
+ *
+ *  RECIBE UN OBJETO Y NO DOS `string` POSICIONALES, y no es cosmética (#316).
+ *  Los dos parámetros eran del mismo tipo, así que cruzarlos compilaba con cero
+ *  errores y —a diferencia del resto de cruces que #316 cerró— este SÍ se parece
+ *  a código correcto: es la forma canónica del bug de orden de argumentos, y sus
+ *  tres llamantes lo escriben con dos ternarias seguidas, que es justo donde se
+ *  cruzan. Lo que alimenta son los gates de generación de IMAGEN, o sea el
+ *  vecindario del bug #249 que `session-facets.ts` existe para evitar; y vive en
+ *  `main.ts`, que no tiene harness (#241), no entra en mutación y no lo mira
+ *  ningún test — el peor sitio del repo para dejar un cruce silencioso.
+ *
+ *  Con un objeto, cruzarlos deja de ser un desliz de posición y pasa a ser
+ *  escribir mal el nombre del campo, que no compila. */
+function applyRenderModes({ renderMode, characterMode }: {
+  renderMode: string;
+  characterMode: string;
+}): void {
   const prevCharOn = characterSprites.skinsAllowed;
   scenesMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
   charactersMode =
@@ -428,10 +445,10 @@ async function requestModeChange(
   } else {
     localStorage.setItem(AICHAR_KEY, mode === "image" ? "1" : "0");
   }
-  applyRenderModes(
-    facet === "scenes" ? mode : scenesMode,
-    facet === "characters" ? mode : charactersMode,
-  );
+  applyRenderModes({
+    renderMode: facet === "scenes" ? mode : scenesMode,
+    characterMode: facet === "characters" ? mode : charactersMode,
+  });
 }
 
 const gameUiEl = document.getElementById("game-ui") as HTMLElement;
@@ -2176,10 +2193,10 @@ const historyBrowser = new HistoryBrowser(narrativeClient);
 // sesión, o el eco de este — re-aplicar es idempotente).
 sharedBridge.on("render_mode_changed", (msg) => {
   if (!session.esMio(msg.sessionId)) return;
-  applyRenderModes(
-    msg.facet === "scenes" ? msg.renderMode : scenesMode,
-    msg.facet === "characters" ? msg.renderMode : charactersMode,
-  );
+  applyRenderModes({
+    renderMode: msg.facet === "scenes" ? msg.renderMode : scenesMode,
+    characterMode: msg.facet === "characters" ? msg.renderMode : charactersMode,
+  });
 });
 
 /** Imágenes actualmente FAKE: tiles del grid sin atlas de superficies y skins
