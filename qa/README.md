@@ -35,6 +35,9 @@ node qa/guardarrail-sin-creditos.mjs   # ¿se NIEGA el guardarraíl de gasto en 
 node qa/dos-corridas.mjs               # ¿terminan DOS baterías a la vez, midiendo cada una lo suyo?
 ```
 
+Y la pregunta que se le hace a la batería entera —¿se puede poner ROJA?— vive en
+`qa/bateria-candados-en-negativo.mjs`, con sus dos hermanos, más abajo.
+
 ## Cómo se escribe un guion
 
 Un fichero en `guiones/` que exporta `async (ctx) => {}`. El contexto ofrece:
@@ -190,6 +193,32 @@ son caché o error. La cuarta comprobación quita el índice a propósito: si el
 sirviéndose sin él, la segunda estaría pasando por otro camino y no probaría lo que dice.
 Probado en negativo: devolviendo el adaptador a su forma pre-arreglo (que la excepción suba
 siempre), las comprobaciones 2 y 3 se ponen rojas.
+
+## Los tres `*-candados-en-negativo.mjs`: ¿se pueden poner ROJOS los candados?
+
+No llevan número porque no son un ejecutable más de la serie: son la pregunta que se le hace a
+todo lo demás. Cada uno **rompe el fuente a propósito**, corre SU batería, exige que falle y
+restaura; se niega a arrancar sobre un árbol sucio y comprueba byte a byte que devolvió lo que
+tocó. Van bajo demanda —cuestan lo que cuesta la batería que conducen— y **ninguno entra en
+`npm run verify`**.
+
+```bash
+node qa/contrato-candados-en-negativo.mjs   # schemas, saneadores y prompts (TS + Python, ~1,5 s cada uno)
+node qa/mutacion-candados-en-negativo.mjs   # el ciclo de mutación y su huella
+node qa/bateria-candados-en-negativo.mjs    # los guiones 22 y 34, o sea ESTA batería (~4 corridas de guion)
+node qa/contrato-candados-en-negativo.mjs python   # los tres aceptan filtro por nombre
+```
+
+Existen por una frase del usuario —**«nacen rojos»**— y por lo que la contradecía: en dos tandas
+seguidas se colaron seis criterios que ya estaban satisfechos antes de empezar. Un informe que
+dice «lo vi rojo» es una afirmación; esto es una prueba, y se vuelve a hacer cada vez que alguien
+lo ejecute.
+
+El de la batería (`bateria-candados-en-negativo.mjs`, #308/#320) añade una exigencia que los
+otros dos no tienen: **el rojo tiene que NOMBRAR la causa**. Un rojo genérico no vale, porque el
+defecto de #308 se manifestaba como un aserto del telegraph fallando tres pasos más abajo — un
+veredicto correcto que no se puede diagnosticar. Y distingue el `⊘` del rojo: si la corrida no
+llegó a medir (salida 2 del runner), no dice nada del guion y no cuenta como éxito.
 
 Los guiones que necesitan una PARTIDA real (no una fixture) comparten el arranque del
 título en `qa/lib/sesion.mjs` — `qa/lib/` no lo recorre el runner, solo `qa/guiones/`.

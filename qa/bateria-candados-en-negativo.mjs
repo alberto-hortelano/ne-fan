@@ -27,6 +27,10 @@
  *    rojo 2 de 4 en la misma máquina ociosa. Lo que lo caza es la COMPUERTA del
  *    bloque 3 (`qa/lib/fixtures.mjs`), que retiene el JSON en el borde de la
  *    red: con la respuesta retenida el módulo no PUEDE haber llegado.
+ *    Va DOS VECES, contra el 22 y contra el 44, y no es redundancia: el
+ *    destrozo rompe todas las cargas, así que el 22 se para en la PRIMERA
+ *    fixture y el camino que de verdad falló —la segunda medida como la
+ *    primera— solo lo ejerce el 44, cuya precondición espera en vez de afirmar.
  *
  *  · **#320 · el control del 34 mide por tecla.** Con `w a s d` medidas solo por
  *    los extremos, `w` se cancelaba con `s` y `a` con `d`: el neto era un
@@ -73,6 +77,30 @@ const INVARIANTES = [
       ],
     ],
     /se pidió la fixture|no había llegado|se quedó en/i,
+  ],
+  // El MISMO destrozo, contra el guion que sí ejerce el camino original de #308.
+  // Lo pidió QA el 2026-08-30 y tiene razón: con `loadFixture` roto para TODAS
+  // las cargas, el 22 muere en su bloque 1 —la PRIMERA fixture— y la segunda,
+  // que es donde vivía el bug, no se llega a pedir. O sea que este script
+  // demostraba que el 22 caza *una* regresión del hook, no que cace LA de #308;
+  // y el día que alguien deje el 22 con una sola fixture seguiría verde sin
+  // avisar. El guion 44 sí lo ejerce: su precondición espera (no afirma) a
+  // propósito, así que la primera carga sobrevive al destrozo y lo que se pone
+  // rojo es el INSTANTE de la segunda.
+  [
+    "#308 · el mismo destrozo contra el guion que ejerce la SEGUNDA carga (el camino original)",
+    MAIN,
+    "44-la-carga",
+    [
+      [
+        "      const carga = ultimaCargaDeFixture;\n",
+        "      const carga = Promise.resolve();\n      void ultimaCargaDeFixture;\n",
+      ],
+    ],
+    // Anclada al ✘: «sigue PENDIENTE» es parte de la descripción del aserto y
+    // se imprime también en verde. Una huella que casa en las dos direcciones
+    // no distingue nada, que es el defecto que este script persigue.
+    /✘[^\n]*sigue PENDIENTE/,
   ],
   [
     "#320 · muere UNA sola tecla de movimiento (`a`) en el proveedor de teclado",
@@ -219,5 +247,9 @@ for (const s of sinMedir) console.log(`   ⊘ ${s}`);
 
 const ok = fallidos.length === 0 && obsoletos.length === 0;
 if (sinMedir.length) process.exit(2);
-console.log(ok ? "\n✔ los dos guiones comprueban lo que dicen comprobar" : "\n✖ hay un guion que no comprueba lo que dice");
+console.log(
+  ok
+    ? "\n✔ los guiones probados comprueban lo que dicen comprobar"
+    : "\n✖ hay un guion que no comprueba lo que dice",
+);
 process.exit(ok ? 0 : 1);

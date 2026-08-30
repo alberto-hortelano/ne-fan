@@ -257,6 +257,19 @@ export default async function (ctx) {
     Boolean(opcion),
     JSON.stringify(opcion),
   );
+  // Y LA PRECONDICIÓN CORTA. Sin ella, la línea de abajo revienta con un
+  // `TypeError` sobre `null` y el veredicto que se lee es ese, no el que
+  // importa: una precondición perdida contada como un fallo de otra cosa es
+  // exactamente lo que esta tanda vino a eliminar del 22. Los bloques 2 y 3 se
+  // quedan sin correr a propósito — son medidas, y una corrida que perdió su
+  // precondición no es el sitio donde leerlas.
+  if (!opcion) {
+    ctx.log(
+      `⊘ sin «${FIXTURE}» en el selector no hay «mundo detrás del título» que medir: ` +
+        `se paran también los bloques 2 (#250) y 3 (#251)`,
+    );
+    return;
+  }
   await ctx.page.selectOption("#room-selector", opcion.valor);
 
   const conMundoDetras = await ctx.waitFor(
