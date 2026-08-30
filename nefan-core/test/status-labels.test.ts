@@ -10,13 +10,17 @@ import assert from "node:assert/strict";
 
 import {
   FALLO_HOJAS_BASE,
+  repartirStatus,
   etiquetaDeFixture,
   motivoDeFixtureParaElJugador,
   motivoDeSesionParaElJugador,
   motivoParaElJugador,
   rotuloDeStatus,
 } from "../src/protocol/status-labels.js";
-import type { NarrativeStatusMessage } from "../src/protocol/messages.js";
+import type {
+  NarrativeStatusDeJuego,
+  NarrativeStatusDeSesion,
+} from "../src/protocol/messages.js";
 
 /** Lo que el bridge manda en el ARRANQUE del mundo: motivo traducido y SIN
  *  nombre de destino, porque en el arranque no se viaja a ningún sitio.
@@ -28,7 +32,7 @@ import type { NarrativeStatusMessage } from "../src/protocol/messages.js";
  *  failed». El test heredaba la premisa falsa y por eso el hueco no se vio
  *  (QA §3.3). Los casos de VIAJE traen ahora su cuerpo con el destino puesto,
  *  explícitamente, porque son los únicos donde el bridge lo escribe. */
-const fallo = (extra: Partial<NarrativeStatusMessage> = {}): NarrativeStatusMessage => ({
+const fallo = (extra: Partial<NarrativeStatusDeSesion> = {}): NarrativeStatusDeSesion => ({
   type: "narrative_status",
   phase: "error",
   kind: "tile",
@@ -125,7 +129,7 @@ describe("rótulo de un fallo del motor", () => {
   });
 
   it("sin `message` cada kind trae su propio cuerpo, no un «algo falló» genérico", () => {
-    const cuerpo = (kind: NarrativeStatusMessage["kind"]): string =>
+    const cuerpo = (kind: NarrativeStatusDeSesion["kind"]): string =>
       rotuloDeStatus(fallo({ kind, message: undefined }), {
         mundoVacio: true,
         overlayAbierto: true,
@@ -133,7 +137,6 @@ describe("rótulo de un fallo del motor", () => {
     assert.equal(cuerpo("tile"), "Algo falló generando el tile.");
     assert.equal(cuerpo("scene"), "Algo falló en el motor narrativo.");
     assert.equal(cuerpo("consequences"), "El motor narrativo rechazó la reacción.");
-    assert.equal(cuerpo("game_gen"), "El motor narrativo rechazó la reacción.");
   });
 
   it("un `message` vacío NO se sustituye por el de por defecto", () => {
@@ -181,7 +184,7 @@ describe("la salida del overlay: qué puede hacer el jugador con el muro", () =>
     // Sin esto, `salida` podría estar clavada al caso del tile de bootstrap y
     // un fallo de escena en el arranque —el mismo callejón— saldría con la
     // salida equivocada sin que nadie se enterara.
-    for (const kind of ["tile", "scene", "consequences", "game_gen"] as const) {
+    for (const kind of ["tile", "scene", "consequences"] as const) {
       for (const overlayAbierto of [true, false]) {
         const r = rotuloDeStatus(fallo({ kind, placeId: "x" }), { mundoVacio: true, overlayAbierto });
         assert.equal(r.destino, "overlay", `${kind}/${overlayAbierto}`);
@@ -437,5 +440,105 @@ describe("la etiqueta de una fixture del selector «Room»", () => {
     // Lo que el guion 24 mide en pantalla, aquí sin navegador: la ruta del
     // glob no puede colarse en lo que lee quien juega.
     assert.doesNotMatch(motivo, /\.json|@nefan-core|scenes\//);
+  });
+});
+
+/** #312 y #313. Un `narrative_status` de una partida MUERTA no puede tocar a la
+ *  viva —con `spawn` le escribe la posición al jugador: teletransporte— y un
+ *  `error` de esa misma partida muerta tiene que seguir llegando a quien juega.
+ *  Las dos mitades a la vez, que es lo que hacía difícil el issue.
+ *
+ *  Vivía en `test/session-facets.test.ts` y se muda con su sujeto (#313): el
+ *  reparto dejó de preguntar por el sello y pasó a mirar QUÉ IDENTIFICADOR trae
+ *  el mensaje, así que ya no tiene nada que hacer en el módulo de las facetas.
+ *  La mudanza no es cosmética para la medida de mutación: `mutation-targets.json`
+ *  ata cada módulo a SU fichero de test, y dejar los asertos donde estaban
+ *  habría puesto los mutantes de `status-labels.ts` a cargo de una batería que
+ *  no lo importa.
+ *
+ *  Se prueba aquí y no en el cliente porque en el cliente no hay nada que pueda
+ *  ponerse rojo (`nefan-html` no tiene harness, #241). Lo que el navegador sí
+ *  ejerce —que el reparto llega a tiempo, que el jugador no se mueve y que el
+ *  progreso del mundo A no se pinta en la tarjeta del juego B— son
+ *  `qa/guiones/35-…` y `qa/guiones/38-…`. */
+describe("repartirStatus: a quién le habla cada narrative_status (#312, #313)", () => {
+  /** El status de una PARTIDA. Es el mensaje del wire ENTERO y no un `Pick`
+   *  a mano: desde #313 el reparto devuelve el mensaje ya estrechado, así que
+   *  lo que entra tiene que ser lo que de verdad viaja. */
+  const dePartida = (
+    phase: NarrativeStatusDeSesion["phase"],
+    sessionId = "la-muerta",
+  ): NarrativeStatusDeSesion => ({ type: "narrative_status", kind: "tile", phase, sessionId });
+
+  /** El status de un JUEGO (pre-generación de mundo). Ya no se puede construir
+   *  con `kind:"game_gen"` y un sello: son mensajes distintos, y esa
+   *  imposibilidad ES el arreglo de #313. */
+  const deJuego = (
+    phase: NarrativeStatusDeJuego["phase"],
+    gameId = "alta_fantasia",
+  ): NarrativeStatusDeJuego => ({ type: "narrative_status", kind: "game_gen", phase, gameId });
+
+  /** «La mía es 1787-abc». Anota A QUIÉN se le preguntó, que es la mitad del
+   *  caso de la pre-generación. */
+  function sello(mia = "1787-abc") {
+    const preguntas: string[] = [];
+    return {
+      preguntas,
+      esMio: (id: string) => {
+        preguntas.push(id);
+        return id === mia;
+      },
+    };
+  }
+
+  it("la pre-generación de mundo va al TÍTULO, y no hay sello que preguntar", () => {
+    // La rama que antes era una EXCEPCIÓN POR KIND («si es game_gen, al título,
+    // sin mirar el sello») porque el sello de una pre-generación era basura: lo
+    // estampaba el transporte con «la sesión viva del bridge al emitir», así que
+    // tras jugar y volver al título llegaba SIEMPRE con sello ajeno y filtrarlo
+    // dejaba la barra de la tarjeta girando para siempre. Desde #313 el mensaje
+    // se direcciona por `gameId` y no trae sello: el aserto de abajo dice algo
+    // más fuerte que antes — no es que no se pregunte, es que no hay qué.
+    const s = sello();
+    for (const phase of ["generating", "progress", "ready", "error"] as const) {
+      assert.equal(repartirStatus(deJuego(phase), s.esMio).destino, "titulo");
+    }
+    assert.deepEqual(s.preguntas, [], "se preguntó el sello de una pre-generación");
+  });
+
+  it("lo que lleva MI sello va a la partida, sea de la fase que sea", () => {
+    const s = sello();
+    for (const phase of ["generating", "progress", "ready", "error"] as const) {
+      assert.equal(repartirStatus(dePartida(phase, "1787-abc"), s.esMio).destino, "juego");
+    }
+  });
+
+  it("un FALLO ajeno no se calla: va al canal de fallos", () => {
+    const s = sello();
+    assert.equal(repartirStatus(dePartida("error"), s.esMio).destino, "fallo-ajeno");
+  });
+
+  it("lo ajeno que NO es fallo se descarta: es el ready que teletransportaba", () => {
+    const s = sello();
+    for (const phase of ["generating", "progress", "ready"] as const) {
+      assert.equal(repartirStatus(dePartida(phase), s.esMio).destino, "descartado");
+    }
+  });
+
+  it("el sello VACÍO no es un hueco: es la partida de nadie, y depende de quién pregunte", () => {
+    // `""` es un sello legítimo —el bridge hablando sin partida cargada— y el
+    // reparto no lo trata aparte: se lo pasa a `esMio` como cualquier otro. Sin
+    // partida aplicada le corresponde al juego; con una partida en marcha, no.
+    //
+    // La otra mitad —que `esMio` conteste eso— es de `session-facets.ts` y la
+    // afirma su propio test ("sin partida, lo que el bridge difunde sin partida
+    // SÍ es mío"). Aquí no se importa aquel módulo A PROPÓSITO: `mutation-targets.json`
+    // ata cada fichero mutado a SU batería, y arrastrarlo haría que los mutantes
+    // de las facetas pagaran también esta suite.
+    const sinPartida = sello("");
+    assert.equal(repartirStatus(dePartida("ready", ""), sinPartida.esMio).destino, "juego");
+    const enPartida = sello("1787-abc");
+    assert.equal(repartirStatus(dePartida("ready", ""), enPartida.esMio).destino, "descartado");
+    assert.equal(repartirStatus(dePartida("ready", "1787-abc"), enPartida.esMio).destino, "juego");
   });
 });

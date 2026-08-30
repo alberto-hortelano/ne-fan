@@ -133,6 +133,16 @@ const ctx: BridgeContext = {
   enviarNarrativo(ws, msg) {
     escribir(ws, sellarSesion(msg, narrative.session_id));
   },
+  // EL TERCER VERBO NO SELLA, y por eso es un verbo y no una bandera (#313).
+  // Lo que viaja por aquí se direcciona por JUEGO: no hay sesión que estampar,
+  // y la que este bridge tuviera cargada al emitir no tiene nada que ver con
+  // quien pidió el trabajo. Aquí no se nombra ningún `kind`: el reparto lo hace
+  // el cliente mirando QUÉ IDENTIFICADOR trae el mensaje, y si esta función
+  // tuviera que preguntar por el kind, la excepción que #313 quitó de
+  // `repartirStatus` solo se habría mudado de sitio.
+  difundirDeJuego(msg) {
+    for (const ws of narrativeSubscribers) escribir(ws, msg);
+  },
 };
 
 // El jugador NO se siembra al arrancar el PROCESO. Aquí había un combatiente

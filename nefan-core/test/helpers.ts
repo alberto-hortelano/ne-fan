@@ -179,6 +179,14 @@ export function makeCtx(
     enviarNarrativo(ws, msg) {
       escribir(ws, sellarSesion(msg, narrative.session_id));
     },
+    // El doble del verbo que NO sella (#313), y por el mismo motivo que los de
+    // arriba: si el doble sellara lo que en producción va sin sello, los tests
+    // de bridge medirían un cable que no existe. Entra en `broadcasts` como
+    // todo lo difundido — lo que cambia es qué lleva dentro, no por dónde sale.
+    difundirDeJuego(msg) {
+      broadcasts.push(msg);
+      for (const ws of subscribers) escribir(ws, msg);
+    },
   };
   return { ctx, broadcasts, storage, narrative, store, sim, aiCalls, subscribers };
 }

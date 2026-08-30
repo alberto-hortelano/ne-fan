@@ -13,16 +13,26 @@ import type {
 import type {
   GamesListedMessage,
   NarrativeEventMessage,
-  NarrativeStatusMessage,
+  NarrativeStatusDeJuego,
+  NarrativeStatusDeSesion,
 } from "@nefan-core/src/protocol/messages.js";
-import { destinoDeStatus } from "@nefan-core/src/session/session-facets.js";
+import { repartirStatus } from "@nefan-core/src/protocol/status-labels.js";
 import type { StatusRotulable } from "@nefan-core/src/protocol/status-labels.js";
 
 export type GameInfo = GamesListedMessage["games"][number];
 export type StyleInfo = GamesListedMessage["styles"][number];
 
 export type NarrativeEventListener = (event: NarrativeEventMessage) => void;
-export type NarrativeStatusListener = (status: NarrativeStatusMessage) => void;
+/** Lo que le pasa a LA PARTIDA: lleva sello, y por tanto puede traer `spawn`,
+ *  `tile`, `placeId`… todo lo que solo tiene sentido dentro de una sesión. */
+export type NarrativeStatusListener = (status: NarrativeStatusDeSesion) => void;
+
+/** El progreso de una PRE-GENERACIÓN DE MUNDO. Es otro tipo y no el mismo con
+ *  otro `kind` (#313): trae `gameId` REQUERIDO, que es lo que permite al título
+ *  pintarlo en la tarjeta del juego que le toca en vez de en la que esté
+ *  seleccionada. Sin este estrechamiento, el canal del título podría recibir un
+ *  status sin `gameId` y la clave de su mapa sería `undefined`. */
+export type ProgresoDeMundoListener = (status: NarrativeStatusDeJuego) => void;
 
 /** Un fallo del motor que NO es de esta partida (#312).
  *
@@ -57,7 +67,7 @@ export class NarrativeClient {
   /** La partida viva: tiles, escenas, viajes, consequences. */
   private statusListeners = new Set<NarrativeStatusListener>();
   /** El título: progreso de la pre-generación de mundo (kind "game_gen"). */
-  private progresoListeners = new Set<NarrativeStatusListener>();
+  private progresoListeners = new Set<ProgresoDeMundoListener>();
   /** El registro de errores: fallos de OTRA partida, sin nada más. */
   private falloAjenoListeners = new Set<FalloAjenoListener>();
   /** Eventos de OTRA partida tirados aquí. Lo lee el bench/QA por
@@ -103,8 +113,8 @@ export class NarrativeClient {
       //
       // No se filtra ENTERO —eso silenciaría el `phase:"error"` de una sesión
       // recién muerta, que es lo que esta casa prohíbe— sino que se REPARTE:
-      // la decisión es de `destinoDeStatus` (core, donde ya vive «cuál es la
-      // mía» y donde se puede poner roja), y aquí solo se entrega. El canal
+      // la decisión es de `repartirStatus` (core, donde se puede poner roja),
+      // y aquí solo se entrega. El canal
       // de fallos ajenos entrega un `StatusRotulable`, que no tiene `spawn` ni
       // `tile`: el desenlace caro no es que esté prohibido, es que no se
       // puede escribir.
@@ -113,26 +123,33 @@ export class NarrativeClient {
       // `labs/narrative/replay-server.mjs`, que reestampa el sello justo de
       // lo que estos embudos descartan: si no, `replay-web` reproduce una
       // película que el cliente tira entera y se queda en negro.
-      switch (destinoDeStatus(msg, (id) => this.deQuienEs.esMia(id))) {
+      // El reparto es por QUÉ IDENTIFICADOR trae el mensaje (#313), no por su
+      // `kind`. Y entrega el mensaje YA ESTRECHADO al arma que resultó ser, así
+      // que dárselo al canal equivocado no compila: hasta #313 los tres canales
+      // recibían el mismo tipo ancho y la correlación destino↔forma era una
+      // convención — el canal del título podía recibir un status sin `gameId` y
+      // la clave de su mapa habría sido `undefined`.
+      const reparto = repartirStatus(msg, (id) => this.deQuienEs.esMia(id));
+      switch (reparto.destino) {
         case "titulo":
-          for (const fn of this.progresoListeners) fn(msg);
+          for (const fn of this.progresoListeners) fn(reparto.status);
           return;
         case "juego":
-          for (const fn of this.statusListeners) fn(msg);
+          for (const fn of this.statusListeners) fn(reparto.status);
           return;
         case "fallo-ajeno":
           // Se dice de quién era ANTES de entregarlo: el rótulo que lee quien
           // juega no lleva sello (ni debe), así que sin esta línea un error
           // de una partida muerta se lee igual que uno de la suya.
           this.deQuienEs.log(
-            `⚠ fallo de otra partida (${msg.kind}, sesión «${msg.sessionId}»): se muestra igual`,
+            `⚠ fallo de otra partida (${reparto.status.kind}, sesión «${reparto.status.sessionId}»): se muestra igual`,
           );
-          for (const fn of this.falloAjenoListeners) fn(msg);
+          for (const fn of this.falloAjenoListeners) fn(reparto.status);
           return;
         case "descartado":
           this.statusTirados++;
           this.deQuienEs.log(
-            `↩ status de otra partida descartado (${msg.kind}/${msg.phase}, sesión «${msg.sessionId}»)`,
+            `↩ status de otra partida descartado (${reparto.status.kind}/${reparto.status.phase}, sesión «${reparto.status.sessionId}»)`,
           );
           return;
       }
@@ -161,9 +178,10 @@ export class NarrativeClient {
     return () => this.statusListeners.delete(fn);
   }
 
-  /** Progreso de la pre-generación de mundo, que es cosa del título. Llega
-   *  SIN mirar el sello y el porqué está escrito en `destinoDeStatus`. */
-  onProgresoDeMundo(fn: NarrativeStatusListener): () => void {
+  /** Progreso de la pre-generación de mundo, que es cosa del título. No lleva
+   *  sello que mirar —se direcciona por `gameId`— y el porqué está escrito en
+   *  `repartirStatus`. */
+  onProgresoDeMundo(fn: ProgresoDeMundoListener): () => void {
     this.progresoListeners.add(fn);
     return () => this.progresoListeners.delete(fn);
   }

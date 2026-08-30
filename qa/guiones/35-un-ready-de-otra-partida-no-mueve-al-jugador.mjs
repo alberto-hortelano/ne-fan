@@ -27,7 +27,7 @@
  *  porque es el único que deja al jugador en otro sitio.
  *
  *  MEDIDO EN ROJO ANTES DE ARREGLAR NADA: sobre el árbol sin el reparto de
- *  `destinoDeStatus`, el bloque 1 falla (el jugador se teletransporta) y el
+ *  `repartirStatus`, el bloque 1 falla (el jugador se teletransporta) y el
  *  bloque 2 pasa (el fallo ajeno ya llegaba, que es la mitad que había que
  *  conservar). La salida está pegada en el informe de implementación.
  *

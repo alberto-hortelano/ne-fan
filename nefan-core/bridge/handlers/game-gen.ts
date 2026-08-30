@@ -87,10 +87,11 @@ export async function handleGenerateGame(
   // chips y deja volver a intentarlo.
   void delivery.then((res) => {
     if (res.ok) return;
-    ctx.broadcastNarrative({
+    ctx.difundirDeJuego({
       type: "narrative_status",
       phase: "error",
       kind: "game_gen",
+      gameId: msg.gameId,
       message: `La pre-generación de "${msg.gameId}" no llegó a correr: ${res.error}`,
     });
   });
@@ -140,11 +141,17 @@ export async function runGameGeneration(
   gameId: string,
 ): Promise<SceneGenOutcome> {
   const start = Date.now();
+  // Va por el verbo que NO sella y CON el juego dentro (#313): este trabajo no
+  // es de ninguna sesión —la de abajo es efímera y se descarta en el finally—,
+  // y el título necesita saber de qué tarjeta es el progreso para no pintarlo
+  // en la del juego que el jugador tenga seleccionado. Olvidar el `gameId` no
+  // compila.
   const status = (phase: "generating" | "progress" | "ready" | "error", message: string): void =>
-    ctx.broadcastNarrative({
+    ctx.difundirDeJuego({
       type: "narrative_status",
       phase,
       kind: "game_gen",
+      gameId,
       message,
       elapsedMs: Date.now() - start,
     });

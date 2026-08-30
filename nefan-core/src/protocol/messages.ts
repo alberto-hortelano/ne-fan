@@ -316,32 +316,38 @@ export interface NarrativeEventMessage {
 
 /** Lifecycle hint for long-running narrative work so clients can show a loader.
  *  Phase: "generating" (LLM dispatched, awaiting), "ready" (scene applied),
- *  "error" (LLM call failed — surfaced verbatim, no silent placeholder). */
-export interface NarrativeStatusMessage {
+ *  "error" (LLM call failed — surfaced verbatim, no silent placeholder).
+ *
+ *  Lo que comparten las DOS armas de `NarrativeStatusMessage`. Lo que NO está
+ *  aquí es el campo de direccionamiento: cada arma trae el suyo, y esa es toda
+ *  la idea (ver abajo). */
+interface CuerpoDeNarrativeStatus {
   type: "narrative_status";
-  /** El mismo sello que el evento, y por el mismo escritor.
-   *
-   *  Desde #312 el cliente lo REPARTE en vez de ignorarlo: `destinoDeStatus`
-   *  (`src/session/session-facets.ts`) manda lo ajeno que es `phase:"error"`
-   *  al registro de errores —callarlo sería el silencio que prohíbe el
-   *  fail-loud de esta casa— y descarta el resto, que es lo que llegaba a
-   *  teletransportar al jugador de la partida viva con su `spawn`.
-   *
-   *  Lo que este campo dice EXACTAMENTE, y hay que leerlo así o el filtro se
-   *  entiende mal: «la sesión que el bridge tenía activa al emitir», no «la
-   *  que pidió el trabajo» (ver `bridge/ws-server.ts`). Por eso la
-   *  pre-generación de mundo (`kind:"game_gen"`) se reparte SIN mirarlo. */
-  sessionId: string;
   /** "progress" = latido del motor narrativo mientras genera (una tool MCP
    *  llamada, un paso dado): resetea el timeout de inactividad de ai_server
    *  y alimenta el texto del loader del cliente. */
   phase: "generating" | "progress" | "ready" | "error";
-  /** "game_gen" = pre-generación de mundo desde el título (generate_game):
-   *  no toca velos de tile ni loaders de escena — alimenta la barra de
-   *  progreso de la tarjeta del juego. */
-  kind: "scene" | "consequences" | "tile" | "game_gen";
   message?: string;
   elapsedMs?: number;
+}
+
+/** UN STATUS DE PARTIDA: le habla a la sesión que lo pidió, y va sellado.
+ *
+ *  El sello es el mismo que el del evento y lo pone el mismo escritor
+ *  (`broadcastNarrative`/`enviarNarrativo`, los dos únicos sitios del bridge
+ *  que sellan). Desde #312 el cliente lo REPARTE en vez de ignorarlo:
+ *  `repartirStatus` (`protocol/status-labels.ts`) manda lo ajeno que es
+ *  `phase:"error"` al registro de errores —callarlo sería el silencio que
+ *  prohíbe el fail-loud de esta casa— y descarta el resto, que es lo que
+ *  llegaba a teletransportar al jugador de la partida viva con su `spawn`.
+ *
+ *  Lo que el sello dice EXACTAMENTE, y hay que leerlo así o el filtro se
+ *  entiende mal: «la sesión que el bridge tenía activa al emitir», no «la que
+ *  pidió el trabajo» (ver `bridge/ws-server.ts`). Para lo que NO es de una
+ *  partida, ese campo era basura: ver `NarrativeStatusDeJuego`. */
+export interface NarrativeStatusDeSesion extends CuerpoDeNarrativeStatus {
+  sessionId: string;
+  kind: "scene" | "consequences" | "tile";
   /** Tile al que se refiere el status (kind "tile") — el cliente pinta el
    *  velo/notificación direccional con esto. */
   tile?: { tx: number; ty: number };
@@ -370,6 +376,41 @@ export interface NarrativeStatusMessage {
    *  el `ready` en vez de escribirla. Ausente = el jugador no se mueve. */
   spawn?: { x: number; z: number };
 }
+
+/** UN STATUS DE JUEGO: la pre-generación de mundo desde el título
+ *  (`generate_game`). No toca velos de tile ni loaders de escena — alimenta la
+ *  barra de progreso de la tarjeta del juego.
+ *
+ *  POR QUÉ ES OTRO MENSAJE Y NO UN `kind` MÁS (#313). Este trabajo NO ES DE
+ *  SESIÓN, ES DE JUEGO: lo pide el título, que no tiene partida, y el bridge
+ *  lo corre en una sesión EFÍMERA que descarta al terminar
+ *  (`handlers/game-gen.ts`). Su `sessionId` era basura bajo las dos semánticas
+ *  posibles: con «la sesión viva al emitir» llegaba con el sello de la partida
+ *  que el bridge tuviera cargada —ajeno para un cliente que acaba de volver al
+ *  título—, y con «la que pidió el trabajo» habría llegado con `""`, que un
+ *  cliente ya metido en partida descartaría igual. En los dos casos la barra
+ *  de la tarjeta se queda girando para siempre. Por eso el reparto tenía una
+ *  excepción por `kind` («si es game_gen, al título, SIN mirar el sello»), y
+ *  una excepción por `kind` es lo que se paga cuando el mensaje lleva UN campo
+ *  de direccionamiento para DOS esquemas distintos.
+ *
+ *  Con dos armas, el reparto se hace por QUÉ IDENTIFICADOR TRAE y no necesita
+ *  saber de kinds; y el tipo hace inexpresables las dos formas malas: un
+ *  `game_gen` con sello de sesión, y un status de partida sin él. `gameId` es
+ *  REQUERIDO —no un `gameId?` al lado de un `sessionId?`, que devolvería el
+ *  reparto a una convención sin candado— y es lo que permite al título saber
+ *  en qué tarjeta pintarlo: hasta #313 tenía UNA sola ranura y el progreso del
+ *  mundo A se pintaba en la tarjeta del juego B. */
+export interface NarrativeStatusDeJuego extends CuerpoDeNarrativeStatus {
+  /** De qué JUEGO (`data/games/{id}`) es esta pre-generación. */
+  gameId: string;
+  kind: "game_gen";
+}
+
+/** Las dos armas juntas, para quien tenga que aceptar cualquiera de las dos
+ *  (el `on("narrative_status")` del cliente, los filtros de los tests). Quien
+ *  EMITE elige el arma, y ahí es donde el tipo cierra el agujero. */
+export type NarrativeStatusMessage = NarrativeStatusDeSesion | NarrativeStatusDeJuego;
 
 export interface GamesListedMessage {
   type: "games_listed";
