@@ -158,6 +158,7 @@ motivos prohibidos**.
   tocar nada — y **se declara de antemano que NO es estable**: #320 (el guion 34 es intermitente
   bajo carga, 1 rojo de cada 4 baterías) está abierto. Si aparece un 34 rojo, **no es de esta
   tanda**. Dicho antes, no después.
+  *Apostilla 2026-08-30: #308 y #320 CERRADOS — el 22 no era intermitente sino un guion que medía la fixture anterior, y el control del 34 pasaba en verde con tres de las cuatro teclas muertas. Ya no hay ajenos que declarar.*
 
 ---
 

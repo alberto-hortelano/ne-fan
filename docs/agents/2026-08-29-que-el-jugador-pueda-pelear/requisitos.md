@@ -221,6 +221,7 @@ inalcanzable** — ver el criterio 6 de abajo.
   el `04-`. La línea base se mide antes de tocar nada.
 - **#320 sigue abierto**: el guion 34 es intermitente bajo carga, 1 rojo de cada 4 baterías. Si
   aparece, no es de esta tanda. Dicho antes, no después.
+  *Apostilla 2026-08-30: #308 y #320 CERRADOS — el 22 no era intermitente sino un guion que medía la fixture anterior, y el control del 34 pasaba en verde con tres de las cuatro teclas muertas. Ya no hay ajenos que declarar.*
 
 ---
 

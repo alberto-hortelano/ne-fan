@@ -67,6 +67,7 @@ Consecuencias, en orden de importancia:
 ## Conflictos
 
 - **#320 y #308 contra la restricción §5** («batería de guiones completa verde»): hoy es inalcanzable por medida ajena — #320 dice que el guion 34 falla 1 de cada 4 baterías completas y #308 que el 22 sale rojo 4 de 6. Declararlos como intermitentes conocidos ANTES de empezar, o la tanda gasta su presupuesto de verificación persiguiendo el flake de otro.
+  *Apostilla 2026-08-30: #308 y #320 CERRADOS — el 22 no era intermitente sino un guion que medía la fixture anterior, y el control del 34 pasaba en verde con tres de las cuatro teclas muertas. Ya no hay ajenos que declarar.*
 - **#241** (ni una línea de `nefan-html` medida) es la razón por la que el candado de #314 tiene que ser regla de `arch-rules` y no un test. No es contradicción: es una dependencia que sigue sin resolverse, y conviene escribirlo en vez de redescubrirlo.
 - **#306** (errores del título sin canal) toca `title-screen.ts` a cuatro líneas de donde toca #313. No se contradicen — pero #313 no debe «mejorar» el `errors.push("narrative", …)` de `:158-166`: eso es #306.
 - Ningún candado de `arch-rules.json` prohíbe añadir un campo de direccionamiento a un mensaje de protocolo. Los de reaparición vivos (`stage_request`/`stage_review`, `texture_hash`) no rozan esto.
@@ -97,4 +98,5 @@ Consecuencias, en orden de importancia:
 - **§3 #314 — añadir dos hechos**: los tres guiones (37/41/42) que LEEN el gate por el hook, y `tileProposalActive` como hermano del mismo patrón que esta tanda no toca.
 - **§4.2 — cerrar el juego de manos.** Añadir: «…y el `kind` no reaparece en `ws-server.ts`: o el tipo hace inexpresable un `game_gen` con sello, o el criterio no está cumplido.»
 - **§5 — añadir**: «los guiones 34 (#320) y 22 (#308) son intermitentes conocidos; una roja suya no es hallazgo de esta tanda.»
+  *Apostilla 2026-08-30: #308 y #320 CERRADOS — el 22 no era intermitente sino un guion que medía la fixture anterior, y el control del 34 pasaba en verde con tres de las cuatro teclas muertas. Ya no hay ajenos que declarar.*
 - **Nota de sitio de #316 (`destinoDeStatus` → `protocol/status-labels.ts`)**: es alcance de **#313**, no de #316, y solo como consecuencia. #313 reescribe esa función entera (deja de mirar `kind`, pasa a mirar el identificador); moverla en el mismo diff es gratis, y con ella se va el import de `protocol/messages.js` que ensucia `session-facets.ts`. Lo que NO debe pasar es que se mueva sola, como tercer trabajo. Si #313 no la reescribe, no se toca. (De paso, cuando alguien abra ese fichero: `status-labels.ts:71` le da a `game_gen` el motivo de `consequences` — «El motor narrativo rechazó la reacción» —, que es de otro `kind`. Es un issue nuevo de una línea, no de esta tanda.)
