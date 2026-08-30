@@ -82,6 +82,7 @@ const EJEMPLARES: Array<[string, Volume]> = [
   ["prop por punto", { id: "barril", label: "barril", type: "prop", at: [60, 60], h: 1.5 }],
   ["prism", { id: "arco", label: "arco de piedra", type: "prism", points: [[50, 50], [58, 50], [58, 56], [50, 56]], h: 6 }],
   ["custom", { id: "noria", label: "noria", type: "custom", at: [60, 60], parts: [{ shape: "box", size: [4, 3, 2] }, { shape: "cylinder", rBottom: 2, h: 3, pos: [3, 0, 0] }] }],
+  ["gate", { id: "porton", label: "portón", type: "gate", at: [60, 60], w: 8, orient: "x" }],
 ];
 
 describe("huella del volumen", () => {
@@ -89,10 +90,8 @@ describe("huella del volumen", () => {
     const tipos = new Set(EJEMPLARES.map(([, v]) => v.type));
     assert.deepEqual(
       [...tipos].sort(),
-      ["building", "bush", "custom", "fountain", "gate", "prism", "prop", "rock", "tower", "tree", "wall"]
-        .filter((t) => t !== "gate")
-        .sort(),
-      "faltan tipos en EJEMPLARES (`gate` va aparte: hoy incumple el invariante)",
+      ["building", "bush", "custom", "fountain", "gate", "prism", "prop", "rock", "tower", "tree", "wall"].sort(),
+      "faltan tipos en EJEMPLARES",
     );
   });
 
@@ -112,23 +111,21 @@ describe("huella del volumen", () => {
     assert.deepEqual(celdasSolidas({ id: "m", label: "matorral", type: "bush", at: [60, 60] }), []);
   });
 
-  // DEUDA MEDIDA, no un descuido: la encontré re-anclando esta cobertura.
-  // Para una `gate`, `volumeFootprintCells` publica el VANO ([at−w/2, at−1.5,
-  // w, 3]) mientras la colisión estampa `volumeFootprint` —las JAMBAS, mucho
-  // más anchas— y luego limpia justo el vano. Las dos huellas son DISJUNTAS:
-  // ni una sola celda sólida cae dentro de la del manifest. No lo arreglo aquí
-  // (mover estos helpers exige que su cuerpo viaje byte a byte), pero lo dejo
-  // congelado: el día que alguien lo repare este test se pone rojo y la puerta
-  // sube al bloque de arriba, que es exactamente lo que debe pasar.
-  it("[deuda] la PUERTA incumple el invariante: su huella y su colisión son disjuntas", () => {
+  // La PUERTA estuvo congelada aquí como deuda: `volumeFootprintCells`
+  // publicaba el VANO y la colisión estampaba las JAMBAS, y las dos huellas
+  // eran DISJUNTAS (36 celdas sólidas, 0 dentro). Arreglada en #187 delegando
+  // en `volumeFootprint`, sube a EJEMPLARES y la cubre el mismo `it()`
+  // paramétrico que los otros diez. Lo que se queda aquí es lo que aquel test
+  // congelado NO comprobaba: que sigue habiendo jambas que bloquear —una
+  // huella que contiene «nada» cumpliría el invariante sin significar nada— y
+  // que el VANO, que es el hueco por el que se cruza, sigue abierto.
+  it("la puerta tiene jambas que bloquean y un vano por el que se cruza", () => {
     const puerta: Volume = { id: "porton", label: "portón", type: "gate", at: [60, 60], w: 8, orient: "x" };
     const solidas = celdasSolidas(puerta);
-    assert.ok(solidas.length > 0, "la puerta sí bloquea: son sus jambas");
-    assert.equal(
-      celdasFueraDeLaHuella(puerta).length,
-      solidas.length,
-      "si esto baja, la puerta se ha ARREGLADO: móvela a EJEMPLARES y borra este test",
-    );
+    assert.equal(solidas.length, 36, "las jambas siguen ahí");
+    assert.deepEqual(celdasFueraDeLaHuella(puerta), [], "y todas caen DENTRO de la huella publicada");
+    // El centro del vano (at) no lo bloquea ninguna: por ahí se pasa.
+    assert.equal(solidas.filter(([c, r]) => c === 60 && r === 60).length, 0, "el vano sigue abierto");
   });
 });
 

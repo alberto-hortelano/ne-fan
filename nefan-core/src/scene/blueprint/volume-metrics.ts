@@ -48,8 +48,16 @@ export function volumeFootprintCells(v: Volume): [number, number, number, number
       return [v.at[0] - r, v.at[1] - r, 2 * r, 2 * r];
     }
     case "gate": {
-      const w = v.w ?? 8;
-      return v.orient === "x" ? [v.at[0] - w / 2, v.at[1] - 1.5, w, 3] : [v.at[0] - 1.5, v.at[1] - w / 2, 3, w];
+      // Delegado en `volumeFootprint` como la rama `building` con `angle`, y
+      // no calculado aparte: lo que esta función publicaba era el VANO
+      // ([at−w/2, at−1.5, w, 3]) mientras la colisión estampa las JAMBAS —la
+      // huella analítica, que es más ancha— y luego limpia el vano de en
+      // medio. Las dos eran DISJUNTAS: ni una sola de las 36 celdas que la
+      // puerta bloquea caía dentro de la huella del manifest, así que el
+      // jugador chocaba justo donde el manifest decía que no había nada
+      // (#187). El vano no es la huella de la puerta: es el hueco que deja.
+      const { cells } = volumeFootprint(v);
+      return [cells[0], cells[1], cells[2] - cells[0], cells[3] - cells[1]];
     }
     case "tree": {
       const s = v.s ?? 1;
