@@ -1187,9 +1187,19 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
        *  el WASD es horizontal por diseño. */
       pitchDeg: (playerPitch * 180) / Math.PI,
       input: { ...input.state },
-      /** La clave sigue llamándose así porque la leen los guiones 37, 41 y 42;
-       *  lo que cambió es de DÓNDE sale (#314): del panel, que es el dueño,
-       *  en vez de un campo del proveedor que ya no existe. */
+      /** De dónde sale desde #314: del panel, que es el dueño, en vez de un
+       *  campo del proveedor que ya no existe.
+       *
+       *  HONESTIDAD SOBRE QUIÉN LA LEE, porque la respuesta cambió el
+       *  2026-08-30 y la anterior ya era falsa: hoy NINGÚN guion la lee. Los
+       *  que preguntan por el diálogo (41 y 43) usan `puedeAtacar()`, y el 37
+       *  perdió su vigilante al descubrirse que comparaba esta clave con
+       *  `dialogue().visible`, que es la MISMA expresión. Se conserva para
+       *  depuración manual desde la consola y porque el bench la ha usado
+       *  siempre; si sigue sin lectores, sobra — y entonces se va, en vez de
+       *  quedarse como un segundo nombre de `dialogue().visible` esperando a
+       *  que alguien lo confunda con una señal independiente, que es
+       *  exactamente cómo nació ese vigilante. */
       dialogueActive: dialogoAbierto(),
       combatSystem: sessionCombatSystemId,
       attackCatalog: attackCatalog.map((a) => a.id),

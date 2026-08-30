@@ -1,32 +1,62 @@
-/** #311 y #314. «Hay una conversación abierta» vivía en DOS sitios que nadie
- *  obligaba a coincidir —el panel (`dialoguePanel`) y un campo público del
- *  proveedor de input, que suprime moverse y atacar— y se emparejaban a mano
- *  en cinco lugares del cliente.
+/** Con una conversación en pantalla, el jugador no anda. Es el hecho de #311
+ *  que ve quien juega, y lo sostienen DOS gates independientes: la puerta del
+ *  proveedor de teclado (`keyboard-input-provider.ts`, que no llega a poner
+ *  `state.up`) y el bucle de juego (`main.ts`, `if (!dialoguePanel.isVisible)`
+ *  alrededor del WASD). Cualquiera de los dos basta.
  *
- *  POR QUÉ EXISTE. El arreglo de #311 fue `abrirDialogo()` / `cerrarDialogo()`,
- *  dueños únicos del par; el de #314 se llevó el par entero — el proveedor
- *  PREGUNTA (`InputDeps.dialogoAbierto()`, derivado del panel) en vez de
- *  guardar una copia, así que hoy no hay dos cosas que desemparejar. Este guion
- *  NO se retira con ello: lo que afirma es que el par que ve el JUGADOR —panel
- *  en pantalla ⇔ controles suprimidos— no diverge en ningún fotograma, y esa
- *  afirmación sobrevive al mecanismo que la cumple. Es lo que se pondría rojo
- *  si alguien volviera a introducir una copia (que es lo que `tsc` no impide, y
- *  por eso #314 dejó además la regla `el-gate-del-dialogo-no-vuelve-a-ser-un-campo`
- *  en `arch-rules.json`, esta vez SÍ a coste cero de deuda).
+ *  QUÉ MIDE ESTE GUION, Y CUÁNDO PUEDE PONERSE ROJO. Medido el 2026-08-30, los
+ *  tres sabotajes, cada uno restaurado antes del siguiente:
  *
- *  SE CORRE SIN `?input=scripted` A PROPÓSITO. El gate solo lo consulta
- *  `keyboard-input-provider.ts`: `ScriptedInputProvider` no lo pregunta nunca
- *  —conduce el juego por su API programática, sin pasar por la puerta del
- *  teclado—, así que con el driver de bench el jugador se movería durante la
- *  conversación y el aserto mediría el vacío. Mismo motivo y mismo remedio que
- *  el guion 34.
+ *    · solo el gate del BUCLE (`if (!dialoguePanel.isVisible)` → `if (true)`)
+ *      ................................................. VERDE (0,00 m)
+ *    · solo el gate del PROVEEDOR (`if (this.deps.dialogoAbierto()) return;`
+ *      → `if (false) return;`) ......................... VERDE (0,00 m)
+ *    · LOS DOS a la vez ............................ **ROJO** (3,32 m andados
+ *      con la conversación delante, frente a 3,95 m libre)
  *
- *  EL CONTROL VA PRIMERO (bloque 1). «El jugador no se movió» y «este guion no
- *  sabe mover al jugador» son el mismo verde: primero se comprueba que `W`
- *  mueve, y solo entonces significa algo que con el diálogo delante no mueva.
- *  Va antes y no después porque el motor falso contesta a cada elección con
- *  OTRA línea de diálogo: el estado «cerrado» solo dura hasta que llega la
- *  respuesta, y un control colocado ahí sería una carrera.
+ *  O sea: este guion es el BACKSTOP del hecho del jugador, no el candado de
+ *  ninguno de los dos mecanismos. Se pone rojo exactamente cuando el jugador
+ *  puede andar hablando —que es el bug— y no antes. Quien aísla el gate del
+ *  proveedor es el **guion 43**; al gate del bucle no lo aísla nadie, porque el
+ *  del proveedor lo tapa.
+ *
+ *  Se dice así de explícito porque la primera versión de este comentario
+ *  afirmaba que quitar el gate del bucle lo ponía rojo. No lo medí antes de
+ *  escribirlo, y era FALSO: sale verde. Es el fallo que este repositorio tiene
+ *  escrito como el más caro —la justificación redactada después, que nadie mide
+ *  y que se congela como documentación—, y estuvo a punto de entrar en el mismo
+ *  fichero que se estaba arreglando por eso mismo.
+ *
+ *  LO QUE ESTE GUION MEDÍA ANTES Y YA NO PUEDE, porque hay que decirlo. Hasta
+ *  #314 se llamaba «el diálogo abre y cierra el gate a la vez» y llevaba un
+ *  vigilante por fotograma que comparaba el panel con el gate del input, más
+ *  dos asertos sobre ese par. Tenía sentido mientras el gate era una COPIA (un
+ *  campo público del proveedor que el bucle escribía a mano): copia y original
+ *  podían desemparejarse, y eso es lo que vigilaba.
+ *
+ *  #314 se llevó la copia — el proveedor PREGUNTA (`InputDeps.dialogoAbierto()`,
+ *  que es `() => dialoguePanel.isVisible`)—, y con ella se llevó el sujeto del
+ *  vigilante: `__nefan.dialogue().visible` y `__nefan.state().dialogueActive`
+ *  pasaron a ser LA MISMA expresión. El vigilante comparaba un booleano consigo
+ *  mismo por dos caminos de una línea, y no podía ponerse rojo: QA lo midió el
+ *  2026-08-30 neutralizando el gate del proveedor por completo y este guion
+ *  salió VERDE ENTERO, los cinco asertos. Se quitaron el vigilante y sus dos
+ *  asertos tautológicos en vez de dejarlos dando falsa confianza; un test que no
+ *  puede ponerse rojo es peor que uno intermitente, porque el intermitente al
+ *  menos se nota.
+ *
+ *  SE CORRE SIN `?input=scripted` A PROPÓSITO. `ScriptedInputProvider` no
+ *  pregunta por el diálogo nunca —conduce el juego por su API programática, sin
+ *  pasar por la puerta del teclado—, así que con el driver de bench el jugador
+ *  se movería durante la conversación y el aserto mediría el vacío. Mismo
+ *  motivo y mismo remedio que los guiones 34 y 43.
+ *
+ *  EL CONTROL VA PRIMERO. «El jugador no se movió» y «este guion no sabe mover
+ *  al jugador» son el mismo verde: primero se comprueba que `W` mueve, y solo
+ *  entonces significa algo que con el diálogo delante no mueva. Va antes y no
+ *  después porque el motor falso contesta a cada elección con OTRA línea de
+ *  diálogo: el estado «cerrado» solo dura hasta que llega la respuesta, y un
+ *  control colocado ahí sería una carrera.
  *
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
@@ -74,13 +104,13 @@ async function cuantoAnda(ctx) {
 }
 
 export default async function (ctx) {
-  // ── 0 · El proveedor de TECLADO, que es el único que lee el gate ────────
+  // ── 0 · El proveedor de TECLADO, que es el único que consulta el gate ────
   const url = new URL(ctx.page.url());
   url.searchParams.delete("input");
   await ctx.page.goto(url.toString(), { waitUntil: "domcontentloaded" });
   await ctx.waitFor("el cliente arranca sin el driver de bench", () => Boolean(window.__nefan));
   ctx.expect(
-    "el guion corre con el proveedor de TECLADO (el de bench no lee el gate del diálogo)",
+    "el guion corre con el proveedor de TECLADO (el de bench no consulta el gate del diálogo)",
     await ctx.page.evaluate(
       () => !new URLSearchParams(location.search).has("input") && !window.__nefan.inputDriver,
     ),
@@ -90,30 +120,6 @@ export default async function (ctx) {
   await esperarListaDeSaves(ctx);
   await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
   await comenzar(ctx);
-
-  // El vigilante del INVARIANTE, encendido para toda la partida: en ningún
-  // fotograma pueden discrepar el panel y el gate.
-  //
-  // ES UNA RED, NO EL CANDADO, y conviene saber qué caza. Probado en negativo
-  // el 2026-08-28: con el gate quitado al ABRIR lo pilla (5 fotogramas de
-  // divergencia); con el gate quitado al CERRAR NO lo pilla, porque el motor
-  // contesta con otra línea y el panel vuelve a abrirse antes del siguiente
-  // rAF. Ese caso lo caza el aserto del bloque 3, que lee las dos mitades en
-  // el MISMO turno síncrono del click. Por eso están los dos.
-  await ctx.page.evaluate(() => {
-    window.__qaPar = { muestras: 0, abierto: 0, divergencias: [] };
-    const mirar = () => {
-      const panel = window.__nefan.dialogue().visible;
-      const gate = window.__nefan.state().dialogueActive;
-      window.__qaPar.muestras++;
-      if (panel) window.__qaPar.abierto++;
-      if (panel !== gate && window.__qaPar.divergencias.length < 5) {
-        window.__qaPar.divergencias.push({ panel, gate, n: window.__qaPar.muestras });
-      }
-      requestAnimationFrame(mirar);
-    };
-    requestAnimationFrame(mirar);
-  });
 
   // ── 1 · CONTROL: sin diálogo, `W` mueve ─────────────────────────────────
   const libre = await cuantoAnda(ctx);
@@ -166,88 +172,22 @@ export default async function (ctx) {
     "el NPC contesta y el panel de diálogo se abre",
     () =>
       window.__nefan.dialogue().visible
-        ? {
-            panel: true,
-            gate: window.__nefan.state().dialogueActive,
-            texto: (window.__nefan.dialogue().text ?? "").slice(0, 60),
-          }
+        ? { panel: true, texto: (window.__nefan.dialogue().text ?? "").slice(0, 60) }
         : null,
     120_000,
   );
   ctx.log(`diálogo abierto: ${JSON.stringify(abierto)}`);
-  ctx.expect(
-    "abrir el diálogo pone el panel Y el gate del input, no uno solo (#311)",
-    abierto.panel && abierto.gate === true,
-    JSON.stringify(abierto),
-  );
 
-  // Y lo que el gate SIGNIFICA para quien juega, que es lo que un booleano no
-  // dice: con la conversación delante, andar no anda.
-  //
-  // HONESTIDAD SOBRE LO QUE ESTE ASERTO NO AÍSLA, medido el 2026-08-28 y
-  // vigente: el movimiento está gateado DOS veces —la puerta del proveedor de
-  // teclado y `if (dialoguePanel.isVisible)` en el propio bucle de juego
-  // (`main.ts`, «Movement (suppressed during dialogue)»)—, así que anular el
-  // gate del proveedor deja este aserto VERDE: lo caza el de arriba. Se
-  // conserva porque es el hecho del jugador y porque es el único que se
-  // pondría rojo si alguien quitara el gate del bucle; el que vigila el
-  // emparejamiento es el par de asertos de estado, no este.
+  // ── 3 · Y lo que eso SIGNIFICA para quien juega ─────────────────────────
+  // Rojo SOLO con los dos gates caídos a la vez (3,32 m; la tabla de la
+  // cabecera tiene las tres medidas). Es el hecho del jugador, no el candado de
+  // un mecanismo concreto.
   const conDialogo = await cuantoAnda(ctx);
   ctx.log(`con el diálogo delante: ${JSON.stringify(conDialogo)}`);
   ctx.expect(
-    "…y con la conversación delante el jugador NO se mueve al mantener W",
+    "con la conversación delante el jugador NO se mueve al mantener W",
     conDialogo.metros === 0,
     `${conDialogo.metros.toFixed(2)} m (libre: ${libre.metros.toFixed(2)} m)`,
   );
   await ctx.shot("con-la-conversacion-delante");
-
-  // ── 3 · Se cierra, y los DOS se sueltan en el mismo turno ───────────────
-  // Se pulsa el botón de la opción —el elemento real del panel— desde dentro
-  // de la página para que la lectura de después caiga en el MISMO turno
-  // síncrono que el click: `chooseByIndex` hace `hide()` y llama a `onChoice`,
-  // que es donde vive `cerrarDialogo()`. Sin esa simultaneidad, la respuesta
-  // del motor reabre el panel y lo medido sería otra cosa.
-  await ctx.page.evaluate(() => {
-    // Cortesía del panel: un click en su cuerpo completa el texto de golpe, y
-    // las opciones no se pintan hasta entonces.
-    document.getElementById("dialogue-text").click();
-  });
-  await ctx.waitFor(
-    "las opciones de respuesta están en pantalla",
-    () => document.querySelector('#dialogue-choices [data-action="choice:0"]')?.textContent ?? null,
-    30_000,
-  );
-  const alCerrar = await ctx.page.evaluate(() => {
-    const leer = () => ({
-      panel: window.__nefan.dialogue().visible,
-      gate: window.__nefan.state().dialogueActive,
-    });
-    const antes = leer();
-    document.querySelector('#dialogue-choices [data-action="choice:0"]').click();
-    return { antes, despues: leer() };
-  });
-  ctx.log(`al elegir una opción: ${JSON.stringify(alCerrar)}`);
-  ctx.expect(
-    "cerrar el diálogo suelta el panel Y el gate en el mismo turno (#311)",
-    alCerrar.antes.panel === true &&
-      alCerrar.antes.gate === true &&
-      alCerrar.despues.panel === false &&
-      alCerrar.despues.gate === false,
-    JSON.stringify(alCerrar),
-  );
-
-  // ── 4 · El invariante, sobre toda la partida ────────────────────────────
-  const par = await ctx.page.evaluate(() => ({ ...window.__qaPar }));
-  ctx.log(`vigilante del par: ${JSON.stringify(par)}`);
-  ctx.expect(
-    "el vigilante ha visto la conversación abierta de verdad (si no, no vigiló nada)",
-    par.abierto > 0 && par.muestras > 30,
-    JSON.stringify(par),
-  );
-  ctx.expect(
-    "en NINGÚN fotograma el panel y el gate del input discreparon (#311)",
-    par.divergencias.length === 0,
-    JSON.stringify(par.divergencias),
-  );
-  await ctx.shot("tras-elegir-una-respuesta");
 }
