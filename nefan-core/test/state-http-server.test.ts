@@ -258,8 +258,8 @@ describe("state HTTP API", () => {
       tile: { tx: 0, ty: 0 },
       biome: "forest_floor",
       ground: [{ id: "camino", kind: "path", points: [[0, 41], [128, 52]], w: 2 }],
-      structures: [
-        { type: "room", rect: [10, 70, 10, 7], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 4, width: 2 }] },
+      volumes: [
+        { id: "posada", label: "posada", type: "building", rect: [10, 70, 10, 7], cutaway: true, doors: [{ edge: "s", at: 4, w: 3 }] },
       ],
       entities: [{ id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1], glyph: "@" }],
     };

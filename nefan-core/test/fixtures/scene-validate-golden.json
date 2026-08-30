@@ -55,10 +55,10 @@
         "distinct_building_heights": 0
       }
     },
-    "structure-fuera-del-grid": {
+    "parche-de-terreno-fuera-del-grid": {
       "ok": false,
       "errors": [
-        "structures[0]: rect [124,70,10,7] se sale del grid 128x128"
+        "terrain_patches[0] se sale del tile (at [124,70], fila 0 de 10 chars)"
       ],
       "warnings": [],
       "stats": {
@@ -127,7 +127,7 @@
         "doors_reachable": 3,
         "npcs_total": 1,
         "npcs_reachable": 1,
-        "volumes_declared": 0,
+        "volumes_declared": 1,
         "volumes_cap": 160,
         "volumes_total": 1,
         "volumes_total_cap": 200,
@@ -135,7 +135,7 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "dos-chars-sin-declarar": {
@@ -147,22 +147,22 @@
       "stats": {
         "cols": 128,
         "rows": 128,
-        "walkable_cells": 16313,
-        "reachable_cells": 16311,
+        "walkable_cells": 16338,
+        "reachable_cells": 16338,
         "border_reachable": true,
-        "doors_total": 6,
-        "doors_reachable": 6,
+        "doors_total": 3,
+        "doors_reachable": 3,
         "npcs_total": 1,
         "npcs_reachable": 1,
-        "volumes_declared": 0,
+        "volumes_declared": 1,
         "volumes_cap": 160,
-        "volumes_total": 2,
+        "volumes_total": 1,
         "volumes_total_cap": 200,
         "ground_features": 1,
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "chars-reservados-todos-legales": {
@@ -264,7 +264,7 @@
         "doors_reachable": 3,
         "npcs_total": 1,
         "npcs_reachable": 1,
-        "volumes_declared": 0,
+        "volumes_declared": 1,
         "volumes_cap": 160,
         "volumes_total": 1,
         "volumes_total_cap": 200,
@@ -272,13 +272,13 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "player-sobre-muro": {
       "ok": false,
       "errors": [
-        "el spawn del player [10, 70] no es transitable (celda \"W\" u ocupada por un footprint)"
+        "el spawn del player [10, 70] no es transitable (celda \"g\" u ocupada por un footprint)"
       ],
       "warnings": [
         "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
@@ -293,7 +293,7 @@
         "doors_reachable": 0,
         "npcs_total": 1,
         "npcs_reachable": 0,
-        "volumes_declared": 0,
+        "volumes_declared": 1,
         "volumes_cap": 160,
         "volumes_total": 1,
         "volumes_total_cap": 200,
@@ -301,7 +301,7 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "player-bajo-la-huella-de-un-prop": {
@@ -322,7 +322,7 @@
         "doors_reachable": 0,
         "npcs_total": 1,
         "npcs_reachable": 0,
-        "volumes_declared": 0,
+        "volumes_declared": 1,
         "volumes_cap": 160,
         "volumes_total": 2,
         "volumes_total_cap": 200,
@@ -330,7 +330,7 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "huellas-que-bloquean-el-paso": {
@@ -347,7 +347,7 @@
         "doors_reachable": 3,
         "npcs_total": 1,
         "npcs_reachable": 1,
-        "volumes_declared": 0,
+        "volumes_declared": 1,
         "volumes_cap": 160,
         "volumes_total": 3,
         "volumes_total_cap": 200,
@@ -355,7 +355,7 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "player-fuera-del-grid": {
@@ -376,7 +376,7 @@
         "doors_reachable": 0,
         "npcs_total": 1,
         "npcs_reachable": 0,
-        "volumes_declared": 0,
+        "volumes_declared": 1,
         "volumes_cap": 160,
         "volumes_total": 1,
         "volumes_total_cap": 200,
@@ -384,7 +384,7 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "player-en-un-tile-normal": {
@@ -699,7 +699,7 @@
         "doors_reachable": 3,
         "npcs_total": 1,
         "npcs_reachable": 0,
-        "volumes_declared": 0,
+        "volumes_declared": 2,
         "volumes_cap": 160,
         "volumes_total": 2,
         "volumes_total_cap": 200,
@@ -707,7 +707,7 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "npc-sin-sitio-para-el-cuerpo": {
@@ -726,7 +726,7 @@
         "doors_reachable": 3,
         "npcs_total": 1,
         "npcs_reachable": 0,
-        "volumes_declared": 0,
+        "volumes_declared": 2,
         "volumes_cap": 160,
         "volumes_total": 2,
         "volumes_total_cap": 200,
@@ -734,7 +734,7 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "npc-inalcanzable": {
@@ -753,34 +753,9 @@
         "doors_reachable": 3,
         "npcs_total": 1,
         "npcs_reachable": 0,
-        "volumes_declared": 0,
+        "volumes_declared": 2,
         "volumes_cap": 160,
         "volumes_total": 2,
-        "volumes_total_cap": 200,
-        "ground_features": 1,
-        "ground_cap": 64,
-        "scatter_zones": 0,
-        "vegetation_zones": 0,
-        "distinct_building_heights": 0
-      }
-    },
-    "puertas-cutaway-en-volumes": {
-      "ok": true,
-      "errors": [],
-      "warnings": [],
-      "stats": {
-        "cols": 128,
-        "rows": 128,
-        "walkable_cells": 16338,
-        "reachable_cells": 16338,
-        "border_reachable": true,
-        "doors_total": 3,
-        "doors_reachable": 3,
-        "npcs_total": 1,
-        "npcs_reachable": 1,
-        "volumes_declared": 1,
-        "volumes_cap": 160,
-        "volumes_total": 1,
         "volumes_total_cap": 200,
         "ground_features": 1,
         "ground_cap": 64,
@@ -803,7 +778,7 @@
         "doors_reachable": 24,
         "npcs_total": 1,
         "npcs_reachable": 1,
-        "volumes_declared": 1,
+        "volumes_declared": 2,
         "volumes_cap": 160,
         "volumes_total": 2,
         "volumes_total_cap": 200,
@@ -828,7 +803,7 @@
         "doors_reachable": 3,
         "npcs_total": 1,
         "npcs_reachable": 1,
-        "volumes_declared": 0,
+        "volumes_declared": 1,
         "volumes_cap": 160,
         "volumes_total": 1,
         "volumes_total_cap": 200,
@@ -836,13 +811,13 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "ninguna-puerta-alcanzable": {
       "ok": false,
       "errors": [
-        "el vano de la puerta south de la structure [10, 70, 10, 7] no lo cruza un cuerpo: ninguna de sus 3 celda(s) es alcanzable desde la entrada del tile (¿lo tapa un volumen, o es más estrecho que un NPC?)",
+        "el vano de la puerta \"s\" de \"posada\" no lo cruza un cuerpo: ninguna de sus 3 celda(s) es alcanzable desde la entrada del tile (¿lo tapa un volumen, o es más estrecho que un NPC?)",
         "el NPC \"barkeep\" en [14, 73] no es alcanzable desde el player"
       ],
       "warnings": [],
@@ -856,7 +831,7 @@
         "doors_reachable": 0,
         "npcs_total": 1,
         "npcs_reachable": 0,
-        "volumes_declared": 0,
+        "volumes_declared": 2,
         "volumes_cap": 160,
         "volumes_total": 2,
         "volumes_total_cap": 200,
@@ -864,7 +839,7 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "entrada-sin-sitio-para-el-cuerpo": {
@@ -883,7 +858,7 @@
         "doors_reachable": 0,
         "npcs_total": 1,
         "npcs_reachable": 0,
-        "volumes_declared": 0,
+        "volumes_declared": 2,
         "volumes_cap": 160,
         "volumes_total": 2,
         "volumes_total_cap": 200,
@@ -891,7 +866,7 @@
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     },
     "mapa-casi-todo-agua": {
@@ -1009,7 +984,7 @@
       "errors": [
         "chars de terreno sin declarar en terrain_legend: \"X\"",
         "scatter inválido: scatter_zones[0]: kind 'fantasma' sin generador en scatter_generators",
-        "el spawn del player [10, 70] no es transitable (celda \"W\" u ocupada por un footprint)",
+        "el spawn del player [10, 70] no es transitable (celda \"g\" u ocupada por un footprint)",
         "el vecino north tiene un river que muere en vuestra costura en la celda 30: tu tile debe continuarlo con celdas transitables compatibles en el borde north, celdas 28..32"
       ],
       "warnings": [
@@ -1025,7 +1000,7 @@
         "doors_reachable": 0,
         "npcs_total": 1,
         "npcs_reachable": 0,
-        "volumes_declared": 0,
+        "volumes_declared": 1,
         "volumes_cap": 160,
         "volumes_total": 1,
         "volumes_total_cap": 200,
@@ -1033,7 +1008,7 @@
         "ground_cap": 64,
         "scatter_zones": 1,
         "vegetation_zones": 0,
-        "distinct_building_heights": 0
+        "distinct_building_heights": 1
       }
     }
   }

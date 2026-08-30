@@ -135,7 +135,7 @@ async function situarse(ctx, id, objetivo, tolerancia = 1.5, tramos = 12) {
  *     viva pasaba en VERDE mientras el aserto de la huida caía.
  *   · Y se pregunta por `probeCollide`, que es la colisión REAL del juego
  *     (terreno + plan + esquema), no por `terrain_grid`: el grid de terreno
- *     lleva los muros de las `structures`, pero NO los `volumes` — y el
+ *     lleva los chars sólidos del tile, pero NO los `volumes` — y el
  *     `mostrador` es un volume. Preguntándole a él, el empotrado también salía
  *     verde. Un candado que no puede ponerse rojo en el caso que existe no es
  *     un candado. */

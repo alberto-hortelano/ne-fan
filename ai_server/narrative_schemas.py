@@ -816,28 +816,11 @@ def validate_scene_response(data: dict) -> dict:
         cleaned.append(clean_ent)
     data["entities"] = cleaned
 
-    # ── Primitivas v2 (structures / vegetation_zones) ────────────────────
+    # ── Primitivas v2 (vegetation_zones) ─────────────────────────────────
     # Passthrough con chequeo de forma superficial: la expansión determinista
     # y la validación semántica (rects dentro del grid, puertas válidas…)
     # viven en nefan-core (scene-expand.ts / scene-validate.ts). Una entrada
     # sin la forma mínima se descarta con traza — nunca tumba la escena.
-    raw_structures = data.get("structures")
-    if isinstance(raw_structures, list):
-        clean_structures = []
-        for i, s in enumerate(raw_structures[:16]):
-            if (
-                isinstance(s, dict)
-                and s.get("type") == "room"
-                and isinstance(s.get("rect"), list)
-                and len(s["rect"]) == 4
-                and all(isinstance(v, int) for v in s["rect"])
-            ):
-                clean_structures.append(s)
-            else:
-                print(f"validate_scene_response: structures[{i}] malformada, descartada", flush=True)
-        data["structures"] = clean_structures
-    else:
-        data.pop("structures", None)
 
     # Vegetación de masa: espejo del zod de nefan-core
     # (src/scene/blueprint/vegetation.ts, la fuente de verdad). `density` son

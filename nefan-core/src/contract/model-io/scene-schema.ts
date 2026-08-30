@@ -20,8 +20,8 @@
  *  `.passthrough()` a nivel ESCENA y `.strict()` en la entity, y la asimetría
  *  está medida, no razonada: el passthrough de escena sostiene campos vivos
  *  que el zod aún no declara (`ambient_event` en las 3 fixtures commiteadas;
- *  `__expanded`, `structures` y `place_anchors` en los snapshots, más
- *  `terrain_patches` en el espejo Python) — declararlos y cerrarlo es otro
+ *  `__expanded` y `place_anchors` en los snapshots, más `terrain_patches` en
+ *  el espejo Python) — declararlos y cerrarlo es otro
  *  issue; el de la entity no sostenía NINGUNO — censadas las 95
  *  entities de las 7 escenas Format D del árbol (fixtures, snapshots, saves,
  *  labs), cero claves fuera de las 12. Un passthrough que no protege tráfico

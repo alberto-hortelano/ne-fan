@@ -51,8 +51,8 @@ describe("computeTileEdges", () => {
       tile: { tx: 0, ty: 0 },
       scene_id: "tile_0_0",
       biome: "grass",
-      // Room pegada al borde norte (fila 0 = muro W).
-      structures: [{ type: "room", rect: [50, 0, 10, 6], doors: [{ side: "south", at: 4 }] }],
+      // Muro pegado al borde norte (fila 0 = "W").
+      terrain_patches: [{ at: [50, 0], rows: ["WWWWWWWWWW"] }],
       entities: [],
     });
     const edges = computeTileEdges(expanded);

@@ -631,37 +631,12 @@ interface Vano {
   cells: Cell[];
 }
 
-/** Huecos de las `structures` (el camino viejo: el expander ya talló el vano
- *  en el grid). */
-function structureDoors(scene: Record<string, unknown>): Vano[] {
-  const vanos: Vano[] = [];
-  const structures = Array.isArray(scene.structures) ? (scene.structures as Record<string, unknown>[]) : [];
-  for (const s of structures) {
-    const rect = s.rect as [number, number, number, number] | undefined;
-    const doors = Array.isArray(s.doors) ? (s.doors as { side: string; at: number; width?: number }[]) : [];
-    if (!Array.isArray(rect)) continue;
-    const [c0, r0, w, h] = rect;
-    for (const d of doors) {
-      const dw = Math.max(1, d.width ?? 1);
-      const cells: Cell[] = [];
-      for (let k = 0; k < dw; k++) {
-        if (d.side === "north") cells.push([c0 + d.at + k, r0]);
-        else if (d.side === "south") cells.push([c0 + d.at + k, r0 + h - 1]);
-        else if (d.side === "west") cells.push([c0, r0 + d.at + k]);
-        else if (d.side === "east") cells.push([c0 + w - 1, r0 + d.at + k]);
-      }
-      if (cells.length > 0) vanos.push({ label: `puerta ${d.side} de la structure [${rect.join(", ")}]`, cells });
-    }
-  }
-  return vanos;
-}
-
-/** Huecos de los buildings CUTAWAY declarados en `volumes` (el camino
- *  moderno: el greybox talla el hueco en runtime; aquí cuentan como
- *  telemetría y objetivo de alcanzabilidad — sus celdas son suelo llano para
- *  el flood, los muros del volume no se estampan en walkable). Antes
- *  doors_total = 0 con un cutaway CON doors: stat engañoso (playtest
- *  2026-08-13). */
+/** Huecos de los buildings CUTAWAY declarados en `volumes` — la ÚNICA vía de
+ *  un vano desde que se retiró la primitiva de salas, #301 (el greybox talla el hueco en
+ *  runtime; aquí cuentan como telemetría y objetivo de alcanzabilidad — sus
+ *  celdas son suelo llano para el flood, los muros del volume no se estampan
+ *  en walkable). Antes doors_total = 0 con un cutaway CON doors: stat
+ *  engañoso (playtest 2026-08-13). */
 function cutawayDoors(scene: Record<string, unknown>): Vano[] {
   const vanos: Vano[] = [];
   for (const v of sceneVolumes(scene)) {
@@ -686,9 +661,9 @@ function cutawayDoors(scene: Record<string, unknown>): Vano[] {
   return vanos;
 }
 
-/** Todos los VANOS del tile, vengan del camino viejo o del moderno. */
+/** Todos los VANOS del tile. */
 export function collectDoorCells(view: TileView, found: Findings): Vano[] {
-  const vanos = [...structureDoors(view.scene), ...cutawayDoors(view.scene)];
+  const vanos = cutawayDoors(view.scene);
   found.stats.doors_total = vanos.reduce((n, v) => n + v.cells.length, 0);
   return vanos;
 }
@@ -833,15 +808,15 @@ function checkCrossingsReachable(targets: ReachTarget[], reach: Reach, found: Fi
  *
  *  Que sobre alguna CELDA suelta sigue siendo aviso, pero NO porque el borde
  *  de un hueco quede fuera del flood —medido: un vano limpio de 3, 4 o 6
- *  celdas no deja ninguna—. La única del corpus, `alta_fantasia` [66,63],
- *  sale de que ese edificio se declara DOS VECES sobre el mismo rect: la
- *  `structures` (room, puerta `width:3`) talla `_` en las columnas 63-65 del
- *  grid, y el `volumes` (taberna cutaway, puerta `w:4`) deja libres 63-66 en
- *  el plan. La celda 66 la libera el plan y la sigue tapando el muro `W` que
- *  escribió la otra declaración, así que `collectDoorCells` cuenta 7 celdas
- *  (3+4) y una no es transitable — con la puerta perfectamente cruzable. Un
- *  aviso es lo que merece: es una incoherencia de la DECLARACIÓN, no un hueco
- *  estrecho. */
+ *  celdas no deja ninguna—. La única que llegó a verse, `alta_fantasia`
+ *  [66,63], salía de declarar el MISMO edificio dos veces sobre el mismo
+ *  rect: la primitiva de salas tallaba `_` en las columnas 63-65 del grid y un
+ *  `volumes` cutaway dejaba libres 63-66 en el plan, con la celda 66
+ *  liberada por el plan y todavía tapada por el muro `W` de la otra
+ *  declaración. Esa causa concreta murió con la primitiva (#301) —hoy el vano
+ *  tiene UN declarante—, pero el aviso se queda: una celda suelta sigue
+ *  significando que la declaración se contradice, no que el hueco sea
+ *  estrecho, y por eso es aviso y no error. */
 function checkDoorsReachable(vanos: Vano[], reach: Reach, found: Findings): void {
   let alcanzables = 0;
   let sueltas = 0;

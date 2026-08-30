@@ -4,22 +4,25 @@ import assert from "node:assert/strict";
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
 import { forestTile, CAMINO_OESTE_ESTE } from "./fixtures/tiles.js";
 
-/** Tile de bootstrap jugable: el camino del fixture, una sala enterable con
- *  puerta al sur lejos de él, un NPC dentro y el jugador fuera. Format D
+/** Tile de bootstrap jugable: el camino del fixture, un edificio enterable
+ *  (`building` con `cutaway`, la única forma de declarar un interior desde
+ *  #301) con puerta al sur lejos de él, un NPC dentro y el jugador fuera.
+ *  Format D
  *  tiene UNA variante desde que se retiraron la escena suelta (issue #172) y
  *  el plató proscenio, así que lo que estos tests comprueban —muros, puertas,
  *  chars sin declarar, spawn del jugador, alcanzabilidad— se mide sobre el
  *  tile, que es donde vive. El bootstrap es el único tile que lleva player. */
-function makeScene(): Record<string, unknown> {
+function makeScene(over: Record<string, unknown> = {}): Record<string, unknown> {
   return forestTile({
     scene_id: "claro_val",
-    structures: [
-      { type: "room", rect: [10, 70, 10, 7], wall_char: "W", floor_char: "o", doors: [{ side: "south", at: 4, width: 2 }] },
+    volumes: [
+      { id: "posada", label: "posada", type: "building", rect: [10, 70, 10, 7], cutaway: true, doors: [{ edge: "s", at: 4, w: 3 }] },
     ],
     entities: [
       { id: "barkeep", kind: "npc", name: "Tabernero", cell: [14, 73], footprint: [1, 1], glyph: "n" },
       { id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1], glyph: "@" },
     ],
+    ...over,
   });
 }
 
@@ -32,7 +35,10 @@ describe("validateScene", () => {
     assert.deepEqual(r.errors, []);
     assert.equal(r.ok, true);
     assert.equal(r.stats.border_reachable, true);
-    // width 2 pedida → auto-ensanchada a 3 celdas por el expander (mpc 0.5).
+    // Las 3 celdas del vano del cutaway cuentan y son alcanzables. Es la
+    // regresión del playtest 2026-08-13: una posada cutaway CON doors
+    // reportaba doors_total 0 porque solo se contaban los vanos de la
+    // primitiva de salas, que ya no existe (#301).
     assert.equal(r.stats.doors_total, 3);
     assert.equal(r.stats.doors_reachable, 3);
     assert.equal(r.stats.npcs_reachable, 1);
@@ -40,7 +46,7 @@ describe("validateScene", () => {
 
   it("rechaza un player sobre un muro o sobre la huella de un prop", () => {
     const s1 = makeScene();
-    (s1.entities as Record<string, unknown>[])[1].cell = [10, 70]; // esquina de muro
+    (s1.entities as Record<string, unknown>[])[1].cell = [10, 70]; // esquina del anillo de muro del cutaway
     const r1 = validateScene(s1, bootstrap);
     assert.ok(r1.errors.some((e) => e.includes("spawn del player")), r1.errors.join(" | "));
 
@@ -51,9 +57,10 @@ describe("validateScene", () => {
   });
 
   it("rechaza chars de terreno sin declarar en la leyenda", () => {
-    const s = makeScene();
-    // El char entra por la sala: floor_char sin entrada en terrain_legend.
-    (s.structures as Record<string, unknown>[])[0].floor_char = "X";
+    // El char entra por un `terrain_patches`, la primitiva viva que escribe en
+    // el grid: el cutaway no escribe chars, así que un caso sobre él no
+    // podría ponerse rojo.
+    const s = makeScene({ terrain_patches: [{ at: [11, 71], rows: ["XXXXXXXX"] }] });
     const r = validateScene(s, bootstrap);
     assert.ok(r.errors.some((e) => e.includes("sin declarar") && e.includes('"X"')), r.errors.join(" | "));
   });
@@ -65,7 +72,7 @@ describe("validateScene", () => {
     // mínimo cuyo interior admite un CUERPO, y así el caso mide lo que dice
     // —encerrado— y no «no cabe», que tiene su propio mensaje y su caso.
     const s = makeScene();
-    (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 7, 7], doors: [] });
+    (s.volumes as Record<string, unknown>[]).push({ id: "cubil", label: "cubil", type: "building", rect: [40, 90, 7, 7], cutaway: true });
     (s.entities as Record<string, unknown>[])[0].cell = [43, 93];
     const r = validateScene(s, bootstrap);
     assert.equal(r.ok, false, "una escena que encierra a un NPC no se entrega");
@@ -77,7 +84,7 @@ describe("validateScene", () => {
   it("y el «cuarto de 5×5» del issue, donde el cuerpo NO cabe, lo dice con otro mensaje", () => {
     // Son dos arreglos distintos para el motor: abrir un paso vs. ensanchar.
     const s = makeScene();
-    (s.structures as Record<string, unknown>[]).push({ type: "room", rect: [40, 90, 5, 5], doors: [] });
+    (s.volumes as Record<string, unknown>[]).push({ id: "cubil", label: "cubil", type: "building", rect: [40, 90, 5, 5], cutaway: true });
     (s.entities as Record<string, unknown>[])[0].cell = [42, 92];
     const r = validateScene(s, bootstrap);
     assert.equal(r.ok, false);
@@ -88,29 +95,10 @@ describe("validateScene", () => {
   });
 
   it("convierte una primitiva imposible en error legible (sin throw)", () => {
-    const s = makeScene();
-    (s.structures as Record<string, unknown>[])[0].rect = [124, 70, 10, 7];
+    const s = makeScene({ terrain_patches: [{ at: [124, 70], rows: ["oooooooooo"] }] });
     const r = validateScene(s, bootstrap);
     assert.equal(r.ok, false);
-    assert.ok(r.errors.some((e) => e.includes("se sale del grid")), r.errors.join(" | "));
-  });
-
-  it("doors_total cuenta también las puertas de buildings cutaway en volumes", () => {
-    // Regresión (playtest 2026-08-13): una posada declarada como volumes
-    // cutaway CON doors reportaba doors_total: 0 (solo se contaban las
-    // structures legacy) — telemetría engañosa para el motor.
-    const s = makeScene();
-    delete s.structures;
-    s.volumes = [
-      {
-        id: "posada", label: "posada", type: "building",
-        rect: [10, 70, 10, 7], cutaway: true,
-        doors: [{ edge: "s", at: 4, w: 3 }],
-      },
-    ];
-    const r = validateScene(s, bootstrap);
-    assert.equal(r.stats.doors_total, 3, "las 3 celdas del vano cutaway cuentan");
-    assert.equal(r.stats.doors_reachable, 3, "y son alcanzables desde el player");
+    assert.ok(r.errors.some((e) => e.includes("se sale del tile")), r.errors.join(" | "));
   });
 });
 

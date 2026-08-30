@@ -37,10 +37,11 @@ RESERVED TERRAIN CHARS — the engine stamps the grid for you, using these:
 - d dirt/tilled       a sand              o wood/dock planks
 - W wall (SOLID)
 
-They need no legend entry. Any OTHER char your primitives introduce (a
-`structures` wall_char/floor_char of your own) MUST be declared in
-terrain_legend, or the tile is rejected: an undeclared char is terrain nobody
-knows how to paint or whether it can be walked on.
+They need no legend entry, and they are the ONLY ones you can produce: no
+primitive you are offered writes a char of its own. Any OTHER char that ends
+up in the grid MUST be declared in terrain_legend, or the tile is rejected: an
+undeclared char is terrain nobody knows how to paint or whether it can be
+walked on.
 
 SOLIDITY — collision (the player physically CANNOT cross solid cells)
 - "W" (wall) and "w" (water) BLOCK movement. "b" (bridge) is walkable over water.

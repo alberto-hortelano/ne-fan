@@ -389,7 +389,7 @@ describe("fronteras arquitectónicas", () => {
       cliente([
         {
           path: "nefan-html/src/main.ts",
-          text: "const zonas = raw.vegetation_zones;\nconst rooms = raw.structures;\n",
+          text: "const zonas = raw.vegetation_zones;\nconst mpc = raw.meters_per_cell;\n",
           imports: [],
         },
       ]).map((v) => `${v.path}:${v.line}`),

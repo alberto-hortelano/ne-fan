@@ -68,9 +68,10 @@ describe("createSimCollisionProvider", () => {
 });
 
 /** #232: el bridge NO veía los volúmenes DERIVADOS del esquema, solo los
- *  `volumes` declarados. En un tile cuyo pueblo viene de `structures` —o cuyo
- *  bosque viene de `vegetation_zones`, que es la mayoría— los NPCs se metían
- *  dentro de las casas y atravesaban los troncos que al jugador sí le frenan.
+ *  `volumes` declarados. En un tile cuyo pueblo viene de las `entities`
+ *  estáticas —o cuyo bosque viene de `vegetation_zones`, que es la mayoría—
+ *  los NPCs se metían dentro de las casas y atravesaban los troncos que al
+ *  jugador sí le frenan.
  *  Hoy el bridge lee el plan COMPUESTO de la world scene: la misma huella con
  *  la que juega el jugador. */
 describe("createSimCollisionProvider · el bridge colisiona con el plan COMPUESTO", () => {
@@ -101,19 +102,20 @@ describe("createSimCollisionProvider · el bridge colisiona con el plan COMPUEST
     assert.deepEqual(blandos.map((v) => v.id), [], "cada tronco derivado frena también en el bridge");
   });
 
-  it("los edificios que salen de `structures` dejan de ser transparentes", () => {
+  it("los edificios que salen de una entity estática dejan de ser transparentes", () => {
     const provider = createSimCollisionProvider(makeState({
-      structures: [{ type: "room", rect: [40, 40, 12, 10], doors: [{ side: "south", at: 4, width: 3 }] }],
+      entities: [
+        { id: "granero", kind: "building", name: "granero", cell: [40, 40], footprint: [12, 10], glyph: "B" },
+      ],
     }));
-    // La celda 41 es INTERIOR a la sala: en el grid es suelo ("o") y solo la
-    // tapa el anillo de 1,5 celdas del volumen derivado. Radio pequeño a
-    // propósito: con uno de jugador el AABB tocaría la fila 40, que ya era
-    // muro en el grid, y el test pasaría sin comprobar nada nuevo.
-    const anillo = cellCenter(45, 41);
-    assert.ok(provider.blocksCircle(anillo.x, anillo.z, 0.1), "el anillo del edificio derivado bloquea");
+    // El granero NO está en `volumes`: es una entity, y su volumen lo deriva
+    // el compositor. En el grid ASCII su rect sigue siendo hierba, así que si
+    // el bridge mirara solo el terreno no bloquearía nada aquí. Radio pequeño
+    // a propósito: lo que se mide es la huella del volumen derivado, no el
+    // margen de un cuerpo grande.
     const dentro = cellCenter(45, 45);
-    assert.ok(!provider.blocksCircle(dentro.x, dentro.z, 0.1), "…y el interior de la sala se puede pisar");
-    const vano = cellCenter(45, 49);
-    assert.ok(!provider.blocksCircle(vano.x, vano.z, 0.1), "…y su vano sigue abierto");
+    assert.ok(provider.blocksCircle(dentro.x, dentro.z, 0.1), "la huella del edificio derivado bloquea");
+    const fuera = cellCenter(45, 60);
+    assert.ok(!provider.blocksCircle(fuera.x, fuera.z, 0.1), "…y la calle de al lado se puede pisar");
   });
 });
