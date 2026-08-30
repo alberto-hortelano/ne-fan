@@ -28,6 +28,20 @@
  *  arte: contorno del área, las dos cuerdas del cono y el parche entero sobre
  *  el embarcadero.
  *
+ *  Y LAS DOS ESCENAS SON DOS (#308). Hasta el 2026-08-30 el bloque 3 pedía la
+ *  segunda fixture y no la esperaba: `loadFixture` era fire-and-forget y la
+ *  espera de aquí se contentaba con dos condiciones que la PRIMERA fixture ya
+ *  satisfacía (`status().scene`, que solo anula `resetWorld`, y `activeTile`,
+ *  que es `tile_0_0` en las dos porque ambas son `tile{0,0}`). Lo caro no era
+ *  el rojo ocasional: era el verde. Una corrida verde de ese día imprimió
+ *  «suelo del puerto: 57 calcos» y «suelo de robledo: 57 calcos» — midió el
+ *  puerto DOS VECES y afirmó tres cosas sobre campo abierto que no comprobó.
+ *  Hoy la carga se espera (el hook devuelve su promesa), el bloque 3 la retiene
+ *  con una compuerta para que el negativo sea causal y no una moneda al aire, y
+ *  cada medida publica QUÉ escena midió. Ojo al tell: `topY` no discrimina
+ *  —0,105 m en las DOS fixtures, medido— ni `activeTile` tampoco; el único
+ *  número que separa una escena de la otra es `calcos`, 57 contra 14.
+ *
  *  EN NEGATIVO: con el código de antes de esta tanda el paso 1 se pone rojo en
  *  `puerto_tile` (holgura −0,019 m: el parche está bajo el deck) y el paso 2
  *  sigue verde — porque el borde ESTABA en cuadro, solo que con alfa cero.
@@ -44,11 +58,20 @@
  *  antes/después exige reiniciar el cliente, o el negativo sale verde.
  */
 
+import { cargarFixture, retenerFixture } from "../lib/fixtures.mjs";
+
 /** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
  *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
  *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
  *  de guion es. */
 export const sinMotor = "cierra el título y carga fixtures del selector; nunca arranca partida";
+
+/** Las dos escenas del guion, nombradas: el puerto es el caso duro (embarcadero
+ *  sobre agua, la capa MÁS ALTA del suelo) y el pueblo es campo abierto. Que
+ *  son DOS y no una es todo el sentido del guion, y #308 fue exactamente
+ *  medirlas creyendo que eran dos cuando eran la misma. */
+const PUERTO = "puerto_tile";
+const ABIERTA = "robledo_tile";
 
 /** Espera a que el renderer EMITA frames nuevos: una captura pedida justo
  *  después de mover al jugador fotografía el frame ANTERIOR (la cámara se
@@ -94,19 +117,6 @@ async function cerrarMuroSiHay(ctx) {
     const muro = document.getElementById("narrative-loader");
     if (muro?.classList.contains("error")) document.getElementById("narrative-loader-dismiss")?.click();
   });
-}
-
-async function cargarTile(ctx, fixture) {
-  await ctx.nefan("loadFixture", fixture);
-  await ctx.waitFor(`la fixture ${fixture} carga`, () => (window.__nefan.status().scene ? true : null));
-  return ctx.waitFor(
-    `el mundo 3D instala el tile de ${fixture}`,
-    () => {
-      const f = window.__nefan.fps();
-      return f && f.ready && f.activeTile ? f : null;
-    },
-    20_000,
-  );
 }
 
 /** Ataca y devuelve el estado del telegraph DURANTE el wind-up (no al final:
@@ -155,7 +165,7 @@ export default async function (ctx) {
   const corto = catalogo.includes("quick") ? "quick" : catalogo[0];
 
   // ── 1. El puerto: la escena que enterraba el parche ──────────────────────
-  await cargarTile(ctx, "puerto_tile");
+  await cargarFixture(ctx, PUERTO);
 
   // Que la fixture sea de verdad el caso duro: sin embarcaderos sobre agua no
   // hay capa alta que enterrar nada, y este guion sería un verde vacío.
@@ -170,8 +180,11 @@ export default async function (ctx) {
   ctx.expect("…y agua bajo ellos", aguas.length >= 1, `${aguas.length}`);
 
   const sueloPuerto = (await ctx.nefan("fps")).suelo;
+  // El TELL nombra la escena que se está MIDIENDO, no la que se pidió: hasta
+  // #308 esta línea decía «suelo del puerto» y «suelo de robledo» pasara lo
+  // que pasara, y una corrida verde llegó a imprimir 57 calcos en las dos.
   ctx.log(
-    `suelo del puerto: ${sueloPuerto.calcos} calcos · cara alta ${sueloPuerto.topY} m · ` +
+    `midiendo «${plano.scene_id}»: ${sueloPuerto.calcos} calcos · cara alta ${sueloPuerto.topY} m · ` +
       `el parche va a ${sueloPuerto.overlayY} m ⇒ holgura ${sueloPuerto.holguraM} m`,
   );
   ctx.expect(
@@ -222,11 +235,58 @@ export default async function (ctx) {
   await ctx.shot("telegraph-puerto-sobre-el-embarcadero");
 
   // ── 3. Y en campo abierto, que es donde se juzga el dibujo ───────────────
-  const fixtureAbierta = await cargarTile(ctx, "robledo_tile");
-  ctx.log(`tile abierto: ${fixtureAbierta.activeTile}`);
+  // LA COMPUERTA, y es PERMANENTE (#308). Retiene el JSON de la fixture en el
+  // borde de la red mientras se piden unos frames: con la respuesta retenida el
+  // módulo NO PUEDE haber llegado, así que un `loadFixture` que devuelva
+  // «hecho» aquí miente SIEMPRE. Es la diferencia entre un negativo y una
+  // moneda al aire: sin ella este guion salió 6 de 6 verde en solitario el
+  // mismo día en que la sonda lo ponía rojo 2 de 4, midiendo el puerto dos
+  // veces y afirmando tres cosas sobre campo abierto que nunca comprobó.
+  //
+  // No es un `waitFor` a propósito: esperar a que la escena llegue volvería a
+  // esconder la regresión. Lo que hay detrás de la compuerta es una AFIRMACIÓN
+  // (`cargarFixture`, `qa/lib/fixtures.mjs`), y por eso el rojo nombra la
+  // escena que había en vez de caer tres asertos más abajo.
+  const compuerta = await retenerFixture(ctx, ABIERTA);
+  let fallo = null;
+  const carga = cargarFixture(ctx, ABIERTA).catch((e) => {
+    fallo = e;
+    return null;
+  });
+  await esperarFrames(ctx);
+  const retenida = await compuerta.soltar();
+  ctx.log(`compuerta sobre ${ABIERTA}.json: ${JSON.stringify(retenida)}`);
+  const fixtureAbierta = await carga;
+  if (fallo) throw fallo;
+  // NO CONCLUYENTE ANTES QUE VERDE: si la compuerta no llegó a retener nada
+  // (fixture ya en el registro de módulos ESM, patrón que dejó de casar), lo de
+  // arriba pasa por no haber probado nada.
+  ctx.expect(
+    "la compuerta retuvo de verdad el JSON de la fixture (si no, no hay negativo que valga)",
+    retenida.interceptadas === 1 && !retenida.porCortafuegos && retenida.fallos.length === 0,
+    JSON.stringify(retenida),
+  );
+
+  // EL TELL (#308): qué escena se está midiendo, con los tres datos que
+  // discriminan. `topY` NO discrimina —medido: 0,105 m en las DOS fixtures— y
+  // `activeTile` tampoco, porque las dos son `tile{0,0}`. El único tell real es
+  // `calcos`: 57 el puerto, 14 el pueblo. Van también el pitch y la posición,
+  // que es donde se veía el daño colateral (la carga tardía llamaba a
+  // `resetWorld` y devolvía la mirada a 0° a mitad del guion).
+  const medida = await ctx.page.evaluate(() => {
+    const s = window.__nefan.state();
+    return { escena: window.__nefan.scene?.scene_id ?? null, pitchDeg: s.pitchDeg, pos: { x: s.pos.x, z: s.pos.z } };
+  });
   const sueloRobledo = (await ctx.nefan("fps")).suelo;
   ctx.log(
-    `suelo de robledo: ${sueloRobledo.calcos} calcos · cara alta ${sueloRobledo.topY} m ⇒ holgura ${sueloRobledo.holguraM} m`,
+    `midiendo «${medida.escena}» (tile ${fixtureAbierta.activeTile}): ` +
+      `${sueloRobledo.calcos} calcos · cara alta ${sueloRobledo.topY} m ⇒ holgura ${sueloRobledo.holguraM} m · ` +
+      `pitch ${medida.pitchDeg.toFixed(2)}° · pos ${medida.pos.x.toFixed(2)},${medida.pos.z.toFixed(2)}`,
+  );
+  ctx.expect(
+    `lo que se mide en campo abierto ES «${ABIERTA}» y no la fixture anterior`,
+    medida.escena === ABIERTA && sueloRobledo.calcos !== sueloPuerto.calcos,
+    `escena «${medida.escena}» con ${sueloRobledo.calcos} calcos; el puerto trae ${sueloPuerto.calcos}`,
   );
   ctx.expect(
     "el suelo de la fixture del golden tampoco llega a la cota del parche",
@@ -268,15 +328,9 @@ export default async function (ctx) {
   );
   await ctx.nefan("inputDriver.selectAttack", corto);
   const tCorto = await enWindup(ctx);
-  // El borde y la MIRADA, no solo el alcance: este aserto es intermitente
-  // (medido el 2026-08-28 sobre `326b859` sin tocar: 4 rojos de 6 corridas,
-  // siempre con el mismo `y=742`), y sin saber con qué pitch se midió no hay
-  // por dónde empezar. Es diagnóstico, no un aserto: no cambia el veredicto.
-  const mirada = await ctx.nefan("state");
   ctx.log(
     `telegraph "${corto}": alcance ${JSON.stringify(tCorto.alcance)} m · radio ${tCorto.areaRadius} m · ` +
-      `borde lejos ${JSON.stringify(tCorto.borde.lejos)} en ${tCorto.viewport.w}×${tCorto.viewport.h} · ` +
-      `pitch ${mirada.pitchDeg?.toFixed(2)}° · pos ${mirada.pos.x.toFixed(2)},${mirada.pos.z.toFixed(2)}`,
+      `borde lejos ${JSON.stringify(tCorto.borde.lejos)} en ${tCorto.viewport.w}×${tCorto.viewport.h}`,
   );
   ctx.expect(
     `"${corto}" llega menos lejos que "${lento}" y el parche lo dice`,

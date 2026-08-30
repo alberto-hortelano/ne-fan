@@ -70,7 +70,23 @@ export default async function (ctx) {
   const antes = await ctx.page.evaluate(loQueDiceLaPantalla);
 
   // --- Se conduce el <select> REAL, por su evento `change` ---
-  await ctx.nefan("loadFixture", ROTA);
+  // Y desde #308 el hook DEVUELVE la carga, así que pedir una fixture cuyo JSON
+  // no llega RECHAZA en quien la pidió. Es el mismo contrato fail-loud que este
+  // guion vigila en la pantalla, un piso más abajo: el `catch` de `paso()` es
+  // para lo que ve quien juega (registro, línea del juego, desplegable devuelto
+  // a su sitio) y NO puede ser también el desagüe por el que el fallo
+  // desaparece de vuelta a quien lo pidió. Antes esta línea resolvía siempre,
+  // porque el hook devolvía `undefined` hubiera pasado lo que hubiera pasado.
+  const rechazo = await ctx.nefan("loadFixture", ROTA).then(
+    () => null,
+    (e) => String(e),
+  );
+  ctx.log(`loadFixture("${ROTA}") con el JSON abortado: ${rechazo ?? "resolvió"}`);
+  ctx.expect(
+    "pedir una fixture cuyo JSON no llega RECHAZA en quien la pidió, no solo en la pantalla (#308)",
+    rechazo !== null && rechazo.includes(ROTA),
+    rechazo ?? "loadFixture resolvió como si la fixture hubiera cargado",
+  );
 
   const dicho = await ctx
     .waitFor(
