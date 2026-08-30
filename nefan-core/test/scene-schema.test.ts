@@ -148,7 +148,7 @@ describe("EmittedSceneSchema — un vano más estrecho que el cuerpo mayor no ll
 /** El TOPE del `footprint` de una entity MÓVIL (#300).
  *
  *  El contrato dejaba declarar `footprint: [8, 8]` a un NPC —4 metros— mientras
- *  el simulador lo mueve como un círculo de 0,5 m de radio y no lee el campo ni
+ *  el simulador lo mueve con un cuerpo de 0,5 m de radio y no lee el campo ni
  *  una vez (`grep footprint src/simulation/` = 0). Lo declarado y lo que el
  *  juego honra no estaban atados por nada, así que el motor podía prometer un
  *  cuerpo que no existe y nadie se enteraba.

@@ -144,7 +144,7 @@ def _celdas_que_cubre_radio(radio_m: float, mpc: float) -> int:
 
 
 # Tope del `footprint` de una entity MÓVIL, en celdas (#300): lo declarado no
-# puede ser más ancho que el círculo que el simulador mueve. Los cinco kinds
+# puede ser más ancho que el cuerpo que el simulador mueve. Los cinco kinds
 # restantes no se mueven y su footprint es geometría, sin tope.
 FOOTPRINT_MAX_CELLS_POR_KIND = {
     "npc": _celdas_que_cubre_radio(NPC_RADIUS_M, TILE_MPC),

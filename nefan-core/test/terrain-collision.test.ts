@@ -206,7 +206,13 @@ describe("el cuerpo mayor que transita el mundo", () => {
     // Misma sonda que arriba, leída al revés: el tope es el mayor ancho en
     // celdas que NO basta para que ese cuerpo cruce — o sea, tanto ancho como
     // cuerpo hay. Un footprint mayor declararía un bicho más ancho que el
-    // círculo que el simulador mueve.
+    // cuerpo que el simulador mueve.
+    //
+    // Quien decide ese ancho es `blocksCircle`, que pese al nombre estampa un
+    // AABB (su bucle `floor()` inclusive), no un disco. Esta sonda lo vigila:
+    // convertida en una prueba de distancia de verdad, se pone roja. Lo que NO
+    // gobierna el cuerpo es `circleOverlapsCell` —un solo llamante, la exención
+    // de `blocksMove`—, y por eso tocarla no rompe nada aquí.
     const pasillo = (n: number): TerrainGridData => ({
       grid: ["W".repeat(4) + ".".repeat(n) + "W".repeat(4)],
       cols: 8 + n,

@@ -41,11 +41,14 @@ export const NPC_RADIUS_M = 0.5;
  *  `footprint` de la entity ni una vez (`grep footprint src/simulation/` = 0).
  *  Hasta #300 eso era un agujero: el contrato le ponía `minimum: 1` sin
  *  máximo, así que una criatura podía declarar `footprint:[8,8]` —4 metros— y
- *  seguir moviéndose como un círculo de 0,5 m, con el motor prometiendo un
- *  cuerpo que el juego no honra. Hoy el contrato no lo deja EXPRESAR: el zod
+ *  seguir moviéndose con el cuerpo de 0,5 m de radio, con el motor prometiendo un
+ *  cuerpo que el juego no honra. Hoy el CONTRATO no lo deja expresar: el zod
  *  de la escena topa el footprint de los kinds móviles con
- *  `celdasQueCubreRadio` sobre estos mismos radios, así que lo declarable no
- *  puede pasarse de lo simulable. El día que el sim derive el radio del
+ *  `celdasQueCubreRadio` sobre estos mismos radios, así que nada de lo que el
+ *  motor emite ni de lo que se pre-genera puede pasarse de lo simulable.
+ *  Cuidado con leerlo de más: ese zod corre en el pre-flight de narrative-mcp,
+ *  en el saneador de ai_server y en `world-snapshot.ts` — NO en la carga de un
+ *  save, que no pasa por zod. El día que el sim derive el radio del
  *  `footprint`, quien llame a `celdasLibresParaRadio` pasa el `max` sobre las
  *  entities de la escena y nada más cambia. */
 export const BODY_RADIUS_M = Math.max(PLAYER_RADIUS_M, NPC_RADIUS_M);
@@ -76,10 +79,21 @@ export function celdasLibresParaRadio(radioM: number, mpc: number): number {
  *
  *  De aquí sale el TOPE del `footprint` de una entity móvil
  *  (`RADIO_SIMULADO_POR_KIND` en `contract/model-io/scene-schema.ts`): lo que
- *  el motor declara ocupar no puede ser más ancho que el círculo que el
+ *  el motor declara ocupar no puede ser más ancho que el cuerpo que el
  *  simulador mueve de verdad. Que no sea un literal es lo que hace el candado:
  *  mover un radio mueve el contrato con él, en vez de dejarlo prometiendo un
- *  cuerpo que ya nadie honra. */
+ *  cuerpo que ya nadie honra.
+ *
+ *  Y ese cuerpo es un CUADRADO, no un círculo: quien lo estampa es
+ *  `blocksCircle` (`:164-175`), cuyo propio bucle recorre el AABB `x±r` con
+ *  `floor()` INCLUSIVE. No lo estampa `circleOverlapsCell` —que sí parece la
+ *  candidata por el nombre y es lo que decía este comentario hasta que QA lo
+ *  midió—: esa tiene UN llamante, la exención de «celda que ya solapabas» de
+ *  `blocksMove` (`:185`), y convertirla en una prueba de distancia deja la
+ *  batería entera verde. La diferencia importa porque el tope se justifica
+ *  sobre la forma del cuerpo: si `blocksCircle` pasara a ser un círculo de
+ *  verdad, esta cuenta dejaría de describirlo, y por eso hay una sonda que se
+ *  pone roja cuando eso ocurre (`test/terrain-collision.test.ts`). */
 export function celdasQueCubreRadio(radioM: number, mpc: number): number {
   return Math.floor((2 * radioM) / mpc);
 }

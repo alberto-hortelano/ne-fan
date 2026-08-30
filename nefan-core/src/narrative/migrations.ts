@@ -52,10 +52,18 @@ export function migrateActiveSceneToTile(state: NarrativeState): void {
   // casa de 3×2 celdas a mpc 2 son 6×4 m y tiene que seguir siéndolo. Para un
   // `npc` o el `player` NO lo es: su cuerpo lo fija el radio del actor EN
   // METROS (`NPC_RADIUS_M`/`PLAYER_RADIUS_M`), que el remuestreo no cambia, y
-  // el sim no lee el campo. Escalarlo ×4 no agrandaba a nadie, y desde el tope
-  // de #300 el contrato ni siquiera lo admite: un save v3 migrado nacería
-  // rechazado por el gate. No es un clamp silencioso — se declara qué se
-  // conserva y por qué.
+  // el sim no lee el campo. Escalarlo ×4 no agrandaba a nadie: solo escribía
+  // en el save un cuerpo que nada honra. No es un clamp silencioso — se
+  // declara qué se conserva y por qué.
+  //
+  // OJO a lo que este cambio NO es: no es que el gate de #300 fuese a rechazar
+  // el save migrado. Medido: `loadSession` asigna `scenes_loaded` sin pasar por
+  // zod y en `bridge/` no hay un solo uso de `EmittedSceneSchema` ni de
+  // `ExpandedSceneSchema`, así que un save v3 con `footprint:[8,8]` carga,
+  // migra y conserva su [8,8]. El tope vive en el CONTRATO —lo que el motor
+  // emite (pre-flight de narrative-mcp + el saneador de ai_server) y lo que se
+  // pre-genera (`world-snapshot.ts:48`)—, no en la carga de una partida. Que
+  // el zod corra también al cargar es otro trabajo, y está en issue.
   //
   // Y con el footprint escalado se va lo que ESTABA HACIENDO sin decirlo:
   // centrar al actor en su bloque. Una celda vieja se convierte en `scale`×
