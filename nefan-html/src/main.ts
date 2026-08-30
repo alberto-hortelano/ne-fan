@@ -265,17 +265,17 @@ const session = createClientSession({
   // primero que quisiera refrescar una faceta a mitad de partida se llevaba
   // el mundo por delante—. Aquí el argumento se LEE: si el mundo pintado ya
   // es el de esa sesión, no hay nada que vaciar.
-  mundo: (sessionId) => {
+  mundo: ({ sessionId }) => {
     if (sessionId === mundoPintadoDe) return;
     mundoPintadoDe = sessionId;
     resetWorld();
   },
-  style: (styleId) => applySessionStyle(styleId),
-  theme: (uiTheme) => applyUiTheme(uiTheme),
-  renderModes: (renderMode, characterMode) => applyRenderModes(renderMode, characterMode),
-  combat: (combatSystem) => applySessionCombatSystem(combatSystem),
-  history: (sessionId) => historyBrowser.setSession(sessionId),
-  entrada: (sessionId) => entrada.sesion(sessionId),
+  style: ({ styleId }) => applySessionStyle(styleId),
+  theme: ({ uiTheme }) => applyUiTheme(uiTheme),
+  renderModes: ({ renderMode, characterMode }) => applyRenderModes(renderMode, characterMode),
+  combat: ({ combatSystem }) => applySessionCombatSystem(combatSystem),
+  history: ({ sessionId }) => historyBrowser.setSession(sessionId),
+  entrada: ({ sessionId }) => entrada.sesion(sessionId),
   // El gate del diálogo, que hasta #311 `leave()` no deshacía: volver al
   // título dejaba puesto lo que abrió la conversación. Llama a
   // `cerrarDialogo()`, el dueño único del par panel+gate, en vez de repetir
@@ -292,7 +292,7 @@ const session = createClientSession({
   //
   // Lo que esto NO hace, dicho para que no se lea de más: no baja el gate a
   // `puerta-de-teclado.ts`. El porqué sigue escrito allí y no ha cambiado.
-  dialogo: (sessionId) => {
+  dialogo: ({ sessionId }) => {
     if (sessionId === dialogoDeSesion) return;
     dialogoDeSesion = sessionId;
     cerrarDialogo();

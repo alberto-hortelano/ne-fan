@@ -35,19 +35,24 @@ const PARTIDA: SessionFacets = {
 
 /** Doble que anota QUÉ sink se llamó y con qué. Se construye como
  *  `FacetSinks` completo a propósito: una faceta nueva sin sink no compila
- *  aquí, y un sink que `apply` no llame sale en el aserto de enumeración. */
+ *  aquí, y un sink que `apply` no llame sale en el aserto de enumeración.
+ *
+ *  Cada sink recibe un `Pick` de las facetas y desestructura SU campo (#316):
+ *  el aplicador ya no elige qué escalar pasar, así que no puede pasar el
+ *  equivocado. Lo que este doble anota sigue siendo el VALOR, para que los
+ *  asertos de abajo digan lo mismo que decían. */
 function espia(): { sinks: FacetSinks; llamadas: Array<[string, unknown]> } {
   const llamadas: Array<[string, unknown]> = [];
   const sinks: FacetSinks = {
-    mundo: (sessionId) => llamadas.push(["mundo", sessionId]),
-    style: (styleId) => llamadas.push(["style", styleId]),
-    theme: (uiTheme) => llamadas.push(["theme", uiTheme]),
-    renderModes: (renderMode, characterMode) =>
+    mundo: ({ sessionId }) => llamadas.push(["mundo", sessionId]),
+    style: ({ styleId }) => llamadas.push(["style", styleId]),
+    theme: ({ uiTheme }) => llamadas.push(["theme", uiTheme]),
+    renderModes: ({ renderMode, characterMode }) =>
       llamadas.push(["renderModes", `${renderMode}/${characterMode}`]),
-    combat: (combatSystem) => llamadas.push(["combat", combatSystem]),
-    history: (sessionId) => llamadas.push(["history", sessionId]),
-    entrada: (sessionId) => llamadas.push(["entrada", sessionId]),
-    dialogo: (sessionId) => llamadas.push(["dialogo", sessionId]),
+    combat: ({ combatSystem }) => llamadas.push(["combat", combatSystem]),
+    history: ({ sessionId }) => llamadas.push(["history", sessionId]),
+    entrada: ({ sessionId }) => llamadas.push(["entrada", sessionId]),
+    dialogo: ({ sessionId }) => llamadas.push(["dialogo", sessionId]),
   };
   return { sinks, llamadas };
 }
