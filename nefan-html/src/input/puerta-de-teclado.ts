@@ -26,11 +26,11 @@
  *     los botones del título). No son input de juego: son controles con foco,
  *     y el título los necesita vivos.
  *   · El diálogo. Suprimir el movimiento y el ataque mientras hay una
- *     conversación abierta sigue siendo cosa de cada manejador: la puerta
- *     tendría que preguntárselo a alguien, y hoy la respuesta vive en
- *     `input.dialogueActive`, que escribe `main.ts`. Bajarlo aquí exige un
- *     canal de configuración con un defecto silencioso («no hay diálogo») que
- *     nadie vería fallar. Queda escrito, no olvidado.
+ *     conversación abierta sigue siendo cosa de cada manejador, que se lo
+ *     pregunta a su dueño (`InputDeps.dialogoAbierto()`, derivado del panel
+ *     desde #314). Bajarlo aquí exige un canal de configuración con un
+ *     defecto silencioso («no hay diálogo») que nadie vería fallar. Queda
+ *     escrito, no olvidado.
  *
  *     REVISADO EN #311 y la decisión NO cambia. Se midió la alternativa que
  *     parecía obvia —un `data-dialogo` en la raíz, como `data-titulo`— y mide

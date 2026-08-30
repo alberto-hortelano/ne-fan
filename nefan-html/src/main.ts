@@ -504,9 +504,18 @@ applyUiTheme(BASE_UI_THEME);
 // Proveedor de input (plugin): default teclado+ratón; ?input=scripted instala
 // el driver programático de bench. Un id desconocido no arranca — fail-loud.
 const requestedInputId = new URLSearchParams(location.search).get("input") ?? undefined;
+/** «Hay una conversación abierta», y SOLO desde su dueño (#314).
+ *
+ *  Antes esto era un campo público del proveedor que `abrirDialogo` ponía y
+ *  `cerrarDialogo` quitaba: una tercera representación del panel, escribible
+ *  desde cualquier módulo del cliente. Ahora el proveedor PREGUNTA y la
+ *  respuesta se deriva del panel, así que no hay nada que desincronizar ni
+ *  nadie de fuera que pueda mentir. Lo comparten el proveedor de juego y las
+ *  teclas dev porque es la misma pregunta. */
+const dialogoAbierto = (): boolean => dialoguePanel.isVisible;
 let input: InputProvider;
 try {
-  input = inputRegistry.create(requestedInputId, {});
+  input = inputRegistry.create(requestedInputId, { dialogoAbierto });
 } catch (err) {
   errors.push("input", `proveedor de input inválido (?input=${requestedInputId})`, err);
   throw err;
@@ -514,9 +523,7 @@ try {
 input.onAttackTypeChanged = () => renderAttackBar();
 
 // Teclas de desarrollo (G/B): fijas, independientes del provider.
-const devInput = new DevToolsInput({
-  isDialogueActive: () => input.dialogueActive,
-});
+const devInput = new DevToolsInput({ dialogoAbierto });
 
 // Hook de bench (labs/narrative / pruebas de navegador): estado vivo legible
 // desde la consola o la automatización. Solo lectura — no es API del juego.
@@ -1180,7 +1187,10 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
        *  el WASD es horizontal por diseño. */
       pitchDeg: (playerPitch * 180) / Math.PI,
       input: { ...input.state },
-      dialogueActive: input.dialogueActive,
+      /** La clave sigue llamándose así porque la leen los guiones 37, 41 y 42;
+       *  lo que cambió es de DÓNDE sale (#314): del panel, que es el dueño,
+       *  en vez de un campo del proveedor que ya no existe. */
+      dialogueActive: dialogoAbierto(),
       combatSystem: sessionCombatSystemId,
       attackCatalog: attackCatalog.map((a) => a.id),
       blocked: {
@@ -1200,8 +1210,8 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
      *  con alguien (#323). Solo lectura. */
     puedeAtacar: () => ({
       raton: document.pointerLockElement !== null,
-      dialogo: input.dialogueActive,
-      ok: document.pointerLockElement !== null && !input.dialogueActive,
+      dialogo: dialogoAbierto(),
+      ok: document.pointerLockElement !== null && !dialogoAbierto(),
     }),
     /** Los ENEMIGOS que el cliente tiene en escena, con la vida que el sim le
      *  está diciendo. Hermano de `npcs()` y por la misma razón: un guion tiene
@@ -1438,21 +1448,20 @@ function getSelectedParams(): EffectiveParams {
 /** ABRIR Y CERRAR UN DIÁLOGO SON DOS COSAS QUE TIENEN QUE IR JUNTAS (#311).
  *
  *  «Hay una conversación abierta» vivía en dos sitios que nadie obligaba a
- *  coincidir: el panel (`dialoguePanel`) y el gate del input
- *  (`input.dialogueActive`, que suprime moverse y atacar). Estaban emparejados
- *  A MANO en cinco sitios, y bastaba un `dialogueActive = false` sin su `hide()`
- *  —o al revés— para dejar al jugador con el panel puesto y el mundo
- *  respondiendo, o con el panel fuera y los controles muertos. Eso compilaba,
- *  pasaba lint y pasaba la batería.
+ *  coincidir: el panel (`dialoguePanel`) y el gate del input —un campo público
+ *  del proveedor que suprimía moverse y atacar—. Estaban emparejados A MANO en
+ *  cinco sitios, y bastaba apagar uno sin su `hide()` —o al revés— para dejar
+ *  al jugador con el panel puesto y el mundo respondiendo, o con el panel fuera
+ *  y los controles muertos. Eso compilaba, pasaba lint y pasaba la batería.
  *
- *  Aquí hay un solo dueño de las dos, así que el par no se puede desemparejar
- *  sin borrar estas funciones. Es el mecanismo que de verdad cierra #311; el
- *  sink de la faceta `dialogo` va ENCIMA de esto y cubre otra cosa: que volver
- *  al título lo deshaga aunque nadie se acuerde.
- *
- *  Lo que NO unifica, dicho para que no se lea de más: sigue habiendo dos
- *  representaciones (el flag y el panel), solo que con un dueño. Colapsarlas
- *  en una es #314. */
+ *  #311 le puso un dueño único, que son estas dos funciones. #314 se llevó el
+ *  espejo entero: el proveedor PREGUNTA por `dialogoAbierto()` en vez de
+ *  guardar una copia, así que ya no hay par que desemparejar — queda UNA
+ *  representación (el panel) y su reflejo en el DOM, que #314 no funde a
+ *  propósito. Estas funciones siguen existiendo porque abrir y cerrar tienen
+ *  más partes que el panel (el ratón, que el panel suelta y no devuelve), y el
+ *  sink de la faceta `dialogo` va ENCIMA y cubre otra cosa: que volver al
+ *  título lo deshaga aunque nadie se acuerde. */
 function abrirDialogo(
   speaker: string,
   text: string,
@@ -1464,10 +1473,11 @@ function abrirDialogo(
   // devolverlo al cerrar es cosa nuestra y hasta el 2026-08-29 no lo hacía
   // nadie — ver `cerrarDialogo`.
   ratonCapturadoAntesDelDialogo = document.pointerLockElement !== null;
+  // Y con el panel en pantalla, el input de juego queda suprimido solo: el
+  // proveedor PREGUNTA por `dialogoAbierto()`, que es este mismo panel (#314).
+  // Aquí había un flag del proveedor que había que levantar a mano junto al
+  // `show()`, y apagar a mano junto al `hide()` de `cerrarDialogo`.
   dialoguePanel.show(speaker, text, choices, who);
-  // Suprime movimiento/ataque del InputProvider mientras el panel está
-  // abierto (las teclas 1-3/T las gestiona el propio panel).
-  input.dialogueActive = true;
 }
 
 /** Cierra el diálogo: el panel fuera y el input devuelto al jugador.
@@ -1477,7 +1487,6 @@ function abrirDialogo(
  *  el segundo, y `hide()` solo asigna. Poder llamarlo de más es lo que permite
  *  que el sink de la faceta lo use sin saber si había algo abierto. */
 function cerrarDialogo(): void {
-  input.dialogueActive = false;
   dialoguePanel.hide();
   devolverElRatonTrasElDialogo();
 }

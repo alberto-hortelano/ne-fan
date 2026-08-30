@@ -11,6 +11,7 @@ import { alPulsarRaton, alPulsarTecla } from "./puerta-de-teclado.js";
 import {
   createInputState,
   DEFAULT_ATTACK_IDS,
+  type InputDeps,
   type InputProvider,
   type InputState,
   type LookDelta,
@@ -18,7 +19,6 @@ import {
 
 export class KeyboardInputProvider implements InputProvider {
   state: InputState = createInputState();
-  dialogueActive = false;
   tileProposalActive = false;
   onAttackTypeChanged?: (typeId: string) => void;
 
@@ -43,15 +43,19 @@ export class KeyboardInputProvider implements InputProvider {
    *  sobre funciones que nadie había registrado — dos no-ops mudos. */
   private readonly desenganches: (() => void)[] = [];
 
-  constructor() {
+  constructor(private readonly deps: InputDeps) {
     const onKeyDown = (e: KeyboardEvent): void => {
-      // Dialogue mode suppresses combat/movement keys
-      // (dialogue-panel.ts handles its own keys with stopPropagation)
-      if (this.dialogueActive) return;
+      // Con una conversación abierta, las teclas de juego (moverse, atacar,
+      // elegir ataque, E/R/Y/N) están suprimidas; las suyas las gestiona el
+      // propio panel. Se PREGUNTA al dueño del panel en vez de leer una copia
+      // local (#314): un campo se puede desincronizar, una pregunta no.
+      if (this.deps.dialogoAbierto()) return;
       // stopPropagation NO corta otros listeners del mismo window: si el
-      // panel de diálogo ya consumió esta tecla (elección 1-3 que cierra el
-      // diálogo y apaga dialogueActive en el mismo evento), sin esta guarda
-      // la tecla se filtraba al selector de ataque del HUD.
+      // panel de diálogo ya consumió esta tecla (elección 1-3, que lo cierra
+      // en el MISMO evento y deja de haber diálogo abierto antes de que este
+      // manejador corra), sin esta guarda la tecla se filtraba al selector de
+      // ataque del HUD. Es la única red que queda tras derivar el gate del
+      // panel, así que no es cinturón sobre tirantes: es el tirante.
       if (e.defaultPrevented) return;
       // Los eventos sintéticos sin `key` (autorrelleno, IME) los descarta la
       // puerta, que es por donde entra este manejador.
@@ -115,7 +119,7 @@ export class KeyboardInputProvider implements InputProvider {
       // igual. Con pointer lock activo la UI ya es inclicable, pero la
       // guarda evita toda una familia de bugs al soltarlo.
       if ((e.target as Element | null)?.closest?.("#game-ui")) return;
-      if (e.button === 0 && document.pointerLockElement !== null && !this.dialogueActive) {
+      if (e.button === 0 && document.pointerLockElement !== null && !this.deps.dialogoAbierto()) {
         this.state.attackRequested = true;
       }
     };
@@ -156,7 +160,7 @@ export class KeyboardInputProvider implements InputProvider {
   // --- IntentSink: la UI clicable levanta los MISMOS flags que las teclas ---
 
   queueAttack(): void {
-    if (!this.dialogueActive) this.state.attackRequested = true;
+    if (!this.deps.dialogoAbierto()) this.state.attackRequested = true;
   }
 
   queueInteract(): void {

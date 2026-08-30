@@ -1,22 +1,25 @@
-/** #311. «Hay una conversación abierta» vive en DOS sitios que nadie obliga a
- *  coincidir —el panel (`dialoguePanel`) y el gate del input
- *  (`input.dialogueActive`, que suprime moverse y atacar)— y hasta esta tanda
- *  se emparejaban a mano en cinco lugares del cliente.
+/** #311 y #314. «Hay una conversación abierta» vivía en DOS sitios que nadie
+ *  obligaba a coincidir —el panel (`dialoguePanel`) y un campo público del
+ *  proveedor de input, que suprime moverse y atacar— y se emparejaban a mano
+ *  en cinco lugares del cliente.
  *
- *  POR QUÉ EXISTE. El arreglo de #311 es `abrirDialogo()` / `cerrarDialogo()`,
- *  dueños únicos del par. Lo que lo canda es que no haya más sitios donde
- *  escribirlo… y eso no lo comprueba nada: la regla de `arch-rules.json` que el
- *  plan pedía se retiró (subía la deuda +5, ver #314), y el sink `dialogo` de
- *  las facetas —lo único que `tsc` sí canda— cubre OTRA cosa: volver al título.
- *  Además NINGÚN guion de la batería abría un diálogo (grep a cero el
- *  2026-08-28), así que desemparejar el flag del panel compilaba, pasaba lint y
- *  pasaba los 34 guiones. Esto es lo que se pone rojo si vuelve a pasar.
+ *  POR QUÉ EXISTE. El arreglo de #311 fue `abrirDialogo()` / `cerrarDialogo()`,
+ *  dueños únicos del par; el de #314 se llevó el par entero — el proveedor
+ *  PREGUNTA (`InputDeps.dialogoAbierto()`, derivado del panel) en vez de
+ *  guardar una copia, así que hoy no hay dos cosas que desemparejar. Este guion
+ *  NO se retira con ello: lo que afirma es que el par que ve el JUGADOR —panel
+ *  en pantalla ⇔ controles suprimidos— no diverge en ningún fotograma, y esa
+ *  afirmación sobrevive al mecanismo que la cumple. Es lo que se pondría rojo
+ *  si alguien volviera a introducir una copia (que es lo que `tsc` no impide, y
+ *  por eso #314 dejó además la regla `el-gate-del-dialogo-no-vuelve-a-ser-un-campo`
+ *  en `arch-rules.json`, esta vez SÍ a coste cero de deuda).
  *
- *  SE CORRE SIN `?input=scripted` A PROPÓSITO. El gate solo se LEE en
- *  `keyboard-input-provider.ts`: `ScriptedInputProvider` tiene el campo
- *  `dialogueActive` y no lo mira nunca, así que con el driver de bench el
- *  jugador se movería durante la conversación y el aserto mediría el vacío.
- *  Mismo motivo y mismo remedio que el guion 34.
+ *  SE CORRE SIN `?input=scripted` A PROPÓSITO. El gate solo lo consulta
+ *  `keyboard-input-provider.ts`: `ScriptedInputProvider` no lo pregunta nunca
+ *  —conduce el juego por su API programática, sin pasar por la puerta del
+ *  teclado—, así que con el driver de bench el jugador se movería durante la
+ *  conversación y el aserto mediría el vacío. Mismo motivo y mismo remedio que
+ *  el guion 34.
  *
  *  EL CONTROL VA PRIMERO (bloque 1). «El jugador no se movió» y «este guion no
  *  sabe mover al jugador» son el mismo verde: primero se comprueba que `W`
@@ -181,14 +184,14 @@ export default async function (ctx) {
   // Y lo que el gate SIGNIFICA para quien juega, que es lo que un booleano no
   // dice: con la conversación delante, andar no anda.
   //
-  // HONESTIDAD SOBRE LO QUE ESTE ASERTO NO AÍSLA, medido el 2026-08-28: el
-  // movimiento está gateado DOS veces —`input.dialogueActive` en el provider de
+  // HONESTIDAD SOBRE LO QUE ESTE ASERTO NO AÍSLA, medido el 2026-08-28 y
+  // vigente: el movimiento está gateado DOS veces —la puerta del proveedor de
   // teclado y `if (dialoguePanel.isVisible)` en el propio bucle de juego
-  // (`main.ts`, «Movement (suppressed during dialogue)»)—, así que quitando el
-  // `dialogueActive = true` de `abrirDialogo` este aserto sigue VERDE: lo caza
-  // el de arriba. Se conserva porque es el hecho del jugador y porque es el
-  // único que se pondría rojo si alguien quitara el gate del bucle; el que
-  // vigila el emparejamiento es el par de asertos de estado, no este.
+  // (`main.ts`, «Movement (suppressed during dialogue)»)—, así que anular el
+  // gate del proveedor deja este aserto VERDE: lo caza el de arriba. Se
+  // conserva porque es el hecho del jugador y porque es el único que se
+  // pondría rojo si alguien quitara el gate del bucle; el que vigila el
+  // emparejamiento es el par de asertos de estado, no este.
   const conDialogo = await cuantoAnda(ctx);
   ctx.log(`con el diálogo delante: ${JSON.stringify(conDialogo)}`);
   ctx.expect(

@@ -57,8 +57,6 @@ export interface IntentSink {
 export interface InputProvider extends IntentSink {
   /** Estado continuo, leído por el game loop cada frame. */
   readonly state: InputState;
-  /** When true, movement and combat inputs are suppressed (dialogue active). */
-  dialogueActive: boolean;
   /** True mientras hay una propuesta de tile en pantalla: Y/N responden a
    *  ella. Lo fija el game loop. */
   tileProposalActive: boolean;
@@ -83,7 +81,28 @@ export interface InputProvider extends IntentSink {
   dispose(): void;
 }
 
-/** El proveedor no recibe nada: sus listeners viven en `window` (teclas,
- *  ratón bajo pointer lock). Recibía el lienzo por la rueda del zoom, que se
- *  fue con la vista oblicua — en primera persona no hay nada que acercar. */
-export type InputDeps = Record<string, never>;
+/** Lo que el proveedor le PREGUNTA a su dueño. Sus listeners siguen viviendo
+ *  en `window` (teclas, ratón bajo pointer lock); lo que recibe aquí no es un
+ *  lienzo —el de la rueda del zoom se fue con la vista oblicua— sino la única
+ *  pregunta que no puede contestar solo.
+ *
+ *  «HAY UN DIÁLOGO ABIERTO» SE PREGUNTA, NO SE COPIA (#314). Hasta hoy era un
+ *  campo público mutable del proveedor —una TERCERA representación del mismo
+ *  estado junto a `dialoguePanel.isVisible` y al `[hidden]` del DOM—: el bucle
+ *  lo escribía a mano al abrir y al cerrar, y cualquier módulo del cliente
+ *  podía escribirlo también. #311 le puso un dueño único
+ *  (`abrirDialogo`/`cerrarDialogo`) y dejó dicho que colapsar las
+ *  representaciones era este issue. Quedan las DOS que #314 no funde a
+ *  propósito: el panel y su reflejo en el DOM.
+ *
+ *  Es un MÉTODO y no un booleano a propósito, y ahí está el candado: un campo
+ *  se asigna, y una función que se evalúa cada vez no se puede desincronizar
+ *  del panel porque no guarda nada. Quien prohíbe el cuarto espejo es el TIPO:
+ *  el campo ya no existe en `InputProvider`, así que ningún módulo de fuera
+ *  puede escribirlo. El checker `el-gate-del-dialogo-no-vuelve-a-ser-un-campo`
+ *  (arch-rules.json) cubre lo que el tipo no puede: que nadie lo re-declare. */
+export interface InputDeps {
+  /** ¿Hay una conversación en pantalla ahora mismo? La contesta el dueño del
+   *  panel (`main.ts`), que es quien lo abre y lo cierra. */
+  dialogoAbierto(): boolean;
+}

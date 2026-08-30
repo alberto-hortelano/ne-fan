@@ -529,6 +529,18 @@
           "reason": "Es LA puerta: aquí se DEFINE el registro que descarta mientras el título manda. Prohibirlo aquí sería prohibir que exista. Su prosa nombra el patrón, y por eso la exención cubre el fichero entero y no una línea."
         }
       ]
+    },
+    {
+      "id": "el-gate-del-dialogo-no-vuelve-a-ser-un-campo",
+      "desc": "El proveedor de input PREGUNTA si hay diálogo abierto; no guarda una copia",
+      "why": "LO QUE CAZA: que `dialogueActive` reaparezca en `nefan-html/src/input/**` — como campo de `InputProvider`, como propiedad de una implementación, o como prosa que lo dé por vivo.\n\nPOR QUÉ NO BASTA EL TIPO, que es la pregunta honesta que hay que contestar antes de añadir un checker. #314 quitó el campo público: hoy el proveedor recibe `InputDeps.dialogoAbierto()` y ningún módulo de fuera puede escribir el gate, porque no hay nada que escribir. Esa es la garantía fuerte y la da `tsc`. Lo que `tsc` NO impide es re-DECLARARLO: añadir `dialogueActive = false` a `KeyboardInputProvider` compila tan feliz, no rompe ningún test, y a partir de ahí hay otra vez dos representaciones de «hay una conversación abierta» que nadie obliga a coincidir — que es exactamente el estado del que salieron #311 y #314. La regla cubre la REAPARICIÓN, no la escritura; por eso es de la familia de `campos-retirados-no-vuelven` y no un `warn` con tope.\n\nPOR QUÉ AQUÍ Y NO EN UN TEST: `nefan-html` no tiene harness que pueda ponerse rojo (#241). Mientras eso siga así, el candado del cliente es una regla de contrato o no es nada.\n\nALCANCE, dicho para que no se lea de más: solo `nefan-html/src/input/**`. `main.ts` queda FUERA a propósito y no por descuido — el hook de bench expone la clave `dialogueActive` en `__nefan.state()` y la leen los guiones 37, 41 y 42; ese nombre es la API del banco, no el espejo, y renombrarlo pondría rojos tres guiones por el motivo equivocado. Lo que la regla protege es el sitio donde el espejo VIVÍA.\n\nEs `error` y entra a CERO ocupantes y CERO exenciones: se midió antes de ponerla (`npm run deuda` = 66 items · Fronteras 15, idéntico con y sin ella). Un candado que hay que pagar para meter no entra.",
+      "severity": "error",
+      "files": [
+        "nefan-html/src/input/**/*.ts"
+      ],
+      "text": {
+        "pattern": "\\bdialogueActive\\b"
+      }
     }
   ]
 }

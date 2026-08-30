@@ -116,9 +116,12 @@ export interface FacetSinks {
    *  juego (moverse, atacar) está suprimido y el panel está en pantalla.
    *
    *  Cuelga de aquí desde #311 por la razón de siempre: era un espejo a mano
-   *  —`input.dialogueActive`, cuatro escrituras sueltas en el cliente, más
-   *  `dialoguePanel.isVisible`— y `leave()` no lo deshacía. La forma exacta
-   *  del bug de #249, que es para lo que existe este módulo. Va el ÚLTIMO del
+   *  —un campo público del proveedor de input, escrito suelto en el cliente,
+   *  más `dialoguePanel.isVisible`— y `leave()` no lo deshacía. La forma
+   *  exacta del bug de #249, que es para lo que existe este módulo. #314 se
+   *  llevó el espejo (hoy el proveedor PREGUNTA por el panel), pero esta
+   *  faceta no sobra: lo que garantiza es que volver al título CIERRE la
+   *  conversación, y de eso el panel no se entera solo. Va el ÚLTIMO del
    *  record: no es destructivo del mundo, así que no tiene por qué correr
    *  antes que nada.
    *
