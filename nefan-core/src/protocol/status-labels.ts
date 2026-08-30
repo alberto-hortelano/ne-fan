@@ -26,12 +26,15 @@
  *  No inventa nada: el status trae `kind`, `placeId` y `tile{tx,ty}`, y el
  *  contexto de pintado (¿hay mundo?, ¿hay overlay abierto?) lo pone el
  *  cliente, que es su dueño. El detalle TÉCNICO no se pierde: se queda en el
- *  `console.warn` del bridge y en el `detail` del error-log del cliente. */
-import type {
-  NarrativeStatusDeJuego,
-  NarrativeStatusDeSesion,
-  NarrativeStatusMessage,
-} from "./messages.js";
+ *  `console.warn` del bridge y en el `detail` del error-log del cliente.
+ *
+ *  LO QUE NO ESTÁ AQUÍ, y estuvo un día: A QUIÉN va el mensaje. Eso es
+ *  `status-reparto.ts`, y son dos decisiones distintas sobre el mismo status
+ *  —qué texto ve el jugador, y a qué canal va— que no comparten ni una llamada.
+ *  Tenerlas juntas sacó a este módulo del conjunto medible en local (133
+ *  mutantes contra un tope de 120); separarlas devuelve a los dos a su bucle
+ *  barato sin tocar ningún umbral. */
+import type { NarrativeStatusDeSesion } from "./messages.js";
 
 /** Lo que el cliente sabe de su propia pantalla en el momento del fallo. */
 export interface ContextoDeRotulo {
@@ -148,73 +151,6 @@ export function rotuloDeStatus(
     detalle,
     salida,
   };
-}
-
-/** A quién le habla un `narrative_status` que difunde el bridge (#312), y
- *  CUÁL de las dos armas resultó ser.
- *
- *  `"titulo"` la barra de pre-generación de mundo · `"juego"` la partida que se
- *  está jugando · `"fallo-ajeno"` el registro de errores, y NADA más ·
- *  `"descartado"` a nadie, con su contador.
- *
- *  Devuelve el mensaje AL LADO del destino, y no solo el destino, porque las
- *  dos cosas son la misma decisión: quien reparte tiene que entregar a cada
- *  canal el arma que ese canal sabe leer, y un destino suelto no estrecha nada
- *  —medido: devolviendo solo el destino, el `switch` del embudo del
- *  cliente sale con `TS2345` en los dos canales y `TS2339` en las dos trazas,
- *  porque `tsc` no puede correlacionar un string con la forma del mensaje—. Con
- *  el par etiquetado, entregar el arma equivocada a un canal no compila, y sigue
- *  habiendo UNA sola función que decide. */
-export type StatusRepartido =
-  /** Se direcciona por JUEGO: a la tarjeta de ESE juego en el título. */
-  | { destino: "titulo"; status: NarrativeStatusDeJuego }
-  /** Lleva MI sello: a la partida que se está jugando. */
-  | { destino: "juego"; status: NarrativeStatusDeSesion }
-  /** Ajeno y es un fallo: se enseña igual, recortado a lo rotulable. */
-  | { destino: "fallo-ajeno"; status: NarrativeStatusDeSesion }
-  /** Ajeno y no es un fallo: a nadie, con su contador. */
-  | { destino: "descartado"; status: NarrativeStatusDeSesion };
-
-/** El reparto, como función pura. Vive en core y no en el cliente porque en el
- *  cliente no hay nada que pueda ponerse rojo: `nefan-html` no tiene harness
- *  (#241). Vive en ESTE fichero desde #313 —antes estaba en
- *  `session/session-facets.ts`, con el nombre `destinoDeStatus`— porque al
- *  dejar de preguntar por el sello dejó de necesitar «cuál es la mía» como algo
- *  más que un argumento; con la mudanza se fue el import de `protocol/messages`
- *  que ensuciaba aquel módulo puro.
- *
- *  EL PROBLEMA que resuelve (#312): hasta entonces el embudo del cliente
- *  filtraba los `narrative_event` por sello y dejaba pasar TODOS los
- *  `narrative_status`. Un `ready` de una partida abandonada llegaba entero a la
- *  viva, y con `spawn` le escribía la posición al jugador — teletransporte, no
- *  «interfaz desbloqueada». `sessionChangedError` (bridge) estrecha la ventana
- *  a los frames ya en vuelo, pero no la cierra.
- *
- *  EL ORDEN DE LAS REGLAS ES EL DISEÑO:
- *
- *  1. Lo que trae `gameId` va al TÍTULO. Y la diferencia con lo que había hasta
- *     #313 no es cosmética: aquí ponía `if (status.kind === "game_gen") return
- *     "titulo"` —una excepción POR KIND, que se saltaba el sello porque el sello
- *     de una pre-generación era basura—. Ahora no hay excepción que hacer: se
- *     pregunta QUÉ IDENTIFICADOR TRAE el mensaje, y un mensaje que se direcciona
- *     por juego no tiene sello que saltarse. El `kind` no reaparece más abajo ni
- *     en el transporte; si reapareciera en cualquiera de los dos sitios, la
- *     excepción solo se habría mudado de sitio.
- *  2. Lo que es mío, a la partida.
- *  3. Lo ajeno que es un FALLO no se calla: un error de una sesión recién muerta
- *     sigue llegando a quien juega. Es el motivo por el que este embudo no
- *     filtraba nada, y por el que la respuesta no es filtrarlo entero sino
- *     partirlo en canales.
- *  4. El resto —un `ready`, un `generating`, un latido de una partida que ya no
- *     está— no tiene destinatario. */
-export function repartirStatus(
-  status: NarrativeStatusMessage,
-  esMio: (sessionId: string) => boolean,
-): StatusRepartido {
-  if ("gameId" in status) return { destino: "titulo", status };
-  if (esMio(status.sessionId)) return { destino: "juego", status };
-  if (status.phase === "error") return { destino: "fallo-ajeno", status };
-  return { destino: "descartado", status };
 }
 
 /** Traduce un fallo de GENERACIÓN a algo que quien juega pueda leer.
