@@ -346,6 +346,72 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Nace ROJA a propósito (#318): al entrar listó los CINCO sitios reales de
+  // nefan-html/src que se redefinían la respuesta en línea, y la misma PR los
+  // migró al contrato. Este test fija lo que el patrón caza y lo que deja
+  // pasar, para que el verde de mañana no sea «el patrón dejó de cazar».
+  it("[error] las-respuestas-de-red-no-se-redefinen-en-linea: el cast a objeto anónimo salta; el cast al contrato no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter(
+        (v) => v.ruleId === "las-respuestas-de-red-no-se-redefinen-en-linea",
+      );
+
+    // Literalmente lo que había hasta esta PR: el cast multilínea de
+    // style-apply.ts:438 (la llave abre en la misma línea y la forma sigue
+    // debajo), el de una línea de title-screen.ts:1194, y la variante sin
+    // paréntesis envolvente que nadie escribió aún pero es el mismo defecto.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/style-apply.ts",
+          text: "// contexto\nconst data = (await res.json()) as {\n  ok?: boolean;\n  cached?: boolean;\n};\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/title-screen.ts",
+          text: "const data = (await res.json()) as { generated: string[]; cost_usd: number };\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/net/x.ts",
+          text: "const d = await res.json() as { ok: boolean };\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/net/x.ts:1",
+        "nefan-html/src/ui/style-apply.ts:2",
+        "nefan-html/src/ui/title-screen.ts:1",
+      ],
+      "el cast a objeto anónimo sobre un .json() tiene que saltar, abra la llave donde la abra",
+    );
+
+    // Y los sanos, callados: el cast a un tipo importado del contrato (el
+    // patrón que los 8 usos legítimos ya seguían), y un `as {` que no viene
+    // de un .json() — un objeto literal casteado no es una respuesta de red.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/style-apply.ts",
+          text: "const data = (await res.json()) as GenerateSurfaceAtlasResponse;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/renderer/sprite-renderer.ts",
+          text: "const meta = (await res.json()) as SpriteSheetMeta;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/z.ts",
+          text: "const opts = base as { color?: string };\n",
+          imports: [],
+        },
+      ]),
+      [],
+      "castar al contrato importado es exactamente lo que la regla pide",
+    );
+  });
+
   // El campo `scattered` y las PRIMITIVAS del esquema entran en dos reglas que
   // ya existían; sin verlas saltar sobre el término nuevo, añadirlo al patrón
   // es una lista que nadie ha probado.

@@ -21,7 +21,6 @@ de personaje de sprite-forge.
 | Endpoint | Proceso | Que hace |
 |----------|---------|----------|
 | `/health` | los 2 | Estado del proceso |
-| `/backend_status` | :8765 | Estado de `ai_vision`. NOTA: hoy no tiene ningún cliente en `nefan-html/src` — candidato a retirada |
 | `/generate_scene` | :8765 | **Canónico** — LLM genera escena open-world (terreno, vegetación, edificios, objetos) |
 | `/analyze_weapon` | :8765 | Vision IA para orientar armas (vía MCP bridge) |
 | `/develop_world` | :8765 | Desarrolla el borrador de mundo de un jugador (kind MCP develop_world) |

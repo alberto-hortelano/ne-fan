@@ -10,6 +10,10 @@
  * No silent fallbacks: when a sheet/skin can't be loaded the API throws and
  * the ErrorLog records the cause. The caller decides whether to surface it.
  */
+import type {
+  SkinSpriteSheetResponse,
+  SpriteSheetMeta,
+} from "@nefan-core/src/contracts/remote-gen.js";
 import { errors } from "../ui/error-log.js";
 
 /** A frame that hasn't decoded yet. Distinct from `null`, which would mean
@@ -20,17 +24,10 @@ const BASE_HERO_MODEL = "y_bot";
 
 export const SPRITE_PENDING = Symbol("sprite-pending");
 export type SpriteImageResult = HTMLImageElement | typeof SPRITE_PENDING;
-export interface SpriteSheetMeta {
-  model: string;
-  anim: string;
-  angle: string;
-  directions: number;
-  frame_count: number;
-  fps: number;
-  duration: number;
-  frame_width: number;
-  frame_height: number;
-}
+
+/** La forma del meta.json (base local o sheet vestido) vive en el contrato:
+ *  es la MISMA a los dos lados del cable. */
+export type { SpriteSheetMeta } from "@nefan-core/src/contracts/remote-gen.js";
 
 export interface SpriteSheet extends SpriteSheetMeta {
   /** frames[dir][frame] — image objects start loading on construction. */
@@ -146,15 +143,11 @@ export class SpriteRenderer {
           err.status = res.status;
           throw err;
         }
-        const data = (await res.json()) as {
-          ok?: boolean;
-          meta?: SpriteSheetMeta;
-          frame_urls?: string[][];
-          hero_url?: string | null;
-          error?: string;
-        };
-        if (!data.ok || !data.meta || !data.frame_urls) {
-          throw new Error(`ai_server /skin_sprite_sheet bad response: ${data.error ?? "missing meta/frame_urls"}`);
+        const data = (await res.json()) as SkinSpriteSheetResponse;
+        // El servicio real jamás emite `error` con 200 (fail-loud por
+        // HTTPException): un 200 sin ok=true es una violación de contrato.
+        if (!data.ok) {
+          throw new Error("ai_server /skin_sprite_sheet: respuesta 200 sin ok=true (viola SkinSpriteSheetResponse)");
         }
         const meta = data.meta;
         if (data.hero_url) {

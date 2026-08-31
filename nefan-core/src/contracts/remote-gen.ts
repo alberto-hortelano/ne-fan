@@ -85,11 +85,44 @@ export interface SkinSpriteSheetRequest {
   style_role?: string;
 }
 
+/** El meta.json de un sprite sheet, tal como lo escribe **sprite-forge**
+ *  (repo aparte) — el mismo shape sirve para los sheets base locales
+ *  (`public/sprites/{model}/{anim}/{angle}/meta.json`) y para los skinneados
+ *  que devuelve `/skin_sprite_sheet`. Contrato observado del wire, como el
+ *  request: el productor no tiene modelo Pydantic. */
+export interface SpriteSheetMeta {
+  model: string;
+  anim: string;
+  angle: string;
+  directions: number;
+  frame_count: number;
+  fps: number;
+  duration: number;
+  frame_width: number;
+  frame_height: number;
+  /** Timestamp ISO local que estampa sprite-forge al generar la hoja
+   *  (p. ej. "2026-08-09T17:22:00"). Viaja SIEMPRE: está en los 11 meta.json
+   *  base de public/sprites/ y en el wire del sheet vestido. */
+  generated_at: string;
+  /** Bloque que AÑADE remote-gen al vestir el sheet (no existe en los meta
+   *  base): de qué hoja base salió y qué costó pintarlo
+   *  (routers/remote_generation.py, `meta.setdefault("skin", …)`). */
+  skin?: {
+    base_key?: string;
+    cost_usd?: number;
+  };
+}
+
 export interface SkinSpriteSheetResponse {
   ok: boolean;
   hash: string;
-  /** meta.json del sheet SKINNEADO (dims, frames, anclas). */
-  meta: Record<string, unknown>;
+  /** true = el sheet salió de la caché de remote-gen sin repagar. El cliente
+   *  lo usa para contabilidad VISIBLE (LED «reusado» vs «pintado» del batch
+   *  de estilo); lo emite siempre el servicio real
+   *  (routers/remote_generation.py). */
+  cached: boolean;
+  /** meta.json del sheet SKINNEADO (dims, frames, anclas + bloque skin). */
+  meta: SpriteSheetMeta;
   /** URLs por dirección → frames, servidas por asset-store
    *  (/cache/sprite_sheet/{hash}/dir_D_frame_FFF.png). Índice = dirección:
    *  el wire manda un array de arrays, no un objeto (estaba mal tipado). */
