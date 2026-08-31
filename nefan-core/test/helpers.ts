@@ -49,6 +49,28 @@ export function makeNarrativeState(storage = new MemorySessionStorage()): {
   return { narrative: new NarrativeState(storage), storage };
 }
 
+/** Escena EXPANDIDA mínima que pasa el gate de `recordSceneLoaded`
+ *  (`ExpandedSceneSchema`, #334): lo que antes se sembraba como
+ *  `{ id: "scene_1" }` eran escenas que el juego jamás produciría y que el
+ *  gate rechaza. SIN `tile` a propósito: un tile exige grid 128×128
+ *  (`computeTileEdges`) y la mayoría de tests no lo necesita — quien lo
+ *  necesite, que expanda un tile de verdad (`expandScenePrimitives`). */
+export function escenaExpandidaDePrueba(
+  id: string,
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    scene_id: id,
+    scene_description: "Escena de prueba.",
+    size: { cols: 4, rows: 4, meters_per_cell: 0.5 },
+    terrain: Array.from({ length: 4 }, () => "gggg"),
+    terrain_legend: {},
+    __expanded: true,
+    entities: [],
+    ...over,
+  };
+}
+
 /** Socket capturador: acumula en `sent` todo lo que el bridge envía. */
 export function makeSocket(): { socket: ClientSocket; sent: ServerMessage[] } {
   const sent: ServerMessage[] = [];

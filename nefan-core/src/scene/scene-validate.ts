@@ -29,6 +29,7 @@
  *  ORDEN son contrato: los congela `test/scene-validate-golden.test.ts`. */
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
+import { DERIVED_ENT_PREFIX } from "./blueprint/derive.js";
 import { MAX_GROUND_FEATURES } from "./blueprint/ground.js";
 import { planCollisionGrid } from "./blueprint/plan-collision.js";
 import { parseScatter } from "./blueprint/scatter.js";
@@ -37,7 +38,7 @@ import { resolveTerrainLegend } from "./scene-normalize.js";
 import { BODY_RADIUS_M, celdasLibresParaRadio } from "./terrain-collision.js";
 import { composeTilePlan, MAX_TILE_VOLUMES } from "./tile-plan.js";
 import { COMPATIBLE, computeTileEdges, matchCrossings, type EdgeCrossing, type TileEdges } from "./tile-edges.js";
-import { TILE_CELLS, TILE_MPC, tileWorldRect } from "./tile.js";
+import { resolveBiome, TILE_CELLS, TILE_MPC, tileWorldRect } from "./tile.js";
 import type { Edge } from "../world-map/types.js";
 
 export interface SceneValidationResult {
@@ -102,7 +103,10 @@ export interface TileView extends GridDims {
   raw: Record<string, unknown>;
   /** La misma escena con las primitivas ya rasterizadas. */
   scene: Record<string, unknown>;
-  /** `rows` filas de exactamente `cols` chars. */
+  /** `rows` filas de exactamente `cols` chars — la MISMA referencia que
+   *  `scene.terrain` (lo garantiza el gate de `openTile`): solo hay UN grid,
+   *  y las pasadas y `computeTileEdges` leen el mismo. Antes había dos (aquí
+   *  una copia normalizada, en `computeTileEdges` el crudo) y divergían. */
   grid: string[];
   /** char → nombre de terreno, según `terrain_legend`. */
   legend: Record<string, string>;
@@ -261,19 +265,6 @@ export type OpenTileResult =
   | { ok: true; view: TileView }
   | { ok: false; rejected: SceneValidationResult };
 
-/** Grid de trabajo desde la escena expandida, normalizado a cols×rows: filas
- *  cortas se rellenan con hierba y las largas se recortan (mismo criterio
- *  tolerante que el saneador de ai_server, que puede no haber corrido). */
-function normalizeGrid(terrain: unknown[], { cols, rows }: GridDims): string[] {
-  const grid: string[] = [];
-  for (let r = 0; r < Math.min(rows, terrain.length); r++) {
-    const row = terrain[r];
-    grid.push(typeof row === "string" ? row.padEnd(cols, "g").slice(0, cols) : "g".repeat(cols));
-  }
-  while (grid.length < rows) grid.push("g".repeat(cols));
-  return grid;
-}
-
 /** Gate de variante + expansión de primitivas + grid + leyenda.
  *
  *  Es lo único que puede cortar la validación en seco: a partir de aquí todas
@@ -329,6 +320,46 @@ export function openTile(rawScene: Record<string, unknown>): OpenTileResult {
     }
   }
 
+  // Gate del grid: a las pasadas solo entra un tile expandido DE VERDAD. La
+  // escena recién expandida lo cumple por construcción; la que llega con
+  // `__expanded: true` solo lo AFIRMA — y cuando mentía (filas de menos, una
+  // fila corta, un bioma fuera de catálogo) cruzaba entera hasta reventar en
+  // `computeTileEdges`, que el state API servía como 500 sin mensaje (#195).
+  // Aquí el normalizador tolerante no tiene sitio: rellenar en silencio es el
+  // saneo mudo que el repo retiró — se rechaza nombrando defecto y salida.
+  const salida =
+    "si la emites tú, quita `__expanded` y declara `biome` + primitivas: el engine sintetiza el grid";
+  const terrain = scene.terrain;
+  if (!Array.isArray(terrain) || terrain.length !== TILE_CELLS) {
+    const defecto = Array.isArray(terrain)
+      ? `terrain tiene ${terrain.length} filas y un tile expandido lleva exactamente ${TILE_CELLS}`
+      : `terrain no es un array (un tile expandido lleva ${TILE_CELLS} filas de ${TILE_CELLS} chars)`;
+    return {
+      ok: false,
+      rejected: { ok: false, errors: [`${defecto} — ${salida}`], warnings: [], stats: emptyStats(dims.cols, dims.rows) },
+    };
+  }
+  const filaMala = terrain.findIndex((row) => typeof row !== "string" || row.length !== TILE_CELLS);
+  if (filaMala >= 0) {
+    const row = terrain[filaMala];
+    const defecto =
+      typeof row === "string"
+        ? `terrain[${filaMala}] tiene ${row.length} chars y cada fila lleva exactamente ${TILE_CELLS}`
+        : `terrain[${filaMala}] no es un string (cada fila son ${TILE_CELLS} chars de terreno)`;
+    return {
+      ok: false,
+      rejected: { ok: false, errors: [`${defecto} — ${salida}`], warnings: [], stats: emptyStats(dims.cols, dims.rows) },
+    };
+  }
+  try {
+    resolveBiome(typeof scene.biome === "string" ? scene.biome : "grass");
+  } catch (err) {
+    return {
+      ok: false,
+      rejected: { ok: false, errors: [(err as Error).message], warnings: [], stats: emptyStats(dims.cols, dims.rows) },
+    };
+  }
+
   const { legend, solidChars } = resolveTerrainLegend(scene.terrain_legend);
   return {
     ok: true,
@@ -336,7 +367,7 @@ export function openTile(rawScene: Record<string, unknown>): OpenTileResult {
       ...dims,
       raw: rawScene,
       scene,
-      grid: normalizeGrid(scene.terrain as unknown[], dims),
+      grid: terrain as string[],
       legend,
       solid: new Set(solidChars),
     },
@@ -370,6 +401,13 @@ export interface PlanMask {
   solid(c: number, r: number): boolean;
   /** Volúmenes del plan compuesto (declarados + derivados). */
   volumes: number;
+  /** QUIÉN bloquea la celda: el id del volumen del plan compuesto que la
+   *  cubre (derivados de entities incluidos), `"ground"` si la bloquea el
+   *  agua rasterizada del plan, o `null` si el plan no la bloquea. La máscara
+   *  compuesta no guarda procedencia celda→volumen, así que se atribuye
+   *  PEREZOSAMENTE —re-rasterizando volumen a volumen— y solo en el camino de
+   *  error: el motor necesita el id para arreglar el spawn (#337). */
+  blockerAt(c: number, r: number): { volumeId: string } | "ground" | null;
 }
 
 /** Compone el plan del tile —el MISMO que pinta el cliente y colisiona el
@@ -387,18 +425,29 @@ export function composePlan(view: TileView, found: Findings): PlanMask {
   for (const w of warnings) found.add("plan-no-cabe", w);
   found.stats.volumes_total = plan?.volumes.length ?? 0;
   const tile = view.scene.tile as { tx: number; ty: number };
-  const grid = plan
-    ? planCollisionGrid(plan.ground, plan.volumes, tileWorldRect(tile.tx, tile.ty), {
-        // La solidez de ESTA escena: un vado declarado (`{name, solid:false}`)
-        // no bloquea tampoco por el plan — igual que en juego.
-        solidChars: [...view.solid],
-      })
-    : null;
+  const rect = tileWorldRect(tile.tx, tile.ty);
+  // La solidez de ESTA escena: un vado declarado (`{name, solid:false}`)
+  // no bloquea tampoco por el plan — igual que en juego.
+  const opts = { solidChars: [...view.solid] };
+  const grid = plan ? planCollisionGrid(plan.ground, plan.volumes, rect, opts) : null;
   const solidChars = new Set(grid?.solid_chars ?? []);
+  const cubre = (g: { cols: number; rows: number; grid: string[]; solid_chars?: string[] }, c: number, r: number) =>
+    c >= 0 && r >= 0 && c < g.cols && r < g.rows && new Set(g.solid_chars ?? []).has(g.grid[r][c]);
+  const solid = (c: number, r: number): boolean =>
+    grid !== null && c >= 0 && r >= 0 && c < grid.cols && r < grid.rows && solidChars.has(grid.grid[r][c]);
   return {
     volumes: plan?.volumes.length ?? 0,
-    solid: (c, r) =>
-      grid !== null && c >= 0 && r >= 0 && c < grid.cols && r < grid.rows && solidChars.has(grid.grid[r][c]),
+    solid,
+    blockerAt: (c, r) => {
+      if (!solid(c, r)) return null;
+      // Solo en el camino de error: un grid por volumen hasta dar con el que
+      // cubre la celda. El primero que la cubre es el culpable que se nombra.
+      for (const v of plan?.volumes ?? []) {
+        const g = planCollisionGrid(undefined, [v], rect, opts);
+        if (g && cubre(g, c, r)) return { volumeId: v.id };
+      }
+      return "ground";
+    },
   };
 }
 
@@ -464,6 +513,7 @@ export function checkScatter(view: TileView, found: Findings): void {
 export function checkPlayerSpawn(
   view: TileView,
   map: WalkableMap,
+  planMask: PlanMask,
   tileContext: TileValidationContext | undefined,
   found: Findings,
 ): Cell | null {
@@ -488,10 +538,39 @@ export function checkPlayerSpawn(
     return null;
   }
   if (!map.isWalkable(player.cell)) {
-    found.add(
-      "nace-en-solido",
-      `el spawn del player [${dc}, ${dr}] no es transitable (celda "${view.grid[r][c]}" u ocupada por un footprint)`,
-    );
+    // Las DOS causas reales de bloqueo, cada una con su arreglo: el char
+    // sólido del grid o la masa del plan (volumen con id, o el agua del
+    // ground). Antes el mensaje culpaba a «un footprint», una causa muerta
+    // desde que la máscara sale del plan compuesto (#337): el motor movía el
+    // spawn a ciegas porque nadie le decía QUÉ lo bloqueaba.
+    const ch = view.grid[r][c];
+    let causa: string;
+    if (view.solid.has(ch)) {
+      const nombre = view.legend[ch] ? ` (${view.legend[ch]})` : "";
+      causa = `la celda es "${ch}"${nombre}, terreno sólido — muévelo a una celda pisable`;
+    } else {
+      const blocker = planMask.blockerAt(c, r);
+      if (blocker === "ground") {
+        causa = "lo cubre el agua del ground del plan — muévelo a tierra firme";
+      } else if (blocker !== null && blocker.volumeId.startsWith(DERIVED_ENT_PREFIX)) {
+        // Un volumen DERIVADO no está en la escena del motor: él declaró una
+        // ENTITY, y «mueve el volumen» le pedía tocar algo que no existe en
+        // su vocabulario. Se nombra la entity (lo accionable) y el volumen
+        // real del plan entre paréntesis (la verdad completa) — QA de #337.
+        const entity = blocker.volumeId.slice(DERIVED_ENT_PREFIX.length);
+        causa =
+          `lo cubre la masa de la entity "${entity}" (volumen derivado "${blocker.volumeId}" del plan) — ` +
+          "muévelo fuera o mueve la entity";
+      } else if (blocker !== null) {
+        causa = `lo cubre la masa del volumen "${blocker.volumeId}" del plan — muévelo fuera o mueve el volumen`;
+      } else {
+        // Inalcanzable por construcción (walkable = char no sólido Y plan no
+        // sólido); si un refactor lo alcanza, mejor un mensaje sin culpable
+        // que un throw que tumbe la ruta.
+        causa = "la bloquea el plan del tile — muévelo a una celda pisable";
+      }
+    }
+    found.add("nace-en-solido", `el spawn del player [${dc}, ${dr}] no es transitable: ${causa}`);
     return null;
   }
   return player.cell;
@@ -943,7 +1022,7 @@ export function validateScene(
   const planMask = composePlan(view, found);
   const map = buildWalkableMap(view, planMask, found);
   checkScatter(view, found);
-  const player = checkPlayerSpawn(view, map, tileContext, found);
+  const player = checkPlayerSpawn(view, map, planMask, tileContext, found);
   // El cuerpo de los NPCs se juzga AQUÍ, no dentro de `checkReachability`:
   // es una pregunta local y no puede quedar detrás del `return` temprano de
   // un tile sin entrada declarada.

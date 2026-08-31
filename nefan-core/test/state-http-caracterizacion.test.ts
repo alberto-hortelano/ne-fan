@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { FIXTURE_GAMES, makeNarrativeState } from "./helpers.js";
+import { escenaExpandidaDePrueba, FIXTURE_GAMES, makeNarrativeState } from "./helpers.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
@@ -157,7 +157,7 @@ before(async () => {
   wm.upsertPlace({ id: "millhaven", kind: "settlement", parent_id: "world", name: "Millhaven" });
   wm.upsertPlace({ id: "bosque", kind: "landmark", parent_id: "world", name: "Bosque" });
   h.narrative.recordEntitySpawned("boris", "npc", "escena_1", [0, 0, 0], { name: "Boris" });
-  h.narrative.recordSceneLoaded("tile_carac", { scene_id: "tile_carac" });
+  h.narrative.recordSceneLoaded("tile_carac", escenaExpandidaDePrueba("tile_carac"));
   schedId = h.narrative.addScheduledEvent("Vira se entera", "al volver", "evt_carac");
   pluginVivo = h.sembrarPlugin("contador_de_caracterizacion");
 });

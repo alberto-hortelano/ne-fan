@@ -6,11 +6,12 @@ import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import type { Consequence } from "../src/narrative/types.js";
 import { combatForHostileRole } from "../src/combat/hostiles.js";
+import { escenaExpandidaDePrueba } from "./helpers.js";
 
 function makeState() {
   const s = new NarrativeState(new MemorySessionStorage());
   s.startNewSession("game");
-  s.recordSceneLoaded("scene_1", { id: "scene_1" });
+  s.recordSceneLoaded("scene_1", escenaExpandidaDePrueba("scene_1"));
   return s;
 }
 

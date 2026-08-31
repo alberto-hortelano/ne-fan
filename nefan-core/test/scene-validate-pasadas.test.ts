@@ -63,7 +63,7 @@ const hallazgos = (view: TileView): Findings => emptyFindings(view.cols, view.ro
  *  el terreno. Lo que el PLAN aporta a la máscara se prueba aparte, sobre un
  *  tile de verdad (describe «composePlan»), porque componerlo pide las
  *  dimensiones reales del tile. */
-const SIN_PLAN: PlanMask = { solid: () => false, volumes: 0 };
+const SIN_PLAN: PlanMask = { solid: () => false, volumes: 0, blockerAt: () => null };
 
 /** Máscara + hallazgos de un grid, que es lo que consumen media docena de pasadas. */
 function mapaDe(
@@ -100,29 +100,35 @@ describe("openTile — gate de variante", () => {
     assert.equal(r.rejected.errors[0], 'tile.tx/ty deben ser enteros, got {"tx":1.5,"ty":0}');
   });
 
-  it("normaliza el grid a cols×rows: rellena las cortas, recorta las largas y no deja huecos", () => {
-    // El grid de trabajo tiene que ser rectangular pase lo que pase: media
-    // docena de pasadas indexan `grid[r][c]` a pelo. OJO: esta tolerancia solo
-    // se puede ejercer AQUÍ — el pipeline completo revienta antes en
-    // `computeTileEdges`, que exige 128×128 exacto (ver el informe de la PR).
-    const terrain: unknown[] = Array.from({ length: 100 }, (_, r) =>
-      r === 3 ? "gg" : r === 4 ? "g".repeat(200) : r === 5 ? null : "g".repeat(128),
-    );
+  it("un grid que no es 128×128 con la marca `__expanded` se rechaza nombrando la fila", () => {
+    // Aquí vivía el normalizador tolerante (rellenar cortas, recortar largas):
+    // esa tolerancia era saneo mudo con cero cobertura real, y las escenas que
+    // la necesitaban reventaban igual en `computeTileEdges` como 500 (#195).
+    // Ahora la marca no exime del contrato: se rechaza con el defecto exacto.
+    const terrain: unknown[] = Array.from({ length: 128 }, (_, r) => (r === 3 ? "gg" : "g".repeat(128)));
     const r = openTile({ tile: { tx: 0, ty: 0 }, biome: "meadow", __expanded: true, terrain, entities: [] });
-    assert.equal(r.ok, true);
-    if (!r.ok) return;
-    assert.equal(r.view.grid.length, 128, "28 filas de relleno hasta el alto del tile");
-    assert.deepEqual([...new Set(r.view.grid.map((f) => f.length))], [128], "todas de 128 chars");
-    assert.equal(r.view.grid[3], "gg".padEnd(128, "g"), "la corta se rellena con hierba");
-    assert.equal(r.view.grid[5], "g".repeat(128), "la que no es texto se sustituye entera");
+    assert.equal(r.ok, false);
+    if (r.ok) return;
+    assert.match(r.rejected.errors[0], /terrain\[3\] tiene 2 chars/);
+    assert.match(r.rejected.errors[0], /quita `__expanded`/, "el mensaje trae la salida, no solo el defecto");
   });
 
-  it("las filas que sobran del terrain no entran en el grid", () => {
+  it("las filas de sobra tampoco se recortan: se rechaza con el número de filas", () => {
     const terrain = Array.from({ length: 130 }, () => "g".repeat(128));
+    const r = openTile({ tile: { tx: 0, ty: 0 }, biome: "meadow", __expanded: true, terrain, entities: [] });
+    assert.equal(r.ok, false);
+    if (r.ok) return;
+    assert.match(r.rejected.errors[0], /terrain tiene 130 filas/);
+  });
+
+  it("el grid de la vista es la MISMA referencia que scene.terrain: no hay doble grid", () => {
+    // `computeTileEdges` lee `scene.terrain` y las pasadas leen `view.grid`;
+    // si volvieran a ser dos objetos, podrían divergir en silencio.
+    const terrain = Array.from({ length: 128 }, () => "g".repeat(128));
     const r = openTile({ tile: { tx: 0, ty: 0 }, biome: "meadow", __expanded: true, terrain, entities: [] });
     assert.equal(r.ok, true);
     if (!r.ok) return;
-    assert.equal(r.view.grid.length, 128);
+    assert.equal(r.view.grid, r.view.scene.terrain, "misma referencia, no una copia");
   });
 
   it("abre un tile ya expandido con su leyenda resuelta", () => {
@@ -274,6 +280,25 @@ describe("composePlan", () => {
     assert.equal(mask.solid(40, 40), false);
   });
 
+  it("blockerAt atribuye la celda bloqueada a SU volumen, al agua del plan, o a nadie", () => {
+    // La atribución de #337: la máscara compuesta no guardaba procedencia
+    // celda→volumen, así que el error de spawn nombraba causas inventadas.
+    const { mask } = abrir(
+      tileConPlan({
+        ground: [{ id: "rio", kind: "water", rect: [0, 100, 128, 8] }],
+        volumes: [{ id: "posada", label: "posada", type: "building", rect: [40, 40, 8, 6] }],
+        entities: [{ id: "mesa", kind: "prop", name: "mesa", cell: [80, 80], footprint: [2, 2], glyph: "m" }],
+      }),
+    );
+    assert.deepEqual(mask.blockerAt(42, 42), { volumeId: "posada" }, "celda dentro del volumen declarado");
+    // El derivado se nombra con SU id del plan compuesto (`derived_ent_<id>`,
+    // blueprint/derive.ts): es el volumen que existe de verdad en el plan que
+    // pinta el cliente, y el prefijo dice de qué entity sale.
+    assert.deepEqual(mask.blockerAt(80, 80), { volumeId: "derived_ent_mesa" }, "el volumen DERIVADO de una entity también se nombra");
+    assert.equal(mask.blockerAt(64, 103), "ground", "el agua del plan no tiene volumen: es el ground");
+    assert.equal(mask.blockerAt(5, 5), null, "una celda libre no tiene culpable");
+  });
+
   it("lo que el compositor no pudo componer sale como ERROR: el motor re-responde", () => {
     // En esta capa el aviso del plan es accionable de verdad — el motor puede
     // volver a mandar la escena. Por eso aquí es error y en el cliente es una
@@ -333,13 +358,13 @@ describe("checkPlayerSpawn", () => {
 
   it("fuera de bootstrap sobra, y no siembra el flood", () => {
     const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [0, 0] }] });
-    assert.equal(checkPlayerSpawn(view, map, { required_crossings: [] }, found), null);
+    assert.equal(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [] }, found), null);
     assert.match(found.errors[0], /no llevan entity kind "player"/);
   });
 
   it("en bootstrap es obligatorio", () => {
     const { view, map, found } = mapaDe(grid);
-    assert.equal(checkPlayerSpawn(view, map, { required_crossings: [], bootstrap: true }, found), null);
+    assert.equal(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [], bootstrap: true }, found), null);
     assert.deepEqual(found.errors, ['falta la entity kind "player" (spawn del jugador)']);
   });
 
@@ -349,28 +374,88 @@ describe("checkPlayerSpawn", () => {
     // la celda existe y está ocupada — y el motor movería el spawn en vano.
     for (const cell of [[9, 9], [-1, 1], [1, -1], [3, 1], [1, 2]] as Cell[]) {
       const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell }] });
-      assert.equal(checkPlayerSpawn(view, map, { required_crossings: [], bootstrap: true }, found), null);
+      assert.equal(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [], bootstrap: true }, found), null);
       assert.deepEqual(found.errors, [`el player está fuera del grid: [${cell[0]}, ${cell[1]}]`]);
     }
   });
 
   it("la esquina [0, 0] es un spawn legal como cualquier otro", () => {
     const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [0, 0] }] });
-    assert.deepEqual(checkPlayerSpawn(view, map, { required_crossings: [], bootstrap: true }, found), [0, 0]);
+    assert.deepEqual(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [], bootstrap: true }, found), [0, 0]);
     assert.deepEqual(found.errors, []);
   });
 
-  it("sobre terreno sólido se rechaza citando el char que pisa", () => {
+  it("sobre terreno sólido se rechaza citando el char que pisa y su leyenda", () => {
     const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [1, 1] }] });
-    assert.equal(checkPlayerSpawn(view, map, { required_crossings: [], bootstrap: true }, found), null);
+    view.legend.W = "muro";
+    assert.equal(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [], bootstrap: true }, found), null);
     assert.deepEqual(found.errors, [
-      'el spawn del player [1, 1] no es transitable (celda "W" u ocupada por un footprint)',
+      'el spawn del player [1, 1] no es transitable: la celda es "W" (muro), terreno sólido — muévelo a una celda pisable',
+    ]);
+  });
+
+  it("bloqueado por la masa de un volumen del plan, el error nombra SU id (#337)", () => {
+    // El char de debajo es "g" (pisable): la causa es el plan, no el terreno.
+    // Antes el mensaje culpaba a la celda y a un «footprint» que ya no
+    // estampa nadie — el motor movía el spawn a ciegas.
+    const plan: PlanMask = {
+      solid: (c, r) => c === 2 && r === 1,
+      volumes: 1,
+      blockerAt: (c, r) => (c === 2 && r === 1 ? { volumeId: "posada" } : null),
+    };
+    const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [2, 1] }] }, plan);
+    assert.equal(checkPlayerSpawn(view, map, plan, { required_crossings: [], bootstrap: true }, found), null);
+    assert.deepEqual(found.errors, [
+      'el spawn del player [2, 1] no es transitable: lo cubre la masa del volumen "posada" del plan — muévelo fuera o mueve el volumen',
+    ]);
+  });
+
+  it("un char sólido SIN entrada de leyenda se nombra a secas, sin inventarle nombre (QA #337)", () => {
+    // El agua rasterizada del plan ("w") no tiene entrada en la leyenda por
+    // defecto: el mensaje no puede prometer una que no existe — nombra el
+    // char tal cual y nada más. Con leyenda declarada sí sale el nombre
+    // (test de arriba); este canda la otra mitad.
+    const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [1, 1] }] });
+    assert.equal(view.legend.W, undefined, "el caso ES sin leyenda");
+    assert.equal(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [], bootstrap: true }, found), null);
+    assert.deepEqual(found.errors, [
+      'el spawn del player [1, 1] no es transitable: la celda es "W", terreno sólido — muévelo a una celda pisable',
+    ]);
+  });
+
+  it("bloqueado por un volumen DERIVADO de una entity, el consejo manda mover la entity (QA #337)", () => {
+    // El motor declaró una entity `mesa`, no un volumen: «mueve el volumen»
+    // le pedía tocar algo que no está en su escena. El prefijo derived_ent_
+    // es la marca del derivador (blueprint/derive.ts) y de él sale el id real.
+    const plan: PlanMask = {
+      solid: (c, r) => c === 2 && r === 1,
+      volumes: 1,
+      blockerAt: (c, r) => (c === 2 && r === 1 ? { volumeId: "derived_ent_mesa" } : null),
+    };
+    const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [2, 1] }] }, plan);
+    assert.equal(checkPlayerSpawn(view, map, plan, { required_crossings: [], bootstrap: true }, found), null);
+    assert.deepEqual(found.errors, [
+      'el spawn del player [2, 1] no es transitable: lo cubre la masa de la entity "mesa" ' +
+        '(volumen derivado "derived_ent_mesa" del plan) — muévelo fuera o mueve la entity',
+    ]);
+  });
+
+  it("bloqueado por el agua del ground del plan, el error lo dice sin inventar un volumen", () => {
+    const plan: PlanMask = {
+      solid: (c, r) => c === 2 && r === 1,
+      volumes: 0,
+      blockerAt: (c, r) => (c === 2 && r === 1 ? "ground" : null),
+    };
+    const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [2, 1] }] }, plan);
+    assert.equal(checkPlayerSpawn(view, map, plan, { required_crossings: [], bootstrap: true }, found), null);
+    assert.deepEqual(found.errors, [
+      "el spawn del player [2, 1] no es transitable: lo cubre el agua del ground del plan — muévelo a tierra firme",
     ]);
   });
 
   it("un spawn válido vuelve como semilla del flood", () => {
     const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [2, 1] }] });
-    assert.deepEqual(checkPlayerSpawn(view, map, { required_crossings: [], bootstrap: true }, found), [2, 1]);
+    assert.deepEqual(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [], bootstrap: true }, found), [2, 1]);
     assert.deepEqual(found.errors, []);
   });
 });

@@ -10,6 +10,7 @@ import { bindPluginsForResume } from "../src/plugins/loader.js";
 import { dispatchPluginEvents } from "../src/plugins/dispatcher.js";
 import type { PluginManifest } from "../src/plugins/types.js";
 import { COMMERCE_MANIFEST } from "./fixtures/commerce-manifest.js";
+import { escenaExpandidaDePrueba } from "./helpers.js";
 
 const COUNTER_PATH = fileURLToPath(
   new URL("fixtures/games/plugtest/plugins/test_counter.json", import.meta.url),
@@ -41,7 +42,7 @@ describe("registerRuntimePlugin", () => {
 
   it("runs projections against the CURRENT state (commerce sees the merchant)", () => {
     const { state, active } = freshSession();
-    state.recordSceneLoaded("scene_1", { id: "scene_1" });
+    state.recordSceneLoaded("scene_1", escenaExpandidaDePrueba("scene_1"));
     state.recordEntitySpawned("blacksmith_01", "npc", "scene_1", [1, 0, 2], {
       role: "merchant",
       name: "Boris",

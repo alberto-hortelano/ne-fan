@@ -28,7 +28,8 @@ import { neighborTile, tileKey, type TileCoord } from "../scene/tile.js";
 import { computeTileEdges } from "../scene/tile-edges.js";
 import type { PluginRecord, PluginManifest, PluginOrigin } from "../plugins/types.js";
 import { computePluginId } from "../plugins/hash.js";
-import { migrateActiveSceneToTile, migrateWorldMapFromV1 } from "./migrations.js";
+import { ExpandedSceneSchema } from "../contract/model-io/scene-schema.js";
+import type { ZodError } from "zod";
 import { buildLlmContext } from "./serialize-llm.js";
 import { registerSceneNpcs } from "./npc-records.js";
 
@@ -105,6 +106,32 @@ const DEFAULT_PLAYER: NarrativePlayerState = {
   position: [0.0, 1.0, 0.0],
   current_scene_id: "",
 };
+
+/** El primer issue del zod, en el idioma de quien mira una escena rota:
+ *  nombra la escena, la entity (si el defecto vive en una, con su id) y el
+ *  campo. Lo usan las DOS puertas del save (#334): la escritura
+ *  (`recordSceneLoaded`) y la carga (`loadSession`). */
+function describeSceneContractViolation(
+  sceneId: string,
+  sceneData: Record<string, unknown>,
+  error: ZodError,
+): string {
+  const issue = error.issues[0];
+  const path = issue.path;
+  let donde = "";
+  if (path[0] === "entities" && typeof path[1] === "number") {
+    const ents = Array.isArray(sceneData.entities)
+      ? (sceneData.entities as Array<{ id?: unknown } | null>)
+      : [];
+    const rawId = ents[path[1]]?.id;
+    const id = typeof rawId === "string" && rawId ? `"${rawId}"` : `#${path[1]}`;
+    const campo = path.slice(2).join(".");
+    donde = `, entity ${id}${campo ? `, campo \`${campo}\`` : ""}`;
+  } else if (path.length > 0) {
+    donde = `, campo \`${path.join(".")}\``;
+  }
+  return `la escena "${sceneId}"${donde} viola el contrato de escena cargable: ${issue.message}`;
+}
 
 export class NarrativeState {
   session_id = "";
@@ -370,12 +397,33 @@ export class NarrativeState {
     this.dirty = true;
   }
 
+  /** Carga un save. Canal de error DISTINGUIBLE por construcción:
+   *  `false` = el save NO EXISTE, y punto; un save que existe pero no vale
+   *  (versión vieja, escena que viola el contrato) LANZA nombrando save y
+   *  motivo. Colapsar los dos en `false` era el descarte silencioso que #334
+   *  vino a cerrar. Las migraciones murieron con #336 (pre-producción: un
+   *  save viejo se borra, no se arrastra). */
   async loadSession(sessionId: string, opts?: LoadSessionOptions): Promise<boolean> {
     const data = await this.storage.read(sessionId);
     if (!data) return false;
-    if (data.schema_version > SCHEMA_VERSION || data.schema_version < 1) {
-      console.warn(`NarrativeState: unsupported schema_version ${data.schema_version}`);
-      return false;
+    if (data.schema_version !== SCHEMA_VERSION) {
+      throw new Error(
+        `save "${sessionId}" incompatible: schema_version ${data.schema_version} ≠ ${SCHEMA_VERSION} — ` +
+          "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
+      );
+    }
+    // El contrato se comprueba ANTES de mutar `this`: un throw a medias
+    // dejaría la sesión que estaba cargada hecha una quimera de las dos.
+    // Es la puerta de #334-A: el save con `footprint:[8,8]` en un kind móvil
+    // (el caso #300) cargaba, se conservaba y el NPC se pintaba a 1,75 m de
+    // donde el sim lo tenía.
+    for (const [sceneId, rec] of Object.entries(data.scenes_loaded)) {
+      const parsed = ExpandedSceneSchema.safeParse(rec.scene_data);
+      if (!parsed.success) {
+        throw new Error(
+          `save "${sessionId}": ${describeSceneContractViolation(sceneId, rec.scene_data, parsed.error)}`,
+        );
+      }
     }
     // Mismo motivo que en startNewSession: el runtime atado era de la sesión
     // que estaba cargada, no de la que se está cargando.
@@ -386,11 +434,11 @@ export class NarrativeState {
     this.game_id = data.game_id;
     this.created_at = data.created_at;
     this.updated_at = data.updated_at;
-    // Spread sobre defaults: los saves v4 anteriores a la era de mundos no
-    // traen description/style_id/world_doc_hash (campos aditivos, sin bump).
+    // Spread sobre defaults: convención ADITIVA declarada (no migración) —
+    // un campo nuevo sin bump de schema cae a su default en saves v5 previos.
     this.world = { ...DEFAULT_WORLD, ...data.world };
-    // Ídem para player: un save viejo sin gold/inventory dejaría undefined en
-    // la aritmética de los plugins (inc/dec sobre player.gold → NaN, push a
+    // Ídem para player: un save sin un campo aditivo dejaría undefined en la
+    // aritmética de los plugins (inc/dec sobre player.gold → NaN, push a
     // inventory → crash). Mismo criterio aditivo que world.
     this.player = { ...structuredClone(DEFAULT_PLAYER), ...data.player };
     this.story_so_far = data.story_so_far;
@@ -398,25 +446,15 @@ export class NarrativeState {
     this.entities = data.entities;
     this.dialogue_history = data.dialogue_history;
     this.asset_index_snapshot = data.asset_index_snapshot;
-    const wm = data.world_map && data.schema_version >= 2
-      ? data.world_map
-      : migrateWorldMapFromV1(data);
-    this.worldMap = new WorldMapManager(wm);
-    // Migración v2→v3 trivial: los saves anteriores no tienen plugins.
-    this.plugins = data.plugins ?? [];
+    this.worldMap = new WorldMapManager(data.world_map);
+    this.plugins = data.plugins;
     // Campos aditivos (sin bump de schema): saves previos no los traen.
     this.ambient_log = data.ambient_log ?? [];
     this.scheduled_events = data.scheduled_events ?? [];
     this.nextEventSeq = data._next_event_seq ?? data.dialogue_history.length;
     this.nextSchedSeq = data._next_sched_seq ?? this.scheduled_events.length;
-    // Migración v3→v4: la escena activa se envuelve como tile (0,0) del plano
-    // continuo. Con el tile centrado en el origen las posiciones mundo no
-    // cambian (el jugador y los NPC no se mueven).
-    if (data.schema_version < 4) {
-      migrateActiveSceneToTile(this);
-    }
     this.rebuildTileIndex();
-    this.dirty = data.schema_version < SCHEMA_VERSION;
+    this.dirty = false;
     if (opts?.assetValidator) {
       const pruned = await validateAssetSnapshot(
         this.asset_index_snapshot,
@@ -477,6 +515,16 @@ export class NarrativeState {
     assetRefs: string[] = [],
     opts: { activate?: boolean } = {},
   ): void {
+    // La puerta de ESCRITURA (#334): todo lo que entra en `scenes_loaded` es
+    // población EXPANDIDA (los 5 callers de producción expanden antes), así
+    // que su gate es `ExpandedSceneSchema`. Sin él, lo inválido se persistía
+    // en el save y volvía en cada resume — el estado corrupto de #300.
+    const gate = ExpandedSceneSchema.safeParse(sceneData);
+    if (!gate.success) {
+      throw new Error(
+        `recordSceneLoaded: ${describeSceneContractViolation(sceneId, sceneData, gate.error)}`,
+      );
+    }
     const activate = opts.activate ?? true;
     // Primer registro vs re-broadcast de escena cacheada: decide la semántica
     // de "mismo id en otra escena" de registerSceneNpcs (mover vs conservar).

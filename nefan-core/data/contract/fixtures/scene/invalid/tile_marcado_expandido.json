@@ -1,0 +1,30 @@
+{
+  "description": "`__expanded` es la marca INTERNA del expander (scene-expand.ts): la estampa el engine al rasterizar las primitivas, y una escena emitida que la trae miente sobre su estado de expansión — con `terrain` vacío o ausente reventaba el validador de jugabilidad como 500 (#195). Se rebota dirigido, no se poda: tirar la marca en silencio sería saneo mudo",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Un claro de hierba alta rodeado de robles.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "meadow",
+    "__expanded": true,
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ],
+        "glyph": "@"
+      }
+    ]
+  }
+}

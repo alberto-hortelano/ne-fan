@@ -9,7 +9,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { NarrativeState } from "../src/narrative/narrative-state.js";
-import { makeNarrativeState } from "./helpers.js";
+import { escenaExpandidaDePrueba, makeNarrativeState } from "./helpers.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
@@ -213,7 +213,7 @@ describe("state HTTP API", () => {
   });
 
   it("POST /scene/asset_refs: append con dedupe, keep-list y 404 sin escena", async () => {
-    narrative.recordSceneLoaded("tile_refs", { scene_id: "tile_refs" });
+    narrative.recordSceneLoaded("tile_refs", escenaExpandidaDePrueba("tile_refs"));
     const r1 = await post("/scene/asset_refs", { scene_id: "tile_refs", refs: ["h1", "h2"] });
     assert.equal(r1.status, 200);
     assert.equal(r1.body.total, 2);

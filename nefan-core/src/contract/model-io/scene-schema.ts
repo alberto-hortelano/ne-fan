@@ -20,13 +20,16 @@
  *  `.passthrough()` a nivel ESCENA y `.strict()` en la entity, y la asimetría
  *  está medida, no razonada: el passthrough de escena sostiene campos vivos
  *  que el zod aún no declara (`ambient_event` en las 3 fixtures commiteadas;
- *  `__expanded` y `place_anchors` en los snapshots, más `terrain_patches` en
- *  el espejo Python) — declararlos y cerrarlo es otro
- *  issue; el de la entity no sostenía NINGUNO — censadas las 95
- *  entities de las 7 escenas Format D del árbol (fixtures, snapshots, saves,
- *  labs), cero claves fuera de las 12. Un passthrough que no protege tráfico
- *  legítimo solo se traga las erratas del modelo, y ese es justo el
- *  fail-silent que este gate existe para cerrar (#259). */
+ *  `place_anchors` en los snapshots, más `terrain_patches` en el espejo
+ *  Python) — declararlos y cerrarlo es otro issue. `__expanded` ya NO es de
+ *  esa lista: es la marca interna del expander y una escena EMITIDA que la
+ *  trae miente sobre su estado — se rebota dirigido en el `superRefine`
+ *  (#195), como `style_ref`. El passthrough de la entity no sostenía
+ *  NINGUNO — censadas las 95 entities de las 7 escenas Format D del árbol
+ *  (fixtures, snapshots, saves, labs), cero claves fuera de las 12. Un
+ *  passthrough que no protege tráfico legítimo solo se traga las erratas del
+ *  modelo, y ese es justo el fail-silent que este gate existe para cerrar
+ *  (#259). */
 
 import { z } from "zod";
 import { GroundSchema } from "../../scene/blueprint/ground.js";
@@ -285,6 +288,22 @@ export const EmittedSceneSchema = z
         message:
           "`style_ref` de escena está retirado (no existe catálogo world.style_refs.scene): " +
           "quítalo. Para guiar el arte usa `surface_ref` por cara de volumen y `style_ref` en los NPCs",
+      });
+    }
+    // `__expanded` es la marca INTERNA del expander (scene-expand.ts): la
+    // estampa el engine al rasterizar primitivas, y separa las dos
+    // poblaciones (EmittedScene ↔ ExpandedScene). Una escena EMITIDA que la
+    // trae miente sobre su estado de expansión, y con `terrain` vacío o
+    // ausente cruzaba hasta reventar el validador de jugabilidad como 500
+    // (#195). Se rebota con `in` —cualquier valor, también `false`— y no se
+    // poda: tirarla en silencio sería saneo mudo.
+    if ("__expanded" in s) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["__expanded"],
+        message:
+          "`__expanded` es la marca interna del expander: una escena emitida no la lleva — " +
+          "quítala y declara `biome` + primitivas; el engine expande y marca él",
       });
     }
   });

@@ -488,7 +488,24 @@ export async function handleResumeSession(
   // nada cuando el save no está, así que el bridge seguía sirviendo la
   // partida buena con el catálogo del motor vacío. Alcanzable con la tecla
   // `H`: el libro de historia pide `resume_session` de la sesión activa.
-  const ok = await ctx.narrative.loadSession(msg.sessionId);
+  //
+  // Dos fallos DISTINTOS con dos respuestas: `false` = el save no existe
+  // (`session_not_found`); un THROW = el save existe pero no vale — versión
+  // vieja o escena que viola el contrato (#334/#336) — y se contesta
+  // `save_invalido` con el motivo, mismo molde que `plugin_integrity`.
+  let ok: boolean;
+  try {
+    ok = await ctx.narrative.loadSession(msg.sessionId);
+  } catch (err) {
+    console.error("Bridge: save inválido en resume_session:", err);
+    ctx.send(ws, {
+      type: "session_started",
+      requestId: msg.requestId,
+      ok: false,
+      error: `save_invalido: ${(err as Error).message ?? err}`,
+    });
+    return;
+  }
   if (!ok) {
     ctx.send(ws, {
       type: "session_started",

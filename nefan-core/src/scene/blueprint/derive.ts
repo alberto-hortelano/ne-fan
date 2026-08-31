@@ -35,6 +35,12 @@ import {
 } from "./vegetation.js";
 import { TREE_MAX_S, type Volume } from "./volumes.js";
 
+/** Prefijo de los volúmenes DERIVADOS de una entity (id = prefijo + entity
+ *  id). Exportado porque el error de spawn del validador lo usa para
+ *  distinguirlos: al motor no le sirve «mueve el volumen» sobre uno que él no
+ *  declaró — lo accionable es mover la ENTITY que lo deriva (#337, QA). */
+export const DERIVED_ENT_PREFIX = "derived_ent_";
+
 interface RawEntity {
   id?: string;
   kind?: string;
@@ -130,7 +136,7 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): D
       Math.min(w, TILE_CELLS),
       Math.min(d, TILE_CELLS),
     ];
-    const id = `derived_ent_${ent.id ?? `${c}_${r}`}`;
+    const id = `${DERIVED_ENT_PREFIX}${ent.id ?? `${c}_${r}`}`;
     const tapada = blockers.find((b) => overlaps(b.rect, rect));
     if (tapada) {
       // El LLM ya cubre ese rect. Un EDIFICIO es el mismo objeto
