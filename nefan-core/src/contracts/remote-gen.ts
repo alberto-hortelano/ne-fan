@@ -100,6 +100,10 @@ export interface SpriteSheetMeta {
   duration: number;
   frame_width: number;
   frame_height: number;
+  /** Timestamp ISO local que estampa sprite-forge al generar la hoja
+   *  (p. ej. "2026-08-09T17:22:00"). Viaja SIEMPRE: está en los 11 meta.json
+   *  base de public/sprites/ y en el wire del sheet vestido. */
+  generated_at: string;
   /** Bloque que AÑADE remote-gen al vestir el sheet (no existe en los meta
    *  base): de qué hoja base salió y qué costó pintarlo
    *  (routers/remote_generation.py, `meta.setdefault("skin", …)`). */

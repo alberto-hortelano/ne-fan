@@ -204,6 +204,24 @@ sirviéndose sin él, la segunda estaría pasando por otro camino y no probaría
 Probado en negativo: devolviendo el adaptador a su forma pre-arreglo (que la excepción suba
 siempre), las comprobaciones 2 y 3 se ponen rojas.
 
+## El quinto ejecutable: `qa/fake-enruta-por-pathname.mjs`
+
+El fake del bench enrutaba comparando `req.url ===`: `POST /skin_sprite_sheet?x=1` daba 404
+aquí y 200 en el server real (FastAPI ignora la query al enrutar), y el ref del unpin salía
+corrupto con query. La tanda #319 lo arregló con `parseRequestPath(req.url).path`, y esto es
+su candado: el typecheck de labs no ve comportamiento runtime y ningún guion del runner llama
+al fake con query string — sin esto, la regresión al `===` volvería a pasar en verde. De paso
+afirma que `cached` (el campo que #318 metió al contrato) viaja en el wire del fake.
+
+```bash
+node qa/fake-enruta-por-pathname.mjs   # arranca su propio fake y lo mata al salir (~5 s)
+```
+
+Cero créditos por construcción: el sujeto ES el fake — no existe proveedor que llamar. Los
+puertos salen de `PUERTOS_TODOS` (runtime_config vía `lib/stack.mjs`, `NEFAN_PORT_OFFSET` se
+honra); con el puerto ocupado se niega y lo dice, no mata a nadie. Probado en negativo:
+contra el fake de main (pre-tanda), las 3 comprobaciones en rojo; con el de la rama, verde.
+
 ## Los tres `*-candados-en-negativo.mjs`: ¿se pueden poner ROJOS los candados?
 
 No llevan número porque no son un ejecutable más de la serie: son la pregunta que se le hace a

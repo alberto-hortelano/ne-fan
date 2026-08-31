@@ -58,6 +58,7 @@ import type {
   GenerateSurfaceAtlasResponse,
   SkinSpriteSheetRequest,
   SkinSpriteSheetResponse,
+  SpriteSheetMeta,
   StyleCompleteResponse,
   StylesMissingResponse,
   SurfaceCellResult,
@@ -550,7 +551,9 @@ const server = http.createServer((req, res) => {
               `(esperado en bench: el cliente cancela la cola de ese skin)`,
           });
         }
-        const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+        // Tipado con el contrato, no `any`: si un meta.json del disco dejara
+        // de tener la forma de SpriteSheetMeta, que lo diga el que lo lee.
+        const meta = JSON.parse(readFileSync(metaPath, "utf8")) as SpriteSheetMeta;
         const frame_urls = Array.from({ length: meta.directions }, (_, d) =>
           Array.from({ length: meta.frame_count }, (_, f) =>
             `/cache/sprite_sheet/fake/${anim}/${angle}/dir_${d}_frame_${String(f).padStart(3, "0")}.png`));
