@@ -92,17 +92,6 @@ export interface AnalyzeWeaponRequest {
  *  contrato del prompt (data/contract/prompts/weapon_orient.md). */
 export type AnalyzeWeaponResponse = Record<string, unknown>;
 
-// ── Estado de backends ──
-
-export interface BackendState {
-  state: string;
-  message: string;
-}
-
-export interface BackendStatusResponse {
-  ai_vision: BackendState;
-}
-
 /** Lo que declara de sí mismo CUALQUIER motor narrativo en `GET /health` —
  *  el real (`ai_server/main.py`) y el falso (`labs/narrative/fake-ai-server.ts`).
  *
@@ -148,9 +137,9 @@ export const NarrativeLlmApi = {
   ),
   developWorld: endpoint<DevelopWorldRequest, DevelopWorldResponse>("POST", "/develop_world"),
   analyzeWeapon: endpoint<AnalyzeWeaponRequest, AnalyzeWeaponResponse>("POST", "/analyze_weapon"),
-  backendStatus: endpoint<void, BackendStatusResponse>("GET", "/backend_status"),
   // /review_scene_image (muerto, sin clientes) ELIMINADO en F4 junto con
-  // LLMClient.review_scene_image y pipe_server.py.
+  // LLMClient.review_scene_image y pipe_server.py. El agregado de estado de
+  // backends se retiró en #256: nadie lo llamaba y agregaba UN valor.
 } as const;
 
 export type NarrativeLlmApi = typeof NarrativeLlmApi;

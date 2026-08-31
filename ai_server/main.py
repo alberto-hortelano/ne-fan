@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 class _SilenceHealthcheckFilter(logging.Filter):
     """Drop uvicorn access log entries for noisy polling endpoints."""
 
-    _SILENCED = ("/health", "/backend_status")
+    _SILENCED = ("/health",)
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()

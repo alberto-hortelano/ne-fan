@@ -129,8 +129,9 @@ GET /styles/{style_id}/{file} MIGRADO a S6 en F2.
 🆕 GET /session/{id}/llm_context (F5).
 
 **S3 narrative-llm (HTTP :8765)** — ✅ /health, /notify_session,
-/generate_scene, /report_player_choice, /develop_world, /analyze_weapon,
-/backend_status. ☠ ELIMINADOS sin clientes vivos: /review_scene_image (F4),
+/generate_scene, /report_player_choice, /develop_world, /analyze_weapon.
+☠ ELIMINADOS sin clientes vivos: el agregado de estado de backends (#256,
+con sus dos helpers de LLMClient), /review_scene_image (F4),
 /review_stage_image (con el proscenio) y /review_scene_blueprint +
 /analyze_scene_image (con el repintado oblicuo). WS :3737 completo en
 `narrative-mcp-ws.ts` (room/vision/narrative_event + responses +
@@ -139,8 +140,8 @@ weapon_orient y weapon_verify.
 
 **S4 gpu-worker — RETIRADO en #199 (2026-08-24).** Servía /generate_texture,
 /generate_model, /generate_skin y /generate_sprite; ninguno tenía consumidor
-vivo desde julio. Con el proceso se fueron su proxy en :8765, la mitad
-`meshy_3d` de /backend_status y la cadena de reuse por hash del contrato de
+vivo desde julio. Con el proceso se fueron su proxy en :8765, su mitad del
+agregado de estado de backends y la cadena de reuse por hash del contrato de
 escena. Los `/diagnostic/skin_test_*` que este documento listaba NO existían.
 
 **S5 remote-gen (HTTP :8768, EXTRAÍDO en F4)** — ✅ /generate_surface_atlas,

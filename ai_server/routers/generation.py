@@ -1,10 +1,10 @@
-"""Generación narrativa y visión: escenas LLM, análisis/review de imagen.
+"""Generación narrativa y visión: escenas LLM, análisis de armas.
 
 Endpoints movidos TAL CUAL desde main.py (el estado runtime viene de `deps`).
-Incluye /backend_status y /analyze_weapon porque comparten el mismo dominio
-(estado y visión de los backends generativos). Los pipelines de APIs de pago
-(repintado, sprite sheets skinneados) viven en routers/remote_generation.py
-(F4); la generación local con GPU se retiró entera con el gpu-worker (#199).
+Incluye /analyze_weapon porque comparte dominio (visión de los backends
+generativos). Los pipelines de APIs de pago (repintado, sprite sheets
+skinneados) viven en routers/remote_generation.py (F4); la generación local
+con GPU se retiró entera con el gpu-worker (#199).
 """
 
 import logging
@@ -70,41 +70,6 @@ async def generate_scene(body: GenerateSceneRequest):
         # del mismo tile recupera la respuesta tardía), 503 para el resto.
         status = 504 if "timeout" in str(e).lower() else 503
         raise HTTPException(status_code=status, detail=str(e)) from e
-
-
-@router.get("/backend_status")
-async def backend_status_endpoint():
-    """Report the state of optional backends."""
-    import asyncio
-
-    # AI Vision (MCP bridge listener preferred, direct API as fallback)
-    if not deps.llm_client:
-        vision_status = {"state": "down", "message": "LLM client no disponible"}
-    else:
-        bridge = await asyncio.to_thread(deps.llm_client.get_bridge_status)
-        has_api: bool = deps.llm_client.has_api_fallback()
-
-        def api_or_down(down_msg: str) -> dict:
-            if has_api:
-                return {"state": "fallback", "message": "API directa (sin listener MCP)"}
-            return {"state": "down", "message": down_msg}
-
-        if not bridge.get("connected"):
-            vision_status = api_or_down("bridge no conectado (¿narrative-mcp arrancado?)")
-        elif bridge.get("error"):
-            vision_status = api_or_down(f"bridge error: {bridge['error']}")
-        elif bridge.get("listener_active"):
-            ago: float = bridge.get("last_listen_seconds_ago", -1)
-            vision_status = {
-                "state": "ready",
-                "message": f"MCP listener activo (último listen hace {max(ago, 0):.0f}s)",
-            }
-        else:
-            vision_status = api_or_down("no hay Claude Code escuchando narrative_listen")
-
-    return {
-        "ai_vision": vision_status,
-    }
 
 
 @router.post("/analyze_weapon")

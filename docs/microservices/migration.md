@@ -92,9 +92,9 @@ FastAPI async intercala); lo que muere es compartirlo con los endpoints
 narrativos. Escalar sigue siendo un proceso por GPU
 (`NEFAN_URL_GPU_WORKER`; probado con dos workers mock en
 `tests/test_two_gpu_workers.py`). narrative-llm proxya los endpoints en
-:8765 para los clientes no migrados (`routers/gpu_proxy.py`, indefinido) y agrega el
-`model_backend` del `/health` del worker en `/backend_status` (best-effort,
-shape intacto). El peel "flux" llama a fal DIRECTO desde el worker
+:8765 para los clientes no migrados (`routers/gpu_proxy.py`, indefinido) y agregaba el
+`model_backend` del `/health` del worker en su estado de backends (retirado
+en #256, ya sin clientes). El peel "flux" llama a fal DIRECTO desde el worker
 (decisión 13); `DevApiCache.enabled` se relee por (mtime, inode) para que el
 toggle sea visible entre procesos. Cliente HTML directo vía
 `serviceUrl("gpu-worker")`. Detalle histórico del plan original:
