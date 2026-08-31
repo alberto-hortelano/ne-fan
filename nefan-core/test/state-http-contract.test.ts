@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { makeNarrativeState } from "./helpers.js";
+import { escenaExpandidaDePrueba, makeNarrativeState } from "./helpers.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin } from "../src/plugins/views.js";
@@ -102,7 +102,7 @@ describe("contrato WorldStateApi ↔ router real", () => {
   });
 
   it("getAssetRefs: unión de refs de escenas/entidades/snapshot de todos los saves", async () => {
-    narrativeRef.recordSceneLoaded("plaza", { scene_id: "plaza" }, ["hash_a", "hash_b"]);
+    narrativeRef.recordSceneLoaded("plaza", escenaExpandidaDePrueba("plaza"), ["hash_a", "hash_b"]);
     narrativeRef.recordEntitySpawned("npc1", "npc", "plaza", [0, 0, 0], {}, "test", "", ["hash_c"]);
     await narrativeRef.establecer();
     const res = await fetch(`${baseUrl}/sessions/asset_refs`);

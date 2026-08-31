@@ -418,6 +418,8 @@ describe("bridge ciclo de sesión", () => {
       scene_description: "prueba",
       size: { cols: 4, rows: 4, meters_per_cell: 2 },
       terrain: ["gggg", "gggg", "gggg", "gggg"],
+      terrain_legend: {},
+      __expanded: true,
       entities: [
         { id: "caja", kind: "prop", name: "Caja", cell: [1, 1], footprint: [1, 1], glyph: "c" },
       ],
@@ -451,6 +453,28 @@ describe("bridge ciclo de sesión", () => {
     const started = sent[0] as SessionStartedMessage;
     assert.equal(started.ok, false);
     assert.equal(started.error, "session_not_found");
+  });
+
+  it("resume de un save de versión vieja responde save_invalido con el motivo, no session_not_found", async () => {
+    // #334/#336: un save que EXISTE pero no vale (versión vieja, contrato
+    // violado) es un fallo distinto de «no existe» y el jugador debe ver el
+    // motivo — antes loadSession colapsaba ambos en false.
+    const { ctx, narrative } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    const data = (await ctx.sessionStorage.read(sessionId))!;
+    (data as { schema_version: number }).schema_version = 3;
+    await ctx.sessionStorage.write(sessionId, data);
+
+    narrative.startNewSession("plugtest");
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
+    const started = sent2[0] as SessionStartedMessage;
+    assert.equal(started.ok, false);
+    assert.match(started.error ?? "", /^save_invalido: /, "molde de plugin_integrity");
+    assert.match(started.error ?? "", /schema_version 3/, "el motivo viaja al jugador");
   });
 
   it("start → save → resume rebindea los plugins por id", async () => {
@@ -1031,10 +1055,12 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
 
 
 describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
-  /** Save mínimo en vector como los pre-facetas: sin character_mode. */
+  /** Save mínimo en vector como los pre-facetas: sin character_mode. La
+   *  versión es la ACTUAL — un save viejo ya no carga (#336) y el sujeto de
+   *  estos tests es el campo ausente, no la versión. */
   const legacyVectorSave = (id: string) =>
     ({
-      schema_version: 3,
+      schema_version: 5,
       session_id: id,
       game_id: "toledo_1200",
       created_at: "2026-01-01T00:00:00Z",

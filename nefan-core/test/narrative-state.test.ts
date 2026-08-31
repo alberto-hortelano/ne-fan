@@ -5,11 +5,84 @@ import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { SCHEMA_VERSION } from "../src/narrative/types.js";
 import { LLM_ENTITIES_MAX, LLM_STORY_MAX_CHARS } from "../src/narrative/serialize-llm.js";
-import { makeNarrativeState } from "./helpers.js";
+import { escenaExpandidaDePrueba, makeNarrativeState } from "./helpers.js";
 
 function makeState() {
   return makeNarrativeState().narrative;
 }
+
+describe("las puertas del save (#334, #336)", () => {
+  it("recordSceneLoaded rechaza una escena que viola el contrato, nombrando entity y campo", () => {
+    const s = makeState();
+    s.startNewSession("toledo_1200");
+    const escena = escenaExpandidaDePrueba("s1", {
+      entities: [
+        { id: "gigante", kind: "npc", name: "Gigante", cell: [1, 1], footprint: [8, 8], glyph: "n" },
+      ],
+    });
+    assert.throws(
+      () => s.recordSceneLoaded("s1", escena),
+      (err: Error) => {
+        assert.match(err.message, /"s1"/, "nombra la escena");
+        assert.match(err.message, /"gigante"/, "nombra la entity");
+        assert.match(err.message, /footprint/, "nombra el campo");
+        return true;
+      },
+    );
+    assert.equal(s.scenes_loaded["s1"], undefined, "la escena inválida no se registró");
+  });
+
+  it("un save cuya escena viola el contrato NO carga: rejects nombrando save, escena, entity y campo", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    const id = s1.startNewSession("toledo_1200");
+    s1.recordSceneLoaded("s1", escenaExpandidaDePrueba("s1"));
+    await s1.establecer();
+    // Corromper el save EN DISCO, como lo dejaría una era anterior del
+    // contrato (el caso #300: footprint inflado en un kind móvil).
+    const data = (await storage.read(id))!;
+    (data.scenes_loaded["s1"].scene_data.entities as unknown[]).push({
+      id: "gigante", kind: "npc", name: "Gigante", cell: [1, 1], footprint: [8, 8], glyph: "n",
+    });
+    await storage.write(id, data);
+    const s2 = new NarrativeState(storage);
+    await assert.rejects(
+      () => s2.loadSession(id),
+      (err: Error) => {
+        assert.match(err.message, new RegExp(`"${id}"`), "nombra el save");
+        assert.match(err.message, /"s1"/, "nombra la escena");
+        assert.match(err.message, /"gigante"/, "nombra la entity");
+        assert.match(err.message, /footprint/, "nombra el campo");
+        return true;
+      },
+    );
+    assert.equal(s2.session_id, "", "el throw llega ANTES de mutar la sesión");
+  });
+
+  it("un save de versión anterior rejects por versión — distinguible de «no existe»", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    const id = s1.startNewSession("toledo_1200");
+    await s1.establecer();
+    const data = (await storage.read(id))!;
+    (data as { schema_version: number }).schema_version = 4;
+    await storage.write(id, data);
+    const s2 = new NarrativeState(storage);
+    await assert.rejects(
+      () => s2.loadSession(id),
+      (err: Error) => {
+        assert.match(err.message, /schema_version 4/, "nombra la versión del save");
+        assert.match(err.message, new RegExp(`"${id}"`), "nombra el save");
+        return true;
+      },
+    );
+  });
+
+  it("false queda SOLO para «no existe»", async () => {
+    const s = makeState();
+    assert.equal(await s.loadSession("no_existe"), false);
+  });
+});
 
 describe("NarrativeState lifecycle", () => {
   it("startNewSession populates session_id and defaults", () => {
@@ -43,7 +116,7 @@ describe("NarrativeState lifecycle", () => {
     assert.equal(s2.isDirty(), false);
   });
 
-  it("rejects unsupported schema version", async () => {
+  it("una versión de schema desconocida LANZA (canal distinguible de «no existe»)", async () => {
     const storage = new MemorySessionStorage();
     await storage.write("badsess", {
       schema_version: 99,
@@ -70,37 +143,30 @@ describe("NarrativeState lifecycle", () => {
       _next_event_seq: 0,
     });
     const s = new NarrativeState(storage);
-    const ok = await s.loadSession("badsess");
-    assert.equal(ok, false);
+    await assert.rejects(() => s.loadSession("badsess"), /schema_version 99/);
   });
 
-  it("load de save viejo sin gold/inventory/appearance → defaults (sin NaN en economy)", async () => {
-    // Regresión: this.player = data.player copiaba el save tal cual; un save
-    // viejo sin gold/inventory dejaba undefined y la aritmética de plugins
+  it("save v5 sin campos aditivos de player → defaults (sin NaN en economy)", async () => {
+    // La convención ADITIVA declarada en loadSession: un campo nuevo de
+    // player sin bump de schema cae a su default en saves que no lo traen.
+    // Regresión original: this.player = data.player copiaba el save tal cual;
+    // sin gold/inventory quedaba undefined y la aritmética de plugins
     // (inc/dec sobre player.gold) producía NaN, el push a inventory crasheaba.
     const storage = new MemorySessionStorage();
-    await storage.write("oldsess", {
-      schema_version: 3,
-      session_id: "oldsess",
-      game_id: "toledo_1200",
-      created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-01T00:00:00Z",
-      world: { name: "Toledo", atmosphere: "", style_token: "", active_scene_id: "s1" },
-      // Save de la era pre-economy: sin gold, inventory ni appearance.
-      player: {
-        level: 3,
-        class: "rogue",
-        health: 80,
-        position: [1, 0, 2],
-        current_scene_id: "s1",
-      },
-      story_so_far: "",
-      scenes_loaded: {},
-      entities: [],
-      dialogue_history: [],
-      asset_index_snapshot: [],
-      _next_event_seq: 0,
-    } as never);
+    const seed = new NarrativeState(storage);
+    seed.startNewSession("toledo_1200");
+    const data = seed.toSessionData();
+    data.session_id = "oldsess";
+    // Quitar los campos "aditivos" del player (simula el save de antes de
+    // que existieran), conservando lo esencial.
+    data.player = {
+      level: 3,
+      class: "rogue",
+      health: 80,
+      position: [1, 0, 2],
+      current_scene_id: "s1",
+    } as never;
+    await storage.write("oldsess", data);
     const s = new NarrativeState(storage);
     assert.equal(await s.loadSession("oldsess"), true);
     // Lo presente en el save se conserva; lo ausente cae al default.
@@ -368,69 +434,16 @@ describe("NarrativeState.worldMap", () => {
       parent_id: "world",
       name: "Robledo",
     });
-    s.recordSceneLoaded("scene_r_v1", { place_id: "robledo", terrain: [] });
+    s.recordSceneLoaded("scene_r_v1", escenaExpandidaDePrueba("scene_r_v1", { place_id: "robledo" }));
     const r = s.worldMap.get("robledo")!;
     assert.equal(r.realized_scene_id, "scene_r_v1");
     assert.equal(r.visited, true);
     assert.equal(s.worldMap.serialize().active_place_id, "robledo");
   });
 
-  it("migrates a v1 session (no world_map) into v2 on load", async () => {
-    const storage = new MemorySessionStorage();
-    const legacy = {
-      schema_version: 1,
-      session_id: "old_sess",
-      game_id: "toledo_1200",
-      created_at: "",
-      updated_at: "",
-      world: { name: "Vall", atmosphere: "", style_token: "", active_scene_id: "tavern" },
-      player: {
-        level: 1,
-        class: "rogue",
-        health: 100,
-        gold: 0,
-        inventory: [],
-        appearance: { model_id: "pete", skin_path: "" },
-        position: [0, 0, 0],
-        current_scene_id: "tavern",
-      },
-      story_so_far: "",
-      scenes_loaded: { tavern: { scene_data: {}, loaded_at: "", asset_refs: [] } },
-      entities: [],
-      dialogue_history: [],
-      asset_index_snapshot: [],
-      _next_event_seq: 0,
-    };
-    // Bypass type system: write legacy shape to test migration.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await storage.write("old_sess", legacy as any);
-
-    const s = new NarrativeState(storage);
-    assert.equal(await s.loadSession("old_sess"), true);
-    const map = s.worldMap.serialize();
-    assert.equal(map.places.world.name, "Vall");
-    assert.equal(map.places.tavern?.kind, "interior");
-    assert.equal(map.places.tavern?.realized_scene_id, "tavern");
-    assert.equal(map.active_place_id, "tavern");
-  });
-
-  it("migrates a v2 session (no plugins) into v3 on load", async () => {
-    const storage = new MemorySessionStorage();
-    const s1 = new NarrativeState(storage);
-    s1.startNewSession("toledo_1200");
-    const v2 = { ...s1.toSessionData(), schema_version: 2 } as Record<string, unknown>;
-    delete v2.plugins;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await storage.write(s1.session_id, v2 as any);
-
-    const s2 = new NarrativeState(storage);
-    assert.equal(await s2.loadSession(s1.session_id), true);
-    assert.deepEqual(s2.plugins, []);
-    assert.ok(s2.isDirty(), "save v2 debe quedar dirty para re-guardarse como v3");
-    const resaved = s2.toSessionData();
-    assert.equal(resaved.schema_version, SCHEMA_VERSION);
-    assert.deepEqual(resaved.plugins, []);
-  });
+  // Aquí vivían «migrates a v1 session (no world_map) into v2» y «migrates a
+  // v2 session (no plugins) into v3»: murieron con migrations.ts entero
+  // (#336) — un save viejo ya no migra, LANZA (las puertas del save, arriba).
 
   it("round-trips plugin records through save/load", async () => {
     const storage = new MemorySessionStorage();
@@ -582,7 +595,7 @@ describe("NarrativeState.serializeForLlm", () => {
     // Escena activa con 10 entidades — TODAS deben sobrevivir al recorte.
     // (recordSceneLoaded ANTES de spawnear: registrar el record purga y
     // re-registra los NPCs de esa escena desde scene_data.)
-    s.recordSceneLoaded("tile_activo", {});
+    s.recordSceneLoaded("tile_activo", escenaExpandidaDePrueba("tile_activo"));
     for (let i = 0; i < 10; i++) {
       s.recordEntitySpawned(`activo_${i}`, "npc", "tile_activo", [i, 0, 0], {});
     }

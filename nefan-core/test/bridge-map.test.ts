@@ -12,6 +12,7 @@ import type {
   } from "../src/protocol/messages.js";
 import {
   capturarLogDelBridge,
+  escenaExpandidaDePrueba,
   makeCtx,
   makeSocket,
   waitFor,
@@ -39,11 +40,7 @@ describe("bridge player_entered_place + map triggers", () => {
       parent_id: "world",
       name: "La Posada",
     });
-    narrative.recordSceneLoaded("scene_tavern", {
-      scene_id: "scene_tavern",
-      place_id: "tavern",
-      scene_description: "la posada",
-    });
+    narrative.recordSceneLoaded("scene_tavern", escenaExpandidaDePrueba("scene_tavern", { place_id: "tavern" }));
     narrative.worldMap.addTrigger("tavern", {
       id: "greet",
       when: { type: "player_entered" },
@@ -88,11 +85,7 @@ describe("bridge player_entered_place + map triggers", () => {
     const alta = registerRuntimePlugin(narrative, ctx.activePlugins, v1);
 
     narrative.worldMap.upsertPlace({ id: "cueva", kind: "site", parent_id: "world", name: "Cueva" });
-    narrative.recordSceneLoaded("scene_cueva", {
-      scene_id: "scene_cueva",
-      place_id: "cueva",
-      scene_description: "la cueva",
-    });
+    narrative.recordSceneLoaded("scene_cueva", escenaExpandidaDePrueba("scene_cueva", { place_id: "cueva" }));
     narrative.worldMap.addTrigger("cueva", {
       id: "al_entrar",
       when: { type: "player_entered" },
@@ -134,11 +127,7 @@ describe("bridge player_entered_place + map triggers", () => {
     const { ctx, broadcasts, narrative } = makeCtx();
     narrative.startNewSession("plugtest");
     narrative.worldMap.upsertPlace({ id: "cueva", kind: "site", parent_id: "world", name: "Cueva" });
-    narrative.recordSceneLoaded("scene_cueva", {
-      scene_id: "scene_cueva",
-      place_id: "cueva",
-      scene_description: "la cueva",
-    });
+    narrative.recordSceneLoaded("scene_cueva", escenaExpandidaDePrueba("scene_cueva", { place_id: "cueva" }));
     narrative.worldMap.addTrigger("cueva", {
       id: "al_entrar",
       when: { type: "player_entered" },
@@ -169,8 +158,8 @@ describe("bridge player_entered_place + map triggers", () => {
     narrative.worldMap.upsertPlace({ id: "bosque", kind: "landmark", parent_id: "world", name: "Bosque" });
     // Desde la aldea se sale al bosque por el sur ⇒ desde el bosque, por el norte.
     narrative.worldMap.addLink({ from: "aldea", to: "bosque", kind: "path", edge: "south" });
-    narrative.recordSceneLoaded("scene_aldea", { scene_id: "scene_aldea", place_id: "aldea", scene_description: "x" });
-    narrative.recordSceneLoaded("scene_bosque", { scene_id: "scene_bosque", place_id: "bosque", scene_description: "x" });
+    narrative.recordSceneLoaded("scene_aldea", escenaExpandidaDePrueba("scene_aldea", { place_id: "aldea" }));
+    narrative.recordSceneLoaded("scene_bosque", escenaExpandidaDePrueba("scene_bosque", { place_id: "bosque" }));
 
     const { socket } = makeSocket();
     await routeMessage({ type: "player_entered_place", placeId: "aldea" }, socket, ctx);
@@ -403,7 +392,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     narrative.startNewSession("plugtest");
     narrative.worldMap.upsertPlace({ id: "forja", kind: "site", parent_id: "world", name: "La Forja" });
     // Escena activa que NO es un tile: el rayo no tiene de dónde partir.
-    narrative.recordSceneLoaded("plato", { scene_id: "plato", stage: {} });
+    narrative.recordSceneLoaded("plato", escenaExpandidaDePrueba("plato"));
 
     const { socket } = makeSocket();
     await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
@@ -558,8 +547,8 @@ describe("bridge activación por posición (tiles + anchors)", () => {
   it("pisar un tile lo activa y pisar el anchor de un place dispara sus triggers", async () => {
     const { ctx, broadcasts, narrative } = makeCtx();
     narrative.startNewSession("plugtest");
-    const t00 = expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", biome: "grass", entities: [] });
-    const t10 = expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", biome: "grass", entities: [] });
+    const t00 = expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", scene_description: "campo", biome: "grass", entities: [] });
+    const t10 = expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", scene_description: "campo", biome: "grass", entities: [] });
     narrative.recordSceneLoaded("tile_0_0", t00);
     narrative.recordSceneLoaded("tile_1_0", t10, [], { activate: false });
     narrative.worldMap.upsertPlace({
