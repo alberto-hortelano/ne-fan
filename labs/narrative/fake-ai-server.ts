@@ -278,22 +278,32 @@ const server = http.createServer((req, res) => {
     res.writeHead(204, cors);
     return res.end();
   }
+  // Se enruta por PATHNAME, como FastAPI: `POST /skin_sprite_sheet?x=1` es la
+  // misma ruta con o sin query (#319; antes se comparaba `req.url ===` y una
+  // query cualquiera daba 404 aquí y 200 en el server real). Divergencia
+  // declarada que queda: parseRequestPath NORMALIZA la barra final
+  // (`/health/` ≡ `/health`), mientras FastAPI la redirige con 307 — el fake
+  // contesta directo donde el real daría un salto más.
+  const pedido = parseRequestPath(req.url);
+  const ruta = pedido.path;
   // `fake: true` es una DECLARACIÓN, no una pista. De ella cuelga el
   // guardarraíl de cero créditos del banco de pruebas (qa/lib/sesion.mjs):
   // ningún guion que pueda disparar generación corre si el backend no dice
   // esto de sí mismo. Contrato: NarrativeHealthResponse
   // (nefan-core/src/contracts/narrative-llm.ts). NO se toca sin leerlo.
-  if (req.method === "GET" && req.url === "/health") {
+  if (req.method === "GET" && ruta === "/health") {
     return send(200, { status: "ready", fake: true } satisfies NarrativeHealthResponse);
   }
   // Unpin fake (batch "aplicar estilo" — el re-pin va por POST /assets/pin).
-  if (req.method === "DELETE" && (req.url ?? "").startsWith("/assets/pin/")) {
-    return send(200, { ok: true, ref: decodeURIComponent((req.url ?? "").slice("/assets/pin/".length)), removed: 0 });
+  // El ref se recorta de `ruta`, no de `req.url`: con query, el ref saldría
+  // corrupto (`mi_ref?x=1`).
+  if (req.method === "DELETE" && ruta.startsWith("/assets/pin/")) {
+    return send(200, { ok: true, ref: decodeURIComponent(ruta.slice("/assets/pin/".length)), removed: 0 });
   }
   // Dry-run del pack de estilo (batch "aplicar estilo" sin créditos).
-  if (req.method === "GET" && /^\/styles\/[A-Za-z0-9_.-]+\/missing$/.test(req.url ?? "")) {
+  if (req.method === "GET" && /^\/styles\/[A-Za-z0-9_.-]+\/missing$/.test(ruta)) {
     return send(200, {
-      style_id: (req.url ?? "").split("/")[2],
+      style_id: ruta.split("/")[2],
       missing: [],
       cost_per_image_usd: 0.18,
       estimated_cost_usd: 0,
@@ -312,7 +322,7 @@ const server = http.createServer((req, res) => {
   // emisión con `Content-Length` son las MISMAS funciones que corren en el
   // asset-store (#280). El CORS es lo único que pone el fake, porque es lo
   // único que de verdad es suyo.
-  const estilo = matchStylesRoute(req.method ?? "GET", parseRequestPath(req.url).parts);
+  const estilo = matchStylesRoute(req.method ?? "GET", pedido.parts);
   if (estilo) {
     writeBlob(res, readStyleFile(STYLES_DIR, estilo.styleId, estilo.file), cors);
     return;
@@ -320,7 +330,7 @@ const server = http.createServer((req, res) => {
   // Contadores del estado de proceso del fake (qa/run.mjs --diag): mirar sin
   // tocar. Va aparte de /dev/status a propósito — ese espeja un contrato real
   // del ai_server y no puede llevar campos que solo existen en el bench.
-  if (req.method === "GET" && req.url === "/dev/counters") {
+  if (req.method === "GET" && ruta === "/dev/counters") {
     return send(200, {
       tiles: tileByKey.size,
       surfaces: surfaceImages.size,
@@ -333,12 +343,12 @@ const server = http.createServer((req, res) => {
   }
   // Toggle del dev API cache (espejo trivial del ai_server real, en memoria):
   // el fake no llama APIs de pago, pero el checkbox del cliente debe operar.
-  if (req.method === "GET" && req.url === "/dev/api_cache") {
+  if (req.method === "GET" && ruta === "/dev/api_cache") {
     return send(200, { enabled: fakeDevCacheEnabled, channels: {} });
   }
   // Estado agregado del panel de dev (contrato DevStatus): el fake no gasta
   // créditos, así el E2E ejercita el panel con spend 0 y claves "presentes".
-  if (req.method === "GET" && req.url === "/dev/status") {
+  if (req.method === "GET" && ruta === "/dev/status") {
     return send(200, {
       api_cache: { enabled: fakeDevCacheEnabled, channels: {} },
       spend: { total_usd: 0, call_count: 0, calls: [] },
@@ -356,15 +366,15 @@ const server = http.createServer((req, res) => {
       keys: { meshy: true, fal: true },
     } satisfies DevStatus);
   }
-  if (req.method === "GET" && req.url?.startsWith("/cache/surface/")) {
-    const hash = req.url.slice("/cache/surface/".length);
+  if (req.method === "GET" && ruta.startsWith("/cache/surface/")) {
+    const hash = ruta.slice("/cache/surface/".length);
     const png = surfaceImages.get(hash);
     if (!png) return send(404, { detail: `fake-ai: superficie ${hash} no encontrada` });
     res.writeHead(200, { "Content-Type": "image/png", ...cors });
     return res.end(png);
   }
-  if (req.method === "GET" && req.url?.startsWith("/cache/sprite_sheet/fake/")) {
-    const rel = req.url.slice("/cache/sprite_sheet/fake/".length);
+  if (req.method === "GET" && ruta.startsWith("/cache/sprite_sheet/fake/")) {
+    const rel = ruta.slice("/cache/sprite_sheet/fake/".length);
     if (!/^[a-z0-9_]+\/[a-z0-9_]+\/dir_\d+_frame_\d{3}\.png$/.test(rel)) {
       return send(400, { detail: `fake-ai: ruta de frame inválida ${rel}` });
     }
@@ -376,8 +386,8 @@ const server = http.createServer((req, res) => {
   // Hero-shot de identidad (retrato del diálogo): en el bench no hay Meshy,
   // así que se sirve el frame frontal del personaje de prueba. El cliente lo
   // recorta a busto igual que haría con el hero real.
-  if (req.method === "GET" && req.url?.startsWith("/cache/sprite_hero/")) {
-    const key = req.url.slice("/cache/sprite_hero/".length);
+  if (req.method === "GET" && ruta.startsWith("/cache/sprite_hero/")) {
+    const key = ruta.slice("/cache/sprite_hero/".length);
     if (!/^[0-9a-f]{16}$/.test(key)) return send(400, { detail: "fake-ai: hero key inválida" });
     const file = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/idle/frontal_8/dir_0_frame_000.png`;
     if (!existsSync(file)) return send(404, { detail: `fake-ai: sin frame para el hero ${key}` });
@@ -390,7 +400,7 @@ const server = http.createServer((req, res) => {
   req.on("end", () => {
     void (async () => {
       console.error(`[fake-ai] ${req.method} ${req.url}`);
-      if (req.method === "POST" && req.url === "/notify_session") {
+      if (req.method === "POST" && ruta === "/notify_session") {
         // El contrato manda ECO de la sesión, no un `{ok:true}` pelado: hoy el
         // cliente solo mira el status, pero un fake que contesta menos de lo
         // que el contrato promete es un fake que no sirve para probar al
@@ -405,7 +415,7 @@ const server = http.createServer((req, res) => {
         } satisfies NotifySessionResponse);
       }
       // Mundo de usuario fake (E2E de crear mundo + encadenado generate_game).
-      if (req.method === "POST" && req.url === "/develop_world") {
+      if (req.method === "POST" && ruta === "/develop_world") {
         const body = leerBody<DevelopWorldRequest>(raw);
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         console.error(`[fake-ai] develop_world (${String(body.draft_text ?? "").length} chars)`);
@@ -425,7 +435,7 @@ const server = http.createServer((req, res) => {
           },
         } satisfies DevelopWorldResponse);
       }
-      if (req.method === "POST" && req.url === "/report_player_choice") {
+      if (req.method === "POST" && ruta === "/report_player_choice") {
         // Responder con una línea de diálogo (no con silencio): es lo que
         // ejercita el panel, el retrato y las opciones en el E2E sin créditos.
         const body = leerBody<ReportPlayerChoiceRequest>(raw);
@@ -480,7 +490,7 @@ const server = http.createServer((req, res) => {
       // páginas de las que su plan anunció y el guion cuenta peticiones que
       // nunca llegan. Reiniciar el proceso entero costaba el arranque del
       // stack; esto cuesta un POST.
-      if (req.method === "POST" && req.url === "/dev/reset") {
+      if (req.method === "POST" && ruta === "/dev/reset") {
         const antes = {
           tiles: tileByKey.size,
           surfaces: surfaceImages.size,
@@ -496,13 +506,13 @@ const server = http.createServer((req, res) => {
         console.error(`[fake-ai] /dev/reset: ${JSON.stringify(antes)} → todo a cero`);
         return send(200, { ok: true, limpiado: antes });
       }
-      if (req.method === "POST" && req.url === "/dev/api_cache") {
+      if (req.method === "POST" && ruta === "/dev/api_cache") {
         const body = leerBody<{ enabled?: boolean }>(raw);
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         fakeDevCacheEnabled = !!body.enabled;
         return send(200, { enabled: fakeDevCacheEnabled, channels: {} });
       }
-      if (req.method === "GET" && req.url === "/sprite_catalog") {
+      if (req.method === "GET" && ruta === "/sprite_catalog") {
         // El catálogo del servicio de sprites, tal como lo reexpone remote-gen.
         // Sin esta ruta el cliente caería a su cota baja de coste y el bench
         // estaría probando el camino de respaldo para siempre en vez del bueno.
@@ -524,7 +534,7 @@ const server = http.createServer((req, res) => {
           warnings: [],
         });
       }
-      if (req.method === "POST" && req.url === "/skin_sprite_sheet") {
+      if (req.method === "POST" && ruta === "/skin_sprite_sheet") {
         dePago("/skin_sprite_sheet"); // genera una hoja de sprites: cuesta
         const body = leerBody<SkinSpriteSheetRequest>(raw);
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
@@ -568,7 +578,7 @@ const server = http.createServer((req, res) => {
           generation_time_ms: 5,
         } satisfies SkinSpriteSheetResponse);
       }
-      if (req.method === "POST" && req.url === "/generate_surface_atlas") {
+      if (req.method === "POST" && ruta === "/generate_surface_atlas") {
         const body = leerBody<GenerateSurfaceAtlasRequest>(raw);
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         const cells = Array.isArray(body.cells) ? body.cells : [];
@@ -612,7 +622,7 @@ const server = http.createServer((req, res) => {
       }
       // Pins del asset-store (batch "aplicar estilo"): en memoria, para que
       // el run del bench termine sin el store real.
-      if (req.method === "POST" && req.url === "/assets/pin") {
+      if (req.method === "POST" && ruta === "/assets/pin") {
         const body = leerBody<AssetPinRequest>(raw);
         if (!body) return send(400, { ok: false, error: "fake-ai: body no es JSON" });
         const hashes = Array.isArray(body.hashes) ? body.hashes : [];
@@ -624,7 +634,7 @@ const server = http.createServer((req, res) => {
         } satisfies AssetPinResponse);
       }
       // Completado fake del pack (batch "aplicar estilo" sin créditos).
-      if (req.method === "POST" && /^\/styles\/[A-Za-z0-9_.-]+\/complete$/.test(req.url ?? "")) {
+      if (req.method === "POST" && /^\/styles\/[A-Za-z0-9_.-]+\/complete$/.test(ruta)) {
         // El fake nunca completa nada (`generated: []`, `cost_usd: 0`), así
         // que esta marca no llega a dispararse HOY. Se escribe igual, y con la
         // misma condición que tendría el server real —pintar refs es lo que
@@ -638,7 +648,7 @@ const server = http.createServer((req, res) => {
           message: "fake: pack ya completo",
         } satisfies StyleCompleteResponse);
       }
-      if (req.method === "POST" && req.url === "/generate_scene") {
+      if (req.method === "POST" && ruta === "/generate_scene") {
         dePago("/generate_scene"); // una llamada al LLM narrativo: cuesta
         if (SCENE_DELAY_MS > 0) {
           console.error(`[fake-ai] /generate_scene retenido ${SCENE_DELAY_MS} ms (SCENE_DELAY_MS)`);
