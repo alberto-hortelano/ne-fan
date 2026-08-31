@@ -48,6 +48,7 @@ Un fichero en `guiones/` que exporta `async (ctx) => {}`. El contexto ofrece:
 | `ctx.waitFor(desc, fn, ms, arg)` | espera a que `fn` (en la página) devuelva algo truthy |
 | `ctx.holdUntil(key, desc, fn, ms, arg)` | mantiene una tecla hasta que se cumple `fn`, y la suelta siempre |
 | `ctx.expect(desc, cond, detalle)` | apunta un criterio; los fallos deciden el veredicto |
+| `ctx.sinMedir(motivo)` | declara «no pude medir» y ABORTA el guion: sale `⊘` con su motivo, aparte de verdes y rojos (y degrada la corrida a exit 2) |
 | `ctx.shot(label)` | captura a `qa/capturas/<RUN_ID>/` |
 | `ctx.page` | la página de Playwright, para lo que no cubra lo anterior |
 
@@ -84,6 +85,13 @@ Reglas que hacen que un guion valga algo:
    valor y es obligatorio: un booleano se pone a `true` sin pensar y se lee dos veces, y una
    frase hay que escribirla y se ve en el diff. Si te equivocas al declararlo —dices `sinMotor` y
    el guion gasta— lo caza el contador de rutas de pago del motor falso y sale ⊘ igual (#295).
+6. **Una precondición perdida se DECLARA, no se `return`.** Si a mitad de guion falta lo que hace
+   posible medir (la fixture no está en el selector, el estado que ibas a ejercer no existe),
+   `ctx.sinMedir(motivo)` — nunca un `expect` fallido más `return`: ese rojo dice «lo que
+   defiendo está roto» cuando lo que pasó es «no pude medir», y ese verde-a-medias mide otra
+   cosa (#331). Declarar ABORTA el guion y sale `⊘`. No es una vía de escape: el ⊘ degrada la
+   corrida MÁS que el rojo (exit 2 contra 1), y un guion que ya empujó fallos no puede
+   reconvertirse — un ⊘ es una declaración, no una amnistía.
 
 ## Los guiones sembrados
 
@@ -207,7 +215,7 @@ tocó. Van bajo demanda —cuestan lo que cuesta la batería que conducen— y *
 ```bash
 node qa/contrato-candados-en-negativo.mjs   # schemas, saneadores y prompts (TS + Python, ~1,5 s cada uno)
 node qa/mutacion-candados-en-negativo.mjs   # el ciclo de mutación y su huella
-node qa/bateria-candados-en-negativo.mjs    # los guiones 22 y 34, o sea ESTA batería (~4 corridas de guion)
+node qa/bateria-candados-en-negativo.mjs    # los guiones que esta batería usa de instrumento (01, 22, 34, 44)
 node qa/contrato-candados-en-negativo.mjs python   # los tres aceptan filtro por nombre
 ```
 
@@ -216,14 +224,20 @@ seguidas se colaron seis criterios que ya estaban satisfechos antes de empezar. 
 dice «lo vi rojo» es una afirmación; esto es una prueba, y se vuelve a hacer cada vez que alguien
 lo ejecute.
 
-El de la batería (`bateria-candados-en-negativo.mjs`, #308/#320) añade una exigencia que los
-otros dos no tienen: **el rojo tiene que NOMBRAR la causa**. Un rojo genérico no vale, porque el
-defecto de #308 se manifestaba como un aserto del telegraph fallando tres pasos más abajo — un
-veredicto correcto que no se puede diagnosticar. Y distingue el `⊘` del rojo: si la corrida no
-llegó a medir (salida 2 del runner), no dice nada del guion y no cuenta como éxito.
+El de la batería (`bateria-candados-en-negativo.mjs`, #308/#320/#331) añade una exigencia que
+los otros dos no tienen: **el veredicto tiene que NOMBRAR la causa**. Un rojo genérico no vale,
+porque el defecto de #308 se manifestaba como un aserto del telegraph fallando tres pasos más
+abajo — un veredicto correcto que no se puede diagnosticar. Y distingue el `⊘` del rojo: si la
+corrida no llegó a medir (salida 2 del runner), no dice nada del guion y no cuenta como éxito —
+salvo que el candado ESPERE un ⊘ (`codigoEsperado: 2`), que es como se prueban las dos caras
+del canal de #331: precondición rota → ⊘ declarado con su motivo, y con fallos ya empujados →
+la reconversión se veta y el guion queda en rojo.
 
 Los guiones que necesitan una PARTIDA real (no una fixture) comparten el arranque del
-título en `qa/lib/sesion.mjs` — `qa/lib/` no lo recorre el runner, solo `qa/guiones/`.
+título en `qa/lib/sesion.mjs`; `qa/lib/sonda.mjs` (`nefan`/`waitFor`, vía `ctxDeSonda(page)`) es
+la MISMA sonda para el runner y para los scripts sueltos (`fixtures-sin-bridge`,
+`captura-de-fixture`), y `qa/lib/fixtures.mjs` (`cargarFixture`) es cómo un guion AFIRMA qué
+fixture midió — `qa/lib/` no lo recorre el runner, solo `qa/guiones/`.
 `07` dispara generación de skins: se niega a correr si `?ai=` no apunta al fake-ai-server.
 
 Un guion **no puede nombrar** los identificadores ingleses de las dos vistas retiradas ni
