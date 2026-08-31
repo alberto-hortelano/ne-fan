@@ -32,17 +32,18 @@
  *     medida sale ~2,5× más rápida (medido el 2026-08-26, y me costó una
  *     tabla entera de números que no significaban nada).
  *
- *  Las fixtures las escribe y las borra este script (`data/scenes/perf_*.json`).
+ *  Los tiles sintéticos viajan DIRECTOS por `page.evaluate` a los hooks de dev
+ *  (`loadSceneRaw` el primero, `addTileRaw` los vecinos): nada se escribe en
+ *  `data/scenes/`. Hasta #332 el primer tile entraba por el selector «Room»
+ *  —que se puebla con el `import.meta.glob` de vite— y la PRIMERA corrida
+ *  contra un cliente ya arrancado fallaba siempre: el glob se expande al
+ *  transformar `main.ts`, así que un vite vivo no veía los `perf_*.json`
+ *  recién escritos. La asimetría (3 de 4 tiles ya iban crudos) ERA el bug.
  */
 import { chromium } from "playwright-core";
-import { writeFileSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { abrirNavegador } from "./lib/navegador.mjs";
 import { URLS } from "./lib/stack.mjs";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const SCENES = join(here, "..", "nefan-core", "data", "scenes");
 const BASE = process.env.NEFAN_URL ?? URLS.html;
 const NIVELES = process.argv.slice(2).map(Number).filter((n) => Number.isFinite(n) && n > 0);
 const ESCALERA = NIVELES.length > 0 ? NIVELES : [120, 160, 200, 240];
@@ -67,28 +68,15 @@ function fixture(n, tx, ty) {
   }
   return {
     tile: { tx, ty },
-    scene_id: `tile_${tx}_${ty}`,
+    // El `scene_id` NOMBRA el nivel: es lo que permite AFIRMAR tras la carga
+    // que el mundo tiene puesto el tile de ESTA fila y no el de la anterior.
+    scene_id: `perf_${n}_${tx}_${ty}`,
     scene_description: `Bench de ${n} volúmenes.`,
     biome: "forest_floor",
     ground: [{ id: "senda", kind: "path", points: [[0, 64], [128, 64]], w: 4, material: "dirt" }],
     entities,
   };
 }
-
-const escritas = [];
-function escribirFixtures(n) {
-  for (const [tx, ty] of TILES) {
-    const nombre = `perf_${n}_${tx}_${ty}`;
-    const ruta = join(SCENES, `${nombre}.json`);
-    writeFileSync(ruta, JSON.stringify(fixture(n, tx, ty)));
-    escritas.push(ruta);
-  }
-}
-const limpiar = () => { for (const f of escritas.splice(0)) rmSync(f, { force: true }); };
-process.on("exit", limpiar);
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { limpiar(); process.exit(130); });
-
-for (const n of ESCALERA) escribirFixtures(n);
 
 const browser = await abrirNavegador(chromium, { log: (s) => console.log(s) });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
@@ -119,19 +107,29 @@ await page.addInitScript(() => {
 await page.goto(`${BASE}/?input=scripted`, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => Boolean(document.getElementById("ts-close")), null, { timeout: 30000 });
 await page.evaluate(() => window.__nefan.closeTitle());
-if (!(await page.evaluate(() => typeof window.__nefan.addTileRaw === "function"))) {
-  throw new Error("el cliente no expone __nefan.addTileRaw: ¿estás midiendo un build de producción?");
+for (const hook of ["loadSceneRaw", "addTileRaw"]) {
+  if (!(await page.evaluate((h) => typeof window.__nefan[h] === "function", hook))) {
+    throw new Error(`el cliente no expone __nefan.${hook}: ¿estás midiendo un build de producción?`);
+  }
 }
 
 async function medir(n, tiles, postura) {
-  await page.evaluate((f) => window.__nefan.loadFixture(f), `perf_${n}_0_0`);
-  await page.waitForFunction(() => (window.__nefan.status().scene ? true : null), null, { timeout: 60000 });
-  for (const [tx, ty] of tiles.slice(1)) {
-    const raw = await page.evaluate(
-      async (f) => (await fetch(`/@fs${f}`)).json(),
-      join(SCENES, `perf_${n}_${tx}_${ty}.json`),
+  // El primer tile TOMA el mundo (lo vacía) por el hook crudo — el mismo
+  // camino declarativo que los vecinos, sin pasar por el selector ni por el
+  // disco. `page.evaluate` espera la promesa del hook.
+  await page.evaluate((r) => window.__nefan.loadSceneRaw(r), fixture(n, 0, 0));
+  // Y se AFIRMA qué quedó puesto (espíritu de qa/lib/fixtures.mjs, #308):
+  // medir la escalera con el tile del nivel anterior puesto daría una tabla
+  // entera de números de OTRA fila.
+  const puesta = await page.evaluate(() => window.__nefan.scene?.scene_id ?? null);
+  if (puesta !== `perf_${n}_0_0`) {
+    throw new Error(
+      `se pidió el tile «perf_${n}_0_0» y el mundo se quedó en «${puesta}»: la fila de ${n} ` +
+        `volúmenes mediría otra escena`,
     );
-    await page.evaluate((r) => window.__nefan.addTileRaw(r), raw);
+  }
+  for (const [tx, ty] of tiles.slice(1)) {
+    await page.evaluate((r) => window.__nefan.addTileRaw(r), fixture(n, tx, ty));
   }
   await page.waitForFunction(() => {
     const f = window.__nefan.fps();
@@ -181,4 +179,3 @@ for (const n of ESCALERA) {
   console.log(`${String(n).padStart(5)} (${String(uno.vols).padStart(4)})  ${f(uno)} ${f(dentro)} ${f(esquina)}`);
 }
 await browser.close();
-limpiar();
