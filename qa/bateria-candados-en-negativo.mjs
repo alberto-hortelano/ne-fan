@@ -158,6 +158,39 @@ const INVARIANTES = [
     ],
     /no puede reconvertirse|amnistía/,
   ],
+  // Cara 3: el motivo vacío se RECHAZA como error del guion (rojo), no como un
+  // ⊘ mudo. Entrada de QA (2026-08-31): la única cara del canal que la batería
+  // no cubría. El `"" ??` evalúa a `""` y fuerza el motivo vacío sin tocar el
+  // template del guion.
+  [
+    "#331 · el motivo vacío se RECHAZA: rojo que exige el motivo, no un ⊘ mudo",
+    join(raiz, "qa/guiones/34-con-el-titulo-delante-el-teclado-no-juega.mjs"),
+    "34-con-el-titulo",
+    [
+      ['const FIXTURE = "puerto_tile";\n', 'const FIXTURE = "puerto_tile_inexistente";\n'],
+      ["    ctx.sinMedir(\n", '    ctx.sinMedir(\n      "" ??\n'],
+    ],
+    /sinMedir exige el MOTIVO/,
+  ],
+  // Cara 4: el guion se TRAGA la sentinela (hallazgo de QA: un try/catch del
+  // propio guion la capturaba y el guion salía VERDE). La declaración deja
+  // marca en el ctx ANTES de lanzar, y el runner la honra al volver: un trago
+  // no puede fabricar un verde. Sin el arreglo, esta entrada sale VERDE — es
+  // exactamente la mentira que caza.
+  [
+    "#331 · tragarse la sentinela no deshace la declaración: sale ⊘, no verde",
+    join(raiz, "qa/guiones/34-con-el-titulo-delante-el-teclado-no-juega.mjs"),
+    "34-con-el-titulo",
+    [
+      ['const FIXTURE = "puerto_tile";\n', 'const FIXTURE = "puerto_tile_inexistente";\n'],
+      [
+        "  if (!opcion) {\n    ctx.sinMedir(\n",
+        '  if (!opcion) {\n    try {\n      ctx.sinMedir("me quedé sin fixture (sentinela tragada a propósito por la batería de candados)");\n    } catch {\n      return; // el trago: la sentinela muere aquí y el guion «acaba bien»\n    }\n  }\n  if (!opcion) {\n    ctx.sinMedir(\n',
+      ],
+    ],
+    /la declaración se honra igual/,
+    2,
+  ],
   [
     "#320 · muere UNA sola tecla de movimiento (`a`) en el proveedor de teclado",
     TECLADO,

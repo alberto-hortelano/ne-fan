@@ -660,6 +660,15 @@ function makeCtx(page, name) {
     ...ctxDeSonda(page),
     name,
     fallos: [],
+    /** La MARCA de que este guion declaró `sinMedir`, puesta ANTES de lanzar
+     *  la sentinela. Existe porque la sentinela es una excepción y un
+     *  `try { ctx.sinMedir(…) } catch {}` del propio guion se la traga —
+     *  QA lo hizo y el guion salió VERDE (2026-08-31). El runner honra la
+     *  marca aunque la sentinela nunca le llegue: una declaración no se
+     *  deshace tragándosela. Pesa para #261: 44 de los 72 catches del censo
+     *  son `.catch(() => null)`, y un helper con catch genérico haría esto
+     *  sin querer. */
+    declaracionSinMedir: null,
 
     /** Mantiene una tecla hasta que se cumple `untilFn`, y la suelta SIEMPRE.
      *  `maxMs` es un cortafuegos, no la condición de parada: esperar por
@@ -694,6 +703,9 @@ function makeCtx(page, name) {
             `(una frase), y llegó ${JSON.stringify(motivo)}.`,
         );
       }
+      // La marca va ANTES del throw: si el guion (o un helper con catch
+      // genérico) se traga la sentinela, la declaración sobrevive igual.
+      ctx.declaracionSinMedir = { motivo };
       throw new SinMedirDeclarado(motivo);
     },
 
@@ -862,6 +874,9 @@ async function main() {
       if (!sinMedir) await mod.default(ctx);
     } catch (err) {
       if (err instanceof SinMedirDeclarado) {
+        // La sentinela llegó: la marca se CONSUME aquí (el bloque de abajo es
+        // solo para la que un catch del guion se tragó).
+        ctx.declaracionSinMedir = null;
         // El ⊘ DECLARADO exige el guion limpio, y esto es MÁS estricto que el
         // propio runner: los ⊘ de abajo (:stack caído, sinMotor falso)
         // conservan `ctx.fallos` no vacíos porque esos fallos pueden ser del
@@ -884,6 +899,26 @@ async function main() {
         await ctx.shot("error").catch(() => {});
       }
     }
+    // La marca sigue puesta = el guion declaró sinMedir y la sentinela NUNCA
+    // llegó: se la tragó un try/catch (suyo o de un helper) y siguió
+    // ejecutándose. La declaración se honra igual — si no, un catch genérico
+    // fabricaría un verde de un guion que dijo «no pude medir» (hallazgo de
+    // QA, #331). Misma regla que arriba: limpio → ⊘; con fallos → rojo.
+    if (ctx.declaracionSinMedir) {
+      const { motivo } = ctx.declaracionSinMedir;
+      if (ctx.fallos.length === 0 && !fatal) {
+        sinMedir =
+          `declarado por el guion: ${motivo} — y la sentinela se tragó (el guion siguió ` +
+          `ejecutándose tras declarar); la declaración se honra igual`;
+      } else {
+        ctx.fallos.push(
+          `declaró sinMedir(«${motivo}»), se tragó la sentinela y siguió con fallos: ` +
+            `un ⊘ es una declaración, no una amnistía — el guion no puede reconvertirse ` +
+            `y se queda en rojo`,
+        );
+        console.log(`    ✘ ${ctx.fallos[ctx.fallos.length - 1]}`);
+      }
+    }
     if (DIAG) {
       const libros = await page
         .evaluate(() => ({
@@ -898,7 +933,11 @@ async function main() {
     if (errores.length) {
       console.log(`    ✘ ${errores.length} excepción(es) en la página`);
       errores.slice(0, 3).forEach((e) => console.log(`      ${e.split("\n")[0]}`));
-      ctx.fallos.push(`${errores.length} excepción(es) no capturadas en la página`);
+      // La primera va EN el fallo, no solo en el log en línea: el resumen es
+      // lo que se lee, y un recuento sin texto no se puede diagnosticar.
+      ctx.fallos.push(
+        `${errores.length} excepción(es) no capturadas en la página: ${errores[0].split("\n")[0]}`,
+      );
     }
     await page.close();
     if (fatal) ctx.fallos.push(`ERROR: ${fatal.message}`);
@@ -958,8 +997,12 @@ async function main() {
   for (const r of resultados) {
     console.log(`${ICONO[r.estado]} ${r.nombre}${r.motivo ? ` — ${r.motivo}` : ""}`);
     // Un rojo dice de quién es en el propio resumen: en una batería de treinta
-    // guiones, el detalle quedó a cientos de líneas de scroll.
-    if (r.estado === ROJO) for (const f of r.fallos) console.log(`    · ${f}`);
+    // guiones, el detalle quedó a cientos de líneas de scroll. Y un ⊘ enseña
+    // los fallos que arrastraba (una excepción de página antes de declarar,
+    // los del cadáver del stack): el exit 2 protege la corrida, pero el
+    // diagnóstico se perdía del resumen (hallazgo de QA, #331). Imprimirlos
+    // no cambia el veredicto.
+    if (r.estado === ROJO || r.estado === SIN_MEDIR) for (const f of r.fallos) console.log(`    · ${f}`);
   }
   const partes = [`${verdes} en verde`, `${rojos} en rojo`];
   if (sinMedir) partes.push(`${sinMedir} SIN MEDIR`);
