@@ -256,6 +256,9 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
    *  ruta absoluta del disco de quien juega (QA §3.4). */
   const CRUDOS = [
     "session_not_found",
+    // El resume de un save que existe pero no vale (#334/#336): versión vieja
+    // o escena que viola el contrato. Copiado verbatim de handleResumeSession.
+    'save_invalido: save "1756640000-abc123" incompatible: schema_version 3 ≠ 5 — pre-producción, sin migraciones (#336): bórralo o empieza partida nueva',
     "game_load_failed: game.json malformed (/home/al/code/ne-fan/nefan-core/data/games/alta_fantasia/game.json): Expected property name or '}' in JSON at position 2 (line 1 column 3)",
     "plugin_integrity: el plugin comercio no está en data/games/alta_fantasia/plugins",
     'combat_system_unknown: "duelo" (esperaba basic|standard)',
@@ -286,6 +289,11 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
    *  pudo completarlo» donde el juego sabe exactamente qué ha pasado. */
   const ESPERADO: Array<[string, string]> = [
     ["session_not_found", "Esa partida guardada ya no está en el disco."],
+    // La mitad visible de la decisión «fallo ruidoso» (#334/#336): el save no
+    // vale y reintentar no puede salir bien NUNCA — la frase da la única
+    // salida real (borrar o empezar de nuevo), como pide la doctrina del
+    // guion 27 (un fallo permanente no se disfraza de hipo del servidor).
+    ["save_invalido", "Esa partida guardada ya no vale para esta versión del juego: bórrala o empieza una nueva."],
     ["game_load_failed", "Los datos de ese mundo están dañados y no se pueden leer."],
     ["plugin_integrity", "Los añadidos de ese mundo no casan con la partida guardada."],
     ["combat_system_unknown", "Ese mundo usa un sistema que esta versión del juego no conoce."],
@@ -336,20 +344,22 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
   });
 
   it("los motivos que el jugador puede ACCIONAR se distinguen entre sí", () => {
-    // Un save que ya no está, un mundo roto, unos añadidos que no casan, un
-    // servidor caído, uno que no contesta y una instalación sin mundos piden
-    // cosas distintas de quien juega: colapsarlos en «no se pudo» sería no
-    // decir nada. Los DOS que sí comparten frase son a propósito
-    // (`combat_system_unknown` y `npc_behavior_unknown`): para el jugador son
-    // el mismo hecho —el mundo pide algo que su juego no trae— y distinguirlos
-    // solo nombraría un subsistema que no conoce. 10 códigos → 9 frases.
+    // Un save que ya no está, uno que existe pero no vale, un mundo roto,
+    // unos añadidos que no casan, un servidor caído, uno que no contesta y
+    // una instalación sin mundos piden cosas distintas de quien juega:
+    // colapsarlos en «no se pudo» sería no decir nada. Los DOS que sí
+    // comparten frase son a propósito (`combat_system_unknown` y
+    // `npc_behavior_unknown`): para el jugador son el mismo hecho —el mundo
+    // pide algo que su juego no trae— y distinguirlos solo nombraría un
+    // subsistema que no conoce. 11 códigos → 10 frases.
     const distintos = CRUDOS.map((raw) => motivoDeSesionParaElJugador(new Error(raw)));
-    assert.equal(new Set(distintos).size, 9, JSON.stringify(distintos));
-    assert.equal(distintos[3], distintos[4], "combate y NPCs comparten frase a propósito");
+    assert.equal(new Set(distintos).size, 10, JSON.stringify(distintos));
+    assert.equal(distintos[4], distintos[5], "combate y NPCs comparten frase a propósito");
     assert.match(distintos[0], /ya no está/);
-    assert.match(distintos[1], /dañados/);
-    assert.match(distintos[5], /conexión/);
-    assert.match(distintos[6], /no contesta/);
+    assert.match(distintos[1], /bórrala o empieza una nueva/, "el save inválido nombra su única salida");
+    assert.match(distintos[2], /dañados/);
+    assert.match(distintos[6], /conexión/);
+    assert.match(distintos[7], /no contesta/);
   });
 
   it("el clon sin hojas NO se confunde con un servidor con hipo, y el consejo se puede seguir", () => {

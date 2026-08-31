@@ -256,6 +256,15 @@ export function motivoDeSesionParaElJugador(err: unknown): string {
   if (/session_not_found/.test(raw)) {
     return "Esa partida guardada ya no está en el disco.";
   }
+  // El save EXISTE pero no vale (#334/#336): versión de una era anterior o
+  // escena que viola el contrato. Reintentar fallará SIEMPRE (el defecto está
+  // en el disco), así que la frase da la única salida real — borrar o empezar
+  // de nuevo, que es la decisión «fallo ruidoso» dicha al jugador y no solo
+  // al log. Sin esta rama caía en el genérico «inténtalo de nuevo»: el mismo
+  // consejo imposible que el guion 27 nació rojo por denunciar.
+  if (/save_invalido/.test(raw)) {
+    return "Esa partida guardada ya no vale para esta versión del juego: bórrala o empieza una nueva.";
+  }
   if (/game_load_failed/.test(raw)) {
     return "Los datos de ese mundo están dañados y no se pueden leer.";
   }

@@ -29,6 +29,7 @@
  *  ORDEN son contrato: los congela `test/scene-validate-golden.test.ts`. */
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
+import { DERIVED_ENT_PREFIX } from "./blueprint/derive.js";
 import { MAX_GROUND_FEATURES } from "./blueprint/ground.js";
 import { planCollisionGrid } from "./blueprint/plan-collision.js";
 import { parseScatter } from "./blueprint/scatter.js";
@@ -551,6 +552,15 @@ export function checkPlayerSpawn(
       const blocker = planMask.blockerAt(c, r);
       if (blocker === "ground") {
         causa = "lo cubre el agua del ground del plan — muévelo a tierra firme";
+      } else if (blocker !== null && blocker.volumeId.startsWith(DERIVED_ENT_PREFIX)) {
+        // Un volumen DERIVADO no está en la escena del motor: él declaró una
+        // ENTITY, y «mueve el volumen» le pedía tocar algo que no existe en
+        // su vocabulario. Se nombra la entity (lo accionable) y el volumen
+        // real del plan entre paréntesis (la verdad completa) — QA de #337.
+        const entity = blocker.volumeId.slice(DERIVED_ENT_PREFIX.length);
+        causa =
+          `lo cubre la masa de la entity "${entity}" (volumen derivado "${blocker.volumeId}" del plan) — ` +
+          "muévelo fuera o mueve la entity";
       } else if (blocker !== null) {
         causa = `lo cubre la masa del volumen "${blocker.volumeId}" del plan — muévelo fuera o mueve el volumen`;
       } else {

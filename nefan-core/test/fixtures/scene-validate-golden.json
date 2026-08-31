@@ -307,7 +307,7 @@
     "player-bajo-la-huella-de-un-prop": {
       "ok": false,
       "errors": [
-        "el spawn del player [15, 80] no es transitable: lo cubre la masa del volumen \"derived_ent_mesa\" del plan — muévelo fuera o mueve el volumen"
+        "el spawn del player [15, 80] no es transitable: lo cubre la masa de la entity \"mesa\" (volumen derivado \"derived_ent_mesa\" del plan) — muévelo fuera o mueve la entity"
       ],
       "warnings": [
         "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"

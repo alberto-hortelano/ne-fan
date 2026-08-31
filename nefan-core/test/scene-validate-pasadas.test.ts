@@ -410,6 +410,36 @@ describe("checkPlayerSpawn", () => {
     ]);
   });
 
+  it("un char sólido SIN entrada de leyenda se nombra a secas, sin inventarle nombre (QA #337)", () => {
+    // El agua rasterizada del plan ("w") no tiene entrada en la leyenda por
+    // defecto: el mensaje no puede prometer una que no existe — nombra el
+    // char tal cual y nada más. Con leyenda declarada sí sale el nombre
+    // (test de arriba); este canda la otra mitad.
+    const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [1, 1] }] });
+    assert.equal(view.legend.W, undefined, "el caso ES sin leyenda");
+    assert.equal(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [], bootstrap: true }, found), null);
+    assert.deepEqual(found.errors, [
+      'el spawn del player [1, 1] no es transitable: la celda es "W", terreno sólido — muévelo a una celda pisable',
+    ]);
+  });
+
+  it("bloqueado por un volumen DERIVADO de una entity, el consejo manda mover la entity (QA #337)", () => {
+    // El motor declaró una entity `mesa`, no un volumen: «mueve el volumen»
+    // le pedía tocar algo que no está en su escena. El prefijo derived_ent_
+    // es la marca del derivador (blueprint/derive.ts) y de él sale el id real.
+    const plan: PlanMask = {
+      solid: (c, r) => c === 2 && r === 1,
+      volumes: 1,
+      blockerAt: (c, r) => (c === 2 && r === 1 ? { volumeId: "derived_ent_mesa" } : null),
+    };
+    const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [2, 1] }] }, plan);
+    assert.equal(checkPlayerSpawn(view, map, plan, { required_crossings: [], bootstrap: true }, found), null);
+    assert.deepEqual(found.errors, [
+      'el spawn del player [2, 1] no es transitable: lo cubre la masa de la entity "mesa" ' +
+        '(volumen derivado "derived_ent_mesa" del plan) — muévelo fuera o mueve la entity',
+    ]);
+  });
+
   it("bloqueado por el agua del ground del plan, el error lo dice sin inventar un volumen", () => {
     const plan: PlanMask = {
       solid: (c, r) => c === 2 && r === 1,
