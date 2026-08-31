@@ -640,6 +640,17 @@ def validate_scene_response(data: dict) -> dict:
             "(la ref de escena se retiró con el repintado del tile)",
             flush=True,
         )
+    # `__expanded` es la marca INTERNA del expander (nefan-core scene-expand):
+    # separa las dos poblaciones de escena, y una escena EMITIDA que la trae
+    # miente sobre su estado de expansión — con `terrain` vacío o ausente
+    # reventaba el validador de jugabilidad como 500 (#195). FAIL-LOUD, no un
+    # `pop`: mentir sobre el estado de expansión no es un campo retirado
+    # inocuo que se pueda podar en silencio. Espejo de EmittedSceneSchema.
+    if "__expanded" in data:
+        raise ValueError(
+            "`__expanded` es la marca interna del expander: una escena emitida no la lleva — "
+            "quítala y declara `biome` + primitivas; el engine expande y marca él"
+        )
 
     # ── Terrain legend ───────────────────────────────────────────────────
     # Los valores pueden ser string (legacy) u objeto {name, solid} — la forma
