@@ -11,6 +11,8 @@
  *  corte continúa por cache-hits ($0 en lo ya pagado). */
 import type {
   GenerateSurfaceAtlasResponse,
+  SkinSpriteSheetResponse,
+  StyleCompleteResponse,
   StylesMissingResponse,
   SurfaceCellSpec,
 } from "@nefan-core/src/contracts/remote-gen.js";
@@ -372,9 +374,9 @@ export class StyleApplyController {
       if (!res.ok) {
         failures.push(`pack del estilo: HTTP ${res.status} ${await res.text().catch(() => "")}`);
       } else {
-        const data = (await res.json()) as { generated?: string[]; cost_usd?: number };
-        packGenerated = data.generated?.length ?? 0;
-        costUsd += data.cost_usd ?? 0;
+        const data = (await res.json()) as StyleCompleteResponse;
+        packGenerated = data.generated.length;
+        costUsd += data.cost_usd;
       }
     }
 
@@ -435,14 +437,12 @@ export class StyleApplyController {
               }),
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = (await res.json()) as {
-              ok?: boolean;
-              cached?: boolean;
-              meta?: { skin?: { cost_usd?: number } };
-              error?: string;
-            };
-            if (!data.ok) throw new Error(data.error ?? "sin ok en la respuesta");
-            const c = data.meta?.skin?.cost_usd ?? 0;
+            const data = (await res.json()) as SkinSpriteSheetResponse;
+            // El servicio real jamás emite un campo `error` con 200 (los
+            // fallos van por HTTPException): un 200 sin ok=true viola el
+            // contrato y se dice tal cual.
+            if (!data.ok) throw new Error("respuesta 200 sin ok=true (viola SkinSpriteSheetResponse)");
+            const c = data.meta.skin?.cost_usd ?? 0;
             costUsd += c;
             if (data.cached) led.cached.skins++;
             else skinsPainted++;

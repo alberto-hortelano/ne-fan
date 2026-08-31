@@ -23,6 +23,10 @@ import {
   SUGGESTED_THEME_TAGS,
   styleCompatibleWithGame,
 } from "@nefan-core/src/games/style-refs.js";
+import type {
+  StyleCompleteResponse,
+  StyleUploadResponse,
+} from "@nefan-core/src/contracts/remote-gen.js";
 import { serviceUrl } from "../net/service-urls.js";
 import { errors } from "./error-log.js";
 import { paso } from "./async-ui.js";
@@ -1154,12 +1158,7 @@ export class TitleScreen {
           body: JSON.stringify({ name, tags, images }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-        const data = (await res.json()) as {
-          style_id: string;
-          uploaded: string[];
-          missing: Array<{ id: string; folder: string; description: string }>;
-          estimated_cost_usd: number;
-        };
+        const data = (await res.json()) as StyleUploadResponse;
         pendingStyleId = data.style_id;
         if (data.missing.length === 0) {
           statusEl.innerHTML = `<span style="color:#4a4">Estilo ${escapeHtml(data.style_id)} completo.</span>`;
@@ -1191,7 +1190,7 @@ export class TitleScreen {
           body: JSON.stringify({ confirm: true }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-        const data = (await res.json()) as { generated: string[]; cost_usd: number };
+        const data = (await res.json()) as StyleCompleteResponse;
         statusEl.innerHTML = `<span style="color:#4a4">Generadas ${data.generated.length} imágenes ($${data.cost_usd.toFixed(2)}).</span>`;
         await this.renderWorldSelect();
       } catch (err) {
