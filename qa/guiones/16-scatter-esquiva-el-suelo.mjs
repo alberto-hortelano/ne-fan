@@ -49,18 +49,6 @@ async function esperarFrames(ctx, n = 3) {
   );
 }
 
-/** Sin bridge (preset `html-fixtures`) el arranque de partida falla a
- *  propósito y el jugador ve el muro de error — y tarda 5 s en salir, así que
- *  puede aparecer DESPUÉS de cargar la fixture. Se cierra por SU botón, como
- *  haría una persona (nada de display:none), justo antes de cada captura.
- *  Con bridge el muro no existe y esto no hace nada. */
-async function cerrarMuroSiHay(ctx) {
-  await ctx.page.evaluate(() => {
-    const muro = document.getElementById("narrative-loader");
-    if (muro?.classList.contains("error")) document.getElementById("narrative-loader-dismiss")?.click();
-  });
-}
-
 export default async function (ctx) {
   await ctx.waitFor("el título aparece al arrancar", () => (document.getElementById("ts-close") ? { hay: true } : null));
   await ctx.nefan("closeTitle");
@@ -151,7 +139,6 @@ export default async function (ctx) {
       `${(avance.x - xSalida).toFixed(2)} m`,
     );
   }
-  await cerrarMuroSiHay(ctx);
   await esperarFrames(ctx);
   await ctx.shot("camino-real-despejado");
 
@@ -260,7 +247,6 @@ export default async function (ctx) {
   // y ni un árbol encima. Desde la orilla oeste, mirando al este.
   await ctx.nefan("setPlayerPos", ox + 74 * plano.mpc, oz + eje.y * plano.mpc);
   await ctx.nefan("setYaw", Math.PI / 2);
-  await cerrarMuroSiHay(ctx);
   await esperarFrames(ctx);
   await ctx.shot("rio-y-puente-sin-arboles");
 }

@@ -109,16 +109,6 @@ function mirarA(ctx, grados) {
   );
 }
 
-/** Sin bridge (preset `html-fixtures`) el arranque de partida falla a
- *  propósito y el jugador ve el muro de error. Se cierra por SU botón, como
- *  haría una persona, justo antes de cada captura. */
-async function cerrarMuroSiHay(ctx) {
-  await ctx.page.evaluate(() => {
-    const muro = document.getElementById("narrative-loader");
-    if (muro?.classList.contains("error")) document.getElementById("narrative-loader-dismiss")?.click();
-  });
-}
-
 /** Ataca y devuelve el estado del telegraph DURANTE el wind-up (no al final:
  *  el episodio se apaga solo y la foto hay que hacerla mientras dura). */
 async function enWindup(ctx) {
@@ -230,7 +220,6 @@ export default async function (ctx) {
     tPuerto.alcance.cerca < tPuerto.optimalDistance && tPuerto.optimalDistance < tPuerto.alcance.lejos,
     `alcance ${JSON.stringify(tPuerto.alcance)} vs óptimo ${tPuerto.optimalDistance}`,
   );
-  await cerrarMuroSiHay(ctx);
   await esperarFrames(ctx);
   await ctx.shot("telegraph-puerto-sobre-el-embarcadero");
 
@@ -309,7 +298,6 @@ export default async function (ctx) {
     enCuadro(tLento.borde.lejos, tLento.viewport),
     JSON.stringify(tLento.borde.lejos),
   );
-  await cerrarMuroSiHay(ctx);
   await esperarFrames(ctx);
   await ctx.shot(`telegraph-borde-${lento}`);
 
@@ -342,7 +330,6 @@ export default async function (ctx) {
     enCuadro(tCorto.borde.lejos, tCorto.viewport),
     JSON.stringify(tCorto.borde.lejos),
   );
-  await cerrarMuroSiHay(ctx);
   await esperarFrames(ctx);
   await ctx.shot(`telegraph-borde-${corto}`);
 

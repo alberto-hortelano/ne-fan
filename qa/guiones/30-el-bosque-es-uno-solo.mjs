@@ -45,16 +45,6 @@ async function esperarFrames(ctx, n = 3) {
   );
 }
 
-/** Sin bridge (preset `html-fixtures`) el arranque de partida falla a propósito
- *  y el jugador ve el muro de error. Se cierra por SU botón, como haría una
- *  persona, justo antes de cada captura. */
-async function cerrarMuroSiHay(ctx) {
-  await ctx.page.evaluate(() => {
-    const muro = document.getElementById("narrative-loader");
-    if (muro?.classList.contains("error")) document.getElementById("narrative-loader-dismiss")?.click();
-  });
-}
-
 export default async function (ctx) {
   await ctx.waitFor("el título aparece al arrancar", () => (document.getElementById("ts-close") ? { hay: true } : null));
   await ctx.nefan("closeTitle");
@@ -171,7 +161,6 @@ export default async function (ctx) {
     `${salida.z.toFixed(2)} → ${fin.z.toFixed(2)}`,
   );
 
-  await cerrarMuroSiHay(ctx);
   await esperarFrames(ctx);
   await ctx.shot("contra-el-tronco");
 }
