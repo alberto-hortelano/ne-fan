@@ -566,14 +566,7 @@ const server = http.createServer((req, res) => {
           hero_key: heroKey,
           hero_url: `/cache/sprite_hero/${heroKey}`,
           generation_time_ms: 5,
-          // `cached` NO está en `SkinSpriteSheetResponse` y aun así el cliente
-          // lo lee (`ui/style-apply.ts:440`, para separar lo pintado de lo
-          // reusado en el batch de estilo). O sea: el contrato se quedó corto,
-          // no el fake. Se emite igual —quitarlo cambiaría en silencio lo que
-          // el bench ejercita— y la desviación queda ESCRITA aquí en vez de
-          // pasar por buena. Arreglarlo es tocar el contrato y el server real:
-          // otra tanda.
-        } satisfies SkinSpriteSheetResponse & { cached: boolean });
+        } satisfies SkinSpriteSheetResponse);
       }
       if (req.method === "POST" && req.url === "/generate_surface_atlas") {
         const body = leerBody<GenerateSurfaceAtlasRequest>(raw);
