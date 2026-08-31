@@ -31,7 +31,11 @@ export interface LoadRoomMessage {
   enemies: {
     id: string;
     position: Vec3;
+    /** Vida VIVA (la que le queda), no la del contrato. */
     health: number;
+    /** Denominador de su barra. Viaja aparte de `health` desde #326: un
+     *  herido que vuelve de un save tiene las dos distintas. */
+    maxHealth: number;
     weaponId: string;
     personality: EnemyPersonality;
   }[];
@@ -184,7 +188,11 @@ export interface AddCombatantsMessage {
   enemies: {
     id: string;
     position: Vec3;
+    /** Vida VIVA (la que le queda), no la del contrato. */
     health: number;
+    /** Denominador de su barra. Viaja aparte de `health` desde #326: un
+     *  herido que vuelve de un save tiene las dos distintas. */
+    maxHealth: number;
     weaponId: string;
     personality: EnemyPersonality;
   }[];

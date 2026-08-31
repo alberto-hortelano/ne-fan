@@ -251,6 +251,7 @@ describe("bridge request_tile (plano continuo)", () => {
             id: "lobo_1",
             position: { x: 70, y: 0, z: 5 },
             health: 40,
+            maxHealth: 60,
             weaponId: "unarmed",
             personality: { aggression: 0.7, preferred_attacks: ["quick"], reaction_time: 0.3 },
           },
@@ -261,9 +262,21 @@ describe("bridge request_tile (plano continuo)", () => {
     );
     assert.ok(sim.getCombatant("lobo_1"), "enemigo añadido");
     assert.ok(sim.getCombatant("player"), "player intacto (sin reset)");
+    // EL DENOMINADOR LLEGA AL SIM, y no es cosmético: `enemy-ai.ts` decide
+    // retirarse por debajo del 30 % de `maxHealth` y `respawn()` cura hasta
+    // ahí. Sin este aserto, quitar el cableado de `enemy.maxHealth` en las dos
+    // puertas dejaba la batería ENTERA en verde —`maxHealth` volvía a
+    // colapsarse con `health`— y un herido reanudado a 40 PV era, para la IA,
+    // un enemigo entero (QA 2026-08-31, H-3).
+    assert.equal(sim.getCombatant("lobo_1")!.health, 40, "la vida VIVA que mandó el cliente");
+    assert.equal(
+      sim.getCombatant("lobo_1")!.maxHealth,
+      60,
+      "…y su denominador APARTE: colapsarlos es lo que pintaba la barra llena",
+    );
     // Duplicado ignorado.
     await routeMessage(
-      { type: "add_combatants", enemies: [{ id: "lobo_1", position: { x: 0, y: 0, z: 0 }, health: 99, weaponId: "unarmed", personality: { aggression: 0, preferred_attacks: ["quick"], reaction_time: 1 } }] },
+      { type: "add_combatants", enemies: [{ id: "lobo_1", position: { x: 0, y: 0, z: 0 }, health: 99, maxHealth: 99, weaponId: "unarmed", personality: { aggression: 0, preferred_attacks: ["quick"], reaction_time: 1 } }] },
       socket,
       ctx,
     );

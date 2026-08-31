@@ -20,7 +20,17 @@ import { isHostileRole } from "../simulation/npc-roles.js";
  *  viaja en `npcs[].combat` de la world scene y en `data.combat` del spawn,
  *  y la que el cliente pasa por `add_combatants`. */
 export interface HostileCombat {
+  /** La vida que le queda AHORA. Nace igual que `max_health` —un enemigo
+   *  recién derivado está entero— y a partir de ahí es lo que el jugador le
+   *  haya dejado: el save la baja al reanudar (`escenaConCombateVivo`). */
   health: number;
+  /** El DENOMINADOR de la barra, que no es lo mismo que la vida y hasta hoy
+   *  se colapsaban: `createCombatant` ponía `maxHealth = health` y el cliente
+   *  `maxHp = hp`, así que un herido que volvía con 12 PV volvía también con
+   *  la barra llena y con la IA creyéndolo entero (`enemy-ai.ts` decide
+   *  retirarse por debajo del 30 % de `maxHealth`). Viaja aparte porque son
+   *  dos hechos distintos, y solo uno cambia al pegarle. */
+  max_health: number;
   weapon_id: string;
   personality: Record<string, unknown>;
 }
@@ -54,7 +64,10 @@ export const HOSTILE_AGGRO_M = 10;
 export function combatForHostileRole(role: unknown): HostileCombat | undefined {
   if (!isHostileRole(role)) return undefined;
   return {
+    // Recién derivado, entero: la vida VIVA y el denominador coinciden. Solo
+    // el runtime las separa (pegarle baja `health` y deja `max_health`).
     health: HOSTILE_HEALTH,
+    max_health: HOSTILE_HEALTH,
     weapon_id: HOSTILE_WEAPON,
     // `medium` + `aggressive`: el hostil BUSCA al jugador (preferred_distance
     // 1,5 m) en vez de esperar a que se le acerque. Sin eso, un enemigo

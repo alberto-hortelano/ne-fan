@@ -42,7 +42,13 @@ const EnemyPersonalitySchema = z.object({
 const EnemySpawnSchema = z.object({
   id: z.string(),
   position: Vec3Schema,
+  /** La vida que le queda AHORA (un herido que vuelve de un save trae la
+   *  suya, no la del contrato). */
   health: z.number(),
+  /** …y sobre cuánta. REQUERIDO, sin default: derivarlo de `health` es
+   *  exactamente la mentira que había —barra llena para un herido, y la IA
+   *  creyéndolo entero— y un default lo dejaría entrar otra vez en silencio. */
+  maxHealth: z.number(),
   weaponId: z.string(),
   personality: EnemyPersonalitySchema,
 });

@@ -153,6 +153,9 @@
 }
 .nf-bar-fill { height: 100%; background: var(--nf-danger); transition: width 200ms ease-out; }
 #enemy-bars { display: flex; flex-direction: column; gap: 4px; font-size: var(--nf-fs-xs); }
+/* Sin enemigos no hay panel: un rectángulo translúcido vacío bajo el estado
+   del jugador sería una promesa de que ahí va algo. */
+#enemy-bars:empty { display: none; }
 #enemy-bars .nf-bar { width: 96px; height: 7px; }
 
 /* ── Barra de acciones (ataques + contextuales) ─────────────────────────── */

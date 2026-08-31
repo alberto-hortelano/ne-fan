@@ -229,6 +229,10 @@
         {
           "test": "test/bridge-npc.test.ts",
           "porque": "Igual que los otros dos: usa `combatForHostileRole` para SEMBRAR un hostil con el combate real y comprobar que `npcSync` lo excluye de la vida ambiental. No afirma ningún número del módulo, así que no puede matar un mutante suyo; y además arranca sesión de bridge, que es la batería más cara del repo."
+        },
+        {
+          "test": "test/mundo-persistido.test.ts",
+          "porque": "Como los otros tres: usa `combatForHostileRole` para SEMBRAR un bloque de combate realista sobre el que probar el overlay del resume, y donde lo compara lo hace consigo mismo (`combat.weapon_id === combatForHostileRole('hostile').weapon_id`). Un mutante de hostiles.ts mueve los dos lados a la vez, así que este test no puede matar ni uno — sería CPU quemada una vez por mutante. Quien mide esos números es test/hostiles.test.ts, que los escribe a mano."
         }
       ]
     },
@@ -531,6 +535,17 @@
       ],
       "break": 100,
       "porque": "Cuándo el jugador ha ENTRADO de verdad en la partida: la conjunción «ya se ha vestido Y ha pintado el tile inicial» (#279), que es la frontera literal que eligió el usuario. Módulo propio con batería de un fichero porque es el único test que lo importa (el cliente lo usa desde nefan-html, que no entra en la mutación de core), igual que `session-facets`. Nace con suelo 100 porque cada rama ES el candado, y el estado que lo demuestra no necesita que falle nada: mientras el jugador se viste, el mundo ya está pintado y el título sigue delante — medido en vivo en el bloque 3 de `qa/guiones/29-la-partida-existe-cuando-el-jugador-entra.mjs`. Un mutante que quite la mitad del `mundoPintado` escribe la partida en ESA ventana, y con ella la de cualquier arranque que todavía puede volver al título (la tarjeta fantasma del issue); uno que quite la del `vestido` deja partidas sin mundo (#189), que canda el guion 20; uno que quite el `anunciada` la anuncia dos veces; uno que se cargue la guarda del id vacío la anuncia sin partida; y uno que rompa el olvido al cambiar de sesión es la forma exacta de #249 (media entrada de la partida que no arrancó, esperando a la mitad que falta para anunciar una sesión que ya no existe). OJO con citar el guion 27 como si midiera esto: allí la ventana se CONSTRUYE a propósito (retiene el 404 de las hojas hasta que el mundo está pintado, y afirma esa precondición); en el clon limpio real el orden se invierte y quien impide el save es el reset de la faceta, no esta conjunción. Dejarlo en `sin_mutar` sería tener el candado sin medir."
+    },
+    {
+      "id": "mundo-persistido",
+      "mutate": [
+        "src/session/mundo-persistido.ts"
+      ],
+      "tests": [
+        "test/mundo-persistido.test.ts"
+      ],
+      "break": 0,
+      "porque": "Qué vuelve al reanudar y en qué estado (#326): la puerta única por `spawn_reason`, la vida viva que se le pone encima a la escena y —lo que más caro sale perder— que el MUERTO no vuelva. Módulo propio con batería de un fichero porque es el único test de core que lo tiene por sujeto: sus dos consumidores son el bridge (`wire-scene.ts`, fuera del perímetro de mutación por #340) y el cliente en el resume (nefan-html, que no entra en la mutación de core), y los guiones 42 y 48 los miden desde fuera. Sus mutantes interesantes son exactamente los desenlaces que la tanda existe para impedir: un `<=` → `<` en el filtro de muertos los resucita a los dos lados (escena y ledger); quitar el filtro de `spawn_reason` abre la SEGUNDA puerta al mismo enemigo (dos barras, un solo combatiente en el sim); y un `estados.size === 0` que devuelva la escena original de más deja al herido volviendo entero. SUELO 0 PORQUE AÚN NO HAY MEDIDA: `local` se niega con un módulo sin corrida previa (coste desconocido) y el 2026-08-31 hay una corrida autorizada EN VUELO, así que no se pide otra; la medición queda PEDIDA con esta tanda y cuando llegue el informe el suelo pasa a ser su score redondeado hacia abajo — no un número a ojo."
     },
     {
       "id": "contrato-escena",

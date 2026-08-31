@@ -43,10 +43,10 @@ import {
   createSessionNpcBehavior,
   generationBusyKey,
   npcSync,
-  sessionDataForClient,
   type BridgeContext,
   type ClientSocket,
 } from "../context.js";
+import { avisoDeIlegibles, sessionDataForClient } from "../wire-scene.js";
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { applyRenderModeChange } from "../../src/narrative/render-mode.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
@@ -263,11 +263,43 @@ function reseedSimForSession(
     ),
   );
   ctx.store.dispatch("player_respawned", { hp, pos: [...pos] });
+  // …y la proyección de enemigos se vacía con él. `sim.reset()` se lleva los
+  // combatientes pero `store.state.enemies` es OTRA lista, y arrastraba la de
+  // la sesión anterior del proceso: el `add_combatants` del resume ve su id ya
+  // proyectado (`projected.some`) y NO actualiza la fila, así que un enemigo
+  // reanudado a 12 PV se quedaba con los 60 de la partida de antes.
+  //
+  // Esto NO es la vía revertida de #323, y la diferencia es toda: aquello
+  // reemplazaba la lista en CADA `broadcastScene`, o sea a mitad de pelea, y
+  // por eso el primer tile nuevo borraba del `state_update` a un enemigo vivo.
+  // Aquí se vacía en el reseed de SESIÓN —donde el sim tampoco tiene a nadie—
+  // y se vuelve a poblar por la misma vía de siempre. El guion 42 lo canda por
+  // fuera: sigue verde porque su sujeto es el cambio de tile.
+  ctx.store.dispatch("enemies_projected", { enemies: [] });
   // Sembrar el sim y TOMAR EL MUNDO son el mismo acto: a partir de aquí
   // conduce este socket y CUALQUIER save() del bridge lleva la posición y la
   // vida vivas del combatiente. Sin esto el save solo sabía dónde empezó la
   // partida (reanudar te devolvía al origen y te curaba a 100).
   ctx.world.claimForSession(ws);
+}
+
+/** Le dice al JUGADOR qué combatientes se ha dejado fuera su partida porque
+ *  el save no deja leer en qué estado quedaron.
+ *
+ *  Va por `narrative_status: error` —el canal fail-loud del bridge (CLAUDE.md
+ *  § Errores)— y DESPUÉS del `session_started`: un `console.warn` del proceso
+ *  del servidor no es el canal de algo que el jugador ve, y hasta esta vuelta
+ *  eso era todo lo que había (QA 2026-08-31, H-2). Sin ilegibles no dice nada:
+ *  el silencio aquí sí es correcto, porque no falta nadie.
+ */
+function avisarDeIlegibles(ctx: BridgeContext, ilegibles: readonly string[]): void {
+  if (ilegibles.length === 0) return;
+  ctx.broadcastNarrative({
+    type: "narrative_status",
+    phase: "error",
+    kind: "consequences",
+    message: avisoDeIlegibles(ilegibles),
+  });
 }
 
 export async function handleStartSession(
@@ -397,6 +429,7 @@ export async function handleStartSession(
   // crear el fichero antes de tiempo, y con él la tarjeta de partida de un
   // arranque que todavía podía fallar.
   ctx.subscribe(ws);
+  const paraElCliente = sessionDataForClient(ctx, ctx.narrative.toSessionData());
   ctx.send(ws, {
     type: "session_started",
     requestId: msg.requestId,
@@ -404,9 +437,10 @@ export async function handleStartSession(
     sessionId: ctx.narrative.session_id,
     gameId: ctx.narrative.game_id,
     isResume: false,
-    state: sessionDataForClient(ctx.narrative.toSessionData()),
+    state: paraElCliente.state,
     uiTheme,
   });
+  avisarDeIlegibles(ctx, paraElCliente.ilegibles);
   // Snapshot de mundo pre-generado (data/games/{id}/world/): replay del
   // bootstrap por la ruta normal — el jugador entra sin esperar al motor. Un
   // snapshot malformado se REPORTA y degrada al bootstrap vivo (nunca se
@@ -590,6 +624,7 @@ export async function handleResumeSession(
   npcSync(ctx);
   await ctx.aiClient.notifySessionStart(ctx.narrative.session_id, ctx.narrative.game_id, true);
   ctx.subscribe(ws);
+  const alCliente = sessionDataForClient(ctx, ctx.narrative.toSessionData());
   ctx.send(ws, {
     type: "session_started",
     requestId: msg.requestId,
@@ -597,9 +632,10 @@ export async function handleResumeSession(
     sessionId: ctx.narrative.session_id,
     gameId: ctx.narrative.game_id,
     isResume: true,
-    state: sessionDataForClient(ctx.narrative.toSessionData()),
+    state: alCliente.state,
     uiTheme,
   });
+  avisarDeIlegibles(ctx, alCliente.ilegibles);
   // Aquí vivía el reintento del bootstrap: una sesión sin NINGUNA escena era
   // un arranque cuyo tile falló, y reanudarla re-encolaba la generación. Se
   // quedó sin sujeto con #279 — ya no nacen saves de cero escenas, así que

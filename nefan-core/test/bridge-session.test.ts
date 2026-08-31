@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { combatRegistry } from "../src/combat/registry.js";
+import { createCombatant } from "../src/combat/combatant.js";
 import { routeMessage } from "../bridge/router.js";
 import type {
   ServerMessage,
@@ -442,6 +443,109 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(internal.__format_d, undefined);
   });
 
+  it("resume: la escena sale al wire con la vida VIVA, y sin los muertos", async () => {
+    // El criterio central de #326 por el lado de la escena. Hasta esta tanda,
+    // `formatDToWorld` emitía `HOSTILE_HEALTH` constante para todo hostil, así
+    // que reanudar devolvía enteros a los heridos y VIVOS a los muertos.
+    const { ctx, narrative } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    narrative.recordSceneLoaded("fd_pelea", {
+      scene_id: "fd_pelea",
+      scene_description: "prueba",
+      size: { cols: 4, rows: 4, meters_per_cell: 2 },
+      terrain: ["gggg", "gggg", "gggg", "gggg"],
+      terrain_legend: {},
+      __expanded: true,
+      entities: [
+        { id: "herido_1", kind: "npc", name: "Herido", role: "hostile", cell: [1, 1], footprint: [1, 1], glyph: "h" },
+        { id: "muerto_1", kind: "npc", name: "Muerto", role: "hostile", cell: [2, 2], footprint: [1, 1], glyph: "m" },
+        { id: "barkeep", kind: "npc", name: "Tabernero", cell: [3, 3], footprint: [1, 1], glyph: "b" },
+      ],
+      ambient_event: "",
+    });
+    // Lo que dejó la partida anterior en el ledger (lo escribe `save()` desde
+    // el runtime del sim; aquí se pone a mano para aislar el sujeto: el WIRE).
+    narrative.getEntity("herido_1")!.data.combat = { health: 12, max_health: 60 };
+    narrative.getEntity("muerto_1")!.data.combat = { health: 0, max_health: 60 };
+    await entrarEnLaPartida(ctx, socket, sessionId);
+
+    narrative.startNewSession("plugtest");
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, true, JSON.stringify(resumed.error));
+    const wire = resumed.state!.scenes_loaded["fd_pelea"].scene_data;
+    const npcs = wire.npcs as Array<Record<string, unknown>>;
+
+    const herido = npcs.find((n) => n.id === "herido_1");
+    assert.ok(herido, "el herido vuelve");
+    const combat = herido!.combat as Record<string, unknown>;
+    assert.equal(combat.health, 12, "vuelve con la vida que le dejaste, no con la del contrato");
+    assert.equal(combat.max_health, 60, "y con su denominador: la barra no se pinta llena");
+
+    assert.equal(
+      npcs.some((n) => n.id === "muerto_1"),
+      false,
+      "el muerto no vuelve: no se pinta, no se registra en el sim y no tiene barra",
+    );
+    assert.ok(npcs.some((n) => n.id === "barkeep"), "y el vecino pacífico sigue ahí");
+
+    // Y lo PERSISTIDO sigue siendo Format D crudo: el overlay se escribe sobre
+    // la copia del wire, no sobre el save (#179).
+    const crudo = ctx.narrative.scenes_loaded["fd_pelea"].scene_data;
+    assert.equal(crudo.npcs, undefined, "la persistencia no se enriquece");
+    assert.equal((crudo.entities as unknown[]).length, 3, "el muerto sigue en el Format D crudo");
+  });
+
+  it("resume: un combate ILEGIBLE en el save no resucita a nadie, y se DICE al jugador", async () => {
+    // El peor fallback posible, cazado por QA (H-2): un `data.combat` sin
+    // `max_health` —lo que trae un save anterior a la tanda— se descartaba con
+    // un `console.warn` del servidor y la escena salía SIN overlay, o sea con
+    // el bloque DERIVADO. Como el derivado siempre está entero, el enemigo que
+    // el jugador había matado volvía `alive:true, 60/60` y en pantalla no
+    // había ni una línea.
+    const { ctx, narrative, broadcasts } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    narrative.recordSceneLoaded("fd_ilegible", {
+      scene_id: "fd_ilegible",
+      scene_description: "prueba",
+      size: { cols: 4, rows: 4, meters_per_cell: 2 },
+      terrain: ["gggg", "gggg", "gggg", "gggg"],
+      terrain_legend: {},
+      __expanded: true,
+      entities: [
+        { id: "bandido_1", kind: "npc", name: "Bandido de camino", role: "hostile", cell: [1, 1], footprint: [1, 1], glyph: "b" },
+      ],
+      ambient_event: "",
+    });
+    // Lo que deja en el save una versión anterior del juego: vida sin
+    // denominador. El jugador lo había MATADO.
+    narrative.getEntity("bandido_1")!.data.combat = { health: 0 };
+    await entrarEnLaPartida(ctx, socket, sessionId);
+
+    narrative.startNewSession("plugtest");
+    const { socket: s2, sent: sent2 } = makeSocket();
+    broadcasts.length = 0;
+    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, true, JSON.stringify(resumed.error));
+    const npcs = resumed.state!.scenes_loaded["fd_ilegible"].scene_data.npcs as unknown[];
+    assert.deepEqual(npcs, [], "lo que no se puede leer NO vuelve al mundo (y menos a 60/60)");
+
+    // Y se dice por el canal del bridge, no por el log del servidor.
+    const aviso = broadcasts.find(
+      (m) => m.type === "narrative_status" && m.phase === "error",
+    ) as { message?: string } | undefined;
+    assert.ok(aviso, `no se avisó de nada: ${JSON.stringify(broadcasts.map((b) => b.type))}`);
+    // En el idioma del jugador: nombra al personaje y NO nombra ningún campo.
+    assert.match(aviso!.message ?? "", /Bandido de camino/);
+    assert.doesNotMatch(aviso!.message ?? "", /max_health|combat\.|undefined/);
+  });
+
   it("resume_session devuelve session_not_found para un id inexistente", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
@@ -781,6 +885,67 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     assert.equal(onDisk.player.health, 42, "y la vida también: reanudar ya no cura");
   });
 
+  /** Lo mismo para el ENEMIGO, que es lo que faltaba: hasta #326 el save no
+   *  sabía nada de su vida, así que un herido volvía entero y un muerto
+   *  volvía vivo. Aquí se pelea de verdad —input con ataque por el router,
+   *  como el cliente— y se mira el fichero de disco. */
+  it("matar a un enemigo llega AL DISCO en el mismo tick (handleInput guarda)", async () => {
+    const { ctx, narrative, sim, storage } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+
+    // El bandido, como lo deja la escena: registro en el ledger + combatiente
+    // en el sim (la vía real es cliente → add_combatants). A un golpe de morir,
+    // a distancia óptima del ataque rápido y SIN personalidad (no devuelve).
+    const sceneId = narrative.world.active_scene_id;
+    narrative.recordEntitySpawned(
+      "bandido_1", "npc", sceneId, [0, 0, -1.5], { name: "Bandido", role: "hostile" }, "scene_init",
+    );
+    sim.addCombatant(createCombatant("bandido_1", 1, "unarmed", { x: 0, y: 0, z: -1.5 }, { x: 0, y: 0, z: 1 }, 60));
+    const enDiscoAntes = (await storage.read(sessionId))!;
+    assert.equal(
+      enDiscoAntes.entities.find((e) => e.id === "bandido_1"),
+      undefined,
+      "precondición: el enemigo aún no está en el save (nadie ha guardado desde que se registró)",
+    );
+
+    const golpear = (attackRequested: boolean) =>
+      routeMessage(
+        {
+          type: "input",
+          delta: 0.05,
+          inputs: {
+            playerPosition: { x: 0, y: 0, z: 0 },
+            playerForward: { x: 0, y: 0, z: -1 },
+            playerMoving: false,
+            ...(attackRequested ? { attackRequested: true, attackType: "quick" } : {}),
+          },
+        },
+        socket,
+        ctx,
+      );
+    await golpear(true);
+    for (let i = 0; i < 10 && sim.getCombatant("bandido_1")!.health > 0; i++) await golpear(false);
+    assert.equal(sim.getCombatant("bandido_1")!.health, 0, "el jugador lo mata en el sim");
+
+    // El bloque `combat` en el disco ES la prueba de que hubo un guardado:
+    // nada más guarda en este test, y el ledger nace sin él (lo escribe
+    // `refreshCombatantsFromRuntime` desde el sim). Se mide así y no con
+    // `updated_at`, que es un ISO de milisegundos y en esta batería el save
+    // anterior cae en el MISMO ms: ese aserto salía verde o rojo según la
+    // carga de la máquina, que es peor que no tenerlo.
+    const onDisk = (await storage.read(sessionId))!;
+    const guardado = onDisk.entities.find((e) => e.id === "bandido_1");
+    assert.ok(guardado, "morir provocó un guardado: el enemigo llegó al ledger del disco");
+    assert.deepEqual(
+      guardado.data.combat,
+      { health: 0, max_health: 60 },
+      "la muerte está en el disco: reanudar ya no lo resucita",
+    );
+  });
+
   /** La otra mitad: el runtime atado es de UNA sesión. Sin soltarlo al
    *  cambiar de identidad, el primer save de la partida nueva escribiría la
    *  posición del jugador de la vieja. */
@@ -1010,7 +1175,19 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const loadRoom = {
       type: "load_room",
       roomId: "scene_x",
-      enemies: [],
+      // Un enemigo HERIDO (40 de 60): la otra puerta por la que `maxHealth`
+      // llega al sim. Ver el aserto del final — sin él, quitar el cableado de
+      // `enemy.maxHealth` en `handleLoadRoom` no lo notaba nadie (H-3).
+      enemies: [
+        {
+          id: "lobo_room",
+          position: { x: 1, y: 0, z: 1 },
+          health: 40,
+          maxHealth: 60,
+          weaponId: "unarmed",
+          personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.3 },
+        },
+      ],
     } as const;
 
     // Con sesión: el HP vivo sobrevive a la transición de escena.
@@ -1041,6 +1218,10 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const legacyUpdate = sent3[0] as StateUpdateMessage;
     assert.equal(legacyUpdate.playerHp, 100);
     assert.equal(legacyUpdate.events[0]?.type, "player_respawned");
+    // El enemigo de la sala entra con su vida VIVA y su denominador aparte.
+    const lobo = noSession.sim.getCombatant("lobo_room")!;
+    assert.equal(lobo.health, 40, "la vida que mandó el cliente");
+    assert.equal(lobo.maxHealth, 60, "…y su denominador, que `createCombatant` colapsaba");
     void sent;
   });
 

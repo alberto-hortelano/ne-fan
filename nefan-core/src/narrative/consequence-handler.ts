@@ -40,6 +40,14 @@ export function dispatchConsequences(
   // guardias") caían en el mismo segundo con el generador por defecto y
   // recibían el MISMO id → entidades duplicadas y NPCs colapsados en el sim.
   let spawnOrdinal = 0;
+  let spawnsDelTurno = 0;
+  // …y el mismo turno también las colocaba a TODAS en el mismo punto, que es
+  // el otro medio choque: `near_player` es «jugador + forward × 5» y no sabe
+  // cuántas van. Medido jugando (QA 2026-08-31, H-5): un cofre y una forja
+  // salieron con la coordenada EXACTA, así que al reanudar el jugador se
+  // encontraba la cara pegada a una caja de 4×4×2,5 m con el cofre invisible
+  // dentro. Este contador sí cuenta SIEMPRE — el de arriba solo se incrementa
+  // cuando no hay generador de ids inyectado, y por eso no vale para esto.
 
   if (consequences.length === 0) {
     result.effects.push({ kind: "ambient_message", message: "💭 El mundo sigue su curso..." });
@@ -86,7 +94,7 @@ export function dispatchConsequences(
         const kind = (c.entity_kind ?? "object") as "npc" | "object" | "building";
         const description = c.description ?? "an entity";
         const hint = c.position_hint ?? "near_player";
-        const pos = resolvePositionHint(hint, opts.playerPosition, opts.playerForward);
+        const pos = resolvePositionHint(hint, opts.playerPosition, opts.playerForward, spawnsDelTurno++);
         const entityId =
           opts.generateEntityId?.(kind) ??
           `narr_${kind}_${Math.floor(Date.now() / 1000)}_${spawnOrdinal++}`;
@@ -165,19 +173,39 @@ const HINT_OFFSETS: Record<string, [number, number, number]> = {
   distant_west: [-50, 0, 0],
 };
 
+/** Separación lateral entre dos cosas que aparecen en el MISMO turno. 1,8 m:
+ *  más que el ancho de la huella de un NPC (0,5 m) y que el de un objeto
+ *  (1,4 m), y menos que el de un edificio (4 m) — un edificio y lo que sea que
+ *  venga con él siguen quedando cerca, pero ya no dentro. */
+const SEPARACION_M = 1.8;
+
+/** Dónde aparece lo que el motor manda. `ordinal` es el puesto que ocupa
+ *  dentro de SU turno: el primero cae donde siempre y los siguientes se
+ *  reparten a los lados, alternando (+1, −1, +2, −2…). Sin eso, «aparecen tres
+ *  guardias» son tres personajes en la misma coordenada. */
 function resolvePositionHint(
   hint: string,
   playerPos: Vec3Like = [0, 0, 0],
   playerForward: Vec3Like = [0, 0, -1],
+  ordinal = 0,
 ): [number, number, number] {
   const base = toTuple(playerPos);
   const fwd = toTuple(playerForward);
+  // Perpendicular al forward en el plano: el reparto va a izquierda y derecha
+  // de lo que el jugador está mirando, no hacia él ni al fondo.
+  const paso = ordinal === 0 ? 0 : Math.ceil(ordinal / 2) * (ordinal % 2 === 1 ? 1 : -1);
+  const lat = paso * SEPARACION_M;
+  const sep: [number, number, number] = [fwd[2] * lat, 0, -fwd[0] * lat];
   if (hint === "near_player") {
-    return [base[0] + fwd[0] * 5, base[1] + fwd[1] * 5, base[2] + fwd[2] * 5];
+    return [base[0] + fwd[0] * 5 + sep[0], base[1] + fwd[1] * 5, base[2] + fwd[2] * 5 + sep[2]];
   }
   const off = HINT_OFFSETS[hint];
   if (off) {
-    return [base[0] + off[0], base[1] + off[1], base[2] + off[2]];
+    return [base[0] + off[0] + sep[0], base[1] + off[1], base[2] + off[2] + sep[2]];
   }
-  return [base[0] + fwd[0] * 10, base[1] + fwd[1] * 10, base[2] + fwd[2] * 10];
+  return [
+    base[0] + fwd[0] * 10 + sep[0],
+    base[1] + fwd[1] * 10,
+    base[2] + fwd[2] * 10 + sep[2],
+  ];
 }

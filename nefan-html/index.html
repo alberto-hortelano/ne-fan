@@ -89,7 +89,11 @@
     <div id="game-ui" data-locked="false">
       <div class="ui-region" id="ui-top-left">
         <div id="player-status" class="nf-panel"></div>
-        <div id="enemy-bars"></div>
+        <!-- Con `nf-panel` como el del jugador: sin él, el nombre y el número
+             de vida de un enemigo se dibujan SOBRE el mundo, y en un pueblo
+             marrón quedan gris oscuro sobre marrón oscuro (QA 2026-08-31).
+             De poco sirve que el número deje de mentir si no se lee. -->
+        <div id="enemy-bars" class="nf-panel"></div>
       </div>
       <div class="ui-region" id="ui-top-right"></div>
       <div class="ui-region" id="ui-bottom-left">
