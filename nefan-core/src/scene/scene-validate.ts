@@ -400,6 +400,13 @@ export interface PlanMask {
   solid(c: number, r: number): boolean;
   /** Volúmenes del plan compuesto (declarados + derivados). */
   volumes: number;
+  /** QUIÉN bloquea la celda: el id del volumen del plan compuesto que la
+   *  cubre (derivados de entities incluidos), `"ground"` si la bloquea el
+   *  agua rasterizada del plan, o `null` si el plan no la bloquea. La máscara
+   *  compuesta no guarda procedencia celda→volumen, así que se atribuye
+   *  PEREZOSAMENTE —re-rasterizando volumen a volumen— y solo en el camino de
+   *  error: el motor necesita el id para arreglar el spawn (#337). */
+  blockerAt(c: number, r: number): { volumeId: string } | "ground" | null;
 }
 
 /** Compone el plan del tile —el MISMO que pinta el cliente y colisiona el
@@ -417,18 +424,29 @@ export function composePlan(view: TileView, found: Findings): PlanMask {
   for (const w of warnings) found.add("plan-no-cabe", w);
   found.stats.volumes_total = plan?.volumes.length ?? 0;
   const tile = view.scene.tile as { tx: number; ty: number };
-  const grid = plan
-    ? planCollisionGrid(plan.ground, plan.volumes, tileWorldRect(tile.tx, tile.ty), {
-        // La solidez de ESTA escena: un vado declarado (`{name, solid:false}`)
-        // no bloquea tampoco por el plan — igual que en juego.
-        solidChars: [...view.solid],
-      })
-    : null;
+  const rect = tileWorldRect(tile.tx, tile.ty);
+  // La solidez de ESTA escena: un vado declarado (`{name, solid:false}`)
+  // no bloquea tampoco por el plan — igual que en juego.
+  const opts = { solidChars: [...view.solid] };
+  const grid = plan ? planCollisionGrid(plan.ground, plan.volumes, rect, opts) : null;
   const solidChars = new Set(grid?.solid_chars ?? []);
+  const cubre = (g: { cols: number; rows: number; grid: string[]; solid_chars?: string[] }, c: number, r: number) =>
+    c >= 0 && r >= 0 && c < g.cols && r < g.rows && new Set(g.solid_chars ?? []).has(g.grid[r][c]);
+  const solid = (c: number, r: number): boolean =>
+    grid !== null && c >= 0 && r >= 0 && c < grid.cols && r < grid.rows && solidChars.has(grid.grid[r][c]);
   return {
     volumes: plan?.volumes.length ?? 0,
-    solid: (c, r) =>
-      grid !== null && c >= 0 && r >= 0 && c < grid.cols && r < grid.rows && solidChars.has(grid.grid[r][c]),
+    solid,
+    blockerAt: (c, r) => {
+      if (!solid(c, r)) return null;
+      // Solo en el camino de error: un grid por volumen hasta dar con el que
+      // cubre la celda. El primero que la cubre es el culpable que se nombra.
+      for (const v of plan?.volumes ?? []) {
+        const g = planCollisionGrid(undefined, [v], rect, opts);
+        if (g && cubre(g, c, r)) return { volumeId: v.id };
+      }
+      return "ground";
+    },
   };
 }
 
@@ -494,6 +512,7 @@ export function checkScatter(view: TileView, found: Findings): void {
 export function checkPlayerSpawn(
   view: TileView,
   map: WalkableMap,
+  planMask: PlanMask,
   tileContext: TileValidationContext | undefined,
   found: Findings,
 ): Cell | null {
@@ -518,10 +537,30 @@ export function checkPlayerSpawn(
     return null;
   }
   if (!map.isWalkable(player.cell)) {
-    found.add(
-      "nace-en-solido",
-      `el spawn del player [${dc}, ${dr}] no es transitable (celda "${view.grid[r][c]}" u ocupada por un footprint)`,
-    );
+    // Las DOS causas reales de bloqueo, cada una con su arreglo: el char
+    // sólido del grid o la masa del plan (volumen con id, o el agua del
+    // ground). Antes el mensaje culpaba a «un footprint», una causa muerta
+    // desde que la máscara sale del plan compuesto (#337): el motor movía el
+    // spawn a ciegas porque nadie le decía QUÉ lo bloqueaba.
+    const ch = view.grid[r][c];
+    let causa: string;
+    if (view.solid.has(ch)) {
+      const nombre = view.legend[ch] ? ` (${view.legend[ch]})` : "";
+      causa = `la celda es "${ch}"${nombre}, terreno sólido — muévelo a una celda pisable`;
+    } else {
+      const blocker = planMask.blockerAt(c, r);
+      if (blocker === "ground") {
+        causa = "lo cubre el agua del ground del plan — muévelo a tierra firme";
+      } else if (blocker !== null) {
+        causa = `lo cubre la masa del volumen "${blocker.volumeId}" del plan — muévelo fuera o mueve el volumen`;
+      } else {
+        // Inalcanzable por construcción (walkable = char no sólido Y plan no
+        // sólido); si un refactor lo alcanza, mejor un mensaje sin culpable
+        // que un throw que tumbe la ruta.
+        causa = "la bloquea el plan del tile — muévelo a una celda pisable";
+      }
+    }
+    found.add("nace-en-solido", `el spawn del player [${dc}, ${dr}] no es transitable: ${causa}`);
     return null;
   }
   return player.cell;
@@ -973,7 +1012,7 @@ export function validateScene(
   const planMask = composePlan(view, found);
   const map = buildWalkableMap(view, planMask, found);
   checkScatter(view, found);
-  const player = checkPlayerSpawn(view, map, tileContext, found);
+  const player = checkPlayerSpawn(view, map, planMask, tileContext, found);
   // El cuerpo de los NPCs se juzga AQUÍ, no dentro de `checkReachability`:
   // es una pregunta local y no puede quedar detrás del `return` temprano de
   // un tile sin entrada declarada.

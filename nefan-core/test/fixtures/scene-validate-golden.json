@@ -278,7 +278,7 @@
     "player-sobre-muro": {
       "ok": false,
       "errors": [
-        "el spawn del player [10, 70] no es transitable (celda \"g\" u ocupada por un footprint)"
+        "el spawn del player [10, 70] no es transitable: lo cubre la masa del volumen \"posada\" del plan — muévelo fuera o mueve el volumen"
       ],
       "warnings": [
         "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
@@ -307,7 +307,7 @@
     "player-bajo-la-huella-de-un-prop": {
       "ok": false,
       "errors": [
-        "el spawn del player [15, 80] no es transitable (celda \"g\" u ocupada por un footprint)"
+        "el spawn del player [15, 80] no es transitable: lo cubre la masa del volumen \"derived_ent_mesa\" del plan — muévelo fuera o mueve el volumen"
       ],
       "warnings": [
         "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
@@ -984,7 +984,7 @@
       "errors": [
         "chars de terreno sin declarar en terrain_legend: \"X\"",
         "scatter inválido: scatter_zones[0]: kind 'fantasma' sin generador en scatter_generators",
-        "el spawn del player [10, 70] no es transitable (celda \"g\" u ocupada por un footprint)",
+        "el spawn del player [10, 70] no es transitable: lo cubre la masa del volumen \"posada\" del plan — muévelo fuera o mueve el volumen",
         "el vecino north tiene un river que muere en vuestra costura en la celda 30: tu tile debe continuarlo con celdas transitables compatibles en el borde north, celdas 28..32"
       ],
       "warnings": [
