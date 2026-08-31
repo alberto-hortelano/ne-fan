@@ -273,6 +273,14 @@ export default async function (ctx) {
   // promesa suelta mata el RUNNER ENTERO con un uncaught rejection y el
   // veredicto de los demás guiones se pierde — medido el 2026-08-26.
   const retenerLasHojas = async (route) => {
+    // El censo del desplegable (#216) NO es una hoja: el editor lo consulta
+    // al abrirse, ANTES de «Comenzar» — retenerlo dejaría el editor sin
+    // pintar y `pulsarComenzar` moriría en su waitForSelector midiendo un
+    // deadlock fabricado, no la ventana provisional. Se deja pasar y la
+    // retención sigue siendo solo de HOJAS, que es lo que viste al jugador.
+    if (new URL(route.request().url()).pathname === "/sprites/index.json") {
+      return route.continue().catch(() => null);
+    }
     await hojasRetenidas;
     await route.continue().catch(() => null);
   };

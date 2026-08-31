@@ -102,7 +102,12 @@ const DEFAULT_PLAYER: NarrativePlayerState = {
   health: 100.0,
   gold: 0,
   inventory: [],
-  appearance: { model_id: "pete", skin_path: "" },
+  // `model_id: ""` = NINGUNA elección: el cliente cae a su base (y_bot) sin
+  // sondear ni loguear. Un id concreto aquí afirmaría una elección que nadie
+  // hizo — el que hubo (un octavo modelo fantasma) no estaba ni en el
+  // desplegable ni en disco (#216), y duplicar el BASE_MODEL del cliente
+  // dentro de core sería una segunda copia de esa verdad.
+  appearance: { model_id: "", skin_path: "" },
   position: [0.0, 1.0, 0.0],
   current_scene_id: "",
 };

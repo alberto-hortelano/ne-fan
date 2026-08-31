@@ -12,6 +12,7 @@
  *  Ambas se pintan en el MISMO lienzo con la misma ventana de encuadre: el
  *  panel no sabe cuál está viendo y el cambio de una a otra no mueve nada.  */
 
+import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import { errors } from "./error-log.js";
 import { SPRITE_PENDING, type SpriteRenderer, type SpriteSheet } from "../renderer/sprite-renderer.js";
 
@@ -127,21 +128,21 @@ export class PortraitView {
     const cached = this.bustSheets.get(model);
     if (cached) return cached;
 
-    // Si la vista activa ya usa frontal_8 (fps), el sheet completo
+    // Si la vista activa ya usa el ángulo único (fps), el sheet completo
     // está cargado: reusarlo en vez de pedir nada. `hasCached` antes de
     // `getCached` NO es redundante: getCached arranca una carga lazy cuando
     // falla, y para una skin eso significa pedir a /sprites unos frames que
     // viven en el asset-store — 404 y una entrada de error por cada NPC.
-    if (this.sprites.hasCached(model, "idle", "frontal_8")) {
-      const whole = this.sprites.getCached(model, "idle", "frontal_8");
+    if (this.sprites.hasCached(model, "idle", HOJAS_ANGLE)) {
+      const whole = this.sprites.getCached(model, "idle", HOJAS_ANGLE);
       if (whole) {
         this.bustSheets.set(model, whole);
         return whole;
       }
     }
 
-    if (!allowFetch) throw new Error(`sin sheet frontal_8 en memoria para "${model}"`);
-    const base = `${this.spritesBaseUrl}/${model}/idle/frontal_8`;
+    if (!allowFetch) throw new Error(`sin sheet ${HOJAS_ANGLE} en memoria para "${model}"`);
+    const base = `${this.spritesBaseUrl}/${model}/idle/${HOJAS_ANGLE}`;
     const res = await fetch(`${base}/meta.json`);
     if (!res.ok) throw new Error(`meta.json ${res.status} en ${base}`);
     const ct = res.headers.get("content-type") ?? "";

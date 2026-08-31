@@ -11,6 +11,7 @@ import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { DEFAULT_SOLID_CHARS, formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
+import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { pickAimTarget } from "@nefan-core/src/scene/aim.js";
 import {
@@ -165,11 +166,12 @@ const config = loadConfig(combatConfigJson);
 /** Caja del MUNDO: el renderer mete aquí dentro su lienzo WebGL (y la UI de
  *  juego se posiciona contra ella, no contra el viewport). */
 const appShell = document.getElementById("app-shell") as HTMLElement;
-/** Set de sprites del mundo: los sheets del y_bot van renderizados desde un
- *  ángulo de cámara fijo. La cámara está a la altura de los ojos, así que el
- *  set es el casi frontal −8°. DEBE coincidir con el SKIN_ANGLE de
- *  ui/style-apply.ts: el ángulo entra en la clave de caché del skin. */
-const worldAngle = "frontal_8";
+/** Set de sprites del mundo: los sheets van renderizados desde el ángulo de
+ *  cámara único del juego (casi frontal −8°, la cámara a la altura de los
+ *  ojos). Es la constante del censo (nefan-core) — la misma que usan el
+ *  middleware de `/sprites/index.json` y el SKIN_ANGLE de ui/style-apply.ts,
+ *  que antes eran literales atados por un «DEBE coincidir». */
+const worldAngle = HOJAS_ANGLE;
 // Bases por servicio (F1–F3). Overrides de bench (`?ai=`, `?bridge=`) viven
 // en net/service-urls.ts; el fake-ai-server emula S3–S6 en un solo puerto,
 // así que `?ai=` cubre las cuatro.

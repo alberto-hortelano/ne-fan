@@ -17,6 +17,7 @@ import type {
   SurfaceCellSpec,
 } from "@nefan-core/src/contracts/remote-gen.js";
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
+import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import {
   STYLE_APPLICATION_SCHEMA_VERSION,
   styleApplicationPinRef,
@@ -76,12 +77,11 @@ export interface SpriteCatalog {
   animations?: { id: string; calls_per_anim?: number | null }[];
   skin?: { enabled?: boolean; cost_usd_per_call?: number | null; reason?: string };
 }
-/** Ángulo del set de sprites. DEBE ser el mismo literal que el `worldAngle`
- *  de main.ts o el skin pre-generado no es el que pedirá la partida: el
- *  ángulo entra en la clave de caché del skin, así que cambiarlo repaga todo
- *  el arte de personaje ya generado. Era una tabla por vista; con una sola
- *  vista es la constante que esa tabla ya devolvía. */
-const SKIN_ANGLE = "frontal_8";
+/** Ángulo del set de sprites: la constante única del censo (nefan-core), la
+ *  misma que usa el `worldAngle` de main.ts — eran dos literales atados por
+ *  un «DEBE coincidir». El ángulo entra en la clave de caché del skin, así
+ *  que cambiarlo EN EL CENSO repaga todo el arte de personaje ya generado. */
+const SKIN_ANGLE = HOJAS_ANGLE;
 
 export interface StyleApplyBlock {
   id: "pack" | "atlas" | "skins";

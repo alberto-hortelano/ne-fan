@@ -11,6 +11,7 @@
  *    entrada en el error-log por skin, sin reintentos.
  */
 import { CONFIG } from "@nefan-core/src/config.js";
+import { HOJAS_BASE_ANIMS } from "@nefan-core/src/contracts/sprite-census.js";
 import { FALLO_HOJAS_BASE } from "@nefan-core/src/protocol/status-labels.js";
 import { errors } from "../ui/error-log.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
@@ -18,19 +19,11 @@ import type { SpriteRenderer } from "./sprite-renderer.js";
 /** Modelo base con el set completo de sheets pre-rendereados. */
 export const BASE_MODEL = "y_bot";
 
-/** Las 10 animaciones del set base (idle/locomoción/combate). */
-export const BASE_ANIMS = [
-  "idle",
-  "walk",
-  "run",
-  "quick",
-  "heavy",
-  "medium",
-  "defensive",
-  "precise",
-  "hit_react",
-  "death",
-] as const;
+/** Las 10 animaciones del set base (idle/locomoción/combate). La fuente es
+ *  el censo (nefan-core): la MISMA lista con la que el middleware decide qué
+ *  modelos ofrece el título — una copia local divergente haría al censo
+ *  validar hojas que este cliente no pide. */
+export const BASE_ANIMS = HOJAS_BASE_ANIMS;
 
 const BASE_ANIM_SET: ReadonlySet<string> = new Set(BASE_ANIMS);
 

@@ -176,7 +176,7 @@ describe("NarrativeState lifecycle", () => {
     assert.equal(s.player.gold, 0, "gold default 0 — la aritmética no da NaN");
     assert.equal(s.player.gold + 25, 25);
     assert.deepEqual(s.player.inventory, [], "inventory default []");
-    assert.equal(s.player.appearance.model_id, "pete", "appearance default");
+    assert.equal(s.player.appearance.model_id, "", "appearance default: \"\" = ninguna elección (el cliente cae a su base)");
     // El array default no se comparte entre instancias del default.
     s.player.inventory.push({ id: "moneda" });
     const s2 = new NarrativeState(new MemorySessionStorage());

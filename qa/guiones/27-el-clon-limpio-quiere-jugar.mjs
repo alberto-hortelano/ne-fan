@@ -72,6 +72,17 @@ export default async function (ctx) {
   // tampoco había clon limpio que medir.
   const corte = { peticiones: 0, conMundo: 0, sinMundo: 0 };
   await ctx.page.route("**/sprites/**", async (route) => {
+    // El censo del desplegable (#216) NO es una hoja: es el endpoint del dev
+    // server que el editor de personaje consulta ANTES de «Comenzar», cuando
+    // aún no hay mundo — retenerlo con la espera de abajo dejaría el editor
+    // sin pintar y este guion moriría en su waitForSelector midiendo un
+    // deadlock fabricado, no al clon. Y en el clon real el censo TAMBIÉN
+    // contesta (lo sirve vite, no son las hojas de 28 MB): se deja pasar al
+    // server de verdad y este guion sigue midiendo lo suyo — qué pasa cuando
+    // las HOJAS no están al pulsar «Comenzar», elija lo que elija el editor.
+    if (new URL(route.request().url()).pathname === "/sprites/index.json") {
+      return route.continue();
+    }
     corte.peticiones++;
     const pintado = await ctx
       .waitFor("el mundo llega antes que el fallo de las hojas", () => window.__nefan?.tiles.length > 0, 60_000)
