@@ -12,8 +12,8 @@ jobs:
       run:
         working-directory: nefan-core
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           # Alineado con engines (>=24): node:sqlite del asset-store (F2).
           node-version: 24
@@ -65,8 +65,8 @@ jobs:
       run:
         working-directory: narrative-mcp
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -89,8 +89,8 @@ jobs:
       run:
         working-directory: nefan-html
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -106,8 +106,8 @@ jobs:
   ai-server:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       # pillow + httpx: deps ligeras de los tests de imagen y del adaptador de

@@ -41,7 +41,7 @@ jobs:
       run:
         working-directory: nefan-core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # OBLIGATORIO. Por defecto `checkout` clona con profundidad 1 y sin
           # tags: `mutacion-ultima`, `--rango`, `merge-base` y `blame` fallan
@@ -51,7 +51,7 @@ jobs:
           # fallo que `scripts/afectado.ts` describe en su cabecera. Sin esto el
           # paso de selección revienta, y así tiene que ser.
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -120,7 +120,7 @@ jobs:
           ORIGEN: ${{ steps.seleccion.outputs.origen }}
           IDS: ${{ steps.seleccion.outputs.ids }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           # Un JSON por módulo más `corrida.json`. Los baja
