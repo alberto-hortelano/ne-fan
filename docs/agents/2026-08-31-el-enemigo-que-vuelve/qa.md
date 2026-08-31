@@ -327,3 +327,130 @@ lo que ahora es cierto («al registro del hostil no lo mueve la VIDA AMBIENTAL»
 protegía), no dejar de escribir la posición— y volver a correr el 42 hasta verlo verde. H-2 y H-3
 son baratos y deberían ir en la misma vuelta: H-3 es un aserto de tres líneas, y H-2 es elegir un
 fallback que no resucite. H-4, H-5 y H-6 son issues, no correcciones de esta tanda.
+
+---
+
+# Vuelta 2 — verificación de `fdb83ba`
+
+Todo lo de arriba es el registro de la vuelta 1 y se queda como estaba. Esto verifica el commit
+`fdb83ba` (sobre `fca3661`, misma rama), medido el **2026-08-31** con mis manos: 5 corridas de
+navegador en `e2e-sin-creditos` (`node qa/run.mjs`), 2 reversiones de código a mano y una corrida
+completa de `verify` + `coverage` + `crap` + `deuda`. **Cero créditos** (`gasto sesión 0,00 €` y el
+guardarraíl declarando `fake:true` por las dos vías en las cinco corridas). Ningún proceso ajeno
+tocado; ninguna corrida de mutación pedida ni esperada.
+
+## Los cuatro guiones en la misma corrida — CONFIRMADO
+
+```
+✔ 42-al-enemigo-no-se-le-borra-la-herida
+✔ 48-el-mundo-vuelve-como-lo-dejaste
+✔ 49-el-mundo-de-runtime-aguanta-dos-resumes
+✔ 50-el-npc-que-el-cliente-no-tiene-se-dice
+4 en verde · 0 en rojo de 4
+```
+
+## Hallazgos de la vuelta 1
+
+| # | | Evidencia medida por mí en esta vuelta |
+|---|---|---|
+| **H-1** · el 42 rojo y declarado verde | ✅ **CERRADO** | **4 corridas verdes**: la de los cuatro juntos + **3 sueltas seguidas**. En las tres el registro del hostil sale **idéntico dígito a dígito** mientras el del mercader se mueve: `bandido_1 [18.412712970876786,0,0.7820418924260968] → [18.412712970876786,…]`, `[17.78452177858373,…] → [17.78452177858373,…]`, `[18.358903521749948,…] → [18.358903521749948,…]`. Y **el rojo lo reproduje yo**: quitando el guardia `isHostileRole` de `npcSync`, el aserto NUEVO cae (`[17.547…] → [17.063…]`) junto con su hermano del canal (`npcs[bandido_1] = 217`) |
+| **H-2** · el `combat` ilegible resucitaba en silencio | ✅ **CERRADO** (deja V-1 abierto) | El ilegible ya **no vuelve**, como el muerto, y el jugador lo lee en su idioma. Medido en vivo (guion 50, sabotaje en el disco y resume por la tarjeta): `narrative · La partida guardada no dice en qué estado quedó Nogala: se queda fuera del mundo, para no devolver con vida a alguien al que ya habías matado.` Sin `max_health`, sin `combat.`, sin `undefined`. El unitario nuevo lo canda por los dos lados (`npcs` vacío + `assert.doesNotMatch(/max_health\|combat\.\|undefined/)`) |
+| **H-3** · `maxHealth` al sim sin candado | ✅ **CERRADO** | **Repetí mi propia reversión**, quitando el cableado de **las dos** puertas: `ℹ pass 1712 · ℹ fail 2` → `✖ load_room con sesión activa preserva el HP…` y `✖ add_combatants es aditivo y respawn acepta pos`. Antes de esta vuelta la misma reversión dejaba `pass 1704 · fail 0` |
+| **H-5** · dos spawns del mismo turno en el mismo punto | ✅ **CERRADO** | Medido en la corrida: `Cofre de la posada` en `x 4,30` y `Forja de Robledo` en `x 7,90`, misma `z` — 3,6 m de separación donde antes había 0,00. El primero no se mueve (unitario `el primero, donde siempre`) |
+| **H-7** · jerga en pantalla | ✅ **MEJORADO** | El canal `narrative` está limpio del todo (frase de arriba). El canal `session` empieza por lo que le pasa al mundo y con el nombre que el jugador conoce, y deja el campo al final entre paréntesis: `«Nogala» no vuelve al mundo: la partida guardada no dice en qué estado quedó (entity "narr_npc_…": combat.max_health inválido (undefined)…)`. Es un registro de errores, así que el detalle ahí me parece correcto |
+| **H-8** · el resume anunciaba spawns como si acabaran de pasar | ✅ **CERRADO** | Capturas `48-02` y `49-01`: `↩ edificio: Forja de Robledo sigue ahí` · `↩ objeto: Cofre de la posada sigue ahí` · `↩ Nogala sigue ahí` · `↩ Secuaz sigue ahí` |
+| **H-9** · dos asertos que no podían ponerse rojos | ✅ **CERRADO** en los dos | El del 42 corre ahora sobre `mundo: ["barkeep","hito_1_0","casa_lenador"]` —lista con contenido— y lleva delante su precondición de no-vacío. El del 48 se funde con el que sí mide |
+| Crítica visual · `#enemy-bars` | ✅ **CERRADO** | Capturas `48-01`/`48-02`/`49-01`: nombre y número dentro del panel translúcido (`Bandido de camino ▬ 60`, `Secuaz ▬ 40`), legibles sobre el marrón del pueblo. Y el `:empty` funciona: en `42-05` (reanudado sin enemigos) **no** queda un rectángulo vacío bajo la vida del jugador |
+| Ficha del 48 en `qa/README.md` | ✅ | añadida, junto a las del 49 y el 50 |
+| **H-4** · objeto/edificio perdido al re-emitir el tile | ⏭ **issue del coordinador** | Sigue pasando y sigue MEDIDO sin poner nada en rojo: `⚠ HALLAZGO re-emisión del tile … {"cofre":false,"forja":false,"pacifico":true,"hostil":true}` |
+| **H-6** · el enemigo de escena reaparece en su celda | ⏭ **issue, y el motivo SE SOSTIENE** | Lo comprobé en el código, no de palabra: el fail-loud de `main.ts:1098-1110` recorre `[...newNpcs, ...enemies]`, o sea lo que **este tile acaba de declarar**, y su propio comentario dice que barrer `enemyEntities` convertiría el candado «en un rojo por perseguir bien». Poner la posición viva en `npcs[].position` mete al rehidratado justo en esa lista, así que un enemigo guardado fuera del rect de su tile encendería un error falso en el panel del jugador. El arreglo pide que ese candado distinga «recién declarado» de «rehidratado»: es su propia tanda, no un remate de esta |
+| **H-10** · el `console.warn` de `refreshCombatantsFromRuntime` | ⏭ **acepto el motivo** | Reporta un alta en el sim de alguien que el motor no puso: un defecto de programación sobre el que quien juega no puede hacer nada, y darle cable al jugador desde `NarrativeState` es un parámetro que solo usaría esa línea |
+
+## H-1: por qué ya no es una carrera (lo que pedí comprobar)
+
+No me quedo con las cuatro corridas verdes — es exactamente el error de la vuelta 1. Fui al
+mecanismo, y son **dos garantías independientes**, cualquiera de las cuales basta:
+
+1. **El sim no mueve a un muerto**: `game-loop.ts:131` y `:151` hacen `if (!enemy || enemy.health <= 0) continue;` en las dos fases del tick. Es lo que el ingeniero alega.
+2. **Y el save ni siquiera lo escribe**: `refreshCombatantsFromRuntime` hace `if (typeof bloque.health === "number" && bloque.health <= 0) continue;` **antes** de tocar `rec.data.combat` y `rec.position`. O sea que, en cuanto la muerte está en el ledger, ningún `save()` posterior vuelve a escribir la posición de ese record — ni con el valor viejo.
+
+Y la muerte está en el ledger antes de la primera lectura del guion: `handleInput` **espera** al
+`save()` antes de mandar el `state_update`, y la condición de parada de `herirHasta` es el HUD, que
+se pinta desde ese `state_update`. Así que cuando el guion lee `l1` el registro ya está congelado.
+La ventana temporal que decidía el veredicto en la vuelta 1 **desapareció**: no es que sea
+improbable, es que no queda ningún escritor. El único que puede mover ese campo es
+`NpcBehaviorSystem`, que es justo lo que el aserto declara proteger — y por eso puede ponerse rojo.
+
+## Hallazgo nuevo de esta vuelta
+
+### V-1 · MENOR — el aviso correcto llega bajo un rótulo falso
+
+El arreglo de H-2 manda el aviso por `narrative_status` con `kind: "consequences"`, y ese `kind`
+tiene rótulo fijo en `status-labels.ts:150`. Lo que el jugador ve a pantalla completa al reanudar
+un save ilegible (captura `50-01`) es:
+
+> **El motor narrativo rechazó la respuesta**
+> La partida guardada no dice en qué estado quedó Nogala: se queda fuera del mundo, para no
+> devolver con vida a alguien al que ya habías matado.
+> `[ Cerrar ]`
+
+El cuerpo es exactamente lo que había que decir. **El titular es falso**: el motor narrativo no ha
+rechazado nada — ni siquiera ha intervenido; lo que ha pasado es que su partida guardada no se deja
+leer entera. Es la misma familia que H-7 y H-8 (no contarle al jugador algo que no ha ocurrido), en
+el único sitio donde el arreglo de esta vuelta le habla.
+
+Los `kind` del contrato son tres (`tile`, `scene`, `consequences`, `status-labels.ts:80`), así que
+elegir `consequences` era lo más cerca que había sin tocar el contrato — pero entonces el remate es
+un cuarto `kind` con su rótulo («Falta parte de tu partida guardada»), no dejar el que miente.
+**No bloquea**: el cuerpo lleva la información, el jugador puede cerrar y seguir, y el estado exige
+un save anterior a la tanda. **Issue.**
+
+Comprobado además que **no hay falsos positivos**: `avisarDeIlegibles` no difunde nada con la lista
+vacía, y las tres partidas sanas de esta corrida (42, 48, 49) reanudaron sin ese overlay.
+
+Observación menor sin issue: un solo `combat` ilegible produce **tres** entradas (`scene`,
+`narrative`, `session`). Cada una es su capa diciendo lo suyo, que es el diseño del repo; solo lo
+anoto por si alguien lo lee como un fallo triple.
+
+## Criterios, recontados sobre `fdb83ba`
+
+Cambian tres filas de la tabla de la vuelta 1; el resto se mantiene con la misma evidencia.
+
+| # | | Qué cambia |
+|---|---|---|
+| 4 · la vía revertida no vuelve | ✅ (era ⚠️) | El guion 42 está verde, 4 de 4, y su bloque 1 sigue candando la vía revertida |
+| 6 · fail-loud por capa | ✅ (era ⚠️) | Las tres capas hablan: `scene` (el cliente), `narrative` (el bridge, `narrative_status: error`) y `session`. El `console.warn` del servidor dejó de ser el único canal. Queda V-1, que es el rótulo, no el canal |
+| 7 · candado ejecutable | ✅ (era ⚠️) | Los cuatro guiones verdes en la misma corrida, y los rojos reproducidos por mí: `npcSync` sin guardia → 42 rojo; `maxHealth` fuera de las dos puertas → 2 unitarios rojos |
+| 8 · sin deuda nueva | ✅ (era ⚠️) | `npm run verify` verde medido por mí: `tests 1714 · pass 1714 · fail 0`. `crap --check`: `0 por encima` del tope 73, cobertura **89,3 %** ≥ 89 %. `npm run deuda`: **65 items · 15 fronteras**, los mismos que declara el informe. La comparación lado a lado contra `main` sigue siendo suya, no mía (ver «No probado») |
+
+## No probado en esta vuelta
+
+- **`npm run deuda` corriendo también sobre `main`**: mido los números de la rama (65/15) y que
+  `crap --check` pasa; la igualdad con `main` la sostiene el informe del ingeniero, no una medida
+  mía.
+- **La mutación**: sin cambios respecto a la vuelta 1 — `src/narrative/**` sigue fuera del perímetro
+  y de `bridge/**` solo hay un módulo ajeno. La lógica nueva de esta vuelta que **sí** es medible
+  (`estadoEnElWire`, en el módulo puro) entra en la batería `mundo-persistido`, que sigue sin medida
+  previa y con la medición PEDIDA. Que el ingeniero moviera la clasificación al módulo puro por esa
+  razón es la decisión correcta.
+- **`respawn()` con un muerto guardado** y el **mundo vaciándose de enemigos**: igual que en la
+  vuelta 1, fuera de alcance.
+
+## Veredicto de la vuelta 2
+
+**APTO.**
+
+El bloqueante está cerrado y —esto es lo que importa— cerrado **por el mecanismo**, no por suerte:
+el aserto que dependía de si caía un `save()` en una ventana de 60 s ahora corre sobre un registro
+que ningún escritor puede tocar, y sigue poniéndose rojo cuando se le quita lo que protege. Los dos
+importantes (H-2 y H-3) están cerrados y los dos rojos los reproduje yo. Los cinco menores están
+hechos, y los tres que quedan fuera salen con motivo escrito y verificado —el de H-6 lo comprobé en
+el código y se sostiene—.
+
+Queda **V-1** (el rótulo falso del aviso) como issue: menor, no bloquea, y el remedio es un `kind`
+propio en el contrato de status.
+
+Y una nota que no es un hallazgo pero sí lo mejor de esta vuelta: el informe abre explicando **por
+qué vio verde un guion que no lo estaba**, con la lección generalizada («cuando un cambio añade un
+ESCRITOR a un campo, hay que ir a buscar los candados que dicen que ese campo no lo escribe nadie»)
+escrita en el guion y no solo en el informe. Eso vale más que el arreglo.
