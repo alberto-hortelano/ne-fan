@@ -465,9 +465,44 @@ const server = http.createServer((req, res) => {
                 position_hint: "near_player",
               }]
             : [];
+        // TERCER turno: el resto del mundo que un motor pone a mitad de
+        // conversación — un NPC pacífico, un objeto y un edificio. La clase
+        // ENTERA, porque desaparecer al reanudar no era cosa solo del enemigo
+        // (#326): el objeto y el edificio se iban enteros y el pacífico se
+        // quedaba a medias (vivo en el bridge, invisible en el cliente).
+        // Mismo mecanismo que el hostil del turno 2: `fakeDialogueTurn` lo
+        // hace determinista y `/dev/reset` lo devuelve a cero entre guiones.
+        const spawnMundo =
+          fakeDialogueTurn === 3
+            ? [
+                {
+                  type: "spawn_entity" as const,
+                  entity_kind: "npc" as const,
+                  role: "villager" as const,
+                  name: "Nogala",
+                  description: "posadera de manos grandes y delantal remendado",
+                  position_hint: "near_player",
+                },
+                {
+                  type: "spawn_entity" as const,
+                  entity_kind: "object" as const,
+                  name: "Cofre de la posada",
+                  description: "cofre de roble con herrajes de hierro",
+                  position_hint: "near_player",
+                },
+                {
+                  type: "spawn_entity" as const,
+                  entity_kind: "building" as const,
+                  name: "Forja de Robledo",
+                  description: "forja de piedra ennegrecida por el humo",
+                  position_hint: "near_player",
+                },
+              ]
+            : [];
         return send(200, {
           consequences: [
             ...spawnHostil,
+            ...spawnMundo,
             {
               type: "dialogue",
               speaker,

@@ -4,17 +4,25 @@
 
 import type { CombatantState, CombatEvent, Vec3 } from "../types.js";
 
+/** Un combatiente nuevo.
+ *
+ *  `maxHealth` por defecto es `health` —quien nace, nace entero— pero se puede
+ *  dar aparte, y hace falta: un enemigo que vuelve de un save llega herido, y
+ *  colapsar los dos números le pintaba la barra llena y hacía que la IA lo
+ *  creyera entero (`enemy-ai.ts` se retira por debajo del 30 % de `maxHealth`,
+ *  que con esto era siempre el 30 % de lo que le quedaba). */
 export function createCombatant(
   id: string,
   health: number = 100,
   weaponId: string = "unarmed",
   position: Vec3 = { x: 0, y: 0, z: 0 },
   forward: Vec3 = { x: 0, y: 0, z: -1 },
+  maxHealth: number = health,
 ): CombatantState {
   return {
     id,
     health,
-    maxHealth: health,
+    maxHealth,
     weaponId,
     state: "idle",
     currentAttackType: "",

@@ -41,7 +41,12 @@ export interface TickInputs {
 export interface RoomEnemy {
   id: string;
   position: Vec3;
+  /** La vida que le queda AHORA: la del contrato en un enemigo nuevo, la del
+   *  save en uno que vuelve herido. */
   health: number;
+  /** Y sobre cuánta. Sin este campo el bridge ponía `maxHealth = health` y un
+   *  herido reanudado volvía con la barra llena (#326). */
+  maxHealth: number;
   weaponId: string;
   personality: EnemyPersonality;
 }
@@ -143,7 +148,7 @@ export class BridgeGameClient implements GameClient {
     this.bridge.sendLoadRoom(
       roomId,
       enemies.map(e => ({
-        id: e.id, position: e.position, health: e.health,
+        id: e.id, position: e.position, health: e.health, maxHealth: e.maxHealth,
         weaponId: e.weaponId, personality: e.personality,
       })),
       dims ? { width: dims.width ?? 20, depth: dims.depth ?? 20 } : undefined,
@@ -154,7 +159,7 @@ export class BridgeGameClient implements GameClient {
     if (enemies.length === 0) return;
     this.bridge.sendAddCombatants(
       enemies.map(e => ({
-        id: e.id, position: e.position, health: e.health,
+        id: e.id, position: e.position, health: e.health, maxHealth: e.maxHealth,
         weaponId: e.weaponId, personality: e.personality,
       })),
     );

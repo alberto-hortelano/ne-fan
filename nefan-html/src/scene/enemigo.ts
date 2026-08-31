@@ -35,7 +35,8 @@ export interface EnemigoNuevo {
 export interface DatosDeEnemigo {
   id: string;
   pos: Vec3;
-  /** El bloque `{health, weapon_id, personality}` derivado por el core. */
+  /** El bloque `{health, max_health, weapon_id, personality}` derivado por el
+   *  core, con la vida VIVA si viene de un save. */
   combat: unknown;
   /** Prompt del skin IA: la DESCRIPCIÓN del motor, no el id. */
   descripcion?: string;
@@ -74,6 +75,16 @@ export function enemigoDesdeCombat(datos: DatosDeEnemigo): EnemigoNuevo | null {
   if (health === null || health <= 0) {
     return rechazar(`combat.health inválido (${JSON.stringify(combat.health)})`);
   }
+  // El DENOMINADOR de la barra, y llega o no se construye el enemigo: SIN
+  // fallback a `health`. Ese fallback es exactamente la mentira que había —un
+  // herido que vuelve de un save con 12 PV se pintaba con la barra llena y la
+  // IA lo trataba como entero—, y un save previo a #326 no trae el campo, así
+  // que se rechaza en voz alta en vez de resucitar el defecto en silencio
+  // (pre-producción: cero compatibilidad hacia atrás).
+  const maxHealth = numero(combat.max_health);
+  if (maxHealth === null || maxHealth <= 0) {
+    return rechazar(`combat.max_health inválido (${JSON.stringify(combat.max_health)})`);
+  }
   const weaponId = combat.weapon_id;
   if (typeof weaponId !== "string" || !weaponId) {
     return rechazar(`combat.weapon_id inválido (${JSON.stringify(weaponId)})`);
@@ -105,6 +116,7 @@ export function enemigoDesdeCombat(datos: DatosDeEnemigo): EnemigoNuevo | null {
       id,
       position: pos,
       health,
+      maxHealth,
       weaponId,
       personality: {
         ...p,
@@ -123,7 +135,7 @@ export function enemigoDesdeCombat(datos: DatosDeEnemigo): EnemigoNuevo | null {
       label: datos.nombre ?? prompt,
       name: datos.nombre ?? id,
       hp: health,
-      maxHp: health,
+      maxHp: maxHealth,
       alive: true,
       category: "creature",
       skinPrompt: prompt,

@@ -43,10 +43,10 @@ import {
   createSessionNpcBehavior,
   generationBusyKey,
   npcSync,
-  sessionDataForClient,
   type BridgeContext,
   type ClientSocket,
 } from "../context.js";
+import { sessionDataForClient } from "../wire-scene.js";
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { applyRenderModeChange } from "../../src/narrative/render-mode.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
@@ -263,6 +263,19 @@ function reseedSimForSession(
     ),
   );
   ctx.store.dispatch("player_respawned", { hp, pos: [...pos] });
+  // …y la proyección de enemigos se vacía con él. `sim.reset()` se lleva los
+  // combatientes pero `store.state.enemies` es OTRA lista, y arrastraba la de
+  // la sesión anterior del proceso: el `add_combatants` del resume ve su id ya
+  // proyectado (`projected.some`) y NO actualiza la fila, así que un enemigo
+  // reanudado a 12 PV se quedaba con los 60 de la partida de antes.
+  //
+  // Esto NO es la vía revertida de #323, y la diferencia es toda: aquello
+  // reemplazaba la lista en CADA `broadcastScene`, o sea a mitad de pelea, y
+  // por eso el primer tile nuevo borraba del `state_update` a un enemigo vivo.
+  // Aquí se vacía en el reseed de SESIÓN —donde el sim tampoco tiene a nadie—
+  // y se vuelve a poblar por la misma vía de siempre. El guion 42 lo canda por
+  // fuera: sigue verde porque su sujeto es el cambio de tile.
+  ctx.store.dispatch("enemies_projected", { enemies: [] });
   // Sembrar el sim y TOMAR EL MUNDO son el mismo acto: a partir de aquí
   // conduce este socket y CUALQUIER save() del bridge lleva la posición y la
   // vida vivas del combatiente. Sin esto el save solo sabía dónde empezó la
@@ -404,7 +417,7 @@ export async function handleStartSession(
     sessionId: ctx.narrative.session_id,
     gameId: ctx.narrative.game_id,
     isResume: false,
-    state: sessionDataForClient(ctx.narrative.toSessionData()),
+    state: sessionDataForClient(ctx, ctx.narrative.toSessionData()),
     uiTheme,
   });
   // Snapshot de mundo pre-generado (data/games/{id}/world/): replay del
@@ -597,7 +610,7 @@ export async function handleResumeSession(
     sessionId: ctx.narrative.session_id,
     gameId: ctx.narrative.game_id,
     isResume: true,
-    state: sessionDataForClient(ctx.narrative.toSessionData()),
+    state: sessionDataForClient(ctx, ctx.narrative.toSessionData()),
     uiTheme,
   });
   // Aquí vivía el reintento del bootstrap: una sesión sin NINGUNA escena era

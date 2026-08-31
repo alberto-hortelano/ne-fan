@@ -24,6 +24,12 @@ describe("combatForHostileRole — hostilidad declarada, números derivados", ()
     assert.ok(c, "un `role:\"hostile\"` tiene que producir combate");
     assert.equal(c.health, HOSTILE_HEALTH);
     assert.ok(c.health > 0, "un enemigo con 0 de vida nace muerto");
+    // El DENOMINADOR viaja aparte de la vida, aunque recién derivado valgan lo
+    // mismo. Sin él, un herido que vuelve de un save (`escenaConCombateVivo` le
+    // baja `health` y deja este) se pintaría con la barra llena y la IA lo
+    // trataría como entero — el bug que #326 hace inexpresable.
+    assert.equal(c.max_health, HOSTILE_HEALTH);
+    assert.equal(c.health, c.max_health, "quien nace, nace entero");
     assert.equal(c.weapon_id, HOSTILE_WEAPON);
     assert.notEqual(c.weapon_id, "", "un arma vacía la rechaza el cliente en la puerta");
 

@@ -251,6 +251,7 @@ describe("bridge request_tile (plano continuo)", () => {
             id: "lobo_1",
             position: { x: 70, y: 0, z: 5 },
             health: 40,
+            maxHealth: 60,
             weaponId: "unarmed",
             personality: { aggression: 0.7, preferred_attacks: ["quick"], reaction_time: 0.3 },
           },
@@ -263,7 +264,7 @@ describe("bridge request_tile (plano continuo)", () => {
     assert.ok(sim.getCombatant("player"), "player intacto (sin reset)");
     // Duplicado ignorado.
     await routeMessage(
-      { type: "add_combatants", enemies: [{ id: "lobo_1", position: { x: 0, y: 0, z: 0 }, health: 99, weaponId: "unarmed", personality: { aggression: 0, preferred_attacks: ["quick"], reaction_time: 1 } }] },
+      { type: "add_combatants", enemies: [{ id: "lobo_1", position: { x: 0, y: 0, z: 0 }, health: 99, maxHealth: 99, weaponId: "unarmed", personality: { aggression: 0, preferred_attacks: ["quick"], reaction_time: 1 } }] },
       socket,
       ctx,
     );

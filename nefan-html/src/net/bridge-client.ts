@@ -2,6 +2,8 @@
  *  resuelve el caller con serviceUrl("game-gateway")). */
 
 import type {
+  AddCombatantsMessage,
+  LoadRoomMessage,
   StateUpdateMessage,
   ServerMessage,
   NarrativeEventMessage,
@@ -17,7 +19,7 @@ import type {
   RenderModeSetMessage,
   RenderModeChangedMessage,
 } from "@nefan-core/src/protocol/messages.js";
-import type { Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
+import type { Vec3 } from "@nefan-core/src/types.js";
 import { errors } from "../ui/error-log.js";
 
 export type BridgeEvent =
@@ -218,13 +220,15 @@ export class BridgeClient {
     this.send({ type: "input", delta, inputs }, { quietOnDisconnect: true });
   }
 
-  sendLoadRoom(roomId: string, enemies: {
-    id: string;
-    position: Vec3;
-    health: number;
-    weaponId: string;
-    personality: EnemyPersonality;
-  }[], dimensions?: { width: number; depth: number }): void {
+  // La forma de `enemies` se IMPORTA del contrato, no se copia: al añadirle
+  // `maxHealth` (#326) esta copia y la del alta aditiva de abajo habrían
+  // seguido compilando con el campo de menos, y el bridge lo habría rechazado
+  // en el zod en tiempo de partida.
+  sendLoadRoom(
+    roomId: string,
+    enemies: LoadRoomMessage["enemies"],
+    dimensions?: { width: number; depth: number },
+  ): void {
     this.send({ type: "load_room", roomId, enemies, dimensions });
   }
 
@@ -239,13 +243,7 @@ export class BridgeClient {
 
   /** Alta ADITIVA de combatientes en el sim del bridge (enemigos de un tile
    *  nuevo) — no resetea nada, ids ya presentes se ignoran. */
-  sendAddCombatants(enemies: {
-    id: string;
-    position: { x: number; y: number; z: number };
-    health: number;
-    weaponId: string;
-    personality: EnemyPersonality;
-  }[]): void {
+  sendAddCombatants(enemies: AddCombatantsMessage["enemies"]): void {
     this.send({ type: "add_combatants", enemies });
   }
 

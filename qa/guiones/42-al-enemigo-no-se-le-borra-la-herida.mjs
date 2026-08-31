@@ -1,7 +1,11 @@
-/** Lo que le HICISTE al enemigo sigue ahí después de cambiar de tile, y el
- *  enemigo tiene UN SOLO DUEÑO.
+/** Lo que le HICISTE al enemigo sigue ahí después de cambiar de tile Y de
+ *  cerrar la partida, y el enemigo tiene UN SOLO DUEÑO.
  *
- *  Las dos mitades que la tanda #323 arregló y que el guion 41 no recorre:
+ *  Las dos mitades que la tanda #323 arregló y que el guion 41 no recorre
+ *  (bloques 1 y 2), más la que abrió #326 (bloque 3: el muerto no vuelve al
+ *  reanudar). El mundo de RUNTIME —lo que el motor pone a mitad de
+ *  conversación, que no está en el Format D de ninguna escena— lo mide su
+ *  guion hermano, el 48.
  *
  *  1. **La herida sobrevive al cambio de tile.** El defecto que se retiró con
  *     `src/store/state-projection.ts` no era «falta un productor»: era que
@@ -39,13 +43,24 @@
  *     `state_update.npcs` (65 frames) y su registro del ledger empieza a
  *     moverse solo (`[11.41,0,-0.90] → [11.81,0,-1.04]`): los dos asertos del
  *     bloque se ponen rojos.
+ *   · Bloque 3 (2026-08-31, #326) — quitando el guardado al morir de
+ *     `handleInput` (bridge/handlers/simulation.ts), el muerto vuelve al
+ *     reanudar y los dos asertos del bloque se ponen rojos: `bandido_1` sale
+ *     otra vez en `enemies()` (`alive:true`, 34,9 PV — la herida del bloque 1,
+ *     que sí se guardó con otro save) y su `#hp-text-bandido_1` vuelve al HUD
+ *     marcando 35.
  *
  *  Lo que este guion NO afirma y está en `qa.md` de la tanda como hallazgo
  *  abierto va con la marca `⚠ HALLAZGO` en el registro: se ve en cada corrida
  *  sin poner el banco en rojo por un defecto que su dueño todavía no ha
  *  arreglado (misma convención que estrenó el guion 24).
  */
-import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import {
+  nuevaPartida,
+  comenzar,
+  esperarListaDeSaves,
+  esperarTituloListo,
+} from "../lib/sesion.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes del guion), la misma
  *  que el 41 y por las mismas dos razones: la partida tiene que arrancar en el
@@ -401,6 +416,93 @@ export default async function (ctx) {
         `(updateWorldLabels solo recorre npcEntities) — rótulos colocados: ${JSON.stringify(rotulo.mundo)}`,
     );
   }
+
+  // ── 3 · EL MUERTO NO VUELVE ────────────────────────────────────────────
+  // La tercera mitad del mismo hecho, y la que se extendió con #326: lo que
+  // le hiciste al enemigo sobrevive también a CERRAR LA PARTIDA. Hasta esa
+  // tanda, `enemy_died` solo tocaba el store volátil y nadie escribía la
+  // muerte en el ledger, así que reanudar devolvía `alive:true, hp:60` a un
+  // enemigo matado dos veces (medido jugando en el QA de #323, que lo dejó en
+  // backlog sin issue). Aquí se mata de verdad, se reanuda por la tarjeta del
+  // save —como quien juega— y se afirma que NO está.
+  const rematado = await herirHasta(ctx, BANDIDO, 0, 90_000);
+  ctx.expect(
+    "el jugador consigue MATAR al enemigo (si no, no hay muerte que persistir)",
+    Boolean(rematado?.muerto),
+    JSON.stringify(rematado),
+  );
+  if (!rematado?.muerto) {
+    ctx.log("⚠ sin muerte no se puede medir el resume; el guion termina aquí");
+    return;
+  }
+  await ctx.shot("enemigo-muerto-antes-de-reanudar");
+
+  await ctx.page.reload({ waitUntil: "domcontentloaded" });
+  await ctx.waitFor("window.__nefan disponible tras el reload", () => Boolean(window.__nefan));
+  await esperarTituloListo(ctx);
+  await esperarListaDeSaves(ctx);
+  const tarjeta = await ctx.page.$(
+    `button[data-action="resume"][data-session-id="${partida.sessionId}"]`,
+  );
+  ctx.expect("el título ofrece REANUDAR la partida recién jugada", Boolean(tarjeta), partida.sessionId);
+  if (!tarjeta) return;
+  await tarjeta.click();
+  await ctx.waitFor(
+    "la escena vuelve tras reanudar",
+    () => (window.__nefan.status().scene ? window.__nefan.scene.scene_id : null),
+    180_000,
+  );
+  await ctx.shot("partida-reanudada-sin-el-muerto");
+
+  // PRECONDICIÓN, y no es ceremonia: sin ella «el muerto no está» saldría
+  // verde también con un resume que no trajera NADA, que es el otro desenlace
+  // malo. El mundo tiene que haber vuelto para que su ausencia signifique algo.
+  const mundoVuelto = await ctx.waitFor(
+    "el mundo vuelve al reanudar (el tabernero está en escena)",
+    (id) => (window.__nefan.npcs().some((n) => n.id === id) ? window.__nefan.npcs().length : null),
+    60_000,
+    MERCADER,
+  ).catch(() => null);
+  ctx.expect(
+    "el mundo vuelve al reanudar (si no, lo de abajo sería un verde vacío)",
+    Boolean(mundoVuelto),
+    `npcs tras reanudar: ${JSON.stringify(await ctx.nefan("npcs"))}`,
+  );
+
+  const trasReanudar = await ctx.page.evaluate((eid) => ({
+    enemigos: window.__nefan.enemies(),
+    barra: document.getElementById(`hp-text-${eid}`)?.textContent ?? null,
+    // Los nombres que el HUD tiene puestos: dos filas con el mismo nombre son
+    // la señal de la SEGUNDA PUERTA (el mismo enemigo entrando dos veces).
+    nombres: Array.from(document.querySelectorAll(".nf-vital-label")).map((n) => n.textContent),
+  }), BANDIDO);
+  ctx.log(`tras reanudar: ${JSON.stringify(trasReanudar)}`);
+  ctx.expect(
+    "el enemigo MUERTO no vuelve al mundo tras reanudar",
+    !trasReanudar.enemigos.some((e) => e.id === BANDIDO),
+    JSON.stringify(trasReanudar.enemigos),
+  );
+  ctx.expect(
+    "…y tampoco vuelve su barra de vida al HUD",
+    trasReanudar.barra === null,
+    `#hp-text-${BANDIDO} = ${JSON.stringify(trasReanudar.barra)}`,
+  );
+
+  // SIN DUPLICADOS: el riesgo peor de rehidratar el mundo es abrirle una
+  // segunda puerta al mismo enemigo (vuelve por la escena Y por el ledger) —
+  // dos barras en el HUD y un solo combatiente en el sim, o sea una barra que
+  // no baja nunca.
+  const ids = trasReanudar.enemigos.map((e) => e.id);
+  ctx.expect(
+    "ningún enemigo vuelve por dos puertas (ids sin repetir)",
+    new Set(ids).size === ids.length,
+    JSON.stringify(ids),
+  );
+  ctx.expect(
+    "…ni hay dos barras con el mismo nombre en el HUD",
+    new Set(trasReanudar.nombres).size === trasReanudar.nombres.length,
+    JSON.stringify(trasReanudar.nombres),
+  );
 
   ctx.log(`partida ${partida.sessionId} · fin del guion`);
 }

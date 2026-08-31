@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { combatRegistry } from "../src/combat/registry.js";
+import { createCombatant } from "../src/combat/combatant.js";
 import { routeMessage } from "../bridge/router.js";
 import type {
   ServerMessage,
@@ -442,6 +443,62 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(internal.__format_d, undefined);
   });
 
+  it("resume: la escena sale al wire con la vida VIVA, y sin los muertos", async () => {
+    // El criterio central de #326 por el lado de la escena. Hasta esta tanda,
+    // `formatDToWorld` emitía `HOSTILE_HEALTH` constante para todo hostil, así
+    // que reanudar devolvía enteros a los heridos y VIVOS a los muertos.
+    const { ctx, narrative } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    narrative.recordSceneLoaded("fd_pelea", {
+      scene_id: "fd_pelea",
+      scene_description: "prueba",
+      size: { cols: 4, rows: 4, meters_per_cell: 2 },
+      terrain: ["gggg", "gggg", "gggg", "gggg"],
+      terrain_legend: {},
+      __expanded: true,
+      entities: [
+        { id: "herido_1", kind: "npc", name: "Herido", role: "hostile", cell: [1, 1], footprint: [1, 1], glyph: "h" },
+        { id: "muerto_1", kind: "npc", name: "Muerto", role: "hostile", cell: [2, 2], footprint: [1, 1], glyph: "m" },
+        { id: "barkeep", kind: "npc", name: "Tabernero", cell: [3, 3], footprint: [1, 1], glyph: "b" },
+      ],
+      ambient_event: "",
+    });
+    // Lo que dejó la partida anterior en el ledger (lo escribe `save()` desde
+    // el runtime del sim; aquí se pone a mano para aislar el sujeto: el WIRE).
+    narrative.getEntity("herido_1")!.data.combat = { health: 12, max_health: 60 };
+    narrative.getEntity("muerto_1")!.data.combat = { health: 0, max_health: 60 };
+    await entrarEnLaPartida(ctx, socket, sessionId);
+
+    narrative.startNewSession("plugtest");
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, true, JSON.stringify(resumed.error));
+    const wire = resumed.state!.scenes_loaded["fd_pelea"].scene_data;
+    const npcs = wire.npcs as Array<Record<string, unknown>>;
+
+    const herido = npcs.find((n) => n.id === "herido_1");
+    assert.ok(herido, "el herido vuelve");
+    const combat = herido!.combat as Record<string, unknown>;
+    assert.equal(combat.health, 12, "vuelve con la vida que le dejaste, no con la del contrato");
+    assert.equal(combat.max_health, 60, "y con su denominador: la barra no se pinta llena");
+
+    assert.equal(
+      npcs.some((n) => n.id === "muerto_1"),
+      false,
+      "el muerto no vuelve: no se pinta, no se registra en el sim y no tiene barra",
+    );
+    assert.ok(npcs.some((n) => n.id === "barkeep"), "y el vecino pacífico sigue ahí");
+
+    // Y lo PERSISTIDO sigue siendo Format D crudo: el overlay se escribe sobre
+    // la copia del wire, no sobre el save (#179).
+    const crudo = ctx.narrative.scenes_loaded["fd_pelea"].scene_data;
+    assert.equal(crudo.npcs, undefined, "la persistencia no se enriquece");
+    assert.equal((crudo.entities as unknown[]).length, 3, "el muerto sigue en el Format D crudo");
+  });
+
   it("resume_session devuelve session_not_found para un id inexistente", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
@@ -779,6 +836,67 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const onDisk = (await storage.read(sessionId))!;
     assert.deepEqual(onDisk.player.position, [4, 1, 7], "la posición viva llegó al disco");
     assert.equal(onDisk.player.health, 42, "y la vida también: reanudar ya no cura");
+  });
+
+  /** Lo mismo para el ENEMIGO, que es lo que faltaba: hasta #326 el save no
+   *  sabía nada de su vida, así que un herido volvía entero y un muerto
+   *  volvía vivo. Aquí se pelea de verdad —input con ataque por el router,
+   *  como el cliente— y se mira el fichero de disco. */
+  it("matar a un enemigo llega AL DISCO en el mismo tick (handleInput guarda)", async () => {
+    const { ctx, narrative, sim, storage } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+
+    // El bandido, como lo deja la escena: registro en el ledger + combatiente
+    // en el sim (la vía real es cliente → add_combatants). A un golpe de morir,
+    // a distancia óptima del ataque rápido y SIN personalidad (no devuelve).
+    const sceneId = narrative.world.active_scene_id;
+    narrative.recordEntitySpawned(
+      "bandido_1", "npc", sceneId, [0, 0, -1.5], { name: "Bandido", role: "hostile" }, "scene_init",
+    );
+    sim.addCombatant(createCombatant("bandido_1", 1, "unarmed", { x: 0, y: 0, z: -1.5 }, { x: 0, y: 0, z: 1 }, 60));
+    const enDiscoAntes = (await storage.read(sessionId))!;
+    assert.equal(
+      enDiscoAntes.entities.find((e) => e.id === "bandido_1"),
+      undefined,
+      "precondición: el enemigo aún no está en el save (nadie ha guardado desde que se registró)",
+    );
+
+    const golpear = (attackRequested: boolean) =>
+      routeMessage(
+        {
+          type: "input",
+          delta: 0.05,
+          inputs: {
+            playerPosition: { x: 0, y: 0, z: 0 },
+            playerForward: { x: 0, y: 0, z: -1 },
+            playerMoving: false,
+            ...(attackRequested ? { attackRequested: true, attackType: "quick" } : {}),
+          },
+        },
+        socket,
+        ctx,
+      );
+    await golpear(true);
+    for (let i = 0; i < 10 && sim.getCombatant("bandido_1")!.health > 0; i++) await golpear(false);
+    assert.equal(sim.getCombatant("bandido_1")!.health, 0, "el jugador lo mata en el sim");
+
+    // El bloque `combat` en el disco ES la prueba de que hubo un guardado:
+    // nada más guarda en este test, y el ledger nace sin él (lo escribe
+    // `refreshCombatantsFromRuntime` desde el sim). Se mide así y no con
+    // `updated_at`, que es un ISO de milisegundos y en esta batería el save
+    // anterior cae en el MISMO ms: ese aserto salía verde o rojo según la
+    // carga de la máquina, que es peor que no tenerlo.
+    const onDisk = (await storage.read(sessionId))!;
+    const guardado = onDisk.entities.find((e) => e.id === "bandido_1");
+    assert.ok(guardado, "morir provocó un guardado: el enemigo llegó al ledger del disco");
+    assert.deepEqual(
+      guardado.data.combat,
+      { health: 0, max_health: 60 },
+      "la muerte está en el disco: reanudar ya no lo resucita",
+    );
   });
 
   /** La otra mitad: el runtime atado es de UNA sesión. Sin soltarlo al

@@ -45,6 +45,32 @@ export async function handleInput(
   // volumen es bajo; el save llega con el siguiente save normal.
   for (const ev of result.npcEvents) applyNpcEvent(ctx, ev);
 
+  // UNA MUERTE TIENE QUE LLEGAR AL DISCO. Hasta #326 `enemy_died` solo tocaba
+  // el store volátil y `handleInput` no guardaba nunca: matar a un enemigo y
+  // cerrar el juego lo devolvía vivo y entero (medido jugando en el QA de
+  // #323). El save vuelca la vida viva de los combatientes, así que basta con
+  // provocarlo — y se provoca UNA vez por tick con muertes, no una por muerte.
+  //
+  // Solo si esta partida está escuchando al sim: los muñecos de una fixture
+  // del selector «Room» no escriben en la partida de nadie (world-claim.ts).
+  const muertes = result.events.filter(
+    (e) => e.type === "died" && e.combatantId !== "player",
+  );
+  if (muertes.length > 0 && ctx.world.kind === "session") {
+    // Fail-loud del bridge: si el guardado falla, el muerto resucitará al
+    // reanudar y el jugador tiene que enterarse AHORA, no entonces.
+    await ctx.narrative.save().catch((err: unknown) => {
+      console.error("Bridge: no se pudo guardar la muerte de un enemigo:", err);
+      ctx.broadcastNarrative({
+        type: "narrative_status",
+        phase: "error",
+        kind: "consequences",
+        message:
+          "No se pudo guardar la muerte de un enemigo: si reanudas la partida, podría seguir vivo.",
+      });
+    });
+  }
+
   ctx.send(ws, {
     type: "state_update",
     events: result.events,
@@ -136,6 +162,7 @@ export function handleLoadRoom(
       enemy.weaponId,
       enemy.position,
       { x: 0, y: 0, z: 1 }, // Default forward
+      enemy.maxHealth,
     );
     ctx.sim.addCombatant(combatant, enemy.personality);
   }
@@ -145,7 +172,7 @@ export function handleLoadRoom(
       id: e.id,
       pos: [e.position.x, e.position.y, e.position.z],
       hp: e.health,
-      max_hp: e.health,
+      max_hp: e.maxHealth,
       weapon_id: e.weaponId,
       combat_state: "idle",
       alive: true,
@@ -198,7 +225,14 @@ export function handleAddCombatants(
   for (const enemy of msg.enemies) {
     if (ctx.sim.getCombatant(enemy.id)) continue;
     ctx.sim.addCombatant(
-      createCombatant(enemy.id, enemy.health, enemy.weaponId, enemy.position, { x: 0, y: 0, z: 1 }),
+      createCombatant(
+        enemy.id,
+        enemy.health,
+        enemy.weaponId,
+        enemy.position,
+        { x: 0, y: 0, z: 1 },
+        enemy.maxHealth,
+      ),
       enemy.personality,
     );
     // Proyección al store (getEnemyStates itera store.enemies): CONCAT, no
@@ -208,7 +242,7 @@ export function handleAddCombatants(
         id: enemy.id,
         pos: [enemy.position.x, enemy.position.y, enemy.position.z],
         hp: enemy.health,
-        max_hp: enemy.health,
+        max_hp: enemy.maxHealth,
         weapon_id: enemy.weaponId,
         combat_state: "idle",
         alive: true,

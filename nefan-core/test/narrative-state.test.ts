@@ -367,16 +367,6 @@ describe("NarrativeState mutations", () => {
     assert.equal(s.story_so_far, "first\n\nsecond");
   });
 
-  it("recordEntityDespawned removes by id", () => {
-    const s = makeState();
-    s.startNewSession("g");
-    s.recordEntitySpawned("a", "npc", "s", [0, 0, 0], {});
-    s.recordEntitySpawned("b", "npc", "s", [0, 0, 0], {});
-    s.recordEntityDespawned("a");
-    assert.equal(s.entities.length, 1);
-    assert.equal(s.entities[0].id, "b");
-  });
-
   it("recordDialogueEvent generates monotonic event IDs", () => {
     const s = makeState();
     s.startNewSession("g");
@@ -708,5 +698,80 @@ describe("NarrativeState: runtime del jugador atado al save", () => {
     await s.save();
     assert.deepEqual((await storage.read(primera))!.player.position, [20, 1, 20]);
     assert.equal((await storage.read(primera))!.player.health, 7);
+  });
+});
+
+describe("NarrativeState: el runtime de los ENEMIGOS también viaja en el save", () => {
+  /** Sesión con un hostil ya registrado en el ledger (como lo deja
+   *  `registerSceneNpcs` para el bandido de la escena inicial). */
+  async function conUnHostil() {
+    const { narrative: s, storage } = makeNarrativeState();
+    const id = s.startNewSession("g");
+    s.recordEntitySpawned("bandido_1", "npc", "tile_0_0", [3, 0, 4], { name: "Bandido", role: "hostile" }, "scene_init");
+    await s.establecer();
+    return { s, storage, id };
+  }
+
+  const combatDe = async (
+    storage: Awaited<ReturnType<typeof conUnHostil>>["storage"],
+    id: string,
+  ) => {
+    const save = await storage.read(id);
+    return save!.entities.find((e) => e.id === "bandido_1")!.data.combat as
+      | Record<string, unknown>
+      | undefined;
+  };
+
+  it("save() vuelca la vida VIVA del combatiente sobre su EntityRecord", async () => {
+    const { s, storage, id } = await conUnHostil();
+    // Sin atadura, el ledger no sabe nada de combate: es el estado de HOY sin
+    // esta tanda, y por eso reanudar devolvía a todos con la vida del contrato.
+    assert.equal(await combatDe(storage, id), undefined);
+
+    s.bindCombatantRuntime(() => [
+      { id: "bandido_1", position: { x: 9, y: 0, z: -1 }, health: 23, maxHealth: 60 },
+    ]);
+    await s.save();
+    assert.deepEqual(await combatDe(storage, id), { health: 23, max_health: 60 });
+    const save = await storage.read(id);
+    assert.deepEqual(
+      save!.entities.find((e) => e.id === "bandido_1")!.position,
+      [9, 0, -1],
+      "y su posición: al enemigo lo mueve la IA de combate, no la vida ambiental",
+    );
+  });
+
+  it("LA MUERTE ES ABSORBENTE: un record a 0 no vuelve a subir aunque el sim lo cure", async () => {
+    const { s, storage, id } = await conUnHostil();
+    let vivo = { id: "bandido_1", position: { x: 0, y: 0, z: 0 }, health: 0, maxHealth: 60 };
+    s.bindCombatantRuntime(() => [vivo]);
+    await s.save();
+    assert.deepEqual(await combatDe(storage, id), { health: 0, max_health: 60 });
+
+    // Esto es exactamente lo que hace `sim.respawn()` al pulsar R: cura a
+    // TODOS los enemigos a su máximo. Sin el candado, morir y reaparecer
+    // deshacía una muerte YA guardada.
+    vivo = { id: "bandido_1", position: { x: 0, y: 0, z: 0 }, health: 60, maxHealth: 60 };
+    await s.save();
+    assert.deepEqual(
+      await combatDe(storage, id),
+      { health: 0, max_health: 60 },
+      "el muerto lo está para siempre en el save (decisión del usuario, 2026-08-31)",
+    );
+  });
+
+  it("la atadura es de UNA sesión, como la del jugador: start y load la sueltan", async () => {
+    const { s, storage } = await conUnHostil();
+    s.bindCombatantRuntime(() => [
+      { id: "bandido_1", position: { x: 0, y: 0, z: 0 }, health: 5, maxHealth: 60 },
+    ]);
+    const segunda = s.startNewSession("g");
+    s.recordEntitySpawned("bandido_1", "npc", "tile_0_0", [3, 0, 4], { name: "Bandido" }, "scene_init");
+    await s.establecer();
+    assert.equal(
+      await combatDe(storage, segunda),
+      undefined,
+      "la partida nueva no hereda la vida del enemigo de la vieja",
+    );
   });
 });

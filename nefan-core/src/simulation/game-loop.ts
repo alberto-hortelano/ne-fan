@@ -91,6 +91,17 @@ export class GameSimulation {
     return this.combatants.get(id);
   }
 
+  /** TODOS los combatientes del sim, el jugador incluido.
+   *
+   *  Existe desde #326 porque el save necesita enumerarlos para persistir su
+   *  vida (`bindCombatantRuntime`), y hasta hoy no se podía: quien quería la
+   *  lista iteraba `store.state.enemies` —una PROYECCIÓN, no la fuente— y solo
+   *  veía a quien alguien hubiera proyectado. Se devuelven las referencias
+   *  vivas, como `getCombatant`: quien lee un estado del sim lo lee del sim. */
+  getCombatants(): CombatantState[] {
+    return [...this.combatants.values()];
+  }
+
   tick(delta: number, inputs: FrameInputs): FrameResult {
     const allEvents: CombatEvent[] = [];
     const player = this.combatants.get("player");

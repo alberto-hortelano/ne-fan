@@ -68,6 +68,22 @@ export interface PlayerRuntime {
  *  un save no puede empeorar por guardarse. */
 export type PlayerRuntimeSource = () => PlayerRuntime | null;
 
+/** Lo que el RUNTIME sabe de un combatiente que NO es el jugador: dónde está
+ *  y cuánta vida le queda, sobre cuánta. Es el mismo hecho que `PlayerRuntime`
+ *  con dos diferencias que importan: hay N y traen su denominador (el del
+ *  jugador vive en el store del cliente). */
+export interface CombatantRuntime {
+  id: string;
+  position: Vec3Like;
+  health: number;
+  maxHealth: number;
+}
+
+/** Fuente del runtime de los combatientes, ATADA al save
+ *  (`bindCombatantRuntime`). Hermana de `PlayerRuntimeSource` y por el mismo
+ *  motivo: sin ella el save solo sabía con cuánta vida NACE un enemigo. */
+export type CombatantRuntimeSource = () => CombatantRuntime[] | null;
+
 export interface LoadSessionOptions {
   /** Probe each unique asset hash in `asset_index_snapshot` against the live
    *  manifest. Hashes the validator reports as missing (resolved `false`) are
@@ -171,6 +187,10 @@ export class NarrativeState {
   /** Fuente del runtime del jugador de ESTA sesión (ver bindPlayerRuntime).
    *  No se persiste: es la atadura con el sim, no un campo del save. */
   private playerRuntime: PlayerRuntimeSource | null = null;
+  /** Fuente del runtime de los COMBATIENTES de esta sesión (ver
+   *  bindCombatantRuntime). No se persiste, como la del jugador: es la
+   *  atadura con el sim, no un campo del save. */
+  private combatantRuntime: CombatantRuntimeSource | null = null;
   /** Índice en memoria tileKey → sceneId (reconstruido en load, actualizado en
    *  recordSceneLoaded). No se persiste: se deriva de scenes_loaded[].tile. */
   private tileIndex = new Map<string, string>();
@@ -245,6 +265,25 @@ export class NarrativeState {
     this.playerRuntime = src;
   }
 
+  /** Lo mismo para los COMBATIENTES, y por eso vive pegada a la de arriba: es
+   *  la misma atadura con un sujeto más.
+   *
+   *  Hasta #326 el único runtime que el save conocía era el del jugador, y el
+   *  de un enemigo no lo persistía nadie: `SessionData` no tiene campo de
+   *  enemigos y `data.combat` del ledger llevaba el valor DERIVADO (60
+   *  constante). Reanudar te devolvía enteros a los que habías herido y VIVOS
+   *  a los que habías matado — el ledger no tiene muerte, así que toda
+   *  rehidratación resucita mientras la vida no viaje.
+   *
+   *  La pone y la quita SOLO `bridge/world-claim.ts`, en el mismo acto que la
+   *  del jugador y por la misma razón medida: el día que la atadura sobrevivió
+   *  a su dueño, el `state.json` de una partida acabó con las coordenadas del
+   *  muñeco de una fixture dentro (`arch-rules.json` →
+   *  `la-atadura-del-save-vive-con-el-dueno-del-mundo`). */
+  bindCombatantRuntime(src: CombatantRuntimeSource | null): void {
+    this.combatantRuntime = src;
+  }
+
   /** Vuelca el runtime vivo sobre `player` justo antes de serializar. Sin
    *  fuente atada (o sin jugador vivo) se conserva lo persistido. */
   private refreshPlayerFromRuntime(): void {
@@ -253,6 +292,42 @@ export class NarrativeState {
     this.player.position = toTuple(live.position);
     this.player.health = live.health;
     if (this.world.active_scene_id) this.player.current_scene_id = this.world.active_scene_id;
+  }
+
+  /** Vuelca el runtime vivo de los combatientes sobre sus `EntityRecord`,
+   *  también justo antes de serializar.
+   *
+   *  LA MUERTE ES ABSORBENTE: un record que ya está a 0 no vuelve a subir,
+   *  diga lo que diga la fuente. Eso es lo que hace PERMANENTE la decisión del
+   *  usuario (2026-08-31) y lo que impide que el `respawn()` del sim —que cura
+   *  a TODOS los enemigos, `game-loop.ts`— deshaga una muerte ya guardada:
+   *  tras morir y pulsar R, el sim vuelve a decir 60 y el save sigue diciendo
+   *  0, que es lo que el jugador se encontrará al reanudar.
+   *
+   *  Un combatiente sin registro en el ledger se DICE y no se traga: significa
+   *  que alguien dio de alta en el sim a alguien que el motor no conoce, y su
+   *  vida no se va a guardar. */
+  private refreshCombatantsFromRuntime(): void {
+    const vivos = this.combatantRuntime?.();
+    if (!vivos) return;
+    for (const c of vivos) {
+      const rec = this.entities.find((e) => e.id === c.id);
+      if (!rec) {
+        console.warn(
+          `[narrative-state] combatiente "${c.id}" sin registro en el ledger — ` +
+            `su vida no se guarda (¿alta en el sim de alguien que el motor no puso?)`,
+        );
+        continue;
+      }
+      const previo = rec.data.combat;
+      const bloque =
+        typeof previo === "object" && previo !== null && !Array.isArray(previo)
+          ? (previo as Record<string, unknown>)
+          : {};
+      if (typeof bloque.health === "number" && bloque.health <= 0) continue;
+      rec.data.combat = { ...bloque, health: c.health, max_health: c.maxHealth };
+      rec.position = toTuple(c.position);
+    }
   }
 
   startNewSession(gameId: string): string {
@@ -278,6 +353,7 @@ export class NarrativeState {
     // volverá a atarlo. Sin esto, el primer save de la partida nueva
     // escribiría la posición del jugador de la vieja.
     this.playerRuntime = null;
+    this.combatantRuntime = null;
     // Nace SOLO en memoria (#279). Un arranque que falla después del `ok` no
     // deja nada en `saves/`: no hay partida que borrar porque no llegó a
     // haberla.
@@ -433,6 +509,7 @@ export class NarrativeState {
     // Mismo motivo que en startNewSession: el runtime atado era de la sesión
     // que estaba cargada, no de la que se está cargando.
     this.playerRuntime = null;
+    this.combatantRuntime = null;
     // Viene de un fichero: existe. Reanudar no necesita ack de nadie.
     this.existencia = "en_disco";
     this.session_id = data.session_id;
@@ -492,6 +569,7 @@ export class NarrativeState {
     }
     if (this.existencia !== "en_disco") return { escrito: false };
     this.refreshPlayerFromRuntime();
+    this.refreshCombatantsFromRuntime();
     this.updated_at = nowIso();
     const payload = this.toSessionData();
     await this.storage.write(this.session_id, payload);
@@ -640,13 +718,12 @@ export class NarrativeState {
     return uniqueId;
   }
 
-  recordEntityDespawned(entityId: string): void {
-    const idx = this.entities.findIndex((e) => e.id === entityId);
-    if (idx >= 0) {
-      this.entities.splice(idx, 1);
-      this.dirty = true;
-    }
-  }
+  // Aquí vivía `recordEntityDespawned`, que borraba una entity del ledger por
+  // id. Se va con #326 y no vuelve: nunca tuvo un llamante de producción, y
+  // esta tanda decide lo CONTRARIO — un muerto SE QUEDA en el ledger con vida
+  // 0, que es lo que hace que el resume sepa que no vuelve y que el motor
+  // pueda narrar que lo mataste. Borrarlo sería volver a un ledger sin muerte,
+  // donde toda rehidratación resucita.
 
   // ── State queries (read by narrative-engine tools) ──
 

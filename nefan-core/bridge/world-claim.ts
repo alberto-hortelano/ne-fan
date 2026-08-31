@@ -47,7 +47,9 @@ export interface WorldClaim {
    *  cualquiera (no hay partida a la que hacerle daño); otro socket, no. */
   canDrive(ws: ClientSocket): boolean;
   /** La partida del jugador toma el mundo: conduce `ws` y el save pasa a
-   *  llevar la posición y la vida VIVAS del combatiente. */
+   *  llevar la posición y la vida VIVAS de los combatientes — la del jugador
+   *  y la de cada enemigo, que desde #326 es lo que impide que reanudar
+   *  resucite a los muertos. */
   claimForSession(ws: ClientSocket): void;
   /** Una escena de prueba toma el mundo: conduce `ws` y el save deja de
    *  escuchar. Devuelve `false` —y no toca nada— si el mundo lo tiene OTRO
@@ -62,7 +64,14 @@ export function createWorldClaim(narrative: NarrativeState, sim: GameSimulation)
   let owner: ClientSocket | null = null;
   let kind: ClaimKind | null = null;
 
-  /** La ÚNICA fuente de runtime que se ata nunca: el combatiente del sim.
+  /** La ÚNICA fuente de runtime que se ata nunca: los combatientes del sim.
+   *
+   *  Son DOS ataduras y un solo acto, porque son el mismo hecho con dos
+   *  sujetos: el jugador (uno, y su vida va en `player`) y los demás
+   *  combatientes (N, y la suya va en su `EntityRecord`). Atar solo la primera
+   *  es lo que había hasta #326, y con ella el save sabía dónde estaba el
+   *  jugador pero no si el enemigo al que acababa de matar seguía muerto.
+   *
    *  Sin combatiente devuelve `null`, que no es un error — es «todavía no hay
    *  jugador vivo» (bootstrap antes de sembrar) y entonces el save conserva lo
    *  que ya tenía. */
@@ -71,6 +80,26 @@ export function createWorldClaim(narrative: NarrativeState, sim: GameSimulation)
       const vivo = sim.getCombatant("player");
       return vivo ? { position: vivo.position, health: vivo.health } : null;
     });
+    narrative.bindCombatantRuntime(() =>
+      sim
+        .getCombatants()
+        .filter((c) => c.id !== "player")
+        .map((c) => ({
+          id: c.id,
+          position: c.position,
+          health: c.health,
+          maxHealth: c.maxHealth,
+        })),
+    );
+  }
+
+  /** Deja de escuchar al sim: las dos ataduras, siempre juntas. Que una
+   *  sobreviva a la otra sería exactamente el fallo del 2026-08-25 con un
+   *  sujeto nuevo — una fixture escribiendo la vida de sus muñecos en la
+   *  partida de quien está jugando. */
+  function dejarDeEscuchar(): void {
+    narrative.bindPlayerRuntime(null);
+    narrative.bindCombatantRuntime(null);
   }
 
   return {
@@ -98,7 +127,7 @@ export function createWorldClaim(narrative: NarrativeState, sim: GameSimulation)
       }
       owner = ws;
       kind = "fixture";
-      narrative.bindPlayerRuntime(null);
+      dejarDeEscuchar();
       // Se dice en voz alta porque es el momento en el que la partida deja de
       // escuchar al sim: si alguna vez vuelve a aparecer una posición de nadie
       // en un `state.json`, esta línea del log es por dónde se empieza.
@@ -112,7 +141,7 @@ export function createWorldClaim(narrative: NarrativeState, sim: GameSimulation)
       const anterior = kind;
       owner = null;
       kind = null;
-      narrative.bindPlayerRuntime(null);
+      dejarDeEscuchar();
       if (anterior === "session") {
         console.log("Bridge: el mundo se queda sin dueño — la partida guardada deja de escuchar al sim");
       }

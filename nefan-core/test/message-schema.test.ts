@@ -48,6 +48,7 @@ test("un frame válido de cada tipo pasa la validación", () => {
           id: "guard",
           position: { x: 0, y: 0, z: 0 },
           health: 100,
+          maxHealth: 100,
           weaponId: "short_sword",
           personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.3 },
         },
@@ -97,7 +98,9 @@ test("start_session sin gameId se rechaza (campo requerido)", () => {
 test("add_combatants con enemigo sin personality se rechaza", () => {
   const res = validateContract(ClientMessageSchema, {
     type: "add_combatants",
-    enemies: [{ id: "g", position: { x: 0, y: 0, z: 0 }, health: 10, weaponId: "unarmed" }],
+    enemies: [
+      { id: "g", position: { x: 0, y: 0, z: 0 }, health: 10, maxHealth: 60, weaponId: "unarmed" },
+    ],
   });
   assert.equal(res.ok, false);
   if (!res.ok) assert.match(res.error, /personality/);

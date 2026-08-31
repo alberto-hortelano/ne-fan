@@ -363,9 +363,31 @@
       }
     },
     {
+      "id": "una-sola-salida-de-escena-del-bridge",
+      "desc": "El bridge normaliza la escena para el cliente en un solo sitio: bridge/wire-scene.ts",
+      "why": "Una escena sale del bridge hacia un cliente por dos caminos —la que se DIFUNDE (`broadcastScene`) y las que viajan en el `session_started` del resume (`sessionDataForClient`)— y hasta #326 cada uno llamaba a `formatDToWorld` por su cuenta, sincronizados por nada. Lo que le añade trabajo al wire tiene que acordarse de los dos: esta misma tanda le pone encima el combate vivo (la vida que le queda a cada enemigo y la ausencia de los muertos), y con las dos llamadas sueltas el resume habría servido una escena con menos encima que el broadcast — que es la familia exacta de #179, «el resume no re-enriquece». La tercera llamada que apareciera divergiría en silencio y en verde. Hoy las dos pasan por `alWire` en `bridge/wire-scene.ts`, y esta regla es lo que impide que vuelvan a separarse: el tipo no puede decirlo (llamar a una función exportada compila desde cualquier sitio), así que lo dice el checker. Severity error y no `max`: hoy son CERO fuera de sus dos exenciones, y el sitio al que se vuelve no es escribir un normalizador nuevo — es que alguien necesite una world scene «solo para esto» en un handler.",
+      "severity": "error",
+      "files": [
+        "nefan-core/bridge/**/*.ts"
+      ],
+      "text": {
+        "pattern": "formatDToWorld\\s*\\("
+      },
+      "exceptions": [
+        {
+          "path": "nefan-core/bridge/wire-scene.ts",
+          "reason": "Es LA salida: la única puerta por la que una escena del bridge llega a un cliente, con el combate vivo ya puesto encima."
+        },
+        {
+          "path": "nefan-core/bridge/sim-collision.ts",
+          "reason": "No es una salida: normaliza para leer el `terrain_grid` con el que el bridge decide si un NPC puede pisar una celda. Ese resultado no sale al cliente por ningún cable, así que no puede divergir de lo que el jugador ve — lo que se compara con la pantalla es la colisión, y de eso ya hay guiones."
+        }
+      ]
+    },
+    {
       "id": "la-atadura-del-save-vive-con-el-dueno-del-mundo",
-      "desc": "Solo `bridge/world-claim.ts` ata o suelta el runtime del jugador al save",
-      "why": "El sim del bridge es UNO y su combatiente `player` también, así que «quién conduce el sim» y «a qué escucha la partida guardada» son el mismo hecho — y el día que se escribieron como dos llamadas sueltas (`simDriver = ws` por un lado, `bindPlayerRuntime(...)` por otro, movidas a mano desde cuatro sitios) se separaron: la atadura sobrevivió al dueño y el `state.json` de una partida acabó con las coordenadas del muñeco de una fixture dentro, alcanzable por el jugador en dos clicks desde el título (QA 2026-08-25, tres de tres corridas; guion `qa/guiones/25-mirar-fixtures-no-se-lleva-la-partida.mjs`). Un save que se corrompe en silencio es peor que uno que no guarda, porque el jugador se entera al reanudar y no antes. `world-claim.ts` los vuelve a juntar: tomar el mundo y decidir si el save escucha son la MISMA llamada, y soltarlo las deshace las dos. Esta regla es lo que impide que vuelvan a separarse — el tipo no puede hacerlo (TypeScript no sabe decir «este método solo se llama desde este fichero»), así que lo dice el checker. Los tests NO entran en los roots a propósito: `test/narrative-state.test.ts` ata la fuente a mano porque su sujeto es `NarrativeState`, no el bridge, y ahí la atadura no tiene dueño al que sobrevivir. `narrative-state.ts` está exceptuado porque es donde el método se DEFINE.",
+      "desc": "Solo `bridge/world-claim.ts` ata o suelta el runtime (jugador y combatientes) al save",
+      "why": "El sim del bridge es UNO y su combatiente `player` también, así que «quién conduce el sim» y «a qué escucha la partida guardada» son el mismo hecho — y el día que se escribieron como dos llamadas sueltas (`simDriver = ws` por un lado, `bindPlayerRuntime(...)` por otro, movidas a mano desde cuatro sitios) se separaron: la atadura sobrevivió al dueño y el `state.json` de una partida acabó con las coordenadas del muñeco de una fixture dentro, alcanzable por el jugador en dos clicks desde el título (QA 2026-08-25, tres de tres corridas; guion `qa/guiones/25-mirar-fixtures-no-se-lleva-la-partida.mjs`). Un save que se corrompe en silencio es peor que uno que no guarda, porque el jugador se entera al reanudar y no antes. `world-claim.ts` los vuelve a juntar: tomar el mundo y decidir si el save escucha son la MISMA llamada, y soltarlo las deshace las dos. Esta regla es lo que impide que vuelvan a separarse — el tipo no puede hacerlo (TypeScript no sabe decir «este método solo se llama desde este fichero»), así que lo dice el checker. Los tests NO entran en los roots a propósito: `test/narrative-state.test.ts` ata la fuente a mano porque su sujeto es `NarrativeState`, no el bridge, y ahí la atadura no tiene dueño al que sobrevivir. `narrative-state.ts` está exceptuado porque es donde el método se DEFINE. Desde #326 el sujeto son DOS ataduras y no una —el jugador y los demás combatientes, cuya vida es lo que impide que reanudar resucite a los muertos— y las dos entran en el patrón: separarlas sería exactamente el fallo del 2026-08-25 con un sujeto nuevo, una fixture escribiendo la vida de sus muñecos en la partida de quien está jugando. Y el patrón pide el PUNTO, como su regla hermana `la-partida-se-establece-donde-el-jugador-entra`: una llamada de verdad siempre tiene receptor (`narrative.bindCombatantRuntime(...)`), así que la prosa de los comentarios puede seguir nombrando la atadura —`game-loop.ts` explica que su enumerador de combatientes existe para ella— sin poner roja una regla que no ha violado nadie.",
       "severity": "error",
       "files": [
         "nefan-core/src/**/*.ts",
@@ -374,7 +396,7 @@
         "nefan-html/src/**/*.ts"
       ],
       "text": {
-        "pattern": "\\bbindPlayerRuntime\\b"
+        "pattern": "\\.bind(Player|Combatant)Runtime\\s*\\("
       },
       "exceptions": [
         {

@@ -62,6 +62,7 @@ import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, currentUiTheme, BASE_UI_THEME, type UiTheme } from "./ui/theme.js";
 import { createClientSession } from "@nefan-core/src/session/session-facets.js";
 import { createEntrada } from "@nefan-core/src/session/entrada.js";
+import { spawnsDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
 import {
   createGameClient,
   createViewerClient,
@@ -681,6 +682,11 @@ let enemyEntities: Entity[] = [];
 let objectEntities: Entity[] = [];
 let npcEntities: Entity[] = [];
 let colorIdx = 0;
+/** Ids que el bridge mueve y este cliente no tiene en escena. Es un DEFECTO
+ *  (ver el bucle de `result.npcs`) y se reporta una vez por id: el
+ *  `state_update` llega a 60 fps y sin dedupe el registro de errores sería
+ *  una línea por frame. Se vacía con el mundo. */
+const npcsSinCuerpo = new Set<string>();
 
 // --- Animación por entidad (NPCs/enemigos) ---
 // La máquina de estados vive fuera de Entity: el track guarda la anim en
@@ -840,6 +846,7 @@ function resetWorld(): void {
   enemyEntities = [];
   objectEntities = [];
   npcEntities = [];
+  npcsSinCuerpo.clear();
   charTracks.clear();
   colorIdx = 0;
   activeTileKey = null;
@@ -1246,6 +1253,18 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
       },
     }),
     npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
+    /** Los OBJETOS y EDIFICIOS que el cliente tiene en escena. Hermano de
+     *  `npcs()` y `enemies()`: un guion tiene que poder afirmar que el cofre
+     *  que el motor puso delante SIGUE ahí tras reanudar, y sin esto solo
+     *  podía sondear la colisión — que dice «aquí hay algo», no «aquí está
+     *  ESE algo». Solo lectura. */
+    objects: () =>
+      objectEntities.map((o) => ({
+        id: o.id,
+        label: o.label,
+        pos: { ...o.pos },
+        category: o.category,
+      })),
     /** ¿Puede el jugador ATACAR ahora mismo? Es la MISMA condición que lee la
      *  puerta real (`keyboard-input-provider.ts`: LMB solo cuenta con pointer
      *  lock y sin diálogo abierto), leída de la misma fuente. Existe porque el
@@ -2107,11 +2126,30 @@ function gameLoop(now: number): void {
   }
 
   // Sync ambient NPCs from result: el bridge es autoritativo sobre pos y
-  // forward; trackMoving detecta el delta y dispara walk/run solo. Un id sin
-  // Entity local es de un tile aún no cargado en el cliente — se ignora.
+  // forward; trackMoving detecta el delta y dispara walk/run solo.
+  //
+  // Un id que el bridge NOMBRA y el cliente no tiene ya no se cae callado.
+  // Aquí ponía «es de un tile aún no cargado — se ignora», y esa
+  // justificación tapaba un defecto: el npc pacífico de un spawn de runtime
+  // volvía vivo del ledger (`npcSync` lo rehidrata) y el cliente lo tiraba
+  // aquí, así que ANDABA INVISIBLE por el mundo. Con la clase entera
+  // rehidratada (#326) un id sin Entity es un defecto, y se dice.
+  //
+  // Con DEDUPE por id porque esto se lee a 60 fps: el registro de errores
+  // guarda el primero de cada uno y no una entrada por frame.
   for (const npcState of result.npcs ?? []) {
     const ne = npcEntities.find((n) => n.id === npcState.id);
-    if (!ne) continue;
+    if (!ne) {
+      if (!npcsSinCuerpo.has(npcState.id)) {
+        npcsSinCuerpo.add(npcState.id);
+        errors.push(
+          "scene",
+          `el bridge mueve al NPC "${npcState.id}" y el cliente no lo tiene en escena: ` +
+            `anda invisible (¿un spawn que no se rehidrató al reanudar?)`,
+        );
+      }
+      continue;
+    }
     ne.pos = { x: npcState.pos.x, y: npcState.pos.y, z: npcState.pos.z };
     ne.forward = { x: npcState.forward.x, y: npcState.forward.y, z: npcState.forward.z };
     ne.requestedAnim = npcState.anim;
@@ -2961,6 +2999,31 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         added++;
       }
       if (added === 0) log(`(sin escena en el save — esperando narrativa)`);
+
+      // …Y LO QUE EL MOTOR PUSO A MITAD DE PARTIDA. Lo de las escenas ya ha
+      // vuelto (arriba); esto es la otra procedencia: las entities de
+      // `spawn_reason: "narrative_request"`, que no están en el Format D de
+      // ninguna escena y hasta #326 desaparecían enteras al reanudar — el
+      // enemigo que el motor te echó encima, el NPC con el que hablabas, el
+      // edificio que apareció. Vuelven por la MISMA puerta por la que
+      // llegaron (`materializeSpawn`), así que no hay un segundo constructor
+      // que se olvide de la mitad.
+      //
+      // DESPUÉS de los tiles, y el orden importa: `materializeSpawn` da de
+      // alta combatientes en el sim del bridge, y el bridge resiembra el sim
+      // al procesar el `resume_session` — que ya ha terminado cuando esta
+      // respuesta llega, pero los tiles de arriba también mandan altas y
+      // deben ir primero para que el orden sea el mismo que en una partida
+      // viva. Materializar antes dejaría un enemigo pintado al que no se
+      // puede pegar (I-3 de #323).
+      //
+      // El filtro de quién vuelve lo hace el CORE (`spawnsDeRuntime`): el
+      // cliente solo pinta, y decidir aquí que un muerto no vuelve sería
+      // lógica de juego en el cliente.
+      const { spawns, errores } = spawnsDeRuntime(res.state.entities ?? []);
+      for (const err of errores) errors.push("session", err);
+      for (const spawn of spawns) materializeSpawn(spawn);
+      if (spawns.length > 0) log(`El mundo vuelve con ${spawns.length} cosa(s) que puso el motor`);
       // La posición viene del save, y ahora está VIVA: el bridge ata el
       // combatiente del sim al NarrativeState al sembrarlo, así que cualquiera
       // de sus guardados la lleva fresca (issue #245).

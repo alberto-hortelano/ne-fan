@@ -21,7 +21,7 @@ import {
 } from "../src/games/world-snapshot.js";
 import { loadWorldVocabulary } from "../src/games/vocabulary.js";
 import type { PluginManifest } from "../src/plugins/types.js";
-import type { SceneRecord, SessionData } from "../src/narrative/types.js";
+import type { SceneRecord } from "../src/narrative/types.js";
 import type { NpcBehaviorSystem } from "../src/simulation/npc-behavior.js";
 import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
 import { isHostileRole } from "../src/simulation/npc-roles.js";
@@ -35,7 +35,7 @@ import {
   type PluginEventInput,
 } from "../src/plugins/dispatcher.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
-import { formatDToWorld } from "../src/scene/scene-normalize.js";
+import { escenaParaElWire } from "./wire-scene.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
 import { resolveExitEdge } from "../src/world-map/edges.js";
@@ -329,9 +329,10 @@ export function broadcastScene(
   enrichSceneWithExits(ctx, scene);
   // Contrato de render único: los clientes reciben la world scene normalizada
   // (objects/npcs en metros, __player_start, world_rect, __format_d con el
-  // crudo). La persistencia (scenes_loaded, saves, serializeForLlm) sigue en
-  // Format D crudo — sólo se normaliza el wire.
-  const worldScene = formatDToWorld(scene);
+  // crudo) CON el combate vivo encima. La persistencia (scenes_loaded, saves,
+  // serializeForLlm) sigue en Format D crudo — sólo se normaliza el wire, y
+  // por una sola puerta (`bridge/wire-scene.ts`).
+  const worldScene = escenaParaElWire(ctx, scene);
   // Aquí vivía una segunda vía a `GameStore.enemies`: una "proyección
   // canónica" NarrativeState.entities → enemies que REEMPLAZABA la lista
   // entera en cada broadcast. Se retiró con `state-projection.ts` (#323) y no
@@ -382,18 +383,6 @@ export function broadcastScene(
   // La escena difundida puede traer NPCs nuevos (registrados por
   // recordSceneLoaded) — engancharlos a la vida ambiental.
   npcSync(ctx);
-}
-
-/** SessionData para el wire: cada scene_data sale normalizada a world scene
- *  (mismo contrato que broadcastScene). Clona los records por escena porque
- *  `toSessionData()` devuelve referencias vivas al estado interno — normalizar
- *  in place corrompería la persistencia, que debe seguir en Format D crudo. */
-export function sessionDataForClient(data: SessionData): SessionData {
-  const scenes: Record<string, SceneRecord> = {};
-  for (const [id, rec] of Object.entries(data.scenes_loaded)) {
-    scenes[id] = { ...rec, scene_data: formatDToWorld(rec.scene_data) };
-  }
-  return { ...data, scenes_loaded: scenes };
 }
 
 /** Nivel 3 del tick (§7.4): pasa los plugin_events recolectados por
