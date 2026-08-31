@@ -17,6 +17,7 @@ import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin } from "../src/plugins/views.js";
 import type { PluginManifest } from "../src/plugins/types.js";
 import { createStateHttpServer } from "../bridge/state-http-server.js";
+import { sceneRoutes } from "../bridge/state-http/scene-routes.js";
 import { pluginRegisterBody } from "../bridge/state-http/context.js";
 import { WorldStateApi } from "../src/contracts/world-state.js";
 import { fillPath, type Endpoint } from "../src/contracts/http.js";
@@ -114,4 +115,35 @@ describe("contrato WorldStateApi ↔ router real", () => {
 
   // GET /styles/{id}/{file} migró al asset-store en F2 — cubierto en
   // test/asset-store.test.ts.
+});
+
+describe("POST /scene/validate — una escena mal formada nunca es un 500 (#195)", () => {
+  // Los tres vectores medidos el 2026-08-30: cada uno tumbaba la ruta con un
+  // throw (computeTileEdges / TypeError / resolveBiome) que state-http-server
+  // servía como 500 mudo. El handler se invoca SIN servidor: el gate vive en
+  // `openTile`, no en un catch de última línea (ver scene-routes.ts).
+  const vectores: Array<[string, Record<string, unknown>]> = [
+    ["__expanded con terrain vacío", { tile: { tx: 0, ty: 0 }, scene_id: "v1", biome: "meadow", __expanded: true, terrain: [], entities: [] }],
+    ["__expanded sin terrain", { tile: { tx: 0, ty: 0 }, scene_id: "v2", biome: "meadow", __expanded: true, entities: [] }],
+    [
+      "__expanded con grid perfecto y biome fuera de catálogo",
+      {
+        tile: { tx: 0, ty: 0 }, scene_id: "v3", biome: "bogus", __expanded: true,
+        terrain: Array.from({ length: 128 }, () => "g".repeat(128)), entities: [],
+      },
+    ],
+  ];
+
+  for (const [nombre, scene] of vectores) {
+    it(`${nombre} → {ok:false} accionable, no un throw`, async () => {
+      const { narrative } = makeNarrativeState();
+      const ctx = { narrative } as Parameters<NonNullable<typeof sceneRoutes.validateScene>>[0];
+      const res = await sceneRoutes.validateScene!(ctx, { params: {}, query: new URLSearchParams(), body: { scene } });
+      assert.ok(res, "la ruta está montada siempre");
+      assert.equal(res.status, 200, "la escena mal formada es un veredicto, no un error HTTP");
+      const body = res.body as { ok: boolean; errors: string[] };
+      assert.equal(body.ok, false);
+      assert.ok(body.errors.length > 0, "el motor necesita el defecto nombrado para corregir");
+    });
+  }
 });

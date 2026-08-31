@@ -53,8 +53,8 @@ function escenaBootstrap(over: Record<string, unknown> = {}): Record<string, unk
 }
 
 /** Tile YA expandido: la única forma de poner un char concreto en una fila
- *  concreta sin pasar por el rasterizador, y de darle al normalizador filas
- *  cortas, largas y de sobra. */
+ *  concreta sin pasar por el rasterizador. El grid tiene que ser 128×128 de
+ *  verdad: el gate de `openTile` rechaza al que lleva la marca y miente. */
 function tileExpandido(terrain: unknown[], over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     tile: { tx: 0, ty: 0 },
@@ -157,6 +157,44 @@ export function casosDeValidacion(): CasoValidacion[] {
       name: "chars-reservados-todos-legales",
       cubre: "chars declarados: los nueve reservados no necesitan leyenda",
       scene: () => tileExpandido(gridLlano({ 0: "gw_sbdaoW".padEnd(128, "g") })),
+      ctx: AISLADO,
+    },
+
+    // ── Gate del grid: la marca `__expanded` no exime del contrato ────────
+    // Los tres primeros REVENTABAN el validador (throw → 500 del state API,
+    // #195): una escena que afirma venir expandida y miente debe rechazarse
+    // con el error accionable, no tumbar la ruta. El cuarto es el candado de
+    // no-regresión C6: sin la marca, el expander ya rechazaba con mensaje.
+    {
+      name: "expandido-con-terrain-vacio",
+      cubre: "gate del grid: `__expanded` con 0 filas → rechazo, no un 500",
+      scene: () => tileExpandido([]),
+      ctx: AISLADO,
+    },
+    {
+      name: "expandido-sin-terrain",
+      cubre: "gate del grid: `__expanded` sin terrain → rechazo, no un TypeError",
+      scene: () => {
+        const s = tileExpandido([]);
+        delete s.terrain;
+        return s;
+      },
+      ctx: AISLADO,
+    },
+    {
+      name: "expandido-con-biome-desconocido",
+      cubre: "gate del grid: bioma fuera de catálogo con grid perfecto → rechazo, no un 500",
+      scene: () => tileExpandido(gridLlano(), { biome: "bogus" }),
+      ctx: AISLADO,
+    },
+    {
+      name: "tile-con-127-filas-sin-marca",
+      cubre: "no-regresión: sin `__expanded`, size/terrain completos los rechaza el expander con mensaje",
+      scene: () => {
+        const s = tileExpandido(gridLlano().slice(0, 127));
+        delete s.__expanded;
+        return s;
+      },
       ctx: AISLADO,
     },
 

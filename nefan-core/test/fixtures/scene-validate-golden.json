@@ -1010,6 +1010,114 @@
         "vegetation_zones": 0,
         "distinct_building_heights": 1
       }
+    },
+    "expandido-con-terrain-vacio": {
+      "ok": false,
+      "errors": [
+        "terrain tiene 0 filas y un tile expandido lleva exactamente 128 — si la emites tú, quita `__expanded` y declara `biome` + primitivas: el engine sintetiza el grid"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "volumes_total": 0,
+        "volumes_total_cap": 200,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "expandido-sin-terrain": {
+      "ok": false,
+      "errors": [
+        "terrain no es un array (un tile expandido lleva 128 filas de 128 chars) — si la emites tú, quita `__expanded` y declara `biome` + primitivas: el engine sintetiza el grid"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "volumes_total": 0,
+        "volumes_total_cap": 200,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "expandido-con-biome-desconocido": {
+      "ok": false,
+      "errors": [
+        "tile.biome \"bogus\" desconocido — usa el catálogo (grass, forest_floor, meadow, sand, dirt, stone, snow, swamp) o un char reservado (g/a/d/s/o)"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "volumes_total": 0,
+        "volumes_total_cap": 200,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "tile-con-127-filas-sin-marca": {
+      "ok": false,
+      "errors": [
+        "un tile no lleva size/terrain completos: la base es `biome` + primitivas (terrain_patches para parches puntuales)"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "volumes_total": 0,
+        "volumes_total_cap": 200,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
     }
   }
 }

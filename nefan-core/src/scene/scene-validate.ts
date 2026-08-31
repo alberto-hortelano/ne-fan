@@ -37,7 +37,7 @@ import { resolveTerrainLegend } from "./scene-normalize.js";
 import { BODY_RADIUS_M, celdasLibresParaRadio } from "./terrain-collision.js";
 import { composeTilePlan, MAX_TILE_VOLUMES } from "./tile-plan.js";
 import { COMPATIBLE, computeTileEdges, matchCrossings, type EdgeCrossing, type TileEdges } from "./tile-edges.js";
-import { TILE_CELLS, TILE_MPC, tileWorldRect } from "./tile.js";
+import { resolveBiome, TILE_CELLS, TILE_MPC, tileWorldRect } from "./tile.js";
 import type { Edge } from "../world-map/types.js";
 
 export interface SceneValidationResult {
@@ -102,7 +102,10 @@ export interface TileView extends GridDims {
   raw: Record<string, unknown>;
   /** La misma escena con las primitivas ya rasterizadas. */
   scene: Record<string, unknown>;
-  /** `rows` filas de exactamente `cols` chars. */
+  /** `rows` filas de exactamente `cols` chars — la MISMA referencia que
+   *  `scene.terrain` (lo garantiza el gate de `openTile`): solo hay UN grid,
+   *  y las pasadas y `computeTileEdges` leen el mismo. Antes había dos (aquí
+   *  una copia normalizada, en `computeTileEdges` el crudo) y divergían. */
   grid: string[];
   /** char → nombre de terreno, según `terrain_legend`. */
   legend: Record<string, string>;
@@ -261,19 +264,6 @@ export type OpenTileResult =
   | { ok: true; view: TileView }
   | { ok: false; rejected: SceneValidationResult };
 
-/** Grid de trabajo desde la escena expandida, normalizado a cols×rows: filas
- *  cortas se rellenan con hierba y las largas se recortan (mismo criterio
- *  tolerante que el saneador de ai_server, que puede no haber corrido). */
-function normalizeGrid(terrain: unknown[], { cols, rows }: GridDims): string[] {
-  const grid: string[] = [];
-  for (let r = 0; r < Math.min(rows, terrain.length); r++) {
-    const row = terrain[r];
-    grid.push(typeof row === "string" ? row.padEnd(cols, "g").slice(0, cols) : "g".repeat(cols));
-  }
-  while (grid.length < rows) grid.push("g".repeat(cols));
-  return grid;
-}
-
 /** Gate de variante + expansión de primitivas + grid + leyenda.
  *
  *  Es lo único que puede cortar la validación en seco: a partir de aquí todas
@@ -329,6 +319,46 @@ export function openTile(rawScene: Record<string, unknown>): OpenTileResult {
     }
   }
 
+  // Gate del grid: a las pasadas solo entra un tile expandido DE VERDAD. La
+  // escena recién expandida lo cumple por construcción; la que llega con
+  // `__expanded: true` solo lo AFIRMA — y cuando mentía (filas de menos, una
+  // fila corta, un bioma fuera de catálogo) cruzaba entera hasta reventar en
+  // `computeTileEdges`, que el state API servía como 500 sin mensaje (#195).
+  // Aquí el normalizador tolerante no tiene sitio: rellenar en silencio es el
+  // saneo mudo que el repo retiró — se rechaza nombrando defecto y salida.
+  const salida =
+    "si la emites tú, quita `__expanded` y declara `biome` + primitivas: el engine sintetiza el grid";
+  const terrain = scene.terrain;
+  if (!Array.isArray(terrain) || terrain.length !== TILE_CELLS) {
+    const defecto = Array.isArray(terrain)
+      ? `terrain tiene ${terrain.length} filas y un tile expandido lleva exactamente ${TILE_CELLS}`
+      : `terrain no es un array (un tile expandido lleva ${TILE_CELLS} filas de ${TILE_CELLS} chars)`;
+    return {
+      ok: false,
+      rejected: { ok: false, errors: [`${defecto} — ${salida}`], warnings: [], stats: emptyStats(dims.cols, dims.rows) },
+    };
+  }
+  const filaMala = terrain.findIndex((row) => typeof row !== "string" || row.length !== TILE_CELLS);
+  if (filaMala >= 0) {
+    const row = terrain[filaMala];
+    const defecto =
+      typeof row === "string"
+        ? `terrain[${filaMala}] tiene ${row.length} chars y cada fila lleva exactamente ${TILE_CELLS}`
+        : `terrain[${filaMala}] no es un string (cada fila son ${TILE_CELLS} chars de terreno)`;
+    return {
+      ok: false,
+      rejected: { ok: false, errors: [`${defecto} — ${salida}`], warnings: [], stats: emptyStats(dims.cols, dims.rows) },
+    };
+  }
+  try {
+    resolveBiome(typeof scene.biome === "string" ? scene.biome : "grass");
+  } catch (err) {
+    return {
+      ok: false,
+      rejected: { ok: false, errors: [(err as Error).message], warnings: [], stats: emptyStats(dims.cols, dims.rows) },
+    };
+  }
+
   const { legend, solidChars } = resolveTerrainLegend(scene.terrain_legend);
   return {
     ok: true,
@@ -336,7 +366,7 @@ export function openTile(rawScene: Record<string, unknown>): OpenTileResult {
       ...dims,
       raw: rawScene,
       scene,
-      grid: normalizeGrid(scene.terrain as unknown[], dims),
+      grid: terrain as string[],
       legend,
       solid: new Set(solidChars),
     },

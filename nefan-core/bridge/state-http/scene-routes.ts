@@ -1,8 +1,10 @@
 /** Escenas: validación de jugabilidad y registro de assets usados.
  *
- *  Hueco reservado para #195 (grid mal formado): el `validateScene` de aquí
- *  es la llamada sin try/catch que produce el 500 — el arreglo son tres
- *  líneas en ESTE handler y un test que lo invoca sin servidor. */
+ *  Sin catch de última línea A PROPÓSITO (#195): el gate de `openTile`
+ *  rechaza toda escena mal formada con `{ok:false}` accionable, así que un
+ *  throw de `validateScene` ya solo puede ser un BUG del validador — y ese
+ *  debe salir como 500 (fail-loud), no disfrazado de `{ok:false}` que enseñe
+ *  al motor a "corregir" su escena contra un validador roto. */
 import {
   SceneAssetRefsRequestSchema,
   SceneValidateRequestSchema,

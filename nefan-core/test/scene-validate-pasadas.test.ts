@@ -100,29 +100,35 @@ describe("openTile — gate de variante", () => {
     assert.equal(r.rejected.errors[0], 'tile.tx/ty deben ser enteros, got {"tx":1.5,"ty":0}');
   });
 
-  it("normaliza el grid a cols×rows: rellena las cortas, recorta las largas y no deja huecos", () => {
-    // El grid de trabajo tiene que ser rectangular pase lo que pase: media
-    // docena de pasadas indexan `grid[r][c]` a pelo. OJO: esta tolerancia solo
-    // se puede ejercer AQUÍ — el pipeline completo revienta antes en
-    // `computeTileEdges`, que exige 128×128 exacto (ver el informe de la PR).
-    const terrain: unknown[] = Array.from({ length: 100 }, (_, r) =>
-      r === 3 ? "gg" : r === 4 ? "g".repeat(200) : r === 5 ? null : "g".repeat(128),
-    );
+  it("un grid que no es 128×128 con la marca `__expanded` se rechaza nombrando la fila", () => {
+    // Aquí vivía el normalizador tolerante (rellenar cortas, recortar largas):
+    // esa tolerancia era saneo mudo con cero cobertura real, y las escenas que
+    // la necesitaban reventaban igual en `computeTileEdges` como 500 (#195).
+    // Ahora la marca no exime del contrato: se rechaza con el defecto exacto.
+    const terrain: unknown[] = Array.from({ length: 128 }, (_, r) => (r === 3 ? "gg" : "g".repeat(128)));
     const r = openTile({ tile: { tx: 0, ty: 0 }, biome: "meadow", __expanded: true, terrain, entities: [] });
-    assert.equal(r.ok, true);
-    if (!r.ok) return;
-    assert.equal(r.view.grid.length, 128, "28 filas de relleno hasta el alto del tile");
-    assert.deepEqual([...new Set(r.view.grid.map((f) => f.length))], [128], "todas de 128 chars");
-    assert.equal(r.view.grid[3], "gg".padEnd(128, "g"), "la corta se rellena con hierba");
-    assert.equal(r.view.grid[5], "g".repeat(128), "la que no es texto se sustituye entera");
+    assert.equal(r.ok, false);
+    if (r.ok) return;
+    assert.match(r.rejected.errors[0], /terrain\[3\] tiene 2 chars/);
+    assert.match(r.rejected.errors[0], /quita `__expanded`/, "el mensaje trae la salida, no solo el defecto");
   });
 
-  it("las filas que sobran del terrain no entran en el grid", () => {
+  it("las filas de sobra tampoco se recortan: se rechaza con el número de filas", () => {
     const terrain = Array.from({ length: 130 }, () => "g".repeat(128));
+    const r = openTile({ tile: { tx: 0, ty: 0 }, biome: "meadow", __expanded: true, terrain, entities: [] });
+    assert.equal(r.ok, false);
+    if (r.ok) return;
+    assert.match(r.rejected.errors[0], /terrain tiene 130 filas/);
+  });
+
+  it("el grid de la vista es la MISMA referencia que scene.terrain: no hay doble grid", () => {
+    // `computeTileEdges` lee `scene.terrain` y las pasadas leen `view.grid`;
+    // si volvieran a ser dos objetos, podrían divergir en silencio.
+    const terrain = Array.from({ length: 128 }, () => "g".repeat(128));
     const r = openTile({ tile: { tx: 0, ty: 0 }, biome: "meadow", __expanded: true, terrain, entities: [] });
     assert.equal(r.ok, true);
     if (!r.ok) return;
-    assert.equal(r.view.grid.length, 128);
+    assert.equal(r.view.grid, r.view.scene.terrain, "misma referencia, no una copia");
   });
 
   it("abre un tile ya expandido con su leyenda resuelta", () => {
