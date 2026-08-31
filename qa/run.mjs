@@ -632,6 +632,20 @@ async function diagnostico() {
   return { saves, mundos, fake, list };
 }
 
+/** La sentinela de `ctx.sinMedir` (#331): lanzarla es lo que ABORTA el guion
+ *  a cualquier profundidad de pila — «marcar y confiar en que el guion haga
+ *  return» era el apaño que tenía el 34, y no compone con quien quiera
+ *  declararla desde dentro de un helper (#261, desde `waitFor`). El catch del
+ *  runner la reconoce y clasifica; no es un error del guion, es su forma de
+ *  decir «no pude medir». */
+class SinMedirDeclarado extends Error {
+  constructor(motivo) {
+    super(motivo);
+    this.name = "SinMedirDeclarado";
+    this.motivo = motivo;
+  }
+}
+
 /** Contexto que recibe cada guion. Todo lo que ofrece espera por estado; no
  *  hay sleep en la API, a propósito. */
 function makeCtx(page, name) {
@@ -682,6 +696,30 @@ function makeCtx(page, name) {
       } finally {
         await ctx.nefan("inputDriver.releaseAll");
       }
+    },
+
+    /** Declara que este guion NO PUEDE MEDIR y ABORTA aquí mismo (#331): no se
+     *  sigue ejecutando ni acumulando fallos después. Es lo que le faltaba al
+     *  veredicto de un guion con la precondición rota — un rojo dice «lo que
+     *  defiendo está roto» cuando lo que pasó es «no pude medir», y esa
+     *  mentira cuesta una investigación entera cada vez.
+     *
+     *  El canal no es una vía de escape: el ⊘ degrada la corrida a exit 2,
+     *  MÁS que el rojo (exit 1) — reconvertir un rojo en ⊘ empeora el
+     *  veredicto por construcción, y un guion que ya empujó fallos ni siquiera
+     *  puede (lo veta el catch del runner).
+     *
+     *  El motivo es parte de la declaración, no un adorno — mismo criterio que
+     *  `exentoDeMotor`: una frase hay que escribirla y dice QUÉ faltó. Sin
+     *  ella, esto es un error normal y el guion sale rojo. */
+    sinMedir(motivo) {
+      if (typeof motivo !== "string" || motivo.trim() === "") {
+        throw new Error(
+          `${name}: ctx.sinMedir exige el MOTIVO por el que este guion no pudo medir ` +
+            `(una frase), y llegó ${JSON.stringify(motivo)}.`,
+        );
+      }
+      throw new SinMedirDeclarado(motivo);
     },
 
     expect(desc, cond, detalle = "") {
@@ -848,9 +886,28 @@ async function main() {
       }
       if (!sinMedir) await mod.default(ctx);
     } catch (err) {
-      fatal = err;
-      console.log(`    ✘ ERROR: ${err.message}`);
-      await ctx.shot("error").catch(() => {});
+      if (err instanceof SinMedirDeclarado) {
+        // El ⊘ DECLARADO exige el guion limpio, y esto es MÁS estricto que el
+        // propio runner: los ⊘ de abajo (:stack caído, sinMotor falso)
+        // conservan `ctx.fallos` no vacíos porque esos fallos pueden ser del
+        // cadáver del stack — un accidente. El declarado es una DECLARACIÓN
+        // del guion, y una declaración con fallos ya empujados sería una
+        // amnistía: el rojo se queda.
+        if (ctx.fallos.length === 0) {
+          sinMedir = `declarado por el guion: ${err.motivo}`;
+        } else {
+          ctx.fallos.push(
+            `declaró sinMedir(«${err.motivo}») con ${ctx.fallos.length} fallo(s) ya ` +
+              `empujados: un ⊘ es una declaración, no una amnistía — el guion no puede ` +
+              `reconvertirse y se queda en rojo`,
+          );
+          console.log(`    ✘ ${ctx.fallos[ctx.fallos.length - 1]}`);
+        }
+      } else {
+        fatal = err;
+        console.log(`    ✘ ERROR: ${err.message}`);
+        await ctx.shot("error").catch(() => {});
+      }
     }
     if (DIAG) {
       const libros = await page
