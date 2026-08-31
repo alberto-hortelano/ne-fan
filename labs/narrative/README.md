@@ -78,7 +78,7 @@ curl -s 'localhost:9899/wait?type=games_listed&timeoutMs=10000'
 
 # arrancar sesión y esperar la escena inicial generada por el motor
 curl -s -XPOST localhost:9899/send \
-  -d '{"type":"start_session","requestId":"s1","gameId":"alta_fantasia","appearance":{"model_id":"pete","skin_path":""}}'
+  -d '{"type":"start_session","requestId":"s1","gameId":"alta_fantasia","appearance":{"model_id":"","skin_path":""}}'
 curl -s 'localhost:9899/wait?type=narrative_event&timeoutMs=300000'
 
 # hablar con un NPC

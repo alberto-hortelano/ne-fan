@@ -39,6 +39,14 @@ animaciones — ver la sección «Characters, on a fresh clone» del [README ra�
    `anims/sword_and_shield/`, con el nombre tal cual lo da Mixamo — `sets/mixamo.json` los
    busca por ese nombre (`sword and shield idle.fbx`, `sword and shield slash (3).fbx`…).
 
+## El desplegable del título se llena solo
+
+El editor de personaje deriva su lista de modelos del **censo vivo** del dev server
+(`GET /sprites/index.json`, que escanea `nefan-html/public/sprites/` en cada petición):
+un modelo aparece en el desplegable cuando tiene **las 10 hojas base completas** en disco,
+y desaparece si le falta una. No hay lista que actualizar — renderiza el set completo de un
+modelo con sprite-forge, recarga el título (F5) y está ofrecido (#216).
+
 ## Dos cosas que se aprendieron por las malas
 
 - **Animaciones de ataque SIN pasos hacia delante**: `attack (4)`, `slash`, `slash (5)`,

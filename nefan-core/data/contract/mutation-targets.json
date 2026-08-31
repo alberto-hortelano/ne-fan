@@ -551,6 +551,17 @@
       ],
       "break": 0,
       "porque": "El gate del contrato de escena y el formateador cuyo error VUELVE AL MODELO. `fake-motor-contract` entra con #334-B: importa el schema de verdad (src, no dist) y lo ejerce con las escenas completas del banco — tiles con ground/volumes/scatter reales, que es dato que ningún otro test del módulo aporta. Sale de `sin_mutar` con la tanda #203/#237/#259, que le añade tres candados nuevos justo aquí (guardia de campos JSON→zod, frontera emitida/expandida y `.strict()` de entity): un test que compara conjuntos de nombres es el arquetipo del verde que no comprueba nada, así que sin mutación estos tres no valen su línea. `validate.ts` va con él porque es su único consumidor en el pre-flight y comparte batería — el mensaje formateado es la mitad del valor del gate. `scene-fixtures` entra porque el candado de ida y vuelta de la frontera vive ahí y ejerce los dos schemas contra dato commiteado; `message-schema` y `style-refs` porque importan los ficheros mutados de verdad (el candado de baterías lo obliga, y tiene razón: style-refs ejerce la `style_ref` de NPC y el rechazo de la de escena). NO entra `contract-fixtures`, que es el set compartido con Python: llega al schema a través de `narrative-mcp/validators.ts`, que importa `@nefan/core` — o sea el `dist/` COMPILADO, no estos ficheros. Stryker no instrumenta el dist, así que ese suite no puede matar un solo mutante y se pagaría por cada uno. `physics.ts` entra con la corrección de #300 (QA H2): es la derivación del tope del `footprint` móvil y del snapshot que lee ai_server, o sea el número que decide qué escena del motor se acepta. Sus tests son `contract-physics` —que compara el fichero commiteado con la derivación— y los de `scene-schema`, que miden el tope PROBANDO el gate; va en el mismo módulo que el schema porque ninguna batería lo cubre sin él."
+    },
+    {
+      "id": "sprite-census",
+      "mutate": [
+        "src/contracts/sprite-census.ts"
+      ],
+      "tests": [
+        "test/sprite-census.test.ts"
+      ],
+      "break": 0,
+      "porque": "La verdad del desplegable de modelos del título (#216): qué es un set COMPLETO de hojas y qué modelos del censo lo cumplen. Módulo propio con batería de un fichero porque es el único test de core que lo importa — sus consumidores reales (el middleware del censo en vite.config.ts y el editor de personaje) viven en nefan-html, que no entra en la mutación de core; el guion 47 los mide desde fuera. Sus mutantes interesantes son exactamente la mentira que la tanda mató: un every→some en modelosCompletos vuelve a ofrecer modelos incompletos (probado en negativo el 2026-08-31: dos asertos rojos), y cambiar HOJAS_ANGLE o una anim del set hace que el censo valide hojas que el cliente no pide (o repague el arte de skin ya generado, porque el ángulo entra en su clave de caché). SUELO 0 PORQUE AÚN NO HAY MEDIDA: `local` se niega con un módulo sin corrida previa (coste desconocido), la medición quedó pedida el 2026-08-31 con la tanda de #216/#255 y cuando llegue el informe el suelo pasa a ser su score redondeado hacia abajo — no un número a ojo."
     }
   ]
 }

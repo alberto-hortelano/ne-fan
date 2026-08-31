@@ -27,6 +27,10 @@ import type {
   StyleCompleteResponse,
   StyleUploadResponse,
 } from "@nefan-core/src/contracts/remote-gen.js";
+import {
+  modelosCompletos,
+  type SpriteCensusResponse,
+} from "@nefan-core/src/contracts/sprite-census.js";
 import { serviceUrl } from "../net/service-urls.js";
 import { errors } from "./error-log.js";
 import { paso } from "./async-ui.js";
@@ -76,16 +80,6 @@ const UPLOAD_FOLDER_LABELS: Array<{ id: string; label: string }> = [
 /** Vida del estado "armado" (¿confirmar gasto?) antes de desarmarse solo —
  *  mismo TTL que el chip de gráficos y el menú dev. */
 const ARM_TTL_MS = 5000;
-
-const MIXAMO_MODELS: { id: string; name: string }[] = [
-  { id: "y_bot", name: "Y Bot (base)" },
-  { id: "paladin", name: "Paladín" },
-  { id: "eve", name: "Eve" },
-  { id: "warrok", name: "Warrok" },
-  { id: "skeletonzombie", name: "Esqueleto" },
-  { id: "arissa", name: "Arissa" },
-  { id: "drake", name: "Drake" },
-];
 
 export class TitleScreen {
   private root: HTMLDivElement;
@@ -935,7 +929,19 @@ export class TitleScreen {
       .addEventListener("click", () => paso(this.renderHome(), "title", "volver al home del título"));
     continueBtn.addEventListener("click", () => {
       if (!styleSel.value) return;
-      this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode, selectedCharMode);
+      // El editor es async (consulta el censo de hojas): el botón se apaga
+      // mientras corre, o un doble click pintaría el editor dos veces. Si el
+      // editor llega a pintarse, este botón ya no está en el DOM y re-armarlo
+      // es inocuo; si el paso falla antes, vuelve a ser pulsable.
+      continueBtn.disabled = true;
+      paso(
+        this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode, selectedCharMode),
+        "title",
+        "abrir el editor de personaje",
+        () => {
+          continueBtn.disabled = false;
+        },
+      );
     });
     (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
       .addEventListener("click", () => this.renderCreateWorld());
@@ -1293,25 +1299,76 @@ export class TitleScreen {
     );
   }
 
-  private renderCharacterEditor(
+  private async renderCharacterEditor(
     game: GameInfo,
     styleId: string,
     renderMode: "image" | "vector",
     characterMode: "image" | "vector",
-  ): void {
+  ): Promise<void> {
     const spritesOn = CONFIG.graphics.character_sprites;
     const skinOn = CONFIG.graphics.ai_skin;
 
-    const modelBlock = spritesOn
-      ? `<label style="display:block;margin-bottom:14px">
-           <div style="font-size:12px;color:#999;margin-bottom:4px">Modelo base (Mixamo)</div>
-           <select id="ts-model" style="${SELECT_CSS}">
-             ${MIXAMO_MODELS.map((m) => `<option value="${m.id}">${m.name}</option>`).join("")}
-           </select>
-         </label>`
-      : `<div style="margin-bottom:14px;color:#666;font-size:11px;font-style:italic">
+    // El desplegable NO es una lista que alguien recuerda actualizar (#216:
+    // prometía 7 modelos de los que 6 no tenían hojas): se deriva del censo
+    // vivo del dev server (`/sprites/index.json`) filtrado por
+    // `modelosCompletos` — ofrecer un modelo es consecuencia de tener su set
+    // completo cargable. Los tres estados hablan; ninguno calla.
+    let modelBlock: string;
+    if (!spritesOn) {
+      modelBlock = `<div style="margin-bottom:14px;color:#666;font-size:11px;font-style:italic">
            Modelo Mixamo deshabilitado (activa <code>graphics.character_sprites</code> en config.ts para usarlo).
          </div>`;
+    } else {
+      let modelos: string[] = [];
+      let fallo = "";
+      try {
+        const res = await fetch("/sprites/index.json");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const censo = (await res.json()) as SpriteCensusResponse;
+        modelos = modelosCompletos(censo);
+      } catch (err) {
+        // Criterio 6 de #216: la derivación falla CON canal. El error-log
+        // está oculto por CSS mientras el título está delante (#246/#306),
+        // así que además de registrarlo se dice en la pantalla donde ocurre.
+        fallo = err instanceof Error ? err.message : String(err);
+        errors.push(
+          "title",
+          `no se pudo leer el censo de modelos de personaje (${fallo}) — se usará la base y_bot`,
+          err,
+        );
+      }
+      const NOTA_CSS = "margin-bottom:14px;color:#a86;font-size:11px";
+      if (fallo) {
+        modelBlock = `<div id="ts-model-nota" data-motivo="fallo" style="${NOTA_CSS}">
+             No se pudo leer el censo de modelos (${escapeHtml(fallo)}) — se usará la base y_bot.
+           </div>`;
+      } else if (modelos.length === 0) {
+        // El clon limpio. Se puede Comenzar igual: el arranque fail-louda con
+        // FALLO_HOJAS_BASE y su remedio (camino medido por el guion 27).
+        modelBlock = `<div id="ts-model-nota" data-motivo="vacio" style="${NOTA_CSS}">
+             Ningún modelo con hojas completas en disco — genéralas con sprite-forge
+             (receta en <code>docs/assets-de-personaje.md</code>).
+           </div>`;
+      } else {
+        // En modo personajes "image" el desplegable SE QUEDA (criterio 5):
+        // el skin IA se genera siempre sobre y_bot, pero el modelo elegido es
+        // la base de RESPALDO que se ve mientras el skin no llega o si falla
+        // (modelFor, character-sprites.ts) — una elección viva, y se anota.
+        const notaImage =
+          characterMode === "image"
+            ? `<div id="ts-model-nota" data-motivo="image" style="margin-top:4px;color:#887;font-size:11px">
+                 El skin IA se genera sobre y_bot; este modelo es el que ves mientras el skin no llega o si falla.
+               </div>`
+            : "";
+        modelBlock = `<label style="display:block;margin-bottom:14px">
+           <div style="font-size:12px;color:#999;margin-bottom:4px">Modelo base (con hojas completas en disco)</div>
+           <select id="ts-model" style="${SELECT_CSS}">
+             ${modelos.map((id) => `<option value="${escapeAttr(id)}">${escapeHtml(nombreDeModelo(id))}</option>`).join("")}
+           </select>
+           ${notaImage}
+         </label>`;
+      }
+    }
 
     const skinBlock = skinOn
       ? `<label style="display:block;margin-bottom:18px">
@@ -1504,6 +1561,14 @@ function formatDate(iso: string): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
+}
+
+/** Nombre legible de un modelo del censo, derivado del id (`y_bot` → «Y bot»):
+ *  pintar es del cliente, y una tabla id→nombre sería otra lista a mano — la
+ *  enfermedad que #216 mató. */
+function nombreDeModelo(id: string): string {
+  const conEspacios = id.replace(/_/g, " ");
+  return conEspacios.charAt(0).toUpperCase() + conEspacios.slice(1);
 }
 
 function escapeAttr(s: string): string {
