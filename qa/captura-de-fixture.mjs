@@ -25,7 +25,7 @@ import { mkdirSync } from "node:fs";
 import { abrirNavegador } from "./lib/navegador.mjs";
 import { ctxDeSonda } from "./lib/sonda.mjs";
 import { cargarFixture } from "./lib/fixtures.mjs";
-import { URLS } from "./lib/stack.mjs";
+import { URLS, offsetActual } from "./lib/stack.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SHOTS = join(here, "capturas");
@@ -38,7 +38,13 @@ if (!fixture || !etiqueta) {
 
 const browser = await abrirNavegador(chromium, { log: (s) => console.log(s) });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-await page.goto(`${BASE}/?input=scripted&raf=timer`, { waitUntil: "domcontentloaded" });
+// `&offset=`: el navegador no tiene entorno — sin él la página resolvería el
+// bridge al bloque de siempre, que puede ser el stack de OTRA corrida (mismo
+// criterio que `run.mjs`; con offset 0 no se escribe).
+const OFFSET = offsetActual();
+await page.goto(`${BASE}/?input=scripted&raf=timer${OFFSET ? `&offset=${OFFSET}` : ""}`, {
+  waitUntil: "domcontentloaded",
+});
 
 const esperar = (desc, fn, arg, ms = 30000) =>
   page.waitForFunction(fn, arg, { timeout: ms, polling: 100 }).catch((e) => {

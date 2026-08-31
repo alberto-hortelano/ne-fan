@@ -42,9 +42,14 @@
  */
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
-import { URLS } from "./lib/stack.mjs";
+import { URLS, offsetActual } from "./lib/stack.mjs";
 
 const BASE = process.env.NEFAN_URL ?? URLS.html;
+/** El navegador no tiene entorno: el bloque de puertos viaja en la URL (mismo
+ *  criterio que `run.mjs`; con offset 0 no se escribe). Sin él, la página de
+ *  este bench resolvería el bridge al bloque de siempre y su `load_room`
+ *  (tomar el mundo) le llegaría al stack de OTRA corrida de la máquina. */
+const OFFSET = offsetActual();
 const NIVELES = process.argv.slice(2).map(Number).filter((n) => Number.isFinite(n) && n > 0);
 const ESCALERA = NIVELES.length > 0 ? NIVELES : [120, 160, 200, 240];
 const TILES = [[0, 0], [1, 0], [0, 1], [1, 1]];
@@ -104,7 +109,9 @@ await page.addInitScript(() => {
   };
   window.cancelAnimationFrame = (id) => { pending.delete(id); };
 });
-await page.goto(`${BASE}/?input=scripted`, { waitUntil: "domcontentloaded" });
+await page.goto(`${BASE}/?input=scripted${OFFSET ? `&offset=${OFFSET}` : ""}`, {
+  waitUntil: "domcontentloaded",
+});
 await page.waitForFunction(() => Boolean(document.getElementById("ts-close")), null, { timeout: 30000 });
 await page.evaluate(() => window.__nefan.closeTitle());
 for (const hook of ["loadSceneRaw", "addTileRaw"]) {

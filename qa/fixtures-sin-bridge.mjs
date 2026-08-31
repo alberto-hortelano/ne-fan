@@ -33,7 +33,7 @@ import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
 import { ctxDeSonda } from "./lib/sonda.mjs";
 import { cargarFixture } from "./lib/fixtures.mjs";
-import { PUERTOS } from "./lib/stack.mjs";
+import { PUERTOS, offsetActual } from "./lib/stack.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
@@ -41,6 +41,12 @@ const SHOTS = join(here, "capturas");
 const HEADED = process.argv.includes("--headed");
 const KEEP = process.argv.includes("--keep");
 const PORT = PUERTOS.html;
+/** El navegador no tiene entorno: el bloque de puertos viaja en la URL (mismo
+ *  criterio que `run.mjs`; con offset 0 no se escribe). Sin él, la página
+ *  resolvería el bridge al bloque DE SIEMPRE — medido el 2026-08-31: con otra
+ *  corrida en la máquina, el muro «sin bridge» no aparecía porque la página
+ *  había encontrado el bridge del stack de al lado. */
+const OFFSET = offsetActual();
 
 /** Espera booleana (no lanza): este guion afirma sobre el arranque en vez de
  *  morir con una excepción. El sondeo es el compartido. */
@@ -82,7 +88,9 @@ async function main() {
   page.on("pageerror", (e) => pageErrors.push(String(e)));
 
   try {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "domcontentloaded" });
+    await page.goto(`http://localhost:${PORT}/${OFFSET ? `?offset=${OFFSET}` : ""}`, {
+      waitUntil: "domcontentloaded",
+    });
     await ctx.waitFor("window.__nefan", () => Boolean(window.__nefan));
 
     // Sin bridge, el arranque de partida falla a propósito (require_bridge) y
