@@ -1325,6 +1325,13 @@ export class TitleScreen {
         const res = await fetch("/sprites/index.json");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const censo = (await res.json()) as SpriteCensusResponse;
+        // Guard de forma (QA H3): un JSON válido que no es un censo caía en
+        // el catch con la jerga del TypeError («Cannot read properties of
+        // undefined…») pintada en la nota. El motivo que ve el jugador tiene
+        // que estar en su idioma; el objeto crudo va al error-log de abajo.
+        if (!Array.isArray(censo?.models) || !Array.isArray(censo?.required?.anims)) {
+          throw new Error("la respuesta no es un censo de modelos");
+        }
         modelos = modelosCompletos(censo);
       } catch (err) {
         // Criterio 6 de #216: la derivación falla CON canal. El error-log
