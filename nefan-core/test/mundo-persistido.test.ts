@@ -17,8 +17,10 @@ import assert from "node:assert/strict";
 import {
   combateDeEntity,
   escenaConCombateVivo,
+  estadoEnElWire,
+  nombreDeEntity,
   spawnsDeRuntime,
-  type EstadoDeCombate,
+  type EstadoEnElWire,
 } from "../src/session/mundo-persistido.js";
 import { combatForHostileRole } from "../src/combat/hostiles.js";
 import type { EntityRecord } from "../src/narrative/types.js";
@@ -50,13 +52,25 @@ function escenaConDos(): Record<string, unknown> {
   };
 }
 
-const estados = (m: Record<string, EstadoDeCombate>) => new Map(Object.entries(m));
+/** Estados del wire escritos corto: `[health, max_health]` = vivo así;
+ *  `"muerto"` / `"ilegible"` = no vuelve, y por qué. */
+const estados = (m: Record<string, [number, number] | "muerto" | "ilegible">) =>
+  new Map<string, EstadoEnElWire>(
+    Object.entries(m).map(([id, v]) => [
+      id,
+      v === "muerto"
+        ? { tipo: "no_vuelve", motivo: { clase: "muerto" } }
+        : v === "ilegible"
+          ? { tipo: "no_vuelve", motivo: { clase: "ilegible", detalle: "sin max_health" } }
+          : { tipo: "vivo", combate: { health: v[0], max_health: v[1] } },
+    ]),
+  );
 
 describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste", () => {
   it("al HERIDO se le baja la vida y conserva su denominador", () => {
     const salida = escenaConCombateVivo(
       escenaConDos(),
-      estados({ bandido_1: { health: 12, max_health: 60 } }),
+      estados({ bandido_1: [12, 60] }),
     );
     const npcs = salida.npcs as Array<Record<string, unknown>>;
     const bandido = npcs.find((n) => n.id === "bandido_1")!;
@@ -72,7 +86,7 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
   it("al MUERTO se le quita del npcs[]: no se pinta, no se registra, no tiene barra", () => {
     const salida = escenaConCombateVivo(
       escenaConDos(),
-      estados({ bandido_1: { health: 0, max_health: 60 } }),
+      estados({ bandido_1: "muerto" }),
     );
     const ids = (salida.npcs as Array<Record<string, unknown>>).map((n) => n.id);
     assert.deepEqual(ids, ["barkeep"], "el muerto no vuelve; el vecino pacífico sí");
@@ -81,13 +95,70 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
   it("no toca la escena que recibe: lo persistido sigue siendo Format D crudo (#179)", () => {
     const original = escenaConDos();
     const antes = JSON.stringify(original);
-    escenaConCombateVivo(original, estados({ bandido_1: { health: 3, max_health: 60 } }));
+    escenaConCombateVivo(original, estados({ bandido_1: [3, 60] }));
     assert.equal(JSON.stringify(original), antes, "el overlay escribió sobre el objeto de entrada");
   });
 
   it("un npc del que no se sabe nada pasa intacto (el que aún no ha peleado)", () => {
     const salida = escenaConCombateVivo(escenaConDos(), estados({}));
     assert.deepEqual(salida.npcs, escenaConDos().npcs);
+  });
+
+  it("al ILEGIBLE también se le quita: servirlo sin overlay lo resucitaría a 60/60", () => {
+    // El peor fallback posible y el que había: un `data.combat` que no se
+    // puede leer dejaba la escena SIN overlay, o sea con el bloque DERIVADO —
+    // siempre entero—, así que el enemigo que el jugador había matado volvía
+    // vivo y a tope, sin una línea en pantalla (QA 2026-08-31, H-2).
+    const salida = escenaConCombateVivo(escenaConDos(), estados({ bandido_1: "ilegible" }));
+    const ids = (salida.npcs as Array<Record<string, unknown>>).map((n) => n.id);
+    assert.deepEqual(ids, ["barkeep"], "lo que no se puede leer no vuelve al mundo");
+  });
+});
+
+describe("estadoEnElWire — la precedencia sim → ledger, y lo que no se puede leer", () => {
+  it("el SIM manda: el ledger va un save por detrás y la vida del HUD saltaría", () => {
+    const r = estadoEnElWire(
+      rec({ id: "x", data: { combat: { health: 60, max_health: 60 } } }),
+      { health: 11, maxHealth: 60 },
+    );
+    assert.deepEqual(r, { tipo: "vivo", combate: { health: 11, max_health: 60 } });
+  });
+
+  it("sin combatiente en el sim manda el ledger (al reanudar solo está el jugador)", () => {
+    const r = estadoEnElWire(rec({ id: "x", data: { combat: { health: 9, max_health: 60 } } }), undefined);
+    assert.deepEqual(r, { tipo: "vivo", combate: { health: 9, max_health: 60 } });
+  });
+
+  it("un muerto no vuelve, lo diga el sim o lo diga el save", () => {
+    const porElSim = estadoEnElWire(rec({ id: "x" }), { health: 0, maxHealth: 60 });
+    assert.deepEqual(porElSim, { tipo: "no_vuelve", motivo: { clase: "muerto" } });
+    const porElSave = estadoEnElWire(
+      rec({ id: "x", data: { combat: { health: 0, max_health: 60 } } }),
+      undefined,
+    );
+    assert.deepEqual(porElSave, { tipo: "no_vuelve", motivo: { clase: "muerto" } });
+  });
+
+  it("un bloque ILEGIBLE no es «sin datos»: tampoco vuelve, y dice por qué", () => {
+    const r = estadoEnElWire(rec({ id: "x", data: { combat: { health: 30 } } }), undefined);
+    assert.equal(r?.tipo, "no_vuelve");
+    if (r?.tipo === "no_vuelve") {
+      assert.equal(r.motivo.clase, "ilegible");
+      if (r.motivo.clase === "ilegible") assert.match(r.motivo.detalle, /max_health/);
+    }
+  });
+
+  it("quien no pelea no tiene estado: null, y su npc pasa intacto por la escena", () => {
+    assert.equal(estadoEnElWire(rec({ id: "barkeep", data: { name: "Tabernero" } }), undefined), null);
+  });
+});
+
+describe("nombreDeEntity — lo que el jugador conoce, no el id del motor", () => {
+  it("el nombre si lo tiene", () => {
+    assert.equal(nombreDeEntity(rec({ id: "narr_npc_178_0", data: { name: "Nogala" } })), "Nogala");
+  });
+  it("y el id si no, que es lo que hay (no una excusa para callar)", () => {
+    assert.equal(nombreDeEntity(rec({ id: "narr_npc_178_0" })), "narr_npc_178_0");
   });
 });
 

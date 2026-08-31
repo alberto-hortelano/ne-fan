@@ -103,6 +103,37 @@ describe("dispatchConsequences", () => {
     }
   });
 
+  it("tres cosas en el MISMO turno no caen en el mismo punto", () => {
+    // Medido jugando (QA 2026-08-31, H-5): el cofre y la forja del turno 3 del
+    // motor salían con la coordenada EXACTA, así que al reanudar el jugador
+    // tenía la cara pegada a una caja de 4×4×2,5 m con el cofre invisible
+    // dentro. `near_player` no sabía cuántas van.
+    const s = makeState();
+    const tres: Consequence[] = ["Nogala", "Cofre", "Forja"].map((name) => ({
+      type: "spawn_entity",
+      entity_kind: "npc",
+      description: name,
+      position_hint: "near_player",
+      name,
+    }));
+    let n = 0;
+    dispatchConsequences(s, "evt_1", tres, {
+      playerPosition: [0, 0, 0],
+      playerForward: [0, 0, -1],
+      generateEntityId: () => `e${n++}`,
+    });
+    const puntos = s.entities.map((e) => `${e.position[0]},${e.position[2]}`);
+    assert.equal(new Set(puntos).size, 3, `tres spawns, ${new Set(puntos).size} sitios: ${puntos}`);
+    // El PRIMERO se queda donde siempre: quien manda una sola cosa no nota
+    // nada, y las claves de caché y las escenas de un solo spawn no se mueven.
+    assert.deepEqual(s.entities[0].position, [0, 0, -5], "el primero, donde siempre");
+    // Y el reparto es LATERAL (perpendicular al forward), no hacia el fondo:
+    // lo que el jugador está mirando sigue estando a 5 m.
+    for (const e of s.entities) assert.equal(e.position[2], -5, "el reparto no aleja ni acerca");
+    const separacion = Math.abs(s.entities[1].position[0] - s.entities[2].position[0]);
+    assert.ok(separacion >= 3, `se reparten pero se tocan (${separacion} m entre el 2.º y el 3.º)`);
+  });
+
   // VÍA (b) al combate: el spawn en RUNTIME, sin recargar la escena. Converge
   // con `formatDToWorld` en `combatForHostileRole`, así que un bandido que
   // aparece a mitad de un diálogo pelea exactamente igual que uno que estaba

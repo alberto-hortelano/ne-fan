@@ -348,15 +348,15 @@ export default async function (ctx) {
   // 3.c · el pacífico no anda invisible: los DOS canales.
   const canales = await ctx.page.evaluate(() => window.__qaCanales);
   ctx.log(`state_update: ${canales.updates} frames · npcs=${JSON.stringify(canales.npcs)}`);
+  // Que el cliente TIENE su cuerpo ya lo afirma el `waitFor` de arriba (sin él
+  // no se llega hasta aquí); lo que falta es la otra mitad de «no anda
+  // invisible»: que el bridge lo esté MOVIENDO. Un aserto `Boolean(vuelto.npc)`
+  // aquí sería una tautología detrás de su propio `if (!vuelto) return` — así
+  // nació y así lo cazó QA (H-9).
   ctx.expect(
-    "el bridge MUEVE al npc pacífico de runtime (sale por el canal de la vida ambiental)",
+    "el pacífico no anda invisible: el bridge lo MUEVE y el cliente tiene su cuerpo",
     (canales.npcs[vuelto.npc.id] ?? 0) > 0,
-    `npcs[${vuelto.npc.id}] = ${canales.npcs[vuelto.npc.id] ?? 0} · vistos: ${JSON.stringify(Object.keys(canales.npcs))}`,
-  );
-  ctx.expect(
-    "…y el cliente TIENE su cuerpo en escena: no anda invisible",
-    Boolean(vuelto.npc),
-    JSON.stringify(despues.npcs),
+    `npcs[${vuelto.npc.id}] = ${canales.npcs[vuelto.npc.id] ?? 0} · vistos: ${JSON.stringify(Object.keys(canales.npcs))} · npcs del cliente: ${JSON.stringify(despues.npcs)}`,
   );
 
   // 3.d · SIN DUPLICADOS, que es la señal de una segunda puerta.

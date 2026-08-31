@@ -499,6 +499,53 @@ describe("bridge ciclo de sesión", () => {
     assert.equal((crudo.entities as unknown[]).length, 3, "el muerto sigue en el Format D crudo");
   });
 
+  it("resume: un combate ILEGIBLE en el save no resucita a nadie, y se DICE al jugador", async () => {
+    // El peor fallback posible, cazado por QA (H-2): un `data.combat` sin
+    // `max_health` —lo que trae un save anterior a la tanda— se descartaba con
+    // un `console.warn` del servidor y la escena salía SIN overlay, o sea con
+    // el bloque DERIVADO. Como el derivado siempre está entero, el enemigo que
+    // el jugador había matado volvía `alive:true, 60/60` y en pantalla no
+    // había ni una línea.
+    const { ctx, narrative, broadcasts } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    narrative.recordSceneLoaded("fd_ilegible", {
+      scene_id: "fd_ilegible",
+      scene_description: "prueba",
+      size: { cols: 4, rows: 4, meters_per_cell: 2 },
+      terrain: ["gggg", "gggg", "gggg", "gggg"],
+      terrain_legend: {},
+      __expanded: true,
+      entities: [
+        { id: "bandido_1", kind: "npc", name: "Bandido de camino", role: "hostile", cell: [1, 1], footprint: [1, 1], glyph: "b" },
+      ],
+      ambient_event: "",
+    });
+    // Lo que deja en el save una versión anterior del juego: vida sin
+    // denominador. El jugador lo había MATADO.
+    narrative.getEntity("bandido_1")!.data.combat = { health: 0 };
+    await entrarEnLaPartida(ctx, socket, sessionId);
+
+    narrative.startNewSession("plugtest");
+    const { socket: s2, sent: sent2 } = makeSocket();
+    broadcasts.length = 0;
+    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, true, JSON.stringify(resumed.error));
+    const npcs = resumed.state!.scenes_loaded["fd_ilegible"].scene_data.npcs as unknown[];
+    assert.deepEqual(npcs, [], "lo que no se puede leer NO vuelve al mundo (y menos a 60/60)");
+
+    // Y se dice por el canal del bridge, no por el log del servidor.
+    const aviso = broadcasts.find(
+      (m) => m.type === "narrative_status" && m.phase === "error",
+    ) as { message?: string } | undefined;
+    assert.ok(aviso, `no se avisó de nada: ${JSON.stringify(broadcasts.map((b) => b.type))}`);
+    // En el idioma del jugador: nombra al personaje y NO nombra ningún campo.
+    assert.match(aviso!.message ?? "", /Bandido de camino/);
+    assert.doesNotMatch(aviso!.message ?? "", /max_health|combat\.|undefined/);
+  });
+
   it("resume_session devuelve session_not_found para un id inexistente", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
@@ -1128,7 +1175,19 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const loadRoom = {
       type: "load_room",
       roomId: "scene_x",
-      enemies: [],
+      // Un enemigo HERIDO (40 de 60): la otra puerta por la que `maxHealth`
+      // llega al sim. Ver el aserto del final — sin él, quitar el cableado de
+      // `enemy.maxHealth` en `handleLoadRoom` no lo notaba nadie (H-3).
+      enemies: [
+        {
+          id: "lobo_room",
+          position: { x: 1, y: 0, z: 1 },
+          health: 40,
+          maxHealth: 60,
+          weaponId: "unarmed",
+          personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.3 },
+        },
+      ],
     } as const;
 
     // Con sesión: el HP vivo sobrevive a la transición de escena.
@@ -1159,6 +1218,10 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const legacyUpdate = sent3[0] as StateUpdateMessage;
     assert.equal(legacyUpdate.playerHp, 100);
     assert.equal(legacyUpdate.events[0]?.type, "player_respawned");
+    // El enemigo de la sala entra con su vida VIVA y su denominador aparte.
+    const lobo = noSession.sim.getCombatant("lobo_room")!;
+    assert.equal(lobo.health, 40, "la vida que mandó el cliente");
+    assert.equal(lobo.maxHealth, 60, "…y su denominador, que `createCombatant` colapsaba");
     void sent;
   });
 

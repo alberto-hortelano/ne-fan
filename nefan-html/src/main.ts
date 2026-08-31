@@ -2646,14 +2646,21 @@ function pintarFalloDelMotor(status: StatusRotulable): void {
  *  `sizeXZ` para que sean sólidos (collidesAt) y tengan volumen que instalar
  *  en el renderer, que es la "geometría base" sobre la que luego se
  *  superponen imágenes IA. */
-function materializeSpawn(effect: {
-  entityId: string;
-  entityKind: "npc" | "object" | "building";
-  description: string;
-  name?: string;
-  position: [number, number, number];
-  data: Record<string, unknown>;
-}): void {
+function materializeSpawn(
+  effect: {
+    entityId: string;
+    entityKind: "npc" | "object" | "building";
+    description: string;
+    name?: string;
+    position: [number, number, number];
+    data: Record<string, unknown>;
+  },
+  /** `true` cuando esto NO acaba de pasar: el mundo se está rehidratando desde
+   *  el save. Lo único que cambia es lo que se le CUENTA al jugador — «⚔ Secuaz
+   *  ataca» y «✨ Nogala aparece» son mentira al reanudar: nadie ha atacado ni
+   *  aparecido, ha vuelto a su partida (QA 2026-08-31, H-8). */
+  opts: { rehidratado?: boolean } = {},
+): void {
   const [x, y, z] = effect.position;
   const pos: Vec3 = { x, y, z };
   const label = (effect.name ?? effect.description ?? effect.entityId).slice(0, 40);
@@ -2684,7 +2691,7 @@ function materializeSpawn(effect: {
         // pegar; la barra de vida, en algo que el jugador ve perder vida.
         gameClient?.addEnemies([nuevo.combatiente]);
         rebuildEnemyBars();
-        log(`⚔ ${effect.name ?? "Enemigo"} ataca`);
+        log(opts.rehidratado ? `↩ ${effect.name ?? "Enemigo"} sigue ahí` : `⚔ ${effect.name ?? "Enemigo"} ataca`);
       }
       return;
     }
@@ -2710,7 +2717,7 @@ function materializeSpawn(effect: {
       styleRole: spawnStyleRole,
     });
     characterSprites.requestSkin(npcPrompt, { role: spawnStyleRole });
-    log(`✨ ${effect.name ?? "NPC"} aparece`);
+    log(opts.rehidratado ? `↩ ${effect.name ?? "NPC"} sigue ahí` : `✨ ${effect.name ?? "NPC"} aparece`);
     return;
   }
 
@@ -2729,7 +2736,8 @@ function materializeSpawn(effect: {
     sizeY: KIND_DEFAULT_HEIGHT[isBuilding ? "building" : "prop"],
     spriteHash,
   });
-  log(`✨ ${isBuilding ? "edificio" : "objeto"}: ${label}`);
+  const que = isBuilding ? "edificio" : "objeto";
+  log(opts.rehidratado ? `↩ ${que}: ${label} sigue ahí` : `✨ ${que}: ${label}`);
 }
 
 narrativeClient.onNarrativeEvent((event) => {
@@ -3022,7 +3030,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       // lógica de juego en el cliente.
       const { spawns, errores } = spawnsDeRuntime(res.state.entities ?? []);
       for (const err of errores) errors.push("session", err);
-      for (const spawn of spawns) materializeSpawn(spawn);
+      for (const spawn of spawns) materializeSpawn(spawn, { rehidratado: true });
       if (spawns.length > 0) log(`El mundo vuelve con ${spawns.length} cosa(s) que puso el motor`);
       // La posición viene del save, y ahora está VIVA: el bridge ata el
       // combatiente del sim al NarrativeState al sembrarlo, así que cualquiera

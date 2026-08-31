@@ -19,49 +19,60 @@
 
 import { formatDToWorld, type WorldScene } from "../src/scene/scene-normalize.js";
 import {
-  combateDeEntity,
   escenaConCombateVivo,
-  type EstadoDeCombate,
+  estadoEnElWire,
+  nombreDeEntity,
+  type EstadoEnElWire,
 } from "../src/session/mundo-persistido.js";
 import type { SceneRecord, SessionData } from "../src/narrative/types.js";
 import type { BridgeContext } from "./context.js";
 
-/** El estado de combate de cada entity del ledger, con la precedencia
- *  SIM → LEDGER escrita una sola vez.
+/** Lo que el mundo sabe de cada combatiente del ledger, más los nombres de
+ *  aquellos cuyo estado NO SE PUEDE LEER.
  *
- *  El sim primero porque es el único que sabe lo que está pasando AHORA: el
- *  ledger se refresca en cada `save()`, así que en un re-broadcast de un tile
- *  cacheado a mitad de pelea iría un paso por detrás y la vida del HUD daría
- *  un salto hacia arriba al cruzar la costura. El ledger después porque es el
- *  único que sobrevive al proceso: al reanudar, el sim aún no tiene a nadie
- *  más que al jugador.
- *
- *  Un bloque roto en el ledger se DICE en el log y esa entity se queda fuera
- *  del overlay (sale con la vida del contrato, que es lo que salía antes de
- *  esta tanda): tragárselo dejaría a un enemigo herido volviendo entero sin
- *  que nadie sepa por qué. */
-export function estadosDeCombate(ctx: BridgeContext): Map<string, EstadoDeCombate> {
-  const estados = new Map<string, EstadoDeCombate>();
+ *  La precedencia (sim → ledger) y la clasificación viven en el módulo puro
+ *  (`estadoEnElWire`), donde se pueden medir; aquí solo se recorre el ledger y
+ *  se recogen los ilegibles para poder DECIRLOS. Un bloque ilegible no se
+ *  traga: quien no se puede leer se queda fuera del mundo, porque servir la
+ *  escena sin overlay la sirve con el bloque DERIVADO —siempre a tope de
+ *  vida— y eso resucita al muerto sin una línea en pantalla. */
+export function estadosDeCombate(ctx: BridgeContext): {
+  estados: Map<string, EstadoEnElWire>;
+  ilegibles: string[];
+} {
+  const estados = new Map<string, EstadoEnElWire>();
+  const ilegibles: string[] = [];
   for (const rec of ctx.narrative.entities) {
-    const vivo = ctx.sim.getCombatant(rec.id);
-    if (vivo) {
-      estados.set(rec.id, { health: vivo.health, max_health: vivo.maxHealth });
-      continue;
-    }
-    const guardado = combateDeEntity(rec);
-    if (guardado.tipo === "combate") {
-      estados.set(rec.id, guardado.combate);
-    } else if (guardado.tipo === "roto") {
-      console.warn(`Bridge: ${guardado.motivo} — esa entity sale al wire sin su vida guardada`);
+    const estado = estadoEnElWire(rec, ctx.sim.getCombatant(rec.id));
+    if (!estado) continue;
+    estados.set(rec.id, estado);
+    if (estado.tipo === "no_vuelve" && estado.motivo.clase === "ilegible") {
+      ilegibles.push(nombreDeEntity(rec));
+      console.warn(`Bridge: ${estado.motivo.detalle} — se queda fuera del mundo`);
     }
   }
-  return estados;
+  return { estados, ilegibles };
+}
+
+/** La frase que lee el JUGADOR cuando su partida trae combatientes cuyo estado
+ *  no se puede leer. En su idioma y sin el nombre de ningún campo: el detalle
+ *  técnico ya está en el log del bridge, y aquí lo que hace falta es que sepa
+ *  QUÉ falta de su mundo y POR QUÉ no se ha rellenado el hueco solo. */
+export function avisoDeIlegibles(nombres: readonly string[]): string {
+  const lista = nombres.slice(0, 3).join(", ");
+  const resto = nombres.length > 3 ? ` y ${nombres.length - 3} más` : "";
+  return nombres.length === 1
+    ? `La partida guardada no dice en qué estado quedó ${lista}: se queda fuera del mundo, ` +
+        `para no devolver con vida a alguien al que ya habías matado.`
+    : `La partida guardada no dice en qué estado quedaron ${nombres.length} personajes ` +
+        `(${lista}${resto}): se quedan fuera del mundo, para no devolver con vida a alguien ` +
+        `al que ya habías matado.`;
 }
 
 /** Format D → world scene → combate vivo encima. Es la ÚNICA llamada a
  *  `formatDToWorld` que queda en todo el bridge (aparte de la colisión
  *  server-side, que no sale al cliente). */
-function alWire(sceneData: Record<string, unknown>, estados: Map<string, EstadoDeCombate>): WorldScene {
+function alWire(sceneData: Record<string, unknown>, estados: Map<string, EstadoEnElWire>): WorldScene {
   return escenaConCombateVivo(formatDToWorld(sceneData), estados);
 }
 
@@ -70,20 +81,28 @@ export function escenaParaElWire(
   ctx: BridgeContext,
   sceneData: Record<string, unknown>,
 ): WorldScene {
-  return alWire(sceneData, estadosDeCombate(ctx));
+  return alWire(sceneData, estadosDeCombate(ctx).estados);
 }
 
 /** SessionData para el wire: cada scene_data sale por la MISMA puerta que la
  *  escena difundida. Clona los records por escena porque `toSessionData()`
  *  devuelve referencias vivas al estado interno — normalizar in place
- *  corrompería la persistencia, que debe seguir en Format D crudo. */
-export function sessionDataForClient(ctx: BridgeContext, data: SessionData): SessionData {
+ *  corrompería la persistencia, que debe seguir en Format D crudo.
+ *
+ *  Devuelve además los `ilegibles` para que el handler los DIGA: aquí no se
+ *  difunde nada porque este mensaje va después del `session_started`, no
+ *  antes (llegar antes lo pintaría como un fallo del arranque, con el mundo
+ *  todavía vacío y el overlay a pantalla completa). */
+export function sessionDataForClient(
+  ctx: BridgeContext,
+  data: SessionData,
+): { state: SessionData; ilegibles: string[] } {
   // Los estados se calculan UNA vez para todas las escenas del save: son del
   // mundo, no del tile, y un save largo trae decenas de tiles.
-  const estados = estadosDeCombate(ctx);
+  const { estados, ilegibles } = estadosDeCombate(ctx);
   const scenes: Record<string, SceneRecord> = {};
   for (const [id, rec] of Object.entries(data.scenes_loaded)) {
     scenes[id] = { ...rec, scene_data: alWire(rec.scene_data, estados) };
   }
-  return { ...data, scenes_loaded: scenes };
+  return { state: { ...data, scenes_loaded: scenes }, ilegibles };
 }

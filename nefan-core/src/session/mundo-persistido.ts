@@ -66,6 +66,63 @@ export type CombateDelLedger =
  *  una escena, y ese vuelve por la escena. */
 export const SPAWN_DE_RUNTIME = "narrative_request";
 
+/** Por qué alguien NO vuelve al mundo. Son dos cosas distintas y no se
+ *  colapsan: al muerto lo mataste tú (es la decisión del usuario y no hay nada
+ *  que decir), y el ilegible es un save que no se puede leer (hay que decirlo,
+ *  y decir cuál). */
+export type MotivoDeAusencia = { clase: "muerto" } | { clase: "ilegible"; detalle: string };
+
+/** Lo que el mundo sabe de un combatiente al armar la escena que sale al
+ *  cable: vuelve con esta vida, o no vuelve y por esto. */
+export type EstadoEnElWire =
+  | { tipo: "vivo"; combate: EstadoDeCombate }
+  | { tipo: "no_vuelve"; motivo: MotivoDeAusencia };
+
+/** Nombre legible de una entity para lo que lee el jugador: el que le puso el
+ *  motor, o el id si no tiene (que es lo que hay, no una excusa para callar). */
+export function nombreDeEntity(rec: EntityRecord): string {
+  const name = rec.data.name;
+  return typeof name === "string" && name ? name : rec.id;
+}
+
+/** El estado de combate de una entity para el wire, con la precedencia
+ *  SIM → LEDGER escrita UNA vez y aquí dentro, donde se puede medir.
+ *
+ *  El sim primero porque es el único que sabe lo que está pasando AHORA: el
+ *  ledger se refresca en cada `save()`, así que en un re-broadcast de un tile
+ *  cacheado a mitad de pelea iría un paso por detrás y la vida del HUD daría
+ *  un salto hacia arriba al cruzar la costura. El ledger después porque es el
+ *  único que sobrevive al proceso: al reanudar, el sim aún no tiene a nadie
+ *  más que al jugador.
+ *
+ *  UN BLOQUE ILEGIBLE NO ES «SIN DATOS»: el que no se puede leer se queda
+ *  FUERA, igual que el muerto. Devolverlo como «no sé nada de este» dejaba la
+ *  escena con el bloque DERIVADO —siempre entero, siempre a tope de vida— y
+ *  entonces el enemigo que el jugador había matado volvía `alive:true, 60/60`
+ *  sin una sola línea en pantalla: el peor fallback posible, porque resucita
+ *  justo lo que esta tanda promete (QA 2026-08-31, H-2). Quien llama, además,
+ *  tiene que DECIRLO por el canal de su capa.
+ *
+ *  `null` = no es un combatiente (un aldeano, un barril, una casa). */
+export function estadoEnElWire(
+  rec: EntityRecord,
+  vivo: { health: number; maxHealth: number } | undefined,
+): EstadoEnElWire | null {
+  if (vivo) {
+    return vivo.health <= 0
+      ? { tipo: "no_vuelve", motivo: { clase: "muerto" } }
+      : { tipo: "vivo", combate: { health: vivo.health, max_health: vivo.maxHealth } };
+  }
+  const guardado = combateDeEntity(rec);
+  if (guardado.tipo === "ninguno") return null;
+  if (guardado.tipo === "roto") {
+    return { tipo: "no_vuelve", motivo: { clase: "ilegible", detalle: guardado.motivo } };
+  }
+  return guardado.combate.health <= 0
+    ? { tipo: "no_vuelve", motivo: { clase: "muerto" } }
+    : { tipo: "vivo", combate: guardado.combate };
+}
+
 function esObjeto(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -117,12 +174,13 @@ export function combateDeEntity(rec: EntityRecord): CombateDelLedger {
  *
  *  Dos cosas, y las dos sobre `npcs[]`:
  *   · al HERIDO se le baja la vida (y se le pone su denominador), y
- *   · al MUERTO se le quita de la lista. Esa es toda la permanencia de la
- *     muerte vista desde el cliente: un npc que no viene en la escena no se
- *     pinta, no se registra en el sim y no tiene barra. */
+ *   · al que NO VUELVE se le quita de la lista — el muerto y el que el save no
+ *     deja leer. Esa es toda la permanencia de la muerte vista desde el
+ *     cliente: un npc que no viene en la escena no se pinta, no se registra en
+ *     el sim y no tiene barra. */
 export function escenaConCombateVivo(
   escena: Record<string, unknown>,
-  estados: ReadonlyMap<string, EstadoDeCombate>,
+  estados: ReadonlyMap<string, EstadoEnElWire>,
 ): Record<string, unknown> {
   const npcs = escena.npcs;
   if (!Array.isArray(npcs)) return escena;
@@ -137,9 +195,10 @@ export function escenaConCombateVivo(
       vivos.push(npc);
       continue;
     }
-    // El muerto NO vuelve. Es la decisión del usuario (2026-08-31) hecha
-    // visible: matar tiene consecuencia y repoblar es cosa del motor.
-    if (estado.health <= 0) continue;
+    // El muerto NO vuelve —es la decisión del usuario (2026-08-31) hecha
+    // visible: matar tiene consecuencia y repoblar es cosa del motor— y el
+    // ilegible tampoco, para no resucitarlo con el bloque derivado.
+    if (estado.tipo === "no_vuelve") continue;
     if (!esObjeto(npc.combat)) {
       // Tiene runtime pero la escena no lo declara hostil: no hay bloque que
       // sobrescribir. Se conserva tal cual — inventarle un `combat` aquí sería
@@ -149,7 +208,11 @@ export function escenaConCombateVivo(
     }
     vivos.push({
       ...npc,
-      combat: { ...npc.combat, health: estado.health, max_health: estado.max_health },
+      combat: {
+        ...npc.combat,
+        health: estado.combate.health,
+        max_health: estado.combate.max_health,
+      },
     });
   }
   return { ...escena, npcs: vivos };
@@ -189,14 +252,22 @@ export function spawnsDeRuntime(entities: readonly EntityRecord[]): {
     if (rec.spawn_reason !== SPAWN_DE_RUNTIME) continue;
     if (!CLASES_QUE_VUELVEN.has(rec.type)) {
       errores.push(
-        `entity de runtime "${rec.id}" no vuelve: tipo "${rec.type}" desconocido ` +
-          `(esperaba npc|object|building)`,
+        `«${nombreDeEntity(rec)}» no vuelve al mundo: el juego no sabe pintar nada de ` +
+          `tipo "${rec.type}" (esperaba npc|object|building)`,
       );
       continue;
     }
     const combate = combateDeEntity(rec);
     if (combate.tipo === "roto") {
-      errores.push(`${combate.motivo} — no vuelve al mundo`);
+      // Primero lo que le pasa al MUNDO y con el nombre que el jugador conoce;
+      // el campo roto va al final y entre paréntesis. Antes esto empezaba por
+      // `entity "narr_npc_1788201390_0": combat.max_health inválido
+      // (undefined)`, que es exacto para quien programa y no significa nada
+      // para quien juega (QA 2026-08-31, H-7).
+      errores.push(
+        `«${nombreDeEntity(rec)}» no vuelve al mundo: la partida guardada no dice en qué ` +
+          `estado quedó (${combate.motivo})`,
+      );
       continue;
     }
     if (combate.tipo === "combate" && combate.combate.health <= 0) continue;
