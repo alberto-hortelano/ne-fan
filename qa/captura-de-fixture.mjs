@@ -23,6 +23,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdirSync } from "node:fs";
 import { abrirNavegador } from "./lib/navegador.mjs";
+import { ctxDeSonda } from "./lib/sonda.mjs";
+import { cargarFixture } from "./lib/fixtures.mjs";
 import { URLS } from "./lib/stack.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,12 +47,11 @@ const esperar = (desc, fn, arg, ms = 30000) =>
 
 await esperar("el título aparece", () => Boolean(document.getElementById("ts-close")));
 await page.evaluate(() => window.__nefan.closeTitle());
-await page.evaluate((f) => window.__nefan.loadFixture(f), fixture);
-await esperar("la fixture carga", () => (window.__nefan.status().scene ? true : null));
-await esperar("el mundo 3D instala el tile", () => {
-  const f = window.__nefan.fps();
-  return f && f.ready && f.activeTile ? true : null;
-});
+// AFIRMA qué escena quedó puesta y espera el tile instalado (#332): las dos
+// esperas propias que había aquí eran el patrón de #308 — una captura de OTRA
+// escena con la etiqueta pedida es exactamente la mentira que costó tres
+// cierres.
+await cargarFixture(ctxDeSonda(page), fixture);
 
 const info = await page.evaluate(
   ({ col, fila, yaw }) => {

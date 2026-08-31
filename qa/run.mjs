@@ -62,6 +62,7 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // bloque decide si dos corridas colisionan — el criterio 3 entero.
 import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
 import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } from "./lib/veredictos.mjs";
+import { ctxDeSonda } from "./lib/sonda.mjs";
 import { spawn } from "node:child_process";
 import {
   readdirSync,
@@ -647,44 +648,18 @@ class SinMedirDeclarado extends Error {
 }
 
 /** Contexto que recibe cada guion. Todo lo que ofrece espera por estado; no
- *  hay sleep en la API, a propósito. */
+ *  hay sleep en la API, a propósito.
+ *
+ *  `nefan`, `waitFor` y `log` viven en `qa/lib/sonda.mjs` y aquí se DELEGA:
+ *  los scripts que no corren bajo el runner (`fixtures-sin-bridge`,
+ *  `captura-de-fixture`) usan la MISMA implementación vía `ctxDeSonda(page)`,
+ *  en vez de la tercera copia de la espera que cada uno llevaba (#332). */
 function makeCtx(page, name) {
   let step = 0;
   const ctx = {
-    page,
+    ...ctxDeSonda(page),
     name,
     fallos: [],
-    log: (msg) => console.log(`    ${msg}`),
-
-    /** Llama a window.__nefan.<path>(...args), o lo lee si no es función. */
-    async nefan(path, ...fnArgs) {
-      return page.evaluate(
-        ([p, a]) => {
-          const hook = window.__nefan;
-          if (!hook) throw new Error("window.__nefan no existe (¿build de producción?)");
-          const keys = p.split(".");
-          const owner = keys.slice(0, -1).reduce((o, k) => (o == null ? o : o[k]), hook);
-          const target = keys.length === 1 ? hook[p] : owner?.[keys[keys.length - 1]];
-          if (target === undefined) throw new Error(`__nefan.${p} no existe`);
-          return typeof target === "function" ? target.apply(keys.length === 1 ? hook : owner, a) : target;
-        },
-        [path, fnArgs],
-      );
-    },
-
-    /** Espera a que `probeFn` (evaluada en la página) devuelva algo truthy.
-     *  `arg` viaja serializado a la página: los guiones comparan contra
-     *  valores que midieron antes, sin ensuciar `window` con globales. */
-    async waitFor(desc, probeFn, timeoutMs = 30_000, arg = undefined) {
-      const t0 = Date.now();
-      let last;
-      while (Date.now() - t0 < timeoutMs) {
-        last = await page.evaluate(probeFn, arg).catch((e) => ({ __err: String(e) }));
-        if (last && !last.__err) return last;
-        await new Promise((r) => setTimeout(r, 150));
-      }
-      throw new Error(`timeout esperando: ${desc} (último valor: ${JSON.stringify(last)})`);
-    },
 
     /** Mantiene una tecla hasta que se cumple `untilFn`, y la suelta SIEMPRE.
      *  `maxMs` es un cortafuegos, no la condición de parada: esperar por
