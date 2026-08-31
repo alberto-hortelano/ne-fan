@@ -83,6 +83,52 @@ class DevStatusEndpointTest(unittest.TestCase):
         finally:
             deps.config = old_config
 
+    def test_dev_status_censo_de_claves(self):
+        """El WIRE de /dev/status, clave a clave, contra su contrato TS
+        (nefan-core/src/contracts/remote-gen.ts, `DevStatus`).
+
+        Existe porque renombrar `config.surface_model` o
+        `config.sprite_skin_model` en el DICT DE SALIDA de dev_status pasaba
+        callado (#319): la tupla de validación de cache_assets.py ya rompía
+        con 500, pero el nombre que viaja por el cable —el que lee
+        dev-status-panel.ts— podía divergir sin que ningún test lo dijera.
+        El censo es el mismo patrón que test_sprite_forge_adapter (sorted ==
+        lista exacta): una clave que sobre O que falte rompe, no solo las
+        ausentes. Los dos modelos se afirman además POR VALOR, para cazar un
+        cruce entre claves (surface con el modelo de skins) que el censo solo
+        no vería.
+
+        Límite honesto: esto ata Python → contrato tal como está ESCRITO
+        AQUÍ. Un rename en el contrato TS sigue necesitando mano humana para
+        llegar a esta lista — la dirección TS → fake ya la ata el typecheck
+        de labs (#309)."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from deps import deps
+        from routers.cache_assets import router
+
+        app = FastAPI()
+        app.include_router(router)
+        old_config = deps.config
+        deps.config = {
+            "surface_model": "nano-banana-pro",
+            "sprite_skin_model": "gpt-image-2",
+            "usd_eur_rate": 0.86,
+        }
+        try:
+            body = TestClient(app).get("/dev/status").json()
+            self.assertEqual(sorted(body), ["api_cache", "config", "keys", "spend"])
+            self.assertEqual(
+                sorted(body["config"]),
+                ["sprite_skin_model", "surface_model", "usd_eur_rate"],
+            )
+            self.assertEqual(body["config"]["surface_model"], "nano-banana-pro")
+            self.assertEqual(body["config"]["sprite_skin_model"], "gpt-image-2")
+            self.assertEqual(sorted(body["keys"]), ["fal", "meshy"])
+        finally:
+            deps.config = old_config
+
     def test_dev_status_fails_loud_without_config(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
