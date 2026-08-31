@@ -61,6 +61,7 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // copias con relojes ya divergidos (500 ms / 800 ms), y la que elige el
 // bloque decide si dos corridas colisionan — el criterio 3 entero.
 import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
+import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } from "./lib/veredictos.mjs";
 import { spawn } from "node:child_process";
 import {
   readdirSync,
@@ -226,18 +227,9 @@ const URL_QS =
   `?input=scripted&ai=${encodeURIComponent(MOTOR_FALSO)}&raf=timer` +
   (OFFSET ? `&offset=${OFFSET}` : "");
 
-/** Los TRES veredictos posibles de un guion, que hasta #272 eran dos.
- *
- *  «Falló» y «no pudo medir» no son lo mismo y confundirlos es lo que hace que
- *  un rojo de verdad se cuele: una corrida cuyo stack se cayó a mitad pintaba
- *  siete guiones ✘ —9/23 cuando en realidad eran 14— y no había en toda la
- *  salida una sola línea que permitiera distinguirlo del juego roto. Cada
- *  investigación de un rojo espurio cuesta lo mismo que la de uno real; esta
- *  semana han sido dos. */
-const VERDE = "verde";
-const ROJO = "rojo";
-const SIN_MEDIR = "sin-medir";
-const ICONO = { [VERDE]: "✔", [ROJO]: "✘", [SIN_MEDIR]: "⊘" };
+// Los TRES veredictos y el exit viven en la escala ÚNICA (`lib/veredictos.mjs`)
+// desde #331: `presets-clasifica` tenía una escala paralela con el mismo `⊘` y
+// la equivalencia solo existía en prosa.
 
 /** Arranca el preset `e2e-sin-creditos` (fake-ai + bridge + cliente, cero
  *  créditos) por el mismo camino que usaría una persona:
@@ -954,7 +946,7 @@ async function main() {
       `\n✖ ${sinMedir} guion(es) no llegaron a medir: esta corrida NO es un veredicto del juego.`,
     );
   }
-  salir(sinMedir > 0 ? 2 : rojos > 0 ? 1 : 0);
+  salir(exitDeCorrida(rojos, sinMedir));
 }
 
 main().catch((err) => {

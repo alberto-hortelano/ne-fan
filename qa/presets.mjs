@@ -45,7 +45,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUERTOS, PUERTOS_TODOS } from "./lib/stack.mjs";
 import { puertoOcupado as portBusy, duenyosDeLosPuertos } from "./lib/puertos.mjs";
-import { clasificarPreset, veredictoDeLaCorrida, ICONO, OK, ROJO, AJENO } from "./lib/presets-clasifica.mjs";
+import { clasificarPreset, veredictoDeLaCorrida } from "./lib/presets-clasifica.mjs";
+import { VERDE, ROJO, SIN_MEDIR, ICONO } from "./lib/veredictos.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const START_SH = join(repoRoot, "start.sh");
@@ -230,10 +231,10 @@ for (const c of elegidos) {
   }
   if (veredicto.faltan.length) console.log(`  ✘ NO levantó: ${veredicto.faltan.join(" ")}`);
   if (veredicto.colados.length) console.log(`  ✘ levantó lo que NO dice: ${veredicto.colados.join(" ")}`);
-  if (veredicto.estado === AJENO) {
+  if (veredicto.estado === SIN_MEDIR) {
     console.log("  ⊘ NO SE MIDIÓ: un ocupante ajeno tenía un puerto que este preset necesita");
   }
-  if (veredicto.estado === OK) console.log("  ✔ los puertos arriba son exactamente los de su máscara");
+  if (veredicto.estado === VERDE) console.log("  ✔ los puertos arriba son exactamente los de su máscara");
   if (veredicto.estado === ROJO && stderr.trim()) {
     console.log(`  stderr: ${stderr.trim().split("\n").slice(-3).join(" | ")}`);
   }

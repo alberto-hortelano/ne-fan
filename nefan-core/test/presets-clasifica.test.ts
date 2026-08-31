@@ -28,7 +28,9 @@ interface Ocupante {
 }
 interface Veredicto {
   slug: string;
-  estado: "ok" | "rojo" | "ajeno";
+  /** La escala única de `qa/lib/veredictos.mjs` (#331): AJENO murió como
+   *  estado — el ocupante sigue en `ajenos[]`, que es detalle. */
+  estado: "verde" | "rojo" | "sin-medir";
   faltan: number[];
   colados: number[];
   ajenos: { puerto: number; duenyo: string | null; rol: "esperado" | "prohibido" }[];
@@ -73,7 +75,7 @@ const clasifica = (ocupacion: Map<number, Ocupante>): Veredicto =>
 describe("presets: el veredicto de un preset", () => {
   it("verde cuando arriba están exactamente los de su máscara", () => {
     const r = clasifica(sonda({ 9877: { arriba: true }, 3000: { arriba: true } }));
-    assert.equal(r.estado, "ok");
+    assert.equal(r.estado, "verde");
     assert.deepEqual(r.faltan, []);
     assert.deepEqual(r.colados, []);
     assert.deepEqual(r.ajenos, []);
@@ -116,7 +118,7 @@ describe("presets: el veredicto de un preset", () => {
     const r = clasifica(
       sonda({ 9877: { arriba: true }, 3000: { arriba: true, ajeno: true, duenyo: "pid 7 · vite" } }),
     );
-    assert.equal(r.estado, "ajeno");
+    assert.equal(r.estado, "sin-medir");
     assert.deepEqual(r.faltan, [], "no se le apunta como «no levantó»: no le dejaron");
     assert.deepEqual(r.ajenos.map((a) => a.rol), ["esperado"]);
   });
