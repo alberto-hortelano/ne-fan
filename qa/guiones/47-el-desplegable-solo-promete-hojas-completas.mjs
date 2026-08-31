@@ -39,12 +39,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nuevaPartida, recargarAlTitulo } from "../lib/sesion.mjs";
 
-/** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion vive entero en el
- *  título — censo del dev server, desplegable y registro de errores. No le
- *  pide nada al motor. */
-export const sinMotor =
-  "solo llega al editor de personaje y contrasta el desplegable con el censo " +
-  "del dev server y con el disco; nunca pulsa «Comenzar»";
+// SIN exención del guardarraíl (#295) a propósito: este guion pulsa
+// «Continuar» (#ts-continue), y el candado del guion 39 prohíbe ese click a
+// cualquier exento — con razón: la lista de exenciones envejece y estirarla
+// para un caso «seguro» es como se pudre. Este guion no genera nada (nunca
+// pulsa #ts-start), así que pasa por el gate de créditos del runner como
+// cualquier otro y no le cuesta nada.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SPRITES = join(here, "..", "..", "nefan-html", "public", "sprites");
