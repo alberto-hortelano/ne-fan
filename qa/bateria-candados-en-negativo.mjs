@@ -107,6 +107,23 @@ const INVARIANTES = [
     // no distingue nada, que es el defecto que este script persigue.
     /✘[^\n]*sigue PENDIENTE/,
   ],
+  // ¿La migración de #332 COMPRÓ algo? El mismo destrozo del hook, contra un
+  // guion migrado en esta pasada (el 01, que antes esperaba por su cuenta con
+  // `status().scene` — una espera que este destrozo NO pone roja, porque
+  // acaba cumpliéndose sola). Con `cargarFixture` la afirmación corre detrás
+  // de la promesa rota y el rojo NOMBRA la escena que había.
+  [
+    "#308 · el mismo destrozo contra un guion MIGRADO en esta pasada (#332: la migración compra algo)",
+    MAIN,
+    "01-arranque",
+    [
+      [
+        "      const carga = ultimaCargaDeFixture;\n",
+        "      const carga = Promise.resolve();\n      void ultimaCargaDeFixture;\n",
+      ],
+    ],
+    /se pidió la fixture|se quedó en/i,
+  ],
   // El canal ⊘ de #331, probado por sus DOS caras contra el guion 34 — el
   // usuario natural del verbo (su precondición es que el selector ofrezca la
   // fixture donde están medidos sus márgenes).

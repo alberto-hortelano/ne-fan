@@ -41,6 +41,7 @@
  */
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
+import { cargarFixture } from "../lib/fixtures.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
  *   · `mundo`   — el viaje del panel «Salidas» necesita un destino SIN
@@ -394,15 +395,17 @@ export default async function (ctx) {
   await ctx.page.reload({ waitUntil: "domcontentloaded" });
   await ctx.waitFor("el cliente vuelve a estar en pie", () => Boolean(window.__nefan));
   await ctx.nefan("closeTitle");
-  await ctx.nefan("loadFixture", FIXTURE);
-  const npcsFixture = await ctx.waitFor(
-    "la fixture del pueblo carga con sus vecinos",
-    () => {
-      const ns = window.__nefan.scene?.npcs ?? [];
-      return ns.length >= 5 ? ns : null;
-    },
-    30_000,
+  // La carga AFIRMA qué escena quedó puesta (#332); los vecinos se LEEN detrás
+  // de la promesa en vez de esperarlos — la fixture es la commiteada, y si un
+  // día pierde a su gente el rojo debe NOMBRARLO, no salir de un timeout.
+  await cargarFixture(ctx, FIXTURE);
+  const npcsFixture = await ctx.page.evaluate(() => window.__nefan.scene?.npcs ?? []);
+  ctx.expect(
+    "la fixture del pueblo trae a sus vecinos (un guardia y cuatro paisanos)",
+    npcsFixture.length >= 5,
+    `${npcsFixture.length} NPC(s)`,
   );
+  if (npcsFixture.length < 5) return;
   const encendido = await encenderSkinsDePersonaje(ctx);
   ctx.expect("el chip de gráficos deja encender los skins IA de personajes", encendido, "el botón está deshabilitado (graphics.ai_skin=false)");
   if (!encendido) return;

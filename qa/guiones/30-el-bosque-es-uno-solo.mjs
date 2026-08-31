@@ -30,6 +30,8 @@
  *  de guion es. */
 export const sinMotor = "cierra el título y carga una fixture del selector; nunca arranca partida";
 
+import { cargarFixture } from "../lib/fixtures.mjs";
+
 /** Espera a que el renderer EMITA frames nuevos: una captura pedida justo
  *  después de mover al jugador fotografía el frame ANTERIOR. Se espera por el
  *  contador de frames, nunca por reloj. */
@@ -58,16 +60,9 @@ export default async function (ctx) {
   await ctx.nefan("closeTitle");
   await ctx.waitFor("el título se cierra", () => window.__nefan.status().title === false);
 
-  await ctx.nefan("loadFixture", "robledo_tile");
-  await ctx.waitFor("la fixture carga", () => (window.__nefan.status().scene ? true : null));
-  await ctx.waitFor(
-    "el mundo 3D instala el tile",
-    () => {
-      const f = window.__nefan.fps();
-      return f && f.ready && f.activeTile ? f : null;
-    },
-    20_000,
-  );
+  // AFIRMA qué escena quedó puesta y espera el tile instalado (#332): las dos
+  // esperas propias que había aquí eran el patrón de #308.
+  await cargarFixture(ctx, "robledo_tile");
 
   // ── 1. Hay bosque que mirar (si no, todo lo demás sale verde vacío) ──────
   const inventario = await ctx.page.evaluate(() => {

@@ -67,6 +67,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { nuevaPartida, comenzar, esperarTituloListo, esperarListaDeSaves } from "../lib/sesion.mjs";
+import { cargarFixture } from "../lib/fixtures.mjs";
 import { URLS } from "../lib/stack.mjs";
 
 export const aisla = ["saves"];
@@ -195,23 +196,11 @@ export default async function (ctx) {
   // ── 3. MITAD A: el modo fixtures sigue siendo jugable ───────────────────
   // Es lo que rompía el gate por suscripción del plan: el bridge conserva la
   // sesión de la partida anterior y el cliente de fixtures no abre ninguna.
-  const fixtura = await ctx.page.$eval("#room-selector", (s) => {
-    const v = [...s.options].map((o) => o.value).filter(Boolean)[0] ?? "";
-    return v ? v.split("/").pop().replace(/\.json$/, "") : "";
-  });
-  ctx.expect("el selector «Room» ofrece alguna fixture", Boolean(fixtura), fixtura);
-  if (!fixtura) return;
-  await ctx.nefan("loadFixture", fixtura);
-  await ctx.waitFor(
-    `la fixture ${fixtura} carga y el mundo 3D la instala`,
-    (f) => {
-      const n = window.__nefan;
-      const g = n.fps();
-      return n.scene?.scene_id === f && g && g.ready && g.activeTile ? true : null;
-    },
-    30_000,
-    fixtura,
-  );
+  // La fixture se NOMBRA (#332, criterio 6): antes se cogía «la primera opción
+  // con valor», o sea que el sujeto de este guion lo decidía el orden
+  // alfabético del selector — añadir una fixture cambiaba lo que se mide sin
+  // que nadie lo notara. La lib ya falla loud si el selector no la ofrece.
+  await cargarFixture(ctx, "robledo_tile");
 
   const posFixturaAntes = await ctx.nefan("playerPos");
   await ctx

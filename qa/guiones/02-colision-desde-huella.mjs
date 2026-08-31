@@ -10,11 +10,14 @@
  *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
  *  de guion es. */
 export const sinMotor = "cierra el título y carga una fixture del selector; nunca arranca partida";
+
+import { cargarFixture } from "../lib/fixtures.mjs";
+
 export default async function (ctx) {
   await ctx.waitFor("el título aparece", () => Boolean(document.getElementById("ts-close")));
   await ctx.nefan("closeTitle");
-  await ctx.nefan("loadFixture", "robledo_tile");
-  await ctx.waitFor("la fixture carga", () => (window.__nefan.status().scene ? true : null));
+  // AFIRMA qué escena quedó puesta (#332): la espera propia era el patrón de #308.
+  await cargarFixture(ctx, "robledo_tile");
 
   const objetivo = await ctx.page.evaluate(() => {
     const objs = window.__nefan.scene?.objects ?? [];

@@ -12,6 +12,9 @@
  *  un booleano porque hay que escribirlo, se ve en el diff y dice qué CLASE
  *  de guion es. */
 export const sinMotor = "cierra el título y carga una fixture del selector; nunca arranca partida";
+
+import { cargarFixture } from "../lib/fixtures.mjs";
+
 export default async function (ctx) {
   await ctx.waitFor("el título aparece al arrancar", () => {
     const btn = document.getElementById("ts-close");
@@ -25,27 +28,18 @@ export default async function (ctx) {
   await ctx.nefan("closeTitle");
   await ctx.waitFor("el título se cierra", () => window.__nefan.status().title === false);
 
-  await ctx.nefan("loadFixture", "robledo_tile");
-  const estado = await ctx.waitFor("la fixture carga", () => {
-    const s = window.__nefan.status();
-    return s.scene ? s : null;
-  });
-  ctx.expect("hay escena cargada tras elegir la fixture", estado.scene === true);
+  // La carga AFIRMA qué escena quedó puesta (#308/#332): la espera propia que
+  // había aquí volvería verde con la escena anterior todavía puesta.
+  const mundo = await cargarFixture(ctx, "robledo_tile");
+  ctx.expect("hay escena cargada tras elegir la fixture", (await ctx.nefan("status")).scene === true);
   ctx.expect("__nefan.ready() en verde", (await ctx.nefan("ready")) === true);
 
   // El tile no basta con QUE LLEGUE: tiene que quedar ACTIVO y con sus
   // superficies compuestas. El layout de superficies es lo que el atlas pide
   // al renderer, así que un tile activo sin él se queda en clay gris para
   // siempre y NADIE lo nota (no hay error: simplemente no se pide nada).
-  // Es el riesgo del orden install/activar, y por eso se afirma aquí.
-  const mundo = await ctx.waitFor(
-    "el mundo 3D instala el tile de la fixture",
-    () => {
-      const f = window.__nefan.fps();
-      return f && f.ready && f.activeTile ? f : null;
-    },
-    20_000,
-  );
+  // Es el riesgo del orden install/activar, y por eso se afirma aquí, sobre
+  // la foto que devuelve `cargarFixture`.
   ctx.log(`fps: activo=${mundo.activeTile} · instalados=${JSON.stringify(mundo.tiles)}`);
   ctx.expect(
     "el tile activo tiene superficies instaladas (si no, clay gris sin pedir atlas jamás)",

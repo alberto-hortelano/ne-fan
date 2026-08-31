@@ -35,6 +35,8 @@ export const sinMotor =
   "cierra el título y carga fixtures del selector, una de ellas con el JSON " +
   "abortado a propósito";
 
+import { cargarFixture } from "../lib/fixtures.mjs";
+
 /** La fixture que se sabotea. La otra (`robledo_tile`) hace de control: si
  *  ninguna de las dos cargara, el verde de este guion no querría decir nada. */
 const ROTA = "zorder_test";
@@ -60,8 +62,8 @@ export default async function (ctx) {
   await ctx.waitFor("el título se cierra", () => window.__nefan.status().title === false);
 
   // --- Control: una fixture que SÍ carga ---
-  await ctx.nefan("loadFixture", CONTROL);
-  await ctx.waitFor("la fixture de control pinta", () => (window.__nefan.status().scene ? { ok: true } : null));
+  // AFIRMA qué escena quedó puesta (#332): la espera propia era el patrón de #308.
+  await cargarFixture(ctx, CONTROL);
   ctx.expect("el selector carga una fixture sana (control)", (await ctx.nefan("status")).scene === true);
 
   // --- El sabotaje, en el borde: el JSON de la otra fixture no llega nunca ---
@@ -77,6 +79,11 @@ export default async function (ctx) {
   // a su sitio) y NO puede ser también el desagüe por el que el fallo
   // desaparece de vuelta a quien lo pidió. Antes esta línea resolvía siempre,
   // porque el hook devolvía `undefined` hubiera pasado lo que hubiera pasado.
+  //
+  // `loadFixture` CRUDO A PROPÓSITO (excepción declarada de #332): esta línea
+  // mide que el hook RECHAZA — `cargarFixture` AFIRMA, y con el helper aquí el
+  // rechazo moriría dentro de la lib en vez de medirse. Migrarla borraría el
+  // negativo de #308.
   const rechazo = await ctx.nefan("loadFixture", ROTA).then(
     () => null,
     (e) => String(e),
@@ -173,17 +180,12 @@ export default async function (ctx) {
 
   // --- No es un estado sin salida: el selector sigue sirviendo ---
   await ctx.page.unroute(`**/scenes/${ROTA}.json*`);
-  await ctx.nefan("loadFixture", CONTROL);
-  const recuperado = await ctx
-    .waitFor(
-      "tras el fallo, el selector vuelve a cargar una fixture",
-      () => {
-        const f = window.__nefan.fps();
-        return window.__nefan.status().scene && f && f.ready && f.activeTile ? f : null;
-      },
-      20_000,
-    )
-    .catch(() => null);
+  // La recuperación se AFIRMA con la lib (#332); si no llega, el expect de
+  // abajo lo dice con el motivo en vez de tragarse un timeout anónimo.
+  const recuperado = await cargarFixture(ctx, CONTROL).catch((err) => {
+    ctx.log(`la recuperación no llegó: ${err.message}`);
+    return null;
+  });
   ctx.expect(
     "un fallo de fixture no deja el cliente en un estado sin salida",
     Boolean(recuperado),
