@@ -1351,6 +1351,15 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
      *  residentes — que es de donde sale `MAX_TILE_VOLUMES`
      *  (`qa/presupuesto-de-volumenes.mjs`). Solo DEV, como el resto del hook. */
     addTileRaw: (raw: Record<string, unknown>) => addTile(raw),
+    /** TOMA el mundo con una escena Format D cruda, sin pasar por el selector
+     *  «Room»: el hermano de `addTileRaw` para el PRIMER tile de un bench.
+     *  Existe porque el selector se puebla con `import.meta.glob`, que vite
+     *  expande al transformar este fichero: una fixture escrita en disco con
+     *  el cliente ya arrancado NO está en el glob, y el bench de presupuesto
+     *  fallaba siempre su primera corrida por ese camino (#332) — la
+     *  asimetría (sus otros 3 tiles ya entraban crudos) era el bug. Solo DEV,
+     *  como el resto del hook. */
+    loadSceneRaw: (raw: Record<string, unknown>) => loadSceneData(raw, { tomaElMundo: true }),
     loadFixture: (name: string): Promise<void> => {
       const option = [...sceneSelector.options].find((o) => o.value.includes(name));
       if (!option) {

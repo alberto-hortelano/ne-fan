@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
+import { cargarFixture } from "../lib/fixtures.mjs";
 
 /** Precondición DECLARADA (qa/run.mjs la ejecuta antes de lanzar el guion):
  *   · `mundo`   — el batch de estilo lee el snapshot del mundo y deriva de él
@@ -261,17 +262,17 @@ export default async function (ctx) {
   await ctx.page.reload({ waitUntil: "domcontentloaded" });
   await ctx.waitFor("el cliente vuelve a estar en pie", () => Boolean(window.__nefan));
   await ctx.nefan("closeTitle");
-  await ctx.nefan("loadFixture", FIXTURE);
-  const declarados = await ctx.waitFor(
-    "la escena con NPCs enriquecidos carga",
-    () => {
-      const ns = window.__nefan.scene?.npcs ?? [];
-      const declarado = ns.find((n) => n.role);
-      const basura = ns.find((n) => n.id.endsWith("_basura"));
-      return declarado && basura ? { declarado, basura } : null;
-    },
-    20_000,
-  ).catch(() => null);
+  // La lib afirma el `scene_id` (el `route.fulfill` sirve los NPCs
+  // enriquecidos bajo el MISMO id); el contenido se LEE detrás de la promesa
+  // en vez de esperarlo — una espera por el contenido taparía un `fulfill`
+  // que no sirvió nada (el patrón de #308).
+  await cargarFixture(ctx, FIXTURE);
+  const declarados = await ctx.page.evaluate(() => {
+    const ns = window.__nefan.scene?.npcs ?? [];
+    const declarado = ns.find((n) => n.role);
+    const basura = ns.find((n) => n.id.endsWith("_basura"));
+    return declarado && basura ? { declarado, basura } : null;
+  });
   ctx.expect("los NPCs enriquecidos llegan al cliente", declarados !== null);
   if (!declarados) return;
   ctx.log(`declarado: ${JSON.stringify(declarados.declarado)} · basura: ${JSON.stringify(declarados.basura)}`);

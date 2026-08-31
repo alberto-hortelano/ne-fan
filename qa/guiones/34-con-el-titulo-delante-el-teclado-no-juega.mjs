@@ -252,24 +252,21 @@ export default async function (ctx) {
     const op = [...sel.options].find((o) => o.value.includes(f));
     return op ? { valor: op.value, etiqueta: op.text } : null;
   }, FIXTURE);
-  ctx.expect(
-    `el panel de dev ofrece «${FIXTURE}», que es la fixture donde están medidos los márgenes de este bloque`,
-    Boolean(opcion),
-    JSON.stringify(opcion),
-  );
-  // Y LA PRECONDICIÓN CORTA. Sin ella, la línea de abajo revienta con un
-  // `TypeError` sobre `null` y el veredicto que se lee es ese, no el que
-  // importa: una precondición perdida contada como un fallo de otra cosa es
-  // exactamente lo que esta tanda vino a eliminar del 22. Los bloques 2 y 3 se
-  // quedan sin correr a propósito — son medidas, y una corrida que perdió su
+  // PRECONDICIÓN PERDIDA = SE DECLARA, no se mide (#331). Antes esto era un
+  // `expect` fallido + `return`: el guion salía ROJO diciendo «lo que defiendo
+  // está roto» cuando lo que pasó es «no pude medir» — y sin la fixture donde
+  // están medidos los márgenes no hay «mundo detrás del título» que medir.
+  // `sinMedir` ABORTA aquí mismo, así que los bloques 2 (#250) y 3 (#251) se
+  // quedan sin correr a propósito: son medidas, y una corrida que perdió su
   // precondición no es el sitio donde leerlas.
   if (!opcion) {
-    ctx.log(
-      `⊘ sin «${FIXTURE}» en el selector no hay «mundo detrás del título» que medir: ` +
-        `se paran también los bloques 2 (#250) y 3 (#251)`,
+    ctx.sinMedir(
+      `el selector no ofrece «${FIXTURE}», la fixture donde están medidos los márgenes de ` +
+        `este bloque: no hay mundo detrás del título que medir (se paran también los ` +
+        `bloques 2 (#250) y 3 (#251))`,
     );
-    return;
   }
+  ctx.log(`fixture del bloque 1: ${opcion.etiqueta} (${opcion.valor})`);
   await ctx.page.selectOption("#room-selector", opcion.valor);
 
   const conMundoDetras = await ctx.waitFor(

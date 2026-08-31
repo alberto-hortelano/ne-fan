@@ -31,7 +31,9 @@ import { fileURLToPath } from "node:url";
 import { puertoOcupado } from "./lib/puertos.mjs";
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
-import { PUERTOS } from "./lib/stack.mjs";
+import { ctxDeSonda } from "./lib/sonda.mjs";
+import { cargarFixture } from "./lib/fixtures.mjs";
+import { PUERTOS, offsetActual } from "./lib/stack.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
@@ -39,6 +41,12 @@ const SHOTS = join(here, "capturas");
 const HEADED = process.argv.includes("--headed");
 const KEEP = process.argv.includes("--keep");
 const PORT = PUERTOS.html;
+/** El navegador no tiene entorno: el bloque de puertos viaja en la URL (mismo
+ *  criterio que `run.mjs`; con offset 0 no se escribe). Sin él, la página
+ *  resolvería el bridge al bloque DE SIEMPRE — medido el 2026-08-31: con otra
+ *  corrida en la máquina, el muro «sin bridge» no aparecía porque la página
+ *  había encontrado el bridge del stack de al lado. */
+const OFFSET = offsetActual();
 
 /** Espera booleana (no lanza): este guion afirma sobre el arranque en vez de
  *  morir con una excepción. El sondeo es el compartido. */
@@ -51,15 +59,8 @@ async function waitPort(port, ms) {
   return false;
 }
 
-/** Espera por ESTADO, nunca por sleep — mismo criterio que qa/run.mjs. */
-async function waitFor(page, label, fn, ms = 20000) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) {
-    if (await page.evaluate(fn).catch(() => false)) return;
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  throw new Error(`timeout esperando: ${label}`);
-}
+// La espera por ESTADO es la de `qa/lib/sonda.mjs` — la MISMA que usa el
+// runner, no una tercera copia con su propio reloj (#332).
 
 async function main() {
   mkdirSync(SHOTS, { recursive: true });
@@ -82,12 +83,15 @@ async function main() {
 
   const browser = await abrirNavegador(chromium);
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const ctx = ctxDeSonda(page);
   const pageErrors = [];
   page.on("pageerror", (e) => pageErrors.push(String(e)));
 
   try {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "domcontentloaded" });
-    await waitFor(page, "window.__nefan", () => Boolean(window.__nefan));
+    await page.goto(`http://localhost:${PORT}/${OFFSET ? `?offset=${OFFSET}` : ""}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await ctx.waitFor("window.__nefan", () => Boolean(window.__nefan));
 
     // Sin bridge, el arranque de partida falla a propósito (require_bridge) y
     // el jugador ve el muro de error. Eso es CORRECTO y se comprueba: lo que
@@ -97,8 +101,7 @@ async function main() {
     // por «un botón que ponga Cerrar»: el título tiene el suyo y aparece al
     // instante, así que esa espera devolvía el control ~4 s antes de que el
     // bootstrap terminara y medía el juego a medio arrancar.
-    await waitFor(
-      page,
+    await ctx.waitFor(
       "el fail-loud del bridge (muro de error)",
       () => document.getElementById("narrative-loader")?.classList.contains("error") === true,
       20000,
@@ -113,8 +116,11 @@ async function main() {
     await page.screenshot({ path: join(SHOTS, "sin-bridge-01-error-de-arranque.png") });
     await page.evaluate(() => document.getElementById("narrative-loader-dismiss")?.click());
 
-    await page.evaluate(() => window.__nefan.loadFixture("robledo_tile"));
-    await waitFor(page, "la fixture cargada", () => window.__nefan.status().scene);
+    // AFIRMA qué escena quedó puesta y espera el tile pintable (#332): la
+    // espera propia por `status().scene` era el patrón de #308. Sin bridge la
+    // lib vale igual — si algún día `fps()` no se poblara sin bridge, el
+    // timeout lo NOMBRA en vez de dejar el candado midiendo a medio arrancar.
+    await cargarFixture(ctx, "robledo_tile");
 
     // EL CANDADO: frames emitidos. Dos muestras separadas — que haya frames no
     // basta, tienen que seguir saliendo.

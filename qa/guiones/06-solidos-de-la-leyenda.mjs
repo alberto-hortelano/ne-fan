@@ -23,6 +23,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cargarFixture } from "../lib/fixtures.mjs";
 
 /** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
  *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
@@ -77,8 +78,8 @@ async function cruzarPorLaFila(ctx, r, maxMs = 7000) {
 export default async function (ctx) {
   await ctx.waitFor("el título aparece", () => Boolean(document.getElementById("ts-close")));
   await ctx.nefan("closeTitle");
-  await ctx.nefan("loadFixture", FIXTURE);
-  await ctx.waitFor("la fixture carga", () => (window.__nefan.status().scene ? true : null));
+  // AFIRMA qué escena quedó puesta (#332): la espera propia era el patrón de #308.
+  await cargarFixture(ctx, FIXTURE);
 
   const leyenda = await ctx.page.evaluate(() => {
     const g = window.__nefan.scene.terrain_grid;
@@ -175,15 +176,16 @@ export default async function (ctx) {
   await ctx.waitFor("el cliente vuelve a estar en pie", () => Boolean(window.__nefan));
   await ctx.waitFor("el título aparece", () => Boolean(document.getElementById("ts-close")));
   await ctx.nefan("closeTitle");
-  await ctx.nefan("loadFixture", FIXTURE);
-  const conVado = await ctx.waitFor(
-    "la escena con el vado declarado carga",
-    () => {
-      const g = window.__nefan.scene?.terrain_grid;
-      return g && !(g.solid_chars ?? []).includes("w") ? { legend: g.legend.w, solid: g.solid_chars } : null;
-    },
-    20_000,
-  );
+  // La lib afirma el `scene_id` — que aquí es el MISMO que el de la escena sin
+  // alterar (el `route.fulfill` sirve el vado bajo el mismo id): lo que
+  // distingue las dos versiones no es el id sino el contenido, y ese se LEE
+  // detrás de la promesa en vez de esperarlo — una espera por el contenido
+  // taparía un `fulfill` que no sirvió nada (el patrón de #308).
+  await cargarFixture(ctx, FIXTURE);
+  const conVado = await ctx.page.evaluate(() => {
+    const g = window.__nefan.scene.terrain_grid;
+    return { legend: g.legend.w, solid: g.solid_chars ?? [] };
+  });
   ctx.expect("la fixture se sirvió con el vado declarado", servida, String(servida));
   ctx.expect("`solid:false` saca el agua de solid_chars", !conVado.solid.includes("w"), JSON.stringify(conVado));
   ctx.expect("y conserva el nombre declarado", JSON.stringify(conVado.legend).includes("vado"), JSON.stringify(conVado.legend));

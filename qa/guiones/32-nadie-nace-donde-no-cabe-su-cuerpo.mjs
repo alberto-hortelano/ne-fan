@@ -47,6 +47,7 @@
  */
 
 import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { cargarFixture } from "../lib/fixtures.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
  *   · `saves` — la partida arranca en el tile de entrada, no donde la dejó
@@ -84,11 +85,10 @@ export default async function (ctx) {
   // Entra por el camino del jugador (el botón del título, no un display:none).
   await ctx.nefan("closeTitle");
   for (const fixture of FIXTURES) {
-    await ctx.nefan("loadFixture", fixture);
-    await ctx.waitFor(`la fixture ${fixture} carga`, (f) => {
-      const s = window.__nefan.scene;
-      return s && String(s.scene_id ?? "").includes(f.replace("_tile", "")) ? true : null;
-    }, 30_000, fixture);
+    // AFIRMA qué escena quedó puesta (#332). La espera propia que había aquí
+    // comparaba con `includes()`, que taparía la regresión de #308 al pasar de
+    // una fixture a la siguiente; la lib exige igualdad estricta de scene_id.
+    await cargarFixture(ctx, fixture);
 
     const cuerpos = await ctx.page.evaluate(CUERPOS_EN_LA_PAGINA);
     ctx.log(`${fixture}: ${cuerpos.map((c) => `${c.id}@[${c.pos}] punto=${c.puntoLibre} cuerpo=${c.cuerpoLibre}`).join(" · ")}`);

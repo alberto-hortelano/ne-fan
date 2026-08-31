@@ -32,6 +32,8 @@
  *  de guion es. */
 export const sinMotor = "cierra el título y carga una fixture del selector; nunca arranca partida";
 
+import { cargarFixture } from "../lib/fixtures.mjs";
+
 /** Espera a que el renderer EMITA frames nuevos: una captura pedida justo
  *  después de mover al jugador fotografía el frame ANTERIOR (la cámara se
  *  actualiza en el bucle, no en el setter) — así salían dos fotos idénticas
@@ -47,33 +49,14 @@ async function esperarFrames(ctx, n = 3) {
   );
 }
 
-/** Sin bridge (preset `html-fixtures`) el arranque de partida falla a
- *  propósito y el jugador ve el muro de error — y tarda 5 s en salir, así que
- *  puede aparecer DESPUÉS de cargar la fixture. Se cierra por SU botón, como
- *  haría una persona (nada de display:none), justo antes de cada captura.
- *  Con bridge el muro no existe y esto no hace nada. */
-async function cerrarMuroSiHay(ctx) {
-  await ctx.page.evaluate(() => {
-    const muro = document.getElementById("narrative-loader");
-    if (muro?.classList.contains("error")) document.getElementById("narrative-loader-dismiss")?.click();
-  });
-}
-
 export default async function (ctx) {
   await ctx.waitFor("el título aparece al arrancar", () => (document.getElementById("ts-close") ? { hay: true } : null));
   await ctx.nefan("closeTitle");
   await ctx.waitFor("el título se cierra", () => window.__nefan.status().title === false);
 
-  await ctx.nefan("loadFixture", "robledo_tile");
-  await ctx.waitFor("la fixture carga", () => (window.__nefan.status().scene ? true : null));
-  await ctx.waitFor(
-    "el mundo 3D instala el tile",
-    () => {
-      const f = window.__nefan.fps();
-      return f && f.ready && f.activeTile ? f : null;
-    },
-    20_000,
-  );
+  // AFIRMA qué escena quedó puesta y espera el tile instalado (#332): las dos
+  // esperas propias que había aquí eran el patrón de #308.
+  await cargarFixture(ctx, "robledo_tile");
 
   // ── 1. La fixture declara lo que este guion dice mirar ───────────────────
   // Sin zona de vegetación no hay nada que esquivar y el guion sería un verde
@@ -156,7 +139,6 @@ export default async function (ctx) {
       `${(avance.x - xSalida).toFixed(2)} m`,
     );
   }
-  await cerrarMuroSiHay(ctx);
   await esperarFrames(ctx);
   await ctx.shot("camino-real-despejado");
 
@@ -265,7 +247,6 @@ export default async function (ctx) {
   // y ni un árbol encima. Desde la orilla oeste, mirando al este.
   await ctx.nefan("setPlayerPos", ox + 74 * plano.mpc, oz + eje.y * plano.mpc);
   await ctx.nefan("setYaw", Math.PI / 2);
-  await cerrarMuroSiHay(ctx);
   await esperarFrames(ctx);
   await ctx.shot("rio-y-puente-sin-arboles");
 }

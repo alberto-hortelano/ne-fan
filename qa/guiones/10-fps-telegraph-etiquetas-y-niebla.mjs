@@ -25,6 +25,7 @@
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
 import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { cargarFixture } from "../lib/fixtures.mjs";
 
 /** Grados de mirada por píxel de ratón (MOUSE_SENS_RAD_PER_PX de main.ts). */
 const GRADOS_POR_PX = (0.0025 * 180) / Math.PI;
@@ -527,20 +528,20 @@ export default async function (ctx) {
   // fixture pasa por el mismo resetWorld() que el arranque de sesión.
   const antesDelReset = (await ctx.nefan("fps")).tiles;
   ctx.log(`tiles antes del reset: ${JSON.stringify(antesDelReset)}`);
-  await ctx.nefan("loadFixture", "robledo_tile");
-  const vaciado = await ctx.waitFor(
-    "al resetear el mundo solo sobrevive el tile recién cargado",
-    () => {
-      const f = window.__nefan.fps();
-      return f && f.tiles.length === 1 ? f : null;
-    },
-    10_000,
-  ).catch((err) => {
+  // La carga AFIRMA qué escena quedó puesta y devuelve la foto del renderer
+  // (#332); lo que este bloque mide —que NO sobrevivan tiles fantasma— se
+  // afirma sobre esa foto, que era lo que la espera propia gateaba.
+  const vaciado = await cargarFixture(ctx, "robledo_tile").catch((err) => {
     ctx.expect("resetWorld vacía la escena three (sin tiles fantasma)", false, err.message);
     return null;
   });
   if (vaciado) {
     ctx.log(`tiles tras el reset: ${JSON.stringify(vaciado.tiles)}`);
+    ctx.expect(
+      "al resetear el mundo solo sobrevive el tile recién cargado",
+      vaciado.tiles.length === 1,
+      JSON.stringify(vaciado.tiles),
+    );
     ctx.expect(
       "resetWorld vacía la escena three (sin tiles fantasma)",
       antesDelReset.filter((k) => vaciado.tiles.includes(k)).length <= 1,

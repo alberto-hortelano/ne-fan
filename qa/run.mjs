@@ -61,6 +61,8 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // copias con relojes ya divergidos (500 ms / 800 ms), y la que elige el
 // bloque decide si dos corridas colisionan — el criterio 3 entero.
 import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
+import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } from "./lib/veredictos.mjs";
+import { ctxDeSonda } from "./lib/sonda.mjs";
 import { spawn } from "node:child_process";
 import {
   readdirSync,
@@ -226,18 +228,9 @@ const URL_QS =
   `?input=scripted&ai=${encodeURIComponent(MOTOR_FALSO)}&raf=timer` +
   (OFFSET ? `&offset=${OFFSET}` : "");
 
-/** Los TRES veredictos posibles de un guion, que hasta #272 eran dos.
- *
- *  «Falló» y «no pudo medir» no son lo mismo y confundirlos es lo que hace que
- *  un rojo de verdad se cuele: una corrida cuyo stack se cayó a mitad pintaba
- *  siete guiones ✘ —9/23 cuando en realidad eran 14— y no había en toda la
- *  salida una sola línea que permitiera distinguirlo del juego roto. Cada
- *  investigación de un rojo espurio cuesta lo mismo que la de uno real; esta
- *  semana han sido dos. */
-const VERDE = "verde";
-const ROJO = "rojo";
-const SIN_MEDIR = "sin-medir";
-const ICONO = { [VERDE]: "✔", [ROJO]: "✘", [SIN_MEDIR]: "⊘" };
+// Los TRES veredictos y el exit viven en la escala ÚNICA (`lib/veredictos.mjs`)
+// desde #331: `presets-clasifica` tenía una escala paralela con el mismo `⊘` y
+// la equivalencia solo existía en prosa.
 
 /** Arranca el preset `e2e-sin-creditos` (fake-ai + bridge + cliente, cero
  *  créditos) por el mismo camino que usaría una persona:
@@ -640,45 +633,42 @@ async function diagnostico() {
   return { saves, mundos, fake, list };
 }
 
+/** La sentinela de `ctx.sinMedir` (#331): lanzarla es lo que ABORTA el guion
+ *  a cualquier profundidad de pila — «marcar y confiar en que el guion haga
+ *  return» era el apaño que tenía el 34, y no compone con quien quiera
+ *  declararla desde dentro de un helper (#261, desde `waitFor`). El catch del
+ *  runner la reconoce y clasifica; no es un error del guion, es su forma de
+ *  decir «no pude medir». */
+class SinMedirDeclarado extends Error {
+  constructor(motivo) {
+    super(motivo);
+    this.name = "SinMedirDeclarado";
+    this.motivo = motivo;
+  }
+}
+
 /** Contexto que recibe cada guion. Todo lo que ofrece espera por estado; no
- *  hay sleep en la API, a propósito. */
+ *  hay sleep en la API, a propósito.
+ *
+ *  `nefan`, `waitFor` y `log` viven en `qa/lib/sonda.mjs` y aquí se DELEGA:
+ *  los scripts que no corren bajo el runner (`fixtures-sin-bridge`,
+ *  `captura-de-fixture`) usan la MISMA implementación vía `ctxDeSonda(page)`,
+ *  en vez de la tercera copia de la espera que cada uno llevaba (#332). */
 function makeCtx(page, name) {
   let step = 0;
   const ctx = {
-    page,
+    ...ctxDeSonda(page),
     name,
     fallos: [],
-    log: (msg) => console.log(`    ${msg}`),
-
-    /** Llama a window.__nefan.<path>(...args), o lo lee si no es función. */
-    async nefan(path, ...fnArgs) {
-      return page.evaluate(
-        ([p, a]) => {
-          const hook = window.__nefan;
-          if (!hook) throw new Error("window.__nefan no existe (¿build de producción?)");
-          const keys = p.split(".");
-          const owner = keys.slice(0, -1).reduce((o, k) => (o == null ? o : o[k]), hook);
-          const target = keys.length === 1 ? hook[p] : owner?.[keys[keys.length - 1]];
-          if (target === undefined) throw new Error(`__nefan.${p} no existe`);
-          return typeof target === "function" ? target.apply(keys.length === 1 ? hook : owner, a) : target;
-        },
-        [path, fnArgs],
-      );
-    },
-
-    /** Espera a que `probeFn` (evaluada en la página) devuelva algo truthy.
-     *  `arg` viaja serializado a la página: los guiones comparan contra
-     *  valores que midieron antes, sin ensuciar `window` con globales. */
-    async waitFor(desc, probeFn, timeoutMs = 30_000, arg = undefined) {
-      const t0 = Date.now();
-      let last;
-      while (Date.now() - t0 < timeoutMs) {
-        last = await page.evaluate(probeFn, arg).catch((e) => ({ __err: String(e) }));
-        if (last && !last.__err) return last;
-        await new Promise((r) => setTimeout(r, 150));
-      }
-      throw new Error(`timeout esperando: ${desc} (último valor: ${JSON.stringify(last)})`);
-    },
+    /** La MARCA de que este guion declaró `sinMedir`, puesta ANTES de lanzar
+     *  la sentinela. Existe porque la sentinela es una excepción y un
+     *  `try { ctx.sinMedir(…) } catch {}` del propio guion se la traga —
+     *  QA lo hizo y el guion salió VERDE (2026-08-31). El runner honra la
+     *  marca aunque la sentinela nunca le llegue: una declaración no se
+     *  deshace tragándosela. Pesa para #261: 44 de los 72 catches del censo
+     *  son `.catch(() => null)`, y un helper con catch genérico haría esto
+     *  sin querer. */
+    declaracionSinMedir: null,
 
     /** Mantiene una tecla hasta que se cumple `untilFn`, y la suelta SIEMPRE.
      *  `maxMs` es un cortafuegos, no la condición de parada: esperar por
@@ -690,6 +680,33 @@ function makeCtx(page, name) {
       } finally {
         await ctx.nefan("inputDriver.releaseAll");
       }
+    },
+
+    /** Declara que este guion NO PUEDE MEDIR y ABORTA aquí mismo (#331): no se
+     *  sigue ejecutando ni acumulando fallos después. Es lo que le faltaba al
+     *  veredicto de un guion con la precondición rota — un rojo dice «lo que
+     *  defiendo está roto» cuando lo que pasó es «no pude medir», y esa
+     *  mentira cuesta una investigación entera cada vez.
+     *
+     *  El canal no es una vía de escape: el ⊘ degrada la corrida a exit 2,
+     *  MÁS que el rojo (exit 1) — reconvertir un rojo en ⊘ empeora el
+     *  veredicto por construcción, y un guion que ya empujó fallos ni siquiera
+     *  puede (lo veta el catch del runner).
+     *
+     *  El motivo es parte de la declaración, no un adorno — mismo criterio que
+     *  `exentoDeMotor`: una frase hay que escribirla y dice QUÉ faltó. Sin
+     *  ella, esto es un error normal y el guion sale rojo. */
+    sinMedir(motivo) {
+      if (typeof motivo !== "string" || motivo.trim() === "") {
+        throw new Error(
+          `${name}: ctx.sinMedir exige el MOTIVO por el que este guion no pudo medir ` +
+            `(una frase), y llegó ${JSON.stringify(motivo)}.`,
+        );
+      }
+      // La marca va ANTES del throw: si el guion (o un helper con catch
+      // genérico) se traga la sentinela, la declaración sobrevive igual.
+      ctx.declaracionSinMedir = { motivo };
+      throw new SinMedirDeclarado(motivo);
     },
 
     expect(desc, cond, detalle = "") {
@@ -856,9 +873,51 @@ async function main() {
       }
       if (!sinMedir) await mod.default(ctx);
     } catch (err) {
-      fatal = err;
-      console.log(`    ✘ ERROR: ${err.message}`);
-      await ctx.shot("error").catch(() => {});
+      if (err instanceof SinMedirDeclarado) {
+        // La sentinela llegó: la marca se CONSUME aquí (el bloque de abajo es
+        // solo para la que un catch del guion se tragó).
+        ctx.declaracionSinMedir = null;
+        // El ⊘ DECLARADO exige el guion limpio, y esto es MÁS estricto que el
+        // propio runner: los ⊘ de abajo (:stack caído, sinMotor falso)
+        // conservan `ctx.fallos` no vacíos porque esos fallos pueden ser del
+        // cadáver del stack — un accidente. El declarado es una DECLARACIÓN
+        // del guion, y una declaración con fallos ya empujados sería una
+        // amnistía: el rojo se queda.
+        if (ctx.fallos.length === 0) {
+          sinMedir = `declarado por el guion: ${err.motivo}`;
+        } else {
+          ctx.fallos.push(
+            `declaró sinMedir(«${err.motivo}») con ${ctx.fallos.length} fallo(s) ya ` +
+              `empujados: un ⊘ es una declaración, no una amnistía — el guion no puede ` +
+              `reconvertirse y se queda en rojo`,
+          );
+          console.log(`    ✘ ${ctx.fallos[ctx.fallos.length - 1]}`);
+        }
+      } else {
+        fatal = err;
+        console.log(`    ✘ ERROR: ${err.message}`);
+        await ctx.shot("error").catch(() => {});
+      }
+    }
+    // La marca sigue puesta = el guion declaró sinMedir y la sentinela NUNCA
+    // llegó: se la tragó un try/catch (suyo o de un helper) y siguió
+    // ejecutándose. La declaración se honra igual — si no, un catch genérico
+    // fabricaría un verde de un guion que dijo «no pude medir» (hallazgo de
+    // QA, #331). Misma regla que arriba: limpio → ⊘; con fallos → rojo.
+    if (ctx.declaracionSinMedir) {
+      const { motivo } = ctx.declaracionSinMedir;
+      if (ctx.fallos.length === 0 && !fatal) {
+        sinMedir =
+          `declarado por el guion: ${motivo} — y la sentinela se tragó (el guion siguió ` +
+          `ejecutándose tras declarar); la declaración se honra igual`;
+      } else {
+        ctx.fallos.push(
+          `declaró sinMedir(«${motivo}»), se tragó la sentinela y siguió con fallos: ` +
+            `un ⊘ es una declaración, no una amnistía — el guion no puede reconvertirse ` +
+            `y se queda en rojo`,
+        );
+        console.log(`    ✘ ${ctx.fallos[ctx.fallos.length - 1]}`);
+      }
     }
     if (DIAG) {
       const libros = await page
@@ -874,7 +933,11 @@ async function main() {
     if (errores.length) {
       console.log(`    ✘ ${errores.length} excepción(es) en la página`);
       errores.slice(0, 3).forEach((e) => console.log(`      ${e.split("\n")[0]}`));
-      ctx.fallos.push(`${errores.length} excepción(es) no capturadas en la página`);
+      // La primera va EN el fallo, no solo en el log en línea: el resumen es
+      // lo que se lee, y un recuento sin texto no se puede diagnosticar.
+      ctx.fallos.push(
+        `${errores.length} excepción(es) no capturadas en la página: ${errores[0].split("\n")[0]}`,
+      );
     }
     await page.close();
     if (fatal) ctx.fallos.push(`ERROR: ${fatal.message}`);
@@ -934,8 +997,12 @@ async function main() {
   for (const r of resultados) {
     console.log(`${ICONO[r.estado]} ${r.nombre}${r.motivo ? ` — ${r.motivo}` : ""}`);
     // Un rojo dice de quién es en el propio resumen: en una batería de treinta
-    // guiones, el detalle quedó a cientos de líneas de scroll.
-    if (r.estado === ROJO) for (const f of r.fallos) console.log(`    · ${f}`);
+    // guiones, el detalle quedó a cientos de líneas de scroll. Y un ⊘ enseña
+    // los fallos que arrastraba (una excepción de página antes de declarar,
+    // los del cadáver del stack): el exit 2 protege la corrida, pero el
+    // diagnóstico se perdía del resumen (hallazgo de QA, #331). Imprimirlos
+    // no cambia el veredicto.
+    if (r.estado === ROJO || r.estado === SIN_MEDIR) for (const f of r.fallos) console.log(`    · ${f}`);
   }
   const partes = [`${verdes} en verde`, `${rojos} en rojo`];
   if (sinMedir) partes.push(`${sinMedir} SIN MEDIR`);
@@ -954,7 +1021,7 @@ async function main() {
       `\n✖ ${sinMedir} guion(es) no llegaron a medir: esta corrida NO es un veredicto del juego.`,
     );
   }
-  salir(sinMedir > 0 ? 2 : rojos > 0 ? 1 : 0);
+  salir(exitDeCorrida(rojos, sinMedir));
 }
 
 main().catch((err) => {

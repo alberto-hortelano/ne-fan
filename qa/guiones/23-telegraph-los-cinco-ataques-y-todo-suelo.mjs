@@ -82,15 +82,6 @@ function mirarA(ctx, grados) {
   );
 }
 
-/** Sin sesión (modo fixtures) el arranque de partida falla a propósito y el
- *  jugador ve el muro de error: se cierra por SU botón, como una persona. */
-async function cerrarMuroSiHay(ctx) {
-  await ctx.page.evaluate(() => {
-    const muro = document.getElementById("narrative-loader");
-    if (muro?.classList.contains("error")) document.getElementById("narrative-loader-dismiss")?.click();
-  });
-}
-
 /** Espera a que NO haya telegraph en pantalla: seleccionar tipo de ataque con
  *  un episodio en vuelo no cambia el área, y esa es justo la trampa que este
  *  guion vigila. */
@@ -213,7 +204,6 @@ export default async function (ctx) {
       t.borde.cerca !== null,
       JSON.stringify(t.borde.cerca),
     );
-    await cerrarMuroSiHay(ctx);
     await ctx.shot(`telegraph-ataque-${tipo}`);
   }
 

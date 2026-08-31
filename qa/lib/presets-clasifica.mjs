@@ -16,19 +16,16 @@
  *  o sea, exactamente en la situación que este arreglo viene a cubrir. Con el
  *  sondeo como dato de entrada, el caso se escribe en tres líneas.
  *
- *  El veredicto AJENO no es un rojo con otro icono: es «no se midió», el mismo
- *  que `⊘ SIN MEDIR` en `qa/run.mjs`. Un preset con un ocupante ajeno en un
- *  puerto que necesita ni siquiera llegó a arrancar (`start.sh` se NIEGA a
- *  arrancar sobre un puerto ocupado desde 2026-08-27, y su `trap EXIT` baja lo
- *  que ya había levantado): no hay nada que juzgar de él, ni bueno ni malo.
+ *  Un preset con un ocupante ajeno en un puerto que necesita ni siquiera llegó
+ *  a arrancar (`start.sh` se NIEGA a arrancar sobre un puerto ocupado desde
+ *  2026-08-27, y su `trap EXIT` baja lo que ya había levantado): no hay nada
+ *  que juzgar de él, ni bueno ni malo. Eso es EXACTAMENTE el `⊘ SIN MEDIR` de
+ *  `qa/run.mjs`, y desde #331 lo es también en el código: la escala vive en
+ *  `lib/veredictos.mjs` (aquí llegó a haber un estado paralelo `AJENO` con el
+ *  mismo icono, y la equivalencia solo existía en prosa). «Quién ocupaba qué»
+ *  no se pierde: sigue en `ajenos[]`, que es detalle, no estado.
  */
-
-/** Los tres veredictos de un preset. */
-export const OK = "ok";
-export const ROJO = "rojo";
-export const AJENO = "ajeno";
-
-export const ICONO = { [OK]: "✔", [ROJO]: "✘", [AJENO]: "⊘" };
+import { VERDE, ROJO, SIN_MEDIR, exitDeCorrida } from "./veredictos.mjs";
 
 /** ¿Qué salió de arrancar UN preset?
  *
@@ -59,24 +56,23 @@ export function clasificarPreset({ slug, esperados, prohibidos, ocupacion }) {
   // no necesita, el preset corrió entero y su veredicto sí vale — lo que no
   // vale es la corrida, que ya no es una foto limpia del catálogo.
   const enEsperado = ajenos.some((a) => a.rol === "esperado");
-  const estado = enEsperado ? AJENO : faltan.length || colados.length ? ROJO : OK;
+  const estado = enEsperado ? SIN_MEDIR : faltan.length || colados.length ? ROJO : VERDE;
 
   return { slug, estado, faltan, colados, ajenos };
 }
 
 /** El veredicto de la CORRIDA, que no es la suma de los de los presets.
  *
- *  Misma escala de códigos de salida que `qa/run.mjs`, y por la misma razón:
- *    0  todos los presets arrancan exactamente su máscara
- *    1  hay presets en rojo, y todos se midieron: es el launcher
- *    2  algo no llegó a medirse (un ocupante ajeno en el catálogo): esta
- *       corrida NO dice si los presets están bien
- *  El 2 gana al 1: con un ajeno dentro, ni siquiera los rojos son de fiar. */
+ *  El exit es el de la escala única (`exitDeCorrida`), con un matiz que se
+ *  conserva a propósito: el «no medido» que degrada a 2 aquí es CUALQUIER
+ *  ocupante ajeno visto en el catálogo —aunque el preset por el que pasó
+ *  saliera verde—, no solo los presets en estado SIN_MEDIR. Con un ajeno
+ *  dentro, la corrida ya no es una foto limpia del catálogo. */
 export function veredictoDeLaCorrida(resultados) {
   const cuenta = (e) => resultados.filter((r) => r.estado === e).length;
-  const ok = cuenta(OK);
+  const ok = cuenta(VERDE);
   const rojos = cuenta(ROJO);
-  const noMedidos = cuenta(AJENO);
+  const noMedidos = cuenta(SIN_MEDIR);
   /** Todos los ocupantes ajenos vistos, sean de un preset medido o no. */
   const ajenos = resultados.flatMap((r) => r.ajenos.map((a) => ({ ...a, slug: r.slug })));
   return {
@@ -85,6 +81,6 @@ export function veredictoDeLaCorrida(resultados) {
     noMedidos,
     ajenos,
     concluyente: ajenos.length === 0,
-    exit: ajenos.length > 0 ? 2 : rojos > 0 ? 1 : 0,
+    exit: exitDeCorrida(rojos, ajenos.length),
   };
 }

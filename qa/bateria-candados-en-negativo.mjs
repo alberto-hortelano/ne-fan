@@ -57,13 +57,18 @@ const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MAIN = join(raiz, "nefan-html/src/main.ts");
 const TECLADO = join(raiz, "nefan-html/src/input/keyboard-input-provider.ts");
 
-/** [nombre, fichero, guion, [ [buscar, poner], … ], huella ]
+/** [nombre, fichero, guion, [ [buscar, poner], … ], huella, codigoEsperado? ]
  *
  *  `buscar` tiene que aparecer EXACTAMENTE una vez: si el código se mueve, el
  *  candado deja de apuntar a donde cree y esto lo dice en vez de dar un falso
- *  verde. `huella` es lo que el rojo tiene que NOMBRAR — un rojo genérico no
- *  vale: el defecto de #308 ya se manifestaba como un aserto de telegraph
+ *  verde. `huella` es lo que el veredicto tiene que NOMBRAR — un rojo genérico
+ *  no vale: el defecto de #308 ya se manifestaba como un aserto de telegraph
  *  fallando tres pasos más abajo, que es justo lo que no se puede diagnosticar.
+ *
+ *  `codigoEsperado` (defecto 1, rojo) existe por el canal `⊘` de #331: hay
+ *  candados cuyo desenlace correcto NO es un rojo sino un ⊘ declarado, y el
+ *  runner sale con 2 ante cualquier ⊘. Un 2 que NO se esperaba sigue contando
+ *  como «la corrida no midió», nunca como éxito.
  */
 const INVARIANTES = [
   [
@@ -101,6 +106,90 @@ const INVARIANTES = [
     // se imprime también en verde. Una huella que casa en las dos direcciones
     // no distingue nada, que es el defecto que este script persigue.
     /✘[^\n]*sigue PENDIENTE/,
+  ],
+  // ¿La migración de #332 COMPRÓ algo? El mismo destrozo del hook, contra un
+  // guion migrado en esta pasada (el 01, que antes esperaba por su cuenta con
+  // `status().scene` — una espera que este destrozo NO pone roja, porque
+  // acaba cumpliéndose sola). Con `cargarFixture` la afirmación corre detrás
+  // de la promesa rota y el rojo NOMBRA la escena que había.
+  [
+    "#308 · el mismo destrozo contra un guion MIGRADO en esta pasada (#332: la migración compra algo)",
+    MAIN,
+    "01-arranque",
+    [
+      [
+        "      const carga = ultimaCargaDeFixture;\n",
+        "      const carga = Promise.resolve();\n      void ultimaCargaDeFixture;\n",
+      ],
+    ],
+    /se pidió la fixture|se quedó en/i,
+  ],
+  // El canal ⊘ de #331, probado por sus DOS caras contra el guion 34 — el
+  // usuario natural del verbo (su precondición es que el selector ofrezca la
+  // fixture donde están medidos sus márgenes).
+  //
+  // Cara 1: precondición rota → el guion DECLARA y sale ⊘ con su motivo (el
+  // runner degrada la corrida a exit 2, que es el precedente de `:954-957`:
+  // «esta corrida NO es un veredicto del juego»). Hasta #331 esto solo podía
+  // salir rojo (mintiendo sobre QUÉ está roto) o verde.
+  [
+    "#331 · precondición rota → el guion declara ⊘ con su motivo, no un rojo que miente",
+    join(raiz, "qa/guiones/34-con-el-titulo-delante-el-teclado-no-juega.mjs"),
+    "34-con-el-titulo",
+    [['const FIXTURE = "puerto_tile";\n', 'const FIXTURE = "puerto_tile_inexistente";\n']],
+    /declarado por el guion.*puerto_tile_inexistente/,
+    2,
+  ],
+  // Cara 2: un guion que YA empujó fallos NO puede reconvertirse a ⊘ — un ⊘
+  // es una declaración, no una amnistía. El cebo se inyecta ANTES de la
+  // precondición rota: el runner tiene que vetar la reconversión y dejar el
+  // guion en ROJO (exit 1, el defecto de `codigoEsperado`).
+  [
+    "#331 · con fallos ya empujados, sinMedir NO reconvierte: el rojo se queda",
+    join(raiz, "qa/guiones/34-con-el-titulo-delante-el-teclado-no-juega.mjs"),
+    "34-con-el-titulo",
+    [
+      ['const FIXTURE = "puerto_tile";\n', 'const FIXTURE = "puerto_tile_inexistente";\n'],
+      [
+        "  const opcion = await ctx.page.evaluate((f) => {\n",
+        '  ctx.expect("cebo inyectado por la batería de candados (debe vetar la reconversión)", false);\n' +
+          "  const opcion = await ctx.page.evaluate((f) => {\n",
+      ],
+    ],
+    /no puede reconvertirse|amnistía/,
+  ],
+  // Cara 3: el motivo vacío se RECHAZA como error del guion (rojo), no como un
+  // ⊘ mudo. Entrada de QA (2026-08-31): la única cara del canal que la batería
+  // no cubría. El `"" ??` evalúa a `""` y fuerza el motivo vacío sin tocar el
+  // template del guion.
+  [
+    "#331 · el motivo vacío se RECHAZA: rojo que exige el motivo, no un ⊘ mudo",
+    join(raiz, "qa/guiones/34-con-el-titulo-delante-el-teclado-no-juega.mjs"),
+    "34-con-el-titulo",
+    [
+      ['const FIXTURE = "puerto_tile";\n', 'const FIXTURE = "puerto_tile_inexistente";\n'],
+      ["    ctx.sinMedir(\n", '    ctx.sinMedir(\n      "" ??\n'],
+    ],
+    /sinMedir exige el MOTIVO/,
+  ],
+  // Cara 4: el guion se TRAGA la sentinela (hallazgo de QA: un try/catch del
+  // propio guion la capturaba y el guion salía VERDE). La declaración deja
+  // marca en el ctx ANTES de lanzar, y el runner la honra al volver: un trago
+  // no puede fabricar un verde. Sin el arreglo, esta entrada sale VERDE — es
+  // exactamente la mentira que caza.
+  [
+    "#331 · tragarse la sentinela no deshace la declaración: sale ⊘, no verde",
+    join(raiz, "qa/guiones/34-con-el-titulo-delante-el-teclado-no-juega.mjs"),
+    "34-con-el-titulo",
+    [
+      ['const FIXTURE = "puerto_tile";\n', 'const FIXTURE = "puerto_tile_inexistente";\n'],
+      [
+        "  if (!opcion) {\n    ctx.sinMedir(\n",
+        '  if (!opcion) {\n    try {\n      ctx.sinMedir("me quedé sin fixture (sentinela tragada a propósito por la batería de candados)");\n    } catch {\n      return; // el trago: la sentinela muere aquí y el guion «acaba bien»\n    }\n  }\n  if (!opcion) {\n    ctx.sinMedir(\n',
+      ],
+    ],
+    /la declaración se honra igual/,
+    2,
   ],
   [
     "#320 · muere UNA sola tecla de movimiento (`a`) en el proveedor de teclado",
@@ -183,7 +272,7 @@ try {
   }
   console.log();
 
-  for (const [nombre, fichero, guion, pares, huella] of INVARIANTES) {
+  for (const [nombre, fichero, guion, pares, huella, codigoEsperado = 1] of INVARIANTES) {
     if (!casa(nombre)) continue;
     restaura();
     let texto = original.get(fichero);
@@ -205,17 +294,35 @@ try {
     writeFileSync(fichero, texto);
     const r = corre(guion);
     const dichos = motivos(r.salida);
-    const rojo = r.codigo === 1;
+    const caza = r.codigo === codigoEsperado;
     const nombra = huella.test(r.salida);
-    if (r.codigo === 2) sinMedir.push(nombre);
-    else if (!rojo || !nombra) fallidos.push(nombre);
-    console.log(`${rojo && nombra ? "🔴 rojo " : r.codigo === 2 ? "⚠️  ⊘   " : "🟢 VERDE"}  ${nombre}`);
-    if (r.codigo === 2) {
+    // Un 2 que NO se esperaba no es un veredicto del guion: la corrida no
+    // midió. Un 2 ESPERADO (codigoEsperado 2, el canal ⊘ de #331) sí lo es, y
+    // se le exige la huella igual que a un rojo.
+    if (r.codigo === 2 && codigoEsperado !== 2) sinMedir.push(nombre);
+    else if (!caza || !nombra) fallidos.push(nombre);
+    const etiqueta =
+      caza && nombra
+        ? codigoEsperado === 2
+          ? "🔴 ⊘   "
+          : "🔴 rojo "
+        : r.codigo === 2 && codigoEsperado !== 2
+          ? "⚠️  ⊘   "
+          : "🟢 VERDE";
+    console.log(`${etiqueta}  ${nombre}`);
+    if (r.codigo === 2 && codigoEsperado !== 2) {
       console.log(`     ⚠️  la corrida NO llegó a medir (salida 2): no dice nada del guion`);
-    } else if (!rojo) {
+    } else if (!caza && r.codigo === 0) {
       console.log(`     ⚠️  ROMPERLO NO CAMBIA NADA: qa/run.mjs ${guion} sigue en verde`);
+    } else if (!caza) {
+      console.log(
+        `     ⚠️  qa/run.mjs ${guion} salió ${r.codigo} y este candado espera ${codigoEsperado}`,
+      );
+      for (const m of dichos.slice(0, 3)) console.log(`        ${m}`);
     } else if (!nombra) {
-      console.log(`     ⚠️  rojo, pero NO nombra la causa (${huella}): un rojo que no se puede diagnosticar`);
+      console.log(
+        `     ⚠️  salida ${r.codigo}, pero NO nombra la causa (${huella}): un veredicto que no se puede diagnosticar`,
+      );
       for (const m of dichos.slice(0, 3)) console.log(`        ${m}`);
     } else {
       console.log(`     lo caza (qa/run.mjs ${guion}): ${dichos[0] ?? "(sin nombre)"}`);
@@ -237,7 +344,7 @@ for (const [f, txt] of original) {
 const probados = INVARIANTES.filter(([n]) => casa(n)).length;
 console.log(`\n${"─".repeat(70)}`);
 console.log(`Candados probados en negativo : ${probados}`);
-console.log(`Nacen rojos y NOMBRAN la causa: ${probados - fallidos.length - obsoletos.length - sinMedir.length}`);
+console.log(`Nacen rojos/⊘ y NOMBRAN la causa: ${probados - fallidos.length - obsoletos.length - sinMedir.length}`);
 console.log(`No se enteran / no diagnostican: ${fallidos.length}`);
 for (const f of fallidos) console.log(`   🟢 ${f}`);
 console.log(`Patrón obsoleto               : ${obsoletos.length}`);
