@@ -152,9 +152,13 @@ const ctx: BridgeContext = {
 // quien sabe dónde está: `reseedSimForSession` (start/resume, con la posición
 // del save) o `handleLoadRoom` (fixtures del selector «Room»).
 
-// Don't crash the bridge if a downstream service (ai_server) is offline.
+// Última red DE VERDAD, no el canal de errores: los throws de los handlers los
+// captura y contesta `routeMessage` (frame con requestId o narrative_status de
+// error), así que esto solo puede dispararse desde trabajo que no nació de un
+// mensaje (timers, promesas sueltas de un job). No tumba el bridge, pero verlo
+// en el log ya no es rutina — es un bug al que le falta canal hacia el cliente.
 process.on("unhandledRejection", (reason) => {
-  console.warn("Bridge: unhandled rejection:", reason);
+  console.error("Bridge: unhandled rejection (fuera del ciclo de mensajes):", reason);
 });
 
 const wss = new WebSocketServer({ port: PORT });

@@ -282,6 +282,11 @@ export interface PongMessage {
 export interface SessionsListedMessage {
   type: "sessions_listed";
   requestId: string;
+  /** Presente solo si el listado NO se pudo hacer (storage de saves ilegible).
+   *  `sessions` llega vacío y el cliente RECHAZA con este motivo — misma
+   *  política que el `error` de `games_listed`: una lista vacía con error
+   *  diría «no tienes partidas», que es otra causa y falsa. */
+  error?: string;
   sessions: SessionMetadata[];
 }
 

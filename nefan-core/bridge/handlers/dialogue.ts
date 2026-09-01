@@ -64,7 +64,21 @@ async function reportAndDispatch(
     speakerHintId,
   });
   const pluginFx = runPluginTick(ctx, eventId, dispatched.pluginEvents);
-  await ctx.narrative.save();
+  // Fail-loud del bridge (patrón de simulation.ts): si el guardado falla
+  // (ENOSPC, permisos), la reacción YA vive en memoria y el jugador tiene que
+  // ver sus efectos igualmente — se avisa del save y el turno sigue. Sin este
+  // catch, el throw se tragaba el narrative_event entero y el modal de diálogo
+  // se quedaba esperando una respuesta que no iba a llegar.
+  await ctx.narrative.save().catch((err: unknown) => {
+    console.error(`Bridge: no se pudo guardar tras la reacción (${logLabel}):`, err);
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "consequences",
+      message:
+        "No se pudo guardar la partida tras esta reacción: si reanudas, podría faltar.",
+    });
+  });
   // Un spawn_entity dinámico puede haber creado NPCs — engancharlos a la
   // vida ambiental sin esperar al siguiente cambio de tile.
   npcSync(ctx);

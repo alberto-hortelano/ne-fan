@@ -237,6 +237,11 @@ export class NarrativeClient {
 
   async listSessions(): Promise<SessionMetadata[]> {
     const res = await this.bridge.listSessions();
+    // Mismo patrón que `listGames`: si el bridge dice que no pudo, se rechaza
+    // con SU motivo (el título ya traduce y pinta ese rechazo). Sin esto, un
+    // storage de saves ilegible llegaba como lista vacía = «no tienes
+    // partidas», que es otra causa y falsa.
+    if (res.error) throw new Error(res.error);
     return res.sessions;
   }
 
