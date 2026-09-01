@@ -10,10 +10,11 @@
  *  Y hay un motivo que no es solo higiene: el UMBRAL. La copia de 41 esperaba
  *  a ponerse a 1,6 m y el aserto de su sitio de llamada admitía 2,6 — una
  *  banda garantizada de «la espera expira y el guion sale verde igual», que es
- *  la familia de defecto más cara del banco. Aquí el umbral y su holgura se
- *  escriben UNA vez, en el mismo sitio que la espera, y la distancia final se
- *  AFIRMA siempre: quien llama ya no puede olvidarse de mirarla (42 no la
- *  miraba).
+ *  la familia de defecto más cara del banco. Aquí hay UN umbral y UN
+ *  predicado: el que esperan los tramos es el que afirma el último, en el
+ *  mismo instante en que lo sondea. No queda holgura porque no queda hueco.
+ *  Y se afirma siempre, así que quien llama ya no puede olvidarse de mirarlo
+ *  (42 no lo miraba).
  *
  *  Ambos caminan por el camino del jugador —yaw + tecla de avance—, nunca
  *  `setPlayerPos`: teletransportarse sería fabricar el escenario que el guion
@@ -34,53 +35,74 @@ function dondeEsta(ctx, id, lista) {
   );
 }
 
-/** Camina hasta ponerse a `objetivo` metros del objetivo y AFIRMA que llegó.
+/** Camina hasta ponerse a `objetivo` metros del objetivo y AFIRMA que llegó,
+ *  con EL MISMO predicado con el que esperó.
  *
  *  En tramos porque el otro también se mueve (nos persigue, o hace su vida):
- *  el cortafuegos de cada tramo es un cortafuegos, no la condición de parada,
- *  y que expire no dice nada porque el bucle vuelve a medir. Eso es lo que
- *  `ctx.absorbe` declara — y es legítimo justamente porque al salir del bucle
- *  hay un aserto sobre la distancia FINAL, que es donde vive la medida.
+ *  el cortafuegos de cada tramo es un cortafuegos, no la condición de parada, y
+ *  que expire no dice nada porque el bucle vuelve a medir. Eso es lo que
+ *  `ctx.absorbe` declara — y es legítimo porque **el último tramo no se
+ *  absorbe: se afirma**.
+ *
+ *  Y se afirma el predicado, no una relectura de la distancia. La primera
+ *  versión de esta tanda hacía lo segundo —esperar a `d ≤ 1,6` y luego afirmar
+ *  `d ≤ 2,6` sobre una medida nueva— y eso es exactamente la banda de «la
+ *  espera expira y el guion sale verde igual» que abrió #261, con los mismos
+ *  números que la crítica llamó defecto; lo cazó QA el 2026-09-01. La holgura
+ *  existía para tapar lo que el objetivo se mueve entre el último sondeo y la
+ *  relectura: si en vez de releer se AFIRMA el sondeo, no hay hueco que tapar y
+ *  no hace falta holgura ninguna. Un predicado, un umbral, un instante.
+ *
+ *  Si el objetivo ya está dentro de `objetivo` metros, el aserto se cumple en
+ *  el primer sondeo y no se anda: no cuesta un tramo de más.
  *
  *  Devuelve la última medición (`{d, dx, dz}`) o `null` si el objetivo ya no
  *  está en la lista. */
 export async function acercarse(ctx, id, opciones = {}) {
-  const {
-    objetivo = 1.6,
-    holgura = 1.0,
-    tramos = 12,
-    tramoMs = 4_000,
-    lista = "enemies",
-  } = opciones;
-  for (let i = 0; i < tramos; i++) {
+  const { objetivo = 1.6, tramos = 12, tramoMs = 4_000, lista = "enemies" } = opciones;
+  const arg = { id, objetivo, lista };
+  /** EL predicado. Lo comparten los cortafuegos y el aserto del final. */
+  const aTiro = (a) => {
+    const e = window.__nefan[a.lista]().find((x) => x.id === a.id);
+    if (!e) return null;
+    const p = window.__nefan.state().pos;
+    const d = Math.hypot(e.pos.x - p.x, e.pos.z - p.z);
+    return d <= a.objetivo ? { d } : null;
+  };
+  /** Encara al objetivo y dice a qué distancia está. */
+  const encarar = async () => {
     const n = await dondeEsta(ctx, id, lista);
+    if (n && n.d > objetivo) await ctx.nefan("setYaw", Math.atan2(n.dx, n.dz));
+    return n;
+  };
+
+  // Tramos de aproximación: cortafuegos, absorbidos.
+  for (let i = 0; i < tramos - 1; i++) {
+    const n = await encarar();
     if (!n || n.d <= objetivo) break;
-    await ctx.nefan("setYaw", Math.atan2(n.dx, n.dz));
     await ctx.absorbe(
       `cortafuegos de UN tramo (${tramoMs} ms) del paseo hasta ${id}: el bucle vuelve a medir y ` +
-        `la distancia FINAL se afirma al salir de él, que es donde vive la medida`,
+        `el ÚLTIMO tramo afirma este mismo predicado (d ≤ ${objetivo} m), que es donde vive la medida`,
       () =>
         ctx.holdUntil(
           "up",
           `el jugador se acerca a ${id} (tramo ${i + 1}, ahora ${n.d.toFixed(1)} m)`,
-          (a) => {
-            const e = window.__nefan[a.lista]().find((x) => x.id === a.id);
-            if (!e) return null;
-            const p = window.__nefan.state().pos;
-            return Math.hypot(e.pos.x - p.x, e.pos.z - p.z) <= a.objetivo ? true : null;
-          },
+          aTiro,
           tramoMs,
-          { id, objetivo, lista },
+          arg,
         ),
     );
   }
-  const fin = await dondeEsta(ctx, id, lista);
-  ctx.expect(
-    `el jugador LLEGA andando a ${(objetivo + holgura).toFixed(1)} m de ${id} (sin teletransportarse)`,
-    Boolean(fin) && fin.d <= objetivo + holgura,
-    `distancia final ${fin ? `${fin.d.toFixed(2)} m` : "el objetivo ya no está en la lista"}`,
+
+  // Y el ÚLTIMO tramo AFIRMA, con el mismo predicado y el mismo umbral.
+  await encarar();
+  await ctx.expectEspera(
+    `el jugador LLEGA andando a ${objetivo} m de ${id} (sin teletransportarse)`,
+    true,
+    aTiro,
+    { ms: tramoMs, arg, tecla: "up" },
   );
-  return fin;
+  return dondeEsta(ctx, id, lista);
 }
 
 /** Pega hasta dejar al objetivo por debajo de `objetivo` de vida en el HUD.

@@ -13,12 +13,21 @@
  *  cuerpos se movieron VERBATIM — cambiarles el reloj o los mensajes es
  *  cambiar el timing de la batería entera.
  *
- *  Desde #261 `waitFor` ANOTA su expiración en el libro de esperas
- *  (`qa/lib/esperas.mjs`) antes de lanzar. El reloj no se toca y el mensaje
- *  tampoco: lo único nuevo es que la expiración deja rastro, y que el runner
- *  exige que alguien la haya observado antes de dar el guion por verde. */
+ *  Desde #261 `waitFor` se APUNTA en el libro de esperas
+ *  (`qa/lib/esperas.mjs`) al arrancar y lo cierra al posarse: cumplida si la
+ *  condición se dio, expirada si no. El reloj y el mensaje no se tocan; lo
+ *  nuevo es que la espera deja rastro desde el primer instante —también
+ *  mientras corre—, y que el runner exige que alguien haya observado toda
+ *  expiración, y que no quede ninguna en vuelo, antes de dar el guion por
+ *  verde. */
 
-import { EsperaExpirada, esperaExpiradaEn, libroDeEsperas, sitioDeLlamada } from "./esperas.mjs";
+import {
+  EsperaExpirada,
+  esperaExpiradaEn,
+  libroDeEsperas,
+  quejaDelMotivo,
+  sitioDeLlamada,
+} from "./esperas.mjs";
 
 /** El subconjunto de `ctx` que no necesita runner: para scripts con page
  *  cruda de Playwright. */
@@ -46,10 +55,11 @@ export function ctxDeSonda(page) {
      *
      *  Solo absorbe expiraciones: cualquier otro error sigue subiendo. */
     async absorbe(motivo, fn) {
-      if (typeof motivo !== "string" || motivo.trim() === "") {
+      const queja = quejaDelMotivo(motivo);
+      if (queja) {
         throw new Error(
-          `ctx.absorbe exige el MOTIVO por el que esta expiración es legítima (una frase que diga ` +
-            `dónde vive la medida), y llegó ${JSON.stringify(motivo)}.`,
+          `ctx.absorbe exige el MOTIVO por el que esta expiración es legítima —una frase que diga ` +
+            `DÓNDE vive la medida—, y el que llegó ${queja}.`,
         );
       }
       try {
@@ -80,24 +90,49 @@ export function ctxDeSonda(page) {
 
     /** Espera a que `probeFn` (evaluada en la página) devuelva algo truthy.
      *  `arg` viaja serializado a la página: los guiones comparan contra
-     *  valores que midieron antes, sin ensuciar `window` con globales. */
-    async waitFor(desc, probeFn, timeoutMs = 30_000, arg = undefined) {
-      const t0 = Date.now();
-      let last;
-      while (Date.now() - t0 < timeoutMs) {
-        last = await page.evaluate(probeFn, arg).catch((e) => ({ __err: String(e) }));
-        if (last && !last.__err) return last;
-        await new Promise((r) => setTimeout(r, 150));
-      }
-      // ANOTAR ANTES DE LANZAR (#261): la expiración es un hecho y queda en el
-      // libro con su reloj y su sitio. Que la excepción llegue o no a alguien
-      // ya no decide si se midió — eso lo decide quién la RESUELVA.
-      const id = esperas.anota(desc, timeoutMs, sitioDeLlamada(new Error().stack));
-      throw new EsperaExpirada(
-        `timeout esperando: ${desc} (último valor: ${JSON.stringify(last)})`,
-        id,
-        last,
-      );
+     *  valores que midieron antes, sin ensuciar `window` con globales.
+     *
+     *  NO es `async` a propósito: la espera se APUNTA en el libro nada más
+     *  arrancar y se le enlaza su propia promesa, para que el runner pueda
+     *  saber al cerrar el guion si sigue en vuelo (#261, hallazgo 1 de QA). El
+     *  reloj y el mensaje son los de siempre; lo único nuevo es que la espera
+     *  deja rastro desde que empieza, no solo cuando expira. */
+    waitFor(desc, probeFn, timeoutMs = 30_000, arg = undefined) {
+      const id = esperas.abre(desc, timeoutMs, sitioDeLlamada(new Error().stack));
+      const posada = (async () => {
+        const t0 = Date.now();
+        let last;
+        // Cuántas veces se llegó a MIRAR, y cuántas de ellas fue la sonda la
+        // que falló: sin esto, una sonda rota (`window.__nefan.noExiste`) es
+        // indistinguible de una condición que no se cumple, y un negativo
+        // deliberado la afirmaría como éxito (hallazgo 3 de QA).
+        let muestras = 0;
+        let rotos = 0;
+        // `primera` garantiza UN sondeo aunque `timeoutMs` sea 0: si no, el
+        // último valor sería `undefined` y tampoco habría mirado nadie.
+        for (let primera = true; primera || Date.now() - t0 < timeoutMs; primera = false) {
+          last = await page.evaluate(probeFn, arg).catch((e) => ({ __err: String(e) }));
+          muestras++;
+          if (last && last.__err) rotos++;
+          if (last && !last.__err) {
+            esperas.cumple(id);
+            return last;
+          }
+          await new Promise((r) => setTimeout(r, 150));
+        }
+        // La expiración es un HECHO y queda en el libro con su reloj y su
+        // sitio. Que la excepción llegue o no a alguien ya no decide si se
+        // midió — eso lo decide quién la RESUELVA.
+        esperas.expira(id);
+        throw new EsperaExpirada(
+          `timeout esperando: ${desc} (último valor: ${JSON.stringify(last)})`,
+          id,
+          last,
+          { muestras, rotos },
+        );
+      })();
+      esperas.enlaza(id, posada);
+      return posada;
     },
   };
 }

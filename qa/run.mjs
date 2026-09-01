@@ -63,7 +63,13 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
 import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } from "./lib/veredictos.mjs";
 import { ctxDeSonda } from "./lib/sonda.mjs";
-import { esperaExpiradaEn, fallosDeEsperasPendientes } from "./lib/esperas.mjs";
+import {
+  esperaExpiradaEn,
+  fallosDeEsperasEnVuelo,
+  fallosDeEsperasPendientes,
+  huboSondeo,
+  quejaDelMotivo,
+} from "./lib/esperas.mjs";
 import { spawn } from "node:child_process";
 import {
   readdirSync,
@@ -79,6 +85,18 @@ import {
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+/** Cuánto se le da a una espera que el guion dejó EN VUELO para que se pose
+ *  antes de leer el libro (#261, hallazgo 1 de QA).
+ *
+ *  Hace falta un tope y no un `await` a secas: una espera suelta puede llevar
+ *  240 s de cortafuegos, y el runner no puede quedarse ahí. Lo que no se posa
+ *  en este margen es un fallo por sí mismo —nadie la esperó, así que no
+ *  decidió nada—, así que el tope no perdona: solo acota lo que se espera.
+ *  Con el árbol de hoy no se gasta ni un ms: ningún guion deja esperas
+ *  sueltas, y el drenaje solo corre cuando hay algo abierto. */
+const DRENAJE_DE_ESPERAS_MS = 5_000;
+
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
@@ -726,10 +744,11 @@ function makeCtx(page, name) {
      *  termina limpio, ⊘ con los motivos (exit 2, PEOR que el rojo); si arrastra
      *  fallos, se queda ROJO — un ⊘ es una declaración, no una amnistía. */
     sinMedirBloque(motivo) {
-      if (typeof motivo !== "string" || motivo.trim() === "") {
+      const queja = quejaDelMotivo(motivo);
+      if (queja) {
         throw new Error(
           `${name}: ctx.sinMedirBloque exige el MOTIVO por el que este bloque no se pudo medir ` +
-            `(una frase), y llegó ${JSON.stringify(motivo)}.`,
+            `—una frase que diga QUÉ faltó—, y el que llegó ${queja}.`,
         );
       }
       ctx.bloquesSinMedir.push(motivo);
@@ -755,6 +774,7 @@ function makeCtx(page, name) {
       const { ms = 30_000, arg = undefined, tecla = undefined, aserto = undefined } = opciones;
       let ocurrio = false;
       let ultimo;
+      let sondeo = { muestras: 0, rotos: 0 };
       try {
         ultimo = tecla
           ? await ctx.holdUntil(tecla, desc, probeFn, ms, arg)
@@ -765,13 +785,33 @@ function makeCtx(page, name) {
         if (!exp) throw err;
         ctx.esperas.resuelve(exp.esperaId, `afirmada por expectEspera: ${desc}`);
         ultimo = exp.ultimo;
+        sondeo = exp.sondeo ?? sondeo;
       }
-      ctx.expect(
-        aserto ?? `${debeOcurrir ? "ocurre" : "NO ocurre"}: ${desc}`,
-        ocurrio === debeOcurrir,
-        `${ocurrio ? "ocurrió" : `no ocurrió en ${ms} ms`} · último valor ${JSON.stringify(ultimo)}`,
-      );
-      return { ocurrio, ultimo };
+      // «No ocurrió» y «no llegué a mirar» NO son lo mismo, y sin esto eran
+      // indistinguibles: `waitFor` enmascara los errores de la página en
+      // `{__err}` y sigue sondeando, así que una sonda ROTA —un campo
+      // renombrado dentro del hook— hacía que un negativo deliberado saliera
+      // ✔ sin haber mirado nada (hallazgo 3 de QA). Para AFIRMAR una
+      // expiración hay que haberla sondeado bien al menos una vez.
+      const frase = aserto ?? `${debeOcurrir ? "ocurre" : "NO ocurre"}: ${desc}`;
+      const detalle =
+        `${ocurrio ? "ocurrió" : `no ocurrió en ${ms} ms`} · ` +
+        `${sondeo.muestras} sondeo(s), ${sondeo.rotos} con la sonda rota · ` +
+        `último valor ${JSON.stringify(ultimo)}`;
+      if (!ocurrio && !huboSondeo(sondeo)) {
+        ctx.expect(
+          frase,
+          false,
+          `NO SE MIDIÓ: la sonda no llegó a evaluarse bien ni una vez, así que esta expiración ` +
+            `no dice si la condición se cumple — ${detalle}`,
+        );
+        return { ocurrio, ultimo, midio: false };
+      }
+      ctx.expect(frase, ocurrio === debeOcurrir, detalle);
+      // Un negativo que sale ✔ tiene que poder auditarse: si no se imprime lo
+      // que sondeó, «el timeout es el éxito» es una afirmación sin cuentas.
+      if (!debeOcurrir && !ocurrio) ctx.log(`↳ ${detalle}`);
+      return { ocurrio, ultimo, midio: true };
     },
 
     expect(desc, cond, detalle = "") {
@@ -998,12 +1038,45 @@ async function main() {
     // Las tres bocas que la resuelven —propagar, `expectEspera`, `absorbe`—
     // están en `qa/lib/esperas.mjs` con el porqué de las legítimas.
     //
+    // ANTES DE LEER EL LIBRO hay que dejar que se posen las esperas que el
+    // guion arrancó y no esperó. Era la cuarta boca (hallazgo 1 de QA): la
+    // lectura era síncrona al volver el guion, así que un `void ctx.waitFor(…)`
+    // —o la hermana perdedora de un `Promise.all`— expiraba un tick más tarde,
+    // cuando ya no la contaba nadie, y el guion salía VERDE. Con el árbol de
+    // hoy esto no cuesta nada: no hay ni una espera suelta, así que `enVuelo`
+    // viene vacío y el drenaje no llega a correr.
+    const enVuelo = ctx.esperas.enVuelo();
+    if (enVuelo.length) {
+      console.log(
+        `    ⧗ ${enVuelo.length} espera(s) seguían en vuelo al terminar el guion: ` +
+          `hasta ${DRENAJE_DE_ESPERAS_MS} ms para que se posen`,
+      );
+      let alarma;
+      await Promise.race([
+        Promise.all(enVuelo.map((e) => e.posada ?? Promise.resolve())),
+        new Promise((r) => {
+          alarma = setTimeout(r, DRENAJE_DE_ESPERAS_MS);
+        }),
+      ]);
+      clearTimeout(alarma);
+    }
+
     // Si el guion DECLARÓ que no midió, las pendientes se imprimen como
     // detalle de su ⊘ en vez de como fallos: el ⊘ es exit 2, PEOR que el rojo,
     // así que declarar no es una vía de escape. Si no declaró, son fallos y el
     // guion sale ROJO — porque un ⊘ exige un motivo escrito y el runner no
     // puede inventárselo por el guion.
-    const esperasPendientes = fallosDeEsperasPendientes(ctx.esperas);
+    //
+    // OJO al leer un ⊘ así: el runner NO sabe de qué bloque salió cada espera,
+    // así que un `sinMedirBloque` cualquiera se lleva a su ⊘ TODAS las
+    // pendientes, tengan que ver con él o no (hallazgo 6 de QA). El veredicto
+    // es correcto —exit 2, ni verde ni amnistía—, pero el motivo impreso puede
+    // hablar de otro bloque: por eso las pendientes se imprimen enteras, con su
+    // sitio, y no resumidas en el motivo.
+    const esperasPendientes = [
+      ...fallosDeEsperasPendientes(ctx.esperas),
+      ...fallosDeEsperasEnVuelo(ctx.esperas),
+    ];
     for (const f of esperasPendientes) {
       if (declaro) {
         console.log(`    ⊘ ${f}`);
