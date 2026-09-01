@@ -416,23 +416,35 @@ dotenv_get() {
     sed -n "s/^$1=//p" "$PROJECT_DIR/.env" | head -1 | tr -d '"'"'"'\r'
 }
 
+# El veredicto de sprite-forge lo redacta nefan-core (`veredictoDeForge`), no
+# este script: es una DECISIÓN sobre un contrato (`SpriteCatalogSchema`) y aquí
+# no se puede probar sin arrancar el servicio de verdad. Este preflight AVISA y
+# nunca falla (decisión del usuario, 2026-09-01): sprite-forge es opcional y
+# vive en otro repo, y desde que su `/skins` se niega con 503 antes de pagar ya
+# no se puede gastar por error. Por eso las dos llamadas acaban en `return 0`.
+# cwd `nefan-core` y `npx tsx`, como start_bridge: desde otro directorio npx
+# resolvería un tsx GLOBAL que no ve las dependencias del paquete.
+salud_sprite_forge() {
+    ( cd "$PROJECT_DIR/nefan-core" && npx tsx scripts/salud-sprite-forge.ts "$@" ) \
+        || echo "⚠️  el preflight de sprite-forge falló al ejecutarse (su error, arriba)"
+}
+
 start_sprite_forge() {
     # Vive en OTRO repositorio: lo usa más de un proyecto y ne-fan es un
     # consumidor suyo, no su dueño. Si no está clonado se dice y se sigue —
     # el resto del stack funciona, solo que sin personajes vestidos.
     if [[ ! -d "$SPRITE_FORGE_DIR" ]]; then
-        echo "⚠️  sprite-forge no está en $SPRITE_FORGE_DIR"
-        echo "    (clónalo o define NEFAN_SPRITE_FORGE_DIR; sin él los NPC salen en maniquí)"
+        salud_sprite_forge --sin-repo "$SPRITE_FORGE_DIR"
         return 0
     fi
     require_port_free "$PORT_FORGE" "sprite-forge" || return 1
     (
         cd "$PROJECT_DIR" || exit 1
-        # El worker de repintado es Python y necesita ESTE venv (fastapi,
-        # uvicorn, rembg). Sin activarlo, sprite-forge sirve hojas base pero
-        # `skin.enabled=false` y todos los NPC salen en maniquí — con el stack
-        # diciendo ✅. Los otros tres subshells de este fichero ya lo activan;
-        # que este no lo hiciera fue el fallo.
+        # El worker de repintado es Python y corre con ESTE venv, así que ESTE
+        # venv tiene que traer `python/requirements.txt` de sprite-forge entero
+        # (fastapi, uvicorn, Pillow, httpx y rembg). Si le falta algo, el
+        # servicio sirve hojas base y publica `skin.enabled:false` con el
+        # motivo — y el preflight de abajo lo lee y lo dice.
         # shellcheck disable=SC1091
         source .venv/bin/activate
         # La clave de imagen: ne-fan la llama MESHY_API_KEY en .env y el
@@ -443,12 +455,24 @@ start_sprite_forge() {
         export SPRITE_FORGE_PYTHON="$PROJECT_DIR/.venv/bin/python"
         cd "$SPRITE_FORGE_DIR" || exit 1
         # Los assets de personaje los pone quien despliega: aquí, los de ne-fan.
+        # Y también el SET y la CACHÉ (#369-R10): el vocabulario de anims es de
+        # ne-fan —quick/heavy/medium/defensive/precise son sus cinco tipos de
+        # ataque— y los GB de PNG que salen de renderizarlas tienen que caer
+        # dentro del árbol que ne-fan gestiona, no en la caché de un repo
+        # hermano que ningún prune de este proyecto mira. Mover la caché NO
+        # repaga arte: `base_key` no lleva ni la ruta ni el nombre del set, y
+        # las hojas base son deterministas y gratis (~9 s cada una).
         exec node bin/sprite-forge.mjs serve \
-            --assets "$PROJECT_DIR/assets/characters" --port "$PORT_FORGE"
+            --assets "$PROJECT_DIR/assets/characters" --port "$PORT_FORGE" \
+            --set "$PROJECT_DIR/nefan-core/data/sprite-set.json" \
+            --cache "$PROJECT_DIR/nefan-core/cache/sprite_base_sheets"
     ) >"$LOG_DIR/nefan-sprite-forge.log" 2>&1 &
     track_started $! "$PORT_FORGE"
-    wait_for_http_health "http://127.0.0.1:$PORT_FORGE/catalog" 90 "sprite-forge" || return 1
-    echo "✅ sprite-forge :$PORT_FORGE  (log: $LOG_DIR/nefan-sprite-forge.log)"
+    # No basta con que /catalog conteste 200: contesta 200 con el repintado
+    # APAGADO, que es el ✅ mentiroso de #367.
+    salud_sprite_forge --url "http://127.0.0.1:$PORT_FORGE/catalog" --espera 90
+    echo "   sprite-forge :$PORT_FORGE  (log: $LOG_DIR/nefan-sprite-forge.log)"
+    return 0
 }
 
 start_narrative_mcp() {

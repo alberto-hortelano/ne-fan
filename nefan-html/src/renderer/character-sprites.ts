@@ -82,6 +82,22 @@ interface SkinState {
   queued: Set<string>;
 }
 
+/** Cuántos PERSONAJES distintos tienen que fallar antes de apagar los skins de
+ *  la sesión entera.
+ *
+ *  El cortacircuitos no desaparece (#236): sigue siendo el único fusible
+ *  contra una tormenta de peticiones que fallan todas —y, contra un
+ *  sprite-forge sin actualizar, contra pagarlas todas—. Lo que cambia es el
+ *  radio: apagaba a la PRIMERA, así que un 500 de un solo personaje devolvía
+ *  al jugador el mundo de maniquíes idénticos que #173 vino a arreglar, sin
+ *  salida salvo recargar. Tres personajes distintos fallando ya no es mala
+ *  suerte: es el backend. Uno, sí puede serlo.
+ *
+ *  Se cuentan PERSONAJES y no fallos: un mismo personaje puede fallar en
+ *  varias anims (`modelFor` encola las de combate perezosamente) y eso sigue
+ *  siendo una sola evidencia sobre el estado del backend. */
+export const UMBRAL_APAGADO_DE_SESION = 3;
+
 export class CharacterSpriteManager {
   /** `${skinnedModel}/${anim}` cuyos frames están generados Y decodificados —
    *  solo entonces sustituyen a la base (evita el parpadeo SPRITE_PENDING). */
@@ -138,11 +154,17 @@ export class CharacterSpriteManager {
    *  AUTO_SKIN_ANIMS al spawnear; el resto lo encola modelFor bajo demanda.
    *  Idempotente por prompt (dos NPCs con la misma descripción comparten
    *  skin). No-op con ai_skin=false o prompt vacío. */
-  /** Cortacircuitos de sesión: el PRIMER fallo de backend (red o 5xx)
-   *  desactiva la generación de skins para toda la sesión con un único
-   *  mensaje — sin él, cada NPC × animación repetía el mismo error (tormenta
-   *  de 502 en consola con Meshy caído o sin créditos). */
+  /** Cortacircuitos de sesión: se dispara cuando `UMBRAL_APAGADO_DE_SESION`
+   *  personajes DISTINTOS han fallado con un error de backend (red o 5xx).
+   *  Sin él, cada NPC × animación repetiría el mismo error (tormenta de 502
+   *  con Meshy caído o sin créditos) y, contra un servicio que cobra antes de
+   *  fallar, cada repetición sería dinero. */
   private skinsDisabled = false;
+
+  /** Los personajes (por `skinnedModel`) que ya fallaron con error de backend.
+   *  Es lo que cuenta contra el umbral, y por eso es un Set y no un contador:
+   *  el mismo personaje fallando en tres anims es UNA evidencia, no tres. */
+  private personajesFallidos = new Set<string>();
 
   /** Decisión de la sesión (no un fallo): el modo de render "vector" apaga
    *  los skins IA — todos los personajes se dibujan con la base y_bot, sin
@@ -157,11 +179,18 @@ export class CharacterSpriteManager {
     this.allowed = allowed;
   }
 
-  /** Rearma el cortacircuitos de fallos de backend. Se llama cuando el
-   *  usuario reactiva los personajes IA desde el menú dev — pide reintentar;
-   *  si el backend sigue caído, el primer fallo lo vuelve a disparar. */
-  resetFailureBreaker(): void {
+  /** Rearma el cortacircuitos de fallos de backend: borra el flag Y la cuenta
+   *  de personajes fallidos (dejar la cuenta puesta haría que el siguiente
+   *  fallo apagara la sesión otra vez, y «rearmar» no significa eso).
+   *
+   *  Se llama al ENTRAR o REANUDAR una sesión y cuando el usuario reactiva los
+   *  personajes IA desde el menú dev. Lo primero es nuevo: hasta #236 el único
+   *  llamante era el OFF→ON del menú dev, así que una sesión que se dejaba a
+   *  medias con el backend caído arrastraba el cortacircuitos a la siguiente,
+   *  ya con el backend arriba, y no había forma de saberlo desde el juego. */
+  rearmarCortacircuitos(): void {
     this.skinsDisabled = false;
+    this.personajesFallidos.clear();
   }
 
   /** Estado de un skin por prompt, para el menú dev. "ready" = la anim idle
@@ -192,11 +221,11 @@ export class CharacterSpriteManager {
       // global vino de este mismo tipo de error) y re-encolar las auto-anims.
       existing.failed = false;
       existing.queued.clear();
-      this.skinsDisabled = false;
+      this.rearmarCortacircuitos();
       for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, existing, anim);
       return;
     }
-    if (opts.force) this.skinsDisabled = false;
+    if (opts.force) this.rearmarCortacircuitos();
     const state: SkinState = { prompt, role: opts.role, failed: false, queued: new Set() };
     this.skins.set(skinnedModel, state);
     for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, state, anim);
@@ -232,25 +261,31 @@ export class CharacterSpriteManager {
         await Promise.all(sheet.frames.flat().map((img) => img.decode()));
         this.readySkins.add(`${skinnedModel}/${anim}`);
       } catch (err) {
-        // Meshy/ai_server caído o sin API key: la entidad se queda con la
-        // base y_bot. Una entrada por skin; el flag corta lo ya encolado y
-        // bloquea futuros lazy de este prompt (sin bucles de reintento).
+        // Meshy/ai_server caído o sin API key: la entidad se queda con la base
+        // y_bot y no se reintenta (sin bucles). El fallo marca el PERSONAJE, no
+        // la sesión: los demás siguen pidiendo y recibiendo su skin.
         state.failed = true;
+        // UNA entrada por fallo, SIEMPRE. Antes esto era un if/else cuya rama
+        // muda —un 5xx con el flag de sesión ya puesto— no escribía nada; la
+        // tapaba el corte de la cola de arriba, y quitar el flag de sesión la
+        // habría convertido en el camino normal.
+        errors.push(
+          "sprite",
+          `skin IA cancelada en "${anim}" para "${state.prompt.slice(0, 40)}" — se mantiene la base y_bot`,
+          err,
+        );
         const status = (err as { status?: number }).status;
         const backendDown = status === undefined || status >= 500;
-        if (backendDown && !this.skinsDisabled) {
-          this.skinsDisabled = true;
-          errors.push(
-            "sprite",
-            `skins IA desactivados para la sesión (los personajes usan la base y_bot). Motivo: ${(err as Error).message}`,
-          );
-        } else if (!backendDown) {
-          errors.push(
-            "sprite",
-            `skin IA cancelada en "${anim}" para "${state.prompt.slice(0, 40)}" — se mantiene la base y_bot`,
-            err,
-          );
-        }
+        if (!backendDown) return;
+        this.personajesFallidos.add(skinnedModel);
+        if (this.skinsDisabled || this.personajesFallidos.size < UMBRAL_APAGADO_DE_SESION) return;
+        this.skinsDisabled = true;
+        errors.push(
+          "sprite",
+          `skins IA desactivados para la sesión: ${this.personajesFallidos.size} personajes ` +
+            `distintos han fallado con error de backend (umbral ${UMBRAL_APAGADO_DE_SESION}). ` +
+            `Los personajes usan la base y_bot. Último motivo: ${(err as Error).message}`,
+        );
       }
     });
   }
