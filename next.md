@@ -57,7 +57,7 @@ Auditoría original en `2d4f8ca` (estado, errores, modularidad, dead code). Las 
 
 ## 7. Arquitectura objetivo: estado extensible por plugins declarativos
 
-> **Estado 2026-06-23 (5ª pasada)**: **F1–F8 completas** (roadmap §7 cerrado). F1–F4 en `plugins/f1-f4`; F5 en `plugins/f5-plugin-register` (`registerRuntimePlugin` + endpoints `/plugins`, tools MCP `plugin_register`/`plugin_list`, manifest embebido en el save); F6 (`serializeForLlm()` proyecta `derived_views`, tool `plugin_inspect` + `GET /plugins/{id}/inspect`); F7 (migración de slice en resume vía `migrate[v]`); **F8** (plugin `commerce` v1 shipped real en `data/games/tavern_intro/plugins/commerce.json`, en `plugins/f8-commerce`). 268 tests en verde + smokes reales (registro por HTTP, `inspect` por HTTP, migración v1→v2 vía loader de FS, y commerce end-to-end: génesis → `market_open` → `trade_offered`→`trade_completed` → save/resume). La evolución en **runtime** cerró el 2026-08-23 (#164): `plugin_register` migra y sustituye por el mismo camino que el resume.
+> **Estado 2026-06-23 (5ª pasada)**: **F1–F8 completas** (roadmap §7 cerrado). F1–F4 en `plugins/f1-f4`; F5 en `plugins/f5-plugin-register` (`registerRuntimePlugin` + endpoints `/plugins`, tools MCP `plugin_register`/`plugin_list`, manifest embebido en el save); F6 (`serializeForLlm()` proyecta `derived_views`, tool `plugin_inspect` + `GET /plugins/{id}/inspect`); F7 (migración de slice en resume vía `migrate[v]`); **F8** (plugin `commerce` v1 shipped real en `data/games/toledo_1200/plugins/commerce.json`, en `plugins/f8-commerce`). 268 tests en verde + smokes reales (registro por HTTP, `inspect` por HTTP, migración v1→v2 vía loader de FS, y commerce end-to-end: génesis → `market_open` → `trade_offered`→`trade_completed` → save/resume). La evolución en **runtime** cerró el 2026-08-23 (#164): `plugin_register` migra y sustituye por el mismo camino que el resume.
 >
 > **Amendments de la implementación** (donde la realidad afinó esta spec):
 > - El manifest gana `writes: string[]`: §7.5 dice "sólo escribe en su slice" pero el ejemplo commerce de §7.7 hace `dec player.gold`. Los efectos escriben en `slice.*` libremente y en paths externos sólo si están declarados en `writes` (validación estática + runtime), con whitelist dura adicional en el dispatcher (`player.gold|health|level|inventory`, `entities[i].data.*`).
@@ -270,7 +270,7 @@ Materialización:
 4. Otros plugins suscritos a `trade_completed` (ej. `reputation` v1) lo procesan en el tick siguiente.
 5. `serializeForLlm()` añade `plugins.commerce.active_markets` al contexto; la IA puede pedir detalle con `plugin_inspect`.
 
-**Patrón shipped (F8, implementado).** El commerce real vive en `nefan-core/data/games/tavern_intro/plugins/commerce.json` y el bridge lo carga/activa en `start_session` como cualquier plugin de developer. Cómo lo conduce el motor narrativo, en orden:
+**Patrón shipped (F8, implementado).** El commerce real vive en `nefan-core/data/games/toledo_1200/plugins/commerce.json` y el bridge lo carga/activa en `start_session` como cualquier plugin de developer. Cómo lo conduce el motor narrativo, en orden:
 
 1. **Abrir mercado** (cuando aparece un mercader, p.ej. tras un `spawn_entity`): emitir `{type: "plugin_event", plugin_id: "<id de commerce>", event_type: "market_open", payload: {market_id, name, stock: {item: cantidad, …}}}`. El plugin crea `slice.markets[market_id]`. (Si el mercader ya existía al iniciar sesión con `data.role = "merchant"`, las `projections` lo siembran solo en génesis y este paso sobra.)
 2. **Descubrir qué hay**: `plugin_list` da el `plugin_id` y los `events_consumed` (`market_open`, `trade_offered`); el bloque `plugins[]` del contexto (F6) muestra `active_markets`; `plugin_inspect(id, "active_markets")` o sin vista el slice completo.
@@ -292,7 +292,7 @@ Cada fase es ejecutable de forma independiente y deja el código en estado coher
 | **F5 — Tool MCP `plugin_register`** ✅ | Validación, fixtures dry-run, persistencia en `NarrativeState`. Plugin emergido sobrevive `save/load`. | M |
 | **F6 — `serializeForLlm` + `plugin_inspect`** ✅ | `derived_views` proyectados al contexto (bloque `plugins[]`). Tool `plugin_inspect(plugin_id, view?)` + endpoint `GET /plugins/{id}/inspect` para detalle (vista o slice completo). | S |
 | **F7 — Evolución + `migrate`** ✅ | Detección v→v+1 en resume Y en `plugin_register` (#164, misma cadena en `src/plugins/migrate.ts`), fixtures de la nueva versión validadas al cargar, ejecución de `migrate[v]` slice-only para convertir el slice (idempotente). | M |
-| **F8 — Plugin `commerce` real** ✅ | Manifest commerce v1 shipped (`data/games/tavern_intro/plugins/commerce.json`), probado end-to-end (génesis + `market_open` runtime + `trade_offered`→`trade_completed` + save/resume). Patrón documentado abajo. | M |
+| **F8 — Plugin `commerce` real** ✅ | Manifest commerce v1 shipped (`data/games/toledo_1200/plugins/commerce.json`), probado end-to-end (génesis + `market_open` runtime + `trade_offered`→`trade_completed` + save/resume). Patrón documentado abajo. | M |
 
 F1+F2 son inversión sin retorno visible para el usuario; a partir de F3 ya hay valor de developer; F5 desbloquea la IA.
 

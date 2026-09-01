@@ -222,11 +222,11 @@ Categorias: item (amarillo), prop (gris), building (marron), creature (rojo), te
 
 ### Errores y logging (fail-loud uniforme)
 
-Nunca `catch { /* ignore */ }`, nunca `return null` silencioso, nunca `return []` cuando hubo un error. En `nefan-core` y en los endpoints Python **esto ya lo sujeta el checker de fronteras**; lo que sigue es el canal de cada capa, que ninguna herramienta puede elegir por ti:
+Nunca `catch { /* ignore */ }`, nunca `return null` silencioso, nunca `return []` cuando hubo un error. El checker de fronteras sujeta solo UNA PARTE: el `catch` vacío en `nefan-core` y el literal `return {"error"...}` con 200 en Python. El `catch { warn; return null }` y el `return []` tras un error NO los ve ninguna herramienta — son convención, y es donde más se cuela. Lo que sigue es el canal de cada capa, que ninguna herramienta puede elegir por ti:
 
 - **TS/HTML**: `errors.push("source", msg, err)` (`nefan-html/src/ui/error-log.ts`) en cualquier `catch` recuperable. Lanzar de nuevo si el caller necesita decidir. Devolver `Result<T,E>` (discriminated union `{ok:true,...} | {ok:false,error}`) cuando "vacío" y "error" son indistinguibles si se colapsan.
 - **TS/bridge**: cualquier `.catch()` sobre una promise que el cliente está esperando debe broadcastear `narrative_status: error` además de loguear — patrón en `nefan-core/bridge/handlers/dialogue.ts` (`dialogue_choice`).
-- **Python/FastAPI**: `raise HTTPException(status_code=..., detail=...)`, **nunca** `return {"error": ...}` con 200 OK. Pydantic `BaseModel` por endpoint para que campos ausentes salgan como 422 estructurado. Modelo de referencia: `/report_player_choice` en `ai_server/main.py`.
+- **Python/FastAPI**: `raise HTTPException(status_code=..., detail=...)`, **nunca** `return {"error": ...}` con 200 OK. Pydantic `BaseModel` por endpoint para que campos ausentes salgan como 422 estructurado. Modelo de referencia: `/report_player_choice` en `ai_server/routers/narrative.py`.
 
 ## Equipo de agentes (roles y coordinación)
 
@@ -266,7 +266,7 @@ Dos vueltas sin converger = el requisito está mal escrito; parar y consultar al
 
 - **Modo de juego canónico: open-world generativo.** El motor narrativo crea una escena base con `generate_scene` y va añadiendo entidades en runtime sin recargar (NPCs, edificios, objetos) según las elecciones del jugador.
 - **Un solo formato de escena.** El motor produce Format D; el bridge lo normaliza a world scene con `formatDToWorld` (nefan-core) antes de emitir, y el cliente pinta esa forma. El cliente no proyecta celdas ni vuelve a normalizar: si lo hiciera habría dos caminos hasta la world scene y divergirían.
-- **NarrativeState como save canónico, con el bridge como único escritor** — todo el playthrough vive en `saves/{session_id}/state.json` (multi-slot, schema versionado). Con bridge conectado, la sesión es la del bridge (plugins incluidos): el mirror GD se hidrata en memoria (`bridge_authoritative`) y su `save()` está bloqueado; pos/HP viajan VIVOS en cada save (el sim se ata al NarrativeState con `bindPlayerRuntime` al sembrarlo, y `save()` tira de él antes de serializar) y el resume restaura posición, HP y entities. Offline, el mirror GD guarda en local. El runtime volátil (player.pos, hp vivo, enemies) vive en `GameStore` y se escribe solo vía `dispatch()`.
+- **NarrativeState como save canónico, con el bridge como único escritor** — todo el playthrough vive en `saves/{session_id}/state.json` (multi-slot, schema versionado). Pos/HP viajan VIVOS en cada save: el sim se ata al NarrativeState con `bindPlayerRuntime` al sembrarlo (solo `bridge/world-claim.ts` pone y quita esa atadura; hay candado), `save()` tira de él antes de serializar, y el resume restaura posición, HP y entities. El cliente no escribe el save nunca: recibe el estado por el wire (`sessionDataForClient`). El runtime volátil (player.pos, hp vivo, enemies) vive en `GameStore` y se escribe solo vía `dispatch()`.
 - **Asset library indexada** — el asset-store (:8767, `cache/manifest.sqlite3` desde F2; `manifest.json` queda congelado como rollback) traquea todo lo generado con su prompt. Claude lo recibe en cada request narrativa y puede reusar por hash.
 - **StreamDiffusion descartado** — abandonado, incompatible con CUDA 12.4. Usar diffusers nativo + TAESD + LCM-LoRA.
 - **Rendering IA frame-by-frame archivado** — 1.3 FPS en RTX 3060, flickering. Enfoque actual: escenas estáticas con texturas IA y entidades dinámicas.

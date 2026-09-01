@@ -17,10 +17,10 @@ Lee después `CLAUDE.md` (raíz) y el código real de las zonas implicadas. Proh
 
 - **Lógica en `nefan-core`, el cliente solo pinta.** Si una regla de juego acaba en `nefan-html/`, el plan está mal.
 - **Un solo formato de escena**: el motor produce Format D, el bridge normaliza con `formatDToWorld`, el cliente pinta world scene. La normalización no se duplica en el cliente.
-- **Contratos tipados en `nefan-core/src/contracts/`** — fuente de verdad del wire entre procesos, incluidos los endpoints Python.
-- **El bridge es el único escritor del save** (`saves/{id}/state.json`); el mirror GD es de solo lectura cuando `bridge_authoritative`.
-- **Fail-loud por capa** (push_error / errors.push / narrative_status:error / HTTPException). Nada de catch silencioso ni `return null` de conveniencia.
-- **El motor narrativo no dibuja**: solo planes declarativos (`ground`+`volumes`, bloque `stage`). Nada de SVG. Nunca recortar imagen IA con siluetas declaradas.
+- **Contratos tipados en `nefan-core/src/contracts/`** — fuente de verdad del wire entre procesos, incluidos los endpoints Python. (No confundir con `src/contract/`: ahí viven el zod del I/O del modelo y el checker de fronteras.)
+- **El bridge es el único escritor del save** (`saves/{id}/state.json`); el sim se ata con `bindPlayerRuntime` solo desde `bridge/world-claim.ts` (candado ejecutable).
+- **Fail-loud por capa** (errors.push / narrative_status:error / HTTPException). Nada de catch silencioso ni `return null` de conveniencia.
+- **El motor narrativo no dibuja**: solo planes declarativos (`ground`+`volumes` del tile). Nada de SVG. Nunca recortar imagen IA con siluetas declaradas.
 - Antes de proponer un módulo intercambiable nuevo, comprueba si encaja en el **systems registry** (`src/systems/registry.ts`) o en un **plugin declarativo** (`src/plugins/`) — son mecanismos distintos: hot loop vs manifest JSON.
 - Los prompts del motor narrativo son **documentación de herramientas, no recetas de uso**.
 

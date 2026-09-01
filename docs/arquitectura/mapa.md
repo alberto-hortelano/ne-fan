@@ -8,20 +8,31 @@ Qué vive en cada carpeta y qué proceso la usa. Consúltalo cuando no sepas dó
 
 ## Arquitectura
 
-Plan de división en microservicios: `docs/microservices/README.md` (servicios, fronteras, fases F0–F6). Los contratos tipados de TODOS los servicios (endpoints WS/HTTP, incluidos los del ai_server Python) viven en `nefan-core/src/contracts/` — fuente de verdad del wire entre procesos.
+Plan de división en microservicios: `docs/microservices/README.md` (servicios, fronteras, fases F0–F6). Hay DOS árboles de contrato con nombre parecido y rol distinto: `nefan-core/src/contracts/` — fuente de verdad del wire entre procesos (endpoints WS/HTTP, incluidos los del ai_server Python) — y `nefan-core/src/contract/` — el I/O del modelo (zod de `model-io/`) y el checker de fronteras (`arch/check.ts`).
 
 ```
 nefan-core/               TypeScript — logica de juego (bridge + cliente web)
   src/
     combat/                Resolver, state machines, manager, enemy AI
     store/                 GameStore (dispatch/subscribe/snapshot)
-    animation/             AnimationController, transitions, state config
-    simulation/            GameSimulation tick loop
+    simulation/            GameSimulation tick loop + NpcBehaviorSystem
     protocol/              Mensajes frontend ↔ logica
     plugins/               Plugins declarativos: tipos zod, hash, DSL, loader, dispatcher
-    dev/                   Initial scene cache (bootstrap replay)
+    contract/              model-io/ (zod del I/O del modelo) + arch/ (checker de fronteras)
+    contracts/             Wire tipado entre procesos (asset-store, remote-gen, State API…)
+    games/                 Loaders de juegos y estilos (game.json, style.json, snapshots)
+    narrative/             NarrativeState (save canónico), serialización para el LLM
+    scene/                 Format D → world scene, builders greybox, validador
+    session/               Facetas de sesión que consume el cliente
+    systems/               Registry genérico de implementaciones de hot loop
+    world-map/             Mapa multinivel, lugares, triggers
   bridge/
     ws-server.ts           WebSocket bridge para el cliente web (:9877)
+    router.ts + handlers/  Un handler por dominio (session, dialogue, tile, scene…)
+    state-http/            State API (:9878): rutas REST del motor narrativo
+    context.ts             Estado del proceso bridge (sim, plugins activos, colas)
+    wire-scene.ts          ÚNICA salida de escena normalizada del bridge
+    world-claim.ts         Único dueño de la atadura sim ↔ NarrativeState
   services/
     asset-store/           Microservicio S6 (:8767): blobs content-addressed +
                            manifest SQLite (F2) + styles binarios; ai_server
@@ -31,9 +42,10 @@ nefan-core/               TypeScript — logica de juego (bridge + cliente web)
     scenes/                Escenas Format D de ejemplo/fixture (robledo_tile, zorder_test) — tiles del selector del cliente
     games/{id}/            Juego = mundo: game.json + world.md + plugins/ (user_* = subidos)
     plugins/               Plugins shipped comunes a TODOS los juegos (economy); un plugins/ local con mismo name lo pisa
-    styles/{id}/           Estilo: style.json + imágenes de referencia por categoría
-  test/                    85 ficheros de test (combat, simulation, escena, narrativa,
-                           plugins, contrato del modelo, fronteras arquitectónicas)
+    styles/{id}/           Estilo: style.json + refs libres en tres carpetas de rol
+                           (surfaces/ faces/ characters/; ver data/styles/README.md)
+  test/                    Tests de combat, simulation, escena, narrativa, plugins,
+                           contrato del modelo y fronteras arquitectónicas
 
 nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
   src/
