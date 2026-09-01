@@ -15,6 +15,7 @@ import {
   combatForHostileRole,
   HOSTILE_HEALTH,
   HOSTILE_WEAPON,
+  HOSTILE_AGGRO_M,
 } from "../src/combat/hostiles.js";
 import { AMBIENT_ROLES } from "../src/simulation/npc-roles.js";
 
@@ -57,6 +58,30 @@ describe("combatForHostileRole — hostilidad declarada, números derivados", ()
     assert.ok(
       (p.preferred_distance as number) < (p.combat_range as number),
       `se planta a ${p.preferred_distance} m con alcance ${p.combat_range}: nunca llegaría a pegar`,
+    );
+
+    // Y los NÚMEROS, escritos a mano — la corrida de mutación del 2026-08-31
+    // (`e67f53c`) dejó vivos los tres literales de esta línea porque lo de
+    // arriba solo mide RELACIONES, y una relación la cumplen también los
+    // valores de otro preset. Que `aggressive` degrade a `neutral` no rompe
+    // `preferred_distance < combat_range` (2,5 < 4,0 sigue siendo cierto):
+    // simplemente el enemigo se planta un metro más lejos y ya no cierra.
+    assert.equal(
+      p.preferred_distance,
+      1.5,
+      "el hostil es `aggressive`: se planta a 1,5 m. Con `neutral` (2,5 m) vuelve a mirar de lejos",
+    );
+    // El radio de aggro viaja en el override, y un override que se pierda no
+    // rompe nada visible: el bloque sigue completo y el cliente lo registra
+    // igual — el enemigo simplemente no se entera de que llegaste.
+    assert.equal(
+      p.aggro_radius,
+      HOSTILE_AGGRO_M,
+      "sin `aggro_radius` en el bloque, el enemigo nunca decide perseguir",
+    );
+    assert.ok(
+      (p.aggro_radius as number) > (p.preferred_distance as number),
+      "detectar tiene que pasar ANTES que pegar, o el aggro no sirve de nada",
     );
   });
 
