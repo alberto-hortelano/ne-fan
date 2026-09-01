@@ -1,0 +1,126 @@
+{
+  "id": "nefan",
+  "description": "El set de assets de personaje de ne-fan: qué FBX es cada animación del juego. Vive AQUÍ y no en sprite-forge (#369-R10) porque el vocabulario de anims es de ne-fan, no del servicio: idle/walk/run son su locomoción y quick/heavy/medium/defensive/precise son EXACTAMENTE los cinco tipos de ataque de data/combat_config.json. Los FBX no están en este repo (la licencia de Mixamo prohíbe redistribuirlos): esto solo dice dónde mirar dentro de assets/characters/ y cómo se llama cada cosa.",
+  "models": {
+    "scan": "mixamo/*/character.fbx",
+    "id_from": "dir"
+  },
+  "animations": [
+    {
+      "id": "idle",
+      "file": "anims/sword_and_shield/sword and shield idle.fbx",
+      "keyframes": 8,
+      "play_fps": 2.2
+    },
+    {
+      "id": "walk",
+      "file": "anims/sword_and_shield/sword and shield walk.fbx",
+      "locomotion": true,
+      "keyframes": 4,
+      "play_fps": 3.6
+    },
+    {
+      "id": "run",
+      "file": "anims/sword_and_shield/sword and shield run.fbx",
+      "locomotion": true,
+      "keyframes": 4,
+      "play_fps": 6.0
+    },
+    {
+      "id": "quick",
+      "file": "anims/sword_and_shield/sword and shield attack (4).fbx",
+      "keyframes": 3,
+      "play_fps": 4.0
+    },
+    {
+      "id": "heavy",
+      "file": "anims/sword_and_shield/sword and shield slash.fbx",
+      "keyframes": 8,
+      "play_fps": 6.0
+    },
+    {
+      "id": "medium",
+      "file": "anims/sword_and_shield/sword and shield slash (5).fbx",
+      "keyframes": 4,
+      "play_fps": 3.5
+    },
+    {
+      "id": "defensive",
+      "file": "anims/sword_and_shield/sword and shield block.fbx",
+      "keyframes": 2,
+      "play_fps": 3.5
+    },
+    {
+      "id": "precise",
+      "file": "anims/sword_and_shield/sword and shield slash (3).fbx",
+      "keyframes": 6,
+      "play_fps": 4.5
+    },
+    {
+      "id": "hit_react",
+      "file": "anims/sword_and_shield/sword and shield impact.fbx",
+      "keyframes": 3,
+      "play_fps": 4.0
+    },
+    {
+      "id": "death",
+      "file": "anims/sword_and_shield/sword and shield death.fbx",
+      "keyframes": 8,
+      "play_fps": 4.0
+    },
+    {
+      "id": "talking",
+      "file": "mixamo/ambient_anims/standing_talking.fbx"
+    },
+    {
+      "id": "drinking",
+      "file": "mixamo/ambient_anims/drinking.fbx"
+    },
+    {
+      "id": "wounded_idle",
+      "file": "mixamo/ambient_anims/wounded_idle.fbx"
+    },
+    {
+      "id": "sitting_idle",
+      "file": "mixamo/ambient_anims/sitting_idle.fbx"
+    },
+    {
+      "id": "waving",
+      "file": "mixamo/ambient_anims/waving.fbx"
+    },
+    {
+      "id": "praying",
+      "file": "mixamo/ambient_anims/praying_kneel.fbx"
+    }
+  ],
+  "_notas": [
+    "COPIA FIEL de sprite-forge/sets/mixamo.json en todo lo que puede cambiar un",
+    "píxel o un euro: los `file` son los mismos, y por tanto el `anim_hash` de la",
+    "clave de caché también (CAMPOS_CLAVE en sprite-forge/src/base-key.mjs: ni el",
+    "nombre del set ni la ruta del fichero entran). Cambiar un `file` de aquí",
+    "REPAGA todo el arte de personaje ya generado con esa anim.",
+    "",
+    "Las diez primeras son el set base que el cliente exige completo",
+    "(HOJAS_BASE_ANIMS en src/contracts/sprite-census.ts). test/sprite-set.test.ts",
+    "canda que estén las diez, para que esta copia no derive del original en",
+    "silencio: sin ellas el título dejaría de ofrecer el modelo y el juego pediría",
+    "hojas que el servicio no sabe renderizar.",
+    "",
+    "Y EL RIESGO INVERSO, que es el que no tiene candado y sí tiene dueño: desde",
+    "que start.sh pasa --set, ne-fan ya NO usa `sets/mixamo.json` del repo hermano,",
+    "así que un arreglo allí —un clip cambiado porque desliza los pies al congelar",
+    "Hips, un `keyframes` mal puesto— NO llega solo. La igualdad entre las dos",
+    "copias no la puede candar `npm test`: el otro fichero vive en otro repositorio",
+    "y puede no estar clonado. Lo que hay es una nota en el README de sprite-forge",
+    "pidiendo que un cambio de set se diga en el commit. Al traerse uno, se compara",
+    "`file` a `file`: es lo único que mueve el `anim_hash`.",
+    "",
+    "Los ataques son los clips SIN pasos (attack (4), slash, slash (5), slash (3)):",
+    "las variantes que llevan pasos deslizan los pies al congelar Hips.",
+    "",
+    "'locomotion' marca los clips cuyo root motion horneado saca al personaje de la",
+    "celda del sprite; en ellos se congela Hips en XZ preservando Y. Es propiedad",
+    "del CLIP, no de su nombre: un set en otro idioma llamaría 'andar' a walk y la",
+    "lógica no puede depender de eso."
+  ]
+}

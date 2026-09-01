@@ -129,6 +129,19 @@ async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise
 
   await baseSheetsReady;
 
+  // Entrar o reanudar una partida rearma el cortacircuitos de skins (#236):
+  // es el único momento en que se sabe que empieza una sesión, y hasta ahora
+  // el cortacircuitos solo se rearmaba desde el OFF→ON del menú dev.
+  //
+  // `characterSprites` es un singleton de MÓDULO, así que su mapa de skins
+  // sobrevive a volver al título y reanudar: sin esta línea, una partida
+  // abandonada con el backend caído se llevaba el apagón a la siguiente —ya
+  // con el backend arriba— y sus vecinos de siempre seguían en maniquí toda
+  // la vida de la pestaña. Rearmar OLVIDA a los que fallaron (ver
+  // `rearmarCortacircuitos`), no los re-pide: los que aparezcan en ESTA
+  // partida los pedirá quien los spawnee, y los que no, no se pagan.
+  characterSprites.rearmarCortacircuitos();
+
   let base = BASE_MODEL;
   if (modelId && modelId !== BASE_MODEL) {
     try {
@@ -417,7 +430,7 @@ function applyRenderModes({ renderMode, characterMode }: {
   // Personajes OFF→ON: los requestSkin que no-opearon con el toggle apagado
   // no dejaron rastro — re-pedir los skins de todo lo ya spawneado.
   if (!prevCharOn && characterSprites.skinsAllowed) {
-    characterSprites.resetFailureBreaker();
+    characterSprites.rearmarCortacircuitos();
     reRequestAllSkins();
   }
   devMenu?.refresh();

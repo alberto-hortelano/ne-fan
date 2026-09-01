@@ -178,22 +178,39 @@ port_owner() { owner_de_pids "$(pids_del_puerto "$1")"; }
 # ser "lo que arrancó este proceso de bash" —quien pulsa `k` casi nunca ha
 # arrancado nada en esa terminal, así que STARTED_PORTS está vacío y el
 # huérfano propio sobrevive— pero tampoco puede ser "todo el catálogo", que es
-# el arma que esta tanda multiplica. El criterio es el WORKTREE: el cwd del
-# proceso, que para un servicio de este árbol cuelga siempre de $PROJECT_DIR.
+# el arma que esta tanda multiplica. El criterio es el WORKTREE: que el proceso
+# se pueda DEMOSTRAR de este árbol, por su cwd o por sus argumentos.
 #
 # Un /proc/<pid>/cwd ILEGIBLE cuenta como AJENO, nunca al revés: si no se puede
 # demostrar que es mío, no se mata. El falso negativo cuesta un servicio que
 # hay que parar a mano; el falso positivo cuesta el trabajo de otra persona.
 #
-# Cae fuera a propósito **sprite-forge**: vive en otro repositorio y su cwd es
-# el suyo, así que `k` no lo toca aunque lo haya arrancado este launcher (sí lo
-# hace el `trap EXIT`, que va por PID). Es lo correcto: lo comparten varios
-# proyectos de esta máquina.
+# El cwd no es la única prueba, y creerlo dejaba un servicio vivo: **sprite-forge**
+# corre desde el repo hermano por diseño (`cd "$SPRITE_FORGE_DIR"`), así que la
+# tecla `k` lo declaraba AJENO y no lo tocaba —aunque lo hubiera arrancado este
+# mismo launcher— dejando :$PORT_FORGE ocupado, con la clave de imagen en su
+# entorno, y el arranque siguiente negándose por puerto ocupado. Este comentario
+# decía que eso era «lo correcto porque lo comparten varios proyectos»: confundía
+# el REPOSITORIO, que sí se comparte, con el PROCESO, que no. El que escucha en
+# ese puerto sirve los assets, el set y la caché de ESTE árbol.
+#
+# Así que se admite una segunda prueba, del mismo rango que el cwd: que los
+# ARGUMENTOS del proceso apunten dentro de $PROJECT_DIR. Un sprite-forge
+# arrancado con `--assets .../ne-fan/assets/characters --set .../ne-fan/...`
+# está sirviendo a este worktree, lo diga su cwd o no. La barra final es
+# obligatoria: sin ella, `/home/al/code/ne-fan` casaría con el worktree de otro
+# agente llamado `/home/al/code/ne-fan-loquesea`.
+#
+# Un /proc/<pid> ILEGIBLE sigue contando como AJENO, nunca al revés: si no se
+# puede demostrar que es mío, no se mata. El falso negativo cuesta un servicio
+# que hay que parar a mano; el falso positivo cuesta el trabajo de otra persona.
 worktree_de_pids() {
-    local pid cwd
+    local pid cwd args
     for pid in $1; do
         cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || continue
         [[ "$cwd" == "$PROJECT_DIR" || "$cwd" == "$PROJECT_DIR"/* ]] && return 0
+        args=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || continue
+        [[ "$args" == *"$PROJECT_DIR/"* ]] && return 0
     done
     return 1
 }
@@ -416,23 +433,40 @@ dotenv_get() {
     sed -n "s/^$1=//p" "$PROJECT_DIR/.env" | head -1 | tr -d '"'"'"'\r'
 }
 
+# El veredicto de sprite-forge lo redacta nefan-core (`veredictoDeForge`), no
+# este script: es una DECISIÓN sobre un contrato (`SpriteCatalogSchema`) y aquí
+# no se puede probar sin arrancar el servicio de verdad. Este preflight AVISA y
+# nunca falla (decisión del usuario, 2026-09-01): sprite-forge es opcional y
+# vive en otro repo, y desde que su `/skins` se niega con 503 antes de pagar ya
+# no se puede gastar por error. Por eso las dos llamadas acaban en `return 0`.
+# cwd `nefan-core` y `npx tsx`, como start_bridge: desde otro directorio npx
+# resolvería un tsx GLOBAL que no ve las dependencias del paquete.
+salud_sprite_forge() {
+    ( cd "$PROJECT_DIR/nefan-core" && npx tsx scripts/salud-sprite-forge.ts "$@" ) \
+        || echo "⚠️  el preflight de sprite-forge falló al ejecutarse (su error, arriba)"
+}
+
 start_sprite_forge() {
+    # El intérprete con el que corre el worker de repintado. Se nombra UNA vez
+    # y se usa dos: para arrancarlo y para que el preflight pueda decir qué
+    # teclear si le falta algo. Escribirlo dos veces es la forma de que un día
+    # el aviso mande arreglar un venv que no es el que se está usando.
+    local forge_python="$PROJECT_DIR/.venv/bin/python"
     # Vive en OTRO repositorio: lo usa más de un proyecto y ne-fan es un
     # consumidor suyo, no su dueño. Si no está clonado se dice y se sigue —
     # el resto del stack funciona, solo que sin personajes vestidos.
     if [[ ! -d "$SPRITE_FORGE_DIR" ]]; then
-        echo "⚠️  sprite-forge no está en $SPRITE_FORGE_DIR"
-        echo "    (clónalo o define NEFAN_SPRITE_FORGE_DIR; sin él los NPC salen en maniquí)"
+        salud_sprite_forge --sin-repo "$SPRITE_FORGE_DIR"
         return 0
     fi
     require_port_free "$PORT_FORGE" "sprite-forge" || return 1
     (
         cd "$PROJECT_DIR" || exit 1
-        # El worker de repintado es Python y necesita ESTE venv (fastapi,
-        # uvicorn, rembg). Sin activarlo, sprite-forge sirve hojas base pero
-        # `skin.enabled=false` y todos los NPC salen en maniquí — con el stack
-        # diciendo ✅. Los otros tres subshells de este fichero ya lo activan;
-        # que este no lo hiciera fue el fallo.
+        # El worker de repintado es Python y corre con ESTE venv, así que ESTE
+        # venv tiene que traer `python/requirements.txt` de sprite-forge entero
+        # (fastapi, uvicorn, Pillow, httpx y rembg). Si le falta algo, el
+        # servicio sirve hojas base y publica `skin.enabled:false` con el
+        # motivo — y el preflight de abajo lo lee y lo dice.
         # shellcheck disable=SC1091
         source .venv/bin/activate
         # La clave de imagen: ne-fan la llama MESHY_API_KEY en .env y el
@@ -440,15 +474,32 @@ start_sprite_forge() {
         # Se traduce aquí, que es la frontera. Si no está, el servicio sirve
         # hojas base y lo DICE en /catalog (no finge repintar).
         export SPRITE_FORGE_IMAGE_KEY="${SPRITE_FORGE_IMAGE_KEY:-$(dotenv_get MESHY_API_KEY)}"
-        export SPRITE_FORGE_PYTHON="$PROJECT_DIR/.venv/bin/python"
+        export SPRITE_FORGE_PYTHON="$forge_python"
         cd "$SPRITE_FORGE_DIR" || exit 1
         # Los assets de personaje los pone quien despliega: aquí, los de ne-fan.
+        # Y también el SET y la CACHÉ (#369-R10): el vocabulario de anims es de
+        # ne-fan —quick/heavy/medium/defensive/precise son sus cinco tipos de
+        # ataque— y los GB de PNG que salen de renderizarlas tienen que caer
+        # dentro del árbol que ne-fan gestiona, no en la caché de un repo
+        # hermano que ningún prune de este proyecto mira. Mover la caché NO
+        # repaga arte: `base_key` no lleva ni la ruta ni el nombre del set, y
+        # las hojas base son deterministas y gratis (~9 s cada una).
         exec node bin/sprite-forge.mjs serve \
-            --assets "$PROJECT_DIR/assets/characters" --port "$PORT_FORGE"
+            --assets "$PROJECT_DIR/assets/characters" --port "$PORT_FORGE" \
+            --set "$PROJECT_DIR/nefan-core/data/sprite-set.json" \
+            --cache "$PROJECT_DIR/nefan-core/cache/sprite_base_sheets"
     ) >"$LOG_DIR/nefan-sprite-forge.log" 2>&1 &
     track_started $! "$PORT_FORGE"
-    wait_for_http_health "http://127.0.0.1:$PORT_FORGE/catalog" 90 "sprite-forge" || return 1
-    echo "✅ sprite-forge :$PORT_FORGE  (log: $LOG_DIR/nefan-sprite-forge.log)"
+    # No basta con que /catalog conteste 200: contesta 200 con el repintado
+    # APAGADO, que es el ✅ mentiroso de #367.
+    # Las tres rutas del remedio las sabe ESTE script, no el repo hermano: el
+    # motivo que publica el servicio habla de SU árbol (`pip install -r
+    # python/requirements.txt`), y ese fichero no existe aquí mientras que el
+    # venv que hay que arreglar sí es el nuestro.
+    salud_sprite_forge --url "http://127.0.0.1:$PORT_FORGE/catalog" --espera 90 \
+        --repo "$SPRITE_FORGE_DIR" --python "$forge_python" --env "$PROJECT_DIR/.env"
+    echo "   sprite-forge :$PORT_FORGE  (log: $LOG_DIR/nefan-sprite-forge.log)"
+    return 0
 }
 
 start_narrative_mcp() {

@@ -30,14 +30,22 @@
  *
  *  GOTCHA del bench, y por eso la parte 1 se mide al final y con la fixture:
  *  el motor falso solo tiene hoja `idle` del modelo de skin y responde 500 a
- *  `walk`, lo que dispara el cortacircuitos del cliente (`skinsDisabled`) y
- *  deja la sesión SIN pedir un skin más. Con la sesión quemada no se puede
- *  observar qué ref pediría el guardia, así que esa mitad se mide en una
+ *  `walk`, y ese fallo marca al PERSONAJE (`state.failed`), que deja de pedir
+ *  nada más. Con los vecinos quemados uno a uno no se puede observar qué ref
+ *  pediría el guardia, así que esa mitad se mide en una
  *  pestaña recién cargada sobre `robledo_tile` —la fixture commiteada que
  *  trae un guardia y cuatro paisanos— leyendo el LIBRO DE SKINS del propio
  *  juego (`__nefan.skins`), que es lo que la partida pidió, se le conteste o
  *  no. Misma función y mismo camino de datos que en sesión
  *  (Format D → `formatDToWorld` → cliente).
+ *
+ *  Lo que este comentario decía hasta #236 —«dispara el cortacircuitos del
+ *  cliente y deja la SESIÓN sin pedir un skin más»— ya no es cierto: el
+ *  fusible de sesión necesita tres personajes distintos caídos
+ *  (`UMBRAL_APAGADO_DE_SESION`), y en `robledo_tile` los hay, pero en el tile
+ *  del bench no. El aserto no cambia; la razón por la que está escrito así,
+ *  sí — y es justo la prosa que impediría que alguien lo «arreglara» de
+ *  vuelta.
  */
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
