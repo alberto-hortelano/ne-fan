@@ -19,7 +19,6 @@ import {
 
 export class KeyboardInputProvider implements InputProvider {
   state: InputState = createInputState();
-  tileProposalActive = false;
   onAttackTypeChanged?: (typeId: string) => void;
 
   /** Mapeo tecla ("1".."9") → id de ataque, reconstruido por sesión desde el
@@ -76,11 +75,11 @@ export class KeyboardInputProvider implements InputProvider {
         // N = rechazar la propuesta de tile (sin propuesta, N es de
         // DevToolsInput: descubrir props).
         case "n":
-          if (!e.repeat && this.tileProposalActive) this.tileDeclineRequested = true;
+          if (!e.repeat && this.deps.propuestaDeTileAbierta()) this.tileDeclineRequested = true;
           break;
         // Y = aceptar la propuesta de generar el tile vecino.
         case "y":
-          if (!e.repeat && this.tileProposalActive) this.tileConfirmRequested = true;
+          if (!e.repeat && this.deps.propuestaDeTileAbierta()) this.tileConfirmRequested = true;
           break;
         // R = respawn (el game loop lo aplica solo con el player muerto).
         case "r": if (!e.repeat) this.respawnRequested = true; break;
@@ -172,11 +171,11 @@ export class KeyboardInputProvider implements InputProvider {
   }
 
   queueTileConfirm(): void {
-    if (this.tileProposalActive) this.tileConfirmRequested = true;
+    if (this.deps.propuestaDeTileAbierta()) this.tileConfirmRequested = true;
   }
 
   queueTileDecline(): void {
-    if (this.tileProposalActive) this.tileDeclineRequested = true;
+    if (this.deps.propuestaDeTileAbierta()) this.tileDeclineRequested = true;
   }
 
   consumeLookDelta(): LookDelta {

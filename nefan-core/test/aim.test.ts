@@ -8,7 +8,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { pickAimTarget } from "../src/scene/aim.js";
+import { pickAimTarget, pickNearestTarget } from "../src/scene/aim.js";
 
 /** El ojo del jugador: 1,6 m sobre el suelo (EYE_M de la vista fps). */
 const OJO = { x: 0, y: 1.6, z: 0 };
@@ -162,5 +162,67 @@ describe("puntería en primera persona", () => {
     // encima, está a 13 m del ojo: fuera.
     const alto = [{ id: "campanario", pos: { x: 0, y: 6.6, z: -12 } }];
     assert.equal(pickAimTarget(OJO, { x: 0, y: 5, z: -12 }, alto, OPTS), null);
+  });
+});
+
+/** La hermana de proximidad: con qué puede TRATAR el jugador aquí.
+ *
+ *  Vive en el mismo fichero que `pickAimTarget` porque son dos criterios de «a
+ *  qué me refiero» y separados es como divergen; y los asertos de aquí son los
+ *  que fijan su diferencia, que es deliberada: mirar es angular, interactuar es
+ *  de proximidad. */
+describe("pickNearestTarget · con qué se puede tratar aquí", () => {
+  const ALCANCE = { maxDistanceM: 2.5 };
+  /** Los pies del jugador: la proximidad se mide en el suelo, no desde el ojo. */
+  const ORIGEN = { x: 0, y: 0, z: 0 };
+
+  it("gana el más cercano dentro del alcance", () => {
+    const npcs = [
+      { id: "lejos", pos: { x: 0, y: 0, z: -2 } },
+      { id: "cerca", pos: { x: 0, y: 0, z: -1 } },
+    ];
+    assert.equal(pickNearestTarget(ORIGEN, npcs, ALCANCE)?.id, "cerca");
+  });
+
+  it("fuera del alcance no hay nadie con quien tratar", () => {
+    const npcs = [{ id: "lejos", pos: { x: 0, y: 0, z: -3 } }];
+    assert.equal(pickNearestTarget(ORIGEN, npcs, ALCANCE), null);
+  });
+
+  it("el borde exacto del alcance SÍ cuenta", () => {
+    const npcs = [{ id: "justo", pos: { x: 0, y: 0, z: -2.5 } }];
+    assert.equal(pickNearestTarget(ORIGEN, npcs, ALCANCE)?.id, "justo");
+  });
+
+  it("NO es angular: se habla con quien tienes al lado sin girarse", () => {
+    // La diferencia con `pickAimTarget`, escrita como aserto: el mismo NPC a la
+    // espalda no se MIRA y sí se puede saludar. Girarse para hablar sería
+    // fricción sin ganancia.
+    const detras = [{ id: "vecino", pos: { x: 0, y: 1.6, z: 1 } }];
+    assert.equal(pickAimTarget(ORIGEN, NORTE, detras, OPTS), null);
+    assert.equal(pickNearestTarget(ORIGEN, detras, ALCANCE)?.id, "vecino");
+  });
+
+  it("se mide en el SUELO: subirse a un cajón no te aleja", () => {
+    const encima = [{ id: "en_el_cajon", pos: { x: 0, y: 40, z: -1 } }];
+    assert.equal(pickNearestTarget(ORIGEN, encima, ALCANCE)?.id, "en_el_cajon");
+  });
+
+  it("con la lista vacía no hay nada, y no es un error", () => {
+    assert.equal(pickNearestTarget(ORIGEN, [], ALCANCE), null);
+  });
+
+  it("a igualdad exacta gana el PRIMERO: el rótulo no puede parpadear", () => {
+    const gemelos = [
+      { id: "a", pos: { x: 1, y: 0, z: 0 } },
+      { id: "b", pos: { x: -1, y: 0, z: 0 } },
+    ];
+    assert.equal(pickNearestTarget(ORIGEN, gemelos, ALCANCE)?.id, "a");
+    assert.equal(pickNearestTarget(ORIGEN, [...gemelos].reverse(), ALCANCE)?.id, "b");
+  });
+
+  it("devuelve la distancia, que es lo que decide si se ofrece la acción", () => {
+    const npcs = [{ id: "x", pos: { x: 3, y: 0, z: 4 } }];
+    assert.equal(pickNearestTarget(ORIGEN, npcs, { maxDistanceM: 10 })?.distanceM, 5);
   });
 });

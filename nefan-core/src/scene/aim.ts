@@ -132,3 +132,34 @@ export function pickAimTarget(
   }
   return best;
 }
+
+/** ¿Con qué puede TRATAR el jugador aquí? — el más cercano dentro del alcance.
+ *
+ *  Es la otra pregunta de esta pareja y vive aquí a propósito, pegada a
+ *  `pickAimTarget`: son dos criterios de «a qué me refiero» y separados es como
+ *  divergen. La diferencia es deliberada y no un descuido —
+ *
+ *   · MIRAR es angular: en primera persona lo que tienes delante no es lo más
+ *     cercano, así que la mirilla la decide la desviación respecto a la cámara;
+ *   · INTERACTUAR es de proximidad: pulsas E y hablas con quien tienes al lado,
+ *     lo estés mirando o no. Girarse para saludar sería fricción sin ganancia.
+ *
+ *  Y se mide en el SUELO (XZ), no en las tres dimensiones: un tabernero subido
+ *  a un cajón sigue estando al lado. La altura solo cuenta para apuntar.
+ *
+ *  A igualdad exacta gana el PRIMERO de la lista, que es el orden en que el
+ *  mundo los tiene: sin ese desempate, dos NPCs a la misma distancia harían
+ *  parpadear el rótulo de la acción según cómo cayera la comparación. */
+export function pickNearestTarget(
+  origin: Punto3,
+  candidates: readonly { id: string; pos: Punto3 }[],
+  opts: { maxDistanceM: number },
+): { id: string; distanceM: number } | null {
+  let best: { id: string; distanceM: number } | null = null;
+  for (const c of candidates) {
+    const d = Math.hypot(c.pos.x - origin.x, c.pos.z - origin.z);
+    if (d > opts.maxDistanceM) continue;
+    if (best === null || d < best.distanceM) best = { id: c.id, distanceM: d };
+  }
+  return best;
+}

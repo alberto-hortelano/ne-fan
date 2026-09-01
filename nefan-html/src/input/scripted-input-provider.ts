@@ -20,7 +20,6 @@ type HoldableKey =
 
 export class ScriptedInputProvider implements InputProvider {
   state: InputState = createInputState();
-  tileProposalActive = false;
   onAttackTypeChanged?: (typeId: string) => void;
 
   private attackIds: readonly string[] = DEFAULT_ATTACK_IDS;
