@@ -18,14 +18,17 @@ Lo que se prueba, en el orden en que duele que se rompa:
    que el cliente reintente cuando debería corregir.
 4. **El flujo entero**, contra el sprite-forge de mentira.
 
+El sprite-forge de mentira ya no contesta respuestas inventadas: sirve las
+fixtures CANÓNICAS que emite el servicio real (`npm run fixtures-contrato` en
+su repo, commiteadas en `nefan-core/data/contract/fixtures/sprite-forge/`).
+Era la cuarta copia del contrato, y la única que nadie comparaba con nada.
+
 Requieren fastapi (TestClient); sin ella se saltan.
 
 Ejecutar con: python3 -m unittest discover -s ai_server/tests -v
 """
 
-import base64
 import importlib.util
-import io
 import json
 import sys
 import tempfile
@@ -33,20 +36,20 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _HAS_FASTAPI = importlib.util.find_spec("fastapi") is not None
-_HAS_PIL = importlib.util.find_spec("PIL") is not None
+
+_FIXTURES = Path(__file__).resolve().parents[2] / "nefan-core" / "data" / "contract" / "fixtures" / "sprite-forge"
 
 
-def _png(color=(10, 20, 30)) -> str:
-    """Un PNG diminuto en base64, que es lo que devuelve el servicio."""
-    from PIL import Image
-
-    buf = io.BytesIO()
-    Image.new("RGB", (4, 4), color).save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
+def _fixture(nombre: str) -> dict:
+    """Una respuesta REAL del servicio (fixture canónica). Si falta, LANZA: un
+    doble que se inventa la respuesta es justo la copia sin contrastar que este
+    directorio vino a matar."""
+    return json.loads((_FIXTURES / f"{nombre}.json").read_text())
 
 
 class ForgeFalso:
@@ -199,10 +202,29 @@ class IndiceDeBasesTest(unittest.TestCase):
         self.rg._apuntar_base("y_bot/walk/frontal_8", "b")
         self.assertEqual(len(self.rg._leer_bases()), 2)
 
+    def test_la_escritura_es_atomica_una_muerte_a_medias_no_trunca_el_indice(self):
+        # El índice existe para servir arte YA PAGADO con el servicio caído: un
+        # write_text directo que muriera a medias lo dejaba truncado (= vacío
+        # para _leer_bases) justo en ese escenario. Se escribe a un temporal y
+        # se hace os.replace: si morimos antes del replace, la versión previa
+        # queda intacta. PROBADO EN NEGATIVO: con el write_text de antes,
+        # os.replace no se llama, la escritura "triunfa" y este test se pone
+        # rojo (el índice cambió pese al fallo simulado).
+        self.rg._apuntar_base("y_bot/idle/frontal_8", "previa")
+        with mock.patch("routers.remote_generation.os.replace",
+                        side_effect=OSError("muerte simulada entre el temporal y el replace")):
+            with self.assertRaises(OSError):
+                self.rg._apuntar_base("y_bot/idle/frontal_8", "nueva")
+        self.assertEqual(self.rg._leer_bases(), {"y_bot/idle/frontal_8": "previa"})
+        # Y el temporal no queda tirado en el directorio.
+        restos = [p.name for p in self.rg._BASE_KEYS_INDEX.parent.iterdir()]
+        self.assertEqual(restos, ["_base_keys.json"])
 
-@unittest.skipUnless(_HAS_FASTAPI and _HAS_PIL, "fastapi/PIL no instalados")
+
+@unittest.skipUnless(_HAS_FASTAPI, "fastapi no instalado")
 class AdaptadorHttpTest(unittest.TestCase):
-    """El flujo entero contra un sprite-forge de mentira."""
+    """El flujo entero contra un sprite-forge de mentira que contesta las
+    respuestas CANÓNICAS del servicio real (las fixtures de contrato)."""
 
     def setUp(self):
         from fastapi import FastAPI
@@ -228,15 +250,13 @@ class AdaptadorHttpTest(unittest.TestCase):
         self._orig_packs = deps.style_packs
         deps.style_packs = None  # sin pack: el camino genérico
 
-        self.forge.respuestas["/sheets"] = {"sheets": [{"base_key": "BK1", "meta": {}}]}
-        self.forge.respuestas["/identity"] = {"image": _png((200, 30, 30)), "cost_usd": 0.24}
-        self.forge.respuestas["/skins"] = {
-            "meta": {"model": "y_bot", "anim": "walk", "angle": "frontal_8",
-                     "directions": 2, "frame_count": 2, "fps": 3.6, "duration": 0.55,
-                     "frame_width": 4, "frame_height": 4, "skin": {"cost_usd": 0.96}},
-            "frames": [[_png(), _png()], [_png(), _png()]],
-            "cost_usd": 0.96,
-        }
+        self.forge.respuestas["/sheets"] = _fixture("sheets")
+        self.forge.respuestas["/identity"] = _fixture("identity")
+        self.forge.respuestas["/skins"] = _fixture("skins")
+        # La identidad de la hoja base que declara la fixture: las aserciones
+        # cuelgan de ella, no de un "BK1" inventado.
+        self.base_key = self.forge.respuestas["/sheets"]["sheets"][0]["base_key"]
+        self.meta_vestido = self.forge.respuestas["/skins"]["meta"]
 
         app = FastAPI()
         app.include_router(rg.router)
@@ -254,7 +274,8 @@ class AdaptadorHttpTest(unittest.TestCase):
         self._tmp.cleanup()
 
     def _pedir(self, **extra):
-        cuerpo = {"model": "y_bot", "anim": "walk", "angle": "frontal_8", "prompt": "un herrero"}
+        cuerpo = {"model": "heroe", "anim": "walk", "angle": "frontal_8",
+                  "prompt": "un herrero de pelo cano"}
         cuerpo.update(extra)
         return self.client.post("/skin_sprite_sheet", json=cuerpo)
 
@@ -267,8 +288,8 @@ class AdaptadorHttpTest(unittest.TestCase):
             sorted(d),
             ["cached", "frame_urls", "generation_time_ms", "hash", "hero_key", "hero_url", "meta", "ok"],
         )
-        self.assertEqual(len(d["frame_urls"]), 2)
-        self.assertEqual(len(d["frame_urls"][0]), 2)
+        self.assertEqual(len(d["frame_urls"]), self.meta_vestido["directions"])
+        self.assertEqual(len(d["frame_urls"][0]), self.meta_vestido["frame_count"])
         self.assertTrue(d["frame_urls"][0][0].startswith("/cache/sprite_sheet/"))
         self.assertTrue(d["hero_url"].startswith("/cache/sprite_hero/"))
         self.assertFalse(d["cached"])
@@ -276,15 +297,20 @@ class AdaptadorHttpTest(unittest.TestCase):
     def test_escribe_los_frames_y_el_hero_en_disco(self):
         d = self._pedir().json()
         out = self.rg.SKINNED_SHEETS_DIR / d["hash"]
-        self.assertEqual(len(list(out.glob("*.png"))), 4)
+        esperados = self.meta_vestido["directions"] * self.meta_vestido["frame_count"]
+        self.assertEqual(len(list(out.glob("*.png"))), esperados)
         self.assertTrue((out / "meta.json").exists())
         self.assertTrue((self.rg.SKINNED_SHEETS_DIR / "heroes" / f"{d['hero_key']}.png").exists())
 
     def test_la_identidad_de_la_base_queda_escrita_en_el_meta(self):
-        # Para poder auditar de qué hoja base salió un sheet vestido.
+        # Para poder auditar de qué hoja base salió un sheet vestido. El meta
+        # en disco es EXACTAMENTE el de sprite-forge más la base_key inyectada.
         d = self._pedir().json()
         meta = json.loads((self.rg.SKINNED_SHEETS_DIR / d["hash"] / "meta.json").read_text())
-        self.assertEqual(meta["skin"]["base_key"], "BK1")
+        self.assertEqual(meta["skin"]["base_key"], self.base_key)
+        esperado = json.loads(json.dumps(self.meta_vestido))
+        esperado["skin"]["base_key"] = self.base_key
+        self.assertEqual(meta, esperado)
 
     def test_la_segunda_vez_sale_de_cache_y_NO_se_vuelve_a_pagar(self):
         primera = self._pedir().json()
@@ -304,18 +330,18 @@ class AdaptadorHttpTest(unittest.TestCase):
 
     def test_apunta_la_base_en_el_indice(self):
         self._pedir()
-        self.assertEqual(self.rg._leer_bases()["y_bot/walk/frontal_8"], "BK1")
+        self.assertEqual(self.rg._leer_bases()["heroe/walk/frontal_8"], self.base_key)
 
     # ── fail-loud ──────────────────────────────────────────────────────────
     def test_sin_angle_da_400(self):
         # El default era el de una vista retirada: una petición sin ángulo
         # cruzaba medio sistema para morir en un 404 sin explicación.
-        r = self.client.post("/skin_sprite_sheet", json={"model": "y_bot", "prompt": "x"})
+        r = self.client.post("/skin_sprite_sheet", json={"model": "heroe", "prompt": "x"})
         self.assertEqual(r.status_code, 400)
         self.assertIn("angle", r.json()["detail"])
 
     def test_sin_prompt_da_400(self):
-        r = self.client.post("/skin_sprite_sheet", json={"model": "y_bot", "angle": "frontal_8"})
+        r = self.client.post("/skin_sprite_sheet", json={"model": "heroe", "angle": "frontal_8"})
         self.assertEqual(r.status_code, 400)
 
     def test_un_4xx_del_servicio_sube_tal_cual(self):

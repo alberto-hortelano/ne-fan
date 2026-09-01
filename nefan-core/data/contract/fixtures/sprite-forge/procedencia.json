@@ -1,0 +1,6 @@
+{
+  "service": "sprite-forge",
+  "version": "0.1.0",
+  "comando": "npm run fixtures-contrato -- --out <dir>",
+  "nota": "Respuestas REALES del servicio sobre un árbol de assets sintético (test/helpers/fbx-sintetico.mjs), con el worker de repintado sustituido por uno de fixture. Deterministas: assets_root normalizado y fecha fija. No editar a mano: se regeneran con el comando de arriba."
+}

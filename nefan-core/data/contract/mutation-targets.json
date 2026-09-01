@@ -582,6 +582,17 @@
       ],
       "break": 100,
       "porque": "La verdad del desplegable de modelos del título (#216): qué es un set COMPLETO de hojas y qué modelos del censo lo cumplen. Módulo propio con batería de un fichero porque es el único test de core que lo importa — sus consumidores reales (el middleware del censo en vite.config.ts y el editor de personaje) viven en nefan-html, que no entra en la mutación de core; el guion 47 los mide desde fuera. Sus mutantes interesantes son exactamente la mentira que la tanda mató: un every→some en modelosCompletos vuelve a ofrecer modelos incompletos (probado en negativo el 2026-08-31: dos asertos rojos), y cambiar HOJAS_ANGLE o una anim del set hace que el censo valide hojas que el cliente no pide (o repague el arte de skin ya generado, porque el ángulo entra en su clave de caché). SUELO 100 MEDIDO, no a ojo: la corrida autorizada 33417840894 (2026-08-31, sobre `e67f53c`) dio 7 de 7 muertos, y `npm run mutacion -- local sprite-census` lo reproduce en 2 s. Un módulo de 7 mutantes con el 100% no admite suelo más bajo: cualquier número por debajo autorizaría a perder una comprobación que hoy existe."
+    },
+    {
+      "id": "contrato-sprite-forge",
+      "mutate": [
+        "src/contracts/sprite-forge.ts"
+      ],
+      "tests": [
+        "test/contract-sprite-forge.test.ts"
+      ],
+      "break": 0,
+      "porque": "El contrato observado del wire de sprite-forge (R15, 2026-09-01): los zod del meta de hojas y del catálogo, y skinImageCalls — el número de llamadas de imagen que se le enseña al usuario ANTES de gastar. Su batería es el test de fixtures canónicas (las emite el servicio real con `npm run fixtures-contrato` en su repo y van commiteadas en data/contract/fixtures/sprite-forge/): un mutante que relaje el schema (quitar el .strict(), aflojar el superRefine del null mudo) o que descuente una anim en skinImageCalls es exactamente la divergencia silenciosa que el contrato tuvo con `generated_at`. Módulo propio con batería de un fichero porque es el único test de core que lo importa; sus otros consumidores (style-apply/title-screen en nefan-html, el fake del bench en labs) no entran en la mutación de core."
     }
   ]
 }

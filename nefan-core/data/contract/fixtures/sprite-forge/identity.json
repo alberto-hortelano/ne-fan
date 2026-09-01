@@ -1,0 +1,10 @@
+{
+  "service": "sprite-forge",
+  "version": "0.1.0",
+  "base_key": "6be029d352212e1b",
+  "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  "ai_model": "gpt-image-2",
+  "api": "fixture",
+  "cost_usd": 0.24,
+  "generation_time_ms": 7
+}

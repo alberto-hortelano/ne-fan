@@ -1,0 +1,104 @@
+{
+  "service": "sprite-forge",
+  "version": "0.1.0",
+  "assets_root": "<assets-sinteticos>",
+  "set": "contrato",
+  "models": [
+    {
+      "id": "heroe",
+      "asset_hash": "44bd7ae60f478fae1061e11a7739f4b94d1daf917982d33b6fc8a01a63f89c21",
+      "bytes": 1,
+      "file": "modelos/heroe/character.fbx"
+    }
+  ],
+  "animations": [
+    {
+      "id": "idle",
+      "asset_hash": "f75fda15a04980056461950e524dc36746ce46cfe54c83f39d667e8c4e269c95",
+      "bytes": 411,
+      "duration_s": 2,
+      "frames_at_default_fps": 24,
+      "locomotion": false,
+      "keyframes": 8,
+      "play_fps": 2.2,
+      "calls_per_anim": 8,
+      "file": "clips/idle.fbx"
+    },
+    {
+      "id": "rota",
+      "asset_hash": "f75fda15a04980056461950e524dc36746ce46cfe54c83f39d667e8c4e269c95",
+      "bytes": 411,
+      "duration_s": 2,
+      "frames_at_default_fps": 24,
+      "locomotion": false,
+      "keyframes": null,
+      "play_fps": null,
+      "calls_per_anim": null,
+      "skin_plan_error": "\"rota\": keyframes debe ser > 0 (era 0)",
+      "file": "clips/idle.fbx"
+    },
+    {
+      "id": "run",
+      "asset_hash": "16c895ae59e72e0df3d23498077378438e35a972d38889bab0f7466501772274",
+      "bytes": 411,
+      "duration_s": 0.5,
+      "frames_at_default_fps": 6,
+      "locomotion": true,
+      "keyframes": 4,
+      "play_fps": 6,
+      "calls_per_anim": 4,
+      "file": "clips/run.fbx"
+    },
+    {
+      "id": "walk",
+      "asset_hash": "14c2d6e483549e22d5de47e2815595e1653a350334cc1751743a7cc3e383e58e",
+      "bytes": 411,
+      "duration_s": 1,
+      "frames_at_default_fps": 12,
+      "locomotion": true,
+      "keyframes": 4,
+      "play_fps": 3.6,
+      "calls_per_anim": 4,
+      "file": "clips/walk.fbx"
+    }
+  ],
+  "angles": [
+    {
+      "id": "frontal_8",
+      "directions": 8,
+      "pitch_deg": -8,
+      "distance_m": 4,
+      "ortho_m": 2.4,
+      "view": "front view, eye-level camera"
+    }
+  ],
+  "defaults": {
+    "fps": 12,
+    "width": 256,
+    "height": 256,
+    "directions": 8,
+    "angle": "frontal_8",
+    "light": 4.65,
+    "roughness": null
+  },
+  "limits": {
+    "max_sheets_per_request": 32,
+    "max_directions": 64,
+    "max_fps": 60,
+    "max_frame_px": 2048
+  },
+  "skin": {
+    "enabled": true,
+    "api": "fixture",
+    "ai_model": "gpt-image-2",
+    "ai_models": [
+      "gpt-image-2",
+      "nano-banana",
+      "nano-banana-2",
+      "nano-banana-pro"
+    ],
+    "cost_usd_per_call": 0.24,
+    "concurrency": 1
+  },
+  "warnings": []
+}

@@ -970,7 +970,7 @@ export class TitleScreen {
         (b, i) => `
           <label style="display:block;font-size:12px;color:#bbb;margin-bottom:3px">
             <input type="checkbox" data-block-idx="${i}" ${b.selected ? "checked" : ""} ${b.missing === 0 ? "disabled" : ""}>
-            ${escapeHtml(b.label)} — ${b.missing === 0 ? "en caché ($0)" : `${b.exact ? "" : "~"}$${b.estCostUsd.toFixed(2)}`}
+            ${escapeHtml(b.label)} — ${b.missing === 0 ? "en caché ($0)" : b.estCostUsd === null ? "coste no disponible" : `${b.exact ? "" : "~"}$${b.estCostUsd.toFixed(2)}`}
           </label>`,
       )
       .join("");
@@ -993,14 +993,17 @@ export class TitleScreen {
     const cancelBtn = el.querySelector("#ts-style-cancel") as HTMLButtonElement;
     const progressEl = el.querySelector("#ts-style-progress") as HTMLElement;
     const refreshTotal = (): void => {
-      const total = plan.blocks
-        .filter((b) => b.selected && b.missing > 0)
-        .reduce((acc, b) => acc + b.estCostUsd, 0);
-      const anything = plan.blocks.some((b) => b.selected && b.missing > 0);
+      const activos = plan.blocks.filter((b) => b.selected && b.missing > 0);
+      const total = activos.reduce((acc, b) => acc + (b.estCostUsd ?? 0), 0);
+      // Un bloque sin precio (el catálogo no pudo costearlo) no desaparece del
+      // total en silencio: el total lleva un «+ ?» y la causa está en las notas.
+      const sinPrecio = activos.some((b) => b.estCostUsd === null);
+      const anything = activos.length > 0;
+      const cifra = `~$${total.toFixed(2)}${sinPrecio ? " + ?" : ""}`;
       totalEl.textContent = anything
-        ? `Coste estimado: ~$${total.toFixed(2)} (los skins y páginas ya en caché no se repagan)`
+        ? `Coste estimado: ${cifra}${sinPrecio ? " — hay bloques con coste no disponible" : ""} (los skins y páginas ya en caché no se repagan)`
         : "Nada seleccionado que genere coste.";
-      runBtn.textContent = anything ? `Aplicar estilo (~$${total.toFixed(2)})` : "Registrar (sin coste)";
+      runBtn.textContent = anything ? `Aplicar estilo (${cifra})` : "Registrar (sin coste)";
     };
     for (const cb of el.querySelectorAll<HTMLInputElement>("input[data-block-idx]")) {
       cb.addEventListener("change", () => {

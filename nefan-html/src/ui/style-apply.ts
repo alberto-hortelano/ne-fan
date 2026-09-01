@@ -19,6 +19,13 @@ import type {
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import {
+  AUTO_SKIN_ANIMS,
+  SKIN_CALLS_FALLBACK,
+  SpriteCatalogSchema,
+  skinImageCalls,
+  type SpriteCatalog,
+} from "@nefan-core/src/contracts/sprite-forge.js";
+import {
   STYLE_APPLICATION_SCHEMA_VERSION,
   styleApplicationPinRef,
 } from "@nefan-core/src/games/style-application-schema.js";
@@ -42,41 +49,6 @@ const MAX_CELLS_PER_REQUEST = 64;
 const CELLS_PER_PAGE = 12;
 /** Coste aprox. por página de atlas (nano-banana-pro vía fal). */
 const ATLAS_PAGE_EST_USD = 0.15;
-const AUTO_SKIN_ANIMS = ["idle", "walk", "run"] as const;
-/** Llamadas de imagen por personaje si el catálogo no contesta: 1 hero + una
- *  por anim. Es un SUELO deliberadamente bajo y solo se usa cuando no se ha
- *  podido preguntar; el número bueno sale de `/sprite_catalog`.
- *
- *  Aquí vivía `1 + 8 + 4 + 4`, copiado a mano del planificador del servicio.
- *  Es el número que se le enseña al usuario ANTES de gastar, así que en cuanto
- *  alguien retocara un perfil de keyframes se quedaba mintiendo — y el
- *  planificador se ha ido a otro repo. */
-const SKIN_CALLS_FALLBACK = 1 + AUTO_SKIN_ANIMS.length;
-
-/** Llamadas de imagen por personaje, derivadas del catálogo del servicio:
- *  1 hero-shot + `calls_per_anim` de cada anim que se genera en automático.
- *
- *  Fail-loud suave a propósito: si el servicio no contesta se devuelve el suelo
- *  y se DICE en una nota, en vez de romper la pantalla de coste. No poder
- *  estimar no debe impedir jugar; enseñar un número inventado como si fuera
- *  exacto, sí. */
-export function skinImageCalls(catalog: SpriteCatalog | null): number {
-  if (!catalog?.animations) return SKIN_CALLS_FALLBACK;
-  let total = 1; // el hero-shot de identidad, una vez por personaje
-  for (const anim of AUTO_SKIN_ANIMS) {
-    const entry = catalog.animations.find((a) => a.id === anim);
-    if (typeof entry?.calls_per_anim !== "number") return SKIN_CALLS_FALLBACK;
-    total += entry.calls_per_anim;
-  }
-  return total;
-}
-
-/** Lo que se lee de `GET /sprite_catalog` (proxy de remote-gen al catálogo de
- *  sprite-forge). Solo la parte que se usa para estimar el coste. */
-export interface SpriteCatalog {
-  animations?: { id: string; calls_per_anim?: number | null }[];
-  skin?: { enabled?: boolean; cost_usd_per_call?: number | null; reason?: string };
-}
 /** Ángulo del set de sprites: la constante única del censo (nefan-core), la
  *  misma que usa el `worldAngle` de main.ts — eran dos literales atados por
  *  un «DEBE coincidir». El ángulo entra en la clave de caché del skin, así
@@ -88,7 +60,11 @@ export interface StyleApplyBlock {
   label: string;
   /** Items que faltan por generar (0 = todo en caché). */
   missing: number;
-  estCostUsd: number;
+  /** `null` = coste NO DISPONIBLE (el catálogo contestó pero no puede costear
+   *  y dijo por qué — la causa va en `notes`). Se enseña como «coste no
+   *  disponible» y decide el usuario: jamás una cifra optimista presentada
+   *  como real. */
+  estCostUsd: number | null;
   /** true = coste exacto del server; false = estimación (~). */
   exact: boolean;
   selected: boolean;
@@ -195,16 +171,40 @@ export class StyleApplyController {
     let catalog: SpriteCatalog | null = null;
     try {
       const catRes = await fetch(`${this.urls.remote}/sprite_catalog`);
-      if (catRes.ok) catalog = (await catRes.json()) as SpriteCatalog;
-      else notes.push(`No se pudo leer el catálogo de sprites (HTTP ${catRes.status}): el coste de los skins es una cota baja.`);
+      if (!catRes.ok) {
+        notes.push(`No se pudo leer el catálogo de sprites (HTTP ${catRes.status}): el coste de los skins es una cota baja.`);
+      } else {
+        // Se valida contra el contrato zod (validado a su vez contra las
+        // fixtures del servicio): un catálogo con otra forma es la misma
+        // situación que no tenerlo, y se dice.
+        const parsed = SpriteCatalogSchema.safeParse(await catRes.json());
+        if (parsed.success) catalog = parsed.data;
+        else notes.push(`El catálogo de sprites no cumple el contrato (${parsed.error.issues[0]?.message ?? "?"}): el coste de los skins es una cota baja.`);
+      }
     } catch (err) {
       notes.push(`No se pudo leer el catálogo de sprites (${(err as Error).message}): el coste de los skins es una cota baja.`);
     }
-    if (catalog?.skin && catalog.skin.enabled === false) {
-      notes.push(`El servicio de sprites no puede vestir personajes: ${catalog.skin.reason ?? "sin causa declarada"}.`);
+    if (catalog && !catalog.skin.enabled) {
+      notes.push(`El servicio de sprites no puede vestir personajes: ${catalog.skin.reason}.`);
     }
-    const callsPerSkin = skinImageCalls(catalog);
-    const costPerImage = catalog?.skin?.cost_usd_per_call ?? pack.cost_per_image_usd;
+    // Catálogo INALCANZABLE ⇒ el suelo, etiquetado como estimación en la nota
+    // de arriba. Catálogo que contesta pero no puede costear ⇒ coste NO
+    // disponible con su causa: el suelo (4 llamadas frente a ~17 reales) no se
+    // enseña nunca como si fuera el precio.
+    let callsPerSkin: number | null;
+    if (!catalog) {
+      callsPerSkin = SKIN_CALLS_FALLBACK;
+    } else {
+      const info = skinImageCalls(catalog);
+      if (info.ok) {
+        callsPerSkin = info.calls;
+      } else {
+        callsPerSkin = null;
+        notes.push(`El coste de vestir los personajes no está disponible: ${info.reason}`);
+      }
+    }
+    const costPerImage =
+      (catalog?.skin.enabled ? catalog.skin.cost_usd_per_call : null) ?? pack.cost_per_image_usd;
 
     // ── Celdas del atlas: mismas funciones puras que la vista en vivo ──
     // UNA normalización por escena para todo el batch: de ella salen el plan
@@ -315,7 +315,9 @@ export class StyleApplyController {
         label: `Skins de personaje (${skins.length} personajes × ${AUTO_SKIN_ANIMS.length} anims)`,
         missing: skins.length,
         estCostUsd:
-          Math.round(skins.length * callsPerSkin * costPerImage * 100) / 100,
+          callsPerSkin === null
+            ? null
+            : Math.round(skins.length * callsPerSkin * costPerImage * 100) / 100,
         exact: false,
         selected: skins.length > 0,
       },
