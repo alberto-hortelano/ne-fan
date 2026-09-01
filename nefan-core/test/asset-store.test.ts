@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
 import { migrateManifest } from "../services/asset-store/migrate-manifest.js";
 import { createAssetStoreServer } from "../services/asset-store/http-server.js";
-import { prune } from "../services/asset-store/prune.js";
+import { fetchKeepList, prune } from "../services/asset-store/prune.js";
 
 let root: string;
 let db: ManifestDb;
@@ -416,5 +416,94 @@ describe("prune LRU con keep-list", () => {
     assert.equal(r.status, 200);
     assert.equal(r.body.ok, true);
     assert.equal(typeof r.body.total_bytes, "number");
+  });
+
+  // Antes fetchKeepList devolvía `Set | null` y timeout, DNS, 500 y JSON
+  // corrupto colapsaban en el mismo null: el 503 del prune no podía decir por
+  // qué. El Result<T,E> existe para que cada causa llegue con su texto.
+  describe("fetchKeepList distingue las causas", () => {
+    /** Servidor de un solo uso que contesta lo que le digas. */
+    async function conServidor(
+      status: number,
+      body: string,
+      fn: (url: string) => Promise<void>,
+    ): Promise<void> {
+      const srv = createServer((_req, res) => {
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(body);
+      });
+      srv.listen(0, "127.0.0.1");
+      await new Promise<void>((r) => srv.on("listening", () => r()));
+      try {
+        await fn(`http://127.0.0.1:${(srv.address() as AddressInfo).port}`);
+      } finally {
+        srv.close();
+      }
+    }
+
+    it("HTTP 500 → la causa dice el status", async () => {
+      await conServidor(500, "{}", async (url) => {
+        const r = await fetchKeepList(url);
+        assert.ok(!r.ok && r.error.includes("HTTP 500"), JSON.stringify(r));
+      });
+    });
+
+    it("200 con JSON corrupto → la causa dice que es ilegible", async () => {
+      await conServidor(200, "esto no es json", async (url) => {
+        const r = await fetchKeepList(url);
+        assert.ok(!r.ok && r.error.includes("ilegible"), JSON.stringify(r));
+      });
+    });
+
+    it("200 sin refs[] → la causa señala el contrato", async () => {
+      await conServidor(200, '{"otra_cosa": []}', async (url) => {
+        const r = await fetchKeepList(url);
+        assert.ok(!r.ok && r.error.includes("sin refs[]"), JSON.stringify(r));
+      });
+    });
+
+    it("world-state caído → la causa dice inalcanzable, y el 503 del prune la lleva", async () => {
+      // Puerto recién liberado: nadie escucha ahí.
+      const muerto = createServer(() => {});
+      muerto.listen(0, "127.0.0.1");
+      await new Promise<void>((r) => muerto.on("listening", () => r()));
+      const urlMuerta = `http://127.0.0.1:${(muerto.address() as AddressInfo).port}`;
+      await new Promise<void>((r) => muerto.close(() => r()));
+
+      const r = await fetchKeepList(urlMuerta);
+      assert.ok(!r.ok && r.error.includes("inalcanzable"), JSON.stringify(r));
+
+      // Y de punta a punta: un asset-store apuntando ahí ABORTA el prune con
+      // la causa dentro del 503 — no con un "unavailable" genérico.
+      const db2 = new ManifestDb(join(root, "prune503.sqlite3"));
+      const srv2 = createAssetStoreServer({
+        port: 0,
+        db: db2,
+        dirsByType: dirsByType(join(root, "prune503fs")),
+        spriteSheetsDir: join(root, "sprite_sheets"),
+        stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
+        cacheMaxBytes: 1,
+        worldStateUrl: urlMuerta,
+      });
+      await new Promise<void>((r2) => srv2.on("listening", () => r2()));
+      try {
+        const base2 = `http://127.0.0.1:${(srv2.address() as AddressInfo).port}`;
+        const res = await fetch(`${base2}/cache/prune`, { method: "POST" });
+        assert.equal(res.status, 503);
+        const body = (await res.json()) as { error?: string };
+        assert.ok(body.error?.includes("inalcanzable"), body.error);
+      } finally {
+        srv2.close();
+        db2.close();
+      }
+    });
+
+    it("con refs → el Set filtrado", async () => {
+      await conServidor(200, '{"refs": ["a", "b", 3]}', async (url) => {
+        const r = await fetchKeepList(url);
+        assert.ok(r.ok);
+        assert.deepEqual([...r.keep].sort(), ["a", "b"]);
+      });
+    });
   });
 });

@@ -33,11 +33,12 @@ import {
 } from "../../src/games/world-snapshot.js";
 import { listStyleApplications } from "../../src/games/style-application.js";
 import { WorldMapManager } from "../../src/world-map/world-map.js";
+import { loadGamePluginManifests } from "../../src/plugins/loader.js";
 import {
-  loadGamePluginManifests,
-  activatePluginsForNewSession,
-  bindPluginsForResume,
-} from "../../src/plugins/loader.js";
+  activarPluginsDeSesionNueva,
+  atarPluginsDeResume,
+  vaciarPluginsActivos,
+} from "../plugins-activos.js";
 import {
   broadcastScene,
   createSessionNpcBehavior,
@@ -377,7 +378,7 @@ export async function handleStartSession(
     }
     const worldDoc = loadWorldDoc(ctx.gamesDir, msg.gameId);
     worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
-    ctx.activePlugins = new Map();
+    vaciarPluginsActivos(ctx);
     ctx.narrative.startNewSession(msg.gameId);
     ctx.narrative.setWorldInfo({
       name: meta.title,
@@ -410,7 +411,7 @@ export async function handleStartSession(
   // manifest inválido aborta el arranque de sesión — fail-loud.
   try {
     const loaded = loadGamePluginManifests(ctx.gamesDir, msg.gameId);
-    ctx.activePlugins = activatePluginsForNewSession(ctx.narrative, loaded);
+    activarPluginsDeSesionNueva(ctx, loaded);
   } catch (err) {
     console.error("Bridge: plugin load failed on start_session:", err);
     ctx.send(ws, {
@@ -549,12 +550,12 @@ export async function handleResumeSession(
     });
     return;
   }
-  ctx.activePlugins = new Map();
+  vaciarPluginsActivos(ctx);
   // Bind de plugins shipped (F3): el slice vive en el save, el manifest
   // se relee del FS y se casa por id (integridad fail-loud).
   try {
     const loaded = loadGamePluginManifests(ctx.gamesDir, ctx.narrative.game_id);
-    ctx.activePlugins = bindPluginsForResume(ctx.narrative, loaded);
+    atarPluginsDeResume(ctx, loaded);
   } catch (err) {
     console.error("Bridge: plugin bind failed on resume_session:", err);
     ctx.send(ws, {

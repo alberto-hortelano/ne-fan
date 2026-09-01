@@ -866,6 +866,170 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Regla NUEVA que nace VERDE porque sus tres ocupantes —las 3 únicas
+  // violaciones literales del patrón en el repo entero— se arreglaron en la
+  // misma PR que la arma (2026-09-01). Una regla verde no demuestra nada, así
+  // que se le enseña LITERALMENTE lo que había: el catch de comentario que
+  // envolvía handleClientMessage ENTERO, el probe de takeover y el
+  // .catch(() => {}) de postProgress. Y los sustitutos, callados — incluido el
+  // tryParse cuyo `return null` es el caso legítimo documentado.
+  it("[error] narrative-mcp-sin-catch-silencioso: las tres formas que había saltan; los sustitutos no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter(
+        (v) => v.ruleId === "narrative-mcp-sin-catch-silencioso",
+      );
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          // ws-bridge.ts:213 hasta esta PR: el catch que se comía CUALQUIER
+          // excepción del despacho como si fuera un frame malformado.
+          path: "narrative-mcp/ws-bridge.ts",
+          text: "try {\n  const msg: ClientMsg = JSON.parse(String(raw));\n  this.enqueueRequest(msg);\n} catch {\n  // ignore malformed\n}\n",
+          imports: [],
+        },
+        {
+          // ws-bridge.ts:118 hasta esta PR: probe legítimo, cuerpo vacío no.
+          path: "narrative-mcp/x.ts",
+          text: "try {\n  const msg: PeerMsg = JSON.parse(String(raw));\n} catch {\n  // Not a peer message\n}\n",
+          imports: [],
+        },
+        {
+          // bridge-http-client.ts:55 hasta esta PR.
+          path: "narrative-mcp/bridge-http-client.ts",
+          text: "void fetch(url, opts)\n  .catch(() => {})\n  .finally(() => clearTimeout(timer));\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "narrative-mcp/bridge-http-client.ts:2",
+        "narrative-mcp/ws-bridge.ts:4",
+        "narrative-mcp/x.ts:3",
+      ],
+      "las tres formas de tragarse un error que tenía narrative-mcp tienen que saltar",
+    );
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          // El tryParse del probe: null SOLO para «no era JSON», y lo juzga
+          // handleClientMessage después. Un cuerpo con return no es un catch vacío.
+          path: "narrative-mcp/ws-bridge.ts",
+          text: "try {\n  return JSON.parse(String(raw)) as PeerMsg;\n} catch {\n  return null;\n}\n",
+          imports: [],
+        },
+        {
+          path: "narrative-mcp/x.ts",
+          text: "try {\n  f();\n} catch (err) {\n  console.error('[narrative-mcp] error despachando:', err);\n}\n",
+          imports: [],
+        },
+        {
+          path: "narrative-mcp/bridge-http-client.ts",
+          text: "void fetch(url, opts)\n  .catch((err: unknown) => {\n    console.error('[narrative-mcp] narrative_progress no entregado:', err);\n  })\n  .finally(() => clearTimeout(timer));\n",
+          imports: [],
+        },
+      ]),
+      [],
+      "el tryParse documentado y los catch con canal son exactamente lo que la regla pide",
+    );
+  });
+
+  // El root nefan-core/scripts entró el 2026-09-01 MEDIDO A CERO: verde por
+  // definición, así que hay que ver saltar el glob — sin esto, añadir el root
+  // sería decorativo (ficheros escaneados que ninguna regla mira). Un catch
+  // vacío en las herramientas corrompe la MEDIDA (deuda, crap, mutación) sin
+  // romper nada visible, y un «script de migrar saves» que ejecute la cadena
+  // por su cuenta es el segundo juez que cadena-de-migracion-unica corta.
+  it("[error] nefan-core/scripts está escaneado y sus reglas lo miran", () => {
+    assert.ok(
+      files.some((f) => f.path.startsWith("nefan-core/scripts/")),
+      "nefan-core/scripts se cayó de scan.roots — las reglas dejarían de mirar las herramientas",
+    );
+    assert.deepEqual(
+      checkArchitecture(config, [
+        {
+          path: "nefan-core/scripts/deuda.ts",
+          text: "try {\n  medir();\n} catch {}\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/scripts/migrar-saves.ts",
+          text: "const slice = runMigrationStep(effects, ctx);\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.ruleId}@${v.path}:${v.line}`),
+      [
+        "core-sin-catch-silencioso@nefan-core/scripts/deuda.ts:3",
+        "cadena-de-migracion-unica@nefan-core/scripts/migrar-saves.ts:1",
+      ],
+      "las reglas extendidas a scripts tienen que cazar ahí igual que en src/",
+    );
+  });
+
+  // Regla NUEVA de la familia «un solo escritor por hecho», nace verde el día
+  // que las seis asignaciones de los dos handlers se mueven al dueño. Se le
+  // enseña la reasignación que había y las CUATRO cosas que declara dejar
+  // pasar: el nacimiento del ctx (sin punto), la lectura, la mutación de
+  // contenido vía registerRuntimePlugin, la comparación — y el dueño.
+  it("[error] los-plugins-activos-tienen-un-solo-escritor: reasignar fuera del dueño salta", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter(
+        (v) => v.ruleId === "los-plugins-activos-tienen-un-solo-escritor",
+      );
+
+    // Literalmente lo que había en los dos handlers hasta esta PR.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: "ctx.activePlugins = new Map();\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/game-gen.ts",
+          text: "// contexto\nctx.activePlugins = activatePluginsForNewSession(ctx.narrative, manifests);\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/handlers/game-gen.ts:2",
+        "nefan-core/bridge/handlers/session.ts:1",
+      ],
+      "la reasignación suelta en un handler tiene que saltar",
+    );
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          // El NACIMIENTO del contexto: sin punto, y ahí es donde el campo
+          // tiene que inicializarse (ws-server.ts y test/helpers.ts).
+          path: "nefan-core/bridge/ws-server.ts",
+          text: "const ctx: BridgeContext = {\n  activePlugins: new Map(),\n};\n",
+          imports: [],
+        },
+        {
+          // Mutar el CONTENIDO del Map vigente es otro hecho con otro dueño
+          // (plugin_register en runtime), y leerlo es lo normal.
+          path: "nefan-core/bridge/handlers/tile.ts",
+          text: "const genCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);\nconst r = registerRuntimePlugin(narrative, ctx.activePlugins, raw);\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/x.ts",
+          text: "if (ctx.activePlugins === otros) return;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/plugins-activos.ts",
+          text: "ctx.activePlugins = new Map();\n",
+          imports: [],
+        },
+      ]),
+      [],
+      "nacer, leer, mutar contenido, comparar y el dueño quedan callados",
+    );
+  });
+
   // La deuda nueva de esta tanda (#181). Hace falta probarla en negativo por
   // partida doble: es `warn` con un `max` congelado —o sea, hoy está "verde"
   // por definición— y además su patrón lleva DOS exclusiones deliberadas (el

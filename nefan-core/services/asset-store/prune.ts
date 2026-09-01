@@ -3,8 +3,8 @@
  *
  *  Si world-state no responde, el CALLER (http-server) ABORTA el prune: los
  *  saves post-F2 referencian assets por hash, así que podar sin keep-list
- *  borraría assets en uso. `keep === null` aquí solo se da en tests/CLI que
- *  asumen explícitamente ese riesgo. */
+ *  borraría assets en uso. `keep === null` en `prune()` solo se da en
+ *  tests/CLI que asumen explícitamente ese riesgo. */
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
@@ -16,19 +16,43 @@ export interface PruneSummary {
   total_bytes: number;
 }
 
-/** Hashes referenciados por algún save vivo, o null si world-state no
- *  respondió (→ prune sin protección, con warning). */
-export async function fetchKeepList(worldStateUrl: string): Promise<Set<string> | null> {
+const KEEP_LIST_TIMEOUT_MS = 3_000;
+
+/** Resultado de pedir la keep-list: los hashes referenciados por algún save
+ *  vivo, o la causa EXACTA de no tenerla. Es el caso-libro del `Result<T,E>`
+ *  de CLAUDE.md: antes esto era `Set | null`, y timeout, DNS, un 500 y un
+ *  JSON corrupto colapsaban en el mismo null — el 503 con el que el caller
+ *  aborta el prune no podía decir por qué, y la causa se perdía entera. */
+export type KeepListResult =
+  | { ok: true; keep: Set<string> }
+  | { ok: false; error: string };
+
+export async function fetchKeepList(worldStateUrl: string): Promise<KeepListResult> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 3_000);
+  const timer = setTimeout(() => ctrl.abort(), KEEP_LIST_TIMEOUT_MS);
   try {
     const res = await fetch(`${worldStateUrl}/sessions/asset_refs`, { signal: ctrl.signal });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { refs?: unknown };
-    if (!Array.isArray(body.refs)) return null;
-    return new Set(body.refs.filter((r): r is string => typeof r === "string"));
-  } catch {
-    return null;
+    if (!res.ok) {
+      return { ok: false, error: `world-state contestó HTTP ${res.status}` };
+    }
+    let body: { refs?: unknown };
+    try {
+      body = (await res.json()) as { refs?: unknown };
+    } catch (err) {
+      return {
+        ok: false,
+        error: `world-state contestó 200 con JSON ilegible (${(err as Error).message})`,
+      };
+    }
+    if (!Array.isArray(body.refs)) {
+      return { ok: false, error: "world-state contestó 200 sin refs[] — ¿cambió el contrato?" };
+    }
+    return { ok: true, keep: new Set(body.refs.filter((r): r is string => typeof r === "string")) };
+  } catch (err) {
+    const causa = ctrl.signal.aborted
+      ? `timeout tras ${KEEP_LIST_TIMEOUT_MS} ms`
+      : ((err as Error)?.message ?? String(err));
+    return { ok: false, error: `world-state inalcanzable en ${worldStateUrl} (${causa})` };
   } finally {
     clearTimeout(timer);
   }
