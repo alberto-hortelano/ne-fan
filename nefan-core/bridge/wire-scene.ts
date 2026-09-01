@@ -43,8 +43,11 @@ export function estadosDeCombate(ctx: BridgeContext): {
   const estados = new Map<string, EstadoEnElWire>();
   const ilegibles: string[] = [];
   for (const rec of ctx.narrative.entities) {
+    // Desde #351 el mapa lleva a TODA entity del ledger, no solo a las que
+    // pelean: la posición viva es de cualquiera que se haya movido, y el
+    // `null` que se saltaba a los pacíficos era justo lo que dejaba al
+    // tabernero volviendo a su celda de spawn.
     const estado = estadoEnElWire(rec, ctx.sim.getCombatant(rec.id));
-    if (!estado) continue;
     estados.set(rec.id, estado);
     if (estado.tipo === "no_vuelve" && estado.motivo.clase === "ilegible") {
       ilegibles.push(nombreDeEntity(rec));

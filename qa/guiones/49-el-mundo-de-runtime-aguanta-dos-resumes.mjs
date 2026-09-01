@@ -34,13 +34,16 @@
  *     registro de errores se llena de un descarte que no es un fallo. Ese
  *     filtro lo mide `test/mundo-persistido.test.ts`, no esto.
  *
- *  ⚠ HALLAZGO que este guion MIDE y no pone en rojo (su dueño aún no lo ha
- *  arreglado; convención del guion 24): un OBJETO o EDIFICIO de runtime
- *  desaparece del cliente cuando su tile se vuelve a difundir —viajar por el
- *  panel «Salidas» y volver—, porque `addTile` purga `objectEntities` por
- *  rect. El resume lo repara (vuelven del ledger), así que no incumple el
- *  criterio 5, pero es la misma promesa rota en un estado que el jugador
- *  alcanza antes.
+ *  Y desde #350 mide TAMBIÉN la ida y vuelta por «Salidas», que era el
+ *  `⚠ HALLAZGO` que este guion contaba sin poner en rojo (convención del
+ *  guion 24): un OBJETO o EDIFICIO de runtime desaparecía del cliente cuando
+ *  su tile se volvía a difundir, porque `addTile` purgaba `objectEntities` por
+ *  RECT mientras NPCs y enemigos se purgaban por identidad de tile. El resume
+ *  lo reparaba —el mundo se curaba solo, que es peor que romperse—. Se mide
+ *  DOS veces, y las dos hacen falta: sin reanudar (bloque 0b) y tras dos
+ *  resumes (bloque 2). La segunda es la que caza la trampa: si el dueño de un
+ *  spawn se escribiera en el llamante en vez de dentro de `materializeSpawn`,
+ *  el rehidratado volvería sin dueño y solo el bloque 2 se pondría rojo.
  *
  *  Cero créditos: preset `e2e-sin-creditos`; el trío del turno 3 y el hostil
  *  del turno 2 los pone `labs/narrative/fake-ai-server.ts`.
@@ -121,6 +124,92 @@ async function pulsarSalida(ctx, nombre) {
   return true;
 }
 
+/** Ida y vuelta por «Salidas», que es lo que hace RE-EMITIR el tile de
+ *  partida — el estado en el que #350 se llevaba por delante los objetos de
+ *  runtime.
+ *
+ *  Devuelve `null` cuando no se pudo ejercer (sin salidas, sin vuelta, el
+ *  viaje que no llega): el llamante lo declara `⊘` en vez de afirmar sobre un
+ *  mundo que no se ha movido. Con éxito devuelve qué sobrevivió. */
+async function idaYVuelta(ctx, etiqueta) {
+  const partida = await mundo(ctx);
+  if (partida.exits.length === 0 || !(await pulsarSalida(ctx, partida.exits[0].name))) {
+    return { motivo: `el panel «Salidas» no ofrecía destino (${etiqueta})` };
+  }
+  const fuera = await ctx.absorbe(
+    "si el viaje no llega, el bloque se DECLARA sin medir en el llamante: ningún verde depende " +
+      "de esta espera",
+    () =>
+      ctx.waitFor(
+        `el jugador llega al destino (otro tile, ${etiqueta})`,
+        (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
+        180_000,
+        partida.tile,
+      ),
+  );
+  if (!fuera) return { motivo: `el jugador no llegó al tile vecino en 180 s (${etiqueta})` };
+  const alli = await mundo(ctx);
+  const vuelta = alli.exits.find((e) => e.place_id !== partida.exits[0].place_id) ?? alli.exits[0];
+  if (!vuelta || !(await pulsarSalida(ctx, vuelta.name))) {
+    return { motivo: `el destino no ofrecía vuelta (${etiqueta})` };
+  }
+  const volvio = await ctx.absorbe(
+    "si la vuelta no llega, el bloque se DECLARA sin medir en el llamante: mirar los objetos del " +
+      "tile equivocado no es medir nada",
+    () =>
+      ctx.waitFor(
+        `el jugador vuelve al tile de partida (${etiqueta})`,
+        (t) => (window.__nefan.currentTile === t ? t : null),
+        180_000,
+        partida.tile,
+      ),
+  );
+  if (!volvio) return { motivo: `el jugador no volvió al tile de partida en 180 s (${etiqueta})` };
+  const regreso = await mundo(ctx);
+  return {
+    regreso,
+    sobreviven: {
+      cofre: regreso.objetos.some((o) => o.label === OBJETO),
+      forja: regreso.objetos.some((o) => o.label === EDIFICIO),
+      pacifico: regreso.npcs.some((n) => n.label === PACIFICO),
+      hostil: regreso.enemigos.some((e) => e.label === HOSTIL),
+    },
+  };
+}
+
+/** Los cuatro siguen ahí tras re-emitir su tile, y ninguno se duplicó. */
+function afirmarQueSobreviven(ctx, viaje, etiqueta) {
+  if (!viaje.sobreviven) {
+    ctx.sinMedirBloque(`${viaje.motivo}: sin ida y vuelta no hay re-emisión del tile que mirar`);
+    return;
+  }
+  ctx.log(`re-emisión del tile (${etiqueta}): ${JSON.stringify(viaje.sobreviven)}`);
+  ctx.expect(
+    `#350 · los cuatro de runtime sobreviven a la ida y vuelta por «Salidas» (${etiqueta})`,
+    viaje.sobreviven.cofre &&
+      viaje.sobreviven.forja &&
+      viaje.sobreviven.pacifico &&
+      viaje.sobreviven.hostil,
+    JSON.stringify({
+      sobreviven: viaje.sobreviven,
+      objetos: viaje.regreso.objetos.map((o) => o.label),
+      npcs: viaje.regreso.npcs.map((n) => n.label),
+      enemigos: viaje.regreso.enemigos.map((e) => e.label),
+    }),
+  );
+  ctx.expect(
+    `…y ninguno se duplicó al re-emitirse el tile (${etiqueta})`,
+    sinRepetir(viaje.regreso.objetos.map((o) => o.id)) &&
+      sinRepetir(viaje.regreso.npcs.map((n) => n.id)) &&
+      sinRepetir(viaje.regreso.enemigos.map((e) => e.id)),
+    JSON.stringify({
+      o: viaje.regreso.objetos.map((x) => x.id),
+      n: viaje.regreso.npcs.map((x) => x.id),
+      e: viaje.regreso.enemigos.map((x) => x.id),
+    }),
+  );
+}
+
 const sinRepetir = (xs) => new Set(xs).size === xs.length;
 
 export default async function (ctx) {
@@ -179,6 +268,14 @@ export default async function (ctx) {
   );
   ctx.log(`spawns de runtime: ${JSON.stringify({ hostil: hostil.id, npc: trio.npc.id, cofre: trio.cofre.id, forja: trio.forja.id })}`);
 
+  // ── 0b · IDA Y VUELTA SIN REANUDAR: el criterio 1 de #350 ───────────────
+  // El estado que el jugador alcanza ANTES que ningún otro: viajar por
+  // «Salidas» y volver. Re-emite el tile de partida, y hasta hoy eso se
+  // llevaba por delante el cofre y la forja —`addTile` purgaba los objetos por
+  // GEOMETRÍA— mientras el NPC y el hostil sobrevivían. La asimetría era el
+  // bug: tres clases con la misma procedencia y dos criterios de purga.
+  afirmarQueSobreviven(ctx, await idaYVuelta(ctx, "sin reanudar"), "sin reanudar");
+
   // ── 1 · DOS RESUMES SEGUIDOS, SIN SEGUNDA PUERTA ────────────────────────
   if (!(await reanudar(ctx, partida.sessionId, "1ª"))) return;
   const uno = await mundo(ctx);
@@ -214,74 +311,17 @@ export default async function (ctx) {
     JSON.stringify(dos.enemigos.find((e) => e.label === HOSTIL)),
   );
 
-  // ── 2 · ⚠ HALLAZGO: re-emitir el tile se lleva los objetos de runtime ────
-  // Se MIDE y se cuenta, no se pone en rojo: el defecto es anterior a #326
-  // (`addTile` purga `objectEntities` por rect) y su dueño no lo ha arreglado.
+  // ── 2 · Y TRAS RESUME + VIAJE, que es donde la trampa reabriría el bug ──
+  // Este bloque llevaba la marca `⚠ HALLAZGO` (convención del guion 24): se
+  // medía y se contaba en verde porque su dueño no lo había arreglado. Ya está
+  // arreglado (#350), así que pasa a AFIRMAR.
   //
-  // Este bloque MIDE y CUENTA, no afirma: por eso cuando no se puede ejercer
-  // (sin salidas, sin vuelta, el viaje que no llega) lo dice por el canal ⊘
-  // —`ctx.sinMedirBloque`, que no aborta— en vez de por un `ctx.log("⚠ … no se
-  // midió")` que salía verde y nadie leía (#261). El guion sigue midiendo el
-  // bloque 3.
-  const viajado = dos.exits.length > 0 && (await pulsarSalida(ctx, dos.exits[0].name));
-  if (!viajado) {
-    ctx.sinMedirBloque(
-      "el panel «Salidas» no ofrecía destino: sin ida y vuelta no se puede mirar qué le hace la " +
-        "re-emisión del tile a los objetos de runtime",
-    );
-  } else {
-    const fuera = await ctx.absorbe(
-      "si el viaje no llega, este bloque se DECLARA sin medir aquí debajo: ningún verde de este " +
-        "guion depende de esta espera",
-      () =>
-        ctx.waitFor(
-          "el jugador llega al destino (otro tile)",
-          (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
-          180_000,
-          dos.tile,
-        ),
-    );
-    const alli = fuera ? await mundo(ctx) : null;
-    const vuelta = alli?.exits.find((e) => e.place_id !== dos.exits[0].place_id) ?? alli?.exits[0];
-    if (!fuera) {
-      ctx.sinMedirBloque(
-        "el jugador no llegó al tile vecino en 180 s: la re-emisión del tile no se pudo mirar",
-      );
-    } else if (!vuelta || !(await pulsarSalida(ctx, vuelta.name))) {
-      ctx.sinMedirBloque(
-        "el destino no ofrecía vuelta: sin regresar al tile de partida no hay re-emisión que mirar",
-      );
-    } else {
-      const volvio = await ctx.absorbe(
-        "si la vuelta no llega, este bloque se DECLARA sin medir aquí debajo: mirar los objetos " +
-          "del tile equivocado no es medir nada",
-        () =>
-          ctx.waitFor(
-            "el jugador vuelve al tile de partida",
-            (t) => (window.__nefan.currentTile === t ? t : null),
-            180_000,
-            dos.tile,
-          ),
-      );
-      if (!volvio) {
-        ctx.sinMedirBloque(
-          "el jugador no volvió al tile de partida en 180 s: la re-emisión del tile no se pudo mirar",
-        );
-      } else {
-        const regreso = await mundo(ctx);
-        const sobreviven = {
-          cofre: regreso.objetos.some((o) => o.label === OBJETO),
-          forja: regreso.objetos.some((o) => o.label === EDIFICIO),
-          pacifico: regreso.npcs.some((n) => n.label === PACIFICO),
-          hostil: regreso.enemigos.some((e) => e.label === HOSTIL),
-        };
-        ctx.log(
-          `⚠ HALLAZGO re-emisión del tile (ida y vuelta por «Salidas»): ${JSON.stringify(sobreviven)} · ` +
-            `objetos ahora ${JSON.stringify(regreso.objetos.map((o) => o.label))}`,
-        );
-      }
-    }
-  }
+  // Y aquí, no solo en el 0b, porque los objetos que hay ahora son los
+  // REHIDRATADOS por dos resumes: si el dueño de una entity de runtime se
+  // escribiera en el llamante en vez de dentro de `materializeSpawn`, el
+  // bloque 0b saldría verde y este rojo. Es la trampa del §3 de la crítica,
+  // puesta donde se ve.
+  afirmarQueSobreviven(ctx, await idaYVuelta(ctx, "tras dos resumes"), "tras dos resumes");
 
   // ── 3 · EL MUERTO DE RUNTIME TAMPOCO VUELVE ─────────────────────────────
   // La otra procedencia del criterio 1. El 42 lo mide con el enemigo de la

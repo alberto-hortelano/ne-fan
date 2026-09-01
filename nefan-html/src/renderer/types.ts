@@ -8,6 +8,29 @@
 
 import type { Vec3 } from "@nefan-core/src/types.js";
 
+/** DE QUIÉN ES UNA ENTITY, que es lo mismo que decir quién puede borrarla.
+ *
+ *  Dos procedencias y ninguna colapsable: lo que DECLARA un tile (y por tanto
+ *  desaparece cuando ese tile deja de declararlo) y lo que puso el motor
+ *  narrativo a mitad de partida (`spawn_entity`), que no pertenece al scene
+ *  data de nadie.
+ *
+ *  Es una unión discriminada y OBLIGATORIA, y ahí está el arreglo de #350.
+ *  Antes esto era `tileKey?: string`, y entonces «es de runtime» y «se me
+ *  olvidó ponerlo» eran el mismo `undefined`. De esa confusión salió el bug:
+ *  `materializeSpawn` no escribía `tileKey` en ninguna de sus tres clases, así
+ *  que la purga de NPCs (por identidad) dejaba vivo al spawn de runtime… y la
+ *  de objetos, que era por GEOMETRÍA (`!inRect`), se llevaba por delante el
+ *  cofre y la forja en cuanto el tile se volvía a difundir. Con `dueno`
+ *  obligatorio, el estado malo no se puede escribir: `tsc` exige los cinco
+ *  sitios que construyen una `Entity`. */
+export type DuenoDeEntity =
+  /** Lo declara el scene data de este tile: se va cuando deje de declararlo. */
+  | { de: "tile"; key: string }
+  /** Lo puso el motor a mitad de partida: no es de ningún tile, y solo
+   *  desaparece si el motor lo retira o el jugador lo mata. */
+  | { de: "runtime" };
+
 /** Un cuerpo del mundo tal y como lo recibe el renderer: jugador, NPC,
  *  enemigo u objeto de escena. Lo produce main.ts (desde el sim y el scene
  *  data). */
@@ -33,9 +56,11 @@ export interface Entity {
   requestedAnim?: string;
   /** true mientras el NPC huye (state_update.npcs[].run) → anim run. */
   npcRun?: boolean;
-  /** Tile del que procede el NPC (clave del scene data que lo declaró) —
-   *  gobierna la purga al re-emitir ese tile; el NPC puede pasear fuera. */
-  tileKey?: string;
+  /** De quién es esta entity — gobierna la purga al re-emitir un tile. NO es
+   *  «dónde está»: el NPC puede pasear fuera de su tile y el enemigo persigue
+   *  al jugador; lo que se pregunta al purgar es de quién era, no dónde
+   *  acabó. */
+  dueno: DuenoDeEntity;
   /** Tipo del volumen del plan que YA representa a esta entity (`volume_id`
    *  de la world scene → `__plan.volumes[].type`). Presente = el greybox la
    *  pinta como volumen sólido, así que no lleva billboard encima: era la
