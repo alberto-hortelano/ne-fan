@@ -24,15 +24,27 @@
  *    · **absorbida**  — `ctx.absorbe(motivo, fn)` la consumió DICIENDO dónde
  *                       vive la medida de verdad.
  *
- *  Y no hay una cuarta **porque el runner cierra la puerta por la que se
- *  colaba**, que es la del reloj: una espera que el guion arranca y no espera
- *  (`void ctx.waitFor(…)`, la hermana perdedora de un `Promise.all`) se posaba
- *  DESPUÉS del veredicto, cuando el libro ya estaba leído, y no la contaba
- *  nadie. Lo cazó QA el 2026-09-01 y la frase que decía «no hay una cuarta»
- *  estaba escrita aquí mismo, o sea en el peor sitio posible. Ahora, antes de
- *  leer el libro, el runner **espera a que se posen las que siguen abiertas**
- *  (con un tope: `DRENAJE_DE_ESPERAS_MS` en `qa/run.mjs`), y la que ni así se
- *  posa es un fallo por sí misma — nadie la esperó, así que no decidió nada.
+ *  **Y aquí va el borde, en vez de una universal**: esta lista NO es «las
+ *  únicas tres formas que puede haber jamás». Ya se escribió esa frase dos
+ *  veces —aquí mismo, que es el peor sitio posible— y las dos veces era
+ *  falsa. Lo que sí se puede afirmar es lo que está MEDIDO, y es esto: la
+ *  puerta por la que se colaba era la del reloj. Una espera que el guion
+ *  arranca y no espera (`void ctx.waitFor(…)`, la hermana perdedora de un
+ *  `Promise.all`) se posaba DESPUÉS del veredicto, con el libro ya leído, y
+ *  no la contaba nadie. Lo cazó QA el 2026-09-01. Ahora, antes de leer el
+ *  libro, el runner **espera a que se posen las que siguen abiertas** (tope:
+ *  `DRENAJE_DE_ESPERAS_MS` en `qa/run.mjs`), y la que ni así se posa es un
+ *  fallo por sí misma — nadie la esperó, así que no decidió nada.
+ *
+ *  Con eso quedan sujetas **las cuatro formas escribibles hoy**, verificadas
+ *  una a una en `qa/esperas-candados-en-negativo.mjs`. Lo que el drenaje NO
+ *  alcanza —y está medido, no supuesto— es una espera que **nace después de
+ *  él**: un `setTimeout(() => { void ctx.waitFor(…) }, 7000)` sale verde,
+ *  porque cuando arranca ya no queda libro que leer. Es la forma exacta que
+ *  tenía el guion 27 antes de arreglarlo. El drenaje es un tope de reloj y
+ *  por tanto una frontera: la misma espera suelta sale verde si se posa a los
+ *  2 s y roja si tarda 8. Ningún guion la escribe hoy; si algún día hace
+ *  falta cerrarla, el sitio es este y la respuesta NO es subir el tope.
  *
  *  Lo que quede sin resolver al terminar el guion es un fallo con nombre: el
  *  runner lo empuja a `ctx.fallos` y el guion sale ROJO. Si el guion DECLARÓ

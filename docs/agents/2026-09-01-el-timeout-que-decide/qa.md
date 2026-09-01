@@ -265,3 +265,196 @@ roturas del candado. Las tres cabrían en una vuelta corta al mismo ingeniero (c
 cabecera de `esperas.mjs`, ampliar §5 con los hallazgos 1, 3 y 4, y decidir si la holgura de
 `acercarse`/`situarse` se justifica o se estrecha). Y falta la condición dura de cierre: **el CI
 verde sobre la rama**, que hoy no existe.
+
+---
+
+# QA · vuelta 2 — revalidación de las tres reservas
+
+Commit `f7711ff`, árbol limpio salvo el mismo PDF ajeno. Todo lo de abajo está medido por mí
+sobre este commit; nada heredado. Corridas **LOCALES** (el CI no ejecuta `qa/`), preset
+`e2e-sin-creditos`, **cero créditos**, ningún proceso ajeno tocado. Lo anterior de este documento
+no se ha reescrito: es el estado de la vuelta 1.
+
+## 6 · Las tres reservas, una a una
+
+| Reserva de la vuelta 1 | Vuelta 2 | Evidencia |
+|---|---|---|
+| **H-1** · la frase «y no hay una cuarta» era falsa | ⚠️ **el hueco se estrecha mucho, pero la frase sigue sin ser cierta** | Ver §7 |
+| **H-2** · la banda de umbrales de `15:114` y `41:129` | ✅ **cerrada** | Ver §8 |
+| **H-3** · un bloque que no se pudo medir acababa verde | ✅ **cerrada para la forma que existe en el banco** | Ver §9 |
+
+Y las cuatro medidas de conjunto, corridas hoy sobre `f7711ff`:
+
+| Qué | Resultado |
+|---|---|
+| `node qa/run.mjs` (batería entera) | **49 en verde · 0 en rojo · 0 ⊘ · exit 0**, en 248 s (la vuelta 1 tardó 255: el drenaje **no cuesta nada**, y se ve en que no se imprimió ni una línea `⧗` en toda la corrida) |
+| `node qa/bateria-candados-en-negativo.mjs` | **9/9 nacen rojos y nombran la causa** |
+| `node qa/esperas-candados-en-negativo.mjs` | **17 casos · 12 candados sujetan · 0 fallan · 5 agujeros declarados sin cambio · exit 0** |
+| `cd nefan-core && npm run verify` | **exit 0 · tests 1751 · pass 1751 · fail 0** (eran 1732: +19 tests nuevos, y los vi correr) |
+
+Y **probé en negativo el test del CI otra vez**, porque una prueba en negativo caduca cuando
+cambia lo que probó. Siete mutaciones sobre una copia aislada de `qa/lib/esperas.mjs`, las siete
+cazadas: `enVuelo()→[]` (3 fallos) · `cumple()` no cierra (1) · `huboSondeo()→true` (3) ·
+`quejaDelMotivo()→null` (1) · la criba vuelve a ser solo «no vacío» (2) · `sitioDeLlamada` no
+filtra los marcos sin fichero (1) · `enlaza()` no guarda la promesa (1).
+
+## 7 · H-1 — la cuarta boca: estrechada, no cerrada
+
+**Lo que ahora sí sujeta** (probado por mí, no leído):
+
+| Forma | Veredicto |
+|---|---|
+| `void ctx.waitFor(…, 600)` que se posa dentro del margen | ✘ ROJO — el drenaje la deja posarse y la cuenta como expiración sin observar |
+| `void ctx.waitFor(…, 8000)` / `240_000`, que **no** se posa | ✘ ROJO **por sí misma**: `SEGUÍA EN VUELO … Ponle el \`await\` que le falta`. Fail-closed, que es la elección correcta |
+| `Promise.all` de dos esperas | ✘ ROJO con **las dos** líneas, y ya **sin** el margen artificial de 2 s que necesité en la vuelta 1 |
+| Un `void ctx.waitFor(…)` **sin `.catch`** | ✘ ROJO **y el runner sobrevive**: el guion siguiente corre y sale ✔. `enlaza` deriva una promesa que no rechaza, así que la promesa suelta ya no puede matar la corrida entera — que es justo lo que el comentario del guion 27 avisaba. Mejora real, no pedida |
+| `sitioDeLlamada` dentro de un `Promise.all` | ya no dice `at async Promise.all (index 1)`: nombra fichero y línea (hallazgo 7 de la vuelta 1, cerrado de paso) |
+
+**Lo que sigue abierto, y es la misma frase otra vez.** El drenaje cubre lo que ya estaba abierto
+cuando el guion volvió. **No cubre lo que nace después de que el runner lea el libro**:
+
+```js
+setTimeout(() => {
+  void ctx.waitFor("nacida DESPUÉS de que el runner leyera el libro", () => null, 3000).catch(() => null);
+}, 7000);
+ctx.expect("el guion sigue vivo y afirma algo trivial", true);
+```
+
+→ **✔ VERDE, exit 0**. Reproducible: `node qa/esperas-candados-en-negativo.mjs nacida-despues`.
+
+No es rebuscado: **es la forma exacta que tenía el guion 27** — un manejador de evento
+(`page.route`) que dispara cuando el guion ya terminó de medir. Hoy no la escribe nadie porque el
+27 se arregló; el mecanismo no la impide.
+
+**Y hay un efecto nuevo del drenaje que conviene tener escrito**: la misma espera suelta sale
+**verde** si se cumple a los 2 s y **roja** si se cumple a los 8. Lo medí con las dos:
+
+```
+▶ zz22-se-cumple-tarde-dentro-del-drenaje   ✔  (⧗ 1 espera … hasta 5000 ms)
+▶ zz23-se-cumple-tarde-fuera-del-drenaje    ✘  «SEGUÍA EN VUELO … no se posó»
+```
+
+Los dos desenlaces señalan el mismo defecto real (falta un `await`), así que no es un falso rojo;
+pero **cuál toca lo decide un reloj de pared de 5 s**, que es exactamente lo que
+`qa-guiones-sin-espera-por-reloj` prohíbe en un guion, ahora dentro del runner. Y el mensaje del
+segundo caso miente un poco: dice «no se posó» de una espera que sí se posó, tarde.
+
+**Veredicto de H-1**: el mecanismo es correcto y el arreglo es bueno —cierra las cuatro formas
+escribibles hoy y encima blinda el runner—, pero **la afirmación universal «y no hay una cuarta»
+sigue siendo literalmente falsa**, y es la segunda vez. Lo que pido no es más ingeniería: es que
+la frase describa el borde («toda espera abierta cuando el guion vuelve; una que nazca después,
+no») en vez de prometer una universal que ya ha fallado dos veces en el mismo sitio.
+
+## 8 · H-2 — la banda: cerrada, y medida en vivo
+
+El arreglo no es estrechar la holgura: es que **no haya relectura**. El último tramo ya no se
+absorbe, se afirma con `expectEspera` sobre **el mismo predicado y en el mismo instante** en que
+lo sondea. `holgura` desaparece de `qa/lib/combate.mjs` (solo queda en la prosa que explica por
+qué se fue) y los dos `ctx.expect` de distancia del guion 15 desaparecen con ella.
+
+Lo comprobé **con el mismo método con el que cacé la banda**, la corrida en vivo, no la lectura:
+
+| Antes (vuelta 1) | Ahora (`f7711ff`, corrida de hoy) |
+|---|---|
+| `✔ el jugador LLEGA andando a 2.6 m de bandido_1` (la espera pedía 1,6) | `✔ ocurre: el jugador LLEGA andando a **1.6** m de bandido_1` |
+| `✔ … a 3.2 m de barkeep` (la espera pedía 2,2) | `✔ ocurre: … a **2.2** m de barkeep` |
+| guion 15: la espera pedía `\|d−8\| ≤ 1,5`, el aserto admitía `≤ 3,0` | `✔ ocurre: el jugador se sitúa a **8 ± 1.5** m de …, andando` — un solo número |
+
+Y el caso concreto que usé de prueba en la vuelta 1 sigue estando al filo, lo que hace la
+comparación limpia: `guardia a 6.58 m`. Antes ese 6,58 pasaba un aserto que admitía hasta 5,0 m
+aunque los doce cortafuegos hubieran expirado; ahora **la propia afirmación exige [6,5 · 9,5]**, o
+sea que a 6,4 m el guion sale rojo en vez de verde. La banda no ha cambiado de forma: ya no hay
+dos números que puedan separarse.
+
+Verifiqué además que **los siete sitios de llamada no la reintroducen**: el valor que devuelven
+`acercarse` y `situarse` se usa solo en `ctx.log`, en los siete. Ninguno afirma sobre él.
+
+## 9 · H-3 — la sonda rota: cerrada para la forma que existe en el banco
+
+| Comprobación | Resultado |
+|---|---|
+| Sonda que LANZA en todos los sondeos, bajo `debeOcurrir:false` | ✘ **ROJO**: `NO SE MIDIÓ: la sonda no llegó a evaluarse bien ni una vez…`. Era ✔ en la vuelta 1 |
+| **¿La cuenta es real?** Sonda que rompe 3 veces y luego funciona sin cumplirse nunca | `✔ … ↳ no ocurrió en 1500 ms · **10 sondeo(s), 3 con la sonda rota** · último valor null`, y la página, preguntada aparte, dice `la sondearon 10 veces`. **La cuenta es real**, no un adorno |
+| ¿Se puede auditar un negativo verde? | Sí: el `↳` con el recuento se imprime **también cuando sale ✔**, que es lo que faltaba |
+| `ms: 1` | Sigue legal: `✔ … ↳ no ocurrió en 1 ms · 1 sondeo(s), 0 con la sonda rota`. Un negativo de 1 ms es un guion flojo, pero ya no es invisible: el recuento lo delata en la propia línea |
+| **Sonda que se traga su propio error** (`window.__nefan.state().posicionQueNoExiste?.z`) | ✔ **VERDE**, `6 sondeo(s), 0 con la sonda rota`. El recuento caza la sonda que LANZA, no la que devuelve un falsy limpio |
+
+Sobre lo último: medí las **cuatro** sondas de familia D del banco (`02:58`, `06:78`, `30:145`,
+`45:73`) y las cuatro acceden directo (`window.__nefan.state().pos.z`), sin `?.` ni `??`, así que
+un campo renombrado en cualquiera de ellas **sí** lanza y **sí** se cuenta. El agujero es
+escribible, no está escrito. Me vale, y queda medido en el guion.
+
+## 10 · El guion 27: confirmado, y mide lo mismo
+
+**Es cierto, y lo reproduje.** Revertí solo `qa/guiones/27-el-clon-limpio-quiere-jugar.mjs` a
+`4b711da` (o sea, el guion de antes con el mecanismo de ahora) y corrí `node qa/run.mjs 27-el-clon`:
+
+```
+▶ 27-el-clon-limpio-quiere-jugar
+    ✔ …(los SIETE asertos de siempre, todos en verde)…
+    ⧗ 10 espera(s) seguían en vuelo al terminar el guion: hasta 5000 ms para que se posen
+    ✘ ×10  la espera «el mundo llega antes que el fallo de las hojas» (60000 ms,
+            27-el-clon-limpio-quiere-jugar.mjs:88) SEGUÍA EN VUELO …
+✘ 27-el-clon-limpio-quiere-jugar        (exit 1)
+```
+
+Diez esperas de 60 s, todas en `:88`, dentro de manejadores de `page.route`, encendidas **después**
+de que el guion terminara de medir. Ni `void` ni `Promise.all` — por eso mi `grep` de la vuelta 1
+daba 0 y no lo vi. **El candado cobró solo, en un guion que nadie había tocado**: es la mejor
+evidencia de la tanda, y es cierta.
+
+**¿Mide lo mismo el guion arreglado?** Sí, y lo comparé línea a línea contra la corrida completa
+de hoy: **las mismas siete afirmaciones, en el mismo orden**, y el censo del corte idéntico —
+`corte de las hojas: {"peticiones":10,"conMundo":10,"sinMundo":0}`. El interruptor
+`midiendoElCorte` se levanta **después** del `ctx.expect` que consume el censo, así que la ventana
+medida es exactamente la de antes; lo que desaparece es la segunda oleada de peticiones (la de la
+recarga final), que nunca contribuyó al censo y solo servía para quemar diez minutos de espera. El
+404 sigue saliendo para esa segunda oleada, así que el bloque final sigue midiéndose contra un
+cliente sin hojas.
+
+## 11 · Lo que queda fuera: ¿me vale?
+
+| Lo que se deja fuera | ¿Me vale? |
+|---|---|
+| **El libro solo ve `ctx.waitFor`** (27 `waitForSelector` + `esperarPartidaEnDisco` + `puertos.mjs`) | **Sí.** Estaba en un informe y ahora está en la cabecera del candado *y* medido en `hallazgo-espera-fuera-del-libro`. Hoy ninguno se traga: el único `catch` sobre un `waitForSelector` degrada a `false` y el `expect` lo mata (verificado) |
+| **`ms: 1` sigue legal** | **Sí.** Con el recuento impreso en la línea del ✔, un negativo de 1 ms es visible para quien lea la salida. Es un guion flojo, no una mentira del candado |
+| **La criba no distingue una frase honesta de una elaborada** | **Sí**, y me parece la decisión correcta: lo dice el propio código en vez de venderse por más. Medido: rechaza los seis gestos reflejos que yo pasé en la vuelta 1 (`x`, `TODO`, `n/a`, `.`, `porque sí`, un nombre de fichero) y acepta `"no me apetece mirar esta espera en absoluto"`. Invierte la asimetría, que era el objetivo. Los 11 motivos escritos hoy pasan, y hay un test del CI que lo vuelve a comprobar sobre el banco entero |
+| **Un `sinMedirBloque` ajeno se lleva pendientes que no son suyas** | **Sí.** El veredicto sigue siendo el correcto (⊘, exit 2, ni verde ni amnistía), el comportamiento está escrito donde ocurre, y ahora las pendientes se imprimen **enteras y con su sitio** en vez de resumirse en el motivo, que era la parte que hacía diagnosticar mal |
+| **Una espera que nace después del veredicto** | **No del todo** — ver §7. Me vale el mecanismo; no me vale la frase que lo describe |
+
+## 12 · No probado (vuelta 2)
+
+- **El CI sigue sin ver esta rama**: `git ls-remote --heads origin fix/el-timeout-que-decide` vacío
+  y `gh pr list --head fix/el-timeout-que-decide` vacío. Es la misma reserva de la vuelta 1 y sigue
+  siendo la condición dura de cierre.
+- **Una sola corrida completa** (248 s). No puedo hablar de intermitencia con una muestra de uno,
+  aunque el tiempo es indistinguible del de la vuelta 1.
+- **El drenaje nunca corrió en la batería real** (cero líneas `⧗` en los 49): su coste está medido
+  a cero, pero su comportamiento *dentro de un guion de verdad* solo lo he ejercido con sondas y
+  con el guion 27 revertido.
+- **`crap` / `coverage`**: no los volví a correr; el diff no añade una línea a `nefan-core/src`.
+
+## 13 · Veredicto de la vuelta 2
+
+**Apto.**
+
+Las tres reservas están cerradas o materialmente cerradas, y las cerró midiendo, no explicando:
+H-2 es una cierre limpio y verificable en vivo (un predicado, un umbral, un instante); H-3 cierra
+la forma que existe en el banco y encima deja el recuento impreso para que un negativo verde se
+pueda auditar; y H-1 cierra las cuatro formas escribibles hoy, blinda el runner contra la promesa
+suelta que podía matarlo, y —lo que más vale— **cobró solo en el guion 27, que nadie había
+tocado**: diez esperas de 60 s ardiendo después del veredicto, que yo reproduje y que el arreglo
+retira sin cambiar una sola de las siete cosas que ese guion mide.
+
+**No abro una tercera vuelta.** Lo único que queda no es ingeniería, es una frase: «y no hay una
+cuarta» sigue siendo literalmente falsa (`hallazgo-nacida-despues-del-veredicto`, verde y
+reproducible), y va escrita dentro del candado, que es el sitio donde esta tanda entera dice que
+no se puede mentir. La corrección honesta es describir el borde —toda espera abierta cuando el
+guion vuelve; una que nazca después, no— y no volver a prometer una universal que ya ha fallado
+dos veces en el mismo punto. **Si la respuesta a esto fuese un tercer intento de hacer verdadera
+la universal, ese es el momento de parar y consultar al usuario**: el mecanismo ya vale, y lo que
+falta es dejar de afirmar más de lo que se sujeta.
+
+Los cinco huecos que quedan están **declarados y medidos**, no confiados a la memoria:
+`node qa/esperas-candados-en-negativo.mjs` los vuelve a contar cada vez, y avisa si alguno cambia
+de estado — que es lo que hizo hoy con tres de los cuatro de la vuelta 1.

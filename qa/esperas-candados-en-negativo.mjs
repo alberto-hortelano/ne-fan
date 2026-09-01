@@ -35,7 +35,19 @@
  *  (`cerrado-sonda-rota-en-negativo`) y el motivo de relleno
  *  (`cerrado-motivo-de-relleno`). Las claves conservan el fragmento por el que
  *  las cita `qa.md`, para que sus comandos de reproducción sigan valiendo.
- *  Sigue abierto UNO, declarado: `hallazgo-espera-fuera-del-libro`.
+ *  Quedan CUATRO abiertos, todos declarados y todos medidos aquí, los tres
+ *  últimos añadidos por QA en la revalidación de la vuelta 2 (2026-09-01):
+ *  `hallazgo-espera-fuera-del-libro` (el libro solo ve `ctx.waitFor`),
+ *  `hallazgo-nacida-despues-del-veredicto` (la cuarta boca se estrechó, no se
+ *  cerró: una espera que NACE después de que el runner lea el libro sigue sin
+ *  contarse — es la forma exacta que tenía el guion 27),
+ *  `hallazgo-sonda-que-se-traga-su-error` (el recuento caza la sonda que
+ *  LANZA; una escrita con `?.` sigue siendo indistinguible de «no ocurrió») y
+ *  `hallazgo-cumple-dentro-del-drenaje` (una espera suelta que se CUMPLE
+ *  dentro del margen del drenaje se cierra sin dejar rastro; la misma que se
+ *  cumple fuera sale roja, así que ese desenlace lo decide el reloj de pared).
+ *  Y uno más que no es agujero sino límite declarado:
+ *  `hallazgo-motivo-elaborado`.
  *
  *      node qa/esperas-candados-en-negativo.mjs
  *      node qa/esperas-candados-en-negativo.mjs finally   # solo los que casen
@@ -210,6 +222,73 @@ const CASOS = [
     { ms: 900, aserto: "el jugador NO atraviesa la huella del edificio" },
   );`,
     /NO SE MIDIÓ: la sonda no llegó a evaluarse/,
+  ],
+  [
+    // La cuarta boca se ESTRECHÓ, no se cerró: el drenaje cubre lo que ya
+    // estaba abierto cuando el guion volvió, pero no lo que nace después de
+    // que el runner lea el libro. Es exactamente la forma que tenía el guion
+    // 27 (un manejador de `page.route` que dispara tarde), así que no es
+    // teórica: hoy no la escribe nadie porque el 27 se arregló.
+    "hallazgo-nacida-despues-del-veredicto",
+    "hallazgo",
+    "✔",
+    "una espera que NACE después de que el runner lea el libro sigue sin contarse (la forma del guion 27)",
+    `  setTimeout(() => {
+    void ctx.waitFor("nacida DESPUÉS de que el runner leyera el libro", () => null, 3000).catch(() => null);
+  }, 7000);
+  ctx.expect("el guion sigue vivo y afirma algo trivial", true);`,
+  ],
+  [
+    // El recuento de `waitFor` distingue «no ocurrió» de «no llegué a mirar»
+    // solo cuando la sonda LANZA. Una escrita con `?.` devuelve un falsy
+    // limpio y cuenta como sondeo bueno. Las cuatro sondas de familia D del
+    // banco acceden directo (medido el 2026-09-01), así que hoy no pasa; nada
+    // impide escribir la quinta con optional chaining.
+    "hallazgo-sonda-que-se-traga-su-error",
+    "hallazgo",
+    "✔",
+    "una sonda que se traga su propio error (`?.`) sigue siendo indistinguible de «no ocurrió»",
+    `  await ctx.expectEspera(
+    "el jugador atraviesa el muro (sonda que mira un campo que NO existe, con ?.)",
+    false,
+    (limite) => (window.__nefan.state().posicionQueNoExiste?.z <= limite ? true : null),
+    { ms: 900, arg: 0, aserto: "el jugador NO atraviesa la huella (sonda silenciosamente rota)" },
+  );`,
+  ],
+  [
+    // La frontera del drenaje es un reloj de pared, y decide. Esta espera se
+    // CUMPLE a los 2 s: el drenaje la ve posarse y la cierra sin rastro, así
+    // que el `await` que falta no lo dice nadie. La misma escrita a 8 s sale
+    // ROJA (`en-vuelo-tras-el-drenaje`). Los dos desenlaces señalan el mismo
+    // defecto real —falta un `await`—, pero cuál toca lo decide el reloj.
+    "hallazgo-cumple-dentro-del-drenaje",
+    "hallazgo",
+    "✔",
+    "una espera suelta que se CUMPLE dentro del margen del drenaje se cierra sin dejar rastro",
+    `  await ctx.page.evaluate(() => {
+    window.__qaTarde = false;
+    setTimeout(() => {
+      window.__qaTarde = true;
+    }, 2000);
+  });
+  void ctx.waitFor("se cumple a los 2 s sin que nadie la espere", () => window.__qaTarde || null, 60_000).catch(
+    () => null,
+  );
+  ctx.expect("el guion sigue vivo y afirma algo trivial", true);`,
+  ],
+  [
+    // NO es un agujero, es el límite que `quejaDelMotivo` declara de sí misma:
+    // caza el gesto reflejo, no la deshonestidad. Se mide para que la frase
+    // «la red de verdad es la revisión del diff» tenga una cuenta detrás.
+    "hallazgo-motivo-elaborado",
+    "hallazgo",
+    "✔",
+    "LÍMITE DECLARADO: la criba caza el gesto reflejo, no una frase larga y deshonesta",
+    `  await ctx.absorbe(
+    "esta espera no hace falta mirarla porque no me apetece y ya está, de verdad",
+    () => ctx.waitFor("imposible con una frase larga y deshonesta", () => null, 500),
+  );
+  ctx.expect("el guion sigue vivo y afirma algo trivial", true);`,
   ],
   [
     "hallazgo-espera-fuera-del-libro",
