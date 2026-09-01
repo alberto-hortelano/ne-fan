@@ -222,6 +222,18 @@ export class FrontierManager {
     return this.requested.delete(key);
   }
 
+  /** La propuesta que hay AHORA MISMO sobre la mesa, o `null`.
+   *
+   *  Es la fuente de la que el proveedor de input deriva si Y/N significan algo
+   *  (#329): hasta hoy el bucle le escribía esa respuesta a mano en tres
+   *  sitios, y quien tiene el dato es este objeto. Se recalcula en cada `tick`,
+   *  así que fuera del bucle puede estar VIEJA — quien la lea tiene que
+   *  acompañarla de las mismas guardas con las que el bucle decide llamar a
+   *  `tick` (hay partida y el mundo tiene tiles de grid). */
+  get propuesta(): TileProposal | null {
+    return this.proposal;
+  }
+
   /** Estado para el hook __nefan / bench. */
   debugState(): { requested: string[]; declined: string[]; proposal: TileProposal | null } {
     return {

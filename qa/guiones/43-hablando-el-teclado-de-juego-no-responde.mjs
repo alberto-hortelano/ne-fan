@@ -5,9 +5,10 @@
  *  al proveedor a PREGUNTAR (`InputDeps.dialogoAbierto()`, derivado del panel).
  *  El guion 37 vigilaba que el panel y el gate no discreparan… pero desde #314
  *  las dos mitades que comparaba salen de la MISMA expresión:
- *  `__nefan.dialogue().visible` y `__nefan.state().dialogueActive` son las dos
+ *  `__nefan.dialogue().visible` y `__nefan.state().dialogueActive` eran las dos
  *  `dialoguePanel.isVisible` (`main.ts`). Su vigilante comparaba un booleano
- *  consigo mismo. Al reportarlo se le quitó, y el 37 quedó con lo único que sí
+ *  consigo mismo. (La segunda clave se retiró del hook el 2026-09-01 con #329,
+ *  por eso mismo: un segundo nombre de la primera, sin un solo lector.) Al reportarlo se le quitó, y el 37 quedó con lo único que sí
  *  puede ponerse rojo: que hablando el jugador no anda — que es el gate del
  *  BUCLE, no el del proveedor.
  *

@@ -139,10 +139,6 @@
       "porque": "Los bordes entre tiles y el bloqueo direccional. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
-      "fichero": "src/scene/aim.ts",
-      "porque": "El apuntado y el cono frontal. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
       "fichero": "src/simulation/game-loop.ts",
       "porque": "El bucle de simulación que corre en el bridge. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
@@ -594,6 +590,50 @@
       ],
       "break": 87,
       "porque": "El contrato observado del wire de sprite-forge (R15, 2026-09-01): los zod del meta de hojas y del catálogo, y skinImageCalls — el número de llamadas de imagen que se le enseña al usuario ANTES de gastar. Su batería es el test de fixtures canónicas (las emite el servicio real con `npm run fixtures-contrato` en su repo y van commiteadas en data/contract/fixtures/sprite-forge/): un mutante que relaje el schema (quitar el .strict(), aflojar el superRefine del null mudo) o que descuente una anim en skinImageCalls es exactamente la divergencia silenciosa que el contrato tuvo con `generated_at`. Módulo propio con batería de un fichero porque es el único test de core que lo importa; sus otros consumidores (style-apply/title-screen en nefan-html, el fake del bench en labs) no entran en la mutación de core. MEDIDO en la corrida 33506776818 (37e74d8, 2026-09-01): 87.5% (8 vivos de 64). El suelo deja de ser 0 y pasa al score medido redondeado hacia abajo."
+    },
+    {
+      "id": "entidades-del-tile",
+      "mutate": [
+        "src/session/entidades-del-tile.ts"
+      ],
+      "tests": [
+        "test/entidades-del-tile.test.ts"
+      ],
+      "break": 0,
+      "porque": "La política ÚNICA de re-emisión de un tile (#379): qué se conserva, qué se crea y qué se retira cuando un tile vuelve a emitirse, más la lectura de lo que ese tile DECLARA de cada objeto y cada personaje. Módulo propio con batería de un fichero porque es el único test de core que lo tiene por sujeto: su consumidor real es el cliente (`nefan-html/src/world/carga-de-tile.ts`), que no entra en la mutación de core, y los guiones 42, 48 y 49 lo miden desde fuera. Sus mutantes interesantes son exactamente los dos desenlaces que la tanda existe para impedir: quitar la rama de `conservar` recrea la entity y devuelve el bug de #379 (el objeto pierde su estado vivo, el NPC vuelve teletransportado a su celda de spawn), y aflojar `esDeEsteTile` —de `dueno.de === 'tile' && dueno.key === key` a cualquiera de sus dos mitades— reabre #350 por los dos lados: con solo la primera, el tile se lleva por delante al vecino que paseó hasta aquí; con solo la segunda, el spawn de runtime desaparece al re-emitir. SUELO 0 PORQUE NO ESTÁ MEDIDO, y el motivo NO es que no se haya intentado: `permisoLocal` (scripts/mutacion-huella.ts) NIEGA cualquier corrida local de un módulo SIN medida previa —«no hay medida previa de entidades-del-tile, así que no se sabe cuánto cuesta y podría ser de los caros»—, y un módulo estrenado nunca la tiene. O sea que un módulo NUEVO no puede nacer con suelo medido en local por construcción, diga lo que diga el plan: la primera medida solo puede salir de una corrida autorizada. Queda PEDIDA (`npm run mutacion -- pendiente`); cuando llegue, el suelo pasa a ser su score medido redondeado hacia abajo. Precedente idéntico y reciente: `mundo-persistido` estuvo en 0 hasta la corrida 33506776818, y `session-facets` nació igual."
+    },
+    {
+      "id": "paso-del-jugador",
+      "mutate": [
+        "src/simulation/paso-del-jugador.ts"
+      ],
+      "tests": [
+        "test/paso-del-jugador.test.ts"
+      ],
+      "break": 0,
+      "porque": "Cómo anda el jugador: el marco relativo al facing, la diagonal renormalizada, el deslizamiento por ejes contra lo sólido y la regla «salir sí, entrar no». Sale del `gameLoop` de `nefan-html` (#358), donde eran treinta líneas sin un solo test detrás (#241) pese a ser regla de juego pura. Módulo propio con batería de un fichero porque es el único test que lo tiene por sujeto: su consumidor es el cliente, que no entra en la mutación de core. Sus mutantes interesantes son exactamente lo que un jugador notaría: quitar el `|| 1` de la renormalización, o el propio `mlen`, hace que la diagonal corra un 41 % más; cambiar el `||` de `atrapado` por `&&` (o quitarlo) deja atrapado para siempre a quien aparezca dentro de una huella sólida — un save antiguo, un teletransporte del bench—; y probar el segundo eje desde el punto ya desplazado en vez de desde el origen pega al jugador a las esquinas cóncavas en vez de deslizarlo. SUELO 0 PORQUE NO ESTÁ MEDIDO, y no por no intentarlo: `permisoLocal` (scripts/mutacion-huella.ts) niega toda corrida local de un módulo SIN medida previa —«no se sabe cuánto cuesta y podría ser de los caros»—, y un módulo estrenado nunca la tiene, así que su primera medida solo puede salir de una corrida autorizada. Queda PEDIDA (`npm run mutacion -- pendiente`); cuando llegue, el suelo pasa a ser su score medido redondeado hacia abajo. Precedente: `mundo-persistido` estuvo en 0 hasta la corrida 33506776818."
+    },
+    {
+      "id": "mirada",
+      "mutate": [
+        "src/simulation/mirada.ts"
+      ],
+      "tests": [
+        "test/mirada.test.ts"
+      ],
+      "break": 0,
+      "porque": "La mirada en primera persona: yaw continuo (y el `forward` HORIZONTAL que sale de él, que es el marco del WASD), pitch acotado a 85°, la sensibilidad del ratón y los pasos de 45°/15° de las flechas por flanco de subida. Sale del `main.ts` del cliente (#358), donde eran tres `let` de módulo, cuatro de flanco y cuatro constantes sueltas. Módulo propio con batería de un fichero porque es el único test que lo tiene por sujeto: su consumidor es el cliente. Sus mutantes interesantes se ven desde dentro de los ojos del jugador: subir el tope de pitch a 90° reabre el gimbal lock (el mundo se da la vuelta), meter el pitch en el `forward` hace que mirar al suelo empuje contra el suelo, y quitar el flanco de las flechas convierte una pulsación mantenida en un giro continuo. SUELO 0 PORQUE NO ESTÁ MEDIDO, y no por no intentarlo: `permisoLocal` (scripts/mutacion-huella.ts) niega toda corrida local de un módulo SIN medida previa —«no se sabe cuánto cuesta y podría ser de los caros»—, y un módulo estrenado nunca la tiene, así que su primera medida solo puede salir de una corrida autorizada. Queda PEDIDA (`npm run mutacion -- pendiente`); cuando llegue, el suelo pasa a ser su score medido redondeado hacia abajo. Precedente: `mundo-persistido` estuvo en 0 hasta la corrida 33506776818."
+    },
+    {
+      "id": "apuntado",
+      "mutate": [
+        "src/scene/aim.ts"
+      ],
+      "tests": [
+        "test/aim.test.ts"
+      ],
+      "break": 0,
+      "porque": "A qué se refiere el jugador, en sus DOS sentidos: qué enfila la cámara (`pickAimTarget`, angular, con el cuerpo modelado como elipsoide de pie) y con qué puede tratar aquí (`pickNearestTarget`, de proximidad y medida en el suelo). Sale de `sin_mutar` con esta tanda porque la segunda mitad se le añade ahora (#358): el bucle del cliente traía su propio criterio de «el NPC más cercano», y dos criterios de «a qué me refiero» en dos ficheros distintos es exactamente como divergen. Batería de un fichero porque es el único test de core que lo importa (el otro consumidor es `nefan-html`). Sus mutantes interesantes: cambiar el `atan2(|cruz|, punto)` por un `acos` satura justo donde viven «lo tengo enfilado» y «lo tengo a la espalda»; quitar la guarda del producto escalar hace apuntable lo que está detrás; y medir la interacción en 3D en vez de en el suelo deja sin poder hablar al que se subió a un cajón. SUELO 0 PORQUE NO ESTÁ MEDIDO, y no por no intentarlo: `permisoLocal` (scripts/mutacion-huella.ts) niega toda corrida local de un módulo SIN medida previa —«no se sabe cuánto cuesta y podría ser de los caros»—, y un módulo estrenado nunca la tiene, así que su primera medida solo puede salir de una corrida autorizada. Queda PEDIDA (`npm run mutacion -- pendiente`); cuando llegue, el suelo pasa a ser su score medido redondeado hacia abajo. Precedente: `mundo-persistido` estuvo en 0 hasta la corrida 33506776818."
     }
   ]
 }

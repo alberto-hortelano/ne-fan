@@ -37,7 +37,9 @@
  *  #314 se llevó la copia — el proveedor PREGUNTA (`InputDeps.dialogoAbierto()`,
  *  que es `() => dialoguePanel.isVisible`)—, y con ella se llevó el sujeto del
  *  vigilante: `__nefan.dialogue().visible` y `__nefan.state().dialogueActive`
- *  pasaron a ser LA MISMA expresión. El vigilante comparaba un booleano consigo
+ *  pasaron a ser LA MISMA expresión. (Esa segunda clave ya no existe: se retiró
+ *  del hook el 2026-09-01 con #329, precisamente por ser un segundo nombre de
+ *  la primera que nadie leía.) El vigilante comparaba un booleano consigo
  *  mismo por dos caminos de una línea, y no podía ponerse rojo: QA lo midió el
  *  2026-08-30 neutralizando el gate del proveedor por completo y este guion
  *  salió VERDE ENTERO, los cinco asertos. Se quitaron el vigilante y sus dos

@@ -57,9 +57,6 @@ export interface IntentSink {
 export interface InputProvider extends IntentSink {
   /** Estado continuo, leído por el game loop cada frame. */
   readonly state: InputState;
-  /** True mientras hay una propuesta de tile en pantalla: Y/N responden a
-   *  ella. Lo fija el game loop. */
-  tileProposalActive: boolean;
   /** Reconstruye el mapeo de selección (1..N en teclado) desde el catálogo
    *  del sistema de combate de la sesión y resetea la selección al primero. */
   setAttackBindings(attackIds: readonly string[]): void;
@@ -105,4 +102,21 @@ export interface InputDeps {
   /** ¿Hay una conversación en pantalla ahora mismo? La contesta el dueño del
    *  panel (`main.ts`), que es quien lo abre y lo cierra. */
   dialogoAbierto(): boolean;
+  /** ¿Hay una propuesta de explorar el tile vecino en pantalla? De ella
+   *  dependen Y/N: sin propuesta, `N` es de las teclas dev y `Y` no es nada.
+   *
+   *  EL ESPEJO QUE #314 DEJÓ EN PIE (#329). Hasta hoy esto era
+   *  `tileProposalActive`, campo público mutable del proveedor que el bucle
+   *  escribía desde fuera en TRES sitios —uno por cada rama en la que la
+   *  propuesta puede no existir— con la copia muda de siempre en el proveedor
+   *  scripted (cero lecturas). Tres escrituras que hay que acertar a la vez
+   *  para que el gate diga la verdad, y ninguna herramienta que se entere si
+   *  falta una.
+   *
+   *  Ahora se DERIVA de su dueño, que ya existía y ya era consultable: la
+   *  `propuesta` del `FrontierManager`, más las mismas guardas que decidían si
+   *  el bucle llegaba a mirarla (no hay conversación abierta, hay partida, y el
+   *  mundo tiene tiles de grid). Es la misma expresión que escribía el bucle,
+   *  escrita UNA vez y en el sitio donde se pregunta. */
+  propuestaDeTileAbierta(): boolean;
 }
