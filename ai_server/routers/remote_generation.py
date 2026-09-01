@@ -16,6 +16,7 @@ AssetCache de `deps`.
 import base64
 import json
 import logging
+import os
 import time
 
 import httpx
@@ -256,7 +257,18 @@ def _apuntar_base(triple: str, base_key: str) -> None:
         return
     idx[triple] = base_key
     _BASE_KEYS_INDEX.parent.mkdir(parents=True, exist_ok=True)
-    _BASE_KEYS_INDEX.write_text(json.dumps(idx, indent=2, sort_keys=True))
+    # Escritura ATÓMICA (temporal en el mismo directorio + os.replace), el
+    # equivalente del patrón de la caché de hojas de sprite-forge
+    # (sheet-cache.mjs): un `write_text` directo que muriera a medias dejaba el
+    # fichero truncado, `_leer_bases` lo trata como vacío, y el arte YA PAGADO
+    # se volvía inalcanzable justo en el único escenario para el que este
+    # índice existe — sprite-forge caído.
+    tmp = _BASE_KEYS_INDEX.with_name(f"._base_keys.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(json.dumps(idx, indent=2, sort_keys=True))
+        os.replace(tmp, _BASE_KEYS_INDEX)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _skin_sheet_key(

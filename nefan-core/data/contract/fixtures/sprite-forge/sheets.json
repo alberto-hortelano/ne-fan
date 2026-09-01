@@ -1,0 +1,26 @@
+{
+  "service": "sprite-forge",
+  "version": "0.1.0",
+  "format": "none",
+  "sheets": [
+    {
+      "model": "heroe",
+      "anim": "idle",
+      "angle": "frontal_8",
+      "base_key": "6be029d352212e1b",
+      "meta": {
+        "angle": "frontal_8",
+        "anim": "idle",
+        "directions": 2,
+        "duration": 2,
+        "fps": 4,
+        "frame_count": 8,
+        "frame_height": 256,
+        "frame_width": 256,
+        "generated_at": "2026-01-01T00:00:00",
+        "model": "heroe"
+      },
+      "cached": true
+    }
+  ]
+}

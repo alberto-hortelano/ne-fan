@@ -58,7 +58,6 @@ import type {
   GenerateSurfaceAtlasResponse,
   SkinSpriteSheetRequest,
   SkinSpriteSheetResponse,
-  SpriteSheetMeta,
   StyleCompleteResponse,
   StylesMissingResponse,
   SurfaceCellResult,
@@ -72,6 +71,10 @@ import type {
   ReportPlayerChoiceRequest,
   ReportPlayerChoiceResponse,
 } from "../../nefan-core/src/contracts/narrative-llm.js";
+import type {
+  SpriteCatalog,
+  SpriteSheetMeta,
+} from "../../nefan-core/src/contracts/sprite-forge.js";
 import type { LlmContext } from "../../nefan-core/src/narrative/types.js";
 // Los BUILDERS de escena viven en fake-scenes.ts (módulo puro, sin listen ni
 // puertos): así un test puede validarlos contra `EmittedSceneSchema` —el
@@ -555,7 +558,7 @@ const server = http.createServer((req, res) => {
         // Los perfiles son los del set que usa el juego: idle 8 keyframes (8
         // llamadas), walk/run 4 (4 lotes de 2 direcciones).
         const perfiles = { idle: [8, 2.2, 8], walk: [4, 3.6, 4], run: [4, 6.0, 4] };
-        const animaciones = [];
+        const animaciones: SpriteCatalog["animations"] = [];
         for (const [id, [kf, fps, calls]] of Object.entries(perfiles)) {
           const metaPath = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/${id}/frontal_8/meta.json`;
           if (!existsSync(metaPath)) continue; // el catálogo sale del DISCO, como el de verdad
@@ -568,7 +571,10 @@ const server = http.createServer((req, res) => {
           angles: [{ id: "frontal_8", directions: 8 }],
           skin: { enabled: true, api: "fake", ai_model: "gpt-image-2", cost_usd_per_call: 0 },
           warnings: [],
-        });
+          // Tipado con el contrato zod del wire (#R15): si el catálogo real
+          // cambia de forma, el fake deja de compilar en vez de mentirle al
+          // bench en silencio.
+        } satisfies SpriteCatalog);
       }
       if (req.method === "POST" && ruta === "/skin_sprite_sheet") {
         dePago("/skin_sprite_sheet"); // genera una hoja de sprites: cuesta

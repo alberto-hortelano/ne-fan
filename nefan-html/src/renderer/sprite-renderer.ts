@@ -10,10 +10,8 @@
  * No silent fallbacks: when a sheet/skin can't be loaded the API throws and
  * the ErrorLog records the cause. The caller decides whether to surface it.
  */
-import type {
-  SkinSpriteSheetResponse,
-  SpriteSheetMeta,
-} from "@nefan-core/src/contracts/remote-gen.js";
+import type { SkinSpriteSheetResponse } from "@nefan-core/src/contracts/remote-gen.js";
+import type { SpriteSheetMeta } from "@nefan-core/src/contracts/sprite-forge.js";
 import { errors } from "../ui/error-log.js";
 
 /** A frame that hasn't decoded yet. Distinct from `null`, which would mean
@@ -27,7 +25,7 @@ export type SpriteImageResult = HTMLImageElement | typeof SPRITE_PENDING;
 
 /** La forma del meta.json (base local o sheet vestido) vive en el contrato:
  *  es la MISMA a los dos lados del cable. */
-export type { SpriteSheetMeta } from "@nefan-core/src/contracts/remote-gen.js";
+export type { SpriteSheetMeta } from "@nefan-core/src/contracts/sprite-forge.js";
 
 export interface SpriteSheet extends SpriteSheetMeta {
   /** frames[dir][frame] — image objects start loading on construction. */

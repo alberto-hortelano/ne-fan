@@ -1,0 +1,52 @@
+{
+  "service": "sprite-forge",
+  "version": "0.1.0",
+  "base_key": "2c8531382bf1be44",
+  "meta": {
+    "model": "heroe",
+    "anim": "walk",
+    "angle": "frontal_8",
+    "directions": 2,
+    "frame_count": 4,
+    "fps": 3.6,
+    "duration": 1.1111,
+    "frame_width": 256,
+    "frame_height": 256,
+    "skin": {
+      "prompt": "un herrero de pelo cano",
+      "ai_model": "gpt-image-2",
+      "api": "fixture",
+      "keyframe_indices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "batches": [
+        [
+          0,
+          1
+        ]
+      ],
+      "background": "u2net",
+      "cost_usd": 0.24
+    }
+  },
+  "frames": [
+    [
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    ],
+    [
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    ]
+  ],
+  "ai_model": "gpt-image-2",
+  "cost_usd": 0.24,
+  "generation_time_ms": 7
+}
