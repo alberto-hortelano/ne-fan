@@ -106,4 +106,93 @@ export default tseslint.config(
     files: ["src/input/puerta-de-teclado.ts"],
     rules: { "no-restricted-syntax": "off" },
   },
+  // NINGÚN FICHERO DEL CLIENTE CRECE POR ENCIMA DE DONDE ESTÁ HOY (#358).
+  //
+  // Es el único invariante estructural de esta casa que dependía de que
+  // alguien se acordara: `scripts/deuda.ts` declara por escrito que el tamaño
+  // de un fichero queda fuera de su alcance, así que trocear `main.ts` no
+  // tenía ni métrica de éxito ni freno — nada impedía que recuperase mañana
+  // las líneas que perdiera hoy. Y el problema medido NO es la foto (3.136
+  // líneas) sino la derivada: +894 líneas (+39,9 %) en 30 días, tocado en 72
+  // de 366 commits.
+  //
+  // POR QUÉ AQUÍ Y NO EN `arch-rules.json`, que es donde vive el resto de los
+  // candados del repo, y la razón NO es la que se escribió primero: el motor
+  // de fronteras SÍ sabe contar líneas (un `text.pattern` de N saltos da UNA
+  // violación, no miles). El motivo es el coste, y va RE-MEDIDO hoy en vez de
+  // citado: el caso CONFORME —el que corre siempre— es justo el lento, porque
+  // la regex tiene que agotar el retroceso para poder decir que no. Medido el
+  // 2026-09-01: un `main.ts` que NO viola (patrón de 4.000 saltos) cuesta 379
+  // ms; los dos ficheros de ~1.650 líneas que tampoco violan, 216 ms entre los
+  // dos; el que SÍ viola, 0 ms. Eso se pagaría en cada `npm test` y cada
+  // `npm run deuda`.
+  // A favor de eslint hay además algo que el otro motor no da: reporta «File
+  // has too many lines (3136)», EL MISMO NÚMERO que `wc -l`, así que el
+  // candado y el criterio de aceptación miden lo mismo.
+  //
+  // EL TOPE, 450, y por qué no 400: cualquier valor entre 389 y 543 exime
+  // exactamente a los mismos cuatro ficheros (no hay nada entre 388 y 544), y
+  // lo único que cambia es la holgura del peor no eximido —
+  // `renderer/character-sprites.ts`, hoy 388. Con 400 le quedarían 12 líneas,
+  // menos de una función documentada de esta casa: el primer edit honesto lo
+  // pondría rojo y la respuesta sería subir el tope, que es el anti-patrón que
+  // `quality-thresholds.json` prohíbe por escrito. Con 450 le quedan 62 sin
+  // ceder un gramo de fuerza.
+  //
+  // LOS DOS `false` NO SON DECORACIÓN: con `skipComments` o `skipBlankLines`
+  // el número del candado dejaría de ser el de `wc -l`, y entonces «main.ts
+  // baja de 3.136» y «el candado no salta» medirían cosas distintas. Esta casa
+  // documenta mucho: descontar comentarios sería además premiar el borrado de
+  // prosa como si fuera troceo.
+  //
+  // LO QUE NO VE: (1) el CSS — `src/ui/game-ui.css` tiene 467 líneas y queda
+  // fuera porque el bloque es `*.ts`; se dice en vez de callarlo, y entra el
+  // día que alguien lo quiera candar. (2) Repartir 3.000 líneas en siete
+  // ficheros de 430: el tope frena el crecimiento por fichero, no la
+  // concentración (hoy 50,1 % del cliente en tres ficheros), y contra eso no
+  // hay checker sino revisión.
+  //
+  // COSTE MEDIDO en este repo (tres corridas de `npm run lint` entero, 2026-09-01):
+  // 2,58 / 2,67 / 2,63 s sin la regla → 2,67 / 2,65 / 2,66 s con ella. O sea,
+  // dentro del ruido: `max-lines` cuenta saltos de línea sobre un AST que
+  // eslint ya tenía parseado, no vuelve a leer nada.
+  //
+  // `error` y no `warn`: entra con CUATRO ocupantes, todos conocidos, todos
+  // eximidos abajo con su cifra de HOY. Un `warn` es una lista que crece.
+  {
+    files: ["src/**/*.ts"],
+    rules: {
+      "max-lines": ["error", { max: 450, skipBlankLines: false, skipComments: false }],
+    },
+  },
+  // Las CUATRO excepciones, congeladas en los valores de hoy (2026-09-01). El
+  // número de cada una es su `wc -l` exacto, así que la excepción no da
+  // holgura: exime lo que ya hay y prohíbe la línea siguiente. Cada entrega
+  // que corte uno de estos ficheros BAJA su número en el mismo commit — si no,
+  // el candado devuelve el hueco recién liberado.
+  {
+    // #358 · el fichero que abre esta tanda: game loop, carga de tiles,
+    // colisión, diálogo, viaje, HUD, arranque, título y bootstrap.
+    files: ["src/main.ts"],
+    rules: { "max-lines": ["error", { max: 3136, skipBlankLines: false, skipComments: false }] },
+  },
+  {
+    // La fachada de three.js: es el ÚNICO fichero del repo que puede
+    // importarlo (`three-solo-en-fps-gl` en arch-rules.json), así que trocearlo
+    // exige antes decidir qué otro fichero hereda ese permiso. Sin issue
+    // propio todavía.
+    files: ["src/renderer/fps-gl.ts"],
+    rules: { "max-lines": ["error", { max: 1687, skipBlankLines: false, skipComments: false }] },
+  },
+  {
+    // #346 · trocear la pantalla de título es la continuación natural de #358.
+    files: ["src/ui/title-screen.ts"],
+    rules: { "max-lines": ["error", { max: 1651, skipBlankLines: false, skipComments: false }] },
+  },
+  {
+    // La corrida de «Aplicar estilo» (subida de pack + confirmación de coste).
+    // Cuelga de #346: es la mitad del título que vive fuera del título.
+    files: ["src/ui/style-apply.ts"],
+    rules: { "max-lines": ["error", { max: 544, skipBlankLines: false, skipComments: false }] },
+  },
 );
