@@ -5,10 +5,13 @@
  *  tres capas, y ninguna es cosmética — las tres deciden si el jugador
  *  entiende qué le ha pasado o lee un volcado:
  *
- *   · `rotuloDeStatus` — el título del overlay de un fallo del motor, y si ese
- *     fallo tapa la pantalla o va a la línea de mensajes (#180). Eran dos
+ *   · `rotuloDeStatus` — el título del overlay de un fallo de la PARTIDA, y si
+ *     ese fallo tapa la pantalla o va a la línea de mensajes (#180). Eran dos
  *     literales sueltos en `main.ts` («Error al generar el mundo», «Error al
- *     generar la escena») encima de un cuerpo ya traducido.
+ *     generar la escena») encima de un cuerpo ya traducido. Y desde #352 hay
+ *     un titular POR HECHO: el catch-all que rotulaba todo lo que no era tile
+ *     ni escena hacía que un takeover, un disco lleno o un plugin roto
+ *     salieran a pantalla completa culpando al motor narrativo.
  *   · `motivoParaElJugador` — el CUERPO de un fallo de generación. Estaba
  *     DUPLICADO en `bridge/handlers/tile.ts` y `scene.ts`, con una rama
  *     distinta en cada copia, y en tile.ts solo se aplicaba si el viaje traía
@@ -81,6 +84,12 @@ const DETALLE_POR_DEFECTO: Record<NarrativeStatusDeSesion["kind"], string> = {
   tile: "Algo falló generando el tile.",
   scene: "Algo falló en el motor narrativo.",
   consequences: "El motor narrativo rechazó la reacción.",
+  restore: "Algo de tu partida guardada no se pudo devolver al mundo.",
+  takeover: "Esta partida se está jugando desde otro sitio.",
+  save: "No se pudo escribir la partida guardada.",
+  plugin: "Un sistema del juego no pudo completar el turno.",
+  action: "El juego no pudo completar esa acción.",
+  protocolo: "El juego mandó un mensaje que el servidor no pudo leer.",
 };
 
 /** Lo que `rotuloDeStatus` LEE de un status, y nada más.
@@ -116,41 +125,97 @@ export function rotuloDeStatus(
   // puede probar.
   const salida: SalidaDelOverlay = ctx.mundoVacio ? "volver-al-titulo" : "cerrar";
 
-  if (status.kind === "tile") {
-    // Bootstrap: el jugador acaba de pulsar «Comenzar» y no hay mundo. No es
-    // «no se pudo llegar» a ningún sitio — es que la partida no arrancó.
-    if (ctx.mundoVacio) {
-      return { destino: "overlay", titulo: "La partida no pudo empezar", detalle, salida };
-    }
-    // Con mundo pintado, el tile puede ser un viaje (overlay abierto, el
-    // jugador esperando) o la frontera generándose sola en segundo plano.
-    // Lo segundo NO merece tapar la pantalla: su feedback es el velo del
-    // borde, y el motivo va a la línea de mensajes.
-    if (ctx.overlayAbierto) {
-      return { destino: "overlay", titulo: "No se pudo llegar", detalle, salida };
-    }
-    return { destino: "log", detalle };
+  // UN `switch` EXHAUSTIVO Y NO UN `return` AL FINAL, y esa es toda la
+  // diferencia de #352. Hasta el 2026-09-01 aquí abajo había un catch-all que
+  // devolvía «El motor narrativo rechazó la respuesta» a TODO lo que no era
+  // `tile` ni `scene`, y como el bridge no tenía más kinds que ofrecer, seis
+  // avisos distintos —un takeover, dos «no se pudo guardar», un plugin roto,
+  // un handler reventado y el «tu partida vuelve incompleta» del issue— salían
+  // a pantalla completa culpando al motor narrativo de algo que no había
+  // hecho. El `Record` de arriba candaba el CUERPO; el título no lo candaba
+  // nadie. Con el `never` de abajo, un kind sin titular propio no compila.
+  switch (status.kind) {
+    case "tile":
+      // Bootstrap: el jugador acaba de pulsar «Comenzar» y no hay mundo. No es
+      // «no se pudo llegar» a ningún sitio — es que la partida no arrancó.
+      if (ctx.mundoVacio) {
+        return { destino: "overlay", titulo: "La partida no pudo empezar", detalle, salida };
+      }
+      // Con mundo pintado, el tile puede ser un viaje (overlay abierto, el
+      // jugador esperando) o la frontera generándose sola en segundo plano.
+      // Lo segundo NO merece tapar la pantalla: su feedback es el velo del
+      // borde, y el motivo va a la línea de mensajes.
+      if (ctx.overlayAbierto) {
+        return { destino: "overlay", titulo: "No se pudo llegar", detalle, salida };
+      }
+      return { destino: "log", detalle };
+
+    case "scene":
+      // Con `placeId` el jugador pulsó un destino en «Salidas»: lo que ha
+      // fallado es llegar. Sin él es una escena que el motor preparaba por su
+      // cuenta.
+      return status.placeId
+        ? { destino: "overlay", titulo: "No se pudo llegar", detalle, salida }
+        : { destino: "overlay", titulo: "No se pudo preparar el lugar", detalle, salida };
+
+    case "consequences":
+      // El ÚNICO rechazo real del motor: una reacción narrativa que no vale
+      // (p. ej. 422 por una consequence mal formada). El rótulo es el que ya
+      // había en el cliente — se mudó aquí para que ningún rótulo de fallo del
+      // motor quedara suelto en `main.ts`; lo que cambia hoy es que por fin es
+      // CIERTO, porque ya no lo hereda nadie más.
+      return {
+        destino: "overlay",
+        titulo: "El motor narrativo rechazó la respuesta",
+        detalle,
+        salida,
+      };
+
+    case "restore":
+      // El save se leyó, la partida arrancó, y algo que el jugador había
+      // dejado en el mundo no ha vuelto. No es un fallo del motor ni del
+      // arranque: es una partida que vuelve con menos de lo que tenía, y el
+      // titular tiene que decir eso para que el cuerpo (que nombra a quién
+      // falta) se entienda.
+      return { destino: "overlay", titulo: "Tu partida vuelve incompleta", detalle, salida };
+
+    case "takeover":
+      // Otro cliente tomó esta partida a mitad de una generación en vuelo: lo
+      // que se descarta no es una respuesta mala, es el resultado de una
+      // sesión que ya no manda.
+      return { destino: "overlay", titulo: "Esta partida ya no está al mando", detalle, salida };
+
+    case "save":
+      // Disco lleno, permisos, un `state.json` que no se pudo escribir. Lo que
+      // ha pasado ya está en memoria y el turno sigue: lo que peligra es que
+      // sobreviva a reanudar.
+      return { destino: "overlay", titulo: "No se pudo guardar la partida", detalle, salida };
+
+    case "plugin":
+      // Un sistema del juego (el comercio, el clima…) reventó su turno. Es
+      // contenido del mundo, no el narrador: decir «el motor narrativo» aquí
+      // manda a mirar el sitio equivocado.
+      return { destino: "overlay", titulo: "Un sistema del juego falló", detalle, salida };
+
+    case "action":
+      // Reventó el handler de algo que el jugador PIDIÓ (hablar, pegar,
+      // interactuar). El sujeto es su acción, no la respuesta de nadie.
+      return { destino: "overlay", titulo: "No se pudo completar esa acción", detalle, salida };
+
+    case "protocolo":
+      // El cliente le mandó al bridge un frame que no pasa el intake. No es el
+      // mundo, ni el motor, ni el disco: es el juego hablando consigo mismo y
+      // no entendiéndose. Salía como `scene` —o sea, bajo «No se pudo preparar
+      // el lugar»— hasta el 2026-09-01 (QA H-7): un titular que manda a mirar
+      // la generación del sitio para decir que el propio juego mandó basura.
+      return { destino: "overlay", titulo: "Fallo interno del juego", detalle, salida };
   }
 
-  if (status.kind === "scene") {
-    // Con `placeId` el jugador pulsó un destino en «Salidas»: lo que ha
-    // fallado es llegar. Sin él es una escena que el motor preparaba por su
-    // cuenta.
-    return status.placeId
-      ? { destino: "overlay", titulo: "No se pudo llegar", detalle, salida }
-      : { destino: "overlay", titulo: "No se pudo preparar el lugar", detalle, salida };
-  }
-
-  // Consequences: una reacción narrativa rechazada (p. ej. 422 por una
-  // consequence mal formada). El rótulo es el que ya había en el cliente — se
-  // muda aquí para que NINGÚN rótulo de fallo del motor quede suelto en
-  // `main.ts` y el sexto se escriba en un séptimo sitio.
-  return {
-    destino: "overlay",
-    titulo: "El motor narrativo rechazó la respuesta",
-    detalle,
-    salida,
-  };
+  // Exhaustividad: un kind nuevo sin titular propio no compila. Es el candado
+  // del criterio 3 de #352 — el catch-all que había aquí es el mecanismo que
+  // fabricaba el bug, no su víctima.
+  const nunca: never = status.kind;
+  throw new Error(`rotuloDeStatus no sabe rotular el kind "${String(nunca)}"`);
 }
 
 /** Traduce un fallo de GENERACIÓN a algo que quien juega pueda leer.
@@ -176,6 +241,25 @@ export function motivoParaElJugador(err: unknown): string {
     return "No hay sitio libre en el mapa para colocarlo.";
   }
   return "El motor narrativo no pudo construirlo; inténtalo de nuevo.";
+}
+
+/** Traduce un fallo de REACCIÓN a algo que quien juega pueda leer.
+ *
+ *  El cuarto canal, y el último que quedaba en inglés: `reportPlayerChoice`
+ *  devuelve `ok:false` y el bridge pintaba `Narrative engine error: <crudo>` a
+ *  pantalla completa (QA 2026-09-01, H-3). El titular de ese aviso —«El motor
+ *  narrativo rechazó la respuesta»— es el único de los ocho que SÍ nombra a su
+ *  culpable de verdad; el cuerpo era lo que no estaba escrito para nadie.
+ *
+ *  Distingue las dos causas porque el consejo cambia: si el motor no contesta,
+ *  reintentar puede funcionar; si contestó algo que no vale, reintentar lo
+ *  mismo vuelve a fallar y lo que hay que hacer es decir otra cosa. */
+export function motivoDeReaccionParaElJugador(err: unknown): string {
+  const raw = (err as Error)?.message ?? String(err);
+  if (/fetch failed|ECONNREFUSED|socket hang up|timeout|timed out/i.test(raw)) {
+    return "El motor narrativo no responde; inténtalo de nuevo en un momento.";
+  }
+  return "El motor narrativo no pudo reaccionar a eso; prueba a decir otra cosa.";
 }
 
 /** La extensión de los módulos de fixture del glob. En una constante para que

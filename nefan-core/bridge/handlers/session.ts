@@ -292,13 +292,19 @@ function reseedSimForSession(
  *  del servidor no es el canal de algo que el jugador ve, y hasta esta vuelta
  *  eso era todo lo que había (QA 2026-08-31, H-2). Sin ilegibles no dice nada:
  *  el silencio aquí sí es correcto, porque no falta nadie.
+ *
+ *  `kind: "restore"` y no `"consequences"` (#352): el cuerpo ya era exacto y
+ *  estaba en idioma de jugador, pero salía bajo «El motor narrativo rechazó la
+ *  respuesta» — un titular que nombra a otro culpable encima de un texto que
+ *  habla del save. Aquí el motor narrativo no ha rechazado nada; ni siquiera
+ *  ha intervenido.
  */
 function avisarDeIlegibles(ctx: BridgeContext, ilegibles: readonly string[]): void {
   if (ilegibles.length === 0) return;
   ctx.broadcastNarrative({
     type: "narrative_status",
     phase: "error",
-    kind: "consequences",
+    kind: "restore",
     message: avisoDeIlegibles(ilegibles),
   });
 }

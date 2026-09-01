@@ -212,11 +212,16 @@ createStateHttpServer({
         );
       }
       // plugin_activated (§7.3 paso 5): se notifica con el status existente
-      // para no tocar los parsers de cliente.
+      // para no tocar los parsers de cliente. `kind: "plugin"` desde #352 —
+      // era `consequences`, o sea «el motor narrativo rechazó la reacción»
+      // para decir que un plugin se ha ACTIVADO. Este no rotula nunca (es
+      // `ready`, y `rotuloDeStatus` solo rotula fallos), así que el jugador no
+      // leía la mentira; pero el kind es el hecho, y dejarlo aquí era el
+      // décimo sitio donde `consequences` significaba «lo demás».
       ctx.broadcastNarrative({
         type: "narrative_status",
         phase: "ready",
-        kind: "consequences",
+        kind: "plugin",
         message:
           result.action === "migrated"
             ? `Plugin evolucionado: ${name} v${result.fromVersion}→v${version}` +
@@ -227,7 +232,8 @@ createStateHttpServer({
       });
       // …y para que llegue A LA PANTALLA, por el feed de eventos, que es el
       // único canal de estos que el cliente pinta hoy (un narrative_status
-      // `ready/consequences` lo descarta en silencio). Solo la migración: es
+      // `ready` que no es de tile ni de escena lo descarta en silencio). Solo
+      // la migración: es
       // la que cambia un sistema con el que el jugador ya estaba tratando, y
       // si el que cambia es un plugin del juego, el cambio es IRREVERSIBLE
       // para ese save — el JSON del disco deja de mandar.
@@ -282,14 +288,20 @@ wss.on("connection", (ws: WebSocket) => {
       console.error(`Bridge: WS frame rejected (${intake.reason}): ${intake.error} — ${preview}`);
       // UNICAST —al socket que mandó la basura, no a todos— pero por el
       // mismo transporte que sella: aquí el `sessionId` se escribía a mano.
+      // `protocolo` y no `scene` (#352, QA H-7): esto no es la generación de
+      // ningún sitio, es el juego mandando un frame que el bridge no puede
+      // leer. Con `scene` el jugador leía «No se pudo preparar el lugar», que
+      // nombra a otro culpable, y debajo jerga de bridge. El volcado técnico
+      // —el motivo del intake y los 200 primeros bytes— ya está entero en el
+      // `console.error` de arriba, que es donde sirve.
       ctx.enviarNarrativo(ws, {
         type: "narrative_status",
         phase: "error",
-        kind: "scene",
+        kind: "protocolo",
         message:
           intake.reason === "json"
-            ? `Bridge recibió un frame WS inválido: ${intake.error}`
-            : `Bridge rechazó un mensaje inválido: ${intake.error}`,
+            ? "El juego mandó al servidor algo que no es un mensaje válido."
+            : "El juego mandó un mensaje que el servidor no reconoce.",
       });
       return;
     }

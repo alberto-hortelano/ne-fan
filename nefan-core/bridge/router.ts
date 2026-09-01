@@ -9,7 +9,10 @@
  *  mensajes con requestId, espera INFINITA para los fire-and-forget (el modal
  *  de diálogo colgado para siempre). */
 
-import { motivoParaElJugador } from "../src/protocol/status-labels.js";
+import {
+  motivoDeSesionParaElJugador,
+  motivoParaElJugador,
+} from "../src/protocol/status-labels.js";
 import type { BridgeContext, ClientSocket, SinSello } from "./context.js";
 import type {
   ClientMessage,
@@ -144,8 +147,16 @@ export type RespuestaAlFallo =
  *  silencio cuando crezca el protocolo. El `error` de los frames con requestId
  *  lleva el motivo técnico (el cliente lo traduce con
  *  `motivoDeSesionParaElJugador` y guarda el crudo en su error-log); el de las
- *  difusiones va ya traducido con `motivoParaElJugador`, como los emisores de
- *  tile.ts y scene.ts. */
+ *  difusiones de GENERACIÓN va ya traducido con `motivoParaElJugador`, como
+ *  los emisores de tile.ts y scene.ts.
+ *
+ *  La difusión que NO es de generación usa el otro traductor, y no es un
+ *  detalle de estilo (#352): un `dialogue_choice` o un `respawn` que revienta
+ *  no ha pasado por el motor narrativo, así que `motivoParaElJugador` —cuyo
+ *  genérico es «El motor narrativo no pudo construirlo»— le contaba al jugador
+ *  una causa inventada, y encima bajo un titular que decía lo mismo. El
+ *  genérico de `motivoDeSesionParaElJugador` («El servidor del juego no pudo
+ *  completarlo; inténtalo de nuevo») es exactamente el hecho. */
 export function respuestaAlFalloDeHandler(msg: ClientMessage, err: unknown): RespuestaAlFallo {
   const raw = (err as Error)?.message ?? String(err);
   const peticion = (frame: SinSello): RespuestaAlFallo => ({ a: "peticion", frame });
@@ -262,8 +273,11 @@ export function respuestaAlFalloDeHandler(msg: ClientMessage, err: unknown): Res
         frame: {
           type: "narrative_status",
           phase: "error",
-          kind: "consequences",
-          message: motivoParaElJugador(err),
+          // `action` y no `consequences`: lo que ha reventado es el handler de
+          // algo que el jugador PIDIÓ (hablar, pegar, interactuar, reaparecer).
+          // El motor narrativo puede no haber intervenido siquiera.
+          kind: "action",
+          message: motivoDeSesionParaElJugador(err),
         },
       };
   }

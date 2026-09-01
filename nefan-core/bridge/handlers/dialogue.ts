@@ -3,6 +3,7 @@
  *  reportarlo al motor narrativo, aplicar las consequences y hacer broadcast. */
 
 import { dispatchConsequences } from "../../src/narrative/consequence-handler.js";
+import { motivoDeReaccionParaElJugador } from "../../src/protocol/status-labels.js";
 import { npcSync, runPluginTick, sessionChangedError, type BridgeContext } from "../context.js";
 import type {
   DialogueChoiceMessage,
@@ -38,21 +39,38 @@ async function reportAndDispatch(
   const changed = sessionChangedError(ctx, jobSession);
   if (changed) {
     console.warn(`Bridge: reportPlayerChoice (${logLabel}) descartado — ${changed}`);
+    // `takeover` y no `consequences` (#352): lo que ha pasado es que otro
+    // cliente tomó esta partida mientras el motor pensaba. El motor no ha
+    // rechazado nada — su respuesta es la que se está tirando.
+    //
+    // Y el CUERPO no es `changed` (QA 2026-09-01, H-3): esa cadena la escribe
+    // `sessionChangedError` para el LOG y lleva dentro los dos session-id
+    // («era 1788…-abc, ahora 1788…-def — resultado descartado sin escribir»),
+    // que a pantalla completa es un volcado. El detalle técnico no se pierde:
+    // está entero en el `console.warn` de la línea de arriba, que es donde
+    // sirve.
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "error",
-      kind: "consequences",
-      message: changed,
+      kind: "takeover",
+      message:
+        "Esta partida se ha abierto en otro sitio y lo que acabas de decir no se ha guardado. " +
+        "Vuelve al título y reanúdala para seguir jugando aquí.",
     });
     return;
   }
   if (!result.ok) {
     console.warn(`Bridge: reportPlayerChoice (${logLabel}) failed for ${eventId}: ${result.error}`);
+    // El ÚNICO rechazo real del motor, y hasta hoy el único de los siete cuyo
+    // cuerpo estaba en INGLÉS y con el volcado dentro («Narrative engine
+    // error: …»). El titular ya era cierto; lo que el jugador leía debajo, no
+    // era ni suyo ni su idioma (QA 2026-09-01, H-3). El crudo sigue entero en
+    // el `console.warn` de arriba.
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "error",
       kind: "consequences",
-      message: `Narrative engine error: ${result.error}`,
+      message: motivoDeReaccionParaElJugador(result.error),
     });
     return;
   }
@@ -71,12 +89,20 @@ async function reportAndDispatch(
   // se quedaba esperando una respuesta que no iba a llegar.
   await ctx.narrative.save().catch((err: unknown) => {
     console.error(`Bridge: no se pudo guardar tras la reacción (${logLabel}):`, err);
+    // `save` y no `consequences` (#352): la reacción SÍ llegó y ya vive en
+    // memoria — lo que ha fallado es escribirla en disco.
+    //
+    // El cuerpo EMPIEZA POR LA CONSECUENCIA y no repite el titular (QA
+    // 2026-09-01, H-4): decía «No se pudo guardar la partida tras esta
+    // reacción: …» debajo de «No se pudo guardar la partida», así que el
+    // jugador leía la misma frase dos veces y lo único nuevo quedaba al final
+    // de la segunda. Con el titular puesto, el cuerpo solo tiene que contar
+    // qué se pierde.
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "error",
-      kind: "consequences",
-      message:
-        "No se pudo guardar la partida tras esta reacción: si reanudas, podría faltar.",
+      kind: "save",
+      message: "Lo que acaba de pasar en esta conversación podría faltar si reanudas.",
     });
   });
   // Un spawn_entity dinámico puede haber creado NPCs — engancharlos a la

@@ -104,7 +104,19 @@ describe("bridge dialogue_choice", () => {
           m.type === "narrative_status" && m.phase === "error" && m.kind === "consequences",
       );
     assert.ok(err, "narrative_status error difundido");
-    assert.ok(err.message?.includes("timeout esperando a Claude"));
+    // El cuerpo va TRADUCIDO, no crudo (QA 2026-09-01, H-3): hasta hoy esto
+    // difundía `Narrative engine error: timeout esperando a Claude` y el
+    // cliente lo pintaba verbatim a pantalla completa, en inglés y con el
+    // volcado dentro. El crudo no se pierde: sigue en el `console.warn` del
+    // bridge, que es donde sirve.
+    assert.equal(
+      err.message,
+      "El motor narrativo no responde; inténtalo de nuevo en un momento.",
+    );
+    assert.ok(
+      !err.message?.includes("timeout esperando a Claude"),
+      "el volcado del motor no puede llegar a la pantalla del jugador",
+    );
   });
 
   it("un save que falla tras la reacción AVISA al jugador y no se traga los efectos", async () => {
@@ -143,14 +155,31 @@ describe("bridge dialogue_choice", () => {
     } finally {
       log.soltar();
     }
+    // `kind: "save"` y no `"consequences"` (#352): la reacción del motor
+    // llegó y se aplicó — lo que falló es el disco. Con el kind viejo este
+    // aviso salía bajo «El motor narrativo rechazó la respuesta», que es
+    // justamente lo contrario de lo que había pasado. El aserto va por el kind
+    // y no solo por el texto porque el kind es lo que elige el TITULAR.
     const err = broadcasts
       .slice(before)
       .find(
         (m): m is NarrativeStatusMessage =>
-          m.type === "narrative_status" && m.phase === "error" && m.kind === "consequences",
+          m.type === "narrative_status" && m.phase === "error" && m.kind === "save",
       );
     assert.ok(err, "el fallo de guardado tiene que llegar al jugador");
-    assert.match(err.message ?? "", /No se pudo guardar la partida/);
+    // El cuerpo EMPIEZA POR LA CONSECUENCIA (QA 2026-09-01, H-4): decía «No se
+    // pudo guardar la partida tras esta reacción: …», o sea el titular otra
+    // vez, y el jugador leía la misma frase dos veces. Se afirman las dos
+    // mitades —lo que dice y lo que ya NO repite— porque si solo se mirara el
+    // texto nuevo, volver a meter el titular delante saldría verde.
+    assert.equal(
+      err.message,
+      "Lo que acaba de pasar en esta conversación podría faltar si reanudas.",
+    );
+    assert.ok(
+      !err.message?.includes("No se pudo guardar la partida"),
+      "el cuerpo no repite el titular que ya está encima",
+    );
     const event = broadcasts
       .slice(before)
       .find((m): m is NarrativeEventMessage => m.type === "narrative_event");

@@ -222,12 +222,19 @@ describe("guardas anti-takeover de sesión", () => {
     resolveChoice({ ok: true, consequences: [] });
     await routed;
 
+    // El aviso va con `kind:"takeover"` y en idioma de jugador (#352 + QA H-3).
+    // Antes se reconocía por «descartado sin escribir», que era la cadena que
+    // `sessionChangedError` compone PARA EL LOG y que lleva dentro los dos
+    // session-id; se pintaba tal cual a pantalla completa. El motivo técnico
+    // sigue existiendo y sigue yendo al `console.warn`: lo que cambia es lo que
+    // ve quien juega.
     assert.ok(
       broadcasts.some(
         (m) =>
           m.type === "narrative_status" &&
           m.phase === "error" &&
-          /descartado sin escribir/.test(m.message ?? ""),
+          m.kind === "takeover" &&
+          /se ha abierto en otro sitio/.test(m.message ?? ""),
       ),
       "esperaba narrative_status de descarte",
     );

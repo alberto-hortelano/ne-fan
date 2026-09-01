@@ -408,10 +408,13 @@ export function runPluginTick(
   }
   if (!result.ok) {
     console.error(`Bridge: plugin tick aborted for ${eventId}:`, result.error);
+    // `plugin` y no `consequences` (#352): un sistema del juego reventó su
+    // turno. El cuerpo ya nombraba al plugin; el titular decía «el motor
+    // narrativo rechazó la respuesta» y mandaba a mirar el sitio equivocado.
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "error",
-      kind: "consequences",
+      kind: "plugin",
       // Al jugador, la frase; el volcado del error ya está en el log de arriba.
       message: result.error
         ? describePluginTickError(result.error, (id) => ctx.narrative.resolvePluginRecord(id)?.name)

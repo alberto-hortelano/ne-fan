@@ -655,6 +655,24 @@
       "text": {
         "pattern": "\\bdialogueActive\\b"
       }
+    },
+    {
+      "id": "ningun-aviso-culpa-al-motor",
+      "desc": "Un `narrative_status` de error del bridge no sale con `kind: \"consequences\"` salvo donde el motor narrativo SÍ rechazó",
+      "why": "LO QUE CAZA: que un aviso a pantalla completa vuelva a salir bajo «El motor narrativo rechazó la respuesta» contando otra cosa.\n\nEL DEFECTO (#352). `kind` es lo único que el jugador lee como TITULAR, y hasta el 2026-09-01 el bridge solo tenía tres kinds: `scene`, `tile` y `consequences`. Todo lo que no era generación de mundo salía por el tercero, y `rotuloDeStatus` lo cerraba con un `return` catch-all. Resultado medido: SIETE emisores bajo el mismo titular y SEIS mintiendo — el «no pude restaurar esto del save» del resume (handlers/session.ts), el takeover de sesión y los dos «no se pudo guardar» (handlers/dialogue.ts, handlers/simulation.ts), el plugin que revienta su turno (context.ts) y el handler que revienta (router.ts). El cuerpo de cada uno era exacto y estaba en idioma de jugador; lo que mentía era el rótulo, y encima nombraba a un culpable concreto que no había intervenido.\n\nPOR QUÉ NO BASTA EL TIPO, que es la pregunta que hay que contestar antes de meter un checker. El `switch` exhaustivo con `const nunca: never` de `rotuloDeStatus` canda la MITAD que le toca: un kind nuevo sin titular propio no compila. Lo que `tsc` no puede decir es que un emisor NUEVO no elija `consequences` para contar algo que no es un rechazo del motor — escribir `kind: \"consequences\"` compila desde cualquier handler, es exactamente cómo llegaron aquí los seis, y es gratis (el kind ya existe y el rótulo ya está escrito). El tipo canda el rótulo; el checker canda la ATRIBUCIÓN.\n\nLÍMITE HONESTO, para que nadie lo lea de más: la regla exime el FICHERO, así que no atrapa a un emisor nuevo escrito DENTRO de `handlers/dialogue.ts` — que es el único sitio donde `consequences` es cierto y por eso el único exceptuado. Para eso está el `switch`, y para eso está que el fichero exceptuado sea el más pequeño posible. Tampoco mira `phase`: un `ready` con ese kind también salta, y es a propósito — el kind describe QUÉ ha pasado, no si ha ido bien (el aviso de plugin activado de `ws-server.ts` era `ready/consequences` y se pasó a `plugin` en esta misma tanda; no rotulaba nunca, pero era el décimo sitio donde `consequences` significaba «lo demás»).\n\nEs `error` y entra a CERO ocupantes fuera de su única excepción: medido con `npm run deuda` antes y después (69 items, Fronteras 15, idéntico). Un candado que hay que pagar para meter no entra.",
+      "severity": "error",
+      "files": [
+        "nefan-core/bridge/**/*.ts"
+      ],
+      "text": {
+        "pattern": "kind:\\s*\"consequences\""
+      },
+      "exceptions": [
+        {
+          "path": "nefan-core/bridge/handlers/dialogue.ts",
+          "reason": "Es el ÚNICO rechazo real del motor narrativo: `reportPlayerChoice` devuelve `ok:false` y lo que ha fallado es, literalmente, la respuesta del motor a la elección del jugador. Los otros dos avisos de este mismo fichero —el takeover y el «no se pudo guardar»— NO están exceptuados por serlo: se les cambió el kind en la misma tanda (`takeover` y `save`), así que la exención cubre el fichero pero dentro de él solo queda un ocupante."
+        }
+      ]
     }
   ]
 }

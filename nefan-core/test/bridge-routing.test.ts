@@ -160,9 +160,16 @@ describe("bridge routing básico", () => {
         m.type === "narrative_status" && m.phase === "error",
     );
     assert.ok(status, "el error tiene que difundirse al jugador");
-    assert.equal(status.kind, "consequences");
-    // Traducido para quien juega (motivoParaElJugador), no el volcado técnico.
-    assert.match(status.message ?? "", /El motor narrativo no responde/);
+    // `action` y no `consequences` (#352): lo que reventó es el handler de lo
+    // que el jugador pidió (`interact_entity`), y el motor narrativo puede no
+    // haber intervenido siquiera.
+    assert.equal(status.kind, "action");
+    // Traducido para quien juega (motivoDeSesionParaElJugador), no el volcado
+    // técnico. Y con el traductor de SESIÓN, no el de generación: éste no es
+    // un fallo del motor construyendo mundo, así que «El motor narrativo no
+    // responde» era una causa inventada encima de un titular mentiroso.
+    assert.match(status.message ?? "", /El servidor del juego no pudo completarlo/);
+    assert.doesNotMatch(status.message ?? "", /motor narrativo/);
     assert.match(log.lineas.join(" | "), /el handler de 'interact_entity' reventó/);
   });
 
@@ -260,7 +267,7 @@ describe("respuestaAlFalloDeHandler (la red por mensaje, caso a caso)", () => {
     assert.equal(f.placeId, "plaza");
   });
 
-  it("el resto de fire-and-forget difunde kind consequences con el motivo traducido", () => {
+  it("el resto de fire-and-forget difunde kind action con el motivo de SESIÓN traducido", () => {
     const casos: ClientMessage[] = [
       { type: "dialogue_choice", eventId: "e", choiceIndex: 0, speaker: "G", chosenText: "Hola" },
       { type: "interact_entity", entityId: "n", entityName: "Guardia" },
@@ -285,10 +292,16 @@ describe("respuestaAlFalloDeHandler (la red por mensaje, caso a caso)", () => {
       if (res.a !== "difusion") continue;
       const f = res.frame;
       assert.equal(f.phase, "error", msg.type);
-      assert.equal(f.kind, "consequences", msg.type);
-      // `motivoParaElJugador` traduce, no vuelca: la prueba usa un error de
-      // red porque es la única rama afirmable sin acoplarse a la frase genérica.
-      assert.match(f.message ?? "", /El motor narrativo no responde/, msg.type);
+      // Ninguno de estos ocho pasa por el motor narrativo antes de reventar:
+      // son acciones del jugador cuyo handler falló. `consequences` los
+      // sacaba bajo «El motor narrativo rechazó la respuesta» (#352).
+      assert.equal(f.kind, "action", msg.type);
+      // Y el CUERPO cambia con el titular: `motivoParaElJugador` es el
+      // traductor de GENERACIÓN, y su genérico —«El motor narrativo no pudo
+      // construirlo»— era la misma mentira dos veces. Con el de sesión, el
+      // texto dice lo que pasó: el servidor del juego no pudo completarlo.
+      assert.match(f.message ?? "", /El servidor del juego no pudo completarlo/, msg.type);
+      assert.doesNotMatch(f.message ?? "", /motor narrativo/, msg.type);
     }
   });
 });
