@@ -17,7 +17,7 @@ import { buildLayout, type SurfaceLayout } from "@nefan-core/src/scene/greybox/s
 import type { Edge } from "@nefan-core/src/world-map/types.js";
 import { errors } from "../ui/error-log.js";
 import type { AtlasImage, FpsDebugCollision, FpsDebugView, FpsGl, FpsGlDebugState } from "./fps-gl.js";
-import type { AttackTelegraph, Entity, PlayerView } from "./types.js";
+import type { AttackTelegraph, Cuerpos, PlayerView } from "./types.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 
 /** El plan que instala el renderer es EL plan de core, no una copia con la
@@ -204,7 +204,7 @@ export class FpsRenderer {
     this.withGl((gl) => gl.clearAtlas(key));
   }
 
-  render(player: PlayerView, enemies: Entity[], objects: Entity[], npcs: Entity[]): void {
+  render(player: PlayerView, enemies: Cuerpos, objects: Cuerpos, npcs: Cuerpos): void {
     this.gl?.render(player, enemies, objects, npcs);
   }
 

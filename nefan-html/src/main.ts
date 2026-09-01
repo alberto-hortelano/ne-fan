@@ -9,10 +9,9 @@ import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-da
 import { attackFlashQuality } from "@nefan-core/src/combat/attack-area.js";
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
-import { DEFAULT_SOLID_CHARS, formatDToWorld, KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
+import { KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
-import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { pickAimTarget } from "@nefan-core/src/scene/aim.js";
 import {
   etiquetaDeFixture,
@@ -23,13 +22,15 @@ import {
   type StatusRotulable,
 } from "@nefan-core/src/protocol/status-labels.js";
 import { marcarTitulo } from "./ui/titulo-manda.js";
-import { TileStore, tileKey, tileWorldRect, type TileClientState } from "./world/tile-store.js";
+import { TileStore } from "./world/tile-store.js";
 import { FrontierManager, type Edge as FrontierEdge } from "./world/frontier.js";
+import { MundoDelCliente } from "./world/mundo-del-cliente.js";
+import { crearCargaDeTile, type OpcionesDeCarga } from "./world/carga-de-tile.js";
 import type { Entity } from "./renderer/types.js";
-import { FPS_DEBUG_VIEW_LABELS, FpsRenderer, type FpsTilePlan } from "./renderer/fps-renderer.js";
+import { FPS_DEBUG_VIEW_LABELS, FpsRenderer } from "./renderer/fps-renderer.js";
 import { FpsAtlasController } from "./scene/fps-atlas.js";
 import { enemigoDesdeCombat } from "./scene/enemigo.js";
-import { CollisionSystem, applyPlanCollision } from "./world/collision.js";
+import { CollisionSystem } from "./world/collision.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import {
   BASE_ANIMS,
@@ -48,7 +49,7 @@ import type { InputProvider } from "./input/input-provider.js";
 import { DevToolsInput } from "./input/dev-tools-input.js";
 import { ScriptedInputProvider } from "./input/scripted-input-provider.js";
 import { DialoguePanel } from "./ui/dialogue-panel.js";
-import { TravelPanel, type SceneExit } from "./ui/travel-panel.js";
+import { TravelPanel } from "./ui/travel-panel.js";
 import { TravelLedger } from "./ui/travel-ledger.js";
 import { TileLedger } from "./ui/tile-ledger.js";
 import { DevStatusPanel } from "./ui/dev-status-panel.js";
@@ -62,13 +63,12 @@ import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, currentUiTheme, BASE_UI_THEME, type UiTheme } from "./ui/theme.js";
 import { createClientSession } from "@nefan-core/src/session/session-facets.js";
 import { createEntrada } from "@nefan-core/src/session/entrada.js";
-import { npcsFueraDelRect, spawnsDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
+import { spawnsDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
 import {
   createGameClient,
   createViewerClient,
   type GameClient,
   type FrameResult,
-  type RoomEnemy,
 } from "./net/game-client.js";
 
 import combatConfigJson from "@nefan-core/data/combat_config.json";
@@ -441,7 +441,7 @@ function applyRenderModes({ renderMode, characterMode }: {
  *  enemigos). requestSkin es idempotente por prompt y respeta ai_skin. */
 function reRequestAllSkins(): void {
   if (playerSkinPrompt) characterSprites.requestSkin(playerSkinPrompt);
-  for (const e of [...npcEntities, ...enemyEntities]) {
+  for (const e of mundo.personajes) {
     if (e.skinPrompt) characterSprites.requestSkin(e.skinPrompt, { role: e.styleRole });
   }
 }
@@ -565,11 +565,11 @@ const devInput = new DevToolsInput({ dialogoAbierto });
 const nefanHook: Record<string, unknown> = {
   input,
   get playerPos() { return playerPos; },
-  get scene() { return sceneData; },
+  get scene() { return mundo.escenaActiva; },
   get dialogueVisible() { return dialoguePanel.isVisible; },
-  get exits() { return currentExits; },
+  get exits() { return mundo.salidas; },
   get tiles() { return [...tileStore.entries.keys()]; },
-  get currentTile() { return activeTileKey; },
+  get currentTile() { return mundo.tileActivo; },
   get frontier() { return frontier.debugState(); },
   /** Ledger del último viaje por «Salidas»: qué paso se dio y cuál no. */
   get viaje() { return travelLedger.debugState(); },
@@ -655,10 +655,15 @@ const playerPos: Vec3 = { x: 0, y: 0, z: 2 };
 let playerForward: Vec3 = { x: 0, y: 0, z: -1 };
 const playerMaxHp = 100;
 const playerWeaponId = "short_sword";
-let sceneData: Record<string, unknown> | null = null;
-/** Salidas del world-map de la escena actual (las adjunta el bridge). Se usan
- *  para la transición continua al cruzar un borde. */
-let currentExits: SceneExit[] = [];
+/** LOS CUERPOS DEL MUNDO Y QUÉ ESCENA ES LA ACTIVA, con un solo dueño.
+ *
+ *  Eran seis `let` de módulo repartidas por este fichero —las listas de NPCs,
+ *  objetos y enemigos, la clave del tile activo, su escena y sus salidas— más
+ *  el índice de color de los enemigos y el dedupe de NPCs sin cuerpo. Al
+ *  trocear el fichero, el riesgo no es escribirlas desde otro módulo —eso es
+ *  `TS2632` y lo caza el compilador— sino DUPLICARLAS: dos copias que compilan
+ *  limpio y mienten. Con campos `#privados` no hay binding que copiar. */
+const mundo = new MundoDelCliente();
 /** Mundo del cliente: colección ACUMULATIVA de tiles (nunca desaparecen). */
 const tileStore = new TileStore();
 /** Prefetch proactivo + velo direccional de fronteras. El jugador nunca se
@@ -671,9 +676,6 @@ const EDGE_ES: Record<FrontierEdge, string> = {
   east: "este",
   west: "oeste",
 };
-/** Clave del tile bajo el jugador (para detectar cambio de tile activo). */
-let activeTileKey: string | null = null;
-
 // --- Generación de imagen SIN sesión (fixtures) ---
 // Persistido en localStorage: es el estado del toggle de escenarios cuando no
 // hay partida; con sesión manda world.render_mode. El toggle visible es el
@@ -689,17 +691,6 @@ characterSprites.setSkinsAllowed(charactersGenerationOn());
 
 // El toggle Dev-cache vive ahora en el panel de dev (DevStatusPanel es su
 // único dueño: estado inicial, cambios y deshabilitado con ai_server caído).
-
-// Entity arrays
-let enemyEntities: Entity[] = [];
-let objectEntities: Entity[] = [];
-let npcEntities: Entity[] = [];
-let colorIdx = 0;
-/** Ids que el bridge mueve y este cliente no tiene en escena. Es un DEFECTO
- *  (ver el bucle de `result.npcs`) y se reporta una vez por id: el
- *  `state_update` llega a 60 fps y sin dedupe el registro de errores sería
- *  una línea por frame. Se vacía con el mundo. */
-const npcsSinCuerpo = new Set<string>();
 
 // --- Animación por entidad (NPCs/enemigos) ---
 // La máquina de estados vive fuera de Entity: el track guarda la anim en
@@ -856,23 +847,32 @@ function resetWorld(): void {
   // volver al título re-pida su skin IA (imagen de pago) por un mundo que ya
   // no existe.
   playerSkinPrompt = "";
-  enemyEntities = [];
-  objectEntities = [];
-  npcEntities = [];
-  npcsSinCuerpo.clear();
+  mundo.vaciar();
   charTracks.clear();
-  colorIdx = 0;
-  activeTileKey = null;
-  sceneData = null;
 }
 
-/** Opciones de carga de escena. `tomaElMundo` es la diferencia entre «esta es
- *  una escena de PRUEBA y a partir de ahora el mundo es mío» (el selector
- *  «Room») y «este tile se AÑADE al mundo que ya tienes» (la partida). Viaja
- *  hasta el bridge como `load_room` — ver `bridge/world-claim.ts`. */
-interface OpcionesDeCarga {
-  tomaElMundo?: boolean;
-}
+/** LA CARGA DE UN TILE, que vive en `world/carga-de-tile.ts`.
+ *
+ *  Aquí quedan solo sus colaboradores: el módulo recibe lo que necesita y no
+ *  alcanza nada más de este fichero. Lo que DECIDE (qué se conserva y qué se
+ *  retira al re-emitir un tile) está más adentro todavía, en `nefan-core`,
+ *  donde hay tests y mutación que puedan ponerse rojos. */
+const cargaDeTile = crearCargaDeTile({
+  mundo,
+  tileStore,
+  fpsRenderer,
+  fpsAtlas: fpsAtlasController,
+  characterSprites,
+  travelPanel,
+  playerPos,
+  session,
+  entrada,
+  gameClient: () => gameClient,
+  rebuildEnemyBars: () => rebuildEnemyBars(),
+  log: (msg) => log(msg),
+});
+const addTile = cargaDeTile.addTile;
+const setActiveClientTile = cargaDeTile.activarTile;
 
 /** API legacy (dropdown de fixtures, change_scene, saves sin migrar): mundo de
  *  UNA escena. El flujo narrativo de tiles usa addTile (aditivo). */
@@ -884,327 +884,9 @@ async function loadSceneData(
   await addTile(rawData, opts);
 }
 
-/** Añade un tile/escena al mundo del cliente. ADITIVO: no toca la posición del
- *  jugador (salvo bootstrap con __player_start o escenas legacy), no vacía las
- *  entidades de otros tiles, no resetea el sim. Re-añadir la misma clave
- *  sustituye (re-render al volver a un tile). */
-async function addTile(
-  rawData: Record<string, unknown>,
-  opts: OpcionesDeCarga = {},
-): Promise<void> {
-  const data = formatDToWorld(rawData);
-  const tile = data.tile as { tx: number; ty: number } | undefined;
-  const isGridTile = Number.isInteger(tile?.tx) && Number.isInteger(tile?.ty);
-  const key = isGridTile
-    ? tileKey(tile!.tx, tile!.ty)
-    : String(data.scene_id ?? "scene");
-  const firstTile = tileStore.entries.size === 0;
-
-  // Rect mundial del tile (los tiles de grid lo derivan de la geometría core;
-  // las escenas legacy vienen centradas).
-  const wr = data.world_rect as { minX: number; minZ: number; maxX: number; maxZ: number } | undefined;
-  const dims = data.dimensions as { width: number; depth: number } | undefined;
-  const rect = isGridTile
-    ? tileWorldRect(tile!.tx, tile!.ty)
-    : wr ?? { minX: -(dims?.width ?? 20) / 2, minZ: -(dims?.depth ?? 20) / 2, maxX: (dims?.width ?? 20) / 2, maxZ: (dims?.depth ?? 20) / 2 };
-
-  // Colisión de terreno POR TILE (origin global desde terrain_grid.origin).
-  let collider: TileClientState["collider"] = null;
-  try {
-    collider = createTerrainCollider(data.terrain_grid as TerrainGridData | undefined);
-  } catch (err) {
-    errors.push("scene", `terrain_grid inconsistente en ${key}; colisión de terreno desactivada`, err);
-  }
-  // Plan del tile: viene RESUELTO en la world scene (`__plan`, compuesto por
-  // core en la normalización — ver src/scene/tile-plan.ts). El cliente no
-  // deriva nada: si lo hiciera habría dos composiciones del mismo tile y
-  // divergirían por los argumentos, que es como divergen estas cosas.
-  const planInfo = (data.__plan as FpsTilePlan | undefined) ?? null;
-  for (const aviso of (data.__plan_warnings as string[] | undefined) ?? []) {
-    errors.push("scene", `plan de ${key}: ${aviso}`);
-  }
-
-  const prevEntry = tileStore.entries.get(key);
-  const { sceneChanged } = tileStore.add({
-    key,
-    tx: isGridTile ? tile!.tx : undefined,
-    ty: isGridTile ? tile!.ty : undefined,
-    rect,
-    scene: data as Record<string, unknown>,
-    collider,
-    // La colisión base del plan se deriva justo debajo (o se restaura si la
-    // escena no cambió).
-    svgCollider: null,
-    svgApplied: false,
-  });
-  // Mundo 3D: spec fps del tile + layout de superficies (la clave del atlas).
-  // ANTES de activarlo abajo: el atlas de superficies pide el layout al
-  // renderer, y un tile sin instalar se quedaría en clay sin pedir nada.
-  if (isGridTile && planInfo) {
-    fpsRenderer.installTile(key, planInfo, rect);
-    // Si ESTE ya es el tile activo, setActiveClientTile no volverá a correr
-    // (solo se dispara al cambiar de tile): lanzar el atlas aquí.
-    if (key === activeTileKey) {
-      void fpsAtlasController.onActiveTile(key).catch((err: unknown) =>
-        errors.push("scene", `el atlas fps de ${key} no arrancó al instalar el tile`, err),
-      );
-    }
-  }
-  // Colisión base del plan: restaurar si la escena no cambió; derivar
-  // (analítica, síncrona) si es nueva o cambió. Agua∖decks del ground +
-  // huellas de volumes — espacio de mundo.
-  const plan = (data as { __plan?: FpsTilePlan }).__plan;
-  if (prevEntry?.svgApplied && !sceneChanged) {
-    tileStore.setSvgCollider(key, prevEntry.svgCollider);
-  } else if (plan) {
-    // La leyenda de ESTA escena decide si el agua declarada bloquea: un vado
-    // (`{name, solid:false}`) tiene que abrirse en las DOS fuentes o el
-    // jugador rebota contra un río que el autor abrió.
-    applyPlanCollision(
-      key,
-      { ground: plan.ground, volumes: plan.volumes },
-      rect,
-      tileStore,
-      (data.terrain_grid as TerrainGridData | undefined)?.solid_chars ?? DEFAULT_SOLID_CHARS,
-    );
-  }
-  // Posición de entrada — SOLO escenas legacy o el bootstrap (primer tile con
-  // spawn explícito). En el resto de tiles el jugador entra andando.
-  const playerStart = data.__player_start as { x: number; z: number } | null | undefined;
-  if (!isGridTile) {
-    if (playerStart) {
-      playerPos.x = playerStart.x;
-      playerPos.z = playerStart.z;
-    } else {
-      playerPos.x = 0;
-      playerPos.z = 2;
-    }
-  } else if (firstTile && playerStart) {
-    playerPos.x = playerStart.x;
-    playerPos.z = playerStart.z;
-  }
-
-  // Purga entidades previas de esta clave (re-render de un tile ya visto) y
-  // extrae enemigos/objetos/NPCs con posiciones GLOBALES.
-  //
-  // LAS TRES CLASES SE PURGAN POR IDENTIDAD, nunca por rect (#350). La
-  // pregunta al purgar es «¿de quién era esto?», no «¿dónde ha acabado?»: un
-  // NPC de otro tile que paseó hasta aquí (vida ambiental del bridge) no debe
-  // borrarse, un enemigo persigue al jugador —a mitad de una pelea está donde
-  // le da la gana— y un objeto que puso el motor a mitad de partida no es de
-  // ningún tile. Hasta hoy los objetos se purgaban por GEOMETRÍA
-  // (`!ids.has(o.id) && !inRect(o.pos)`), así que el cofre y la forja que el
-  // motor materializó desaparecían en cuanto el jugador viajaba por «Salidas»
-  // y volvía: el tile se re-difundía, el objeto caía dentro del rect y no
-  // figuraba en el scene data. Con `dueno` la condición es la misma para las
-  // tres, y un token de diferencia con la de antes.
-  const objects = (data.objects ?? []) as Record<string, unknown>[];
-  const ids = new Set(objects.map((o) => o.id as string));
-  const npcIds = new Set(((data.npcs ?? []) as Record<string, unknown>[]).map((n) => n.id as string));
-  const deEsteTile = (e: Entity) => e.dueno.de === "tile" && e.dueno.key === key;
-  // El `ids.has` NO se puede quitar al pasar a identidad, y por eso la
-  // condición de los objetos no es idéntica a la de los NPC: abajo se empujan
-  // los objetos del scene data SIN mirar si ya estaban (`:1039`), mientras que
-  // un NPC ya presente se CONSERVA (`:1050-1054`). Sin este filtro, un id que
-  // el motor declare después en el Format D saldría DUPLICADO — el fallo
-  // hermano del que se está arreglando.
-  objectEntities = objectEntities.filter((o) => !ids.has(o.id) && !deEsteTile(o));
-  npcEntities = npcEntities.filter((n) => !(deEsteTile(n) && !npcIds.has(n.id)));
-  enemyEntities = enemyEntities.filter((e) => !(deEsteTile(e) && !npcIds.has(e.id)));
-  const enemies: RoomEnemy[] = [];
-  // Qué tipo de volumen representa a cada objeto del plan: de aquí sale si el
-  // greybox ya lo pinta (y entonces no lleva billboard encima).
-  const tipoDeVolumen = new Map((planInfo?.volumes ?? []).map((v) => [v.id, v.type]));
-
-  for (const obj of objects) {
-    const pos: Vec3 = {
-      x: (obj.position as number[])[0],
-      y: (obj.position as number[])[1],
-      z: (obj.position as number[])[2],
-    };
-    const scale = (obj.scale as number[] | undefined);
-    const sizeXZ = scale && scale.length >= 3
-      ? { x: scale[0], z: scale[2] }
-      : undefined;
-    const sizeY = scale && scale.length >= 3 ? scale[1] : undefined;
-    const category = obj.category as string | undefined;
-    const shape = obj.shape as string | undefined;
-    // Aquí había una rama `objects[].combat` de 58 líneas que construía
-    // enemigos. Era un fósil de `data/rooms/*.json` (muertas en #209): ningún
-    // dato del árbol llevaba ese campo y `formatDToWorld` nunca lo emitía en
-    // `objects[]`, así que nunca corrió en producción. Los enemigos entran hoy
-    // por `npcs[].combat` (el motor declara `role:"hostile"`) y por
-    // `materializeSpawn`, y las dos vías pasan por `enemigoDesdeCombat`.
-    const objectEntity: Entity = {
-      id: obj.id as string, pos, radius: 5,
-      // Lo declara ESTE tile: se va el día que deje de declararlo, y solo por
-      // eso (#350).
-      dueno: { de: "tile", key },
-      color: category === "item" ? "#aa8" : "#666",
-      label: (obj.description ?? "") as string, alive: true,
-      category: category ?? "prop",
-      sizeXZ,
-      sizeY,
-      shape,
-      // Tipo del volumen que ya la pinta en el greybox (`volume_id` de la
-      // world scene). Presente = no se dibuja billboard encima; `building`
-      // además no se puede mirar (su centro no es un punto al que apuntar).
-      volumeType: typeof obj.volume_id === "string" ? tipoDeVolumen.get(obj.volume_id) : undefined,
-    };
-    objectEntities.push(objectEntity);
-  }
-
-  // NPCs from room data (append: los de otros tiles siguen vivos). Un id ya
-  // presente CONSERVA su Entity: la posición autoritativa es la del bridge
-  // (vida ambiental) — recrearlo lo teletransportaría a su spawn del scene
-  // data (stale) y perdería el skin en vuelo.
-  const npcsData = (data.npcs ?? []) as Record<string, unknown>[];
-  const newNpcs: Entity[] = [];
-  for (const npc of npcsData) {
-    const npcId = npc.id as string;
-    const existing = npcEntities.find((n) => n.id === npcId)
-      ?? enemyEntities.find((e) => e.id === npcId);
-    if (existing) {
-      // Este tile vuelve a declararlo: pasa a ser suyo (pudo llegar paseando
-      // desde el vecino). Lo que NO se toca es su posición — la autoritativa
-      // es la del bridge, y recrearlo lo teletransportaría.
-      existing.dueno = { de: "tile", key };
-      continue;
-    }
-    // VÍA (a) al combate: el motor declaró `role:"hostile"` y el core derivó
-    // el bloque (`formatDToWorld` → `combatForHostileRole`). El cliente no
-    // decide quién pelea ni con cuánta vida: solo lo pinta y se lo dice al
-    // sim, que es quien resuelve el daño.
-    if (npc.combat !== undefined) {
-      const nuevo = enemigoDesdeCombat({
-        id: npcId,
-        pos: {
-          x: (npc.position as number[])?.[0] ?? 0,
-          y: (npc.position as number[])?.[1] ?? 0,
-          z: (npc.position as number[])?.[2] ?? 0,
-        },
-        combat: npc.combat,
-        descripcion: typeof npc.description === "string" ? npc.description : undefined,
-        styleRef: typeof npc.style_ref === "string" ? npc.style_ref : undefined,
-        nombre: typeof npc.name === "string" ? npc.name : undefined,
-        indiceColor: colorIdx++,
-        dueno: { de: "tile", key },
-      });
-      if (nuevo) {
-        enemies.push(nuevo.combatiente);
-        enemyEntities.push(nuevo.entidad);
-        characterSprites.requestSkin(nuevo.entidad.skinPrompt ?? npcId, {
-          role: nuevo.entidad.styleRole,
-        });
-      }
-      continue;
-    }
-    const npcPrompt = (npc.description ?? npc.name ?? npc.id) as string;
-    // Ref de personaje: la elegida por el motor (style_ref) o el default
-    // por rol (conserva las claves de caché de skins previas).
-    const npcStyleRole = npcSkinStyleRef(npc as { style_ref?: string; role?: string });
-    const entity: Entity = {
-      id: npcId,
-      pos: {
-        x: (npc.position as number[])?.[0] ?? 0,
-        y: (npc.position as number[])?.[1] ?? 0,
-        z: (npc.position as number[])?.[2] ?? 0,
-      },
-      forward: { x: 0, y: 0, z: -1 },
-      radius: 7,
-      color: "#68c",
-      label: (npc.name ?? npc.id) as string,
-      name: (npc.name ?? npc.id) as string,
-      alive: true,
-      category: "creature",
-      skinPrompt: npcPrompt,
-      styleRole: npcStyleRole,
-      dueno: { de: "tile", key },
-    };
-    characterSprites.requestSkin(npcPrompt, { role: npcStyleRole });
-    newNpcs.push(entity);
-  }
-  npcEntities.push(...newNpcs);
-
-  // Fail-loud del contrato de posiciones globales: un NPC de un tile de grid
-  // DECLARADO fuera de su rect delata una conversión celda→mundo rota.
-  //
-  // La decisión —cuál de las dos coordenadas de un npc es la conversión— vive
-  // en core (`npcsFueraDelRect`), junto a quien escribe la otra
-  // (`escenaConCombateVivo`): son las dos mitades del mismo criterio, y aquí
-  // no hay nada que pueda ponerse rojo si una se afloja (#241/#357). El
-  // cliente solo pinta el resultado en el panel del jugador.
-  //
-  // Cubre `data.npcs` ENTERO y no solo lo recién creado, que es más de lo que
-  // miraba el bucle que había aquí: un npc ya conocido cuya declaración se
-  // rompiera no lo veía nadie. Y no da falsos rojos por perseguir bien, porque
-  // lo que mide es la posición DECLARADA, no dónde ha acabado el personaje.
-  if (isGridTile) {
-    for (const fuera of npcsFueraDelRect(data.npcs, rect)) {
-      errors.push(
-        "scene",
-        `entidad "${fuera.id}" de ${key} fuera de su rect: (${fuera.x.toFixed(1)}, ${fuera.z.toFixed(1)})`,
-      );
-    }
-  }
-
-  // Build enemy HP bars
-  rebuildEnemyBars();
-
-  // Activación visual del primer tile / escena legacy (el resto de tiles se
-  // activa por POSICIÓN en gameLoop al pisarlos).
-  if (firstTile || !isGridTile) {
-    setActiveClientTile(key);
-  } else if (key === activeTileKey) {
-    // Re-render del tile activo (resume/re-broadcast): refrescar el puntero.
-    setActiveClientTile(key);
-  }
-
-  // Sim: los tiles de la PARTIDA añaden combatientes de forma ADITIVA (sin
-  // reset), porque el mundo es un plano continuo. Tomar el mundo —el selector
-  // «Room», o una escena legacy suelta— manda `load_room`, que además le dice
-  // al bridge que lo que va a andar por aquí no es el jugador de la partida.
-  if (gameClient) {
-    if (opts.tomaElMundo || !isGridTile) {
-      gameClient.loadRoom(data, key, enemies);
-    } else {
-      gameClient.addEnemies(enemies);
-    }
-  }
-
-  // El mundo de la PARTIDA está pintado: media entrada (#279). Cuelga de que
-  // el tile se AÑADA y no de `installTile`, que solo corre con un plan no
-  // vacío (la world scene no trae `__plan` si el tile no tiene ni suelo ni
-  // volúmenes): un tile legal pero pelado dejaría una partida que no se
-  // escribe nunca. El atlas de
-  // imagen tampoco entra —es fire-and-forget— así que «pintado» sigue siendo
-  // honesto con remote-gen caído. Las fixtures del selector «Room» quedan
-  // fuera por las dos guardas: no son la partida de nadie.
-  if (session.active && isGridTile && !opts.tomaElMundo) entrada.mundoPintado();
-
-  log("Scene loaded: " + key);
-}
-
-/** Apunta la "escena activa" del cliente (imagen IA, exits, TravelPanel) al
- *  tile bajo el jugador. */
-function setActiveClientTile(key: string): void {
-  const entry = tileStore.entries.get(key);
-  if (!entry) return;
-  activeTileKey = key;
-  sceneData = entry.scene;
-  fpsRenderer.setActiveTile(key);
-  // Reinstala el atlas de caché o, con generación auto, lo pinta (el
-  // controller degrada a clay con error visible si algo falla).
-  void fpsAtlasController.onActiveTile(key).catch((err: unknown) =>
-    errors.push("scene", `el atlas fps de ${key} no arrancó al activar el tile`, err),
-  );
-  currentExits = (entry.scene.exits ?? []) as SceneExit[];
-  travelPanel.setExits(currentExits);
-}
-
 function rebuildEnemyBars(): void {
   enemyBarsContainer.innerHTML = "";
-  for (const ee of enemyEntities) {
+  for (const ee of mundo.enemigos) {
     const bar = document.createElement("div");
     bar.className = "nf-vital";
     // El NOMBRE, no el id. Un enemigo de la escena traía un slug legible por
@@ -1238,7 +920,7 @@ function rebuildEnemyBars(): void {
 const collision = new CollisionSystem({
   tileStore,
   getPlayerPos: () => playerPos,
-  getObstacles: () => objectEntities,
+  getObstacles: () => mundo.objetos,
 });
 const collidesAt = (x: number, z: number): boolean => collision.collidesAt(x, z);
 
@@ -1290,14 +972,14 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
         e: collidesAt(playerPos.x + 0.5, playerPos.z),
       },
     }),
-    npcs: () => npcEntities.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
+    npcs: () => mundo.npcs.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
     /** Los OBJETOS y EDIFICIOS que el cliente tiene en escena. Hermano de
      *  `npcs()` y `enemies()`: un guion tiene que poder afirmar que el cofre
      *  que el motor puso delante SIGUE ahí tras reanudar, y sin esto solo
      *  podía sondear la colisión — que dice «aquí hay algo», no «aquí está
      *  ESE algo». Solo lectura. */
     objects: () =>
-      objectEntities.map((o) => ({
+      mundo.objetos.map((o) => ({
         id: o.id,
         label: o.label,
         pos: { ...o.pos },
@@ -1323,7 +1005,7 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
      *  contra el HUD (`#hp-text-<id>`), que es lo que ve quien juega; esto es
      *  para saber hacia dónde andar. Solo lectura. */
     enemies: () =>
-      enemyEntities.map((e) => ({
+      mundo.enemigos.map((e) => ({
         id: e.id,
         label: e.label,
         pos: { ...e.pos },
@@ -1336,7 +1018,7 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
     devPanel,
     probeCollide: (x: number, z: number) => collidesAt(x, z),
     fps: () => fpsRenderer.debugState(),
-    get scene() { return sceneData; },
+    get scene() { return mundo.escenaActiva; },
     // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
     // flechas de dirección. Mismo camino que el giro real: yaw → snap.
     setYaw: (yaw: number) => {
@@ -1360,12 +1042,12 @@ if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {
      *  plató, que ocupaba este sitio, ya no existe). El detalle de por qué NO,
      *  en status(). */
     ready: () =>
-      !titleScreen.isVisible && sceneData !== null && !fpsAtlasController.running,
+      !titleScreen.isVisible && mundo.escenaActiva !== null && !fpsAtlasController.running,
     status: () => ({
       title: titleScreen.isVisible,
-      scene: sceneData !== null,
+      scene: mundo.escenaActiva !== null,
       painting: fpsAtlasController.running,
-      npcs: npcEntities.length,
+      npcs: mundo.npcs.length,
     }),
     /** Estado del diálogo, o `{visible:false}`. */
     dialogue: () =>
@@ -1804,18 +1486,18 @@ function updateWorldLabels(): void {
     return;
   }
   // NPCs Y ENEMIGOS. Los hostiles entraban aquí por primera vez el
-  // 2026-08-29 (#323) y este filtro solo miraba `npcEntities`, así que lo
+  // 2026-08-29 (#323) y este filtro solo miraba a los NPCs, así que lo
   // único que el juego acababa de aprender a poner delante del jugador era
   // justo lo único sin rótulo y sin mirilla: un bulto anónimo que pega. Un
   // enemigo es la entidad que MÁS necesita nombre — es a lo que apuntas.
-  const personajes = [...npcEntities, ...enemyEntities].filter((n) => n.alive !== false);
+  const personajes = mundo.personajes.filter((n) => n.alive !== false);
   // Solo objetos CON nombre: sin descripción no hay nada que enseñar, y la
   // mirilla debe encenderse únicamente sobre lo que sí se puede nombrar.
   // Los EDIFICIOS quedan fuera: su centro no es un punto al que se pueda
   // apuntar (estás dentro o pegado a la fachada). El resto de lo que el
   // greybox pinta —un árbol, un barril— sí se puede mirar y nombrar: que el
   // plan lo pinte como volumen decide cómo se DIBUJA, no si tiene nombre.
-  const objetos = objectEntities.filter(
+  const objetos = mundo.objetos.filter(
     (o) => Boolean(o.label?.trim()) && o.volumeType !== "building",
   );
 
@@ -1921,8 +1603,8 @@ function gameLoop(now: number): void {
   if (devInput.consumeGenerateScene()) {
     // Manual = siempre permitida, también con la generación auto en OFF
     // (misma semántica que el botón por-item del menú dev).
-    if (activeTileKey) {
-      const k = activeTileKey;
+    if (mundo.tileActivo) {
+      const k = mundo.tileActivo;
       void fpsAtlasController.runFor(k).catch((err: unknown) =>
         errors.push("scene", `el atlas fps de ${k} no arrancó (tecla G)`, err),
       );
@@ -2031,7 +1713,7 @@ function gameLoop(now: number): void {
     // activa" del cliente (imagen IA, exits). El bridge hace lo propio con
     // NarrativeState en su handler de input.
     const under = tileStore.getAt(playerPos.x, playerPos.z);
-    if (under && under.key !== activeTileKey) {
+    if (under && under.key !== mundo.tileActivo) {
       setActiveClientTile(under.key);
     }
   }
@@ -2040,7 +1722,7 @@ function gameLoop(now: number): void {
   const INTERACT_RANGE = 2.5;
   let npcInRange: Entity | null = null;
   let nearestDist = Infinity;
-  for (const npc of npcEntities) {
+  for (const npc of mundo.npcs) {
     if (npc.alive === false) continue;
     const d = Math.hypot(npc.pos.x - playerPos.x, npc.pos.z - playerPos.z);
     if (d < nearestDist) { nearestDist = d; npcInRange = npc; }
@@ -2125,7 +1807,7 @@ function gameLoop(now: number): void {
           params,
           playerPos,
           playerForward,
-          enemyEntities.filter((ee) => ee.alive).map((ee) => ee.pos),
+          mundo.enemigos.filter((ee) => ee.alive).map((ee) => ee.pos),
         ),
         fadeTimer: 0.3,
       };
@@ -2176,10 +1858,9 @@ function gameLoop(now: number): void {
   // Con DEDUPE por id porque esto se lee a 60 fps: el registro de errores
   // guarda el primero de cada uno y no una entrada por frame.
   for (const npcState of result.npcs ?? []) {
-    const ne = npcEntities.find((n) => n.id === npcState.id);
+    const ne = mundo.npcs.find((n) => n.id === npcState.id);
     if (!ne) {
-      if (!npcsSinCuerpo.has(npcState.id)) {
-        npcsSinCuerpo.add(npcState.id);
+      if (mundo.esNuevoNpcSinCuerpo(npcState.id)) {
         errors.push(
           "scene",
           `el bridge mueve al NPC "${npcState.id}" y el cliente no lo tiene en escena: ` +
@@ -2196,7 +1877,7 @@ function gameLoop(now: number): void {
 
   // Sync enemy entities from result
   for (const enemyState of result.enemies) {
-    const ee = enemyEntities.find(e => e.id === enemyState.id);
+    const ee = mundo.enemigos.find(e => e.id === enemyState.id);
     if (ee) {
       if (enemyState.pos) {
         ee.pos = { x: enemyState.pos.x, y: enemyState.pos.y, z: enemyState.pos.z };
@@ -2216,7 +1897,7 @@ function gameLoop(now: number): void {
   playerHpBar.style.width = pHpPct + "%";
   playerHpText.textContent = Math.ceil(result.playerHp).toString();
 
-  for (const ee of enemyEntities) {
+  for (const ee of mundo.enemigos) {
     const bar = document.getElementById(`hp-${ee.id}`);
     const text = document.getElementById(`hp-text-${ee.id}`);
     if (bar) bar.style.width = Math.max(0, (ee.hp ?? 0) / (ee.maxHp ?? 1) * 100) + "%";
@@ -2251,8 +1932,8 @@ function gameLoop(now: number): void {
     };
   }
   if (spritesOn) {
-    for (const ee of enemyEntities) updateEntitySprite(ee, now, { npc: false });
-    for (const npc of npcEntities) updateEntitySprite(npc, now, { npc: true });
+    for (const ee of mundo.enemigos) updateEntitySprite(ee, now, { npc: false });
+    for (const npc of mundo.npcs) updateEntitySprite(npc, now, { npc: true });
   }
   // Blindaje: una excepción de UN frame no debe matar el rAF (juego
   // congelado en negro para siempre). Se registra (dedup por mensaje) y el
@@ -2290,9 +1971,9 @@ function gameLoop(now: number): void {
         maxHp: playerMaxHp,
         sprite: playerSprite,
       },
-      enemyEntities,
-      objectEntities,
-      npcEntities,
+      mundo.enemigos,
+      mundo.objetos,
+      mundo.npcs,
     );
   } catch (err) {
     const msg = (err as Error).message ?? String(err);
@@ -2356,7 +2037,7 @@ function listFakeItems(): FakeItem[] {
   }
   const prompts = new Set<string>();
   if (playerSkinPrompt) prompts.add(playerSkinPrompt);
-  for (const e of [...npcEntities, ...enemyEntities]) {
+  for (const e of mundo.personajes) {
     if (e.skinPrompt) prompts.add(e.skinPrompt);
   }
   const yBotSheet = spriteRenderer.getCached(BASE_MODEL, "idle", characterSprites.activeAngle);
@@ -2686,7 +2367,7 @@ function pintarFalloDelMotor(status: StatusRotulable): void {
 /** Materializa un `spawn_entity` del motor narrativo EN LA ESCENA VIVA, sin
  *  recargar. El `position` ya viene resuelto en metros mundo por el bridge
  *  (consequence-handler.ts:resolvePositionHint, relativo al jugador). NPCs van a
- *  npcEntities (interactuables con E); building/object a objectEntities con
+ *  la lista de NPCs (interactuables con E); building/object a la de objetos, con
  *  `sizeXZ` para que sean sólidos (collidesAt) y tengan volumen que instalar
  *  en el renderer, que es la "geometría base" sobre la que luego se
  *  superponen imágenes IA. */
@@ -2724,7 +2405,7 @@ function materializeSpawn(
         descripcion: effect.description,
         styleRef: typeof effect.data.style_ref === "string" ? effect.data.style_ref : undefined,
         nombre: effect.name,
-        indiceColor: colorIdx++,
+        indiceColor: mundo.siguienteColorDeEnemigo(),
         // DE RUNTIME, y se escribe AQUÍ DENTRO y nunca en el llamante (#350).
         // Es la trampa concreta que este tipo cierra: con el dueño puesto
         // fuera, el rehidratado del resume volvería sin él y el bug —el spawn
@@ -2733,7 +2414,7 @@ function materializeSpawn(
         dueno: { de: "runtime" },
       });
       if (nuevo) {
-        enemyEntities.push(nuevo.entidad);
+        mundo.anadirEnemigo(nuevo.entidad);
         characterSprites.requestSkin(nuevo.entidad.skinPrompt ?? effect.entityId, {
           role: nuevo.entidad.styleRole,
         });
@@ -2752,7 +2433,7 @@ function materializeSpawn(
       style_ref: typeof effect.data.style_ref === "string" ? effect.data.style_ref : undefined,
       role: typeof effect.data.role === "string" ? effect.data.role : undefined,
     });
-    npcEntities.push({
+    mundo.anadirNpc({
       id: effect.entityId,
       pos,
       forward: { x: 0, y: 0, z: -1 },
@@ -2774,7 +2455,7 @@ function materializeSpawn(
 
   // building / object: caja sólida colocada en la escena actual.
   const isBuilding = effect.entityKind === "building";
-  objectEntities.push({
+  mundo.anadirObjeto({
     id: effect.entityId,
     pos,
     radius: isBuilding ? 8 : 5,
@@ -2806,9 +2487,9 @@ narrativeClient.onNarrativeEvent((event) => {
         // resolvió, la que tiene ese nombre en pantalla, o —si el diálogo
         // llegó sin interacción previa— la última con la que se habló.
         const npc =
-          (effect.speakerId ? npcEntities.find((n) => n.id === effect.speakerId) : undefined) ??
-          npcEntities.find((n) => (n.name ?? "") === effect.speaker) ??
-          (lastInteractedId ? npcEntities.find((n) => n.id === lastInteractedId) : undefined);
+          (effect.speakerId ? mundo.npcs.find((n) => n.id === effect.speakerId) : undefined) ??
+          mundo.npcs.find((n) => (n.name ?? "") === effect.speaker) ??
+          (lastInteractedId ? mundo.npcs.find((n) => n.id === lastInteractedId) : undefined);
         const skinPrompt = npc?.skinPrompt ?? effect.speakerSkinPrompt;
         abrirDialogo(
           effect.speaker,

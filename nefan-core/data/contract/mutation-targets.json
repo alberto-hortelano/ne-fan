@@ -594,6 +594,17 @@
       ],
       "break": 87,
       "porque": "El contrato observado del wire de sprite-forge (R15, 2026-09-01): los zod del meta de hojas y del catálogo, y skinImageCalls — el número de llamadas de imagen que se le enseña al usuario ANTES de gastar. Su batería es el test de fixtures canónicas (las emite el servicio real con `npm run fixtures-contrato` en su repo y van commiteadas en data/contract/fixtures/sprite-forge/): un mutante que relaje el schema (quitar el .strict(), aflojar el superRefine del null mudo) o que descuente una anim en skinImageCalls es exactamente la divergencia silenciosa que el contrato tuvo con `generated_at`. Módulo propio con batería de un fichero porque es el único test de core que lo importa; sus otros consumidores (style-apply/title-screen en nefan-html, el fake del bench en labs) no entran en la mutación de core. MEDIDO en la corrida 33506776818 (37e74d8, 2026-09-01): 87.5% (8 vivos de 64). El suelo deja de ser 0 y pasa al score medido redondeado hacia abajo."
+    },
+    {
+      "id": "entidades-del-tile",
+      "mutate": [
+        "src/session/entidades-del-tile.ts"
+      ],
+      "tests": [
+        "test/entidades-del-tile.test.ts"
+      ],
+      "break": 0,
+      "porque": "La política ÚNICA de re-emisión de un tile (#379): qué se conserva, qué se crea y qué se retira cuando un tile vuelve a emitirse, más la lectura de lo que ese tile DECLARA de cada objeto y cada personaje. Módulo propio con batería de un fichero porque es el único test de core que lo tiene por sujeto: su consumidor real es el cliente (`nefan-html/src/world/carga-de-tile.ts`), que no entra en la mutación de core, y los guiones 42, 48 y 49 lo miden desde fuera. Sus mutantes interesantes son exactamente los dos desenlaces que la tanda existe para impedir: quitar la rama de `conservar` recrea la entity y devuelve el bug de #379 (el objeto pierde su estado vivo, el NPC vuelve teletransportado a su celda de spawn), y aflojar `esDeEsteTile` —de `dueno.de === 'tile' && dueno.key === key` a cualquiera de sus dos mitades— reabre #350 por los dos lados: con solo la primera, el tile se lleva por delante al vecino que paseó hasta aquí; con solo la segunda, el spawn de runtime desaparece al re-emitir. SUELO 0 PORQUE NO ESTÁ MEDIDO, y el motivo NO es que no se haya intentado: `permisoLocal` (scripts/mutacion-huella.ts) NIEGA cualquier corrida local de un módulo SIN medida previa —«no hay medida previa de entidades-del-tile, así que no se sabe cuánto cuesta y podría ser de los caros»—, y un módulo estrenado nunca la tiene. O sea que un módulo NUEVO no puede nacer con suelo medido en local por construcción, diga lo que diga el plan: la primera medida solo puede salir de una corrida autorizada. Queda PEDIDA (`npm run mutacion -- pendiente`); cuando llegue, el suelo pasa a ser su score medido redondeado hacia abajo. Precedente idéntico y reciente: `mundo-persistido` estuvo en 0 hasta la corrida 33506776818, y `session-facets` nació igual."
     }
   ]
 }

@@ -39,7 +39,7 @@ const TILE_SIZE_M = TILE_CELLS * TILE_MPC;
 import type { GreyboxLight } from "@nefan-core/src/scene/greybox/common.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
 import type { Edge } from "@nefan-core/src/world-map/types.js";
-import type { AttackTelegraph, Entity, PlayerView } from "./types.js";
+import type { AttackTelegraph, Cuerpos, Entity, PlayerView } from "./types.js";
 import { SPRITE_PENDING, type SpriteRenderer } from "./sprite-renderer.js";
 
 const EYE_M = 1.6;
@@ -1532,7 +1532,7 @@ export class FpsGl {
     slot.mesh.position.set(e.pos.x, this.reliefWorldAt(e.pos.x, e.pos.z), e.pos.z);
   }
 
-  render(player: PlayerView, enemies: Entity[], objects: Entity[], npcs: Entity[]): void {
+  render(player: PlayerView, enemies: Cuerpos, objects: Cuerpos, npcs: Cuerpos): void {
     this.frames++;
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.lastNow) / 1000 || 0.016);

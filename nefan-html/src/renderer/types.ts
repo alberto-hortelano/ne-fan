@@ -8,28 +8,14 @@
 
 import type { Vec3 } from "@nefan-core/src/types.js";
 
-/** DE QUIÉN ES UNA ENTITY, que es lo mismo que decir quién puede borrarla.
- *
- *  Dos procedencias y ninguna colapsable: lo que DECLARA un tile (y por tanto
- *  desaparece cuando ese tile deja de declararlo) y lo que puso el motor
- *  narrativo a mitad de partida (`spawn_entity`), que no pertenece al scene
- *  data de nadie.
- *
- *  Es una unión discriminada y OBLIGATORIA, y ahí está el arreglo de #350.
- *  Antes esto era `tileKey?: string`, y entonces «es de runtime» y «se me
- *  olvidó ponerlo» eran el mismo `undefined`. De esa confusión salió el bug:
- *  `materializeSpawn` no escribía `tileKey` en ninguna de sus tres clases, así
- *  que la purga de NPCs (por identidad) dejaba vivo al spawn de runtime… y la
- *  de objetos, que era por GEOMETRÍA (`!inRect`), se llevaba por delante el
- *  cofre y la forja en cuanto el tile se volvía a difundir. Con `dueno`
- *  obligatorio, el estado malo no se puede escribir: `tsc` exige los cinco
- *  sitios que construyen una `Entity`. */
-export type DuenoDeEntity =
-  /** Lo declara el scene data de este tile: se va cuando deje de declararlo. */
-  | { de: "tile"; key: string }
-  /** Lo puso el motor a mitad de partida: no es de ningún tile, y solo
-   *  desaparece si el motor lo retira o el jugador lo mata. */
-  | { de: "runtime" };
+/** DE QUIÉN ES UNA ENTITY. Vivía AQUÍ y se ha ido a `nefan-core`
+ *  (`session/entidades-del-tile.ts`) con la política que gobierna: de quién es
+ *  una entity decide quién puede BORRARLA al re-emitir un tile, y eso es
+ *  dominio, no render — estaba en el contrato del renderer solo porque
+ *  `Entity` está aquí. Se re-exporta para que sus dos usos del cliente sigan
+ *  leyéndolo del mismo sitio que el tipo al que pertenece el campo. */
+export type { DuenoDeEntity } from "@nefan-core/src/session/entidades-del-tile.js";
+import type { DuenoDeEntity } from "@nefan-core/src/session/entidades-del-tile.js";
 
 /** Un cuerpo del mundo tal y como lo recibe el renderer: jugador, NPC,
  *  enemigo u objeto de escena. Lo produce main.ts (desde el sim y el scene
@@ -86,6 +72,18 @@ export interface Entity {
   /** AI-generated sprite hash (objects/buildings) served from /cache/sprite/{hash}. */
   spriteHash?: string;
 }
+
+/** Los cuerpos del mundo que el bucle entrega al renderer en UN frame.
+ *
+ *  La LISTA es de solo lectura porque su dueño es `MundoDelCliente` y nadie
+ *  más la reordena ni la vacía; los cuerpos NO lo son, y a propósito: el
+ *  bridge les escribe la posición y el rumbo cada frame, y copiarlos sería
+ *  tirar el trabajo del sim. Tiene nombre propio para que la firma de
+ *  `render()` quepa en una línea: escrita a mano, `readonly Entity[]` tres
+ *  veces se pasa del ancho de prettier y el candado de tamaño de `fps-gl.ts`
+ *  —que no da holgura— se pone rojo por un reformateo.
+ */
+export type Cuerpos = readonly Entity[];
 
 export interface PlayerView {
   pos: Vec3;

@@ -171,10 +171,13 @@ export default tseslint.config(
   // que corte uno de estos ficheros BAJA su número en el mismo commit — si no,
   // el candado devuelve el hueco recién liberado.
   {
-    // #358 · el fichero que abre esta tanda: game loop, carga de tiles,
-    // colisión, diálogo, viaje, HUD, arranque, título y bootstrap.
+    // #358 · el fichero que abre esta tanda. Entró en 3.136 (game loop, carga
+    // de tiles, colisión, diálogo, viaje, HUD, arranque, título y bootstrap) y
+    // BAJA en el mismo commit que corta: 2.817 tras llevarse `addTile` y
+    // `setActiveClientTile` a `world/carga-de-tile.ts`. Si el número no bajara
+    // aquí, el candado le devolvería al fichero el hueco recién liberado.
     files: ["src/main.ts"],
-    rules: { "max-lines": ["error", { max: 3136, skipBlankLines: false, skipComments: false }] },
+    rules: { "max-lines": ["error", { max: 2817, skipBlankLines: false, skipComments: false }] },
   },
   {
     // La fachada de three.js: es el ÚNICO fichero del repo que puede
