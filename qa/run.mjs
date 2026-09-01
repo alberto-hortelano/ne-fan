@@ -63,6 +63,7 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
 import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } from "./lib/veredictos.mjs";
 import { ctxDeSonda } from "./lib/sonda.mjs";
+import { esperaExpiradaEn, fallosDeEsperasPendientes } from "./lib/esperas.mjs";
 import { spawn } from "node:child_process";
 import {
   readdirSync,
@@ -670,6 +671,12 @@ function makeCtx(page, name) {
      *  sin querer. */
     declaracionSinMedir: null,
 
+    /** Los bloques que este guion declaró NO PODER MEDIR sin abortar
+     *  (`sinMedirBloque`, #261). Es la versión honesta de los cinco
+     *  `ctx.log("⚠ … no se midió")` que había: mismo canal ⊘ que `sinMedir`,
+     *  pero el guion sigue midiendo lo demás. */
+    bloquesSinMedir: [],
+
     /** Mantiene una tecla hasta que se cumple `untilFn`, y la suelta SIEMPRE.
      *  `maxMs` es un cortafuegos, no la condición de parada: esperar por
      *  tiempo de pared no es determinista (el movimiento va por delta de rAF). */
@@ -707,6 +714,64 @@ function makeCtx(page, name) {
       // genérico) se traga la sentinela, la declaración sobrevive igual.
       ctx.declaracionSinMedir = { motivo };
       throw new SinMedirDeclarado(motivo);
+    },
+
+    /** Declara que UN BLOQUE de este guion no se pudo medir, sin abortar: el
+     *  guion sigue midiendo los demás (#261).
+     *
+     *  Es el hermano de `sinMedir` para el caso que se escribía en PROSA —
+     *  `if (…) { ctx.log("⚠ … no se midió"); return; }`—, que es un ⊘ sin
+     *  declarar: sale verde y nadie se entera. Mismo canal, misma exigencia de
+     *  motivo, y el mismo desenlace del `sinMedir` declarado: si el guion
+     *  termina limpio, ⊘ con los motivos (exit 2, PEOR que el rojo); si arrastra
+     *  fallos, se queda ROJO — un ⊘ es una declaración, no una amnistía. */
+    sinMedirBloque(motivo) {
+      if (typeof motivo !== "string" || motivo.trim() === "") {
+        throw new Error(
+          `${name}: ctx.sinMedirBloque exige el MOTIVO por el que este bloque no se pudo medir ` +
+            `(una frase), y llegó ${JSON.stringify(motivo)}.`,
+        );
+      }
+      ctx.bloquesSinMedir.push(motivo);
+      console.log(`    ⊘ bloque no medido: ${motivo}`);
+    },
+
+    /** Espera, y AFIRMA el hecho de si ocurrió o no (#261).
+     *
+     *  Aquí muere la familia de defectos más cara del banco: el hueco entre el
+     *  umbral de la espera y el del aserto. Espera y aserto son el MISMO
+     *  predicado, escrito UNA vez, así que deja de existir la banda de
+     *  «expiró y aun así verde».
+     *
+     *  `debeOcurrir` es un parámetro y no dos verbos porque hay guiones donde
+     *  el signo es DATO (el mismo paseo tiene que cruzar el puente y NO cruzar
+     *  el río: lo decide la leyenda del terreno). `tecla` mantiene una tecla
+     *  mientras se espera, como `holdUntil`. `aserto` permite escribir la
+     *  frase del ✔/✘ cuando la del evento no se lee bien en negativo.
+     *
+     *  Devuelve `{ ocurrio, ultimo }`: `ultimo` es el último valor sondeado, o
+     *  el valor de la espera si se cumplió. */
+    async expectEspera(desc, debeOcurrir, probeFn, opciones = {}) {
+      const { ms = 30_000, arg = undefined, tecla = undefined, aserto = undefined } = opciones;
+      let ocurrio = false;
+      let ultimo;
+      try {
+        ultimo = tecla
+          ? await ctx.holdUntil(tecla, desc, probeFn, ms, arg)
+          : await ctx.waitFor(desc, probeFn, ms, arg);
+        ocurrio = true;
+      } catch (err) {
+        const exp = esperaExpiradaEn(err);
+        if (!exp) throw err;
+        ctx.esperas.resuelve(exp.esperaId, `afirmada por expectEspera: ${desc}`);
+        ultimo = exp.ultimo;
+      }
+      ctx.expect(
+        aserto ?? `${debeOcurrir ? "ocurre" : "NO ocurre"}: ${desc}`,
+        ocurrio === debeOcurrir,
+        `${ocurrio ? "ocurrió" : `no ocurrió en ${ms} ms`} · último valor ${JSON.stringify(ultimo)}`,
+      );
+      return { ocurrio, ultimo };
     },
 
     expect(desc, cond, detalle = "") {
@@ -894,6 +959,12 @@ async function main() {
           console.log(`    ✘ ${ctx.fallos[ctx.fallos.length - 1]}`);
         }
       } else {
+        // Una expiración que PROPAGA hasta aquí está observada: paró el guion
+        // y su mensaje es el rojo. Se resuelve para que el candado del libro
+        // de esperas no la cuente además como pendiente (#261). La cadena de
+        // causas importa: `esperarRegistro` la envuelve en un error propio.
+        const exp = esperaExpiradaEn(err);
+        if (exp) ctx.esperas.resuelve(exp.esperaId, "propagó al runner y paró el guion");
         fatal = err;
         console.log(`    ✘ ERROR: ${err.message}`);
         await ctx.shot("error").catch(() => {});
@@ -904,7 +975,9 @@ async function main() {
     // ejecutándose. La declaración se honra igual — si no, un catch genérico
     // fabricaría un verde de un guion que dijo «no pude medir» (hallazgo de
     // QA, #331). Misma regla que arriba: limpio → ⊘; con fallos → rojo.
+    let declaro = Boolean(sinMedir) || ctx.bloquesSinMedir.length > 0;
     if (ctx.declaracionSinMedir) {
+      declaro = true;
       const { motivo } = ctx.declaracionSinMedir;
       if (ctx.fallos.length === 0 && !fatal) {
         sinMedir =
@@ -917,6 +990,41 @@ async function main() {
             `y se queda en rojo`,
         );
         console.log(`    ✘ ${ctx.fallos[ctx.fallos.length - 1]}`);
+      }
+    }
+
+    // ── EL LIBRO DE ESPERAS (#261) ────────────────────────────────────────
+    // Toda espera que expiró está anotada; aquí se cobra la que nadie observó.
+    // Las tres bocas que la resuelven —propagar, `expectEspera`, `absorbe`—
+    // están en `qa/lib/esperas.mjs` con el porqué de las legítimas.
+    //
+    // Si el guion DECLARÓ que no midió, las pendientes se imprimen como
+    // detalle de su ⊘ en vez de como fallos: el ⊘ es exit 2, PEOR que el rojo,
+    // así que declarar no es una vía de escape. Si no declaró, son fallos y el
+    // guion sale ROJO — porque un ⊘ exige un motivo escrito y el runner no
+    // puede inventárselo por el guion.
+    const esperasPendientes = fallosDeEsperasPendientes(ctx.esperas);
+    for (const f of esperasPendientes) {
+      if (declaro) {
+        console.log(`    ⊘ ${f}`);
+      } else {
+        console.log(`    ✘ ${f}`);
+        ctx.fallos.push(f);
+      }
+    }
+
+    // Los bloques que el guion declaró no poder medir SIN abortar. Misma regla
+    // que el `sinMedir` que aborta: limpio → ⊘ con los motivos; con fallos →
+    // rojo, que una declaración no es una amnistía.
+    if (ctx.bloquesSinMedir.length && !sinMedir) {
+      const motivos = ctx.bloquesSinMedir.map((m) => `«${m}»`).join(" · ");
+      if (ctx.fallos.length === 0 && !fatal) {
+        sinMedir = `${ctx.bloquesSinMedir.length} bloque(s) declarados sin medir: ${motivos}`;
+      } else {
+        console.log(
+          `    ⊘ ${ctx.bloquesSinMedir.length} bloque(s) sin medir (${motivos}) — pero el guion ` +
+            `arrastra fallos: se queda en rojo`,
+        );
       }
     }
     if (DIAG) {

@@ -513,14 +513,20 @@ export default async function (ctx) {
   // material para la crítica visual.
   await mirarA(ctx, -30);
   await ctx.nefan("inputDriver.queueAttack");
-  await ctx
-    .waitFor(
-      "el wind-up está en pantalla para la foto",
-      () => (window.__nefan.fps()?.telegraph?.mode === "windup" ? true : null),
-      3_000,
-    )
-    .then(() => ctx.shot("telegraph-mirando-abajo"))
-    .catch((err) => ctx.log(`sin captura del telegraph: ${err.message}`));
+  await ctx.absorbe(
+    "esta espera solo sirve para pillar el wind-up en la foto: lo que el guion MIDE del " +
+      "telegraph son las trazas de arriba (`el telegraph aparece durante el wind-up…`, `…y se " +
+      "apaga` y `bajando la mirada, el telegraph entra en el cuadro`), y ahí " +
+      "vive el veredicto. Sin foto se pierde material para la crítica visual, no una medida",
+    () =>
+      ctx
+        .waitFor(
+          "el wind-up está en pantalla para la foto",
+          () => (window.__nefan.fps()?.telegraph?.mode === "windup" ? true : null),
+          3_000,
+        )
+        .then(() => ctx.shot("telegraph-mirando-abajo")),
+  );
 
   // ── El mundo se vacía de verdad ─────────────────────────────────────────
   // Nadie llamaba nunca a removeTile: los grupos three de la partida anterior

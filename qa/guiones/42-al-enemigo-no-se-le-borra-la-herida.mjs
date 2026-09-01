@@ -70,6 +70,7 @@ import {
   esperarListaDeSaves,
   esperarTituloListo,
 } from "../lib/sesion.mjs";
+import { acercarse, herirHasta } from "../lib/combate.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes del guion), la misma
  *  que el 41 y por las mismas dos razones: la partida tiene que arrancar en el
@@ -122,69 +123,6 @@ const ledger = (ctx) =>
     return Object.fromEntries((body.entities ?? []).map((e) => [e.id, e.position]));
   });
 
-/** Camina hasta ponerse a distancia de golpe. Por el camino del jugador —yaw +
- *  tecla de avance—, en tramos porque el enemigo también se mueve. */
-async function acercarse(ctx, id, tramos = 12) {
-  let m = await medir(ctx, id);
-  for (let i = 0; i < tramos && m && m.d > DISTANCIA_DE_GOLPE; i++) {
-    const p = await ctx.nefan("state");
-    await ctx.nefan("setYaw", Math.atan2(m.pos.x - p.pos.x, m.pos.z - p.pos.z));
-    await ctx
-      .holdUntil(
-        "up",
-        `el jugador se pone a ${DISTANCIA_DE_GOLPE} m de ${id} (tramo ${i + 1}, ahora ${m.d.toFixed(1)} m)`,
-        (a) => {
-          const e = window.__nefan.enemies().find((x) => x.id === a.id);
-          if (!e) return null;
-          const q = window.__nefan.state().pos;
-          return Math.hypot(e.pos.x - q.x, e.pos.z - q.z) <= a.objetivo ? true : null;
-        },
-        4_000,
-        { id, objetivo: DISTANCIA_DE_GOLPE },
-      )
-      .catch(() => null);
-    m = await medir(ctx, id);
-  }
-  return m;
-}
-
-/** Pega hasta dejar al enemigo por debajo de `objetivo` SIN matarlo. Se
- *  re-encara y se cierra la distancia atacando, como quien juega; la condición
- *  de parada es la vida del HUD, no un reloj ni un número de intentos. */
-async function herirHasta(ctx, id, objetivo, maxMs = 60_000) {
-  await ctx.nefan("inputDriver.selectAttack", "quick");
-  const fin = await ctx
-    .waitFor(
-      `la vida de ${id} baja de ${objetivo} en el HUD`,
-      (a) => {
-        const e = window.__nefan.enemies().find((x) => x.id === a.id);
-        const p = window.__nefan.state().pos;
-        const drv = window.__nefan.inputDriver;
-        if (e && p) {
-          window.__nefan.setYaw(Math.atan2(e.pos.x - p.x, e.pos.z - p.z));
-          if (Math.hypot(e.pos.x - p.x, e.pos.z - p.z) > a.alcance) drv.press("up");
-          else drv.release("up");
-          drv.queueAttack();
-        }
-        const el = document.getElementById(`hp-text-${a.id}`);
-        if (!el) return null;
-        const n = Number(el.textContent);
-        if (Number.isFinite(n) && n <= a.objetivo) return { hud: n, muerto: n <= 0 };
-        // El jugador muerto deja de poder pegar: se corta aquí para que el
-        // rojo diga «te mataron» y no agote el cortafuegos en silencio.
-        if (Number(document.getElementById("player-hp-text")?.textContent ?? 0) <= 0) {
-          return { hud: n, jugadorMuerto: true };
-        }
-        return null;
-      },
-      maxMs,
-      { id, objetivo, alcance: DISTANCIA_DE_GOLPE },
-    )
-    .catch(() => null);
-  await ctx.nefan("inputDriver.release", "up");
-  return fin;
-}
-
 export default async function (ctx) {
   // La sonda de frames se instala ANTES de que cargue la app: el cliente abre
   // su WebSocket al bridge en el arranque y un wrap posterior no vería un solo
@@ -229,8 +167,8 @@ export default async function (ctx) {
   ctx.log(`enemigo de la escena: ${JSON.stringify(enemigo)}`);
 
   // ── 1 · LA HERIDA VIAJA ────────────────────────────────────────────────
-  await acercarse(ctx, BANDIDO);
-  const herido = await herirHasta(ctx, BANDIDO, VIDA_OBJETIVO);
+  await acercarse(ctx, BANDIDO, { objetivo: DISTANCIA_DE_GOLPE });
+  const herido = await herirHasta(ctx, BANDIDO, VIDA_OBJETIVO, { alcance: DISTANCIA_DE_GOLPE });
   ctx.expect(
     "el jugador consigue HERIR al enemigo sin matarlo (si no, no hay herida que viajar)",
     Boolean(herido) && !herido.jugadorMuerto && !herido.muerto,
@@ -323,9 +261,12 @@ export default async function (ctx) {
   );
 
   // (b) y se le puede volver a pegar: el número BAJA otra vez.
-  const cerca = await acercarse(ctx, BANDIDO, 30);
+  const cerca = await acercarse(ctx, BANDIDO, { objetivo: DISTANCIA_DE_GOLPE, tramos: 30 });
   ctx.log(`de vuelta a ${cerca?.d?.toFixed(2)} m de ${BANDIDO} (vida HUD ${vidaTrasViajar})`);
-  const segundaHerida = await herirHasta(ctx, BANDIDO, vidaTrasViajar - 1, 90_000);
+  const segundaHerida = await herirHasta(ctx, BANDIDO, vidaTrasViajar - 1, {
+    maxMs: 90_000,
+    alcance: DISTANCIA_DE_GOLPE,
+  });
   const vidaFinal = await vidaEnElHud(ctx, BANDIDO);
   if (segundaHerida?.jugadorMuerto) {
     ctx.log(`☠ el jugador murió en la segunda pelea (vida del enemigo ${vidaFinal})`);
@@ -402,14 +343,21 @@ export default async function (ctx) {
   // enemigo matado dos veces (medido jugando en el QA de #323, que lo dejó en
   // backlog sin issue). Aquí se mata de verdad, se reanuda por la tarjeta del
   // save —como quien juega— y se afirma que NO está.
-  const rematado = await herirHasta(ctx, BANDIDO, 0, 90_000);
+  const rematado = await herirHasta(ctx, BANDIDO, 0, { maxMs: 90_000, alcance: DISTANCIA_DE_GOLPE });
   ctx.expect(
     "el jugador consigue MATAR al enemigo (si no, no hay muerte que persistir)",
     Boolean(rematado?.muerto),
     JSON.stringify(rematado),
   );
   if (!rematado?.muerto) {
-    ctx.log("⚠ sin muerte no se puede medir el resume; el guion termina aquí");
+    // Por el canal ⊘ y no por un `ctx.log("⚠ …")` (#261): el bloque del resume
+    // no se midió, y eso se DECLARA. Con el aserto de arriba ya en rojo el
+    // guion se queda ROJO —una declaración no es una amnistía—, pero el motivo
+    // sale impreso en vez de perderse en una línea de log que nadie lee.
+    ctx.sinMedirBloque(
+      "sin muerte no hay muerto que persistir: el bloque del resume (el enemigo matado no vuelve) " +
+        "no se pudo medir",
+    );
     return;
   }
   await ctx.shot("enemigo-muerto-antes-de-reanudar");
@@ -436,25 +384,26 @@ export default async function (ctx) {
   // save que caiga escribe EL MISMO valor. Si el registro cambia, solo puede
   // haberlo movido la vida ambiental. Determinista por los dos lados.
   const l1 = await ledger(ctx);
-  const conElMuerto = await ctx.waitFor(
-    "el mercader se mueve en el ledger (la vida ambiental está corriendo)",
-    (a) =>
-      fetch(`${a.base}/entities`)
-        .then((r) => r.json())
-        .then((b) => {
-          const pos = Object.fromEntries((b.entities ?? []).map((e) => [e.id, e.position]));
-          const movio = JSON.stringify(pos[a.mercader]) !== JSON.stringify(a.l1[a.mercader]);
-          return movio ? { mercader: pos[a.mercader], hostil: pos[a.bandido] } : null;
-        })
-        .catch(() => null),
-    60_000,
-    {
-      base: String(await ctx.page.evaluate(() => window.__nefan.servicios()["world-state"])).replace(/\/+$/, ""),
-      mercader: MERCADER,
-      bandido: BANDIDO,
-      l1,
-    },
-  ).catch(() => null);
+  const base = String(await ctx.page.evaluate(() => window.__nefan.servicios()["world-state"])).replace(/\/+$/, "");
+  const conElMuerto = await ctx.absorbe(
+    "si la vida ambiental no llega a mover al mercader, esta mitad del ledger se DECLARA sin " +
+      "medir aquí debajo (`sinMedirBloque`): ningún verde de este guion depende de esta espera",
+    () =>
+      ctx.waitFor(
+        "el mercader se mueve en el ledger (la vida ambiental está corriendo)",
+        (a) =>
+          fetch(`${a.base}/entities`)
+            .then((r) => r.json())
+            .then((b) => {
+              const pos = Object.fromEntries((b.entities ?? []).map((e) => [e.id, e.position]));
+              const movio = JSON.stringify(pos[a.mercader]) !== JSON.stringify(a.l1[a.mercader]);
+              return movio ? { mercader: pos[a.mercader], hostil: pos[a.bandido] } : null;
+            })
+            .catch(() => null),
+        60_000,
+        { base, mercader: MERCADER, bandido: BANDIDO, l1 },
+      ),
+  );
   if (conElMuerto) {
     ctx.log(
       `ledger: ${MERCADER} ${JSON.stringify(l1[MERCADER])} → ${JSON.stringify(conElMuerto.mercader)} · ` +
@@ -466,7 +415,13 @@ export default async function (ctx) {
       `${JSON.stringify(l1[BANDIDO])} → ${JSON.stringify(conElMuerto.hostil)}`,
     );
   } else {
-    ctx.log("⚠ el mercader no se movió en 60 s: la mitad del ledger no se pudo medir en esta corrida");
+    // Por el canal ⊘ (#261): esta mitad del bloque 2 no se midió, y decirlo en
+    // un `ctx.log("⚠ …")` era un ⊘ sin declarar — la corrida salía verde
+    // afirmando media comparación. El guion sigue midiendo lo que queda.
+    ctx.sinMedirBloque(
+      "el mercader no se movió en 60 s: sin vida ambiental corriendo, la mitad del ledger " +
+        "—el control que hace significativa la quietud del hostil— no se pudo medir",
+    );
   }
 
   await ctx.page.reload({ waitUntil: "domcontentloaded" });

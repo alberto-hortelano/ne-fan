@@ -47,22 +47,25 @@ export default async function (ctx) {
   await ctx.shot("antes-de-empujar");
 
   // Se espera por el FALLO: si el jugador logra meterse dentro de la huella,
-  // la condición se cumple y el guion se pone rojo. El timeout es el éxito.
-  let atraveso = true;
-  await ctx
-    .holdUntil(
-      "up",
-      "el jugador ATRAVIESA el muro (esto sería el fallo)",
-      (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
-      6000,
-      zBorde - 0.5,
-    )
-    .catch(() => {
-      atraveso = false;
-    });
+  // la condición se cumple y el guion se pone rojo. El timeout ES el éxito, y
+  // por eso se afirma con `expectEspera` (#261) en vez de tragarlo: que la
+  // espera expire deja de ser un accidente que nadie mira y pasa a ser EL
+  // DATO, escrito en el mismo sitio donde se espera. De paso desaparece el
+  // baile del `let atraveso = true` que lo decía a través de una variable.
+  const { ocurrio: atraveso } = await ctx.expectEspera(
+    "el jugador atraviesa la huella del edificio",
+    false,
+    (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
+    {
+      ms: 6000,
+      arg: zBorde - 0.5,
+      tecla: "up",
+      aserto: "el jugador NO atraviesa la huella del edificio",
+    },
+  );
 
   const fin = (await ctx.nefan("state")).pos;
-  ctx.expect("el jugador NO atraviesa la huella del edificio", !atraveso, `z final ${fin.z.toFixed(2)} vs borde ${zBorde.toFixed(2)}`);
+  ctx.log(`z final ${fin.z.toFixed(2)} vs borde ${zBorde.toFixed(2)} (atravesó: ${atraveso})`);
   ctx.expect("pero sí avanzó hacia él (no estaba bloqueado de salida)", fin.z < zSalida - 0.5, `${zSalida.toFixed(2)} → ${fin.z.toFixed(2)}`);
   await ctx.shot("contra-el-muro");
 }

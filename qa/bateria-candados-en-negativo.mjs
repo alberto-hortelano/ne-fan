@@ -191,6 +191,53 @@ const INVARIANTES = [
     /la declaración se honra igual/,
     2,
   ],
+  // #261 · el libro de esperas: una espera que expira y NADIE observa no puede
+  // acabar en verde. El sujeto es el guion 02, cuya espera expira SIEMPRE por
+  // diseño (se espera a que el jugador atraviese un muro, que es el fallo que
+  // el guion viene a descartar): es el único sitio del árbol donde el destrozo
+  // no depende de que algo salga mal, así que la corrida es determinista.
+  //
+  // El destrozo devuelve el `.catch(() => null)` sobre la espera —el gesto
+  // reflejo que había 89 veces en `qa/guiones/`— dejando intacto el aserto: si
+  // el candado no existiera, el guion saldría VERDE con la espera tragada, que
+  // es exactamente la mentira de #261. Con él, el ÚNICO ✘ es la línea del
+  // libro, y nombra el sitio.
+  [
+    "#261 · una espera que expira sin que nadie la observe NO puede acabar en verde",
+    join(raiz, "qa/guiones/02-colision-desde-huella.mjs"),
+    "02-colision",
+    [
+      [
+        `  const { ocurrio: atraveso } = await ctx.expectEspera(
+    "el jugador atraviesa la huella del edificio",
+    false,
+    (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
+    {
+      ms: 6000,
+      arg: zBorde - 0.5,
+      tecla: "up",
+      aserto: "el jugador NO atraviesa la huella del edificio",
+    },
+  );
+`,
+        `  let atraveso = true;
+  await ctx
+    .holdUntil(
+      "up",
+      "el jugador ATRAVIESA el muro (esto sería el fallo)",
+      (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
+      6000,
+      zBorde - 0.5,
+    )
+    .catch(() => {
+      atraveso = false;
+    });
+  ctx.expect("el jugador NO atraviesa la huella del edificio", !atraveso);
+`,
+      ],
+    ],
+    /expiró.*nadie la observó/,
+  ],
   [
     "#320 · muere UNA sola tecla de movimiento (`a`) en el proveedor de teclado",
     TECLADO,

@@ -38,8 +38,15 @@ const FIXTURE_EN_DISCO = join(
 );
 
 /** Coloca al jugador al oeste del río en la fila `r` y le hace caminar al
- *  este. Devuelve la x final. */
-async function cruzarPorLaFila(ctx, r, maxMs = 7000) {
+ *  este, AFIRMANDO si tenía que llegar al otro lado o no.
+ *
+ *  El signo es DATO y no dos funciones: el mismo paseo tiene que cruzar por el
+ *  puente y NO cruzar por el agua — lo decide la leyenda del terreno, que es
+ *  justo lo que este guion mide. Por eso `debeCruzar` es un parámetro de
+ *  `expectEspera` (#261): en el caso negativo el timeout ES el éxito, y así se
+ *  escribe donde se espera en vez de viajar en un `let cruzo = true` que
+ *  alguien tiene que acordarse de mirar. */
+async function cruzarPorLaFila(ctx, r, debeCruzar, aserto, maxMs = 7000) {
   const punto = await ctx.page.evaluate((fila) => {
     const g = window.__nefan.scene.terrain_grid;
     const [ox, oz] = g.origin;
@@ -65,12 +72,12 @@ async function cruzarPorLaFila(ctx, r, maxMs = 7000) {
   await ctx.nefan("setPlayerPos", punto.xSalida, punto.z);
   await ctx.nefan("setYaw", Math.PI / 2); // forward = +X = este
   const libre = (await ctx.nefan("probeCollide", punto.xSalida, punto.z)) === false;
-  let cruzo = true;
-  await ctx
-    .holdUntil("up", "el jugador llega al otro lado", (m) => (window.__nefan.state().pos.x >= m ? true : null), maxMs, punto.xMeta)
-    .catch(() => {
-      cruzo = false;
-    });
+  const { ocurrio: cruzo } = await ctx.expectEspera(
+    `el jugador llega al otro lado por la fila ${r}`,
+    debeCruzar,
+    (m) => (window.__nefan.state().pos.x >= m ? true : null),
+    { ms: maxMs, arg: punto.xMeta, tecla: "up", aserto },
+  );
   const fin = (await ctx.nefan("state")).pos;
   return { ...punto, libre, cruzo, fin };
 }
@@ -127,22 +134,28 @@ export default async function (ctx) {
   if (leyenda.filaCruzable < 0 || leyenda.filaBloqueada < 0) return;
 
   // ── 2. El vado se cruza andando ─────────────────────────────────────────
-  const porElPuente = await cruzarPorLaFila(ctx, leyenda.filaCruzable);
-  ctx.expect("el punto de partida del puente está libre", porElPuente.libre);
-  ctx.expect(
+  const porElPuente = await cruzarPorLaFila(
+    ctx,
+    leyenda.filaCruzable,
+    true,
     `el jugador CRUZA el río por el puente (fila ${leyenda.filaCruzable})`,
-    porElPuente.cruzo,
-    `x ${porElPuente.xSalida.toFixed(1)} → ${porElPuente.fin.x.toFixed(1)} (meta ${porElPuente.xMeta.toFixed(1)})`,
+  );
+  ctx.expect("el punto de partida del puente está libre", porElPuente.libre);
+  ctx.log(
+    `por el puente: x ${porElPuente.xSalida.toFixed(1)} → ${porElPuente.fin.x.toFixed(1)} (meta ${porElPuente.xMeta.toFixed(1)})`,
   );
   await ctx.shot("cruzado-por-el-puente");
 
   // ── 3. …y el agua no ────────────────────────────────────────────────────
-  const contraElAgua = await cruzarPorLaFila(ctx, leyenda.filaBloqueada);
-  ctx.expect("el punto de partida del agua está libre", contraElAgua.libre);
-  ctx.expect(
+  const contraElAgua = await cruzarPorLaFila(
+    ctx,
+    leyenda.filaBloqueada,
+    false,
     `el jugador NO cruza por el agua (fila ${leyenda.filaBloqueada})`,
-    !contraElAgua.cruzo,
-    `x ${contraElAgua.xSalida.toFixed(1)} → ${contraElAgua.fin.x.toFixed(1)} (meta ${contraElAgua.xMeta.toFixed(1)})`,
+  );
+  ctx.expect("el punto de partida del agua está libre", contraElAgua.libre);
+  ctx.log(
+    `contra el agua: x ${contraElAgua.xSalida.toFixed(1)} → ${contraElAgua.fin.x.toFixed(1)} (meta ${contraElAgua.xMeta.toFixed(1)})`,
   );
   ctx.expect(
     "pero sí avanzó hasta la orilla",
@@ -190,11 +203,14 @@ export default async function (ctx) {
   ctx.expect("`solid:false` saca el agua de solid_chars", !conVado.solid.includes("w"), JSON.stringify(conVado));
   ctx.expect("y conserva el nombre declarado", JSON.stringify(conVado.legend).includes("vado"), JSON.stringify(conVado.legend));
 
-  const porElVado = await cruzarPorLaFila(ctx, leyenda.filaBloqueada);
-  ctx.expect(
+  const porElVado = await cruzarPorLaFila(
+    ctx,
+    leyenda.filaBloqueada,
+    true,
     `con el agua declarada vadeable, el jugador SÍ cruza por la fila ${leyenda.filaBloqueada}`,
-    porElVado.cruzo,
-    `x ${porElVado.xSalida.toFixed(1)} → ${porElVado.fin.x.toFixed(1)} (meta ${porElVado.xMeta.toFixed(1)})`,
+  );
+  ctx.log(
+    `por el vado: x ${porElVado.xSalida.toFixed(1)} → ${porElVado.fin.x.toFixed(1)} (meta ${porElVado.xMeta.toFixed(1)})`,
   );
   await ctx.shot("vadeando");
 }

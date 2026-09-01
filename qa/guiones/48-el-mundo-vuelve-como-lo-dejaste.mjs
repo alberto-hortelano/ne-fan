@@ -50,6 +50,7 @@ import {
   esperarTituloListo,
 } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
+import { acercarse, herirHasta } from "../lib/combate.mjs";
 
 /** El fake es determinista por turno de diálogo (`fakeDialogueTurn`), así que
  *  hace falta empezar de cero: saves vírgenes y contador a 0. */
@@ -77,70 +78,6 @@ const vidaEnElHud = (ctx, id) =>
     const n = Number(el.textContent);
     return Number.isFinite(n) ? n : null;
   }, id);
-
-/** Pega hasta dejar al enemigo por debajo de `objetivo` SIN matarlo, como
- *  quien juega: re-encarándose y cerrando la distancia. La condición de
- *  parada es la vida del HUD, no un reloj. Mismo molde que el guion 42. */
-async function herirHasta(ctx, id, objetivo, maxMs = 60_000) {
-  await ctx.nefan("inputDriver.selectAttack", "quick");
-  const fin = await ctx
-    .waitFor(
-      `la vida de ${id} baja de ${objetivo} en el HUD`,
-      (a) => {
-        const e = window.__nefan.enemies().find((x) => x.id === a.id);
-        const p = window.__nefan.state().pos;
-        const drv = window.__nefan.inputDriver;
-        if (e && p) {
-          window.__nefan.setYaw(Math.atan2(e.pos.x - p.x, e.pos.z - p.z));
-          if (Math.hypot(e.pos.x - p.x, e.pos.z - p.z) > a.alcance) drv.press("up");
-          else drv.release("up");
-          drv.queueAttack();
-        }
-        const el = document.getElementById(`hp-text-${a.id}`);
-        if (!el) return null;
-        const n = Number(el.textContent);
-        if (Number.isFinite(n) && n <= a.objetivo) return { hud: n, muerto: n <= 0 };
-        if (Number(document.getElementById("player-hp-text")?.textContent ?? 0) <= 0) {
-          return { hud: n, jugadorMuerto: true };
-        }
-        return null;
-      },
-      maxMs,
-      { id, objetivo, alcance: DISTANCIA_DE_GOLPE },
-    )
-    .catch(() => null);
-  await ctx.nefan("inputDriver.release", "up");
-  return fin;
-}
-
-/** Camina hasta el NPC por el camino del jugador (yaw + tecla de avance). */
-async function acercarseAlNpc(ctx, id, objetivo = 2.2, tramos = 12) {
-  for (let i = 0; i < tramos; i++) {
-    const n = await ctx.page.evaluate((npcId) => {
-      const e = window.__nefan.npcs().find((x) => x.id === npcId);
-      if (!e) return null;
-      const p = window.__nefan.state().pos;
-      return { d: Math.hypot(e.pos.x - p.x, e.pos.z - p.z), dx: e.pos.x - p.x, dz: e.pos.z - p.z };
-    }, id);
-    if (!n || n.d <= objetivo) return n;
-    await ctx.nefan("setYaw", Math.atan2(n.dx, n.dz));
-    await ctx
-      .holdUntil(
-        "up",
-        `el jugador se acerca a ${id} (tramo ${i + 1}, ahora ${n.d.toFixed(1)} m)`,
-        (a) => {
-          const e = window.__nefan.npcs().find((x) => x.id === a.id);
-          if (!e) return null;
-          const p = window.__nefan.state().pos;
-          return Math.hypot(e.pos.x - p.x, e.pos.z - p.z) <= a.objetivo ? true : null;
-        },
-        4_000,
-        { id, objetivo },
-      )
-      .catch(() => null);
-  }
-  return null;
-}
 
 /** Lo que el cliente tiene en escena AHORA, por las tres listas y el HUD. */
 const mundo = (ctx) =>
@@ -191,7 +128,7 @@ export default async function (ctx) {
     60_000,
     MERCADER,
   );
-  await acercarseAlNpc(ctx, MERCADER);
+  await acercarse(ctx, MERCADER, { objetivo: 2.2, lista: "npcs" });
   await ctx.nefan("inputDriver.queueInteract");
   await ctx.waitFor("el tabernero contesta (turno 1)", () => window.__nefan.dialogueVisible || null, 60_000);
 
@@ -234,10 +171,17 @@ export default async function (ctx) {
   // Cerrar la conversación para poder pelear (con el panel abierto el cliente
   // suprime el ataque) y herir al Secuaz SIN matarlo.
   await ctx.nefan("advanceDialogue");
-  await ctx
-    .waitFor("la conversación se cierra", () => (window.__nefan.dialogueVisible ? null : true), 15_000)
-    .catch(() => null);
-  const herido = await herirHasta(ctx, hostil.id, VIDA_OBJETIVO);
+  // Con el panel abierto el cliente SUPRIME el ataque, así que sin este cierre
+  // no hay pelea que medir: se afirma (#261) en vez de tragarlo — expiraba sin
+  // que nadie lo mirara y el rojo llegaba tres pasos más abajo, disfrazado de
+  // «el jugador no consigue herir al enemigo».
+  await ctx.expectEspera(
+    "la conversación se cierra (con el panel abierto el cliente suprime el ataque)",
+    true,
+    () => (window.__nefan.dialogueVisible ? null : true),
+    { ms: 15_000 },
+  );
+  const herido = await herirHasta(ctx, hostil.id, VIDA_OBJETIVO, { alcance: DISTANCIA_DE_GOLPE });
   ctx.expect(
     "el jugador HIERE al enemigo de runtime sin matarlo (si no, no hay herida que sobreviva)",
     Boolean(herido) && !herido.jugadorMuerto && !herido.muerto,
@@ -335,7 +279,10 @@ export default async function (ctx) {
   );
 
   // 3.b · y se le puede PEGAR: volver pintado no basta (I-3 de #323).
-  const segundaHerida = await herirHasta(ctx, vuelto.enemigo.id, (vidaDespues ?? VIDA_OBJETIVO) - 1, 90_000);
+  const segundaHerida = await herirHasta(ctx, vuelto.enemigo.id, (vidaDespues ?? VIDA_OBJETIVO) - 1, {
+    maxMs: 90_000,
+    alcance: DISTANCIA_DE_GOLPE,
+  });
   const vidaFinal = await vidaEnElHud(ctx, vuelto.enemigo.id);
   if (segundaHerida?.jugadorMuerto) ctx.log(`☠ el jugador murió peleando (enemigo en ${vidaFinal})`);
   ctx.expect(

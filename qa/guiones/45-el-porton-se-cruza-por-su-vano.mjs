@@ -59,22 +59,20 @@ async function esperarFrames(ctx, n = 3) {
 /** Anda hacia el sur desde `(x, zSalida)` e informa de hasta dónde llegó.
  *  Devuelve `{ cruzo, zFinal }` — nunca lanza: el fallo del cruce es un dato,
  *  no una excepción, porque el paso 2 espera justamente que NO cruce. */
-async function intentarCruzar(ctx, x, zSalida, zMeta) {
+async function intentarCruzar(ctx, x, zSalida, zMeta, debeCruzar, aserto) {
   await ctx.nefan("setPlayerPos", x, zSalida);
   await ctx.nefan("setYaw", 0); // forward = +Z = hacia el sur, contra la muralla
   await esperarFrames(ctx);
-  let cruzo = true;
-  await ctx
-    .holdUntil(
-      "up",
-      `el jugador avanza hacia el sur desde x=${x.toFixed(2)}`,
-      (meta) => (window.__nefan.state().pos.z >= meta ? { z: window.__nefan.state().pos.z } : null),
-      12_000,
-      zMeta,
-    )
-    .catch(() => {
-      cruzo = false;
-    });
+  // El signo es DATO: por el vano tiene que cruzar y contra la muralla NO, y
+  // eso lo decide quien llama. Se AFIRMA con `expectEspera` (#261) en vez de
+  // pasarlo por un `let cruzo = true`: en el caso negativo el timeout ES el
+  // éxito, y una expiración que nadie observa no puede decidir un verde.
+  const { ocurrio: cruzo } = await ctx.expectEspera(
+    `el jugador avanza hacia el sur desde x=${x.toFixed(2)} hasta z=${zMeta.toFixed(2)}`,
+    debeCruzar,
+    (meta) => (window.__nefan.state().pos.z >= meta ? { z: window.__nefan.state().pos.z } : null),
+    { ms: 12_000, arg: zMeta, tecla: "up", aserto },
+  );
   return { cruzo, zFinal: (await ctx.nefan("state")).pos.z };
 }
 
@@ -159,13 +157,11 @@ export default async function (ctx) {
   await esperarFrames(ctx);
   await ctx.shot("delante-del-porton");
 
-  const porVano = await intentarCruzar(ctx, geo.x, zSalida, zMeta);
-  ctx.log(`por el vano: z ${zSalida.toFixed(2)} → ${porVano.zFinal.toFixed(2)} (meta ${zMeta.toFixed(2)})`);
-  ctx.expect(
+  const porVano = await intentarCruzar(
+    ctx, geo.x, zSalida, zMeta, true,
     "el jugador CRUZA la muralla por el vano del portón",
-    porVano.cruzo,
-    `llegó a z=${porVano.zFinal.toFixed(2)} de los ${zMeta.toFixed(2)} pedidos`,
   );
+  ctx.log(`por el vano: z ${zSalida.toFixed(2)} → ${porVano.zFinal.toFixed(2)} (meta ${zMeta.toFixed(2)})`);
   await esperarFrames(ctx);
   await ctx.shot("despues-de-cruzar-el-porton");
 
@@ -229,11 +225,14 @@ export default async function (ctx) {
     `probeCollide(${xMuralla.toFixed(2)}, ${geo.z.toFixed(2)}) = ${enMuro}`,
   );
 
-  const porElMuro = await intentarCruzar(ctx, xMuralla, zSalida, zMeta);
+  const porElMuro = await intentarCruzar(
+    ctx, xMuralla, zSalida, zMeta, false,
+    "el jugador NO cruza por la muralla: el portón es una puerta, no un agujero de lado a lado",
+  );
   ctx.log(`por la muralla: z ${zSalida.toFixed(2)} → ${porElMuro.zFinal.toFixed(2)} (meta ${zMeta.toFixed(2)})`);
   ctx.expect(
-    "el jugador NO cruza por la muralla: el portón es una puerta, no un agujero de lado a lado",
-    !porElMuro.cruzo && porElMuro.zFinal < geo.z,
+    "…y se queda al NORTE de la muralla, sin traspasarla a medias",
+    porElMuro.zFinal < geo.z,
     `llegó a z=${porElMuro.zFinal.toFixed(2)}, y la muralla está en z=${geo.z.toFixed(2)}`,
   );
   await esperarFrames(ctx);
