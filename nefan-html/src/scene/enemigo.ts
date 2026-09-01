@@ -18,7 +18,7 @@
 import type { Vec3 } from "@nefan-core/src/types.js";
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import type { RoomEnemy } from "../net/game-client.js";
-import type { Entity } from "../renderer/types.js";
+import type { DuenoDeEntity, Entity } from "../renderer/types.js";
 import { errors } from "../ui/error-log.js";
 
 /** Colores del rótulo/silueta de la barra de vida — sin arte propio todavía,
@@ -46,9 +46,10 @@ export interface DatosDeEnemigo {
   nombre?: string;
   /** Índice para rotar el color entre varios enemigos en pantalla. */
   indiceColor?: number;
-  /** Tile del que procede (purga al re-emitir ese tile). Ausente en un spawn
-   *  dinámico, que no pertenece al scene data de ningún tile. */
-  tileKey?: string;
+  /** De quién es (gobierna la purga al re-emitir un tile). OBLIGATORIO, y no
+   *  un `tileKey?` como hasta #350: un spawn de runtime tiene que DECIR que lo
+   *  es, en vez de compartir el `undefined` con el que se olvidó de ponerlo. */
+  dueno: DuenoDeEntity;
 }
 
 function esObjeto(v: unknown): v is Record<string, unknown> {
@@ -143,7 +144,7 @@ export function enemigoDesdeCombat(datos: DatosDeEnemigo): EnemigoNuevo | null {
       // warrior). Se deriva con la MISMA función que los NPCs o la clave de
       // caché del skin diverge y se paga dos veces.
       styleRole: npcSkinStyleRef({ style_ref: datos.styleRef, role: "hostile" }),
-      ...(datos.tileKey ? { tileKey: datos.tileKey } : {}),
+      dueno: datos.dueno,
     },
   };
 }

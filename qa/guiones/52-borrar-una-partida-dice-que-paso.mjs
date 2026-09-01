@@ -68,7 +68,16 @@ async function pulsarBorrar(ctx, id, desc) {
       const tarjetas = [...document.querySelectorAll("button[data-action=delete]")].map(
         (b) => b.dataset.sessionId,
       );
-      if (aviso === previo && tarjetas.includes(sid)) return null;
+      // Sigue esperando mientras no haya pasado nada… Y TAMBIÉN si la lista
+      // está VACÍA, que es un estado INTERMEDIO y no un desenlace: el título
+      // repinta las tarjetas enteras, así que hay un frame en el que no hay
+      // ninguna. Sin esta guarda, `waitFor` devolvía esa foto —la tarjeta
+      // borrada ya no está, luego «listo»— y el último aserto del guion leía
+      // `tarjetas: []` y se ponía rojo por el motivo equivocado: la partida
+      // jugada no se había borrado, es que aún no se había vuelto a pintar.
+      // Aquí la lista nunca puede quedarse legítimamente a cero (la partida
+      // real sobrevive a los tres borrados), así que vacía = todavía no.
+      if ((aviso === previo && tarjetas.includes(sid)) || tarjetas.length === 0) return null;
       // El borde de ESTA tarjeta y el de otra cualquiera. Se comparan porque
       // `sessionRowHtml` ya pinta un borde inline a todas: mirar solo «tiene
       // borderColor» era un verde que no podía ponerse rojo (probado: con la

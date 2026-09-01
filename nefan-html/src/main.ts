@@ -62,7 +62,7 @@ import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, currentUiTheme, BASE_UI_THEME, type UiTheme } from "./ui/theme.js";
 import { createClientSession } from "@nefan-core/src/session/session-facets.js";
 import { createEntrada } from "@nefan-core/src/session/entrada.js";
-import { spawnsDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
+import { npcsFueraDelRect, spawnsDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
 import {
   createGameClient,
   createViewerClient,
@@ -986,19 +986,31 @@ async function addTile(
 
   // Purga entidades previas de esta clave (re-render de un tile ya visto) y
   // extrae enemigos/objetos/NPCs con posiciones GLOBALES.
-  const inRect = (p: Vec3) => p.x >= rect.minX && p.x < rect.maxX && p.z >= rect.minZ && p.z < rect.maxZ;
+  //
+  // LAS TRES CLASES SE PURGAN POR IDENTIDAD, nunca por rect (#350). La
+  // pregunta al purgar es «¿de quién era esto?», no «¿dónde ha acabado?»: un
+  // NPC de otro tile que paseó hasta aquí (vida ambiental del bridge) no debe
+  // borrarse, un enemigo persigue al jugador —a mitad de una pelea está donde
+  // le da la gana— y un objeto que puso el motor a mitad de partida no es de
+  // ningún tile. Hasta hoy los objetos se purgaban por GEOMETRÍA
+  // (`!ids.has(o.id) && !inRect(o.pos)`), así que el cofre y la forja que el
+  // motor materializó desaparecían en cuanto el jugador viajaba por «Salidas»
+  // y volvía: el tile se re-difundía, el objeto caía dentro del rect y no
+  // figuraba en el scene data. Con `dueno` la condición es la misma para las
+  // tres, y un token de diferencia con la de antes.
   const objects = (data.objects ?? []) as Record<string, unknown>[];
   const ids = new Set(objects.map((o) => o.id as string));
   const npcIds = new Set(((data.npcs ?? []) as Record<string, unknown>[]).map((n) => n.id as string));
-  objectEntities = objectEntities.filter((o) => !ids.has(o.id) && !inRect(o.pos));
-  // NPCs y ENEMIGOS: purga por IDENTIDAD de tile, nunca por rect — un NPC de
-  // otro tile que paseó hasta aquí (vida ambiental del bridge) no debe
-  // borrarse, y un enemigo persigue al jugador, así que a la mitad de una
-  // pelea está donde le da la gana. Solo caen los que pertenecían a ESTE tile
-  // y ya no figuran en su scene data. Purgar al enemigo por rect lo devolvía
-  // a su celda de spawn con la vida llena en cada re-emisión del tile.
-  npcEntities = npcEntities.filter((n) => !(n.tileKey === key && !npcIds.has(n.id)));
-  enemyEntities = enemyEntities.filter((e) => !(e.tileKey === key && !npcIds.has(e.id)));
+  const deEsteTile = (e: Entity) => e.dueno.de === "tile" && e.dueno.key === key;
+  // El `ids.has` NO se puede quitar al pasar a identidad, y por eso la
+  // condición de los objetos no es idéntica a la de los NPC: abajo se empujan
+  // los objetos del scene data SIN mirar si ya estaban (`:1039`), mientras que
+  // un NPC ya presente se CONSERVA (`:1050-1054`). Sin este filtro, un id que
+  // el motor declare después en el Format D saldría DUPLICADO — el fallo
+  // hermano del que se está arreglando.
+  objectEntities = objectEntities.filter((o) => !ids.has(o.id) && !deEsteTile(o));
+  npcEntities = npcEntities.filter((n) => !(deEsteTile(n) && !npcIds.has(n.id)));
+  enemyEntities = enemyEntities.filter((e) => !(deEsteTile(e) && !npcIds.has(e.id)));
   const enemies: RoomEnemy[] = [];
   // Qué tipo de volumen representa a cada objeto del plan: de aquí sale si el
   // greybox ya lo pinta (y entonces no lleva billboard encima).
@@ -1025,6 +1037,9 @@ async function addTile(
     // `materializeSpawn`, y las dos vías pasan por `enemigoDesdeCombat`.
     const objectEntity: Entity = {
       id: obj.id as string, pos, radius: 5,
+      // Lo declara ESTE tile: se va el día que deje de declararlo, y solo por
+      // eso (#350).
+      dueno: { de: "tile", key },
       color: category === "item" ? "#aa8" : "#666",
       label: (obj.description ?? "") as string, alive: true,
       category: category ?? "prop",
@@ -1050,7 +1065,10 @@ async function addTile(
     const existing = npcEntities.find((n) => n.id === npcId)
       ?? enemyEntities.find((e) => e.id === npcId);
     if (existing) {
-      existing.tileKey = key;
+      // Este tile vuelve a declararlo: pasa a ser suyo (pudo llegar paseando
+      // desde el vecino). Lo que NO se toca es su posición — la autoritativa
+      // es la del bridge, y recrearlo lo teletransportaría.
+      existing.dueno = { de: "tile", key };
       continue;
     }
     // VÍA (a) al combate: el motor declaró `role:"hostile"` y el core derivó
@@ -1070,7 +1088,7 @@ async function addTile(
         styleRef: typeof npc.style_ref === "string" ? npc.style_ref : undefined,
         nombre: typeof npc.name === "string" ? npc.name : undefined,
         indiceColor: colorIdx++,
-        tileKey: key,
+        dueno: { de: "tile", key },
       });
       if (nuevo) {
         enemies.push(nuevo.combatiente);
@@ -1101,25 +1119,32 @@ async function addTile(
       category: "creature",
       skinPrompt: npcPrompt,
       styleRole: npcStyleRole,
-      tileKey: key,
+      dueno: { de: "tile", key },
     };
     characterSprites.requestSkin(npcPrompt, { role: npcStyleRole });
     newNpcs.push(entity);
   }
   npcEntities.push(...newNpcs);
 
-  // Fail-loud del contrato de posiciones globales: una entidad de un tile de
-  // grid FUERA de su rect delata una conversión celda→mundo rota.
+  // Fail-loud del contrato de posiciones globales: un NPC de un tile de grid
+  // DECLARADO fuera de su rect delata una conversión celda→mundo rota.
+  //
+  // La decisión —cuál de las dos coordenadas de un npc es la conversión— vive
+  // en core (`npcsFueraDelRect`), junto a quien escribe la otra
+  // (`escenaConCombateVivo`): son las dos mitades del mismo criterio, y aquí
+  // no hay nada que pueda ponerse rojo si una se afloja (#241/#357). El
+  // cliente solo pinta el resultado en el panel del jugador.
+  //
+  // Cubre `data.npcs` ENTERO y no solo lo recién creado, que es más de lo que
+  // miraba el bucle que había aquí: un npc ya conocido cuya declaración se
+  // rompiera no lo veía nadie. Y no da falsos rojos por perseguir bien, porque
+  // lo que mide es la posición DECLARADA, no dónde ha acabado el personaje.
   if (isGridTile) {
-    // Los enemigos se comprueban RECIÉN nacidos (`enemies`, lo que este tile
-    // acaba de declarar), no barriendo `enemyEntities`: uno que lleva un rato
-    // persiguiendo al jugador puede estar legítimamente fuera del rect de su
-    // tile, y exigirle que siga dentro convertiría el candado de la
-    // conversión celda→mundo en un rojo por perseguir bien.
-    for (const e of [...newNpcs, ...enemies.map((en) => ({ id: en.id, pos: en.position }))]) {
-      if (!inRect(e.pos)) {
-        errors.push("scene", `entidad "${e.id}" de ${key} fuera de su rect: (${e.pos.x.toFixed(1)}, ${e.pos.z.toFixed(1)})`);
-      }
+    for (const fuera of npcsFueraDelRect(data.npcs, rect)) {
+      errors.push(
+        "scene",
+        `entidad "${fuera.id}" de ${key} fuera de su rect: (${fuera.x.toFixed(1)}, ${fuera.z.toFixed(1)})`,
+      );
     }
   }
 
@@ -2700,6 +2725,12 @@ function materializeSpawn(
         styleRef: typeof effect.data.style_ref === "string" ? effect.data.style_ref : undefined,
         nombre: effect.name,
         indiceColor: colorIdx++,
+        // DE RUNTIME, y se escribe AQUÍ DENTRO y nunca en el llamante (#350).
+        // Es la trampa concreta que este tipo cierra: con el dueño puesto
+        // fuera, el rehidratado del resume volvería sin él y el bug —el spawn
+        // que desaparece al re-emitir su tile— reaparecería tras resume +
+        // viaje. Con `dueno` obligatorio, olvidarlo no compila.
+        dueno: { de: "runtime" },
       });
       if (nuevo) {
         enemyEntities.push(nuevo.entidad);
@@ -2734,6 +2765,7 @@ function materializeSpawn(
       spriteHash,
       skinPrompt: npcPrompt,
       styleRole: spawnStyleRole,
+      dueno: { de: "runtime" },
     });
     characterSprites.requestSkin(npcPrompt, { role: spawnStyleRole });
     log(opts.rehidratado ? `↩ ${effect.name ?? "NPC"} sigue ahí` : `✨ ${effect.name ?? "NPC"} aparece`);
@@ -2754,6 +2786,12 @@ function materializeSpawn(
     // Altura coherente con la de las escenas del motor (defaults por kind).
     sizeY: KIND_DEFAULT_HEIGHT[isBuilding ? "building" : "prop"],
     spriteHash,
+    // EL ARREGLO DE #350, en una línea: este cofre y esta forja no son de
+    // ningún tile, así que la purga de `addTile` ya no se los lleva por caer
+    // dentro de su rect. Antes desaparecían en cuanto el jugador viajaba por
+    // «Salidas» y volvía, y solo reaparecían al reanudar — el mundo se curaba
+    // solo, que es peor que romperse.
+    dueno: { de: "runtime" },
   });
   const que = isBuilding ? "edificio" : "objeto";
   log(opts.rehidratado ? `↩ ${que}: ${label} sigue ahí` : `✨ ${que}: ${label}`);
