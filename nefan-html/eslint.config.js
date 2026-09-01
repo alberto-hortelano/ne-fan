@@ -2,6 +2,13 @@ import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 import prettier from "eslint-config-prettier";
 
+import tamano from "../nefan-core/data/contract/client-file-size.json" with { type: "json" };
+
+/** Opciones de `max-lines` para un tope dado. Los dos `false` son los que
+ *  hacen que el número del candado sea el mismo que `wc -l` — ver el bloque de
+ *  abajo. */
+const topeDe = (max) => ({ max, skipBlankLines: false, skipComments: false });
+
 export default tseslint.config(
   { ignores: ["dist/", "node_modules/"] },
   eslint.configs.recommended,
@@ -116,28 +123,28 @@ export default tseslint.config(
   // líneas) sino la derivada: +894 líneas (+39,9 %) en 30 días, tocado en 72
   // de 366 commits.
   //
-  // POR QUÉ AQUÍ Y NO EN `arch-rules.json`, que es donde vive el resto de los
-  // candados del repo, y la razón NO es la que se escribió primero: el motor
-  // de fronteras SÍ sabe contar líneas (un `text.pattern` de N saltos da UNA
-  // violación, no miles). El motivo es el coste, y va RE-MEDIDO hoy en vez de
-  // citado: el caso CONFORME —el que corre siempre— es justo el lento, porque
-  // la regex tiene que agotar el retroceso para poder decir que no. Medido el
-  // 2026-09-01: un `main.ts` que NO viola (patrón de 4.000 saltos) cuesta 379
-  // ms; los dos ficheros de ~1.650 líneas que tampoco violan, 216 ms entre los
-  // dos; el que SÍ viola, 0 ms. Eso se pagaría en cada `npm test` y cada
-  // `npm run deuda`.
-  // A favor de eslint hay además algo que el otro motor no da: reporta «File
-  // has too many lines (3136)», EL MISMO NÚMERO que `wc -l`, así que el
-  // candado y el criterio de aceptación miden lo mismo.
+  // LOS NÚMEROS NO ESTÁN AQUÍ: viven en `data/contract/client-file-size.json`,
+  // con el resto de los contratos del repo, y este bloque los CONSUME. No es
+  // orden: es que un número escrito solo aquí no lo puede vigilar nadie.
+  // Eslint sabe decir «te has pasado» y no sabe decir «esta excepción sobra
+  // desde que troceaste el fichero» — el día que #346 baje `title-screen.ts`
+  // de 1.651 a 900, una excepción que siga diciendo 1.651 le regala 751 líneas
+  // de recrecimiento en silencio (QA 2026-09-01, H-2). Ese es el trabajo de
+  // `nefan-core/test/client-file-size.test.ts`, que exige que cada cifra sea
+  // EXACTAMENTE el `wc -l` de su fichero y denuncia la que sobre.
   //
-  // EL TOPE, 450, y por qué no 400: cualquier valor entre 389 y 543 exime
-  // exactamente a los mismos cuatro ficheros (no hay nada entre 388 y 544), y
-  // lo único que cambia es la holgura del peor no eximido —
-  // `renderer/character-sprites.ts`, hoy 388. Con 400 le quedarían 12 líneas,
-  // menos de una función documentada de esta casa: el primer edit honesto lo
-  // pondría rojo y la respuesta sería subir el tope, que es el anti-patrón que
-  // `quality-thresholds.json` prohíbe por escrito. Con 450 le quedan 62 sin
-  // ceder un gramo de fuerza.
+  // POR QUÉ EL CONTEO VIVE EN ESLINT Y NO EN `arch-rules.json`, que es donde
+  // vive el resto de los candados del repo, y la razón NO es la que se escribió
+  // primero: el motor de fronteras SÍ sabe contar líneas (un `text.pattern` de
+  // N saltos da UNA violación, no miles). El motivo es el coste, y va
+  // RE-MEDIDO en vez de citado: el caso CONFORME —el que corre siempre— es
+  // justo el lento, porque la regex tiene que agotar el retroceso para poder
+  // decir que no. Medido el 2026-09-01: un `main.ts` que NO viola (patrón de
+  // 4.000 saltos) cuesta 379 ms; los dos ficheros de ~1.650 líneas que tampoco
+  // violan, 216 ms entre los dos; el que SÍ viola, 0 ms. Eso se pagaría en cada
+  // `npm test` y cada `npm run deuda`. A favor de eslint hay además algo que el
+  // otro motor no da: reporta «File has too many lines (3136)», EL MISMO NÚMERO
+  // que `wc -l`, así que el candado y el criterio de aceptación miden lo mismo.
   //
   // LOS DOS `false` NO SON DECORACIÓN: con `skipComments` o `skipBlankLines`
   // el número del candado dejaría de ser el de `wc -l`, y entonces «main.ts
@@ -145,12 +152,15 @@ export default tseslint.config(
   // documenta mucho: descontar comentarios sería además premiar el borrado de
   // prosa como si fuera troceo.
   //
-  // LO QUE NO VE: (1) el CSS — `src/ui/game-ui.css` tiene 467 líneas y queda
-  // fuera porque el bloque es `*.ts`; se dice en vez de callarlo, y entra el
-  // día que alguien lo quiera candar. (2) Repartir 3.000 líneas en siete
-  // ficheros de 430: el tope frena el crecimiento por fichero, no la
-  // concentración (hoy 50,1 % del cliente en tres ficheros), y contra eso no
-  // hay checker sino revisión.
+  // LO QUE ESTE BLOQUE NO PUEDE HACER, y por eso tiene DOS acompañantes en
+  // otro motor: (1) no puede impedir que lo apaguen — un `/* eslint-disable
+  // max-lines */` en la primera línea devuelve el fichero al régimen anterior
+  // con exit 0 y sin una palabra en la salida, así que eso lo cierra
+  // `el-tope-de-tamano-no-se-apaga-con-un-comentario` en `arch-rules.json`;
+  // (2) no puede ver envejecer sus propias excepciones — eso lo cierra el test
+  // de arriba. Y lo que NO cubre nadie: el CSS (`src/ui/game-ui.css`, 467
+  // líneas, fuera porque el régimen es `.ts`) y la CONCENTRACIÓN, porque
+  // repartir 3.000 líneas en siete ficheros de 430 le parece bien a todos.
   //
   // COSTE MEDIDO en este repo (tres corridas de `npm run lint` entero, 2026-09-01):
   // 2,58 / 2,67 / 2,63 s sin la regla → 2,67 / 2,65 / 2,66 s con ella. O sea,
@@ -158,47 +168,16 @@ export default tseslint.config(
   // eslint ya tenía parseado, no vuelve a leer nada.
   //
   // `error` y no `warn`: entra con CUATRO ocupantes, todos conocidos, todos
-  // eximidos abajo con su cifra de HOY. Un `warn` es una lista que crece.
+  // eximidos con su cifra de HOY. Un `warn` es una lista que crece.
   {
     files: ["src/**/*.ts"],
-    rules: {
-      "max-lines": ["error", { max: 450, skipBlankLines: false, skipComments: false }],
-    },
+    rules: { "max-lines": ["error", topeDe(tamano.tope)] },
   },
-  // Las CUATRO excepciones, congeladas en los valores de hoy (2026-09-01). El
-  // número de cada una es su `wc -l` exacto, así que la excepción no da
-  // holgura: exime lo que ya hay y prohíbe la línea siguiente. Cada entrega
-  // que corte uno de estos ficheros BAJA su número en el mismo commit — si no,
-  // el candado devuelve el hueco recién liberado.
-  {
-    // #358 · el fichero que abre esta tanda. Entró en 3.136 (game loop, carga
-    // de tiles, colisión, diálogo, viaje, HUD, arranque, título y bootstrap) y
-    // BAJA en el mismo commit que corta: 2.817 al llevarse la carga de tile a
-    // `world/carga-de-tile.ts`, y 2.500 al repartir el bucle (mirada y paso a
-    // `nefan-core`, más animación, frontera, eco de combate, saludo y volcado
-    // del bridge a sus propios módulos), y 2.326 al llevarse el seam del banco
-    // de pruebas a `dev/nefan-hook.ts`. Si el número no bajara aquí, el candado
-    // le devolvería al fichero el hueco recién liberado.
-    files: ["src/main.ts"],
-    rules: { "max-lines": ["error", { max: 2326, skipBlankLines: false, skipComments: false }] },
-  },
-  {
-    // La fachada de three.js: es el ÚNICO fichero del repo que puede
-    // importarlo (`three-solo-en-fps-gl` en arch-rules.json), así que trocearlo
-    // exige antes decidir qué otro fichero hereda ese permiso. Sin issue
-    // propio todavía.
-    files: ["src/renderer/fps-gl.ts"],
-    rules: { "max-lines": ["error", { max: 1687, skipBlankLines: false, skipComments: false }] },
-  },
-  {
-    // #346 · trocear la pantalla de título es la continuación natural de #358.
-    files: ["src/ui/title-screen.ts"],
-    rules: { "max-lines": ["error", { max: 1651, skipBlankLines: false, skipComments: false }] },
-  },
-  {
-    // La corrida de «Aplicar estilo» (subida de pack + confirmación de coste).
-    // Cuelga de #346: es la mitad del título que vive fuera del título.
-    files: ["src/ui/style-apply.ts"],
-    rules: { "max-lines": ["error", { max: 544, skipBlankLines: false, skipComments: false }] },
-  },
+  // Las cuatro excepciones, generadas desde el contrato. El motivo de cada una
+  // viaja con su número, en el JSON: separarlos es como se acaba con una cifra
+  // que nadie sabe por qué está.
+  ...tamano.excepciones.map((e) => ({
+    files: [e.fichero],
+    rules: { "max-lines": ["error", topeDe(e.lineas)] },
+  })),
 );

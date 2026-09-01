@@ -1,0 +1,30 @@
+{
+  "$comment": "EL TAMAÑO DE LOS FICHEROS DEL CLIENTE (#358). Ningún .ts de `nefan-html/src` pasa de `tope` líneas, y las cuatro `excepciones` son los que ya lo superaban el 2026-09-01, congelados en su cifra EXACTA de ese día. DOS MOTORES LEEN ESTE FICHERO Y NINGUNO PUEDE CALLAR AL OTRO: (1) `nefan-html/eslint.config.js` genera de aquí su regla `max-lines` y sus cuatro bloques de excepción, que es quien da el error rápido y con el número delante mientras se programa; (2) `nefan-core/test/client-file-size.test.ts` vigila que las excepciones no ENVEJEZCAN, que es lo que eslint no puede hacer — ver abajo. Y un tercero, `el-tope-de-tamano-no-se-apaga-con-un-comentario` (arch-rules.json), impide que un `/* eslint-disable */` saque a un fichero del régimen. POR QUÉ LAS CIFRAS SON EXACTAS Y NO UN TECHO CÓMODO: la excepción es una FOTOGRAFÍA, no un presupuesto. Si `title-screen.ts` baja de 1.651 a 900 al trocearlo (#346) y su excepción sigue diciendo 1.651, el candado le acaba de regalar 751 líneas de recrecimiento sin que nada se ponga rojo — la congelación quedaría sostenida en la prosa que esta tanda vino a sustituir por un candado (QA 2026-09-01, H-2). Con la cifra exacta, cortar uno de estos ficheros pone ROJO el test hasta que su número baje en el MISMO commit, que es el trinquete que se quería. Corolario práctico: quitar líneas de un fichero eximido obliga a tocar este JSON, y eso es correcto — el número solo puede ir hacia abajo. TOPE 450 Y NO 400: cualquier valor entre 389 y 543 exime exactamente a estos cuatro (no hay nada entre 388 y 544); lo único que cambia es la holgura del peor no eximido, `renderer/character-sprites.ts` con 388. Con 400 le quedarían 12 líneas, menos de una función documentada de esta casa, y el primer edit honesto forzaría a subir el tope — el anti-patrón que `quality-thresholds.json` prohíbe por escrito. LO QUE NO MIDE: el CSS (`ui/game-ui.css`, 467 líneas) queda fuera porque el régimen es de `.ts`; y la CONCENTRACIÓN — repartir 3.000 líneas en siete ficheros de 430 le parece bien. Contra eso no hay checker, hay revisión.",
+  "tope": 450,
+  "excepciones": [
+    {
+      "fichero": "src/main.ts",
+      "lineas": 2326,
+      "porque": "El fichero que abre #358: game loop, carga de tiles, colisión, diálogo, viaje, HUD, arranque, título y bootstrap. Entró en la tanda con 3.136 y bajó tres veces en los commits que cortaron (2.817 al salir la carga de tile, 2.500 al repartirse el bucle, 2.326 al salir el seam del banco de pruebas).",
+      "issue": "#358"
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "lineas": 1687,
+      "porque": "La fachada de three.js, y el ÚNICO fichero del repo que puede importarlo (`three-solo-en-fps-gl` en arch-rules.json): trocearlo exige antes decidir qué otro fichero hereda ese permiso. Sin issue propio todavía.",
+      "issue": null
+    },
+    {
+      "fichero": "src/ui/title-screen.ts",
+      "lineas": 1651,
+      "porque": "La pantalla de título. Trocearla es la continuación natural de #358 y ya tiene issue.",
+      "issue": "#346"
+    },
+    {
+      "fichero": "src/ui/style-apply.ts",
+      "lineas": 544,
+      "porque": "La corrida de «Aplicar estilo» (subida de pack y confirmación de coste). Cuelga de #346: es la mitad del título que vive fuera del título.",
+      "issue": "#346"
+    }
+  ]
+}
