@@ -52,7 +52,14 @@ export function postProgress(message: string): void {
     body: JSON.stringify({ message }),
     signal: ctrl.signal,
   })
-    .catch(() => {})
+    .catch((err: unknown) => {
+      // Best-effort, pero DICHO: sin bridge el latido se pierde y esta es la
+      // única traza de por qué el loader del cliente no avanza. Causa breve
+      // ("This operation was aborted" = los 3 s de timeout).
+      console.error(
+        `[narrative-mcp] narrative_progress no entregado al bridge: ${(err as Error)?.message ?? String(err)}`,
+      );
+    })
     .finally(() => clearTimeout(timer));
 }
 

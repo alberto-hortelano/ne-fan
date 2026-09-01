@@ -106,19 +106,22 @@ async function handle(
       } satisfies ErrorResponse);
       return;
     }
-    const keep = await fetchKeepList(opts.worldStateUrl);
-    if (keep === null) {
+    const keepRes = await fetchKeepList(opts.worldStateUrl);
+    if (!keepRes.ok) {
       // Sin keep-list no se puede saber qué assets referencian los saves; los
       // saves post-F2 referencian por hash, así que podar sin ella borraría
       // assets en uso (resume con texturas rotas). Se ABORTA en vez de podar
-      // a ciegas — mejor no liberar espacio que corromper una partida.
-      console.warn("asset-store prune: world-state sin respuesta — prune ABORTADO (sin keep-list)");
+      // a ciegas — mejor no liberar espacio que corromper una partida. La
+      // causa real (timeout, DNS, 500, JSON corrupto) viaja al log Y al 503:
+      // quien depura el prune no tiene otra traza.
+      console.warn(`asset-store prune: keep-list no disponible (${keepRes.error}) — prune ABORTADO`);
       sendJson(res, 503, {
         ok: false,
-        error: "world-state unavailable: prune aborted to avoid deleting in-use assets",
+        error: `keep-list unavailable (${keepRes.error}): prune aborted to avoid deleting in-use assets`,
       } satisfies ErrorResponse);
       return;
     }
+    const keep = keepRes.keep;
     // Protegidos = referenciados por saves vivos ∪ pineados (aplicaciones de
     // estilo a juegos: assets pre-generados sin save que los referencie aún).
     for (const h of db.pinnedHashes()) keep.add(h);

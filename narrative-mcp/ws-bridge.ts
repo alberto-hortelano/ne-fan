@@ -108,17 +108,11 @@ export class WsBridge {
 
     wss.on('connection', (ws) => {
       ws.once('message', (raw) => {
-        try {
-          const msg: PeerMsg = JSON.parse(String(raw));
-          if (msg.type === 'takeover') {
-            console.error('[narrative-mcp] takeover requested — shutting down');
-            this.shutdown();
-            return;
-          }
-        } catch {
-          // Not a peer message
+        if (WsBridge.tryParsePeerMsg(raw)?.type === 'takeover') {
+          console.error('[narrative-mcp] takeover requested — shutting down');
+          this.shutdown();
+          return;
         }
-
         this.setupClient(ws);
         this.handleClientMessage(ws, raw);
       });
@@ -188,10 +182,35 @@ export class WsBridge {
     });
   }
 
-  private handleClientMessage(ws: WebSocket, raw: unknown): void {
+  /** JSON.parse del PRIMER frame de una conexión, buscando solo el probe de
+   *  takeover. Devuelve null en el único caso legítimo — el frame no es JSON,
+   *  así que no es un peer message — y ese null no traga nada: el frame sigue
+   *  su camino a handleClientMessage, que es quien juzga y reporta el resto. */
+  private static tryParsePeerMsg(raw: unknown): PeerMsg | null {
     try {
-      const msg: ClientMsg = JSON.parse(String(raw));
+      return JSON.parse(String(raw)) as PeerMsg;
+    } catch {
+      return null;
+    }
+  }
 
+  private handleClientMessage(ws: WebSocket, raw: unknown): void {
+    let msg: ClientMsg;
+    try {
+      msg = JSON.parse(String(raw)) as ClientMsg;
+    } catch {
+      // Frame ilegible del ai_server: se DICE (truncado, que es la pista para
+      // depurar al emisor) y se descarta. Este catch cubre SOLO el parse —
+      // antes envolvía el handler entero y cualquier excepción de
+      // sendBridgeStatus/enqueueRequest desaparecía con él, dejando a
+      // ai_server esperando su timeout de 120–180 s.
+      console.error(
+        `[narrative-mcp] frame ilegible del AI server (descartado): ${String(raw).slice(0, 200)}`,
+      );
+      return;
+    }
+
+    try {
       if (msg.type === 'hello') return;
 
       if (msg.type === 'bridge_status_request') {
@@ -210,8 +229,28 @@ export class WsBridge {
         }
         this.enqueueRequest(msg);
       }
-    } catch {
-      // ignore malformed
+    } catch (err) {
+      this.reportDispatchFailure(msg, err);
+    }
+  }
+
+  /** Fallo despachando un mensaje YA parseado. Se loguea con causa SIEMPRE y,
+   *  si la petición espera respuesta, se le contesta un error terminal: sin
+   *  ese canal, ai_server esperaba su timeout entero (120–180 s) por una
+   *  excepción local a este proceso. */
+  private reportDispatchFailure(msg: ClientMsg, err: unknown): void {
+    console.error(`[narrative-mcp] error despachando '${msg.type}':`, err);
+    if (msg.type !== 'room_request' && msg.type !== 'vision_request' && msg.type !== 'narrative_event') {
+      return;
+    }
+    try {
+      this.sendRequestError(msg, {
+        error: 'mcp_dispatch_failed',
+        message: `narrative-mcp failed dispatching ${msg.type}: ${(err as Error)?.message ?? String(err)}`,
+      });
+    } catch (sendErr) {
+      // El propio canal de error falló (p. ej. socket cerrándose): queda el log.
+      console.error(`[narrative-mcp] tampoco se pudo responder el error de '${msg.type}':`, sendErr);
     }
   }
 
@@ -255,19 +294,13 @@ export class WsBridge {
     this.lastListenAt = Date.now();
   }
 
-  private sendNoListenerError(msg: RequestMsg): void {
+  /** Contesta una petición con un payload de error TERMINAL, en el sobre de
+   *  respuesta del tipo que corresponda, y olvida su origen. Lo comparten el
+   *  rechazo por falta de listener y el fallo de despacho. */
+  private sendRequestError(msg: RequestMsg, errorPayload: Record<string, unknown>): void {
     const target = this.targetFor(msg.request_id);
     this.requestOrigins.delete(msg.request_id);
     if (!target) return;
-    const reason = this.mcpEverConnected
-      ? 'mcp_listener_idle'
-      : 'mcp_listener_never_connected';
-    const errorPayload = {
-      error: 'no_mcp_listener',
-      reason,
-      message: 'No Claude Code instance is calling narrative_listen on the bridge. ' +
-               'Start Claude Code from the project directory so .mcp.json loads narrative-mcp.',
-    };
     if (msg.type === 'vision_request') {
       target.send(JSON.stringify({
         type: 'vision_response',
@@ -287,6 +320,18 @@ export class WsBridge {
         room_data: errorPayload,
       } satisfies RoomResponseMsg));
     }
+  }
+
+  private sendNoListenerError(msg: RequestMsg): void {
+    const reason = this.mcpEverConnected
+      ? 'mcp_listener_idle'
+      : 'mcp_listener_never_connected';
+    this.sendRequestError(msg, {
+      error: 'no_mcp_listener',
+      reason,
+      message: 'No Claude Code instance is calling narrative_listen on the bridge. ' +
+               'Start Claude Code from the project directory so .mcp.json loads narrative-mcp.',
+    });
     console.error(`[narrative-mcp] No MCP listener — rejected ${msg.type} (${reason})`);
   }
 

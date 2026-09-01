@@ -22,10 +22,11 @@ import {
   styleApplicationPinRef,
 } from "../../src/games/style-application.js";
 import { resolveServiceUrl } from "../../src/contracts/common.js";
+import { loadGamePluginManifests } from "../../src/plugins/loader.js";
 import {
-  activatePluginsForNewSession,
-  loadGamePluginManifests,
-} from "../../src/plugins/loader.js";
+  activarPluginsDeSesionNueva,
+  vaciarPluginsActivos,
+} from "../plugins-activos.js";
 import { createHash } from "node:crypto";
 
 import {
@@ -165,7 +166,7 @@ export async function runGameGeneration(
     // ctx.narrative, que es un singleton — no hay otra forma de recoger el
     // world map que siembra el bootstrap. El save se borra en el finally; el
     // snapshot queda como único artefacto.
-    ctx.activePlugins = new Map();
+    vaciarPluginsActivos(ctx);
     ephemeralSession = ctx.narrative.startNewSession(gameId);
     const worldDoc = loadWorldDoc(ctx.gamesDir, gameId);
     ctx.narrative.setWorldInfo({
@@ -181,7 +182,7 @@ export async function runGameGeneration(
     // Plugins activos como en un start_session real: el motor genera con el
     // mismo contexto que verá en partida (sus slices mueren con el save).
     const manifests = loadGamePluginManifests(ctx.gamesDir, gameId);
-    ctx.activePlugins = activatePluginsForNewSession(ctx.narrative, manifests);
+    activarPluginsDeSesionNueva(ctx, manifests);
     await ctx.aiClient.notifySessionStart(ephemeralSession, gameId, false);
 
     const { sceneId: entrySceneId } = await generateBootstrapTileScene(ctx, gameId, {
