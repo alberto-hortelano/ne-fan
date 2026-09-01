@@ -267,7 +267,7 @@ describe("NarrativeState: la partida existe cuando el jugador entra", () => {
     const { narrative: s, storage } = makeNarrativeState();
     const id = s.startNewSession("g");
     await s.establecer();
-    assert.equal(await s.deleteSession(id), true);
+    assert.equal(await s.deleteSession(id), "deleted");
     assert.equal(s.session_id, "");
     assert.equal(s.enDisco, false);
     assert.deepEqual(await storage.list(), []);

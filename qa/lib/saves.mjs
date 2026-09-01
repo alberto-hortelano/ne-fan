@@ -49,6 +49,19 @@ function dirDeSaves() {
   return dir;
 }
 
+/** El directorio del save de una sesión en el disco efímero, o null si esta
+ *  corrida no tiene disco propio (stack adoptado).
+ *
+ *  Lo necesita el guion que produce un borrado FALLIDO de verdad: la única
+ *  forma honesta de que `fs.rm` dé EACCES es quitarle el permiso de escritura
+ *  al directorio, y eso es tocar el disco — que es lo que este fichero sabe
+ *  encontrar y un guion no. Devuelve la ruta EXISTA O NO el directorio: quien
+ *  llama decide qué hacer con eso. */
+export function dirDelSave(sessionId) {
+  const dir = dirDeSaves();
+  return dir ? join(dir, sessionId) : null;
+}
+
 /** Ruta del `state.json` de una sesión en el disco efímero, o null. */
 export function rutaDelSave(sessionId) {
   const dir = dirDeSaves();

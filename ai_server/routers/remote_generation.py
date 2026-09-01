@@ -18,10 +18,11 @@ import json
 import logging
 import os
 import time
+from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from asset_paths import SKINNED_SHEETS_DIR
 from deps import deps
@@ -322,8 +323,49 @@ def hero_key(prompt: str, model: str, angle: str, ai_model: str, style_key: str 
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
+class SkinSpriteSheetRequest(BaseModel):
+    """Una anim de un personaje, vestida por sprite-forge.
+
+    ERA EL ÚNICO ENDPOINT DEL ai_server SIN MODELO (#366): leía `request.json()`
+    y sacaba seis `str(body.get(...))`, así que un campo mal escrito se
+    convertía en `""` y viajaba. Los dos que importan se atajaban con un
+    `HTTPException(400)` a mano; los otros cuatro, no — `styel_id` en vez de
+    `style_id` era un personaje pintado sin el estilo del juego, sin una sola
+    queja y con la factura pagada.
+
+    `strip_whitespace` va en TODOS los campos porque el endpoint hacía
+    `.strip()` en los seis, y `min_length=1` DESPUÉS del recorte: así un
+    `angle: "  "` es 422 y no un `""` que cruza medio sistema para morir en un
+    404 sin explicación.
+    """
+
+    # `extra="forbid"` AQUÍ y no en `SurfaceCellSpec`, que documenta lo
+    # contrario tres pantallas más arriba. No es una incoherencia: allí un
+    # campo que el server viejo no conoce degrada a una celda sin ref, que se
+    # ve y no cuesta nada; aquí un `styel_id` mal escrito paga un personaje
+    # entero pintado sin el estilo del juego. La aceptación de #366 dice
+    # «ausente O MAL ESCRITO», y para un campo opcional la única forma de
+    # cumplirlo es esta. Los dos únicos clientes (`sprite-renderer.ts` y
+    # `style-apply.ts`) mandan exactamente estos seis campos.
+    model_config = ConfigDict(extra="forbid")
+
+    model: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    """Modelo base sobre el que se repinta (p. ej. `y_bot`)."""
+    prompt: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    """Descripción del personaje: es la procedencia del arte, no una etiqueta."""
+    angle: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    """OBLIGATORIO. Tenía por defecto el de una vista retirada en agosto."""
+    anim: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] = "idle"
+    # Estilo del juego (opcional): pack + ref de personaje elegida por el motor
+    # para este NPC ("style_role" es el nombre legacy del campo en el wire; hoy
+    # transporta el id de la ref de characters/). Vacío o desconocido ⇒ primera
+    # ref de characters/ del manifest. Sin pack o sin imagen ⇒ sin ref.
+    style_id: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
+    style_role: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
+
+
 @router.post("/skin_sprite_sheet")
-async def skin_sprite_sheet_endpoint(request: Request):
+async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
     """Adaptador: viste una anim de un personaje llamando a **sprite-forge**.
 
     Lo que hace aquí y no allí, porque es semántica de ne-fan y no del servicio:
@@ -331,30 +373,18 @@ async def skin_sprite_sheet_endpoint(request: Request):
     `cache/sprite_sheets/{key}` y apuntar el gasto. sprite-forge devuelve
     IMÁGENES —no guarda lo que genera— y el que guarda es quien llama.
 
-    Body: {model, anim, angle, prompt, style_id?, style_role?}
+    Body: `SkinSpriteSheetRequest` (un campo ausente o mal escrito es 422
+    estructurado, no un `""` que viaja hasta el modelo).
     Returns: {ok, hash, cached, meta, frame_urls, hero_key, hero_url,
               generation_time_ms} — el wire NO cambia: el meta es el del sheet
     VESTIDO (keyframes reducidos + fps de perfil), no el de la base.
     """
-    body = await request.json()
-    model = str(body.get("model", "")).strip()
-    anim = str(body.get("anim", "idle")).strip()
-    # `angle` es OBLIGATORIO. Tenía por defecto el de una vista retirada en
-    # agosto, así que una petición sin ángulo cruzaba medio sistema para acabar
-    # en un 404 sin explicación.
-    angle = str(body.get("angle", "")).strip()
-    prompt = str(body.get("prompt", "")).strip()
-    # Estilo del juego (opcional): pack + ref de personaje elegida por el motor
-    # para este NPC ("style_role" es el nombre legacy del campo en el wire; hoy
-    # transporta el id de la ref de characters/). Vacío o desconocido ⇒ primera
-    # ref de characters/ del manifest. Sin pack o sin imagen ⇒ sin ref.
-    style_id = str(body.get("style_id", "")).strip()
-    style_role = str(body.get("style_role", "")).strip()
-
-    if not (model and prompt):
-        raise HTTPException(status_code=400, detail="missing model or prompt")
-    if not angle:
-        raise HTTPException(status_code=400, detail="missing angle")
+    model = body.model
+    anim = body.anim
+    angle = body.angle
+    prompt = body.prompt
+    style_id = body.style_id
+    style_role = body.style_role
 
     style_ref = None
     if style_id and deps.style_packs is not None:

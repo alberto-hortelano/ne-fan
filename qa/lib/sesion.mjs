@@ -269,7 +269,7 @@ export async function abrirSelectorDeMundos(ctx) {
  *  `delete_session` es su propia ruta (`bridge/router.ts`), la misma que usa
  *  la UI. */
 export async function borrarSaveComoOtroCliente(ctx, sessionId, wsUrl = null) {
-  const ok = await ctx.page.evaluate(
+  const desenlace = await ctx.page.evaluate(
     ([urlPedida, id]) =>
       new Promise((res, rej) => {
         // Sin URL explícita, la del juego: el gateway que la página está
@@ -289,13 +289,21 @@ export async function borrarSaveComoOtroCliente(ctx, sessionId, wsUrl = null) {
           if (m.type !== "session_deleted") return;
           contestado = true;
           ws.close();
-          res(Boolean(m.ok));
+          // El frame es una unión discriminada desde #365: `deleted`,
+          // `not_found` o `failed` CON motivo. Se devuelve entero para que el
+          // fallo llegue aquí con su causa en vez de como un `false` pelado.
+          res(m);
         };
       }),
     [wsUrl, sessionId],
   );
-  if (!ok) throw new Error(`el bridge no borró el save ${sessionId}`);
-  return ok;
+  if (desenlace.outcome !== "deleted") {
+    throw new Error(
+      `el bridge no borró el save ${sessionId}: ${desenlace.outcome}` +
+        (desenlace.error ? ` — ${desenlace.error}` : ""),
+    );
+  }
+  return desenlace.outcome;
 }
 
 /** Abre partida nueva: mundo → modo de personajes → estilo → Continuar →

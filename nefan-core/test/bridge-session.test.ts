@@ -803,8 +803,83 @@ describe("bridge ciclo de sesión", () => {
       ServerMessage,
       { type: "session_deleted" }
     >;
-    assert.equal(deleted.ok, true);
+    assert.equal(deleted.outcome, "deleted");
     assert.equal((await ctx.sessionStorage.list()).length, 0);
+  });
+
+  /** LOS TRES DESENLACES DE delete_session (#365).
+   *
+   *  El `ok: boolean` de antes colapsaba dos causas que el almacén sí
+   *  distingue —ENOENT devuelve, EACCES/EBUSY lanzan— y el motivo se quedaba
+   *  en el log del servidor. Para quien pulsó Borrar eran el mismo silencio.
+   *
+   *  PROBADO EN NEGATIVO (2026-09-01): devolviendo `outcome:"deleted"` desde
+   *  el handler pase lo que pase, los dos primeros casos se ponen rojos;
+   *  volviendo el router a su `ok:false` pelado, el tercero no compila —que
+   *  es el candado de verdad. */
+  it("borrar un save que NO está no se confunde con borrarlo", async () => {
+    const { ctx } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "delete_session", requestId: "r1", sessionId: "no-existe" },
+      socket,
+      ctx,
+    );
+    const frame = sent.find((m) => m.type === "session_deleted") as Extract<
+      ServerMessage,
+      { type: "session_deleted" }
+    >;
+    assert.equal(frame.outcome, "not_found");
+  });
+
+  it("borrar la partida ACTIVA suelta su identidad (el handler pasa por narrative)", async () => {
+    // Se lo saltaba yendo directo a `sessionStorage`, así que `session_id`
+    // quedaba apuntando a un directorio que ya no existe.
+    const { ctx, narrative } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage(
+      { type: "start_session", requestId: "r1", gameId: "plugtest" },
+      socket,
+      ctx,
+    );
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    assert.equal(narrative.session_id, sessionId);
+
+    await routeMessage({ type: "delete_session", requestId: "r2", sessionId }, socket, ctx);
+    assert.equal(narrative.session_id, "");
+    assert.equal(narrative.enDisco, false);
+  });
+
+  it("un borrado que FALLA de verdad llega con outcome failed y su motivo", async () => {
+    // EACCES/EBUSY: `SessionStorage.delete` lanza y el frame tiene que llevar
+    // la causa hasta el jugador. `failed` sin `error` no compila.
+    const { ctx, storage } = makeCtx();
+    const { socket, sent } = makeSocket();
+    storage.delete = async () => {
+      const err = new Error("EACCES: permission denied, rm '/saves/x'") as NodeJS.ErrnoException;
+      err.code = "EACCES";
+      throw err;
+    };
+    const log = capturarLogDelBridge();
+    try {
+      await routeMessage(
+        { type: "delete_session", requestId: "r1", sessionId: "x" },
+        socket,
+        ctx,
+      );
+    } finally {
+      log.soltar();
+    }
+    const frame = sent.find((m) => m.type === "session_deleted") as Extract<
+      ServerMessage,
+      { type: "session_deleted" }
+    >;
+    assert.equal(frame.outcome, "failed");
+    assert.equal(frame.type, "session_deleted");
+    if (frame.outcome !== "failed") return;
+    assert.match(frame.error, /delete_session_failed/);
+    assert.match(frame.error, /EACCES/);
   });
 });
 

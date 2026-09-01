@@ -530,11 +530,27 @@ export interface GameGeneratedMessage {
   error?: string;
 }
 
-export interface SessionDeletedMessage {
-  type: "session_deleted";
-  requestId: string;
-  ok: boolean;
-}
+/** Qué pasó al borrar una partida. Son TRES desenlaces y no dos, y la
+ *  diferencia la conoce solo `SessionStorage.delete`: ENOENT («no estaba»)
+ *  devuelve `not_found`, mientras que EACCES o EBUSY LANZAN. */
+export type BorradoDeSesion = "deleted" | "not_found" | "failed";
+
+/** Respuesta a `delete_session`.
+ *
+ *  UNIÓN DISCRIMINADA y no `{ok, error?}` (#365). El `ok: boolean` de antes
+ *  colapsaba «no estaba» con «no se pudo», que son cosas distintas para quien
+ *  acaba de pulsar Borrar: en el primer caso la tarjeta desaparece porque el
+ *  save ya no está, y en el segundo sigue ahí y hay algo que arreglar. Y el
+ *  motivo no viajaba: `bridge/router.ts` mandaba `ok:false` pelado y lo
+ *  dejaba en el log del servidor, donde el jugador no mira.
+ *
+ *  Con la unión, `failed` sin `error` NO COMPILA — que es el candado que pedía
+ *  el criterio 5: el estado malo es inexpresable, no «hay un test que lo
+ *  comprueba». Mismo idioma que `SpriteCatalogSkinSchema` y
+ *  `NarrativeStatusMessage`. */
+export type SessionDeletedMessage =
+  | { type: "session_deleted"; requestId: string; outcome: "deleted" | "not_found" }
+  | { type: "session_deleted"; requestId: string; outcome: "failed"; error: string };
 
 export interface RenderModeSetMessage {
   type: "render_mode_set";
