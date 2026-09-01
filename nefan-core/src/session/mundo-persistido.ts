@@ -72,11 +72,39 @@ export const SPAWN_DE_RUNTIME = "narrative_request";
  *  y decir cuál). */
 export type MotivoDeAusencia = { clase: "muerto" } | { clase: "ilegible"; detalle: string };
 
-/** Lo que el mundo sabe de un combatiente al armar la escena que sale al
- *  cable: vuelve con esta vida, o no vuelve y por esto. */
+/** Lo que el mundo sabe de una entity del ledger al armar la escena que sale
+ *  al cable: vuelve aquí y con esta vida, o no vuelve y por esto.
+ *
+ *  `combate: null` NO es «no sé nada de este»: es «este no pelea» — un
+ *  aldeano, un barril, una casa. Hasta el 2026-09-01 ese caso se colapsaba con
+ *  «no está en el ledger» devolviendo `null` entero, y por eso el tabernero
+ *  que había paseado media plaza reaparecía en su celda de spawn al reanudar
+ *  (#351): sin estado no había nada que poner encima de la escena. La vida y
+ *  la posición son dos hechos distintos sobre la misma entity, y solo uno de
+ *  los dos es exclusivo de los que pelean. */
 export type EstadoEnElWire =
-  | { tipo: "vivo"; combate: EstadoDeCombate }
+  | { tipo: "vivo"; combate: EstadoDeCombate | null; posicion: [number, number, number] }
   | { tipo: "no_vuelve"; motivo: MotivoDeAusencia };
+
+/** Dónde queda la posición que la ESCENA declara cuando `escenaConCombateVivo`
+ *  pone la viva en `position`.
+ *
+ *  No es un apaño de transporte: es lo que mantiene vivo el fail-loud del
+ *  cliente. Ese candado pregunta «¿esta coordenada es una conversión
+ *  celda→metro que cae fuera de su tile?», y desde #351 `position` ya no
+ *  siempre lo es — un NPC que se movió trae la del save. Guardar la declarada
+ *  aparte es lo que permite seguir midiendo la CONVERSIÓN en vez de exentar al
+ *  que se movió.
+ *
+ *  La alternativa que se descartó, y por qué: marcar «esta posición es viva,
+ *  no la mires». Medido, eso APAGA el candado entero — `registerSceneNpcs`
+ *  (`narrative/npc-records.ts`) mete en el ledger a TODO NPC de escena con la
+ *  misma conversión celda→metro nada más registrarla, así que a la primera
+ *  difusión ya estarían todos marcados y la comprobación no volvería a mirar
+ *  a nadie nunca. Aquí, en cambio, la conversión se sigue midiendo siempre,
+ *  se haya movido el personaje o no: el candado queda MÁS fuerte que antes,
+ *  porque hoy solo se miraba a los recién creados. */
+export const POSICION_DECLARADA = "position_declared";
 
 /** Nombre legible de una entity para lo que lee el jugador: el que le puso el
  *  motor, o el id si no tiene (que es lo que hay, no una excusa para callar). */
@@ -85,7 +113,7 @@ export function nombreDeEntity(rec: EntityRecord): string {
   return typeof name === "string" && name ? name : rec.id;
 }
 
-/** El estado de combate de una entity para el wire, con la precedencia
+/** El estado de una entity para el wire —vida y POSICIÓN—, con la precedencia
  *  SIM → LEDGER escrita UNA vez y aquí dentro, donde se puede medir.
  *
  *  El sim primero porque es el único que sabe lo que está pasando AHORA: el
@@ -95,6 +123,17 @@ export function nombreDeEntity(rec: EntityRecord): string {
  *  único que sobrevive al proceso: al reanudar, el sim aún no tiene a nadie
  *  más que al jugador.
  *
+ *  LA POSICIÓN SIGUE LA MISMA PRECEDENCIA, y a propósito: son dos hechos sobre
+ *  la misma entity y tenerlos con reglas de frescura distintas en la misma
+ *  función es cómo se acaba con una vida de hace un segundo al lado de una
+ *  posición de hace un minuto. Hoy la rama del sim no cambia nada observable
+ *  —el cliente CONSERVA la entity que ya tiene y solo usa esta coordenada al
+ *  crearla, o sea al reanudar, cuando el sim está vacío—, y está escrita así
+ *  igualmente porque el día que eso cambie la respuesta correcta ya está
+ *  puesta. El NPC ambiental no pasa por el sim: su posición la mueve
+ *  `npc-behavior.ts` sobre `rec.position` EN VIVO, así que el ledger ya es su
+ *  fuente fresca.
+ *
  *  UN BLOQUE ILEGIBLE NO ES «SIN DATOS»: el que no se puede leer se queda
  *  FUERA, igual que el muerto. Devolverlo como «no sé nada de este» dejaba la
  *  escena con el bloque DERIVADO —siempre entero, siempre a tope de vida— y
@@ -103,24 +142,31 @@ export function nombreDeEntity(rec: EntityRecord): string {
  *  justo lo que esta tanda promete (QA 2026-08-31, H-2). Quien llama, además,
  *  tiene que DECIRLO por el canal de su capa.
  *
- *  `null` = no es un combatiente (un aldeano, un barril, una casa). */
+ *  NO devuelve `null` para el que no pelea: devuelve `vivo` con
+ *  `combate: null`. Ese `null` de antes era el que dejaba al tabernero sin
+ *  estado y por tanto sin posición que devolver (#351). */
 export function estadoEnElWire(
   rec: EntityRecord,
-  vivo: { health: number; maxHealth: number } | undefined,
-): EstadoEnElWire | null {
+  vivo: { health: number; maxHealth: number; position: { x: number; y: number; z: number } } | undefined,
+): EstadoEnElWire {
   if (vivo) {
     return vivo.health <= 0
       ? { tipo: "no_vuelve", motivo: { clase: "muerto" } }
-      : { tipo: "vivo", combate: { health: vivo.health, max_health: vivo.maxHealth } };
+      : {
+          tipo: "vivo",
+          combate: { health: vivo.health, max_health: vivo.maxHealth },
+          posicion: [vivo.position.x, vivo.position.y, vivo.position.z],
+        };
   }
+  const posicion: [number, number, number] = [rec.position[0], rec.position[1], rec.position[2]];
   const guardado = combateDeEntity(rec);
-  if (guardado.tipo === "ninguno") return null;
+  if (guardado.tipo === "ninguno") return { tipo: "vivo", combate: null, posicion };
   if (guardado.tipo === "roto") {
     return { tipo: "no_vuelve", motivo: { clase: "ilegible", detalle: guardado.motivo } };
   }
   return guardado.combate.health <= 0
     ? { tipo: "no_vuelve", motivo: { clase: "muerto" } }
-    : { tipo: "vivo", combate: guardado.combate };
+    : { tipo: "vivo", combate: guardado.combate, posicion };
 }
 
 function esObjeto(v: unknown): v is Record<string, unknown> {
@@ -164,7 +210,7 @@ export function combateDeEntity(rec: EntityRecord): CombateDelLedger {
   return { tipo: "combate", combate: { health, max_health: maxHealth } };
 }
 
-/** La world scene tal y como sale al cable, con el combate VIVO encima.
+/** La world scene tal y como sale al cable, con el mundo VIVO encima.
  *
  *  Devuelve un OBJETO NUEVO y no toca el que recibe. No es higiene: sellar el
  *  estado de sesión dentro del `scene_data` persistido es lo que se hizo con
@@ -172,12 +218,23 @@ export function combateDeEntity(rec: EntityRecord): CombateDelLedger {
  *  resume servía un enriquecimiento congelado. Aquí lo persistido no se entera
  *  de que esto existe.
  *
- *  Dos cosas, y las dos sobre `npcs[]`:
- *   · al HERIDO se le baja la vida (y se le pone su denominador), y
+ *  Tres cosas, y las tres sobre `npcs[]`:
+ *   · al HERIDO se le baja la vida (y se le pone su denominador),
  *   · al que NO VUELVE se le quita de la lista — el muerto y el que el save no
  *     deja leer. Esa es toda la permanencia de la muerte vista desde el
  *     cliente: un npc que no viene en la escena no se pinta, no se registra en
- *     el sim y no tiene barra. */
+ *     el sim y no tiene barra, y
+ *   · al que SE MOVIÓ se le pone donde estaba (#351). El `npcs[].position` de
+ *     la escena persistida es la celda de spawn del Format D: sin esto, el
+ *     bandido al que perseguiste media plaza —y el tabernero que se fue a dar
+ *     una vuelta— reaparecían en su casilla de salida al reanudar. La vida ya
+ *     viajaba desde #326; la posición se guardaba (`narrative-state.ts`) y no
+ *     se servía.
+ *
+ *  La posición DECLARADA no se tira: se guarda en `POSICION_DECLARADA`, que es
+ *  lo que sigue mirando el fail-loud de conversión celda→metro del cliente
+ *  (`npcsFueraDelRect`). Ver la constante para por qué no vale con «marcar»
+ *  la viva. */
 export function escenaConCombateVivo(
   escena: Record<string, unknown>,
   estados: ReadonlyMap<string, EstadoEnElWire>,
@@ -199,15 +256,22 @@ export function escenaConCombateVivo(
     // visible: matar tiene consecuencia y repoblar es cosa del motor— y el
     // ilegible tampoco, para no resucitarlo con el bloque derivado.
     if (estado.tipo === "no_vuelve") continue;
-    if (!esObjeto(npc.combat)) {
-      // Tiene runtime pero la escena no lo declara hostil: no hay bloque que
-      // sobrescribir. Se conserva tal cual — inventarle un `combat` aquí sería
-      // que este módulo decidiera quién pelea, y eso lo deriva el core.
-      vivos.push(npc);
+    const situado: Record<string, unknown> = {
+      ...npc,
+      position: [...estado.posicion],
+      [POSICION_DECLARADA]: npc.position,
+    };
+    if (estado.combate === null || !esObjeto(npc.combat)) {
+      // No pelea, o pelea pero la escena no lo declara hostil: no hay bloque
+      // que sobrescribir. Se conserva tal cual — inventarle un `combat` aquí
+      // sería que este módulo decidiera quién pelea, y eso lo deriva el core.
+      // La POSICIÓN sí se le pone: moverse no es privilegio de los que pelean,
+      // y creerlo es lo que dejó al tabernero volviendo a su celda (#351).
+      vivos.push(situado);
       continue;
     }
     vivos.push({
-      ...npc,
+      ...situado,
       combat: {
         ...npc.combat,
         health: estado.combate.health,
@@ -216,6 +280,68 @@ export function escenaConCombateVivo(
     });
   }
   return { ...escena, npcs: vivos };
+}
+
+/** Un NPC de la escena cuya coordenada DECLARADA cae fuera del rect de su
+ *  tile: la firma de una conversión celda→metro rota. */
+export interface NpcFueraDelRect {
+  id: string;
+  x: number;
+  z: number;
+}
+
+/** Rect de un tile en metros mundo (`tileWorldRect`). */
+export interface RectDelTile {
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+}
+
+/** El fail-loud del contrato de posiciones globales: qué NPCs de esta escena
+ *  están declarados fuera del rect de su propio tile.
+ *
+ *  VIVE AQUÍ Y NO EN EL CLIENTE, que es donde estaba hasta el 2026-09-01 como
+ *  un bucle suelto dentro de `addTile`. La razón no es orden: es que esta
+ *  función y `escenaConCombateVivo` toman la MISMA decisión desde los dos
+ *  lados —cuál de las dos coordenadas de un npc es la conversión— y separarlas
+ *  es cómo una se afloja sin que la otra se entere. Juntas, quien toque una ve
+ *  la otra en la misma pantalla; y aquí hay tests y hay mutación, que en
+ *  `nefan-html` no hay ninguna de las dos (#241/#357).
+ *
+ *  MIDE `POSICION_DECLARADA` CUANDO ESTÁ, y `position` cuando no. O sea: mide
+ *  siempre la conversión, se haya movido el personaje o no. Es la diferencia
+ *  entre esto y «exentar al rehidratado», que es lo que apagaría el candado —
+ *  a la primera difusión de una escena TODO npc está ya en el ledger
+ *  (`registerSceneNpcs`) y no quedaría nadie a quien mirar.
+ *
+ *  Cubre MÁS que el bucle que sustituye y no menos: aquel solo miraba a los
+ *  recién creados en el cliente (`newNpcs` + `enemies`), así que un npc ya
+ *  conocido cuya declaración se hubiera roto no lo veía nadie. */
+export function npcsFueraDelRect(
+  npcs: unknown,
+  rect: RectDelTile,
+): NpcFueraDelRect[] {
+  if (!Array.isArray(npcs)) return [];
+  const fuera: NpcFueraDelRect[] = [];
+  for (const npc of npcs) {
+    if (!esObjeto(npc) || typeof npc.id !== "string") continue;
+    const declarada = npc[POSICION_DECLARADA] ?? npc.position;
+    if (!Array.isArray(declarada) || declarada.length < 3) continue;
+    const x = numero(declarada[0]);
+    const z = numero(declarada[2]);
+    // Una coordenada que no es un número finito NO es «está dentro»: es otro
+    // fallo de conversión, y colapsarlo con «no hay nada que decir» es
+    // exactamente el silencio que esta casa prohíbe.
+    if (x === null || z === null) {
+      fuera.push({ id: npc.id, x: Number.NaN, z: Number.NaN });
+      continue;
+    }
+    if (x < rect.minX || x >= rect.maxX || z < rect.minZ || z >= rect.maxZ) {
+      fuera.push({ id: npc.id, x, z });
+    }
+  }
+  return fuera;
 }
 
 /** Lo que `materializeSpawn` come: la forma del effect `spawn_entity`, sin el

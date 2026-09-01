@@ -15,10 +15,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  POSICION_DECLARADA,
   combateDeEntity,
   escenaConCombateVivo,
   estadoEnElWire,
   nombreDeEntity,
+  npcsFueraDelRect,
   spawnsDeRuntime,
   type EstadoEnElWire,
 } from "../src/session/mundo-persistido.js";
@@ -52,18 +54,50 @@ function escenaConDos(): Record<string, unknown> {
   };
 }
 
-/** Estados del wire escritos corto: `[health, max_health]` = vivo así;
- *  `"muerto"` / `"ilegible"` = no vuelve, y por qué. */
-const estados = (m: Record<string, [number, number] | "muerto" | "ilegible">) =>
+/** Dónde estaba cada npc de `escenaConDos()` cuando la escena lo declaró. Se
+ *  nombra para poder afirmar que la posición DECLARADA sobrevive al overlay. */
+const DECLARADA = { bandido_1: [3, 0, 4], barkeep: [-2, 0, 1] } as const;
+
+/** Estados del wire escritos corto: `[health, max_health]` = vivo así, quieto
+ *  donde lo declaró la escena; `{ en: [x,y,z] }` = vivo y AHÍ (se movió);
+ *  `"muerto"` / `"ilegible"` = no vuelve, y por qué.
+ *
+ *  El caso «vivo y quieto» pone la MISMA posición que la escena a propósito:
+ *  así los tests de vida no cambian de sujeto al añadirle la posición al
+ *  estado (#351), y el que sí quiere medir la mudanza la pide explícita. */
+type EstadoCorto =
+  | [number, number]
+  | { en: [number, number, number]; combate?: [number, number] }
+  | "muerto"
+  | "ilegible";
+
+const estados = (m: Record<string, EstadoCorto>) =>
   new Map<string, EstadoEnElWire>(
-    Object.entries(m).map(([id, v]) => [
-      id,
-      v === "muerto"
-        ? { tipo: "no_vuelve", motivo: { clase: "muerto" } }
-        : v === "ilegible"
-          ? { tipo: "no_vuelve", motivo: { clase: "ilegible", detalle: "sin max_health" } }
-          : { tipo: "vivo", combate: { health: v[0], max_health: v[1] } },
-    ]),
+    Object.entries(m).map(([id, v]) => {
+      if (v === "muerto") return [id, { tipo: "no_vuelve", motivo: { clase: "muerto" } }];
+      if (v === "ilegible") {
+        return [id, { tipo: "no_vuelve", motivo: { clase: "ilegible", detalle: "sin max_health" } }];
+      }
+      const quieta = (DECLARADA as Record<string, readonly number[]>)[id] ?? [0, 0, 0];
+      if (Array.isArray(v)) {
+        return [
+          id,
+          {
+            tipo: "vivo",
+            combate: { health: v[0], max_health: v[1] },
+            posicion: [quieta[0], quieta[1], quieta[2]],
+          },
+        ];
+      }
+      return [
+        id,
+        {
+          tipo: "vivo",
+          combate: v.combate ? { health: v.combate[0], max_health: v.combate[1] } : null,
+          posicion: v.en,
+        },
+      ];
+    }),
   );
 
 describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste", () => {
@@ -95,13 +129,51 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
   it("no toca la escena que recibe: lo persistido sigue siendo Format D crudo (#179)", () => {
     const original = escenaConDos();
     const antes = JSON.stringify(original);
-    escenaConCombateVivo(original, estados({ bandido_1: [3, 60] }));
+    escenaConCombateVivo(original, estados({ bandido_1: { en: [30, 0, 12], combate: [3, 60] } }));
     assert.equal(JSON.stringify(original), antes, "el overlay escribió sobre el objeto de entrada");
   });
 
-  it("un npc del que no se sabe nada pasa intacto (el que aún no ha peleado)", () => {
+  it("un npc del que no se sabe nada pasa intacto (el que no está en el ledger)", () => {
     const salida = escenaConCombateVivo(escenaConDos(), estados({}));
     assert.deepEqual(salida.npcs, escenaConDos().npcs);
+  });
+
+  // ── #351 · la posición sale por la misma puerta que la vida ──────────────
+
+  it("al que SE MOVIÓ se le pone donde estaba, no en su celda de spawn", () => {
+    // El defecto entero de #351: la posición se guardaba
+    // (`narrative-state.ts`) y no se servía, así que el bandido al que
+    // perseguiste media plaza reaparecía en la casilla del Format D.
+    const salida = escenaConCombateVivo(
+      escenaConDos(),
+      estados({ bandido_1: { en: [12.25, 0, 0.75], combate: [12, 60] } }),
+    );
+    const bandido = (salida.npcs as Array<Record<string, unknown>>).find((n) => n.id === "bandido_1")!;
+    assert.deepEqual(bandido.position, [12.25, 0, 0.75]);
+    assert.equal((bandido.combat as Record<string, unknown>).health, 12, "y con su vida, las dos cosas");
+  });
+
+  it("el PACÍFICO que paseó también vuelve donde estaba: moverse no es de los que pelean", () => {
+    // El sujeto que el issue no nombraba y la crítica midió:
+    // `npc-behavior.ts` mueve el record de CUALQUIER NPC ambiental, y hasta
+    // hoy uno sin bloque `combat` no tenía estado y salía intacto.
+    const salida = escenaConCombateVivo(escenaConDos(), estados({ barkeep: { en: [-9, 0, 7] } }));
+    const barkeep = (salida.npcs as Array<Record<string, unknown>>).find((n) => n.id === "barkeep")!;
+    assert.deepEqual(barkeep.position, [-9, 0, 7]);
+    assert.equal(barkeep.combat, undefined, "y sin inventarle un bloque de combate que no tiene");
+  });
+
+  it("la posición DECLARADA se guarda aparte: es lo que sigue midiendo el fail-loud", () => {
+    // Sin esto, poner la viva en `position` deja al candado de conversión
+    // celda→metro sin nada que mirar. No se marca «no mires esto»: se aparta
+    // la declarada para poder seguir mirándola.
+    const salida = escenaConCombateVivo(
+      escenaConDos(),
+      estados({ bandido_1: { en: [99, 0, 99], combate: [12, 60] }, barkeep: { en: [-9, 0, 7] } }),
+    );
+    const npcs = salida.npcs as Array<Record<string, unknown>>;
+    assert.deepEqual(npcs.find((n) => n.id === "bandido_1")![POSICION_DECLARADA], DECLARADA.bandido_1);
+    assert.deepEqual(npcs.find((n) => n.id === "barkeep")![POSICION_DECLARADA], DECLARADA.barkeep);
   });
 
   it("al ILEGIBLE también se le quita: servirlo sin overlay lo resucitaría a 60/60", () => {
@@ -116,21 +188,49 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
 });
 
 describe("estadoEnElWire — la precedencia sim → ledger, y lo que no se puede leer", () => {
+  /** Un combatiente del sim escrito corto. */
+  const enElSim = (health: number, x = 0, z = 0) => ({
+    health,
+    maxHealth: 60,
+    position: { x, y: 0, z },
+  });
+
   it("el SIM manda: el ledger va un save por detrás y la vida del HUD saltaría", () => {
     const r = estadoEnElWire(
       rec({ id: "x", data: { combat: { health: 60, max_health: 60 } } }),
-      { health: 11, maxHealth: 60 },
+      enElSim(11, 8, 3),
     );
-    assert.deepEqual(r, { tipo: "vivo", combate: { health: 11, max_health: 60 } });
+    assert.deepEqual(r, {
+      tipo: "vivo",
+      combate: { health: 11, max_health: 60 },
+      posicion: [8, 0, 3],
+    });
+  });
+
+  it("…y manda también para la POSICIÓN: una vida fresca con una coordenada rancia sería peor", () => {
+    // Dos hechos sobre la misma entity con reglas de frescura distintas es
+    // cómo se acaba con el enemigo pintado donde estaba hace un minuto y la
+    // barra de hace un segundo. El record dice [1,0,2] (el fixture) y el sim
+    // dice otra cosa: manda el sim, igual que con la vida.
+    const r = estadoEnElWire(rec({ id: "x", position: [1, 0, 2] }), enElSim(40, -5.5, 12.25));
+    assert.equal(r.tipo, "vivo");
+    if (r.tipo === "vivo") assert.deepEqual(r.posicion, [-5.5, 0, 12.25]);
   });
 
   it("sin combatiente en el sim manda el ledger (al reanudar solo está el jugador)", () => {
-    const r = estadoEnElWire(rec({ id: "x", data: { combat: { health: 9, max_health: 60 } } }), undefined);
-    assert.deepEqual(r, { tipo: "vivo", combate: { health: 9, max_health: 60 } });
+    const r = estadoEnElWire(
+      rec({ id: "x", position: [4, 0, 6], data: { combat: { health: 9, max_health: 60 } } }),
+      undefined,
+    );
+    assert.deepEqual(r, {
+      tipo: "vivo",
+      combate: { health: 9, max_health: 60 },
+      posicion: [4, 0, 6],
+    });
   });
 
   it("un muerto no vuelve, lo diga el sim o lo diga el save", () => {
-    const porElSim = estadoEnElWire(rec({ id: "x" }), { health: 0, maxHealth: 60 });
+    const porElSim = estadoEnElWire(rec({ id: "x" }), enElSim(0));
     assert.deepEqual(porElSim, { tipo: "no_vuelve", motivo: { clase: "muerto" } });
     const porElSave = estadoEnElWire(
       rec({ id: "x", data: { combat: { health: 0, max_health: 60 } } }),
@@ -141,15 +241,128 @@ describe("estadoEnElWire — la precedencia sim → ledger, y lo que no se puede
 
   it("un bloque ILEGIBLE no es «sin datos»: tampoco vuelve, y dice por qué", () => {
     const r = estadoEnElWire(rec({ id: "x", data: { combat: { health: 30 } } }), undefined);
-    assert.equal(r?.tipo, "no_vuelve");
-    if (r?.tipo === "no_vuelve") {
+    assert.equal(r.tipo, "no_vuelve");
+    if (r.tipo === "no_vuelve") {
       assert.equal(r.motivo.clase, "ilegible");
       if (r.motivo.clase === "ilegible") assert.match(r.motivo.detalle, /max_health/);
     }
   });
 
-  it("quien no pelea no tiene estado: null, y su npc pasa intacto por la escena", () => {
-    assert.equal(estadoEnElWire(rec({ id: "barkeep", data: { name: "Tabernero" } }), undefined), null);
+  it("quien no pelea SÍ tiene estado: sin combate, pero con su posición (#351)", () => {
+    // Devolvía `null`, y ese `null` era el bug: sin estado no había nada que
+    // ponerle a la escena, así que el tabernero que había paseado media plaza
+    // reaparecía en su celda de spawn al reanudar.
+    const r = estadoEnElWire(
+      rec({ id: "barkeep", position: [-9, 0, 7], data: { name: "Tabernero" } }),
+      undefined,
+    );
+    assert.deepEqual(r, { tipo: "vivo", combate: null, posicion: [-9, 0, 7] });
+  });
+
+  it("la posición que devuelve es una COPIA: mutarla no reescribe el ledger", () => {
+    // Sale hacia el wire y de ahí a un objeto nuevo; si fuera la misma
+    // referencia, cualquier consumidor podría mover al personaje en el save
+    // sin pasar por `save()`.
+    const r0 = rec({ id: "x", position: [1, 0, 2] });
+    const r = estadoEnElWire(r0, undefined);
+    if (r.tipo === "vivo") r.posicion[0] = 999;
+    assert.deepEqual(r0.position, [1, 0, 2]);
+  });
+});
+
+/** #351 · el fail-loud de conversión celda→metro, mudado del cliente a core.
+ *
+ *  Aquí vive el criterio 2b de la tanda, y su mitad importante es la SEGUNDA:
+ *  el candado no se debilita para conseguir que el que se movió no encienda un
+ *  rojo falso. Un NPC *declarado* fuera de su rect se sigue reportando, y da
+ *  igual que la escena traiga además su posición viva. */
+describe("npcsFueraDelRect — la conversión celda→metro se sigue midiendo", () => {
+  const RECT = { minX: -32, minZ: -32, maxX: 32, maxZ: 32 };
+
+  it("un npc DECLARADO fuera de su rect se reporta, con su id y su coordenada", () => {
+    const fuera = npcsFueraDelRect(
+      [
+        { id: "dentro", position: [4, 0, -4] },
+        { id: "roto", position: [96.5, 0, 12.25] },
+      ],
+      RECT,
+    );
+    assert.deepEqual(fuera, [{ id: "roto", x: 96.5, z: 12.25 }]);
+  });
+
+  it("el que SE MOVIÓ fuera del rect NO enciende un rojo falso: se mide su declarada", () => {
+    // El enemigo persigue al jugador y los tiles son de 64 m: a mitad de una
+    // pelea está legítimamente fuera. Lo que se mide no es dónde está, es si
+    // la coordenada que la escena DECLARA es una conversión rota.
+    const fuera = npcsFueraDelRect(
+      [{ id: "bandido_1", position: [140, 0, 200], [POSICION_DECLARADA]: [8.01, 0, 0.7] }],
+      RECT,
+    );
+    assert.deepEqual(fuera, []);
+  });
+
+  it("…y el candado NO se debilita: con la declarada rota lo reporta AUNQUE se haya movido", () => {
+    // La mitad que impide que `POSICION_DECLARADA` se convierta en una
+    // exención general. Si el checker se saltara al que trae posición viva,
+    // este caso saldría verde — y a la primera difusión de cualquier escena
+    // TODO npc la trae (`registerSceneNpcs` los mete a todos en el ledger),
+    // así que el candado no volvería a mirar a nadie nunca.
+    const fuera = npcsFueraDelRect(
+      [{ id: "bandido_1", position: [4, 0, 4], [POSICION_DECLARADA]: [96.5, 0, 12.25] }],
+      RECT,
+    );
+    assert.deepEqual(fuera, [{ id: "bandido_1", x: 96.5, z: 12.25 }]);
+  });
+
+  it("cubre a los npc YA CONOCIDOS, que es más de lo que miraba el bucle del cliente", () => {
+    // En `main.ts` solo se comprobaban los recién creados (`newNpcs` +
+    // `enemies`): un npc que ya existía en el cliente y cuya declaración se
+    // rompiera después no lo veía nadie. Aquí se recorre `npcs[]` entero.
+    const fuera = npcsFueraDelRect(
+      [
+        { id: "a", position: [-40, 0, 0] },
+        { id: "b", position: [0, 0, 40] },
+        { id: "c", position: [0, 0, 0] },
+      ],
+      RECT,
+    );
+    assert.deepEqual(fuera.map((f) => f.id), ["a", "b"]);
+  });
+
+  it("el borde es semiabierto, igual que el `inRect` que sustituye", () => {
+    // `>= min` y `< max`, para que dos tiles vecinos no se disputen la misma
+    // línea. Sin esto, el npc de la costura saldría reportado por uno de los
+    // dos o por ninguno.
+    const fuera = npcsFueraDelRect(
+      [
+        { id: "min", position: [-32, 0, -32] },
+        { id: "max", position: [32, 0, 32] },
+      ],
+      RECT,
+    );
+    assert.deepEqual(fuera.map((f) => f.id), ["max"]);
+  });
+
+  it("una coordenada que no es un número NO cuenta como «está dentro»", () => {
+    // Colapsar «no sé leer esto» con «no hay nada que decir» es el silencio
+    // que esta casa prohíbe, y aquí es alcanzable: una escena mal normalizada
+    // trae `undefined` o un string donde iba el metro.
+    const fuera = npcsFueraDelRect(
+      [
+        { id: "nan", position: ["x", 0, 2] },
+        { id: "hueco", position: [1, 0, undefined] },
+      ],
+      RECT,
+    );
+    assert.deepEqual(fuera.map((f) => f.id), ["nan", "hueco"]);
+    assert.ok(Number.isNaN(fuera[0].x));
+  });
+
+  it("lo que no es una lista de npcs con posición no revienta ni inventa un fallo", () => {
+    assert.deepEqual(npcsFueraDelRect(undefined, RECT), []);
+    assert.deepEqual(npcsFueraDelRect("npcs", RECT), []);
+    assert.deepEqual(npcsFueraDelRect([null, 7, { sinId: 1 }, { id: "x" }], RECT), []);
+    assert.deepEqual(npcsFueraDelRect([{ id: "corta", position: [1, 0] }], RECT), []);
   });
 });
 
