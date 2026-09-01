@@ -30,6 +30,11 @@
  */
 import { nuevaPartida, comenzar, esperarRegistro } from "../lib/sesion.mjs";
 
+/** El umbral que declara `character-sprites.ts`. Aquí solo se usa para SABER
+ *  si este escenario puede medir la rama de «por debajo del umbral»: el rango
+ *  entero lo recorre el guion 53. */
+const UMBRAL = 3;
+
 /** Lo que el cliente escribe en el registro por CADA skin que se le cae. */
 const CANCELADA = /skin IA cancelada/g;
 /** …y lo que escribe UNA sola vez, si se alcanza el umbral de la sesión. */
@@ -38,7 +43,7 @@ const APAGADO_DE_SESION = /skins IA desactivados para la sesión/g;
 export default async function (ctx) {
   // El primer personaje que pida skin es el saboteado; los demás pasan.
   let victima = null;
-  const respuestas = { caidas: 0, servidas: 0 };
+  const respuestas = { caidas: 0, servidas: 0, saboteando: true };
   await ctx.page.route("**/skin_sprite_sheet", async (route) => {
     let prompt = "";
     try {
@@ -49,7 +54,7 @@ export default async function (ctx) {
       ctx.log(`cuerpo de /skin_sprite_sheet ilegible: ${String(err).slice(0, 80)}`);
     }
     victima ??= prompt;
-    if (prompt === victima) {
+    if (respuestas.saboteando && prompt === victima) {
       respuestas.caidas++;
       await route.fulfill({
         status: 500,
@@ -137,14 +142,74 @@ export default async function (ctx) {
     canceladas === fallidos.length,
     `${canceladas} entradas para ${fallidos.length} personajes fallidos`,
   );
-  // El apagón de sesión no desaparece: se acota. Con menos personajes caídos
-  // que el umbral NO puede haberse disparado; alcanzado el umbral, tiene que
-  // decirlo una sola vez.
+  // El apagón de sesión no desaparece: se acota. Este escenario solo puede
+  // ejercer la mitad de ABAJO del umbral —el tile de entrada del motor falso
+  // trae dos personajes— y eso se dice en vez de disfrazarse de condicional:
+  // un `if (fallidos >= UMBRAL)` aquí viaja sobre algo que no pasa nunca, y un
+  // aserto que no puede ejecutarse se ve igual que uno que funciona. El rango
+  // entero (1, 2 y 3 caídos) lo mide el guion 53 sobre `robledo_tile`.
+  if (fallidos.length >= UMBRAL) {
+    ctx.sinMedirBloque(
+      `este tile tumbó ${fallidos.length} personajes y el umbral es ${UMBRAL}: el escenario ` +
+        "dejó de poder medir «por debajo del umbral». El rango vive en el guion 53",
+    );
+  } else {
+    ctx.expect(
+      `por debajo del umbral (${fallidos.length} < ${UMBRAL}), la sesión NO se apaga ` +
+        "(era el bug: se apagaba al primero)",
+      apagados === 0,
+      `fallidos=${fallidos.length} apagados=${apagados} · ${registro.replace(/\s+/g, " ").slice(0, 300)}`,
+    );
+  }
+
+  // ── 4 · Rearmar de verdad: el que falló vuelve a pedir Y RECIBE ─────────
+  // «Rearmar el cortacircuitos» devolvía a la sesión la CAPACIDAD de pedir
+  // skins pero no borraba el recuerdo de los personajes que ya habían fallado,
+  // y `requestSkin` sale antes para un personaje con estado y sin `force`. Con
+  // el manager como singleton de MÓDULO, el vecino caído se quedaba en maniquí
+  // toda la vida de la pestaña: ni volver al título ni reanudar lo recuperaban,
+  // que es justo el gesto que esta tanda cableó como rearme.
+  //
+  // El gesto es del jugador y no del guion: el chip de gráficos, Personajes
+  // OFF y otra vez ON — el mismo camino (`applyRenderModes`) que dispara el
+  // rearme al entrar o reanudar una partida.
+  //
+  // SE MIDE EL DELTA, no el estado final, y no es un rodeo: en el banco toda
+  // hoja que no sea `idle` da 500, así que el personaje recuperado vuelve a
+  // quedar `failed` en cuanto pide `walk`. Lo que prueba el rearme es que
+  // AHORA TIENE ARTE que antes no tenía; exigir `failed:false` sería exigir
+  // que el motor falso tuviera hojas que no tiene.
+  const antes = (await ctx.nefan("skins")).find((s) => s.prompt === victima);
   ctx.expect(
-    fallidos.length >= 3
-      ? "alcanzado el umbral, el apagón de sesión se anuncia UNA vez"
-      : "por debajo del umbral, la sesión NO se apaga (era el bug: se apagaba al primero)",
-    fallidos.length >= 3 ? apagados === 1 : apagados === 0,
-    `fallidos=${fallidos.length} apagados=${apagados} · ${registro.replace(/\s+/g, " ").slice(0, 300)}`,
+    "precondición: el saboteado llega a este bloque sin una sola anim lista",
+    antes?.failed === true && antes.ready.length === 0,
+    JSON.stringify(antes),
+  );
+
+  respuestas.saboteando = false;
+  await ctx.page.click("#gfx-chip");
+  const seg = ctx.page
+    .locator("#gfx-panel .gfx-row", { hasText: /personaje/i })
+    .locator(".gfx-seg button");
+  await seg.first().waitFor({ state: "visible", timeout: 10_000 });
+  await seg.nth(1).click(); // «maqueta»: apaga (sin confirmación, no gasta)
+  await seg.first().click(); // arma el encendido («gastará créditos»)
+  await seg.first().click(); // confirma
+
+  const recuperado = await ctx.waitFor(
+    "el personaje que había fallado vuelve a pedir su skin tras el rearme, Y LA RECIBE",
+    (v) => {
+      const s = window.__nefan.skins.find((x) => x.prompt === v);
+      return s && s.ready.length > 0 ? s : null;
+    },
+    90_000,
+    victima,
+  );
+  await ctx.shot("tras-rearmar-el-caido-vuelve");
+  ctx.log(`recuperado: ${JSON.stringify(recuperado)}`);
+  ctx.expect(
+    "rearmar OLVIDA al que falló, así que su siguiente petición empieza limpia y se sirve",
+    recuperado.ready.length > antes.ready.length,
+    `antes ready=${JSON.stringify(antes.ready)} · ahora ready=${JSON.stringify(recuperado.ready)}`,
   );
 }

@@ -179,18 +179,36 @@ export class CharacterSpriteManager {
     this.allowed = allowed;
   }
 
-  /** Rearma el cortacircuitos de fallos de backend: borra el flag Y la cuenta
-   *  de personajes fallidos (dejar la cuenta puesta haría que el siguiente
-   *  fallo apagara la sesión otra vez, y «rearmar» no significa eso).
+  /** Rearma el cortacircuitos de fallos de backend: borra el flag, la cuenta
+   *  de personajes fallidos Y **el recuerdo de los que fallaron**.
+   *
+   *  Las dos primeras cosas devuelven a la sesión la CAPACIDAD de pedir skins.
+   *  La tercera es la que hace que eso sirva de algo, y faltaba: `requestSkin`
+   *  sale antes para un personaje que ya tiene estado y no lleva `force`
+   *  (`if (existing) { if (!opts.force …) return; }`), así que rearmar sin
+   *  olvidar dejaba a los vecinos que ya habían fallado en maniquí para TODA
+   *  la vida de la pestaña — `CharacterSpriteManager` es un singleton de
+   *  módulo y su mapa `skins` sobrevive a volver al título y reanudar. El
+   *  único camino de vuelta era el botón `force` del menú dev, o recargar. Un
+   *  «rearme» que no rearma es peor que no tenerlo: promete una salida que no
+   *  existe.
+   *
+   *  OLVIDAR y no re-pedir, que es la diferencia que cuesta dinero: borrar el
+   *  estado deja que la SIGUIENTE petición de ese personaje empiece limpia,
+   *  sin encolar nada aquí. Re-pedirlos en bloque pagaría los skins de los
+   *  vecinos de la partida anterior, que en la nueva puede que no aparezcan.
+   *  Y no se toca `readySkins`: el arte YA PAGADO se conserva, y la caché del
+   *  renderer sirve esas anims sin una sola petición.
    *
    *  Se llama al ENTRAR o REANUDAR una sesión y cuando el usuario reactiva los
    *  personajes IA desde el menú dev. Lo primero es nuevo: hasta #236 el único
-   *  llamante era el OFF→ON del menú dev, así que una sesión que se dejaba a
-   *  medias con el backend caído arrastraba el cortacircuitos a la siguiente,
-   *  ya con el backend arriba, y no había forma de saberlo desde el juego. */
+   *  llamante era el OFF→ON del menú dev. */
   rearmarCortacircuitos(): void {
     this.skinsDisabled = false;
     this.personajesFallidos.clear();
+    for (const [skinnedModel, state] of this.skins) {
+      if (state.failed) this.skins.delete(skinnedModel);
+    }
   }
 
   /** Estado de un skin por prompt, para el menú dev. "ready" = la anim idle
@@ -217,12 +235,14 @@ export class CharacterSpriteManager {
     const existing = this.skins.get(skinnedModel);
     if (existing) {
       if (!opts.force || !existing.failed) return;
-      // Reintento explícito: rearmar el skin y el cortacircuitos (el fallo
-      // global vino de este mismo tipo de error) y re-encolar las auto-anims.
-      existing.failed = false;
-      existing.queued.clear();
+      // Reintento explícito de ESTE personaje. El orden importa: primero se
+      // rearma la sesión —que de paso OLVIDA a todos los fallidos, este
+      // incluido— y luego se vuelve a sembrar su estado con su `role`, que es
+      // lo que elige la ref de personaje del pack y no se puede perder.
       this.rearmarCortacircuitos();
-      for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, existing, anim);
+      const state: SkinState = { prompt, role: opts.role ?? existing.role, failed: false, queued: new Set() };
+      this.skins.set(skinnedModel, state);
+      for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, state, anim);
       return;
     }
     if (opts.force) this.rearmarCortacircuitos();

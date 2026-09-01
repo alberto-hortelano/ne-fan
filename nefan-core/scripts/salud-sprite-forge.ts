@@ -40,6 +40,41 @@ export interface VeredictoDeForge {
   nivel: NivelDeSalud;
   /** La línea, ya redactada y sin color: una sola, con la causa dentro. */
   linea: string;
+  /** Qué HACER, en los términos de ne-fan y con rutas de esta máquina.
+   *
+   *  Existe porque el motivo lo escribe el repo hermano y habla de SU árbol:
+   *  decía `pip install -r python/requirements.txt`, y ese fichero no existe
+   *  en ne-fan —vive en el clon de al lado— mientras que el intérprete que hay
+   *  que arreglar sí es el de ne-fan. Quien copiaba la línea del terminal
+   *  obtenía «No such file or directory». Un aviso que no se puede ejecutar es
+   *  el que se ignora, y el riesgo asumido de esta tanda es justamente que se
+   *  ignore. Solo aparece cuando hay algo que hacer. */
+  remedio?: string;
+}
+
+/** Lo que ne-fan pone de su parte para arrancar sprite-forge. Lo sabe el
+ *  launcher y no el servicio, así que viaja como dato: sin él, esta función no
+ *  puede traducir un motivo del repo hermano a algo ejecutable aquí. */
+export interface ContextoDeNeFan {
+  /** El clon de sprite-forge (`$SPRITE_FORGE_DIR`). */
+  repo: string;
+  /** El intérprete con el que ne-fan lo arranca (`SPRITE_FORGE_PYTHON`). */
+  python: string;
+  /** El fichero del que sale la clave de imagen (`MESHY_API_KEY`). */
+  env: string;
+}
+
+/** El remedio, en una línea y con rutas absolutas de ESTA máquina.
+ *
+ *  No clasifica el motivo: nombrar las DOS cosas que ne-fan pone —las
+ *  dependencias del venv y la clave— es siempre cierto, y sniffar la prosa del
+ *  repo hermano con un regex sería un acoplamiento que se rompe solo el día
+ *  que allí redacten distinto. */
+function remedioDeNeFan(ctx: ContextoDeNeFan): string {
+  return (
+    `esto lo pone ne-fan · dependencias: ${ctx.python} -m pip install -r ` +
+    `${ctx.repo}/python/requirements.txt · clave: MESHY_API_KEY en ${ctx.env}`
+  );
 }
 
 /** Lo que se ha podido observar del servicio. Es la ENTRADA de la decisión, y
@@ -58,7 +93,10 @@ export type SondeoDeForge =
  *  Los cuatro casos son los cuatro modos de fallo REALES de esta frontera, y
  *  cada uno lleva su causa en la línea porque el siguiente sitio donde el
  *  jugador se enteraría es la pantalla, con todos los NPC en maniquí. */
-export function veredictoDeForge(sondeo: SondeoDeForge): VeredictoDeForge {
+export function veredictoDeForge(
+  sondeo: SondeoDeForge,
+  ctx?: ContextoDeNeFan,
+): VeredictoDeForge {
   if (sondeo.tipo === "sin-repo") {
     return {
       nivel: "aviso",
@@ -96,7 +134,8 @@ export function veredictoDeForge(sondeo: SondeoDeForge): VeredictoDeForge {
       nivel: "aviso",
       linea:
         `sprite-forge arrancó pero el REPINTADO está apagado: ${skin.reason} — ` +
-        `los personajes salen en maniquí y_bot (el juego arranca igual).`,
+        `los personajes salen en maniquí y_bot (el juego arranca igual, y no gasta).`,
+      ...(ctx ? { remedio: remedioDeNeFan(ctx) } : {}),
     };
   }
   return {
@@ -133,7 +172,10 @@ function pintar(v: VeredictoDeForge): string {
   if (v.nivel === "ok") return `✅ ${v.linea}`;
   const rojo = color ? "\u001b[31m" : "";
   const fin = color ? "\u001b[0m" : "";
-  return `${rojo}⚠️  ${v.linea}${fin}`;
+  // El remedio va en su propia línea y SIN el rojo: no es el problema, es lo
+  // que hay que teclear, y se copia del terminal tal cual.
+  const remedio = v.remedio ? `\n    ${v.remedio}` : "";
+  return `${rojo}⚠️  ${v.linea}${fin}${remedio}`;
 }
 
 async function main(): Promise<void> {
@@ -155,7 +197,13 @@ async function main(): Promise<void> {
   if (!Number.isFinite(segundos) || segundos <= 0) {
     throw new Error(`--espera inválida: ${val("--espera")}`);
   }
-  console.log(pintar(veredictoDeForge(await sondear(url, segundos))));
+  // Las tres rutas las sabe el launcher; aquí no se adivina ninguna. Sin
+  // ellas el veredicto sigue saliendo, solo que sin la línea del remedio.
+  const repo = val("--repo");
+  const python = val("--python");
+  const env = val("--env");
+  const ctx = repo && python && env ? { repo, python, env } : undefined;
+  console.log(pintar(veredictoDeForge(await sondear(url, segundos), ctx)));
 }
 
 // Importado (el test de los cuatro veredictos) no sondea ni imprime nada; solo

@@ -132,9 +132,12 @@ export default async function (ctx) {
   // bandido hostil de #323 entró en el bootstrap) se ve lo que siempre fue
   // verdad: el libro apunta lo que la partida PIDE y el cable lleva lo que la
   // cola llega a mandar, y contra el motor falso la cola se corta — el fake
-  // solo tiene hoja `idle` y contesta 500 a `walk`, lo que dispara el
-  // cortacircuitos del cliente (`skinsDisabled`) y deja sin salir todo lo
-  // encolado detrás. Es el mismo gotcha que documenta el guion 15.
+  // solo tiene hoja `idle` y contesta 500 a `walk`, y ese fallo marca al
+  // PERSONAJE: `state.failed` deja sin salir todo lo que llevara encolado
+  // detrás. (Hasta #236 el fallo apagaba además los skins de la SESIÓN a la
+  // primera; hoy hacen falta tres personajes distintos, y en este tile solo
+  // hay dos, así que el fusible de sesión ni se acerca. El corte de la cola,
+  // que es lo que este bloque tiene que sortear, sigue igual.)
   //
   // Así que la igualdad se sustituye por las DOS afirmaciones que sí son
   // ciertas y que son las que pueden cazar el bug que este bloque persigue

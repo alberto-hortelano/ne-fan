@@ -57,6 +57,38 @@ describe("veredictoDeForge", () => {
     );
   });
 
+  it("el aviso trae un remedio EJECUTABLE desde el terminal de ne-fan", () => {
+    // El motivo lo escribe el repo hermano y habla de SU árbol: decía
+    // `pip install -r python/requirements.txt`, y ese fichero no existe en
+    // ne-fan —vive en el clon de al lado— mientras que el intérprete que hay
+    // que arreglar sí es el de ne-fan. Copiar la línea daba «No such file».
+    const v = veredictoDeForge(
+      { tipo: "catalogo", json: conSkin({ enabled: false, reason: "falta `rembg`" }) },
+      { repo: "/home/x/code/sprite-forge", python: "/home/x/code/ne-fan/.venv/bin/python",
+        env: "/home/x/code/ne-fan/.env" },
+    );
+    assert.equal(v.nivel, "aviso");
+    assert.ok(v.remedio, "un aviso sin remedio es el que se ignora");
+    // La ruta del requirements es la del REPO HERMANO y el intérprete es el de
+    // ne-fan: cruzarlos manda arreglar un venv que no es el que se usa.
+    assert.match(v.remedio, /\/home\/x\/code\/ne-fan\/\.venv\/bin\/python -m pip install -r/);
+    assert.match(v.remedio, /\/home\/x\/code\/sprite-forge\/python\/requirements\.txt/);
+    // Y la otra traducción que faltaba: el servicio pide SPRITE_FORGE_IMAGE_KEY
+    // y en ne-fan esa variable se llama MESHY_API_KEY y vive en .env.
+    assert.match(v.remedio, /MESHY_API_KEY en \/home\/x\/code\/ne-fan\/\.env/);
+  });
+
+  it("sin contexto de ne-fan no se inventa un remedio", () => {
+    // Las rutas las sabe el launcher. Adivinarlas aquí sería mandar teclear
+    // algo que puede no existir, que es el defecto que esto viene a cerrar.
+    const v = veredictoDeForge({
+      tipo: "catalogo",
+      json: conSkin({ enabled: false, reason: "falta la clave" }),
+    });
+    assert.equal(v.nivel, "aviso");
+    assert.equal(v.remedio, undefined);
+  });
+
   it("un catálogo que no cumple el contrato NO se interpreta a ojo", () => {
     // Si el repo hermano y este espejo divergen, leer `skin.enabled` es
     // adivinar: se avisa diciendo dónde falló el zod.
