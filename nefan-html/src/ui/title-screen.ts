@@ -476,15 +476,21 @@ export class TitleScreen {
   /** Pinta un motivo en el hueco de error del home, si el home está en
    *  pantalla. Es lo que lee el jugador cuando algo del propio título falla
    *  (el bridge no contesta, la sesión no arranca): sin esto el fallo solo
-   *  existía en la consola. */
-  private mostrarErrorEnHome(motivo: string): void {
+   *  existía en la consola.
+   *
+   *  `tono` porque no todo lo que se dice aquí es un error. «Tu partida ya no
+   *  estaba, no había nada que borrar» es, para quien pulsó Borrar, un ÉXITO —
+   *  y se pintaba con el mismo rojo que «no se pudo borrar». El texto los
+   *  distinguía y el color los volvía a juntar: quien ojea la pantalla ve el
+   *  bloque rojo, no la frase. */
+  private mostrarErrorEnHome(motivo: string, tono: "error" | "aviso" = "error"): void {
     const el = this.content.querySelector<HTMLElement>("#ts-error");
     if (!el) return;
-    el.innerHTML = `<span style="color:#a44">${escapeHtml(motivo)}</span>`;
+    el.innerHTML = `<span style="color:${tono === "error" ? "#a44" : "#8a8"}">${escapeHtml(motivo)}</span>`;
     el.style.display = "";
   }
 
-  private async renderHome(aviso?: string): Promise<void> {
+  private async renderHome(aviso?: string, tono?: "error" | "aviso"): Promise<void> {
     this.modeArmed.clear();
     this.content.style.maxWidth = "720px";
     // ORDEN A PROPÓSITO: todo lo que puede cambiar DESPUÉS del primer pintado
@@ -506,7 +512,7 @@ export class TitleScreen {
     const sessionsEl = this.content.querySelector("#ts-sessions") as HTMLElement;
     const newBtn = this.content.querySelector("#ts-new") as HTMLButtonElement;
 
-    if (aviso) this.mostrarErrorEnHome(aviso);
+    if (aviso) this.mostrarErrorEnHome(aviso, tono);
 
     // EL ENGANCHE VA AQUÍ, en el mismo bloque síncrono que pinta el botón, y
     // no después del `await` de abajo (#181): entre pintar y enganchar había
@@ -569,19 +575,30 @@ export class TitleScreen {
           if (!confirm(`¿Borrar la partida ${id}?`)) return;
           try {
             // Los tres desenlaces se ven distintos, que es lo que pedía #365.
+            // Y se ven distintos también DE UN VISTAZO: «ya no estaba» es un
+            // éxito para quien pulsó Borrar, así que va en tono de aviso.
             const resultado = await this.narrative.deleteSession(id);
             await this.renderHome(
               resultado === "not_found"
                 ? `La partida ${id} ya no estaba en disco: no había nada que borrar.`
                 : undefined,
+              resultado === "not_found" ? "aviso" : undefined,
             );
           } catch (err) {
             // NO se repinta la lista: la partida NO se borró y su tarjeta tiene
             // que seguir donde estaba. Repintar aquí borraría el motivo y
             // dejaría la pantalla idéntica a la de un borrado que sí ocurrió —
             // el no-op mudo de antes, con un paso más.
+            //
+            // Y como la tarjeta se queda, se MARCA: el aviso vive ~350 px por
+            // encima de ella y el único vínculo era un id opaco de veinte
+            // caracteres. La primera frase dice qué hacer; la causa técnica va
+            // detrás, que es donde sirve (y el guion 52 la exige).
+            marcarTarjetaFallida(btn);
             this.mostrarErrorEnHome(
-              `No se pudo borrar la partida ${id}: ${(err as Error).message}`,
+              `La partida ${id} SIGUE ahí: el juego no pudo borrarla y no se ha perdido nada. ` +
+                `Comprueba los permisos de su carpeta en saves/ y vuelve a intentarlo. ` +
+                `Causa: ${(err as Error).message}`,
             );
           }
         };
@@ -1546,6 +1563,20 @@ function modeBadgeHtml(s: SessionMetadata, facet: "scenes" | "characters"): stri
     ? "Backend de skins apagado por config: activa graphics.ai_skin en nefan-core/src/config.ts"
     : `${facetEs}: click para cambiar a ${labels[target]} antes de cargar (${MODE_COST_LABELS[target]})`;
   return `<button data-mode-facet="${facet}" data-session-id="${escapeAttr(s.session_id)}"${blocked ? " disabled" : ""} title="${escapeAttr(title)}" style="${MODE_BADGE_CSS}${blocked ? ";opacity:.45;cursor:default" : ""}">${RENDER_MODE_ICONS[mode]} ${escapeHtml(labels[mode])}</button>`;
+}
+
+/** Resalta la tarjeta de una partida que no se pudo borrar.
+ *
+ *  El aviso y la tarjeta viven a media pantalla de distancia y su único
+ *  vínculo era el id: en una lista de doce saves, saber CUÁL falló obligaba a
+ *  comparar veinte caracteres. Se marca el contenedor, no el botón, porque lo
+ *  que hay que encontrar es la partida. Desaparece solo: cualquier repintado
+ *  del home (el siguiente borrado, volver de una partida) rehace la lista. */
+function marcarTarjetaFallida(btn: HTMLElement): void {
+  const fila = btn.closest<HTMLElement>(".ts-save");
+  if (!fila) return;
+  fila.style.borderColor = "#a44";
+  fila.style.background = "#241a1a";
 }
 
 function sessionRowHtml(s: SessionMetadata): string {

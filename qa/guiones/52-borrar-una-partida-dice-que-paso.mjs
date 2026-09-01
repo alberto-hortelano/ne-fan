@@ -48,6 +48,13 @@ const idsEnPantalla = () =>
 /** El texto del aviso del título (`#ts-error`), vacío si no hay ninguno. */
 const avisoDelTitulo = () => document.getElementById("ts-error")?.textContent?.trim() ?? "";
 
+/** El color con el que se pinta ese aviso. No es leer píxeles: es el estilo
+ *  inline que el título ESCRIBE, y es lo que distingue de un vistazo un fallo
+ *  («no se pudo») de un éxito raro («ya no estaba»), que es la mitad del
+ *  criterio 1b que el texto por sí solo no cubre. */
+const colorDelAviso = () =>
+  document.getElementById("ts-error")?.querySelector("span")?.style.color ?? "";
+
 /** Pulsa Borrar de una tarjeta y espera a que el título ACABE de reaccionar:
  *  o el aviso cambió, o la tarjeta desapareció. Nunca por reloj. */
 async function pulsarBorrar(ctx, id, desc) {
@@ -62,7 +69,24 @@ async function pulsarBorrar(ctx, id, desc) {
         (b) => b.dataset.sessionId,
       );
       if (aviso === previo && tarjetas.includes(sid)) return null;
-      return { aviso, tarjetas, sigue: tarjetas.includes(sid) };
+      // El borde de ESTA tarjeta y el de otra cualquiera. Se comparan porque
+      // `sessionRowHtml` ya pinta un borde inline a todas: mirar solo «tiene
+      // borderColor» era un verde que no podía ponerse rojo (probado: con la
+      // marca quitada seguía pasando). Lo que hay que afirmar es la
+      // DIFERENCIA con sus vecinas.
+      const borde = (e) => (e instanceof HTMLElement ? e.style.borderColor : "");
+      const filas = [...document.querySelectorAll(".ts-save")];
+      const mia = document
+        .querySelector(`button[data-action="delete"][data-session-id="${sid}"]`)
+        ?.closest(".ts-save");
+      return {
+        aviso,
+        tarjetas,
+        sigue: tarjetas.includes(sid),
+        color: el?.querySelector("span")?.style.color ?? "",
+        marcada: borde(mia),
+        vecinas: filas.filter((f) => f !== mia).map(borde),
+      };
     },
     30_000,
     [id, avisoPrevio],
@@ -116,13 +140,30 @@ export default async function (ctx) {
   );
   ctx.expect(
     "…y el jugador lee POR QUÉ, sin abrir la consola",
-    tras.aviso.includes(paraFallar) && /no se pudo borrar/i.test(tras.aviso),
+    tras.aviso.includes(paraFallar) && /no pudo borrarla|no se pudo borrar/i.test(tras.aviso),
     tras.aviso || "(el título no dijo nada: el no-op mudo de #365)",
   );
   ctx.expect(
     "…con la causa técnica dentro, que es lo que hace accionable el aviso",
     /EACCES|permission|delete_session_failed/i.test(tras.aviso),
     tras.aviso,
+  );
+  // Lo primero que se lee tiene que ser qué pasa y qué hacer, no una ruta
+  // absoluta de tres líneas: la causa técnica va DETRÁS, no delante.
+  ctx.expect(
+    "…y antes de la ruta hay una frase que dice qué hacer y que no se perdió nada",
+    /no se ha perdido nada/i.test(tras.aviso) && /permisos/i.test(tras.aviso) &&
+      tras.aviso.indexOf("EACCES") > tras.aviso.indexOf("no se ha perdido nada"),
+    tras.aviso,
+  );
+  // El aviso vive a media pantalla de la tarjeta y el único vínculo era un id
+  // de veinte caracteres: en una lista de doce saves, cuál falló era un
+  // ejercicio de comparar cadenas.
+  ctx.expect(
+    "…y la tarjeta que falló se DISTINGUE de sus vecinas, no solo por un id opaco",
+    tras.marcada !== "" && tras.vecinas.length > 0 &&
+      tras.vecinas.every((b) => b !== tras.marcada),
+    `la que falló: "${tras.marcada}" · las demás: ${JSON.stringify(tras.vecinas)}`,
   );
 
   // ── 2 · NOT_FOUND: «no estaba» no se disfraza de fallo ───────────────────
@@ -139,8 +180,16 @@ export default async function (ctx) {
   ctx.expect(
     "…y se dice que no había nada que borrar, en vez de callarlo o darlo por fallo",
     /ya no estaba|no había nada que borrar/i.test(fantasma.aviso) &&
-      !/no se pudo borrar/i.test(fantasma.aviso),
+      !/no pudo borrarla/i.test(fantasma.aviso),
     fantasma.aviso || "(sin aviso: «no estaba» y «borrada» vuelven a verse igual)",
+  );
+  // Y se VE distinto, no solo se lee distinto: para quien pulsó Borrar esto es
+  // un éxito, y se pintaba con el mismo rojo de error que «no se pudo». Quien
+  // ojea la pantalla ve el bloque de color, no la frase.
+  ctx.expect(
+    "…y NO se pinta con el rojo de un fallo: para el jugador esto salió bien",
+    fantasma.color !== "" && fantasma.color !== tras.color,
+    `«no estaba» → ${fantasma.color} · «no se pudo» → ${tras.color}`,
   );
 
   // ── 3 · DELETED: el caso bueno sigue siendo silencioso y limpio ──────────
