@@ -12,6 +12,7 @@ import {
   FALLO_HOJAS_BASE,
   etiquetaDeFixture,
   motivoDeFixtureParaElJugador,
+  motivoDeReaccionParaElJugador,
   motivoDeSesionParaElJugador,
   motivoParaElJugador,
   rotuloDeStatus,
@@ -133,6 +134,12 @@ describe("rótulo de un fallo del motor", () => {
     assert.equal(cuerpo("tile"), "Algo falló generando el tile.");
     assert.equal(cuerpo("scene"), "Algo falló en el motor narrativo.");
     assert.equal(cuerpo("consequences"), "El motor narrativo rechazó la reacción.");
+    assert.equal(cuerpo("restore"), "Algo de tu partida guardada no se pudo devolver al mundo.");
+    assert.equal(cuerpo("takeover"), "Esta partida se está jugando desde otro sitio.");
+    assert.equal(cuerpo("save"), "No se pudo escribir la partida guardada.");
+    assert.equal(cuerpo("plugin"), "Un sistema del juego no pudo completar el turno.");
+    assert.equal(cuerpo("action"), "El juego no pudo completar esa acción.");
+    assert.equal(cuerpo("protocolo"), "El juego mandó un mensaje que el servidor no pudo leer.");
   });
 
   it("un `message` vacío NO se sustituye por el de por defecto", () => {
@@ -150,6 +157,130 @@ describe("rótulo de un fallo del motor", () => {
         `phase "${phase}" debería rechazarse`,
       );
     }
+  });
+});
+
+/** #352 — el titular dice QUÉ HA PASADO, y ninguno nombra a otro culpable.
+ *
+ *  Hasta el 2026-09-01 `rotuloDeStatus` acababa en un `return` catch-all: todo
+ *  lo que no era `tile` ni `scene` salía a pantalla completa bajo «El motor
+ *  narrativo rechazó la respuesta». Como el bridge no tenía más kinds que
+ *  ofrecer, SIETE emisores compartían ese titular y SEIS mentían: el aviso de
+ *  «tu partida vuelve incompleta» del resume, el takeover de sesión, los dos
+ *  «no se pudo guardar», el plugin que revienta su turno y el handler que
+ *  revienta.
+ *
+ *  Un `it` por kind y con el TÍTULO LITERAL, y no un «son distintos entre sí»:
+ *  este módulo está en mutación a `break: 100`, así que cada `StringLiteral`
+ *  nuevo necesita un aserto que lo mate. Y con la tabla, además, borrar una
+ *  rama entera para que caiga en otra se ve — que es exactamente el defecto
+ *  que se está arreglando. */
+describe("un titular por hecho: ningún aviso culpa a quien no ha sido", () => {
+  const titulo = (kind: NarrativeStatusDeSesion["kind"]): string => {
+    const r = rotuloDeStatus(fallo({ kind, message: "da igual el cuerpo" }), {
+      mundoVacio: false,
+      overlayAbierto: true,
+    });
+    assert.equal(r.destino, "overlay", `${kind} tiene que tapar la pantalla`);
+    return r.destino === "overlay" ? r.titulo : "";
+  };
+
+  it("restore: la partida vuelve con menos de lo que tenía — no es cosa del motor", () => {
+    // El del issue: el cuerpo («la partida guardada no dice en qué estado
+    // quedó X») era exacto y estaba en idioma de jugador desde #326; encima
+    // ponía que el motor narrativo había rechazado una respuesta que nadie
+    // había pedido.
+    assert.equal(titulo("restore"), "Tu partida vuelve incompleta");
+  });
+
+  it("takeover: otro cliente tomó la partida — la respuesta del motor es la víctima", () => {
+    assert.equal(titulo("takeover"), "Esta partida ya no está al mando");
+  });
+
+  it("save: el disco, no el narrador", () => {
+    assert.equal(titulo("save"), "No se pudo guardar la partida");
+  });
+
+  it("plugin: un sistema del juego, que es contenido del mundo y no el narrador", () => {
+    assert.equal(titulo("plugin"), "Un sistema del juego falló");
+  });
+
+  it("action: reventó el handler de algo que el jugador pidió", () => {
+    assert.equal(titulo("action"), "No se pudo completar esa acción");
+  });
+
+  it("protocolo: el juego consigo mismo, no la generación de un sitio", () => {
+    // QA H-7: un frame WS que no pasa el intake salía con `kind:"scene"`, o sea
+    // bajo «No se pudo preparar el lugar» — un titular que manda a mirar la
+    // generación del mundo para decir que el propio juego mandó basura.
+    assert.equal(titulo("protocolo"), "Fallo interno del juego");
+  });
+
+  it("consequences conserva el suyo, que por fin es cierto: ya no lo hereda nadie", () => {
+    assert.equal(titulo("consequences"), "El motor narrativo rechazó la respuesta");
+  });
+
+  it("SOLO el rechazo del motor nombra al motor: los otros ocho titulares no", () => {
+    // El criterio 3 de la tanda, dicho como aserto: «ningún aviso sale bajo un
+    // titular que nombra a otro culpable». Sin esto, un titular nuevo escrito
+    // como «El motor narrativo no pudo guardar» pasaría los `it` de arriba
+    // (cada uno mira su cadena) y volvería a poner el defecto en pantalla.
+    const kinds: NarrativeStatusDeSesion["kind"][] = [
+      "tile",
+      "scene",
+      "consequences",
+      "restore",
+      "takeover",
+      "save",
+      "plugin",
+      "action",
+      "protocolo",
+    ];
+    const culpan = kinds.filter((k) => /motor narrativo/i.test(titulo(k)));
+    assert.deepEqual(culpan, ["consequences"], JSON.stringify(kinds.map((k) => [k, titulo(k)])));
+  });
+
+  it("cada kind tiene SU titular: nueve kinds, nueve hechos, ningún catch-all", () => {
+    // El aserto que se pone rojo si alguien devuelve el catch-all: con un
+    // `return` al final, los seis kinds nuevos colapsarían en un solo título
+    // y este conjunto tendría 4 elementos en vez de 9.
+    const kinds: NarrativeStatusDeSesion["kind"][] = [
+      "tile",
+      "scene",
+      "consequences",
+      "restore",
+      "takeover",
+      "save",
+      "plugin",
+      "action",
+      "protocolo",
+    ];
+    const titulos = kinds.map((k) => titulo(k));
+    assert.equal(new Set(titulos).size, 9, JSON.stringify(titulos));
+    // Los DOS que sí pueden coincidir lo hacen por contexto y no por kind: un
+    // `scene` CON `placeId` es el mismo hecho que un `tile` con el jugador
+    // esperando —no poder ir donde iba—, y ahí compartir titular es correcto.
+    const conDestino = rotuloDeStatus(fallo({ kind: "scene", placeId: "plaza" }), {
+      mundoVacio: false,
+      overlayAbierto: true,
+    });
+    assert.equal(conDestino.destino === "overlay" && conDestino.titulo, titulo("tile"));
+  });
+
+  it("un kind sin titular propio no compila: el `switch` lo canda, y si se rompe, LANZA", () => {
+    // La red de debajo de la red. El candado fuerte es `tsc` (el `const nunca:
+    // never` del final), y por eso hay que forzar el tipo para llegar aquí:
+    // este aserto existe para que el fallback del catch-all no pueda volver
+    // «por si acaso» — un kind desconocido tiene que reventar, no heredar el
+    // titular de otro.
+    assert.throws(
+      () =>
+        rotuloDeStatus(
+          { phase: "error", kind: "inventado" as NarrativeStatusDeSesion["kind"], message: "x" },
+          { mundoVacio: false, overlayAbierto: true },
+        ),
+      /no sabe rotular el kind "inventado"/,
+    );
   });
 });
 
@@ -180,7 +311,18 @@ describe("la salida del overlay: qué puede hacer el jugador con el muro", () =>
     // Sin esto, `salida` podría estar clavada al caso del tile de bootstrap y
     // un fallo de escena en el arranque —el mismo callejón— saldría con la
     // salida equivocada sin que nadie se enterara.
-    for (const kind of ["tile", "scene", "consequences"] as const) {
+    const kinds = [
+      "tile",
+      "scene",
+      "consequences",
+      "restore",
+      "takeover",
+      "save",
+      "plugin",
+      "action",
+      "protocolo",
+    ] as const;
+    for (const kind of kinds) {
       for (const overlayAbierto of [true, false]) {
         const r = rotuloDeStatus(fallo({ kind, placeId: "x" }), { mundoVacio: true, overlayAbierto });
         assert.equal(r.destino, "overlay", `${kind}/${overlayAbierto}`);
@@ -246,6 +388,81 @@ describe("motivoParaElJugador: el cuerpo de un fallo de generación", () => {
       motivoParaElJugador(null),
       "El motor narrativo no pudo construirlo; inténtalo de nuevo.",
     );
+  });
+});
+
+/** #352 / QA H-3 — el cuarto canal, y el último que quedaba en inglés.
+ *
+ *  El bridge pintaba `Narrative engine error: <crudo>` a pantalla completa
+ *  bajo un titular que sí era cierto. Se afirman las frases LITERALES y no un
+ *  «son distintas»: el módulo está en mutación a `break: 100`, así que cada
+ *  literal nuevo necesita quien lo mate. */
+describe("motivoDeReaccionParaElJugador: el cuerpo de una reacción que falló", () => {
+  it("el motor que no contesta se distingue del que contesta algo que no vale", () => {
+    // La distinción existe porque el CONSEJO cambia: con el motor caído,
+    // reintentar puede funcionar; con una reacción rechazada, repetir lo mismo
+    // vuelve a fallar y lo que hay que hacer es decir otra cosa. Colapsarlas
+    // sería mandar al jugador a un bucle.
+    assert.equal(
+      motivoDeReaccionParaElJugador(new Error("fetch failed")),
+      "El motor narrativo no responde; inténtalo de nuevo en un momento.",
+    );
+    assert.equal(
+      motivoDeReaccionParaElJugador(new Error("HTTP 422: consequence inválida")),
+      "El motor narrativo no pudo reaccionar a eso; prueba a decir otra cosa.",
+    );
+  });
+
+  it("las cuatro formas REALES de que el motor no conteste caen en la misma frase", () => {
+    // Copiadas de donde se lanzan (`ai-client.ts` y el fetch de node): sin la
+    // alternancia entera, un `socket hang up` caería en «no pudo reaccionar» y
+    // el jugador leería que dijo algo malo cuando lo que pasa es que el motor
+    // está caído.
+    for (const raw of [
+      "fetch failed",
+      "request to http://127.0.0.1:8765/report_player_choice failed, reason: connect ECONNREFUSED 127.0.0.1:8765",
+      "socket hang up",
+      "Narrative engine timeout after 60000ms",
+      "the request timed out",
+    ]) {
+      assert.equal(
+        motivoDeReaccionParaElJugador(new Error(raw)),
+        "El motor narrativo no responde; inténtalo de nuevo en un momento.",
+        raw,
+      );
+    }
+  });
+
+  it("ninguna frase enseña el volcado, ni el código, ni inglés", () => {
+    // El defecto entero de H-3: `Narrative engine error: <crudo>` a pantalla
+    // completa. Si alguien devuelve `raw` en cualquier rama, esto se pone rojo.
+    for (const raw of ["fetch failed", "HTTP 422 Unprocessable Entity", "Narrative engine error"]) {
+      const motivo = motivoDeReaccionParaElJugador(new Error(raw));
+      assert.ok(!motivo.includes(raw), `«${raw}» llegó entero al jugador: ${motivo}`);
+      assert.doesNotMatch(motivo, /Narrative|engine|error:|HTTP|fetch/i, motivo);
+      assert.match(motivo, /^El motor narrativo/, motivo);
+    }
+  });
+
+  it("un rechazo que no es Error se lee igual (la promesa puede rechazar con un string)", () => {
+    // `?? String(err)` y `&& String(err)` se confunden aquí, y la diferencia es
+    // observable: con `&&`, un rechazo-string dejaría de reconocerse y el motor
+    // caído se leería como una reacción rechazada.
+    assert.equal(
+      motivoDeReaccionParaElJugador("fetch failed"),
+      "El motor narrativo no responde; inténtalo de nuevo en un momento.",
+    );
+  });
+
+  it("un rechazo VACÍO no revienta la vía de error", () => {
+    // El fail-loud reventando dentro de su propio canal es el peor sitio: el
+    // jugador se quedaría sin mensaje ninguno.
+    for (const vacio of [undefined, null]) {
+      assert.equal(
+        motivoDeReaccionParaElJugador(vacio),
+        "El motor narrativo no pudo reaccionar a eso; prueba a decir otra cosa.",
+      );
+    }
   });
 });
 

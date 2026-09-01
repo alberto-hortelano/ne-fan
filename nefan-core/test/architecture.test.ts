@@ -828,6 +828,81 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Regla NUEVA y a cero fuera de su única excepción: el verde de hoy no
+  // demuestra nada mientras no se vea saltar. Lo que defiende es la
+  // ATRIBUCIÓN del titular — la mitad que `tsc` no puede candar, porque
+  // escribir `kind: "consequences"` compila desde cualquier handler y es
+  // exactamente por donde llegaron los seis mentirosos de #352.
+  it("[error] ningun-aviso-culpa-al-motor: un aviso que se atribuye al motor salta; los kinds honestos no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "ningun-aviso-culpa-al-motor");
+
+    assert.deepEqual(
+      deLaRegla([
+        // Los seis emisores de #352, tal y como estaban escritos el día que se
+        // midieron. Cada uno cuenta un hecho distinto bajo el mismo titular.
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: 'ctx.broadcastNarrative({\n  phase: "error",\n  kind: "consequences",\n  message: avisoDeIlegibles(x),\n});\n',
+        },
+        {
+          path: "nefan-core/bridge/handlers/simulation.ts",
+          text: 'ctx.broadcastNarrative({ phase: "error", kind: "consequences", message: "no se pudo guardar" });\n',
+        },
+        {
+          path: "nefan-core/bridge/context.ts",
+          text: 'ctx.broadcastNarrative({ phase: "error", kind: "consequences", message: plugin });\n',
+        },
+        {
+          path: "nefan-core/bridge/router.ts",
+          text: 'return { a: "difusion", frame: { phase: "error", kind: "consequences" } };\n',
+        },
+        // Sin espacio tras los dos puntos: nada obliga a escribirlo con él, y
+        // un patrón que pidiera `kind: "` literal dejaría pasar esta.
+        {
+          path: "nefan-core/bridge/handlers/scene.ts",
+          text: 'broadcast({ kind:"consequences" });\n',
+        },
+        // Con el salto de línea que mete prettier cuando el objeto es largo.
+        {
+          path: "nefan-core/bridge/ws-server.ts",
+          text: 'ctx.broadcastNarrative({\n  type: "narrative_status",\n  phase: "ready",\n  kind:\n    "consequences",\n});\n',
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/context.ts:1",
+        "nefan-core/bridge/handlers/scene.ts:1",
+        "nefan-core/bridge/handlers/session.ts:3",
+        "nefan-core/bridge/handlers/simulation.ts:1",
+        "nefan-core/bridge/router.ts:1",
+        "nefan-core/bridge/ws-server.ts:4",
+      ],
+      "los seis emisores que culpaban al motor tienen que saltar, con y sin espacio y partidos en dos líneas",
+    );
+
+    // Y los inocentes: los cinco kinds que la tanda repartió —cada uno con su
+    // hecho— y el único sitio donde `consequences` es cierto. Sin este
+    // segundo bloque la regla podría estar prohibiendo el campo `kind` entero
+    // y el primero saldría igual de verde.
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-core/bridge/handlers/session.ts", text: 'kind: "restore",\n' },
+        { path: "nefan-core/bridge/handlers/dialogue.ts", text: 'kind: "takeover",\n' },
+        { path: "nefan-core/bridge/handlers/simulation.ts", text: 'kind: "save",\n' },
+        { path: "nefan-core/bridge/context.ts", text: 'kind: "plugin",\n' },
+        { path: "nefan-core/bridge/router.ts", text: 'kind: "action",\n' },
+        { path: "nefan-core/bridge/handlers/tile.ts", text: 'kind: "tile",\n' },
+        // El rechazo REAL del motor, en el fichero exceptuado: es el hecho que
+        // el titular describe, y por eso sigue siendo legal.
+        {
+          path: "nefan-core/bridge/handlers/dialogue.ts",
+          text: 'ctx.broadcastNarrative({ phase: "error", kind: "consequences", message: `Narrative engine error: ${e}` });\n',
+        },
+      ]),
+      [],
+    );
+  });
+
   // La deuda congelada es la que más fácil se pudre: `max` se baja en la PR
   // que arregla un catch, y nadie vuelve a comprobar que el patrón siga
   // cazando los que quedan. Probado en negativo con las DOS formas que el

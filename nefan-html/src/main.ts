@@ -2525,6 +2525,12 @@ function setLoaderState(
     clearInterval(loaderTicker);
     loaderTicker = null;
   }
+  // …y se BORRA el contador, no solo se para (QA 2026-09-01, H-5). Paraba el
+  // intervalo y dejaba el último texto puesto, así que bajo un muro de error
+  // quedaba un «0s» huérfano entre el motivo y «Cerrar»: el reloj de una
+  // espera que ya no existe. Un fallo no tarda segundos en fallar, y esta
+  // tanda le pone cinco avisos nuevos encima a este mismo widget.
+  if (loaderElapsed) loaderElapsed.textContent = "";
 }
 
 if (loaderDismiss) loaderDismiss.onclick = () => hideLoader();

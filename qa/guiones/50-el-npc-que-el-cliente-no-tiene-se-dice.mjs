@@ -23,10 +23,22 @@
  *  a 60 fps y sin dedupe por id el panel sería una línea por frame y el
  *  jugador no vería nada más.
  *
+ *  Y desde #352 mide también EL TITULAR del muro que este mismo sabotaje
+ *  provoca: el bloque ilegible dispara `avisarDeIlegibles`, que tapa la
+ *  pantalla. El cuerpo era exacto desde #326; el titular decía «El motor
+ *  narrativo rechazó la respuesta» encima de un texto que habla del save.
+ *
  *  PROBADO EN NEGATIVO (2026-08-31): devolviendo el `continue` mudo a
  *  `nefan-html/src/main.ts` (el `if (!ne) continue;` de `result.npcs`), el
  *  primer aserto se pone rojo: el panel solo trae el error de sesión y del
  *  personaje que anda por ahí no dice nada.
+ *
+ *  PROBADO EN NEGATIVO (2026-09-01, bloque #352): devolviendo
+ *  `kind: "consequences"` a `avisarDeIlegibles`
+ *  (`nefan-core/bridge/handlers/session.ts`), los dos asertos del titular se
+ *  ponen rojos con la pantalla real delante —«El motor narrativo rechazó la
+ *  respuesta»— y el del CUERPO se queda verde, que es exactamente el reparto
+ *  del defecto: mentía el rótulo, no el motivo.
  *
  *  Cero créditos: preset `e2e-sin-creditos`; el trío del turno 3 lo pone
  *  `labs/narrative/fake-ai-server.ts`.
@@ -125,4 +137,51 @@ export default async function (ctx) {
     invisibles === 1,
     `entradas con "invisible": ${invisibles}`,
   );
+
+  // ── #352 · EL TITULAR DEL MURO DICE LO QUE HA PASADO ────────────────────
+  // El mismo sabotaje que provoca lo de arriba dispara el otro aviso del
+  // resume: `estadoEnElWire` no puede leer el bloque de combate de la entity,
+  // así que `avisarDeIlegibles` difunde un `narrative_status: error` que tapa
+  // la pantalla. El CUERPO ya era exacto y estaba en idioma de jugador desde
+  // #326 (H-2); lo que mentía era el titular — «El motor narrativo rechazó la
+  // respuesta», encima de un texto que habla de la partida guardada. Aquí se
+  // mira lo que el jugador LEE, que es lo único que este guion puede medir y
+  // lo único que ningún test unitario ve.
+  const muro = await ctx
+    .waitFor(
+      "el aviso de «tu partida vuelve incompleta» tapa la pantalla",
+      () => {
+        const el = document.getElementById("narrative-loader");
+        if (!el?.classList.contains("visible") || !el.classList.contains("error")) return null;
+        return {
+          titulo: document.getElementById("narrative-loader-title")?.textContent ?? "",
+          detalle: document.getElementById("narrative-loader-detail")?.textContent ?? "",
+        };
+      },
+      60_000,
+    )
+    .catch(() => null);
+  if (!muro) {
+    ctx.sinMedirBloque(
+      "el aviso de ilegibles no llegó a pintarse en 60 s: sin muro en pantalla no hay titular que leer",
+    );
+  } else {
+    ctx.log(`muro del resume: ${JSON.stringify(muro)}`);
+    await ctx.shot("titular-del-resume");
+    ctx.expect(
+      "#352 · el titular dice QUÉ HA PASADO: la partida vuelve incompleta",
+      muro.titulo === "Tu partida vuelve incompleta",
+      JSON.stringify(muro),
+    );
+    ctx.expect(
+      "…y NO culpa al motor narrativo, que aquí no ha intervenido",
+      !/motor narrativo/i.test(muro.titulo),
+      muro.titulo,
+    );
+    ctx.expect(
+      "…con el cuerpo que ya era cierto debajo (el titular no sustituye al motivo)",
+      muro.detalle.includes("no dice en qué estado qued"),
+      muro.detalle,
+    );
+  }
 }

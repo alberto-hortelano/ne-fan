@@ -61,12 +61,17 @@ export async function handleInput(
     // reanudar y el jugador tiene que enterarse AHORA, no entonces.
     await ctx.narrative.save().catch((err: unknown) => {
       console.error("Bridge: no se pudo guardar la muerte de un enemigo:", err);
+      // `save` y no `consequences` (#352): el enemigo está muerto en el sim y
+      // el jugador lo ha visto caer. Lo que peligra es que sobreviva a
+      // reanudar, y eso es el save, no el motor.
+      // El cuerpo empieza por la CONSECUENCIA, como su hermano de dialogue.ts
+      // (QA 2026-09-01, H-4): «No se pudo guardar la muerte de un enemigo» era
+      // el titular otra vez con un sujeto pegado detrás.
       ctx.broadcastNarrative({
         type: "narrative_status",
         phase: "error",
-        kind: "consequences",
-        message:
-          "No se pudo guardar la muerte de un enemigo: si reanudas la partida, podría seguir vivo.",
+        kind: "save",
+        message: "El enemigo al que acabas de matar podría seguir vivo si reanudas la partida.",
       });
     });
   }

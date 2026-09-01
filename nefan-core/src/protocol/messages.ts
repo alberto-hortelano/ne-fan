@@ -360,7 +360,37 @@ interface CuerpoDeNarrativeStatus {
  *  partida, ese campo era basura: ver `NarrativeStatusDeJuego`. */
 export interface NarrativeStatusDeSesion extends CuerpoDeNarrativeStatus {
   sessionId: string;
-  kind: "scene" | "consequences" | "tile";
+  /** QUÉ HA PASADO, no por dónde pasó. El `kind` es lo único que el jugador
+   *  lee como TITULAR (`rotuloDeStatus`), así que cada valor es un hecho
+   *  distinto y no una etiqueta de módulo:
+   *
+   *   · `scene` / `tile` — generación de mundo: no se pudo preparar el sitio.
+   *   · `consequences` — el motor narrativo rechazó la reacción. **Solo eso**:
+   *     hasta el 2026-09-01 este kind era el cajón de sastre de los OTROS
+   *     seis, y como el rótulo era un catch-all, seis avisos a pantalla
+   *     completa culpaban al motor narrativo de un takeover, de un disco
+   *     lleno o de un plugin roto (#352).
+   *   · `restore` — la partida vuelve del save sin algo que tenía.
+   *   · `takeover` — otra pestaña/cliente tomó esta partida.
+   *   · `save` — no se pudo escribir el save.
+   *   · `plugin` — un sistema del juego (plugin) falló su turno.
+   *   · `action` — reventó el handler de algo que el jugador pidió.
+   *   · `protocolo` — el cliente mandó un frame que el bridge no puede leer.
+     *     No es el mundo ni el motor: es el juego consigo mismo.
+   *
+   *  Añadir uno sin darle título propio NO COMPILA: `rotuloDeStatus` cierra
+   *  su `switch` con `const nunca: never`, y `DETALLE_POR_DEFECTO` es un
+   *  `Record` sobre esta misma unión. */
+  kind:
+    | "scene"
+    | "consequences"
+    | "tile"
+    | "restore"
+    | "takeover"
+    | "save"
+    | "plugin"
+    | "action"
+    | "protocolo";
   /** Tile al que se refiere el status (kind "tile") — el cliente pinta el
    *  velo/notificación direccional con esto. */
   tile?: { tx: number; ty: number };
