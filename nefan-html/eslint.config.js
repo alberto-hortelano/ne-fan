@@ -176,10 +176,11 @@ export default tseslint.config(
     // BAJA en el mismo commit que corta: 2.817 al llevarse la carga de tile a
     // `world/carga-de-tile.ts`, y 2.500 al repartir el bucle (mirada y paso a
     // `nefan-core`, más animación, frontera, eco de combate, saludo y volcado
-    // del bridge a sus propios módulos). Si el número no bajara aquí, el
-    // candado le devolvería al fichero el hueco recién liberado.
+    // del bridge a sus propios módulos), y 2.326 al llevarse el seam del banco
+    // de pruebas a `dev/nefan-hook.ts`. Si el número no bajara aquí, el candado
+    // le devolvería al fichero el hueco recién liberado.
     files: ["src/main.ts"],
-    rules: { "max-lines": ["error", { max: 2500, skipBlankLines: false, skipComments: false }] },
+    rules: { "max-lines": ["error", { max: 2326, skipBlankLines: false, skipComments: false }] },
   },
   {
     // La fachada de three.js: es el ÚNICO fichero del repo que puede
