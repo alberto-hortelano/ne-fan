@@ -119,9 +119,20 @@ describe("FsSessionStorage fail-loud", () => {
     assert.equal(await fs.readFile(join(canaryDir, "keep.txt"), "utf-8"), "no me borres");
   });
 
-  it("delete devuelve false si no existe pero propaga errores reales", async () => {
-    const storage = new FsSessionStorage(await makeRoot());
-    assert.equal(await storage.delete("no_existe"), false);
+  it("delete distingue «no estaba» de «borrado», y propaga los errores reales", async () => {
+    // Es el ÚNICO sitio del sistema que sabe distinguirlos: ENOENT devuelve
+    // `not_found`, EACCES/EBUSY lanzan. Colapsarlo en un booleano aquí lo
+    // perdía para el resto de la cadena y el jugador leía el mismo silencio en
+    // los dos casos (#365).
+    const root = await makeRoot();
+    const storage = new FsSessionStorage(root);
+    assert.equal(await storage.delete("no_existe"), "not_found");
+
+    const data = { session_id: "s", game_id: "g", updated_at: "t", story_so_far: "",
+      scenes_loaded: {}, entities: [] } as never;
+    await storage.write("s", data);
+    assert.equal(await storage.delete("s"), "deleted");
+    assert.equal(await storage.delete("s"), "not_found");
   });
 
   it("write es atómico: no deja state.json a medias ante un fallo de serialización", async () => {

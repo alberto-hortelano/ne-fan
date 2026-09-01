@@ -125,7 +125,8 @@ function synthResponse(respType) {
         games: [{ game_id: "tavern_intro", title: "The Calling" }],
       };
     case "session_deleted":
-      return { type: "session_deleted", ok: true };
+      // Unión discriminada desde #365: el `ok:true` de antes ya no existe.
+      return { type: "session_deleted", outcome: "deleted" };
     default:
       return null;
   }

@@ -678,8 +678,15 @@ export async function handleDeleteSession(
   ws: ClientSocket,
   ctx: BridgeContext,
 ): Promise<void> {
-  const ok = await ctx.sessionStorage.delete(msg.sessionId);
-  ctx.send(ws, { type: "session_deleted", requestId: msg.requestId, ok });
+  // Por `ctx.narrative` y NO por `ctx.sessionStorage` (#365): es el único que
+  // suelta la sesión activa cuando se borra su propio save. Saltárselo dejaba
+  // `narrative.session_id` apuntando a un directorio que ya no existe.
+  //
+  // El desenlace viaja tal cual: `deleted` y `not_found` son cosas distintas
+  // para quien acaba de pulsar Borrar. Un EACCES/EBUSY LANZA desde aquí y lo
+  // convierte el router en `outcome:"failed"` CON su motivo.
+  const outcome = await ctx.narrative.deleteSession(msg.sessionId);
+  ctx.send(ws, { type: "session_deleted", requestId: msg.requestId, outcome });
 }
 
 /** Cambia el modo de render de un save por faceta y en ambos sentidos

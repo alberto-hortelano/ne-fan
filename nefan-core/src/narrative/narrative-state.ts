@@ -581,13 +581,21 @@ export class NarrativeState {
     return this.storage.list();
   }
 
-  async deleteSession(sessionId: string): Promise<boolean> {
-    const ok = await this.storage.delete(sessionId);
-    if (ok && sessionId === this.session_id) {
+  /** Borra un save Y suelta la sesión activa si era esa.
+   *
+   *  Es lo que hace que este método exista y no se llame directamente a
+   *  `storage.delete`: hasta #365, `handleDeleteSession` se lo saltaba, así
+   *  que borrar el save de la partida en curso dejaba `session_id` colgando de
+   *  un directorio que ya no existe. Devuelve el desenlace tal cual —quien
+   *  decide qué se le cuenta al jugador es el borde— y sigue LANZANDO en
+   *  EACCES/EBUSY. */
+  async deleteSession(sessionId: string): Promise<"deleted" | "not_found"> {
+    const resultado = await this.storage.delete(sessionId);
+    if (resultado === "deleted" && sessionId === this.session_id) {
       this.session_id = "";
       this.existencia = "sin_sesion";
     }
-    return ok;
+    return resultado;
   }
 
   // ── Recording mutations ──

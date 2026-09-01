@@ -333,16 +333,65 @@ class AdaptadorHttpTest(unittest.TestCase):
         self.assertEqual(self.rg._leer_bases()["heroe/walk/frontal_8"], self.base_key)
 
     # ── fail-loud ──────────────────────────────────────────────────────────
-    def test_sin_angle_da_400(self):
+    #
+    # 422 y no 400 (#366): el endpoint era el ÚNICO del ai_server sin
+    # `BaseModel` —leía `request.json()` y sacaba seis `str(body.get(...))`—,
+    # así que solo dos de los seis campos tenían guarda, y a mano. Los cuatro
+    # restantes se convertían en `""` y viajaban: `styel_id` mal escrito era un
+    # personaje pintado sin el estilo del juego, sin una queja y ya pagado.
+    # El 422 estructurado NOMBRA el campo, que es lo que el 400 a mano no hacía.
+    def _malo(self, **cambios):
+        cuerpo = {"model": "heroe", "prompt": "x", "angle": "frontal_8"}
+        cuerpo.update(cambios)
+        for k in [k for k, v in cuerpo.items() if v is None]:
+            del cuerpo[k]
+        return self.client.post("/skin_sprite_sheet", json=cuerpo)
+
+    def _campos_del_422(self, r):
+        return {".".join(str(x) for x in d["loc"][1:]) for d in r.json()["detail"]}
+
+    def test_sin_angle_da_422_nombrandolo(self):
         # El default era el de una vista retirada: una petición sin ángulo
         # cruzaba medio sistema para morir en un 404 sin explicación.
-        r = self.client.post("/skin_sprite_sheet", json={"model": "heroe", "prompt": "x"})
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("angle", r.json()["detail"])
+        r = self._malo(angle=None)
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("angle", self._campos_del_422(r))
 
-    def test_sin_prompt_da_400(self):
-        r = self.client.post("/skin_sprite_sheet", json={"model": "heroe", "angle": "frontal_8"})
-        self.assertEqual(r.status_code, 400)
+    def test_sin_prompt_da_422_nombrandolo(self):
+        r = self._malo(prompt=None)
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("prompt", self._campos_del_422(r))
+
+    def test_sin_model_da_422_nombrandolo(self):
+        r = self._malo(model=None)
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("model", self._campos_del_422(r))
+
+    def test_un_campo_en_BLANCO_tampoco_pasa(self):
+        # `"  "` sobrevivía al `if not angle` de antes solo por el `.strip()`
+        # que había justo encima; con el modelo, el recorte es del contrato y
+        # no de una línea que alguien puede quitar sin darse cuenta.
+        for campo in ("model", "prompt", "angle", "anim"):
+            with self.subTest(campo=campo):
+                r = self._malo(**{campo: "   "})
+                self.assertEqual(r.status_code, 422)
+                self.assertIn(campo, self._campos_del_422(r))
+
+    def test_el_cuerpo_llega_ya_RECORTADO_al_adaptador(self):
+        # El endpoint hacía `.strip()` en los seis campos; ahora lo hace el
+        # modelo. Si se perdiera, la clave de caché de " heroe " y "heroe"
+        # serían distintas y el mismo personaje se pagaría dos veces.
+        r = self._pedir(model="  heroe  ", anim=" walk ")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.rg._leer_bases()["heroe/walk/frontal_8"], self.base_key)
+
+    def test_un_campo_MAL_ESCRITO_ya_no_se_traga(self):
+        # Antes: `styel_id` no existía, `style_id` quedaba en `""` y el
+        # personaje se pintaba sin el estilo del juego. Sin una queja.
+        cuerpo = {"model": "heroe", "prompt": "x", "angle": "frontal_8", "styel_id": "anime"}
+        r = self.client.post("/skin_sprite_sheet", json=cuerpo)
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("styel_id", self._campos_del_422(r))
 
     def test_un_4xx_del_servicio_sube_tal_cual(self):
         # Es culpa de lo que pedimos: convertirlo en 502 le diría al cliente

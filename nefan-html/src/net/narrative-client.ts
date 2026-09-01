@@ -284,9 +284,17 @@ export class NarrativeClient {
     if (!res.ok) throw new Error(res.error ?? "el bridge rechazó el cambio de modo");
   }
 
-  async deleteSession(sessionId: string): Promise<boolean> {
+  /** Borra una partida guardada y dice QUÉ pasó.
+   *
+   *  Mismo patrón que `listGames`, `createGame` y `generateGame` de este mismo
+   *  fichero: si el bridge dice que no pudo, se RECHAZA con su motivo. Antes
+   *  devolvía `res.ok` como booleano y el título lo tiraba, así que un borrado
+   *  rechazado era un no-op mudo (#365). Y `not_found` deja de disfrazarse de
+   *  fallo: el save no está, que es lo que el jugador quería. */
+  async deleteSession(sessionId: string): Promise<"deleted" | "not_found"> {
     const res = await this.bridge.deleteSession(sessionId);
-    return res.ok;
+    if (res.outcome === "failed") throw new Error(res.error);
+    return res.outcome;
   }
 
   sendDialogueChoice(payload: {

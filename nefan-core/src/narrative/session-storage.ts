@@ -22,7 +22,9 @@ export interface SessionStorage {
   /** Sobrescribe un save que YA existe. `false` (sin escribir nada) si no
    *  existe — nunca lo crea. */
   writeExisting(sessionId: string, data: SessionData): Promise<boolean>;
-  delete(sessionId: string): Promise<boolean>;
+  /** Borra un save y dice QUÉ pasó — «no estaba» no es «no se pudo» (#365).
+   *  Un fallo de verdad (permisos, fichero en uso) LANZA. */
+  delete(sessionId: string): Promise<"deleted" | "not_found">;
   list(): Promise<SessionMetadata[]>;
   exists(sessionId: string): Promise<boolean>;
 }
@@ -144,13 +146,19 @@ export class FsSessionStorage implements SessionWriter {
     return true;
   }
 
-  async delete(sessionId: string): Promise<boolean> {
+  /** Borra un save. Devuelve QUÉ pasó, no si «salió bien»: este es el único
+   *  sitio del sistema que sabe distinguir «no estaba» de «no se pudo», y
+   *  colapsarlo en un booleano aquí lo pierde para siempre — el jugador
+   *  acababa leyendo el mismo silencio en los dos casos (#365). El fallo de
+   *  verdad sigue LANZANDO: el que decide qué se le cuenta al jugador es el
+   *  borde (router/handler), no el almacén. */
+  async delete(sessionId: string): Promise<"deleted" | "not_found"> {
     const dir = this.dirFor(sessionId); // lanza si el id se escapa de saves/
     try {
       await fs.rm(dir, { recursive: true });
-      return true;
+      return "deleted";
     } catch (err) {
-      if (isEnoent(err)) return false; // borrar lo que no está: no es un error
+      if (isEnoent(err)) return "not_found"; // borrar lo que no está: no es un error
       throw err; // EACCES/EBUSY/… deben verse (fail-loud)
     }
   }
@@ -215,8 +223,8 @@ export class MemorySessionStorage implements SessionWriter {
     return true;
   }
 
-  async delete(sessionId: string): Promise<boolean> {
-    return this.store.delete(sessionId);
+  async delete(sessionId: string): Promise<"deleted" | "not_found"> {
+    return this.store.delete(sessionId) ? "deleted" : "not_found";
   }
 
   async list(): Promise<SessionMetadata[]> {

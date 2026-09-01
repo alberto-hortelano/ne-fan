@@ -331,6 +331,24 @@
       ]
     },
     {
+      "id": "python-sin-request-crudo",
+      "desc": "Los endpoints del ai_server declaran su cuerpo con un BaseModel, no leen `request.json()`",
+      "why": "Hermana de `python-sin-error-con-200`, y cubre justo lo que aquella NO ve. Aquella prohíbe el 200-con-error; esto prohíbe la AUSENCIA de contrato de entrada, que es la otra mitad de la convención de CLAUDE.md («Pydantic BaseModel por endpoint para que campos ausentes salgan como 422 estructurado») y hasta hoy era prosa sin candado.\n\nLO QUE CAZA, exactamente: un parámetro anotado `: Request` (el `Request` crudo de FastAPI) y un `await …request.json()`. Con eso basta porque las dos van siempre juntas: sin `Request` no hay de dónde sacar el json, y un `Request` que no se lee no sirve de nada.\n\nPOR QUÉ EXISTE, medido (#366). `/skin_sprite_sheet` era el ÚNICO endpoint del proceso sin modelo: `async def skin_sprite_sheet_endpoint(request: Request)` con `body = await request.json()` y SEIS `str(body.get(...))`. De los seis campos, dos tenían guarda —a mano, con `HTTPException(400)`— y cuatro no: un `styel_id` mal escrito quedaba en `\"\"`, el personaje se pintaba sin el estilo del juego y la factura se pagaba igual, sin una sola queja. El resto del ai_server es la capa más limpia del repo (70+ HTTPException, cero 200-con-error), así que este gate NACE A CERO REAL: hoy su único ocupante es la exención escrita de abajo, no una deuda congelada. Es `error` y no `warn` por eso — un `max` sobre un conteo que ya es cero autorizaría a volver a subirlo.\n\nLO QUE NO CAZA, dicho para que nadie lo cite como garantía: un `BaseModel` sin restricciones (`model: str` acepta `\"\"` igual que el `str(body.get(...))` de antes). El 422 lo da la AUSENCIA del campo; que un campo presente pero vacío también falle es cosa de sus `StringConstraints`, y eso no lo puede ver un patrón de texto. Tampoco mira los routers de fuera de `ai_server/routers/**` — el State API del bridge es TypeScript y tiene su propia frontera.",
+      "severity": "error",
+      "files": [
+        "ai_server/routers/**/*.py"
+      ],
+      "text": {
+        "pattern": ":\\s*Request\\b|await\\s+[A-Za-z_.]*request\\.json\\s*\\("
+      },
+      "exceptions": [
+        {
+          "path": "ai_server/routers/asset_proxy.py",
+          "reason": "no tiene cuerpo que modelar: reenvía BYTES al asset-store tal cual (método, ruta, query y headers), y para eso necesita la petición entera. Un BaseModel aquí describiría un json que no existe."
+        }
+      ]
+    },
+    {
       "id": "html-sin-catch-silencioso",
       "desc": "El cliente 2D no traga errores en silencio",
       "why": "Fail-loud: todo catch recuperable debe pasar por errors.push(...) del error-log. Deuda existente congelada; cada PR que baje el número debe bajar también el max. Baja de 5 a 4 al darle canal al re-disparo del atlas fps (fps-atlas.ts): era el único de los cinco sin una línea que dijera qué se estaba tragando, y se comía la ÚLTIMA oportunidad de texturar un tile. Los cuatro que quedan son degradaciones documentadas en su propio catch (localStorage ausente, frame de sprite fuera de rango, blob podado, busto sin skin): bajar de 4 no es tocar el número, es decidir que esas cuatro merecen entrada en el log del jugador.",

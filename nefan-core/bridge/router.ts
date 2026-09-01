@@ -202,9 +202,19 @@ export function respuestaAlFalloDeHandler(msg: ClientMessage, err: unknown): Res
         error: `${msg.type}_failed: ${raw}`,
       });
     case "delete_session":
-      // `session_deleted` no tiene campo error: `ok:false` es la respuesta
-      // honesta (la tarjeta sigue en el título) y el motivo queda en el log.
-      return peticion({ type: "session_deleted", requestId: msg.requestId, ok: false });
+      // CORRIGE lo que esta misma línea decía hasta hoy (#370, `4a9c5e1`):
+      // «`session_deleted` no tiene campo error: `ok:false` es la respuesta
+      // honesta y el motivo queda en el log». No lo era. El log es del
+      // servidor y quien pulsó Borrar mira la pantalla; y aquel `ok:false`
+      // colapsaba además dos causas distintas —«no estaba» y «no se pudo»—
+      // que `SessionStorage.delete` sí distingue. Desde #365 el frame es una
+      // unión discriminada y `failed` no compila sin motivo.
+      return peticion({
+        type: "session_deleted",
+        requestId: msg.requestId,
+        outcome: "failed",
+        error: `delete_session_failed: ${raw}`,
+      });
     case "set_render_mode":
       return peticion({
         type: "render_mode_set",

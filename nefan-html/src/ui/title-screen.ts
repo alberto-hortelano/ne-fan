@@ -565,12 +565,24 @@ export class TitleScreen {
       }
       for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-action=delete]")) {
         const borrarLaPartida = async (): Promise<void> => {
-          if (!confirm(`¿Borrar la partida ${btn.dataset.sessionId}?`)) return;
+          const id = btn.dataset.sessionId!;
+          if (!confirm(`¿Borrar la partida ${id}?`)) return;
           try {
-            await this.narrative.deleteSession(btn.dataset.sessionId!);
-            await this.renderHome();
+            // Los tres desenlaces se ven distintos, que es lo que pedía #365.
+            const resultado = await this.narrative.deleteSession(id);
+            await this.renderHome(
+              resultado === "not_found"
+                ? `La partida ${id} ya no estaba en disco: no había nada que borrar.`
+                : undefined,
+            );
           } catch (err) {
-            alert(`Borrado falló: ${(err as Error).message}`);
+            // NO se repinta la lista: la partida NO se borró y su tarjeta tiene
+            // que seguir donde estaba. Repintar aquí borraría el motivo y
+            // dejaría la pantalla idéntica a la de un borrado que sí ocurrió —
+            // el no-op mudo de antes, con un paso más.
+            this.mostrarErrorEnHome(
+              `No se pudo borrar la partida ${id}: ${(err as Error).message}`,
+            );
           }
         };
         btn.addEventListener("click", () =>

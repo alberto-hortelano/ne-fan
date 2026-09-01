@@ -70,13 +70,19 @@ export interface GenerateSurfaceAtlasResponse {
  *  dirección. remote-gen es solo el ADAPTADOR — resuelve la ref de personaje
  *  del style pack, guarda lo generado y apunta el gasto, porque el servicio
  *  devuelve imágenes y no guarda nada.
- *  OJO: el endpoint actual lee JSON crudo, sin
- *  modelo Pydantic — este shape es el contrato observado del wire. */
+ *
+ *  Espejo de `SkinSpriteSheetRequest` (`ai_server/routers/remote_generation.py`),
+ *  que desde #366 es un `BaseModel` de verdad: un campo ausente o mal escrito
+ *  sale como 422 estructurado en vez de convertirse en `""` y viajar. */
 export interface SkinSpriteSheetRequest {
   /** Modelo base del sheet (p. ej. "y_bot"). */
   model: string;
+  /** Anim a vestir. Ausente ⇒ "idle" (default del server); nunca vacía. */
   anim?: string;
-  angle?: string;
+  /** OBLIGATORIO, y el espejo lo declaraba opcional: el server lo EXIGE desde
+   *  que se retiró la vista cuyo ángulo era el default, y una petición sin él
+   *  cruzaba medio sistema para morir en un 404 sin explicación. */
+  angle: string;
   /** Descripción del personaje a skinnear. */
   prompt: string;
   style_id?: string;

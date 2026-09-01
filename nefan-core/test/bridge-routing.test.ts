@@ -216,15 +216,23 @@ describe("respuestaAlFalloDeHandler (la red por mensaje, caso a caso)", () => {
       const res = respuestaAlFalloDeHandler(msg, boom);
       assert.equal(res.a, "peticion", msg.type);
       if (res.a !== "peticion") continue;
-      const f = res.frame as { type: string; requestId: string; ok?: boolean; error?: string };
+      const f = res.frame as {
+        type: string;
+        requestId: string;
+        ok?: boolean;
+        outcome?: string;
+        error?: string;
+      };
       assert.equal(f.type, frame, msg.type);
       assert.equal(f.requestId, "r", msg.type);
       if ("ok" in f) assert.equal(f.ok, false, msg.type);
-      // session_deleted no tiene campo error (ok:false basta); el resto lleva
-      // el motivo técnico con el tipo del mensaje delante, para el error-log.
-      if (frame !== "session_deleted") {
-        assert.match(f.error ?? "", new RegExp(`${msg.type}_failed: boom`), msg.type);
-      }
+      // `session_deleted` no lleva `ok`: desde #365 es una unión discriminada
+      // y el fallo es `outcome:"failed"`. Lo que NO cambia es que TODOS los
+      // frames de fallo llevan el motivo técnico con el tipo delante: hasta
+      // hoy este era la excepción, y su motivo se quedaba en el log del
+      // servidor mientras el jugador miraba la pantalla.
+      if (frame === "session_deleted") assert.equal(f.outcome, "failed", msg.type);
+      assert.match(f.error ?? "", new RegExp(`${msg.type}_failed: boom`), msg.type);
     }
   });
 
