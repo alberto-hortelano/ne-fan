@@ -12,6 +12,7 @@ import type {
   } from "../src/protocol/messages.js";
 import type { Consequence } from "../src/narrative/types.js";
 import {
+  capturarLogDelBridge,
   makeCtx,
   makeSocket,
   waitFor,
@@ -104,6 +105,59 @@ describe("bridge dialogue_choice", () => {
       );
     assert.ok(err, "narrative_status error difundido");
     assert.ok(err.message?.includes("timeout esperando a Claude"));
+  });
+
+  it("un save que falla tras la reacción AVISA al jugador y no se traga los efectos", async () => {
+    // El agujero B de la revisión 2026-09-01: el tramo post-`result.ok` no
+    // protegía el save(), así que un disco lleno (ENOSPC) tras aplicar las
+    // consequences se tragaba el narrative_event ENTERO — el diálogo aplicado
+    // en memoria y el jugador mirando un modal que no iba a responder nunca.
+    // Con el fix (patrón simulation.ts) tienen que difundirse LAS DOS COSAS:
+    // el aviso del guardado y el evento con sus efectos.
+    const consequences: Consequence[] = [
+      { type: "dialogue", speaker: "Boris", text: "Te escucho.", choices: ["Sigue"] },
+    ];
+    const bundle = makeCtx({
+      ai: { reportPlayerChoice: async () => ({ ok: true, consequences }) },
+    });
+    await startSession(bundle);
+    const { ctx, broadcasts, narrative } = bundle;
+    narrative.save = async () => {
+      throw new Error("ENOSPC: no space left on device");
+    };
+    const before = broadcasts.length;
+    const { socket } = makeSocket();
+    const log = capturarLogDelBridge();
+    try {
+      await routeMessage(
+        {
+          type: "dialogue_choice",
+          eventId: "ignored",
+          choiceIndex: 0,
+          speaker: "Boris",
+          chosenText: "Escúchame",
+        },
+        socket,
+        ctx,
+      );
+    } finally {
+      log.soltar();
+    }
+    const err = broadcasts
+      .slice(before)
+      .find(
+        (m): m is NarrativeStatusMessage =>
+          m.type === "narrative_status" && m.phase === "error" && m.kind === "consequences",
+      );
+    assert.ok(err, "el fallo de guardado tiene que llegar al jugador");
+    assert.match(err.message ?? "", /No se pudo guardar la partida/);
+    const event = broadcasts
+      .slice(before)
+      .find((m): m is NarrativeEventMessage => m.type === "narrative_event");
+    assert.ok(event, "los efectos de la reacción se difunden IGUALMENTE");
+    assert.deepEqual(event.consequences, consequences);
+    // El detalle técnico (ENOSPC), en el log del bridge.
+    assert.match(log.lineas.join(" | "), /ENOSPC/);
   });
 
   it("interact_entity pasa por el mismo ciclo y difunde narrative_event", async () => {

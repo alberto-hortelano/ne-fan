@@ -1,8 +1,21 @@
 /** Enruta un ClientMessage ya parseado al handler correspondiente.
- *  Función pura respecto al transporte: testeable con un socket fake. */
+ *  Función pura respecto al transporte: testeable con un socket fake.
+ *
+ *  Y desde 2026-09-01, NUNCA rechaza: un handler que revienta se contesta al
+ *  cliente por el canal que ese mensaje ya tiene (frame con `requestId` o
+ *  `narrative_status: error`), en vez de morir como unhandled rejection del
+ *  proceso. Antes cualquier throw no capturado acababa en un `console.warn`
+ *  del servidor y el cliente NO recibía nada: 30 s de timeout para los
+ *  mensajes con requestId, espera INFINITA para los fire-and-forget (el modal
+ *  de diálogo colgado para siempre). */
 
-import type { BridgeContext, ClientSocket } from "./context.js";
-import type { ClientMessage } from "../src/protocol/messages.js";
+import { motivoParaElJugador } from "../src/protocol/status-labels.js";
+import type { BridgeContext, ClientSocket, SinSello } from "./context.js";
+import type {
+  ClientMessage,
+  NarrativeStatusDeSesion,
+  SinSelloDeSesion,
+} from "../src/protocol/messages.js";
 import {
   handleInput,
   handleLoadRoom,
@@ -29,6 +42,23 @@ import { handlePlayerEnteredPlace } from "./handlers/scene.js";
 import { handleRequestTile } from "./handlers/tile.js";
 
 export async function routeMessage(
+  msg: ClientMessage,
+  ws: ClientSocket,
+  ctx: BridgeContext,
+): Promise<void> {
+  try {
+    await despachar(msg, ws, ctx);
+  } catch (err) {
+    // La red POR MENSAJE. El volcado técnico se queda aquí, que es donde se
+    // depura; lo que viaja es lo que ese cliente ya sabe pintar.
+    console.error(`Bridge: el handler de '${msg.type}' reventó:`, err);
+    const respuesta = respuestaAlFalloDeHandler(msg, err);
+    if (respuesta.a === "peticion") ctx.send(ws, respuesta.frame);
+    else ctx.broadcastNarrative(respuesta.frame);
+  }
+}
+
+async function despachar(
   msg: ClientMessage,
   ws: ClientSocket,
   ctx: BridgeContext,
@@ -100,4 +130,134 @@ export async function routeMessage(
       console.warn(`Bridge: unhandled message type:`, (unknown as { type?: string }).type);
     }
   }
+}
+
+/** Lo que debe recibir el cliente cuando el handler de `msg` revienta:
+ *  o el frame de respuesta que su `requestId` está esperando, o la difusión
+ *  de `narrative_status: error` que un fire-and-forget ya sabe pintar. */
+export type RespuestaAlFallo =
+  | { a: "peticion"; frame: SinSello }
+  | { a: "difusion"; frame: SinSelloDeSesion<NarrativeStatusDeSesion> };
+
+/** Pura y exhaustiva sobre `ClientMessage`: un mensaje nuevo sin decisión de
+ *  respuesta al fallo NO COMPILA — así la red por mensaje no se queda corta en
+ *  silencio cuando crezca el protocolo. El `error` de los frames con requestId
+ *  lleva el motivo técnico (el cliente lo traduce con
+ *  `motivoDeSesionParaElJugador` y guarda el crudo en su error-log); el de las
+ *  difusiones va ya traducido con `motivoParaElJugador`, como los emisores de
+ *  tile.ts y scene.ts. */
+export function respuestaAlFalloDeHandler(msg: ClientMessage, err: unknown): RespuestaAlFallo {
+  const raw = (err as Error)?.message ?? String(err);
+  const peticion = (frame: SinSello): RespuestaAlFallo => ({ a: "peticion", frame });
+  switch (msg.type) {
+    case "list_games":
+      return peticion({
+        type: "games_listed",
+        requestId: msg.requestId,
+        error: `list_games_failed: ${raw}`,
+        games: [],
+        styles: [],
+      });
+    case "list_sessions":
+      return peticion({
+        type: "sessions_listed",
+        requestId: msg.requestId,
+        error: `list_sessions_failed: ${raw}`,
+        sessions: [],
+      });
+    case "create_game":
+      return peticion({
+        type: "game_created",
+        requestId: msg.requestId,
+        ok: false,
+        error: `create_game_failed: ${raw}`,
+      });
+    case "generate_game":
+      return peticion({
+        type: "game_generated",
+        requestId: msg.requestId,
+        ok: false,
+        error: `generate_game_failed: ${raw}`,
+      });
+    case "get_world_snapshot":
+      return peticion({
+        type: "world_snapshot",
+        requestId: msg.requestId,
+        ok: false,
+        error: `get_world_snapshot_failed: ${raw}`,
+      });
+    case "record_style_application":
+      return peticion({
+        type: "style_application_recorded",
+        requestId: msg.requestId,
+        ok: false,
+        error: `record_style_application_failed: ${raw}`,
+      });
+    case "start_session":
+    case "resume_session":
+      return peticion({
+        type: "session_started",
+        requestId: msg.requestId,
+        ok: false,
+        error: `${msg.type}_failed: ${raw}`,
+      });
+    case "delete_session":
+      // `session_deleted` no tiene campo error: `ok:false` es la respuesta
+      // honesta (la tarjeta sigue en el título) y el motivo queda en el log.
+      return peticion({ type: "session_deleted", requestId: msg.requestId, ok: false });
+    case "set_render_mode":
+      return peticion({
+        type: "render_mode_set",
+        requestId: msg.requestId,
+        ok: false,
+        error: `set_render_mode_failed: ${raw}`,
+      });
+    // Fire-and-forget: nadie espera un frame, así que el canal es la difusión
+    // de error — con los campos que permiten al cliente ATRIBUIRLA: el tile
+    // libera su key de `frontier.requested` (y el velo), el viaje cierra su
+    // «Viajando…» por `placeId`.
+    case "request_tile":
+      return {
+        a: "difusion",
+        frame: {
+          type: "narrative_status",
+          phase: "error",
+          kind: "tile",
+          tile: { tx: msg.tx, ty: msg.ty },
+          edge: msg.edge,
+          message: motivoParaElJugador(err),
+        },
+      };
+    case "player_entered_place":
+      return {
+        a: "difusion",
+        frame: {
+          type: "narrative_status",
+          phase: "error",
+          kind: "scene",
+          placeId: msg.placeId,
+          message: motivoParaElJugador(err),
+        },
+      };
+    case "dialogue_choice":
+    case "interact_entity":
+    case "input":
+    case "load_room":
+    case "respawn":
+    case "add_combatants":
+    case "ping":
+    case "session_entered":
+      return {
+        a: "difusion",
+        frame: {
+          type: "narrative_status",
+          phase: "error",
+          kind: "consequences",
+          message: motivoParaElJugador(err),
+        },
+      };
+  }
+  // Exhaustividad: un mensaje nuevo sin decisión de respuesta no compila.
+  const nunca: never = msg;
+  throw new Error(`sin respuesta de fallo para ${(nunca as { type?: string }).type}`);
 }
