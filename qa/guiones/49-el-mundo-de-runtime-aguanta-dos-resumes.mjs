@@ -51,6 +51,7 @@ import {
   esperarListaDeSaves,
   esperarTituloListo,
 } from "../lib/sesion.mjs";
+import { acercarse, herirHasta } from "../lib/combate.mjs";
 
 /** El motor falso es determinista POR TURNO de diálogo, así que hace falta
  *  empezar de cero: saves vírgenes y el contador a 0. */
@@ -76,70 +77,6 @@ const mundo = (ctx) =>
     exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
   }));
 
-/** Camina hasta el NPC por el camino del jugador (yaw + tecla de avance). */
-async function acercarseAlNpc(ctx, id, objetivo = 2.2, tramos = 12) {
-  for (let i = 0; i < tramos; i++) {
-    const n = await ctx.page.evaluate((npcId) => {
-      const e = window.__nefan.npcs().find((x) => x.id === npcId);
-      if (!e) return null;
-      const p = window.__nefan.state().pos;
-      return { d: Math.hypot(e.pos.x - p.x, e.pos.z - p.z), dx: e.pos.x - p.x, dz: e.pos.z - p.z };
-    }, id);
-    if (!n || n.d <= objetivo) return n;
-    await ctx.nefan("setYaw", Math.atan2(n.dx, n.dz));
-    await ctx
-      .holdUntil(
-        "up",
-        `el jugador se acerca a ${id} (tramo ${i + 1}, ahora ${n.d.toFixed(1)} m)`,
-        (a) => {
-          const e = window.__nefan.npcs().find((x) => x.id === a.id);
-          if (!e) return null;
-          const p = window.__nefan.state().pos;
-          return Math.hypot(e.pos.x - p.x, e.pos.z - p.z) <= a.objetivo ? true : null;
-        },
-        4_000,
-        { id, objetivo },
-      )
-      .catch(() => null);
-  }
-  return null;
-}
-
-/** Pega hasta dejar al enemigo por debajo de `objetivo`, como quien juega:
- *  re-encarándose y cerrando la distancia. La condición de parada es la vida
- *  del HUD, no un reloj. Mismo molde que los guiones 42 y 48. */
-async function herirHasta(ctx, id, objetivo, maxMs = 120_000) {
-  await ctx.nefan("inputDriver.selectAttack", "quick");
-  const fin = await ctx
-    .waitFor(
-      `la vida de ${id} baja de ${objetivo} en el HUD`,
-      (a) => {
-        const e = window.__nefan.enemies().find((x) => x.id === a.id);
-        const p = window.__nefan.state().pos;
-        const drv = window.__nefan.inputDriver;
-        if (e && p) {
-          window.__nefan.setYaw(Math.atan2(e.pos.x - p.x, e.pos.z - p.z));
-          if (Math.hypot(e.pos.x - p.x, e.pos.z - p.z) > a.alcance) drv.press("up");
-          else drv.release("up");
-          drv.queueAttack();
-        }
-        const el = document.getElementById(`hp-text-${a.id}`);
-        if (!el) return null;
-        const n = Number(el.textContent);
-        if (Number.isFinite(n) && n <= a.objetivo) return { hud: n, muerto: n <= 0 };
-        if (Number(document.getElementById("player-hp-text")?.textContent ?? 0) <= 0) {
-          return { hud: n, jugadorMuerto: true };
-        }
-        return null;
-      },
-      maxMs,
-      { id, objetivo, alcance: DISTANCIA_DE_GOLPE },
-    )
-    .catch(() => null);
-  await ctx.nefan("inputDriver.release", "up");
-  return fin;
-}
-
 /** Reanuda por la tarjeta del save, como quien juega. */
 async function reanudar(ctx, sessionId, etiqueta) {
   await ctx.page.reload({ waitUntil: "domcontentloaded" });
@@ -157,14 +94,18 @@ async function reanudar(ctx, sessionId, etiqueta) {
   );
   // El mundo del save llega en el mismo `session_started`; se espera al
   // tabernero, que es de la escena, para no medir a mitad de montaje.
-  await ctx
-    .waitFor(
-      `el mundo se monta tras reanudar (${etiqueta})`,
-      (id) => (window.__nefan.npcs().some((n) => n.id === id) ? true : null),
-      60_000,
-      MERCADER,
-    )
-    .catch(() => null);
+  await ctx.absorbe(
+    "solo evita medir a mitad de montaje; lo que el mundo TRAE tras reanudar lo afirman los " +
+      "asertos del bloque que llamó a `reanudar` (los cuatro siguen ahí, ninguno duplicado…), " +
+      "que es donde vive la medida",
+    () =>
+      ctx.waitFor(
+        `el mundo se monta tras reanudar (${etiqueta})`,
+        (id) => (window.__nefan.npcs().some((n) => n.id === id) ? true : null),
+        60_000,
+        MERCADER,
+      ),
+  );
   return true;
 }
 
@@ -193,7 +134,7 @@ export default async function (ctx) {
     60_000,
     MERCADER,
   );
-  await acercarseAlNpc(ctx, MERCADER);
+  await acercarse(ctx, MERCADER, { objetivo: 2.2, lista: "npcs" });
   await ctx.nefan("inputDriver.queueInteract");
   await ctx.waitFor("el tabernero contesta (turno 1)", () => window.__nefan.dialogueVisible || null, 60_000);
 
@@ -228,9 +169,14 @@ export default async function (ctx) {
     return;
   }
   await ctx.nefan("advanceDialogue");
-  await ctx
-    .waitFor("la conversación se cierra", () => (window.__nefan.dialogueVisible ? null : true), 15_000)
-    .catch(() => null);
+  // Con el panel abierto el cliente SUPRIME el ataque: sin este cierre no hay
+  // pelea que medir, así que se AFIRMA (#261) en vez de tragarlo.
+  await ctx.expectEspera(
+    "la conversación se cierra (con el panel abierto el cliente suprime el ataque)",
+    true,
+    () => (window.__nefan.dialogueVisible ? null : true),
+    { ms: 15_000 },
+  );
   ctx.log(`spawns de runtime: ${JSON.stringify({ hostil: hostil.id, npc: trio.npc.id, cofre: trio.cofre.id, forja: trio.forja.id })}`);
 
   // ── 1 · DOS RESUMES SEGUIDOS, SIN SEGUNDA PUERTA ────────────────────────
@@ -271,43 +217,70 @@ export default async function (ctx) {
   // ── 2 · ⚠ HALLAZGO: re-emitir el tile se lleva los objetos de runtime ────
   // Se MIDE y se cuenta, no se pone en rojo: el defecto es anterior a #326
   // (`addTile` purga `objectEntities` por rect) y su dueño no lo ha arreglado.
+  //
+  // Este bloque MIDE y CUENTA, no afirma: por eso cuando no se puede ejercer
+  // (sin salidas, sin vuelta, el viaje que no llega) lo dice por el canal ⊘
+  // —`ctx.sinMedirBloque`, que no aborta— en vez de por un `ctx.log("⚠ … no se
+  // midió")` que salía verde y nadie leía (#261). El guion sigue midiendo el
+  // bloque 3.
   const viajado = dos.exits.length > 0 && (await pulsarSalida(ctx, dos.exits[0].name));
-  if (viajado) {
-    const fuera = await ctx
-      .waitFor(
-        "el jugador llega al destino (otro tile)",
-        (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
-        180_000,
-        dos.tile,
-      )
-      .catch(() => null);
-    const alli = fuera ? await mundo(ctx) : null;
-    const vuelta = alli?.exits.find((e) => e.place_id !== dos.exits[0].place_id) ?? alli?.exits[0];
-    if (vuelta && (await pulsarSalida(ctx, vuelta.name))) {
-      await ctx
-        .waitFor(
-          "el jugador vuelve al tile de partida",
-          (t) => (window.__nefan.currentTile === t ? t : null),
+  if (!viajado) {
+    ctx.sinMedirBloque(
+      "el panel «Salidas» no ofrecía destino: sin ida y vuelta no se puede mirar qué le hace la " +
+        "re-emisión del tile a los objetos de runtime",
+    );
+  } else {
+    const fuera = await ctx.absorbe(
+      "si el viaje no llega, este bloque se DECLARA sin medir aquí debajo: ningún verde de este " +
+        "guion depende de esta espera",
+      () =>
+        ctx.waitFor(
+          "el jugador llega al destino (otro tile)",
+          (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
           180_000,
           dos.tile,
-        )
-        .catch(() => null);
-      const regreso = await mundo(ctx);
-      const sobreviven = {
-        cofre: regreso.objetos.some((o) => o.label === OBJETO),
-        forja: regreso.objetos.some((o) => o.label === EDIFICIO),
-        pacifico: regreso.npcs.some((n) => n.label === PACIFICO),
-        hostil: regreso.enemigos.some((e) => e.label === HOSTIL),
-      };
-      ctx.log(
-        `⚠ HALLAZGO re-emisión del tile (ida y vuelta por «Salidas»): ${JSON.stringify(sobreviven)} · ` +
-          `objetos ahora ${JSON.stringify(regreso.objetos.map((o) => o.label))}`,
+        ),
+    );
+    const alli = fuera ? await mundo(ctx) : null;
+    const vuelta = alli?.exits.find((e) => e.place_id !== dos.exits[0].place_id) ?? alli?.exits[0];
+    if (!fuera) {
+      ctx.sinMedirBloque(
+        "el jugador no llegó al tile vecino en 180 s: la re-emisión del tile no se pudo mirar",
+      );
+    } else if (!vuelta || !(await pulsarSalida(ctx, vuelta.name))) {
+      ctx.sinMedirBloque(
+        "el destino no ofrecía vuelta: sin regresar al tile de partida no hay re-emisión que mirar",
       );
     } else {
-      ctx.log("⚠ el destino no ofrecía vuelta: la re-emisión del tile no se midió esta vez");
+      const volvio = await ctx.absorbe(
+        "si la vuelta no llega, este bloque se DECLARA sin medir aquí debajo: mirar los objetos " +
+          "del tile equivocado no es medir nada",
+        () =>
+          ctx.waitFor(
+            "el jugador vuelve al tile de partida",
+            (t) => (window.__nefan.currentTile === t ? t : null),
+            180_000,
+            dos.tile,
+          ),
+      );
+      if (!volvio) {
+        ctx.sinMedirBloque(
+          "el jugador no volvió al tile de partida en 180 s: la re-emisión del tile no se pudo mirar",
+        );
+      } else {
+        const regreso = await mundo(ctx);
+        const sobreviven = {
+          cofre: regreso.objetos.some((o) => o.label === OBJETO),
+          forja: regreso.objetos.some((o) => o.label === EDIFICIO),
+          pacifico: regreso.npcs.some((n) => n.label === PACIFICO),
+          hostil: regreso.enemigos.some((e) => e.label === HOSTIL),
+        };
+        ctx.log(
+          `⚠ HALLAZGO re-emisión del tile (ida y vuelta por «Salidas»): ${JSON.stringify(sobreviven)} · ` +
+            `objetos ahora ${JSON.stringify(regreso.objetos.map((o) => o.label))}`,
+        );
+      }
     }
-  } else {
-    ctx.log("⚠ sin salidas en el panel: la re-emisión del tile no se midió esta vez");
   }
 
   // ── 3 · EL MUERTO DE RUNTIME TAMPOCO VUELVE ─────────────────────────────
@@ -316,16 +289,26 @@ export default async function (ctx) {
   const trasViaje = await mundo(ctx);
   const elHostil = trasViaje.enemigos.find((e) => e.label === HOSTIL);
   if (!elHostil) {
-    // No es `sinMedir`: si el bloque 1 ya falló, el guion está diciendo algo
-    // del juego y un ⊘ lo taparía. Se dice y se para.
-    ctx.log(`⚠ el hostil de runtime ya no está antes de poder matarlo (${JSON.stringify(trasViaje.enemigos)}): el bloque 3 no se mide`);
-    return;
+    // `sinMedir` y no un `ctx.log` + `return`. El comentario que había aquí
+    // decía que un ⊘ taparía un rojo del bloque 1, y era falso: el runner ya lo
+    // impide desde #331 — un guion que declara con fallos ya empujados se queda
+    // ROJO, porque un ⊘ es una declaración, no una amnistía. Lo que sí hacía el
+    // `return` mudo era acabar en VERDE sin haber medido el bloque 3.
+    ctx.sinMedir(
+      `el hostil de runtime ya no está antes de poder matarlo (${JSON.stringify(trasViaje.enemigos)}): ` +
+        `sin él, el bloque 3 —el muerto de runtime tampoco vuelve— no se puede medir`,
+    );
   }
-  const rematado = await herirHasta(ctx, elHostil.id, 0);
+  const rematado = await herirHasta(ctx, elHostil.id, 0, {
+    maxMs: 120_000,
+    alcance: DISTANCIA_DE_GOLPE,
+  });
   if (!rematado?.muerto) {
-    ctx.log(`⚠ no se pudo matar al hostil de runtime (${JSON.stringify(rematado)}): el bloque 3 no se mide`);
     ctx.log(`partida ${partida.sessionId} · fin del guion`);
-    return;
+    ctx.sinMedir(
+      `no se pudo matar al hostil de runtime (${JSON.stringify(rematado)}): sin muerte no hay ` +
+        `muerto que dejar de volver, y el bloque 3 no se puede medir`,
+    );
   }
   await ctx.shot("hostil-de-runtime-muerto");
   if (!(await reanudar(ctx, partida.sessionId, "3ª, tras matarlo"))) return;

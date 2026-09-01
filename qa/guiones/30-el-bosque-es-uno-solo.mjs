@@ -136,25 +136,17 @@ export default async function (ctx) {
   ctx.expect("el punto de partida está libre", (await ctx.nefan("probeCollide", salida.x, salida.z)) === false);
 
   // Se espera por el FALLO: si el jugador ATRAVIESA el tronco, la condición se
-  // cumple y el guion se pone rojo. El timeout es el éxito.
-  let atraveso = true;
-  await ctx
-    .holdUntil(
-      "up",
-      "el jugador ATRAVIESA el árbol (esto sería el fallo)",
-      (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
-      6000,
-      objetivo.z - 0.5,
-    )
-    .catch(() => {
-      atraveso = false;
-    });
-  const fin = (await ctx.nefan("state")).pos;
-  ctx.expect(
-    "el jugador NO atraviesa el tronco",
-    !atraveso,
-    `z final ${fin.z.toFixed(2)} vs tronco ${objetivo.z.toFixed(2)}`,
+  // cumple y el guion se pone rojo. El timeout ES el éxito, y se AFIRMA
+  // (#261): una expiración que nadie observa no puede decidir un verde, y aquí
+  // la observa el propio aserto — espera y aserto son el mismo predicado.
+  const { ocurrio: atraveso } = await ctx.expectEspera(
+    "el jugador atraviesa el tronco del árbol",
+    false,
+    (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
+    { ms: 6000, arg: objetivo.z - 0.5, tecla: "up", aserto: "el jugador NO atraviesa el tronco" },
   );
+  const fin = (await ctx.nefan("state")).pos;
+  ctx.log(`z final ${fin.z.toFixed(2)} vs tronco ${objetivo.z.toFixed(2)} (atravesó: ${atraveso})`);
   ctx.expect(
     "pero sí avanzó hacia él (no estaba bloqueado de salida)",
     fin.z < salida.z - 0.5,

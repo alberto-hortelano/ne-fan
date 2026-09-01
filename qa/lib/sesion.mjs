@@ -414,9 +414,15 @@ export async function regenerarMundo(ctx, gameId = "alta_fantasia") {
 export async function esperarRegistro(ctx, desc, libro, probe, maxMs = 60_000, arg = undefined) {
   try {
     return await ctx.waitFor(desc, probe, maxMs, arg);
-  } catch {
+  } catch (err) {
     const v = await leerLibro(ctx, libro).catch((e) => ({ __err: String(e) }));
-    throw new Error(`${desc}: el juego nunca lo registró · ${libro}=${JSON.stringify(v)}`);
+    // El error propio se ENCADENA (#261): es el único helper que relanza otro
+    // error, y sin `cause` la `EsperaExpirada` original —con su id en el libro
+    // de esperas— se perdía aquí, así que una expiración perfectamente
+    // observada por el runner salía luego como «pendiente».
+    throw new Error(`${desc}: el juego nunca lo registró · ${libro}=${JSON.stringify(v)}`, {
+      cause: err,
+    });
   }
 }
 

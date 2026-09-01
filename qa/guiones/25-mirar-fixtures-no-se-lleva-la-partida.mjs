@@ -76,6 +76,13 @@ const GAME_ID = "alta_fantasia";
 /** El State API del bridge. Sale de la fuente única de puertos, no de un
  *  literal: dos corridas a la vez no comparten stack. */
 const API = URLS.state_api;
+/** Cuánto tiene que alejarse el jugador de su arranque para que «se conservó»
+ *  y «volvió al arranque» sean distinguibles. Un solo número para la espera y
+ *  para el aserto: dos umbrales dejaban la banda de «expiró y verde» (#261). */
+const SEPARACION_MINIMA = 1.5;
+/** Y cuánto basta para decir que el muñeco de la fixture ANDA. Menos porque
+ *  aquí no hay nada que distinguir de un arranque: solo que responde. */
+const PASO_EN_FIXTURE = 0.4;
 
 /** Llamada al State API tal cual la hace narrative-mcp. */
 async function api(method, path, body) {
@@ -143,29 +150,28 @@ export default async function (ctx) {
 
   const posArranque = await ctx.nefan("playerPos");
   await ctx.nefan("setYaw", 0); // +z: la calle abierta del tile del bench
-  await ctx
-    .holdUntil(
-      "up",
-      "el jugador anda por la calle, lejos de su punto de arranque",
-      (a) => {
-        const p = window.__nefan.playerPos;
-        return Math.hypot(p.x - a.x, p.z - a.z) >= 2 ? p : null;
-      },
-      15_000,
-      { x: posArranque.x, z: posArranque.z },
-    )
-    .catch(() => null);
+  // Sin separación, lo de abajo no distingue «se conservó» de «volvió al
+  // arranque»: NO CONCLUYENTE antes que verde. La espera pedía 2 m y el aserto
+  // 1,5, y entre los dos quedaba la banda de «expiró y verde igual» (#261);
+  // ahora es UN umbral, afirmado donde se espera.
+  await ctx.expectEspera(
+    `el jugador anda ${SEPARACION_MINIMA} m por la calle, lejos de su punto de arranque ` +
+      `(si no, el resto no prueba nada)`,
+    true,
+    (a) => {
+      const p = window.__nefan.playerPos;
+      return Math.hypot(p.x - a.x, p.z - a.z) >= a.minima ? p : null;
+    },
+    {
+      ms: 15_000,
+      arg: { x: posArranque.x, z: posArranque.z, minima: SEPARACION_MINIMA },
+      tecla: "up",
+    },
+  );
   const posJugando = await ctx.nefan("playerPos");
   const separacion = Math.hypot(posJugando.x - posArranque.x, posJugando.z - posArranque.z);
   ctx.log(
     `el jugador dejó la partida en ${JSON.stringify(posJugando)} (${separacion.toFixed(1)} m del arranque)`,
-  );
-  // Sin separación, lo de abajo no distingue «se conservó» de «volvió al
-  // arranque»: NO CONCLUYENTE antes que verde.
-  ctx.expect(
-    "el jugador se ha ALEJADO del arranque (si no, el resto no prueba nada)",
-    separacion >= 1.5,
-    `arranque ${JSON.stringify(posArranque)} · ahora ${JSON.stringify(posJugando)}`,
   );
 
   await escrituraDelMotor("qa25_testigo_jugando", "Piedra de la partida");
@@ -203,18 +209,21 @@ export default async function (ctx) {
   await cargarFixture(ctx, "robledo_tile");
 
   const posFixturaAntes = await ctx.nefan("playerPos");
-  await ctx
-    .holdUntil(
-      "up",
-      "el muñeco de la fixture anda",
-      (a) => {
-        const p = window.__nefan.playerPos;
-        return Math.hypot(p.x - a.x, p.z - a.z) >= 0.5 ? p : null;
-      },
-      15_000,
-      { x: posFixturaAntes.x, z: posFixturaAntes.z },
-    )
-    .catch(() => null);
+  // Mismo arreglo que arriba: la espera pedía 0,5 m y el aserto 0,4.
+  await ctx.expectEspera(
+    "el modo fixtures SIGUE siendo jugable después de una partida en el mismo bridge " +
+      `(el muñeco anda ${PASO_EN_FIXTURE} m)`,
+    true,
+    (a) => {
+      const p = window.__nefan.playerPos;
+      return Math.hypot(p.x - a.x, p.z - a.z) >= a.minima ? p : null;
+    },
+    {
+      ms: 15_000,
+      arg: { x: posFixturaAntes.x, z: posFixturaAntes.z, minima: PASO_EN_FIXTURE },
+      tecla: "up",
+    },
+  );
   const posFixturaDespues = await ctx.nefan("playerPos");
   const anduvo = Math.hypot(
     posFixturaDespues.x - posFixturaAntes.x,
@@ -222,11 +231,6 @@ export default async function (ctx) {
   );
   ctx.log(
     `en la fixture: ${JSON.stringify(posFixturaAntes)} → ${JSON.stringify(posFixturaDespues)} (${anduvo.toFixed(2)} m)`,
-  );
-  ctx.expect(
-    "el modo fixtures SIGUE siendo jugable después de una partida en el mismo bridge",
-    anduvo >= 0.4,
-    `${JSON.stringify(posFixturaAntes)} → ${JSON.stringify(posFixturaDespues)}`,
   );
   await ctx.shot("mirando-una-fixture");
 

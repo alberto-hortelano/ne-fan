@@ -71,6 +71,17 @@ export default async function (ctx) {
   // omisión (`corte.sinMundo`), y si nunca se pidió una hoja (`peticiones`)
   // tampoco había clon limpio que medir.
   const corte = { peticiones: 0, conMundo: 0, sinMundo: 0 };
+  /** ¿Sigue el guion tomando la medida del corte?
+   *
+   *  Cuando deja de estarlo, el 404 sale DIRECTO y no se abre ninguna espera
+   *  más. Sin esto, la recarga del final volvía a pedir las diez hojas y sus
+   *  diez manejadores se quedaban esperando a un mundo que en el título no
+   *  llega nunca: sesenta segundos ardiendo por manejador, después de que el
+   *  guion hubiera terminado de medir. Nadie las esperaba y no decidían nada
+   *  —el `corte` ya estaba leído y afirmado—, así que eran basura pura. Las
+   *  encontró el candado de esperas en vuelo (#261) el 2026-09-01, en un guion
+   *  que nadie había tocado; es exactamente para lo que existe. */
+  let midiendoElCorte = true;
   await ctx.page.route("**/sprites/**", async (route) => {
     // El censo del desplegable (#216) NO es una hoja: es el endpoint del dev
     // server que el editor de personaje consulta ANTES de «Comenzar», cuando
@@ -84,6 +95,18 @@ export default async function (ctx) {
       return route.continue();
     }
     corte.peticiones++;
+    if (!midiendoElCorte) {
+      // La medida ya está tomada: 404 y a otra cosa, sin abrir una espera que
+      // nadie va a mirar.
+      await route
+        .fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "clon sin hojas (simulado por QA)" }),
+        })
+        .catch(() => null);
+      return;
+    }
     const pintado = await ctx
       .waitFor("el mundo llega antes que el fallo de las hojas", () => window.__nefan?.tiles.length > 0, 60_000)
       .then(() => true)
@@ -212,6 +235,11 @@ export default async function (ctx) {
       : `${corte.sinMundo} de ${corte.peticiones} corte(s) salieron SIN mundo pintado — ` +
         `el guion recorrió el orden débil y sus asertos no son concluyentes`,
   );
+
+  // La medida del corte está tomada y afirmada: de aquí en adelante el 404 sale
+  // directo. La recarga de más abajo vuelve a pedir las hojas, y sin esto sus
+  // manejadores se quedaban esperando un mundo que en el título no llega (#261).
+  midiendoElCorte = false;
 
   const savesDespues = await listarSaves(ctx);
   const nuevos = savesDespues.ids.filter((id) => !savesAntes.ids.includes(id));

@@ -63,6 +63,15 @@ const API = URLS.state_api;
  *  de los 2 m a los que el guardia SE PLANTA — si se ataca desde más cerca,
  *  el guardia ya está en su sitio y no tiene a dónde acercarse. */
 const DISTANCIA_DE_ATAQUE = 8;
+/** Cuánto se tiene que mover un NPC respecto al punto de la pelea para que
+ *  cuente como REACCIÓN. Un solo número para la espera y para los asertos de
+ *  dirección: si la espera pidiese más que ellos quedaría una banda en la que
+ *  la espera expira y el guion sale verde igual (#261). */
+const REACCION_MINIMA = 1;
+/** Margen del paseo de `situarse` alrededor de `DISTANCIA_DE_ATAQUE`. Es a la
+ *  vez la condición de la espera y la del aserto —`situarse` afirma el mismo
+ *  predicado que espera—, así que no hay dos números que puedan separarse. */
+const TOLERANCIA_DE_SITIO = 1.5;
 
 /** Ficha de la entidad tal y como la ve el MOTOR (tool MCP `entity_get`). */
 async function fichaDelBridge(id) {
@@ -85,36 +94,68 @@ const medir = (ctx, id) =>
     };
   }, id);
 
-/** Sitúa al jugador a ~`objetivo` metros del NPC caminando: encara y anda
- *  hacia él si está lejos, y se retira si está encima. Por el camino del
- *  jugador (mismo yaw→forward que las flechas); nunca teletransporta, que
- *  sería fabricar el escenario que el guion viene a medir. En tramos porque
- *  el NPC también se mueve. */
-async function situarse(ctx, id, objetivo, tolerancia = 1.5, tramos = 12) {
-  let m = await medir(ctx, id);
-  for (let i = 0; i < tramos && m && Math.abs(m.d - objetivo) > tolerancia; i++) {
-    const acercarse = m.d > objetivo;
-    const dx = acercarse ? m.npc.x - m.jugador.x : m.jugador.x - m.npc.x;
-    const dz = acercarse ? m.npc.z - m.jugador.z : m.jugador.z - m.npc.z;
+/** Sitúa al jugador a `objetivo` ± `tolerancia` metros del NPC caminando —y lo
+ *  AFIRMA, con el mismo predicado con el que esperó.
+ *
+ *  Encara y anda hacia él si está lejos, y se retira si está encima. Por el
+ *  camino del jugador (mismo yaw→forward que las flechas); nunca teletransporta,
+ *  que sería fabricar el escenario que el guion viene a medir. En tramos porque
+ *  el NPC también se mueve: el cortafuegos de cada tramo se absorbe porque el
+ *  bucle vuelve a medir, y **el último tramo no se absorbe: se afirma**.
+ *
+ *  El aserto es el PREDICADO, no una relectura. Antes vivía en los dos sitios
+ *  de llamada y admitía el doble de banda que la espera (`|d − 8| ≤ 3` contra
+ *  `≤ 1,5`): eso deja garantizada la franja «la espera expira y el guion sale
+ *  verde igual», que es la familia de defecto de #261. Afirmando el sondeo no
+ *  hay franja, y de paso el mercader deja de ser el único de los dos oficios
+ *  cuyo paseo no comprobaba nadie. */
+async function situarse(ctx, id, objetivo, tolerancia = TOLERANCIA_DE_SITIO, tramos = 12) {
+  const arg = { id, objetivo, tolerancia };
+  /** EL predicado. Lo comparten los cortafuegos y el aserto del final. */
+  const enSitio = (a) => {
+    const n = window.__nefan.npcs().find((x) => x.id === a.id);
+    if (!n) return null;
+    const p = window.__nefan.state().pos;
+    const d = Math.hypot(n.pos.x - p.x, n.pos.z - p.z);
+    return Math.abs(d - a.objetivo) <= a.tolerancia ? { d } : null;
+  };
+  /** Encara al NPC —o le da la espalda, si hay que retirarse— y dice dónde está. */
+  const encarar = async () => {
+    const m = await medir(ctx, id);
+    if (!m) return m;
+    const acercandose = m.d > objetivo;
+    const dx = acercandose ? m.npc.x - m.jugador.x : m.jugador.x - m.npc.x;
+    const dz = acercandose ? m.npc.z - m.jugador.z : m.jugador.z - m.npc.z;
     await ctx.nefan("setYaw", Math.atan2(dx, dz));
-    await ctx
-      .holdUntil(
-        "up",
-        `el jugador se sitúa a ${objetivo} m de ${id} (tramo ${i + 1}, ahora ${m.d.toFixed(1)} m)`,
-        (a) => {
-          const n = window.__nefan.npcs().find((x) => x.id === a.id);
-          if (!n) return null;
-          const p = window.__nefan.state().pos;
-          const d = Math.hypot(n.pos.x - p.x, n.pos.z - p.z);
-          return Math.abs(d - a.objetivo) <= a.tolerancia ? { d } : null;
-        },
-        4_000,
-        { id, objetivo, tolerancia },
-      )
-      .catch(() => null);
-    m = await medir(ctx, id);
+    return m;
+  };
+
+  for (let i = 0; i < tramos - 1; i++) {
+    const m = await encarar();
+    if (!m || Math.abs(m.d - objetivo) <= tolerancia) break;
+    await ctx.absorbe(
+      `cortafuegos de UN tramo (4 s) del paseo hasta ${id}: el NPC también se mueve, así que el ` +
+        `bucle vuelve a medir y el ÚLTIMO tramo afirma este mismo predicado ` +
+        `(|d − ${objetivo}| ≤ ${tolerancia} m), que es donde vive la medida`,
+      () =>
+        ctx.holdUntil(
+          "up",
+          `el jugador se sitúa a ${objetivo} m de ${id} (tramo ${i + 1}, ahora ${m.d.toFixed(1)} m)`,
+          enSitio,
+          4_000,
+          arg,
+        ),
+    );
   }
-  return m;
+
+  await encarar();
+  await ctx.expectEspera(
+    `el jugador se sitúa a ${objetivo} ± ${tolerancia} m de ${id}, andando (desde ahí su reacción es visible)`,
+    true,
+    enSitio,
+    { ms: 4_000, arg, tecla: "up" },
+  );
+  return medir(ctx, id);
 }
 
 /** ¿NACE el NPC en una celda que bloquea el plano del tile?
@@ -161,14 +202,18 @@ async function encarar(ctx, id) {
   if (!m) return m;
   const antes = (await ctx.nefan("fps"))?.frames ?? 0;
   await ctx.nefan("setYaw", Math.atan2(m.npc.x - m.jugador.x, m.npc.z - m.jugador.z));
-  await ctx
-    .waitFor(
-      `el mundo se redibuja ya encarando a ${id}`,
-      (f) => ((window.__nefan.fps()?.frames ?? 0) > f + 1 ? true : null),
-      5_000,
-      antes,
-    )
-    .catch(() => ctx.log(`⚠ el renderer no emitió frame tras encarar a ${id}: la captura puede ir atrasada`));
+  await ctx.absorbe(
+    `esta espera solo sirve para que la CAPTURA salga ya girada: los asertos de este guion van ` +
+      `contra el estado (\`__nefan\`), nunca contra píxeles, así que sin frame se pierde una foto ` +
+      `atrasada y ninguna medida`,
+    () =>
+      ctx.waitFor(
+        `el mundo se redibuja ya encarando a ${id}`,
+        (f) => ((window.__nefan.fps()?.frames ?? 0) > f + 1 ? true : null),
+        5_000,
+        antes,
+      ),
+  );
   return m;
 }
 
@@ -180,24 +225,26 @@ async function encarar(ctx, id) {
  *  deja de ser estímulo antes de que dé tiempo a ver nada. No es una espera
  *  por reloj: la condición de parada es el DESPLAZAMIENTO del NPC respecto al
  *  punto de la pelea, y `maxMs` es cortafuegos. */
-async function atacarYVer(ctx, id, umbral = 1.5, maxMs = 30_000) {
+async function atacarYVer(ctx, id, umbral = REACCION_MINIMA, maxMs = 30_000) {
   const antes = await medir(ctx, id);
   if (!antes) return null;
   const peligro = antes.jugador;
-  await ctx
-    .waitFor(
-      `${id} reacciona al combate (se acerca o se aleja ${umbral} m del punto de la pelea)`,
-      (a) => {
-        window.__nefan.inputDriver.queueAttack();
-        const n = window.__nefan.npcs().find((x) => x.id === a.id);
-        if (!n) return null;
-        const d = Math.hypot(n.pos.x - a.px, n.pos.z - a.pz);
-        return Math.abs(d - a.d0) >= a.umbral ? { d } : null;
-      },
-      maxMs,
-      { id, px: peligro.x, pz: peligro.z, d0: antes.d, umbral },
-    )
-    .catch(() => null);
+  // La espera y el ASERTO piden lo mismo (`REACCION_MINIMA`), y por eso se
+  // afirma aquí (#261): con la espera pidiendo 1,5 m y los asertos de abajo
+  // 1 m quedaba una banda garantizada —el NPC se mueve entre 1 y 1,5— en la
+  // que la espera expiraba y el guion salía VERDE igual. Un umbral, un sitio.
+  await ctx.expectEspera(
+    `${id} reacciona al combate (se acerca o se aleja ${umbral} m del punto de la pelea)`,
+    true,
+    (a) => {
+      window.__nefan.inputDriver.queueAttack();
+      const n = window.__nefan.npcs().find((x) => x.id === a.id);
+      if (!n) return null;
+      const d = Math.hypot(n.pos.x - a.px, n.pos.z - a.pz);
+      return Math.abs(d - a.d0) >= a.umbral ? { d } : null;
+    },
+    { ms: maxMs, arg: { id, px: peligro.x, pz: peligro.z, d0: antes.d, umbral } },
+  );
   const despues = await medir(ctx, id);
   return {
     d0: antes.d,
@@ -302,7 +349,7 @@ export default async function (ctx) {
   ctx.log(`mercader: distancia al punto de la pelea ${reaccionMercader?.d0?.toFixed(2)} → ${reaccionMercader?.d1?.toFixed(2)} m`);
   ctx.expect(
     "el mercader HUYE de la pelea: se aleja del punto donde el jugador ataca",
-    reaccionMercader?.d1 > reaccionMercader?.d0 + 1,
+    reaccionMercader?.d1 > reaccionMercader?.d0 + REACCION_MINIMA,
     JSON.stringify({ antes: reaccionMercader?.d0, despues: reaccionMercader?.d1 }),
   );
   await encarar(ctx, mercader.id);
@@ -361,11 +408,6 @@ export default async function (ctx) {
   );
   const sitioGuardia = await situarse(ctx, guardia.id, DISTANCIA_DE_ATAQUE);
   ctx.log(`guardia a ${sitioGuardia?.d?.toFixed(2)} m del jugador antes del ataque`);
-  ctx.expect(
-    "el jugador consigue atacar desde donde la reacción es visible (ni encima ni fuera del radio de percepción)",
-    sitioGuardia && sitioGuardia.d > 3 && sitioGuardia.d < 16,
-    `distancia=${sitioGuardia?.d?.toFixed(2)} m`,
-  );
   const aLaVista = await encarar(ctx, guardia.id);
   ctx.log(`guardia en cuadro: jugador ${JSON.stringify(aLaVista?.jugador)} · guardia ${JSON.stringify(aLaVista?.npc)}`);
   await ctx.shot("guardia-a-la-vista");
@@ -373,7 +415,7 @@ export default async function (ctx) {
   ctx.log(`guardia: distancia al punto de la pelea ${reaccionGuardia?.d0?.toFixed(2)} → ${reaccionGuardia?.d1?.toFixed(2)} m`);
   ctx.expect(
     "el guardia INTERVIENE: se acerca al punto donde el jugador ataca en vez de huir",
-    reaccionGuardia?.d1 < reaccionGuardia?.d0 - 1,
+    reaccionGuardia?.d1 < reaccionGuardia?.d0 - REACCION_MINIMA,
     JSON.stringify({ antes: reaccionGuardia?.d0, despues: reaccionGuardia?.d1 }),
   );
   ctx.expect(

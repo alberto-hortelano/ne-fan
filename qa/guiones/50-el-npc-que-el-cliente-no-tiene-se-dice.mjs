@@ -39,6 +39,7 @@ import {
   esperarTituloListo,
 } from "../lib/sesion.mjs";
 import { rutaDelSave } from "../lib/saves.mjs";
+import { acercarse } from "../lib/combate.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -46,37 +47,21 @@ const GAME_ID = "alta_fantasia";
 const MERCADER = "barkeep";
 const PACIFICO = "Nogala";
 
-async function acercarseAlNpc(ctx, id, objetivo = 2.2, tramos = 12) {
-  for (let i = 0; i < tramos; i++) {
-    const n = await ctx.page.evaluate((npcId) => {
-      const e = window.__nefan.npcs().find((x) => x.id === npcId);
-      if (!e) return null;
-      const p = window.__nefan.state().pos;
-      return { d: Math.hypot(e.pos.x - p.x, e.pos.z - p.z), dx: e.pos.x - p.x, dz: e.pos.z - p.z };
-    }, id);
-    if (!n || n.d <= objetivo) return n;
-    await ctx.nefan("setYaw", Math.atan2(n.dx, n.dz));
-    await ctx
-      .holdUntil("up", `acercarse a ${id}`, (a) => {
-        const e = window.__nefan.npcs().find((x) => x.id === a.id);
-        if (!e) return null;
-        const p = window.__nefan.state().pos;
-        return Math.hypot(e.pos.x - p.x, e.pos.z - p.z) <= a.objetivo ? true : null;
-      }, 4_000, { id, objetivo })
-      .catch(() => null);
-  }
-  return null;
-}
 
 export default async function (ctx) {
   await nuevaPartida(ctx, { gameId: GAME_ID });
   const partida = await comenzar(ctx);
   await ctx.waitFor("el tabernero está en escena", (id) => window.__nefan.npcs().find((n) => n.id === id) ?? null, 60_000, MERCADER);
-  await acercarseAlNpc(ctx, MERCADER);
+  await acercarse(ctx, MERCADER, { objetivo: 2.2, lista: "npcs" });
   await ctx.nefan("inputDriver.queueInteract");
   await ctx.waitFor("el tabernero contesta", () => window.__nefan.dialogueVisible || null, 60_000);
   await ctx.nefan("chooseDialogue", 0);
-  await ctx.waitFor("turno 2", () => (window.__nefan.enemies().length > 1 ? true : null), 90_000).catch(() => null);
+  await ctx.absorbe(
+    "sincroniza con el turno 2 del motor (que es quien pone al hostil): si no llega, el que se " +
+      "queda sin llegar es el turno 3, y eso lo dice el aserto «hay npc pacífico de runtime», " +
+      "que es donde vive la medida de este bloque",
+    () => ctx.waitFor("turno 2", () => (window.__nefan.enemies().length > 1 ? true : null), 90_000),
+  );
   await ctx.nefan("chooseDialogue", 0);
   const nogala = await ctx
     .waitFor("aparece Nogala", (n) => window.__nefan.npcs().find((x) => x.label === n) ?? null, 90_000, PACIFICO)

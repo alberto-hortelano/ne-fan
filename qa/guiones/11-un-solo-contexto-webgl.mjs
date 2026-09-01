@@ -61,16 +61,24 @@ export default async function (ctx) {
   // Y andar un poco: cubre cualquier creación perezosa de contexto (en el
   // árbol viejo el clay del tile se componía al añadirlo, así que el segundo
   // ya estaba ahí antes de moverse).
-  await ctx.holdUntil(
-    "el jugador se mueve",
-    "el jugador se mueve",
+  //
+  // OJO A LA TECLA. Esto llevaba desde el 21-ago (94b8522) escrito
+  // `holdUntil("el jugador se mueve", "el jugador se mueve", …)`: la firma es
+  // `(key, desc, …)`, así que `press()` escribía `state["el jugador se
+  // mueve"]` y NUNCA `state.up`. La condición era imposible, quemaba los 15 s
+  // enteros en cada corrida, no cubría nada — y salía verde, porque nadie
+  // miraba la expiración. Es el caso más puro de #261 en el árbol: un sleep
+  // con mejores modales. Ahora la espera se AFIRMA: si el jugador no anda, el
+  // guion lo dice en vez de fingir que lo comprobó.
+  await ctx.expectEspera(
+    "el jugador anda al menos 1 m (para ejercer cualquier creación perezosa de contexto)",
+    true,
     (inicio) => {
       const p = window.__nefan.state().pos;
       return Math.hypot(p.x - inicio.x, p.z - inicio.z) > 1 ? p : null;
     },
-    15_000,
-    (await ctx.nefan("state")).pos,
-  ).catch(() => null);
+    { ms: 15_000, arg: (await ctx.nefan("state")).pos, tecla: "up" },
+  );
 
   const contextos = await ctx.page.evaluate(() =>
     window.__ctxProbe.map((c, i) => ({

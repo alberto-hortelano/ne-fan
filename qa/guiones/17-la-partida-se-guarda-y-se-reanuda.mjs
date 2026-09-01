@@ -53,6 +53,13 @@ const GAME_ID = "alta_fantasia";
 /** El State API del bridge. Sale de la fuente única de puertos, no de un
  *  literal: dos corridas a la vez no comparten stack. */
 const API = URLS.state_api;
+/** Cuánto tiene que separarse el jugador de su punto de arranque para que lo
+ *  de abajo distinga «se persiste la posición» de «se cae al `__player_start`».
+ *  UN número: es a la vez la condición de la espera y la del aserto — dos
+ *  umbrales distintos dejaban una banda de «expiró y verde igual» (#261).
+ *  Con 1,5 m sobra: la tolerancia con la que se compara contra el save es de
+ *  0,5 m, y la calle del tile del bench se acaba en una pared poco después. */
+const SEPARACION_MINIMA = 1.5;
 
 /** Llamada al State API tal cual la hace narrative-mcp. */
 async function api(method, path, body) {
@@ -246,34 +253,27 @@ export default async function (ctx) {
   // persistiera nada y se limitara a caer al arranque de la escena. Andando,
   // los dos puntos se separan y el aserto distingue una cosa de la otra.
   await ctx.nefan("setYaw", 0); // +z: calle abierta, lejos de la taberna
-  // El `catch` traga el cortafuegos de holdUntil a propósito: lo que decide no
-  // es si llegó a los 2 m, es la separación MEDIDA de abajo.
-  await ctx
-    .holdUntil(
-      "up",
-      "el jugador se aleja de su punto de arranque",
-      (a) => {
-        const p = window.__nefan.playerPos;
-        const d = Math.hypot(p.x - a.x, p.z - a.z);
-        // 2 m: la calle del tile del bench se acaba en una pared poco después,
-        // y el listón real es el de abajo (separarse MUCHO más que la
-        // tolerancia de 0,5 m con la que se compara luego).
-        return d >= 2 ? { x: p.x, z: p.z, d } : null;
-      },
-      15_000,
-      { x: posArranque.x, z: posArranque.z },
-    )
-    .catch(() => null);
+  // La espera y el ASERTO piden lo mismo, `SEPARACION_MINIMA`, y por eso se
+  // afirma aquí (#261). Antes la espera pedía 2 m, el aserto 1,5 y el `catch`
+  // se tragaba la diferencia «a propósito»: entre 1,5 y 2 quedaba una banda en
+  // la que la espera expiraba y el guion salía VERDE. Un umbral, un sitio.
+  await ctx.expectEspera(
+    `el jugador se aleja ${SEPARACION_MINIMA} m de su punto de arranque (si no, el resto no prueba nada)`,
+    true,
+    (a) => {
+      const p = window.__nefan.playerPos;
+      const d = Math.hypot(p.x - a.x, p.z - a.z);
+      return d >= a.minima ? { x: p.x, z: p.z, d } : null;
+    },
+    {
+      ms: 15_000,
+      arg: { x: posArranque.x, z: posArranque.z, minima: SEPARACION_MINIMA },
+      tecla: "up",
+    },
+  );
   const posAntes = await ctx.nefan("playerPos");
   const separacion = Math.hypot(posAntes.x - posArranque.x, posAntes.z - posArranque.z);
   ctx.log(`el jugador anduvo hasta ${JSON.stringify(posAntes)} (${separacion.toFixed(1)} m)`);
-  // NO CONCLUYENTE antes que verde: si no se ha movido, lo de abajo no
-  // distingue «se persiste la posición» de «se cae al __player_start».
-  ctx.expect(
-    "el jugador se ha ALEJADO del arranque de la escena (si no, el resto no prueba nada)",
-    separacion >= 1.5,
-    `arranque ${JSON.stringify(posArranque)} · ahora ${JSON.stringify(posAntes)} (${separacion.toFixed(2)} m)`,
-  );
   // Un guardado del motor DESPUÉS de andar: es el que tiene que llevarse la
   // posición nueva.
   await api("POST", "/map/place", {

@@ -48,15 +48,25 @@ Un fichero en `guiones/` que exporta `async (ctx) => {}`. El contexto ofrece:
 | `ctx.waitFor(desc, fn, ms, arg)` | espera a que `fn` (en la página) devuelva algo truthy |
 | `ctx.holdUntil(key, desc, fn, ms, arg)` | mantiene una tecla hasta que se cumple `fn`, y la suelta siempre |
 | `ctx.expect(desc, cond, detalle)` | apunta un criterio; los fallos deciden el veredicto |
+| `ctx.expectEspera(desc, debeOcurrir, fn, {ms, arg, tecla, aserto})` | espera y AFIRMA si ocurrió o no: un umbral, escrito una vez. `debeOcurrir:false` es «el timeout ES el éxito» |
+| `ctx.absorbe(motivo, fn)` | consume la expiración de una espera DICIENDO dónde vive la medida de verdad (cortafuegos de un bucle que remide, esperas que solo sirven para una foto) |
 | `ctx.sinMedir(motivo)` | declara «no pude medir» y ABORTA el guion: sale `⊘` con su motivo, aparte de verdes y rojos (y degrada la corrida a exit 2) |
+| `ctx.sinMedirBloque(motivo)` | lo mismo para UN bloque, sin abortar: el guion sigue midiendo los demás |
 | `ctx.shot(label)` | captura a `qa/capturas/<RUN_ID>/` |
 | `ctx.page` | la página de Playwright, para lo que no cubra lo anterior |
 
 Reglas que hacen que un guion valga algo:
 
-1. **Nunca esperes por tiempo de pared.** El movimiento va por delta de rAF y el typewriter por
-   `setInterval`: ningún `sleep` es determinista. Espera por ESTADO (`waitFor`). Los `maxMs` son
-   cortafuegos, no la condición de parada. Corolario que costó un guion intermitente: si el
+1. **Nunca esperes por tiempo de pared, y no dejes expirar una espera sin mirarla.** El
+   movimiento va por delta de rAF y el typewriter por `setInterval`: ningún `sleep` es
+   determinista. Espera por ESTADO (`waitFor`). Los `maxMs` son cortafuegos, no la condición de
+   parada — pero un `waitFor` cuya condición no se cumple nunca es un sleep con mejores modales,
+   así que **toda expiración se anota y alguien tiene que observarla** (#261): o propaga, o la
+   afirma `ctx.expectEspera`, o la absorbe `ctx.absorbe` diciendo dónde vive la medida. Lo que
+   expire sin observador es un fallo con nombre y el guion sale ROJO; el `.catch(() => null)`
+   sobre una espera dejó de ser gratis. Y cuidado con el hueco entre el umbral de la ESPERA y el
+   del ASERTO: si la espera pide más que el `expect`, queda una banda garantizada de «expiró y
+   verde igual» — `expectEspera` existe para escribir el umbral una sola vez. Corolario que costó un guion intermitente: si el
    estado que quieres afirmar es TRANSITORIO (el destello de impacto del telegraph dura 0,3 s
    de tiempo de sim, y el sim corre con el `delta` del game loop topado a 0,1 s), ningún
    observador externo puede garantizar verlo por mucho que muestree más fino — el problema no
@@ -91,7 +101,9 @@ Reglas que hacen que un guion valga algo:
    defiendo está roto» cuando lo que pasó es «no pude medir», y ese verde-a-medias mide otra
    cosa (#331). Declarar ABORTA el guion y sale `⊘`. No es una vía de escape: el ⊘ degrada la
    corrida MÁS que el rojo (exit 2 contra 1), y un guion que ya empujó fallos no puede
-   reconvertirse — un ⊘ es una declaración, no una amnistía.
+   reconvertirse — un ⊘ es una declaración, no una amnistía. Si lo que se pierde es UN bloque y
+   el guion puede seguir midiendo los demás, `ctx.sinMedirBloque(motivo)`, que no aborta: es la
+   versión honesta del `if (…) { ctx.log("⚠ … no se midió"); return; }`, que salía VERDE.
 
 ## Los guiones sembrados
 

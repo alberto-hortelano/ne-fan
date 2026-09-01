@@ -44,6 +44,7 @@
  *  la tanda 2026-08-29-que-el-jugador-pueda-pelear.
  */
 import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { acercarse } from "../lib/combate.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
  *   · `saves`   — la partida tiene que arrancar en el tile de bootstrap, que
@@ -102,35 +103,6 @@ const esperarEnemigo = (ctx, id, maxMs = 60_000) =>
     maxMs,
     id,
   );
-
-/** Encara al enemigo y camina hasta ponerse a distancia de golpe.
- *
- *  Por el camino del jugador: yaw + tecla de avance, nunca `setPlayerPos` —
- *  teletransportarse sería fabricar el escenario que el guion viene a medir.
- *  En tramos porque el enemigo también se mueve (nos está persiguiendo, que es
- *  medio punto de que exista). */
-async function acercarse(ctx, id, objetivo = DISTANCIA_DE_GOLPE, tramos = 14) {
-  let m = await medir(ctx, id);
-  for (let i = 0; i < tramos && m && m.d > objetivo; i++) {
-    await ctx.nefan("setYaw", Math.atan2(m.enemigo.x - m.jugador.x, m.enemigo.z - m.jugador.z));
-    await ctx
-      .holdUntil(
-        "up",
-        `el jugador se pone a ${objetivo} m de ${id} (tramo ${i + 1}, ahora ${m.d.toFixed(1)} m)`,
-        (a) => {
-          const e = window.__nefan.enemies().find((x) => x.id === a.id);
-          if (!e) return null;
-          const p = window.__nefan.state().pos;
-          return Math.hypot(e.pos.x - p.x, e.pos.z - p.z) <= a.objetivo ? true : null;
-        },
-        4_000,
-        { id, objetivo },
-      )
-      .catch(() => null);
-    m = await medir(ctx, id);
-  }
-  return m;
-}
 
 /** Pega hasta que la vida DEL HUD baje del valor de partida.
  *
@@ -296,13 +268,12 @@ async function pelearContra(
   // andarle encima añadía un tramo de segundos comiendo golpes sin devolver
   // ninguno, y el guion se decidía por quién llegaba antes al suelo.
   if (acercarseAndando) {
-    const cerca = await acercarse(ctx, id);
+    // El aserto de la distancia final vive DENTRO de `acercarse` (qa/lib/combate):
+    // el umbral de la espera y el del aserto eran distintos —1,6 contra 2,6— y
+    // esa banda garantizaba un «la espera expira y el guion sale verde igual».
+    // Ahora se escribe una sola vez, junto a la espera (#261).
+    const cerca = await acercarse(ctx, id, { objetivo: DISTANCIA_DE_GOLPE, tramos: 14 });
     ctx.log(`${etiqueta}: a ${cerca?.d?.toFixed(2)} m antes de atacar (vida HUD ${vida0})`);
-    ctx.expect(
-      `${etiqueta}: el jugador LLEGA a distancia de golpe andando (sin teletransportarse)`,
-      Boolean(cerca) && cerca.d <= DISTANCIA_DE_GOLPE + 1.0,
-      `distancia final ${cerca?.d?.toFixed(2)} m`,
-    );
     await ctx.shot(`${etiqueta}-antes-del-golpe`);
   } else {
     // Sin captura ni medidas antes de pegar, A PROPÓSITO: el enemigo ya está
@@ -443,37 +414,8 @@ export default async function (ctx) {
     30_000,
   );
   // Acercarse a hablar por el camino del jugador (E, no una llamada interna).
-  await ctx.nefan("setYaw", Math.atan2(barkeep.pos.x, barkeep.pos.z));
-  for (let i = 0; i < 12; i++) {
-    const cerca = await ctx.page.evaluate((id) => {
-      const n = window.__nefan.npcs().find((x) => x.id === id);
-      if (!n) return null;
-      const p = window.__nefan.state().pos;
-      return Math.hypot(n.pos.x - p.x, n.pos.z - p.z);
-    }, "barkeep");
-    if (cerca !== null && cerca <= 2.2) break;
-    const n = await ctx.page.evaluate((id) => {
-      const e = window.__nefan.npcs().find((x) => x.id === id);
-      const p = window.__nefan.state().pos;
-      return e ? { dx: e.pos.x - p.x, dz: e.pos.z - p.z } : null;
-    }, "barkeep");
-    if (!n) break;
-    await ctx.nefan("setYaw", Math.atan2(n.dx, n.dz));
-    await ctx
-      .holdUntil(
-        "up",
-        `el jugador se acerca al tabernero (tramo ${i + 1})`,
-        (id) => {
-          const e = window.__nefan.npcs().find((x) => x.id === id);
-          if (!e) return null;
-          const p = window.__nefan.state().pos;
-          return Math.hypot(e.pos.x - p.x, e.pos.z - p.z) <= 2.2 ? true : null;
-        },
-        4_000,
-        "barkeep",
-      )
-      .catch(() => null);
-  }
+  // Era la SEXTA copia del mismo paseo en el árbol; hoy es una llamada.
+  await acercarse(ctx, "barkeep", { objetivo: 2.2, lista: "npcs" });
 
   // Turno 1 de diálogo: hablar. Turno 2: contestar — y es ahí donde el motor
   // manda al secuaz.
