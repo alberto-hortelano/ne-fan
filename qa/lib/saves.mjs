@@ -126,6 +126,30 @@ export async function esperarPartidaEnDisco(ctx, sessionId, maxMs = 60_000) {
   );
 }
 
+/** Espera a que el `state.json` de `sessionId` EN DISCO cumpla `predicado`
+ *  (recibe el save parseado; devuelve algo verdadero para parar). Devuelve
+ *  ese valor, o `null` si `maxMs` expira — el llamante decide si eso es un
+ *  rojo o un `sinMedir`.
+ *
+ *  Existe para el guion que necesita saber QUÉ hay guardado antes de
+ *  reanudar (el 60: la posición del destino tras viajar por «Salidas»), sin
+ *  escribir un sondeo a mano dentro del guion — que es lo que prohíbe
+ *  `qa-guiones-sin-espera-por-reloj`, y con razón: la espera por condición
+ *  vive aquí, una vez. Solo disco: sin `QA_RUN_TMP` no hay nada que leer. */
+export async function esperarEnElSave(sessionId, predicado, maxMs = 15_000) {
+  if (!dirDeSaves()) throw new Error("esperarEnElSave: sin QA_RUN_TMP no hay disco de saves que leer");
+  const t0 = Date.now();
+  while (Date.now() - t0 < maxMs) {
+    const ruta = rutaDelSave(sessionId);
+    if (ruta) {
+      const v = predicado(JSON.parse(readFileSync(ruta, "utf8")));
+      if (v) return v;
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return null;
+}
+
 /** Clona un save `n` veces con ids nuevos. Devuelve los ids creados.
  *
  *  Existe para el guion que mide QUÉ SE PINTA con muchas partidas (#251): la
