@@ -54,6 +54,20 @@ function sembrar(nombre: string): ManifestDb {
   return db;
 }
 
+describe("ManifestDb: abrir el índice", () => {
+  it("crea el directorio del índice si no existe (un clon limpio no tiene cache/)", () => {
+    // QA de T4, H1: DatabaseSync no crea directorios y el store moría con
+    // «unable to open database file» antes de poder decir nada.
+    const ruta = join(root, "clon-limpio", "cache", "manifest.sqlite3");
+    assert.equal(existsSync(join(root, "clon-limpio")), false);
+    const db = new ManifestDb(ruta);
+    assert.ok(existsSync(ruta), "la DB se creó donde se pidió");
+    assert.equal(db.totalCount(), 0);
+    assert.deepEqual(verificarSoloSurface(db), { ok: true }, "un índice vacío arranca");
+    db.close();
+  });
+});
+
 describe("ManifestDb: kinds ajenos", () => {
   it("kindsAjenos agrupa por (type, subtype) y filasAjenas devuelve las mismas filas completas", () => {
     const db = sembrar("kinds");

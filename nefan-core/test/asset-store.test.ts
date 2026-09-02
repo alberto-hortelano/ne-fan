@@ -261,36 +261,31 @@ describe("registro e índice", () => {
     assert.equal(miss.body.toString(), "Not found");
   });
 
-  it("GET /assets: collapse por (hash,type), más reciente primero, filtro y limit", async () => {
+  it("GET /assets: más reciente primero, limit, filtro por type y lista vacía para un type sin filas", async () => {
+    // Con un solo kind, `register` no puede producir dos subtypes del mismo
+    // hash: el collapse por (hash,type) que aquí se medía con texturas
+    // albedo/normal es inalcanzable por el wire desde #257 y se retiró con su
+    // fixture (QA de T4, H3). Queda lo que sí puede pasar: orden por recencia,
+    // `limit`, el filtro por type (CSV incluido) y un type que no existe.
     const fresh = new ManifestDb(join(root, "list.sqlite3"));
-    // El collapse por (hash,type) es SQL sobre filas crudas: con un solo kind
-    // vivo, `register` no puede producir dos subtypes del mismo hash, así que
-    // se plantan con `importEntry` (la costura declarada para filas históricas).
-    const fila = (hash: string, type: string, subtype: string, prompt: string, i: number) => ({
-      hash, type, subtype, prompt, created_at: `2026-01-0${i}T00:00:00.000Z`, size_bytes: 1, extra: {},
-    });
-    fresh.importEntry(fila("a", "texture", "albedo", "pa", 1));
-    fresh.importEntry(fila("a", "texture", "normal", "pa2", 2));
-    fresh.importEntry(fila("b", "scene", "scene", "pb", 3));
-    fresh.importEntry(fila("c", "texture", "albedo", "pc", 4));
-    // Semántica Python: reverse + primera aparición por (hash,type) — la
-    // entrada más RECIENTE del grupo aporta prompt/created_at.
+    for (const [h, p] of [["a", "pa"], ["b", "pb"], ["c", "pc"]]) {
+      fresh.register({ hash: h, type: "surface", subtype: "surface", prompt: p, size_bytes: 1 });
+    }
     const all = fresh.listAssets(undefined, 50);
-    assert.deepEqual(all.map((e) => e.hash), ["c", "b", "a"]);
-    assert.equal(all[2].prompt, "pa2");
-    // subtype viaja en el summary (fila ganadora del collapse).
-    assert.equal(all[2].subtype, "normal");
-    assert.deepEqual(fresh.listAssets("texture", 50).map((e) => e.hash), ["c", "a"]);
+    assert.deepEqual(all.map((e) => e.hash), ["c", "b", "a"], "la más reciente primero");
+    assert.deepEqual(all.map((e) => e.subtype), ["surface", "surface", "surface"]);
+    assert.equal(all[2].prompt, "pa");
     assert.equal(fresh.listAssets(undefined, 1).length, 1);
-    // Filtro CSV multi-tipo.
-    fresh.register({ hash: "d", type: "surface", subtype: "surface", prompt: "pd", size_bytes: 1 });
-    assert.deepEqual(
-      fresh.listAssets("texture,surface", 50).map((e) => e.hash),
-      ["d", "c", "a"],
-    );
-    // Un type que no tiene filas: lista vacía, no error (es lo que ve el
-    // motor si alguien le pide un kind retirado).
+    assert.deepEqual(fresh.listAssets("surface", 50).map((e) => e.hash), ["c", "b", "a"]);
+    // El filtro CSV sigue aceptando varios types: los que no tienen filas no
+    // aportan nada, y uno solo desconocido es lista vacía, no error (es lo que
+    // ve el motor si alguien le pide un kind retirado).
+    assert.deepEqual(fresh.listAssets("texture,surface", 50).map((e) => e.hash), ["c", "b", "a"]);
     assert.deepEqual(fresh.listAssets("model", 50), []);
+    // Registrar el mismo (hash,type,subtype) no crea otra fila ni cambia el orden.
+    fresh.register({ hash: "a", type: "surface", subtype: "surface", prompt: "otro", size_bytes: 9 });
+    assert.deepEqual(fresh.listAssets(undefined, 50).map((e) => e.hash), ["c", "b", "a"]);
+    assert.equal(fresh.findByHash("a").length, 1);
     fresh.close();
   });
 

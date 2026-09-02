@@ -16,6 +16,8 @@
  *  .sqlite3; DatabaseSync es síncrono y las escrituras se serializan en el
  *  event loop — la cola HTTP del proceso ES la serialización.
  */
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { ASSET_KIND, type AssetKind } from "../../src/contracts/asset-store.js";
@@ -76,6 +78,11 @@ export class ManifestDb {
   private lastTouch = new Map<string, number>();
 
   constructor(path: string) {
+    // Un clon limpio no tiene `cache/`, y DatabaseSync no crea el directorio:
+    // moría con «unable to open database file» (errcode 14) y, como el store
+    // es el primer servicio del preset, `cliente-web` no arrancaba (QA de T4,
+    // H1). El directorio del índice se crea aquí, que es donde se abre.
+    mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec(`
       PRAGMA journal_mode = WAL;
