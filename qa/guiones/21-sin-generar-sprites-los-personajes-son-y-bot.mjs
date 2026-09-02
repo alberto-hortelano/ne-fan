@@ -37,17 +37,24 @@
  */
 import { nuevaPartida, comenzar, esperarRegistro } from "../lib/sesion.mjs";
 
-/** Los cuatro endpoints del gpu-worker (#199) y el puerto en el que vivía.
- *  Se escriben aquí porque lo que se canda es que NO aparezcan: si alguien
- *  los resucita, esta lista es la que tiene que ponerse roja. */
-const RETIRADOS = /:8766(\D|$)|\/generate_texture\b|\/generate_model\b|\/generate_skin\b|\/generate_sprite\b/;
+/** Los cuatro endpoints del gpu-worker (#199) y el puerto en el que vivía, y
+ *  desde T4 (#257) los blobs de los siete kinds del asset-store sin productor
+ *  (`/cache/albedo/…`, `/cache/model/…`, `/cache/plate/…`…). Se escriben aquí
+ *  porque lo que se canda es que NO aparezcan: si alguien los resucita, esta
+ *  lista es la que tiene que ponerse roja. */
+const RETIRADOS =
+  /:8766(\D|$)|\/generate_texture\b|\/generate_model\b|\/generate_skin\b|\/generate_sprite\b|\/cache\/(albedo|normal|roughness|model|skin|sprite|scene|plate|segment)\//;
 
 /** Hojas base servidas por Vite desde `public/sprites/{modelo}/…`. */
 const HOJA_BASE = /\/sprites\/([^/]+)\//;
 
 /** Frames de un personaje VESTIDO: no salen de `public/`, sino de las URLs
- *  que devuelve `/skin_sprite_sheet` (blobs del asset-store). */
-const HOJA_VESTIDA = /\/sprite_sheets\/|\/cache\/skin/;
+ *  que devuelve `/skin_sprite_sheet` (`/cache/sprite_sheet/{key}/dir_…` del
+ *  asset-store; `remote_generation.py`, y el fake igual). Hasta T4 esta regex
+ *  decía `/sprite_sheets/` —el DIRECTORIO en disco, que nunca viaja en una
+ *  URL— y `/cache/skin`, un kind muerto: no podía casar nada, así que el
+ *  «cero frames vestidos» de abajo era un verde que no comprobaba. */
+const HOJA_VESTIDA = /\/cache\/sprite_sheet\//;
 
 export default async function (ctx) {
   // Se escucha ANTES de navegar y se recarga: el runner ya había abierto la
@@ -152,7 +159,7 @@ export default async function (ctx) {
   const muertas = peticiones.filter((u) => RETIRADOS.test(u));
   ctx.log(`peticiones de la sesión: ${peticiones.length} · a endpoints retirados: ${muertas.length}`);
   ctx.expect(
-    "ninguna petición de una partida entera va a un endpoint del gpu-worker retirado",
+    "ninguna petición de una partida entera va a un endpoint del gpu-worker retirado ni a un blob de un kind muerto del asset-store",
     muertas.length === 0,
     JSON.stringify(muertas.slice(0, 5)),
   );

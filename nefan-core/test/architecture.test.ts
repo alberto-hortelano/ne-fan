@@ -412,6 +412,123 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // T4 «lo que ya no emite nadie» (#343 #344 #257 #368-F6): un caso por
+  // familia de términos, en el proceso donde cada uno vivía. Sin verlos saltar,
+  // los 45 términos nuevos del patrón serían una lista que nadie ha probado.
+  it("[error] campos-retirados-no-vuelven: lo que ya no emite nadie salta donde reaparezca", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "campos-retirados-no-vuelven");
+
+    assert.deepEqual(
+      deLaRegla([
+        // El kind WS sin emisor, en el receptor que lo esperaba.
+        {
+          path: "narrative-mcp/ws-bridge.ts",
+          text: "if (msg.type === 'hello') return;\nif (msg.type === 'bridge_status_request') {\n",
+          imports: [],
+        },
+        // El campo de manifest de plugin que ningún código aplicaba.
+        {
+          path: "nefan-core/src/plugins/types.ts",
+          text: "fixtures: z.array(PluginFixtureSchema).default([]),\nslice_size_hint: z.number().int().positive().optional(),\n",
+          imports: [],
+        },
+        // El sprite_hash que el cliente leía, vuelto por un guion de QA.
+        {
+          path: "qa/guiones/99-x.mjs",
+          text: "const h = effect.data.sprite_hash;\n",
+          imports: [],
+        },
+        // Los *_cache_dir de la config, por el snapshot commiteado.
+        {
+          path: "nefan-core/data/runtime_config.json",
+          text: '{\n  "cache_root": "cache",\n  "texture_cache_dir": "x"\n}\n',
+          imports: [],
+        },
+        // El directorio de un kind muerto, escrito a mano en Python.
+        {
+          path: "ai_server/x.py",
+          text: 'AssetCache(cache_dir="cache/textures", asset_type="texture")\n',
+          imports: [],
+        },
+        // La familia del snapshot del save, por un test que la resucite.
+        {
+          path: "nefan-core/test/x.test.ts",
+          text: "s1.setAssetIndexSnapshot([]);\nassert.equal(s2.asset_index_snapshot.length, 0);\n",
+          imports: [],
+        },
+        // Las tablas del lector de blobs y su literal de error.
+        {
+          path: "nefan-core/services/asset-store/blob-store.ts",
+          text: 'const TEXTURE_MAPS = new Set(["albedo"]);\nreturn text(400, "Invalid map type");\n',
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "ai_server/x.py:1",
+        "narrative-mcp/ws-bridge.ts:2",
+        "nefan-core/data/runtime_config.json:3",
+        "nefan-core/services/asset-store/blob-store.ts:1",
+        "nefan-core/services/asset-store/blob-store.ts:2",
+        "nefan-core/src/plugins/types.ts:2",
+        "nefan-core/test/x.test.ts:1",
+        "nefan-core/test/x.test.ts:2",
+        "qa/guiones/99-x.mjs:1",
+      ],
+      "cada familia retirada en T4 tiene que saltar en el proceso donde vivía",
+    );
+
+    // Y lo vivo que se parece, callado: `cache/sprite_sheets` (sprite-forge),
+    // el kind `surface`, `roughness`/`billboard` como vocabulario de three.js
+    // y `sprite_sheet` en el guion 21.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/services/asset-store/config.ts",
+          text: "spriteSheetsDir: abs(`${ai.cache_root}/sprite_sheets`),\nsurfaceDir: abs(ai.surface_cache_dir),\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/renderer/fps-gl.ts",
+          text: "material.roughness = 0.8;\nconst billboard = new Sprite();\n",
+          imports: [],
+        },
+        {
+          path: "qa/guiones/21-x.mjs",
+          text: "const HOJA_VESTIDA = /\\/cache\\/sprite_sheet\\//;\n",
+          imports: [],
+        },
+      ]),
+      [],
+      "los términos son compuestos para no morder lo vivo",
+    );
+  });
+
+  // La regla de casts cubre desde T4 los tres árboles de nefan-core que no son
+  // test/: el cast que se tipó en prune.ts tiene que saltar si vuelve, y los
+  // 14 casts legítimos de test/ sobre servidores fake tienen que seguir fuera.
+  it("[error] las-respuestas-de-red-no-se-redefinen-en-linea: cubre src, bridge y services de nefan-core; test/ queda fuera", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter(
+        (v) => v.ruleId === "las-respuestas-de-red-no-se-redefinen-en-linea",
+      );
+    const cast = "body = (await res.json()) as { refs?: unknown };\n";
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-core/services/asset-store/prune.ts", text: cast, imports: [] },
+        { path: "nefan-core/src/narrative/ai-client.ts", text: cast, imports: [] },
+        { path: "nefan-core/bridge/handlers/x.ts", text: cast, imports: [] },
+        { path: "nefan-core/test/x.test.ts", text: cast, imports: [] },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/handlers/x.ts:1",
+        "nefan-core/services/asset-store/prune.ts:1",
+        "nefan-core/src/narrative/ai-client.ts:1",
+      ],
+      "el cast anónimo salta en los tres árboles de producción y no en test/",
+    );
+  });
+
   // El campo `scattered` y las PRIMITIVAS del esquema entran en dos reglas que
   // ya existían; sin verlas saltar sobre el término nuevo, añadirlo al patrón
   // es una lista que nadie ha probado.

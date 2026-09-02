@@ -12,12 +12,13 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
+import { loadAssetStoreConfig } from "../services/asset-store/config.js";
 import { createAssetStoreServer } from "../services/asset-store/http-server.js";
 import { fetchKeepList, prune } from "../services/asset-store/prune.js";
 
@@ -99,6 +100,19 @@ async function post(path: string, body: unknown): Promise<{ status: number; body
   });
   return { status: res.status, body: (await res.json()) as Record<string, unknown> };
 }
+
+describe("loadAssetStoreConfig", () => {
+  it("resuelve las rutas del snapshot a absolutas desde la raíz del repo, y el puerto admite override por env", () => {
+    const cfg = loadAssetStoreConfig({});
+    assert.ok(isAbsolute(cfg.surfaceDir) && cfg.surfaceDir.endsWith(join("cache", "surfaces")), cfg.surfaceDir);
+    assert.ok(isAbsolute(cfg.dbPath) && cfg.dbPath.endsWith(join("cache", "manifest.sqlite3")), cfg.dbPath);
+    assert.ok(cfg.spriteSheetsDir.endsWith(join("cache", "sprite_sheets")), cfg.spriteSheetsDir);
+    assert.ok(isAbsolute(cfg.stylesDir), cfg.stylesDir);
+    assert.equal(typeof cfg.port, "number");
+    // El puerto del catálogo, salvo que el launcher lo desplace (NEFAN_PORT_OFFSET → env).
+    assert.equal(loadAssetStoreConfig({ NEFAN_ASSET_STORE_PORT: "18767" }).port, 18767);
+  });
+});
 
 describe("CORS (espejo del CORSMiddleware de los FastAPI)", () => {
   it("toda respuesta lleva Access-Control-Allow-Origin: * (el cliente pide blobs con crossOrigin)", async () => {
