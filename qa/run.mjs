@@ -764,7 +764,7 @@ function makeCtx(page, name) {
      *
      *  `debeOcurrir` es un parámetro y no dos verbos porque hay guiones donde
      *  el signo es DATO (el mismo paseo tiene que cruzar el puente y NO cruzar
-     *  el río: lo decide la leyenda del terreno). `tecla` mantiene una tecla
+     *  el río: lo decide qué chars son sólidos). `tecla` mantiene una tecla
      *  mientras se espera, como `holdUntil`. `aserto` permite escribir la
      *  frase del ✔/✘ cuando la del evento no se lee bien en negativo.
      *

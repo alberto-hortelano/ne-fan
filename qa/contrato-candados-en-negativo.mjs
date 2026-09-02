@@ -85,8 +85,8 @@ const INVARIANTES = [
     SCHEMA, "ts:test/scene-fixtures.test.ts",
     [
       [
-        "    size: SceneSizeSchema,\n    terrain: z.array(z.string()).min(1),\n    terrain_legend: TerrainLegendSchema,",
-        "    size: SceneSizeSchema.optional(),\n    terrain: z.array(z.string()).min(1).optional(),\n    terrain_legend: TerrainLegendSchema.optional(),",
+        "    size: SceneSizeSchema,\n    terrain: z.array(z.string()).min(1),",
+        "    size: SceneSizeSchema.optional(),\n    terrain: z.array(z.string()).min(1).optional(),",
       ],
       ["    __expanded: z.literal(true),", "    __expanded: z.literal(true).optional(),"],
     ],

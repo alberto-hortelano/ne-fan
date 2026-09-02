@@ -1,28 +1,23 @@
-/** La leyenda del terreno decide qué se puede pisar — y el jugador lo nota.
+/** El río solo se cruza por el puente — y el jugador lo nota.
  *
- *  `formatDToWorld` resuelve `terrain_legend` a dos cosas que el juego usa de
- *  verdad: el NOMBRE de cada char y la lista `solid_chars` que alimenta el
- *  colisionador del cliente y la colisión server-side de NPCs
- *  (`bridge/sim-collision.ts`). Los defaults (muro y agua bloquean) y la
- *  posibilidad de declarar `{name, solid:false}` para un vado son contrato,
- *  no detalle: un fallo aquí encierra al jugador o le deja andar sobre el río.
+ *  `formatDToWorld` emite en `terrain_grid.solid_chars` los chars del grid que
+ *  bloquean, y los fija el ENGINE (`DEFAULT_SOLID_CHARS`: muro y agua), no la
+ *  escena: nadie puede declarar un río vadeable ni un puente sólido. Esa lista
+ *  alimenta el colisionador del cliente y la colisión server-side de NPCs
+ *  (`bridge/sim-collision.ts`), así que un fallo aquí encierra al jugador o le
+ *  deja andar sobre el agua.
  *
- *  Se comprueba ANDANDO, no leyendo el JSON: el río de `robledo_tile` solo se
- *  cruza por su puente. Segunda mitad: la MISMA fixture servida con el agua
- *  declarada `solid:false` — el jugador debe poder vadearla por donde antes
- *  rebotaba. La sustitución se hace en la respuesta HTTP de la fixture (dato,
- *  no código): es exactamente lo que vería el jugador si el motor declarase
- *  ese vado, que el contrato de leyenda admite.
+ *  Se comprueba ANDANDO, no leyendo el JSON: el río de `robledo_tile` se cruza
+ *  por su puente y no por el agua. El agua y el puente salen los dos de
+ *  `ground` (water + deck): es la misma agua contada en el grid y en el plan,
+ *  y las dos fuentes tienen que decir lo mismo.
  *
  *  La fila por la que se cruza es el CENTRO del puente, no su primera fila:
  *  con la escala del tile (0,5 m/celda) el jugador mide 1,6 celdas de ancho,
  *  así que caminar por el borde del tablero le mete medio cuerpo en el agua
- *  de la fila de al lado. En la fixture vieja (2 m/celda) cualquier fila valía.
+ *  de la fila de al lado.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { cargarFixture } from "../lib/fixtures.mjs";
 
 /** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
@@ -32,16 +27,12 @@ import { cargarFixture } from "../lib/fixtures.mjs";
 export const sinMotor = "cierra el título y carga fixtures del selector; nunca arranca partida";
 
 const FIXTURE = "robledo_tile";
-const FIXTURE_EN_DISCO = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..", "..", "nefan-core", "data", "scenes", `${FIXTURE}.json`,
-);
 
 /** Coloca al jugador al oeste del río en la fila `r` y le hace caminar al
  *  este, AFIRMANDO si tenía que llegar al otro lado o no.
  *
  *  El signo es DATO y no dos funciones: el mismo paseo tiene que cruzar por el
- *  puente y NO cruzar por el agua — lo decide la leyenda del terreno, que es
+ *  puente y NO cruzar por el agua — lo decide qué chars son sólidos, que es
  *  justo lo que este guion mide. Por eso `debeCruzar` es un parámetro de
  *  `expectEspera` (#261): en el caso negativo el timeout ES el éxito, y así se
  *  escribe donde se espera en vez de viajar en un `let cruzo = true` que
@@ -88,7 +79,7 @@ export default async function (ctx) {
   // AFIRMA qué escena quedó puesta (#332): la espera propia era el patrón de #308.
   await cargarFixture(ctx, FIXTURE);
 
-  const leyenda = await ctx.page.evaluate(() => {
+  const solidez = await ctx.page.evaluate(() => {
     const g = window.__nefan.scene.terrain_grid;
     // Filas del puente: las que cruzan TODA la anchura del río con chars no
     // sólidos. Se camina por la de en MEDIO (el jugador tiene anchura: por el
@@ -115,30 +106,35 @@ export default async function (ctx) {
       (row, i) => i >= filaCruzable + 6 && [...row.slice(min, max + 1)].some((ch) => solidos.has(ch)),
     );
     return {
-      legend: g.legend,
       solid_chars: g.solid_chars,
+      claves: Object.keys(g).sort(),
       rioCols: [min, max],
       filaCruzable,
       filaBloqueada,
       charsPuente: filaCruzable >= 0 ? g.grid[filaCruzable].slice(min, max + 1) : "",
     };
   });
-  ctx.log(`río en columnas ${leyenda.rioCols} · fila del puente ${leyenda.filaCruzable} ("${leyenda.charsPuente}") · fila maciza ${leyenda.filaBloqueada}`);
+  ctx.log(`río en columnas ${solidez.rioCols} · fila del puente ${solidez.filaCruzable} ("${solidez.charsPuente}") · fila maciza ${solidez.filaBloqueada}`);
 
-  // ── 1. La leyenda resuelta ──────────────────────────────────────────────
-  ctx.expect("el agua es sólida por defecto", (leyenda.solid_chars ?? []).includes("w"), JSON.stringify(leyenda.solid_chars));
-  ctx.expect("el puente NO es sólido", !(leyenda.solid_chars ?? []).includes("b"), JSON.stringify(leyenda.solid_chars));
-  ctx.expect("el camino NO es sólido", !(leyenda.solid_chars ?? []).includes("_"), JSON.stringify(leyenda.solid_chars));
-  ctx.expect("cada char del grid tiene nombre en la leyenda", Boolean(leyenda.legend?.w && leyenda.legend?.b), JSON.stringify(leyenda.legend));
-  ctx.expect("hay una fila cruzable (el puente) y una maciza", leyenda.filaCruzable >= 0 && leyenda.filaBloqueada >= 0, JSON.stringify(leyenda));
-  if (leyenda.filaCruzable < 0 || leyenda.filaBloqueada < 0) return;
+  // ── 1. Lo que el engine fija como sólido ────────────────────────────────
+  ctx.expect("el agua es sólida", (solidez.solid_chars ?? []).includes("w"), JSON.stringify(solidez.solid_chars));
+  ctx.expect("el muro es sólido", (solidez.solid_chars ?? []).includes("W"), JSON.stringify(solidez.solid_chars));
+  ctx.expect("el puente NO es sólido", !(solidez.solid_chars ?? []).includes("b"), JSON.stringify(solidez.solid_chars));
+  ctx.expect("el camino NO es sólido", !(solidez.solid_chars ?? []).includes("_"), JSON.stringify(solidez.solid_chars));
+  ctx.expect(
+    "el grid viaja solo con lo que la colisión necesita (sin nombres por char)",
+    JSON.stringify(solidez.claves) === JSON.stringify(["cols", "grid", "meters_per_cell", "origin", "rows", "solid_chars"]),
+    JSON.stringify(solidez.claves),
+  );
+  ctx.expect("hay una fila cruzable (el puente) y una maciza", solidez.filaCruzable >= 0 && solidez.filaBloqueada >= 0, JSON.stringify(solidez));
+  if (solidez.filaCruzable < 0 || solidez.filaBloqueada < 0) return;
 
-  // ── 2. El vado se cruza andando ─────────────────────────────────────────
+  // ── 2. El puente se cruza andando ───────────────────────────────────────
   const porElPuente = await cruzarPorLaFila(
     ctx,
-    leyenda.filaCruzable,
+    solidez.filaCruzable,
     true,
-    `el jugador CRUZA el río por el puente (fila ${leyenda.filaCruzable})`,
+    `el jugador CRUZA el río por el puente (fila ${solidez.filaCruzable})`,
   );
   ctx.expect("el punto de partida del puente está libre", porElPuente.libre);
   ctx.log(
@@ -149,9 +145,9 @@ export default async function (ctx) {
   // ── 3. …y el agua no ────────────────────────────────────────────────────
   const contraElAgua = await cruzarPorLaFila(
     ctx,
-    leyenda.filaBloqueada,
+    solidez.filaBloqueada,
     false,
-    `el jugador NO cruza por el agua (fila ${leyenda.filaBloqueada})`,
+    `el jugador NO cruza por el agua (fila ${solidez.filaBloqueada})`,
   );
   ctx.expect("el punto de partida del agua está libre", contraElAgua.libre);
   ctx.log(
@@ -163,54 +159,4 @@ export default async function (ctx) {
     `${contraElAgua.xSalida.toFixed(1)} → ${contraElAgua.fin.x.toFixed(1)}`,
   );
   await ctx.shot("contra-el-rio");
-
-  // ── 4. `solid:false` en la leyenda abre el vado ─────────────────────────
-  // Misma escena, mismo camino del jugador; lo único que cambia es lo que el
-  // AUTOR declara del char de agua. Si `solid` dejara de leerse, el jugador
-  // seguiría rebotando aquí y el guion se pone rojo.
-  let servida = false;
-  await ctx.page.route(`**/${FIXTURE}.json*`, async (route) => {
-    const original = await route.fetch();
-    const texto = await original.text();
-    const escena = JSON.parse(readFileSync(FIXTURE_EN_DISCO, "utf8"));
-    escena.terrain_legend = { ...escena.terrain_legend, w: { name: "vado", solid: false } };
-    servida = true;
-    // El cliente carga las fixtures con `import.meta.glob`, así que Vite las
-    // sirve ya transformadas a módulo ES; se responde en el mismo formato en
-    // el que venía.
-    const esModulo = !texto.trimStart().startsWith("{");
-    await route.fulfill(
-      esModulo
-        ? { body: `export default ${JSON.stringify(escena)};`, contentType: "application/javascript" }
-        : { body: JSON.stringify(escena), contentType: "application/json" },
-    );
-  });
-  await ctx.page.reload({ waitUntil: "domcontentloaded" });
-  await ctx.waitFor("el cliente vuelve a estar en pie", () => Boolean(window.__nefan));
-  await ctx.waitFor("el título aparece", () => Boolean(document.getElementById("ts-close")));
-  await ctx.nefan("closeTitle");
-  // La lib afirma el `scene_id` — que aquí es el MISMO que el de la escena sin
-  // alterar (el `route.fulfill` sirve el vado bajo el mismo id): lo que
-  // distingue las dos versiones no es el id sino el contenido, y ese se LEE
-  // detrás de la promesa en vez de esperarlo — una espera por el contenido
-  // taparía un `fulfill` que no sirvió nada (el patrón de #308).
-  await cargarFixture(ctx, FIXTURE);
-  const conVado = await ctx.page.evaluate(() => {
-    const g = window.__nefan.scene.terrain_grid;
-    return { legend: g.legend.w, solid: g.solid_chars ?? [] };
-  });
-  ctx.expect("la fixture se sirvió con el vado declarado", servida, String(servida));
-  ctx.expect("`solid:false` saca el agua de solid_chars", !conVado.solid.includes("w"), JSON.stringify(conVado));
-  ctx.expect("y conserva el nombre declarado", JSON.stringify(conVado.legend).includes("vado"), JSON.stringify(conVado.legend));
-
-  const porElVado = await cruzarPorLaFila(
-    ctx,
-    leyenda.filaBloqueada,
-    true,
-    `con el agua declarada vadeable, el jugador SÍ cruza por la fila ${leyenda.filaBloqueada}`,
-  );
-  ctx.log(
-    `por el vado: x ${porElVado.xSalida.toFixed(1)} → ${porElVado.fin.x.toFixed(1)} (meta ${porElVado.xMeta.toFixed(1)})`,
-  );
-  await ctx.shot("vadeando");
 }
