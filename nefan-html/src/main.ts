@@ -2234,23 +2234,19 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       const skinPath = res.state.player.appearance.skin_path || "";
       await setPlayerAppearance(desiredModel, skinPath);
 
-      // Materialise the world the player was in. Multi-tile: TODOS los tiles
-      // del save se re-añaden (el plano continuo sobrevive al resume); la
-      // escena activa se añade la última para quedar como activa si es legacy.
+      // Materialise the world the player was in: TODOS los tiles del save se
+      // re-añaden (el plano continuo sobrevive al resume), y la escena activa
+      // PRIMERO: `addTile` activa el primer tile del plano (`carga-de-tile.ts`)
+      // y ese debe ser el del save, no el primero de `scenes_loaded` (#390).
       const activeId = res.state.world?.active_scene_id;
       const scenes = res.state.scenes_loaded as Record<string, { scene_data?: Record<string, unknown>; tile?: unknown }> | undefined;
-      let added = 0;
-      for (const [id, rec] of Object.entries(scenes ?? {})) {
-        if (!rec?.scene_data || !rec.tile || id === activeId) continue;
-        await addTile(rec.scene_data);
-        added++;
-      }
-      const activeScene = activeId ? scenes?.[activeId]?.scene_data : undefined;
-      if (activeScene) {
-        await addTile(activeScene);
-        added++;
-      }
-      if (added === 0) log(`(sin escena en el save — esperando narrativa)`);
+      const activa = activeId ? scenes?.[activeId]?.scene_data : undefined;
+      const resto = Object.entries(scenes ?? {}).flatMap(([id, rec]) =>
+        rec?.scene_data && rec.tile && id !== activeId ? [rec.scene_data] : [],
+      );
+      const porAnadir = activa ? [activa, ...resto] : resto;
+      for (const scene of porAnadir) await addTile(scene);
+      if (porAnadir.length === 0) log(`(sin escena en el save — esperando narrativa)`);
 
       // …Y LO QUE EL MOTOR PUSO A MITAD DE PARTIDA. Lo de las escenas ya ha
       // vuelto (arriba); esto es la otra procedencia: las entities de
@@ -2284,8 +2280,10 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         playerPos.x = savedPos[0];
         playerPos.z = savedPos[2];
       }
+      // Solo si la posición no cae en el tile ya activo: la misma clave se
+      // re-encolaría en el controller y correría un segundo resolve.
       const underResume = tileStore.getAt(playerPos.x, playerPos.z);
-      if (underResume) setActiveClientTile(underResume.key);
+      if (underResume && underResume.key !== mundo.tileActivo) setActiveClientTile(underResume.key);
     }
   } catch (err) {
     errors.push("session", "session start/resume failed", err);
