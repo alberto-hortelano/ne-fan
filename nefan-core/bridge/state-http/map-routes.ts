@@ -32,7 +32,6 @@ export const mapRoutes = {
     if (!parsed.ok) return parsed.result;
     try {
       const place = ctx.narrative.worldMap.upsertPlace(parsed.data);
-      ctx.narrative.markDirty();
       return mutated({ ok: true, place } satisfies PlaceUpsertResponse);
     } catch (err) {
       return bad((err as Error).message);
@@ -44,7 +43,6 @@ export const mapRoutes = {
     if (!parsed.ok) return parsed.result;
     try {
       const link = ctx.narrative.worldMap.addLink(parsed.data);
-      ctx.narrative.markDirty();
       return mutated({ ok: true, link } satisfies MapLinkResponse);
     } catch (err) {
       return bad((err as Error).message);
@@ -57,7 +55,6 @@ export const mapRoutes = {
     const { place_id: placeId, trigger } = parsed.data;
     try {
       ctx.narrative.worldMap.addTrigger(placeId, trigger);
-      ctx.narrative.markDirty();
       return mutated({ ok: true, place_id: placeId, trigger_id: trigger.id } satisfies MapTriggerResponse);
     } catch (err) {
       return bad((err as Error).message);

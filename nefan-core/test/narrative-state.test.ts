@@ -93,7 +93,6 @@ describe("NarrativeState lifecycle", () => {
     assert.equal(s.player.level, 1);
     assert.equal(s.story_so_far, "");
     assert.deepEqual(s.entities, []);
-    assert.ok(s.isDirty());
   });
 
   it("save persists schema version and roundtrips through loadSession", async () => {
@@ -113,7 +112,6 @@ describe("NarrativeState lifecycle", () => {
     assert.equal(s2.entities.length, 1);
     assert.equal(s2.entities[0].id, "npc_1");
     assert.equal(s2.dialogue_history.length, 1);
-    assert.equal(s2.isDirty(), false);
   });
 
   it("una versión de schema desconocida LANZA (canal distinguible de «no existe»)", async () => {

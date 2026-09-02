@@ -165,7 +165,6 @@ async function runPlaceTravel(
     // El anchor se fija ANTES de generar: buildGenerateTileCtx lo lee para
     // decirle al motor QUÉ lugar está construyendo en ese tile.
     place.anchor = anchor;
-    ctx.narrative.markDirty();
     if (!resolvePlaceTarget(ctx.narrative, placeId)) {
       throw new Error(`el anclaje de ${place.name} no da punto de aparición`);
     }

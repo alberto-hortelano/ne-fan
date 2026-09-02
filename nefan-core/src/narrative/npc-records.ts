@@ -110,19 +110,14 @@ export function registerSceneNpcs(
   // los mueve), role, directive y current_place_id. Solo se retiran los
   // scene_init que ya no figuran en la escena, y se crean los nuevos.
   const ids = new Set(npcs.map((n) => n.id));
-  const before = state.entities.length;
   state.entities = state.entities.filter(
     (e) => !(e.scene_id === sceneId && e.spawn_reason === "scene_init" && !ids.has(e.id)),
   );
-  if (state.entities.length !== before) state.markDirty();
 
   for (const npc of npcs) {
     const existing = state.entities.find((e) => e.id === npc.id);
     if (existing) {
-      if (npc.name && existing.data.name !== npc.name) {
-        existing.data.name = npc.name;
-        state.markDirty();
-      }
+      if (npc.name && existing.data.name !== npc.name) existing.data.name = npc.name;
       // Mismo id declarado por OTRA escena en el PRIMER registro = el
       // personaje se MUEVE aquí con todo su estado (data: inventario, role,
       // directive) y toma la posición que la escena le declara. Es el
@@ -132,7 +127,6 @@ export function registerSceneNpcs(
       if (opts.firstRegistration && existing.scene_id !== sceneId) {
         existing.scene_id = sceneId;
         existing.position = [npc.pos[0], npc.pos[1], npc.pos[2]];
-        state.markDirty();
       }
       continue;
     }

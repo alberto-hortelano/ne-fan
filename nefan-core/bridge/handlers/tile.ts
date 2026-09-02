@@ -369,7 +369,6 @@ export async function activateByPosition(
     ctx.posTracking.placeId = placeId;
     ctx.narrative.worldMap.setActivePlace(placeId);
     ctx.narrative.worldMap.markVisited(placeId);
-    ctx.narrative.markDirty();
     await fireMapTriggers(ctx, prev, placeId);
   } else if (!placeId) {
     ctx.posTracking.placeId = null;

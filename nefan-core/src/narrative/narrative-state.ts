@@ -162,7 +162,6 @@ export class NarrativeState {
 
   private nextEventSeq = 0;
   private nextSchedSeq = 0;
-  private dirty = false;
   /** La puerta del disco. Privada y SIN setter público: las únicas
    *  transiciones son las cuatro de abajo (startNewSession, loadSession,
    *  establecer, deleteSession/descartarProvisional). */
@@ -216,7 +215,6 @@ export class NarrativeState {
     if (this.world.active_scene_id === sceneId) return true;
     this.world.active_scene_id = sceneId;
     this.player.current_scene_id = sceneId;
-    this.dirty = true;
     return true;
   }
 
@@ -340,7 +338,6 @@ export class NarrativeState {
     // deja nada en `saves/`: no hay partida que borrar porque no llegó a
     // haberla.
     this.existencia = "provisional";
-    this.dirty = true;
     return this.session_id;
   }
 
@@ -401,7 +398,6 @@ export class NarrativeState {
         `"${dropped.id}" (${dropped.description.slice(0, 60)}…)`,
       );
     }
-    this.dirty = true;
     return id;
   }
 
@@ -411,7 +407,6 @@ export class NarrativeState {
     const idx = this.scheduled_events.findIndex((e) => e.id === id);
     if (idx < 0) return false;
     this.scheduled_events.splice(idx, 1);
-    this.dirty = true;
     return true;
   }
 
@@ -422,7 +417,6 @@ export class NarrativeState {
     if (this.ambient_log.length > 30) {
       this.ambient_log.splice(0, this.ambient_log.length - 30);
     }
-    this.markDirty();
   }
 
   /** Fija la identidad del mundo de la sesión (título, brief, estilo
@@ -449,7 +443,6 @@ export class NarrativeState {
     this.world.character_mode = info.character_mode;
     this.world.combat_system = info.combat_system;
     if (info.style_refs) this.world.style_refs = info.style_refs;
-    this.dirty = true;
   }
 
   /** Reemplaza el catálogo de refs de estilo que ve el motor (`style_ref`
@@ -457,7 +450,6 @@ export class NarrativeState {
    *  en start_session y resume_session — el save solo lo cachea. */
   setStyleRefs(refs: NarrativeWorldState["style_refs"]): void {
     this.world.style_refs = refs;
-    this.dirty = true;
   }
 
   /** Carga un save. Canal de error DISTINGUIBLE por construcción:
@@ -517,7 +509,6 @@ export class NarrativeState {
     this.nextEventSeq = data._next_event_seq ?? data.dialogue_history.length;
     this.nextSchedSeq = data._next_sched_seq ?? this.scheduled_events.length;
     this.rebuildTileIndex();
-    this.dirty = false;
     return true;
   }
 
@@ -542,7 +533,6 @@ export class NarrativeState {
     this.updated_at = nowIso();
     const payload = this.toSessionData();
     await this.storage.write(this.session_id, payload);
-    this.dirty = false;
     return { escrito: true };
   }
 
@@ -635,7 +625,6 @@ export class NarrativeState {
       }
     }
     registerSceneNpcs(this, sceneId, sceneData, { firstRegistration });
-    this.dirty = true;
   }
 
   /** Append ADITIVO con dedupe a asset_refs de una escena cargada: los
@@ -650,7 +639,6 @@ export class NarrativeState {
       if (!current.has(ref)) {
         current.add(ref);
         record.asset_refs.push(ref);
-        this.dirty = true;
       }
     }
     return record.asset_refs.length;
@@ -691,7 +679,6 @@ export class NarrativeState {
       data,
       asset_refs: assetRefs,
     });
-    this.dirty = true;
     return uniqueId;
   }
 
@@ -724,7 +711,6 @@ export class NarrativeState {
   addInventoryItem(entityId: string, item: unknown): boolean {
     if (entityId === "player") {
       this.player.inventory.push(item);
-      this.dirty = true;
       return true;
     }
     const entity = this.getEntity(entityId);
@@ -735,7 +721,6 @@ export class NarrativeState {
     } else {
       entity.data.inventory = [item];
     }
-    this.dirty = true;
     return true;
   }
 
@@ -751,16 +736,9 @@ export class NarrativeState {
     );
     if (idx === -1) return false;
     inv.splice(idx, 1);
-    this.dirty = true;
     return true;
   }
 
-  /** Notify that state was mutated out-of-band (e.g. by a narrative engine
-   * tool through the bridge HTTP API: world map, NPC directives, triggers),
-   * so the next save() persists it. */
-  markDirty(): void {
-    this.dirty = true;
-  }
 
   // ── Plugins (next.md §7) ──
 
@@ -806,7 +784,6 @@ export class NarrativeState {
       );
     }
     this.plugins.push(record);
-    this.dirty = true;
   }
 
   /** Sustituye un PluginRecord migrado (F7, §7.3 "Evolución"): nuevo
@@ -851,7 +828,6 @@ export class NarrativeState {
     record.origin = next.origin;
     if (next.manifest) record.manifest = next.manifest;
     else delete record.manifest;
-    this.dirty = true;
   }
 
   /** Sustituye el slice de un plugin tras un tick del dispatcher (F4). */
@@ -861,7 +837,6 @@ export class NarrativeState {
       throw new Error(`NarrativeState.setPluginSlice: plugin desconocido ${id}`);
     }
     record.slice = slice;
-    this.dirty = true;
   }
 
   recordDialogueEvent(
@@ -883,7 +858,6 @@ export class NarrativeState {
       free_text: freeText,
       narrative_consequences: [],
     });
-    this.dirty = true;
     return eventId;
   }
 
@@ -891,35 +865,27 @@ export class NarrativeState {
     const evt = this.dialogue_history.find((e) => e.id === eventId);
     if (evt) {
       evt.narrative_consequences.push(consequence);
-      this.dirty = true;
     }
   }
 
   updatePlayerPosition(pos: Vec3Like, sceneId: string = ""): void {
     this.player.position = toTuple(pos);
     if (sceneId) this.player.current_scene_id = sceneId;
-    this.dirty = true;
   }
 
   updatePlayerHealth(health: number): void {
     this.player.health = health;
-    this.dirty = true;
   }
 
   updatePlayerAppearance(modelId: string, skinPath: string): void {
     this.player.appearance = { model_id: modelId, skin_path: skinPath };
-    this.dirty = true;
   }
 
   appendStory(delta: string): void {
     if (!delta) return;
     this.story_so_far = this.story_so_far ? `${this.story_so_far}\n\n${delta}` : delta;
-    this.dirty = true;
   }
 
-  isDirty(): boolean {
-    return this.dirty;
-  }
 
   // ── Serialization ──
 
