@@ -107,7 +107,7 @@ const ctx: BridgeContext = {
   persistWorldSnapshots: true,
   activePlugins: new Map(),
   sceneGen: new SceneGenQueue(),
-  posTracking: { cellKey: null, placeId: null },
+  posTracking: { cellKey: null, tileKey: null, placeId: null },
   world: createWorldClaim(narrative, sim),
   subscribe(ws) {
     narrativeSubscribers.add(ws as WebSocket);

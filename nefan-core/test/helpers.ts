@@ -180,7 +180,7 @@ export function makeCtx(
     persistWorldSnapshots: opts.persistWorldSnapshots ?? false,
     activePlugins: new Map(),
     sceneGen: new SceneGenQueue(),
-    posTracking: { cellKey: null, placeId: null },
+    posTracking: { cellKey: null, tileKey: null, placeId: null },
     world: createWorldClaim(narrative, sim),
     subscribe(ws) {
       subscribers.add(ws);

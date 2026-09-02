@@ -12,6 +12,7 @@ import type {
   } from "../src/protocol/messages.js";
 import {
   capturarLogDelBridge,
+  entrarEnLaPartida,
   escenaExpandidaDePrueba,
   makeCtx,
   makeSocket,
@@ -595,6 +596,90 @@ describe("bridge activación por posición (tiles + anchors)", () => {
     await input(55.4, -4);
     const count2 = broadcasts.filter((m) => m.type === "narrative_event" && m.eventId === "map_trigger").length;
     assert.equal(count2, count, "sin re-disparos");
+  });
+});
+
+/** El hecho «el jugador ha cambiado de tile» ESCRIBE el save (#395). Hasta la
+ *  tanda solo marcaba un `dirty` sin lector: un viaje por «Salidas» al que no
+ *  siguiera otra escritura reanudaba en el tile de antes. Se mide contando
+ *  escrituras del storage, que es lo que el disco ve — no llamadas a `save()`,
+ *  que con la partida sin establecer no escriben nada. */
+describe("bridge cambiar de tile guarda la partida (#395)", () => {
+  const dosTiles = (narrative: NarrativeState) => {
+    narrative.recordSceneLoaded(
+      "tile_0_0",
+      expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", scene_description: "campo", biome: "grass", entities: [] }),
+    );
+    narrative.recordSceneLoaded(
+      "tile_1_0",
+      expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", scene_description: "campo", biome: "grass", entities: [] }),
+      [],
+      { activate: false },
+    );
+  };
+
+  /** Una partida EN DISCO que escucha al sim, con las escrituras contadas. */
+  async function partidaEnMarcha() {
+    const h = makeCtx();
+    h.narrative.startNewSession("plugtest");
+    dosTiles(h.narrative);
+    const { socket } = makeSocket();
+    h.ctx.world.claimForSession(socket);
+    await entrarEnLaPartida(h.ctx, socket, h.narrative.session_id);
+    const escrituras: string[] = [];
+    const write = h.storage.write.bind(h.storage);
+    h.storage.write = async (id, data) => {
+      escrituras.push(id);
+      await write(id, data);
+    };
+    const input = (x: number, z: number) =>
+      routeMessage(
+        { type: "input", delta: 0.016, inputs: { playerPosition: { x, y: 0, z }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: true } },
+        socket,
+        h.ctx,
+      );
+    return { ...h, socket, escrituras, input };
+  }
+
+  it("cambiar de TILE escribe el save con el destino y la posición; cambiar de celda dentro del mismo tile, no", async () => {
+    const { narrative, storage, escrituras, input } = await partidaEnMarcha();
+    // El primer input arranca el gate (tile desconocido → hay tile): escribe.
+    await input(0, 0);
+    const trasElPrimero = escrituras.length;
+    assert.ok(trasElPrimero >= 1, "el primer tile pisado se guarda");
+    // Dos celdas más del mismo tile: ni una escritura.
+    await input(0.7, 0);
+    await input(1.4, 0.7);
+    assert.equal(escrituras.length, trasElPrimero, "cambiar de celda dentro del tile no escribe");
+    // Cruzar a (1,0): UNA escritura, y el save lleva el destino y la posición.
+    await input(40, -20);
+    assert.equal(escrituras.length, trasElPrimero + 1, "cambiar de tile escribe una vez");
+    assert.equal(narrative.world.active_scene_id, "tile_1_0");
+    const guardado = await storage.read(narrative.session_id);
+    assert.equal(guardado?.world.active_scene_id, "tile_1_0", "el save lleva el tile del destino");
+    assert.deepEqual(guardado?.player.position, [40, 0, -20], "…y la posición viva del jugador en él");
+  });
+
+  it("si el save del cambio de tile falla, el jugador lo lee (narrative_status error, kind save)", async () => {
+    const { ctx, broadcasts, storage, input } = await partidaEnMarcha();
+    await input(0, 0);
+    storage.write = async () => {
+      throw new Error("disco lleno (simulado)");
+    };
+    const log = capturarLogDelBridge();
+    try {
+      await input(40, -20);
+    } finally {
+      log.soltar();
+    }
+    const aviso = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error" && m.kind === "save",
+    );
+    assert.ok(aviso, "el fallo del save se difunde como narrative_status error kind save");
+    assert.match(aviso.message ?? "", /podría no guardarse/);
+    assert.ok(log.lineas.some((l) => l.includes("el cambio de tile") && l.includes("disco lleno")), log.lineas.join(" | "));
+    // Y el tile SÍ cambió: el fallo del disco no deja al jugador en el tile de antes.
+    assert.equal(ctx.narrative.world.active_scene_id, "tile_1_0");
   });
 });
 

@@ -362,6 +362,37 @@ export async function comenzar(ctx, maxMs = 180_000) {
   return arrancada;
 }
 
+/** Recarga la página y REANUDA la partida `sessionId` desde su tarjeta del
+ *  título, como quien juega. Vuelve cuando la escena está de vuelta, con su
+ *  `scene_id`; `null` si el título no ofrece la tarjeta (queda AFIRMADO con
+ *  `ctx.expect`, no tragado: el llamante decide si sigue).
+ *
+ *  Estaba escrito tres veces —55, 60 y el bloque de resume de otros dos— y
+ *  cada copia esperaba a una cosa distinta. Aquí se espera a lo que hace falta
+ *  para que «reanudó» sea verdad (hook, título, lista de saves, tarjeta,
+ *  escena) y cada guion afirma después lo suyo sobre el mundo que volvió.
+ *
+ *  `alRecargar` corre en cuanto `window.__nefan` existe y ANTES de que el
+ *  título esté listo: es el hueco para instalar un espía (el observer del HUD
+ *  del 60) que tiene que ver el resume desde su primera línea. */
+export async function reanudar(ctx, sessionId, { alRecargar = null } = {}) {
+  await ctx.page.reload({ waitUntil: "domcontentloaded" });
+  await ctx.waitFor("window.__nefan disponible tras el reload", () => Boolean(window.__nefan));
+  if (alRecargar) await alRecargar();
+  await esperarTituloListo(ctx);
+  await esperarListaDeSaves(ctx);
+  const tarjeta = await ctx.page.$(`button[data-action="resume"][data-session-id="${sessionId}"]`);
+  ctx.expect("el título ofrece REANUDAR la partida", Boolean(tarjeta), sessionId);
+  if (!tarjeta) return null;
+  await tarjeta.click();
+  const scene = await ctx.waitFor(
+    "la escena vuelve tras reanudar",
+    () => (window.__nefan.status().scene ? window.__nefan.scene.scene_id : null),
+    180_000,
+  );
+  return { scene };
+}
+
 /** Pre-genera el mundo del juego desde el título, por el camino del jugador
  *  (el botón «Generar mundo», que pide confirmación en dos clicks como las
  *  acciones de pago) y deja al guion de vuelta en el home.

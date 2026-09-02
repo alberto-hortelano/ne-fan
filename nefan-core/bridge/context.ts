@@ -94,8 +94,10 @@ export interface BridgeContext {
    *  prioridad blocking) en vez de perderse. */
   sceneGen: SceneGenQueue;
   /** Tracking de la activación por posición (tile/place bajo el jugador),
-   *  gateado por cambio de celda para no costar nada en el hot loop. */
-  posTracking: { cellKey: string | null; placeId: string | null };
+   *  gateado por cambio de celda para no costar nada en el hot loop.
+   *  `tileKey` es el gate del save por cambio de TILE (#395): una escritura
+   *  por 64 m, no una por celda. */
+  posTracking: { cellKey: string | null; tileKey: string | null; placeId: string | null };
   /** El dueño del mundo del sim: quién puede escribir en él y si la partida
    *  guardada está escuchando (`bridge/world-claim.ts`). Tomar el mundo y
    *  decidir si el save escucha son la MISMA llamada — separarlos es lo que

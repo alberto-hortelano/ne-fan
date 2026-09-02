@@ -101,7 +101,10 @@ async function difundirPlaceRealizado(
   if (!sceneId || !ctx.narrative.scenes_loaded[sceneId]) return false;
   const scene = ctx.narrative.scenes_loaded[sceneId].scene_data;
   // recordSceneLoaded re-activates the place AND (re-)registers the
-  // scene's NPCs into entities so the narrative engine sees them.
+  // scene's NPCs into entities so the narrative engine sees them. Este save
+  // persiste la activación del place y el ledger de NPCs; la POSICIÓN del
+  // jugador llega con el save del cambio de tile (`activateByPosition`,
+  // #395), en el primer `input` tras el spawn que se pide abajo.
   ctx.narrative.recordSceneLoaded(sceneId, scene);
   await ctx.narrative.save();
   // El spawn se PIDE al cliente (dueño de la posición).
