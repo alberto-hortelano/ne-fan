@@ -64,6 +64,22 @@ describe("unionCollisionGrids", () => {
     assert.deepEqual(u?.solid_chars, ["S"]);
   });
 
+  it("una fuente SIN solid_chars declara sus sólidos con \"S\", que es el char de los grids derivados", () => {
+    // Los grids que salen de `volumeCollisionGrid`/`groundCollisionGrid` llevan
+    // `solid_chars: ["S"]`, pero el campo es opcional en `TerrainGridData`: sin
+    // él, el default tiene que seguir siendo "S" en las DOS posiciones de la
+    // unión, o una fuente entera dejaría de bloquear en silencio.
+    const sinLista = (rows: string[]): TerrainGridData => {
+      const { solid_chars: _omitido, ...resto } = mk(rows);
+      return resto;
+    };
+    const a = sinLista(["Sg", "gg"]);
+    const b = sinLista(["gg", "gS"]);
+    assert.deepEqual(unionCollisionGrids(a, mk(["gg", "gg"]))?.grid, ["Sg", "gg"], "la fuente A sin lista bloquea con S");
+    assert.deepEqual(unionCollisionGrids(mk(["gg", "gg"]), b)?.grid, ["gg", "gS"], "la fuente B sin lista bloquea con S");
+    assert.deepEqual(unionCollisionGrids(a, b)?.grid, ["Sg", "gS"]);
+  });
+
   it("respeta solid_chars distintos de cada fuente", () => {
     const a: TerrainGridData = { ...mk(["Wg"]), solid_chars: ["W"] };
     const b: TerrainGridData = { ...mk(["gw"]), solid_chars: ["w"] };
