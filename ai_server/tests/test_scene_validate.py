@@ -150,10 +150,8 @@ class TestSceneValidateBenign(unittest.TestCase):
         self.assertTrue(out["scene_id"])  # se rellena (benigno)
 
     def test_glyph_is_kept_verbatim(self):
-        # El glyph es del motor y el saneador no lo reescribe: hasta #335 un
-        # glyph que coincidía con un char del grid recibía uno de reserva en
-        # silencio, y el motor nunca se enteraba de que su entity cambió de
-        # marca. Sin tabla de chars que consultar, no hay reescritura.
+        # El glyph es del motor y el saneador no lo reescribe: lo que declara
+        # es lo que sale, sin sustituciones mudas (#335).
         s = base_scene()
         s["entities"] = [{"id": "x", "kind": "prop", "name": "X", "cell": [0, 0], "footprint": [1, 1], "glyph": "g"}]
         out = validate_scene_response(s)

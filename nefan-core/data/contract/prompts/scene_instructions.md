@@ -60,8 +60,8 @@ plazas/courtyards. Points are float cell coordinates and curves are smoothed
 gets made: the biome fills the base and every `ground` feature is stamped over
 it, so a road that is not in `ground` does not exist.
 
-Do NOT emit SVG of any kind (the old "terrain_svg"/"map_ground" fields are
-gone): everything is declarative data — typed "ground" features + "volumes".
+Never draw anything yourself (no SVG, no image): everything is declarative
+data — typed "ground" features + "volumes".
 
 ENTITY RULES
 - Every entity has a UNIQUE id (slug). Two trees in different places need

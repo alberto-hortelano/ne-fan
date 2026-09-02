@@ -141,7 +141,7 @@
     "expandido-con-biome-desconocido": {
       "ok": false,
       "errors": [
-        "tile.biome \"bogus\" desconocido — usa el catálogo (grass, forest_floor, meadow, sand, dirt, stone, snow, swamp) o un char del grid (g/a/d/s/o)"
+        "tile.biome \"bogus\" desconocido — usa el catálogo (grass, forest_floor, meadow, sand, dirt, stone, snow, swamp)"
       ],
       "warnings": [],
       "stats": {

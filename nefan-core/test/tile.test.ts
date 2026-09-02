@@ -40,9 +40,13 @@ describe("geometría de tile", () => {
     assert.deepEqual(neighborTile(2, -1, "west"), { tx: 1, ty: -1 });
   });
 
-  it("resolveBiome: catálogo, char del grid, desconocido fail-loud", () => {
+  it("resolveBiome: solo el catálogo; lo demás es fail-loud sin ofrecer alternativa", () => {
     assert.equal(resolveBiome("forest_floor"), "g");
-    assert.equal(resolveBiome("a"), "a");
+    assert.equal(resolveBiome("sand"), "a");
+    // Un char suelto NO es un bioma: la única vía es el catálogo, y el mensaje
+    // no puede enseñarle al motor otra (era una rama sin sujeto: ni el zod ni
+    // el espejo Python la dejaban llegar).
+    assert.throws(() => resolveBiome("a"), /desconocido — usa el catálogo \(grass, forest_floor, meadow, sand, dirt, stone, snow, swamp\)$/);
     assert.throws(() => resolveBiome("lava"), /desconocido/);
     assert.throws(() => resolveBiome(undefined), /requerido/);
   });

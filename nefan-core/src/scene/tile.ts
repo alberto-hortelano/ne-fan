@@ -65,9 +65,8 @@ export function neighborTile(tx: number, ty: number, edge: Edge): TileCoord {
 
 /** Catálogo de biomas → char base del grid (el fill que sintetiza
  *  `scene-expand`; el nombre del bioma no viaja: nadie lo lee). El bioma
- *  desconocido es fail-loud — el motor debe usar el catálogo, que es el mismo
- *  enum que `SCENE_BIOMES` en el zod. Los chars del grid también se aceptan
- *  directamente como biome. */
+ *  desconocido es fail-loud — el motor solo puede elegir del catálogo, que es
+ *  el mismo enum que `SCENE_BIOMES` en el zod y en su espejo Python. */
 export const BIOME_CATALOG: Record<string, string> = {
   grass: "g",
   forest_floor: "g",
@@ -79,19 +78,15 @@ export const BIOME_CATALOG: Record<string, string> = {
   swamp: "d",
 };
 
-/** Chars del grid aceptados como biome directo. */
-const RESERVED_BIOME_CHARS = new Set(["g", "a", "d", "s", "o"]);
-
-/** Resuelve un `biome` (nombre del catálogo o char del grid) → char base del
- *  fill. Lanza si es desconocido. */
+/** Resuelve un `biome` del catálogo → char base del fill. Lanza si es
+ *  desconocido: el catálogo es lo único que el contrato admite. */
 export function resolveBiome(biome: unknown): string {
   if (typeof biome !== "string" || !biome) {
     throw new Error(`tile.biome requerido (catálogo: ${Object.keys(BIOME_CATALOG).join(", ")})`);
   }
   const entry = BIOME_CATALOG[biome];
   if (entry) return entry;
-  if (biome.length === 1 && RESERVED_BIOME_CHARS.has(biome)) return biome;
   throw new Error(
-    `tile.biome "${biome}" desconocido — usa el catálogo (${Object.keys(BIOME_CATALOG).join(", ")}) o un char del grid (g/a/d/s/o)`,
+    `tile.biome "${biome}" desconocido — usa el catálogo (${Object.keys(BIOME_CATALOG).join(", ")})`,
   );
 }
