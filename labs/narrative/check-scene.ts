@@ -18,7 +18,7 @@ import { resolve } from "node:path";
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "../../nefan-core/src/scene/scene-expand.js";
 import { validateScene, type SceneValidationResult } from "../../nefan-core/src/scene/scene-validate.js";
-import { resolveTerrainLegend } from "../../nefan-core/src/scene/scene-normalize.js";
+import { formatDToWorld } from "../../nefan-core/src/scene/scene-normalize.js";
 
 function usage(): never {
   console.error("uso: check-scene (--file escena.json | --run <run_dir> | --save <save_dir>) [--state-api <url>]");
@@ -113,8 +113,10 @@ async function main(): Promise<void> {
 
   console.log(`escena: ${scene.scene_id} (place_id: ${scene.place_id ?? "—"}) — validación ${via}`);
   console.log(`stats: ${JSON.stringify(result.stats)}`);
-  const { legend, solidChars } = resolveTerrainLegend((hasUnexpandedPrimitives(scene) ? expandScenePrimitives(scene) : scene).terrain_legend);
-  console.log(`solid_chars: ${solidChars.join(" ")} | legend: ${JSON.stringify(legend)}`);
+  const tg = formatDToWorld(hasUnexpandedPrimitives(scene) ? expandScenePrimitives(scene) : scene).terrain_grid as
+    | { solid_chars?: string[] }
+    | undefined;
+  console.log(`solid_chars: ${(tg?.solid_chars ?? []).join(" ")}`);
   console.log("\n" + renderAscii(scene) + "\n");
 
   for (const w of result.warnings) console.log(`⚠ ${w}`);

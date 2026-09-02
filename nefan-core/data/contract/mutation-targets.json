@@ -176,7 +176,7 @@
         "test/tile.test.ts"
       ],
       "break": 98,
-      "porque": "Format D → world scene y el PLAN del tile que viaja resuelto dentro (`tile-plan.ts`): el único camino hasta lo que el cliente pinta y lo que el bridge colisiona. Los dos ficheros van juntos porque `formatDToWorld` es el único llamante de `composeTilePlan` en producción y comparten batería. Son los tests que lo importan directamente; media casa más lo alcanza a través del bridge, pero nada de eso puede matar un mutante de la conversión. plan-collision entra el 2026-08-23 con el vado, y entra porque el candado de imports lo obliga: ejerce `resolveTerrainLegend` (misma escena con `w: \"agua\"` y con `w: {name, solid:false}`), pero NO sube el score — medido las dos veces el 2026-08-23: 98,91 % con él y 98,91 % sin él, cero mutantes nuevos muertos y 70 s en vez de 54 s. Esos mutantes ya los mataba scene-normalize.test.ts. Se queda porque meterlo en `excluidos` sería mentira (importa el fichero mutado de verdad); si hay que abaratar este módulo, este es el candidato. sim-collision entra con la tanda del bosque: importa `composeTilePlan` para comprobar que el bridge frena en los MISMOS troncos que el jugador (#232)."
+      "porque": "Format D → world scene y el PLAN del tile que viaja resuelto dentro (`tile-plan.ts`): el único camino hasta lo que el cliente pinta y lo que el bridge colisiona. Los dos ficheros van juntos porque `formatDToWorld` es el único llamante de `composeTilePlan` en producción y comparten batería. Son los tests que lo importan directamente; media casa más lo alcanza a través del bridge, pero nada de eso puede matar un mutante de la conversión. plan-collision entra el 2026-08-23 y sigue porque el candado de imports lo obliga: ejerce `formatDToWorld` para comprobar que `terrain_grid.solid_chars` es lo que el plan bloquea. Medido el 2026-08-23 NO subía el score (98,91 % con él y sin él) y costaba 16 s más; el 2026-09-02 (#335) perdió además su caso propio —la solidez por escena se retiró con la leyenda y hoy la fija el engine—, así que si hay que abaratar este módulo, este es el candidato. sim-collision entra con la tanda del bosque: importa `composeTilePlan` para comprobar que el bridge frena en los MISMOS troncos que el jugador (#232)."
     },
     {
       "id": "plugins-dsl",
@@ -547,6 +547,7 @@
       "id": "contrato-escena",
       "mutate": [
         "src/contract/model-io/physics.ts",
+        "src/contract/model-io/retired-terrain-fields.ts",
         "src/contract/model-io/scene-schema.ts",
         "src/contract/model-io/validate.ts"
       ],
@@ -555,6 +556,7 @@
         "test/contract-physics.test.ts",
         "test/contract-prompts.test.ts",
         "test/message-schema.test.ts",
+        "test/retired-terrain-fields.test.ts",
         "test/scene-fixtures.test.ts",
         "test/scene-schema.test.ts",
         "test/style-refs.test.ts"

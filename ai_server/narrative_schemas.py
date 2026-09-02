@@ -44,12 +44,6 @@ GENERATE_SCENE_SYSTEM_PROMPT = (
 GENERATE_SCENE_TOOL = _tool("generate_scene.json")
 
 
-RESERVED_TERRAIN = {
-    "g": "grass", "w": "water", "_": "path", "s": "stone",
-    "b": "bridge", "d": "dirt", "a": "sand", "o": "wood",
-    "W": "muro",
-}
-
 VALID_ENTITY_KINDS = {"building", "prop", "item", "tree", "npc", "player", "decor"}
 
 
@@ -534,8 +528,7 @@ def validate_scene_response(data: dict) -> dict:
 
     Se CONSERVAN las normalizaciones BENIGNAS que el gate del modelo tolera y
     que por tanto no pueden rechazar tras el pre-flight: defaults de
-    scene_id/description, clamp de cell/footprint al grid, glifo de reserva ante
-    colisión con el terreno, enriquecimiento de la leyenda y descarte de campos
+    scene_id/description, clamp de cell/footprint al grid y descarte de campos
     legacy/retirados.
     """
     import uuid as _uuid
@@ -546,10 +539,10 @@ def validate_scene_response(data: dict) -> dict:
     data["scene_description"] = data.get("scene_description") or "Un paraje desolado."
     data["ambient_event"] = data.get("ambient_event") or ""
 
-    # ── Tile (Format D v3, plano continuo) ───────────────────────────────
-    # Un tile no lleva size/terrain (la base es biome + primitivas, expandida
-    # en nefan-core). Aquí solo saneado superficial; el bridge fija las coords
-    # y valida jugabilidad/costuras server-side.
+    # ── Tile (plano continuo) ────────────────────────────────────────────
+    # Un tile no lleva size/terrain (la base es biome + ground/volumes; el grid
+    # lo sintetiza nefan-core). Aquí solo saneado superficial; el bridge fija
+    # las coords y valida jugabilidad/costuras server-side.
     raw_tile = data.get("tile")
     is_tile = (
         isinstance(raw_tile, dict)
@@ -584,23 +577,6 @@ def validate_scene_response(data: dict) -> dict:
             raise ValueError(
                 "un tile necesita `biome` (grass|forest_floor|meadow|sand|dirt|stone|snow|swamp)"
             )
-        patches = data.get("terrain_patches")
-        if isinstance(patches, list):
-            clean_p = []
-            for i, tp in enumerate(patches[:24]):
-                if (
-                    isinstance(tp, dict)
-                    and isinstance(tp.get("at"), list) and len(tp["at"]) == 2
-                    and all(isinstance(v, int) for v in tp["at"])
-                    and isinstance(tp.get("rows"), list) and tp["rows"]
-                    and all(isinstance(r, str) and r for r in tp["rows"])
-                ):
-                    clean_p.append({"at": tp["at"], "rows": tp["rows"]})
-                else:
-                    print(f"validate_scene_response: terrain_patches[{i}] malformado, descartado", flush=True)
-            data["terrain_patches"] = clean_p
-        else:
-            data.pop("terrain_patches", None)
         anchors = data.get("place_anchors")
         if isinstance(anchors, list):
             clean_a = []
@@ -651,28 +627,6 @@ def validate_scene_response(data: dict) -> dict:
             "`__expanded` es la marca interna del expander: una escena emitida no la lleva — "
             "quítala y declara `biome` + primitivas; el engine expande y marca él"
         )
-
-    # ── Terrain legend ───────────────────────────────────────────────────
-    # Los valores pueden ser string (legacy) u objeto {name, solid} — la forma
-    # objeto declara colisión por char y debe sobrevivir el saneado (la resuelve
-    # formatDToWorld en nefan-core). Un valor de otro tipo se descarta.
-    raw_legend = data.get("terrain_legend")
-    legend: dict = {}
-    if isinstance(raw_legend, dict):
-        for ch, val in raw_legend.items():
-            if isinstance(val, str):
-                legend[ch] = val
-            elif isinstance(val, dict) and isinstance(val.get("name"), str):
-                entry = {"name": val["name"]}
-                if isinstance(val.get("solid"), bool):
-                    entry["solid"] = val["solid"]
-                legend[ch] = entry
-    # El tile no trae grid que escanear: su leyenda es la declarada más las
-    # reservadas (el engine sintetiza el terreno desde bioma + primitivas).
-    # Merge reserved (the legend takes precedence if LLM redefined a char).
-    for ch, name in RESERVED_TERRAIN.items():
-        legend.setdefault(ch, name)
-    data["terrain_legend"] = legend
 
     # ── Map plan (ground + volumes) ──────────────────────────────────────
     # Espejo de parseGround/parseVolumes en nefan-core: mismo criterio en
@@ -746,7 +700,6 @@ def validate_scene_response(data: dict) -> dict:
     raw_entities = data.get("entities")
     if not isinstance(raw_entities, list):
         raw_entities = []
-    terrain_chars = set(legend.keys())
 
     seen_ids: set = set()
     cleaned: list = []
@@ -816,11 +769,6 @@ def validate_scene_response(data: dict) -> dict:
         glyph = ent.get("glyph")
         if not (isinstance(glyph, str) and len(glyph) == 1):
             raise ValueError(f"entity '{eid}': `glyph` debe ser un único carácter")
-        if glyph in terrain_chars:
-            # Colisión con un char de terreno → glifo de reserva (benigno: el
-            # gate del modelo no comprueba unicidad de glyph).
-            fallback_pool = "?xyzqXYZQ#&%$*+!"
-            glyph = next((c for c in fallback_pool if c not in terrain_chars), "?")
 
         clean_ent = {
             "id": eid,

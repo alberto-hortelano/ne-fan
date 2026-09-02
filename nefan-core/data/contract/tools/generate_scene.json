@@ -36,31 +36,6 @@
         "type": "string",
         "description": "2-3 sentence description of the scene, in Spanish."
       },
-      "terrain_legend": {
-        "type": "object",
-        "description": "Mapping from terrain char to terrain name. Only for CUSTOM chars your primitives introduce (a structure's wall_char/floor_char of your own); reserved chars need no entry, and an undeclared char is rejected. A value can also be {\"name\": ..., \"solid\": true|false} to declare that char blocks movement. W and w are solid by default; b (bridge) is walkable.",
-        "additionalProperties": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "solid": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "name"
-              ]
-            }
-          ]
-        }
-      },
       "ground": {
         "type": "array",
         "description": "Ground features as typed objects (max 64), coordinates in cells 0..128: path {points:[[c,r],...], w?, material?}, area {rect|polygon|ellipse, material}, water {rect|polygon|ellipse} (blocks movement), deck {rect|polygon|ellipse, material?} (walkable OVER water, punches its collision), hill {rect|polygon|ellipse, h: METRES, -6..6 non-zero} (smooth declared relief: positive knoll, negative hollow; presentation-only — collision stays flat, it flattens under buildings/paths/areas/water and dies at tile seams; first-person view only today). Area-like kinds take EXACTLY ONE shape. Anything BUILT with height goes in \"volumes\". See MAP PLAN in the tile instructions."

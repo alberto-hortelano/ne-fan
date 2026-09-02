@@ -14,8 +14,8 @@ import {
   EmittedSceneSchema,
 } from '@nefan/core';
 
-/** Gate ESTRUCTURAL de una escena Format D (entities, size, terrain, legend,
- *  tile/biome + sub-partes ground/volumes). Delega en el zod SoT. Antes
+/** Gate ESTRUCTURAL de una escena Format D (entities, tile/biome y las
+ *  sub-partes ground/volumes). Delega en el zod SoT. Antes
  *  el top-level de la escena no se validaba en ninguna parte que volviera al
  *  modelo: ai_server lo DEGRADABA en silencio (terrain mal → padding, entities
  *  malformadas → clamp). La jugabilidad la valida aparte /scene/validate. */
