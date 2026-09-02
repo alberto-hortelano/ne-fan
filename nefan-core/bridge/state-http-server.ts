@@ -40,7 +40,7 @@ export interface StateHttpServerOptions {
    *  para que el loader del cliente muestre qué está pasando. */
   onProgress: (message: string) => void;
   /** El mapa cambió a mitad de sesión (`map_upsert_place`, `map_link`): el
-   *  bridge difunde las salidas del tile activo (#179). */
+   *  bridge difunde las salidas de los tiles cargados (#179). */
   onMapChanged: () => void;
   /** Hooks de plugins (F5) — viven en ws-server porque el registry activo del
    *  dispatcher (`activePlugins`) es estado del bridge. */

@@ -45,8 +45,9 @@ export interface StateHttpContext {
    *  para que el loader del cliente muestre qué está pasando. */
   onProgress: (message: string) => void;
   /** El MAPA ha cambiado (un lugar creado o renombrado, un enlace nuevo): el
-   *  bridge difunde las salidas del tile activo (`exits_changed`, #179) sin
-   *  re-difundir la escena. Lo llaman las rutas de mapa ANTES de `mutated`. */
+   *  bridge difunde las salidas de cada tile cargado con lugar
+   *  (`exits_changed`, #179) sin re-difundir la escena. Lo llaman las rutas de
+   *  mapa ANTES de `mutated`. */
   onMapChanged: () => void;
   /** Storage de saves — GET /sessions/asset_refs (F2) recorre TODOS los
    *  saves para construir la keep-list del prune del asset-store. Opcional:

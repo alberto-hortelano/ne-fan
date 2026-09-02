@@ -11,7 +11,7 @@ import type {
   NarrativeEventMessage,
   NarrativeStatusMessage,
   } from "../src/protocol/messages.js";
-import { difundirSalidasDelTileActivo } from "../bridge/salidas.js";
+import { difundirSalidasDeLosTilesCargados } from "../bridge/salidas.js";
 import { sessionDataForClient } from "../bridge/wire-scene.js";
 import {
   capturarLogDelBridge,
@@ -793,7 +793,7 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
     assert.deepEqual(exitsOf(broadcasts), ["molino"]);
   });
 
-  it("un link creado a mitad de sesión llega como exits_changed, sin escena y sin sellar el save (#179)", async () => {
+  it("un link creado a mitad de sesión llega como exits_changed del tile activo, sin escena y sin sellar el save (#179)", async () => {
     const { ctx, broadcasts, narrative } = bootstrapWith(tileScene({ place_id: "robledo" }));
     const { socket } = makeSocket();
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
@@ -807,7 +807,7 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
     broadcasts.length = 0;
     narrative.worldMap.upsertPlace({ id: "ermita", kind: "site", parent_id: "world", name: "La Ermita" });
     narrative.worldMap.addLink({ from: "robledo", to: "ermita", kind: "path", edge: "north" });
-    difundirSalidasDelTileActivo(ctx);
+    difundirSalidasDeLosTilesCargados(ctx);
     const cambio = broadcasts.find((m): m is ExitsChangedMessage => m.type === "exits_changed");
     assert.ok(cambio, "exits_changed difundido");
     assert.equal(cambio.sceneId, "tile_0_0");
@@ -824,11 +824,42 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
     assert.deepEqual((servida.exits as { place_id: string }[]).map((e) => e.place_id), ["molino", "ermita"]);
   });
 
+  it("un link a un lugar cuyo tile está CARGADO pero no activo llega a ESE tile (QA T6, H-1)", async () => {
+    // El jugador está en el molino (tile_1_0 activo) y el motor enlaza la aldea
+    // (tile_0_0, cargado) con la ermita. Hasta la vuelta de QA solo se
+    // difundían las salidas del activo, y al volver A PIE a la aldea el cliente
+    // pintaba su copia vieja hasta Reanudar.
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    seedMapLikeEngine(narrative);
+    const tile = (tx: number, place_id?: string) =>
+      expandScenePrimitives({ tile: { tx, ty: 0 }, scene_id: `tile_${tx}_0`, scene_description: "campo", biome: "grass", entities: [], ...(place_id ? { place_id } : {}) });
+    narrative.recordSceneLoaded("tile_0_0", tile(0, "robledo"));
+    narrative.recordSceneLoaded("tile_1_0", tile(1, "molino"));
+    // Campo abierto cargado: sin lugar, sin salidas que puedan cambiar.
+    narrative.recordSceneLoaded("tile_2_0", tile(2), [], { activate: false });
+    assert.equal(narrative.world.active_scene_id, "tile_1_0");
+    broadcasts.length = 0;
+    narrative.worldMap.upsertPlace({ id: "ermita", kind: "site", parent_id: "world", name: "La Ermita" });
+    narrative.worldMap.addLink({ from: "robledo", to: "ermita", kind: "path", edge: "north" });
+    difundirSalidasDeLosTilesCargados(ctx);
+    const cambios = broadcasts.filter((m): m is ExitsChangedMessage => m.type === "exits_changed");
+    assert.deepEqual(
+      cambios.map((c) => [c.sceneId, c.exits.map((e) => e.place_id)]),
+      [
+        ["tile_0_0", ["molino", "ermita"]],
+        ["tile_1_0", ["robledo"]],
+      ],
+      "uno por tile cargado CON lugar: el de la aldea trae la ermita; el campo abierto no recibe nada",
+    );
+    assert.equal(broadcasts.length, cambios.length, "solo exits_changed: ni escena ni status");
+  });
+
   it("sin escena activa, un cambio del mapa no difunde nada: la escena que llegue traerá sus salidas", async () => {
     const { ctx, broadcasts, narrative } = makeCtx();
     narrative.startNewSession("plugtest");
     seedMapLikeEngine(narrative);
-    difundirSalidasDelTileActivo(ctx);
+    difundirSalidasDeLosTilesCargados(ctx);
     assert.deepEqual(broadcasts, []);
   });
 

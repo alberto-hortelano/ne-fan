@@ -609,9 +609,12 @@ export interface RenderModeChangedMessage {
  *  el motor creó un enlace o renombró un lugar a mitad de sesión (`map_link`,
  *  `map_upsert_place` por el State API). Lleva SOLO las salidas: re-difundir
  *  la escena para pintar un botón volvería a pasar por el atlas de superficies
- *  y por `add_combatants`. El cliente actualiza el panel «Salidas» del tile
- *  `sceneId` si lo tiene; si aún no lo tiene, la escena llegará con ellas.
- *  Sin rótulo: no es un estado que el jugador lea como aviso. */
+ *  y por `add_combatants`. Sale uno por tile CARGADO con lugar, no solo del
+ *  activo: el cliente guarda una copia de las salidas de cada tile que tiene y
+ *  la pinta al volver a pisarlo a pie, así que la copia de un tile no activo
+ *  también tiene que ponerse al día. El cliente actualiza la copia de `sceneId`
+ *  y, si es el activo, el panel; si aún no tiene el tile, la escena llegará
+ *  con ellas. Sin rótulo: no es un estado que el jugador lea como aviso. */
 export interface ExitsChangedMessage {
   type: "exits_changed";
   sessionId: string;
