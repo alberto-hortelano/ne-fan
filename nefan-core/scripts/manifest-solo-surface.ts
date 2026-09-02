@@ -2,8 +2,8 @@
  *
  *  El manifest indexaba 16.986 filas de siete kinds que ningún proceso vuelve
  *  a producir (texturas PBR y modelos del gpu-worker, skins y sprites 2D,
- *  repintados de la oblicua, recortes SAM2 y un `scene_render` huérfano que ni
- *  siquiera tenía directorio). `prune` no podía tocarlas y el asset-store se
+ *  repintados de la oblicua, recortes SAM2 y un type de renders huérfano que
+ *  ni siquiera tenía directorio conocido). `prune` no podía tocarlas y el asset-store se
  *  niega a arrancar con ellas (`services/asset-store/solo-surface.ts`). Este
  *  script es la única vía de purgarlas, y lo es a propósito: irreproducible
  *  sería un `DELETE` a mano desde `node -e`.

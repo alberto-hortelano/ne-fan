@@ -172,7 +172,6 @@ export interface SessionData {
   scenes_loaded: Record<string, SceneRecord>;
   entities: EntityRecord[];
   dialogue_history: DialogueEvent[];
-  asset_index_snapshot: AssetEntry[];
   world_map: WorldMap;
   /** v3 — registro de plugins activos (§7.6 de next.md). */
   plugins: PluginRecord[];

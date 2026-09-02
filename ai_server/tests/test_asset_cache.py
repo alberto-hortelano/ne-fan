@@ -40,12 +40,13 @@ class FakeRegistrar:
 
 
 class HashKeyTest(unittest.TestCase):
-    """El hash es el CONTRATO de la caché entera (16.907 entradas): fijarlo
-    evita que un refactor lo bifurque en silencio."""
+    """El hash es el CONTRATO de la caché entera: fijarlo evita que un
+    refactor lo bifurque en silencio y deje huérfanas las superficies ya
+    pagadas."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.cache = AssetCache(cache_dir=str(Path(self._tmp.name) / "t"), asset_type="texture")
+        self.cache = AssetCache(cache_dir=str(Path(self._tmp.name) / "t"), asset_type="surface")
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -84,42 +85,46 @@ class AssetCachePutTest(unittest.TestCase):
         self.root = Path(self._tmp.name)
         self.registrar = FakeRegistrar()
         self.cache = AssetCache(
-            cache_dir=str(self.root / "textures"), asset_type="texture", manifest=self.registrar
+            cache_dir=str(self.root / "surfaces"), asset_type="surface", manifest=self.registrar
         )
 
     def tearDown(self):
         self._tmp.cleanup()
 
     def test_put_writes_blob_and_registers(self):
-        key = self.cache.put("mossy stone", "albedo", b"PNGDATA", context={"style": "s1"})
-        path = self.root / "textures" / key / "albedo.png"
+        key = self.cache.put("mossy stone", "surface", b"PNGDATA", context={"style": "s1"})
+        path = self.root / "surfaces" / key / "surface.png"
         self.assertTrue(path.exists())
         self.assertEqual(path.read_bytes(), b"PNGDATA")
         self.assertEqual(len(self.registrar.calls), 1)
         call = self.registrar.calls[0]
         self.assertEqual(call["hash"], key)
-        self.assertEqual(call["type"], "texture")
-        self.assertEqual(call["subtype"], "albedo")
+        self.assertEqual(call["type"], "surface")
+        self.assertEqual(call["subtype"], "surface")
         self.assertEqual(call["size_bytes"], 7)
         self.assertEqual(call["extra"], {"style": "s1"})
 
-    def test_subtype_override_and_model_extension(self):
-        models = AssetCache(
-            cache_dir=str(self.root / "models"), asset_type="model", manifest=self.registrar
-        )
-        key = models.put("a sword", "model", b"GLB", subtype_override="model")
-        self.assertTrue((self.root / "models" / key / "model.glb").exists())
+    def test_defaults_are_the_live_kind(self):
+        # Instanciarlo sin argumentos no puede resucitar un directorio sin
+        # productor (#257): el default es el kind vivo.
+        cache = AssetCache(cache_dir=str(self.root / "d"))
+        self.assertEqual(cache.asset_type, "surface")
+        self.assertEqual(AssetCache.__init__.__defaults__[0], "cache/surfaces")
 
-    def test_get_roundtrip(self):
-        self.cache.put("oak planks", "albedo", b"DATA")
-        self.assertEqual(self.cache.get("oak planks", "albedo"), b"DATA")
-        self.assertTrue(self.cache.has("oak planks", "albedo"))
-        self.assertIsNone(self.cache.get("nunca generado", "albedo"))
+    def test_has_and_get_by_hash_roundtrip(self):
+        # El camino real de remote_generation.py: has() con el contexto y
+        # get_by_hash() con la clave que devolvió put().
+        ctx = {"style": "s1"}
+        key = self.cache.put("oak planks", "surface", b"DATA", context=ctx)
+        self.assertTrue(self.cache.has("oak planks", "surface", context=ctx))
+        self.assertEqual(self.cache.get_by_hash(key, "surface"), b"DATA")
+        self.assertFalse(self.cache.has("nunca generado", "surface"))
+        self.assertIsNone(self.cache.get_by_hash("0000000000000000", "surface"))
 
     def test_put_without_manifest_is_fine(self):
-        cache = AssetCache(cache_dir=str(self.root / "solo"), asset_type="texture")
-        key = cache.put("standalone", "albedo", b"X")
-        self.assertTrue((self.root / "solo" / key / "albedo.png").exists())
+        cache = AssetCache(cache_dir=str(self.root / "solo"), asset_type="surface")
+        key = cache.put("standalone", "surface", b"X")
+        self.assertTrue((self.root / "solo" / key / "surface.png").exists())
 
 
 if __name__ == "__main__":

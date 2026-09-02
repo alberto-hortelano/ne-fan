@@ -26,7 +26,7 @@ console.log(`asset-store: índice ${cfg.dbPath} (${db.totalCount()} entradas, ${
 const server = createAssetStoreServer({
   port: cfg.port,
   db,
-  dirsByType: cfg.dirsByType,
+  surfaceDir: cfg.surfaceDir,
   spriteSheetsDir: cfg.spriteSheetsDir,
   stylesDir: cfg.stylesDir,
   cacheMaxBytes: cfg.cacheMaxBytes,

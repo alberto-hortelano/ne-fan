@@ -85,7 +85,7 @@ describe("guardias del script", () => {
       guardiaDeOrden(["surfaces", "sprite_sheets", "dev_api_cache", "spend", "manifest.sqlite3", "manifest.sqlite3-wal", "manifest.sqlite3-shm"]),
       [],
     );
-    // `cache/sprites` (muerto) no es `cache/sprite_sheets` (vivo).
+    // El directorio de sprites 2D (muerto) no es `sprite_sheets` (vivo).
     assert.deepEqual(guardiaDeOrden(["sprites"]), ["sprites"]);
   });
 

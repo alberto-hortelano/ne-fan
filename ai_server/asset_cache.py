@@ -31,10 +31,15 @@ class ManifestRegistrar(Protocol):
 
 
 class AssetCache:
+    """Blobs PNG de UN kind bajo `cache_dir/{hash}/{map_type}.png`. El único
+    productor vivo es remote_gen_main.py con el kind `surface` (#257); los
+    defaults son ese kind y no otro para que instanciarlo sin argumentos no
+    resucite un directorio sin productor."""
+
     def __init__(
         self,
-        cache_dir: str = "cache/textures",
-        asset_type: str = "texture",
+        cache_dir: str = "cache/surfaces",
+        asset_type: str = "surface",
         manifest: ManifestRegistrar | None = None,
     ):
         self.cache_dir = Path(cache_dir)
@@ -60,24 +65,11 @@ class AssetCache:
         return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
 
     def get_path(self, key: str, map_type: str) -> Path:
-        ext = ".glb" if map_type == "model" else ".png"
-        return self.cache_dir / key / f"{map_type}{ext}"
+        return self.cache_dir / key / f"{map_type}.png"
 
-    def has(self, prompt: str, map_type: str = "albedo", context: dict | None = None) -> bool:
+    def has(self, prompt: str, map_type: str, context: dict | None = None) -> bool:
         key = self.hash_key(prompt, context)
         return self.get_path(key, map_type).exists()
-
-    def has_all(self, prompt: str, map_types: list[str] | None = None) -> bool:
-        if map_types is None:
-            map_types = ["albedo", "normal"]
-        return all(self.has(prompt, mt) for mt in map_types)
-
-    def get(self, prompt: str, map_type: str = "albedo", context: dict | None = None) -> bytes | None:
-        key = self.hash_key(prompt, context)
-        path = self.get_path(key, map_type)
-        if path.exists():
-            return path.read_bytes()
-        return None
 
     def get_by_hash(self, key: str, map_type: str) -> bytes | None:
         path = self.get_path(key, map_type)
@@ -91,7 +83,6 @@ class AssetCache:
         map_type: str,
         data: bytes,
         context: dict | None = None,
-        subtype_override: str | None = None,
     ) -> str:
         key = self.hash_key(prompt, context)
         path = self.get_path(key, map_type)
@@ -118,23 +109,9 @@ class AssetCache:
             self.manifest.register(
                 hash_key=key,
                 asset_type=self.asset_type,
-                subtype=subtype_override or map_type,
+                subtype=map_type,
                 prompt=prompt,
                 size_bytes=len(data),
                 extra=context or None,
             )
         return key
-
-    def list_cached(self) -> list[dict]:
-        result = []
-        if not self.cache_dir.exists():
-            return result
-        for entry in self.cache_dir.iterdir():
-            if entry.is_dir():
-                maps = [
-                    f.stem
-                    for f in entry.iterdir()
-                    if f.suffix in (".png", ".glb")
-                ]
-                result.append({"hash": entry.name, "maps": maps})
-        return result

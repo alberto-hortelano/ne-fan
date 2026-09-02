@@ -1,8 +1,8 @@
 /** Servidor HTTP del asset-store (S6) — implementa AssetStoreApi
  *  (src/contracts/asset-store.ts) replicando el cable observable del router
- *  FastAPI original (cache_assets.py), incluido el ORDEN de matching:
- *  /cache/{kind}/{hash} captura kind="check" ANTES de que ninguna ruta
- *  /cache/check exista → 400 "Invalid map type" (ruta muerta preservada).
+ *  FastAPI original (cache_assets.py). Desde #257 el índice y el lector de
+ *  blobs solo conocen el kind `surface`: `GET /cache/{otro}/{hash}` es 400 y
+ *  `POST /assets` con otro type no pasa el zod.
  *
  *  Desviaciones anunciadas (header del contrato): los endpoints JSON emiten
  *  `ErrorResponse` {ok:false,error} en vez del {detail} de FastAPI; un
@@ -36,7 +36,8 @@ import { fetchKeepList, prune } from "./prune.js";
 export interface AssetStoreServerOptions {
   port: number;
   db: ManifestDb;
-  dirsByType: Record<string, string>;
+  /** Raíz de blobs de `surface` — ver AssetStoreConfig.surfaceDir. */
+  surfaceDir: string;
   spriteSheetsDir: string;
   stylesDir: string;
   cacheMaxBytes: number;
@@ -125,7 +126,7 @@ async function handle(
     // Protegidos = referenciados por saves vivos ∪ pineados (aplicaciones de
     // estilo a juegos: assets pre-generados sin save que los referencie aún).
     for (const h of db.pinnedHashes()) keep.add(h);
-    const summary = prune(db, opts.dirsByType, opts.cacheMaxBytes, keep);
+    const summary = prune(db, opts.surfaceDir, opts.cacheMaxBytes, keep);
     sendJson(res, 200, { ok: true, ...summary } satisfies CachePruneResponse);
     return;
   }
@@ -192,16 +193,9 @@ async function handle(
       return;
     }
     db.touch(hash);
-    const enriched = matches.map((m) => {
-      const cacheUrl =
-        m.type === "texture"
-          ? `/cache/${m.subtype}/${hash}`
-          : m.type === "model" || m.type === "skin" || m.type === "sprite" || m.type === "surface"
-            ? `/cache/${m.type}/${hash}`
-            : undefined;
-      // scene/segment (y subtypes huérfanos) van SIN cache_url, como hoy.
-      return cacheUrl === undefined ? m : { ...m, cache_url: cacheUrl };
-    });
+    // Un solo kind, una sola forma de URL: el arranque garantiza que no hay
+    // filas de otro type (solo-surface.ts), así que no hay cascada que hacer.
+    const enriched = matches.map((m) => ({ ...m, cache_url: `/cache/${m.type}/${hash}` }));
     sendJson(res, 200, { matches: enriched } satisfies AssetByHashResponse);
     return;
   }
@@ -227,10 +221,9 @@ async function handle(
     return;
   }
 
-  // ── GET /cache/{kind}/{hash} — cascada específicas→catch-all (captura
-  //    también kind="check": ruta muerta preservada, ver blob-store.ts) ──
+  // ── GET /cache/{kind}/{hash} — solo kind=surface; el resto 400 (blob-store.ts) ──
   if (method === "GET" && parts[0] === "cache" && parts.length === 3) {
-    const result = readBlob(opts.dirsByType, parts[1], parts[2]);
+    const result = readBlob(opts.surfaceDir, parts[1], parts[2]);
     if (result.touched) db.touch(result.touched);
     writeBlob(res, result);
     return;

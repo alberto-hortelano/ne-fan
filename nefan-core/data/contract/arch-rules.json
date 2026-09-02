@@ -104,7 +104,6 @@
           "games/style-application(\\.js)?$",
           "games/vocabulary(\\.js)?$",
           "games/world-snapshot(\\.js)?$",
-          "narrative/asset-index(\\.js)?$",
           "narrative/narrative-state(\\.js)?$",
           "narrative/session-storage(\\.js)?$",
           "plugins/loader(\\.js)?$",
@@ -266,7 +265,7 @@
     {
       "id": "narrative-mcp-sin-catch-silencioso",
       "desc": "narrative-mcp no tiene catch vacío ni .catch(() => {})",
-      "why": "Mismo patrón que `core-sin-catch-silencioso`, sobre el proceso donde tragarse un error sale MÁS caro: narrative-mcp es el cable entre ai_server y el terminal del motor, y un error sin canal ahí no se manifiesta como error en ninguna parte — ai_server espera su timeout de 120–180 s y el jugador mira un loader eterno sin que ningún log diga por qué. Era, medido el 2026-09-01, el único árbol TS del repo SIN regla de fail-loud, y contenía las 3 únicas violaciones literales del patrón en todo el repo: el catch que envolvía `handleClientMessage` ENTERO (cualquier excepción de sendBridgeStatus/enqueueRequest desaparecía como si fuera un frame malformado), el probe de takeover (parse legítimo, cuerpo vacío ilegítimo — hoy es un tryParse que devuelve null solo para «no era JSON») y el `.catch(() => {})` de postProgress. Las tres se arreglaron el día que entró la regla, que por eso nace verde y con severity error. El canal de esta capa es `console.error` — stdout es el protocolo MCP y no se puede escribir en él.",
+      "why": "Mismo patrón que `core-sin-catch-silencioso`, sobre el proceso donde tragarse un error sale MÁS caro: narrative-mcp es el cable entre ai_server y el terminal del motor, y un error sin canal ahí no se manifiesta como error en ninguna parte — ai_server espera su timeout de 120–180 s y el jugador mira un loader eterno sin que ningún log diga por qué. Era, medido el 2026-09-01, el único árbol TS del repo SIN regla de fail-loud, y contenía las 3 únicas violaciones literales del patrón en todo el repo: el catch que envolvía `handleClientMessage` ENTERO (cualquier excepción de enqueueRequest —o del emisor de status que existía entonces, retirado en #343— desaparecía como si fuera un frame malformado), el probe de takeover (parse legítimo, cuerpo vacío ilegítimo — hoy es un tryParse que devuelve null solo para «no era JSON») y el `.catch(() => {})` de postProgress. Las tres se arreglaron el día que entró la regla, que por eso nace verde y con severity error. El canal de esta capa es `console.error` — stdout es el protocolo MCP y no se puede escribir en él.",
       "severity": "error",
       "files": [
         "narrative-mcp/**/*.ts"

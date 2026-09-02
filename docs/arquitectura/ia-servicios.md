@@ -33,7 +33,7 @@ de personaje de sprite-forge.
 | `/styles/{id}/complete` | :8768 | Genera las categorías que faltan (requiere confirm=true — gasta créditos) |
 | `/dev/api_cache` | :8768 | Toggle del modo dev de APIs de pago (visible para los 3 procesos) |
 | `/assets`, `/assets/by_hash/{hash}` | :8767 | Índice de assets del manifest (asset-store; :8765 proxya) |
-| `/cache/{type}/{hash}` | :8767 | Servir asset cacheado (`surface`/`sprite_sheet` vivos; `texture`/`model`/`skin`/`sprite` ya sin productor, se sirven los históricos; :8765 proxya) |
+| `/cache/{type}/{hash}` | :8767 | Servir asset cacheado: solo `surface` (cualquier otro kind es 400 desde #257); `sprite_sheet`/`sprite_hero` van por sus rutas propias; :8765 proxya |
 
 ## Modelos de IA y que hacen
 

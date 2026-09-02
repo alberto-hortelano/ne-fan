@@ -8,6 +8,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
+import type { AssetRefsResponse } from "../../src/contracts/world-state.js";
 import type { ManifestDb } from "./manifest-db.js";
 
 export interface PruneSummary {
@@ -35,15 +36,17 @@ export async function fetchKeepList(worldStateUrl: string): Promise<KeepListResu
     if (!res.ok) {
       return { ok: false, error: `world-state contestó HTTP ${res.status}` };
     }
-    let body: { refs?: unknown };
+    let body: AssetRefsResponse;
     try {
-      body = (await res.json()) as { refs?: unknown };
+      body = (await res.json()) as AssetRefsResponse;
     } catch (err) {
       return {
         ok: false,
         error: `world-state contestó 200 con JSON ilegible (${(err as Error).message})`,
       };
     }
+    // El cast de arriba es una promesa del contrato, no una comprobación: la
+    // guardia de runtime sigue siendo esta.
     if (!Array.isArray(body.refs)) {
       return { ok: false, error: "world-state contestó 200 sin refs[] — ¿cambió el contrato?" };
     }
@@ -58,9 +61,13 @@ export async function fetchKeepList(worldStateUrl: string): Promise<KeepListResu
   }
 }
 
+/** `surfaceDir` es la raíz de blobs del único kind del índice: el arranque
+ *  (solo-surface.ts) garantiza que ningún grupo tiene otro type, así que ya
+ *  no existe el «type sin dir conocido — no tocar» que hacía inmunes al
+ *  prune a 16.986 filas (#257). */
 export function prune(
   db: ManifestDb,
-  dirsByType: Record<string, string>,
+  surfaceDir: string,
   maxBytes: number,
   keep: Set<string> | null,
 ): PruneSummary {
@@ -77,9 +84,7 @@ export function prune(
   for (const g of groups) {
     if (total <= maxBytes) break;
     if (keep?.has(g.hash)) continue; // referenciado por un save vivo
-    const root = dirsByType[g.type];
-    if (root === undefined) continue; // type sin dir conocido — no tocar
-    const blobDir = join(root, g.hash);
+    const blobDir = join(surfaceDir, g.hash);
     try {
       if (existsSync(blobDir)) rmSync(blobDir, { recursive: true });
     } catch (err) {

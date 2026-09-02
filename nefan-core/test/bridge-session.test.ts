@@ -1327,7 +1327,6 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
       scenes_loaded: {},
       entities: [],
       dialogue_history: [],
-      asset_index_snapshot: [],
       world_map: { places: [], links: [], triggers: [] },
       plugins: [],
       _next_event_seq: 1,

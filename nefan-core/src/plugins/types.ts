@@ -187,8 +187,6 @@ export const PluginManifestSchema = z
     derived_views: z.array(DerivedViewSchema).default([]),
     migrate: z.record(z.string().regex(/^\d+$/), z.array(EffectSchema)).optional(),
     fixtures: z.array(PluginFixtureSchema).default([]),
-    /** §7.9 — el bridge avisa cuando el slice rebasa 10× este hint. */
-    slice_size_hint: z.number().int().positive().optional(),
   })
   .strict();
 

@@ -1,5 +1,5 @@
-/** Índice SQLite del asset-store — sustituye a cache/manifest.json (lista
- *  JSON reescrita ENTERA en cada registro bajo un lock de proceso).
+/** Índice SQLite del asset-store (F2; antes una lista JSON reescrita ENTERA
+ *  en cada registro bajo un lock de proceso, archivada en #257).
  *
  *  Semánticas portadas 1:1 de ai_server/asset_cache.py (AssetManifest):
  *  - register = INSERT OR IGNORE por (hash, type, subtype) — el Python hace
@@ -18,7 +18,7 @@
  */
 import { DatabaseSync } from "node:sqlite";
 
-import { ASSET_KIND } from "../../src/contracts/asset-store.js";
+import { ASSET_KIND, type AssetKind } from "../../src/contracts/asset-store.js";
 
 export interface ManifestEntryRow {
   hash: string;
@@ -135,8 +135,8 @@ export class ManifestDb {
    *  que hacía AssetManifest.register con _now(). Duplicado = no-op. */
   register(e: {
     hash: string;
-    type: string;
-    subtype: string;
+    type: AssetKind;
+    subtype: AssetKind;
     prompt: string;
     size_bytes: number;
     extra?: Record<string, unknown>;
@@ -149,7 +149,10 @@ export class ManifestDb {
       .run(e.hash, e.type, e.subtype, e.prompt, nowIso(), e.size_bytes, JSON.stringify(e.extra ?? {}));
   }
 
-  /** Import de la migración/recovery: conserva created_at y last_used. */
+  /** Fila CRUDA, con su created_at y last_used: la vía para plantar una fila
+   *  histórica en un test (el fail-loud de arranque y la purga se prueban
+   *  así). `type`/`subtype` van sin tipar a propósito — `register`, el camino
+   *  de producción, sí exige el kind vivo. */
   importEntry(e: ManifestEntryRow): void {
     this.db
       .prepare(
@@ -180,8 +183,8 @@ export class ManifestDb {
     }
   }
 
-  /** `assetType` admite lista CSV ("texture,model,surface") — la librería del
-   *  motor narrativo pide varios tipos reutilizables en una sola consulta. */
+  /** `assetType` admite lista CSV — la librería del motor narrativo pedía
+   *  varios tipos reutilizables en una consulta; hoy solo queda `surface`. */
   listAssets(assetType?: string, limit = 50): AssetSummaryRow[] {
     const types = (assetType ?? "")
       .split(",")

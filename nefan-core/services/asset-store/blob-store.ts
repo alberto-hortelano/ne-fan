@@ -1,12 +1,13 @@
 /** Lectura de blobs del cache content-addressed + estáticos de style packs.
  *
  *  Replica el CABLE observable de ai_server/routers/cache_assets.py: los
- *  errores de blobs son TEXTO PLANO ("Not found", "Invalid map type",
- *  "Invalid filename"), no JSON — los clientes solo miran el status pero el
- *  cuerpo se preserva igual. */
+ *  errores de blobs son TEXTO PLANO ("Not found", "Invalid kind", "Invalid
+ *  filename"), no JSON — los clientes solo miran el status pero el cuerpo se
+ *  preserva igual. */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 
+import { ASSET_KIND } from "../../src/contracts/asset-store.js";
 import { SAFE_ID } from "../../src/games/loader.js";
 
 export interface BlobResult {
@@ -24,47 +25,15 @@ const text = (status: number, msg: string): BlobResult => ({
   body: Buffer.from(msg, "utf-8"),
 });
 
-/** kind → [asset_type (dir), filename, content-type]. Espejo de la cascada
- *  específicas→catch-all del router FastAPI (plate sale del cache de scene;
- *  model es GLB; el catch-all solo admite mapas de textura). */
-const KIND_TABLE: Record<string, { type: string; filename: string; contentType: string }> = {
-  sprite: { type: "sprite", filename: "sprite.png", contentType: "image/png" },
-  skin: { type: "skin", filename: "skin.png", contentType: "image/png" },
-  scene: { type: "scene", filename: "scene.png", contentType: "image/png" },
-  plate: { type: "scene", filename: "plate.png", contentType: "image/png" },
-  segment: { type: "segment", filename: "segment.png", contentType: "image/png" },
-  model: { type: "model", filename: "model.glb", contentType: "model/gltf-binary" },
-  surface: { type: "surface", filename: "surface.png", contentType: "image/png" },
-};
-
-const TEXTURE_MAPS = new Set(["albedo", "normal", "roughness"]);
-
-/** GET /cache/{kind}/{hash}. OJO: kind="check" cae aquí a propósito — en
- *  FastAPI /cache/{map_type}/{hash} se registra ANTES que /cache/check/{hash},
- *  así que /cache/check/{h} SIEMPRE respondió 400 "Invalid map type". Contrato
- *  observable preservado (ver checkHash en contracts/asset-store.ts). */
-export function readBlob(
-  dirsByType: Record<string, string>,
-  kind: string,
-  hash: string,
-): BlobResult {
-  let type: string;
-  let filename: string;
-  let contentType: string;
-  const known = KIND_TABLE[kind];
-  if (known) {
-    ({ type, filename, contentType } = known);
-  } else if (TEXTURE_MAPS.has(kind)) {
-    type = "texture";
-    filename = `${kind}.png`;
-    contentType = "image/png";
-  } else {
-    return text(400, "Invalid map type");
-  }
-  const root = dirsByType[type];
-  const path = root ? join(root, hash, filename) : "";
-  if (!path || !existsSync(path)) return text(404, "Not found");
-  return { status: 200, contentType, body: readFileSync(path), touched: hash };
+/** GET /cache/{kind}/{hash}. El único kind con productor es `surface`
+ *  (#257): cualquier otro —incluidos los siete que este store sirvió hasta
+ *  septiembre de 2026 y `check`, que nunca fue una ruta— es 400 texto plano.
+ *  El blob vive en {surfaceDir}/{hash}/surface.png. */
+export function readBlob(surfaceDir: string, kind: string, hash: string): BlobResult {
+  if (kind !== ASSET_KIND) return text(400, "Invalid kind");
+  const path = join(surfaceDir, hash, `${ASSET_KIND}.png`);
+  if (!existsSync(path)) return text(404, "Not found");
+  return { status: 200, contentType: "image/png", body: readFileSync(path), touched: hash };
 }
 
 const SHEET_FRAME_RE = /^dir_\d+_frame_\d{3}\.png$/;
@@ -91,7 +60,7 @@ const HERO_KEY_RE = /^[0-9a-f]{16}$/;
  *  del personaje antes de repintar sus frames, y que el cliente reusa como
  *  retrato en el diálogo. Mismo almacén paralelo que los frames: sin
  *  manifest y sin touch, y por tanto FUERA del prune (que solo recorre
- *  dirsByType) — si algún día los sprite sheets entran en el manifest,
+ *  surfaceDir) — si algún día los sprite sheets entran en el manifest,
  *  heroes y frames necesitarán pin a la vez. */
 export function readSpriteHero(spriteSheetsDir: string, key: string): BlobResult {
   if (!HERO_KEY_RE.test(key)) return text(400, "Invalid filename");

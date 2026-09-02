@@ -34,9 +34,9 @@ nefan-core/               TypeScript — logica de juego (bridge + cliente web)
     wire-scene.ts          ÚNICA salida de escena normalizada del bridge
     world-claim.ts         Único dueño de la atadura sim ↔ NarrativeState
   services/
-    asset-store/           Microservicio S6 (:8767): blobs content-addressed +
-                           manifest SQLite (F2) + styles binarios; ai_server
-                           proxya /cache|/assets para clientes no migrados
+    asset-store/           Microservicio S6 (:8767): blobs de `surface` (el
+                           único kind, #257) + manifest SQLite + styles
+                           binarios; ai_server proxya /cache|/assets
   data/
     combat_config.json     Tipos ataque, armas, animaciones, velocidades
     scenes/                Escenas Format D de ejemplo/fixture (robledo_tile, zorder_test) — tiles del selector del cliente

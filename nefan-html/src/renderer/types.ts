@@ -69,8 +69,6 @@ export interface Entity {
   /** Optional Mixamo character reference: when set and SpriteRenderer has the
    *  matching sheet cached, the entity is drawn as a sprite instead of a circle. */
   sprite?: { model: string; anim: string; angle: string; animStartedAt?: number };
-  /** AI-generated sprite hash (objects/buildings) served from /cache/sprite/{hash}. */
-  spriteHash?: string;
 }
 
 /** Los cuerpos del mundo que el bucle entrega al renderer en UN frame.
