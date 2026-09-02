@@ -851,8 +851,9 @@ def validate_scene_response(data: dict) -> dict:
         #   · `role` — preset de conducta (npc-roles.ts). Sin él, TODO NPC de
         #     escena es un villager: un guardia declarado ni se queda quieto ni
         #     percibe la pelea.
-        #   · `description` — el prompt del skin IA. Sin ella se pinta desde el
-        #     nombre propio del personaje, que no describe a nadie.
+        #   · `description` — el texto del que se genera el arte de CUALQUIER
+        #     entity (su procedencia, #238); en un NPC es el prompt del skin IA,
+        #     y sin ella se pinta desde el nombre propio, que no describe a nadie.
         # `role` va contra el enum del contrato y LANZA: un oficio inventado
         # ("herrero") no degrada a villager en silencio, vuelve al motor con el
         # vocabulario y el sitio donde sí va el oficio.
@@ -873,8 +874,9 @@ def validate_scene_response(data: dict) -> dict:
             desc = ent["description"]
             if not isinstance(desc, str) or not desc.strip():
                 raise ValueError(
-                    f"entity '{eid}': `description` es el PROMPT del skin del personaje y no "
-                    f"puede ir vacía ({desc!r}). Descríbelo (aspecto, ropa, arma) o quita el campo"
+                    f"entity '{eid}': `description` es el texto del que se genera su arte (en un "
+                    f"NPC, el prompt del skin) y no puede ir vacía ({desc!r}). Descríbelo (aspecto, "
+                    f"ropa, arma) o quita el campo"
                 )
             clean_ent["description"] = desc.strip()
         # decor puede pedir snap al muro más cercano (lo resuelve el expander TS).

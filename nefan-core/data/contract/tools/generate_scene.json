@@ -167,7 +167,7 @@
             },
             "description": {
               "type": "string",
-              "description": "NPCs: what this character LOOKS LIKE, in Spanish, one line ('herrero fornido con mandil de cuero quemado'). It is the prompt that paints their AI skin, so describe appearance — build, clothes, tools, hair — not biography. Without it the skin is painted from their proper name, which describes nobody. Always write one for a named NPC."
+              "description": "Optional, any kind. What this entity LOOKS LIKE, in Spanish, one line ('herrero fornido con mandil de cuero quemado', 'pozo de piedra con brocal musgoso'). It is NOT the label the player reads — that is `name` — it is the text the entity's art is generated from, and the game keeps it verbatim as the provenance of whatever is generated, so the asset can be regenerated later with a better model. For an NPC it is the prompt that paints their AI skin, so describe appearance — build, clothes, tools, hair — not biography: without it they are painted from their proper name, which describes nobody — always write one for a named NPC. For buildings, props and items nothing is generated from it yet; when you write it, it is kept."
             },
             "style_ref": {
               "type": "string",

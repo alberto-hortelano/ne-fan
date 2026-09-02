@@ -15,7 +15,7 @@ is. Call narrative_respond with this JSON ("Map Format D"):
       "shape": "box"|"cylinder"|"sphere"|"cone",     // optional; default box
       "h": <metres>,                                 // height in METRES — ALWAYS declare it for furniture/props (table 0.75, bench 0.45, barrel 0.9, shelf 2.0…); without it the engine falls back to semantic defaults by label, generic per-kind otherwise
       "role": "peasant"|"guard"|"villager"|"merchant"|"hostile", // NPCs: BEHAVIOUR preset (see DRESSING AND BEHAVIOUR below). Not the job. `hostile` = something to FIGHT; the engine derives its stats. Omitted ⇒ villager
-      "description": "<spanish, one line>",          // NPCs: what they LOOK LIKE — the prompt that paints their skin. REQUIRED for every named NPC
+      "description": "<spanish, one line>",          // what it LOOKS LIKE, in Spanish — the text its art is generated from, kept verbatim as provenance. REQUIRED for every named NPC (paints the skin); optional for anything else
       "style_ref": "<character ref id>" },           // NPCs only, optional: id from world.style_refs.characters whose description best matches this NPC's look (guides the AI skin); missing/unknown falls back to a role-derived default
     ...
   ]
