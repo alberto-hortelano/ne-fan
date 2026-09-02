@@ -19,10 +19,13 @@
 
 import { formatDToWorld, type WorldScene } from "../src/scene/scene-normalize.js";
 import {
+  entidadesFueraDelMundo,
   escenaConCombateVivo,
   estadoEnElWire,
   nombreDeEntity,
+  rectsDelMundo,
   type EstadoEnElWire,
+  type FueraDelMundo,
 } from "../src/session/mundo-persistido.js";
 import type { SceneRecord, SessionData } from "../src/narrative/types.js";
 import type { BridgeContext } from "./context.js";
@@ -92,14 +95,17 @@ export function escenaParaElWire(
  *  devuelve referencias vivas al estado interno — normalizar in place
  *  corrompería la persistencia, que debe seguir en Format D crudo.
  *
- *  Devuelve además los `ilegibles` para que el handler los DIGA: aquí no se
- *  difunde nada porque este mensaje va después del `session_started`, no
- *  antes (llegar antes lo pintaría como un fallo del arranque, con el mundo
+ *  Devuelve además lo que el handler tiene que DECIR: los `ilegibles` (un
+ *  combate que no se puede leer) y los `fueraDelMundo` (#382: una posición
+ *  viva que no cae en ningún tile del save — la unión de rects sale de ESTE
+ *  mismo `scenes_loaded`, que es el mundo entero conocido). Aquí no se
+ *  difunde nada porque esos avisos van después del `session_started`, no
+ *  antes (llegar antes los pintaría como un fallo del arranque, con el mundo
  *  todavía vacío y el overlay a pantalla completa). */
 export function sessionDataForClient(
   ctx: BridgeContext,
   data: SessionData,
-): { state: SessionData; ilegibles: string[] } {
+): { state: SessionData; ilegibles: string[]; fueraDelMundo: FueraDelMundo[] } {
   // Los estados se calculan UNA vez para todas las escenas del save: son del
   // mundo, no del tile, y un save largo trae decenas de tiles.
   const { estados, ilegibles } = estadosDeCombate(ctx);
@@ -107,5 +113,9 @@ export function sessionDataForClient(
   for (const [id, rec] of Object.entries(data.scenes_loaded)) {
     scenes[id] = { ...rec, scene_data: alWire(rec.scene_data, estados) };
   }
-  return { state: { ...data, scenes_loaded: scenes }, ilegibles };
+  const fueraDelMundo = entidadesFueraDelMundo(data.entities, rectsDelMundo(data.scenes_loaded));
+  for (const f of fueraDelMundo) {
+    console.warn(`Bridge: la posición viva de "${f.id}" (${f.x}, ${f.z}) no cae en ningún tile del save`);
+  }
+  return { state: { ...data, scenes_loaded: scenes }, ilegibles, fueraDelMundo };
 }

@@ -543,6 +543,41 @@ describe("bridge ciclo de sesión", () => {
     assert.doesNotMatch(aviso!.message ?? "", /max_health|combat\.|undefined/);
   });
 
+  it("resume: una posición VIVA que no cae en ningún tile del save se DICE, y la escena carga (#382)", async () => {
+    // El repro del issue: el save pone al tabernero en (168.25, 168.25) —
+    // tile_3_3 en una partida de un tile— y hasta la tanda nadie lo miraba:
+    // el cliente medía solo la DECLARADA (conversión celda→metro) y el panel
+    // decía «— sin errores —» con el tabernero desaparecido.
+    const { ctx, narrative, broadcasts } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await waitFor(() => Object.keys(ctx.narrative.scenes_loaded).length > 0);
+    narrative.recordEntitySpawned("barkeep", "npc", "tile_0_0", [7.75, 0, -0.25], { name: "Tabernero corpulento" });
+    narrative.getEntity("barkeep")!.position = [168.25, 0, 168.25];
+    await entrarEnLaPartida(ctx, socket, sessionId);
+
+    narrative.startNewSession("plugtest");
+    const { socket: s2, sent: sent2 } = makeSocket();
+    broadcasts.length = 0;
+    const log = capturarLogDelBridge();
+    try {
+      await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    } finally {
+      log.soltar();
+    }
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, true, JSON.stringify(resumed.error));
+    const aviso = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.ok(aviso, `no se avisó de nada: ${JSON.stringify(broadcasts.map((b) => b.type))}`);
+    assert.equal(aviso.kind, "restore");
+    assert.match(aviso.message ?? "", /Tabernero corpulento/);
+    assert.match(aviso.message ?? "", /168\.3, 168\.3/);
+    assert.match(aviso.message ?? "", /donde no hay mundo/);
+  });
+
   it("resume_session devuelve session_not_found para un id inexistente", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();

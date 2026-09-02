@@ -37,7 +37,8 @@
  *  (para el resume), que es exactamente por qué no puede tocar `node:*`.
  */
 
-import type { EntityRecord } from "../narrative/types.js";
+import type { EntityRecord, SceneRecord } from "../narrative/types.js";
+import { tileWorldRect } from "../scene/tile.js";
 
 /** El runtime de un combatiente que el SAVE sí puede saber: cuánta vida le
  *  queda y sobre cuánta. Las dos, y no solo la primera: sin el denominador,
@@ -342,6 +343,95 @@ export function npcsFueraDelRect(
     }
   }
   return fuera;
+}
+
+/** El rect en metros de cada tile del save. Su UNIÓN es «el mundo conocido»:
+ *  `scenes_loaded` nunca se poda, así que todo sitio donde el jugador ha
+ *  estado sigue aquí, y una coordenada que no cae en ninguno es una
+ *  coordenada donde no hay suelo. Las escenas sin `tile` (legacy) no aportan
+ *  rect: no están en el plano. */
+export function rectsDelMundo(
+  scenes: Readonly<Record<string, Pick<SceneRecord, "tile">>>,
+): RectDelTile[] {
+  const rects: RectDelTile[] = [];
+  for (const rec of Object.values(scenes)) {
+    if (rec.tile) rects.push(tileWorldRect(rec.tile.tx, rec.tile.ty));
+  }
+  return rects;
+}
+
+/** Una entity del ledger cuya posición VIVA no cae en ningún tile del save. */
+export interface FueraDelMundo {
+  id: string;
+  nombre: string;
+  x: number;
+  z: number;
+}
+
+/** El fail-loud de la posición VIVA (#382): qué entities del ledger están
+ *  donde no hay mundo.
+ *
+ *  Es el hermano de `npcsFueraDelRect` con OTRA vara, y las dos viven juntas
+ *  a propósito. Aquel mide la DECLARADA contra el rect de su propio tile
+ *  (la firma de una conversión celda→metro rota); este mide la VIVA —la que
+ *  desde #351 sale al cable en `position`— contra la UNIÓN de rects de todos
+ *  los tiles del save. La vara es la unión y no «su tile» porque moverse es
+ *  legítimo: el enemigo que te persiguió al tile vecino y el aldeano que se fue
+ *  a dar una vuelta están en un sitio donde HAY mundo, y acusarlos sería el
+ *  falso rojo que hace que un candado se acabe apagando. Lo que no es legítimo
+ *  es la coordenada del repro del issue —`[168.25, 0, 168.25]`, `tile_3_3` en
+ *  una partida de dos tiles—, que ningún proceso del juego escribe y solo
+ *  trae un save corrupto: al jugador le faltaba el tabernero y el panel decía
+ *  «— sin errores —».
+ *
+ *  Con `rects` VACÍO devuelve `[]`, y no es tragarse nada: sin tiles no hay
+ *  mundo del que estar fuera (una partida sin escenas, o un save de escenas
+ *  legacy sin `tile`). Un número que no es finito NO es «está dentro»: es
+ *  otra forma de no estar en ningún sitio, y sale con `NaN` en la coordenada
+ *  para que el aviso lo enseñe tal cual. */
+export function entidadesFueraDelMundo(
+  entities: readonly EntityRecord[],
+  rects: readonly RectDelTile[],
+): FueraDelMundo[] {
+  if (rects.length === 0) return [];
+  const fuera: FueraDelMundo[] = [];
+  for (const rec of entities) {
+    const pos: unknown = rec.position;
+    const x = Array.isArray(pos) ? numero(pos[0]) : null;
+    const z = Array.isArray(pos) ? numero(pos[2]) : null;
+    if (x === null || z === null) {
+      fuera.push({ id: rec.id, nombre: nombreDeEntity(rec), x: Number.NaN, z: Number.NaN });
+      continue;
+    }
+    const enAlgunTile = rects.some(
+      (r) => x >= r.minX && x < r.maxX && z >= r.minZ && z < r.maxZ,
+    );
+    if (!enAlgunTile) fuera.push({ id: rec.id, nombre: nombreDeEntity(rec), x, z });
+  }
+  return fuera;
+}
+
+/** La frase que lee el JUGADOR cuando su partida pone a alguien donde no hay
+ *  mundo: con el nombre y la coordenada, porque es lo que necesita para
+ *  decidir si le importa (y para que el fallo se pueda reproducir con el
+ *  save delante). La escena carga igual: esto avisa, no bloquea. */
+export function avisoDeFueraDelMundo(fuera: readonly FueraDelMundo[]): string {
+  const coord = (f: FueraDelMundo) => `(${f.x.toFixed(1)}, ${f.z.toFixed(1)})`;
+  if (fuera.length === 1) {
+    return (
+      `La partida guardada pone a ${fuera[0].nombre} en ${coord(fuera[0])}, donde no hay mundo: ` +
+      `no lo vas a encontrar.`
+    );
+  }
+  const lista = fuera
+    .slice(0, 3)
+    .map((f) => `${f.nombre} en ${coord(f)}`)
+    .join(", ");
+  const resto = fuera.length > 3 ? ` y ${fuera.length - 3} más` : "";
+  return (
+    `La partida guardada pone a ${fuera.length} personajes donde no hay mundo ` +
+    `(${lista}${resto}): no los vas a encontrar.`
+  );
 }
 
 /** Lo que `materializeSpawn` come: la forma del effect `spawn_entity`, sin el
