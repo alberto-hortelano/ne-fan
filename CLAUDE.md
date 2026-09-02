@@ -194,7 +194,7 @@ Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
   "terrain_grid": { "grid": ["..."], "legend": {}, "solid_chars": ["W", "w"] },
   "objects": [
     { "id": "tavern", "shape": "box", "position": [-2, 0, -2], "scale": [8, 1, 4],
-      "category": "building", "description": "Taberna" }
+      "category": "building", "name": "Taberna" }
   ],
   "npcs": [ { "id": "barkeep", "name": "Tabernero", "position": [0, 0, -2] } ],
   "__player_start": { "x": -1.75, "z": 10.25 },
