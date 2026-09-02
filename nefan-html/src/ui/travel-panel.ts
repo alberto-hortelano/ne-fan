@@ -3,8 +3,9 @@
 
 import type { SceneExit } from "@nefan-core/src/protocol/messages.js";
 
-// El tipo canónico vive en el protocolo (lo fabrica enrichSceneWithExits);
-// se re-exporta para que los consumidores existentes no cambien de import.
+// El tipo canónico vive en el protocolo (las calcula `src/world-map/exits.ts`
+// y las pone el bridge al servir la escena o al cambiar el mapa, #179); se
+// re-exporta para que los consumidores existentes no cambien de import.
 export type { SceneExit } from "@nefan-core/src/protocol/messages.js";
 
 export class TravelPanel {

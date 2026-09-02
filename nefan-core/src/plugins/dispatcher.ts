@@ -245,7 +245,6 @@ export function dispatchPluginEvents(
   for (const write of appliedWrites) {
     applyToState(state, write);
   }
-  if (appliedWrites.length > 0) state.markDirty();
 
   return { ok: true, effects, undelivered };
 

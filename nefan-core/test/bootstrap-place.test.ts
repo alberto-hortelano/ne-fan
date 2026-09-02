@@ -1,6 +1,6 @@
 /** El tile de arranque tiene que quedar ATADO a un lugar del world map.
  *
- *  Si no lo queda, `enrichSceneWithExits` se cae al `active_place_id`, que en
+ *  Si no lo queda, `placeDeLaEscena` se cae al `active_place_id`, que en
  *  un mapa recién creado es la raíz ("world") — y la raíz no tiene links, así
  *  que el panel «Salidas» del cliente sale VACÍO sin un solo error. Con el
  *  panel apagado no hay viaje a ningún lugar: la única vía viva de viaje del

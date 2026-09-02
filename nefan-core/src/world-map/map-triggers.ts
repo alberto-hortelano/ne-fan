@@ -34,7 +34,6 @@ export class MapTriggerEvaluator {
         fired.push(trigger);
       }
     }
-    if (fired.length > 0) this.state.markDirty();
     return fired;
   }
 

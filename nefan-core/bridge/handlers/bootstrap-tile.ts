@@ -108,14 +108,11 @@ export async function runBootstrapTile(
     });
   try {
     const { sceneId, scene } = await generateBootstrapTileScene(ctx, sessionGameId);
-    // Snapshot pasivo del mundo ANTES de que broadcastScene mute la escena
-    // con `exits`: la segunda partida de este juego arranca sin motor. Los
-    // replays vuelven a pasar por broadcastScene, que re-adjunta los exits
-    // desde el world map restaurado.
+    // Snapshot pasivo del mundo: la segunda partida de este juego arranca sin
+    // motor. La escena ya está guardada (generateBootstrapTileScene) y el
+    // broadcast no la toca: las salidas se calculan al servir.
     writeSessionSnapshot(ctx, sessionGameId, sceneId);
     broadcastScene(ctx, sceneId, scene, Date.now() - sceneStart, { source: "engine" });
-    // broadcastScene mutated the scene with `exits` — persist them.
-    await ctx.narrative.save();
     return { delivered: true };
   } catch (err) {
     console.warn("Bridge: generate_scene failed:", err);

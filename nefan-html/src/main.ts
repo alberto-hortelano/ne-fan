@@ -1472,8 +1472,7 @@ function gameLoop(now: number): void {
 
 populateSceneSelector();
 
-// El override de bench `?bridge=` (stack E2E de labs/narrative) se resuelve en
-// net/service-urls.ts.
+// El override de bench `?bridge=` (stack E2E de labs/narrative): net/service-urls.ts.
 const sharedBridge = new BridgeClient(serviceUrl("game-gateway"));
 const narrativeClient = new NarrativeClient(sharedBridge, {
   esMia: (sessionId) => session.esMio(sessionId),
@@ -1482,8 +1481,9 @@ const narrativeClient = new NarrativeClient(sharedBridge, {
 const titleScreen = new TitleScreen(narrativeClient);
 const historyBrowser = new HistoryBrowser(narrativeClient);
 
-// Cambio de modo de render difundido por el bridge (otro cliente de la misma
-// sesión, o el eco de este — re-aplicar es idempotente).
+// Las salidas del tile activo cambiaron sin que cambie la escena (#179): solo el panel.
+sharedBridge.on("exits_changed", (msg) => { if (session.esMio(msg.sessionId)) cargaDeTile.actualizarSalidas(msg.sceneId, msg.exits); });
+// Cambio de modo de render difundido por el bridge (otro cliente de la misma sesión, o el eco de este — re-aplicar es idempotente).
 sharedBridge.on("render_mode_changed", (msg) => {
   if (!session.esMio(msg.sessionId)) return;
   applyRenderModes({

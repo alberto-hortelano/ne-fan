@@ -543,6 +543,73 @@ describe("bridge ciclo de sesión", () => {
     assert.doesNotMatch(aviso!.message ?? "", /max_health|combat\.|undefined/);
   });
 
+  it("resume: una posición VIVA que no cae en ningún tile del save se DICE, y la escena carga (#382)", async () => {
+    // El repro del issue: el save pone al tabernero en (168.25, 168.25) —
+    // tile_3_3 en una partida de un tile— y hasta la tanda nadie lo miraba:
+    // el cliente medía solo la DECLARADA (conversión celda→metro) y el panel
+    // decía «— sin errores —» con el tabernero desaparecido.
+    const { ctx, narrative, broadcasts } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await waitFor(() => Object.keys(ctx.narrative.scenes_loaded).length > 0);
+    narrative.recordEntitySpawned("barkeep", "npc", "tile_0_0", [7.75, 0, -0.25], { name: "Tabernero corpulento" });
+    narrative.getEntity("barkeep")!.position = [168.25, 0, 168.25];
+    await entrarEnLaPartida(ctx, socket, sessionId);
+
+    narrative.startNewSession("plugtest");
+    const { socket: s2, sent: sent2 } = makeSocket();
+    broadcasts.length = 0;
+    const log = capturarLogDelBridge();
+    try {
+      await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    } finally {
+      log.soltar();
+    }
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, true, JSON.stringify(resumed.error));
+    const aviso = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.ok(aviso, `no se avisó de nada: ${JSON.stringify(broadcasts.map((b) => b.type))}`);
+    assert.equal(aviso.kind, "restore");
+    assert.match(aviso.message ?? "", /Tabernero corpulento/);
+    assert.match(aviso.message ?? "", /168,3, 168,3/);
+    assert.match(aviso.message ?? "", /donde no hay mundo/);
+  });
+
+  it("resume: una position que no es una coordenada es un save INVÁLIDO que nombra a la entidad, no un reventón genérico (QA T6, H-2)", async () => {
+    // `position: null` llegaba hasta `npcSync`, que lee `record.position[0]`,
+    // y el jugador leía «inténtalo de nuevo» — un consejo que no puede
+    // funcionar con el defecto en el disco. La salida correcta es la de un
+    // save que no vale (#334/#336), y ANTES de tocar la sesión viva.
+    const { ctx, narrative, storage } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await waitFor(() => Object.keys(ctx.narrative.scenes_loaded).length > 0);
+    narrative.recordEntitySpawned("barkeep", "npc", "tile_0_0", [7.75, 0, -0.25], { name: "Tabernero corpulento" });
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    const guardado = (await storage.read(sessionId))!;
+    (guardado.entities.find((e) => e.id === "barkeep") as { position: unknown }).position = null;
+    await storage.write(sessionId, guardado);
+
+    narrative.startNewSession("plugtest");
+    const { socket: s2, sent: sent2 } = makeSocket();
+    const log = capturarLogDelBridge();
+    try {
+      await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    } finally {
+      log.soltar();
+    }
+    const resumed = sent2[0] as SessionStartedMessage;
+    assert.equal(resumed.ok, false);
+    assert.match(resumed.error ?? "", /^save_invalido: /);
+    assert.match(resumed.error ?? "", /entities\["barkeep"\]\.position/);
+    assert.match(resumed.error ?? "", /null/);
+    assert.match(resumed.error ?? "", /bórralo o empieza partida nueva/);
+  });
+
   it("resume_session devuelve session_not_found para un id inexistente", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();

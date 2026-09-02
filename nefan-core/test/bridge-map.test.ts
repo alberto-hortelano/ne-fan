@@ -7,11 +7,15 @@ import { routeMessage } from "../bridge/router.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type {
+  ExitsChangedMessage,
   NarrativeEventMessage,
   NarrativeStatusMessage,
   } from "../src/protocol/messages.js";
+import { difundirSalidasDeLosTilesCargados } from "../bridge/salidas.js";
+import { sessionDataForClient } from "../bridge/wire-scene.js";
 import {
   capturarLogDelBridge,
+  entrarEnLaPartida,
   escenaExpandidaDePrueba,
   makeCtx,
   makeSocket,
@@ -598,10 +602,94 @@ describe("bridge activación por posición (tiles + anchors)", () => {
   });
 });
 
+/** El hecho «el jugador ha cambiado de tile» ESCRIBE el save (#395). Hasta la
+ *  tanda solo marcaba un `dirty` sin lector: un viaje por «Salidas» al que no
+ *  siguiera otra escritura reanudaba en el tile de antes. Se mide contando
+ *  escrituras del storage, que es lo que el disco ve — no llamadas a `save()`,
+ *  que con la partida sin establecer no escriben nada. */
+describe("bridge cambiar de tile guarda la partida (#395)", () => {
+  const dosTiles = (narrative: NarrativeState) => {
+    narrative.recordSceneLoaded(
+      "tile_0_0",
+      expandScenePrimitives({ tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", scene_description: "campo", biome: "grass", entities: [] }),
+    );
+    narrative.recordSceneLoaded(
+      "tile_1_0",
+      expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", scene_description: "campo", biome: "grass", entities: [] }),
+      [],
+      { activate: false },
+    );
+  };
+
+  /** Una partida EN DISCO que escucha al sim, con las escrituras contadas. */
+  async function partidaEnMarcha() {
+    const h = makeCtx();
+    h.narrative.startNewSession("plugtest");
+    dosTiles(h.narrative);
+    const { socket } = makeSocket();
+    h.ctx.world.claimForSession(socket);
+    await entrarEnLaPartida(h.ctx, socket, h.narrative.session_id);
+    const escrituras: string[] = [];
+    const write = h.storage.write.bind(h.storage);
+    h.storage.write = async (id, data) => {
+      escrituras.push(id);
+      await write(id, data);
+    };
+    const input = (x: number, z: number) =>
+      routeMessage(
+        { type: "input", delta: 0.016, inputs: { playerPosition: { x, y: 0, z }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: true } },
+        socket,
+        h.ctx,
+      );
+    return { ...h, socket, escrituras, input };
+  }
+
+  it("cambiar de TILE escribe el save con el destino y la posición; cambiar de celda dentro del mismo tile, no", async () => {
+    const { narrative, storage, escrituras, input } = await partidaEnMarcha();
+    // El primer input arranca el gate (tile desconocido → hay tile): escribe.
+    await input(0, 0);
+    const trasElPrimero = escrituras.length;
+    assert.ok(trasElPrimero >= 1, "el primer tile pisado se guarda");
+    // Dos celdas más del mismo tile: ni una escritura.
+    await input(0.7, 0);
+    await input(1.4, 0.7);
+    assert.equal(escrituras.length, trasElPrimero, "cambiar de celda dentro del tile no escribe");
+    // Cruzar a (1,0): UNA escritura, y el save lleva el destino y la posición.
+    await input(40, -20);
+    assert.equal(escrituras.length, trasElPrimero + 1, "cambiar de tile escribe una vez");
+    assert.equal(narrative.world.active_scene_id, "tile_1_0");
+    const guardado = await storage.read(narrative.session_id);
+    assert.equal(guardado?.world.active_scene_id, "tile_1_0", "el save lleva el tile del destino");
+    assert.deepEqual(guardado?.player.position, [40, 0, -20], "…y la posición viva del jugador en él");
+  });
+
+  it("si el save del cambio de tile falla, el jugador lo lee (narrative_status error, kind save)", async () => {
+    const { ctx, broadcasts, storage, input } = await partidaEnMarcha();
+    await input(0, 0);
+    storage.write = async () => {
+      throw new Error("disco lleno (simulado)");
+    };
+    const log = capturarLogDelBridge();
+    try {
+      await input(40, -20);
+    } finally {
+      log.soltar();
+    }
+    const aviso = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error" && m.kind === "save",
+    );
+    assert.ok(aviso, "el fallo del save se difunde como narrative_status error kind save");
+    assert.match(aviso.message ?? "", /podría no guardarse/);
+    assert.ok(log.lineas.some((l) => l.includes("el cambio de tile") && l.includes("disco lleno")), log.lineas.join(" | "));
+    // Y el tile SÍ cambió: el fallo del disco no deja al jugador en el tile de antes.
+    assert.equal(ctx.narrative.world.active_scene_id, "tile_1_0");
+  });
+});
+
 
 /** El panel «Salidas» del cliente se dibuja desde `scene.exits`, que el
- *  bridge adjunta con las salidas del place de la escena. Si la escena no
- *  queda atada a ningún place, `enrichSceneWithExits` cae al
+ *  bridge calcula al servir con las salidas del place de la escena. Si la
+ *  escena activa no queda atada a ningún place, `placeDeLaEscena` cae al
  *  `active_place_id`, que en un mapa recién sembrado es la raíz "world" — sin
  *  links, o sea panel VACÍO y sin un solo error. Como el panel es la única
  *  vía viva de viaje a un lugar, ahí desaparece el juego entero en silencio.
@@ -703,6 +791,76 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
 
     assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.place_id, "robledo");
     assert.deepEqual(exitsOf(broadcasts), ["molino"]);
+  });
+
+  it("un link creado a mitad de sesión llega como exits_changed del tile activo, sin escena y sin sellar el save (#179)", async () => {
+    const { ctx, broadcasts, narrative } = bootstrapWith(tileScene({ place_id: "robledo" }));
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+    assert.deepEqual(exitsOf(broadcasts), ["molino"]);
+    // La escena PERSISTIDA sigue siendo Format D crudo: las salidas no se sellan.
+    assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.exits, undefined, "scene_data sin exits");
+
+    // El motor crea un lugar y un enlace a mitad de sesión (lo que hace
+    // `map_link` por el State API), y el bridge difunde SOLO las salidas.
+    broadcasts.length = 0;
+    narrative.worldMap.upsertPlace({ id: "ermita", kind: "site", parent_id: "world", name: "La Ermita" });
+    narrative.worldMap.addLink({ from: "robledo", to: "ermita", kind: "path", edge: "north" });
+    difundirSalidasDeLosTilesCargados(ctx);
+    const cambio = broadcasts.find((m): m is ExitsChangedMessage => m.type === "exits_changed");
+    assert.ok(cambio, "exits_changed difundido");
+    assert.equal(cambio.sceneId, "tile_0_0");
+    assert.deepEqual(cambio.exits.map((e) => [e.place_id, e.name, e.edge]), [
+      ["molino", "El Molino", "east"],
+      ["ermita", "La Ermita", "north"],
+    ]);
+    assert.equal(broadcasts.some((m) => m.type === "narrative_event"), false, "ni una escena re-difundida");
+    assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.exits, undefined, "y el save sigue sin sello");
+
+    // Y el RESUME re-calcula: la escena que sirve `sessionDataForClient` trae
+    // el destino nuevo, que es lo que hasta #179 se quedaba congelado.
+    const servida = sessionDataForClient(ctx, narrative.toSessionData()).state.scenes_loaded["tile_0_0"].scene_data;
+    assert.deepEqual((servida.exits as { place_id: string }[]).map((e) => e.place_id), ["molino", "ermita"]);
+  });
+
+  it("un link a un lugar cuyo tile está CARGADO pero no activo llega a ESE tile (QA T6, H-1)", async () => {
+    // El jugador está en el molino (tile_1_0 activo) y el motor enlaza la aldea
+    // (tile_0_0, cargado) con la ermita. Hasta la vuelta de QA solo se
+    // difundían las salidas del activo, y al volver A PIE a la aldea el cliente
+    // pintaba su copia vieja hasta Reanudar.
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    seedMapLikeEngine(narrative);
+    const tile = (tx: number, place_id?: string) =>
+      expandScenePrimitives({ tile: { tx, ty: 0 }, scene_id: `tile_${tx}_0`, scene_description: "campo", biome: "grass", entities: [], ...(place_id ? { place_id } : {}) });
+    narrative.recordSceneLoaded("tile_0_0", tile(0, "robledo"));
+    narrative.recordSceneLoaded("tile_1_0", tile(1, "molino"));
+    // Campo abierto cargado: sin lugar, sin salidas que puedan cambiar.
+    narrative.recordSceneLoaded("tile_2_0", tile(2), [], { activate: false });
+    assert.equal(narrative.world.active_scene_id, "tile_1_0");
+    broadcasts.length = 0;
+    narrative.worldMap.upsertPlace({ id: "ermita", kind: "site", parent_id: "world", name: "La Ermita" });
+    narrative.worldMap.addLink({ from: "robledo", to: "ermita", kind: "path", edge: "north" });
+    difundirSalidasDeLosTilesCargados(ctx);
+    const cambios = broadcasts.filter((m): m is ExitsChangedMessage => m.type === "exits_changed");
+    assert.deepEqual(
+      cambios.map((c) => [c.sceneId, c.exits.map((e) => e.place_id)]),
+      [
+        ["tile_0_0", ["molino", "ermita"]],
+        ["tile_1_0", ["robledo"]],
+      ],
+      "uno por tile cargado CON lugar: el de la aldea trae la ermita; el campo abierto no recibe nada",
+    );
+    assert.equal(broadcasts.length, cambios.length, "solo exits_changed: ni escena ni status");
+  });
+
+  it("sin escena activa, un cambio del mapa no difunde nada: la escena que llegue traerá sus salidas", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    seedMapLikeEngine(narrative);
+    difundirSalidasDeLosTilesCargados(ctx);
+    assert.deepEqual(broadcasts, []);
   });
 
   it("un tile de exploración NO hereda el place_id que invente el motor", async () => {

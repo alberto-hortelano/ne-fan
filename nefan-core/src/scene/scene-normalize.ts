@@ -267,9 +267,6 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     objects,
     npcs,
     ambient_event: raw.ambient_event,
-    // El bridge adjunta las salidas del world map; el renderer las ignora pero
-    // loadSceneData las pasa al TravelPanel.
-    exits: raw.exits,
     // Metadatos para el cliente — el renderer los ignora.
     __player_start: playerStart,
     // El plan COMPUESTO (declarado + derivado del esquema). Viaja resuelto a

@@ -40,10 +40,11 @@ const MOTOR_DE_PRUEBA = "http://127.0.0.1:18765";
 /** Y con qué gateway está emparejada esa State API: la IDENTIDAD de la vía. */
 const GATEWAY_DE_PRUEBA = "ws://127.0.0.1:9877";
 
-function makeCtx(): { ctx: StateHttpContext; progreso: string[] } {
+function makeCtx(): { ctx: StateHttpContext; progreso: string[]; cambiosDeMapa: { n: number } } {
   const { narrative, storage } = makeNarrativeState();
   narrative.startNewSession("plugtest");
   const progreso: string[] = [];
+  const cambiosDeMapa = { n: 0 };
   const ctx: StateHttpContext = {
     narrative,
     npcDirector: new NpcDirector(narrative),
@@ -52,6 +53,9 @@ function makeCtx(): { ctx: StateHttpContext; progreso: string[] } {
     aiServerUrl: MOTOR_DE_PRUEBA,
     gatewayUrl: GATEWAY_DE_PRUEBA,
     onProgress: (m) => progreso.push(m),
+    onMapChanged: () => {
+      cambiosDeMapa.n += 1;
+    },
     plugins: {
       register: () => {
         throw new Error("no debería llamarse en este test");
@@ -62,7 +66,7 @@ function makeCtx(): { ctx: StateHttpContext; progreso: string[] } {
       },
     },
   };
-  return { ctx, progreso };
+  return { ctx, progreso, cambiosDeMapa };
 }
 
 /** El `RouteRequest` mínimo: la mayoría de handlers no miran query ni body. */
@@ -231,18 +235,21 @@ describe("la tabla ROUTES está completa por construcción", () => {
 });
 
 describe("handlers invocados a pelo, uno por concepto", () => {
-  it("map: upsertPlace muta y marca el save; el cuerpo inválido rebota con 400", () => {
-    const { ctx } = makeCtx();
+  it("map: upsertPlace muta, marca el save y avisa del cambio de mapa; el cuerpo inválido rebota con 400", () => {
+    const { ctx, cambiosDeMapa } = makeCtx();
     const creado = mapRoutes.upsertPlace(ctx, req({
       body: { id: "millhaven", kind: "settlement", parent_id: "world", name: "Millhaven" },
     }));
     assert.equal(creado.status, 200);
     assert.equal(creado.mutated, true);
     assert.equal(ctx.narrative.worldMap.get("millhaven")?.name, "Millhaven");
+    // Las salidas del tile activo pueden haber cambiado (#179): se avisa UNA vez.
+    assert.equal(cambiosDeMapa.n, 1);
 
     const malo = mapRoutes.upsertPlace(ctx, req({ body: { id: "x", kind: "teleport" } }));
     assert.equal(malo.status, 400);
     assert.equal(malo.mutated, undefined, "un 400 no puede persistir el save");
+    assert.equal(cambiosDeMapa.n, 1, "un 400 tampoco toca el panel «Salidas»");
   });
 
   it("map: getPlace responde 404 sin tocar nada cuando el lugar no existe", () => {

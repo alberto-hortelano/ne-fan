@@ -104,17 +104,28 @@
  *    "ground_dirt","path_cobble","rock_stone"]}`: las mismas 23 celdas pedidas
  *    tres veces. Con la guarda: `posts: 1 · celdas 23 · repetidas 0`.
  *
- *  Y una medida que NO es de #390 pero salió al escribir esto: sin forzar el
- *  guardado tras «Salidas», en Maqueta 3D reanudar devolvía al jugador a
- *  `tile_0_0` (`antes tile_1_0 · ahora tile_0_0`): el save del viaje lleva la
- *  posición del origen. Ver `guardarConLaPosicionDelDestino`.
+ *  Y EL SAVE DEL VIAJE (#395), un aserto de este guion: tras «Salidas», el
+ *  save tiene que llevar `active_scene_id` del destino Y la posición dentro
+ *  de su rect, sin que nadie fuerce un guardado. Lo escribe
+ *  `activateByPosition` al cambiar de TILE (el save que dispara el propio
+ *  viaje va ANTES del spawn y lleva la posición del origen), y aquí se espera
+ *  por PREDICADO —no por tiempo— y se afirma. Forzar una escritura por el
+ *  State API para «curarlo» sería medir el efecto secundario que #395 denuncia.
+ *  Nació ROJO sobre `6d3d7ac` (medido el 2026-09-02) en el bloque de Maqueta
+ *  3D: `✘ #395 · el save recoge el viaje … — {"destino":"tile_1_0","rect":
+ *  {"minX":32,…},"cliente":{"x":64,"y":0,"z":7},"ultimo":{"active":"tile_0_0",
+ *  "position":[0.25,0,3.25]}}` con el `maxMs` de `esperarEnElSave` agotado
+ *  —ningún save siguió al spawn— y, de arrastre, `✘ Maqueta 3D · el tile
+ *  activo tras reanudar es el que tenía la partida — antes tile_1_0 · ahora
+ *  tile_0_0`, que es lo que ve el jugador. En Imagen IA el mismo aserto salía
+ *  VERDE en la base: el `/scene/asset_refs` del atlas del destino guardaba por
+ *  efecto secundario, que es justo lo que tapaba el defecto en el stack real.
  */
 import {
   comenzar,
   nuevaPartida,
   recargarAlTitulo,
-  esperarListaDeSaves,
-  esperarTituloListo,
+  reanudar,
 } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
 import { esperarEnElSave } from "../lib/saves.mjs";
@@ -212,63 +223,39 @@ const olvidarMappingLocal = (ctx) =>
     return claves.length;
   });
 
-/** Fuerza un guardado por el cable del MOTOR (State API → `onMutation` →
- *  save, patrón del 48) y espera a que el save EN DISCO lleve la posición del
- *  destino. Hace falta porque el save que dispara el viaje se escribe ANTES
- *  del primer tick de `input` tras el spawn: lleva `active_scene_id` del
- *  destino y la posición del tile de ORIGEN (medido el 2026-09-02 en Maqueta
- *  3D: reanudar devolvía al jugador a `tile_0_0` con la partida en `tile_1_0`).
- *  En Imagen IA lo tapa el `/scene/asset_refs` del atlas, que vuelve a
- *  guardar. Es OTRO defecto (se reporta aparte): aquí solo se evita medirlo. */
-async function guardarConLaPosicionDelDestino(ctx, sessionId, destino) {
-  const eco = await fetch(`${URLS.state_api}/map/place`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      id: `qa60_testigo_${Date.now()}`,
-      kind: "site",
-      parent_id: null,
-      name: "Piedra testigo",
-      description: "Fuerza un guardado tras llegar al tile vecino (guion 60).",
-    }),
-  });
-  if (eco.status !== 200) ctx.sinMedir(`el State API no aceptó la escritura que fuerza el guardado (HTTP ${eco.status})`);
-  const pos = await ctx.page.evaluate(() => window.__nefan.state().pos);
+/** El save recoge el viaje POR CONSTRUCCIÓN (#395): tras el spawn en el
+ *  destino, el primer `input` cambia de tile y `activateByPosition` guarda.
+ *  Se espera ese save por PREDICADO —`active_scene_id` = destino ∧ posición
+ *  dentro del rect del destino, leído de la world scene activa, no de una
+ *  constante— y se AFIRMA: un `null` aquí es el defecto de #395, no un
+ *  `sinMedir`. Nada se fuerza por el State API: eso era la muleta. */
+async function esperarElSaveDelDestino(ctx, sessionId, destino) {
+  const { pos, rect } = await ctx.page.evaluate(() => ({
+    pos: window.__nefan.state().pos,
+    rect: window.__nefan.scene?.world_rect ?? null,
+  }));
+  if (!rect) ctx.sinMedir(`la escena activa (${destino}) no publica world_rect: sin rect no hay predicado`);
+  const dentro = (p) => p[0] >= rect.minX && p[0] < rect.maxX && p[2] >= rect.minZ && p[2] < rect.maxZ;
   let ultimo = null;
   const guardado = await esperarEnElSave(sessionId, (s) => {
     const p = s.player?.position;
     ultimo = { active: s.world?.active_scene_id, position: p };
-    return s.world?.active_scene_id === destino && Array.isArray(p) && Math.hypot(p[0] - pos.x, p[2] - pos.z) < 1
-      ? ultimo
-      : null;
+    return s.world?.active_scene_id === destino && Array.isArray(p) && p.length === 3 && dentro(p) ? ultimo : null;
   });
-  if (!guardado) {
-    ctx.sinMedir(
-      `el save no recogió la posición del destino ${destino} (cliente en ${JSON.stringify(pos)}, save ${JSON.stringify(ultimo)}): ` +
-        "es el defecto del save tras viajar, no #390",
-    );
-  }
+  ctx.expect(
+    "#395 · el save recoge el viaje por «Salidas» sin que nadie lo fuerce (active_scene_id = destino ∧ posición en su rect)",
+    guardado !== null,
+    JSON.stringify({ destino, rect, cliente: pos, ultimo }),
+  );
   return guardado;
 }
 
-/** Recarga, pulsa la tarjeta REANUDAR de la partida y espera a que el
- *  renderer tenga el tile activo texturado (o a que expire, volcando el
- *  estado del renderer, que es lo que dice qué tile ganó). */
-async function reanudar(ctx, sessionId, { antesDeEsperar = null } = {}) {
-  await ctx.page.reload({ waitUntil: "domcontentloaded" });
-  await ctx.waitFor("window.__nefan disponible tras el reload", () => Boolean(window.__nefan));
-  await espiarHud(ctx);
-  await esperarTituloListo(ctx);
-  await esperarListaDeSaves(ctx);
-  const tarjeta = await ctx.page.$(`button[data-action="resume"][data-session-id="${sessionId}"]`);
-  ctx.expect("el título ofrece REANUDAR la partida", Boolean(tarjeta), sessionId);
-  if (!tarjeta) return null;
-  await tarjeta.click();
-  await ctx.waitFor(
-    "la escena vuelve tras reanudar",
-    () => (window.__nefan.status().scene ? window.__nefan.scene.scene_id : null),
-    180_000,
-  );
+/** Reanuda (`qa/lib/sesion.mjs`) con el espía del HUD puesto desde la primera
+ *  línea y espera a que el renderer tenga el tile activo texturado (o a que
+ *  expire, volcando el estado del renderer, que es lo que dice qué tile ganó). */
+async function reanudarYMedirElRenderer(ctx, sessionId, { antesDeEsperar = null } = {}) {
+  const vuelta = await reanudar(ctx, sessionId, { alRecargar: () => espiarHud(ctx) });
+  if (!vuelta) return null;
   if (antesDeEsperar) await antesDeEsperar();
   // Precondición ANTES de medir: sin dos tiles no hay carrera que perder.
   const dosTiles = await ctx.absorbe(
@@ -345,8 +332,9 @@ export default async function (ctx) {
   };
   await recargarAlTitulo(ctx);
 
-  /** Partida nueva en `modo` + viaje a «Salidas» + guardado con la posición
-   *  del destino. Devuelve lo que hace falta para reanudar y afirmar. */
+  /** Partida nueva en `modo` + viaje a «Salidas» + el save del destino, que
+   *  el juego escribe solo (#395). Devuelve lo que hace falta para reanudar y
+   *  afirmar. */
   async function partidaConDosTiles(modo, etiqueta) {
     const gastoAntes = await gastoDelFake();
     const posts0 = atlasPosts.length;
@@ -365,7 +353,7 @@ export default async function (ctx) {
     const avisoVecino = await esperarAtlasDe(ctx, vecino);
     ctx.log(`${etiqueta} · en ${vecino}: ${JSON.stringify(avisoVecino)}`);
     aprenderLayoutKey(vecino, posts1);
-    await guardarConLaPosicionDelDestino(ctx, partida.sessionId, vecino);
+    await esperarElSaveDelDestino(ctx, partida.sessionId, vecino);
     const fps = await estadoFps(ctx);
     ctx.log(`${etiqueta} · renderer antes de reanudar: ${JSON.stringify(fps)}`);
     return { partida, tile0, posTile0, vecino, aviso, postsArranque, gastoAntes, gastoArranque, fps };
@@ -378,7 +366,7 @@ export default async function (ctx) {
     const desde = peticiones.length;
     const postsAntes = atlasPosts.length;
     const gastoAntes = await gastoDelFake();
-    const r = await reanudar(ctx, p.partida.sessionId);
+    const r = await reanudarYMedirElRenderer(ctx, p.partida.sessionId);
     if (!r) return;
     if (r.sinTiles) {
       ctx.sinMedir(`el save volvió con ${r.estado.tiles.length} tile(s): sin dos tiles no hay carrera que medir`);
@@ -515,7 +503,7 @@ export default async function (ctx) {
   await olvidarMappingLocal(ctx);
   const postsAntesA3 = atlasPosts.length;
   let claveA3 = null;
-  const r3 = await reanudar(ctx, p2.partida.sessionId, {
+  const r3 = await reanudarYMedirElRenderer(ctx, p2.partida.sessionId, {
     antesDeEsperar: async () => {
       await ctx.waitFor("el POST del atlas del resume está en vuelo (retenido)", () => window.__qaRetenidas >= 1 || null, 60_000);
       const antes = await ctx.page.evaluate(() => {

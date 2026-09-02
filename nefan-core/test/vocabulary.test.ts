@@ -109,6 +109,7 @@ describe("POST /vocabulary (State API)", () => {
         mutations++;
       },
       onProgress: () => {},
+      onMapChanged: () => {},
     });
     await new Promise<void>((res) => server.once("listening", () => res()));
     const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -150,6 +151,7 @@ describe("POST /vocabulary (State API)", () => {
       gamesDir,
       onMutation: () => {},
       onProgress: () => {},
+      onMapChanged: () => {},
     });
     await new Promise<void>((res) => server.once("listening", () => res()));
     return { server, baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };

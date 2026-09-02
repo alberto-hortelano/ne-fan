@@ -769,6 +769,19 @@
       "text": {
         "pattern": "/\\*\\s*eslint-disable(?![-\\w])"
       }
+    },
+    {
+      "id": "las-salidas-no-se-sellan-en-la-escena",
+      "desc": "Las `exits` no se escriben dentro de una escena: se calculan al servir (bridge/wire-scene.ts) y se difunden solas (bridge/salidas.ts)",
+      "why": "Las salidas del panel «Salidas» son un derivado del world map (los links del place de la escena). Hasta #179 el bridge las HORNEABA en el `scene_data` al difundir (`scene.exits = …` en `enrichSceneWithExits`), sobre el MISMO objeto que va al save, así que tenían un único invalidador —volver a difundir la escena— y dos síntomas: un `map_link` creado a mitad de sesión llegaba al save y no al panel, y el resume servía el sello congelado (la escena guardada dejaba de ser Format D crudo). Hoy las calcula `src/world-map/exits.ts` y las pone `wire-scene.ts` sobre el objeto NUEVO que sale al cable (broadcast y resume por la misma puerta), y cuando el mapa cambia `salidas.ts` manda solo las salidas (`exits_changed`). Esta regla impide el camino de vuelta, que es el corto: alguien que necesita «que la escena traiga las salidas» y escribe `scene.exits = …` en un handler, o en `recordSceneLoaded`, y con eso vuelve a sellar un derivado del mapa en la persistencia. El patrón caza la ASIGNACIÓN a una propiedad `exits` (no la comparación `===`, que es leer): en bridge/** y src/narrative/**, que son los dos sitios que tocan `scene_data` persistido. `wire-scene.ts` no necesita exención porque construye un objeto nuevo con spread —si algún día necesitara asignar, es que está mutando lo que recibe, y eso es justo lo que no debe—. El cliente queda fuera a propósito: `carga-de-tile.ts` escribe `entry.scene.exits` sobre SU copia en memoria de la world scene, que no es la persistencia de nadie. Probado en negativo en architecture.test.ts.",
+      "severity": "error",
+      "files": [
+        "nefan-core/bridge/**/*.ts",
+        "nefan-core/src/narrative/**/*.ts"
+      ],
+      "text": {
+        "pattern": "\\.exits\\s*=(?!=)"
+      }
     }
   ]
 }

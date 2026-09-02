@@ -436,6 +436,7 @@
       "tests": [
         "test/bootstrap-place.test.ts",
         "test/edges.test.ts",
+        "test/exits.test.ts",
         "test/map-triggers.test.ts",
         "test/place-anchor.test.ts",
         "test/style-application.test.ts",

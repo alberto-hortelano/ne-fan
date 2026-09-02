@@ -16,11 +16,14 @@ import assert from "node:assert/strict";
 
 import {
   POSICION_DECLARADA,
+  avisoDeFueraDelMundo,
   combateDeEntity,
+  entidadesFueraDelMundo,
   escenaConCombateVivo,
   estadoEnElWire,
   nombreDeEntity,
   npcsFueraDelRect,
+  rectsDelMundo,
   spawnsDeRuntime,
   type EstadoEnElWire,
 } from "../src/session/mundo-persistido.js";
@@ -478,5 +481,63 @@ describe("combateDeEntity — tres desenlaces, ninguno colapsable", () => {
     const r = combateDeEntity(rec({ id: "raro", data: { combat: "sí" } }));
     assert.equal(r.tipo, "roto");
     if (r.tipo === "roto") assert.match(r.motivo, /raro/);
+  });
+});
+
+/** La posición VIVA contra la UNIÓN de tiles del save (#382). Es el hermano
+ *  de `npcsFueraDelRect` con otra vara: aquel mide la declarada contra SU
+ *  tile; este la viva contra todo el mundo conocido, porque moverse al tile
+ *  de al lado es legítimo y una coordenada donde no hay ningún tile no lo es. */
+describe("entidadesFueraDelMundo — la viva contra la unión de tiles del save (#382)", () => {
+  /** Dos tiles: (0,0) y (1,0) → x en [−32, 96), z en [−32, 32). */
+  const dosTiles = rectsDelMundo({
+    tile_0_0: { tile: { tx: 0, ty: 0 } },
+    tile_1_0: { tile: { tx: 1, ty: 0 } },
+    legacy: {},
+  });
+
+  it("los rects salen de los tiles del save, y una escena sin tile no aporta ninguno", () => {
+    assert.deepEqual(dosTiles, [
+      { minX: -32, minZ: -32, maxX: 32, maxZ: 32 },
+      { minX: 32, minZ: -32, maxX: 96, maxZ: 32 },
+    ]);
+  });
+
+  it("el repro del issue: [168.25, 0, 168.25] no cae en ningún tile y se nombra con su coordenada", () => {
+    const fuera = entidadesFueraDelMundo(
+      [rec({ id: "barkeep", spawn_reason: "scene_init", position: [168.25, 0, 168.25], data: { name: "Tabernero" } })],
+      dosTiles,
+    );
+    assert.deepEqual(fuera, [{ id: "barkeep", nombre: "Tabernero", x: 168.25, z: 168.25 }]);
+    const aviso = avisoDeFueraDelMundo(fuera);
+    assert.match(aviso, /Tabernero/);
+    assert.match(aviso, /168,3, 168,3/);
+    assert.doesNotMatch(aviso, /no lo vas|no los vas/, "sin género");
+    assert.match(aviso, /donde no hay mundo/);
+  });
+
+  it("el que se fue al tile VECINO está donde hay mundo: no es un rojo (negativo del falso positivo)", () => {
+    // Fuera de su tile de origen (0,0) pero dentro de (1,0): el enemigo que te
+    // persiguió, el aldeano que dio una vuelta.
+    assert.deepEqual(
+      entidadesFueraDelMundo([rec({ id: "bandido", scene_id: "tile_0_0", position: [66, 0, 7] })], dosTiles),
+      [],
+    );
+  });
+
+  it("sin tiles no hay mundo del que estar fuera: devuelve [] a propósito", () => {
+    assert.deepEqual(entidadesFueraDelMundo([rec({ id: "x", position: [999, 0, 999] })], []), []);
+    assert.deepEqual(entidadesFueraDelMundo([rec({ id: "x", position: [999, 0, 999] })], rectsDelMundo({ legacy: {} })), []);
+  });
+
+  it("con varios, el aviso los cuenta y nombra hasta tres", () => {
+    const fuera = entidadesFueraDelMundo(
+      ["a", "b", "c", "d"].map((id) => rec({ id, position: [500, 0, 500], data: { name: id.toUpperCase() } })),
+      dosTiles,
+    );
+    const aviso = avisoDeFueraDelMundo(fuera);
+    assert.match(aviso, /4 personajes/);
+    assert.match(aviso, /A en \(500,0, 500,0\), B en/);
+    assert.match(aviso, /y 1 más/);
   });
 });

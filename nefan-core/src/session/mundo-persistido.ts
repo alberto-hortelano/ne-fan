@@ -37,7 +37,8 @@
  *  (para el resume), que es exactamente por qué no puede tocar `node:*`.
  */
 
-import type { EntityRecord } from "../narrative/types.js";
+import type { EntityRecord, SceneRecord } from "../narrative/types.js";
+import { tileWorldRect } from "../scene/tile.js";
 
 /** El runtime de un combatiente que el SAVE sí puede saber: cuánta vida le
  *  queda y sobre cuánta. Las dos, y no solo la primera: sin el denominador,
@@ -212,11 +213,11 @@ export function combateDeEntity(rec: EntityRecord): CombateDelLedger {
 
 /** La world scene tal y como sale al cable, con el mundo VIVO encima.
  *
- *  Devuelve un OBJETO NUEVO y no toca el que recibe. No es higiene: sellar el
- *  estado de sesión dentro del `scene_data` persistido es lo que se hizo con
- *  `exits` y causó #179 — la escena guardada dejaba de ser Format D crudo y el
- *  resume servía un enriquecimiento congelado. Aquí lo persistido no se entera
- *  de que esto existe.
+ *  Devuelve un OBJETO NUEVO y no toca el que recibe. No es higiene: un
+ *  derivado de sesión que viva dentro del `scene_data` persistido deja de ser
+ *  Format D crudo y el resume lo sirve congelado (las salidas del mapa, hoy
+ *  calculadas al servir, son el caso que lo enseñó: #179). Aquí lo persistido
+ *  no se entera de que esto existe.
  *
  *  Tres cosas, y las tres sobre `npcs[]`:
  *   · al HERIDO se le baja la vida (y se le pone su denominador),
@@ -342,6 +343,92 @@ export function npcsFueraDelRect(
     }
   }
   return fuera;
+}
+
+/** El rect en metros de cada tile del save. Su UNIÓN es «el mundo conocido»:
+ *  `scenes_loaded` nunca se poda, así que todo sitio donde el jugador ha
+ *  estado sigue aquí, y una coordenada que no cae en ninguno es una
+ *  coordenada donde no hay suelo. Las escenas sin `tile` (legacy) no aportan
+ *  rect: no están en el plano. */
+export function rectsDelMundo(
+  scenes: Readonly<Record<string, Pick<SceneRecord, "tile">>>,
+): RectDelTile[] {
+  const rects: RectDelTile[] = [];
+  for (const rec of Object.values(scenes)) {
+    if (rec.tile) rects.push(tileWorldRect(rec.tile.tx, rec.tile.ty));
+  }
+  return rects;
+}
+
+/** Una entity del ledger cuya posición VIVA no cae en ningún tile del save. */
+export interface FueraDelMundo {
+  id: string;
+  nombre: string;
+  x: number;
+  z: number;
+}
+
+/** El fail-loud de la posición VIVA (#382): qué entities del ledger están
+ *  donde no hay mundo.
+ *
+ *  Es el hermano de `npcsFueraDelRect` con OTRA vara, y las dos viven juntas
+ *  a propósito. Aquel mide la DECLARADA contra el rect de su propio tile
+ *  (la firma de una conversión celda→metro rota); este mide la VIVA —la que
+ *  desde #351 sale al cable en `position`— contra la UNIÓN de rects de todos
+ *  los tiles del save. La vara es la unión y no «su tile» porque moverse es
+ *  legítimo: el enemigo que te persiguió al tile vecino y el aldeano que se fue
+ *  a dar una vuelta están en un sitio donde HAY mundo, y acusarlos sería el
+ *  falso rojo que hace que un candado se acabe apagando. Lo que no es legítimo
+ *  es la coordenada del repro del issue —`[168.25, 0, 168.25]`, `tile_3_3` en
+ *  una partida de dos tiles—, que ningún proceso del juego escribe y solo
+ *  trae un save corrupto: al jugador le faltaba el tabernero y el panel decía
+ *  «— sin errores —».
+ *
+ *  Con `rects` VACÍO devuelve `[]`, y no es tragarse nada: sin tiles no hay
+ *  mundo del que estar fuera (una partida sin escenas, o un save de escenas
+ *  legacy sin `tile`). La FORMA de `position` (tres números finitos) no se
+ *  vuelve a comprobar aquí: la garantiza `loadSession` al cargar el save, que
+ *  rechaza el fichero nombrando la entidad — una rama para «no es un array»
+ *  sería código para un estado que el tipo ya impide. */
+export function entidadesFueraDelMundo(
+  entities: readonly EntityRecord[],
+  rects: readonly RectDelTile[],
+): FueraDelMundo[] {
+  if (rects.length === 0) return [];
+  const fuera: FueraDelMundo[] = [];
+  for (const rec of entities) {
+    const [x, , z] = rec.position;
+    const enAlgunTile = rects.some(
+      (r) => x >= r.minX && x < r.maxX && z >= r.minZ && z < r.maxZ,
+    );
+    if (!enAlgunTile) fuera.push({ id: rec.id, nombre: nombreDeEntity(rec), x, z });
+  }
+  return fuera;
+}
+
+/** La frase que lee el JUGADOR cuando su partida pone a alguien donde no hay
+ *  mundo: con el nombre y la coordenada, porque es lo que necesita para
+ *  decidir si le importa (y para que el fallo se pueda reproducir con el
+ *  save delante). En español de España —coma decimal— y sin género (una
+ *  tabernera también se pierde). La escena carga igual: esto avisa, no bloquea. */
+export function avisoDeFueraDelMundo(fuera: readonly FueraDelMundo[]): string {
+  const num = (n: number) => n.toFixed(1).replace(".", ",");
+  const coord = (f: FueraDelMundo) => `(${num(f.x)}, ${num(f.z)})`;
+  if (fuera.length === 1) {
+    return (
+      `La partida guardada pone a ${fuera[0].nombre} en ${coord(fuera[0])}, donde no hay mundo: ` +
+      `ahí no hay nada que encontrar.`
+    );
+  }
+  const lista = fuera
+    .slice(0, 3)
+    .map((f) => `${f.nombre} en ${coord(f)}`)
+    .join(", ");
+  const resto = fuera.length > 3 ? ` y ${fuera.length - 3} más` : "";
+  return (
+    `La partida guardada pone a ${fuera.length} personajes donde no hay mundo ` +
+    `(${lista}${resto}): ahí no hay nada que encontrar.`
+  );
 }
 
 /** Lo que `materializeSpawn` come: la forma del effect `spawn_entity`, sin el

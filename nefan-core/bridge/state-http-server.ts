@@ -39,6 +39,9 @@ export interface StateHttpServerOptions {
    *  narrative-mcp): el bridge lo difunde como narrative_status "progress"
    *  para que el loader del cliente muestre qué está pasando. */
   onProgress: (message: string) => void;
+  /** El mapa cambió a mitad de sesión (`map_upsert_place`, `map_link`): el
+   *  bridge difunde las salidas de los tiles cargados (#179). */
+  onMapChanged: () => void;
   /** Hooks de plugins (F5) — viven en ws-server porque el registry activo del
    *  dispatcher (`activePlugins`) es estado del bridge. */
   plugins: PluginHooks;
@@ -63,6 +66,7 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
     plugins: opts.plugins,
     gamesDir: opts.gamesDir,
     onProgress: opts.onProgress,
+    onMapChanged: opts.onMapChanged,
     sessionStorage: opts.sessionStorage,
     aiServerUrl: opts.aiServerUrl,
     gatewayUrl: opts.gatewayUrl,

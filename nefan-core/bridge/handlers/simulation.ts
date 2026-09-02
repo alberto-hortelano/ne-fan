@@ -3,6 +3,7 @@
 import { createCombatant } from "../../src/combat/combatant.js";
 import { combatRegistry } from "../../src/combat/registry.js";
 import { activateByPosition } from "./tile.js";
+import { guardarOAvisar } from "../guardar.js";
 import {
   getEnemyStates,
   getNpcStates,
@@ -51,29 +52,19 @@ export async function handleInput(
   // #323). El save vuelca la vida viva de los combatientes, así que basta con
   // provocarlo — y se provoca UNA vez por tick con muertes, no una por muerte.
   //
-  // Solo si esta partida está escuchando al sim: los muñecos de una fixture
-  // del selector «Room» no escriben en la partida de nadie (world-claim.ts).
+  // Fail-loud del bridge (`guardarOAvisar`, que también gatea por «esta
+  // partida escucha al sim»): si el guardado falla, el muerto resucitará al
+  // reanudar y el jugador tiene que enterarse AHORA, no entonces. `save` y no
+  // `consequences` (#352): lo que peligra es el save, no el motor.
   const muertes = result.events.filter(
     (e) => e.type === "died" && e.combatantId !== "player",
   );
-  if (muertes.length > 0 && ctx.world.kind === "session") {
-    // Fail-loud del bridge: si el guardado falla, el muerto resucitará al
-    // reanudar y el jugador tiene que enterarse AHORA, no entonces.
-    await ctx.narrative.save().catch((err: unknown) => {
-      console.error("Bridge: no se pudo guardar la muerte de un enemigo:", err);
-      // `save` y no `consequences` (#352): el enemigo está muerto en el sim y
-      // el jugador lo ha visto caer. Lo que peligra es que sobreviva a
-      // reanudar, y eso es el save, no el motor.
-      // El cuerpo empieza por la CONSECUENCIA, como su hermano de dialogue.ts
-      // (QA 2026-09-01, H-4): «No se pudo guardar la muerte de un enemigo» era
-      // el titular otra vez con un sujeto pegado detrás.
-      ctx.broadcastNarrative({
-        type: "narrative_status",
-        phase: "error",
-        kind: "save",
-        message: "El enemigo al que acabas de matar podría seguir vivo si reanudas la partida.",
-      });
-    });
+  if (muertes.length > 0) {
+    await guardarOAvisar(
+      ctx,
+      "la muerte de un enemigo",
+      "El enemigo al que acabas de matar podría seguir vivo si reanudas la partida.",
+    );
   }
 
   ctx.send(ws, {

@@ -129,6 +129,9 @@ export interface CargaDeTile {
   /** Apunta la «escena activa» del cliente (imagen IA, exits, TravelPanel) al
    *  tile bajo el jugador. */
   activarTile(key: string): void;
+  /** Las salidas de un tile cambiaron sin que cambie la escena (`exits_changed`,
+   *  #179): el motor creó un enlace o renombró un lugar a mitad de sesión. */
+  actualizarSalidas(key: string, salidas: SceneExit[]): void;
 }
 
 export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
@@ -146,6 +149,23 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
       errors.push("scene", `el atlas fps de ${key} no arrancó al activar el tile`, err),
     );
     travelPanel.setExits(salidas);
+  }
+
+  /** Solo el panel: ni renderer ni atlas ni sim. La escena del tile conserva
+   *  las salidas nuevas para que un `activarTile` posterior las pinte; si el
+   *  tile aún no está, no hay nada que actualizar — su escena sale del wire
+   *  con las salidas ya puestas (`bridge/wire-scene.ts`). */
+  function actualizarSalidas(key: string, salidas: SceneExit[]): void {
+    const entry = tileStore.entries.get(key);
+    if (!entry) {
+      deps.log(`salidas de ${key} antes que su escena: llegan con ella`);
+      return;
+    }
+    entry.scene.exits = salidas;
+    if (key === mundo.tileActivo) {
+      mundo.activarTile(key, entry.scene, salidas);
+      travelPanel.setExits(salidas);
+    }
   }
 
   /** Los cuerpos: la política de re-emisión aplicada a las tres clases. */
@@ -375,5 +395,5 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     deps.log("Scene loaded: " + key);
   }
 
-  return { addTile, activarTile };
+  return { addTile, activarTile, actualizarSalidas };
 }

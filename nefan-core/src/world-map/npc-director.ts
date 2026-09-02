@@ -91,7 +91,6 @@ export class NpcDirector {
       from: current,
       departed_at: new Date().toISOString(),
     } satisfies NpcTransit;
-    this.state.markDirty();
     return { ok: true, info: placeInfo(npc) };
   }
 
@@ -114,7 +113,6 @@ export class NpcDirector {
         npc.position = [target.x, npc.position[1], target.z];
       }
     }
-    this.state.markDirty();
     return { ok: true, info: placeInfo(npc) };
   }
 
@@ -123,7 +121,6 @@ export class NpcDirector {
     const npc = this.state.getEntity(npcId);
     if (!npc) return { ok: false, error: `npc "${npcId}" not found` };
     npc.data.directive = directive;
-    this.state.markDirty();
     return { ok: true, info: placeInfo(npc) };
   }
 

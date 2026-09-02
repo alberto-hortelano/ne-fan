@@ -138,6 +138,18 @@ function describeSceneContractViolation(
   return `la escena "${sceneId}"${donde} viola el contrato de escena cargable: ${issue.message}`;
 }
 
+/** Por qué una `position` del ledger NO es una coordenada, o `null` si lo es:
+ *  un array de exactamente tres números finitos. Lo lee `loadSession` para que
+ *  un save con `null`, sin campo, con dos números o con una letra no llegue al
+ *  sim; las coordenadas que sí lo son las juzga después el checker de #382. */
+function describirPosicionInvalida(pos: unknown): string | null {
+  if (!Array.isArray(pos)) return `no es una coordenada [x, y, z] (recibido ${JSON.stringify(pos)})`;
+  if (pos.length !== 3) return `tiene ${pos.length} componentes en vez de 3 (${JSON.stringify(pos)})`;
+  const malo = pos.findIndex((v) => typeof v !== "number" || !Number.isFinite(v));
+  if (malo >= 0) return `tiene un componente que no es un número finito (${JSON.stringify(pos)})`;
+  return null;
+}
+
 export class NarrativeState {
   session_id = "";
   game_id = "";
@@ -162,7 +174,6 @@ export class NarrativeState {
 
   private nextEventSeq = 0;
   private nextSchedSeq = 0;
-  private dirty = false;
   /** La puerta del disco. Privada y SIN setter público: las únicas
    *  transiciones son las cuatro de abajo (startNewSession, loadSession,
    *  establecer, deleteSession/descartarProvisional). */
@@ -216,7 +227,6 @@ export class NarrativeState {
     if (this.world.active_scene_id === sceneId) return true;
     this.world.active_scene_id = sceneId;
     this.player.current_scene_id = sceneId;
-    this.dirty = true;
     return true;
   }
 
@@ -340,7 +350,6 @@ export class NarrativeState {
     // deja nada en `saves/`: no hay partida que borrar porque no llegó a
     // haberla.
     this.existencia = "provisional";
-    this.dirty = true;
     return this.session_id;
   }
 
@@ -401,7 +410,6 @@ export class NarrativeState {
         `"${dropped.id}" (${dropped.description.slice(0, 60)}…)`,
       );
     }
-    this.dirty = true;
     return id;
   }
 
@@ -411,7 +419,6 @@ export class NarrativeState {
     const idx = this.scheduled_events.findIndex((e) => e.id === id);
     if (idx < 0) return false;
     this.scheduled_events.splice(idx, 1);
-    this.dirty = true;
     return true;
   }
 
@@ -422,7 +429,6 @@ export class NarrativeState {
     if (this.ambient_log.length > 30) {
       this.ambient_log.splice(0, this.ambient_log.length - 30);
     }
-    this.markDirty();
   }
 
   /** Fija la identidad del mundo de la sesión (título, brief, estilo
@@ -449,7 +455,6 @@ export class NarrativeState {
     this.world.character_mode = info.character_mode;
     this.world.combat_system = info.combat_system;
     if (info.style_refs) this.world.style_refs = info.style_refs;
-    this.dirty = true;
   }
 
   /** Reemplaza el catálogo de refs de estilo que ve el motor (`style_ref`
@@ -457,7 +462,6 @@ export class NarrativeState {
    *  en start_session y resume_session — el save solo lo cachea. */
   setStyleRefs(refs: NarrativeWorldState["style_refs"]): void {
     this.world.style_refs = refs;
-    this.dirty = true;
   }
 
   /** Carga un save. Canal de error DISTINGUIBLE por construcción:
@@ -485,6 +489,22 @@ export class NarrativeState {
       if (!parsed.success) {
         throw new Error(
           `save "${sessionId}": ${describeSceneContractViolation(sceneId, rec.scene_data, parsed.error)}`,
+        );
+      }
+    }
+    // Y el LEDGER: `entities[].position` es lo que el sim y la vida ambiental
+    // leen sin mirar (`record.position[0]`), y lo que el checker de #382
+    // contrasta con los tiles del save. Un save con `position: null` o con
+    // letras dentro tumbaba el resume entero en `npcSync` con un «inténtalo de
+    // nuevo» que no puede funcionar (QA de T6, H-2). La garantía va en el
+    // tipo: lo que no es una coordenada no entra, y sale por la misma puerta
+    // que una escena que viola el contrato — nombrando la entidad y el campo.
+    for (const rec of data.entities) {
+      const motivo = describirPosicionInvalida(rec.position);
+      if (motivo) {
+        throw new Error(
+          `save "${sessionId}": entities["${rec.id}"].position ${motivo} — ` +
+            "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
         );
       }
     }
@@ -517,7 +537,6 @@ export class NarrativeState {
     this.nextEventSeq = data._next_event_seq ?? data.dialogue_history.length;
     this.nextSchedSeq = data._next_sched_seq ?? this.scheduled_events.length;
     this.rebuildTileIndex();
-    this.dirty = false;
     return true;
   }
 
@@ -542,7 +561,6 @@ export class NarrativeState {
     this.updated_at = nowIso();
     const payload = this.toSessionData();
     await this.storage.write(this.session_id, payload);
-    this.dirty = false;
     return { escrito: true };
   }
 
@@ -635,7 +653,6 @@ export class NarrativeState {
       }
     }
     registerSceneNpcs(this, sceneId, sceneData, { firstRegistration });
-    this.dirty = true;
   }
 
   /** Append ADITIVO con dedupe a asset_refs de una escena cargada: los
@@ -650,7 +667,6 @@ export class NarrativeState {
       if (!current.has(ref)) {
         current.add(ref);
         record.asset_refs.push(ref);
-        this.dirty = true;
       }
     }
     return record.asset_refs.length;
@@ -691,7 +707,6 @@ export class NarrativeState {
       data,
       asset_refs: assetRefs,
     });
-    this.dirty = true;
     return uniqueId;
   }
 
@@ -724,7 +739,6 @@ export class NarrativeState {
   addInventoryItem(entityId: string, item: unknown): boolean {
     if (entityId === "player") {
       this.player.inventory.push(item);
-      this.dirty = true;
       return true;
     }
     const entity = this.getEntity(entityId);
@@ -735,7 +749,6 @@ export class NarrativeState {
     } else {
       entity.data.inventory = [item];
     }
-    this.dirty = true;
     return true;
   }
 
@@ -751,16 +764,9 @@ export class NarrativeState {
     );
     if (idx === -1) return false;
     inv.splice(idx, 1);
-    this.dirty = true;
     return true;
   }
 
-  /** Notify that state was mutated out-of-band (e.g. by a narrative engine
-   * tool through the bridge HTTP API: world map, NPC directives, triggers),
-   * so the next save() persists it. */
-  markDirty(): void {
-    this.dirty = true;
-  }
 
   // ── Plugins (next.md §7) ──
 
@@ -806,7 +812,6 @@ export class NarrativeState {
       );
     }
     this.plugins.push(record);
-    this.dirty = true;
   }
 
   /** Sustituye un PluginRecord migrado (F7, §7.3 "Evolución"): nuevo
@@ -851,7 +856,6 @@ export class NarrativeState {
     record.origin = next.origin;
     if (next.manifest) record.manifest = next.manifest;
     else delete record.manifest;
-    this.dirty = true;
   }
 
   /** Sustituye el slice de un plugin tras un tick del dispatcher (F4). */
@@ -861,7 +865,6 @@ export class NarrativeState {
       throw new Error(`NarrativeState.setPluginSlice: plugin desconocido ${id}`);
     }
     record.slice = slice;
-    this.dirty = true;
   }
 
   recordDialogueEvent(
@@ -883,7 +886,6 @@ export class NarrativeState {
       free_text: freeText,
       narrative_consequences: [],
     });
-    this.dirty = true;
     return eventId;
   }
 
@@ -891,35 +893,27 @@ export class NarrativeState {
     const evt = this.dialogue_history.find((e) => e.id === eventId);
     if (evt) {
       evt.narrative_consequences.push(consequence);
-      this.dirty = true;
     }
   }
 
   updatePlayerPosition(pos: Vec3Like, sceneId: string = ""): void {
     this.player.position = toTuple(pos);
     if (sceneId) this.player.current_scene_id = sceneId;
-    this.dirty = true;
   }
 
   updatePlayerHealth(health: number): void {
     this.player.health = health;
-    this.dirty = true;
   }
 
   updatePlayerAppearance(modelId: string, skinPath: string): void {
     this.player.appearance = { model_id: modelId, skin_path: skinPath };
-    this.dirty = true;
   }
 
   appendStory(delta: string): void {
     if (!delta) return;
     this.story_so_far = this.story_so_far ? `${this.story_so_far}\n\n${delta}` : delta;
-    this.dirty = true;
   }
 
-  isDirty(): boolean {
-    return this.dirty;
-  }
 
   // ── Serialization ──
 

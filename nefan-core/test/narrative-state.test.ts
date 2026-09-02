@@ -93,7 +93,6 @@ describe("NarrativeState lifecycle", () => {
     assert.equal(s.player.level, 1);
     assert.equal(s.story_so_far, "");
     assert.deepEqual(s.entities, []);
-    assert.ok(s.isDirty());
   });
 
   it("save persists schema version and roundtrips through loadSession", async () => {
@@ -113,7 +112,37 @@ describe("NarrativeState lifecycle", () => {
     assert.equal(s2.entities.length, 1);
     assert.equal(s2.entities[0].id, "npc_1");
     assert.equal(s2.dialogue_history.length, 1);
-    assert.equal(s2.isDirty(), false);
+  });
+
+  it("una position del ledger que no es una coordenada LANZA nombrando la entidad; una válida carga (QA T6, H-2)", async () => {
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    const id = s1.startNewSession("toledo_1200");
+    s1.recordEntitySpawned("barkeep", "npc", "scene_1", [7.75, 0, -0.25], { name: "Tabernero" });
+    await s1.establecer();
+    const bueno = (await storage.read(id))!;
+    const conPosicion = (position: unknown) => {
+      const roto = structuredClone(bueno);
+      (roto.entities[0] as { position: unknown }).position = position;
+      return roto;
+    };
+    for (const [position, motivo] of [
+      [null, /no es una coordenada/],
+      [undefined, /no es una coordenada/],
+      [[1, 2], /2 componentes/],
+      [["x", 0, 0], /no es un número finito/],
+    ] as const) {
+      await storage.write(id, conPosicion(position));
+      await assert.rejects(
+        () => new NarrativeState(storage).loadSession(id),
+        (err: Error) => /entities\["barkeep"\]\.position/.test(err.message) && motivo.test(err.message),
+        `position ${JSON.stringify(position)} tiene que rechazarse nombrando la entidad y el motivo`,
+      );
+    }
+    await storage.write(id, conPosicion([168.25, 0, 168.25]));
+    const s2 = new NarrativeState(storage);
+    assert.equal(await s2.loadSession(id), true, "una coordenada finita fuera del mundo CARGA: eso lo juzga el checker de #382, no el tipo");
+    assert.deepEqual(s2.entities[0].position, [168.25, 0, 168.25]);
   });
 
   it("una versión de schema desconocida LANZA (canal distinguible de «no existe»)", async () => {

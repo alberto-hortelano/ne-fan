@@ -48,6 +48,7 @@ import {
   type ClientSocket,
 } from "../context.js";
 import { avisoDeIlegibles, sessionDataForClient } from "../wire-scene.js";
+import { avisoDeFueraDelMundo, type FueraDelMundo } from "../../src/session/mundo-persistido.js";
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { applyRenderModeChange } from "../../src/narrative/render-mode.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
@@ -309,6 +310,20 @@ function avisarDeIlegibles(ctx: BridgeContext, ilegibles: readonly string[]): vo
   });
 }
 
+/** Gemelo del de arriba para la POSICIÓN (#382): una entity cuya posición
+ *  viva no cae en ningún tile del save se dice con nombre y coordenada, por
+ *  el mismo canal y con el mismo `kind` — la partida vuelve sin algo que
+ *  tenía. La escena carga igual: es un aviso, no un bloqueo. */
+function avisarDeFueraDelMundo(ctx: BridgeContext, fuera: readonly FueraDelMundo[]): void {
+  if (fuera.length === 0) return;
+  ctx.broadcastNarrative({
+    type: "narrative_status",
+    phase: "error",
+    kind: "restore",
+    message: avisoDeFueraDelMundo(fuera),
+  });
+}
+
 export async function handleStartSession(
   msg: StartSessionMessage,
   ws: ClientSocket,
@@ -448,6 +463,7 @@ export async function handleStartSession(
     uiTheme,
   });
   avisarDeIlegibles(ctx, paraElCliente.ilegibles);
+  avisarDeFueraDelMundo(ctx, paraElCliente.fueraDelMundo);
   // Snapshot de mundo pre-generado (data/games/{id}/world/): replay del
   // bootstrap por la ruta normal — el jugador entra sin esperar al motor. Un
   // snapshot malformado se REPORTA y degrada al bootstrap vivo (nunca se
@@ -489,8 +505,8 @@ export async function handleStartSession(
 /** Replay del snapshot de mundo por la ruta normal del bootstrap: restaura el
  *  world map, registra TODAS las escenas (las no-entrada sin activar — el
  *  anillo y los places pre-realizados quedan disponibles para request_tile y
- *  player_entered_place al instante) y difunde la de entrada, que re-adjunta
- *  sus exits desde el world map restaurado. */
+ *  player_entered_place al instante) y difunde la de entrada; sus salidas se
+ *  calculan al servir desde el world map restaurado. */
 async function replayWorldSnapshot(ctx: BridgeContext, snap: WorldSnapshot): Promise<void> {
   ctx.narrative.worldMap = WorldMapManager.fromSerialized(structuredClone(snap.world_map));
   for (const [id, scene] of Object.entries(snap.scenes)) {
@@ -643,6 +659,7 @@ export async function handleResumeSession(
     uiTheme,
   });
   avisarDeIlegibles(ctx, alCliente.ilegibles);
+  avisarDeFueraDelMundo(ctx, alCliente.fueraDelMundo);
   // Aquí vivía el reintento del bootstrap: una sesión sin NINGUNA escena era
   // un arranque cuyo tile falló, y reanudarla re-encolaba la generación. Se
   // quedó sin sujeto con #279 — ya no nacen saves de cero escenas, así que

@@ -198,9 +198,12 @@ export interface AddCombatantsMessage {
   }[];
 }
 
-/** Salida que el bridge adjunta a toda escena difundida (enrichSceneWithExits,
- *  derivada de los links del world map). El cliente la usa para el TravelPanel
- *  y para la transición continua al cruzar un borde. */
+/** Una salida del lugar de una escena: un link del world map con el destino
+ *  resuelto a su nombre. El bridge la CALCULA al servir la escena
+ *  (`bridge/wire-scene.ts`, sobre `src/world-map/exits.ts`) y la vuelve a
+ *  mandar sola cuando el mapa cambia (`exits_changed`); no vive en el
+ *  `scene_data` persistido. El cliente la usa para el TravelPanel y para la
+ *  transición continua al cruzar un borde. */
 export interface SceneExit {
   place_id: string;
   name: string;
@@ -602,6 +605,23 @@ export interface RenderModeChangedMessage {
   renderMode: "image" | "vector";
 }
 
+/** Las SALIDAS del tile activo han cambiado sin que cambie la escena (#179):
+ *  el motor creó un enlace o renombró un lugar a mitad de sesión (`map_link`,
+ *  `map_upsert_place` por el State API). Lleva SOLO las salidas: re-difundir
+ *  la escena para pintar un botón volvería a pasar por el atlas de superficies
+ *  y por `add_combatants`. Sale uno por tile CARGADO con lugar, no solo del
+ *  activo: el cliente guarda una copia de las salidas de cada tile que tiene y
+ *  la pinta al volver a pisarlo a pie, así que la copia de un tile no activo
+ *  también tiene que ponerse al día. El cliente actualiza la copia de `sceneId`
+ *  y, si es el activo, el panel; si aún no tiene el tile, la escena llegará
+ *  con ellas. Sin rótulo: no es un estado que el jugador lea como aviso. */
+export interface ExitsChangedMessage {
+  type: "exits_changed";
+  sessionId: string;
+  sceneId: string;
+  exits: SceneExit[];
+}
+
 export type ServerMessage =
   | StateUpdateMessage
   | PongMessage
@@ -616,7 +636,8 @@ export type ServerMessage =
   | StyleApplicationRecordedMessage
   | SessionDeletedMessage
   | RenderModeSetMessage
-  | RenderModeChangedMessage;
+  | RenderModeChangedMessage
+  | ExitsChangedMessage;
 
 /** Un mensaje de difusión TAL COMO LO ESCRIBE quien lo emite: sin el sello de
  *  sesión, que pone el único escritor que hay (`broadcastNarrative`).

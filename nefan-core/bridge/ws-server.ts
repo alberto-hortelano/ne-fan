@@ -31,6 +31,7 @@ import { routeMessage } from "./router.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
 import { intakeClientMessage } from "./message-intake.js";
 import { sellarSesion, type BridgeContext, type ClientSocket } from "./context.js";
+import { difundirSalidasDeLosTilesCargados } from "./salidas.js";
 import type { CombatConfig } from "../src/types.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
 
@@ -107,7 +108,7 @@ const ctx: BridgeContext = {
   persistWorldSnapshots: true,
   activePlugins: new Map(),
   sceneGen: new SceneGenQueue(),
-  posTracking: { cellKey: null, placeId: null },
+  posTracking: { cellKey: null, tileKey: null, placeId: null },
   world: createWorldClaim(narrative, sim),
   subscribe(ws) {
     narrativeSubscribers.add(ws as WebSocket);
@@ -186,6 +187,7 @@ createStateHttpServer({
       message,
     });
   },
+  onMapChanged: () => difundirSalidasDeLosTilesCargados(ctx),
   plugins: {
     register: (raw) => {
       const result = registerRuntimePlugin(narrative, ctx.activePlugins, raw);
