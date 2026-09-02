@@ -1,8 +1,9 @@
 /** Scene format normalization — engine-agnostic, shared by every client.
  *
- *  The narrative engine emits scenes in "Map Format D": a character grid
- *  (`size.cols`/`size.rows`, `terrain` as an array of strings, `terrain_legend`)
- *  plus `entities` placed by `cell`/`footprint`. Renderers, however, want world
+ *  The narrative engine emits scenes in "Map Format D": a tile (`biome` +
+ *  declarative `ground`/`volumes`, from which the engine synthesises the
+ *  `size`/`terrain` cell grid used for collision and seams) plus `entities`
+ *  placed by `cell`/`footprint`. Renderers, however, want world
  *  coordinates in metres (`dimensions` + `objects[]`/`npcs[]` with
  *  `position`/`scale`). `formatDToWorld` is the single place that bridges the two
  *  so the logic does not live inside a specific client (CLAUDE.md: "lógica en
@@ -83,41 +84,11 @@ export const KIND_DEFAULT_HEIGHT: Record<string, number> = {
  *  recorta en vez de tumbar la escena. */
 const MAX_ENTITY_HEIGHT_M = 20;
 
-/** Chars de terreno sólidos por defecto: "W" muro (reservado para interiores)
- *  y "w" agua (los puentes "b" son transitables). La leyenda puede añadir o
- *  quitar solidez por char con la forma objeto `{name, solid}`. */
+/** Chars del grid que bloquean el paso: "W" muro y "w" agua (el puente "b"
+ *  es transitable). ÚNICA fuente de solidez del terreno — nadie la declara
+ *  por escena: la fija el engine. Si algún día hace falta un vado, irá como
+ *  propiedad del rasgo `water` de `ground`, no como excepción sobre un char. */
 export const DEFAULT_SOLID_CHARS: readonly string[] = ["W", "w"];
-
-/** Heurística retro para leyendas legacy (valor string, sin `solid`): un
- *  nombre que suena a muro se trata como sólido. Arregla los saves generados
- *  antes de que la leyenda declarase solidez, sin regenerar la escena. */
-const SOLID_LEGEND_NAME = /muro|muralla|pared|tapia|wall|acantilado|cliff/i;
-
-/** Normaliza `terrain_legend` (valores string legacy u objeto `{name, solid}`)
- *  a un mapa char→nombre plano para el renderer, y resuelve qué chars bloquean
- *  movimiento. `solid: false` explícito quita un default (p.ej. agua vadeable).
- *  Exportada para que scene-validate use la misma resolución de solidez. */
-export function resolveTerrainLegend(rawLegend: unknown): {
-  legend: Record<string, string>;
-  solidChars: string[];
-} {
-  const legend: Record<string, string> = {};
-  const solid = new Set<string>(DEFAULT_SOLID_CHARS);
-  if (rawLegend && typeof rawLegend === "object") {
-    for (const [ch, val] of Object.entries(rawLegend as Record<string, unknown>)) {
-      if (typeof val === "string") {
-        legend[ch] = val;
-        if (SOLID_LEGEND_NAME.test(val)) solid.add(ch);
-      } else if (val && typeof val === "object") {
-        const entry = val as { name?: unknown; solid?: unknown };
-        legend[ch] = typeof entry.name === "string" ? entry.name : ch;
-        if (entry.solid === true) solid.add(ch);
-        else if (entry.solid === false) solid.delete(ch);
-      }
-    }
-  }
-  return { legend, solidChars: [...solid].sort() };
-}
 
 /** Convert a Map Format D scene to a world-coordinate scene. If `raw` is not in
  *  Format D it is returned unchanged. */
@@ -143,7 +114,6 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
   const cols = size!.cols!;
   const rows = size!.rows!;
   const mpc = size!.meters_per_cell ?? 2;
-  const { legend, solidChars } = resolveTerrainLegend(raw.terrain_legend);
   // Rect mundial de la escena — ÚNICA fuente del origen. Un tile vive en su
   // rect global del plano continuo; una escena legacy queda centrada en el
   // origen (comportamiento histórico, sin cambios).
@@ -272,15 +242,14 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     // siendo el fallback de color cuando esto no está.
     terrain_grid: {
       grid: terrain as string[],
-      legend,
       cols,
       rows,
       meters_per_cell: mpc,
       // Esquina NW del grid en coordenadas mundo (plano continuo).
       origin: [worldRect.minX, worldRect.minZ] as [number, number],
-      // Chars que bloquean movimiento (muro/agua + leyenda `{name, solid}`).
-      // Los consume `createTerrainCollider`.
-      solid_chars: solidChars,
+      // Chars que bloquean movimiento (muro y agua). Los consume
+      // `createTerrainCollider`; el bridge (sim-collision) lee los mismos.
+      solid_chars: [...DEFAULT_SOLID_CHARS],
     },
     // Plan del tile DECLARADO (rasgos de suelo + volúmenes tipados), tal cual
     // lo mandó el motor: es provenance, no la fuente de render. Lo que se

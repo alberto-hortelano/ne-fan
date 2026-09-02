@@ -1,5 +1,5 @@
 /** Char sólido de los grids de colisión DERIVADOS (no del `terrain_grid` del
- *  esquema, que trae su propia leyenda).
+ *  esquema, cuyos sólidos son `DEFAULT_SOLID_CHARS`).
  *
  *  Vivía aquí con el rasterizador de máscaras de la imagen IA
  *  (`solidGridFromMasks`), que se retiró con el pipeline de repintado de la

@@ -6,11 +6,10 @@
  *  Devuelve el mismo shape que `volumeCollisionGrid` (`TerrainGridData` con
  *  chars `S`); el cliente une ambas fuentes por el camino de siempre.
  *
- *  QUIÉN DECIDE SI EL AGUA BLOQUEA: la leyenda del terreno, no esta función.
- *  Un autor que declare `{name, solid:false}` sobre `GROUND_WATER_CHAR` está
- *  abriendo un VADO, y `planCollisionGrid` deja de llamar aquí — si no, dos
- *  colisiones sobre el mismo río se contradirían y ganaría la que nadie
- *  escribió. */
+ *  El agua declarada bloquea y los decks la abren — no hay más dial: la
+ *  solidez del terreno la fija el engine (`DEFAULT_SOLID_CHARS`), no la
+ *  escena. Si algún día hace falta un vado, será una propiedad del rasgo
+ *  `water` de `ground`, para que el suelo siga teniendo un solo origen. */
 
 import { IMAGE_SOLID_CHAR } from "../image-collision.js";
 import type { TerrainGridData } from "../terrain-collision.js";
@@ -22,8 +21,7 @@ const OPEN_CHAR = "g";
 
 /** Char al que `scene-expand` rasteriza el agua de `ground` en el grid de
  *  terreno. Es el MISMO agua contada dos veces —analítica aquí, en celdas
- *  allí—, así que la leyenda del terreno (`{name, solid}` sobre este char) es
- *  quien decide si bloquea: ver `planCollisionGrid`. */
+ *  allí—, y las dos bloquean: está en `DEFAULT_SOLID_CHARS`. */
 export const GROUND_WATER_CHAR = "w";
 
 /** Cualquier rasgo con forma (rect|polygon|ellipse). La colisión solo barre

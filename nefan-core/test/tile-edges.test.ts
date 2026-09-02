@@ -24,41 +24,6 @@ describe("computeTileEdges", () => {
     assert.equal(edges.north.biome, "forest_floor");
   });
 
-  it("clasifica runs por char (w→river, s→road) y separa runs distintos", () => {
-    // Río vertical norte→sur declarado en `ground` (agua → "w") y una
-    // carretera empedrada al este estampada como parche ASCII (char "s", que
-    // ningún kind de `ground` rasteriza).
-    const expanded = expandScenePrimitives({
-      tile: { tx: 0, ty: 0 },
-      scene_id: "tile_0_0",
-      biome: "grass",
-      ground: [{ id: "rio", kind: "water", rect: [28.5, 0, 3, 128] }],
-      terrain_patches: [{ at: [126, 89], rows: ["ss", "ss"] }],
-      entities: [],
-    });
-    const edges = computeTileEdges(expanded);
-    assert.equal(edges.north.crossings[0]?.type, "river");
-    assert.ok(Math.abs(edges.north.crossings[0].at - 30) <= 1);
-    assert.equal(edges.south.crossings[0]?.type, "river");
-    assert.equal(edges.east.crossings.length, 1);
-    assert.equal(edges.east.crossings[0].type, "road");
-    assert.ok(Math.abs(edges.east.crossings[0].at - 90) <= 1);
-    assert.deepEqual(edges.west.crossings, []);
-  });
-
-  it("los muros en el borde NO cuentan como cruce", () => {
-    const expanded = expandScenePrimitives({
-      tile: { tx: 0, ty: 0 },
-      scene_id: "tile_0_0",
-      biome: "grass",
-      // Muro pegado al borde norte (fila 0 = "W").
-      terrain_patches: [{ at: [50, 0], rows: ["WWWWWWWWWW"] }],
-      entities: [],
-    });
-    const edges = computeTileEdges(expanded);
-    assert.deepEqual(edges.north.crossings, []);
-  });
-
   it("fail-loud con un grid que no es de tile", () => {
     assert.throws(
       () => computeTileEdges({ terrain: ["ggg"], biome: "grass" }),

@@ -55,33 +55,6 @@
         "distinct_building_heights": 0
       }
     },
-    "parche-de-terreno-fuera-del-grid": {
-      "ok": false,
-      "errors": [
-        "terrain_patches[0] se sale del tile (at [124,70], fila 0 de 10 chars)"
-      ],
-      "warnings": [],
-      "stats": {
-        "cols": 128,
-        "rows": 128,
-        "walkable_cells": 0,
-        "reachable_cells": 0,
-        "border_reachable": false,
-        "doors_total": 0,
-        "doors_reachable": 0,
-        "npcs_total": 0,
-        "npcs_reachable": 0,
-        "volumes_declared": 0,
-        "volumes_cap": 160,
-        "volumes_total": 0,
-        "volumes_total_cap": 200,
-        "ground_features": 0,
-        "ground_cap": 64,
-        "scatter_zones": 0,
-        "vegetation_zones": 0,
-        "distinct_building_heights": 0
-      }
-    },
     "vegetation-zone-invalida": {
       "ok": false,
       "errors": [
@@ -111,70 +84,97 @@
         "distinct_building_heights": 2
       }
     },
-    "char-de-terreno-sin-declarar": {
+    "expandido-con-terrain-vacio": {
       "ok": false,
       "errors": [
-        "chars de terreno sin declarar en terrain_legend: \"X\""
+        "terrain tiene 0 filas y un tile expandido lleva exactamente 128 — si la emites tú, quita `__expanded` y declara `biome` + primitivas: el engine sintetiza el grid"
       ],
       "warnings": [],
       "stats": {
         "cols": 128,
         "rows": 128,
-        "walkable_cells": 16338,
-        "reachable_cells": 16338,
-        "border_reachable": true,
-        "doors_total": 3,
-        "doors_reachable": 3,
-        "npcs_total": 1,
-        "npcs_reachable": 1,
-        "volumes_declared": 1,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
         "volumes_cap": 160,
-        "volumes_total": 1,
+        "volumes_total": 0,
         "volumes_total_cap": 200,
-        "ground_features": 1,
+        "ground_features": 0,
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 1
+        "distinct_building_heights": 0
       }
     },
-    "dos-chars-sin-declarar": {
+    "expandido-sin-terrain": {
       "ok": false,
       "errors": [
-        "chars de terreno sin declarar en terrain_legend: \"Y\", \"Z\""
+        "terrain no es un array (un tile expandido lleva 128 filas de 128 chars) — si la emites tú, quita `__expanded` y declara `biome` + primitivas: el engine sintetiza el grid"
       ],
       "warnings": [],
       "stats": {
         "cols": 128,
         "rows": 128,
-        "walkable_cells": 16338,
-        "reachable_cells": 16338,
-        "border_reachable": true,
-        "doors_total": 3,
-        "doors_reachable": 3,
-        "npcs_total": 1,
-        "npcs_reachable": 1,
-        "volumes_declared": 1,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
         "volumes_cap": 160,
-        "volumes_total": 1,
+        "volumes_total": 0,
         "volumes_total_cap": 200,
-        "ground_features": 1,
+        "ground_features": 0,
         "ground_cap": 64,
         "scatter_zones": 0,
         "vegetation_zones": 0,
-        "distinct_building_heights": 1
+        "distinct_building_heights": 0
       }
     },
-    "chars-reservados-todos-legales": {
-      "ok": true,
-      "errors": [],
-      "warnings": [
-        "tile sin cruces de vecinos ni entrada conocida: alcanzabilidad no verificada"
+    "expandido-con-biome-desconocido": {
+      "ok": false,
+      "errors": [
+        "tile.biome \"bogus\" desconocido — usa el catálogo (grass, forest_floor, meadow, sand, dirt, stone, snow, swamp) o un char del grid (g/a/d/s/o)"
       ],
+      "warnings": [],
       "stats": {
         "cols": 128,
         "rows": 128,
-        "walkable_cells": 16382,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "volumes_total": 0,
+        "volumes_total_cap": 200,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "tile-con-127-filas-sin-marca": {
+      "ok": false,
+      "errors": [
+        "un tile no lleva size/terrain: la base es `biome` + `ground`/`volumes`"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 128,
+        "rows": 128,
+        "walkable_cells": 0,
         "reachable_cells": 0,
         "border_reachable": false,
         "doors_total": 0,
@@ -979,10 +979,9 @@
         "distinct_building_heights": 2
       }
     },
-    "cuatro-pasadas-fallando-a-la-vez": {
+    "tres-pasadas-fallando-a-la-vez": {
       "ok": false,
       "errors": [
-        "chars de terreno sin declarar en terrain_legend: \"X\"",
         "scatter inválido: scatter_zones[0]: kind 'fantasma' sin generador en scatter_generators",
         "el spawn del player [10, 70] no es transitable: lo cubre la masa del volumen \"posada\" del plan — muévelo fuera o mueve el volumen",
         "el vecino north tiene un river que muere en vuestra costura en la celda 30: tu tile debe continuarlo con celdas transitables compatibles en el borde north, celdas 28..32"
@@ -1009,114 +1008,6 @@
         "scatter_zones": 1,
         "vegetation_zones": 0,
         "distinct_building_heights": 1
-      }
-    },
-    "expandido-con-terrain-vacio": {
-      "ok": false,
-      "errors": [
-        "terrain tiene 0 filas y un tile expandido lleva exactamente 128 — si la emites tú, quita `__expanded` y declara `biome` + primitivas: el engine sintetiza el grid"
-      ],
-      "warnings": [],
-      "stats": {
-        "cols": 128,
-        "rows": 128,
-        "walkable_cells": 0,
-        "reachable_cells": 0,
-        "border_reachable": false,
-        "doors_total": 0,
-        "doors_reachable": 0,
-        "npcs_total": 0,
-        "npcs_reachable": 0,
-        "volumes_declared": 0,
-        "volumes_cap": 160,
-        "volumes_total": 0,
-        "volumes_total_cap": 200,
-        "ground_features": 0,
-        "ground_cap": 64,
-        "scatter_zones": 0,
-        "vegetation_zones": 0,
-        "distinct_building_heights": 0
-      }
-    },
-    "expandido-sin-terrain": {
-      "ok": false,
-      "errors": [
-        "terrain no es un array (un tile expandido lleva 128 filas de 128 chars) — si la emites tú, quita `__expanded` y declara `biome` + primitivas: el engine sintetiza el grid"
-      ],
-      "warnings": [],
-      "stats": {
-        "cols": 128,
-        "rows": 128,
-        "walkable_cells": 0,
-        "reachable_cells": 0,
-        "border_reachable": false,
-        "doors_total": 0,
-        "doors_reachable": 0,
-        "npcs_total": 0,
-        "npcs_reachable": 0,
-        "volumes_declared": 0,
-        "volumes_cap": 160,
-        "volumes_total": 0,
-        "volumes_total_cap": 200,
-        "ground_features": 0,
-        "ground_cap": 64,
-        "scatter_zones": 0,
-        "vegetation_zones": 0,
-        "distinct_building_heights": 0
-      }
-    },
-    "expandido-con-biome-desconocido": {
-      "ok": false,
-      "errors": [
-        "tile.biome \"bogus\" desconocido — usa el catálogo (grass, forest_floor, meadow, sand, dirt, stone, snow, swamp) o un char reservado (g/a/d/s/o)"
-      ],
-      "warnings": [],
-      "stats": {
-        "cols": 128,
-        "rows": 128,
-        "walkable_cells": 0,
-        "reachable_cells": 0,
-        "border_reachable": false,
-        "doors_total": 0,
-        "doors_reachable": 0,
-        "npcs_total": 0,
-        "npcs_reachable": 0,
-        "volumes_declared": 0,
-        "volumes_cap": 160,
-        "volumes_total": 0,
-        "volumes_total_cap": 200,
-        "ground_features": 0,
-        "ground_cap": 64,
-        "scatter_zones": 0,
-        "vegetation_zones": 0,
-        "distinct_building_heights": 0
-      }
-    },
-    "tile-con-127-filas-sin-marca": {
-      "ok": false,
-      "errors": [
-        "un tile no lleva size/terrain completos: la base es `biome` + primitivas (terrain_patches para parches puntuales)"
-      ],
-      "warnings": [],
-      "stats": {
-        "cols": 128,
-        "rows": 128,
-        "walkable_cells": 0,
-        "reachable_cells": 0,
-        "border_reachable": false,
-        "doors_total": 0,
-        "doors_reachable": 0,
-        "npcs_total": 0,
-        "npcs_reachable": 0,
-        "volumes_declared": 0,
-        "volumes_cap": 160,
-        "volumes_total": 0,
-        "volumes_total_cap": 200,
-        "ground_features": 0,
-        "ground_cap": 64,
-        "scatter_zones": 0,
-        "vegetation_zones": 0,
-        "distinct_building_heights": 0
       }
     }
   }

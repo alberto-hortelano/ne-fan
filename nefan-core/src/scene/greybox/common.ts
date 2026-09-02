@@ -2,7 +2,7 @@
  *  three.js: el lenguaje de primitivas y luces, y el JSON canónico que
  *  gobierna las claves de caché.
  *
- *  Aquí vivía además `groundColorFor` (leyenda de terreno → color de suelo),
+ *  Aquí vivía además `groundColorFor` (char del grid → color de suelo),
  *  cuyo único consumidor era el builder del PLATÓ: murió con él. El suelo del
  *  tile se colorea desde `GROUND_MATERIAL_COLORS` (blueprint/ground-prims.ts),
  *  que es otra tabla y sigue viva. */

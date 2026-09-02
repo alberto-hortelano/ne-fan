@@ -154,14 +154,17 @@ describe("formatDToWorld", () => {
     assert.equal(torch?.category, "decor");
   });
 
-  it("normalizes an object-form legend to plain names and emits solid_chars", () => {
-    const d = makeFormatD();
-    d.terrain_legend = { W: { name: "muro de piedra", solid: true }, o: "tablones" };
-    const w = formatDToWorld(d);
-    const tg = w.terrain_grid as { legend: Record<string, string>; solid_chars: string[] };
-    assert.equal(tg.legend.W, "muro de piedra");
-    assert.equal(tg.legend.o, "tablones");
+  it("terrain_grid carries the engine's solid chars and nothing char→name", () => {
+    // Nadie declara solidez ni nombres por char: el grid viaja solo para la
+    // colisión, y lo que bloquea lo fija `DEFAULT_SOLID_CHARS`.
+    const w = formatDToWorld(makeFormatD());
+    const tg = w.terrain_grid as Record<string, unknown>;
     assert.deepEqual(tg.solid_chars, ["W", "w"]);
+    assert.deepEqual(
+      Object.keys(tg).sort(),
+      ["cols", "grid", "meters_per_cell", "origin", "rows", "solid_chars"],
+      "el wire del grid es exactamente TerrainGridData",
+    );
   });
 
   it("returns a non-Format-D payload unchanged", () => {

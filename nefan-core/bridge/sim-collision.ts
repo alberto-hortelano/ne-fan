@@ -2,7 +2,7 @@
  *
  *  Espejo del CollisionSystem del cliente (fuentes en unión), construido solo
  *  con lo que el bridge tiene persistido en NarrativeState:
- *  1. terrain_grid del esquema (formatDToWorld — muros W, agua w, leyenda);
+ *  1. terrain_grid del esquema (formatDToWorld — muro W, agua w);
  *  2. PLAN COMPUESTO (`__plan` de la world scene: lo declarado por el motor
  *     MÁS lo derivado del esquema — entities estáticas y la vegetación de
  *     masa), rasterizado con la MISMA función de core que el cliente
@@ -24,7 +24,7 @@ import {
   type TerrainCollider,
   type TerrainGridData,
 } from "../src/scene/terrain-collision.js";
-import { DEFAULT_SOLID_CHARS, formatDToWorld } from "../src/scene/scene-normalize.js";
+import { formatDToWorld } from "../src/scene/scene-normalize.js";
 import {
   planCollisionGrid,
   type CollisionGridDims,
@@ -48,17 +48,13 @@ function buildPlanCollider(
   sceneId: string,
   plan: { ground?: GroundFeature[]; volumes?: Volume[] },
   rect: WorldRect,
-  /** Solidez resuelta de la leyenda de ESA escena: el agua que el autor
-   *  declaró vadeable no bloquea tampoco por el plan (ver planCollisionGrid).
-   *  Sin ella, jugador y NPCs discreparían del vado. */
-  solidChars: readonly string[],
   dims?: CollisionGridDims,
 ): TerrainCollider | null {
   const ground = plan.ground?.length ? plan.ground : undefined;
   const volumes = plan.volumes?.length ? plan.volumes : undefined;
   if (!ground && !volumes) return null;
   try {
-    return createTerrainCollider(planCollisionGrid(ground, volumes, rect, { solidChars, dims }));
+    return createTerrainCollider(planCollisionGrid(ground, volumes, rect, dims));
   } catch (err) {
     console.warn(`[sim-collision] ${sceneId}: plan no deriva colisión —`, err);
     return null;
@@ -75,13 +71,10 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
 
     // 1. terrain_grid del esquema. formatDToWorld devuelve el raw intacto en
     // escenas no-Format-D (legacy), que no traen terrain_grid → sin fuente.
-    // Su leyenda resuelta (`solid_chars`) manda también sobre el plan (2), y
-    // de la misma normalización sale el plan compuesto.
-    let solidChars: readonly string[] = DEFAULT_SOLID_CHARS;
+    // De la misma normalización sale el plan compuesto (2).
     let plan: TilePlan | null = null;
     try {
       const world = formatDToWorld(rec.scene_data) as { terrain_grid?: TerrainGridData; __plan?: TilePlan };
-      if (world.terrain_grid?.solid_chars) solidChars = world.terrain_grid.solid_chars;
       plan = world.__plan ?? null;
       const tc = createTerrainCollider(world.terrain_grid ?? null);
       if (tc) colliders.push(tc);
@@ -96,7 +89,6 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
         sceneId,
         plan,
         tileWorldRect(rec.tile.tx, rec.tile.ty),
-        solidChars,
       );
       if (planCollider) colliders.push(planCollider);
     }

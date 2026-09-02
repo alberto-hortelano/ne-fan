@@ -20,11 +20,13 @@
  *  `.passthrough()` a nivel ESCENA y `.strict()` en la entity, y la asimetría
  *  está medida, no razonada: el passthrough de escena sostiene campos vivos
  *  que el zod aún no declara (`ambient_event` en las 3 fixtures commiteadas;
- *  `place_anchors` en los snapshots, más `terrain_patches` en el espejo
- *  Python) — declararlos y cerrarlo es otro issue. `__expanded` ya NO es de
- *  esa lista: es la marca interna del expander y una escena EMITIDA que la
- *  trae miente sobre su estado — se rebota dirigido en el `superRefine`
- *  (#195), como `style_ref`. El passthrough de la entity no sostenía
+ *  `place_anchors` en los snapshots y en el saneador Python) — declararlos y
+ *  cerrarlo es otro issue. `__expanded` ya NO es de esa lista: es la marca
+ *  interna del expander y una escena EMITIDA que la trae miente sobre su
+ *  estado — se rebota dirigido en el `superRefine` (#195), como `style_ref` y
+ *  como los campos de terreno retirados (`refineRetiredTerrainFields`, que
+ *  corre en las DOS poblaciones porque un save también puede traerlos). El
+ *  passthrough de la entity no sostenía
  *  NINGUNO — censadas las 95 entities de las 7 escenas Format D del árbol
  *  (fixtures, snapshots, saves, labs), cero claves fuera de las 12. Un
  *  passthrough que no protege tráfico legítimo solo se traga las erratas del
@@ -38,6 +40,7 @@ import { VolumesSchema } from "../../scene/blueprint/volumes.js";
 import { parseScatter } from "../../scene/blueprint/scatter.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
 import { enMetros, topeDeFootprint } from "./physics.js";
+import { refineRetiredTerrainFields } from "./retired-terrain-fields.js";
 
 export const ENTITY_KINDS = ["building", "prop", "item", "tree", "npc", "player", "decor"] as const;
 export const SCENE_BIOMES = ["grass", "forest_floor", "meadow", "sand", "dirt", "stone", "snow", "swamp"] as const;
@@ -175,12 +178,6 @@ export const SceneSizeSchema = z.object({
   meters_per_cell: z.number().positive(),
 });
 
-const TerrainLegendEntry = z.union([
-  z.string(),
-  z.object({ name: z.string(), solid: z.boolean().optional() }).passthrough(),
-]);
-export const TerrainLegendSchema = z.record(TerrainLegendEntry);
-
 const TileCoordSchema = z.object({ tx: z.number().int(), ty: z.number().int() });
 
 /** Lo que las DOS poblaciones tienen en común. Está fuera de los dos schemas
@@ -195,7 +192,6 @@ const sceneBaseShape = {
   biome: z.enum(SCENE_BIOMES).optional(),
   size: SceneSizeSchema.optional(),
   terrain: z.array(z.string()).optional(),
-  terrain_legend: TerrainLegendSchema.optional(),
   ground: GroundSchema.optional(),
   volumes: VolumesSchema.optional(),
   // Vegetación de masa: el MISMO zod que compone el plan
@@ -249,6 +245,7 @@ export const EmittedSceneSchema = z
   .passthrough()
   .superRefine((s, ctx) => {
     refineScatter(s, ctx);
+    refineRetiredTerrainFields(s, ctx);
     // CANDADO de las variantes retiradas: Format D tiene UNA forma y ninguna
     // más. Sin `tile` la escena era la "suelta" (size/terrain a elección del
     // motor, sin sitio en el mundo) o el `stage` proscenio. El error va en la
@@ -322,8 +319,8 @@ export type EmittedScene = z.infer<typeof EmittedSceneSchema>;
  *  20 y dejaba al juego sin mundo pre-generado. Por eso aquí:
  *
  *  - Se EXIGE lo que escribe `expandScenePrimitives` y sin lo cual el cliente
- *    no puede pintar: `size`, `terrain` no vacío, `terrain_legend` y la marca
- *    `__expanded`, que es la frontera y ya existía en el dato desde siempre.
+ *    no puede colisionar: `size`, `terrain` no vacío y la marca `__expanded`,
+ *    que es la frontera y ya existía en el dato desde siempre.
  *  - NO se re-litiga nada del modelo. En concreto NO se rechaza `style_ref` de
  *    escena: 18 de los 20 tiles del árbol la llevan heredada de antes de su
  *    retirada, y rebotarlos aquí no arregla un contrato — apaga el arranque.
@@ -336,12 +333,17 @@ export const ExpandedSceneSchema = z
     ...sceneBaseShape,
     size: SceneSizeSchema,
     terrain: z.array(z.string()).min(1),
-    terrain_legend: TerrainLegendSchema,
     /** La frontera, y la escribe `expandScenePrimitives` (scene-expand.ts).
      *  `z.literal(true)` y no `z.boolean()`: una escena a medio expandir no es
      *  una escena cargable. */
     __expanded: z.literal(true),
   })
-  .passthrough();
+  .passthrough()
+  // Lo ÚNICO del modelo que sí se re-litiga al cargar: los campos de terreno
+  // retirados. No es compatibilidad al revés — es que un save que los trae
+  // los devolvería al motor por `serializeForLlm`, y de ahí a que el motor
+  // los vuelva a emitir hay un turno. Pre-producción: el save se borra o se
+  // regenera, y el mensaje lo dice.
+  .superRefine(refineRetiredTerrainFields);
 
 export type ExpandedScene = z.infer<typeof ExpandedSceneSchema>;
