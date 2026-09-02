@@ -235,7 +235,7 @@ export default async function (ctx) {
       objetos: objetos.length,
       pintados: objetos
         .filter((o) => o.volume_id === undefined)
-        .map((o) => ({ id: o.id, desc: String(o.description ?? ""), cat: o.category })),
+        .map((o) => ({ id: o.id, desc: String(o.name ?? ""), cat: o.category })),
       casa: objetos.find((o) => o.category === "building") ?? null,
       arboles: vols.filter((v) => v.type === "tree").map((v) => ({ id: v.id, at: v.at })),
     };

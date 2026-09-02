@@ -40,7 +40,6 @@ import type { NarrativeClient } from "../net/narrative-client.js";
 interface WorldSceneDelBatch {
   __plan?: TilePlan;
   npcs?: Array<{ id: string; name?: string; description?: string; role?: string; style_ref?: string }>;
-  objects?: Array<{ id: string; description?: string; combat?: unknown }>;
 }
 
 /** Tope de celdas por petición del server (SurfaceAtlasRequest max_length). */

@@ -66,7 +66,7 @@ export default async function (ctx) {
       // la escena que no esté representado por un volumen del plan.
       pintados: objetos
         .filter((o) => o.volume_id === undefined)
-        .map((o) => ({ id: o.id, desc: String(o.description ?? ""), cat: o.category })),
+        .map((o) => ({ id: o.id, desc: String(o.name ?? ""), cat: o.category })),
       // Las entities `tree` del Format D crudo: las que declaró el motor.
       entitiesArbol: (s.__format_d?.entities ?? []).filter((e) => e.kind === "tree").length,
     };

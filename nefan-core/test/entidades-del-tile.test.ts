@@ -37,7 +37,7 @@ function deRuntime(id: string): EnElMundo {
 
 /** Un objeto declarado mínimo, con lo que haga falta encima. */
 function objeto(id: string, extra: Partial<ObjetoDeclarado> = {}): ObjetoDeclarado {
-  return { id, pos: { x: 0, y: 0, z: 0 }, descripcion: id, categoria: "prop", ...extra };
+  return { id, pos: { x: 0, y: 0, z: 0 }, nombre: id, categoria: "prop", ...extra };
 }
 
 describe("esDeEsteTile", () => {
@@ -51,7 +51,7 @@ describe("esDeEsteTile", () => {
 describe("repartoDelTile · la política única", () => {
   it("lo declarado que YA ESTÁ se conserva, con lo que el tile declara AHORA", () => {
     const antes = [delTile("cofre")];
-    const ahora = [objeto("cofre", { descripcion: "un cofre forzado" })];
+    const ahora = [objeto("cofre", { nombre: "un cofre forzado" })];
     const reparto = repartoDelTile(antes, ahora, TILE);
     assert.deepEqual(reparto.conservar, [{ id: "cofre", declarado: ahora[0] }]);
     assert.deepEqual(reparto.crear, []);
@@ -138,7 +138,7 @@ describe("repartoDelTile · la política única", () => {
 });
 
 describe("objetosDeclarados", () => {
-  it("lee la world scene entera: posición, prosa, categoría, huella, alto, forma y volumen", () => {
+  it("lee la world scene entera: posición, nombre, categoría, huella, alto, forma y volumen", () => {
     const { declaradas, errores } = objetosDeclarados([
       {
         id: "taberna",
@@ -146,7 +146,7 @@ describe("objetosDeclarados", () => {
         scale: [8, 3, 4],
         category: "building",
         shape: "cylinder",
-        description: "Taberna del Ciervo",
+        name: "Taberna del Ciervo",
         volume_id: "vol_3",
       },
     ]);
@@ -155,7 +155,7 @@ describe("objetosDeclarados", () => {
       {
         id: "taberna",
         pos: { x: -2, y: 0, z: -2 },
-        descripcion: "Taberna del Ciervo",
+        nombre: "Taberna del Ciervo",
         categoria: "building",
         sizeXZ: { x: 8, z: 4 },
         sizeY: 3,
@@ -165,14 +165,26 @@ describe("objetosDeclarados", () => {
     ]);
   });
 
-  it("sin categoría es `prop` y sin descripción es cadena vacía", () => {
+  it("sin categoría es `prop` y sin nombre es cadena vacía", () => {
     const { declaradas } = objetosDeclarados([{ id: "x", position: [0, 0, 0] }]);
     assert.equal(declaradas[0].categoria, "prop");
-    assert.equal(declaradas[0].descripcion, "");
+    assert.equal(declaradas[0].nombre, "");
     assert.equal(declaradas[0].sizeXZ, undefined);
     assert.equal(declaradas[0].sizeY, undefined);
     assert.equal(declaradas[0].shape, undefined);
     assert.equal(declaradas[0].volumeId, undefined);
+  });
+
+  it("la `description` de la world scene NO es la etiqueta: se lee `name` y la procedencia no se propaga (#238)", () => {
+    // Antes del cambio el wire traía `description: ent.name` y este lector la
+    // tomaba como prosa a pintar. Ahora `description` es el texto que se dio al
+    // modelo (procedencia); el cliente, que solo pinta, no tiene nada que hacer
+    // con él, así que no se le ofrece un campo que ni lee.
+    const { declaradas } = objetosDeclarados([
+      { id: "pozo", position: [0, 0, 0], name: "pozo de la plaza", description: "pozo de piedra con brocal musgoso" },
+    ]);
+    assert.equal(declaradas[0].nombre, "pozo de la plaza");
+    assert.ok(!("descripcion" in declaradas[0]) && !("description" in declaradas[0]), JSON.stringify(declaradas[0]));
   });
 
   it("una `scale` corta o con basura no es media huella: se ignora entera", () => {
@@ -268,11 +280,11 @@ describe("declaraciones rotas · se dicen, no se tragan", () => {
     // El duplicado que el filtro `!ids.has(o.id)` del cliente tapaba sin
     // nombrarlo: ahora entra el primero y el segundo tiene una línea con su id.
     const { declaradas, errores } = objetosDeclarados([
-      { id: "cofre", position: [1, 0, 1], description: "el primero" },
-      { id: "cofre", position: [9, 0, 9], description: "el segundo" },
+      { id: "cofre", position: [1, 0, 1], name: "el primero" },
+      { id: "cofre", position: [9, 0, 9], name: "el segundo" },
     ]);
     assert.equal(declaradas.length, 1);
-    assert.equal(declaradas[0].descripcion, "el primero");
+    assert.equal(declaradas[0].nombre, "el primero");
     assert.equal(errores.length, 1);
     assert.match(errores[0], /"cofre": declarado dos veces/);
   });
@@ -294,16 +306,16 @@ describe("declaraciones rotas · se dicen, no se tragan", () => {
 });
 
 describe("los dos casos del criterio de verificación", () => {
-  it("un objeto que CAMBIA SU DESCRIPCIÓN se conserva y trae la descripción nueva", () => {
+  it("un objeto que CAMBIA SU NOMBRE se conserva y trae el nombre nuevo", () => {
     // Sin esto, conservar sería una regresión: el tile diría una cosa y el
     // mundo enseñaría la anterior para siempre.
     const antes = [delTile("puerta")];
     const { declaradas } = objetosDeclarados([
-      { id: "puerta", position: [4, 0, 4], description: "la puerta, ahora astillada", scale: [2, 3, 1] },
+      { id: "puerta", position: [4, 0, 4], name: "la puerta, ahora astillada", scale: [2, 3, 1] },
     ]);
     const reparto = repartoDelTile(antes, declaradas, TILE);
     assert.equal(reparto.crear.length, 0, "no se recrea: la entity que ya está se conserva");
-    assert.equal(reparto.conservar[0].declarado.descripcion, "la puerta, ahora astillada");
+    assert.equal(reparto.conservar[0].declarado.nombre, "la puerta, ahora astillada");
     assert.deepEqual(reparto.conservar[0].declarado.pos, { x: 4, y: 0, z: 4 });
   });
 
