@@ -98,8 +98,11 @@ const EntityBase = z
     // cuando el tile trae ochenta entidades. Espejo exacto del mensaje que da
     // `clean_ent` en ai_server.
     role: z.string().min(1).optional(),
-    // `description` es el PROMPT del skin del personaje (aspecto, no
-    // biografía). Opcional en el zod y exigida en la prosa del prompt: este
+    // `description`, en CUALQUIER entity, es el texto del que se genera su
+    // arte (aspecto, no biografía): la PROCEDENCIA, que viaja verbatim hasta
+    // la world scene para poder regenerar el asset con un modelo mejor
+    // (#238). En un NPC es además el prompt del skin.
+    // Opcional en el zod y exigida en la prosa del prompt para el NPC: este
     // schema canda también las fixtures de `data/scenes/`, y las 14 sondas de
     // z-order de zorder_test.json no tienen aspecto que describir ni deben
     // pagar un skin. Sin ella, el prompt del skin es el nombre propio del
@@ -120,7 +123,7 @@ const EntityBase = z
       .string()
       .min(1)
       .refine((d) => d.trim().length > 0, {
-        message: "`description` no puede ser solo espacios: es el PROMPT del skin del personaje",
+        message: "`description` no puede ser solo espacios: es el texto del que se genera su arte (en un NPC, el prompt del skin)",
       })
       .optional(),
     // Ref de personaje del catálogo del pack (world.style_refs.characters)

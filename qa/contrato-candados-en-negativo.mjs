@@ -130,8 +130,9 @@ const INVARIANTES = [
     [[
       '        if "description" in ent:\n            desc = ent["description"]\n' +
         '            if not isinstance(desc, str) or not desc.strip():\n                raise ValueError(\n' +
-        '                    f"entity \'{eid}\': `description` es el PROMPT del skin del personaje y no "\n' +
-        '                    f"puede ir vacía ({desc!r}). Descríbelo (aspecto, ropa, arma) o quita el campo"\n' +
+        '                    f"entity \'{eid}\': `description` es el texto del que se genera su arte (en un "\n' +
+        '                    f"NPC, el prompt del skin) y no puede ir vacía ({desc!r}). Descríbelo (aspecto, "\n' +
+        '                    f"ropa, arma) o quita el campo"\n' +
         '                )\n            clean_ent["description"] = desc.strip()',
       '        if isinstance(ent.get("description"), str) and ent["description"].strip():\n' +
         '            clean_ent["description"] = ent["description"].strip()',

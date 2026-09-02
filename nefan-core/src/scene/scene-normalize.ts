@@ -35,16 +35,31 @@ type FormatDEntity = {
   /** Altura en METROS (no en celdas — el footprint sí va en celdas). Opcional;
    *  sin ella se aplica el default por kind (KIND_DEFAULT_HEIGHT). */
   h?: number;
-  /** NPCs. Los tres campos con los que el motor viste y anima al personaje:
-   *  `role` es el preset de conducta (NPC_ROLES; el oficio va en el nombre y
-   *  en la descripción), `description` el prompt del skin IA y `style_ref` la
-   *  ref de personaje que el motor eligió del catálogo del pack. Declarados
-   *  aquí porque el contrato los declara: son datos del motor, no un extra
-   *  que este módulo adivine. */
+  /** Lo que el motor declara de CUALQUIER entity además de su etiqueta:
+   *  `description` es el texto exacto que se le dio al modelo —lo que la
+   *  entity PARECE, no lo que el jugador lee (eso es `name`)— y viaja
+   *  verbatim como PROCEDENCIA de lo que se genere a partir de ella, para
+   *  poder regenerar ese arte con un modelo mejor (#238). En un NPC es
+   *  además el prompt del skin IA. Los otros dos son solo de NPC: `role` es
+   *  el preset de conducta (NPC_ROLES; el oficio va en el nombre y en la
+   *  descripción) y `style_ref` la ref de personaje que el motor eligió del
+   *  catálogo del pack. Declarados aquí porque el contrato los declara: son
+   *  datos del motor, no un extra que este módulo adivine. */
   role?: string;
   description?: string;
   style_ref?: string;
 };
+
+/** `{[clave]: valor}` si `valor` es un texto NO VACÍO; si no, `{}` (la clave
+ *  no viaja). Es la regla única de «lo declarado que viaja tal cual» para los
+ *  campos de texto opcionales: el `typeof` no sobra pese al tipo de
+ *  `FormatDEntity`, porque `ent` viene de un JSON sin validar (save, fixture a
+ *  mano) y un `role: 42` propagado revienta al derivar la clave del skin; y el
+ *  vacío se colapsa con la ausencia a propósito, porque `description: ""`
+ *  viajando convertiría el prompt del skin (`description ?? name`) en "". */
+function textoDeclarado(clave: string, valor: unknown): Record<string, string> {
+  return typeof valor === "string" && valor ? { [clave]: valor } : {};
+}
 
 /** Formas válidas que el cliente entiende. `shape` inválido se ignora (cae a box). */
 const VALID_SHAPES = new Set(["box", "cylinder", "sphere", "cone"]);
@@ -183,9 +198,6 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       if (!ent.name) {
         throw new Error(`scene entities[${i}] (npc ${ent.id}) missing name`);
       }
-      // El `typeof` no sobra pese al tipo: como el resto de este módulo,
-      // `ent` viene de un JSON sin validar (save, fixture a mano) y un
-      // `role: 42` propagado revienta al derivar la clave del skin.
       const { role, style_ref: styleRef, description } = ent;
       // Hostilidad → combate, DERIVADO aquí. El motor declara `role:"hostile"`
       // y el core pone los números (`combatForHostileRole`): así la escena
@@ -202,9 +214,9 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
         // motor (style_ref, catálogo world.style_refs.characters): el cliente
         // deriva de ellos la ref del skin (npcSkinStyleRef) — deben viajar o
         // el skin en partida y el del batch de estilo divergen de clave.
-        ...(typeof role === "string" && role ? { role } : {}),
-        ...(typeof styleRef === "string" && styleRef ? { style_ref: styleRef } : {}),
-        ...(typeof description === "string" && description ? { description } : {}),
+        ...textoDeclarado("role", role),
+        ...textoDeclarado("style_ref", styleRef),
+        ...textoDeclarado("description", description),
       });
       continue;
     }
@@ -226,7 +238,13 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       position: [x, 0, z],
       scale: [w * mpc, entH, h * mpc],
       category,
-      description: ent.name,
+      // El mismo par que lleva un NPC: `name` es la ETIQUETA (lo que el
+      // jugador lee al mirarlo) y `description`, solo si el motor la declaró,
+      // la PROCEDENCIA. Hasta #238 aquí se escribía `description: ent.name` y
+      // la declarada se tiraba en silencio —el contrato la invitaba en
+      // cualquier entity y el wire la perdía para todo lo que no fuera NPC.
+      name: ent.name,
+      ...textoDeclarado("description", ent.description),
       // Qué volumen del plan REPRESENTA a esta entity. Con él, el cliente la
       // pinta UNA vez (como volumen del greybox, que además colisiona) en vez
       // de dibujar encima un billboard que se atraviesa. Ausente = no está en

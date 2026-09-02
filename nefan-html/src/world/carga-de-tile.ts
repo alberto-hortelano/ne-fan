@@ -22,8 +22,8 @@
  *
  *   · un objeto no tiene ninguna (nadie mueve un barril, nadie le baja la
  *     vida), así que se le re-aplica TODO lo declarado, posición incluida: sin
- *     eso, un tile que cambia la descripción de su puerta enseñaría la
- *     anterior para siempre;
+ *     eso, un tile que cambia el nombre de su puerta enseñaría el anterior
+ *     para siempre;
  *   · un personaje sí las tiene —el bridge manda su posición y su rumbo, el
  *     sim su vida, y su skin puede estar en vuelo—, así que se le re-aplica
  *     solo el NOMBRE, y únicamente si el tile lo declara. Re-aplicarle la
@@ -102,7 +102,7 @@ function declaradoDeObjeto(
     pos: { ...d.pos },
     radius: 5,
     color: d.categoria === "item" ? "#aa8" : "#666",
-    label: d.descripcion,
+    label: d.nombre,
     category: d.categoria,
     sizeXZ: d.sizeXZ,
     sizeY: d.sizeY,

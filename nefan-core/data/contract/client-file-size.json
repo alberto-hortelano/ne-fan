@@ -22,7 +22,7 @@
     },
     {
       "fichero": "src/ui/style-apply.ts",
-      "lineas": 544,
+      "lineas": 543,
       "porque": "La corrida de «Aplicar estilo» (subida de pack y confirmación de coste). Cuelga de #346: es la mitad del título que vive fuera del título.",
       "issue": "#346"
     }

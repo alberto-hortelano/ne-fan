@@ -1,5 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "../src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "../src/games/style-categories.js";
@@ -48,6 +51,11 @@ const conEntity = (ent: unknown, i = 0): Record<string, unknown> => {
 const conNpc = (npc: Record<string, unknown>): Record<string, unknown> =>
   conEntity({ kind: "npc", name: "Aldeana", cell: [1, 1], footprint: [1, 1], glyph: "n", ...npc }, 1);
 
+/** El OBJETO del fixture (índice 0, la taberna) sustituido por la entity bajo
+ *  prueba: un prop con lo que haga falta encima. */
+const conObjeto = (obj: Record<string, unknown>): Record<string, unknown> =>
+  conEntity({ kind: "prop", name: "pozo de la plaza", cell: [1, 1], footprint: [1, 1], glyph: "o", ...obj }, 0);
+
 /** La ref de skin que derivarían la partida y el batch de estilo. */
 const refDelSkin = (npc: Record<string, unknown>) =>
   npcSkinStyleRef(npc as { style_ref?: string; role?: string });
@@ -89,7 +97,7 @@ describe("formatDToWorld", () => {
     // Altura default por kind: building 2.5 m (KIND_DEFAULT_HEIGHT).
     assert.deepEqual(tavern.scale, [8, 2.5, 4]);
     assert.equal(tavern.category, "building");
-    assert.equal(tavern.description, "Taberna");
+    assert.equal(tavern.name, "Taberna");
   });
 
   it("extracts npcs and the player start", () => {
@@ -278,6 +286,69 @@ describe("formatDToWorld — el NPC llega entero a la clave de caché del skin",
  *  con él, que `getEnemyStates` emita algo. Sin este bloque el NPC hostil
  *  llegaba como cualquier aldeano y el jugador no tenía contra quién pelear,
  *  que es el estado en el que llevaba el juego desde que existe. */
+/** #238. El contrato invita a poner `description` en CUALQUIER entity y hasta
+ *  esta tanda el wire la tiraba para todo lo que no fuera NPC: el objeto salía
+ *  con `description: ent.name` —la etiqueta disfrazada de descripción— y la
+ *  declarada moría en la normalización (el save, Format D, sí la conservaba).
+ *  La decisión escrita es «`name` es la etiqueta, `description` es la
+ *  PROCEDENCIA»: el texto exacto que se dio al modelo, que viaja verbatim para
+ *  poder regenerar el arte con un modelo mejor. Nada se genera hoy de un prop,
+ *  así que lo que se afirma es que VIAJA y que no pisa la etiqueta; el lector
+ *  es `session/entidades-del-tile.ts` (`leerObjeto`), que lee `name`. */
+describe("formatDToWorld — la `description` de un objeto es su procedencia, no su etiqueta (#238)", () => {
+  const PROCEDENCIA = "pozo de piedra con brocal musgoso";
+
+  it("con `description` declarada: la etiqueta sigue siendo `name` y la declarada viaja aparte, tal cual", () => {
+    const obj = objectsOf(formatDToWorld(conObjeto({ id: "pozo", description: PROCEDENCIA })))[0];
+    assert.equal(obj.id, "pozo");
+    assert.equal(obj.name, "pozo de la plaza", "la etiqueta es `name`: la procedencia no la pisa");
+    assert.equal(obj.description, PROCEDENCIA, "la procedencia viaja verbatim en su propio campo");
+  });
+
+  it("sin `description`: `name` presente y NADA inventado (ni la etiqueta copiada como descripción)", () => {
+    const obj = objectsOf(formatDToWorld(conObjeto({ id: "pozo" })))[0];
+    assert.equal(obj.name, "pozo de la plaza");
+    // `in`, no el valor: `description: undefined` también sería inventarse la
+    // clave, y el JSON del wire no sería el mismo.
+    assert.ok(!("description" in obj), `"description" no debería existir: ${JSON.stringify(obj)}`);
+  });
+
+  // Espejo de NO_VIAJAN (NPC): la regla de «texto no vacío o nada» es la misma
+  // para los dos, porque ahora la escribe el mismo helper.
+  for (const [nombre, basura] of [
+    ["cadena vacía", ""],
+    ["un número", 42],
+    ["un objeto", { es: "raro" }],
+  ] as [string, unknown][]) {
+    it(`una \`description\` que es ${nombre} no viaja, y la etiqueta no se resiente`, () => {
+      const obj = objectsOf(formatDToWorld(conObjeto({ id: "pozo", description: basura })))[0];
+      assert.ok(!("description" in obj), `"description" no debería existir: ${JSON.stringify(obj)}`);
+      assert.equal(obj.name, "pozo de la plaza");
+    });
+  }
+
+  it("la etiqueta que se pinta no cambia con la tanda: robledo_tile, objeto a objeto, `name` = `name` de su entity", () => {
+    // Determinista y desde el jugador: es la fixture del selector «Room» que
+    // el guion 61 mira en pantalla. Hoy ninguna de sus entities lleva
+    // `description` (0 de 24), así que ningún objeto debe estrenarla.
+    const formatD = JSON.parse(
+      readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../data/scenes/robledo_tile.json"), "utf-8"),
+    ) as { entities: { id: string; kind: string; name: string; description?: string }[] };
+    const porId = new Map(formatD.entities.map((e) => [e.id, e]));
+    const objetos = objectsOf(formatDToWorld(formatD));
+    assert.ok(objetos.length >= 20, `robledo_tile trae ${objetos.length} objetos — ¿fixture equivocada?`);
+    for (const obj of objetos) {
+      const ent = porId.get(obj.id as string);
+      assert.ok(ent, `objeto ${String(obj.id)} sin entity de origen`);
+      assert.equal(obj.name, ent.name, `${ent.id}: la etiqueta es el name de su entity`);
+      assert.equal("description" in obj, "description" in ent, `${ent.id}: description solo si la entity la declara`);
+    }
+    // Y que hoy sea CERO se dice, no se supone: el día que una fixture la
+    // estrene, este aserto pide que se mire el guion 61.
+    assert.equal(objetos.filter((o) => "description" in o).length, 0, "hoy ninguna entity de robledo_tile lleva description");
+  });
+});
+
 describe("formatDToWorld — un NPC hostil llega con su combate derivado", () => {
   it("`role:\"hostile\"` sale con el bloque combat que el cliente exige", () => {
     const npc = npcsOf(

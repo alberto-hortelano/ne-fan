@@ -219,6 +219,19 @@ class TestEntityRolYDescripcionSobreviven(unittest.TestCase):
         npc = self._npc(description="guardia con lanza y capa parda")
         self.assertEqual(npc["description"], "guardia con lanza y capa parda")
 
+    def test_la_descripcion_de_un_prop_tambien_sobrevive(self):
+        # #238: `description` es la PROCEDENCIA de cualquier entity (el texto
+        # que se dio al modelo), no un campo de NPC. El saneador la copia para
+        # todos los kinds; esto lo deja escrito para que nadie la acote de vuelta.
+        s = base_scene()
+        s["entities"].append(
+            {"id": "pozo", "kind": "prop", "name": "pozo de la plaza", "cell": [2, 1],
+             "footprint": [1, 1], "glyph": "o", "description": "pozo de piedra con brocal musgoso"}
+        )
+        prop = validate_scene_response(s)["entities"][-1]
+        self.assertEqual(prop["name"], "pozo de la plaza")
+        self.assertEqual(prop["description"], "pozo de piedra con brocal musgoso")
+
     def test_sin_declararlos_no_se_inventan(self):
         npc = self._npc()
         self.assertNotIn("role", npc)

@@ -103,8 +103,11 @@ export interface Punto {
 export interface ObjetoDeclarado {
   id: string;
   pos: Punto;
-  /** Prosa del motor: lo que el jugador lee al mirarlo. */
-  descripcion: string;
+  /** La ETIQUETA del motor (`name`): lo que el jugador lee al mirarlo. La
+   *  `description` de la world scene no se lee aquí a propósito: es la
+   *  PROCEDENCIA del arte (el texto que se dio al modelo), y el cliente, que
+   *  solo pinta, no tiene nada que hacer con ella (#238). */
+  nombre: string;
   /** item | prop | building | decor | terrain (default `prop`). */
   categoria: string;
   /** Huella en metros sobre el plano XZ (`scale[0]`, `scale[2]`). */
@@ -261,7 +264,7 @@ function leerObjeto(rec: Record<string, unknown>, id: string, pos: Punto): Objet
   return {
     id,
     pos,
-    descripcion: texto(rec.description) ?? "",
+    nombre: texto(rec.name) ?? "",
     categoria: texto(rec.category) ?? "prop",
     ...(escala ? { sizeXZ: { x: escala[0], z: escala[2] }, sizeY: escala[1] } : {}),
     ...(shape ? { shape } : {}),
