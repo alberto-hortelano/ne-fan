@@ -48,11 +48,20 @@
  *       `layout_key` = hash del layout + estilo, y lo identifica. En el falso
  *       el tile equivocado sale $0 porque sus celdas ya se pintaron en la
  *       partida; el `layout_key` es lo que delata su POST.
- *   5 · **A3, la guarda que no puede regresar**: durante el arranque de la
- *       partida ninguna celda se pidió dos veces (`pendingTiles` dedup de la
- *       MISMA clave, $0.15×2 el 2026-08-14). Se cuenta por `cells[].key` sobre
- *       los POST del primer tile, no por gasto: el falso anota pago solo si
- *       PINTÓ, y una segunda petición idéntica sería cache-hit.
+ *   5 · **A3, la guarda que no puede regresar** (`pendingTiles`: la MISMA clave
+ *       disparada dos veces antes del primer await pagaba dos veces,
+ *       $0.15×2 el 2026-08-14), en su propio bloque, porque en el flujo normal
+ *       del banco NO hay segundo disparo de la misma clave que deduplicar —
+ *       QA lo midió anulando la guarda con el guion en verde. Hoy ese doble
+ *       disparo solo ocurre al RE-AÑADIR el tile activo (`carga-de-tile.ts`:
+ *       `installTile` → `onActiveTile` y `activarTile` → `onActiveTile`, en el
+ *       mismo `addTile`), y el bridge re-difunde un tile que ya existe ante
+ *       `request_tile` (`source: "cache"`). Para que el segundo disparo llegue
+ *       a `runFor` el atlas no puede estar aún en caché: se RETIENE el POST del
+ *       resume con `page.route`, se re-difunde el activo desde un segundo WS
+ *       de la página y se suelta el POST. Se afirma por `cells[].key`: ninguna
+ *       celda del activo pedida dos veces. No por gasto: el falso anota pago
+ *       solo si PINTÓ, y una segunda petición idéntica sería cache-hit.
  *
  *  Bloque 2 repite el flujo literal de H2 en **Maqueta 3D** con la librería
  *  que dejó el bloque 1, y exige gasto cero en todo el bloque.
@@ -87,6 +96,13 @@
  *    ÚNICAMENTE en A4 — `{"antes":{"activeTile":"tile_1_0","textured":
  *    ["tile_1_0"]},"despues":{"activeTile":"tile_0_0","textured":["tile_1_0"]}}`:
  *    el tile pisado con un run en vuelo se queda en clay.
+ *
+ *  · Solo la guarda `pendingTiles` anulada (`if (false && …)`, el sabotaje de
+ *    QA que la primera versión del guion no veía): rojo ÚNICAMENTE en A3 —
+ *    `A3 · tile_0_0 re-añadido con su POST retenido (3 retenido(s))` y
+ *    `✘ A3 · … — {"posts":3,"celdas":69,"repetidas":["bark","foliage",
+ *    "ground_dirt","path_cobble","rock_stone"]}`: las mismas 23 celdas pedidas
+ *    tres veces. Con la guarda: `posts: 1 · celdas 23 · repetidas 0`.
  *
  *  Y una medida que NO es de #390 pero salió al escribir esto: sin forzar el
  *  guardado tras «Salidas», en Maqueta 3D reanudar devolvía al jugador a
@@ -238,7 +254,7 @@ async function guardarConLaPosicionDelDestino(ctx, sessionId, destino) {
 /** Recarga, pulsa la tarjeta REANUDAR de la partida y espera a que el
  *  renderer tenga el tile activo texturado (o a que expire, volcando el
  *  estado del renderer, que es lo que dice qué tile ganó). */
-async function reanudar(ctx, sessionId) {
+async function reanudar(ctx, sessionId, { antesDeEsperar = null } = {}) {
   await ctx.page.reload({ waitUntil: "domcontentloaded" });
   await ctx.waitFor("window.__nefan disponible tras el reload", () => Boolean(window.__nefan));
   await espiarHud(ctx);
@@ -253,6 +269,7 @@ async function reanudar(ctx, sessionId) {
     () => (window.__nefan.status().scene ? window.__nefan.scene.scene_id : null),
     180_000,
   );
+  if (antesDeEsperar) await antesDeEsperar();
   // Precondición ANTES de medir: sin dos tiles no hay carrera que perder.
   const dosTiles = await ctx.absorbe(
     "si el save vuelve con un solo tile, el llamante declara sinMedir: ningún verde depende de esta espera",
@@ -399,16 +416,9 @@ export default async function (ctx) {
     /instalado/.test(p1.aviso),
     p1.aviso,
   );
-  // A3: la MISMA clave no se pide dos veces (guarda de `pendingTiles`).
-  const claves = p1.postsArranque.flatMap((b) => (b?.cells ?? []).map((c) => c.key));
-  const repetidas = claves.filter((k, i) => claves.indexOf(k) !== i);
+  ctx.log(`Imagen IA · POST del atlas en el arranque: ${p1.postsArranque.length}`);
   ctx.expect(
-    "A3 · en el arranque ninguna celda se pidió dos veces (el doble disparo de la misma clave no regresa)",
-    p1.postsArranque.length > 0 && repetidas.length === 0,
-    JSON.stringify({ posts: p1.postsArranque.length, celdas: claves.length, repetidas: [...new Set(repetidas)].slice(0, 5) }),
-  );
-  ctx.expect(
-    "Imagen IA · el motor falso anotó UN pago de atlas en el arranque (pintó el tile del jugador)",
+    "Imagen IA · el motor falso anotó UN pago de atlas en el arranque (precondición: pintó el tile del jugador)",
     pagosDeAtlas(p1.gastoArranque) - pagosDeAtlas(p1.gastoAntes) === 1,
     JSON.stringify({ antes: p1.gastoAntes.rutas, despues: p1.gastoArranque.rutas }),
   );
@@ -483,5 +493,85 @@ export default async function (ctx) {
       JSON.stringify({ antes: antesA4, despues: estadoA4 }),
     );
     await ctx.shot("a4-cruce-con-run-en-vuelo");
+  }
+
+  // ── 4 · A3: la MISMA clave disparada dos veces en el mismo tick se pide UNA ──
+  // Se reanuda con el POST del atlas RETENIDO (el run queda en vuelo y el
+  // atlas fuera de caché), se re-difunde el tile activo por `request_tile`
+  // (el bridge contesta con la escena que ya tiene, `source: "cache"`) y el
+  // cliente lo re-añade: `installTile` y `activarTile` disparan
+  // `onActiveTile` de la misma clave en el mismo `addTile`. Con la guarda,
+  // los dos se encolan y al soltar el POST hay UN atlas; sin ella, cada uno
+  // lanza su `runFor` y las mismas celdas se piden tres veces.
+  const retenidas = [];
+  let soltar = false;
+  await ctx.page.route("**/generate_surface_atlas", async (route) => {
+    if (soltar || route.request().method() !== "POST") return route.continue();
+    retenidas.push(route);
+    await ctx.page.evaluate(() => {
+      window.__qaRetenidas = (window.__qaRetenidas ?? 0) + 1;
+    });
+  });
+  await olvidarMappingLocal(ctx);
+  const postsAntesA3 = atlasPosts.length;
+  let claveA3 = null;
+  const r3 = await reanudar(ctx, p2.partida.sessionId, {
+    antesDeEsperar: async () => {
+      await ctx.waitFor("el POST del atlas del resume está en vuelo (retenido)", () => window.__qaRetenidas >= 1 || null, 60_000);
+      const antes = await ctx.page.evaluate(() => {
+        const f = window.__nefan.fps();
+        const listos = (window.__qaHud60 ?? []).filter((l) => l.includes(`tile listo: ${f.activeTile}`)).length;
+        return { activeTile: f.activeTile, listos };
+      });
+      claveA3 = antes.activeTile;
+      const [, tx, ty] = /^tile_(-?\d+)_(-?\d+)$/.exec(claveA3) ?? [];
+      // Re-difusión del tile ACTIVO por el cable del juego, desde un segundo
+      // socket de la página (la URL la da el propio juego, como en saves.mjs).
+      await ctx.page.evaluate(
+        ([x, y]) =>
+          new Promise((res, rej) => {
+            const url = window.__nefan.servicios()["game-gateway"];
+            const ws = new WebSocket(url);
+            ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
+            ws.onopen = () => {
+              ws.send(JSON.stringify({ type: "request_tile", tx: x, ty: y, reason: "prefetch" }));
+              setTimeout(() => {
+                ws.close();
+                res(true);
+              }, 0);
+            };
+          }),
+        [Number(tx), Number(ty)],
+      );
+      await ctx.waitFor(
+        "el tile activo vuelve a llegar y se re-añade (segundo «tile listo» de la misma clave)",
+        (n) => {
+          const f = window.__nefan.fps();
+          return (window.__qaHud60 ?? []).filter((l) => l.includes(`tile listo: ${f.activeTile}`)).length > n || null;
+        },
+        60_000,
+        antes.listos,
+      );
+      ctx.log(`A3 · ${claveA3} re-añadido con su POST retenido (${retenidas.length} retenido(s)); se suelta`);
+      soltar = true;
+      for (const route of retenidas) await route.continue();
+    },
+  });
+  await ctx.page.unroute("**/generate_surface_atlas");
+  if (r3 && !r3.sinTiles) {
+    const postsA3 = atlasPosts.slice(postsAntesA3).filter((b) => b?.layout_key === layoutKeyDe[claveA3]);
+    const celdas = postsA3.flatMap((b) => (b?.cells ?? []).map((c) => c.key));
+    const repetidas = [...new Set(celdas.filter((k, i) => celdas.indexOf(k) !== i))];
+    ctx.log(`A3 · POST del tile ${claveA3} tras reanudar + re-difusión: ${postsA3.length} · celdas ${celdas.length} · repetidas ${repetidas.length}`);
+    ctx.expect(
+      "A3 · la misma clave disparada dos veces en el mismo tick se pide UNA vez (ninguna celda del activo repetida)",
+      postsA3.length > 0 && repetidas.length === 0,
+      JSON.stringify({ posts: postsA3.length, celdas: celdas.length, repetidas: repetidas.slice(0, 5) }),
+    );
+    ctx.expect(
+      "A3 · y el tile activo acaba texturado igual",
+      r3.estado.activeTile === claveA3 && r3.estado.textured.includes(claveA3),
+      JSON.stringify(r3.estado),
+    );
   }
 }
