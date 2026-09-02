@@ -61,7 +61,8 @@ export class FpsAtlasController {
    *  disparo del arranque (dos triggers antes del primer await pagaban dos
    *  veces la misma página; visto en vivo 2026-08-14, $0.15×2). */
   private pendingTiles = new Set<string>();
-  /** Triggers llegados con otro en vuelo: se re-ejecutan al terminar. */
+  /** Triggers de la MISMA clave llegados con el suyo en vuelo: se re-ejecutan
+   *  al terminar. Una clave DISTINTA no se encola: supera al run en vuelo. */
   private queuedTiles = new Set<string>();
 
   constructor(
@@ -80,8 +81,11 @@ export class FpsAtlasController {
   /** Tile activo nuevo. El arte YA PAGADO se restaura SIEMPRE (también en
    *  modo vector — lo ya pintado se conserva): memoria →
    *  mapping persistido (solo asset-store) → resolve_only contra la librería
-   *  ($0). Pintar celdas nuevas solo con la generación activa. Con un run en
-   *  vuelo no relanza (los disparadores del arranque se solapan). */
+   *  ($0). Pintar celdas nuevas solo con la generación activa. Un tile activo
+   *  NUEVO supera al run en vuelo (el `token` de `runFor` desecha el anterior
+   *  antes de aplicar nada); la MISMA clave se deduplica en `pendingTiles`.
+   *  Hasta #390 aquí había un `if (this.inFlight) return;` que descartaba en
+   *  silencio el tile del jugador cuando el resume activaba otro antes. */
   async onActiveTile(key: string): Promise<void> {
     // Un trigger solapado no se DESCARTA: se re-encola para cuando acabe el
     // actual — el disparo temprano del arranque corre sin estilo/modos de la
@@ -103,7 +107,6 @@ export class FpsAtlasController {
         this.deps.log(`Atlas fps de ${key}: en espera del estilo de la sesión`);
         return;
       }
-      if (this.inFlight) return;
       if (await this.reinstallFromStorage(key)) return;
       await this.runFor(key, { resolveOnly: !this.deps.generationOn() });
     } finally {
@@ -183,6 +186,11 @@ export class FpsAtlasController {
         data.missing += part.missing;
       }
       if (!resolveOnly) this.deps.onGeneration?.({ kind: "fps_atlas", cached: data.cached });
+      // Keep-list ANTES del corte por token: si otro tile superó a este en
+      // vuelo, su arte (pagado o de la librería) sigue siendo de esta escena y
+      // el prune no debe podarlo. Sin esto, «último gana» convertía arte
+      // pagado en podable.
+      void this.registerRefs(key, Object.values(data.cells).map((c) => c.hash));
       if (token !== this.token) return; // el tile activo cambió en vuelo
 
       const resolvedKeys = Object.keys(data.cells);
@@ -227,7 +235,6 @@ export class FpsAtlasController {
         }
         this.persistMapping(layoutKey, data.cells, kindByKey);
       }
-      void this.registerRefs(key, Object.values(data.cells).map((c) => c.hash));
       this.deps.log(
         data.missing > 0
           ? `Atlas fps de ${key}: ${images.size} superficies de la librería; faltan ${data.missing} por pintar (G o Imágenes…)`
