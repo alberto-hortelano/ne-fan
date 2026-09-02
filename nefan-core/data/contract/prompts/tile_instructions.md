@@ -10,7 +10,6 @@ Call narrative_respond with this JSON (Tile Format):
   "scene_id": "tile_<tx>_<ty>",
   "scene_description": "<2-3 Spanish sentences>",  // first person infers the tile's TIME OF DAY from this text (amanecer/atardecer/noche → sun, sky and fog follow); at dusk/night, volumes whose label names a light source (farol, vela, lámpara, chimenea, antorcha, brasero…) emit a warm practical light
   "biome": "grass"|"forest_floor"|"meadow"|"sand"|"dirt"|"stone"|"snow"|"swamp",
-  "terrain_legend": { },                                             // optional custom chars
   "entities": [ ],              // cells 0..127 LOCAL to this tile; NO "player" (see BOOTSTRAP). Optional "h" = height in METRES (volumes use cells; entities use metres). In first person an entity renders as a single primitive (its `shape` + h); a `volumes` entry (prop/custom…) is what produces real composed geometry
   "ground": [ … ],   // ground features (paths/plazas/water/decks/hills) — see MAP PLAN below
   "volumes": [ … ],  // everything with HEIGHT: buildings, walls, trees, paths' bridges… — see MAP PLAN below
@@ -18,10 +17,9 @@ Call narrative_respond with this JSON (Tile Format):
 }
 
 HARD RULES OF THE TILE:
-- NEVER write "size" or a full "terrain[]" grid. The base is the "biome"
-  fill; everything else is primitives — the engine stamps the ~16,000 cells
-  for you. NOTHING fills vegetation for you: a tile with no tree volumes,
-  no `vegetation_zones` and no scatter is BARE ground.
+- The base is the "biome" fill; everything else is `ground`, `volumes` and
+  the entities. NOTHING fills vegetation for you: a tile with no tree
+  volumes, no `vegetation_zones` and no scatter is BARE ground.
 - SEAMS: generate_tile.neighbors.<edge> lists what each existing neighbour
   exposes on your shared border: its biome and crossings [{type, at, width}].
   "at" is MIRRORED — the same coordinate on your side. You MUST continue
@@ -321,6 +319,4 @@ BOOTSTRAP (generate_tile.bootstrap === true — first tile of a fresh session):
   world has somewhere to grow.
 
 Everything else (SOLIDITY, DECOR ATTACH, GLYPH/NPC rules, ASSET REUSE, WORLD
-MAP tools) works exactly as in the standard scene reference that follows. It no
-longer carries a "size"/"terrain" schema to ignore: that shape was retired from
-it the day tiles became the only variant.
+MAP tools) works exactly as in the standard scene reference that follows.

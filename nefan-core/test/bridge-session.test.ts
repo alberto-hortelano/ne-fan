@@ -419,7 +419,6 @@ describe("bridge ciclo de sesión", () => {
       scene_description: "prueba",
       size: { cols: 4, rows: 4, meters_per_cell: 2 },
       terrain: ["gggg", "gggg", "gggg", "gggg"],
-      terrain_legend: {},
       __expanded: true,
       entities: [
         { id: "caja", kind: "prop", name: "Caja", cell: [1, 1], footprint: [1, 1], glyph: "c" },
@@ -456,7 +455,6 @@ describe("bridge ciclo de sesión", () => {
       scene_description: "prueba",
       size: { cols: 4, rows: 4, meters_per_cell: 2 },
       terrain: ["gggg", "gggg", "gggg", "gggg"],
-      terrain_legend: {},
       __expanded: true,
       entities: [
         { id: "herido_1", kind: "npc", name: "Herido", role: "hostile", cell: [1, 1], footprint: [1, 1], glyph: "h" },
@@ -515,7 +513,6 @@ describe("bridge ciclo de sesión", () => {
       scene_description: "prueba",
       size: { cols: 4, rows: 4, meters_per_cell: 2 },
       terrain: ["gggg", "gggg", "gggg", "gggg"],
-      terrain_legend: {},
       __expanded: true,
       entities: [
         { id: "bandido_1", kind: "npc", name: "Bandido de camino", role: "hostile", cell: [1, 1], footprint: [1, 1], glyph: "b" },

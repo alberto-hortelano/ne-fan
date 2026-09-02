@@ -149,12 +149,13 @@ class TestSceneValidateBenign(unittest.TestCase):
         out = validate_scene_response(s)
         self.assertTrue(out["scene_id"])  # se rellena (benigno)
 
-    def test_glyph_colliding_with_terrain_is_reassigned(self):
+    def test_glyph_is_kept_verbatim(self):
+        # El glyph es del motor y el saneador no lo reescribe: lo que declara
+        # es lo que sale, sin sustituciones mudas (#335).
         s = base_scene()
-        # 'g' es char de terreno (grass); un entity con glyph 'g' recibe reserva.
         s["entities"] = [{"id": "x", "kind": "prop", "name": "X", "cell": [0, 0], "footprint": [1, 1], "glyph": "g"}]
         out = validate_scene_response(s)
-        self.assertNotEqual(out["entities"][0]["glyph"], "g")
+        self.assertEqual(out["entities"][0]["glyph"], "g")
 
     def test_cell_out_of_bounds_clamped(self):
         s = base_scene()

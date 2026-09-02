@@ -6,11 +6,6 @@
     "ty": 0
   },
   "biome": "grass",
-  "terrain_legend": {
-    "w": "agua de la ría",
-    "b": "tablones de los embarcaderos",
-    "_": "empedrado del muelle"
-  },
   "ground": [
     {
       "id": "ria",

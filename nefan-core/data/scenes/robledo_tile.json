@@ -6,11 +6,6 @@
     "ty": 0
   },
   "biome": "grass",
-  "terrain_legend": {
-    "w": "agua del río Negro",
-    "b": "puente de tablones",
-    "_": "camino de tierra"
-  },
   "ground": [
     {
       "id": "rio_negro_n",

@@ -34,7 +34,7 @@ import { MAX_GROUND_FEATURES } from "./blueprint/ground.js";
 import { planCollisionGrid } from "./blueprint/plan-collision.js";
 import { parseScatter } from "./blueprint/scatter.js";
 import { MAX_VOLUMES } from "./blueprint/volumes.js";
-import { resolveTerrainLegend } from "./scene-normalize.js";
+import { DEFAULT_SOLID_CHARS } from "./scene-normalize.js";
 import { BODY_RADIUS_M, celdasLibresParaRadio } from "./terrain-collision.js";
 import { composeTilePlan, MAX_TILE_VOLUMES } from "./tile-plan.js";
 import { COMPATIBLE, computeTileEdges, matchCrossings, type EdgeCrossing, type TileEdges } from "./tile-edges.js";
@@ -94,9 +94,9 @@ export interface GridDims {
   rows: number;
 }
 
-/** El tile ABIERTO: lo que declaró el motor, lo que salió de expandirlo, el
- *  grid normalizado a cols×rows y su leyenda resuelta. Es material de solo
- *  lectura — ninguna pasada lo modifica. */
+/** El tile ABIERTO: lo que declaró el motor, lo que salió de expandirlo y el
+ *  grid normalizado a cols×rows. Es material de solo lectura — ninguna pasada
+ *  lo modifica. */
 export interface TileView extends GridDims {
   /** La escena TAL CUAL la mandó el motor: los presupuestos se miden aquí,
    *  sobre lo DECLARADO, no sobre lo que el expander añadió. */
@@ -108,9 +108,7 @@ export interface TileView extends GridDims {
    *  y las pasadas y `computeTileEdges` leen el mismo. Antes había dos (aquí
    *  una copia normalizada, en `computeTileEdges` el crudo) y divergían. */
   grid: string[];
-  /** char → nombre de terreno, según `terrain_legend`. */
-  legend: Record<string, string>;
-  /** Chars que bloquean el paso (muro, agua…). */
+  /** Chars que bloquean el paso (muro y agua: `DEFAULT_SOLID_CHARS`). */
   solid: ReadonlySet<string>;
 }
 
@@ -178,8 +176,6 @@ export interface Reach {
 const SEVERIDAD = {
   /** El plan no cabe / no se pudo componer: lo que el compositor ignoró. */
   "plan-no-cabe": "error",
-  /** Terreno que nadie sabe pintar ni si se pisa. */
-  "chars-sin-declarar": "error",
   "scatter-invalido": "error",
   /** El player declarado no es el que corresponde al tile, o no existe. */
   "player-mal-declarado": "error",
@@ -223,10 +219,6 @@ function edgeCell(edge: Edge, at: number): Cell {
   }
 }
 
-/** Chars reservados siempre legales sin declarar (espejo de RESERVED_TERRAIN
- *  en ai_server/narrative_schemas.py). */
-const RESERVED_CHARS = new Set(["g", "w", "_", "s", "b", "d", "a", "o", "W"]);
-
 const emptyStats = (cols = 0, rows = 0): SceneValidationResult["stats"] => ({
   cols,
   rows,
@@ -265,7 +257,7 @@ export type OpenTileResult =
   | { ok: true; view: TileView }
   | { ok: false; rejected: SceneValidationResult };
 
-/** Gate de variante + expansión de primitivas + grid + leyenda.
+/** Gate de variante + expansión de primitivas + grid.
  *
  *  Es lo único que puede cortar la validación en seco: a partir de aquí todas
  *  las pasadas acumulan hallazgos sobre el MISMO tile y el motor recibe todo
@@ -290,9 +282,9 @@ export function openTile(rawScene: Record<string, unknown>): OpenTileResult {
     };
   }
 
-  // Tile (Format D v3): la forma la garantiza el expander (bioma + 128×128
-  // sintetizados); aquí solo las coords. size/terrain completos los rechaza
-  // el propio expander con mensaje accionable.
+  // Tile: la forma la garantiza el expander (bioma + 128×128 sintetizados);
+  // aquí solo las coords. size/terrain completos los rechaza el propio
+  // expander con mensaje accionable.
   const t = rawScene.tile as { tx?: unknown; ty?: unknown };
   if (!t || !Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
     return {
@@ -360,7 +352,6 @@ export function openTile(rawScene: Record<string, unknown>): OpenTileResult {
     };
   }
 
-  const { legend, solidChars } = resolveTerrainLegend(scene.terrain_legend);
   return {
     ok: true,
     view: {
@@ -368,32 +359,12 @@ export function openTile(rawScene: Record<string, unknown>): OpenTileResult {
       raw: rawScene,
       scene,
       grid: terrain as string[],
-      legend,
-      solid: new Set(solidChars),
+      solid: new Set(DEFAULT_SOLID_CHARS),
     },
   };
 }
 
-// ═══ Pasada 1 · chars declarados ════════════════════════════════════════════
-
-/** Todo char del grid debe ser reservado o traer entrada en `terrain_legend`:
- *  uno sin declarar es terreno que nadie sabe pintar ni si se puede pisar. */
-export function checkDeclaredChars(view: TileView, found: Findings): void {
-  const undeclared = new Set<string>();
-  for (const row of view.grid) {
-    for (const ch of row) {
-      if (!RESERVED_CHARS.has(ch) && view.legend[ch] === undefined) undeclared.add(ch);
-    }
-  }
-  if (undeclared.size > 0) {
-    found.add(
-      "chars-sin-declarar",
-      `chars de terreno sin declarar en terrain_legend: ${[...undeclared].map((c) => `"${c}"`).join(", ")}`,
-    );
-  }
-}
-
-// ═══ Pasada 2 · el plan compuesto ═══════════════════════════════════════════
+// ═══ Pasada 1 · el plan compuesto ═══════════════════════════════════════════
 
 /** Qué celdas bloquea el PLAN del tile, y de qué tamaño es. */
 export interface PlanMask {
@@ -426,10 +397,7 @@ export function composePlan(view: TileView, found: Findings): PlanMask {
   found.stats.volumes_total = plan?.volumes.length ?? 0;
   const tile = view.scene.tile as { tx: number; ty: number };
   const rect = tileWorldRect(tile.tx, tile.ty);
-  // La solidez de ESTA escena: un vado declarado (`{name, solid:false}`)
-  // no bloquea tampoco por el plan — igual que en juego.
-  const opts = { solidChars: [...view.solid] };
-  const grid = plan ? planCollisionGrid(plan.ground, plan.volumes, rect, opts) : null;
+  const grid = plan ? planCollisionGrid(plan.ground, plan.volumes, rect) : null;
   const solidChars = new Set(grid?.solid_chars ?? []);
   const cubre = (g: { cols: number; rows: number; grid: string[]; solid_chars?: string[] }, c: number, r: number) =>
     c >= 0 && r >= 0 && c < g.cols && r < g.rows && new Set(g.solid_chars ?? []).has(g.grid[r][c]);
@@ -443,7 +411,7 @@ export function composePlan(view: TileView, found: Findings): PlanMask {
       // Solo en el camino de error: un grid por volumen hasta dar con el que
       // cubre la celda. El primero que la cubre es el culpable que se nombra.
       for (const v of plan?.volumes ?? []) {
-        const g = planCollisionGrid(undefined, [v], rect, opts);
+        const g = planCollisionGrid(undefined, [v], rect);
         if (g && cubre(g, c, r)) return { volumeId: v.id };
       }
       return "ground";
@@ -546,8 +514,7 @@ export function checkPlayerSpawn(
     const ch = view.grid[r][c];
     let causa: string;
     if (view.solid.has(ch)) {
-      const nombre = view.legend[ch] ? ` (${view.legend[ch]})` : "";
-      causa = `la celda es "${ch}"${nombre}, terreno sólido — muévelo a una celda pisable`;
+      causa = `la celda es "${ch}", terreno sólido — muévelo a una celda pisable`;
     } else {
       const blocker = planMask.blockerAt(c, r);
       if (blocker === "ground") {
@@ -1018,7 +985,6 @@ export function validateScene(
   const view = opened.view;
   const found = emptyFindings(view.cols, view.rows);
 
-  checkDeclaredChars(view, found);
   const planMask = composePlan(view, found);
   const map = buildWalkableMap(view, planMask, found);
   checkScatter(view, found);

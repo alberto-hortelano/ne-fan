@@ -191,7 +191,7 @@ Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
   "dimensions": { "width": 64, "depth": 64, "height": 3 },
   "world_rect": { "minX": -32, "minZ": -32, "maxX": 32, "maxZ": 32 },
   "terrain": { "color": [0.18, 0.22, 0.14] },
-  "terrain_grid": { "grid": ["..."], "legend": {}, "solid_chars": ["W", "w"] },
+  "terrain_grid": { "grid": ["..."], "solid_chars": ["W", "w"] },
   "objects": [
     { "id": "tavern", "shape": "box", "position": [-2, 0, -2], "scale": [8, 1, 4],
       "category": "building", "name": "Taberna" }

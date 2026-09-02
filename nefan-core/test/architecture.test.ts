@@ -415,6 +415,135 @@ describe("fronteras arquitectónicas", () => {
   // T4 «lo que ya no emite nadie» (#343 #344 #257 #368-F6): un caso por
   // familia de términos, en el proceso donde cada uno vivía. Sin verlos saltar,
   // los 45 términos nuevos del patrón serían una lista que nadie ha probado.
+  // El terreno por chars (#335): los identificadores de la leyenda, de los
+  // parches y del código que los servía. La vía de vuelta es un save o
+  // snapshot anterior copiado a una fixture, o un saneador que reinyecte la
+  // leyenda — por eso se enseña en JSON, en Python y en TS.
+  it("[error] campos-retirados-no-vuelven: el terreno por chars salta donde reaparezca", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "campos-retirados-no-vuelven");
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/data/scenes/x.json",
+          text: '{\n  "biome": "grass",\n  "terrain_legend": { "w": "agua" }\n}\n',
+          imports: [],
+        },
+        {
+          path: "ai_server/narrative_schemas.py",
+          text: 'for ch, name in RESERVED_TERRAIN.items():\n    legend.setdefault(ch, name)\ndata["terrain_patches"] = clean_p\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/scene/scene-normalize.ts",
+          text: "export function resolveTerrainLegend(raw: unknown) {}\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/data/contract/tools/x.json",
+          text: '{\n  "description": "a structure\'s wall_char/floor_char of your own"\n}\n',
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "ai_server/narrative_schemas.py:1",
+        "ai_server/narrative_schemas.py:3",
+        "nefan-core/data/contract/tools/x.json:2",
+        "nefan-core/data/contract/tools/x.json:2",
+        "nefan-core/data/scenes/x.json:3",
+        "nefan-core/src/scene/scene-normalize.ts:1",
+      ],
+      "la leyenda, los parches y los chars propios tienen que saltar en datos, Python y TS",
+    );
+
+    // El único sitio donde el nombre SÍ se escribe es el rebote por nombre del
+    // zod y su caso negativo, exceptuados por ruta: fuera de ellos, salta.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/src/contract/model-io/retired-terrain-fields.ts",
+          text: 'export const X = ["terrain_legend"];\n',
+          imports: [],
+        },
+      ]),
+      [],
+      "el fichero del rebote por nombre está exceptuado a propósito",
+    );
+  });
+
+  // La PROSA del modelo anterior (#335): distinto patrón y distintos roots que
+  // la regla de identificadores, porque lo que confunde a un agente no es un
+  // nombre de campo sino una frase que le explica cómo declarar terreno por
+  // chars. Se enseña en la documentación de arquitectura, en CLAUDE.md, en un
+  // prompt y en un docstring Python — y se comprueba que la palabra «leyenda»
+  // a secas (la de un mundo, la de un mapa dibujado) NO salta.
+  it("[error] el-terreno-no-se-declara-por-chars: la prosa del terreno por chars salta donde se lea", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "el-terreno-no-se-declara-por-chars");
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "docs/arquitectura/x.md",
+          text: "El grid viaja para colisión.\nLa leyenda del terreno decide qué bloquea.\n",
+          imports: [],
+        },
+        {
+          path: "CLAUDE.md",
+          text: "Cada char custom lleva su legend entry.\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/data/contract/prompts/x.md",
+          text: "RESERVED TERRAIN CHARS — the engine stamps the grid for you\nOnly for CUSTOM chars your primitives introduce\n",
+          imports: [],
+        },
+        {
+          path: "ai_server/x.py",
+          text: "# el tile no trae grid: su terrain legend es la declarada\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/public/x/index.html",
+          text: "<p>Un char propio se declara sólido con la forma objeto.</p>\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "ai_server/x.py:1",
+        "CLAUDE.md:1",
+        "docs/arquitectura/x.md:2",
+        "nefan-core/data/contract/prompts/x.md:1",
+        "nefan-core/data/contract/prompts/x.md:2",
+        "nefan-html/public/x/index.html:1",
+      ],
+      "la prosa del terreno por chars tiene que saltar en docs, CLAUDE.md, prompts, Python y páginas estáticas",
+    );
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/data/games/x/world.md",
+          text: "Nadie distingue ya la crónica de la leyenda.\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/public/world_map/index.html",
+          text: '<div class="legend"><span class="lg-site">Site</span></div>\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/scene/scene-normalize.ts",
+          text: "// Chars del grid que bloquean el paso: W muro y w agua.\n",
+          imports: [],
+        },
+      ]),
+      [],
+      "la leyenda de un mundo, la de un mapa dibujado y los chars del grid vigentes no son el modelo anterior",
+    );
+  });
+
   it("[error] campos-retirados-no-vuelven: lo que ya no emite nadie salta donde reaparezca", () => {
     const deLaRegla = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "campos-retirados-no-vuelven");

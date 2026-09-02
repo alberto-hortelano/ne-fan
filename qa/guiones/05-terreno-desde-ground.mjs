@@ -40,7 +40,6 @@ export default async function (ctx) {
       origin: g?.origin ?? null,
       filas: g?.grid?.length ?? 0,
       solid_chars: g?.solid_chars ?? null,
-      legend: g?.legend ?? null,
       cuenta,
     };
   });
@@ -100,7 +99,7 @@ export default async function (ctx) {
     );
   }
 
-  // ── 3. La leyenda decide qué bloquea ────────────────────────────────────
+  // ── 3. `solid_chars` dice qué bloquea (agua y muro, fijados por el engine) ─
   const solidos = plano.solid_chars ?? [];
   ctx.expect("el agua es un char sólido", solidos.includes("w"), JSON.stringify(solidos));
   ctx.expect("el muro es un char sólido", solidos.includes("W"), JSON.stringify(solidos));

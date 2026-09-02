@@ -181,7 +181,7 @@ exactas.
 
 Lo que el renderer NUNCA porta es la conversión celdas→metros: el bridge
 normaliza con `formatDToWorld` en el wire y el cliente pinta world scene en
-metros. Si el cliente se trajera esa conversión (`terrain_legend`,
+metros. Si el cliente se trajera esa conversión (`size.cols`,
 `meters_per_cell`) habría dos caminos hasta la misma escena y la segunda copia
 se enteraría tarde de cada cambio del primero. Candados
 `cliente-no-convierte-celdas-a-metros` (error) y

@@ -239,7 +239,6 @@ describe("EmittedSceneSchema — solo queda el tile", () => {
     scene_description: "Una aldea sin sitio en el mundo.",
     size: { cols: 4, rows: 2, meters_per_cell: 2 },
     terrain: ["gggg", "gggg"],
-    terrain_legend: {},
     entities: [{ id: "p", kind: "player", name: "Tú", cell: [1, 1], footprint: [1, 1], glyph: "@" }],
   };
 

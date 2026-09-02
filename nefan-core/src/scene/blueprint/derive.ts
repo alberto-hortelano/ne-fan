@@ -183,8 +183,7 @@ export function deriveVolumesFromSchema(raw: DeriveInput, declared: Volume[]): D
  *  La exclusión de suelo es el MISMO predicado que gobierna el scatter de
  *  detalle fps y el relieve (`buildScatterExclusions`): las tres rutas del
  *  blueprint esquivan lo mismo — huellas, agua, decks y la banda del camino
- *  (w/2 + 0,5). **Qué queda FUERA**: se ancla en `ground`, así que el agua o
- *  los caminos declarados SOLO como chars de `terrain_patches` no la ven. Los
+ *  (w/2 + 0,5). Se ancla en `ground`, que es el único origen del suelo. Los
  *  parches de material (`kind: "area"` — plaza, huerto) SÍ se pueblan: son
  *  material, y una zona declarada sobre un huerto debe poder plantarse.
  *

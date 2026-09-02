@@ -17,7 +17,6 @@ import assert from "node:assert/strict";
 import {
   buildWalkableMap,
   composePlan,
-  checkDeclaredChars,
   checkNpcBodies,
   checkPlayerSpawn,
   checkReachability,
@@ -46,7 +45,6 @@ function vista(filas: string[], over: Partial<TileView> = {}): TileView {
     grid: filas,
     raw: {},
     scene: {},
-    legend: {},
     solid: new Set(["W", "~"]),
     ...over,
   };
@@ -131,34 +129,15 @@ describe("openTile — gate de variante", () => {
     assert.equal(r.view.grid, r.view.scene.terrain, "misma referencia, no una copia");
   });
 
-  it("abre un tile ya expandido con su leyenda resuelta", () => {
+  it("abre un tile ya expandido con los sólidos que fija el engine", () => {
+    // La escena no puede añadir ni quitar solidez: la vista lleva exactamente
+    // `DEFAULT_SOLID_CHARS`, venga el tile con lo que venga.
     const terrain = Array.from({ length: 128 }, () => "g".repeat(128));
-    const r = openTile({
-      tile: { tx: 0, ty: 0 }, biome: "meadow", __expanded: true, terrain, entities: [],
-      terrain_legend: { m: { name: "musgo", solid: false }, R: { name: "roca", solid: true } },
-    });
+    const r = openTile({ tile: { tx: 0, ty: 0 }, biome: "meadow", __expanded: true, terrain, entities: [] });
     assert.equal(r.ok, true);
     if (!r.ok) return;
     assert.equal(r.view.cols, 128);
-    assert.equal(r.view.legend.m, "musgo");
-    assert.ok(r.view.solid.has("R"), "roca declarada sólida");
-    assert.ok(!r.view.solid.has("m"));
-  });
-});
-
-describe("checkDeclaredChars", () => {
-  it("acepta los chars reservados sin leyenda y delata los demás en orden de barrido", () => {
-    const view = vista(["ggwW", "_sbd", "aoQZ"]);
-    const found = hallazgos(view);
-    checkDeclaredChars(view, found);
-    assert.deepEqual(found.errors, ['chars de terreno sin declarar en terrain_legend: "Q", "Z"']);
-  });
-
-  it("un char declarado en la leyenda deja de ser error", () => {
-    const view = vista(["ggQ"], { legend: { Q: "musgo" } });
-    const found = hallazgos(view);
-    checkDeclaredChars(view, found);
-    assert.deepEqual(found.errors, []);
+    assert.deepEqual([...r.view.solid].sort(), ["W", "w"]);
   });
 });
 
@@ -385,15 +364,6 @@ describe("checkPlayerSpawn", () => {
     assert.deepEqual(found.errors, []);
   });
 
-  it("sobre terreno sólido se rechaza citando el char que pisa y su leyenda", () => {
-    const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [1, 1] }] });
-    view.legend.W = "muro";
-    assert.equal(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [], bootstrap: true }, found), null);
-    assert.deepEqual(found.errors, [
-      'el spawn del player [1, 1] no es transitable: la celda es "W" (muro), terreno sólido — muévelo a una celda pisable',
-    ]);
-  });
-
   it("bloqueado por la masa de un volumen del plan, el error nombra SU id (#337)", () => {
     // El char de debajo es "g" (pisable): la causa es el plan, no el terreno.
     // Antes el mensaje culpaba a la celda y a un «footprint» que ya no
@@ -410,13 +380,10 @@ describe("checkPlayerSpawn", () => {
     ]);
   });
 
-  it("un char sólido SIN entrada de leyenda se nombra a secas, sin inventarle nombre (QA #337)", () => {
-    // El agua rasterizada del plan ("w") no tiene entrada en la leyenda por
-    // defecto: el mensaje no puede prometer una que no existe — nombra el
-    // char tal cual y nada más. Con leyenda declarada sí sale el nombre
-    // (test de arriba); este canda la otra mitad.
+  it("sobre terreno sólido se rechaza citando el char que pisa, a secas (QA #337)", () => {
+    // Ningún char tiene nombre: el mensaje nombra el char tal cual y nada
+    // más — no puede prometer un rótulo que ninguna escena declara.
     const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [1, 1] }] });
-    assert.equal(view.legend.W, undefined, "el caso ES sin leyenda");
     assert.equal(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [], bootstrap: true }, found), null);
     assert.deepEqual(found.errors, [
       'el spawn del player [1, 1] no es transitable: la celda es "W", terreno sólido — muévelo a una celda pisable',

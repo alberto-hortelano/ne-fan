@@ -33,7 +33,7 @@
  */
 
 import type { Vec3 } from "@nefan-core/src/types.js";
-import { DEFAULT_SOLID_CHARS, formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
+import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
 import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import { npcsFueraDelRect } from "@nefan-core/src/session/mundo-persistido.js";
@@ -315,16 +315,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     if (prevEntry?.svgApplied && !sceneChanged) {
       tileStore.setSvgCollider(key, prevEntry.svgCollider);
     } else if (planInfo) {
-      // La leyenda de ESTA escena decide si el agua declarada bloquea: un vado
-      // (`{name, solid:false}`) tiene que abrirse en las DOS fuentes o el
-      // jugador rebota contra un río que el autor abrió.
-      applyPlanCollision(
-        key,
-        { ground: planInfo.ground, volumes: planInfo.volumes },
-        rect,
-        tileStore,
-        (data.terrain_grid as TerrainGridData | undefined)?.solid_chars ?? DEFAULT_SOLID_CHARS,
-      );
+      applyPlanCollision(key, { ground: planInfo.ground, volumes: planInfo.volumes }, rect, tileStore);
     }
     // Posición de entrada — SOLO escenas legacy o el bootstrap (primer tile con
     // spawn explícito). En el resto de tiles el jugador entra andando.

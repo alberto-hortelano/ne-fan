@@ -6,7 +6,6 @@ is. Call narrative_respond with this JSON ("Map Format D"):
 {
   "scene_id": "<slug>",
   "scene_description": "<2-3 Spanish sentences>",
-  "terrain_legend": { "<char>": "<terrain name>" | { "name": "<terrain name>", "solid": true|false }, ... },  // optional: only for custom chars your primitives introduce (see RESERVED TERRAIN CHARS)
   "ground": [ … ],   // flat ground features (paths/plazas/water/decks) — see the MAP PLAN reference in the tile instructions
   "volumes": [ … ],  // everything with HEIGHT: buildings (cutaway for enterable), walls, trees… — same MAP PLAN reference as ground
   "entities": [
@@ -31,24 +30,11 @@ rules and win over anything here. A scene without `tile` is rejected by the
 gate before it reaches the game: there is no such thing as a free-standing map
 with a size of your choosing.
 
-RESERVED TERRAIN CHARS — the engine stamps the grid for you, using these:
-- g grass (default)   _ path/dirt road    s stone/paved
-- w water             b bridge (wood over water)
-- d dirt/tilled       a sand              o wood/dock planks
-- W wall (SOLID)
-
-They need no legend entry, and they are the ONLY ones you can produce: no
-primitive you are offered writes a char of its own. Any OTHER char that ends
-up in the grid MUST be declared in terrain_legend, or the tile is rejected: an
-undeclared char is terrain nobody knows how to paint or whether it can be
-walked on.
-
-SOLIDITY — collision (the player physically CANNOT cross solid cells)
-- "W" (wall) and "w" (water) BLOCK movement. "b" (bridge) is walkable over water.
-- A custom char is declared solid with the object form of terrain_legend:
-  "R": { "name": "roca desprendida", "solid": true }. Plain string values are walkable.
-- Consequence: water that crosses the tile needs a bridge (a `deck` over it) if
-  the far side matters, or you have split the world in two.
+SOLIDITY — collision (the player physically CANNOT cross solid cells): water
+declared in `ground` blocks movement; a `deck` over it is walkable; walls are
+`volumes`. Nothing else you write becomes terrain. Consequence: water that
+crosses the tile needs a bridge (a `deck` over it) if the far side matters, or
+you have split the world in two.
 
 ENTERABLE ROOMS & BUILDINGS: declare the shell as a `volumes` building with
 `cutaway:true` — walls, door gaps and the interior visible from the camera come
@@ -74,8 +60,8 @@ plazas/courtyards. Points are float cell coordinates and curves are smoothed
 gets made: the biome fills the base and every `ground` feature is stamped over
 it, so a road that is not in `ground` does not exist.
 
-Do NOT emit SVG of any kind (the old "terrain_svg"/"map_ground" fields are
-gone): everything is declarative data — typed "ground" features + "volumes".
+Never draw anything yourself (no SVG, no image): everything is declarative
+data — typed "ground" features + "volumes".
 
 ENTITY RULES
 - Every entity has a UNIQUE id (slug). Two trees in different places need

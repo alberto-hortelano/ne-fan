@@ -1,9 +1,10 @@
-/** Expansión determinista de primitivas de escena (Format D v2).
+/** Expansión determinista de un tile Format D.
  *
- *  El motor narrativo puede describir la escena con primitivas de alto nivel
- *  en vez de dibujar el ASCII a mano:
- *   - `terrain_patches`: parches ASCII rectangulares sobre el fill del bioma.
- *   - `decor` con `attach: "wall"`: se pega a la celda de muro más cercana.
+ *  El motor declara `biome` + `ground`/`volumes`; aquí se SINTETIZA el grid
+ *  de terreno que el motor nunca escribe —fill del bioma 128×128 más los
+ *  rasgos de `ground` rasterizados—, que viaja solo para la colisión de
+ *  celdas y las costuras entre tiles. La otra expansión es el `decor` con
+ *  `attach: "wall"`, que se pega a la celda de muro más cercana.
  *
  *  `vegetation_zones` NO se expande aquí y es a propósito: estampaba una
  *  entity `tree` de 1×1 por celda plantada (cientos por tile) que se PINTABA
@@ -29,9 +30,9 @@ import { parseGround } from "./blueprint/ground.js";
 import { shapeContains, GROUND_WATER_CHAR } from "./blueprint/ground-collision.js";
 
 /** Char de muro: el único que el `decor` con `attach:"wall"` busca para
- *  pegarse. Es el reservado del contrato (`DEFAULT_SOLID_CHARS`), no una
- *  elección de quien declara la escena: desde que se retiró la primitiva de
- *  salas (#301) ninguna introduce un char de muro propio. */
+ *  pegarse. Es el reservado del contrato (`DEFAULT_SOLID_CHARS`). Hoy ningún
+ *  productor lo escribe en el grid —los muros son `volumes`—, así que el snap
+ *  no encuentra celda: darle sujeto o retirarlo es backlog (#335). */
 const WALL_CHAR = "W";
 
 /** ¿Tiene la escena primitivas pendientes de expandir? */
@@ -121,65 +122,37 @@ function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
   }
 }
 
-/** Prepara la BASE de un tile (Format D v3): fill del bioma 128×128 +
- *  terrain_patches + rasterización de los rasgos `ground` al grid. Devuelve
- *  una copia con `size`/`terrain` sintetizados lista para la expansión
- *  compartida (el decor con `attach`). Fail-loud en primitivas
- *  imposibles — mismo contrato que el resto del expander. */
+/** Prepara la BASE de un tile: fill del bioma 128×128 + rasterización de los
+ *  rasgos `ground` al grid. Devuelve una copia con `size`/`terrain`
+ *  sintetizados lista para la expansión compartida (el decor con `attach`).
+ *  Fail-loud en coords rotas o en un tile que traiga el grid escrito. */
 function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> {
   const t = raw.tile as { tx?: unknown; ty?: unknown };
   if (!t || !Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
     throw new Error(`tile.tx/ty deben ser enteros, got ${JSON.stringify(raw.tile)}`);
   }
   if (raw.size !== undefined || (Array.isArray(raw.terrain) && raw.terrain.length > 0)) {
-    throw new Error(
-      "un tile no lleva size/terrain completos: la base es `biome` + primitivas (terrain_patches para parches puntuales)",
-    );
+    throw new Error("un tile no lleva size/terrain: la base es `biome` + `ground`/`volumes`");
   }
-  const { char: biomeChar, name: biomeName } = resolveBiome(raw.biome);
+  const biomeChar = resolveBiome(raw.biome);
 
   const grid: string[][] = [];
   for (let r = 0; r < TILE_CELLS; r++) grid.push(new Array<string>(TILE_CELLS).fill(biomeChar));
 
-  // Parches ASCII rectangulares sobre el fill (detalles puntuales).
-  const patches = Array.isArray(raw.terrain_patches) ? (raw.terrain_patches as Record<string, unknown>[]) : [];
-  for (let pi = 0; pi < patches.length; pi++) {
-    const p = patches[pi];
-    const at = p?.at as [number, number] | undefined;
-    const rows = p?.rows as string[] | undefined;
-    if (!Array.isArray(at) || at.length !== 2 || !Number.isInteger(at[0]) || !Number.isInteger(at[1]) ||
-        !Array.isArray(rows) || rows.length === 0 || !rows.every((row) => typeof row === "string" && row.length > 0)) {
-      throw new Error(`terrain_patches[${pi}] debe ser { at: [col,row], rows: ["…"] }`);
-    }
-    const [c0, r0] = at;
-    for (let r = 0; r < rows.length; r++) {
-      if (r0 + r < 0 || r0 + r >= TILE_CELLS || c0 < 0 || c0 + rows[r].length > TILE_CELLS) {
-        throw new Error(`terrain_patches[${pi}] se sale del tile (at [${c0},${r0}], fila ${r} de ${rows[r].length} chars)`);
-      }
-      for (let c = 0; c < rows[r].length; c++) grid[r0 + r][c0 + c] = rows[r][c];
-    }
-  }
-
   // Ground declarativo → grid (única vía de costuras; ver rasterizeGroundToGrid).
   rasterizeGroundToGrid(raw.ground, grid);
-
-  // Leyenda: el char del bioma hereda su nombre de catálogo si la leyenda no
-  // lo declara ya (p.ej. forest_floor → g:"suelo de bosque").
-  const legend: Record<string, unknown> = { ...((raw.terrain_legend as Record<string, unknown>) ?? {}) };
-  if (legend[biomeChar] === undefined && biomeName !== biomeChar) legend[biomeChar] = biomeName;
 
   return {
     ...raw,
     size: { cols: TILE_CELLS, rows: TILE_CELLS, meters_per_cell: TILE_MPC },
     terrain: grid.map((row) => row.join("")),
-    terrain_legend: legend,
   };
 }
 
 /** Expande el decor-attach sobre una escena Format D cruda y devuelve una
  *  copia plana marcada `__expanded`. Escena sin primitivas (o ya expandida) →
- *  se devuelve tal cual. Un tile (Format D v3, campo `tile`) pasa primero por
- *  prepareTileBase (bioma + parches + raster). */
+ *  se devuelve tal cual. Un tile (campo `tile`) pasa primero por
+ *  prepareTileBase (bioma + raster de `ground`). */
 export function expandScenePrimitives(raw: Record<string, unknown>): Record<string, unknown> {
   if (!hasUnexpandedPrimitives(raw)) return raw;
   if (raw.tile !== undefined) raw = prepareTileBase(raw);
@@ -199,7 +172,6 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
     const row = typeof (raw.terrain as unknown[])[r] === "string" ? ((raw.terrain as string[])[r]) : "";
     grid.push(row.padEnd(cols, "g").slice(0, cols).split(""));
   }
-  const legend: Record<string, unknown> = { ...(raw.terrain_legend as Record<string, unknown> ?? {}) };
   const entities: Record<string, unknown>[] = Array.isArray(raw.entities)
     ? (raw.entities as Record<string, unknown>[]).map((e) => ({ ...e }))
     : [];
@@ -226,7 +198,6 @@ export function expandScenePrimitives(raw: Record<string, unknown>): Record<stri
   }
 
   out.terrain = grid.map((row) => row.join(""));
-  out.terrain_legend = legend;
   out.entities = entities;
   out.__expanded = true;
   return out;

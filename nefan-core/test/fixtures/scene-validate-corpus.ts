@@ -114,50 +114,9 @@ export function casosDeValidacion(): CasoValidacion[] {
 
     // ── Expansión de primitivas ───────────────────────────────────────────
     {
-      name: "parche-de-terreno-fuera-del-grid",
-      cubre: "expansión: el fail-loud del expander se vuelve error legible",
-      scene: () =>
-        escenaBootstrap({ terrain_patches: [{ at: [124, 70], rows: ["oooooooooo"] }] }),
-      ctx: BOOTSTRAP,
-    },
-    {
       name: "vegetation-zone-invalida",
       cubre: "expansión: densidad fuera de rango",
       scene: () => planDeTile({ vegetation_zones: [{ type: "pino", area: "rest", density: 2 }] }),
-    },
-
-    // ── Chars declarados + solidez ────────────────────────────────────────
-    // La pasada de chars se ejerce con `terrain_patches`, que es la primitiva
-    // VIVA que escribe chars en el grid (`scene-expand.ts`, ruta de
-    // migraciones y snapshots). Hasta #301 la ejercía el `floor_char` de la
-    // primitiva de salas; el cutaway que la sustituye no escribe en el grid,
-    // así que un caso sobre él no podría ponerse rojo jamás.
-    {
-      name: "char-de-terreno-sin-declarar",
-      cubre: "chars declarados: un char del grid ausente de terrain_legend",
-      scene: () =>
-        escenaBootstrap({ terrain_patches: [{ at: [11, 71], rows: ["XXXXXXXX"] }] }),
-      ctx: BOOTSTRAP,
-    },
-
-    {
-      name: "dos-chars-sin-declarar",
-      cubre: "chars declarados: se listan TODOS los que faltan, en orden de barrido",
-      // Dos parches en filas distintas: el de arriba se barre primero.
-      scene: () =>
-        escenaBootstrap({
-          terrain_patches: [
-            { at: [41, 91], rows: ["ZZZZ"] },
-            { at: [11, 71], rows: ["YYYYYYYY"] },
-          ],
-        }),
-      ctx: BOOTSTRAP,
-    },
-    {
-      name: "chars-reservados-todos-legales",
-      cubre: "chars declarados: los nueve reservados no necesitan leyenda",
-      scene: () => tileExpandido(gridLlano({ 0: "gw_sbdaoW".padEnd(128, "g") })),
-      ctx: AISLADO,
     },
 
     // ── Gate del grid: la marca `__expanded` no exime del contrato ────────
@@ -519,10 +478,10 @@ export function casosDeValidacion(): CasoValidacion[] {
 
     // ── Varias pasadas a la vez: el ORDEN de los mensajes es contrato ─────
     {
-      name: "cuatro-pasadas-fallando-a-la-vez",
-      cubre: "orden: chars → scatter → spawn → costuras",
+      name: "tres-pasadas-fallando-a-la-vez",
+      cubre: "orden: scatter → spawn → costuras",
       scene: () => {
-        const s = escenaBootstrap({ terrain_patches: [{ at: [11, 71], rows: ["XXXXXXXX"] }] });
+        const s = escenaBootstrap();
         (s.entities as Record<string, unknown>[])[1].cell = [10, 70];
         s.scatter_generators = { guijarro: { parts: [{ shape: "box", size: [0.4, 0.3, 0.4] }] } };
         s.scatter_zones = [{ kind: "fantasma", shape: { type: "rect", x0: 0, z0: 80, x1: 30, z1: 110 }, density: 0.1 }];

@@ -41,7 +41,6 @@ function makeScene(): Record<string, unknown> {
       fila(""),
       fila(""),
     ],
-    terrain_legend: { o: "tarima de madera" },
     entities: [
       { id: "antorcha", kind: "decor", name: "antorcha de pared", cell: [4, 3], footprint: [1, 1], glyph: "i", attach: "wall" },
       { id: "player", kind: "player", name: "Tú", cell: [7, 9], footprint: [1, 1], glyph: "@" },
@@ -64,22 +63,6 @@ describe("expandScenePrimitives", () => {
     const [c, r] = torch.cell as [number, number];
     const grid = out.terrain as string[];
     assert.equal(grid[r][c], "W", `la antorcha debe quedar sobre un muro, quedó en (${c},${r})="${grid[r][c]}"`);
-  });
-
-  it("throws fail-loud on a patch that falls outside the tile", () => {
-    // El fail-loud del expander sobre la primitiva que SÍ escribe en el grid:
-    // un parche que se sale por la derecha (col 124 + 10 chars > 128).
-    const bad = {
-      tile: { tx: 0, ty: 0 },
-      scene_id: "tile_0_0",
-      biome: "meadow",
-      terrain_patches: [{ at: [124, 70], rows: ["oooooooooo"] }],
-      entities: [],
-    };
-    assert.throws(() => expandScenePrimitives(bad), /se sale del tile/);
-    // Y sobre una forma imposible: `rows` que no son cadenas.
-    const bad2 = { ...bad, terrain_patches: [{ at: [4, 4], rows: [7] }] };
-    assert.throws(() => expandScenePrimitives(bad2), /debe ser \{ at: \[col,row\], rows/);
   });
 
   it("formatDToWorld expands defensively and the walls collide", () => {

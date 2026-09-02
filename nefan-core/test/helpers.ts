@@ -64,7 +64,6 @@ export function escenaExpandidaDePrueba(
     scene_description: "Escena de prueba.",
     size: { cols: 4, rows: 4, meters_per_cell: 0.5 },
     terrain: Array.from({ length: 4 }, () => "gggg"),
-    terrain_legend: {},
     __expanded: true,
     entities: [],
     ...over,

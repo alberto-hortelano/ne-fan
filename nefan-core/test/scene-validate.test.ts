@@ -56,15 +56,6 @@ describe("validateScene", () => {
     assert.ok(r2.errors.some((e) => e.includes("spawn del player")), r2.errors.join(" | "));
   });
 
-  it("rechaza chars de terreno sin declarar en la leyenda", () => {
-    // El char entra por un `terrain_patches`, la primitiva viva que escribe en
-    // el grid: el cutaway no escribe chars, así que un caso sobre él no
-    // podría ponerse rojo.
-    const s = makeScene({ terrain_patches: [{ at: [11, 71], rows: ["XXXXXXXX"] }] });
-    const r = validateScene(s, bootstrap);
-    assert.ok(r.errors.some((e) => e.includes("sin declarar") && e.includes('"X"')), r.errors.join(" | "));
-  });
-
   it("un NPC encerrado en una sala sin puertas es ERROR, no aviso", () => {
     // Hasta esta tanda era un aviso, y los avisos no rechazan: el motor
     // entregaba la escena que encierra al NPC. La sala es 7×7 porque el
@@ -92,13 +83,6 @@ describe("validateScene", () => {
       'el NPC "barkeep" nace en [42, 92], un hueco donde su cuerpo no cabe: hacen falta 3 celdas ' +
         "libres seguidas en cada eje y ahí no las hay, así que no podría moverse",
     ]);
-  });
-
-  it("convierte una primitiva imposible en error legible (sin throw)", () => {
-    const s = makeScene({ terrain_patches: [{ at: [124, 70], rows: ["oooooooooo"] }] });
-    const r = validateScene(s, bootstrap);
-    assert.equal(r.ok, false);
-    assert.ok(r.errors.some((e) => e.includes("se sale del tile")), r.errors.join(" | "));
   });
 });
 

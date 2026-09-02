@@ -11,7 +11,7 @@ import {
   worldToTile,
 } from "../src/scene/tile.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
-import { forestTile } from "./fixtures/tiles.js";
+import { CAMINO_OESTE_ESTE, forestTile } from "./fixtures/tiles.js";
 
 describe("geometría de tile", () => {
   it("tile (0,0) está centrado en el origen; vecinos contiguos", () => {
@@ -40,9 +40,13 @@ describe("geometría de tile", () => {
     assert.deepEqual(neighborTile(2, -1, "west"), { tx: 1, ty: -1 });
   });
 
-  it("resolveBiome: catálogo, char reservado, desconocido fail-loud", () => {
-    assert.deepEqual(resolveBiome("forest_floor"), { char: "g", name: "suelo de bosque" });
-    assert.deepEqual(resolveBiome("a"), { char: "a", name: "a" });
+  it("resolveBiome: solo el catálogo; lo demás es fail-loud sin ofrecer alternativa", () => {
+    assert.equal(resolveBiome("forest_floor"), "g");
+    assert.equal(resolveBiome("sand"), "a");
+    // Un char suelto NO es un bioma: la única vía es el catálogo, y el mensaje
+    // no puede enseñarle al motor otra (era una rama sin sujeto: ni el zod ni
+    // el espejo Python la dejaban llegar).
+    assert.throws(() => resolveBiome("a"), /desconocido — usa el catálogo \(grass, forest_floor, meadow, sand, dirt, stone, snow, swamp\)$/);
     assert.throws(() => resolveBiome("lava"), /desconocido/);
     assert.throws(() => resolveBiome(undefined), /requerido/);
   });
@@ -62,9 +66,14 @@ describe("expansión de tiles (Format D v3)", () => {
     assert.equal(grid.length, TILE_CELLS);
     assert.ok(grid.every((row) => row.length === TILE_CELLS));
     assert.equal(out.__expanded, true);
-    // El fill base es el char del bioma.
+    // El fill base es el char del bioma, y el tile expandido no lleva nada
+    // más del terreno que el grid: ni nombres por char ni solidez declarada.
     assert.equal(grid[0][0], "g");
-    assert.equal((out.terrain_legend as Record<string, unknown>).g, "suelo de bosque");
+    assert.deepEqual(
+      Object.keys(out).filter((k) => k.startsWith("terrain")),
+      ["terrain"],
+      "el único campo de terreno que escribe el expander es el grid",
+    );
     // El camino toca el borde oeste alrededor de la fila 41…
     assert.equal(grid[41][0], "_", `borde oeste fila 41: "${grid[41][0]}"`);
     // …y el este alrededor de la fila 52.
@@ -72,19 +81,6 @@ describe("expansión de tiles (Format D v3)", () => {
     // Y cruza el interior (algún "_" en la columna central).
     const midCol = 64;
     assert.ok(grid.some((row) => row[midCol] === "_"), "el camino cruza el centro");
-  });
-
-  it("terrain_patches estampa y valida rangos", () => {
-    const tile = makeForestTile();
-    tile.terrain_patches = [{ at: [10, 10], rows: ["ss", "s_"] }];
-    const out = expandScenePrimitives(tile);
-    const grid = out.terrain as string[];
-    assert.equal(grid[10].slice(10, 12), "ss");
-    assert.equal(grid[11].slice(10, 12), "s_");
-
-    const bad = makeForestTile();
-    bad.terrain_patches = [{ at: [127, 0], rows: ["ss"] }];
-    assert.throws(() => expandScenePrimitives(bad), /se sale del tile/);
   });
 
   it("rechaza tiles con size/terrain completos y biome desconocido", () => {
@@ -112,13 +108,13 @@ describe("expansión de tiles (Format D v3)", () => {
     assert.deepEqual(npc.position, [32.25, 0, -31.75]);
     const tg = w.terrain_grid as { origin: [number, number] };
     assert.deepEqual(tg.origin, [32, -32]);
-    // El collider bloquea en coordenadas GLOBALES: agua/camino… usamos un
-    // muro escrito con un parche de terreno para probar.
+    // El collider bloquea en coordenadas GLOBALES: una charca declarada en
+    // `ground` sobre la esquina NW del tile.
     const tile2 = makeForestTile();
-    tile2.terrain_patches = [{ at: [0, 0], rows: ["WWWWWW"] }];
+    tile2.ground = [CAMINO_OESTE_ESTE, { id: "charca", kind: "water", rect: [0, 0, 6, 2] }];
     const w2 = formatDToWorld(tile2);
     const col = createTerrainCollider(w2.terrain_grid as never)!;
-    // Celda (0,0) del tile (1,0) = mundo [32..32.5): su centro es sólido (muro).
+    // Celda (0,0) del tile (1,0) = mundo [32..32.5): su centro es sólido (agua).
     assert.ok(col.blocksCircle(32.25, -31.75, 0.1));
     assert.ok(!col.blocksCircle(0, 0, 0.1), "el origen del mundo NO pertenece a este tile");
   });

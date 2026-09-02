@@ -452,8 +452,8 @@ into context:
               };
             }
           }
-          // Gate ESTRUCTURAL del top-level (entities, size, terrain grid,
-          // legend, tile/biome): antes NO se validaba en el camino del modelo
+          // Gate ESTRUCTURAL del top-level (entities, tile/biome,
+          // ground/volumes): antes NO se validaba en el camino del modelo
           // — ai_server lo degradaba en silencio (filas de terrain rellenadas,
           // entities clampadas). Ahora el error vuelve al modelo. La
           // jugabilidad la valida /scene/validate más abajo.
@@ -612,7 +612,7 @@ into context:
     `the tile rules instead: edge-crossing continuity with realized ` +
     `neighbours, no "player" entity outside bootstrap, walkable entry). Runs ` +
     `the same server-side checks as the respond pre-flight: expandable ` +
-    `primitives, declared terrain chars, walkable player spawn, flood-fill ` +
+    `primitives, walkable player spawn, flood-fill ` +
     `reachability (doors, map edge, NPCs), and the world-map exterior link ` +
     `for place_id. Returns { ok, errors, warnings, stats }.`,
     {

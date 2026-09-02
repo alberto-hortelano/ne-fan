@@ -29,5 +29,5 @@ export type { Volume, CustomVolume, CustomPart } from "./volumes.js";
 export { parseGround, groundHasWater, GroundSchema, GroundFeatureSchema, MAX_GROUND_FEATURES } from "./ground.js";
 export type { GroundFeature, GroundPath, GroundArea, GroundWater, GroundDeck } from "./ground.js";
 export { groundCollisionGrid, shapeContains, GROUND_WATER_CHAR, TILE_GRID_DIMS, type CollisionGridDims } from "./ground-collision.js";
-export { planCollisionGrid, unionCollisionGrids, type PlanCollisionOpts } from "./plan-collision.js";
+export { planCollisionGrid, unionCollisionGrids } from "./plan-collision.js";
 export { GROUND_MATERIAL_COLORS, groundFeaturePrims, catmullRomSample } from "./ground-prims.js";

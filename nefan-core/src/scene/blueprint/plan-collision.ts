@@ -10,7 +10,7 @@
  *  jugador↔NPC. Con esta unión canónica ambos derivan el mismo grid. */
 import type { TerrainGridData } from "../terrain-collision.js";
 import type { WorldRect } from "../tile.js";
-import { groundCollisionGrid, GROUND_WATER_CHAR, type CollisionGridDims } from "./ground-collision.js";
+import { groundCollisionGrid, type CollisionGridDims } from "./ground-collision.js";
 import { volumeCollisionGrid } from "./collision.js";
 import type { GroundFeature } from "./ground.js";
 import type { Volume } from "./volumes.js";
@@ -36,30 +36,19 @@ export function unionCollisionGrids(
   return { ...a, grid: rows, solid_chars: ["S"] };
 }
 
-export interface PlanCollisionOpts {
-  /** Solidez RESUELTA de la leyenda del terreno de ESA escena
-   *  (`resolveTerrainLegend` → `terrain_grid.solid_chars`). Es obligatoria a
-   *  propósito: el agua de `ground` se rasteriza al grid como
-   *  `GROUND_WATER_CHAR`, así que quien declara `{name, solid:false}` para ese
-   *  char está declarando un VADO. Si el plan la bloqueara igual habría dos
-   *  colisiones sobre la misma agua contradiciéndose, y ganaría la que el
-   *  autor NO escribió: el jugador rebotaría contra un río que la escena abre.
-   *  Sin leyenda propia, `DEFAULT_SOLID_CHARS` (el agua bloquea). */
-  solidChars: readonly string[];
-  /** Dims propias (cols/rows/mpc de la escena); sin ellas, las del tile. */
-  dims?: CollisionGridDims;
-}
-
 /** Grid de colisión del plan de un tile: agua∖decks del `ground` UNIDA a las
- *  huellas analíticas de los `volumes`. `null` si el plan no aporta sólidos. */
+ *  huellas analíticas de los `volumes`. `null` si el plan no aporta sólidos.
+ *  El agua declarada bloquea SIEMPRE (los decks la abren): es la misma agua
+ *  que `scene-expand` rasteriza al grid como `GROUND_WATER_CHAR`, y las dos
+ *  fuentes tienen que decir lo mismo. `dims` son las de la escena
+ *  (cols/rows/mpc); sin ellas, las del tile. */
 export function planCollisionGrid(
   ground: GroundFeature[] | undefined,
   volumes: Volume[] | undefined,
   rect: WorldRect,
-  opts: PlanCollisionOpts,
+  dims?: CollisionGridDims,
 ): TerrainGridData | null {
-  const waterBlocks = opts.solidChars.includes(GROUND_WATER_CHAR);
-  const waterGrid = waterBlocks && ground?.length ? groundCollisionGrid(ground, rect, opts.dims) : null;
-  const volumeGrid = volumes?.length ? volumeCollisionGrid(volumes, rect, opts.dims) : null;
+  const waterGrid = ground?.length ? groundCollisionGrid(ground, rect, dims) : null;
+  const volumeGrid = volumes?.length ? volumeCollisionGrid(volumes, rect, dims) : null;
   return unionCollisionGrids(waterGrid, volumeGrid);
 }

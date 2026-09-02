@@ -63,36 +63,30 @@ export function neighborTile(tx: number, ty: number, edge: Edge): TileCoord {
   }
 }
 
-/** Catálogo de biomas → char base del grid. El nombre desconocido es
- *  fail-loud (el motor debe usar el catálogo; espejo en
- *  ai_server/narrative_schemas.py — mantener sincronizados). Los chars
- *  reservados del terreno también se aceptan directamente como biome. */
-export const BIOME_CATALOG: Record<string, { char: string; name: string }> = {
-  grass: { char: "g", name: "grass" },
-  forest_floor: { char: "g", name: "suelo de bosque" },
-  meadow: { char: "g", name: "pradera" },
-  sand: { char: "a", name: "arena" },
-  dirt: { char: "d", name: "tierra" },
-  stone: { char: "s", name: "piedra" },
-  snow: { char: "n", name: "nieve" },
-  swamp: { char: "d", name: "ciénaga" },
+/** Catálogo de biomas → char base del grid (el fill que sintetiza
+ *  `scene-expand`; el nombre del bioma no viaja: nadie lo lee). El bioma
+ *  desconocido es fail-loud — el motor solo puede elegir del catálogo, que es
+ *  el mismo enum que `SCENE_BIOMES` en el zod y en su espejo Python. */
+export const BIOME_CATALOG: Record<string, string> = {
+  grass: "g",
+  forest_floor: "g",
+  meadow: "g",
+  sand: "a",
+  dirt: "d",
+  stone: "s",
+  snow: "n",
+  swamp: "d",
 };
 
-/** Chars de terreno reservados aceptados como biome directo. */
-const RESERVED_BIOME_CHARS = new Set(["g", "a", "d", "s", "o"]);
-
-/** Resuelve un `biome` (nombre del catálogo o char reservado) → char base +
- *  nombre para la leyenda. Lanza si es desconocido. */
-export function resolveBiome(biome: unknown): { char: string; name: string } {
+/** Resuelve un `biome` del catálogo → char base del fill. Lanza si es
+ *  desconocido: el catálogo es lo único que el contrato admite. */
+export function resolveBiome(biome: unknown): string {
   if (typeof biome !== "string" || !biome) {
     throw new Error(`tile.biome requerido (catálogo: ${Object.keys(BIOME_CATALOG).join(", ")})`);
   }
   const entry = BIOME_CATALOG[biome];
   if (entry) return entry;
-  if (biome.length === 1 && RESERVED_BIOME_CHARS.has(biome)) {
-    return { char: biome, name: biome };
-  }
   throw new Error(
-    `tile.biome "${biome}" desconocido — usa el catálogo (${Object.keys(BIOME_CATALOG).join(", ")}) o un char reservado (g/a/d/s/o)`,
+    `tile.biome "${biome}" desconocido — usa el catálogo (${Object.keys(BIOME_CATALOG).join(", ")})`,
   );
 }
