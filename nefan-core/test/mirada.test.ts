@@ -170,3 +170,37 @@ describe("Mirada · las flechas van por FLANCO, no por estar pulsadas", () => {
     assert.ok(PASO_DE_YAW_RAD > PASO_DE_PITCH_RAD);
   });
 });
+
+/** Dos huecos que solo enseñó la mutación, y los dos son de la misma familia:
+ *  asertos escritos CONTRA la constante que quieren comprobar. Comparar el yaw
+ *  con `yaw0 + PASO_DE_YAW_RAD` sigue cuadrando si el paso pasa a ser 720°, y
+ *  el flanco de ↓ nunca se probaba en frío porque todos los asertos de pitch
+ *  bajan DESPUÉS de haber subido. */
+describe("Mirada · los pasos de las flechas son los que dice el manual", () => {
+  it("←/→ giran 45 GRADOS y ↑/↓ inclinan 15, no dos constantes cualesquiera", () => {
+    const m = new Mirada();
+    const yaw0 = m.yaw;
+    m.pasos({ ...SIN_GIRO, turnLeft: true });
+    assert.ok(casi(((m.yaw - yaw0) * 180) / Math.PI, 45), "←/→ son 45°");
+    assert.ok(casi(m.pitchEnGrados, 0));
+    m.pasos(SIN_GIRO);
+    m.pasos({ ...SIN_GIRO, turnUp: true });
+    assert.ok(casi(m.pitchEnGrados, 15), "↑/↓ son 15°");
+  });
+
+  it("la PRIMERA pulsación de la partida ya cuenta, sea cual sea la flecha", () => {
+    // El flanco arranca con las cuatro teclas SUELTAS. Si alguna naciera
+    // «pulsada», entrar en la partida con esa flecha ya apretada la dejaría
+    // muerta hasta soltarla, y eso no se nota jugando: se nota que no gira.
+    const grados = (tecla: keyof typeof SIN_GIRO): { yaw: number; pitch: number } => {
+      const m = new Mirada();
+      const yaw0 = m.yaw;
+      m.pasos({ ...SIN_GIRO, [tecla]: true });
+      return { yaw: ((m.yaw - yaw0) * 180) / Math.PI, pitch: m.pitchEnGrados };
+    };
+    assert.ok(casi(grados("turnLeft").yaw, 45), "← en frío");
+    assert.ok(casi(grados("turnRight").yaw, -45), "→ en frío");
+    assert.ok(casi(grados("turnUp").pitch, 15), "↑ en frío");
+    assert.ok(casi(grados("turnDown").pitch, -15), "↓ en frío");
+  });
+});

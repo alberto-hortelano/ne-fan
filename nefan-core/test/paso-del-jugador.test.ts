@@ -153,3 +153,33 @@ describe("pasoDelJugador · fail-loud", () => {
     assert.deepEqual(paso({ adelante: 0, derecha: 0 }, LIBRE, { x: 0, z: 0 }), { dx: 0, dz: 0 });
   });
 });
+
+/** Los dos ejes NO están cubiertos por igual, y hasta la mutación no se veía:
+ *  todos los asertos de arriba que varían velocidad, frame o pared caminan
+ *  hacia −Z, donde `dx` vale 0 pase lo que pase. Con el numerador a cero da lo
+ *  mismo multiplicar que dividir, así que la aritmética de `dx` y su prueba
+ *  contra lo sólido salían verdes rotas. Estos dos asertos son los mismos de
+ *  antes MIRANDO AL NORTE PERO ANDANDO DE LADO, que es donde `dx` manda. */
+describe("pasoDelJugador · el eje lateral se mide igual que el frontal", () => {
+  it("el strafe también escala con la velocidad y con el tiempo del frame", () => {
+    const d = pasoDelJugador({
+      desde: ORIGEN,
+      forward: NORTE,
+      intencion: { adelante: 0, derecha: 1 },
+      velocidad: 6,
+      delta: 0.5,
+      solido: LIBRE,
+    });
+    assert.deepEqual(d, { dx: 3, dz: 0 }, "6 m/s durante medio segundo son 3 m de lado");
+  });
+
+  it("la pared lateral se prueba HACIA DONDE VAS, no hacia el otro lado", () => {
+    // Muro pegado a la derecha del jugador y nada más: solo el signo del
+    // desplazamiento probado decide si se entra en él o se resbala.
+    const muroAlEste = (x: number): boolean => x > 0.5;
+    const d = paso({ adelante: 0, derecha: 1 }, muroAlEste);
+    assert.equal(d.dx, 0, "ir hacia el muro se bloquea");
+    const izquierda = paso({ adelante: 0, derecha: -1 }, muroAlEste);
+    assert.equal(izquierda.dx, -1, "alejarse del muro no se bloquea");
+  });
+});
