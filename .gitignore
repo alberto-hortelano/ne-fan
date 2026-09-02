@@ -93,5 +93,5 @@ nefan-core/data/styles/_staging/
 
 # Equipo de agentes: el andamio del ciclo NO entra al repo (ver docs/agents/README.md).
 # Solo perduran requisitos.md (qué se pidió) y qa.md (qué se verificó).
-docs/agents/*/plan.md
-docs/agents/*/implementacion.md
+docs/agents/*/plan*.md
+docs/agents/*/implementacion*.md
