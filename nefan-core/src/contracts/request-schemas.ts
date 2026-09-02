@@ -36,7 +36,7 @@ import type {
   SceneAssetRefsRequest,
   SceneValidateRequest,
 } from "./world-state.js";
-import type { AssetPinRequest, AssetRegisterRequest } from "./asset-store.js";
+import { ASSET_KIND, type AssetPinRequest, type AssetRegisterRequest } from "./asset-store.js";
 import {
   MAX_VOCABULARY_ENTRIES,
   VocabularyEntrySchema,
@@ -161,10 +161,12 @@ export const PluginRegisterRequestSchema = z.object({
 
 // ── asset-store (services/asset-store/http-server.ts) ──
 
+// `type`/`subtype` son el literal del ÚNICO kind con productor (#257): un
+// registro de otro kind es 400 aquí, no una fila que el prune no sabrá tocar.
 export const AssetRegisterRequestSchema = z.object({
   hash: z.string().min(1),
-  type: z.string().min(1),
-  subtype: z.string().min(1),
+  type: z.literal(ASSET_KIND),
+  subtype: z.literal(ASSET_KIND),
   prompt: z.string(),
   size_bytes: z.number().min(0),
   extra: z.record(z.unknown()).optional(),

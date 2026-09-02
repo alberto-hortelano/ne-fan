@@ -171,16 +171,6 @@ class LLMClient:
                             self._activity[req_id] = time.time()
                             self._last_progress_msg[req_id] = message
                             print(f"LLM: progreso [{req_id[:8]}…] {message}")
-                elif msg_type == "bridge_status_response":
-                    req_id = msg["request_id"]
-                    with self._pending_lock:
-                        if req_id in self._pending:
-                            # Strip the type/request_id wrapper
-                            self._pending[req_id] = {
-                                "listener_active": msg.get("listener_active", False),
-                                "listener_ever_connected": msg.get("listener_ever_connected", False),
-                                "last_listen_seconds_ago": msg.get("last_listen_seconds_ago", -1),
-                            }
             except (json.JSONDecodeError, KeyError) as e:
                 # The narrative-mcp bridge produced a frame we can't parse. Log
                 # the preview so a real protocol mismatch surfaces instead of
@@ -255,24 +245,18 @@ class LLMClient:
         so the narrative engine knows what's already generated and which
         playthrough is in flight. Mutates and returns the payload.
 
-        La librería que ve el motor: solo tipos reutilizables, descripciones
+        La librería que ve el motor: solo el tipo reutilizable, descripciones
         cortas admitidas ("banco de piedra" es una entrada válida), dedupe por
-        prompt (las celdas de superficie se repiten por estilo) e intercalado
-        round-robin por tipo — una muestra VARIADA, no el tipo más reciente
-        monopolizando la ventana.
-
-        El round-robin está INACTIVO desde #199: con el gpu-worker se fueron
-        `texture`/`model`/`sprite` y `REUSABLE_ASSET_TYPES` quedó en un solo
-        tipo, `surface`. El código se conserva porque su sujeto puede volver
-        —un segundo tipo reutilizable lo reactiva sin tocar nada—, no por
-        nostalgia: si pasa otro año sin un segundo tipo, bórralo."""
+        prompt (las celdas de superficie se repiten por estilo) y las `limit`
+        más recientes. Hubo un intercalado round-robin por tipo cuando había
+        varios tipos reutilizables; murió con ellos (#199 y #257)."""
         if self.asset_manifest is not None:
             try:
                 assets = self.asset_manifest.list_assets(
                     asset_type=self.REUSABLE_ASSET_TYPES, limit=200
                 )
-                by_type: dict[str, list[dict]] = {}
                 seen_prompts: set[str] = set()
+                reusable: list[dict] = []
                 for a in assets:
                     prompt = str(a.get("prompt", "")).strip()
                     if len(prompt) < 4:
@@ -281,12 +265,9 @@ class LLMClient:
                     if norm in seen_prompts:
                         continue
                     seen_prompts.add(norm)
-                    by_type.setdefault(str(a.get("type", "")), []).append(a)
-                reusable: list[dict] = []
-                while len(reusable) < limit and any(by_type.values()):
-                    for t in sorted(by_type.keys()):
-                        if by_type[t] and len(reusable) < limit:
-                            reusable.append(by_type[t].pop(0))
+                    reusable.append(a)
+                    if len(reusable) >= limit:
+                        break
                 if reusable:
                     payload["available_assets"] = reusable
             except Exception as e:

@@ -39,8 +39,6 @@ export type {
   DispatchOptions,
   DispatchResult,
 } from "./narrative/consequence-handler.js";
-export { AssetIndex } from "./narrative/asset-index.js";
-export type { AssetIndexFilter } from "./narrative/asset-index.js";
 export * from "./narrative/types.js";
 export * from "./plugins/types.js";
 export { canonicalJson, computePluginId } from "./plugins/hash.js";

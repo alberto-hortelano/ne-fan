@@ -95,23 +95,23 @@ describe("pins del asset-store", () => {
       for (const h of ["h1", "h2"]) {
         mkdirSync(join(blobs, h), { recursive: true });
         writeFileSync(join(blobs, h, "surface.png"), Buffer.alloc(100));
-        db.register({ hash: h, type: "surface", subtype: "albedo", prompt: "p", size_bytes: 100 });
+        db.register({ hash: h, type: "surface", subtype: "surface", prompt: "p", size_bytes: 100 });
       }
       db.pin(styleApplicationPinRef(GAME, "estilo_test"), ["h1"]);
       assert.deepEqual([...db.pinnedHashes()], ["h1"]);
       // Presupuesto 0 bytes: sin pin caerían ambos; el pineado sobrevive.
-      const summary = prune(db, { surface: blobs }, 1, null);
+      const summary = prune(db, blobs, 1, null);
       assert.equal(summary.pruned, 2, "sin keep-list ni pins todo poda — baseline");
 
       // Re-crear y comprobar que el prune real (keep ∪ pins) protege h1.
       for (const h of ["h1", "h2"]) {
         mkdirSync(join(blobs, h), { recursive: true });
         writeFileSync(join(blobs, h, "surface.png"), Buffer.alloc(100));
-        db.register({ hash: h, type: "surface", subtype: "albedo", prompt: "p", size_bytes: 100 });
+        db.register({ hash: h, type: "surface", subtype: "surface", prompt: "p", size_bytes: 100 });
       }
       const keep = new Set<string>();
       for (const h of db.pinnedHashes()) keep.add(h);
-      const summary2 = prune(db, { surface: blobs }, 1, keep);
+      const summary2 = prune(db, blobs, 1, keep);
       assert.equal(summary2.pruned, 1, "solo el no pineado");
       assert.equal(db.findByHash("h1").length, 1, "el pineado sigue indexado");
 

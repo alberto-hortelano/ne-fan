@@ -1,6 +1,5 @@
 import { WebSocketServer, WebSocket as WsWebSocket, type WebSocket } from 'ws';
 import type {
-  BridgeStatusResponseMsg,
   ClientMsg,
   NarrativeEventResponseMsg,
   NarrativeProgressMsg,
@@ -202,8 +201,8 @@ export class WsBridge {
       // Frame ilegible del ai_server: se DICE (truncado, que es la pista para
       // depurar al emisor) y se descarta. Este catch cubre SOLO el parse —
       // antes envolvía el handler entero y cualquier excepción de
-      // sendBridgeStatus/enqueueRequest desaparecía con él, dejando a
-      // ai_server esperando su timeout de 120–180 s.
+      // enqueueRequest desaparecía con él, dejando a ai_server esperando su
+      // timeout de 120–180 s.
       console.error(
         `[narrative-mcp] frame ilegible del AI server (descartado): ${String(raw).slice(0, 200)}`,
       );
@@ -212,11 +211,6 @@ export class WsBridge {
 
     try {
       if (msg.type === 'hello') return;
-
-      if (msg.type === 'bridge_status_request') {
-        this.sendBridgeStatus(ws, msg.request_id);
-        return;
-      }
 
       if (msg.type === 'room_request' || msg.type === 'vision_request' || msg.type === 'narrative_event') {
         this.requestOrigins.set(msg.request_id, ws);
@@ -261,18 +255,6 @@ export class WsBridge {
     if (origin && origin.readyState === origin.OPEN) return origin;
     if (this.client && this.client.readyState === this.client.OPEN) return this.client;
     return null;
-  }
-
-  private sendBridgeStatus(ws: WebSocket, requestId: string): void {
-    if (ws.readyState !== ws.OPEN) return;
-    const sinceLast = this.lastListenAt > 0 ? (Date.now() - this.lastListenAt) / 1000 : -1;
-    ws.send(JSON.stringify({
-      type: 'bridge_status_response',
-      request_id: requestId,
-      listener_active: this.isListenerActive(),
-      listener_ever_connected: this.mcpEverConnected,
-      last_listen_seconds_ago: sinceLast,
-    } satisfies BridgeStatusResponseMsg));
   }
 
   /** True if a Claude Code MCP client is currently waiting on narrative_listen

@@ -6,7 +6,6 @@
  */
 import {
   SCHEMA_VERSION,
-  type AssetEntry,
   type Consequence,
   type DialogueChoice,
   type DialogueEvent,
@@ -32,9 +31,6 @@ import { ExpandedSceneSchema } from "../contract/model-io/scene-schema.js";
 import type { ZodError } from "zod";
 import { buildLlmContext } from "./serialize-llm.js";
 import { registerSceneNpcs } from "./npc-records.js";
-
-export type AssetValidator = (hash: string) => Promise<boolean>;
-export type LoadWarningSink = (source: string, message: string) => void;
 
 /** Dónde vive la partida AHORA MISMO.
  *
@@ -83,18 +79,6 @@ export interface CombatantRuntime {
  *  (`bindCombatantRuntime`). Hermana de `PlayerRuntimeSource` y por el mismo
  *  motivo: sin ella el save solo sabía con cuánta vida NACE un enemigo. */
 export type CombatantRuntimeSource = () => CombatantRuntime[] | null;
-
-export interface LoadSessionOptions {
-  /** Probe each unique asset hash in `asset_index_snapshot` against the live
-   *  manifest. Hashes the validator reports as missing (resolved `false`) are
-   *  dropped from the snapshot. Errors thrown by the validator leave the entry
-   *  intact — we don't conflate "uncertain" with "missing". */
-  assetValidator?: AssetValidator;
-  /** Optional channel for human-facing warnings during the load
-   *  (orphan-asset drops, validation errors). Pair this with the HTML
-   *  `errors.push("session", …)` to surface in the dev panel. */
-  onWarning?: LoadWarningSink;
-}
 
 const DEFAULT_WORLD: NarrativeWorldState = {
   name: "",
@@ -165,7 +149,6 @@ export class NarrativeState {
   scenes_loaded: Record<string, SceneRecord> = {};
   entities: EntityRecord[] = [];
   dialogue_history: DialogueEvent[] = [];
-  asset_index_snapshot: AssetEntry[] = [];
   worldMap: WorldMapManager = new WorldMapManager(WorldMapManager.createEmpty());
   plugins: PluginRecord[] = [];
   /** Log compacto de vida ambiental (guardia intervino, campesino huyó…) —
@@ -341,7 +324,6 @@ export class NarrativeState {
     this.scenes_loaded = {};
     this.entities = [];
     this.dialogue_history = [];
-    this.asset_index_snapshot = [];
     this.worldMap = new WorldMapManager(WorldMapManager.createEmpty());
     this.plugins = [];
     this.ambient_log = [];
@@ -484,7 +466,7 @@ export class NarrativeState {
    *  motivo. Colapsar los dos en `false` era el descarte silencioso que #334
    *  vino a cerrar. Las migraciones murieron con #336 (pre-producción: un
    *  save viejo se borra, no se arrastra). */
-  async loadSession(sessionId: string, opts?: LoadSessionOptions): Promise<boolean> {
+  async loadSession(sessionId: string): Promise<boolean> {
     const data = await this.storage.read(sessionId);
     if (!data) return false;
     if (data.schema_version !== SCHEMA_VERSION) {
@@ -527,7 +509,6 @@ export class NarrativeState {
     this.scenes_loaded = data.scenes_loaded;
     this.entities = data.entities;
     this.dialogue_history = data.dialogue_history;
-    this.asset_index_snapshot = data.asset_index_snapshot;
     this.worldMap = new WorldMapManager(data.world_map);
     this.plugins = data.plugins;
     // Campos aditivos (sin bump de schema): saves previos no los traen.
@@ -537,18 +518,6 @@ export class NarrativeState {
     this.nextSchedSeq = data._next_sched_seq ?? this.scheduled_events.length;
     this.rebuildTileIndex();
     this.dirty = false;
-    if (opts?.assetValidator) {
-      const pruned = await validateAssetSnapshot(
-        this.asset_index_snapshot,
-        opts.assetValidator,
-        opts.onWarning,
-        sessionId,
-      );
-      if (pruned.changed) {
-        this.asset_index_snapshot = pruned.entries;
-        this.dirty = true;
-      }
-    }
     return true;
   }
 
@@ -948,11 +917,6 @@ export class NarrativeState {
     this.dirty = true;
   }
 
-  setAssetIndexSnapshot(entries: AssetEntry[]): void {
-    this.asset_index_snapshot = entries;
-    this.dirty = true;
-  }
-
   isDirty(): boolean {
     return this.dirty;
   }
@@ -972,7 +936,6 @@ export class NarrativeState {
       scenes_loaded: this.scenes_loaded,
       entities: this.entities,
       dialogue_history: this.dialogue_history,
-      asset_index_snapshot: this.asset_index_snapshot,
       world_map: this.worldMap.serialize(),
       plugins: this.plugins,
       ambient_log: this.ambient_log,
@@ -996,47 +959,6 @@ export class NarrativeState {
     this.nextEventSeq += 1;
     return `evt_${String(this.nextEventSeq).padStart(4, "0")}`;
   }
-}
-
-async function validateAssetSnapshot(
-  entries: AssetEntry[],
-  validator: AssetValidator,
-  warn: LoadWarningSink | undefined,
-  sessionId: string,
-): Promise<{ changed: boolean; entries: AssetEntry[] }> {
-  if (entries.length === 0) return { changed: false, entries };
-  const cache = new Map<string, boolean>();
-  const kept: AssetEntry[] = [];
-  let changed = false;
-  for (const entry of entries) {
-    let present: boolean;
-    if (cache.has(entry.hash)) {
-      present = cache.get(entry.hash)!;
-    } else {
-      try {
-        present = await validator(entry.hash);
-      } catch (err) {
-        // Validator failed (network/HTTP error). Keep the entry — uncertain
-        // is not the same as missing, and dropping on a transient blip would
-        // silently corrupt the session.
-        const msg = `could not validate asset ${entry.hash}: ${(err as Error).message}`;
-        console.warn(`NarrativeState[${sessionId}]: ${msg}`);
-        warn?.("session", msg);
-        kept.push(entry);
-        continue;
-      }
-      cache.set(entry.hash, present);
-    }
-    if (present) {
-      kept.push(entry);
-    } else {
-      changed = true;
-      const msg = `dropped orphan asset ${entry.hash} (${entry.type}/${entry.subtype}) from session ${sessionId}`;
-      console.warn(`NarrativeState: ${msg}`);
-      warn?.("session", msg);
-    }
-  }
-  return { changed, entries: kept };
 }
 
 function nowIso(): string {

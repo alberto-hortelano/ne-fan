@@ -78,11 +78,9 @@ class TestAvailableAssets(unittest.TestCase):
 
     def test_limite_recorta_la_ventana(self):
         """El techo de la ventana se respeta aunque el manifest traiga mucho
-        más. COBERTURA PERDIDA en #199: el intercalado round-robin ENTRE tipos
-        ya no es alcanzable en producción — con `surface` como único tipo
-        reutilizable, `by_type` tiene siempre una sola clave. El código del
-        round-robin se conserva (es el mecanismo general, no algo del worker),
-        pero ningún test puede volver a ejercerlo por esta vía."""
+        más. El intercalado round-robin ENTRE tipos que hubo aquí murió con
+        el segundo tipo reutilizable (#199) y se borró en #257: con un solo
+        tipo era código que ningún test podía ejercer."""
         assets = [asset(f"s{i}", "surface", f"superficie numero {i}") for i in range(40)]
         client = make_client(assets)
         payload = client._inject_available_assets({}, limit=12)

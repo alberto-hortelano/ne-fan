@@ -18,9 +18,8 @@ export const sessionRoutes = {
     } satisfies WorldStateHealthResponse),
 
   /** Keep-list del asset-store (F2): unión de hashes referenciados por
-   *  CUALQUIER save vivo (asset_refs de escenas y entidades +
-   *  asset_index_snapshot). El prune la consulta para no podar assets que un
-   *  resume necesitará.
+   *  CUALQUIER save vivo (asset_refs de escenas y entidades). El prune la
+   *  consulta para no podar assets que un resume necesitará.
    *
    *  Hueco reservado para #224 (título a 200 ms): esta es la ÚNICA
    *  dependencia del handler; cambiar la API de `SessionStorage` para no
@@ -46,7 +45,6 @@ export const sessionRoutes = {
       for (const entity of data.entities ?? []) {
         for (const r of entity.asset_refs ?? []) refs.add(r);
       }
-      for (const asset of data.asset_index_snapshot ?? []) refs.add(asset.hash);
     }
     return ok({ refs: [...refs].sort() } satisfies ResponseOf<typeof WorldStateApi.getAssetRefs>);
   },

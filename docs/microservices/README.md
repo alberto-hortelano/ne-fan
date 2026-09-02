@@ -81,7 +81,7 @@ Dos ciclos (sin cambios respecto a hoy):
   lógica pura in-process (alias Vite) y eso es CORRECTO — colisión, compositores
   y render no deben cruzar la red. La línea divisoria dentro de nefan-core:
   `src/{types,vec3,rng,config,store,combat,simulation,animation,scene,world-map,plugins,narrative(sin storage),protocol,systems}` = librería pura;
-  `src/narrative/{session-storage,asset-index,ai-client}`, `src/games/loader`,
+  `src/narrative/{session-storage,ai-client}`, `src/games/loader`,
   `src/plugins/loader`, `src/dev/*` y `bridge/**` = solo servidor.
 
 ## Invariantes (sobreviven a cualquier fase)
@@ -135,7 +135,7 @@ con sus dos helpers de LLMClient), /review_scene_image (F4),
 /review_stage_image (con el proscenio) y /review_scene_blueprint +
 /analyze_scene_image (con el repintado oblicuo). WS :3737 completo en
 `narrative-mcp-ws.ts` (room/vision/narrative_event + responses +
-narrative_progress + bridge_status + takeover); los kinds de visión vivos son
+narrative_progress + takeover); los kinds de visión vivos son
 weapon_orient y weapon_verify.
 
 **S4 gpu-worker — RETIRADO en #199 (2026-08-24).** Servía /generate_texture,

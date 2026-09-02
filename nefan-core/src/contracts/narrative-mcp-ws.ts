@@ -55,19 +55,13 @@ export interface HelloMsg {
   type: "hello";
 }
 
-export interface BridgeStatusRequestMsg {
-  type: "bridge_status_request";
-  request_id: string;
-}
-
 export type AiToMcpMsg =
   | RoomRequestMsg
   | VisionRequestMsg
   | NarrativeEventMsg
-  | HelloMsg
-  | BridgeStatusRequestMsg;
+  | HelloMsg;
 
-/** Peticiones que pasan por la cola del listener (excluye hello y status). */
+/** Peticiones que pasan por la cola del listener (excluye hello). */
 export type McpRequestMsg = RoomRequestMsg | VisionRequestMsg | NarrativeEventMsg;
 
 // ── narrative-mcp → narrative-llm (Python) ──
@@ -90,15 +84,6 @@ export interface NarrativeEventResponseMsg {
   result: Record<string, unknown>;
 }
 
-export interface BridgeStatusResponseMsg {
-  type: "bridge_status_response";
-  request_id: string;
-  listener_active: boolean;
-  listener_ever_connected: boolean;
-  /** -1 = nunca. */
-  last_listen_seconds_ago: number;
-}
-
 /** Latido de progreso mientras el motor genera: resetea el timeout de
  *  INACTIVIDAD de ai_server y alimenta el loader del cliente (vía
  *  POST /narrative_progress del world-state en paralelo). */
@@ -112,7 +97,6 @@ export type McpToAiMsg =
   | RoomResponseMsg
   | VisionResponseMsg
   | NarrativeEventResponseMsg
-  | BridgeStatusResponseMsg
   | NarrativeProgressMsg;
 
 // ── Peer-to-peer (instancias de narrative-mcp entre sí) ──

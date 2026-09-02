@@ -55,17 +55,6 @@ export class AiClient {
     this.dispatcher = opts.dispatcher;
   }
 
-  async health(): Promise<{ ok: boolean; status?: string }> {
-    try {
-      const res = await this.request("GET", "/health", undefined, 3_000);
-      if (!res.ok) return { ok: false };
-      const data = (await res.json()) as { status?: string };
-      return { ok: true, status: data.status };
-    } catch {
-      return { ok: false };
-    }
-  }
-
   async notifySessionStart(sessionId: string, gameId: string, isResume: boolean): Promise<boolean> {
     try {
       const res = await this.request("POST", "/notify_session", {

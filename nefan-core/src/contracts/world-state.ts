@@ -248,8 +248,8 @@ export interface NpcDirectiveRequest {
 }
 
 /** Keep-list para el prune del asset-store (F2): hashes referenciados por
- *  algún save vivo (asset_refs de escenas/entidades + asset_index_snapshot),
- *  ordenados. Requiere que el server reciba sessionStorage. */
+ *  algún save vivo (asset_refs de escenas/entidades), ordenados. Requiere que
+ *  el server reciba sessionStorage. */
 export interface AssetRefsResponse {
   refs: string[];
 }

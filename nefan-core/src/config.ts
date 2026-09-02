@@ -65,27 +65,11 @@ export interface NefanConfig {
     llm_timeout_s: number;
     port: number;
     cache_root: string;
-    /** Caches HISTÓRICOS de lo que generaba el gpu-worker, retirado en #199:
-     *  texturas PBR, modelos GLB, skins y sprites 2D. Ya NO tienen productor,
-     *  pero services/asset-store/config.ts mapea esos cuatro kinds a estos
-     *  directorios y el manifest conserva sus filas: sin la ruta, los blobs
-     *  ya generados dejarían de servirse. Mismo caso que scene_cache_dir y
-     *  segment_cache_dir, aquí debajo. */
-    texture_cache_dir: string;
-    model_cache_dir: string;
-    skin_cache_dir: string;
-    sprite_cache_dir: string;
-    /** Cache histórico de las imágenes de escena del repintado oblicuo,
-     *  servido en /cache/scene/{hash}. El pipeline que lo llenaba murió; la
-     *  ruta sigue aquí porque el asset-store mapea el tipo "scene" a este
-     *  directorio y el manifest todavía tiene filas de ese tipo. */
-    scene_cache_dir: string;
-    /** Cache histórico de los recortes de la segmentación SAM2, servido en
-     *  /cache/segment/{hash}. Mismo caso que scene_cache_dir: sin productor,
-     *  pero el asset-store lo mapea y el manifest lo referencia. */
-    segment_cache_dir: string;
     /** Librería de celdas de superficie de la vista fps (kind "surface"),
-     *  servida en /cache/surface/{hash}. */
+     *  servida en /cache/surface/{hash}. Es el ÚNICO directorio de blobs del
+     *  asset-store desde #257: los seis caches históricos sin productor
+     *  (texturas, modelos, skins, sprites, repintados, recortes SAM2) se
+     *  archivaron en archivo/cache/ y sus filas se purgaron del índice. */
     surface_cache_dir: string;
     /** Modelo image-to-image con el que sprite-forge viste a los personajes
      *  (hero-shot de identidad + atlas de keyframes por anim×dir). */
@@ -196,12 +180,6 @@ export const CONFIG: NefanConfig = {
     llm_timeout_s: 1800,
     port: SERVICES["narrative-llm"].currentPort,
     cache_root: "cache",
-    texture_cache_dir: "cache/textures",
-    model_cache_dir: "cache/models",
-    skin_cache_dir: "cache/skins",
-    sprite_cache_dir: "cache/sprites",
-    scene_cache_dir: "cache/scenes",
-    segment_cache_dir: "cache/segments",
     surface_cache_dir: "cache/surfaces",
     sprite_skin_model: "gpt-image-2",
     sprite_forge_url: `http://127.0.0.1:${PORT_SPRITE_FORGE}`,

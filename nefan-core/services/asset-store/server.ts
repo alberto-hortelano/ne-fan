@@ -1,22 +1,24 @@
-/** Entry del asset-store (S6, :8767): abre el índice SQLite, migra el
- *  manifest.json legado si la tabla está vacía (idempotente) y sirve
- *  AssetStoreApi. Arrancar con: `npx tsx services/asset-store/server.ts`
- *  (start.sh lo hace en los presets que lo necesitan). */
+/** Entry del asset-store (S6, :8767): abre el índice SQLite, comprueba que
+ *  solo contiene el kind vivo y sirve AssetStoreApi. Arrancar con:
+ *  `npx tsx services/asset-store/server.ts` (start.sh lo hace en los presets
+ *  que lo necesitan). */
 import { resolveServiceUrl } from "../../src/contracts/service-registry.js";
 import { loadAssetStoreConfig } from "./config.js";
 import { ManifestDb } from "./manifest-db.js";
-import { migrateManifest } from "./migrate-manifest.js";
+import { verificarSoloSurface } from "./solo-surface.js";
 import { createAssetStoreServer } from "./http-server.js";
 
 const cfg = loadAssetStoreConfig(process.env);
 const db = new ManifestDb(cfg.dbPath);
 
-if (db.totalCount() === 0) {
-  const s = migrateManifest(db, cfg.manifestJsonPath, cfg.dirsByType);
-  console.log(
-    `asset-store: migración inicial — ${s.imported} entradas importadas de manifest.json, ` +
-      `${s.recovered} recuperadas de disco`,
-  );
+// Fail-loud inverso (#257): un índice con kinds sin productor no se sirve a
+// medias — se dice qué hay y qué script lo purga, y se sale con 1. start.sh
+// enseña estas líneas en la terminal cuando el hijo muere antes del /health.
+const veredicto = verificarSoloSurface(db);
+if (!veredicto.ok) {
+  console.error(veredicto.mensaje);
+  db.close();
+  process.exit(1);
 }
 
 console.log(`asset-store: índice ${cfg.dbPath} (${db.totalCount()} entradas, ${db.totalBytes()} bytes)`);
@@ -24,7 +26,7 @@ console.log(`asset-store: índice ${cfg.dbPath} (${db.totalCount()} entradas, ${
 const server = createAssetStoreServer({
   port: cfg.port,
   db,
-  dirsByType: cfg.dirsByType,
+  surfaceDir: cfg.surfaceDir,
   spriteSheetsDir: cfg.spriteSheetsDir,
   stylesDir: cfg.stylesDir,
   cacheMaxBytes: cfg.cacheMaxBytes,

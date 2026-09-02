@@ -2,7 +2,7 @@
 
 Transitorio de F2 para los clientes NO migrados a resolveServiceUrl (siguen
 yendo a :8765). Copia método, path, query, body, status y content-type TAL
-CUAL: los cuerpos de error en texto plano ("Not found", "Invalid map type")
+CUAL: los cuerpos de error en texto plano ("Not found", "Invalid kind")
 pasan intactos.
 
 Store caído → 502 {detail: "asset-store unreachable"} (modo de fallo nuevo e

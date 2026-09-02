@@ -1898,7 +1898,6 @@ function materializeSpawn(
   const [x, y, z] = effect.position;
   const pos: Vec3 = { x, y, z };
   const label = (effect.name ?? effect.description ?? effect.entityId).slice(0, 40);
-  const spriteHash = typeof effect.data.sprite_hash === "string" ? effect.data.sprite_hash : undefined;
 
   if (effect.entityKind === "npc") {
     // VÍA (b) al combate: un `spawn_entity` con `role:"hostile"`. El bloque
@@ -1952,7 +1951,6 @@ function materializeSpawn(
       name: effect.name ?? effect.entityId,
       alive: true,
       category: "creature",
-      spriteHash,
       skinPrompt: npcPrompt,
       styleRole: spawnStyleRole,
       dueno: { de: "runtime" },
@@ -1975,7 +1973,6 @@ function materializeSpawn(
     sizeXZ: isBuilding ? { x: 4, z: 4 } : { x: 1.4, z: 1.4 },
     // Altura coherente con la de las escenas del motor (defaults por kind).
     sizeY: KIND_DEFAULT_HEIGHT[isBuilding ? "building" : "prop"],
-    spriteHash,
     // EL ARREGLO DE #350, en una línea: este cofre y esta forja no son de
     // ningún tile, así que la purga de `addTile` ya no se los lleva por caer
     // dentro de su rect. Antes desaparecían en cuanto el jugador viajaba por
