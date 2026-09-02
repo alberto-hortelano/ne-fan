@@ -511,7 +511,8 @@ describe("entidadesFueraDelMundo — la viva contra la unión de tiles del save 
     assert.deepEqual(fuera, [{ id: "barkeep", nombre: "Tabernero", x: 168.25, z: 168.25 }]);
     const aviso = avisoDeFueraDelMundo(fuera);
     assert.match(aviso, /Tabernero/);
-    assert.match(aviso, /168\.3, 168\.3/);
+    assert.match(aviso, /168,3, 168,3/);
+    assert.doesNotMatch(aviso, /no lo vas|no los vas/, "sin género");
     assert.match(aviso, /donde no hay mundo/);
   });
 
@@ -529,15 +530,6 @@ describe("entidadesFueraDelMundo — la viva contra la unión de tiles del save 
     assert.deepEqual(entidadesFueraDelMundo([rec({ id: "x", position: [999, 0, 999] })], rectsDelMundo({ legacy: {} })), []);
   });
 
-  it("una coordenada que no es un número finito cuenta como fuera, con NaN a la vista", () => {
-    const fuera = entidadesFueraDelMundo(
-      [rec({ id: "roto", position: [Number.NaN, 0, 3] }), rec({ id: "sin_pos", position: undefined as unknown as [number, number, number] })],
-      dosTiles,
-    );
-    assert.deepEqual(fuera.map((f) => f.id), ["roto", "sin_pos"]);
-    assert.ok(fuera.every((f) => Number.isNaN(f.x) && Number.isNaN(f.z)));
-  });
-
   it("con varios, el aviso los cuenta y nombra hasta tres", () => {
     const fuera = entidadesFueraDelMundo(
       ["a", "b", "c", "d"].map((id) => rec({ id, position: [500, 0, 500], data: { name: id.toUpperCase() } })),
@@ -545,7 +537,7 @@ describe("entidadesFueraDelMundo — la viva contra la unión de tiles del save 
     );
     const aviso = avisoDeFueraDelMundo(fuera);
     assert.match(aviso, /4 personajes/);
-    assert.match(aviso, /A en \(500\.0, 500\.0\), B en/);
+    assert.match(aviso, /A en \(500,0, 500,0\), B en/);
     assert.match(aviso, /y 1 más/);
   });
 });

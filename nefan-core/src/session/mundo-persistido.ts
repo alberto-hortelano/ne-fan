@@ -386,9 +386,10 @@ export interface FueraDelMundo {
  *
  *  Con `rects` VACÍO devuelve `[]`, y no es tragarse nada: sin tiles no hay
  *  mundo del que estar fuera (una partida sin escenas, o un save de escenas
- *  legacy sin `tile`). Un número que no es finito NO es «está dentro»: es
- *  otra forma de no estar en ningún sitio, y sale con `NaN` en la coordenada
- *  para que el aviso lo enseñe tal cual. */
+ *  legacy sin `tile`). La FORMA de `position` (tres números finitos) no se
+ *  vuelve a comprobar aquí: la garantiza `loadSession` al cargar el save, que
+ *  rechaza el fichero nombrando la entidad — una rama para «no es un array»
+ *  sería código para un estado que el tipo ya impide. */
 export function entidadesFueraDelMundo(
   entities: readonly EntityRecord[],
   rects: readonly RectDelTile[],
@@ -396,13 +397,7 @@ export function entidadesFueraDelMundo(
   if (rects.length === 0) return [];
   const fuera: FueraDelMundo[] = [];
   for (const rec of entities) {
-    const pos: unknown = rec.position;
-    const x = Array.isArray(pos) ? numero(pos[0]) : null;
-    const z = Array.isArray(pos) ? numero(pos[2]) : null;
-    if (x === null || z === null) {
-      fuera.push({ id: rec.id, nombre: nombreDeEntity(rec), x: Number.NaN, z: Number.NaN });
-      continue;
-    }
+    const [x, , z] = rec.position;
     const enAlgunTile = rects.some(
       (r) => x >= r.minX && x < r.maxX && z >= r.minZ && z < r.maxZ,
     );
@@ -414,13 +409,15 @@ export function entidadesFueraDelMundo(
 /** La frase que lee el JUGADOR cuando su partida pone a alguien donde no hay
  *  mundo: con el nombre y la coordenada, porque es lo que necesita para
  *  decidir si le importa (y para que el fallo se pueda reproducir con el
- *  save delante). La escena carga igual: esto avisa, no bloquea. */
+ *  save delante). En español de España —coma decimal— y sin género (una
+ *  tabernera también se pierde). La escena carga igual: esto avisa, no bloquea. */
 export function avisoDeFueraDelMundo(fuera: readonly FueraDelMundo[]): string {
-  const coord = (f: FueraDelMundo) => `(${f.x.toFixed(1)}, ${f.z.toFixed(1)})`;
+  const num = (n: number) => n.toFixed(1).replace(".", ",");
+  const coord = (f: FueraDelMundo) => `(${num(f.x)}, ${num(f.z)})`;
   if (fuera.length === 1) {
     return (
       `La partida guardada pone a ${fuera[0].nombre} en ${coord(fuera[0])}, donde no hay mundo: ` +
-      `no lo vas a encontrar.`
+      `ahí no hay nada que encontrar.`
     );
   }
   const lista = fuera
@@ -430,7 +427,7 @@ export function avisoDeFueraDelMundo(fuera: readonly FueraDelMundo[]): string {
   const resto = fuera.length > 3 ? ` y ${fuera.length - 3} más` : "";
   return (
     `La partida guardada pone a ${fuera.length} personajes donde no hay mundo ` +
-    `(${lista}${resto}): no los vas a encontrar.`
+    `(${lista}${resto}): ahí no hay nada que encontrar.`
   );
 }
 

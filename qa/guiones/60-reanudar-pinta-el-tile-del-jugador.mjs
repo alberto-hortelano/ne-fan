@@ -104,15 +104,13 @@
  *    "ground_dirt","path_cobble","rock_stone"]}`: las mismas 23 celdas pedidas
  *    tres veces. Con la guarda: `posts: 1 · celdas 23 · repetidas 0`.
  *
- *  Y EL SAVE DEL VIAJE (#395), que salió al escribir esto y hoy es un aserto
- *  de este guion: tras «Salidas», el save tiene que llevar `active_scene_id`
- *  del destino Y la posición dentro de su rect, sin que nadie fuerce un
- *  guardado. Hasta #395 el único save del viaje se escribía ANTES del spawn
- *  (posición del origen) y cambiar de tile solo marcaba un `dirty` que nadie
- *  leía; la primera versión de este guion lo esquivaba posteando un place por
- *  el State API («cura» por el efecto secundario que el issue denuncia) y
- *  declaraba `sinMedir`. Ahora `activateByPosition` guarda al cambiar de TILE
- *  y aquí se espera ese save por PREDICADO —no por tiempo— y se afirma.
+ *  Y EL SAVE DEL VIAJE (#395), un aserto de este guion: tras «Salidas», el
+ *  save tiene que llevar `active_scene_id` del destino Y la posición dentro
+ *  de su rect, sin que nadie fuerce un guardado. Lo escribe
+ *  `activateByPosition` al cambiar de TILE (el save que dispara el propio
+ *  viaje va ANTES del spawn y lleva la posición del origen), y aquí se espera
+ *  por PREDICADO —no por tiempo— y se afirma. Forzar una escritura por el
+ *  State API para «curarlo» sería medir el efecto secundario que #395 denuncia.
  *  Nació ROJO sobre `6d3d7ac` (medido el 2026-09-02) en el bloque de Maqueta
  *  3D: `✘ #395 · el save recoge el viaje … — {"destino":"tile_1_0","rect":
  *  {"minX":32,…},"cliente":{"x":64,"y":0,"z":7},"ultimo":{"active":"tile_0_0",

@@ -317,12 +317,12 @@ export async function handleRequestTile(
  *
  *  Y al cambiar de TILE, guarda (#395): «el jugador ha cambiado de tile» es
  *  el hecho que el save tiene que recoger, y aquí es el único sitio que lo
- *  conoce. Hasta #395 solo se marcaba un `dirty` que nadie leía, así que un
- *  viaje por «Salidas» al que no siguiera ninguna otra escritura (un atlas que
- *  registrar, una tool del motor) reanudaba en el tile de ANTES. Gateado por
- *  tile y no por celda —una escritura por 64 m—, e independiente de
- *  `setActiveTile`: en el viaje a un place ya realizado el destino se activa
- *  ANTES del spawn, y aun así la posición fresca solo llega con este save. */
+ *  conoce. Sin este save, un viaje por «Salidas» al que no siga ninguna otra
+ *  escritura (un atlas que registrar, una tool del motor) reanuda en el tile
+ *  de ANTES. Gateado por tile y no por celda —una escritura por 64 m—, e
+ *  independiente de `setActiveTile`: en el viaje a un place ya realizado el
+ *  destino se activa ANTES del spawn, y aun así la posición fresca solo llega
+ *  con este save. */
 export async function activateByPosition(
   ctx: BridgeContext,
   x: number,

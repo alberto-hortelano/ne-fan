@@ -138,6 +138,18 @@ function describeSceneContractViolation(
   return `la escena "${sceneId}"${donde} viola el contrato de escena cargable: ${issue.message}`;
 }
 
+/** Por qué una `position` del ledger NO es una coordenada, o `null` si lo es:
+ *  un array de exactamente tres números finitos. Lo lee `loadSession` para que
+ *  un save con `null`, sin campo, con dos números o con una letra no llegue al
+ *  sim; las coordenadas que sí lo son las juzga después el checker de #382. */
+function describirPosicionInvalida(pos: unknown): string | null {
+  if (!Array.isArray(pos)) return `no es una coordenada [x, y, z] (recibido ${JSON.stringify(pos)})`;
+  if (pos.length !== 3) return `tiene ${pos.length} componentes en vez de 3 (${JSON.stringify(pos)})`;
+  const malo = pos.findIndex((v) => typeof v !== "number" || !Number.isFinite(v));
+  if (malo >= 0) return `tiene un componente que no es un número finito (${JSON.stringify(pos)})`;
+  return null;
+}
+
 export class NarrativeState {
   session_id = "";
   game_id = "";
@@ -477,6 +489,22 @@ export class NarrativeState {
       if (!parsed.success) {
         throw new Error(
           `save "${sessionId}": ${describeSceneContractViolation(sceneId, rec.scene_data, parsed.error)}`,
+        );
+      }
+    }
+    // Y el LEDGER: `entities[].position` es lo que el sim y la vida ambiental
+    // leen sin mirar (`record.position[0]`), y lo que el checker de #382
+    // contrasta con los tiles del save. Un save con `position: null` o con
+    // letras dentro tumbaba el resume entero en `npcSync` con un «inténtalo de
+    // nuevo» que no puede funcionar (QA de T6, H-2). La garantía va en el
+    // tipo: lo que no es una coordenada no entra, y sale por la misma puerta
+    // que una escena que viola el contrato — nombrando la entidad y el campo.
+    for (const rec of data.entities) {
+      const motivo = describirPosicionInvalida(rec.position);
+      if (motivo) {
+        throw new Error(
+          `save "${sessionId}": entities["${rec.id}"].position ${motivo} — ` +
+            "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
         );
       }
     }
