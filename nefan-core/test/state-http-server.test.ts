@@ -29,6 +29,7 @@ let baseUrl: string;
 let narrative: NarrativeState;
 let activePlugins: Map<string, PluginManifest>;
 let mutations = 0;
+let mapChanges = 0;
 let progressMessages: string[] = [];
 
 before(async () => {
@@ -48,6 +49,9 @@ before(async () => {
     },
     onProgress: (message) => {
       progressMessages.push(message);
+    },
+    onMapChanged: () => {
+      mapChanges += 1;
     },
     plugins: {
       register: (raw) =>
@@ -231,8 +235,9 @@ describe("state HTTP API", () => {
     assert.equal(r400.status, 400);
   });
 
-  it("POST /map/place + GET /map/place/{id} + onMutation", async () => {
+  it("POST /map/place + GET /map/place/{id} + onMutation + onMapChanged", async () => {
     const beforeMutations = mutations;
+    const beforeMap = mapChanges;
     const created = await post("/map/place", {
       id: "millhaven",
       kind: "settlement",
@@ -242,6 +247,8 @@ describe("state HTTP API", () => {
     assert.equal(created.status, 200);
     assert.equal(created.body.ok, true);
     assert.ok(mutations > beforeMutations, "onMutation llamado tras la mutación");
+    // Un lugar nuevo o renombrado cambia el panel «Salidas» (#179).
+    assert.equal(mapChanges, beforeMap + 1, "onMapChanged llamado UNA vez por el place");
 
     const fetched = await get("/map/place/millhaven");
     assert.equal(fetched.status, 200);
@@ -374,6 +381,7 @@ describe("state HTTP API", () => {
       parent_id: "world",
       name: "Bosque",
     });
+    const beforeMap = mapChanges;
     const { status, body } = await post("/map/link", {
       from: "millhaven",
       to: "forest",
@@ -382,6 +390,18 @@ describe("state HTTP API", () => {
     });
     assert.equal(status, 200);
     assert.equal(body.ok, true);
+    // Un enlace nuevo es una salida nueva: el bridge tiene que difundirla (#179).
+    assert.equal(mapChanges, beforeMap + 1, "onMapChanged llamado UNA vez por el link");
+  });
+
+  it("POST /map/link inválido y POST /map/trigger NO tocan el panel «Salidas»", async () => {
+    const beforeMap = mapChanges;
+    await post("/map/link", { from: "millhaven", to: "forest", kind: "teleport" });
+    await post("/map/trigger", {
+      place_id: "millhaven",
+      trigger: { id: "t_sin_salidas", when: { type: "first_visit" }, consequences: [] },
+    });
+    assert.equal(mapChanges, beforeMap, "ni un link rechazado ni un trigger cambian las salidas");
   });
 
   it("inventario de entidad: 404 para entidad desconocida, alta y lectura", async () => {

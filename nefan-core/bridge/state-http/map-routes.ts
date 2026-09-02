@@ -32,6 +32,8 @@ export const mapRoutes = {
     if (!parsed.ok) return parsed.result;
     try {
       const place = ctx.narrative.worldMap.upsertPlace(parsed.data);
+      // Un lugar renombrado cambia el rótulo de su botón en «Salidas» (#179).
+      ctx.onMapChanged();
       return mutated({ ok: true, place } satisfies PlaceUpsertResponse);
     } catch (err) {
       return bad((err as Error).message);
@@ -43,6 +45,8 @@ export const mapRoutes = {
     if (!parsed.ok) return parsed.result;
     try {
       const link = ctx.narrative.worldMap.addLink(parsed.data);
+      // Un enlace nuevo es una salida nueva: al panel, sin re-difundir la escena (#179).
+      ctx.onMapChanged();
       return mutated({ ok: true, link } satisfies MapLinkResponse);
     } catch (err) {
       return bad((err as Error).message);

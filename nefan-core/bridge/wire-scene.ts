@@ -6,15 +6,21 @@
  *  `session_started` del resume)—, sincronizadas por nada. Cada tanda que le
  *  añade trabajo al wire tiene que acordarse de las dos, y la tercera que
  *  apareciera divergiría en silencio: el resume serviría una escena con menos
- *  encima que el broadcast, que es la familia exacta de #179. Aquí son UNA, y
- *  lo canda `arch-rules.json` → `una-sola-salida-de-escena-del-bridge`.
+ *  encima que el broadcast. Aquí son UNA, y lo canda `arch-rules.json` →
+ *  `una-sola-salida-de-escena-del-bridge`.
  *
- *  Lo que se le añade hoy es el COMBATE VIVO (#326): la escena persistida es
- *  Format D crudo —y tiene que seguir siéndolo— así que la vida que le queda a
- *  cada enemigo y la muerte de los que ya no vuelven se ponen AQUÍ, sobre el
- *  objeto nuevo que devuelve `formatDToWorld`, camino del cable. Lo persistido
- *  no se entera; sellar el estado de sesión dentro del `scene_data` es lo que
- *  se hizo con `exits` y causó #179.
+ *  Lo que se le pone encima, sobre el objeto NUEVO que devuelve
+ *  `formatDToWorld` y camino del cable:
+ *   · el COMBATE VIVO (#326): la vida que le queda a cada enemigo y la
+ *     ausencia de los que ya no vuelven;
+ *   · las SALIDAS del lugar (#179): los links del world map de AHORA, con el
+ *     nombre del destino. Se calculan al servir —broadcast y resume por la
+ *     misma puerta— y no se sellan en el `scene_data`: un derivado del mapa
+ *     que viviera dentro de la escena persistida solo se actualizaría al
+ *     volver a difundirla, y el resume lo serviría congelado. Cuando el mapa
+ *     cambia a mitad de sesión, `bridge/salidas.ts` manda solo las salidas.
+ *  La escena persistida es Format D crudo y tiene que seguir siéndolo: lo
+ *  persistido no se entera de nada de esto.
  */
 
 import { formatDToWorld, type WorldScene } from "../src/scene/scene-normalize.js";
@@ -27,6 +33,7 @@ import {
   type EstadoEnElWire,
   type FueraDelMundo,
 } from "../src/session/mundo-persistido.js";
+import { placeDeLaEscena, salidasDePlace } from "../src/world-map/exits.js";
 import type { SceneRecord, SessionData } from "../src/narrative/types.js";
 import type { BridgeContext } from "./context.js";
 
@@ -75,19 +82,37 @@ export function avisoDeIlegibles(nombres: readonly string[]): string {
         `al que ya habías matado.`;
 }
 
-/** Format D → world scene → combate vivo encima. Es la ÚNICA llamada a
- *  `formatDToWorld` que queda en todo el bridge (aparte de la colisión
- *  server-side, que no sale al cliente). */
-function alWire(sceneData: Record<string, unknown>, estados: Map<string, EstadoEnElWire>): WorldScene {
-  return escenaConCombateVivo(formatDToWorld(sceneData), estados);
+/** Format D → world scene → combate vivo → salidas del lugar. Es la ÚNICA
+ *  llamada a `formatDToWorld` que queda en todo el bridge (aparte de la
+ *  colisión server-side, que no sale al cliente). `sceneId` hace falta para
+ *  saber si ESTA es la escena activa: solo la activa cae al place activo cuando
+ *  no declara el suyo (`placeDeLaEscena`). */
+function alWire(
+  ctx: BridgeContext,
+  sceneId: string,
+  sceneData: Record<string, unknown>,
+  estados: Map<string, EstadoEnElWire>,
+): WorldScene {
+  const wm = ctx.narrative.worldMap;
+  const placeId = placeDeLaEscena(
+    sceneData,
+    sceneId,
+    ctx.narrative.world.active_scene_id,
+    wm.serialize().active_place_id,
+  );
+  return {
+    ...escenaConCombateVivo(formatDToWorld(sceneData), estados),
+    exits: placeId === null ? [] : salidasDePlace(wm, placeId),
+  };
 }
 
 /** La forma en la que una escena sale del bridge hacia un cliente. */
 export function escenaParaElWire(
   ctx: BridgeContext,
+  sceneId: string,
   sceneData: Record<string, unknown>,
 ): WorldScene {
-  return alWire(sceneData, estadosDeCombate(ctx).estados);
+  return alWire(ctx, sceneId, sceneData, estadosDeCombate(ctx).estados);
 }
 
 /** SessionData para el wire: cada scene_data sale por la MISMA puerta que la
@@ -111,7 +136,7 @@ export function sessionDataForClient(
   const { estados, ilegibles } = estadosDeCombate(ctx);
   const scenes: Record<string, SceneRecord> = {};
   for (const [id, rec] of Object.entries(data.scenes_loaded)) {
-    scenes[id] = { ...rec, scene_data: alWire(rec.scene_data, estados) };
+    scenes[id] = { ...rec, scene_data: alWire(ctx, id, rec.scene_data, estados) };
   }
   const fueraDelMundo = entidadesFueraDelMundo(data.entities, rectsDelMundo(data.scenes_loaded));
   for (const f of fueraDelMundo) {

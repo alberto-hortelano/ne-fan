@@ -49,6 +49,7 @@ before(async () => {
     sessionStorage: storage,
     onMutation: () => {},
     onProgress: () => {},
+    onMapChanged: () => {},
     plugins: {
       register: (raw) =>
         pluginRegisterBody(registerRuntimePlugin(narrative, activePlugins, raw)),

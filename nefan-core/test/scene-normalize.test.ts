@@ -393,9 +393,10 @@ describe("formatDToWorld — un NPC hostil llega con su combate derivado", () =>
 });
 
 /** La cola del literal de retorno es el resto del contrato de render: lo leen
- *  el bridge al difundir (bridge/context.ts:239), el TravelPanel (`exits`), el
- *  renderer 2D (`terrain.color` como fallback sin textura) y el pipeline de
- *  estilo (`style_ref`, `biome`). Nadie asserteaba nada de ahí. */
+ *  el renderer (`terrain.color` como fallback sin textura) y el pipeline de
+ *  estilo (`style_ref`, `biome`). Las salidas del panel «Salidas» NO están
+ *  aquí: son del mapa y las pone el bridge al servir (`wire-scene.ts`, #179).
+ *  Nadie asserteaba nada de ahí. */
 describe("formatDToWorld — la cola de la world scene", () => {
   it("el id de la world scene es el scene_id de la escena, sin alias que lo dupliquen", () => {
     const w = formatDToWorld(makeFormatD());

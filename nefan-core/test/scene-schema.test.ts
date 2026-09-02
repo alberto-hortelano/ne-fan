@@ -94,7 +94,7 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
   });
 
   it("tolera campos legacy por passthrough (no rechaza)", () => {
-    assert.equal(accepts({ ...base, ambient_event: "viento", exits: [] }), true);
+    assert.equal(accepts({ ...base, ambient_event: "viento", nota_del_motor: "sin uso" }), true);
   });
 });
 

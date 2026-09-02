@@ -18,6 +18,7 @@ import type {
   SessionDeletedMessage,
   RenderModeSetMessage,
   RenderModeChangedMessage,
+  ExitsChangedMessage,
 } from "@nefan-core/src/protocol/messages.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
 import { errors } from "../ui/error-log.js";
@@ -28,7 +29,8 @@ export type BridgeEvent =
   | "disconnected"
   | "narrative_event"
   | "narrative_status"
-  | "render_mode_changed";
+  | "render_mode_changed"
+  | "exits_changed";
 
 type EventPayload = {
   state_update: StateUpdateMessage;
@@ -37,6 +39,7 @@ type EventPayload = {
   narrative_event: NarrativeEventMessage;
   narrative_status: NarrativeStatusMessage;
   render_mode_changed: RenderModeChangedMessage;
+  exits_changed: ExitsChangedMessage;
 };
 
 type Handler<E extends BridgeEvent> = (data: EventPayload[E]) => void;
@@ -158,6 +161,9 @@ export class BridgeClient {
         break;
       case "render_mode_changed":
         this.emit("render_mode_changed", msg);
+        break;
+      case "exits_changed":
+        this.emit("exits_changed", msg);
         break;
     }
   }

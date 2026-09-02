@@ -213,11 +213,11 @@ export function combateDeEntity(rec: EntityRecord): CombateDelLedger {
 
 /** La world scene tal y como sale al cable, con el mundo VIVO encima.
  *
- *  Devuelve un OBJETO NUEVO y no toca el que recibe. No es higiene: sellar el
- *  estado de sesión dentro del `scene_data` persistido es lo que se hizo con
- *  `exits` y causó #179 — la escena guardada dejaba de ser Format D crudo y el
- *  resume servía un enriquecimiento congelado. Aquí lo persistido no se entera
- *  de que esto existe.
+ *  Devuelve un OBJETO NUEVO y no toca el que recibe. No es higiene: un
+ *  derivado de sesión que viva dentro del `scene_data` persistido deja de ser
+ *  Format D crudo y el resume lo sirve congelado (las salidas del mapa, hoy
+ *  calculadas al servir, son el caso que lo enseñó: #179). Aquí lo persistido
+ *  no se entera de que esto existe.
  *
  *  Tres cosas, y las tres sobre `npcs[]`:
  *   · al HERIDO se le baja la vida (y se le pone su denominador),

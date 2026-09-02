@@ -44,6 +44,10 @@ export interface StateHttpContext {
    *  narrative-mcp): el bridge lo difunde como narrative_status "progress"
    *  para que el loader del cliente muestre qué está pasando. */
   onProgress: (message: string) => void;
+  /** El MAPA ha cambiado (un lugar creado o renombrado, un enlace nuevo): el
+   *  bridge difunde las salidas del tile activo (`exits_changed`, #179) sin
+   *  re-difundir la escena. Lo llaman las rutas de mapa ANTES de `mutated`. */
+  onMapChanged: () => void;
   /** Storage de saves — GET /sessions/asset_refs (F2) recorre TODOS los
    *  saves para construir la keep-list del prune del asset-store. Opcional:
    *  sin él la ruta no existe (404). */

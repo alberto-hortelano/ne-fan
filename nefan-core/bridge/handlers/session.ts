@@ -505,8 +505,8 @@ export async function handleStartSession(
 /** Replay del snapshot de mundo por la ruta normal del bootstrap: restaura el
  *  world map, registra TODAS las escenas (las no-entrada sin activar — el
  *  anillo y los places pre-realizados quedan disponibles para request_tile y
- *  player_entered_place al instante) y difunde la de entrada, que re-adjunta
- *  sus exits desde el world map restaurado. */
+ *  player_entered_place al instante) y difunde la de entrada; sus salidas se
+ *  calculan al servir desde el world map restaurado. */
 async function replayWorldSnapshot(ctx: BridgeContext, snap: WorldSnapshot): Promise<void> {
   ctx.narrative.worldMap = WorldMapManager.fromSerialized(structuredClone(snap.world_map));
   for (const [id, scene] of Object.entries(snap.scenes)) {

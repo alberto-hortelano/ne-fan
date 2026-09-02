@@ -87,6 +87,7 @@ function levantar(opts: { conStorage: boolean; gamesDir: string }): Promise<Harn
       mutaciones += 1;
     },
     onProgress: () => {},
+    onMapChanged: () => {},
     plugins: {
       register: (raw) => pluginRegisterBody(registerRuntimePlugin(narrative, activePlugins, raw)),
       list: () =>

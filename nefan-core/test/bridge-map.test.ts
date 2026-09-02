@@ -7,9 +7,12 @@ import { routeMessage } from "../bridge/router.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type {
+  ExitsChangedMessage,
   NarrativeEventMessage,
   NarrativeStatusMessage,
   } from "../src/protocol/messages.js";
+import { difundirSalidasDelTileActivo } from "../bridge/salidas.js";
+import { sessionDataForClient } from "../bridge/wire-scene.js";
 import {
   capturarLogDelBridge,
   entrarEnLaPartida,
@@ -685,8 +688,8 @@ describe("bridge cambiar de tile guarda la partida (#395)", () => {
 
 
 /** El panel «Salidas» del cliente se dibuja desde `scene.exits`, que el
- *  bridge adjunta con las salidas del place de la escena. Si la escena no
- *  queda atada a ningún place, `enrichSceneWithExits` cae al
+ *  bridge calcula al servir con las salidas del place de la escena. Si la
+ *  escena activa no queda atada a ningún place, `placeDeLaEscena` cae al
  *  `active_place_id`, que en un mapa recién sembrado es la raíz "world" — sin
  *  links, o sea panel VACÍO y sin un solo error. Como el panel es la única
  *  vía viva de viaje a un lugar, ahí desaparece el juego entero en silencio.
@@ -788,6 +791,45 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
 
     assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.place_id, "robledo");
     assert.deepEqual(exitsOf(broadcasts), ["molino"]);
+  });
+
+  it("un link creado a mitad de sesión llega como exits_changed, sin escena y sin sellar el save (#179)", async () => {
+    const { ctx, broadcasts, narrative } = bootstrapWith(tileScene({ place_id: "robledo" }));
+    const { socket } = makeSocket();
+    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+    assert.deepEqual(exitsOf(broadcasts), ["molino"]);
+    // La escena PERSISTIDA sigue siendo Format D crudo: las salidas no se sellan.
+    assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.exits, undefined, "scene_data sin exits");
+
+    // El motor crea un lugar y un enlace a mitad de sesión (lo que hace
+    // `map_link` por el State API), y el bridge difunde SOLO las salidas.
+    broadcasts.length = 0;
+    narrative.worldMap.upsertPlace({ id: "ermita", kind: "site", parent_id: "world", name: "La Ermita" });
+    narrative.worldMap.addLink({ from: "robledo", to: "ermita", kind: "path", edge: "north" });
+    difundirSalidasDelTileActivo(ctx);
+    const cambio = broadcasts.find((m): m is ExitsChangedMessage => m.type === "exits_changed");
+    assert.ok(cambio, "exits_changed difundido");
+    assert.equal(cambio.sceneId, "tile_0_0");
+    assert.deepEqual(cambio.exits.map((e) => [e.place_id, e.name, e.edge]), [
+      ["molino", "El Molino", "east"],
+      ["ermita", "La Ermita", "north"],
+    ]);
+    assert.equal(broadcasts.some((m) => m.type === "narrative_event"), false, "ni una escena re-difundida");
+    assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.exits, undefined, "y el save sigue sin sello");
+
+    // Y el RESUME re-calcula: la escena que sirve `sessionDataForClient` trae
+    // el destino nuevo, que es lo que hasta #179 se quedaba congelado.
+    const servida = sessionDataForClient(ctx, narrative.toSessionData()).state.scenes_loaded["tile_0_0"].scene_data;
+    assert.deepEqual((servida.exits as { place_id: string }[]).map((e) => e.place_id), ["molino", "ermita"]);
+  });
+
+  it("sin escena activa, un cambio del mapa no difunde nada: la escena que llegue traerá sus salidas", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    narrative.startNewSession("plugtest");
+    seedMapLikeEngine(narrative);
+    difundirSalidasDelTileActivo(ctx);
+    assert.deepEqual(broadcasts, []);
   });
 
   it("un tile de exploración NO hereda el place_id que invente el motor", async () => {

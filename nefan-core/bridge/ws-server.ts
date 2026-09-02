@@ -31,6 +31,7 @@ import { routeMessage } from "./router.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
 import { intakeClientMessage } from "./message-intake.js";
 import { sellarSesion, type BridgeContext, type ClientSocket } from "./context.js";
+import { difundirSalidasDelTileActivo } from "./salidas.js";
 import type { CombatConfig } from "../src/types.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
 
@@ -186,6 +187,7 @@ createStateHttpServer({
       message,
     });
   },
+  onMapChanged: () => difundirSalidasDelTileActivo(ctx),
   plugins: {
     register: (raw) => {
       const result = registerRuntimePlugin(narrative, ctx.activePlugins, raw);

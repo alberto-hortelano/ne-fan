@@ -472,6 +472,25 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Las salidas no se sellan en la escena (#179). La regla verde de hoy no
+  // distingue «nadie asigna `exits`» de «el patrón no casa nada», así que se le
+  // enseña la línea exacta con la que el bridge sellaba las salidas y se comprueba
+  // que salta donde toca —bridge y src/narrative— y que LEER no salta.
+  it("[error] las-salidas-no-se-sellan-en-la-escena: asignar `.exits` en el bridge o en narrative salta; leerlo no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "las-salidas-no-se-sellan-en-la-escena");
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-core/bridge/handlers/x.ts", text: "scene.exits = links.map((l) => l);\n", imports: [] },
+        { path: "nefan-core/src/narrative/y.ts", text: "const a = 1;\nrecord.scene_data.exits=[];\n", imports: [] },
+        { path: "nefan-core/bridge/z.ts", text: "if (scene.exits === undefined) {}\nconst b = scene.exits ?? [];\n", imports: [] },
+        { path: "nefan-html/src/world/w.ts", text: "entry.scene.exits = salidas;\n", imports: [] },
+      ]).map((v) => `${v.path}:${v.line}`),
+      ["nefan-core/bridge/handlers/x.ts:1", "nefan-core/src/narrative/y.ts:2"],
+      "salta la asignación en bridge y narrative; no la lectura, ni la copia en memoria del cliente",
+    );
+  });
+
   // La PROSA del modelo anterior (#335): distinto patrón y distintos roots que
   // la regla de identificadores, porque lo que confunde a un agente no es un
   // nombre de campo sino una frase que le explica cómo declarar terreno por

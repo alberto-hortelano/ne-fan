@@ -38,10 +38,8 @@ import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import { escenaParaElWire } from "./wire-scene.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
 import type { PlaceTriggerSpec } from "../src/world-map/types.js";
-import { resolveExitEdge } from "../src/world-map/edges.js";
 import type {
   NarrativeStatusDeJuego,
-  SceneExit,
   ServerMessage,
   SinSelloDeSesion,
   StateUpdateMessage,
@@ -240,30 +238,6 @@ export function addNeighborhoodSceneIds(
   }
 }
 
-/** Attach the current place's outgoing links to the scene as `exits`, so the
- *  2D client can show a travel panel without pulling the whole world map.
- *  Mutates `scene` in place (same object recordSceneLoaded stored by ref). */
-export function enrichSceneWithExits(ctx: BridgeContext, scene: Record<string, unknown>): void {
-  const placeId =
-    (typeof scene.place_id === "string" && scene.place_id) ||
-    ctx.narrative.worldMap.serialize().active_place_id;
-  if (!placeId) return;
-  const links = ctx.narrative.worldMap.getOutgoingLinks(placeId);
-  scene.exits = links.map((l): SceneExit => {
-    const targetId = l.from === placeId ? l.to : l.from;
-    return {
-      place_id: targetId,
-      name: ctx.narrative.worldMap.get(targetId)?.name ?? targetId,
-      link_kind: l.kind,
-      travel_hours: l.travel_hours,
-      description: l.description,
-      // Lado de esta escena por el que sale el link (para la transición
-      // continua del cliente). null → undefined: exit sin orientación.
-      edge: resolveExitEdge(ctx.narrative.worldMap, placeId, l) ?? undefined,
-    };
-  });
-}
-
 /** Los mensajes que SÍ llevan sello de sesión: lo que el sellador puede
  *  aceptar. Se deriva del propio `ServerMessage` en vez de enumerarse, así que
  *  un mensaje nuevo con `sessionId` requerido entra solo — y uno que se
@@ -328,13 +302,12 @@ export function broadcastScene(
     source?: "engine" | "cache" | "snapshot";
   },
 ): void {
-  enrichSceneWithExits(ctx, scene);
   // Contrato de render único: los clientes reciben la world scene normalizada
   // (objects/npcs en metros, __player_start, world_rect, __format_d con el
-  // crudo) CON el combate vivo encima. La persistencia (scenes_loaded, saves,
-  // serializeForLlm) sigue en Format D crudo — sólo se normaliza el wire, y
-  // por una sola puerta (`bridge/wire-scene.ts`).
-  const worldScene = escenaParaElWire(ctx, scene);
+  // crudo) CON el combate vivo y las salidas del lugar encima. La persistencia
+  // (scenes_loaded, saves, serializeForLlm) sigue en Format D crudo — sólo se
+  // normaliza el wire, y por una sola puerta (`bridge/wire-scene.ts`).
+  const worldScene = escenaParaElWire(ctx, sceneId, scene);
   // Aquí vivía una segunda vía a `GameStore.enemies`: una "proyección
   // canónica" NarrativeState.entities → enemies que REEMPLAZABA la lista
   // entera en cada broadcast. Se retiró con `state-projection.ts` (#323) y no

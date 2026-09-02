@@ -93,8 +93,8 @@ export function buildGenerateTileCtx(
  *  expansión y registro SIN activar (la escena activa la decide la posición
  *  del jugador). "exists" si el tile ya estaba; LANZA en cualquier fallo.
  *  `opts.placeId` marca el tile como la escena realizada de ese place (viaje
- *  a un lugar anclado): recordSceneLoaded lo engancha y las exits difundidas
- *  pasan a ser las suyas. */
+ *  a un lugar anclado): recordSceneLoaded lo engancha y las salidas que salen
+ *  al wire con la escena son las suyas (`wire-scene.ts` las calcula al servir). */
 export async function generateTileScene(
   ctx: BridgeContext,
   tx: number,
