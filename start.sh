@@ -284,12 +284,39 @@ wait_for_port() {
     return 1
 }
 
+# ¿Ha terminado ya el hijo? Un proceso muerto sigue siendo ZOMBIE hasta que
+# alguien hace `wait` sobre él, y `kill -0` sobre un zombie devuelve 0 como si
+# viviera: hay que mirar el estado en /proc/<pid>/stat, el campo que sigue al
+# último ')' del nombre. Sin /proc/<pid> también cuenta como terminado.
+proceso_terminado() {
+    local pid=$1 stat estado
+    stat=$(cat "/proc/$pid/stat" 2>/dev/null) || return 0
+    estado=${stat##*) }
+    estado=${estado%% *}
+    [[ $estado == Z ]]
+}
+
+# Espera al /health de un servicio. Con `pid` y `log`, si el hijo MUERE antes
+# de responder no se agota el timeout callando: se dice el código de salida y
+# se enseñan las últimas líneas de su log, que es donde el servicio ha escrito
+# por qué (el asset-store, por ejemplo, se niega a arrancar sobre un índice
+# con kinds sin productor y deja ahí el nombre del script que lo purga).
 wait_for_http_health() {
-    local url=$1 timeout=${2:-60} label=${3:-service}
-    local i=0
+    local url=$1 timeout=${2:-60} label=${3:-service} pid=${4:-} log=${5:-}
+    local i=0 rc
     while (( i < timeout )); do
         if curl -sf "$url" >/dev/null 2>&1; then
             return 0
+        fi
+        if [[ -n $pid ]] && proceso_terminado "$pid"; then
+            wait "$pid" 2>/dev/null
+            rc=$?
+            echo "❌ $label murió antes de responder (exit $rc)"
+            if [[ -n $log && -r $log ]]; then
+                echo "   últimas líneas de $log:"
+                tail -n 12 "$log" | sed 's/^/   │ /'
+            fi
+            return 1
         fi
         sleep 1
         ((i++))
@@ -386,7 +413,7 @@ start_fake_ai() {
         npx tsx ../labs/narrative/fake-ai-server.ts ) \
         >"$LOG_DIR/nefan-fake-ai.log" 2>&1 &
     track_started $! "$PORT_FAKE"
-    wait_for_http_health "http://127.0.0.1:$PORT_FAKE/health" 30 "fake-ai-server" || return 1
+    wait_for_http_health "http://127.0.0.1:$PORT_FAKE/health" 30 "fake-ai-server" "$!" "$LOG_DIR/nefan-fake-ai.log" || return 1
     echo "✅ fake-ai-server :$PORT_FAKE  (log: $LOG_DIR/nefan-fake-ai.log)"
 }
 
@@ -408,7 +435,7 @@ start_asset_store() {
         npx tsx services/asset-store/server.ts ) \
         >"$LOG_DIR/nefan-asset-store.log" 2>&1 &
     track_started $! "$PORT_ASSETS"
-    wait_for_http_health "http://127.0.0.1:$PORT_ASSETS/health" 30 "asset-store" || return 1
+    wait_for_http_health "http://127.0.0.1:$PORT_ASSETS/health" 30 "asset-store" "$!" "$LOG_DIR/nefan-asset-store.log" || return 1
     echo "✅ asset-store :$PORT_ASSETS  (log: $LOG_DIR/nefan-asset-store.log)"
 }
 
@@ -421,7 +448,7 @@ start_remote_gen() {
         exec python -u ai_server/remote_gen_main.py
     ) >"$LOG_DIR/nefan-remote-gen.log" 2>&1 &
     track_started $! "$PORT_RGEN"
-    wait_for_http_health "http://127.0.0.1:$PORT_RGEN/health" 30 "remote-gen" || return 1
+    wait_for_http_health "http://127.0.0.1:$PORT_RGEN/health" 30 "remote-gen" "$!" "$LOG_DIR/nefan-remote-gen.log" || return 1
     echo "✅ remote-gen :$PORT_RGEN  (log: $LOG_DIR/nefan-remote-gen.log)"
 }
 
@@ -539,7 +566,7 @@ start_ai() {
     ) >"$LOG_DIR/nefan-ai.log" 2>&1 &
     track_started $! "$PORT_AI"
     echo "⏳ ai_server is loading models (takes ~30s on first run)..."
-    wait_for_http_health "http://localhost:$PORT_AI/health" 120 "ai_server" || return 1
+    wait_for_http_health "http://localhost:$PORT_AI/health" 120 "ai_server" "$!" "$LOG_DIR/nefan-ai.log" || return 1
     echo "✅ ai_server :$PORT_AI  (log: $LOG_DIR/nefan-ai.log)"
 }
 

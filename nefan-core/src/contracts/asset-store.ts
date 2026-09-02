@@ -36,6 +36,10 @@ export type AssetKind =
   /** Celda de superficie de la vista fps (librería reutilizable). */
   | "surface";
 
+/** El ÚNICO kind con productor (`ai_server/remote_gen_main.py`): la fuente
+ *  del literal para el zod del registro, la DB y el lector de blobs. */
+export const ASSET_KIND: AssetKind = "surface";
+
 /** Entrada del manifest — mismo shape que AssetEntry del save
  *  (asset_index_snapshot) más el touch LRU. */
 export interface ManifestEntry extends AssetEntry {

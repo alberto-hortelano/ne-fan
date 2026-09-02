@@ -18,6 +18,8 @@
  */
 import { DatabaseSync } from "node:sqlite";
 
+import { ASSET_KIND } from "../../src/contracts/asset-store.js";
+
 export interface ManifestEntryRow {
   hash: string;
   type: string;
@@ -43,6 +45,25 @@ export interface PruneGroup {
   size: number;
   last: string;
 }
+
+/** Un (type, subtype) del índice que NO es el kind vivo, con su peso. */
+export interface KindAjeno {
+  type: string;
+  subtype: string;
+  filas: number;
+  bytes: number;
+}
+
+export interface PurgaAjenos {
+  filas: number;
+  pins: number;
+  meta: number;
+}
+
+/** Todo lo que no sea `surface/surface` — el WHERE que comparten el
+ *  recuento, el export y el DELETE, para que los tres hablen del mismo
+ *  conjunto de filas. */
+const WHERE_AJENO = `type <> ? OR subtype <> ?`;
 
 const TOUCH_DEBOUNCE_MS = 60_000;
 
@@ -190,20 +211,7 @@ export class ManifestDb {
          FROM assets WHERE hash = ? ORDER BY id`,
       )
       .all(hash) as unknown as Array<Omit<ManifestEntryRow, "extra"> & { extra: string; last_used: string | null }>;
-    return rows.map((r) => {
-      const entry: ManifestEntryRow = {
-        hash: r.hash,
-        type: r.type,
-        subtype: r.subtype,
-        prompt: r.prompt,
-        created_at: r.created_at,
-        size_bytes: r.size_bytes,
-        extra: JSON.parse(r.extra) as Record<string, unknown>,
-      };
-      // last_used solo si existe — el JSON del manifest legado omitía la clave.
-      if (r.last_used != null) entry.last_used = r.last_used;
-      return entry;
-    });
+    return rows.map((r) => this.rowToEntry(r));
   }
 
   touch(hash: string): void {
@@ -240,6 +248,70 @@ export class ManifestDb {
 
   deleteGroup(type: string, hash: string): void {
     this.db.prepare(`DELETE FROM assets WHERE type = ? AND hash = ?`).run(type, hash);
+  }
+
+  // ── Kinds sin productor (#257) ──
+  //
+  // El índice solo admite el kind vivo (`ASSET_KIND`); estas tres consultas
+  // son el recuento que el arranque enseña, el export que la purga escribe
+  // ANTES de borrar (#293: la procedencia vive en la fila, no en el PNG) y el
+  // DELETE. Las tres cuelgan del mismo WHERE a propósito.
+
+  /** Qué hay en el índice que no es el kind vivo, agrupado por (type, subtype). */
+  kindsAjenos(): KindAjeno[] {
+    const rows = this.db
+      .prepare(
+        `SELECT type, subtype, COUNT(*) AS filas, COALESCE(SUM(size_bytes), 0) AS bytes
+         FROM assets WHERE ${WHERE_AJENO} GROUP BY type, subtype ORDER BY type, subtype`,
+      )
+      .all(ASSET_KIND, ASSET_KIND) as unknown as KindAjeno[];
+    // node:sqlite devuelve objetos sin prototipo; el export los compara con
+    // deepStrictEqual contra JSON releído, así que se normalizan aquí.
+    return rows.map((r) => ({ type: r.type, subtype: r.subtype, filas: r.filas, bytes: r.bytes }));
+  }
+
+  /** Las filas ajenas COMPLETAS, en orden de inserción: lo que se exporta. */
+  filasAjenas(): ManifestEntryRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT hash, type, subtype, prompt, created_at, size_bytes, extra, last_used
+         FROM assets WHERE ${WHERE_AJENO} ORDER BY id`,
+      )
+      .all(ASSET_KIND, ASSET_KIND) as unknown as Array<
+      Omit<ManifestEntryRow, "extra"> & { extra: string; last_used: string | null }
+    >;
+    return rows.map((r) => this.rowToEntry(r));
+  }
+
+  /** Borra las filas ajenas, los pins que se quedan sin fila y las `meta`
+   *  del import del manifest.json (`imported_*`). Sin transacción propia: el
+   *  llamador decide (la purga lo envuelve en `transaction`). */
+  borrarKindsAjenos(): PurgaAjenos {
+    const filas = this.db.prepare(`DELETE FROM assets WHERE ${WHERE_AJENO}`).run(ASSET_KIND, ASSET_KIND);
+    const pins = this.db.prepare(`DELETE FROM pins WHERE hash NOT IN (SELECT hash FROM assets)`).run();
+    const meta = this.db.prepare(`DELETE FROM meta WHERE key LIKE 'imported_%'`).run();
+    return { filas: Number(filas.changes), pins: Number(pins.changes), meta: Number(meta.changes) };
+  }
+
+  /** Compacta el fichero. SQLite lo rechaza dentro de una transacción y con
+   *  otro proceso escribiendo: se llama solo, con el store parado. */
+  vacuum(): void {
+    this.db.exec("VACUUM");
+  }
+
+  private rowToEntry(r: Omit<ManifestEntryRow, "extra"> & { extra: string; last_used: string | null }): ManifestEntryRow {
+    const entry: ManifestEntryRow = {
+      hash: r.hash,
+      type: r.type,
+      subtype: r.subtype,
+      prompt: r.prompt,
+      created_at: r.created_at,
+      size_bytes: r.size_bytes,
+      extra: JSON.parse(r.extra) as Record<string, unknown>,
+    };
+    // last_used solo si existe — el JSON del manifest legado omitía la clave.
+    if (r.last_used != null) entry.last_used = r.last_used;
+    return entry;
   }
 
   setMeta(key: string, value: string): void {
