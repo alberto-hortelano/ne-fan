@@ -1,5 +1,5 @@
 {
-  "description": "`description` es el PROMPT del skin del personaje: vacía no vale. El zod la rechazaba y ai_server la descartaba en silencio, dejando al NPC pintado desde su nombre propio (#237)",
+  "description": "`description` es el texto del que se genera el arte (en un NPC, el prompt del skin): vacía no vale. El zod la rechazaba y ai_server la descartaba en silencio, dejando al NPC pintado desde su nombre propio (#237)",
   "expect": "reject",
   "payload": {
     "scene_id": "tile_0_0",
