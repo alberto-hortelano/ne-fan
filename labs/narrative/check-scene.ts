@@ -62,8 +62,8 @@ function sceneFromSave(saveDir: string): Record<string, unknown> {
   return scene;
 }
 
-/** Mapa ASCII: terreno expandido + glyphs de entities. Celdas sólidas tal cual
- *  (W/w); el jugador y NPCs destacan por su glyph. */
+/** Mapa ASCII: terreno expandido + una marca por entity (la inicial de su
+ *  `kind`: `p` player, `n` npc, `b` building…). Celdas sólidas tal cual (W/w). */
 function renderAscii(rawScene: Record<string, unknown>): string {
   const scene = hasUnexpandedPrimitives(rawScene) ? expandScenePrimitives(rawScene) : rawScene;
   const size = scene.size as { cols: number; rows: number };
@@ -74,10 +74,10 @@ function renderAscii(rawScene: Record<string, unknown>): string {
     const cell = e.cell as [number, number] | undefined;
     if (!Array.isArray(cell)) continue;
     const fp = (e.footprint as [number, number] | undefined) ?? [1, 1];
-    const glyph = typeof e.glyph === "string" && e.glyph.length === 1 ? e.glyph : "?";
+    const marca = typeof e.kind === "string" && e.kind.length > 0 ? e.kind[0] : "?";
     for (let r = cell[1]; r < cell[1] + (fp[1] ?? 1); r++) {
       for (let c = cell[0]; c < cell[0] + (fp[0] ?? 1); c++) {
-        if (grid[r]?.[c] !== undefined) grid[r][c] = glyph;
+        if (grid[r]?.[c] !== undefined) grid[r][c] = marca;
       }
     }
   }

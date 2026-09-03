@@ -514,7 +514,7 @@ function renderFormatD(canvas, scene) {
       ctx.fillStyle = "#fff";
       ctx.font = `${Math.max(8, cellPx - 2)}px ui-monospace, monospace`;
       ctx.textAlign = "center";
-      ctx.fillText(e.glyph || "?", offX + (cx + w / 2) * cellPx, offY + (cy + h / 2) * cellPx + 3);
+      ctx.fillText((e.kind || "?")[0], offX + (cx + w / 2) * cellPx, offY + (cy + h / 2) * cellPx + 3);
     }
   }
 }

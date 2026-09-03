@@ -713,7 +713,7 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
     scene_description: "el claro del arranque",
     ground: [],
     entities: [
-      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
+      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1] },
     ],
     ...over,
   });

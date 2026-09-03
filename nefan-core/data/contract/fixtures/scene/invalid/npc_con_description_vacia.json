@@ -21,8 +21,7 @@
         "footprint": [
           1,
           1
-        ],
-        "glyph": "@"
+        ]
       },
       {
         "id": "roric",
@@ -36,7 +35,6 @@
           1,
           1
         ],
-        "glyph": "n",
         "role": "guard",
         "description": ""
       }

@@ -134,6 +134,9 @@ function describeSceneContractViolation(
     donde = `, entity ${id}${campo ? `, campo \`${campo}\`` : ""}`;
   } else if (path.length > 0) {
     donde = `, campo \`${path.join(".")}\``;
+  } else if (issue.code === "unrecognized_keys") {
+    // Con `.strict()` la clave de más no tiene `path`: el campo ES la clave.
+    donde = `, campo ${issue.keys.map((k) => `\`${k}\``).join(", ")}`;
   }
   return `la escena "${sceneId}"${donde} viola el contrato de escena cargable: ${issue.message}`;
 }

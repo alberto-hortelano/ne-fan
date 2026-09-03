@@ -7,18 +7,17 @@
     "tile": { "tx": 0, "ty": 0 },
     "biome": "dirt",
     "entities": [
-      { "id": "player", "kind": "player", "name": "Tú", "cell": [64, 64], "footprint": [1, 1], "glyph": "@" },
+      { "id": "player", "kind": "player", "name": "Tú", "cell": [64, 64], "footprint": [1, 1] },
       {
         "id": "roric",
         "kind": "npc",
         "name": "Guardia Roric",
         "cell": [60, 60],
         "footprint": [2, 2],
-        "glyph": "n",
         "role": "guard",
         "description": "guardia de cota remendada y lanza corta"
       },
-      { "id": "granero", "kind": "building", "name": "granero", "cell": [20, 20], "footprint": [20, 14], "glyph": "B" }
+      { "id": "granero", "kind": "building", "name": "granero", "cell": [20, 20], "footprint": [20, 14] }
     ]
   }
 }

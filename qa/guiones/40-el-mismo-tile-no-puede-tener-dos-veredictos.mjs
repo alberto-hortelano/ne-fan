@@ -97,9 +97,9 @@ const base = {
   scene_description: "Una plaza de tierra batida entre casas encaladas.",
   tile: { tx: 0, ty: 0 },
   biome: "dirt",
-  entities: [{ id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" }],
+  entities: [{ id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1] }],
 };
-const npc = (extra) => ({ id: "roric", kind: "npc", name: "Guardia Roric", cell: [60, 60], footprint: [1, 1], glyph: "n", ...extra });
+const npc = (extra) => ({ id: "roric", kind: "npc", name: "Guardia Roric", cell: [60, 60], footprint: [1, 1], ...extra });
 const conNpc = (extra) => ({ ...base, entities: [...base.entities, npc(extra)] });
 
 /** [nombre, payload, eje, por qué está en la rejilla]
@@ -129,7 +129,8 @@ const CASOS = [
   ["tile con terrain vacío", { ...base, terrain: [] }, "campo", "el borde tolerado: los dos podan sin quejarse"],
   ["entity kind fuera del enum", conNpc({ kind: "creature" }), "campo", "vocabulario compartido"],
   ["role inventado", conNpc({ role: "herrero" }), "campo", "el vocabulario que YA candaban las fixtures"],
-  ["entity glyph de dos chars", conNpc({ glyph: "nn" }), "campo", "forma de entity que ninguna fixture toca"],
+  ["entity cell no numérica", conNpc({ cell: ["a", 60] }), "campo", "forma de entity que ninguna fixture toca"],
+  ["clave desconocida en la raíz", { ...base, nota_del_motor: "sin uso" }, "campo", "#400: la raíz es `.strict()` en el zod y allow-list fail-loud en ai_server"],
   ["entity footprint 0", conNpc({ footprint: [0, 1] }), "campo", "ídem"],
   ["escena sin tile", { ...base, tile: undefined }, "campo", "la variante retirada"],
   ["tile sin biome", (() => { const s = { ...base }; delete s.biome; return s; })(), "campo", "el bioma es la base del tile"],

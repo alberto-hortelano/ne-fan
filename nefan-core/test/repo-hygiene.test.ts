@@ -121,10 +121,13 @@ function retiredRule(): { pattern: RegExp; terms: string[] } {
   const rule = archConfig.rules.find((r) => r.id === "campos-retirados-no-vuelven");
   const source = rule?.text?.pattern;
   assert.ok(source, "la regla campos-retirados-no-vuelven debe existir con su patrón");
-  // El patrón es `\b(a|b|c)\b`: la alternancia ES la lista de términos.
-  const alternancia = /\(([^)]+)\)/.exec(source);
-  assert.ok(alternancia, `patrón sin alternancia legible: ${source}`);
-  return { pattern: new RegExp(source), terms: alternancia[1].split("|") };
+  // El patrón es `\b(a|b|c)\b`: la alternancia ES la lista de términos. Un
+  // término puede llevar un lookahead pegado (`attach(?!\()` deja pasar los
+  // métodos `attach(` del cliente y de narrative-mcp): para buscarlo en un
+  // NOMBRE de fichero se le quita, porque ahí lo que cuenta es el literal.
+  assert.ok(source.startsWith("\\b(") && source.endsWith(")\\b"), `patrón sin alternancia legible: ${source}`);
+  const alternancia = source.slice(source.indexOf("(") + 1, source.lastIndexOf(")"));
+  return { pattern: new RegExp(source), terms: alternancia.split("|").map((t) => t.replace(/\(\?[!=].*$/, "")) };
 }
 
 const entries = tracked();

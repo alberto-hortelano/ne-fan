@@ -10,7 +10,7 @@ is. Call narrative_respond with this JSON ("Map Format D"):
   "volumes": [ … ],  // everything with HEIGHT: buildings (cutaway for enterable), walls, trees… — same MAP PLAN reference as ground
   "entities": [
     { "id": "<unique slug>", "kind": "building"|"prop"|"item"|"tree"|"npc"|"player"|"decor",
-      "name": "<spanish>", "cell": [col, row], "footprint": [w, h], "glyph": "<1 ASCII char>",
+      "name": "<spanish>", "cell": [col, row], "footprint": [w, h],
       "shape": "box"|"cylinder"|"sphere"|"cone",     // optional; default box
       "h": <metres>,                                 // height in METRES — ALWAYS declare it for furniture/props (table 0.75, bench 0.45, barrel 0.9, shelf 2.0…); without it the engine falls back to semantic defaults by label, generic per-kind otherwise
       "role": "peasant"|"guard"|"villager"|"merchant"|"hostile", // NPCs: BEHAVIOUR preset (see DRESSING AND BEHAVIOUR below). Not the job. `hostile` = something to FIGHT; the engine derives its stats. Omitted ⇒ villager
@@ -47,9 +47,6 @@ SPECIMENS PER m²: 0.01 open oakwood, 0.05 mature forest, 0.08 closed pinewood
 and ceiling) or tree `volumes`. Nothing fills vegetation on its own: undeclared
 vegetation does not exist. Hand-placed `tree` entities are still fine for
 singular landmarks.
-
-DECOR ATTACH: a decor entity may add "attach": "wall" — the engine snaps it to
-the nearest wall cell (torches, hanging signs, banners).
 
 LINEAR & ORGANIC GROUND (rivers, roads, plazas) — declare anything linear or
 organic as typed `ground` features:
@@ -150,7 +147,7 @@ and it works by DESCRIPTION, not by hash:
   existing asset.
 
 VALIDATION before responding:
-- [ ] every entity has id/kind/name/cell/footprint/glyph
+- [ ] every entity has id/kind/name/cell/footprint
 - [ ] no two entities share an id
 - [ ] PLAYABILITY: the player spawn is walkable; walking from it you can reach
       every enterable building's door AND the way out — the tile's seams with

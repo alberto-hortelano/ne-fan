@@ -1,6 +1,6 @@
 {
-  "description": "un NPC con los TRES campos del motor: role del vocabulario, description (prompt del skin) y style_ref elegida",
-  "expect": "accept",
+  "description": "`attach:\"wall\"` está retirado (#399): pedía pegar el decor a la celda de muro más cercana y ningún productor escribía ese char en el grid desde que los muros son `volumes`, así que el snap nunca encontraba celda. Los dos gates lo rebotan nombrando la clave, como cualquier campo que la entity no declara.",
+  "expect": "reject",
   "payload": {
     "scene_id": "tile_0_0",
     "scene_description": "Una plaza de tierra batida entre casas encaladas.",
@@ -24,9 +24,9 @@
         ]
       },
       {
-        "id": "roric",
-        "kind": "npc",
-        "name": "Guardia Roric",
+        "id": "antorcha",
+        "kind": "decor",
+        "name": "antorcha de pared",
         "cell": [
           60,
           60
@@ -35,9 +35,7 @@
           1,
           1
         ],
-        "role": "guard",
-        "description": "guardia con lanza y capa parda",
-        "style_ref": "warrior"
+        "attach": "wall"
       }
     ]
   }

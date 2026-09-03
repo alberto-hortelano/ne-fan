@@ -68,7 +68,6 @@ function fixture(n, tx, ty) {
       name: "pino",
       cell: [2 + (i % lado) * paso, 2 + Math.floor(i / lado) * paso],
       footprint: [4, 4],
-      glyph: "t",
     });
   }
   return {

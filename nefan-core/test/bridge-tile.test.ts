@@ -25,7 +25,6 @@ describe("bridge request_tile (plano continuo)", () => {
     scene_description: "campo de bench",
     ground,
     entities: [],
-    ambient_event: "",
   });
 
   /** Camino oeste↔este a la altura de la fila 41, el `at` de las costuras. */
@@ -144,7 +143,7 @@ describe("bridge request_tile (plano continuo)", () => {
         { id: "barril_o", label: "barril", type: "prop", shape: "box", rect: [61, 34, 2, 3] },
         { id: "barril_e", label: "barril", type: "prop", shape: "box", rect: [65, 34, 2, 3] },
       ],
-      entities: [{ id: "posadero", kind: "npc", name: "Posadero", cell: [60, 27], footprint: [1, 1], glyph: "n" }],
+      entities: [{ id: "posadero", kind: "npc", name: "Posadero", cell: [60, 27], footprint: [1, 1] }],
     });
     const { ctx, broadcasts, narrative } = makeCtx({
       ai: { generateScene: async () => ({ ok: true, scene: posadaPinzada() }) },

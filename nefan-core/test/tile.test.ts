@@ -56,7 +56,6 @@ const makeForestTile = (): Record<string, unknown> =>
   forestTile({
     scene_description: "Bosque espeso con una senda.",
     vegetation_zones: [{ type: "pino", area: "rest", density: 0.02 }],
-    ambient_event: "",
   });
 
 describe("expansión de tiles (Format D v3)", () => {
@@ -98,7 +97,7 @@ describe("expansión de tiles (Format D v3)", () => {
     const { createTerrainCollider } = await import("../src/scene/terrain-collision.js");
     const tile = makeForestTile(); // tx=1, ty=0 → rect [32..96, -32..32]
     (tile.entities as Record<string, unknown>[]).push(
-      { id: "npc1", kind: "npc", name: "Guía", cell: [0, 0], footprint: [1, 1], glyph: "n" },
+      { id: "npc1", kind: "npc", name: "Guía", cell: [0, 0], footprint: [1, 1] },
     );
     const w = formatDToWorld(tile);
     assert.deepEqual(w.world_rect, { minX: 32, minZ: -32, maxX: 96, maxZ: 32 });
@@ -125,7 +124,7 @@ describe("expansión de tiles (Format D v3)", () => {
       scene_id: "s",
       size: { cols: 10, rows: 6, meters_per_cell: 2 },
       terrain: Array.from({ length: 6 }, () => "g".repeat(10)),
-      entities: [{ id: "b", kind: "building", name: "B", cell: [2, 1], footprint: [4, 2], glyph: "H" }],
+      entities: [{ id: "b", kind: "building", name: "B", cell: [2, 1], footprint: [4, 2] }],
     });
     assert.deepEqual(legacy.world_rect, { minX: -10, minZ: -6, maxX: 10, maxZ: 6 });
     assert.equal(legacy.tile, undefined);

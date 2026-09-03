@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 import { NPC_ROLES } from "../src/simulation/npc-roles.js";
-import { ENTITY_FIELDS, SCENE_FIELDS, RADIO_SIMULADO_POR_KIND } from "../src/contract/model-io/scene-schema.js";
+import { ENTITY_FIELDS, SCENE_FIELDS, EMITTED_SCENE_FIELDS, RADIO_SIMULADO_POR_KIND } from "../src/contract/model-io/scene-schema.js";
 import { celdasQueCubreRadio } from "../src/scene/terrain-collision.js";
 import { TILE_MPC } from "../src/scene/tile.js";
 
@@ -204,6 +204,20 @@ describe("contrato narrativo — el tool a mano no ofrece campos que el zod no c
       [],
       "campos ofrecidos al modelo que el zod no conoce: o se declaran en `sceneBaseShape` " +
         "(delegando en el validador de producción que ya exista) o se sacan del tool",
+    );
+  });
+
+  it("la vuelta en la raíz: lo que el zod acepta y el tool NO ofrece es EXACTAMENTE `place_anchors`", () => {
+    // El saneador de ai_server deriva su allow-list de raíz del tool más este
+    // único nombre (#400): si el zod gana un campo emitible que el tool no
+    // ofrece, los dos gates divergen sin que nadie se entere. `place_anchors`
+    // es la brecha conocida (lo escribe el motor del banco y lo leen los
+    // handlers; el tool real no lo pide) y tiene issue derivado.
+    const delJson = Object.keys(tool.input_schema.properties);
+    assert.deepEqual(
+      EMITTED_SCENE_FIELDS.filter((k) => !delJson.includes(k)),
+      ["place_anchors"],
+      "campos de raíz que el zod acepta y el tool no ofrece: o van al tool, o a la allow-list de ai_server con su motivo",
     );
   });
 

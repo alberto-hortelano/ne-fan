@@ -21,8 +21,7 @@
         "footprint": [
           1,
           1
-        ],
-        "glyph": "@"
+        ]
       },
       {
         "id": "roric",
@@ -35,8 +34,7 @@
         "footprint": [
           1,
           1
-        ],
-        "glyph": "n"
+        ]
       }
     ]
   }

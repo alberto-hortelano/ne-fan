@@ -63,9 +63,15 @@ const INVARIANTES = [
     [["  scatter_generators: z.unknown().optional(),\n  scatter_zones: z.unknown().optional(),\n", ""]],
   ],
   [
-    "campos · el zod pierde `attach` y el tool se lo sigue ofreciendo al modelo",
+    "campos · el zod pierde `style_ref` de entity y el tool se lo sigue ofreciendo al modelo",
     SCHEMA, "ts:test/contract-prompts.test.ts",
-    [['    attach: z.literal("wall").optional(),\n', ""]],
+    [["    style_ref: z.string().min(1).optional(),\n", ""]],
+  ],
+  // ── #400 · la raíz cerrada, y su brecha conocida ─────────────────────────
+  [
+    "campos · el zod gana un campo de raíz que el tool no ofrece (la brecha deja de ser solo `place_anchors`)",
+    SCHEMA, "ts:test/contract-prompts.test.ts",
+    [["  entities: z.array(EntitySchema),\n} as const;", "  entities: z.array(EntitySchema),\n  nota_del_motor: z.string().optional(),\n} as const;"]],
   ],
   // ── #203 · el guardia DÉBIL de términos prometidos ──────────────────────
   [
@@ -78,6 +84,15 @@ const INVARIANTES = [
     "entity · el `.strict()` vuelve a ser `.passthrough()` (la clave inventada se cae muda)",
     SCHEMA, "ts:test/scene-schema.test.ts",
     [["  .strict()\n  .superRefine((e, ctx) => {", "  .passthrough()\n  .superRefine((e, ctx) => {"]],
+  ],
+  // ── #400 · la escena cerrada ────────────────────────────────────────────
+  [
+    "escena · el `.strict()` de la raíz vuelve a ser `.passthrough()` (la clave inventada cruza muda hasta el save)",
+    SCHEMA, "ts:test/scene-schema.test.ts",
+    [
+      ["  .object(sceneBaseShape, { errorMap: sceneErrorMap(EMITTED_SCENE_FIELDS) })\n  .strict()", "  .object(sceneBaseShape, { errorMap: sceneErrorMap(EMITTED_SCENE_FIELDS) })\n  .passthrough()"],
+      ['  }, { errorMap: sceneErrorMap([...SCENE_FIELDS, "__expanded"]) })\n  .strict();', '  }, { errorMap: sceneErrorMap([...SCENE_FIELDS, "__expanded"]) })\n  .passthrough();'],
+    ],
   ],
   // ── #237 · la frontera entre las dos poblaciones ────────────────────────
   [
@@ -136,6 +151,14 @@ const INVARIANTES = [
         '                )\n            clean_ent["description"] = desc.strip()',
       '        if isinstance(ent.get("description"), str) and ent["description"].strip():\n' +
         '            clean_ent["description"] = ent["description"].strip()',
+    ]],
+  ],
+  [
+    "python · la raíz vuelve a ser muda (la clave desconocida cruza hasta el save)",
+    PY, "py:ai_server.tests.test_contract_fixtures",
+    [[
+      "    desconocidas = [k for k in data if k not in SCENE_FIELDS]\n    if desconocidas:\n",
+      "    desconocidas = []\n    if desconocidas:\n",
     ]],
   ],
   [

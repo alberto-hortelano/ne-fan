@@ -315,7 +315,7 @@ describe("handlers invocados a pelo, uno por concepto", () => {
       tile: { tx: 0, ty: 0 },
       biome: "forest_floor",
       entities: [
-        { id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1], glyph: "@" },
+        { id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1] },
       ],
     };
     const res = sceneRoutes.validateScene(ctx, req({ body: { scene: tile } }));

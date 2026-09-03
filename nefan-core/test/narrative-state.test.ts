@@ -17,7 +17,7 @@ describe("las puertas del save (#334, #336)", () => {
     s.startNewSession("toledo_1200");
     const escena = escenaExpandidaDePrueba("s1", {
       entities: [
-        { id: "gigante", kind: "npc", name: "Gigante", cell: [1, 1], footprint: [8, 8], glyph: "n" },
+        { id: "gigante", kind: "npc", name: "Gigante", cell: [1, 1], footprint: [8, 8] },
       ],
     });
     assert.throws(
@@ -42,7 +42,7 @@ describe("las puertas del save (#334, #336)", () => {
     // contrato (el caso #300: footprint inflado en un kind móvil).
     const data = (await storage.read(id))!;
     (data.scenes_loaded["s1"].scene_data.entities as unknown[]).push({
-      id: "gigante", kind: "npc", name: "Gigante", cell: [1, 1], footprint: [8, 8], glyph: "n",
+      id: "gigante", kind: "npc", name: "Gigante", cell: [1, 1], footprint: [8, 8],
     });
     await storage.write(id, data);
     const s2 = new NarrativeState(storage);

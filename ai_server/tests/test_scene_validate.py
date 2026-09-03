@@ -33,7 +33,7 @@ def base_scene():
         "tile": {"tx": 0, "ty": 0},
         "biome": "grass",
         "entities": [
-            {"id": "p", "kind": "player", "name": "Tú", "cell": [1, 1], "footprint": [1, 1], "glyph": "@"}
+            {"id": "p", "kind": "player", "name": "Tú", "cell": [1, 1], "footprint": [1, 1]}
         ],
     }
 
@@ -46,7 +46,7 @@ def suelta_scene():
         "size": {"cols": 4, "rows": 2, "meters_per_cell": 2},
         "terrain": ["gggg", "gggg"],
         "entities": [
-            {"id": "p", "kind": "player", "name": "Tú", "cell": [1, 1], "footprint": [1, 1], "glyph": "@"}
+            {"id": "p", "kind": "player", "name": "Tú", "cell": [1, 1], "footprint": [1, 1]}
         ],
     }
 
@@ -103,19 +103,44 @@ class TestVariantesRetiradas(unittest.TestCase):
     def test_la_variante_viva_sigue_pasando(self):
         validate_scene_response(base_scene())  # tile: no raise
 
-    def test_un_tile_con_stage_lo_descarta_con_traza(self):
+    def test_un_tile_con_stage_lanza_nombrando_la_clave(self):
+        # #400: la raíz es allow-list fail-loud (espejo del `.strict()` del
+        # zod). Antes `stage` se podaba con traza y el mismo tile tenía dos
+        # veredictos según por dónde entrase.
         s = base_scene()
         s["stage"] = {"exits": []}
-        out = validate_scene_response(s)
-        self.assertNotIn("stage", out)
+        with self.assertRaises(ValueError) as cm:
+            validate_scene_response(s)
+        self.assertIn("`stage`", str(cm.exception))
 
-    def test_la_style_ref_de_escena_no_sobrevive(self):
+    def test_la_style_ref_de_escena_lanza_con_su_motivo(self):
         # Se retiró con el repintado del tile (nadie la consume en primera
-        # persona). El rechazo duro vive en el gate zod; aquí, como `stage`,
-        # se descarta para que no se persista un campo que ya no existe.
+        # persona). Espejo del zod: no el mensaje genérico de clave desconocida,
+        # sino el que dice con qué se sustituye.
         s = base_scene()
         s["style_ref"] = "settlement"
-        self.assertNotIn("style_ref", validate_scene_response(s))
+        with self.assertRaises(ValueError) as cm:
+            validate_scene_response(s)
+        self.assertIn("`style_ref` de escena está retirado", str(cm.exception))
+        self.assertIn("`style_ref` en los NPCs", str(cm.exception))
+
+    def test_una_clave_de_raiz_desconocida_lanza_nombrandola_y_listando_los_campos(self):
+        s = base_scene()
+        s["nota_del_motor"] = "sin uso"
+        with self.assertRaises(ValueError) as cm:
+            validate_scene_response(s)
+        msg = str(cm.exception)
+        self.assertIn("`nota_del_motor`", msg)
+        for campo in ("tile", "biome", "scene_id", "entities", "ground", "volumes", "place_anchors"):
+            self.assertIn(campo, msg)
+        self.assertNotIn("`size`", msg)
+
+    def test_el_saneador_no_inyecta_campos_que_el_motor_no_emitio(self):
+        # Hasta #400 inyectaba un campo vacío en cada escena (el mismo camino
+        # por el que un campo retirado volvió a colarse durante meses): lo que
+        # sale tiene EXACTAMENTE las claves que entraron.
+        out = validate_scene_response(base_scene())
+        self.assertEqual(set(out.keys()), set(base_scene().keys()))
 
 
 class TestSceneValidateFailLoud(unittest.TestCase):
@@ -125,19 +150,13 @@ class TestSceneValidateFailLoud(unittest.TestCase):
 
     def test_entity_bad_kind_raises(self):
         s = base_scene()
-        s["entities"] = [{"id": "x", "kind": "monster", "name": "X", "cell": [0, 0], "footprint": [1, 1], "glyph": "x"}]
-        with self.assertRaises(ValueError):
-            validate_scene_response(s)
-
-    def test_entity_missing_glyph_raises(self):
-        s = base_scene()
-        s["entities"] = [{"id": "x", "kind": "prop", "name": "X", "cell": [0, 0], "footprint": [1, 1]}]
+        s["entities"] = [{"id": "x", "kind": "monster", "name": "X", "cell": [0, 0], "footprint": [1, 1]}]
         with self.assertRaises(ValueError):
             validate_scene_response(s)
 
     def test_entity_bad_footprint_raises(self):
         s = base_scene()
-        s["entities"] = [{"id": "x", "kind": "prop", "name": "X", "cell": [0, 0], "footprint": [0, 1], "glyph": "x"}]
+        s["entities"] = [{"id": "x", "kind": "prop", "name": "X", "cell": [0, 0], "footprint": [0, 1]}]
         with self.assertRaises(ValueError):
             validate_scene_response(s)
 
@@ -149,17 +168,9 @@ class TestSceneValidateBenign(unittest.TestCase):
         out = validate_scene_response(s)
         self.assertTrue(out["scene_id"])  # se rellena (benigno)
 
-    def test_glyph_is_kept_verbatim(self):
-        # El glyph es del motor y el saneador no lo reescribe: lo que declara
-        # es lo que sale, sin sustituciones mudas (#335).
-        s = base_scene()
-        s["entities"] = [{"id": "x", "kind": "prop", "name": "X", "cell": [0, 0], "footprint": [1, 1], "glyph": "g"}]
-        out = validate_scene_response(s)
-        self.assertEqual(out["entities"][0]["glyph"], "g")
-
     def test_cell_out_of_bounds_clamped(self):
         s = base_scene()
-        s["entities"] = [{"id": "x", "kind": "prop", "name": "X", "cell": [999, 999], "footprint": [1, 1], "glyph": "x"}]
+        s["entities"] = [{"id": "x", "kind": "prop", "name": "X", "cell": [999, 999], "footprint": [1, 1]}]
         out = validate_scene_response(s)
         self.assertLess(out["entities"][0]["cell"][0], 128)  # clampado al grid del tile
 
@@ -179,7 +190,7 @@ class TestEntityStyleRefSurvives(unittest.TestCase):
         s = base_scene()
         s["entities"].append(
             {"id": "guardia", "kind": "npc", "name": "Guardia", "cell": [2, 1],
-             "footprint": [1, 1], "glyph": "n", **extra}
+             "footprint": [1, 1], **extra}
         )
         return validate_scene_response(s)["entities"][-1]
 
@@ -209,7 +220,7 @@ class TestEntityRolYDescripcionSobreviven(unittest.TestCase):
         s = base_scene()
         s["entities"].append(
             {"id": "guardia", "kind": "npc", "name": "Guardia Roric", "cell": [2, 1],
-             "footprint": [1, 1], "glyph": "n", **extra}
+             "footprint": [1, 1], **extra}
         )
         return validate_scene_response(s)["entities"][-1]
 
@@ -227,7 +238,7 @@ class TestEntityRolYDescripcionSobreviven(unittest.TestCase):
         s = base_scene()
         s["entities"].append(
             {"id": "pozo", "kind": "prop", "name": "pozo de la plaza", "cell": [2, 1],
-             "footprint": [1, 1], "glyph": "o", "description": "pozo de piedra con brocal musgoso"}
+             "footprint": [1, 1], "description": "pozo de piedra con brocal musgoso"}
         )
         prop = validate_scene_response(s)["entities"][-1]
         self.assertEqual(prop["name"], "pozo de la plaza")
@@ -265,7 +276,7 @@ class TestEntityRolYDescripcionSobreviven(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             self._npc(health=60)
         self.assertIn("health", str(cm.exception))
-        self.assertIn("glyph", str(cm.exception))
+        self.assertIn("style_ref", str(cm.exception))
 
 
 class TestSpawnEntityLlevaRolYRef(unittest.TestCase):

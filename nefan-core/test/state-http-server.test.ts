@@ -268,7 +268,7 @@ describe("state HTTP API", () => {
       volumes: [
         { id: "posada", label: "posada", type: "building", rect: [10, 70, 10, 7], cutaway: true, doors: [{ edge: "s", at: 4, w: 3 }] },
       ],
-      entities: [{ id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1], glyph: "@" }],
+      entities: [{ id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1] }],
     };
     // Sin ningún tile registrado ⇒ bootstrap: el player es obligatorio y el
     // tile es jugable.

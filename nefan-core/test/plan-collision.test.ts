@@ -127,7 +127,6 @@ describe("planCollisionGrid", () => {
       biome: "grass",
       ground: rawGround,
       entities: [],
-      ambient_event: "",
     }) as { terrain_grid: TerrainGridData };
     // Fuente 1: el grid. Los sólidos son exactamente los del engine.
     assert.deepEqual(world.terrain_grid.solid_chars, [...DEFAULT_SOLID_CHARS]);
@@ -160,7 +159,6 @@ describe("consistencia de colisión del plan bridge↔cliente", () => {
       scene_description: "campo con río y casa",
       biome: "grass",
       entities: [],
-      ambient_event: "",
       ground: rawGround,
       volumes: rawVolumes,
     }) as Record<string, unknown>;

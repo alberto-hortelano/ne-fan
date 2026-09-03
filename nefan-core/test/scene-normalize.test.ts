@@ -32,11 +32,10 @@ function makeFormatD(): Record<string, unknown> {
       "gggggggggg",
     ],
     entities: [
-      { id: "tavern", kind: "building", name: "Taberna", cell: [2, 1], footprint: [4, 2], glyph: "H" },
-      { id: "barkeep", kind: "npc", name: "Tabernero", cell: [3, 2], footprint: [1, 1], glyph: "n" },
-      { id: "player", kind: "player", name: "Tú", cell: [5, 5], footprint: [1, 1], glyph: "@" },
+      { id: "tavern", kind: "building", name: "Taberna", cell: [2, 1], footprint: [4, 2] },
+      { id: "barkeep", kind: "npc", name: "Tabernero", cell: [3, 2], footprint: [1, 1] },
+      { id: "player", kind: "player", name: "Tú", cell: [5, 5], footprint: [1, 1] },
     ],
-    ambient_event: "El fuego crepita.",
   };
 }
 
@@ -49,12 +48,12 @@ const conEntity = (ent: unknown, i = 0): Record<string, unknown> => {
 
 /** El npc del fixture (índice 1) con los campos bajo prueba encima. */
 const conNpc = (npc: Record<string, unknown>): Record<string, unknown> =>
-  conEntity({ kind: "npc", name: "Aldeana", cell: [1, 1], footprint: [1, 1], glyph: "n", ...npc }, 1);
+  conEntity({ kind: "npc", name: "Aldeana", cell: [1, 1], footprint: [1, 1], ...npc }, 1);
 
 /** El OBJETO del fixture (índice 0, la taberna) sustituido por la entity bajo
  *  prueba: un prop con lo que haga falta encima. */
 const conObjeto = (obj: Record<string, unknown>): Record<string, unknown> =>
-  conEntity({ kind: "prop", name: "pozo de la plaza", cell: [1, 1], footprint: [1, 1], glyph: "o", ...obj }, 0);
+  conEntity({ kind: "prop", name: "pozo de la plaza", cell: [1, 1], footprint: [1, 1], ...obj }, 0);
 
 /** La ref de skin que derivarían la partida y el batch de estilo. */
 const refDelSkin = (npc: Record<string, unknown>) =>
@@ -73,7 +72,6 @@ describe("formatDToWorld", () => {
       biome: "grass",
       scene_description: "campo",
       entities: [],
-      ambient_event: "",
     });
     assert.ok(Array.isArray(w.objects), "primera pasada normaliza");
     // Sin la guarda __format_d, esta segunda pasada re-entraría en la
@@ -111,7 +109,7 @@ describe("formatDToWorld", () => {
 
   it("maps tree kind to prop category", () => {
     const d = makeFormatD();
-    (d.entities as Record<string, unknown>[]).push({ id: "oak", kind: "tree", name: "Roble", cell: [0, 0], footprint: [1, 1], glyph: "T" });
+    (d.entities as Record<string, unknown>[]).push({ id: "oak", kind: "tree", name: "Roble", cell: [0, 0], footprint: [1, 1] });
     const w = formatDToWorld(d);
     const oak = objectsOf(w).find((o) => o.id === "oak");
     assert.equal(oak?.category, "prop");
@@ -122,8 +120,8 @@ describe("formatDToWorld", () => {
   it("respeta la altura explícita `h` (metros) y recorta valores disparatados", () => {
     const d = makeFormatD();
     (d.entities as Record<string, unknown>[]).push(
-      { id: "torre", kind: "building", name: "Torre", cell: [7, 0], footprint: [2, 2], glyph: "t", h: 6.5 },
-      { id: "megalito", kind: "prop", name: "Megalito", cell: [0, 3], footprint: [1, 1], glyph: "M", h: 999 },
+      { id: "torre", kind: "building", name: "Torre", cell: [7, 0], footprint: [2, 2], h: 6.5 },
+      { id: "megalito", kind: "prop", name: "Megalito", cell: [0, 3], footprint: [1, 1], h: 999 },
     );
     const w = formatDToWorld(d);
     const objs = objectsOf(w);
@@ -135,9 +133,9 @@ describe("formatDToWorld", () => {
   it("un `h` inválido cae al default por kind (tolerante, como shape)", () => {
     const d = makeFormatD();
     (d.entities as Record<string, unknown>[]).push(
-      { id: "caja", kind: "prop", name: "Caja", cell: [0, 3], footprint: [1, 1], glyph: "c", h: -2 },
-      { id: "gema", kind: "item", name: "Gema", cell: [1, 3], footprint: [1, 1], glyph: "g", h: "alta" },
-      { id: "cartel", kind: "decor", name: "Cartel", cell: [2, 3], footprint: [1, 1], glyph: "i" },
+      { id: "caja", kind: "prop", name: "Caja", cell: [0, 3], footprint: [1, 1], h: -2 },
+      { id: "gema", kind: "item", name: "Gema", cell: [1, 3], footprint: [1, 1], h: "alta" },
+      { id: "cartel", kind: "decor", name: "Cartel", cell: [2, 3], footprint: [1, 1] },
     );
     const w = formatDToWorld(d);
     const objs = objectsOf(w);
@@ -148,7 +146,7 @@ describe("formatDToWorld", () => {
 
   it("keeps decor kind as its own walkable category", () => {
     const d = makeFormatD();
-    (d.entities as Record<string, unknown>[]).push({ id: "torch", kind: "decor", name: "antorcha de pared", cell: [1, 0], footprint: [1, 1], glyph: "i" });
+    (d.entities as Record<string, unknown>[]).push({ id: "torch", kind: "decor", name: "antorcha de pared", cell: [1, 0], footprint: [1, 1] });
     const w = formatDToWorld(d);
     const torch = objectsOf(w).find((o) => o.id === "torch");
     assert.equal(torch?.category, "decor");
@@ -204,7 +202,6 @@ describe("formatDToWorld", () => {
       biome,
       scene_description: "campo",
       entities: [],
-      ambient_event: "",
     });
     const bueno = formatDToWorld(tile("grass")) as { terrain?: { color?: number[] } };
     assert.ok(bueno.terrain, "un biome válido produce terreno");
@@ -572,7 +569,7 @@ describe("formatDToWorld — fail-loud con índice, id y campo", () => {
 describe("formatDToWorld — altura y forma degeneradas", () => {
   const conProp = (h: unknown): Record<string, unknown> => {
     const d = makeFormatD();
-    (d.entities as Record<string, unknown>[]).push({ id: "barril", kind: "prop", name: "Barril", cell: [0, 3], footprint: [1, 1], glyph: "b", h });
+    (d.entities as Record<string, unknown>[]).push({ id: "barril", kind: "prop", name: "Barril", cell: [0, 3], footprint: [1, 1], h });
     return d;
   };
   const alturaDelBarril = (h: unknown): number =>
@@ -589,7 +586,7 @@ describe("formatDToWorld — altura y forma degeneradas", () => {
 
   it("un árbol sin shape declarada sale redondo (cylinder), no caja", () => {
     const d = makeFormatD();
-    (d.entities as Record<string, unknown>[]).push({ id: "oak", kind: "tree", name: "Roble", cell: [0, 0], footprint: [1, 1], glyph: "T" });
+    (d.entities as Record<string, unknown>[]).push({ id: "oak", kind: "tree", name: "Roble", cell: [0, 0], footprint: [1, 1] });
     const oak = objectsOf(formatDToWorld(d)).find((o) => o.id === "oak");
     assert.equal(oak?.shape, "cylinder");
     // Un prop sin shape NO recibe forma: el cliente cae a su caja por defecto.

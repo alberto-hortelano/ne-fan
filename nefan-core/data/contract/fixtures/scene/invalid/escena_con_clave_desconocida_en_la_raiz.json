@@ -1,5 +1,5 @@
 {
-  "description": "un tile NO lleva `size`: su base es `biome` + primitivas y el grid lo sintetiza el engine (128×128 @0,5 m). ai_server lo podaba en silencio, así que el mismo tile tenía dos veredictos según por dónde entrase (#237)",
+  "description": "la RAÍZ de la escena es `.strict()` en el zod y allow-list fail-loud en ai_server (#400): una clave que el contrato no declara vuelve al motor con su nombre y con los campos que sí existen, en vez de cruzar muda hasta el save (antes el `.passthrough()` la dejaba pasar y el saneador podaba a trozos: unas con traza, otras sin ella).",
   "expect": "reject",
   "payload": {
     "scene_id": "tile_0_0",
@@ -9,11 +9,6 @@
       "ty": 0
     },
     "biome": "dirt",
-    "size": {
-      "cols": 128,
-      "rows": 128,
-      "meters_per_cell": 0.5
-    },
     "entities": [
       {
         "id": "player",
@@ -28,6 +23,7 @@
           1
         ]
       }
-    ]
+    ],
+    "nota_del_motor": "sin uso"
   }
 }

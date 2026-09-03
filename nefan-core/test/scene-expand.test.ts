@@ -4,76 +4,64 @@ import assert from "node:assert/strict";
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "../src/scene/scene-expand.js";
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
 import { createTerrainCollider } from "../src/scene/terrain-collision.js";
+import { TILE_CELLS } from "../src/scene/tile.js";
 
-/** Escena con el grid YA escrito (muro cerrado con un hueco de puerta al sur)
- *  y un decor pegado al muro.
- *
- *  Ya NO lleva `vegetation_zones`: el expander dejó de estampar entities de
- *  vegetación en el grid y su zona no significaría nada aquí. La masa forestal
- *  se compone como volúmenes del plan — `derive-vegetation` y
- *  `vegetation-density` cubren lo que este fichero cubría de ella.
- *
- *  Y ya no lleva la primitiva de salas (#301): el muro se escribe a mano en el
- *  `terrain`, que es lo que queda cuando nadie lo estampa por ti. Lo que este
- *  fichero prueba del expander es el `attach:"wall"` y la idempotencia; el
- *  perímetro cerrado por construcción lo declara hoy un `building` con
- *  `cutaway` en `volumes`, cuyo anillo de muro vive en el PLAN y no en el
- *  grid ASCII. */
-function makeScene(): Record<string, unknown> {
-  const fila = (s: string) => s.padEnd(16, "g");
+/** Un tile crudo como lo emite el motor: bioma + un rasgo de `ground` (una
+ *  balsa de agua) y sin grid. Lo ÚNICO que el expander hace hoy es sintetizar
+ *  ese grid: el decor pegado al muro se retiró con #399 porque buscaba un
+ *  char de muro que ningún productor escribía. */
+function makeTile(): Record<string, unknown> {
   return {
-    scene_id: "taberna_exp",
-    scene_description: "Taberna con patio.",
-    size: { cols: 16, rows: 12, meters_per_cell: 0.5 },
-    // rect [2,1,10,7]: muros en las filas 1 y 7 (cols 2..11), suelo "o"
-    // dentro, y un hueco de puerta de 3 celdas (cols 6..8) en el muro sur.
-    terrain: [
-      fila(""),
-      fila("ggWWWWWWWWWW"),
-      fila("ggWooooooooW"),
-      fila("ggWooooooooW"),
-      fila("ggWooooooooW"),
-      fila("ggWooooooooW"),
-      fila("ggWooooooooW"),
-      fila("ggWWWW___WWW"),
-      fila(""),
-      fila(""),
-      fila(""),
-      fila(""),
-    ],
+    tile: { tx: 0, ty: 0 },
+    scene_id: "tile_0_0",
+    scene_description: "Pradera con una balsa.",
+    biome: "grass",
+    ground: [{ id: "balsa", kind: "water", rect: [10, 10, 6, 4] }],
     entities: [
-      { id: "antorcha", kind: "decor", name: "antorcha de pared", cell: [4, 3], footprint: [1, 1], glyph: "i", attach: "wall" },
-      { id: "player", kind: "player", name: "Tú", cell: [7, 9], footprint: [1, 1], glyph: "@" },
+      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1] },
     ],
-    ambient_event: "",
   };
 }
 
 describe("expandScenePrimitives", () => {
   it("is idempotent (a second expansion is a no-op)", () => {
-    const once = expandScenePrimitives(makeScene());
+    const once = expandScenePrimitives(makeTile());
     const twice = expandScenePrimitives(once);
     assert.equal(twice, once);
     assert.equal(hasUnexpandedPrimitives(once), false);
   });
 
-  it("snaps attach:wall decor to the nearest wall cell", () => {
-    const out = expandScenePrimitives(makeScene());
-    const torch = (out.entities as Record<string, unknown>[]).find((e) => e.id === "antorcha")!;
-    const [c, r] = torch.cell as [number, number];
-    const grid = out.terrain as string[];
-    assert.equal(grid[r][c], "W", `la antorcha debe quedar sobre un muro, quedó en (${c},${r})="${grid[r][c]}"`);
+  it("solo un tile sin la marca tiene algo que expandir", () => {
+    assert.equal(hasUnexpandedPrimitives(makeTile()), true);
+    assert.equal(hasUnexpandedPrimitives({ ...makeTile(), __expanded: true }), false);
+    // Sin `tile` no hay bioma que rellenar ni `ground` que rasterizar: la
+    // escena se devuelve tal cual (misma referencia).
+    const sinTile: Record<string, unknown> = { ...makeTile() };
+    delete sinTile.tile;
+    assert.equal(hasUnexpandedPrimitives(sinTile), false);
+    assert.equal(expandScenePrimitives(sinTile), sinTile);
   });
 
-  it("formatDToWorld expands defensively and the walls collide", () => {
-    const world = formatDToWorld(makeScene());
+  it("sintetiza el grid 128×128 del bioma y rasteriza el agua declarada", () => {
+    const out = expandScenePrimitives(makeTile());
+    const grid = out.terrain as string[];
+    assert.equal(grid.length, TILE_CELLS);
+    assert.ok(grid.every((row) => row.length === TILE_CELLS));
+    assert.equal(grid[12][12], "w", "dentro de la balsa: agua");
+    assert.equal(grid[64][64], "g", "fuera: el fill del bioma");
+    assert.equal(out.__expanded, true);
+  });
+
+  it("formatDToWorld expands defensively and the water collides", () => {
+    const world = formatDToWorld(makeTile());
     const tg = world.terrain_grid as { grid: string[]; solid_chars: string[] };
-    assert.ok(tg.solid_chars.includes("W"));
+    assert.equal(tg.grid.length, TILE_CELLS, "la fixture cruda llega expandida");
+    assert.ok(tg.solid_chars.includes("w"));
     const col = createTerrainCollider(tg as never)!;
-    // Muro norte: celda (2,1). mpc 0.5, halfW=4, halfD=3 →
-    // centro de la celda: x = 2*0.5 - 4 + 0.25 = -2.75 ; z = 1*0.5 - 3 + 0.25 = -2.25
-    assert.ok(col.blocksCircle(-2.75, -2.25, 0.1));
-    // Hueco de la puerta (col 6, row 7): x = -0.75 ; z = 0.75 → transitable.
-    assert.ok(!col.blocksCircle(-0.75, 0.75, 0.1));
+    // Celda (12,12) de la balsa. mpc 0,5 y tile centrado en el origen (64 m de
+    // lado): centro de la celda x = 12*0,5 − 32 + 0,25 = −25,75 ; z igual.
+    assert.ok(col.blocksCircle(-25.75, -25.75, 0.1));
+    // Celda (64,64), hierba: x = 64*0,5 − 32 + 0,25 = 0,25 → transitable.
+    assert.ok(!col.blocksCircle(0.25, 0.25, 0.1));
   });
 });

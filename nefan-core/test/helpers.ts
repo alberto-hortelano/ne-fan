@@ -102,7 +102,7 @@ export function fakeBootstrapTile(over: Record<string, unknown> = {}): Record<st
     biome: "grass",
     scene_description: "una escena",
     entities: [
-      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
+      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1] },
     ],
     ...over,
   };

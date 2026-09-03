@@ -3,8 +3,9 @@
  *  El motor declara `biome` + `ground`/`volumes`; aquí se SINTETIZA el grid
  *  de terreno que el motor nunca escribe —fill del bioma 128×128 más los
  *  rasgos de `ground` rasterizados—, que viaja solo para la colisión de
- *  celdas y las costuras entre tiles. La otra expansión es el `decor` con
- *  `attach: "wall"`, que se pega a la celda de muro más cercana.
+ *  celdas y las costuras entre tiles. Es la ÚNICA expansión: la del decor
+ *  pegado al muro se retiró (#399) porque buscaba un char de muro que ningún
+ *  productor escribía desde que los muros son `volumes`.
  *
  *  `vegetation_zones` NO se expande aquí y es a propósito: estampaba una
  *  entity `tree` de 1×1 por celda plantada (cientos por tile) que se PINTABA
@@ -29,20 +30,11 @@ import { TILE_CELLS, TILE_MPC, resolveBiome } from "./tile.js";
 import { parseGround } from "./blueprint/ground.js";
 import { shapeContains, GROUND_WATER_CHAR } from "./blueprint/ground-collision.js";
 
-/** Char de muro: el único que el `decor` con `attach:"wall"` busca para
- *  pegarse. Es el reservado del contrato (`DEFAULT_SOLID_CHARS`). Hoy ningún
- *  productor lo escribe en el grid —los muros son `volumes`—, así que el snap
- *  no encuentra celda: darle sujeto o retirarlo es backlog (#335). */
-const WALL_CHAR = "W";
-
-/** ¿Tiene la escena primitivas pendientes de expandir? */
+/** ¿Tiene la escena primitivas pendientes de expandir? Un tile sin la marca
+ *  SIEMPRE: el fill del bioma es obligatorio aunque no traiga ninguna otra
+ *  primitiva. Una escena sin `tile` no tiene nada que expandir. */
 export function hasUnexpandedPrimitives(raw: Record<string, unknown>): boolean {
-  if (raw.__expanded === true) return false;
-  // Un tile SIEMPRE se expande: el fill del bioma es obligatorio aunque no
-  // traiga ninguna otra primitiva.
-  if (raw.tile !== undefined) return true;
-  return Array.isArray(raw.entities) &&
-    (raw.entities as Record<string, unknown>[]).some((e) => e && e.attach === "wall");
+  return raw.__expanded !== true && raw.tile !== undefined;
 }
 
 /** Pinta un camino grueso ("_") sobre el grid mutable: celda pintada si la
@@ -124,8 +116,8 @@ function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
 
 /** Prepara la BASE de un tile: fill del bioma 128×128 + rasterización de los
  *  rasgos `ground` al grid. Devuelve una copia con `size`/`terrain`
- *  sintetizados lista para la expansión compartida (el decor con `attach`).
- *  Fail-loud en coords rotas o en un tile que traiga el grid escrito. */
+ *  sintetizados. Fail-loud en coords rotas o en un tile que traiga el grid
+ *  escrito. */
 function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> {
   const t = raw.tile as { tx?: unknown; ty?: unknown };
   if (!t || !Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
@@ -149,56 +141,9 @@ function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> 
   };
 }
 
-/** Expande el decor-attach sobre una escena Format D cruda y devuelve una
- *  copia plana marcada `__expanded`. Escena sin primitivas (o ya expandida) →
- *  se devuelve tal cual. Un tile (campo `tile`) pasa primero por
- *  prepareTileBase (bioma + raster de `ground`). */
+/** Expande un tile Format D crudo y devuelve una copia plana marcada
+ *  `__expanded`. Escena sin `tile` (o ya expandida) → se devuelve tal cual. */
 export function expandScenePrimitives(raw: Record<string, unknown>): Record<string, unknown> {
   if (!hasUnexpandedPrimitives(raw)) return raw;
-  if (raw.tile !== undefined) raw = prepareTileBase(raw);
-
-  const size = raw.size as { cols?: number; rows?: number } | undefined;
-  const cols = size?.cols;
-  const rows = size?.rows;
-  if (typeof cols !== "number" || typeof rows !== "number" || !Array.isArray(raw.terrain)) {
-    throw new Error("expandScenePrimitives: la escena no tiene size.cols/rows + terrain (Format D)");
-  }
-
-  const out: Record<string, unknown> = { ...raw };
-  // Grid mutable normalizado a cols (pad con "g" — mismo criterio tolerante
-  // que el saneador de ai_server, que puede no haber corrido en fixtures).
-  const grid: string[][] = [];
-  for (let r = 0; r < rows; r++) {
-    const row = typeof (raw.terrain as unknown[])[r] === "string" ? ((raw.terrain as string[])[r]) : "";
-    grid.push(row.padEnd(cols, "g").slice(0, cols).split(""));
-  }
-  const entities: Record<string, unknown>[] = Array.isArray(raw.entities)
-    ? (raw.entities as Record<string, unknown>[]).map((e) => ({ ...e }))
-    : [];
-
-  // ── Decor attach:"wall" — snap a la celda de muro más cercana (radio 3) ───
-  for (const e of entities) {
-    if (e.attach !== "wall" || e.kind !== "decor") continue;
-    const cell = e.cell as [number, number] | undefined;
-    if (!Array.isArray(cell)) continue;
-    const [ec, er] = cell;
-    let best: [number, number] | null = null;
-    let bestD = Infinity;
-    for (let r = Math.max(0, er - 3); r <= Math.min(rows - 1, er + 3); r++) {
-      for (let c = Math.max(0, ec - 3); c <= Math.min(cols - 1, ec + 3); c++) {
-        if (grid[r][c] !== WALL_CHAR) continue;
-        const d = Math.abs(c - ec) + Math.abs(r - er);
-        if (d < bestD) {
-          bestD = d;
-          best = [c, r];
-        }
-      }
-    }
-    if (best) e.cell = best;
-  }
-
-  out.terrain = grid.map((row) => row.join(""));
-  out.entities = entities;
-  out.__expanded = true;
-  return out;
+  return { ...prepareTileBase(raw), __expanded: true };
 }

@@ -314,7 +314,6 @@
         16,
         12
       ],
-      "glyph": "L",
       "h": 6
     },
     {
@@ -329,7 +328,6 @@
         12,
         9
       ],
-      "glyph": "A",
       "h": 5
     },
     {
@@ -344,7 +342,6 @@
         14,
         10
       ],
-      "glyph": "C",
       "h": 4.5
     },
     {
@@ -359,7 +356,6 @@
         14,
         12
       ],
-      "glyph": "S",
       "h": 6.5
     },
     {
@@ -374,7 +370,6 @@
         16,
         14
       ],
-      "glyph": "T",
       "h": 7
     },
     {
@@ -389,7 +384,6 @@
         6,
         6
       ],
-      "glyph": "F",
       "h": 11
     },
     {
@@ -404,7 +398,6 @@
         2,
         2
       ],
-      "glyph": "g",
       "h": 4
     },
     {
@@ -419,7 +412,6 @@
         3,
         2
       ],
-      "glyph": "b",
       "h": 1.4
     },
     {
@@ -434,7 +426,6 @@
         4,
         2
       ],
-      "glyph": "r",
       "h": 1.6
     },
     {
@@ -449,7 +440,6 @@
         2,
         2
       ],
-      "glyph": "n",
       "h": 1
     },
     {
@@ -464,7 +454,6 @@
         2,
         2
       ],
-      "glyph": "j",
       "h": 0.8
     },
     {
@@ -478,8 +467,7 @@
       "footprint": [
         1,
         1
-      ],
-      "glyph": "f"
+      ]
     },
     {
       "id": "bita_amarre",
@@ -492,8 +480,7 @@
       "footprint": [
         1,
         1
-      ],
-      "glyph": "o"
+      ]
     },
     {
       "id": "pino_oeste",
@@ -506,8 +493,7 @@
       "footprint": [
         2,
         2
-      ],
-      "glyph": "P"
+      ]
     },
     {
       "id": "pino_sur",
@@ -520,8 +506,7 @@
       "footprint": [
         2,
         2
-      ],
-      "glyph": "P"
+      ]
     },
     {
       "id": "olmo_alto",
@@ -534,8 +519,7 @@
       "footprint": [
         2,
         2
-      ],
-      "glyph": "O"
+      ]
     },
     {
       "id": "sabela_lonjera",
@@ -550,8 +534,7 @@
       "footprint": [
         1,
         1
-      ],
-      "glyph": "1"
+      ]
     },
     {
       "id": "brendan_cordelero",
@@ -566,8 +549,7 @@
       "footprint": [
         1,
         1
-      ],
-      "glyph": "2"
+      ]
     },
     {
       "id": "muriel_tabernera",
@@ -582,8 +564,7 @@
       "footprint": [
         1,
         1
-      ],
-      "glyph": "3"
+      ]
     },
     {
       "id": "olmo_estibador",
@@ -598,8 +579,7 @@
       "footprint": [
         1,
         1
-      ],
-      "glyph": "4"
+      ]
     },
     {
       "id": "player",
@@ -612,9 +592,7 @@
       "footprint": [
         1,
         1
-      ],
-      "glyph": "@"
+      ]
     }
-  ],
-  "ambient_event": "Las tablas del embarcadero crujen con la marea y huele a salitre y a brea caliente."
+  ]
 }

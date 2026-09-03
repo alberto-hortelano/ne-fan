@@ -1,10 +1,13 @@
 /** Los DOS campos con los que el terreno se declaraba por chars están retirados
  *  (#335), y las dos poblaciones de escena los RECHAZAN nombrándolos: la
  *  emitida, porque el motor puede copiar un ejemplo viejo; la cargada, porque
- *  un save o snapshot anterior los trae dentro y con `.passthrough()` volverían
- *  al motor por `serializeForLlm`. El nombre del campo se escribe aquí como
- *  literal porque el caso negativo lo exige — por eso este fichero está
- *  exceptuado de `campos-retirados-no-vuelven`, y solo él. */
+ *  un save o snapshot anterior los trae dentro y sin rechazo volverían al
+ *  motor por `serializeForLlm`. Desde #400 los dos schemas son `.strict()`:
+ *  el rebote es el de la clave desconocida y lo que aquí se comprueba es que
+ *  el MOTIVO siga siendo el del campo retirado (con qué se sustituye), no el
+ *  genérico. El nombre del campo se escribe aquí como literal porque el caso
+ *  negativo lo exige — por eso este fichero está exceptuado de
+ *  `campos-retirados-no-vuelven`, y solo él. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
@@ -23,11 +26,13 @@ const cargada = (over: Record<string, unknown>) => ({
   ...over,
 });
 
-/** El issue de un campo retirado, o null si el schema no lo rebotó. */
+/** El issue que rebota un campo retirado, o null si el schema no lo rebotó.
+ *  Con `.strict()` es el de claves desconocidas, que nombra el campo en
+ *  `keys` (no en `path`). */
 function issueDe(schema: typeof EmittedSceneSchema | typeof ExpandedSceneSchema, scene: Record<string, unknown>, campo: string) {
   const r = schema.safeParse(scene);
   if (r.success) return null;
-  return r.error.issues.find((i) => i.path.join(".") === campo) ?? null;
+  return r.error.issues.find((i) => i.code === "unrecognized_keys" && i.keys.includes(campo)) ?? null;
 }
 
 describe("los campos de terreno retirados se rechazan por nombre", () => {
@@ -40,7 +45,7 @@ describe("los campos de terreno retirados se rechazan por nombre", () => {
     assert.equal(ExpandedSceneSchema.safeParse(cargada({})).success, true);
   });
 
-  it("EmittedSceneSchema rebota `terrain_legend` con el path del campo y el modelo vigente en el mensaje", () => {
+  it("EmittedSceneSchema rebota `terrain_legend` nombrándolo y con el modelo vigente en el mensaje", () => {
     const issue = issueDe(EmittedSceneSchema, emitida({ terrain_legend: { w: "agua" } }), "terrain_legend");
     assert.ok(issue, "el gate tiene que rebotar la leyenda");
     assert.match(issue.message, /`terrain_legend` está retirado/);
@@ -90,11 +95,12 @@ describe("los campos de terreno retirados se rechazan por nombre", () => {
     assert.equal(s2.session_id, "", "el throw llega ANTES de mutar la sesión");
   });
 
-  it("y los dos a la vez dan DOS issues, uno por campo (no se para en el primero)", () => {
+  it("y los dos a la vez se nombran los dos en el PRIMER issue (que es el único que ve el motor)", () => {
     const r = EmittedSceneSchema.safeParse(emitida({ terrain_legend: {}, terrain_patches: [] }));
     assert.equal(r.success, false);
     if (r.success) return;
-    const campos = r.error.issues.map((i) => i.path.join(".")).filter((p) => (RETIRED_TERRAIN_FIELDS as readonly string[]).includes(p));
-    assert.deepEqual(campos.sort(), ["terrain_legend", "terrain_patches"]);
+    const primero = r.error.issues[0];
+    assert.match(primero.message, /`terrain_legend` está retirado/);
+    assert.match(primero.message, /`terrain_patches` está retirado/);
   });
 });

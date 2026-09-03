@@ -19,8 +19,8 @@ function makeScene(over: Record<string, unknown> = {}): Record<string, unknown> 
       { id: "posada", label: "posada", type: "building", rect: [10, 70, 10, 7], cutaway: true, doors: [{ edge: "s", at: 4, w: 3 }] },
     ],
     entities: [
-      { id: "barkeep", kind: "npc", name: "Tabernero", cell: [14, 73], footprint: [1, 1], glyph: "n" },
-      { id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1], glyph: "@" },
+      { id: "barkeep", kind: "npc", name: "Tabernero", cell: [14, 73], footprint: [1, 1] },
+      { id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1] },
     ],
     ...over,
   });
@@ -51,7 +51,7 @@ describe("validateScene", () => {
     assert.ok(r1.errors.some((e) => e.includes("spawn del player")), r1.errors.join(" | "));
 
     const s2 = makeScene();
-    (s2.entities as Record<string, unknown>[]).push({ id: "mesa", kind: "prop", name: "mesa", cell: [15, 80], footprint: [2, 2], glyph: "m" });
+    (s2.entities as Record<string, unknown>[]).push({ id: "mesa", kind: "prop", name: "mesa", cell: [15, 80], footprint: [2, 2] });
     const r2 = validateScene(s2, bootstrap);
     assert.ok(r2.errors.some((e) => e.includes("spawn del player")), r2.errors.join(" | "));
   });
@@ -178,7 +178,7 @@ describe("validateScene — tiles", () => {
   it("player en un tile normal → error; en bootstrap es obligatorio", () => {
     const withPlayer = makeTile();
     (withPlayer.entities as Record<string, unknown>[]).push({
-      id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@",
+      id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1],
     });
     const r1 = validateScene(withPlayer, { required_crossings: [] });
     assert.ok(r1.errors.some((e) => e.includes("no llevan entity")), r1.errors.join(" | "));
@@ -288,8 +288,8 @@ describe("validateScene — el hueco tiene que admitir el cuerpo mayor", () => {
       { id: "barril_e", label: "barril", type: "prop", shape: "box", rect: [esteIni, 62, 2, 3] },
     ],
     entities: [
-      { id: "posadero", kind: "npc", name: "Posadero", cell: [60, 55], footprint: [1, 1], glyph: "n" },
-      { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
+      { id: "posadero", kind: "npc", name: "Posadero", cell: [60, 55], footprint: [1, 1] },
+      { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1] },
     ],
   });
 
@@ -318,7 +318,7 @@ describe("validateScene — el hueco tiene que admitir el cuerpo mayor", () => {
     // —`isWalkable` con ±1 celda de tolerancia— pasaba, y no podía moverse.
     const escena = conBarriles(63, 65);
     (escena.entities as Record<string, unknown>[])[0] = {
-      id: "posadero", kind: "npc", name: "Posadero", cell: [64, 63], footprint: [1, 1], glyph: "n",
+      id: "posadero", kind: "npc", name: "Posadero", cell: [64, 63], footprint: [1, 1],
     };
     const r = validateScene(escena, bootstrap);
     assert.equal(r.ok, false);
@@ -342,7 +342,7 @@ describe("validateScene — el hueco tiene que admitir el cuerpo mayor", () => {
       scene_description: "Un prado con un carro.",
       biome: "meadow",
       volumes: [{ id: "carro", label: "carro", type: "prop", shape: "box", rect: [60, 60, 6, 4] }],
-      entities: [{ id: "carretero", kind: "npc", name: "Carretero", cell: [62, 61], footprint: [1, 1], glyph: "n" }],
+      entities: [{ id: "carretero", kind: "npc", name: "Carretero", cell: [62, 61], footprint: [1, 1] }],
     };
     const r = validateScene(enElAnillo, { required_crossings: [] });
     assert.equal(r.ok, false, "sin entrada declarada el cuerpo se juzga igual");
@@ -362,7 +362,7 @@ describe("validateScene — el hueco tiene que admitir el cuerpo mayor", () => {
       scene_description: "Un prado con un carro.",
       biome: "meadow",
       volumes: [{ id: "carro", label: "carro", type: "prop", shape: "box", rect: [60, 60, 6, 4] }],
-      entities: [{ id: "carretero", kind: "npc", name: "Carretero", cell: [68, 61], footprint: [1, 1], glyph: "n" }],
+      entities: [{ id: "carretero", kind: "npc", name: "Carretero", cell: [68, 61], footprint: [1, 1] }],
     };
     const r = validateScene(sano, { required_crossings: [] });
     assert.deepEqual(r.errors, []);

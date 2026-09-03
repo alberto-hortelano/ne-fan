@@ -525,8 +525,8 @@ describe("el rol declarado en la escena llega hasta el preset de conducta", () =
       tile: { tx: 0, ty: 0 },
       biome: "grass",
       entities: [
-        { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
-        { kind: "npc", cell: [60, 60], footprint: [1, 1], glyph: "n", ...npc },
+        { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1] },
+        { kind: "npc", cell: [60, 60], footprint: [1, 1], ...npc },
       ],
     };
   }

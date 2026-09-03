@@ -88,10 +88,9 @@ describe("vegetation_zones · density es ejemplares/m² y se entrega EXACTA", ()
   });
 
   it("el zod es el MISMO que compone el plan: un campo inventado se rebota", () => {
-    // `.strict()`: `glyph` era el char con el que la ruta retirada estampaba
-    // la entity en el grid. Sin esa ruta no lo lee nadie, así que aceptarlo
-    // sería prometer algo que no ocurre.
-    assert.equal(parseVegetationZones([{ type: "pino", area: "rest", density: 0.02, glyph: "T" }]).ok, false);
+    // `.strict()`: una clave que la zona no declara no la lee nadie, así que
+    // aceptarla sería prometer algo que no ocurre.
+    assert.equal(parseVegetationZones([{ type: "pino", area: "rest", density: 0.02, color: "verde" }]).ok, false);
     assert.equal(parseVegetationZones([{ type: "pino", area: [0, 0, 200, 10], density: 0.02 }]).ok, false, "area fuera del tile");
     assert.equal(parseVegetationZones([{ type: "", area: "rest", density: 0.02 }]).ok, false, "sin planta no hay zona");
   });

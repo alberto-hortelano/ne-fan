@@ -1,6 +1,6 @@
 {
-  "description": "un NPC con los TRES campos del motor: role del vocabulario, description (prompt del skin) y style_ref elegida",
-  "expect": "accept",
+  "description": "el char ASCII de una entity está retirado (#400): lo exigían el tool, el zod y el saneador y no lo leía nadie fuera del propio contrato. Un motor que lo copie de un ejemplo viejo recibe la clave nombrada y la lista de los 10 campos que sí existen.",
+  "expect": "reject",
   "payload": {
     "scene_id": "tile_0_0",
     "scene_description": "Una plaza de tierra batida entre casas encaladas.",
@@ -35,9 +35,9 @@
           1,
           1
         ],
+        "glyph": "n",
         "role": "guard",
-        "description": "guardia con lanza y capa parda",
-        "style_ref": "warrior"
+        "description": "guardia con lanza y capa parda"
       }
     ]
   }

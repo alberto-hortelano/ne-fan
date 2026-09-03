@@ -13,10 +13,14 @@ import { resolve } from "node:path";
 
 import {
   EmittedSceneSchema,
+  ExpandedSceneSchema,
   EntitySchema,
   ENTITY_FIELDS,
+  EMITTED_SCENE_FIELDS,
+  SCENE_FIELDS,
   RADIO_SIMULADO_POR_KIND,
 } from "../src/contract/model-io/scene-schema.js";
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { validateContract } from "../src/contract/model-io/validate.js";
 import { MIN_VANO_CELDAS } from "../src/scene/blueprint/volumes.js";
 import { BODY_RADIUS_M, celdasLibresParaRadio, celdasQueCubreRadio } from "../src/scene/terrain-collision.js";
@@ -49,7 +53,7 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
     scene_description: "una escena de prueba",
     tile: { tx: 0, ty: 0 },
     biome: "grass",
-    entities: [{ id: "p", kind: "player", name: "Tú", cell: [1, 1], footprint: [1, 1], glyph: "@" }],
+    entities: [{ id: "p", kind: "player", name: "Tú", cell: [1, 1], footprint: [1, 1] }],
   };
 
   it("acepta la escena base válida", () => {
@@ -59,18 +63,14 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
   it("entity con kind fuera del enum (antes: → prop)", () => {
     const r = EmittedSceneSchema.safeParse({
       ...base,
-      entities: [{ id: "x", kind: "monster", name: "X", cell: [0, 0], footprint: [1, 1], glyph: "x" }],
+      entities: [{ id: "x", kind: "monster", name: "X", cell: [0, 0], footprint: [1, 1] }],
     });
     assert.equal(r.success, false);
   });
 
-  it("entity sin glyph / footprint (antes: glifo de reserva / clamp)", () => {
+  it("entity sin footprint (antes: clamp)", () => {
     assert.equal(
-      EmittedSceneSchema.safeParse({ ...base, entities: [{ id: "x", kind: "prop", name: "X", cell: [0, 0], footprint: [1, 1] }] }).success,
-      false,
-    );
-    assert.equal(
-      EmittedSceneSchema.safeParse({ ...base, entities: [{ id: "x", kind: "prop", name: "X", cell: [0, 0], glyph: "x" }] }).success,
+      EmittedSceneSchema.safeParse({ ...base, entities: [{ id: "x", kind: "prop", name: "X", cell: [0, 0] }] }).success,
       false,
     );
   });
@@ -93,8 +93,62 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
     assert.equal(EmittedSceneSchema.safeParse(sinBiome).success, false);
   });
 
-  it("tolera campos legacy por passthrough (no rechaza)", () => {
-    assert.equal(accepts({ ...base, ambient_event: "viento", nota_del_motor: "sin uso" }), true);
+  // ── La raíz CERRADA (#400) ───────────────────────────────────────────────
+  // Hasta aquí la escena era `.passthrough()` y una clave inventada en la raíz
+  // cruzaba muda hasta el save. Ahora vuelve al modelo con su nombre y con la
+  // lista de lo que sí existe — la misma forma que el rebote de la entity.
+  it("una clave de raíz desconocida se rechaza nombrándola y listando los campos del motor", () => {
+    const res = validateContract(EmittedSceneSchema, { ...base, nota_del_motor: "sin uso" });
+    assert.equal(res.ok, false, "la clave inventada no puede colarse");
+    if (res.ok) return;
+    assert.match(res.error, /la escena trae la clave `nota_del_motor`/, res.error);
+    for (const campo of EMITTED_SCENE_FIELDS) assert.match(res.error, new RegExp(`\\b${campo}\\b`), res.error);
+    // Y NO le enseña el grid, que el motor no escribe nunca.
+    assert.doesNotMatch(res.error, /\bsize\b|\bterrain\b/, res.error);
+    assert.match(res.error, /`scene_description`/, res.error);
+  });
+
+  it("`style_ref` de escena y `__expanded` siguen rechazándose con SU motivo (no con el genérico)", () => {
+    // Antes vivían en el `superRefine`; con `.strict()` el primer issue es la
+    // clave desconocida, así que el motivo tiene que salir del errorMap o el
+    // motor pierde el porqué.
+    const conRef = validateContract(EmittedSceneSchema, { ...base, style_ref: "settlement" });
+    assert.equal(conRef.ok, false);
+    if (conRef.ok) return;
+    assert.match(conRef.error, /`style_ref` de escena está retirado/, conRef.error);
+    assert.match(conRef.error, /`style_ref` en los NPCs/, conRef.error);
+    const marcada = validateContract(EmittedSceneSchema, { ...base, __expanded: false });
+    assert.equal(marcada.ok, false, "con `in`, cualquier valor — también `false`");
+    if (marcada.ok) return;
+    assert.match(marcada.error, /`__expanded` es la marca interna del expander/, marcada.error);
+  });
+
+  it("`place_anchors` está declarado: la forma buena pasa y la mala se rechaza", () => {
+    assert.equal(accepts({ ...base, place_anchors: [{ place_id: "taberna", rect: [52, 48, 24, 16] }] }), true);
+    assert.equal(accepts({ ...base, place_anchors: [{ place_id: "taberna" }] }), true, "rect opcional");
+    assert.notEqual(accepts({ ...base, place_anchors: [{ rect: [1, 2, 3, 4] }] }), true, "sin place_id no ancla nada");
+    assert.notEqual(accepts({ ...base, place_anchors: [{ place_id: "x", rect: [1, 2, 3] }] }), true, "rect son 4 enteros");
+    assert.notEqual(
+      accepts({ ...base, place_anchors: Array.from({ length: 9 }, (_, i) => ({ place_id: `p${i}` })) }),
+      true,
+      "tope de 8, como el saneador de ai_server",
+    );
+  });
+
+  it("ExpandedSceneSchema (lo que el juego CARGA) también es `.strict()`, y su lista incluye la marca", () => {
+    const cargada = expandScenePrimitives(base);
+    assert.equal(ExpandedSceneSchema.safeParse(cargada).success, true, "la base expandida pasa");
+    const res = validateContract(ExpandedSceneSchema, { ...cargada, nota_del_motor: "sin uso" });
+    assert.equal(res.ok, false, "un save con una clave desconocida no carga mudo");
+    if (res.ok) return;
+    assert.match(res.error, /la escena trae la clave `nota_del_motor`/, res.error);
+    for (const campo of [...SCENE_FIELDS, "__expanded"]) assert.match(res.error, new RegExp(`\\b${campo}\\b`), res.error);
+    // Y la `style_ref` de escena heredada de un snapshot viejo se rebota al
+    // cargar con su motivo: pre-producción, el snapshot se regenera.
+    const conRef = validateContract(ExpandedSceneSchema, { ...cargada, style_ref: "settlement" });
+    assert.equal(conRef.ok, false);
+    if (conRef.ok) return;
+    assert.match(conRef.error, /`style_ref` de escena está retirado/, conRef.error);
   });
 });
 
@@ -113,7 +167,7 @@ describe("EmittedSceneSchema — un vano más estrecho que el cuerpo mayor no ll
     scene_description: "una escena de prueba",
     tile: { tx: 0, ty: 0 },
     biome: "grass",
-    entities: [{ id: "p", kind: "player", name: "Tú", cell: [1, 1], footprint: [1, 1], glyph: "@" }],
+    entities: [{ id: "p", kind: "player", name: "Tú", cell: [1, 1], footprint: [1, 1] }],
     volumes: [v],
   });
   const posada = (w: number): unknown =>
@@ -167,7 +221,7 @@ describe("EmittedSceneSchema — una entity móvil no declara más cuerpo del qu
     entities: [e],
   });
   const movil = (kind: string, n: number): unknown =>
-    conEntity({ id: "bicho", kind, name: "Bicho", cell: [10, 10], footprint: [n, n], glyph: "b" });
+    conEntity({ id: "bicho", kind, name: "Bicho", cell: [10, 10], footprint: [n, n] });
 
   it("el tope EFECTIVO del gate es el que sale del cuerpo simulado, no un número escrito a mano", () => {
     // Se mide probando el gate, no leyendo la constante: si alguien sustituye
@@ -198,7 +252,7 @@ describe("EmittedSceneSchema — una entity móvil no declara más cuerpo del qu
   it("los cinco kinds ESTÁTICOS no tienen tope: un granero de 20×14 es geometría legítima", () => {
     for (const kind of ["building", "prop", "item", "tree", "decor"]) {
       assert.equal(
-        accepts(conEntity({ id: "granero", kind, name: "granero", cell: [10, 10], footprint: [20, 14], glyph: "B" })),
+        accepts(conEntity({ id: "granero", kind, name: "granero", cell: [10, 10], footprint: [20, 14] })),
         true,
         `${kind} [20,14] tiene que seguir pasando: nadie lo mueve`,
       );
@@ -217,9 +271,9 @@ describe("EmittedSceneSchema — una entity móvil no declara más cuerpo del qu
   });
 
   it("un footprint rectangular se juzga por su lado MAYOR", () => {
-    assert.equal(accepts(conEntity({ id: "b", kind: "npc", name: "B", cell: [1, 1], footprint: [1, 2], glyph: "b" })), true);
+    assert.equal(accepts(conEntity({ id: "b", kind: "npc", name: "B", cell: [1, 1], footprint: [1, 2] })), true);
     assert.equal(
-      EmittedSceneSchema.safeParse(conEntity({ id: "b", kind: "npc", name: "B", cell: [1, 1], footprint: [1, 5], glyph: "b" })).success,
+      EmittedSceneSchema.safeParse(conEntity({ id: "b", kind: "npc", name: "B", cell: [1, 1], footprint: [1, 5] })).success,
       false,
       "5 celdas de fondo son 2,5 m: el bicho no cabe en su propio cuerpo",
     );
@@ -239,7 +293,7 @@ describe("EmittedSceneSchema — solo queda el tile", () => {
     scene_description: "Una aldea sin sitio en el mundo.",
     size: { cols: 4, rows: 2, meters_per_cell: 2 },
     terrain: ["gggg", "gggg"],
-    entities: [{ id: "p", kind: "player", name: "Tú", cell: [1, 1], footprint: [1, 1], glyph: "@" }],
+    entities: [{ id: "p", kind: "player", name: "Tú", cell: [1, 1], footprint: [1, 1] }],
   };
 
   /** El plató: la suelta más su bloque `stage`. Pasaba el gate hasta hoy. */
@@ -292,8 +346,8 @@ describe("EmittedSceneSchema — un rol inventado vuelve al modelo accionable", 
     tile: { tx: 0, ty: 0 },
     biome: "dirt",
     entities: [
-      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
-      { kind: "npc", cell: [60, 60], footprint: [1, 1], glyph: "n", ...npc },
+      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1] },
+      { kind: "npc", cell: [60, 60], footprint: [1, 1], ...npc },
     ],
   });
 
@@ -349,17 +403,17 @@ describe("EmittedSceneSchema — una clave desconocida en una entity vuelve nomb
     tile: { tx: 0, ty: 0 },
     biome: "dirt",
     entities: [
-      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" },
-      { kind: "npc", cell: [60, 60], footprint: [1, 1], glyph: "n", ...npc },
+      { id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1] },
+      { kind: "npc", cell: [60, 60], footprint: [1, 1], ...npc },
     ],
   });
 
-  it("nombra la entity, la clave que sobra y las 12 que valen", () => {
+  it("nombra la entity, la clave que sobra y las 10 que valen", () => {
     const res = validateContract(
       EmittedSceneSchema,
       tileCon({ id: "boris_herrero", name: "Boris el Herrero", health: 60 }),
     );
-    assert.equal(res.ok, false, "una clave fuera de las 12 no puede colarse");
+    assert.equal(res.ok, false, "una clave fuera de las 10 no puede colarse");
     if (res.ok) return;
     assert.match(res.error, /boris_herrero/, res.error);
     assert.match(res.error, /`health`/, res.error);
@@ -383,7 +437,7 @@ describe("EmittedSceneSchema — una clave desconocida en una entity vuelve nomb
     // PRIMER issue pasa a ser el `id: Required`, y `formatError` solo enseña
     // ese — que es igual de accionable.
     const anonima = EntitySchema.safeParse(
-      { kind: "npc", name: "?", cell: [1, 1], footprint: [1, 1], glyph: "n", hp: 3 },
+      { kind: "npc", name: "?", cell: [1, 1], footprint: [1, 1], hp: 3 },
     );
     assert.equal(anonima.success, false);
     if (anonima.success) return;
@@ -392,12 +446,12 @@ describe("EmittedSceneSchema — una clave desconocida en una entity vuelve nomb
     assert.match(desconocida.message, /una entity trae la clave `hp`/, desconocida.message);
   });
 
-  it("las 12 declaradas siguen pasando (el cierre no rechaza de más)", () => {
+  it("las 10 declaradas siguen pasando (el cierre no rechaza de más)", () => {
     assert.equal(
       accepts(tileCon({
         id: "roric", name: "Guardia Roric", role: "guard",
         description: "guardia con lanza y capa parda", style_ref: "warrior",
-        shape: "box", h: 1.8, attach: "wall",
+        shape: "box", h: 1.8,
       })),
       true,
     );
