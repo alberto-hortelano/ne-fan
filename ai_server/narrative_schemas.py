@@ -150,7 +150,7 @@ def _mensaje_de_claves_de_raiz_desconocidas(claves: list) -> str:
             f"en el contrato. Una escena tiene EXACTAMENTE estos campos: {' | '.join(SCENE_FIELDS)}. "
             "Lo que quisieras contar del lugar va en `scene_description`"
         )
-    return ". ".join(partes)
+    return "; ".join(partes)
 
 # Tipos de rasgo de suelo del plan de tile (`ground`). Espejo de
 # GroundFeatureSchema en nefan-core/src/scene/blueprint/ground.ts.

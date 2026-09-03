@@ -290,7 +290,7 @@ function sceneErrorMap(campos: readonly string[]): z.ZodErrorMap {
           `${campos.join(" | ")}. Lo que quisieras contar del lugar va en \`scene_description\``,
       );
     }
-    return { message: partes.join(". ") };
+    return { message: partes.join("; ") };
   };
 }
 
