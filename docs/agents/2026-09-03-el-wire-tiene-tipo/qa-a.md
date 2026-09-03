@@ -180,3 +180,6 @@ Edición temporal de `narrative_schemas.py` (truncar a 8) para probar el guion 4
 
 ## No probado
 Igual que antes: CI en la PR, mutación (pedida), motor real por MCP y ai_server como proceso. `./start.sh --parar` al final: nada que parar.
+
+## Cierre de H6 · medido sobre `3385126`
+H6 cerrado: el ancla de `place_anchors` es `z.object({…}).strict()` (`scene-schema.ts:223-226`); sonda `{ place_id: "taberna", color: 1 }` → zod **RECHAZA → place_anchors[0]: Unrecognized key(s) in object: 'color'**, ai_server RECHAZA nombrándola; guion 40 `= ancla con clave extra [campo]: zod=RECHAZA · ai_server=RECHAZA` → 1 en verde. **Probado en negativo** (quitado el `.strict()` una vez, restaurado de copia): guion 40 → `✘ ningún CAMPO de forma recibe dos veredictos… ancla con clave extra: zod=ACEPTA · ai_server=RECHAZA` y `✘ ai_server nunca RECHAZA lo que el zod ACEPTA`; `scene-schema.test.ts` → `✖ \`place_anchors\` está declarado: la forma buena pasa y la mala se rechaza` (34 pass · 1 fail). Árbol limpio tras restaurar. **Veredicto final: APTO.**
