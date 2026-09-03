@@ -74,9 +74,13 @@ const INVARIANTES = [
     [["  entities: z.array(EntitySchema),\n} as const;", "  entities: z.array(EntitySchema),\n  nota_del_motor: z.string().optional(),\n} as const;"]],
   ],
   // ── #203 · el guardia DÉBIL de términos prometidos ──────────────────────
+  // Vive en `contract-terms.test.ts` desde #347 (es trans-proceso y no puede
+  // entrar en la batería de mutación); hasta el 2026-09-03 este invariante
+  // seguía apuntando a `contract-prompts` y daba VERDE al romperlo — un
+  // candado obsoleto que solo se vio al volver a ejecutar el guion.
   [
     "guardia débil · el prompt vuelve a prometer `player_choice`, que no existe en ningún proceso",
-    PROMPT, "ts:test/contract-prompts.test.ts",
+    PROMPT, "ts:test/contract-terms.test.ts",
     [["dialogue_choice event", "player_choice event"]],
   ],
   // ── #259 · la entity cerrada ────────────────────────────────────────────
