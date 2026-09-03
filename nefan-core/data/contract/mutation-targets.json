@@ -79,10 +79,6 @@
       "porque": "Solo declara tipos: no queda una línea de JavaScript detrás, así que no hay nada que mutar. No es deuda y no la habrá — si algún día lleva lógica, esto deja de ser cierto y hay que sacarlo de aquí."
     },
     {
-      "fichero": "src/contracts/asset-store.ts",
-      "porque": "El contrato del asset-store (:8767). Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
       "fichero": "src/contracts/narrative-llm.ts",
       "porque": "El contrato de la llamada narrativa al LLM. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
@@ -92,7 +88,7 @@
     },
     {
       "fichero": "src/contracts/request-schemas.ts",
-      "porque": "Los zod de petición de los servicios. Ningún test lo tiene por sujeto: medirlo hoy solo daría mutantes NoCoverage, que es deuda de COBERTURA y no medida de mutación — primero el test, luego el módulo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
+      "porque": "Los zod de petición de los servicios. DESDE #376 hay tests que tienen por sujeto una PARTE de este fichero —`AssetRegisterRequestSchema`, la unión discriminada del registro del asset-store, la ejerce `test/asset-store.test.ts` por HTTP y en negativo—, así que el motivo de antes («ningún test lo tiene por sujeto») ya no es cierto y no se deja escrito como si lo fuera. Lo que sigue faltando es la BATERÍA: el fichero cubre además el State API entero, y agruparlo hoy mediría zod cuyos tests están repartidos por media casa, así que sus supervivientes no tendrían dueño honesto — que es justo lo que la atribución por PR existe para evitar. Se trocea o se agrupa por servicio en su propia tanda."
     },
     {
       "fichero": "src/contracts/common.ts",
@@ -639,6 +635,19 @@
       ],
       "break": 66,
       "porque": "A qué se refiere el jugador, en sus DOS sentidos: qué enfila la cámara (`pickAimTarget`, angular, con el cuerpo modelado como elipsoide de pie) y con qué puede tratar aquí (`pickNearestTarget`, de proximidad y medida en el suelo). Sale de `sin_mutar` con esta tanda porque la segunda mitad se le añade ahora (#358): el bucle del cliente traía su propio criterio de «el NPC más cercano», y dos criterios de «a qué me refiero» en dos ficheros distintos es exactamente como divergen. Batería de un fichero porque es el único test de core que lo importa (el otro consumidor es `nefan-html`). Sus mutantes interesantes: cambiar el `atan2(|cruz|, punto)` por un `acos` satura justo donde viven «lo tengo enfilado» y «lo tengo a la espalda»; quitar la guarda del producto escalar hace apuntable lo que está detrás; y medir la interacción en 3D en vez de en el suelo deja sin poder hablar al que se subió a un cajón. MEDIDO en la corrida 33560823591 (`5ad1914`, 2026-09-02): 66.4% (44 vivos de 131) — el más bajo de los cuatro módulos que estrena esta tanda, y el número no es el hallazgo: lo es DÓNDE están. Sobreviven los dos mutantes que el párrafo de arriba anuncia como interesantes: la guarda del producto escalar (L90) sigue viva en sus cuatro formas, o sea que nadie comprueba que lo de detrás no se apunta; y el producto vectorial de `anguloEntre` (L61-64) admite cambiarle los signos sin que un test se entere. Suman además los cuatro `c.pos.x - origin.x` → `+` de las DOS funciones, vivos porque todos los casos se miden con el ojo en el origen, y el desempate de `best` entero (L128-129, «a igualdad de ángulo, el más cercano»). Dicho sin adorno: la batería mide el camino feliz y no las guardas ni el desempate. El suelo pasa al score medido redondeado hacia abajo, que es lo prometido, pero 66 se registra como DEUDA CON DUEÑO y no como conforme — `npm run deuda` lo saca con sus 44. Cerrarlo exige corrida autorizada: 131 mutantes pasa del `tope_local` de 120, y pasa por 11."
+    },
+    {
+      "id": "asset-store-contrato",
+      "mutate": [
+        "src/contracts/asset-store.ts"
+      ],
+      "tests": [
+        "test/asset-store.test.ts",
+        "test/asset-store-server.test.ts",
+        "test/manifest-kinds-con-productor.test.ts"
+      ],
+      "break": 0,
+      "porque": "El contrato del asset-store (:8767). Deja de estar en `sin_mutar` con #376: hasta entonces el fichero solo declaraba tipos y un literal, y su motivo escrito era «ningún test lo tiene por sujeto — primero el test, luego el módulo». #376 le pone LÓGICA (los tres predicados de kind y `refDeArteDePersonaje`, que es de dónde sale el `ref` con el que el store pina el arte de personaje) y los tests que la tienen por sujeto, así que toca la segunda mitad de esa frase. Sus mutantes interesantes son exactamente los estados que la tanda vino a hacer inexpresables: un `esArteDePersonaje` que devuelva false deja el arte más caro del juego registrado SIN pin y por tanto evictable por LRU —la skin de un NPC vivo—, y un `refDeArteDePersonaje` que no derive el mismo ref para el hero y para sus sheets rompe el «se sueltan juntos» sin que nada se ponga rojo aguas arriba. Batería de tres ficheros porque son los tres tests de core que lo importan (el cable HTTP, el arranque del proceso y el veredicto de kinds). SUELO 0 a propósito hasta la primera corrida AUTORIZADA: el suelo de esta casa se pone al score MEDIDO, no al que uno espera."
     }
   ]
 }

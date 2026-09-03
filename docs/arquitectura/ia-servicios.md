@@ -49,7 +49,7 @@ NEFAN_MANIFEST_DB=/tmp/prueba/manifest.sqlite3 npx tsx services/asset-store/serv
 Es **TS-only** y de PRUEBA, como `NEFAN_GAMES_DIR`/`NEFAN_SAVES_DIR` del bridge: no está en
 `data/runtime_config.json` (el snapshot es para los servicios que no son TS, y `manifest_db` no lo
 lee ninguno) y `start.sh` no la conoce — se exporta en el entorno de quien arranca el servicio.
-`scripts/manifest-solo-surface.ts` la hereda (`loadAssetStoreConfig(process.env)`) y su flag `--db`
+`scripts/manifest-kinds-con-productor.ts` la hereda (`loadAssetStoreConfig(process.env)`) y su flag `--db`
 gana; **`--cache`/`--archivo` NO se mueven con ella**, así que al purgar un índice desplazado hay que
 decir las dos mitades o el script mirará el `cache/` del checkout. El veredicto del arranque nombra
 las dos: qué índice rechaza y qué almacén archivar.

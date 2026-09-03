@@ -2,7 +2,7 @@
 /** EL ÍNDICE DEL STORE SE PRUEBA SIN EL DEL CHECKOUT (QA de T8 PR-A: #391).
  *
  *  El asset-store tiene UN camino de fallo en el arranque —negarse a servir un
- *  índice con kinds sin productor (`services/asset-store/solo-surface.ts`)— y
+ *  índice con kinds sin productor (`services/asset-store/kinds-con-productor.ts`)— y
  *  hasta esta PR no se podía ejercer sin la DB del checkout: `loadAssetStoreConfig`
  *  solo admitía override para el PUERTO, así que `server.ts` abría siempre
  *  `cache/manifest.sqlite3`. El QA de T4 tuvo que exportar el árbol entero al
@@ -188,7 +188,7 @@ db.importEntry({ hash: "q1", type: "qa_centinela", subtype: "solo-de-este-guion"
     expect("1 · nombra el kind que sobra y cuántas filas", /texture \(albedo 1\)/.test(neg.stderr), neg.stderr.slice(0, 200));
     expect(
       "1 · dice con qué script se purga",
-      neg.stderr.includes("scripts/manifest-solo-surface.ts"),
+      neg.stderr.includes("scripts/manifest-kinds-con-productor.ts"),
       neg.stderr.slice(0, 200),
     );
     expect(

@@ -3,7 +3,8 @@
  *
  *  POR QUÉ ASÍ (#391). El único camino de fallo del arranque —negarse a servir
  *  un índice con kinds sin productor— vivía en un fichero sin un solo test:
- *  `verificarSoloSurface` sí lo tenía (`manifest-solo-surface.test.ts`), pero
+ *  `verificarKindsConProductor` sí lo tenía
+ *  (`manifest-kinds-con-productor.test.ts`), pero
  *  quien traduce el veredicto en `exit 1` es `server.ts`, y para ejercerlo
  *  hacía falta plantar una fila ajena en la DB DEL CHECKOUT. El QA de T4
  *  exportó el árbol entero a un temporal para poder hacerlo: ese workaround es
@@ -28,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { ENV_MANIFEST_DB, loadAssetStoreConfig } from "../services/asset-store/config.js";
 import type { AssetStoreHealthResponse } from "../services/asset-store/http-server.js";
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
-import { SCRIPT_DE_PURGA } from "../services/asset-store/solo-surface.js";
+import { SCRIPT_DE_PURGA } from "../services/asset-store/kinds-con-productor.js";
 
 const CORE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER = join(CORE, "services", "asset-store", "server.ts");
@@ -149,8 +150,7 @@ describe("loadAssetStoreConfig: la ruta del índice admite override (#391)", () 
     // El override es SOLO del índice: los demás campos no se mueven.
     const conOverride = loadAssetStoreConfig({ [ENV_MANIFEST_DB]: absoluta });
     const sinOverride = loadAssetStoreConfig({});
-    assert.equal(conOverride.surfaceDir, sinOverride.surfaceDir);
-    assert.equal(conOverride.spriteSheetsDir, sinOverride.spriteSheetsDir);
+    assert.deepEqual(conOverride.blobDirs, sinOverride.blobDirs);
     assert.equal(conOverride.stylesDir, sinOverride.stylesDir);
     assert.equal(conOverride.cacheMaxBytes, sinOverride.cacheMaxBytes);
   });
@@ -240,6 +240,42 @@ describe("server.ts: el fail-loud del índice, contra una DB temporal", () => {
     // El stderr solo lleva el ExperimentalWarning de node:sqlite: ni veredicto
     // ni excepción (comparar con "" lo ataría a esa advertencia de node).
     assert.doesNotMatch(salida.stderr, /kinds SIN productor|Error/, salida.stderr);
+  });
+
+  it("arranca con los TRES kinds del índice y sirve el listado del arte de personaje (#376)", async () => {
+    // El sujeto es el arranque: hasta #376 una fila `sprite_hero` era «un kind
+    // sin productor» y el store se habría NEGADO a arrancar sobre este índice.
+    const ruta = dbTemporal("tres-kinds", (db) => {
+      db.register({ hash: "s1", type: "surface", subtype: "surface", prompt: "adoquín", size_bytes: 10 });
+      db.registrarArteDePersonaje(
+        [
+          { hash: "0123456789abcdef", type: "sprite_hero", subtype: "sprite_hero", prompt: "Blas, el tabernero", size_bytes: 20, extra: { character_ref: "0123456789abcdef" } },
+          { hash: "fedcba9876543210", type: "sprite_sheet", subtype: "sprite_sheet", prompt: "Blas, el tabernero", size_bytes: 30, extra: { character_ref: "0123456789abcdef" } },
+        ],
+        "character:0123456789abcdef",
+      );
+    });
+
+    const salida = await arrancar(
+      { [ENV_MANIFEST_DB]: ruta, NEFAN_ASSET_STORE_PORT: "0" },
+      async (puerto) => {
+        const res = await fetch(`http://127.0.0.1:${puerto}/assets?asset_type=sprite_hero&limit=50`, {
+          signal: AbortSignal.timeout(5_000),
+        });
+        return (await res.json()) as { assets: Array<{ hash: string; prompt: string }> };
+      },
+    );
+
+    assert.ok(salida.stdout.includes(`índice ${ruta} (3 entradas, 60 bytes)`), salida.stdout);
+    assert.doesNotMatch(salida.stderr, /kinds SIN productor/, salida.stderr);
+    // Y el hero se puede consultar POR SU PROMPT, que es para lo que se indexa.
+    const listado = salida.extra as { assets?: Array<{ hash: string; prompt: string }> };
+    assert.deepEqual(
+      listado.assets?.map((a) => [a.hash, a.prompt]),
+      [["0123456789abcdef", "Blas, el tabernero"]],
+      JSON.stringify(salida.extra),
+    );
+    assert.equal(salida.code, 0);
   });
 
   it("con la variable en blanco no arranca y dice cuál es", async () => {

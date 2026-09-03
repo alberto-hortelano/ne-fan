@@ -36,7 +36,12 @@ import type {
   SceneAssetRefsRequest,
   SceneValidateRequest,
 } from "./world-state.js";
-import { ASSET_KIND, type AssetPinRequest, type AssetRegisterRequest } from "./asset-store.js";
+import { HASH_DE_ASSET } from "./asset-store.js";
+import type {
+  AssetCharacterRegisterRequest,
+  AssetPinRequest,
+  AssetRegisterRequest,
+} from "./asset-store.js";
 import {
   MAX_VOCABULARY_ENTRIES,
   VocabularyEntrySchema,
@@ -161,16 +166,53 @@ export const PluginRegisterRequestSchema = z.object({
 
 // ── asset-store (services/asset-store/http-server.ts) ──
 
-// `type`/`subtype` son el literal del ÚNICO kind con productor (#257): un
-// registro de otro kind es 400 aquí, no una fila que el prune no sabrá tocar.
+// `POST /assets` es la puerta de la SUPERFICIE y solo de ella (#257, #376):
+// un registro de otro kind es 400 aquí, no una fila que el prune no sabrá
+// tocar. El arte de personaje tiene la suya, abajo.
+//
+// El `hash` lleva FORMA y no solo `min(1)`. No es celo: el prune borra
+// `rutaDeBlob(kind, hash)` con `rmSync recursive`, así que un hash que sea un
+// nombre de directorio plausible borra ese directorio, y un `../..` sale de
+// `cache/`. Los dos productores emiten `sha256(...)[:16]` y el LECTOR ya lo
+// exigía para el hero: lo que faltaba era exigirlo al escribir.
 export const AssetRegisterRequestSchema = z.object({
-  hash: z.string().min(1),
-  type: z.literal(ASSET_KIND),
-  subtype: z.literal(ASSET_KIND),
+  hash: z.string().regex(HASH_DE_ASSET),
+  type: z.literal("surface"),
+  subtype: z.literal("surface"),
   prompt: z.string(),
   size_bytes: z.number().min(0),
   extra: z.record(z.unknown()).optional(),
 });
+
+// ── El arte de UN personaje, en UNA petición (POST /assets/character) ──
+//
+// Lo que este schema hace inexpresable, y que la primera forma de #376 no
+// alcanzaba: **el `ref` de pin no es una entrada**. Con un `character_ref` por
+// fila, un `sprite_sheet` podía declarar el ref de otro personaje —medido por
+// QA: soltar A se llevaba los frames de B—, o sea que «un hero sin sus
+// frames», la frase del criterio de cierre, seguía siendo un estado
+// expresable. Aquí el ref se deriva de `hero_key` para las N filas y no hay
+// campo en el que escribir la contradicción. El `hash` del hero tampoco se
+// manda: ES `hero_key`.
+//
+// `prompt` no vacío en TODAS las filas: es la procedencia, que es el motivo
+// entero por el que este arte se indexa (#293).
+const ArteDePersonajeFilaSchema = z.object({
+  hash: z.string().regex(HASH_DE_ASSET),
+  prompt: z.string().min(1),
+  size_bytes: z.number().min(0),
+  extra: z.record(z.unknown()).optional(),
+});
+
+export const AssetCharacterRegisterRequestSchema = z
+  .object({
+    hero_key: z.string().regex(HASH_DE_ASSET),
+    hero: ArteDePersonajeFilaSchema.omit({ hash: true }).optional(),
+    sheets: z.array(ArteDePersonajeFilaSchema).max(64).optional(),
+  })
+  .refine((v) => v.hero !== undefined || (v.sheets?.length ?? 0) > 0, {
+    message: "una petición sin hero y sin sheets no registra nada: manda al menos uno",
+  });
 
 export const SceneAssetRefsRequestSchema = z.object({
   scene_id: z.string().min(1),
@@ -238,6 +280,8 @@ assertMirror<SceneAssetRefsRequest, z.infer<typeof SceneAssetRefsRequestSchema>>
 assertMirror<z.infer<typeof SceneAssetRefsRequestSchema>, SceneAssetRefsRequest>();
 assertMirror<AssetRegisterRequest, z.infer<typeof AssetRegisterRequestSchema>>();
 assertMirror<z.infer<typeof AssetRegisterRequestSchema>, AssetRegisterRequest>();
+assertMirror<AssetCharacterRegisterRequest, z.infer<typeof AssetCharacterRegisterRequestSchema>>();
+assertMirror<z.infer<typeof AssetCharacterRegisterRequestSchema>, AssetCharacterRegisterRequest>();
 
 assertSameKeys<SceneAssetRefsRequest, z.infer<typeof SceneAssetRefsRequestSchema>>();
 assertSameKeys<PlaceUpsert, z.infer<typeof PlaceUpsertSchema>>();
@@ -251,6 +295,7 @@ assertSameKeys<NarrativeProgressRequest, z.infer<typeof NarrativeProgressRequest
 assertSameKeys<SceneValidateRequest, z.infer<typeof SceneValidateRequestSchema>>();
 assertSameKeys<PluginRegisterRequest, z.infer<typeof PluginRegisterRequestSchema>>();
 assertSameKeys<AssetRegisterRequest, z.infer<typeof AssetRegisterRequestSchema>>();
+assertSameKeys<AssetCharacterRegisterRequest, z.infer<typeof AssetCharacterRegisterRequestSchema>>();
 
 assertMirror<VocabularySetRequest, z.infer<typeof VocabularySetRequestSchema>>();
 assertMirror<z.infer<typeof VocabularySetRequestSchema>, VocabularySetRequest>();

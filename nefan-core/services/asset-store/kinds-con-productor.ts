@@ -5,18 +5,29 @@
  *  oblicua, recortes SAM2…) y `prune` no podía tocarlas: un type sin
  *  directorio conocido era «intocable» por diseño. Quitar el mapeo de esos
  *  kinds sin purgar las filas las habría hecho inmunes para siempre. La
- *  purga es una operación aparte (`scripts/manifest-solo-surface.ts`, con
- *  export de procedencia por #293), y este veredicto es lo que impide que un
- *  índice a medio purgar —o un clon con `cache/` histórico— arranque callado
- *  y sirva 404 sobre filas que ya no tienen blob.
+ *  purga es una operación aparte (`scripts/manifest-kinds-con-productor.ts`,
+ *  con export de procedencia por #293), y este veredicto es lo que impide que
+ *  un índice a medio purgar —o un clon con `cache/` histórico— arranque
+ *  callado y sirva 404 sobre filas que ya no tienen blob.
+ *
+ *  EL INVARIANTE NO ES «UN SOLO KIND» (#376). Hasta septiembre de 2026 el
+ *  índice tenía exactamente uno y esto se llamaba `verificarSoloSurface` —el
+ *  nombre viejo se escribe aquí A PROPÓSITO y es su único sitio vivo en el
+ *  repo: quien lo encuentre en una PR o un doc anterior tiene que poder llegar
+ *  hasta aquí, y para eso hay que nombrarlo—, que contaba lo que hacía pero no
+ *  lo que defendía: lo que no se admite es un
+ *  kind que NADIE pueda volver a producir, porque su fila promete un blob que
+ *  ya no se puede rehacer. Los dos kinds del arte de personaje sí tienen
+ *  productor (`ai_server/routers/remote_generation.py`), así que entraron —y
+ *  el nombre de esta función pasó a decir el invariante y no el recuento.
  *
  *  Decisión pura: recibe la DB y devuelve el veredicto redactado. Quien sale
  *  con 1 es `server.ts`. */
 import type { ManifestDb } from "./manifest-db.js";
 
-export const SCRIPT_DE_PURGA = "scripts/manifest-solo-surface.ts";
+export const SCRIPT_DE_PURGA = "scripts/manifest-kinds-con-productor.ts";
 
-export type VeredictoSoloSurface = { ok: true } | { ok: false; mensaje: string };
+export type VeredictoKinds = { ok: true } | { ok: false; mensaje: string };
 
 /** De qué índice y de qué almacén habla el veredicto.
  *
@@ -34,7 +45,10 @@ export interface IndiceInspeccionado {
   cacheDir: string;
 }
 
-export function verificarSoloSurface(db: ManifestDb, indice: IndiceInspeccionado): VeredictoSoloSurface {
+export function verificarKindsConProductor(
+  db: ManifestDb,
+  indice: IndiceInspeccionado,
+): VeredictoKinds {
   const ajenos = db.kindsAjenos();
   if (ajenos.length === 0) return { ok: true };
 

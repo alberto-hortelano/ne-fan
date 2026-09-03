@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 
-import { ASSET_KIND } from "../../src/contracts/asset-store.js";
+import { type AssetKind, KIND_BLOB_PLANO } from "../../src/contracts/asset-store.js";
 import { SAFE_ID } from "../../src/games/loader.js";
 
 export interface BlobResult {
@@ -25,28 +25,56 @@ const text = (status: number, msg: string): BlobResult => ({
   body: Buffer.from(msg, "utf-8"),
 });
 
-/** GET /cache/{kind}/{hash}. El único kind con productor es `surface`
- *  (#257): cualquier otro —incluidos los siete que este store sirvió hasta
- *  septiembre de 2026 y `check`, que nunca fue una ruta— es 400 texto plano.
- *  El blob vive en {surfaceDir}/{hash}/surface.png. */
-export function readBlob(surfaceDir: string, kind: string, hash: string): BlobResult {
-  if (kind !== ASSET_KIND) return text(400, "Invalid kind");
-  const path = join(surfaceDir, hash, `${ASSET_KIND}.png`);
+/** La entrada del sistema de ficheros que ES el blob de `(kind, hash)`.
+ *
+ *  ÚNICO sitio donde se compone una ruta de blob, y por eso es total sobre
+ *  `AssetKind`: lo usan el lector y el prune, que hasta #376 derivaban la
+ *  suya cada uno por su lado sobre un `surfaceDir` suelto. Con dos kinds más
+ *  eso era un `join` distinto por sitio y un borrado en la carpeta
+ *  equivocada.
+ *
+ *  Ojo a la forma, que NO es la misma para los tres y es justo por lo que hay
+ *  un kind por directorio y no un kind con subtypes: `surface` y
+ *  `sprite_sheet` son DIRECTORIOS (el PNG de la superficie dentro; los N
+ *  frames del sheet dentro) y `sprite_hero` es un FICHERO suelto. El prune
+ *  borra exactamente lo que esta función devuelve. */
+export function rutaDeBlob(
+  blobDirs: Record<AssetKind, string>,
+  kind: AssetKind,
+  hash: string,
+): string {
+  return kind === "sprite_hero"
+    ? join(blobDirs.sprite_hero, `${hash}.png`)
+    : join(blobDirs[kind], hash);
+}
+
+/** GET /cache/{kind}/{hash}. Solo `KIND_BLOB_PLANO`: cualquier otro kind
+ *  —incluidos los dos del arte de personaje, que tienen sus propias rutas, y
+ *  los siete que este store sirvió hasta septiembre de 2026— es 400 texto
+ *  plano. El blob vive en {blobDirs.surface}/{hash}/surface.png. */
+export function readBlob(
+  blobDirs: Record<AssetKind, string>,
+  kind: string,
+  hash: string,
+): BlobResult {
+  if (kind !== KIND_BLOB_PLANO) return text(400, "Invalid kind");
+  const path = join(rutaDeBlob(blobDirs, KIND_BLOB_PLANO, hash), `${KIND_BLOB_PLANO}.png`);
   if (!existsSync(path)) return text(404, "Not found");
   return { status: 200, contentType: "image/png", body: readFileSync(path), touched: hash };
 }
 
 const SHEET_FRAME_RE = /^dir_\d+_frame_\d{3}\.png$/;
 
-/** GET /cache/sprite_sheet/{hash}/{filename} — almacén paralelo SIN manifest
- *  (deliberado) y sin touch, como hoy. */
+/** GET /cache/sprite_sheet/{hash}/{filename} — un frame del sheet vestido.
+ *  Sin touch: el LRU no decide sobre este kind, que va pineado
+ *  (`refDeArteDePersonaje`) mientras no exista keep-list de personaje. */
 export function readSpriteSheetFrame(
-  spriteSheetsDir: string,
+  blobDirs: Record<AssetKind, string>,
   hash: string,
   filename: string,
 ): BlobResult {
   if (!SHEET_FRAME_RE.test(filename)) return text(400, "Invalid filename");
-  const path = join(spriteSheetsDir, hash, filename);
+  const path = join(rutaDeBlob(blobDirs, "sprite_sheet", hash), filename);
   if (!existsSync(path)) return text(404, "Not found");
   return { status: 200, contentType: "image/png", body: readFileSync(path) };
 }
@@ -58,13 +86,10 @@ const HERO_KEY_RE = /^[0-9a-f]{16}$/;
 /** GET /cache/sprite_hero/{key} — hero-shot de identidad del pipeline de
  *  skins (cache/sprite_sheets/heroes/{key}.png): la imagen que fija la cara
  *  del personaje antes de repintar sus frames, y que el cliente reusa como
- *  retrato en el diálogo. Mismo almacén paralelo que los frames: sin
- *  manifest y sin touch, y por tanto FUERA del prune (que solo recorre
- *  surfaceDir) — si algún día los sprite sheets entran en el manifest,
- *  heroes y frames necesitarán pin a la vez. */
-export function readSpriteHero(spriteSheetsDir: string, key: string): BlobResult {
+ *  retrato en el diálogo. Sin touch, por lo mismo que los frames. */
+export function readSpriteHero(blobDirs: Record<AssetKind, string>, key: string): BlobResult {
   if (!HERO_KEY_RE.test(key)) return text(400, "Invalid filename");
-  const path = join(spriteSheetsDir, "heroes", `${key}.png`);
+  const path = rutaDeBlob(blobDirs, "sprite_hero", key);
   if (!existsSync(path)) return text(404, "Not found");
   return { status: 200, contentType: "image/png", body: readFileSync(path) };
 }

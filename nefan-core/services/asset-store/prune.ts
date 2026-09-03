@@ -6,9 +6,10 @@
  *  borraría assets en uso. `keep === null` en `prune()` solo se da en
  *  tests/CLI que asumen explícitamente ese riesgo. */
 import { existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
 
+import { type AssetKind, esAssetKind } from "../../src/contracts/asset-store.js";
 import type { AssetRefsResponse } from "../../src/contracts/world-state.js";
+import { rutaDeBlob } from "./blob-store.js";
 import type { ManifestDb } from "./manifest-db.js";
 
 export interface PruneSummary {
@@ -61,13 +62,19 @@ export async function fetchKeepList(worldStateUrl: string): Promise<KeepListResu
   }
 }
 
-/** `surfaceDir` es la raíz de blobs del único kind del índice: el arranque
- *  (solo-surface.ts) garantiza que ningún grupo tiene otro type, así que ya
- *  no existe el «type sin dir conocido — no tocar» que hacía inmunes al
- *  prune a 16.986 filas (#257). */
+/** `blobDirs` da la raíz de CADA kind del índice: el arranque
+ *  (kinds-con-productor.ts) garantiza que ningún grupo tiene un type que no
+ *  esté ahí, así que ya no existe el «type sin dir conocido — no tocar» que
+ *  hacía inmunes al prune a 16.986 filas (#257).
+ *
+ *  Un type desconocido es FAIL-LOUD y no un `continue`: si el arranque dejó
+ *  entrar una fila que este mapa no sabe borrar, el prune estaría
+ *  desindexando arte cuyo blob se queda en disco para siempre — que es
+ *  exactamente el estado que #257 tardó meses en descubrir. Mejor 500 con el
+ *  type dentro. */
 export function prune(
   db: ManifestDb,
-  surfaceDir: string,
+  blobDirs: Record<AssetKind, string>,
   maxBytes: number,
   keep: Set<string> | null,
 ): PruneSummary {
@@ -83,12 +90,19 @@ export function prune(
   groups.sort((a, b) => (a.last < b.last ? -1 : a.last > b.last ? 1 : 0));
   for (const g of groups) {
     if (total <= maxBytes) break;
-    if (keep?.has(g.hash)) continue; // referenciado por un save vivo
-    const blobDir = join(surfaceDir, g.hash);
+    if (keep?.has(g.hash)) continue; // referenciado por un save vivo, o pineado
+    if (!esAssetKind(g.type)) {
+      throw new Error(
+        `asset-store prune: el índice tiene una fila de type "${g.type}" (hash ${g.hash}), ` +
+          `que no es un kind con productor y no tiene dónde borrar su blob. ` +
+          `El arranque debería haberlo impedido: purga el índice antes de podar.`,
+      );
+    }
+    const blob = rutaDeBlob(blobDirs, g.type, g.hash);
     try {
-      if (existsSync(blobDir)) rmSync(blobDir, { recursive: true });
+      if (existsSync(blob)) rmSync(blob, { recursive: true });
     } catch (err) {
-      console.warn(`asset-store prune: cannot remove ${blobDir}:`, err);
+      console.warn(`asset-store prune: cannot remove ${blob}:`, err);
       continue; // no desindexar lo que sigue en disco
     }
     db.deleteGroup(g.type, g.hash);
