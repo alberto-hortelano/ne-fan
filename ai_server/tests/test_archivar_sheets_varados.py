@@ -5,13 +5,17 @@ por eso: la primera corrida de verdad es también la única oportunidad de que
 salga bien, y el modo por defecto tiene que ser el que no destruye nada.
 
 Lo que se fija:
-  1. **Dry-run no toca un byte.** Es el defecto, y si dejara de serlo se
+  1. **Solo se archiva lo INALCANZABLE.** Un sheet cuya clave viva es el nombre
+     de su directorio es arte servible y se queda donde está. La primera versión
+     archivaba todo directorio con `meta.json`, y este guion es rerunnable:
+     regenerar arte y volver a correrlo se lo habría llevado (hallazgo 3 del QA).
+  2. **Dry-run no toca un byte.** Es el defecto, y si dejara de serlo se
      enteraría alguien contando ficheros en `cache/`, no un test.
-  2. **`heroes/` no se archiva.** La clave del hero no cuelga de la del sheet:
+  3. **`heroes/` no se archiva.** La clave del hero no cuelga de la del sheet:
      archivarlo obligaría a repagar la llamada de identidad de cada personaje.
-  3. **Un destino ocupado para el barrido entero**, no a medias: la mitad del
+  4. **Un destino ocupado para el barrido entero**, no a medias: la mitad del
      arte en cada sitio es peor que no haber empezado.
-  4. **Nunca se borra**: lo movido está entero en el archivo.
+  5. **Nunca se borra**: lo movido está entero en el archivo.
 
 Ejecutar con: python3 -m unittest discover -s ai_server/tests
 """
@@ -32,20 +36,34 @@ _spec.loader.exec_module(tool)
 
 
 class BarridoTest(unittest.TestCase):
+    @staticmethod
+    def _meta(anim: str, prompt: str) -> dict:
+        """Un meta COMPLETO, como el que escribe el adaptador: con `base_key`,
+        `ai_model` y el perfil efectivo (`frame_count` + `fps`). Sin ellos no se
+        puede recomponer la clave viva, que es de lo que va este guion."""
+        return {
+            "model": "y_bot", "anim": anim, "angle": "frontal_8",
+            "directions": 2, "frame_count": 4, "fps": 3.6,
+            "skin": {"prompt": prompt, "ai_model": "gpt-image-2", "api": "fake",
+                     "cost_usd": 1.92, "base_key": "84b8b91255a268db"},
+        }
+
+    def _plantar(self, nombre: str, meta: dict) -> Path:
+        d = self.cache / nombre
+        d.mkdir(parents=True)
+        (d / "dir_0_frame_000.png").write_bytes(b"x" * 10)
+        (d / "meta.json").write_text(json.dumps(meta))
+        return d
+
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         raiz = Path(self._tmp.name)
         self.cache = raiz / "sprite_sheets"
         self.archivo = raiz / "archivo"
         self.cache.mkdir()
+        # Dos sheets VARADOS: el nombre de su directorio no es la clave viva.
         for h, anim in (("aaaa1111", "idle"), ("bbbb2222", "walk")):
-            d = self.cache / h
-            d.mkdir()
-            (d / "dir_0_frame_000.png").write_bytes(b"x" * 10)
-            (d / "meta.json").write_text(json.dumps({
-                "model": "y_bot", "anim": anim, "angle": "frontal_8",
-                "skin": {"prompt": f"un herrero {h}", "cost_usd": 1.92, "api": "fake"},
-            }))
+            self._plantar(h, self._meta(anim, f"un herrero {h}"))
         # Lo que NO es un sheet vestido y no se archiva.
         (self.cache / "heroes").mkdir()
         (self.cache / "heroes" / "cafe.png").write_bytes(b"y" * 10)
@@ -75,6 +93,50 @@ class BarridoTest(unittest.TestCase):
                          {"un herrero aaaa1111", "un herrero bbbb2222"})
         self.assertTrue(all(f["frames"] == 1 for f in filas))
 
+    # ── lo alcanzable NO se archiva (hallazgo 3 del QA) ────────────────────
+    def test_un_sheet_bajo_la_clave_VIVA_no_se_archiva(self):
+        # El repro del QA: plantó un directorio con la clave viva de hoy y el
+        # guion lo listó para archivar igual. Es arte servible, y este guion se
+        # vuelve a correr cada vez que la clave se mueve.
+        meta = self._meta("idle", "un tabernero que sigue vivo")
+        viva = tool._clave_viva(meta, "")
+        self.assertIsNotNone(viva)
+        self._plantar(viva, meta)
+        estados = {f["hash"]: f["estado"] for f in tool.censar(self.cache)}
+        self.assertEqual(estados[viva], "alcanzable")
+        self.assertNotIn(viva, [f["hash"] for f in tool.sheets_varados(self.cache)])
+        self.assertEqual(self._correr("--ejecutar"), 0)
+        self.assertIn(viva, self._en_cache())
+        self.assertNotIn(viva, [p.name for p in self.archivo.iterdir()])
+
+    def test_el_MISMO_meta_bajo_otro_nombre_si_esta_varado(self):
+        # La comparación es contra el NOMBRE del directorio, no contra el meta:
+        # es lo que distingue «alcanzable» de «tiene buena pinta».
+        meta = self._meta("idle", "un tabernero que sigue vivo")
+        viva = tool._clave_viva(meta, "")
+        self._plantar(viva, meta)
+        self._plantar("0000000000000000", meta)
+        estados = {f["hash"]: f["estado"] for f in tool.censar(self.cache)}
+        self.assertEqual(estados[viva], "alcanzable")
+        self.assertEqual(estados["0000000000000000"], "varado")
+
+    def test_un_meta_SIN_base_key_no_se_puede_recomponer(self):
+        # Los sheets anteriores al traslado a sprite-forge (2026-08-24): no
+        # llevan la identidad de su hoja base, así que no los alcanza nadie.
+        meta = self._meta("idle", "un sacristán de antes del traslado")
+        del meta["skin"]["base_key"]
+        self._plantar("cccc4444", meta)
+        estados = {f["hash"]: f["estado"] for f in tool.censar(self.cache)}
+        self.assertEqual(estados["cccc4444"], "no recomponible")
+
+    def test_la_tabla_dice_el_estado_de_cada_uno(self):
+        meta = self._meta("idle", "un tabernero que sigue vivo")
+        self._plantar(tool._clave_viva(meta, ""), meta)
+        salida = tool.tabla(tool.censar(self.cache))
+        self.assertIn("alcanzable", salida)
+        self.assertIn("varado", salida)
+        self.assertIn("alcanzable(s) se quedan donde están", salida)
+
     def test_ejecutar_mueve_los_sheets_y_deja_heroes_e_indice(self):
         # El hero no se vara con la clave del sheet (`hero_key` no cuelga de
         # `base_key` ni del perfil): archivarlo repagaría la identidad de cada
@@ -97,14 +159,15 @@ class BarridoTest(unittest.TestCase):
         # Ni el que no chocaba: media mudanza es peor que ninguna.
         self.assertEqual(self._en_cache(), ["_base_keys.json", "aaaa1111", "bbbb2222", "heroes"])
 
-    def test_un_sheet_sin_meta_se_archiva_pero_se_dice_que_no_tiene_procedencia(self):
+    def test_un_sheet_sin_meta_se_archiva_pero_no_se_le_inventa_un_prompt(self):
         # Un repintado muerto a medias (el meta se escribe el último). Ocupa
         # disco y no lo sirve nadie, pero no se le inventa un prompt.
         (self.cache / "cccc3333").mkdir()
         (self.cache / "cccc3333" / "dir_0_frame_000.png").write_bytes(b"z")
         fila = next(f for f in tool.sheets_varados(self.cache) if f["hash"] == "cccc3333")
+        self.assertEqual(fila["estado"], "no recomponible")
         self.assertEqual(fila["prompt"], "")
-        self.assertIn("SIN PROCEDENCIA", tool.tabla([fila]))
+        self.assertIn("(sin meta)", tool.tabla([fila]))
 
     def test_una_cache_que_no_existe_no_revienta(self):
         self.assertEqual(tool.sheets_varados(self.cache / "no-existe"), [])

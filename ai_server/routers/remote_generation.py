@@ -300,11 +300,33 @@ def _leer_bases() -> dict:
     if viejas:
         # El fichero ENTERO, no las entradas malas: se escribe de una pieza
         # (`_apuntar_base` lo relee y lo vuelca completo), así que uno mezclado
-        # no lo ha escrito nadie. Una línea, y el primer sheet que se pida lo
-        # deja en la forma viva.
+        # no lo ha escrito nadie.
+        #
+        # RADIO DEL DAÑO, que conviene tener escrito porque es la propiedad más
+        # cara de esta zona: al rechazarlo se pierden TAMBIÉN las entradas
+        # buenas que hubiera, y la siguiente petición vuelca el fichero con una
+        # sola. O sea que tras el cambio de formato, con el servicio caído, solo
+        # es alcanzable el arte de los triples que se hayan vuelto a pedir UNA
+        # vez con el servicio arriba; el índice se repuebla personaje a
+        # personaje según se juegan. Es el precio de no adivinar un perfil, y es
+        # el correcto: una entrada inventada apunta a arte que no existe, que es
+        # peor que no tener entrada.
+        #
+        # La causa se dice tal cual es. «Forma anterior» solo cuando la entrada
+        # es la `base_key` a secas de antes de #375; una entrada con perfil
+        # inválido (keyframes 0, play_fps string, un booleano) NO es una
+        # migración pendiente y mandar a buscarla es media hora perdida.
+        crudas = sum(1 for t in viejas if not isinstance(idx[t], dict))
+        causa = (
+            f"{crudas} con la forma anterior a #375 (la base_key a secas)"
+            if crudas == len(viejas)
+            else f"{crudas} con la forma anterior a #375 y {len(viejas) - crudas} con perfil inválido"
+            if crudas
+            else f"{len(viejas)} con perfil inválido"
+        )
         logger.warning(
-            f"índice de base_keys con la forma anterior a #375 ({len(viejas)} de {len(idx)} "
-            f"entradas sin perfil de repintado); se ignora ENTERO y se reconstruye al vuelo"
+            f"índice de base_keys inservible: {causa}, de {len(idx)} entradas; se ignora "
+            f"ENTERO (también las buenas) y se reconstruye al vuelo"
         )
         return {}
     return idx
@@ -557,6 +579,15 @@ async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
         # se dice abajo con el error original. Un 502 (el catálogo contesta pero
         # no sabe repintar esta anim) NO es degradable: no hay nada que servir
         # con una clave que no se puede componer.
+        #
+        # Se DESCARTA la `base_key` recién obtenida cuando `/sheets` contestó y
+        # el que se cayó fue `/catalog`, y es deliberado: la pareja
+        # (identidad, perfil) tiene que salir del mismo sitio o se compone una
+        # clave que no existió nunca. Hoy las dos coinciden; el día que difieran
+        # —un bump de `version` en sprite-forge, o sea #369-R7— servir lo del
+        # índice es servir el arte que se pagó, que es lo que este camino
+        # promete. Generar con la base nueva es el otro camino, y ese exige el
+        # servicio entero en pie.
         if e.status_code != 503:
             raise
         apunte = _leer_bases().get(triple)

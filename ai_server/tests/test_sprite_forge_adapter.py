@@ -250,6 +250,30 @@ class IndiceDeBasesTest(unittest.TestCase):
             self.assertEqual(self.rg._leer_bases(), {})
         self.assertIn("forma anterior", "\n".join(logs.output))
 
+    def test_una_entrada_NUEVA_con_el_perfil_roto_no_se_reporta_como_migracion(self):
+        # El aviso decía «forma anterior a #375» también aquí, y eso manda a
+        # quien lo lea a buscar una migración pendiente que no existe: la
+        # entrada es de la forma NUEVA, lo que está mal es el perfil.
+        self.rg._BASE_KEYS_INDEX.write_text(json.dumps({
+            "y_bot/idle/frontal_8": {"base_key": "a", "perfil": {"keyframes": 0, "play_fps": 4.0}},
+        }))
+        with self.assertLogs("ai_server", level="WARNING") as logs:
+            self.assertEqual(self.rg._leer_bases(), {})
+        texto = "\n".join(logs.output)
+        self.assertIn("perfil inválido", texto)
+        self.assertNotIn("forma anterior", texto)
+
+    def test_y_un_indice_MEZCLADO_nombra_las_dos_causas(self):
+        self.rg._BASE_KEYS_INDEX.write_text(json.dumps({
+            "y_bot/idle/frontal_8": "abc123",
+            "y_bot/walk/frontal_8": {"base_key": "b", "perfil": {"keyframes": 4, "play_fps": "no"}},
+        }))
+        with self.assertLogs("ai_server", level="WARNING") as logs:
+            self.assertEqual(self.rg._leer_bases(), {})
+        texto = "\n".join(logs.output)
+        self.assertIn("forma anterior", texto)
+        self.assertIn("perfil inválido", texto)
+
     def test_una_entrada_a_MEDIAS_tampoco_se_parsea(self):
         # Con perfil pero sin `play_fps`: media entrada no es media clave, es
         # una clave distinta. Y el fichero se escribe de una pieza, así que uno
@@ -446,6 +470,40 @@ class AdaptadorHttpTest(unittest.TestCase):
         r = self._pedir(anim="rota")
         self.assertEqual(r.status_code, 502, r.text)
         self.assertIn("keyframes debe ser > 0", r.json()["detail"])
+
+    def test_un_perfil_inutilizable_SIN_skin_plan_error_tambien_es_502(self):
+        # El TERCERO de los tres fail-loud, y el único que no cubría ningún test
+        # (hallazgo 2 del QA de esta PR): la fixture `rota` sale por la rama de
+        # `skin_plan_error`, así que borrar la comprobación de keyframes/play_fps
+        # dejaba la suite entera verde. Con un catálogo que publique nulls SIN
+        # su causa, el adaptador compondría "0kf@0.0fps" en silencio, que es el
+        # saneado mudo que la casa prohíbe. Hoy sprite-forge no puede producir
+        # ese cuerpo (`costeDeCatalogo` siempre empareja los nulls con su
+        # error), pero el fail-loud existe justo porque el servicio vive en otro
+        # repo y en otra versión.
+        cat = json.loads(json.dumps(self.forge.respuestas["/catalog"]))
+        for a in cat["animations"]:
+            if a["id"] == "walk":
+                a["keyframes"], a["play_fps"] = None, None
+                a.pop("skin_plan_error", None)
+        self.forge.respuestas["/catalog"] = cat
+        r = self._pedir()
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertNotIn("/skins", self.forge.rutas_pedidas("POST"))
+
+    def test_un_keyframes_CERO_sin_causa_tampoco_pasa(self):
+        # La otra mitad del mismo fail-loud: no basta con rechazar `null`. Un
+        # 0 compone una clave perfectamente válida ("0kf@…") para un repintado
+        # que no existe.
+        cat = json.loads(json.dumps(self.forge.respuestas["/catalog"]))
+        for a in cat["animations"]:
+            if a["id"] == "walk":
+                a["keyframes"] = 0
+                a.pop("skin_plan_error", None)
+        self.forge.respuestas["/catalog"] = cat
+        r = self._pedir()
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertIn("keyframes=0", r.json()["detail"])
 
     def test_un_catalogo_sin_animations_es_502_y_no_se_inventa_el_perfil(self):
         self.forge.respuestas["/catalog"] = {"service": "sprite-forge"}

@@ -13,10 +13,25 @@ v3` varó 169 sheets y 553 MB que hubo que barrer a mano después
 (`archivo/cache/sprite_sheets/`). El barrido va en la MISMA PR que mueve la
 clave; si no se hace ese día, no se hace.
 
+**Varado, no «todo lo que hay»**, y la diferencia importa porque este guion es
+rerunnable: la primera versión archivaba cualquier directorio con `meta.json`,
+así que volver a correrlo después de regenerar arte se lo habría llevado. Un
+sheet es ALCANZABLE cuando la clave viva —`_skin_sheet_key`, **la de
+producción**, importada, no una copia— recompuesta desde su propio `meta.json`
+da exactamente el nombre de su directorio. Si da otra cosa (`varado`), o si al
+meta le falta con qué recomponerla (`no recomponible`), no lo alcanza nadie.
+
+Punto ciego, escrito porque es real: el `meta.json` **no guarda el style_key**
+(el pack de estilo con el que se pidió), así que un sheet generado con estilo no
+se puede recomponer y sale como varado. `--style-key` permite comprobar contra
+uno concreto. Que la procedencia del arte de personaje esté incompleta es
+justamente #376.
+
 **DRY-RUN por defecto.** Imprime la tabla de lo que movería y no toca nada.
 Solo con `--ejecutar` mueve, y nunca borra: si el destino ya existe, para.
 
 Lo que NO toca, y es deliberado:
+  · los sheets ALCANZABLES — se listan aparte y se quedan donde están.
   · `heroes/` — la clave del hero (`hero_key`) no cuelga de `base_key` ni del
     perfil de repintado, así que un cambio de la clave del sheet no lo vara.
   · `_base_keys.json` — es un índice, no arte. El adaptador lo reconstruye.
@@ -42,6 +57,32 @@ ARCHIVO_POR_DEFECTO = REPO / "archivo" / "cache" / "sprite_sheets"
 NO_SON_SHEETS = {"heroes"}
 
 
+def _clave_viva(meta: dict, style_key: str) -> str | None:
+    """La clave que el adaptador compondría HOY para este sheet, o `None` si su
+    `meta.json` no trae con qué recomponerla.
+
+    Usa `_skin_sheet_key` **de producción** (importada, no copiada): una segunda
+    implementación de la clave aquí sería el espejo que deriva, y este guion
+    existe justo por lo que pasa cuando la clave se mueve.
+
+    El perfil sale del meta del sheet VESTIDO, que es el efectivo con el que se
+    pintó: `frame_count` son sus keyframes y `fps` su `play_fps`.
+    """
+    sys.path.insert(0, str(REPO / "ai_server"))
+    from routers.remote_generation import _skin_sheet_key  # noqa: PLC0415
+
+    skin = meta.get("skin") or {}
+    campos = (meta.get("model"), meta.get("anim"), meta.get("angle"),
+              skin.get("base_key"), skin.get("prompt"), skin.get("ai_model"))
+    kf, fps = meta.get("frame_count"), meta.get("fps")
+    if not all(isinstance(c, str) and c for c in campos):
+        return None
+    if not isinstance(kf, int) or kf <= 0 or not isinstance(fps, (int, float)) or fps <= 0:
+        return None
+    return _skin_sheet_key(skin["base_key"], meta["model"], meta["anim"], meta["angle"],
+                           skin["prompt"], skin["ai_model"], style_key, (kf, float(fps)))
+
+
 def _bytes_y_frames(d: Path) -> tuple[int, int]:
     total = 0
     frames = 0
@@ -53,13 +94,18 @@ def _bytes_y_frames(d: Path) -> tuple[int, int]:
     return total, frames
 
 
-def sheets_varados(cache: Path) -> list[dict]:
-    """Todo directorio de sheet vestido con su procedencia, ordenado por tamaño.
+def censar(cache: Path, style_key: str = "") -> list[dict]:
+    """Los sheets vestidos de la caché, cada uno con su ESTADO, por tamaño.
 
-    «Sheet vestido» = directorio con `meta.json`. Un directorio SIN meta es un
-    repintado que murió a medias (el meta se escribe el último) y también entra:
-    ocupa disco y no lo va a servir nadie, pero se dice que no tiene procedencia
-    en vez de inventarle una.
+    Tres estados, y el guion solo mueve el último:
+      · `alcanzable` — la clave viva recompuesta desde su meta ES el nombre de
+        su directorio: arte perfectamente servible, se queda donde está.
+      · `no recomponible` — al meta le falta algo para recomponer la clave. En
+        la práctica es `skin.base_key`: los sheets anteriores al traslado a
+        sprite-forge (2026-08-24) no lo llevan, y sin la identidad de su hoja
+        base no los alcanza nadie, con perfil o sin él.
+      · `varado` — la clave viva da OTRA cosa: quedó bajo una clave que ya no se
+        compone.
     """
     if not cache.is_dir():
         return []
@@ -73,11 +119,15 @@ def sheets_varados(cache: Path) -> list[dict]:
             try:
                 meta = json.loads(meta_path.read_text())
             except (OSError, ValueError) as e:
-                print(f"AVISO: {d.name}/meta.json ilegible ({e}); se archiva sin procedencia")
+                print(f"AVISO: {d.name}/meta.json ilegible ({e}); no recomponible")
+        viva = _clave_viva(meta, style_key) if meta else None
+        estado = "no recomponible" if viva is None else ("alcanzable" if viva == d.name else "varado")
         nbytes, frames = _bytes_y_frames(d)
         filas.append({
             "dir": d,
             "hash": d.name,
+            "estado": estado,
+            "clave_viva": viva,
             "model": meta.get("model", "?"),
             "anim": meta.get("anim", "?"),
             "angle": meta.get("angle", "?"),
@@ -90,22 +140,32 @@ def sheets_varados(cache: Path) -> list[dict]:
     return sorted(filas, key=lambda f: -f["bytes"])
 
 
+def sheets_varados(cache: Path, style_key: str = "") -> list[dict]:
+    """Solo los que este guion mueve: los que ya no alcanza la clave viva."""
+    return [f for f in censar(cache, style_key) if f["estado"] != "alcanzable"]
+
+
 def tabla(filas: list[dict]) -> str:
     if not filas:
-        return "(no hay ni un sheet vestido en la caché: nada que archivar)"
+        return "(no hay ni un sheet vestido en la caché)"
     ancho = max(len(f"{f['model']}/{f['anim']}/{f['angle']}") for f in filas)
-    out = [f"{'hash':<16}  {'model/anim/angle':<{ancho}}  {'frames':>6}  {'MB':>6}  {'$':>5}  prompt"]
+    out = [f"{'hash':<16}  {'estado':<15}  {'model/anim/angle':<{ancho}}  {'frames':>6}  {'MB':>6}  {'$':>5}  prompt"]
     for f in filas:
         triple = f"{f['model']}/{f['anim']}/{f['angle']}"
         coste = f"{f['coste']:.2f}" if isinstance(f["coste"], (int, float)) else "—"
-        prompt = f["prompt"] or "(SIN PROCEDENCIA)"
+        prompt = f["prompt"] or "(sin meta)"
         out.append(
-            f"{f['hash']:<16}  {triple:<{ancho}}  {f['frames']:>6}  "
-            f"{f['bytes'] / 1e6:>6.1f}  {coste:>5}  {prompt[:56]}"
+            f"{f['hash']:<16}  {f['estado']:<15}  {triple:<{ancho}}  {f['frames']:>6}  "
+            f"{f['bytes'] / 1e6:>6.1f}  {coste:>5}  {prompt[:52]}"
         )
-    tot_b = sum(f["bytes"] for f in filas)
-    tot_f = sum(f["frames"] for f in filas)
-    out.append(f"{'TOTAL':<16}  {len(filas)} sheets{'':<{max(0, ancho - 7)}}  {tot_f:>6}  {tot_b / 1e6:>6.1f}")
+    mueve = [f for f in filas if f["estado"] != "alcanzable"]
+    tot_b = sum(f["bytes"] for f in mueve)
+    tot_f = sum(f["frames"] for f in mueve)
+    quedan = len(filas) - len(mueve)
+    out.append(
+        f"{'TOTAL A ARCHIVAR':<16}  {len(mueve)} sheets · {tot_f} frames · {tot_b / 1e6:.1f} MB"
+        + (f"   ({quedan} alcanzable(s) se quedan donde están)" if quedan else "")
+    )
     return "\n".join(out)
 
 
@@ -115,15 +175,21 @@ def main() -> int:
                     help="raíz de los sheets vestidos (por defecto la de este checkout)")
     ap.add_argument("--archivo", type=Path, default=ARCHIVO_POR_DEFECTO,
                     help="dónde se archivan (por defecto archivo/cache/sprite_sheets/)")
+    ap.add_argument("--style-key", default="",
+                    help="style_key con el que comprobar la alcanzabilidad (el meta no lo guarda)")
     ap.add_argument("--ejecutar", action="store_true",
                     help="mover de verdad. Sin esto NO se toca nada")
     args = ap.parse_args()
 
-    filas = sheets_varados(args.cache)
+    censo = censar(args.cache, args.style_key)
+    filas = [f for f in censo if f["estado"] != "alcanzable"]
     print(f"caché:   {args.cache}")
-    print(f"archivo: {args.archivo}\n")
-    print(tabla(filas))
+    print(f"archivo: {args.archivo}")
+    print(f"alcanzable = la clave viva recompuesta desde su meta (style_key={args.style_key!r}) "
+          f"es el nombre de su directorio\n")
+    print(tabla(censo))
     if not filas:
+        print("\nNada varado: todo lo que hay en la caché lo alcanza la clave viva.")
         return 0
 
     if not args.ejecutar:
