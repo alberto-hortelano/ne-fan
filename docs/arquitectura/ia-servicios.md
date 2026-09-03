@@ -35,6 +35,25 @@ de personaje de sprite-forge.
 | `/assets`, `/assets/by_hash/{hash}` | :8767 | Índice de assets del manifest (asset-store; :8765 proxya) |
 | `/cache/{type}/{hash}` | :8767 | Servir asset cacheado: solo `surface` (cualquier otro kind es 400 desde #257); `sprite_sheet`/`sprite_hero` van por sus rutas propias; :8765 proxya |
 
+**`NEFAN_MANIFEST_DB` — la palanca de prueba del asset-store** (#391). Qué índice SQLite abre
+`services/asset-store/server.ts`: por defecto el del snapshot (`cache/manifest.sqlite3`), y con la
+variable el que se le diga (absoluta tal cual, relativa contra la raíz del repo; **puesta pero en
+blanco es fail-loud**, no «sin override»). Existe porque el único camino de fallo del arranque
+—negarse a servir un índice con kinds SIN productor— no se podía ejercer sin tocar el índice del
+checkout: el QA de T4 tuvo que exportar el árbol entero a un temporal para plantar la fila ajena.
+
+```bash
+NEFAN_MANIFEST_DB=/tmp/prueba/manifest.sqlite3 npx tsx services/asset-store/server.ts
+```
+
+Es **TS-only** y de PRUEBA, como `NEFAN_GAMES_DIR`/`NEFAN_SAVES_DIR` del bridge: no está en
+`data/runtime_config.json` (el snapshot es para los servicios que no son TS, y `manifest_db` no lo
+lee ninguno) y `start.sh` no la conoce — se exporta en el entorno de quien arranca el servicio.
+`scripts/manifest-solo-surface.ts` la hereda (`loadAssetStoreConfig(process.env)`) y su flag `--db`
+gana; **`--cache`/`--archivo` NO se mueven con ella**, así que al purgar un índice desplazado hay que
+decir las dos mitades o el script mirará el `cache/` del checkout. El veredicto del arranque nombra
+las dos: qué índice rechaza y qué almacén archivar.
+
 ## Modelos de IA y que hacen
 
 | Modelo | Uso | Donde |

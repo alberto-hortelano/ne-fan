@@ -22,6 +22,9 @@ export interface AssetStoreConfig {
   surfaceDir: string;
   /** Almacén paralelo de sprite sheets skineados (sin manifest, a propósito). */
   spriteSheetsDir: string;
+  /** Raíz de `cache/`: la que nombra el fail-loud del arranque al decir qué
+   *  archivar, para que índice y almacén se lean juntos (`solo-surface.ts`). */
+  cacheDir: string;
   /** Style packs binarios (movidos desde world-state en F2). */
   stylesDir: string;
   /** Techo del prune LRU; <= 0 = sin límite (prune → 400). */
@@ -71,6 +74,7 @@ export function loadAssetStoreConfig(env: Record<string, string | undefined> = {
     dbPath: abs(rutaDelIndice(env, ai.manifest_db)),
     surfaceDir: abs(ai.surface_cache_dir),
     spriteSheetsDir: abs(`${ai.cache_root}/sprite_sheets`),
+    cacheDir: abs(ai.cache_root),
     stylesDir: abs(CONFIG.content.styles_dir),
     cacheMaxBytes: ai.cache_max_bytes,
   };

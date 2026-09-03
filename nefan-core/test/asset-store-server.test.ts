@@ -26,6 +26,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ENV_MANIFEST_DB, loadAssetStoreConfig } from "../services/asset-store/config.js";
+import type { AssetStoreHealthResponse } from "../services/asset-store/http-server.js";
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
 import { SCRIPT_DE_PURGA } from "../services/asset-store/solo-surface.js";
 
@@ -39,6 +40,8 @@ interface Salida {
   signal: NodeJS.Signals | null;
   stdout: string;
   stderr: string;
+  /** Lo que devolvió `alEscuchar`, si se pasó (la respuesta de `/health`). */
+  extra: unknown;
 }
 
 let root: string;
@@ -51,19 +54,31 @@ after(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-/** Lo que imprime el servidor cuando ya tiene el socket: es lo ÚLTIMO que
- *  hace, así que un hijo que la escribe ya no va a terminar por su cuenta. */
-const LINEA_ESCUCHANDO = /listening on/;
+/** La línea que imprime el servidor cuando ya tiene el socket, con el puerto
+ *  donde escucha DE VERDAD. Que ese número sea el real y no el pedido es lo que
+ *  permite llamarlo con `port: 0`: hasta que QA lo midió, la línea decía `:0`
+ *  mientras el kernel servía en otro, y la URL del log no era llamable. */
+const LINEA_ESCUCHANDO = /listening on http:\/\/127\.0\.0\.1:(\d+)/;
+
+/** El puerto que el hijo ANUNCIA, o null si todavía no lo ha dicho. */
+function puertoAnunciado(stdout: string): number | null {
+  const m = LINEA_ESCUCHANDO.exec(stdout);
+  return m ? Number(m[1]) : null;
+}
 
 /** Arranca `server.ts` como HIJO de este proceso y espera a que muera.
  *
- *  En cuanto el hijo dice que escucha se le manda SIGTERM. Para el caso
- *  POSITIVO es la única forma de pararlo (si todo va bien no termina solo), y
- *  para los NEGATIVOS es lo que hace que fallen rápido: un arranque que
- *  debería haber muerto y se queda sirviendo se corta ahí en vez de agotar la
- *  red de seguridad — medido, 60 s por caso. No es una espera por reloj: se
- *  espera a que el proceso DIGA algo, no a que pasen N milisegundos. */
-function arrancar(env: Record<string, string>): Promise<Salida> {
+ *  En cuanto el hijo dice que escucha se le llama (si hay algo que llamar) y se
+ *  le manda SIGTERM. Para el caso POSITIVO es la única forma de pararlo (si
+ *  todo va bien no termina solo), y para los NEGATIVOS es lo que hace que
+ *  fallen rápido: un arranque que debería haber muerto y se queda sirviendo se
+ *  corta ahí en vez de agotar la red de seguridad — medido, 60 s por caso. No
+ *  es una espera por reloj: se espera a que el proceso DIGA algo, no a que
+ *  pasen N milisegundos. */
+function arrancar(
+  env: Record<string, string>,
+  alEscuchar?: (puerto: number) => Promise<unknown>,
+): Promise<Salida> {
   return new Promise((cumplir, fallar) => {
     const hijo = spawn(process.execPath, ["--import", "tsx", SERVER], {
       cwd: CORE,
@@ -72,13 +87,29 @@ function arrancar(env: Record<string, string>): Promise<Salida> {
     });
     let stdout = "";
     let stderr = "";
+    let extra: unknown = null;
+    let disparado = false;
     // Red de seguridad: un hijo que ni arranca, ni muere, ni llega a escuchar
     // colgaría la suite entera. Se mata por PID (el suyo, el que arrancó este
     // test) y el caso falla por lo que asegure.
     const guardia = setTimeout(() => hijo.kill("SIGKILL"), 60_000);
     hijo.stdout.on("data", (b: Buffer) => {
       stdout += b.toString();
-      if (LINEA_ESCUCHANDO.test(stdout)) hijo.kill("SIGTERM");
+      const puerto = puertoAnunciado(stdout);
+      if (disparado || puerto === null) return;
+      disparado = true;
+      const parar = (): void => {
+        hijo.kill("SIGTERM");
+      };
+      if (!alEscuchar) return parar();
+      void alEscuchar(puerto)
+        .then((r) => {
+          extra = r;
+        })
+        .catch((e: unknown) => {
+          extra = { error: String(e) };
+        })
+        .finally(parar);
     });
     hijo.stderr.on("data", (b: Buffer) => {
       stderr += b.toString();
@@ -86,7 +117,7 @@ function arrancar(env: Record<string, string>): Promise<Salida> {
     hijo.on("error", fallar);
     hijo.on("close", (code, signal) => {
       clearTimeout(guardia);
-      cumplir({ code, signal, stdout, stderr });
+      cumplir({ code, signal, stdout, stderr, extra });
     });
   });
 }
@@ -160,6 +191,10 @@ describe("server.ts: el fail-loud del índice, contra una DB temporal", () => {
     assert.match(salida.stderr, /texture \(albedo 1\)/, "nombra el kind que sobra y cuántas filas");
     assert.ok(salida.stderr.includes(SCRIPT_DE_PURGA), "dice con qué script se purga");
     assert.doesNotMatch(salida.stdout, /índice/, "muere ANTES de anunciar el índice y de escuchar");
+    // De QUÉ índice habla. Sin esto el aserto de arriba lo satisface igual de
+    // bien el del checkout, y con el override roto este caso daría verde por
+    // el motivo equivocado (lo midió QA el 2026-09-03).
+    assert.ok(salida.stderr.includes(ruta), `el veredicto no nombra su índice: ${salida.stderr}`);
 
     // No hace daño al pasar: la fila ajena sigue ahí (purgar es otra cosa).
     const db = new ManifestDb(ruta);
@@ -167,18 +202,39 @@ describe("server.ts: el fail-loud del índice, contra una DB temporal", () => {
     db.close();
   });
 
-  it("con el índice limpio arranca, y el que abre es el de la variable", async () => {
+  it("con el índice limpio arranca, SIRVE lo que hay en él y anuncia el puerto de verdad", async () => {
     const ruta = dbTemporal("limpia", (db) => {
       db.register({ hash: "s1", type: "surface", subtype: "surface", prompt: "adoquín", size_bytes: 42 });
     });
 
-    const salida = await arrancar({ [ENV_MANIFEST_DB]: ruta, NEFAN_ASSET_STORE_PORT: "0" });
+    // Puerto 0 = lo elige el kernel, así que no se pisa el stack de nadie. La
+    // dirección a la que se llama sale de lo que el propio hijo ANUNCIA: si la
+    // línea mintiera (decía `:0` hasta que QA lo midió), este `fetch` no
+    // encontraría a nadie.
+    const salida = await arrancar(
+      { [ENV_MANIFEST_DB]: ruta, NEFAN_ASSET_STORE_PORT: "0" },
+      async (puerto) => {
+        const res = await fetch(`http://127.0.0.1:${puerto}/health`, { signal: AbortSignal.timeout(5_000) });
+        return { status: res.status, cuerpo: (await res.json()) as AssetStoreHealthResponse };
+      },
+    );
 
     // La línea del índice nombra la DB TEMPORAL con su recuento: es la prueba
     // de que el override llega hasta el proceso, no solo hasta la función.
     assert.ok(salida.stdout.includes(`índice ${ruta} (1 entradas, 42 bytes)`), salida.stdout);
-    assert.match(salida.stdout, LINEA_ESCUCHANDO, "llegó a escuchar (puerto efímero)");
     assert.doesNotMatch(salida.stdout, /cache[/\\]manifest\.sqlite3/, "el índice del checkout no se abre");
+
+    const puerto = puertoAnunciado(salida.stdout);
+    assert.ok(puerto !== null && puerto > 0, `anunció un puerto que no es llamable: ${salida.stdout}`);
+
+    const salud = salida.extra as { status?: number; cuerpo?: AssetStoreHealthResponse };
+    assert.equal(salud.status, 200, `/health no contestó: ${JSON.stringify(salida.extra)}`);
+    assert.deepEqual(
+      { total_count: salud.cuerpo?.total_count, total_bytes: salud.cuerpo?.total_bytes },
+      { total_count: 1, total_bytes: 42 },
+      "lo que sirve es el índice de la variable, no otro",
+    );
+
     assert.equal(salida.code, 0, "SIGTERM lo baja por su manejador, no a lo bruto");
     assert.equal(salida.signal, null);
     // El stderr solo lleva el ExperimentalWarning de node:sqlite: ni veredicto
