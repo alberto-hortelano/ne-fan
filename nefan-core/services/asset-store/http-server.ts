@@ -15,26 +15,27 @@ import type { AddressInfo } from "node:net";
 import type { ErrorResponse } from "../../src/contracts/common.js";
 import type {
   AssetByHashResponse,
+  AssetCharacterRegisterRequest,
+  AssetCharacterRegisterResponse,
   AssetKind,
   AssetListResponse,
   AssetPinResponse,
-  AssetRegisterRequest,
   AssetRegisterResponse,
   AssetUnpinResponse,
   CachePruneResponse,
 } from "../../src/contracts/asset-store.js";
 import {
-  esArteDePersonaje,
   esKindDePersonaje,
   KIND_BLOB_PLANO,
   refDeArteDePersonaje,
 } from "../../src/contracts/asset-store.js";
 import {
+  AssetCharacterRegisterRequestSchema,
   AssetPinRequestSchema,
   AssetRegisterRequestSchema,
 } from "../../src/contracts/request-schemas.js";
 import { formatZodError } from "../../src/contract/model-io/validate.js";
-import type { ManifestDb } from "./manifest-db.js";
+import type { ManifestDb, RegistroDeAsset } from "./manifest-db.js";
 import { readBlob, readSpriteHero, readSpriteSheetFrame, readStyleFile } from "./blob-store.js";
 // El cable de la ruta de estilos vive aparte porque lo COMPARTE el motor falso
 // del bench (labs/narrative/fake-ai-server.ts), que antes lo copiaba a mano y
@@ -236,8 +237,25 @@ async function handle(
     // (mismo hash+type+subtype) = éxito idempotente, igual que el return
     // silencioso del Python. NO se verifica el blob en disco: hay entradas
     // legítimas sin blob propio (analysis, bbox legadas).
-    registrar(db, parsed.data);
+    db.register(parsed.data);
     sendJson(res, 200, { ok: true } satisfies AssetRegisterResponse);
+    return;
+  }
+
+  // ── POST /assets/character — el arte de UN personaje, en una transacción ──
+  if (method === "POST" && path === "/assets/character") {
+    const parsed = AssetCharacterRegisterRequestSchema.safeParse(await readJson(req));
+    if (!parsed.success) {
+      sendJson(res, 400, {
+        ok: false,
+        error:
+          `body requires { hero_key, hero?: { prompt, size_bytes, extra? }, sheets?: [{ hash, prompt, size_bytes, extra? }] } ` +
+          `— el ref de pin lo DERIVA el store de hero_key, no viaja por fila (#376) — ${formatZodError(parsed.error)}`,
+      } satisfies ErrorResponse);
+      return;
+    }
+    const { ref, rows } = registrarPersonaje(db, parsed.data);
+    sendJson(res, 200, { ok: true, ref, rows } satisfies AssetCharacterRegisterResponse);
     return;
   }
 
@@ -262,36 +280,60 @@ async function handle(
 
 // ── Helpers ──
 
-/** Qué forma pedía el cuerpo, según el `type` que traía.
+/** Qué forma pedía `POST /assets`, y a dónde va lo que no cabe ahí.
  *
- *  El cliente de `POST /assets` es fail-loud (`asset_store_client.py` lanza con
- *  el cuerpo dentro), así que este texto es lo que ve quien depura una
- *  generación que se ha caído. Un «extra: Required» a secas no dice que a
- *  `extra` le falta el `character_ref` ni por qué es obligatorio. */
+ *  El cliente es fail-loud (`asset_store_client.py` lanza con el cuerpo
+ *  dentro), así que este texto es lo que ve quien depura una generación que se
+ *  ha caído. Un «type: Invalid literal» a secas no dice que el arte de
+ *  personaje tiene su propia ruta ni por qué. */
 function formaEsperada(cuerpo: unknown): string {
   const type = (cuerpo as { type?: unknown } | null)?.type;
   return typeof type === "string" && esKindDePersonaje(type)
-    ? "el arte de personaje se indexa con su procedencia y PINEADO (#376): " +
-        "body requires { hash, type, subtype, prompt (no vacío), size_bytes, extra: { character_ref } }" +
-        (type === "sprite_hero" ? ", con character_ref === hash" : "")
-    : "body requires { hash, type, subtype, prompt, size_bytes, extra? }";
+    ? `el arte de personaje no se registra fila a fila por aquí: va entero por POST /assets/character ` +
+        `(hero + sheets en una transacción, con el ref de pin DERIVADO de hero_key — #376)`
+    : "body requires { hash (16 hex), type, subtype, prompt, size_bytes, extra? }";
 }
 
-/** El registro de una fila, con el pin que le corresponda por su kind.
+/** El arte de un personaje: sus filas y su pin, en una transacción.
  *
- *  Vive aquí y no en `handle` a propósito: el arte de personaje NO se registra
- *  suelto (`registrarPineado`, una transacción), y ese «no» tiene que estar en
- *  el camino que recorre TODO registro, no en la rama que alguien recuerde
- *  escribir. El `ref` se DERIVA del `character_ref` que el zod ya exigió: no
- *  lo elige quien llama, así que hero y sheets de un mismo personaje caen bajo
- *  el mismo ref por construcción y `DELETE /assets/pin/{ref}` los suelta a la
- *  vez (#376). */
-function registrar(db: ManifestDb, data: AssetRegisterRequest): void {
-  if (esArteDePersonaje(data)) {
-    db.registrarPineado(data, refDeArteDePersonaje(data.extra.character_ref));
-    return;
+ *  El `ref` sale de `hero_key` y de nada más, y las N filas van bajo ESE ref.
+ *  Que el `character_ref` acabe también en el `extra` de cada fila es
+ *  procedencia (dice de quién es cada blob), no una entrada: lo estampa el
+ *  store desde la misma fuente que el pin, así que los dos no pueden
+ *  discrepar. Con la forma anterior sí podían, y el QA lo midió: un sheet
+ *  declaraba el ref de otro personaje y soltar A se llevaba los frames de B. */
+function registrarPersonaje(
+  db: ManifestDb,
+  data: AssetCharacterRegisterRequest,
+): { ref: string; rows: number } {
+  const ref = refDeArteDePersonaje(data.hero_key);
+  const conProcedencia = (extra: Record<string, unknown> | undefined): Record<string, unknown> => ({
+    ...extra,
+    character_ref: data.hero_key,
+  });
+  const filas: RegistroDeAsset[] = [];
+  if (data.hero) {
+    filas.push({
+      hash: data.hero_key,
+      type: "sprite_hero",
+      subtype: "sprite_hero",
+      prompt: data.hero.prompt,
+      size_bytes: data.hero.size_bytes,
+      extra: conProcedencia(data.hero.extra),
+    });
   }
-  db.register(data);
+  for (const s of data.sheets ?? []) {
+    filas.push({
+      hash: s.hash,
+      type: "sprite_sheet",
+      subtype: "sprite_sheet",
+      prompt: s.prompt,
+      size_bytes: s.size_bytes,
+      extra: conProcedencia(s.extra),
+    });
+  }
+  db.registrarArteDePersonaje(filas, ref);
+  return { ref, rows: filas.length };
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {

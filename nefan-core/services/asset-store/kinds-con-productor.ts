@@ -11,8 +11,11 @@
  *  callado y sirva 404 sobre filas que ya no tienen blob.
  *
  *  EL INVARIANTE NO ES «UN SOLO KIND» (#376). Hasta septiembre de 2026 el
- *  índice tenía exactamente uno y esto se llamaba `verificarSoloSurface`, que
- *  contaba lo que hacía pero no lo que defendía: lo que no se admite es un
+ *  índice tenía exactamente uno y esto se llamaba `verificarSoloSurface` —el
+ *  nombre viejo se escribe aquí A PROPÓSITO y es su único sitio vivo en el
+ *  repo: quien lo encuentre en una PR o un doc anterior tiene que poder llegar
+ *  hasta aquí, y para eso hay que nombrarlo—, que contaba lo que hacía pero no
+ *  lo que defendía: lo que no se admite es un
  *  kind que NADIE pueda volver a producir, porque su fila promete un blob que
  *  ya no se puede rehacer. Los dos kinds del arte de personaje sí tienen
  *  productor (`ai_server/routers/remote_generation.py`), así que entraron —y

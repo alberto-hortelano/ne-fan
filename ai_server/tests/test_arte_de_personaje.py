@@ -39,11 +39,11 @@ from routers.remote_generation import hero_key  # noqa: E402
 
 class StoreFalso:
     def __init__(self):
-        self.registros = []
+        self.peticiones = []
 
-    def register(self, hash_key, asset_type, subtype, prompt, size_bytes, extra=None):
-        self.registros.append({"hash": hash_key, "type": asset_type, "prompt": prompt,
-                               "size_bytes": size_bytes, "extra": extra or {}})
+    def register_character(self, hero_key, hero=None, sheets=None):
+        self.peticiones.append({"hero_key": hero_key, "hero": hero, "sheets": sheets or []})
+        return {"ok": True, "ref": f"character:{hero_key}", "rows": 1 if hero else 0}
 
 
 class BarridoDeHeroesTest(unittest.TestCase):
@@ -87,7 +87,7 @@ class BarridoDeHeroesTest(unittest.TestCase):
         censo = {f["hero_key"]: f for f in tool.censar(self.cache, self.archivo)}
         self.assertEqual(censo[bueno]["estado"], "nombrable")
         self.assertEqual(censo[bueno]["prompt"], self.PROMPT)
-        self.assertEqual(censo["ffffffffffffffff"]["estado"], "sin procedencia")
+        self.assertEqual(censo["ffffffffffffffff"]["estado"], "no recomponible")
         self.assertEqual(censo["ffffffffffffffff"]["prompt"], "")
 
     def test_el_meta_puede_estar_en_ARCHIVO(self):
@@ -106,7 +106,7 @@ class BarridoDeHeroesTest(unittest.TestCase):
         (self.cache / "roto" / "meta.json").write_text("{ esto no es json")
         self._hero("aaaaaaaaaaaaaaaa")
         censo = tool.censar(self.cache, self.archivo)
-        self.assertEqual([f["estado"] for f in censo], ["sin procedencia"])
+        self.assertEqual([f["estado"] for f in censo], ["no recomponible"])
 
     def test_un_style_key_distinto_da_OTRAS_claves(self):
         # El meta no guarda el style_key: un personaje pintado con pack solo se
@@ -114,12 +114,12 @@ class BarridoDeHeroesTest(unittest.TestCase):
         clave_con_estilo = hero_key(self.PROMPT, "y_bot", "frontal_8", "gpt-image-2", "pack:abc")
         self._meta(self.cache, "sheet1", self.PROMPT)
         self._hero(clave_con_estilo)
-        self.assertEqual(tool.censar(self.cache, self.archivo)[0]["estado"], "sin procedencia")
+        self.assertEqual(tool.censar(self.cache, self.archivo)[0]["estado"], "no recomponible")
         con = tool.censar(self.cache, self.archivo, "pack:abc")
         self.assertEqual(con[0]["estado"], "nombrable")
 
     # ── el registro ────────────────────────────────────────────────────────
-    def test_registra_los_nombrables_con_su_prompt_real_y_su_character_ref(self):
+    def test_registra_los_nombrables_con_su_prompt_real_en_UNA_peticion(self):
         clave = self._clave_de(self.PROMPT)
         self._meta(self.cache, "sheet1", self.PROMPT)
         self._hero(clave, 4096)
@@ -127,16 +127,17 @@ class BarridoDeHeroesTest(unittest.TestCase):
 
         store = StoreFalso()
         self.assertEqual(tool.registrar(tool.censar(self.cache, self.archivo), store), 1)
-        self.assertEqual(len(store.registros), 1, "el que no tiene procedencia NO se indexa")
-        fila = store.registros[0]
-        self.assertEqual(fila["hash"], clave)
-        self.assertEqual(fila["type"], "sprite_hero")
-        self.assertEqual(fila["prompt"], self.PROMPT)
-        self.assertEqual(fila["size_bytes"], 4096)
-        # El ref con el que el store lo pina es su propio hero_key.
-        self.assertEqual(fila["extra"]["character_ref"], clave)
-        self.assertEqual(fila["extra"]["model"], "y_bot")
-        self.assertEqual(fila["extra"]["ai_model"], "gpt-image-2")
+        self.assertEqual(len(store.peticiones), 1, "el no recomponible NO se indexa")
+        pet = store.peticiones[0]
+        # Una petición por personaje: su hero y ningún sheet (sus anims ya no
+        # están). El `ref` lo deriva el store del hero_key; aquí no se manda.
+        self.assertEqual(pet["hero_key"], clave)
+        self.assertEqual(pet["sheets"], [])
+        self.assertEqual(pet["hero"]["prompt"], self.PROMPT)
+        self.assertEqual(pet["hero"]["size_bytes"], 4096)
+        self.assertNotIn("character_ref", pet["hero"]["extra"])
+        self.assertEqual(pet["hero"]["extra"]["model"], "y_bot")
+        self.assertEqual(pet["hero"]["extra"]["ai_model"], "gpt-image-2")
 
     def test_un_nombrable_sin_prompt_es_fail_loud_y_no_se_inventa_uno(self):
         # La línea que no puede fallar: un hero en el índice con la descripción
@@ -150,14 +151,14 @@ class BarridoDeHeroesTest(unittest.TestCase):
         self.assertIn("no se inventa", str(e.exception))
 
     # ── el archivo ─────────────────────────────────────────────────────────
-    def test_los_sin_procedencia_se_MUEVEN_enteros_y_nada_se_borra(self):
+    def test_los_no_recomponibles_se_MUEVEN_enteros_y_nada_se_borra(self):
         clave = self._clave_de(self.PROMPT)
         self._meta(self.cache, "sheet1", self.PROMPT)
         self._hero(clave)
         huerfano = self._hero("ffffffffffffffff")
         contenido = huerfano.read_bytes()
 
-        destino = self.archivo / tool.SUBDIR_SIN_PROCEDENCIA
+        destino = self.archivo / tool.SUBDIR_NO_RECOMPONIBLES
         self.assertEqual(tool.archivar(tool.censar(self.cache, self.archivo), destino), 1)
         self.assertFalse(huerfano.exists(), "salió de la caché")
         self.assertTrue((self.cache / "heroes" / f"{clave}.png").exists(), "el nombrable se queda")
@@ -168,7 +169,7 @@ class BarridoDeHeroesTest(unittest.TestCase):
         # La mitad del arte en cada sitio es peor que no haber empezado.
         for k in ["ffffffffffffffff", "eeeeeeeeeeeeeeee"]:
             self._hero(k)
-        destino = self.archivo / tool.SUBDIR_SIN_PROCEDENCIA
+        destino = self.archivo / tool.SUBDIR_NO_RECOMPONIBLES
         destino.mkdir(parents=True)
         (destino / "ffffffffffffffff.png").write_bytes(b"otra cosa")
         with self.assertRaises(RuntimeError):
@@ -191,7 +192,7 @@ class BarridoDeHeroesTest(unittest.TestCase):
         finally:
             sys.argv = argv
         self.assertEqual(sorted(p.name for p in (self.cache / "heroes").iterdir()), antes)
-        self.assertFalse((self.archivo / tool.SUBDIR_SIN_PROCEDENCIA).exists())
+        self.assertFalse((self.archivo / tool.SUBDIR_NO_RECOMPONIBLES).exists())
 
 
 if __name__ == "__main__":

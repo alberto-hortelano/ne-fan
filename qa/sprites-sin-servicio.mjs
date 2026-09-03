@@ -25,8 +25,11 @@
  *    4. servicio CAÍDO, sin el índice        → 503 (el arreglo es de verdad el
  *       índice: si esto diera 200, el 2 estaría pasando por otra cosa)
  *    5. y en la 2, el arte servido de caché ha quedado APUNTADO en el
- *       asset-store con su prompt (#376): el cache-hit es el único camino por
- *       el que pasa el arte pagado antes de que ese índice existiera
+ *       asset-store —sheet Y hero, con su prompt, bajo el mismo ref (#376)—:
+ *       el cache-hit es el único camino por el que pasa el arte pagado antes
+ *       de que ese índice existiera, y este es el único sitio del repo donde
+ *       el payload que compone `registrar_arte_de_personaje` se mide contra el
+ *       zod REAL del store
  *
  *  ARRANCA TAMBIÉN EL ASSET-STORE, y no es decorado: desde #376 el adaptador
  *  indexa el hero y el sheet en LOS DOS caminos, y ese registro es fail-loud
@@ -100,6 +103,8 @@ const hijos = [];
 /** Lo que este guion escribió en `cache/` y tiene que llevarse al salir: el
  *  banco no deja arte de mentira en la caché del que lo corre. */
 const plantados = [];
+/** Los ficheros sueltos (el hero-shot) que este guion escribió en `cache/`. */
+const plantadosFicheros = [];
 /** El índice tal como lo encontramos, para devolverlo igual (o quitarlo si no
  *  estaba): el sujeto es nuestro, pero la caché es de quien corre el guion. */
 let indicePrevio = null;
@@ -109,6 +114,7 @@ let tmpStore = null;
 
 function limpiar() {
   for (const d of plantados) rmSync(d, { recursive: true, force: true });
+  for (const f of plantadosFicheros) rmSync(f, { force: true });
   if (habiaIndice) writeFileSync(INDEX, indicePrevio);
   else if (existsSync(INDEX)) rmSync(INDEX, { force: true });
   if (tmpStore) rmSync(tmpStore, { recursive: true, force: true });
@@ -172,7 +178,11 @@ async def main():
     ai_model = str(deps.config["sprite_skin_model"])
     # style_key vacío: la petición del guion no lleva style_id, como la del test.
     clave = rg._skin_sheet_key(hoja["base_key"], model, anim, angle, prompt, ai_model, "", perfil)
-    print(json.dumps({"clave": clave, "base_key": hoja["base_key"],
+    # El hero_key también sale del adaptador: es la clave que el registro del
+    # arte de personaje usa como identidad y como ref de pin (#376), y
+    # recomponerla aquí sería el espejo que deriva.
+    hero = rg.hero_key(prompt, model, angle, ai_model, "")
+    print(json.dumps({"clave": clave, "hero_key": hero, "base_key": hoja["base_key"],
                       "keyframes": perfil[0], "play_fps": perfil[1],
                       "directions": hoja["meta"]["directions"], "ai_model": ai_model}))
 asyncio.run(main())
@@ -194,17 +204,29 @@ const PNG_1x1 = Buffer.from(
 );
 
 /** Planta en disco el sujeto de la prueba: un sheet «ya pagado» bajo la clave
- *  VIVA, con su meta y sus frames, y lo apunta en el índice tal como lo haría el
- *  adaptador. Devuelve qué hay que borrar al salir.
+ *  VIVA, con su meta y sus frames, **y su hero-shot**, y lo apunta en el índice
+ *  tal como lo haría el adaptador. Devuelve qué hay que borrar al salir.
  *
  *  Se planta en vez de buscarse porque un candado que depende de que alguien
  *  haya pagado arte en ESTA máquina no es un candado: es una lotería que se
  *  pone roja cuando cambia una clave y que no se puede devolver a verde sin
- *  gastar (o sin 466 MB de `rembg`). */
+ *  gastar (o sin 466 MB de `rembg`).
+ *
+ *  EL HERO SE PLANTA DESDE EL QA DE #376, y es el arreglo de un verde que no
+ *  podía ponerse rojo: sin hero en disco, la rama que compone su fila no se
+ *  ejecutaba NUNCA, así que el check «no se inventó la fila del hero» lo
+ *  satisfacía igual de bien un registro roto. Con el hero plantado, este guion
+ *  es lo único del repo que ejerce el payload del hero contra el zod REAL del
+ *  store — el fake de pytest no valida y los tests de TS escriben el suyo a
+ *  mano. */
 function plantarSujeto(peticion) {
   const info = preguntarAlAdaptador(peticion);
   const dir = join(SKINS_DIR, info.clave);
   if (existsSync(dir)) throw new Error(`el sujeto ${info.clave} YA existe: no lo planto yo, y no lo voy a borrar`);
+  const heroPath = join(SKINS_DIR, "heroes", `${info.hero_key}.png`);
+  if (existsSync(heroPath)) throw new Error(`el hero ${info.hero_key} YA existe: no lo planto yo, y no lo voy a borrar`);
+  mkdirSync(dirname(heroPath), { recursive: true });
+  writeFileSync(heroPath, PNG_1x1);
   mkdirSync(dir, { recursive: true });
   for (let d = 0; d < info.directions; d += 1) {
     for (let f = 0; f < info.keyframes; f += 1) {
@@ -221,7 +243,7 @@ function plantarSujeto(peticion) {
     skin: { prompt: peticion.prompt, ai_model: info.ai_model, api: "plantado-por-qa",
             cost_usd: 0, base_key: info.base_key },
   }, null, 2));
-  return { ...info, dir, urls: info.directions * info.keyframes };
+  return { ...info, dir, heroPath, urls: info.directions * info.keyframes };
 }
 
 async function pedirSkin(cuerpo) {
@@ -282,9 +304,11 @@ async function main() {
   const nuevo = { ...cuerpo, prompt: `personaje que no existe ${Date.now()}` };
   const s = plantarSujeto(cuerpo);
   plantados.push(s.dir);
+  plantadosFicheros.push(s.heroPath);
   console.log(
     `sujeto plantado: ${cuerpo.model}/${cuerpo.anim}/${cuerpo.angle} — "${cuerpo.prompt}"\n` +
-    `  clave viva ${s.clave} · base ${s.base_key} · perfil ${s.keyframes}kf@${s.play_fps}fps · ${s.urls} frames\n`,
+    `  clave viva ${s.clave} · hero ${s.hero_key} · base ${s.base_key} · ` +
+    `perfil ${s.keyframes}kf@${s.play_fps}fps · ${s.urls} frames\n`,
   );
 
   // ── asset-store, contra un índice de usar y tirar ──
@@ -375,11 +399,25 @@ async function main() {
   } else {
     mal(`el cache-hit no apuntó el sheet ${hash1} con su prompt: ${JSON.stringify(sheets)?.slice(0, 200)}`);
   }
-  // El hero del sujeto plantado no existe en disco (plantarlo son frames y
-  // meta, no una llamada de identidad), así que NO debe haber fila de hero:
-  // una fila cuyo blob no existe es la mentira contraria.
-  if ((heroes ?? []).length === 0) ok("y no se inventó la fila del hero que no está en disco");
-  else mal(`hay filas de hero sin blob: ${JSON.stringify(heroes).slice(0, 200)}`);
+  // El HERO, contra el zod REAL del store. Es la mitad del cable que ningún
+  // test de la PR ejercía: el fake de pytest no valida payloads y los tests de
+  // TS escriben el suyo a mano, así que si la forma que compone
+  // `registrar_arte_de_personaje` derivara, nadie se enteraría hasta ver un
+  // NPC en maniquí. Aquí el payload es el de producción y el schema el de
+  // producción.
+  const heroApuntado = (heroes ?? []).find((f) => f.hash === s.hero_key);
+  if (heroApuntado && heroApuntado.prompt === cuerpo.prompt) {
+    ok(`y el HERO también, con su prompt y su clave (${s.hero_key})`);
+  } else {
+    mal(`el hero ${s.hero_key} no quedó apuntado con su prompt: ${JSON.stringify(heroes)?.slice(0, 200)}`);
+  }
+  // Y los dos bajo el MISMO ref, que es el «se sueltan juntos» del criterio de
+  // cierre: un solo DELETE tiene que llevarse exactamente dos.
+  const suelta = await fetch(`${STORE_URL}/assets/pin/${encodeURIComponent(`character:${s.hero_key}`)}`, {
+    method: "DELETE",
+  }).then((r) => r.json()).catch(() => null);
+  if (suelta?.removed === 2) ok("y un solo DELETE del ref del personaje suelta hero Y frames (removed=2)");
+  else mal(`el ref del personaje no tenía hero + frames: ${JSON.stringify(suelta)}`);
 
   // 3 ─ lo nuevo no se puede generar, y se dice por qué
   r = await pedirSkin(nuevo);

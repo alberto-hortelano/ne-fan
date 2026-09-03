@@ -8,6 +8,9 @@ AssetManifest (duck typing: AssetCache.put() y llm_client no se tocan):
 - register()      → POST /assets       (fail-loud: si el store no responde,
                     la generación DEBE fallar ruidosa — igual que fallaba el
                     rewrite del manifest.json con un OSError)
+- register_character() → POST /assets/character  (el arte de UN personaje,
+                    hero y sheets en una transacción; el ref de pin lo deriva
+                    el store de `hero_key`)
 - list_assets()   → GET /assets        (available_assets del LLM)
 - total_count()   → GET /health        (log de arranque)
 - total_bytes()   → GET /health        (health de ai_server; best-effort → 0)
@@ -70,6 +73,43 @@ class AssetStoreClient:
                     time.sleep(0.5)
         raise RuntimeError(
             f"asset-store register failed ({self.base_url}/assets): {last_err}"
+        ) from last_err
+
+    def register_character(
+        self,
+        hero_key: str,
+        hero: dict | None = None,
+        sheets: list[dict] | None = None,
+    ) -> dict:
+        """El arte de UN personaje, en UNA petición (#376).
+
+        `hero` es `{prompt, size_bytes, extra?}` SIN hash: su hash es el
+        `hero_key`. Cada sheet es `{hash, prompt, size_bytes, extra?}` sin
+        `character_ref`: el store lo estampa desde `hero_key`, que es la misma
+        fuente de la que deriva el `ref` de pin. Por eso los dos no pueden
+        discrepar, y por eso esto no es `register()` con otro `type`: con un
+        ref por fila, un sheet podía declarar el de otro personaje.
+
+        Fail-loud como `register()`: es arte pagado, y una fila que no entra es
+        procedencia que se pierde.
+        """
+        payload: dict = {"hero_key": hero_key}
+        if hero is not None:
+            payload["hero"] = hero
+        if sheets:
+            payload["sheets"] = sheets
+        last_err: Exception | None = None
+        for attempt in range(2):
+            try:
+                res = self._client.post("/assets/character", json=payload)
+                res.raise_for_status()
+                return res.json()
+            except httpx.HTTPError as err:
+                last_err = err
+                if attempt == 0:
+                    time.sleep(0.5)
+        raise RuntimeError(
+            f"asset-store register_character failed ({self.base_url}/assets/character): {last_err}"
         ) from last_err
 
     # ── Lectura ──

@@ -327,6 +327,45 @@ Probado en negativo (2026-09-03): contra el adaptador y el set anteriores a #375
 primeras comprobaciones en rojo — «EL FALLO DE #375 ESTÁ VIVO: el adaptador no tiene
 `_perfil_efectivo`» y las seis ambientales sin perfil declarado.
 
+## El octavo ejecutable: `qa/el-arte-de-personaje-no-se-pina-a-medias.mjs`
+
+El hero-shot y sus sheets vestidos son el arte más caro del juego, y hasta #376 vivían sin fila
+y sin prompt: un PNG llamado por un hash que nadie podía volver a pedir. Lo que cierra el issue
+no es «indexarlos» —a secas los habría vuelto evictables, y sin keep-list de personaje el prune
+podría borrar por LRU la skin de un NPC vivo— sino indexarlos **con su procedencia y PINEADOS,
+hero y frames a la vez**. Ese «a la vez» es la pieza cara, y este guion es su candado.
+
+```bash
+node qa/el-arte-de-personaje-no-se-pina-a-medias.mjs   # 24 comprobaciones, ~8 s
+```
+
+Lo mide donde se decide: arrancando el **entry real** del asset-store (el mismo que lanza
+`start.sh`) contra un índice `mkdtemp` y hablándole por HTTP. Lo primero que afirma es que **el
+`ref` de pin no es una entrada**: el arte de personaje no entra por `POST /assets` (400 que dice
+por dónde va) sino entero por `POST /assets/character`, y el ref lo DERIVA el store de
+`hero_key`. Esa forma nació de este guion: su primera versión traía un bloque PENDIENTE con dos
+huecos medidos y sin candar —un `sprite_sheet` aceptaba el `character_ref` de otro personaje, así
+que soltar A se llevaba los frames de B; y el `hash` no tenía forma, así que una fila llamada
+`heroes` hacía que el prune borrase la carpeta entera de hero-shots—. Los dos se cerraron en la
+misma PR y el bloque pasó a ser dos comprobaciones más, que es lo que un candado cerrado tiene
+que ser.
+
+El resto: el prompt vacío es 400 y `surface` lo sigue admitiendo (la regla es del kind, no un
+endurecimiento global); el registro válido deja fila con su prompt, su `extra` entero y el
+`character_ref` que **estampa el store**; un `character_ref` ajeno en el `extra` no cuela y el
+pin del vecino no se toca; registrar el mismo arte N veces —que es lo que hace el adaptador en
+cada servida— no duplica fila; y un solo `DELETE` los suelta juntos. Contra el **prune real**
+con sus tres kinds, que tienen layouts distintos: directorio para `surface` y `sprite_sheet`,
+fichero suelto para `sprite_hero`, sin llevarse por delante la carpeta `heroes/`, respetando el
+pin, y con fail-loud (no un `continue` callado) para un `type` sin productor.
+
+Cero créditos (no llama a `/identity` ni a `/skins`, ni arranca sprite-forge) y cero vecinos
+molestados: índice y blobs en `mkdtemp` (`NEFAN_MANIFEST_DB` — el del checkout no se abre ni
+para leerlo, y se comprueba al terminar), el puerto lo elige el kernel y el hijo se mata por su
+PID. Vive fuera de `guiones/` por la razón de `sprites-sin-servicio.mjs`: no toca la página.
+Probado en negativo (2026-09-03) con siete mutantes, cada uno con su rojo distinto — el detalle,
+en la cabecera del propio guion.
+
 ## Los tres `*-candados-en-negativo.mjs`: ¿se pueden poner ROJOS los candados?
 
 No llevan número porque no son un ejecutable más de la serie: son la pregunta que se le hace a

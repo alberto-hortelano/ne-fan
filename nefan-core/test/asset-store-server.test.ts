@@ -247,12 +247,11 @@ describe("server.ts: el fail-loud del índice, contra una DB temporal", () => {
     // sin productor» y el store se habría NEGADO a arrancar sobre este índice.
     const ruta = dbTemporal("tres-kinds", (db) => {
       db.register({ hash: "s1", type: "surface", subtype: "surface", prompt: "adoquín", size_bytes: 10 });
-      db.registrarPineado(
-        { hash: "0123456789abcdef", type: "sprite_hero", subtype: "sprite_hero", prompt: "Blas, el tabernero", size_bytes: 20, extra: { character_ref: "0123456789abcdef" } },
-        "character:0123456789abcdef",
-      );
-      db.registrarPineado(
-        { hash: "fedcba9876543210", type: "sprite_sheet", subtype: "sprite_sheet", prompt: "Blas, el tabernero", size_bytes: 30, extra: { character_ref: "0123456789abcdef" } },
+      db.registrarArteDePersonaje(
+        [
+          { hash: "0123456789abcdef", type: "sprite_hero", subtype: "sprite_hero", prompt: "Blas, el tabernero", size_bytes: 20, extra: { character_ref: "0123456789abcdef" } },
+          { hash: "fedcba9876543210", type: "sprite_sheet", subtype: "sprite_sheet", prompt: "Blas, el tabernero", size_bytes: 30, extra: { character_ref: "0123456789abcdef" } },
+        ],
         "character:0123456789abcdef",
       );
     });

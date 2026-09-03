@@ -161,18 +161,25 @@ export class ManifestDb {
     this.insertarFila(e);
   }
 
-  /** Registro de arte de personaje: la fila Y su pin, o ninguna de las dos.
+  /** El arte de UN personaje: TODAS sus filas y su pin, o ninguna.
    *
-   *  Va en UNA transacción porque el pin no es un extra de este kind: es la
-   *  única razón por la que se puede indexar sin empeorar. Sin keep-list de
-   *  arte de personaje (`entity.asset_refs` es `[]` y no lo rellena ningún
-   *  llamante), una fila sin pin la puede evictar el prune por LRU y con ella
-   *  se va la skin de un NPC vivo. Registrar y pinar por separado deja una
-   *  ventana en la que ese estado existe; aquí no existe (#376). */
-  registrarPineado(e: RegistroDeAsset, ref: string): void {
+   *  Va en UNA transacción por dos razones, y las dos son el mismo invariante
+   *  visto de cerca (#376):
+   *
+   *  1. El pin no es un extra de este kind: es la única razón por la que se
+   *     puede indexar sin empeorar. Sin keep-list de arte de personaje
+   *     (`entity.asset_refs` es `[]` y no lo rellena ningún llamante), una
+   *     fila sin pin la puede evictar el prune por LRU y con ella se va la
+   *     skin de un NPC vivo.
+   *  2. El hero y sus frames entran JUNTOS. La forma anterior registraba fila
+   *     a fila —dos peticiones—, así que un fallo entre las dos dejaba un hero
+   *     pineado sin sus frames en el índice: literalmente lo que el criterio
+   *     de cierre del issue prohíbe. Con una transacción por personaje, ese
+   *     estado no existe ni un instante. */
+  registrarArteDePersonaje(filas: RegistroDeAsset[], ref: string): void {
     this.transaction(() => {
-      this.insertarFila(e);
-      this.pinSinTransaccion(ref, [e.hash]);
+      for (const f of filas) this.insertarFila(f);
+      this.pinSinTransaccion(ref, filas.map((f) => f.hash));
     });
   }
 

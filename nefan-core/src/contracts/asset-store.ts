@@ -62,8 +62,8 @@ export const KIND_BLOB_PLANO: AssetKind = "surface";
 /** Los dos kinds del arte de un personaje. Van SIEMPRE juntos: el hero-shot
  *  es la llamada de identidad que fija su cara y los sheets son sus anims
  *  repintadas a partir de él, así que un hero sin sus frames —o al revés— es
- *  arte pagado que ya no sirve para nada (#376). Lo que los ata es el `ref`
- *  de `refDeArteDePersonaje`. */
+ *  arte pagado que ya no sirve para nada (#376). Se registran por una ruta
+ *  propia (`registerCharacterArt`) y no por `POST /assets`: ver ahí por qué. */
 export const KINDS_DE_PERSONAJE = ["sprite_sheet", "sprite_hero"] as const;
 
 export type AssetKindDePersonaje = (typeof KINDS_DE_PERSONAJE)[number];
@@ -72,14 +72,40 @@ export function esKindDePersonaje(kind: string): kind is AssetKindDePersonaje {
   return (KINDS_DE_PERSONAJE as readonly string[]).includes(kind);
 }
 
+/** La forma que tienen de verdad todas las claves del índice: 16 hex.
+ *
+ *  `sha256(...)[:16]` en los dos productores — `AssetCache.hash_key`
+ *  (superficies) y `hero_key`/`_skin_sheet_key` (personaje). El LECTOR ya la
+ *  exigía para el hero (`HERO_KEY_RE`, blob-store.ts); el ESCRITOR no, y por
+ *  ahí se colaba una fila cuyo blob el lector iba a rechazar con «Invalid
+ *  filename», y algo peor: el prune borra `rutaDeBlob(kind, hash)` con
+ *  `rmSync recursive`, así que un `hash` que fuera un nombre de directorio
+ *  plausible —`heroes`— se llevaba la carpeta ENTERA de hero-shots dejando
+ *  sus filas apuntando a nada, y un `../..` salía de `cache/`. Medido por QA
+ *  el 2026-09-03 con el prune real. Que el hash sea contenido y no un nombre
+ *  elegido es lo que hace segura la ruta derivada, y hasta hoy solo lo
+ *  garantizaba la buena educación del productor. */
+export const HASH_DE_ASSET = /^[0-9a-f]{16}$/;
+
 /** El `ref` bajo el que se pinan el hero-shot de un personaje y TODOS sus
  *  sheets vestidos.
  *
- *  Se DERIVA aquí del `hero_key` y no lo elige quien registra, y esa es toda
- *  la garantía de «se pinan y se sueltan juntos»: con un solo ref,
+ *  Se DERIVA del `hero_key` **en el servidor**, y esa es toda la garantía de
+ *  «se pinan y se sueltan juntos»: con un solo ref,
  *  `DELETE /assets/pin/{ref}` los retira a la vez POR CONSTRUCCIÓN, sin que
- *  nadie tenga que acordarse de recorrer los frames. El pin es hoy
- *  PERMANENTE porque no existe keep-list de arte de personaje
+ *  nadie tenga que acordarse de recorrer los frames.
+ *
+ *  Que lo derive el servidor y no lo mande el cliente NO es cosmética: fue la
+ *  primera forma de esta PR y el QA la tumbó midiéndola. Con `character_ref`
+ *  como campo de entrada por fila, un `sprite_sheet` podía declarar el ref de
+ *  OTRO personaje y el store lo aceptaba: soltar A se llevaba los frames de
+ *  B (`removed: 3`) y soltar B dejaba los suyos colgando de A (`removed: 1`)
+ *  — literalmente «un hero sin sus frames», que es la frase del criterio de
+ *  cierre de #376. No era un test que faltara: el estado malo seguía siendo
+ *  EXPRESABLE. Hoy no hay campo en el que mentir, porque el ref no es una
+ *  entrada.
+ *
+ *  El pin es PERMANENTE porque no existe keep-list de arte de personaje
  *  (`entity.asset_refs` es `[]` y no lo rellena ningún llamante): indexar
  *  este arte sin pin lo volvería evictable y el prune podría borrar por LRU
  *  la skin de un NPC vivo. Hoy son invisibles; volverlos borrables sería
@@ -160,43 +186,76 @@ export interface AssetRegisterSurface {
   extra?: Record<string, unknown>;
 }
 
-/** Registro de arte de personaje (sheet vestido o hero-shot).
+/** Registro de un asset ya escrito en disco por un generador.
  *
- *  Se diferencia de la superficie en DOS cosas, y las dos son garantías del
- *  tipo, no comprobaciones que alguien tenga que acordarse de hacer:
+ *  `POST /assets` es la puerta de la SUPERFICIE y solo de ella. El arte de
+ *  personaje tiene la suya (`registerCharacterArt`) porque no se registra fila
+ *  a fila: se registra un PERSONAJE. */
+export type AssetRegisterRequest = AssetRegisterSurface;
+
+/** Una fila de arte de personaje dentro de la petición de su personaje.
  *
- *  1. `extra.character_ref` es OBLIGATORIO — es el `hero_key` del personaje,
- *     y de él sale el `ref` con el que el store pina la fila al registrarla
- *     (`refDeArteDePersonaje`). Así «registrado sin pin» no es un estado
- *     expresable. Para `sprite_hero`, además, `hash === extra.character_ref`:
- *     un hero pineado bajo el ref de OTRO personaje tampoco lo es.
- *  2. `prompt` no puede ir vacío. Este arte existe para poder regenerarse con
- *     un modelo mejor («la descripción es la procedencia», #293): una fila de
- *     hero con el prompt en blanco es exactamente la mentira que #376
- *     denuncia, con la agravante de que ahora está escrita en el índice. */
-interface RegistroDeKind<K extends AssetKindDePersonaje> {
+ *  No lleva `type`, ni `subtype`, ni `ref`: los pone el store. Lo único que
+ *  aporta quien registra es lo que solo él sabe — qué blob es, cuánto pesa,
+ *  con qué texto se pidió y con qué se volvería a pedir. */
+export interface ArteDePersonajeFila {
+  /** 16 hex (`HASH_DE_ASSET`): el `hero_key` para el hero, la clave del sheet
+   *  vestido para cada anim. */
   hash: string;
-  type: K;
-  subtype: K;
+  /** La descripción con la que se pagó. NO puede ir vacía: este arte se
+   *  indexa para poder regenerarlo con un modelo mejor («la descripción es la
+   *  procedencia», #293), y una fila muda es la mentira que #376 denuncia,
+   *  con la agravante de estar escrita en el índice. */
   prompt: string;
   size_bytes: number;
-  extra: { character_ref: string } & Record<string, unknown>;
+  /** Con qué se vuelve a pedir exactamente este arte (triple, modelo de
+   *  imagen, estilo, identidad de la hoja base, perfil de repintado). El
+   *  `character_ref` NO se manda: lo estampa el store desde `hero_key`. */
+  extra?: Record<string, unknown>;
 }
 
-export type AssetRegisterArteDePersonaje =
-  | RegistroDeKind<"sprite_sheet">
-  | RegistroDeKind<"sprite_hero">;
+/** `POST /assets/character` — el arte de UN personaje, en una sola petición.
+ *
+ *  POR QUÉ ES UNA RUTA APARTE Y NO `POST /assets` CON OTRO `type`. La primera
+ *  forma de #376 registraba fila a fila con un `character_ref` por fila, y el
+ *  QA la tumbó midiéndola: un `sprite_sheet` podía declarar el ref de otro
+ *  personaje, así que soltar A se llevaba los frames de B y soltar B dejaba
+ *  los suyos colgando de A. «Un hero sin sus frames» —la frase del criterio de
+ *  cierre— seguía siendo un estado EXPRESABLE, y el contrato prometía lo
+ *  contrario. Aquí el `ref` no es un campo: se DERIVA de `hero_key` y lo mismo
+ *  para las N filas, así que no hay dónde escribir la contradicción.
+ *
+ *  Y de paso arregla una segunda grieta que la forma anterior tenía y nadie
+ *  había mirado: con dos POST, si el primero pasaba y el segundo no, quedaba
+ *  un hero pineado sin sus frames en el índice hasta la siguiente servida. Una
+ *  petición es UNA transacción: o entran todos, o no entra ninguno.
+ *
+ *  Las dos mitades son opcionales por separado, y las dos ausencias son
+ *  estados reales del productor:
+ *  - `hero` ausente = su PNG no está en disco (un sheet servido de caché cuyo
+ *    hero se archivó). Registrar su fila sería prometer un blob que no está.
+ *  - `sheets` vacío = todavía no hay ninguna anim vestida bajo esa identidad,
+ *    o se archivaron todas (es el caso del barrido de
+ *    `ai_server/tools/arte_de_personaje.py`).
+ *  Las dos a la vez, no: una petición que no registra nada es un error del
+ *  llamante y sale por 400. */
+export interface AssetCharacterRegisterRequest {
+  /** La identidad del personaje (`hero_key`, 16 hex) y la ÚNICA fuente del
+   *  `ref` de pin. */
+  hero_key: string;
+  /** El hero-shot, si su blob está en disco. Su `hash` es `hero_key` y por eso
+   *  no se manda: no puede discrepar de él. */
+  hero?: Omit<ArteDePersonajeFila, "hash">;
+  /** Las anims vestidas de ESTE personaje que hay en disco. */
+  sheets?: ArteDePersonajeFila[];
+}
 
-/** Registro de un asset ya escrito en disco por un generador. `type` y
- *  `subtype` son un kind CON productor: cualquier otro es 400 en el zod
- *  (request-schemas.ts), no una fila que el prune no sabrá tocar. */
-export type AssetRegisterRequest = AssetRegisterSurface | AssetRegisterArteDePersonaje;
-
-/** Narrowing del registro entero, no solo de su `type`: quien lo pina
- *  necesita el `extra.character_ref`, y este predicado es lo que se lo
- *  garantiza al compilador. */
-export function esArteDePersonaje(r: AssetRegisterRequest): r is AssetRegisterArteDePersonaje {
-  return esKindDePersonaje(r.type);
+export interface AssetCharacterRegisterResponse {
+  ok: true;
+  /** El ref derivado bajo el que quedó todo pineado. */
+  ref: string;
+  /** Cuántas filas se registraron (las repetidas cuentan: es idempotente). */
+  rows: number;
 }
 
 export interface AssetRegisterResponse {
@@ -226,6 +285,12 @@ export const AssetStoreApi = {
   pinAssets: endpoint<AssetPinRequest, AssetPinResponse>("POST", "/assets/pin"),
   unpinAssets: endpoint<void, AssetUnpinResponse, "ref">("DELETE", "/assets/pin/{ref}"),
   registerAsset: endpoint<AssetRegisterRequest, AssetRegisterResponse>("POST", "/assets"),
+  /** El arte de UN personaje, hero y sheets en una transacción, pineado bajo
+   *  un `ref` que DERIVA el store. Ver AssetCharacterRegisterRequest. */
+  registerCharacterArt: endpoint<AssetCharacterRegisterRequest, AssetCharacterRegisterResponse>(
+    "POST",
+    "/assets/character",
+  ),
   /** Movido desde world-state :9878 en F2 (mismo contrato binario). */
   getStyleFile: endpoint<void, BinaryResponse, "style_id" | "file">(
     "GET",

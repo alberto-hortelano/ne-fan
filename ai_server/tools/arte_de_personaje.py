@@ -16,22 +16,42 @@ Este guion cierra ese hueco UNA vez, y solo con procedencia REAL:
     style_key)` desde algún `meta.json` legible sale EXACTAMENTE el nombre del
     fichero. Eso no es una conjetura: es una comprobación criptográfica de que
     ese PNG se pidió con ese texto. Se registra con su prompt y el store lo pina.
-  · **sin procedencia** — ningún meta da su clave. Va a
-    `archivo/cache/sprite_sheets/heroes-sin-procedencia/`, con el resto del arte
-    archivado. **Nunca se borra**: es material pagado.
+  · **no recomponible** — la clave VIVA no produce su nombre desde ningún meta
+    legible, así que ninguna petición de hoy lo va a pedir. Va a
+    `archivo/cache/sprite_sheets/heroes-no-recomponibles/`, con el resto del
+    arte archivado. **Nunca se borra**: es material pagado.
+
+EL NOMBRE DEL ESTADO ES «NO RECOMPONIBLE» Y NO «SIN PROCEDENCIA», y la
+diferencia no es un matiz: un hero puede tener procedencia perfectamente
+recuperable y aun así no ser recomponible con la clave de hoy. Pasó y está
+medido — el `hero_key` cambió el 2026-08-24 en `a31a6f4` (#253): antes era
+`prompt, base_model, ai_model, style_key, angle, "hero_v2", devcache` y hoy es
+`prompt, model, angle, ai_model, style_key, "heroforge_v3", devcache`, o sea que
+cambiaron el token de versión Y el orden de los campos. Reimplementando la
+fórmula RETIRADA, el QA de #376 recuperó el prompt de `42dd1866efecd7f5`
+(«pastor trashumante con manta de lana a cuadros y cayado»), pedido además con
+un ángulo de la vista que se retiró en agosto.
+Llamar a eso «sin procedencia» sería exactamente el rótulo que alguien lea
+dentro de tres meses y se crea. Lo que este guion afirma de los que archiva es
+lo que puede afirmar: **la clave viva no los nombra**, así que archivarlos no le
+cuesta un repago a ninguna partida.
+
+DOS HUECOS, los dos declarados porque los dos mueven arte:
+  1. El `meta.json` **no guarda el style_key**, así que un personaje pintado con
+     pack de estilo no se recompone con `--style-key ""` — y en un checkout
+     donde se haya jugado con estilo, esa corrida archivaría arte VIVO. Pásale
+     el suyo con `--style-key`. Medido el 2026-09-03 con los 16 candidatos de
+     los packs del repo: no recupera ninguno más en ESTE disco.
+  2. Un hero nombrado por una fórmula ANTERIOR (la de antes de #253) tiene
+     prompt recuperable desde `archivo/`, y este guion no lo intenta: recomponer
+     con fórmulas retiradas es arqueología, y una clave que no se puede volver a
+     producir no sirve para registrar. Sale como no recomponible, que es cierto.
 
 Lo que NO se hace, y es la regla dura: **jamás se inventa un prompt.** Un hero
 en el índice con la descripción vacía, o con la del vecino, es exactamente la
 mentira que #376 denuncia — con la agravante de que estaría escrita en el sitio
 del que alguien va a fiarse para regenerar el arte. El zod del store lo rechaza
-igualmente (`prompt` no vacío en los kinds de personaje), pero la decisión es de
-aquí.
-
-Punto ciego heredado de `archivar_sheets_varados.py`: el `meta.json` **no
-guarda el style_key**, así que un personaje pintado con pack de estilo no se
-puede recomponer con `--style-key ""`. `--style-key` permite probar contra uno
-concreto. Medido el 2026-09-03 con los 16 candidatos de los packs del repo: no
-recupera ninguno más.
+igualmente (`prompt` no vacío), pero la decisión es de aquí.
 
 **DRY-RUN por defecto.** Imprime la tabla y no toca nada. Solo con `--ejecutar`
 registra y mueve.
@@ -52,7 +72,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 CACHE_POR_DEFECTO = REPO / "cache" / "sprite_sheets"
 ARCHIVO_POR_DEFECTO = REPO / "archivo" / "cache" / "sprite_sheets"
-SUBDIR_SIN_PROCEDENCIA = "heroes-sin-procedencia"
+SUBDIR_NO_RECOMPONIBLES = "heroes-no-recomponibles"
 
 
 def _hero_key():
@@ -112,7 +132,7 @@ def censar(cache: Path, archivo: Path, style_key: str = "") -> list[dict]:
         filas.append({
             "fichero": f,
             "hero_key": f.stem,
-            "estado": "nombrable" if proc else "sin procedencia",
+            "estado": "nombrable" if proc else "no recomponible",
             "prompt": proc["prompt"] if proc else "",
             "model": proc["model"] if proc else "?",
             "angle": proc["angle"] if proc else "?",
@@ -137,16 +157,27 @@ def tabla(filas: list[dict]) -> str:
     sin = [f for f in filas if f["estado"] != "nombrable"]
     out.append(
         f"{'TOTAL':<16}  {len(nom)} nombrable(s) · {sum(f['bytes'] for f in nom) / 1e6:.2f} MB "
-        f"al índice   |   {len(sin)} sin procedencia · "
+        f"al índice   |   {len(sin)} no recomponible(s) · "
         f"{sum(f['bytes'] for f in sin) / 1e6:.2f} MB al archivo"
     )
+    if sin:
+        out.append(
+            "                  archivarlos no le cuesta un repago a ninguna partida: la clave viva "
+            "no produce\n                  su nombre, así que ninguna petición de hoy los pide. "
+            "Su prompt puede seguir siendo\n                  recuperable desde archivo/ con la "
+            "fórmula con la que se pidieron (ver cabecera)."
+        )
     return "\n".join(out)
 
 
 def registrar(filas: list[dict], manifest) -> int:
-    """Apunta los nombrables en el asset-store con su prompt REAL. Fail-loud."""
-    from routers.remote_generation import KIND_HERO  # noqa: PLC0415
+    """Apunta los nombrables en el asset-store con su prompt REAL. Fail-loud.
 
+    Uno por petición y sin sheets: `POST /assets/character` con `hero` y
+    `sheets` vacío es exactamente este caso —un hero cuyas anims ya no están—,
+    y el store deriva su `ref` de pin del `hero_key`. No se manda
+    `character_ref`: no es una entrada en ningún sitio (#376).
+    """
     n = 0
     for f in filas:
         if f["estado"] != "nombrable":
@@ -156,17 +187,21 @@ def registrar(filas: list[dict], manifest) -> int:
             # vacío), pero es la línea que no puede fallar: sin este guardián,
             # un cambio en `claves_conocidas` podría meter una fila muda.
             raise RuntimeError(f"{f['hero_key']}: nombrable sin prompt — no se inventa uno")
-        manifest.register(
-            f["hero_key"], KIND_HERO, KIND_HERO, f["prompt"], f["bytes"],
-            {"character_ref": f["hero_key"], "model": f["model"], "angle": f["angle"],
-             "ai_model": f["ai_model"], "style_key": f["style_key"]},
+        manifest.register_character(
+            f["hero_key"],
+            hero={
+                "prompt": f["prompt"],
+                "size_bytes": f["bytes"],
+                "extra": {"model": f["model"], "angle": f["angle"],
+                          "ai_model": f["ai_model"], "style_key": f["style_key"]},
+            },
         )
         n += 1
     return n
 
 
 def archivar(filas: list[dict], destino: Path) -> int:
-    """Mueve los que no tienen procedencia. Nunca borra; un destino ocupado para."""
+    """Mueve los que la clave viva no nombra. Nunca borra; un destino ocupado para."""
     sin = [f for f in filas if f["estado"] != "nombrable"]
     if not sin:
         return 0
@@ -193,9 +228,11 @@ def main() -> int:
 
     filas = censar(args.cache, args.archivo, args.style_key)
     print(f"caché:   {args.cache / 'heroes'}")
-    print(f"archivo: {args.archivo / SUBDIR_SIN_PROCEDENCIA}")
-    print(f"nombrable = hero_key(prompt, model, angle, ai_model, style_key={args.style_key!r}) "
-          f"recompuesta desde algún meta.json ES el nombre del fichero\n")
+    print(f"archivo: {args.archivo / SUBDIR_NO_RECOMPONIBLES}")
+    print(f"nombrable      = hero_key(prompt, model, angle, ai_model, style_key={args.style_key!r}) "
+          f"recompuesta desde algún meta.json ES el nombre del fichero")
+    print("no recomponible = la clave VIVA no produce ese nombre. NO significa «sin procedencia»: "
+          "puede\n                  tenerla y no ser alcanzable (ver cabecera). No se borra, se archiva.\n")
     print(tabla(filas))
     if not filas:
         return 0
@@ -214,9 +251,10 @@ def main() -> int:
     finally:
         store.close()
     print(f"\nindexados {n} hero-shots con su prompt (el store los pina al registrarlos)")
-    movidos = archivar(filas, args.archivo / SUBDIR_SIN_PROCEDENCIA)
-    print(f"archivados {movidos} sin procedencia en {args.archivo / SUBDIR_SIN_PROCEDENCIA}")
-    print("Nada borrado: el arte pagado sigue ahí, aunque no se sepa con qué texto se pidió.")
+    movidos = archivar(filas, args.archivo / SUBDIR_NO_RECOMPONIBLES)
+    print(f"archivados {movidos} no recomponibles en {args.archivo / SUBDIR_NO_RECOMPONIBLES}")
+    print("Nada borrado: el arte pagado sigue ahí, y su procedencia sigue en los meta.json "
+          "de archivo/.")
     return 0
 
 

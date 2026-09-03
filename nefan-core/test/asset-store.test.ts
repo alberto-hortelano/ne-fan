@@ -251,35 +251,43 @@ describe("registro e índice", () => {
     assert.equal((await post("/assets", { hash: "x" })).status, 400);
     // Borde zod (request-schemas): campo con tipo/rango inválido también 400.
     assert.equal(
-      (await post("/assets", { hash: "y", type: "surface", subtype: "surface", prompt: "p", size_bytes: -1 })).status,
+      (await post("/assets", { hash: "aaaaaaaaaaaaaaaa", type: "surface", subtype: "surface", prompt: "p", size_bytes: -1 })).status,
       400,
     );
+    // Un hash sin forma de hash es 400: el prune borra `rutaDeBlob(kind,hash)`
+    // con `rmSync recursive`, así que un nombre de directorio plausible o un
+    // `../..` borrarían lo que no toca (medido por QA el 2026-09-03).
+    for (const hash of ["heroes", "../../fuera", "NOESUNHASH", "abc"]) {
+      const r = await post("/assets", { hash, type: "surface", subtype: "surface", prompt: "p", size_bytes: 1 });
+      assert.equal(r.status, 400, hash);
+      assert.equal(db.findByHash(hash).length, 0, `${hash}: el 400 no deja fila`);
+    }
     // El registro de un kind sin productor es 400 aquí, no una fila que el
     // prune nunca podrá tocar (#257). Hasta esta tanda entraba y se indexaba.
-    const texture = await post("/assets", { hash: "t1", type: "texture", subtype: "albedo", prompt: "p", size_bytes: 1 });
+    const texture = await post("/assets", { hash: "7e7e7e7e7e7e7e7e", type: "texture", subtype: "albedo", prompt: "p", size_bytes: 1 });
     assert.equal(texture.status, 400);
     assert.match(String(texture.body.error), /type/);
-    assert.equal(db.findByHash("t1").length, 0, "el 400 no deja fila");
+    assert.equal(db.findByHash("7e7e7e7e7e7e7e7e").length, 0, "el 400 no deja fila");
     // Y el subtype también es el literal.
     assert.equal(
-      (await post("/assets", { hash: "t2", type: "surface", subtype: "albedo", prompt: "p", size_bytes: 1 })).status,
+      (await post("/assets", { hash: "7e7e7e7e7e7e7e7f", type: "surface", subtype: "albedo", prompt: "p", size_bytes: 1 })).status,
       400,
     );
-    const entry = { hash: "reg1", type: "surface", subtype: "surface", prompt: "piedra", size_bytes: 10 };
+    const entry = { hash: "1e91e91e91e91e91", type: "surface", subtype: "surface", prompt: "piedra", size_bytes: 10 };
     assert.deepEqual((await post("/assets", entry)).body, { ok: true });
     assert.deepEqual((await post("/assets", entry)).body, { ok: true }); // dup = éxito
-    assert.equal(db.findByHash("reg1").length, 1);
+    assert.equal(db.findByHash("1e91e91e91e91e91").length, 1);
   });
 
   it("by_hash: cache_url /cache/surface/{hash}, touch, y 404 texto plano", async () => {
-    await post("/assets", { hash: "bh1", type: "surface", subtype: "surface", prompt: "p", size_bytes: 1 });
-    const t = await getJson("/assets/by_hash/bh1");
+    await post("/assets", { hash: "b0b0b0b0b0b0b0b0", type: "surface", subtype: "surface", prompt: "p", size_bytes: 1 });
+    const t = await getJson("/assets/by_hash/b0b0b0b0b0b0b0b0");
     assert.equal(t.status, 200);
     const matches = t.body.matches as Array<Record<string, unknown>>;
     assert.equal(matches.length, 1);
-    assert.equal(matches[0].cache_url, "/cache/surface/bh1");
+    assert.equal(matches[0].cache_url, "/cache/surface/b0b0b0b0b0b0b0b0");
     // touch estampó last_used
-    assert.ok(db.findByHash("bh1")[0].last_used);
+    assert.ok(db.findByHash("b0b0b0b0b0b0b0b0")[0].last_used);
     const miss = await getRaw("/assets/by_hash/noexiste");
     assert.equal(miss.status, 404);
     assert.equal(miss.body.toString(), "Not found");
@@ -314,14 +322,14 @@ describe("registro e índice", () => {
   });
 
   it("kind surface: blob servido con touch y by_hash con cache_url", async () => {
-    writeSurface(root, "s1hash");
-    db.register({ hash: "s1hash", type: "surface", subtype: "surface", prompt: "aged plaster", size_bytes: 4 });
-    const blob = await getRaw("/cache/surface/s1hash");
+    writeSurface(root, "5115115115115115");
+    db.register({ hash: "5115115115115115", type: "surface", subtype: "surface", prompt: "aged plaster", size_bytes: 4 });
+    const blob = await getRaw("/cache/surface/5115115115115115");
     assert.equal(blob.status, 200);
     assert.equal(blob.contentType, "image/png");
-    const by = await getJson("/assets/by_hash/s1hash");
+    const by = await getJson("/assets/by_hash/5115115115115115");
     assert.equal(by.status, 200);
-    assert.equal(by.body.matches[0].cache_url, "/cache/surface/s1hash");
+    assert.equal(by.body.matches[0].cache_url, "/cache/surface/5115115115115115");
   });
 
   it("limit no numérico → 400 ErrorResponse (desviación documentada del 422)", async () => {
@@ -331,107 +339,161 @@ describe("registro e índice", () => {
   });
 });
 
-/** #376 — el arte de personaje entra en el índice CON su prompt y PINEADO, o
- *  no entra. Lo que estos tests fijan no es «el store sabe registrarlo» sino
- *  que los dos estados malos no son expresables: una fila sin pin (que el
- *  prune podría evictar, y con ella la skin de un NPC vivo) y una fila de
- *  hero sin la descripción con la que se pagó. */
+/** #376 — el arte de personaje entra en el índice CON su prompt y PINEADO, y
+ *  el `ref` de pin NO es una entrada.
+ *
+ *  Lo que estos tests fijan no es «el store sabe registrarlo» sino que los
+ *  estados malos no son EXPRESABLES: una fila sin pin (que el prune podría
+ *  evictar, y con ella la skin de un NPC vivo), una fila de hero sin la
+ *  descripción con la que se pagó, y —lo que el QA de esta PR tumbó de la
+ *  primera forma— un sheet colgando del `ref` de otro personaje. */
 describe("arte de personaje en el índice (#376)", () => {
   const HERO = "0123456789abcdef";
   const SHEET = "fedcba9876543210";
+  const OTRO_HERO = "aaaabbbbccccdddd";
 
-  it("sin extra.character_ref no hay registro: los dos kinds son 400 y no dejan fila", async () => {
-    for (const kind of ["sprite_sheet", "sprite_hero"] as const) {
-      const hash = kind === "sprite_hero" ? HERO : SHEET;
+  const character = (cuerpo: unknown): Promise<{ status: number; body: Record<string, unknown> }> =>
+    post("/assets/character", cuerpo);
+
+  it("el arte de personaje NO entra por POST /assets, y el 400 dice por dónde va", async () => {
+    // La puerta vieja se cierra: mientras existiera, el `character_ref` por
+    // fila seguiría siendo escribible y con él la contradicción que el QA
+    // midió (un sheet bajo el ref de otro personaje).
+    for (const kind of ["sprite_hero", "sprite_sheet"] as const) {
       const r = await post("/assets", {
-        hash,
-        type: kind,
-        subtype: kind,
-        prompt: "Blas, el tabernero",
-        size_bytes: 10,
+        hash: kind === "sprite_hero" ? HERO : SHEET,
+        type: kind, subtype: kind, prompt: "Blas", size_bytes: 10,
+        extra: { character_ref: HERO },
       });
       assert.equal(r.status, 400, kind);
-      // El 400 dice QUÉ falta: el cliente de esto es fail-loud y su excepción
-      // lleva el cuerpo dentro, así que un «extra: Required» a secas manda a
-      // quien lo lea a averiguar qué esperaba `extra`.
-      assert.match(String(r.body.error), /character_ref/, kind);
-      assert.equal(db.findByHash(hash).length, 0, `${kind}: el 400 no deja fila`);
+      assert.match(String(r.body.error), /POST \/assets\/character/, kind);
+      assert.equal(db.findByHash(kind === "sprite_hero" ? HERO : SHEET).length, 0, kind);
     }
-    // Y `extra` presente pero sin la clave tampoco vale: el pin necesita el ref.
-    const vacio = await post("/assets", {
-      hash: SHEET, type: "sprite_sheet", subtype: "sprite_sheet",
-      prompt: "p", size_bytes: 1, extra: { otra_cosa: 1 },
-    });
-    assert.equal(vacio.status, 400);
+  });
+
+  it("una petición que no registra nada es 400: no hay «personaje vacío»", async () => {
+    const r = await character({ hero_key: HERO });
+    assert.equal(r.status, 400);
+    assert.match(String(r.body.error), /al menos uno/);
   });
 
   it("sin prompt no hay registro: el arte de personaje sin procedencia es 400", async () => {
     // Es LA queja de #376: el hero-shot son ~60 % de los bytes pagados en
     // personajes y su prompt no se guardaba en ningún sitio. Indexarlo con el
     // prompt en blanco sería la misma mentira, ahora escrita en el índice.
-    const r = await post("/assets", {
-      hash: HERO, type: "sprite_hero", subtype: "sprite_hero",
-      prompt: "", size_bytes: 10, extra: { character_ref: HERO },
+    const sinHero = await character({ hero_key: HERO, hero: { prompt: "", size_bytes: 10 } });
+    assert.equal(sinHero.status, 400);
+    const sinSheet = await character({
+      hero_key: HERO, sheets: [{ hash: SHEET, prompt: "", size_bytes: 10 }],
     });
-    assert.equal(r.status, 400);
+    assert.equal(sinSheet.status, 400);
     assert.equal(db.findByHash(HERO).length, 0);
+    assert.equal(db.findByHash(SHEET).length, 0);
     // La superficie SÍ admite prompt vacío (cable de siempre): la diferencia
     // es del kind, no una regla global que alguien haya endurecido de paso.
     assert.equal(
-      (await post("/assets", { hash: "sinprompt", type: "surface", subtype: "surface", prompt: "", size_bytes: 1 })).status,
+      (await post("/assets", { hash: "5195195195195195", type: "surface", subtype: "surface", prompt: "", size_bytes: 1 })).status,
       200,
     );
   });
 
-  it("un hero bajo el ref de OTRO personaje es 400: su hash ES su character_ref", async () => {
-    const r = await post("/assets", {
-      hash: HERO, type: "sprite_hero", subtype: "sprite_hero",
-      prompt: "Blas", size_bytes: 10, extra: { character_ref: "aaaaaaaaaaaaaaaa" },
-    });
-    assert.equal(r.status, 400);
-    assert.match(String(r.body.error), /character_ref/);
-    assert.equal(db.findByHash(HERO).length, 0);
+  it("un hash sin forma de hash es 400 en las dos mitades (el prune borra lo que ese hash nombre)", async () => {
+    // `heroes` es el nombre de la carpeta de hero-shots, que cuelga DENTRO de
+    // la raíz de sheets: sin forma, una fila así hacía que el prune borrara la
+    // carpeta entera dejando sus filas apuntando a nada (medido por QA).
+    for (const malo of ["heroes", "../../fuera", "no-es-un-hash"]) {
+      assert.equal((await character({ hero_key: malo, hero: { prompt: "p", size_bytes: 1 } })).status, 400, malo);
+      assert.equal(
+        (await character({ hero_key: HERO, sheets: [{ hash: malo, prompt: "p", size_bytes: 1 }] })).status,
+        400,
+        malo,
+      );
+    }
+    assert.equal(db.findByHash("heroes").length, 0);
   });
 
-  it("registro válido: fila con prompt, PIN bajo character:{hero_key} y visible en /assets", async () => {
-    const ref = refDeArteDePersonaje(HERO);
-    assert.equal(ref, `character:${HERO}`);
-    for (const [hash, kind] of [[HERO, "sprite_hero"], [SHEET, "sprite_sheet"]] as const) {
-      const r = await post("/assets", {
-        hash, type: kind, subtype: kind,
-        prompt: "Blas, el tabernero",
-        size_bytes: 1_000,
-        extra: { character_ref: HERO, model: "y_bot", anim: "idle" },
-      });
-      assert.deepEqual(r.body, { ok: true }, kind);
-    }
-    // La fila lleva la procedencia, que es para lo que se indexa.
+  it("registro válido: hero y sheets en UNA transacción, con el ref DERIVADO y la procedencia estampada", async () => {
+    const r = await character({
+      hero_key: HERO,
+      hero: { prompt: "Blas, el tabernero", size_bytes: 900, extra: { model: "y_bot", angle: "frontal_8" } },
+      sheets: [{ hash: SHEET, prompt: "Blas, el tabernero", size_bytes: 1_000, extra: { model: "y_bot", anim: "idle" } }],
+    });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { ok: true, ref: refDeArteDePersonaje(HERO), rows: 2 });
+
+    // El hash del hero es su hero_key: no se manda, así que no puede diferir.
     const fila = db.findByHash(HERO)[0];
     assert.equal(fila.type, "sprite_hero");
     assert.equal(fila.prompt, "Blas, el tabernero");
+    // El `character_ref` lo ESTAMPA el store, de la misma fuente que el pin.
     assert.equal(fila.extra.character_ref, HERO);
-    // Y el resto de `extra` SOBREVIVE al zod: es con lo que se vuelve a pedir
-    // exactamente este arte (triple, modelo de imagen, estilo, hoja base). Un
-    // `z.object` sin `.passthrough()` los stripearía en silencio, que es la
-    // forma más callada de perder la procedencia que este índice existe para
-    // guardar.
+    assert.equal(db.findByHash(SHEET)[0].extra.character_ref, HERO);
+    // Y el resto de `extra` sobrevive: es con lo que se vuelve a pedir este
+    // arte. Un `z.object` sin `.passthrough()` lo stripearía en silencio.
     assert.equal(fila.extra.model, "y_bot");
-    assert.equal(fila.extra.anim, "idle");
-    // Hero y sheet, el MISMO ref: por eso se sueltan juntos.
+    assert.equal(db.findByHash(SHEET)[0].extra.anim, "idle");
+
+    // Los dos pineados bajo el MISMO ref: por eso se sueltan juntos.
     assert.ok(db.pinnedHashes().has(HERO));
     assert.ok(db.pinnedHashes().has(SHEET));
-    // Y el listado del kind los enseña con su prompt (es lo que se consulta
-    // para saber con qué texto se pagó cada cara).
     const listado = await getJson(`/assets?asset_type=sprite_hero&limit=50`);
     const filas = listado.body.assets as Array<Record<string, string>>;
     assert.ok(filas.some((f) => f.hash === HERO && f.prompt === "Blas, el tabernero"), JSON.stringify(filas));
-    // Un solo DELETE los retira a los dos.
+  });
+
+  it("un sheet de OTRO personaje no puede colgar de este ref: no hay campo en el que decirlo", async () => {
+    // El hallazgo que tumbó la primera forma de esta PR: con `character_ref`
+    // por fila, el sheet de B se registraba bajo el ref de A y soltar A se
+    // llevaba sus frames (`removed: 3`). Aquí el ref sale de `hero_key` y de
+    // nada más, así que el sheet que entra en la petición de A ES de A: no
+    // existe la contradicción, y el pin del vecino no se toca.
+    await character({ hero_key: OTRO_HERO, hero: { prompt: "Nuño", size_bytes: 10 } });
+    const antes = [...db.pinnedHashes()].filter((h) => h === OTRO_HERO).length;
+    // `extra.character_ref` es una clave más de `extra`, y el store la PISA.
+    const r = await character({
+      hero_key: HERO,
+      sheets: [{ hash: "1234123412341234", prompt: "Blas", size_bytes: 10, extra: { character_ref: OTRO_HERO } }],
+    });
+    assert.equal(r.status, 200);
+    assert.equal(db.findByHash("1234123412341234")[0].extra.character_ref, HERO, "el store estampa el suyo");
+    // Y el ref del vecino sigue teniendo exactamente lo que tenía.
+    assert.equal([...db.pinnedHashes()].filter((h) => h === OTRO_HERO).length, antes);
+    const del = await fetch(`${baseUrl}/assets/pin/${encodeURIComponent(refDeArteDePersonaje(OTRO_HERO))}`, { method: "DELETE" });
+    assert.deepEqual((await del.json()) as unknown, { ok: true, ref: refDeArteDePersonaje(OTRO_HERO), removed: 1 });
+  });
+
+  it("las dos ausencias son estados reales del productor: hero sin sheets, y sheets sin hero", async () => {
+    // hero sin sheets = el barrido (`arte_de_personaje.py`): un hero cuyas
+    // anims ya no están. sheets sin hero = un sheet servido de caché cuyo
+    // hero se archivó; registrar su fila sería prometer un blob que no está.
+    const soloHero = await character({ hero_key: "1111222233334444", hero: { prompt: "solo", size_bytes: 1 } });
+    assert.deepEqual(soloHero.body, { ok: true, ref: "character:1111222233334444", rows: 1 });
+    const soloSheets = await character({
+      hero_key: "5555666677778888",
+      sheets: [{ hash: "9999aaaabbbbcccc", prompt: "solo frames", size_bytes: 1 }],
+    });
+    assert.deepEqual(soloSheets.body, { ok: true, ref: "character:5555666677778888", rows: 1 });
+    assert.equal(db.findByHash("5555666677778888").length, 0, "no se inventa la fila del hero");
+    // Y los frames quedan pineados bajo el ref de su hero igual.
+    assert.ok(db.pinnedHashes().has("9999aaaabbbbcccc"));
+  });
+
+  it("un solo DELETE suelta hero Y frames, y repetir la petición no duplica", async () => {
+    const clave = "dddd0000eeee1111";
+    const sheet = "dddd0000eeee2222";
+    const cuerpo = {
+      hero_key: clave,
+      hero: { prompt: "Telmo", size_bytes: 10 },
+      sheets: [{ hash: sheet, prompt: "Telmo", size_bytes: 10 }],
+    };
+    // El cache-hit apunta en CADA servida: idempotente por (hash,type,subtype).
+    for (let i = 0; i < 3; i++) assert.equal((await character(cuerpo)).status, 200);
+    assert.equal(db.findByHash(clave).length, 1);
+    assert.equal(db.findByHash(sheet).length, 1);
+    const ref = refDeArteDePersonaje(clave);
     const del = await fetch(`${baseUrl}/assets/pin/${encodeURIComponent(ref)}`, { method: "DELETE" });
-    assert.equal(del.status, 200);
-    assert.deepEqual(await del.json(), { ok: true, ref, removed: 2 });
-    assert.equal(db.pinnedHashes().size, 0);
-    // Se vuelven a pinar para no dejar el índice del describe a medias.
-    db.pin(ref, [HERO, SHEET]);
+    assert.deepEqual((await del.json()) as unknown, { ok: true, ref, removed: 2 });
+    db.pin(ref, [clave, sheet]);
   });
 
   it("by_hash: el arte de personaje NO promete cache_url (esa forma no lo sirve)", async () => {
@@ -443,11 +505,10 @@ describe("arte de personaje en el índice (#376)", () => {
   });
 
   it("registrado por HTTP ⇒ protegido del prune en el mismo instante, sin que nadie pine aparte", async () => {
-    // La cadena entera y la única que importa: zod → handler → fila + pin. Si
-    // el handler llamara a `register` en vez de a `registrarPineado`, el arte
-    // entraría EVICTABLE y el prune podría borrar la skin de un NPC vivo —
-    // que es lo que convertiría #376 en un empeoramiento. Este test es lo que
-    // se pone rojo si eso pasa.
+    // La cadena entera y la única que importa: zod → handler → filas + pin. Si
+    // el handler llamara a `register` en vez de a `registrarArteDePersonaje`,
+    // el arte entraría EVICTABLE y el prune podría borrar la skin de un NPC
+    // vivo — que es lo que convertiría #376 en un empeoramiento.
     const base = join(root, "reciencreado");
     const d = blobDirs(base);
     const hero = "3333333333333333";
@@ -461,18 +522,13 @@ describe("arte de personaje en el índice (#376)", () => {
     });
     await new Promise<void>((r) => srv.on("listening", () => r()));
     try {
-      const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/assets`;
+      const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/assets/character`;
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          hash: hero, type: "sprite_hero", subtype: "sprite_hero",
-          prompt: "Blas, el tabernero", size_bytes: 100,
-          extra: { character_ref: hero },
-        }),
+        body: JSON.stringify({ hero_key: hero, hero: { prompt: "Blas, el tabernero", size_bytes: 100 } }),
       });
       assert.equal(res.status, 200);
-      // Sin pinar nada más: solo lo que dejó el registro.
       const keep = new Set<string>(pdb.pinnedHashes());
       const s = prune(pdb, d, 1, keep);
       assert.equal(s.pruned, 0, "el arte recién registrado no se poda");
@@ -483,7 +539,35 @@ describe("arte de personaje en el índice (#376)", () => {
       pdb.close();
     }
   });
+
+  it("si una fila de la petición no entra, no entra NINGUNA (ni el pin)", async () => {
+    // La segunda grieta de la forma anterior, que nadie había mirado: con dos
+    // POST, un fallo entre ellos dejaba un hero pineado sin sus frames. Aquí
+    // la petición entera es una transacción.
+    const pdb = new ManifestDb(join(root, "atomico.sqlite3"));
+    const clave = "0f0f0f0f0f0f0f0f";
+    assert.throws(() =>
+      pdb.registrarArteDePersonaje(
+        [
+          { hash: clave, type: "sprite_hero", subtype: "sprite_hero", prompt: "Blas", size_bytes: 1 },
+          // `extra` no serializable: revienta DENTRO de la transacción.
+          { hash: "0f0f0f0f0f0f0f01", type: "sprite_sheet", subtype: "sprite_sheet", prompt: "Blas", size_bytes: 1, extra: { ciclo: circular() } },
+        ],
+        refDeArteDePersonaje(clave),
+      ),
+    );
+    assert.equal(pdb.findByHash(clave).length, 0, "el hero no sobrevive al fallo de su sheet");
+    assert.equal(pdb.pinnedHashes().size, 0, "y no queda pin colgando");
+    pdb.close();
+  });
 });
+
+/** Un objeto con un ciclo: `JSON.stringify` lanza sobre él. */
+function circular(): Record<string, unknown> {
+  const o: Record<string, unknown> = {};
+  o.yo = o;
+  return o;
+}
 
 describe("prune con los tres kinds (#376)", () => {
   /** Escribe el blob de cada kind con la FORMA que tiene en producción:
@@ -548,21 +632,24 @@ describe("prune con los tres kinds (#376)", () => {
     // colara, desindexar una fila cuyo blob no se sabe borrar es el estado que
     // #257 tardó meses en descubrir: 16.986 filas inmunes al prune.
     const pdb = new ManifestDb(join(root, "prune-ajeno.sqlite3"));
-    pdb.importEntry({ hash: "t1", type: "texture", subtype: "albedo", prompt: "", created_at: "2026-01-01T00:00:00.000Z", size_bytes: 100, extra: {} });
+    pdb.importEntry({ hash: "7e7e7e7e7e7e7e7e", type: "texture", subtype: "albedo", prompt: "", created_at: "2026-01-01T00:00:00.000Z", size_bytes: 100, extra: {} });
     assert.throws(
       () => prune(pdb, blobDirs(join(root, "prune-ajeno")), 1, null),
       /type "texture".*no es un kind con productor/s,
     );
-    assert.equal(pdb.findByHash("t1").length, 1, "la fila NO se desindexa");
+    assert.equal(pdb.findByHash("7e7e7e7e7e7e7e7e").length, 1, "la fila NO se desindexa");
     pdb.close();
   });
 });
 
 describe("concurrencia (criterio 'hecho' de F2)", () => {
   it("200 POST /assets en paralelo + lecturas intercaladas: cero pérdidas, DB íntegra", async () => {
+    // Los hashes tienen la FORMA de un hash (16 hex): el zod la exige desde
+    // #376, porque el prune borra `rutaDeBlob(kind, hash)` recursivamente.
+    const ccHash = (n: number): string => `cc${String(n).padStart(14, "0")}`;
     const posts = Array.from({ length: 200 }, (_, i) =>
       post("/assets", {
-        hash: `cc${i % 150}`, // colisiones deliberadas de (hash,type,subtype)
+        hash: ccHash(i % 150), // colisiones deliberadas de (hash,type,subtype)
         type: "surface",
         subtype: "surface",
         prompt: `concurrente ${i}`,
@@ -573,7 +660,7 @@ describe("concurrencia (criterio 'hecho' de F2)", () => {
     const results = await Promise.all([...posts, ...reads]);
     for (const r of results) assert.equal(r.status, 200);
     // 200 posts sobre 150 claves únicas → exactamente 150 filas nuevas
-    const count = db.findByHash("cc0").length;
+    const count = db.findByHash(ccHash(0)).length;
     assert.equal(count, 1);
     const listed = await getJson("/assets?asset_type=surface&limit=500");
     const total = (listed.body.assets as unknown[]).length;
@@ -615,7 +702,7 @@ describe("prune LRU con keep-list", () => {
   });
 
   it("POST /cache/prune vía HTTP consulta la keep-list del world-state fake", async () => {
-    keepRefs = ["reg1", "bh1", "s1hash", "h1"];
+    keepRefs = ["1e91e91e91e91e91", "b0b0b0b0b0b0b0b0", "5115115115115115", "h1"];
     const r = await post("/cache/prune", {});
     assert.equal(r.status, 200);
     assert.equal(r.body.ok, true);

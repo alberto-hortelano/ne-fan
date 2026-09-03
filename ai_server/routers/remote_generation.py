@@ -528,18 +528,26 @@ def registrar_arte_de_personaje(
     denuncia. Es idempotente (el store hace `INSERT OR IGNORE`), así que
     apuntarlo en cada servida no cuesta nada más que un POST local.
 
-    **Pineado, no evictable.** El store deriva el `ref` del `character_ref` que
-    va en `extra` y pina la fila al registrarla, en la misma transacción. No
-    existe keep-list de arte de personaje (`entity.asset_refs` es `[]` y no lo
-    rellena ningún llamante), así que una fila sin pin la podría evictar el
-    prune por LRU y con ella se iría la skin de un NPC vivo: indexarlo
-    evictable sería empeorar, no arreglar. El unpin llega con esa keep-list.
+    **UNA petición, no dos.** Va por `POST /assets/character`, que registra el
+    hero y sus sheets en la MISMA transacción y pina las filas bajo un `ref`
+    que deriva el store de `hero_key`. La primera forma de #376 hacía dos
+    `register()` con un `character_ref` por fila, y tenía dos grietas que el QA
+    midió: un sheet podía declarar el ref de OTRO personaje (soltar A se
+    llevaba los frames de B), y si el segundo POST fallaba quedaba un hero
+    pineado sin sus frames — que es literalmente lo que prohíbe el criterio de
+    cierre del issue. Aquí el ref no es un campo y la pareja es atómica.
 
-    **Fail-loud, y en los dos caminos.** `AssetStoreClient.register` lanza si el
-    store no contesta, y aquí no se atrapa. No es celo: los frames y el
-    hero-shot los SIRVE ese mismo proceso (`/cache/sprite_sheet/…`,
-    `/cache/sprite_hero/…`), así que un 200 con el store caído devolvería URLs
-    muertas — un cache-hit «bueno» que en pantalla es un maniquí. Mejor decirlo.
+    **Pineado, no evictable.** No existe keep-list de arte de personaje
+    (`entity.asset_refs` es `[]` y no lo rellena ningún llamante), así que una
+    fila sin pin la podría evictar el prune por LRU y con ella se iría la skin
+    de un NPC vivo: indexarlo evictable sería empeorar, no arreglar. El unpin
+    llega con esa keep-list.
+
+    **Fail-loud.** `register_character` lanza si el store no contesta, y aquí no
+    se atrapa. No es celo: los frames y el hero-shot los SIRVE ese mismo
+    proceso (`/cache/sprite_sheet/…`, `/cache/sprite_hero/…`), así que un 200
+    con el store caído devolvería URLs muertas — un cache-hit «bueno» que en
+    pantalla es un maniquí. Mejor decirlo.
 
     El `extra` lleva lo que hace falta para volver a pedir EXACTAMENTE este
     arte: el triple, el modelo de imagen, el estilo, la identidad de la hoja
@@ -554,29 +562,28 @@ def registrar_arte_de_personaje(
             "dueño y su procedencia se perdería (deps.asset_manifest sin poblar)"
         )
 
-    comun = {
-        "character_ref": hero_k,
-        "model": model,
-        "angle": angle,
-        "ai_model": ai_model,
-        "style_key": style_key,
-    }
+    comun = {"model": model, "angle": angle, "ai_model": ai_model, "style_key": style_key}
     hero_path = raiz / "heroes" / f"{hero_k}.png"
+    hero = None
     if hero_path.exists():
-        store.register(hero_k, KIND_HERO, KIND_HERO, prompt, _peso_en_disco(hero_path), dict(comun))
+        hero = {"prompt": prompt, "size_bytes": _peso_en_disco(hero_path), "extra": dict(comun)}
     else:
         # Puede pasar de verdad: un sheet servido desde caché cuyo hero se
-        # archivó (los 53 sin procedencia del barrido de #376). Registrar una
-        # fila cuyo blob no existe sería la mentira contraria.
+        # archivó (los heroes que la clave viva ya no nombra, ver
+        # `ai_server/tools/arte_de_personaje.py`). Registrar una fila cuyo blob
+        # no existe sería la mentira contraria.
         logger.warning(
             f"sheet {sheet_key} sin hero en disco ({hero_path.name}): se indexa el "
             f"sheet sin su hero-shot"
         )
-    store.register(
-        sheet_key, KIND_SHEET, KIND_SHEET, prompt, _peso_en_disco(raiz / sheet_key),
-        {**comun, "anim": anim, "base_key": base_key,
-         "keyframes": perfil[0], "play_fps": perfil[1]},
-    )
+    sheets = [{
+        "hash": sheet_key,
+        "prompt": prompt,
+        "size_bytes": _peso_en_disco(raiz / sheet_key),
+        "extra": {**comun, "anim": anim, "base_key": base_key,
+                  "keyframes": perfil[0], "play_fps": perfil[1]},
+    }]
+    store.register_character(hero_k, hero=hero, sheets=sheets)
 
 
 class SkinSpriteSheetRequest(BaseModel):

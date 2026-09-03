@@ -315,19 +315,41 @@ class StoreFalso:
     corriera con `deps.asset_manifest = None` no probaría el camino que corre
     en producción: probaría el 502. Guarda lo registrado para poder afirmar
     QUÉ se apuntó y con qué procedencia. `caido` simula el store sin
-    contestar, que es fail-loud igual que el cliente real."""
+    contestar, que es fail-loud igual que el cliente real.
+
+    LO QUE ESTE FAKE NO PRUEBA, dicho aquí para que nadie lo cite como
+    garantía: **no valida el payload**. Un `hero` sin `prompt` o un `hash` con
+    otra forma pasan igual de verdes, porque el zod vive en el store y aquí no
+    hay store. Quien canda el cable de verdad —el payload que compone este
+    módulo contra el schema real, con un hero en disco— es
+    `qa/sprites-sin-servicio.mjs`, que arranca el entry real. Lo señaló el QA
+    de #376 y tiene razón: sin esa mitad, un registro roto sale verde por aquí.
+    """
 
     def __init__(self):
         self.registros = []
+        self.personajes = []
         self.caido = False
 
-    def register(self, hash_key, asset_type, subtype, prompt, size_bytes, extra=None):
+    def register_character(self, hero_key, hero=None, sheets=None):
         if self.caido:
-            raise RuntimeError("asset-store register failed (simulado)")
-        self.registros.append({
-            "hash": hash_key, "type": asset_type, "subtype": subtype,
-            "prompt": prompt, "size_bytes": size_bytes, "extra": extra or {},
-        })
+            raise RuntimeError("asset-store register_character failed (simulado)")
+        self.personajes.append({"hero_key": hero_key, "hero": hero, "sheets": sheets or []})
+        if hero is not None:
+            self.registros.append({
+                "hash": hero_key, "type": "sprite_hero", "subtype": "sprite_hero",
+                "prompt": hero["prompt"], "size_bytes": hero["size_bytes"],
+                # El `character_ref` lo estampa el STORE desde hero_key; aquí se
+                # refleja para que las aserciones lean lo que acabará en la fila.
+                "extra": {**(hero.get("extra") or {}), "character_ref": hero_key},
+            })
+        for sh in sheets or []:
+            self.registros.append({
+                "hash": sh["hash"], "type": "sprite_sheet", "subtype": "sprite_sheet",
+                "prompt": sh["prompt"], "size_bytes": sh["size_bytes"],
+                "extra": {**(sh.get("extra") or {}), "character_ref": hero_key},
+            })
+        return {"ok": True, "ref": f"character:{hero_key}", "rows": len(self.registros)}
 
     def de_tipo(self, tipo):
         return [r for r in self.registros if r["type"] == tipo]
@@ -462,6 +484,19 @@ class AdaptadorHttpTest(unittest.TestCase):
         )
 
     # ── el arte de personaje tiene dueño (#376) ────────────────────────────
+    def test_hero_y_sheet_van_en_UNA_peticion_con_el_ref_derivado(self):
+        # La forma importa, y no es cosmética: con dos peticiones y un
+        # `character_ref` por fila, un sheet podía declarar el ref de otro
+        # personaje y un fallo entre las dos dejaba un hero sin sus frames.
+        d = self._pedir().json()
+        self.assertEqual(len(self.store.personajes), 1, self.store.personajes)
+        pet = self.store.personajes[0]
+        self.assertEqual(pet["hero_key"], d["hero_key"])
+        self.assertEqual([s["hash"] for s in pet["sheets"]], [d["hash"]])
+        # El ref NO viaja por fila: no hay dónde escribirlo mal.
+        self.assertNotIn("character_ref", pet["sheets"][0].get("extra", {}))
+        self.assertNotIn("character_ref", (pet["hero"] or {}).get("extra", {}))
+
     def test_al_generar_se_indexan_el_hero_y_el_sheet_con_su_prompt(self):
         d = self._pedir().json()
         heroes = self.store.de_tipo("sprite_hero")
