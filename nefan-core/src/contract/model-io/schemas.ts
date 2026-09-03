@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
+import { VocabularioDeEntity } from "./entity-vocabulary.js";
 
 // ── narrative_event (reacción del motor a una elección del jugador) ─────────
 
@@ -38,8 +39,11 @@ const SpawnEntityConsequence = z
   .object({
     type: z.literal("spawn_entity"),
     entity_kind: z.enum(["npc", "building", "object"]),
-    description: z.string().min(1).describe("Descripción en español de la entidad a materializar"),
-    name: z.string().optional().describe("Nombre propio (NPCs)"),
+    // El MISMO vocabulario que una entity de `generate_scene`
+    // (entity-vocabulary.ts): `name` obligatorio y es el rótulo,
+    // `description` opcional y es la procedencia (#397).
+    name: VocabularioDeEntity.name,
+    description: VocabularioDeEntity.description,
     position_hint: z.string().optional().describe("Pista de dónde aparece, p.ej. 'junto a la fuente'"),
     role: z
       .enum(NPC_ROLES)

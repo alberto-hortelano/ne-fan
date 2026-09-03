@@ -436,8 +436,11 @@ export function avisoDeFueraDelMundo(fuera: readonly FueraDelMundo[]): string {
 export interface SpawnDeRuntime {
   entityId: string;
   entityKind: "npc" | "object" | "building";
-  description: string;
-  name?: string;
+  /** El rótulo: `data.name` del ledger. Un record sin él no vuelve (se dice). */
+  name: string;
+  /** La procedencia, si el motor la declaró. NUNCA se inventa: sin ella el
+   *  cliente pinta con `name`, en vivo y al reanudar por igual (#397). */
+  description?: string;
   position: [number, number, number];
   data: Record<string, unknown>;
 }
@@ -486,13 +489,25 @@ export function spawnsDeRuntime(entities: readonly EntityRecord[]): {
     if (combate.tipo === "combate" && combate.combate.health <= 0) continue;
     const data = rec.data;
     const nombre = typeof data.name === "string" && data.name ? data.name : undefined;
+    if (nombre === undefined) {
+      // Pre-producción: no se inventa un rótulo (ni el id, ni la descripción).
+      // El contrato exige `name` desde #397, así que un record sin él es un
+      // save de antes o un ledger corrupto, y las dos cosas se dicen.
+      errores.push(
+        `«${rec.id}» no vuelve al mundo: la partida guardada no dice cómo se llama`,
+      );
+      continue;
+    }
+    // La procedencia SOLO si el motor la declaró. Aquí se caía a `rec.id`, y el
+    // jugador veía al mismo NPC pintado con «an entity» en vivo y con
+    // `narr_npc_…` tras reanudar (guion 66).
     const descripcion =
-      typeof data.description === "string" && data.description ? data.description : rec.id;
+      typeof data.description === "string" && data.description ? data.description : undefined;
     spawns.push({
       entityId: rec.id,
       entityKind: rec.type as SpawnDeRuntime["entityKind"],
-      description: descripcion,
-      ...(nombre ? { name: nombre } : {}),
+      name: nombre,
+      ...(descripcion !== undefined ? { description: descripcion } : {}),
       position: [rec.position[0], rec.position[1], rec.position[2]],
       data,
     });

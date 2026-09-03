@@ -100,7 +100,7 @@ curl -s -XPOST localhost:9899/send \
 `replay-server.mjs` reproduce una sesión grabada (`runs/<ts>/events.ndjson`) como película para el
 **cliente** (`nefan-html`), **sin motor narrativo, sin ai_server y sin jugador**. Esto funciona
 porque `events.ndjson` capturó los mismos mensajes `in` que el bridge real envía al cliente
-(`session_started`, `narrative_event` con la escena en `effects[].spawn_entity.data.scene`,
+(`session_started`, `narrative_event` con la escena en su effect `scene_loaded` (`effects[].scene`),
 `narrative_status`…) — que es justo lo que el cliente consume para dibujar.
 
 Cómo lo hace:

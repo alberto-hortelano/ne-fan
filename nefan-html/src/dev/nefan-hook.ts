@@ -181,7 +181,12 @@ export function instalarNefanHook(deps: DepsDelHook): void {
           e: deps.collidesAt(deps.playerPos.x + 0.5, deps.playerPos.z),
         },
       }),
-      npcs: () => deps.mundo.npcs.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos } })),
+      /** `skinPrompt` es con QUÉ se pinta al NPC: su `description` (la
+       *  procedencia) o, sin ella, su `name`. Un guion tiene que poder afirmar
+       *  que el cliente no inventa una descripción («an entity», el id) para lo
+       *  que llegó sin ella (#397). Solo lectura. */
+      npcs: () =>
+        deps.mundo.npcs.map((n) => ({ id: n.id, label: n.label, pos: { ...n.pos }, skinPrompt: n.skinPrompt })),
       /** Los OBJETOS y EDIFICIOS que el cliente tiene en escena. Hermano de
        *  `npcs()` y `enemies()`: un guion tiene que poder afirmar que el cofre
        *  que el motor puso delante SIGUE ahí tras reanudar, y sin esto solo

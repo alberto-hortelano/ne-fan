@@ -39,6 +39,7 @@ import { VegetationZonesSchema } from "../../scene/blueprint/vegetation.js";
 import { VolumesSchema } from "../../scene/blueprint/volumes.js";
 import { parseScatter } from "../../scene/blueprint/scatter.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
+import { VocabularioDeEntity } from "./entity-vocabulary.js";
 import { enMetros, topeDeFootprint } from "./physics.js";
 import { refineRetiredTerrainFields } from "./retired-terrain-fields.js";
 
@@ -73,7 +74,10 @@ const EntityBase = z
   .object({
     id: z.string().min(1),
     kind: z.enum(ENTITY_KINDS),
-    name: z.string(),
+    // `name` y `description` son el vocabulario COMPARTIDO con `spawn_entity`
+    // (entity-vocabulary.ts): la etiqueta obligatoria y la procedencia
+    // opcional, el mismo objeto zod en las dos puertas (#397).
+    name: VocabularioDeEntity.name,
     // Celda [col,row]: admite fracción (colocación fina — media celda importa
     // en el z-order y en props pequeños), como los `at` de volumes.
     cell: z.tuple([z.number(), z.number()]),
@@ -101,34 +105,12 @@ const EntityBase = z
     // cuando el tile trae ochenta entidades. Espejo exacto del mensaje que da
     // `clean_ent` en ai_server.
     role: z.string().min(1).optional(),
-    // `description`, en CUALQUIER entity, es el texto del que se genera su
-    // arte (aspecto, no biografía): la PROCEDENCIA, que viaja verbatim hasta
-    // la world scene para poder regenerar el asset con un modelo mejor
-    // (#238). En un NPC es además el prompt del skin.
-    // Opcional en el zod y exigida en la prosa del prompt para el NPC: este
-    // schema canda también las fixtures de `data/scenes/`, y las 14 sondas de
-    // z-order de zorder_test.json no tienen aspecto que describir ni deben
-    // pagar un skin. Sin ella, el prompt del skin es el nombre propio del
-    // NPC («Beltrán»), que no describe a nadie.
-    // Rechaza también la description EN BLANCO, que sin esto pasaba el gate
-    // aquí y la tiraba el `.strip()` de ai_server — el mismo NPC aceptado aquí
-    // y desvestido allí (#237).
-    //
-    // `.refine()` y NO `.trim().min(1)`: `trim` no valida, REESCRIBE. Estos
-    // schemas se usan como PREDICADO —`validateContract` tira el resultado del
-    // `safeParse`— y desde #237 `ExpandedSceneSchema` está además en la ruta
-    // de CARGA de los snapshots. Un schema que transforma en esa posición
-    // reescribe datos de disco en silencio, y lo hizo: un `"  tabernero  "`
-    // guardado volvía sin espacios. La regla queda escrita en el tipo — estos
-    // schemas no transforman NUNCA — y la canda `scene-schema.test.ts`
-    // («ninguno de los dos schemas reescribe lo que valida»).
-    description: z
-      .string()
-      .min(1)
-      .refine((d) => d.trim().length > 0, {
-        message: "`description` no puede ser solo espacios: es el texto del que se genera su arte (en un NPC, el prompt del skin)",
-      })
-      .optional(),
+    // La PROCEDENCIA (qué es y por qué `.refine()` y no `.trim()`: en
+    // entity-vocabulary.ts). Opcional en el zod y exigida en la prosa del
+    // prompt para el NPC: este schema canda también las fixtures de
+    // `data/scenes/`, y las 14 sondas de z-order de zorder_test.json no
+    // tienen aspecto que describir ni deben pagar un skin.
+    description: VocabularioDeEntity.description,
     // Ref de personaje del catálogo del pack (world.style_refs.characters)
     // ELEGIDA por el motor; sin ella, el default sale del `role`.
     style_ref: z.string().min(1).optional(),

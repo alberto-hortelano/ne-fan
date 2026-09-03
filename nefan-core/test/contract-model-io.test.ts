@@ -63,7 +63,9 @@ test("narrative_event: el validador acepta formas válidas", () => {
       consequences: [
         { type: "dialogue", speaker: "Herrero", text: "Hola", choices: ["Comprar", "Irme"] },
         { type: "story_update", delta: "El jugador saludó al herrero." },
-        { type: "spawn_entity", entity_kind: "npc", description: "a blacksmith", role: "merchant" },
+        { type: "spawn_entity", entity_kind: "npc", name: "Herrero", description: "a blacksmith", role: "merchant" },
+        // `description` es OPCIONAL (la procedencia); `name` es el rótulo (#397).
+        { type: "spawn_entity", entity_kind: "object", name: "Farol del zaguán" },
       ],
     },
     { consequences: [{ type: "plugin_event", plugin_id: "abc", event_type: "trade_offered", payload: { item: "x" } }] },
@@ -79,8 +81,12 @@ test("narrative_event: el validador rechaza (y da error preciso) formas inválid
     [{ consequences: [{ type: "dialogue", speaker: "X" }] }, /text/], // falta text
     [{ consequences: [{ type: "dialogue", text: "hi" }] }, /speaker/], // falta speaker
     [{ consequences: [{ type: "story_update" }] }, /delta/], // falta delta
-    [{ consequences: [{ type: "spawn_entity", description: "x" }] }, /entity_kind/], // falta kind
-    [{ consequences: [{ type: "spawn_entity", entity_kind: "animal", description: "x" }] }, /entity_kind/],
+    [{ consequences: [{ type: "spawn_entity", name: "x" }] }, /entity_kind/], // falta kind
+    [{ consequences: [{ type: "spawn_entity", entity_kind: "animal", name: "x" }] }, /entity_kind/],
+    // #397: `name` obligatorio y no vacío (es el rótulo); `description`, si va, no en blanco.
+    [{ consequences: [{ type: "spawn_entity", entity_kind: "npc", description: "un lobo" }] }, /name/],
+    [{ consequences: [{ type: "spawn_entity", entity_kind: "npc", name: "", description: "un lobo" }] }, /name/],
+    [{ consequences: [{ type: "spawn_entity", entity_kind: "npc", name: "Lobo", description: "   " }] }, /description/],
     [{ consequences: [{ type: "show_dialogue", speaker: "a", text: "b" }] }, /type/], // alias
     [{ consequences: [{ type: "dialogue", speaker: "a", text: "b", choices: ["1", "2", "3", "4"] }] }, /choices/],
     [{ consequences: [1, 2, 3, 4, 5].map(() => ({ type: "noop" })) }, /at most 4|4 element/], // >4

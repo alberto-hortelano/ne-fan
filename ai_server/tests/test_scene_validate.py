@@ -277,11 +277,49 @@ class TestSpawnEntityLlevaRolYRef(unittest.TestCase):
     def _spawn(self, **extra):
         out = validate_narrative_reaction({
             "consequences": [
-                {"type": "spawn_entity", "entity_kind": "npc",
+                {"type": "spawn_entity", "entity_kind": "npc", "name": "Guardia",
                  "description": "un guardia con yelmo abollado", **extra},
             ],
         })
         return out["consequences"][0]
+
+    # ── name obligatorio, description opcional: el MISMO vocabulario que una
+    # entity de escena (entity-vocabulary.ts, #397). Espejo del zod, línea a
+    # línea, porque esta reconstrucción corre en las DOS vías.
+    def test_sin_name_LANZA_y_dice_que_es_el_rotulo(self):
+        with self.assertRaises(ValueError) as cm:
+            validate_narrative_reaction({
+                "consequences": [
+                    {"type": "spawn_entity", "entity_kind": "building",
+                     "description": "forja de piedra ennegrecida"},
+                ],
+            })
+        self.assertIn("name", str(cm.exception))
+
+    def test_name_en_blanco_LANZA(self):
+        with self.assertRaises(ValueError) as cm:
+            self._spawn(name="   ")
+        self.assertIn("name", str(cm.exception))
+
+    def test_sin_description_pasa_y_NO_se_inventa(self):
+        out = validate_narrative_reaction({
+            "consequences": [
+                {"type": "spawn_entity", "entity_kind": "npc", "name": "Mochuelo"},
+            ],
+        })
+        c = out["consequences"][0]
+        self.assertEqual(c["name"], "Mochuelo")
+        self.assertNotIn("description", c)
+
+    def test_description_en_blanco_LANZA_en_vez_de_colarse(self):
+        with self.assertRaises(ValueError) as cm:
+            self._spawn(description="   ")
+        self.assertIn("description", str(cm.exception))
+
+    def test_description_viaja_verbatim(self):
+        c = self._spawn(description="  posadera de manos grandes  ")
+        # Sin `.strip()`: el schema no reescribe lo que valida (como el zod).
+        self.assertEqual(c["description"], "  posadera de manos grandes  ")
 
     def test_rol_y_ref_llegan_hasta_la_consequence(self):
         c = self._spawn(role="guard", style_ref="characters_capitana")

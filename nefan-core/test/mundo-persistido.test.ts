@@ -455,6 +455,31 @@ describe("spawnsDeRuntime — UNA puerta por entidad, y la decide el spawn_reaso
     assert.match(errores[0], /raro_1/);
     assert.match(errores[0], /vehicle/);
   });
+
+  it("sin `description` en el ledger, el spawn vuelve SIN ella: no se le pone el id de procedencia (#397)", () => {
+    // Aquí se caía a `rec.id`: el mismo NPC se pintaba con «an entity» en vivo
+    // y con `narr_npc_…` tras reanudar (guion 66). La procedencia es lo que
+    // declaró el motor o nada.
+    const { spawns, errores } = spawnsDeRuntime([
+      rec({ id: "narr_npc_178_3", data: { name: "Mochuelo", role: "villager" } }),
+    ]);
+    assert.deepEqual(errores, []);
+    assert.equal(spawns.length, 1);
+    assert.equal(spawns[0].name, "Mochuelo");
+    assert.equal("description" in spawns[0], false, JSON.stringify(spawns[0]));
+  });
+
+  it("un record sin `name` NO vuelve y se DICE: el rótulo no se inventa (#397)", () => {
+    // Pre-producción: el contrato exige `name`, así que un ledger sin él es un
+    // save de antes o algo corrupto. Ni el id ni la descripción hacen de rótulo.
+    const { spawns, errores } = spawnsDeRuntime([
+      rec({ id: "anonimo_1", data: { description: "alguien sin nombre" } }),
+    ]);
+    assert.deepEqual(spawns, []);
+    assert.equal(errores.length, 1);
+    assert.match(errores[0], /anonimo_1/);
+    assert.match(errores[0], /cómo se llama/);
+  });
 });
 
 describe("combateDeEntity — tres desenlaces, ninguno colapsable", () => {

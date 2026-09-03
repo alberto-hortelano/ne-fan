@@ -1,0 +1,13 @@
+{
+  "description": "spawn_entity sin `name`: el rótulo es obligatorio en las dos puertas (generate_scene y spawn_entity comparten el vocabulario, #397). `description` sola no basta: es la procedencia, no la etiqueta.",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "building",
+        "description": "forja de piedra ennegrecida por el humo"
+      }
+    ]
+  }
+}

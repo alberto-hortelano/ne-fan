@@ -3,12 +3,37 @@ import type { UiTheme } from "../games/ui-theme.js";
 
 import type { Vec3, CombatEvent, EnemyPersonality } from "../types.js";
 import type { Edge } from "../world-map/types.js";
+import type { WorldScene } from "../scene/scene-normalize.js";
 import type {
   Consequence,
   ConsequenceEffect,
   SessionData,
   SessionMetadata,
 } from "../narrative/types.js";
+
+/** UNA ESCENA CARGADA, tal cual la pinta el cliente: el effect que el BRIDGE
+ *  emite (y solo él: `broadcastScene`) con el `eventId: "scene_init"` cuando
+ *  una escena recién generada, realizada o re-difundida entra en el wire.
+ *
+ *  Hasta #397 esto viajaba disfrazado de `spawn_entity` con `data.scene`
+ *  dentro, una `description` que era la de la escena y sin `name`: cuando el
+ *  contrato del spawn pasó a exigir `name` —porque es el rótulo—, el disfraz
+ *  no podía seguir. Cargar una escena no es materializar una entity y ahora
+ *  lo dice el `kind`.
+ *
+ *  Vive AQUÍ y no en `ConsequenceEffect` (narrative/types.ts) porque no lo
+ *  produce `dispatchConsequences` —ninguna consequence del motor carga una
+ *  escena—, y porque `protocol → narrative` es la dirección permitida de la
+ *  dependencia; al revés sería un ciclo. */
+export interface SceneLoadedEffect {
+  kind: "scene_loaded";
+  sceneId: string;
+  scene: WorldScene;
+}
+
+/** Lo que va en `effects[]` de un `narrative_event`: los effects de las
+ *  consequences más el de escena, que solo emite el bridge. */
+export type EfectoEnElWire = ConsequenceEffect | SceneLoadedEffect;
 
 // ── Frontend → Logic ──
 
@@ -327,7 +352,7 @@ export interface NarrativeEventMessage {
   sessionId: string;
   eventId: string;
   consequences: Consequence[];
-  effects: ConsequenceEffect[];
+  effects: EfectoEnElWire[];
 }
 
 /** Lifecycle hint for long-running narrative work so clients can show a loader.

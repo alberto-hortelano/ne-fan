@@ -68,7 +68,8 @@ describe("bridge ciclo de sesión", () => {
     );
     assert.ok(sceneEvent, "scene_init broadcast");
     assert.equal(sceneEvent.eventId, "scene_init");
-    assert.equal(sceneEvent.effects[0].kind, "spawn_entity");
+    // La escena viaja como SU effect, no disfrazada de spawn sin nombre (#397).
+    assert.equal(sceneEvent.effects[0].kind, "scene_loaded");
     // La escena quedó registrada y persistida.
     assert.ok(narrative.scenes_loaded["tile_0_0"]);
   });
