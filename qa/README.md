@@ -271,7 +271,7 @@ contra el fake de main (pre-tanda), las 3 comprobaciones en rojo; con el de la r
 ## El sexto ejecutable: `qa/el-indice-del-store-se-prueba-sin-el-del-checkout.mjs`
 
 El asset-store tiene UN camino de fallo en el arranque —negarse a servir un índice con kinds
-sin productor (`services/asset-store/solo-surface.ts`)— y hasta #391 no se podía ejercer sin la
+sin productor (`services/asset-store/kinds-con-productor.ts`)— y hasta #391 no se podía ejercer sin la
 DB del checkout: `loadAssetStoreConfig` solo admitía override para el PUERTO. El QA de T4 tuvo
 que exportar el árbol entero al scratchpad, plantar la fila ajena en la copia y arrancar desde
 allí; ese workaround ERA el defecto, y `NEFAN_MANIFEST_DB` lo cierra. Esto es su candado, y lo

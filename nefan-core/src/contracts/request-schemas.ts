@@ -36,7 +36,7 @@ import type {
   SceneAssetRefsRequest,
   SceneValidateRequest,
 } from "./world-state.js";
-import { ASSET_KIND, type AssetPinRequest, type AssetRegisterRequest } from "./asset-store.js";
+import type { AssetPinRequest, AssetRegisterRequest } from "./asset-store.js";
 import {
   MAX_VOCABULARY_ENTRIES,
   VocabularyEntrySchema,
@@ -161,16 +161,63 @@ export const PluginRegisterRequestSchema = z.object({
 
 // ── asset-store (services/asset-store/http-server.ts) ──
 
-// `type`/`subtype` son el literal del ÚNICO kind con productor (#257): un
-// registro de otro kind es 400 aquí, no una fila que el prune no sabrá tocar.
-export const AssetRegisterRequestSchema = z.object({
+// `type`/`subtype` son kinds CON productor (#257, #376): un registro de otro
+// kind es 400 aquí, no una fila que el prune no sabrá tocar.
+//
+// Es una UNIÓN DISCRIMINADA y no un objeto con `type: z.enum(...)` porque los
+// tres kinds no piden lo mismo, y la diferencia es lo que #376 vino a arreglar:
+// el arte de personaje EXIGE `extra.character_ref` (de ahí sale el `ref` con
+// el que el store lo pina al registrarlo) y un `prompt` no vacío (es su
+// procedencia, y una fila de hero sin ella es la mentira del issue escrita en
+// el índice). Con la unión, «arte de personaje registrado sin pin» y «hero
+// pineado bajo el ref de otro» dejan de ser estados expresables, en vez de
+// estados vigilados por un test que alguien puede no escribir.
+const registroBase = {
   hash: z.string().min(1),
-  type: z.literal(ASSET_KIND),
-  subtype: z.literal(ASSET_KIND),
-  prompt: z.string(),
   size_bytes: z.number().min(0),
-  extra: z.record(z.unknown()).optional(),
-});
+};
+
+const CharacterRefSchema = z.object({ character_ref: z.string().min(1).max(200) }).passthrough();
+
+export const AssetRegisterRequestSchema = z
+  .discriminatedUnion("type", [
+    z.object({
+      ...registroBase,
+      type: z.literal("surface"),
+      subtype: z.literal("surface"),
+      prompt: z.string(),
+      extra: z.record(z.unknown()).optional(),
+    }),
+    z.object({
+      ...registroBase,
+      type: z.literal("sprite_sheet"),
+      subtype: z.literal("sprite_sheet"),
+      prompt: z.string().min(1),
+      extra: CharacterRefSchema,
+    }),
+    z.object({
+      ...registroBase,
+      type: z.literal("sprite_hero"),
+      subtype: z.literal("sprite_hero"),
+      prompt: z.string().min(1),
+      extra: CharacterRefSchema,
+    }),
+  ])
+  .superRefine((v, ctx) => {
+    // El hero-shot ES el personaje: su hash es el `hero_key`, que es también
+    // el `character_ref` bajo el que se pina él y se pinan sus sheets. Si los
+    // dos pudieran diferir, un hero acabaría colgando del ref de otro y el
+    // «se sueltan juntos» se rompería en silencio. Va en un superRefine y no
+    // en un `.refine()` de la rama porque z.discriminatedUnion solo admite
+    // ZodObject entre sus opciones.
+    if (v.type === "sprite_hero" && v.hash !== v.extra.character_ref) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["extra", "character_ref"],
+        message: `un sprite_hero se pina bajo su propio hero_key: hash "${v.hash}" ≠ character_ref "${v.extra.character_ref}"`,
+      });
+    }
+  });
 
 export const SceneAssetRefsRequestSchema = z.object({
   scene_id: z.string().min(1),

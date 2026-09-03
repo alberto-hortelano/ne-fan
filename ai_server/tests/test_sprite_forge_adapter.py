@@ -308,6 +308,31 @@ class IndiceDeBasesTest(unittest.TestCase):
         self.assertEqual(restos, ["_base_keys.json"])
 
 
+class StoreFalso:
+    """El asset-store, con la firma que usa el adaptador y nada más.
+
+    Existe porque desde #376 el arte de personaje se INDEXA, y un test que
+    corriera con `deps.asset_manifest = None` no probaría el camino que corre
+    en producción: probaría el 502. Guarda lo registrado para poder afirmar
+    QUÉ se apuntó y con qué procedencia. `caido` simula el store sin
+    contestar, que es fail-loud igual que el cliente real."""
+
+    def __init__(self):
+        self.registros = []
+        self.caido = False
+
+    def register(self, hash_key, asset_type, subtype, prompt, size_bytes, extra=None):
+        if self.caido:
+            raise RuntimeError("asset-store register failed (simulado)")
+        self.registros.append({
+            "hash": hash_key, "type": asset_type, "subtype": subtype,
+            "prompt": prompt, "size_bytes": size_bytes, "extra": extra or {},
+        })
+
+    def de_tipo(self, tipo):
+        return [r for r in self.registros if r["type"] == tipo]
+
+
 @unittest.skipUnless(_HAS_FASTAPI, "fastapi no instalado")
 class AdaptadorHttpTest(unittest.TestCase):
     """El flujo entero contra un sprite-forge de mentira que contesta las
@@ -336,6 +361,10 @@ class AdaptadorHttpTest(unittest.TestCase):
         deps.config["sprite_skin_model"] = "gpt-image-2"
         self._orig_packs = deps.style_packs
         deps.style_packs = None  # sin pack: el camino genérico
+        # El índice donde el arte de personaje deja su dueño (#376).
+        self.store = StoreFalso()
+        self._orig_store = deps.asset_manifest
+        deps.asset_manifest = self.store
 
         self.forge.respuestas["/sheets"] = _fixture("sheets")
         self.forge.respuestas["/identity"] = _fixture("identity")
@@ -365,6 +394,7 @@ class AdaptadorHttpTest(unittest.TestCase):
         deps.config.clear()
         deps.config.update(self._orig_cfg)
         deps.style_packs = self._orig_packs
+        deps.asset_manifest = self._orig_store
         self._tmp.cleanup()
 
     def _pedir(self, **extra):
@@ -430,6 +460,72 @@ class AdaptadorHttpTest(unittest.TestCase):
             apunte["perfil"],
             {"keyframes": self.perfil_walk["keyframes"], "play_fps": self.perfil_walk["play_fps"]},
         )
+
+    # ── el arte de personaje tiene dueño (#376) ────────────────────────────
+    def test_al_generar_se_indexan_el_hero_y_el_sheet_con_su_prompt(self):
+        d = self._pedir().json()
+        heroes = self.store.de_tipo("sprite_hero")
+        sheets = self.store.de_tipo("sprite_sheet")
+        self.assertEqual([h["hash"] for h in heroes], [d["hero_key"]])
+        self.assertEqual([s["hash"] for s in sheets], [d["hash"]])
+        # La PROCEDENCIA, que es lo que faltaba: el hero era un PNG llamado por
+        # un hash y su prompt no se guardaba en ningún sitio.
+        for fila in heroes + sheets:
+            self.assertEqual(fila["prompt"], "un herrero de pelo cano")
+            self.assertEqual(fila["subtype"], fila["type"])
+            self.assertGreater(fila["size_bytes"], 0)
+        # Y el ref con el que el store los pina es el MISMO para los dos: por
+        # eso se sueltan juntos. Para el hero, además, es su propio hash.
+        self.assertEqual(heroes[0]["extra"]["character_ref"], d["hero_key"])
+        self.assertEqual(sheets[0]["extra"]["character_ref"], d["hero_key"])
+        self.assertEqual(heroes[0]["hash"], heroes[0]["extra"]["character_ref"])
+
+    def test_el_extra_del_sheet_lleva_con_que_volver_a_pedirlo(self):
+        # No es adorno: con el prompt solo no se puede repetir esta compra —
+        # hacen falta el triple, el modelo de imagen, el estilo, la identidad
+        # de la hoja base y el perfil de repintado.
+        self._pedir()
+        extra = self.store.de_tipo("sprite_sheet")[0]["extra"]
+        self.assertEqual(extra["model"], "heroe")
+        self.assertEqual(extra["anim"], "walk")
+        self.assertEqual(extra["angle"], "frontal_8")
+        self.assertEqual(extra["ai_model"], "gpt-image-2")
+        self.assertEqual(extra["style_key"], "")
+        self.assertEqual(extra["base_key"], self.base_key)
+        self.assertEqual(extra["keyframes"], self.perfil_walk["keyframes"])
+        self.assertEqual(extra["play_fps"], self.perfil_walk["play_fps"])
+
+    def test_TAMBIEN_en_cache_hit_se_indexa(self):
+        # La mitad del issue: todo el arte pagado ANTES de que el índice
+        # existiera solo pasa por aquí. Si solo se registrara al generar, se
+        # quedaría fuera para siempre.
+        d = self._pedir().json()
+        self.store.registros.clear()
+        segunda = self._pedir().json()
+        self.assertTrue(segunda["cached"])
+        self.assertEqual([r["hash"] for r in self.store.de_tipo("sprite_hero")], [d["hero_key"]])
+        self.assertEqual([r["hash"] for r in self.store.de_tipo("sprite_sheet")], [d["hash"]])
+
+    def test_si_el_store_no_contesta_es_502_con_la_causa_y_NO_un_200_bonito(self):
+        # El store es quien SIRVE estos frames: un 200 con él caído devolvería
+        # URLs muertas. Y además el arte se habría pagado sin dueño.
+        self.store.caido = True
+        r = self._pedir()
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertIn("asset-store", r.json()["detail"])
+
+    def test_un_sheet_sin_hero_en_disco_se_indexa_igual_y_no_inventa_la_fila_del_hero(self):
+        # Pasa de verdad: los 53 heroes sin procedencia del barrido de #376 se
+        # archivan y sus sheets siguen siendo servibles. Una fila de hero cuyo
+        # PNG no existe sería la mentira contraria a la que denuncia el issue.
+        d = self._pedir().json()
+        (self.rg.SKINNED_SHEETS_DIR / "heroes" / f"{d['hero_key']}.png").unlink()
+        self.store.registros.clear()
+        segunda = self._pedir()
+        self.assertEqual(segunda.status_code, 200, segunda.text)
+        self.assertEqual(self.store.de_tipo("sprite_hero"), [])
+        self.assertEqual(len(self.store.de_tipo("sprite_sheet")), 1)
+        self.assertIsNone(segunda.json()["hero_url"])
 
     # ── el perfil de repintado en la clave (#375) ──────────────────────────
     def test_cambiar_el_perfil_de_la_anim_da_OTRO_hash(self):

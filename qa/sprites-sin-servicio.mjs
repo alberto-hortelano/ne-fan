@@ -24,6 +24,17 @@
  *    3. servicio CAÍDO   + personaje NUEVO  → 503 que dice POR QUÉ, no 500 mudo
  *    4. servicio CAÍDO, sin el índice        → 503 (el arreglo es de verdad el
  *       índice: si esto diera 200, el 2 estaría pasando por otra cosa)
+ *    5. y en la 2, el arte servido de caché ha quedado APUNTADO en el
+ *       asset-store con su prompt (#376): el cache-hit es el único camino por
+ *       el que pasa el arte pagado antes de que ese índice existiera
+ *
+ *  ARRANCA TAMBIÉN EL ASSET-STORE, y no es decorado: desde #376 el adaptador
+ *  indexa el hero y el sheet en LOS DOS caminos, y ese registro es fail-loud
+ *  —el store es quien SIRVE estos frames, así que un 200 con él caído
+ *  devolvería URLs muertas—. Sin él arriba, las cuatro comprobaciones de
+ *  arriba darían 502 y este guion mediría el fallo equivocado. Su índice es un
+ *  SQLite de usar y tirar (`NEFAN_MANIFEST_DB`, la palanca de #391): el del
+ *  checkout no se toca ni para leerlo.
  *
  *  CERO CRÉDITOS, y no por confianza: `sprite-forge` se arranca con `--sin-skin`
  *  (sin worker de repintado, así que no hay nada que pueda llamar a un proveedor
@@ -55,7 +66,8 @@
  *  de esta misma tanda).
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUERTOS_TODOS } from "./lib/stack.mjs";
@@ -76,7 +88,9 @@ const REUSAR = process.argv.includes("--reusar");
  *  literalmente el desenlace que esta tanda cierra. */
 const FORGE_PORT = PUERTOS_TODOS.sprite_forge;
 const RGEN_PORT = PUERTOS_TODOS.remote_gen;
+const STORE_PORT = PUERTOS_TODOS.asset_store;
 const FORGE_URL = `http://127.0.0.1:${FORGE_PORT}`;
+const STORE_URL = `http://127.0.0.1:${STORE_PORT}`;
 const SKINS_DIR = join(repoRoot, "cache/sprite_sheets");
 const INDEX = join(SKINS_DIR, "_base_keys.json");
 const FORGE_DIR = process.env.NEFAN_SPRITE_FORGE_DIR ?? join(process.env.HOME ?? "", "code/sprite-forge");
@@ -90,11 +104,22 @@ const plantados = [];
  *  estaba): el sujeto es nuestro, pero la caché es de quien corre el guion. */
 let indicePrevio = null;
 let habiaIndice = false;
+/** El SQLite de usar y tirar del asset-store de este guion. */
+let tmpStore = null;
 
 function limpiar() {
   for (const d of plantados) rmSync(d, { recursive: true, force: true });
   if (habiaIndice) writeFileSync(INDEX, indicePrevio);
   else if (existsSync(INDEX)) rmSync(INDEX, { force: true });
+  if (tmpStore) rmSync(tmpStore, { recursive: true, force: true });
+}
+
+/** Qué hay en el índice temporal del store, por kind. Se pregunta por HTTP
+ *  (el fichero lo tiene abierto el hijo, que es su único dueño). */
+async function filasDelStore(kind) {
+  const res = await fetch(`${STORE_URL}/assets?asset_type=${kind}&limit=100`).catch(() => null);
+  if (!res?.ok) return null;
+  return (await res.json()).assets ?? [];
 }
 
 function ok(t) { console.log(`  ✔ ${t}`); }
@@ -262,6 +287,34 @@ async function main() {
     `  clave viva ${s.clave} · base ${s.base_key} · perfil ${s.keyframes}kf@${s.play_fps}fps · ${s.urls} frames\n`,
   );
 
+  // ── asset-store, contra un índice de usar y tirar ──
+  //
+  // Es quien SIRVE los frames y, desde #376, quien les da dueño: sin él, cada
+  // petición del adaptador sería un 502 y este guion mediría otra cosa. El
+  // índice va a un temporal (`NEFAN_MANIFEST_DB`, #391) para no escribir en el
+  // del checkout ni una fila.
+  if (await puertoOcupado(STORE_PORT)) {
+    console.log(`ROJO — ya hay algo escuchando en :${STORE_PORT} y no lo he arrancado yo.`);
+    console.log("  Este guion necesita SU asset-store, contra un índice temporal: si midiera");
+    console.log("  contra el del vecino escribiría filas en la caché de otro. Párale (./start.sh → k).");
+    return 1;
+  }
+  tmpStore = mkdtempSync(join(tmpdir(), "qa-sprites-store-"));
+  // `node --import tsx` y no `npx tsx`: `npx` es un PADRE que lanza el server
+  // como NIETO, así que el SIGKILL de la limpieza mata al lanzador y deja el
+  // store escuchando. Medido: la siguiente corrida se negaba por «ya hay algo
+  // en ese puerto» — suyo, del run anterior. Así el hijo ES el servidor.
+  arrancar(process.execPath, ["--import", "tsx", "services/asset-store/server.ts"], {
+    cwd: join(repoRoot, "nefan-core"),
+    env: { ...process.env, NEFAN_MANIFEST_DB: join(tmpStore, "manifest.sqlite3"),
+           NEFAN_ASSET_STORE_PORT: String(STORE_PORT) },
+  }, "store");
+  if (!(await waitPort(STORE_PORT, 120_000))) {
+    console.log(`ROJO — el asset-store no llegó a escuchar en :${STORE_PORT}.`);
+    for (const h of hijos) if (h.etiqueta === "store") console.log(h.log.join("").trimEnd());
+    return 1;
+  }
+
   // ── remote-gen, que es quien tiene el adaptador ──
   //
   // Si ya hay uno escuchando, este guion NO lo reutiliza en silencio, y la razón
@@ -283,7 +336,7 @@ async function main() {
     console.log("      este verde vale por el código que ESE proceso cargó, no por el del disco.\n");
   } else {
     arrancar("bash", ["-c", "source .venv/bin/activate && exec python -u ai_server/remote_gen_main.py"],
-      { cwd: repoRoot }, "rgen");
+      { cwd: repoRoot, env: { ...process.env, NEFAN_URL_ASSET_STORE: STORE_URL } }, "rgen");
     if (!(await waitPort(RGEN_PORT, 120_000))) {
       console.log(`ROJO — remote-gen no llegó a escuchar en :${RGEN_PORT}.`);
       for (const h of hijos) if (h.etiqueta === "rgen") console.log(h.log.join("").trimEnd());
@@ -311,6 +364,22 @@ async function main() {
   } else {
     mal(`servicio caído: el arte PAGADO desapareció — ${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
   }
+
+  // 2 bis ─ y ese cache-hit ha dejado DUEÑO (#376): el arte que ya estaba
+  //         pagado antes de que el índice existiera solo pasa por aquí.
+  const heroes = await filasDelStore("sprite_hero");
+  const sheets = await filasDelStore("sprite_sheet");
+  const sheetApuntado = (sheets ?? []).find((f) => f.hash === hash1);
+  if (sheetApuntado && sheetApuntado.prompt === cuerpo.prompt) {
+    ok(`el cache-hit dejó el sheet apuntado con su prompt ("${sheetApuntado.prompt.slice(0, 40)}")`);
+  } else {
+    mal(`el cache-hit no apuntó el sheet ${hash1} con su prompt: ${JSON.stringify(sheets)?.slice(0, 200)}`);
+  }
+  // El hero del sujeto plantado no existe en disco (plantarlo son frames y
+  // meta, no una llamada de identidad), así que NO debe haber fila de hero:
+  // una fila cuyo blob no existe es la mentira contraria.
+  if ((heroes ?? []).length === 0) ok("y no se inventó la fila del hero que no está en disco");
+  else mal(`hay filas de hero sin blob: ${JSON.stringify(heroes).slice(0, 200)}`);
 
   // 3 ─ lo nuevo no se puede generar, y se dice por qué
   r = await pedirSkin(nuevo);

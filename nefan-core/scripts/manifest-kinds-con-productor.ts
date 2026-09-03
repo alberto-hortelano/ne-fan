@@ -1,10 +1,11 @@
-/** Purga del índice del asset-store: se queda SOLO con el kind vivo (#257).
+/** Purga del índice del asset-store: se queda solo con los kinds que tienen
+ *  PRODUCTOR (#257, #376).
  *
  *  El manifest indexaba 16.986 filas de siete kinds que ningún proceso vuelve
  *  a producir (texturas PBR y modelos del gpu-worker, skins y sprites 2D,
  *  repintados de la oblicua, recortes SAM2 y un type de renders huérfano que
  *  ni siquiera tenía directorio conocido). `prune` no podía tocarlas y el asset-store se
- *  niega a arrancar con ellas (`services/asset-store/solo-surface.ts`). Este
+ *  niega a arrancar con ellas (`services/asset-store/kinds-con-productor.ts`). Este
  *  script es la única vía de purgarlas, y lo es a propósito: irreproducible
  *  sería un `DELETE` a mano desde `node -e`.
  *
@@ -12,7 +13,7 @@
  *
  *  1. Los BLOBS se archivan antes (`mv cache/<dir> archivo/cache/<dir>`,
  *     jamás `rm`: es material pagado). Si `cache/` todavía tiene un directorio
- *     que no es de lo vivo, o el `manifest.json` legado, el script lo nombra
+ *     que no es de un kind con productor, o el `manifest.json` legado, el script lo nombra
  *     y aborta — borrar la fila con el blob aún en su sitio dejaría 445 MB de
  *     repintados sin índice que los encuentre.
  *  2. El store tiene que estar PARADO: `VACUUM` exige exclusividad y con otro
@@ -34,7 +35,7 @@
  *  1 = cualquier guardia; 2 = flag desconocida.
  *
  *  Uso:
- *    npx tsx scripts/manifest-solo-surface.ts [--ejecutar] [--db <p>] [--cache <dir>] [--archivo <dir>]
+ *    npx tsx scripts/manifest-kinds-con-productor.ts [--ejecutar] [--db <p>] [--cache <dir>] [--archivo <dir>]
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -56,7 +57,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const FICHERO_EXPORT = "manifest-retirado.json";
 
 /** Lo que puede haber en `cache/` sin que sea un blob de un kind muerto: el
- *  directorio del kind vivo, el almacén paralelo de sprite-forge, las cachés
+ *  directorio de cada kind con productor, las cachés
  *  de las APIs de pago (que no son del asset-store) y el propio índice con
  *  sus ficheros WAL. Todo lo demás es «archívalo primero». */
 export const LO_VIVO_EN_CACHE: ReadonlySet<string> = new Set([
@@ -213,8 +214,8 @@ function tabla(r: Resumen): string {
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2));
   if ("error" in parsed) {
-    console.error(`manifest-solo-surface: ${parsed.error}`);
-    console.error("uso: npx tsx scripts/manifest-solo-surface.ts [--ejecutar] [--db <p>] [--cache <dir>] [--archivo <dir>]");
+    console.error(`manifest-kinds-con-productor: ${parsed.error}`);
+    console.error("uso: npx tsx scripts/manifest-kinds-con-productor.ts [--ejecutar] [--db <p>] [--cache <dir>] [--archivo <dir>]");
     return 2;
   }
   const cfg = loadAssetStoreConfig(process.env);
@@ -225,7 +226,7 @@ async function main(): Promise<number> {
   // Guardia 1: blobs archivados.
   const sobrantes = guardiaDeOrden(existsSync(cacheDir) ? readdirSync(cacheDir) : []);
   if (sobrantes.length > 0) {
-    console.error(`manifest-solo-surface: ${cacheDir} todavía tiene material que no es del kind vivo — archívalo primero:`);
+    console.error(`manifest-kinds-con-productor: ${cacheDir} todavía tiene material que no es de un kind con productor — archívalo primero:`);
     for (const s of sobrantes) console.error(`  mv ${join(cacheDir, s)} ${join(archivoDir, s)}`);
     return 1;
   }
@@ -233,19 +234,19 @@ async function main(): Promise<number> {
   // Guardia 2: store parado.
   const storeUrl = resolveServiceUrl("asset-store", process.env);
   if (await storeArriba(storeUrl)) {
-    console.error(`manifest-solo-surface: hay un asset-store respondiendo en ${storeUrl} — párale primero (tecla k de start.sh): VACUUM exige exclusividad.`);
+    console.error(`manifest-kinds-con-productor: hay un asset-store respondiendo en ${storeUrl} — párale primero (tecla k de start.sh): VACUUM exige exclusividad.`);
     return 1;
   }
 
   if (!existsSync(dbPath)) {
-    console.error(`manifest-solo-surface: no existe ${dbPath}`);
+    console.error(`manifest-kinds-con-productor: no existe ${dbPath}`);
     return 1;
   }
 
   const db = new ManifestDb(dbPath);
   try {
     const r = purgar(db, { dbPath, archivoDir, ejecutar: parsed.ejecutar });
-    console.log(`manifest-solo-surface: ${dbPath}`);
+    console.log(`manifest-kinds-con-productor: ${dbPath}`);
     console.log(tabla(r));
     if (!parsed.ejecutar) {
       console.log(r.totalFilas === 0 ? "0 filas ajenas, nada que hacer." : "dry-run: nada tocado. Repite con --ejecutar para exportar y borrar.");
@@ -263,7 +264,7 @@ async function main(): Promise<number> {
     console.log(`quedan ${r.quedan} filas ajenas`);
     return r.quedan === 0 ? 0 : 1;
   } catch (err) {
-    console.error(`manifest-solo-surface: ${(err as Error).message}`);
+    console.error(`manifest-kinds-con-productor: ${(err as Error).message}`);
     return 1;
   } finally {
     db.close();

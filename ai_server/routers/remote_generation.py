@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Annotated
 
 import httpx
@@ -484,6 +485,100 @@ def hero_key(prompt: str, model: str, angle: str, ai_model: str, style_key: str 
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
+# ── El arte de personaje en el índice del asset-store (#376) ──────────────────
+#
+# Los dos kinds del arte más caro del juego. Hasta septiembre de 2026 vivían en
+# un almacén paralelo: ni fila, ni prompt, ni dueño. El sheet al menos guardaba
+# su procedencia en `meta.json` (`skin.prompt`); el hero-shot es un PNG desnudo
+# llamado por un hash y **su prompt no se guardaba en ningún sitio**, o sea que
+# no se podía regenerar con un modelo mejor — que es para lo que existe la
+# descripción (#293, «la descripción es la procedencia»).
+KIND_HERO = "sprite_hero"
+KIND_SHEET = "sprite_sheet"
+
+
+def _peso_en_disco(p: Path) -> int:
+    """Bytes de un fichero o de un directorio entero (el sheet son N frames)."""
+    if p.is_file():
+        return p.stat().st_size
+    return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+
+
+def registrar_arte_de_personaje(
+    *,
+    hero_k: str,
+    sheet_key: str,
+    prompt: str,
+    model: str,
+    anim: str,
+    angle: str,
+    ai_model: str,
+    style_key: str,
+    base_key: str,
+    perfil: tuple[int, float],
+    raiz: Path | None = None,
+    manifest=None,
+) -> None:
+    """Apunta en el índice del asset-store el hero-shot y el sheet de un personaje.
+
+    ÚNICO ESCRITOR, y se llama en LOS DOS CAMINOS del endpoint —recién generado
+    y cache-hit—. El cache-hit no es un detalle: es el camino por el que pasa
+    todo el arte que ya estaba pagado antes de que este índice existiera, así
+    que registrar solo al generar habría dejado fuera precisamente lo que #376
+    denuncia. Es idempotente (el store hace `INSERT OR IGNORE`), así que
+    apuntarlo en cada servida no cuesta nada más que un POST local.
+
+    **Pineado, no evictable.** El store deriva el `ref` del `character_ref` que
+    va en `extra` y pina la fila al registrarla, en la misma transacción. No
+    existe keep-list de arte de personaje (`entity.asset_refs` es `[]` y no lo
+    rellena ningún llamante), así que una fila sin pin la podría evictar el
+    prune por LRU y con ella se iría la skin de un NPC vivo: indexarlo
+    evictable sería empeorar, no arreglar. El unpin llega con esa keep-list.
+
+    **Fail-loud, y en los dos caminos.** `AssetStoreClient.register` lanza si el
+    store no contesta, y aquí no se atrapa. No es celo: los frames y el
+    hero-shot los SIRVE ese mismo proceso (`/cache/sprite_sheet/…`,
+    `/cache/sprite_hero/…`), así que un 200 con el store caído devolvería URLs
+    muertas — un cache-hit «bueno» que en pantalla es un maniquí. Mejor decirlo.
+
+    El `extra` lleva lo que hace falta para volver a pedir EXACTAMENTE este
+    arte: el triple, el modelo de imagen, el estilo, la identidad de la hoja
+    base y el perfil de repintado. El prompt va donde va la procedencia, que es
+    la columna `prompt` de la fila.
+    """
+    raiz = raiz if raiz is not None else SKINNED_SHEETS_DIR
+    store = manifest if manifest is not None else deps.asset_manifest
+    if store is None:
+        raise RuntimeError(
+            "no hay cliente del asset-store: el arte de personaje se pagaría sin "
+            "dueño y su procedencia se perdería (deps.asset_manifest sin poblar)"
+        )
+
+    comun = {
+        "character_ref": hero_k,
+        "model": model,
+        "angle": angle,
+        "ai_model": ai_model,
+        "style_key": style_key,
+    }
+    hero_path = raiz / "heroes" / f"{hero_k}.png"
+    if hero_path.exists():
+        store.register(hero_k, KIND_HERO, KIND_HERO, prompt, _peso_en_disco(hero_path), dict(comun))
+    else:
+        # Puede pasar de verdad: un sheet servido desde caché cuyo hero se
+        # archivó (los 53 sin procedencia del barrido de #376). Registrar una
+        # fila cuyo blob no existe sería la mentira contraria.
+        logger.warning(
+            f"sheet {sheet_key} sin hero en disco ({hero_path.name}): se indexa el "
+            f"sheet sin su hero-shot"
+        )
+    store.register(
+        sheet_key, KIND_SHEET, KIND_SHEET, prompt, _peso_en_disco(raiz / sheet_key),
+        {**comun, "anim": anim, "base_key": base_key,
+         "keyframes": perfil[0], "play_fps": perfil[1]},
+    )
+
+
 class SkinSpriteSheetRequest(BaseModel):
     """Una anim de un personaje, vestida por sprite-forge.
 
@@ -662,6 +757,24 @@ async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
             f"${meta['skin']['cost_usd']}, {int(time.time() - start)}s)"
         )
     elapsed_ms = int((time.time() - start) * 1000)
+
+    # El arte queda con dueño ANTES de contestar, venga de generarse o de la
+    # caché (#376). Va aquí, después del if/elif/else, para que no haya un
+    # camino de salida que devuelva URLs de arte sin fila: registrar solo al
+    # generar dejaba fuera todo lo ya pagado, que es la mitad del issue.
+    try:
+        registrar_arte_de_personaje(
+            hero_k=hero_k, sheet_key=key, prompt=prompt, model=model, anim=anim,
+            angle=angle, ai_model=ai_model, style_key=style_key, base_key=base_key,
+            perfil=perfil,
+        )
+    except RuntimeError as e:
+        # El store es quien SIRVE estos frames: si no contesta, las URLs que
+        # devolveríamos están muertas. Un 502 con la causa, no un 200 bonito.
+        raise HTTPException(
+            status_code=502,
+            detail=f"el arte de {model}/{anim} no se ha podido indexar en el asset-store: {e}",
+        ) from e
 
     frame_urls = [
         [

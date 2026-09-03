@@ -1,8 +1,9 @@
 /** Servidor HTTP del asset-store (S6) — implementa AssetStoreApi
  *  (src/contracts/asset-store.ts) replicando el cable observable del router
- *  FastAPI original (cache_assets.py). Desde #257 el índice y el lector de
- *  blobs solo conocen el kind `surface`: `GET /cache/{otro}/{hash}` es 400 y
- *  `POST /assets` con otro type no pasa el zod.
+ *  FastAPI original (cache_assets.py). El índice conoce los kinds de
+ *  `ASSET_KINDS` y el catch-all de blobs solo `KIND_BLOB_PLANO`:
+ *  `GET /cache/{otro}/{hash}` es 400 y `POST /assets` con un type sin
+ *  productor no pasa el zod.
  *
  *  Desviaciones anunciadas (header del contrato): los endpoints JSON emiten
  *  `ErrorResponse` {ok:false,error} en vez del {detail} de FastAPI; un
@@ -14,11 +15,19 @@ import type { AddressInfo } from "node:net";
 import type { ErrorResponse } from "../../src/contracts/common.js";
 import type {
   AssetByHashResponse,
+  AssetKind,
   AssetListResponse,
   AssetPinResponse,
+  AssetRegisterRequest,
   AssetRegisterResponse,
   AssetUnpinResponse,
   CachePruneResponse,
+} from "../../src/contracts/asset-store.js";
+import {
+  esArteDePersonaje,
+  esKindDePersonaje,
+  KIND_BLOB_PLANO,
+  refDeArteDePersonaje,
 } from "../../src/contracts/asset-store.js";
 import {
   AssetPinRequestSchema,
@@ -37,9 +46,8 @@ import { fetchKeepList, prune } from "./prune.js";
 export interface AssetStoreServerOptions {
   port: number;
   db: ManifestDb;
-  /** Raíz de blobs de `surface` — ver AssetStoreConfig.surfaceDir. */
-  surfaceDir: string;
-  spriteSheetsDir: string;
+  /** Raíz de blobs por kind — ver AssetStoreConfig.blobDirs. */
+  blobDirs: Record<AssetKind, string>;
   stylesDir: string;
   cacheMaxBytes: number;
   /** Base del world-state para la keep-list del prune (resolveServiceUrl). */
@@ -133,7 +141,7 @@ async function handle(
     // Protegidos = referenciados por saves vivos ∪ pineados (aplicaciones de
     // estilo a juegos: assets pre-generados sin save que los referencie aún).
     for (const h of db.pinnedHashes()) keep.add(h);
-    const summary = prune(db, opts.surfaceDir, opts.cacheMaxBytes, keep);
+    const summary = prune(db, opts.blobDirs, opts.cacheMaxBytes, keep);
     sendJson(res, 200, { ok: true, ...summary } satisfies CachePruneResponse);
     return;
   }
@@ -164,13 +172,13 @@ async function handle(
   // Antes del catch-all de /cache/{kind}/{hash}: tiene tres segmentos y
   // caería ahí como un "kind" inexistente.
   if (method === "GET" && parts[0] === "cache" && parts[1] === "sprite_hero" && parts.length === 3) {
-    writeBlob(res, readSpriteHero(opts.spriteSheetsDir, parts[2]));
+    writeBlob(res, readSpriteHero(opts.blobDirs, parts[2]));
     return;
   }
 
   // ── GET /cache/sprite_sheet/{hash}/{filename} ──
   if (method === "GET" && parts[0] === "cache" && parts[1] === "sprite_sheet" && parts.length === 4) {
-    writeBlob(res, readSpriteSheetFrame(opts.spriteSheetsDir, parts[2], parts[3]));
+    writeBlob(res, readSpriteSheetFrame(opts.blobDirs, parts[2], parts[3]));
     return;
   }
 
@@ -200,9 +208,13 @@ async function handle(
       return;
     }
     db.touch(hash);
-    // Un solo kind, una sola forma de URL: el arranque garantiza que no hay
-    // filas de otro type (solo-surface.ts), así que no hay cascada que hacer.
-    const enriched = matches.map((m) => ({ ...m, cache_url: `/cache/${m.type}/${hash}` }));
+    // `cache_url` SOLO para el kind que sirve el catch-all: desde #376 el
+    // índice tiene además los dos del arte de personaje, y una URL
+    // `/cache/sprite_sheet/{hash}` no sirve nada (el sheet es un directorio
+    // de frames). Prometerla sería un 400 con forma de enlace.
+    const enriched = matches.map((m) =>
+      m.type === KIND_BLOB_PLANO ? { ...m, cache_url: `/cache/${m.type}/${hash}` } : m,
+    );
     sendJson(res, 200, { matches: enriched } satisfies AssetByHashResponse);
     return;
   }
@@ -211,11 +223,12 @@ async function handle(
   if (method === "POST" && path === "/assets") {
     // Borde de entrada: espejo zod del contrato (request-schemas.ts, con
     // guardia de deriva) en vez del predicado a mano.
-    const parsed = AssetRegisterRequestSchema.safeParse(await readJson(req));
+    const cuerpo = await readJson(req);
+    const parsed = AssetRegisterRequestSchema.safeParse(cuerpo);
     if (!parsed.success) {
       sendJson(res, 400, {
         ok: false,
-        error: `body requires { hash, type, subtype, prompt, size_bytes, extra? } — ${formatZodError(parsed.error)}`,
+        error: `${formaEsperada(cuerpo)} — ${formatZodError(parsed.error)}`,
       } satisfies ErrorResponse);
       return;
     }
@@ -223,14 +236,14 @@ async function handle(
     // (mismo hash+type+subtype) = éxito idempotente, igual que el return
     // silencioso del Python. NO se verifica el blob en disco: hay entradas
     // legítimas sin blob propio (analysis, bbox legadas).
-    db.register(parsed.data);
+    registrar(db, parsed.data);
     sendJson(res, 200, { ok: true } satisfies AssetRegisterResponse);
     return;
   }
 
-  // ── GET /cache/{kind}/{hash} — solo kind=surface; el resto 400 (blob-store.ts) ──
+  // ── GET /cache/{kind}/{hash} — solo KIND_BLOB_PLANO; el resto 400 (blob-store.ts) ──
   if (method === "GET" && parts[0] === "cache" && parts.length === 3) {
-    const result = readBlob(opts.surfaceDir, parts[1], parts[2]);
+    const result = readBlob(opts.blobDirs, parts[1], parts[2]);
     if (result.touched) db.touch(result.touched);
     writeBlob(res, result);
     return;
@@ -248,6 +261,38 @@ async function handle(
 }
 
 // ── Helpers ──
+
+/** Qué forma pedía el cuerpo, según el `type` que traía.
+ *
+ *  El cliente de `POST /assets` es fail-loud (`asset_store_client.py` lanza con
+ *  el cuerpo dentro), así que este texto es lo que ve quien depura una
+ *  generación que se ha caído. Un «extra: Required» a secas no dice que a
+ *  `extra` le falta el `character_ref` ni por qué es obligatorio. */
+function formaEsperada(cuerpo: unknown): string {
+  const type = (cuerpo as { type?: unknown } | null)?.type;
+  return typeof type === "string" && esKindDePersonaje(type)
+    ? "el arte de personaje se indexa con su procedencia y PINEADO (#376): " +
+        "body requires { hash, type, subtype, prompt (no vacío), size_bytes, extra: { character_ref } }" +
+        (type === "sprite_hero" ? ", con character_ref === hash" : "")
+    : "body requires { hash, type, subtype, prompt, size_bytes, extra? }";
+}
+
+/** El registro de una fila, con el pin que le corresponda por su kind.
+ *
+ *  Vive aquí y no en `handle` a propósito: el arte de personaje NO se registra
+ *  suelto (`registrarPineado`, una transacción), y ese «no» tiene que estar en
+ *  el camino que recorre TODO registro, no en la rama que alguien recuerde
+ *  escribir. El `ref` se DERIVA del `character_ref` que el zod ya exigió: no
+ *  lo elige quien llama, así que hero y sheets de un mismo personaje caen bajo
+ *  el mismo ref por construcción y `DELETE /assets/pin/{ref}` los suelta a la
+ *  vez (#376). */
+function registrar(db: ManifestDb, data: AssetRegisterRequest): void {
+  if (esArteDePersonaje(data)) {
+    db.registrarPineado(data, refDeArteDePersonaje(data.extra.character_ref));
+    return;
+  }
+  db.register(data);
+}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body ?? null);

@@ -1,8 +1,10 @@
 /** Tests del asset-store (services/asset-store/): cable HTTP exacto del
  *  router FastAPI original, escrituras concurrentes (el criterio "hecho" de
  *  F2 — imposible con el rewrite de 5,8 MB del JSON) y prune LRU con
- *  keep-list. Desde #257 el índice solo admite el kind `surface`: aquí se
- *  fija que cualquier otro es 400 en el blob y en el registro.
+ *  keep-list. El índice admite los kinds de `ASSET_KINDS` y el catch-all de
+ *  blobs solo `KIND_BLOB_PLANO`: aquí se fija que cualquier otro es 400 en el
+ *  blob y en el registro, y que el arte de personaje entra PINEADO o no
+ *  entra (#376).
  *
  *  Lo que se fue con #257 y ya no tiene sujeto: la ruta muerta `/cache/check`
  *  (400 por caer en el catch-all), los blobs de los siete kinds sin productor
@@ -17,6 +19,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 
+import type { AssetKind } from "../src/contracts/asset-store.js";
+import { refDeArteDePersonaje } from "../src/contracts/asset-store.js";
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
 import { loadAssetStoreConfig } from "../services/asset-store/config.js";
 import { createAssetStoreServer } from "../services/asset-store/http-server.js";
@@ -31,6 +35,16 @@ let keepRefs: string[] = [];
 
 function surfaceDir(base: string): string {
   return join(base, "surfaces");
+}
+
+/** Las tres raíces de blobs, con la misma forma que `loadAssetStoreConfig`:
+ *  el hero cuelga de `heroes/` DENTRO de la raíz de sheets. */
+function blobDirs(base: string): Record<AssetKind, string> {
+  return {
+    surface: surfaceDir(base),
+    sprite_sheet: join(base, "sprite_sheets"),
+    sprite_hero: join(base, "sprite_sheets", "heroes"),
+  };
 }
 
 /** Un blob de superficie en disco: {base}/surfaces/{hash}/surface.png. */
@@ -61,8 +75,7 @@ before(async () => {
   server = createAssetStoreServer({
     port: 0,
     db,
-    surfaceDir: surfaceDir(root),
-    spriteSheetsDir: join(root, "sprite_sheets"),
+    blobDirs: blobDirs(root),
     stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
     cacheMaxBytes: 1024 * 1024,
     worldStateUrl: `http://127.0.0.1:${wsPort}`,
@@ -104,9 +117,16 @@ async function post(path: string, body: unknown): Promise<{ status: number; body
 describe("loadAssetStoreConfig", () => {
   it("resuelve las rutas del snapshot a absolutas desde la raíz del repo, y el puerto admite override por env", () => {
     const cfg = loadAssetStoreConfig({});
-    assert.ok(isAbsolute(cfg.surfaceDir) && cfg.surfaceDir.endsWith(join("cache", "surfaces")), cfg.surfaceDir);
+    assert.ok(
+      isAbsolute(cfg.blobDirs.surface) && cfg.blobDirs.surface.endsWith(join("cache", "surfaces")),
+      cfg.blobDirs.surface,
+    );
     assert.ok(isAbsolute(cfg.dbPath) && cfg.dbPath.endsWith(join("cache", "manifest.sqlite3")), cfg.dbPath);
-    assert.ok(cfg.spriteSheetsDir.endsWith(join("cache", "sprite_sheets")), cfg.spriteSheetsDir);
+    assert.ok(cfg.blobDirs.sprite_sheet.endsWith(join("cache", "sprite_sheets")), cfg.blobDirs.sprite_sheet);
+    // El hero cuelga DENTRO de la raíz de sheets: el prune borra exactamente
+    // lo que `rutaDeBlob` devuelve, así que si estas dos raíces se separaran
+    // el barrido de un hero se llevaría por delante otra carpeta.
+    assert.equal(cfg.blobDirs.sprite_hero, join(cfg.blobDirs.sprite_sheet, "heroes"));
     assert.ok(isAbsolute(cfg.stylesDir), cfg.stylesDir);
     assert.equal(typeof cfg.port, "number");
     // El puerto del catálogo, salvo que el launcher lo desplace (NEFAN_PORT_OFFSET → env).
@@ -136,7 +156,11 @@ describe("cable exacto de blobs (cache_assets.py)", () => {
   it("solo el kind surface: cualquier otro → 400 texto 'Invalid kind'; miss en disco → 404 'Not found'", async () => {
     // Los siete kinds que este store sirvió hasta #257 son hoy tan
     // desconocidos como `nonsense`: no hay tabla que los mapee a un directorio.
-    for (const kind of ["nonsense", "albedo", "normal", "roughness", "model", "skin", "sprite", "scene", "plate", "segment", "check"]) {
+    // `sprite_sheet` está en el ÍNDICE desde #376 y aun así es 400 aquí: es
+    // un directorio de N frames y se sirve por `/cache/sprite_sheet/{h}/{f}`.
+    // «Kinds del índice» y «kinds servibles por el catch-all» dejaron de
+    // coincidir, y este 400 es lo que lo fija.
+    for (const kind of ["nonsense", "albedo", "normal", "roughness", "model", "skin", "sprite", "scene", "plate", "segment", "check", "sprite_sheet"]) {
       const r = await getRaw(`/cache/${kind}/abc`);
       assert.equal(r.status, 400, kind);
       assert.equal(r.body.toString(), "Invalid kind", kind);
@@ -307,6 +331,233 @@ describe("registro e índice", () => {
   });
 });
 
+/** #376 — el arte de personaje entra en el índice CON su prompt y PINEADO, o
+ *  no entra. Lo que estos tests fijan no es «el store sabe registrarlo» sino
+ *  que los dos estados malos no son expresables: una fila sin pin (que el
+ *  prune podría evictar, y con ella la skin de un NPC vivo) y una fila de
+ *  hero sin la descripción con la que se pagó. */
+describe("arte de personaje en el índice (#376)", () => {
+  const HERO = "0123456789abcdef";
+  const SHEET = "fedcba9876543210";
+
+  it("sin extra.character_ref no hay registro: los dos kinds son 400 y no dejan fila", async () => {
+    for (const kind of ["sprite_sheet", "sprite_hero"] as const) {
+      const hash = kind === "sprite_hero" ? HERO : SHEET;
+      const r = await post("/assets", {
+        hash,
+        type: kind,
+        subtype: kind,
+        prompt: "Blas, el tabernero",
+        size_bytes: 10,
+      });
+      assert.equal(r.status, 400, kind);
+      // El 400 dice QUÉ falta: el cliente de esto es fail-loud y su excepción
+      // lleva el cuerpo dentro, así que un «extra: Required» a secas manda a
+      // quien lo lea a averiguar qué esperaba `extra`.
+      assert.match(String(r.body.error), /character_ref/, kind);
+      assert.equal(db.findByHash(hash).length, 0, `${kind}: el 400 no deja fila`);
+    }
+    // Y `extra` presente pero sin la clave tampoco vale: el pin necesita el ref.
+    const vacio = await post("/assets", {
+      hash: SHEET, type: "sprite_sheet", subtype: "sprite_sheet",
+      prompt: "p", size_bytes: 1, extra: { otra_cosa: 1 },
+    });
+    assert.equal(vacio.status, 400);
+  });
+
+  it("sin prompt no hay registro: el arte de personaje sin procedencia es 400", async () => {
+    // Es LA queja de #376: el hero-shot son ~60 % de los bytes pagados en
+    // personajes y su prompt no se guardaba en ningún sitio. Indexarlo con el
+    // prompt en blanco sería la misma mentira, ahora escrita en el índice.
+    const r = await post("/assets", {
+      hash: HERO, type: "sprite_hero", subtype: "sprite_hero",
+      prompt: "", size_bytes: 10, extra: { character_ref: HERO },
+    });
+    assert.equal(r.status, 400);
+    assert.equal(db.findByHash(HERO).length, 0);
+    // La superficie SÍ admite prompt vacío (cable de siempre): la diferencia
+    // es del kind, no una regla global que alguien haya endurecido de paso.
+    assert.equal(
+      (await post("/assets", { hash: "sinprompt", type: "surface", subtype: "surface", prompt: "", size_bytes: 1 })).status,
+      200,
+    );
+  });
+
+  it("un hero bajo el ref de OTRO personaje es 400: su hash ES su character_ref", async () => {
+    const r = await post("/assets", {
+      hash: HERO, type: "sprite_hero", subtype: "sprite_hero",
+      prompt: "Blas", size_bytes: 10, extra: { character_ref: "aaaaaaaaaaaaaaaa" },
+    });
+    assert.equal(r.status, 400);
+    assert.match(String(r.body.error), /character_ref/);
+    assert.equal(db.findByHash(HERO).length, 0);
+  });
+
+  it("registro válido: fila con prompt, PIN bajo character:{hero_key} y visible en /assets", async () => {
+    const ref = refDeArteDePersonaje(HERO);
+    assert.equal(ref, `character:${HERO}`);
+    for (const [hash, kind] of [[HERO, "sprite_hero"], [SHEET, "sprite_sheet"]] as const) {
+      const r = await post("/assets", {
+        hash, type: kind, subtype: kind,
+        prompt: "Blas, el tabernero",
+        size_bytes: 1_000,
+        extra: { character_ref: HERO, model: "y_bot", anim: "idle" },
+      });
+      assert.deepEqual(r.body, { ok: true }, kind);
+    }
+    // La fila lleva la procedencia, que es para lo que se indexa.
+    const fila = db.findByHash(HERO)[0];
+    assert.equal(fila.type, "sprite_hero");
+    assert.equal(fila.prompt, "Blas, el tabernero");
+    assert.equal(fila.extra.character_ref, HERO);
+    // Y el resto de `extra` SOBREVIVE al zod: es con lo que se vuelve a pedir
+    // exactamente este arte (triple, modelo de imagen, estilo, hoja base). Un
+    // `z.object` sin `.passthrough()` los stripearía en silencio, que es la
+    // forma más callada de perder la procedencia que este índice existe para
+    // guardar.
+    assert.equal(fila.extra.model, "y_bot");
+    assert.equal(fila.extra.anim, "idle");
+    // Hero y sheet, el MISMO ref: por eso se sueltan juntos.
+    assert.ok(db.pinnedHashes().has(HERO));
+    assert.ok(db.pinnedHashes().has(SHEET));
+    // Y el listado del kind los enseña con su prompt (es lo que se consulta
+    // para saber con qué texto se pagó cada cara).
+    const listado = await getJson(`/assets?asset_type=sprite_hero&limit=50`);
+    const filas = listado.body.assets as Array<Record<string, string>>;
+    assert.ok(filas.some((f) => f.hash === HERO && f.prompt === "Blas, el tabernero"), JSON.stringify(filas));
+    // Un solo DELETE los retira a los dos.
+    const del = await fetch(`${baseUrl}/assets/pin/${encodeURIComponent(ref)}`, { method: "DELETE" });
+    assert.equal(del.status, 200);
+    assert.deepEqual(await del.json(), { ok: true, ref, removed: 2 });
+    assert.equal(db.pinnedHashes().size, 0);
+    // Se vuelven a pinar para no dejar el índice del describe a medias.
+    db.pin(ref, [HERO, SHEET]);
+  });
+
+  it("by_hash: el arte de personaje NO promete cache_url (esa forma no lo sirve)", async () => {
+    const by = await getJson(`/assets/by_hash/${SHEET}`);
+    assert.equal(by.status, 200);
+    const m = (by.body.matches as Array<Record<string, unknown>>)[0];
+    assert.equal(m.type, "sprite_sheet");
+    assert.ok(!("cache_url" in m), JSON.stringify(m));
+  });
+
+  it("registrado por HTTP ⇒ protegido del prune en el mismo instante, sin que nadie pine aparte", async () => {
+    // La cadena entera y la única que importa: zod → handler → fila + pin. Si
+    // el handler llamara a `register` en vez de a `registrarPineado`, el arte
+    // entraría EVICTABLE y el prune podría borrar la skin de un NPC vivo —
+    // que es lo que convertiría #376 en un empeoramiento. Este test es lo que
+    // se pone rojo si eso pasa.
+    const base = join(root, "reciencreado");
+    const d = blobDirs(base);
+    const hero = "3333333333333333";
+    mkdirSync(d.sprite_hero, { recursive: true });
+    writeFileSync(join(d.sprite_hero, `${hero}.png`), Buffer.alloc(100));
+    const pdb = new ManifestDb(join(root, "reciencreado.sqlite3"));
+    const srv = createAssetStoreServer({
+      port: 0, db: pdb, blobDirs: d,
+      stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
+      cacheMaxBytes: 1, worldStateUrl: "http://127.0.0.1:1",
+    });
+    await new Promise<void>((r) => srv.on("listening", () => r()));
+    try {
+      const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/assets`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hash: hero, type: "sprite_hero", subtype: "sprite_hero",
+          prompt: "Blas, el tabernero", size_bytes: 100,
+          extra: { character_ref: hero },
+        }),
+      });
+      assert.equal(res.status, 200);
+      // Sin pinar nada más: solo lo que dejó el registro.
+      const keep = new Set<string>(pdb.pinnedHashes());
+      const s = prune(pdb, d, 1, keep);
+      assert.equal(s.pruned, 0, "el arte recién registrado no se poda");
+      assert.ok(existsSync(join(d.sprite_hero, `${hero}.png`)), "el hero sigue en disco");
+      assert.equal(pdb.findByHash(hero).length, 1, "y sigue indexado");
+    } finally {
+      srv.close();
+      pdb.close();
+    }
+  });
+});
+
+describe("prune con los tres kinds (#376)", () => {
+  /** Escribe el blob de cada kind con la FORMA que tiene en producción:
+   *  dos directorios y un fichero suelto. */
+  function sembrarBlobs(base: string, hash: string, hero: string): void {
+    const d = blobDirs(base);
+    mkdirSync(join(d.surface, hash), { recursive: true });
+    writeFileSync(join(d.surface, hash, "surface.png"), Buffer.alloc(100));
+    mkdirSync(join(d.sprite_sheet, hash), { recursive: true });
+    writeFileSync(join(d.sprite_sheet, hash, "dir_0_frame_000.png"), Buffer.alloc(100));
+    mkdirSync(d.sprite_hero, { recursive: true });
+    writeFileSync(join(d.sprite_hero, `${hero}.png`), Buffer.alloc(100));
+  }
+
+  it("sin pins borra el blob correcto de CADA kind — y el hero es un fichero, no un directorio", () => {
+    const base = join(root, "prune3kinds");
+    const hero = "1111111111111111";
+    sembrarBlobs(base, "h", hero);
+    const d = blobDirs(base);
+    const pdb = new ManifestDb(join(root, "prune3kinds.sqlite3"));
+    pdb.importEntry({ hash: "h", type: "surface", subtype: "surface", prompt: "s", created_at: "2026-01-01T00:00:00.000Z", size_bytes: 100, extra: {} });
+    pdb.importEntry({ hash: "h", type: "sprite_sheet", subtype: "sprite_sheet", prompt: "Blas", created_at: "2026-01-02T00:00:00.000Z", size_bytes: 100, extra: { character_ref: hero } });
+    pdb.importEntry({ hash: hero, type: "sprite_hero", subtype: "sprite_hero", prompt: "Blas", created_at: "2026-01-03T00:00:00.000Z", size_bytes: 100, extra: { character_ref: hero } });
+
+    const s = prune(pdb, d, 1, null);
+    assert.equal(s.pruned, 3, "los tres grupos");
+    assert.ok(!existsSync(join(d.surface, "h")), "surface: se va el directorio");
+    assert.ok(!existsSync(join(d.sprite_sheet, "h")), "sprite_sheet: se va el directorio de frames");
+    assert.ok(!existsSync(join(d.sprite_hero, `${hero}.png`)), "sprite_hero: se va el PNG");
+    // Y no se lleva por delante la carpeta `heroes/` entera, que cuelga
+    // DENTRO de la de sheets: borrar el directorio en vez del fichero
+    // arrasaría los heroes de todos los demás personajes.
+    assert.ok(existsSync(d.sprite_hero), "la carpeta heroes/ sigue ahí");
+    pdb.close();
+  });
+
+  it("con el pin del personaje no borra ni el hero ni sus frames, y sí la superficie", () => {
+    const base = join(root, "prune3pin");
+    const hero = "2222222222222222";
+    sembrarBlobs(base, "h", hero);
+    const d = blobDirs(base);
+    const pdb = new ManifestDb(join(root, "prune3pin.sqlite3"));
+    pdb.importEntry({ hash: "h", type: "surface", subtype: "surface", prompt: "s", created_at: "2026-01-01T00:00:00.000Z", size_bytes: 100, extra: {} });
+    pdb.importEntry({ hash: "h", type: "sprite_sheet", subtype: "sprite_sheet", prompt: "Blas", created_at: "2026-01-02T00:00:00.000Z", size_bytes: 100, extra: {} });
+    pdb.importEntry({ hash: hero, type: "sprite_hero", subtype: "sprite_hero", prompt: "Blas", created_at: "2026-01-03T00:00:00.000Z", size_bytes: 100, extra: {} });
+    pdb.pin(refDeArteDePersonaje(hero), ["h", hero]);
+
+    // Lo que hace el handler: keep = saves ∪ pineados.
+    const keep = new Set<string>(pdb.pinnedHashes());
+    const s = prune(pdb, d, 1, keep);
+    // El hash "h" tiene DOS grupos (surface y sprite_sheet) y el pin protege
+    // por hash, así que aquí no se poda nada: es el comportamiento real del
+    // pin, y el sheet queda protegido junto a su hero.
+    assert.equal(s.pruned, 0);
+    assert.ok(existsSync(join(d.sprite_sheet, "h")));
+    assert.ok(existsSync(join(d.sprite_hero, `${hero}.png`)));
+    pdb.close();
+  });
+
+  it("un type que no es un kind con productor es FAIL-LOUD, no un salto callado", () => {
+    // El arranque lo impide (kinds-con-productor.ts), pero si alguna vez
+    // colara, desindexar una fila cuyo blob no se sabe borrar es el estado que
+    // #257 tardó meses en descubrir: 16.986 filas inmunes al prune.
+    const pdb = new ManifestDb(join(root, "prune-ajeno.sqlite3"));
+    pdb.importEntry({ hash: "t1", type: "texture", subtype: "albedo", prompt: "", created_at: "2026-01-01T00:00:00.000Z", size_bytes: 100, extra: {} });
+    assert.throws(
+      () => prune(pdb, blobDirs(join(root, "prune-ajeno")), 1, null),
+      /type "texture".*no es un kind con productor/s,
+    );
+    assert.equal(pdb.findByHash("t1").length, 1, "la fila NO se desindexa");
+    pdb.close();
+  });
+});
+
 describe("concurrencia (criterio 'hecho' de F2)", () => {
   it("200 POST /assets en paralelo + lecturas intercaladas: cero pérdidas, DB íntegra", async () => {
     const posts = Array.from({ length: 200 }, (_, i) =>
@@ -344,7 +595,7 @@ describe("prune LRU con keep-list", () => {
       });
     }
     // keep-list protege a "old": el eviction salta al siguiente
-    const summary = prune(pdb, surfaceDir(base), 150, new Set(["old"]));
+    const summary = prune(pdb, blobDirs(base), 150, new Set(["old"]));
     assert.equal(summary.pruned, 2);
     assert.equal(summary.freed_bytes, 200);
     assert.ok(existsSync(join(surfaceDir(base), "old")));
@@ -358,7 +609,7 @@ describe("prune LRU con keep-list", () => {
   it("max_bytes <= 0 → no-op con el total real", () => {
     const pdb = new ManifestDb(join(root, "prune2.sqlite3"));
     pdb.register({ hash: "z", type: "surface", subtype: "surface", prompt: "", size_bytes: 42 });
-    const s = prune(pdb, surfaceDir(join(root, "nada")), 0, null);
+    const s = prune(pdb, blobDirs(join(root, "nada")), 0, null);
     assert.deepEqual(s, { pruned: 0, freed_bytes: 0, total_bytes: 42 });
     pdb.close();
   });
@@ -432,8 +683,7 @@ describe("prune LRU con keep-list", () => {
       const srv2 = createAssetStoreServer({
         port: 0,
         db: db2,
-        surfaceDir: surfaceDir(join(root, "prune503fs")),
-        spriteSheetsDir: join(root, "sprite_sheets"),
+        blobDirs: blobDirs(join(root, "prune503fs")),
         stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
         cacheMaxBytes: 1,
         worldStateUrl: urlMuerta,

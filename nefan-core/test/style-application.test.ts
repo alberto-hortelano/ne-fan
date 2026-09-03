@@ -92,6 +92,11 @@ describe("pins del asset-store", () => {
     try {
       const db = new ManifestDb(join(dir, "manifest.sqlite3"));
       const blobs = join(dir, "surfaces");
+      const dirs = {
+        surface: blobs,
+        sprite_sheet: join(dir, "sprite_sheets"),
+        sprite_hero: join(dir, "sprite_sheets", "heroes"),
+      };
       for (const h of ["h1", "h2"]) {
         mkdirSync(join(blobs, h), { recursive: true });
         writeFileSync(join(blobs, h, "surface.png"), Buffer.alloc(100));
@@ -100,7 +105,7 @@ describe("pins del asset-store", () => {
       db.pin(styleApplicationPinRef(GAME, "estilo_test"), ["h1"]);
       assert.deepEqual([...db.pinnedHashes()], ["h1"]);
       // Presupuesto 0 bytes: sin pin caerían ambos; el pineado sobrevive.
-      const summary = prune(db, blobs, 1, null);
+      const summary = prune(db, dirs, 1, null);
       assert.equal(summary.pruned, 2, "sin keep-list ni pins todo poda — baseline");
 
       // Re-crear y comprobar que el prune real (keep ∪ pins) protege h1.
@@ -111,7 +116,7 @@ describe("pins del asset-store", () => {
       }
       const keep = new Set<string>();
       for (const h of db.pinnedHashes()) keep.add(h);
-      const summary2 = prune(db, blobs, 1, keep);
+      const summary2 = prune(db, dirs, 1, keep);
       assert.equal(summary2.pruned, 1, "solo el no pineado");
       assert.equal(db.findByHash("h1").length, 1, "el pineado sigue indexado");
 

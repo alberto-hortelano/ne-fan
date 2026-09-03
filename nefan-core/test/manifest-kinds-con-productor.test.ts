@@ -1,5 +1,5 @@
-/** La purga del índice del asset-store (#257) y el veredicto de arranque que
- *  la exige. Todo sobre una DB temporal: la real se purgó UNA vez, con el
+/** La purga del índice del asset-store (#257, #376) y el veredicto de
+ *  arranque que la exige. Todo sobre una DB temporal: la real se purgó UNA vez, con el
  *  `mv` de los blobs delante, y lo que aquí se fija es que el script no pueda
  *  hacer daño en ningún orden distinto de ese. */
 import { describe, it, before, after } from "node:test";
@@ -9,18 +9,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
-import { SCRIPT_DE_PURGA, verificarSoloSurface } from "../services/asset-store/solo-surface.js";
+import { SCRIPT_DE_PURGA, verificarKindsConProductor } from "../services/asset-store/kinds-con-productor.js";
 import {
   compararExport,
   FICHERO_EXPORT,
   guardiaDeOrden,
   purgar,
-} from "../scripts/manifest-solo-surface.js";
+} from "../scripts/manifest-kinds-con-productor.js";
 
 let root: string;
 
 before(() => {
-  root = mkdtempSync(join(tmpdir(), "manifest-solo-surface-"));
+  root = mkdtempSync(join(tmpdir(), "manifest-kinds-con-productor-"));
 });
 
 after(() => {
@@ -69,7 +69,7 @@ describe("ManifestDb: abrir el índice", () => {
     const db = new ManifestDb(ruta);
     assert.ok(existsSync(ruta), "la DB se creó donde se pidió");
     assert.equal(db.totalCount(), 0);
-    assert.deepEqual(verificarSoloSurface(db, indiceDe("clon-limpio")), { ok: true }, "un índice vacío arranca");
+    assert.deepEqual(verificarKindsConProductor(db, indiceDe("clon-limpio")), { ok: true }, "un índice vacío arranca");
     db.close();
   });
 });
@@ -193,17 +193,17 @@ describe("purgar", () => {
   });
 });
 
-describe("verificarSoloSurface (el arranque del asset-store)", () => {
+describe("verificarKindsConProductor (el arranque del asset-store)", () => {
   it("con una fila ajena: ok:false y el mensaje nombra el script de purga", () => {
     const indice = indiceDe("veredicto");
     const db = new ManifestDb(indice.dbPath);
     db.register({ hash: "s1", type: "surface", subtype: "surface", prompt: "p", size_bytes: 1 });
-    assert.deepEqual(verificarSoloSurface(db, indice), { ok: true });
+    assert.deepEqual(verificarKindsConProductor(db, indice), { ok: true });
     db.importEntry({
       hash: "t1", type: "texture", subtype: "albedo", prompt: "", created_at: "2026-01-01T00:00:00.000Z",
       size_bytes: 5_000_000, extra: {},
     });
-    const v = verificarSoloSurface(db, indice);
+    const v = verificarKindsConProductor(db, indice);
     assert.equal(v.ok, false);
     if (v.ok) return;
     assert.match(v.mensaje, /1 filas de kinds SIN productor/);
@@ -213,6 +213,28 @@ describe("verificarSoloSurface (el arranque del asset-store)", () => {
     // El nombre del script va al FINAL: es lo que sobrevive al `tail` de start.sh.
     const ultima = v.mensaje.trimEnd().split("\n").at(-1) ?? "";
     assert.ok(ultima.includes(SCRIPT_DE_PURGA), ultima);
+    db.close();
+  });
+
+  it("los tres kinds CON productor pasan; un subtype que no casa con su type, no (#376)", () => {
+    const indice = indiceDe("tres-kinds");
+    const db = new ManifestDb(indice.dbPath);
+    db.register({ hash: "s1", type: "surface", subtype: "surface", prompt: "p", size_bytes: 1 });
+    db.register({ hash: "h1", type: "sprite_hero", subtype: "sprite_hero", prompt: "Blas", size_bytes: 1 });
+    db.register({ hash: "k1", type: "sprite_sheet", subtype: "sprite_sheet", prompt: "Blas", size_bytes: 1 });
+    assert.deepEqual(verificarKindsConProductor(db, indice), { ok: true }, "el arte de personaje ya tiene sitio");
+
+    // El subtype no es decorativo: `sprite_sheet/skin` era uno de los siete
+    // kinds archivados en #257 y volver a escribirlo por ahí sería reabrir
+    // una fila que ningún productor rehace.
+    db.importEntry({
+      hash: "viejo", type: "sprite_sheet", subtype: "skin", prompt: "",
+      created_at: "2026-01-01T00:00:00.000Z", size_bytes: 7, extra: {},
+    });
+    const v = verificarKindsConProductor(db, indice);
+    assert.equal(v.ok, false);
+    if (v.ok) return;
+    assert.match(v.mensaje, /sprite_sheet \(skin 1\)/);
     db.close();
   });
 
@@ -226,7 +248,7 @@ describe("verificarSoloSurface (el arranque del asset-store)", () => {
       hash: "t1", type: "texture", subtype: "albedo", prompt: "", created_at: "2026-01-01T00:00:00.000Z",
       size_bytes: 1, extra: {},
     });
-    const v = verificarSoloSurface(db, indice);
+    const v = verificarKindsConProductor(db, indice);
     assert.equal(v.ok, false);
     if (v.ok) return;
     const primera = v.mensaje.split("\n")[0];

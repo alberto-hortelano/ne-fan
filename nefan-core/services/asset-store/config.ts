@@ -7,6 +7,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CONFIG } from "../../src/config.js";
+import type { AssetKind } from "../../src/contracts/asset-store.js";
 
 /** nefan-core/services/asset-store → tres niveles arriba = raíz del repo. */
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -15,15 +16,15 @@ export interface AssetStoreConfig {
   port: number;
   /** Índice SQLite (`cache/manifest.sqlite3`), o el que diga `NEFAN_MANIFEST_DB`. */
   dbPath: string;
-  /** Raíz de blobs del ÚNICO kind con productor (`surface`): {dir}/{hash}/surface.png.
-   *  Es un string y no un mapa por kind a propósito (#257): añadir un kind al
-   *  manifest exige tocar esta firma, `AssetKind` y el zod del registro, no
-   *  añadir una línea a una tabla. */
-  surfaceDir: string;
-  /** Almacén paralelo de sprite sheets skineados (sin manifest, a propósito). */
-  spriteSheetsDir: string;
+  /** Raíz de blobs de CADA kind del índice. Es un `Record` sobre la unión y
+   *  no tres strings sueltos: añadir un kind a `ASSET_KINDS` sin darle
+   *  directorio aquí NO COMPILA, así que la totalidad la sujeta el tipo y no
+   *  una revisión. Lo que hay bajo cada raíz lo dice `rutaDeBlob`
+   *  (`blob-store.ts`), que es el único sitio que compone la ruta. */
+  blobDirs: Record<AssetKind, string>;
   /** Raíz de `cache/`: la que nombra el fail-loud del arranque al decir qué
-   *  archivar, para que índice y almacén se lean juntos (`solo-surface.ts`). */
+   *  archivar, para que índice y almacén se lean juntos
+   *  (`kinds-con-productor.ts`). */
   cacheDir: string;
   /** Style packs binarios (movidos desde world-state en F2). */
   stylesDir: string;
@@ -37,7 +38,8 @@ export const ENV_MANIFEST_DB = "NEFAN_MANIFEST_DB";
 /** El índice a abrir: `NEFAN_MANIFEST_DB` si está, y si no el del snapshot.
  *
  *  POR QUÉ EXISTE. El único camino de fallo del arranque del asset-store
- *  —negarse a servir un índice con kinds sin productor (`solo-surface.ts`)—
+ *  —negarse a servir un índice con kinds sin productor
+ *  (`kinds-con-productor.ts`)—
  *  no se podía ejercer sin la DB del checkout: el QA de T4 exportó el árbol
  *  entero a un temporal para plantar la fila ajena y arrancar desde allí. Ese
  *  workaround ES el defecto, y con esta variable el negativo se prueba contra
@@ -72,8 +74,11 @@ export function loadAssetStoreConfig(env: Record<string, string | undefined> = {
   return {
     port: Number(env.NEFAN_ASSET_STORE_PORT ?? CONFIG.ports.asset_store),
     dbPath: abs(rutaDelIndice(env, ai.manifest_db)),
-    surfaceDir: abs(ai.surface_cache_dir),
-    spriteSheetsDir: abs(`${ai.cache_root}/sprite_sheets`),
+    blobDirs: {
+      surface: abs(ai.surface_cache_dir),
+      sprite_sheet: abs(`${ai.cache_root}/sprite_sheets`),
+      sprite_hero: abs(`${ai.cache_root}/sprite_sheets/heroes`),
+    },
     cacheDir: abs(ai.cache_root),
     stylesDir: abs(CONFIG.content.styles_dir),
     cacheMaxBytes: ai.cache_max_bytes,

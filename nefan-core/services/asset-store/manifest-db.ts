@@ -20,7 +20,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { ASSET_KIND, type AssetKind } from "../../src/contracts/asset-store.js";
+import { ASSET_KINDS, type AssetKind } from "../../src/contracts/asset-store.js";
 
 export interface ManifestEntryRow {
   hash: string;
@@ -48,7 +48,7 @@ export interface PruneGroup {
   last: string;
 }
 
-/** Un (type, subtype) del índice que NO es el kind vivo, con su peso. */
+/** Un (type, subtype) del índice que NO es un kind con productor, con su peso. */
 export interface KindAjeno {
   type: string;
   subtype: string;
@@ -62,10 +62,25 @@ export interface PurgaAjenos {
   meta: number;
 }
 
-/** Todo lo que no sea `surface/surface` — el WHERE que comparten el
- *  recuento, el export y el DELETE, para que los tres hablen del mismo
- *  conjunto de filas. */
-const WHERE_AJENO = `type <> ? OR subtype <> ?`;
+/** Lo que entra en el índice por el camino de producción (`POST /assets`).
+ *  `type`/`subtype` son `AssetKind`: el zod del borde ya rebotó cualquier
+ *  otro con un 400. */
+export interface RegistroDeAsset {
+  hash: string;
+  type: AssetKind;
+  subtype: AssetKind;
+  prompt: string;
+  size_bytes: number;
+  extra?: Record<string, unknown>;
+}
+
+/** Todo lo que no sea un kind CON productor con su subtype igual — el WHERE
+ *  que comparten el recuento, el export y el DELETE, para que los tres hablen
+ *  del mismo conjunto de filas. Los placeholders los pone `PARAMS_KINDS`. */
+const WHERE_AJENO = `type <> subtype OR type NOT IN (${ASSET_KINDS.map(() => "?").join(",")})`;
+
+/** Los kinds vivos, en el orden en que los espera `WHERE_AJENO`. */
+const PARAMS_KINDS: readonly string[] = ASSET_KINDS;
 
 const TOUCH_DEBOUNCE_MS = 60_000;
 
@@ -115,10 +130,12 @@ export class ManifestDb {
    *  pineados quedan protegidos del prune aunque ningún save los referencie.
    *  Re-pinear el mismo ref AÑADE (idempotente por PK). */
   pin(ref: string, hashes: string[]): void {
+    this.transaction(() => this.pinSinTransaccion(ref, hashes));
+  }
+
+  private pinSinTransaccion(ref: string, hashes: string[]): void {
     const stmt = this.db.prepare(`INSERT OR IGNORE INTO pins (ref, hash) VALUES (?, ?)`);
-    this.transaction(() => {
-      for (const h of hashes) stmt.run(ref, h);
-    });
+    for (const h of hashes) stmt.run(ref, h);
   }
 
   /** Retira TODOS los pins de un ref. Devuelve cuántos había. */
@@ -140,14 +157,26 @@ export class ManifestDb {
 
   /** Registro normal (POST /assets): created_at lo estampa el store, igual
    *  que hacía AssetManifest.register con _now(). Duplicado = no-op. */
-  register(e: {
-    hash: string;
-    type: AssetKind;
-    subtype: AssetKind;
-    prompt: string;
-    size_bytes: number;
-    extra?: Record<string, unknown>;
-  }): void {
+  register(e: RegistroDeAsset): void {
+    this.insertarFila(e);
+  }
+
+  /** Registro de arte de personaje: la fila Y su pin, o ninguna de las dos.
+   *
+   *  Va en UNA transacción porque el pin no es un extra de este kind: es la
+   *  única razón por la que se puede indexar sin empeorar. Sin keep-list de
+   *  arte de personaje (`entity.asset_refs` es `[]` y no lo rellena ningún
+   *  llamante), una fila sin pin la puede evictar el prune por LRU y con ella
+   *  se va la skin de un NPC vivo. Registrar y pinar por separado deja una
+   *  ventana en la que ese estado existe; aquí no existe (#376). */
+  registrarPineado(e: RegistroDeAsset, ref: string): void {
+    this.transaction(() => {
+      this.insertarFila(e);
+      this.pinSinTransaccion(ref, [e.hash]);
+    });
+  }
+
+  private insertarFila(e: RegistroDeAsset): void {
     this.db
       .prepare(
         `INSERT OR IGNORE INTO assets (hash, type, subtype, prompt, created_at, size_bytes, extra)
@@ -159,7 +188,7 @@ export class ManifestDb {
   /** Fila CRUDA, con su created_at y last_used: la vía para plantar una fila
    *  histórica en un test (el fail-loud de arranque y la purga se prueban
    *  así). `type`/`subtype` van sin tipar a propósito — `register`, el camino
-   *  de producción, sí exige el kind vivo. */
+   *  de producción, sí exige un kind con productor. */
   importEntry(e: ManifestEntryRow): void {
     this.db
       .prepare(
@@ -191,7 +220,8 @@ export class ManifestDb {
   }
 
   /** `assetType` admite lista CSV — la librería del motor narrativo pedía
-   *  varios tipos reutilizables en una consulta; hoy solo queda `surface`. */
+   *  varios tipos reutilizables en una consulta; hoy la usa además el barrido
+   *  de arte de personaje para listar `sprite_hero`. */
   listAssets(assetType?: string, limit = 50): AssetSummaryRow[] {
     const types = (assetType ?? "")
       .split(",")
@@ -260,21 +290,23 @@ export class ManifestDb {
     this.db.prepare(`DELETE FROM assets WHERE type = ? AND hash = ?`).run(type, hash);
   }
 
-  // ── Kinds sin productor (#257) ──
+  // ── Kinds sin productor (#257, #376) ──
   //
-  // El índice solo admite el kind vivo (`ASSET_KIND`); estas tres consultas
-  // son el recuento que el arranque enseña, el export que la purga escribe
-  // ANTES de borrar (#293: la procedencia vive en la fila, no en el PNG) y el
-  // DELETE. Las tres cuelgan del mismo WHERE a propósito.
+  // El índice solo admite los kinds de `ASSET_KINDS`, y con el subtype igual
+  // al type; estas tres consultas son el recuento que el arranque enseña, el
+  // export que la purga escribe ANTES de borrar (#293: la procedencia vive en
+  // la fila, no en el PNG) y el DELETE. Las tres cuelgan del mismo WHERE a
+  // propósito.
 
-  /** Qué hay en el índice que no es el kind vivo, agrupado por (type, subtype). */
+  /** Qué hay en el índice sin productor que lo pueda rehacer, agrupado por
+   *  (type, subtype). */
   kindsAjenos(): KindAjeno[] {
     const rows = this.db
       .prepare(
         `SELECT type, subtype, COUNT(*) AS filas, COALESCE(SUM(size_bytes), 0) AS bytes
          FROM assets WHERE ${WHERE_AJENO} GROUP BY type, subtype ORDER BY type, subtype`,
       )
-      .all(ASSET_KIND, ASSET_KIND) as unknown as KindAjeno[];
+      .all(...PARAMS_KINDS) as unknown as KindAjeno[];
     // node:sqlite devuelve objetos sin prototipo; el export los compara con
     // deepStrictEqual contra JSON releído, así que se normalizan aquí.
     return rows.map((r) => ({ type: r.type, subtype: r.subtype, filas: r.filas, bytes: r.bytes }));
@@ -287,7 +319,7 @@ export class ManifestDb {
         `SELECT hash, type, subtype, prompt, created_at, size_bytes, extra, last_used
          FROM assets WHERE ${WHERE_AJENO} ORDER BY id`,
       )
-      .all(ASSET_KIND, ASSET_KIND) as unknown as Array<
+      .all(...PARAMS_KINDS) as unknown as Array<
       Omit<ManifestEntryRow, "extra"> & { extra: string; last_used: string | null }
     >;
     return rows.map((r) => this.rowToEntry(r));
@@ -297,7 +329,7 @@ export class ManifestDb {
    *  del import del manifest.json (`imported_*`). Sin transacción propia: el
    *  llamador decide (la purga lo envuelve en `transaction`). */
   borrarKindsAjenos(): PurgaAjenos {
-    const filas = this.db.prepare(`DELETE FROM assets WHERE ${WHERE_AJENO}`).run(ASSET_KIND, ASSET_KIND);
+    const filas = this.db.prepare(`DELETE FROM assets WHERE ${WHERE_AJENO}`).run(...PARAMS_KINDS);
     const pins = this.db.prepare(`DELETE FROM pins WHERE hash NOT IN (SELECT hash FROM assets)`).run();
     const meta = this.db.prepare(`DELETE FROM meta WHERE key LIKE 'imported_%'`).run();
     return { filas: Number(filas.changes), pins: Number(pins.changes), meta: Number(meta.changes) };
