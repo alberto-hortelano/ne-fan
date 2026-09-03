@@ -215,10 +215,15 @@ const sceneBaseShape = {
   // derivado de #400.
   place_anchors: z
     .array(
-      z.object({
-        place_id: z.string().min(1),
-        rect: z.tuple([z.number().int(), z.number().int(), z.number().int(), z.number().int()]).optional(),
-      }),
+      // `.strict()` como la raíz: una clave extra en el ancla se rechaza
+      // nombrándola, igual que en ai_server. Sin él el pre-flight la tragaba
+      // muda y ai_server tiraba el tile: la dirección cara del guion 40.
+      z
+        .object({
+          place_id: z.string().min(1),
+          rect: z.tuple([z.number().int(), z.number().int(), z.number().int(), z.number().int()]).optional(),
+        })
+        .strict(),
     )
     .max(8)
     .optional(),

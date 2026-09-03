@@ -127,6 +127,11 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
   it("`place_anchors` está declarado: la forma buena pasa y la mala se rechaza", () => {
     assert.equal(accepts({ ...base, place_anchors: [{ place_id: "taberna", rect: [52, 48, 24, 16] }] }), true);
     assert.equal(accepts({ ...base, place_anchors: [{ place_id: "taberna" }] }), true, "rect opcional");
+    assert.match(
+      String(accepts({ ...base, place_anchors: [{ place_id: "taberna", color: 1 }] })),
+      /place_anchors.*color/,
+      "clave extra en el ancla: rechazada nombrándola, como en ai_server (QA de PR-A de T7)",
+    );
     assert.notEqual(accepts({ ...base, place_anchors: [{ rect: [1, 2, 3, 4] }] }), true, "sin place_id no ancla nada");
     assert.notEqual(accepts({ ...base, place_anchors: [{ place_id: "x", rect: [1, 2, 3] }] }), true, "rect son 4 enteros");
     assert.notEqual(

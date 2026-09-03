@@ -141,3 +141,42 @@ Ninguno es un obstáculo que el usuario tenga delante.
 
 ## Cifras del entorno
 `npm run verify` 1936/0 · `npm run coverage` líneas 89.1 % · `npm run crap` máx 48 (`formatDToWorld` 48, 0 sobre el tope) · `npm run deuda` 75 · html `tsc`/`lint` OK · mcp `tsc` OK · Python 143 OK · candados 12/12 · batería 12/12 + `fixtures-sin-bridge` + guion 40 reeditado · `./start.sh --parar` al final: «nada que parar aquí».
+
+---
+
+# Re-validación — vuelta de PR-A · medido sobre `6dec076` (rama rebasada sobre `main` con PR-C #397)
+
+Solo lo que cambió, contra los hallazgos 1-5 y el rebase. Cero créditos.
+
+## Veredicto final: **NO APTO por un solo punto (H6, una línea); todo lo demás, apto**
+
+Los cinco hallazgos están cerrados y medidos (abajo). Al re-sondear la forma nueva aparece **una divergencia
+nueva en la dirección cara** — el ancla del zod es `z.object` sin `.strict()` (la clave extra se cae muda) y
+ai_server la rechaza nombrándola: el pre-flight acepta, ai_server tira el tile y no hay re-respuesta. Es el
+eje 2 de guion 40, que ahora lo mide y está **en rojo** en la rama. Se cierra con `.strict()` en el ancla del
+zod (o tolerándola en Python, pero la casa decidió «espejo exacto»). Con eso, apto.
+
+| Hallazgo / cambio | Veredicto | Evidencia |
+|---|---|---|
+| **H1** `place_anchors` en Python lanza nombrando el elemento | ✅ | Mis tres sondas (`sondeo.py`): `9 elementos → RECHAZA → \`place_anchors\`: como mucho 8 anclas por tile (trae 9)` · `rect de 3 → \`place_anchors[0].rect\`: cuatro enteros [col, row, ancho, alto]` · `sin place_id → \`place_anchors[0].place_id\`: obligatorio y no vacío`. Extra: `rect no entero` (1.5) y `rect con bool` → mismo mensaje; `no lista → debe ser una lista de anclas {place_id, rect?}`; `ancla no objeto → un ancla es un objeto {place_id, rect?}`; `clave extra → \`place_anchors[0]\` trae \`color\`: un ancla solo tiene \`place_id\` y \`rect\``. La forma buena pasa tal cual en los dos. Guion 40: los tres casos + control `= zod=RECHAZA · ai_server=RECHAZA` / `bueno = ACEPTA · ACEPTA`. Comentario del zod ya no dice «espejo exacto» (líneas 216-224) |
+| **H2+H3** registro de claves retiradas con motivo, idéntico en los dos gates | ✅ | TS y Python, palabra por palabra: `attach` → «`attach` está retirado: el decor ya no se pega a un muro (los muros son `volumes`): declara la `cell` exacta donde va. Si viene de un save o snapshot, bórralo o regenéralo»; `glyph` → «…el char ASCII de una entity no lo lee nadie; la entity se identifica por `id` y se rotula por `name`…»; `ambient_event` → «…la frase de ambiente no la leía nadie; lo que quieras contar del lugar va en `scene_description`…»; `terrain_legend`/`terrain_patches` → el motivo del terreno **también en Python** (antes genérico). En las dos poblaciones (loader con `ambient_event`/`attach` → mismo motivo). `glyph`+`attach` en la misma entity → los dos motivos separados por «;»; `glyph`+`hp` → motivo + genérico. `ai_server/campos_retirados.py` exceptuado en `arch-rules.json:543`; `verify` 1958/0 con el candado vivo |
+| **H4** la lista que ve el motor = campos del tool | ✅ | `EMITTED_SCENE_FIELDS = scene_id\|scene_description\|place_id\|tile\|biome\|ground\|volumes\|vegetation_zones\|scatter_generators\|scatter_zones\|entities` = raíz del tool (mismo conjunto, `extra.mts`); `ambient_evnt` en TS y Python → lista **sin** `place_anchors`. `contract-prompts.test.ts` canda igualdad exacta + brecha = `place_anchors` |
+| **H5** `h`/`name` | ✅ | Python: `h -1 / 0 / "2" / True → RECHAZA → \`h\` es la altura en metros y debe ser un número > 0 (…)`; `h 25 → ACEPTA · h de salida=25.0` (se conserva); `name` ausente / `""` / `"   "` / `3` → RECHAZA con la frase de `MOTIVO_NAME_INVALIDO`. zod: `h -1/0 → Number must be greater than 0`; `name ""` → `String must contain at least 1 character(s)` (zod, no la frase — es el diseño de C, veredicto idéntico); `"   "` → la frase. Guion 40: `h negativa`, `h grande`, `sin name` en eje `campo`, `= RECHAZA·RECHAZA` / `= ACEPTA·ACEPTA` |
+| Guion 40 sigue con dientes | ✅ probado | Python vuelto a podar (9→8, edición temporal, restaurada): `✘ ningún CAMPO de forma recibe dos veredictos… — place_anchors 9 elementos [campo]: zod=RECHAZA · ai_server=ACEPTA`. El eje `campo-pendiente` murió sin inquilinos: correcto (`BLOQUES` vuelve a 4, los cuatro `zod=RECHAZA/py=ACEPTA`). Además, `contrato-candados-en-negativo.mjs`: **14 probados · 14 nacen rojos** (los dos nuevos: «las anclas vuelven a podarse» y «la altura no positiva vuelve a descartarse», cazados por las fixtures `nueve_anclas_de_lugar` y `entity_con_altura_negativa`) |
+| Rebase sobre C | ✅ | `EntityBase` usa `VocabularioDeEntity.name/description` (`scene-schema.ts:91,122`) y su shape es `id\|kind\|name\|cell\|footprint\|shape\|h\|role\|description\|style_ref` (sin `glyph`/`attach`); `npm run gen:contract → sin cambios (sincronizado)`, árbol limpio; guiones **66** y **67** de C en verde sobre A (`node qa/run.mjs 40 62 66 67 → 4 en verde · 0 en rojo`, capturas `…T12-30-23-825Z-150903`) |
+| Cifras | ✅ | `npm run verify` → **1958 pass · 0 fail** · `python -m unittest discover` → **Ran 159 tests · OK** · candados 14/14 · guiones 40 (antes de H6), 62, 66, 67 verdes |
+
+## H6 · IMPORTANTE (nuevo, de la vuelta) — un ancla con clave extra: el zod la acepta, ai_server la rechaza
+**Dónde**: `scene-schema.ts:216-224` (`place_anchors: z.array(z.object({ place_id, rect? }))` — `z.object` sin `.strict()` descarta la clave extra en silencio); `narrative_schemas.py` (bloque de anclas: «un ancla solo tiene `place_id` y `rect`»).
+**Repro** (`extra.mts` / sondeo Python): `{ place_anchors: [{ place_id: "taberna", color: 1 }] }` → zod **ACEPTA** · ai_server **RECHAZA → \`place_anchors[0]\` trae \`color\`: un ancla solo tiene \`place_id\` y \`rect\``.
+**Por qué es la dirección cara**: `narrative-mcp/validators.ts:23` devuelve `{ ok: true }` sin el dato parseado — lo que sigue hacia ai_server es el JSON crudo con `color` dentro; ai_server lanza y no hay re-respuesta (guion 40, eje 2: «eso pierde el tile sin re-respuesta»). Productor real: hoy ninguno (el tool no ofrece `place_anchors`), así que el riesgo práctico es bajo; el contrato, no: es exactamente la clase de divergencia que la vuelta acaba de cerrar en la otra dirección.
+**Guion**: añadido a guion 40 el caso `["ancla con clave extra", …, "campo"]`; hoy → `✘ ningún CAMPO de forma recibe dos veredictos… — ancla con clave extra [campo]: zod=ACEPTA · ai_server=RECHAZA` y `✘ ai_server nunca RECHAZA lo que el zod ACEPTA`. **La batería queda en rojo en la rama hasta cerrarlo** (una línea: `.strict()` en el objeto del ancla, como está la entity).
+
+## Nota
+- `name: ""` vuelve del zod como `String must contain at least 1 character(s)` y de Python con la frase de `MOTIVO_NAME_INVALIDO`: veredicto idéntico, texto distinto. Es de C (`VocabularioDeEntity.name = z.string().min(1).refine(...)`), no de A; lo anoto para su dueño.
+
+## Workarounds de la re-validación
+Edición temporal de `narrative_schemas.py` (truncar a 8) para probar el guion 40 en negativo, restaurada de copia (`git status`: solo el guion 40 modificado). Sondeos en subprocesos, sin juego.
+
+## No probado
+Igual que antes: CI en la PR, mutación (pedida), motor real por MCP y ai_server como proceso. `./start.sh --parar` al final: nada que parar.
