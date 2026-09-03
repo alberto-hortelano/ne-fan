@@ -540,6 +540,10 @@
           "reason": "es el caso NEGATIVO de ese rebote: una escena con el campo retirado tiene que ser rechazada nombrándolo, y para escribirla hay que escribir el nombre. Mismo criterio que architecture.test.ts; fichero aparte para no cegar scene-schema.test.ts entero a los demás términos."
         },
         {
+          "path": "ai_server/campos_retirados.py",
+          "reason": "es el espejo Python de retired-terrain-fields.ts: la tabla clave retirada → con qué se sustituye, que el saneador lee para dar el MISMO motivo que el zod. Para nombrar el campo hay que escribirlo; el fichero no contiene nada más, para que la ceguera que compra la exención se limite a esas líneas."
+        },
+        {
           "path": "nefan-core/data/contract/fixtures/scene/invalid/entity_con_glifo.json",
           "reason": "fixture NEGATIVA compartida por los dos gates (zod y ai_server): una entity con el char ASCII retirado (#400) tiene que rechazarse en los dos lados, y para escribirla hay que escribir la clave. Un fichero por término, para que si uno de los dos volviera al schema la otra fixture no lo tapara. Sin el término en el NOMBRE del fichero: repo-hygiene.test.ts caza los términos retirados también en las rutas."
         },

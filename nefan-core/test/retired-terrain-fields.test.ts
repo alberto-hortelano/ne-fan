@@ -11,8 +11,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { EmittedSceneSchema, ExpandedSceneSchema } from "../src/contract/model-io/scene-schema.js";
-import { RETIRED_TERRAIN_FIELDS } from "../src/contract/model-io/retired-terrain-fields.js";
+import { EmittedSceneSchema, EntitySchema, ExpandedSceneSchema } from "../src/contract/model-io/scene-schema.js";
+import { RETIRED_TERRAIN_FIELDS, mensajeDeClaveRetirada } from "../src/contract/model-io/retired-terrain-fields.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
@@ -93,6 +93,46 @@ describe("los campos de terreno retirados se rechazan por nombre", () => {
       },
     );
     assert.equal(s2.session_id, "", "el throw llega ANTES de mutar la sesión");
+  });
+
+  // ── Los tres de #399/#400, con el mismo patrón (QA de PR-A, hallazgo 2) ──
+  it("`ambient_event` en la raíz vuelve con su motivo, en las dos poblaciones", () => {
+    for (const [schema, escena] of [[EmittedSceneSchema, emitida({ ambient_event: "viento" })], [ExpandedSceneSchema, cargada({ ambient_event: "" })]] as const) {
+      const issue = issueDe(schema, escena, "ambient_event");
+      assert.ok(issue, "se rebota");
+      assert.match(issue.message, /`ambient_event` está retirado/);
+      assert.match(issue.message, /`scene_description`/);
+      assert.match(issue.message, /bórralo o regenéralo/);
+      assert.doesNotMatch(issue.message, /EXACTAMENTE estos campos/, "no es el genérico del motor");
+    }
+  });
+
+  it("`glyph` y `attach` en una entity vuelven con su motivo, no con el consejo para el motor", () => {
+    const entity = (extra: Record<string, unknown>) =>
+      EntitySchema.safeParse({ id: "antorcha", kind: "decor", name: "antorcha", cell: [1, 1], footprint: [1, 1], ...extra });
+    const conGlifo = entity({ glyph: "i" });
+    assert.equal(conGlifo.success, false);
+    if (conGlifo.success) return;
+    assert.match(conGlifo.error.issues[0].message, /la entity "antorcha" trae `glyph` está retirado/);
+    assert.match(conGlifo.error.issues[0].message, /bórralo o regenéralo/);
+    const pegada = entity({ attach: "wall" });
+    assert.equal(pegada.success, false);
+    if (pegada.success) return;
+    assert.match(pegada.error.issues[0].message, /`attach` está retirado: el decor ya no se pega a un muro/);
+    // Y una retirada junto a una inventada: cada una con lo suyo, en un issue.
+    const mixta = entity({ glyph: "i", hp: 3 });
+    assert.equal(mixta.success, false);
+    if (mixta.success) return;
+    assert.match(mixta.error.issues[0].message, /`glyph` está retirado/);
+    assert.match(mixta.error.issues[0].message, /trae la clave `hp`, que no existe/);
+  });
+
+  it("el registro sabe exactamente qué está retirado y no inventa motivos", () => {
+    for (const campo of [...RETIRED_TERRAIN_FIELDS, "ambient_event", "glyph", "attach"]) {
+      assert.match(mensajeDeClaveRetirada(campo) ?? "", new RegExp(`^\\x60${campo}\\x60 está retirado: `), campo);
+    }
+    assert.equal(mensajeDeClaveRetirada("nota_del_motor"), null);
+    assert.equal(mensajeDeClaveRetirada("place_anchors"), null, "declarado, no retirado");
   });
 
   it("y los dos a la vez se nombran los dos en el PRIMER issue (que es el único que ve el motor)", () => {

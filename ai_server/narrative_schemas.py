@@ -10,6 +10,11 @@ import json
 import os
 from pathlib import Path
 
+try:
+    from .campos_retirados import MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA, MOTIVO_DE_CLAVE_RETIRADA
+except ImportError:  # importado plano (sys.path = ai_server), como hace llm_client
+    from campos_retirados import MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA, MOTIVO_DE_CLAVE_RETIRADA
+
 
 _PROMPTS_DIR = Path(
     os.environ.get(
@@ -92,63 +97,61 @@ def _entity_fields_del_contrato() -> list:
 ENTITY_FIELDS = _entity_fields_del_contrato()
 
 
-def _scene_fields_del_contrato() -> list:
-    """Campos de la RAÍZ que el motor puede emitir, LEÍDOS del tool compartido.
-
-    Espejo de `EMITTED_SCENE_FIELDS` en nefan-core (derivado del shape de la
-    escena) y allow-list del rechazo de clave desconocida en la raíz (#400,
-    espejo del `.strict()` de EmittedSceneSchema). El único nombre que no sale
-    del tool es `place_anchors`: el zod lo declara (lo escriben este saneador y
-    el motor del banco, lo leen los handlers de tile y place) pero el tool real
-    aún no se lo ofrece al motor — issue derivado. Que la brecha sea EXACTAMENTE
-    esa la canda `contract-prompts.test.ts` del lado TS; si crece, el test
-    rompe antes de que los dos gates diverjan.
-    """
+def _campos_de_la_raiz_del_tool() -> list:
+    """Campos de la RAÍZ que el tool ofrece al motor. Es la lista que se le
+    ENSEÑA cuando trae una clave de más (espejo de `EMITTED_SCENE_FIELDS`):
+    los del tool y ni uno más — un nombre sin esquema no se le enseña."""
     props = GENERATE_SCENE_TOOL["input_schema"].get("properties")
     if not isinstance(props, dict) or not props:
         raise ValueError(
             "generate_scene.json: `properties` de la raíz vacío — sin la lista de campos "
             "el saneador no puede rechazar una clave de raíz desconocida (espejo de SCENE_FIELDS)"
         )
-    return [*props.keys(), "place_anchors"]
+    return list(props.keys())
 
 
-SCENE_FIELDS = _scene_fields_del_contrato()
+CAMPOS_DE_LA_RAIZ_DEL_TOOL = _campos_de_la_raiz_del_tool()
 
-# Claves de raíz RETIRADAS con motivo propio (espejo de `sceneErrorMap` en
-# nefan-core): el motor las copia de un ejemplo viejo y hay que decirle con qué
-# se sustituyen, no solo que «no existen». `stage` era el bloque del plató
-# proscenio (sus salidas), que murió con la vista. `style_ref` de ESCENA elegía la
-# lámina del repintado del tile, que murió con la vista oblicua (la de cada
-# NPC, `entities[].style_ref`, sigue viva). `__expanded` es la marca INTERNA
-# del expander de nefan-core: una escena EMITIDA que la trae miente sobre su
-# estado y con `terrain` vacío reventaba el validador de jugabilidad (#195).
-_MOTIVO_DE_CLAVE_RETIRADA = {
-    "stage": (
-        "`stage` era el plató proscenio y se retiró con la vista que lo pintaba: una escena necesita "
-        "`tile` {tx,ty}, la única variante de Format D (mundo continuo, pídela con generate_tile)"
-    ),
-    "style_ref": (
-        "`style_ref` de escena está retirado (no existe catálogo world.style_refs.scene): "
-        "quítalo. Para guiar el arte usa `surface_ref` por cara de volumen y `style_ref` en los NPCs"
-    ),
-    "__expanded": (
-        "`__expanded` es la marca interna del expander: una escena emitida no la lleva — "
-        "quítala y declara `biome` + primitivas; el engine expande y marca él"
-    ),
-}
+# La allow-list del rechazo de clave de raíz desconocida (#400, espejo del
+# `.strict()` de EmittedSceneSchema): el tool más `place_anchors`, el único
+# campo que el zod declara (lo escriben este saneador y el motor del banco, lo
+# leen los handlers de tile y place) y el tool real aún no ofrece — issue
+# derivado. Que la brecha sea EXACTAMENTE esa la canda `contract-prompts.test.ts`
+# del lado TS; si crece, el test rompe antes de que los dos gates diverjan.
+SCENE_FIELDS = [*CAMPOS_DE_LA_RAIZ_DEL_TOOL, "place_anchors"]
 
 
 def _mensaje_de_claves_de_raiz_desconocidas(claves: list) -> str:
-    partes = [_MOTIVO_DE_CLAVE_RETIRADA[k] for k in claves if k in _MOTIVO_DE_CLAVE_RETIRADA]
-    resto = [k for k in claves if k not in _MOTIVO_DE_CLAVE_RETIRADA]
+    """Espejo de `sceneErrorMap` (nefan-core): las claves RETIRADAS llevan su
+    motivo (`campos_retirados.py`, el mismo texto que el zod); las demás, la
+    lista de lo que el tool ofrece."""
+    partes = [MOTIVO_DE_CLAVE_RETIRADA[k] for k in claves if k in MOTIVO_DE_CLAVE_RETIRADA]
+    resto = [k for k in claves if k not in MOTIVO_DE_CLAVE_RETIRADA]
     if resto:
         una = len(resto) == 1
         partes.append(
             f"la escena trae {'la clave' if una else 'las claves'} "
             f"{', '.join('`' + k + '`' for k in resto)}, que no {'existe' if una else 'existen'} "
-            f"en el contrato. Una escena tiene EXACTAMENTE estos campos: {' | '.join(SCENE_FIELDS)}. "
+            f"en el contrato. Una escena tiene EXACTAMENTE estos campos: "
+            f"{' | '.join(CAMPOS_DE_LA_RAIZ_DEL_TOOL)}. "
             "Lo que quisieras contar del lugar va en `scene_description`"
+        )
+    return "; ".join(partes)
+
+
+def _mensaje_de_claves_de_entity_desconocidas(eid: str, claves: list) -> str:
+    """Espejo de `entityErrorMap` (nefan-core): ídem para una entity."""
+    quien = f"entity '{eid}'"
+    partes = [f"{quien} trae {MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA[k]}" for k in claves if k in MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA]
+    resto = [k for k in claves if k not in MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA]
+    if resto:
+        una = len(resto) == 1
+        partes.append(
+            f"{quien}: {'la clave' if una else 'las claves'} "
+            f"{', '.join(repr(k) for k in sorted(resto))} no "
+            f"{'existe' if una else 'existen'} en el contrato. "
+            f"Una entity tiene EXACTAMENTE estos campos: {' | '.join(ENTITY_FIELDS)}. "
+            "Lo que quisieras contar de ella va en `description`, que es de donde sale su aspecto"
         )
     return "; ".join(partes)
 
@@ -638,21 +641,35 @@ def validate_scene_response(data: dict) -> dict:
             raise ValueError(
                 "un tile necesita `biome` (grass|forest_floor|meadow|sand|dirt|stone|snow|swamp)"
             )
-        anchors = data.get("place_anchors")
-        if isinstance(anchors, list):
-            clean_a = []
-            for i, a in enumerate(anchors[:8]):
-                if isinstance(a, dict) and isinstance(a.get("place_id"), str) and a["place_id"]:
-                    entry = {"place_id": a["place_id"]}
-                    rect = a.get("rect")
-                    if isinstance(rect, list) and len(rect) == 4 and all(isinstance(v, int) for v in rect):
-                        entry["rect"] = rect
-                    clean_a.append(entry)
-                else:
-                    print(f"validate_scene_response: place_anchors[{i}] malformado, descartado", flush=True)
-            data["place_anchors"] = clean_a
-        else:
-            data.pop("place_anchors", None)
+        # `place_anchors`: espejo EXACTO del zod (lista de ≤8, `place_id` no
+        # vacío, `rect` opcional de 4 enteros) y FAIL-LOUD nombrando el
+        # elemento. Hasta la QA de #400 se podaba en silencio (truncar a 8,
+        # tirar el rect de 3, descartar el ancla sin place_id con traza)
+        # mientras el zod rechazaba: el mismo tile con dos veredictos, y un
+        # comentario en el zod que decía «espejo» sin serlo.
+        if "place_anchors" in data:
+            anchors = data["place_anchors"]
+            if not isinstance(anchors, list):
+                raise ValueError("`place_anchors` debe ser una lista de anclas {place_id, rect?}")
+            if len(anchors) > 8:
+                raise ValueError(f"`place_anchors`: como mucho 8 anclas por tile (trae {len(anchors)})")
+            for i, a in enumerate(anchors):
+                if not isinstance(a, dict):
+                    raise ValueError(f"`place_anchors[{i}]`: un ancla es un objeto {{place_id, rect?}}")
+                if not isinstance(a.get("place_id"), str) or not a["place_id"]:
+                    raise ValueError(f"`place_anchors[{i}].place_id`: obligatorio y no vacío")
+                if "rect" in a and not (
+                    isinstance(a["rect"], list)
+                    and len(a["rect"]) == 4
+                    and all(isinstance(v, int) and not isinstance(v, bool) for v in a["rect"])
+                ):
+                    raise ValueError(f"`place_anchors[{i}].rect`: cuatro enteros [col, row, ancho, alto]")
+                desconocidas_a = [k for k in a if k not in ("place_id", "rect")]
+                if desconocidas_a:
+                    raise ValueError(
+                        f"`place_anchors[{i}]` trae {', '.join('`' + k + '`' for k in desconocidas_a)}: "
+                        "un ancla solo tiene `place_id` y `rect`"
+                    )
 
     # ── Candado de las variantes retiradas (espejo de EmittedSceneSchema) ─
     # Format D tiene UNA forma: el tile del mundo continuo. La "suelta"
@@ -764,13 +781,7 @@ def validate_scene_response(data: dict) -> dict:
         # proteger. El mensaje nombra la clave y la entity, como el de `role`.
         desconocidas = [k for k in ent if k not in ENTITY_FIELDS]
         if desconocidas:
-            raise ValueError(
-                f"entity '{eid}': {'la clave' if len(desconocidas) == 1 else 'las claves'} "
-                f"{', '.join(repr(k) for k in sorted(desconocidas))} no "
-                f"{'existe' if len(desconocidas) == 1 else 'existen'} en el contrato. "
-                f"Una entity tiene EXACTAMENTE estos campos: {' | '.join(ENTITY_FIELDS)}. "
-                "Lo que quisieras contar de ella va en `description`, que es de donde sale su aspecto"
-            )
+            raise ValueError(_mensaje_de_claves_de_entity_desconocidas(eid, desconocidas))
 
         # Fail-loud en la FORMA (espejo de EntitySchema): kind del enum, cell
         # par numérico, footprint par de enteros ≥1. Se CONSERVA la
@@ -809,23 +820,31 @@ def validate_scene_response(data: dict) -> dict:
         w = max(1, min(int(fp[0]), cols - col))
         h = max(1, min(int(fp[1]), rows - row))
 
+        # `name` es la ETIQUETA que lee el jugador y el zod la exige (`z.string()`,
+        # también vacía): rellenarla con el id era inventarse un rótulo en
+        # silencio, y el mismo tile tenía dos veredictos (QA de #400).
+        if not isinstance(ent.get("name"), str):
+            raise ValueError(f"entity '{eid}': `name` es obligatorio (la etiqueta que lee el jugador)")
         clean_ent = {
             "id": eid,
             "kind": kind,
-            "name": ent.get("name") or eid,
+            "name": ent["name"],
             "cell": [col, row],
             "footprint": [w, h],
         }
         if ent.get("shape") in ("box", "cylinder", "sphere", "cone"):
             clean_ent["shape"] = ent["shape"]
-        # Altura en METROS (espejo de KIND_DEFAULT_HEIGHT/MAX_ENTITY_HEIGHT_M
-        # en scene-normalize.ts) — sin whitelist aquí el campo se perdería.
-        if (
-            isinstance(ent.get("h"), (int, float))
-            and not isinstance(ent.get("h"), bool)
-            and 0 < ent["h"] <= 20
-        ):
-            clean_ent["h"] = float(ent["h"])
+        # Altura en METROS. Espejo exacto del zod (`h: z.number().positive()`):
+        # `h ≤ 0` o no numérica LANZA, y una altura grande se CONSERVA tal cual
+        # — el recorte a 20 m lo hace `formatDToWorld` al normalizar, en las
+        # dos vías por igual. Hasta la QA de #400 esto descartaba en silencio
+        # la negativa (el zod la rechaza) y también la > 20 (el zod la acepta):
+        # la altura se perdía solo por la vía de API directa.
+        if "h" in ent:
+            altura = ent["h"]
+            if not isinstance(altura, (int, float)) or isinstance(altura, bool) or altura <= 0:
+                raise ValueError(f"entity '{eid}': `h` es la altura en metros y debe ser un número > 0 ({altura!r})")
+            clean_ent["h"] = float(altura)
         # Ref de estilo del NPC ELEGIDA por el motor: `entities[].style_ref` la
         # declara generate_scene.json y de ella sale la clave de caché del skin
         # (npcSkinStyleRef, src/games/style-categories.ts). Sin whitelist aquí

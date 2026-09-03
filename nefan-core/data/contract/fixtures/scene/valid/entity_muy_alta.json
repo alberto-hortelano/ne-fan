@@ -1,0 +1,42 @@
+{
+  "description": "una altura grande NO se rechaza ni se pierde en ninguna de las dos vías: el recorte a 20 m lo hace `formatDToWorld` al normalizar (QA de #400: el saneador la descartaba y la altura se perdía solo por la vía de API directa).",
+  "expect": "accept",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      },
+      {
+        "id": "torre",
+        "kind": "building",
+        "name": "torre del homenaje",
+        "cell": [
+          60,
+          60
+        ],
+        "footprint": [
+          4,
+          4
+        ],
+        "h": 25
+      }
+    ]
+  }
+}

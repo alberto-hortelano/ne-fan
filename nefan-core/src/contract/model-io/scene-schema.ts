@@ -40,7 +40,7 @@ import { parseScatter } from "../../scene/blueprint/scatter.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
 import { VocabularioDeEntity } from "./entity-vocabulary.js";
 import { enMetros, topeDeFootprint } from "./physics.js";
-import { mensajeDeCampoRetirado } from "./retired-terrain-fields.js";
+import { mensajeDeClaveRetirada } from "./retired-terrain-fields.js";
 
 export const ENTITY_KINDS = ["building", "prop", "item", "tree", "npc", "player", "decor"] as const;
 export const SCENE_BIOMES = ["grass", "forest_floor", "meadow", "sand", "dirt", "stone", "snow", "swamp"] as const;
@@ -60,13 +60,25 @@ const entityErrorMap: z.ZodErrorMap = (issue, ctx) => {
   if (issue.code !== z.ZodIssueCode.unrecognized_keys) return { message: ctx.defaultError };
   const id = (ctx.data as { id?: unknown } | null)?.id;
   const quien = typeof id === "string" && id ? `la entity "${id}"` : "una entity";
-  return {
-    message:
-      `${quien} trae ${issue.keys.length === 1 ? "la clave" : "las claves"} ` +
-      `${issue.keys.map((k) => `\`${k}\``).join(", ")}, que no existe${issue.keys.length === 1 ? "" : "n"} ` +
-      `en el contrato. Una entity tiene EXACTAMENTE estos campos: ${ENTITY_FIELDS.join(" | ")}. ` +
-      `Lo que quisieras contar de ella va en \`description\`, que es de donde sale su aspecto.`,
-  };
+  // Una clave RETIRADA (el char ASCII, el decor pegado al muro) lleva su
+  // motivo: el consejo genérico está escrito para el motor, y por donde
+  // vuelven esas dos es por un save o snapshot anterior a su retirada.
+  const partes: string[] = [];
+  const desconocidas: string[] = [];
+  for (const k of issue.keys) {
+    const motivo = mensajeDeClaveRetirada(k);
+    if (motivo === null) desconocidas.push(k);
+    else partes.push(`${quien} trae ${motivo}`);
+  }
+  if (desconocidas.length > 0) {
+    partes.push(
+      `${quien} trae ${desconocidas.length === 1 ? "la clave" : "las claves"} ` +
+        `${desconocidas.map((k) => `\`${k}\``).join(", ")}, que no existe${desconocidas.length === 1 ? "" : "n"} ` +
+        `en el contrato. Una entity tiene EXACTAMENTE estos campos: ${ENTITY_FIELDS.join(" | ")}. ` +
+        `Lo que quisieras contar de ella va en \`description\`, que es de donde sale su aspecto.`,
+    );
+  }
+  return { message: partes.join("; ") };
 };
 
 const EntityBase = z
@@ -195,9 +207,12 @@ const sceneBaseShape = {
   scatter_zones: z.unknown().optional(),
   // Dónde vive cada lugar del mapa dentro del tile: el bridge afina con esto el
   // anclaje del place (bootstrap-place, handlers de tile) y el jugador aparece
-  // dentro del lugar, no en el centro geométrico. Espejo exacto del saneador
-  // de ai_server. Lo escribe el motor del banco y lo tolera el saneador; el
-  // tool real aún no se lo ofrece al motor — issue derivado de #400.
+  // dentro del lugar, no en el centro geométrico. El saneador de ai_server
+  // exige la MISMA forma y rechaza nombrando el elemento (QA de #400: hasta
+  // entonces podaba en silencio mientras este comentario decía «espejo»). Lo
+  // escribe el motor del banco; el tool real aún no se lo ofrece al motor, por
+  // eso NO está en la lista que se le enseña (`EMITTED_SCENE_FIELDS`) — issue
+  // derivado de #400.
   place_anchors: z
     .array(
       z.object({
@@ -229,11 +244,16 @@ function refineScatter(
  *  `generate_scene.json` le ofrezca al modelo y que no esté aquí pone rojo. */
 export const SCENE_FIELDS = Object.keys(sceneBaseShape) as readonly string[];
 
-/** Los campos que el MOTOR puede emitir en la raíz: los de la base menos el
- *  grid (`size`/`terrain`), que solo existe en la población expandida. Es la
- *  lista que se le enseña al modelo cuando trae una clave de más, y la que el
- *  saneador de ai_server deriva del tool (`SCENE_FIELDS` allí). */
-export const EMITTED_SCENE_FIELDS = SCENE_FIELDS.filter((k) => k !== "size" && k !== "terrain");
+/** La lista que se le enseña al MOTOR cuando trae una clave de más: los campos
+ *  del tool, ni uno más. De la base salen el grid (`size`/`terrain`, que solo
+ *  existe en la población expandida) y `place_anchors` (declarado para el
+ *  loader y el banco, pero sin esquema en el tool: un nombre sin esquema no se
+ *  le enseña al modelo). `contract-prompts.test.ts` canda que esta lista y la
+ *  raíz del tool sean el MISMO conjunto; el saneador de ai_server la lee del
+ *  tool directamente. */
+export const EMITTED_SCENE_FIELDS = SCENE_FIELDS.filter(
+  (k) => k !== "size" && k !== "terrain" && k !== "place_anchors",
+);
 
 /** Por qué se rebota una clave de raíz RETIRADA, o `null` si es una clave
  *  desconocida cualquiera. Un campo retirado no se rebota con el mensaje
@@ -263,7 +283,7 @@ function motivoDeClaveRetirada(clave: string): string | null {
       "quítala y declara `biome` + primitivas; el engine expande y marca él"
     );
   }
-  return mensajeDeCampoRetirado(clave);
+  return mensajeDeClaveRetirada(clave);
 }
 
 /** Mensaje de la clave de raíz desconocida — el espejo de `entityErrorMap` un

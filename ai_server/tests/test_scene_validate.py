@@ -12,6 +12,7 @@ import glob
 import os
 import unittest
 
+from ai_server.campos_retirados import MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA, MOTIVO_DE_CLAVE_RETIRADA
 from ai_server.narrative_schemas import (
     MAX_VEGETATION_ZONES,
     MAX_VEG_DENSITY,
@@ -131,9 +132,105 @@ class TestVariantesRetiradas(unittest.TestCase):
             validate_scene_response(s)
         msg = str(cm.exception)
         self.assertIn("`nota_del_motor`", msg)
-        for campo in ("tile", "biome", "scene_id", "entities", "ground", "volumes", "place_anchors"):
+        for campo in ("tile", "biome", "scene_id", "entities", "ground", "volumes"):
             self.assertIn(campo, msg)
+        # Ni el grid ni `place_anchors` (sin esquema en el tool) se le enseñan.
         self.assertNotIn("`size`", msg)
+        self.assertNotIn("place_anchors", msg)
+
+    def test_toda_clave_retirada_vuelve_con_su_motivo_en_la_raiz(self):
+        # Espejo de `sceneErrorMap`: el mismo texto que el zod, palabra por
+        # palabra, para las seis claves de raíz retiradas. Se recorre el
+        # registro (`campos_retirados.py`) en vez de escribir las claves aquí:
+        # el candado `campos-retirados-no-vuelven` cubre estos tests.
+        for clave, motivo in MOTIVO_DE_CLAVE_RETIRADA.items():
+            with self.subTest(clave=clave):
+                s = base_scene()
+                s[clave] = {"x": 1}
+                with self.assertRaises(ValueError) as cm:
+                    validate_scene_response(s)
+                self.assertEqual(str(cm.exception), motivo)
+                self.assertNotIn("EXACTAMENTE estos campos", motivo)
+
+    def test_toda_clave_de_entity_retirada_vuelve_con_su_motivo(self):
+        for clave, motivo in MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA.items():
+            with self.subTest(clave=clave):
+                s = base_scene()
+                s["entities"][0][clave] = "x"
+                with self.assertRaises(ValueError) as cm:
+                    validate_scene_response(s)
+                self.assertIn(motivo, str(cm.exception))
+                self.assertNotIn("EXACTAMENTE estos campos", str(cm.exception))
+
+
+class TestPlaceAnchorsEnEspejo(unittest.TestCase):
+    """QA de #400 (hallazgo 1): el zod rechaza la forma mala y aquí se podaba
+    en silencio mientras el comentario decía «espejo exacto». Ahora es espejo:
+    misma forma, y fail-loud nombrando el elemento."""
+
+    def _con(self, anchors):
+        s = base_scene()
+        s["place_anchors"] = anchors
+        return validate_scene_response(s)
+
+    def test_la_forma_buena_pasa_tal_cual(self):
+        out = self._con([{"place_id": "taberna", "rect": [52, 48, 24, 16]}, {"place_id": "plaza"}])
+        self.assertEqual(out["place_anchors"], [{"place_id": "taberna", "rect": [52, 48, 24, 16]}, {"place_id": "plaza"}])
+
+    def test_nueve_anclas_lanzan_con_la_cifra(self):
+        with self.assertRaises(ValueError) as cm:
+            self._con([{"place_id": f"p{i}"} for i in range(9)])
+        self.assertIn("como mucho 8", str(cm.exception))
+        self.assertIn("9", str(cm.exception))
+
+    def test_un_ancla_sin_place_id_lanza_nombrando_el_elemento(self):
+        with self.assertRaises(ValueError) as cm:
+            self._con([{"place_id": "ok"}, {"rect": [1, 2, 3, 4]}])
+        self.assertIn("`place_anchors[1].place_id`", str(cm.exception))
+
+    def test_un_rect_que_no_son_cuatro_enteros_lanza(self):
+        for rect in ([1, 2, 3], [1, 2, 3, 4.5], "1,2,3,4", [1, 2, 3, True]):
+            with self.subTest(rect=rect):
+                with self.assertRaises(ValueError) as cm:
+                    self._con([{"place_id": "x", "rect": rect}])
+                self.assertIn("`place_anchors[0].rect`", str(cm.exception))
+
+    def test_lo_que_no_es_una_lista_lanza(self):
+        with self.assertRaises(ValueError) as cm:
+            self._con({"taberna": [1, 2, 3, 4]})
+        self.assertIn("`place_anchors`", str(cm.exception))
+
+
+class TestAlturaYNombreEnEspejo(unittest.TestCase):
+    """Heredado y arreglado en la QA de #400 (hallazgo 5): `h` y `name` daban
+    dos veredictos según la vía."""
+
+    def _entity(self, **extra):
+        s = base_scene()
+        s["entities"].append({"id": "poste", "kind": "prop", "cell": [2, 2], "footprint": [1, 1], **extra})
+        return validate_scene_response(s)["entities"][-1]
+
+    def test_h_no_positiva_lanza_nombrando_el_campo(self):
+        for altura in (0, -1, -0.5, "alta", True):
+            with self.subTest(h=altura):
+                with self.assertRaises(ValueError) as cm:
+                    self._entity(name="poste", h=altura)
+                self.assertIn("`h`", str(cm.exception))
+
+    def test_una_altura_grande_se_conserva_no_se_pierde(self):
+        # El recorte a 20 m lo hace formatDToWorld en las dos vías por igual.
+        self.assertEqual(self._entity(name="torre", h=25)["h"], 25.0)
+        self.assertEqual(self._entity(name="poste", h=0.5)["h"], 0.5)
+
+    def test_sin_name_lanza_en_vez_de_rellenar_con_el_id(self):
+        with self.assertRaises(ValueError) as cm:
+            self._entity()
+        self.assertIn("`name`", str(cm.exception))
+        self.assertIn("poste", str(cm.exception))
+
+    def test_name_vacio_pasa_como_en_el_zod(self):
+        # `z.string()` sin `min(1)`: la etiqueta vacía es legal en los dos.
+        self.assertEqual(self._entity(name="")["name"], "")
 
     def test_el_saneador_no_inyecta_campos_que_el_motor_no_emitio(self):
         # Hasta #400 inyectaba un campo vacío en cada escena (el mismo camino

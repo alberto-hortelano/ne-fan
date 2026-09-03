@@ -103,8 +103,9 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
     if (res.ok) return;
     assert.match(res.error, /la escena trae la clave `nota_del_motor`/, res.error);
     for (const campo of EMITTED_SCENE_FIELDS) assert.match(res.error, new RegExp(`\\b${campo}\\b`), res.error);
-    // Y NO le enseña el grid, que el motor no escribe nunca.
-    assert.doesNotMatch(res.error, /\bsize\b|\bterrain\b/, res.error);
+    // Y NO le enseña el grid, que el motor no escribe nunca, ni `place_anchors`,
+    // que el tool no describe (un nombre sin esquema no se enseña).
+    assert.doesNotMatch(res.error, /\bsize\b|\bterrain\b|place_anchors/, res.error);
     assert.match(res.error, /`scene_description`/, res.error);
   });
 

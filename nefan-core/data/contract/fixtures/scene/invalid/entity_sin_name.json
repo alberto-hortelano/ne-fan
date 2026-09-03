@@ -1,0 +1,40 @@
+{
+  "description": "`name` es la etiqueta que lee el jugador y es obligatoria: los dos gates rechazan la entity sin ella (heredado, QA de #400: el saneador la rellenaba con el id).",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      },
+      {
+        "id": "poste",
+        "kind": "prop",
+        "cell": [
+          60,
+          60
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      }
+    ]
+  }
+}

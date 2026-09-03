@@ -107,7 +107,10 @@ const conNpc = (extra) => ({ ...base, entities: [...base.entities, npc(extra)] }
  *  `eje` es "campo" (forma de la escena o de una entity: los dos gates tienen
  *  que dar el MISMO veredicto) o el id del BLOQUE DECLARATIVO que perturba
  *  (`ground`, `volumes`, `vegetation_zones`, `scatter`: zod duro, ai_server
- *  laxo — y los cuatro tienen que comportarse igual entre sí). */
+ *  laxo — y los cuatro tienen que comportarse igual entre sí). El eje
+ *  "campo-pendiente" (campos que divergían con issue pendiente) nació y murió
+ *  en la QA de PR-A de T7: `h` y `name` se alinearon en la misma vuelta y no
+ *  quedó ninguno — una lista vacía no canda nada. */
 // Generador VÁLIDO de verdad, comprobado contra `parseScatter`: un `cylinder`
 // exige `rTop`, y la primera versión de este control usaba `r` — el guion se
 // puso rojo y tenía razón (el dato de prueba estaba mal, no el código).
@@ -147,6 +150,21 @@ const CASOS = [
   ["scatter_zones basura", { ...base, scatter_zones: "hola" }, "scatter", "#203 metió scatter en el zod; tiene que quedar donde sus hermanos"],
   ["scatter zona sin generador", { ...base, scatter_generators: gen, scatter_zones: [zona({ kind: "no_existe" })] }, "scatter", "ídem"],
   ["scatter density negativa", { ...base, scatter_generators: gen, scatter_zones: [zona({ density: -1 })] }, "scatter", "ídem"],
+  // `place_anchors` entró en el zod con #400 con forma dura (≤8, `place_id`
+  // obligatorio, `rect` de 4 enteros) y en la QA de PR-A ai_server lo podaba
+  // en silencio: hoy es ESPEJO (rechaza nombrando el elemento), así que es
+  // eje `campo` y tiene fixture compartida por cada forma.
+  ["place_anchors 9 elementos", { ...base, place_anchors: Array.from({ length: 9 }, (_, i) => ({ place_id: `p${i}` })) }, "campo", "QA #400: ai_server truncaba a 8 en silencio"],
+  ["place_anchors rect de 3", { ...base, place_anchors: [{ place_id: "x", rect: [1, 2, 3] }] }, "campo", "QA #400: ai_server descartaba el rect"],
+  ["place_anchors sin place_id", { ...base, place_anchors: [{ rect: [1, 2, 3, 4] }] }, "campo", "QA #400: ai_server descartaba el elemento"],
+  ["place_anchors bueno", { ...base, place_anchors: [{ place_id: "taberna", rect: [52, 48, 24, 16] }] }, "campo", "control: la forma buena la aceptan los dos"],
+
+  // ── heredados, alineados en la QA de PR-A de T7 (2026-09-03) ────────────
+  // Medidos divergentes en `main` (zod rechaza / ai_server descarta o rellena)
+  // y arreglados en la misma vuelta: son CAMPOS y llevan fixture compartida.
+  ["entity h negativa", conNpc({ h: -1 }), "campo", "ai_server descartaba `h` en silencio y aceptaba"],
+  ["entity h grande", conNpc({ h: 25 }), "campo", "los dos aceptan; ai_server perdía la altura (el recorte a 20 m es de formatDToWorld)"],
+  ["entity sin name", conNpc({ name: undefined }), "campo", "ai_server rellenaba `name` con el id y aceptaba"],
 ];
 
 const TS = `

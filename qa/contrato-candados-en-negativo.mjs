@@ -166,6 +166,22 @@ const INVARIANTES = [
     ]],
   ],
   [
+    "python · las anclas vuelven a podarse en silencio (nueve → ocho, sin decirlo)",
+    PY, "py:ai_server.tests.test_contract_fixtures",
+    [[
+      '            if len(anchors) > 8:\n                raise ValueError(f"`place_anchors`: como mucho 8 anclas por tile (trae {len(anchors)})")\n',
+      '            anchors = anchors[:8]\n',
+    ]],
+  ],
+  [
+    "python · la altura no positiva vuelve a descartarse en silencio",
+    PY, "py:ai_server.tests.test_contract_fixtures",
+    [[
+      '            if not isinstance(altura, (int, float)) or isinstance(altura, bool) or altura <= 0:\n                raise ValueError(f"entity \'{eid}\': `h` es la altura en metros y debe ser un número > 0 ({altura!r})")\n            clean_ent["h"] = float(altura)',
+      '            if isinstance(altura, (int, float)) and not isinstance(altura, bool) and altura > 0:\n                clean_ent["h"] = float(altura)',
+    ]],
+  ],
+  [
     "python · la allow-list de entity vuelve a ser muda (la clave desconocida por el desagüe)",
     PY, "py:ai_server.tests.test_contract_fixtures",
     [[

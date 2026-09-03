@@ -1,0 +1,38 @@
+{
+  "description": "un ancla sin `place_id` no ancla nada: se rechaza en los dos gates (QA de #400: el saneador la descartaba con traza).",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      }
+    ],
+    "place_anchors": [
+      {
+        "rect": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    ]
+  }
+}
