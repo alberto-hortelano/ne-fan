@@ -33,8 +33,7 @@
  */
 
 import type { Vec3 } from "@nefan-core/src/types.js";
-import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
-import { createTerrainCollider, type TerrainGridData } from "@nefan-core/src/scene/terrain-collision.js";
+import { createTerrainCollider } from "@nefan-core/src/scene/terrain-collision.js";
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import { npcsFueraDelRect } from "@nefan-core/src/session/mundo-persistido.js";
 import {
@@ -44,7 +43,7 @@ import {
   type NpcDeclarado,
   type ObjetoDeclarado,
 } from "@nefan-core/src/session/entidades-del-tile.js";
-import type { SceneExit } from "@nefan-core/src/protocol/messages.js";
+import type { EscenaServida, SceneExit } from "@nefan-core/src/protocol/messages.js";
 
 import { enemigoDesdeCombat } from "../scene/enemigo.js";
 import type { FpsAtlasController } from "../scene/fps-atlas.js";
@@ -124,8 +123,10 @@ function declaradoDePersonaje(d: NpcDeclarado): Pick<Entity, "label" | "name"> |
 }
 
 export interface CargaDeTile {
-  /** Añade un tile/escena al mundo del cliente. */
-  addTile(rawData: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void>;
+  /** Añade un tile/escena al mundo del cliente. Recibe la escena YA servida
+   *  (world scene + salidas): la única normalización del cliente es la de la
+   *  fixture del selector «Room», en `main.ts`. */
+  addTile(data: EscenaServida, opts?: OpcionesDeCarga): Promise<void>;
   /** Apunta la «escena activa» del cliente (imagen IA, exits, TravelPanel) al
    *  tile bajo el jugador. */
   activarTile(key: string): void;
@@ -140,7 +141,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
   function activarTile(key: string): void {
     const entry = tileStore.entries.get(key);
     if (!entry) return;
-    const salidas = (entry.scene.exits ?? []) as SceneExit[];
+    const salidas = entry.scene.exits;
     mundo.activarTile(key, entry.scene, salidas);
     fpsRenderer.setActiveTile(key);
     // Reinstala el atlas de caché o, con generación auto, lo pinta (el
@@ -171,7 +172,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
   /** Los cuerpos: la política de re-emisión aplicada a las tres clases. */
   function poblar(
     key: string,
-    data: Record<string, unknown>,
+    data: EscenaServida,
     planInfo: FpsTilePlan | null,
   ): RoomEnemy[] {
     // Qué tipo de volumen representa a cada objeto del plan: de aquí sale si
@@ -265,32 +266,22 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
   }
 
   async function addTile(
-    rawData: Record<string, unknown>,
+    data: EscenaServida,
     opts: OpcionesDeCarga = {},
   ): Promise<void> {
-    const data = formatDToWorld(rawData);
-    const tile = data.tile as { tx: number; ty: number } | undefined;
-    const isGridTile = Number.isInteger(tile?.tx) && Number.isInteger(tile?.ty);
-    const key = isGridTile ? tileKey(tile!.tx, tile!.ty) : String(data.scene_id ?? "scene");
+    const tile = data.tile;
+    const isGridTile = tile !== undefined;
+    const key = isGridTile ? tileKey(tile.tx, tile.ty) : (data.scene_id || "scene");
     const firstTile = tileStore.entries.size === 0;
 
     // Rect mundial del tile (los tiles de grid lo derivan de la geometría core;
-    // las escenas legacy vienen centradas).
-    const wr = data.world_rect as { minX: number; minZ: number; maxX: number; maxZ: number } | undefined;
-    const dims = data.dimensions as { width: number; depth: number } | undefined;
-    const rect = isGridTile
-      ? tileWorldRect(tile!.tx, tile!.ty)
-      : wr ?? {
-          minX: -(dims?.width ?? 20) / 2,
-          minZ: -(dims?.depth ?? 20) / 2,
-          maxX: (dims?.width ?? 20) / 2,
-          maxZ: (dims?.depth ?? 20) / 2,
-        };
+    // las escenas legacy traen el suyo, centrado).
+    const rect = isGridTile ? tileWorldRect(tile.tx, tile.ty) : data.world_rect;
 
     // Colisión de terreno POR TILE (origin global desde terrain_grid.origin).
     let collider: TileClientState["collider"] = null;
     try {
-      collider = createTerrainCollider(data.terrain_grid as TerrainGridData | undefined);
+      collider = createTerrainCollider(data.terrain_grid);
     } catch (err) {
       errors.push("scene", `terrain_grid inconsistente en ${key}; colisión de terreno desactivada`, err);
     }
@@ -298,18 +289,18 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     // core en la normalización — ver src/scene/tile-plan.ts). El cliente no
     // deriva nada: si lo hiciera habría dos composiciones del mismo tile y
     // divergirían por los argumentos, que es como divergen estas cosas.
-    const planInfo = (data.__plan as FpsTilePlan | undefined) ?? null;
-    for (const aviso of (data.__plan_warnings as string[] | undefined) ?? []) {
+    const planInfo = data.__plan ?? null;
+    for (const aviso of data.__plan_warnings ?? []) {
       errors.push("scene", `plan de ${key}: ${aviso}`);
     }
 
     const prevEntry = tileStore.entries.get(key);
     const { sceneChanged } = tileStore.add({
       key,
-      tx: isGridTile ? tile!.tx : undefined,
-      ty: isGridTile ? tile!.ty : undefined,
+      tx: tile?.tx,
+      ty: tile?.ty,
       rect,
-      scene: data as Record<string, unknown>,
+      scene: data,
       collider,
       // La colisión base del plan se deriva justo debajo (o se restaura si la
       // escena no cambió).
@@ -339,7 +330,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     }
     // Posición de entrada — SOLO escenas legacy o el bootstrap (primer tile con
     // spawn explícito). En el resto de tiles el jugador entra andando.
-    const playerStart = data.__player_start as { x: number; z: number } | null | undefined;
+    const playerStart = data.__player_start;
     if (!isGridTile) {
       playerPos.x = playerStart ? playerStart.x : 0;
       playerPos.z = playerStart ? playerStart.z : 2;

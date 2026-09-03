@@ -50,6 +50,8 @@
  *  mundo».
  */
 
+import type { NpcEnElWire, ObjetoEnElWire } from "../scene/scene-normalize.js";
+
 /** DE QUIÉN ES UNA ENTITY, que es lo mismo que decir quién puede borrarla.
  *
  *  Dos procedencias y ninguna colapsable: lo que DECLARA un tile (y por tanto
@@ -185,10 +187,6 @@ export function repartoDelTile<D extends { id: string }>(
   return { conservar, crear: declarados.filter((d) => !yaEstaban.has(d.id)), retirar };
 }
 
-function esObjeto(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
 /** Texto NO VACÍO, o nada. El vacío se colapsa con la ausencia a propósito: un
  *  `name: ""` no es un nombre, y tratarlo como tal pinta un rótulo en blanco
  *  sobre la cabeza de alguien. */
@@ -216,24 +214,20 @@ function punto(v: unknown): Punto | null {
  *  Un id REPETIDO dentro del mismo tile es una declaración rota y se dice: es
  *  la forma exacta del duplicado que el filtro `!ids.has(o.id)` del cliente
  *  tapaba sin nombrarlo (#379). Entra el primero; el segundo se reporta. */
-function declaraciones<D extends { id: string }>(
-  raw: unknown,
+function declaraciones<R extends { id: string; position: readonly number[] }, D extends { id: string }>(
+  raw: readonly R[] | undefined,
   que: string,
-  leer: (rec: Record<string, unknown>, id: string, pos: Punto) => D,
+  leer: (rec: R, id: string, pos: Punto) => D,
 ): Declaraciones<D> {
   const declaradas: D[] = [];
   const errores: string[] = [];
-  if (raw === undefined || raw === null) return { declaradas, errores };
-  if (!Array.isArray(raw)) {
-    errores.push(`el tile declara sus ${que}s en algo que no es una lista`);
-    return { declaradas, errores };
-  }
+  if (raw === undefined) return { declaradas, errores };
   const vistos = new Set<string>();
+  // La identidad y la posición se siguen MIRANDO aunque el tipo las prometa:
+  // la lista llega como JSON de otro proceso, y este es el sitio donde un
+  // duplicado (#379) o una posición que no son tres números se DICEN en vez
+  // de pintarse mal.
   for (const [i, rec] of raw.entries()) {
-    if (!esObjeto(rec)) {
-      errores.push(`${que} [${i}]: la declaración no es un objeto`);
-      continue;
-    }
     const id = texto(rec.id);
     if (id === undefined) {
       errores.push(`${que} [${i}]: sin id, así que no hay nada que pintar ni que purgar`);
@@ -257,44 +251,44 @@ function declaraciones<D extends { id: string }>(
   return { declaradas, errores };
 }
 
-function leerObjeto(rec: Record<string, unknown>, id: string, pos: Punto): ObjetoDeclarado {
-  const escala = numeros(rec.scale, 3);
-  const shape = texto(rec.shape);
-  const volumeId = texto(rec.volume_id);
+/** Lo que el contrato de render declara con tipo SE CONFÍA (#378, QA H1):
+ *  `ObjetoEnElWire`/`NpcEnElWire` los escribe `formatDToWorld` y aquí no se
+ *  vuelven a mirar campo a campo — mirar a medias (`name` sin error, `scale`
+ *  con `numeros()`) era lo peor de los dos mundos. Lo único que se sigue
+ *  mirando está en `declaraciones`: id, posición y duplicado, que es lo que
+ *  sin ello no hay nada que pintar ni que purgar, y se DICE. */
+function leerObjeto(rec: ObjetoEnElWire, id: string, pos: Punto): ObjetoDeclarado {
   return {
     id,
     pos,
-    nombre: texto(rec.name) ?? "",
-    categoria: texto(rec.category) ?? "prop",
-    ...(escala ? { sizeXZ: { x: escala[0], z: escala[2] }, sizeY: escala[1] } : {}),
-    ...(shape ? { shape } : {}),
-    ...(volumeId ? { volumeId } : {}),
+    nombre: rec.name,
+    categoria: rec.category,
+    sizeXZ: { x: rec.scale[0], z: rec.scale[2] },
+    sizeY: rec.scale[1],
+    ...(rec.shape !== undefined ? { shape: rec.shape } : {}),
+    ...(rec.volume_id !== undefined ? { volumeId: rec.volume_id } : {}),
   };
 }
 
-function leerNpc(rec: Record<string, unknown>, id: string, pos: Punto): NpcDeclarado {
-  const nombre = texto(rec.name);
-  const descripcion = texto(rec.description);
-  const styleRef = texto(rec.style_ref);
-  const role = texto(rec.role);
+function leerNpc(rec: NpcEnElWire, id: string, pos: Punto): NpcDeclarado {
   return {
     id,
     pos,
-    ...(nombre ? { nombre } : {}),
-    ...(descripcion ? { descripcion } : {}),
-    ...(styleRef ? { styleRef } : {}),
-    ...(role ? { role } : {}),
+    nombre: rec.name,
+    ...(rec.description !== undefined ? { descripcion: rec.description } : {}),
+    ...(rec.style_ref !== undefined ? { styleRef: rec.style_ref } : {}),
+    ...(rec.role !== undefined ? { role: rec.role } : {}),
     ...(rec.combat !== undefined ? { combat: rec.combat } : {}),
   };
 }
 
 /** Los objetos y edificios que declara la world scene de un tile. */
-export function objetosDeclarados(raw: unknown): Declaraciones<ObjetoDeclarado> {
+export function objetosDeclarados(raw: readonly ObjetoEnElWire[] | undefined): Declaraciones<ObjetoDeclarado> {
   return declaraciones(raw, "objeto", leerObjeto);
 }
 
 /** Los personajes que declara la world scene de un tile (vecinos y hostiles:
  *  los separa la presencia de `combat`, y esa puerta es del cliente). */
-export function npcsDeclarados(raw: unknown): Declaraciones<NpcDeclarado> {
+export function npcsDeclarados(raw: readonly NpcEnElWire[] | undefined): Declaraciones<NpcDeclarado> {
   return declaraciones(raw, "npc", leerNpc);
 }

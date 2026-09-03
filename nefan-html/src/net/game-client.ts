@@ -10,6 +10,7 @@
 import { GameStore } from "@nefan-core/src/store/game-store.js";
 import type { CombatEvent, Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
 import type { StateUpdateMessage } from "@nefan-core/src/protocol/messages.js";
+import type { WorldScene } from "@nefan-core/src/scene/scene-normalize.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { errors } from "../ui/error-log.js";
 import { BridgeClient } from "./bridge-client.js";
@@ -62,7 +63,7 @@ export interface GameClient {
    *  defecto del cliente. Con el save arrastrando la posición viva del sim
    *  (#245), ese frame se llevaba por delante la partida guardada. */
   idle(): FrameResult;
-  loadRoom(roomData: Record<string, unknown>, roomId: string, enemies: RoomEnemy[]): void;
+  loadRoom(roomData: Pick<WorldScene, "dimensions">, roomId: string, enemies: RoomEnemy[]): void;
   /** Alta aditiva de combatientes (enemigos de un tile nuevo): no resetea el
    *  sim ni al player — el mundo es un plano continuo. */
   addEnemies(enemies: RoomEnemy[]): void;
@@ -143,15 +144,15 @@ export class BridgeGameClient implements GameClient {
     return { ...this.lastState, events: [] };
   }
 
-  loadRoom(roomData: Record<string, unknown>, roomId: string, enemies: RoomEnemy[]): void {
-    const dims = roomData.dimensions as { width?: number; depth?: number } | undefined;
+  loadRoom(roomData: Pick<WorldScene, "dimensions">, roomId: string, enemies: RoomEnemy[]): void {
+    const { width, depth } = roomData.dimensions;
     this.bridge.sendLoadRoom(
       roomId,
       enemies.map(e => ({
         id: e.id, position: e.position, health: e.health, maxHealth: e.maxHealth,
         weaponId: e.weaponId, personality: e.personality,
       })),
-      dims ? { width: dims.width ?? 20, depth: dims.depth ?? 20 } : undefined,
+      { width, depth },
     );
   }
 

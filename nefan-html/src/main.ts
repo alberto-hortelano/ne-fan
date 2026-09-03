@@ -8,7 +8,7 @@ import { instalarNefanHook } from "./dev/nefan-hook.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
-import { KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
+import { KIND_DEFAULT_HEIGHT, formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import { pickAimTarget, pickNearestTarget } from "@nefan-core/src/scene/aim.js";
@@ -321,10 +321,9 @@ const fpsAtlasController = new FpsAtlasController(
       const surfaces = fpsRenderer.getTileSurfaces(key);
       const entry = tileStore.entries.get(key);
       if (!surfaces || !entry) return null;
-      const scene = entry.scene as { scene_description?: string };
       return {
         layout: surfaces.layout,
-        sceneDescription: String(scene.scene_description ?? ""),
+        sceneDescription: entry.scene.scene_description,
       };
     },
     apply: (key, images) => fpsRenderer.applyAtlas(key, images),
@@ -791,12 +790,14 @@ const setActiveClientTile = cargaDeTile.activarTile;
 
 /** API legacy (dropdown de fixtures, change_scene, saves sin migrar): mundo de
  *  UNA escena. El flujo narrativo de tiles usa addTile (aditivo). */
+const addTileRaw = (raw: Record<string, unknown>, opts?: OpcionesDeCarga) => addTile({ ...formatDToWorld(raw), exits: [] }, opts); // la única normalización local: fixtures y benches, sin bridge ni salidas
+
 async function loadSceneData(
   rawData: Record<string, unknown>,
   opts: OpcionesDeCarga = {},
 ): Promise<void> {
   resetWorld();
-  await addTile(rawData, opts);
+  await addTileRaw(rawData, opts);
 }
 
 function rebuildEnemyBars(): void {
@@ -1614,7 +1615,7 @@ instalarNefanHook({
   dialogoAbierto,
   combatSystemId: () => sessionCombatSystemId,
   attackCatalog: () => attackCatalog,
-  addTile,
+  addTileRaw,
   loadSceneData,
   cargarFixture,
 });
@@ -2017,13 +2018,12 @@ narrativeClient.onNarrativeEvent((event) => {
         // como SU propio effect (`SceneLoadedEffect`, eventId `scene_init`):
         // eso es "cargar escena", y no es materializar una entity.
         const scene = effect.scene;
-        // El tile realizado de un lugar lleva su `place_id` (lo fija el
-        // bridge en el Format D crudo): es lo que ata esta escena al viaje
-        // que el jugador pidió, y no al prefetch que aterrice a la vez.
-        const crudo = scene.__format_d as { place_id?: string } | undefined;
-        travelLedger.escena(String(scene.scene_id ?? effect.sceneId), crudo?.place_id);
-        const t = scene.tile as { tx: number; ty: number } | undefined;
-        if (t && Number.isInteger(t.tx) && Number.isInteger(t.ty)) {
+        // El tile realizado de un lugar lleva su `place_id` (lo estampa el
+        // bridge): es lo que ata esta escena al viaje que el jugador pidió, y
+        // no al prefetch que aterrice a la vez.
+        travelLedger.escena(scene.scene_id || effect.sceneId, scene.place_id);
+        const t = scene.tile;
+        if (t) {
           // Tile del plano: ADITIVO (los anteriores no desaparecen).
           paso(
             addTile(scene).then(() => {
@@ -2042,8 +2042,8 @@ narrativeClient.onNarrativeEvent((event) => {
             `el tile ${effect.sceneId} llegó pero no se pudo instalar`,
           );
         } else {
-          // Escena legacy (save v3 sin migrar).
-          paso(loadSceneData(scene), "scene", `no se pudo cargar la escena ${effect.sceneId}`);
+          resetWorld();
+          paso(addTile(scene), "scene", `no se pudo cargar la escena ${effect.sceneId}`);
           log(`🌍 escena cargada: ${effect.sceneId}`);
         }
         break;
@@ -2234,10 +2234,10 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       // PRIMERO: `addTile` activa el primer tile del plano (`carga-de-tile.ts`)
       // y ese debe ser el del save, no el primero de `scenes_loaded` (#390).
       const activeId = res.state.world?.active_scene_id;
-      const scenes = res.state.scenes_loaded as Record<string, { scene_data?: Record<string, unknown>; tile?: unknown }> | undefined;
-      const activa = activeId ? scenes?.[activeId]?.scene_data : undefined;
-      const resto = Object.entries(scenes ?? {}).flatMap(([id, rec]) =>
-        rec?.scene_data && rec.tile && id !== activeId ? [rec.scene_data] : [],
+      const scenes = res.state.scenes_loaded;
+      const activa = activeId ? scenes[activeId]?.scene_data : undefined;
+      const resto = Object.entries(scenes).flatMap(([id, rec]) =>
+        rec.tile && id !== activeId ? [rec.scene_data] : [],
       );
       const porAnadir = activa ? [activa, ...resto] : resto;
       for (const scene of porAnadir) await addTile(scene);

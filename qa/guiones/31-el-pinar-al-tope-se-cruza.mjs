@@ -82,7 +82,7 @@ export default async function (ctx) {
   await comenzar(ctx);
 
   // ── 1. El caso peor que el contrato admite, declarado por el motor ──────
-  const zonas = await ctx.page.evaluate(() => window.__nefan.scene.__format_d?.vegetation_zones ?? []);
+  const zonas = await ctx.page.evaluate(() => window.__nefan.scene.vegetation_zones ?? []);
   ctx.log(`zonas de vegetación del tile: ${JSON.stringify(zonas)}`);
   ctx.expect(
     "el tile de la partida declara una zona de vegetación AL TOPE del dial",

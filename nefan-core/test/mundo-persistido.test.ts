@@ -15,7 +15,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  POSICION_DECLARADA,
   avisoDeFueraDelMundo,
   combateDeEntity,
   entidadesFueraDelMundo,
@@ -29,6 +28,13 @@ import {
 } from "../src/session/mundo-persistido.js";
 import { combatForHostileRole } from "../src/combat/hostiles.js";
 import type { EntityRecord } from "../src/narrative/types.js";
+
+/** El tipo de la escena servida, DERIVADO del módulo bajo prueba y no importado
+ *  de scene-normalize: este fichero es de la batería de mutación de
+ *  mundo-persistido y un import (aunque sea de tipos) lo metería en la de
+ *  scene-normalize (`mutation-config.test.ts`). */
+type WorldScene = ReturnType<typeof escenaConCombateVivo>;
+type NpcEnElWire = WorldScene["npcs"][number];
 
 /** Un `EntityRecord` como los que escribe el ledger. */
 function rec(over: Partial<EntityRecord> & { id: string }): EntityRecord {
@@ -47,15 +53,26 @@ function rec(over: Partial<EntityRecord> & { id: string }): EntityRecord {
 
 /** La world scene tal como la deja `formatDToWorld` para un tile con dos NPC:
  *  un hostil (con su bloque derivado) y un tabernero. */
-function escenaConDos(): Record<string, unknown> {
+function escenaConDos(): WorldScene {
   return {
     scene_id: "tile_0_0",
+    scene_description: "una plaza",
+    dimensions: { width: 64, depth: 64, height: 3 },
+    world_rect: { minX: -32, minZ: -32, maxX: 32, maxZ: 32 },
+    terrain: { color: [0.18, 0.22, 0.14] },
+    terrain_grid: { grid: ["g"], cols: 1, rows: 1, meters_per_cell: 0.5 },
+    objects: [],
     npcs: [
       { id: "bandido_1", name: "Bandido", position: [3, 0, 4], combat: combatForHostileRole("hostile") },
       { id: "barkeep", name: "Tabernero", position: [-2, 0, 1], role: "merchant" },
     ],
+    __player_start: null,
   };
 }
+
+/** Un npc del wire escrito corto: lo que `formatDToWorld` emite de un vecino. */
+const npc = (id: string, position: [number, number, number], extra: Partial<NpcEnElWire> = {}): NpcEnElWire =>
+  ({ id, name: id, position, ...extra });
 
 /** Dónde estaba cada npc de `escenaConDos()` cuando la escena lo declaró. Se
  *  nombra para poder afirmar que la posición DECLARADA sobrevive al overlay. */
@@ -109,9 +126,8 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
       escenaConDos(),
       estados({ bandido_1: [12, 60] }),
     );
-    const npcs = salida.npcs as Array<Record<string, unknown>>;
-    const bandido = npcs.find((n) => n.id === "bandido_1")!;
-    const combat = bandido.combat as Record<string, unknown>;
+    const bandido = salida.npcs.find((n) => n.id === "bandido_1")!;
+    const combat = bandido.combat!;
     assert.equal(combat.health, 12, "vuelve con la vida que le dejaste, no con la del contrato");
     assert.equal(combat.max_health, 60, "…y sobre su denominador: si no, la barra sale llena");
     // El resto del bloque sigue entero: sin arma ni personalidad el cliente lo
@@ -125,8 +141,7 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
       escenaConDos(),
       estados({ bandido_1: "muerto" }),
     );
-    const ids = (salida.npcs as Array<Record<string, unknown>>).map((n) => n.id);
-    assert.deepEqual(ids, ["barkeep"], "el muerto no vuelve; el vecino pacífico sí");
+    assert.deepEqual(salida.npcs.map((n) => n.id), ["barkeep"], "el muerto no vuelve; el vecino pacífico sí");
   });
 
   it("no toca la escena que recibe: lo persistido sigue siendo Format D crudo (#179)", () => {
@@ -151,9 +166,9 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
       escenaConDos(),
       estados({ bandido_1: { en: [12.25, 0, 0.75], combate: [12, 60] } }),
     );
-    const bandido = (salida.npcs as Array<Record<string, unknown>>).find((n) => n.id === "bandido_1")!;
+    const bandido = salida.npcs.find((n) => n.id === "bandido_1")!;
     assert.deepEqual(bandido.position, [12.25, 0, 0.75]);
-    assert.equal((bandido.combat as Record<string, unknown>).health, 12, "y con su vida, las dos cosas");
+    assert.equal(bandido.combat!.health, 12, "y con su vida, las dos cosas");
   });
 
   it("el PACÍFICO que paseó también vuelve donde estaba: moverse no es de los que pelean", () => {
@@ -161,7 +176,7 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
     // `npc-behavior.ts` mueve el record de CUALQUIER NPC ambiental, y hasta
     // hoy uno sin bloque `combat` no tenía estado y salía intacto.
     const salida = escenaConCombateVivo(escenaConDos(), estados({ barkeep: { en: [-9, 0, 7] } }));
-    const barkeep = (salida.npcs as Array<Record<string, unknown>>).find((n) => n.id === "barkeep")!;
+    const barkeep = salida.npcs.find((n) => n.id === "barkeep")!;
     assert.deepEqual(barkeep.position, [-9, 0, 7]);
     assert.equal(barkeep.combat, undefined, "y sin inventarle un bloque de combate que no tiene");
   });
@@ -174,9 +189,8 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
       escenaConDos(),
       estados({ bandido_1: { en: [99, 0, 99], combate: [12, 60] }, barkeep: { en: [-9, 0, 7] } }),
     );
-    const npcs = salida.npcs as Array<Record<string, unknown>>;
-    assert.deepEqual(npcs.find((n) => n.id === "bandido_1")![POSICION_DECLARADA], DECLARADA.bandido_1);
-    assert.deepEqual(npcs.find((n) => n.id === "barkeep")![POSICION_DECLARADA], DECLARADA.barkeep);
+    assert.deepEqual(salida.npcs.find((n) => n.id === "bandido_1")!.position_declared, DECLARADA.bandido_1);
+    assert.deepEqual(salida.npcs.find((n) => n.id === "barkeep")!.position_declared, DECLARADA.barkeep);
   });
 
   it("al ILEGIBLE también se le quita: servirlo sin overlay lo resucitaría a 60/60", () => {
@@ -185,8 +199,7 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
     // siempre entero—, así que el enemigo que el jugador había matado volvía
     // vivo y a tope, sin una línea en pantalla (QA 2026-08-31, H-2).
     const salida = escenaConCombateVivo(escenaConDos(), estados({ bandido_1: "ilegible" }));
-    const ids = (salida.npcs as Array<Record<string, unknown>>).map((n) => n.id);
-    assert.deepEqual(ids, ["barkeep"], "lo que no se puede leer no vuelve al mundo");
+    assert.deepEqual(salida.npcs.map((n) => n.id), ["barkeep"], "lo que no se puede leer no vuelve al mundo");
   });
 });
 
@@ -283,13 +296,7 @@ describe("npcsFueraDelRect — la conversión celda→metro se sigue midiendo", 
   const RECT = { minX: -32, minZ: -32, maxX: 32, maxZ: 32 };
 
   it("un npc DECLARADO fuera de su rect se reporta, con su id y su coordenada", () => {
-    const fuera = npcsFueraDelRect(
-      [
-        { id: "dentro", position: [4, 0, -4] },
-        { id: "roto", position: [96.5, 0, 12.25] },
-      ],
-      RECT,
-    );
+    const fuera = npcsFueraDelRect([npc("dentro", [4, 0, -4]), npc("roto", [96.5, 0, 12.25])], RECT);
     assert.deepEqual(fuera, [{ id: "roto", x: 96.5, z: 12.25 }]);
   });
 
@@ -298,20 +305,20 @@ describe("npcsFueraDelRect — la conversión celda→metro se sigue midiendo", 
     // pelea está legítimamente fuera. Lo que se mide no es dónde está, es si
     // la coordenada que la escena DECLARA es una conversión rota.
     const fuera = npcsFueraDelRect(
-      [{ id: "bandido_1", position: [140, 0, 200], [POSICION_DECLARADA]: [8.01, 0, 0.7] }],
+      [npc("bandido_1", [140, 0, 200], { position_declared: [8.01, 0, 0.7] })],
       RECT,
     );
     assert.deepEqual(fuera, []);
   });
 
   it("…y el candado NO se debilita: con la declarada rota lo reporta AUNQUE se haya movido", () => {
-    // La mitad que impide que `POSICION_DECLARADA` se convierta en una
+    // La mitad que impide que `position_declared` se convierta en una
     // exención general. Si el checker se saltara al que trae posición viva,
     // este caso saldría verde — y a la primera difusión de cualquier escena
     // TODO npc la trae (`registerSceneNpcs` los mete a todos en el ledger),
     // así que el candado no volvería a mirar a nadie nunca.
     const fuera = npcsFueraDelRect(
-      [{ id: "bandido_1", position: [4, 0, 4], [POSICION_DECLARADA]: [96.5, 0, 12.25] }],
+      [npc("bandido_1", [4, 0, 4], { position_declared: [96.5, 0, 12.25] })],
       RECT,
     );
     assert.deepEqual(fuera, [{ id: "bandido_1", x: 96.5, z: 12.25 }]);
@@ -322,11 +329,7 @@ describe("npcsFueraDelRect — la conversión celda→metro se sigue midiendo", 
     // `enemies`): un npc que ya existía en el cliente y cuya declaración se
     // rompiera después no lo veía nadie. Aquí se recorre `npcs[]` entero.
     const fuera = npcsFueraDelRect(
-      [
-        { id: "a", position: [-40, 0, 0] },
-        { id: "b", position: [0, 0, 40] },
-        { id: "c", position: [0, 0, 0] },
-      ],
+      [npc("a", [-40, 0, 0]), npc("b", [0, 0, 40]), npc("c", [0, 0, 0])],
       RECT,
     );
     assert.deepEqual(fuera.map((f) => f.id), ["a", "b"]);
@@ -359,13 +362,6 @@ describe("npcsFueraDelRect — la conversión celda→metro se sigue midiendo", 
     );
     assert.deepEqual(fuera.map((f) => f.id), ["nan", "hueco"]);
     assert.ok(Number.isNaN(fuera[0].x));
-  });
-
-  it("lo que no es una lista de npcs con posición no revienta ni inventa un fallo", () => {
-    assert.deepEqual(npcsFueraDelRect(undefined, RECT), []);
-    assert.deepEqual(npcsFueraDelRect("npcs", RECT), []);
-    assert.deepEqual(npcsFueraDelRect([null, 7, { sinId: 1 }, { id: "x" }], RECT), []);
-    assert.deepEqual(npcsFueraDelRect([{ id: "corta", position: [1, 0] }], RECT), []);
   });
 });
 

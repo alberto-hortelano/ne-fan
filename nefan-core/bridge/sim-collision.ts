@@ -19,11 +19,7 @@
  *  del esquema son del jugador (cliente), no de los NPCs. */
 
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
-import {
-  createTerrainCollider,
-  type TerrainCollider,
-  type TerrainGridData,
-} from "../src/scene/terrain-collision.js";
+import { createTerrainCollider, type TerrainCollider } from "../src/scene/terrain-collision.js";
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
 import {
   planCollisionGrid,
@@ -69,14 +65,13 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
     if (!rec) return [];
     const colliders: TerrainCollider[] = [];
 
-    // 1. terrain_grid del esquema. formatDToWorld devuelve el raw intacto en
-    // escenas no-Format-D (legacy), que no traen terrain_grid → sin fuente.
-    // De la misma normalización sale el plan compuesto (2).
+    // 1. terrain_grid del esquema. De la misma normalización sale el plan
+    // compuesto (2). Una escena que no sea Format D expandido lanza y se dice.
     let plan: TilePlan | null = null;
     try {
-      const world = formatDToWorld(rec.scene_data) as { terrain_grid?: TerrainGridData; __plan?: TilePlan };
+      const world = formatDToWorld(rec.scene_data);
       plan = world.__plan ?? null;
-      const tc = createTerrainCollider(world.terrain_grid ?? null);
+      const tc = createTerrainCollider(world.terrain_grid);
       if (tc) colliders.push(tc);
     } catch (err) {
       console.warn(`[sim-collision] ${sceneId}: terrain_grid no deriva colisión —`, err);

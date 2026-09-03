@@ -16,13 +16,24 @@ import assert from "node:assert/strict";
 
 import {
   esDeEsteTile,
-  npcsDeclarados,
-  objetosDeclarados,
+  npcsDeclarados as leerNpcs,
+  objetosDeclarados as leerObjetos,
   repartoDelTile,
   type EnElMundo,
   type NpcDeclarado,
   type ObjetoDeclarado,
 } from "../src/session/entidades-del-tile.js";
+
+/** Los lectores CONFÍAN en el tipo del wire (#378, QA H1): un `ObjetoEnElWire`
+ *  trae siempre `name`, `category` y `scale`, y un `NpcEnElWire` su `name`.
+ *  Cada test escribe solo lo que mide; el resto lo completa esto, para que la
+ *  forma que entra sea la que el tipo promete — lo ROTO (sin id, posición que
+ *  no son tres números, duplicados) se escribe roto a propósito y sigue roto. */
+type Suelto = Record<string, unknown>;
+const objetosDeclarados = (raw: readonly Suelto[] | undefined) =>
+  leerObjetos(raw?.map((o) => ({ name: String(o.id), category: "prop", scale: [1, 1, 1], ...o })) as never);
+const npcsDeclarados = (raw: readonly Suelto[] | undefined) =>
+  leerNpcs(raw?.map((o) => ({ name: String(o.id), ...o })) as never);
 
 const TILE = "tile_0_0";
 const VECINO = "tile_1_0";
@@ -165,16 +176,6 @@ describe("objetosDeclarados", () => {
     ]);
   });
 
-  it("sin categoría es `prop` y sin nombre es cadena vacía", () => {
-    const { declaradas } = objetosDeclarados([{ id: "x", position: [0, 0, 0] }]);
-    assert.equal(declaradas[0].categoria, "prop");
-    assert.equal(declaradas[0].nombre, "");
-    assert.equal(declaradas[0].sizeXZ, undefined);
-    assert.equal(declaradas[0].sizeY, undefined);
-    assert.equal(declaradas[0].shape, undefined);
-    assert.equal(declaradas[0].volumeId, undefined);
-  });
-
   it("la `description` de la world scene NO es la etiqueta: se lee `name` y la procedencia no se propaga (#238)", () => {
     // Antes del cambio el wire traía `description: ent.name` y este lector la
     // tomaba como prosa a pintar. Ahora `description` es el texto que se dio al
@@ -187,17 +188,8 @@ describe("objetosDeclarados", () => {
     assert.ok(!("descripcion" in declaradas[0]) && !("description" in declaradas[0]), JSON.stringify(declaradas[0]));
   });
 
-  it("una `scale` corta o con basura no es media huella: se ignora entera", () => {
-    assert.equal(objetosDeclarados([{ id: "x", position: [0, 0, 0], scale: [4, 2] }]).declaradas[0].sizeXZ, undefined);
-    assert.equal(
-      objetosDeclarados([{ id: "x", position: [0, 0, 0], scale: [4, "alto", 2] }]).declaradas[0].sizeY,
-      undefined,
-    );
-  });
-
   it("sin objetos declarados no hay ni entidades ni ruido", () => {
     assert.deepEqual(objetosDeclarados(undefined), { declaradas: [], errores: [] });
-    assert.deepEqual(objetosDeclarados(null), { declaradas: [], errores: [] });
     assert.deepEqual(objetosDeclarados([]), { declaradas: [], errores: [] });
   });
 });
@@ -236,13 +228,6 @@ describe("npcsDeclarados", () => {
     assert.equal("combat" in declaradas[0], true);
     assert.equal(declaradas[0].combat, "roto");
   });
-
-  it("un campo de texto VACÍO no es un valor: no se propaga", () => {
-    const { declaradas } = npcsDeclarados([
-      { id: "x", position: [0, 0, 0], name: "", description: "", style_ref: "", role: "" },
-    ]);
-    assert.deepEqual(declaradas[0], { id: "x", pos: { x: 0, y: 0, z: 0 } });
-  });
 });
 
 describe("declaraciones rotas · se dicen, no se tragan", () => {
@@ -266,16 +251,6 @@ describe("declaraciones rotas · se dicen, no se tragan", () => {
     assert.match(errores[0], /"sin_sitio"/);
   });
 
-  it("una declaración que no es un objeto se reporta con su índice", () => {
-    const { declaradas, errores } = objetosDeclarados(["cofre", null, 3]);
-    assert.deepEqual(declaradas, []);
-    assert.deepEqual(errores, [
-      "objeto [0]: la declaración no es un objeto",
-      "objeto [1]: la declaración no es un objeto",
-      "objeto [2]: la declaración no es un objeto",
-    ]);
-  });
-
   it("un id REPETIDO en el mismo tile entra una vez y se dice", () => {
     // El duplicado que el filtro `!ids.has(o.id)` del cliente tapaba sin
     // nombrarlo: ahora entra el primero y el segundo tiene una línea con su id.
@@ -287,12 +262,6 @@ describe("declaraciones rotas · se dicen, no se tragan", () => {
     assert.equal(declaradas[0].nombre, "el primero");
     assert.equal(errores.length, 1);
     assert.match(errores[0], /"cofre": declarado dos veces/);
-  });
-
-  it("una lista que no es una lista se dice y no revienta el tile", () => {
-    const { declaradas, errores } = npcsDeclarados({ herrero: {} });
-    assert.deepEqual(declaradas, []);
-    assert.deepEqual(errores, ["el tile declara sus npcs en algo que no es una lista"]);
   });
 
   it("lo roto no arrastra a lo sano: el resto del tile entra igual", () => {

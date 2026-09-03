@@ -67,7 +67,7 @@ export default async function (ctx) {
     return {
       scene_id: s.scene_id,
       ground: s.ground ?? [],
-      zonas: (s.__format_d?.vegetation_zones ?? s.vegetation_zones ?? []).length,
+      zonas: (s.vegetation_zones ?? []).length,
       origin: g?.origin ?? null,
       mpc: g?.meters_per_cell ?? null,
     };

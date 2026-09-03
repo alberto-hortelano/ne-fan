@@ -15,6 +15,7 @@ import {
   type WorldRect,
 } from "@nefan-core/src/scene/tile.js";
 import type { TerrainCollider } from "@nefan-core/src/scene/terrain-collision.js";
+import type { EscenaServida } from "@nefan-core/src/protocol/messages.js";
 
 export { TILE_SIZE_M, tileKey, tileWorldRect, worldToTile };
 export type { WorldRect };
@@ -26,8 +27,9 @@ export interface TileClientState {
   tx?: number;
   ty?: number;
   rect: WorldRect;
-  /** WorldScene normalizado (formatDToWorld), posiciones GLOBALES. */
-  scene: Record<string, unknown>;
+  /** La escena tal como la sirvió el bridge (world scene + salidas), en
+   *  posiciones GLOBALES. Tipada (#378): el cliente la lee, no la abre con `as`. */
+  scene: EscenaServida;
   collider: TerrainCollider | null;
   /** Colisión base derivada del PLAN declarado (agua∖decks del `ground` +
    *  huellas de los `volumes`). Disponible en cuanto llega el tile. Se UNE al

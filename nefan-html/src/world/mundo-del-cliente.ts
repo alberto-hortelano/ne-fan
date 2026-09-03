@@ -28,7 +28,7 @@
  *  manda el bridge, y copiarlos por frame sería tirar el trabajo del sim.
  */
 
-import type { SceneExit } from "@nefan-core/src/protocol/messages.js";
+import type { EscenaServida, SceneExit } from "@nefan-core/src/protocol/messages.js";
 import type { Entity } from "../renderer/types.js";
 
 export class MundoDelCliente {
@@ -36,7 +36,7 @@ export class MundoDelCliente {
   #enemigos: Entity[] = [];
   #objetos: Entity[] = [];
   #tileActivo: string | null = null;
-  #escenaActiva: Record<string, unknown> | null = null;
+  #escenaActiva: EscenaServida | null = null;
   #salidas: SceneExit[] = [];
   #colorDeEnemigo = 0;
   /** Ids que el bridge mueve y este cliente no tiene en escena. Es un DEFECTO
@@ -71,7 +71,7 @@ export class MundoDelCliente {
 
   /** La world scene del tile activo: lo que el hook `__nefan.scene` publica y
    *  lo que decide si el juego está «listo». */
-  get escenaActiva(): Record<string, unknown> | null {
+  get escenaActiva(): EscenaServida | null {
     return this.#escenaActiva;
   }
 
@@ -95,7 +95,7 @@ export class MundoDelCliente {
   }
 
   /** Apunta la escena activa del cliente al tile bajo el jugador. */
-  activarTile(key: string, escena: Record<string, unknown>, salidas: SceneExit[]): void {
+  activarTile(key: string, escena: EscenaServida, salidas: SceneExit[]): void {
     this.#tileActivo = key;
     this.#escenaActiva = escena;
     this.#salidas = salidas;

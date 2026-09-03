@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "../src/scene/scene-normalize.js";
+import { formatDToWorld, KIND_DEFAULT_HEIGHT, type WorldScene } from "../src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "../src/games/style-categories.js";
 import {
   combatForHostileRole,
@@ -12,9 +12,9 @@ import {
   HOSTILE_WEAPON,
 } from "../src/combat/hostiles.js";
 
-/** Atajos de lectura: la world scene es un Record suelto por contrato. */
-const objectsOf = (w: Record<string, unknown>) => w.objects as Record<string, unknown>[];
-const npcsOf = (w: Record<string, unknown>) => w.npcs as Record<string, unknown>[];
+/** Atajos de lectura sobre el tipo (#378): ya no hay nada que abrir con `as`. */
+const objectsOf = (w: WorldScene) => w.objects;
+const npcsOf = (w: WorldScene) => w.npcs;
 
 /** A minimal but valid Map Format D scene: 10×6 grid (meters_per_cell 2 ⇒
  *  20m × 12m), one building, one npc, one player start. */
@@ -60,23 +60,12 @@ const refDelSkin = (npc: Record<string, unknown>) =>
   npcSkinStyleRef(npc as { style_ref?: string; role?: string });
 
 describe("formatDToWorld", () => {
-  it("es idempotente: una world scene ya normalizada pasa intacta", () => {
-    const w = formatDToWorld(makeFormatD());
-    assert.equal(formatDToWorld(w), w, "misma referencia, sin re-normalizar");
-  });
-
-  it("es idempotente también para tiles (conservan `tile` pero no `biome`)", () => {
-    const w = formatDToWorld({
-      tile: { tx: 0, ty: 0 },
-      scene_id: "tile_0_0",
-      biome: "grass",
-      scene_description: "campo",
-      entities: [],
-    });
-    assert.ok(Array.isArray(w.objects), "primera pasada normaliza");
-    // Sin la guarda __format_d, esta segunda pasada re-entraría en la
-    // expansión de tile (tile presente, biome ya consumido) y lanzaría.
-    assert.equal(formatDToWorld(w), w);
+  it("no emite ni `exits` ni el crudo entero (#378): las salidas las pone el wire y `place_id` sustituye a `__format_d`", () => {
+    const w = formatDToWorld({ ...makeFormatD(), place_id: "taberna" });
+    assert.equal("exits" in w, false, "`exits` es de EscenaServida, no de la world scene");
+    assert.equal("__format_d" in w, false, "el Format D ya no viaja dentro de la world scene");
+    assert.equal(w.place_id, "taberna", "lo que el cliente leía de __format_d.place_id viaja como miembro");
+    assert.equal("place_id" in formatDToWorld(makeFormatD()), false, "sin place estampado no hay clave");
   });
 
   it("converts size to centred world dimensions", () => {
@@ -165,9 +154,12 @@ describe("formatDToWorld", () => {
     );
   });
 
-  it("returns a non-Format-D payload unchanged", () => {
-    const legacy = { scene_id: "crypt", dimensions: { width: 10, height: 4, depth: 8 }, surfaces: {}, objects: [] };
-    assert.equal(formatDToWorld(legacy), legacy);
+  it("una world scene ya normalizada NO vuelve a entrar: lanza (la idempotencia murió con __format_d)", () => {
+    // Antes la guarda `__format_d` la dejaba pasar intacta; ahora el tipo
+    // impide llamar con una WorldScene y, si llega en runtime (un .mjs), lo
+    // dice en vez de devolver media conversión.
+    const w = formatDToWorld(makeFormatD());
+    assert.throws(() => formatDToWorld(w as unknown as Record<string, unknown>), /no es Format D expandido/);
   });
 
   it("throws fail-loud on a malformed entity (missing cell)", () => {
@@ -383,7 +375,7 @@ describe("formatDToWorld — un NPC hostil llega con su combate derivado", () =>
 
   it("el hostil va a npcs[], no a objects[] (la rama de objects era el fósil)", () => {
     const world = formatDToWorld(conNpc({ id: "lobo_1", role: "hostile", name: "Lobo flaco" }));
-    const objetos = (world.objects ?? []) as Record<string, unknown>[];
+    const objetos = world.objects;
     assert.ok(!objetos.some((o) => o.id === "lobo_1"), "el hostil no puede salir por objects[]");
     assert.ok(objetos.every((o) => !("combat" in o)), "ningún object lleva combat");
   });
@@ -473,12 +465,13 @@ describe("formatDToWorld — la cola de la world scene", () => {
   });
 });
 
-/** Contrato de la cabecera del módulo: "A payload that is NOT Format D is
- *  returned verbatim". Importa porque `formatDToWorld` se aplica a TODO lo que
- *  sale por el wire (bridge/context.ts:239 y el resume de :291), incluidas
- *  world scenes ya resueltas y payloads de `change_scene`: media conversión
- *  sobre un payload ajeno es peor que ninguna. */
-describe("formatDToWorld — lo que no es Format D pasa verbatim", () => {
+/** Contrato de la cabecera del módulo (#378): lo que NO es Format D expandido
+ *  LANZA nombrando lo que falta. Hasta esta tanda volvía verbatim, «media
+ *  conversión sobre un payload ajeno es peor que ninguna» — pero una
+ *  `WorldScene` con miembros no puede ser «lo que entró», y todo lo que llega
+ *  aquí en producción pasó por `ExpandedSceneSchema`: un payload sin grid es
+ *  un error de quien llama, no una escena que pintar a medias. */
+describe("formatDToWorld — lo que no es Format D expandido lanza", () => {
   const casos: [string, Record<string, unknown>][] = [
     ["sin size", { terrain: ["gg", "gg"], entities: [] }],
     ["size sin cols", { size: { rows: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"], entities: [] }],
@@ -487,8 +480,12 @@ describe("formatDToWorld — lo que no es Format D pasa verbatim", () => {
     ["sin entities", { size: { cols: 2, rows: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"] }],
   ];
   for (const [nombre, payload] of casos) {
-    it(`${nombre} → misma referencia, sin tocar`, () => {
-      assert.equal(formatDToWorld(payload), payload);
+    it(`${nombre} → lanza y nombra las claves que trae`, () => {
+      assert.throws(() => formatDToWorld(payload), (err: Error) => {
+        assert.match(err.message, /no es Format D expandido/);
+        for (const k of Object.keys(payload)) assert.ok(err.message.includes(k), `nombra "${k}": ${err.message}`);
+        return true;
+      });
     });
   }
 });
