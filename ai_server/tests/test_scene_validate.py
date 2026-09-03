@@ -228,9 +228,13 @@ class TestAlturaYNombreEnEspejo(unittest.TestCase):
         self.assertIn("`name`", str(cm.exception))
         self.assertIn("poste", str(cm.exception))
 
-    def test_name_vacio_pasa_como_en_el_zod(self):
-        # `z.string()` sin `min(1)`: la etiqueta vacía es legal en los dos.
-        self.assertEqual(self._entity(name="")["name"], "")
+    def test_name_vacio_o_en_blanco_lanza_con_la_frase_del_vocabulario(self):
+        # Vocabulario compartido de #397: la misma frase que MOTIVO_NAME_INVALIDO.
+        for name in ("", "   "):
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError) as cm:
+                    self._entity(name=name)
+                self.assertIn("no puede faltar, estar vacío ni ser solo espacios", str(cm.exception))
 
     def test_el_saneador_no_inyecta_campos_que_el_motor_no_emitio(self):
         # Hasta #400 inyectaba un campo vacío en cada escena (el mismo camino

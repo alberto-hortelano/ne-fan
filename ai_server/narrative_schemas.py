@@ -820,15 +820,21 @@ def validate_scene_response(data: dict) -> dict:
         w = max(1, min(int(fp[0]), cols - col))
         h = max(1, min(int(fp[1]), rows - row))
 
-        # `name` es la ETIQUETA que lee el jugador y el zod la exige (`z.string()`,
-        # también vacía): rellenarla con el id era inventarse un rótulo en
-        # silencio, y el mismo tile tenía dos veredictos (QA de #400).
-        if not isinstance(ent.get("name"), str):
-            raise ValueError(f"entity '{eid}': `name` es obligatorio (la etiqueta que lee el jugador)")
+        # `name` es el RÓTULO que lee el jugador, con el vocabulario compartido
+        # de #397 (entity-vocabulary.ts): obligatorio, no vacío, no en blanco.
+        # Rellenarlo con el id era inventarse un rótulo en silencio, y el mismo
+        # tile tenía dos veredictos según la vía (QA de #400). La MISMA frase
+        # que MOTIVO_NAME_INVALIDO en el zod.
+        name_raw = ent.get("name")
+        if not isinstance(name_raw, str) or not name_raw.strip():
+            raise ValueError(
+                f"entity '{eid}': `name` no puede faltar, estar vacío ni ser solo espacios: "
+                "es el rótulo que lee el jugador (la procedencia va en `description`)"
+            )
         clean_ent = {
             "id": eid,
             "kind": kind,
-            "name": ent["name"],
+            "name": name_raw,
             "cell": [col, row],
             "footprint": [w, h],
         }
