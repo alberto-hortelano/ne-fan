@@ -212,7 +212,24 @@ Desde que las hojas de personaje las produce **sprite-forge** (repo aparte, :877
 da ese servicio. La primera versión la pedía ANTES de mirar su propia caché, así que con el
 servicio caído un sheet **ya pagado** que estaba en disco devolvía 503: todos los NPC en
 maniquí y el retrato del diálogo en blanco, teniendo los ficheros ahí. Lo arregla un índice
-(`cache/sprite_sheets/_base_keys.json`) y esto es su candado — el adaptador no tiene ni un test.
+(`cache/sprite_sheets/_base_keys.json`) con lo último que se supo de cada
+`{model}/{anim}/{angle}` —su `base_key` y, desde #375, su perfil de repintado, porque los dos
+entran en la clave—, y esto es su candado contra el servicio de VERDAD (el adaptador tiene su
+propia batería con un sprite-forge de mentira en `ai_server/tests/`).
+
+**El sujeto se lo planta él**, y es la lección más cara que lleva dentro. Antes buscaba un
+sheet pagado en `cache/sprite_sheets/`, o sea que dependía del accidente de lo que hubiera en
+la máquina de quien lo corriera: cuando #375 movió la clave, los 27 sheets que había quedaron
+inalcanzables y el candado se puso **ROJO sin que nada estuviera roto**. Y regenerar uno era
+imposible aquí — el worker de repintado exige `rembg` (466 MB) que no está instalado, así que
+la única receta escrita no se podía ejecutar en la máquina donde estaba escrita. Un rojo
+permanente que todo el mundo aprende a ignorar es peor que no tener candado.
+
+Un «sheet pagado» son ficheros: frames + `meta.json` bajo la clave viva. El guion los escribe
+antes de empezar y se los lleva al salir (el índice se restaura tal como estaba). La clave **no
+la recalcula**: se la pregunta al propio adaptador, importando `_perfil_efectivo` y
+`_skin_sheet_key` — una segunda implementación de la clave en el banco sería el espejo que
+deriva, que es justo lo que #375 vino a cerrar.
 
 ```bash
 node qa/sprites-sin-servicio.mjs           # arranca forge (--sin-skin) + remote-gen, mata forge a media prueba (~40 s)
@@ -230,7 +247,8 @@ repintado**, así que no hay nada que pueda llamar a un proveedor; las cuatro ru
 son caché o error. La cuarta comprobación quita el índice a propósito: si el pagado siguiera
 sirviéndose sin él, la segunda estaría pasando por otro camino y no probaría lo que dice.
 Probado en negativo: devolviendo el adaptador a su forma pre-arreglo (que la excepción suba
-siempre), las comprobaciones 2 y 3 se ponen rojas.
+siempre, o que la degradación no mire el índice), las comprobaciones 2 y 3 se ponen rojas.
+Necesita el `.venv` y `assets/characters` — en un worktree pelado hay que enlazarlos.
 
 ## El quinto ejecutable: `qa/fake-enruta-por-pathname.mjs`
 
@@ -276,6 +294,38 @@ un servicio. Cero créditos y cero vecinos molestados: cada caso con su `mkdtemp
 elige el kernel (ningún número del catálogo escrito a mano) y el hijo se mata **por su PID**.
 Escrito por QA al validar #391; probado en negativo (revirtiendo el override caen 12 de las 17,
 con salida 1).
+
+## El séptimo ejecutable: `qa/perfil-de-repintado-en-la-clave.mjs`
+
+`keyframes` y `play_fps` de `nefan-core/data/sprite-set.json` deciden qué fotogramas se pintan
+y a qué velocidad se reproducen. Hasta #375 no entraban en ninguna clave de caché —ni en la del
+sheet vestido de ne-fan ni en la `base_key` de sprite-forge—, así que retocarlos producía un
+repintado distinto con la MISMA clave: se servía el arte viejo, sin error y sin aviso, con la
+factura ya pagada. Y desde #369-R10 ese fichero no es una copia: `start.sh` se lo pasa al
+servicio con `--set`, o sea que es el set VIVO.
+
+La batería de `ai_server/tests/test_sprite_forge_adapter.py` ya prueba la función de clave
+contra un sprite-forge de mentira. Lo que ahí no cabe es la cadena que de verdad cuesta dinero:
+**fichero del set → `GET /catalog` del servicio REAL** (que mergea con su `PERFIL_POR_DEFECTO` y
+colapsa los keyframes que no caben en el ciclo) **→ clave del sheet vestido**. Espejar esa
+aritmética en el lado Python es justo lo que #375 prohíbe, y solo el servicio real dice si el
+espejo ha vuelto.
+
+```bash
+node qa/perfil-de-repintado-en-la-clave.mjs   # arranca su sprite-forge (--sin-skin) y lo mata al salir (~40 s)
+```
+
+Cero créditos por construcción: sprite-forge arranca **sin worker de repintado**, así que no
+existe proceso capaz de llamar a un proveedor, y las dos rutas que se ejercen (`GET /catalog` y
+`POST /sheets format=none`) son disco y aritmética. El set se toca en una COPIA en `/tmp` cuya
+identidad byte a byte con el fichero vivo se afirma primero: una muerte a media prueba no puede
+dejar el repositorio con un perfil de mentira commiteable. Puerto desde `PUERTOS_TODOS`
+(`NEFAN_PORT_OFFSET` se honra); ocupado ⇒ se niega y lo dice, no mata a nadie. Necesita el venv
+(el sujeto es el adaptador de Python) y `assets/characters`.
+
+Probado en negativo (2026-09-03): contra el adaptador y el set anteriores a #375, las tres
+primeras comprobaciones en rojo — «EL FALLO DE #375 ESTÁ VIVO: el adaptador no tiene
+`_perfil_efectivo`» y las seis ambientales sin perfil declarado.
 
 ## Los tres `*-candados-en-negativo.mjs`: ¿se pueden poner ROJOS los candados?
 

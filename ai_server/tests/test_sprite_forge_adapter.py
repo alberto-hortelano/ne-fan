@@ -111,20 +111,44 @@ class ClavesTest(unittest.TestCase):
 
         self.rg = rg
         self.base = dict(base_key="b1", model="y_bot", anim="walk", angle="frontal_8",
-                         prompt="un herrero", ai_model="gpt-image-2", style_key="s1")
+                         prompt="un herrero", ai_model="gpt-image-2", style_key="s1",
+                         perfil=(8, 2.2))
 
     def test_misma_peticion_misma_clave(self):
         self.assertEqual(self.rg._skin_sheet_key(**self.base), self.rg._skin_sheet_key(**self.base))
 
     def test_cada_campo_cambia_la_clave_del_sheet(self):
         otros = dict(base_key="b2", model="paladin", anim="run", angle="otro",
-                     prompt="una arquera", ai_model="nano-banana", style_key="s2")
+                     prompt="una arquera", ai_model="nano-banana", style_key="s2",
+                     perfil=(4, 3.6))
         vistas = {self.rg._skin_sheet_key(**self.base): "base"}
         for campo, valor in otros.items():
             k = self.rg._skin_sheet_key(**{**self.base, campo: valor})
             self.assertNotIn(k, vistas, f'cambiar "{campo}" NO cambió la clave')
             vistas[k] = campo
         self.assertEqual(len(vistas), len(otros) + 1)
+
+    def test_cada_MITAD_del_perfil_cambia_la_clave(self):
+        # #375: el perfil de repintado decide QUÉ fotogramas se pintan
+        # (`keyframes`) y a qué velocidad se reproducen (`play_fps`). Sin él en
+        # la clave, cambiarlo en data/sprite-set.json producía un repintado
+        # distinto con la MISMA clave: se servía el arte viejo en silencio. Las
+        # dos mitades por separado, porque meter solo una es el mismo fallo con
+        # la mitad de superficie.
+        k = self.rg._skin_sheet_key(**self.base)
+        self.assertNotEqual(k, self.rg._skin_sheet_key(**{**self.base, "perfil": (12, 2.2)}),
+                            "cambiar keyframes NO cambió la clave")
+        self.assertNotEqual(k, self.rg._skin_sheet_key(**{**self.base, "perfil": (8, 6.0)}),
+                            "cambiar play_fps NO cambió la clave")
+
+    def test_el_perfil_no_distingue_un_entero_de_su_float(self):
+        # `"play_fps": 4` y `"play_fps": 4.0` en el set son el MISMO perfil: si
+        # dieran dos claves, reescribir el JSON de otra manera repagaría ~16
+        # llamadas de imagen por personaje sin cambiar un píxel.
+        self.assertEqual(
+            self.rg._skin_sheet_key(**{**self.base, "perfil": (4, 4)}),
+            self.rg._skin_sheet_key(**{**self.base, "perfil": (4, 4.0)}),
+        )
 
     def test_el_prompt_no_distingue_mayusculas_ni_espacios(self):
         # Dos NPC descritos igual con otro espaciado no deben cobrarse dos veces.
@@ -183,13 +207,26 @@ class IndiceDeBasesTest(unittest.TestCase):
         self.assertEqual(self.rg._leer_bases(), {})
 
     def test_guarda_y_recupera(self):
-        self.rg._apuntar_base("y_bot/idle/frontal_8", "abc123")
-        self.assertEqual(self.rg._leer_bases()["y_bot/idle/frontal_8"], "abc123")
+        self.rg._apuntar_base("y_bot/idle/frontal_8", "abc123", (8, 2.2))
+        self.assertEqual(
+            self.rg._leer_bases()["y_bot/idle/frontal_8"],
+            {"base_key": "abc123", "perfil": {"keyframes": 8, "play_fps": 2.2}},
+        )
 
     def test_una_base_nueva_reemplaza_a_la_vieja(self):
-        self.rg._apuntar_base("y_bot/idle/frontal_8", "vieja")
-        self.rg._apuntar_base("y_bot/idle/frontal_8", "nueva")
-        self.assertEqual(self.rg._leer_bases(), {"y_bot/idle/frontal_8": "nueva"})
+        self.rg._apuntar_base("y_bot/idle/frontal_8", "vieja", (8, 2.2))
+        self.rg._apuntar_base("y_bot/idle/frontal_8", "nueva", (8, 2.2))
+        self.assertEqual(self.rg._leer_bases()["y_bot/idle/frontal_8"]["base_key"], "nueva")
+
+    def test_un_perfil_nuevo_reemplaza_al_viejo(self):
+        # El índice sirve arte pagado con el servicio caído: si guardara el
+        # perfil de anteayer, serviría la clave de un repintado que ya no existe.
+        self.rg._apuntar_base("y_bot/idle/frontal_8", "b", (8, 2.2))
+        self.rg._apuntar_base("y_bot/idle/frontal_8", "b", (4, 6.0))
+        self.assertEqual(
+            self.rg._leer_bases()["y_bot/idle/frontal_8"]["perfil"],
+            {"keyframes": 4, "play_fps": 6.0},
+        )
 
     def test_un_indice_corrupto_no_tumba_el_endpoint(self):
         # Es contabilidad, no el arte: lo peor que puede pasar es una llamada de
@@ -197,9 +234,59 @@ class IndiceDeBasesTest(unittest.TestCase):
         self.rg._BASE_KEYS_INDEX.write_text("{esto no es json")
         self.assertEqual(self.rg._leer_bases(), {})
 
+    def test_un_indice_que_no_es_un_objeto_tampoco(self):
+        self.rg._BASE_KEYS_INDEX.write_text('["esto es una lista"]')
+        self.assertEqual(self.rg._leer_bases(), {})
+
+    def test_la_forma_ANTERIOR_a_375_se_trata_como_ausente_y_se_dice(self):
+        # Pre-producción, cero compatibilidad (#375): hasta el 2026-09-03 el
+        # valor era la `base_key` a secas. Rellenarle el perfil con el de por
+        # defecto del servicio daría una clave ADIVINADA, y este índice existe
+        # justo para lo contrario — servir exactamente el arte que se pagó. Se
+        # ignora entero y se DICE: un índice que se vacía en silencio es una
+        # tanda de llamadas de más que nadie sabe explicar.
+        self.rg._BASE_KEYS_INDEX.write_text(json.dumps({"y_bot/idle/frontal_8": "abc123"}))
+        with self.assertLogs("ai_server", level="WARNING") as logs:
+            self.assertEqual(self.rg._leer_bases(), {})
+        self.assertIn("forma anterior", "\n".join(logs.output))
+
+    def test_una_entrada_NUEVA_con_el_perfil_roto_no_se_reporta_como_migracion(self):
+        # El aviso decía «forma anterior a #375» también aquí, y eso manda a
+        # quien lo lea a buscar una migración pendiente que no existe: la
+        # entrada es de la forma NUEVA, lo que está mal es el perfil.
+        self.rg._BASE_KEYS_INDEX.write_text(json.dumps({
+            "y_bot/idle/frontal_8": {"base_key": "a", "perfil": {"keyframes": 0, "play_fps": 4.0}},
+        }))
+        with self.assertLogs("ai_server", level="WARNING") as logs:
+            self.assertEqual(self.rg._leer_bases(), {})
+        texto = "\n".join(logs.output)
+        self.assertIn("perfil inválido", texto)
+        self.assertNotIn("forma anterior", texto)
+
+    def test_y_un_indice_MEZCLADO_nombra_las_dos_causas(self):
+        self.rg._BASE_KEYS_INDEX.write_text(json.dumps({
+            "y_bot/idle/frontal_8": "abc123",
+            "y_bot/walk/frontal_8": {"base_key": "b", "perfil": {"keyframes": 4, "play_fps": "no"}},
+        }))
+        with self.assertLogs("ai_server", level="WARNING") as logs:
+            self.assertEqual(self.rg._leer_bases(), {})
+        texto = "\n".join(logs.output)
+        self.assertIn("forma anterior", texto)
+        self.assertIn("perfil inválido", texto)
+
+    def test_una_entrada_a_MEDIAS_tampoco_se_parsea(self):
+        # Con perfil pero sin `play_fps`: media entrada no es media clave, es
+        # una clave distinta. Y el fichero se escribe de una pieza, así que uno
+        # mezclado no lo ha escrito este código.
+        self.rg._BASE_KEYS_INDEX.write_text(json.dumps({
+            "y_bot/idle/frontal_8": {"base_key": "a", "perfil": {"keyframes": 8}},
+            "y_bot/walk/frontal_8": {"base_key": "b", "perfil": {"keyframes": 4, "play_fps": 3.6}},
+        }))
+        self.assertEqual(self.rg._leer_bases(), {})
+
     def test_conserva_las_otras_hojas(self):
-        self.rg._apuntar_base("y_bot/idle/frontal_8", "a")
-        self.rg._apuntar_base("y_bot/walk/frontal_8", "b")
+        self.rg._apuntar_base("y_bot/idle/frontal_8", "a", (8, 2.2))
+        self.rg._apuntar_base("y_bot/walk/frontal_8", "b", (4, 3.6))
         self.assertEqual(len(self.rg._leer_bases()), 2)
 
     def test_la_escritura_es_atomica_una_muerte_a_medias_no_trunca_el_indice(self):
@@ -210,12 +297,12 @@ class IndiceDeBasesTest(unittest.TestCase):
         # queda intacta. PROBADO EN NEGATIVO: con el write_text de antes,
         # os.replace no se llama, la escritura "triunfa" y este test se pone
         # rojo (el índice cambió pese al fallo simulado).
-        self.rg._apuntar_base("y_bot/idle/frontal_8", "previa")
+        self.rg._apuntar_base("y_bot/idle/frontal_8", "previa", (8, 2.2))
         with mock.patch("routers.remote_generation.os.replace",
                         side_effect=OSError("muerte simulada entre el temporal y el replace")):
             with self.assertRaises(OSError):
-                self.rg._apuntar_base("y_bot/idle/frontal_8", "nueva")
-        self.assertEqual(self.rg._leer_bases(), {"y_bot/idle/frontal_8": "previa"})
+                self.rg._apuntar_base("y_bot/idle/frontal_8", "nueva", (8, 2.2))
+        self.assertEqual(self.rg._leer_bases()["y_bot/idle/frontal_8"]["base_key"], "previa")
         # Y el temporal no queda tirado en el directorio.
         restos = [p.name for p in self.rg._BASE_KEYS_INDEX.parent.iterdir()]
         self.assertEqual(restos, ["_base_keys.json"])
@@ -253,6 +340,13 @@ class AdaptadorHttpTest(unittest.TestCase):
         self.forge.respuestas["/sheets"] = _fixture("sheets")
         self.forge.respuestas["/identity"] = _fixture("identity")
         self.forge.respuestas["/skins"] = _fixture("skins")
+        # El catálogo, que es de donde sale el perfil de repintado que entra en
+        # la clave del sheet vestido (#375). Es GRATIS: sprite-forge lo deriva
+        # del disco, no gasta una llamada de imagen.
+        self.forge.respuestas["/catalog"] = _fixture("catalog")
+        self.perfil_walk = next(
+            a for a in self.forge.respuestas["/catalog"]["animations"] if a["id"] == "walk"
+        )
         # La identidad de la hoja base que declara la fixture: las aserciones
         # cuelgan de ella, no de un "BK1" inventado.
         self.base_key = self.forge.respuestas["/sheets"]["sheets"][0]["base_key"]
@@ -328,9 +422,94 @@ class AdaptadorHttpTest(unittest.TestCase):
         self.assertIn("/skins", self.forge.rutas_pedidas("POST"))
         self.assertNotIn("/identity", self.forge.rutas_pedidas("POST"))
 
-    def test_apunta_la_base_en_el_indice(self):
+    def test_apunta_la_base_y_el_perfil_en_el_indice(self):
         self._pedir()
-        self.assertEqual(self.rg._leer_bases()["heroe/walk/frontal_8"], self.base_key)
+        apunte = self.rg._leer_bases()["heroe/walk/frontal_8"]
+        self.assertEqual(apunte["base_key"], self.base_key)
+        self.assertEqual(
+            apunte["perfil"],
+            {"keyframes": self.perfil_walk["keyframes"], "play_fps": self.perfil_walk["play_fps"]},
+        )
+
+    # ── el perfil de repintado en la clave (#375) ──────────────────────────
+    def test_cambiar_el_perfil_de_la_anim_da_OTRO_hash(self):
+        # EL FALLO DE #375, de punta a punta: `keyframes`/`play_fps` deciden qué
+        # se pinta, así que retocarlos en data/sprite-set.json produce un
+        # repintado distinto. Antes la clave no se movía y se servía el arte
+        # viejo en silencio, con la factura ya pagada y el jugador viendo
+        # fotogramas que no corresponden al perfil declarado.
+        primero = self._pedir().json()["hash"]
+        cat = json.loads(json.dumps(self.forge.respuestas["/catalog"]))
+        for a in cat["animations"]:
+            if a["id"] == "walk":
+                a["play_fps"] = a["play_fps"] + 2
+        self.forge.respuestas["/catalog"] = cat
+        segundo = self._pedir().json()
+        self.assertNotEqual(primero, segundo["hash"], "cambiar el perfil NO movió la clave")
+        self.assertFalse(segundo["cached"], "sirvió el arte del perfil viejo")
+
+    def test_el_perfil_sale_del_CATALOGO_no_del_json_del_set(self):
+        # El catálogo publica el perfil ya mergeado con el de por defecto del
+        # servicio y relee el set en cada petición: es lo único que dice lo que
+        # /skins va a aplicar. Un espejo de `perfilDe` en este lado derivaría.
+        self._pedir()
+        self.assertIn("/catalog", self.forge.rutas_pedidas("GET"))
+
+    def test_una_anim_que_el_catalogo_no_conoce_es_502_que_la_NOMBRA(self):
+        cat = json.loads(json.dumps(self.forge.respuestas["/catalog"]))
+        cat["animations"] = [a for a in cat["animations"] if a["id"] != "walk"]
+        self.forge.respuestas["/catalog"] = cat
+        r = self._pedir()
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertIn("walk", r.json()["detail"])
+
+    def test_una_anim_que_NO_SE_PUEDE_repintar_es_502_con_su_causa(self):
+        # La fixture canónica trae una anim `rota` con su `skin_plan_error`:
+        # keyframes/play_fps viajan null y no hay perfil que hashear. Inventarle
+        # uno serviría arte bajo una clave que no es la de nadie.
+        r = self._pedir(anim="rota")
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertIn("keyframes debe ser > 0", r.json()["detail"])
+
+    def test_un_perfil_inutilizable_SIN_skin_plan_error_tambien_es_502(self):
+        # El TERCERO de los tres fail-loud, y el único que no cubría ningún test
+        # (hallazgo 2 del QA de esta PR): la fixture `rota` sale por la rama de
+        # `skin_plan_error`, así que borrar la comprobación de keyframes/play_fps
+        # dejaba la suite entera verde. Con un catálogo que publique nulls SIN
+        # su causa, el adaptador compondría "0kf@0.0fps" en silencio, que es el
+        # saneado mudo que la casa prohíbe. Hoy sprite-forge no puede producir
+        # ese cuerpo (`costeDeCatalogo` siempre empareja los nulls con su
+        # error), pero el fail-loud existe justo porque el servicio vive en otro
+        # repo y en otra versión.
+        cat = json.loads(json.dumps(self.forge.respuestas["/catalog"]))
+        for a in cat["animations"]:
+            if a["id"] == "walk":
+                a["keyframes"], a["play_fps"] = None, None
+                a.pop("skin_plan_error", None)
+        self.forge.respuestas["/catalog"] = cat
+        r = self._pedir()
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertNotIn("/skins", self.forge.rutas_pedidas("POST"))
+
+    def test_un_keyframes_CERO_sin_causa_tampoco_pasa(self):
+        # La otra mitad del mismo fail-loud: no basta con rechazar `null`. Un
+        # 0 compone una clave perfectamente válida ("0kf@…") para un repintado
+        # que no existe.
+        cat = json.loads(json.dumps(self.forge.respuestas["/catalog"]))
+        for a in cat["animations"]:
+            if a["id"] == "walk":
+                a["keyframes"] = 0
+                a.pop("skin_plan_error", None)
+        self.forge.respuestas["/catalog"] = cat
+        r = self._pedir()
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertIn("keyframes=0", r.json()["detail"])
+
+    def test_un_catalogo_sin_animations_es_502_y_no_se_inventa_el_perfil(self):
+        self.forge.respuestas["/catalog"] = {"service": "sprite-forge"}
+        r = self._pedir()
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertNotIn("/skins", self.forge.rutas_pedidas("POST"))
 
     # ── fail-loud ──────────────────────────────────────────────────────────
     #
@@ -383,7 +562,7 @@ class AdaptadorHttpTest(unittest.TestCase):
         # serían distintas y el mismo personaje se pagaría dos veces.
         r = self._pedir(model="  heroe  ", anim=" walk ")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(self.rg._leer_bases()["heroe/walk/frontal_8"], self.base_key)
+        self.assertEqual(self.rg._leer_bases()["heroe/walk/frontal_8"]["base_key"], self.base_key)
 
     def test_un_campo_MAL_ESCRITO_ya_no_se_traga(self):
         # Antes: `styel_id` no existía, `style_id` quedaba en `""` y el
@@ -443,6 +622,18 @@ class AdaptadorHttpTest(unittest.TestCase):
         self.rg._BASE_KEYS_INDEX.unlink()
         self.forge.parar()
         self.assertEqual(self._pedir().status_code, 503)
+
+    def test_con_el_indice_en_la_forma_VIEJA_no_se_finge_conocer_el_perfil(self):
+        # #375/§9.2: un índice anterior al perfil se trata como AUSENTE. La
+        # alternativa —rellenarle el perfil con el de por defecto— daría 200 con
+        # una clave adivinada: un cache-miss disfrazado de acierto, que con el
+        # servicio caído es un directorio vacío en vez de un error.
+        self._pedir()
+        self.rg._BASE_KEYS_INDEX.write_text(json.dumps({"heroe/walk/frontal_8": self.base_key}))
+        self.forge.parar()
+        r = self._pedir()
+        self.assertEqual(r.status_code, 503, r.text)
+        self.assertIn("no responde", r.json()["detail"])
 
     def test_el_catalogo_se_reexpone(self):
         self.forge.respuestas["/catalog"] = {"service": "sprite-forge", "animations": []}

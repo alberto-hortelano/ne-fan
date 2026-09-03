@@ -11,10 +11,12 @@
  *  ficheros ahí — peor que antes de la extracción, cuando la clave salía del
  *  disco local.
  *
- *  Lo arregla un índice de la última `base_key` conocida por
- *  `{model}/{anim}/{angle}` (`cache/sprite_sheets/_base_keys.json`). Este guion
- *  es su candado: sin él, el arreglo solo se puede comprobar a mano y volvería a
- *  romperse el día que alguien reordene el adaptador.
+ *  Lo arregla un índice de lo último que se supo de cada
+ *  `{model}/{anim}/{angle}` (`cache/sprite_sheets/_base_keys.json`): su
+ *  `base_key` y, desde #375, su perfil de repintado, porque los DOS entran en la
+ *  clave del sheet vestido. Este guion es su candado: sin él, el arreglo solo se
+ *  puede comprobar a mano y volvería a romperse el día que alguien reordene el
+ *  adaptador.
  *
  *  Las cuatro comprobaciones, en orden:
  *    1. servicio ARRIBA  + personaje pagado → 200 `cached`, con URLs y hero
@@ -27,6 +29,20 @@
  *  (sin worker de repintado, así que no hay nada que pueda llamar a un proveedor
  *  de imagen) y las cuatro rutas son o caché o error. Ninguna genera.
  *
+ *  EL SUJETO SE LO PLANTA ÉL, y esa es la lección más cara de este guion. Antes
+ *  buscaba un sheet pagado en `cache/sprite_sheets/`, o sea que dependía del
+ *  accidente de lo que hubiera en la máquina de quien lo corriera: el día que
+ *  #375 movió la clave, los 27 que había quedaron inalcanzables y el candado se
+ *  puso ROJO sin que nada estuviera roto. Y regenerar uno era imposible sin el
+ *  worker de repintado, que exige `rembg` (466 MB) que nadie tiene instalado —
+ *  o sea un rojo permanente, que es la peor clase de candado.
+ *
+ *  Un «sheet pagado» son ficheros: frames + `meta.json` bajo la clave viva. Se
+ *  escriben aquí y se borran al salir. La clave NO se recalcula a mano: se le
+ *  pregunta al propio adaptador (`_skin_sheet_key` + `_perfil_efectivo`,
+ *  importadas), porque una segunda implementación de la clave en este fichero
+ *  sería el espejo que deriva — exactamente lo que #375 vino a cerrar.
+ *
  *  Vive fuera de `qa/guiones/` por la misma razón que `presets.mjs`: el runner
  *  arranca UN stack con navegador y se lo pasa a todos, y esto necesita arrancar
  *  y MATAR un servicio a media prueba, sin navegador ninguno.
@@ -38,8 +54,8 @@
  *  el adaptador VIEJO, y un verde así no vale nada (pasó durante la validación
  *  de esta misma tanda).
  */
-import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, renameSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUERTOS_TODOS } from "./lib/stack.mjs";
@@ -67,6 +83,19 @@ const FORGE_DIR = process.env.NEFAN_SPRITE_FORGE_DIR ?? join(process.env.HOME ??
 
 const fallos = [];
 const hijos = [];
+/** Lo que este guion escribió en `cache/` y tiene que llevarse al salir: el
+ *  banco no deja arte de mentira en la caché del que lo corre. */
+const plantados = [];
+/** El índice tal como lo encontramos, para devolverlo igual (o quitarlo si no
+ *  estaba): el sujeto es nuestro, pero la caché es de quien corre el guion. */
+let indicePrevio = null;
+let habiaIndice = false;
+
+function limpiar() {
+  for (const d of plantados) rmSync(d, { recursive: true, force: true });
+  if (habiaIndice) writeFileSync(INDEX, indicePrevio);
+  else if (existsSync(INDEX)) rmSync(INDEX, { force: true });
+}
 
 function ok(t) { console.log(`  ✔ ${t}`); }
 function mal(t) { console.log(`  ✘ ${t}`); fallos.push(t); }
@@ -87,21 +116,87 @@ async function waitPort(port, ms, quiero = true) {
   return false;
 }
 
-/** El sujeto de la prueba: un personaje ya pagado y ALCANZABLE, o sea con
- *  `skin.base_key` en su meta (los sheets anteriores al traslado no lo tienen y
- *  ya no los encuentra nadie). Sin sujeto no se puede vouchear nada, así que
- *  esto es ROJO y no un verde vacío. */
-function sujeto() {
-  if (!existsSync(SKINS_DIR)) return null;
-  for (const d of readdirSync(SKINS_DIR)) {
-    const meta = join(SKINS_DIR, d, "meta.json");
-    if (!existsSync(meta)) continue;
-    const m = JSON.parse(readFileSync(meta, "utf8"));
-    if (m?.skin?.base_key && m.model && m.anim && m.angle && m.skin.prompt) {
-      return { hash: d, model: m.model, anim: m.anim, angle: m.angle, prompt: m.skin.prompt };
+/** Le pregunta al ADAPTADOR qué clave compondría para esta petición, y con qué
+ *  perfil e identidad de hoja base. No se calcula aquí: se importan
+ *  `_perfil_efectivo` y `_skin_sheet_key` de producción y se llaman. Un segundo
+ *  cálculo de la clave en este fichero sería el espejo que deriva, y el día que
+ *  divergiera este guion daría fe de una clave que el juego no usa.
+ *
+ *  Es gratis: `GET /catalog` es disco y `POST /sheets format=none` es la
+ *  identidad determinista de la hoja base, sin frames y sin pintar nada. */
+function preguntarAlAdaptador({ model, anim, angle, prompt }) {
+  const py = `
+import asyncio, json, sys
+sys.path.insert(0, "ai_server")
+from config_snapshot import load_config
+from deps import deps
+from routers import remote_generation as rg
+# El mismo cargador que usa remote_gen_main al arrancar: el ai_model del skin
+# entra en la clave, así que tiene que salir de la config de verdad.
+deps.config = load_config()
+model, anim, angle, prompt, forge_url = sys.argv[1:6]
+# Se apunta EXPLÍCITAMENTE al sprite-forge que ha arrancado este guion: el
+# snapshot que lee deps no honra NEFAN_PORT_OFFSET, y preguntarle la clave al
+# servicio del vecino es medir contra otro despliegue.
+deps.config["sprite_forge_url"] = forge_url
+async def main():
+    perfil = await rg._perfil_efectivo(anim)
+    base = await rg._forge("/sheets", {"model": model, "anims": [anim],
+                                       "angle": angle, "format": "none"}, timeout=600.0)
+    hoja = base["sheets"][0]
+    ai_model = str(deps.config["sprite_skin_model"])
+    # style_key vacío: la petición del guion no lleva style_id, como la del test.
+    clave = rg._skin_sheet_key(hoja["base_key"], model, anim, angle, prompt, ai_model, "", perfil)
+    print(json.dumps({"clave": clave, "base_key": hoja["base_key"],
+                      "keyframes": perfil[0], "play_fps": perfil[1],
+                      "directions": hoja["meta"]["directions"], "ai_model": ai_model}))
+asyncio.run(main())
+`;
+  const r = spawnSync("bash", ["-c",
+    `source .venv/bin/activate && exec python -c "$1" "$2" "$3" "$4" "$5" "$6"`,
+    "--", py, model, anim, angle, prompt, FORGE_URL], { cwd: repoRoot, encoding: "utf8" });
+  if (r.status !== 0) {
+    throw new Error(`no se pudo preguntar la clave al adaptador:\n${(r.stderr || r.stdout || "").trim()}`);
+  }
+  return JSON.parse(r.stdout.trim().split("\n").pop());
+}
+
+/** Un PNG 1×1 válido. Los frames no se leen en esta prueba (el adaptador solo
+ *  compone sus URLs), pero un sheet de bytes inventados no sería un sheet. */
+const PNG_1x1 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+/** Planta en disco el sujeto de la prueba: un sheet «ya pagado» bajo la clave
+ *  VIVA, con su meta y sus frames, y lo apunta en el índice tal como lo haría el
+ *  adaptador. Devuelve qué hay que borrar al salir.
+ *
+ *  Se planta en vez de buscarse porque un candado que depende de que alguien
+ *  haya pagado arte en ESTA máquina no es un candado: es una lotería que se
+ *  pone roja cuando cambia una clave y que no se puede devolver a verde sin
+ *  gastar (o sin 466 MB de `rembg`). */
+function plantarSujeto(peticion) {
+  const info = preguntarAlAdaptador(peticion);
+  const dir = join(SKINS_DIR, info.clave);
+  if (existsSync(dir)) throw new Error(`el sujeto ${info.clave} YA existe: no lo planto yo, y no lo voy a borrar`);
+  mkdirSync(dir, { recursive: true });
+  for (let d = 0; d < info.directions; d += 1) {
+    for (let f = 0; f < info.keyframes; f += 1) {
+      writeFileSync(join(dir, `dir_${d}_frame_${String(f).padStart(3, "0")}.png`), PNG_1x1);
     }
   }
-  return null;
+  // meta.json el ÚLTIMO, como hace el adaptador: su presencia significa "está
+  // entero". Y con la misma forma, para que sea un sujeto y no un decorado.
+  writeFileSync(join(dir, "meta.json"), JSON.stringify({
+    model: peticion.model, anim: peticion.anim, angle: peticion.angle,
+    directions: info.directions, frame_count: info.keyframes, fps: info.play_fps,
+    duration: Number((info.keyframes / info.play_fps).toFixed(4)),
+    frame_width: 256, frame_height: 256,
+    skin: { prompt: peticion.prompt, ai_model: info.ai_model, api: "plantado-por-qa",
+            cost_usd: 0, base_key: info.base_key },
+  }, null, 2));
+  return { ...info, dir, urls: info.directions * info.keyframes };
 }
 
 async function pedirSkin(cuerpo) {
@@ -132,37 +227,40 @@ function matar(etiqueta) {
 async function main() {
   console.log("¿Sobrevive el arte pagado a que sprite-forge esté caído?\n");
 
+  habiaIndice = existsSync(INDEX);
+  if (habiaIndice) indicePrevio = readFileSync(INDEX);
+  mkdirSync(SKINS_DIR, { recursive: true });
+
   if (!existsSync(join(FORGE_DIR, "bin/sprite-forge.mjs"))) {
     console.log(`ROJO — sprite-forge no está en ${FORGE_DIR}.`);
     console.log("  Clónalo (github.com/alberto-hortelano/sprite-forge) o define NEFAN_SPRITE_FORGE_DIR.");
     return 1;
   }
-  const s = sujeto();
-  if (!s) {
-    console.log("ROJO — no hay ni un sheet de personaje ALCANZABLE en cache/sprite_sheets/");
-    console.log("  (alcanzable = su meta.json trae skin.base_key). Sin arte pagado que");
-    console.log("  proteger, este guion no puede dar fe de nada, así que no da verde.");
-    console.log("  Para crear el sujeto sin gastar: arranca sprite-forge con");
-    console.log("  SPRITE_FORGE_IMAGE_API=fake y pide un /skin_sprite_sheet cualquiera.");
-    return 1;
-  }
-  console.log(`sujeto: ${s.model}/${s.anim}/${s.angle} — "${s.prompt}" (hash ${s.hash})\n`);
-  const cuerpo = { model: s.model, anim: s.anim, angle: s.angle, prompt: s.prompt };
-  const nuevo = { ...cuerpo, prompt: `personaje que no existe ${Date.now()}` };
-
   // ── sprite-forge, SIN worker de repintado: no hay nada que pueda gastar ──
   if (await puertoOcupado(FORGE_PORT)) {
     console.log(`ROJO — el puerto ${FORGE_PORT} ya está ocupado; este guion necesita matarlo a media prueba.`);
     return 1;
   }
   arrancar("node", ["bin/sprite-forge.mjs", "serve", "--sin-skin",
-    "--assets", join(repoRoot, "assets/characters"), "--port", String(FORGE_PORT)],
+    "--assets", join(repoRoot, "assets/characters"),
+    "--set", join(repoRoot, "nefan-core/data/sprite-set.json"), "--port", String(FORGE_PORT)],
   { cwd: FORGE_DIR }, "forge");
   if (!(await waitPort(FORGE_PORT, 120_000))) {
     console.log(`ROJO — sprite-forge no llegó a escuchar en :${FORGE_PORT}.`);
     for (const h of hijos) if (h.etiqueta === "forge") console.log(h.log.join("").trimEnd() || "  (sin una línea de log)");
     return 1;
   }
+
+  // ── el sujeto, plantado por nosotros bajo la clave VIVA ──
+  const cuerpo = { model: "y_bot", anim: "idle", angle: "frontal_8",
+    prompt: `sujeto plantado por el banco ${Date.now()}` };
+  const nuevo = { ...cuerpo, prompt: `personaje que no existe ${Date.now()}` };
+  const s = plantarSujeto(cuerpo);
+  plantados.push(s.dir);
+  console.log(
+    `sujeto plantado: ${cuerpo.model}/${cuerpo.anim}/${cuerpo.angle} — "${cuerpo.prompt}"\n` +
+    `  clave viva ${s.clave} · base ${s.base_key} · perfil ${s.keyframes}kf@${s.play_fps}fps · ${s.urls} frames\n`,
+  );
 
   // ── remote-gen, que es quien tiene el adaptador ──
   //
@@ -250,6 +348,11 @@ try {
 } catch (e) {
   console.log(`ROJO — ${e.stack ?? e.message}`);
 } finally {
-  if (!KEEP) for (const h of hijos) if (h.p.exitCode === null) h.p.kill("SIGKILL");
+  if (!KEEP) {
+    for (const h of hijos) if (h.p.exitCode === null) h.p.kill("SIGKILL");
+    limpiar();
+  } else {
+    console.log(`\n  (--keep: el sujeto se queda en ${plantados.join(", ") || "ningún sitio"})`);
+  }
 }
 process.exit(code);
