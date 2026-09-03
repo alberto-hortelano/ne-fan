@@ -14,7 +14,7 @@ const db = new ManifestDb(cfg.dbPath);
 // Fail-loud inverso (#257): un índice con kinds sin productor no se sirve a
 // medias — se dice qué hay y qué script lo purga, y se sale con 1. start.sh
 // enseña estas líneas en la terminal cuando el hijo muere antes del /health.
-const veredicto = verificarSoloSurface(db);
+const veredicto = verificarSoloSurface(db, { dbPath: cfg.dbPath, cacheDir: cfg.cacheDir });
 if (!veredicto.ok) {
   console.error(veredicto.mensaje);
   db.close();

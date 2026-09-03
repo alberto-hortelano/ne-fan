@@ -268,7 +268,34 @@ puertos salen de `PUERTOS_TODOS` (runtime_config vía `lib/stack.mjs`, `NEFAN_PO
 honra); con el puerto ocupado se niega y lo dice, no mata a nadie. Probado en negativo:
 contra el fake de main (pre-tanda), las 3 comprobaciones en rojo; con el de la rama, verde.
 
-## El sexto ejecutable: `qa/perfil-de-repintado-en-la-clave.mjs`
+## El sexto ejecutable: `qa/el-indice-del-store-se-prueba-sin-el-del-checkout.mjs`
+
+El asset-store tiene UN camino de fallo en el arranque —negarse a servir un índice con kinds
+sin productor (`services/asset-store/solo-surface.ts`)— y hasta #391 no se podía ejercer sin la
+DB del checkout: `loadAssetStoreConfig` solo admitía override para el PUERTO. El QA de T4 tuvo
+que exportar el árbol entero al scratchpad, plantar la fila ajena en la copia y arrancar desde
+allí; ese workaround ERA el defecto, y `NEFAN_MANIFEST_DB` lo cierra. Esto es su candado, y lo
+mide arrancando el **entry real** (el mismo que lanza `start.sh`) contra índices de usar y tirar.
+
+```bash
+node qa/el-indice-del-store-se-prueba-sin-el-del-checkout.mjs   # 17 comprobaciones, ~10 s
+```
+
+Las cuatro cosas que afirma: el **negativo** (`exit 1`, el motivo, el script de purga y que el
+veredicto habla de SU índice — un kind centinela que ningún checkout puede tener); el
+**positivo** (arranca, nombra la DB de la variable con su recuento y `/health` **contesta por
+HTTP desde otro proceso** con ese mismo recuento); el **blanco** (`NEFAN_MANIFEST_DB="  "` sale
+con 1 y no deja basura en la raíz del repo); y que el índice del **checkout** no se toca en
+ninguno de los tres casos.
+
+Vive fuera de `guiones/` por la razón de `sprites-sin-servicio.mjs`: no toca la página, y en
+`guiones/` cada corrida de la batería pagaría un Chromium para un check que solo arranca y para
+un servicio. Cero créditos y cero vecinos molestados: cada caso con su `mkdtemp`, el puerto lo
+elige el kernel (ningún número del catálogo escrito a mano) y el hijo se mata **por su PID**.
+Escrito por QA al validar #391; probado en negativo (revirtiendo el override caen 12 de las 17,
+con salida 1).
+
+## El séptimo ejecutable: `qa/perfil-de-repintado-en-la-clave.mjs`
 
 `keyframes` y `play_fps` de `nefan-core/data/sprite-set.json` deciden qué fotogramas se pintan
 y a qué velocidad se reproducen. Hasta #375 no entraban en ninguna clave de caché —ni en la del

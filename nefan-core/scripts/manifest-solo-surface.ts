@@ -41,7 +41,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
-import { CONFIG } from "../src/config.js";
 import { resolveServiceUrl } from "../src/contracts/service-registry.js";
 import { loadAssetStoreConfig } from "../services/asset-store/config.js";
 import {
@@ -220,7 +219,7 @@ async function main(): Promise<number> {
   }
   const cfg = loadAssetStoreConfig(process.env);
   const dbPath = parsed.db ?? cfg.dbPath;
-  const cacheDir = parsed.cache ?? resolve(REPO_ROOT, CONFIG.ai_server.cache_root);
+  const cacheDir = parsed.cache ?? cfg.cacheDir;
   const archivoDir = parsed.archivo ?? resolve(REPO_ROOT, "archivo", "cache");
 
   // Guardia 1: blobs archivados.
