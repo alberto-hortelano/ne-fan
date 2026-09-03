@@ -150,3 +150,23 @@ Con esto A6 «batería entera verde» queda ✅ (la fila de la tabla remite aqu�
 escena servida no lleva rastro del crudo, que `exits` va encima, que cada clave de raíz/objeto/npc es un miembro del
 tipo, que el grid viaja una vez, que todo `name` es texto, y que normalizar dos veces desde JS se dice. Cero
 créditos, sin esperas por reloj, probado en negativo (arriba).
+
+## Re-validación (vuelta de QA: `181b51c` sobre `7631998`, rama rebasada sobre `main` = `0b56cb2` con PR-A)
+
+Alcance: solo lo que cambió en la vuelta (H1, H2, H5) y que el resto siga en pie. Medido el 2026-09-03.
+
+| Qué | Veredicto | Evidencia |
+|---|---|---|
+| H1 · `leerObjeto`/`leerNpc` confían en el tipo | ✅ | `grep -n "numeros(\|texto(" entidades-del-tile.ts` → solo `texto(rec.id)` (`:231`), `numeros(v, 3)` dentro de `punto` (`:206`) y la prosa de `:257`: lo que se sigue mirando es id, posición y duplicado, y se dice. `leerObjeto` lee `name`/`category`/`scale` tal cual; `sizeXZ`/`sizeY` salen siempre de `scale`. Coherente con la cabecera nueva («mirar a medias era lo peor de los dos mundos») |
+| H2 · `POSICION_DECLARADA` a cero | ✅ | `grep -rn POSICION_DECLARADA nefan-core nefan-html/src qa labs docs/arquitectura CLAUDE.md` → 0 (también fuera del comentario de `mundo-persistido.test.ts`) |
+| H2 · casts de tests sobre la salida tipada | ✅ con residuo | `mundo-persistido.test.ts`: 0 (`:417` abre `EntityRecord.data.combat`, que sí es `Record`: legítimo). `scene-normalize.test.ts`: `objectsOf` tipado; los `d.entities as Record<…>[]` son sobre la ENTRADA Format D (legítimos). Quedan **tres** sobre la salida: `:148` `w.terrain_grid as Record`, `:351` `npc.combat as Record | undefined`, `:437` `formatDToWorld(conRef) as Record` (para un `"style_ref" in w`). Residuo menor, no bloquea |
+| H5 · `?? npc.id` fuera | ✅ | `style-apply.ts:265`: `const prompt = npc.description ?? npc.name;` |
+| H3 / H6 | a issue | #410 y #411 (los abre el coordinador) |
+| `npm run verify` sobre `181b51c` | ✅ | `ℹ pass 1950 · ℹ fail 0` · `verify exit=0` |
+| Guion 68 sobre `181b51c` | ✅ | `1 en verde · 0 en rojo de 1` (arranque y resume: sin crudo, `exits` lista, solo miembros del tipo, grid ×1, todo `name`; segunda normalización lanza). Capturas `qa/capturas/2026-09-03T12-58-42-303Z-187153` |
+| Árbol | limpio | `git status --short` vacío; `qa-b.md` y el guion 68 ya commiteados por el ingeniero |
+
+**Veredicto final: APTO.** Los tres hallazgos corregibles están corregidos; el residuo (tres `as` en
+`scene-normalize.test.ts` sobre la salida tipada) es menor y puede ir con la próxima pasada por ese fichero. No
+se re-corrió la batería entera ni `coverage/crap/deuda` sobre `181b51c` (cambio confinado a dos lectores, tres
+tests y una línea del cliente; el ingeniero reporta 47 / 0 por encima / 75, sin motivo para dudarlo).
