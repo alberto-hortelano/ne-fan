@@ -72,7 +72,8 @@
       "grip_length_normalized": {
         "type": "number",
         "minimum": 0,
-        "maximum": 1
+        "maximum": 1,
+        "description": "Fracción de la longitud del arma ocupada por el agarre"
       },
       "confidence": {
         "type": "number",
@@ -81,7 +82,8 @@
         "description": "0.9+ si agarre y hoja son claros; <0.5 si la malla parece rota"
       },
       "notes": {
-        "type": "string"
+        "type": "string",
+        "description": "Justificación breve para depuración"
       }
     },
     "required": [

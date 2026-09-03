@@ -86,6 +86,7 @@ test("narrative_event: el validador rechaza (y da error preciso) formas inválid
     // #397: `name` obligatorio y no vacío (es el rótulo); `description`, si va, no en blanco.
     [{ consequences: [{ type: "spawn_entity", entity_kind: "npc", description: "un lobo" }] }, /name/],
     [{ consequences: [{ type: "spawn_entity", entity_kind: "npc", name: "", description: "un lobo" }] }, /name/],
+    [{ consequences: [{ type: "spawn_entity", entity_kind: "npc", name: "   ", description: "un lobo" }] }, /name/],
     [{ consequences: [{ type: "spawn_entity", entity_kind: "npc", name: "Lobo", description: "   " }] }, /description/],
     [{ consequences: [{ type: "show_dialogue", speaker: "a", text: "b" }] }, /type/], // alias
     [{ consequences: [{ type: "dialogue", speaker: "a", text: "b", choices: ["1", "2", "3", "4"] }] }, /choices/],

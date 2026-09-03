@@ -10,9 +10,10 @@
  *  un test de forma, y son la deuda que se cierra aquí. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type { ZodObject, ZodRawShape, ZodTypeAny } from "zod";
 
-import { VocabularioDeEntity } from "../src/contract/model-io/entity-vocabulary.js";
+import { MOTIVO_NAME_INVALIDO, VocabularioDeEntity } from "../src/contract/model-io/entity-vocabulary.js";
 import { EntitySchema } from "../src/contract/model-io/scene-schema.js";
 import { ConsequenceSchema, NarrativeReactionSchema } from "../src/contract/model-io/schemas.js";
 import { validateContract } from "../src/contract/model-io/validate.js";
@@ -47,12 +48,28 @@ describe("entity-vocabulary · las dos puertas cogen EL MISMO objeto", () => {
     for (const [puerta, shape] of [["escena", shapeDeEscena], ["spawn", shapeDeSpawn]] as const) {
       assert.equal(acepta(shape.name, "Nogala"), true, `${puerta}: un nombre normal`);
       assert.equal(acepta(shape.name, ""), false, `${puerta}: el rótulo vacío no es un rótulo`);
+      assert.equal(acepta(shape.name, "   "), false, `${puerta}: el rótulo en blanco tampoco (QA PR-C, H1)`);
       assert.equal(acepta(shape.name, undefined), false, `${puerta}: sin \`name\` no hay entity`);
       assert.equal(acepta(shape.description, undefined), true, `${puerta}: la procedencia es opcional`);
       assert.equal(acepta(shape.description, "posadera de manos grandes"), true, `${puerta}: una procedencia normal`);
       assert.equal(acepta(shape.description, ""), false, `${puerta}: vacía no`);
       assert.equal(acepta(shape.description, "   "), false, `${puerta}: en blanco tampoco (#237)`);
     }
+  });
+
+  it("un `name` en blanco se rechaza NOMBRANDO el campo, con la misma frase que el espejo Python", () => {
+    // H1 de la QA de PR-C: `"   "` pasaba el zod y lo rechazaba Python — la
+    // divergencia de espejo que #397 vino a cerrar, en el campo nuevo. La
+    // frase es una y vive en el vocabulario; el Python la copia literal y aquí
+    // se comprueba que sigue copiada (el modelo entra por las dos vías).
+    const r = VocabularioDeEntity.name.safeParse("   ");
+    assert.equal(r.success, false);
+    if (!r.success) assert.equal(r.error.issues[0].message, MOTIVO_NAME_INVALIDO);
+    const python = readFileSync(new URL("../../ai_server/narrative_schemas.py", import.meta.url), "utf-8");
+    // El f-string de Python parte la frase en dos literales adyacentes; se
+    // compara sin los saltos de línea ni las comillas del medio.
+    const plano = python.replace(/"\s*\n\s*"/g, "");
+    assert.ok(plano.includes(MOTIVO_NAME_INVALIDO), "narrative_schemas.py no dice la misma frase que el zod para `name`");
   });
 
   it("el vocabulario no transforma: lo que entra es lo que sale (predicado, no saneador)", () => {

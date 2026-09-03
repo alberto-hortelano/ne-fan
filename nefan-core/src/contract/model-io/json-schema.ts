@@ -99,17 +99,24 @@ export function toJsonSchema(schema: ZodTypeAny): JsonSchema {
           (v) => typeof v === "string",
         ),
       });
+    // Los envoltorios (`.optional()`, `.default()`, `.nullable()`, `.refine()`)
+    // no tienen JSON Schema propio, pero SÍ pueden llevar el `.describe()`:
+    // `z.string().optional().describe("…")` lo cuelga del ZodOptional, no del
+    // string. Sin arrastrarlo, todo campo opcional salía al tool sin
+    // semántica —el modelo por API veía `description` sin saber qué es— y el
+    // prompt `.md` sí la llevaba (QA de PR-C, H5). El envoltorio manda si
+    // describe; si no, queda lo que dijera el interior.
     case "ZodOptional":
     case "ZodDefault":
-      return toJsonSchema(d.innerType as ZodTypeAny);
+      return withDescription(schema, toJsonSchema(d.innerType as ZodTypeAny));
     case "ZodNullable": {
       const inner = toJsonSchema(d.innerType as ZodTypeAny);
       const t = inner.type;
       if (typeof t === "string") inner.type = [t, "null"];
-      return inner;
+      return withDescription(schema, inner);
     }
     case "ZodEffects":
-      return toJsonSchema(d.schema as ZodTypeAny);
+      return withDescription(schema, toJsonSchema(d.schema as ZodTypeAny));
     case "ZodArray": {
       const out: JsonSchema = { type: "array", items: toJsonSchema(d.type as ZodTypeAny) };
       const min = d.minLength as { value: number } | null;

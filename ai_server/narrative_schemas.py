@@ -1052,9 +1052,11 @@ def validate_narrative_reaction(data: dict | None) -> dict:
             # aquí antes se colaba tras el `.strip()`.
             name_raw = c.get("name")
             if not isinstance(name_raw, str) or not name_raw.strip():
+                # La MISMA frase que el `.refine()` del zod (MOTIVO_NAME_INVALIDO en
+                # entity-vocabulary.ts); test/entity-vocabulary.test.ts la busca aquí.
                 raise ValueError(
-                    f"spawn_entity[{idx}] missing required field `name` (non-empty string): "
-                    "es el rótulo que lee el jugador; `description` es la procedencia y es opcional"
+                    f"spawn_entity[{idx}].name: `name` no puede faltar, estar vacío ni ser solo espacios: "
+                    "es el rótulo que lee el jugador (la procedencia va en `description`)"
                 )
             entry = {
                 "type": "spawn_entity",

@@ -150,6 +150,28 @@ function describirPosicionInvalida(pos: unknown): string | null {
   return null;
 }
 
+/** Por qué el `data.name` de un record NO es un rótulo, o `null` si lo es: un
+ *  texto con algo más que espacios. Hermano de `describirPosicionInvalida` y
+ *  por el mismo motivo: `name` es lo que el cliente pinta y lo que el sim
+ *  resiembra (#397), y hay DOS lectores del ledger — que no pueden decidir
+ *  cada uno lo suyo. */
+function describirNombreInvalido(name: unknown): string | null {
+  if (name === undefined) return "falta";
+  if (typeof name !== "string") return `no es un texto (recibido ${JSON.stringify(name)})`;
+  if (name.trim().length === 0) return `está vacío (${JSON.stringify(name)})`;
+  return null;
+}
+
+/** Cómo llamar, para quien juega, a un record que no tiene nombre: su
+ *  descripción si la tiene (es lo único que puede reconocer), y si no, qué
+ *  clase de cosa era. `motivoDeSesionParaElJugador` lo recorta del mensaje. */
+function quienEs(rec: EntityRecord): string {
+  const d = rec.data.description;
+  if (typeof d === "string" && d.trim().length > 0) return `«${d}»`;
+  const clase: Record<string, string> = { npc: "un personaje", object: "un objeto", building: "un edificio" };
+  return `${clase[rec.type] ?? `algo de tipo "${rec.type}"`} que puso el motor`;
+}
+
 export class NarrativeState {
   session_id = "";
   game_id = "";
@@ -504,6 +526,22 @@ export class NarrativeState {
       if (motivo) {
         throw new Error(
           `save "${sessionId}": entities["${rec.id}"].position ${motivo} — ` +
+            "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
+        );
+      }
+      // Y su NOMBRE (#397): `data.name` es el rótulo que el cliente pinta y el
+      // record que el bridge resiembra en el sim. El contrato lo exige en las
+      // dos puertas, así que un save sin él es de antes o está corrupto. Se
+      // rechaza AQUÍ y no en un lector porque hay dos —`spawnsDeRuntime` en el
+      // cliente y la resiembra del sim en el bridge— y con el filtro en uno
+      // solo el NPC sin nombre no volvía al cliente pero el bridge lo movía:
+      // «anda invisible» (QA de PR-C, H2). Lo que no tiene nombre no entra, y
+      // el motivo dice a QUIÉN le falta en palabras del jugador (su
+      // descripción), no solo el id.
+      const sinNombre = describirNombreInvalido(rec.data.name);
+      if (sinNombre) {
+        throw new Error(
+          `save "${sessionId}": entities["${rec.id}"].data.name ${sinNombre} — ${quienEs(rec)} no tiene nombre — ` +
             "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
         );
       }

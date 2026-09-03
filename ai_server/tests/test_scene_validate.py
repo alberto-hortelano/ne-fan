@@ -295,11 +295,14 @@ class TestSpawnEntityLlevaRolYRef(unittest.TestCase):
                 ],
             })
         self.assertIn("name", str(cm.exception))
+        # La misma frase que el zod (MOTIVO_NAME_INVALIDO, entity-vocabulary.ts).
+        self.assertIn("es el rótulo que lee el jugador", str(cm.exception))
 
     def test_name_en_blanco_LANZA(self):
         with self.assertRaises(ValueError) as cm:
             self._spawn(name="   ")
         self.assertIn("name", str(cm.exception))
+        self.assertIn("es el rótulo que lee el jugador", str(cm.exception))
 
     def test_sin_description_pasa_y_NO_se_inventa(self):
         out = validate_narrative_reaction({

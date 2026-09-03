@@ -488,15 +488,17 @@ export function spawnsDeRuntime(entities: readonly EntityRecord[]): {
     }
     if (combate.tipo === "combate" && combate.combate.health <= 0) continue;
     const data = rec.data;
-    const nombre = typeof data.name === "string" && data.name ? data.name : undefined;
-    if (nombre === undefined) {
-      // Pre-producción: no se inventa un rótulo (ni el id, ni la descripción).
-      // El contrato exige `name` desde #397, así que un record sin él es un
-      // save de antes o un ledger corrupto, y las dos cosas se dicen.
-      errores.push(
-        `«${rec.id}» no vuelve al mundo: la partida guardada no dice cómo se llama`,
+    const nombre = data.name;
+    if (typeof nombre !== "string" || nombre.trim().length === 0) {
+      // INALCANZABLE por contrato: `loadSession` rechaza el save entero si un
+      // record no trae `data.name` (#397), así que este ledger no existe sin
+      // nombres. Aquí vivía una rama que lo dejaba fuera «y lo decía»; QA la
+      // cazó como segundo criterio (el bridge resembraba el sim igual: «anda
+      // invisible»). Un lector no decide: si llega aquí, el ledger se saltó la
+      // puerta y eso se rompe, no se maquilla.
+      throw new Error(
+        `«${rec.id}» llegó al resume sin data.name: el save tenía que haberse rechazado al cargarlo`,
       );
-      continue;
     }
     // La procedencia SOLO si el motor la declaró. Aquí se caía a `rec.id`, y el
     // jugador veía al mismo NPC pintado con «an entity» en vivo y con

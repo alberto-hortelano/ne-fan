@@ -482,7 +482,7 @@ describe("NarrativeState state queries", () => {
     const storage = new MemorySessionStorage();
     const s1 = new NarrativeState(storage);
     const id = s1.startNewSession("g");
-    s1.recordEntitySpawned("boris", "npc", "scene_1", [0, 0, 0], {});
+    s1.recordEntitySpawned("boris", "npc", "scene_1", [0, 0, 0], { name: "Boris" });
     s1.addInventoryItem("boris", { id: "iron_key", name: "Llave de hierro" });
     await s1.establecer();
 
@@ -491,6 +491,50 @@ describe("NarrativeState state queries", () => {
     assert.deepEqual(s2.getInventory("boris"), [
       { id: "iron_key", name: "Llave de hierro" },
     ]);
+  });
+
+  it("loadSession RECHAZA un save cuyo record no tiene `data.name`, nombrando a quién le falta (#397)", async () => {
+    // La garantía va en el tipo, como con `position`: hay DOS lectores del
+    // ledger (spawnsDeRuntime en el cliente, la resiembra del sim en el
+    // bridge) y ninguno decide — lo que no tiene nombre no entra. El motivo
+    // lleva el id (para el log) y, entre guiones, a QUIÉN le falta en palabras
+    // del jugador: su descripción si la hay, su clase si no.
+    const storage = new MemorySessionStorage();
+    const s1 = new NarrativeState(storage);
+    const id = s1.startNewSession("g");
+    s1.recordEntitySpawned("nogala", "npc", "scene_1", [0, 0, 0], {
+      name: "Nogala",
+      description: "posadera de manos grandes",
+    });
+    s1.recordEntitySpawned("cofre_1", "object", "scene_1", [1, 0, 0], { name: "Cofre" });
+    await s1.establecer();
+
+    const roto = (await storage.read(id))!;
+    delete roto.entities[0].data.name;
+    await storage.write(id, roto);
+    await assert.rejects(
+      () => new NarrativeState(storage).loadSession(id),
+      (err: Error) =>
+        /entities\["nogala"\]\.data\.name falta/.test(err.message) &&
+        /— «posadera de manos grandes» no tiene nombre —/.test(err.message) &&
+        /bórralo o empieza partida nueva/.test(err.message),
+      "el motivo nombra el record, a quién le falta y qué hacer",
+    );
+
+    // En blanco es lo mismo que faltar, y sin descripción se dice la clase.
+    roto.entities[0].data.name = "Nogala";
+    roto.entities[1].data.name = "   ";
+    await storage.write(id, roto);
+    await assert.rejects(
+      () => new NarrativeState(storage).loadSession(id),
+      /entities\["cofre_1"\]\.data\.name está vacío .* — un objeto que puso el motor no tiene nombre —/,
+    );
+
+    // Y la sesión que estaba cargada no se toca: el throw va ANTES de mutar.
+    const s3 = new NarrativeState(storage);
+    const otra = s3.startNewSession("g2");
+    await assert.rejects(() => s3.loadSession(id));
+    assert.equal(s3.session_id, otra, "un load rechazado no deja la sesión hecha una quimera");
   });
 });
 

@@ -34,10 +34,19 @@
  *  trae ochenta— y ese mensaje es la pieza que trabaja. */
 import { z } from "zod";
 
+/** Por qué se rechaza un `name` que falta, está vacío o es solo espacios. Es
+ *  la MISMA frase en el zod y en el espejo Python (`narrative_schemas.py`):
+ *  `test/entity-vocabulary.test.ts` lee el fichero Python y la busca, porque
+ *  el modelo entra por las dos vías y tiene que leer el mismo motivo por las
+ *  dos. QA de PR-C (H1): `"   "` pasaba el zod y lo rechazaba Python. */
+export const MOTIVO_NAME_INVALIDO =
+  "`name` no puede faltar, estar vacío ni ser solo espacios: es el rótulo que lee el jugador (la procedencia va en `description`)";
+
 export const VocabularioDeEntity = {
   name: z
     .string()
     .min(1)
+    .refine((n) => n.trim().length > 0, { message: MOTIVO_NAME_INVALIDO })
     .describe("Etiqueta: lo que el jugador lee al mirarla (el rótulo). Nombre propio si lo tiene"),
   description: z
     .string()

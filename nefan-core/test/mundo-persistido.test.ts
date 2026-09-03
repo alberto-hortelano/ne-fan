@@ -469,16 +469,16 @@ describe("spawnsDeRuntime — UNA puerta por entidad, y la decide el spawn_reaso
     assert.equal("description" in spawns[0], false, JSON.stringify(spawns[0]));
   });
 
-  it("un record sin `name` NO vuelve y se DICE: el rótulo no se inventa (#397)", () => {
-    // Pre-producción: el contrato exige `name`, así que un ledger sin él es un
-    // save de antes o algo corrupto. Ni el id ni la descripción hacen de rótulo.
-    const { spawns, errores } = spawnsDeRuntime([
-      rec({ id: "anonimo_1", data: { description: "alguien sin nombre" } }),
-    ]);
-    assert.deepEqual(spawns, []);
-    assert.equal(errores.length, 1);
-    assert.match(errores[0], /anonimo_1/);
-    assert.match(errores[0], /cómo se llama/);
+  it("un record sin `name` no es un caso: es un ledger que se saltó la puerta, y REVIENTA (#397)", () => {
+    // La decisión vive en UN sitio, `loadSession` (narrative-state.test.ts lo
+    // mide): un save con un record sin `data.name` no carga. Aquí no hay rama
+    // «se deja fuera y se dice» —QA la cazó como segundo criterio frente a la
+    // resiembra del sim—; si llega, es invariante roto y se lanza con el id.
+    assert.throws(
+      () => spawnsDeRuntime([rec({ id: "anonimo_1", data: { description: "alguien sin nombre" } })]),
+      /anonimo_1.*sin data\.name/,
+    );
+    assert.throws(() => spawnsDeRuntime([rec({ id: "blanco_1", data: { name: "   " } })]), /blanco_1/);
   });
 });
 

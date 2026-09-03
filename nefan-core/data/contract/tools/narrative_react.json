@@ -31,7 +31,8 @@
                     "type": "string",
                     "minLength": 1
                   },
-                  "maxItems": 3
+                  "maxItems": 3,
+                  "description": "Hasta 3 opciones de respuesta ofrecidas al jugador"
                 }
               },
               "required": [
@@ -80,10 +81,12 @@
                 },
                 "description": {
                   "type": "string",
-                  "minLength": 1
+                  "minLength": 1,
+                  "description": "Procedencia: el texto exacto (en español) del que se genera su arte — aspecto, no biografía; en un NPC, el prompt del skin. Sin ella se pinta con `name`"
                 },
                 "position_hint": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Pista de dónde aparece, p.ej. 'junto a la fuente'"
                 },
                 "role": {
                   "type": "string",
@@ -93,10 +96,12 @@
                     "villager",
                     "merchant",
                     "hostile"
-                  ]
+                  ],
+                  "description": "NPCs: preset de conducta. Los cuatro ambientales (peasant/guard/villager/merchant) deambulan; `hostile` ATACA al jugador y el motor del juego deriva su vida, arma y agresividad — no las declaras tú. No es el oficio: un bandido o un lobo son `hostile` y su identidad va en `name`/`description`. Ausente ⇒ villager"
                 },
                 "style_ref": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "NPCs: id de la referencia de personaje de world.style_refs.characters que mejor case con su aspecto (guía el skin IA). Ausente/desconocido cae al default por rol"
                 },
                 "character_type": {
                   "type": "string"
@@ -121,7 +126,8 @@
                   "description": "Qué ocurrirá y bajo qué condición. Persiste en tu agenda (context.scheduled_events) hasta que lo dispares y lo retires con la tool scheduled_event_resolve(id)"
                 },
                 "trigger": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Condición de disparo (texto libre)"
                 }
               },
               "required": [
@@ -148,7 +154,8 @@
                 },
                 "payload": {
                   "type": "object",
-                  "additionalProperties": {}
+                  "additionalProperties": {},
+                  "description": "Datos del evento (objeto)"
                 }
               },
               "required": [
