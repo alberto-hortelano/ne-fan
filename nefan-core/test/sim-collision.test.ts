@@ -22,7 +22,6 @@ function makeState(extra: Record<string, unknown> = {}): NarrativeState {
     scene_description: "campo",
     biome: "grass",
     entities: [],
-    ambient_event: "",
     ...extra,
   }) as Record<string, unknown>;
   // Muro en la fila 10, columnas 10..20 (terrain_grid del esquema).
@@ -107,7 +106,7 @@ describe("createSimCollisionProvider · el bridge colisiona con el plan COMPUEST
   it("los edificios que salen de una entity estática dejan de ser transparentes", () => {
     const provider = createSimCollisionProvider(makeState({
       entities: [
-        { id: "granero", kind: "building", name: "granero", cell: [40, 40], footprint: [12, 10], glyph: "B" },
+        { id: "granero", kind: "building", name: "granero", cell: [40, 40], footprint: [12, 10] },
       ],
     }));
     // El granero NO está en `volumes`: es una entity, y su volumen lo deriva

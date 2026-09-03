@@ -87,7 +87,6 @@
       "name": "Casa del Concejo",
       "cell": [40, 40],
       "footprint": [14, 10],
-      "glyph": "C",
       "h": 5.5
     },
     {
@@ -96,7 +95,6 @@
       "name": "Capilla de San Beda",
       "cell": [14, 16],
       "footprint": [10, 8],
-      "glyph": "K",
       "h": 7
     },
     {
@@ -104,8 +102,7 @@
       "kind": "building",
       "name": "Herrería de Boris",
       "cell": [16, 88],
-      "footprint": [9, 7],
-      "glyph": "H"
+      "footprint": [9, 7]
     },
     {
       "id": "posada",
@@ -113,7 +110,6 @@
       "name": "Posada del Olmo",
       "cell": [56, 92],
       "footprint": [12, 9],
-      "glyph": "P",
       "h": 4
     },
     {
@@ -122,7 +118,6 @@
       "name": "Molino del Vado",
       "cell": [98, 44],
       "footprint": [10, 8],
-      "glyph": "M",
       "h": 6
     },
     {
@@ -130,8 +125,7 @@
       "kind": "building",
       "name": "Establo comunal",
       "cell": [100, 92],
-      "footprint": [10, 7],
-      "glyph": "E"
+      "footprint": [10, 7]
     },
     {
       "id": "atalaya",
@@ -139,7 +133,6 @@
       "name": "Atalaya vieja",
       "cell": [8, 112],
       "footprint": [5, 5],
-      "glyph": "T",
       "h": 9
     },
     {
@@ -148,7 +141,6 @@
       "name": "pozo de la plaza",
       "cell": [62, 80],
       "footprint": [1, 1],
-      "glyph": "o",
       "shape": "cylinder"
     },
     {
@@ -156,32 +148,28 @@
       "kind": "prop",
       "name": "puesto de pan",
       "cell": [55, 76],
-      "footprint": [2, 1],
-      "glyph": "="
+      "footprint": [2, 1]
     },
     {
       "id": "puesto_fruta",
       "kind": "prop",
       "name": "puesto de fruta",
       "cell": [68, 76],
-      "footprint": [2, 1],
-      "glyph": "="
+      "footprint": [2, 1]
     },
     {
       "id": "yunque",
       "kind": "prop",
       "name": "yunque de la herrería",
       "cell": [27, 90],
-      "footprint": [1, 1],
-      "glyph": "y"
+      "footprint": [1, 1]
     },
     {
       "id": "carro",
       "kind": "prop",
       "name": "carro de mano",
       "cell": [72, 88],
-      "footprint": [2, 1],
-      "glyph": "c"
+      "footprint": [2, 1]
     },
     {
       "id": "rueda_molino",
@@ -189,7 +177,6 @@
       "name": "rueda hidráulica",
       "cell": [96, 48],
       "footprint": [1, 2],
-      "glyph": "r",
       "shape": "cylinder"
     },
     {
@@ -198,7 +185,6 @@
       "name": "fardo de heno",
       "cell": [104, 84],
       "footprint": [1, 1],
-      "glyph": "f",
       "shape": "sphere"
     },
     {
@@ -206,80 +192,70 @@
       "kind": "decor",
       "name": "cartel: Robledo",
       "cell": [78, 68],
-      "footprint": [1, 1],
-      "glyph": "i"
+      "footprint": [1, 1]
     },
     {
       "id": "farol_plaza",
       "kind": "item",
       "name": "farol de la plaza",
       "cell": [58, 82],
-      "footprint": [1, 1],
-      "glyph": "l"
+      "footprint": [1, 1]
     },
     {
       "id": "roble_n1",
       "kind": "tree",
       "name": "roble",
       "cell": [6, 6],
-      "footprint": [2, 2],
-      "glyph": "T"
+      "footprint": [2, 2]
     },
     {
       "id": "roble_n2",
       "kind": "tree",
       "name": "roble",
       "cell": [30, 8],
-      "footprint": [2, 2],
-      "glyph": "T"
+      "footprint": [2, 2]
     },
     {
       "id": "pino_ne",
       "kind": "tree",
       "name": "pino",
       "cell": [118, 12],
-      "footprint": [2, 2],
-      "glyph": "T"
+      "footprint": [2, 2]
     },
     {
       "id": "roble_o",
       "kind": "tree",
       "name": "roble",
       "cell": [8, 44],
-      "footprint": [2, 2],
-      "glyph": "T"
+      "footprint": [2, 2]
     },
     {
       "id": "pino_e",
       "kind": "tree",
       "name": "pino",
       "cell": [116, 72],
-      "footprint": [2, 2],
-      "glyph": "T"
+      "footprint": [2, 2]
     },
     {
       "id": "roble_s1",
       "kind": "tree",
       "name": "roble",
       "cell": [34, 114],
-      "footprint": [2, 2],
-      "glyph": "T"
+      "footprint": [2, 2]
     },
     {
       "id": "roble_s2",
       "kind": "tree",
       "name": "roble",
       "cell": [76, 116],
-      "footprint": [2, 2],
-      "glyph": "T"
+      "footprint": [2, 2]
     },
     {
       "id": "pino_se",
       "kind": "tree",
       "name": "pino",
       "cell": [116, 110],
-      "footprint": [2, 2],
-      "glyph": "T"
+      "footprint": [2, 2]
     },
     {
       "id": "alcaldesa_mirla",
@@ -287,7 +263,6 @@
       "name": "Alcaldesa Mirla",
       "cell": [56, 84],
       "footprint": [1, 1],
-      "glyph": "n",
       "role": "villager",
       "description": "alcaldesa de cabello cano con una vara de mando"
     },
@@ -297,7 +272,6 @@
       "name": "Boris el Herrero",
       "cell": [28, 92],
       "footprint": [1, 1],
-      "glyph": "n",
       "role": "merchant",
       "description": "herrero fornido con mandil de cuero quemado"
     },
@@ -307,7 +281,6 @@
       "name": "Greta la Posadera",
       "cell": [62, 102],
       "footprint": [1, 1],
-      "glyph": "n",
       "role": "merchant",
       "description": "posadera menuda con delantal de lino"
     },
@@ -317,7 +290,6 @@
       "name": "Guardia Roric",
       "cell": [72, 58],
       "footprint": [1, 1],
-      "glyph": "n",
       "role": "guard",
       "description": "guardia con lanza y capa parda"
     },
@@ -327,7 +299,6 @@
       "name": "Halmar el Molinero",
       "cell": [104, 53],
       "footprint": [1, 1],
-      "glyph": "n",
       "role": "peasant",
       "description": "molinero blanco de harina hasta las cejas"
     },
@@ -336,9 +307,7 @@
       "kind": "player",
       "name": "Tú",
       "cell": [60, 84],
-      "footprint": [1, 1],
-      "glyph": "@"
+      "footprint": [1, 1]
     }
-  ],
-  "ambient_event": "El agua golpea las tablas del puente y huele a pan recién hecho."
+  ]
 }

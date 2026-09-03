@@ -104,10 +104,6 @@
               "maxItems": 2,
               "description": "[width_cells, height_cells]; usually [1,1] for props/NPCs. HARD LIMIT for anything that MOVES: an npc declares at most 2 cells per side and the player at most 1 — that is the body the simulator actually moves, and the gate rejects anything wider. A bigger creature is NOT a bigger footprint; its size lives in `description`, which is what paints it. The five static kinds (building/prop/item/tree/decor) have no limit: their footprint IS geometry."
             },
-            "glyph": {
-              "type": "string",
-              "description": "A single printable ASCII char."
-            },
             "shape": {
               "type": "string",
               "enum": [
@@ -121,13 +117,6 @@
             "h": {
               "type": "number",
               "description": "Optional real-world height in METRES (NOT cells — footprint stays in cells). Guide: house 2.5-4, tower/church 5-8, tree 3-8, prop 0.5-2, item/decor ~0.5. Omit to use the per-kind default (building 2.5, tree 4, prop 1, item/decor 0.5)."
-            },
-            "attach": {
-              "type": "string",
-              "enum": [
-                "wall"
-              ],
-              "description": "decor only: snap to the nearest wall cell (torches, signs, banners)."
             },
             "role": {
               "type": "string",
@@ -154,8 +143,7 @@
             "kind",
             "name",
             "cell",
-            "footprint",
-            "glyph"
+            "footprint"
           ]
         },
         "maxItems": 80

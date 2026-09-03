@@ -10,6 +10,11 @@ import json
 import os
 from pathlib import Path
 
+try:
+    from .campos_retirados import MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA, MOTIVO_DE_CLAVE_RETIRADA
+except ImportError:  # importado plano (sys.path = ai_server), como hace llm_client
+    from campos_retirados import MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA, MOTIVO_DE_CLAVE_RETIRADA
+
 
 _PROMPTS_DIR = Path(
     os.environ.get(
@@ -90,6 +95,65 @@ def _entity_fields_del_contrato() -> list:
 
 
 ENTITY_FIELDS = _entity_fields_del_contrato()
+
+
+def _campos_de_la_raiz_del_tool() -> list:
+    """Campos de la RAÍZ que el tool ofrece al motor. Es la lista que se le
+    ENSEÑA cuando trae una clave de más (espejo de `EMITTED_SCENE_FIELDS`):
+    los del tool y ni uno más — un nombre sin esquema no se le enseña."""
+    props = GENERATE_SCENE_TOOL["input_schema"].get("properties")
+    if not isinstance(props, dict) or not props:
+        raise ValueError(
+            "generate_scene.json: `properties` de la raíz vacío — sin la lista de campos "
+            "el saneador no puede rechazar una clave de raíz desconocida (espejo de SCENE_FIELDS)"
+        )
+    return list(props.keys())
+
+
+CAMPOS_DE_LA_RAIZ_DEL_TOOL = _campos_de_la_raiz_del_tool()
+
+# La allow-list del rechazo de clave de raíz desconocida (#400, espejo del
+# `.strict()` de EmittedSceneSchema): el tool más `place_anchors`, el único
+# campo que el zod declara (lo escriben este saneador y el motor del banco, lo
+# leen los handlers de tile y place) y el tool real aún no ofrece — issue
+# derivado. Que la brecha sea EXACTAMENTE esa la canda `contract-prompts.test.ts`
+# del lado TS; si crece, el test rompe antes de que los dos gates diverjan.
+SCENE_FIELDS = [*CAMPOS_DE_LA_RAIZ_DEL_TOOL, "place_anchors"]
+
+
+def _mensaje_de_claves_de_raiz_desconocidas(claves: list) -> str:
+    """Espejo de `sceneErrorMap` (nefan-core): las claves RETIRADAS llevan su
+    motivo (`campos_retirados.py`, el mismo texto que el zod); las demás, la
+    lista de lo que el tool ofrece."""
+    partes = [MOTIVO_DE_CLAVE_RETIRADA[k] for k in claves if k in MOTIVO_DE_CLAVE_RETIRADA]
+    resto = [k for k in claves if k not in MOTIVO_DE_CLAVE_RETIRADA]
+    if resto:
+        una = len(resto) == 1
+        partes.append(
+            f"la escena trae {'la clave' if una else 'las claves'} "
+            f"{', '.join('`' + k + '`' for k in resto)}, que no {'existe' if una else 'existen'} "
+            f"en el contrato. Una escena tiene EXACTAMENTE estos campos: "
+            f"{' | '.join(CAMPOS_DE_LA_RAIZ_DEL_TOOL)}. "
+            "Lo que quisieras contar del lugar va en `scene_description`"
+        )
+    return "; ".join(partes)
+
+
+def _mensaje_de_claves_de_entity_desconocidas(eid: str, claves: list) -> str:
+    """Espejo de `entityErrorMap` (nefan-core): ídem para una entity."""
+    quien = f"entity '{eid}'"
+    partes = [f"{quien} trae {MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA[k]}" for k in claves if k in MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA]
+    resto = [k for k in claves if k not in MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA]
+    if resto:
+        una = len(resto) == 1
+        partes.append(
+            f"{quien}: {'la clave' if una else 'las claves'} "
+            f"{', '.join(repr(k) for k in sorted(resto))} no "
+            f"{'existe' if una else 'existen'} en el contrato. "
+            f"Una entity tiene EXACTAMENTE estos campos: {' | '.join(ENTITY_FIELDS)}. "
+            "Lo que quisieras contar de ella va en `description`, que es de donde sale su aspecto"
+        )
+    return "; ".join(partes)
 
 # Tipos de rasgo de suelo del plan de tile (`ground`). Espejo de
 # GroundFeatureSchema en nefan-core/src/scene/blueprint/ground.ts.
@@ -521,15 +585,16 @@ def validate_scene_response(data: dict) -> dict:
     """Valida y normaliza una escena Map Format D del LLM.
 
     FAIL-LOUD en la FORMA (espejo de EmittedSceneSchema, el gate del pre-flight
-    MCP): un error estructural que el modelo DEBE corregir (grid que no cuadra
-    con size, entity con kind fuera del enum o sin glyph/cell/footprint, tile
-    sin biome) LANZA `ValueError` con el motivo — antes se rellenaba/clampaba en
+    MCP): un error estructural que el modelo DEBE corregir (un tile con grid
+    propio, entity con kind fuera del enum o sin cell/footprint, tile sin
+    biome, una clave que el contrato no declara — en la raíz o en una entity)
+    LANZA `ValueError` con el motivo — antes se rellenaba/clampaba/podaba en
     silencio y el mapa salía deformado sin que el modelo se enterara.
 
     Se CONSERVAN las normalizaciones BENIGNAS que el gate del modelo tolera y
     que por tanto no pueden rechazar tras el pre-flight: defaults de
-    scene_id/description, clamp de cell/footprint al grid y descarte de campos
-    legacy/retirados.
+    scene_id/description y clamp de cell/footprint al grid. Este saneador NO
+    añade campos: lo que sale es lo que entró, saneado.
     """
     import uuid as _uuid
 
@@ -537,7 +602,6 @@ def validate_scene_response(data: dict) -> dict:
     scene_id = data.get("scene_id") or f"scene_{_uuid.uuid4().hex[:8]}"
     data["scene_id"] = scene_id
     data["scene_description"] = data.get("scene_description") or "Un paraje desolado."
-    data["ambient_event"] = data.get("ambient_event") or ""
 
     # ── Tile (plano continuo) ────────────────────────────────────────────
     # Un tile no lleva size/terrain (la base es biome + ground/volumes; el grid
@@ -577,21 +641,35 @@ def validate_scene_response(data: dict) -> dict:
             raise ValueError(
                 "un tile necesita `biome` (grass|forest_floor|meadow|sand|dirt|stone|snow|swamp)"
             )
-        anchors = data.get("place_anchors")
-        if isinstance(anchors, list):
-            clean_a = []
-            for i, a in enumerate(anchors[:8]):
-                if isinstance(a, dict) and isinstance(a.get("place_id"), str) and a["place_id"]:
-                    entry = {"place_id": a["place_id"]}
-                    rect = a.get("rect")
-                    if isinstance(rect, list) and len(rect) == 4 and all(isinstance(v, int) for v in rect):
-                        entry["rect"] = rect
-                    clean_a.append(entry)
-                else:
-                    print(f"validate_scene_response: place_anchors[{i}] malformado, descartado", flush=True)
-            data["place_anchors"] = clean_a
-        else:
-            data.pop("place_anchors", None)
+        # `place_anchors`: espejo EXACTO del zod (lista de ≤8, `place_id` no
+        # vacío, `rect` opcional de 4 enteros) y FAIL-LOUD nombrando el
+        # elemento. Hasta la QA de #400 se podaba en silencio (truncar a 8,
+        # tirar el rect de 3, descartar el ancla sin place_id con traza)
+        # mientras el zod rechazaba: el mismo tile con dos veredictos, y un
+        # comentario en el zod que decía «espejo» sin serlo.
+        if "place_anchors" in data:
+            anchors = data["place_anchors"]
+            if not isinstance(anchors, list):
+                raise ValueError("`place_anchors` debe ser una lista de anclas {place_id, rect?}")
+            if len(anchors) > 8:
+                raise ValueError(f"`place_anchors`: como mucho 8 anclas por tile (trae {len(anchors)})")
+            for i, a in enumerate(anchors):
+                if not isinstance(a, dict):
+                    raise ValueError(f"`place_anchors[{i}]`: un ancla es un objeto {{place_id, rect?}}")
+                if not isinstance(a.get("place_id"), str) or not a["place_id"]:
+                    raise ValueError(f"`place_anchors[{i}].place_id`: obligatorio y no vacío")
+                if "rect" in a and not (
+                    isinstance(a["rect"], list)
+                    and len(a["rect"]) == 4
+                    and all(isinstance(v, int) and not isinstance(v, bool) for v in a["rect"])
+                ):
+                    raise ValueError(f"`place_anchors[{i}].rect`: cuatro enteros [col, row, ancho, alto]")
+                desconocidas_a = [k for k in a if k not in ("place_id", "rect")]
+                if desconocidas_a:
+                    raise ValueError(
+                        f"`place_anchors[{i}]` trae {', '.join('`' + k + '`' for k in desconocidas_a)}: "
+                        "un ancla solo tiene `place_id` y `rect`"
+                    )
 
     # ── Candado de las variantes retiradas (espejo de EmittedSceneSchema) ─
     # Format D tiene UNA forma: el tile del mundo continuo. La "suelta"
@@ -603,41 +681,24 @@ def validate_scene_response(data: dict) -> dict:
             "una escena necesita `tile` {tx,ty}: es la única variante de Format D "
             "(mundo continuo, pídela con generate_tile)"
         )
-    if data.pop("stage", None) is not None:
-        print("validate_scene_response: stage descartado (el plató proscenio se retiró)", flush=True)
-    # La `style_ref` de ESCENA elegía la lámina que guiaba el repintado del
-    # tile, y ese repintado murió con la vista oblicua: la primera persona
-    # pinta con style_token + lámina de superficies + refs de CARA. El gate la
-    # RECHAZA aguas arriba (pre-flight MCP); aquí se descarta con traza, como
-    # `stage`. La que sigue viva es la de cada NPC (`entities[].style_ref`).
-    if data.pop("style_ref", None) is not None:
-        print(
-            "validate_scene_response: style_ref de escena descartado "
-            "(la ref de escena se retiró con el repintado del tile)",
-            flush=True,
-        )
-    # `__expanded` es la marca INTERNA del expander (nefan-core scene-expand):
-    # separa las dos poblaciones de escena, y una escena EMITIDA que la trae
-    # miente sobre su estado de expansión — con `terrain` vacío o ausente
-    # reventaba el validador de jugabilidad como 500 (#195). FAIL-LOUD, no un
-    # `pop`: mentir sobre el estado de expansión no es un campo retirado
-    # inocuo que se pueda podar en silencio. Espejo de EmittedSceneSchema.
-    if "__expanded" in data:
-        raise ValueError(
-            "`__expanded` es la marca interna del expander: una escena emitida no la lleva — "
-            "quítala y declara `biome` + primitivas; el engine expande y marca él"
-        )
+    # ── Clave de RAÍZ desconocida → FAIL-LOUD (#400, espejo del `.strict()` de
+    # EmittedSceneSchema). Hasta aquí la raíz era una allow-list muda a trozos:
+    # `stage`, la `style_ref` de escena y tres campos SVG se podaban con traza,
+    # diez campos legacy se podaban sin ella, y cualquier otra clave inventada
+    # cruzaba entera hasta el save. El zod rebota TODO lo que no declara
+    # nombrándolo, así que aquí igual — o el mismo tile tendría dos veredictos
+    # según por dónde entrase (guion 40). Va DESPUÉS del bloque del tile porque
+    # `size`/`terrain` tienen su propio mensaje ahí y `terrain: []` se tolera y
+    # se poda, exactamente como el zod. Las claves retiradas llevan su motivo
+    # propio (`_MOTIVO_DE_CLAVE_RETIRADA`).
+    desconocidas = [k for k in data if k not in SCENE_FIELDS]
+    if desconocidas:
+        raise ValueError(_mensaje_de_claves_de_raiz_desconocidas(desconocidas))
 
     # ── Map plan (ground + volumes) ──────────────────────────────────────
     # Espejo de parseGround/parseVolumes en nefan-core: mismo criterio en
     # ambos lados o un plan aceptado aquí lo rechazaría el bridge al
-    # persistir el retoque. Los formatos SVG antiguos (map_svg, map_ground,
-    # terrain_svg) ya no se aceptan: descartar en silencio con traza — nunca
-    # 422 (los saves viejos deben resumir sin error).
-    for legacy in ("map_svg", "map_ground", "terrain_svg"):
-        if legacy in data:
-            print(f"validate_scene: {legacy} SVG legacy descartado (usa ground + volumes)")
-            data.pop(legacy, None)
+    # persistir el retoque.
     if "ground" in data:
         feats = validate_ground(data.get("ground"))
         if feats is not None:
@@ -720,19 +781,12 @@ def validate_scene_response(data: dict) -> dict:
         # proteger. El mensaje nombra la clave y la entity, como el de `role`.
         desconocidas = [k for k in ent if k not in ENTITY_FIELDS]
         if desconocidas:
-            raise ValueError(
-                f"entity '{eid}': {'la clave' if len(desconocidas) == 1 else 'las claves'} "
-                f"{', '.join(repr(k) for k in sorted(desconocidas))} no "
-                f"{'existe' if len(desconocidas) == 1 else 'existen'} en el contrato. "
-                f"Una entity tiene EXACTAMENTE estos campos: {' | '.join(ENTITY_FIELDS)}. "
-                "Lo que quisieras contar de ella va en `description`, que es de donde sale su aspecto"
-            )
+            raise ValueError(_mensaje_de_claves_de_entity_desconocidas(eid, desconocidas))
 
         # Fail-loud en la FORMA (espejo de EntitySchema): kind del enum, cell
-        # par numérico, footprint par de enteros ≥1, glyph de 1 char. Se
-        # CONSERVAN las normalizaciones benignas que FormatDScene tolera y que
-        # por tanto NO deben rechazar tras el pre-flight: clamp de cell/footprint
-        # al grid y glifo de reserva ante colisión con el terreno.
+        # par numérico, footprint par de enteros ≥1. Se CONSERVA la
+        # normalización benigna que el gate tolera y que por tanto NO debe
+        # rechazar tras el pre-flight: el clamp de cell/footprint al grid.
         kind = ent.get("kind")
         if kind not in VALID_ENTITY_KINDS:
             raise ValueError(f"entity '{eid}': kind '{kind}' inválido; permitidos: {sorted(VALID_ENTITY_KINDS)}")
@@ -766,28 +820,37 @@ def validate_scene_response(data: dict) -> dict:
         w = max(1, min(int(fp[0]), cols - col))
         h = max(1, min(int(fp[1]), rows - row))
 
-        glyph = ent.get("glyph")
-        if not (isinstance(glyph, str) and len(glyph) == 1):
-            raise ValueError(f"entity '{eid}': `glyph` debe ser un único carácter")
-
+        # `name` es el RÓTULO que lee el jugador, con el vocabulario compartido
+        # de #397 (entity-vocabulary.ts): obligatorio, no vacío, no en blanco.
+        # Rellenarlo con el id era inventarse un rótulo en silencio, y el mismo
+        # tile tenía dos veredictos según la vía (QA de #400). La MISMA frase
+        # que MOTIVO_NAME_INVALIDO en el zod.
+        name_raw = ent.get("name")
+        if not isinstance(name_raw, str) or not name_raw.strip():
+            raise ValueError(
+                f"entity '{eid}': `name` no puede faltar, estar vacío ni ser solo espacios: "
+                "es el rótulo que lee el jugador (la procedencia va en `description`)"
+            )
         clean_ent = {
             "id": eid,
             "kind": kind,
-            "name": ent.get("name") or eid,
+            "name": name_raw,
             "cell": [col, row],
             "footprint": [w, h],
-            "glyph": glyph,
         }
         if ent.get("shape") in ("box", "cylinder", "sphere", "cone"):
             clean_ent["shape"] = ent["shape"]
-        # Altura en METROS (espejo de KIND_DEFAULT_HEIGHT/MAX_ENTITY_HEIGHT_M
-        # en scene-normalize.ts) — sin whitelist aquí el campo se perdería.
-        if (
-            isinstance(ent.get("h"), (int, float))
-            and not isinstance(ent.get("h"), bool)
-            and 0 < ent["h"] <= 20
-        ):
-            clean_ent["h"] = float(ent["h"])
+        # Altura en METROS. Espejo exacto del zod (`h: z.number().positive()`):
+        # `h ≤ 0` o no numérica LANZA, y una altura grande se CONSERVA tal cual
+        # — el recorte a 20 m lo hace `formatDToWorld` al normalizar, en las
+        # dos vías por igual. Hasta la QA de #400 esto descartaba en silencio
+        # la negativa (el zod la rechaza) y también la > 20 (el zod la acepta):
+        # la altura se perdía solo por la vía de API directa.
+        if "h" in ent:
+            altura = ent["h"]
+            if not isinstance(altura, (int, float)) or isinstance(altura, bool) or altura <= 0:
+                raise ValueError(f"entity '{eid}': `h` es la altura en metros y debe ser un número > 0 ({altura!r})")
+            clean_ent["h"] = float(altura)
         # Ref de estilo del NPC ELEGIDA por el motor: `entities[].style_ref` la
         # declara generate_scene.json y de ella sale la clave de caché del skin
         # (npcSkinStyleRef, src/games/style-categories.ts). Sin whitelist aquí
@@ -827,9 +890,6 @@ def validate_scene_response(data: dict) -> dict:
                     f"ropa, arma) o quita el campo"
                 )
             clean_ent["description"] = desc.strip()
-        # decor puede pedir snap al muro más cercano (lo resuelve el expander TS).
-        if ent.get("attach") == "wall":
-            clean_ent["attach"] = "wall"
         cleaned.append(clean_ent)
     data["entities"] = cleaned
 
@@ -875,11 +935,6 @@ def validate_scene_response(data: dict) -> dict:
         data["vegetation_zones"] = clean_veg
     else:
         data.pop("vegetation_zones", None)
-
-    # ── Strip legacy fields the new schema doesn't use ───────────────────
-    for legacy in ("dimensions", "sky", "fog", "vegetation", "lighting", "exits",
-                   "npcs", "objects", "surfaces", "zone_type"):
-        data.pop(legacy, None)
 
     return data
 

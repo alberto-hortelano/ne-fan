@@ -1,5 +1,5 @@
 {
-  "description": "un NPC con los TRES campos del motor: role del vocabulario, description (prompt del skin) y style_ref elegida",
+  "description": "una altura grande NO se rechaza ni se pierde en ninguna de las dos vías: el recorte a 20 m lo hace `formatDToWorld` al normalizar (QA de #400: el saneador la descartaba y la altura se perdía solo por la vía de API directa).",
   "expect": "accept",
   "payload": {
     "scene_id": "tile_0_0",
@@ -24,20 +24,18 @@
         ]
       },
       {
-        "id": "roric",
-        "kind": "npc",
-        "name": "Guardia Roric",
+        "id": "torre",
+        "kind": "building",
+        "name": "torre del homenaje",
         "cell": [
           60,
           60
         ],
         "footprint": [
-          1,
-          1
+          4,
+          4
         ],
-        "role": "guard",
-        "description": "guardia con lanza y capa parda",
-        "style_ref": "warrior"
+        "h": 25
       }
     ]
   }

@@ -102,7 +102,7 @@ describe("fixtures de data/scenes — solo tiles", () => {
     scene_description: "Una aldea sin sitio en el mundo.",
     size: { cols: 4, rows: 2, meters_per_cell: 2 },
     terrain: ["gggg", "gggg"],
-    entities: [{ id: "p", kind: "player", name: "Tú", cell: [1, 1], footprint: [1, 1], glyph: "@" }],
+    entities: [{ id: "p", kind: "player", name: "Tú", cell: [1, 1], footprint: [1, 1] }],
   };
 
   it("caza una escena suelta perfectamente formada (el caso del issue #172)", () => {

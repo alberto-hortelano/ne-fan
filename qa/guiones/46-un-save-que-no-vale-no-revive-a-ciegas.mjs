@@ -48,7 +48,6 @@ const ENTITY_IMPOSIBLE = {
   name: "Gigante del guion 46",
   cell: [1, 1],
   footprint: [8, 8],
-  glyph: "n",
 };
 
 /** Un resume_session crudo por el cable del bridge, DESDE la página (la URL

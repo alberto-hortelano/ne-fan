@@ -228,9 +228,8 @@ describe("world_vocabulary en turnos de tile", () => {
               biome: "grass",
               scene_description: "campo",
               entities: llmCtx.bootstrap_world_map
-                ? [{ id: "player", kind: "player", cell: [64, 64], footprint: [1, 1], glyph: "@" }]
+                ? [{ id: "player", kind: "player", cell: [64, 64], footprint: [1, 1] }]
                 : [],
-              ambient_event: "",
             },
           }),
         },

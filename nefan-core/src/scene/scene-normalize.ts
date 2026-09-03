@@ -29,7 +29,6 @@ type FormatDEntity = {
   name: string;
   cell: [number, number];
   footprint: [number, number];
-  glyph?: string;
   /** Pista de forma para el render (box|cylinder|sphere|cone). Opcional; el
    *  cliente la usa como geometría del volumen, en vez de caer a caja. */
   shape?: string;
@@ -266,7 +265,6 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     biome: typeof raw.biome === "string" ? raw.biome : undefined,
     objects,
     npcs,
-    ambient_event: raw.ambient_event,
     // Metadatos para el cliente — el renderer los ignora.
     __player_start: playerStart,
     // El plan COMPUESTO (declarado + derivado del esquema). Viaja resuelto a

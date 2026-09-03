@@ -1,5 +1,5 @@
 {
-  "description": "un tile NO lleva `size`: su base es `biome` + primitivas y el grid lo sintetiza el engine (128×128 @0,5 m). ai_server lo podaba en silencio, así que el mismo tile tenía dos veredictos según por dónde entrase (#237)",
+  "description": "`name` es la etiqueta que lee el jugador y es obligatoria: los dos gates rechazan la entity sin ella (heredado, QA de #400: el saneador la rellenaba con el id).",
   "expect": "reject",
   "payload": {
     "scene_id": "tile_0_0",
@@ -9,11 +9,6 @@
       "ty": 0
     },
     "biome": "dirt",
-    "size": {
-      "cols": 128,
-      "rows": 128,
-      "meters_per_cell": 0.5
-    },
     "entities": [
       {
         "id": "player",
@@ -22,6 +17,18 @@
         "cell": [
           64,
           64
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      },
+      {
+        "id": "poste",
+        "kind": "prop",
+        "cell": [
+          60,
+          60
         ],
         "footprint": [
           1,

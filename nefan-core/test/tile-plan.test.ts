@@ -22,10 +22,10 @@ function tile(over: Record<string, unknown> = {}): Record<string, unknown> {
     ground: [{ id: "senda", kind: "path", points: [[0, 64], [128, 64]], w: 4, material: "dirt" }],
     volumes: [{ id: "casa", label: "casa", type: "building", rect: [20, 20, 10, 8], wall_h: 5 }],
     entities: [
-      { id: "roble", kind: "tree", name: "roble", cell: [80, 80], footprint: [4, 4], glyph: "t" },
-      { id: "barril", kind: "prop", name: "barril", cell: [40, 90], footprint: [2, 2], glyph: "b" },
-      { id: "moneda", kind: "item", name: "moneda", cell: [50, 50], footprint: [1, 1], glyph: "$" },
-      { id: "herrero", kind: "npc", name: "Beltrán", cell: [30, 30], footprint: [1, 1], glyph: "n" },
+      { id: "roble", kind: "tree", name: "roble", cell: [80, 80], footprint: [4, 4] },
+      { id: "barril", kind: "prop", name: "barril", cell: [40, 90], footprint: [2, 2] },
+      { id: "moneda", kind: "item", name: "moneda", cell: [50, 50], footprint: [1, 1] },
+      { id: "herrero", kind: "npc", name: "Beltrán", cell: [30, 30], footprint: [1, 1] },
     ],
     ...over,
   };
@@ -116,7 +116,6 @@ describe("composeTilePlan · lo que no cabe se dice", () => {
       name: "trasto",
       cell: [(i % 20) * 3, Math.floor(i / 20) * 6],
       footprint: [1, 1],
-      glyph: "x",
     }));
     const { plan, warnings } = composeTilePlan(
       tile({
@@ -159,7 +158,6 @@ describe("composeTilePlan · lo que no cabe se dice", () => {
       name: "trasto",
       cell: [(i % 20) * 3, Math.floor(i / 20) * 6],
       footprint: [1, 1],
-      glyph: "x",
     }));
     const { warnings } = composeTilePlan(
       tile({
@@ -188,7 +186,6 @@ describe("composeTilePlan · lo que no cabe se dice", () => {
       name: "trasto",
       cell: [(i % 20) * 3, Math.floor(i / 20) * 6],
       footprint: [1, 1],
-      glyph: "x",
     }));
     const { warnings } = composeTilePlan(tile({ entities: trastos }));
     assert.equal(
@@ -211,7 +208,6 @@ describe("composeTilePlan · lo que no cabe se dice", () => {
       name: "trasto",
       cell: [(i % 20) * 3, Math.floor(i / 20) * 6],
       footprint: [1, 1],
-      glyph: "x",
     }));
     const { warnings } = composeTilePlan(
       tile({ entities: trastos, vegetation_zones: [{ type: "pino", area: "rest", density: 999 }] }),
@@ -236,7 +232,6 @@ describe("composeTilePlan · lo que no cabe se dice", () => {
       name: "trasto",
       cell: [(i % 20) * 6, 40 + Math.floor(i / 20) * 8],
       footprint: [1, 1],
-      glyph: "x",
     }));
     const { plan, warnings } = composeTilePlan(tile({ entities: trastos }));
     assert.ok(plan);
@@ -276,7 +271,7 @@ describe("composeTilePlan · lo que el tile no declara no se inventa", () => {
     const { warnings } = composeTilePlan({
       tile: { tx: 0, ty: 0 },
       scene_id: "tile_0_0",
-      entities: [{ id: "roble", kind: "tree", name: "roble", cell: [80, 80], footprint: [4, 4], glyph: "t" }],
+      entities: [{ id: "roble", kind: "tree", name: "roble", cell: [80, 80], footprint: [4, 4] }],
     });
     assert.deepEqual(warnings, [], "no declarar suelo no es lo mismo que declararlo mal");
   });

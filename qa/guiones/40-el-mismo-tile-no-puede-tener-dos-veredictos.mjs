@@ -97,9 +97,9 @@ const base = {
   scene_description: "Una plaza de tierra batida entre casas encaladas.",
   tile: { tx: 0, ty: 0 },
   biome: "dirt",
-  entities: [{ id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" }],
+  entities: [{ id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1] }],
 };
-const npc = (extra) => ({ id: "roric", kind: "npc", name: "Guardia Roric", cell: [60, 60], footprint: [1, 1], glyph: "n", ...extra });
+const npc = (extra) => ({ id: "roric", kind: "npc", name: "Guardia Roric", cell: [60, 60], footprint: [1, 1], ...extra });
 const conNpc = (extra) => ({ ...base, entities: [...base.entities, npc(extra)] });
 
 /** [nombre, payload, eje, por qué está en la rejilla]
@@ -107,7 +107,10 @@ const conNpc = (extra) => ({ ...base, entities: [...base.entities, npc(extra)] }
  *  `eje` es "campo" (forma de la escena o de una entity: los dos gates tienen
  *  que dar el MISMO veredicto) o el id del BLOQUE DECLARATIVO que perturba
  *  (`ground`, `volumes`, `vegetation_zones`, `scatter`: zod duro, ai_server
- *  laxo — y los cuatro tienen que comportarse igual entre sí). */
+ *  laxo — y los cuatro tienen que comportarse igual entre sí). El eje
+ *  "campo-pendiente" (campos que divergían con issue pendiente) nació y murió
+ *  en la QA de PR-A de T7: `h` y `name` se alinearon en la misma vuelta y no
+ *  quedó ninguno — una lista vacía no canda nada. */
 // Generador VÁLIDO de verdad, comprobado contra `parseScatter`: un `cylinder`
 // exige `rTop`, y la primera versión de este control usaba `r` — el guion se
 // puso rojo y tenía razón (el dato de prueba estaba mal, no el código).
@@ -129,7 +132,8 @@ const CASOS = [
   ["tile con terrain vacío", { ...base, terrain: [] }, "campo", "el borde tolerado: los dos podan sin quejarse"],
   ["entity kind fuera del enum", conNpc({ kind: "creature" }), "campo", "vocabulario compartido"],
   ["role inventado", conNpc({ role: "herrero" }), "campo", "el vocabulario que YA candaban las fixtures"],
-  ["entity glyph de dos chars", conNpc({ glyph: "nn" }), "campo", "forma de entity que ninguna fixture toca"],
+  ["entity cell no numérica", conNpc({ cell: ["a", 60] }), "campo", "forma de entity que ninguna fixture toca"],
+  ["clave desconocida en la raíz", { ...base, nota_del_motor: "sin uso" }, "campo", "#400: la raíz es `.strict()` en el zod y allow-list fail-loud en ai_server"],
   ["entity footprint 0", conNpc({ footprint: [0, 1] }), "campo", "ídem"],
   ["escena sin tile", { ...base, tile: undefined }, "campo", "la variante retirada"],
   ["tile sin biome", (() => { const s = { ...base }; delete s.biome; return s; })(), "campo", "el bioma es la base del tile"],
@@ -146,6 +150,26 @@ const CASOS = [
   ["scatter_zones basura", { ...base, scatter_zones: "hola" }, "scatter", "#203 metió scatter en el zod; tiene que quedar donde sus hermanos"],
   ["scatter zona sin generador", { ...base, scatter_generators: gen, scatter_zones: [zona({ kind: "no_existe" })] }, "scatter", "ídem"],
   ["scatter density negativa", { ...base, scatter_generators: gen, scatter_zones: [zona({ density: -1 })] }, "scatter", "ídem"],
+  // `place_anchors` entró en el zod con #400 con forma dura (≤8, `place_id`
+  // obligatorio, `rect` de 4 enteros) y en la QA de PR-A ai_server lo podaba
+  // en silencio: hoy es ESPEJO (rechaza nombrando el elemento), así que es
+  // eje `campo` y tiene fixture compartida por cada forma.
+  ["place_anchors 9 elementos", { ...base, place_anchors: Array.from({ length: 9 }, (_, i) => ({ place_id: `p${i}` })) }, "campo", "QA #400: ai_server truncaba a 8 en silencio"],
+  ["place_anchors rect de 3", { ...base, place_anchors: [{ place_id: "x", rect: [1, 2, 3] }] }, "campo", "QA #400: ai_server descartaba el rect"],
+  ["place_anchors sin place_id", { ...base, place_anchors: [{ rect: [1, 2, 3, 4] }] }, "campo", "QA #400: ai_server descartaba el elemento"],
+  ["place_anchors bueno", { ...base, place_anchors: [{ place_id: "taberna", rect: [52, 48, 24, 16] }] }, "campo", "control: la forma buena la aceptan los dos"],
+  // QA de la vuelta de PR-A (2026-09-03): el ancla del zod era `z.object` SIN
+  // `.strict()` (la clave extra se caía muda) y ai_server la rechazaba
+  // nombrándola: la dirección CARA (eje 2), el pre-flight acepta y ai_server
+  // tira el tile. Desde entonces el ancla es `.strict()` y este caso lo canda.
+  ["ancla con clave extra", { ...base, place_anchors: [{ place_id: "taberna", color: 1 }] }, "campo", "QA #400 vuelta: el ancla es .strict() en los dos lados"],
+
+  // ── heredados, alineados en la QA de PR-A de T7 (2026-09-03) ────────────
+  // Medidos divergentes en `main` (zod rechaza / ai_server descarta o rellena)
+  // y arreglados en la misma vuelta: son CAMPOS y llevan fixture compartida.
+  ["entity h negativa", conNpc({ h: -1 }), "campo", "ai_server descartaba `h` en silencio y aceptaba"],
+  ["entity h grande", conNpc({ h: 25 }), "campo", "los dos aceptan; ai_server perdía la altura (el recorte a 20 m es de formatDToWorld)"],
+  ["entity sin name", conNpc({ name: undefined }), "campo", "ai_server rellenaba `name` con el id y aceptaba"],
 ];
 
 const TS = `

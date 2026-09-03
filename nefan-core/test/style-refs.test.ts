@@ -143,10 +143,12 @@ describe("style_ref de escena — retirada fail-loud, no ignorada", () => {
 
   it("una escena con style_ref se RECHAZA nombrando el campo", () => {
     const r = EmittedSceneSchema.safeParse(tile({ style_ref: "settlement" }));
-    assert.equal(r.success, false, "un campo retirado no puede colarse por passthrough");
-    const issue = r.error!.issues.find((i) => i.path.join(".") === "style_ref");
+    assert.equal(r.success, false, "un campo retirado no puede colarse");
+    // Con la raíz `.strict()` (#400) el rebote es el de clave desconocida, que
+    // nombra el campo en `keys`; el motivo propio lo pone el errorMap.
+    const issue = r.error!.issues.find((i) => i.code === "unrecognized_keys" && i.keys.includes("style_ref"));
     assert.ok(issue, "el error apunta al campo, para que el motor sepa qué quitar");
-    assert.match(issue!.message, /retirado/);
+    assert.match(issue!.message, /`style_ref` de escena está retirado/);
   });
 
   it("sin ella la misma escena pasa, y la style_ref de NPC sigue viva", () => {
@@ -159,7 +161,6 @@ describe("style_ref de escena — retirada fail-loud, no ignorada", () => {
           name: "Aldeana",
           cell: [4, 4],
           footprint: [1, 1],
-          glyph: "n",
           style_ref: "commoner",
         },
       ],

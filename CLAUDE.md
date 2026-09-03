@@ -180,7 +180,7 @@ debug del renderer) viven aparte, en `input/dev-tools-input.ts`.
 
 Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
 
-**1. Format D** — lo que produce el motor narrativo (`generate_scene`), con **una sola variante**: el **tile** del mundo continuo (`tile{tx,ty}` + `biome` + `ground`/`volumes` declarativos; el motor NO escribe el grid, lo sintetiza el engine 128×128 @0,5 m), más sus `entities[]` (`kind`, `cell:[col,row]`, `footprint:[w,h]`, `glyph`, `shape?`, `h?`). Las otras dos se retiraron y no vuelven: la "suelta" (tamaño a elección del motor, sin sitio en el plano) y el **plató proscenio** (`size`+`terrain` propios + bloque `stage` con sus salidas), que murió con la vista que lo pintaba. Una escena sin `tile` la rechazan el zod (`src/contract/model-io/scene-schema.ts`), su espejo Python y `validateScene`; `stage_request`/`stage_review` tienen candado de reaparición en `arch-rules.json`. Contrato en `nefan-core/data/contract/tools/generate_scene.json`; validador de jugabilidad en `src/scene/scene-validate.ts`. Es lo que se PERSISTE (saves, `scenes_loaded`, `serializeForLlm`).
+**1. Format D** — lo que produce el motor narrativo (`generate_scene`), con **una sola variante**: el **tile** del mundo continuo (`tile{tx,ty}` + `biome` + `ground`/`volumes` declarativos; el motor NO escribe el grid, lo sintetiza el engine 128×128 @0,5 m), más sus `entities[]` (`kind`, `cell:[col,row]`, `footprint:[w,h]`, `shape?`, `h?`). Las otras dos se retiraron y no vuelven: la "suelta" (tamaño a elección del motor, sin sitio en el plano) y el **plató proscenio** (`size`+`terrain` propios + bloque `stage` con sus salidas), que murió con la vista que lo pintaba. Una escena sin `tile` la rechazan el zod (`src/contract/model-io/scene-schema.ts`), su espejo Python y `validateScene`; `stage_request`/`stage_review` tienen candado de reaparición en `arch-rules.json`. Contrato en `nefan-core/data/contract/tools/generate_scene.json`; validador de jugabilidad en `src/scene/scene-validate.ts`. Es lo que se PERSISTE (saves, `scenes_loaded`, `serializeForLlm`).
 
 **2. World scene** — el contrato de render que consume el cliente: la salida de `formatDToWorld` (`nefan-core/src/scene/scene-normalize.ts`). El bridge normaliza en el wire (`broadcastScene` y el resume vía `sessionDataForClient`); el cliente HTML también la genera en local para fixtures. Forma:
 
@@ -197,8 +197,7 @@ Hay exactamente DOS formatos, y la conversión entre ellos vive en nefan-core:
       "category": "building", "name": "Taberna" }
   ],
   "npcs": [ { "id": "barkeep", "name": "Tabernero", "position": [0, 0, -2] } ],
-  "__player_start": { "x": -1.75, "z": 10.25 },
-  "ambient_event": "..."
+  "__player_start": { "x": -1.75, "z": 10.25 }
 }
 ```
 

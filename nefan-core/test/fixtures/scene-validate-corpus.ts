@@ -45,8 +45,8 @@ function escenaBootstrap(over: Record<string, unknown> = {}): Record<string, unk
       { id: "posada", label: "posada", type: "building", rect: [10, 70, 10, 7], cutaway: true, doors: [{ edge: "s", at: 4, w: 3 }] },
     ],
     entities: [
-      { id: "barkeep", kind: "npc", name: "Tabernero", cell: [14, 73], footprint: [1, 1], glyph: "n" },
-      { id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1], glyph: "@" },
+      { id: "barkeep", kind: "npc", name: "Tabernero", cell: [14, 73], footprint: [1, 1] },
+      { id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1] },
     ],
     ...over,
   });
@@ -195,7 +195,7 @@ export function casosDeValidacion(): CasoValidacion[] {
       scene: () => {
         const s = escenaBootstrap();
         (s.entities as Record<string, unknown>[]).push({
-          id: "mesa", kind: "prop", name: "mesa", cell: [15, 80], footprint: [2, 2], glyph: "m",
+          id: "mesa", kind: "prop", name: "mesa", cell: [15, 80], footprint: [2, 2],
         });
         return s;
       },
@@ -207,11 +207,11 @@ export function casosDeValidacion(): CasoValidacion[] {
       scene: () =>
         escenaBootstrap({
           entities: [
-            { id: "barkeep", kind: "npc", name: "Tabernero", cell: [14, 73], footprint: [1, 1], glyph: "n" },
-            { id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1], glyph: "@" },
-            { id: "roble", kind: "tree", name: "roble", cell: [20, 84], footprint: [2, 2], glyph: "t" },
-            { id: "granero", kind: "building", name: "granero", cell: [30, 84], footprint: [4, 3], glyph: "B" },
-            { id: "moneda", kind: "item", name: "moneda", cell: [40, 84], footprint: [2, 2], glyph: "$" },
+            { id: "barkeep", kind: "npc", name: "Tabernero", cell: [14, 73], footprint: [1, 1] },
+            { id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1] },
+            { id: "roble", kind: "tree", name: "roble", cell: [20, 84], footprint: [2, 2] },
+            { id: "granero", kind: "building", name: "granero", cell: [30, 84], footprint: [4, 3] },
+            { id: "moneda", kind: "item", name: "moneda", cell: [40, 84], footprint: [2, 2] },
           ],
         }),
       ctx: BOOTSTRAP,
@@ -231,7 +231,7 @@ export function casosDeValidacion(): CasoValidacion[] {
       cubre: "spawn: solo el tile de bootstrap lleva player",
       scene: () =>
         forestTile({
-          entities: [{ id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1], glyph: "@" }],
+          entities: [{ id: "player", kind: "player", name: "Tú", cell: [64, 64], footprint: [1, 1] }],
         }),
       ctx: AISLADO,
     },
@@ -395,7 +395,7 @@ export function casosDeValidacion(): CasoValidacion[] {
       scene: () => {
         const s = escenaBootstrap();
         (s.entities as Record<string, unknown>[]).push({
-          id: "carro", kind: "prop", name: "carro", cell: [14, 76], footprint: [1, 1], glyph: "c",
+          id: "carro", kind: "prop", name: "carro", cell: [14, 76], footprint: [1, 1],
         });
         return s;
       },
@@ -470,7 +470,6 @@ export function casosDeValidacion(): CasoValidacion[] {
             name: "trasto",
             cell: [(i % 20) * 3, Math.floor(i / 20) * 6],
             footprint: [1, 1],
-            glyph: "x",
           })),
           vegetation_zones: [{ type: "pino", area: "rest", density: 0.08 }],
         }),

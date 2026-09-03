@@ -7,14 +7,13 @@
     "tile": { "tx": 0, "ty": 0 },
     "biome": "dirt",
     "entities": [
-      { "id": "player", "kind": "player", "name": "Tú", "cell": [64, 64], "footprint": [1, 1], "glyph": "@" },
+      { "id": "player", "kind": "player", "name": "Tú", "cell": [64, 64], "footprint": [1, 1] },
       {
         "id": "mastin",
         "kind": "npc",
         "name": "Mastín del molinero",
         "cell": [60, 60],
         "footprint": [3, 3],
-        "glyph": "d",
         "role": "villager",
         "description": "mastín de pelaje pardo y collar de cuero claveteado"
       }

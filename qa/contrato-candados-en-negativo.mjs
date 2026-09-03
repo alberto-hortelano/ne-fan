@@ -63,14 +63,24 @@ const INVARIANTES = [
     [["  scatter_generators: z.unknown().optional(),\n  scatter_zones: z.unknown().optional(),\n", ""]],
   ],
   [
-    "campos · el zod pierde `attach` y el tool se lo sigue ofreciendo al modelo",
+    "campos · el zod pierde `style_ref` de entity y el tool se lo sigue ofreciendo al modelo",
     SCHEMA, "ts:test/contract-prompts.test.ts",
-    [['    attach: z.literal("wall").optional(),\n', ""]],
+    [["    style_ref: z.string().min(1).optional(),\n", ""]],
+  ],
+  // ── #400 · la raíz cerrada, y su brecha conocida ─────────────────────────
+  [
+    "campos · el zod gana un campo de raíz que el tool no ofrece (la brecha deja de ser solo `place_anchors`)",
+    SCHEMA, "ts:test/contract-prompts.test.ts",
+    [["  entities: z.array(EntitySchema),\n} as const;", "  entities: z.array(EntitySchema),\n  nota_del_motor: z.string().optional(),\n} as const;"]],
   ],
   // ── #203 · el guardia DÉBIL de términos prometidos ──────────────────────
+  // Vive en `contract-terms.test.ts` desde #347 (es trans-proceso y no puede
+  // entrar en la batería de mutación); hasta el 2026-09-03 este invariante
+  // seguía apuntando a `contract-prompts` y daba VERDE al romperlo — un
+  // candado obsoleto que solo se vio al volver a ejecutar el guion.
   [
     "guardia débil · el prompt vuelve a prometer `player_choice`, que no existe en ningún proceso",
-    PROMPT, "ts:test/contract-prompts.test.ts",
+    PROMPT, "ts:test/contract-terms.test.ts",
     [["dialogue_choice event", "player_choice event"]],
   ],
   // ── #259 · la entity cerrada ────────────────────────────────────────────
@@ -78,6 +88,15 @@ const INVARIANTES = [
     "entity · el `.strict()` vuelve a ser `.passthrough()` (la clave inventada se cae muda)",
     SCHEMA, "ts:test/scene-schema.test.ts",
     [["  .strict()\n  .superRefine((e, ctx) => {", "  .passthrough()\n  .superRefine((e, ctx) => {"]],
+  ],
+  // ── #400 · la escena cerrada ────────────────────────────────────────────
+  [
+    "escena · el `.strict()` de la raíz vuelve a ser `.passthrough()` (la clave inventada cruza muda hasta el save)",
+    SCHEMA, "ts:test/scene-schema.test.ts",
+    [
+      ["  .object(sceneBaseShape, { errorMap: sceneErrorMap(EMITTED_SCENE_FIELDS) })\n  .strict()", "  .object(sceneBaseShape, { errorMap: sceneErrorMap(EMITTED_SCENE_FIELDS) })\n  .passthrough()"],
+      ['  }, { errorMap: sceneErrorMap([...SCENE_FIELDS, "__expanded"]) })\n  .strict();', '  }, { errorMap: sceneErrorMap([...SCENE_FIELDS, "__expanded"]) })\n  .passthrough();'],
+    ],
   ],
   // ── #237 · la frontera entre las dos poblaciones ────────────────────────
   [
@@ -136,6 +155,30 @@ const INVARIANTES = [
         '                )\n            clean_ent["description"] = desc.strip()',
       '        if isinstance(ent.get("description"), str) and ent["description"].strip():\n' +
         '            clean_ent["description"] = ent["description"].strip()',
+    ]],
+  ],
+  [
+    "python · la raíz vuelve a ser muda (la clave desconocida cruza hasta el save)",
+    PY, "py:ai_server.tests.test_contract_fixtures",
+    [[
+      "    desconocidas = [k for k in data if k not in SCENE_FIELDS]\n    if desconocidas:\n",
+      "    desconocidas = []\n    if desconocidas:\n",
+    ]],
+  ],
+  [
+    "python · las anclas vuelven a podarse en silencio (nueve → ocho, sin decirlo)",
+    PY, "py:ai_server.tests.test_contract_fixtures",
+    [[
+      '            if len(anchors) > 8:\n                raise ValueError(f"`place_anchors`: como mucho 8 anclas por tile (trae {len(anchors)})")\n',
+      '            anchors = anchors[:8]\n',
+    ]],
+  ],
+  [
+    "python · la altura no positiva vuelve a descartarse en silencio",
+    PY, "py:ai_server.tests.test_contract_fixtures",
+    [[
+      '            if not isinstance(altura, (int, float)) or isinstance(altura, bool) or altura <= 0:\n                raise ValueError(f"entity \'{eid}\': `h` es la altura en metros y debe ser un número > 0 ({altura!r})")\n            clean_ent["h"] = float(altura)',
+      '            if isinstance(altura, (int, float)) and not isinstance(altura, bool) and altura > 0:\n                clean_ent["h"] = float(altura)',
     ]],
   ],
   [

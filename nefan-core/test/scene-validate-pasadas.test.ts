@@ -242,7 +242,7 @@ describe("composePlan", () => {
   it("una entity estática bloquea por SU VOLUMEN, que es lo que el jugador choca", () => {
     const { mask } = abrir(
       tileConPlan({
-        entities: [{ id: "granero", kind: "building", name: "granero", cell: [40, 40], footprint: [6, 4], glyph: "B" }],
+        entities: [{ id: "granero", kind: "building", name: "granero", cell: [40, 40], footprint: [6, 4] }],
       }),
     );
     assert.equal(mask.solid(42, 41), true, "dentro de la huella");
@@ -253,7 +253,7 @@ describe("composePlan", () => {
     const { mask } = abrir(
       tileConPlan({
         ground: [{ id: "senda", kind: "path", points: [[0, 64], [128, 64]], w: 4, material: "dirt" }],
-        entities: [{ id: "moneda", kind: "item", name: "moneda", cell: [40, 40], footprint: [2, 2], glyph: "$" }],
+        entities: [{ id: "moneda", kind: "item", name: "moneda", cell: [40, 40], footprint: [2, 2] }],
       }),
     );
     assert.equal(mask.solid(40, 40), false);
@@ -266,7 +266,7 @@ describe("composePlan", () => {
       tileConPlan({
         ground: [{ id: "rio", kind: "water", rect: [0, 100, 128, 8] }],
         volumes: [{ id: "posada", label: "posada", type: "building", rect: [40, 40, 8, 6] }],
-        entities: [{ id: "mesa", kind: "prop", name: "mesa", cell: [80, 80], footprint: [2, 2], glyph: "m" }],
+        entities: [{ id: "mesa", kind: "prop", name: "mesa", cell: [80, 80], footprint: [2, 2] }],
       }),
     );
     assert.deepEqual(mask.blockerAt(42, 42), { volumeId: "posada" }, "celda dentro del volumen declarado");

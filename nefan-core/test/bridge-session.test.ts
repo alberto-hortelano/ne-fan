@@ -422,9 +422,8 @@ describe("bridge ciclo de sesión", () => {
       terrain: ["gggg", "gggg", "gggg", "gggg"],
       __expanded: true,
       entities: [
-        { id: "caja", kind: "prop", name: "Caja", cell: [1, 1], footprint: [1, 1], glyph: "c" },
+        { id: "caja", kind: "prop", name: "Caja", cell: [1, 1], footprint: [1, 1] },
       ],
-      ambient_event: "",
     });
     await entrarEnLaPartida(ctx, socket, sessionId);
 
@@ -458,11 +457,10 @@ describe("bridge ciclo de sesión", () => {
       terrain: ["gggg", "gggg", "gggg", "gggg"],
       __expanded: true,
       entities: [
-        { id: "herido_1", kind: "npc", name: "Herido", role: "hostile", cell: [1, 1], footprint: [1, 1], glyph: "h" },
-        { id: "muerto_1", kind: "npc", name: "Muerto", role: "hostile", cell: [2, 2], footprint: [1, 1], glyph: "m" },
-        { id: "barkeep", kind: "npc", name: "Tabernero", cell: [3, 3], footprint: [1, 1], glyph: "b" },
+        { id: "herido_1", kind: "npc", name: "Herido", role: "hostile", cell: [1, 1], footprint: [1, 1] },
+        { id: "muerto_1", kind: "npc", name: "Muerto", role: "hostile", cell: [2, 2], footprint: [1, 1] },
+        { id: "barkeep", kind: "npc", name: "Tabernero", cell: [3, 3], footprint: [1, 1] },
       ],
-      ambient_event: "",
     });
     // Lo que dejó la partida anterior en el ledger (lo escribe `save()` desde
     // el runtime del sim; aquí se pone a mano para aislar el sujeto: el WIRE).
@@ -516,9 +514,8 @@ describe("bridge ciclo de sesión", () => {
       terrain: ["gggg", "gggg", "gggg", "gggg"],
       __expanded: true,
       entities: [
-        { id: "bandido_1", kind: "npc", name: "Bandido de camino", role: "hostile", cell: [1, 1], footprint: [1, 1], glyph: "b" },
+        { id: "bandido_1", kind: "npc", name: "Bandido de camino", role: "hostile", cell: [1, 1], footprint: [1, 1] },
       ],
-      ambient_event: "",
     });
     // Lo que deja en el save una versión anterior del juego: vida sin
     // denominador. El jugador lo había MATADO.

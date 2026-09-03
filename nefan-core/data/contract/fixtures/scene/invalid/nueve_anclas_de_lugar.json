@@ -1,0 +1,57 @@
+{
+  "description": "`place_anchors` admite como mucho 8 anclas por tile: la novena se rechaza nombrándola en los dos gates (QA de #400: el saneador truncaba a 8 en silencio).",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_0_0",
+    "scene_description": "Una plaza de tierra batida entre casas encaladas.",
+    "tile": {
+      "tx": 0,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      }
+    ],
+    "place_anchors": [
+      {
+        "place_id": "p0"
+      },
+      {
+        "place_id": "p1"
+      },
+      {
+        "place_id": "p2"
+      },
+      {
+        "place_id": "p3"
+      },
+      {
+        "place_id": "p4"
+      },
+      {
+        "place_id": "p5"
+      },
+      {
+        "place_id": "p6"
+      },
+      {
+        "place_id": "p7"
+      },
+      {
+        "place_id": "p8"
+      }
+    ]
+  }
+}

@@ -13,7 +13,6 @@ function makeTileScene(tx: number, ty: number, extra: Record<string, unknown> = 
     scene_description: "campo",
     biome: "grass",
     entities: [],
-    ambient_event: "",
     ...extra,
   });
 }
@@ -63,7 +62,7 @@ describe("NarrativeState — registro de tiles (v4)", () => {
     s.recordSceneLoaded(
       "tile_1_0",
       makeTileScene(1, 0, {
-        entities: [{ id: "guia", kind: "npc", name: "Guía", cell: [0, 0], footprint: [1, 1], glyph: "n" }],
+        entities: [{ id: "guia", kind: "npc", name: "Guía", cell: [0, 0], footprint: [1, 1] }],
       }),
     );
     const npc = s.entities.find((e) => e.id === "guia")!;
@@ -82,7 +81,7 @@ describe("NarrativeState — registro de tiles (v4)", () => {
       makeTileScene(0, 0, {
         entities: [{
           id: "guardia_1", kind: "npc", name: "Guardia", cell: [10, 10],
-          footprint: [1, 1], glyph: "n", role: "guard",
+          footprint: [1, 1], role: "guard",
           description: "guardia con lanza y capa parda",
         }],
       }),
@@ -97,8 +96,8 @@ describe("NarrativeState — registro de tiles (v4)", () => {
     s.startNewSession("plugtest");
     const scene = makeTileScene(0, 0, {
       entities: [
-        { id: "aldeana", kind: "npc", name: "Aldeana", cell: [10, 10], footprint: [1, 1], glyph: "n" },
-        { id: "viejo", kind: "npc", name: "Viejo", cell: [20, 20], footprint: [1, 1], glyph: "n" },
+        { id: "aldeana", kind: "npc", name: "Aldeana", cell: [10, 10], footprint: [1, 1] },
+        { id: "viejo", kind: "npc", name: "Viejo", cell: [20, 20], footprint: [1, 1] },
       ],
     });
     s.recordSceneLoaded("tile_0_0", scene);
@@ -117,7 +116,7 @@ describe("NarrativeState — registro de tiles (v4)", () => {
     // Un NPC que YA no está en la escena sí se retira.
     const scene2 = makeTileScene(0, 0, {
       entities: [
-        { id: "aldeana", kind: "npc", name: "Aldeana", cell: [10, 10], footprint: [1, 1], glyph: "n" },
+        { id: "aldeana", kind: "npc", name: "Aldeana", cell: [10, 10], footprint: [1, 1] },
       ],
     });
     s.recordSceneLoaded("tile_0_0", scene2);
@@ -142,7 +141,7 @@ describe("NarrativeState — registro de tiles (v4)", () => {
     // El motor realiza la posada y declara a Nogala con su id existente.
     const posada = escenaExpandidaDePrueba("posada_interior", {
       entities: [
-        { id: "nogala", kind: "npc", name: "Nogala Tres-Tratos", cell: [10, 10], footprint: [1, 1], glyph: "n" },
+        { id: "nogala", kind: "npc", name: "Nogala Tres-Tratos", cell: [10, 10], footprint: [1, 1] },
       ],
     });
     s.recordSceneLoaded("posada_interior", posada);
@@ -175,7 +174,7 @@ describe("NarrativeState — registro de tiles (v4)", () => {
     try {
       s.recordSceneLoaded("posada_interior", escenaExpandidaDePrueba("posada_interior", {
         entities: [
-          { id: "nogala_tres_tratos", kind: "npc", name: "Nogala Tres-Tratos", cell: [10, 10], footprint: [1, 1], glyph: "n" },
+          { id: "nogala_tres_tratos", kind: "npc", name: "Nogala Tres-Tratos", cell: [10, 10], footprint: [1, 1] },
         ],
       }));
     } finally {

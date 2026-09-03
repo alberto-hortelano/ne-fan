@@ -296,7 +296,7 @@ tile continuing a path from the WEST neighbour (its crossing is
   "scene_description": "Bosque cerrado de pinos; la senda serpentea entre los troncos hacia el este.",
   "biome": "forest_floor",
   "entities": [
-    { "id": "roca_musgo", "kind": "prop", "name": "roca cubierta de musgo", "cell": [80, 30], "footprint": [3, 2], "glyph": "O", "shape": "sphere" }
+    { "id": "roca_musgo", "kind": "prop", "name": "roca cubierta de musgo", "cell": [80, 30], "footprint": [3, 2], "shape": "sphere" }
   ],
   "ground": [
     { "id": "claro_sur", "kind": "area", "label": "claro del bosque", "ellipse": { "center": [40, 80], "rx": 18, "ry": 12 }, "material": "grass" },
@@ -318,5 +318,5 @@ BOOTSTRAP (generate_tile.bootstrap === true — first tile of a fresh session):
 - There are no neighbours yet: extend a path to at least one edge so the
   world has somewhere to grow.
 
-Everything else (SOLIDITY, DECOR ATTACH, GLYPH/NPC rules, ASSET REUSE, WORLD
-MAP tools) works exactly as in the standard scene reference that follows.
+Everything else (SOLIDITY, NPC rules, ASSET REUSE, WORLD MAP tools) works
+exactly as in the standard scene reference that follows.

@@ -17,21 +17,20 @@
  *  la vista que lo pintaba: una escena sin `tile` es un error de contrato, no
  *  una escena pequeña.
  *
- *  `.passthrough()` a nivel ESCENA y `.strict()` en la entity, y la asimetría
- *  está medida, no razonada: el passthrough de escena sostiene campos vivos
- *  que el zod aún no declara (`ambient_event` en las 3 fixtures commiteadas;
- *  `place_anchors` en los snapshots y en el saneador Python) — declararlos y
- *  cerrarlo es otro issue. `__expanded` ya NO es de esa lista: es la marca
- *  interna del expander y una escena EMITIDA que la trae miente sobre su
- *  estado — se rebota dirigido en el `superRefine` (#195), como `style_ref` y
- *  como los campos de terreno retirados (`refineRetiredTerrainFields`, que
- *  corre en las DOS poblaciones porque un save también puede traerlos). El
- *  passthrough de la entity no sostenía
- *  NINGUNO — censadas las 95 entities de las 7 escenas Format D del árbol
- *  (fixtures, snapshots, saves, labs), cero claves fuera de las 12. Un
- *  passthrough que no protege tráfico legítimo solo se traga las erratas del
- *  modelo, y ese es justo el fail-silent que este gate existe para cerrar
- *  (#259). */
+ *  `.strict()` en los DOS niveles, escena y entity. La entity se cerró en #259
+ *  (censadas 95 entities en 7 escenas: cero claves fuera del shape); la escena
+ *  en #400, cuando los dos campos que su `.passthrough()` sostenía dejaron de
+ *  necesitarlo: `place_anchors` se declara (lo escriben el saneador Python y
+ *  el motor del banco; lo leen los handlers de tile y place) y la frase de
+ *  ambiente de la escena se retiró (cero lectores en core, bridge y cliente —
+ *  la copiaba `formatDToWorld` para nadie). Un passthrough que no protege tráfico
+ *  legítimo solo se traga las erratas del modelo, y ese es justo el
+ *  fail-silent que este gate existe para cerrar. Con el cierre, una clave de
+ *  raíz desconocida es SIEMPRE el primer issue, así que los rebotes dirigidos
+ *  que antes vivían en el `superRefine` (`style_ref` de escena, la marca
+ *  `__expanded` del expander, los campos de terreno retirados) viven ahora en
+ *  el `errorMap` de la escena: es el único sitio desde el que su motivo llega
+ *  al motor, porque `formatError` solo enseña el primer issue. */
 
 import { z } from "zod";
 import { GroundSchema } from "../../scene/blueprint/ground.js";
@@ -41,7 +40,7 @@ import { parseScatter } from "../../scene/blueprint/scatter.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
 import { VocabularioDeEntity } from "./entity-vocabulary.js";
 import { enMetros, topeDeFootprint } from "./physics.js";
-import { refineRetiredTerrainFields } from "./retired-terrain-fields.js";
+import { mensajeDeClaveRetirada } from "./retired-terrain-fields.js";
 
 export const ENTITY_KINDS = ["building", "prop", "item", "tree", "npc", "player", "decor"] as const;
 export const SCENE_BIOMES = ["grass", "forest_floor", "meadow", "sand", "dirt", "stone", "snow", "swamp"] as const;
@@ -61,13 +60,25 @@ const entityErrorMap: z.ZodErrorMap = (issue, ctx) => {
   if (issue.code !== z.ZodIssueCode.unrecognized_keys) return { message: ctx.defaultError };
   const id = (ctx.data as { id?: unknown } | null)?.id;
   const quien = typeof id === "string" && id ? `la entity "${id}"` : "una entity";
-  return {
-    message:
-      `${quien} trae ${issue.keys.length === 1 ? "la clave" : "las claves"} ` +
-      `${issue.keys.map((k) => `\`${k}\``).join(", ")}, que no existe${issue.keys.length === 1 ? "" : "n"} ` +
-      `en el contrato. Una entity tiene EXACTAMENTE estos campos: ${ENTITY_FIELDS.join(" | ")}. ` +
-      `Lo que quisieras contar de ella va en \`description\`, que es de donde sale su aspecto.`,
-  };
+  // Una clave RETIRADA (el char ASCII, el decor pegado al muro) lleva su
+  // motivo: el consejo genérico está escrito para el motor, y por donde
+  // vuelven esas dos es por un save o snapshot anterior a su retirada.
+  const partes: string[] = [];
+  const desconocidas: string[] = [];
+  for (const k of issue.keys) {
+    const motivo = mensajeDeClaveRetirada(k);
+    if (motivo === null) desconocidas.push(k);
+    else partes.push(`${quien} trae ${motivo}`);
+  }
+  if (desconocidas.length > 0) {
+    partes.push(
+      `${quien} trae ${desconocidas.length === 1 ? "la clave" : "las claves"} ` +
+        `${desconocidas.map((k) => `\`${k}\``).join(", ")}, que no existe${desconocidas.length === 1 ? "" : "n"} ` +
+        `en el contrato. Una entity tiene EXACTAMENTE estos campos: ${ENTITY_FIELDS.join(" | ")}. ` +
+        `Lo que quisieras contar de ella va en \`description\`, que es de donde sale su aspecto.`,
+    );
+  }
+  return { message: partes.join("; ") };
 };
 
 const EntityBase = z
@@ -82,10 +93,8 @@ const EntityBase = z
     // en el z-order y en props pequeños), como los `at` de volumes.
     cell: z.tuple([z.number(), z.number()]),
     footprint: z.tuple([z.number().int().min(1), z.number().int().min(1)]),
-    glyph: z.string().length(1),
     shape: z.enum(["box", "cylinder", "sphere", "cone"]).optional(),
     h: z.number().positive().optional(),
-    attach: z.literal("wall").optional(),
     // ── NPCs: con qué se viste y cómo se comporta ────────────────────────
     // `role` NO es el oficio: es el preset de conducta que el sim implementa
     // (NPC_ROLES, la misma lista que el enum de `spawn_entity` — un NPC no
@@ -122,8 +131,10 @@ const EntityBase = z
 export const ENTITY_FIELDS = Object.keys(EntityBase.shape) as readonly string[];
 
 export const EntitySchema = EntityBase
-  // CERRADO (#259): una clave que no esté entre las 12 vuelve al modelo con su
-  // nombre en vez de caerse por el desagüe. La poda muda de `clean_ent` en
+  // CERRADO (#259): una clave que no esté entre las 10 vuelve al modelo con su
+  // nombre en vez de caerse por el desagüe. Las dos que se fueron después
+  // (#399/#400): el decor pegado al muro buscaba un char que ningún productor
+  // escribía, y el char ASCII de la entity no lo leía nadie fuera del contrato. La poda muda de `clean_ent` en
   // ai_server hacía lo mismo por el otro lado y es su espejo exacto.
   .strict()
   .superRefine((e, ctx) => {
@@ -194,6 +205,28 @@ const sceneBaseShape = {
   // a secas sí sería verde que no comprueba nada; con el refinamiento no lo es.
   scatter_generators: z.unknown().optional(),
   scatter_zones: z.unknown().optional(),
+  // Dónde vive cada lugar del mapa dentro del tile: el bridge afina con esto el
+  // anclaje del place (bootstrap-place, handlers de tile) y el jugador aparece
+  // dentro del lugar, no en el centro geométrico. El saneador de ai_server
+  // exige la MISMA forma y rechaza nombrando el elemento (QA de #400: hasta
+  // entonces podaba en silencio mientras este comentario decía «espejo»). Lo
+  // escribe el motor del banco; el tool real aún no se lo ofrece al motor, por
+  // eso NO está en la lista que se le enseña (`EMITTED_SCENE_FIELDS`) — issue
+  // derivado de #400.
+  place_anchors: z
+    .array(
+      // `.strict()` como la raíz: una clave extra en el ancla se rechaza
+      // nombrándola, igual que en ai_server. Sin él el pre-flight la tragaba
+      // muda y ai_server tiraba el tile: la dirección cara del guion 40.
+      z
+        .object({
+          place_id: z.string().min(1),
+          rect: z.tuple([z.number().int(), z.number().int(), z.number().int(), z.number().int()]).optional(),
+        })
+        .strict(),
+    )
+    .max(8)
+    .optional(),
   entities: z.array(EntitySchema),
 } as const;
 
@@ -216,6 +249,76 @@ function refineScatter(
  *  `generate_scene.json` le ofrezca al modelo y que no esté aquí pone rojo. */
 export const SCENE_FIELDS = Object.keys(sceneBaseShape) as readonly string[];
 
+/** La lista que se le enseña al MOTOR cuando trae una clave de más: los campos
+ *  del tool, ni uno más. De la base salen el grid (`size`/`terrain`, que solo
+ *  existe en la población expandida) y `place_anchors` (declarado para el
+ *  loader y el banco, pero sin esquema en el tool: un nombre sin esquema no se
+ *  le enseña al modelo). `contract-prompts.test.ts` canda que esta lista y la
+ *  raíz del tool sean el MISMO conjunto; el saneador de ai_server la lee del
+ *  tool directamente. */
+export const EMITTED_SCENE_FIELDS = SCENE_FIELDS.filter(
+  (k) => k !== "size" && k !== "terrain" && k !== "place_anchors",
+);
+
+/** Por qué se rebota una clave de raíz RETIRADA, o `null` si es una clave
+ *  desconocida cualquiera. Un campo retirado no se rebota con el mensaje
+ *  genérico: el motor lo copió de un ejemplo viejo y hay que decirle con qué
+ *  se sustituye. `stage` era el bloque del plató proscenio (sus salidas), que
+ *  murió con la vista que lo pintaba. `style_ref` de ESCENA elegía la lámina temática del repintado
+ *  del tile, que murió con la vista oblicua — la de ENTIDAD (npc) sigue viva.
+ *  `__expanded` es la marca INTERNA del expander (scene-expand.ts): una escena
+ *  EMITIDA que la trae miente sobre su estado, y con `terrain` vacío cruzaba
+ *  hasta reventar el validador de jugabilidad como 500 (#195). */
+function motivoDeClaveRetirada(clave: string): string | null {
+  if (clave === "stage") {
+    return (
+      "`stage` era el plató proscenio y se retiró con la vista que lo pintaba: una escena necesita " +
+      "`tile` {tx,ty}, la única variante de Format D (mundo continuo, pídela con generate_tile)"
+    );
+  }
+  if (clave === "style_ref") {
+    return (
+      "`style_ref` de escena está retirado (no existe catálogo world.style_refs.scene): " +
+      "quítalo. Para guiar el arte usa `surface_ref` por cara de volumen y `style_ref` en los NPCs"
+    );
+  }
+  if (clave === "__expanded") {
+    return (
+      "`__expanded` es la marca interna del expander: una escena emitida no la lleva — " +
+      "quítala y declara `biome` + primitivas; el engine expande y marca él"
+    );
+  }
+  return mensajeDeClaveRetirada(clave);
+}
+
+/** Mensaje de la clave de raíz desconocida — el espejo de `entityErrorMap` un
+ *  nivel más arriba, con la lista de campos de la población que toca
+ *  (`campos`). Va por `errorMap` y no en un `superRefine` porque con
+ *  `.strict()` la clave desconocida es SIEMPRE el primer issue, y
+ *  `formatError` solo enseña ese: un motivo que viva más abajo no llega al
+ *  motor. Las retiradas llevan su motivo propio; las demás, la lista. */
+function sceneErrorMap(campos: readonly string[]): z.ZodErrorMap {
+  return (issue, ctx) => {
+    if (issue.code !== z.ZodIssueCode.unrecognized_keys) return { message: ctx.defaultError };
+    const partes: string[] = [];
+    const desconocidas: string[] = [];
+    for (const k of issue.keys) {
+      const motivo = motivoDeClaveRetirada(k);
+      if (motivo === null) desconocidas.push(k);
+      else partes.push(motivo);
+    }
+    if (desconocidas.length > 0) {
+      const una = desconocidas.length === 1;
+      partes.push(
+        `la escena trae ${una ? "la clave" : "las claves"} ${desconocidas.map((k) => `\`${k}\``).join(", ")}, ` +
+          `que no existe${una ? "" : "n"} en el contrato. Una escena tiene EXACTAMENTE estos campos: ` +
+          `${campos.join(" | ")}. Lo que quisieras contar del lugar va en \`scene_description\``,
+      );
+    }
+    return { message: partes.join("; ") };
+  };
+}
+
 /** Lo que el motor EMITE (pre-expansión) — el gate del pre-flight MCP, cuyo
  *  error vuelve al modelo. Sus reglas describen al MODELO: un tile no lleva
  *  `size` ni grid `terrain`, y `style_ref` de escena está retirada. NO
@@ -223,11 +326,10 @@ export const SCENE_FIELDS = Object.keys(sceneBaseShape) as readonly string[];
  *  POST-expansión y llevan las tres cosas legítimamente — eso lo vigila
  *  `ExpandedSceneSchema`, y confundirlas rompe el arranque (#237). */
 export const EmittedSceneSchema = z
-  .object(sceneBaseShape)
-  .passthrough()
+  .object(sceneBaseShape, { errorMap: sceneErrorMap(EMITTED_SCENE_FIELDS) })
+  .strict()
   .superRefine((s, ctx) => {
     refineScatter(s, ctx);
-    refineRetiredTerrainFields(s, ctx);
     // CANDADO de las variantes retiradas: Format D tiene UNA forma y ninguna
     // más. Sin `tile` la escena era la "suelta" (size/terrain a elección del
     // motor, sin sitio en el mundo) o el `stage` proscenio. El error va en la
@@ -254,40 +356,8 @@ export const EmittedSceneSchema = z
     if (s.biome === undefined) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["biome"], message: "un tile necesita `biome`" });
     }
-    // `style_ref` de ESCENA: retirado. Elegía la lámina temática que guiaba
-    // el repintado del tile, y ese repintado murió con la vista oblicua — la
-    // primera persona no consume una sola de esas refs (su arte sale de
-    // style_token + lámina de superficies + refs de CARA). El motor lo lleva
-    // en su historial y va a seguir emitiéndolo un rato: como `.passthrough()`
-    // lo dejaría entrar y scene-normalize lo tiraría después, el eje era
-    // FAIL-SILENT. Aquí se rebota con el motivo (regla del repo: salida
-    // inválida del modelo → error preciso y re-respuesta). OJO: la `style_ref`
-    // de ENTIDAD (npc) sigue viva — elige el aspecto del skin.
-    if ("style_ref" in s) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["style_ref"],
-        message:
-          "`style_ref` de escena está retirado (no existe catálogo world.style_refs.scene): " +
-          "quítalo. Para guiar el arte usa `surface_ref` por cara de volumen y `style_ref` en los NPCs",
-      });
-    }
-    // `__expanded` es la marca INTERNA del expander (scene-expand.ts): la
-    // estampa el engine al rasterizar primitivas, y separa las dos
-    // poblaciones (EmittedScene ↔ ExpandedScene). Una escena EMITIDA que la
-    // trae miente sobre su estado de expansión, y con `terrain` vacío o
-    // ausente cruzaba hasta reventar el validador de jugabilidad como 500
-    // (#195). Se rebota con `in` —cualquier valor, también `false`— y no se
-    // poda: tirarla en silencio sería saneo mudo.
-    if ("__expanded" in s) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["__expanded"],
-        message:
-          "`__expanded` es la marca interna del expander: una escena emitida no la lleva — " +
-          "quítala y declara `biome` + primitivas; el engine expande y marca él",
-      });
-    }
+    // `style_ref` de escena y `__expanded` NO se rebotan aquí: con `.strict()`
+    // ya son claves desconocidas, y su motivo lo pone `sceneErrorMap`.
   });
 
 export type EmittedScene = z.infer<typeof EmittedSceneSchema>;
@@ -303,10 +373,12 @@ export type EmittedScene = z.infer<typeof EmittedSceneSchema>;
  *  - Se EXIGE lo que escribe `expandScenePrimitives` y sin lo cual el cliente
  *    no puede colisionar: `size`, `terrain` no vacío y la marca `__expanded`,
  *    que es la frontera y ya existía en el dato desde siempre.
- *  - NO se re-litiga nada del modelo. En concreto NO se rechaza `style_ref` de
- *    escena: 18 de los 20 tiles del árbol la llevan heredada de antes de su
- *    retirada, y rebotarlos aquí no arregla un contrato — apaga el arranque.
- *    Ese eje se vigila donde se emite, no donde se lee.
+ *  - NO se re-litiga la FORMA del modelo (un tile cargado lleva `size` y
+ *    `terrain` legítimamente). Lo que sí se rebota es lo RETIRADO, por
+ *    `.strict()` como en la emitida: un save o snapshot anterior a una
+ *    retirada trae el campo dentro, y con `.passthrough()` viviría para
+ *    siempre en `scene_data` y volvería al motor por `serializeForLlm`.
+ *    Pre-producción: el save se borra o se regenera, y el mensaje lo dice.
  *
  *  Dos tipos con nombre y no una variante con flag: con un flag, un consumidor
  *  puede preguntar por la población equivocada y seguir compilando. */
@@ -319,13 +391,7 @@ export const ExpandedSceneSchema = z
      *  `z.literal(true)` y no `z.boolean()`: una escena a medio expandir no es
      *  una escena cargable. */
     __expanded: z.literal(true),
-  })
-  .passthrough()
-  // Lo ÚNICO del modelo que sí se re-litiga al cargar: los campos de terreno
-  // retirados. No es compatibilidad al revés — es que un save que los trae
-  // los devolvería al motor por `serializeForLlm`, y de ahí a que el motor
-  // los vuelva a emitir hay un turno. Pre-producción: el save se borra o se
-  // regenera, y el mensaje lo dice.
-  .superRefine(refineRetiredTerrainFields);
+  }, { errorMap: sceneErrorMap([...SCENE_FIELDS, "__expanded"]) })
+  .strict();
 
 export type ExpandedScene = z.infer<typeof ExpandedSceneSchema>;

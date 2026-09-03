@@ -7,14 +7,13 @@
     "tile": { "tx": 0, "ty": 0 },
     "biome": "dirt",
     "entities": [
-      { "id": "player", "kind": "player", "name": "Tú", "cell": [64, 64], "footprint": [1, 1], "glyph": "@" },
+      { "id": "player", "kind": "player", "name": "Tú", "cell": [64, 64], "footprint": [1, 1] },
       {
         "id": "ogro",
         "kind": "npc",
         "name": "Ogro del vado",
         "cell": [60, 60],
         "footprint": [8, 8],
-        "glyph": "O",
         "role": "hostile",
         "description": "ogro corpulento de piel gris y maza de piedra"
       }

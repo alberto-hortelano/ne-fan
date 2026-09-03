@@ -60,7 +60,7 @@ function makeSnapshot(gameId: string, worldDocHash: string): WorldSnapshot {
     // Escenas EXPANDIDAS, que es la población que vive en un snapshot: se
     // construyen pasando un tile emitido por `expandScenePrimitives`, la misma
     // función que las escribe en producción. Antes eran garabatos —un tile sin
-    // `size` ni `terrain`, con una entity sin `footprint` ni `glyph`— que
+    // `size` ni `terrain`, con una entity sin `footprint`— que
     // ningún camino real produce; pasaban porque `scenes` no tenía tipo (#237).
     scenes: {
       tile_0_0: expandScenePrimitives({
@@ -68,7 +68,7 @@ function makeSnapshot(gameId: string, worldDocHash: string): WorldSnapshot {
         scene_description: "Tile de arranque del snapshot",
         tile: { tx: 0, ty: 0 },
         biome: "grass",
-        entities: [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1], glyph: "@" }],
+        entities: [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1] }],
       }),
       tile_1_0: expandScenePrimitives({
         scene_id: "tile_1_0",
@@ -141,7 +141,7 @@ describe("world-snapshot (módulo puro)", () => {
       scene_description: "Tile de arranque del snapshot",
       tile: { tx: 0, ty: 0 },
       biome: "grass",
-      entities: [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1], glyph: "@" }],
+      entities: [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1] }],
     });
 
     /** Escribe el snapshot SIN pasar por el validador de escritura. */

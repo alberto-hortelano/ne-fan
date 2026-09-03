@@ -221,7 +221,7 @@ export function bootstrapTile() {
       // mercader acorralado huye —que no puede— en vez de si huye un mercader
       // (#247). Aquí tiene 12 m de calle por delante y el jugador arranca a
       // 8,3 m, justo la distancia de ataque que el guion busca.
-      { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [79, 63], footprint: [1, 1], glyph: "n",
+      { id: "barkeep", kind: "npc", name: "Tabernero corpulento", cell: [79, 63], footprint: [1, 1],
         role: "merchant", description: "tabernero corpulento de mandil manchado" },
       // Un HOSTIL declarado como lo declara el motor de verdad: `role:"hostile"`
       // y nada más. Ni bloque `combat`, ni vida, ni `entity_kind` inventado —
@@ -241,19 +241,18 @@ export function bootstrapTile() {
       // `HOSTILE_AGGRO_M`), así que una partida nueva no se abre con una pelea
       // que el jugador no ha pedido — se abre con un bandido a la vista, al
       // que hay que acercarse. Con 4,5 m el banco medía una ejecución.
-      { id: "bandido_1", kind: "npc", name: "Bandido de camino", cell: [88, 65], footprint: [1, 1], glyph: "b",
+      { id: "bandido_1", kind: "npc", name: "Bandido de camino", cell: [88, 65], footprint: [1, 1],
         role: "hostile", description: "bandido de camino con cota remendada y la cara marcada" },
-      { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1], glyph: "@" },
+      { id: "player", kind: "player", name: "Tú", cell: [64, 70], footprint: [1, 1] },
       // Casa declarada como ENTITY (sin volume ni structure): el compositor
       // debe derivarle un edificio con techo — regresión del bug "casas como
       // cuadrados sin proyectar en iso".
-      { id: "casa_lenador", kind: "building", name: "casa del leñador", cell: [92, 82], footprint: [20, 14], glyph: "C" },
+      { id: "casa_lenador", kind: "building", name: "casa del leñador", cell: [92, 82], footprint: [20, 14] },
     ],
     place_anchors: [{ place_id: "taberna_bench_place", rect: [52, 48, 24, 16] }],
     ground: BOOTSTRAP_GROUND,
     volumes: BOOTSTRAP_VOLUMES,
     ...BOOTSTRAP_SCATTER,
-    ambient_event: "El fuego crepita dentro.",
   };
 }
 
@@ -327,16 +326,15 @@ export function makeTile(gt: GenerateTile) {
     ...(place ? { place_anchors: [{ place_id: place.id, rect: [48, 68, 32, 20] }] } : {}),
     vegetation_zones: [{ type: "abeto", area: [4, 4, 30, 20], density: 0.08 }],
     entities: [
-      { id: `hito_${tx}_${ty}`, kind: "prop", name: `hito del tile (${tx},${ty})`, cell: [70, 58], footprint: [1, 1], glyph: "o" },
+      { id: `hito_${tx}_${ty}`, kind: "prop", name: `hito del tile (${tx},${ty})`, cell: [70, 58], footprint: [1, 1] },
       ...(place
         ? [{ id: `${place.id}_vecino`, kind: "npc", name: `Vecino de ${place.name}`,
-            cell: [72, 84], footprint: [1, 1], glyph: "n",
+            cell: [72, 84], footprint: [1, 1],
             // Un GUARDIA: el único rol con conducta distinta (se planta y
             // entra a la pelea en vez de huir). Es el que hace que el bench
             // recorra el camino entero de #173, no solo el del skin.
             role: "guard", description: `guardia de ${place.name} con lanza y capa parda` }]
         : []),
     ],
-    ambient_event: place ? `Llegas a ${place.name}.` : "El viento peina la hierba.",
   };
 }
