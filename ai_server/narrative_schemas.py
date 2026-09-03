@@ -1045,17 +1045,33 @@ def validate_narrative_reaction(data: dict | None) -> dict:
                 raise ValueError(
                     f"spawn_entity[{idx}].entity_kind='{kind}' invalid; allowed: {sorted(valid_kinds)}"
                 )
-            description = str(c.get("description", "")).strip()
-            if not description:
-                raise ValueError(f"spawn_entity[{idx}] missing required field `description`")
+            # El MISMO vocabulario que una entity de generate_scene
+            # (entity-vocabulary.ts, #397): `name` obligatorio y es el rótulo;
+            # `description` opcional y es la procedencia (el texto del que sale
+            # su arte). Si viene, no puede ir en blanco — el zod la rechaza y
+            # aquí antes se colaba tras el `.strip()`.
+            name_raw = c.get("name")
+            if not isinstance(name_raw, str) or not name_raw.strip():
+                # La MISMA frase que el `.refine()` del zod (MOTIVO_NAME_INVALIDO en
+                # entity-vocabulary.ts); test/entity-vocabulary.test.ts la busca aquí.
+                raise ValueError(
+                    f"spawn_entity[{idx}].name: `name` no puede faltar, estar vacío ni ser solo espacios: "
+                    "es el rótulo que lee el jugador (la procedencia va en `description`)"
+                )
             entry = {
                 "type": "spawn_entity",
                 "entity_kind": kind,
-                "description": description,
+                "name": name_raw,
                 "position_hint": str(c.get("position_hint", "near_player")),
             }
-            if c.get("name"):
-                entry["name"] = str(c["name"])
+            if "description" in c and c["description"] is not None:
+                description = c["description"]
+                if not isinstance(description, str) or not description.strip():
+                    raise ValueError(
+                        f"spawn_entity[{idx}].description no puede ir vacía ni ser solo espacios: "
+                        "es el texto del que se genera su arte (omítela si no la hay)"
+                    )
+                entry["description"] = description
             # El MISMO par que en una entity de escena (clean_ent), y por el
             # mismo motivo: esta reconstrucción por allow-list corre en las DOS
             # vías —API directa y MCP (llm_client.sendVisionResponse)— así que

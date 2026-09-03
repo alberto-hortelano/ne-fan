@@ -9,7 +9,8 @@
         "description": "true si el arma está bien colocada en la mano para combate"
       },
       "issue": {
-        "type": "string"
+        "type": "string",
+        "description": "Qué está mal (cuando ok=false)"
       },
       "suggested_delta_euler": {
         "type": "array",
@@ -25,7 +26,8 @@
           }
         ],
         "minItems": 3,
-        "maxItems": 3
+        "maxItems": 3,
+        "description": "Corrección sugerida [rx, ry, rz] en grados (cuando ok=false)"
       }
     },
     "required": [

@@ -283,9 +283,10 @@ export function sellarSesion<T extends { type: string }>(
   return { ...msg, sessionId };
 }
 
-/** Push a freshly loaded/realized scene to every narrative subscriber, reusing
- *  the scene_init spawn_entity effect the clients already render. Only real
- *  scenes pass through here — there is no "fallback minimal scene" any more. */
+/** Push a freshly loaded/realized scene to every narrative subscriber as the
+ *  `scene_loaded` effect (`eventId: "scene_init"`) the clients render. Only
+ *  real scenes pass through here — there is no "fallback minimal scene" any
+ *  more. */
 export function broadcastScene(
   ctx: BridgeContext,
   sceneId: string,
@@ -329,17 +330,12 @@ export function broadcastScene(
     type: "narrative_event",
     eventId: "scene_init",
     consequences: [],
-    effects: [
-      {
-        kind: "spawn_entity",
-        entityId: sceneId,
-        entityKind: "object",
-        description: String(scene.scene_description ?? sceneId),
-        position: [0, 0, 0],
-        data: { scene: worldScene },
-        eventId: "scene_init",
-      },
-    ],
+    // Un effect propio (`SceneLoadedEffect`, protocol/messages.ts) y no un
+    // `spawn_entity` con la escena escondida en `data`: cargar una escena no
+    // es materializar una entity, y el spawn exige un `name` que aquí no hay
+    // (#397). El `eventId: "scene_init"` se conserva: es lo que cuentan los
+    // guiones que afirman «cero re-difusiones».
+    effects: [{ kind: "scene_loaded", sceneId, scene: worldScene }],
   });
   // El ready lleva las coords del tile (si lo es) para el velo/notificación
   // direccional del cliente.

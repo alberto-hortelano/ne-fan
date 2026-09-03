@@ -455,6 +455,31 @@ describe("spawnsDeRuntime — UNA puerta por entidad, y la decide el spawn_reaso
     assert.match(errores[0], /raro_1/);
     assert.match(errores[0], /vehicle/);
   });
+
+  it("sin `description` en el ledger, el spawn vuelve SIN ella: no se le pone el id de procedencia (#397)", () => {
+    // Aquí se caía a `rec.id`: el mismo NPC se pintaba con «an entity» en vivo
+    // y con `narr_npc_…` tras reanudar (guion 66). La procedencia es lo que
+    // declaró el motor o nada.
+    const { spawns, errores } = spawnsDeRuntime([
+      rec({ id: "narr_npc_178_3", data: { name: "Mochuelo", role: "villager" } }),
+    ]);
+    assert.deepEqual(errores, []);
+    assert.equal(spawns.length, 1);
+    assert.equal(spawns[0].name, "Mochuelo");
+    assert.equal("description" in spawns[0], false, JSON.stringify(spawns[0]));
+  });
+
+  it("un record sin `name` no es un caso: es un ledger que se saltó la puerta, y REVIENTA (#397)", () => {
+    // La decisión vive en UN sitio, `loadSession` (narrative-state.test.ts lo
+    // mide): un save con un record sin `data.name` no carga. Aquí no hay rama
+    // «se deja fuera y se dice» —QA la cazó como segundo criterio frente a la
+    // resiembra del sim—; si llega, es invariante roto y se lanza con el id.
+    assert.throws(
+      () => spawnsDeRuntime([rec({ id: "anonimo_1", data: { description: "alguien sin nombre" } })]),
+      /anonimo_1.*sin data\.name/,
+    );
+    assert.throws(() => spawnsDeRuntime([rec({ id: "blanco_1", data: { name: "   " } })]), /blanco_1/);
+  });
 });
 
 describe("combateDeEntity — tres desenlaces, ninguno colapsable", () => {

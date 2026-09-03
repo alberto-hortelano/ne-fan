@@ -60,7 +60,7 @@ import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, BASE_UI_THEME } from "./ui/theme.js";
 import { createClientSession } from "@nefan-core/src/session/session-facets.js";
 import { createEntrada } from "@nefan-core/src/session/entrada.js";
-import { spawnsDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
+import { spawnsDeRuntime, type SpawnDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
 import { Mirada } from "@nefan-core/src/simulation/mirada.js";
 import { intencionDeTeclas, pasoDelJugador } from "@nefan-core/src/simulation/paso-del-jugador.js";
 import {
@@ -1881,14 +1881,10 @@ function pintarFalloDelMotor(status: StatusRotulable): void {
  *  en el renderer, que es la "geometría base" sobre la que luego se
  *  superponen imágenes IA. */
 function materializeSpawn(
-  effect: {
-    entityId: string;
-    entityKind: "npc" | "object" | "building";
-    description: string;
-    name?: string;
-    position: [number, number, number];
-    data: Record<string, unknown>;
-  },
+  /** La forma del effect `spawn_entity` sin su `eventId`: la misma que come
+   *  el resume (`spawnsDeRuntime`). `name` es el rótulo, siempre;
+   *  `description` la procedencia, si la hay (#397). */
+  effect: SpawnDeRuntime,
   /** `true` cuando esto NO acaba de pasar: el mundo se está rehidratando desde
    *  el save. Lo único que cambia es lo que se le CUENTA al jugador — «⚔ Secuaz
    *  ataca» y «✨ Nogala aparece» son mentira al reanudar: nadie ha atacado ni
@@ -1897,7 +1893,8 @@ function materializeSpawn(
 ): void {
   const [x, y, z] = effect.position;
   const pos: Vec3 = { x, y, z };
-  const label = (effect.name ?? effect.description ?? effect.entityId).slice(0, 40);
+  // El rótulo ES `name`: la descripción es la procedencia y no se rotula.
+  const label = effect.name.slice(0, 40);
 
   if (effect.entityKind === "npc") {
     // VÍA (b) al combate: un `spawn_entity` con `role:"hostile"`. El bloque
@@ -1930,13 +1927,14 @@ function materializeSpawn(
         // pegar; la barra de vida, en algo que el jugador ve perder vida.
         gameClient?.addEnemies([nuevo.combatiente]);
         rebuildEnemyBars();
-        log(opts.rehidratado ? `↩ ${effect.name ?? "Enemigo"} sigue ahí` : `⚔ ${effect.name ?? "Enemigo"} ataca`);
+        log(opts.rehidratado ? `↩ ${effect.name} sigue ahí` : `⚔ ${effect.name} ataca`);
       }
       return;
     }
-    // El caso central del skin IA: la descripción del motor narrativo es el
-    // prompt con el que se repinta la base y_bot frame a frame.
-    const npcPrompt = effect.description || (effect.name ?? effect.entityId);
+    // El caso central del skin IA: la PROCEDENCIA (`description`) es el prompt
+    // con el que se repinta la base y_bot frame a frame; sin ella, el nombre.
+    // Nada se inventa aquí ni antes: lo que llega es lo que declaró el motor.
+    const npcPrompt = effect.description ?? effect.name;
     const spawnStyleRole = npcSkinStyleRef({
       style_ref: typeof effect.data.style_ref === "string" ? effect.data.style_ref : undefined,
       role: typeof effect.data.role === "string" ? effect.data.role : undefined,
@@ -1948,7 +1946,7 @@ function materializeSpawn(
       radius: 7,
       color: "#68c",
       label,
-      name: effect.name ?? effect.entityId,
+      name: effect.name,
       alive: true,
       category: "creature",
       skinPrompt: npcPrompt,
@@ -1956,7 +1954,7 @@ function materializeSpawn(
       dueno: { de: "runtime" },
     });
     characterSprites.requestSkin(npcPrompt, { role: spawnStyleRole });
-    log(opts.rehidratado ? `↩ ${effect.name ?? "NPC"} sigue ahí` : `✨ ${effect.name ?? "NPC"} aparece`);
+    log(opts.rehidratado ? `↩ ${effect.name} sigue ahí` : `✨ ${effect.name} aparece`);
     return;
   }
 
@@ -2014,49 +2012,46 @@ narrativeClient.onNarrativeEvent((event) => {
       case "story_delta":
         log(`📖 ${effect.delta.slice(0, 80)}`);
         break;
-      case "spawn_entity": {
-        // El bridge envuelve una escena recién generada en un spawn_entity con
-        // `data.scene` (ws-server.ts start_session): eso es "cargar escena".
-        // Un spawn_entity SIN `data.scene` es una entidad suelta que se
-        // materializa in-place en la escena viva (Task 13).
-        const scene = (effect.data as Record<string, unknown> | undefined)?.scene as
-          | Record<string, unknown>
-          | undefined;
-        if (scene) {
-          // El tile realizado de un lugar lleva su `place_id` (lo fija el
-          // bridge en el Format D crudo): es lo que ata esta escena al viaje
-          // que el jugador pidió, y no al prefetch que aterrice a la vez.
-          const crudo = scene.__format_d as { place_id?: string } | undefined;
-          travelLedger.escena(String(scene.scene_id ?? effect.entityId), crudo?.place_id);
-          const t = scene.tile as { tx: number; ty: number } | undefined;
-          if (t && Number.isInteger(t.tx) && Number.isInteger(t.ty)) {
-            // Tile del plano: ADITIVO (los anteriores no desaparecen).
-            paso(
-              addTile(scene).then(() => {
-                const edge = frontier.onTileReady(t.tx, t.ty, playerPos.x, playerPos.z);
-                if (edge) {
-                  // Sin destello de llegada: el feedback ES que el muro de
-                  // niebla de esa frontera se disipa y descubre el terreno
-                  // nuevo. Un flash encima solo tapaba lo que hay que mirar.
-                  const ES: Record<string, string> = { north: "norte", south: "sur", east: "este", west: "oeste" };
-                  log(`🌍 el mundo continúa hacia el ${ES[edge]}`);
-                } else {
-                  log(`🌍 tile listo: ${effect.entityId}`);
-                }
-              }),
-              "scene",
-              `el tile ${effect.entityId} llegó pero no se pudo instalar`,
-            );
-          } else {
-            // Escena legacy (save v3 sin migrar).
-            paso(loadSceneData(scene), "scene", `no se pudo cargar la escena ${effect.entityId}`);
-            log(`🌍 escena cargada: ${effect.entityId}`);
-          }
+      case "scene_loaded": {
+        // El bridge difunde una escena recién generada, realizada o re-difundida
+        // como SU propio effect (`SceneLoadedEffect`, eventId `scene_init`):
+        // eso es "cargar escena", y no es materializar una entity.
+        const scene = effect.scene;
+        // El tile realizado de un lugar lleva su `place_id` (lo fija el
+        // bridge en el Format D crudo): es lo que ata esta escena al viaje
+        // que el jugador pidió, y no al prefetch que aterrice a la vez.
+        const crudo = scene.__format_d as { place_id?: string } | undefined;
+        travelLedger.escena(String(scene.scene_id ?? effect.sceneId), crudo?.place_id);
+        const t = scene.tile as { tx: number; ty: number } | undefined;
+        if (t && Number.isInteger(t.tx) && Number.isInteger(t.ty)) {
+          // Tile del plano: ADITIVO (los anteriores no desaparecen).
+          paso(
+            addTile(scene).then(() => {
+              const edge = frontier.onTileReady(t.tx, t.ty, playerPos.x, playerPos.z);
+              if (edge) {
+                // Sin destello de llegada: el feedback ES que el muro de
+                // niebla de esa frontera se disipa y descubre el terreno
+                // nuevo. Un flash encima solo tapaba lo que hay que mirar.
+                const ES: Record<string, string> = { north: "norte", south: "sur", east: "este", west: "oeste" };
+                log(`🌍 el mundo continúa hacia el ${ES[edge]}`);
+              } else {
+                log(`🌍 tile listo: ${effect.sceneId}`);
+              }
+            }),
+            "scene",
+            `el tile ${effect.sceneId} llegó pero no se pudo instalar`,
+          );
         } else {
-          materializeSpawn(effect);
+          // Escena legacy (save v3 sin migrar).
+          paso(loadSceneData(scene), "scene", `no se pudo cargar la escena ${effect.sceneId}`);
+          log(`🌍 escena cargada: ${effect.sceneId}`);
         }
         break;
       }
+      case "spawn_entity":
+        // Una entidad suelta que se materializa in-place en la escena viva.
+        materializeSpawn(effect);
+        break;
       case "schedule_event":
         log(`⏳ scheduled: ${effect.description.slice(0, 60)}`);
         break;

@@ -163,13 +163,34 @@ describe("dispatchConsequences", () => {
     assert.equal(s.entities[0].data.role, "hostile");
   });
 
+  it("sin `description` el effect va SIN ella: nadie inventa «an entity» (#397)", () => {
+    // `name` es el rótulo y es obligatorio; `description` es la procedencia y
+    // es opcional. Aquí vivía `c.description ?? "an entity"`: un texto que
+    // ningún motor escribió acababa siendo el prompt del skin del NPC, y el
+    // guion 66 lo veía pintado. Con procedencia, viaja verbatim.
+    const s = makeState();
+    const r = dispatchConsequences(s, "evt_1", [
+      { type: "spawn_entity", entity_kind: "npc", name: "Mochuelo", role: "villager" },
+      { type: "spawn_entity", entity_kind: "npc", name: "Nogala", description: "posadera de manos grandes" },
+    ]);
+    const efectos = r.effects.filter((e): e is Extract<typeof e, { kind: "spawn_entity" }> => e.kind === "spawn_entity");
+    assert.equal(efectos.length, 2);
+    assert.equal(efectos[0].name, "Mochuelo");
+    assert.equal("description" in efectos[0], false, `se inventó una procedencia: ${JSON.stringify(efectos[0])}`);
+    assert.equal(efectos[1].name, "Nogala");
+    assert.equal(efectos[1].description, "posadera de manos grandes");
+    // Y el ledger guarda lo que llegó, sin añadir lo que no llegó.
+    assert.equal("description" in s.entities[0].data, false);
+    assert.equal(s.entities[1].data.description, "posadera de manos grandes");
+  });
+
   it("un spawn NO hostil no lleva combat: ni un aldeano, ni un objeto, ni un edificio", () => {
     const s = makeState();
     const r = dispatchConsequences(s, "evt_1", [
-      { type: "spawn_entity", entity_kind: "npc", role: "villager", description: "aldeana" },
-      { type: "spawn_entity", entity_kind: "npc", description: "alguien sin rol" },
-      { type: "spawn_entity", entity_kind: "object", description: "un cofre" },
-      { type: "spawn_entity", entity_kind: "building", description: "una forja" },
+      { type: "spawn_entity", entity_kind: "npc", role: "villager", name: "Aldeana", description: "aldeana" },
+      { type: "spawn_entity", entity_kind: "npc", name: "Alguien", description: "alguien sin rol" },
+      { type: "spawn_entity", entity_kind: "object", name: "Cofre", description: "un cofre" },
+      { type: "spawn_entity", entity_kind: "building", name: "Forja", description: "una forja" },
     ]);
     for (const e of s.entities) {
       assert.ok(!("combat" in e.data), `${e.id} (${e.type}) salió con combat`);
@@ -186,8 +207,8 @@ describe("dispatchConsequences", () => {
     // en el sim como algo a lo que pegar y que pega.
     const s = makeState();
     dispatchConsequences(s, "evt_1", [
-      { type: "spawn_entity", entity_kind: "building", role: "hostile", description: "forja" },
-      { type: "spawn_entity", entity_kind: "object", role: "hostile", description: "yunque" },
+      { type: "spawn_entity", entity_kind: "building", role: "hostile", name: "Forja", description: "forja" },
+      { type: "spawn_entity", entity_kind: "object", role: "hostile", name: "Yunque", description: "yunque" },
     ]);
     for (const e of s.entities) {
       assert.ok(!("combat" in e.data), `${e.type} hostil salió con combat`);
@@ -197,9 +218,9 @@ describe("dispatchConsequences", () => {
   it("varios spawns del mismo turno reciben ids únicos (no colisionan)", () => {
     const s = makeState();
     const cs: Consequence[] = [
-      { type: "spawn_entity", entity_kind: "npc", description: "guardia 1" },
-      { type: "spawn_entity", entity_kind: "npc", description: "guardia 2" },
-      { type: "spawn_entity", entity_kind: "npc", description: "guardia 3" },
+      { type: "spawn_entity", entity_kind: "npc", name: "Guardia", description: "guardia 1" },
+      { type: "spawn_entity", entity_kind: "npc", name: "Guardia", description: "guardia 2" },
+      { type: "spawn_entity", entity_kind: "npc", name: "Guardia", description: "guardia 3" },
     ];
     const r = dispatchConsequences(s, "evt_1", cs); // sin generateEntityId → default
     const ids = s.entities.map((e) => e.id);

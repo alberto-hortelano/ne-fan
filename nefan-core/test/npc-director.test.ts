@@ -66,7 +66,7 @@ describe("NpcDirector.arriveNpc", () => {
     const s1 = new NarrativeState(storage);
     const id = s1.startNewSession("g");
     s1.worldMap.upsertPlace({ id: "puerto", kind: "settlement", parent_id: "world", name: "Puerto" });
-    s1.recordEntitySpawned("boris", "npc", "scene", [0, 0, 0], { current_place_id: "world" });
+    s1.recordEntitySpawned("boris", "npc", "scene", [0, 0, 0], { name: "Boris", current_place_id: "world" });
     const d1 = new NpcDirector(s1);
     d1.moveNpcToPlace("boris", "puerto");
     d1.arriveNpc("boris");

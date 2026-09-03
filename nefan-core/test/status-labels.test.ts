@@ -488,6 +488,10 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
     // al jugador. Copiado verbatim de lo que compone `preloadBase`
     // (nefan-html/src/renderer/character-sprites.ts) en un clon limpio.
     `${FALLO_HOJAS_BASE}: faltan 10 de 10 hojas (idle, walk, run, quick, heavy, medium, defensive, precise, hit_react, death) — Error: HTTP 404 on /sprites/y_bot/idle/frontal_8/meta.json`,
+    // El save con un record del ledger sin `data.name` (#397): el motivo trae
+    // a QUIÉN le falta, entre guiones, en palabras del jugador. Copiado verbatim
+    // de `loadSession`. Va el último para no mover los índices de arriba.
+    'save_invalido: save "1756640000-abc123": entities["narr_npc_1788436407_0_2"].data.name falta — «posadera de manos grandes y delantal remendado» no tiene nombre — pre-producción, sin migraciones (#336): bórralo o empieza partida nueva',
   ];
 
   it("ninguno enseña el código, la ruta del disco ni el volcado", () => {
@@ -530,6 +534,13 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
       "Faltan las hojas de sprites del personaje, que no viajan en el repositorio: " +
         "genéralas con sprite-forge siguiendo docs/assets-de-personaje.md.",
     ],
+    // …y cuando el motivo del save inválido dice a quién le falta el nombre,
+    // se le dice a quien juega por su descripción, nunca por el id de máquina
+    // (#397, QA H3). El molde («bórrala o empieza una nueva») no cambia.
+    [
+      "save_invalido (record sin nombre)",
+      "Esa partida guardada ya no vale para esta versión del juego («posadera de manos grandes y delantal remendado» no tiene nombre): bórrala o empieza una nueva.",
+    ],
   ];
 
   it("cada código del bridge tiene SU frase, no una genérica que valga para todo", () => {
@@ -568,9 +579,10 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
     // comparten frase son a propósito (`combat_system_unknown` y
     // `npc_behavior_unknown`): para el jugador son el mismo hecho —el mundo
     // pide algo que su juego no trae— y distinguirlos solo nombraría un
-    // subsistema que no conoce. 11 códigos → 10 frases.
+    // subsistema que no conoce. 12 códigos → 11 frases (el save inválido con
+    // un record sin nombre es OTRA frase: nombra a quién le falta, #397).
     const distintos = CRUDOS.map((raw) => motivoDeSesionParaElJugador(new Error(raw)));
-    assert.equal(new Set(distintos).size, 10, JSON.stringify(distintos));
+    assert.equal(new Set(distintos).size, 11, JSON.stringify(distintos));
     assert.equal(distintos[4], distintos[5], "combate y NPCs comparten frase a propósito");
     assert.match(distintos[0], /ya no está/);
     assert.match(distintos[1], /bórrala o empieza una nueva/, "el save inválido nombra su única salida");

@@ -1,11 +1,12 @@
 {
-  "description": "entity_kind creature no permitido",
+  "description": "entity_kind creature no permitido (lleva `name` para que el motivo del rechazo sea SOLO el kind)",
   "expect": "reject",
   "payload": {
     "consequences": [
       {
         "type": "spawn_entity",
         "entity_kind": "creature",
+        "name": "Lobo",
         "description": "un lobo"
       }
     ]

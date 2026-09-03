@@ -23,6 +23,16 @@ import {
   } from "./helpers.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 
+/** La world scene que difundió un `scene_init`: viaja en su propio effect
+ *  `scene_loaded` (#397), no en el `data` de un spawn. */
+function escenaDelEvento(
+  ev: NarrativeEventMessage | undefined,
+): { exits?: { place_id: string; edge?: string }[] } | undefined {
+  const efecto = ev?.effects?.[0];
+  if (!efecto || efecto.kind !== "scene_loaded") return undefined;
+  return efecto.scene as { exits?: { place_id: string; edge?: string }[] };
+}
+
 describe("bridge player_entered_place + map triggers", () => {
   it("lugar desconocido → narrative_status: error", async () => {
     const { ctx, broadcasts } = makeCtx();
@@ -170,7 +180,7 @@ describe("bridge player_entered_place + map triggers", () => {
     const fromAldea = broadcasts.find(
       (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
     );
-    const aldeaScene = fromAldea?.effects?.[0]?.data?.scene as { exits?: { place_id: string; edge?: string }[] };
+    const aldeaScene = escenaDelEvento(fromAldea);
     assert.equal(aldeaScene?.exits?.[0]?.place_id, "bosque");
     assert.equal(aldeaScene?.exits?.[0]?.edge, "south");
 
@@ -179,7 +189,7 @@ describe("bridge player_entered_place + map triggers", () => {
     const fromBosque = broadcasts.find(
       (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
     );
-    const bosqueScene = fromBosque?.effects?.[0]?.data?.scene as { exits?: { place_id: string; edge?: string }[] };
+    const bosqueScene = escenaDelEvento(fromBosque);
     assert.equal(bosqueScene?.exits?.[0]?.place_id, "aldea");
     assert.equal(bosqueScene?.exits?.[0]?.edge, "north");
   });
@@ -279,8 +289,8 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     const sceneEvent = broadcasts.findLast(
       (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
     );
-    const scene = sceneEvent?.effects?.[0]?.data?.scene as { exits?: { place_id: string }[] };
-    assert.deepEqual(scene.exits?.map((e) => e.place_id), ["claro"]);
+    const scene = escenaDelEvento(sceneEvent);
+    assert.deepEqual(scene?.exits?.map((e) => e.place_id), ["claro"]);
   });
 
   it("si el motor acota el lugar con `place_anchors`, el spawn cae DENTRO del rect", async () => {
@@ -739,8 +749,7 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
     const ev = (broadcasts as NarrativeEventMessage[]).findLast(
       (m) => m.type === "narrative_event" && m.eventId === "scene_init",
     );
-    const scene = ev?.effects?.[0]?.data?.scene as { exits?: { place_id: string }[] } | undefined;
-    return scene?.exits?.map((e) => e.place_id);
+    return escenaDelEvento(ev)?.exits?.map((e) => e.place_id);
   };
 
   it("el bootstrap SIN place_id, habiendo mapa, es error — no un panel vacío", async () => {

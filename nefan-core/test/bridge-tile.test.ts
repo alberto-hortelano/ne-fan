@@ -54,9 +54,14 @@ describe("bridge request_tile (plano continuo)", () => {
       (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
     );
     assert.ok(sceneEvent, "re-broadcast del esquema persistido");
-    // El wire lleva la world scene normalizada (contrato de render único);
-    // la persistencia interna sigue en Format D crudo.
-    const wireScene = (sceneEvent.effects[0].data as { scene: Record<string, unknown> }).scene;
+    // El wire lleva la world scene normalizada (contrato de render único) en
+    // su propio effect `scene_loaded` (#397); la persistencia interna sigue en
+    // Format D crudo.
+    const efecto = sceneEvent.effects[0];
+    assert.equal(efecto.kind, "scene_loaded", "la escena viaja como scene_loaded, no disfrazada de spawn");
+    if (efecto.kind !== "scene_loaded") throw new Error("inalcanzable");
+    assert.equal(efecto.sceneId, "tile_0_0");
+    const wireScene = efecto.scene;
     assert.ok(Array.isArray(wireScene.objects), "objects[] en metros");
     assert.ok(wireScene.dimensions, "dimensions derivadas");
     assert.ok(wireScene.__format_d, "el crudo viaja en __format_d");

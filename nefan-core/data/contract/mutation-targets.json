@@ -547,6 +547,7 @@
     {
       "id": "contrato-escena",
       "mutate": [
+        "src/contract/model-io/entity-vocabulary.ts",
         "src/contract/model-io/physics.ts",
         "src/contract/model-io/retired-terrain-fields.ts",
         "src/contract/model-io/scene-schema.ts",
@@ -556,6 +557,7 @@
         "test/contract-model-io.test.ts",
         "test/contract-physics.test.ts",
         "test/contract-prompts.test.ts",
+        "test/entity-vocabulary.test.ts",
         "test/message-schema.test.ts",
         "test/retired-terrain-fields.test.ts",
         "test/scene-fixtures.test.ts",

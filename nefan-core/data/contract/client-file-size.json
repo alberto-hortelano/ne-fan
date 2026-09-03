@@ -4,7 +4,7 @@
   "excepciones": [
     {
       "fichero": "src/main.ts",
-      "lineas": 2321,
+      "lineas": 2316,
       "porque": "El fichero que abre #358: game loop, carga de tiles, colisión, diálogo, viaje, HUD, arranque, título y bootstrap. Entró en la tanda con 3.136 y bajó tres veces en los commits que cortaron (2.817 al salir la carga de tile, 2.500 al repartirse el bucle, 2.326 al salir el seam del banco de pruebas); 2.321 al ordenar el resume (#390).",
       "issue": "#358"
     },

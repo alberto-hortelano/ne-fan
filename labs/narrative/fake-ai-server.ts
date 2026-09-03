@@ -502,10 +502,37 @@ const server = http.createServer((req, res) => {
                 },
               ]
             : [];
+        // CUARTO turno: lo que llega SIN procedencia. `name` es obligatorio y
+        // es el rótulo; `description` es opcional y es el texto del que sale
+        // el arte (#397). Un motor que no la declara no obliga al cliente a
+        // inventarla: hasta esta tanda un spawn sin `description` se pintaba
+        // con «an entity» en vivo y con su id tras reanudar, y el guion 66 es
+        // quien lo afirma. Ningún guion llegaba al turno 4 (medido:
+        // `chooseDialogue` ≤ 2 veces por guion), así que no cambia lo que
+        // cuentan 48, 49 y 50 del turno 3.
+        const spawnSinProcedencia =
+          fakeDialogueTurn === 4
+            ? [
+                {
+                  type: "spawn_entity" as const,
+                  entity_kind: "npc" as const,
+                  role: "villager" as const,
+                  name: "Mochuelo",
+                  position_hint: "near_player",
+                },
+                {
+                  type: "spawn_entity" as const,
+                  entity_kind: "object" as const,
+                  name: "Farol del zaguán",
+                  position_hint: "near_player",
+                },
+              ]
+            : [];
         return send(200, {
           consequences: [
             ...spawnHostil,
             ...spawnMundo,
+            ...spawnSinProcedencia,
             {
               type: "dialogue",
               speaker,

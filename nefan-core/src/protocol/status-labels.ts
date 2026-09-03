@@ -347,7 +347,14 @@ export function motivoDeSesionParaElJugador(err: unknown): string {
   // al log. Sin esta rama caía en el genérico «inténtalo de nuevo»: el mismo
   // consejo imposible que el guion 27 nació rojo por denunciar.
   if (/save_invalido/.test(raw)) {
-    return "Esa partida guardada ya no vale para esta versión del juego: bórrala o empieza una nueva.";
+    // Si el motivo trae a QUIÉN le falta el nombre (#397: `loadSession` lo
+    // escribe entre guiones, con su descripción o su clase), se le dice: es
+    // la única pista que quien juega puede reconocer — un id de máquina no le
+    // dice nada (QA de PR-C, H3). El resto del molde no cambia.
+    const quien = /— (.+?) no tiene nombre —/.exec(raw);
+    return quien
+      ? `Esa partida guardada ya no vale para esta versión del juego (${quien[1]} no tiene nombre): bórrala o empieza una nueva.`
+      : "Esa partida guardada ya no vale para esta versión del juego: bórrala o empieza una nueva.";
   }
   if (/game_load_failed/.test(raw)) {
     return "Los datos de ese mundo están dañados y no se pueden leer.";

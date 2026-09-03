@@ -91,8 +91,13 @@ export function dispatchConsequences(
         break;
       }
       case "spawn_entity": {
-        const kind = (c.entity_kind ?? "object") as "npc" | "object" | "building";
-        const description = c.description ?? "an entity";
+        // Sin defaults mudos (#397): `entity_kind` y `name` los exige el
+        // contrato (zod y espejo Python) antes de llegar aquí, y `description`
+        // es OPCIONAL de verdad — si el motor no la declaró, el effect va sin
+        // ella y el cliente pinta con `name`. Aquí vivía un `?? "an entity"`
+        // que nadie escribió y que el jugador acababa viendo como prompt del
+        // skin.
+        const kind = c.entity_kind;
         const hint = c.position_hint ?? "near_player";
         const pos = resolvePositionHint(hint, opts.playerPosition, opts.playerForward, spawnsDelTurno++);
         const entityId =
@@ -127,8 +132,8 @@ export function dispatchConsequences(
           kind: "spawn_entity",
           entityId: finalId,
           entityKind: kind,
-          description,
-          name: typeof c.name === "string" ? c.name : undefined,
+          name: c.name,
+          ...(c.description !== undefined ? { description: c.description } : {}),
           position: pos,
           data,
           eventId,

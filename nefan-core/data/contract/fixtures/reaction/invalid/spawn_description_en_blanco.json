@@ -1,0 +1,14 @@
+{
+  "description": "spawn_entity con `description` de solo espacios: la procedencia es opcional, pero si va no puede ir en blanco (mismo refinamiento que una entity de escena; el `.strip()` de ai_server la dejaba pasar y luego la tiraba).",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "npc",
+        "name": "Mochuelo",
+        "description": "   "
+      }
+    ]
+  }
+}

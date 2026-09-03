@@ -36,13 +36,15 @@ function sceneFromRun(runDir: string): Record<string, unknown> {
   const lines = readFileSync(path, "utf8").split("\n").filter(Boolean);
   let found: Record<string, unknown> | null = null;
   for (const line of lines) {
-    const evt = JSON.parse(line) as { msg?: { type?: string; effects?: { type?: string; data?: { scene?: Record<string, unknown> } }[] } };
+    const evt = JSON.parse(line) as { msg?: { type?: string; effects?: { kind?: string; scene?: Record<string, unknown> }[] } };
     const effects = evt.msg?.type === "narrative_event" ? evt.msg.effects ?? [] : [];
     for (const eff of effects) {
-      if (eff?.data?.scene) found = eff.data.scene;
+      // La escena viaja en su propio effect (`scene_loaded`, #397), no dentro
+      // del `data` de un spawn.
+      if (eff?.kind === "scene_loaded" && eff.scene) found = eff.scene;
     }
   }
-  if (!found) throw new Error(`ninguna escena en ${path} (¿el run llegó a recibir narrative_event con data.scene?)`);
+  if (!found) throw new Error(`ninguna escena en ${path} (¿el run llegó a recibir narrative_event con un effect scene_loaded?)`);
   return found;
 }
 

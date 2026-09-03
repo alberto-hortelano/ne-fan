@@ -310,7 +310,8 @@ export class NarrativeClient {
   }
 
   /** Trigger lazy realize of a world-map place. The realized scene arrives via
-   *  the onNarrativeEvent callback as a scene_init spawn_entity effect. */
+   *  the onNarrativeEvent callback as a `scene_loaded` effect (eventId
+   *  `scene_init`). */
   enterPlace(placeId: string): void {
     this.bridge.sendPlayerEnteredPlace(placeId);
   }

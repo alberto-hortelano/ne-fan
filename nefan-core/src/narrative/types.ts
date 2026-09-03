@@ -130,9 +130,13 @@ export type Consequence =
   | {
       type: "spawn_entity";
       entity_kind: "npc" | "object" | "building";
-      description: string;
+      /** La etiqueta: lo que se rotula. Obligatoria, como en una entity de
+       *  escena (vocabulario compartido, entity-vocabulary.ts). */
+      name: string;
+      /** La procedencia: el texto del que sale su arte. Opcional; sin ella se
+       *  pinta con `name` y nadie la inventa. */
+      description?: string;
       position_hint?: string;
-      name?: string;
       character_type?: string;
       /** Rol de comportamiento ambiental (peasant | guard | villager |
        *  merchant). Fluye a entity.data y lo consume el NpcBehaviorSystem;
@@ -356,8 +360,12 @@ export type ConsequenceEffect =
       kind: "spawn_entity";
       entityId: string;
       entityKind: "npc" | "object" | "building";
-      description: string;
-      name?: string;
+      /** El rótulo. Siempre: el contrato lo exige y el cliente no tiene con
+       *  qué sustituirlo. */
+      name: string;
+      /** La procedencia, tal cual la declaró el motor; ausente si no la
+       *  declaró (el cliente pinta entonces con `name`). */
+      description?: string;
       position: [number, number, number];
       data: Record<string, unknown>;
       eventId: string;
