@@ -7,11 +7,11 @@ import type { UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import { BridgeClient } from "./bridge-client.js";
 import type {
   SessionMetadata,
-  SessionData,
   ConsequenceEffect,
 } from "@nefan-core/src/narrative/types.js";
 import type {
   GamesListedMessage,
+  SessionDataEnElWire,
   NarrativeEventMessage,
   NarrativeStatusDeJuego,
   NarrativeStatusDeSesion,
@@ -254,7 +254,7 @@ export class NarrativeClient {
   ): Promise<{
     sessionId: string;
     gameId: string;
-    state: SessionData;
+    state: SessionDataEnElWire;
     /** Tema de UI del estilo, recalculado del pack por el bridge (no viene
      *  del save: retocar una paleta se ve al reanudar). */
     uiTheme?: UiTheme;
@@ -266,7 +266,7 @@ export class NarrativeClient {
     return { sessionId: res.sessionId, gameId: res.gameId ?? gameId, state: res.state, uiTheme: res.uiTheme };
   }
 
-  async resumeSession(sessionId: string): Promise<{ state: SessionData; uiTheme?: UiTheme }> {
+  async resumeSession(sessionId: string): Promise<{ state: SessionDataEnElWire; uiTheme?: UiTheme }> {
     const res = await this.bridge.resumeSession(sessionId);
     if (!res.ok || !res.state) throw new Error(res.error ?? "resume_session failed");
     return { state: res.state, uiTheme: res.uiTheme };

@@ -434,12 +434,12 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(resumed.ok, true);
     const wire = resumed.state!.scenes_loaded["fd_scene"].scene_data;
     assert.ok(Array.isArray(wire.objects), "wire: objects[] en metros");
-    assert.ok(wire.__format_d, "wire: el crudo viaja en __format_d");
-    assert.equal(wire.size, undefined, "wire: sin size top-level");
+    assert.ok(Array.isArray(wire.exits), "wire: las salidas van encima");
+    assert.equal("__format_d" in wire, false, "wire: el crudo ya no viaja dentro (#378)");
+    assert.equal("size" in wire, false, "wire: sin size top-level");
     // El estado interno (y por tanto el próximo save) sigue crudo.
     const internal = ctx.narrative.scenes_loaded["fd_scene"].scene_data;
     assert.ok(internal.size, "persistencia: Format D crudo");
-    assert.equal(internal.__format_d, undefined);
   });
 
   it("resume: la escena sale al wire con la vida VIVA, y sin los muertos", async () => {

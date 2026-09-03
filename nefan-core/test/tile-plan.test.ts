@@ -302,9 +302,4 @@ describe("el plan viaja RESUELTO en la world scene", () => {
     assert.equal(w.__plan_warnings?.length, 1);
     assert.match(w.__plan_warnings![0], /ground inválido/);
   });
-
-  it("una escena ya normalizada no se recompone (idempotencia del wire)", () => {
-    const w = formatDToWorld(tile());
-    assert.equal(formatDToWorld(w as Record<string, unknown>), w);
-  });
 });

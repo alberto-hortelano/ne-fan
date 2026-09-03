@@ -22,8 +22,8 @@
     },
     {
       "fichero": "src/ui/style-apply.ts",
-      "lineas": 543,
-      "porque": "La corrida de «Aplicar estilo» (subida de pack y confirmación de coste). Cuelga de #346: es la mitad del título que vive fuera del título.",
+      "lineas": 533,
+      "porque": "La corrida de «Aplicar estilo» (subida de pack y confirmación de coste). Cuelga de #346: es la mitad del título que vive fuera del título. 533 al tipar la world scene (#378): su copia privada del tipo (`WorldSceneDelBatch`) desaparece.",
       "issue": "#346"
     }
   ]

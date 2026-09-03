@@ -78,7 +78,9 @@ export interface DepsDelHook {
    *  preguntas y no como valores congelados en el arranque. */
   combatSystemId(): string;
   attackCatalog(): readonly AttackSpec[];
-  addTile(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void>;
+  /** Format D crudo → escena servida sin salidas → `addTile`. La normalización
+   *  vive en `main.ts`, que es el único sitio del cliente que la hace. */
+  addTileRaw(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void>;
   loadSceneData(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void>;
   /** Conduce el `<select>` de fixtures y DEVUELVE la carga. Se queda en
    *  `main.ts` porque es quien tiene el desplegable y la promesa que su
@@ -289,7 +291,7 @@ export function instalarNefanHook(deps: DepsDelHook): void {
        *  sin ello no hay forma de medir desde el árbol el coste de varios tiles
        *  residentes — que es de donde sale `MAX_TILE_VOLUMES`
        *  (`qa/presupuesto-de-volumenes.mjs`). Solo DEV, como el resto del hook. */
-      addTileRaw: (raw: Record<string, unknown>) => deps.addTile(raw),
+      addTileRaw: (raw: Record<string, unknown>) => deps.addTileRaw(raw),
       /** TOMA el mundo con una escena Format D cruda, sin pasar por el selector
        *  «Room»: el hermano de `addTileRaw` para el PRIMER tile de un bench.
        *  Existe porque el selector se puebla con `import.meta.glob`, que vite

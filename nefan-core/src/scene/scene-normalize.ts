@@ -10,18 +10,90 @@
  *  nefan-core, clientes que solo pintan").
  *
  *  Fail-loud: a malformed Format D entity throws rather than being silently
- *  dropped. A payload that is NOT Format D is returned verbatim (an
- *  already-resolved world scene, e.g. a `change_scene` payload). */
+ *  dropped, and so does a payload that is NOT expanded Format D (#378): until
+ *  then it was returned verbatim, and half a conversion over a foreign payload
+ *  is worse than none — but a `WorldScene` with members cannot be "whatever
+ *  came in", so the honest answer is to say what is missing. */
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
-import { composeTilePlan } from "./tile-plan.js";
-import { tileWorldRect } from "./tile.js";
-import { combatForHostileRole } from "../combat/hostiles.js";
+import { composeTilePlan, type TilePlan } from "./tile-plan.js";
+import { tileWorldRect, type TileCoord, type WorldRect } from "./tile.js";
+import type { TerrainGridData } from "./terrain-collision.js";
+import { combatForHostileRole, type HostileCombat } from "../combat/hostiles.js";
+import type { ExpandedScene } from "../contract/model-io/scene-schema.js";
 
-/** The world-coordinate scene shape a renderer consumes. Loose by design — the
- *  renderer reads a known subset and ignores the rest (e.g. `__player_start`,
- *  `__format_d`). */
-export type WorldScene = Record<string, unknown>;
+/** Un objeto, edificio, prop, item o decor de la world scene: en METROS y con
+ *  la BASE en `position[1]`. `name` es la etiqueta (lo que el jugador lee) y
+ *  `description`, si el motor la declaró, la procedencia del arte (#238).
+ *  `volume_id` dice qué volumen del plan ya lo pinta (sin él, billboard). */
+export interface ObjetoEnElWire {
+  id: string;
+  position: [number, number, number];
+  scale: [number, number, number];
+  /** `tree` se pinta como `prop`: la categoría es de RENDER, no el kind. */
+  category: "building" | "prop" | "item" | "decor";
+  name: string;
+  description?: string;
+  volume_id?: string;
+  shape?: "box" | "cylinder" | "sphere" | "cone";
+}
+
+/** Un personaje de la world scene. `combat` solo si el motor lo declaró
+ *  `role:"hostile"` (lo deriva el core: `combatForHostileRole`); `role`,
+ *  `style_ref` y `description` tal cual los declaró el motor.
+ *  `position_declared` NO lo escribe `formatDToWorld`: lo pone el wire
+ *  (`escenaConCombateVivo`) cuando sustituye `position` por la VIVA del save,
+ *  y es lo que sigue midiendo el fail-loud de conversión celda→metro
+ *  (`npcsFueraDelRect`). */
+export interface NpcEnElWire {
+  id: string;
+  name: string;
+  position: [number, number, number];
+  combat?: HostileCombat;
+  role?: string;
+  style_ref?: string;
+  description?: string;
+  position_declared?: [number, number, number];
+}
+
+/** El contrato de RENDER: lo que devuelve `formatDToWorld`, lo que el bridge
+ *  sirve (con las salidas encima: `EscenaServida`, protocol/messages.ts) y lo
+ *  que el cliente pinta. CERRADA: ni índice ni `Record` — escribir mal un
+ *  miembro no compila (candado de tipo al final del fichero). Hasta #378 era
+ *  `Record<string, unknown>` y cada consumidor la abría con `as`.
+ *
+ *  Los miembros opcionales lo son porque el MOTOR los declara o no
+ *  (`ground`, `volumes`, `vegetation_zones`, `scatter_*`, `biome`,
+ *  `place_id`), porque solo un tile del plano los tiene (`tile`), o porque
+ *  el plan puede no componerse (`__plan`, con sus avisos). Los declarados
+ *  viajan TAL CUAL (provenance, con el tipo del contrato de escena): lo que se
+ *  pinta y colisiona es `__plan`, ya compuesto. */
+export interface WorldScene {
+  scene_id: string;
+  scene_description: string;
+  dimensions: { width: number; depth: number; height: number };
+  world_rect: WorldRect;
+  tile?: TileCoord;
+  /** Color de suelo de reserva cuando no hay atlas. */
+  terrain: { color: [number, number, number] };
+  /** El grid crudo, para la COLISIÓN de terreno (no para pintar). */
+  terrain_grid: TerrainGridData;
+  ground?: ExpandedScene["ground"];
+  volumes?: ExpandedScene["volumes"];
+  vegetation_zones?: ExpandedScene["vegetation_zones"];
+  scatter_generators?: ExpandedScene["scatter_generators"];
+  scatter_zones?: ExpandedScene["scatter_zones"];
+  biome?: string;
+  /** El lugar del world map que esta escena realiza (lo estampa el bridge). */
+  place_id?: string;
+  objects: ObjetoEnElWire[];
+  npcs: NpcEnElWire[];
+  /** Dónde aparece el jugador; `null` si la escena no declara entity player. */
+  __player_start: { x: number; z: number } | null;
+  /** El plan COMPUESTO (declarado + derivado), resuelto UNA vez aquí. */
+  __plan?: TilePlan;
+  __plan_warnings?: string[];
+}
 
 type FormatDEntity = {
   id: string;
@@ -89,14 +161,24 @@ const MAX_ENTITY_HEIGHT_M = 20;
  *  propiedad del rasgo `water` de `ground`, no como excepción sobre un char. */
 export const DEFAULT_SOLID_CHARS: readonly string[] = ["W", "w"];
 
-/** Convert a Map Format D scene to a world-coordinate scene. If `raw` is not in
- *  Format D it is returned unchanged. */
+/** Texto de un campo de la raíz, o `""` si no es texto: `scene_description`
+ *  puede faltar en una fixture a mano y el HUD la pinta tal cual. */
+function textoOVacio(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+/** Convert an expanded Map Format D scene to a world-coordinate scene. Throws
+ *  if `raw` is not expanded Format D: the persisted population is gated by
+ *  `ExpandedSceneSchema` and a local fixture is expanded right here, so what
+ *  reaches the check below without `size`/`terrain`/`entities` is a payload
+ *  this function was never meant to see (#378: it used to come back verbatim,
+ *  typed as a scene it was not).
+ *
+ *  `raw` sigue siendo `Record<string, unknown>` a propósito: es la población
+ *  PERSISTIDA (`SceneRecord.scene_data`), que aún no tiene tipo — tiparla es
+ *  otro issue. Los `as` de dentro son la frontera entre esa población y el
+ *  contrato de render, y viven aquí y en ningún otro sitio. */
 export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
-  // Idempotencia: una world scene ya normalizada (lleva __format_d) pasa
-  // intacta. Sin esta guarda, un tile normalizado re-entraría en la expansión
-  // (conserva `tile` pero no `biome`) y lanzaría — el bridge normaliza en el
-  // wire y el cliente HTML vuelve a llamar aquí para sus fixtures locales.
-  if (raw.__format_d !== undefined) return raw;
   // Red de seguridad para fixtures locales: las escenas del bridge llegan ya
   // expandidas (__expanded); una escena cruda con primitivas se expande aquí.
   if (hasUnexpandedPrimitives(raw)) raw = expandScenePrimitives(raw);
@@ -108,7 +190,12 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     Array.isArray(terrain) && terrain.every((r) => typeof r === "string") &&
     Array.isArray(entities);
 
-  if (!isFormatD) return raw;
+  if (!isFormatD) {
+    throw new Error(
+      "formatDToWorld: la escena no es Format D expandido (falta size.cols/rows, terrain[] de strings " +
+        `o entities[]); claves: ${Object.keys(raw).join(", ")}`,
+    );
+  }
 
   const cols = size!.cols!;
   const rows = size!.rows!;
@@ -117,9 +204,11 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
   // rect global del plano continuo; una escena legacy queda centrada en el
   // origen (comportamiento histórico, sin cambios).
   const tile = raw.tile as { tx?: number; ty?: number } | undefined;
+  const tileCoord: TileCoord | undefined =
+    tile && Number.isInteger(tile.tx) && Number.isInteger(tile.ty) ? { tx: tile.tx!, ty: tile.ty! } : undefined;
   const worldRect =
-    tile && Number.isInteger(tile.tx) && Number.isInteger(tile.ty)
-      ? tileWorldRect(tile.tx!, tile.ty!)
+    tileCoord
+      ? tileWorldRect(tileCoord.tx, tileCoord.ty)
       : {
           minX: -(cols * mpc) / 2,
           minZ: -(rows * mpc) / 2,
@@ -132,8 +221,8 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
   // lo LEE — nadie vuelve a derivar (ver src/scene/tile-plan.ts).
   const { plan, representedBy, warnings } = composeTilePlan(raw);
 
-  const objects: Record<string, unknown>[] = [];
-  const npcs: Record<string, unknown>[] = [];
+  const objects: ObjetoEnElWire[] = [];
+  const npcs: NpcEnElWire[] = [];
   let playerStart: { x: number; z: number } | null = null;
 
   for (let i = 0; i < entities.length; i++) {
@@ -192,7 +281,7 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     // building / prop / tree / item / decor: tree maps to prop visually.
     // decor conserva su categoría — puramente estético, sin colisión ni
     // interacción (el cliente solo bloquea building/prop).
-    const category = ent.kind === "tree" ? "prop" : ent.kind;
+    const category = (ent.kind === "tree" ? "prop" : ent.kind) as ObjetoEnElWire["category"];
     if (!ent.name) {
       throw new Error(`scene entities[${i}] (${ent.id}) missing name`);
     }
@@ -202,7 +291,7 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       typeof ent.h === "number" && Number.isFinite(ent.h) && ent.h > 0
         ? Math.min(ent.h, MAX_ENTITY_HEIGHT_M)
         : (KIND_DEFAULT_HEIGHT[ent.kind] ?? 1);
-    const obj: Record<string, unknown> = {
+    const obj: ObjetoEnElWire = {
       id: ent.id,
       position: [x, 0, z],
       scale: [w * mpc, entH, h * mpc],
@@ -221,19 +310,19 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       ...(representedBy[ent.id] ? { volume_id: representedBy[ent.id] } : {}),
     };
     // Forma: explícita si es válida; si no, los árboles son redondos por defecto.
-    if (ent.shape && VALID_SHAPES.has(ent.shape)) obj.shape = ent.shape;
+    if (ent.shape && VALID_SHAPES.has(ent.shape)) obj.shape = ent.shape as ObjetoEnElWire["shape"];
     else if (ent.kind === "tree") obj.shape = "cylinder";
     objects.push(obj);
   }
 
   return {
-    scene_id: raw.scene_id,
-    scene_description: raw.scene_description ?? "",
+    scene_id: textoOVacio(raw.scene_id),
+    scene_description: textoOVacio(raw.scene_description),
     dimensions: { width: cols * mpc, depth: rows * mpc, height: 3 },
     // Coordenadas del plano continuo: rect mundial de la escena/tile y, si es
     // un tile, sus coords de grid. El cliente ancla capas/colisión aquí.
     world_rect: worldRect,
-    tile: tile && Number.isInteger(tile.tx) && Number.isInteger(tile.ty) ? { tx: tile.tx, ty: tile.ty } : undefined,
+    tile: tileCoord,
     terrain: { color: [0.18, 0.22, 0.14] },
     // El grid de terreno crudo (río/camino/puente/piedra…): el cliente lo
     // consume para la COLISIÓN de terreno (createTerrainCollider), no para
@@ -253,8 +342,13 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     // Plan del tile DECLARADO (rasgos de suelo + volúmenes tipados), tal cual
     // lo mandó el motor: es provenance, no la fuente de render. Lo que se
     // pinta y lo que colisiona es `__plan`, que además trae lo derivado.
-    ground: Array.isArray(raw.ground) ? raw.ground : undefined,
-    volumes: Array.isArray(raw.volumes) ? raw.volumes : undefined,
+    ground: Array.isArray(raw.ground) ? (raw.ground as WorldScene["ground"]) : undefined,
+    volumes: Array.isArray(raw.volumes) ? (raw.volumes as WorldScene["volumes"]) : undefined,
+    // La vegetación de masa DECLARADA (la plantada está en `__plan`): viaja
+    // como provenance, y es lo que el banco lee para saber qué pidió el motor.
+    vegetation_zones: Array.isArray(raw.vegetation_zones)
+      ? (raw.vegetation_zones as WorldScene["vegetation_zones"])
+      : undefined,
     // Scatter declarativo (vista fps): passthrough crudo — lo valida el gate
     // de escena y, en render, parseScatter (fail-loud con ruta).
     scatter_generators:
@@ -263,6 +357,10 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
         : undefined,
     scatter_zones: Array.isArray(raw.scatter_zones) ? raw.scatter_zones : undefined,
     biome: typeof raw.biome === "string" ? raw.biome : undefined,
+    // El lugar que realiza (lo estampa el bridge sobre el crudo): hasta #378
+    // el cliente lo sacaba del Format D ENTERO, que viajaba dentro de la world
+    // scene (el 44 % de los bytes de un tile) para leer esta clave.
+    ...(typeof raw.place_id === "string" && raw.place_id ? { place_id: raw.place_id } : {}),
     objects,
     npcs,
     // Metadatos para el cliente — el renderer los ignora.
@@ -272,6 +370,13 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     // los argumentos y el bosque del cliente no sería el del bridge.
     __plan: plan ?? undefined,
     __plan_warnings: warnings.length > 0 ? warnings : undefined,
-    __format_d: raw,
   };
 }
+
+// CANDADO DE TIPO (#378): `WorldScene` es una interfaz cerrada, así que un
+// miembro mal escrito no compila. Si esta línea deja de dar error, alguien le
+// ha puesto un índice o la ha vuelto a abrir — `npm run build` se pone rojo.
+// @ts-expect-error — `position_declred` no es un miembro del npc: eso es lo que se prueba
+type _CandadoDeTipoDelNpc = NpcEnElWire["position_declred"];
+// @ts-expect-error — ni `scene_descrption` de la escena: un índice `[k: string]` lo dejaría compilar
+type _CandadoDeTipoDeLaEscena = WorldScene["scene_descrption"];

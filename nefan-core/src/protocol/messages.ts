@@ -7,6 +7,7 @@ import type { WorldScene } from "../scene/scene-normalize.js";
 import type {
   Consequence,
   ConsequenceEffect,
+  SceneRecord,
   SessionData,
   SessionMetadata,
 } from "../narrative/types.js";
@@ -28,7 +29,7 @@ import type {
 export interface SceneLoadedEffect {
   kind: "scene_loaded";
   sceneId: string;
-  scene: WorldScene;
+  scene: EscenaServida;
 }
 
 /** Lo que va en `effects[]` de un `narrative_event`: los effects de las
@@ -239,6 +240,23 @@ export interface SceneExit {
   edge?: Edge;
 }
 
+/** La escena tal como SALE del bridge (#378): la world scene de
+ *  `formatDToWorld` más las salidas del lugar, calculadas al servir. Solo la
+ *  devuelve `alWire` (bridge/wire-scene.ts); `formatDToWorld` no conoce
+ *  `exits`, y que sean obligatorias aquí es lo que dice que no se sellan en la
+ *  escena persistida (#179). */
+export type EscenaServida = WorldScene & { exits: SceneExit[] };
+
+/** Un `SceneRecord` del save con su escena ya servida: es lo que viaja en el
+ *  `session_started` del resume, por la misma puerta que el broadcast. */
+export type SceneRecordEnElWire = Omit<SceneRecord, "scene_data"> & { scene_data: EscenaServida };
+
+/** `SessionData` en el wire: el save entero, con cada escena servida. Hasta
+ *  #378 viajaba tipado como el Format D persistido, que no era lo que llevaba. */
+export type SessionDataEnElWire = Omit<SessionData, "scenes_loaded"> & {
+  scenes_loaded: Record<string, SceneRecordEnElWire>;
+};
+
 /** The player walked up to an entity (NPC) and pressed the interact key. The
  *  bridge reports it to the narrative engine, which replies with consequences
  *  (typically a show_dialogue effect). */
@@ -325,8 +343,8 @@ export interface SessionStartedMessage {
   sessionId?: string;
   gameId?: string;
   isResume?: boolean;
-  state?: SessionData;
-  scene?: Record<string, unknown>;
+  state?: SessionDataEnElWire;
+  scene?: EscenaServida;
   /** Tema de la UI de juego del estilo de la sesión, RECALCULADO del
    *  style.json vigente en start Y en resume (misma política que
    *  world.style_refs: retocar la paleta de un pack se ve al reanudar).

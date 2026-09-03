@@ -7,10 +7,10 @@ import { alPulsarTecla } from "../input/puerta-de-teclado.js";
 import { paso } from "./async-ui.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
 import type {
-  SessionData,
   DialogueEvent,
   EntityRecord,
 } from "@nefan-core/src/narrative/types.js";
+import type { SessionDataEnElWire } from "@nefan-core/src/protocol/messages.js";
 
 export class HistoryBrowser {
   private root: HTMLDivElement;
@@ -84,7 +84,7 @@ export class HistoryBrowser {
     this.content.innerHTML = `<div class="hb-note">Cargando…</div>`;
     this.detail.textContent = "Selecciona un evento para ver detalles…";
 
-    let state: SessionData | null;
+    let state: SessionDataEnElWire | null;
     if (this._resumeSessionId) {
       try {
         const r = await this.narrative.resumeSession(this._resumeSessionId);
@@ -114,7 +114,7 @@ export class HistoryBrowser {
     this.root.hidden = true;
   }
 
-  private renderTimeline(state: SessionData): void {
+  private renderTimeline(state: SessionDataEnElWire): void {
     const entries: { id: string; label: string; at: string; payload: unknown; group: string }[] = [];
     for (const sceneId of Object.keys(state.scenes_loaded)) {
       const s = state.scenes_loaded[sceneId];

@@ -63,11 +63,11 @@ describe("bridge request_tile (plano continuo)", () => {
     const wireScene = efecto.scene;
     assert.ok(Array.isArray(wireScene.objects), "objects[] en metros");
     assert.ok(wireScene.dimensions, "dimensions derivadas");
-    assert.ok(wireScene.__format_d, "el crudo viaja en __format_d");
-    assert.equal(wireScene.size, undefined, "sin size top-level (no es Format D)");
+    assert.ok(Array.isArray(wireScene.exits), "las salidas van encima, en el wire");
+    assert.equal("__format_d" in wireScene, false, "el crudo ya no viaja dentro (#378)");
+    assert.equal("size" in wireScene, false, "sin size top-level (no es Format D)");
     const persisted = narrative.scenes_loaded["tile_0_0"].scene_data;
     assert.ok(persisted.size, "la persistencia sigue en Format D crudo");
-    assert.equal(persisted.__format_d, undefined);
     const ready = broadcasts.find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
     );

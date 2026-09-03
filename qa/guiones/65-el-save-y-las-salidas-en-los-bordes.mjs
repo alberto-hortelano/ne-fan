@@ -234,7 +234,7 @@ export default async function (ctx) {
   await afirmarSaveDelDestino(ctx, partida.sessionId, molinoTile, "viaje a un lugar YA realizado");
 
   // ── C · Ráfaga desde el activo + enlace entre lugares ajenos ─────────────
-  const molinoPlace = await ctx.page.evaluate(() => window.__nefan.scene?.place_id ?? window.__nefan.scene?.__format_d?.place_id ?? null);
+  const molinoPlace = await ctx.page.evaluate(() => window.__nefan.scene?.place_id ?? null);
   ctx.log(`place del molino según la escena: ${molinoPlace}`);
   const rafaga = ["qa65_r1", "qa65_r2", "qa65_r3"];
   for (const id of rafaga) await lugar(id, `Ráfaga ${id}`);

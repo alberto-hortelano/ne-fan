@@ -44,7 +44,7 @@
  *   1 · el checker mide `npc.position` en vez de `position_declared ?? …`
  *       (o sea, la viva) → el panel se queda en «— sin errores —» y el aserto
  *       principal se pone rojo;
- *   2 · la exención que proponía el plan (`if (npc[POSICION_DECLARADA] !==
+ *   2 · la exención que proponía el plan (`if (npc.position_declared !==
  *       undefined) continue;`) → mismo rojo, mismo volcado.
  *
  *  Cero créditos: preset `e2e-sin-creditos`; el tabernero lo declara el tile

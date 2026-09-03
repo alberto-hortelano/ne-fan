@@ -67,8 +67,13 @@ export default async function (ctx) {
       pintados: objetos
         .filter((o) => o.volume_id === undefined)
         .map((o) => ({ id: o.id, desc: String(o.name ?? ""), cat: o.category })),
-      // Las entities `tree` del Format D crudo: las que declaró el motor.
-      entitiesArbol: (s.__format_d?.entities ?? []).filter((e) => e.kind === "tree").length,
+      // Los árboles que el motor declaró como ENTITY: en la world scene son
+      // objetos representados por un volumen `tree` del plan (`volume_id`); el
+      // Format D crudo ya no viaja dentro de la escena (#378).
+      entitiesArbol: objetos.filter((o) => {
+        const v = o.volume_id ? vols.find((x) => x.id === o.volume_id) : undefined;
+        return v?.type === "tree";
+      }).length,
     };
   });
   ctx.log(

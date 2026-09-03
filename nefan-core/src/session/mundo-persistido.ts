@@ -38,6 +38,7 @@
  */
 
 import type { EntityRecord, SceneRecord } from "../narrative/types.js";
+import type { NpcEnElWire, WorldScene } from "../scene/scene-normalize.js";
 import { tileWorldRect } from "../scene/tile.js";
 
 /** El runtime de un combatiente que el SAVE sí puede saber: cuánta vida le
@@ -87,25 +88,23 @@ export type EstadoEnElWire =
   | { tipo: "vivo"; combate: EstadoDeCombate | null; posicion: [number, number, number] }
   | { tipo: "no_vuelve"; motivo: MotivoDeAusencia };
 
-/** Dónde queda la posición que la ESCENA declara cuando `escenaConCombateVivo`
- *  pone la viva en `position`.
+/* La posición que la ESCENA declara cuando `escenaConCombateVivo` pone la viva
+ * en `position` va en `NpcEnElWire.position_declared` (scene-normalize.ts):
+ * desde #378 es un miembro del tipo, no una cadena compartida.
  *
- *  No es un apaño de transporte: es lo que mantiene vivo el fail-loud del
- *  cliente. Ese candado pregunta «¿esta coordenada es una conversión
- *  celda→metro que cae fuera de su tile?», y desde #351 `position` ya no
- *  siempre lo es — un NPC que se movió trae la del save. Guardar la declarada
- *  aparte es lo que permite seguir midiendo la CONVERSIÓN en vez de exentar al
- *  que se movió.
+ * No es un apaño de transporte: es lo que mantiene vivo el fail-loud del
+ * cliente. Ese candado pregunta «¿esta coordenada es una conversión celda→metro
+ * que cae fuera de su tile?», y desde #351 `position` ya no siempre lo es — un
+ * NPC que se movió trae la del save. Guardar la declarada aparte es lo que
+ * permite seguir midiendo la CONVERSIÓN en vez de exentar al que se movió.
  *
- *  La alternativa que se descartó, y por qué: marcar «esta posición es viva,
- *  no la mires». Medido, eso APAGA el candado entero — `registerSceneNpcs`
- *  (`narrative/npc-records.ts`) mete en el ledger a TODO NPC de escena con la
- *  misma conversión celda→metro nada más registrarla, así que a la primera
- *  difusión ya estarían todos marcados y la comprobación no volvería a mirar
- *  a nadie nunca. Aquí, en cambio, la conversión se sigue midiendo siempre,
- *  se haya movido el personaje o no: el candado queda MÁS fuerte que antes,
- *  porque hoy solo se miraba a los recién creados. */
-export const POSICION_DECLARADA = "position_declared";
+ * La alternativa que se descartó, y por qué: marcar «esta posición es viva, no
+ * la mires». Medido, eso APAGA el candado entero — `registerSceneNpcs`
+ * (`narrative/npc-records.ts`) mete en el ledger a TODO NPC de escena con la
+ * misma conversión celda→metro nada más registrarla, así que a la primera
+ * difusión ya estarían todos marcados y la comprobación no volvería a mirar a
+ * nadie nunca. Aquí, en cambio, la conversión se sigue midiendo siempre, se
+ * haya movido el personaje o no. */
 
 /** Nombre legible de una entity para lo que lee el jugador: el que le puso el
  *  motor, o el id si no tiene (que es lo que hay, no una excusa para callar). */
@@ -232,22 +231,16 @@ export function combateDeEntity(rec: EntityRecord): CombateDelLedger {
  *     viajaba desde #326; la posición se guardaba (`narrative-state.ts`) y no
  *     se servía.
  *
- *  La posición DECLARADA no se tira: se guarda en `POSICION_DECLARADA`, que es
+ *  La posición DECLARADA no se tira: se guarda en `position_declared`, que es
  *  lo que sigue mirando el fail-loud de conversión celda→metro del cliente
- *  (`npcsFueraDelRect`). Ver la constante para por qué no vale con «marcar»
- *  la viva. */
+ *  (`npcsFueraDelRect`). Ver el comentario de arriba para por qué no vale con
+ *  «marcar» la viva. */
 export function escenaConCombateVivo(
-  escena: Record<string, unknown>,
+  escena: WorldScene,
   estados: ReadonlyMap<string, EstadoEnElWire>,
-): Record<string, unknown> {
-  const npcs = escena.npcs;
-  if (!Array.isArray(npcs)) return escena;
-  const vivos: unknown[] = [];
-  for (const npc of npcs) {
-    if (!esObjeto(npc) || typeof npc.id !== "string") {
-      vivos.push(npc);
-      continue;
-    }
+): WorldScene {
+  const vivos: NpcEnElWire[] = [];
+  for (const npc of escena.npcs) {
     const estado = estados.get(npc.id);
     if (!estado) {
       vivos.push(npc);
@@ -257,12 +250,12 @@ export function escenaConCombateVivo(
     // visible: matar tiene consecuencia y repoblar es cosa del motor— y el
     // ilegible tampoco, para no resucitarlo con el bloque derivado.
     if (estado.tipo === "no_vuelve") continue;
-    const situado: Record<string, unknown> = {
+    const situado: NpcEnElWire = {
       ...npc,
       position: [...estado.posicion],
-      [POSICION_DECLARADA]: npc.position,
+      position_declared: npc.position,
     };
-    if (estado.combate === null || !esObjeto(npc.combat)) {
+    if (estado.combate === null || npc.combat === undefined) {
       // No pelea, o pelea pero la escena no lo declara hostil: no hay bloque
       // que sobrescribir. Se conserva tal cual — inventarle un `combat` aquí
       // sería que este módulo decidiera quién pelea, y eso lo deriva el core.
@@ -310,7 +303,7 @@ export interface RectDelTile {
  *  la otra en la misma pantalla; y aquí hay tests y hay mutación, que en
  *  `nefan-html` no hay ninguna de las dos (#241/#357).
  *
- *  MIDE `POSICION_DECLARADA` CUANDO ESTÁ, y `position` cuando no. O sea: mide
+ *  MIDE `position_declared` CUANDO ESTÁ, y `position` cuando no. O sea: mide
  *  siempre la conversión, se haya movido el personaje o no. Es la diferencia
  *  entre esto y «exentar al rehidratado», que es lo que apagaría el candado —
  *  a la primera difusión de una escena TODO npc está ya en el ledger
@@ -320,15 +313,15 @@ export interface RectDelTile {
  *  recién creados en el cliente (`newNpcs` + `enemies`), así que un npc ya
  *  conocido cuya declaración se hubiera roto no lo veía nadie. */
 export function npcsFueraDelRect(
-  npcs: unknown,
+  npcs: readonly NpcEnElWire[],
   rect: RectDelTile,
 ): NpcFueraDelRect[] {
-  if (!Array.isArray(npcs)) return [];
   const fuera: NpcFueraDelRect[] = [];
   for (const npc of npcs) {
-    if (!esObjeto(npc) || typeof npc.id !== "string") continue;
-    const declarada = npc[POSICION_DECLARADA] ?? npc.position;
-    if (!Array.isArray(declarada) || declarada.length < 3) continue;
+    // El tipo dice «tres números», pero lo que llega es JSON de otro proceso y
+    // este candado existe justo para el día en que la conversión escriba algo
+    // que no lo es: se mira el valor, no la promesa.
+    const declarada: readonly unknown[] = npc.position_declared ?? npc.position;
     const x = numero(declarada[0]);
     const z = numero(declarada[2]);
     // Una coordenada que no es un número finito NO es «está dentro»: es otro

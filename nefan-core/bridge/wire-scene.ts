@@ -23,7 +23,8 @@
  *  persistido no se entera de nada de esto.
  */
 
-import { formatDToWorld, type WorldScene } from "../src/scene/scene-normalize.js";
+import { formatDToWorld } from "../src/scene/scene-normalize.js";
+import type { EscenaServida, SceneRecordEnElWire, SessionDataEnElWire } from "../src/protocol/messages.js";
 import {
   entidadesFueraDelMundo,
   escenaConCombateVivo,
@@ -34,7 +35,7 @@ import {
   type FueraDelMundo,
 } from "../src/session/mundo-persistido.js";
 import { placeDeLaEscena, salidasDePlace } from "../src/world-map/exits.js";
-import type { SceneRecord, SessionData } from "../src/narrative/types.js";
+import type { SessionData } from "../src/narrative/types.js";
 import type { BridgeContext } from "./context.js";
 
 /** Lo que el mundo sabe de cada combatiente del ledger, más los nombres de
@@ -92,7 +93,7 @@ function alWire(
   sceneId: string,
   sceneData: Record<string, unknown>,
   estados: Map<string, EstadoEnElWire>,
-): WorldScene {
+): EscenaServida {
   const wm = ctx.narrative.worldMap;
   const placeId = placeDeLaEscena(
     sceneData,
@@ -111,7 +112,7 @@ export function escenaParaElWire(
   ctx: BridgeContext,
   sceneId: string,
   sceneData: Record<string, unknown>,
-): WorldScene {
+): EscenaServida {
   return alWire(ctx, sceneId, sceneData, estadosDeCombate(ctx).estados);
 }
 
@@ -130,11 +131,11 @@ export function escenaParaElWire(
 export function sessionDataForClient(
   ctx: BridgeContext,
   data: SessionData,
-): { state: SessionData; ilegibles: string[]; fueraDelMundo: FueraDelMundo[] } {
+): { state: SessionDataEnElWire; ilegibles: string[]; fueraDelMundo: FueraDelMundo[] } {
   // Los estados se calculan UNA vez para todas las escenas del save: son del
   // mundo, no del tile, y un save largo trae decenas de tiles.
   const { estados, ilegibles } = estadosDeCombate(ctx);
-  const scenes: Record<string, SceneRecord> = {};
+  const scenes: Record<string, SceneRecordEnElWire> = {};
   for (const [id, rec] of Object.entries(data.scenes_loaded)) {
     scenes[id] = { ...rec, scene_data: alWire(ctx, id, rec.scene_data, estados) };
   }

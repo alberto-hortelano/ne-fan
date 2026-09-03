@@ -304,8 +304,8 @@ export function broadcastScene(
   },
 ): void {
   // Contrato de render único: los clientes reciben la world scene normalizada
-  // (objects/npcs en metros, __player_start, world_rect, __format_d con el
-  // crudo) CON el combate vivo y las salidas del lugar encima. La persistencia
+  // (objects/npcs en metros, __player_start, world_rect, place_id) CON el
+  // combate vivo y las salidas del lugar encima. La persistencia
   // (scenes_loaded, saves, serializeForLlm) sigue en Format D crudo — sólo se
   // normaliza el wire, y por una sola puerta (`bridge/wire-scene.ts`).
   const worldScene = escenaParaElWire(ctx, sceneId, scene);

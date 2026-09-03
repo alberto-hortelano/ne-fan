@@ -30,17 +30,9 @@ import {
   styleApplicationPinRef,
 } from "@nefan-core/src/games/style-application-schema.js";
 import { buildFpsTileSpec } from "@nefan-core/src/scene/blueprint/index.js";
-import type { TilePlan } from "@nefan-core/src/scene/tile-plan.js";
 import { buildLayout } from "@nefan-core/src/scene/greybox/surfaces.js";
-import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
+import { formatDToWorld, type WorldScene } from "@nefan-core/src/scene/scene-normalize.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
-
-/** Lo que el batch lee de una world scene normalizada: el plan compuesto (de
- *  donde salen las celdas del atlas) y quién lleva skin. */
-interface WorldSceneDelBatch {
-  __plan?: TilePlan;
-  npcs?: Array<{ id: string; name?: string; description?: string; role?: string; style_ref?: string }>;
-}
 
 /** Tope de celdas por petición del server (SurfaceAtlasRequest max_length). */
 const MAX_CELLS_PER_REQUEST = 64;
@@ -209,10 +201,8 @@ export class StyleApplyController {
     // UNA normalización por escena para todo el batch: de ella salen el plan
     // (celdas del atlas) y los npcs/objects (skins). Dos llamadas darían dos
     // composiciones del mismo tile.
-    const normalizadas = new Map<string, WorldSceneDelBatch>();
-    for (const [sceneId, scene] of scenes) {
-      normalizadas.set(sceneId, formatDToWorld(scene as Record<string, unknown>) as WorldSceneDelBatch);
-    }
+    const normalizadas = new Map<string, WorldScene>();
+    for (const [sceneId, scene] of scenes) normalizadas.set(sceneId, formatDToWorld(scene));
     let cells: SurfaceCellSpec[] = [];
     let missingCells: number;
     let sceneDescription = "";
@@ -271,7 +261,7 @@ export class StyleApplyController {
     const skins: Array<{ prompt: string; role?: string }> = [];
     for (const [sceneId] of scenes) {
       const world = normalizadas.get(sceneId)!;
-      for (const npc of world.npcs ?? []) {
+      for (const npc of world.npcs) {
         const prompt = npc.description ?? npc.name ?? npc.id;
         if (!prompt || skinSeen.has(prompt)) continue;
         skinSeen.add(prompt);

@@ -115,10 +115,8 @@ async function main(): Promise<void> {
 
   console.log(`escena: ${scene.scene_id} (place_id: ${scene.place_id ?? "—"}) — validación ${via}`);
   console.log(`stats: ${JSON.stringify(result.stats)}`);
-  const tg = formatDToWorld(hasUnexpandedPrimitives(scene) ? expandScenePrimitives(scene) : scene).terrain_grid as
-    | { solid_chars?: string[] }
-    | undefined;
-  console.log(`solid_chars: ${(tg?.solid_chars ?? []).join(" ")}`);
+  const tg = formatDToWorld(hasUnexpandedPrimitives(scene) ? expandScenePrimitives(scene) : scene).terrain_grid;
+  console.log(`solid_chars: ${(tg.solid_chars ?? []).join(" ")}`);
   console.log("\n" + renderAscii(scene) + "\n");
 
   for (const w of result.warnings) console.log(`⚠ ${w}`);
