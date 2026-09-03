@@ -9,6 +9,7 @@
  *  `limit` no numérico en /assets es 400 (antes 422 de Pydantic). Los cuerpos
  *  de error de blobs siguen siendo texto plano byte a byte. */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 
 import type { ErrorResponse } from "../../src/contracts/common.js";
 import type {
@@ -74,7 +75,13 @@ export function createAssetStoreServer(opts: AssetStoreServerOptions): Server {
     });
   });
   server.listen(opts.port, "127.0.0.1", () => {
-    console.log(`NEFan asset-store listening on http://127.0.0.1:${opts.port}`);
+    // El puerto REAL, no el pedido: con `port: 0` el kernel elige uno y
+    // `opts.port` sigue siendo 0, así que la línea anunciaba una URL que no
+    // era llamable (medido por QA: escuchaba en 33029 y decía `:0`). Quien
+    // lee el log —una persona, un guion de QA, el hijo de un bench— solo
+    // tiene esta línea para saber a dónde llamar.
+    const escucha = server.address() as AddressInfo | null;
+    console.log(`NEFan asset-store listening on http://127.0.0.1:${escucha?.port ?? opts.port}`);
   });
   return server;
 }

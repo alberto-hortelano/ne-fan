@@ -54,6 +54,12 @@ function sembrar(nombre: string): ManifestDb {
   return db;
 }
 
+/** El índice y el almacén de los que habla el veredicto. Desde #391 son
+ *  parámetro: el store puede estar mirando una DB que no es la del checkout. */
+function indiceDe(nombre: string): { dbPath: string; cacheDir: string } {
+  return { dbPath: join(root, `${nombre}.sqlite3`), cacheDir: join(root, "cache") };
+}
+
 describe("ManifestDb: abrir el índice", () => {
   it("crea el directorio del índice si no existe (un clon limpio no tiene cache/)", () => {
     // QA de T4, H1: DatabaseSync no crea directorios y el store moría con
@@ -63,7 +69,7 @@ describe("ManifestDb: abrir el índice", () => {
     const db = new ManifestDb(ruta);
     assert.ok(existsSync(ruta), "la DB se creó donde se pidió");
     assert.equal(db.totalCount(), 0);
-    assert.deepEqual(verificarSoloSurface(db), { ok: true }, "un índice vacío arranca");
+    assert.deepEqual(verificarSoloSurface(db, indiceDe("clon-limpio")), { ok: true }, "un índice vacío arranca");
     db.close();
   });
 });
@@ -189,14 +195,15 @@ describe("purgar", () => {
 
 describe("verificarSoloSurface (el arranque del asset-store)", () => {
   it("con una fila ajena: ok:false y el mensaje nombra el script de purga", () => {
-    const db = new ManifestDb(join(root, "veredicto.sqlite3"));
+    const indice = indiceDe("veredicto");
+    const db = new ManifestDb(indice.dbPath);
     db.register({ hash: "s1", type: "surface", subtype: "surface", prompt: "p", size_bytes: 1 });
-    assert.deepEqual(verificarSoloSurface(db), { ok: true });
+    assert.deepEqual(verificarSoloSurface(db, indice), { ok: true });
     db.importEntry({
       hash: "t1", type: "texture", subtype: "albedo", prompt: "", created_at: "2026-01-01T00:00:00.000Z",
       size_bytes: 5_000_000, extra: {},
     });
-    const v = verificarSoloSurface(db);
+    const v = verificarSoloSurface(db, indice);
     assert.equal(v.ok, false);
     if (v.ok) return;
     assert.match(v.mensaje, /1 filas de kinds SIN productor/);
@@ -206,6 +213,29 @@ describe("verificarSoloSurface (el arranque del asset-store)", () => {
     // El nombre del script va al FINAL: es lo que sobrevive al `tail` de start.sh.
     const ultima = v.mensaje.trimEnd().split("\n").at(-1) ?? "";
     assert.ok(ultima.includes(SCRIPT_DE_PURGA), ultima);
+    db.close();
+  });
+
+  it("dice de QUÉ índice y de qué almacén habla, y el consejo se puede copiar tal cual (#391)", () => {
+    // Con `NEFAN_MANIFEST_DB` hay dos índices posibles: un veredicto que no
+    // nombre el suyo deja al que lo lee sin saber cuál ha rechazado, y el
+    // `mv cache/<dir>` literal de antes podía ser de otro mundo que la DB.
+    const indice = { dbPath: join(root, "otro-mundo", "manifest.sqlite3"), cacheDir: join(root, "otro-mundo", "cache") };
+    const db = new ManifestDb(indice.dbPath);
+    db.importEntry({
+      hash: "t1", type: "texture", subtype: "albedo", prompt: "", created_at: "2026-01-01T00:00:00.000Z",
+      size_bytes: 1, extra: {},
+    });
+    const v = verificarSoloSurface(db, indice);
+    assert.equal(v.ok, false);
+    if (v.ok) return;
+    const primera = v.mensaje.split("\n")[0];
+    assert.ok(primera.includes(indice.dbPath), primera);
+    assert.ok(v.mensaje.includes(`mv ${indice.cacheDir}/<dir>`), v.mensaje);
+    assert.doesNotMatch(v.mensaje, /mv cache\/<dir>/, "el literal de antes no vuelve");
+    // El consejo lleva `--db <ruta>`: el script lee el entorno donde se le
+    // llama, que no tiene por qué ser el del store que se ha negado.
+    assert.ok(v.mensaje.includes(`${SCRIPT_DE_PURGA} --db ${indice.dbPath}`), v.mensaje);
     db.close();
   });
 });

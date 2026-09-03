@@ -18,7 +18,23 @@ export const SCRIPT_DE_PURGA = "scripts/manifest-solo-surface.ts";
 
 export type VeredictoSoloSurface = { ok: true } | { ok: false; mensaje: string };
 
-export function verificarSoloSurface(db: ManifestDb): VeredictoSoloSurface {
+/** De qué índice y de qué almacén habla el veredicto.
+ *
+ *  Va como parámetro OBLIGATORIO desde que `NEFAN_MANIFEST_DB` existe (#391):
+ *  antes había un solo índice posible y el mensaje podía hablar de «el»
+ *  índice; ahora hay dos, y uno que no dice cuál rechaza deja al que lo lee
+ *  sin saber si el `exit 1` viene del fichero que acaba de apuntar a propósito
+ *  o del checkout. Por lo mismo el consejo de archivar lleva el almacén de
+ *  verdad y no un `cache/` literal: las dos mitades pueden ser de mundos
+ *  distintos, y solo se ve si se nombran las dos. */
+export interface IndiceInspeccionado {
+  /** Fichero SQLite que se ha abierto (`AssetStoreConfig.dbPath`). */
+  dbPath: string;
+  /** Raíz de los blobs, donde están los directorios a archivar (`cacheDir`). */
+  cacheDir: string;
+}
+
+export function verificarSoloSurface(db: ManifestDb, indice: IndiceInspeccionado): VeredictoSoloSurface {
   const ajenos = db.kindsAjenos();
   if (ajenos.length === 0) return { ok: true };
 
@@ -36,14 +52,19 @@ export function verificarSoloSurface(db: ManifestDb): VeredictoSoloSurface {
   const lineas = [...porType.entries()].map(
     ([type, t]) => `   ${type} (${t.subtypes.join(", ")}): ${t.filas} filas, ${mb(t.bytes)}`,
   );
+  // El `--db` del consejo no es adorno: el script lee `NEFAN_MANIFEST_DB` del
+  // entorno EN EL QUE SE LE LLAMA, que no tiene por qué ser el del store que
+  // acaba de negarse (el store puede haberlo recibido de start.sh o de un
+  // guion). Con la ruta escrita, copiar y pegar purga el índice correcto.
+  const purga = `npx tsx ${SCRIPT_DE_PURGA} --db ${indice.dbPath}`;
   return {
     ok: false,
     mensaje: [
-      `asset-store: el índice tiene ${totalFilas} filas de kinds SIN productor — no arranco.`,
+      `asset-store: el índice ${indice.dbPath} tiene ${totalFilas} filas de kinds SIN productor — no arranco.`,
       ...lineas,
-      `   Archiva sus blobs (mv cache/<dir> archivo/cache/<dir>) y purga las filas con`,
-      `   npx tsx ${SCRIPT_DE_PURGA}            (dry-run: enseña la tabla)`,
-      `   npx tsx ${SCRIPT_DE_PURGA} --ejecutar (exporta la procedencia y borra)`,
+      `   Archiva sus blobs (mv ${indice.cacheDir}/<dir> archivo/cache/<dir>) y purga las filas con`,
+      `   ${purga}            (dry-run: enseña la tabla)`,
+      `   ${purga} --ejecutar (exporta la procedencia y borra)`,
     ].join("\n"),
   };
 }
