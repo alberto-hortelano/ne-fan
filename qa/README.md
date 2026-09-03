@@ -212,7 +212,15 @@ Desde que las hojas de personaje las produce **sprite-forge** (repo aparte, :877
 da ese servicio. La primera versión la pedía ANTES de mirar su propia caché, así que con el
 servicio caído un sheet **ya pagado** que estaba en disco devolvía 503: todos los NPC en
 maniquí y el retrato del diálogo en blanco, teniendo los ficheros ahí. Lo arregla un índice
-(`cache/sprite_sheets/_base_keys.json`) y esto es su candado — el adaptador no tiene ni un test.
+(`cache/sprite_sheets/_base_keys.json`) con lo último que se supo de cada
+`{model}/{anim}/{angle}` —su `base_key` y, desde #375, su perfil de repintado, porque los dos
+entran en la clave—, y esto es su candado contra el servicio de VERDAD (el adaptador tiene su
+propia batería con un sprite-forge de mentira en `ai_server/tests/`).
+
+**Necesita un sujeto en disco y lo dice**: sin un sheet vestido alcanzable en
+`cache/sprite_sheets/` da ROJO en vez de un verde vacío. Un cambio que mueva la clave del
+sheet —como #375— archiva los que había, así que después toca crear uno, y sin gastar: arranca
+`sprite-forge` con `SPRITE_FORGE_IMAGE_API=fake` y pide un `/skin_sprite_sheet` cualquiera.
 
 ```bash
 node qa/sprites-sin-servicio.mjs           # arranca forge (--sin-skin) + remote-gen, mata forge a media prueba (~40 s)

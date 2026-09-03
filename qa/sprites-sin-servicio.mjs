@@ -11,10 +11,12 @@
  *  ficheros ahí — peor que antes de la extracción, cuando la clave salía del
  *  disco local.
  *
- *  Lo arregla un índice de la última `base_key` conocida por
- *  `{model}/{anim}/{angle}` (`cache/sprite_sheets/_base_keys.json`). Este guion
- *  es su candado: sin él, el arreglo solo se puede comprobar a mano y volvería a
- *  romperse el día que alguien reordene el adaptador.
+ *  Lo arregla un índice de lo último que se supo de cada
+ *  `{model}/{anim}/{angle}` (`cache/sprite_sheets/_base_keys.json`): su
+ *  `base_key` y, desde #375, su perfil de repintado, porque los DOS entran en la
+ *  clave del sheet vestido. Este guion es su candado: sin él, el arreglo solo se
+ *  puede comprobar a mano y volvería a romperse el día que alguien reordene el
+ *  adaptador.
  *
  *  Las cuatro comprobaciones, en orden:
  *    1. servicio ARRIBA  + personaje pagado → 200 `cached`, con URLs y hero

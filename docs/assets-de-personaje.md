@@ -21,10 +21,17 @@ assets/characters/
 └── anims/sword_and_shield/*.fbx     ← el pack de combate y locomoción
 ```
 
-`sets/mixamo.json` declara **16 animaciones** con su fichero, sus `keyframes` y su `play_fps`.
-De ellas, las **10 primeras son las `BASE_ANIMS`** que el cliente necesita para que alguien
-tenga cuerpo: `idle`, `walk`, `run`, `quick`, `heavy`, `medium`, `defensive`, `precise`,
-`hit_react`, `death`. Las otras seis son de ambiente y solo las usa la vida de los NPCs.
+El set que ne-fan le pasa (`nefan-core/data/sprite-set.json`, desde #369-R10; `sets/mixamo.json`
+es su gemelo en el repo del servicio) declara **16 animaciones** con su fichero, sus `keyframes`
+y su `play_fps`. De ellas, las **10 primeras son las `BASE_ANIMS`** que el cliente necesita para
+que alguien tenga cuerpo: `idle`, `walk`, `run`, `quick`, `heavy`, `medium`, `defensive`,
+`precise`, `hit_react`, `death`. Las otras seis son de ambiente y solo las usa la vida de los NPCs.
+
+`keyframes` y `play_fps` son el **perfil de repintado**, y desde #375 (2026-09-03) entran en la
+clave del sheet vestido de ne-fan: retocarlos repaga el arte de esa anim (~4 llamadas de imagen
+por personaje). Es deliberado —producen un repintado distinto, y antes se servía el viejo en
+silencio— pero conviene saberlo antes de tocarlos. En `base_key` (la hoja BASE, gratis) no
+entran: esa no depende del perfil.
 
 En esta máquina hay 22 modelos y 54 clips de combate; el catálogo completo son **320 hojas**,
 muy por encima del tope de 32 por petición. Se renderiza por lotes, nombrando modelos y

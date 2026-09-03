@@ -15,7 +15,10 @@
  *    `base_key` (`sprite-forge/src/base-key.mjs`), y REPAGA todo el arte de
  *    personaje ya generado con ella;
  *  - un `keyframes` ausente hace que `calls_per_anim` viaje `null` y el
- *    catálogo no pueda publicar el coste ANTES de gastar.
+ *    catálogo no pueda publicar el coste ANTES de gastar; y desde #375 hace
+ *    además que esa anim herede el `PERFIL_POR_DEFECTO` de sprite-forge, que
+ *    ENTRA en la clave del sheet vestido — o sea que un cambio en el otro repo
+ *    repagaría su arte sin una línea en el `git log` de este.
  *
  *  Las tres son silenciosas en el juego y ruidosas en la factura. Aquí se
  *  candan.
@@ -24,6 +27,11 @@
  *  «el set trae las diez anims del set base» se pone rojo nombrándola;
  *  quitándole `keyframes` a `heavy`, el de los perfiles se pone rojo.
  *  Revertido.
+ *
+ *  PROBADO EN NEGATIVO (2026-09-03, #375): quitándole el `play_fps` a
+ *  `praying` —una de las seis que hasta hoy no lo declaraban— el de los
+ *  perfiles se pone rojo nombrándola. Antes de esta tanda ese mismo borrado
+ *  salía VERDE: el candado solo miraba las diez de HOJAS_BASE_ANIMS.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -59,13 +67,26 @@ describe("data/sprite-set.json", () => {
     );
   });
 
-  it("cada anim del set base declara su fichero y su perfil", () => {
-    // `keyframes` y `play_fps` son lo que sprite-forge necesita para publicar
-    // `calls_per_anim` en /catalog — el precio que se le enseña al usuario
-    // ANTES de gastar. Sin ellos viaja null y ne-fan no puede cotizar.
-    for (const anim of HOJAS_BASE_ANIMS) {
-      const entrada = SET.animations.find((a) => a.id === anim);
-      assert.ok(entrada, `falta la anim "${anim}"`);
+  it("TODAS las anims del set declaran su fichero y su perfil, no solo las diez base", () => {
+    // Dos razones, y la segunda llegó con #375:
+    //
+    // 1. `keyframes` y `play_fps` son lo que sprite-forge necesita para
+    //    publicar `calls_per_anim` en /catalog — el precio que se le enseña al
+    //    usuario ANTES de gastar. Sin ellos viaja null y ne-fan no puede cotizar.
+    // 2. El perfil entra en la clave del sheet VESTIDO (`_skin_sheet_key`, #375).
+    //    Una anim que NO lo declara hereda el `PERFIL_POR_DEFECTO` de
+    //    sprite-forge, que vive en otro repositorio: el día que cambie allí, el
+    //    arte de esa anim repaga sin que nadie haya tocado ne-fan, y el `git
+    //    log` de este repo no tendrá ni una línea que lo explique.
+    //
+    // Por eso el barrido es sobre `SET.animations` y no sobre HOJAS_BASE_ANIMS
+    // (las diez del set base): hasta #375 las seis ambientales
+    // —talking, drinking, wounded_idle, sitting_idle, waving, praying— caían
+    // fuera del candado por ser justo las que el cliente no exige. Una anim
+    // nueva sin perfil vuelve a poner esto rojo sin que haya que acordarse.
+    assert.ok(SET.animations.length >= HOJAS_BASE_ANIMS.length, "el set encogió");
+    for (const entrada of SET.animations) {
+      const anim = entrada.id;
       assert.ok(entrada.file?.endsWith(".fbx"), `"${anim}" sin fichero FBX: ${entrada.file}`);
       assert.equal(typeof entrada.keyframes, "number", `"${anim}" sin keyframes`);
       assert.ok(entrada.keyframes! > 0, `"${anim}" con keyframes ${entrada.keyframes}`);

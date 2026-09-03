@@ -70,27 +70,39 @@
     },
     {
       "id": "talking",
-      "file": "mixamo/ambient_anims/standing_talking.fbx"
+      "file": "mixamo/ambient_anims/standing_talking.fbx",
+      "keyframes": 4,
+      "play_fps": 4.0
     },
     {
       "id": "drinking",
-      "file": "mixamo/ambient_anims/drinking.fbx"
+      "file": "mixamo/ambient_anims/drinking.fbx",
+      "keyframes": 4,
+      "play_fps": 4.0
     },
     {
       "id": "wounded_idle",
-      "file": "mixamo/ambient_anims/wounded_idle.fbx"
+      "file": "mixamo/ambient_anims/wounded_idle.fbx",
+      "keyframes": 4,
+      "play_fps": 4.0
     },
     {
       "id": "sitting_idle",
-      "file": "mixamo/ambient_anims/sitting_idle.fbx"
+      "file": "mixamo/ambient_anims/sitting_idle.fbx",
+      "keyframes": 4,
+      "play_fps": 4.0
     },
     {
       "id": "waving",
-      "file": "mixamo/ambient_anims/waving.fbx"
+      "file": "mixamo/ambient_anims/waving.fbx",
+      "keyframes": 4,
+      "play_fps": 4.0
     },
     {
       "id": "praying",
-      "file": "mixamo/ambient_anims/praying_kneel.fbx"
+      "file": "mixamo/ambient_anims/praying_kneel.fbx",
+      "keyframes": 4,
+      "play_fps": 4.0
     }
   ],
   "_notas": [
@@ -100,11 +112,27 @@
     "nombre del set ni la ruta del fichero entran). Cambiar un `file` de aquí",
     "REPAGA todo el arte de personaje ya generado con esa anim.",
     "",
+    "Y DESDE #375 (2026-09-03), el `keyframes`/`play_fps` de una anim también:",
+    "el perfil de repintado entra en la clave del sheet VESTIDO de ne-fan",
+    "(_skin_sheet_key en ai_server/routers/remote_generation.py). Antes no entraba",
+    "en ninguna clave —ni en la del vestido ni en base_key—, así que retocarlo",
+    "producía un repintado distinto con la MISMA clave y se servía el arte viejo",
+    "en silencio. En base_key sigue sin entrar, y es deliberado: la hoja BASE no",
+    "depende del perfil (el repintado elige índices sobre la hoja completa), así",
+    "que meterlo allí repagaría arte que no ha cambiado.",
+    "",
+    "Corolario: TODAS declaran su perfil, también las seis ambientales, que hasta",
+    "#375 lo heredaban del PERFIL_POR_DEFECTO de sprite-forge. Heredarlo era",
+    "delegar en otro repo un valor que ahora entra en una clave de caché: el día",
+    "que allí cambiara el defecto, el arte de esas seis repagaría sin que nadie",
+    "hubiera tocado ne-fan. Los 4kf@4fps de aquí son EXACTAMENTE lo que heredaban,",
+    "así que declararlos no movió una sola clave.",
+    "",
     "Las diez primeras son el set base que el cliente exige completo",
     "(HOJAS_BASE_ANIMS en src/contracts/sprite-census.ts). test/sprite-set.test.ts",
     "canda que estén las diez, para que esta copia no derive del original en",
     "silencio: sin ellas el título dejaría de ofrecer el modelo y el juego pediría",
-    "hojas que el servicio no sabe renderizar.",
+    "hojas que el servicio no sabe renderizar. El perfil lo exige a las DIECISÉIS.",
     "",
     "Y EL RIESGO INVERSO, que es el que no tiene candado y sí tiene dueño: desde",
     "que start.sh pasa --set, ne-fan ya NO usa `sets/mixamo.json` del repo hermano,",

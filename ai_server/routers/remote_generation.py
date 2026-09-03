@@ -199,15 +199,29 @@ def _sprite_forge_url() -> str:
 
 
 async def _forge(path: str, payload: dict, timeout: float = 900.0) -> dict:
+    """Una llamada POST a sprite-forge (la que gasta o la que renderiza)."""
+    return await _forge_http("POST", path, payload, timeout)
+
+
+async def _forge_http(
+    metodo: str, path: str, payload: dict | None = None, timeout: float = 900.0
+) -> dict:
     """Una llamada a sprite-forge. Fail-loud: su error sube con SU causa.
 
     Envolver un fallo del servicio en un 502 genérico borra justo lo que el
     cliente necesita para saber si le falta un asset, una clave o un modelo.
+
+    El método es un parámetro porque el adaptador necesita `GET /catalog` en el
+    mismo camino caliente que los POST (el perfil de repintado entra en la clave
+    del sheet, ver `_skin_sheet_key`) y la política de traducción de errores
+    —incluido el 503 del que el llamante sabe degradar— tiene que ser UNA. Con
+    dos copias, la de `GET` se habría quedado sin la degradación y un servicio
+    caído habría dejado de servir arte ya pagado.
     """
     url = f"{_sprite_forge_url()}{path}"
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=timeout, write=timeout, pool=10)) as c:
-            res = await c.post(url, json=payload)
+            res = await c.request(metodo, url, json=payload)
     except httpx.HTTPError as e:
         raise HTTPException(
             status_code=503,
@@ -232,17 +246,46 @@ async def _forge(path: str, payload: dict, timeout: float = 900.0) -> dict:
     return res.json()
 
 
-# Última `base_key` conocida de cada `{model}/{anim}/{angle}`. Existe por una
-# razón concreta: la clave del sheet vestido cuelga de la identidad de la hoja
-# base, y esa identidad la da sprite-forge. Sin este índice, un servicio caído
-# escondería arte YA PAGADO que está en disco — el jugador vería a todos los
-# NPC en maniquí y el retrato del diálogo en blanco, teniendo los ficheros ahí.
+# Lo último que se sabe de cada `{model}/{anim}/{angle}`: su `base_key` y su
+# perfil de repintado. Existe por una razón concreta: la clave del sheet vestido
+# cuelga de las dos cosas y las dos las da sprite-forge. Sin este índice, un
+# servicio caído escondería arte YA PAGADO que está en disco — el jugador vería
+# a todos los NPC en maniquí y el retrato del diálogo en blanco, teniendo los
+# ficheros ahí.
+#
+# Forma de cada entrada: `{"base_key": str, "perfil": {"keyframes": int,
+# "play_fps": float}}`. El perfil entró el 2026-09-03 (#375) y con él cambió el
+# formato del fichero. Pre-producción, cero compatibilidad: un índice con la
+# forma anterior se trata como AUSENTE y se dice — no se parsea a medias ni se
+# le rellena el perfil con el de por defecto del servicio. Lo que este índice
+# promete es servir exactamente el arte ya pagado; prometerlo con un perfil
+# adivinado da una clave que no es la de nadie y sirve un 503 disfrazado de
+# cache-miss.
 _BASE_KEYS_INDEX = SKINNED_SHEETS_DIR / "_base_keys.json"
+
+
+def _entrada_valida(v: object) -> bool:
+    """¿Tiene esta entrada la forma viva? (`base_key` + perfil completo)."""
+    if not isinstance(v, dict):
+        return False
+    perfil = v.get("perfil")
+    if not isinstance(v.get("base_key"), str) or not v["base_key"] or not isinstance(perfil, dict):
+        return False
+    kf, fps = perfil.get("keyframes"), perfil.get("play_fps")
+    return _keyframes_valido(kf) and _play_fps_valido(fps)
+
+
+def _keyframes_valido(v: object) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and v > 0
+
+
+def _play_fps_valido(v: object) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
 
 
 def _leer_bases() -> dict:
     try:
-        return json.loads(_BASE_KEYS_INDEX.read_text())
+        idx = json.loads(_BASE_KEYS_INDEX.read_text())
     except FileNotFoundError:
         return {}
     except (OSError, ValueError) as e:
@@ -250,13 +293,29 @@ def _leer_bases() -> dict:
         # como si estuviera vacío (el peor caso es una llamada de más).
         logger.warning(f"índice de base_keys ilegible ({e}); se ignora")
         return {}
+    if not isinstance(idx, dict):
+        logger.warning("índice de base_keys ilegible (no es un objeto); se ignora")
+        return {}
+    viejas = [t for t, v in idx.items() if not _entrada_valida(v)]
+    if viejas:
+        # El fichero ENTERO, no las entradas malas: se escribe de una pieza
+        # (`_apuntar_base` lo relee y lo vuelca completo), así que uno mezclado
+        # no lo ha escrito nadie. Una línea, y el primer sheet que se pida lo
+        # deja en la forma viva.
+        logger.warning(
+            f"índice de base_keys con la forma anterior a #375 ({len(viejas)} de {len(idx)} "
+            f"entradas sin perfil de repintado); se ignora ENTERO y se reconstruye al vuelo"
+        )
+        return {}
+    return idx
 
 
-def _apuntar_base(triple: str, base_key: str) -> None:
+def _apuntar_base(triple: str, base_key: str, perfil: tuple[int, float]) -> None:
+    entrada = {"base_key": base_key, "perfil": {"keyframes": perfil[0], "play_fps": perfil[1]}}
     idx = _leer_bases()
-    if idx.get(triple) == base_key:
+    if idx.get(triple) == entrada:
         return
-    idx[triple] = base_key
+    idx[triple] = entrada
     _BASE_KEYS_INDEX.parent.mkdir(parents=True, exist_ok=True)
     # Escritura ATÓMICA (temporal en el mismo directorio + os.replace), el
     # equivalente del patrón de la caché de hojas de sprite-forge
@@ -273,7 +332,8 @@ def _apuntar_base(triple: str, base_key: str) -> None:
 
 
 def _skin_sheet_key(
-    base_key: str, model: str, anim: str, angle: str, prompt: str, ai_model: str, style_key: str
+    base_key: str, model: str, anim: str, angle: str, prompt: str, ai_model: str,
+    style_key: str, perfil: tuple[int, float]
 ) -> str:
     """Clave del sheet VESTIDO en la caché de ne-fan.
 
@@ -286,19 +346,98 @@ def _skin_sheet_key(
     codifique: esta clave no debe depender de cómo componga la suya el servicio.
     El día que allí cambie la receta, aquí no se puede empezar a servir el
     `walk` de un personaje cuando alguien pide su `run`.
+
+    **El perfil de repintado `(keyframes, play_fps)` va aquí y NO en `base_key`**
+    (#375, 2026-09-03). Es lo que decide qué fotogramas se pintan y a qué
+    velocidad se reproducen, o sea el arte vestido; sin él, cambiar el perfil de
+    una anim en `nefan-core/data/sprite-set.json` producía un repintado distinto
+    con la MISMA clave y se servía el arte viejo en silencio. En `base_key` no
+    va porque la hoja BASE no depende del perfil —el repintado elige índices
+    *sobre* la hoja completa— y ensuciarla repagaría arte que no ha cambiado.
+    Es el perfil EFECTIVO (el de `GET /catalog`, ya mergeado con el de por
+    defecto del servicio), no el declarado: ver `_perfil_efectivo`.
+
+    **Decisión sobre `version` (#369-R7), con su coste:** `base_key` lleva la
+    versión de sprite-forge (`CAMPOS_CLAVE` en su `src/base-key.mjs`), así que
+    un bump de versión del renderizador de hojas mueve esta clave y REPAGA los
+    `/skins` de cada personaje (~16 llamadas de imagen por NPC). Se deja como
+    está: `base_key` es la identidad de la hoja base y quién la mueve lo decide
+    el servicio que la produce, no su consumidor — filtrar aquí campos de una
+    identidad ajena es exactamente el espejo que se deriva y acaba sirviendo el
+    sheet de otra hoja. El coste queda escrito: rehacer una hoja base cuesta
+    ~9 s y cero euros en sprite-forge, pero repintarla cuesta dinero en ne-fan,
+    así que la mitigación (que el bump sea una decisión consciente y no un
+    efecto de versionar) es del otro repo, #369-R7, fuera de esta tanda.
     """
     import hashlib
 
+    # `float()` normaliza: un `play_fps: 4` del set y un `4.0` son el MISMO
+    # perfil y no pueden dar dos claves — sería un repago por escribir el JSON
+    # de otra manera.
+    perfil_txt = f"{int(perfil[0])}kf@{float(perfil[1])}fps"
     payload = "\n".join(
-        [base_key, model, anim, angle, prompt.strip().lower(), ai_model, style_key,
+        [base_key, model, anim, angle, prompt.strip().lower(), ai_model, style_key, perfil_txt,
          # v3 (2026-08-24): las hojas las produce sprite-forge y la clave pasa a
          # colgar de su base_key. Los sheets v2 se derivaban de otra cadena.
+         # NO se bumpea a v4 al entrar el perfil (2026-09-03): el literal existe
+         # para invalidar cuando la clave NO se movería sola, y un campo nuevo en
+         # el payload ya la mueve entera. Bumpear además insinuaría que el campo
+         # no basta.
          "skinforge_v3",
          # En modo dev-cache los frames derivan de una respuesta rancia: clave
          # aparte para no contaminar el cache real de este prompt.
          DEV_API_CACHE.namespace_suffix()]
     )
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+async def _perfil_efectivo(anim: str) -> tuple[int, float]:
+    """El perfil de repintado que sprite-forge va a APLICAR a esta anim.
+
+    Se pregunta a `GET /catalog` —gratis, solo disco— y no se lee de
+    `nefan-core/data/sprite-set.json`, que es el mismo fichero que sprite-forge
+    tiene abierto: el catálogo publica el perfil YA MERGEADO con el de por
+    defecto del servicio y relee el set en CADA petición, así que es lo único
+    que dice lo que `/skins` hará de verdad. Leer el JSON aquí obligaría a
+    espejar `perfilDe` (merge campo a campo) y `keyframeIndices` (los keyframes
+    colapsan cuando se piden más que fotogramas tiene el ciclo): un espejo que
+    deriva, y cuando derive servirá arte con la clave equivocada, que es el
+    fallo que esta función existe para cerrar.
+
+    Fail-loud: sin perfil no hay clave honesta, y una clave adivinada sirve el
+    arte de otro perfil sin decirlo. Un 502 con la causa es la única salida.
+    """
+    cat = await _forge_http("GET", "/catalog", timeout=30.0)
+    anims = cat.get("animations")
+    if not isinstance(anims, list):
+        raise HTTPException(
+            status_code=502,
+            detail=f'sprite-forge /catalog no trae "animations": sin perfil para "{anim}"',
+        )
+    entrada = next((a for a in anims if isinstance(a, dict) and a.get("id") == anim), None)
+    if entrada is None:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f'sprite-forge no conoce la anim "{anim}" en su catálogo: no se puede '
+                f"saber con qué perfil la repintaría"
+            ),
+        )
+    if entrada.get("skin_plan_error"):
+        raise HTTPException(
+            status_code=502,
+            detail=f'sprite-forge no puede repintar "{anim}": {entrada["skin_plan_error"]}',
+        )
+    kf, fps = entrada.get("keyframes"), entrada.get("play_fps")
+    if not _keyframes_valido(kf) or not _play_fps_valido(fps):
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f'sprite-forge publica "{anim}" sin perfil de repintado utilizable '
+                f"(keyframes={kf!r}, play_fps={fps!r})"
+            ),
+        )
+    return (kf, float(fps))
 
 
 def hero_key(prompt: str, model: str, angle: str, ai_model: str, style_key: str = "") -> str:
@@ -396,8 +535,10 @@ async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
     style_note = style_ref.style_token if style_ref else ""
     ai_model = str(deps.config["sprite_skin_model"])
 
-    # La hoja base es GRATIS y determinista: se pide su identidad sin frames
-    # (format=none) para colgar de ella las dos claves de caché.
+    # Lo que la clave del sheet vestido necesita de sprite-forge, y las dos
+    # cosas son GRATIS (`/sheets format=none` es determinista y sin frames;
+    # `/catalog` solo mira el disco): la identidad de la hoja base y el perfil
+    # de repintado con el que la va a vestir.
     triple = f"{model}/{anim}/{angle}"
     solo_cache = False
     try:
@@ -407,24 +548,30 @@ async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
             timeout=300.0,
         )
         base_key = base["sheets"][0]["base_key"]
-        _apuntar_base(triple, base_key)
+        perfil = await _perfil_efectivo(anim)
+        _apuntar_base(triple, base_key, perfil)
     except HTTPException as e:
-        # Si el servicio no está, todavía se puede servir lo YA PAGADO: la
-        # última identidad conocida de esta hoja basta para encontrarlo en
-        # disco. Lo que no se puede es generar nada nuevo, y eso se dice abajo
-        # con el error original.
+        # Si el servicio no está, todavía se puede servir lo YA PAGADO: lo
+        # último que se supo de esta hoja —su identidad y su perfil— basta para
+        # encontrarlo en disco. Lo que no se puede es generar nada nuevo, y eso
+        # se dice abajo con el error original. Un 502 (el catálogo contesta pero
+        # no sabe repintar esta anim) NO es degradable: no hay nada que servir
+        # con una clave que no se puede componer.
         if e.status_code != 503:
             raise
-        base_key = _leer_bases().get(triple)
-        if not base_key:
+        apunte = _leer_bases().get(triple)
+        if not apunte:
             raise
+        base_key = apunte["base_key"]
+        perfil = (apunte["perfil"]["keyframes"], apunte["perfil"]["play_fps"])
         solo_cache = True
         logger.warning(
-            f"sprite-forge no responde; se sirve {triple} desde caché con la última "
-            f"identidad conocida ({base_key}) — sin verificar la hoja base"
+            f"sprite-forge no responde; se sirve {triple} desde caché con lo último "
+            f"conocido (base {base_key}, perfil {perfil[0]}kf@{perfil[1]}fps) — sin "
+            f"verificar la hoja base"
         )
 
-    key = _skin_sheet_key(base_key, model, anim, angle, prompt, ai_model, style_key)
+    key = _skin_sheet_key(base_key, model, anim, angle, prompt, ai_model, style_key, perfil)
     out_dir = SKINNED_SHEETS_DIR / key
     out_meta_path = out_dir / "meta.json"
     hero_k = hero_key(prompt, model, angle, ai_model, style_key)
