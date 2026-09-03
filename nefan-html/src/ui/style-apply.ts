@@ -262,7 +262,7 @@ export class StyleApplyController {
     for (const [sceneId] of scenes) {
       const world = normalizadas.get(sceneId)!;
       for (const npc of world.npcs) {
-        const prompt = npc.description ?? npc.name ?? npc.id;
+        const prompt = npc.description ?? npc.name;
         if (!prompt || skinSeen.has(prompt)) continue;
         skinSeen.add(prompt);
         // Misma regla que la partida (npcSkinStyleRef) o la clave de caché

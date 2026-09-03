@@ -251,35 +251,33 @@ function declaraciones<R extends { id: string; position: readonly number[] }, D 
   return { declaradas, errores };
 }
 
-/** Lo que el contrato de render ya declara con tipo se lee TAL CUAL (#378);
- *  los `texto()` que quedan colapsan el vacío con la ausencia a propósito. */
+/** Lo que el contrato de render declara con tipo SE CONFÍA (#378, QA H1):
+ *  `ObjetoEnElWire`/`NpcEnElWire` los escribe `formatDToWorld` y aquí no se
+ *  vuelven a mirar campo a campo — mirar a medias (`name` sin error, `scale`
+ *  con `numeros()`) era lo peor de los dos mundos. Lo único que se sigue
+ *  mirando está en `declaraciones`: id, posición y duplicado, que es lo que
+ *  sin ello no hay nada que pintar ni que purgar, y se DICE. */
 function leerObjeto(rec: ObjetoEnElWire, id: string, pos: Punto): ObjetoDeclarado {
-  const escala = numeros(rec.scale, 3);
-  const shape = texto(rec.shape);
-  const volumeId = texto(rec.volume_id);
   return {
     id,
     pos,
     nombre: rec.name,
     categoria: rec.category,
-    ...(escala ? { sizeXZ: { x: escala[0], z: escala[2] }, sizeY: escala[1] } : {}),
-    ...(shape ? { shape } : {}),
-    ...(volumeId ? { volumeId } : {}),
+    sizeXZ: { x: rec.scale[0], z: rec.scale[2] },
+    sizeY: rec.scale[1],
+    ...(rec.shape !== undefined ? { shape: rec.shape } : {}),
+    ...(rec.volume_id !== undefined ? { volumeId: rec.volume_id } : {}),
   };
 }
 
 function leerNpc(rec: NpcEnElWire, id: string, pos: Punto): NpcDeclarado {
-  const nombre = texto(rec.name);
-  const descripcion = texto(rec.description);
-  const styleRef = texto(rec.style_ref);
-  const role = texto(rec.role);
   return {
     id,
     pos,
-    ...(nombre ? { nombre } : {}),
-    ...(descripcion ? { descripcion } : {}),
-    ...(styleRef ? { styleRef } : {}),
-    ...(role ? { role } : {}),
+    nombre: rec.name,
+    ...(rec.description !== undefined ? { descripcion: rec.description } : {}),
+    ...(rec.style_ref !== undefined ? { styleRef: rec.style_ref } : {}),
+    ...(rec.role !== undefined ? { role: rec.role } : {}),
     ...(rec.combat !== undefined ? { combat: rec.combat } : {}),
   };
 }

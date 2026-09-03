@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { formatDToWorld, KIND_DEFAULT_HEIGHT } from "../src/scene/scene-normalize.js";
+import { formatDToWorld, KIND_DEFAULT_HEIGHT, type WorldScene } from "../src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "../src/games/style-categories.js";
 import {
   combatForHostileRole,
@@ -12,9 +12,9 @@ import {
   HOSTILE_WEAPON,
 } from "../src/combat/hostiles.js";
 
-/** Atajos de lectura: la world scene es un Record suelto por contrato. */
-const objectsOf = (w: Record<string, unknown>) => w.objects as Record<string, unknown>[];
-const npcsOf = (w: Record<string, unknown>) => w.npcs as Record<string, unknown>[];
+/** Atajos de lectura sobre el tipo (#378): ya no hay nada que abrir con `as`. */
+const objectsOf = (w: WorldScene) => w.objects;
+const npcsOf = (w: WorldScene) => w.npcs;
 
 /** A minimal but valid Map Format D scene: 10×6 grid (meters_per_cell 2 ⇒
  *  20m × 12m), one building, one npc, one player start. */
@@ -375,7 +375,7 @@ describe("formatDToWorld — un NPC hostil llega con su combate derivado", () =>
 
   it("el hostil va a npcs[], no a objects[] (la rama de objects era el fósil)", () => {
     const world = formatDToWorld(conNpc({ id: "lobo_1", role: "hostile", name: "Lobo flaco" }));
-    const objetos = (world.objects ?? []) as Record<string, unknown>[];
+    const objetos = world.objects;
     assert.ok(!objetos.some((o) => o.id === "lobo_1"), "el hostil no puede salir por objects[]");
     assert.ok(objetos.every((o) => !("combat" in o)), "ningún object lleva combat");
   });

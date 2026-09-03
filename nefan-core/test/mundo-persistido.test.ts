@@ -126,9 +126,8 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
       escenaConDos(),
       estados({ bandido_1: [12, 60] }),
     );
-    const npcs = salida.npcs as Array<Record<string, unknown>>;
-    const bandido = npcs.find((n) => n.id === "bandido_1")!;
-    const combat = bandido.combat as Record<string, unknown>;
+    const bandido = salida.npcs.find((n) => n.id === "bandido_1")!;
+    const combat = bandido.combat!;
     assert.equal(combat.health, 12, "vuelve con la vida que le dejaste, no con la del contrato");
     assert.equal(combat.max_health, 60, "…y sobre su denominador: si no, la barra sale llena");
     // El resto del bloque sigue entero: sin arma ni personalidad el cliente lo
@@ -142,8 +141,7 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
       escenaConDos(),
       estados({ bandido_1: "muerto" }),
     );
-    const ids = (salida.npcs as Array<Record<string, unknown>>).map((n) => n.id);
-    assert.deepEqual(ids, ["barkeep"], "el muerto no vuelve; el vecino pacífico sí");
+    assert.deepEqual(salida.npcs.map((n) => n.id), ["barkeep"], "el muerto no vuelve; el vecino pacífico sí");
   });
 
   it("no toca la escena que recibe: lo persistido sigue siendo Format D crudo (#179)", () => {
@@ -168,9 +166,9 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
       escenaConDos(),
       estados({ bandido_1: { en: [12.25, 0, 0.75], combate: [12, 60] } }),
     );
-    const bandido = (salida.npcs as Array<Record<string, unknown>>).find((n) => n.id === "bandido_1")!;
+    const bandido = salida.npcs.find((n) => n.id === "bandido_1")!;
     assert.deepEqual(bandido.position, [12.25, 0, 0.75]);
-    assert.equal((bandido.combat as Record<string, unknown>).health, 12, "y con su vida, las dos cosas");
+    assert.equal(bandido.combat!.health, 12, "y con su vida, las dos cosas");
   });
 
   it("el PACÍFICO que paseó también vuelve donde estaba: moverse no es de los que pelean", () => {
@@ -178,7 +176,7 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
     // `npc-behavior.ts` mueve el record de CUALQUIER NPC ambiental, y hasta
     // hoy uno sin bloque `combat` no tenía estado y salía intacto.
     const salida = escenaConCombateVivo(escenaConDos(), estados({ barkeep: { en: [-9, 0, 7] } }));
-    const barkeep = (salida.npcs as Array<Record<string, unknown>>).find((n) => n.id === "barkeep")!;
+    const barkeep = salida.npcs.find((n) => n.id === "barkeep")!;
     assert.deepEqual(barkeep.position, [-9, 0, 7]);
     assert.equal(barkeep.combat, undefined, "y sin inventarle un bloque de combate que no tiene");
   });
@@ -191,9 +189,8 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
       escenaConDos(),
       estados({ bandido_1: { en: [99, 0, 99], combate: [12, 60] }, barkeep: { en: [-9, 0, 7] } }),
     );
-    const npcs = salida.npcs as Array<Record<string, unknown>>;
-    assert.deepEqual(npcs.find((n) => n.id === "bandido_1")!.position_declared, DECLARADA.bandido_1);
-    assert.deepEqual(npcs.find((n) => n.id === "barkeep")!.position_declared, DECLARADA.barkeep);
+    assert.deepEqual(salida.npcs.find((n) => n.id === "bandido_1")!.position_declared, DECLARADA.bandido_1);
+    assert.deepEqual(salida.npcs.find((n) => n.id === "barkeep")!.position_declared, DECLARADA.barkeep);
   });
 
   it("al ILEGIBLE también se le quita: servirlo sin overlay lo resucitaría a 60/60", () => {
@@ -202,8 +199,7 @@ describe("escenaConCombateVivo — la escena sale al wire con lo que le hiciste"
     // siempre entero—, así que el enemigo que el jugador había matado volvía
     // vivo y a tope, sin una línea en pantalla (QA 2026-08-31, H-2).
     const salida = escenaConCombateVivo(escenaConDos(), estados({ bandido_1: "ilegible" }));
-    const ids = (salida.npcs as Array<Record<string, unknown>>).map((n) => n.id);
-    assert.deepEqual(ids, ["barkeep"], "lo que no se puede leer no vuelve al mundo");
+    assert.deepEqual(salida.npcs.map((n) => n.id), ["barkeep"], "lo que no se puede leer no vuelve al mundo");
   });
 });
 
@@ -316,7 +312,7 @@ describe("npcsFueraDelRect — la conversión celda→metro se sigue midiendo", 
   });
 
   it("…y el candado NO se debilita: con la declarada rota lo reporta AUNQUE se haya movido", () => {
-    // La mitad que impide que `POSICION_DECLARADA` se convierta en una
+    // La mitad que impide que `position_declared` se convierta en una
     // exención general. Si el checker se saltara al que trae posición viva,
     // este caso saldría verde — y a la primera difusión de cualquier escena
     // TODO npc la trae (`registerSceneNpcs` los mete a todos en el ledger),
