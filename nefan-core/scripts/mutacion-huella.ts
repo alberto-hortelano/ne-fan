@@ -311,11 +311,36 @@ export interface CommitDelRango {
   modulos: readonly string[];
 }
 
+/** El rango sin medir, con la lista vacía hecha INEXPRESABLE en la rama que
+ *  tiene commits.
+ *
+ *  Un rango vacío y un rango en el que nadie tocó este módulo son dos hechos
+ *  distintos, y la diferencia decide trabajo: «sin dueño» dice que hubo cambios
+ *  y ninguno explica a este superviviente —hay que mirarlo—, mientras que «rango
+ *  vacío» dice que no había dónde buscar. Colapsarlos es lo que producía la
+ *  salida de #381: los 33 módulos «SIN DUEÑO en el rango» justo después de la
+ *  corrida que más tenía que repartir, porque el ancla del rango era un tag que
+ *  la propia corrida adelantaba.
+ *
+ *  La rama de commits es una TUPLA NO VACÍA a propósito. Con `readonly
+ *  CommitDelRango[]` el estado malo —`tipo: "commits"` con cero commits— se
+ *  podría volver a escribir y el compilador no diría nada; así no compila. */
+export type RangoDeCommits =
+  | { tipo: "vacío" }
+  | { tipo: "commits"; commits: readonly [CommitDelRango, ...CommitDelRango[]] };
+
+export function rangoDe(commits: readonly CommitDelRango[]): RangoDeCommits {
+  const [primero, ...resto] = commits;
+  if (primero === undefined) return { tipo: "vacío" };
+  return { tipo: "commits", commits: [primero, ...resto] };
+}
+
 export interface Atribucion {
   modulo: string;
   candidatos: CommitDelRango[];
-  veredicto: "uno" | "varios" | "sin dueño";
-  /** Cómo se lee en un comentario: «#273», «#274 o #276», «sin dueño en el rango». */
+  veredicto: "uno" | "varios" | "sin dueño" | "rango vacío";
+  /** Cómo se lee en un comentario: «#273», «#274 o #276», «sin dueño en el
+   *  rango», «sin rango que mirar». */
   etiqueta: string;
 }
 
@@ -334,9 +359,22 @@ export interface Atribucion {
  *
  *  Con dos candidatos se nombran LOS DOS. Un dueño equivocado es peor que dos
  *  candidatos: el equivocado se descarta en diez segundos y el hallazgo se queda
- *  sin nadie. */
-export function atribuir(modulo: string, commits: readonly CommitDelRango[]): Atribucion {
-  const candidatos = commits.filter((c) => c.modulos.includes(modulo));
+ *  sin nadie.
+ *
+ *  Y con CERO commits no se contesta «sin dueño»: se contesta que no había
+ *  rango. Los dos veredictos mandan a sitios distintos —uno a mirar el
+ *  superviviente, el otro a mirar por qué la corrida no tenía nada que medir— y
+ *  el segundo no es un hallazgo de nadie. */
+export function atribuir(modulo: string, rango: RangoDeCommits): Atribucion {
+  if (rango.tipo === "vacío") {
+    return {
+      modulo,
+      candidatos: [],
+      veredicto: "rango vacío",
+      etiqueta: "sin rango que mirar (la corrida no tenía commits sin medir)",
+    };
+  }
+  const candidatos = rango.commits.filter((c) => c.modulos.includes(modulo));
   const nombres = candidatos.map(nombreDeCommit);
   if (candidatos.length === 0) {
     return { modulo, candidatos, veredicto: "sin dueño", etiqueta: "sin dueño en el rango" };
@@ -373,13 +411,48 @@ export type OrigenCorrida = "rango" | "todos" | "explicito";
  *  destape una regresión deja el run en rojo — y una TRUNCADA también. Filtrar
  *  por `conclusion == success` rechazaría justo las corridas que traen el
  *  hallazgo. */
+/** Un informe del artefacto, SELLADO con el hash de su contenido. */
+export interface InformeSellado {
+  modulo: string;
+  /** SHA-256 en hexadecimal del fichero tal y como lo escribió la corrida.
+   *
+   *  Lo calcula `mutacion.ts` con `node:crypto`, y no este fichero: aquí no
+   *  entra nada del entorno (la cabecera explica por qué). El `hash64` de
+   *  arriba tampoco vale para esto — existe para la identidad de un mutante, no
+   *  para sellar 76 MB de informes contra una sustitución deliberada. */
+  sha256: string;
+}
+
 export interface Corrida {
   sha: string;
+  /** Hasta dónde estaba medido cuando ESTA corrida eligió qué medir: el ancla
+   *  de su rango.
+   *
+   *  Viaja en el manifiesto porque el tag `mutacion-ultima` no puede servir de
+   *  ancla: la propia corrida lo adelanta al terminar (`mutation.yml`), así que
+   *  `repartir` lo leía YA MOVIDO y el rango `tag..corrida.sha` salía siempre
+   *  vacío — los 33 módulos «sin dueño» justo después de la corrida que más
+   *  tenía que repartir (#381). El dato ya existía en el paso de selección de
+   *  CI; lo único que se hacía con él era tirarlo. */
+  desde: string;
   run_id: string;
   origen: OrigenCorrida;
   modulos_pedidos: string[];
-  modulos_con_informe: string[];
+  /** Qué informes trae y con qué contenido exacto.
+   *
+   *  Sustituye a la lista de nombres, que no distinguía la medida de CI de una
+   *  medida local hecha después (#420): `npm run mutacion -- local <id>` deja un
+   *  fichero con el nombre EXACTO que el manifiesto espera, así que no faltaba
+   *  ni sobraba nada y el guardia lo dejaba pasar. Dos núcleos, otro commit y
+   *  otro momento, presentados como parte de la misma foto y luego commiteados
+   *  en la huella. Con el sello, el nombre ya no basta. */
+  informes: InformeSellado[];
   fecha: string;
+}
+
+/** Los ids de los módulos que dejaron informe. */
+export function modulosConInforme(c: Corrida): string[] {
+  return c.informes.map((i) => i.modulo);
 }
 
 export interface VeredictoCorrida {
@@ -389,7 +462,8 @@ export interface VeredictoCorrida {
 }
 
 export function veredictoDeCorrida(c: Corrida): VeredictoCorrida {
-  const faltan = c.modulos_pedidos.filter((id) => !c.modulos_con_informe.includes(id));
+  const conInforme = modulosConInforme(c);
+  const faltan = c.modulos_pedidos.filter((id) => !conInforme.includes(id));
   if (faltan.length > 0) {
     return {
       completa: false,
@@ -414,7 +488,7 @@ export function veredictoDeCorrida(c: Corrida): VeredictoCorrida {
 }
 
 /** Lo que hay en `reports/mutation/` después de bajar el artefacto, contra lo
- *  que el manifiesto dice que TRAE — `modulos_con_informe`, no `modulos_pedidos`.
+ *  que el manifiesto dice que TRAE — `informes`, no `modulos_pedidos`.
  *
  *  La diferencia entre esas dos listas no es un fallo de descarga: es una
  *  corrida a la que se le cayó un módulo, y de eso ya dictamina
@@ -425,24 +499,47 @@ export function veredictoDeCorrida(c: Corrida): VeredictoCorrida {
  *  con un consejo que nadie podía cumplir («vuelve a bajarla entera»: el
  *  informe no estaba truncado en el camino, no existía en origen).
  *
- *  Los dos lados que sí importan son sobre lo prometido. Que FALTE un informe
- *  declarado es una descarga truncada, y ahí sí repagar bajarla otra vez. Que
- *  SOBRE uno es peor y más silencioso: un informe de la semana pasada que se
- *  quedó en el directorio se mezcla con los recién bajados y `npm run deuda`
- *  presenta las dos medidas como si fueran la misma foto. */
-export function verificaDescarga(c: Corrida, presentes: readonly string[]): string[] {
+ *  TRES lados, y el tercero es el que el nombre no podía ver. Que FALTE un
+ *  informe declarado es una descarga truncada, y ahí sí repagar bajarla otra
+ *  vez. Que SOBRE uno es peor y más silencioso: un informe de la semana pasada
+ *  que se quedó en el directorio se mezcla con los recién bajados y
+ *  `npm run deuda` presenta las dos medidas como si fueran la misma foto. Y que
+ *  un informe traiga el nombre correcto y OTRO CONTENIDO no lo veía nadie
+ *  (#420): `npm run mutacion -- local <id>` escribe justo en
+ *  `reports/mutation/<id>.json`, así que ni faltaba ni sobraba — pasaba el
+ *  guardia, entraba en el reparto y de ahí a la huella COMMITEADA, con la fecha,
+ *  el sha y el run de CI encima de una medida que no era la de CI. El sello lo
+ *  hace comprobable, y de paso caza el informe truncado al bajarlo o editado a
+ *  mano. */
+export function verificaDescarga(c: Corrida, presentes: readonly InformeSellado[]): string[] {
   const errores: string[] = [];
-  const faltan = c.modulos_con_informe.filter((id) => !presentes.includes(id));
+  const selloPresente = new Map(presentes.map((i) => [i.modulo, i.sha256]));
+  const declarados = new Set(modulosConInforme(c));
+  const faltan = c.informes.filter((i) => !selloPresente.has(i.modulo)).map((i) => i.modulo);
   if (faltan.length > 0) {
     errores.push(
       `el manifiesto declara ${faltan.length} informe(s) que no vienen en el artefacto: ${faltan.join(", ")}`,
     );
   }
-  const sobran = presentes.filter((id) => !c.modulos_con_informe.includes(id));
+  const sobran = presentes.filter((i) => !declarados.has(i.modulo)).map((i) => i.modulo);
   if (sobran.length > 0) {
     errores.push(
       `hay ${sobran.length} informe(s) que esta corrida no generó: ${sobran.join(", ")} — ` +
         `son de una medida anterior y mezclarlos daría una foto que nunca existió`,
+    );
+  }
+  const suplantados = c.informes
+    .filter((i) => {
+      const sello = selloPresente.get(i.modulo);
+      return sello !== undefined && sello !== i.sha256;
+    })
+    .map((i) => i.modulo);
+  if (suplantados.length > 0) {
+    errores.push(
+      `${suplantados.length} informe(s) NO son los que midió la corrida ${c.run_id}: ` +
+        `${suplantados.join(", ")} — el nombre casa y el contenido no. Es lo que deja un ` +
+        `\`npm run mutacion -- local\` corrido encima de la descarga: dos núcleos, otro código y otro ` +
+        `momento, a punto de commitearse en la huella con el sha y el run de CI encima`,
     );
   }
   return errores;
