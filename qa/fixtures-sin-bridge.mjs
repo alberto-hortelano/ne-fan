@@ -47,6 +47,13 @@ const PORT = PUERTOS.html;
  *  corrida en la máquina, el muro «sin bridge» no aparecía porque la página
  *  había encontrado el bridge del stack de al lado. */
 const OFFSET = offsetActual();
+/** El socket movido a OTRO host y OTRO puerto, que es lo que hace `?bridge=`
+ *  en el stack E2E de labs/narrative. Ni el host ni el puerto salen del
+ *  snapshot: si el muro cita el snapshot, miente en los dos (#341). `127.0.0.2`
+ *  es loopback igual que el `.1` —así que la conexión se rechaza en el acto y
+ *  el muro sale— pero no lo escribe nadie más en el repo. */
+const HOST_MOVIDO = "127.0.0.2";
+const BRIDGE_MOVIDO = `ws://${HOST_MOVIDO}:${PUERTOS.bridge + 3}`;
 
 /** Espera booleana (no lanza): este guion afirma sobre el arranque en vez de
  *  morir con una excepción. El sondeo es el compartido. */
@@ -57,6 +64,35 @@ async function waitPort(port, ms) {
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
+}
+
+/** Espera el muro de arranque y afirma que cita la URL EFECTIVA del socket
+ *  (#341): la que la propia página dice haber resuelto con `serviceUrl`, ya
+ *  aplicados los overrides de la query. Se compara contra lo que declara la
+ *  página y NO contra una URL que escriba este guion, porque escribirla aquí
+ *  sería la tautología de siempre: el runner afirmando su propio texto.
+ *
+ *  La aserción vieja —`/bridge/i.test(detalle)`— la implica y se fue con ella:
+ *  la palabra «bridge» sale igual en un muro que manda a mirar al puerto
+ *  equivocado. */
+async function muroCitaElSocket(page, ctx, fallos, etiqueta) {
+  await ctx.waitFor(
+    `el fail-loud del bridge (muro de error) · ${etiqueta}`,
+    () => document.getElementById("narrative-loader")?.classList.contains("error") === true,
+    20000,
+  );
+  const { detalle, socket } = await page.evaluate(() => ({
+    detalle: document.getElementById("narrative-loader-detail")?.textContent ?? "",
+    socket: window.__nefan.servicios()["game-gateway"],
+  }));
+  console.log(`· ${etiqueta} · socket efectivo ${socket}`);
+  console.log(`  muro: "${detalle.slice(0, 100)}…"`);
+  if (!detalle.includes(socket)) {
+    fallos.push(
+      `${etiqueta}: el muro no cita la URL efectiva del socket (${socket}) — dice "${detalle.slice(0, 130)}"`,
+    );
+  }
+  return detalle;
 }
 
 // La espera por ESTADO es la de `qa/lib/sonda.mjs` — la MISMA que usa el
@@ -101,18 +137,7 @@ async function main() {
     // por «un botón que ponga Cerrar»: el título tiene el suyo y aparece al
     // instante, así que esa espera devolvía el control ~4 s antes de que el
     // bootstrap terminara y medía el juego a medio arrancar.
-    await ctx.waitFor(
-      "el fail-loud del bridge (muro de error)",
-      () => document.getElementById("narrative-loader")?.classList.contains("error") === true,
-      20000,
-    );
-    const detalle = await page.evaluate(
-      () => document.getElementById("narrative-loader-detail")?.textContent ?? "",
-    );
-    console.log(`· fail-loud del bridge: "${detalle.slice(0, 70)}…"`);
-    if (!/bridge/i.test(detalle)) {
-      fallos.push(`el muro de error no habla del bridge: "${detalle.slice(0, 80)}"`);
-    }
+    await muroCitaElSocket(page, ctx, fallos, "sin bridge");
     await page.screenshot({ path: join(SHOTS, "sin-bridge-01-error-de-arranque.png") });
     await page.evaluate(() => document.getElementById("narrative-loader-dismiss")?.click());
 
@@ -137,6 +162,24 @@ async function main() {
     if (!st.billboards) fallos.push("0 billboards: la fixture trae NPCs y no se montó ninguno");
 
     await page.screenshot({ path: join(SHOTS, "sin-bridge-02-fixture-pintada.png") });
+
+    // SEGUNDA PASADA, y es la que le da dientes al candado de arriba: el
+    // socket movido a otro host y otro puerto con `?bridge=`. Con el bloque de
+    // puertos por defecto, `ws://localhost:<snapshot>` y la URL efectiva solo
+    // se diferencian en el nombre del host, así que un muro mentiroso casi
+    // colaba; aquí no coincide nada. Es además el caso REAL del stack E2E de
+    // labs/narrative, donde el muro mandaba a mirar a una máquina que no era.
+    const q = new URLSearchParams();
+    if (OFFSET) q.set("offset", String(OFFSET));
+    q.set("bridge", BRIDGE_MOVIDO);
+    await page.goto(`http://localhost:${PORT}/?${q}`, { waitUntil: "domcontentloaded" });
+    await ctx.waitFor("window.__nefan (bridge movido)", () => Boolean(window.__nefan));
+    const detalleMovido = await muroCitaElSocket(page, ctx, fallos, "bridge movido");
+    if (!detalleMovido.includes(HOST_MOVIDO)) {
+      fallos.push(`con \`?bridge=\` el muro no nombra el host al que apunta el socket (${HOST_MOVIDO})`);
+    }
+    await page.screenshot({ path: join(SHOTS, "sin-bridge-03-bridge-movido.png") });
+
     if (pageErrors.length) fallos.push(`${pageErrors.length} excepción(es) en la página: ${pageErrors[0]}`);
   } finally {
     await browser.close();

@@ -52,7 +52,7 @@ interface PendingRequest {
 
 export class BridgeClient {
   private ws: WebSocket | null = null;
-  private url: string;
+  private _url: string;
   private retryInterval = 5000;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private handlers: Map<BridgeEvent, Handler<BridgeEvent>[]> = new Map();
@@ -61,12 +61,24 @@ export class BridgeClient {
   private nextRequestId = 0;
 
   constructor(url: string) {
-    this.url = url;
+    this._url = url;
     this.connect();
   }
 
   get isConnected(): boolean {
     return this._connected;
+  }
+
+  /** La URL EFECTIVA del socket: la que resolvió `serviceUrl("game-gateway")`
+   *  con los overrides de la query ya aplicados (`?offset=`, `?bridge=`).
+   *
+   *  Existe para que el fail-loud pueda citarla (#341). Antes el muro de
+   *  arranque interpolaba `localhost` y el puerto del snapshot, así que con un
+   *  bloque de puertos desplazado o con el bridge en otra máquina mandaba al
+   *  jugador a mirar un sitio donde no había nada. Solo lectura: quien quiera
+   *  cambiar de socket construye otro cliente. */
+  get url(): string {
+    return this._url;
   }
 
   on<E extends BridgeEvent>(event: E, handler: Handler<E>): void {
@@ -90,7 +102,7 @@ export class BridgeClient {
 
   private connect(): void {
     try {
-      this.ws = new WebSocket(this.url);
+      this.ws = new WebSocket(this._url);
     } catch {
       this.scheduleRetry();
       return;
@@ -99,7 +111,7 @@ export class BridgeClient {
     this.ws.onopen = () => {
       this._connected = true;
       this.emit("connected");
-      console.log("BridgeClient: connected to", this.url);
+      console.log("BridgeClient: connected to", this._url);
     };
 
     this.ws.onclose = () => {
@@ -124,7 +136,7 @@ export class BridgeClient {
       // mostly as a breadcrumb. Without this push the user sees only a
       // generic "disconnected" later, with no hint that the disconnect
       // came from an error rather than a clean close.
-      errors.push("bridge", `WebSocket onerror on ${this.url}`, event);
+      errors.push("bridge", `WebSocket onerror on ${this._url}`, event);
     };
 
     this.ws.onmessage = (event) => {
