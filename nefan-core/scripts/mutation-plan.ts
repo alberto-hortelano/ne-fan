@@ -74,7 +74,10 @@ const ModuloSchema = z.object({
   /** Por qué esos ficheros y esa batería. Obligatorio: sin motivo escrito, el
    *  reparto se convierte en folclore en dos meses. */
   porque: z.string().min(10),
-});
+  // `.strict()` y no por gusto: la proyección de `scripts/afectado.ts` compara
+  // clave a clave, y una clave que el schema no conoce se strippearía en
+  // silencio y no seleccionaría nunca. Aquí salta al leer el plan.
+}).strict();
 
 const ExentoSchema = z.object({
   /** Ruta o glob relativo a nefan-core. */
@@ -142,7 +145,9 @@ const PlanSchema = z.object({
    *  módulo cuando cambia. Lo que declara es que NADIE lo muta, y por qué. */
   sin_mutar: z.array(ExentoSchema).default([]),
   modulos: z.array(ModuloSchema).nonempty(),
-});
+  // Ver `ModuloSchema`: una clave global desconocida tampoco puede entrar sin
+  // que alguien decida si selecciona o no.
+}).strict();
 
 export type ModuloMutacion = z.infer<typeof ModuloSchema>;
 export type ExentoMutacion = z.infer<typeof ExentoSchema>;
@@ -302,6 +307,45 @@ export type ProyeccionDeObjetivos =
   | { ok: true; proyeccion: ProyeccionObjetivos }
   | { ok: false; porque: string };
 
+type Registro = Record<string, unknown>;
+
+/** Las claves del plan que SÍ pueden cambiar el veredicto de un módulo, con la
+ *  parte de cada una que se compara. Es la mitad que selecciona. */
+const SELECCIONAN_GLOBAL: Record<string, (p: Registro) => unknown> = {
+  comando: (p) => p.comando,
+};
+
+const SELECCIONAN_POR_MODULO: Record<string, (m: Registro) => unknown> = {
+  mutate: (m) => m.mutate,
+  tests: (m) => m.tests,
+  break: (m) => m.break,
+  // De una exclusión importa CUÁL es, no su motivo escrito.
+  excluidos: (m) => ((m.excluidos ?? []) as { test?: unknown }[]).map((e) => e.test),
+};
+
+/** Y la otra mitad, la que NO selecciona, con el motivo escrito de cada clave.
+ *
+ *  Las dos juntas tienen que cubrir el schema ENTERO, y eso lo canda
+ *  `test/afectado.test.ts`: una clave nueva —`aparcado`, por ejemplo, que decide
+ *  si un módulo se mide— pone el test rojo en vez de nacer invisible. Sin esa
+ *  totalidad, la proyección es una lista blanca cuyo defecto es el silencio, que
+ *  es literalmente lo que el crítico rechazó de la opción B en #404. */
+export const NO_SELECCIONAN: Record<string, string> = {
+  _comment: "prosa: explica el reparto, no lo cambia",
+  porque: "prosa, y es la clave del asunto: aquí se ESCRIBE lo que una corrida acaba de medir, así que si contara, anotar la medida costaría la corrida completa siguiente",
+  tope_local: "cuántos mutantes se dejan medir en la máquina de quien programa: una puerta de coste, no toca a un mutante",
+  tope_lote: "cuántos segundos puede durar un lote en CI: empaqueta la corrida, no cambia su resultado",
+  directorios_completos: "ensancha el PERÍMETRO, que `mutate.ts` no mira: sale en `npm test`, en `npm run deuda` y en la pregunta que este selector hace por un huérfano, no en el score de un módulo",
+  sin_mutar: "declara quién NO se muta y por qué; como `directorios_completos`, vive en el perímetro y no en la medida",
+  modulos: "es el contenedor del reparto: lo que decide va clave a clave dentro de cada módulo",
+  id: "es la clave con la que se emparejan las dos revisiones, no un campo que comparar",
+};
+
+/** Las claves que el schema conoce, para que el candado de totalidad pregunte al
+ *  schema y no a una lista paralela. */
+export const CLAVES_DEL_PLAN = Object.keys(PlanSchema.shape);
+export const CLAVES_DEL_MODULO = Object.keys(ModuloSchema.shape);
+
 export function proyeccionDeObjetivos(contenido: string): ProyeccionDeObjetivos {
   let plan: unknown;
   try {
@@ -314,22 +358,21 @@ export function proyeccionDeObjetivos(contenido: string): ProyeccionDeObjetivos 
     return { ok: false, porque: "no tiene una lista `modulos` con contenido" };
   }
   if (typeof p.comando !== "string") return { ok: false, porque: "no tiene `comando`" };
-  const global = JSON.stringify({ comando: p.comando });
+  const proyecta = (fuente: Registro, campos: Record<string, (x: Registro) => unknown>): string =>
+    JSON.stringify(Object.keys(campos).sort().map((k) => [k, campos[k](fuente)]));
   const modulos = new Map<string, string>();
-  for (const m of p.modulos as { id?: unknown; mutate?: unknown; tests?: unknown; break?: unknown; excluidos?: { test?: unknown }[] }[]) {
+  for (const m of p.modulos as Registro[]) {
     if (typeof m.id !== "string") return { ok: false, porque: "hay un módulo sin `id`" };
-    modulos.set(
-      m.id,
-      JSON.stringify({
-        mutate: m.mutate,
-        tests: m.tests,
-        break: m.break,
-        excluidos: (m.excluidos ?? []).map((e) => e.test),
-      }),
-    );
+    modulos.set(m.id, proyecta(m, SELECCIONAN_POR_MODULO));
   }
-  return { ok: true, proyeccion: { global, modulos } };
+  return { ok: true, proyeccion: { global: proyecta(p as Registro, SELECCIONAN_GLOBAL), modulos } };
 }
+
+/** Las claves que la proyección compara, para el candado de totalidad. */
+export const clavesQueSeleccionan = (): { plan: string[]; modulo: string[] } => ({
+  plan: Object.keys(SELECCIONAN_GLOBAL),
+  modulo: Object.keys(SELECCIONAN_POR_MODULO),
+});
 
 /** El PERÍMETRO: qué ficheros tienen que tener respuesta a «si cambia esto,
  *  ¿qué hay que ejecutar?».
@@ -644,17 +687,28 @@ export function alcanceDe(modulo: ModuloMutacion): Set<string> {
   return cierreDeRuntime([...modulo.tests, ...ficherosMutados(modulo)]);
 }
 
-/** Las APIs con las que se ENUMERA un directorio. Quien llama a una de éstas
- *  no nombra los ficheros que va a leer: los descubre. Por eso `leeElDato` no
- *  puede contestar solo con el nombre del fichero. */
+/** Las dos formas de leer un fichero SIN escribir su nombre. Quien llama a una
+ *  de éstas no nombra lo que va a leer: lo descubre, y por eso `leeElDato` no
+ *  puede contestar solo con el nombre del fichero.
+ *
+ *  `API_ENUMERA` descubre listando el directorio; `API_ABRE` descubre
+ *  componiendo la ruta (`readFileSync(join(DIR, \`${x}.json\`))`), que es la
+ *  forma más normal de leer un directorio de fixtures y la que se coló en la
+ *  primera versión de esto (#404 / QA H-1). */
 const API_ENUMERA = new Set(["readdirSync", "readdir", "opendirSync", "opendir", "globSync", "glob"]);
+const API_ABRE = new Set(["readFileSync", "readFile", "createReadStream", "openSync", "open"]);
 
 interface Lectura {
   /** Los literales de cadena del fichero, más los que `join`/`resolve` componen
-   *  a partir de argumentos literales seguidos. */
+   *  a partir de argumentos literales seguidos. Es lo que contesta por NOMBRE. */
   literales: string[];
-  /** Llama a alguna de `API_ENUMERA`: descubre ficheros en vez de nombrarlos. */
-  enumeraDirectorios: boolean;
+  /** Los directorios DEL PAQUETE cuyo contenido descubre este fichero, resueltos
+   *  LLAMADA A LLAMADA contra el disco. */
+  directoriosLeidos: string[];
+  /** Descubrimientos cuyo directorio NO se pudo resolver: el directorio le llega
+   *  por parámetro desde otro fichero, o se compone de algo que no es un
+   *  literal. Ahí el selector está CIEGO y hay que decirlo, no suponerlo. */
+  descubrimientosCiegos: number;
 }
 
 const cacheLecturas = new Map<string, Lectura>();
@@ -668,34 +722,13 @@ export function ancestrosDe(ruta: string): string[] {
   return out;
 }
 
-/** ¿Este literal NOMBRA ese directorio? Dos filtros, y los dos con testigo:
- *
- *  · Tiene que traer una BARRA. `"data"` es una palabra que aparece como campo
- *    de un JSON o como variable en media casa —`bridge/state-http-server.ts`,
- *    `src/plugins/dispatcher.ts`, `test/helpers.ts` y cuatro más la llevan como
- *    literal suelto—, y `"../data"` es una ruta. Hoy ninguno de esos siete
- *    enumera directorios, así que el filtro no cambia una sola selección: es un
- *    guardia para el día que uno lo haga, porque sin él ese `readdirSync`
- *    convertiría CUALQUIER fichero de `data/` en selector de sus módulos.
- *  · Casa por el FINAL, no por dentro: quien enumera `data/contract/tools` no
- *    lee `data/contract/fixtures/**`, así que un literal que nombra un
- *    subdirectorio no vale por su padre. Ese sí se paga hoy, medido: casando
- *    por dentro, los **83** ficheros de `data/contract/fixtures/**` pasarían de
- *    ninguno a `blueprint-volumenes, contrato-escena, scene-validate`, porque
- *    `test/scene-schema.test.ts` enumera y nombra `"../data/contract/tools"`. */
-export function nombraDirectorio(literal: string, directorio: string): boolean {
-  const n = literal.replace(/\/+$/, "");
-  if (n.endsWith("/" + directorio)) return true;
-  return n === directorio && directorio.includes("/");
-}
-
 /** ¿La corrida de este fichero LEE ese dato? La pregunta que el grafo de
  *  imports no contesta: un `readFileSync(join(root, "data", "contract",
  *  "x.json"))` no es una arista de import y por eso el selector, ante un dato
  *  cualquiera, ejecutaba de más.
  *
- *  `dato` es la ruta del fichero relativa a nefan-core, y hay DOS formas de
- *  leerlo, porque hay dos formas de abrir un fichero:
+ *  `dato` es la ruta del fichero relativa a nefan-core, y hay DOS respuestas
+ *  posibles porque hay dos formas de abrir un fichero:
  *
  *  1. NOMBRÁNDOLO. Se busca el nombre del fichero dentro de los LITERALES DE
  *     CADENA, no del texto crudo, y las dos mitades importan:
@@ -707,17 +740,24 @@ export function nombraDirectorio(literal: string, directorio: string): boolean {
  *       (`src/plugins/migrate.ts` cita `arch-rules.json` sin abrirlo jamás), y
  *       contar esas menciones devolvería el «ejecuta todo» que se quiere acotar.
  *
- *  2. ENUMERANDO SU DIRECTORIO. Quien hace `readdirSync(dir)` lee lo que haya
- *     dentro sin nombrarlo nunca, así que la forma 1 lo declara «no lo lee
- *     nadie» — que es la respuesta más peligrosa que este fichero puede dar.
- *     Medido antes de arreglarlo: `data/scenes/puerto_tile.json` → ningún
- *     módulo, con `test/scene-fixtures.test.ts` leyendo `data/scenes` con
- *     `readdirSync` y estando en la batería de `contrato-escena` y de
- *     `scene-validate`. Así que un fichero que enumera directorios y nombra un
- *     ANCESTRO del dato cuenta como lector suyo.
+ *  2. SIN NOMBRARLO, descubriéndolo dentro de un DIRECTORIO. Aquí la forma 1
+ *     contesta «no lo lee nadie», que es la respuesta más peligrosa que este
+ *     fichero puede dar, y hay dos maneras de llegar:
+ *     · `readdirSync(DIR)` — medido antes de arreglarlo:
+ *       `data/scenes/puerto_tile.json` → ningún módulo, con
+ *       `test/scene-fixtures.test.ts` leyéndolo y estando en la batería de
+ *       `contrato-escena` y de `scene-validate`.
+ *     · `readFileSync(join(DIR, \`${x}.json\`))` — medido igual:
+ *       `data/contract/fixtures/sprite-forge/*.json` → NADA, con
+ *       `test/contract-sprite-forge.test.ts` —la batería de
+ *       `contrato-sprite-forge`— abriéndolos así uno a uno.
+ *     Las dos se contestan igual: el directorio se resuelve LLAMADA A LLAMADA
+ *     (`directoriosLeidos`) y el dato lo lee quien lea un ancestro suyo.
  *
  *  Se queda del lado seguro donde no puede saber: un fichero del alcance que ya
- *  no está en el árbol cuenta como lector. */
+ *  no está en el árbol cuenta como lector, y un descubrimiento cuyo directorio
+ *  no se resuelve NO se inventa — se cuenta como ciego y lo caza el candado de
+ *  totalidad (`descubrimientosCiegos`). */
 export function leeElDato(fichero: string, dato: string): boolean {
   const l = lecturaDe(fichero);
   // Borrado o renombrado: no hay nada que analizar, y el lado seguro es contar
@@ -725,41 +765,21 @@ export function leeElDato(fichero: string, dato: string): boolean {
   if (l === undefined) return true;
   const nombre = dato.split("/").pop() as string;
   if (l.literales.some((s) => s.includes(nombre))) return true;
-  if (!l.enumeraDirectorios) return false;
   const ancestros = ancestrosDe(dato);
-  return l.literales.some((s) => ancestros.some((a) => nombraDirectorio(s, a)));
+  return l.directoriosLeidos.some((d) => ancestros.includes(d));
 }
 
-/** ¿Este fichero ENUMERA directorios? Lo consulta el candado de totalidad: un
- *  fichero que enumera y del que el selector no sabe QUÉ enumera es un agujero
- *  por el que un dato sale «no lo lee nadie» sin que sea verdad. */
-export function enumeraDirectorios(fichero: string): boolean {
-  return lecturaDe(fichero)?.enumeraDirectorios ?? false;
+/** Los directorios del paquete cuyo contenido descubre este fichero. Lo consulta
+ *  el candado de totalidad. */
+export function directoriosLeidos(fichero: string): string[] {
+  return lecturaDe(fichero)?.directoriosLeidos ?? [];
 }
 
-/** Los directorios DEL PAQUETE que este fichero nombra en un literal, resueltos
- *  contra el disco (relativos al propio fichero o a la raíz del paquete).
- *
- *  Se resuelve en vez de casar cadenas a propósito: es la comprobación
- *  INDEPENDIENTE con la que el candado audita a `nombraDirectorio`. Si un día
- *  el emparejamiento por sufijo dejara de ver un directorio que aquí sí se
- *  resuelve, el candado lo dice en vez de pasar en verde. */
-export function directoriosQueNombra(fichero: string): string[] {
-  const l = lecturaDe(fichero);
-  if (l === undefined) return [];
-  const base = dirname(join(coreRoot, fichero));
-  const out = new Set<string>();
-  for (const lit of l.literales) {
-    // Solo lo que PARECE una ruta, por lo mismo que `nombraDirectorio`: `".."`
-    // resuelve siempre a un directorio que existe y no dice nada.
-    if (!lit.includes("/")) continue;
-    for (const abs of [resolve(base, lit), resolve(coreRoot, lit)]) {
-      const rel = normaliza(relative(coreRoot, abs));
-      if (rel === "" || rel.startsWith("..")) continue;
-      if (existsSync(abs) && statSync(abs).isDirectory()) out.add(rel);
-    }
-  }
-  return [...out].sort();
+/** Cuántas veces este fichero descubre ficheros en un directorio que el selector
+ *  NO ha podido resolver. Es el agujero declarable: mientras sea 0, todo lo que
+ *  el fichero abre sin nombrar está atribuido. */
+export function descubrimientosCiegos(fichero: string): number {
+  return lecturaDe(fichero)?.descubrimientosCiegos ?? 0;
 }
 
 /** Lo que hay que mirar de un fichero para contestar a lo de arriba, una sola
@@ -770,24 +790,149 @@ function lecturaDe(fichero: string): Lectura | undefined {
   if (previo) return previo;
   const abs = join(coreRoot, fichero);
   if (!existsSync(abs)) return undefined;
-  const l = analizaLectura(abs);
+  const l = analizaLectura(readFileSync(abs, "utf8"), dirname(abs));
   cacheLecturas.set(fichero, l);
   return l;
 }
 
-function analizaLectura(abs: string): Lectura {
-  const sf = ts.createSourceFile(abs, readFileSync(abs, "utf8"), ts.ScriptTarget.ESNext, true);
+/** Lo mismo, sobre un CONTENIDO escrito a mano y una ruta que se finge. Separado
+ *  de dónde sale el texto por lo mismo que `comparaPerimetro`: los casos que
+ *  importan —el alias de un import, el nombre compuesto, la cabeza que no
+ *  resuelve— se prueban con seis líneas de código sintético, y un candado que
+ *  cuesta fabricar ficheros en el árbol acaba no probándose. */
+export function descubrimientosDe(
+  texto: string,
+  ficheroRelativo: string,
+): { directorios: string[]; ciegos: number } {
+  const l = analizaLectura(texto, dirname(join(coreRoot, ficheroRelativo)));
+  return { directorios: l.directoriosLeidos, ciegos: l.descubrimientosCiegos };
+}
+
+/** El directorio DEL PAQUETE al que resuelve esa ruta, o `undefined`. Se
+ *  resuelve contra el DISCO en vez de casar cadenas: `"data"` a secas o `".."`
+ *  casarían con cualquier cosa. */
+function dirDelPaquete(desde: string, ruta: string): string | undefined {
+  if (ruta === "") return undefined;
+  const abs = resolve(desde, ruta);
+  const rel = normaliza(relative(coreRoot, abs));
+  if (rel === "" || rel.startsWith("..")) return undefined;
+  return existsSync(abs) && statSync(abs).isDirectory() ? rel : undefined;
+}
+
+/** `import.meta.url` — el ancla desde la que esta casa escribe cualquier ruta de
+ *  fichero, y la ÚNICA que autoriza a resolver relativo al propio fichero. */
+function esImportMetaUrl(n: ts.Node): boolean {
+  return (
+    ts.isPropertyAccessExpression(n) && n.name.text === "url" && ts.isMetaProperty(n.expression)
+  );
+}
+
+/** Los literales SEGUIDOS desde `i`, que es como `join` recibe la cola de una
+ *  ruta: `join(HERE, "fixtures", "fps-plans")` → `fixtures/fps-plans`. */
+function colaLiteral(args: readonly ts.Node[], i: number): string {
+  const out: string[] = [];
+  for (let k = i; k < args.length; k++) {
+    const a = args[k];
+    if (!esCadena(a)) break;
+    out.push(a.text);
+  }
+  return out.join("/");
+}
+
+const nombreLlamado = (n: ts.CallExpression): string | undefined =>
+  ts.isIdentifier(n.expression)
+    ? n.expression.text
+    : ts.isPropertyAccessExpression(n.expression)
+      ? n.expression.name.text
+      : undefined;
+
+/** La CABEZA de un nombre compuesto: en `join(DIR, \`${x}.json\`)` es `DIR`.
+ *  `undefined` si el último tramo es un literal —entonces el nombre SÍ está
+ *  escrito y lo contesta la vía 1— o si no es un `join`/`resolve`. */
+function cabezaCompuesta(n: ts.Node): ts.Node | undefined {
+  if (!ts.isCallExpression(n)) return undefined;
+  const nombre = nombreLlamado(n);
+  if (nombre !== "join" && nombre !== "resolve") return undefined;
+  if (n.arguments.length < 2) return undefined;
+  if (esCadena(n.arguments[n.arguments.length - 1])) return undefined;
+  return n.arguments[0];
+}
+
+function analizaLectura(texto: string, base: string): Lectura {
+  const sf = ts.createSourceFile(join(base, "x.ts"), texto, ts.ScriptTarget.ESNext, true);
   const literales: string[] = [];
-  let enumeraDirectorios = false;
-  const visita = (n: ts.Node): void => {
+  // `import { readdirSync as leerDir }` apagaba la detección entera cuando ésta
+  // iba por el NOMBRE de la llamada (QA H-2): el alias se resuelve aquí.
+  const alias = new Map<string, string>();
+  /** Nombre local → directorio del paquete, de `const X = …` y de los
+   *  parámetros que una llamada del MISMO fichero ata a un directorio. */
+  const nombresDeDirectorio = new Map<string, Set<string>>();
+  const parametrosDe = new Map<string, string[]>();
+
+  const apunta = (nombre: string, dirs: readonly string[]): void => {
+    if (dirs.length === 0) return;
+    const previo = nombresDeDirectorio.get(nombre) ?? new Set<string>();
+    for (const d of dirs) previo.add(d);
+    nombresDeDirectorio.set(nombre, previo);
+  };
+
+  /** A qué directorio del paquete apunta esta EXPRESIÓN, por su forma y no por
+   *  los literales que lleve sueltos.
+   *
+   *  La diferencia se paga: `resolve(gamesDir, "..", "plugins")`
+   *  (`src/plugins/loader.ts`) tiene literales que, resueltos contra la carpeta
+   *  del propio fichero, dan `src/plugins` — un directorio que existe y que ese
+   *  código no mira jamás. Con la cabeza sin resolver, la respuesta correcta es
+   *  «no lo sé», y de ahí sale el descubrimiento CIEGO que el candado exige
+   *  declarar. */
+  const resuelve = (n: ts.Node): string[] => {
+    if (ts.isIdentifier(n)) return [...(nombresDeDirectorio.get(n.text) ?? [])];
+    if (esImportMetaUrl(n)) return [normaliza(relative(coreRoot, base))];
+    if (esCadena(n)) {
+      const d = dirDelPaquete(coreRoot, n.text);
+      return d === undefined ? [] : [d];
+    }
+    if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "URL") {
+      const [ruta, ancla] = n.arguments ?? [];
+      if (ruta === undefined || ancla === undefined || !esCadena(ruta)) return [];
+      return junta(resuelve(ancla), ruta.text);
+    }
+    if (ts.isCallExpression(n) && n.arguments.length > 0) {
+      const nom = nombreLlamado(n);
+      if (nom === "join" || nom === "resolve") {
+        return junta(resuelve(n.arguments[0]), colaLiteral(n.arguments, 1));
+      }
+      // Envoltorios que no mueven la ruta: `fileURLToPath(x)`, `dirname(x)`
+      // sobre `import.meta.url` (que ya devuelve el DIRECTORIO), `normalize`…
+      return resuelve(n.arguments[0]);
+    }
+    return [];
+  };
+  const junta = (cabezas: readonly string[], cola: string): string[] =>
+    cabezas
+      .map((c) => dirDelPaquete(coreRoot, cola === "" ? c : `${c}/${cola}`))
+      .filter((d): d is string => d !== undefined);
+
+  // Pasada 1 · literales, alias de import, constantes que son un directorio y
+  // la firma de cada función del fichero.
+  const pasada1 = (n: ts.Node): void => {
+    if (ts.isImportDeclaration(n)) {
+      const enlaces = n.importClause?.namedBindings;
+      if (enlaces !== undefined && ts.isNamedImports(enlaces)) {
+        for (const e of enlaces.elements) alias.set(e.name.text, (e.propertyName ?? e.name).text);
+      }
+    }
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
+      apunta(n.name.text, resuelve(n.initializer));
+    }
+    if (ts.isFunctionDeclaration(n) && n.name) {
+      parametrosDe.set(
+        n.name.text,
+        n.parameters.map((p) => (ts.isIdentifier(p.name) ? p.name.text : "")),
+      );
+    }
     if (ts.isCallExpression(n)) {
-      const llamada = n.expression;
-      const nombre = ts.isIdentifier(llamada)
-        ? llamada.text
-        : ts.isPropertyAccessExpression(llamada)
-          ? llamada.name.text
-          : undefined;
-      if (nombre !== undefined && API_ENUMERA.has(nombre)) enumeraDirectorios = true;
+      const nombre = nombreLlamado(n);
       // `join(coreRoot, "data", "scenes")` nombra un directorio tan bien como
       // `"../data/scenes"`, solo que partido en argumentos.
       if (nombre === "join" || nombre === "resolve") {
@@ -803,10 +948,50 @@ function analizaLectura(abs: string): Lectura {
       }
     }
     if (esCadena(n)) literales.push(n.text);
-    ts.forEachChild(n, visita);
+    ts.forEachChild(n, pasada1);
   };
-  visita(sf);
-  return { literales, enumeraDirectorios };
+  pasada1(sf);
+
+  // Pasada 2 · lo que las llamadas del fichero atan a un parámetro. Un salto,
+  // que es lo que hace falta: `escenasDe(SCENES)` con `readdirSync(dir)` dentro.
+  const pasada2 = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+      const params = parametrosDe.get(n.expression.text);
+      if (params !== undefined) {
+        n.arguments.forEach((arg, i) => {
+          const nombre = params[i];
+          if (nombre) apunta(nombre, resuelve(arg));
+        });
+      }
+    }
+    ts.forEachChild(n, pasada2);
+  };
+  pasada2(sf);
+
+  // Pasada 3 · los DESCUBRIMIENTOS, resueltos llamada a llamada.
+  const directorios = new Set<string>();
+  let descubrimientosCiegos = 0;
+  const pasada3 = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && n.arguments.length > 0) {
+      const llamado = nombreLlamado(n);
+      const nombre = llamado === undefined ? undefined : (alias.get(llamado) ?? llamado);
+      const donde =
+        nombre !== undefined && API_ENUMERA.has(nombre)
+          ? n.arguments[0]
+          : nombre !== undefined && API_ABRE.has(nombre)
+            ? cabezaCompuesta(n.arguments[0])
+            : undefined;
+      if (donde !== undefined) {
+        const dirs = resuelve(donde);
+        if (dirs.length === 0) descubrimientosCiegos++;
+        for (const d of dirs) directorios.add(d);
+      }
+    }
+    ts.forEachChild(n, pasada3);
+  };
+  pasada3(sf);
+
+  return { literales, directoriosLeidos: [...directorios].sort(), descubrimientosCiegos };
 }
 
 function esCadena(

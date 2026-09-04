@@ -13,7 +13,8 @@
  *  para no tener. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -31,12 +32,16 @@ import {
 } from "../scripts/afectado.js";
 import {
   alcanceDe,
+  CLAVES_DEL_MODULO,
+  CLAVES_DEL_PLAN,
+  clavesQueSeleccionan,
   coreRoot,
-  directoriosQueNombra,
-  enumeraDirectorios,
+  descubrimientosCiegos,
+  descubrimientosDe,
+  directoriosLeidos,
   leeElDato,
   leerPlan,
-  nombraDirectorio,
+  NO_SELECCIONAN,
   patronesDelPerimetro,
   REGLA_PERIMETRO,
 } from "../scripts/mutation-plan.js";
@@ -585,67 +590,117 @@ describe("qué cuenta como LEER un dato", () => {
     assert.equal(leeElDato("src/scene/no-existe-este-fichero.ts", "data/contract/arch-rules.json"), true);
   });
 
-  // La otra mitad, y la que faltaba: quien hace `readdirSync(dir)` lee lo que
-  // haya dentro sin nombrarlo nunca. Sin esto, `data/scenes/puerto_tile.json`
-  // salía «no lo lee nadie» —medido— con dos baterías vivas leyéndolo.
+  // La otra mitad: quien DESCUBRE un fichero no escribe su nombre en ninguna
+  // parte. Los dos testigos son reales, y los dos salían «no los lee nadie»
+  // teniendo su batería delante.
   it("ENUMERAR el directorio cuenta como leer lo que hay dentro", () => {
     // `test/scene-fixtures.test.ts` recorre `data/scenes` con `readdirSync`.
     assert.equal(leeElDato("test/scene-fixtures.test.ts", "data/scenes/puerto_tile.json"), true);
   });
 
-  it("…pero solo para lo que cuelga de ESE directorio", () => {
-    // El par negativo: enumerar `data/scenes` no es leer `data/contract/`.
-    assert.equal(leeElDato("test/scene-fixtures.test.ts", "data/contract/client-file-size.json"), false);
+  it("ABRIR con el nombre COMPUESTO también", () => {
+    // `test/contract-sprite-forge.test.ts` —la batería de `contrato-sprite-forge`—
+    // hace `readFileSync(join(DIR, `${nombre}.json`))`: el basename no aparece
+    // en ningún literal y no hay `readdirSync` que valga. Regenerar esas
+    // fixtures con el repo hermano seleccionaba NADA.
+    assert.equal(
+      leeElDato("test/contract-sprite-forge.test.ts", "data/contract/fixtures/sprite-forge/catalog.json"),
+      true,
+    );
   });
 
-  it("nombrar el directorio SIN enumerarlo no cuenta", () => {
-    // `src/scene/scene-validate.ts` no hace `readdirSync` de nada.
-    assert.equal(enumeraDirectorios("src/scene/scene-validate.ts"), false);
+  it("…pero solo para lo que cuelga de ESE directorio", () => {
+    // El par negativo: leer `data/scenes` no es leer `data/contract/`.
+    assert.equal(leeElDato("test/scene-fixtures.test.ts", "data/contract/client-file-size.json"), false);
+    assert.equal(
+      leeElDato("test/contract-sprite-forge.test.ts", "data/contract/client-file-size.json"),
+      false,
+    );
+  });
+
+  it("nombrar el directorio SIN descubrir nada dentro no cuenta", () => {
+    // `src/scene/scene-validate.ts` no abre ningún directorio.
+    assert.deepEqual(directoriosLeidos("src/scene/scene-validate.ts"), []);
     assert.equal(leeElDato("src/scene/scene-validate.ts", "data/scenes/puerto_tile.json"), false);
   });
 });
 
-describe("qué cuenta como NOMBRAR un directorio", () => {
-  it("una ruta sí; una palabra suelta no", () => {
-    assert.equal(nombraDirectorio("../data/scenes", "data/scenes"), true);
-    assert.equal(nombraDirectorio("data/scenes/", "data/scenes"), true);
-    assert.equal(nombraDirectorio("/home/al/x/nefan-core/data/scenes", "data/scenes"), true);
-    // `"data"` a secas es un campo de JSON o una variable en siete ficheros de
-    // los alcances de hoy. Ninguno enumera todavía, así que este filtro no
-    // cambia una sola selección: es el guardia para el día que uno lo haga.
-    assert.equal(nombraDirectorio("data", "data"), false);
-    assert.equal(nombraDirectorio("../data", "data"), true);
+/** De qué directorio habla cada descubrimiento, sobre código escrito a mano.
+ *
+ *  Es el sitio donde se decide lo que el selector puede afirmar, y los casos
+ *  que importan no están en el árbol (todavía): un import con alias, una cabeza
+ *  de ruta que no resuelve, un nombre que sí está escrito. Fabricar ficheros
+ *  reales para probarlos costaría bastante más que estas seis líneas, y un
+ *  candado caro es un candado que no se prueba. */
+describe("de qué directorio habla un descubrimiento", () => {
+  const DIR = 'const DIR = fileURLToPath(new URL("../data/scenes", import.meta.url));\n';
+  const como = (cuerpo: string) => descubrimientosDe(cuerpo, "test/inventado.test.ts");
+
+  it("enumerar una constante que resuelve a un directorio del paquete", () => {
+    const r = como(`${DIR}readdirSync(DIR);`);
+    assert.deepEqual(r.directorios, ["data/scenes"]);
+    assert.equal(r.ciegos, 0);
   });
 
-  it("nombrar un SUBdirectorio no vale por su padre", () => {
-    // Quien enumera `data/contract/tools` no lee `data/contract/fixtures/**`.
-    // Éste sí se paga: casando por dentro, los 83 ficheros de
-    // `data/contract/fixtures/**` pasan de ninguno a tres módulos.
-    assert.equal(nombraDirectorio("../data/contract/tools", "data/contract"), false);
-    assert.equal(nombraDirectorio("../data/contract/tools", "data/contract/tools"), true);
+  it("el import con ALIAS no lo apaga", () => {
+    // La detección iba por el NOMBRE de la llamada, así que
+    // `import { readdirSync as leerDir }` dejaba el candado entero en verde.
+    const r = como(`import { readdirSync as leerDir } from "node:fs";\n${DIR}leerDir(DIR);`);
+    assert.deepEqual(r.directorios, ["data/scenes"], "un alias no puede cegar al selector");
+  });
+
+  it("abrir con el nombre compuesto habla del directorio; con el nombre escrito, no", () => {
+    assert.deepEqual(como(`${DIR}readFileSync(join(DIR, \`\${x}.json\`));`).directorios, ["data/scenes"]);
+    // El nombre está escrito: lo contesta la vía del basename y esto no es un
+    // descubrimiento — ni un directorio leído, ni un ciego.
+    const escrito = como(`${DIR}readFileSync(join(DIR, "robledo_tile.json"));`);
+    assert.deepEqual(escrito.directorios, []);
+    assert.equal(escrito.ciegos, 0);
+  });
+
+  it("un parámetro atado por una llamada del mismo fichero sí resuelve", () => {
+    // Es la forma de `test/scene-fixtures.test.ts`: `escenasDe(SCENES)` con el
+    // `readdirSync` dentro de `escenasDe`.
+    const r = como(`${DIR}function recorre(d) { return readdirSync(d); }\nrecorre(DIR);`);
+    assert.deepEqual(r.directorios, ["data/scenes"]);
+  });
+
+  it("una cabeza que NO resuelve es un descubrimiento CIEGO, no un directorio inventado", () => {
+    // El caso real que costó un falso «lo veo»: `src/plugins/loader.ts` hace
+    // `loadManifestsFromDir(resolve(gamesDir, "..", "plugins"))`, y esos
+    // literales, resueltos contra la carpeta del propio fichero, dan un
+    // directorio que existe y que ese código no mira jamás.
+    const r = como(`readdirSync(resolve(gamesDir, "..", "plugins"));`);
+    assert.deepEqual(r.directorios, []);
+    assert.equal(r.ciegos, 1, "no saber QUÉ enumera tiene que contarse, no redondearse a cero");
+  });
+
+  it("y enumerar algo que llega de fuera del fichero también", () => {
+    assert.equal(como(`export function f(dir) { return readdirSync(dir); }`).ciegos, 1);
   });
 });
 
 /** El candado de totalidad del agujero: ningún fichero de datos puede salir
- *  «no lo lee nadie» sin que se haya comprobado que ninguna batería enumera su
- *  directorio.
+ *  «no lo lee nadie» sin que se haya comprobado que ninguna batería lo abre.
  *
- *  Se comprueba por una vía DISTINTA de la que usa el selector: `leeElDato`
- *  empareja el literal con el directorio por sufijo, y esto RESUELVE cada
- *  literal contra el disco. Si el emparejamiento dejara de ver un directorio
- *  que sí se resuelve, esto lo dice en vez de pasar en verde. */
-describe("candado · quien enumera un directorio del paquete se ve, y lo que no se ve está escrito", () => {
+ *  Se comprueba LLAMADA A LLAMADA y no fichero a fichero, que es la diferencia
+ *  entre prometer y sujetar: la versión anterior daba por bueno cualquier
+ *  fichero que nombrara ALGÚN directorio con datos, así que un enumerador ciego
+ *  con un literal cualquiera al lado —aunque no tuviera nada que ver— pasaba en
+ *  verde. Lo que se cuenta ahora es cuántos descubrimientos de ESE fichero no
+ *  resuelven su directorio. */
+describe("candado · quien abre un directorio del paquete se ve, y lo que no se ve está escrito", () => {
   const plan = leerPlan();
   const alcance = new Map<string, string[]>();
   for (const m of plan.modulos) {
     for (const f of alcanceDe(m)) alcance.set(f, [...(alcance.get(f) ?? []), m.id]);
   }
 
-  /** Los ficheros de alguna batería que enumeran directorios SIN que se pueda
-   *  saber cuál: el directorio les llega por parámetro y lo nombra quien los
-   *  llama. Cada uno con lo que cuesta. La lista no exime de nada — está aquí
-   *  para que un enumerador NUEVO ponga esto en rojo en vez de ampliar el
-   *  agujero en silencio. */
+  /** Los ficheros de alguna batería que descubren ficheros en un directorio que
+   *  no se puede resolver: les llega por parámetro desde otro fichero. Cada uno
+   *  con lo que cuesta. La lista no exime de nada — está aquí para que un
+   *  descubridor NUEVO ponga esto en rojo en vez de ampliar el agujero en
+   *  silencio. */
   const CIEGOS: Record<string, string> = {
     "src/narrative/session-storage.ts":
       "enumera la raíz de `saves/`, que no está versionada: ningún fichero de datos del repo cuelga de ahí",
@@ -654,34 +709,50 @@ describe("candado · quien enumera un directorio del paquete se ve, y lo que no 
     "src/games/loader.ts":
       "enumera el gamesDir/stylesDir que le pasan. COSTE: añadir o quitar un JUEGO o un ESTILO entero se ve igual, porque trae su `game.json` o su `style.json` y esos SÍ los nombra este fichero; lo que no se vería es un fichero suelto dentro de uno ya existente",
     "src/plugins/loader.ts":
-      "enumera el directorio de plugins que le pasan. COSTE: un plugin nuevo en `data/plugins/` o en `data/games/{id}/plugins/` no selecciona por sí solo a las baterías que cargan plugins de verdad (las de `state-http-*`)",
+      "enumera el directorio de plugins que le pasan. COSTE: un plugin nuevo en `data/plugins/`, en `data/games/{id}/plugins/` o en las fixtures de `test/fixtures/games/*/plugins/` no selecciona por sí solo a las baterías que cargan plugins de verdad (las de `state-http-*`)",
     "scripts/manifest-kinds-con-productor.ts":
       "enumera el `cacheDir` del asset-store, que está en .gitignore: no hay dato versionado debajo",
   };
 
-  /** ¿Cuelga algún fichero de DATOS de este directorio? Un enumerador que solo
-   *  nombra directorios de código no puede estar leyendo un dato del repo. */
-  const guardaDatos = (dir: string): boolean =>
-    readdirSync(join(coreRoot, dir), { recursive: true, withFileTypes: true }).some(
-      (e) => e.isFile() && !e.name.endsWith(".ts"),
-    );
-
-  it("todo el que enumera, o nombra el directorio de datos que enumera, o está en la lista con su coste", () => {
+  it("todo el que descubre resuelve su directorio, o está en la lista con su coste", () => {
     const ciegos: string[] = [];
     for (const [f, ids] of alcance) {
-      if (!enumeraDirectorios(f)) continue;
-      if (directoriosQueNombra(f).some(guardaDatos)) continue;
+      if (descubrimientosCiegos(f) === 0) continue;
       ciegos.push(`${f} (en ${ids.join(", ")})`);
     }
     assert.deepEqual(
       ciegos.map((c) => c.split(" ")[0]).sort(),
       Object.keys(CIEGOS).sort(),
-      "hay un enumerador cuyo directorio el selector no ve y que no está declarado: " +
-        "o nombra el directorio en un literal, o escribe aquí qué se pierde",
+      "hay un descubrimiento cuyo directorio el selector no resuelve y que no está declarado: " +
+        "o se escribe la ruta donde el análisis la vea, o se escribe aquí qué se pierde",
     );
     for (const [f, porque] of Object.entries(CIEGOS)) {
       assert.ok(porque.length > 40, `${f} está exento sin decir lo que cuesta`);
     }
+  });
+
+  it("y lo que sí resuelve queda ATRIBUIDO: todo dato bajo esos directorios selecciona su batería", () => {
+    // El oráculo del guion de QA, metido en el candado: si un fichero dice
+    // «leo `data/contract/fixtures/sprite-forge`», entonces cada dato de ahí
+    // dentro tiene que seleccionar sus módulos. Sin esto, resolver el
+    // directorio y no usarlo sería un verde que no comprueba nada.
+    let mirados = 0;
+    for (const [f, ids] of alcance) {
+      for (const dir of directoriosLeidos(f)) {
+        for (const e of readdirSync(join(coreRoot, dir), { withFileTypes: true })) {
+          if (!e.isFile() || e.name.endsWith(".ts")) continue;
+          mirados++;
+          const dato = `${dir}/${e.name}`;
+          const selecciona = new Set(
+            [...alcance].filter(([g]) => leeElDato(g, dato)).flatMap(([, xs]) => xs),
+          );
+          for (const id of ids) {
+            assert.ok(selecciona.has(id), `${dato} lo abre ${f}, y no selecciona ${id}`);
+          }
+        }
+      }
+    }
+    assert.ok(mirados > 20, `solo ${mirados} datos mirados: el candado estaría aprobando sin mirar`);
   });
 
   /** Quién selecciona ese dato, contra el plan REAL. */
@@ -711,6 +782,76 @@ describe("candado · quien enumera un directorio del paquete se ve, y lo que no 
     const ids = seleccionanA("data/scenes/todavia_no_escrita.json");
     assert.ok(ids.has("contrato-escena"));
     assert.ok(ids.has("scene-validate"));
+  });
+});
+
+/** El candado de totalidad de la PROYECCIÓN: toda clave que el plan conoce está
+ *  clasificada, y clasificar significa escribir por qué.
+ *
+ *  Sin esto, la proyección es una lista blanca de cuatro campos y todo lo demás
+ *  —presente o FUTURO— es prosa por defecto: el mismo defecto-silencio que el
+ *  crítico rechazó de la opción B en #404. No es hipotético, y por eso está
+ *  aquí antes que el campo: PR-2 de este mismo plan añade `aparcado` a la
+ *  entrada del módulo, y `aparcado` decide si un módulo se mide o no.
+ *  Desaparcarlo sin que esto exista no seleccionaría a nadie. */
+describe("candado · la proyección del plan cubre TODAS las claves del schema", () => {
+  const clasificadas = (claves: readonly string[], seleccionan: readonly string[]): void => {
+    for (const k of claves) {
+      const sel = seleccionan.includes(k);
+      const no = k in NO_SELECCIONAN;
+      assert.ok(
+        sel || no,
+        `la clave \`${k}\` del plan no está clasificada: o la compara la proyección de ` +
+          `\`scripts/afectado.ts\`, o se escribe en NO_SELECCIONAN por qué no puede cambiar un mutante`,
+      );
+      assert.ok(!(sel && no), `la clave \`${k}\` está en los dos lados a la vez`);
+    }
+  };
+
+  it("las claves del plan y las de cada módulo están todas a un lado o al otro", () => {
+    const { plan, modulo } = clavesQueSeleccionan();
+    assert.ok(CLAVES_DEL_PLAN.length > 3 && CLAVES_DEL_MODULO.length > 3, "sin claves no hay nada que candar");
+    clasificadas(CLAVES_DEL_PLAN, plan);
+    clasificadas(CLAVES_DEL_MODULO, modulo);
+  });
+
+  it("y la que no selecciona dice POR QUÉ, con longitud de frase", () => {
+    for (const [k, porque] of Object.entries(NO_SELECCIONAN)) {
+      assert.ok(porque.length > 30, `\`${k}\` está exenta sin motivo escrito: "${porque}"`);
+    }
+  });
+
+  it("una clave que el schema NO conoce no entra en silencio: el plan es .strict()", () => {
+    // La otra mitad de lo mismo. Si `PlanSchema` strippeara lo desconocido, se
+    // podría añadir un campo al JSON, usarlo desde otro guion y no seleccionar
+    // nunca. Se prueba con el plan REAL más una clave inventada.
+    const real = JSON.parse(
+      readFileSync(join(coreRoot, "data", "contract", "mutation-targets.json"), "utf8"),
+    ) as Record<string, unknown>;
+    const tmp = mkdtempSync(join(tmpdir(), "plan-estricto-"));
+    const escribe = (plan: unknown): string => {
+      const ruta = join(tmp, `${Math.random().toString(36).slice(2)}.json`);
+      writeFileSync(ruta, JSON.stringify(plan));
+      return ruta;
+    };
+    assert.throws(
+      () => leerPlan(escribe({ ...real, campo_que_nadie_declaro: 1 })),
+      /campo_que_nadie_declaro|no reconocid|Unrecognized/i,
+      "una clave GLOBAL desconocida tiene que saltar",
+    );
+    const modulos = real.modulos as Record<string, unknown>[];
+    assert.throws(
+      () =>
+        leerPlan(
+          escribe({ ...real, modulos: [{ ...modulos[0], campo_de_modulo_sin_clasificar: 1 }, ...modulos.slice(1)] }),
+        ),
+      /campo_de_modulo_sin_clasificar|no reconocid|Unrecognized/i,
+      "y una clave desconocida DENTRO de un módulo también: es donde va a caer `aparcado`",
+    );
+    // …y el plan real sigue leyéndose, o sea que `.strict()` no está de adorno
+    // porque nadie lo ejerza.
+    assert.ok(leerPlan(escribe(real)).modulos.length > 0);
+    rmSync(tmp, { recursive: true, force: true });
   });
 });
 

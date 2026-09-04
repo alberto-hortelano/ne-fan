@@ -461,3 +461,23 @@ ningún otro campo de contrato muerto: `qa/**/*.mjs` es root de la regla
 `npm run verify` en rojo — pasó al sembrar el `12`. De que no vuelvan al CÓDIGO se ocupa ese
 candado; un guion cubre lo que el candado no puede ver, que es la PANTALLA. Cuando haga falta
 mirar nombres internos, se afirma con **lista blanca** (lo que debe haber), no con lista negra.
+
+## `qa/el-selector-ve-lo-que-la-batería-abre.mjs`: los datos que un descarte podría perder
+
+Nace con el desanulado del selector (#404). Hasta entonces cualquier fichero de `data/contract/`
+forzaba la corrida completa: caro, molesto y **correcto**, porque nadie podía equivocarse. Al pasar el
+selector a **descartar**, el fallo cambia de forma: ya no es una corrida de tres horas de más, es una
+corrida verde que **no midió lo que tocaba**.
+
+Este guion recorre las **puertas** —los ficheros de test que abren datos— y comprueba que cada dato
+que una batería abre selecciona a los módulos de esa batería. Hoy mira 8 puertas y 38 datos.
+
+Cazó lo que la primera vuelta no vio: las fixtures de `data/contract/fixtures/sprite-forge/` y el
+golden `test/fixtures/fps-plans/varied.json` salían a **«NO EJECUTA NADA»**, aunque los tests que los
+abren SON la batería de `contrato-sprite-forge` y de cuatro módulos de blueprint. El primer arreglo
+solo cubría a quien **enumera** un directorio; estos se abren **por nombre compuesto**.
+
+Se pone rojo cuando un dato que una puerta abre deja de seleccionar a su batería, y nombra el fichero
+y la puerta. Su hueco conocido, escrito y sin cerrar: una ruta armada con `+` o con un template
+(`` `${DIR}/${x}.json` ``) no se ve **ni cuenta como ciega**, que es por donde volvería a colarse este
+mismo fallo.
