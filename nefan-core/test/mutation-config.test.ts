@@ -29,6 +29,7 @@ import {
   cierreDeImports,
   cierreDeRuntime,
   concurrenciaDe,
+  configDe,
   dueñoDe,
   ficherosDeclarados,
   ficherosExentos,
@@ -36,6 +37,7 @@ import {
   leerPlan,
   perimetro,
   REGLA_PERIMETRO,
+  SIN_MEDIR,
   testConcurrencyDe,
   testsQueImportan,
   type ModuloMutacion,
@@ -118,7 +120,7 @@ describe("plan de mutación · lo que nombra existe", () => {
     // persigue es el fichero del que nadie ha dicho nada.
     const declarados = new Set(plan.modulos.flatMap((m) => ficherosDeclarados(m)));
     assert.ok(plan.directorios_completos.length > 0, "sin directorios_completos este candado no mira nada");
-    for (const dir of plan.directorios_completos) {
+    for (const { directorio: dir } of plan.directorios_completos) {
       const enDisco = globSync(`${dir}/*.ts`, { cwd: raiz }).map((f) => f.split("\\").join("/"));
       assert.ok(enDisco.length > 0, `directorios_completos nombra "${dir}", que no existe o está vacío`);
       for (const f of enDisco) {
@@ -210,6 +212,78 @@ describe("plan de mutación · el reparto es TOTAL sobre el perímetro", () => {
       assert.ok(
         e.porque.split(/\s+/).length >= 8,
         `sin_mutar["${e.fichero}"]: "${e.porque}" no explica nada — di por qué NO se mide`,
+      );
+    }
+    // Y lo mismo para un directorio que ENSANCHA el perímetro: la regla
+    // `core-puro-sin-node` es la que declara qué es núcleo puro, así que meter
+    // un directorio por esta puerta y no por la regla es una decisión que hay
+    // que poder leer dentro de dos meses sin adivinarla.
+    for (const d of plan.directorios_completos) {
+      assert.ok(
+        d.porque.split(/\s+/).length >= 8,
+        `directorios_completos["${d.directorio}"]: "${d.porque}" no explica nada — ` +
+          `di por qué se mide entero AQUÍ y no en ${REGLA_PERIMETRO}`,
+      );
+    }
+  });
+
+  it("un módulo `sin medir` se corre SIN suelo, y uno medido con el suyo", () => {
+    // `mutate.ts` dice de `configDe` que «es determinista y tiene candado», y
+    // hasta hoy la segunda mitad era mentira: ningún test lo llamaba. Importa
+    // porque el config generado es lo ÚNICO que Stryker lee, así que el suelo
+    // de verdad no es el del contrato sino el que salga de aquí.
+    //
+    // Sin `break`, Stryker no falla por score: es lo que hay que hacer con un
+    // módulo del que no se sabe nada todavía. Un `break: 0` daría el mismo
+    // resultado y sería una mentira distinta — el informe diría que hay suelo.
+    const base = leer("stryker.config.json") as Record<string, unknown>;
+    const medido: ModuloMutacion = { ...plan.modulos[0], break: 91 };
+    const nuevo: ModuloMutacion = { ...plan.modulos[0], break: SIN_MEDIR };
+    const umbrales = (m: ModuloMutacion) =>
+      (configDe(base, plan, m, 2) as { thresholds: Record<string, unknown> }).thresholds;
+    assert.equal(umbrales(medido).break, 91);
+    assert.equal(
+      "break" in umbrales(nuevo),
+      false,
+      `un módulo "${SIN_MEDIR}" no puede llevar break en su config: ` +
+        `${JSON.stringify(umbrales(nuevo))}`,
+    );
+    // Y lo demás del config no se resiente: los otros umbrales siguen ahí.
+    assert.deepEqual(
+      Object.keys(umbrales(nuevo)).sort(),
+      Object.keys(base.thresholds as object).sort(),
+      "el config sin suelo perdió (o inventó) algún otro umbral",
+    );
+  });
+
+  it("un suelo `sin medir` caduca en cuanto la huella trae la medida", () => {
+    // EL CANDADO QUE HACE INEXPRESABLE EL GATE PERMANENTEMENTE VERDE.
+    //
+    // Un módulo estrenado no puede traer su suelo puesto: `permisoLocal`
+    // rechaza el coste desconocido, así que su primera medida exige una corrida
+    // autorizada y hay días en los que el módulo existe sin score. Ese estado
+    // es legítimo. Lo que no es legítimo es que se quede.
+    //
+    // Antes se escribía `break: 0`, que aprueba cualquier cosa y no se
+    // distingue de un suelo medido: `asset-store-contrato` lo llevó TRES tandas
+    // (#354, #380, #389) con sus 9 mutantes y sus 2 vivos ya commiteados en la
+    // huella y su suelo sin subir. Nadie lo miró porque nada se ponía rojo.
+    //
+    // Con `sin medir`, en cuanto la corrida deja la medida en la huella
+    // commiteada, este test cae y dice el número que hay que copiar. El suelo
+    // no depende de que alguien se acuerde.
+    const huella = leer("data/contract/mutacion-huella.json") as {
+      ficheros: Record<string, { total: number; vivos?: unknown[] }>;
+    };
+    for (const m of plan.modulos) {
+      if (m.break !== SIN_MEDIR) continue;
+      const medidos = ficherosMutados(m).filter((f) => huella.ficheros[f] !== undefined);
+      assert.deepEqual(
+        medidos,
+        [],
+        `el módulo "${m.id}" dice "${SIN_MEDIR}" pero la huella ya trae ${medidos.join(", ")}: ` +
+          `ya se midió, sube el suelo al score medido. Un suelo que nadie sube es un gate ` +
+          `permanentemente verde, y eso no es un final`,
       );
     }
   });

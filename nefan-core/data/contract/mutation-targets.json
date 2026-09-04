@@ -3,11 +3,30 @@
   "comando": "NODE_OPTIONS=--max-old-space-size=1024 node --import tsx --test --test-concurrency=1",
   "tope_local": 120,
   "directorios_completos": [
-    "src/plugins/dsl",
-    "src/scene/blueprint",
-    "src/scene/greybox",
-    "src/store",
-    "src/world-map"
+    {
+      "directorio": "src/narrative",
+      "porque": "AQUÍ Y NO EN `arch-rules.json`, y esta es la razón: el perímetro de la mutación sale de la regla `core-puro-sin-node`, que declara qué es núcleo PURO, y `src/narrative/session-storage.ts:2-3` importa `node:fs` y `node:path`. Meter el directorio en esa regla pondría `npm test` en rojo por una frontera que es cierta: ese fichero no es puro. Pero que un fichero del directorio toque el disco no es motivo para que los otros ocho se queden fuera de toda medida — 2.515 líneas con la carga y la escritura del save dentro, y `grep -c src/narrative` daba 0 en este contrato hasta #340. `directorios_completos` es la única puerta al perímetro que no exige mentir sobre la pureza, y tiene precedente en `src/plugins/dsl`. Cuatro de los nueve ficheros se excluyen con `!ruta` y su motivo escrito, en el `porque` del módulo `serialize-llm`."
+    },
+    {
+      "directorio": "src/plugins/dsl",
+      "porque": "El DSL de los plugins: sus ficheros los nombran los módulos uno a uno (agrupados por batería) y ninguno los recoge con un glob, así que un fichero nuevo aquí se quedaría sin medir para siempre sin que nada fallara. Está dentro del perímetro que declara `core-puro-sin-node`; se mide entero por el huérfano, no por el perímetro."
+    },
+    {
+      "directorio": "src/scene/blueprint",
+      "porque": "Los builders del greybox, repartidos en nueve módulos POR BATERÍA y no por carpeta: ningún glob los cubre y un `blueprint/nuevo.ts` entraría a producción sin dueño. Está dentro del perímetro de `core-puro-sin-node`; se mide entero por el huérfano."
+    },
+    {
+      "directorio": "src/scene/greybox",
+      "porque": "Los dos módulos del greybox nombran sus ficheros uno a uno; un tercero se colaría sin medir. Está dentro del perímetro de `core-puro-sin-node`; se mide entero por el huérfano."
+    },
+    {
+      "directorio": "src/store",
+      "porque": "El estado volátil de la partida, en un solo módulo que lista sus ficheros: un reducer nuevo sin dueño es exactamente el diff que saldría verde sin medir nada. Está dentro del perímetro de `core-puro-sin-node`; se mide entero por el huérfano."
+    },
+    {
+      "directorio": "src/world-map",
+      "porque": "El mapa multinivel: `world-map` usa glob con dos exclusiones (`index.ts`, que es un barril que ningún test carga, y `npc-director.ts`, que tiene otra batería), así que el candado de huérfanos es lo que garantiza que esas exclusiones sigan siendo deliberadas. Está dentro del perímetro de `core-puro-sin-node`."
+    }
   ],
   "sin_mutar": [
     {
@@ -115,10 +134,6 @@
       "porque": "Trece líneas: la constante del carácter sólido de una rejilla venida de imagen. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Ningún test lo importa por su nombre, aunque quince baterías lo cargan de rebote. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
-      "fichero": "src/scene/scene-validate.ts",
-      "porque": "El validador de jugabilidad (flood-fill sobre 128×128). Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Con un aviso: es el fichero que el 2026-08-21 disparó el OOM killer con `timeoutMS` en 120 s. Con los 10 s de hoy y la concurrencia acotada ya es medible, pero conviene que vaya en un módulo solo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
       "fichero": "src/scene/scene-expand.ts",
       "porque": "La expansión de primitivas de escena. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
@@ -129,10 +144,6 @@
     {
       "fichero": "src/scene/tile.ts",
       "porque": "La geometría del tile: coordenadas, celdas y metros. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
-      "fichero": "src/scene/tile-edges.ts",
-      "porque": "Los bordes entre tiles y el bloqueo direccional. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
       "fichero": "src/simulation/game-loop.ts",
@@ -657,8 +668,93 @@
         "test/asset-store-server.test.ts",
         "test/manifest-kinds-con-productor.test.ts"
       ],
-      "break": 0,
-      "porque": "El contrato del asset-store (:8767). Deja de estar en `sin_mutar` con #376: hasta entonces el fichero solo declaraba tipos y un literal, y su motivo escrito era «ningún test lo tiene por sujeto — primero el test, luego el módulo». #376 le pone LÓGICA (los tres predicados de kind y `refDeArteDePersonaje`, que es de dónde sale el `ref` con el que el store pina el arte de personaje) y los tests que la tienen por sujeto, así que toca la segunda mitad de esa frase. Sus mutantes interesantes son exactamente los estados que la tanda vino a hacer inexpresables: un `esArteDePersonaje` que devuelva false deja el arte más caro del juego registrado SIN pin y por tanto evictable por LRU —la skin de un NPC vivo—, y un `refDeArteDePersonaje` que no derive el mismo ref para el hero y para sus sheets rompe el «se sueltan juntos» sin que nada se ponga rojo aguas arriba. Batería de tres ficheros porque son los tres tests de core que lo importan (el cable HTTP, el arranque del proceso y el veredicto de kinds). SUELO 0 a propósito hasta la primera corrida AUTORIZADA: el suelo de esta casa se pone al score MEDIDO, no al que uno espera."
+      "break": 77,
+      "porque": "El contrato del asset-store (:8767). Deja de estar en `sin_mutar` con #376: hasta entonces el fichero solo declaraba tipos y un literal, y su motivo escrito era «ningún test lo tiene por sujeto — primero el test, luego el módulo». #376 le pone LÓGICA (los tres predicados de kind y `refDeArteDePersonaje`, que es de dónde sale el `ref` con el que el store pina el arte de personaje) y los tests que la tienen por sujeto, así que toca la segunda mitad de esa frase. Sus mutantes interesantes son exactamente los estados que la tanda vino a hacer inexpresables: un `esArteDePersonaje` que devuelva false deja el arte más caro del juego registrado SIN pin y por tanto evictable por LRU —la skin de un NPC vivo—, y un `refDeArteDePersonaje` que no derive el mismo ref para el hero y para sus sheets rompe el «se sueltan juntos» sin que nada se ponga rojo aguas arriba. Batería de tres ficheros porque son los tres tests de core que lo importan (el cable HTTP, el arranque del proceso y el veredicto de kinds). SUELO 77 desde el 2026-09-04 (#339/#340), y no es una medida nueva: es LEER la huella commiteada, que trae 9 mutantes con 2 vivos de la corrida 33790710680 = 77,8 %, redondeado hacia abajo. Estrenó con `break: 0` «a propósito hasta la primera corrida autorizada» y ahí se quedó TRES tandas (#354, #380, #389) con la medida ya en el disco: un 0 aprueba cualquier cosa y no se distingue de un suelo puesto, así que nadie lo volvió a mirar. Por eso el 0 deja de ser expresable para un módulo sin medir: hoy se dice `\"sin medir\"` y el candado de `test/mutation-config.test.ts` lo caduca en cuanto la huella trae el número. Los 2 vivos siguen siendo deuda de este módulo."
+    },
+    {
+      "id": "scene-validate",
+      "mutate": [
+        "src/scene/scene-validate.ts"
+      ],
+      "tests": [
+        "test/scene-fixtures.test.ts",
+        "test/scene-validate-golden.test.ts",
+        "test/scene-validate-pasadas.test.ts",
+        "test/scene-validate.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El validador de JUGABILIDAD: el flood-fill sobre el grid de 128×128 que decide si un tile del motor se puede caminar de verdad, y el que dice que NO con su motivo antes de que el jugador se quede encerrado. Sale de `sin_mutar` con #339: su motivo escrito decía «hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería», y eso es lo que se hace aquí. Batería DERIVADA del árbol de imports (`testsQueImportan`), no de una lista a mano: son CUATRO tests y no cinco — `scene-fixtures.test.ts` entra porque valida cada fixture commiteada con este validador, y estar además en la batería de `contrato-escena` no exime (un test puede pagar dos módulos; un fichero mutado solo puede tener uno). AVISO que la exención dejaba escrito y sigue vigente: es el fichero que el 2026-08-21 disparó el OOM killer con `timeoutMS` en 120 s. Con los 10 s de hoy y la concurrencia acotada es medible, y va en módulo SOLO justamente por eso: si vuelve a reventar el reloj, se aísla sin arrastrar a nadie. Es el módulo más caro que estrena esta tanda — 1.002 líneas, estimadas ~660 mutantes por la mediana de la huella (0,66 mut/línea), muy por encima del `tope_local`."
+    },
+    {
+      "id": "tile-edges",
+      "mutate": [
+        "src/scene/tile-edges.ts"
+      ],
+      "tests": [
+        "test/scene-validate-pasadas.test.ts",
+        "test/tile-edges.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "Los bordes entre tiles del mundo continuo y el bloqueo direccional: qué lado de un tile continúa en el vecino y por dónde NO se puede salir. Sale de `sin_mutar` con #339 por el mismo motivo que `scene-validate` y con su misma frase escrita. Batería derivada del árbol de imports: `tile-edges.test.ts`, que lo tiene por sujeto, y `scene-validate-pasadas.test.ts`, que entra por el `import type TileEdges` de su línea 36 — un import de tipo cuenta para el candado de baterías porque el cierre de imports lo ve, y dejarlo fuera sería una excepción sin motivo. Módulo aparte de `scene-validate` y no junto a él: comparten UN test de los cuatro, así que juntarlos haría que cada mutante de los bordes pagase las otras tres suites. 120 líneas, estimadas ~80 mutantes."
+    },
+    {
+      "id": "ai-client",
+      "mutate": [
+        "src/narrative/ai-client.ts"
+      ],
+      "tests": [
+        "test/ai-client.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El cable HTTP con ai_server: quién pide narrativa, cómo se leen sus respuestas y qué pasa cuando no contesta. Entra con #340, que mete `src/narrative` en `directorios_completos` — hasta hoy `grep -c src/narrative` sobre este contrato daba 0 y las 2.515 líneas del directorio no las medía nadie. Módulo propio con batería de UN fichero porque eso es lo que dice el árbol de imports, y porque agrupar los cinco ficheros baratos del directorio en un solo módulo saldría 5× más caro por mutante: MEDIDO el 2026-09-04 con el comando real del contrato, la batería de los cinco tarda 0,92 s y esta sola 0,18 s. La casa agrupa por BATERÍA y no por tema, y estas cinco baterías son disjuntas."
+    },
+    {
+      "id": "consequence-handler",
+      "mutate": [
+        "src/narrative/consequence-handler.ts"
+      ],
+      "tests": [
+        "test/consequence-handler.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El despacho de las consequences del motor: lo que la narrativa dice que PASA (spawn, inventario, diálogo, eventos) traducido a cambios en la partida. Entra con #340. Batería de un fichero, derivada del árbol de imports; el porqué de un módulo por fichero y no uno para los cinco está en `ai-client`."
+    },
+    {
+      "id": "render-mode",
+      "mutate": [
+        "src/narrative/render-mode.ts"
+      ],
+      "tests": [
+        "test/render-mode.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "Con imagen o sin ella: el modo de pintado de la partida, que decide si se gastan créditos en arte. 49 líneas, el más barato del directorio. Entra con #340. Batería de un fichero derivada del árbol de imports; el porqué del reparto está en `ai-client`."
+    },
+    {
+      "id": "speaker-resolve",
+      "mutate": [
+        "src/narrative/speaker-resolve.ts"
+      ],
+      "tests": [
+        "test/speaker-resolve.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "QUIÉN habla: resolver el interlocutor de una línea de diálogo contra las entities de la partida. Entra con #340. Batería de un fichero derivada del árbol de imports; el porqué del reparto está en `ai-client`."
+    },
+    {
+      "id": "serialize-llm",
+      "mutate": [
+        "src/narrative/serialize-llm.ts",
+        "!src/narrative/narrative-state.ts",
+        "!src/narrative/session-storage.ts",
+        "!src/narrative/npc-records.ts",
+        "!src/narrative/types.ts"
+      ],
+      "tests": [
+        "test/narrative-state.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "Lo que el motor VE de la partida: la serialización del estado que viaja en cada request narrativa. Entra con #340. Su batería es `narrative-state.test.ts` porque es el único test que lo importa — derivado del árbol, no elegido. AQUÍ SE DECLARAN, ADEMÁS, LAS CUATRO EXCLUSIONES DEL DIRECTORIO, y en este módulo y no en otro porque tres de las cuatro comparten precisamente esta batería. Van con `!ruta` y no en `sin_mutar` porque el candado de huérfanos de un `directorios_completos` exige que un módulo las NOMBRE (`test/mutation-config.test.ts`), y estar en los dos sitios lo prohíbe el candado de exenciones caducadas. Los motivos, uno a uno: (1) `narrative-state.ts` (1.027 líneas) lo importan DIECIOCHO ficheros de test, y con `coverageAnalysis: off` cada uno de sus ~675 mutantes estimados pagaría los dieciocho — el problema no son los mutantes, es la batería, y arriesga el `timeout-minutes: 180` del workflow, que ya va por ~131 min; (2) `session-storage.ts` (249 líneas), lo mismo con diecisiete, y además es el fichero que importa `node:fs` y por el que este directorio no puede entrar en `core-puro-sin-node`; (3) `npc-records.ts` (170 líneas) no lo importa NI UN test: hoy solo daría `NoCoverage`, que es deuda de cobertura y no medida de mutación — `registerSceneNpcs` está además a CRAP 59 y subiendo, y lo que le falta es un test, no un mutante; (4) `types.ts` (384 líneas) tiene JS detrás en dos líneas (`:17` y `:335`), pero lo importan ONCE tests y su batería no se paga por diez mutantes. Los tres primeros tienen issue propio; el cuarto entra cuando alguien necesite medir esas dos líneas."
     }
   ]
 }
