@@ -414,18 +414,28 @@ export function veredictoDeCorrida(c: Corrida): VeredictoCorrida {
 }
 
 /** Lo que hay en `reports/mutation/` después de bajar el artefacto, contra lo
- *  que el manifiesto dice que debería haber.
+ *  que el manifiesto dice que TRAE — `modulos_con_informe`, no `modulos_pedidos`.
  *
- *  Los dos lados importan. Que FALTE un informe declarado es una corrida
- *  truncada. Que SOBRE uno es peor y más silencioso: un informe de la semana
- *  pasada que se quedó en el directorio se mezcla con los recién bajados y
- *  `npm run deuda` presenta las dos medidas como si fueran la misma foto. */
+ *  La diferencia entre esas dos listas no es un fallo de descarga: es una
+ *  corrida a la que se le cayó un módulo, y de eso ya dictamina
+ *  `veredictoDeCorrida` (INCOMPLETA, no mueve el tag). Compararlas aquí
+ *  confundía los dos hechos y cerraba el ritual entero: el 2026-09-03,
+ *  `contrato-escena` murió en su dry-run y las medidas de los otros 32 módulos
+ *  —10.128 mutantes, 131 minutos de runner— quedaron IMPOSIBLES de repartir,
+ *  con un consejo que nadie podía cumplir («vuelve a bajarla entera»: el
+ *  informe no estaba truncado en el camino, no existía en origen).
+ *
+ *  Los dos lados que sí importan son sobre lo prometido. Que FALTE un informe
+ *  declarado es una descarga truncada, y ahí sí repagar bajarla otra vez. Que
+ *  SOBRE uno es peor y más silencioso: un informe de la semana pasada que se
+ *  quedó en el directorio se mezcla con los recién bajados y `npm run deuda`
+ *  presenta las dos medidas como si fueran la misma foto. */
 export function verificaDescarga(c: Corrida, presentes: readonly string[]): string[] {
   const errores: string[] = [];
-  const faltan = c.modulos_pedidos.filter((id) => !presentes.includes(id));
+  const faltan = c.modulos_con_informe.filter((id) => !presentes.includes(id));
   if (faltan.length > 0) {
     errores.push(
-      `el manifiesto declara ${faltan.length} módulo(s) que no vienen en el artefacto: ${faltan.join(", ")}`,
+      `el manifiesto declara ${faltan.length} informe(s) que no vienen en el artefacto: ${faltan.join(", ")}`,
     );
   }
   const sobran = presentes.filter((id) => !c.modulos_con_informe.includes(id));

@@ -482,6 +482,7 @@ function repartir(argv: readonly string[]): void {
   console.log(`\nHuella actualizada: ${RUTA_HUELLA} — commítala con la tanda, el delta se ve en el diff.\n`);
 
   imprimeReparto(repartos, corrida);
+  if (!veredictoDeCorrida(corrida).completa) process.exitCode = 1;
 
   const comentar = argv.includes("--comentar");
   const porPr = agrupaPorPr(repartos);
@@ -605,6 +606,18 @@ function imprimeReparto(repartos: readonly Reparto[], corrida: Corrida): void {
       );
     }
     if (r.nuevos.length > 8) console.log(`      …y ${r.nuevos.length - 8} nuevos más`);
+  }
+  const sinMedir = corrida.modulos_pedidos.filter((id) => !corrida.modulos_con_informe.includes(id));
+  if (sinMedir.length > 0) {
+    // Se dice AQUÍ, al final y no al principio, porque esta salida es la que se
+    // copia al informe de la tanda: un reparto parcial que termina en silencio
+    // se lee como completo, y el módulo caído conserva su huella vieja — que en
+    // el diff parece «no cambió» y en realidad es «no se miró».
+    console.log(
+      `  ⚠ ${sinMedir.length} módulo(s) se PIDIERON y no dejaron informe: ${sinMedir.join(", ")}\n` +
+        `    conservan la huella de su última medida; no son «0 supervivientes», son «sin mirar».\n` +
+        `    El tag NO se ha movido, así que la próxima corrida vuelve a pedirlos.`,
+    );
   }
   console.log("");
 }

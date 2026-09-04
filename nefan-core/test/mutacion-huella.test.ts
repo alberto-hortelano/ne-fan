@@ -493,6 +493,42 @@ describe("descarga · ni falta ni sobra", () => {
     assert.match(errores[0], /world-map/);
   });
 
+  it("una corrida a la que se le CAYÓ un módulo se puede bajar igual", () => {
+    // El caso que ninguna de las tres pruebas de arriba alimentaba: las tres
+    // usan una corrida con `pedidos === con_informe`, así que la confusión
+    // entre las dos listas nunca se ejercía. La pagó la corrida 33790710680
+    // (2026-09-03): `contrato-escena` murió en su dry-run, y los 32 informes
+    // restantes —10.128 mutantes, 131 min de runner— no había forma de
+    // repartirlos. Que la corrida sea INCOMPLETA lo dictamina
+    // `veredictoDeCorrida`, no esto: aquí solo se comprueba que el artefacto
+    // trae lo que promete.
+    const caida: Corrida = {
+      ...corrida,
+      modulos_pedidos: ["store", "world-map", "contrato-escena"],
+      modulos_con_informe: ["store", "world-map"],
+    };
+    assert.deepEqual(verificaDescarga(caida, ["store", "world-map"]), []);
+    const v = veredictoDeCorrida(caida);
+    assert.equal(v.completa, false, "y sigue siendo INCOMPLETA: no se ha perdido el hecho");
+    assert.equal(v.mueveTag, false);
+    assert.match(v.porque, /contrato-escena/);
+  });
+
+  it("de una corrida caída sigue faltando lo que SÍ prometía", () => {
+    // La otra mitad: bajar mal el artefacto de una corrida incompleta tiene que
+    // seguir doliendo. Lo que se relaja es la comparación con `pedidos`, no la
+    // integridad de la descarga.
+    const caida: Corrida = {
+      ...corrida,
+      modulos_pedidos: ["store", "world-map", "contrato-escena"],
+      modulos_con_informe: ["store", "world-map"],
+    };
+    const errores = verificaDescarga(caida, ["store"]);
+    assert.equal(errores.length, 1);
+    assert.match(errores[0], /world-map/);
+    assert.doesNotMatch(errores[0], /contrato-escena/, "el que no midió no es un fallo de descarga");
+  });
+
   it("un informe VIEJO que se quedó en el directorio se rechaza", () => {
     // Es el fallo silencioso: dos medidas de fechas distintas presentadas como
     // una sola foto. `npm run deuda` sumaría los supervivientes de la semana
