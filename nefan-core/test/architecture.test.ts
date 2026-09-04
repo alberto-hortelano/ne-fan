@@ -734,6 +734,60 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Hermana de la anterior una capa más arriba: allí es un número de física
+  // re-escrito, aquí es DÓNDE escucha un servicio compuesto a mano en el único
+  // proceso que no puede saberlo del snapshot. Sobre el árbol de hoy la regla
+  // está verde —#341 se llevó su única ocurrencia—, así que hay que enseñarle
+  // el texto que existe para cortar.
+  it("[error] el-cliente-no-lee-el-puerto-del-snapshot: componer el puerto salta; leer el resto del snapshot no", () => {
+    const puerto = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter(
+        (v) => v.ruleId === "el-cliente-no-lee-el-puerto-del-snapshot",
+      );
+
+    // Literalmente la línea que había hasta #341, y la otra vía de llegar al
+    // mismo sitio (el derivador del registro, sin pasar por `serviceUrl`).
+    assert.deepEqual(
+      puerto([
+        {
+          path: "nefan-html/src/net/game-client.ts",
+          text:
+            "const msg = `bridge did not connect within ${timeoutMs}ms — is nefan-core bridge " +
+            "running on ws://localhost:${CONFIG.ports.bridge}?`;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/main.ts",
+          text: "// dos líneas antes\n\nconst p = portOf('game-gateway', {});\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      ["nefan-html/src/main.ts:3", "nefan-html/src/net/game-client.ts:1"],
+      "componer a mano el puerto de un servicio en el cliente salta, venga del snapshot o del derivador",
+    );
+
+    // Vecinos inocentes, y son los tres que hay hoy en el árbol: leer OTRA
+    // cosa del snapshot, citar la URL efectiva del socket, y el comentario de
+    // `service-urls.ts` —el fichero que sí tiene que hablar de puertos—.
+    assert.deepEqual(
+      puerto([
+        {
+          path: "nefan-html/src/net/game-client.ts",
+          text:
+            "if (!CONFIG.session.require_bridge) {\n" +
+            "  const msg = `bridge did not connect within ${timeoutMs}ms — ${bridge.url}`;\n}\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/net/service-urls.ts",
+          text: " * (SERVICES.currentPort del contrato). */\nreturn resolveServiceUrl(name, envFromQuery());\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   it("[error] scattered y las primitivas del esquema no vuelven al cliente", () => {
     const retirados = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "campos-retirados-no-vuelven");

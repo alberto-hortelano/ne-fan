@@ -4,8 +4,8 @@
   "excepciones": [
     {
       "fichero": "src/main.ts",
-      "lineas": 2316,
-      "porque": "El fichero que abre #358: game loop, carga de tiles, colisión, diálogo, viaje, HUD, arranque, título y bootstrap. Entró en la tanda con 3.136 y bajó tres veces en los commits que cortaron (2.817 al salir la carga de tile, 2.500 al repartirse el bucle, 2.326 al salir el seam del banco de pruebas); 2.321 al ordenar el resume (#390).",
+      "lineas": 2377,
+      "porque": "El fichero que abre #358: game loop, carga de tiles, colisión, diálogo, viaje, HUD, arranque, título y bootstrap. Entró en la tanda con 3.136 y bajó tres veces en los commits que cortaron (2.817 al salir la carga de tile, 2.500 al repartirse el bucle, 2.326 al salir el seam del banco de pruebas); 2.321 al ordenar el resume (#390). SUBE a 2.377 con #306: el ÚNICO suscriptor de avisos al jugador (`errors.onAviso`) vive aquí porque aquí están los dos destinos —`titleScreen` y `setLoaderState`— y es el único sitio que puede decidir entre ellos, más el apagado del muro que ese suscriptor deja armado (QA de T9, H-1).",
       "issue": "#358"
     },
     {
@@ -16,8 +16,8 @@
     },
     {
       "fichero": "src/ui/title-screen.ts",
-      "lineas": 1651,
-      "porque": "La pantalla de título. Trocearla es la continuación natural de #358 y ya tiene issue.",
+      "lineas": 1732,
+      "porque": "La pantalla de título. Trocearla es la continuación natural de #358 y ya tiene issue. SUBE de 1.651 a 1.732 con #306: `#ts-error` deja de ser un `innerHTML` de un solo mensaje que cada `renderHome` borraba y pasa a pintarse desde el estado, que es lo que hace que un fallo del arranque sobreviva al repintado. La DECISIÓN de qué se enseña (uno por titular, tope 3, orden por gravedad) no está aquí: es `encajarAviso` en `ui/error-log.ts`, pura y fuera de este fichero justamente porque es uno de los que #346 quiere trocear.",
       "issue": "#346"
     },
     {

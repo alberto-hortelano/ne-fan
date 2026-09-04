@@ -250,7 +250,11 @@ export function createGameClient(
   }
   return new Promise<GameClient>((resolve, reject) => {
     const timer = setTimeout(() => {
-      const msg = `bridge did not connect within ${timeoutMs}ms — is nefan-core bridge running on ws://localhost:${CONFIG.ports.bridge}?`;
+      // La URL que se cita es la EFECTIVA (`bridge.url`), no el puerto del
+      // snapshot: este texto lo pinta el muro que ve el jugador
+      // (`setLoaderState` en bootstrap), y con `?offset=` o `?bridge=` el
+      // socket no está donde dice el snapshot (#341).
+      const msg = `bridge did not connect within ${timeoutMs}ms — is nefan-core bridge running on ${bridge.url}?`;
       errors.push("session", msg);
       reject(new Error(msg));
     }, timeoutMs);

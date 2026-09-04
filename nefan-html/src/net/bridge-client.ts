@@ -21,7 +21,7 @@ import type {
   ExitsChangedMessage,
 } from "@nefan-core/src/protocol/messages.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
-import { errors } from "../ui/error-log.js";
+import { AVISO_PARTIDA, AVISO_TRAMA_ILEGIBLE, errors } from "../ui/error-log.js";
 
 export type BridgeEvent =
   | "state_update"
@@ -52,7 +52,7 @@ interface PendingRequest {
 
 export class BridgeClient {
   private ws: WebSocket | null = null;
-  private url: string;
+  private _url: string;
   private retryInterval = 5000;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private handlers: Map<BridgeEvent, Handler<BridgeEvent>[]> = new Map();
@@ -61,12 +61,24 @@ export class BridgeClient {
   private nextRequestId = 0;
 
   constructor(url: string) {
-    this.url = url;
+    this._url = url;
     this.connect();
   }
 
   get isConnected(): boolean {
     return this._connected;
+  }
+
+  /** La URL EFECTIVA del socket: la que resolvió `serviceUrl("game-gateway")`
+   *  con los overrides de la query ya aplicados (`?offset=`, `?bridge=`).
+   *
+   *  Existe para que el fail-loud pueda citarla (#341). Antes el muro de
+   *  arranque interpolaba `localhost` y el puerto del snapshot, así que con un
+   *  bloque de puertos desplazado o con el bridge en otra máquina mandaba al
+   *  jugador a mirar un sitio donde no había nada. Solo lectura: quien quiera
+   *  cambiar de socket construye otro cliente. */
+  get url(): string {
+    return this._url;
   }
 
   on<E extends BridgeEvent>(event: E, handler: Handler<E>): void {
@@ -90,7 +102,7 @@ export class BridgeClient {
 
   private connect(): void {
     try {
-      this.ws = new WebSocket(this.url);
+      this.ws = new WebSocket(this._url);
     } catch {
       this.scheduleRetry();
       return;
@@ -98,8 +110,12 @@ export class BridgeClient {
 
     this.ws.onopen = () => {
       this._connected = true;
+      // El socket abre: lo que hizo saltar el aviso de «sin conexión» ya no es
+      // cierto, y un aviso que no caduca acaba contradiciendo a la pantalla
+      // (QA de T9, H-3). Se demuestra aquí, no se supone.
+      errors.resuelto("bridge");
       this.emit("connected");
-      console.log("BridgeClient: connected to", this.url);
+      console.log("BridgeClient: connected to", this._url);
     };
 
     this.ws.onclose = () => {
@@ -124,7 +140,13 @@ export class BridgeClient {
       // mostly as a breadcrumb. Without this push the user sees only a
       // generic "disconnected" later, with no hint that the disconnect
       // came from an error rather than a clean close.
-      errors.push("bridge", `WebSocket onerror on ${this.url}`, event);
+      // Y A LA PANTALLA (#306): sin este socket no hay partida ninguna, y el
+      // aviso llega mucho antes que el muro de `bootstrap` —que espera cinco
+      // segundos a que el bridge conteste—. Es idempotente por su texto, que
+      // no cambia: el reintento cada 5 s no lo repite.
+      errors.push("bridge", `el socket de la partida no abre (${this._url})`, event, {
+        alJugador: AVISO_PARTIDA,
+      });
     };
 
     this.ws.onmessage = (event) => {
@@ -134,12 +156,23 @@ export class BridgeClient {
         this.dispatch(msg);
       } catch (err) {
         const preview = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
-        errors.push("bridge", `Failed to parse WS frame: ${preview}`, err);
+        // Titular PROPIO y no el de «sin conexión» (#306): aquí el socket está
+        // abierto y contestando, así que decirle al jugador que no hay conexión
+        // sería mandarlo a mirar su red por un fallo que no es suyo. La partida
+        // está igual de rota, pero por otro motivo.
+        errors.push("bridge", `el servidor de la partida mandó algo ilegible: ${preview}`, err, {
+          alJugador: AVISO_TRAMA_ILEGIBLE,
+        });
       }
     };
   }
 
   private dispatch(msg: ServerMessage): void {
+    // Llegar hasta aquí es la prueba de que la trama se entendió: retira el
+    // aviso de «respondió algo que no se entiende» sin esperar a que el socket
+    // se reconecte, que puede no pasar nunca. `resuelto` sale sin hacer nada
+    // cuando no hay aviso vivo, así que el camino caliente no paga.
+    errors.resuelto("bridge");
     if ("requestId" in msg && typeof msg.requestId === "string") {
       const pending = this.pending.get(msg.requestId);
       if (pending) {
@@ -188,7 +221,13 @@ export class BridgeClient {
     }
     if (!opts.quietOnDisconnect) {
       const type = typeof msg.type === "string" ? msg.type : "<no type>";
-      errors.push("bridge", `Dropped '${type}' frame: bridge not connected`);
+      // A la pantalla con el mismo titular que el `onerror` (#306): para quien
+      // juega, «se perdió lo que acabas de pedir porque no hay socket» y «el
+      // socket no abre» son la misma noticia, y colapsan en un aviso. El tipo
+      // de trama perdida sigue en el detalle.
+      errors.push("bridge", `se perdió el mensaje '${type}': no hay conexión con la partida`, undefined, {
+        alJugador: AVISO_PARTIDA,
+      });
     }
   }
 

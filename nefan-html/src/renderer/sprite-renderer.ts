@@ -12,7 +12,7 @@
  */
 import type { SkinSpriteSheetResponse } from "@nefan-core/src/contracts/remote-gen.js";
 import type { SpriteSheetMeta } from "@nefan-core/src/contracts/sprite-forge.js";
-import { errors } from "../ui/error-log.js";
+import { AVISO_PERSONAJES, errors } from "../ui/error-log.js";
 
 /** A frame that hasn't decoded yet. Distinct from `null`, which would mean
  *  "no such frame exists" — load failures throw rather than return null. */
@@ -231,7 +231,14 @@ export class SpriteRenderer {
       this.cache.set(key, sheet);
       return sheet;
     } catch (err) {
-      errors.push("sprite", `sheet load failed for ${key}`, err);
+      // A la pantalla (#306) con el titular de la familia: una hoja que no
+      // llega deja al personaje en maniquí y nadie lo decía. Colapsa con el
+      // agregado de `preloadBase` —mismo titular, misma noticia—, así que diez
+      // hojas caídas no son diez avisos; y como el agregado llega después, el
+      // detalle que acaba leyéndose es el suyo, que trae el remedio.
+      errors.push("sprite", `no se pudo cargar la hoja de personaje ${key}`, err, {
+        alJugador: AVISO_PERSONAJES,
+      });
       throw err;
     } finally {
       this.inflight.delete(key);

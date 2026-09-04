@@ -20,7 +20,7 @@ import {
   type SalidaDelOverlay,
   type StatusRotulable,
 } from "@nefan-core/src/protocol/status-labels.js";
-import { marcarTitulo } from "./ui/titulo-manda.js";
+import { elTituloManda, marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
 import { FrontierManager } from "./world/frontier.js";
 import { crearFronteraDelJugador } from "./world/frontera-del-jugador.js";
@@ -50,7 +50,7 @@ import { TileLedger } from "./ui/tile-ledger.js";
 import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { GraphicsModeChip } from "./ui/graphics-mode.js";
-import { errors } from "./ui/error-log.js";
+import { AVISO_PERSONAJES, errors } from "./ui/error-log.js";
 import { EcoDelCombate } from "./ui/eco-del-combate.js";
 import { HablarConUnNpc } from "./ui/hablar-con-un-npc.js";
 import { paso } from "./ui/async-ui.js";
@@ -215,6 +215,18 @@ baseSheetsReady.catch((err) =>
     `set base ${BASE_MODEL} incompleto — personajes sin sprite. Las hojas no están en el repo: ` +
       `genéralas con sprite-forge, receta en docs/assets-de-personaje.md`,
     err,
+    // Y a la PANTALLA (#306): sin hojas los personajes salen en maniquí y
+    // hasta ahora nadie lo decía. Este mensaje llega DESPUÉS que los de las
+    // hojas sueltas y con el mismo titular, así que es el suyo el que se lee.
+    //
+    // El detalle NO es el `message`: ese está escrito para quien programa y no
+    // se puede cambiar (el guion 13 exige `y_bot`, «incompleto» y el documento
+    // en el registro). Lo traduce el traductor de la casa, que tiene rama
+    // propia para este código desde #255.
+    {
+      alJugador: AVISO_PERSONAJES,
+      detalleAlJugador: motivoDeSesionParaElJugador(err),
+    },
   ),
 );
 /** El renderer del mundo, construido EAGER: es el único que hay, así que no
@@ -1578,13 +1590,62 @@ graphicsChip = new GraphicsModeChip({
 // propio título, así que quien añada un panel nuevo no tiene que acordarse de
 // nada. Desde #285 el interruptor apaga también el INPUT de juego, por la
 // misma lectura: `ui/titulo-manda.ts`.
+/** La fuente del aviso que pintó el muro, o `null` si no lo puso un aviso.
+ *  Permite apagarlo sin tocar los muros legítimos (arranque fallido, fallo de
+ *  generación). */
+let muroPuestoPorAviso: string | null = null;
 titleScreen.onVisibilityChange = (visible) => {
   graphicsChip?.setHidden(visible);
+  // El título solo TAPA el muro (`#narrative-loader` vive dentro de
+  // `#game-ui`), así que uno puesto por un aviso seguía armado y salía a
+  // pantalla completa al cerrar el título por su propio botón, con un fallo
+  // que el jugador acababa de leer arriba (QA de T9, H-1). No se pierde nada:
+  // el aviso lo tiene el título, que es quien manda ahora.
+  if (visible && muroPuestoPorAviso !== null) {
+    hideLoader();
+    muroPuestoPorAviso = null;
+  }
   // El único escritor del interruptor. Lo leen la regla de CSS que apaga los
   // píxeles y la puerta de teclado que descarta el input (#285): la misma
   // lectura para las dos, así que no pueden divergir.
   marcarTitulo(visible);
 };
+// EL ÚNICO PINTOR DE AVISOS (#306). Los fallos que saltan SOLOS durante el
+// arranque —three.js que no carga, las hojas base que no llegan, el socket de
+// la partida— solo existían en `#error-log`, que el interruptor de #246 apaga
+// mientras el título manda: un título normal encima de un cliente roto.
+//
+// El aviso es una PROYECCIÓN del mismo `errors.push` que lo registró (el texto
+// es su `message`), así que log y pantalla no pueden divergir. Aquí solo se
+// decide DÓNDE se lee:
+//
+//  - El título lo APUNTA siempre. No es doble verdad: es el mismo aviso, y los
+//    dos huecos no pueden verse a la vez porque `html[data-titulo="1"] #game-ui`
+//    esconde el muro mientras el título manda. Apuntarlo siempre es lo que
+//    salva el caso que da nombre al issue: los tres fallos saltan ANTES del
+//    primer `show()` del título, así que enrutar solo por el estado de ahora
+//    los pintaría en un muro que el título tapa medio segundo después.
+//  - Y si el título NO manda, además se pinta el muro, que es lo que el
+//    jugador tiene delante en ese momento.
+//
+// `setLoaderState` es una declaración de función: existe aquí aunque se lea
+// 130 líneas más abajo.
+// La entrega llega SIEMPRE en microtarea (`ErrorLog.entrega`), así que aquí el
+// módulo ya ha terminado de evaluarse y `loaderEl` existe.
+errors.onAviso((e) => {
+  // «Resuelto» es la mitad que faltaba: un aviso que no caduca acaba
+  // contradiciendo a la pantalla que lo enseña (QA de T9, H-3).
+  if (e.tipo === "resuelto") {
+    titleScreen.retirarAvisos(e.source);
+    if (muroPuestoPorAviso === e.source) hideLoader();
+    return;
+  }
+  titleScreen.avisar(e.aviso);
+  if (!elTituloManda()) {
+    setLoaderState("error", e.aviso.titulo, e.aviso.mensaje);
+    muroPuestoPorAviso = e.aviso.source;
+  }
+});
 // El seam del banco de pruebas (`window.__nefan`), en UNA construcción y AQUÍ:
 // después de `titleScreen` y `narrativeClient`, que son los últimos
 // colaboradores que mira. Estaba en tres puntos de escritura separados por
