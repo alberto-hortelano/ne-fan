@@ -1,13 +1,14 @@
 /** A QUIÉN LE HABLA cada `narrative_status` que difunde el bridge. Solo eso.
  *
- *  Vive aparte de `status-labels.ts` desde el 2026-08-30, y la razón no es de
- *  tamaño: son DOS DECISIONES DISTINTAS sobre el mismo mensaje. Rotular
- *  contesta «qué texto ve el jugador y si tapa la pantalla»; repartir contesta
- *  «a qué canal va esto». Comparten el tipo del mensaje y nada más — ni una
- *  llamada, ni un dato.
+ *  Vive aparte desde el 2026-08-30, y la razón no es de tamaño: son DOS
+ *  DECISIONES DISTINTAS sobre el mismo mensaje. Rotular contesta «qué texto ve
+ *  el jugador y si tapa la pantalla»; repartir contesta «a qué canal va esto».
+ *  Comparten el tipo del mensaje y nada más — ni una llamada, ni un dato.
  *
  *  Estuvieron juntas un día, el que #313 tardó en mudar el reparto desde
- *  `session/session-facets.ts`, y el módulo lo dijo por su cuenta: `status-labels`
+ *  `session/session-facets.ts`, y el módulo lo dijo por su cuenta: el fichero
+ *  del que salió este —el que hoy son `status-rotulo.ts` y `status-motivo.ts`,
+ *  que el 2026-09-04 se partieron a su vez por lo mismo y otra vez (#383)—
  *  pasó de 116 a 133 mutantes y cruzó el `tope_local` de 120, o sea que salió
  *  del conjunto que un agente puede medir en su propia máquina sin pedir
  *  permiso. La respuesta a un módulo que engorda porque se le ha metido una

@@ -60,6 +60,7 @@ import {
   moduloPorId,
   resumenDeMutantes,
   rutaInforme,
+  SIN_MEDIR,
   type ModuloMutacion,
   type PlanMutacion,
 } from "./mutation-plan.js";
@@ -247,12 +248,28 @@ function main(): void {
       r.total === 0
         ? "SIN INFORME — la corrida no dejó medida"
         : `${String(r.total).padStart(5)} mutantes · ${String(r.vivos).padStart(4)} vivos · ` +
-          `score ${r.score.toFixed(1).padStart(5)}% (break ${suelo})`;
+          `score ${r.score.toFixed(1).padStart(5)}% (${suelo === SIN_MEDIR ? "SIN SUELO" : `break ${suelo}`})`;
     console.log(`║ ${marca} ${r.id.padEnd(22)} ${veredicto} · ${r.segundos.toFixed(0)}s`);
     mutantes += r.total;
     reloj += r.segundos;
   }
   console.log(`╚═ ${mutantes} mutantes en ${(reloj / 60).toFixed(1)} min de reloj\n`);
+
+  // Un módulo sin suelo NO puede caer, así que su línea de arriba lleva un `ok`
+  // que no significa nada. Se dice aparte y con el número delante: es la única
+  // corrida en la que ese número existe, y si no se copia al contrato el módulo
+  // se queda con un gate que aprueba lo que sea. Eso es lo que le pasó a
+  // `asset-store-contrato` durante tres tandas.
+  const sinSuelo = resultados.filter((r) => moduloPorId(plan, r.id).break === SIN_MEDIR && r.total > 0);
+  if (sinSuelo.length > 0) {
+    console.log(
+      `SIN SUELO — su "${SIN_MEDIR}" se sustituye por ESTE número en data/contract/mutation-targets.json:`,
+    );
+    for (const r of sinSuelo) {
+      console.log(`  ${r.id.padEnd(22)} break: ${Math.floor(r.score)}   (${r.vivos} vivos de ${r.total})`);
+    }
+    console.log("");
+  }
 
   const fallados = resultados.filter((r) => !r.ok);
   if (fallados.length > 0) {

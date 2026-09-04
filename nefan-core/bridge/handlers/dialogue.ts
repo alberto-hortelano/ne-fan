@@ -3,7 +3,7 @@
  *  reportarlo al motor narrativo, aplicar las consequences y hacer broadcast. */
 
 import { dispatchConsequences } from "../../src/narrative/consequence-handler.js";
-import { motivoDeReaccionParaElJugador } from "../../src/protocol/status-labels.js";
+import { motivoDeReaccionParaElJugador } from "../../src/protocol/status-motivo.js";
 import { npcSync, runPluginTick, sessionChangedError, type BridgeContext } from "../context.js";
 import type {
   DialogueChoiceMessage,

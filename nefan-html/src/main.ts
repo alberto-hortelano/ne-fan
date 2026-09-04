@@ -16,10 +16,12 @@ import {
   etiquetaDeFixture,
   motivoDeFixtureParaElJugador,
   motivoDeSesionParaElJugador,
+} from "@nefan-core/src/protocol/status-motivo.js";
+import {
   rotuloDeStatus,
   type SalidaDelOverlay,
   type StatusRotulable,
-} from "@nefan-core/src/protocol/status-labels.js";
+} from "@nefan-core/src/protocol/status-rotulo.js";
 import { elTituloManda, marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
 import { FrontierManager } from "./world/frontier.js";

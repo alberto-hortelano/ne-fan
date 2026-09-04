@@ -395,7 +395,7 @@ interface CuerpoDeNarrativeStatus {
  *  El sello es el mismo que el del evento y lo pone el mismo escritor
  *  (`broadcastNarrative`/`enviarNarrativo`, los dos únicos sitios del bridge
  *  que sellan). Desde #312 el cliente lo REPARTE en vez de ignorarlo:
- *  `repartirStatus` (`protocol/status-labels.ts`) manda lo ajeno que es
+ *  `repartirStatus` (`protocol/status-reparto.ts`) manda lo ajeno que es
  *  `phase:"error"` al registro de errores —callarlo sería el silencio que
  *  prohíbe el fail-loud de esta casa— y descarta el resto, que es lo que
  *  llegaba a teletransportar al jugador de la partida viva con su `spawn`.

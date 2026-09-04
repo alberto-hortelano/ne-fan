@@ -7,7 +7,7 @@
  *  broadcast). */
 import { loadWorldDoc } from "../../src/games/loader.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
-import { motivoParaElJugador } from "../../src/protocol/status-labels.js";
+import { motivoParaElJugador } from "../../src/protocol/status-motivo.js";
 import { validateScene } from "../../src/scene/scene-validate.js";
 import { tileKey } from "../../src/scene/tile.js";
 import { resolveBootstrapPlaceId } from "../../src/world-map/bootstrap-place.js";

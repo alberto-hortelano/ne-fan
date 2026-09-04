@@ -16,7 +16,7 @@ import { TILE_MPC, tileKey, tileWorldRect, worldToTile, type TileCoord } from ".
 import { oppositeEdge } from "../../src/world-map/edges.js";
 import type { Edge } from "../../src/world-map/types.js";
 import type { LlmContext } from "../../src/narrative/types.js";
-import { motivoParaElJugador } from "../../src/protocol/status-labels.js";
+import { motivoParaElJugador } from "../../src/protocol/status-motivo.js";
 import type { RequestTileMessage } from "../../src/protocol/messages.js";
 import type { SceneGenOutcome } from "../scene-gen-queue.js";
 import { guardarOAvisar } from "../guardar.js";

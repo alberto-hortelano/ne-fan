@@ -30,6 +30,22 @@ import { z } from "zod";
 const here = dirname(fileURLToPath(import.meta.url));
 export const coreRoot = join(here, "..");
 
+/** El suelo de un módulo que TODAVÍA NO SE HA MEDIDO.
+ *
+ *  Existe porque la alternativa que se usaba —`break: 0`— es un gate
+ *  permanentemente verde disfrazado de suelo: aprueba cualquier score, nadie lo
+ *  vuelve a mirar y el módulo se queda así. No es hipotético:
+ *  `asset-store-contrato` estrenó con 0 y llevaba TRES tandas (#354, #380,
+ *  #389) con su medida ya commiteada en la huella y su suelo sin subir.
+ *
+ *  Un módulo nuevo no puede traer su suelo puesto: `permisoLocal` rechaza el
+ *  coste desconocido, así que la PRIMERA medida de cualquier módulo exige una
+ *  corrida autorizada. El estado «lo estrené y aún no se ha medido» es real y
+ *  dura días; lo que no puede es ser indistinguible de «medí y salió 0». Con
+ *  este valor se dice, y el candado de `test/mutation-config.test.ts` lo
+ *  caduca en cuanto la huella trae la medida. */
+export const SIN_MEDIR = "sin medir";
+
 const ModuloSchema = z.object({
   /** Identifica el config generado y el informe: `reports/mutation/<id>.json`. */
   id: z.string().regex(/^[a-z0-9-]+$/),
@@ -40,8 +56,13 @@ const ModuloSchema = z.object({
   /** Suelo de score de ESTE módulo. Es su línea base MEDIDA redondeada hacia
    *  abajo, no un número a ojo: sube cuando se maten supervivientes. Un suelo
    *  por módulo es más estricto que uno global — el global lo aprobaba un
-   *  módulo grande y bien probado tapando a uno pequeño y ciego. */
-  break: z.number().min(0).max(100),
+   *  módulo grande y bien probado tapando a uno pequeño y ciego.
+   *
+   *  O `SIN_MEDIR` mientras el módulo no tenga corrida: entonces NO se aplica
+   *  suelo y se dice en voz alta, en vez de escribir un 0 que aprueba todo y
+   *  parece un número. Es un estado con fecha de caducidad, no una opción: el
+   *  candado se pone rojo en cuanto la huella trae su medida. */
+  break: z.union([z.number().min(0).max(100), z.literal(SIN_MEDIR)]),
   /** Tests que SÍ importan lo que el módulo muta y aun así se quedan fuera de
    *  la batería. Es la única forma de saltarse el candado, y lleva motivo
    *  obligatorio: la excepción sin razón escrita es indistinguible del
@@ -83,8 +104,17 @@ const PlanSchema = z.object({
    *  estos esté nombrado por algún módulo: si no, un fichero nuevo se cuela
    *  sin que nadie lo mida y nada falla — el agujero por el que un objetivo
    *  se queda huérfano. Los directorios donde solo se muta un fichero suelto
-   *  (src/scene, src/combat) NO van aquí. */
-  directorios_completos: z.array(z.string()).default([]),
+   *  (src/scene, src/combat) NO van aquí.
+   *
+   *  Esta lista ENSANCHA el perímetro, que por lo demás sale de la regla
+   *  `core-puro-sin-node` de `arch-rules.json`. Por eso el motivo es
+   *  obligatorio: meter un directorio aquí y no en la regla es una decisión con
+   *  razón, no un atajo, y sin escribirla parece arbitraria a los dos meses.
+   *  El caso que la obligó: `src/narrative` no puede entrar en la regla porque
+   *  `session-storage.ts` importa `node:fs` y el build se pondría rojo. */
+  directorios_completos: z
+    .array(z.object({ directorio: z.string(), porque: z.string().min(10) }))
+    .default([]),
   /** Los ficheros del perímetro que NO se mutan, con su motivo.
    *
    *  Existe para que la pregunta «¿qué hay que ejecutar si cambia este
@@ -246,7 +276,7 @@ export function perimetro(plan: PlanMutacion): string[] {
   }
   const patrones = [
     ...proyeccion.patrones,
-    ...plan.directorios_completos.map((d) => `${d}/*.ts`),
+    ...plan.directorios_completos.map((d) => `${d.directorio}/*.ts`),
   ];
   const out = new Set<string>();
   for (const p of patrones) for (const f of expande(p)) out.add(f);
@@ -680,7 +710,12 @@ export function configDe(
     _comment: _c,
     ...comun
   } = base as Record<string, unknown> & { $schema?: unknown; _comment?: unknown };
-  const thresholds = { ...(comun.thresholds as Record<string, number>), break: modulo.break };
+  // Un módulo `SIN_MEDIR` se corre SIN `break`: Stryker sin ese campo no falla
+  // por score, que es exactamente lo que hay que hacer con un módulo del que
+  // todavía no se sabe nada. Escribir `break: 0` aquí sería lo mismo en efecto
+  // y una mentira en la lectura — un 0 se lee como «medido y malísimo».
+  const suelos = { ...(comun.thresholds as Record<string, number>) };
+  const thresholds = modulo.break === SIN_MEDIR ? suelos : { ...suelos, break: modulo.break };
   return {
     ...comun,
     _comment: `GENERADO por scripts/mutate.ts desde data/contract/mutation-targets.json — módulo "${modulo.id}". No lo edites: se reescribe en cada corrida.`,

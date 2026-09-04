@@ -14,7 +14,7 @@ import { resolvePlaceTarget } from "../../src/world-map/place-target.js";
 import { tileKey, type TileCoord } from "../../src/scene/tile.js";
 import { activeTileOf, runTileGeneration } from "./tile.js";
 import type { SceneGenOutcome } from "../scene-gen-queue.js";
-import { motivoParaElJugador } from "../../src/protocol/status-labels.js";
+import { motivoParaElJugador } from "../../src/protocol/status-motivo.js";
 import type { PlayerEnteredPlaceMessage } from "../../src/protocol/messages.js";
 
 export async function handlePlayerEnteredPlace(

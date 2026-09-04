@@ -68,6 +68,18 @@ describe("formatDToWorld", () => {
     assert.equal("place_id" in formatDToWorld(makeFormatD()), false, "sin place estampado no hay clave");
   });
 
+  it("un `place_id` que no es una cadena NO viaja: ni un número ni la cadena vacía estampan la clave", () => {
+    // La guarda tiene dos mitades y hasta hoy solo se probaba el caso AUSENTE,
+    // donde las dos dan lo mismo. Con `place_id` presente se separan: el 7 lo
+    // deja pasar quien se quede sin el `typeof`, y el `""` lo deja pasar quien
+    // cambie el `&&` por un `||`. Y esta línea es lo ÚNICO que hay entre un
+    // `Record<string, unknown>` que escribe otro proceso y una `WorldScene`
+    // cerrada que promete `place_id?: string`: aguas abajo nadie vuelve a
+    // mirarlo, todos lo tipan como cadena. Media guarda es una promesa falsa.
+    assert.equal("place_id" in formatDToWorld({ ...makeFormatD(), place_id: 7 }), false);
+    assert.equal("place_id" in formatDToWorld({ ...makeFormatD(), place_id: "" }), false);
+  });
+
   it("converts size to centred world dimensions", () => {
     const w = formatDToWorld(makeFormatD());
     assert.deepEqual(w.dimensions, { width: 20, depth: 12, height: 3 });
@@ -462,6 +474,11 @@ describe("formatDToWorld — la cola de la world scene", () => {
     for (const campo of ["scatter_generators", "style_ref", "biome"]) {
       assert.equal(w[campo], undefined, `"${campo}" no declarado no debería emitirse`);
     }
+    // Y sin avisos, `__plan_warnings` es `undefined` y NO una lista vacía. La
+    // diferencia no la nota el lector del cliente (`?? []`), pero sí el wire:
+    // un `[]` viajaría en CADA tile, y el tipo declara el miembro opcional
+    // justamente porque «no tengo nada que decir» se dice no diciéndolo.
+    assert.equal(w.__plan_warnings, undefined);
   });
 });
 

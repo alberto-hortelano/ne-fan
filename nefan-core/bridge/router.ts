@@ -12,7 +12,7 @@
 import {
   motivoDeSesionParaElJugador,
   motivoParaElJugador,
-} from "../src/protocol/status-labels.js";
+} from "../src/protocol/status-motivo.js";
 import type { BridgeContext, ClientSocket, SinSello } from "./context.js";
 import type {
   ClientMessage,

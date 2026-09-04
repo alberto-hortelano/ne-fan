@@ -12,7 +12,7 @@
  */
 import { CONFIG } from "@nefan-core/src/config.js";
 import { HOJAS_BASE_ANIMS } from "@nefan-core/src/contracts/sprite-census.js";
-import { FALLO_HOJAS_BASE } from "@nefan-core/src/protocol/status-labels.js";
+import { FALLO_HOJAS_BASE } from "@nefan-core/src/protocol/status-motivo.js";
 import { errors } from "../ui/error-log.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 

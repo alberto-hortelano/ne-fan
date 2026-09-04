@@ -1,13 +1,32 @@
 {
-  "_comment": "El reparto de la mutación por módulos. Fuente ÚNICA de qué se muta y con qué tests: de aquí salen los configs de Stryker (los genera scripts/mutate.ts y NO se commitean), la selección parcial de scripts/afectado.ts, la cola de `npm run deuda` y el candado de test/mutation-config.test.ts. POR QUÉ ESTÁ PARTIDO: con testRunner \"command\" Stryker no ve los tests uno a uno, coverageAnalysis va en `off` y cada mutante ejecuta la batería ENTERA que se le pase — así que la batería es el único dial de coste que hay. Medido el 2026-08-23 sobre la corrida de un solo config: 1684 mutantes con ocho ficheros de test por mutante, la mayoría de los cuales ni importaba el fichero mutado; 114,1 min de CPU con el paralelismo acotado. El reparto amplió los objetivos de 3 a 42 ficheros y los mutantes de 1684 a 6962, así que la corrida completa de HOY no es comparable con aquella: lo que abarata el trabajo no es que la completa cueste menos, es que casi nunca hace falta la completa (`npm run mutate -- --cambiado`). LA BATERÍA NO ES LIBRE: el candado la contrasta contra la traza de imports REAL —atravesando los barriles por el símbolo importado—, así que (1) todo test que importe un fichero mutado tiene que estar en su batería o en `excluidos` con motivo, (2) todo test de la batería tiene que alcanzar algún fichero mutado, si no es CPU quemada una vez por mutante, y (3) todo fichero mutado tiene que estar en exactamente un módulo, sin huérfanos en los `directorios_completos`. EL REPARTO ES TOTAL: todo .ts del perímetro puro —el que declara `core-puro-sin-node` en arch-rules.json— está en un módulo o en `sin_mutar` con motivo escrito, y `npm test` se pone rojo si aparece uno sin dueño. Sin esa totalidad, un diff que tocara solo ficheros sin dueño seleccionaría cero módulos y saldría verde sin que nadie midiera nada, que es la misma forma del fallo que tuvo esta casa meses con un objetivo apuntando a una ruta muerta. POR QUÉ LOS MÓDULOS NO SON TEMÁTICOS: agrupan por BATERÍA. `volumes.ts` va solo porque lo importan trece tests; juntarlo con la huella haría que los 977 mutantes de collision/footprint/volume-metrics pagasen esos trece. BREAK: el suelo de cada módulo es su score MEDIDO redondeado hacia abajo, no un número a ojo; sube conforme se maten supervivientes. Sustituye al break global de 72 de stryker.config.json, que era la media que sostenía plugins-dsl (1362 de los 1684 mutantes) y aprobaba por 0,86 puntos tapando lo que hicieran los pequeños. TOPE_LOCAL: cuántos mutantes se pueden llegar a medir en la máquina de quien está programando. Lo aplica scripts/mutate.ts a CUALQUIER corrida local, no solo al verbo `npm run mutacion -- local <id>`: el 2026-08-25 un backtick sin escapar dentro de un `echo` (sustitución de comandos en bash) lanzó `npm run mutate` sin argumentos, los 20 módulos a concurrencia 8, con el usuario delante y load average 14. El tope existía y no sirvió, porque el accidente no pasó por encima sino por debajo, por la puerta que no tenía cerradura. En CI no aplica (GitHub Actions exporta CI=true): allí no hay nadie delante y la corrida completa es lo que se le pide. EL NÚMERO, 120, sale de medir y no de opinar: blueprint-plan son 41 mutantes en 24 s de reloj a concurrencia 2 (medido dos veces en una máquina de 16 núcleos), o sea ~0,58 s por mutante, así que 120 mutantes son ~70 s ocupando 2 de 16 núcleos — por debajo del minuto y medio y sin que se note. Deja pasar los baratos (session-facets 28, blueprint-plan 41, combat-resolver 77, status-labels 100, state-http-dispatch 103, npc-director 118) y corta antes del siguiente escalón, que es blueprint-fps-ambiente con 172; scene-normalize (271) y plugins-dsl (1362) quedan fuera con holgura. HONESTIDAD SOBRE EL NÚMERO: el conjunto admitido es idéntico para CUALQUIER valor entre 118 y 171, así que bajar de 150 a 120 no cambió a quién deja pasar — lo que cerró el incidente del backtick fue el muro de mutate.ts, que es otra cosa. El 120 se elige porque expresa el presupuesto de RELOJ que se está concediendo (~70 s) en vez de sentarse en lo alto de la meseta insinuando una precisión que los datos no dan. Lo que sí hay que vigilar: npc-director está a 2 mutantes del tope, así que el primer test que se le añada lo saca del conjunto medible en local; `npm run mutacion -- pendiente` imprime el conjunto y ese margen para que no ocurra en silencio. El resto se pide y lo autoriza una persona: `npm run mutacion -- pendiente`.",
+  "_comment": "El reparto de la mutación por módulos. Fuente ÚNICA de qué se muta y con qué tests: de aquí salen los configs de Stryker (los genera scripts/mutate.ts y NO se commitean), la selección parcial de scripts/afectado.ts, la cola de `npm run deuda` y el candado de test/mutation-config.test.ts. POR QUÉ ESTÁ PARTIDO: con testRunner \"command\" Stryker no ve los tests uno a uno, coverageAnalysis va en `off` y cada mutante ejecuta la batería ENTERA que se le pase — así que la batería es el único dial de coste que hay. Medido el 2026-08-23 sobre la corrida de un solo config: 1684 mutantes con ocho ficheros de test por mutante, la mayoría de los cuales ni importaba el fichero mutado; 114,1 min de CPU con el paralelismo acotado. El reparto amplió los objetivos de 3 a 42 ficheros y los mutantes de 1684 a 6962, así que la corrida completa de HOY no es comparable con aquella: lo que abarata el trabajo no es que la completa cueste menos, es que casi nunca hace falta la completa (`npm run mutate -- --cambiado`). LA BATERÍA NO ES LIBRE: el candado la contrasta contra la traza de imports REAL —atravesando los barriles por el símbolo importado—, así que (1) todo test que importe un fichero mutado tiene que estar en su batería o en `excluidos` con motivo, (2) todo test de la batería tiene que alcanzar algún fichero mutado, si no es CPU quemada una vez por mutante, y (3) todo fichero mutado tiene que estar en exactamente un módulo, sin huérfanos en los `directorios_completos`. EL REPARTO ES TOTAL: todo .ts del perímetro puro —el que declara `core-puro-sin-node` en arch-rules.json— está en un módulo o en `sin_mutar` con motivo escrito, y `npm test` se pone rojo si aparece uno sin dueño. Sin esa totalidad, un diff que tocara solo ficheros sin dueño seleccionaría cero módulos y saldría verde sin que nadie midiera nada, que es la misma forma del fallo que tuvo esta casa meses con un objetivo apuntando a una ruta muerta. POR QUÉ LOS MÓDULOS NO SON TEMÁTICOS: agrupan por BATERÍA. `volumes.ts` va solo porque lo importan trece tests; juntarlo con la huella haría que los 977 mutantes de collision/footprint/volume-metrics pagasen esos trece. BREAK: el suelo de cada módulo es su score MEDIDO redondeado hacia abajo, no un número a ojo; sube conforme se maten supervivientes. Sustituye al break global de 72 de stryker.config.json, que era la media que sostenía plugins-dsl (1362 de los 1684 mutantes) y aprobaba por 0,86 puntos tapando lo que hicieran los pequeños. TOPE_LOCAL: cuántos mutantes se pueden llegar a medir en la máquina de quien está programando. Lo aplica scripts/mutate.ts a CUALQUIER corrida local, no solo al verbo `npm run mutacion -- local <id>`: el 2026-08-25 un backtick sin escapar dentro de un `echo` (sustitución de comandos en bash) lanzó `npm run mutate` sin argumentos, los 20 módulos a concurrencia 8, con el usuario delante y load average 14. El tope existía y no sirvió, porque el accidente no pasó por encima sino por debajo, por la puerta que no tenía cerradura. En CI no aplica (GitHub Actions exporta CI=true): allí no hay nadie delante y la corrida completa es lo que se le pide. EL NÚMERO, 120, sale de medir y no de opinar: blueprint-plan son 41 mutantes en 24 s de reloj a concurrencia 2 (medido dos veces en una máquina de 16 núcleos), o sea ~0,58 s por mutante, así que 120 mutantes son ~70 s ocupando 2 de 16 núcleos — por debajo del minuto y medio y sin que se note. Deja pasar los baratos (session-facets 28, blueprint-plan 41, combat-resolver 77, state-http-dispatch 103, npc-director 118) y corta antes del siguiente escalón, que es blueprint-fps-ambiente con 172; scene-normalize (271) y plugins-dsl (1362) quedan fuera con holgura. HONESTIDAD SOBRE EL NÚMERO: el conjunto admitido es idéntico para CUALQUIER valor entre 118 y 171, así que bajar de 150 a 120 no cambió a quién deja pasar — lo que cerró el incidente del backtick fue el muro de mutate.ts, que es otra cosa. El 120 se elige porque expresa el presupuesto de RELOJ que se está concediendo (~70 s) en vez de sentarse en lo alto de la meseta insinuando una precisión que los datos no dan. Lo que sí hay que vigilar: npc-director está a 2 mutantes del tope, así que el primer test que se le añada lo saca del conjunto medible en local; `npm run mutacion -- pendiente` imprime el conjunto y ese margen para que no ocurra en silencio. El resto se pide y lo autoriza una persona: `npm run mutacion -- pendiente`.",
   "comando": "NODE_OPTIONS=--max-old-space-size=1024 node --import tsx --test --test-concurrency=1",
   "tope_local": 120,
   "directorios_completos": [
-    "src/plugins/dsl",
-    "src/scene/blueprint",
-    "src/scene/greybox",
-    "src/store",
-    "src/world-map"
+    {
+      "directorio": "src/narrative",
+      "porque": "AQUÍ Y NO EN `arch-rules.json`, y esta es la razón: el perímetro de la mutación sale de la regla `core-puro-sin-node`, que declara qué es núcleo PURO, y `src/narrative/session-storage.ts:2-3` importa `node:fs` y `node:path`. Meter el directorio en esa regla pondría `npm test` en rojo por una frontera que es cierta: ese fichero no es puro. Pero que un fichero del directorio toque el disco no es motivo para que los otros ocho se queden fuera de toda medida — 2.515 líneas con la carga y la escritura del save dentro, y `grep -c src/narrative` daba 0 en este contrato hasta #340. `directorios_completos` es la única puerta al perímetro que no exige mentir sobre la pureza, y tiene precedente en `src/plugins/dsl`. Cuatro de los nueve ficheros se excluyen con `!ruta` y su motivo escrito, en el `porque` del módulo `serialize-llm`."
+    },
+    {
+      "directorio": "src/plugins/dsl",
+      "porque": "El DSL de los plugins: sus ficheros los nombran los módulos uno a uno (agrupados por batería) y ninguno los recoge con un glob, así que un fichero nuevo aquí se quedaría sin medir para siempre sin que nada fallara. Está dentro del perímetro que declara `core-puro-sin-node`; se mide entero por el huérfano, no por el perímetro."
+    },
+    {
+      "directorio": "src/scene/blueprint",
+      "porque": "Los builders del greybox, repartidos en nueve módulos POR BATERÍA y no por carpeta: ningún glob los cubre y un `blueprint/nuevo.ts` entraría a producción sin dueño. Está dentro del perímetro de `core-puro-sin-node`; se mide entero por el huérfano."
+    },
+    {
+      "directorio": "src/scene/greybox",
+      "porque": "Los dos módulos del greybox nombran sus ficheros uno a uno; un tercero se colaría sin medir. Está dentro del perímetro de `core-puro-sin-node`; se mide entero por el huérfano."
+    },
+    {
+      "directorio": "src/store",
+      "porque": "El estado volátil de la partida, en un solo módulo que lista sus ficheros: un reducer nuevo sin dueño es exactamente el diff que saldría verde sin medir nada. Está dentro del perímetro de `core-puro-sin-node`; se mide entero por el huérfano."
+    },
+    {
+      "directorio": "src/world-map",
+      "porque": "El mapa multinivel: `world-map` usa glob con dos exclusiones (`index.ts`, que es un barril que ningún test carga, y `npc-director.ts`, que tiene otra batería), así que el candado de huérfanos es lo que garantiza que esas exclusiones sigan siendo deliberadas. Está dentro del perímetro de `core-puro-sin-node`."
+    }
   ],
   "sin_mutar": [
     {
@@ -115,10 +134,6 @@
       "porque": "Trece líneas: la constante del carácter sólido de una rejilla venida de imagen. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Ningún test lo importa por su nombre, aunque quince baterías lo cargan de rebote. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
-      "fichero": "src/scene/scene-validate.ts",
-      "porque": "El validador de jugabilidad (flood-fill sobre 128×128). Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Con un aviso: es el fichero que el 2026-08-21 disparó el OOM killer con `timeoutMS` en 120 s. Con los 10 s de hoy y la concurrencia acotada ya es medible, pero conviene que vaya en un módulo solo. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
       "fichero": "src/scene/scene-expand.ts",
       "porque": "La expansión de primitivas de escena. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
@@ -129,10 +144,6 @@
     {
       "fichero": "src/scene/tile.ts",
       "porque": "La geometría del tile: coordenadas, celdas y metros. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
-    },
-    {
-      "fichero": "src/scene/tile-edges.ts",
-      "porque": "Los bordes entre tiles y el bloqueo direccional. Hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería. Pendiente de la tanda B (vaciar `sin_mutar` a módulos reales)."
     },
     {
       "fichero": "src/simulation/game-loop.ts",
@@ -172,7 +183,7 @@
         "test/tile.test.ts"
       ],
       "break": 98,
-      "porque": "Format D → world scene y el PLAN del tile que viaja resuelto dentro (`tile-plan.ts`): el único camino hasta lo que el cliente pinta y lo que el bridge colisiona. Los dos ficheros van juntos porque `formatDToWorld` es el único llamante de `composeTilePlan` en producción y comparten batería. Son los tests que lo importan directamente; media casa más lo alcanza a través del bridge, pero nada de eso puede matar un mutante de la conversión. plan-collision entra el 2026-08-23 y sigue porque el candado de imports lo obliga: ejerce `formatDToWorld` para comprobar que `terrain_grid.solid_chars` es lo que el plan bloquea. Medido el 2026-08-23 NO subía el score (98,91 % con él y sin él) y costaba 16 s más; el 2026-09-02 (#335) perdió además su caso propio —la solidez por escena se retiró con la leyenda y hoy la fija el engine—, así que si hay que abaratar este módulo, este es el candidato. sim-collision entra con la tanda del bosque: importa `composeTilePlan` para comprobar que el bridge frena en los MISMOS troncos que el jugador (#232)."
+      "porque": "Format D → world scene y el PLAN del tile que viaja resuelto dentro (`tile-plan.ts`): el único camino hasta lo que el cliente pinta y lo que el bridge colisiona. Los dos ficheros van juntos porque `formatDToWorld` es el único llamante de `composeTilePlan` en producción y comparten batería. Son los tests que lo importan directamente; media casa más lo alcanza a través del bridge, pero nada de eso puede matar un mutante de la conversión. plan-collision entra el 2026-08-23 y sigue porque el candado de imports lo obliga: ejerce `formatDToWorld` para comprobar que `terrain_grid.solid_chars` es lo que el plan bloquea. Medido el 2026-08-23 NO subía el score (98,91 % con él y sin él) y costaba 16 s más; el 2026-09-02 (#335) perdió además su caso propio —la solidez por escena se retiró con la leyenda y hoy la fija el engine—, así que si hay que abaratar este módulo, este es el candidato. sim-collision entra con la tanda del bosque: importa `composeTilePlan` para comprobar que el bridge frena en los MISMOS troncos que el jugador (#232). MEDIDO en la corrida 33790710680 (2026-09-04): 313 mutantes entre los dos ficheros (231 + 82), 8 vivos = 97,4 %, por DEBAJO del suelo 98 — `tile-plan.ts` no dejó ninguno vivo, los ocho son de `scene-normalize.ts`. #419 (T10) mata CUATRO. Los dos de `place_id` (`:363`) piden un `place_id: 7` —no-cadena y truthy—: con la clave AUSENTE las dos mitades de la guarda (`typeof` y truthy) dan lo mismo, y esa línea es lo único que hay entre un `Record<string, unknown>` de otro proceso y una `WorldScene` cerrada que promete `place_id?: string`. Los dos de `__plan_warnings` (`:372`) solo se separan de lo vivo cuando NO hay avisos, donde el miembro opcional tiene que ser `undefined` y no `[]`. Los cuatro se demostraron muertos A MANO el 2026-09-04 —mutante aplicado en el fuente, test rojo, revertido—; el score lo pone la corrida siguiente, que es la única que puede: 313 mutantes pasan del `tope_local` de 120 y `local` rechaza el módulo."
     },
     {
       "id": "plugins-dsl",
@@ -486,15 +497,26 @@
       "porque": "Quién decide QUÉ endpoint contesta una URL. `http.ts` sale de `sin_mutar` con la tanda #225: `fillPath` ya vivía ahí y ahora también su inversa, `matchRoute`, que es la pieza capaz de desviar una ruta EN SILENCIO — un mutante que relaje la comparación de segmentos hace que `/map/place/x/y` vuelva a contestar por `/map/place/x`, y ninguna respuesta cambia de forma. Va con `dispatch.ts` porque los dos son el mismo camino y ningún test importa uno sin el otro; y va con dispatch.ts EXPRESAMENTE porque `bridge/` no está en el reparto: la guarda de sesión y el flag `mutated` que llega al borde son lo más caro de perder de todo el State API, y este es el único sitio del bridge donde hoy se miden. La batería son los dos únicos tests que importan lo mutado: el de contrato recorre las 29 rutas del contrato contra el server real y el de despacho llama a `matchRoute` y a `dispatchStateRequest` a pelo, sin abrir un puerto. Suelo 100 medido el 2026-08-23 sobre 103 mutantes: la primera corrida dio 85,8 % con 16 vivos, y los 16 señalaban cosas de verdad — la normalización de barras duplicada entre el matcher y el despacho, un segmento vacío en posición de {param} que ningún test tocaba (los tres que había los rebotaba la longitud, no la guarda), el mensaje del 409 que solo se comprobaba por su primera palabra, y un tope de bucle que no podía matarse porque el mutante era equivalente. Se arreglaron el código y los tests, no el número."
     },
     {
-      "id": "status-labels",
+      "id": "status-rotulo",
       "mutate": [
-        "src/protocol/status-labels.ts"
+        "src/protocol/status-rotulo.ts"
       ],
       "tests": [
-        "test/status-labels.test.ts"
+        "test/status-rotulo.test.ts"
       ],
       "break": 100,
-      "porque": "El rótulo que lee QUIEN JUEGA cuando el motor falla (#180): decide qué fallo tapa la pantalla, cuál se queda en la línea de mensajes y cuál de los cuatro títulos toca. Módulo propio con batería de un fichero porque es el único test que lo importa: es una función pura de veinte líneas y meterla en cualquier otro módulo obligaría a los mutantes de ESE a pagar su suite, que es el coste que el reparto existe para evitar. Entra al reparto y no a `sin_mutar` porque la decisión ES el sujeto de su test: un mutante que cambie el `destino` de la frontera de `log` a `overlay` interrumpe una partida en curso y ninguna forma de respuesta cambia. Suelo 100 medido el 2026-08-23 sobre 46 mutantes. La primera corrida dio 97,9 % con un vivo, y el vivo señalaba código y no un aserto que faltara: el `titulo` de la rama `log` no lo lee nadie, así que cambiarle el texto no podía romper nada. Se arregló el TIPO —`Rotulo` pasó a ser unión discriminada y la rama de log ya no tiene título— en vez de añadir un aserto sobre algo que no se pinta."
+      "porque": "El TITULAR que lee QUIEN JUEGA cuando algo de la partida falla (#180, #352): decide qué fallo tapa la pantalla, cuál se queda en la línea de mensajes, cuál de los nueve titulares toca y qué salida ofrece el muro. Nace el 2026-09-04 (#383) al partir en dos el módulo que rotulaba Y traducía, que medía 162 mutantes contra un `tope_local` de 120: fuera del conjunto que un agente puede medir en su propia máquina. La respuesta a un módulo que no cabe es partirlo por su costura, no subir el tope — subir un umbral para que quepa lo que uno acaba de engordar es la trampa de `feedback_metricas_son_sintomas`. La costura estaba escrita en su propia cabecera desde el primer día y era real: cero llamadas cruzadas, cero estado compartido, y el único import del fichero (`messages.js`) se fue con esta mitad. Batería de un fichero porque es el único test que lo importa. Entra al reparto y no a `sin_mutar` porque la decisión ES el sujeto de su test: un mutante que mueva el `destino` de la frontera de `log` a `overlay` interrumpe una partida en curso y ninguna forma de respuesta cambia. SUELO 100 y no `\"sin medir\"`, y no es una apuesta sino aritmética: el módulo padre medía 162 mutantes con CERO vivos en la corrida 33790710680, y partir un 100 % da dos 100 %. Su coste propio NO está medido — estimado por líneas, ~85 de aquellos 162, con holgura bajo el tope; el número real lo pone la corrida posterior al merge de #383. Si dijera que esta mitad pasa de 120, el corte fue malo y se vuelve a cortar: el tope no se toca."
+    },
+    {
+      "id": "status-motivo",
+      "mutate": [
+        "src/protocol/status-motivo.ts"
+      ],
+      "tests": [
+        "test/status-motivo.test.ts"
+      ],
+      "break": 100,
+      "porque": "El CUERPO en cristiano que quien juega lee DEBAJO del titular: los cuatro traductores de excepción → frase (generación #180, reacción QA H-3, sesión `#ts-error` y fixture #269), la etiqueta de una fixture del selector «Room» y `FALLO_HOJAS_BASE`, el código del único fallo de arranque que no viene del bridge (#255). Nace el 2026-09-04 (#383) con la otra mitad del módulo que rotulaba Y traducía; el motivo del corte, la costura y la aritmética del suelo están escritos en el `porque` de `status-rotulo`. Batería de un fichero porque es el único test que lo importa. Sus mutantes interesantes son las RAMAS: colapsar cualquiera manda al jugador al motivo genérico —«El servidor del juego no pudo completarlo; inténtalo de nuevo»—, que es un consejo imposible cuando lo que falta es un fichero que no viaja en el repositorio (el guion 27 nació rojo por exactamente eso) o cuando el save del disco ya no vale (#334/#336, donde reintentar falla SIEMPRE). Y `etiquetaDeFixture` no lleva regex A PROPÓSITO: dos cortes de cadena tienen mutantes que un test puede matar uno a uno, y un patrón no. SUELO 100 por la misma aritmética que su hermano, y su coste propio tampoco está medido: estimado por líneas, ~77 de los 162 del padre."
     },
     {
       "id": "status-reparto",
@@ -505,7 +527,7 @@
         "test/status-reparto.test.ts"
       ],
       "break": 100,
-      "porque": "A QUIÉN le habla cada `narrative_status`: la partida viva, la barra de pre-generación del título, el registro de errores, o nadie. Nace el 2026-08-30 al trocear `status-labels`, y el troceo no es de tamaño: rotular («qué texto ve el jugador y si tapa la pantalla») y repartir («a qué canal va») son dos decisiones distintas sobre el mismo mensaje que no comparten ni una llamada. Estuvieron juntas el día que #313 tardó en mudar el reparto desde `session/session-facets.ts`, y el módulo lo dijo solo: 116 → 133 mutantes, o sea por encima del `tope_local` de 120 y fuera del conjunto que se puede medir en local sin pedir permiso. Se separó en vez de subir el tope — subir un umbral para que quepa lo que uno acaba de engordar es la trampa de `feedback_metricas_son_sintomas`. Suelo 100 y no menos por lo mismo que `session-facets`: son cuatro líneas sin estado, y sus mutantes interesantes —cambiar el orden de las reglas, o preguntar por el identificador que no es— son EXACTAMENTE los dos bugs que el módulo existe para hacer inexpresables (#312: un `ready` de una partida abandonada teletransportaba al jugador de la viva; #313: el progreso del mundo A se pintaba en la tarjeta del juego B). SIN CORRIDA TODAVÍA, y eso tiene una consecuencia que conviene saber antes de estrenarlo: `costeDe` lee la huella, así que un módulo nuevo no tiene coste conocido y `npm run mutacion -- local status-reparto` lo RECHAZA («no hay medida previa»). Necesita UNA corrida autorizada para entrar en el conjunto medible en local; a partir de ahí es de los baratos. Su coste real se conoce por RESTA, y las dos puntas están medidas el 2026-08-30: el módulo junto medía 133 y `status-labels` mide 115 ya sin el reparto (100 %, 0 vivos), así que son ~18 mutantes — de los más baratos del plan."
+      "porque": "A QUIÉN le habla cada `narrative_status`: la partida viva, la barra de pre-generación del título, el registro de errores, o nadie. Nace el 2026-08-30 al trocear el módulo que hoy son `status-rotulo` y `status-motivo`, y el troceo no es de tamaño: rotular («qué texto ve el jugador y si tapa la pantalla») y repartir («a qué canal va») son dos decisiones distintas sobre el mismo mensaje que no comparten ni una llamada. Estuvieron juntas el día que #313 tardó en mudar el reparto desde `session/session-facets.ts`, y el módulo lo dijo solo: 116 → 133 mutantes, o sea por encima del `tope_local` de 120 y fuera del conjunto que se puede medir en local sin pedir permiso. Se separó en vez de subir el tope — subir un umbral para que quepa lo que uno acaba de engordar es la trampa de `feedback_metricas_son_sintomas`. Suelo 100 y no menos por lo mismo que `session-facets`: son cuatro líneas sin estado, y sus mutantes interesantes —cambiar el orden de las reglas, o preguntar por el identificador que no es— son EXACTAMENTE los dos bugs que el módulo existe para hacer inexpresables (#312: un `ready` de una partida abandonada teletransportaba al jugador de la viva; #313: el progreso del mundo A se pintaba en la tarjeta del juego B). SIN CORRIDA TODAVÍA, y eso tiene una consecuencia que conviene saber antes de estrenarlo: `costeDe` lee la huella, así que un módulo nuevo no tiene coste conocido y `npm run mutacion -- local status-reparto` lo RECHAZA («no hay medida previa»). Necesita UNA corrida autorizada para entrar en el conjunto medible en local; a partir de ahí es de los baratos. Su coste real se conoce por RESTA, y las dos puntas están medidas el 2026-08-30: el módulo junto medía 133 y el resto, ya sin el reparto, medía 115 (100 %, 0 vivos), así que son ~18 mutantes — de los más baratos del plan."
     },
     {
       "id": "session-facets",
@@ -601,7 +623,7 @@
         "test/entidades-del-tile.test.ts"
       ],
       "break": 96,
-      "porque": "La política ÚNICA de re-emisión de un tile (#379): qué se conserva, qué se crea y qué se retira cuando un tile vuelve a emitirse, más la lectura de lo que ese tile DECLARA de cada objeto y cada personaje. Módulo propio con batería de un fichero porque es el único test de core que lo tiene por sujeto: su consumidor real es el cliente (`nefan-html/src/world/carga-de-tile.ts`), que no entra en la mutación de core, y los guiones 42, 48 y 49 lo miden desde fuera. Sus mutantes interesantes son exactamente los dos desenlaces que la tanda existe para impedir: quitar la rama de `conservar` recrea la entity y devuelve el bug de #379 (el objeto pierde su estado vivo, el NPC vuelve teletransportado a su celda de spawn), y aflojar `esDeEsteTile` —de `dueno.de === 'tile' && dueno.key === key` a cualquiera de sus dos mitades— reabre #350 por los dos lados: con solo la primera, el tile se lleva por delante al vecino que paseó hasta aquí; con solo la segunda, el spawn de runtime desaparece al re-emitir. MEDIDO en la corrida 33560823591 (`5ad1914`, 2026-09-02): 96.4% (5 vivos de 139). El suelo deja de ser 0 y pasa al score medido redondeado hacia abajo. AVISO que la medida deja escrito: entre los 5 vivos está `esDeEsteTile` colapsado a `true` (L82), que es EXACTAMENTE el mutante que el párrafo de arriba anuncia como interesante — con él, un tile que vuelve se lleva por delante todo lo que haya en el mundo, que es #350 por su lado peor. Sobrevive porque los asertos prueban las dos mitades del `&&` por separado y ninguno prueba el colapso entero. 139 mutantes está por encima del `tope_local` de 120: el aserto que lo mata se puede escribir aquí, pero demostrarlo exige corrida autorizada."
+      "porque": "La política ÚNICA de re-emisión de un tile (#379): qué se conserva, qué se crea y qué se retira cuando un tile vuelve a emitirse, más la lectura de lo que ese tile DECLARA de cada objeto y cada personaje. Módulo propio con batería de un fichero porque es el único test de core que lo tiene por sujeto: su consumidor real es el cliente (`nefan-html/src/world/carga-de-tile.ts`), que no entra en la mutación de core, y los guiones 42, 48 y 49 lo miden desde fuera. Sus mutantes interesantes son exactamente los dos desenlaces que la tanda existe para impedir: quitar la rama de `conservar` recrea la entity y devuelve el bug de #379 (el objeto pierde su estado vivo, el NPC vuelve teletransportado a su celda de spawn), y aflojar `esDeEsteTile` —de `dueno.de === 'tile' && dueno.key === key` a cualquiera de sus dos mitades— reabre #350 por los dos lados: con solo la primera, el tile se lleva por delante al vecino que paseó hasta aquí; con solo la segunda, el spawn de runtime desaparece al re-emitir. MEDIDO en la corrida 33790710680 (2026-09-04): 121 mutantes, 12 vivos = 90,1 %, por DEBAJO del suelo 96. El colapso ENTERO de `esDeEsteTile` que la corrida anterior dejaba vivo ya muere; lo que metió el módulo en rojo son los opcionales del wire que trajo #412. #419 (T10) mata DIEZ de esos doce: los seis spreads condicionales de `leerObjeto`/`leerNpc` (`:268 :269 :278`-`:281`), que solo se probaban PRESENTES y por tanto podían ponerse siempre valiendo `undefined` —y entonces `in` deja de separar a un enemigo de un vecino, que es lo que `NpcDeclarado.combat` promete—; los dos de `texto()` (`:194`), que colapsan el id VACÍO con la ausencia; la cola del mensaje de posición (`:244`) y el nombre de la clase que lo encabeza (`:293`). Los diez se demostraron muertos A MANO el 2026-09-04 —mutante aplicado en el fuente, test rojo, revertido—; el score lo pone la corrida siguiente, que es la única que puede: 121 pasa del `tope_local` de 120 y `local` lo rechaza. Los otros DOS se quedan vivos a propósito, y NO son la misma clase de cosa — la etiqueta importa. `:201` es EQUIVALENTE de verdad: colapsa `typeof x === \"number\"` a `true` dejando `Number.isFinite(x)`, que no coerce (`Number.isFinite(\"1\")` y `Number.isFinite(true)` son false), así que NO HAY VALOR que separe al mutante del original y no se puede matar nunca. `:84` es otra cosa: INALCANZABLE BAJO EL TIPO. Colapsa `dueno.de === \"tile\"` a `true`, y con `dueno` como unión discriminada (#350) el dueño de runtime no tiene `key`, así que `dueno.key === key` ya vale false por sí solo en todo estado que alguien pueda construir — verificados los OCHO productores de `dueno` que hay en el cliente (`carga-de-tile.ts` :190 :199 :210 :230 :259 y `main.ts` :1983 :2018 :2043): los ocho son literales, sin un spread y sin nada deserializado de JSON, y el único punto que lo propaga en vez de construirlo (`enemigo.ts:147`) recibe de dos de esos ocho. Pero SÍ se puede matar rompiendo el tipo con un cast (`{de:\"runtime\", key} as unknown as DuenoDeEntity`), y QA lo hizo. Ese test no se escribe: sería un verde que no comprueba nada, porque inventa con un cast un estado que ningún productor escribe. La diferencia entre las dos etiquetas es toda la promesa: al equivalente no le puede pasar nada, y a este lo sujeta `DuenoDeEntity` y no un aserto — el día que alguien afloje esa unión, `:84` pasa a ser matable y a ser deuda de verdad. Ninguno de los dos es, hoy, un aserto que falte."
     },
     {
       "id": "paso-del-jugador",
@@ -646,8 +668,93 @@
         "test/asset-store-server.test.ts",
         "test/manifest-kinds-con-productor.test.ts"
       ],
-      "break": 0,
-      "porque": "El contrato del asset-store (:8767). Deja de estar en `sin_mutar` con #376: hasta entonces el fichero solo declaraba tipos y un literal, y su motivo escrito era «ningún test lo tiene por sujeto — primero el test, luego el módulo». #376 le pone LÓGICA (los tres predicados de kind y `refDeArteDePersonaje`, que es de dónde sale el `ref` con el que el store pina el arte de personaje) y los tests que la tienen por sujeto, así que toca la segunda mitad de esa frase. Sus mutantes interesantes son exactamente los estados que la tanda vino a hacer inexpresables: un `esArteDePersonaje` que devuelva false deja el arte más caro del juego registrado SIN pin y por tanto evictable por LRU —la skin de un NPC vivo—, y un `refDeArteDePersonaje` que no derive el mismo ref para el hero y para sus sheets rompe el «se sueltan juntos» sin que nada se ponga rojo aguas arriba. Batería de tres ficheros porque son los tres tests de core que lo importan (el cable HTTP, el arranque del proceso y el veredicto de kinds). SUELO 0 a propósito hasta la primera corrida AUTORIZADA: el suelo de esta casa se pone al score MEDIDO, no al que uno espera."
+      "break": 77,
+      "porque": "El contrato del asset-store (:8767). Deja de estar en `sin_mutar` con #376: hasta entonces el fichero solo declaraba tipos y un literal, y su motivo escrito era «ningún test lo tiene por sujeto — primero el test, luego el módulo». #376 le pone LÓGICA (los tres predicados de kind y `refDeArteDePersonaje`, que es de dónde sale el `ref` con el que el store pina el arte de personaje) y los tests que la tienen por sujeto, así que toca la segunda mitad de esa frase. Sus mutantes interesantes son exactamente los estados que la tanda vino a hacer inexpresables: un `esArteDePersonaje` que devuelva false deja el arte más caro del juego registrado SIN pin y por tanto evictable por LRU —la skin de un NPC vivo—, y un `refDeArteDePersonaje` que no derive el mismo ref para el hero y para sus sheets rompe el «se sueltan juntos» sin que nada se ponga rojo aguas arriba. Batería de tres ficheros porque son los tres tests de core que lo importan (el cable HTTP, el arranque del proceso y el veredicto de kinds). SUELO 77 desde el 2026-09-04 (#339/#340), y no es una medida nueva: es LEER la huella commiteada, que trae 9 mutantes con 2 vivos de la corrida 33790710680 = 77,8 %, redondeado hacia abajo. Estrenó con `break: 0` «a propósito hasta la primera corrida autorizada» y ahí se quedó TRES tandas (#354, #380, #389) con la medida ya en el disco: un 0 aprueba cualquier cosa y no se distingue de un suelo puesto, así que nadie lo volvió a mirar. Por eso el 0 deja de ser expresable para un módulo sin medir: hoy se dice `\"sin medir\"` y el candado de `test/mutation-config.test.ts` lo caduca en cuanto la huella trae el número. Los 2 vivos siguen siendo deuda de este módulo."
+    },
+    {
+      "id": "scene-validate",
+      "mutate": [
+        "src/scene/scene-validate.ts"
+      ],
+      "tests": [
+        "test/scene-fixtures.test.ts",
+        "test/scene-validate-golden.test.ts",
+        "test/scene-validate-pasadas.test.ts",
+        "test/scene-validate.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El validador de JUGABILIDAD: el flood-fill sobre el grid de 128×128 que decide si un tile del motor se puede caminar de verdad, y el que dice que NO con su motivo antes de que el jugador se quede encerrado. Sale de `sin_mutar` con #339: su motivo escrito decía «hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería», y eso es lo que se hace aquí. Batería DERIVADA del árbol de imports (`testsQueImportan`), no de una lista a mano: son CUATRO tests y no cinco — `scene-fixtures.test.ts` entra porque valida cada fixture commiteada con este validador, y estar además en la batería de `contrato-escena` no exime (un test puede pagar dos módulos; un fichero mutado solo puede tener uno). AVISO que la exención dejaba escrito y sigue vigente: es el fichero que el 2026-08-21 disparó el OOM killer con `timeoutMS` en 120 s. Con los 10 s de hoy y la concurrencia acotada es medible, y va en módulo SOLO justamente por eso: si vuelve a reventar el reloj, se aísla sin arrastrar a nadie. Es el módulo más caro que estrena esta tanda — 1.002 líneas, estimadas ~660 mutantes por la mediana de la huella (0,66 mut/línea), muy por encima del `tope_local`."
+    },
+    {
+      "id": "tile-edges",
+      "mutate": [
+        "src/scene/tile-edges.ts"
+      ],
+      "tests": [
+        "test/scene-validate-pasadas.test.ts",
+        "test/tile-edges.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "Los bordes entre tiles del mundo continuo y el bloqueo direccional: qué lado de un tile continúa en el vecino y por dónde NO se puede salir. Sale de `sin_mutar` con #339 por el mismo motivo que `scene-validate` y con su misma frase escrita. Batería derivada del árbol de imports: `tile-edges.test.ts`, que lo tiene por sujeto, y `scene-validate-pasadas.test.ts`, que entra por el `import type TileEdges` de su línea 36 — un import de tipo cuenta para el candado de baterías porque el cierre de imports lo ve, y dejarlo fuera sería una excepción sin motivo. Módulo aparte de `scene-validate` y no junto a él: comparten UN test de los cuatro, así que juntarlos haría que cada mutante de los bordes pagase las otras tres suites. 120 líneas, estimadas ~80 mutantes."
+    },
+    {
+      "id": "ai-client",
+      "mutate": [
+        "src/narrative/ai-client.ts"
+      ],
+      "tests": [
+        "test/ai-client.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El cable HTTP con ai_server: quién pide narrativa, cómo se leen sus respuestas y qué pasa cuando no contesta. Entra con #340, que mete `src/narrative` en `directorios_completos` — hasta hoy `grep -c src/narrative` sobre este contrato daba 0 y las 2.515 líneas del directorio no las medía nadie. Módulo propio con batería de UN fichero porque eso es lo que dice el árbol de imports, y porque agrupar los cinco ficheros baratos del directorio en un solo módulo saldría 5× más caro por mutante: MEDIDO el 2026-09-04 con el comando real del contrato, la batería de los cinco tarda 0,92 s y esta sola 0,18 s. La casa agrupa por BATERÍA y no por tema, y estas cinco baterías son disjuntas."
+    },
+    {
+      "id": "consequence-handler",
+      "mutate": [
+        "src/narrative/consequence-handler.ts"
+      ],
+      "tests": [
+        "test/consequence-handler.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El despacho de las consequences del motor: lo que la narrativa dice que PASA (spawn, inventario, diálogo, eventos) traducido a cambios en la partida. Entra con #340. Batería de un fichero, derivada del árbol de imports; el porqué de un módulo por fichero y no uno para los cinco está en `ai-client`."
+    },
+    {
+      "id": "render-mode",
+      "mutate": [
+        "src/narrative/render-mode.ts"
+      ],
+      "tests": [
+        "test/render-mode.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "Con imagen o sin ella: el modo de pintado de la partida, que decide si se gastan créditos en arte. 49 líneas, el más barato del directorio. Entra con #340. Batería de un fichero derivada del árbol de imports; el porqué del reparto está en `ai-client`."
+    },
+    {
+      "id": "speaker-resolve",
+      "mutate": [
+        "src/narrative/speaker-resolve.ts"
+      ],
+      "tests": [
+        "test/speaker-resolve.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "QUIÉN habla: resolver el interlocutor de una línea de diálogo contra las entities de la partida. Entra con #340. Batería de un fichero derivada del árbol de imports; el porqué del reparto está en `ai-client`."
+    },
+    {
+      "id": "serialize-llm",
+      "mutate": [
+        "src/narrative/serialize-llm.ts",
+        "!src/narrative/narrative-state.ts",
+        "!src/narrative/session-storage.ts",
+        "!src/narrative/npc-records.ts",
+        "!src/narrative/types.ts"
+      ],
+      "tests": [
+        "test/narrative-state.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "Lo que el motor VE de la partida: la serialización del estado que viaja en cada request narrativa. Entra con #340. Su batería es `narrative-state.test.ts` porque es el único test que lo importa — derivado del árbol, no elegido. AQUÍ SE DECLARAN, ADEMÁS, LAS CUATRO EXCLUSIONES DEL DIRECTORIO, y en este módulo y no en otro porque tres de las cuatro comparten precisamente esta batería. Van con `!ruta` y no en `sin_mutar` porque el candado de huérfanos de un `directorios_completos` exige que un módulo las NOMBRE (`test/mutation-config.test.ts`), y estar en los dos sitios lo prohíbe el candado de exenciones caducadas. Los motivos, uno a uno, con los recuentos medidos el 2026-09-04 con `testsQueImportan`, que es la misma función que usa el candado de baterías: (1) `narrative-state.ts` (1.027 líneas) lo importan DIECIOCHO ficheros de test, y con `coverageAnalysis: off` cada uno de sus ~675 mutantes estimados pagaría los dieciocho — el problema no son los mutantes, es la batería, y arriesga el `timeout-minutes: 180` del workflow, que ya va por ~131 min (issue #430); (2) `session-storage.ts` (249 líneas), lo mismo con DIECISÉIS, y además es el fichero que importa `node:fs` y por el que este directorio no puede entrar en `core-puro-sin-node` (issue #430); (3) `npc-records.ts` (170 líneas) no lo tiene por sujeto NI UN test —`testsQueImportan` da 0—, pero OJO: sí se carga, porque `narrative-state.ts:33` importa `registerSceneNpcs` y `test/narrative-state.test.ts`, que es la batería de ESTE módulo, lo trae en su cierre de imports. O sea que sus mutantes se ejecutarían y saldrían casi todos SUPERVIVIENTES, no sin cubrir: con `coverageAnalysis: off` el estado `NoCoverage` no existe en esta casa (cero apariciones en la huella). Medirlo hoy no diría nada del código — diría que le falta un test que lo tenga por sujeto, que es justo lo que dice ya su CRAP de 59 y subiendo. Primero el test, luego el mutante (issue #431); (4) `types.ts` (384 líneas) tiene JS detrás en dos líneas (`:17` y `:335`), pero lo importan DIEZ tests y su batería no se paga por diez mutantes: este no necesita issue, su motivo se sostiene solo y entra cuando alguien necesite medir esas dos líneas."
     }
   ]
 }
