@@ -66,6 +66,9 @@ function loQueSeLee() {
     huecoVisible: hueco ? hueco.style.display !== "none" : false,
     avisos: [...(hueco?.querySelectorAll("[data-aviso]") ?? [])].map((e) => ({
       titulo: e.getAttribute("data-aviso") ?? "",
+      // El DETALLE aparte del titular: el aviso los pinta en dos elementos
+      // (titular destacado, detalle atenuado) y `textContent` los pegaría.
+      detalle: e.querySelector("span")?.textContent ?? "",
       texto: e.textContent ?? "",
     })),
     log: [...document.querySelectorAll(".error-log__entry")].map((e) => ({
@@ -76,6 +79,11 @@ function loQueSeLee() {
     // esté puesto no demuestra que la regla de CSS siga apagando nada.
     titulo: document.documentElement.dataset.titulo ?? null,
     gameUiOculto: gameUi ? getComputedStyle(gameUi).display === "none" : null,
+    // Y el muro DEBAJO. Que el título lo tape no es que esté apagado: en
+    // estado `error` sale entero en cuanto el jugador cierra el título por su
+    // propio botón, con el fallo que acaba de leer arriba (QA de T9, H-1).
+    muroArmado:
+      document.getElementById("narrative-loader")?.classList.contains("error") === true,
   };
 }
 
@@ -116,7 +124,7 @@ export default async function (ctx) {
   await esperarAviso(ctx, AVISOS.mundo);
   const conMundoRoto = await ctx.page.evaluate(loQueSeLee);
   const mundo = pareja(conMundoRoto, AVISOS.mundo);
-  ctx.log(`aviso: «${mundo.aviso?.titulo}» → ${mundo.aviso?.texto}`);
+  ctx.log(`aviso: «${mundo.aviso?.titulo}» → ${mundo.aviso?.detalle}`);
   ctx.expect(
     "three.js que no carga se DICE en el título, no solo en un panel apagado",
     Boolean(mundo.aviso),
@@ -131,6 +139,14 @@ export default async function (ctx) {
     "el interruptor de #246 sigue intacto: con el título delante #game-ui está apagado",
     conMundoRoto.titulo === "1" && conMundoRoto.gameUiOculto === true,
     JSON.stringify({ titulo: conMundoRoto.titulo, gameUiOculto: conMundoRoto.gameUiOculto }),
+  );
+  // El invariante de H-1, y es determinista: si el título manda, el muro NO
+  // puede estar en estado error. O el aviso llegó antes y el título lo apagó
+  // al tomar el mando, o llegó después y nunca se pintó ahí.
+  ctx.expect(
+    "…y el muro NO queda armado debajo: cerrar el título no le suelta un fallo a pantalla completa",
+    conMundoRoto.muroArmado === false,
+    `#narrative-loader en error con data-titulo="${conMundoRoto.titulo}"`,
   );
   await ctx.shot("306-el-mundo-no-se-puede-dibujar");
 
@@ -153,24 +169,41 @@ export default async function (ctx) {
     trasRepintar.avisos.filter((a) => a.titulo === AVISOS.mundo).length === 1,
     JSON.stringify(trasRepintar.avisos.map((a) => a.titulo)),
   );
-  await ctx.page.unroute("**/fps-gl*");
 
   // ─── 3 · Las hojas base no llegan: los personajes van en maniquí ───────
+  //
+  // El chunk sigue abortado A PROPÓSITO: con dos familias rotas a la vez se
+  // puede afirmar el ORDEN, y el orden importa porque el de llegada es el
+  // contrario del de gravedad (QA de T9 midió las hojas a 130-155 ms, antes
+  // que el chunk y antes que el propio título).
   await ctx.page.route("**/sprites/y_bot/**", (route) => route.abort("failed"));
   await recargarAlTitulo(ctx);
   await esperarAviso(ctx, AVISOS.personajes);
+  await esperarAviso(ctx, AVISOS.mundo);
   const conHojasRotas = await ctx.page.evaluate(loQueSeLee);
   const hojas = pareja(conHojasRotas, AVISOS.personajes);
-  ctx.log(`aviso: «${hojas.aviso?.titulo}» → ${hojas.aviso?.texto}`);
+  ctx.log(`aviso: «${hojas.aviso?.titulo}» → ${hojas.aviso?.detalle}`);
   ctx.expect(
     "las hojas base que no llegan se DICEN en el título",
     Boolean(hojas.aviso),
     JSON.stringify(conHojasRotas.avisos),
   );
+  // Esta familia es la excepción a la una-sola-verdad LITERAL, y a propósito:
+  // su `message` está escrito para quien programa y el guion 13 exige que el
+  // registro lo conserve. Lo que lee el jugador es la traducción del traductor
+  // de la casa (`motivoDeSesionParaElJugador`), no un volcado. Se afirman las
+  // dos mitades: que el jugador lee la frase traducida, y que el registro NO
+  // ha perdido la técnica.
   ctx.expect(
-    "…con el mensaje del registro, que NOMBRA EL REMEDIO (#255)",
-    Boolean(hojas.entrada) && /sprite-forge/.test(hojas.aviso?.texto ?? ""),
+    "…con la frase del TRADUCTOR de la casa, no con el volcado para quien programa",
+    /hojas de sprites/.test(hojas.aviso?.texto ?? "") &&
+      !/set base|incompleto/.test(hojas.aviso?.texto ?? ""),
     hojas.aviso?.texto ?? "(sin aviso)",
+  );
+  ctx.expect(
+    "…y el registro conserva el mensaje técnico entero, con el remedio (#255)",
+    conHojasRotas.log.some((e) => /set base/.test(e.msg) && /assets-de-personaje\.md/.test(e.msg)),
+    JSON.stringify(conHojasRotas.log.slice(0, 3)),
   );
   // Diez hojas fallan, y el agregado de `preloadBase` falla detrás: si el
   // aviso no colapsara por (fuente, título), aquí habría once.
@@ -185,8 +218,23 @@ export default async function (ctx) {
     conHojasRotas.avisos.length <= 3,
     JSON.stringify(conHojasRotas.avisos.map((a) => a.titulo)),
   );
+  // JERARQUÍA (QA de T9, H-7): el orden es el de GRAVEDAD, no el de llegada.
+  // «Los personajes van sin vestir» es cosmético —se juega igual, con
+  // maniquíes— y llega ANTES; «no se puede dibujar el mundo» deja el juego
+  // inservible y tiene que leerse primero.
+  ctx.expect(
+    "el aviso más grave se lee PRIMERO, aunque el cosmético haya llegado antes",
+    conHojasRotas.avisos.length === 2 && conHojasRotas.avisos[0].titulo === AVISOS.mundo,
+    JSON.stringify(conHojasRotas.avisos.map((a) => a.titulo)),
+  );
+  ctx.expect(
+    "…y con dos familias rotas el muro sigue sin quedarse armado bajo el título",
+    conHojasRotas.muroArmado === false && conHojasRotas.gameUiOculto === true,
+    JSON.stringify({ muroArmado: conHojasRotas.muroArmado, titulo: conHojasRotas.titulo }),
+  );
   await ctx.shot("306-los-personajes-van-sin-vestir");
   await ctx.page.unroute("**/sprites/y_bot/**");
+  await ctx.page.unroute("**/fps-gl*");
 
   // ─── 4 · El socket contesta algo que no se entiende ────────────────────
   //
@@ -216,7 +264,7 @@ export default async function (ctx) {
   await esperarAviso(ctx, AVISOS.socket);
   const conSocketRoto = await ctx.page.evaluate(loQueSeLee);
   const socket = pareja(conSocketRoto, AVISOS.socket);
-  ctx.log(`aviso: «${socket.aviso?.titulo}» → ${socket.aviso?.texto}`);
+  ctx.log(`aviso: «${socket.aviso?.titulo}» → ${socket.aviso?.detalle}`);
   ctx.expect(
     "una trama del socket que no se entiende se DICE en el título",
     Boolean(socket.aviso),

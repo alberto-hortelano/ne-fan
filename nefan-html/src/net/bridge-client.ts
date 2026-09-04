@@ -110,6 +110,10 @@ export class BridgeClient {
 
     this.ws.onopen = () => {
       this._connected = true;
+      // El socket abre: lo que hizo saltar el aviso de «sin conexión» ya no es
+      // cierto, y un aviso que no caduca acaba contradiciendo a la pantalla
+      // (QA de T9, H-3). Se demuestra aquí, no se supone.
+      errors.resuelto("bridge");
       this.emit("connected");
       console.log("BridgeClient: connected to", this._url);
     };
@@ -140,7 +144,7 @@ export class BridgeClient {
       // aviso llega mucho antes que el muro de `bootstrap` —que espera cinco
       // segundos a que el bridge conteste—. Es idempotente por su texto, que
       // no cambia: el reintento cada 5 s no lo repite.
-      errors.push("bridge", `WebSocket onerror on ${this._url}`, event, {
+      errors.push("bridge", `el socket de la partida no abre (${this._url})`, event, {
         alJugador: AVISO_PARTIDA,
       });
     };
@@ -156,7 +160,7 @@ export class BridgeClient {
         // abierto y contestando, así que decirle al jugador que no hay conexión
         // sería mandarlo a mirar su red por un fallo que no es suyo. La partida
         // está igual de rota, pero por otro motivo.
-        errors.push("bridge", `Failed to parse WS frame: ${preview}`, err, {
+        errors.push("bridge", `el servidor de la partida mandó algo ilegible: ${preview}`, err, {
           alJugador: AVISO_TRAMA_ILEGIBLE,
         });
       }
@@ -164,6 +168,11 @@ export class BridgeClient {
   }
 
   private dispatch(msg: ServerMessage): void {
+    // Llegar hasta aquí es la prueba de que la trama se entendió: retira el
+    // aviso de «respondió algo que no se entiende» sin esperar a que el socket
+    // se reconecte, que puede no pasar nunca. `resuelto` sale sin hacer nada
+    // cuando no hay aviso vivo, así que el camino caliente no paga.
+    errors.resuelto("bridge");
     if ("requestId" in msg && typeof msg.requestId === "string") {
       const pending = this.pending.get(msg.requestId);
       if (pending) {
@@ -216,7 +225,7 @@ export class BridgeClient {
       // juega, «se perdió lo que acabas de pedir porque no hay socket» y «el
       // socket no abre» son la misma noticia, y colapsan en un aviso. El tipo
       // de trama perdida sigue en el detalle.
-      errors.push("bridge", `Dropped '${type}' frame: bridge not connected`, undefined, {
+      errors.push("bridge", `se perdió el mensaje '${type}': no hay conexión con la partida`, undefined, {
         alJugador: AVISO_PARTIDA,
       });
     }

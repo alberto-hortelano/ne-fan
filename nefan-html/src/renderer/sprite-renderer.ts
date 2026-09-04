@@ -236,7 +236,7 @@ export class SpriteRenderer {
       // agregado de `preloadBase` —mismo titular, misma noticia—, así que diez
       // hojas caídas no son diez avisos; y como el agregado llega después, el
       // detalle que acaba leyéndose es el suyo, que trae el remedio.
-      errors.push("sprite", `sheet load failed for ${key}`, err, {
+      errors.push("sprite", `no se pudo cargar la hoja de personaje ${key}`, err, {
         alJugador: AVISO_PERSONAJES,
       });
       throw err;

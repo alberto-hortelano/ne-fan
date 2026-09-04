@@ -92,7 +92,7 @@ export class FpsRenderer {
         // fallo salta durante la carga del módulo —antes de que exista el
         // título— así que hasta ahora solo llegaba a un panel que el
         // interruptor de #246 mantiene apagado mientras el título manda.
-        errors.push("render", "la vista fps no pudo cargar three.js", err, {
+        errors.push("render", "no se pudo cargar el motor de dibujo del mundo", err, {
           alJugador: AVISO_MUNDO,
         });
       });

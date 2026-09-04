@@ -217,9 +217,16 @@ baseSheetsReady.catch((err) =>
     err,
     // Y a la PANTALLA (#306): sin hojas los personajes salen en maniquí y
     // hasta ahora nadie lo decía. Este mensaje llega DESPUÉS que los de las
-    // hojas sueltas y con el mismo titular, así que es el suyo el que se lee:
-    // es el que trae el recuento y el remedio.
-    { alJugador: AVISO_PERSONAJES },
+    // hojas sueltas y con el mismo titular, así que es el suyo el que se lee.
+    //
+    // El detalle NO es el `message`: ese está escrito para quien programa y no
+    // se puede cambiar (el guion 13 exige `y_bot`, «incompleto» y el documento
+    // en el registro). Lo traduce el traductor de la casa, que tiene rama
+    // propia para este código desde #255.
+    {
+      alJugador: AVISO_PERSONAJES,
+      detalleAlJugador: motivoDeSesionParaElJugador(err),
+    },
   ),
 );
 /** El renderer del mundo, construido EAGER: es el único que hay, así que no
@@ -1583,8 +1590,21 @@ graphicsChip = new GraphicsModeChip({
 // propio título, así que quien añada un panel nuevo no tiene que acordarse de
 // nada. Desde #285 el interruptor apaga también el INPUT de juego, por la
 // misma lectura: `ui/titulo-manda.ts`.
+/** La fuente del aviso que pintó el muro, o `null` si no lo puso un aviso.
+ *  Permite apagarlo sin tocar los muros legítimos (arranque fallido, fallo de
+ *  generación). */
+let muroPuestoPorAviso: string | null = null;
 titleScreen.onVisibilityChange = (visible) => {
   graphicsChip?.setHidden(visible);
+  // El título solo TAPA el muro (`#narrative-loader` vive dentro de
+  // `#game-ui`), así que uno puesto por un aviso seguía armado y salía a
+  // pantalla completa al cerrar el título por su propio botón, con un fallo
+  // que el jugador acababa de leer arriba (QA de T9, H-1). No se pierde nada:
+  // el aviso lo tiene el título, que es quien manda ahora.
+  if (visible && muroPuestoPorAviso !== null) {
+    hideLoader();
+    muroPuestoPorAviso = null;
+  }
   // El único escritor del interruptor. Lo leen la regla de CSS que apaga los
   // píxeles y la puerta de teclado que descarta el input (#285): la misma
   // lectura para las dos, así que no pueden divergir.
@@ -1610,9 +1630,21 @@ titleScreen.onVisibilityChange = (visible) => {
 //
 // `setLoaderState` es una declaración de función: existe aquí aunque se lea
 // 130 líneas más abajo.
-errors.onAviso(({ titulo, mensaje }) => {
-  titleScreen.avisar(titulo, mensaje);
-  if (!elTituloManda()) setLoaderState("error", titulo, mensaje);
+// La entrega llega SIEMPRE en microtarea (`ErrorLog.entrega`), así que aquí el
+// módulo ya ha terminado de evaluarse y `loaderEl` existe.
+errors.onAviso((e) => {
+  // «Resuelto» es la mitad que faltaba: un aviso que no caduca acaba
+  // contradiciendo a la pantalla que lo enseña (QA de T9, H-3).
+  if (e.tipo === "resuelto") {
+    titleScreen.retirarAvisos(e.source);
+    if (muroPuestoPorAviso === e.source) hideLoader();
+    return;
+  }
+  titleScreen.avisar(e.aviso);
+  if (!elTituloManda()) {
+    setLoaderState("error", e.aviso.titulo, e.aviso.mensaje);
+    muroPuestoPorAviso = e.aviso.source;
+  }
 });
 // El seam del banco de pruebas (`window.__nefan`), en UNA construcción y AQUÍ:
 // después de `titleScreen` y `narrativeClient`, que son los últimos

@@ -32,7 +32,7 @@ import {
   type SpriteCensusResponse,
 } from "@nefan-core/src/contracts/sprite-census.js";
 import { serviceUrl } from "../net/service-urls.js";
-import { errors } from "./error-log.js";
+import { type AvisoAlJugador, encajarAviso, errors } from "./error-log.js";
 import { paso } from "./async-ui.js";
 import { StyleApplyController, type StyleApplyPlan } from "./style-apply.js";
 import {
@@ -81,12 +81,6 @@ const UPLOAD_FOLDER_LABELS: Array<{ id: string; label: string }> = [
  *  mismo TTL que el chip de gráficos y el menú dev. */
 const ARM_TTL_MS = 5000;
 
-/** Cuántos avisos del registro caben a la vez en el hueco del home (#306).
- *  Tres, y no «todos»: la pantalla del título no es el registro de errores
- *  —ese sigue entero en `#error-log`— y una lista larga de líneas rojas se
- *  deja de leer, que es el mismo modo de fallo que tenía guardar UNA sola. */
-const MAX_AVISOS = 3;
-
 export class TitleScreen {
   private root: HTMLDivElement;
   private content: HTMLDivElement;
@@ -101,7 +95,7 @@ export class TitleScreen {
    *  siguiente se lo llevaba. La clave es el TÍTULO —dos fallos de la misma
    *  familia son una noticia— y se enseña el detalle del último, que en la
    *  familia de los sprites es el agregado con el remedio. */
-  private readonly avisosDelJugador: { titulo: string; detalle: string }[] = [];
+  private avisosDelJugador: AvisoAlJugador[] = [];
   /** El motivo de la ÚLTIMA acción que falló (pulsar «Nueva partida» sin
    *  bridge, borrar una partida que ya no estaba). Efímero por naturaleza:
    *  pertenece a lo que se acaba de intentar, así que el repintado del home lo
@@ -512,18 +506,28 @@ export class TitleScreen {
    *  #246 mantiene apagado. Lo llama el ÚNICO suscriptor de `errors.onAviso`
    *  (main.ts), y es idempotente por título: el mismo fallo refresca su detalle
    *  en su sitio en vez de apilar una copia. */
-  avisar(titulo: string, detalle: string): void {
-    const ya = this.avisosDelJugador.find((a) => a.titulo === titulo);
-    if (ya) {
-      ya.detalle = detalle;
-    } else {
-      this.avisosDelJugador.push({ titulo, detalle });
-      // El más viejo cae: los tres últimos son los que siguen siendo noticia.
-      if (this.avisosDelJugador.length > MAX_AVISOS) {
-        this.avisosDelJugador.splice(0, this.avisosDelJugador.length - MAX_AVISOS);
-      }
-    }
+  avisar(aviso: AvisoAlJugador): void {
+    this.avisosDelJugador = encajarAviso(this.avisosDelJugador, aviso);
+    // «Bridge OK — N partidas» describe una lectura anterior a la caída: se
+    // retira aquí para que la pantalla no diga dos cosas contrarias A LA VEZ.
+    if (aviso.source === "bridge") this.caducarEstadoDeSaves();
     this.pintarAvisos();
+  }
+
+  /** El fallo de `source` se ha resuelto: sus avisos se van de la pantalla.
+   *  La otra mitad de `avisar`, y la que impide que un aviso sea eterno. */
+  retirarAvisos(source: string): void {
+    this.avisosDelJugador = this.avisosDelJugador.filter((a) => a.source !== source);
+    this.pintarAvisos();
+  }
+
+  /** El título deja de afirmar que la lista está al día cuando el socket que
+   *  la trajo acaba de fallar. Las tarjetas se quedan: siguen sirviendo. */
+  private caducarEstadoDeSaves(): void {
+    const el = this.content.querySelector<HTMLElement>("#ts-status");
+    if (!el || !(el.textContent ?? "").startsWith("Bridge OK")) return;
+    el.textContent = "Esta lista es de antes del fallo: puede que ya no esté al día.";
+    el.style.color = "#888";
   }
 
   /** Reescribe `#ts-error` ENTERO desde el estado: los avisos del registro más,
@@ -534,13 +538,18 @@ export class TitleScreen {
   private pintarAvisos(): void {
     const el = this.content.querySelector<HTMLElement>("#ts-error");
     if (!el) return;
-    // `data-aviso` es el titular, y está para que el candado pueda afirmar
-    // CUÁL se lee y cuántos hay — no un `includes` sobre el texto entero.
+    // Por GRAVEDAD, no por orden de llegada, y con el titular separado del
+    // detalle: los dos iban en el mismo color y cuerpo, así que el cosmético
+    // gritaba igual que «no se puede dibujar el mundo» y encima salía antes
+    // por llegar antes (QA de T9, H-7). `data-aviso` es el titular, para que
+    // el candado afirme CUÁL se lee y cuántos hay.
     const pegajosos = this.avisosDelJugador
       .map(
         (a) =>
-          `<div data-aviso="${escapeHtml(a.titulo)}" style="color:#a44;margin-bottom:4px">` +
-          `${escapeHtml(a.titulo)}: ${escapeHtml(a.detalle)}</div>`,
+          `<div data-aviso="${escapeHtml(a.titulo)}" style="margin-bottom:8px;line-height:1.45">` +
+          `<strong style="color:#c55">${escapeHtml(a.titulo)}</strong>` +
+          `<span style="display:block;color:#8a7f7f;font-size:12px">${escapeHtml(a.mensaje)}</span>` +
+          `</div>`,
       )
       .join("");
     const accion = this.avisoDeAccion
@@ -559,11 +568,16 @@ export class TitleScreen {
     // el orden anterior, `#ts-sessions` se repintaba al volver `listSessions`
     // y empujaba «Nueva partida» hacia abajo tantos píxeles como partidas
     // hubiera: el botón ya escuchaba, pero se movía bajo el cursor.
+    // …y `#ts-error` va POR DEBAJO del botón por esa misma regla, que es la
+    // que esta tanda se saltó: desde #306 ese hueco se rellena TARDE (un
+    // chunk lento, un socket que se cae con el título ya delante) y encima
+    // del botón lo movía 33 px bajo el cursor — más que los +24 px que
+    // abrieron #250 (QA de T9, H-2).
     this.content.innerHTML = `
       <h1 style="font-size:32px;color:#da6;margin-bottom:24px">Never Ending Fantasy</h1>
       <p style="margin-bottom:18px;color:#999">Selecciona una partida o empieza una nueva.</p>
-      <div id="ts-error" style="margin-bottom:18px;font-size:13px;display:none"></div>
       <button id="ts-new" style="${BTN_PRIMARY_CSS}">Nueva partida</button>
+      <div id="ts-error" style="margin-top:18px;font-size:13px;display:none"></div>
       <h2 style="margin:24px 0 10px;color:#bbb">Partidas guardadas</h2>
       <div id="ts-status" style="margin-bottom:12px;font-size:12px;color:#666"></div>
       <div id="ts-sessions" style="margin-bottom:24px"></div>
