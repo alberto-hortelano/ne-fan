@@ -58,11 +58,21 @@ El ciclo entero es `npm run mutacion` (en `nefan-core`):
 | `local <id>` | el ingeniero | mide UN módulo con dos núcleos; **rechaza** el que pase de `tope_local` diciendo su coste. Corrido ENCIMA de una descarga bloquea el reparto: sobreescribe el informe de CI y su sello deja de casar |
 | `traer [run-id]` | el coordinador | vacía `reports/mutation/` y baja el artefacto; rechaza la descarga a la que le falte un informe, le sobre uno, o traiga uno cuyo **sello no case** con el que midió la corrida |
 | `repartir [--comentar]` | el coordinador | delta contra la huella de HEAD, atribución honesta —anclada en el `desde` que trae la corrida, no en el tag que ella misma mueve— y comentario en la PR de origen; repite el guardia del sello |
+| `lotes [--ids …]` | cualquiera, y CI | cómo se partiría la corrida en jobs, por los SEGUNDOS medidos de cada módulo. Sin flags solo imprime: es la forma de mirar el reparto sin gastar un runner |
+| `cola <run-id>` | el coordinador | cuánto esperó cada job de esa corrida y cuánto paga la matriz por venir partida. Es lo que ajusta `max-parallel`, y se MIDE |
 
 Autorizar es entrar en Actions → *Mutation testing* → **Run workflow** (funciona
 desde el navegador del móvil). Input vacío = lo que falta desde el tag; `TODOS` =
 la corrida completa. Una petición pendiente **no bloquea nada**: se cierra la
 tanda y el resultado llega después, al sitio donde se causó.
+
+**La corrida va PARTIDA en lotes** (`planificar` → matriz de `medir` → `reunir`),
+porque una sola se comió el `timeout-minutes: 180` con 25 de 33 módulos. Se
+empaqueta por el reloj MEDIDO de cada módulo —ni los mutantes ni ningún proxy
+ordenan bien el más caro— con tope `tope_lote` (30 min), y lo que nadie ha
+cronometrado va en un lote propio, igual que `permisoLocal` rechaza el coste
+desconocido. `traer` y `repartir` no se enteran: siguen bajando un artefacto con
+un `corrida.json`.
 
 La atribución es «las PR del rango cuyo diff selecciona ese módulo», no
 `git blame`: blame contesta quién escribió la línea, y la pregunta es qué cambio

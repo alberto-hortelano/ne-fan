@@ -100,6 +100,19 @@ const PlanSchema = z.object({
    *  sin dar con qué mirarlos. Obligatorio y sin defecto: un tope que se puede
    *  omitir es un tope que desaparece sin que nadie lo note. */
   tope_local: z.number().int().positive(),
+  /** Cuántos SEGUNDOS DE RELOJ puede llegar a durar un lote de la corrida en
+   *  CI (`npm run mutacion -- lotes`). Está en segundos y no en mutantes a
+   *  propósito: lo que se está presupuestando es el `timeout-minutes` de un
+   *  job, y el mutante no es una unidad de tiempo — `blueprint-derive` tiene
+   *  484 mutantes y tarda 1.647 s, y `world-map` tiene más peso por cualquier
+   *  proxy y tarda 701.
+   *
+   *  Se calibra con el DÍA MALO y no con la media: el factor medido entre las
+   *  dos últimas corridas completas fue 1,31 uniforme sobre los 25 módulos
+   *  comunes, así que un presupuesto ajustado a la media se sale la mitad de
+   *  las veces. Planificar sobre el día malo es un margen de un tercio ya
+   *  pagado. Obligatorio y sin defecto, por lo mismo que `tope_local`. */
+  tope_lote: z.number().int().positive(),
   /** Directorios que se miden ENTEROS. El candado exige que cada `.ts` de
    *  estos esté nombrado por algún módulo: si no, un fichero nuevo se cuela
    *  sin que nadie lo mida y nada falla — el agujero por el que un objetivo

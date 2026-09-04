@@ -421,6 +421,33 @@ el `--pedidos ""` del input `TODOS` y las cuatro piezas del paso del workflow. A
 `reports/mutation/` mientras corre y lo devuelve; verifica byte a byte los fuentes y la huella
 —que `repartir` reescribe por diseño— y sale con 2 si algo no volvió.
 
+## `qa/mutacion-reparto-en-lotes.mjs`: la corrida partida, y lo que aún no tiene quien la cace
+
+```bash
+node qa/mutacion-reparto-en-lotes.mjs                 # ~4 min, sin red y sin medir mutación
+node qa/mutacion-reparto-en-lotes.mjs --solo-vigentes # ~20 s, solo los candados de regresión
+```
+
+De la validación de PR-E (la corrida partida en lotes). Dos grupos, y la diferencia es el punto:
+**VIGENTE** son nueve invariantes que hoy se cumplen —determinismo del reparto, ningún lote de
+varios por encima de `tope_lote`, cada pedido en exactamente un lote, lo no cronometrado en lote
+propio, `tope_lote` por debajo del `timeout-minutes` del job que lo ejecuta, un lote muerto que
+deja la corrida INCOMPLETA con el tag quieto, la fusión que se niega sin plan, el sello de #420
+dentro de cada lote y la procedencia escrita de los 52 relojes sembrados—, y **ABIERTO** son los
+hallazgos que siguen sin candado: cada uno se rompe a mano y se mira si la batería o los dos
+guiones de negativos se enteran. Si nadie se entera, el invariante es prosa y la línea sigue
+roja; el día que alguien lo tape, se pone verde sola.
+
+La comprobación es **línea base y luego romper**: primero se corre cada checker con el árbol
+limpio y solo cuenta como «se entera» que su resultado CAMBIE. Sin esa línea base, un checker ya
+rojo por el entorno (un `dist/` sin compilar) pasaría por candado. Y las roturas del grupo
+ABIERTO **no tocan ningún literal que los otros guiones busquen**: la primera versión de la del
+lote propio borraba una línea que el guion de candados usa de patrón, el guion se ponía rojo
+porque su patrón desaparecía, y eso se lee igual que cazar el fallo sin serlo.
+
+Aparta `nefan-core/reports/` entero mientras corre y lo devuelve; verifica byte a byte los cinco
+fuentes y la huella, y sale con 2 si algo no volvió.
+
 Los guiones que necesitan una PARTIDA real (no una fixture) comparten el arranque del
 título en `qa/lib/sesion.mjs`; `qa/lib/sonda.mjs` (`nefan`/`waitFor`, vía `ctxDeSonda(page)`) es
 la MISMA sonda para el runner y para los scripts sueltos (`fixtures-sin-bridge`,
