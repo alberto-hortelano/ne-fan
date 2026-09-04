@@ -192,6 +192,23 @@ describe("objetosDeclarados", () => {
     assert.deepEqual(objetosDeclarados(undefined), { declaradas: [], errores: [] });
     assert.deepEqual(objetosDeclarados([]), { declaradas: [], errores: [] });
   });
+
+  it("lo que el tile NO declara no viaja: sin `shape` ni `volume_id` las claves no existen, ni con `undefined`", () => {
+    // Los dos opcionales solo se probaban PRESENTES (el test de arriba los trae
+    // los dos), así que el lector podía ponerlos SIEMPRE, valiendo `undefined`,
+    // sin que nada se pusiera rojo. Quien lee con `!== undefined` —el cliente,
+    // hoy— no nota la diferencia; quien lee con `in` sí, y `NpcDeclarado` dice
+    // textualmente que la PRESENCIA de `combat` es lo que separa a un enemigo
+    // de un vecino. Con la clave siempre puesta esa frase deja de ser cierta.
+    // El aserto va sobre el registro ENTERO porque `deepEqual` (estricto, de
+    // `node:assert/strict`) distingue `{a:1}` de `{a:1,b:undefined}` y campo a
+    // campo no se distinguen.
+    const { declaradas, errores } = objetosDeclarados([{ id: "pozo", position: [1, 0, 2] }]);
+    assert.deepEqual(errores, []);
+    assert.deepEqual(declaradas, [
+      { id: "pozo", pos: { x: 1, y: 0, z: 2 }, nombre: "pozo", categoria: "prop", sizeXZ: { x: 1, z: 1 }, sizeY: 1 },
+    ]);
+  });
 });
 
 describe("npcsDeclarados", () => {
@@ -228,15 +245,36 @@ describe("npcsDeclarados", () => {
     assert.equal("combat" in declaradas[0], true);
     assert.equal(declaradas[0].combat, "roto");
   });
+
+  it("un vecino sin prosa, sin ref, sin rol y sin combate no trae ninguna de las cuatro claves", () => {
+    // La otra mitad del test de arriba, y la que faltaba: si `combat` se pusiera
+    // SIEMPRE (valiendo `undefined`), `"combat" in decl` diría que sí en todos y
+    // el criterio que el tipo declara —la presencia— dejaría de separar nada.
+    // Lo mismo con la prosa y la ref: `descripcion: undefined` es una clave que
+    // el tile no dijo, y el prompt del skin sale de ahí (`descripcion ?? nombre`).
+    const { declaradas, errores } = npcsDeclarados([{ id: "aldeana", position: [3, 0, 4] }]);
+    assert.deepEqual(errores, []);
+    assert.deepEqual(declaradas, [{ id: "aldeana", pos: { x: 3, y: 0, z: 4 }, nombre: "aldeana" }]);
+  });
 });
 
 describe("declaraciones rotas · se dicen, no se tragan", () => {
   it("sin id no entra, y se dice con su posición en la lista", () => {
-    const { declaradas, errores } = objetosDeclarados([{ position: [0, 0, 0] }, { id: 7, position: [0, 0, 0] }]);
+    // El id VACÍO cuenta como «sin id», y hay que probarlo aparte: colapsar `""`
+    // con la ausencia es una DECISIÓN del lector (`texto()`), no una casualidad
+    // del tipo. Si dejara entrar el `""`, habría en el mundo una entity a la que
+    // no se puede nombrar en un log ni purgar por identidad — y un id vacío no
+    // se ve en la línea de errores, así que el fallo llegaría mudo.
+    const { declaradas, errores } = objetosDeclarados([
+      { position: [0, 0, 0] },
+      { id: 7, position: [0, 0, 0] },
+      { id: "", position: [0, 0, 0] },
+    ]);
     assert.deepEqual(declaradas, []);
-    assert.equal(errores.length, 2);
+    assert.equal(errores.length, 3);
     assert.match(errores[0], /objeto \[0\]: sin id/);
     assert.match(errores[1], /objeto \[1\]: sin id/);
+    assert.match(errores[2], /objeto \[2\]: sin id/);
   });
 
   it("sin position no entra: no hay dónde pintarlo", () => {
@@ -248,7 +286,12 @@ describe("declaraciones rotas · se dicen, no se tragan", () => {
     assert.deepEqual(declaradas, []);
     assert.equal(errores.length, 3);
     for (const e of errores) assert.match(e, /position no son tres números/);
-    assert.match(errores[0], /"sin_sitio"/);
+    // El mensaje ENTERO y no un trozo: de qué CLASE es lo que se cayó (`npc`, y
+    // no `objeto`, que es la otra mitad de la misma función), quién, qué llegó
+    // en `position` y por qué no se pinta. Con solo el trozo del medio, la cola
+    // se podía vaciar y la clase podía dejar de decirse sin que nada cayera.
+    assert.equal(errores[0], 'npc "sin_sitio": position no son tres números (undefined), así que no hay dónde ponerlo');
+    assert.equal(errores[1], 'npc "corta": position no son tres números ([1,2]), así que no hay dónde ponerlo');
   });
 
   it("un id REPETIDO en el mismo tile entra una vez y se dice", () => {
