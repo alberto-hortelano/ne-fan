@@ -683,8 +683,8 @@
         "test/scene-validate-pasadas.test.ts",
         "test/scene-validate.test.ts"
       ],
-      "break": "sin medir",
-      "porque": "El validador de JUGABILIDAD: el flood-fill sobre el grid de 128×128 que decide si un tile del motor se puede caminar de verdad, y el que dice que NO con su motivo antes de que el jugador se quede encerrado. Sale de `sin_mutar` con #339: su motivo escrito decía «hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería», y eso es lo que se hace aquí. Batería DERIVADA del árbol de imports (`testsQueImportan`), no de una lista a mano: son CUATRO tests y no cinco — `scene-fixtures.test.ts` entra porque valida cada fixture commiteada con este validador, y estar además en la batería de `contrato-escena` no exime (un test puede pagar dos módulos; un fichero mutado solo puede tener uno). AVISO que la exención dejaba escrito y sigue vigente: es el fichero que el 2026-08-21 disparó el OOM killer con `timeoutMS` en 120 s. Con los 10 s de hoy y la concurrencia acotada es medible, y va en módulo SOLO justamente por eso: si vuelve a reventar el reloj, se aísla sin arrastrar a nadie. Es el módulo más caro que estrena esta tanda — 1.002 líneas, estimadas ~660 mutantes por la mediana de la huella (0,66 mut/línea), muy por encima del `tope_local`."
+      "break": 88,
+      "porque": "El validador de JUGABILIDAD: el flood-fill sobre el grid de 128×128 que decide si un tile del motor se puede caminar de verdad, y el que dice que NO con su motivo antes de que el jugador se quede encerrado. Sale de `sin_mutar` con #339: su motivo escrito decía «hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería», y eso es lo que se hace aquí. Batería DERIVADA del árbol de imports (`testsQueImportan`), no de una lista a mano: son CUATRO tests y no cinco — `scene-fixtures.test.ts` entra porque valida cada fixture commiteada con este validador, y estar además en la batería de `contrato-escena` no exime (un test puede pagar dos módulos; un fichero mutado solo puede tener uno). AVISO que la exención dejaba escrito y sigue vigente: es el fichero que el 2026-08-21 disparó el OOM killer con `timeoutMS` en 120 s. Con los 10 s de hoy y la concurrencia acotada es medible, y va en módulo SOLO justamente por eso: si vuelve a reventar el reloj, se aísla sin arrastrar a nadie. Es el módulo más caro que estrena esta tanda — 1.002 líneas, estimadas ~660 mutantes por la mediana de la huella (0,66 mut/línea), muy por encima del `tope_local`. Suelo 88 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 91 supervivientes de 826 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número."
     },
     {
       "id": "tile-edges",
@@ -695,8 +695,8 @@
         "test/scene-validate-pasadas.test.ts",
         "test/tile-edges.test.ts"
       ],
-      "break": "sin medir",
-      "porque": "Los bordes entre tiles del mundo continuo y el bloqueo direccional: qué lado de un tile continúa en el vecino y por dónde NO se puede salir. Sale de `sin_mutar` con #339 por el mismo motivo que `scene-validate` y con su misma frase escrita. Batería derivada del árbol de imports: `tile-edges.test.ts`, que lo tiene por sujeto, y `scene-validate-pasadas.test.ts`, que entra por el `import type TileEdges` de su línea 36 — un import de tipo cuenta para el candado de baterías porque el cierre de imports lo ve, y dejarlo fuera sería una excepción sin motivo. Módulo aparte de `scene-validate` y no junto a él: comparten UN test de los cuatro, así que juntarlos haría que cada mutante de los bordes pagase las otras tres suites. 120 líneas, estimadas ~80 mutantes."
+      "break": 70,
+      "porque": "Los bordes entre tiles del mundo continuo y el bloqueo direccional: qué lado de un tile continúa en el vecino y por dónde NO se puede salir. Sale de `sin_mutar` con #339 por el mismo motivo que `scene-validate` y con su misma frase escrita. Batería derivada del árbol de imports: `tile-edges.test.ts`, que lo tiene por sujeto, y `scene-validate-pasadas.test.ts`, que entra por el `import type TileEdges` de su línea 36 — un import de tipo cuenta para el candado de baterías porque el cierre de imports lo ve, y dejarlo fuera sería una excepción sin motivo. Módulo aparte de `scene-validate` y no junto a él: comparten UN test de los cuatro, así que juntarlos haría que cada mutante de los bordes pagase las otras tres suites. 120 líneas, estimadas ~80 mutantes. Suelo 70 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 33 supervivientes de 113 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número."
     },
     {
       "id": "ai-client",
@@ -706,8 +706,8 @@
       "tests": [
         "test/ai-client.test.ts"
       ],
-      "break": "sin medir",
-      "porque": "El cable HTTP con ai_server: quién pide narrativa, cómo se leen sus respuestas y qué pasa cuando no contesta. Entra con #340, que mete `src/narrative` en `directorios_completos` — hasta hoy `grep -c src/narrative` sobre este contrato daba 0 y las 2.515 líneas del directorio no las medía nadie. Módulo propio con batería de UN fichero porque eso es lo que dice el árbol de imports, y porque agrupar los cinco ficheros baratos del directorio en un solo módulo saldría 5× más caro por mutante: MEDIDO el 2026-09-04 con el comando real del contrato, la batería de los cinco tarda 0,92 s y esta sola 0,18 s. La casa agrupa por BATERÍA y no por tema, y estas cinco baterías son disjuntas."
+      "break": 31,
+      "porque": "El cable HTTP con ai_server: quién pide narrativa, cómo se leen sus respuestas y qué pasa cuando no contesta. Entra con #340, que mete `src/narrative` en `directorios_completos` — hasta hoy `grep -c src/narrative` sobre este contrato daba 0 y las 2.515 líneas del directorio no las medía nadie. Módulo propio con batería de UN fichero porque eso es lo que dice el árbol de imports, y porque agrupar los cinco ficheros baratos del directorio en un solo módulo saldría 5× más caro por mutante: MEDIDO el 2026-09-04 con el comando real del contrato, la batería de los cinco tarda 0,92 s y esta sola 0,18 s. La casa agrupa por BATERÍA y no por tema, y estas cinco baterías son disjuntas. Suelo 31 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 73 supervivientes de 106 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número."
     },
     {
       "id": "consequence-handler",
@@ -717,8 +717,8 @@
       "tests": [
         "test/consequence-handler.test.ts"
       ],
-      "break": "sin medir",
-      "porque": "El despacho de las consequences del motor: lo que la narrativa dice que PASA (spawn, inventario, diálogo, eventos) traducido a cambios en la partida. Entra con #340. Batería de un fichero, derivada del árbol de imports; el porqué de un módulo por fichero y no uno para los cinco está en `ai-client`."
+      "break": 59,
+      "porque": "El despacho de las consequences del motor: lo que la narrativa dice que PASA (spawn, inventario, diálogo, eventos) traducido a cambios en la partida. Entra con #340. Batería de un fichero, derivada del árbol de imports; el porqué de un módulo por fichero y no uno para los cinco está en `ai-client`. Suelo 59 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 60 supervivientes de 149 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número."
     },
     {
       "id": "render-mode",
@@ -728,8 +728,8 @@
       "tests": [
         "test/render-mode.test.ts"
       ],
-      "break": "sin medir",
-      "porque": "Con imagen o sin ella: el modo de pintado de la partida, que decide si se gastan créditos en arte. 49 líneas, el más barato del directorio. Entra con #340. Batería de un fichero derivada del árbol de imports; el porqué del reparto está en `ai-client`."
+      "break": 100,
+      "porque": "Con imagen o sin ella: el modo de pintado de la partida, que decide si se gastan créditos en arte. 49 líneas, el más barato del directorio. Entra con #340. Batería de un fichero derivada del árbol de imports; el porqué del reparto está en `ai-client`. Suelo 100 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 0 supervivientes de 37 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número."
     },
     {
       "id": "speaker-resolve",
@@ -739,8 +739,8 @@
       "tests": [
         "test/speaker-resolve.test.ts"
       ],
-      "break": "sin medir",
-      "porque": "QUIÉN habla: resolver el interlocutor de una línea de diálogo contra las entities de la partida. Entra con #340. Batería de un fichero derivada del árbol de imports; el porqué del reparto está en `ai-client`."
+      "break": 68,
+      "porque": "QUIÉN habla: resolver el interlocutor de una línea de diálogo contra las entities de la partida. Entra con #340. Batería de un fichero derivada del árbol de imports; el porqué del reparto está en `ai-client`. Suelo 68 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 29 supervivientes de 93 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número."
     },
     {
       "id": "serialize-llm",
@@ -754,8 +754,8 @@
       "tests": [
         "test/narrative-state.test.ts"
       ],
-      "break": "sin medir",
-      "porque": "Lo que el motor VE de la partida: la serialización del estado que viaja en cada request narrativa. Entra con #340. Su batería es `narrative-state.test.ts` porque es el único test que lo importa — derivado del árbol, no elegido. AQUÍ SE DECLARAN, ADEMÁS, LAS CUATRO EXCLUSIONES DEL DIRECTORIO, y en este módulo y no en otro porque tres de las cuatro comparten precisamente esta batería. Van con `!ruta` y no en `sin_mutar` porque el candado de huérfanos de un `directorios_completos` exige que un módulo las NOMBRE (`test/mutation-config.test.ts`), y estar en los dos sitios lo prohíbe el candado de exenciones caducadas. Los motivos, uno a uno, con los recuentos medidos el 2026-09-04 con `testsQueImportan`, que es la misma función que usa el candado de baterías: (1) `narrative-state.ts` (1.027 líneas) lo importan DIECIOCHO ficheros de test, y con `coverageAnalysis: off` cada uno de sus ~675 mutantes estimados pagaría los dieciocho — el problema no son los mutantes, es la batería, y arriesga el `timeout-minutes: 180` del workflow, que ya va por ~131 min (issue #430); (2) `session-storage.ts` (249 líneas), lo mismo con DIECISÉIS, y además es el fichero que importa `node:fs` y por el que este directorio no puede entrar en `core-puro-sin-node` (issue #430); (3) `npc-records.ts` (170 líneas) no lo tiene por sujeto NI UN test —`testsQueImportan` da 0—, pero OJO: sí se carga, porque `narrative-state.ts:33` importa `registerSceneNpcs` y `test/narrative-state.test.ts`, que es la batería de ESTE módulo, lo trae en su cierre de imports. O sea que sus mutantes se ejecutarían y saldrían casi todos SUPERVIVIENTES, no sin cubrir: con `coverageAnalysis: off` el estado `NoCoverage` no existe en esta casa (cero apariciones en la huella). Medirlo hoy no diría nada del código — diría que le falta un test que lo tenga por sujeto, que es justo lo que dice ya su CRAP de 59 y subiendo. Primero el test, luego el mutante (issue #431); (4) `types.ts` (384 líneas) tiene JS detrás en dos líneas (`:17` y `:335`), pero lo importan DIEZ tests y su batería no se paga por diez mutantes: este no necesita issue, su motivo se sostiene solo y entra cuando alguien necesite medir esas dos líneas."
+      "break": 57,
+      "porque": "Lo que el motor VE de la partida: la serialización del estado que viaja en cada request narrativa. Entra con #340. Su batería es `narrative-state.test.ts` porque es el único test que lo importa — derivado del árbol, no elegido. AQUÍ SE DECLARAN, ADEMÁS, LAS CUATRO EXCLUSIONES DEL DIRECTORIO, y en este módulo y no en otro porque tres de las cuatro comparten precisamente esta batería. Van con `!ruta` y no en `sin_mutar` porque el candado de huérfanos de un `directorios_completos` exige que un módulo las NOMBRE (`test/mutation-config.test.ts`), y estar en los dos sitios lo prohíbe el candado de exenciones caducadas. Los motivos, uno a uno, con los recuentos medidos el 2026-09-04 con `testsQueImportan`, que es la misma función que usa el candado de baterías: (1) `narrative-state.ts` (1.027 líneas) lo importan DIECIOCHO ficheros de test, y con `coverageAnalysis: off` cada uno de sus ~675 mutantes estimados pagaría los dieciocho — el problema no son los mutantes, es la batería, y arriesga el `timeout-minutes: 180` del workflow, que ya va por ~131 min (issue #430); (2) `session-storage.ts` (249 líneas), lo mismo con DIECISÉIS, y además es el fichero que importa `node:fs` y por el que este directorio no puede entrar en `core-puro-sin-node` (issue #430); (3) `npc-records.ts` (170 líneas) no lo tiene por sujeto NI UN test —`testsQueImportan` da 0—, pero OJO: sí se carga, porque `narrative-state.ts:33` importa `registerSceneNpcs` y `test/narrative-state.test.ts`, que es la batería de ESTE módulo, lo trae en su cierre de imports. O sea que sus mutantes se ejecutarían y saldrían casi todos SUPERVIVIENTES, no sin cubrir: con `coverageAnalysis: off` el estado `NoCoverage` no existe en esta casa (cero apariciones en la huella). Medirlo hoy no diría nada del código — diría que le falta un test que lo tenga por sujeto, que es justo lo que dice ya su CRAP de 59 y subiendo. Primero el test, luego el mutante (issue #431); (4) `types.ts` (384 líneas) tiene JS detrás en dos líneas (`:17` y `:335`), pero lo importan DIEZ tests y su batería no se paga por diez mutantes: este no necesita issue, su motivo se sostiene solo y entra cuando alguien necesite medir esas dos líneas. Suelo 57 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 50 supervivientes de 117 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número."
     }
   ]
 }
