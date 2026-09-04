@@ -10,7 +10,9 @@
  *  un test de forma, y son la deuda que se cierra aquí. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ZodObject, ZodRawShape, ZodTypeAny } from "zod";
 
 import { MOTIVO_NAME_INVALIDO, VocabularioDeEntity } from "../src/contract/model-io/entity-vocabulary.js";
@@ -31,6 +33,30 @@ const shapeDeSpawn = (() => {
   assert.ok(opcion, "ConsequenceSchema declara spawn_entity");
   return opcion.shape;
 })();
+
+/** La raíz del repo BUSCÁNDOLA hacia arriba, no contándola con `../..`.
+ *
+ *  Este test lee el espejo Python, que vive FUERA de `nefan-core`, y el salto
+ *  fijo se rompió en cuanto el fichero dejó de estar donde el autor lo contó:
+ *  Stryker copia la batería a `nefan-core/.stryker-tmp/sandbox-XXXX/`, un nivel
+ *  más hondo, así que `../../ai_server` caía en `.stryker-tmp/ai_server` y el
+ *  dry-run moría con ENOENT. No falló el test: falló el módulo ENTERO — la
+ *  corrida 33790710680 dejó `contrato-escena` SIN INFORME (290 mutantes sin
+ *  medir) y salió en rojo, y nada lo dijo hasta el reparto, porque la mutación
+ *  no corre por PR. Buscar la raíz sobrevive a cualquier profundidad. */
+function raizDelRepo(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 10; i++) {
+    if (existsSync(join(dir, "ai_server")) && existsSync(join(dir, "nefan-core"))) return dir;
+    const arriba = dirname(dir);
+    if (arriba === dir) break;
+    dir = arriba;
+  }
+  throw new Error(
+    `no encuentro la raíz del repo subiendo desde ${dirname(fileURLToPath(import.meta.url))}: ` +
+      `busco un directorio que tenga a la vez ai_server/ y nefan-core/`,
+  );
+}
 
 describe("entity-vocabulary · las dos puertas cogen EL MISMO objeto", () => {
   it("`name` es el mismo schema en la escena y en el spawn", () => {
@@ -65,7 +91,7 @@ describe("entity-vocabulary · las dos puertas cogen EL MISMO objeto", () => {
     const r = VocabularioDeEntity.name.safeParse("   ");
     assert.equal(r.success, false);
     if (!r.success) assert.equal(r.error.issues[0].message, MOTIVO_NAME_INVALIDO);
-    const python = readFileSync(new URL("../../ai_server/narrative_schemas.py", import.meta.url), "utf-8");
+    const python = readFileSync(join(raizDelRepo(), "ai_server", "narrative_schemas.py"), "utf-8");
     // El f-string de Python parte la frase en dos literales adyacentes; se
     // compara sin los saltos de línea ni las comillas del medio.
     const plano = python.replace(/"\s*\n\s*"/g, "");

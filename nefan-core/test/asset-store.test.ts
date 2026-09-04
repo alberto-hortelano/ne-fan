@@ -257,7 +257,21 @@ describe("registro e índice", () => {
     // Un hash sin forma de hash es 400: el prune borra `rutaDeBlob(kind,hash)`
     // con `rmSync recursive`, así que un nombre de directorio plausible o un
     // `../..` borrarían lo que no toca (medido por QA el 2026-09-03).
-    for (const hash of ["heroes", "../../fuera", "NOESUNHASH", "abc"]) {
+    //
+    // Los DOS anclajes se prueban con carga útil, no solo con basura: el
+    // `../../fuera` de arriba no lleva 16 hex, así que un `HASH_DE_ASSET` al
+    // que le falte el `^` lo rechaza IGUAL y el test no se entera. Los dos
+    // mutantes que sobrevivieron en la corrida 33790710680 eran exactamente
+    // esos anclajes, y no eran equivalentes: sin `^`, `../../fuera` + 16 hex
+    // pasa la validación y entra en una ruta que se borra con `rmSync`.
+    for (const hash of [
+      "heroes",
+      "../../fuera",
+      "NOESUNHASH",
+      "abc",
+      "../../fuera0123456789abcdef", // sin `^`: pasaría (el sufijo son 16 hex)
+      "0123456789abcdef/../../etc", // sin `$`: pasaría (el prefijo son 16 hex)
+    ]) {
       const r = await post("/assets", { hash, type: "surface", subtype: "surface", prompt: "p", size_bytes: 1 });
       assert.equal(r.status, 400, hash);
       assert.equal(db.findByHash(hash).length, 0, `${hash}: el 400 no deja fila`);
@@ -401,7 +415,13 @@ describe("arte de personaje en el índice (#376)", () => {
     // `heroes` es el nombre de la carpeta de hero-shots, que cuelga DENTRO de
     // la raíz de sheets: sin forma, una fila así hacía que el prune borrara la
     // carpeta entera dejando sus filas apuntando a nada (medido por QA).
-    for (const malo of ["heroes", "../../fuera", "no-es-un-hash"]) {
+    for (const malo of [
+      "heroes",
+      "../../fuera",
+      "no-es-un-hash",
+      "../../fuera0123456789abcdef",
+      "0123456789abcdef/../../etc",
+    ]) {
       assert.equal((await character({ hero_key: malo, hero: { prompt: "p", size_bytes: 1 } })).status, 400, malo);
       assert.equal(
         (await character({ hero_key: HERO, sheets: [{ hash: malo, prompt: "p", size_bytes: 1 }] })).status,

@@ -266,6 +266,53 @@ describe("plan de mutación · el reparto es alcanzable", () => {
     }
   });
 
+  it("ninguna batería sale del paquete: el sandbox de Stryker no copia a los vecinos", () => {
+    // La trampa que ya ha mordido TRES veces, y la tercera cerró una corrida
+    // entera. Stryker copia la batería a `nefan-core/.stryker-tmp/sandbox-XXXX/`
+    // —dos niveles más hondo— y NO copia a los hermanos del monorepo. Un salto
+    // relativo contado a mano (`../../ai_server`, `from "../../narrative-mcp/…"`)
+    // apunta entonces a un sitio que no existe, y no falla el test: falla el
+    // DRY-RUN, o sea el módulo entero, que sale SIN INFORME.
+    //
+    // Las tres: `fake-motor-contract` (labs/, #347), `contract-fixtures`
+    // (narrative-mcp/, mismo #347) y `entity-vocabulary` (ai_server/), esta
+    // última en la corrida 33790710680 — 290 mutantes sin medir y el reparto
+    // parado. Ninguna la vio nadie hasta que la corrida volvió en rojo, porque
+    // la mutación no corre por PR: es el sitio exacto donde hace falta candado
+    // y no prosa.
+    //
+    // Salir del paquete NO está prohibido: lo está el salto FIJO. Buscar la
+    // raíz hacia arriba sobrevive a cualquier profundidad, y ese es el arreglo
+    // (`raizDelRepo()` en test/entity-vocabulary.test.ts). Si un test tiene que
+    // saltar a mano, va a "excluidos" CON MOTIVO, como los otros dos.
+    const escapes = (src: string): string[] => {
+      const hallazgos: string[] = [];
+      for (const m of src.matchAll(/(?:from|import\()\s*"((?:\.\.\/){2,}[^"]*)"/g)) {
+        hallazgos.push(`import "${m[1]}"`);
+      }
+      for (const m of src.matchAll(/new URL\(\s*"((?:\.\.\/){2,}[^"]*)"/g)) {
+        hallazgos.push(`new URL("${m[1]}", import.meta.url)`);
+      }
+      if (src.includes("import.meta.url") && /"\.\.",\s*"\.\."/.test(src)) {
+        hallazgos.push(`join(…import.meta.url…, "..", "..")`);
+      }
+      return hallazgos;
+    };
+
+    for (const m of plan.modulos) {
+      for (const t of m.tests) {
+        const hallazgos = escapes(readFileSync(resolve(raiz, t), "utf8"));
+        assert.deepEqual(
+          hallazgos,
+          [],
+          `${nombre(m)}: "${t}" sale del paquete con un salto fijo (${hallazgos.join("; ")}). ` +
+            `Dentro del sandbox de Stryker esa ruta no existe y el módulo entero se queda SIN INFORME. ` +
+            `Búscala hacia arriba, o saca el test a "excluidos" con su motivo`,
+        );
+      }
+    }
+  });
+
   it("el cierre de runtime nunca selecciona más que el ingenuo", () => {
     // La selección parcial se apoya en descartar las aristas `import type`,
     // que TypeScript borra al compilar. Descartar aristas solo puede QUITAR

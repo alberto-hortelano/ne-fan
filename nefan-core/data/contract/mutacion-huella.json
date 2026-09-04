@@ -2,9 +2,9 @@
   "_comment": "GENERADO por `npm run mutacion -- repartir`. Las huellas (7 componentes hasheadas) de los supervivientes de la última corrida de cada fichero: es lo que deja que el delta diga qué es NUEVO, qué YA ESTABA y qué no tiene base. Se commitea a propósito — reports/ está gitignorado y mutate.ts borra el informe antes de correr. No lo edites a mano.",
   "ficheros": {
     "bridge/state-http/dispatch.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "7e0afca10661c20279a6c54da1796fcee4ae0a7c",
       "total": 43,
       "vivos": [],
@@ -12,18 +12,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/combat/attack-area.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "d0f35564b32223c9630b2802469e6c3034a6c153",
       "total": 33,
       "vivos": [],
@@ -31,18 +31,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/combat/combat-resolver.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "9a1a9e1b86ae3ea070131a97534a300eb02fec39",
       "total": 41,
       "vivos": [],
@@ -50,18 +50,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/combat/enemy-ai.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "21e199df423b319d0e54eedb1ad7cd6519e5e52b",
       "total": 216,
       "vivos": [
@@ -215,18 +215,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/combat/hostiles.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "12113ca90a6c2247d950beddd692c00b0a2958f3",
       "total": 9,
       "vivos": [
@@ -236,12 +236,12 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/contract/model-io/physics.ts": {
@@ -400,10 +400,32 @@
         "#389"
       ]
     },
+    "src/contracts/asset-store.ts": {
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
+      "blob": "a9179ddccb1ca89310efe685b0937eeb28a60ed1",
+      "total": 9,
+      "vivos": [
+        "69447c90d640dcb4",
+        "9ba628f8ebfcff80"
+      ],
+      "nuevos": [],
+      "resueltos": 0,
+      "base": "sin base",
+      "duenos": [
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
+      ]
+    },
     "src/contracts/http.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "2b7b8f089a7d3d2b9c9d7b9a91d136407f0717c5",
       "total": 60,
       "vivos": [],
@@ -411,18 +433,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/contracts/sprite-census.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "ea0d2a795adc3d2a75544ff3273d88135677f4a4",
       "total": 7,
       "vivos": [],
@@ -430,18 +452,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/contracts/sprite-forge.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "3bff24118fc2a7a61ffc795d2d1690131150d693",
       "total": 64,
       "vivos": [
@@ -458,18 +480,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/plugins/dsl/deep-equal.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "ce633f56a2c12b2e3d88be2f90a1f62a5639e33c",
       "total": 59,
       "vivos": [
@@ -497,18 +519,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/plugins/dsl/effects.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "0dc0f48112b8b973127a4738dfe404059a78e938",
       "total": 96,
       "vivos": [
@@ -532,18 +554,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/plugins/dsl/errors.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "035b02e90605d1920b948ed84364ca1ab6c66f87",
       "total": 2,
       "vivos": [
@@ -553,18 +575,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/plugins/dsl/evaluate.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "a6627cc5a5ecf7a5c733a815e6d316a74b40812b",
       "total": 68,
       "vivos": [
@@ -587,18 +609,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/plugins/dsl/paths.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "b2b680b5456a892b3109aa1a2be6b2ce797e9cfd",
       "total": 437,
       "vivos": [
@@ -777,18 +799,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/plugins/dsl/predicates.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "cb9d089b0e77ef9ba95585448cf2aaf78d81701b",
       "total": 106,
       "vivos": [
@@ -820,18 +842,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/plugins/dsl/values.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "720d5f19166ea6841b2232ddfd2c03a02bf2a6b0",
       "total": 594,
       "vivos": [
@@ -1004,37 +1026,37 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/protocol/status-labels.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
-      "blob": "b31ccfdd5518f1f3cdc7ec1faa9ad98327cd836e",
-      "total": 160,
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
+      "blob": "5e217bda049b9617f0a3b50b6564be4e18572420",
+      "total": 162,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/protocol/status-reparto.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "4aa10b071c3064a63bbe895a2d7424208b247311",
       "total": 18,
       "vivos": [],
@@ -1042,18 +1064,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/aim.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "ffb471a2f08215c0feae71b6332df2ab5c287f00",
       "total": 131,
       "vivos": [
@@ -1106,18 +1128,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/collision.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "8bfb75dc76fb83e03e77e836c4e3d69e87b3061e",
       "total": 558,
       "vivos": [
@@ -1337,18 +1359,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/derive.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "2d400c36e608b73e9243ff47adab2070bc0e2f5b",
       "total": 280,
       "vivos": [
@@ -1413,20 +1435,20 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "incomparable",
+      "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/footprint.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "a3be0a71b743af010cd3e2e20779b59619f46213",
       "total": 227,
       "vivos": [
@@ -1587,18 +1609,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/fps-ambience.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "abaef4591b0c52ff0ee976971561d92197147770",
       "total": 172,
       "vivos": [
@@ -1665,18 +1687,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/fps-detail.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "7d1baa9bb44e5d11bfc53db70f28855e906c770f",
       "total": 539,
       "vivos": [
@@ -2036,18 +2058,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/fps-interior.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "28babc2cab50a9583da8651c62ab8d0d8bad9d22",
       "total": 181,
       "vivos": [
@@ -2145,18 +2167,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/fps-relief.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "b9a528fa85e2e7253017e57044b78f6c762fa887",
       "total": 224,
       "vivos": [
@@ -2271,18 +2293,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/fps-spec.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "f0fd225f0aaacbdd8281d2ba122d4281660cbaea",
       "total": 309,
       "vivos": [
@@ -2401,18 +2423,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/greybox.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "1be47f8f7b1ec4da89e1f9c6074e5b1d113e4d45",
       "total": 121,
       "vivos": [
@@ -2506,18 +2528,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/ground-collision.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "8dbe8529fe3663bba3e8e196fee010d3728ff8c5",
       "total": 166,
       "vivos": [
@@ -2549,20 +2571,20 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "incomparable",
+      "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/ground-prims.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "09dbae0d67e1144b2e67db64a74ccbdc3971a8ba",
       "total": 224,
       "vivos": [
@@ -2687,18 +2709,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/ground.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "e27e94ea69071b21d0bab5ec2862bb51238267a2",
       "total": 117,
       "vivos": [
@@ -2730,18 +2752,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/palette.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "b22db38c71920620dc10eac18bf827fb511ef689",
       "total": 78,
       "vivos": [
@@ -2818,37 +2840,37 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/plan-collision.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "d627b73fb1c6987cfe3b3e3b308ce126c762908d",
       "total": 38,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "incomparable",
+      "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/scatter.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "7139d5b2cc6c23fcc01361bff2c5c35dc5734c0d",
       "total": 1040,
       "vivos": [
@@ -3444,18 +3466,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/time-of-day.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "fa974b06a97395cd9c8c765c3b0924e3f3f0fb4f",
       "total": 15,
       "vivos": [],
@@ -3463,18 +3485,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/vegetation.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "0c92c1baf27e6db19810b30dd01ff4851c3fcad9",
       "total": 111,
       "vivos": [
@@ -3517,18 +3539,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/volume-metrics.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "d08af1088a041b3d084d6aa979155ae974195d9c",
       "total": 183,
       "vivos": [
@@ -3584,18 +3606,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/blueprint/volumes.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "6438b51409ebc98612656605424e9934ff2fa628",
       "total": 375,
       "vivos": [
@@ -3702,18 +3724,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/greybox/common.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "3e9de874f6e7f144cbd5bb2420b4b585a6fcfa6f",
       "total": 22,
       "vivos": [
@@ -3724,20 +3746,20 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "incomparable",
+      "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/greybox/surfaces.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "6f579e8e09abfc53aa02cea69cf91ae7f823f9e7",
       "total": 516,
       "vivos": [
@@ -3831,18 +3853,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/greybox/volume-prims.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "d0dad43ee8393886f17f05455ab29acd7cfb96d5",
       "total": 795,
       "vivos": [
@@ -4386,43 +4408,46 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/scene-normalize.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
-      "blob": "77e40aa6518c79608f46535e3b311756b94f1f66",
-      "total": 229,
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
+      "blob": "9e9db4fcf7e1d433c21dcb5ed0d75c4728bf9f25",
+      "total": 231,
       "vivos": [
-        "014673a268b67937",
-        "9185e78fe8431a9f",
-        "a9edf5144e118df9",
-        "e7e7a62b85fe04b9",
-        "f150a5de8c5978d2"
+        "09985c505fbffbf3",
+        "09ff9efff7b420e1",
+        "4c4c51e60c5e26e2",
+        "604cb1b3317907ea",
+        "b611f14c161a5def",
+        "baed1ad6df15ef15",
+        "bc206eb2b192f595",
+        "d8f092c214bfde17"
       ],
       "nuevos": [],
       "resueltos": 0,
       "base": "incomparable",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/scene/tile-plan.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "0e10b845020d7b24f5818bbda0da75024021c04f",
       "total": 82,
       "vivos": [],
@@ -4430,43 +4455,50 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/session/entidades-del-tile.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
-      "blob": "e3f9b2acae4151c2c3c7c2c0768b25fd6da86aa0",
-      "total": 139,
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
+      "blob": "f17f192fa4282cbc0e3b469fdc66309bd16eef29",
+      "total": 121,
       "vivos": [
-        "14e10384f768aba3",
-        "2adc3f8f9351045e",
-        "88439336c9e3a850",
-        "b3173dd96e75f0e9",
-        "faa73a2da24cbd57"
+        "23ea6d5704316c61",
+        "4446750150d1f508",
+        "4f66d75c2593c539",
+        "4f9a7e646826ef10",
+        "514500259ec522e3",
+        "53a6263c2a6dee14",
+        "8a36058083b752b1",
+        "a8dd50f772e4f580",
+        "d39f4a9596b42806",
+        "e8241ce9ecb03753",
+        "edcc57d0a2bdcb7a",
+        "fef36b02e2bbd5e6"
       ],
       "nuevos": [],
       "resueltos": 0,
       "base": "incomparable",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/session/entrada.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "2cdaa8d263ea59b3e90d95e2848991dc3523bf4c",
       "total": 32,
       "vivos": [],
@@ -4474,93 +4506,88 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/session/mundo-persistido.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
-      "blob": "a4321027f279b7b468aaaaf6c04124538a848e9b",
-      "total": 308,
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
+      "blob": "d2bade39c963e6da9329c60392e7193ced04c25a",
+      "total": 286,
       "vivos": [
-        "00d0c805ef9267e0",
-        "02e0d15b6ed622f8",
-        "08e48089141f8007",
-        "093930120b18b30a",
-        "0f144b827f224338",
-        "135f4c140324669a",
-        "18886301d1a154e6",
-        "27d5bb00a0d5d738",
-        "27f505b133a2d4d6",
-        "289e7c980a65ece5",
-        "2c0b49914d4c4f4f",
-        "2d2ef1dbc0228d6f",
-        "2ed182e9bc557974",
-        "3a7d31d3ce6fbfad",
-        "484e0eb3c657a309",
-        "4877fe3de0bf5f05",
-        "551b424894a8b2ec",
-        "5693eaac85872fd0",
-        "583cdae2880c04fd",
-        "59bbe2c4f6eb2369",
-        "687f8e48e5319f54",
-        "6919e1b1ff0d5e22",
-        "704cb1ca3c8553e6",
-        "8c8188edcecd51af",
-        "8f38172d18ee9454",
-        "8fdc212d8aefd383",
-        "990579722ab672fb",
-        "9b3c4cd0412cff7d",
-        "9de0cfc9c0160f82",
-        "a8734df2faa05c0f",
-        "aa160cfd1012fe8d",
-        "acd5a55e8fd7ea15",
-        "b136f2d625f0a649",
-        "b3d692588248c935",
-        "b6a1d3ffdb6e3e6f",
-        "b6e00c80cd32a4a7",
-        "b84c384f76b26504",
-        "b9ab3e4015759551",
-        "baad93078179857c",
-        "be7312aedb6b17a2",
-        "c02741a31890bc5b",
-        "cc396b69936f78f4",
-        "d1a21b81725afdf9",
-        "d3eeb766eccbb8ee",
-        "dbf143205f74f04d",
-        "dee589829a4d6afc",
-        "e5371f83f2126d2d",
-        "ed996473850ee2a0",
-        "f094484b9d76e2ed",
-        "f3568c6b2ab14144",
-        "f3c9e5f8e14756fd",
-        "f6a8e52e252b39cc",
-        "f89c4754f08180e2",
-        "fbe7ab4eb0b4b324",
-        "fc009dad5ee6dd71"
+        "0153c691f94828cb",
+        "030e7c6019fbfccf",
+        "0946b24094818c82",
+        "0a21855e8c281229",
+        "1568873c3ef49abe",
+        "184f6d0dcb877cb8",
+        "1b6e703dbdf1e7ce",
+        "1e839dca476820fe",
+        "27919303b4fec389",
+        "296db5d2b892aed2",
+        "2c5ac31c1d0f7f9c",
+        "2db7aeeea2ded91f",
+        "30cc93c4659ca175",
+        "311b15286bffcd6d",
+        "335aa0e50a4dcf89",
+        "3ac5773e22c9af82",
+        "425d35a6a99618f8",
+        "48be6b09e623cd32",
+        "4bee808209a1d93f",
+        "4c5f16af6b2c035d",
+        "56cf50ee92c07fb7",
+        "5cd9ed8f17052401",
+        "6056ed51eb6ad41c",
+        "6fac1616e977d7ed",
+        "70c68d63fa90da91",
+        "7a3a3997b7d4a03f",
+        "7fa1133b5575d3b4",
+        "864ac967d0cb1626",
+        "8be09244e7263ee8",
+        "92de856c78989b85",
+        "95926013f7e50e6c",
+        "a0904ff34f063208",
+        "a0ef13e05db103d9",
+        "a2cab115cfd3b3a9",
+        "b030f8beecdb039d",
+        "b0f3f081769c1ef8",
+        "b535887ab6681f64",
+        "b6280c48f0048a29",
+        "b7836e53b7fec928",
+        "bb4f4d31f73ca137",
+        "c5282b678960f88d",
+        "d6d1036382952636",
+        "da5e4105e5196e7a",
+        "e1341d31cb9e779b",
+        "e13d87009859a2ea",
+        "e5b6029c66a2c342",
+        "e97f1e7846dac5cc",
+        "ecf98278082f2802",
+        "edf027c59676545d",
+        "f16bd1f3aac51eb3"
       ],
       "nuevos": [],
       "resueltos": 0,
       "base": "incomparable",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/session/session-facets.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "d4aab3717b4ff69136c4d2e8c446351fa25d60a1",
       "total": 35,
       "vivos": [],
@@ -4568,18 +4595,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/simulation/mirada.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "e7bfdfa62a89e1a9182f355bcbdf2ddcb69b676e",
       "total": 58,
       "vivos": [
@@ -4588,42 +4615,42 @@
         "f1adab126fdda63b"
       ],
       "nuevos": [],
-      "resueltos": 2,
+      "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/simulation/paso-del-jugador.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "3e8421be64580db85a76b516698d1c270ae03c1c",
       "total": 46,
       "vivos": [
         "7995ea11c6914477"
       ],
       "nuevos": [],
-      "resueltos": 3,
+      "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/store/game-store.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "17c959566bee60c5b87464e1f47f5ce6e05381fc",
       "total": 69,
       "vivos": [
@@ -4673,18 +4700,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/store/reducers.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "38dcdc048e0ccf74813f58b6970514bf7f37c30f",
       "total": 91,
       "vivos": [],
@@ -4692,18 +4719,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/world-map/bootstrap-place.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "3e4522637bcebcc8fecb06708ac93b8da2dc3ff8",
       "total": 72,
       "vivos": [
@@ -4721,18 +4748,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/world-map/edges.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "4ccf764190a54f18b0d172540916a07c6792b850",
       "total": 50,
       "vivos": [
@@ -4745,18 +4772,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/world-map/exits.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "598294397148fab168f6590496cfd972e4f6ad58",
       "total": 21,
       "vivos": [
@@ -4764,20 +4791,20 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "sin base",
+      "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/world-map/map-triggers.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "d37e0bb41bdcf0eeb012a00ea2b999136e5b1413",
       "total": 33,
       "vivos": [
@@ -4786,20 +4813,20 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "incomparable",
+      "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/world-map/npc-director.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "73d1b3ceadcfeab2472d88a61ea40f73b457f11d",
       "total": 115,
       "vivos": [
@@ -4825,20 +4852,20 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "incomparable",
+      "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/world-map/place-anchor.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "366e9d15feef524fdc863d953571407af61f69eb",
       "total": 36,
       "vivos": [
@@ -4849,18 +4876,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/world-map/place-target.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "02cffcbf32ba35c752ed11c7382ae5237f398294",
       "total": 35,
       "vivos": [
@@ -4904,18 +4931,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/world-map/types.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "e57c2a7d7c41000d217878f5ee1b2102125eaae6",
       "total": 15,
       "vivos": [
@@ -4936,18 +4963,18 @@
       "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     },
     "src/world-map/world-map.ts": {
-      "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
-      "run": "33672454166",
-      "fecha": "2026-09-02T22:16:51.674Z",
+      "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
+      "run": "33790710680",
+      "fecha": "2026-09-03T20:40:17.833Z",
       "blob": "a6e6827d1239c4c964d102c05fd4adbdf191cb19",
       "total": 254,
       "vivos": [
@@ -5017,15 +5044,15 @@
         "f967071614110c0e"
       ],
       "nuevos": [],
-      "resueltos": 6,
+      "resueltos": 0,
       "base": "con base",
       "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
+        "#416",
+        "#415",
+        "#414",
+        "#412",
+        "#409",
+        "#406"
       ]
     }
   }
