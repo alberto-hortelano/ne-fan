@@ -15,7 +15,7 @@ import { buildFpsTileSpec, type FpsTileSpec } from "@nefan-core/src/scene/bluepr
 import type { TilePlan } from "@nefan-core/src/scene/tile-plan.js";
 import { buildLayout, type SurfaceLayout } from "@nefan-core/src/scene/greybox/surfaces.js";
 import type { Edge } from "@nefan-core/src/world-map/types.js";
-import { errors } from "../ui/error-log.js";
+import { AVISO_MUNDO, errors } from "../ui/error-log.js";
 import type { AtlasImage, FpsDebugCollision, FpsDebugView, FpsGl, FpsGlDebugState } from "./fps-gl.js";
 import type { AttackTelegraph, Cuerpos, PlayerView } from "./types.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
@@ -88,7 +88,13 @@ export class FpsRenderer {
         this.gl.setLookPitch(this.lookPitch);
       })
       .catch((err: unknown) => {
-        errors.push("render", "la vista fps no pudo cargar three.js", err);
+        // A LA PANTALLA (#306): sin three.js no hay mundo que pintar, y el
+        // fallo salta durante la carga del módulo —antes de que exista el
+        // título— así que hasta ahora solo llegaba a un panel que el
+        // interruptor de #246 mantiene apagado mientras el título manda.
+        errors.push("render", "la vista fps no pudo cargar three.js", err, {
+          alJugador: AVISO_MUNDO,
+        });
       });
   }
 

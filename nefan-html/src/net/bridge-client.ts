@@ -21,7 +21,7 @@ import type {
   ExitsChangedMessage,
 } from "@nefan-core/src/protocol/messages.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
-import { errors } from "../ui/error-log.js";
+import { AVISO_PARTIDA, AVISO_TRAMA_ILEGIBLE, errors } from "../ui/error-log.js";
 
 export type BridgeEvent =
   | "state_update"
@@ -136,7 +136,13 @@ export class BridgeClient {
       // mostly as a breadcrumb. Without this push the user sees only a
       // generic "disconnected" later, with no hint that the disconnect
       // came from an error rather than a clean close.
-      errors.push("bridge", `WebSocket onerror on ${this._url}`, event);
+      // Y A LA PANTALLA (#306): sin este socket no hay partida ninguna, y el
+      // aviso llega mucho antes que el muro de `bootstrap` —que espera cinco
+      // segundos a que el bridge conteste—. Es idempotente por su texto, que
+      // no cambia: el reintento cada 5 s no lo repite.
+      errors.push("bridge", `WebSocket onerror on ${this._url}`, event, {
+        alJugador: AVISO_PARTIDA,
+      });
     };
 
     this.ws.onmessage = (event) => {
@@ -146,7 +152,13 @@ export class BridgeClient {
         this.dispatch(msg);
       } catch (err) {
         const preview = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
-        errors.push("bridge", `Failed to parse WS frame: ${preview}`, err);
+        // Titular PROPIO y no el de «sin conexión» (#306): aquí el socket está
+        // abierto y contestando, así que decirle al jugador que no hay conexión
+        // sería mandarlo a mirar su red por un fallo que no es suyo. La partida
+        // está igual de rota, pero por otro motivo.
+        errors.push("bridge", `Failed to parse WS frame: ${preview}`, err, {
+          alJugador: AVISO_TRAMA_ILEGIBLE,
+        });
       }
     };
   }
@@ -200,7 +212,13 @@ export class BridgeClient {
     }
     if (!opts.quietOnDisconnect) {
       const type = typeof msg.type === "string" ? msg.type : "<no type>";
-      errors.push("bridge", `Dropped '${type}' frame: bridge not connected`);
+      // A la pantalla con el mismo titular que el `onerror` (#306): para quien
+      // juega, «se perdió lo que acabas de pedir porque no hay socket» y «el
+      // socket no abre» son la misma noticia, y colapsan en un aviso. El tipo
+      // de trama perdida sigue en el detalle.
+      errors.push("bridge", `Dropped '${type}' frame: bridge not connected`, undefined, {
+        alJugador: AVISO_PARTIDA,
+      });
     }
   }
 

@@ -20,7 +20,7 @@ import {
   type SalidaDelOverlay,
   type StatusRotulable,
 } from "@nefan-core/src/protocol/status-labels.js";
-import { marcarTitulo } from "./ui/titulo-manda.js";
+import { elTituloManda, marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
 import { FrontierManager } from "./world/frontier.js";
 import { crearFronteraDelJugador } from "./world/frontera-del-jugador.js";
@@ -50,7 +50,7 @@ import { TileLedger } from "./ui/tile-ledger.js";
 import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { GraphicsModeChip } from "./ui/graphics-mode.js";
-import { errors } from "./ui/error-log.js";
+import { AVISO_PERSONAJES, errors } from "./ui/error-log.js";
 import { EcoDelCombate } from "./ui/eco-del-combate.js";
 import { HablarConUnNpc } from "./ui/hablar-con-un-npc.js";
 import { paso } from "./ui/async-ui.js";
@@ -215,6 +215,11 @@ baseSheetsReady.catch((err) =>
     `set base ${BASE_MODEL} incompleto — personajes sin sprite. Las hojas no están en el repo: ` +
       `genéralas con sprite-forge, receta en docs/assets-de-personaje.md`,
     err,
+    // Y a la PANTALLA (#306): sin hojas los personajes salen en maniquí y
+    // hasta ahora nadie lo decía. Este mensaje llega DESPUÉS que los de las
+    // hojas sueltas y con el mismo titular, así que es el suyo el que se lee:
+    // es el que trae el recuento y el remedio.
+    { alJugador: AVISO_PERSONAJES },
   ),
 );
 /** El renderer del mundo, construido EAGER: es el único que hay, así que no
@@ -1585,6 +1590,30 @@ titleScreen.onVisibilityChange = (visible) => {
   // lectura para las dos, así que no pueden divergir.
   marcarTitulo(visible);
 };
+// EL ÚNICO PINTOR DE AVISOS (#306). Los fallos que saltan SOLOS durante el
+// arranque —three.js que no carga, las hojas base que no llegan, el socket de
+// la partida— solo existían en `#error-log`, que el interruptor de #246 apaga
+// mientras el título manda: un título normal encima de un cliente roto.
+//
+// El aviso es una PROYECCIÓN del mismo `errors.push` que lo registró (el texto
+// es su `message`), así que log y pantalla no pueden divergir. Aquí solo se
+// decide DÓNDE se lee:
+//
+//  - El título lo APUNTA siempre. No es doble verdad: es el mismo aviso, y los
+//    dos huecos no pueden verse a la vez porque `html[data-titulo="1"] #game-ui`
+//    esconde el muro mientras el título manda. Apuntarlo siempre es lo que
+//    salva el caso que da nombre al issue: los tres fallos saltan ANTES del
+//    primer `show()` del título, así que enrutar solo por el estado de ahora
+//    los pintaría en un muro que el título tapa medio segundo después.
+//  - Y si el título NO manda, además se pinta el muro, que es lo que el
+//    jugador tiene delante en ese momento.
+//
+// `setLoaderState` es una declaración de función: existe aquí aunque se lea
+// 130 líneas más abajo.
+errors.onAviso(({ titulo, mensaje }) => {
+  titleScreen.avisar(titulo, mensaje);
+  if (!elTituloManda()) setLoaderState("error", titulo, mensaje);
+});
 // El seam del banco de pruebas (`window.__nefan`), en UNA construcción y AQUÍ:
 // después de `titleScreen` y `narrativeClient`, que son los últimos
 // colaboradores que mira. Estaba en tres puntos de escritura separados por

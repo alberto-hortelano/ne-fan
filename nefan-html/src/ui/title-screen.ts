@@ -81,6 +81,12 @@ const UPLOAD_FOLDER_LABELS: Array<{ id: string; label: string }> = [
  *  mismo TTL que el chip de gráficos y el menú dev. */
 const ARM_TTL_MS = 5000;
 
+/** Cuántos avisos del registro caben a la vez en el hueco del home (#306).
+ *  Tres, y no «todos»: la pantalla del título no es el registro de errores
+ *  —ese sigue entero en `#error-log`— y una lista larga de líneas rojas se
+ *  deja de leer, que es el mismo modo de fallo que tenía guardar UNA sola. */
+const MAX_AVISOS = 3;
+
 export class TitleScreen {
   private root: HTMLDivElement;
   private content: HTMLDivElement;
@@ -88,6 +94,19 @@ export class TitleScreen {
    *  crea el constructor, así que buscarlo y comprobar que existe era la misma
    *  rama inalcanzable que esta tanda borró en `loadSceneFile`. */
   private readonly aviso = document.createElement("div");
+  /** Los avisos que le llegan al título desde el registro de errores (#306):
+   *  fallos que saltaron SOLOS, sin que el jugador pulsara nada. Viven aquí y
+   *  no en el DOM porque `renderHome` reescribe `content.innerHTML` entero, y
+   *  eso era literalmente el bug: el motivo se pintaba y el repintado
+   *  siguiente se lo llevaba. La clave es el TÍTULO —dos fallos de la misma
+   *  familia son una noticia— y se enseña el detalle del último, que en la
+   *  familia de los sprites es el agregado con el remedio. */
+  private readonly avisosDelJugador: { titulo: string; detalle: string }[] = [];
+  /** El motivo de la ÚLTIMA acción que falló (pulsar «Nueva partida» sin
+   *  bridge, borrar una partida que ya no estaba). Efímero por naturaleza:
+   *  pertenece a lo que se acaba de intentar, así que el repintado del home lo
+   *  descarta — al revés que los de arriba. */
+  private avisoDeAccion: { motivo: string; tono: "error" | "aviso" } | null = null;
   private resolve: ((action: TitleAction) => void) | null = null;
   /** Notifica show/hide al caller (main.ts oculta el chip de gráficos
    *  mientras el título está abierto). Cubre TODOS los cierres, incluido el
@@ -484,10 +503,52 @@ export class TitleScreen {
    *  distinguía y el color los volvía a juntar: quien ojea la pantalla ve el
    *  bloque rojo, no la frase. */
   private mostrarErrorEnHome(motivo: string, tono: "error" | "aviso" = "error"): void {
+    this.avisoDeAccion = { motivo, tono };
+    this.pintarAvisos();
+  }
+
+  /** Un aviso del registro de errores (#306): algo se rompió SOLO y el jugador
+   *  tiene que enterarse por el título, no por un panel que el interruptor de
+   *  #246 mantiene apagado. Lo llama el ÚNICO suscriptor de `errors.onAviso`
+   *  (main.ts), y es idempotente por título: el mismo fallo refresca su detalle
+   *  en su sitio en vez de apilar una copia. */
+  avisar(titulo: string, detalle: string): void {
+    const ya = this.avisosDelJugador.find((a) => a.titulo === titulo);
+    if (ya) {
+      ya.detalle = detalle;
+    } else {
+      this.avisosDelJugador.push({ titulo, detalle });
+      // El más viejo cae: los tres últimos son los que siguen siendo noticia.
+      if (this.avisosDelJugador.length > MAX_AVISOS) {
+        this.avisosDelJugador.splice(0, this.avisosDelJugador.length - MAX_AVISOS);
+      }
+    }
+    this.pintarAvisos();
+  }
+
+  /** Reescribe `#ts-error` ENTERO desde el estado: los avisos del registro más,
+   *  si lo hay, el motivo de la última acción fallida. Un solo sitio escribe
+   *  ese hueco, así que no hay dos redacciones que puedan divergir. No hace
+   *  nada si el home no está pintado (el hueco solo existe ahí): el aviso se
+   *  queda en `avisosDelJugador` y el siguiente `renderHome` lo saca. */
+  private pintarAvisos(): void {
     const el = this.content.querySelector<HTMLElement>("#ts-error");
     if (!el) return;
-    el.innerHTML = `<span style="color:${tono === "error" ? "#a44" : "#8a8"}">${escapeHtml(motivo)}</span>`;
-    el.style.display = "";
+    // `data-aviso` es el titular, y está para que el candado pueda afirmar
+    // CUÁL se lee y cuántos hay — no un `includes` sobre el texto entero.
+    const pegajosos = this.avisosDelJugador
+      .map(
+        (a) =>
+          `<div data-aviso="${escapeHtml(a.titulo)}" style="color:#a44;margin-bottom:4px">` +
+          `${escapeHtml(a.titulo)}: ${escapeHtml(a.detalle)}</div>`,
+      )
+      .join("");
+    const accion = this.avisoDeAccion
+      ? `<span style="color:${this.avisoDeAccion.tono === "error" ? "#a44" : "#8a8"}">` +
+        `${escapeHtml(this.avisoDeAccion.motivo)}</span>`
+      : "";
+    el.innerHTML = pegajosos + accion;
+    el.style.display = pegajosos || accion ? "" : "none";
   }
 
   private async renderHome(aviso?: string, tono?: "error" | "aviso"): Promise<void> {
@@ -512,7 +573,13 @@ export class TitleScreen {
     const sessionsEl = this.content.querySelector("#ts-sessions") as HTMLElement;
     const newBtn = this.content.querySelector("#ts-new") as HTMLButtonElement;
 
+    // El motivo de la acción anterior muere con el repintado; los avisos del
+    // registro NO —son fallos que siguen puestos— y `pintarAvisos` los saca
+    // del estado. Hasta esta tanda el hueco se quedaba vacío y con él el
+    // único sitio donde el jugador podía leer que el cliente estaba roto.
+    this.avisoDeAccion = null;
     if (aviso) this.mostrarErrorEnHome(aviso, tono);
+    else this.pintarAvisos();
 
     // EL ENGANCHE VA AQUÍ, en el mismo bloque síncrono que pinta el botón, y
     // no después del `await` de abajo (#181): entre pintar y enganchar había

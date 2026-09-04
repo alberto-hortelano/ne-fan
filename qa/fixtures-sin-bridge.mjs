@@ -76,9 +76,18 @@ async function waitPort(port, ms) {
  *  la palabra «bridge» sale igual en un muro que manda a mirar al puerto
  *  equivocado. */
 async function muroCitaElSocket(page, ctx, fallos, etiqueta) {
+  // Se espera al muro DE BOOTSTRAP por su titular, no a «un muro cualquiera en
+  // rojo». Desde #306 el `onerror` del socket pinta el suyo un instante antes
+  // (a los ~0 ms, contra los 5 s que tarda el timeout de `createGameClient`):
+  // esperar por la clase `error` a secas mediría ese, y este candado dejaría de
+  // mirar el mensaje que #341 arregla.
   await ctx.waitFor(
-    `el fail-loud del bridge (muro de error) · ${etiqueta}`,
-    () => document.getElementById("narrative-loader")?.classList.contains("error") === true,
+    `el muro de arranque del bridge · ${etiqueta}`,
+    () =>
+      document.getElementById("narrative-loader")?.classList.contains("error") === true &&
+      (document.getElementById("narrative-loader-title")?.textContent ?? "").includes(
+        "No se pudo arrancar la partida",
+      ),
     20000,
   );
   const { detalle, socket } = await page.evaluate(() => ({
@@ -137,6 +146,31 @@ async function main() {
     // por «un botón que ponga Cerrar»: el título tiene el suyo y aparece al
     // instante, así que esa espera devolvía el control ~4 s antes de que el
     // bootstrap terminara y medía el juego a medio arrancar.
+    // Y ANTES que el muro del arranque, el aviso del SOCKET (#306). Es la otra
+    // mitad del canal: con el título todavía sin pintar no hay `#ts-error`
+    // donde escribir, así que el aviso va al muro — el sitio que el jugador
+    // tiene delante en ese instante. Sin esto, el cliente se queda cinco
+    // segundos mudo mientras el socket ya ha fallado.
+    const avisoDelSocket = await ctx
+      .waitFor(
+        "el aviso del socket llega al muro antes que el timeout del arranque",
+        () =>
+          (document.getElementById("narrative-loader-title")?.textContent ?? "").includes(
+            "Sin conexión con la partida",
+          )
+            ? { detalle: document.getElementById("narrative-loader-detail")?.textContent ?? "" }
+            : null,
+        4000,
+      )
+      .catch(() => null);
+    if (!avisoDelSocket) {
+      fallos.push(
+        "el fallo del socket no se dice: el jugador espera al timeout del arranque sin saber nada (#306)",
+      );
+    } else {
+      console.log(`· aviso del socket: "${avisoDelSocket.detalle.slice(0, 80)}"`);
+    }
+
     await muroCitaElSocket(page, ctx, fallos, "sin bridge");
     await page.screenshot({ path: join(SHOTS, "sin-bridge-01-error-de-arranque.png") });
     await page.evaluate(() => document.getElementById("narrative-loader-dismiss")?.click());
