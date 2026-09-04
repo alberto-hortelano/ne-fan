@@ -496,6 +496,42 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
     );
   });
 
+  it("coverageAnalysis no puede prometer un filtrado que el runner tira a la basura", () => {
+    // MEDIDO EL 2026-09-04, y el resultado es que aquí no hay palanca: con
+    // `testRunner: "command"` Stryker ACEPTA `perTest`, lo imprime en el log
+    // ("command test runner with \"perTest\" coverage analysis") y luego lo
+    // ignora, sin un solo aviso. El runner de comando devuelve UN test
+    // sintético ("All tests") y ningún `mutantCoverage`, así que
+    // `TestCoverage.hasCoverage` es false y el planificador cae en su rama
+    // "no coverage information exists, all tests need to run"; su `mutantRun`
+    // ni siquiera lee el `testFilter` que le llega. El propio `stryker init`
+    // lo sabe y escribe `coverageAnalysis: "off"` cuando el runner es command.
+    //
+    // El experimento: 4 módulos (combat-resolver, serialize-llm,
+    // state-http-dispatch, npc-director), dos brazos emparejados e
+    // intercalados y un tercero con "all". Los 409 mutantes salieron
+    // IDÉNTICOS uno a uno —id, mutador, línea, columna y estado— y con
+    // `coveredBy` en cero en los tres brazos; el reloj no se movió fuera del
+    // ruido (combat-resolver 22,7 s de media con "off" contra 23,0 s con
+    // "perTest", n=5 y n=5, con el signo cambiando entre parejas).
+    //
+    // Por qué es un candado y no una nota: un no-op silencioso es PEOR que no
+    // tocarlo. Quien lo ponga leerá un cambio donde no hay ninguno, y la
+    // siguiente medida se atribuirá a una palanca que nunca se accionó. La
+    // palanca de verdad exige cambiar de runner (`@stryker-mutator/tap-runner`
+    // filtra por FICHERO de test y sí reporta cobertura), y eso es otra tarea
+    // con otro riesgo: ahí el score sí puede moverse.
+    const base = leer("stryker.config.json") as { coverageAnalysis?: string; testRunner?: string };
+    if (base.testRunner !== "command") return; // otro runner, otra conversación: este candado no opina
+    assert.equal(
+      base.coverageAnalysis,
+      "off",
+      `coverageAnalysis: "${base.coverageAnalysis}" con testRunner "command" NO filtra nada — Stryker lo acepta ` +
+        `sin avisar y sigue corriendo la batería entera por mutante. Si quieres el filtrado de verdad, ` +
+        `hay que cambiar de test runner (ver la medida del 2026-09-04 en docs/agents/2026-09-05-dos-velocidades/)`,
+    );
+  });
+
   it("`npm run mutate` corre el plan, no un config suelto", () => {
     const scripts = leer("package.json").scripts as Record<string, string>;
     assert.match(
