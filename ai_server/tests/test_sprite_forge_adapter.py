@@ -25,7 +25,7 @@ Era la cuarta copia del contrato, y la única que nadie comparaba con nada.
 
 Requieren fastapi (TestClient); sin ella se saltan.
 
-Ejecutar con: python3 -m unittest discover -s ai_server/tests -v
+Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_server/tests -v
 """
 
 import importlib.util

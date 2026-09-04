@@ -1,7 +1,7 @@
 """Tests del DevApiCache: gating por enabled, roundtrip multi-blob,
 persistencia del estado y namespacing de claves derivadas.
 
-Ejecutar con: python3 -m unittest discover -s ai_server/tests -v"""
+Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_server/tests -v"""
 
 import asyncio
 import sys

@@ -5,7 +5,7 @@ acotado, base clay reproducible byte a byte (la caché depende de esos bytes),
 prompt con las reglas anti-fragmentación, feather sin negro (regresión del bug
 AFFINE) y hints con serialización canónica estable.
 
-Ejecutar con: python3 -m unittest discover -s ai_server/tests -v
+Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_server/tests -v
 (sin red: el generador no se instancia — solo las funciones puras)."""
 
 import io

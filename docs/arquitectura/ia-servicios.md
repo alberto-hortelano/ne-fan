@@ -54,6 +54,42 @@ gana; **`--cache`/`--archivo` NO se mueven con ella**, así que al purgar un ín
 decir las dos mitades o el script mirará el `cache/` del checkout. El veredicto del arranque nombra
 las dos: qué índice rechaza y qué almacén archivar.
 
+**`NEFAN_SPEND_DIR` — la misma palanca para el ledger de gasto** (#392). Dónde escribe
+`ai_server/spend_tracker.py`: por defecto `cache/spend/` del checkout, y con la variable el
+directorio que se le diga (absoluta tal cual, relativa contra la raíz del repo; **puesta pero en
+blanco es fail-loud**). Existe porque los tests del adaptador de sprite-forge hacen POST a
+`/skin_sprite_sheet` contra un forge de mentira, y ese camino llama a `SPEND.add` con el `cost_usd`
+de la fixture: **43 eventos y $10,32 de gasto INVENTADO por corrida**, en el mismo fichero que se
+mira para decidir si se sigue gastando.
+
+Cuando se descubrió, el ledger llevaba **desde el 2026-08-24 siendo 95 % ruido**: de sus 1616
+eventos y $768,58, **1429 eventos y $731,04 eran de la suite** — 240 ($57,60) de la fixture viva y
+1189 ($673,44) de la fixture anterior (commit `a31a6f4`, que pedía `prompt="un herrero"` a
+`/skin_sprite_sheet` desde el propio test). El gasto REAL era **$37,54** — con una salvedad que se
+escribe aquí para que el número no se congele sin ella: dentro de esos 187 eventos quedan **4 con el
+prompt literal `x` ($0,96)** que huelen a sondeo manual y NO se retiraron, porque no estaban
+autorizados y porque la herramienta se niega a usar un criterio de menos de 8 caracteres. O sea que
+$37,54 es el techo del gasto real, no su valor exacto.
+
+Los dos lotes se retiraron a `archivo/cache/spend/`, cada uno a su fichero, con
+`ai_server/tools/archivar_gasto_de_test.py` (dry-run por defecto, nunca borra, se niega a duplicar en
+el archivo). **Los dos criterios seleccionan por IGUALDAD** contra las formas que compone
+`remote_generation.py` (`hero: <prompt>`, `skin <anim>: <prompt>`), nunca por `contains`: con
+`contains` se barría arte real, como `hero: un herrero de pelo cano y delantal de cuero quemado`. Lo
+que cambia entre los dos es de dónde sale el prompt — derivado de la fixture viva, o declarado con
+procedencia y ventana de fechas comprobada para las retiradas.
+
+```bash
+NEFAN_SPEND_DIR=$(mktemp -d) python -m unittest discover -s ai_server/tests
+```
+
+Es la línea que corre el CI (`.github/workflows/ci.yml`), y **olvidarla no es verde**: a diferencia
+de `NEFAN_MANIFEST_DB`, aquí la variable sola no bastaba —una suite sin ella pasaba en verde
+ensuciando el ledger—, así que `SpendTracker.__init__` se **niega** a construirse sobre la ruta real
+cuando `unittest` está en `sys.modules`, y dice el remedio. Olfateo medido: con el stack de
+producción (fastapi + starlette + httpx + pydantic + numpy + PIL, y `routers.remote_generation`
+importado) `unittest` **no** está cargado, y pytest no está instalado.
+
 ## Modelos de IA y que hacen
 
 | Modelo | Uso | Donde |
