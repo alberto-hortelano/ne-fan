@@ -14,7 +14,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from spend_tracker import ENV_SPEND_DIR, RAIZ_REPO, RUTA_REAL, SpendTracker, raiz_del_ledger  # noqa: E402
+from spend_tracker import (  # noqa: E402
+    ENV_SPEND_DIR,
+    RAIZ_REPO,
+    RUTA_REAL,
+    SpendTracker,
+    parece_ledger_de_verdad,
+    raiz_del_ledger,
+)
 
 
 class SpendTrackerTest(unittest.TestCase):
@@ -84,6 +91,33 @@ class LedgerRealFueraDeTestTest(unittest.TestCase):
         self.assertNotEqual(str(disfraz), str(RUTA_REAL))
         with self.assertRaises(RuntimeError):
             SpendTracker(disfraz)
+
+    def test_el_ledger_de_OTRO_checkout_tambien_revienta(self):
+        """La negativa es por FORMA, no por checkout (hallazgo H2 de QA).
+
+        `RUTA_REAL` sale del `__file__` del módulo que corre, así que desde un
+        worktree el ledger del checkout principal no era «el real» para nadie:
+        `NEFAN_SPEND_DIR=/home/al/code/ne-fan/cache/spend` se construía sin
+        quejarse y la suite le metía 43 eventos. En esta casa se trabaja en
+        worktrees a diario y las rutas absolutas se copian entre terminales.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            otro = Path(tmp) / "otro-checkout" / "cache" / "spend"
+            otro.mkdir(parents=True)
+            self.assertNotEqual(otro.resolve(), RUTA_REAL)
+            with self.assertRaises(RuntimeError) as ctx:
+                SpendTracker(otro)
+            self.assertIn("OTRO checkout", str(ctx.exception))
+            self.assertIn(ENV_SPEND_DIR, str(ctx.exception))
+
+    def test_la_forma_es_cache_barra_spend_y_nada_mas(self):
+        """Ni de menos (un `spend/` suelto no es un ledger) ni de más: lo que se
+        rechaza es exactamente `…/cache/spend`, que es como lo compone
+        `raiz_del_ledger`. Un `mktemp -d` no puede acabar así."""
+        self.assertTrue(parece_ledger_de_verdad(Path("/x/cache/spend")))
+        self.assertFalse(parece_ledger_de_verdad(Path("/x/spend")))
+        self.assertFalse(parece_ledger_de_verdad(Path("/x/cache/spends")))
+        self.assertFalse(parece_ledger_de_verdad(Path("/tmp/tmpab12cd34")))
 
     def test_un_temporal_se_construye_sin_quejarse(self):
         with tempfile.TemporaryDirectory() as tmp:

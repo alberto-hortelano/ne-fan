@@ -64,11 +64,30 @@ def raiz_del_ledger(env: Mapping[str, str] | None = None) -> Path:
     return ruta if ruta.is_absolute() else (RAIZ_REPO / ruta)
 
 
+def parece_ledger_de_verdad(root: Path) -> bool:
+    """¿Este directorio tiene FORMA de ledger de gasto de un checkout de ne-fan?
+
+    O sea: `…/cache/spend`. La comparación con `RUTA_REAL` sola no bastaba, y lo
+    encontró QA: `RUTA_REAL` sale del `__file__` del `spend_tracker.py` que se
+    está ejecutando, así que desde un worktree —donde se trabaja a diario en
+    esta casa— `NEFAN_SPEND_DIR=/home/al/code/ne-fan/cache/spend` apuntaba al
+    ledger de VERDAD y no era «el real» para nadie. Medido: la suite le metía
+    43 eventos. La negativa cubría el olvido; no cubría el copiado de una ruta
+    absoluta desde otro terminal o desde un documento.
+
+    Por la forma, en cambio, están cubiertos todos los checkouts a la vez, y no
+    hay falso positivo posible en un test: un `mktemp -d` nunca acaba en
+    `cache/spend`. Quien de verdad quiera un temporal con ese nombre exacto verá
+    el mensaje y sabrá por qué.
+    """
+    return root.name == "spend" and root.parent.name == "cache"
+
+
 class SpendTracker:
     def __init__(self, root: Path):
         root = Path(root)
-        # La garantía va en el tipo, no en la disciplina: bajo test el ledger
-        # real NO SE PUEDE NOMBRAR. Se rechaza en el constructor y no en `add`
+        # La garantía va en el tipo, no en la disciplina: bajo test un ledger de
+        # gasto NO SE PUEDE NOMBRAR. Se rechaza en el constructor y no en `add`
         # porque las LECTURAS también sobran — un `status()` sobre el ledger de
         # la máquina hace que el test dependa de cuánto se haya gastado hoy.
         #
@@ -78,10 +97,12 @@ class SpendTracker:
         # pytest no está instalado. Si algún día una dependencia importara
         # `unittest`, remote-gen se negaría a arrancar diciendo por qué: fallo
         # ruidoso, que es el que se arregla.
-        if root.resolve() == RUTA_REAL and "unittest" in sys.modules:
+        resuelto = root.resolve()
+        if "unittest" in sys.modules and (resuelto == RUTA_REAL or parece_ledger_de_verdad(resuelto)):
+            cual = "el de ESTE checkout" if resuelto == RUTA_REAL else "el de OTRO checkout (o worktree)"
             raise RuntimeError(
-                f"el ledger de gasto REAL ({RUTA_REAL / 'events.jsonl'}) no se abre desde un "
-                f"proceso de test: es dinero, y un test que lo escribe inventa gasto. "
+                f"un ledger de gasto REAL ({resuelto / 'events.jsonl'}, {cual}) no se abre desde "
+                f"un proceso de test: es dinero, y un test que lo escribe inventa gasto. "
                 f"Pon {ENV_SPEND_DIR} a un directorio de usar y tirar, p.ej.: "
                 f"{ENV_SPEND_DIR}=$(mktemp -d) python -m unittest discover -s ai_server/tests"
             )

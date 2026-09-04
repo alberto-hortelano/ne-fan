@@ -65,10 +65,19 @@ mira para decidir si se sigue gastando.
 Cuando se descubrió, el ledger llevaba **desde el 2026-08-24 siendo 95 % ruido**: de sus 1616
 eventos y $768,58, **1429 eventos y $731,04 eran de la suite** — 240 ($57,60) de la fixture viva y
 1189 ($673,44) de la fixture anterior (commit `a31a6f4`, que pedía `prompt="un herrero"` a
-`/skin_sprite_sheet` desde el propio test). El gasto REAL era **$37,54**. Los dos lotes se retiraron
-a `archivo/cache/spend/`, cada uno a su fichero, con `ai_server/tools/archivar_gasto_de_test.py`
-(dry-run por defecto, nunca borra; criterio derivado de la fixture viva y DECLARADO con procedencia
-y ventana de fechas para las retiradas).
+`/skin_sprite_sheet` desde el propio test). El gasto REAL era **$37,54** — con una salvedad que se
+escribe aquí para que el número no se congele sin ella: dentro de esos 187 eventos quedan **4 con el
+prompt literal `x` ($0,96)** que huelen a sondeo manual y NO se retiraron, porque no estaban
+autorizados y porque la herramienta se niega a usar un criterio de menos de 8 caracteres. O sea que
+$37,54 es el techo del gasto real, no su valor exacto.
+
+Los dos lotes se retiraron a `archivo/cache/spend/`, cada uno a su fichero, con
+`ai_server/tools/archivar_gasto_de_test.py` (dry-run por defecto, nunca borra, se niega a duplicar en
+el archivo). **Los dos criterios seleccionan por IGUALDAD** contra las formas que compone
+`remote_generation.py` (`hero: <prompt>`, `skin <anim>: <prompt>`), nunca por `contains`: con
+`contains` se barría arte real, como `hero: un herrero de pelo cano y delantal de cuero quemado`. Lo
+que cambia entre los dos es de dónde sale el prompt — derivado de la fixture viva, o declarado con
+procedencia y ventana de fechas comprobada para las retiradas.
 
 ```bash
 NEFAN_SPEND_DIR=$(mktemp -d) python -m unittest discover -s ai_server/tests

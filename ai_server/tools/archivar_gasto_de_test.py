@@ -14,27 +14,31 @@ Esto los saca del ledger. **Nunca borra**: los mueve a
 como manda la casa con todo lo pagado o de sesión. Si mañana resulta que uno
 era real, está ahí con su `t`, su `usd` y su `what`.
 
-**El criterio tiene dos mitades, y son distintas a propósito.**
+**El criterio tiene dos mitades. Las dos se seleccionan por IGUALDAD, nunca por `contains`.** Lo que cambia es
+de dónde sale el prompt.
 
-1 · **Fixture VIVA — derivada, nunca copiada.** Un evento es de test cuando su
-`what` CONTIENE el prompt con el que la suite pide arte hoy, y ese prompt se lee
-de las **fixtures canónicas**
-(`nefan-core/data/contract/fixtures/sprite-forge/*.json` → `…skin.prompt`), que
-son la respuesta REAL del servicio commiteada en el repo. Copiar aquí la cadena
-a mano habría sido la quinta copia del contrato y la única que nadie compara con
-nada — el mismo error que mataron esas fixtures. `contains` vale aquí porque el
-prompt vivo es largo y descriptivo.
+1 · **Fixture VIVA — derivada, nunca copiada.** El prompt se lee de las
+**fixtures canónicas** (`nefan-core/data/contract/fixtures/sprite-forge/*.json`
+→ `…skin.prompt`), que son la respuesta REAL del servicio commiteada en el repo.
+Copiar aquí la cadena a mano habría sido la quinta copia del contrato y la única
+que nadie compara con nada — el mismo error que mataron esas fixtures.
 
-2 · **Fixtures RETIRADAS — declaradas, fechadas y por igualdad EXACTA.** El
-prompt de una fixture anterior ya no está en el repo, así que no hay de dónde
-derivarlo: se DECLARA en `FIXTURES_RETIRADAS`, con su commit de procedencia y su
-ventana de fechas, y la ventana se COMPRUEBA antes de mover nada. Y se
-selecciona por igualdad exacta del `what` completo, no por `contains`: el prompt
-retirado (`un herrero`) es corto y genérico, y un `contains` se llevaría por
-delante cualquier `hero: un herrero de la aldea del norte` que un jugador
-hubiera pedido de verdad. Las tres formas exactas que produce el código de
-producción (`f"hero: {prompt[:50]}"`, `f"skin {anim}: {prompt[:44]}"`) sí son
-inconfundibles.
+2 · **Fixtures RETIRADAS — declaradas y fechadas.** El prompt de una fixture
+anterior ya no está en el repo, así que no hay de dónde derivarlo: se DECLARA en
+`FIXTURES_RETIRADAS`, con su commit de procedencia y su ventana de fechas, y la
+ventana se COMPRUEBA antes de mover nada.
+
+**Por qué igualdad y no `contains`, en las dos.** `contains` empezó siendo la
+regla del lote vivo, «porque el prompt es largo y descriptivo». QA lo midió y es
+falso: de 6 `what` construidos con la forma que emite producción, **3 se
+barrían**, entre ellos `hero: un herrero de pelo cano y delantal de cuero
+quemado` — un NPC perfectamente plausible en un mundo de fantasía. La defensa no
+puede ser que nadie llame a su herrero como la fixture. Así que las dos mitades
+comparan contra las formas EXACTAS que compone el código de producción
+(`f"hero: {prompt[:50]}"` y `f"skin {anim}: {prompt[:44]}"`, `remote_generation.py`):
+prefijo conocido, prompt truncado igual, y **final de cadena**. Un prompt de
+jugador que empiece igual y siga, no entra. Un `atlas d0: <el prompt>` tampoco,
+porque su prefijo no es ninguno de los dos.
 
 **DRY-RUN por defecto.** Imprime la tabla de lo que movería, el total que
 quedaría y qué se queda, y no toca nada. Solo con `--ejecutar` mueve.
@@ -56,6 +60,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from collections import Counter
 from datetime import date, datetime
@@ -176,16 +181,37 @@ def whats_retirados(lotes=FIXTURES_RETIRADAS) -> set[str]:
     return fuera
 
 
+#: Cómo compone `remote_generation.py` el `what` de cada evento de personaje.
+#: `(prefijo, recorte)`; el recorte es el `prompt[:N]` de esa llamada. El `anim`
+#: de la segunda es libre (walk, run, idle…), así que va como comodín ANCLADO:
+#: `skin <anim>: <prompt>` y se acabó la cadena.
+FORMAS_DEL_WHAT = (("hero: ", 50), ("skin ", 44))
+
+
+def formas_exactas(prompt: str) -> re.Pattern[str]:
+    """El patrón que casa EXACTAMENTE los `what` que produce la suite con este
+    prompt, y ninguno más.
+
+    Anclado a los dos extremos: sin `$`, `hero: un herrero de pelo cano y
+    delantal de cuero quemado` entraría, que es el hallazgo H1 de QA. Y con
+    prefijo obligatorio, `atlas d0: <prompt>` se queda fuera aunque contenga la
+    cadena entera: un atlas no lo pide ningún test de sprite-forge.
+    """
+    hero = re.escape(f"hero: {prompt[:50]}")
+    skin = r"skin [^:]*: " + re.escape(prompt[:44])
+    return re.compile(rf"^(?:{hero}|{skin})$")
+
+
 def es_de_test(evento: dict, prompts: list[str], retirados: set[str] | None = None) -> bool:
     what = evento.get("what")
     if not isinstance(what, str):
         return False
-    # Fixture retirada: igualdad EXACTA del `what` entero.
+    # Fixture retirada: igualdad EXACTA del `what` entero, declarado.
     if what in (retirados if retirados is not None else whats_retirados()):
         return True
-    # Fixture viva: el prompt es largo y descriptivo, así que `contains` basta
-    # y además sobrevive al recorte de `what[:120]`.
-    return any(p in what for p in prompts)
+    # Fixture viva: igualdad contra las formas que compone producción. Era
+    # `contains`, y barría arte real (H1).
+    return any(formas_exactas(p).match(what) for p in prompts)
 
 
 def comprobar_ventanas(pares, lotes=FIXTURES_RETIRADAS) -> None:
@@ -259,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"ledger:  {args.ledger}  ({len(pares)} eventos · ${_usd(pares):.2f})")
     print(f"archivo: {destino}")
-    print("criterio · fixture VIVA (contiene, DERIVADO de las fixtures canónicas de sprite-forge): "
+    print("criterio · fixture VIVA (igualdad con las formas de producción, DERIVADO de las fixtures canónicas): "
           + ", ".join(repr(p) for p in prompts))
     for lote in FIXTURES_RETIRADAS:
         print(f"criterio · fixture RETIRADA {lote['id']} (igualdad exacta, {lote['desde']}→{lote['hasta']}, "
@@ -282,6 +308,21 @@ def main(argv: list[str] | None = None) -> int:
         print("\nERROR: el ledger ha cambiado mientras se leía (¿remote-gen escribiendo?). "
               "Para los servicios y repite. No se ha tocado nada.", file=sys.stderr)
         return 1
+
+    # Fail-loud antes de escribir UNA: si la línea ya está en el archivo, este
+    # barrido ya se hizo (o alguien restauró el ledger de una copia), y
+    # duplicarla convierte el archivo en una fuente que no se puede sumar. Es lo
+    # que hacen las dos herramientas hermanas (`archivar_sheets_varados.py:204`,
+    # `arte_de_personaje.py:210`) y es el patrón de la casa para lo que toca
+    # dinero. Medido por QA sin esto: 426 líneas, 213 únicas.
+    if destino.is_file():
+        ya = set(destino.read_text(encoding="utf-8").splitlines())
+        repetidas = [linea for linea, _ in elegidos if linea in ya]
+        if repetidas:
+            print(f"\nERROR: {len(repetidas)} de las {len(elegidos)} líneas ya están en {destino}. "
+                  "Este lote ya se archivó; no se mueve nada. Usa --destino para un lote distinto.",
+                  file=sys.stderr)
+            return 1
 
     # 1 · Primero el archivo, y se relee para comprobar que está entero.
     destino.parent.mkdir(parents=True, exist_ok=True)

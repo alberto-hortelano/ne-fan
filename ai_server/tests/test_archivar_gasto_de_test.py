@@ -70,6 +70,45 @@ class CriterioTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             tool.prompts_de_test(FIXTURES_REALES / "no-existe")
 
+    def test_el_criterio_vivo_no_barre_arte_real(self):
+        """Los seis casos EXACTOS con los que QA tumbó el `contains` (H1).
+
+        Están construidos con la forma que emite producción
+        (`f"hero: {prompt[:50]}"`, `f"skin {anim}: {prompt[:44]}"`), y tres de
+        ellos se barrían: un NPC de jugador que empieza igual y sigue, su
+        locomoción, y uno que contiene el prompt en medio. El cuarto —un atlas—
+        también, y ni siquiera lo pide un test de sprite-forge.
+        """
+        vivo = tool.prompts_de_test()  # ['un herrero de pelo cano']
+        de_test = [
+            "hero: un herrero de pelo cano",
+            "skin walk: un herrero de pelo cano",
+            "skin run: un herrero de pelo cano",
+            "skin idle: un herrero de pelo cano",   # cualquier anim, no solo las tres vistas
+        ]
+        arte_real = [
+            "hero: un herrero de pelo cano y delantal de cuero quemad",
+            "skin walk: un herrero de pelo cano y delantal de cuero",
+            "hero: retrato de un herrero de pelo cano, forja de Roble",
+            "atlas d0: un herrero de pelo cano",
+            "hero: un herrero de pelo negro, forja de Robledo",
+            "hero: un herrero de la aldea del norte",
+        ]
+        for what in de_test:
+            self.assertTrue(tool.es_de_test({"what": what}, vivo), f"debería barrerse: {what}")
+        for what in arte_real:
+            self.assertFalse(tool.es_de_test({"what": what}, vivo), f"NO debería barrerse: {what}")
+
+    def test_las_formas_salen_del_prompt_y_se_truncan_como_produccion(self):
+        """`hero:` recorta a 50 y `skin <anim>:` a 44. Si el patrón no truncara,
+        un prompt largo no casaría con NINGÚN evento y el barrido saldría vacío
+        —silenciosamente— sobre un ledger sucio."""
+        largo = "un herrero de pelo cano con un delantal de cuero curtido y remaches de bronce"
+        pat = tool.formas_exactas(largo)
+        self.assertTrue(pat.match(f"hero: {largo[:50]}"))
+        self.assertTrue(pat.match(f"skin walk: {largo[:44]}"))
+        self.assertFalse(pat.match(f"hero: {largo}"))
+
 
 class FixturaRetiradaTest(unittest.TestCase):
     """El segundo criterio: lotes cuya fixture ya no está en el repo.
@@ -205,6 +244,18 @@ class BarridoTest(unittest.TestCase):
         self.assertEqual(self._correr("--ejecutar", "--destino", str(otro)), 0)
         self.assertFalse(self._destino.exists())
         self.assertEqual(len([x for x in otro.read_text().splitlines() if x.strip()]), len(self.DE_TEST))
+
+    def test_se_niega_a_duplicar_en_el_archivo(self):
+        """Con el ledger restaurado de una copia, el mismo lote al mismo destino
+        NO se escribe dos veces: se niega entero, como sus dos hermanas. Sin
+        esto QA midió 426 líneas con 213 únicas, y el guion decía `Archivados`
+        las dos veces."""
+        self.assertEqual(self._correr("--ejecutar"), 0)
+        antes = self._destino.read_text()
+        self.ledger.write_text(self.crudo, encoding="utf-8")   # alguien restaura de la copia
+        self.assertEqual(self._correr("--ejecutar"), 1)
+        self.assertEqual(self._destino.read_text(), antes, "el archivo no se toca")
+        self.assertEqual(self.ledger.read_text(), self.crudo, "el ledger tampoco")
 
     def test_nada_se_borra(self):
         antes = [x for x in self.crudo.splitlines() if x.strip()]
