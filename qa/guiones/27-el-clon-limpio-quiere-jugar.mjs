@@ -10,7 +10,7 @@
  *  que en un clon rechaza; el fallo llega DESPUÉS de `session.enter`, así que
  *  `unIntentoDeArrancar` (main.ts) lo caza, abandona la partida y vuelve al
  *  título con `aviso`. El aviso lo redacta `motivoDeSesionParaElJugador`
- *  (nefan-core/src/protocol/status-labels.ts), que no reconoce «faltan 10 de
+ *  (nefan-core/src/protocol/status-motivo.ts), que no reconoce «faltan 10 de
  *  10 hojas … HTTP 404 on /sprites/y_bot/…» y cae a su rama por defecto:
  *  «El servidor del juego no pudo completarlo; inténtalo de nuevo». El
  *  servidor no tiene nada que ver y reintentar no puede funcionar: la única

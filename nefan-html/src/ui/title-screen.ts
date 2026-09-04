@@ -18,7 +18,7 @@ import type {
 } from "@nefan-core/src/narrative/types.js";
 import type { NarrativeStatusDeJuego } from "@nefan-core/src/protocol/messages.js";
 import { CONFIG } from "@nefan-core/src/config.js";
-import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-labels.js";
+import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
 import {
   SUGGESTED_THEME_TAGS,
   styleCompatibleWithGame,

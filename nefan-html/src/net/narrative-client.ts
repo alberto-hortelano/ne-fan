@@ -17,7 +17,7 @@ import type {
   NarrativeStatusDeSesion,
 } from "@nefan-core/src/protocol/messages.js";
 import { repartirStatus } from "@nefan-core/src/protocol/status-reparto.js";
-import type { StatusRotulable } from "@nefan-core/src/protocol/status-labels.js";
+import type { StatusRotulable } from "@nefan-core/src/protocol/status-rotulo.js";
 
 export type GameInfo = GamesListedMessage["games"][number];
 export type StyleInfo = GamesListedMessage["styles"][number];
