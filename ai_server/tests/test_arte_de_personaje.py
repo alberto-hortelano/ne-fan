@@ -17,7 +17,7 @@ Lo que se fija:
   5. **Nunca se borra**: lo que no tiene procedencia se MUEVE, y un destino
      ocupado para el barrido entero antes de mover el primero.
 
-Ejecutar con: python3 -m unittest discover -s ai_server/tests
+Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_server/tests
 """
 
 import importlib.util

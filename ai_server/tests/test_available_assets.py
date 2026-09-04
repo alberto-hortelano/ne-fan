@@ -8,7 +8,7 @@ len(prompt) > 20) las 30 entradas eran TODAS prompts de inpaint de scene/plate
 Desde #199 el ÚNICO tipo reutilizable es `surface`: texture/model/sprite se
 fueron con el gpu-worker, que era su único productor.
 
-Ejecutar con: python3 -m unittest discover -s ai_server/tests -v"""
+Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_server/tests -v"""
 
 import sys
 import unittest

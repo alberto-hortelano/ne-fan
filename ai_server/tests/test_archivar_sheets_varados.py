@@ -17,7 +17,7 @@ Lo que se fija:
      arte en cada sitio es peor que no haber empezado.
   5. **Nunca se borra**: lo movido está entero en el archivo.
 
-Ejecutar con: python3 -m unittest discover -s ai_server/tests
+Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_server/tests
 """
 
 import importlib.util

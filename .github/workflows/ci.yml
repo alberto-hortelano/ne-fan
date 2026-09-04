@@ -130,4 +130,8 @@ jobs:
       # al menos sintácticamente válido — es código que se retoma cada pocos
       # meses cuando avanza la tecnología de IA.
       - run: python -m compileall -q ai_server labs
-      - run: python -m unittest discover -s ai_server/tests
+      # NEFAN_SPEND_DIR: el ledger de gasto (`cache/spend/events.jsonl`) es
+      # dinero, y la suite le añadía 43 eventos de gasto INVENTADO por corrida
+      # (#392). La variable lo desplaza a un temporal; olvidarla no es verde,
+      # `SpendTracker` se niega a construirse sobre la ruta real bajo test.
+      - run: NEFAN_SPEND_DIR=$(mktemp -d) python -m unittest discover -s ai_server/tests

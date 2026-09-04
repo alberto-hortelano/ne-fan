@@ -54,6 +54,33 @@ gana; **`--cache`/`--archivo` NO se mueven con ella**, así que al purgar un ín
 decir las dos mitades o el script mirará el `cache/` del checkout. El veredicto del arranque nombra
 las dos: qué índice rechaza y qué almacén archivar.
 
+**`NEFAN_SPEND_DIR` — la misma palanca para el ledger de gasto** (#392). Dónde escribe
+`ai_server/spend_tracker.py`: por defecto `cache/spend/` del checkout, y con la variable el
+directorio que se le diga (absoluta tal cual, relativa contra la raíz del repo; **puesta pero en
+blanco es fail-loud**). Existe porque los tests del adaptador de sprite-forge hacen POST a
+`/skin_sprite_sheet` contra un forge de mentira, y ese camino llama a `SPEND.add` con el `cost_usd`
+de la fixture: **43 eventos y $10,32 de gasto INVENTADO por corrida**, en el mismo fichero que se
+mira para decidir si se sigue gastando.
+
+Cuando se descubrió, el ledger llevaba **desde el 2026-08-24 siendo 95 % ruido**: de sus 1616
+eventos y $768,58, **1429 eventos y $731,04 eran de la suite** — 240 ($57,60) de la fixture viva y
+1189 ($673,44) de la fixture anterior (commit `a31a6f4`, que pedía `prompt="un herrero"` a
+`/skin_sprite_sheet` desde el propio test). El gasto REAL era **$37,54**. Los dos lotes se retiraron
+a `archivo/cache/spend/`, cada uno a su fichero, con `ai_server/tools/archivar_gasto_de_test.py`
+(dry-run por defecto, nunca borra; criterio derivado de la fixture viva y DECLARADO con procedencia
+y ventana de fechas para las retiradas).
+
+```bash
+NEFAN_SPEND_DIR=$(mktemp -d) python -m unittest discover -s ai_server/tests
+```
+
+Es la línea que corre el CI (`.github/workflows/ci.yml`), y **olvidarla no es verde**: a diferencia
+de `NEFAN_MANIFEST_DB`, aquí la variable sola no bastaba —una suite sin ella pasaba en verde
+ensuciando el ledger—, así que `SpendTracker.__init__` se **niega** a construirse sobre la ruta real
+cuando `unittest` está en `sys.modules`, y dice el remedio. Olfateo medido: con el stack de
+producción (fastapi + starlette + httpx + pydantic + numpy + PIL, y `routers.remote_generation`
+importado) `unittest` **no** está cargado, y pytest no está instalado.
+
 ## Modelos de IA y que hacen
 
 | Modelo | Uso | Donde |

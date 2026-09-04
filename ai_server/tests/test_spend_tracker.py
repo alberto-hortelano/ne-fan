@@ -1,7 +1,11 @@
 """Tests del SpendTracker (contador de gasto del panel de dev) y del endpoint
 agregado GET /dev/status.
 
-Ejecutar con: python3 -m unittest discover -s ai_server/tests -v"""
+Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_server/tests -v
+
+La variable no es adorno: sin ella este módulo no llega ni a importarse (#392).
+El ledger es dinero, y hasta hoy la suite le añadía 43 eventos de gasto
+inventado por corrida."""
 
 import sys
 import tempfile
@@ -10,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from spend_tracker import SpendTracker  # noqa: E402
+from spend_tracker import ENV_SPEND_DIR, RAIZ_REPO, RUTA_REAL, SpendTracker, raiz_del_ledger  # noqa: E402
 
 
 class SpendTrackerTest(unittest.TestCase):
@@ -53,6 +57,55 @@ class SpendTrackerTest(unittest.TestCase):
         other.add(0.03, "b", "gpu-worker")
         self.assertAlmostEqual(self.spend.total_usd(), 0.20, places=4)
         self.assertEqual(other.status()["call_count"], 2)
+
+
+class LedgerRealFueraDeTestTest(unittest.TestCase):
+    """El ledger real no se puede NOMBRAR desde un proceso de test (#392).
+
+    La garantía va en el constructor, no en la disciplina de quien escribe el
+    test: hasta hoy la suite entera pasaba VERDE mientras añadía 43 eventos y
+    $10,32 de gasto inventado al fichero que se mira para decidir si se sigue
+    gastando. Un test que se limitara a comprobar que nadie llama a `add` no
+    habría cazado eso, porque quien llamaba era producción.
+    """
+
+    def test_construir_sobre_la_ruta_real_bajo_test_revienta(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            SpendTracker(RUTA_REAL)
+        # El mensaje tiene que traer el REMEDIO: un fail-loud que no dice qué
+        # hacer se resuelve borrando el guardián.
+        self.assertIn(ENV_SPEND_DIR, str(ctx.exception))
+        self.assertIn(str(RUTA_REAL / "events.jsonl"), str(ctx.exception))
+
+    def test_la_ruta_real_disfrazada_tambien_revienta(self):
+        """`.resolve()` no es decorativo: `ai_server/../cache/spend` es la
+        misma carpeta, y sin resolver colaría."""
+        disfraz = RAIZ_REPO / "ai_server" / ".." / "cache" / "spend"
+        self.assertNotEqual(str(disfraz), str(RUTA_REAL))
+        with self.assertRaises(RuntimeError):
+            SpendTracker(disfraz)
+
+    def test_un_temporal_se_construye_sin_quejarse(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spend = SpendTracker(Path(tmp))
+            spend.add(0.24, "un herrero de pelo cano", "remote-gen")
+            self.assertAlmostEqual(spend.total_usd(), 0.24, places=4)
+
+    def test_raiz_del_ledger_lee_la_variable(self):
+        self.assertEqual(raiz_del_ledger({}), RUTA_REAL)
+        self.assertEqual(raiz_del_ledger({ENV_SPEND_DIR: "/tmp/nefan-ledger"}),
+                         Path("/tmp/nefan-ledger"))
+        # Relativa: contra la raíz del repo, no contra el cwd de quien arranca.
+        self.assertEqual(raiz_del_ledger({ENV_SPEND_DIR: "cache/otro"}),
+                         RAIZ_REPO / "cache" / "otro")
+
+    def test_variable_en_blanco_es_fail_loud(self):
+        """Puesta pero vacía NO es «sin override»: devolver la ruta real ahí
+        sería justo lo que la variable existe para evitar."""
+        for blanco in ("", "   ", "\t"):
+            with self.assertRaises(RuntimeError) as ctx:
+                raiz_del_ledger({ENV_SPEND_DIR: blanco})
+            self.assertIn(ENV_SPEND_DIR, str(ctx.exception))
 
 
 class DevStatusEndpointTest(unittest.TestCase):

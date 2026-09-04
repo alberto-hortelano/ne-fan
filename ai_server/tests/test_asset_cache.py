@@ -7,7 +7,7 @@ keep-list). Aquí queda lo que SIGUE siendo Python: el hashing (que no se
 porta a propósito — depende del str() de Python) y la escritura de blobs con
 registro duck-typed contra el índice.
 
-Ejecutar con: python3 -m unittest discover -s ai_server/tests -v
+Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_server/tests -v
 (sin dependencias fuera de stdlib; el cache vive en un tmpdir)."""
 
 import sys
