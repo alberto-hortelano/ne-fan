@@ -290,6 +290,47 @@ const INVARIANTES = [
     ],
   },
   {
+    // H2 de QA-E. El commit de PR-E dice que «el sello es lo que hace segura la
+    // fusión: `reunir` verifica cada informe contra el sha256 de SU parcial
+    // antes de mezclarlo». Esa frase no la defendía nadie: el candado del sello
+    // ejerce `repartir` y rompe `selloDeInforme`, no la llamada de dentro de
+    // `fusionar`. Sin ella, un informe suplantado entra en la fusión, sale en
+    // el artefacto único con SU sello dentro del manifiesto que la propia
+    // fusión acaba de fabricar, y de ahí a la huella commiteada: #420 reabierto
+    // por la puerta nueva.
+    nombre: "fusión · el sello de cada lote se comprueba ANTES de mezclar (#420 por la puerta nueva)",
+    mira: () => {
+      const dir = join(CORE, "reports", "lotes-ensayo");
+      rmSync(dir, { recursive: true, force: true });
+      // Un lote completo y honesto: el manifiesto lo escribe la herramienta.
+      siembraInforme();
+      manifiesta({ run: "999912", pedidos: E.id });
+      mkdirSync(join(dir, "plan-corrida"), { recursive: true });
+      const r = mutacion([
+        "lotes", "--ids", E.id, "--origen", "rango",
+        "--sha", E.tag, "--desde", E.anterior, "--run", "999912",
+      ]);
+      if (!r.ok) throw new Error(`lotes no escribió el plan:\n${r.salida}`);
+      writeFileSync(
+        join(dir, "plan-corrida", "plan-corrida.json"),
+        readFileSync(join(CORE, "reports", "plan-corrida.json"), "utf8"),
+      );
+      mkdirSync(join(dir, "informe-mutacion-1"), { recursive: true });
+      writeFileSync(join(dir, "informe-mutacion-1", "corrida.json"), readFileSync(CORRIDA, "utf8"));
+      // …y el informe se SUSTITUYE después de sellado, que es lo que deja un
+      // `local` corrido encima del artefacto del job.
+      soloInforme("suplantado");
+      writeFileSync(
+        join(dir, "informe-mutacion-1", `${E.id}.json`),
+        readFileSync(join(INFORMES, `${E.id}.json`), "utf8"),
+      );
+      return mutacion(["fusionar", "--entrada", "reports/lotes-ensayo"]).salida;
+    },
+    bien: (s) => /NO son los que midió la corrida 999912/.test(s) && /no casa con su propio manifiesto/.test(s),
+    porque: "sin ese guardia, un informe suplantado entra en el artefacto único y de ahí a la huella commiteada",
+    rompe: [MUT, `    const errores = verificaDescarga(parcial, presentes);`, `    const errores: string[] = [];`],
+  },
+  {
     nombre: "reloj · `mutate.ts` guarda los segundos de cada módulo, y no al final",
     // El cronómetro existía y moría con el log: sacar los de dos corridas costó
     // leer dos logs de 21.000 líneas a mano. Y se escribe DESPUÉS DE CADA

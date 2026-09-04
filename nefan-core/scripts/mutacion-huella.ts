@@ -752,6 +752,45 @@ export function fusionaCorrida(
     }
   }
 
+  // EL PLAN TAMBIÉN SE MIRA. Es el único documento que llega aquí sin sello
+  // —cada informe se comprueba con su sha256 y el veredicto entero sale de
+  // esto—, y un plan bien formado pero INCOHERENTE no lo paraba nadie: con
+  // `modulos_pedidos` recortado, un lote que muere deja de contar como pedido y
+  // la corrida sale COMPLETA con el tag adelantado; con `modulos_pedidos` vacío
+  // y cero informes, sale COMPLETA habiendo medido CERO módulos, que es el peor
+  // resultado posible del ciclo.
+  //
+  // Las dos listas del plan describen lo mismo, así que se exige que sean el
+  // MISMO conjunto. Con eso, «un lote sin noticias» y «COMPLETA» dejan de poder
+  // convivir: los módulos de un lote que no sube nada están en
+  // `modulos_pedidos` y no en `informes`, luego `veredictoDeCorrida` dice
+  // INCOMPLETA por construcción. La contradicción no se detecta — se hace
+  // inexpresable, que es lo que esta casa prefiere a un `if` que la vigile.
+  if (plan.modulos_pedidos.length === 0) {
+    throw new Error(
+      `el plan de la corrida ${plan.run_id} no pide medir NADA. Una corrida de cero módulos que ` +
+        `sale COMPLETA mueve el tag declarando medido todo lo que hay desde la anterior, sin haber ` +
+        `medido un solo mutante`,
+    );
+  }
+  const pedidos = new Set(plan.modulos_pedidos);
+  const enLoteYNoPedido = [...enLotes.keys()].filter((id) => !pedidos.has(id));
+  const pedidoYSinLote = plan.modulos_pedidos.filter((id) => !enLotes.has(id));
+  if (enLoteYNoPedido.length > 0 || pedidoYSinLote.length > 0) {
+    throw new Error(
+      `el plan de la corrida ${plan.run_id} se contradice: ` +
+        (enLoteYNoPedido.length > 0
+          ? `${enLoteYNoPedido.join(", ")} está en un lote y no en modulos_pedidos —si su lote muere, ` +
+            `nadie lo echa de menos y la corrida sale COMPLETA—`
+          : "") +
+        (enLoteYNoPedido.length > 0 && pedidoYSinLote.length > 0 ? "; " : "") +
+        (pedidoYSinLote.length > 0
+          ? `${pedidoYSinLote.join(", ")} se pide y no lo mide ningún lote, así que la corrida no ` +
+            `podría salir COMPLETA nunca`
+          : ""),
+    );
+  }
+
   const informes: InformeSellado[] = [];
   const visto = new Map<string, string>();
   for (const p of parciales) {

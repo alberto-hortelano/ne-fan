@@ -1069,10 +1069,19 @@ function fusionar(argv: readonly string[]): void {
       `  ${veredicto.completa ? "COMPLETA" : "INCOMPLETA"} — ${veredicto.porque}`,
   );
   if (caidos.length > 0) {
+    // La línea NO repite el veredicto: lo cita. Antes afirmaba «la corrida es
+    // INCOMPLETA» por su cuenta, y con un plan incoherente el mismo párrafo
+    // decía COMPLETA dos líneas más arriba — dos frases contradictorias en la
+    // misma salida, que se lee igual que un veredicto sin comprobar. Hoy la
+    // convivencia es imposible (`fusionaCorrida` exige que los lotes y
+    // `modulos_pedidos` sean el mismo conjunto), y aun así se deriva de
+    // `veredicto` en vez de afirmarse aparte: dos fuentes para el mismo hecho
+    // vuelven a divergir en cuanto una de las dos cambie.
     console.log(
       `  ⚠ ${caidos.length} lote(s) SIN NOTICIAS: ${caidos.map((l) => `${l.lote} (${l.modulos.join(", ")})`).join(" · ")}\n` +
-        `    No subieron nada. Sus módulos siguen PEDIDOS y sin informe, así que la corrida es ` +
-        `INCOMPLETA y el tag no se mueve — que es exactamente lo que tiene que pasar.`,
+        `    No subieron nada, y sus módulos siguen PEDIDOS y sin informe: por eso la corrida sale ` +
+        `${veredicto.completa ? "COMPLETA (¡y no debería!)" : "INCOMPLETA"} y el tag ` +
+        `${veredicto.mueveTag ? "SE MUEVE (¡y no debería!)" : "no se mueve"}.`,
     );
   }
   const salida = process.env.GITHUB_OUTPUT;

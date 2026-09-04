@@ -745,6 +745,43 @@ describe("lotes · se empaqueta por el RELOJ, y lo desconocido va solo", () => {
     assert.equal(suyo.margen, undefined, "un lote sin medida no tiene margen que enseñar");
   });
 
+  it("VARIOS módulos sin medida van cada uno en SU lote, no todos juntos en uno", () => {
+    // El caso que faltaba, y no es un detalle: con UN solo módulo sin medida,
+    // «va solo» y «van todos juntos» son la MISMA cosa, así que las once
+    // llamadas que había no podían distinguirlas. Es el mismo verde que cazó el
+    // guion en `costeDeLaMatriz` (mediana con dos jobs), en la función hermana
+    // y sobre la regla que hoy gobierna 17 de los 41 módulos: agrupados, los 17
+    // sin cronometrar —`contrato-escena` incluido— caerían en un solo job
+    // contra un timeout de 45 minutos, que es literalmente el fallo que motivó
+    // partir la corrida.
+    const sin = ["ai-client", "contrato-escena", "tile-edges"];
+    const lotes = empaqueta([m("caro", 1700), ...sin.map((id) => m(id))], 1800);
+    const deSinMedida = lotes.filter((l) => !l.medido);
+    assert.equal(deSinMedida.length, sin.length, "un lote POR MÓDULO sin cronometrar, no uno para todos");
+    for (const l of deSinMedida) {
+      assert.equal(l.modulos.length, 1, `el lote ${l.lote} lleva ${l.modulos.length} módulos sin medida`);
+    }
+    assert.deepEqual(
+      deSinMedida.flatMap((l) => l.modulos).sort(),
+      [...sin].sort(),
+      "y están todos: ninguno se pierde por el camino",
+    );
+  });
+
+  it("la totalidad se afirma: tantos lotes sin medida como módulos sin medida", () => {
+    // La relación, no una lectura a ojo del reparto. Si alguien juntara dos, o
+    // colara uno en un hueco, este número dejaría de casar.
+    for (const cuantos of [1, 2, 5]) {
+      const sin = Array.from({ length: cuantos }, (_, i) => m(`sin-medir-${i}`));
+      const lotes = empaqueta([m("a", 900), m("b", 800), ...sin], 1800);
+      assert.equal(
+        lotes.filter((l) => !l.medido).length,
+        cuantos,
+        `con ${cuantos} módulo(s) sin medida tienen que salir ${cuantos} lote(s) sin medida`,
+      );
+    }
+  });
+
   it("un lote de módulos sin medir NO es un lote de 0 segundos", () => {
     // El colapso que haría inútil todo lo anterior. Los dos lotes dicen
     // `segundos: 0`, así que por el número son indistinguibles: lo que los
@@ -900,6 +937,47 @@ describe("fusionar · `modulos_pedidos` sale del PLAN, nunca de los lotes que ll
     );
     assert.equal(c.informes.find((i) => i.modulo === "a")?.segundos, 1647);
     assert.equal(c.informes.find((i) => i.modulo === "b")?.segundos, undefined, "y la ausencia también");
+  });
+
+  // ── el plan es lo único que llega sin sello, así que se mira ──
+  it("un plan cuyo `modulos_pedidos` no cubre sus lotes se lanza: un lote muerto saldría COMPLETA", () => {
+    // El agujero que encontró QA. Con `apuntado` en el lote 2 y FUERA de
+    // `modulos_pedidos`, si el lote 2 muere nadie lo echa de menos: las dos
+    // listas casan, `veredictoDeCorrida` dice COMPLETA y el tag se adelanta
+    // declarando medido lo que nadie midió. Cada informe se comprueba con su
+    // sha256; el documento del que sale el veredicto entero, no se comprobaba.
+    const recortado: PlanDeCorrida = { ...PLAN, modulos_pedidos: ["a", "b"] };
+    assert.throws(() => fusionaCorrida(recortado, [parcial()], "f"), /\bc\b/);
+  });
+
+  it("un plan que pide un módulo que no mide ningún lote se lanza", () => {
+    // La otra dirección: la corrida no podría salir COMPLETA nunca, y eso es un
+    // plan roto, no una corrida incompleta.
+    const sobrante: PlanDeCorrida = { ...PLAN, modulos_pedidos: ["a", "b", "c", "fantasma"] };
+    assert.throws(() => fusionaCorrida(sobrante, [parcial()], "f"), /fantasma/);
+  });
+
+  it("un plan que no pide NADA se lanza: cero medido y el tag adelantado es el peor final", () => {
+    const vacio: PlanDeCorrida = { ...PLAN, modulos_pedidos: [], lotes: [] };
+    assert.throws(() => fusionaCorrida(vacio, [], "f"), /no pide medir NADA/);
+  });
+
+  it("un lote SIN NOTICIAS y COMPLETA no pueden convivir: es imposible, no improbable", () => {
+    // La consecuencia de exigir que las dos listas del plan sean el mismo
+    // conjunto. Con eso, los módulos de un lote que no sube nada están sí o sí
+    // en `modulos_pedidos` y fuera de `informes` → INCOMPLETA. Antes las dos
+    // frases salían juntas en la misma pantalla y quien leía el job tenía que
+    // elegir cuál creerse.
+    for (const parciales of [[], [parcial()]]) {
+      const c = fusionaCorrida(PLAN, parciales, "f");
+      const caidos = lotesSinNoticias(PLAN, parciales);
+      if (caidos.length === 0) continue;
+      assert.equal(
+        veredictoDeCorrida(c).completa,
+        false,
+        `con ${caidos.length} lote(s) sin noticias, COMPLETA es una contradicción`,
+      );
+    }
   });
 
   it("un lote que no llegó NO es un error de fusión: es una medida que falta", () => {

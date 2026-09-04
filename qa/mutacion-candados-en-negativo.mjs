@@ -159,6 +159,23 @@ const INVARIANTES = [
   ["lotes · se empaqueta por ID en vez de por el reloj medido", SRC,
     `    .sort((a, b) => b.segundos - a.segundos || a.id.localeCompare(b.id));`,
     `    .sort((a, b) => a.id.localeCompare(b.id));`],
+  // H1 de QA-E: con UN solo módulo sin medida, «va solo» y «van todos juntos»
+  // son la misma cosa, así que la batería no podía distinguirlas. Agrupados,
+  // los 17 sin cronometrar caen en un job contra un timeout de 45 min — el
+  // fallo que motivó partir la corrida. La sonda AGRUPA en vez de borrar la
+  // línea, para no dejar obsoleto el patrón que busca el invariante de al lado:
+  // un rojo por «patrón desaparecido» se lee igual que cazar el fallo sin serlo.
+  ["lotes · los módulos sin medida se juntan TODOS en un lote en vez de ir solos", SRC,
+    `  for (const m of sinMedida) {\n    lotes.push({ lote: lotes.length + 1, modulos: [m.id], segundos: 0, medido: false });\n  }`,
+    `  if (sinMedida.length > 0) {\n    lotes.push({ lote: lotes.length + 1, modulos: sinMedida.map((s) => s.id), segundos: 0, medido: false });\n  }`],
+  // H3 de QA-E: el plan es lo único que llega a la fusión sin sello. Con
+  // `modulos_pedidos` recortado, un lote muerto deja de contar como pedido y la
+  // corrida sale COMPLETA con el tag adelantado.
+  ["fusión · el plan no se mira: `modulos_pedidos` puede no cubrir sus propios lotes", SRC,
+    `  if (enLoteYNoPedido.length > 0 || pedidoYSinLote.length > 0) {`,
+    `  if (false as boolean) {`],
+  ["fusión · un plan que no pide NADA pasa (cero medido y el tag adelantado)", SRC,
+    `  if (plan.modulos_pedidos.length === 0) {`, `  if (false as boolean) {`],
   // El coste del día después. La MEDIANA escondería justo el caso que importa:
   // basta un job atascado para que quien tiene una PR no pueda cerrar su tarea.
   ["cola · la espera se mide con la mediana en vez de con el PEOR job", SRC,
