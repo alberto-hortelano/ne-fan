@@ -133,6 +133,29 @@ port_busy() { fuser "$1/tcp" >/dev/null 2>&1; }
 #  lo cite sube la deuda como si hubiera un segundo sitio que mata.)
 kill_port() { fuser -k "$1/tcp" >/dev/null 2>&1; sleep 0.5; }
 
+# Matar unos PIDS CONCRETOS, los que se demostraron nuestros. Es lo que usa
+# `cmd_stop`, y la diferencia con `kill_port` no es de estilo:
+#
+# `kill_port` pregunta «¿quién tiene este puerto AHORA?» y mata a quien conteste
+# — que puede no ser el que se clasificó. Con el barrido en dos pasadas esa
+# ventana pasó de ~0 a la pasada entera (medio segundo de `sleep` por proceso
+# matado), y QA lo midió: un ajeno que toma un puerto del bloque durante el
+# barrido SOBREVIVÍA antes del arreglo y MORÍA después, 2 de 2. Y el disparador
+# es el escenario normal, no el raro: `start.sh` se NIEGA a arrancar sobre un
+# puerto ocupado, así que quien espera a que se libere un bloque arranca justo
+# ahí. O sea que la PR que existe para no matar servidores ajenos había
+# introducido la única forma en que `--parar` podía matar uno de verdad.
+#
+# Con los pids de la foto no hay ventana: el que llegó después ni se entera.
+# TERM primero y KILL medio segundo después, como `kill_tree`: al matar,
+# `fuser` manda SIGKILL a pelo, y el bridge escribe saves.
+kill_pids() {
+    local p
+    for p in $1; do kill -TERM "$p" 2>/dev/null; done
+    sleep 0.5
+    for p in $1; do kill -KILL "$p" 2>/dev/null; done
+}
+
 # ─── Quién escucha, en UNA foto ────────────────────────────────
 #
 # `fuser` lanza un proceso por puerto y recorre /proc entero buscando quién lo
@@ -1338,9 +1361,14 @@ cmd_stop() {
 
     # ── Pasada 2 · imprimir y barrer, un PROCESO por línea. ─────────────────
     # Los puertos que comparten el mismo conjunto de pids son el mismo proceso
-    # (bridge + State API), así que se dicen juntos y se mata una vez: matar el
-    # primero se lleva el otro, y repetir el `kill_port` solo añade medio
-    # segundo de `sleep` por puerto.
+    # (bridge + State API), así que se dicen juntos y se mata UNA vez.
+    #
+    # Y se mata por PID, no por puerto (`kill_pids`, no `kill_port`): la foto ya
+    # tiene los pids, y usarla entera es lo coherente con el propio diseño de
+    # las dos pasadas — resolver todo antes de mutar nada, y luego actuar sobre
+    # lo resuelto. Matar por puerto aquí abría una ventana del tamaño de esta
+    # pasada en la que un ajeno recién llegado se comía el tiro con la
+    # clasificación del ocupante anterior.
     local i j etiquetas alguno=0 saltados=0
     local -a hecho=()
     for i in "${!f_port[@]}"; do
@@ -1360,8 +1388,14 @@ cmd_stop() {
             saltados=1
             continue
         fi
+        # Sin pids no hay a quién matar, y matar por PUERTO aquí sería matar a
+        # quien haya llegado después (ver `kill_pids`). Se dice y se sigue.
+        if [[ -z "${f_pids[$i]// /}" ]]; then
+            echo "    ⏭  $etiquetas  (sus pids ya no se pueden leer: murió solo, o es de otro usuario)"
+            continue
+        fi
         echo "    · $etiquetas  ${f_who[$i]:-(desconocido)}"
-        kill_port "${f_port[$i]}"
+        kill_pids "${f_pids[$i]}"
         alguno=1
     done
     (( alguno == 0 )) && echo "    (nada que parar aquí)"

@@ -22,6 +22,10 @@
  *      teardown imprimía «Para llevarte también lo ajeno: --parar-todo», que es
  *      el arma que «no le cerreis sus servers» prohíbe, recomendada por un
  *      fantasma.
+ *   4. un proceso AJENO que toma un puerto del catálogo **durante** el barrido
+ *      no se lleva el tiro. La foto de dueños del caso 3 abrió esa ventana si
+ *      además se mata por PUERTO: el recién llegado muere con la clasificación
+ *      del ocupante anterior. Se mata por PID.
  *
  *  Lo que NO se ejerce a propósito: `./start.sh --parar-todo` (la tecla `K`).
  *  Barre el catálogo entero «sea de quien sea», y en esta máquina trabajan
@@ -162,8 +166,20 @@ async function main() {
   });
   const salida = `${r.stdout ?? ""}${r.stderr ?? ""}`;
 
-  if (r.status === 1) ok("el launcher se niega a arrancar sobre un puerto ajeno (exit 1)");
-  else mal("el launcher se niega a arrancar sobre un puerto ajeno", r.status === null ? "no terminó: arrancó encima y se quedó sirviendo" : `salió con ${r.status}`);
+  // Un exit 1 NO basta, y salió caro: en un worktree recién creado no hay
+  // `node_modules`, el preflight sale con 1 antes de mirar puerto ninguno, y
+  // este aserto lo daba por bueno — verde por un motivo que no tiene nada que
+  // ver con lo que mide. Así que se exige exit 1 **por el puerto**, y un
+  // preflight caído se dice como lo que es: entorno, no veredicto.
+  if (/Preflight failed/.test(salida)) {
+    console.log("  ⚠ sin veredicto: el preflight del launcher falló (faltan dependencias del worktree)");
+    console.log(`    ${salida.split("\n").filter((l) => /—|Preflight/.test(l)).slice(0, 4).join(" / ").slice(0, 200)}`);
+    sinVeredicto = true;
+  } else if (r.status === 1 && /ocupado/.test(salida)) {
+    ok("el launcher se niega a arrancar sobre un puerto ajeno (exit 1 POR EL PUERTO)");
+  } else {
+    mal("el launcher se niega a arrancar sobre un puerto ajeno", r.status === null ? "no terminó: arrancó encima y se quedó sirviendo" : `salió con ${r.status}`);
+  }
 
   // No basta con que falle: tiene que DECIR de quién es el puerto, que es lo
   // que convierte un error en algo accionable («habla con su dueño»).
@@ -227,17 +243,22 @@ async function main() {
   if (miasAjenas.length === 0) ok("ningún puerto del señuelo PROPIO sale como AJENO (antes :state_api salía siempre)");
   else mal("ningún puerto propio sale como AJENO", miasAjenas.map((l) => l.trim()).join(" / ").slice(0, 200));
 
-  if (forasteras.length) {
-    // No es un veredicto del código: hay algo de OTRO worktree en los diez
-    // bloques que `--parar` mira, y con eso delante el aviso de `--parar-todo`
-    // es CORRECTO. Rojo aquí sería rojo por el entorno, que es peor que no
-    // contestar.
-    console.log(`  ⚠ sin veredicto sobre el aviso de --parar-todo: hay ocupantes de otro worktree — ${forasteras.map((l) => l.trim()).join(" / ").slice(0, 160)}`);
-    sinVeredicto = true;
-  } else if (!/Para llevarte también lo ajeno/.test(informe)) {
-    ok("…y el teardown NO recomienda `--parar-todo` por un fantasma");
+  // El aviso, en su forma SIEMPRE EVALUABLE: sale si y solo si el informe
+  // imprimió al menos una línea AJENO. La forma anterior («no aparece el
+  // aviso») dependía de que no hubiera nadie más en la máquina, así que se
+  // marcaba «sin veredicto» casi siempre — y en la corrida en negativo tampoco
+  // se evaluaba, que es lo peor que le puede pasar a un aserto (H6 de QA). Con
+  // esta y con la hermética de arriba el fantasma queda cazado igual: el aviso
+  // solo puede encenderse por un AJENO, y ningún puerto mío puede serlo.
+  const hayAviso = /Para llevarte también lo ajeno/.test(informe);
+  if (hayAviso === (ajenas.length > 0)) {
+    ok(`el aviso de \`--parar-todo\` sale si y solo si hay ajenos (aquí: ${ajenas.length} ajeno(s), aviso ${hayAviso ? "sí" : "no"})`);
   } else {
-    mal("no se recomienda --parar-todo sin ajenos", "el aviso salía en TODO teardown");
+    mal("el aviso de --parar-todo va atado a que haya ajenos",
+        `ajenos=${ajenas.length} aviso=${hayAviso} — antes salía en TODO teardown por el fantasma de :state_api`);
+  }
+  if (forasteras.length) {
+    console.log(`    (nota: los ${forasteras.length} ajeno(s) son de otro worktree, así que el aviso es correcto aquí)`);
   }
 
   // Al matar, `fuser` escupía los pids a stdout y ensuciaba el informe. Se
@@ -255,6 +276,77 @@ async function main() {
   const juntos = lineas.filter((l) => l.includes(`:${PUERTOS.bridge}`) && l.includes(`:${PUERTOS.state_api}`));
   if (juntos.length === 1) ok("los dos puertos del mismo proceso salen en UNA línea");
   else mal("los puertos del mismo proceso se agrupan", `líneas que citan los dos: ${juntos.length}`);
+
+  await tiroTardio();
+}
+
+/** ── 4. Un ajeno que llega DURANTE el barrido no se lleva el tiro ──────────
+ *
+ *  La regresión que introdujo la foto de dueños, y la encontró QA: la foto se
+ *  toma antes de barrer, pero si además se MATA POR PUERTO, un proceso que tome
+ *  ese puerto entre la foto y su turno muere con la clasificación del ocupante
+ *  anterior. La ventana pasó de ~0 a la pasada entera. Y el disparador es el
+ *  escenario normal: `start.sh` se niega a arrancar sobre un puerto ocupado, así
+ *  que quien espera a que se libere un bloque arranca justo ahí.
+ *
+ *  El experimento: cuatro señuelos PROPIOS, uno de ellos en el último puerto del
+ *  orden de barrido; se lanza `--parar`; a los 300 ms se retira el último y entra
+ *  uno AJENO en su sitio. Cuando el barrido llegue a ese puerto, matando por PID
+ *  no le pasa nada; matando por puerto, muere.
+ *
+ *  No puede dar un verde falso: si el señuelo propio del último puerto no sale
+ *  en el informe, el barrido no llegó a evaluarlo y se dice «sin veredicto» en
+ *  vez de cantar victoria. */
+async function tiroTardio() {
+  const tardio = PUERTOS.fake_ai;                 // el último de ALL_PORTS
+  const lentos = [PUERTOS_TODOS.asset_store, PUERTOS_TODOS.remote_gen];
+
+  const propios = [];
+  for (const p of lentos) propios.push(await señuelo(p, repoRoot, `PROPIO :${p}`));
+  const ultimo = await señuelo(tardio, repoRoot, `PROPIO :${tardio} (el del relevo)`);
+  propios.push(ultimo);
+  arrancados.push(...propios);
+
+  const parar = spawn("./start.sh", ["--parar"], { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] });
+  let informe = "";
+  // El relevo se ata al INFORME, no a un reloj: se espera a que el barrido
+  // anuncie su primera víctima. Con un `setTimeout` de 300 ms el intruso
+  // llegaba ANTES de que se tomara la foto (medido: el arranque de bash tarda
+  // más que eso), y entonces entraba en ella como ajeno — un experimento que no
+  // medía nada. Cuando sale la primera línea `·`, la foto está hecha y quedan
+  // dos procesos por matar (~1 s) antes de llegar al puerto del relevo.
+  let primeraVictima;
+  const barriendo = new Promise((res) => { primeraVictima = res; });
+  const recoge = (d) => {
+    informe += d;
+    if (/^\s*·\s+:/m.test(informe)) primeraVictima(true);
+  };
+  parar.stdout.on("data", recoge);
+  parar.stderr.on("data", recoge);
+  const terminado = new Promise((res) => parar.on("close", res));
+
+  const arrancó = await Promise.race([barriendo, new Promise((r) => setTimeout(() => r(false), 15_000))]);
+  if (!arrancó) {
+    await terminado;
+    console.log("  ⚠ sin veredicto sobre el tiro tardío: el barrido no llegó a matar a nadie");
+    sinVeredicto = true;
+    return;
+  }
+  await retirar(ultimo);
+  const intruso = await señuelo(tardio, "/tmp", `AJENO TARDÍO :${tardio}`);
+  arrancados.push(intruso);
+
+  await terminado;
+
+  if (!new RegExp(`^\\s*·[^\\n]*:${tardio}\\b`, "m").test(informe)) {
+    console.log(`  ⚠ sin veredicto sobre el tiro tardío: el barrido no llegó a evaluar :${tardio} como propio`);
+    sinVeredicto = true;
+  } else if (!(await esperarMuerte(intruso, 1_000))) {
+    ok("un AJENO que toma un puerto DURANTE el barrido sobrevive (se mata por PID, no por puerto)");
+  } else {
+    mal("un ajeno que llega durante el barrido sobrevive",
+        "lo mató: `--parar` está matando por PUERTO y se lleva a quien no clasificó");
+  }
 }
 
 try {

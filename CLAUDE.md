@@ -108,8 +108,10 @@ Cosas a tener en cuenta:
   puertos del catálogo (los diez bloques) cuyo proceso se puede **demostrar** de este árbol
   por su `cwd` **o por sus argumentos** (`/proc/<pid>/`; ilegible = ajeno, nunca al revés).
   Resuelve el dueño de todos ANTES de matar a ninguno —si no, el segundo puerto de un
-  proceso de dos (bridge + State API) sale «ajeno» porque ya está muerto— y agrupa en una
-  línea los puertos que comparten proceso. Lo ajeno lo enumera y lo deja. El barrido del
+  proceso de dos (bridge + State API) sale «ajeno» porque ya está muerto—, agrupa en una
+  línea los puertos que comparten proceso y mata **por PID**, no por puerto: entre la foto
+  y el barrido puede haber llegado otro, y matar por puerto se lo llevaría con la
+  clasificación del anterior. Lo ajeno lo enumera y lo deja. El barrido del
   catálogo entero sigue existiendo pero hay que pedirlo: tecla `K` o `--parar-todo`.
 - **`NEFAN_PORT_OFFSET`** desplaza el bloque de puertos entero para que quepan varios
   stacks en la máquina (varios agentes, dos corridas del banco). 0 —el defecto— son
