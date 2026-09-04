@@ -30,6 +30,9 @@
  *    npm run mutacion -- traer [run-id]     # vacía reports/ y baja el artefacto
  *    npm run mutacion -- repartir           # delta + atribución (--comentar publica)
  *    npm run mutacion -- local <id>         # medir UN módulo barato, aquí
+ *    npm run mutacion -- lotes              # cómo se partiría la corrida en jobs
+ *    npm run mutacion -- fusionar …         # lo corre CI, junta los lotes
+ *    npm run mutacion -- cola <run-id>      # cuánto estorba la matriz a una PR
  *    npm run mutacion -- ancla              # el sha del tag, para el YAML
  *    npm run mutacion -- manifiesto …       # lo escribe CI, no una persona
  *
@@ -54,8 +57,8 @@
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 
 import { contextoDe, seleccionar, type Seleccion } from "./afectado.js";
 import {
@@ -71,7 +74,11 @@ import {
 import {
   atribuir,
   deltaDeCorrida,
+  costeDeLaMatriz,
   duenosDeLaMedida,
+  empaqueta,
+  fusionaCorrida,
+  lotesSinNoticias,
   estadoLegible,
   estadoDeReparto,
   marcaDeCorrida,
@@ -91,6 +98,9 @@ import {
   type CommitDelRango,
   type DeltaDeFichero,
   type DuenosDeLaMedida,
+  type JobDeCI,
+  type OrigenCorrida,
+  type PlanDeCorrida,
   type Huella,
   type InformeSellado,
   type MedidaDeFichero,
@@ -104,6 +114,13 @@ const WORKFLOW = "mutation.yml";
 const ARTEFACTO = "informe-mutacion";
 const DIR_INFORMES = join(coreRoot, "reports", "mutation");
 const RUTA_CORRIDA = join(DIR_INFORMES, "corrida.json");
+/** El cronómetro que deja `mutate.ts`, y el plan que escribe `lotes`. Los dos
+ *  viven FUERA de `reports/mutation/`: ahí dentro cualquier `.json` que no sea
+ *  `corrida.json` se lee como el informe de un módulo, así que un fichero
+ *  nuestro inventaría un módulo fantasma. El plan viaja en su propio artefacto
+ *  y el cronómetro no viaja: se consume en el mismo job que lo escribió. */
+const RUTA_TIEMPOS = join(coreRoot, "reports", "mutacion-tiempos.json");
+const RUTA_PLAN_CORRIDA = join(coreRoot, "reports", "plan-corrida.json");
 
 function git(args: string[]): string {
   return execFileSync("git", args, { cwd: raizRepo, encoding: "utf8" }).trim();
@@ -239,6 +256,20 @@ export function costeDe(plan: PlanMutacion, huella: Huella, id: string): number 
   return medidos.reduce((n, m) => n + m.total, 0);
 }
 
+/** Los segundos de reloj de un módulo según su última medida, con MÁXIMO y no
+ *  con suma. El número es del módulo y está repetido en cada una de sus filas
+ *  —una corrida de Stryker mide el módulo entero de una vez—, así que sumar
+ *  cuadruplicaría un módulo de cuatro ficheros; y cuando las filas vienen de
+ *  corridas distintas, el máximo es la cota segura para un presupuesto de
+ *  reloj. `undefined` = nadie lo ha cronometrado, y eso viaja hasta el lote
+ *  propio en vez de convertirse en un cero. */
+export function segundosDe(plan: PlanMutacion, huella: Huella, id: string): number | undefined {
+  const medidos = ficherosMutados(moduloPorId(plan, id))
+    .map((f) => huella.ficheros[f]?.segundos)
+    .filter((s): s is number => typeof s === "number");
+  return medidos.length === 0 ? undefined : Math.max(...medidos);
+}
+
 // ── informes ─────────────────────────────────────────────────────────────────
 
 interface InformeCrudo {
@@ -257,15 +288,28 @@ function selloDeInforme(ruta: string): string {
   return createHash("sha256").update(readFileSync(ruta)).digest("hex");
 }
 
-/** Los informes que hay en `reports/mutation/`, con su sello. `corrida.json`
- *  vive en el mismo directorio (tiene que viajar en el artefacto) y NO es un
- *  informe: contarlo lo convertiría en un módulo fantasma. */
-function informesEnDisco(): InformeSellado[] {
-  if (!existsSync(DIR_INFORMES)) return [];
-  return readdirSync(DIR_INFORMES)
+/** Qué ficheros de un directorio de informes SON informes, con su sello.
+ *
+ *  `corrida.json` vive en el mismo directorio —tiene que viajar en el
+ *  artefacto— y NO es uno: contarlo declararía un informe de un módulo
+ *  `corrida` que el plan no tiene, y `repartir` moriría buscándolo.
+ *
+ *  Una sola definición, porque desde la matriz hay DOS sitios que leen un
+ *  directorio de informes: la descarga que verifica `traer`/`repartir` y cada
+ *  lote que junta `fusionar`. Con dos copias de la regla, un fichero nuevo
+ *  nuestro se colaría por el sitio que alguien se olvidara de tocar. */
+function informesDelDirectorio(dir: string): InformeSellado[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
     .filter((f) => f.endsWith(".json") && f !== "corrida.json")
     .sort()
-    .map((f) => ({ modulo: f.slice(0, -".json".length), sha256: selloDeInforme(join(DIR_INFORMES, f)) }));
+    .map((f) => ({ modulo: f.slice(0, -".json".length), sha256: selloDeInforme(join(dir, f)) }));
+}
+
+/** Los informes que hay en `reports/mutation/`, que es donde los deja `mutate`
+ *  y donde los baja `traer`. */
+function informesEnDisco(): InformeSellado[] {
+  return informesDelDirectorio(DIR_INFORMES);
 }
 
 /** El manifiesto de la corrida bajada, o un error que dice qué le pasa.
@@ -538,6 +582,10 @@ function repartir(argv: readonly string[]): void {
     const deltas = deltaDeCorrida(ahora, base);
     const atribucion = atribuir(id, rango);
     const duenos = duenosDeLaMedida(atribucion);
+    // El reloj del módulo entra en la huella, que es de donde `lotes`
+    // presupuesta. Va repetido en cada fila del módulo porque la huella se
+    // indexa por fichero; `segundosDe` lo lee con MÁXIMO, no con suma.
+    const segundos = corrida.informes.find((i) => i.modulo === id)?.segundos;
 
     for (const d of deltas) {
       medidos[d.fichero] = {
@@ -551,6 +599,7 @@ function repartir(argv: readonly string[]): void {
         resueltos: d.resueltos.length,
         base: d.base,
         duenos,
+        ...(segundos === undefined ? {} : { segundos }),
       };
     }
     repartos.push({
@@ -804,6 +853,281 @@ function local(argv: readonly string[]): void {
   process.exitCode = r.status ?? 1;
 }
 
+// ── verbo: lotes (parte la corrida por el reloj) ─────────────────────────────
+
+/** Un origen válido, o un error que dice cuáles hay. Compartido por `manifiesto`
+ *  y `lotes`: dos validaciones del mismo enum acabarían discrepando. */
+function origenValido(v: string): OrigenCorrida {
+  if (v !== "rango" && v !== "todos" && v !== "explicito") {
+    throw new Error(`--origen inválido: "${v}" (rango | todos | explicito)`);
+  }
+  return v;
+}
+
+/** Cómo se reparte la corrida en jobs, y —si CI lo pide— el plan que la fusión
+ *  necesitará después.
+ *
+ *  Sin los flags de CI solo IMPRIME: es lo que deja mirar el reparto sin medir
+ *  nada ni gastar un runner, y es la comprobación que se hace a ojo en la PR.
+ *
+ *    npm run mutacion -- lotes                        # lo que se mediría hoy
+ *    npm run mutacion -- lotes --ids "a b c"          # esos módulos
+ *    npm run mutacion -- lotes --ids … --origen … --sha … --desde … --run …
+ *                                                     # además escribe el plan
+ */
+function lotes(argv: readonly string[]): void {
+  const plan = leerPlan();
+  const huella = leerHuella();
+  const opcional = (flag: string): string | undefined => {
+    const i = argv.indexOf(flag);
+    return i < 0 ? undefined : argv[i + 1];
+  };
+
+  const idsCrudos = opcional("--ids");
+  const ids = argv.includes("--todos")
+    ? // El input TODOS del workflow. Explícito y no una lista vacía que alguien
+      // tenga que interpretar: `--pedidos ""` ya costó una corrida entera.
+      plan.modulos.map((m) => m.id)
+    : idsCrudos === undefined
+      ? (() => {
+          const sel = seleccionDesdeElTag(plan, shaDelTag());
+          return sel.todos ? plan.modulos.map((m) => m.id) : sel.ids;
+        })()
+      : idsCrudos.split(/\s+/).filter(Boolean);
+  // Fail-loud: un id inventado en el input del workflow tiene que morir AQUÍ,
+  // no en el job que intente medirlo media hora después.
+  for (const id of ids) moduloPorId(plan, id);
+  if (ids.length === 0) {
+    throw new Error(
+      `no hay nada que repartir: el diff desde ${TAG} no selecciona ningún módulo. ` +
+        `Si querías la corrida completa, lánzala con el input TODOS.`,
+    );
+  }
+
+  const paquetes = empaqueta(
+    ids.map((id) => {
+      const s = segundosDe(plan, huella, id);
+      return s === undefined ? { id } : { id, segundos: s };
+    }),
+    plan.tope_lote,
+  );
+
+  const tope = plan.tope_lote;
+  console.log(`\n${paquetes.length} lote(s) para ${ids.length} módulo(s) · tope ${tope}s (${(tope / 60).toFixed(0)} min)\n`);
+  for (const l of paquetes) {
+    if (!l.medido) {
+      console.log(`  lote ${String(l.lote).padStart(2)}  SIN MEDIDA DE RELOJ  ${l.modulos.join(" ")}`);
+      continue;
+    }
+    // EL MARGEN SE IMPRIME, y no es adorno: `blueprint-derive` está a dos
+    // minutos y medio del tope, igual que `npc-director` está a dos mutantes de
+    // `tope_local`. El primer test que se le añada lo saca del empaquetado, y
+    // eso hay que verlo venir en vez de descubrirlo con una corrida cortada.
+    const margen = l.margen ?? 0;
+    const aviso = margen < 0 ? "  ⚠ SE PASA DEL TOPE: irá solo y hay que partir su batería" : "";
+    console.log(
+      `  lote ${String(l.lote).padStart(2)}  ${String(l.segundos).padStart(5)}s ` +
+        `(margen ${margen >= 0 ? "+" : ""}${margen}s = ${(margen / 60).toFixed(1)} min)  ` +
+        `${l.modulos.join(" ")}${aviso}`,
+    );
+  }
+  // EL MÓDULO QUE MARCA EL SUELO DEL RELOJ, con su margen propio. Es la otra
+  // lectura del margen y la que avisa antes: mientras el más caro quepa en un
+  // lote, el reparto tiene arreglo; el día que él solo pase del tope, ninguna
+  // partición baja de ahí y hay que partir su batería. Es el mismo aviso que
+  // `pendiente` da con `npc-director`, a dos mutantes de `tope_local`.
+  const conReloj = ids
+    .map((id) => ({ id, s: segundosDe(plan, huella, id) }))
+    .filter((m): m is { id: string; s: number } => m.s !== undefined)
+    .sort((a, b) => b.s - a.s);
+  const peor = conReloj[0];
+  if (peor) {
+    const margen = tope - peor.s;
+    console.log(
+      `\n  El más caro es ${peor.id} con ${peor.s}s: está a ${margen}s (${(margen / 60).toFixed(1)} min) de ` +
+        `no caber él solo. El primer test que se le añada lo saca del empaquetado, y entonces la ` +
+        `respuesta es partir su batería, nunca subir tope_lote.`,
+    );
+  }
+
+  const sinMedida = paquetes.filter((l) => !l.medido).length;
+  if (sinMedida > 0) {
+    console.log(
+      `\n  ${sinMedida} módulo(s) sin medida de reloj van SOLOS, por la misma razón por la que ` +
+        `permisoLocal rechaza el coste desconocido: un coste que nadie sabe no se supone barato. ` +
+        `Se cura solo en cuanto los mida una corrida.`,
+    );
+  }
+
+  const sha = opcional("--sha");
+  if (sha === undefined) {
+    console.log(`\n  (solo lectura: sin --sha/--desde/--run/--origen no se escribe el plan de la corrida)\n`);
+    return;
+  }
+  const exige = (flag: string): string => {
+    const v = opcional(flag);
+    if (v === undefined || v === "") throw new Error(`lotes necesita ${flag} para escribir el plan`);
+    return v;
+  };
+  const planCorrida: PlanDeCorrida = {
+    sha,
+    desde: exige("--desde"),
+    run_id: exige("--run"),
+    origen: origenValido(exige("--origen")),
+    // LA LISTA COMPLETA, y aquí es donde se decide todo lo demás: la fusión la
+    // leerá de aquí y no de los lotes que sobrevivan, así que un lote que muera
+    // entero deja sus módulos pedidos y sin informe → INCOMPLETA y el tag
+    // quieto. Ver `fusionaCorrida`.
+    modulos_pedidos: [...ids].sort(),
+    lotes: paquetes,
+  };
+  mkdirSync(dirname(RUTA_PLAN_CORRIDA), { recursive: true });
+  writeFileSync(RUTA_PLAN_CORRIDA, `${JSON.stringify(planCorrida, null, 2)}\n`);
+  console.log(`\n  Plan de la corrida en ${relative(coreRoot, RUTA_PLAN_CORRIDA)}\n`);
+
+  const salida = process.env.GITHUB_OUTPUT;
+  if (salida) {
+    // La matriz que consume `fromJSON`. Un objeto por lote con sus ids ya
+    // formateados: el job de medir no necesita leer el plan para saber qué le
+    // toca, y así un fallo al bajar el artefacto no puede convertirse en un
+    // lote que mide otra cosa.
+    const matriz = paquetes.map((l) => ({ lote: l.lote, ids: l.modulos.join(" ") }));
+    writeFileSync(salida, `matriz=${JSON.stringify(matriz)}\nlotes=${paquetes.length}\n`, { flag: "a" });
+  }
+}
+
+// ── verbo: fusionar (lo corre el job `reunir`) ───────────────────────────────
+
+/** Junta el plan con los manifiestos parciales de cada lote y deja EXACTAMENTE
+ *  lo que `traer` y `repartir` esperan: un `reports/mutation/` con un informe
+ *  por módulo y un solo `corrida.json`. Los dos verbos de quien reparte no se
+ *  enteran de que la corrida vino partida, que es el objetivo.
+ *
+ *    npm run mutacion -- fusionar --entrada <dir con los artefactos bajados>
+ */
+function fusionar(argv: readonly string[]): void {
+  const i = argv.indexOf("--entrada");
+  const entrada = i < 0 ? undefined : argv[i + 1];
+  if (!entrada) throw new Error("fusionar necesita --entrada <dir con los artefactos bajados>");
+
+  const rutaPlan = join(entrada, "plan-corrida", "plan-corrida.json");
+  if (!existsSync(rutaPlan)) {
+    // Sin plan NO se fabrica una corrida con lo que haya llegado: eso es
+    // justamente lo que haría que un lote muerto saliera COMPLETA.
+    throw new Error(
+      `no está el plan de la corrida en ${rutaPlan}. Sin él no se sabe qué se PIDIÓ medir, y ` +
+        `reconstruirlo desde los lotes que llegaron haría que un lote caído se llevara consigo ` +
+        `tanto lo pedido como lo medido: el veredicto diría COMPLETA y el tag se movería mintiendo.`,
+    );
+  }
+  const plan = JSON.parse(readFileSync(rutaPlan, "utf8")) as PlanDeCorrida;
+
+  // Cada lote subió su artefacto `informe-mutacion-<n>`; `download-artifact`
+  // los deja como subdirectorios con ese nombre.
+  const dirsDeLote = readdirSync(entrada)
+    .filter((d) => d.startsWith("informe-mutacion-"))
+    .sort();
+  const parciales: Corrida[] = [];
+  const ficheros: { modulo: string; origen: string }[] = [];
+  for (const d of dirsDeLote) {
+    const dir = join(entrada, d);
+    const rutaParcial = join(dir, "corrida.json");
+    if (!existsSync(rutaParcial)) {
+      // Un artefacto sin manifiesto no es un lote medido: es un lote que subió
+      // basura. Se dice y no se mezcla.
+      console.log(`  ⚠ ${d} no trae corrida.json: se ignora y sus módulos cuentan como sin informe`);
+      continue;
+    }
+    const parcial = JSON.parse(readFileSync(rutaParcial, "utf8")) as Corrida;
+    // EL SELLO DE #420, ANTES DE MEZCLAR. Es lo que hace segura la fusión de N
+    // artefactos: sin esto, juntar informes de varios sitios reabriría el
+    // agujero que la PR anterior cerró.
+    const presentes = informesDelDirectorio(dir);
+    const errores = verificaDescarga(parcial, presentes);
+    if (errores.length > 0) {
+      throw new Error(
+        `el lote ${d} no casa con su propio manifiesto:\n` + errores.map((e) => `  · ${e}`).join("\n"),
+      );
+    }
+    parciales.push(parcial);
+    for (const p of presentes) ficheros.push({ modulo: p.modulo, origen: join(dir, `${p.modulo}.json`) });
+  }
+
+  const corrida = fusionaCorrida(plan, parciales, new Date().toISOString());
+
+  mkdirSync(DIR_INFORMES, { recursive: true });
+  for (const f of readdirSync(DIR_INFORMES)) rmSync(join(DIR_INFORMES, f), { force: true });
+  for (const f of ficheros) copyFileSync(f.origen, join(DIR_INFORMES, `${f.modulo}.json`));
+  writeFileSync(RUTA_CORRIDA, `${JSON.stringify(corrida, null, 2)}\n`);
+
+  const veredicto = veredictoDeCorrida(corrida);
+  const caidos = lotesSinNoticias(plan, parciales);
+  console.log(
+    `\nCorrida ${corrida.run_id} sobre ${corrida.sha.slice(0, 7)} (${corrida.origen}), ` +
+      `${plan.lotes.length} lote(s)\n` +
+      `  ${corrida.informes.length} informe(s) de ${corrida.modulos_pedidos.length} pedido(s)\n` +
+      `  ${veredicto.completa ? "COMPLETA" : "INCOMPLETA"} — ${veredicto.porque}`,
+  );
+  if (caidos.length > 0) {
+    console.log(
+      `  ⚠ ${caidos.length} lote(s) SIN NOTICIAS: ${caidos.map((l) => `${l.lote} (${l.modulos.join(", ")})`).join(" · ")}\n` +
+        `    No subieron nada. Sus módulos siguen PEDIDOS y sin informe, así que la corrida es ` +
+        `INCOMPLETA y el tag no se mueve — que es exactamente lo que tiene que pasar.`,
+    );
+  }
+  const salida = process.env.GITHUB_OUTPUT;
+  if (salida) {
+    writeFileSync(salida, `completa=${veredicto.completa}\nmueve_tag=${veredicto.mueveTag}\n`, { flag: "a" });
+  }
+  if (!veredicto.completa) process.exitCode = 1;
+}
+
+// ── verbo: cola (¿cuánto estorba la matriz?) ─────────────────────────────────
+
+/** Cuánto espera una PR normal mientras la matriz ocupa el pool de runners.
+ *
+ *  NO SE ESTIMA, SE MIDE, y por eso existe este verbo en vez de un número
+ *  puesto a ojo en el YAML: `max-parallel` empieza en 6 porque hay que empezar
+ *  en algo, y se ajusta con esto. La pregunta es del arquitecto y el umbral es
+ *  del usuario, que puede moverlo:
+ *
+ *    · sobre la corrida de MUTACIÓN → el sobrecoste de partir (N × checkout +
+ *      `npm ci` + dry-run), que son minutos de runner y no de reloj;
+ *    · sobre la corrida de una PR NORMAL lanzada mientras la matriz corre → lo
+ *      que esa PR esperó. Si pasa de dos minutos, se baja `max-parallel`: el
+ *      reloj de la mutación es diferido y el de una PR no, y el hook
+ *      `ci-verde.sh` no deja cerrar una tarea con el CI pendiente.
+ *
+ *    npm run mutacion -- cola <run-id>
+ */
+const TOPE_ESPERA_S = 120;
+
+function cola(argv: readonly string[]): void {
+  const id = argv.find((a) => /^\d+$/.test(a));
+  if (!id) throw new Error("falta el id de la corrida: npm run mutacion -- cola <run-id>");
+  const jobs = JSON.parse(gh(["api", `repos/{owner}/{repo}/actions/runs/${id}/jobs?per_page=100`, "--paginate"]))
+    .jobs as JobDeCI[];
+  const c = costeDeLaMatriz(jobs, TOPE_ESPERA_S);
+  const min = (s: number): string => `${(s / 60).toFixed(1)} min`;
+  console.log(
+    `\nCorrida ${id} · ${c.jobs} job(s)\n` +
+      `  espera de cola   peor ${min(c.esperaPeor)} (${c.esperaPeorJob}) · mediana ${min(c.esperaMediana)}\n` +
+      `  reloj de pared   ${min(c.pared)}\n` +
+      `  runner gastado   ${min(c.runner)}\n` +
+      `  sobrecoste       ${min(c.sobrecoste)} — lo que se paga por venir partida (N × checkout + npm ci + dry-run)\n`,
+  );
+  if (c.cabe) {
+    console.log(`  ✔ el peor job esperó ${min(c.esperaPeor)}, dentro del presupuesto de ${min(TOPE_ESPERA_S)}.\n`);
+    return;
+  }
+  console.log(
+    `  ✗ el peor job esperó ${min(c.esperaPeor)}, por encima del presupuesto de ${min(TOPE_ESPERA_S)}.\n` +
+      `    BAJA max-parallel en .github/workflows/mutation.yml. El reloj de la mutación es diferido y\n` +
+      `    el de una PR no: el hook ci-verde.sh no deja cerrar una tarea con el CI pendiente.\n`,
+  );
+  process.exitCode = 1;
+}
+
 // ── verbo: ancla (lo lee CI antes de medir) ──────────────────────────────────
 
 /** El sha del tag, a pelo y sin adornos: lo consume un `$(…)` del YAML.
@@ -841,11 +1165,15 @@ function manifiesto(argv: readonly string[]): void {
     if (i < 0 || argv[i + 1] === undefined) throw new Error("manifiesto necesita --pedidos");
     return argv[i + 1].split(/\s+/).filter(Boolean).sort();
   };
-  const origen = valor("--origen");
-  if (origen !== "rango" && origen !== "todos" && origen !== "explicito") {
-    throw new Error(`--origen inválido: "${origen}" (rango | todos | explicito)`);
-  }
+  const origen = origenValido(valor("--origen"));
   const pedidos = listaPedida();
+  // El cronómetro que dejó `mutate.ts` en este mismo job. Si no está —una
+  // corrida que ni llegó a medir— los informes viajan sin `segundos`, y esa
+  // ausencia acaba mandando el módulo a un lote propio, que es la dirección
+  // segura.
+  const tiempos = existsSync(RUTA_TIEMPOS)
+    ? (JSON.parse(readFileSync(RUTA_TIEMPOS, "utf8")) as Record<string, number>)
+    : {};
   const corrida: Corrida = {
     sha: valor("--sha"),
     // Obligatorio: sin ancla el manifiesto no sirve para repartir, y un
@@ -855,7 +1183,10 @@ function manifiesto(argv: readonly string[]): void {
     run_id: valor("--run"),
     origen,
     modulos_pedidos: pedidos.length > 0 ? pedidos : leerPlan().modulos.map((m) => m.id),
-    informes: informesEnDisco(),
+    informes: informesEnDisco().map((i) => ({
+      ...i,
+      ...(typeof tiempos[i.modulo] === "number" ? { segundos: tiempos[i.modulo] } : {}),
+    })),
     fecha: new Date().toISOString(),
   };
   mkdirSync(DIR_INFORMES, { recursive: true });
@@ -864,7 +1195,11 @@ function manifiesto(argv: readonly string[]): void {
   console.log(`${veredicto.completa ? "COMPLETA" : "INCOMPLETA"} — ${veredicto.porque}`);
   console.log(`  ancla:    ${corrida.desde}`);
   console.log(`  pedidos:  ${corrida.modulos_pedidos.join(" ")}`);
-  console.log(`  informes: ${corrida.informes.map((i) => `${i.modulo}:${i.sha256.slice(0, 8)}`).join(" ")}`);
+  console.log(
+    `  informes: ${corrida.informes
+      .map((i) => `${i.modulo}:${i.sha256.slice(0, 8)}${i.segundos === undefined ? "" : `:${i.segundos}s`}`)
+      .join(" ")}`,
+  );
   const salida = process.env.GITHUB_OUTPUT;
   if (salida) {
     writeFileSync(salida, `completa=${veredicto.completa}\nmueve_tag=${veredicto.mueveTag}\n`, { flag: "a" });
@@ -878,6 +1213,9 @@ const VERBOS: Record<string, (argv: string[]) => void> = {
   traer,
   repartir,
   local,
+  lotes,
+  fusionar,
+  cola,
   ancla,
   manifiesto,
 };
@@ -892,6 +1230,9 @@ function main(): void {
         `  traer [run-id]      vacía reports/mutation/ y baja el artefacto de CI\n` +
         `  repartir [--comentar]  delta contra la corrida anterior y atribución\n` +
         `  local <id>          mide UN módulo barato en esta máquina\n` +
+        `  lotes [--ids …]     parte la corrida en jobs por los SEGUNDOS medidos\n` +
+        `  fusionar --entrada  junta los lotes en un solo corrida.json (lo corre CI)\n` +
+        `  cola <run-id>       cuánto espera una PR mientras la matriz ocupa el pool\n` +
         `  ancla               el sha de ${TAG}, para que CI lo guarde en el manifiesto\n` +
         `  manifiesto …        lo escribe CI dentro del artefacto\n`,
     );

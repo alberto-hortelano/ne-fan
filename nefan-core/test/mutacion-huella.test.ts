@@ -23,9 +23,13 @@ import {
   avisoDeAntiguedad,
   avisoDeFrescura,
   claveDeMutante,
+  costeDeLaMatriz,
   deltaDeCorrida,
   duenosDeLaMedida,
   duenosLegibles,
+  empaqueta,
+  fusionaCorrida,
+  lotesSinNoticias,
   estadoLegible,
   estadoDeReparto,
   marcaDeCorrida,
@@ -47,7 +51,10 @@ import {
   type CommitDelRango,
   type Huella,
   type InformeSellado,
+  type JobDeCI,
   type MedidaDeFichero,
+  type ModuloAEmpaquetar,
+  type PlanDeCorrida,
   type MutanteMedido,
 } from "../scripts/mutacion-huella.js";
 import { leerPlan } from "../scripts/mutation-plan.js";
@@ -682,6 +689,275 @@ describe("descarga · ni falta, ni sobra, ni es otro informe con el mismo nombre
       [],
       "el orden en disco tampoco decide nada",
     );
+  });
+});
+
+describe("lotes · se empaqueta por el RELOJ, y lo desconocido va solo", () => {
+  const m = (id: string, segundos?: number): ModuloAEmpaquetar =>
+    segundos === undefined ? { id } : { id, segundos };
+
+  it("cabe lo que cabe, y no se pasa del tope", () => {
+    const lotes = empaqueta([m("a", 900), m("b", 800), m("c", 700)], 1800);
+    assert.equal(lotes.length, 2);
+    for (const l of lotes) assert.ok(l.segundos <= 1800, `${l.modulos.join(",")} se pasa: ${l.segundos}s`);
+  });
+
+  it("todo módulo pedido acaba en EXACTAMENTE un lote", () => {
+    // La totalidad, que es lo que impide que un módulo se caiga del reparto sin
+    // que nada falle: un módulo que no está en ningún lote no lo mide nadie, y
+    // la corrida saldría COMPLETA porque tampoco estaría en `modulos_pedidos`
+    // si el plan se derivara de los lotes.
+    const ids = ["a", "b", "c", "d", "e"];
+    const lotes = empaqueta([m("a", 1700), m("b", 900), m("c", 800), m("d"), m("e", 100)], 1800);
+    const colocados = lotes.flatMap((l) => l.modulos);
+    assert.deepEqual([...colocados].sort(), [...ids].sort());
+    assert.equal(colocados.length, new Set(colocados).size, "ningún módulo en dos lotes");
+  });
+
+  it("el más caro primero, y el id NO decide el orden", () => {
+    // First-fit DECRECIENTE. Los ids están elegidos para que el orden
+    // alfabético y el orden por coste sean OPUESTOS: si alguien sustituyera el
+    // criterio por el id —o por el orden de entrada—, el módulo caro llegaría
+    // el último, no encontraría hueco y abriría un lote casi vacío mientras los
+    // baratos llenan el primero.
+    const lotes = empaqueta([m("alfa", 100), m("bravo", 50), m("zorro", 1700)], 1800);
+    assert.equal(lotes[0].modulos[0], "zorro", "el más caro abre el primer lote");
+  });
+
+  it("el reparto no depende del orden de entrada", () => {
+    // Dos corridas del mismo plan tienen que dar EL MISMO reparto: es lo que
+    // deja comparar dos corridas entre sí y revisar el plan en la PR. El
+    // desempate va por id, que es el único criterio estable que hay.
+    const uno = empaqueta([m("z", 100), m("a", 1000), m("b", 900)], 1800);
+    const otro = empaqueta([m("b", 900), m("z", 100), m("a", 1000)], 1800);
+    assert.deepEqual(uno, otro);
+  });
+
+  it("un módulo SIN MEDIDA va solo, y no se le supone un cero", () => {
+    // La misma regla que `permisoLocal`: un coste desconocido no se supone
+    // barato. Metido en un hueco con un 0 implícito, es lo que revienta el
+    // reloj del job que lo acoja.
+    const lotes = empaqueta([m("caro", 1700), m("nadie-lo-midio")], 1800);
+    const suyo = lotes.find((l) => l.modulos.includes("nadie-lo-midio"));
+    assert.ok(suyo, "el módulo sin medida tiene que estar en algún lote");
+    assert.deepEqual(suyo.modulos, ["nadie-lo-midio"], "y él solo");
+    assert.equal(suyo.medido, false, "y su lote dice que no se sabe lo que cuesta");
+    assert.equal(suyo.margen, undefined, "un lote sin medida no tiene margen que enseñar");
+  });
+
+  it("un lote de módulos sin medir NO es un lote de 0 segundos", () => {
+    // El colapso que haría inútil todo lo anterior. Los dos lotes dicen
+    // `segundos: 0`, así que por el número son indistinguibles: lo que los
+    // separa es `medido`, y sin ese campo «no cuesta nada» y «nadie sabe lo que
+    // cuesta» serían la misma cosa para quien lea el reparto — y el segundo
+    // acabaría en un hueco.
+    const [medidoEnCero] = empaqueta([m("instantaneo", 0)], 1800);
+    const [sinMedir] = empaqueta([m("nadie-lo-midio")], 1800);
+    assert.equal(medidoEnCero.segundos, sinMedir.segundos, "por el número son iguales");
+    assert.notEqual(medidoEnCero.medido, sinMedir.medido, "y aun así no son lo mismo");
+    assert.equal(medidoEnCero.medido, true);
+    assert.equal(sinMedir.medido, false);
+  });
+
+  it("un módulo que SOLO ya pasa del tope va solo y se le ve el margen negativo", () => {
+    // No es un error: es el aviso de que ese módulo se volvió patológico y hay
+    // que partir su batería. Subir el tope sería la salida barata, la misma que
+    // `tope_local` prohíbe.
+    const lotes = empaqueta([m("gigante", 2500), m("normal", 100)], 1800);
+    const suyo = lotes.find((l) => l.modulos.includes("gigante"));
+    assert.deepEqual(suyo?.modulos, ["gigante"]);
+    assert.ok((suyo?.margen ?? 0) < 0, "su margen tiene que salir NEGATIVO, para que se vea");
+    assert.ok(
+      lotes.some((l) => l.modulos.includes("normal") && !l.modulos.includes("gigante")),
+      "y no arrastra a nadie con él",
+    );
+  });
+
+  it("el margen de cada lote es lo que le queda hasta el tope", () => {
+    const [uno] = empaqueta([m("a", 1647)], 1800);
+    assert.equal(uno.margen, 153, "blueprint-derive: 2,5 minutos hasta el tope");
+  });
+
+  it("sin módulos no hay lotes: no se inventa uno vacío", () => {
+    assert.deepEqual(empaqueta([], 1800), []);
+  });
+});
+
+describe("fusionar · `modulos_pedidos` sale del PLAN, nunca de los lotes que llegaron", () => {
+  const sello2 = (modulo: string, segundos?: number): InformeSellado => ({
+    modulo,
+    sha256: `sello-de-${modulo}`,
+    ...(segundos === undefined ? {} : { segundos }),
+  });
+  const PLAN: PlanDeCorrida = {
+    sha: "abc123",
+    desde: "ancla000",
+    run_id: "77",
+    origen: "rango",
+    modulos_pedidos: ["a", "b", "c"],
+    lotes: [
+      { lote: 1, modulos: ["a", "b"], segundos: 900, medido: true, margen: 900 },
+      { lote: 2, modulos: ["c"], segundos: 0, medido: false },
+    ],
+  };
+  const parcial = (over: Partial<Corrida> = {}): Corrida => ({
+    sha: PLAN.sha,
+    desde: PLAN.desde,
+    run_id: PLAN.run_id,
+    origen: PLAN.origen,
+    modulos_pedidos: ["a", "b"],
+    informes: [sello2("a"), sello2("b")],
+    fecha: "2026-09-04T10:00:00.000Z",
+    ...over,
+  });
+
+  it("con todos los lotes vivos, la corrida es COMPLETA", () => {
+    const c = fusionaCorrida(
+      PLAN,
+      [parcial(), parcial({ modulos_pedidos: ["c"], informes: [sello2("c")] })],
+      "2026-09-04T11:00:00.000Z",
+    );
+    assert.deepEqual(c.modulos_pedidos, ["a", "b", "c"]);
+    assert.deepEqual(modulosConInforme(c), ["a", "b", "c"]);
+    assert.equal(veredictoDeCorrida(c).completa, true);
+    assert.equal(veredictoDeCorrida(c).mueveTag, true);
+  });
+
+  it("UN LOTE MUERTO deja la corrida INCOMPLETA y el tag quieto", () => {
+    // EL CANDADO DE LA PR. El lote 2 no sube nada —se lo comió el timeout, o el
+    // runner se cayó—. `modulos_pedidos` sale del PLAN, así que "c" sigue
+    // pedido y sin informe: INCOMPLETA, el tag no se mueve y la próxima corrida
+    // vuelve a pedirlo.
+    //
+    // Si `modulos_pedidos` se reconstruyera desde los parciales que llegaron,
+    // "c" desaparecería de las DOS listas, volverían a casar y el veredicto
+    // diría COMPLETA: el tag se movería declarando medido lo que nadie midió, y
+    // a partir de ahí el agujero es invisible. Es el mismo fallo que #418 y
+    // #381 llevan dos tandas cerrando.
+    const c = fusionaCorrida(PLAN, [parcial()], "2026-09-04T11:00:00.000Z");
+    assert.deepEqual(c.modulos_pedidos, ["a", "b", "c"], "lo pedido NO encoge con el lote que murió");
+    assert.deepEqual(modulosConInforme(c), ["a", "b"]);
+    const v = veredictoDeCorrida(c);
+    assert.equal(v.completa, false);
+    assert.equal(v.mueveTag, false, "un tag que se mueve aquí declara medido lo que nadie midió");
+    assert.match(v.porque, /\bc\b/, "y dice cuál falta");
+  });
+
+  it("el lote sin noticias se puede NOMBRAR, que es lo que su job ya no puede decir", () => {
+    const caidos = lotesSinNoticias(PLAN, [parcial()]);
+    assert.equal(caidos.length, 1);
+    assert.equal(caidos[0].lote, 2);
+    assert.deepEqual(caidos[0].modulos, ["c"]);
+  });
+
+  it("un parcial de OTRA corrida no se mezcla: se lanza", () => {
+    for (const [campo, valor] of [
+      ["sha", "otro-commit"],
+      ["desde", "otra-ancla"],
+      ["run_id", "78"],
+      ["origen", "todos"],
+    ] as const) {
+      assert.throws(
+        () => fusionaCorrida(PLAN, [parcial({ [campo]: valor } as Partial<Corrida>)], "f"),
+        new RegExp(campo),
+        `un parcial con ${campo} distinto tiene que lanzar`,
+      );
+    }
+  });
+
+  it("un módulo en DOS lotes se lanza: se mediría dos veces", () => {
+    const roto: PlanDeCorrida = {
+      ...PLAN,
+      lotes: [
+        { lote: 1, modulos: ["a", "b"], segundos: 900, medido: true, margen: 900 },
+        { lote: 2, modulos: ["b", "c"], segundos: 900, medido: true, margen: 900 },
+      ],
+    };
+    assert.throws(() => fusionaCorrida(roto, [], "f"), /"b"/);
+  });
+
+  it("un informe de un módulo que no está en ningún lote se lanza", () => {
+    assert.throws(
+      () => fusionaCorrida(PLAN, [parcial({ informes: [sello2("intruso")] })], "f"),
+      /intruso/,
+    );
+  });
+
+  it("dos parciales con el MISMO módulo se lanzan: dos medidas presentadas como una", () => {
+    assert.throws(
+      () => fusionaCorrida(PLAN, [parcial(), parcial({ informes: [sello2("a")] })], "f"),
+      /"a"/,
+    );
+  });
+
+  it("los segundos de cada informe sobreviven a la fusión", () => {
+    // Es el dato que motiva la PR: sin él, la corrida siguiente no sabe cuánto
+    // tarda nada y todo vuelve a lote propio.
+    const c = fusionaCorrida(
+      PLAN,
+      [parcial({ informes: [sello2("a", 1647), sello2("b")] })],
+      "2026-09-04T11:00:00.000Z",
+    );
+    assert.equal(c.informes.find((i) => i.modulo === "a")?.segundos, 1647);
+    assert.equal(c.informes.find((i) => i.modulo === "b")?.segundos, undefined, "y la ausencia también");
+  });
+
+  it("un lote que no llegó NO es un error de fusión: es una medida que falta", () => {
+    // Tres estados otra vez: lote medido, lote a medias (su propio parcial ya lo
+    // declara) y lote sin noticias. Lanzar aquí impediría repartir los lotes que
+    // SÍ midieron — 131 minutos de runner tirados, que es exactamente lo que
+    // pasó el 2026-09-03 cuando `contrato-escena` se cayó.
+    assert.doesNotThrow(() => fusionaCorrida(PLAN, [parcial()], "f"));
+  });
+});
+
+describe("el coste del día después se MIDE, no se estima", () => {
+  const job = (name: string, creado: string, empezado: string, acabado: string): JobDeCI => ({
+    name,
+    created_at: `2026-09-04T10:${creado}:00Z`,
+    started_at: `2026-09-04T10:${empezado}:00Z`,
+    completed_at: `2026-09-04T10:${acabado}:00Z`,
+  });
+
+  it("la espera de cola es el hueco entre encolado y empezado, y se coge el PEOR", () => {
+    // TRES jobs a propósito, y no dos: con dos, la mediana y el peor son el
+    // MISMO elemento, y este test no podía ponerse rojo si alguien cambiaba uno
+    // por el otro. Lo cazó el guion de negativos sobre este mismo caso.
+    // Importa qué se coge: basta UN job atascado para que quien tiene una PR no
+    // pueda cerrar su tarea, y la mediana lo escondería.
+    const c = costeDeLaMatriz(
+      [job("lote 1", "00", "00", "10"), job("lote 2", "00", "01", "11"), job("lote 3", "00", "05", "15")],
+      120,
+    );
+    assert.equal(c.esperaPeor, 300, "el peor, no la mediana");
+    assert.equal(c.esperaPeorJob, "lote 3");
+    assert.equal(c.esperaMediana, 60, "y la mediana se enseña aparte, que es otra cosa");
+    assert.notEqual(c.esperaPeor, c.esperaMediana, "si salieran iguales, este test no probaría nada");
+  });
+
+  it("por encima del presupuesto NO cabe, y eso es lo que baja `max-parallel`", () => {
+    assert.equal(costeDeLaMatriz([job("a", "00", "01", "10")], 120).cabe, true, "60 s caben en 120");
+    assert.equal(costeDeLaMatriz([job("a", "00", "03", "10")], 120).cabe, false, "180 s no");
+  });
+
+  it("el SOBRECOSTE es lo que la matriz paga de más por venir partida", () => {
+    // Dos jobs en paralelo de 10 min cada uno: 20 min de runner en 10 de reloj.
+    // Esos 10 de más son N × (checkout + npm ci + dry-run), y son minutos de
+    // runner, no de reloj. Se dicen, porque es el precio honesto de partir.
+    const c = costeDeLaMatriz([job("a", "00", "00", "10"), job("b", "00", "00", "10")], 120);
+    assert.equal(c.pared, 600);
+    assert.equal(c.runner, 1200);
+    assert.equal(c.sobrecoste, 600);
+  });
+
+  it("un solo job no paga sobrecoste, y no sale NEGATIVO", () => {
+    assert.equal(costeDeLaMatriz([job("a", "00", "00", "10")], 120).sobrecoste, 0);
+  });
+
+  it("sin jobs se lanza en vez de contestar cero", () => {
+    // Un cero se leería como «no estorba nada», que es la conclusión opuesta a
+    // la verdadera («no se ha medido»).
+    assert.throws(() => costeDeLaMatriz([], 120), /no hay jobs/);
   });
 });
 

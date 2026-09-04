@@ -130,6 +130,42 @@ const INVARIANTES = [
   ["dueños · los dos estados sin dueño se leen con la MISMA frase en la cola", SRC,
     `  return "sin rango que mirar: nadie buscó dueño";`,
     `  return "sin dueño en el rango";`],
+  // ── lotes: partir la corrida por el reloj ──
+  // EL CANDADO DE PR-E. Si `modulos_pedidos` se reconstruyera desde los
+  // parciales que llegaron, un lote muerto se llevaría consigo tanto lo pedido
+  // como lo medido, las dos listas volverían a casar y `veredictoDeCorrida`
+  // diría COMPLETA: el tag se movería declarando medido lo que nadie midió.
+  ["fusión · `modulos_pedidos` sale de los lotes que llegaron en vez de del PLAN", SRC,
+    `    modulos_pedidos: [...plan.modulos_pedidos].sort(),`,
+    `    modulos_pedidos: [...new Set(informes.map((i) => i.modulo))].sort(),`],
+  ["fusión · un parcial de OTRA corrida se mezcla sin mirar", SRC,
+    `      if (delPlan !== delParcial) {`, `      if (false as boolean) {`],
+  ["fusión · un módulo en dos lotes pasa (se mediría dos veces)", SRC,
+    `      if (ya !== undefined) {`, `      if (false as boolean) {`],
+  ["fusión · un lote caído no se puede NOMBRAR", SRC,
+    `  return plan.lotes.filter((l) => !l.modulos.some((id) => conInforme.has(id)));`,
+    `  return [];`],
+  // Sin medida previa → lote propio. Es la regla de `permisoLocal` otra vez: un
+  // coste desconocido no se supone barato, y metido en un hueco con un 0
+  // implícito revienta el reloj del job que lo acoja.
+  ["lotes · a un módulo SIN MEDIDA se le supone 0 y se le busca hueco", SRC,
+    `    .filter((m): m is { id: string; segundos: number } => typeof m.segundos === "number")`,
+    `    .map((m) => ({ id: m.id, segundos: m.segundos ?? 0 }))`],
+  ["lotes · un lote sin medida se declara MEDIDO (0 s se lee como una medida)", SRC,
+    `    lotes.push({ lote: lotes.length + 1, modulos: [m.id], segundos: 0, medido: false });`,
+    `    lotes.push({ lote: lotes.length + 1, modulos: [m.id], segundos: 0, medido: true });`],
+  ["lotes · el margen negativo se recorta a 0 (el módulo patológico deja de verse venir)", SRC,
+    `    margen: tope - c.segundos,`, `    margen: Math.max(0, tope - c.segundos),`],
+  ["lotes · se empaqueta por ID en vez de por el reloj medido", SRC,
+    `    .sort((a, b) => b.segundos - a.segundos || a.id.localeCompare(b.id));`,
+    `    .sort((a, b) => a.id.localeCompare(b.id));`],
+  // El coste del día después. La MEDIANA escondería justo el caso que importa:
+  // basta un job atascado para que quien tiene una PR no pueda cerrar su tarea.
+  ["cola · la espera se mide con la mediana en vez de con el PEOR job", SRC,
+    `    esperaPeor: esperas[0].s,`, `    esperaPeor: ordenadas[Math.floor(ordenadas.length / 2)].s,`],
+  ["cola · sin jobs se contesta cero en vez de lanzar (un cero se lee «no estorba»)", SRC,
+    `  if (jobs.length === 0) throw new Error("no hay jobs que medir: ¿es el id de una corrida que existe?");`,
+    `  if (jobs.length === 0) return { esperaPeor: 0, esperaPeorJob: "", esperaMediana: 0, pared: 0, runner: 0, sobrecoste: 0, jobs: 0, cabe: true };`],
   // ── qué cuenta como vivo ──
   ["vivos · el total deja de contar a los supervivientes", SRC,
     `  return { vivos: [...vivos].sort(), total: vivos.length + detectados };`,

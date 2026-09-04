@@ -3,8 +3,8 @@
  *
  *  Vecino de `qa/mutacion-candados-en-negativo.mjs`, y complementario: aquél
  *  rompe `scripts/mutacion-huella.ts` —el fichero puro— y mira si la batería se
- *  entera. Éste rompe lo que la batería NO puede mirar: `scripts/mutacion.ts` y
- *  `.github/workflows/mutation.yml`.
+ *  entera. Éste rompe lo que la batería NO puede mirar: `scripts/mutacion.ts`,
+ *  `scripts/mutate.ts` y `.github/workflows/mutation.yml`.
  *
  *  POR QUÉ EXISTE. PR-A (#381 + #420) declaró su propia carencia: «el invariante
  *  "`repartir` ancla en `corrida.desde` y NO en el tag" no lo defiende ningún
@@ -29,13 +29,19 @@
  *    node qa/mutacion-cableado-en-negativo.mjs
  *    node qa/mutacion-cableado-en-negativo.mjs ancla    # solo los que casen
  *
- *  Verde = los siete invariantes del cableado se pueden ver rotos.
+ *  PR-E (la corrida partida en lotes) añade cuatro más, por el mismo motivo: el
+ *  plan que sube ANTES de medir, el fail-loud de la fusión sin plan, el
+ *  cronómetro de `mutate.ts` y el `fail-fast: false` de la matriz. Todo eso vive
+ *  en scripts y en YAML, o sea donde ningún test llega.
+ *
+ *  Verde = todos los invariantes del cableado se pueden ver rotos.
  *  Rojo  = hay una pieza del ciclo que se puede deshacer sin que se note.
  *
  *  QUÉ TOCA Y CÓMO LO DEVUELVE. Escribe en el árbol de trabajo: aparta
  *  `nefan-core/reports/mutation/` (que es material descargado, no versionado),
- *  y modifica temporalmente `scripts/mutacion.ts`, el workflow y
- *  `data/contract/mutacion-huella.json` —que `repartir` reescribe por diseño—.
+ *  y modifica temporalmente `scripts/mutacion.ts`, `scripts/mutate.ts`, el
+ *  workflow y `data/contract/mutacion-huella.json` —que `repartir` reescribe por
+ *  diseño—.
  *  Todo vuelve en el `finally` y se verifica byte a byte al terminar; si algo no
  *  volvió, sale con 2 y lo dice.
  */
@@ -47,6 +53,9 @@ import { dirname, join } from "node:path";
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE = join(raiz, "nefan-core");
 const MUT = join(CORE, "scripts", "mutacion.ts");
+/** `mutate.ts` entra con PR-E: es quien cronometra cada módulo, y ese número es
+ *  lo único que hace posible repartir la corrida por el reloj. */
+const MUTATE = join(CORE, "scripts", "mutate.ts");
 const YML = join(raiz, ".github", "workflows", "mutation.yml");
 const HUELLA = join(CORE, "data", "contract", "mutacion-huella.json");
 const PLAN = join(CORE, "data", "contract", "mutation-targets.json");
@@ -239,6 +248,78 @@ const INVARIANTES = [
     porque: "sin el ancla en el manifiesto, `repartir` no tiene de dónde sacarla y el reparto vuelve a colgar del tag",
     rompe: [YML, `          DESDE="$(npm run --silent mutacion -- ancla)"\n`, ``],
   },
+
+  // ── PR-E · la corrida partida en lotes ─────────────────────────────────────
+  {
+    nombre: "lotes · el PLAN lleva TODO lo pedido, también lo que no se pudo empaquetar por reloj",
+    mira: () => {
+      rmSync(join(CORE, "reports", "plan-corrida.json"), { force: true });
+      const r = mutacion([
+        "lotes", "--ids", `${E.id} apuntado`, "--origen", "explicito",
+        "--sha", E.tag, "--desde", E.anterior, "--run", "999910",
+      ]);
+      if (!r.ok) throw new Error(`lotes no escribió el plan:\n${r.salida}`);
+      const p = JSON.parse(readFileSync(join(CORE, "reports", "plan-corrida.json"), "utf8"));
+      return `${p.modulos_pedidos.join(",")} | lotes=${p.lotes.length}`;
+    },
+    // `apuntado` no tiene reloj en la huella, así que va a lote propio; lo que
+    // NO puede pasar es que se caiga de `modulos_pedidos`, porque de ahí sale el
+    // veredicto de la fusión.
+    bien: (s) => s.startsWith(["apuntado", E.id].sort().join(",")),
+    porque: "de `modulos_pedidos` del plan sale el veredicto: un módulo que se caiga de ahí es una medida que nadie echa de menos",
+    rompe: [
+      MUT,
+      `    modulos_pedidos: [...ids].sort(),`,
+      `    modulos_pedidos: paquetes.filter((l) => l.medido).flatMap((l) => l.modulos).sort(),`,
+    ],
+  },
+  {
+    nombre: "fusión · sin el plan NO se fabrica una corrida con lo que llegó",
+    mira: () => {
+      const dir = join(CORE, "reports", "lotes-ensayo");
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(join(dir, "informe-mutacion-1"), { recursive: true });
+      return mutacion(["fusionar", "--entrada", "reports/lotes-ensayo"]).salida;
+    },
+    bien: (s) => /no está el plan de la corrida/.test(s) && /COMPLETA y el tag se movería mintiendo/.test(s),
+    porque: "reconstruir lo pedido desde los lotes que llegaron hace que un lote muerto salga COMPLETA: el tag mentiría",
+    rompe: [
+      MUT,
+      `  if (!existsSync(rutaPlan)) {`,
+      `  if (false as boolean) {`,
+    ],
+  },
+  {
+    nombre: "reloj · `mutate.ts` guarda los segundos de cada módulo, y no al final",
+    // El cronómetro existía y moría con el log: sacar los de dos corridas costó
+    // leer dos logs de 21.000 líneas a mano. Y se escribe DESPUÉS DE CADA
+    // MÓDULO porque la corrida que motivó los lotes murió en el timeout con 25
+    // medidos — guardarlo al final habría perdido los 25.
+    mira: () => readFileSync(MUTATE, "utf8"),
+    bien: (s) => /anotaTiempo\(r\.id, Math\.round\(r\.segundos\)\);/.test(s) && /rmSync\(RUTA_TIEMPOS, \{ force: true \}\);/.test(s),
+    porque: "sin el cronómetro en el manifiesto, la corrida siguiente no sabe cuánto tarda nada y TODO vuelve a lote propio",
+    rompe: [
+      MUTATE,
+      `    anotaTiempo(r.id, Math.round(r.segundos));\n`,
+      ``,
+    ],
+  },
+  {
+    nombre: "workflow · la matriz no cancela a los lotes vivos cuando uno se cae",
+    // `fail-fast: false` es el equivalente exacto de que `mutate.ts` no corte en
+    // el primer módulo bajo su break: sin él, un lote caído se lleva por delante
+    // medidas ya hechas.
+    mira: () => readFileSync(YML, "utf8"),
+    bien: (s) =>
+      /fail-fast: false/.test(s) &&
+      /max-parallel: \d+/.test(s) &&
+      // El plan sube ANTES de medir y en su propio artefacto: es lo único que
+      // sobrevive a un lote que muere sin subir nada.
+      /name: plan-corrida/.test(s) &&
+      s.indexOf("name: plan-corrida") < s.indexOf("Medir el lote"),
+    porque: "sin `fail-fast: false` un lote caído cancela a los demás; y sin el plan subido antes, la fusión no sabe qué se pidió",
+    rompe: [YML, `      fail-fast: false\n`, ``],
+  },
 ];
 
 // ── el bucle ─────────────────────────────────────────────────────────────────
@@ -252,7 +333,7 @@ if (existsSync(APARTADO)) {
   process.exit(2);
 }
 
-const fuentes = new Map([MUT, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
+const fuentes = new Map([MUT, MUTATE, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
 const restauraFuentes = () => { for (const [f, t] of fuentes) writeFileSync(f, t); };
 const habiaInformes = existsSync(INFORMES);
 if (habiaInformes) renameSync(INFORMES, APARTADO);

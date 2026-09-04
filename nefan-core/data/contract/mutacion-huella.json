@@ -1,5 +1,5 @@
 {
-  "_comment": "GENERADO por `npm run mutacion -- repartir`. Las huellas (7 componentes hasheadas) de los supervivientes de la última corrida de cada fichero: es lo que deja que el delta diga qué es NUEVO, qué YA ESTABA y qué no tiene base. Se commitea a propósito — reports/ está gitignorado y mutate.ts borra el informe antes de correr. No lo edites a mano.",
+  "_comment": "GENERADO por `npm run mutacion -- repartir`. Las huellas (7 componentes hasheadas) de los supervivientes de la última corrida de cada fichero: es lo que deja que el delta diga qué es NUEVO, qué YA ESTABA y qué no tiene base. Se commitea a propósito — reports/ está gitignorado y mutate.ts borra el informe antes de correr. No lo edites a mano. · `segundos` es el RELOJ que costó medir el módulo al que pertenece cada fichero, y es de donde `npm run mutacion -- lotes` presupuesta los jobs de CI. A partir de la corrida en matriz lo escribe `manifiesto` desde el cronómetro de `mutate.ts`; las 52 filas que lo estrenan se SEMBRARON A MANO el 2026-09-04 con los `Done in` del log de la corrida 33866958770 (sha e67ae4d, 2026-09-04) — el campo no existía cuando se midió, así que el número hubo que sacarlo leyendo el log. Se eligió esa corrida y no la anterior (33790710680, 81a7ce0) a propósito: es el DÍA MALO, 1,31x más lenta de forma uniforme sobre los 25 módulos comunes, y presupuestar sobre el día malo es un margen de un tercio ya pagado. `status-labels` estaba en esa medida y NO se sembró: #433 lo partió en status-rotulo y status-motivo, y repartir su reloj entre las dos mitades sería inventarlo — las dos entran sin medida y van a lote propio.",
   "ficheros": {
     "bridge/state-http/dispatch.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -23,7 +23,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 67
     },
     "src/combat/attack-area.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -47,7 +48,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 26
     },
     "src/combat/combat-resolver.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -71,7 +73,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 26
     },
     "src/combat/enemy-ai.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -241,7 +244,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 38
     },
     "src/combat/hostiles.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -267,7 +271,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 2
     },
     "src/contract/model-io/physics.ts": {
       "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
@@ -484,7 +489,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 67
     },
     "src/contracts/sprite-census.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -581,7 +587,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 820
     },
     "src/plugins/dsl/effects.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -621,7 +628,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 820
     },
     "src/plugins/dsl/errors.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -647,7 +655,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 820
     },
     "src/plugins/dsl/evaluate.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -686,7 +695,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 820
     },
     "src/plugins/dsl/paths.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -881,7 +891,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 820
     },
     "src/plugins/dsl/predicates.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -929,7 +940,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 820
     },
     "src/plugins/dsl/values.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1118,7 +1130,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 820
     },
     "src/protocol/status-labels.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1166,7 +1179,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 3
     },
     "src/scene/aim.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -1469,7 +1483,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 1389
     },
     "src/scene/blueprint/derive.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1552,7 +1567,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 1647
     },
     "src/scene/blueprint/footprint.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1729,7 +1745,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 1389
     },
     "src/scene/blueprint/fps-ambience.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1812,7 +1829,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 27
     },
     "src/scene/blueprint/fps-detail.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2188,7 +2206,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 690
     },
     "src/scene/blueprint/fps-interior.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2302,7 +2321,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 690
     },
     "src/scene/blueprint/fps-relief.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2433,7 +2453,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 690
     },
     "src/scene/blueprint/fps-spec.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2568,7 +2589,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 481
     },
     "src/scene/blueprint/greybox.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2678,7 +2700,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 866
     },
     "src/scene/blueprint/ground-collision.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2728,7 +2751,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 840
     },
     "src/scene/blueprint/ground-prims.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2869,7 +2893,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 840
     },
     "src/scene/blueprint/ground.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2917,7 +2942,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 840
     },
     "src/scene/blueprint/palette.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3010,7 +3036,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 1647
     },
     "src/scene/blueprint/plan-collision.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3034,7 +3061,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 26
     },
     "src/scene/blueprint/scatter.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3646,7 +3674,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 266
     },
     "src/scene/blueprint/time-of-day.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3670,7 +3699,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 1647
     },
     "src/scene/blueprint/vegetation.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3729,7 +3759,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 1647
     },
     "src/scene/blueprint/volume-metrics.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3801,7 +3832,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 1389
     },
     "src/scene/blueprint/volumes.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3924,7 +3956,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 1070
     },
     "src/scene/greybox/common.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3953,7 +3986,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 866
     },
     "src/scene/greybox/surfaces.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4063,7 +4097,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 395
     },
     "src/scene/greybox/volume-prims.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4623,7 +4658,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 866
     },
     "src/scene/scene-normalize.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4656,7 +4692,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 429
     },
     "src/scene/tile-plan.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4680,7 +4717,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 429
     },
     "src/session/entidades-del-tile.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -4739,7 +4777,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 5
     },
     "src/session/mundo-persistido.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4814,7 +4853,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 47
     },
     "src/session/session-facets.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4838,7 +4878,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 6
     },
     "src/simulation/mirada.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -4954,7 +4995,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 86
     },
     "src/store/reducers.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4978,7 +5020,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 86
     },
     "src/world-map/bootstrap-place.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5012,7 +5055,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 701
     },
     "src/world-map/edges.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5041,7 +5085,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 701
     },
     "src/world-map/exits.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5067,7 +5112,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 701
     },
     "src/world-map/map-triggers.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5094,7 +5140,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 701
     },
     "src/world-map/npc-director.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5138,7 +5185,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 220
     },
     "src/world-map/place-anchor.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5165,7 +5213,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 701
     },
     "src/world-map/place-target.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5225,7 +5274,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 701
     },
     "src/world-map/types.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5262,7 +5312,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 701
     },
     "src/world-map/world-map.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5351,7 +5402,8 @@
           "#409",
           "#406"
         ]
-      }
+      },
+      "segundos": 701
     }
   }
 }

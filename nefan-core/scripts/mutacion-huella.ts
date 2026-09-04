@@ -155,6 +155,24 @@ export interface MedidaDeFichero {
    *  `DuenosDeLaMedida`: era `string[]`, y la lista vacía decía a la vez «se
    *  miró el rango y nadie tocó este módulo» y «no había rango que mirar». */
   duenos: DuenosDeLaMedida;
+  /** Segundos de RELOJ que costó medir el módulo al que pertenecía este
+   *  fichero. Es lo que `lotes` presupuesta, y hasta ahora se perdía con el log
+   *  de CI: sacar los de dos corridas costó leer dos logs de 21.000 líneas a
+   *  mano.
+   *
+   *  VA POR FICHERO PORQUE LA HUELLA SE INDEXA POR FICHERO (la cabecera explica
+   *  por qué), pero el número es del MÓDULO: una corrida de Stryker mide el
+   *  módulo entero de una vez, y no hay forma de repartir ese reloj entre sus
+   *  ficheros que no sea inventada. Por eso el coste de un módulo se toma con
+   *  MÁXIMO y no con suma (`segundosDe`): sumar cuadruplicaría un módulo de
+   *  cuatro ficheros, y cuando las filas vienen de corridas distintas el máximo
+   *  es además la cota segura para un presupuesto de reloj.
+   *
+   *  AUSENTE es un estado de verdad, no un cero: significa «nadie ha medido
+   *  cuánto tarda», y `lotes` lo manda a un lote propio por la misma razón por
+   *  la que `permisoLocal` rechaza el coste desconocido. Un cero lo metería en
+   *  cualquier hueco. */
+  segundos?: number;
 }
 
 /** De quién es lo que una medida encontró — el veredicto de `atribuir`, tal y
@@ -463,6 +481,14 @@ export interface InformeSellado {
    *  arriba tampoco vale para esto — existe para la identidad de un mutante, no
    *  para sellar 76 MB de informes contra una sustitución deliberada. */
   sha256: string;
+  /** Segundos de reloj que tardó ESTE módulo en ESTA corrida.
+   *
+   *  `mutate.ts` ya los cronometraba y los imprimía, y morían con el log. Viajan
+   *  aquí para llegar a la huella, que es de donde `lotes` presupuesta. Opcional
+   *  porque el cronómetro puede faltar (un informe copiado a mano, una corrida
+   *  anterior a este campo), y esa ausencia se propaga hasta el lote propio en
+   *  vez de convertirse en un cero. */
+  segundos?: number;
 }
 
 export interface Corrida {
@@ -585,6 +611,264 @@ export function verificaDescarga(c: Corrida, presentes: readonly InformeSellado[
     );
   }
   return errores;
+}
+
+// ── lotes: partir la corrida por el RELOJ ────────────────────────────────────
+
+/** Lo que `lotes` necesita saber de un módulo: cuánto tarda, si es que alguien
+ *  lo ha medido alguna vez. */
+export interface ModuloAEmpaquetar {
+  id: string;
+  /** Segundos de reloj de su última medida. AUSENTE ≠ 0: ver `Lote.medido`. */
+  segundos?: number;
+}
+
+export interface Lote {
+  lote: number;
+  modulos: string[];
+  /** Suma de los segundos de sus módulos. 0 en un lote sin medida, y por eso no
+   *  se puede leer sin mirar `medido`. */
+  segundos: number;
+  /** Si el reloj de este lote se conoce. Un lote de módulos sin medir NO es un
+   *  lote de 0 s: es un lote cuyo coste nadie sabe, y se dice. */
+  medido: boolean;
+  /** Cuánto le queda hasta el tope, en segundos. NEGATIVO cuando un módulo
+   *  solo ya lo pasa — que no es un error, es el aviso de que ese módulo se
+   *  volvió patológico. `undefined` sin medida. */
+  margen?: number;
+}
+
+/** Cómo se parte la corrida en trozos que quepan en el reloj de un job.
+ *
+ *  SE EMPAQUETA POR SEGUNDOS MEDIDOS Y POR NADA MÁS. La primera versión del
+ *  plan proponía un peso `mutantes × ficheros de batería`, y la medida lo
+ *  desmintió: `blueprint-derive` es el módulo más caro de la corrida (1.647 s el
+ *  día malo) y ese peso lo dejaba SÉPTIMO de once; los mutantes a secas,
+ *  también. Un dial de coste que se equivoca en cuatro puestos sobre el módulo
+ *  que marca el techo no sirve para llenar un lote, porque el lote que se sale
+ *  del reloj es justo el suyo.
+ *
+ *  SIN MEDIDA PREVIA → LOTE PROPIO, que es la misma regla que `permisoLocal`:
+ *  un coste desconocido no se supone barato. Meterlo en un hueco con un 0
+ *  implícito es la forma exacta de reventar el reloj del job que lo acoja.
+ *
+ *  UN MÓDULO QUE SOLO YA PASA DEL TOPE VA SOLO Y NO ES UN ERROR: se empaqueta,
+ *  se le calcula un margen negativo y quien lea la salida lo ve venir. La
+ *  respuesta cuando pase es partir su batería, nunca subir el tope — igual que
+ *  con `tope_local`.
+ *
+ *  Descendente por segundos y primer hueco que quepa (first-fit decreasing). No
+ *  es óptimo y no hace falta que lo sea: el desempate va por id para que dos
+ *  corridas del mismo plan den EL MISMO reparto, que es lo que deja comparar
+ *  dos corridas y lo que hace revisable el plan en la PR. */
+export function empaqueta(modulos: readonly ModuloAEmpaquetar[], tope: number): Lote[] {
+  const conMedida = modulos
+    .filter((m): m is { id: string; segundos: number } => typeof m.segundos === "number")
+    .sort((a, b) => b.segundos - a.segundos || a.id.localeCompare(b.id));
+  const sinMedida = modulos.filter((m) => typeof m.segundos !== "number").sort((a, b) => a.id.localeCompare(b.id));
+
+  const cajas: { modulos: string[]; segundos: number }[] = [];
+  for (const m of conMedida) {
+    const hueco = cajas.find((c) => c.segundos + m.segundos <= tope);
+    if (hueco) {
+      hueco.modulos.push(m.id);
+      hueco.segundos += m.segundos;
+    } else {
+      // No cabe en ninguno: caja nueva. Si el módulo solo ya pasa del tope, la
+      // caja nace pasada — y eso se enseña, no se corrige.
+      cajas.push({ modulos: [m.id], segundos: m.segundos });
+    }
+  }
+
+  const lotes: Lote[] = cajas.map((c, i) => ({
+    lote: i + 1,
+    modulos: c.modulos,
+    segundos: c.segundos,
+    medido: true,
+    margen: tope - c.segundos,
+  }));
+  // Los sin medida van DETRÁS y de uno en uno, con su número siguiendo la
+  // cuenta: así el reparto se lee de más caro conocido a desconocido.
+  for (const m of sinMedida) {
+    lotes.push({ lote: lotes.length + 1, modulos: [m.id], segundos: 0, medido: false });
+  }
+  return lotes;
+}
+
+/** Lo que CI sube ANTES de medir, para que la fusión sepa qué se pidió aunque
+ *  un lote entero se caiga sin dejar rastro. Ver `fusionaCorrida`. */
+export interface PlanDeCorrida {
+  sha: string;
+  desde: string;
+  run_id: string;
+  origen: OrigenCorrida;
+  /** La lista COMPLETA de lo que esta corrida iba a medir. Es el dato que no se
+   *  puede reconstruir después. */
+  modulos_pedidos: string[];
+  lotes: Lote[];
+}
+
+/** Un `corrida.json` de vuelta: el plan más lo que cada lote llegó a dejar.
+ *
+ *  TODO EL DISEÑO CABE EN UNA FRASE: `modulos_pedidos` sale del PLAN, nunca de
+ *  la suma de los manifiestos parciales que sobrevivieron. Un lote que muere
+ *  entero y no sube nada deja sus módulos en `modulos_pedidos` y fuera de
+ *  `informes`, así que `veredictoDeCorrida` dice INCOMPLETA y el tag no se
+ *  mueve. Si `modulos_pedidos` saliera de los parciales, ese lote se llevaría
+ *  consigo tanto lo pedido como lo medido, las dos listas volverían a casar y el
+ *  veredicto diría COMPLETA: un tag que declara medido lo que nadie midió, que
+ *  es exactamente lo que #418 y #381 llevan dos tandas cerrando.
+ *
+ *  Lanza cuando lo que llega no puede ser una sola corrida:
+ *   · un parcial cuyo `sha`, `desde`, `origen` o `run_id` no casa con el plan —
+ *     son dos corridas presentadas como una;
+ *   · un módulo en dos lotes, o un informe de un módulo que no está en ningún
+ *     lote — el plan y lo medido hablan de cosas distintas;
+ *   · dos parciales trayendo el mismo módulo: dos medidas del mismo sujeto, que
+ *     es la familia de #420 con otra cara.
+ *
+ *  Lo que NO es error: un lote sin parcial. Eso es un lote caído, y se cuenta
+ *  como sus módulos sin informe — tres estados otra vez (lote medido, lote a
+ *  medias que su propio parcial ya declara, lote sin noticias), no dos.
+ *
+ *  `fecha` la pone el llamador: aquí no entra un reloj, por lo mismo que no
+ *  entra git. */
+export function fusionaCorrida(
+  plan: PlanDeCorrida,
+  parciales: readonly Corrida[],
+  fecha: string,
+): Corrida {
+  const enLotes = new Map<string, number>();
+  for (const l of plan.lotes) {
+    for (const id of l.modulos) {
+      const ya = enLotes.get(id);
+      if (ya !== undefined) {
+        throw new Error(
+          `el plan de la corrida ${plan.run_id} pone "${id}" en el lote ${ya} y en el ${l.lote}: ` +
+            `se mediría dos veces y la fusión no sabría cuál de las dos medidas vale`,
+        );
+      }
+      enLotes.set(id, l.lote);
+    }
+  }
+
+  const informes: InformeSellado[] = [];
+  const visto = new Map<string, string>();
+  for (const p of parciales) {
+    for (const [campo, delPlan, delParcial] of [
+      ["sha", plan.sha, p.sha],
+      ["desde", plan.desde, p.desde],
+      ["origen", plan.origen, p.origen],
+      ["run_id", plan.run_id, p.run_id],
+    ] as const) {
+      if (delPlan !== delParcial) {
+        throw new Error(
+          `un manifiesto parcial dice ${campo}="${delParcial}" y el plan de la corrida dice ` +
+            `"${delPlan}": son dos corridas distintas, y fusionarlas daría una foto que nunca existió`,
+        );
+      }
+    }
+    for (const i of p.informes) {
+      if (!enLotes.has(i.modulo)) {
+        throw new Error(
+          `llega un informe de "${i.modulo}", que no está en ningún lote del plan de la corrida ` +
+            `${plan.run_id}: o el plan no es el de esta corrida, o alguien midió de más`,
+        );
+      }
+      const antes = visto.get(i.modulo);
+      if (antes !== undefined) {
+        throw new Error(
+          `dos manifiestos parciales traen el informe de "${i.modulo}" (sellos ${antes.slice(0, 8)} y ` +
+            `${i.sha256.slice(0, 8)}): dos medidas del mismo módulo presentadas como una`,
+        );
+      }
+      visto.set(i.modulo, i.sha256);
+      informes.push(i);
+    }
+  }
+
+  return {
+    sha: plan.sha,
+    desde: plan.desde,
+    run_id: plan.run_id,
+    origen: plan.origen,
+    // DEL PLAN. Es la línea que sostiene el veredicto: ver la cabecera.
+    modulos_pedidos: [...plan.modulos_pedidos].sort(),
+    informes: [...informes].sort((a, b) => a.modulo.localeCompare(b.modulo)),
+    fecha,
+  };
+}
+
+/** Lo que CI cuenta de cada job de una corrida. Los tres instantes en ISO, tal
+ *  y como los devuelve `gh api …/actions/runs/<id>/jobs`. */
+export interface JobDeCI {
+  name: string;
+  created_at: string;
+  started_at: string;
+  completed_at?: string | null;
+}
+
+export interface CosteDeLaMatriz {
+  /** El peor hueco entre «encolado» y «empezado», en segundos. Es lo que espera
+   *  quien tiene una PR mientras la matriz ocupa el pool. */
+  esperaPeor: number;
+  esperaPeorJob: string;
+  esperaMediana: number;
+  /** Reloj de pared de la corrida entera. */
+  pared: number;
+  /** Suma de las duraciones de todos los jobs. */
+  runner: number;
+  /** Lo que la matriz paga de MÁS por venir partida: N veces checkout,
+   *  `npm ci` y dry-run. Es minutos de runner, no de reloj, y es el precio
+   *  honesto de la partición. */
+  sobrecoste: number;
+  jobs: number;
+  /** Si el peor hueco cabe en el presupuesto de espera. */
+  cabe: boolean;
+}
+
+/** El coste del día después, medido y no estimado.
+ *
+ *  La pregunta concreta que contesta: **cuántos jobs simultáneos aguanta esto
+ *  sin que una PR normal se quede esperando runner**. Importa porque el hook
+ *  `ci-verde.sh` no deja cerrar una tarea con el CI pendiente, así que una
+ *  corrida de 23 lotes que ocupe el pool bloquea a quien está trabajando — el
+ *  reloj de la mutación es diferido y el de una PR no.
+ *
+ *  Vive aquí, pura y sobre los tres instantes, para que se pueda ejercer con
+ *  datos sintéticos: pedírselo a `gh` dentro haría un test que en CI no
+ *  comprueba nada, que es de lo que va la cabecera de este fichero. */
+export function costeDeLaMatriz(jobs: readonly JobDeCI[], topeEsperaS: number): CosteDeLaMatriz {
+  if (jobs.length === 0) throw new Error("no hay jobs que medir: ¿es el id de una corrida que existe?");
+  const ms = (s: string): number => Date.parse(s);
+  const esperas = jobs
+    .map((j) => ({ name: j.name, s: Math.max(0, (ms(j.started_at) - ms(j.created_at)) / 1000) }))
+    .sort((a, b) => b.s - a.s);
+  const fin = (j: JobDeCI): number => ms(j.completed_at ?? j.started_at);
+  const pared = (Math.max(...jobs.map(fin)) - Math.min(...jobs.map((j) => ms(j.created_at)))) / 1000;
+  const runner = jobs.reduce((n, j) => n + (fin(j) - ms(j.started_at)) / 1000, 0);
+  const ordenadas = [...esperas].sort((a, b) => a.s - b.s);
+  return {
+    esperaPeor: esperas[0].s,
+    esperaPeorJob: esperas[0].name,
+    esperaMediana: ordenadas[Math.floor(ordenadas.length / 2)].s,
+    pared,
+    runner,
+    // Con un solo job la partición no paga nada: el sobrecoste es lo que la
+    // matriz añade SOBRE el reloj de pared, y con jobs en serie sería negativo.
+    sobrecoste: Math.max(0, runner - pared),
+    jobs: jobs.length,
+    cabe: esperas[0].s <= topeEsperaS,
+  };
+}
+
+/** Los lotes de los que no ha llegado ni un parcial. No es un error de fusión
+ *  —lo dictamina `veredictoDeCorrida` a través de `modulos_pedidos`— pero hay
+ *  que poder NOMBRARLOS: un lote caído entero es la única forma de perder una
+ *  medida sin que nadie lo diga en la salida del job que la perdió. */
+export function lotesSinNoticias(plan: PlanDeCorrida, parciales: readonly Corrida[]): Lote[] {
+  const conInforme = new Set(parciales.flatMap((p) => modulosConInforme(p)));
+  return plan.lotes.filter((l) => !l.modulos.some((id) => conInforme.has(id)));
 }
 
 // ── el tope de la medida local ───────────────────────────────────────────────

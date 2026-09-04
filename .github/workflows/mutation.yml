@@ -28,18 +28,21 @@ permissions:
   contents: write
 
 jobs:
-  mutation:
+  # ── 1 · PLANIFICAR ─────────────────────────────────────────────────────────
+  # Decide QUÉ se mide, con qué ancla, y en cuántos trozos. Sube el plan como
+  # artefacto propio ANTES de medir nada: es el único dato que después no se
+  # puede reconstruir, y de él sale `modulos_pedidos` de la fusión.
+  planificar:
     runs-on: ubuntu-latest
-    # 42 ficheros mutados en 20 módulos = 9.040 mutantes. Corrida completa
-    # medida el 2026-08-23 en una máquina de 16 hilos: 31m28 de reloj y 333 min
-    # de CPU. Este runner tiene 4 hilos, así que el reloj se acerca al CPU. El
-    # tope está para que un mutante que se atasque no se coma el día — y por eso
-    # el artefacto sube con `if: always()`: una corrida truncada por el timeout
-    # sigue trayendo lo que llegó a medir, y `corrida.json` dice qué falta.
-    timeout-minutes: 180
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: nefan-core
+    outputs:
+      matriz: ${{ steps.lotes.outputs.matriz }}
+      lotes: ${{ steps.lotes.outputs.lotes }}
+      origen: ${{ steps.seleccion.outputs.origen }}
+      desde: ${{ steps.seleccion.outputs.desde }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -63,17 +66,17 @@ jobs:
       # lo que los agentes hubieran pedido — coge también las PR que nadie pidió
       # y los commits directos a main (11 de los últimos 40 no llevan `(#NNN)`).
       # Un rango que no selecciona nada NO se degrada a la corrida completa: el
-      # paso falla, porque gastar 180 minutos de runner midiendo cero es peor
-      # que decirlo.
+      # paso falla, porque gastar runner midiendo cero es peor que decirlo.
       #
       # Y AQUÍ SE LEE EL ANCLA, antes de medir y en los tres orígenes: el sha del
       # tag `mutacion-ultima` tal y como está AHORA, que es el punto desde el que
-      # esta corrida elige. Se lee una vez y viaja al manifiesto, porque el
-      # último paso de este mismo workflow adelanta el tag a `$GITHUB_SHA`: quien
-      # reparta después leería un ancla que ya no es la de esta corrida, el rango
-      # `tag..corrida.sha` saldría VACÍO por construcción y los 33 módulos
-      # saldrían «sin dueño» justo en la corrida que más tenía que repartir
-      # (#381). El dato existía; lo único que se hacía con él era tirarlo.
+      # esta corrida elige. Se lee una vez y viaja al plan y al manifiesto,
+      # porque el último job de este mismo workflow adelanta el tag a
+      # `$GITHUB_SHA`: quien reparta después leería un ancla que ya no es la de
+      # esta corrida, el rango `tag..corrida.sha` saldría VACÍO por construcción
+      # y los módulos saldrían «sin dueño» justo en la corrida que más tenía que
+      # repartir (#381). El dato existía; lo único que se hacía con él era
+      # tirarlo.
       - name: Qué hay que medir
         id: seleccion
         run: |
@@ -97,52 +100,149 @@ jobs:
           # y no interpolado en el `run`: no entra en la línea de comandos.
           MODULOS: ${{ inputs.modulos }}
 
-      # El runner recorre los módulos SIN cortar en el primero que baje de su
-      # break: una sola corrida deja medidos todos y el artefacto sube completo.
-      # El fallo se reporta con el código de salida, y por eso los pasos de
-      # abajo llevan `if: always()`.
-      #
-      # La concurrencia la decide la máquina (scripts/mutate.ts): por defecto
-      # media máquina, que es lo correcto en un portátil con alguien delante.
-      # Aquí no hay nadie usándola, así que se le da todo menos un núcleo.
-      - name: Medir
-        run: NEFAN_MUTATE_CONCURRENCY=$(( $(nproc) - 1 )) npm run mutate -- $IDS
+      # EL REPARTO EN LOTES, por SEGUNDOS MEDIDOS y por nada más. Un proxy
+      # (mutantes, o mutantes x ficheros de batería) deja a `blueprint-derive`
+      # —el módulo más caro, 1.647 s— séptimo de once, y el lote que se sale del
+      # reloj es justo el suyo. Los módulos sin medida van solos, por la misma
+      # razón por la que `permisoLocal` rechaza el coste desconocido.
+      - name: Repartir en lotes
+        id: lotes
+        run: |
+          # Con el input TODOS el selector no da ids: se pide la lista entera
+          # del plan con `--todos`, EXPLÍCITO. Una lista vacía que alguien tenga
+          # que interpretar como «todos» ya costó una corrida completa —el
+          # `--pedidos ""` que mataba el manifiesto después de medir.
+          if [ "$ORIGEN" = "todos" ]; then
+            npm run --silent mutacion -- lotes --todos --origen "$ORIGEN" \
+              --sha "$GITHUB_SHA" --desde "$DESDE" --run "$GITHUB_RUN_ID"
+          else
+            npm run --silent mutacion -- lotes --ids "$IDS" --origen "$ORIGEN" \
+              --sha "$GITHUB_SHA" --desde "$DESDE" --run "$GITHUB_RUN_ID"
+          fi
         env:
           IDS: ${{ steps.seleccion.outputs.ids }}
+          ORIGEN: ${{ steps.seleccion.outputs.origen }}
+          DESDE: ${{ steps.seleccion.outputs.desde }}
+
+      # EL PLAN SUBE ANTES DE MEDIR, y en su propio artefacto. Es lo que hace
+      # que un lote que muera entero —sin subir nada— siga dejando sus módulos
+      # en `modulos_pedidos`: la fusión los cuenta como pedidos y sin informe,
+      # el veredicto sale INCOMPLETA y el tag no se mueve. Si `modulos_pedidos`
+      # se reconstruyera desde los lotes que llegaron, un lote muerto se llevaría
+      # consigo tanto lo pedido como lo medido, las dos listas volverían a casar
+      # y el tag se movería declarando medido lo que nadie midió.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plan-corrida
+          path: nefan-core/reports/plan-corrida.json
+
+  # ── 2 · MEDIR (matriz) ─────────────────────────────────────────────────────
+  medir:
+    needs: planificar
+    runs-on: ubuntu-latest
+    # 45 = los 30 minutos de `tope_lote` más el arranque (checkout, npm ci,
+    # dry-run) y margen sobre el día malo. El tope del lote está en
+    # `mutation-targets.json` y es lo que `lotes` presupuesta; este número es su
+    # red, no su fuente.
+    timeout-minutes: 45
+    strategy:
+      # OBLIGATORIO. Sin esto, un lote que se cae cancela a los demás y se
+      # pierden medidas ya hechas — el equivalente exacto de que `mutate.ts` no
+      # corte en el primer módulo que baja de su break.
+      fail-fast: false
+      # Explícito, y se ajusta CON LA MEDIDA: el hueco entre `created_at` y
+      # `started_at` de los jobs (`gh api …/actions/runs/<id>/jobs`) dice cuánto
+      # espera en cola una PR normal mientras corre la matriz. Si pasa de 2
+      # minutos, se baja. El reloj de la mutación es diferido; el de una PR no.
+      max-parallel: 6
+      matrix:
+        include: ${{ fromJSON(needs.planificar.outputs.matriz) }}
+    defaults:
+      run:
+        working-directory: nefan-core
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: nefan-core/package-lock.json
+      - run: npm ci
+
+      # El lote recibe sus ids POR LA MATRIZ y no bajando el plan: así un fallo
+      # al descargar un artefacto no puede convertirse en un job que mide otra
+      # cosa. El plan solo lo necesita `reunir`.
+      - name: Medir el lote
+        run: NEFAN_MUTATE_CONCURRENCY=$(( $(nproc) - 1 )) npm run mutate -- $IDS
+        env:
+          IDS: ${{ matrix.ids }}
           # El muro de `mutate.ts` se niega a correr sin esto. Aquí SÍ se pone,
           # y es la única razón por la que se pone: en el runner no hay nadie
           # delante cuya máquina se pueda saturar, y la corrida está autorizada
           # por la persona que pulsó «Run workflow».
           NEFAN_MUTATE_AUTORIZADO: "si"
 
-      # EL MANIFIESTO LO ESCRIBE CI, no `traer`: `traer` solo puede escribir lo
-      # que CREÍA que iba a pasar. Y hace falta porque el código de salida no
-      # sirve de criterio — `mutate.ts` sale con 1 tanto si la medida fue
-      # completa y destapó una regresión como si se truncó, así que filtrar por
-      # "conclusion == success" rechazaría justo las corridas con el hallazgo.
-      #
-      # `corrida.json`, SIN punto inicial: `upload-artifact@v4` excluye los
-      # ficheros ocultos y un manifiesto que no viaja es un manifiesto que no
-      # existe.
-      - name: Manifiesto de la corrida
-        id: manifiesto
+      # EL MANIFIESTO PARCIAL LO ESCRIBE CI, no `traer`: `traer` solo puede
+      # escribir lo que CREÍA que iba a pasar. `--pedidos` son los ids de ESTE
+      # lote, y el sello de cada informe entra aquí; el cronómetro que dejó
+      # `mutate.ts` en este mismo job viaja con él como `segundos`, que es de
+      # donde saldrá el reparto de la próxima corrida.
+      - name: Manifiesto del lote
         if: always()
         run: npm run --silent mutacion -- manifiesto --origen "$ORIGEN" --pedidos "$IDS" --sha "$GITHUB_SHA" --desde "$DESDE" --run "$GITHUB_RUN_ID"
         env:
-          ORIGEN: ${{ steps.seleccion.outputs.origen }}
-          IDS: ${{ steps.seleccion.outputs.ids }}
-          # El ancla que leyó el paso de selección, ANTES de que el último paso
-          # mueva el tag. `--desde` es obligatorio: un manifiesto que se
-          # escribiera igual sin ella dejaría el fallo para el día del reparto,
-          # cuando el runner ya no está.
-          DESDE: ${{ steps.seleccion.outputs.desde }}
+          ORIGEN: ${{ needs.planificar.outputs.origen }}
+          DESDE: ${{ needs.planificar.outputs.desde }}
+          IDS: ${{ matrix.ids }}
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          # Un JSON por módulo más `corrida.json`. Los baja
-          # `npm run mutacion -- traer`, que vacía el directorio antes para no
-          # mezclar dos medidas en una foto que nunca existió.
+          # Un artefacto por lote. `reunir` los baja todos y `fusionar` los
+          # junta en el ÚNICO `informe-mutacion` que `traer` conoce.
+          name: informe-mutacion-${{ matrix.lote }}
+          path: nefan-core/reports/mutation/
+
+  # ── 3 · REUNIR ─────────────────────────────────────────────────────────────
+  # `if: always()`: si un lote se cae, la fusión es MÁS necesaria, no menos —
+  # es quien dice cuál se cayó y quien impide que el tag se mueva.
+  reunir:
+    needs: [planificar, medir]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: nefan-core
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: nefan-core/package-lock.json
+      - run: npm ci
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: nefan-core/reports/lotes
+
+      # Verifica el sello de cada informe contra su parcial ANTES de mezclarlo
+      # —es lo que hace segura la fusión de N artefactos (#420)—, escribe UN
+      # `corrida.json` cuyo `modulos_pedidos` sale del PLAN, y deja
+      # `reports/mutation/` con la forma exacta que `traer` espera.
+      - name: Fusionar los lotes
+        id: fusion
+        run: npm run --silent mutacion -- fusionar --entrada reports/lotes
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          # El artefacto que baja `npm run mutacion -- traer`. Su forma no ha
+          # cambiado con la matriz, y ese es el objetivo: `traer` y `repartir`
+          # no se enteran de que la corrida vino partida.
           name: informe-mutacion
           path: nefan-core/reports/mutation/
 
@@ -159,7 +259,7 @@ jobs:
       # motivo se IMPRIME en vez de saltarse el paso en silencio: un paso gris en
       # la UI no dice por qué.
       - name: Reposicionar mutacion-ultima
-        if: always() && steps.manifiesto.outputs.mueve_tag == 'true'
+        if: always() && steps.fusion.outputs.mueve_tag == 'true'
         run: |
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "NO se mueve el tag: esta corrida midió $GITHUB_REF, no main."

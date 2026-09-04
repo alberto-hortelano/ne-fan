@@ -71,6 +71,24 @@ const STRYKER = join(coreRoot, "node_modules", ".bin", "stryker");
  *  `reports/mutation/`, que es lo que CI sube como artefacto y lo que
  *  `deuda.ts` lee: un config colado ahí se leería como un informe. */
 const DIR_CONFIGS = join(coreRoot, "reports", "stryker");
+/** El cronómetro de cada módulo, para que `manifiesto` lo meta en el
+ *  manifiesto y de ahí llegue a la huella, que es de donde `lotes` presupuesta.
+ *
+ *  FUERA de `reports/mutation/`, por lo mismo que los configs: ahí dentro
+ *  cualquier `.json` que no sea `corrida.json` se lee como el informe de un
+ *  módulo, y este fichero inventaría un módulo fantasma llamado `tiempos`.
+ *
+ *  Se escribe DESPUÉS DE CADA MÓDULO y no al final: la corrida que motivó todo
+ *  esto murió en el `timeout-minutes` con 25 módulos medidos, y un cronómetro
+ *  que solo se guarda al terminar habría perdido los 25. */
+const RUTA_TIEMPOS = join(coreRoot, "reports", "mutacion-tiempos.json");
+
+function anotaTiempo(id: string, segundos: number): void {
+  const previo = existsSync(RUTA_TIEMPOS)
+    ? (JSON.parse(readFileSync(RUTA_TIEMPOS, "utf8")) as Record<string, number>)
+    : {};
+  writeFileSync(RUTA_TIEMPOS, `${JSON.stringify({ ...previo, [id]: segundos }, null, 2)}\n`);
+}
 
 interface Resultado {
   id: string;
@@ -228,10 +246,18 @@ function main(): void {
       `(un proceso de test por worker; NEFAN_MUTATE_CONCURRENCY para cambiarlo).`,
   );
 
+  // El cronómetro empieza vacío: si sobreviviera el de la corrida anterior,
+  // `manifiesto` sellaría los informes de HOY con los segundos de AYER, y el
+  // reparto en lotes se haría sobre un reloj que no es el de estos módulos.
+  mkdirSync(dirname(RUTA_TIEMPOS), { recursive: true });
+  rmSync(RUTA_TIEMPOS, { force: true });
+
   const resultados: Resultado[] = [];
   for (const m of modulos) {
     console.log(`\n━━ ${m.id} · ${m.mutate.join(" ")} · batería de ${m.tests.length} test(s)\n`);
-    resultados.push(corre(plan, m, concurrencia));
+    const r = corre(plan, m, concurrencia);
+    resultados.push(r);
+    anotaTiempo(r.id, Math.round(r.segundos));
   }
 
   console.log("\n╔═ Mutación por módulo ═══════════════════════════════════════════");
