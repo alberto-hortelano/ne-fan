@@ -399,6 +399,28 @@ salvo que el candado ESPERE un ⊘ (`codigoEsperado: 2`), que es como se prueban
 del canal de #331: precondición rota → ⊘ declarado con su motivo, y con fallos ya empujados →
 la reconversión se veta y el guion queda en rojo.
 
+## `qa/mutacion-cableado-en-negativo.mjs`: lo que la batería NO puede mirar
+
+```bash
+node qa/mutacion-cableado-en-negativo.mjs          # ~40 s, sin red y sin medir mutación
+node qa/mutacion-cableado-en-negativo.mjs ancla    # filtro por nombre
+```
+
+Los tres de arriba conducen una **batería**: rompen el fuente y miran si los tests se enteran.
+Éste conduce **la herramienta**: `scripts/mutacion.ts` y `.github/workflows/mutation.yml` no los
+importa ningún test —no pueden, llaman a git y a `gh`—, así que ahí «romper y mirar el test» no
+es una opción y la única prueba posible es ejercer el verbo de verdad sobre un
+`reports/mutation/` de ensayo y exigir que el OBSERVABLE cambie al deshacer el cambio.
+
+Nació al validar PR-A de T10 (#381 + #420), que declaró su propia carencia —«el invariante
+"`repartir` ancla en `corrida.desde` y no en el tag" no lo defiende ningún test»— y QA midió que
+no era una: eran **siete** reversiones del cableado que no ponían rojo nada, los dos issues de la
+PR incluidos. Cubre el ancla del reparto, la contradicción del rango vacío, el sello del informe,
+`corrida.json` como no-informe, el fail-loud del formato viejo, el ancla que escribe `manifiesto`,
+el `--pedidos ""` del input `TODOS` y las cuatro piezas del paso del workflow. Aparta
+`reports/mutation/` mientras corre y lo devuelve; verifica byte a byte los fuentes y la huella
+—que `repartir` reescribe por diseño— y sale con 2 si algo no volvió.
+
 Los guiones que necesitan una PARTIDA real (no una fixture) comparten el arranque del
 título en `qa/lib/sesion.mjs`; `qa/lib/sonda.mjs` (`nefan`/`waitFor`, vía `ctxDeSonda(page)`) es
 la MISMA sonda para el runner y para los scripts sueltos (`fixtures-sin-bridge`,
