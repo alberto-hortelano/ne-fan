@@ -205,7 +205,7 @@ describe("cola de deuda · mutación repartida en varios informes", () => {
           nuevos: [],
           resueltos: 0,
           base: "con base",
-          duenos: ["#273"],
+          duenos: { veredicto: "con dueño", quienes: ["#273"] },
         },
       },
     };

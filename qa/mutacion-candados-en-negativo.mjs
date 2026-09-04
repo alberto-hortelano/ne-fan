@@ -54,13 +54,14 @@ const BATERIA = "test/mutacion-huella.test.ts";
 const INVARIANTES = [
   // ── el delta y sus TRES estados ──
   ["delta · sin-base se colapsa a NUEVO", SRC,
-    `      base: "sin base",\n      nuevos: [],`,
-    `      base: "sin base",\n      nuevos: [...ahora.vivos],`],
+    `    nuevos: [],\n    yaEstaban: [],`,
+    `    nuevos: [...ahora.vivos],\n    yaEstaban: [],`],
   ["delta · sin-base se colapsa a YA ESTABA", SRC,
-    `      nuevos: [],\n      yaEstaban: [],`,
-    `      nuevos: [],\n      yaEstaban: [...ahora.vivos],`],
+    `    yaEstaban: [],\n    resueltos: [],`,
+    `    yaEstaban: [...ahora.vivos],\n    resueltos: [],`],
   ["delta · sin-base se etiqueta como CON BASE", SRC,
-    `      base: "sin base",`, `      base: "con base",`],
+    `  if (!base) return sinComparar("sin base");`,
+    `  if (!base) return { ...sinComparar("sin base"), base: "con base" };`],
   // El caso que el plan marcó como el caro: si el delta fuera una resta, una
   // corrida con un superviviente nuevo encima de uno resuelto diría "sin
   // cambios" teniendo el hallazgo dentro.
@@ -94,15 +95,41 @@ const INVARIANTES = [
   ["tag · una lista explícita mueve el tag", SRC,
     `      completa: true,\n      mueveTag: false,`, `      completa: true,\n      mueveTag: true,`],
   ["tag · una corrida truncada mueve el tag", SRC,
-    `  const faltan = c.modulos_pedidos.filter((id) => !c.modulos_con_informe.includes(id));`,
+    `  const faltan = c.modulos_pedidos.filter((id) => !conInforme.includes(id));`,
     `  const faltan: string[] = [];`],
   // ── la descarga, por los dos lados ──
   ["descarga · un informe que SOBRA se ignora", SRC,
-    `  const sobran = presentes.filter((id) => !c.modulos_con_informe.includes(id));`,
+    `  const sobran = presentes.filter((i) => !declarados.has(i.modulo)).map((i) => i.modulo);`,
     `  const sobran: string[] = [];`],
+  // El invariante que estableció #418 y que no defendía nadie: lo declarado es
+  // lo que la corrida TRAE, no lo que PIDIÓ. La diferencia solo se ve con un
+  // módulo pedido y caído — `contrato-escena` hoy — sobre el que alguien corra
+  // un `local`.
+  ["descarga · lo declarado sale de lo que se PIDIÓ en vez de lo que se trajo (#418)", SRC,
+    `  const declarados = new Set(modulosConInforme(c));`,
+    `  const declarados = new Set(c.modulos_pedidos);`],
   ["descarga · un informe que FALTA se ignora", SRC,
-    `  const faltan = c.modulos_pedidos.filter((id) => !presentes.includes(id));`,
+    `  const faltan = c.informes.filter((i) => !selloPresente.has(i.modulo)).map((i) => i.modulo);`,
     `  const faltan: string[] = [];`],
+  // #420: el sello. Sin él, `local <id>` deja un fichero con el nombre EXACTO
+  // que el manifiesto espera y la medida local entra en la huella commiteada.
+  ["descarga · el SELLO deja de mirar: una medida local se cuela en el histórico", SRC,
+    `  const suplantados = c.informes\n    .filter((i) => {\n      const sello = selloPresente.get(i.modulo);\n      return sello !== undefined && sello !== i.sha256;\n    })\n    .map((i) => i.modulo);`,
+    `  const suplantados: string[] = [];`],
+  // #381: un rango vacío no es un módulo sin dueño. Colapsarlos imprimía 33
+  // hallazgos inventados después de cada corrida completa.
+  ["atribución · un rango VACÍO se colapsa a «sin dueño»", SRC,
+    `  if (rango.tipo === "vacío") {\n    return {\n      modulo,\n      candidatos: [],\n      veredicto: "rango vacío",\n      etiqueta: "sin rango que mirar (la corrida no tenía commits sin medir)",\n    };\n  }\n  const candidatos = rango.commits.filter((c) => c.modulos.includes(modulo));`,
+    `  const candidatos = (rango.tipo === "vacío" ? [] : rango.commits).filter((c) => c.modulos.includes(modulo));`],
+  // #381 un piso más abajo: el veredicto que se GUARDA. Si «rango vacío» se
+  // escribe como «sin dueño», `npm run deuda` acusa de un hallazgo a un rango
+  // que nadie miró — el mismo bug, ya fuera de `repartir`.
+  ["dueños · el RANGO VACÍO se guarda como «sin dueño» (la huella pierde el cuarto veredicto)", SRC,
+    `  if (a.veredicto === "rango vacío") return { veredicto: "rango vacío" };`,
+    `  if (a.veredicto === "rango vacío") return { veredicto: "sin dueño" };`],
+  ["dueños · los dos estados sin dueño se leen con la MISMA frase en la cola", SRC,
+    `  return "sin rango que mirar: nadie buscó dueño";`,
+    `  return "sin dueño en el rango";`],
   // ── qué cuenta como vivo ──
   ["vivos · el total deja de contar a los supervivientes", SRC,
     `  return { vivos: [...vivos].sort(), total: vivos.length + detectados };`,

@@ -55,9 +55,9 @@ El ciclo entero es `npm run mutacion` (en `nefan-core`):
 | Verbo | Quién | Qué hace |
 |---|---|---|
 | `pendiente` | el usuario y el coordinador | qué falta por medir desde el tag `mutacion-ultima`, con su coste en mutantes |
-| `local <id>` | el ingeniero | mide UN módulo con dos núcleos; **rechaza** el que pase de `tope_local` diciendo su coste |
-| `traer [run-id]` | el coordinador | vacía `reports/mutation/` y baja el artefacto; rechaza una descarga en la que falte o sobre un informe |
-| `repartir [--comentar]` | el coordinador | delta contra la huella de HEAD, atribución honesta y comentario en la PR de origen |
+| `local <id>` | el ingeniero | mide UN módulo con dos núcleos; **rechaza** el que pase de `tope_local` diciendo su coste. Corrido ENCIMA de una descarga bloquea el reparto: sobreescribe el informe de CI y su sello deja de casar |
+| `traer [run-id]` | el coordinador | vacía `reports/mutation/` y baja el artefacto; rechaza la descarga a la que le falte un informe, le sobre uno, o traiga uno cuyo **sello no case** con el que midió la corrida |
+| `repartir [--comentar]` | el coordinador | delta contra la huella de HEAD, atribución honesta —anclada en el `desde` que trae la corrida, no en el tag que ella misma mueve— y comentario en la PR de origen; repite el guardia del sello |
 
 Autorizar es entrar en Actions → *Mutation testing* → **Run workflow** (funciona
 desde el navegador del móvil). Input vacío = lo que falta desde el tag; `TODOS` =

@@ -24,6 +24,8 @@ import {
   avisoDeFrescura,
   claveDeMutante,
   deltaDeCorrida,
+  duenosDeLaMedida,
+  duenosLegibles,
   estadoLegible,
   estadoDeReparto,
   marcaDeCorrida,
@@ -33,15 +35,18 @@ import {
   fusiona,
   hash64,
   huellaDeMutante,
+  modulosConInforme,
   permisoLocal,
   prDelAsunto,
   queHacerCon,
+  rangoDe,
   veredictoDeCorrida,
   verificaDescarga,
   vivosDeFichero,
   type Corrida,
   type CommitDelRango,
   type Huella,
+  type InformeSellado,
   type MedidaDeFichero,
   type MutanteMedido,
 } from "../scripts/mutacion-huella.js";
@@ -65,7 +70,7 @@ const medida = (over: Partial<MedidaDeFichero> = {}): MedidaDeFichero => ({
   nuevos: [],
   resueltos: 0,
   base: "con base",
-  duenos: [],
+  duenos: { veredicto: "sin dueño" },
   ...over,
 });
 
@@ -376,7 +381,7 @@ describe("atribución · por módulo × alcance, y honesta", () => {
   });
 
   it("una sola PR selecciona el módulo → es suya", () => {
-    const a = atribuir("store", [commit("aaa1111", ["store"], 274), commit("bbb2222", ["world-map"], 276)]);
+    const a = atribuir("store", rangoDe([commit("aaa1111", ["store"], 274), commit("bbb2222", ["world-map"], 276)]));
     assert.equal(a.veredicto, "uno");
     assert.equal(a.etiqueta, "#274");
   });
@@ -384,7 +389,7 @@ describe("atribución · por módulo × alcance, y honesta", () => {
   it("dos candidatas → se nombran LAS DOS", () => {
     // Un dueño equivocado es peor que dos candidatos: el equivocado se descarta
     // en diez segundos y el hallazgo se queda sin nadie.
-    const a = atribuir("store", [commit("aaa1111", ["store"], 274), commit("bbb2222", ["store"], 276)]);
+    const a = atribuir("store", rangoDe([commit("aaa1111", ["store"], 274), commit("bbb2222", ["store"], 276)]));
     assert.equal(a.veredicto, "varios");
     assert.equal(a.etiqueta, "#274 o #276");
     assert.equal(a.candidatos.length, 2);
@@ -392,7 +397,7 @@ describe("atribución · por módulo × alcance, y honesta", () => {
 
   it("ninguna lo selecciona → SIN DUEÑO, y se dice", () => {
     // No se descarta ni se le adjudica al más cercano: se cuenta y se enseña.
-    const a = atribuir("store", [commit("aaa1111", ["world-map"], 274)]);
+    const a = atribuir("store", rangoDe([commit("aaa1111", ["world-map"], 274)]));
     assert.equal(a.veredicto, "sin dueño");
     assert.match(a.etiqueta, /sin dueño en el rango/);
   });
@@ -400,8 +405,60 @@ describe("atribución · por módulo × alcance, y honesta", () => {
   it("un commit directo a main también puede ser dueño, con su sha", () => {
     // 11 de los últimos 40 commits de este repo no llevan `(#NNN)`. Si solo
     // pudieran ser dueñas las PR, esos supervivientes saldrían huérfanos.
-    const a = atribuir("store", [commit("aaa1111c", ["store"])]);
+    const a = atribuir("store", rangoDe([commit("aaa1111c", ["store"])]));
     assert.equal(a.etiqueta, "aaa1111");
+  });
+
+  // ── #381: un rango vacío no es un módulo sin dueño ──
+  it("RANGO VACÍO no se colapsa con SIN DUEÑO: son dos hechos distintos", () => {
+    // El bug de #381 en una línea: `repartir` anclaba el rango en el tag
+    // `mutacion-ultima`, que la propia corrida adelanta al terminar, así que
+    // después de CADA corrida completa el rango salía vacío y los 33 módulos
+    // se imprimían «SIN DUEÑO en el rango» — una frase que dice «hubo cambios y
+    // ninguno explica esto: míralo», cuando la verdad era «no había dónde
+    // mirar». Un hallazgo inventado 33 veces cuesta más que ninguno.
+    const vacio = atribuir("store", rangoDe([]));
+    const sinDueno = atribuir("store", rangoDe([commit("aaa1111", ["world-map"], 274)]));
+    assert.equal(vacio.veredicto, "rango vacío");
+    assert.equal(sinDueno.veredicto, "sin dueño");
+    assert.notEqual(vacio.veredicto, sinDueno.veredicto);
+    assert.notEqual(vacio.etiqueta, sinDueno.etiqueta);
+    assert.doesNotMatch(vacio.etiqueta, /sin dueño/, "no puede leerse como el otro veredicto");
+    assert.match(vacio.etiqueta, /sin rango/);
+    assert.deepEqual(vacio.candidatos, [], "y no se inventa un candidato de la nada");
+  });
+
+  it("con rango vacío ningún módulo tiene dueño, tenga el nombre que tenga", () => {
+    // No hay una lista de la que salvarse: sin commits, la respuesta es la
+    // misma para todos, y es «no lo sé», no «de nadie».
+    for (const id of ["store", "world-map", "plugins-dsl"]) {
+      assert.equal(atribuir(id, rangoDe([])).veredicto, "rango vacío");
+    }
+  });
+});
+
+describe("atribución · el rango, con la lista vacía hecha inexpresable", () => {
+  const commit = (sha: string): CommitDelRango => ({ sha, asunto: "algo", modulos: ["store"] });
+
+  it("cero commits → `vacío`, y no un `commits` con lista vacía", () => {
+    // La rama `commits` es una tupla NO VACÍA: `{tipo:"commits", commits:[]}`
+    // no compila. Aquí se comprueba lo que el tipo no puede — que el
+    // constructor use la rama correcta.
+    assert.deepEqual(rangoDe([]), { tipo: "vacío" });
+  });
+
+  it("uno o más commits → `commits`, con todos dentro y en orden", () => {
+    const r = rangoDe([commit("aaa"), commit("bbb")]);
+    assert.equal(r.tipo, "commits");
+    if (r.tipo !== "commits") return;
+    assert.deepEqual(
+      r.commits.map((c) => c.sha),
+      ["aaa", "bbb"],
+    );
+    // El primero es `CommitDelRango`, no `CommitDelRango | undefined`: eso lo
+    // afirma el tipo tupla y por eso esta línea compila sin guardia.
+    const primero: CommitDelRango = r.commits[0];
+    assert.equal(primero.sha, "aaa");
   });
 });
 
@@ -435,13 +492,19 @@ describe("atribución · de qué PR es un asunto de commit", () => {
   });
 });
 
+/** Un informe declarado en el manifiesto, con su sello. El sello por defecto
+ *  deriva del nombre para que dos informes distintos no compartan hash sin que
+ *  el test lo diga a propósito. */
+const sello = (modulo: string, sha256 = `sello-de-${modulo}`): InformeSellado => ({ modulo, sha256 });
+
 describe("manifiesto · quién puede mover el tag", () => {
   const corrida = (over: Partial<Corrida> = {}): Corrida => ({
     sha: "abc",
+    desde: "ancla000",
     run_id: "1",
     origen: "rango",
     modulos_pedidos: ["a", "b"],
-    modulos_con_informe: ["a", "b"],
+    informes: [sello("a"), sello("b")],
     fecha: "2026-08-25T00:00:00.000Z",
     ...over,
   });
@@ -456,10 +519,16 @@ describe("manifiesto · quién puede mover el tag", () => {
     // El artefacto sube con `if: always()`, así que una corrida que se coma el
     // timeout deja informes de verdad. Mover el tag ahí declararía medido lo
     // que nadie midió, y el agujero sería invisible desde ese momento.
-    const v = veredictoDeCorrida(corrida({ modulos_con_informe: ["a"] }));
+    const v = veredictoDeCorrida(corrida({ informes: [sello("a")] }));
     assert.equal(v.completa, false);
     assert.equal(v.mueveTag, false);
     assert.match(v.porque, /\bb\b/);
+  });
+
+  it("los módulos con informe salen de `informes`, sin que nadie repita la lista", () => {
+    // Había DOS listas de nombres en el manifiesto y ahora hay una: el sello
+    // trae el módulo dentro. Una segunda lista podría discrepar de la primera.
+    assert.deepEqual(modulosConInforme(corrida()), ["a", "b"]);
   });
 
   it("una lista EXPLÍCITA de módulos NO mueve el tag aunque esté completa", () => {
@@ -473,30 +542,31 @@ describe("manifiesto · quién puede mover el tag", () => {
   });
 });
 
-describe("descarga · ni falta ni sobra", () => {
+describe("descarga · ni falta, ni sobra, ni es otro informe con el mismo nombre", () => {
   const corrida: Corrida = {
     sha: "abc",
+    desde: "ancla000",
     run_id: "9",
     origen: "rango",
     modulos_pedidos: ["store", "world-map"],
-    modulos_con_informe: ["store", "world-map"],
+    informes: [sello("store"), sello("world-map")],
     fecha: "2026-08-25T00:00:00.000Z",
   };
 
   it("lo exacto pasa", () => {
-    assert.deepEqual(verificaDescarga(corrida, ["store", "world-map"]), []);
+    assert.deepEqual(verificaDescarga(corrida, [sello("store"), sello("world-map")]), []);
   });
 
   it("un módulo declarado que no viene es una corrida truncada", () => {
-    const errores = verificaDescarga(corrida, ["store"]);
+    const errores = verificaDescarga(corrida, [sello("store")]);
     assert.equal(errores.length, 1);
     assert.match(errores[0], /world-map/);
   });
 
   it("una corrida a la que se le CAYÓ un módulo se puede bajar igual", () => {
     // El caso que ninguna de las tres pruebas de arriba alimentaba: las tres
-    // usan una corrida con `pedidos === con_informe`, así que la confusión
-    // entre las dos listas nunca se ejercía. La pagó la corrida 33790710680
+    // usan una corrida con `pedidos === informes`, así que la confusión entre
+    // las dos listas nunca se ejercía. La pagó la corrida 33790710680
     // (2026-09-03): `contrato-escena` murió en su dry-run, y los 32 informes
     // restantes —10.128 mutantes, 131 min de runner— no había forma de
     // repartirlos. Que la corrida sea INCOMPLETA lo dictamina
@@ -505,9 +575,9 @@ describe("descarga · ni falta ni sobra", () => {
     const caida: Corrida = {
       ...corrida,
       modulos_pedidos: ["store", "world-map", "contrato-escena"],
-      modulos_con_informe: ["store", "world-map"],
+      informes: [sello("store"), sello("world-map")],
     };
-    assert.deepEqual(verificaDescarga(caida, ["store", "world-map"]), []);
+    assert.deepEqual(verificaDescarga(caida, [sello("store"), sello("world-map")]), []);
     const v = veredictoDeCorrida(caida);
     assert.equal(v.completa, false, "y sigue siendo INCOMPLETA: no se ha perdido el hecho");
     assert.equal(v.mueveTag, false);
@@ -521,9 +591,9 @@ describe("descarga · ni falta ni sobra", () => {
     const caida: Corrida = {
       ...corrida,
       modulos_pedidos: ["store", "world-map", "contrato-escena"],
-      modulos_con_informe: ["store", "world-map"],
+      informes: [sello("store"), sello("world-map")],
     };
-    const errores = verificaDescarga(caida, ["store"]);
+    const errores = verificaDescarga(caida, [sello("store")]);
     assert.equal(errores.length, 1);
     assert.match(errores[0], /world-map/);
     assert.doesNotMatch(errores[0], /contrato-escena/, "el que no midió no es un fallo de descarga");
@@ -533,10 +603,85 @@ describe("descarga · ni falta ni sobra", () => {
     // Es el fallo silencioso: dos medidas de fechas distintas presentadas como
     // una sola foto. `npm run deuda` sumaría los supervivientes de la semana
     // pasada a los de hoy sin decir que son de corridas diferentes.
-    const errores = verificaDescarga(corrida, ["store", "world-map", "plugins-dsl"]);
+    const errores = verificaDescarga(corrida, [sello("store"), sello("world-map"), sello("plugins-dsl")]);
     assert.equal(errores.length, 1);
     assert.match(errores[0], /plugins-dsl/);
     assert.match(errores[0], /medida anterior/);
+  });
+
+  // ── #420: el sello, que es lo que el nombre no podía ver ──
+  it("un `local` corrido ENCIMA de la descarga se caza: el nombre casa y el contenido no", () => {
+    // El agujero exacto de #420. `npm run mutacion -- local world-map` escribe
+    // en `reports/mutation/world-map.json`, que es el nombre EXACTO que el
+    // manifiesto espera: no faltaba ni sobraba nada, así que el guardia lo
+    // dejaba pasar, entraba en el reparto y de ahí a la huella commiteada con
+    // el sha, la fecha y el run de CI encima de una medida que no era de CI —
+    // dos núcleos, otro código y otro momento.
+    const errores = verificaDescarga(corrida, [sello("store"), sello("world-map", "el-que-dejo-el-local")]);
+    assert.equal(errores.length, 1);
+    assert.match(errores[0], /world-map/, "tiene que NOMBRAR el módulo suplantado");
+    assert.doesNotMatch(errores[0], /\bstore\b/, "y no arrastrar al que sí es de la corrida");
+    assert.match(errores[0], /9/, "y decir de qué corrida se esperaba");
+    assert.match(errores[0], /local/, "y qué lo produce, que es lo accionable");
+  });
+
+  it("el sello caza también el informe truncado o editado a mano", () => {
+    // No es solo el `local`: cualquier contenido distinto bajo el mismo nombre
+    // —una descarga a medias, un JSON tocado a mano— deja de pasar por bueno.
+    const errores = verificaDescarga(corrida, [sello("store", "medio-fichero"), sello("world-map")]);
+    assert.equal(errores.length, 1);
+    assert.match(errores[0], /store/);
+  });
+
+  it("los tres fallos se cuentan por separado: no se tapan entre ellos", () => {
+    // Falta uno, sobra otro y un tercero está suplantado. Si el guardia parara
+    // en el primero, arreglar la descarga descubriría el siguiente fallo de uno
+    // en uno, y el sello —el más silencioso— sería el último en verse.
+    const tres: Corrida = {
+      ...corrida,
+      modulos_pedidos: ["store", "world-map", "plugins-dsl"],
+      informes: [sello("store"), sello("world-map"), sello("plugins-dsl")],
+    };
+    const errores = verificaDescarga(tres, [
+      sello("store", "otro-contenido"),
+      sello("world-map"),
+      sello("session-facets"),
+    ]);
+    assert.equal(errores.length, 3);
+    assert.match(errores.join("\n"), /plugins-dsl/, "el que falta");
+    assert.match(errores.join("\n"), /session-facets/, "el que sobra");
+    assert.match(errores.join("\n"), /store/, "el suplantado");
+  });
+
+  it("un módulo PEDIDO y CAÍDO que aparece en disco se caza: el guardia mira `informes`", () => {
+    // El invariante que estableció #418 y que no defendía nadie: `declarados`
+    // sale de `informes`, NO de `modulos_pedidos`. La diferencia solo se ve en
+    // el caso que esta tanda tiene vivo — `contrato-escena` se pidió en la
+    // corrida 33790710680 y murió en su dry-run, así que no dejó informe. Si
+    // alguien corre `local contrato-escena` encima de la descarga, el fichero
+    // aparece en disco SIN sello con el que compararlo: no falta (no está
+    // declarado) y no puede estar suplantado. Lo caza `sobran`, y solo porque
+    // `declarados` sale de lo que la corrida TRAE. Comparado contra lo que
+    // PIDIÓ, la medida local pasaría por buena y entraría en la huella.
+    const caida: Corrida = {
+      ...corrida,
+      modulos_pedidos: ["store", "world-map", "contrato-escena"],
+      informes: [sello("store"), sello("world-map")],
+    };
+    const errores = verificaDescarga(caida, [sello("store"), sello("world-map"), sello("contrato-escena")]);
+    assert.equal(errores.length, 1);
+    assert.match(errores[0], /contrato-escena/);
+    assert.match(errores[0], /medida anterior/);
+  });
+
+  it("mismo nombre y mismo sello pasa: el guardia no rechaza de más", () => {
+    // La otra dirección. Un guardia que rechazara siempre sería igual de
+    // inútil, y además apagaría el ritual entero de `traer`.
+    assert.deepEqual(
+      verificaDescarga(corrida, [sello("world-map"), sello("store")]),
+      [],
+      "el orden en disco tampoco decide nada",
+    );
   });
 });
 
@@ -619,30 +764,89 @@ describe("cola de deuda · qué se lee de cada fichero", () => {
   });
 
   it("los NUEVOS salen con su dueño", () => {
-    const base = medida({ vivos: [h("a"), h("b")], nuevos: [h("b")], duenos: ["#274", "#276"] });
+    const base = medida({ vivos: [h("a"), h("b")], nuevos: [h("b")], duenos: { veredicto: "con dueño", quienes: ["#274", "#276"] } });
     assert.match(anotacionDeFichero([h("a"), h("b")], base), /1 NUEVOS · #274 o #276/);
   });
 
   it("un NUEVO sin dueño lo dice en vez de inventarse uno", () => {
-    const base = medida({ vivos: [h("b")], nuevos: [h("b")], duenos: [] });
+    const base = medida({ vivos: [h("b")], nuevos: [h("b")], duenos: { veredicto: "sin dueño" } });
     assert.match(anotacionDeFichero([h("b")], base), /sin dueño en el rango/);
   });
 
   it("si ya no queda ninguno de los nuevos, no se sigue anunciando", () => {
-    const base = medida({ vivos: [h("a"), h("b")], nuevos: [h("b")], duenos: ["#274"] });
+    const base = medida({ vivos: [h("a"), h("b")], nuevos: [h("b")], duenos: { veredicto: "con dueño", quienes: ["#274"] } });
     assert.match(anotacionDeFichero([h("a")], base), /ya estaban/);
   });
 
   it("un superviviente que la última medida no conocía se marca sin atribuir", () => {
     // Solo puede venir de un `npm run mutacion -- local` posterior. Decirlo
     // evita leer la atribución de la huella como si también cubriera a estos.
-    const base = medida({ vivos: [h("a")], nuevos: [], duenos: ["#274"] });
+    const base = medida({ vivos: [h("a")], nuevos: [], duenos: { veredicto: "con dueño", quienes: ["#274"] } });
     assert.match(anotacionDeFichero([h("a"), h("z")], base), /1 sin atribuir/);
   });
 
   it("los resueltos se enseñan: es la mitad buena del delta", () => {
-    const base = medida({ vivos: [h("a")], nuevos: [], resueltos: 3, duenos: [] });
+    const base = medida({ vivos: [h("a")], nuevos: [], resueltos: 3, duenos: { veredicto: "sin dueño" } });
     assert.match(anotacionDeFichero([h("a")], base), /3 resueltos/);
+  });
+
+  // ── #381 un piso más abajo: lo que la huella GUARDA de la atribución ──
+  it("un NUEVO de un RANGO VACÍO no se lee como «sin dueño»: nadie lo buscó", () => {
+    // El bug de #381 desplazado a la huella. `atribuir` distingue los dos
+    // estados y la consola de `repartir` los imprime bien; si al escribir se
+    // colapsaran en una lista vacía, `npm run deuda` diría «1 NUEVOS · sin
+    // dueño en el rango» de un módulo al que NADIE le buscó dueño. Una
+    // no-medida con cara de resultado, que es el fallo original con otra cara.
+    const sinRango = medida({ vivos: [h("b")], nuevos: [h("b")], duenos: { veredicto: "rango vacío" } });
+    const sinDueno = medida({ vivos: [h("b")], nuevos: [h("b")], duenos: { veredicto: "sin dueño" } });
+    const leidoSinRango = anotacionDeFichero([h("b")], sinRango);
+    const leidoSinDueno = anotacionDeFichero([h("b")], sinDueno);
+    assert.notEqual(leidoSinRango, leidoSinDueno, "los dos estados no pueden leerse igual");
+    assert.doesNotMatch(leidoSinRango, /sin dueño/, "no puede leerse como el otro veredicto");
+    assert.match(leidoSinRango, /nadie buscó dueño/);
+    assert.match(leidoSinDueno, /sin dueño en el rango/);
+  });
+
+  it("los TRES estados del dueño se leen distintos, como los tres del delta", () => {
+    const leidos = (["con dueño", "sin dueño", "rango vacío"] as const).map((v) =>
+      duenosLegibles(v === "con dueño" ? { veredicto: v, quienes: ["#274"] } : { veredicto: v }),
+    );
+    assert.equal(new Set(leidos).size, 3, "dos veredictos con la misma frase son un veredicto");
+  });
+});
+
+describe("el dueño que se GUARDA sale de la atribución, no se rehace aparte", () => {
+  const commit = (sha: string, modulos: string[], pr?: number): CommitDelRango => ({
+    sha,
+    asunto: pr ? `algo (#${pr})` : "algo directo",
+    pr,
+    modulos,
+  });
+
+  it("una candidata → se guarda con su nombre", () => {
+    const d = duenosDeLaMedida(atribuir("store", rangoDe([commit("aaa1111", ["store"], 274)])));
+    assert.deepEqual(d, { veredicto: "con dueño", quienes: ["#274"] });
+  });
+
+  it("dos candidatas → se guardan LAS DOS, como se imprimen", () => {
+    const d = duenosDeLaMedida(
+      atribuir("store", rangoDe([commit("aaa1111", ["store"], 274), commit("bbb2222", ["store"], 276)])),
+    );
+    assert.deepEqual(d, { veredicto: "con dueño", quienes: ["#274", "#276"] });
+  });
+
+  it("un commit directo a main se guarda con su sha corto, no se pierde", () => {
+    // Rehacer los nombres a mano en `repartir` era una copia de
+    // `nombreDeCommit`: dos reglas para el mismo nombre, capaces de divergir.
+    const d = duenosDeLaMedida(atribuir("store", rangoDe([commit("aaa1111c", ["store"])])));
+    assert.deepEqual(d, { veredicto: "con dueño", quienes: ["aaa1111"] });
+  });
+
+  it("nadie lo tocó → SIN DUEÑO; no había rango → RANGO VACÍO. Nunca la misma cosa", () => {
+    assert.deepEqual(duenosDeLaMedida(atribuir("store", rangoDe([commit("aaa1111", ["world-map"], 274)]))), {
+      veredicto: "sin dueño",
+    });
+    assert.deepEqual(duenosDeLaMedida(atribuir("store", rangoDe([]))), { veredicto: "rango vacío" });
   });
 });
 
@@ -808,6 +1012,30 @@ describe("la huella commiteada es el histórico que este repo no tenía", () => 
       assert.ok(m.total > 0, `${f} dice 0 mutantes medidos`);
       assert.ok(Array.isArray(m.vivos), `${f} no lleva lista de vivos`);
       for (const h of m.vivos) assert.match(h, /^[0-9a-f]{16}$/, `${f}: huella con formato raro`);
+    }
+  });
+
+  it("TODA fila commiteada dice su veredicto de dueño, y con dueño nombra a alguien", () => {
+    // La totalidad, que es lo que impide que una fila a medio migrar sobreviva
+    // en silencio: `fusiona` CONSERVA lo que la corrida no midió, así que una
+    // fila con la forma vieja (`duenos: []`) se quedaría ahí para siempre y
+    // `duenosLegibles` la leería como `undefined`. El tipo solo sujeta lo que
+    // se escribe desde TypeScript; el fichero lo escribe también el editor de
+    // quien resuelve un conflicto.
+    const huella = JSON.parse(readFileSync(resolve(raiz, "data/contract/mutacion-huella.json"), "utf8")) as Huella;
+    for (const [f, m] of Object.entries(huella.ficheros)) {
+      const d = m.duenos;
+      assert.ok(d !== null && typeof d === "object" && !Array.isArray(d), `${f}: dueños con la forma vieja`);
+      assert.ok(
+        d.veredicto === "con dueño" || d.veredicto === "sin dueño" || d.veredicto === "rango vacío",
+        `${f}: veredicto de dueño desconocido (${JSON.stringify(d)})`,
+      );
+      if (d.veredicto === "con dueño") {
+        assert.ok(d.quienes.length > 0, `${f}: dice tener dueño y no nombra a ninguno`);
+      }
+      // Y se lee: la cola de trabajo no puede escribir `undefined` de una fila
+      // que el fichero traía con otra forma.
+      assert.ok(duenosLegibles(d).length > 0, `${f}: sus dueños no se pueden leer`);
     }
   });
 });

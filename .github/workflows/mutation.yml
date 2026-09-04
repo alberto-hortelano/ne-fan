@@ -65,9 +65,21 @@ jobs:
       # Un rango que no selecciona nada NO se degrada a la corrida completa: el
       # paso falla, porque gastar 180 minutos de runner midiendo cero es peor
       # que decirlo.
+      #
+      # Y AQUÍ SE LEE EL ANCLA, antes de medir y en los tres orígenes: el sha del
+      # tag `mutacion-ultima` tal y como está AHORA, que es el punto desde el que
+      # esta corrida elige. Se lee una vez y viaja al manifiesto, porque el
+      # último paso de este mismo workflow adelanta el tag a `$GITHUB_SHA`: quien
+      # reparta después leería un ancla que ya no es la de esta corrida, el rango
+      # `tag..corrida.sha` saldría VACÍO por construcción y los 33 módulos
+      # saldrían «sin dueño» justo en la corrida que más tenía que repartir
+      # (#381). El dato existía; lo único que se hacía con él era tirarlo.
       - name: Qué hay que medir
         id: seleccion
         run: |
+          DESDE="$(npm run --silent mutacion -- ancla)"
+          echo "ancla del rango: $DESDE"
+          echo "desde=$DESDE" >> "$GITHUB_OUTPUT"
           if [ "$MODULOS" = "TODOS" ]; then
             echo "origen=todos" >> "$GITHUB_OUTPUT"
             echo "ids=" >> "$GITHUB_OUTPUT"
@@ -115,10 +127,15 @@ jobs:
       - name: Manifiesto de la corrida
         id: manifiesto
         if: always()
-        run: npm run --silent mutacion -- manifiesto --origen "$ORIGEN" --pedidos "$IDS" --sha "$GITHUB_SHA" --run "$GITHUB_RUN_ID"
+        run: npm run --silent mutacion -- manifiesto --origen "$ORIGEN" --pedidos "$IDS" --sha "$GITHUB_SHA" --desde "$DESDE" --run "$GITHUB_RUN_ID"
         env:
           ORIGEN: ${{ steps.seleccion.outputs.origen }}
           IDS: ${{ steps.seleccion.outputs.ids }}
+          # El ancla que leyó el paso de selección, ANTES de que el último paso
+          # mueva el tag. `--desde` es obligatorio: un manifiesto que se
+          # escribiera igual sin ella dejaría el fallo para el día del reparto,
+          # cuando el runner ya no está.
+          DESDE: ${{ steps.seleccion.outputs.desde }}
 
       - uses: actions/upload-artifact@v7
         if: always()
