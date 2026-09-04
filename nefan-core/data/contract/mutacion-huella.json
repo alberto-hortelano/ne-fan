@@ -11,16 +11,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/combat/attack-area.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -32,16 +35,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/combat/combat-resolver.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -53,16 +59,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/combat/enemy-ai.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -220,16 +229,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/combat/hostiles.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -243,16 +255,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/contract/model-io/physics.ts": {
       "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
@@ -266,14 +281,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#402",
+          "#401",
+          "#398",
+          "#396",
+          "#394",
+          "#389"
+        ]
+      }
     },
     "src/contract/model-io/retired-terrain-fields.ts": {
       "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
@@ -285,14 +303,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "sin base",
-      "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#402",
+          "#401",
+          "#398",
+          "#396",
+          "#394",
+          "#389"
+        ]
+      }
     },
     "src/contract/model-io/scene-schema.ts": {
       "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
@@ -368,14 +389,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "incomparable",
-      "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#402",
+          "#401",
+          "#398",
+          "#396",
+          "#394",
+          "#389"
+        ]
+      }
     },
     "src/contract/model-io/validate.ts": {
       "sha": "7b817b98e258b8b9ae82be1a79747d35ef0a5fa1",
@@ -401,14 +425,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#402",
-        "#401",
-        "#398",
-        "#396",
-        "#394",
-        "#389"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#402",
+          "#401",
+          "#398",
+          "#396",
+          "#394",
+          "#389"
+        ]
+      }
     },
     "src/contracts/asset-store.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -423,14 +450,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "sin base",
-      "duenos": [
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/contracts/http.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -442,16 +472,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/contracts/sprite-census.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -463,14 +496,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/contracts/sprite-forge.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -491,14 +527,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/plugins/dsl/deep-equal.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -530,16 +569,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/plugins/dsl/effects.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -567,16 +609,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/plugins/dsl/errors.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -590,16 +635,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/plugins/dsl/evaluate.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -626,16 +674,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/plugins/dsl/paths.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -818,16 +869,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/plugins/dsl/predicates.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -863,16 +917,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/plugins/dsl/values.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1049,16 +1106,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/protocol/status-labels.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1070,16 +1130,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/protocol/status-reparto.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1091,16 +1154,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/aim.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -1157,14 +1223,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/collision.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1388,16 +1457,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/derive.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1468,16 +1540,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/footprint.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1642,16 +1717,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/fps-ambience.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -1722,16 +1800,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/fps-detail.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2095,16 +2176,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/fps-interior.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2206,16 +2290,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/fps-relief.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2334,16 +2421,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/fps-spec.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2466,16 +2556,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/greybox.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2573,16 +2666,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/ground-collision.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2620,16 +2716,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/ground-prims.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2758,16 +2857,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/ground.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2803,16 +2905,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/palette.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2893,16 +2998,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/plan-collision.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -2914,16 +3022,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/scatter.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3523,16 +3634,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/time-of-day.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3544,16 +3658,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/vegetation.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3600,16 +3717,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/volume-metrics.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3669,16 +3789,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/blueprint/volumes.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3789,16 +3912,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/greybox/common.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3815,16 +3941,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/greybox/surfaces.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -3922,16 +4051,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/greybox/volume-prims.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4479,16 +4611,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/scene-normalize.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4509,16 +4644,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/scene/tile-plan.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4530,16 +4668,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/session/entidades-del-tile.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -4564,14 +4705,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "incomparable",
-      "duenos": [
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/session/entrada.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4583,16 +4727,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/session/mundo-persistido.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4655,16 +4802,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/session/session-facets.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4676,16 +4826,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/simulation/mirada.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -4701,14 +4854,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/simulation/paso-del-jugador.ts": {
       "sha": "81a7ce047155dd9dac2e3d22e3474fa26201ec36",
@@ -4722,14 +4878,17 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/store/game-store.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4783,16 +4942,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/store/reducers.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4804,16 +4966,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/world-map/bootstrap-place.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4835,16 +5000,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/world-map/edges.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4861,16 +5029,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/world-map/exits.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4884,16 +5055,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/world-map/map-triggers.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4908,16 +5082,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/world-map/npc-director.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4949,16 +5126,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/world-map/place-anchor.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -4973,16 +5153,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/world-map/place-target.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5030,16 +5213,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/world-map/types.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5064,16 +5250,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     },
     "src/world-map/world-map.ts": {
       "sha": "e67ae4da2acce963659f930c7d25a89f277c77df",
@@ -5150,16 +5339,19 @@
       "nuevos": [],
       "resueltos": 0,
       "base": "con base",
-      "duenos": [
-        "#423",
-        "#418",
-        "#416",
-        "#415",
-        "#414",
-        "#412",
-        "#409",
-        "#406"
-      ]
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#423",
+          "#418",
+          "#416",
+          "#415",
+          "#414",
+          "#412",
+          "#409",
+          "#406"
+        ]
+      }
     }
   }
 }

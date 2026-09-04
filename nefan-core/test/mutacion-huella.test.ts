@@ -24,6 +24,8 @@ import {
   avisoDeFrescura,
   claveDeMutante,
   deltaDeCorrida,
+  duenosDeLaMedida,
+  duenosLegibles,
   estadoLegible,
   estadoDeReparto,
   marcaDeCorrida,
@@ -68,7 +70,7 @@ const medida = (over: Partial<MedidaDeFichero> = {}): MedidaDeFichero => ({
   nuevos: [],
   resueltos: 0,
   base: "con base",
-  duenos: [],
+  duenos: { veredicto: "sin dueño" },
   ...over,
 });
 
@@ -651,6 +653,27 @@ describe("descarga · ni falta, ni sobra, ni es otro informe con el mismo nombre
     assert.match(errores.join("\n"), /store/, "el suplantado");
   });
 
+  it("un módulo PEDIDO y CAÍDO que aparece en disco se caza: el guardia mira `informes`", () => {
+    // El invariante que estableció #418 y que no defendía nadie: `declarados`
+    // sale de `informes`, NO de `modulos_pedidos`. La diferencia solo se ve en
+    // el caso que esta tanda tiene vivo — `contrato-escena` se pidió en la
+    // corrida 33790710680 y murió en su dry-run, así que no dejó informe. Si
+    // alguien corre `local contrato-escena` encima de la descarga, el fichero
+    // aparece en disco SIN sello con el que compararlo: no falta (no está
+    // declarado) y no puede estar suplantado. Lo caza `sobran`, y solo porque
+    // `declarados` sale de lo que la corrida TRAE. Comparado contra lo que
+    // PIDIÓ, la medida local pasaría por buena y entraría en la huella.
+    const caida: Corrida = {
+      ...corrida,
+      modulos_pedidos: ["store", "world-map", "contrato-escena"],
+      informes: [sello("store"), sello("world-map")],
+    };
+    const errores = verificaDescarga(caida, [sello("store"), sello("world-map"), sello("contrato-escena")]);
+    assert.equal(errores.length, 1);
+    assert.match(errores[0], /contrato-escena/);
+    assert.match(errores[0], /medida anterior/);
+  });
+
   it("mismo nombre y mismo sello pasa: el guardia no rechaza de más", () => {
     // La otra dirección. Un guardia que rechazara siempre sería igual de
     // inútil, y además apagaría el ritual entero de `traer`.
@@ -741,30 +764,89 @@ describe("cola de deuda · qué se lee de cada fichero", () => {
   });
 
   it("los NUEVOS salen con su dueño", () => {
-    const base = medida({ vivos: [h("a"), h("b")], nuevos: [h("b")], duenos: ["#274", "#276"] });
+    const base = medida({ vivos: [h("a"), h("b")], nuevos: [h("b")], duenos: { veredicto: "con dueño", quienes: ["#274", "#276"] } });
     assert.match(anotacionDeFichero([h("a"), h("b")], base), /1 NUEVOS · #274 o #276/);
   });
 
   it("un NUEVO sin dueño lo dice en vez de inventarse uno", () => {
-    const base = medida({ vivos: [h("b")], nuevos: [h("b")], duenos: [] });
+    const base = medida({ vivos: [h("b")], nuevos: [h("b")], duenos: { veredicto: "sin dueño" } });
     assert.match(anotacionDeFichero([h("b")], base), /sin dueño en el rango/);
   });
 
   it("si ya no queda ninguno de los nuevos, no se sigue anunciando", () => {
-    const base = medida({ vivos: [h("a"), h("b")], nuevos: [h("b")], duenos: ["#274"] });
+    const base = medida({ vivos: [h("a"), h("b")], nuevos: [h("b")], duenos: { veredicto: "con dueño", quienes: ["#274"] } });
     assert.match(anotacionDeFichero([h("a")], base), /ya estaban/);
   });
 
   it("un superviviente que la última medida no conocía se marca sin atribuir", () => {
     // Solo puede venir de un `npm run mutacion -- local` posterior. Decirlo
     // evita leer la atribución de la huella como si también cubriera a estos.
-    const base = medida({ vivos: [h("a")], nuevos: [], duenos: ["#274"] });
+    const base = medida({ vivos: [h("a")], nuevos: [], duenos: { veredicto: "con dueño", quienes: ["#274"] } });
     assert.match(anotacionDeFichero([h("a"), h("z")], base), /1 sin atribuir/);
   });
 
   it("los resueltos se enseñan: es la mitad buena del delta", () => {
-    const base = medida({ vivos: [h("a")], nuevos: [], resueltos: 3, duenos: [] });
+    const base = medida({ vivos: [h("a")], nuevos: [], resueltos: 3, duenos: { veredicto: "sin dueño" } });
     assert.match(anotacionDeFichero([h("a")], base), /3 resueltos/);
+  });
+
+  // ── #381 un piso más abajo: lo que la huella GUARDA de la atribución ──
+  it("un NUEVO de un RANGO VACÍO no se lee como «sin dueño»: nadie lo buscó", () => {
+    // El bug de #381 desplazado a la huella. `atribuir` distingue los dos
+    // estados y la consola de `repartir` los imprime bien; si al escribir se
+    // colapsaran en una lista vacía, `npm run deuda` diría «1 NUEVOS · sin
+    // dueño en el rango» de un módulo al que NADIE le buscó dueño. Una
+    // no-medida con cara de resultado, que es el fallo original con otra cara.
+    const sinRango = medida({ vivos: [h("b")], nuevos: [h("b")], duenos: { veredicto: "rango vacío" } });
+    const sinDueno = medida({ vivos: [h("b")], nuevos: [h("b")], duenos: { veredicto: "sin dueño" } });
+    const leidoSinRango = anotacionDeFichero([h("b")], sinRango);
+    const leidoSinDueno = anotacionDeFichero([h("b")], sinDueno);
+    assert.notEqual(leidoSinRango, leidoSinDueno, "los dos estados no pueden leerse igual");
+    assert.doesNotMatch(leidoSinRango, /sin dueño/, "no puede leerse como el otro veredicto");
+    assert.match(leidoSinRango, /nadie buscó dueño/);
+    assert.match(leidoSinDueno, /sin dueño en el rango/);
+  });
+
+  it("los TRES estados del dueño se leen distintos, como los tres del delta", () => {
+    const leidos = (["con dueño", "sin dueño", "rango vacío"] as const).map((v) =>
+      duenosLegibles(v === "con dueño" ? { veredicto: v, quienes: ["#274"] } : { veredicto: v }),
+    );
+    assert.equal(new Set(leidos).size, 3, "dos veredictos con la misma frase son un veredicto");
+  });
+});
+
+describe("el dueño que se GUARDA sale de la atribución, no se rehace aparte", () => {
+  const commit = (sha: string, modulos: string[], pr?: number): CommitDelRango => ({
+    sha,
+    asunto: pr ? `algo (#${pr})` : "algo directo",
+    pr,
+    modulos,
+  });
+
+  it("una candidata → se guarda con su nombre", () => {
+    const d = duenosDeLaMedida(atribuir("store", rangoDe([commit("aaa1111", ["store"], 274)])));
+    assert.deepEqual(d, { veredicto: "con dueño", quienes: ["#274"] });
+  });
+
+  it("dos candidatas → se guardan LAS DOS, como se imprimen", () => {
+    const d = duenosDeLaMedida(
+      atribuir("store", rangoDe([commit("aaa1111", ["store"], 274), commit("bbb2222", ["store"], 276)])),
+    );
+    assert.deepEqual(d, { veredicto: "con dueño", quienes: ["#274", "#276"] });
+  });
+
+  it("un commit directo a main se guarda con su sha corto, no se pierde", () => {
+    // Rehacer los nombres a mano en `repartir` era una copia de
+    // `nombreDeCommit`: dos reglas para el mismo nombre, capaces de divergir.
+    const d = duenosDeLaMedida(atribuir("store", rangoDe([commit("aaa1111c", ["store"])])));
+    assert.deepEqual(d, { veredicto: "con dueño", quienes: ["aaa1111"] });
+  });
+
+  it("nadie lo tocó → SIN DUEÑO; no había rango → RANGO VACÍO. Nunca la misma cosa", () => {
+    assert.deepEqual(duenosDeLaMedida(atribuir("store", rangoDe([commit("aaa1111", ["world-map"], 274)]))), {
+      veredicto: "sin dueño",
+    });
+    assert.deepEqual(duenosDeLaMedida(atribuir("store", rangoDe([]))), { veredicto: "rango vacío" });
   });
 });
 
@@ -930,6 +1012,30 @@ describe("la huella commiteada es el histórico que este repo no tenía", () => 
       assert.ok(m.total > 0, `${f} dice 0 mutantes medidos`);
       assert.ok(Array.isArray(m.vivos), `${f} no lleva lista de vivos`);
       for (const h of m.vivos) assert.match(h, /^[0-9a-f]{16}$/, `${f}: huella con formato raro`);
+    }
+  });
+
+  it("TODA fila commiteada dice su veredicto de dueño, y con dueño nombra a alguien", () => {
+    // La totalidad, que es lo que impide que una fila a medio migrar sobreviva
+    // en silencio: `fusiona` CONSERVA lo que la corrida no midió, así que una
+    // fila con la forma vieja (`duenos: []`) se quedaría ahí para siempre y
+    // `duenosLegibles` la leería como `undefined`. El tipo solo sujeta lo que
+    // se escribe desde TypeScript; el fichero lo escribe también el editor de
+    // quien resuelve un conflicto.
+    const huella = JSON.parse(readFileSync(resolve(raiz, "data/contract/mutacion-huella.json"), "utf8")) as Huella;
+    for (const [f, m] of Object.entries(huella.ficheros)) {
+      const d = m.duenos;
+      assert.ok(d !== null && typeof d === "object" && !Array.isArray(d), `${f}: dueños con la forma vieja`);
+      assert.ok(
+        d.veredicto === "con dueño" || d.veredicto === "sin dueño" || d.veredicto === "rango vacío",
+        `${f}: veredicto de dueño desconocido (${JSON.stringify(d)})`,
+      );
+      if (d.veredicto === "con dueño") {
+        assert.ok(d.quienes.length > 0, `${f}: dice tener dueño y no nombra a ninguno`);
+      }
+      // Y se lee: la cola de trabajo no puede escribir `undefined` de una fila
+      // que el fichero traía con otra forma.
+      assert.ok(duenosLegibles(d).length > 0, `${f}: sus dueños no se pueden leer`);
     }
   });
 });

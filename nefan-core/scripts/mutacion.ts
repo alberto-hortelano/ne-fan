@@ -38,6 +38,19 @@
  *  pueda ejercerlo con datos sintéticos. Un test que llamara a git de verdad
  *  correría en CI sobre un clon superficial y pasaría en verde sin comprobar
  *  nada, que es lo que `deuda.ts:159` ya documenta de `enColaDeCrap`.
+ *
+ *  LO QUE QUEDA EN ESTE FICHERO NO LO MIRA NINGÚN TEST, y hay que saberlo: nadie
+ *  puede importar `scripts/mutacion.ts` (llama a git y a `gh`) ni `mutate.ts`
+ *  (lanza una corrida al cargarse), y `scripts/` está fuera del perímetro de
+ *  mutación. Medido el 2026-09-04 sobre el diff de #381+#420: OCHO reversiones
+ *  del cableado —el ancla del reparto, la contradicción del rango vacío, el
+ *  fail-loud de `leerCorrida`, el cálculo del sello, el ancla que escribe
+ *  `manifiesto`, la admisión de `--pedidos ""` y el paso del workflow— dejaban
+ *  `npm run verify` en verde. Quien las mira es
+ *  `qa/mutacion-cableado-en-negativo.mjs`, que ejerce cada una contra el VERBO
+ *  de verdad y exige ver el observable cambiar al romperla. Si tocas algo de
+ *  aquí, córrelo; y si añades una decisión nueva, añádele su invariante ahí,
+ *  porque la batería no va a enterarse.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -58,6 +71,7 @@ import {
 import {
   atribuir,
   deltaDeCorrida,
+  duenosDeLaMedida,
   estadoLegible,
   estadoDeReparto,
   marcaDeCorrida,
@@ -76,6 +90,7 @@ import {
   type Corrida,
   type CommitDelRango,
   type DeltaDeFichero,
+  type DuenosDeLaMedida,
   type Huella,
   type InformeSellado,
   type MedidaDeFichero,
@@ -253,14 +268,18 @@ function informesEnDisco(): InformeSellado[] {
     .map((f) => ({ modulo: f.slice(0, -".json".length), sha256: selloDeInforme(join(DIR_INFORMES, f)) }));
 }
 
-/** El manifiesto de la corrida bajada, o un error que dice qué le falta.
+/** El manifiesto de la corrida bajada, o un error que dice qué le pasa.
  *
- *  Pre-producción, cero compatibilidad: un `corrida.json` sin `desde` o sin
- *  `informes` no se lee «como se pueda». Sin `desde`, `repartir` no tiene ancla
- *  y volvería a colgar el rango del tag que la propia corrida movió (#381);
- *  sin `informes`, el guardia compara nombres y una medida local se cuela en el
- *  histórico commiteado (#420). Las dos degradaciones salen VERDES y mienten,
- *  que es justo por lo que aquí se lanza. */
+ *  Pre-producción, cero compatibilidad: un `corrida.json` no se lee «como se
+ *  pueda», y eso vale para TODOS sus campos, no solo para los dos que estrenó
+ *  esta tanda. Cada uno decide algo que después no se puede deshacer: sin
+ *  `desde`, `repartir` volvería a colgar el rango del tag que la propia corrida
+ *  movió (#381); sin `informes`, el guardia compara nombres y una medida local
+ *  se cuela en el histórico commiteado (#420); un `origen` desconocido no es
+ *  `"explicito"`, así que `veredictoDeCorrida` lo tomaría por una corrida capaz
+ *  de MOVER EL TAG, declarando medido lo que nadie midió; y un
+ *  `modulos_pedidos` ausente reventaba con un `TypeError` crudo en vez de
+ *  decir qué hacer. Todas esas degradaciones salen verdes y mienten. */
 function leerCorrida(): Corrida {
   if (!existsSync(RUTA_CORRIDA)) {
     throw new Error(
@@ -271,15 +290,25 @@ function leerCorrida(): Corrida {
     );
   }
   const corrida = JSON.parse(readFileSync(RUTA_CORRIDA, "utf8")) as Partial<Corrida>;
-  const falta: string[] = [];
-  if (typeof corrida.desde !== "string" || corrida.desde.length === 0) falta.push("desde (el ancla del rango)");
-  if (!Array.isArray(corrida.informes)) falta.push("informes (el módulo y el sello de cada informe)");
-  if (falta.length > 0) {
+  const cadena = (v: unknown): boolean => typeof v === "string" && v.length > 0;
+  const mal: string[] = [];
+  if (!cadena(corrida.sha)) mal.push("sha (el commit que se midió)");
+  if (!cadena(corrida.desde)) mal.push("desde (el ancla del rango)");
+  if (!cadena(corrida.run_id)) mal.push("run_id (la corrida de CI de la que salió)");
+  if (!cadena(corrida.fecha)) mal.push("fecha");
+  if (corrida.origen !== "rango" && corrida.origen !== "todos" && corrida.origen !== "explicito") {
+    mal.push(`origen (dice ${JSON.stringify(corrida.origen)}, y solo vale rango | todos | explicito)`);
+  }
+  if (!Array.isArray(corrida.modulos_pedidos)) mal.push("modulos_pedidos (qué se mandó medir)");
+  if (!Array.isArray(corrida.informes)) mal.push("informes (el módulo y el sello de cada informe)");
+  if (mal.length > 0) {
     throw new Error(
-      `el manifiesto de ${relative(coreRoot, RUTA_CORRIDA)} no trae: ${falta.join(", ")}. ` +
-        `Es de una corrida anterior a que CI los escribiera, y sin ellos no se puede repartir: el rango ` +
-        `colgaría del tag que la propia corrida adelanta (#381) y el guardia de la descarga compararía ` +
-        `nombres, que es lo que deja pasar una medida local (#420). Lanza una corrida nueva y bájala.`,
+      `el manifiesto de ${relative(coreRoot, RUTA_CORRIDA)} no está bien: ${mal.join("; ")}.\n` +
+        `Lo escribe CI dentro del artefacto, así que esto significa una de dos: o es de una corrida ` +
+        `anterior a que CI escribiera el ancla y el sello —y entonces no hay recuperación, porque el dato ` +
+        `no existe en ningún sitio— o alguien lo editó a mano. En los dos casos, la salida es una corrida ` +
+        `nueva: autorízala (Actions → "Mutation testing" → Run workflow) y bájala con ` +
+        `npm run mutacion -- traer`,
     );
   }
   return corrida as Corrida;
@@ -458,7 +487,11 @@ interface HallazgoNuevo {
 interface Reparto {
   modulo: string;
   ficheros: DeltaDeFichero[];
-  duenos: string[];
+  // La MISMA estructura que va a la huella, derivada de la atribución una sola
+  // vez: aquí se rehacían los nombres a mano (una copia de `nombreDeCommit`) y
+  // el veredicto viajaba aparte, así que la consola y el fichero podían acabar
+  // diciendo cosas distintas del mismo módulo.
+  duenos: DuenosDeLaMedida;
   etiqueta: string;
   // Derivado de `Atribucion` y no copiado: una segunda lista de veredictos
   // podría quedarse sin el cuarto y el compilador no diría nada.
@@ -504,7 +537,7 @@ function repartir(argv: readonly string[]): void {
     }
     const deltas = deltaDeCorrida(ahora, base);
     const atribucion = atribuir(id, rango);
-    const duenos = atribucion.candidatos.map((c) => (c.pr === undefined ? c.sha.slice(0, 7) : `#${c.pr}`));
+    const duenos = duenosDeLaMedida(atribucion);
 
     for (const d of deltas) {
       medidos[d.fichero] = {
@@ -646,7 +679,10 @@ function pistaDeBlame(sha: string, fichero: string, linea: number): string {
 function agrupaPorPr(repartos: readonly Reparto[]): Map<number, Reparto[]> {
   const out = new Map<number, Reparto[]>();
   for (const r of repartos) {
-    for (const d of r.duenos) {
+    // Solo la rama con dueños tiene a quién comentar; las otras dos ni siquiera
+    // ofrecen una lista que recorrer, que es la gracia de la unión.
+    if (r.duenos.veredicto !== "con dueño") continue;
+    for (const d of r.duenos.quienes) {
       if (!d.startsWith("#")) continue;
       const pr = Number(d.slice(1));
       out.set(pr, [...(out.get(pr) ?? []), r]);

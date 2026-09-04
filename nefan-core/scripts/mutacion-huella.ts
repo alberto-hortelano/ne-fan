@@ -151,9 +151,51 @@ export interface MedidaDeFichero {
    *  contenido del commit medido a mano: sin esto decía "ya estaban" de unos
    *  supervivientes que nadie había podido comparar. */
   base: "con base" | "sin base" | "incomparable";
-  /** Quién pudo traerlos: las PR del rango cuyo diff selecciona este módulo.
-   *  Vacío = sin dueño en el rango, que se dice, no se descarta. */
-  duenos: string[];
+  /** Quién pudo traerlos, con los tres estados que NO se colapsan. Ver
+   *  `DuenosDeLaMedida`: era `string[]`, y la lista vacía decía a la vez «se
+   *  miró el rango y nadie tocó este módulo» y «no había rango que mirar». */
+  duenos: DuenosDeLaMedida;
+}
+
+/** De quién es lo que una medida encontró — el veredicto de `atribuir`, tal y
+ *  como se GUARDA.
+ *
+ *  Era `string[]` y la lista vacía significaba dos cosas incompatibles. El
+ *  cuarto veredicto («rango vacío») nacía en `atribuir`, se leía bien en la
+ *  consola de quien reparte… y se perdía al escribir la huella, así que
+ *  `npm run deuda` escribía «N NUEVOS · sin dueño en el rango» sobre un módulo
+ *  al que NADIE había buscado dueño. Es el bug de #381 un piso más abajo: una
+ *  no-medida con cara de resultado, que es la forma exacta del fallo que esta
+ *  casa ya declaró inexpresable para los tres estados del delta («SIN BASE no es
+ *  ni nuevo ni ya estaba»).
+ *
+ *  La rama con dueños lleva una TUPLA NO VACÍA, igual que `RangoDeCommits`: así
+ *  «con dueño y ninguno» no compila, y los dos estados sin dueño son
+ *  constructores distintos que ningún `if` puede confundir. Y no hace falta
+ *  distinguir «uno» de «varios», porque eso lo dice la propia lista. */
+export type DuenosDeLaMedida =
+  | { veredicto: "con dueño"; quienes: readonly [string, ...string[]] }
+  | { veredicto: "sin dueño" }
+  | { veredicto: "rango vacío" };
+
+/** Lo que se guarda, DERIVADO de la atribución y no recalculado aparte.
+ *
+ *  `repartir` construía los nombres a mano (`c.pr === undefined ? sha : "#pr"`,
+ *  una copia de `nombreDeCommit`) y tiraba el veredicto. Derivarlo aquí hace que
+ *  la huella no pueda discrepar de lo que la consola acaba de imprimir. */
+export function duenosDeLaMedida(a: Atribucion): DuenosDeLaMedida {
+  if (a.veredicto === "rango vacío") return { veredicto: "rango vacío" };
+  const [primero, ...resto] = a.candidatos.map(nombreDeCommit);
+  if (primero === undefined) return { veredicto: "sin dueño" };
+  return { veredicto: "con dueño", quienes: [primero, ...resto] };
+}
+
+/** Cómo se lee un dueño en la cola de trabajo. Vive junto al tipo para que no
+ *  haya dos redacciones del mismo veredicto en dos ficheros. */
+export function duenosLegibles(d: DuenosDeLaMedida): string {
+  if (d.veredicto === "con dueño") return d.quienes.join(" o ");
+  if (d.veredicto === "sin dueño") return "sin dueño en el rango";
+  return "sin rango que mirar: nadie buscó dueño";
 }
 
 export interface Huella {
@@ -625,7 +667,10 @@ export function anotacionDeFichero(
   else if (base.base === "incomparable") {
     partes.push("base de otro código — no hubo comparación posible en la última corrida");
   } else if (sigueNuevo > 0) {
-    partes.push(`${sigueNuevo} NUEVOS · ${base.duenos.length > 0 ? base.duenos.join(" o ") : "sin dueño en el rango"}`);
+    // El veredicto se LEE, no se deduce de si la lista está vacía: «nadie del
+    // rango tocó esto» y «no había rango» mandan a sitios distintos, y el
+    // segundo no es un hallazgo de nadie.
+    partes.push(`${sigueNuevo} NUEVOS · ${duenosLegibles(base.duenos)}`);
   } else partes.push("ya estaban");
   if (base.resueltos > 0) partes.push(`${base.resueltos} resueltos`);
   // Un superviviente que no está NI en los vivos NI en los nuevos de la última

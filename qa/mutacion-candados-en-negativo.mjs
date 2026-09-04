@@ -101,6 +101,13 @@ const INVARIANTES = [
   ["descarga · un informe que SOBRA se ignora", SRC,
     `  const sobran = presentes.filter((i) => !declarados.has(i.modulo)).map((i) => i.modulo);`,
     `  const sobran: string[] = [];`],
+  // El invariante que estableció #418 y que no defendía nadie: lo declarado es
+  // lo que la corrida TRAE, no lo que PIDIÓ. La diferencia solo se ve con un
+  // módulo pedido y caído — `contrato-escena` hoy — sobre el que alguien corra
+  // un `local`.
+  ["descarga · lo declarado sale de lo que se PIDIÓ en vez de lo que se trajo (#418)", SRC,
+    `  const declarados = new Set(modulosConInforme(c));`,
+    `  const declarados = new Set(c.modulos_pedidos);`],
   ["descarga · un informe que FALTA se ignora", SRC,
     `  const faltan = c.informes.filter((i) => !selloPresente.has(i.modulo)).map((i) => i.modulo);`,
     `  const faltan: string[] = [];`],
@@ -114,6 +121,15 @@ const INVARIANTES = [
   ["atribución · un rango VACÍO se colapsa a «sin dueño»", SRC,
     `  if (rango.tipo === "vacío") {\n    return {\n      modulo,\n      candidatos: [],\n      veredicto: "rango vacío",\n      etiqueta: "sin rango que mirar (la corrida no tenía commits sin medir)",\n    };\n  }\n  const candidatos = rango.commits.filter((c) => c.modulos.includes(modulo));`,
     `  const candidatos = (rango.tipo === "vacío" ? [] : rango.commits).filter((c) => c.modulos.includes(modulo));`],
+  // #381 un piso más abajo: el veredicto que se GUARDA. Si «rango vacío» se
+  // escribe como «sin dueño», `npm run deuda` acusa de un hallazgo a un rango
+  // que nadie miró — el mismo bug, ya fuera de `repartir`.
+  ["dueños · el RANGO VACÍO se guarda como «sin dueño» (la huella pierde el cuarto veredicto)", SRC,
+    `  if (a.veredicto === "rango vacío") return { veredicto: "rango vacío" };`,
+    `  if (a.veredicto === "rango vacío") return { veredicto: "sin dueño" };`],
+  ["dueños · los dos estados sin dueño se leen con la MISMA frase en la cola", SRC,
+    `  return "sin rango que mirar: nadie buscó dueño";`,
+    `  return "sin dueño en el rango";`],
   // ── qué cuenta como vivo ──
   ["vivos · el total deja de contar a los supervivientes", SRC,
     `  return { vivos: [...vivos].sort(), total: vivos.length + detectados };`,
