@@ -133,7 +133,7 @@ export function applyPlanCollision(
     // colisionan igual sobre el mismo plan.
     const grid = planCollisionGrid(plan.ground, plan.volumes, rect);
     const collider = grid ? createTerrainCollider(grid) : null;
-    tileStore.setSvgCollider(key, collider);
+    tileStore.setSvgCollider(key, collider, "derivada");
     dlog(
       `[collision] ${key}: plan aplicado — ${collider?.solidCellCount ?? 0} celdas sólidas`,
     );

@@ -55,6 +55,12 @@ export class TileStore {
    *  recalcula. Vivía en el renderer oblicuo, que era quien re-pintaba; con
    *  una sola vista, el dueño del dato es el modelo de mundo. */
   private fingerprints = new Map<string, string>();
+  /** Cuántas veces se DERIVÓ y cuántas se RESTAURÓ la colisión del plan de cada
+   *  tile. Solo lectura, para `__nefan.colision()` (QA-G H3 de #410): «restaurar
+   *  vs derivar» solo era observable por una traza de dev, y un guion sobre una
+   *  cadena de `console.log` deja de medir sin ponerse rojo el día que alguien
+   *  la reescribe. */
+  private episodios = new Map<string, { derivaciones: number; restauraciones: number }>();
 
   /** ¿Hay mundo? (las reglas de frontera solo aplican entonces). */
   get hasGridTiles(): boolean {
@@ -94,18 +100,35 @@ export class TileStore {
 
   /** Instala la colisión base derivada del plan del tile (null = plan sin
    *  celdas sólidas, aplicado igualmente: los AABBs del esquema se apagan).
-   *  Fail-loud si la clave no existe: se deriva justo tras registrar el tile. */
-  setSvgCollider(key: string, collider: TerrainCollider | null): void {
+   *  `como` dice si se acaba de DERIVAR o se RESTAURA la de antes (la huella no
+   *  cambió): es el dato que #410 hace observable. Fail-loud si la clave no
+   *  existe: se deriva justo tras registrar el tile. */
+  setSvgCollider(key: string, collider: TerrainCollider | null, como: "derivada" | "restaurada"): void {
     const entry = this.entries.get(key);
     if (!entry) throw new Error(`TileStore.setSvgCollider: tile ${key} no registrado`);
     entry.svgCollider = collider;
     entry.svgApplied = true;
+    const e = this.episodios.get(key) ?? { derivaciones: 0, restauraciones: 0 };
+    if (como === "derivada") e.derivaciones += 1;
+    else e.restauraciones += 1;
+    this.episodios.set(key, e);
+  }
+
+  /** Por tile: su huella y cuántas veces la colisión del plan se derivó o se
+   *  restauró. Copias, no las entradas: es un observable de bench. */
+  colision(): { key: string; huella: string; derivaciones: number; restauraciones: number }[] {
+    return [...this.entries.keys()].map((key) => ({
+      key,
+      huella: this.fingerprints.get(key) ?? "",
+      ...(this.episodios.get(key) ?? { derivaciones: 0, restauraciones: 0 }),
+    }));
   }
 
   /** Solo para resetWorld (arranque/resume/fixtures). */
   clear(): void {
     this.entries.clear();
     this.fingerprints.clear();
+    this.episodios.clear();
   }
 
   /** Coords de los tiles que toca el AABB (x±r, z±r) — ≤4. */

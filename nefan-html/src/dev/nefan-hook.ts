@@ -108,6 +108,10 @@ export function instalarNefanHook(deps: DepsDelHook): void {
     get dialogueVisible() { return deps.dialoguePanel.isVisible; },
     get exits() { return deps.mundo.salidas; },
     get tiles() { return [...deps.tileStore.entries.keys()]; },
+    // Por tile: huella y cuántas veces la colisión del plan se DERIVÓ o se
+    // RESTAURÓ (#410). Es lo que hace observable «el tile volvió igual» sin
+    // leer una traza de consola (guion 75).
+    colision: () => deps.tileStore.colision(),
     get currentTile() { return deps.mundo.tileActivo; },
     get frontier() { return deps.frontier.debugState(); },
     /** Ledger del último viaje por «Salidas»: qué paso se dio y cuál no. */

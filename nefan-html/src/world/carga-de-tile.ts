@@ -330,7 +330,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     // (analítica, síncrona) si es nueva o cambió. Agua∖decks del ground +
     // huellas de volumes — espacio de mundo.
     if (prevEntry?.svgApplied && !sceneChanged) {
-      tileStore.setSvgCollider(key, prevEntry.svgCollider);
+      tileStore.setSvgCollider(key, prevEntry.svgCollider, "restaurada");
     } else if (planInfo) {
       applyPlanCollision(key, { ground: planInfo.ground, volumes: planInfo.volumes }, rect, tileStore);
     }
