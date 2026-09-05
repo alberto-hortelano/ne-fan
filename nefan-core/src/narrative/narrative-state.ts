@@ -29,6 +29,7 @@ import { computeTileEdges } from "../scene/tile-edges.js";
 import type { PluginRecord, PluginManifest, PluginOrigin } from "../plugins/types.js";
 import { computePluginId } from "../plugins/hash.js";
 import { ExpandedSceneSchema } from "../contract/model-io/scene-schema.js";
+import { InventoryListSchema, describirInventarioInvalido } from "../contracts/request-schemas.js";
 import type { ZodError } from "zod";
 import { buildLlmContext } from "./serialize-llm.js";
 import { registerSceneNpcs } from "./npc-records.js";
@@ -546,6 +547,22 @@ export class NarrativeState {
       if (sinNombre) {
         throw new Error(
           `save "${sessionId}": entities["${rec.id}"].data.name ${sinNombre} — ${quienEs(rec)} no tiene nombre — ` +
+            "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
+        );
+      }
+    }
+    // Y el INVENTARIO del jugador (#452): `InventoryItem.id` es por lo que
+    // `inventory_remove` encuentra un ítem, y el save es la tercera puerta por
+    // la que entra uno —las otras dos, el State API y los plugins, ya aplican
+    // este mismo zod—. Un ítem sin `id` es de antes del gate o está corrupto:
+    // no se conserva (pre-producción, sin migraciones). Un save SIN el campo
+    // sigue cayendo al default más abajo (convención aditiva): lo que se
+    // exige es que lo que venga, venga bien formado.
+    if (data.player.inventory !== undefined) {
+      const inv = InventoryListSchema.safeParse(data.player.inventory);
+      if (!inv.success) {
+        throw new Error(
+          `save "${sessionId}": ${describirInventarioInvalido(inv.error)} — ` +
             "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
         );
       }

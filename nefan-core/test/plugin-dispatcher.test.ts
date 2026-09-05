@@ -13,6 +13,7 @@ import {
   describePluginTickError,
   dispatchPluginEvents,
 } from "../src/plugins/dispatcher.js";
+import { registerRuntimePlugin } from "../src/plugins/register.js";
 import type { PluginManifest } from "../src/plugins/types.js";
 
 const FIXTURE_GAMES = fileURLToPath(new URL("fixtures/games", import.meta.url));
@@ -205,10 +206,16 @@ describe("describePluginTickError: lo que puede acabar delante de quien juega", 
     assert.doesNotMatch(f, /f{8}/);
   });
 
-  it("cubre los cinco motivos, también sin resolutor de nombres", () => {
+  it("cubre los seis motivos, también sin resolutor de nombres", () => {
     const casos = [
       describePluginTickError({ code: "dsl_error", pluginId: "x", type: "t", detail: "d" }),
       describePluginTickError({ code: "write_rejected", pluginId: "x", path: "player.gold" }),
+      describePluginTickError({
+        code: "write_invalid",
+        pluginId: "x",
+        path: "player.inventory",
+        detail: "player.inventory[0].id: Required",
+      }),
       describePluginTickError({ code: "emit_limit_exceeded", limit: 16, trace: ["a → b"] }),
       describePluginTickError({ code: "not_consumed", pluginId: "x", type: "t" }),
       describePluginTickError({ code: "unknown_plugin", pluginId: "x" }),
@@ -218,6 +225,101 @@ describe("describePluginTickError: lo que puede acabar delante de quien juega", 
       assert.match(f, /\.$/, `una frase, con su punto: ${f}`);
       assert.doesNotMatch(f, /_|\{|\[/, f);
     }
-    assert.match(casos[2], /bucle/, "el ciclo de eventos se explica, no se codifica");
+    assert.match(casos[3], /bucle/, "el ciclo de eventos se explica, no se codifica");
+  });
+});
+
+/** #452: `PLAYER_WRITABLE` deja pasar `player.inventory`, y lo que se escribe
+ *  ahí tiene contrato (`InventoryItem.id`, el zod del State API). Un plugin
+ *  que empuje `{name:"x"}` deja un ítem que `inventory_remove` no podrá sacar
+ *  nunca y que el save conservaría. El manifest se registra AQUÍ y no como
+ *  fixture de `plugtest`: el loader test fija sus tres nombres. */
+describe("#452: la forma del inventario que escribe un plugin", () => {
+  const ITEM_GIVER = {
+    version: 1,
+    name: "item_giver",
+    description: "Deja en el inventario lo que traiga el evento, tal cual.",
+    origin: { author: "developer", rationale: "test del gate del id (#452)" },
+    slice: { schema: { type: "object" }, initial: { dados: 0 } },
+    reads: ["player.inventory"],
+    writes: ["player.inventory"],
+    events_consumed: [
+      {
+        type: "give_item",
+        do: [
+          { op: "push", path: "player.inventory", value: "event.item" },
+          { op: "inc", path: "slice.dados", value: 1 },
+        ],
+      },
+      {
+        type: "set_inventory",
+        do: [{ op: "set", path: "player.inventory", value: "event.items" }],
+      },
+    ],
+    fixtures: [
+      {
+        before: { dados: 0 },
+        event: { type: "give_item", item: { id: "antorcha" } },
+        context: { player: { inventory: [] } },
+        after: { dados: 1 },
+      },
+    ],
+  };
+
+  function conItemGiver() {
+    const { state, manifests } = activeSession("plugtest");
+    const { id } = registerRuntimePlugin(state, manifests, ITEM_GIVER);
+    return { state, manifests, id };
+  }
+
+  it("push de un ítem SIN id: write_invalid nombrando player.inventory[i].id, y no se commitea nada", () => {
+    const { state, manifests, id } = conItemGiver();
+    const result = dispatchPluginEvents(state, manifests, [
+      { pluginId: id, type: "give_item", payload: { item: { name: "una nota suelta" } } },
+    ]);
+    assert.equal(result.ok, false);
+    assert.equal(result.error?.code, "write_invalid");
+    if (result.error?.code !== "write_invalid") return;
+    assert.equal(result.error.pluginId, id);
+    assert.equal(result.error.path, "player.inventory");
+    assert.equal(result.error.detail, "player.inventory[0].id: Required");
+    // Transaccional: ni el ítem ni el slice.
+    assert.deepEqual(state.player.inventory, []);
+    assert.deepEqual(state.getPluginRecord(id)?.slice, { dados: 0 });
+  });
+
+  it("push de un ítem CON id aterriza, con lo que traiga además del id", () => {
+    // El caso que separa «exige id» de «rechaza todo push»: mismo plugin,
+    // mismo evento, un ítem bien formado.
+    const { state, manifests, id } = conItemGiver();
+    const result = dispatchPluginEvents(state, manifests, [
+      { pluginId: id, type: "give_item", payload: { item: { id: "nota", name: "una nota suelta" } } },
+    ]);
+    assert.equal(result.ok, true, JSON.stringify(result.error));
+    assert.deepEqual(state.player.inventory, [{ id: "nota", name: "una nota suelta" }]);
+    assert.deepEqual(state.getPluginRecord(id)?.slice, { dados: 1 });
+    assert.ok(result.effects[0].changedPaths.includes("player.inventory"));
+  });
+
+  it("el gate mira cómo QUEDA el inventario, no la operación: un set del array entero con un ítem malo en la posición 1 lo nombra", () => {
+    const { state, manifests, id } = conItemGiver();
+    const result = dispatchPluginEvents(state, manifests, [
+      { pluginId: id, type: "set_inventory", payload: { items: [{ id: "a" }, { qty: 2 }] } },
+    ]);
+    assert.equal(result.ok, false);
+    assert.equal(result.error?.code, "write_invalid");
+    if (result.error?.code !== "write_invalid") return;
+    assert.equal(result.error.detail, "player.inventory[1].id: Required");
+    assert.deepEqual(state.player.inventory, []);
+  });
+
+  it("el motivo para quien juega nombra el sistema y no enseña ni el código ni la ruta", () => {
+    const frase = describePluginTickError(
+      { code: "write_invalid", pluginId: "abc", path: "player.inventory", detail: "player.inventory[0].id: Required" },
+      () => "Comercio",
+    );
+    assert.match(frase, /«Comercio»/);
+    assert.match(frase, /inventario/);
+    assert.doesNotMatch(frase, /write_invalid|abc|player\.inventory|Required/);
   });
 });

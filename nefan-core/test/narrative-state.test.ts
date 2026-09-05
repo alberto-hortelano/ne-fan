@@ -78,6 +78,41 @@ describe("las puertas del save (#334, #336)", () => {
     );
   });
 
+  it("un ítem del inventario sin `id` NO carga: rejects nombrando player.inventory[i].id (#452)", async () => {
+    // El save es la tercera puerta del inventario: el State API y los plugins
+    // ya exigen el `id`, y un save que lo trajera sin él resucitaría un ítem
+    // que `inventory_remove` no puede sacar. Se nombra el ÍNDICE del ítem
+    // malo, no el primero: la lista se valida entera.
+    const storage = new MemorySessionStorage();
+    const seed = new NarrativeState(storage);
+    seed.startNewSession("toledo_1200");
+    const data = seed.toSessionData();
+    data.session_id = "inv_sin_id";
+    data.player.inventory = [{ id: "antorcha" }, { name: "una nota suelta" }] as never;
+    await storage.write("inv_sin_id", data);
+    await assert.rejects(
+      () => new NarrativeState(storage).loadSession("inv_sin_id"),
+      (err: Error) => {
+        assert.match(err.message, /save "inv_sin_id": player\.inventory\[1\]\.id: Required/);
+        assert.match(err.message, /sin migraciones \(#336\)/);
+        return true;
+      },
+    );
+  });
+
+  it("…y con `id` en todos carga y los conserva tal cual — la regla es el id, no el inventario", async () => {
+    const storage = new MemorySessionStorage();
+    const seed = new NarrativeState(storage);
+    seed.startNewSession("toledo_1200");
+    const data = seed.toSessionData();
+    data.session_id = "inv_con_id";
+    data.player.inventory = [{ id: "antorcha" }, { id: "nota", name: "una nota suelta", qty: 2 }];
+    await storage.write("inv_con_id", data);
+    const s = new NarrativeState(storage);
+    assert.equal(await s.loadSession("inv_con_id"), true);
+    assert.deepEqual(s.player.inventory, [{ id: "antorcha" }, { id: "nota", name: "una nota suelta", qty: 2 }]);
+  });
+
   it("false queda SOLO para «no existe»", async () => {
     const s = makeState();
     assert.equal(await s.loadSession("no_existe"), false);
