@@ -71,18 +71,17 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { interpretePython } from "./lib/python.mjs";
+
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LEDGER = join(RAIZ, "cache", "spend", "events.jsonl");
 const HERRAMIENTA = join(RAIZ, "ai_server", "tools", "archivar_gasto_de_test.py");
 const ENV_SPEND_DIR = "NEFAN_SPEND_DIR";
 
-/** El intérprete: el `.venv` del checkout si está (un worktree desprendido no
- *  lo tiene, y entonces vale el del sistema con las deps instaladas). */
-const PY = existsSync(join(RAIZ, ".venv", "bin", "python"))
-  ? join(RAIZ, ".venv", "bin", "python")
-  : existsSync("/home/al/code/ne-fan/.venv/bin/python")
-    ? "/home/al/code/ne-fan/.venv/bin/python"
-    : "python3";
+/** El intérprete: `NEFAN_PYTHON`, el `.venv` del checkout o el `python3` del
+ *  sistema, en ese orden (`qa/lib/python.mjs`; un worktree desprendido lo dice
+ *  con la variable). */
+const PY = interpretePython(RAIZ);
 
 const fallos = [];
 const expect = (desc, cond, detalle = "") => {

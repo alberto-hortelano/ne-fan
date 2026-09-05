@@ -36,11 +36,20 @@
  *       en el disco efímero de este guion y `data/games/alta_fantasia/world/`
  *       del checkout queda como estaba. Así nacieron los 4 tiles basura que se
  *       borraron el 2026-09-05: alguien corrió un preset sobre el árbol real.
+ *   5 · EL ai_server SE APAGA LIMPIO: SIGTERM por PID → uvicorn dice
+ *       «Application shutdown complete.» y muere por la señal que se le mandó
+ *       (la re-lanza a propósito tras el apagado; nunca sale con 0). Un
+ *       `lifespan` que revienta al apagar dice «shutdown failed» y nadie lo
+ *       leía, porque ningún guion miraba cómo mueren sus hijos (hallazgo 5 de
+ *       `qa-2.md`).
  *
  *  EN NEGATIVO (probado el 2026-09-05 al escribirlo): comentando en
  *  `narrative_schemas.py` la copia `clean_ent["role"] = ent["role"]`, rojo
  *  nombrando a `barkeep` sin `role`; comentando la de `description`, rojo por
- *  `description`. Las dos restauradas.
+ *  `description`. Las dos restauradas. Con el `lifespan` de `main.py` cerrando
+ *  un `deps.remote_gen` que no existe, rojo en el apagado («shutdown failed»). Y un
+ *  `kill -INT` al guion a mitad de corrida deja `ps` y `/tmp/qa-npc-cruza-*`
+ *  vacíos: la limpieza es la misma para el `finally` y para las señales.
  *
  *  Lo que NO hace: no toca el guion 40 (`el-mismo-tile-…`), que mide la
  *  asimetría zod ↔ Python sobre payloads en memoria y la documenta como
@@ -55,7 +64,11 @@
  *  VECINOS: los puertos del bridge y la State API salen de `lib/stack.mjs`
  *  (`NEFAN_PORT_OFFSET` se honra); los del stub, ai_server y el asset-store
  *  muerto los elige el kernel. Con un puerto ocupado el guion se NIEGA y dice
- *  quién lo tiene; nunca mata a nadie. Sus tres hijos se matan por PID.
+ *  quién lo tiene; nunca mata a nadie. Sus tres hijos se matan por PID, también
+ *  con Ctrl+C: SIGINT/SIGTERM corren la misma limpieza que el `finally` (hijos
+ *  por PID + disco efímero) y salen con 130/143. Sin manejador, Node muere sin
+ *  pasar por ningún `finally`, y quedaban dos huérfanos escuchando — uno de
+ *  ellos un ai_server con `ANTHROPIC_API_KEY` en el entorno.
  *
  *  Vive FUERA de `qa/guiones/` como sus hermanos `el-ledger-…` y
  *  `el-selector-…`: no toca la página y en la batería pagaría un Chromium por
@@ -72,6 +85,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PUERTOS, offsetActual } from "./lib/stack.mjs";
+import { interpretePython } from "./lib/python.mjs";
 import {
   duenyosDeLosPuertos,
   esperarPuertoArriba,
@@ -95,13 +109,10 @@ const CLAVE_FALSA = "banco-sin-creditos";
  *  bridge mudo cuelgue el CI. Medido: el viaje entero tarda ~2 s. */
 const ESCENA_MAX_MS = 90_000;
 
-/** El intérprete: el `.venv` del checkout si está; si no, el del repo
- *  principal (un worktree no lo tiene); si no, el del sistema (CI). */
-const PY = existsSync(join(RAIZ, ".venv", "bin", "python"))
-  ? join(RAIZ, ".venv", "bin", "python")
-  : existsSync("/home/al/code/ne-fan/.venv/bin/python")
-    ? "/home/al/code/ne-fan/.venv/bin/python"
-    : "python3";
+/** El intérprete: `NEFAN_PYTHON` si está, el `.venv` del checkout si existe,
+ *  el `python3` del sistema si no (CI). Un worktree desprendido, que no tiene
+ *  `.venv`, lo dice con la variable en vez de tener una ruta ajena en el repo. */
+const PY = interpretePython(RAIZ);
 
 const fallos = [];
 const expect = (desc, cond, detalle = "") => {
@@ -115,7 +126,7 @@ class SinMedir extends Error {}
  *  afirmar sobre lo que dijo por consola. */
 function arrancar(nombre, cmd, args, opts) {
   const p = spawn(cmd, args, { ...opts, stdio: ["ignore", "pipe", "pipe"] });
-  const hijo = { nombre, p, log: "", muerto: null };
+  const hijo = { nombre, p, log: "", muerto: null, salida: null };
   const acumula = (chunk) => {
     hijo.log += chunk.toString("utf8");
     if (hijo.log.length > 200_000) hijo.log = hijo.log.slice(-100_000);
@@ -123,9 +134,40 @@ function arrancar(nombre, cmd, args, opts) {
   p.stdout.on("data", acumula);
   p.stderr.on("data", acumula);
   p.on("exit", (code, signal) => {
+    hijo.salida = { code, signal };
     hijo.muerto = `salió (code=${code} signal=${signal})`;
   });
+  hijos.push(hijo);
   return hijo;
+}
+
+/** Los hijos vivos y el disco efímero, a nivel de módulo para que la limpieza
+ *  pueda correr desde una señal, no solo desde el `finally` de `main`. */
+const hijos = [];
+let tmp = null;
+let limpiando = null;
+
+/** La limpieza, UNA sola para todos los caminos: el `finally` del flujo normal
+ *  y los manejadores de SIGINT/SIGTERM. Idempotente: quien llegue segundo
+ *  espera a la misma promesa. */
+function limpiar() {
+  if (!limpiando) {
+    limpiando = (async () => {
+      for (const h of [...hijos].reverse()) await matar(h);
+      if (tmp) rmSync(tmp, { recursive: true, force: true });
+    })();
+  }
+  return limpiando;
+}
+
+// Sin esto, un Ctrl+C mata al guion SIN pasar por ningún `finally` (Node no
+// rechaza la promesa en curso) y sus hijos quedan reparentados y escuchando.
+for (const [señal, codigo] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.on(señal, async () => {
+    console.log(`\n⊘ INTERRUMPIDO (${señal}) — matando a los hijos por PID y borrando el disco efímero`);
+    await limpiar();
+    process.exit(codigo);
+  });
 }
 
 /** SIGTERM por PID y, si no se va, SIGKILL. Solo a los hijos de este guion. */
@@ -251,7 +293,7 @@ async function main() {
 
   // ── disco efímero: el árbol no se toca ──────────────────────────────────
   const worldAntes = existsSync(WORLD_DEL_CHECKOUT) ? readdirSync(WORLD_DEL_CHECKOUT).sort() : null;
-  const tmp = mkdtempSync(join(tmpdir(), "qa-npc-cruza-"));
+  tmp = mkdtempSync(join(tmpdir(), "qa-npc-cruza-"));
   const games = join(tmp, "games");
   const saves = join(tmp, "saves");
   mkdirSync(games);
@@ -262,14 +304,12 @@ async function main() {
   // sin llamar a nadie y el tramo que se quiere medir no se recorrería.
   rmSync(join(games, GAME, "world"), { recursive: true, force: true });
 
-  const hijos = [];
   try {
     // ── 1 · el stub del modelo ──────────────────────────────────────────
     const stub = arrancar("fake-anthropic", process.execPath, ["--import", "tsx", STUB], {
       cwd: CORE,
       env: { ...process.env, PORT: String(puertoStub) },
     });
-    hijos.push(stub);
     await esperarPuertoArriba(puertoStub, { quien: "fake-anthropic", siMuere: () => stub.muerto && cola(stub.log) });
     const stubUrl = `http://127.0.0.1:${puertoStub}`;
     expect("el stub arranca sin haber servido nada (llamadas = 0)", (await saludable(`${stubUrl}/health`)).llamadas === 0);
@@ -285,7 +325,6 @@ async function main() {
         NEFAN_URL_ASSET_STORE: `http://127.0.0.1:${puertoMuerto}`,
       },
     });
-    hijos.push(ai);
     await esperarPuertoArriba(puertoAi, { quien: "ai_server", siMuere: () => ai.muerto && cola(ai.log) });
     const aiUrl = `http://127.0.0.1:${puertoAi}`;
     const salud = await saludable(`${aiUrl}/health`);
@@ -306,7 +345,6 @@ async function main() {
         NEFAN_STATE_HTTP_PORT: String(puertoState),
       },
     });
-    hijos.push(bridge);
     await esperarPuertoArriba(puertoBridge, { quien: "bridge", siMuere: () => bridge.muerto && cola(bridge.log) });
 
     // ── 4 · start_session → scene_loaded ────────────────────────────────
@@ -319,8 +357,12 @@ async function main() {
     expect("2 · el ready dice source:engine (no snapshot, no caché)", ready?.source === "engine", corto(ready));
 
     // Lo que el stub SIRVIÓ, leído del stub: es el verbatim contra el que se
-    // compara el wire, no una cadena copiada a este fichero.
-    const servido = await saludable(`${stubUrl}/servido`);
+    // compara el wire, no una cadena copiada a este fichero. Un 404 aquí NO es
+    // «no pude medir»: es que la escena que llegó no vino por el stub (un
+    // snapshot, otro modelo), y eso es ROJO con nombre.
+    const rServido = await fetch(`${stubUrl}/servido`);
+    expect("3 · el stub sirvió una escena: lo que llegó al wire vino por aquí", rServido.ok, `GET /servido → HTTP ${rServido.status}`);
+    const servido = rServido.ok ? await rServido.json() : { api_key: null, tool_choice: null, input: { entities: [] } };
     const declarados = Object.fromEntries((servido.input?.entities ?? []).map((e) => [e.id, e]));
     const npcs = Array.isArray(escena?.npcs) ? escena.npcs : [];
     const barkeep = npcs.find((n) => n.id === "barkeep");
@@ -362,17 +404,36 @@ async function main() {
       JSON.stringify(worldAntes) === JSON.stringify(worldDespues),
       `antes=${JSON.stringify(worldAntes)} después=${JSON.stringify(worldDespues)}`,
     );
+
+    // ── 7 · apagado limpio del ai_server ────────────────────────────────
+    // SIGTERM por PID, como haría start.sh. Lo que se mira es el LOG, no el
+    // código: uvicorn captura la señal, apaga el lifespan y después la
+    // RE-LANZA (`server.py`, `capture_signals`), así que un ai_server sano
+    // muere por SIGTERM con `code=null` — `code === 0` sería rojo para siempre.
+    // Lo que sí distingue el apagado sano del roto es «Application shutdown
+    // complete.» frente a «Application shutdown failed. Exiting.»: hasta el
+    // 2026-09-05 el `lifespan` de main.py cerraba un `deps.remote_gen` que no
+    // existe desde que remote-gen es otro proceso, fallaba en CADA corrida, y
+    // nadie lo leía porque ningún guion miraba cómo mueren sus hijos.
+    await matar(ai);
+    const apagado = ai.log.slice(ai.log.indexOf("Waiting for application shutdown"));
+    expect(
+      "5 · el ai_server se apaga limpio con SIGTERM («shutdown complete», muerto por la señal)",
+      ai.salida?.signal === "SIGTERM" &&
+        /Application shutdown complete\./.test(apagado) &&
+        !/shutdown failed/i.test(apagado),
+      `${ai.muerto} · ${cola(apagado, 4)}`,
+    );
   } catch (e) {
     for (const h of hijos) {
       console.log(`\n  ── log de ${h.nombre} (cola) ──\n    ${cola(h.log)}`);
     }
     throw e;
   } finally {
-    for (const h of hijos.reverse()) await matar(h);
+    await limpiar();
     for (const puerto of [puertoBridge, puertoState, puertoAi, puertoStub]) {
       if (!(await esperarPuertoLibre(puerto))) console.log(`  ⚠ :${puerto} no se soltó tras matar a su dueño`);
     }
-    rmSync(tmp, { recursive: true, force: true });
   }
 
   console.log(`\n  · ${((Date.now() - t0) / 1000).toFixed(1)} s en total`);

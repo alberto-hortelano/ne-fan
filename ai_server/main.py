@@ -100,9 +100,11 @@ async def lifespan(app: FastAPI):
     if deps.llm_client is not None:
         deps.llm_client.close()
     deps.llm_client = None
-    if deps.remote_gen is not None:
-        deps.remote_gen.close()
-    deps.remote_gen = None
+    # Aquí se cerraba también `deps.remote_gen`, un atributo que `Deps` no tiene
+    # desde que remote-gen es OTRO proceso (F4): cada apagado acababa en
+    # `AttributeError` y «Application shutdown failed», y nadie lo leía porque
+    # ningún guion miraba cómo mueren sus hijos (qa-2.md, hallazgo 5). Lo mira
+    # `qa/el-npc-cruza-ai-server-con-role-y-description.mjs`.
 
 
 app = FastAPI(title="NE-Fan AI Server", lifespan=lifespan)

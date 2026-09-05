@@ -480,17 +480,20 @@ palanca que trajo #235): sin ella se engancharía al terminal de Claude Code de 
 máquina y le mandaría la petición.
 
 ```bash
-node qa/el-npc-cruza-ai-server-con-role-y-description.mjs   # 21 comprobaciones, ~2 s
+node qa/el-npc-cruza-ai-server-con-role-y-description.mjs   # ~2 s; NEFAN_PYTHON=<intérprete> en un worktree sin .venv
 ```
 
 Afirma que el ai_server es el real (`fake:false`, «canal MCP desactivado»), que `barkeep` llega al
 wire con `role:"merchant"` y su `description` **verbatim** (leída del stub, no copiada al guion) y
 `bandido_1` con `role:"hostile"` y su `combat`, que el stub recibió **exactamente una** llamada con
 la clave falsa, y que el snapshot del mundo cae en el disco efímero y no en `data/games/` (así
-nacieron los 4 tiles basura que se borraron el 05-09). Probado en negativo comentando cada copia
-en `narrative_schemas.py`: 3 rojos sin `role`, 2 sin `description`. No toca el guion 40 ni compara
-salidas saneadas por igualdad. Corre en CI (job `candados-headless`); puertos del bridge por
-`NEFAN_PORT_OFFSET`, los demás los elige el kernel, y con uno ocupado se niega sin matar a nadie.
+nacieron los 4 tiles basura que se borraron el 05-09), y que el ai_server se **apaga limpio** con
+SIGTERM (exit 0: su `lifespan` reventaba al cerrar un `deps.remote_gen` inexistente y nadie lo leía).
+Probado en negativo comentando cada copia en `narrative_schemas.py`: 3 rojos sin `role`, 2 sin
+`description`. Una escena que NO venga del stub es ROJO con nombre, no «sin medir». No toca el guion
+40 ni compara salidas saneadas por igualdad. Corre en CI (job `candados-headless`); puertos del bridge
+por `NEFAN_PORT_OFFSET`, los demás los elige el kernel, y con uno ocupado se niega sin matar a nadie.
+Un Ctrl+C a mitad corre la misma limpieza que el `finally` (hijos por PID + disco efímero) y sale 130.
 
 ## `qa/el-selector-ve-lo-que-la-batería-abre.mjs`: los datos que un descarte podría perder
 
