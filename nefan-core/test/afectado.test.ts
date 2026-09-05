@@ -21,13 +21,17 @@ import {
   clasifica,
   comparaObjetivos,
   comparaPerimetro,
+  contextoDe,
   efectoArchRules,
   efectoObjetivos,
+  exigeBateriasEnElArbol,
+  ficherosCambiados,
   importadoresEn,
   instrumentoDeMedida,
   origenDelBorrado,
   revisionesDelRango,
   seleccionar,
+  SIN_RENOMBRAR,
   type Borrado,
   type Contexto,
   type EfectoArchRules,
@@ -59,7 +63,14 @@ interface Opciones {
   /** Lo que se sabe de cualquier fichero borrado. Por defecto, nada: no hay
    *  revisión en la que mirar, que es lo que pasa con `--ficheros`. */
   borrado?: Borrado;
+  /** Qué hay en `despues`. Por defecto, lo mismo que en el árbol (es el caso
+   *  de `pendiente` y del flujo `main...HEAD`); se separa para auditar historia. */
+  sigue?: (fichero: string) => boolean;
 }
+
+/** Lo que el contexto sintético dice que ya no está en el árbol: el fuente
+ *  borrado y el test que se fue con él. */
+const NO_ESTAN = new Set(["src/scene/borrado.ts", "test/borrado.test.ts"]);
 
 /** Dos módulos: `alfa` muta y carga `src/scene/alfa.ts`; `beta`, `src/store/beta.ts`.
  *  `src/scene/exento.ts` está en el perímetro sin que nadie lo mute, y
@@ -87,8 +98,8 @@ const ctx = (o: Opciones = {}): Contexto => ({
         : f === "src/scene/exento.ts"
           ? { tipo: "exento", porque: "solo declara tipos" }
           : { tipo: "huerfano" },
-  // Dos que ya no están: el fuente borrado y el test que se fue con él.
-  existe: (f) => f !== "src/scene/borrado.ts" && f !== "test/borrado.test.ts",
+  existe: (f) => !NO_ESTAN.has(f),
+  sigue: (f) => (o.sigue ?? ((g) => !NO_ESTAN.has(g)))(f),
   borrado: () =>
     o.borrado ?? { tipo: "sin-revision", porque: "por defecto, el contexto no tiene un `antes` en el que mirar" },
   // Ningún dato tiene lector por defecto: quién lee qué es lo que el selector
@@ -352,6 +363,20 @@ describe("selector · un fuente borrado pregunta a `antes` quién lo cargaba", (
     assert.deepEqual(s.ids, ["alfa"]);
     assert.match(porqueDel(s), /1 fichero\(s\) que se fueron con él \(test\/borrado\.test\.ts\)/);
     assert.match(porqueDel(s), /1 fichero\(s\) \(src\/scene\/alfa\.ts\), todos en este diff/);
+  });
+
+  it("…pero «se fue» se decide en `despues`, no en el árbol de hoy: al auditar historia sigue forzando", () => {
+    // Caso G de QA: c1 añade `qa-b ← qa-a`; c2 borra `qa-b` (qa-a fuera del
+    // diff, roto); c3 borra `qa-a`. El MISMO `--rango c1..c2` contestaba
+    // «EJECUTA LOS 42» con el árbol en c2 y «NO EJECUTA NADA» con el árbol en
+    // c3, porque el reparto vivos/idos miraba el disco. Aquí el árbol dice que
+    // `test/borrado.test.ts` no está, pero `despues` dice que sí: fuerza.
+    const s = seleccionar(
+      ctx({ borrado: borrado({ importadores: ["test/borrado.test.ts"] }), sigue: () => true }),
+      [BORRADO],
+    );
+    assert.equal(s.todos, true, "un importador que se fue DESPUÉS del rango no se fue con él");
+    assert.match(porqueDel(s), /test\/borrado\.test\.ts, que NO está en el diff/);
   });
 
   it("una hoja —nadie lo importaba, ningún módulo lo medía— no selecciona nada, y dice por qué", () => {
@@ -1030,6 +1055,30 @@ describe("borrado · quién lo cargaba en una revisión, leído de git", () => {
     assert.deepEqual(dueños("src/no-existe-jamas.ts"), []);
   });
 
+  it("una exclusión `!ruta` del plan NO cuenta como mutar", () => {
+    // `world-map` muta `src/world-map/*.ts` menos `!src/world-map/npc-director.ts`,
+    // que muta `npc-director`. Sin este candado, tratar la exclusión como un
+    // patrón más seleccionaba de más (rotura P de QA, 94/94 verde).
+    const b = origenDelBorrado(enHead, "src/world-map/npc-director.ts");
+    const dueños = b.tipo === "borrado" && b.plan.ok ? b.plan.dueños : [];
+    assert.ok(dueños.includes("npc-director"), `falta npc-director en ${dueños.join(", ")}`);
+    assert.ok(!dueños.includes("world-map"), "una exclusión `!ruta` no es mutar");
+  });
+
+  it("`sigue` mira `despues` cuando es una revisión, y el árbol cuando es null", () => {
+    // Es lo que separa auditar historia de medir el árbol: con `despues: sha`,
+    // un fichero que hoy no existe pero estaba en esa revisión SIGUE.
+    const plan = leerPlan();
+    const enRevision = contextoDe(plan, { antes: "HEAD", despues: "HEAD" });
+    assert.equal(enRevision.sigue("scripts/afectado.ts"), true);
+    assert.equal(enRevision.sigue("src/no-existe-jamas.ts"), false);
+    const enArbol = contextoDe(plan, { antes: "HEAD", despues: null });
+    assert.equal(enArbol.sigue("scripts/afectado.ts"), true);
+    assert.equal(enArbol.sigue("src/no-existe-jamas.ts"), false);
+    // Y con una revisión inexistente no contesta «no»: se lanza.
+    assert.throws(() => contextoDe(plan, { antes: "HEAD", despues: "no-es-una-ref" }).sigue("src/types.ts"), /git/);
+  });
+
   it("y de un fichero que no existía en `antes` lo dice, sin importadores", () => {
     const b = origenDelBorrado(enHead, "src/no-existe-jamas.ts");
     assert.equal(b.tipo, "borrado");
@@ -1041,6 +1090,86 @@ describe("borrado · quién lo cargaba en una revisión, leído de git", () => {
 
   it("una revisión que no existe es un error, no un «no lo importa nadie»", () => {
     assert.throws(() => origenDelBorrado({ antes: "no-es-una-ref", despues: null }, "src/types.ts"), /git/);
+  });
+});
+
+/** `--no-renames` no tiene forma de probarse contra git sin historia (el job
+ *  `nefan-core` del CI clona superficial), y sin él el selector se queda
+ *  VERDE: la regla de los idos tapa el síntoma en `pendiente` (rotura S de QA,
+ *  94/94). Así que el candado es sobre el instrumento mismo: la bandera es una
+ *  sola verdad y va con TODO `git diff --name-only` de los dos guiones que
+ *  construyen listas para `seleccionar`. El guion `qa/el-borrado-pregunta-a-antes.mjs`
+ *  (job `candados-headless`, con git real) es la mitad que sí ejercita el
+ *  renombrado. */
+describe("candado · ningún `git diff --name-only` del instrumento va sin `--no-renames`", () => {
+  const GUIONES = ["scripts/afectado.ts", "scripts/mutacion.ts"];
+
+  it("la bandera es exactamente `--no-renames`", () => {
+    assert.deepEqual([...SIN_RENOMBRAR], ["--no-renames"]);
+  });
+
+  it("y la llevan todos los `--name-only` de afectado.ts y mutacion.ts, que son al menos cinco", () => {
+    let total = 0;
+    for (const g of GUIONES) {
+      const texto = readFileSync(join(coreRoot, g), "utf8");
+      const todos = texto.match(/"diff",\s*"--name-only"/g) ?? [];
+      const conBandera = texto.match(/"diff",\s*"--name-only",\s*\.\.\.SIN_RENOMBRAR\b/g) ?? [];
+      assert.equal(
+        conBandera.length,
+        todos.length,
+        `${g}: ${todos.length - conBandera.length} \`git diff --name-only\` sin \`...SIN_RENOMBRAR\` — la ruta de origen de un renombrado no se analizaría`,
+      );
+      total += todos.length;
+    }
+    assert.ok(total >= 5, `solo ${total} listas de diff encontradas: el candado estaría aprobando sin mirar`);
+  });
+});
+
+/** Un test que el plan lista y que ya no está en el árbol: el estado normal a
+ *  mitad de tanda, y hasta hoy un `ENOENT` crudo desde la traza de imports (QA
+ *  de #471, hallazgo 3). Fail-loud igual; frase para una persona. */
+describe("candado · un test del plan que no está en el árbol se dice con nombre y remedio", () => {
+  const real = leerPlan();
+
+  it("el plan real pasa: todas sus baterías están", () => {
+    assert.doesNotThrow(() => exigeBateriasEnElArbol(real));
+  });
+
+  it("uno que falta se nombra con su módulo y con qué fichero tocar, y `contextoDe` no llega a la traza", () => {
+    const [primero, ...resto] = real.modulos;
+    const roto: typeof real = {
+      ...real,
+      modulos: [{ ...primero, tests: [...primero.tests, "test/no-existe.test.ts"] }, ...resto],
+    };
+    const esperado = new RegExp(
+      `el plan lista \`test/no-existe\\.test\\.ts\` \\(batería de \`${primero.id}\`\\) y no está en el árbol: actualiza data/contract/mutation-targets\\.json`,
+    );
+    assert.throws(() => exigeBateriasEnElArbol(roto), esperado);
+    assert.throws(() => contextoDe(roto), esperado);
+  });
+});
+
+/** `--ficheros` habla en rutas desde la raíz del repo, como git. Con
+ *  `bridge/context.ts` desde nefan-core/ contestaba «fuera de nefan-core → NO
+ *  EJECUTA NADA», confiado y falso (QA de #471, hallazgo 6). */
+describe("candado · `--ficheros` rechaza una ruta escrita desde el paquete", () => {
+  it("una ruta que no existe desde la raíz pero sí bajo nefan-core/ se rechaza nombrando la buena", () => {
+    assert.throws(
+      () => ficherosCambiados(["--ficheros", "bridge/context.ts"]),
+      /`bridge\/context\.ts` no existe ahí pero sí en nefan-core\/: escribe `nefan-core\/bridge\/context\.ts`/,
+    );
+  });
+
+  it("la misma ruta desde la raíz llega relativa al paquete", () => {
+    assert.deepEqual(ficherosCambiados(["--ficheros", "nefan-core/bridge/context.ts"]).ficheros, ["bridge/context.ts"]);
+  });
+
+  it("un fichero borrado (no existe en ningún sitio) y uno de fuera del paquete siguen pasando", () => {
+    // De un borrado se habla precisamente porque ya no está; `labs/` está fuera
+    // de nefan-core y llega con `../`, como en un diff de git.
+    const o = ficherosCambiados(["--ficheros", "nefan-core/scripts/gate-snapshots.ts", "labs/fps/dump_spec.ts"]);
+    assert.deepEqual(o.ficheros, ["scripts/gate-snapshots.ts", "../labs/fps/dump_spec.ts"]);
+    assert.equal(o.revisiones, undefined);
   });
 });
 

@@ -217,6 +217,12 @@ jobs:
       - run: node qa/mutacion-reparto-en-lotes.mjs --solo-vigentes
       # (2,6 s) cada dato que una batería abre selecciona a sus módulos (#404).
       - run: node qa/el-selector-ve-lo-que-la-bateria-abre.mjs
+      # (~10 s) un fuente BORRADO solo se descarta cuando `antes` demuestra que
+      # sus importadores están en el diff (#471): clon superficial en
+      # `qa/.tmp/`, borrados y `git mv` con git real, y el mismo `afectado
+      # --rango` que corre `pendiente`. Es el único candado con git real de
+      # `--no-renames` y del reparto vivos/idos por `despues`. No toca el árbol.
+      - run: node qa/el-borrado-pregunta-a-antes.mjs
       # (36 s) rompe `mutacion-huella.ts` y la huella y exige que su batería se
       # entere; restaura byte a byte.
       - run: node qa/mutacion-candados-en-negativo.mjs
