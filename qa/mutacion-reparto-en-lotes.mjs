@@ -162,12 +162,42 @@ const VIGENTES = [
     },
   },
   {
-    nombre: "reparto · lo que nadie cronometró va SOLO, uno por lote (hoy son 17)",
+    nombre: "reparto · lo que nadie cronometró va SOLO, uno por lote",
     porque: "la regla de `permisoLocal`: un coste desconocido no se supone barato",
+    // LA POBLACIÓN SE SIEMBRA. La primera versión miraba el plan REAL y exigía
+    // «más de un módulo sin reloj» —eran 17 el 04-09—; #440 y #445 cronometraron
+    // los 41 y el invariante se quedó sin sujeto: rojo en `main` del 04 al 05-09
+    // sin que nadie lo supiera, por PRECONDICIÓN y no por el planificador
+    // (`empaqueta` seguía bien, y `mutacion-huella.test.ts` lo prueba con datos
+    // sintéticos). Aquí se descronometran DOS módulos en una copia de la huella
+    // —uno solo no distingue «van solos» de «van juntos»— y se afirma que van
+    // cada uno a su lote, y solo ellos. La huella vuelve en el `finally`.
     mira: () => {
-      const { lotes } = planDeHoy();
-      const sin = lotes.filter((l) => !l.medido);
-      return sin.length > 1 && sin.every((l) => l.modulos.length === 1);
+      const original = readFileSync(HUELLA, "utf8");
+      const huella = JSON.parse(original);
+      const plan = JSON.parse(readFileSync(PLAN, "utf8"));
+      // Módulos de ficheros PLANOS (sin glob ni exclusión), todos con reloj: a
+      // esos se les puede quitar el reloj borrando `segundos` fila a fila.
+      const planos = (m) => m.mutate.every((f) => !f.startsWith("!") && !f.includes("*"));
+      const conReloj = plan.modulos.filter(
+        (m) => planos(m) && m.mutate.every((f) => typeof huella.ficheros[f]?.segundos === "number"),
+      );
+      if (conReloj.length < 2) throw new Error("hacen falta dos módulos cronometrados para sembrar la población");
+      const sembrados = conReloj.slice(0, 2).map((m) => m.id);
+      for (const m of conReloj.slice(0, 2)) for (const f of m.mutate) delete huella.ficheros[f].segundos;
+      writeFileSync(HUELLA, `${JSON.stringify(huella, null, 2)}\n`);
+      try {
+        const { lotes } = planDeHoy();
+        const sin = lotes.filter((l) => !l.medido);
+        const ids = sin.flatMap((l) => l.modulos).sort();
+        return (
+          sin.length === 2 &&
+          sin.every((l) => l.modulos.length === 1) &&
+          ids.join() === [...sembrados].sort().join()
+        );
+      } finally {
+        writeFileSync(HUELLA, original);
+      }
     },
   },
   {

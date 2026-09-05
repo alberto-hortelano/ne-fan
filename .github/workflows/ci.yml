@@ -143,11 +143,17 @@ jobs:
   # elige el kernel, lo matan por PID y se ponen ROJOS por sí solos. Hasta esta
   # tanda el CI no tocaba `qa/` (cero menciones), y el 2026-09-05 uno de esos
   # candados llevaba un día rojo en `main` sin que nadie lo supiera. Un paso por
-  # ejecutable, para que el rojo tenga nombre. Los 70 guiones de navegador y
-  # `bateria-`/`esperas-` (spawnean `qa/run.mjs`: preset + Chromium) siguen
-  # siendo corrida local.
+  # ejecutable, para que el rojo tenga nombre. Lo que NO entra, y por qué, está
+  # en `qa/README.md` («Lo que corre el CI»): los 70 guiones de navegador y
+  # `bateria-`/`esperas-` (spawnean `qa/run.mjs`: preset + Chromium),
+  # `fake-enruta-por-pathname` (su observable lee sprite sheets GENERADOS,
+  # gitignored: rojo en un clon limpio) y los tres que levantan asset-store o
+  # sprite-forge (`el-arte-`, `el-indice-`, `perfil-`: sin cronometrar).
   candados-headless:
     runs-on: ubuntu-latest
+    # ~2 min medidos en local (05-09) para los siete pasos. Un candado que se
+    # quede esperando un puerto no puede comerse el runner seis horas.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -180,3 +186,29 @@ jobs:
       # llega al wire del bridge con los dos campos; rojo si una de las dos
       # copias de `validate_scene_response` desaparece.
       - run: node qa/el-npc-cruza-ai-server-con-role-y-description.mjs
+      # #357: los candados en negativo SIN navegador, en este orden — los que
+      # solo leen antes que los que escriben en el árbol y restauran, y
+      # `contrato-` (que se niega sobre ficheros sucios) detrás de los que
+      # escriben. Cada uno sale con 2 si no puede medir; ninguno gasta un
+      # crédito. Tiempos medidos en local el 2026-09-05 (Ryzen 7 5800X).
+      #
+      # (6,5 s) el reparto por reloj, la fusión de lotes y la procedencia de la
+      # siembra. Estuvo ROJO en `main` del 04-09 al 05-09 sin que nadie lo
+      # supiera —la población que daba por fija cambió con #440/#445—, y esa es
+      # la razón de que este job exista.
+      - run: node qa/mutacion-reparto-en-lotes.mjs --solo-vigentes
+      # (2,6 s) cada dato que una batería abre selecciona a sus módulos (#404).
+      - run: node qa/el-selector-ve-lo-que-la-bateria-abre.mjs
+      # (36 s) rompe `mutacion-huella.ts` y la huella y exige que su batería se
+      # entere; restaura byte a byte.
+      - run: node qa/mutacion-candados-en-negativo.mjs
+      # (26 s) rompe `mutacion.ts`, `mutate.ts` y `mutation.yml` y ejerce el
+      # VERBO real sobre un `reports/mutation/` de ensayo. Lee el tag
+      # `mutacion-ultima` y su historia: de ahí el `fetch-depth: 0`.
+      - run: node qa/mutacion-cableado-en-negativo.mjs
+      # (3,5 s) rompe schemas y saneadores (TS con tsx, Python con
+      # `python3 -m unittest`) y exige que sus tests se enteren.
+      - run: node qa/contrato-candados-en-negativo.mjs
+      # (45 s) la suite de ai_server no escribe el ledger de gasto REAL (#392);
+      # spawnea `python3 -m unittest discover` con el entorno controlado.
+      - run: node qa/el-ledger-de-gasto-no-lo-escribe-la-suite.mjs

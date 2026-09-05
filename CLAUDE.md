@@ -35,6 +35,7 @@ fallan solos. Antes ocupaban media página de prosa y se ignoraban igual:
 | `qa/run.mjs` | que el juego real hace lo que se dice, desde el arranque |
 | `test/contract-model-io.test.ts` | que los prompts y tools del modelo no divergen del zod |
 | `.claude/hooks/ci-verde.sh` (hook `Stop`) | que nadie da una tarea por terminada con el CI de su PR pendiente o en rojo. Verde en local NO es verde: el runner tiene otro sistema de ficheros y ninguna caché |
+| `ci.yml` job `candados-headless` (+ `data/contract/banco-medido.json`) | que los candados en negativo de `qa/` que no abren navegador corren en cada PR: el 05-09 uno llevaba un día rojo en `main` sin que nadie lo supiera, porque nadie lo corría. Y que el banco tiene quien lo mire: todo `qa/lib/*.mjs` lo importa un test o está eximido con motivo (dirección test → banco; `qa/` nunca entra en producción, regla `el-banco-no-entra-en-produccion`). La batería de navegador (`qa/run.mjs` y `bateria-`/`esperas-`) sigue siendo corrida local; qué entra y qué no, en `qa/README.md` |
 
 Si vas a añadir una regla a este fichero, pregúntate antes si puede ser una de
 esas. La prosa se olvida a mitad de contexto; un test que falla, no.

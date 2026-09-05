@@ -38,6 +38,40 @@ node qa/dos-corridas.mjs               # ¿terminan DOS baterías a la vez, midi
 Y la pregunta que se le hace a la batería entera —¿se puede poner ROJA?— vive en
 `qa/bateria-candados-en-negativo.mjs`, con sus dos hermanos, más abajo.
 
+## Lo que corre el CI
+
+Hasta T11 (#357) el CI no tocaba `qa/` (cero menciones en `ci.yml`), y el 2026-09-05 un candado
+llevaba un día rojo en `main` sin que nadie lo supiera: `mutacion-reparto-en-lotes` exigía «más de
+un módulo sin cronometrar» sobre el plan real, #440/#445 cronometraron los 41, y nadie lo corrió.
+Un candado en negativo también envejece. Desde entonces el job **`candados-headless`** de
+`.github/workflows/ci.yml` corre, un paso por ejecutable, los que no abren navegador. Tiempos
+medidos en local el 05-09 (Ryzen 7 5800X), en el orden del job: los que solo leen antes que los que
+escriben en el árbol y restauran, y `contrato-` —que se niega sobre ficheros sucios— detrás.
+
+| Dentro | Tiempo | Qué necesita del runner |
+|---|---|---|
+| `el-npc-cruza-ai-server-con-role-y-description.mjs` | 2 s | python3 con `uvicorn`+`anthropic`, `dist/` del core |
+| `mutacion-reparto-en-lotes.mjs --solo-vigentes` | 6,5 s | tsx; escribe y restaura la huella y `reports/` |
+| `el-selector-ve-lo-que-la-bateria-abre.mjs` | 2,6 s | `typescript` de nefan-core; solo lee |
+| `mutacion-candados-en-negativo.mjs` | 36 s | tsx; escribe y restaura `mutacion-huella.ts` y la huella |
+| `mutacion-cableado-en-negativo.mjs` | 26 s | el tag `mutacion-ultima` y su historia (`fetch-depth: 0`); escribe y restaura |
+| `contrato-candados-en-negativo.mjs` | 3,5 s | tsx + `python3 -m unittest`; exige SUS ficheros limpios |
+| `el-ledger-de-gasto-no-lo-escribe-la-suite.mjs` | 45 s | python3 con las deps de la suite de ai_server |
+
+| Fuera | Por qué |
+|---|---|
+| `qa/run.mjs` y los 70 guiones de `qa/guiones/` | preset `e2e-sin-creditos` + Chromium: corrida local. Un job de navegador en CI es programa aparte, con su reloj medido antes |
+| `bateria-candados-en-negativo.mjs`, `esperas-candados-en-negativo.mjs` | parecen headless y **no lo son**: spawnean `qa/run.mjs` (preset + Playwright) |
+| `fake-enruta-por-pathname.mjs` | su observable (`POST /skin_sprite_sheet?x=1 → 200`) depende de que el fake encuentre `nefan-html/public/sprites/paladin/idle/frontal_8/meta.json`, que es arte GENERADO y gitignored: en un clon limpio contesta 500 y el guion sale rojo (medido el 05-09: verde en el checkout del usuario, rojo en un worktree recién clonado). Entra el día que la ruta se pruebe sin leer del disco |
+| `el-arte-de-personaje-…`, `el-indice-del-store-…`, `perfil-de-repintado-…`, `sprites-sin-servicio` | levantan asset-store, remote-gen o sprite-forge (Python del `.venv`); nadie los ha cronometrado. Candidatos siguientes, con reloj medido antes |
+| `guardarrail-sin-creditos`, `dos-corridas`, `fixtures-sin-bridge`, `captura-de-fixture`, `capturar-portadas`, `presupuesto-de-volumenes`, `presets`, `no-mata-lo-ajeno`, `parar-clasifica-los-nueve-puertos` | conducen el runner, un Chromium o `start.sh` sobre los puertos del catálogo de la máquina |
+
+La otra mitad de #357 no corre en el job sino en `npm test`: todo módulo de `qa/lib` lo importa
+algún test de `nefan-core/test/` (dirección **test → banco**; `qa/` nunca entra en producción,
+regla `el-banco-no-entra-en-produccion`) o está eximido con motivo en
+`nefan-core/data/contract/banco-medido.json` (`test/qa-lib-tiene-quien-lo-mire.test.ts`; los 7
+exentos conducen navegador, disco o sockets). `qa/lib` NO entra en mutación ni en el CRAP.
+
 ## Cómo se escribe un guion
 
 Un fichero en `guiones/` que exporta `async (ctx) => {}`. El contexto ofrece:
@@ -375,8 +409,8 @@ en la cabecera del propio guion.
 No llevan número porque no son un ejecutable más de la serie: son la pregunta que se le hace a
 todo lo demás. Cada uno **rompe el fuente a propósito**, corre SU batería, exige que falle y
 restaura; se niega a arrancar sobre un árbol sucio y comprueba byte a byte que devolvió lo que
-tocó. Van bajo demanda —cuestan lo que cuesta la batería que conducen— y **ninguno entra en
-`npm run verify`**.
+tocó. **Ninguno entra en `npm run verify`**; `contrato-` y `mutacion-` corren en CI (job
+`candados-headless`, #357) y `bateria-` no: spawnea `qa/run.mjs`, o sea preset + Chromium.
 
 ```bash
 node qa/contrato-candados-en-negativo.mjs   # schemas, saneadores y prompts (TS + Python, ~1,5 s cada uno)
@@ -402,7 +436,7 @@ la reconversión se veta y el guion queda en rojo.
 ## `qa/mutacion-cableado-en-negativo.mjs`: lo que la batería NO puede mirar
 
 ```bash
-node qa/mutacion-cableado-en-negativo.mjs          # ~40 s, sin red y sin medir mutación
+node qa/mutacion-cableado-en-negativo.mjs          # ~26 s, sin red y sin medir mutación; corre en CI
 node qa/mutacion-cableado-en-negativo.mjs ancla    # filtro por nombre
 ```
 
@@ -425,15 +459,17 @@ el `--pedidos ""` del input `TODOS` y las cuatro piezas del paso del workflow. A
 
 ```bash
 node qa/mutacion-reparto-en-lotes.mjs                 # ~4 min, sin red y sin medir mutación
-node qa/mutacion-reparto-en-lotes.mjs --solo-vigentes # ~20 s, solo los candados de regresión
+node qa/mutacion-reparto-en-lotes.mjs --solo-vigentes # ~7 s, solo los candados de regresión; es lo que corre en CI
 ```
 
 De la validación de PR-E (la corrida partida en lotes). Dos grupos, y la diferencia es el punto:
 **VIGENTE** son nueve invariantes que hoy se cumplen —determinismo del reparto, ningún lote de
 varios por encima de `tope_lote`, cada pedido en exactamente un lote, lo no cronometrado en lote
-propio, `tope_lote` por debajo del `timeout-minutes` del job que lo ejecuta, un lote muerto que
-deja la corrida INCOMPLETA con el tag quieto, la fusión que se niega sin plan, el sello de #420
-dentro de cada lote y la procedencia escrita de los 52 relojes sembrados—, y **ABIERTO** son los
+propio —con la población SEMBRADA en una copia de la huella: desde #440/#445 todo módulo tiene
+reloj, el árbol real ya no da sujeto y la primera versión estuvo roja en `main` del 04 al 05-09 sin
+que nadie lo viera—, `tope_lote` por debajo del `timeout-minutes` del job que lo ejecuta, un lote
+muerto que deja la corrida INCOMPLETA con el tag quieto, la fusión que se niega sin plan, el sello
+de #420 dentro de cada lote y la procedencia escrita de los relojes sembrados—, y **ABIERTO** son los
 hallazgos que siguen sin candado: cada uno se rompe a mano y se mira si la batería o los dos
 guiones de negativos se enteran. Si nadie se entera, el invariante es prosa y la línea sigue
 roja; el día que alguien lo tape, se pone verde sola.
@@ -495,7 +531,7 @@ Probado en negativo comentando cada copia en `narrative_schemas.py`: 3 rojos sin
 por `NEFAN_PORT_OFFSET`, los demás los elige el kernel, y con uno ocupado se niega sin matar a nadie.
 Un Ctrl+C a mitad corre la misma limpieza que el `finally` (hijos por PID + disco efímero) y sale 130.
 
-## `qa/el-selector-ve-lo-que-la-batería-abre.mjs`: los datos que un descarte podría perder
+## `qa/el-selector-ve-lo-que-la-bateria-abre.mjs`: los datos que un descarte podría perder
 
 Nace con el desanulado del selector (#404). Hasta entonces cualquier fichero de `data/contract/`
 forzaba la corrida completa: caro, molesto y **correcto**, porque nadie podía equivocarse. Al pasar el
