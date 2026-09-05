@@ -146,13 +146,14 @@ describe("fixtures de data/scenes — solo tiles", () => {
 /** El candado de la FRONTERA entre las dos poblaciones (#237), y es de ida y
  *  vuelta a propósito: comprobar solo un lado deja pasar el error que costó el
  *  reencuadre — un schema que describe lo que el modelo EMITE apuntado a lo
- *  que el juego CARGA, que rechaza 20 de 20 snapshots y apaga el arranque.
+ *  que el juego CARGA, que rechazaría TODOS los snapshots y apagaría el
+ *  arranque.
  *
  *  Va sobre las 3 fixtures COMMITEADAS de `data/scenes/`, nunca sobre los
  *  snapshots de `data/games/<juego>/world/`: esos están en `.gitignore` (ver
  *  el comentario de abajo), así que un test sobre ellos sería verde vacío en
- *  CI. La verificación de los 20 es local y se hace con
- *  `scripts/gate-snapshots.ts`, que NO es un test y lo dice. */
+ *  CI. Los snapshots se comprueban donde se CARGAN —`loadWorldSnapshot`, con
+ *  artefacto sintético en `world-snapshot.test.ts`—, no recorriendo el disco. */
 describe("la frontera entre lo que el motor emite y lo que el juego carga", () => {
   it("cruda ⇒ EmittedSceneSchema; expandida ⇒ ExpandedSceneSchema (las 3 fixtures)", () => {
     const escenas = escenasDe(SCENES);
@@ -202,9 +203,11 @@ describe("la frontera entre lo que el motor emite y lo que el juego carga", () =
  *  recorriera sería verde vacío en CI y en cualquier clon limpio: el
  *  `readdirSync` no encuentra ninguno y el aserto compara dos listas vacías.
  *  Un test que no puede ponerse rojo es peor que ninguno. Lo que SÍ se canda,
- *  y en el sitio donde de verdad se para la clase, es que el bridge rechace un
- *  tile así al generarlo —antes de que llegue a save o snapshot—:
- *  `bridge-tile.test.ts`, «un tile con un NPC que no cabe donde nace». */
+ *  y en los dos sitios donde de verdad se para la clase, es que el bridge
+ *  rechace un tile así al generarlo —antes de que llegue a save o snapshot—
+ *  (`bridge-tile.test.ts`, «un tile con un NPC que no cabe donde nace») y que
+ *  la puerta de carga rechace el snapshot que lo traiga igual, generado bajo
+ *  un validador más laxo (`world-snapshot.test.ts`, #302). */
 describe("las fixtures de data/scenes son jugables, no solo bien formadas", () => {
   it("las 3 del selector «Room» se pueden recorrer con el cuerpo mayor", () => {
     const escenas = escenasDe(SCENES);

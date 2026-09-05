@@ -970,7 +970,7 @@ export class TitleScreen {
       const as = appliedStatus();
       const CONTENT_LABEL: Record<string, string> = {
         ready: `<span style="color:#4a4">✓ generado</span>`,
-        stale: `<span style="color:#da6">⟳ obsoleto (world.md cambió)</span>`,
+        stale: `<span style="color:#da6">⟳ obsoleto (regenera el mundo)</span>`,
         missing: `<span style="color:#a66">— sin generar</span>`,
       };
       const styleLabel = !styleSel.value
