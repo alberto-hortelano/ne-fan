@@ -16,7 +16,8 @@ import {
   type WorldRect,
 } from "@nefan-core/src/scene/tile.js";
 import type { TerrainCollider } from "@nefan-core/src/scene/terrain-collision.js";
-import type { EscenaServida } from "@nefan-core/src/protocol/messages.js";
+import type { SceneExit } from "@nefan-core/src/protocol/messages.js";
+import { huellaDeEscena, type EscenaSinSalidas } from "@nefan-core/src/protocol/escena-servida.js";
 
 export { TILE_SIZE_M, tileKey, tileWorldRect, worldToTile };
 export type { WorldRect };
@@ -27,9 +28,14 @@ export interface TileClientState {
   tx: number;
   ty: number;
   rect: WorldRect;
-  /** La escena tal como la sirvió el bridge (world scene + salidas), en
-   *  posiciones GLOBALES. Tipada (#378): el cliente la lee, no la abre con `as`. */
-  scene: EscenaServida;
+  /** La world scene del tile, en posiciones GLOBALES y SIN las salidas: se
+   *  separan en la frontera (`separarSalidas`, #410) porque tienen otra vida
+   *  —cambian con el mapa, no con la escena— y no pueden entrar en la huella.
+   *  Tipada (#378): el cliente la lee, no la abre con `as`. */
+  escena: EscenaSinSalidas;
+  /** Las salidas del lugar: la otra mitad del wire. Las reescribe
+   *  `actualizarSalidas` cuando el mapa cambia (`exits_changed`). */
+  salidas: SceneExit[];
   collider: TerrainCollider | null;
   /** Colisión base derivada del PLAN declarado (agua∖decks del `ground` +
    *  huellas de los `volumes`). Disponible en cuanto llega el tile. Se UNE al
@@ -42,9 +48,10 @@ export interface TileClientState {
 
 export class TileStore {
   readonly entries = new Map<string, TileClientState>();
-  /** Huella del scene data con el que se registró cada clave. Es lo único que
-   *  distingue "el tile vuelve a llegar igual" (resume, re-broadcast) de "el
-   *  tile CAMBIÓ" — y de eso depende si la colisión derivada se restaura o se
+  /** Huella de la ESCENA con la que se registró cada clave (`huellaDeEscena`:
+   *  sin las salidas, que cambian por su cuenta). Es lo único que distingue
+   *  "el tile vuelve a llegar igual" (resume, re-broadcast) de "el tile
+   *  CAMBIÓ" — y de eso depende si la colisión derivada se restaura o se
    *  recalcula. Vivía en el renderer oblicuo, que era quien re-pintaba; con
    *  una sola vista, el dueño del dato es el modelo de mundo. */
   private fingerprints = new Map<string, string>();
@@ -77,7 +84,7 @@ export class TileStore {
     if (tile.key !== tileKey(tile.tx, tile.ty)) {
       throw new Error(`TileStore.add: clave ${tile.key} ≠ tileKey(${tile.tx}, ${tile.ty})`);
     }
-    const fingerprint = JSON.stringify(tile.scene);
+    const fingerprint = huellaDeEscena(tile.escena);
     const sceneChanged =
       this.entries.has(tile.key) && this.fingerprints.get(tile.key) !== fingerprint;
     this.entries.set(tile.key, tile);

@@ -34,6 +34,7 @@ import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import type { Mirada } from "@nefan-core/src/simulation/mirada.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
 import type { InputProvider } from "../input/input-provider.js";
+import type { EscenaServida } from "@nefan-core/src/protocol/messages.js";
 import type { MundoDelCliente } from "../world/mundo-del-cliente.js";
 import type { TileStore } from "../world/tile-store.js";
 import type { FrontierManager } from "../world/frontier.js";
@@ -88,13 +89,22 @@ export interface DepsDelHook {
   cargarFixture(name: string): Promise<void>;
 }
 
+/** Lo que publica `__nefan.scene`: la escena en la forma del WIRE —la world
+ *  scene con las salidas encima—, que es lo que leen los guiones del banco
+ *  (`s.exits`, guiones 08 y 68). El cliente las guarda SEPARADAS (#410); aquí
+ *  se vuelven a juntar en un objeto nuevo, sin tocar lo guardado. */
+function escenaServida(mundo: MundoDelCliente): EscenaServida | null {
+  const escena = mundo.escenaActiva;
+  return escena === null ? null : { ...escena, exits: [...mundo.salidas] };
+}
+
 /** Construye el hook y lo instala en `window`. UNA sola construcción: el orden
  *  de las claves deja de depender de dónde esté declarado cada colaborador. */
 export function instalarNefanHook(deps: DepsDelHook): void {
   const hook: Record<string, unknown> = {
     input: deps.input,
     get playerPos() { return deps.playerPos; },
-    get scene() { return deps.mundo.escenaActiva; },
+    get scene() { return escenaServida(deps.mundo); },
     get dialogueVisible() { return deps.dialoguePanel.isVisible; },
     get exits() { return deps.mundo.salidas; },
     get tiles() { return [...deps.tileStore.entries.keys()]; },
@@ -234,7 +244,7 @@ export function instalarNefanHook(deps: DepsDelHook): void {
       devPanel: deps.devPanel,
       probeCollide: (x: number, z: number) => deps.collidesAt(x, z),
       fps: () => deps.fpsRenderer.debugState(),
-      get scene() { return deps.mundo.escenaActiva; },
+      get scene() { return escenaServida(deps.mundo); },
       // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
       // flechas de dirección. Mismo camino que el giro real: yaw → forward.
       setYaw: (yaw: number) => {

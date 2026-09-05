@@ -244,7 +244,9 @@ export interface SceneExit {
  *  `formatDToWorld` más las salidas del lugar, calculadas al servir. Solo la
  *  devuelve `alWire` (bridge/wire-scene.ts); `formatDToWorld` no conoce
  *  `exits`, y que sean obligatorias aquí es lo que dice que no se sellan en la
- *  escena persistida (#179). */
+ *  escena persistida (#179). El cliente la SEPARA al recibirla
+ *  (`protocol/escena-servida.ts`, #410): las salidas no entran en la huella
+ *  con la que decide si un tile cambió. */
 export type EscenaServida = WorldScene & { exits: SceneExit[] };
 
 /** Un `SceneRecord` del save con su escena ya servida: es lo que viaja en el

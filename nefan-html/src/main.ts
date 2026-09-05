@@ -337,7 +337,7 @@ const fpsAtlasController = new FpsAtlasController(
       if (!surfaces || !entry) return null;
       return {
         layout: surfaces.layout,
-        sceneDescription: entry.scene.scene_description,
+        sceneDescription: entry.escena.scene_description,
       };
     },
     apply: (key, images) => fpsRenderer.applyAtlas(key, images),

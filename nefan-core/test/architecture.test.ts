@@ -472,11 +472,12 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
-  // Las salidas no se sellan en la escena (#179). La regla verde de hoy no
-  // distingue «nadie asigna `exits`» de «el patrón no casa nada», así que se le
-  // enseña la línea exacta con la que el bridge sellaba las salidas y se comprueba
-  // que salta donde toca —bridge y src/narrative— y que LEER no salta.
-  it("[error] las-salidas-no-se-sellan-en-la-escena: asignar `.exits` en el bridge o en narrative salta; leerlo no", () => {
+  // Las salidas no se sellan en la escena (#179), tampoco en la copia del
+  // cliente (#410). La regla verde de hoy no distingue «nadie asigna `exits`»
+  // de «el patrón no casa nada», así que se le enseña la línea exacta con la
+  // que el bridge sellaba las salidas y la que el cliente escribía sobre su
+  // huella, y se comprueba que saltan las tres capas y que LEER no salta.
+  it("[error] las-salidas-no-se-sellan-en-la-escena: asignar `.exits` en bridge, narrative o el cliente salta; leerlo no", () => {
     const deLaRegla = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "las-salidas-no-se-sellan-en-la-escena");
     assert.deepEqual(
@@ -485,9 +486,10 @@ describe("fronteras arquitectónicas", () => {
         { path: "nefan-core/src/narrative/y.ts", text: "const a = 1;\nrecord.scene_data.exits=[];\n", imports: [] },
         { path: "nefan-core/bridge/z.ts", text: "if (scene.exits === undefined) {}\nconst b = scene.exits ?? [];\n", imports: [] },
         { path: "nefan-html/src/world/w.ts", text: "entry.scene.exits = salidas;\n", imports: [] },
+        { path: "nefan-html/src/world/v.ts", text: "entry.salidas = salidas;\nconst n = escena.exits ?? [];\n", imports: [] },
       ]).map((v) => `${v.path}:${v.line}`),
-      ["nefan-core/bridge/handlers/x.ts:1", "nefan-core/src/narrative/y.ts:2"],
-      "salta la asignación en bridge y narrative; no la lectura, ni la copia en memoria del cliente",
+      ["nefan-core/bridge/handlers/x.ts:1", "nefan-core/src/narrative/y.ts:2", "nefan-html/src/world/w.ts:1"],
+      "salta la asignación en bridge, narrative y el cliente (#410); no la lectura ni la mitad `salidas` del store",
     );
   });
 

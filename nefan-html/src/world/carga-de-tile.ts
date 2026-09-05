@@ -44,6 +44,7 @@ import {
   type ObjetoDeclarado,
 } from "@nefan-core/src/session/entidades-del-tile.js";
 import type { EscenaServida, SceneExit } from "@nefan-core/src/protocol/messages.js";
+import { separarSalidas, type EscenaSinSalidas } from "@nefan-core/src/protocol/escena-servida.js";
 
 import { enemigoDesdeCombat } from "../scene/enemigo.js";
 import type { FpsAtlasController } from "../scene/fps-atlas.js";
@@ -141,30 +142,31 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
   function activarTile(key: string): void {
     const entry = tileStore.entries.get(key);
     if (!entry) return;
-    const salidas = entry.scene.exits;
-    mundo.activarTile(key, entry.scene, salidas);
+    mundo.activarTile(key, entry.escena, entry.salidas);
     fpsRenderer.setActiveTile(key);
     // Reinstala el atlas de caché o, con generación auto, lo pinta (el
     // controller degrada a clay con error visible si algo falla).
     void fpsAtlas.onActiveTile(key).catch((err: unknown) =>
       errors.push("scene", `el atlas fps de ${key} no arrancó al activar el tile`, err),
     );
-    travelPanel.setExits(salidas);
+    travelPanel.setExits(entry.salidas);
   }
 
-  /** Solo el panel: ni renderer ni atlas ni sim. La escena del tile conserva
-   *  las salidas nuevas para que un `activarTile` posterior las pinte; si el
-   *  tile aún no está, no hay nada que actualizar — su escena sale del wire
-   *  con las salidas ya puestas (`bridge/wire-scene.ts`). */
+  /** Solo el panel: ni renderer ni atlas ni sim. El tile conserva las salidas
+   *  nuevas para que un `activarTile` posterior las pinte — en SU mitad, no
+   *  dentro de la escena (#410): así la huella de la escena no se mueve y la
+   *  siguiente re-difusión del mismo tile no re-deriva la colisión. Si el tile
+   *  aún no está, no hay nada que actualizar — su escena sale del wire con las
+   *  salidas ya puestas (`bridge/wire-scene.ts`). */
   function actualizarSalidas(key: string, salidas: SceneExit[]): void {
     const entry = tileStore.entries.get(key);
     if (!entry) {
       deps.log(`salidas de ${key} antes que su escena: llegan con ella`);
       return;
     }
-    entry.scene.exits = salidas;
+    entry.salidas = salidas;
     if (key === mundo.tileActivo) {
-      mundo.activarTile(key, entry.scene, salidas);
+      mundo.activarTile(key, entry.escena, salidas);
       travelPanel.setExits(salidas);
     }
   }
@@ -172,7 +174,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
   /** Los cuerpos: la política de re-emisión aplicada a las tres clases. */
   function poblar(
     key: string,
-    data: EscenaServida,
+    data: EscenaSinSalidas,
     planInfo: FpsTilePlan | null,
   ): RoomEnemy[] {
     // Qué tipo de volumen representa a cada objeto del plan: de aquí sale si
@@ -269,7 +271,11 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     data: EscenaServida,
     opts: OpcionesDeCarga = {},
   ): Promise<void> {
-    const tile = data.tile;
+    // Las dos mitades del wire se separan AQUÍ y no vuelven a juntarse en el
+    // cliente (#410): la escena va a la huella y al renderer; las salidas, al
+    // panel. Ver src/protocol/escena-servida.ts.
+    const { escena, exits: salidas } = separarSalidas(data);
+    const tile = escena.tile;
     const key = tileKey(tile.tx, tile.ty);
     const firstTile = tileStore.entries.size === 0;
 
@@ -280,7 +286,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     // Colisión de terreno POR TILE (origin global desde terrain_grid.origin).
     let collider: TileClientState["collider"] = null;
     try {
-      collider = createTerrainCollider(data.terrain_grid);
+      collider = createTerrainCollider(escena.terrain_grid);
     } catch (err) {
       errors.push("scene", `terrain_grid inconsistente en ${key}; colisión de terreno desactivada`, err);
     }
@@ -288,8 +294,8 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     // core en la normalización — ver src/scene/tile-plan.ts). El cliente no
     // deriva nada: si lo hiciera habría dos composiciones del mismo tile y
     // divergirían por los argumentos, que es como divergen estas cosas.
-    const planInfo = data.__plan ?? null;
-    for (const aviso of data.__plan_warnings ?? []) {
+    const planInfo = escena.__plan ?? null;
+    for (const aviso of escena.__plan_warnings ?? []) {
       errors.push("scene", `plan de ${key}: ${aviso}`);
     }
 
@@ -299,7 +305,8 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
       tx: tile.tx,
       ty: tile.ty,
       rect,
-      scene: data,
+      escena,
+      salidas,
       collider,
       // La colisión base del plan se deriva justo debajo (o se restaura si la
       // escena no cambió).
@@ -329,20 +336,20 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     }
     // Posición de entrada — SOLO el bootstrap (primer tile con spawn
     // explícito). En el resto de tiles el jugador entra andando.
-    const playerStart = data.__player_start;
+    const playerStart = escena.__player_start;
     if (firstTile && playerStart) {
       playerPos.x = playerStart.x;
       playerPos.z = playerStart.z;
     }
 
-    const enemies = poblar(key, data, planInfo);
+    const enemies = poblar(key, escena, planInfo);
 
     // Fail-loud del contrato de posiciones globales: un NPC DECLARADO fuera del
     // rect de su tile delata una conversión celda→mundo rota. La decisión
     // —cuál de las dos coordenadas de un npc es la conversión— vive en core,
     // junto a quien escribe la otra (#241/#357); aquí solo se pinta el
     // resultado en el panel del jugador.
-    for (const fuera of npcsFueraDelRect(data.npcs, rect)) {
+    for (const fuera of npcsFueraDelRect(escena.npcs, rect)) {
       errors.push(
         "scene",
         `entidad "${fuera.id}" de ${key} fuera de su rect: (${fuera.x.toFixed(1)}, ${fuera.z.toFixed(1)})`,
@@ -364,7 +371,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     // andar por aquí no es el jugador de la partida.
     const cliente = deps.gameClient();
     if (cliente) {
-      if (opts.tomaElMundo) cliente.loadRoom(data, key, enemies);
+      if (opts.tomaElMundo) cliente.loadRoom(escena, key, enemies);
       else cliente.addEnemies(enemies);
     }
 
