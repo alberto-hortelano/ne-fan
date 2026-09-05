@@ -66,3 +66,23 @@ tolera (los tests que comparten estado no lo toleran) y que el score medido **no
 3. `perTest` vuelve con un número: cuánto reloj ahorra y si el score cambia. **Si el score cambia, no se
    adopta**, y el informe dice por qué.
 4. Ninguna tanda vuelve a esperar una corrida para cerrarse — eso ya se levantó, y no se reintroduce.
+
+## Tras los dos carriles (2026-09-05, `main` = `9dabc8a`)
+
+**Los dos carriles están fusionados**: S en #445 (cierra #404; corridas completas 10/13 → 5/13 sobre las trece
+PR reales; derivados #442 y #444) y R en #446 (`perTest` es un no-op con `testRunner: "command"`; candado en
+`test/mutation-config.test.ts`; derivados #441 y #443). #439 sigue **abierto**.
+
+Del plan queda **solo su PR-2** (§4): el campo `aparcado` en la entrada del módulo, su descuento en
+`seleccionDesdeElTag`, el contador de commits desde `desde` en `pendiente`/`deuda`, y el rótulo
+RÁPIDO/PROFUNDO en `pendiente` y `lotes`. Medido antes de decidir si se hace: aparcar `plugins-dsl` y `enemy-ai`
+compra ~700 s de ~12.350 (5,7 % del reloj); el selector vivo ya hace que una PR de núcleo mida solo lo suyo.
+
+Hoy `pendiente` dice 42 de 42, COMPLETA, y da **once** motivos: el tag `mutacion-ultima` sigue en `7b817b9`
+(34 commits atrás) y el rango incluye las PR que tocaron el instrumento y tres ficheros borrados. Es la
+corrida completa que #445 predijo para sí misma (R3 del plan): la «rápida» solo se ve después de que una
+corrida mueva el tag.
+
+Pregunta para el crítico: ¿la PR-2 sigue vigente tal como está escrita, se reencuadra (por ejemplo a solo el
+rótulo, o a cerrar #439 con lo fusionado), o es obsoleta? Y qué le falta a #439 para cumplir su criterio de
+cierre sin reintroducir la espera por una corrida.
