@@ -557,8 +557,11 @@ export class NarrativeState {
     // este mismo zod—. Un ítem sin `id` es de antes del gate o está corrupto:
     // no se conserva (pre-producción, sin migraciones). Un save SIN el campo
     // sigue cayendo al default más abajo (convención aditiva): lo que se
-    // exige es que lo que venga, venga bien formado.
-    if (data.player.inventory !== undefined) {
+    // exige es que lo que venga, venga bien formado. Y un save SIN bloque
+    // `player` cae ENTERO al default, como antes de #452: la comprobación es
+    // del inventario que viene, no de que venga (QA-B, H2: leer `.inventory`
+    // de `undefined` daba un TypeError por motivo, que no es un motivo).
+    if (data.player !== undefined && data.player.inventory !== undefined) {
       const inv = InventoryListSchema.safeParse(data.player.inventory);
       if (!inv.success) {
         throw new Error(

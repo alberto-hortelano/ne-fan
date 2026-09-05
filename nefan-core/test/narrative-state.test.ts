@@ -113,6 +113,32 @@ describe("las puertas del save (#334, #336)", () => {
     assert.deepEqual(s.player.inventory, [{ id: "antorcha" }, { id: "nota", name: "una nota suelta", qty: 2 }]);
   });
 
+  it("la puerta del inventario es del inventario que VIENE: sin bloque `player` el save cae entero al default, sin TypeError (QA-B H2)", async () => {
+    // Los dos casos que separan «valida lo que trae» de «exige que traiga»:
+    // sin `player` → DEFAULT_PLAYER, como antes de #452 (convención aditiva,
+    // la misma del test «save v5 sin campos aditivos»); con `player` pero sin
+    // `inventory` → default también. Ninguno es un rechazo.
+    const storage = new MemorySessionStorage();
+    const seed = new NarrativeState(storage);
+    seed.startNewSession("toledo_1200");
+    const sinPlayer = seed.toSessionData();
+    sinPlayer.session_id = "sin_player";
+    delete (sinPlayer as Partial<typeof sinPlayer>).player;
+    await storage.write("sin_player", sinPlayer);
+    const a = new NarrativeState(storage);
+    assert.equal(await a.loadSession("sin_player"), true, "antes de la corrección: TypeError «reading 'inventory'»");
+    assert.deepEqual(a.player.inventory, []);
+    assert.equal(a.player.level, 1);
+
+    const sinInventario = seed.toSessionData();
+    sinInventario.session_id = "sin_inventario";
+    delete (sinInventario.player as Partial<typeof sinInventario.player>).inventory;
+    await storage.write("sin_inventario", sinInventario);
+    const b = new NarrativeState(storage);
+    assert.equal(await b.loadSession("sin_inventario"), true);
+    assert.deepEqual(b.player.inventory, []);
+  });
+
   it("false queda SOLO para «no existe»", async () => {
     const s = makeState();
     assert.equal(await s.loadSession("no_existe"), false);
