@@ -14,6 +14,10 @@
  *  panel de salidas vacío: es un error (issue #172, hallazgo 3 de QA). Sin
  *  `place_id` el panel «Salidas» se apaga SIN UN SOLO AVISO y con él
  *  desaparece la única vía de viaje del cliente.
+ *
+ *  Lo único que dice dónde EMPIEZA el jugador es `place_id`. Los anchors de
+ *  los lugares (`map_upsert_place.anchor`, #408) dicen dónde VIVE cada uno en
+ *  el plano, y un tile puede tener varios: de ellos no se deduce el de partida.
  */
 
 import type { WorldMapManager } from "./world-map.js";
@@ -35,7 +39,6 @@ export type BootstrapPlaceResolution =
 /** Escena de arranque tal y como vuelve del motor, en lo que aquí importa. */
 interface BootstrapSceneLike {
   place_id?: unknown;
-  place_anchors?: unknown;
 }
 
 /** Lugares "de verdad" del mapa: todos menos la raíz. La raíz (`kind:"world"`)
@@ -50,25 +53,11 @@ function realPlaceIds(wm: WorldMapManager): Set<string> {
   return ids;
 }
 
-/** Ids de place declarados en `place_anchors` que existen de verdad en el
- *  mapa. Es el otro sitio donde el motor dice qué lugares viven en el tile;
- *  `recordSceneLoaded` ya lo lee para fijarles el anchor. */
-function declaredAnchorIds(scene: BootstrapSceneLike, real: ReadonlySet<string>): string[] {
-  if (!Array.isArray(scene.place_anchors)) return [];
-  const ids: string[] = [];
-  for (const a of scene.place_anchors as Array<{ place_id?: unknown }>) {
-    const id = a?.place_id;
-    if (typeof id === "string" && real.has(id) && !ids.includes(id)) ids.push(id);
-  }
-  return ids;
-}
-
 /** Resuelve el place del tile de arranque cruzando lo que declara la escena
  *  con el mapa que el motor acaba de sembrar.
  *
- *  Orden: `place_id` corroborado por el mapa → el único `place_anchors` que
- *  existe → error. Un mapa SIN lugares no es error: no hay a dónde viajar y
- *  un panel vacío ahí dice la verdad. */
+ *  Orden: `place_id` corroborado por el mapa → error. Un mapa SIN lugares no
+ *  es error: no hay a dónde viajar y un panel vacío ahí dice la verdad. */
 export function resolveBootstrapPlaceId(
   wm: WorldMapManager,
   scene: BootstrapSceneLike,
@@ -81,7 +70,6 @@ export function resolveBootstrapPlaceId(
   // jugador se esté perdiendo. El panel vacío no miente.
   if (real.size === 0) return { kind: "sin-lugares" };
 
-  const anchors = declaredAnchorIds(scene, real);
   if (declared) {
     return {
       kind: "error",
@@ -89,16 +77,6 @@ export function resolveBootstrapPlaceId(
         `la escena de arranque declara place_id "${declared}", que no existe en el world map ` +
         `(hay: ${[...real].join(", ")}) — llama a map_upsert_place para crearlo, o corrige el ` +
         `place_id al lugar de partida, y re-responde`,
-    };
-  }
-  if (anchors.length === 1) return { kind: "place", placeId: anchors[0] };
-  if (anchors.length > 1) {
-    return {
-      kind: "error",
-      error:
-        `la escena de arranque no declara place_id y ancla ${anchors.length} lugares en el tile ` +
-        `(${anchors.join(", ")}): el bridge no puede adivinar en cuál empieza el jugador — ` +
-        `añade "place_id" con el lugar de partida y re-responde`,
     };
   }
   return {

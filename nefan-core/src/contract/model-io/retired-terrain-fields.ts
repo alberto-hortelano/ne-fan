@@ -2,7 +2,8 @@
  *  rebotan. Nació con los DOS del terreno por chars (2026-09-02, #335: una
  *  leyenda char→nombre/solidez y parches ASCII sobre el bioma) y desde #399/#400
  *  lleva también los tres que retiró esa tanda: el decor pegado al muro, el
- *  char ASCII de la entity y la frase de ambiente de la escena.
+ *  char ASCII de la entity y la frase de ambiente de la escena; desde #408,
+ *  las anclas de lugar declaradas en la escena (`place_anchors`).
  *
  *  Desde que los dos schemas de escena son `.strict()` (#400), una clave que
  *  no esté en el shape se rebota sola en las dos poblaciones: lo que queda
@@ -40,6 +41,11 @@ const MOTIVOS: Readonly<Record<string, string>> = {
   glyph: "el char ASCII de una entity no lo lee nadie; la entity se identifica por `id` y se rotula por `name`",
   // #399: el snap al muro buscaba un char que ningún productor escribe.
   attach: "el decor ya no se pega a un muro (los muros son `volumes`): declara la `cell` exacta donde va",
+  // #408: cuatro lectores y ningún productor real (solo el motor del banco lo
+  // escribía). El mismo dato viaja por la tool que ya existía, con más
+  // información (el tile además del rect); un segundo canal era un camino falso.
+  place_anchors:
+    "la escena no ancla lugares: el motor los ancla con `map_upsert_place.anchor {tx, ty, rect}`, que ya existe",
 };
 
 /** El motivo con el que se rebota `campo` si es uno de los retirados; `null`

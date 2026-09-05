@@ -20,10 +20,11 @@
  *  `.strict()` en los DOS niveles, escena y entity. La entity se cerró en #259
  *  (censadas 95 entities en 7 escenas: cero claves fuera del shape); la escena
  *  en #400, cuando los dos campos que su `.passthrough()` sostenía dejaron de
- *  necesitarlo: `place_anchors` se declara (lo escriben el saneador Python y
- *  el motor del banco; lo leen los handlers de tile y place) y la frase de
- *  ambiente de la escena se retiró (cero lectores en core, bridge y cliente —
- *  la copiaba `formatDToWorld` para nadie). Un passthrough que no protege tráfico
+ *  necesitarlo: las anclas de lugar de la escena se declararon (y en #408 se
+ *  retiraron a su vez: el motor ancla lugares con `map_upsert_place.anchor`,
+ *  que ya existía) y la frase de ambiente de la escena se retiró (cero
+ *  lectores en core, bridge y cliente — la copiaba `formatDToWorld` para
+ *  nadie). Un passthrough que no protege tráfico
  *  legítimo solo se traga las erratas del modelo, y ese es justo el
  *  fail-silent que este gate existe para cerrar. Con el cierre, una clave de
  *  raíz desconocida es SIEMPRE el primer issue, así que los rebotes dirigidos
@@ -205,28 +206,6 @@ const sceneBaseShape = {
   // a secas sí sería verde que no comprueba nada; con el refinamiento no lo es.
   scatter_generators: z.unknown().optional(),
   scatter_zones: z.unknown().optional(),
-  // Dónde vive cada lugar del mapa dentro del tile: el bridge afina con esto el
-  // anclaje del place (bootstrap-place, handlers de tile) y el jugador aparece
-  // dentro del lugar, no en el centro geométrico. El saneador de ai_server
-  // exige la MISMA forma y rechaza nombrando el elemento (QA de #400: hasta
-  // entonces podaba en silencio mientras este comentario decía «espejo»). Lo
-  // escribe el motor del banco; el tool real aún no se lo ofrece al motor, por
-  // eso NO está en la lista que se le enseña (`EMITTED_SCENE_FIELDS`) — issue
-  // derivado de #400.
-  place_anchors: z
-    .array(
-      // `.strict()` como la raíz: una clave extra en el ancla se rechaza
-      // nombrándola, igual que en ai_server. Sin él el pre-flight la tragaba
-      // muda y ai_server tiraba el tile: la dirección cara del guion 40.
-      z
-        .object({
-          place_id: z.string().min(1),
-          rect: z.tuple([z.number().int(), z.number().int(), z.number().int(), z.number().int()]).optional(),
-        })
-        .strict(),
-    )
-    .max(8)
-    .optional(),
   entities: z.array(EntitySchema),
 } as const;
 
@@ -250,15 +229,12 @@ function refineScatter(
 export const SCENE_FIELDS = Object.keys(sceneBaseShape) as readonly string[];
 
 /** La lista que se le enseña al MOTOR cuando trae una clave de más: los campos
- *  del tool, ni uno más. De la base salen el grid (`size`/`terrain`, que solo
- *  existe en la población expandida) y `place_anchors` (declarado para el
- *  loader y el banco, pero sin esquema en el tool: un nombre sin esquema no se
- *  le enseña al modelo). `contract-prompts.test.ts` canda que esta lista y la
- *  raíz del tool sean el MISMO conjunto; el saneador de ai_server la lee del
- *  tool directamente. */
-export const EMITTED_SCENE_FIELDS = SCENE_FIELDS.filter(
-  (k) => k !== "size" && k !== "terrain" && k !== "place_anchors",
-);
+ *  del tool, ni uno más. De la base sale solo el grid (`size`/`terrain`, que
+ *  solo existe en la población expandida). `contract-prompts.test.ts` canda que
+ *  esta lista y la raíz del tool sean el MISMO conjunto — desde #408 sin
+ *  ninguna brecha: la única (las anclas de lugar, que solo escribía el motor
+ *  del banco) se retiró; el saneador de ai_server la lee del tool directamente. */
+export const EMITTED_SCENE_FIELDS = SCENE_FIELDS.filter((k) => k !== "size" && k !== "terrain");
 
 /** Por qué se rebota una clave de raíz RETIRADA, o `null` si es una clave
  *  desconocida cualquiera. Un campo retirado no se rebota con el mensaje

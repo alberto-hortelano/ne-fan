@@ -107,6 +107,24 @@ describe("los campos de terreno retirados se rechazan por nombre", () => {
     }
   });
 
+  it("`place_anchors` en la raíz (#408) vuelve con el canal que lo sustituye, en las dos poblaciones", () => {
+    // La forma BUENA de antes también se rebota: no es la forma lo que murió,
+    // es el campo. El sustituto va en el mensaje porque el motor del banco es
+    // justo quien lo copiaría de una escena anterior a la retirada.
+    const casos = [
+      [EmittedSceneSchema, emitida({ place_anchors: [{ place_id: "taberna", rect: [52, 48, 24, 16] }] })],
+      [ExpandedSceneSchema, cargada({ place_anchors: [] })],
+    ] as const;
+    for (const [schema, escena] of casos) {
+      const issue = issueDe(schema, escena, "place_anchors");
+      assert.ok(issue, "se rebota");
+      assert.match(issue.message, /`place_anchors` está retirado/);
+      assert.match(issue.message, /`map_upsert_place\.anchor \{tx, ty, rect\}`/);
+      assert.match(issue.message, /bórralo o regenéralo/);
+      assert.doesNotMatch(issue.message, /EXACTAMENTE estos campos/, "no es el genérico del motor");
+    }
+  });
+
   it("`glyph` y `attach` en una entity vuelven con su motivo, no con el consejo para el motor", () => {
     const entity = (extra: Record<string, unknown>) =>
       EntitySchema.safeParse({ id: "antorcha", kind: "decor", name: "antorcha", cell: [1, 1], footprint: [1, 1], ...extra });
@@ -128,11 +146,11 @@ describe("los campos de terreno retirados se rechazan por nombre", () => {
   });
 
   it("el registro sabe exactamente qué está retirado y no inventa motivos", () => {
-    for (const campo of [...RETIRED_TERRAIN_FIELDS, "ambient_event", "glyph", "attach"]) {
+    for (const campo of [...RETIRED_TERRAIN_FIELDS, "ambient_event", "glyph", "attach", "place_anchors"]) {
       assert.match(mensajeDeClaveRetirada(campo) ?? "", new RegExp(`^\\x60${campo}\\x60 está retirado: `), campo);
     }
     assert.equal(mensajeDeClaveRetirada("nota_del_motor"), null);
-    assert.equal(mensajeDeClaveRetirada("place_anchors"), null, "declarado, no retirado");
+    assert.equal(mensajeDeClaveRetirada("place_id"), null, "vivo, no retirado");
   });
 
   it("y los dos a la vez se nombran los dos en el PRIMER issue (que es el único que ve el motor)", () => {
