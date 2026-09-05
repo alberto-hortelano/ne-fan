@@ -1889,9 +1889,6 @@ narrativeClient.onStatusDeLaPartida((status) => {
           status.message ?? "El motor narrativo está construyendo el mundo. Puede tardar un momento.",
         );
         break;
-      case "ready":
-        hideLoader();
-        break;
       case "error":
         pintarFalloDelMotor(status);
         break;

@@ -108,7 +108,6 @@ export interface StyleApplyUrls {
 
 interface SnapshotScene {
   scene_id?: string;
-  tile?: unknown;
   biome?: string;
   ground?: unknown[];
   volumes?: unknown[];
