@@ -14,6 +14,10 @@ import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
+import { registerRuntimePlugin } from "../src/plugins/register.js";
+import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
+import type { PluginManifest } from "../src/plugins/types.js";
+import { pluginRegisterBody, type PluginHooks } from "../bridge/state-http/context.js";
 import { createSimCollisionProvider } from "../bridge/sim-collision.js";
 import { SceneGenQueue } from "../bridge/scene-gen-queue.js";
 import { createWorldClaim } from "../bridge/world-claim.js";
@@ -25,6 +29,7 @@ import {
   type NarrativeAiClient,
 } from "../bridge/context.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
+import type { NarrativeWorldState } from "../src/narrative/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +54,27 @@ export function makeNarrativeState(storage = new MemorySessionStorage()): {
   return { narrative: new NarrativeState(storage), storage };
 }
 
+/** `NarrativeWorldState` COMPLETO con los valores de una sesión recién nacida
+ *  (los de `DEFAULT_WORLD`). Existe porque tres tests construían el mundo a
+ *  mano con cuatro campos y un `as`: cada campo obligatorio nuevo (#231b
+ *  encontró siete) se colaba sin que ningún fixture lo declarase. */
+export function mundoDePrueba(over: Partial<NarrativeWorldState> = {}): NarrativeWorldState {
+  return {
+    name: "",
+    atmosphere: "",
+    style_token: "",
+    active_scene_id: "",
+    description: "",
+    style_id: "",
+    world_doc_hash: "",
+    render_mode: "",
+    character_mode: "",
+    combat_system: "",
+    style_refs: { characters: [] },
+    ...over,
+  };
+}
+
 /** Escena EXPANDIDA mínima que pasa el gate de `recordSceneLoaded`
  *  (`ExpandedSceneSchema`, #334): lo que antes se sembraba como
  *  `{ id: "scene_1" }` eran escenas que el juego jamás produciría y que el
@@ -67,6 +93,35 @@ export function escenaExpandidaDePrueba(
     __expanded: true,
     entities: [],
     ...over,
+  };
+}
+
+/** Los hooks de plugins del State API cableados como en `ws-server.ts`
+ *  (registro, listado e inspección sobre `activePlugins`). Un test que levanta
+ *  `createStateHttpServer` los necesita aunque no toque un plugin: el tipo los
+ *  exige, y un doble que los omitiera compilaba solo por el `as`. */
+export function hooksDePlugins(
+  narrative: NarrativeState,
+  activePlugins: Map<string, PluginManifest> = new Map(),
+): PluginHooks {
+  return {
+    register: (raw) => pluginRegisterBody(registerRuntimePlugin(narrative, activePlugins, raw)),
+    list: () =>
+      [...activePlugins.entries()].map(([id, m]) =>
+        pluginListSummary(id, m, narrative.getPluginRecord(id)?.origin.author),
+      ),
+    inspect: (id, view) =>
+      inspectPlugin(
+        {
+          plugins: narrative.plugins,
+          world: narrative.world,
+          player: narrative.player,
+          entities: narrative.entities,
+        },
+        activePlugins,
+        id,
+        view,
+      ),
   };
 }
 
@@ -158,6 +213,7 @@ export function makeCtx(
           style_id: "estilo_test",
           world_brief: "b".repeat(150),
           world_md: "# Mundo de Prueba\n" + "lore ".repeat(500),
+          tags: ["fantasia"],
         },
       };
     },

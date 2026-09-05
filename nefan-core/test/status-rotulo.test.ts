@@ -25,8 +25,11 @@ import type { NarrativeStatusDeSesion } from "../src/protocol/messages.js";
  *  failed». El test heredaba la premisa falsa y por eso el hueco no se vio
  *  (QA §3.3). Los casos de VIAJE traen ahora su cuerpo con el destino puesto,
  *  explícitamente, porque son los únicos donde el bridge lo escribe. */
-const fallo = (extra: Partial<NarrativeStatusDeSesion> = {}): NarrativeStatusDeSesion => ({
+const fallo = (
+  extra: Partial<Omit<NarrativeStatusDeSesion, "sessionId">> = {},
+): NarrativeStatusDeSesion => ({
   type: "narrative_status",
+  sessionId: "partida_de_prueba",
   phase: "error",
   kind: "tile",
   message: "El motor narrativo no responde; inténtalo de nuevo en un momento.",
@@ -54,9 +57,10 @@ describe("rótulo de un fallo del motor", () => {
       mundoVacio: false,
       overlayAbierto: true,
     });
+    assert.equal(r.destino, "overlay");
     assert.deepEqual(
-      { destino: r.destino, titulo: r.titulo, detalle: r.detalle },
-      { destino: "overlay", titulo: "No se pudo llegar", detalle: CUERPO_DE_VIAJE },
+      { titulo: r.titulo, detalle: r.detalle },
+      { titulo: "No se pudo llegar", detalle: CUERPO_DE_VIAJE },
     );
   });
 
@@ -78,10 +82,8 @@ describe("rótulo de un fallo del motor", () => {
       fallo({ kind: "scene", placeId: "ermita_del_vado", message: "No se pudo viajar a Ermita del vado. El motor narrativo no responde; inténtalo de nuevo en un momento." }),
       { mundoVacio: false, overlayAbierto: true },
     );
-    assert.deepEqual(
-      { destino: r.destino, titulo: r.titulo },
-      { destino: "overlay", titulo: "No se pudo llegar" },
-    );
+    assert.equal(r.destino, "overlay");
+    assert.equal(r.titulo, "No se pudo llegar");
   });
 
   it("escena SIN place: no se pudo preparar el lugar", () => {
@@ -89,10 +91,8 @@ describe("rótulo de un fallo del motor", () => {
       mundoVacio: false,
       overlayAbierto: true,
     });
-    assert.deepEqual(
-      { destino: r.destino, titulo: r.titulo },
-      { destino: "overlay", titulo: "No se pudo preparar el lugar" },
-    );
+    assert.equal(r.destino, "overlay");
+    assert.equal(r.titulo, "No se pudo preparar el lugar");
   });
 
   it("una escena sin place no depende del contexto de pintado: siempre al overlay", () => {

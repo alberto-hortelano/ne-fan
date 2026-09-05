@@ -23,7 +23,7 @@ import {
 import { routeMessage } from "../bridge/router.js";
 import type {
   NarrativeEventMessage,
-  NarrativeStatusMessage,
+  NarrativeStatusDeSesion,
 } from "../src/protocol/messages.js";
 import { FIXTURE_GAMES, makeCtx, makeSocket, waitFor } from "./helpers.js";
 
@@ -287,7 +287,8 @@ describe("world-snapshot en start_session", () => {
       );
       assert.ok(sceneEvent, "scene_init del snapshot difundido");
       const ready = broadcasts.find(
-        (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
+        (m): m is NarrativeStatusDeSesion =>
+          m.type === "narrative_status" && m.kind !== "game_gen" && m.phase === "ready",
       );
       assert.ok(ready, "narrative_status ready");
       // …y el ready DICE que viene del mundo pre-generado. El guion 05 lo usa

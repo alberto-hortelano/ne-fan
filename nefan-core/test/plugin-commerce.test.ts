@@ -47,7 +47,7 @@ describe("commerce plugin shipped (F8)", () => {
         payload: { market_id: "blacksmith_01", name: "Herrería de Boris", stock: { iron_sword: 2, shield: 1 } },
       },
     ]);
-    assert.equal(tick.ok, true, tick.error);
+    assert.equal(tick.ok, true, JSON.stringify(tick.error));
 
     const slice = state.getPluginRecord(id)?.slice as { markets: Record<string, { stock: Record<string, number> }> };
     assert.deepEqual(slice.markets.blacksmith_01.stock, { iron_sword: 2, shield: 1 });
@@ -72,7 +72,7 @@ describe("commerce plugin shipped (F8)", () => {
     const tick = dispatchPluginEvents(state, active, [
       { pluginId: id, type: "trade_offered", payload: { market_id: "blacksmith_01", item_id: "iron_sword", price: 50 } },
     ]);
-    assert.equal(tick.ok, true, tick.error);
+    assert.equal(tick.ok, true, JSON.stringify(tick.error));
 
     assert.equal(state.player.gold, 50);
     assert.deepEqual(state.player.inventory, [{ id: "iron_sword", from: "blacksmith_01" }]);

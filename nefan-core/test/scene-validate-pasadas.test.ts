@@ -160,7 +160,12 @@ describe("buildWalkableMap", () => {
   it("lo que bloquea el PLAN tampoco se pisa, y no muerde la fila siguiente", () => {
     // La máscara es fila-mayor: sin el corte por columna, la celda [cols, r]
     // escribe en el índice de [0, r+1]. El bug clásico del grid plano.
-    const plan: PlanMask = { solid: (c, r) => r === 0 && c >= 3, volumes: 1 };
+    const tapa = (c: number, r: number) => r === 0 && c >= 3;
+    const plan: PlanMask = {
+      solid: tapa,
+      volumes: 1,
+      blockerAt: (c, r) => (tapa(c, r) ? { volumeId: "tapia" } : null),
+    };
     const { map } = mapaDe(["gggg", "gggg", "gggg"], {}, plan);
     assert.equal(map.isWalkable([3, 0]), false, "lo que el plan tapa no se pisa");
     assert.equal(map.isWalkable([0, 1]), true, "la fila siguiente queda intacta");

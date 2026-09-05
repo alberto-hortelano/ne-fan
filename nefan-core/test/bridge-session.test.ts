@@ -10,6 +10,7 @@ import { combatRegistry } from "../src/combat/registry.js";
 import { createCombatant } from "../src/combat/combatant.js";
 import { routeMessage } from "../bridge/router.js";
 import type {
+  LoadRoomMessage,
   ServerMessage,
   NarrativeEventMessage,
   NarrativeStatusMessage,
@@ -172,10 +173,8 @@ describe("bridge ciclo de sesión", () => {
     );
     const started = sent[0] as SessionStartedMessage;
     assert.equal(started.ok, true);
-    assert.equal(
-      (started.state?.world as Record<string, unknown>).perspective,
-      undefined,
-    );
+    assert.ok(started.state);
+    assert.ok(!("perspective" in started.state.world), "el campo legacy no entra en el mundo de la sesión");
   });
 
   it("start_session congela el modo de render (default image, vector explícito, inválido aborta)", async () => {
@@ -474,11 +473,12 @@ describe("bridge ciclo de sesión", () => {
     const resumed = sent2[0] as SessionStartedMessage;
     assert.equal(resumed.ok, true, JSON.stringify(resumed.error));
     const wire = resumed.state!.scenes_loaded["fd_pelea"].scene_data;
-    const npcs = wire.npcs as Array<Record<string, unknown>>;
+    const npcs = wire.npcs;
 
     const herido = npcs.find((n) => n.id === "herido_1");
     assert.ok(herido, "el herido vuelve");
-    const combat = herido!.combat as Record<string, unknown>;
+    const combat = herido.combat;
+    assert.ok(combat, "el herido vuelve como combatiente");
     assert.equal(combat.health, 12, "vuelve con la vida que le dejaste, no con la del contrato");
     assert.equal(combat.max_health, 60, "y con su denominador: la barra no se pinta llena");
 
@@ -625,14 +625,14 @@ describe("bridge ciclo de sesión", () => {
     // #334/#336: un save que EXISTE pero no vale (versión vieja, contrato
     // violado) es un fallo distinto de «no existe» y el jugador debe ver el
     // motivo — antes loadSession colapsaba ambos en false.
-    const { ctx, narrative } = makeCtx();
+    const { ctx, narrative, storage } = makeCtx();
     const { socket, sent } = makeSocket();
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     await entrarEnLaPartida(ctx, socket, sessionId);
-    const data = (await ctx.sessionStorage.read(sessionId))!;
+    const data = (await storage.read(sessionId))!;
     (data as { schema_version: number }).schema_version = 3;
-    await ctx.sessionStorage.write(sessionId, data);
+    await storage.write(sessionId, data);
 
     narrative.startNewSession("plugtest");
     const { socket: s2, sent: sent2 } = makeSocket();
@@ -680,9 +680,11 @@ describe("bridge ciclo de sesión", () => {
     await entrarEnLaPartida(ctx, socket, sessionId);
 
     // Save de la era de dos perspectivas: inyectar el campo congelado legacy.
+    // Entrada ADVERSARIAL a propósito — el tipo del mundo ya no tiene
+    // `perspective`, y eso es justo lo que se está probando desde el disco.
     const saved = await storage.read(sessionId);
     assert.ok(saved);
-    (saved.world as Record<string, unknown>).perspective = "isometric";
+    (saved.world as unknown as Record<string, unknown>).perspective = "isometric";
     await storage.write(sessionId, saved);
 
     narrative.startNewSession("toledo_1200");
@@ -1309,7 +1311,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   });
 
   it("load_room con sesión activa preserva el HP; sin sesión resetea a tope", async () => {
-    const loadRoom = {
+    const loadRoom: LoadRoomMessage = {
       type: "load_room",
       roomId: "scene_x",
       // Un enemigo HERIDO (40 de 60): la otra puerta por la que `maxHealth`
@@ -1325,7 +1327,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
           personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.3 },
         },
       ],
-    } as const;
+    };
 
     // Con sesión: el HP vivo sobrevive a la transición de escena.
     const withSession = makeCtx();
@@ -1395,8 +1397,8 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     }) as unknown as import("../src/narrative/types.js").SessionData;
 
   it("activar escenarios en save legacy FIJA character_mode=vector (no arrastra los skins)", async () => {
-    const { ctx } = makeCtx();
-    await ctx.sessionStorage.write("s1", legacyVectorSave("s1"));
+    const { ctx, storage } = makeCtx();
+    await storage.write("s1", legacyVectorSave("s1"));
     const { socket, sent } = makeSocket();
     await routeMessage(
       { type: "set_render_mode", requestId: "r1", sessionId: "s1", renderMode: "image", facet: "scenes" },
@@ -1414,8 +1416,8 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
   });
 
   it("activar personajes deja los escenarios en vector", async () => {
-    const { ctx } = makeCtx();
-    await ctx.sessionStorage.write("s2", legacyVectorSave("s2"));
+    const { ctx, storage } = makeCtx();
+    await storage.write("s2", legacyVectorSave("s2"));
     const { socket, sent } = makeSocket();
     await routeMessage(
       { type: "set_render_mode", requestId: "r1", sessionId: "s2", renderMode: "image", facet: "characters" },
@@ -1431,8 +1433,8 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
   });
 
   it("doble activación y sesión inexistente fallan con error claro", async () => {
-    const { ctx } = makeCtx();
-    await ctx.sessionStorage.write("s3", legacyVectorSave("s3"));
+    const { ctx, storage } = makeCtx();
+    await storage.write("s3", legacyVectorSave("s3"));
     const { socket, sent } = makeSocket();
     await routeMessage(
       { type: "set_render_mode", requestId: "r1", sessionId: "s3", renderMode: "image", facet: "scenes" },
@@ -1467,10 +1469,10 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
   });
 
   it("image → vector en save inactivo: lo baja y no arrastra los skins legacy", async () => {
-    const { ctx } = makeCtx();
+    const { ctx, storage } = makeCtx();
     const save = legacyVectorSave("s6");
     (save.world as { render_mode: string }).render_mode = "image";
-    await ctx.sessionStorage.write("s6", save);
+    await storage.write("s6", save);
     const { socket, sent } = makeSocket();
     await routeMessage(
       { type: "set_render_mode", requestId: "r1", sessionId: "s6", renderMode: "vector", facet: "scenes" },
@@ -1487,8 +1489,8 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
   });
 
   it("con la sesión ACTIVA, el cambio se difunde como render_mode_changed", async () => {
-    const { ctx, narrative, broadcasts } = makeCtx();
-    await ctx.sessionStorage.write("s7", legacyVectorSave("s7"));
+    const { ctx, narrative, broadcasts, storage } = makeCtx();
+    await storage.write("s7", legacyVectorSave("s7"));
     assert.equal(await narrative.loadSession("s7"), true, "la sesión activa sale del save");
     narrative.world.render_mode = "image";
     narrative.world.character_mode = "image";
@@ -1507,8 +1509,8 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
   });
 
   it("con la sesión ACTIVA, el espejo en memoria fija ambos modos", async () => {
-    const { ctx, narrative } = makeCtx();
-    await ctx.sessionStorage.write("s4", legacyVectorSave("s4"));
+    const { ctx, narrative, storage } = makeCtx();
+    await storage.write("s4", legacyVectorSave("s4"));
     assert.equal(await narrative.loadSession("s4"), true, "la sesión activa sale del save");
     narrative.world.render_mode = "vector";
     narrative.world.character_mode = "";
@@ -1522,9 +1524,9 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
   });
 
   it("con la sesión ACTIVA persiste vía narrative.save() SIN pisar el estado más nuevo en memoria", async () => {
-    const { ctx, narrative } = makeCtx();
+    const { ctx, narrative, storage } = makeCtx();
     // Disco tiene el snapshot inicial (story_so_far vacío).
-    await ctx.sessionStorage.write("s5", legacyVectorSave("s5"));
+    await storage.write("s5", legacyVectorSave("s5"));
     // La sesión activa avanzó EN MEMORIA (progreso aún no reflejado en ese
     // snapshot de disco) — el escritor único es narrative.
     assert.equal(await narrative.loadSession("s5"), true, "la sesión activa sale del save");

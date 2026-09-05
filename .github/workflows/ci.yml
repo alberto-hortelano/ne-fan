@@ -45,6 +45,16 @@ jobs:
       - run: npm run typecheck:labs
       - run: npm run lint
       - run: npm run build
+      # `test/` tampoco entraba en ningún proyecto TS (#231b): 96 errores de
+      # tipos el 2026-09-05 con las flags del build, y 16 de ellos eran tests
+      # que MENTÍAN — escribían por una asa que la interfaz no tiene a propósito
+      # (`sessionStorage.write`, #279), pasaban una rama retirada, forzaban un
+      # `session_id = null` que el estado no puede tener. Sin este paso `tsx`
+      # los ejecuta igual, borrando los tipos sin mirarlos. Va DETRÁS de
+      # `build` porque `contract-fixtures.test.ts` importa
+      # `narrative-mcp/validators.ts`, que resuelve `@nefan/core` por el
+      # `dist/` del core: sin él, el proyecto de tests no tipa.
+      - run: npm run typecheck:tests
       # UNA sola pasada de la suite. Había dos —`npm test` y luego `npm run
       # coverage`, el mismo glob `test/*.test.ts`— y la segunda es la primera
       # instrumentada: 1526 tests y ~50 s de CPU repetidos literalmente en cada
