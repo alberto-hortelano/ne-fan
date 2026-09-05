@@ -80,7 +80,13 @@ import type { LlmContext } from "../../nefan-core/src/narrative/types.js";
 // puertos): así un test puede validarlos contra `EmittedSceneSchema` —el
 // contrato del rol que este server suplanta— sin levantar un servidor
 // (test/fake-motor-contract.test.ts, #334-B).
-import { bootstrapTile, makeTile, type GenerateTile } from "./fake-scenes.js";
+import {
+  ANCHORED_PLACE_RECT,
+  BOOTSTRAP_PLACE_RECT,
+  bootstrapTile,
+  makeTile,
+  type GenerateTile,
+} from "./fake-scenes.js";
 
 /** El cuerpo JSON de una petición, leído CON EL CONTRATO del endpoint delante.
  *
@@ -174,12 +180,18 @@ async function handleGenerateTile(gt: GenerateTile) {
   if (gt?.bootstrap) {
     // Como el motor real: sembrar el world map con las map tools. Dos places
     // y un link — el segundo NO se realiza aquí: es el destino del panel
-    // «Salidas», que se ancla a un tile libre al viajar.
+    // «Salidas», que se ancla a un tile libre al viajar. El lugar de partida
+    // lleva su `anchor` con rect (#408: el ÚNICO canal por el que un lugar se
+    // ancla al plano; la escena ya no declara anclas). El spawn de ARRANQUE no
+    // lo mueve: es la celda del `player` de la escena, fuera de la taberna. El
+    // rect gobierna la VUELTA (el viaje de regreso deja al jugador dentro de
+    // él) y la activación del lugar por posición al pisarlo.
     await statePost("/map/place", {
       id: "taberna_bench_place",
       kind: "settlement",
       parent_id: "world",
       name: "Taberna del bench",
+      anchor: { tx: 0, ty: 0, rect: BOOTSTRAP_PLACE_RECT },
     }).catch((err) => console.error("[fake-ai] bootstrap place:", err.message));
     await statePost("/map/place", {
       id: "molino_bench_place",
@@ -197,6 +209,27 @@ async function handleGenerateTile(gt: GenerateTile) {
       description: "El camino del este, siguiendo el río.",
     }).catch((err) => console.error("[fake-ai] bootstrap link:", err.message));
     return bootstrapTile();
+  }
+  // El tile de un LUGAR: el motor acota dónde vive dentro del tile por el
+  // canal real (`map_upsert_place.anchor`, con el tile que el bridge ya le
+  // asignó) ANTES de responder la escena, y el bridge resuelve el spawn al
+  // difundir — el jugador aparece dentro del lugar, no en el centro del tile.
+  // Se hace en CADA generación, como el motor real (que responde a cada
+  // `generate_tile` sin caché): el anchor vive en el world map de la SESIÓN, y
+  // `tileByKey` es caché del proceso del fake — la segunda partida del mismo
+  // stack recibía el tile cacheado sin volver a anclar y el jugador aparecía en
+  // el centro del tile (QA-E de T13). Sin `.catch`: un rechazo del State API
+  // tumba la respuesta (500 al bridge) y el guion se pone rojo — el banco no
+  // puede mentir.
+  if (gt.place) {
+    await statePost("/map/place", {
+      id: gt.place.id,
+      kind: gt.place.kind,
+      parent_id: "world",
+      name: gt.place.name,
+      description: gt.place.description,
+      anchor: { tx: gt.tx, ty: gt.ty, rect: ANCHORED_PLACE_RECT },
+    });
   }
   const key = `tile_${gt.tx}_${gt.ty}`;
   if (!tileByKey.has(key)) tileByKey.set(key, makeTile(gt));

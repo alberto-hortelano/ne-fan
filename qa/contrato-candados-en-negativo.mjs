@@ -69,7 +69,7 @@ const INVARIANTES = [
   ],
   // ── #400 · la raíz cerrada, y su brecha conocida ─────────────────────────
   [
-    "campos · el zod gana un campo de raíz que el tool no ofrece (la brecha deja de ser solo `place_anchors`)",
+    "campos · el zod gana un campo de raíz que el tool no ofrece (la brecha deja de ser vacía, #408)",
     SCHEMA, "ts:test/contract-prompts.test.ts",
     [["  entities: z.array(EntitySchema),\n} as const;", "  entities: z.array(EntitySchema),\n  nota_del_motor: z.string().optional(),\n} as const;"]],
   ],
@@ -166,11 +166,11 @@ const INVARIANTES = [
     ]],
   ],
   [
-    "python · las anclas vuelven a podarse en silencio (nueve → ocho, sin decirlo)",
+    "python · el tile sin `biome` vuelve a recibir hierba por defecto, en silencio",
     PY, "py:ai_server.tests.test_contract_fixtures",
     [[
-      '            if len(anchors) > 8:\n                raise ValueError(f"`place_anchors`: como mucho 8 anclas por tile (trae {len(anchors)})")\n',
-      '            anchors = anchors[:8]\n',
+      '            raise ValueError(\n                "un tile necesita `biome` (grass|forest_floor|meadow|sand|dirt|stone|snow|swamp)"\n            )\n',
+      '            data["biome"] = "grass"\n',
     ]],
   ],
   [

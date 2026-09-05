@@ -103,9 +103,8 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
     if (res.ok) return;
     assert.match(res.error, /la escena trae la clave `nota_del_motor`/, res.error);
     for (const campo of EMITTED_SCENE_FIELDS) assert.match(res.error, new RegExp(`\\b${campo}\\b`), res.error);
-    // Y NO le enseña el grid, que el motor no escribe nunca, ni `place_anchors`,
-    // que el tool no describe (un nombre sin esquema no se enseña).
-    assert.doesNotMatch(res.error, /\bsize\b|\bterrain\b|place_anchors/, res.error);
+    // Y NO le enseña el grid, que el motor no escribe nunca.
+    assert.doesNotMatch(res.error, /\bsize\b|\bterrain\b/, res.error);
     assert.match(res.error, /`scene_description`/, res.error);
   });
 
@@ -122,23 +121,6 @@ describe("EmittedSceneSchema — rechaza lo que el saneador degradaba", () => {
     assert.equal(marcada.ok, false, "con `in`, cualquier valor — también `false`");
     if (marcada.ok) return;
     assert.match(marcada.error, /`__expanded` es la marca interna del expander/, marcada.error);
-  });
-
-  it("`place_anchors` está declarado: la forma buena pasa y la mala se rechaza", () => {
-    assert.equal(accepts({ ...base, place_anchors: [{ place_id: "taberna", rect: [52, 48, 24, 16] }] }), true);
-    assert.equal(accepts({ ...base, place_anchors: [{ place_id: "taberna" }] }), true, "rect opcional");
-    assert.match(
-      String(accepts({ ...base, place_anchors: [{ place_id: "taberna", color: 1 }] })),
-      /place_anchors.*color/,
-      "clave extra en el ancla: rechazada nombrándola, como en ai_server (QA de PR-A de T7)",
-    );
-    assert.notEqual(accepts({ ...base, place_anchors: [{ rect: [1, 2, 3, 4] }] }), true, "sin place_id no ancla nada");
-    assert.notEqual(accepts({ ...base, place_anchors: [{ place_id: "x", rect: [1, 2, 3] }] }), true, "rect son 4 enteros");
-    assert.notEqual(
-      accepts({ ...base, place_anchors: Array.from({ length: 9 }, (_, i) => ({ place_id: `p${i}` })) }),
-      true,
-      "tope de 8, como el saneador de ai_server",
-    );
   });
 
   it("ExpandedSceneSchema (lo que el juego CARGA) también es `.strict()`, y su lista incluye la marca", () => {

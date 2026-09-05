@@ -31,22 +31,10 @@ describe("resolveBootstrapPlaceId", () => {
     assert.deepEqual(res, { kind: "place", placeId: "robledo" });
   });
 
-  it("sin place_id, lo deduce del único place_anchors que existe en el mapa", () => {
-    const res = resolveBootstrapPlaceId(seededMap(), {
-      place_anchors: [{ place_id: "robledo", rect: [52, 48, 24, 16] }],
-    });
-    assert.deepEqual(res, { kind: "place", placeId: "robledo" });
-  });
-
-  it("los anchors de lugares que no existen no cuentan como deducción", () => {
-    const res = resolveBootstrapPlaceId(seededMap(), {
-      place_anchors: [{ place_id: "aldea_fantasma" }, { place_id: "robledo" }],
-    });
-    // Solo uno de los dos existe: ese es el lugar, sin ambigüedad.
-    assert.deepEqual(res, { kind: "place", placeId: "robledo" });
-  });
-
-  // ── Los tres negativos: dónde tiene que gritar ──
+  // ── Los dos negativos: dónde tiene que gritar ──
+  // (Un tercero, «ancla varios lugares sin decir en cuál empieza», murió con
+  // #408: la escena ya no declara anclas, así que sin `place_id` no hay nada
+  // que deducir — es el caso de abajo, a secas.)
 
   it("ERROR si no declara place_id habiendo lugares en el mapa (el panel saldría vacío)", () => {
     const res = resolveBootstrapPlaceId(seededMap(), {});
@@ -65,14 +53,6 @@ describe("resolveBootstrapPlaceId", () => {
     assert.match(res.kind === "error" ? res.error : "", /map_upsert_place/);
   });
 
-  it("ERROR si ancla varios lugares y no dice en cuál empieza el jugador", () => {
-    const res = resolveBootstrapPlaceId(seededMap(), {
-      place_anchors: [{ place_id: "robledo" }, { place_id: "molino" }],
-    });
-    assert.equal(res.kind, "error");
-    assert.match(res.kind === "error" ? res.error : "", /no puede adivinar/);
-  });
-
   // ── El estado que NO es un error ──
 
   it("un mapa sin lugares no es error: no hay a dónde viajar y el panel vacío no miente", () => {
@@ -89,17 +69,4 @@ describe("resolveBootstrapPlaceId", () => {
     assert.deepEqual(resolveBootstrapPlaceId(wm, { place_id: "world" }), { kind: "sin-lugares" });
   });
 
-  it("place_anchors malformado no rompe la resolución", () => {
-    const wm = seededMap();
-    assert.equal(resolveBootstrapPlaceId(wm, { place_anchors: "no soy un array" }).kind, "error");
-    assert.equal(
-      resolveBootstrapPlaceId(wm, { place_anchors: [null, { rect: [1, 2, 3, 4] }, 7] }).kind,
-      "error",
-    );
-    // Duplicados del mismo lugar son UN lugar, no una ambigüedad.
-    assert.deepEqual(
-      resolveBootstrapPlaceId(wm, { place_anchors: [{ place_id: "robledo" }, { place_id: "robledo" }] }),
-      { kind: "place", placeId: "robledo" },
-    );
-  });
 });

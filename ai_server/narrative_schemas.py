@@ -113,12 +113,11 @@ def _campos_de_la_raiz_del_tool() -> list:
 CAMPOS_DE_LA_RAIZ_DEL_TOOL = _campos_de_la_raiz_del_tool()
 
 # La allow-list del rechazo de clave de raíz desconocida (#400, espejo del
-# `.strict()` de EmittedSceneSchema): el tool más `place_anchors`, el único
-# campo que el zod declara (lo escriben este saneador y el motor del banco, lo
-# leen los handlers de tile y place) y el tool real aún no ofrece — issue
-# derivado. Que la brecha sea EXACTAMENTE esa la canda `contract-prompts.test.ts`
-# del lado TS; si crece, el test rompe antes de que los dos gates diverjan.
-SCENE_FIELDS = [*CAMPOS_DE_LA_RAIZ_DEL_TOOL, "place_anchors"]
+# `.strict()` de EmittedSceneSchema): EXACTAMENTE los campos del tool, sin
+# brecha. Que siga sin haberla lo canda `contract-prompts.test.ts` del lado TS:
+# si el zod gana un campo que el tool no ofrece, el test rompe antes de que los
+# dos gates diverjan.
+SCENE_FIELDS = [*CAMPOS_DE_LA_RAIZ_DEL_TOOL]
 
 
 def _mensaje_de_claves_de_raiz_desconocidas(claves: list) -> str:
@@ -641,35 +640,6 @@ def validate_scene_response(data: dict) -> dict:
             raise ValueError(
                 "un tile necesita `biome` (grass|forest_floor|meadow|sand|dirt|stone|snow|swamp)"
             )
-        # `place_anchors`: espejo EXACTO del zod (lista de ≤8, `place_id` no
-        # vacío, `rect` opcional de 4 enteros) y FAIL-LOUD nombrando el
-        # elemento. Hasta la QA de #400 se podaba en silencio (truncar a 8,
-        # tirar el rect de 3, descartar el ancla sin place_id con traza)
-        # mientras el zod rechazaba: el mismo tile con dos veredictos, y un
-        # comentario en el zod que decía «espejo» sin serlo.
-        if "place_anchors" in data:
-            anchors = data["place_anchors"]
-            if not isinstance(anchors, list):
-                raise ValueError("`place_anchors` debe ser una lista de anclas {place_id, rect?}")
-            if len(anchors) > 8:
-                raise ValueError(f"`place_anchors`: como mucho 8 anclas por tile (trae {len(anchors)})")
-            for i, a in enumerate(anchors):
-                if not isinstance(a, dict):
-                    raise ValueError(f"`place_anchors[{i}]`: un ancla es un objeto {{place_id, rect?}}")
-                if not isinstance(a.get("place_id"), str) or not a["place_id"]:
-                    raise ValueError(f"`place_anchors[{i}].place_id`: obligatorio y no vacío")
-                if "rect" in a and not (
-                    isinstance(a["rect"], list)
-                    and len(a["rect"]) == 4
-                    and all(isinstance(v, int) and not isinstance(v, bool) for v in a["rect"])
-                ):
-                    raise ValueError(f"`place_anchors[{i}].rect`: cuatro enteros [col, row, ancho, alto]")
-                desconocidas_a = [k for k in a if k not in ("place_id", "rect")]
-                if desconocidas_a:
-                    raise ValueError(
-                        f"`place_anchors[{i}]` trae {', '.join('`' + k + '`' for k in desconocidas_a)}: "
-                        "un ancla solo tiene `place_id` y `rect`"
-                    )
 
     # ── Candado de las variantes retiradas (espejo de EmittedSceneSchema) ─
     # Format D tiene UNA forma: el tile del mundo continuo. La "suelta"

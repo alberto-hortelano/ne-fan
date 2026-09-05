@@ -91,7 +91,8 @@ export async function generateBootstrapTileScene(
 
 /** Genera el tile (0,0) de una sesión nueva — corre dentro de la cola. El
  *  motor siembra el world map (map tools) y responde el tile de arranque con
- *  la escena inicial (taberna…), player y place_anchors. */
+ *  la escena inicial (taberna…), su `player` y el `place_id` del lugar de
+ *  partida (los anchors de los lugares van por `map_upsert_place`). */
 export async function runBootstrapTile(
   ctx: BridgeContext,
   sessionGameId: string,
