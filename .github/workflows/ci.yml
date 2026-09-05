@@ -46,7 +46,7 @@ jobs:
       - run: npm run lint
       - run: npm run build
       # `test/` tampoco entraba en ningún proyecto TS (#231b): 96 errores de
-      # tipos el 2026-09-05 con las flags del build, y 16 de ellos eran tests
+      # tipos el 2026-09-05 con las flags del build, y 15 de ellos eran tests
       # que MENTÍAN — escribían por una asa que la interfaz no tiene a propósito
       # (`sessionStorage.write`, #279), pasaban una rama retirada, forzaban un
       # `session_id = null` que el estado no puede tener. Sin este paso `tsx`
