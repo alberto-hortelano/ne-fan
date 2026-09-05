@@ -948,7 +948,7 @@ into context:
     `can later get it. Pass "player" to give the item directly to the player.`,
     {
       entity_id: z.string().describe('Entity id, or "player".'),
-      item_json: z.string().describe('JSON describing the item, e.g. {"id":"iron_key","name":"Llave de hierro","description":"..."}.'),
+      item_json: z.string().describe('JSON describing the item. "id" is REQUIRED (inventory_remove takes it by id); the rest is free, e.g. {"id":"iron_key","name":"Llave de hierro","description":"..."}.'),
     },
     async ({ entity_id, item_json }) => {
       let item: unknown;

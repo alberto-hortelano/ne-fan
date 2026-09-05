@@ -26,6 +26,7 @@
     "build": "tsc",
     "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json",
     "typecheck:labs": "tsc --noEmit -p tsconfig.labs.json",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
     "test": "node --import tsx --test --test-concurrency=${NEFAN_TEST_CONCURRENCY:-4} test/*.test.ts",
     "lint": "eslint src bridge services test scripts",
     "format": "prettier --write src bridge services test scripts",
@@ -43,7 +44,7 @@
     "mutate": "tsx scripts/mutate.ts",
     "mutacion": "tsx scripts/mutacion.ts",
     "afectado": "tsx scripts/afectado.ts",
-    "verify": "npm run build && npm run typecheck:scripts && npm run typecheck:labs && npm run lint && npm test"
+    "verify": "npm run build && npm run typecheck:scripts && npm run typecheck:labs && npm run typecheck:tests && npm run lint && npm test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

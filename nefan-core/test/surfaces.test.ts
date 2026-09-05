@@ -256,7 +256,7 @@ describe("buildFpsTileSpec", () => {
     // y la comprobación de abajo no distinguiría las dos cosas.
     const ground = [
       { id: "camino", kind: "path" as const, points: [[20, 20], [80, 20], [80, 80]] as [number, number][], w: 4, material: "dirt" as const },
-      { id: "plaza", kind: "area" as const, rect: [30, 30, 20, 20] as [number, number, number, number], material: "cobblestone" as const },
+      { id: "plaza", kind: "area" as const, rect: [30, 30, 20, 20] as [number, number, number, number], material: "cobble" as const },
       { id: "rio", kind: "water" as const, rect: [0, 100, 128, 16] as [number, number, number, number] },
       { id: "muelle", kind: "deck" as const, rect: [40, 96, 10, 24] as [number, number, number, number], material: "wood" as const },
     ];

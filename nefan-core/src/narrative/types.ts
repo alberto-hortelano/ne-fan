@@ -21,12 +21,24 @@ export interface PlayerAppearance {
   skin_path: string;
 }
 
+/** Un objeto del inventario del JUGADOR. Lo escribe `inventory_add` (tool MCP,
+ *  `item_json`) y lo saca `inventory_remove` POR `id`: un ítem sin `id` no se
+ *  podría quitar nunca, así que el gate del State API
+ *  (`InventoryAddRequestSchema`) lo exige y el tipo lo refleja. El resto lo
+ *  pone el motor (name, description, lo que la historia necesite) y viaja tal
+ *  cual. Los inventarios de las ENTIDADES (`data.inventory`) siguen sin tipar:
+ *  viven en el blob libre del NPC. */
+export interface InventoryItem {
+  id: string;
+  [k: string]: unknown;
+}
+
 export interface NarrativePlayerState {
   level: number;
   class: string;
   health: number;
   gold: number;
-  inventory: unknown[];
+  inventory: InventoryItem[];
   appearance: PlayerAppearance;
   position: [number, number, number];
   current_scene_id: string;

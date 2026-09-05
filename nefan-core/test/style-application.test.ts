@@ -173,10 +173,7 @@ describe("WS get_world_snapshot / record_style_application", () => {
       );
       const ready = s2.sent[0] as WorldSnapshotMessage;
       assert.equal(ready.status, "ready");
-      assert.equal(
-        (ready.snapshot as WorldSnapshot).entry_scene_id,
-        "tile_0_0",
-      );
+      assert.equal(ready.snapshot?.entry_scene_id, "tile_0_0");
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }

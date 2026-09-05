@@ -23,10 +23,10 @@ function npc(
     spawned_at: "2026-08-20T00:00:00.000Z",
     spawn_reason: "scene_init",
     spawn_event_id: "",
-    position: { x: 0, y: 0, z: 0 },
+    position: [0, 0, 0],
     data: { name, ...data },
     asset_refs: [],
-  } as EntityRecord;
+  };
 }
 
 describe("hablante → entidad", () => {

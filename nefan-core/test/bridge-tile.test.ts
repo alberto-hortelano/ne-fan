@@ -8,9 +8,13 @@ import { runTileGeneration } from "../bridge/handlers/tile.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type {
   NarrativeEventMessage,
+  NarrativeStatusDeSesion,
   NarrativeStatusMessage,
+  ServerMessage,
   StateUpdateMessage,
 } from "../src/protocol/messages.js";
+import type { NarrativeState } from "../src/narrative/narrative-state.js";
+import type { SceneGenOutcome } from "../bridge/scene-gen-queue.js";
 import {
   makeCtx,
   makeSocket,
@@ -294,9 +298,10 @@ describe("bridge request_tile (plano continuo)", () => {
 
 describe("bridge: de dónde salió la escena (`source` del ready)", () => {
   const tileScene = () => ({ biome: "grass", scene_description: "campo", ground: [], entities: [] });
-  const readyDe = (broadcasts: unknown[]) =>
-    (broadcasts as NarrativeStatusMessage[]).findLast(
-      (m) => m.type === "narrative_status" && m.phase === "ready",
+  const readyDe = (broadcasts: ServerMessage[]) =>
+    broadcasts.findLast(
+      (m): m is NarrativeStatusDeSesion =>
+        m.type === "narrative_status" && m.kind !== "game_gen" && m.phase === "ready",
     );
 
   it("un tile generado AHORA se declara `engine`; su re-difusión, `cache`", async () => {
@@ -334,10 +339,15 @@ describe("bridge: la cola abandonada avisa a quien la espera", () => {
    *  de donde lo borra abandonAll. Devuelve el suelte. */
   function ocuparCola(ctx: ReturnType<typeof makeCtx>["ctx"]): () => void {
     let soltar!: () => void;
+    // Un job que NO entrega nada al cliente lo dice con el `SceneGenOutcome`
+    // del contrato, no con un `Promise<void>` que la cola no sabría leer.
     ctx.sceneGen.enqueue({
       key: "bloqueo",
       blocking: true,
-      run: () => new Promise<void>((r) => { soltar = r; }),
+      run: () =>
+        new Promise<SceneGenOutcome>((r) => {
+          soltar = () => r({ delivered: false, motivo: "bloqueo de test: no difunde nada" });
+        }),
     });
     return () => soltar();
   }

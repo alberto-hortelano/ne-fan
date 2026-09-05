@@ -4,7 +4,12 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { formatDToWorld, KIND_DEFAULT_HEIGHT, type WorldScene } from "../src/scene/scene-normalize.js";
+import {
+  formatDToWorld,
+  KIND_DEFAULT_HEIGHT,
+  type NpcEnElWire,
+  type WorldScene,
+} from "../src/scene/scene-normalize.js";
 import { npcSkinStyleRef } from "../src/games/style-categories.js";
 import {
   combatForHostileRole,
@@ -56,8 +61,7 @@ const conObjeto = (obj: Record<string, unknown>): Record<string, unknown> =>
   conEntity({ kind: "prop", name: "pozo de la plaza", cell: [1, 1], footprint: [1, 1], ...obj }, 0);
 
 /** La ref de skin que derivarían la partida y el batch de estilo. */
-const refDelSkin = (npc: Record<string, unknown>) =>
-  npcSkinStyleRef(npc as { style_ref?: string; role?: string });
+const refDelSkin = (npc: NpcEnElWire) => npcSkinStyleRef(npc);
 
 describe("formatDToWorld", () => {
   it("no emite ni `exits` ni el crudo entero (#378): las salidas las pone el wire y `place_id` sustituye a `__format_d`", () => {
@@ -157,7 +161,7 @@ describe("formatDToWorld", () => {
     // Nadie declara solidez ni nombres por char: el grid viaja solo para la
     // colisión, y lo que bloquea lo fija `DEFAULT_SOLID_CHARS`.
     const w = formatDToWorld(makeFormatD());
-    const tg = w.terrain_grid as Record<string, unknown>;
+    const tg = w.terrain_grid;
     assert.deepEqual(tg.solid_chars, ["W", "w"]);
     assert.deepEqual(
       Object.keys(tg).sort(),
@@ -189,12 +193,12 @@ describe("formatDToWorld", () => {
     for (const shape of ["box", "cylinder", "sphere", "cone"]) {
       const d = makeFormatD();
       (d.entities as Record<string, unknown>[])[0].shape = shape;
-      const obj = (formatDToWorld(d) as { objects: Record<string, unknown>[] }).objects[0];
+      const obj = formatDToWorld(d).objects[0];
       assert.equal(obj.shape, shape, `la forma "${shape}" debería conservarse`);
     }
     const d = makeFormatD();
     (d.entities as Record<string, unknown>[])[0].shape = "dodecaedro";
-    const obj = (formatDToWorld(d) as { objects: Record<string, unknown>[] }).objects[0];
+    const obj = formatDToWorld(d).objects[0];
     assert.equal(obj.shape, undefined, "una forma fuera del catálogo NO se propaga al renderer");
   });
 
@@ -402,7 +406,7 @@ describe("formatDToWorld — la cola de la world scene", () => {
   it("el id de la world scene es el scene_id de la escena, sin alias que lo dupliquen", () => {
     const w = formatDToWorld(makeFormatD());
     assert.equal(w.scene_id, "taberna_test");
-    assert.equal(Object.keys(w).filter((k) => w[k] === "taberna_test").length, 1,
+    assert.equal(Object.values(w).filter((v) => v === "taberna_test").length, 1,
       "un solo campo lleva el id: dos nombres para el mismo valor es lo que se retiró");
   });
 
@@ -446,7 +450,7 @@ describe("formatDToWorld — la cola de la world scene", () => {
   it("la style_ref de escena no llega a la world scene (campo retirado)", () => {
     const conRef = makeFormatD();
     conRef.style_ref = "settlement";
-    const w = formatDToWorld(conRef) as Record<string, unknown>;
+    const w = formatDToWorld(conRef);
     assert.ok(!("style_ref" in w), "no se propaga la elección de escena");
   });
 
@@ -468,12 +472,15 @@ describe("formatDToWorld — la cola de la world scene", () => {
   });
 
   it("una escena que no declara ningún opcional no emite ninguno", () => {
-    // La línea base de los cuatro tests de arriba: sin declaración, la clave
-    // no existe. Un default inventado aquí viajaría a los dos clientes.
-    const w = formatDToWorld(makeFormatD());
+    // La línea base de los cuatro tests de arriba: sin declaración, nada
+    // viaja. Se mira el JSON —lo que recibe el cliente— y no el objeto en
+    // memoria: `formatDToWorld` deja la clave con `undefined`, que el wire no
+    // lleva; un default inventado (`[]`, `""`) sí llegaría a los clientes.
+    const wire: Record<string, unknown> = JSON.parse(JSON.stringify(formatDToWorld(makeFormatD())));
     for (const campo of ["scatter_generators", "style_ref", "biome"]) {
-      assert.equal(w[campo], undefined, `"${campo}" no declarado no debería emitirse`);
+      assert.ok(!(campo in wire), `"${campo}" no declarado no debería viajar`);
     }
+    const w = formatDToWorld(makeFormatD());
     // Y sin avisos, `__plan_warnings` es `undefined` y NO una lista vacía. La
     // diferencia no la nota el lector del cliente (`?? []`), pero sí el wire:
     // un `[]` viajaría en CADA tile, y el tipo declara el miembro opcional
