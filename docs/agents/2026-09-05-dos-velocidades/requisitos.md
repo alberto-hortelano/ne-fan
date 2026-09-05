@@ -89,3 +89,19 @@ corrida mueva el tag.
 Pregunta que se hizo al crítico: ¿la PR-2 sigue vigente tal como está escrita, se reencuadra (por ejemplo a solo el
 rótulo, o a cerrar #439 con lo fusionado), o es obsoleta? Y qué le falta a #439 para cumplir su criterio de
 cierre sin reintroducir la espera por una corrida.
+
+## Cierre (2026-09-05, `main` = `b689839`)
+
+**#439 cerrado** con #445 + #446 y el criterio reescrito en cifras (comentario del 05-09 en el issue); la PR-2
+`aparcado` retirada. Decisión del usuario, literal: «Cerrar #439 y hacer #471 ahora». **#471 cerrado por #472**:
+`efectoDeFuente` pregunta a la revisión `antes` quién importaba el borrado y solo fuerza la completa si alguno
+sigue en el árbol y no está en el diff. Sin arquitecto (una rama y su test; `plan-471.md` del coordinador);
+ingeniero + QA en worktrees aparte. Medido: #448 pasa de los 42 módulos a 9, `c146395` de 42 a 20, las otras
+24 PR no se mueven, `pendiente` de 11 motivos a 8 (los ocho, instrumento o `comparaObjetivos`). QA (apto con
+hallazgos): `--no-renames` sin candado y ausente en `mutacion.ts` (dentro de la PR, por ser instrumento ya
+forzado), vivos/idos por `despues` y no por el disco, tres preexistentes con mensaje humano, y un **defecto**
+en las exclusiones `!ruta` de los dueños que apareció al escribir el candado que QA pidió. Noveno candado
+headless en CI: `qa/el-borrado-pregunta-a-antes.mjs`. Derivado: #473 (import de directorio). Verify 2149 ·
+deuda 81 idéntica (PARCIAL hasta que una corrida mida `escena-servida`) · cero créditos. Backlog 48 (36
+núcleo + 12 `futuro`). La próxima corrida sigue saliendo completa por instrumento (#445/#446/#449/#472) y hay
+que pedirla a mano; después, la «rápida» es lo que el diff seleccione.
