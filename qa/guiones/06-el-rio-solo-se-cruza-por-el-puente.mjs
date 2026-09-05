@@ -1,7 +1,8 @@
 /** El río solo se cruza por el puente — y el jugador lo nota.
  *
  *  `formatDToWorld` emite en `terrain_grid.solid_chars` los chars del grid que
- *  bloquean, y los fija el ENGINE (`DEFAULT_SOLID_CHARS`: muro y agua), no la
+ *  bloquean, y los fija el ENGINE (`DEFAULT_SOLID_CHARS`: solo el agua; los
+ *  muros son volúmenes del plan, #407), no la
  *  escena: nadie puede declarar un río vadeable ni un puente sólido. Esa lista
  *  alimenta el colisionador del cliente y la colisión server-side de NPCs
  *  (`bridge/sim-collision.ts`), así que un fallo aquí encierra al jugador o le
@@ -118,7 +119,11 @@ export default async function (ctx) {
 
   // ── 1. Lo que el engine fija como sólido ────────────────────────────────
   ctx.expect("el agua es sólida", (solidez.solid_chars ?? []).includes("w"), JSON.stringify(solidez.solid_chars));
-  ctx.expect("el muro es sólido", (solidez.solid_chars ?? []).includes("W"), JSON.stringify(solidez.solid_chars));
+  ctx.expect(
+    "y es lo ÚNICO sólido: los muros son volúmenes del plan, no chars del grid (#407)",
+    JSON.stringify(solidez.solid_chars ?? []) === JSON.stringify(["w"]),
+    JSON.stringify(solidez.solid_chars),
+  );
   ctx.expect("el puente NO es sólido", !(solidez.solid_chars ?? []).includes("b"), JSON.stringify(solidez.solid_chars));
   ctx.expect("el camino NO es sólido", !(solidez.solid_chars ?? []).includes("_"), JSON.stringify(solidez.solid_chars));
   ctx.expect(

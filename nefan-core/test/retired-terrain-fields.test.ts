@@ -50,7 +50,7 @@ describe("los campos de terreno retirados se rechazan por nombre", () => {
     assert.ok(issue, "el gate tiene que rebotar la leyenda");
     assert.match(issue.message, /`terrain_legend` está retirado/);
     assert.match(issue.message, /`biome` \+ `ground`\/`volumes`/);
-    assert.match(issue.message, /agua y muro bloquean/);
+    assert.match(issue.message, /el agua bloquea; los muros son `volumes`/);
   });
 
   it("EmittedSceneSchema rebota `terrain_patches` aunque venga vacío (con `in`, no por valor)", () => {

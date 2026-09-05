@@ -68,7 +68,7 @@ limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella 
 | `bateria-candados-en-negativo.mjs`, `esperas-candados-en-negativo.mjs` | parecen headless y **no lo son**: spawnean `qa/run.mjs` (preset + Playwright) |
 | `fake-enruta-por-pathname.mjs` | su observable (`POST /skin_sprite_sheet?x=1 → 200`) depende de que el fake encuentre `nefan-html/public/sprites/paladin/idle/frontal_8/meta.json`, que es arte GENERADO y gitignored: en un clon limpio contesta 500 y el guion sale rojo (medido el 05-09: verde en el checkout del usuario, rojo en un worktree recién clonado). Entra el día que la ruta se pruebe sin leer del disco |
 | `el-arte-de-personaje-…`, `el-indice-del-store-…`, `perfil-de-repintado-…`, `sprites-sin-servicio` | levantan asset-store, remote-gen o sprite-forge (Python del `.venv`); nadie los ha cronometrado. Candidatos siguientes, con reloj medido antes |
-| `guardarrail-sin-creditos`, `dos-corridas`, `fixtures-sin-bridge`, `captura-de-fixture`, `capturar-portadas`, `presupuesto-de-volumenes`, `presets`, `no-mata-lo-ajeno`, `parar-clasifica-los-nueve-puertos` | conducen el runner, un Chromium o `start.sh` sobre los puertos del catálogo de la máquina |
+| `guardarrail-sin-creditos`, `dos-corridas`, `fixtures-sin-bridge`, `las-fixtures-solo-chocan-con-el-agua`, `captura-de-fixture`, `capturar-portadas`, `presupuesto-de-volumenes`, `presets`, `no-mata-lo-ajeno`, `parar-clasifica-los-nueve-puertos` | conducen el runner, un Chromium o `start.sh` sobre los puertos del catálogo de la máquina |
 
 La otra mitad de #357 no corre en el job sino en `npm test`: todo módulo de `qa/lib` lo importa
 algún test de `nefan-core/test/` (dirección **test → banco**; `qa/` nunca entra en producción,
@@ -151,7 +151,7 @@ Reglas que hacen que un guion valga algo:
 | `02-colision-desde-huella` | La colisión sale de la huella declarada, nunca de los píxeles |
 | `03-hud-de-ataques` | El HUD se genera desde el catálogo del sistema de combate de la sesión |
 | `05-terreno-desde-ground` | El suelo declarativo (`ground`) se rasteriza al grid y de ahí sale la colisión — incluido un tile generado EN VIVO al explorar, no el snapshot de pre-generación |
-| `06-el-rio-solo-se-cruza-por-el-puente` | `solid_chars` los fija el engine (agua y muro): el jugador cruza el río por el puente y rebota contra el agua, y ni el puente ni el camino bloquean |
+| `06-el-rio-solo-se-cruza-por-el-puente` | `solid_chars` los fija el engine (solo el agua: los muros son volúmenes del plan, #407): el jugador cruza el río por el puente y rebota contra el agua, y ni el puente ni el camino bloquean |
 | `07-npc-clave-del-skin` | `role`/`style_ref`/`description` sobreviven a `formatDToWorld`, y partida y batch de estilo derivan la MISMA clave de caché (si divergen, el skin se paga dos veces) |
 | `08-viaje-a-place-sin-realizar` | Viajar a un destino del panel "Salidas" que el motor aún no ha realizado: se realiza al pisarlo, no antes |
 | `09-viaje-de-vuelta` | La vuelta desde un place ya visitado reusa lo generado en vez de volver a pagarlo |
@@ -214,6 +214,12 @@ node qa/fixtures-sin-bridge.mjs --keep     # deja el stack arriba
 
 Vive fuera de `guiones/` por la razón contraria a `presets.mjs`: el runner levanta
 `e2e-sin-creditos`, que lleva bridge, y aquí el sujeto es justo **no tenerlo**.
+
+Su hermano `qa/las-fixtures-solo-chocan-con-el-agua.mjs` (QA de #407) recorre el mismo preset
+y mide la COLISIÓN en las tres fixtures: `solid_chars` es exactamente `["w"]`, ninguna celda trae el
+muro retirado `W`, el agua y los edificios del plan bloquean y el arranque del jugador no. Es el
+otro camino legítimo hasta la world scene (`addTileRaw` → `formatDToWorld` en el cliente), que los
+guiones 05 y 06 —con bridge— no pisan. Mismo grupo: corrida local, mismas banderas.
 
 Dos cosas que aprendió el arreglo y que conviene no volver a descubrir:
 

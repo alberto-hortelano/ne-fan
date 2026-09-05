@@ -3,7 +3,8 @@
  *
  *  Desde #335 el terreno tiene UN origen: el motor declara `biome` +
  *  `ground`/`volumes`, el engine sintetiza el grid para colisión y costuras, y
- *  la solidez la fija `DEFAULT_SOLID_CHARS` (agua y muro). Los dos campos con
+ *  la solidez la fija `DEFAULT_SOLID_CHARS` (solo el agua; los muros son
+ *  volúmenes del plan, #407). Los dos campos con
  *  los que antes se declaraba terreno por chars —una leyenda char→nombre y
  *  solidez, y parches ASCII sobre el bioma— están retirados y el zod los
  *  REBOTA por nombre en las dos poblaciones de escena

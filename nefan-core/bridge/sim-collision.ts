@@ -2,7 +2,7 @@
  *
  *  Espejo del CollisionSystem del cliente (fuentes en unión), construido solo
  *  con lo que el bridge tiene persistido en NarrativeState:
- *  1. terrain_grid del esquema (formatDToWorld — muro W, agua w);
+ *  1. terrain_grid del esquema (formatDToWorld — el agua w; los muros son plan);
  *  2. PLAN COMPUESTO (`__plan` de la world scene: lo declarado por el motor
  *     MÁS lo derivado del esquema — entities estáticas y la vegetación de
  *     masa), rasterizado con la MISMA función de core que el cliente

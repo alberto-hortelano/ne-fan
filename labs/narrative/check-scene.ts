@@ -63,7 +63,7 @@ function sceneFromSave(saveDir: string): Record<string, unknown> {
 }
 
 /** Mapa ASCII: terreno expandido + una marca por entity (la inicial de su
- *  `kind`: `p` player, `n` npc, `b` building…). Celdas sólidas tal cual (W/w). */
+ *  `kind`: `p` player, `n` npc, `b` building…). Celdas sólidas tal cual (el agua `w`). */
 function renderAscii(rawScene: Record<string, unknown>): string {
   const scene = hasUnexpandedPrimitives(rawScene) ? expandScenePrimitives(rawScene) : rawScene;
   const size = scene.size as { cols: number; rows: number };

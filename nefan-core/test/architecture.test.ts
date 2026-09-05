@@ -555,7 +555,7 @@ describe("fronteras arquitectónicas", () => {
         },
         {
           path: "nefan-core/src/scene/scene-normalize.ts",
-          text: "// Chars del grid que bloquean el paso: W muro y w agua.\n",
+          text: "// Chars del grid que bloquean el paso: solo w, el agua.\n",
           imports: [],
         },
       ]),
