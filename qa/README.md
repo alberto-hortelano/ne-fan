@@ -54,6 +54,7 @@ limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella 
 | Dentro | Tiempo | Qué necesita del runner |
 |---|---|---|
 | `el-npc-cruza-ai-server-con-role-y-description.mjs` | 2 s | python3 con `uvicorn`+`anthropic`, `dist/` del core |
+| `el-state-api-no-muta-sin-partida.mjs` | 2,4 s | tsx y `dist/` del core; levanta bridge + motor falso en disco efímero (#453) |
 | `mutacion-reparto-en-lotes.mjs --solo-vigentes` | 6,5 s | tsx; escribe y restaura la huella y `reports/` |
 | `el-selector-ve-lo-que-la-bateria-abre.mjs` | 2,6 s | `typescript` de nefan-core; solo lee |
 | `mutacion-candados-en-negativo.mjs` | 36 s | tsx; escribe y restaura `mutacion-huella.ts` y la huella |

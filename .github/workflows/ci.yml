@@ -161,7 +161,7 @@ jobs:
   # sprite-forge (`el-arte-`, `el-indice-`, `perfil-`: sin cronometrar).
   candados-headless:
     runs-on: ubuntu-latest
-    # ~2 min medidos en local (05-09) para los siete pasos. Un candado que se
+    # ~2 min medidos en local (05-09) para los ocho pasos. Un candado que se
     # quede esperando un puerto no puede comerse el runner seis horas.
     timeout-minutes: 20
     steps:
@@ -196,6 +196,12 @@ jobs:
       # llega al wire del bridge con los dos campos; rojo si una de las dos
       # copias de `validate_scene_response` desaparece.
       - run: node qa/el-npc-cruza-ai-server-con-role-y-description.mjs
+      # #453: el State API REAL (bridge + motor falso, disco efímero) rebota con
+      # 409 cada mutadora del contrato sin partida, muta con 200 en la sesión
+      # provisional y en disco, y contesta 500 «aplicado en memoria pero NO
+      # guardado» cuando persistir falla — y lo comprueba contra la memoria y el
+      # save. (2,4 s) Solo necesita node, tsx y el dist del core.
+      - run: node qa/el-state-api-no-muta-sin-partida.mjs
       # #357: los candados en negativo SIN navegador, en este orden: primero el
       # que estaba rojo en `main`, luego el único que solo lee (`el-selector`),
       # después los que escriben en el árbol y restauran, y `contrato-` —que se

@@ -558,7 +558,10 @@ describe("state HTTP API · lo que pasa después del handler (#453)", () => {
         assert.equal(res.status, 500, "antes: el 200 del handler, y el fallo solo en el log");
         const body = (await res.json()) as { ok: boolean; error: string };
         assert.equal(body.ok, false);
-        assert.equal(body.error, "aplicado en memoria pero NO guardado: disco lleno");
+        assert.equal(
+          body.error,
+          "aplicado en memoria pero NO guardado: disco lleno. No reintentes: la mutación ya está aplicada y la siguiente escritura que guarde la arrastrará",
+        );
         // El body no miente: el ítem SÍ está en memoria (reintentar duplicaría).
         assert.deepEqual(narrative.player.inventory.map((i) => i.id), ["antorcha"]);
       },
