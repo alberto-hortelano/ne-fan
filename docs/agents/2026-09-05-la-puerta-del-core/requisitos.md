@@ -68,3 +68,29 @@ una lista negra que persigue.
 3. ¿Qué hacer con `index.ts`: puerta browser-safe, borrarlo, o partirlo? ¿Quién lo importa hoy?
 4. Conflictos: programas #358 (troceo de `main.ts`), #241 (harness del cliente), #241/#306 candados del
    cliente; `vite.config.ts` fuera de la regla.
+
+## Tras la crítica (2026-09-05) — decisión del usuario
+
+Veredicto del crítico: **REENCUADRADA** (`critica.md`). Medido: 0 de 169 PR en 30 días rompieron el cliente
+por un refactor del core, y `ci.yml` ya corre el `tsc` del cliente en cada PR; `index.ts` es `exports["."]` de
+`@nefan/core` y lo consumen `narrative-mcp/server.ts` y `validators.ts` (no es huérfano); 24 de las 41 rutas son
+contratos de frontera, 14 lógica pura de render/colisión, 3 rozan la simulación sin violar «el cliente solo
+pinta». El hueco real: 40 entradas → 81 ficheros en el cierre → 0 `node:*` hoy, pero **10 de los 81 están
+fuera del perímetro de `core-puro-sin-node`** y un `node:fs` en cualquiera de ellos mañana pasa las dos reglas.
+
+Opción elegida por el usuario, literal: **«Reencuadre: derivar del grafo»**.
+
+> **Aceptación reencuadrada.** La pureza browser-safe se **deriva del grafo**: un candado calcula el cierre
+> transitivo de imports de todo módulo de `nefan-core` que alcance `nefan-html/src` (alias `@nefan-core/*` +
+> relativos, `.js→.ts`, `index.ts`) y falla si algún fichero del cierre importa `node:*`; medido al nacer: 40
+> entradas → 81 ficheros → 0 `node:*` (nace verde). Probado en negativo con un `node:fs` a dos saltos. Con él,
+> `html-no-importa-core-con-node` **se borra** el mismo día (`grep` a cero). No se crea barrel ni lista blanca;
+> `index.ts` y `package.json#exports` no se tocan (son la puerta node de narrative-mcp). `core-puro-sin-node` no
+> cambia sus `files` (define el perímetro de mutación). Cero líneas cambiadas en `nefan-html/src`. Cerrar #359
+> desde la PR con este texto.
+
+Pregunta abierta para el arquitecto: si el candado vive como **tipo de regla nuevo** del checker
+(`arch-rules.json` + `check.ts`, así sale en `npm run deuda` y lo puede reutilizar otra frontera) o como test
+a medida en `architecture.test.ts`; y qué pieza de traza de imports se reutiliza (`arch-collect.ts` con
+`ts.preProcessFile`, o `cierreDeImports`/`resolverEspecificador` de `scripts/mutation-plan.ts`, que hoy vive
+en `scripts/` y no en `src/`).
