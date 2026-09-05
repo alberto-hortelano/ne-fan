@@ -58,6 +58,7 @@ limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella 
 | `mutacion-reparto-en-lotes.mjs --solo-vigentes` | 6,5 s | tsx; escribe y restaura la huella y `reports/` |
 | `el-selector-ve-lo-que-la-bateria-abre.mjs` | 2,6 s | `typescript` de nefan-core; solo lee |
 | `el-borrado-pregunta-a-antes.mjs` | ~10 s | git y el `node_modules` de nefan-core (`tsx`, `typescript`); clona superficial en `qa/.tmp/` y no toca el árbol (#471) |
+| `el-cierre-ve-el-node-a-saltos.mjs` | ~10 s | git y el `node_modules` de nefan-core (`tsx`, `typescript`); clona superficial en `qa/.tmp/` y no toca el árbol (#359) |
 | `mutacion-candados-en-negativo.mjs` | 36 s | tsx; escribe y restaura `mutacion-huella.ts` y la huella |
 | `mutacion-cableado-en-negativo.mjs` | 26 s | el tag `mutacion-ultima` y su historia (`fetch-depth: 0`); escribe y restaura |
 | `contrato-candados-en-negativo.mjs` | 3,5 s | tsx + `python3 -m unittest`; exige SUS ficheros limpios |
@@ -605,3 +606,31 @@ y auditar `c1..c2` con el árbol ya en c3 → fuerza igual que en c2 (el reparto
 en `despues`, no en el disco). Es el único candado con git real de `--no-renames`: sin él la ruta de
 origen de un renombrado ni aparece en la lista y los bloques 2 y 3 caen. Exit 0/1/2; no toca el
 árbol; cero créditos.
+
+## `qa/el-cierre-ve-el-node-a-saltos.mjs`: el `node:*` que entra en el cliente a través del core
+
+Nace con #359. Hasta entonces la pureza browser-safe del bundle la sostenía una lista negra de ocho
+módulos del core escrita a mano: un módulo nuevo con `node:fs` que el cliente alcanzara pasaba el
+checker hasta que alguien lo añadiera. Desde #359 se DERIVA del grafo: la regla `cierre`
+`el-cliente-no-alcanza-node-ni-a-traves-del-core` recorre el cierre transitivo de imports desde
+`nefan-html/src/**` (alias `@nefan-core/*` leído del tsconfig, relativos, `.js→.ts`, `index.ts`) y
+denuncia el `node:*` donde esté, con el camino entero. Eso cambia la dirección del riesgo: una lista
+que no ve algo se ve (falta la entrada); un grafo que no ve algo sale VERDE sin haber mirado — un
+alias mal resuelto, una arista que `preProcessFile` no cuente, un destino podado en silencio.
+
+La batería (`test/arch-cierre.test.ts`) prueba el motor con imports YA RESUELTOS que ella inventa, y
+`architecture.test.ts` comprueba el cierre real (≥ 80 ficheros) y la unión colector↔motor sobre
+texto sintético. Este guion rompe el árbol DE VERDAD —un `node:fs` escrito en un fichero del core—
+en un clon superficial en `qa/.tmp/`, con el instrumento del **árbol de trabajo** copiado encima
+(`scripts/`, `src/contract/arch/`, `arch-rules.json`, el tsconfig del cliente; sirve antes de
+commitear), y pregunta al mismo `checkArchitecture(archConfig, loadArchFiles())` que corre `npm test`.
+Los sujetos se eligen del cierre de hoy —un fichero fuera del perímetro de `core-puro-sin-node` a dos
+saltos y otro a tres— para que no caduque si alguien mueve `rng.ts`. Nueve bloques: árbol intacto
+verde y cierre ≥ 80 · `node:fs` a dos saltos → SOLO la regla nueva, con el camino · a tres saltos,
+cadena de cuatro ficheros · `export * from` es arista · import de directorio · import ROTO →
+«el import está roto: … no existe en disco» en quien lo escribe · `import()` dinámico literal ·
+`node:fs` directo en el cliente, una sola vez · destino que EXISTE fuera de `scan.roots` → «existe
+pero el checker no lo escanea» (dos mensajes distintos a propósito: un typo se arregla en el import,
+un fichero real en `arch-rules.json`). Probado en negativo: solo juzgar las entradas → 6 bloques
+rojos; el colector devolviendo «paquete» para un import roto → bloque 5 rojo; `paths_de: []` →
+bloque 0 rojo («solo alcanza 0 ficheros del core»). Exit 0/1/2; no toca el árbol; cero créditos.

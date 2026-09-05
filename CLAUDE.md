@@ -28,7 +28,7 @@ fallan solos. Antes ocupaban media página de prosa y se ignoraban igual:
 
 | Herramienta | Qué sujeta |
 |-------------|-----------|
-| `nefan-core/data/contract/arch-rules.json` (+ `test/architecture.test.ts`) | fronteras: lógica en core y un cliente que solo pinta, dirección de dependencias, módulos puros sin `node:*`, three.js solo en `fps-gl.ts`, el cliente sin conversión celdas→metros, fail-loud por capa. `npm test` los verifica |
+| `nefan-core/data/contract/arch-rules.json` (+ `test/architecture.test.ts`) | fronteras: lógica en core y un cliente que solo pinta, dirección de dependencias, módulos puros sin `node:*` y nada de lo que el cliente alcanza por el grafo de imports trae `node:*` (regla `cierre`: se deriva del grafo, no de una lista), three.js solo en `fps-gl.ts`, el cliente sin conversión celdas→metros, fail-loud por capa. `npm test` los verifica |
 | `nefan-core/data/contract/quality-thresholds.json` (`npm run crap`) | complejidad × cobertura: tope de no-empeorar y suelo de cobertura |
 | `nefan-core/data/contract/mutation-targets.json` (`npm run mutacion`) | si los tests se enterarían de un cambio, no solo si pasan por la línea — y que **todo** fichero del núcleo puro esté medido o eximido con motivo escrito: sin esa totalidad, un diff sobre un fichero sin dueño sale verde sin medir nada |
 | `nefan-core/data/contract/mutacion-huella.json` | de quién es cada superviviente y cuál es NUEVO. Va commiteado: el delta se ve en el diff, y un clon limpio ve la deuda de mutación en vez de una fuente vacía |

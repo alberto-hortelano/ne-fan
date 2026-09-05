@@ -13,11 +13,24 @@
 
 import { z } from "zod";
 
+import { violacionesDeCierre } from "./cierre.js";
+
 /** Un import ya extraído de un fichero: el especificador tal cual lo escribió
  *  el autor, con la línea (1-based) donde aparece. */
 export interface ImportRef {
   spec: string;
   line: number;
+  /** Ruta relativa a la raíz del repo del fichero al que apunta, resuelta por
+   *  el colector (relativos, `.js`→`.ts`, `index.ts` y los alias del
+   *  `tsconfig.json` que declare `scan.paths_de`). Ausente = paquete o builtin
+   *  (`three`, `node:fs`): no vive en el repo. Es la arista que recorre una
+   *  regla `cierre`; las reglas `imports` siguen mirando `spec`. */
+  resolved?: string;
+  /** El colector buscó `resolved` en disco y no estaba: el import está ROTO
+   *  (typo, fichero borrado). Se distingue de «existe pero no se escanea»
+   *  porque a quien lo lee en CI le piden dos cosas distintas: arreglar el
+   *  import, o ampliar `scan.roots`. Solo lo pone el colector. */
+  roto?: true;
 }
 
 /** Fichero a examinar. `imports` solo lo traen los de TypeScript. */
@@ -65,14 +78,26 @@ const RuleSchema = z
     imports: z.object({ forbid: z.array(z.string()).min(1) }).optional(),
     /** Prohibición sobre el texto del fichero (regex, se aplica con "gm"). */
     text: z.object({ pattern: z.string().min(1) }).optional(),
+    /** Prohibición sobre el CIERRE transitivo de imports: los ficheros que
+     *  casan `files` son las entradas, y `forbid` (regex sobre el
+     *  especificador) se aplica a todo import de todo fichero que se alcance
+     *  desde ellas por `ImportRef.resolved`. Es la regla que mira lo que
+     *  ENTRA por el grafo y no solo lo que el fichero escribe: `imports` con
+     *  `^node:` sobre el cliente deja pasar el `node:fs` de un módulo del core
+     *  que el cliente importa a dos saltos; `cierre` no. `quien` nombra al
+     *  sujeto en el mensaje («entra en el cliente por: …»). Motor en
+     *  `cierre.ts`. */
+    cierre: z
+      .object({ forbid: z.array(z.string()).min(1), quien: z.string().min(1).default("el cierre") })
+      .optional(),
     exceptions: z.array(ExceptionSchema).default([]),
     /** Solo para severity "warn": número de violaciones tolerado hoy. El test
      *  falla si CRECE — la deuda queda congelada y visible, no escondida. */
     max: z.number().int().nonnegative().optional(),
   })
   .strict()
-  .refine((r) => Boolean(r.imports) !== Boolean(r.text), {
-    message: "cada regla declara `imports` o `text`, nunca ambos ni ninguno",
+  .refine((r) => [r.imports, r.text, r.cierre].filter(Boolean).length === 1, {
+    message: "cada regla declara `imports`, `text` o `cierre`: exactamente uno",
   })
   .refine((r) => r.severity === "error" || typeof r.max === "number", {
     message: "una regla `warn` debe declarar `max` (el conteo congelado)",
@@ -99,6 +124,13 @@ export const ArchConfigSchema = z
        *  colector LANZA en vez de escanear de menos en silencio. */
       files: z.array(z.string()).default([]),
       ignore: z.array(z.string()).default([]),
+      /** `tsconfig.json` (rutas relativas a la raíz del repo) cuyos
+       *  `compilerOptions.paths` definen alias de import para los ficheros que
+       *  viven bajo su directorio. El colector los LEE para rellenar
+       *  `ImportRef.resolved` — leído, no copiado: el cliente importa el core
+       *  por `@nefan-core/*`, y si ese alias cambiara en el tsconfig y no aquí,
+       *  el cierre se podaría en silencio. */
+      paths_de: z.array(z.string()).default([]),
     }),
     rules: z.array(RuleSchema).min(1),
   })
@@ -297,8 +329,12 @@ function violatesPuerta(rule: ArchRule, exc: { path: string; funcion?: string },
  *  eximido SIN `funcion` no se mira; uno eximido CON ella se mira como puerta. */
 export function checkArchitecture(config: ArchConfig, files: readonly SourceFile[]): Violation[] {
   const out: Violation[] = [];
+  const porRuta = new Map(files.map((f) => [f.path, f] as const));
   for (const rule of config.rules) {
     const found: Violation[] = [];
+    // En una regla `cierre` los ficheros que casan no se juzgan uno a uno: son
+    // las ENTRADAS del grafo, y se juzga todo lo que se alcanza desde ellas.
+    const entradas: string[] = [];
     for (const file of files) {
       if (!matchesAny(file.path, rule.files)) continue;
       const exc = rule.exceptions.find((e) => matchesAny(file.path, [e.path]));
@@ -306,8 +342,10 @@ export function checkArchitecture(config: ArchConfig, files: readonly SourceFile
         if (exc.funcion) found.push(...violatesPuerta(rule, exc, file));
         continue;
       }
-      found.push(...(rule.imports ? violatesImport(rule, file) : violatesText(rule, file)));
+      if (rule.cierre) entradas.push(file.path);
+      else found.push(...(rule.imports ? violatesImport(rule, file) : violatesText(rule, file)));
     }
+    if (rule.cierre) found.push(...violacionesDeCierre(rule, entradas, porRuta));
     found.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
     out.push(...found);
   }

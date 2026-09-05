@@ -27,6 +27,8 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { z } from "zod";
 
+import { baseRelativa, primeroEnDisco } from "./especificador.js";
+
 const here = dirname(fileURLToPath(import.meta.url));
 export const coreRoot = join(here, "..");
 
@@ -541,17 +543,13 @@ function reexportaciones(fichero: string): Map<string, { file: string; original:
 }
 
 /** Resuelve un especificador relativo a un fichero real del repo. Devuelve
- *  `undefined` para los paquetes de node_modules: no se mutan. */
+ *  `undefined` para los paquetes de node_modules: no se mutan. La lista de
+ *  candidatos (`.js`→`.ts`, `index.ts`…) vive en `scripts/especificador.ts`,
+ *  compartida con `afectado.ts` y con el colector del checker de fronteras. */
 function resolverEspecificador(desde: string, especificador: string): string | undefined {
-  if (!especificador.startsWith(".")) return undefined;
-  const base = resolve(dirname(desde), especificador);
-  // El código fuente importa con extensión `.js` (ESM) pero en disco es `.ts`.
-  const candidatos = base.endsWith(".js") ? [`${base.slice(0, -3)}.ts`] : [];
-  candidatos.push(`${base}.ts`, base, join(base, "index.ts"));
-  for (const c of candidatos) {
-    if (existsSync(c) && statSync(c).isFile()) return normaliza(relative(coreRoot, c));
-  }
-  return undefined;
+  const base = baseRelativa(desde, especificador);
+  const c = base === undefined ? undefined : primeroEnDisco(base);
+  return c === undefined ? undefined : normaliza(relative(coreRoot, c));
 }
 
 /** Las aristas de RUNTIME: `importsDirectos` menos las que TypeScript borra al

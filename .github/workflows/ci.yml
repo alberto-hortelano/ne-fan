@@ -223,6 +223,15 @@ jobs:
       # --rango` que corre `pendiente`. Es el único candado con git real de
       # `--no-renames` y del reparto vivos/idos por `despues`. No toca el árbol.
       - run: node qa/el-borrado-pregunta-a-antes.mjs
+      # (~10 s) un `node:*` que entra en el cliente A SALTOS, a través del core,
+      # lo ve la regla `cierre` del checker con el colector REAL (#359): clon
+      # superficial en `qa/.tmp/`, roturas escritas de verdad en ficheros del
+      # core (dos y tres saltos, re-exportación, directorio, import roto,
+      # `import()` dinámico, destino existente fuera del escaneo) y el mismo
+      # `checkArchitecture(archConfig, loadArchFiles())` que corre `npm test`.
+      # La batería del grafo es sintética; esto es lo que la une al disco.
+      # No toca el árbol.
+      - run: node qa/el-cierre-ve-el-node-a-saltos.mjs
       # (36 s) rompe `mutacion-huella.ts` y la huella y exige que su batería se
       # entere; restaura byte a byte.
       - run: node qa/mutacion-candados-en-negativo.mjs

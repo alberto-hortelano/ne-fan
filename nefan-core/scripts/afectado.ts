@@ -70,9 +70,10 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, matchesGlob, relative, resolve } from "node:path";
+import { join, matchesGlob, relative, resolve } from "node:path";
 import ts from "typescript";
 
+import { baseRelativa, candidatosDe } from "./especificador.js";
 import {
   alcanceDe,
   cierreDeRuntime,
@@ -815,14 +816,12 @@ function gitGrepL(rev: string, texto: string, patrones: readonly string[]): stri
 }
 
 /** A qué ficheros PODRÍA apuntar un especificador relativo, sin comprobar
- *  ninguno en disco. Es `resolverEspecificador` sin el `existsSync`: la
- *  misma lista de candidatos (`.js` → `.ts`, `.ts` añadido, la ruta tal cual y
- *  su `index.ts`), y decide quien compare con el fichero que busca. */
+ *  ninguno en disco: la lista de candidatos de `scripts/especificador.ts` (la
+ *  misma que usa `resolverEspecificador` con el disco delante), y decide quien
+ *  compare con el fichero que busca. */
 function resuelveSinDisco(desde: string, especificador: string): string[] {
-  if (!especificador.startsWith(".")) return [];
-  const base = resolve(dirname(desde), especificador);
-  const sinJs = base.replace(/\.js$/, "");
-  return [`${sinJs}.ts`, `${sinJs}.mts`, `${base}.ts`, base, join(base, "index.ts")];
+  const base = baseRelativa(desde, especificador);
+  return base === undefined ? [] : candidatosDe(base);
 }
 
 /** Los módulos del plan de una revisión que mutaban ese fichero o lo tenían en
