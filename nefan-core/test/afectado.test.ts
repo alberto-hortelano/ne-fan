@@ -23,9 +23,12 @@ import {
   comparaPerimetro,
   efectoArchRules,
   efectoObjetivos,
+  importadoresEn,
   instrumentoDeMedida,
+  origenDelBorrado,
   revisionesDelRango,
   seleccionar,
+  type Borrado,
   type Contexto,
   type EfectoArchRules,
   type EfectoObjetivos,
@@ -53,6 +56,9 @@ interface Opciones {
   lectores?: readonly string[];
   /** Qué ficheros son el instrumento de medida (derivado, en el real). */
   instrumento?: readonly string[];
+  /** Lo que se sabe de cualquier fichero borrado. Por defecto, nada: no hay
+   *  revisión en la que mirar, que es lo que pasa con `--ficheros`. */
+  borrado?: Borrado;
 }
 
 /** Dos módulos: `alfa` muta y carga `src/scene/alfa.ts`; `beta`, `src/store/beta.ts`.
@@ -81,7 +87,10 @@ const ctx = (o: Opciones = {}): Contexto => ({
         : f === "src/scene/exento.ts"
           ? { tipo: "exento", porque: "solo declara tipos" }
           : { tipo: "huerfano" },
-  existe: (f) => f !== "src/scene/borrado.ts",
+  // Dos que ya no están: el fuente borrado y el test que se fue con él.
+  existe: (f) => f !== "src/scene/borrado.ts" && f !== "test/borrado.test.ts",
+  borrado: () =>
+    o.borrado ?? { tipo: "sin-revision", porque: "por defecto, el contexto no tiene un `antes` en el que mirar" },
   // Ningún dato tiene lector por defecto: quién lee qué es lo que el selector
   // DERIVA, y aquí se inyecta para poder probar las dos direcciones.
   leen: () => [...(o.lectores ?? [])],
@@ -184,10 +193,12 @@ describe("selector · ante la duda, de MÁS, y diciéndolo", () => {
     disparaTodo("stryker.config.json", /instrumento de medida/);
   });
 
-  it("un fuente que ya no está en el árbol fuerza la corrida completa", () => {
-    // Borrar un fichero cambia a quien lo importaba, y del borrado no queda
-    // grafo que consultar.
-    disparaTodo("src/scene/borrado.ts", /ya no está en el árbol/);
+  it("un fuente borrado SIN una revisión en la que mirar fuerza la corrida completa", () => {
+    // Borrar un fichero cambia a quien lo importaba. Ese grafo está en `antes`;
+    // con `--ficheros` no hay `antes`, y suponer que sus importadores están en
+    // el diff sería la selección corta y callada que este selector no hace. El
+    // caso CON revisión tiene su propio bloque más abajo.
+    disparaTodo("src/scene/borrado.ts", /ya no está en el árbol, y .*`antes`/);
   });
 
   it("la huella NO fuerza la corrida completa, y dice sobre qué se apoya", () => {
@@ -283,6 +294,114 @@ describe("selector · el instrumento se deriva, no es una carpeta", () => {
     // El testigo del lado contrario, y es el que costó los 41 módulos de #416:
     // vive en `scripts/` y es sujeto de la batería de `asset-store-contrato`.
     assert.equal(inst.has("scripts/manifest-kinds-con-productor.ts"), false);
+  });
+});
+
+/** El cuarto forzador de la familia de #404 (#471): un fuente borrado pedía los
+ *  42 módulos «porque no hay grafo que decir quién lo cargaba». Lo hay, en
+ *  `antes`, y quien lo cargaba tiene que estar en el mismo diff o el árbol no
+ *  compila. Las dos direcciones importan: la que acota, porque #448 pagó una
+ *  completa entera solo por `scripts/gate-snapshots.ts`; y la que no acota,
+ *  porque un importador fuera del diff es exactamente la duda que hay que
+ *  ejecutar de más. */
+describe("selector · un fuente borrado pregunta a `antes` quién lo cargaba", () => {
+  const BORRADO = "src/scene/borrado.ts";
+  const borrado = (o: Partial<Extract<Borrado, { tipo: "borrado" }>> = {}): Borrado => ({
+    tipo: "borrado",
+    antes: "a1b2c3d",
+    existiaEnAntes: true,
+    importadores: [],
+    plan: { ok: true, dueños: [] },
+    ...o,
+  });
+  const selCon = (b: Borrado, ...ficheros: string[]) => seleccionar(ctx({ borrado: b }), [BORRADO, ...ficheros]);
+  const porqueDel = (s: ReturnType<typeof seleccionar>): string =>
+    s.efectos.find((e) => e.fichero === BORRADO)?.porque ?? "";
+
+  it("con todos sus importadores en el diff NO fuerza nada: ellos ya seleccionan", () => {
+    // El caso de #448. El borrado en sí no añade módulos; los importadores, que
+    // están en el diff, seleccionan los suyos con el grafo de hoy.
+    const s = selCon(borrado({ importadores: ["src/scene/alfa.ts"] }), "src/scene/alfa.ts");
+    assert.equal(s.todos, false, "el borrado no puede costar la completa si sus importadores están en el diff");
+    assert.deepEqual(s.ids, ["alfa"]);
+    assert.match(porqueDel(s), /lo importaban 1 fichero\(s\) \(src\/scene\/alfa\.ts\), todos en este diff/);
+  });
+
+  it("con UN importador fuera del diff fuerza la completa y lo nombra", () => {
+    // Posible con un árbol que no compila o con un `import()` por cadena que
+    // el grafo no sigue. Es la duda, y la duda se ejecuta de más y se dice.
+    const s = selCon(
+      borrado({ importadores: ["src/scene/alfa.ts", "src/store/beta.ts"] }),
+      "src/scene/alfa.ts",
+    );
+    assert.equal(s.todos, true);
+    assert.deepEqual(s.ids, ["alfa", "beta"]);
+    assert.match(porqueDel(s), /src\/store\/beta\.ts, que NO está en el diff/);
+    assert.doesNotMatch(porqueDel(s), /alfa\.ts, que NO/, "el que sí está en el diff no se señala");
+  });
+
+  it("un importador que se FUE con él no tiene que estar en la lista del diff", () => {
+    // `test/status-labels.test.ts` → `test/status-motivo.test.ts` en #433: con
+    // detección de renombrados, `git diff --name-only` calla la ruta de origen
+    // (y `mutacion.ts pendiente` construye la lista así). Un importador que ya
+    // no está en el árbol cambió por definición y ya no puede cargar nada. El
+    // contexto sintético dice que `test/borrado.test.ts` no existe; la lista
+    // del diff no lo trae.
+    const s = selCon(borrado({ importadores: ["test/borrado.test.ts", "src/scene/alfa.ts"] }), "src/scene/alfa.ts");
+    assert.equal(s.todos, false, "un importador desaparecido no es un importador fuera del diff");
+    assert.deepEqual(s.ids, ["alfa"]);
+    assert.match(porqueDel(s), /1 fichero\(s\) que se fueron con él \(test\/borrado\.test\.ts\)/);
+    assert.match(porqueDel(s), /1 fichero\(s\) \(src\/scene\/alfa\.ts\), todos en este diff/);
+  });
+
+  it("una hoja —nadie lo importaba, ningún módulo lo medía— no selecciona nada, y dice por qué", () => {
+    // `gate-snapshots.ts` literal: un guion de entrada que se lanzaba a mano.
+    const s = selCon(borrado());
+    assert.equal(s.todos, false);
+    assert.deepEqual(s.ids, []);
+    assert.match(porqueDel(s), /en a1b2c3d ningún fichero del repo lo importaba/);
+    assert.match(porqueDel(s), /ninguna batería lo ejecutaba/);
+  });
+
+  it("una hoja que un módulo VIVO mutaba o tenía en su batería selecciona ese módulo", () => {
+    const s = selCon(borrado({ plan: { ok: true, dueños: ["beta"] } }));
+    assert.equal(s.todos, false);
+    assert.deepEqual(s.ids, ["beta"]);
+    assert.match(porqueDel(s), /beta lo mutaba o lo tenía en su batería: perdió un sujeto/);
+  });
+
+  it("…y si ese módulo ya no está en el plan, no selecciona a nadie pero lo dice", () => {
+    // La desaparición del módulo la reclama `comparaObjetivos`, no este fichero.
+    const s = selCon(borrado({ plan: { ok: true, dueños: ["gamma"] } }));
+    assert.equal(s.todos, false);
+    assert.deepEqual(s.ids, []);
+    assert.match(porqueDel(s), /gamma, que lo medía, ya no está en el plan/);
+  });
+
+  it("una hoja sin plan de `antes` que consultar fuerza la completa diciendo qué faltó", () => {
+    const s = selCon(borrado({ plan: { ok: false, porque: "no se pudo leer el plan en a1b2c3d" } }));
+    assert.equal(s.todos, true);
+    assert.match(porqueDel(s), /no se pudo leer el plan en a1b2c3d/);
+  });
+
+  it("un fichero que este diff NO borró pero que el árbol de hoy ya no tiene fuerza la completa", () => {
+    // Pasa al auditar un commit viejo: el fichero se modificó ahí y se borró
+    // después. El grafo de hoy no es el de ese diff, y decirlo es lo honesto.
+    const s = selCon({ tipo: "sigue-en-despues", rev: "d4e5f6" });
+    assert.equal(s.todos, true);
+    assert.match(porqueDel(s), /sigue en d4e5f6/);
+    assert.match(porqueDel(s), /el grafo de hoy no es el de ese diff/);
+  });
+
+  it("nacer y morir dentro del rango se dice tal cual", () => {
+    const s = selCon(borrado({ existiaEnAntes: false }));
+    assert.equal(s.todos, false);
+    assert.match(porqueDel(s), /no existía en a1b2c3d/);
+  });
+
+  it("un borrado acotado no diluye la duda del resto del diff", () => {
+    const s = selCon(borrado({ importadores: ["src/scene/alfa.ts"] }), "src/scene/alfa.ts", "src/scene/huerfano.ts");
+    assert.equal(s.todos, true);
   });
 });
 
@@ -852,6 +971,76 @@ describe("candado · la proyección del plan cubre TODAS las claves del schema",
     // porque nadie lo ejerza.
     assert.ok(leerPlan(escribe(real)).modulos.length > 0);
     rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+/** La mitad que sí toca git, contra HEAD —que existe en cualquier clon, hasta
+ *  en uno superficial—: leer quién importa un fichero en una revisión y qué
+ *  módulos del plan de esa revisión lo nombran. Los testigos son reales, y el
+ *  que importa es el negativo: `types.ts` existe en tres carpetas, y un
+ *  importador que se decidiera por el nombre del fichero confundiría las tres. */
+describe("borrado · quién lo cargaba en una revisión, leído de git", () => {
+  const enHead = { antes: "HEAD", despues: null };
+
+  it("resuelve el especificador contra la ruta del importador, no por el nombre del fichero", () => {
+    // `src/plugins/dispatcher.ts` importa `./types.js` (el de plugins) y
+    // `../narrative/types.js` (el de narrativa), y NO `src/types.ts`.
+    assert.ok(importadoresEn("HEAD", "src/plugins/types.ts").includes("src/plugins/dispatcher.ts"));
+    assert.ok(importadoresEn("HEAD", "src/narrative/types.ts").includes("src/plugins/dispatcher.ts"));
+    assert.ok(
+      !importadoresEn("HEAD", "src/types.ts").includes("src/plugins/dispatcher.ts"),
+      "mismo basename, otra carpeta: no es un importador",
+    );
+  });
+
+  it("ve a los tests como importadores, y los devuelve relativos a nefan-core", () => {
+    const imp = importadoresEn("HEAD", "scripts/mutation-plan.ts");
+    assert.ok(imp.includes("scripts/afectado.ts"), `falta scripts/afectado.ts en ${imp.join(", ")}`);
+    assert.ok(imp.includes("test/afectado.test.ts"));
+  });
+
+  it("un fichero que nadie importa da la lista vacía, no un error", () => {
+    assert.deepEqual(importadoresEn("HEAD", "src/no-existe-jamas.ts"), []);
+  });
+
+  it("sin revisiones no hay dónde mirar, y se dice", () => {
+    const b = origenDelBorrado(undefined, "src/scene/x.ts");
+    assert.equal(b.tipo, "sin-revision");
+    assert.match(b.tipo === "sin-revision" ? b.porque : "", /sin `antes`/);
+  });
+
+  it("si el fichero sigue en `despues`, este diff no lo borró", () => {
+    assert.deepEqual(origenDelBorrado({ antes: "HEAD~1", despues: "HEAD" }, "scripts/afectado.ts"), {
+      tipo: "sigue-en-despues",
+      rev: "HEAD",
+    });
+  });
+
+  it("los dueños salen del plan de `antes`: por literal, por glob y por batería", () => {
+    const dueños = (f: string): string[] => {
+      const b = origenDelBorrado(enHead, f);
+      assert.equal(b.tipo, "borrado");
+      return b.tipo === "borrado" && b.plan.ok ? b.plan.dueños : [];
+    };
+    // Literal en `mutate` y, por su batería, también en la de contrato-escena.
+    assert.deepEqual(dueños("src/scene/scene-validate.ts"), ["scene-validate"]);
+    assert.ok(dueños("test/scene-fixtures.test.ts").includes("scene-validate"));
+    // Glob: `plugins-dsl` muta `src/plugins/dsl/*.ts`.
+    assert.deepEqual(dueños("src/plugins/dsl/effects.ts"), ["plugins-dsl"]);
+    assert.deepEqual(dueños("src/no-existe-jamas.ts"), []);
+  });
+
+  it("y de un fichero que no existía en `antes` lo dice, sin importadores", () => {
+    const b = origenDelBorrado(enHead, "src/no-existe-jamas.ts");
+    assert.equal(b.tipo, "borrado");
+    if (b.tipo === "borrado") {
+      assert.equal(b.existiaEnAntes, false);
+      assert.deepEqual(b.importadores, []);
+    }
+  });
+
+  it("una revisión que no existe es un error, no un «no lo importa nadie»", () => {
+    assert.throws(() => origenDelBorrado({ antes: "no-es-una-ref", despues: null }, "src/types.ts"), /git/);
   });
 });
 
