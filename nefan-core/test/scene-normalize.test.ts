@@ -1,4 +1,3 @@
-import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
