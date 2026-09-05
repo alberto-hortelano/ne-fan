@@ -17,6 +17,7 @@ import {
   ArchConfigSchema,
   checkArchitecture,
   deadExceptions,
+  enclosingFunction,
   formatDeadExceptions,
   formatFailure,
   globToRegExp,
@@ -554,7 +555,7 @@ describe("fronteras arquitectónicas", () => {
         },
         {
           path: "nefan-core/src/scene/scene-normalize.ts",
-          text: "// Chars del grid que bloquean el paso: W muro y w agua.\n",
+          text: "// Chars del grid que bloquean el paso: solo w, el agua.\n",
           imports: [],
         },
       ]),
@@ -1071,6 +1072,140 @@ describe("fronteras arquitectónicas", () => {
         },
       ]),
       [],
+    );
+  });
+
+  // #411: la regla que hasta aquí decía «cliente 2D» y toleraba `max: 2` sin
+  // nombrar cuáles eran las dos. Ahora las nombra como exenciones CON
+  // `funcion` y es error: una tercera puerta en cualquier otro fichero del
+  // cliente salta, las dos nombradas callan mientras sean UNA llamada dentro
+  // de su función, y una segunda llamada en el mismo fichero —o una puerta
+  // que deja de llamar— también salta (QA-C de T13 lo encontró: la exención
+  // por fichero dejaba las dos cosas en verde). El caso de UNA sola puerta no
+  // distingue la regla de su contraria («ningún fichero del cliente salta»),
+  // así que van las dos, y cada negativo lleva su positivo al lado.
+  it("[error] solo-el-bridge-normaliza-la-escena: una tercera puerta salta; las dos nombradas callan si son UNA llamada dentro de su función", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files)
+        .filter((v) => v.ruleId === "solo-el-bridge-normaliza-la-escena")
+        .map((v) => `${v.path}:${v.line} [${v.severity}] ${v.detail}`);
+
+    // La regla, tal como está: error, sin contador, sin «2D», dos puertas con función.
+    const regla = config.rules.find((r) => r.id === "solo-el-bridge-normaliza-la-escena")!;
+    assert.equal(regla.severity, "error");
+    assert.equal(regla.max, undefined, "volvió el contador sin nombres");
+    assert.doesNotMatch(regla.desc + regla.why, /\b2D\b/, "el cliente 2D se retiró el 2026-08-22");
+    assert.deepEqual(
+      regla.exceptions.map((e) => [e.path, e.funcion]),
+      [
+        ["nefan-html/src/main.ts", "addTileRaw"],
+        ["nefan-html/src/ui/style-apply.ts", "StyleApplyController.plan"],
+      ],
+    );
+
+    // Las dos puertas tal como están escritas hoy (misma forma que el árbol).
+    const MAIN = [
+      "const addTile = cargaDeTile.addTile;",
+      "const addTileRaw = (raw: Record<string, unknown>, opts?: OpcionesDeCarga) => addTile({ ...formatDToWorld(raw), exits: [] }, opts);",
+      "",
+    ].join("\n");
+    const STYLE = [
+      "export class StyleApplyController {",
+      "  private ledger: StyleRunLedger | null = null;",
+      "",
+      "  async plan(gameId: string, styleId: string): Promise<StyleApplyPlan> {",
+      "    const normalizadas = new Map<string, WorldScene>();",
+      "    for (const [sceneId, scene] of scenes) normalizadas.set(sceneId, formatDToWorld(scene));",
+      "    return { cells: [] };",
+      "  }",
+      "",
+      "  async run(plan: StyleApplyPlan): Promise<void> {",
+      "    void plan;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const puertas: SourceFile[] = [
+      { path: "nefan-html/src/main.ts", text: MAIN, imports: [] },
+      { path: "nefan-html/src/ui/style-apply.ts", text: STYLE, imports: [] },
+    ];
+    assert.deepEqual(deLaRegla(puertas), [], "las dos puertas, UNA llamada cada una dentro de su función, callan");
+
+    // Una tercera puerta: el fichero que más cerca está de tentarlo (recibe
+    // la escena del wire), otro cualquiera, y el vecino del eximido —nombrar
+    // `ui/style-apply.ts` no exime a `ui/style-apply-preview.ts`.
+    assert.deepEqual(
+      deLaRegla([
+        ...puertas,
+        { path: "nefan-html/src/world/carga-de-tile.ts", text: "const world = formatDToWorld(msg.scene);\n", imports: [] },
+        { path: "nefan-html/src/ui/title-screen.ts", text: "preview.set(id, formatDToWorld (raw));\n", imports: [] },
+        { path: "nefan-html/src/ui/style-apply-preview.ts", text: "formatDToWorld(x)\n", imports: [] },
+      ]),
+      [
+        'nefan-html/src/ui/style-apply-preview.ts:1 [error] patrón prohibido: "formatDToWorld("',
+        'nefan-html/src/ui/title-screen.ts:1 [error] patrón prohibido: "formatDToWorld ("',
+        'nefan-html/src/world/carga-de-tile.ts:1 [error] patrón prohibido: "formatDToWorld("',
+      ],
+      "una normalización local fuera de las dos puertas es un tercer camino hasta la world scene",
+    );
+
+    // G1 · una SEGUNDA llamada en el fichero eximido: antes entraba gratis.
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-html/src/main.ts", text: MAIN + "const __segunda = formatDToWorld({} as never);\n", imports: [] },
+      ]),
+      ["nefan-html/src/main.ts:3 [error] fuera de la puerta `addTileRaw`: esta llamada vive en `__segunda`"],
+    );
+    // …y dos DENTRO de la misma función tampoco: la puerta es UNA llamada.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/main.ts",
+          text: "const addTileRaw = (raw) => addTile({ ...formatDToWorld(raw), otra: formatDToWorld(raw) });\n",
+          imports: [],
+        },
+      ]),
+      ["nefan-html/src/main.ts:1 [error] la puerta `addTileRaw` es UNA llamada; esta es la 2ª"],
+    );
+
+    // G2 · la función nombrada deja de llamar: exención sin sujeto, no barra libre.
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-html/src/main.ts", text: "const addTileRaw = (raw) => addTile(raw as WorldScene);\n", imports: [] },
+      ]),
+      [
+        `nefan-html/src/main.ts:1 [error] exención sin sujeto: \`addTileRaw\` ya no casa ${JSON.stringify(regla.text!.pattern)} en este fichero — borra la exención o vuelve a nombrar la puerta`,
+      ],
+    );
+
+    // G4 · la puerta se renombra: la llamada ya no vive donde dice el JSON.
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-html/src/main.ts", text: MAIN.replace("addTileRaw =", "addTileRaw2 ="), imports: [] },
+      ]),
+      ["nefan-html/src/main.ts:2 [error] fuera de la puerta `addTileRaw`: esta llamada vive en `addTileRaw2`"],
+    );
+
+    // G5 · la llamada se mueve de `plan()` a `run()` de la misma clase.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/style-apply.ts",
+          text: STYLE.replace("    for (const [sceneId, scene] of scenes) normalizadas.set(sceneId, formatDToWorld(scene));\n", "").replace(
+            "    void plan;",
+            "    void formatDToWorld(plan);",
+          ),
+          imports: [],
+        },
+      ]),
+      ["nefan-html/src/ui/style-apply.ts:10 [error] fuera de la puerta `StyleApplyController.plan`: esta llamada vive en `StyleApplyController.run`"],
+    );
+    // …y el mismo método `plan` en OTRA clase tampoco es la puerta.
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-html/src/ui/style-apply.ts", text: STYLE.replace("class StyleApplyController", "class StylePreview"), imports: [] },
+      ]),
+      ["nefan-html/src/ui/style-apply.ts:6 [error] fuera de la puerta `StyleApplyController.plan`: esta llamada vive en `StylePreview.plan`"],
     );
   });
 
@@ -1708,6 +1843,51 @@ describe("motor de reglas", () => {
       ]),
       [],
     );
+  });
+
+  it("`exceptions[].funcion` solo vale en una regla `text`: en una de imports no valida", () => {
+    const base = {
+      scan: { roots: [{ dir: "x", ext: [".ts"] }] },
+      rules: [
+        {
+          id: "r",
+          desc: "d",
+          why: "w",
+          severity: "error",
+          files: ["x/**/*.ts"],
+          exceptions: [{ path: "x/ok.ts", reason: "la puerta", funcion: "abre" }],
+        },
+      ],
+    };
+    assert.throws(
+      () => ArchConfigSchema.parse({ ...base, rules: [{ ...base.rules[0], imports: { forbid: ["^three$"] } }] }),
+      /funcion.*regla `text`/,
+    );
+    const cfg = ArchConfigSchema.parse({ ...base, rules: [{ ...base.rules[0], text: { pattern: "abrir\\(" } }] });
+    assert.equal(cfg.rules[0].exceptions[0].funcion, "abre");
+  });
+
+  it("enclosingFunction: las tres formas de declarar, la clase del método, y null cuando no hay dueño", () => {
+    const texto = [
+      "export function suelta(a: number) {",
+      "  return abrir(a);",
+      "}",
+      "const flecha = (x) => abrir(x);",
+      "export class Caja {",
+      "  private n = 0;",
+      "  async metodo(a: string): Promise<void> {",
+      "    if (a) {",
+      "      abrir(a);",
+      "    }",
+      "  }",
+      "}",
+      "abrir(0);",
+    ].join("\n");
+    assert.equal(enclosingFunction(texto, 2), "suelta");
+    assert.equal(enclosingFunction(texto, 4), "flecha");
+    assert.equal(enclosingFunction(texto, 9), "Caja.metodo");
+    assert.equal(enclosingFunction(texto, 13), null, "a nivel de módulo no hay función");
+    assert.equal(enclosingFunction(texto, 99), null);
   });
 
   it("una regla warn sin max no valida", () => {

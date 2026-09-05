@@ -13,25 +13,26 @@ import {
 import { formatDToWorld } from "../src/scene/scene-normalize.js";
 import { TILE_MPC } from "../src/scene/tile.js";
 
-/** Interior de taberna estilo del ejemplo del prompt: borde W sólido con
- *  puerta "_" al sur, suelo "o". 8×6 celdas, mpc 0.5 ⇒ 4m × 3m, con la
- *  esquina NW en (−2, −1.5) para que el centro de la sala sea el (0,0) del
- *  mundo. El `origin` va DECLARADO (#405): ya no hay fallback centrado. */
+/** Interior de taberna: borde sólido "S" (el char de los grids derivados del
+ *  plan; este grid declara su propio `solid_chars`) con puerta "_" al sur,
+ *  suelo "o". 8×6 celdas, mpc 0.5 ⇒ 4m × 3m, con la esquina NW en (−2, −1.5)
+ *  para que el centro de la sala sea el (0,0) del mundo. El `origin` va
+ *  DECLARADO (#405): ya no hay fallback centrado. */
 function makeGrid(): TerrainGridData {
   return {
     grid: [
-      "WWWWWWWW",
-      "WooooooW",
-      "WooooooW",
-      "WooooooW",
-      "WooooooW",
-      "WWW__WWW",
+      "SSSSSSSS",
+      "SooooooS",
+      "SooooooS",
+      "SooooooS",
+      "SooooooS",
+      "SSS__SSS",
     ],
     cols: 8,
     rows: 6,
     meters_per_cell: 0.5,
     origin: [-2, -1.5],
-    solid_chars: ["W"],
+    solid_chars: ["S"],
   };
 }
 
@@ -112,12 +113,12 @@ describe("createTerrainCollider", () => {
     // mpc 0.5) centrado sobre la franja debe chocar aunque sus 4 esquinas
     // cayeran fuera; el bucle por celdas cubiertas lo garantiza.
     const col = createTerrainCollider({
-      grid: ["ooo", "oWo", "ooo"],
+      grid: ["ooo", "oSo", "ooo"],
       cols: 3,
       rows: 3,
       meters_per_cell: 0.5,
       origin: [-0.75, -0.75],
-      solid_chars: ["W"],
+      solid_chars: ["S"],
     })!;
     assert.ok(col.blocksCircle(0, 0, 0.4)); // celda central del grid 3×3
   });
@@ -133,13 +134,15 @@ describe("createTerrainCollider", () => {
     assert.ok(col.blocksCircle(-1.6, 0, 0.4));
   });
 
-  it("integrates with formatDToWorld: W and w are the solid chars, and only those", () => {
+  it("integrates with formatDToWorld: el agua `w` es el único char sólido", () => {
     // La solidez la fija el engine, no la escena: ningún campo de la escena
-    // puede añadir un char sólido ni quitar uno de los dos.
+    // puede añadir un char sólido ni quitar el agua. La "W" que un día fue
+    // «muro» es hoy un char más que el engine no conoce (#407): los muros
+    // son volúmenes del plan, no chars del grid.
     const tg = gridDe(["WgwP", "gbg_"]);
-    assert.deepEqual(tg.solid_chars, ["W", "w"]);
+    assert.deepEqual(tg.solid_chars, ["w"]);
     const col = createTerrainCollider(tg)!;
-    assert.ok(col.isSolidCell(0, 0)); // W
+    assert.ok(!col.isSolidCell(0, 0), "la W ya no es muro: no bloquea");
     assert.ok(col.isSolidCell(2, 0)); // w agua
     assert.ok(!col.isSolidCell(1, 0)); // g
     assert.ok(!col.isSolidCell(3, 0), "un char que el engine no conoce no bloquea");
@@ -174,12 +177,12 @@ describe("el cuerpo mayor que transita el mundo", () => {
     // centrado en él. La celda de diferencia entre los dos radios ES el issue
     // #289: por un hueco de 2 celdas (1 m) pasa el jugador y no pasa el NPC.
     const pasillo = (n: number): TerrainGridData => ({
-      grid: ["W".repeat(4) + ".".repeat(n) + "W".repeat(4)],
+      grid: ["S".repeat(4) + ".".repeat(n) + "S".repeat(4)],
       cols: 8 + n,
       rows: 1,
       meters_per_cell: TILE_MPC,
       origin: [0, 0],
-      solid_chars: ["W"],
+      solid_chars: ["S"],
     });
     for (const [radio, minimo] of [[PLAYER_RADIUS_M, 2], [NPC_RADIUS_M, 3]] as const) {
       assert.equal(celdasLibresParaRadio(radio, TILE_MPC), minimo);
@@ -223,12 +226,12 @@ describe("el cuerpo mayor que transita el mundo", () => {
     // gobierna el cuerpo es `circleOverlapsCell` —un solo llamante, la exención
     // de `blocksMove`—, y por eso tocarla no rompe nada aquí.
     const pasillo = (n: number): TerrainGridData => ({
-      grid: ["W".repeat(4) + ".".repeat(n) + "W".repeat(4)],
+      grid: ["S".repeat(4) + ".".repeat(n) + "S".repeat(4)],
       cols: 8 + n,
       rows: 1,
       meters_per_cell: TILE_MPC,
       origin: [0, 0],
-      solid_chars: ["W"],
+      solid_chars: ["S"],
     });
     const centro = (n: number): number => (4 + n / 2) * TILE_MPC;
     for (const radio of [PLAYER_RADIUS_M, NPC_RADIUS_M]) {

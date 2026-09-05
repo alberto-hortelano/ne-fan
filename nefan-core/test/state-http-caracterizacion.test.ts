@@ -44,6 +44,7 @@ import { NpcDirector } from "../src/world-map/npc-director.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
 import type { PluginManifest } from "../src/plugins/types.js";
+import { WorldStateApi } from "../src/contracts/world-state.js";
 import { createStateHttpServer } from "../bridge/state-http-server.js";
 import { pluginRegisterBody } from "../bridge/state-http/context.js";
 
@@ -324,6 +325,21 @@ describe("State API · caracterización del flag `mutated`", () => {
     }
   });
 
+  it("la tabla y la declaración `mutates` del contrato dicen lo mismo, en las dos direcciones", () => {
+    // #453 puso la decisión en el contrato (`Endpoint.mutates`): el despacho
+    // exige sesión a lo declarado, y el contador de arriba mide lo que cada
+    // handler devuelve. Si una ruta muta sin declararlo, se acepta sin partida
+    // y `save()` lanza; si se declara sin mutar, rebota lecturas legítimas.
+    const declaradas = Object.values(WorldStateApi)
+      .filter((ep) => ep.mutates)
+      .map((ep) => `${ep.method} ${ep.path}`)
+      .sort();
+    assert.deepEqual(declaradas, MUTADORAS.map((r) => r.nombre).sort());
+    for (const r of NO_MUTADORAS) {
+      assert.ok(!declaradas.includes(r.nombre), `${r.nombre} está declarada mutadora y no persiste nada`);
+    }
+  });
+
   it("la tabla cubre las 28 rutas con rama: 12 mutadoras + 16 que no", () => {
     // Si alguien añade un endpoint, esta cuenta obliga a decidir a qué lado
     // cae — que es exactamente la decisión que un refactor pierde en silencio.
@@ -539,12 +555,15 @@ describe("State API · CAMBIO DECLARADO 1: la ruta pedida es la ruta contestada"
   });
 });
 
-describe("State API · CAMBIO DECLARADO 3: POST /vocabulary ve antes el body que su sesión", () => {
-  it("con la sesión cerrada Y el body roto, gana el body (500, antes 404)", async () => {
-    // El router viejo comprobaba la sesión activa ANTES de leer el body; ahora
-    // el despacho lee el body de todo POST y esa comprobación vive dentro del
-    // handler. Solo se nota cuando pasan las dos cosas a la vez, y narrative-mcp
-    // no puede producirlo (serializa con JSON.stringify). Lo encontró QA.
+describe("State API · CAMBIO DECLARADO 4 (#453): sin partida, una mutadora es 409 antes de leer el body", () => {
+  it("con la sesión cerrada, el body ya no manda: roto o bueno, `POST /vocabulary` es 409 `no_session`", async () => {
+    // Sustituye al CAMBIO DECLARADO 3 del corte #225 («con la sesión cerrada
+    // Y el body roto gana el body: 500»). Aquella asimetría existía porque la
+    // comprobación de sesión vivía DENTRO del handler, después del body; #453
+    // la sube al despacho para toda ruta que el contrato declare `mutates`,
+    // así que vuelve a ir antes del body — y responde 409 en vez del 404 de
+    // dominio que daba el handler, porque no es «no encontrado»: es «no hay
+    // partida en la que aplicar esto».
     const sin = await levantar({ conStorage: true, gamesDir });
     try {
       sin.narrative.session_id = "";
@@ -553,13 +572,17 @@ describe("State API · CAMBIO DECLARADO 3: POST /vocabulary ve antes el body que
         headers: { "Content-Type": "application/json" },
         body: "{roto",
       });
-      assert.equal(roto.status, 500);
-      assert.match(String(((await roto.json()) as { error?: string }).error), /invalid JSON body/);
-      // Con el body BIEN, la respuesta es la de siempre: el cambio se limita
-      // al caso en que además el cuerpo es basura.
+      assert.equal(roto.status, 409);
+      assert.match(String(((await roto.json()) as { error?: string }).error), /^no_session: POST \/vocabulary/);
       const bueno = await pedir(sin.baseUrl, "POST", "/vocabulary", { entries: [] });
-      assert.equal(bueno.status, 404);
-      assert.match(String(bueno.body.error), /no active session/);
+      assert.equal(bueno.status, 409);
+      assert.match(String(bueno.body.error), /^no_session/);
+      assert.equal(sin.mutaciones(), 0, "un rechazo no llega a onMutation");
+      // Y una LECTURA sin sesión conserva su 404 de dominio: la guardia nueva
+      // no se come a las rutas de documento.
+      const cronica = await pedir(sin.baseUrl, "GET", "/story");
+      assert.equal(cronica.status, 404);
+      assert.match(String(cronica.body.error), /no active session/);
     } finally {
       sin.cerrar();
     }

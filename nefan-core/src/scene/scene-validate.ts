@@ -108,7 +108,7 @@ export interface TileView extends GridDims {
    *  y las pasadas y `computeTileEdges` leen el mismo. Antes había dos (aquí
    *  una copia normalizada, en `computeTileEdges` el crudo) y divergían. */
   grid: string[];
-  /** Chars que bloquean el paso (muro y agua: `DEFAULT_SOLID_CHARS`). */
+  /** Chars que bloquean el paso (el agua: `DEFAULT_SOLID_CHARS`). */
   solid: ReadonlySet<string>;
 }
 
@@ -858,8 +858,8 @@ function checkCrossingsReachable(targets: ReachTarget[], reach: Reach, found: Fi
  *  [66,63], salía de declarar el MISMO edificio dos veces sobre el mismo
  *  rect: la primitiva de salas tallaba `_` en las columnas 63-65 del grid y un
  *  `volumes` cutaway dejaba libres 63-66 en el plan, con la celda 66
- *  liberada por el plan y todavía tapada por el muro `W` de la otra
- *  declaración. Esa causa concreta murió con la primitiva (#301) —hoy el vano
+ *  liberada por el plan y todavía tapada por el muro que la otra
+ *  declaración estampaba en el grid. Esa causa concreta murió con la primitiva (#301) —hoy el vano
  *  tiene UN declarante—, pero el aviso se queda: una celda suelta sigue
  *  significando que la declaración se contradice, no que el hueco sea
  *  estrecho, y por eso es aviso y no error. */

@@ -139,12 +139,31 @@ export const InventoryRemoveRequestSchema = z.object({
   item_id: z.string().min(1),
 });
 
-/** `item` lleva `id` obligatorio (es por lo que `inventory_remove` lo
- *  encuentra: un ítem sin `id` no se podría quitar nunca) y el resto pasa tal
- *  cual — lo pone el motor. `passthrough` porque el tipo (`InventoryItem`)
- *  tiene índice libre; la guardia de deriva de abajo lo cubre igual. */
+/** Un ítem del inventario del jugador. `id` obligatorio (es por lo que
+ *  `inventory_remove` lo encuentra: un ítem sin `id` no se podría quitar
+ *  nunca) y el resto pasa tal cual — lo pone el motor. `passthrough` porque el
+ *  tipo (`InventoryItem`) tiene índice libre; la guardia de deriva de abajo lo
+ *  cubre igual.
+ *
+ *  Es el molde ÚNICO de las TRES puertas por las que entra un ítem (#452):
+ *  el State API (`inventory_add`, abajo), los plugins (`push`/`set` sobre
+ *  `player.inventory`, src/plugins/dispatcher.ts) y el save (`loadSession`).
+ *  Con el gate en una sola de ellas el tipo `InventoryItem` era una promesa:
+ *  un plugin podía dejar `{name:"x"}` en el inventario y el save lo conservaba. */
+export const InventoryItemSchema = z.object({ id: z.string().min(1) }).passthrough();
+export const InventoryListSchema = z.array(InventoryItemSchema);
+
+/** `player.inventory[2].id: Required` — la ruta del ítem y el motivo, igual
+ *  en las dos puertas que validan la LISTA (plugins y save): quien lo lea
+ *  tiene que poder ir al ítem. */
+export function describirInventarioInvalido(error: z.ZodError): string {
+  return error.issues
+    .map((i) => `player.inventory${i.path.map((p) => (typeof p === "number" ? `[${p}]` : `.${p}`)).join("")}: ${i.message}`)
+    .join("; ");
+}
+
 export const InventoryAddRequestSchema = z.object({
-  item: z.object({ id: z.string().min(1) }).passthrough(),
+  item: InventoryItemSchema,
 });
 
 export const NarrativeProgressRequestSchema = z.object({

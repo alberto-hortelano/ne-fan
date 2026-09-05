@@ -20,6 +20,16 @@ export interface Endpoint<Req, Res, Params extends string = never, Query = never
   readonly method: HttpMethod;
   /** Plantilla de ruta, p. ej. "/npc/{id}/directive". */
   readonly path: string;
+  /** `true` = la petición cambia el estado autoritativo (el save). Es parte
+   *  del CONTRATO y no un detalle del handler porque decide dos cosas que
+   *  quien llama tiene que poder saber de antemano: que sin sesión activa no
+   *  se acepta (409, #453 — mutar un `NarrativeState` sin partida es escribir
+   *  en el vacío y el fallo de guardar salía solo por el log), y que su 200
+   *  significa «aplicado Y persistido». Un POST que no lo declara es un
+   *  cálculo (`/scene/validate`) o un latido (`/narrative_progress`): puede
+   *  responder sin partida. La tabla de test/state-http-caracterizacion.test.ts
+   *  contrasta esta declaración con el flag `mutated` que devuelve cada handler. */
+  readonly mutates?: true;
   readonly _req?: Req;
   readonly _res?: Res;
   readonly _params?: Record<Params, string>;
@@ -29,7 +39,8 @@ export interface Endpoint<Req, Res, Params extends string = never, Query = never
 export const endpoint = <Req, Res, Params extends string = never, Query = never>(
   method: HttpMethod,
   path: string,
-): Endpoint<Req, Res, Params, Query> => ({ method, path });
+  opts?: { mutates: true },
+): Endpoint<Req, Res, Params, Query> => (opts?.mutates ? { method, path, mutates: true } : { method, path });
 
 /** Extractores para clientes tipados. */
 export type RequestOf<E> = E extends Endpoint<infer Req, unknown, string, unknown> ? Req : never;
@@ -54,7 +65,10 @@ export function fillPath(template: string, params: Record<string, string> = {}):
  *  matcher solo mira `method` y `path`, así que la restricción se queda en
  *  esos dos campos: pedir `Endpoint<…>` con sus phantom types haría que
  *  `WorldStateApi` —29 endpoints con 29 pares de tipos distintos— no casara. */
-export type EndpointTable = Record<string, { readonly method: HttpMethod; readonly path: string }>;
+export type EndpointTable = Record<
+  string,
+  { readonly method: HttpMethod; readonly path: string; readonly mutates?: true }
+>;
 
 export interface RouteMatch<K extends string> {
   /** La clave de la tabla, no el path: el que despacha ya no re-parsea nada. */

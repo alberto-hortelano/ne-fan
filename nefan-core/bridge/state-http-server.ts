@@ -21,6 +21,7 @@ import type { SessionStorage } from "../src/narrative/session-storage.js";
 import type { NpcDirector } from "../src/world-map/npc-director.js";
 import { dispatchStateRequest } from "./state-http/dispatch.js";
 import type { PluginHooks, StateHttpContext } from "./state-http/context.js";
+import type { ErrorResponse } from "../src/contracts/common.js";
 
 export interface StateHttpServerOptions {
   port: number;
@@ -94,10 +95,26 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
     })
       .then(async (result) => {
         if (result.mutated) {
+          // El handler YA escribió en memoria; lo que falla aquí es persistir.
+          // Se le dice a quien llamó con un 500 y no con el 200 del handler
+          // (#453): un `warn` en el log del bridge no lo lee el motor, que
+          // seguiría narrando sobre un cambio que el próximo resume no tendrá.
+          // El body nombra el estado exacto —aplicado, no guardado— Y le dice
+          // al motor qué hacer, porque reintentar duplicaría la mutación
+          // (`addInventoryItem` hace push sin deduplicar) y la siguiente
+          // escritura que sí guarde serializa el estado ENTERO, huérfano incluido.
           try {
             await onMutation();
           } catch (err) {
-            console.warn("StateHttpServer: onMutation failed:", err);
+            const motivo = String((err as Error)?.message ?? err);
+            console.error(`StateHttpServer: ${req.method} ${req.url} aplicado en memoria pero NO guardado: ${motivo}`);
+            sendJson(res, 500, {
+              ok: false,
+              error:
+                `aplicado en memoria pero NO guardado: ${motivo}. No reintentes: la mutación ya está ` +
+                `aplicada y la siguiente escritura que guarde la arrastrará`,
+            } satisfies ErrorResponse);
+            return;
           }
         }
         sendJson(res, result.status, result.body);
