@@ -80,12 +80,12 @@ export const docRoutes = {
     } satisfies StoryResponse);
   },
 
-  /** Vocabulario canónico (tool MCP vocabulary_set, génesis generate_game). */
+  /** Vocabulario canónico (tool MCP vocabulary_set, génesis generate_game).
+   *  Sin sesión no llega hasta aquí: el contrato lo declara `mutates` y el
+   *  despacho rebota con 409 antes de leer el body (#453). `game_id` nace con
+   *  `session_id` en las dos altas de sesión, así que aquí ya es un juego. */
   setVocabulary: (ctx, { body }) => {
     const { narrative } = ctx;
-    if (!narrative.session_id || !narrative.game_id) {
-      return notFound("no active session — vocabulary belongs to a game session");
-    }
     const parsed = parseBody(VocabularySetRequestSchema, body);
     if (!parsed.ok) return parsed.result;
     try {
