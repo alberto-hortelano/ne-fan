@@ -258,18 +258,27 @@ export interface AssetRefsResponse {
 
 // ── Tabla de endpoints ──
 
+/** Las rutas que escriben el save lo DECLARAN aquí (`Endpoint.mutates`), no
+ *  solo en el `mutated` que devuelve su handler: el despacho exige sesión
+ *  activa antes de dejarlas pasar (#453) y el motor sabe, leyendo el
+ *  contrato, cuáles pueden fallar por «no hay partida». Doce hoy; la tabla
+ *  de test/state-http-caracterizacion.test.ts sujeta que la declaración y
+ *  el flag del handler no se separen. */
+const MUTA = { mutates: true } as const;
+
 export const WorldStateApi = {
   health: endpoint<void, WorldStateHealthResponse>("GET", "/health"),
 
   // Map
   getMap: endpoint<void, WorldMap>("GET", "/map"),
   getPlace: endpoint<void, PlaceDetailResponse, "id">("GET", "/map/place/{id}"),
-  upsertPlace: endpoint<PlaceUpsert, PlaceUpsertResponse>("POST", "/map/place"),
-  addLink: endpoint<LinkSpec, MapLinkResponse>("POST", "/map/link"),
-  addTrigger: endpoint<MapTriggerRequest, MapTriggerResponse>("POST", "/map/trigger"),
+  upsertPlace: endpoint<PlaceUpsert, PlaceUpsertResponse>("POST", "/map/place", MUTA),
+  addLink: endpoint<LinkSpec, MapLinkResponse>("POST", "/map/link", MUTA),
+  addTrigger: endpoint<MapTriggerRequest, MapTriggerResponse>("POST", "/map/trigger", MUTA),
   appendSceneAssetRefs: endpoint<SceneAssetRefsRequest, SceneAssetRefsResponse>(
     "POST",
     "/scene/asset_refs",
+    MUTA,
   ),
 
   // Entities / inventario
@@ -279,14 +288,16 @@ export const WorldStateApi = {
   addInventoryItem: endpoint<InventoryAddRequest, InventoryMutationResponse, "id">(
     "POST",
     "/entity/{id}/inventory",
+    MUTA,
   ),
   removeInventoryItem: endpoint<InventoryRemoveRequest, InventoryMutationResponse, "id">(
     "POST",
     "/entity/{id}/inventory/remove",
+    MUTA,
   ),
 
   // Vocabulario canónico (génesis generate_game)
-  setVocabulary: endpoint<VocabularySetRequest, VocabularySetResponse>("POST", "/vocabulary"),
+  setVocabulary: endpoint<VocabularySetRequest, VocabularySetResponse>("POST", "/vocabulary", MUTA),
 
   // Documentos para el motor narrativo
   getWorldDoc: endpoint<void, WorldDocResponse>("GET", "/world_doc"),
@@ -295,6 +306,7 @@ export const WorldStateApi = {
   resolveScheduledEvent: endpoint<void, ScheduledEventResolveResponse, "id">(
     "POST",
     "/scheduled_event/{id}/resolve",
+    MUTA,
   ),
 
   // Validación de escenas (pre-flight de narrative_respond y tool
@@ -311,6 +323,7 @@ export const WorldStateApi = {
   registerPlugin: endpoint<PluginRegisterRequest, PluginRegisterResponse>(
     "POST",
     "/plugins/register",
+    MUTA,
   ),
 
   // Progreso del motor narrativo
@@ -325,11 +338,13 @@ export const WorldStateApi = {
   moveNpcToPlace: endpoint<NpcMoveToPlaceRequest, NpcDirectorResult, "id">(
     "POST",
     "/npc/{id}/move_to_place",
+    MUTA,
   ),
-  arriveNpc: endpoint<void, NpcDirectorResult, "id">("POST", "/npc/{id}/arrive"),
+  arriveNpc: endpoint<void, NpcDirectorResult, "id">("POST", "/npc/{id}/arrive", MUTA),
   setNpcDirective: endpoint<NpcDirectiveRequest, NpcDirectorResult, "id">(
     "POST",
     "/npc/{id}/directive",
+    MUTA,
   ),
 
   // GET /styles/{style_id}/{file} migró al asset-store en F2 (los covers de

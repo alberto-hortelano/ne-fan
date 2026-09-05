@@ -1,7 +1,7 @@
 /** Colisión del mundo del cliente — extraída de main.ts.
  *
  *  Dos fuentes de solidez por tile, en UNIÓN (las dos bloquean):
- *  1. `collider`      — terrain_grid del esquema (muros W, agua w, features);
+ *  1. `collider`      — terrain_grid del esquema (el agua w; los muros son plan);
  *  2. `svgCollider`   — PLAN declarado: agua∖decks del `ground` + huellas de
  *                       los `volumes`, derivados por la función de core
  *                       compartida `planCollisionGrid` (el MISMO cálculo que el

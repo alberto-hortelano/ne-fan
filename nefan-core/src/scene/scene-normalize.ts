@@ -155,11 +155,14 @@ export const KIND_DEFAULT_HEIGHT: Record<string, number> = {
  *  recorta en vez de tumbar la escena. */
 const MAX_ENTITY_HEIGHT_M = 20;
 
-/** Chars del grid que bloquean el paso: "W" muro y "w" agua (el puente "b"
- *  es transitable). ÚNICA fuente de solidez del terreno — nadie la declara
- *  por escena: la fija el engine. Si algún día hace falta un vado, irá como
- *  propiedad del rasgo `water` de `ground`, no como excepción sobre un char. */
-export const DEFAULT_SOLID_CHARS: readonly string[] = ["W", "w"];
+/** Chars del grid que bloquean el paso: solo "w", el agua que rasteriza
+ *  `expandScenePrimitives` desde `ground` (el puente "b" es transitable). Los
+ *  MUROS no son chars del grid: son volúmenes del plan, y su solidez sale de
+ *  `planCollisionGrid` (#407 retiró el char de muro, que nadie producía).
+ *  ÚNICA fuente de solidez del terreno — nadie la declara por escena: la fija
+ *  el engine. Si algún día hace falta un vado, irá como propiedad del rasgo
+ *  `water` de `ground`, no como excepción sobre un char. */
+export const DEFAULT_SOLID_CHARS: readonly string[] = ["w"];
 
 /** Texto de un campo de la raíz, o `""` si no es texto: `scene_description`
  *  puede faltar en una fixture a mano y el HUD la pinta tal cual. */
@@ -335,8 +338,9 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       meters_per_cell: mpc,
       // Esquina NW del grid en coordenadas mundo (plano continuo).
       origin: [worldRect.minX, worldRect.minZ] as [number, number],
-      // Chars que bloquean movimiento (muro y agua). Los consume
-      // `createTerrainCollider`; el bridge (sim-collision) lee los mismos.
+      // Chars que bloquean movimiento (el agua; los muros son volúmenes del
+      // plan). Los consume `createTerrainCollider`; el bridge (sim-collision)
+      // lee los mismos.
       solid_chars: [...DEFAULT_SOLID_CHARS],
     },
     // Plan del tile DECLARADO (rasgos de suelo + volúmenes tipados), tal cual

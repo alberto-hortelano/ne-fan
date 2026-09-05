@@ -501,3 +501,117 @@ describe("state HTTP API", () => {
     assert.equal(body.ok, false);
   });
 });
+
+/** El borde del transporte cuando persistir falla o no procede (#453). Servidor
+ *  PROPIO por caso: el de arriba comparte `narrative` entre tests y su
+ *  `onMutation` es un contador. */
+describe("state HTTP API · lo que pasa después del handler (#453)", () => {
+  async function conServidor<T>(
+    onMutation: (narrative: NarrativeState) => void | Promise<void>,
+    cuerpo: (base: string, narrative: NarrativeState) => Promise<T>,
+  ): Promise<T> {
+    const { narrative, storage } = makeNarrativeState();
+    narrative.startNewSession("plugtest");
+    const propio = createStateHttpServer({
+      aiServerUrl: "http://127.0.0.1:0",
+      gatewayUrl: "ws://127.0.0.1:0",
+      port: 0,
+      narrative,
+      npcDirector: new NpcDirector(narrative),
+      gamesDir: fileURLToPath(new URL("../data/games", import.meta.url)),
+      sessionStorage: storage,
+      onMutation: () => onMutation(narrative),
+      onProgress: () => {},
+      onMapChanged: () => {},
+      plugins: {
+        register: () => {
+          throw new Error("no se registra nada aquí");
+        },
+        list: () => [],
+        inspect: () => {
+          throw new Error("no se inspecciona nada aquí");
+        },
+      },
+    });
+    await new Promise<void>((resolve) => propio.on("listening", () => resolve()));
+    try {
+      return await cuerpo(`http://127.0.0.1:${(propio.address() as AddressInfo).port}`, narrative);
+    } finally {
+      propio.close();
+    }
+  }
+
+  const alta = (base: string) =>
+    fetch(`${base}/entity/player/inventory`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item: { id: "antorcha" } }),
+    });
+
+  it("si persistir lanza, la respuesta es 500 y dice el estado exacto: aplicado en memoria, NO guardado", async () => {
+    await conServidor(
+      () => {
+        throw new Error("disco lleno");
+      },
+      async (base, narrative) => {
+        const res = await alta(base);
+        assert.equal(res.status, 500, "antes: el 200 del handler, y el fallo solo en el log");
+        const body = (await res.json()) as { ok: boolean; error: string };
+        assert.equal(body.ok, false);
+        assert.equal(
+          body.error,
+          "aplicado en memoria pero NO guardado: disco lleno. No reintentes: la mutación ya está aplicada y la siguiente escritura que guarde la arrastrará",
+        );
+        // El body no miente: el ítem SÍ está en memoria (reintentar duplicaría).
+        assert.deepEqual(narrative.player.inventory.map((i) => i.id), ["antorcha"]);
+      },
+    );
+  });
+
+  it("la sesión PROVISIONAL (#279) no es «sin sesión»: muta con 200 y save() contesta escrito:false sin lanzar", async () => {
+    let ultimo: { escrito: boolean } | null = null;
+    await conServidor(
+      async (narrative) => {
+        ultimo = await narrative.save();
+      },
+      async (base) => {
+        // `startNewSession` sin `establecer()`: existe en memoria y en ningún
+        // otro sitio — la efímera de la pre-generación de mundos.
+        const res = await alta(base);
+        assert.equal(res.status, 200);
+        assert.deepEqual(ultimo, { escrito: false });
+      },
+    );
+  });
+
+  it("y la establecida escribe de verdad: mismo 200, escrito:true — los dos lados de la misma regla", async () => {
+    let ultimo: { escrito: boolean } | null = null;
+    await conServidor(
+      async (narrative) => {
+        ultimo = await narrative.save();
+      },
+      async (base, narrative) => {
+        await narrative.establecer();
+        const res = await alta(base);
+        assert.equal(res.status, 200);
+        assert.deepEqual(ultimo, { escrito: true });
+      },
+    );
+  });
+
+  it("sin sesión, el cable devuelve el 409 del despacho y onMutation ni se llama", async () => {
+    let llamadas = 0;
+    await conServidor(
+      () => {
+        llamadas += 1;
+      },
+      async (base, narrative) => {
+        narrative.session_id = "";
+        const res = await alta(base);
+        assert.equal(res.status, 409);
+        assert.match(String(((await res.json()) as { error: string }).error), /^no_session/);
+        assert.equal(llamadas, 0);
+      },
+    );
+  });
+});

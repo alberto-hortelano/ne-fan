@@ -34,6 +34,7 @@ import {
   type DslContext,
 } from "./dsl/evaluate.js";
 import type { PluginManifest } from "./types.js";
+import { InventoryListSchema, describirInventarioInvalido } from "../contracts/request-schemas.js";
 
 export const MAX_EMITS_PER_TICK = 16;
 
@@ -51,6 +52,9 @@ export type PluginTickError =
   | { code: "not_consumed"; pluginId: string; type: string }
   | { code: "emit_limit_exceeded"; limit: number; trace: string[] }
   | { code: "write_rejected"; pluginId: string; path: string }
+  /** La whitelist dejó pasar el path, pero lo escrito no tiene la FORMA que
+   *  ese path exige (hoy: `player.inventory` sin `id`, #452). */
+  | { code: "write_invalid"; pluginId: string; path: string; detail: string }
   | { code: "dsl_error"; pluginId: string; type: string; detail: string };
 
 export type PluginAppliedEffect = Extract<ConsequenceEffect, { kind: "plugin_applied" }>;
@@ -98,6 +102,8 @@ export function describePluginTickError(
       return `Un sistema del juego (${sistema(error.pluginId)}) falló al resolver '${error.type}'.`;
     case "write_rejected":
       return `${sistema(error.pluginId)} intentó cambiar algo que no le corresponde.`;
+    case "write_invalid":
+      return `${sistema(error.pluginId)} intentó dejar en el inventario algo que el juego no reconoce.`;
     case "emit_limit_exceeded":
       return "Dos sistemas del juego se respondieron en bucle y se ha cortado el turno.";
     case "not_consumed":
@@ -207,6 +213,16 @@ export function dispatchPluginEvents(
           return fail({ code: "write_rejected", pluginId: id, path: write.path });
         }
       }
+      // Tercera línea: la FORMA de lo que la whitelist deja pasar. El
+      // inventario tiene contrato (`InventoryItem.id`, el mismo zod del State
+      // API) y hasta #452 esta era la única puerta que no lo aplicaba: un
+      // `push {name:"x"}` entraba entero y el save lo conservaba. Se valida la
+      // copia de trabajo COMPLETA y no el valor del write, porque el evaluador
+      // entrega el array final tras todos los efectos (`push`, `set` de un
+      // índice o del array entero acaban igual) y porque lo que importa es
+      // cómo queda el inventario, no cómo se llegó.
+      const invalido = inventarioInvalido(externalWrites, ctx);
+      if (invalido) return fail({ code: "write_invalid", pluginId: id, path: "player.inventory", detail: invalido });
 
       // Adopta las working copies mutadas por los efectos autorizados.
       workSlices.set(id, ctx.slice);
@@ -276,6 +292,24 @@ function parseCanonical(path: string): ParsedCanonical {
 }
 
 const PLAYER_WRITABLE = new Set(["gold", "health", "level", "inventory"]);
+
+/** El motivo (`player.inventory[i].id: Required`) si alguno de los writes toca
+ *  `player.inventory` y la copia de trabajo no cumple el contrato; `null` si
+ *  nadie lo tocó o queda bien formado. */
+function inventarioInvalido(writes: readonly ExternalWriteOp[], ctx: DslContext): string | null {
+  const tocaInventario = writes.some((w) => {
+    const { root, segs } = parseCanonical(w.path);
+    return root === "player" && segs[0] === "inventory";
+  });
+  if (!tocaInventario) return null;
+  // `ctx.player` es `unknown` para el DSL: si no es un objeto con lista, el
+  // zod lo dice como `player.inventory: Required` en vez de reventar aquí.
+  const player = ctx.player;
+  const inventario =
+    typeof player === "object" && player !== null ? (player as { inventory?: unknown }).inventory : undefined;
+  const parsed = InventoryListSchema.safeParse(inventario);
+  return parsed.success ? null : describirInventarioInvalido(parsed.error);
+}
 
 function externalWriteAllowed(path: string): boolean {
   const { root, segs } = parseCanonical(path);
