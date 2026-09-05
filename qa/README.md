@@ -57,6 +57,7 @@ limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella 
 | `el-state-api-no-muta-sin-partida.mjs` | 2,4 s | tsx y `dist/` del core; levanta bridge + motor falso en disco efímero (#453) |
 | `mutacion-reparto-en-lotes.mjs --solo-vigentes` | 6,5 s | tsx; escribe y restaura la huella y `reports/` |
 | `el-selector-ve-lo-que-la-bateria-abre.mjs` | 2,6 s | `typescript` de nefan-core; solo lee |
+| `el-borrado-pregunta-a-antes.mjs` | ~10 s | git y el `node_modules` de nefan-core (`tsx`, `typescript`); clona superficial en `qa/.tmp/` y no toca el árbol (#471) |
 | `mutacion-candados-en-negativo.mjs` | 36 s | tsx; escribe y restaura `mutacion-huella.ts` y la huella |
 | `mutacion-cableado-en-negativo.mjs` | 26 s | el tag `mutacion-ultima` y su historia (`fetch-depth: 0`); escribe y restaura |
 | `contrato-candados-en-negativo.mjs` | 3,5 s | tsx + `python3 -m unittest`; exige SUS ficheros limpios |
@@ -583,3 +584,24 @@ Se pone rojo cuando un dato que una puerta abre deja de seleccionar a su baterí
 y la puerta. Su hueco conocido, escrito y sin cerrar: una ruta armada con `+` o con un template
 (`` `${DIR}/${x}.json` ``) no se ve **ni cuenta como ciega**, que es por donde volvería a colarse este
 mismo fallo.
+
+## `qa/el-borrado-pregunta-a-antes.mjs`: un borrado solo se descarta si `antes` dice quién lo cargaba
+
+Nace con #471, el cuarto forzador de la familia de #404: un `.ts` que ya no estaba en el árbol pedía
+los 42 módulos («no hay grafo de imports que decir quién lo cargaba»), y #448 pagó una corrida
+completa por borrar `scripts/gate-snapshots.ts` cuando el resto de su diff seleccionaba 9. Desde #471
+`efectoDeBorrado` pregunta a la revisión `antes` del rango quién lo importaba y solo NO fuerza si esos
+importadores están en el mismo diff o se fueron con él. Como en `el-selector-ve…`, eso cambia la
+dirección del riesgo: de equivocarse de MÁS a poder equivocarse de MENOS.
+
+La batería (`test/afectado.test.ts`) prueba la regla con un `Borrado` inyectado y la lectura de git
+solo contra `HEAD`, donde nada está borrado. Este guion hace el flujo de verdad: un clon superficial
+del repo en `qa/.tmp/`, encima el `scripts/` y el plan del **árbol de trabajo** (sirve antes de
+commitear), y commits que borran y renombran con git. El sujeto se elige del plan de hoy (un módulo con
+un fichero literal cuya única batería es su único importador; hoy `status-rotulo`) para que no caduque
+con el plan. Seis bloques: borrar con el importador fuera del diff → fuerza nombrándolo; `git mv` al
+día → no fuerza y selecciona; `git mv` roto → fuerza; hoja → nada, diciéndolo; `--ficheros` → fuerza;
+y auditar `c1..c2` con el árbol ya en c3 → fuerza igual que en c2 (el reparto vivos/idos se decide
+en `despues`, no en el disco). Es el único candado con git real de `--no-renames`: sin él la ruta de
+origen de un renombrado ni aparece en la lista y los bloques 2 y 3 caen. Exit 0/1/2; no toca el
+árbol; cero créditos.

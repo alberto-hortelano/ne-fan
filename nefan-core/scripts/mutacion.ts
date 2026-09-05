@@ -60,7 +60,7 @@ import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
-import { contextoDe, seleccionar, type Seleccion } from "./afectado.js";
+import { contextoDe, seleccionar, SIN_RENOMBRAR, type Seleccion } from "./afectado.js";
 import {
   coreRoot,
   esVivo,
@@ -175,11 +175,13 @@ const aCore = (p: string): string => relative(coreRoot, join(raizRepo, p)).split
 
 /** Lo cambiado desde el tag, incluyendo el ÁRBOL DE TRABAJO. Un agente a mitad
  *  de tanda tiene cambios sin commitear, y son justo los que pueden invalidar
- *  una medida: mirar solo lo commiteado daría una frescura optimista. Es la
- *  misma pareja de comandos que `ficherosCambiados` (`afectado.ts:440-446`). */
+ *  una medida: mirar solo lo commiteado daría una frescura optimista. Con
+ *  `SIN_RENOMBRAR` (`--no-renames`), como todo `git diff --name-only` del
+ *  instrumento: sin él la ruta de ORIGEN de un renombrado ni aparece, y un
+ *  `git mv` sin actualizar al importador no forzaría nada (QA de #471). */
 export function ficherosDesdeElTag(tag: string): string[] {
   return [
-    ...gitLineas(["diff", "--name-only", tag]),
+    ...gitLineas(["diff", "--name-only", ...SIN_RENOMBRAR, tag]),
     ...gitLineas(["ls-files", "--others", "--exclude-standard"]),
   ].map(aCore);
 }
@@ -197,7 +199,7 @@ function commitsDelRango(plan: PlanMutacion, tag: string, hasta: string): Commit
   return crudos.map((linea) => {
     const [sha, ...resto] = linea.split("\t");
     const asunto = resto.join("\t");
-    const ficheros = gitLineas(["diff", "--name-only", `${sha}^`, sha]).map(aCore);
+    const ficheros = gitLineas(["diff", "--name-only", ...SIN_RENOMBRAR, `${sha}^`, sha]).map(aCore);
     const sel = seleccionar(contextoDe(plan, { antes: `${sha}^`, despues: sha }), ficheros);
     return {
       sha,

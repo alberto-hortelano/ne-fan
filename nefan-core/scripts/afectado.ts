@@ -20,14 +20,20 @@
  *  verde sin que nadie haya medido, y esa es exactamente la forma del fallo que
  *  tuvo esta casa meses (un objetivo apuntando a una ruta que no existía). Así
  *  que fuerzan la corrida completa: un cambio en el propio instrumento, un
- *  fuente que ya no está en el árbol, y —el caso que da sentido al candado de
- *  totalidad— un fichero del perímetro puro del que el plan no dice nada, ni
- *  mutándolo ni eximiéndolo en `sin_mutar`.
+ *  fuente borrado del que no se puede saber quién lo cargaba, y —el caso que da
+ *  sentido al candado de totalidad— un fichero del perímetro puro del que el
+ *  plan no dice nada, ni mutándolo ni eximiéndolo en `sin_mutar`.
  *
  *  LO QUE **NO** ES INSTRUMENTO SE COMPRUEBA, NO SE DECLARA. Esa frase estaba
  *  escrita aquí desde `efectoDeSalida` y no se aplicaba a los tres sitios donde
- *  más costaba (#404). Hoy sí, y los tres se derivan:
+ *  más costaba (#404). Hoy sí, y los cuatro se derivan:
  *
+ *  · Un FUENTE BORRADO no tiene grafo de hoy, pero sí lo tiene en la revisión
+ *    `antes` del rango, y quien lo importaba ahí tiene que estar en el mismo
+ *    diff —o el árbol no compilaría— y ya selecciona sus módulos con el grafo
+ *    de hoy (`efectoDeBorrado`, #471). Hasta entonces borrar
+ *    `scripts/gate-snapshots.ts` costó los 42 módulos (#448) cuando el resto
+ *    de su diff seleccionaba 9.
  *  · Un DATO del paquete lo fuerza a correr quien lo LEE (`ctx.leen`), no el
  *    cajón donde vive. Leer es nombrar el fichero o ENUMERAR su directorio —
  *    ver `leeElDato`, que sin la segunda mitad declaraba «no lo lee nadie» a
@@ -43,15 +49,18 @@
  *    `scripts/manifest-kinds-con-productor.ts`, en la de `asset-store-contrato`—
  *    selecciona su módulo y no los 41.
  *
- *  Ninguna de las cuatro relaja el criterio de arriba: si no hay contra qué
- *  comparar, si el fichero no se parsea o si lo que cambió es la parte que
- *  decide qué se mide, se ejecuta todo y se dice cuál de ellas fue.
+ *  Ninguna de las cinco relaja el criterio de arriba: si no hay contra qué
+ *  comparar, si el fichero no se parsea, si un importador del borrado no está
+ *  en el diff o si lo que cambió es la parte que decide qué se mide, se
+ *  ejecuta todo y se dice cuál de ellas fue.
  *
  *  Uso:
  *    npm run afectado                          # main...HEAD + árbol de trabajo
  *    npm run afectado -- --desde tooling/x     # desde otra rama o commit
  *    npm run afectado -- --rango a1b2c3~1..a1b2c3   # auditar un commit ya hecho
- *    npm run afectado -- --ficheros a.ts b.ts  # una lista explícita
+ *    npm run afectado -- --ficheros nefan-core/src/a.ts labs/b.ts   # una lista explícita,
+ *        # en rutas desde la RAÍZ del repo (como las escribe git), no desde nefan-core:
+ *        # `--ficheros bridge/context.ts` se rechaza nombrando `nefan-core/bridge/context.ts`
  *    npm run afectado -- --ids                 # JSON de ids (matriz de CI)
  *    npm run afectado -- --coste               # además, qué % de los mutantes
  *
@@ -61,7 +70,8 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, matchesGlob, relative, resolve } from "node:path";
+import ts from "typescript";
 
 import {
   alcanceDe,
@@ -189,8 +199,19 @@ export interface Contexto {
   perimetro: ReadonlySet<string>;
   /** Quién responde por un fichero del perímetro. */
   dueño: (fichero: string) => ReturnType<typeof dueñoDe>;
-  /** Si el fichero sigue en el árbol. Uno borrado no se puede analizar. */
+  /** Si el fichero sigue en el árbol. Uno borrado no tiene grafo de HOY. */
   existe: (fichero: string) => boolean;
+  /** Si el fichero está en `despues` — el árbol cuando `despues` es null, la
+   *  revisión cuando es un sha. Es distinto de `existe` justo al auditar
+   *  historia: un importador que se fue DESPUÉS del rango no puede contar como
+   *  «se fue con él», o el mismo `--rango a..b` contestaría distinto hoy que
+   *  mañana (QA de #471, caso G). */
+  sigue: (fichero: string) => boolean;
+  /** Lo que se sabe de un fichero que ya no está en el árbol, mirando el
+   *  rango: quién lo importaba en `antes` y qué módulo del plan de `antes` lo
+   *  nombraba. Se consulta solo para los borrados, porque cuesta un `git grep`
+   *  y un `git show` por candidato. Ver `origenDelBorrado`. */
+  borrado: (fichero: string) => Borrado;
   /** Los módulos cuya corrida ejecuta código que LEE ese dato: nombrándolo, o
    *  enumerando su directorio. El grafo de imports no ve una lectura de disco;
    *  esto sí. Recibe la RUTA relativa a nefan-core, no el nombre suelto: sin el
@@ -227,14 +248,18 @@ export interface EfectoObjetivos {
 }
 
 export function contextoDe(plan: PlanMutacion, revisiones?: Revisiones): Contexto {
+  exigeBateriasEnElArbol(plan);
   const alcances = new Map<string, readonly string[]>(plan.modulos.map((m) => [m.id, [...alcanceDe(m)]]));
   const instrumento = instrumentoDeMedida();
+  const despues = revisiones?.despues ?? null;
   return {
     alcances,
     baterias: new Map(plan.modulos.map((m) => [m.id, m.tests])),
     perimetro: new Set(perimetro(plan)),
     dueño: (f) => dueñoDe(plan, f),
     existe: (f) => existsSync(join(coreRoot, f)),
+    sigue: (f) => (despues === null ? existsSync(join(coreRoot, f)) : existeEn(despues, f)),
+    borrado: (f) => origenDelBorrado(revisiones, f),
     leen: (dato) =>
       [...alcances].filter(([, alcance]) => alcance.some((f) => leeElDato(f, dato))).map(([id]) => id),
     instrumento: (f) => instrumento.has(f),
@@ -243,22 +268,139 @@ export function contextoDe(plan: PlanMutacion, revisiones?: Revisiones): Context
   };
 }
 
+/** Un test que el plan lista y que ya no está en el árbol es el estado normal
+ *  a mitad de tanda —se borra el test y luego se toca el plan—, y hasta hoy
+ *  `alcanceDe` cascaba con un `ENOENT` crudo desde la traza de imports (QA de
+ *  #471, hallazgo 3), en `afectado` y en `mutacion -- pendiente` por igual.
+ *  Sigue siendo fail-loud y exit 1; lo que cambia es que la frase la puede leer
+ *  una persona y dice qué tocar. */
+export function exigeBateriasEnElArbol(plan: PlanMutacion): void {
+  const faltan = plan.modulos.flatMap((m) =>
+    m.tests.filter((t) => !existsSync(join(coreRoot, t))).map((t) => `\`${t}\` (batería de \`${m.id}\`)`),
+  );
+  if (faltan.length > 0) {
+    throw new Error(
+      `el plan lista ${faltan.join(", ")} y no está en el árbol: actualiza ${RUTA_OBJETIVOS}`,
+    );
+  }
+}
+
 /** Los módulos cuya corrida CARGA ese fichero. */
 function cargadoPor(ctx: Contexto, fichero: string): string[] {
   return [...ctx.alcances].filter(([, alcance]) => alcance.includes(fichero)).map(([id]) => id);
 }
 
-function efectoDeFuente(ctx: Contexto, f: string): Efecto {
-  if (!ctx.existe(f)) {
+/** Un fuente que ya no está en el árbol.
+ *
+ *  Hasta #471 esta rama devolvía `todos: true` con una frase razonable —«no
+ *  hay grafo de imports que decir quién lo cargaba»— y era un forzador de la
+ *  familia de #404: #448 pagó los 42 módulos por borrar `scripts/gate-
+ *  snapshots.ts` cuando el resto de su diff seleccionaba 9. El grafo SÍ existe:
+ *  en la revisión `antes` del rango. Y quien lo importaba ahí tiene que estar en
+ *  este mismo diff —si no, el árbol no compila—, y estando en el diff ya
+ *  selecciona sus módulos con el grafo de hoy. Así que el borrado en sí no
+ *  añade nada, y se dice sobre qué se apoya para no añadirlo.
+ *
+ *  Lo que NO relaja: un importador de `antes` que no esté en el diff (un
+ *  `import()` por cadena, un árbol que no compila) fuerza la completa y se le
+ *  nombra; sin revisión en la que mirar (`--ficheros`), también; y un fichero
+ *  que este diff no borró —sigue en `despues`— pero que el árbol de hoy ya no
+ *  tiene, también, porque el grafo de hoy no es el de ese diff.
+ *
+ *  La hoja —nadie lo importaba en `antes`— es el caso real de #448:
+ *  `gate-snapshots.ts` era un guion de entrada que se lanzaba a mano. Ninguna
+ *  batería lo ejecutaba, así que borrarlo no puede cambiar la suerte de un
+ *  mutante. Si además algún módulo del plan de `antes` lo mutaba o lo tenía en
+ *  su batería, se selecciona ese módulo si sigue en el plan: perdió un sujeto y
+ *  es su medida la que hay que refrescar. El límite, escrito: quien lo lanzaba
+ *  como SUBPROCESO por una cadena no es un importador y aquí no se ve — es el
+ *  mismo límite que tiene el selector con un fichero vivo, y no uno nuevo. */
+function efectoDeBorrado(ctx: Contexto, f: string, cambiados: ReadonlySet<string>): Efecto {
+  const base = { fichero: f, clase: "fuente" as const };
+  const b = ctx.borrado(f);
+  if (b.tipo === "sin-revision") {
+    return { ...base, ids: [], todos: true, porque: `ya no está en el árbol, y ${b.porque}` };
+  }
+  if (b.tipo === "sigue-en-despues") {
     return {
-      fichero: f,
-      clase: "fuente",
+      ...base,
       ids: [],
       todos: true,
       porque:
-        "ya no está en el árbol (borrado o renombrado): no hay grafo de imports que decir quién lo cargaba",
+        `este diff no lo borra (sigue en ${b.rev}) pero ya no está en el árbol de trabajo: ` +
+        "el grafo de hoy no es el de ese diff y no puede decir quién lo cargaba",
     };
   }
+  // Un importador que ya no está en `despues` se fue con él (borrado o
+  // renombrado): cambió por definición, aunque la lista del diff no lo traiga
+  // —con detección de renombrados `git diff --name-only` calla la ruta de
+  // origen—, y ya no puede cargar nada. Solo a los que SIGUEN en `despues` se
+  // les exige estar en el diff. Es `ctx.sigue` y no `ctx.existe` a propósito:
+  // al auditar historia, `despues` no es el árbol de hoy.
+  const idos = b.importadores.filter((i) => !ctx.sigue(i));
+  const vivos = b.importadores.filter((i) => ctx.sigue(i));
+  const fuera = vivos.filter((i) => !cambiados.has(i));
+  if (fuera.length > 0) {
+    return {
+      ...base,
+      ids: [],
+      todos: true,
+      porque:
+        `borrado, y en ${b.antes} lo importaba ${fuera.join(", ")}, que NO está en el diff: ` +
+        "o el árbol no compila o lo carga por una vía que el grafo no ve",
+    };
+  }
+  if (b.importadores.length > 0) {
+    const deVivos =
+      vivos.length > 0
+        ? `${vivos.length} fichero(s) (${vivos.join(", ")}), todos en este diff, y ya seleccionan con el grafo de hoy`
+        : "";
+    const deIdos =
+      idos.length > 0
+        ? `${idos.length} fichero(s) que se fueron con él (${idos.join(", ")}) y ya no pueden cargarlo`
+        : "";
+    return {
+      ...base,
+      ids: [],
+      todos: false,
+      porque: `borrado; en ${b.antes} lo importaban ${[deVivos, deIdos].filter(Boolean).join("; y ")}`,
+    };
+  }
+  if (!b.plan.ok) {
+    return {
+      ...base,
+      ids: [],
+      todos: true,
+      porque: `borrado y en ${b.antes} nadie lo importaba, pero ${b.plan.porque}: no se puede saber si un módulo lo medía`,
+    };
+  }
+  const nadie = b.existiaEnAntes
+    ? `en ${b.antes} ningún fichero del repo lo importaba`
+    : `no existía en ${b.antes} (nació y murió dentro del rango)`;
+  const dueñosVivos = b.plan.dueños.filter((id) => ctx.alcances.has(id));
+  if (dueñosVivos.length > 0) {
+    return {
+      ...base,
+      ids: dueñosVivos,
+      todos: false,
+      porque: `borrado; ${nadie}, pero ${dueñosVivos.join(", ")} lo mutaba o lo tenía en su batería: perdió un sujeto y su medida es la que cambia`,
+    };
+  }
+  const dueñosIdos = b.plan.dueños;
+  return {
+    ...base,
+    ids: [],
+    todos: false,
+    porque:
+      `borrado; ${nadie}` +
+      (dueñosIdos.length > 0
+        ? `, y ${dueñosIdos.join(", ")}, que lo medía, ya no está en el plan (eso lo reclama la comparación del plan, no este fichero)`
+        : " y ningún módulo del plan lo mutaba ni lo tenía en su batería: ninguna batería lo ejecutaba, así que borrarlo no cambia la suerte de un mutante"),
+  };
+}
+
+function efectoDeFuente(ctx: Contexto, f: string, cambiados: ReadonlySet<string>): Efecto {
+  if (!ctx.existe(f)) return efectoDeBorrado(ctx, f, cambiados);
   // El perímetro va ANTES que el alcance a propósito. Un huérfano significa que
   // el plan está incompleto, y sobre un plan incompleto la derivación no es de
   // fiar aunque dé una respuesta: se ejecuta de más y se dice por qué.
@@ -424,7 +566,7 @@ function efectoDeObjetivos(ctx: Contexto): Efecto {
   };
 }
 
-function efectoDe(ctx: Contexto, f: string): Efecto {
+function efectoDe(ctx: Contexto, f: string, cambiados: ReadonlySet<string>): Efecto {
   // El instrumento se pregunta ANTES que el cajón: `scripts/` no es una
   // carpeta de instrumento, es una carpeta donde además vive el instrumento.
   if (ctx.instrumento(f)) {
@@ -438,7 +580,7 @@ function efectoDe(ctx: Contexto, f: string): Efecto {
     };
   }
   const clase = clasifica(f);
-  if (clase === "fuente") return efectoDeFuente(ctx, f);
+  if (clase === "fuente") return efectoDeFuente(ctx, f, cambiados);
   if (clase === "salida") return efectoDeSalida(ctx, f);
   if (f === RUTA_ARCH_RULES) return efectoDeArchRules(ctx);
   if (f === RUTA_OBJETIVOS) return efectoDeObjetivos(ctx);
@@ -480,7 +622,10 @@ function efectoDe(ctx: Contexto, f: string): Efecto {
 }
 
 export function seleccionar(ctx: Contexto, ficheros: readonly string[]): Seleccion {
-  const efectos = [...new Set(ficheros)].sort().map((f) => efectoDe(ctx, f));
+  // El conjunto entero viaja con cada fichero: un borrado necesita saber si sus
+  // importadores de `antes` están en este mismo diff.
+  const cambiados: ReadonlySet<string> = new Set(ficheros);
+  const efectos = [...cambiados].sort().map((f) => efectoDe(ctx, f, cambiados));
   const todos = efectos.some((e) => e.todos);
   const ids = todos ? [...ctx.alcances.keys()] : [...new Set(efectos.flatMap((e) => e.ids))];
   // El orden es el del plan, no el del diff: la lista tiene que ser la misma
@@ -548,6 +693,172 @@ function contenidoDe(rev: string | null, ruta: string): Lectura {
 }
 
 const primeraLinea = (err: unknown): string => String((err as Error).message).split("\n")[0];
+
+// ── un fuente borrado: su grafo está en `antes` ──────────────────────────────
+
+/** Lo que el selector puede saber de un fichero que ya no está en el árbol.
+ *  Tres respuestas y ninguna callada: no hay revisión en la que mirar; este
+ *  diff no lo borró; o sí lo borró, y entonces quién lo importaba en `antes` y
+ *  qué módulos del plan de `antes` lo nombraban. */
+export type Borrado =
+  | { tipo: "sin-revision"; porque: string }
+  | { tipo: "sigue-en-despues"; rev: string }
+  | {
+      tipo: "borrado";
+      antes: string;
+      existiaEnAntes: boolean;
+      /** Quien lo importaba en `antes`. Rutas relativas a nefan-core (las de
+       *  fuera del paquete, con `../`), que es como llegan los ficheros del
+       *  diff. Quién de ellos sigue en el árbol lo decide `ctx.existe` al
+       *  aplicar la regla, no aquí. */
+      importadores: string[];
+      /** Los módulos del plan de `antes` que lo mutaban o lo tenían en su
+       *  batería. Sin el plan de `antes` no se puede contestar, y se dice. */
+      plan: { ok: true; dueños: string[] } | { ok: false; porque: string };
+    };
+
+export function origenDelBorrado(revisiones: Revisiones | undefined, fichero: string): Borrado {
+  if (!revisiones) {
+    return {
+      tipo: "sin-revision",
+      porque:
+        "una lista explícita de ficheros no dice de qué revisión viene: sin `antes` no hay grafo en el que buscar quién lo cargaba",
+    };
+  }
+  if (revisiones.despues !== null && existeEn(revisiones.despues, fichero)) {
+    return { tipo: "sigue-en-despues", rev: revisiones.despues };
+  }
+  const antes = revisiones.antes;
+  return {
+    tipo: "borrado",
+    antes,
+    existiaEnAntes: existeEn(antes, fichero),
+    importadores: importadoresEn(antes, fichero),
+    plan: dueñosEn(antes, fichero),
+  };
+}
+
+/** Si un fichero (ruta relativa a nefan-core, `../` incluido) está en esa
+ *  revisión. `ls-tree` contesta con una línea si está y con nada si no está;
+ *  solo falla (128) si la revisión no existe, y eso se lanza: confundir «la
+ *  ref no existe» con «el fichero no existe» decidiría en falso. */
+function existeEn(rev: string, ruta: string): boolean {
+  // `join` normaliza el `../` de lo que está fuera del paquete: git no lo haría.
+  const enRepo = join(nombrePaquete, ruta).split("\\").join("/");
+  try {
+    return (
+      execFileSync("git", ["ls-tree", "--name-only", rev, "--", enRepo], {
+        cwd: raizRepo,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim().length > 0
+    );
+  } catch (err) {
+    throw new Error(`git ls-tree ${rev} -- ${enRepo}: ${primeraLinea(err)}`, { cause: err });
+  }
+}
+
+/** Extensiones de lo que node puede cargar: es donde puede vivir un import. */
+const CARGABLES = ["*.ts", "*.mts", "*.cts", "*.js", "*.mjs", "*.cjs"];
+
+/** Quién importaba ese fichero del paquete en una revisión, en todo el repo —
+ *  una batería puede importar desde fuera de nefan-core, y al revés.
+ *
+ *  Dos pasos, por coste: `git grep` con el nombre del fichero deja una lista
+ *  corta de candidatos, y de cada candidato se leen sus especificadores de
+ *  import (`ts.preProcessFile`, el mismo lector que la traza de imports) y se
+ *  resuelven contra la ruta del importador SIN tocar el disco, porque en el
+ *  disco ya no está. El segundo paso es lo que evita el falso positivo del
+ *  mismo basename en dos carpetas: `src/types.ts` y `src/plugins/types.ts`.
+ *
+ *  LÍMITE, y por qué este grafo no es el de `resolverEspecificador`: un import
+ *  de DIRECTORIO (`from "./x"` → `x/index.ts`) no escribe «index» en ninguna
+ *  parte, así que el prefiltro no lo encuentra y el candidato `index.ts` de
+ *  `resuelveSinDisco` no llega a compararse nunca; borrar ese `index.ts` saldría
+ *  «nadie lo importaba» aunque el importador siguiera vivo (QA de #471, caso H).
+ *  Hoy no hay ninguno en el repo y `moduleResolution: Node16` lo rechaza en
+ *  ESM; si alguna vez entra uno, el prefiltro tiene que buscar también el
+ *  nombre del directorio. */
+export function importadoresEn(rev: string, fichero: string): string[] {
+  const objetivo = resolve(coreRoot, fichero);
+  const nombre = fichero.split("/").pop()!.replace(/\.[mc]?[tj]s$/, "");
+  const candidatos = gitGrepL(rev, nombre, CARGABLES);
+  const out: string[] = [];
+  for (const c of candidatos) {
+    const abs = join(raizRepo, c);
+    if (abs === objetivo) continue;
+    const texto = execFileSync("git", ["show", `${rev}:${c}`], { cwd: raizRepo, encoding: "utf8" });
+    const importa = ts
+      .preProcessFile(texto, true, true)
+      .importedFiles.some((ref) => resuelveSinDisco(abs, ref.fileName).includes(objetivo));
+    if (importa) out.push(relative(coreRoot, abs).split("\\").join("/"));
+  }
+  return out.sort();
+}
+
+/** `git grep -l -F`, que sale con 1 cuando no hay ninguna coincidencia: eso es
+ *  una lista vacía, no un error. Cualquier otro código sí lo es. */
+function gitGrepL(rev: string, texto: string, patrones: readonly string[]): string[] {
+  try {
+    return execFileSync("git", ["grep", "-l", "-F", "-e", texto, rev, "--", ...patrones], {
+      cwd: raizRepo,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => l.slice(l.indexOf(":") + 1));
+  } catch (err) {
+    if ((err as { status?: number }).status === 1) return [];
+    throw new Error(`git grep en ${rev}: ${primeraLinea(err)}`, { cause: err });
+  }
+}
+
+/** A qué ficheros PODRÍA apuntar un especificador relativo, sin comprobar
+ *  ninguno en disco. Es `resolverEspecificador` sin el `existsSync`: la
+ *  misma lista de candidatos (`.js` → `.ts`, `.ts` añadido, la ruta tal cual y
+ *  su `index.ts`), y decide quien compare con el fichero que busca. */
+function resuelveSinDisco(desde: string, especificador: string): string[] {
+  if (!especificador.startsWith(".")) return [];
+  const base = resolve(dirname(desde), especificador);
+  const sinJs = base.replace(/\.js$/, "");
+  return [`${sinJs}.ts`, `${sinJs}.mts`, `${base}.ts`, base, join(base, "index.ts")];
+}
+
+/** Los módulos del plan de una revisión que mutaban ese fichero o lo tenían en
+ *  su batería. Se lee el JSON sin el schema de hoy —el plan de `antes` puede
+ *  ser de otra forma—, pero con la misma lectura de `mutate` que `ficheros-
+ *  Mutados`: literal o glob, y las exclusiones (`!ruta`) no cuentan como
+ *  mutar. */
+function dueñosEn(rev: string, fichero: string): { ok: true; dueños: string[] } | { ok: false; porque: string } {
+  const lectura = contenidoDe(rev, RUTA_OBJETIVOS);
+  if (!lectura.ok) return { ok: false, porque: lectura.porque };
+  let plan: unknown;
+  try {
+    plan = JSON.parse(lectura.texto);
+  } catch (err) {
+    return { ok: false, porque: `${RUTA_OBJETIVOS} en ${rev} no es JSON válido: ${(err as Error).message}` };
+  }
+  const modulos = (plan as { modulos?: unknown }).modulos;
+  if (!Array.isArray(modulos)) return { ok: false, porque: `${RUTA_OBJETIVOS} en ${rev} no tiene una lista \`modulos\`` };
+  const dueños: string[] = [];
+  for (const m of modulos as { id?: unknown; mutate?: unknown; tests?: unknown }[]) {
+    if (typeof m.id !== "string") continue;
+    const mutate = Array.isArray(m.mutate) ? (m.mutate as string[]) : [];
+    const tests = Array.isArray(m.tests) ? (m.tests as string[]) : [];
+    // En orden y RESTANDO, como `ficherosMutados`: `src/world-map/*.ts` seguido
+    // de `!src/world-map/npc-director.ts` no muta a npc-director. Saltarse el
+    // `!` en vez de restarlo lo dejaba como dueño (QA de #471, hallazgo 4).
+    let muta = false;
+    for (const p of mutate) {
+      const negado = p.startsWith("!");
+      const limpio = negado ? p.slice(1) : p;
+      if (limpio === fichero || matchesGlob(fichero, limpio)) muta = !negado;
+    }
+    if (muta || tests.includes(fichero)) dueños.push(m.id);
+  }
+  return { ok: true, dueños };
+}
 
 /** ¿Puede este cambio de `arch-rules.json` alterar QUÉ se muta? Solo si cambia
  *  la regla de la que sale el perímetro. Cualquier duda —no hay contra qué
@@ -669,6 +980,18 @@ export function comparaObjetivos(
   };
 }
 
+/** Un renombrado es un borrado más un alta, y aquí se quiere ver como tal: con
+ *  la detección de renombrados de git, `--name-only` calla la ruta de ORIGEN, y
+ *  entonces la ruta vieja ni se analiza —un `git mv` sin actualizar al
+ *  importador no forzaría nada— y el importador de un borrado que se renombró
+ *  en el mismo diff (`test/status-labels.test.ts` → `test/status-motivo.test.ts`
+ *  en #433) saldría «fuera del diff». Va con TODO `git diff --name-only` del
+ *  instrumento: los tres de aquí y los dos de `mutacion.ts` (`ficherosDesdeElTag`,
+ *  `commitsDelRango`), que lo importan de aquí para que sea una sola verdad; el
+ *  candado de `test/afectado.test.ts` recorre los dos ficheros y exige que ningún
+ *  `--name-only` vaya sin él. */
+export const SIN_RENOMBRAR: readonly string[] = ["--no-renames"];
+
 /** De dónde salen los ficheros cambiados. Fail-loud: si git no puede contestar
  *  (no hay merge-base, la ref no existe), NO se devuelve una lista vacía —
  *  una lista vacía se leería como "no hay nada que medir". */
@@ -676,12 +999,27 @@ export function ficherosCambiados(argv: readonly string[]): Origen {
   const explicitos = argv.indexOf("--ficheros");
   if (explicitos >= 0) {
     const ficheros = argv.slice(explicitos + 1).filter((a) => !a.startsWith("--"));
+    // Las rutas son desde la RAÍZ del repo, como las escribe git. Una que no
+    // exista ahí pero sí bajo nefan-core/ es casi seguro alguien hablando desde
+    // el paquete: hasta hoy salía «está fuera de nefan-core y ninguna batería
+    // lo carga → NO EJECUTA NADA», confiado y falso (QA de #471, hallazgo 6).
+    // Lo que sí puede no existir en ningún sitio es un fichero borrado, y ese
+    // pasa: de él se habla precisamente porque ya no está.
+    const desdeElPaquete = ficheros.filter(
+      (f) => !existsSync(join(raizRepo, f)) && existsSync(join(coreRoot, f)),
+    );
+    if (desdeElPaquete.length > 0) {
+      throw new Error(
+        `--ficheros habla en rutas desde la raíz del repo, y ${desdeElPaquete.map((f) => `\`${f}\``).join(", ")} ` +
+          `no existe ahí pero sí en nefan-core/: escribe ${desdeElPaquete.map((f) => `\`${nombrePaquete}/${f}\``).join(", ")}`,
+      );
+    }
     return { ficheros: ficheros.map(aCore), descripcion: `lista explícita de ${ficheros.length} fichero(s)` };
   }
   const rango = valorDe(argv, "--rango");
   if (rango) {
     return {
-      ficheros: git(["diff", "--name-only", rango]).map(aCore),
+      ficheros: git(["diff", "--name-only", ...SIN_RENOMBRAR, rango]).map(aCore),
       descripcion: rango,
       revisiones: revisionesDelRango(rango),
     };
@@ -689,9 +1027,9 @@ export function ficherosCambiados(argv: readonly string[]): Origen {
 
   const ref = valorDe(argv, "--desde") ?? "main";
   const base = mergeBase(ref);
-  const comiteados = git(["diff", "--name-only", `${base}..HEAD`]);
+  const comiteados = git(["diff", "--name-only", ...SIN_RENOMBRAR, `${base}..HEAD`]);
   const arbol = [
-    ...git(["diff", "--name-only", "HEAD"]),
+    ...git(["diff", "--name-only", ...SIN_RENOMBRAR, "HEAD"]),
     ...git(["ls-files", "--others", "--exclude-standard"]),
   ];
   return {
