@@ -45,7 +45,9 @@ export function handleGetWorldSnapshot(
       vocabulary: vocabulary as Record<string, unknown> | null,
     });
   } catch (err) {
-    console.error(`Bridge: get_world_snapshot("${msg.gameId}") failed:`, err);
+    // Solo el mensaje: un snapshot rechazado en la carga es esperable y su
+    // mensaje ya se explica solo; la traza lo tapaba (QA 2026-09-05).
+    console.error(`Bridge: get_world_snapshot("${msg.gameId}") rechazado: ${(err as Error).message ?? String(err)}`);
     ctx.send(ws, {
       type: "world_snapshot",
       requestId: msg.requestId,

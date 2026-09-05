@@ -72,14 +72,17 @@ function makeSnapshot(worldDocHash: string): WorldSnapshot {
     world_map: new WorldMapManager(WorldMapManager.createEmpty()).serialize(),
     // Escena EXPANDIDA por la función de producción: es la población que vive
     // en un snapshot, y desde #237 `WorldSnapshotSchema` la tipa (antes bastaba
-    // con dos campos sueltos que ningún camino real produce).
+    // con dos campos sueltos que ningún camino real produce). Y CON player:
+    // es la escena de entrada, y desde #302 la puerta de carga la pasa por
+    // `validateScene` con `bootstrap: true`, que exige el spawn del jugador
+    // —igual que el bootstrap vivo al generarla. Sin él salía `stale`.
     scenes: {
       tile_0_0: expandScenePrimitives({
         scene_id: "tile_0_0",
         scene_description: "arranque",
         tile: { tx: 0, ty: 0 },
         biome: "grass",
-        entities: [],
+        entities: [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1] }],
       }),
     },
     entry_scene_id: "tile_0_0",
@@ -173,10 +176,7 @@ describe("WS get_world_snapshot / record_style_application", () => {
       );
       const ready = s2.sent[0] as WorldSnapshotMessage;
       assert.equal(ready.status, "ready");
-      assert.equal(
-        (ready.snapshot as WorldSnapshot).entry_scene_id,
-        "tile_0_0",
-      );
+      assert.equal(ready.snapshot?.entry_scene_id, "tile_0_0");
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }

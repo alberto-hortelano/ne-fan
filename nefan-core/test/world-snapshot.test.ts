@@ -13,6 +13,7 @@ import { WorldMapManager } from "../src/world-map/world-map.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import {
   WORLD_SNAPSHOT_SCHEMA_VERSION,
+  WorldSnapshotSchema,
   deleteWorldSnapshot,
   loadWorldSnapshot,
   worldSnapshotPath,
@@ -23,7 +24,7 @@ import {
 import { routeMessage } from "../bridge/router.js";
 import type {
   NarrativeEventMessage,
-  NarrativeStatusMessage,
+  NarrativeStatusDeSesion,
 } from "../src/protocol/messages.js";
 import { FIXTURE_GAMES, makeCtx, makeSocket, waitFor } from "./helpers.js";
 
@@ -287,7 +288,8 @@ describe("world-snapshot en start_session", () => {
       );
       assert.ok(sceneEvent, "scene_init del snapshot difundido");
       const ready = broadcasts.find(
-        (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
+        (m): m is NarrativeStatusDeSesion =>
+          m.type === "narrative_status" && m.kind !== "game_gen" && m.phase === "ready",
       );
       assert.ok(ready, "narrative_status ready");
       // …y el ready DICE que viene del mundo pre-generado. El guion 05 lo usa
@@ -367,6 +369,163 @@ describe("world-snapshot en start_session", () => {
       assert.equal(second.aiCalls.scene.length, 0, "segundo arranque = replay del snapshot");
       assert.ok(second.narrative.scenes_loaded["tile_0_0"]);
     } finally {
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+});
+
+/** #302 · lo que se carga pasa por `validateScene` o no se sirve.
+ *
+ *  Lo ESTRUCTURAL ya lo paraba `ExpandedSceneSchema .strict()` (#237, #409):
+ *  un campo retirado tumbaba el snapshot. Lo que NO miraba nadie era la
+ *  JUGABILIDAD: `scene-validate.ts` se endureció cinco veces entre el 22-08 y
+ *  el 04-09 y un snapshot generado bajo el validador viejo se replayeaba
+ *  `ready` con un NPC que hoy nace dentro de un muro. Como los snapshots de
+ *  `data/games/` están en `.gitignore`, esto no puede recorrer el disco (verde
+ *  vacío en CI): el artefacto es SINTÉTICO y se escribe sin pasar por el
+ *  validador de escritura (patrón `aDisco`), que es justo la forma de «lo
+ *  generó una versión anterior».
+ *
+ *  El artefacto está BIEN FORMADO a propósito —el primer `it` lo demuestra
+ *  con el MISMO zod que aplica la puerta, `WorldSnapshotSchema`—, para que el
+ *  rojo de los demás solo pueda venir del bucle de `validateScene` en
+ *  `loadWorldSnapshot`. Comentar ese bucle pone rojos los tres que siguen al
+ *  primero (probado en negativo el 2026-09-05). */
+describe("lo que se carga pasa por validateScene o no se sirve (#302)", () => {
+  /** Posada SIN cutaway = huella sólida entera, y el posadero nace dentro:
+   *  `nace-en-solido`, la clase de #289 que `checkNpcBodies` juzga SIEMPRE,
+   *  con o sin contexto de costuras. */
+  const posadaSinPuerta = (tx: number, conPlayer: boolean): Record<string, unknown> =>
+    expandScenePrimitives({
+      scene_id: `tile_${tx}_0`,
+      scene_description: "Una posada sin puerta con el posadero dentro",
+      tile: { tx, ty: 0 },
+      biome: "grass",
+      volumes: [{ id: "posada", label: "posada", type: "building", rect: [52, 20, 24, 16] }],
+      entities: [
+        ...(conPlayer ? [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1] }] : []),
+        { id: "posadero", kind: "npc", name: "Posadero", cell: [60, 27], footprint: [1, 1] },
+      ],
+    });
+
+  const sana = (tx: number, conPlayer: boolean): Record<string, unknown> =>
+    expandScenePrimitives({
+      scene_id: `tile_${tx}_0`,
+      scene_description: conPlayer ? "Tile de arranque" : "Vecino este",
+      tile: { tx, ty: 0 },
+      biome: "grass",
+      entities: conPlayer ? [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1] }] : [],
+    });
+
+  const snapshotCon = (worldDocHash: string, scenes: Record<string, Record<string, unknown>>) => ({
+    schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
+    game_id: GAME,
+    world_doc_hash: worldDocHash,
+    generated_at: "2026-08-18T00:00:00.000Z",
+    world_map: new WorldMapManager(WorldMapManager.createEmpty()).serialize(),
+    scenes,
+    entry_scene_id: "tile_0_0",
+  });
+
+  /** Escribe el snapshot SIN pasar por el validador de escritura. */
+  const aDisco = (gamesDir: string, worldDocHash: string, scenes: Record<string, Record<string, unknown>>): void => {
+    mkdirSync(join(gamesDir, GAME, "world"), { recursive: true });
+    writeFileSync(worldSnapshotPath(gamesDir, GAME), JSON.stringify(snapshotCon(worldDocHash, scenes)), "utf-8");
+  };
+
+  it("el artefacto está BIEN FORMADO: la clase que se cierra no la ve el zod de la puerta", () => {
+    // El mismo schema que aplica `loadWorldSnapshot` (y `writeWorldSnapshot`):
+    // si esto no pasara, los rechazos de abajo serían del gate estructural y
+    // no dirían nada de la jugabilidad.
+    const r = WorldSnapshotSchema.safeParse(
+      snapshotCon("h", { tile_0_0: posadaSinPuerta(0, true), tile_1_0: posadaSinPuerta(1, false) }),
+    );
+    assert.ok(r.success, r.success ? "" : r.error.message);
+  });
+
+  it("escena de ENTRADA injugable ⇒ loadWorldSnapshot lanza nombrando fichero, escena y motivo; el título la ve stale", () => {
+    const { gamesDir, worldDocHash } = tmpGamesDir();
+    try {
+      aDisco(gamesDir, worldDocHash, { tile_0_0: posadaSinPuerta(0, true) });
+      assert.throws(
+        () => loadWorldSnapshot(gamesDir, GAME, worldDocHash),
+        (err: Error) => {
+          assert.match(err.message, /injugable/);
+          assert.ok(err.message.includes(worldSnapshotPath(gamesDir, GAME)), `sin la ruta del fichero: ${err.message}`);
+          assert.match(err.message, /"tile_0_0"/);
+          assert.match(err.message, /"posadero".*no transitable/);
+          assert.match(err.message, /regenera el mundo desde el título/);
+          return true;
+        },
+      );
+      // El chip del título degrada a stale con warning, nunca tumba el listado.
+      const warn = console.warn;
+      const avisos: string[] = [];
+      console.warn = (...args: unknown[]) => void avisos.push(args.map(String).join(" "));
+      try {
+        assert.equal(worldSnapshotStatus(gamesDir, GAME, worldDocHash), "stale");
+      } finally {
+        console.warn = warn;
+      }
+      assert.match(avisos.join(" | "), /injugable/, "el motivo se reporta, no se traga");
+    } finally {
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  it("un tile del ANILLO (sin player, bootstrap:false) con un NPC en sólido también se rechaza; el anillo sano entra", () => {
+    // El plan lo AFIRMABA; esto lo mide: sin contexto de costuras, el anillo
+    // solo pierde la alcanzabilidad (aviso `no-verificado`), no el cuerpo.
+    const { gamesDir, worldDocHash } = tmpGamesDir();
+    try {
+      aDisco(gamesDir, worldDocHash, { tile_0_0: sana(0, true), tile_1_0: posadaSinPuerta(1, false) });
+      assert.throws(
+        () => loadWorldSnapshot(gamesDir, GAME, worldDocHash),
+        /injugable.*"tile_1_0".*"posadero"/,
+      );
+      // Control positivo: la misma forma con el anillo sano SÍ se sirve (el
+      // bucle no rechaza de más, ni por el player de la entrada ni por la
+      // falta de player del anillo).
+      aDisco(gamesDir, worldDocHash, { tile_0_0: sana(0, true), tile_1_0: sana(1, false) });
+      const cargado = loadWorldSnapshot(gamesDir, GAME, worldDocHash);
+      assert.ok(cargado);
+      assert.equal(Object.keys(cargado.scenes).length, 2);
+      assert.equal(worldSnapshotStatus(gamesDir, GAME, worldDocHash), "ready");
+    } finally {
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  it("start_session NO lo sirve: ningún `ready` con source snapshot, el bootstrap vivo corre (1 llamada al motor) y el motivo se reporta", async () => {
+    const { gamesDir, worldDocHash } = tmpGamesDir();
+    const error = console.error;
+    const reportado: string[] = [];
+    console.error = (...args: unknown[]) => void reportado.push(args.map(String).join(" "));
+    try {
+      aDisco(gamesDir, worldDocHash, { tile_0_0: posadaSinPuerta(0, true) });
+      const { ctx, broadcasts, aiCalls } = makeCtx({ gamesDir });
+      const { socket, sent } = makeSocket();
+      await routeMessage({ type: "start_session", requestId: "r1", gameId: GAME }, socket, ctx);
+      await waitFor(() =>
+        broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+      );
+      assert.equal(sent[0].type, "session_started", "la sesión arranca igual: se degrada, no se deja al jugador sin partida");
+      // Estrechado en línea por el discriminante (`kind`), sin predicado de
+      // tipo: `source` solo existe en el status DE SESIÓN, no en el de
+      // `game_gen`, y así el aserto no depende de qué nombre de la unión
+      // importe el fichero (#231b).
+      const readyDeSnapshot = broadcasts.find(
+        (m) =>
+          m.type === "narrative_status" &&
+          m.kind !== "game_gen" &&
+          m.phase === "ready" &&
+          m.source === "snapshot",
+      );
+      assert.equal(readyDeSnapshot, undefined, "el snapshot injugable se sirvió como ready");
+      assert.equal(aiCalls.scene.length, 1, "degradó al bootstrap vivo, que llama al motor");
+      assert.match(reportado.join(" | "), /injugable/, "el bridge no se lo traga: lo reporta");
+    } finally {
+      console.error = error;
       rmSync(gamesDir, { recursive: true, force: true });
     }
   });

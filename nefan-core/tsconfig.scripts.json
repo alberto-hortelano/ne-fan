@@ -8,9 +8,8 @@
   // El resto de opciones replica el tsconfig de build para que un fichero de
   // `scripts/` se compruebe con el mismo rasero que uno de `src/`.
   //
-  // `test/` NO entra aquí: es #231(b), va detrás de la tanda del bosque
-  // (#243/#233/#232) porque 19 de sus errores viven en tests cuyo sujeto
-  // reescribe esa tanda.
+  // `test/` NO entra aquí: tiene su propio proyecto, `tsconfig.tests.json`
+  // (#231b), que hereda estas flags y añade `lib ES2023`.
   "compilerOptions": {
     "target": "ES2022",
     "module": "Node16",

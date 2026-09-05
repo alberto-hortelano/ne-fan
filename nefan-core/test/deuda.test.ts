@@ -201,6 +201,7 @@ describe("cola de deuda · mutación repartida en varios informes", () => {
           run: "1",
           fecha: "2026-08-25T00:00:00.000Z",
           total: 10,
+          blob: "b10b0000000000000000000000000000000000ab",
           vivos: ["0123456789abcdef"],
           nuevos: [],
           resueltos: 0,

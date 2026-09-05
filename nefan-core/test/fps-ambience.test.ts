@@ -19,13 +19,13 @@ const DIA = "Un mediodía cualquiera en la plaza del mercado.";
 const NOCHE = "Es de noche y el pueblo duerme.";
 
 /** Antorcha suelta en mitad de la calle (no cae dentro de ningún cutaway). */
-const antorcha: Volume = { id: "antorcha", label: "antorcha en el poste", type: "prop", at: [20, 30], h: 2 };
+const antorcha: Volume = { id: "antorcha", label: "antorcha en el poste", type: "prop", shape: "cylinder", at: [20, 30], h: 2 };
 /** Banco: nombra nada que arda. */
-const banco: Volume = { id: "banco", label: "banco de madera", type: "prop", at: [40, 40], h: 1 };
+const banco: Volume = { id: "banco", label: "banco de madera", type: "prop", shape: "box", at: [40, 40], h: 1 };
 
 /** Casa abierta en corte + un candil DENTRO de su huella. */
 const casaAbierta: Volume = { id: "casa", label: "casa", type: "building", rect: [10, 10, 8, 6], wall_h: 5, cutaway: true };
-const candilInterior: Volume = { id: "candil", label: "candil sobre la mesa", type: "prop", at: [14, 13], h: 1 };
+const candilInterior: Volume = { id: "candil", label: "candil sobre la mesa", type: "prop", shape: "cylinder", at: [14, 13], h: 1 };
 
 describe("de día no se toca nada", () => {
   it("sin luces, sin cielo y sin niebla: el tile se ve EXACTAMENTE como el arte histórico", () => {
@@ -83,8 +83,8 @@ describe("de noche", () => {
   });
 
   it("la altura de la llama se acota por arriba y por abajo", () => {
-    const farolAlto: Volume = { id: "f", label: "farol de la torre", type: "prop", at: [20, 20], h: 40 };
-    const brasaBaja: Volume = { id: "b", label: "brasero", type: "prop", at: [20, 20], h: 0.4 };
+    const farolAlto: Volume = { id: "f", label: "farol de la torre", type: "prop", shape: "cylinder", at: [20, 20], h: 40 };
+    const brasaBaja: Volume = { id: "b", label: "brasero", type: "prop", shape: "cylinder", at: [20, 20], h: 0.4 };
     const alto = buildFpsAmbience(NOCHE, [farolAlto], "t").lightsM!.find((l) => l.kind === "point")!;
     const bajo = buildFpsAmbience(NOCHE, [brasaBaja], "t").lightsM!.find((l) => l.kind === "point")!;
     assert.equal(alto.pos![1], 2.4);
@@ -155,12 +155,12 @@ describe("qué enciende y qué no", () => {
     // Sin tope, una plaza con veinte faroles mete veinte point lights en la
     // escena y el frame se desploma.
     const faroles: Volume[] = Array.from({ length: 20 }, (_, i) => ({
-      id: `farol_${i}`, label: "farol", type: "prop", at: [20 + i * 2, 30], h: 2,
+      id: `farol_${i}`, label: "farol", type: "prop", shape: "cylinder", at: [20 + i * 2, 30], h: 2,
     }));
     assert.equal(buildFpsAmbience(NOCHE, faroles, "t").lightsM!.filter((l) => l.kind === "point").length, 8);
 
     const dentro: Volume[] = Array.from({ length: 10 }, (_, i) => ({
-      id: `candil_${i}`, label: "candil", type: "prop", at: [11 + i * 0.5, 12], h: 1,
+      id: `candil_${i}`, label: "candil", type: "prop", shape: "cylinder", at: [11 + i * 0.5, 12], h: 1,
     }));
     assert.equal(buildFpsAmbience(DIA, [casaAbierta, ...dentro], "t").extraM!.length, 4);
   });

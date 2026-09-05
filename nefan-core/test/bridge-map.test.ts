@@ -9,7 +9,9 @@ import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type {
   ExitsChangedMessage,
   NarrativeEventMessage,
+  NarrativeStatusDeSesion,
   NarrativeStatusMessage,
+  ServerMessage,
   } from "../src/protocol/messages.js";
 import { difundirSalidasDeLosTilesCargados } from "../bridge/salidas.js";
 import { sessionDataForClient } from "../bridge/wire-scene.js";
@@ -22,6 +24,12 @@ import {
   waitFor,
   } from "./helpers.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
+
+/** El `ready` DE PARTIDA: el status de juego (`game_gen`) no lleva `spawn`,
+ *  `tile` ni `source`, y el tipo lo dice — de ahí que el filtro lo excluya en
+ *  vez de abrir la unión con un `as`. */
+const readyDeSesion = (m: ServerMessage): m is NarrativeStatusDeSesion =>
+  m.type === "narrative_status" && m.kind !== "game_gen" && m.phase === "ready";
 
 /** La world scene que difundió un `scene_init`: viaja en su propio effect
  *  `scene_loaded` (#397), no en el `data` de un spawn. */
@@ -269,19 +277,17 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     // Dos "generating": el acuse del viaje (kind scene, con placeId) y el del
     // tile que lo materializa. Los dos nombran el destino.
     const acuse = broadcasts.find(
-      (m): m is NarrativeStatusMessage =>
+      (m): m is NarrativeStatusDeSesion =>
         m.type === "narrative_status" && m.phase === "generating" && m.kind === "scene",
     );
     assert.equal(acuse?.placeId, "forja");
     const generating = broadcasts.find(
-      (m): m is NarrativeStatusMessage =>
+      (m): m is NarrativeStatusDeSesion =>
         m.type === "narrative_status" && m.phase === "generating" && m.kind === "tile",
     );
     assert.ok(generating, "el tile del viaje también anuncia que se está generando");
     assert.match(generating.message ?? "", /Viajando a La Forja/);
-    const ready = broadcasts.find(
-      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
-    );
+    const ready = broadcasts.find(readyDeSesion);
     assert.deepEqual(ready?.spawn, { x: 128, z: 0 });
     assert.deepEqual(ready?.tile, { tx: 2, ty: 0 });
 
@@ -313,9 +319,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     assert.deepEqual(narrative.worldMap.get("forja")?.anchor, { tx: 1, ty: 0, rect: [20, 30, 10, 10] });
     // Tile (1,0): minX 32, minZ −32. Centro del rect = celda (25, 35) →
     // x = 32 + 25·0.5 = 44.5, z = −32 + 35·0.5 = −14.5.
-    const ready = broadcasts.find(
-      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
-    );
+    const ready = broadcasts.find(readyDeSesion);
     assert.deepEqual(ready?.spawn, { x: 44.5, z: -14.5 });
   });
 
@@ -336,9 +340,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     assert.ok(!narrative.story_so_far.includes("Suena el yunque."), "aún no ha llegado");
 
     // El cliente aplica el spawn y su siguiente sim_input lo delata.
-    const ready = broadcasts.find(
-      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
-    );
+    const ready = broadcasts.find(readyDeSesion);
     await routeMessage(
       {
         type: "input",
@@ -377,9 +379,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     const { socket } = makeSocket();
     await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     assert.equal(aiCalls.scene.length, 0, "sin LLM: la escena ya existía");
-    const ready = broadcasts.find(
-      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
-    );
+    const ready = broadcasts.find(readyDeSesion);
     assert.deepEqual(ready?.spawn, { x: 64, z: 0 }, "centro del tile (1,0)");
     assert.ok(narrative.story_so_far.includes("Suena el yunque."), "trigger de llegada");
 
@@ -459,9 +459,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
       (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
     );
     assert.ok(scene, "la escena del destino se difunde");
-    const ready = broadcasts.find(
-      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
-    );
+    const ready = broadcasts.find(readyDeSesion);
     assert.deepEqual(ready?.spawn, { x: 64, z: 0 }, "y con el spawn: viajar es APARECER allí");
     assert.equal(ready?.source, "cache", "el bridge declara que no lo generó ahora");
     assert.equal(aiCalls.scene.length, 0, "no se gastó motor en un lugar que ya existía");
@@ -499,7 +497,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     // El acuse va ANTES de que el job corra: es lo que el cliente apunta para
     // saber que el bridge cogió el viaje, y en qué estado.
     const acuse = broadcasts.find(
-      (m): m is NarrativeStatusMessage =>
+      (m): m is NarrativeStatusDeSesion =>
         m.type === "narrative_status" && m.phase === "generating" && m.kind === "scene",
     );
     assert.equal(acuse?.placeId, "forja");

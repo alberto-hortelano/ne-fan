@@ -5,22 +5,10 @@ import assert from "node:assert/strict";
 
 import { applyRenderModeChange } from "../src/narrative/render-mode.js";
 import type { NarrativeWorldState } from "../src/narrative/types.js";
+import { mundoDePrueba } from "./helpers.js";
 
-function world(over: Partial<NarrativeWorldState>): NarrativeWorldState {
-  return {
-    name: "",
-    atmosphere: "",
-    style_token: "",
-    active_scene_id: "",
-    description: "",
-    style_id: "",
-    world_doc_hash: "",
-    render_mode: "vector",
-    character_mode: "",
-    combat_system: "",
-    ...over,
-  };
-}
+const world = (over: Partial<NarrativeWorldState>): NarrativeWorldState =>
+  mundoDePrueba({ render_mode: "vector", ...over });
 
 describe("applyRenderModeChange", () => {
   it("scenes: vector → image y FIJA character_mode=vector (no arrastra skins legacy)", () => {

@@ -5,7 +5,7 @@ import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { SCHEMA_VERSION } from "../src/narrative/types.js";
 import { LLM_ENTITIES_MAX, LLM_STORY_MAX_CHARS } from "../src/narrative/serialize-llm.js";
-import { escenaExpandidaDePrueba, makeNarrativeState } from "./helpers.js";
+import { escenaExpandidaDePrueba, makeNarrativeState, mundoDePrueba } from "./helpers.js";
 
 function makeState() {
   return makeNarrativeState().narrative;
@@ -153,7 +153,7 @@ describe("NarrativeState lifecycle", () => {
       game_id: "x",
       created_at: "",
       updated_at: "",
-      world: { name: "", atmosphere: "", style_token: "", active_scene_id: "" },
+      world: mundoDePrueba(),
       player: {
         level: 1,
         class: "rogue",
@@ -168,6 +168,8 @@ describe("NarrativeState lifecycle", () => {
       scenes_loaded: {},
       entities: [],
       dialogue_history: [],
+      world_map: { schema_version: 1, places: {}, links: [], root_id: "world", active_place_id: "world" },
+      plugins: [],
       _next_event_seq: 0,
     });
     const s = new NarrativeState(storage);
@@ -203,7 +205,7 @@ describe("NarrativeState lifecycle", () => {
     assert.deepEqual(s.player.position, [1, 0, 2]);
     assert.equal(s.player.gold, 0, "gold default 0 — la aritmética no da NaN");
     assert.equal(s.player.gold + 25, 25);
-    assert.deepEqual(s.player.inventory, [], "inventory default []");
+    assert.equal(s.player.inventory.length, 0, "inventory default []");
     assert.equal(s.player.appearance.model_id, "", "appearance default: \"\" = ninguna elección (el cliente cae a su base)");
     // El array default no se comparte entre instancias del default.
     s.player.inventory.push({ id: "moneda" });
@@ -472,10 +474,15 @@ describe("NarrativeState state queries", () => {
     assert.equal(s.removeInventoryItem("boris", "hammer"), false);
     assert.equal(s.removeInventoryItem("ghost", "hammer"), false);
     assert.deepEqual(s.getInventory("boris"), [{ id: "iron_key" }]);
-    // Items sin campo `id` nunca casan (inventario sin tipar).
-    s.addInventoryItem("player", "una nota suelta");
-    assert.equal(s.removeInventoryItem("player", "una nota suelta"), false);
-    assert.deepEqual(s.getInventory("player"), ["una nota suelta"]);
+    // Items sin campo `id` nunca casan. Al jugador ya no le puede llegar uno
+    // (`InventoryItem` exige `id`, #231b), pero el blob de una entidad sigue
+    // sin tipar y ahí sí cabe: la guardia de `removeInventoryItem` se prueba
+    // donde el estado aún es alcanzable.
+    s.recordEntitySpawned("escriba", "npc", "scene_1", [0, 0, 0], {
+      inventory: ["una nota suelta"],
+    });
+    assert.equal(s.removeInventoryItem("escriba", "una nota suelta"), false);
+    assert.deepEqual(s.getInventory("escriba"), ["una nota suelta"]);
   });
 
   it("addInventoryItem persists through save/load", async () => {

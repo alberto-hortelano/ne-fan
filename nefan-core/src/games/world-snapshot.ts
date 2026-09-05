@@ -21,15 +21,18 @@ import { createHash } from "node:crypto";
 
 import { SAFE_ID, loadWorldDoc } from "./loader.js";
 import { ExpandedSceneSchema } from "../contract/model-io/scene-schema.js";
+import { validateScene } from "../scene/scene-validate.js";
 import type { WorldMap } from "../world-map/types.js";
 
 /** v2: muere el eje de vistas — el snapshot ya no declara `branch` (había
  *  una sola rama viva y su valor era siempre "tile"). */
 export const WORLD_SNAPSHOT_SCHEMA_VERSION = 2;
 
-/** Envoltorio validado por zod; el interior (world_map, escenas Format D) ya
- *  fue validado al generarse — aquí `WorldMapManager.fromSerialized` y el
- *  replay son la segunda línea. */
+/** Envoltorio validado por zod. Las escenas pasan aquí el gate ESTRUCTURAL
+ *  (`ExpandedSceneSchema .strict()`); el de JUGABILIDAD (`validateScene`) lo
+ *  aplica `loadWorldSnapshot` escena a escena, porque «ya se validó al
+ *  generarse» no vale: el validador se endurece y el snapshot no se entera.
+ *  `WorldMapManager.fromSerialized` re-valida el world_map al restaurarlo. */
 export const WorldSnapshotSchema = z
   .object({
     schema_version: z.literal(WORLD_SNAPSHOT_SCHEMA_VERSION),
@@ -44,7 +47,7 @@ export const WorldSnapshotSchema = z
      *  tipo, así que un snapshot con escenas a medio expandir pasaba el gate
      *  y reventaba después, al pintar. `ExpandedSceneSchema` es el único
      *  schema que describe esta población — el otro (`EmittedSceneSchema`)
-     *  describe la contraria y rechaza los 20 tiles del árbol por diseño. */
+     *  describe la contraria y rechaza toda escena expandida por diseño. */
     scenes: z.record(z.string(), ExpandedSceneSchema),
     entry_scene_id: z.string().min(1),
   })
@@ -75,10 +78,11 @@ export function worldSnapshotPath(gamesDir: string, gameId: string): string {
   return join(gamesDir, gameId, "world", "tile.json");
 }
 
-/** Carga el snapshot del juego. Ausente → null. Malformado o de otra versión
- *  de schema → throw (fail-loud: el caller decide si degrada al bootstrap
- *  vivo REPORTÁNDOLO). world_doc_hash distinto del esperado → null + warn
- *  (world.md editado: stale esperable, nunca servir mundo viejo en silencio). */
+/** Carga el snapshot del juego. Ausente → null. Malformado, de otra versión
+ *  de schema o con una escena INJUGABLE → throw (fail-loud: el caller decide
+ *  si degrada al bootstrap vivo REPORTÁNDOLO). world_doc_hash distinto del
+ *  esperado → null + warn (world.md editado: stale esperable, nunca servir
+ *  mundo viejo en silencio). */
 export function loadWorldSnapshot(
   gamesDir: string,
   gameId: string,
@@ -118,8 +122,32 @@ export function loadWorldSnapshot(
     );
     return null;
   }
-  // El envoltorio va por zod; el world_map lo re-valida
-  // WorldMapManager.fromSerialized al restaurarlo (segunda línea).
+  // Lo que se carga pasa por el validador de JUGABILIDAD o no se sirve (#302).
+  // El zod de arriba dice que la escena está bien FORMADA; esto dice que se
+  // puede recorrer con un cuerpo. Va DESPUÉS del hash para no pagar el
+  // flood-fill por un snapshot que ya es stale, y va aquí —la única puerta de
+  // carga— y no en el replay del bridge, para que el chip del título y
+  // `start_session` digan lo mismo con un solo código. `scene-validate.ts` se
+  // endureció cinco veces entre el 22-08 y el 04-09: un snapshot generado bajo
+  // el validador viejo seguía replayéandose `ready` con un NPC que hoy no cabe.
+  // Sin contexto de costuras (`required_crossings: []`, sin `entry`), los
+  // tiles del anillo salen con aviso `no-verificado` y NO se rechazan por
+  // alcanzabilidad; lo que sí se juzga siempre es el cuerpo de cada NPC
+  // (`checkNpcBodies`, #289) y el spawn del jugador en la escena de entrada.
+  for (const [id, scene] of Object.entries(snapshot.scenes)) {
+    const check = validateScene(scene, {
+      required_crossings: [],
+      bootstrap: id === snapshot.entry_scene_id,
+    });
+    if (!check.ok) {
+      throw new Error(
+        `world snapshot injugable (${path}): la escena "${id}" no pasa el validador de hoy: ` +
+          `${check.errors.join(" · ")} — regenera el mundo desde el título`,
+      );
+    }
+  }
+  // El world_map lo re-valida WorldMapManager.fromSerialized al restaurarlo
+  // (segunda línea).
   return snapshot;
 }
 

@@ -13,7 +13,7 @@ import { createCombatant } from "../src/combat/combatant.js";
 import { loadConfig } from "../src/combat/combat-data.js";
 import { combatRegistry } from "../src/combat/registry.js";
 import { GameStore } from "../src/store/game-store.js";
-import type { CombatConfig, CombatEvent } from "../src/types.js";
+import type { CombatConfig, CombatEvent, EnemyPersonality } from "../src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const config: CombatConfig = loadConfig(
@@ -66,7 +66,7 @@ interface SystemCase {
   aiEnemyPos: Vec;
   /** HP del enemigo que muere en 3 ataques del player. */
   killableHp: number;
-  personality: Record<string, unknown>;
+  personality: EnemyPersonality;
 }
 
 const SYSTEMS: SystemCase[] = [

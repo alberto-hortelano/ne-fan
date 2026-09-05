@@ -11,6 +11,7 @@
  */
 import type {
   EntityRecord,
+  InventoryItem,
   NarrativePlayerState,
   LlmContext,
   WorldMap,
@@ -129,7 +130,8 @@ export interface InventoryGetResponse {
 }
 
 export interface InventoryAddRequest {
-  item: unknown;
+  /** Con `id` obligatorio: es por lo que `inventory_remove` lo encuentra. */
+  item: InventoryItem;
 }
 
 export interface InventoryRemoveRequest {

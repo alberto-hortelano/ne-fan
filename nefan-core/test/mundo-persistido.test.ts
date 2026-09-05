@@ -341,8 +341,8 @@ describe("npcsFueraDelRect — la conversión celda→metro se sigue midiendo", 
     // dos o por ninguno.
     const fuera = npcsFueraDelRect(
       [
-        { id: "min", position: [-32, 0, -32] },
-        { id: "max", position: [32, 0, 32] },
+        { id: "min", name: "min", position: [-32, 0, -32] },
+        { id: "max", name: "max", position: [32, 0, 32] },
       ],
       RECT,
     );
@@ -353,13 +353,13 @@ describe("npcsFueraDelRect — la conversión celda→metro se sigue midiendo", 
     // Colapsar «no sé leer esto» con «no hay nada que decir» es el silencio
     // que esta casa prohíbe, y aquí es alcanzable: una escena mal normalizada
     // trae `undefined` o un string donde iba el metro.
-    const fuera = npcsFueraDelRect(
-      [
-        { id: "nan", position: ["x", 0, 2] },
-        { id: "hueco", position: [1, 0, undefined] },
-      ],
-      RECT,
-    );
+    // Entrada ADVERSARIAL a propósito: el tipo dice tres números, pero esto es
+    // JSON de otro proceso y aquí se fuerza lo que el tipo no deja escribir.
+    const rotos = [
+      { id: "nan", name: "nan", position: ["x", 0, 2] },
+      { id: "hueco", name: "hueco", position: [1, 0, undefined] },
+    ] as unknown as NpcEnElWire[];
+    const fuera = npcsFueraDelRect(rotos, RECT);
     assert.deepEqual(fuera.map((f) => f.id), ["nan", "hueco"]);
     assert.ok(Number.isNaN(fuera[0].x));
   });

@@ -297,7 +297,7 @@ describe("handlers invocados a pelo, uno por concepto", () => {
       body: { place_id: "bosque" },
     }));
     assert.equal(viaje.mutated, true);
-    assert.equal(npcRoutes.npcsInTransit(ctx, req()).status, 200);
+    assert.equal(npcRoutes.npcsInTransit(ctx).status, 200);
     const llegada = npcRoutes.arriveNpc(ctx, req({ params: { id: "boris" } }));
     assert.equal(llegada.mutated, true);
     assert.equal(ctx.npcDirector.getNpcPlace("boris")?.current_place_id, "bosque");
@@ -347,8 +347,8 @@ describe("handlers invocados a pelo, uno por concepto", () => {
 
   it("doc: sin sesión activa, la crónica no existe", () => {
     const { ctx } = makeCtx();
-    ctx.narrative.session_id = null;
-    const res = docRoutes.getStory(ctx, req());
+    ctx.narrative.session_id = "";
+    const res = docRoutes.getStory(ctx);
     assert.equal(res.status, 404);
     assert.match(String((res.body as { error: string }).error), /no active session/);
   });
@@ -387,7 +387,7 @@ describe("handlers invocados a pelo, uno por concepto", () => {
   it("session: sin sessionStorage, la keep-list NO existe (null, no una lista vacía)", async () => {
     const { ctx } = makeCtx();
     ctx.sessionStorage = undefined;
-    assert.equal(await sessionRoutes.getAssetRefs(ctx, req()), null);
+    assert.equal(await sessionRoutes.getAssetRefs(ctx), null);
   });
 });
 

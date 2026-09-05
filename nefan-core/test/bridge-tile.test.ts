@@ -8,9 +8,13 @@ import { runTileGeneration } from "../bridge/handlers/tile.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type {
   NarrativeEventMessage,
+  NarrativeStatusDeSesion,
   NarrativeStatusMessage,
+  ServerMessage,
   StateUpdateMessage,
 } from "../src/protocol/messages.js";
+import type { NarrativeState } from "../src/narrative/narrative-state.js";
+import type { SceneGenOutcome } from "../bridge/scene-gen-queue.js";
 import {
   makeCtx,
   makeSocket,
@@ -130,9 +134,10 @@ describe("bridge request_tile (plano continuo)", () => {
   it("un tile con un NPC que no cabe donde nace se rechaza ANTES de persistirse (#289)", async () => {
     // El candado donde de verdad se para la clase: el bridge valida CADA tile
     // que devuelve el motor y lanza si no es jugable, así que un NPC
-    // encerrado no llega ni al save ni al snapshot de mundo. (Los snapshots
-    // pre-generados no se versionan —`.gitignore`—, así que no hay fichero en
-    // el repo que auditar: lo que se puede candar es esto.)
+    // encerrado no llega ni al save ni al snapshot de mundo. (Y si un snapshot
+    // viejo lo trajera igual —validador endurecido DESPUÉS de generarlo—, lo
+    // para la puerta de carga, `loadWorldSnapshot`: `world-snapshot.test.ts`,
+    // #302.)
     //
     // Dos props a 1,2 m dejan 2 celdas libres = 1,00 m: lo cruza el jugador
     // (radio 0,4) y NUNCA un NPC (0,5). El vano de la posada es legal (w:4).
@@ -294,9 +299,10 @@ describe("bridge request_tile (plano continuo)", () => {
 
 describe("bridge: de dónde salió la escena (`source` del ready)", () => {
   const tileScene = () => ({ biome: "grass", scene_description: "campo", ground: [], entities: [] });
-  const readyDe = (broadcasts: unknown[]) =>
-    (broadcasts as NarrativeStatusMessage[]).findLast(
-      (m) => m.type === "narrative_status" && m.phase === "ready",
+  const readyDe = (broadcasts: ServerMessage[]) =>
+    broadcasts.findLast(
+      (m): m is NarrativeStatusDeSesion =>
+        m.type === "narrative_status" && m.kind !== "game_gen" && m.phase === "ready",
     );
 
   it("un tile generado AHORA se declara `engine`; su re-difusión, `cache`", async () => {
@@ -334,10 +340,15 @@ describe("bridge: la cola abandonada avisa a quien la espera", () => {
    *  de donde lo borra abandonAll. Devuelve el suelte. */
   function ocuparCola(ctx: ReturnType<typeof makeCtx>["ctx"]): () => void {
     let soltar!: () => void;
+    // Un job que NO entrega nada al cliente lo dice con el `SceneGenOutcome`
+    // del contrato, no con un `Promise<void>` que la cola no sabría leer.
     ctx.sceneGen.enqueue({
       key: "bloqueo",
       blocking: true,
-      run: () => new Promise<void>((r) => { soltar = r; }),
+      run: () =>
+        new Promise<SceneGenOutcome>((r) => {
+          soltar = () => r({ delivered: false, motivo: "bloqueo de test: no difunde nada" });
+        }),
     });
     return () => soltar();
   }

@@ -523,7 +523,9 @@ export interface GamesListedMessage {
     tags: string[];
     /** Estado del contenido pre-generado (data/games/{id}/world/tile.json):
      *  "ready" = snapshot vigente (arranque instantáneo), "stale" = world.md
-     *  cambió desde la generación, "missing" = nunca generado. */
+     *  cambió desde la generación O el snapshot ya no pasa la puerta de carga
+     *  (`ExpandedSceneSchema .strict()` + `validateScene`, #302),
+     *  "missing" = nunca generado. */
     generation: "ready" | "stale" | "missing";
     /** Estilos aplicados al juego (batch de assets estilizados): "ready" =
      *  vigente, "stale" = el mundo se regeneró/editó después. */
