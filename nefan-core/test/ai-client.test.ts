@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { AiClient } from "../src/narrative/ai-client.js";
 import type { LlmContext } from "../src/narrative/types.js";
+import { mundoDePrueba } from "./helpers.js";
 
 function mockFetch(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
   return ((url: string, init: RequestInit = {}) => Promise.resolve(handler(url, init))) as typeof fetch;
@@ -11,7 +12,7 @@ function mockFetch(handler: (url: string, init: RequestInit) => Response | Promi
 const ctx: LlmContext = {
   session_id: "s",
   game_id: "g",
-  world: { name: "", atmosphere: "", style_token: "", active_scene_id: "scene_1" },
+  world: mundoDePrueba({ active_scene_id: "scene_1" }),
   player: {
     level: 1,
     class: "rogue",

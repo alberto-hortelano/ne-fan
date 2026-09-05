@@ -69,6 +69,7 @@ export type {
   LlmContext,
   NarrativeWorldState,
   NarrativePlayerState,
+  InventoryItem,
   PlayerAppearance,
 } from "../narrative/types.js";
 export { SCHEMA_VERSION } from "../narrative/types.js";

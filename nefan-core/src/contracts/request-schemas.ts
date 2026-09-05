@@ -31,6 +31,7 @@ import type {
   NarrativeProgressRequest,
   NpcDirectiveRequest,
   NpcMoveToPlaceRequest,
+  InventoryAddRequest,
   InventoryRemoveRequest,
   PluginRegisterRequest,
   SceneAssetRefsRequest,
@@ -138,13 +139,13 @@ export const InventoryRemoveRequestSchema = z.object({
   item_id: z.string().min(1),
 });
 
-/** `item` es libre (unknown) pero DEBE estar presente — z.unknown() infiere
- *  opcional, así que la presencia se comprueba con un refine y este schema
- *  queda fuera de la guardia de deriva (el tipo del contrato es
- *  `{ item: unknown }`). */
-export const InventoryAddRequestSchema = z
-  .object({ item: z.unknown() })
-  .refine((b) => b.item !== undefined, { message: "body requires { item }" });
+/** `item` lleva `id` obligatorio (es por lo que `inventory_remove` lo
+ *  encuentra: un ítem sin `id` no se podría quitar nunca) y el resto pasa tal
+ *  cual — lo pone el motor. `passthrough` porque el tipo (`InventoryItem`)
+ *  tiene índice libre; la guardia de deriva de abajo lo cubre igual. */
+export const InventoryAddRequestSchema = z.object({
+  item: z.object({ id: z.string().min(1) }).passthrough(),
+});
 
 export const NarrativeProgressRequestSchema = z.object({
   message: z.string().min(1),
@@ -268,6 +269,8 @@ assertMirror<NpcDirectiveRequest, z.infer<typeof NpcDirectiveRequestSchema>>();
 assertMirror<z.infer<typeof NpcDirectiveRequestSchema>, NpcDirectiveRequest>();
 assertMirror<NpcMoveToPlaceRequest, z.infer<typeof NpcMoveToPlaceRequestSchema>>();
 assertMirror<z.infer<typeof NpcMoveToPlaceRequestSchema>, NpcMoveToPlaceRequest>();
+assertMirror<InventoryAddRequest, z.infer<typeof InventoryAddRequestSchema>>();
+assertMirror<z.infer<typeof InventoryAddRequestSchema>, InventoryAddRequest>();
 assertMirror<InventoryRemoveRequest, z.infer<typeof InventoryRemoveRequestSchema>>();
 assertMirror<z.infer<typeof InventoryRemoveRequestSchema>, InventoryRemoveRequest>();
 assertMirror<NarrativeProgressRequest, z.infer<typeof NarrativeProgressRequestSchema>>();
@@ -290,6 +293,7 @@ assertSameKeys<MapTriggerRequest, z.infer<typeof MapTriggerRequestSchema>>();
 assertSameKeys<PlaceTriggerSpec, z.infer<typeof PlaceTriggerSpecSchema>>();
 assertSameKeys<NpcDirectiveRequest, z.infer<typeof NpcDirectiveRequestSchema>>();
 assertSameKeys<NpcMoveToPlaceRequest, z.infer<typeof NpcMoveToPlaceRequestSchema>>();
+assertSameKeys<InventoryAddRequest, z.infer<typeof InventoryAddRequestSchema>>();
 assertSameKeys<InventoryRemoveRequest, z.infer<typeof InventoryRemoveRequestSchema>>();
 assertSameKeys<NarrativeProgressRequest, z.infer<typeof NarrativeProgressRequestSchema>>();
 assertSameKeys<SceneValidateRequest, z.infer<typeof SceneValidateRequestSchema>>();

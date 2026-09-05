@@ -37,7 +37,7 @@ describe("composeTilePlan · un solo plan para todos", () => {
     assert.ok(plan);
     const ids = plan.volumes.map((v) => v.id);
     assert.deepEqual(ids, ["casa", "derived_ent_barril", "derived_ent_roble"]);
-    assert.equal(plan.ground.length, 1);
+    assert.equal(plan.ground?.length, 1);
     assert.equal(plan.biome, "forest_floor");
   });
 
@@ -49,8 +49,8 @@ describe("composeTilePlan · un solo plan para todos", () => {
     });
     // Un item no es geometría del plan (se recoge, no se choca) y un NPC
     // tampoco: los dos siguen pintándose como entidad.
-    assert.equal(representedBy.moneda, undefined);
-    assert.equal(representedBy.herrero, undefined);
+    assert.ok(!("moneda" in representedBy));
+    assert.ok(!("herrero" in representedBy));
   });
 
   it("el seed sale del TILE, no del caller: el mismo tile compone el mismo bosque siempre", () => {
@@ -245,7 +245,7 @@ describe("composeTilePlan · lo que el tile no declara no se inventa", () => {
     const { plan } = composeTilePlan(tile({ volumes: [], entities: [] }));
     assert.ok(plan, "un tile que solo tiene senda sigue teniendo algo que pintar");
     assert.equal(plan.volumes.length, 0);
-    assert.equal(plan.ground.length, 1);
+    assert.equal(plan.ground?.length, 1);
   });
 
   it("un biome que no es texto no viaja en el plan", () => {

@@ -1,0 +1,28 @@
+{
+  // Tipos de `test/` (#231b). Hereda las flags de `tsconfig.scripts.json` —el
+  // mismo rasero que `src/`, en modo noEmit y fuera del tsconfig de build, que
+  // lo consume `tsc -b` desde narrative-mcp y emitiría `dist/test/*`— y solo
+  // cambia dos cosas:
+  //
+  // - `include`: `test/**/*.ts`.
+  // - `lib: ["ES2023"]`: los tests corren en Node ≥ 24, que tiene
+  //   `Array.prototype.findLast`, y varios lo usan. El build sigue en ES2022
+  //   (unificarlo cuando Node 24 sea el suelo declarado va al backlog).
+  //
+  // Sin `allowJs`: los `await import(join(repoRoot, "qa", "lib", …))` de los
+  // tests que miran al banco tienen especificador no literal y salen `any`.
+  //
+  // Sin baseline de errores tolerados y sin `as any` en `test/`: el 2026-09-05
+  // había 96 errores y 15 de ellos eran tests que mentían (una asa que la
+  // interfaz no tiene, una rama retirada, un `session_id = null` que el estado
+  // no admite). El candado es `tsc`.
+  //
+  // Necesita el `dist/` del core: `npm run build` antes (así va en `verify` y
+  // en CI). `contract-fixtures.test.ts` importa `narrative-mcp/validators.ts`,
+  // que resuelve `@nefan/core` por él; sin `dist/` el único error es ese.
+  "extends": "./tsconfig.scripts.json",
+  "compilerOptions": {
+    "lib": ["ES2023"]
+  },
+  "include": ["test/**/*.ts"]
+}
