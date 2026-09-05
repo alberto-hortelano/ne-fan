@@ -94,3 +94,23 @@ Pregunta abierta para el arquitecto: si el candado vive como **tipo de regla nue
 a medida en `architecture.test.ts`; y qué pieza de traza de imports se reutiliza (`arch-collect.ts` con
 `ts.preProcessFile`, o `cierreDeImports`/`resolverEspecificador` de `scripts/mutation-plan.ts`, que hoy vive
 en `scripts/` y no en `src/`).
+
+## Cierre (2026-09-05, `main` = `cc528ca`, PR #474)
+
+**#359 cerrado, reencuadrado.** Ni barrel ni lista blanca: la pureza browser-safe se deriva del grafo con el
+tipo de regla nuevo `cierre` (`el-cliente-no-alcanza-node-ni-a-traves-del-core`), grafo puro en
+`src/contract/arch/cierre.ts` con módulo de mutación propio `arch-cierre` (sin base hasta la próxima corrida),
+candidatos de resolución unificados en `scripts/especificador.ts` (antes duplicados en `mutation-plan.ts` y
+`afectado.ts`), alias leído del `tsconfig.json` del cliente. Borrada `html-no-importa-core-con-node`;
+`html-sin-node-ni-rutas-crudas` → `html-solo-alcanza-core-por-el-alias`. Cero líneas en `nefan-html/src`;
+`index.ts` y `package.json#exports` intactos; `core-puro-sin-node` con `files` intactos.
+
+Medido al nacer: 41 rutas → 82 ficheros → 0 `node:*` (11 fuera del perímetro puro). Rotura real vista roja con
+el camino entero (`fps-gl.ts → fps-relief.ts → rng.ts → node:fs`). QA (apto con hallazgos, 15 ataques + 8
+roturas): la unión colector↔motor no tenía candado (ahora sí, cae con la reversión exacta), `aliasDeTsconfig`
+sin test (ahora 11), dos mensajes distintos para import roto y destino fuera del escaneo, las aristas de solo
+tipo se cuentan (decisión escrita). Décimo candado headless en CI: `qa/el-cierre-ve-el-node-a-saltos.mjs`.
+Verify 2177 · deuda 81, fronteras 13 · cero créditos. Backlog 48 → 47 (35 núcleo + 12 `futuro`).
+
+Lección: el ingeniero cazó él mismo un mutante superviviente (BFS → pila) porque su primer test tenía las dos
+rutas saliendo del mismo nodo — «un elemento no distingue una regla de su contraria», cuarta aparición.
