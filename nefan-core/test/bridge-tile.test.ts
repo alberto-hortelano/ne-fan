@@ -130,9 +130,10 @@ describe("bridge request_tile (plano continuo)", () => {
   it("un tile con un NPC que no cabe donde nace se rechaza ANTES de persistirse (#289)", async () => {
     // El candado donde de verdad se para la clase: el bridge valida CADA tile
     // que devuelve el motor y lanza si no es jugable, así que un NPC
-    // encerrado no llega ni al save ni al snapshot de mundo. (Los snapshots
-    // pre-generados no se versionan —`.gitignore`—, así que no hay fichero en
-    // el repo que auditar: lo que se puede candar es esto.)
+    // encerrado no llega ni al save ni al snapshot de mundo. (Y si un snapshot
+    // viejo lo trajera igual —validador endurecido DESPUÉS de generarlo—, lo
+    // para la puerta de carga, `loadWorldSnapshot`: `world-snapshot.test.ts`,
+    // #302.)
     //
     // Dos props a 1,2 m dejan 2 celdas libres = 1,00 m: lo cruza el jugador
     // (radio 0,4) y NUNCA un NPC (0,5). El vano de la posada es legal (w:4).
