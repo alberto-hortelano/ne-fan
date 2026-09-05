@@ -45,25 +45,37 @@ const alias: readonly AliasDePaths[] = archConfig.scan.paths_de.flatMap((rel) =>
 
 const aRutaRepo = (abs: string): string => relative(repoRoot, abs).split(sep).join("/");
 
+interface Resuelto {
+  ruta: string;
+  /** Nada existía en disco: `ruta` es la base tal cual y el import está roto. */
+  roto: boolean;
+}
+
 /** Resolución en disco cacheada por ruta base: los ~1.500 imports del árbol
  *  apuntan a unos pocos cientos de destinos distintos. */
-const resueltos = new Map<string, string>();
+const resueltos = new Map<string, Resuelto>();
+
+function resolver(desdeRel: string, spec: string): Resuelto | undefined {
+  const desdeAbs = join(repoRoot, desdeRel);
+  const base = baseRelativa(desdeAbs, spec) ?? baseDeAlias(desdeAbs, spec, alias);
+  if (base === undefined) return undefined;
+  const previo = resueltos.get(base);
+  if (previo !== undefined) return previo;
+  const enDisco = primeroEnDisco(base);
+  const r: Resuelto = enDisco === undefined ? { ruta: aRutaRepo(base), roto: true } : { ruta: aRutaRepo(enDisco), roto: false };
+  resueltos.set(base, r);
+  return r;
+}
 
 /** A qué fichero del repo apunta un import, como ruta relativa a la raíz —
  *  o `undefined` si es un paquete o un builtin (`three`, `node:fs`). Relativos
  *  y alias por la misma lista de candidatos que usa el plan de mutación
  *  (`scripts/especificador.ts`). Un especificador que apunta al repo pero no
  *  casa con ningún fichero devuelve su ruta base tal cual: no se cuela como
- *  «paquete», y una regla `cierre` lo denuncia como destino no escaneado. */
+ *  «paquete», y una regla `cierre` lo denuncia como import roto (`importsOf`
+ *  lo marca `roto`). */
 export function resolverImport(desdeRel: string, spec: string): string | undefined {
-  const desdeAbs = join(repoRoot, desdeRel);
-  const base = baseRelativa(desdeAbs, spec) ?? baseDeAlias(desdeAbs, spec, alias);
-  if (base === undefined) return undefined;
-  const previo = resueltos.get(base);
-  if (previo !== undefined) return previo;
-  const ruta = aRutaRepo(primeroEnDisco(base) ?? base);
-  resueltos.set(base, ruta);
-  return ruta;
+  return resolver(desdeRel, spec)?.ruta;
 }
 
 /** Recorre un directorio y devuelve las rutas con alguna de las extensiones. */
@@ -95,13 +107,13 @@ function walk(dir: string, ext: readonly string[], ignore: readonly string[]): s
 /** Imports de un fichero TS, con su línea. `preProcessFile` entiende de
  *  verdad la sintaxis: no confunde un "three" escrito en un comentario con un
  *  import — que es justo el falso positivo que tendría una regex. */
-function importsOf(pathRel: string, text: string): ImportRef[] {
+export function importsOf(pathRel: string, text: string): ImportRef[] {
   const pre = ts.preProcessFile(text, true, true);
   return pre.importedFiles.map((ref) => {
-    const resolved = resolverImport(pathRel, ref.fileName);
-    return resolved === undefined
-      ? { spec: ref.fileName, line: lineOf(text, ref.pos) }
-      : { spec: ref.fileName, line: lineOf(text, ref.pos), resolved };
+    const r = resolver(pathRel, ref.fileName);
+    const base: ImportRef = { spec: ref.fileName, line: lineOf(text, ref.pos) };
+    if (r === undefined) return base;
+    return r.roto ? { ...base, resolved: r.ruta, roto: true } : { ...base, resolved: r.ruta };
   });
 }
 

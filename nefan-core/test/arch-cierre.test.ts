@@ -162,14 +162,28 @@ describe("cierre · el grafo", () => {
     assert.deepEqual(violacionesDeCierre(regla(), ["nefan-html/src/p.ts"], mapa(p, q)), []);
   });
 
-  it("un destino resuelto que NO está escaneado es violación con su camino, no una poda silenciosa", () => {
+  it("un destino que NO existe en disco (`roto`) es violación en quien lo importa: «el import está roto», con su camino", () => {
+    const aRoto = f("nefan-core/src/a.ts", [
+      { spec: "./no-existe.js", line: 4, resolved: "nefan-core/src/no-existe.js", roto: true },
+    ]);
+    const v = violacionesDeCierre(regla(), ["nefan-html/src/x.ts"], mapa(x, aRoto));
+    assert.equal(v.length, 1);
+    assert.equal(v[0].path, "nefan-core/src/a.ts", "se denuncia en quien lo importa");
+    assert.equal(v[0].line, 4);
+    assert.match(v[0].detail, /^el import está roto: "nefan-core\/src\/no-existe\.js" no existe en disco/);
+    assert.doesNotMatch(v[0].detail, /amplía scan\.roots/, "a un typo no se le contesta con ampliar el escaneo");
+    assert.match(v[0].detail, /Camino: nefan-html\/src\/x\.ts → nefan-core\/src\/a\.ts → nefan-core\/src\/no-existe\.js$/);
+  });
+
+  it("un destino que existe pero NO está escaneado es violación con su camino, no una poda silenciosa: «amplía scan.roots»", () => {
     // `a` importa algo fuera de scan.roots: lo que haya detrás no se ha mirado.
     const aFuera = f("nefan-core/src/a.ts", [{ spec: "../../fuera/z.js", line: 4, resolved: "fuera/z.ts" }]);
     const v = violacionesDeCierre(regla(), ["nefan-html/src/x.ts"], mapa(x, aFuera));
     assert.equal(v.length, 1);
     assert.equal(v[0].path, "nefan-core/src/a.ts", "se denuncia en quien lo importa");
     assert.equal(v[0].line, 4);
-    assert.match(v[0].detail, /alcanza "fuera\/z\.ts" y el checker no lo escanea/);
+    assert.match(v[0].detail, /^"fuera\/z\.ts" existe pero el checker no lo escanea: amplía scan\.roots/);
+    assert.doesNotMatch(v[0].detail, /está roto/, "un fichero que existe no es un import roto");
     assert.match(v[0].detail, /Camino: nefan-html\/src\/x\.ts → nefan-core\/src\/a\.ts → fuera\/z\.ts$/);
   });
 

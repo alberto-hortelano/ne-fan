@@ -23,6 +23,8 @@ import type { ArchRule, SourceFile, Violation } from "./check.js";
 export interface Arista {
   desde: string;
   line: number;
+  /** El colector no encontró el destino en disco (`ImportRef.roto`). */
+  roto?: true;
 }
 
 /** El cierre desde unas entradas, como mapa `ruta → arista por la que se
@@ -50,7 +52,7 @@ export function cierreDesde(
     if (!file) continue;
     for (const imp of file.imports ?? []) {
       if (imp.resolved === undefined || padres.has(imp.resolved)) continue;
-      padres.set(imp.resolved, { desde: actual, line: imp.line });
+      padres.set(imp.resolved, imp.roto ? { desde: actual, line: imp.line, roto: true } : { desde: actual, line: imp.line });
       cola.push(imp.resolved);
     }
   }
@@ -75,7 +77,11 @@ export function caminoHasta(padres: ReadonlyMap<string, Arista | null>, ruta: st
  *  Y el fail-loud del propio grafo: un destino resuelto que no está entre los
  *  ficheros escaneados es violación, no poda. Sin esto, un import a un fichero
  *  fuera de `scan.roots` cortaría la búsqueda en silencio y la regla saldría
- *  verde sin haber mirado lo que hay detrás. */
+ *  verde sin haber mirado lo que hay detrás. Son DOS mensajes, porque son dos
+ *  arreglos: si el colector no encontró el fichero (`roto`), el import está
+ *  mal y se repara el import; si existe, el checker no lo escanea y se amplía
+ *  el escaneo (QA de #359, hallazgo 6: con una sola frase el lector probaba
+ *  antes a ampliar `scan.roots` cuando lo que tenía era un typo). */
 export function violacionesDeCierre(
   rule: ArchRule,
   entradas: readonly string[],
@@ -94,9 +100,10 @@ export function violacionesDeCierre(
         path: arista ? arista.desde : ruta,
         line: arista ? arista.line : 1,
         detail:
-          `el cierre alcanza "${ruta}" y el checker no lo escanea (amplía scan.roots o scan.files en arch-rules.json; ` +
-          `si el fichero no existe, el import está roto). Sin eso el grafo se poda en silencio. ` +
-          `Camino: ${caminoHasta(padres, ruta).join(" → ")}`,
+          (arista?.roto
+            ? `el import está roto: "${ruta}" no existe en disco (buscado como .ts, .mts, tal cual e index.ts). `
+            : `"${ruta}" existe pero el checker no lo escanea: amplía scan.roots o scan.files en arch-rules.json. `) +
+          `Sin esto el grafo se podaría en silencio. Camino: ${caminoHasta(padres, ruta).join(" → ")}`,
       });
       continue;
     }

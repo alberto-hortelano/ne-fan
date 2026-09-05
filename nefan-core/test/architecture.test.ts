@@ -26,7 +26,7 @@ import {
   type SourceFile,
 } from "../src/contract/arch/check.js";
 import { cierreDesde } from "../src/contract/arch/cierre.js";
-import { archConfig as config, loadArchFiles, resolverImport } from "../scripts/arch-collect.js";
+import { archConfig as config, importsOf, loadArchFiles, resolverImport } from "../scripts/arch-collect.js";
 
 const files = loadArchFiles();
 const violations = checkArchitecture(config, files);
@@ -1797,6 +1797,65 @@ describe("fronteras arquitectónicas", () => {
       ],
     };
     assert.deepEqual(deLaRegla([vite, a, b]), [], "el guion de build no arrastra al cierre del bundle");
+  });
+
+  // La UNIÓN colector↔motor (QA de #359, hallazgo 1): la batería sintética
+  // prueba el grafo con imports ya resueltos que ella inventa, y revertir en el
+  // colector «un import que no existe en disco devuelve su base y va marcado
+  // `roto`» (→ `undefined`, como un paquete) dejaba 94/94 verde. Aquí el
+  // colector REAL resuelve texto real y el motor con la config REAL lo juzga.
+  // El intermedio se llama `rng.ts` porque el colector mira el disco: un
+  // `@nefan-core/src/a.js` inexistente ya saldría roto en el primer salto.
+  it("[error] el-cliente-no-alcanza-node-ni-a-traves-del-core: un import que no existe en disco no se cuela como paquete — llega al motor como roto y se denuncia", () => {
+    assert.equal(resolverImport("nefan-core/src/rng.ts", "./no-existe.js"), "nefan-core/src/no-existe.js");
+    assert.equal(resolverImport("nefan-html/src/main.ts", "@nefan-core/src/no-existe.js"), "nefan-core/src/no-existe.js");
+    const refs = importsOf("nefan-core/src/rng.ts", 'import "./no-existe.js";\nimport "./vec3.js";\nimport "../package.json";\n');
+    assert.deepEqual(refs, [
+      { spec: "./no-existe.js", line: 1, resolved: "nefan-core/src/no-existe.js", roto: true },
+      { spec: "./vec3.js", line: 2, resolved: "nefan-core/src/vec3.ts" },
+      { spec: "../package.json", line: 3, resolved: "nefan-core/package.json" },
+    ]);
+    const deLaRegla = (fs: SourceFile[]) =>
+      checkArchitecture(config, fs).filter((v) => v.ruleId === "el-cliente-no-alcanza-node-ni-a-traves-del-core");
+    const x: SourceFile = {
+      path: "nefan-html/src/x.ts",
+      text: "",
+      imports: importsOf("nefan-html/src/x.ts", 'import "@nefan-core/src/rng.js";'),
+    };
+    // Roto: el fichero no existe. Se pide reparar el import, no ampliar el escaneo.
+    const rngRoto: SourceFile = { path: "nefan-core/src/rng.ts", text: "", imports: importsOf("nefan-core/src/rng.ts", 'import "./no-existe.js";') };
+    const vRoto = deLaRegla([x, rngRoto]);
+    assert.equal(vRoto.length, 1);
+    assert.equal(`${vRoto[0].path}:${vRoto[0].line}`, "nefan-core/src/rng.ts:1");
+    assert.match(vRoto[0].detail, /^el import está roto: "nefan-core\/src\/no-existe\.js" no existe en disco/);
+    assert.match(vRoto[0].detail, /Camino: nefan-html\/src\/x\.ts → nefan-core\/src\/rng\.ts → nefan-core\/src\/no-existe\.js$/);
+    // Existe (package.json) pero ningún root lo escanea: se pide ampliar el escaneo.
+    const rngFuera: SourceFile = { path: "nefan-core/src/rng.ts", text: "", imports: importsOf("nefan-core/src/rng.ts", 'import "../package.json";') };
+    const vFuera = deLaRegla([x, rngFuera]);
+    assert.equal(vFuera.length, 1);
+    assert.match(vFuera[0].detail, /^"nefan-core\/package\.json" existe pero el checker no lo escanea: amplía scan\.roots/);
+  });
+
+  // Decisión del usuario (QA de #359, hallazgo 5): las aristas de SOLO TIPO
+  // cuentan. `ts.preProcessFile` las devuelve como cualquier import y el motor
+  // no distingue; este test fija que siga siendo así, con la config real.
+  it("[error] el-cliente-no-alcanza-node-ni-a-traves-del-core: un `import type` de node:* a un salto salta igual", () => {
+    const x: SourceFile = {
+      path: "nefan-html/src/x.ts",
+      text: "",
+      imports: importsOf("nefan-html/src/x.ts", 'import "@nefan-core/src/rng.js";'),
+    };
+    const rng: SourceFile = {
+      path: "nefan-core/src/rng.ts",
+      text: "",
+      imports: importsOf("nefan-core/src/rng.ts", 'import type { Stats } from "node:fs";\nexport type S = Stats;\n'),
+    };
+    assert.deepEqual(rng.imports, [{ spec: "node:fs", line: 1 }], "el colector no borra las aristas de tipo");
+    const v = checkArchitecture(config, [x, rng]).filter((v) => v.ruleId === "el-cliente-no-alcanza-node-ni-a-traves-del-core");
+    assert.deepEqual(
+      v.map(({ path, line, detail }) => ({ path, line, detail })),
+      [{ path: "nefan-core/src/rng.ts", line: 1, detail: '"node:fs" entra en el cliente por: nefan-html/src/x.ts → nefan-core/src/rng.ts → node:fs' }],
+    );
   });
 
   for (const report of reports) {

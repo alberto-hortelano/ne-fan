@@ -26,6 +26,11 @@ export interface ImportRef {
    *  (`three`, `node:fs`): no vive en el repo. Es la arista que recorre una
    *  regla `cierre`; las reglas `imports` siguen mirando `spec`. */
   resolved?: string;
+  /** El colector buscó `resolved` en disco y no estaba: el import está ROTO
+   *  (typo, fichero borrado). Se distingue de «existe pero no se escanea»
+   *  porque a quien lo lee en CI le piden dos cosas distintas: arreglar el
+   *  import, o ampliar `scan.roots`. Solo lo pone el colector. */
+  roto?: true;
 }
 
 /** Fichero a examinar. `imports` solo lo traen los de TypeScript. */
