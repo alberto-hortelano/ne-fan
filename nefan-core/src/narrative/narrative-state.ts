@@ -260,7 +260,7 @@ export class NarrativeState {
   private rebuildTileIndex(): void {
     this.tileIndex.clear();
     for (const [sceneId, rec] of Object.entries(this.scenes_loaded)) {
-      if (rec.tile) this.tileIndex.set(tileKey(rec.tile.tx, rec.tile.ty), sceneId);
+      this.tileIndex.set(tileKey(rec.tile.tx, rec.tile.ty), sceneId);
     }
   }
 
@@ -518,6 +518,22 @@ export class NarrativeState {
           `save "${sessionId}": ${describeSceneContractViolation(sceneId, rec.scene_data, parsed.error)}`,
         );
       }
+      // El registro lleva las coords del tile al lado de su escena (#405), y
+      // de ellas sale el `tileIndex`. Un save cuyo registro no las trae —o las
+      // trae distintas de las de la escena— es de antes o está corrupto: se
+      // rechaza, no se re-deriva en silencio (sería la migración que #336
+      // prohíbe). El tipo dice que están; el disco no lo promete.
+      const declarado = rec.tile as TileCoord | undefined;
+      const t = parsed.data.tile;
+      if (declarado?.tx !== t.tx || declarado?.ty !== t.ty) {
+        const motivo = declarado
+          ? `es ${JSON.stringify(declarado)} y su escena dice ${JSON.stringify(t)}`
+          : "falta";
+        throw new Error(
+          `save "${sessionId}": scenes_loaded["${sceneId}"].tile ${motivo} — ` +
+            "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
+        );
+      }
     }
     // Y el LEDGER: `entities[].position` es lo que el sim y la vida ambiental
     // leen sin mirar (`record.position[0]`), y lo que el checker de #382
@@ -669,23 +685,18 @@ export class NarrativeState {
     // Primer registro vs re-broadcast de escena cacheada: decide la semántica
     // de "mismo id en otra escena" de registerSceneNpcs (mover vs conservar).
     const firstRegistration = !(sceneId in this.scenes_loaded);
-    // Tile (Format D v3): coords derivadas del propio scene_data y costuras
-    // computadas del grid expandido — el registro es autosuficiente.
-    const rawTile = sceneData.tile as { tx?: unknown; ty?: unknown } | undefined;
-    const tile: TileCoord | undefined =
-      rawTile && Number.isInteger(rawTile.tx) && Number.isInteger(rawTile.ty)
-        ? { tx: rawTile.tx as number, ty: rawTile.ty as number }
-        : undefined;
+    // Coords del tile derivadas del propio scene_data (el gate de arriba ya
+    // las exige) y costuras computadas del grid expandido — el registro es
+    // autosuficiente.
+    const tile: TileCoord = gate.data.tile;
     const record: SceneRecord = {
       scene_data: sceneData,
       loaded_at: nowIso(),
       asset_refs: assetRefs,
+      tile,
+      edges: computeTileEdges(sceneData),
     };
-    if (tile) {
-      record.tile = tile;
-      record.edges = computeTileEdges(sceneData);
-      this.tileIndex.set(tileKey(tile.tx, tile.ty), sceneId);
-    }
+    this.tileIndex.set(tileKey(tile.tx, tile.ty), sceneId);
     this.scenes_loaded[sceneId] = record;
     if (activate) {
       this.world.active_scene_id = sceneId;

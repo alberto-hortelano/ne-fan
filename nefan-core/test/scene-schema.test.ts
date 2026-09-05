@@ -301,7 +301,10 @@ describe("EmittedSceneSchema — solo queda el tile", () => {
       assert.equal(r.success, false, `una escena sin tile debe fallar (${nombre})`);
       if (r.success) return;
       const msg = r.error.issues[0].message;
-      assert.deepEqual(r.error.issues[0].path, [], "el problema es de la escena entera, no de un campo");
+      // Desde #405 `tile` es un campo OBLIGATORIO de la forma base (antes lo
+      // exigía un superRefine con el issue en la raíz): el primer issue es el
+      // campo que falta, y su mensaje nombra la variante viva.
+      assert.deepEqual(r.error.issues[0].path, ["tile"], "el primer issue es el `tile` que falta");
       assert.match(msg, /`tile`/, msg);
       assert.match(msg, /generate_tile/, msg);
     });
@@ -449,5 +452,35 @@ describe("EmittedSceneSchema — una clave desconocida en una entity vuelve nomb
     assert.notEqual(accepts(tileCon({ id: "a", name: "A", description: "" })), true);
     assert.notEqual(accepts(tileCon({ id: "b", name: "B", description: "   " })), true);
     assert.equal(accepts(tileCon({ id: "c", name: "C", description: "herrero fornido" })), true);
+  });
+});
+
+/** #405: la población CARGADA también exige `tile`. Hasta esta tanda solo lo
+ *  exigía la emitida (por `superRefine`), así que un snapshot o un save con
+ *  una escena sin sitio en el plano pasaba el gate y media casa llevaba una
+ *  rama «centrada en el origen» para pintarla. Con `tile` pasa; sin él, el
+ *  primer issue lo nombra — los dos casos, para no confundir la regla con «el
+ *  gate rechaza todo». */
+describe("ExpandedSceneSchema — `tile` es obligatorio también en lo que se CARGA (#405)", () => {
+  const cargada = expandScenePrimitives({
+    tile: { tx: 2, ty: -1 },
+    scene_id: "tile_2_-1",
+    scene_description: "campo",
+    biome: "grass",
+    entities: [],
+  });
+
+  it("con `tile` pasa", () => {
+    const r = ExpandedSceneSchema.safeParse(cargada);
+    assert.equal(r.success, true, r.success ? "" : r.error.message);
+  });
+
+  it("sin `tile` falla, y el primer issue es ese campo con el motivo que lee el modelo", () => {
+    const { tile: _tile, ...sinTile } = cargada;
+    const r = ExpandedSceneSchema.safeParse(sinTile);
+    assert.equal(r.success, false);
+    if (r.success) return;
+    assert.deepEqual(r.error.issues[0].path, ["tile"]);
+    assert.match(r.error.issues[0].message, /`tile`.*generate_tile/);
   });
 });

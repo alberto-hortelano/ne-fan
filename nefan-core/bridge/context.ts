@@ -220,7 +220,7 @@ export function sessionChangedError(ctx: BridgeContext, jobSessionId: string): s
 }
 
 /** Añade a `sceneIds` los ids de escena del vecindario 3×3 alrededor del tile
- *  de `rec` (no-op si `rec` no es un tile). Criterio compartido por la
+ *  de `rec` (no-op sin `rec`). Criterio compartido por la
  *  proyección de enemigos y la vida ambiental de NPCs: el mundo es continuo y
  *  lo "cercano" es el tile más sus 8 adyacentes. */
 export function addNeighborhoodSceneIds(
@@ -228,7 +228,7 @@ export function addNeighborhoodSceneIds(
   rec: SceneRecord | undefined,
   sceneIds: Set<string>,
 ): void {
-  if (!rec?.tile) return;
+  if (!rec) return;
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
       const n = ctx.narrative.getTile(rec.tile.tx + dx, rec.tile.ty + dy);
@@ -337,15 +337,15 @@ export function broadcastScene(
     // guiones que afirman «cero re-difusiones».
     effects: [{ kind: "scene_loaded", sceneId, scene: worldScene }],
   });
-  // El ready lleva las coords del tile (si lo es) para el velo/notificación
-  // direccional del cliente.
-  const rawTile = scene.tile as { tx?: number; ty?: number } | undefined;
-  const isTile = rawTile && Number.isInteger(rawTile.tx) && Number.isInteger(rawTile.ty);
+  // El ready lleva las coords del tile para el velo/notificación direccional
+  // del cliente. Siempre `kind:"tile"` (#405): toda escena servida es un tile.
+  // El `kind:"scene"` sigue vivo para el VIAJE (generating/error de
+  // handlers/scene.ts), que es otro hecho — «no se pudo preparar el sitio».
   ctx.broadcastNarrative({
     type: "narrative_status",
     phase: "ready",
-    kind: isTile ? "tile" : "scene",
-    tile: isTile ? { tx: rawTile.tx!, ty: rawTile.ty! } : undefined,
+    kind: "tile",
+    tile: worldScene.tile,
     edge: meta?.edge,
     spawn: meta?.spawn,
     source: meta?.source,

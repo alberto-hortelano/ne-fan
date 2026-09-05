@@ -4,7 +4,7 @@
  *  (entities[] con kind "npc" y cell [col,row]) y escenas legacy (npcs[] con
  *  position [x,y,z]) — y la política de preservación de records vivos al
  *  re-entrar a una escena cacheada. recordSceneLoaded delega aquí. */
-import { TILE_MPC, tileWorldRect } from "../scene/tile.js";
+import { TILE_MPC, tileCoordDe, tileWorldRect } from "../scene/tile.js";
 import type { NarrativeState } from "./narrative-state.js";
 
 /** Pull the NPCs declared in a scene into `entities`, so the narrative engine
@@ -24,12 +24,10 @@ export function registerSceneNpcs(
     firstRegistration?: boolean;
   } = {},
 ): void {
-  // En tiles la posición registrada es GLOBAL (metros del plano continuo);
-  // en escenas legacy se conserva el histórico (celdas locales).
-  const rawTile = sceneData.tile as { tx?: number; ty?: number } | undefined;
-  const rect = rawTile && Number.isInteger(rawTile.tx) && Number.isInteger(rawTile.ty)
-    ? tileWorldRect(rawTile.tx!, rawTile.ty!)
-    : null;
+  // La posición registrada es GLOBAL (metros del plano continuo), desde el
+  // rect del tile: sin él no habría celda que convertir (#405).
+  const tile = tileCoordDe(sceneData);
+  const rect = tileWorldRect(tile.tx, tile.ty);
   const npcs: Array<{
     id: string; name: string; pos: [number, number, number];
     extra: Record<string, unknown>;
@@ -69,9 +67,7 @@ export function registerSceneNpcs(
       npcs.push({
         id: e.id,
         name: e.name,
-        pos: rect
-          ? [rect.minX + (col + fw / 2) * TILE_MPC, 0, rect.minZ + (row + fh / 2) * TILE_MPC]
-          : [col, 0, row],
+        pos: [rect.minX + (col + fw / 2) * TILE_MPC, 0, rect.minZ + (row + fh / 2) * TILE_MPC],
         extra: npcBehaviorExtras(e),
       });
     }

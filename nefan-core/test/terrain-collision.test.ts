@@ -15,9 +15,10 @@ import { TILE_MPC } from "../src/scene/tile.js";
 
 /** Interior de taberna: borde sólido "S" (el char de los grids derivados del
  *  plan; este grid declara su propio `solid_chars`) con puerta "_" al sur,
- *  suelo "o". 8×6 celdas, mpc 0.5 ⇒ 4m × 3m, origen en el centro (halfW=2,
- *  halfD=1.5). */
-function makeGrid() {
+ *  suelo "o". 8×6 celdas, mpc 0.5 ⇒ 4m × 3m, con la esquina NW en (−2, −1.5)
+ *  para que el centro de la sala sea el (0,0) del mundo. El `origin` va
+ *  DECLARADO (#405): ya no hay fallback centrado. */
+function makeGrid(): TerrainGridData {
   return {
     grid: [
       "SSSSSSSS",
@@ -30,19 +31,28 @@ function makeGrid() {
     cols: 8,
     rows: 6,
     meters_per_cell: 0.5,
+    origin: [-2, -1.5],
     solid_chars: ["S"],
   };
 }
 
-/** Normaliza una escena Format D mínima y devuelve su `terrain_grid`, que es
- *  lo que consume el collider. Tipado como TerrainGridData para que los tests
- *  puedan construir el collider sin castear. */
+/** Lo que llega del wire: JSON sin tipo. Así se prueba lo que el tipo no
+ *  puede prometer sobre lo que otro proceso escribió. */
+const desdeElWire = (tg: Record<string, unknown>): TerrainGridData =>
+  JSON.parse(JSON.stringify(tg)) as TerrainGridData;
+
+/** Normaliza una escena Format D mínima (el grid va a mano, así que se marca
+ *  expandida) y devuelve su `terrain_grid`, que es lo que consume el collider.
+ *  Tipado como TerrainGridData para que los tests puedan construir el
+ *  collider sin castear. */
 const gridDe = (terrain: string[]): TerrainGridData & { solid_chars: string[] } =>
   formatDToWorld({
+    tile: { tx: 0, ty: 0 },
     scene_id: "s",
     size: { cols: terrain[0].length, rows: terrain.length, meters_per_cell: 1 },
     terrain,
     entities: [],
+    __expanded: true,
   }).terrain_grid as TerrainGridData & { solid_chars: string[] };
 
 describe("createTerrainCollider", () => {
@@ -60,6 +70,16 @@ describe("createTerrainCollider", () => {
   it("throws fail-loud on an inconsistent grid", () => {
     assert.throws(() => createTerrainCollider({ ...makeGrid(), rows: 9 }), /inconsistente/);
     assert.throws(() => createTerrainCollider({ ...makeGrid(), meters_per_cell: 0 }), /inconsistente/);
+  });
+
+  it("sin `origin` lanza (#405): no hay fallback centrado en el origen, y el motivo lo nombra", () => {
+    assert.throws(() => createTerrainCollider(desdeElWire({ ...makeGrid(), origin: undefined })), /origin/);
+    assert.throws(() => createTerrainCollider(desdeElWire({ ...makeGrid(), origin: [0] })), /origin/);
+    // Y con `origin` declarado en OTRO sitio, el muro se mueve con él: la
+    // celda (0,0) ya no está en (−1.75, −1.25) sino 10 m al este.
+    const movido = createTerrainCollider({ ...makeGrid(), origin: [8, -1.5] })!;
+    assert.ok(!movido.blocksCircle(-1.75, -1.25, 0.1), "donde estaba el muro ya no hay nada");
+    assert.ok(movido.blocksCircle(8.25, -1.25, 0.1), "el muro está donde dice `origin`");
   });
 
   it("marks wall cells solid and floor/door cells walkable", () => {
@@ -97,6 +117,7 @@ describe("createTerrainCollider", () => {
       cols: 3,
       rows: 3,
       meters_per_cell: 0.5,
+      origin: [-0.75, -0.75],
       solid_chars: ["S"],
     })!;
     assert.ok(col.blocksCircle(0, 0, 0.4)); // celda central del grid 3×3

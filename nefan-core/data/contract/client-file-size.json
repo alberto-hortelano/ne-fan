@@ -4,8 +4,8 @@
   "excepciones": [
     {
       "fichero": "src/main.ts",
-      "lineas": 2379,
-      "porque": "El fichero que abre #358: game loop, carga de tiles, colisión, diálogo, viaje, HUD, arranque, título y bootstrap. Entró en la tanda con 3.136 y bajó tres veces en los commits que cortaron (2.817 al salir la carga de tile, 2.500 al repartirse el bucle, 2.326 al salir el seam del banco de pruebas); 2.321 al ordenar el resume (#390). SUBE a 2.377 con #306: el ÚNICO suscriptor de avisos al jugador (`errors.onAviso`) vive aquí porque aquí están los dos destinos —`titleScreen` y `setLoaderState`— y es el único sitio que puede decidir entre ellos, más el apagado del muro que ese suscriptor deja armado (QA de T9, H-1). SUBE a 2.379 con #383, y las dos líneas son MECÁNICAS: el módulo de core que rotulaba Y traducía los fallos se partió en `status-rotulo.ts` y `status-motivo.ts`, y `main.ts` usa símbolos de las dos mitades, así que su único `import` pasa a ser dos. Con `printWidth` 110 ninguno de los dos cabe en una línea (120 y 137 caracteres), de modo que son 5 + 5 donde antes había 8. Cero lógica nueva de cliente: los seis símbolos importados son los mismos y se usan en los mismos seis sitios.",
+      "lineas": 2371,
+      "porque": "El fichero que abre #358: game loop, carga de tiles, colisión, diálogo, viaje, HUD, arranque, título y bootstrap. Entró en la tanda con 3.136 y bajó tres veces en los commits que cortaron (2.817 al salir la carga de tile, 2.500 al repartirse el bucle, 2.326 al salir el seam del banco de pruebas); 2.321 al ordenar el resume (#390). SUBE a 2.377 con #306: el ÚNICO suscriptor de avisos al jugador (`errors.onAviso`) vive aquí porque aquí están los dos destinos —`titleScreen` y `setLoaderState`— y es el único sitio que puede decidir entre ellos, más el apagado del muro que ese suscriptor deja armado (QA de T9, H-1). SUBE a 2.379 con #383, y las dos líneas son MECÁNICAS: el módulo de core que rotulaba Y traducía los fallos se partió en `status-rotulo.ts` y `status-motivo.ts`, y `main.ts` usa símbolos de las dos mitades, así que su único `import` pasa a ser dos. Con `printWidth` 110 ninguno de los dos cabe en una línea (120 y 137 caracteres), de modo que son 5 + 5 donde antes había 8. Cero lógica nueva de cliente: los seis símbolos importados son los mismos y se usan en los mismos seis sitios. BAJA a 2374 con #405: muere la rama «escena suelta» del `scene_loaded` (el `else` que reseteaba el mundo), el `tx === undefined` del listado de atlas y el `rec.tile &&` del resume — toda escena servida es un tile. BAJA a 2371 (QA-F H3): fuera el `case \"ready\"` del `kind:\"scene\"`, que ningún productor alimenta — el tipo lo hace ahora inexpresable.",
       "issue": "#358"
     },
     {
@@ -22,8 +22,8 @@
     },
     {
       "fichero": "src/ui/style-apply.ts",
-      "lineas": 533,
-      "porque": "La corrida de «Aplicar estilo» (subida de pack y confirmación de coste). Cuelga de #346: es la mitad del título que vive fuera del título. 533 al tipar la world scene (#378): su copia privada del tipo (`WorldSceneDelBatch`) desaparece.",
+      "lineas": 531,
+      "porque": "La corrida de «Aplicar estilo» (subida de pack y confirmación de coste). Cuelga de #346: es la mitad del título que vive fuera del título. 533 al tipar la world scene (#378): su copia privada del tipo (`WorldSceneDelBatch`) desaparece. BAJA a 532 con #405: fuera el `if (scene.tile === undefined) continue` — el snapshot no puede traer una escena sin tile. BAJA a 531 (QA-F H1): fuera `tile?: unknown` de `SnapshotScene`, sin lector desde #405.",
       "issue": "#346"
     }
   ]

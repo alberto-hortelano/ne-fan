@@ -108,7 +108,6 @@ export interface StyleApplyUrls {
 
 interface SnapshotScene {
   scene_id?: string;
-  tile?: unknown;
   biome?: string;
   ground?: unknown[];
   volumes?: unknown[];
@@ -209,7 +208,6 @@ export class StyleApplyController {
     {
       const seen = new Set<string>();
       for (const [sceneId, scene] of scenes) {
-        if (scene.tile === undefined) continue;
         if (!sceneDescription && typeof scene.scene_description === "string") {
           sceneDescription = scene.scene_description;
         }

@@ -67,9 +67,8 @@ describe("composeTilePlan · un solo plan para todos", () => {
     assert.notDeepEqual(a.plan?.volumes, c.plan?.volumes);
   });
 
-  it("una escena sin `tile` no tiene plan (Format D tiene una sola variante)", () => {
-    const { plan } = composeTilePlan({ scene_id: "suelta", entities: [] });
-    assert.equal(plan, null);
+  it("una escena sin `tile` no tiene plan: LANZA nombrándolo (#405; Format D tiene una sola variante)", () => {
+    assert.throws(() => composeTilePlan({ scene_id: "suelta", entities: [] }), /`tile`/);
   });
 
   it("un tile sin suelo ni volúmenes no compone plan: no hay nada que pintar", () => {

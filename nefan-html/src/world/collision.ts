@@ -51,7 +51,7 @@ export class CollisionSystem {
    *  semántica "salir sí, entrar no" — bloquea el movimiento HACIA él pero
    *  nunca el de vuelta. Con la resolución por ejes del gameLoop esto da el
    *  bloqueo DIRECCIONAL gratis: pegado al borde este solo se bloquea +x;
-   *  ±z y -x siguen libres. Solo aplica cuando el mundo es de tiles de grid. */
+   *  ±z y -x siguen libres. Sin mundo no hay frontera. */
   frontierBlocksMove(x: number, z: number): boolean {
     const { tileStore } = this.deps;
     if (!tileStore.hasGridTiles) return false;
@@ -73,15 +73,9 @@ export class CollisionSystem {
     if (this.frontierBlocksMove(x, z)) return true;
     const { tileStore } = this.deps;
     const p = this.deps.getPlayerPos();
-    if (tileStore.hasGridTiles) {
-      for (const t of tileStore.keysTouching(x, z, PLAYER_RADIUS)) {
-        const tile = tileStore.get(t.tx, t.ty);
-        if (tile && this.tileBlocks(tile, p, x, z)) return true;
-      }
-    } else {
-      for (const entry of tileStore.entries.values()) {
-        if (this.tileBlocks(entry, p, x, z)) return true;
-      }
+    for (const t of tileStore.keysTouching(x, z, PLAYER_RADIUS)) {
+      const tile = tileStore.get(t.tx, t.ty);
+      if (tile && this.tileBlocks(tile, p, x, z)) return true;
     }
     for (const obj of this.deps.getObstacles()) {
       if (!obj.sizeXZ) continue;

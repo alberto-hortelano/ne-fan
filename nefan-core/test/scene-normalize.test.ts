@@ -24,27 +24,24 @@ import {
 const objectsOf = (w: WorldScene) => w.objects;
 const npcsOf = (w: WorldScene) => w.npcs;
 
-/** A minimal but valid Map Format D scene: 10×6 grid (meters_per_cell 2 ⇒
- *  20m × 12m), one building, one npc, one player start. */
+/** Un tile Format D mínimo y válido, EXPANDIDO como lo haría el bridge
+ *  (#405): pradera 128×128 @0,5 m en el tile (0,0) —rect mundial [−32, 32)—
+ *  con un edificio, un npc y el spawn del jugador. Celda `[c, r]` con huella
+ *  `[w, h]` → centro en x = −32 + (c + w/2)·0,5 ; z = −32 + (r + h/2)·0,5.
+ *  Hasta #405 era un grid 10×6 @2 m SIN `tile`, centrado en el origen: la
+ *  variante que ya no existe. */
 function makeFormatD(): Record<string, unknown> {
-  return {
+  return expandScenePrimitives({
+    tile: { tx: 0, ty: 0 },
     scene_id: "taberna_test",
     scene_description: "Una taberna de prueba.",
-    size: { cols: 10, rows: 6, meters_per_cell: 2 },
-    terrain: [
-      "gggggggggg",
-      "gggggggggg",
-      "gggggggggg",
-      "gggggggggg",
-      "gggggggggg",
-      "gggggggggg",
-    ],
+    biome: "grass",
     entities: [
       { id: "tavern", kind: "building", name: "Taberna", cell: [2, 1], footprint: [4, 2] },
       { id: "barkeep", kind: "npc", name: "Tabernero", cell: [3, 2], footprint: [1, 1] },
       { id: "player", kind: "player", name: "Tú", cell: [5, 5], footprint: [1, 1] },
     ],
-  };
+  });
 }
 
 /** Sustituye la entity `i` del fixture (0 = taberna, 1 = npc, 2 = player). */
@@ -87,9 +84,11 @@ describe("formatDToWorld", () => {
     assert.equal("place_id" in formatDToWorld({ ...makeFormatD(), place_id: "" }), false);
   });
 
-  it("converts size to centred world dimensions", () => {
+  it("las dimensiones son las del tile (64 m de lado) y el rect mundial el del tile (0,0)", () => {
     const w = formatDToWorld(makeFormatD());
-    assert.deepEqual(w.dimensions, { width: 20, depth: 12, height: 3 });
+    assert.deepEqual(w.dimensions, { width: 64, depth: 64, height: 3 });
+    assert.deepEqual(w.world_rect, { minX: -32, minZ: -32, maxX: 32, maxZ: 32 });
+    assert.deepEqual(w.tile, { tx: 0, ty: 0 });
   });
 
   it("places a building object at its footprint centre in metres", () => {
@@ -97,11 +96,12 @@ describe("formatDToWorld", () => {
     const objects = objectsOf(w);
     assert.equal(objects.length, 1);
     const tavern = objects[0];
-    // cell [2,1] footprint [4,2], mpc 2, halfW 10, halfD 6
-    // x = (2 + 4/2)*2 - 10 = -2 ; z = (1 + 2/2)*2 - 6 = -2
-    assert.deepEqual(tavern.position, [-2, 0, -2]);
-    // Altura default por kind: building 2.5 m (KIND_DEFAULT_HEIGHT).
-    assert.deepEqual(tavern.scale, [8, 2.5, 4]);
+    // cell [2,1] footprint [4,2], mpc 0,5, tile (0,0) → minX = minZ = −32
+    // x = −32 + (2 + 4/2)·0,5 = −30 ; z = −32 + (1 + 2/2)·0,5 = −31
+    assert.deepEqual(tavern.position, [-30, 0, -31]);
+    // Altura default por kind: building 2.5 m (KIND_DEFAULT_HEIGHT); la
+    // huella de 4×2 celdas son 2 m × 1 m.
+    assert.deepEqual(tavern.scale, [2, 2.5, 1]);
     assert.equal(tavern.category, "building");
     assert.equal(tavern.name, "Taberna");
   });
@@ -111,8 +111,10 @@ describe("formatDToWorld", () => {
     const npcs = npcsOf(w);
     assert.equal(npcs.length, 1);
     assert.equal(npcs[0].id, "barkeep");
-    // player cell [5,5]: x = (5+0.5)*2 - 10 = 1 ; z = (5+0.5)*2 - 6 = 5
-    assert.deepEqual(w.__player_start, { x: 1, z: 5 });
+    // barkeep cell [3,2] 1×1: x = −32 + 3,5·0,5 = −30,25 ; z = −32 + 2,5·0,5 = −30,75
+    assert.deepEqual(npcs[0].position, [-30.25, 0, -30.75]);
+    // player cell [5,5]: x = z = −32 + 5,5·0,5 = −29,25
+    assert.deepEqual(w.__player_start, { x: -29.25, z: -29.25 });
   });
 
   it("maps tree kind to prop category", () => {
@@ -494,8 +496,8 @@ describe("formatDToWorld — la cola de la world scene", () => {
     });
     assert.equal(tile.biome, "forest_floor");
 
-    // Escena legacy (no tile) con un biome corrupto: no llega a resolveBiome,
-    // así que la única red es este filtro de tipo.
+    // Una escena ya EXPANDIDA con un biome corrupto (un save tocado a mano) no
+    // vuelve a pasar por resolveBiome, así que la única red es este filtro de tipo.
     const roto = makeFormatD();
     roto.biome = 42;
     assert.equal(formatDToWorld(roto).biome, undefined);
@@ -507,9 +509,12 @@ describe("formatDToWorld — la cola de la world scene", () => {
     // memoria: `formatDToWorld` deja la clave con `undefined`, que el wire no
     // lleva; un default inventado (`[]`, `""`) sí llegaría a los clientes.
     const wire: Record<string, unknown> = JSON.parse(JSON.stringify(formatDToWorld(makeFormatD())));
-    for (const campo of ["scatter_generators", "style_ref", "biome"]) {
+    for (const campo of ["scatter_generators", "style_ref"]) {
       assert.ok(!(campo in wire), `"${campo}" no declarado no debería viajar`);
     }
+    // `biome` sí viaja: un tile lo declara siempre (es su base), así que ya no
+    // es un «no declarado» — y viaja tal cual, sin normalizar.
+    assert.equal(wire.biome, "grass");
     const w = formatDToWorld(makeFormatD());
     // Y sin avisos, `__plan_warnings` es `undefined` y NO una lista vacía. La
     // diferencia no la nota el lector del cliente (`?? []`), pero sí el wire:
@@ -526,12 +531,14 @@ describe("formatDToWorld — la cola de la world scene", () => {
  *  aquí en producción pasó por `ExpandedSceneSchema`: un payload sin grid es
  *  un error de quien llama, no una escena que pintar a medias. */
 describe("formatDToWorld — lo que no es Format D expandido lanza", () => {
+  // Marcadas `__expanded` a propósito: sin la marca la conversión intentaría
+  // expandirlas y el error sería el del expander, no el de esta guarda.
   const casos: [string, Record<string, unknown>][] = [
-    ["sin size", { terrain: ["gg", "gg"], entities: [] }],
-    ["size sin cols", { size: { rows: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"], entities: [] }],
-    ["size sin rows", { size: { cols: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"], entities: [] }],
-    ["terrain con una fila no-string", { size: { cols: 2, rows: 2, meters_per_cell: 2 }, terrain: ["gg", 42], entities: [] }],
-    ["sin entities", { size: { cols: 2, rows: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"] }],
+    ["sin size", { __expanded: true, terrain: ["gg", "gg"], entities: [] }],
+    ["size sin cols", { __expanded: true, size: { rows: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"], entities: [] }],
+    ["size sin rows", { __expanded: true, size: { cols: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"], entities: [] }],
+    ["terrain con una fila no-string", { __expanded: true, size: { cols: 2, rows: 2, meters_per_cell: 2 }, terrain: ["gg", 42], entities: [] }],
+    ["sin entities", { __expanded: true, size: { cols: 2, rows: 2, meters_per_cell: 2 }, terrain: ["gg", "gg"] }],
   ];
   for (const [nombre, payload] of casos) {
     it(`${nombre} → lanza y nombra las claves que trae`, () => {
@@ -542,6 +549,51 @@ describe("formatDToWorld — lo que no es Format D expandido lanza", () => {
       });
     });
   }
+});
+
+/** #405: `tile` es obligatorio y el rect mundial sale de él — y SOLO de él.
+ *  Hasta esta tanda una escena sin `tile` se «centraba en el origen» (rect
+ *  ±cols·mpc/2), y esa rama vivía en cuatro sitios más (colisión, plan,
+ *  bridge, cliente). Dos tiles distintos y no uno: con un solo caso no se
+ *  distingue «el rect sale del tile» de «el rect es siempre el de (0,0)». */
+describe("formatDToWorld — el rect mundial sale del tile, y sin tile no hay escena", () => {
+  const tileEn = (tx: number, ty: number) =>
+    expandScenePrimitives({ tile: { tx, ty }, scene_id: `tile_${tx}_${ty}`, scene_description: "campo", biome: "grass", entities: [] });
+
+  it("tile (0,0) → rect [−32, 32) y origin (−32, −32)", () => {
+    const w = formatDToWorld(tileEn(0, 0));
+    assert.deepEqual(w.world_rect, { minX: -32, minZ: -32, maxX: 32, maxZ: 32 });
+    assert.deepEqual(w.terrain_grid.origin, [-32, -32]);
+  });
+
+  it("tile (1,0) → rect [32, 96) × [−32, 32): la regla, no su contraria", () => {
+    const w = formatDToWorld(tileEn(1, 0));
+    assert.deepEqual(w.world_rect, { minX: 32, minZ: -32, maxX: 96, maxZ: 32 });
+    assert.deepEqual(w.terrain_grid.origin, [32, -32]);
+    assert.deepEqual(w.tile, { tx: 1, ty: 0 });
+  });
+
+  it("tile (−2, 3) → rect [−160, −96) × [160, 224): los dos ejes y los dos signos", () => {
+    const w = formatDToWorld(tileEn(-2, 3));
+    assert.deepEqual(w.world_rect, { minX: -160, minZ: 160, maxX: -96, maxZ: 224 });
+    assert.deepEqual(w.terrain_grid.origin, [-160, 160]);
+  });
+
+  it("expandida sin `tile` → lanza nombrando `tile` (ya no hay escena centrada en el origen)", () => {
+    const { tile: _t, ...sinTile } = makeFormatD();
+    assert.throws(() => formatDToWorld(sinTile), /`tile`/);
+  });
+
+  it("cruda sin `tile` → lanza nombrando `tile` (no hay «escena suelta» que expandir)", () => {
+    assert.throws(
+      () => formatDToWorld({ scene_id: "suelta", scene_description: "campo", biome: "grass", entities: [] }),
+      /`tile`/,
+    );
+  });
+
+  it("`tile` con coords no enteras → lanza diciendo qué llegó", () => {
+    assert.throws(() => formatDToWorld({ ...makeFormatD(), tile: { tx: 0.5, ty: 0 } }), /enteros.*0\.5/);
+  });
 });
 
 /** Fail-loud: una entity malformada tumba la escena con un mensaje que dice

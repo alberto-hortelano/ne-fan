@@ -10,8 +10,8 @@
  *  combatientes en el sim, encolar skins— y la construcción de `Entity`, que
  *  es el tipo del renderer y no tiene sitio en core.
  *
- *  ADITIVO: no toca la posición del jugador (salvo bootstrap con
- *  `__player_start` o escena legacy), no vacía las entidades de otros tiles, no
+ *  ADITIVO: no toca la posición del jugador (salvo el bootstrap con
+ *  `__player_start`), no vacía las entidades de otros tiles, no
  *  resetea el sim. Re-añadir la misma clave SUSTITUYE, que es el caso que la
  *  política de re-emisión gobierna.
  *
@@ -72,9 +72,9 @@ export interface DepsDeCargaDeTile {
   fpsAtlas: FpsAtlasController;
   characterSprites: CharacterSpriteManager;
   travelPanel: TravelPanel;
-  /** La posición del jugador, que este módulo MUEVE en el bootstrap y en las
-   *  escenas legacy. Es un `const` mutado in situ en `main.ts`, así que cruza
-   *  el módulo por referencia. */
+  /** La posición del jugador, que este módulo MUEVE en el bootstrap. Es un
+   *  `const` mutado in situ en `main.ts`, así que cruza el módulo por
+   *  referencia. */
   playerPos: Vec3;
   /** Hay partida (no una fixture del selector «Room»). */
   session: { readonly active: boolean };
@@ -270,13 +270,12 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     opts: OpcionesDeCarga = {},
   ): Promise<void> {
     const tile = data.tile;
-    const isGridTile = tile !== undefined;
-    const key = isGridTile ? tileKey(tile.tx, tile.ty) : (data.scene_id || "scene");
+    const key = tileKey(tile.tx, tile.ty);
     const firstTile = tileStore.entries.size === 0;
 
-    // Rect mundial del tile (los tiles de grid lo derivan de la geometría core;
-    // las escenas legacy traen el suyo, centrado).
-    const rect = isGridTile ? tileWorldRect(tile.tx, tile.ty) : data.world_rect;
+    // Rect mundial del tile, de la geometría de core — la misma con la que el
+    // bridge escribió el `world_rect` que viaja en la escena.
+    const rect = tileWorldRect(tile.tx, tile.ty);
 
     // Colisión de terreno POR TILE (origin global desde terrain_grid.origin).
     let collider: TileClientState["collider"] = null;
@@ -297,8 +296,8 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     const prevEntry = tileStore.entries.get(key);
     const { sceneChanged } = tileStore.add({
       key,
-      tx: tile?.tx,
-      ty: tile?.ty,
+      tx: tile.tx,
+      ty: tile.ty,
       rect,
       scene: data,
       collider,
@@ -310,7 +309,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     // Mundo 3D: spec fps del tile + layout de superficies (la clave del atlas).
     // ANTES de activarlo abajo: el atlas de superficies pide el layout al
     // renderer, y un tile sin instalar se quedaría en clay sin pedir nada.
-    if (isGridTile && planInfo) {
+    if (planInfo) {
       fpsRenderer.installTile(key, planInfo, rect);
       // Si ESTE ya es el tile activo, `activarTile` no volverá a correr (solo
       // se dispara al cambiar de tile): lanzar el atlas aquí.
@@ -328,49 +327,44 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     } else if (planInfo) {
       applyPlanCollision(key, { ground: planInfo.ground, volumes: planInfo.volumes }, rect, tileStore);
     }
-    // Posición de entrada — SOLO escenas legacy o el bootstrap (primer tile con
-    // spawn explícito). En el resto de tiles el jugador entra andando.
+    // Posición de entrada — SOLO el bootstrap (primer tile con spawn
+    // explícito). En el resto de tiles el jugador entra andando.
     const playerStart = data.__player_start;
-    if (!isGridTile) {
-      playerPos.x = playerStart ? playerStart.x : 0;
-      playerPos.z = playerStart ? playerStart.z : 2;
-    } else if (firstTile && playerStart) {
+    if (firstTile && playerStart) {
       playerPos.x = playerStart.x;
       playerPos.z = playerStart.z;
     }
 
     const enemies = poblar(key, data, planInfo);
 
-    // Fail-loud del contrato de posiciones globales: un NPC de un tile de grid
-    // DECLARADO fuera de su rect delata una conversión celda→mundo rota. La
-    // decisión —cuál de las dos coordenadas de un npc es la conversión— vive en
-    // core, junto a quien escribe la otra (#241/#357); aquí solo se pinta el
+    // Fail-loud del contrato de posiciones globales: un NPC DECLARADO fuera del
+    // rect de su tile delata una conversión celda→mundo rota. La decisión
+    // —cuál de las dos coordenadas de un npc es la conversión— vive en core,
+    // junto a quien escribe la otra (#241/#357); aquí solo se pinta el
     // resultado en el panel del jugador.
-    if (isGridTile) {
-      for (const fuera of npcsFueraDelRect(data.npcs, rect)) {
-        errors.push(
-          "scene",
-          `entidad "${fuera.id}" de ${key} fuera de su rect: (${fuera.x.toFixed(1)}, ${fuera.z.toFixed(1)})`,
-        );
-      }
+    for (const fuera of npcsFueraDelRect(data.npcs, rect)) {
+      errors.push(
+        "scene",
+        `entidad "${fuera.id}" de ${key} fuera de su rect: (${fuera.x.toFixed(1)}, ${fuera.z.toFixed(1)})`,
+      );
     }
 
     deps.rebuildEnemyBars();
 
-    // Activación visual del primer tile / escena legacy (el resto de tiles se
-    // activa por POSICIÓN en el bucle al pisarlos); y refresco del puntero
-    // cuando el que vuelve es el tile activo (resume / re-broadcast).
-    if (firstTile || !isGridTile || key === mundo.tileActivo) {
+    // Activación visual del primer tile (el resto se activa por POSICIÓN en el
+    // bucle al pisarlos); y refresco del puntero cuando el que vuelve es el
+    // tile activo (resume / re-broadcast).
+    if (firstTile || key === mundo.tileActivo) {
       activarTile(key);
     }
 
     // Sim: los tiles de la PARTIDA añaden combatientes de forma ADITIVA (sin
     // reset), porque el mundo es un plano continuo. Tomar el mundo —el selector
-    // «Room», o una escena legacy suelta— manda `load_room`, que además le dice
-    // al bridge que lo que va a andar por aquí no es el jugador de la partida.
+    // «Room»— manda `load_room`, que además le dice al bridge que lo que va a
+    // andar por aquí no es el jugador de la partida.
     const cliente = deps.gameClient();
     if (cliente) {
-      if (opts.tomaElMundo || !isGridTile) cliente.loadRoom(data, key, enemies);
+      if (opts.tomaElMundo) cliente.loadRoom(data, key, enemies);
       else cliente.addEnemies(enemies);
     }
 
@@ -381,7 +375,7 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     // «pintado» sigue siendo honesto con remote-gen caído. Las fixtures del
     // selector «Room» quedan fuera por las dos guardas: no son la partida de
     // nadie.
-    if (deps.session.active && isGridTile && !opts.tomaElMundo) deps.entrada.mundoPintado();
+    if (deps.session.active && !opts.tomaElMundo) deps.entrada.mundoPintado();
 
     deps.log("Scene loaded: " + key);
   }

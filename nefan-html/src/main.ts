@@ -802,9 +802,9 @@ const cargaDeTile = crearCargaDeTile({
 const addTile = cargaDeTile.addTile;
 const setActiveClientTile = cargaDeTile.activarTile;
 
-/** API legacy (dropdown de fixtures, change_scene, saves sin migrar): mundo de
- *  UNA escena. El flujo narrativo de tiles usa addTile (aditivo). */
-const addTileRaw = (raw: Record<string, unknown>, opts?: OpcionesDeCarga) => addTile({ ...formatDToWorld(raw), exits: [] }, opts); // la única normalización local: fixtures y benches, sin bridge ni salidas
+/** Las fixtures del selector «Room»: la ÚNICA normalización local del cliente
+ *  (sin bridge no hay salidas). Un tile como cualquier otro; la partida usa addTile con la escena ya servida. */
+const addTileRaw = (raw: Record<string, unknown>, opts?: OpcionesDeCarga) => addTile({ ...formatDToWorld(raw), exits: [] }, opts);
 
 async function loadSceneData(
   rawData: Record<string, unknown>,
@@ -1111,7 +1111,7 @@ function handleRespawnRequest(): void {
   const p = gameClient?.getCombatant("player");
   if (!p || p.health > 0) return;
   // Punto libre cercano: la posición actual si no colisiona; si no, el
-  // centro del tile actual; último recurso, el origen legacy.
+  // centro del tile actual; último recurso, el origen del mundo.
   let rp = { x: playerPos.x, y: 0, z: playerPos.z };
   if (collidesAt(rp.x, rp.z)) {
     const under = tileStore.getAt(playerPos.x, playerPos.z);
@@ -1518,7 +1518,7 @@ function listFakeItems(): FakeItem[] {
   const st = fpsRenderer.debugState();
   const textured = new Set(st.ready ? st.textured : []);
   for (const t of tileStore.entries.values()) {
-    if (t.tx === undefined || textured.has(t.key) || !fpsRenderer.getTileSurfaces(t.key)) continue;
+    if (textured.has(t.key) || !fpsRenderer.getTileSurfaces(t.key)) continue;
     items.push({
       kind: "fps_atlas",
       id: t.key,
@@ -1889,9 +1889,6 @@ narrativeClient.onStatusDeLaPartida((status) => {
           status.message ?? "El motor narrativo está construyendo el mundo. Puede tardar un momento.",
         );
         break;
-      case "ready":
-        hideLoader();
-        break;
       case "error":
         pintarFalloDelMotor(status);
         break;
@@ -2085,30 +2082,25 @@ narrativeClient.onNarrativeEvent((event) => {
         // bridge): es lo que ata esta escena al viaje que el jugador pidió, y
         // no al prefetch que aterrice a la vez.
         travelLedger.escena(scene.scene_id || effect.sceneId, scene.place_id);
+        // Tile del plano: ADITIVO (los anteriores no desaparecen). Toda escena
+        // servida es un tile (#405): no hay «escena suelta» que resetee el mundo.
         const t = scene.tile;
-        if (t) {
-          // Tile del plano: ADITIVO (los anteriores no desaparecen).
-          paso(
-            addTile(scene).then(() => {
-              const edge = frontier.onTileReady(t.tx, t.ty, playerPos.x, playerPos.z);
-              if (edge) {
-                // Sin destello de llegada: el feedback ES que el muro de
-                // niebla de esa frontera se disipa y descubre el terreno
-                // nuevo. Un flash encima solo tapaba lo que hay que mirar.
-                const ES: Record<string, string> = { north: "norte", south: "sur", east: "este", west: "oeste" };
-                log(`🌍 el mundo continúa hacia el ${ES[edge]}`);
-              } else {
-                log(`🌍 tile listo: ${effect.sceneId}`);
-              }
-            }),
-            "scene",
-            `el tile ${effect.sceneId} llegó pero no se pudo instalar`,
-          );
-        } else {
-          resetWorld();
-          paso(addTile(scene), "scene", `no se pudo cargar la escena ${effect.sceneId}`);
-          log(`🌍 escena cargada: ${effect.sceneId}`);
-        }
+        paso(
+          addTile(scene).then(() => {
+            const edge = frontier.onTileReady(t.tx, t.ty, playerPos.x, playerPos.z);
+            if (edge) {
+              // Sin destello de llegada: el feedback ES que el muro de
+              // niebla de esa frontera se disipa y descubre el terreno
+              // nuevo. Un flash encima solo tapaba lo que hay que mirar.
+              const ES: Record<string, string> = { north: "norte", south: "sur", east: "este", west: "oeste" };
+              log(`🌍 el mundo continúa hacia el ${ES[edge]}`);
+            } else {
+              log(`🌍 tile listo: ${effect.sceneId}`);
+            }
+          }),
+          "scene",
+          `el tile ${effect.sceneId} llegó pero no se pudo instalar`,
+        );
         break;
       }
       case "spawn_entity":
@@ -2300,7 +2292,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       const scenes = res.state.scenes_loaded;
       const activa = activeId ? scenes[activeId]?.scene_data : undefined;
       const resto = Object.entries(scenes).flatMap(([id, rec]) =>
-        rec.tile && id !== activeId ? [rec.scene_data] : [],
+        id !== activeId ? [rec.scene_data] : [],
       );
       const porAnadir = activa ? [activa, ...resto] : resto;
       for (const scene of porAnadir) await addTile(scene);

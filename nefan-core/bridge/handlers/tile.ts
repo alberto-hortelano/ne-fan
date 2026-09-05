@@ -43,7 +43,7 @@ export function buildGenerateTileCtx(
   >) {
     const shared = rec.edges?.[oppositeEdge(edge)];
     neighbors[edge] = {
-      tile: [rec.tile!.tx, rec.tile!.ty],
+      tile: [rec.tile.tx, rec.tile.ty],
       scene_id: String(rec.scene_data.scene_id ?? ""),
       description: String(rec.scene_data.scene_description ?? ""),
       biome: shared?.biome ?? String(rec.scene_data.biome ?? "grass"),
@@ -385,9 +385,7 @@ export async function activateByPosition(
   }
 }
 
-/** Tile del jugador según la escena activa (o su posición como fallback). */
+/** Tile de la escena activa; `null` solo si no hay escena activa. */
 export function activeTileOf(ctx: BridgeContext): TileCoord | null {
-  const active = ctx.narrative.scenes_loaded[ctx.narrative.world.active_scene_id];
-  if (active?.tile) return active.tile;
-  return null;
+  return ctx.narrative.scenes_loaded[ctx.narrative.world.active_scene_id]?.tile ?? null;
 }

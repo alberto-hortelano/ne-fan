@@ -31,15 +31,17 @@ describe("expandScenePrimitives", () => {
     assert.equal(hasUnexpandedPrimitives(once), false);
   });
 
-  it("solo un tile sin la marca tiene algo que expandir", () => {
+  it("todo lo que no lleva la marca tiene algo que expandir; sin `tile` expandir LANZA nombrándolo (#405)", () => {
     assert.equal(hasUnexpandedPrimitives(makeTile()), true);
     assert.equal(hasUnexpandedPrimitives({ ...makeTile(), __expanded: true }), false);
-    // Sin `tile` no hay bioma que rellenar ni `ground` que rasterizar: la
-    // escena se devuelve tal cual (misma referencia).
+    // Ya no existe la escena «sin tile que se devuelve tal cual»: una escena
+    // sin sitio en el plano no es una variante, es un error de contrato.
     const sinTile: Record<string, unknown> = { ...makeTile() };
     delete sinTile.tile;
-    assert.equal(hasUnexpandedPrimitives(sinTile), false);
-    assert.equal(expandScenePrimitives(sinTile), sinTile);
+    assert.equal(hasUnexpandedPrimitives(sinTile), true);
+    assert.throws(() => expandScenePrimitives(sinTile), /`tile`/);
+    // Y con `tile` roto (no enteros) el mensaje dice qué llegó.
+    assert.throws(() => expandScenePrimitives({ ...makeTile(), tile: { tx: 0.5, ty: 0 } }), /enteros.*0\.5/);
   });
 
   it("sintetiza el grid 128×128 del bioma y rasteriza el agua declarada", () => {

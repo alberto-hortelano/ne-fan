@@ -62,7 +62,7 @@ function edgeLine(grid: string[], edge: Edge): string {
   }
 }
 
-/** Resumen de los 4 bordes de un tile EXPANDIDO (Format D v3 plano). */
+/** Resumen de los 4 bordes de un tile EXPANDIDO (Format D). */
 export function computeTileEdges(expanded: Record<string, unknown>): TileEdges {
   const grid = expanded.terrain as string[];
   if (!Array.isArray(grid) || grid.length !== TILE_CELLS || grid.some((r) => typeof r !== "string" || r.length !== TILE_CELLS)) {

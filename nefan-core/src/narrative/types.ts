@@ -99,9 +99,9 @@ export interface SceneRecord {
   scene_data: Record<string, unknown>;
   loaded_at: string;
   asset_refs: string[];
-  /** Coords del tile del plano continuo (Format D v3). Ausente = escena
-   *  legacy accesible solo por TravelPanel/player_entered_place. */
-  tile?: TileCoord;
+  /** Coords del tile del plano continuo. Obligatorias (#405): toda escena
+   *  registrada es un tile, y de aquí sale el `tileIndex`. */
+  tile: TileCoord;
   /** Resumen de costuras por borde (computeTileEdges sobre el expandido) —
    *  contexto de vecinos para generar tiles adyacentes sin re-expandir. */
   edges?: TileEdges;
@@ -310,7 +310,7 @@ export interface LlmContext {
     sites: Array<{ id: string; kind: string; name: string; description: string }>;
     links: unknown[];
   };
-  /** Petición de un TILE del plano continuo (Format D v3): coords, contexto
+  /** Petición de un TILE del plano continuo (Format D): coords, contexto
    *  de costuras de los vecinos ya generados (bioma + cruces del borde
    *  compartido, con `at` espejo sin transformación), por dónde entra el
    *  jugador, y places cercanos. */

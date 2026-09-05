@@ -1,6 +1,7 @@
 /** Tests del state HTTP API (bridge/state-http-server.ts) sobre un servidor
  *  real en puerto efímero, con NarrativeState en memoria y los mismos hooks de
  *  plugins que monta ws-server.ts. */
+import { tileContextFor } from "../bridge/state-http/scene-routes.js";
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -270,12 +271,27 @@ describe("state HTTP API", () => {
       ],
       entities: [{ id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1] }],
     };
-    // Sin ningún tile registrado ⇒ bootstrap: el player es obligatorio y el
-    // tile es jugable.
-    const ok = await post("/scene/validate", { scene: tile });
+    // La sesión de esta suite YA tiene un tile registrado (`tile_refs`, del
+    // test de asset_refs), así que esto NO es el bootstrap: un tile con
+    // `player` se rechaza nombrando la regla…
+    const conPlayer = await post("/scene/validate", { scene: tile });
+    assert.equal(conPlayer.status, 200);
+    assert.equal(conPlayer.body.ok, false);
+    assert.ok(
+      (conPlayer.body.errors as string[]).some((e) => e.includes('kind "player"')),
+      JSON.stringify(conPlayer.body.errors),
+    );
+    // …y sin él es jugable: el jugador entra andando por la costura.
+    const ok = await post("/scene/validate", { scene: { ...tile, entities: [] } });
     assert.equal(ok.status, 200);
     assert.equal(ok.body.ok, true, JSON.stringify(ok.body.errors));
     assert.equal((ok.body.stats as { doors_total: number }).doors_total, 3);
+    // Y el `bootstrap` que el servidor deriva es «no hay ningún tile aún»: los
+    // dos casos, para no confundir la regla con «siempre false». Hasta #405
+    // una escena sin `tile` no contaba, y esta suite era bootstrap por
+    // accidente del helper.
+    assert.equal(tileContextFor(makeNarrativeState().narrative, tile)?.bootstrap, true, "mundo vacío ⇒ bootstrap");
+    assert.equal(tileContextFor(narrative, tile)?.bootstrap, false, "con un tile registrado ya no");
 
     // Una escena sin `tile` ya no es Format D: la suelta y el plató murieron.
     const suelta = await post("/scene/validate", {

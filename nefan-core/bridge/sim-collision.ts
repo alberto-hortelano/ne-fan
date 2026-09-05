@@ -77,9 +77,8 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
       console.warn(`[sim-collision] ${sceneId}: terrain_grid no deriva colisión —`, err);
     }
 
-    // 2. El plan compuesto solo aplica a tiles del plano continuo (tienen
-    // rect mundial).
-    if (rec.tile && plan) {
+    // 2. El plan compuesto, sobre el rect mundial del tile.
+    if (plan) {
       const planCollider = buildPlanCollider(
         sceneId,
         plan,

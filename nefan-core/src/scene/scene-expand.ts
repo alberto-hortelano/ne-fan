@@ -26,15 +26,16 @@
  *  que corrija; si llega hasta el bridge, el catch existente la difunde como
  *  `narrative_status: error`. */
 
-import { TILE_CELLS, TILE_MPC, resolveBiome } from "./tile.js";
+import { TILE_CELLS, TILE_MPC, resolveBiome, tileCoordDe } from "./tile.js";
 import { parseGround } from "./blueprint/ground.js";
 import { shapeContains, GROUND_WATER_CHAR } from "./blueprint/ground-collision.js";
 
-/** ¿Tiene la escena primitivas pendientes de expandir? Un tile sin la marca
- *  SIEMPRE: el fill del bioma es obligatorio aunque no traiga ninguna otra
- *  primitiva. Una escena sin `tile` no tiene nada que expandir. */
+/** ¿Tiene la escena primitivas pendientes de expandir? Todo lo que no lleve
+ *  la marca: el fill del bioma es obligatorio aunque no traiga ninguna otra
+ *  primitiva. Una escena sin `tile` no «no tiene nada que expandir»: es
+ *  inválida (#405), y lo dice `prepareTileBase` al intentarlo. */
 export function hasUnexpandedPrimitives(raw: Record<string, unknown>): boolean {
-  return raw.__expanded !== true && raw.tile !== undefined;
+  return raw.__expanded !== true;
 }
 
 /** Pinta un camino grueso ("_") sobre el grid mutable: celda pintada si la
@@ -119,10 +120,7 @@ function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
  *  sintetizados. Fail-loud en coords rotas o en un tile que traiga el grid
  *  escrito. */
 function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> {
-  const t = raw.tile as { tx?: unknown; ty?: unknown };
-  if (!t || !Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
-    throw new Error(`tile.tx/ty deben ser enteros, got ${JSON.stringify(raw.tile)}`);
-  }
+  tileCoordDe(raw);
   if (raw.size !== undefined || (Array.isArray(raw.terrain) && raw.terrain.length > 0)) {
     throw new Error("un tile no lleva size/terrain: la base es `biome` + `ground`/`volumes`");
   }
@@ -142,7 +140,8 @@ function prepareTileBase(raw: Record<string, unknown>): Record<string, unknown> 
 }
 
 /** Expande un tile Format D crudo y devuelve una copia plana marcada
- *  `__expanded`. Escena sin `tile` (o ya expandida) → se devuelve tal cual. */
+ *  `__expanded`. Ya expandida → se devuelve tal cual (misma referencia); sin
+ *  `tile` LANZA nombrándolo. */
 export function expandScenePrimitives(raw: Record<string, unknown>): Record<string, unknown> {
   if (!hasUnexpandedPrimitives(raw)) return raw;
   return { ...prepareTileBase(raw), __expanded: true };

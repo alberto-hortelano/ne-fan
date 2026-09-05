@@ -2,6 +2,7 @@
  *  cargado una sola vez, y el harness del bridge (socket capturador, AiClient
  *  falso, BridgeContext completo) que antes vivía copiado en cada archivo.
  *  Los tests de bridge nuevos deben construir su ctx con makeCtx() de aquí. */
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
@@ -78,22 +79,22 @@ export function mundoDePrueba(over: Partial<NarrativeWorldState> = {}): Narrativ
 /** Escena EXPANDIDA mínima que pasa el gate de `recordSceneLoaded`
  *  (`ExpandedSceneSchema`, #334): lo que antes se sembraba como
  *  `{ id: "scene_1" }` eran escenas que el juego jamás produciría y que el
- *  gate rechaza. SIN `tile` a propósito: un tile exige grid 128×128
- *  (`computeTileEdges`) y la mayoría de tests no lo necesita — quien lo
- *  necesite, que expanda un tile de verdad (`expandScenePrimitives`). */
+ *  gate rechaza. Es un TILE de verdad (#405): pradera 128×128 en el tile
+ *  (0,0) —otro si `over.tile` lo dice—, expandida por el mismo
+ *  `expandScenePrimitives` que usa el bridge. Nadie escribe 128 filas a mano,
+ *  y la escena «sin tile» que este helper sembraba ya no existe en el juego. */
 export function escenaExpandidaDePrueba(
   id: string,
   over: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  return {
+  return expandScenePrimitives({
+    tile: { tx: 0, ty: 0 },
     scene_id: id,
     scene_description: "Escena de prueba.",
-    size: { cols: 4, rows: 4, meters_per_cell: 0.5 },
-    terrain: Array.from({ length: 4 }, () => "gggg"),
-    __expanded: true,
+    biome: "grass",
     entities: [],
     ...over,
-  };
+  });
 }
 
 /** Los hooks de plugins del State API cableados como en `ws-server.ts`

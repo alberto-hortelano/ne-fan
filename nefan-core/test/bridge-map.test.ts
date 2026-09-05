@@ -414,8 +414,10 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     const { ctx, broadcasts, narrative, aiCalls } = makeCtx();
     narrative.startNewSession("plugtest");
     narrative.worldMap.upsertPlace({ id: "forja", kind: "site", parent_id: "world", name: "La Forja" });
-    // Escena activa que NO es un tile: el rayo no tiene de dónde partir.
-    narrative.recordSceneLoaded("plato", escenaExpandidaDePrueba("plato"));
+    // Sin escena activa el rayo no tiene de dónde partir. Hasta #405 esto se
+    // sembraba con una escena SIN `tile` («plató»): esa variante ya no entra
+    // por el gate, así que el único «sin tile bajo el jugador» que queda es
+    // «sin escena».
 
     const { socket } = makeSocket();
     await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);

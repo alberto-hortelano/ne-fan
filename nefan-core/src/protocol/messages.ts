@@ -404,30 +404,28 @@ interface CuerpoDeNarrativeStatus {
  *  entiende mal: «la sesión que el bridge tenía activa al emitir», no «la que
  *  pidió el trabajo» (ver `bridge/ws-server.ts`). Para lo que NO es de una
  *  partida, ese campo era basura: ver `NarrativeStatusDeJuego`. */
-export interface NarrativeStatusDeSesion extends CuerpoDeNarrativeStatus {
-  sessionId: string;
-  /** QUÉ HA PASADO, no por dónde pasó. El `kind` es lo único que el jugador
-   *  lee como TITULAR (`rotuloDeStatus`), así que cada valor es un hecho
-   *  distinto y no una etiqueta de módulo:
-   *
-   *   · `scene` / `tile` — generación de mundo: no se pudo preparar el sitio.
-   *   · `consequences` — el motor narrativo rechazó la reacción. **Solo eso**:
-   *     hasta el 2026-09-01 este kind era el cajón de sastre de los OTROS
-   *     seis, y como el rótulo era un catch-all, seis avisos a pantalla
-   *     completa culpaban al motor narrativo de un takeover, de un disco
-   *     lleno o de un plugin roto (#352).
-   *   · `restore` — la partida vuelve del save sin algo que tenía.
-   *   · `takeover` — otra pestaña/cliente tomó esta partida.
-   *   · `save` — no se pudo escribir el save.
-   *   · `plugin` — un sistema del juego (plugin) falló su turno.
-   *   · `action` — reventó el handler de algo que el jugador pidió.
-   *   · `protocolo` — el cliente mandó un frame que el bridge no puede leer.
+/** QUÉ HA PASADO, no por dónde pasó. El `kind` es lo único que el jugador
+ *  lee como TITULAR (`rotuloDeStatus`), así que cada valor es un hecho
+ *  distinto y no una etiqueta de módulo:
+ *
+ *   · `scene` / `tile` — generación de mundo: no se pudo preparar el sitio.
+ *   · `consequences` — el motor narrativo rechazó la reacción. **Solo eso**:
+ *     hasta el 2026-09-01 este kind era el cajón de sastre de los OTROS
+ *     seis, y como el rótulo era un catch-all, seis avisos a pantalla
+ *     completa culpaban al motor narrativo de un takeover, de un disco
+ *     lleno o de un plugin roto (#352).
+ *   · `restore` — la partida vuelve del save sin algo que tenía.
+ *   · `takeover` — otra pestaña/cliente tomó esta partida.
+ *   · `save` — no se pudo escribir el save.
+ *   · `plugin` — un sistema del juego (plugin) falló su turno.
+ *   · `action` — reventó el handler de algo que el jugador pidió.
+ *   · `protocolo` — el cliente mandó un frame que el bridge no puede leer.
      *     No es el mundo ni el motor: es el juego consigo mismo.
-   *
-   *  Añadir uno sin darle título propio NO COMPILA: `rotuloDeStatus` cierra
-   *  su `switch` con `const nunca: never`, y `DETALLE_POR_DEFECTO` es un
-   *  `Record` sobre esta misma unión. */
-  kind:
+ *
+ *  Añadir uno sin darle título propio NO COMPILA: `rotuloDeStatus` cierra
+ *  su `switch` con `const nunca: never`, y `DETALLE_POR_DEFECTO` es un
+ *  `Record` sobre esta misma unión. */
+export type KindDeStatusDeSesion =
     | "scene"
     | "consequences"
     | "tile"
@@ -437,6 +435,21 @@ export interface NarrativeStatusDeSesion extends CuerpoDeNarrativeStatus {
     | "plugin"
     | "action"
     | "protocolo";
+
+/** Qué FASES admite cada kind. Un `ready` es «el sitio está listo» (`tile`:
+ *  desde #405 toda escena servida es un tile, así que es el único ready del
+ *  mundo) o «el plugin se activó» (`plugin`, bridge/ws-server.ts). Ningún otro
+ *  hecho tiene un «listo» que contar, y hasta #405 el tipo dejaba escribir un
+ *  lector de `scene`+`ready` que ningún productor alimentaba (main.ts lo tuvo,
+ *  QA-F H3). Con esta unión ese lector NO COMPILA: al estrechar por `kind`, la
+ *  fase `ready` desaparece de los kinds que no la producen. */
+type FaseYKindDeSesion =
+  | { phase: "ready"; kind: "tile" | "plugin" }
+  | { phase: Exclude<CuerpoDeNarrativeStatus["phase"], "ready">; kind: KindDeStatusDeSesion };
+
+export type NarrativeStatusDeSesion = Omit<CuerpoDeNarrativeStatus, "phase"> &
+  FaseYKindDeSesion & {
+    sessionId: string;
   /** Tile al que se refiere el status (kind "tile") — el cliente pinta el
    *  velo/notificación direccional con esto. */
   tile?: { tx: number; ty: number };
@@ -464,7 +477,7 @@ export interface NarrativeStatusDeSesion extends CuerpoDeNarrativeStatus {
    *  de su posición —la reporta en `sim_input`—, así que el bridge la PIDE en
    *  el `ready` en vez de escribirla. Ausente = el jugador no se mueve. */
   spawn?: { x: number; z: number };
-}
+  };
 
 /** UN STATUS DE JUEGO: la pre-generación de mundo desde el título
  *  (`generate_game`). No toca velos de tile ni loaders de escena — alimenta la

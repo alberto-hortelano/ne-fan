@@ -1,9 +1,9 @@
 /** Geometría del plano continuo de tiles — ÚNICA fuente de verdad.
  *
  *  El mundo es un plano global dividido en tiles cuadrados de 64×64 m con
- *  clave (tx, ty). El tile (0,0) está CENTRADO en el origen del mundo: así la
- *  migración del save v3 (escenas centradas en el origen) estampa la escena
- *  vieja en el tile (0,0) sin mover al jugador ni a los NPC.
+ *  clave (tx, ty). El tile (0,0) está CENTRADO en el origen del mundo, y por
+ *  eso `worldToTile` redondea en vez de truncar. Toda escena vive en un tile
+ *  (#405): no hay escena «sin sitio en el plano».
  *
  *  Convención de ejes (idéntica al cliente): east = +x, west = −x,
  *  south = +z (ty+1), north = −z (ty−1).
@@ -29,6 +29,25 @@ export interface WorldRect {
 }
 
 export const tileKey = (tx: number, ty: number): string => `tile_${tx}_${ty}`;
+
+/** Las coords del tile de una escena Format D cruda, o un error que nombra
+ *  `tile`. Es el ÚNICO lector del crudo (#405): `formatDToWorld`,
+ *  `composeTilePlan`, el expander y el registro de NPCs lo comparten, así que
+ *  «sin tile» tiene un solo mensaje — lo que llega aquí sin él es un bug de
+ *  quien llama, no una variante. El texto es el mismo que el `required_error`
+ *  del zod, que es el que lee el modelo en el pre-flight. */
+export function tileCoordDe(raw: Record<string, unknown>): TileCoord {
+  const t = raw.tile as { tx?: unknown; ty?: unknown } | null | undefined;
+  if (!t || typeof t !== "object") {
+    throw new Error(
+      "una escena necesita `tile` {tx,ty}: es la única variante de Format D (mundo continuo, pídela con generate_tile)",
+    );
+  }
+  if (!Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
+    throw new Error(`tile.tx/ty deben ser enteros, got ${JSON.stringify(raw.tile)}`);
+  }
+  return { tx: t.tx as number, ty: t.ty as number };
+}
 
 /** Parse de un id canónico `tile_{tx}_{ty}` → coords, o null si no lo es. */
 export function parseTileKey(key: string): TileCoord | null {

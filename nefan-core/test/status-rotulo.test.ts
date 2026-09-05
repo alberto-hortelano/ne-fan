@@ -26,7 +26,10 @@ import type { NarrativeStatusDeSesion } from "../src/protocol/messages.js";
  *  (QA §3.3). Los casos de VIAJE traen ahora su cuerpo con el destino puesto,
  *  explícitamente, porque son los únicos donde el bridge lo escribe. */
 const fallo = (
-  extra: Partial<Omit<NarrativeStatusDeSesion, "sessionId">> = {},
+  // Sin `phase`: la fija el helper (es un FALLO), y desde #405 el tipo ata la
+  // fase al kind — un `extra` que pudiera traer `phase` des-correlacionaría
+  // las dos mitades y el literal dejaría de ser un `NarrativeStatusDeSesion`.
+  extra: Partial<Omit<NarrativeStatusDeSesion, "sessionId" | "phase">> = {},
 ): NarrativeStatusDeSesion => ({
   type: "narrative_status",
   sessionId: "partida_de_prueba",
@@ -146,8 +149,17 @@ describe("rótulo de un fallo del motor", () => {
 
   it("rotular algo que NO es un fallo es un error de quien llama (fail-loud)", () => {
     for (const phase of ["generating", "progress", "ready"] as const) {
+      // Con `kind: "tile"` las tres fases son expresables (el `ready` solo lo es
+      // para `tile` y `plugin` desde #405), así que el literal es un status
+      // legítimo y lo que se prueba es el fail-loud del rotulador, no el tipo.
+      const noEsFallo: NarrativeStatusDeSesion = {
+        type: "narrative_status",
+        sessionId: "partida_de_prueba",
+        phase,
+        kind: "tile",
+      };
       assert.throws(
-        () => rotuloDeStatus(fallo({ phase }), { mundoVacio: true, overlayAbierto: true }),
+        () => rotuloDeStatus(noEsFallo, { mundoVacio: true, overlayAbierto: true }),
         /solo rotula fallos/,
         `phase "${phase}" debería rechazarse`,
       );

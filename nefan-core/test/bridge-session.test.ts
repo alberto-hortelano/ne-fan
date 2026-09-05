@@ -27,6 +27,7 @@ import {
   waitFor,
   REAL_GAMES_DIR,
   REAL_STYLES_DIR,
+  escenaExpandidaDePrueba,
 } from "./helpers.js";
 
 describe("bridge ciclo de sesión", () => {
@@ -414,16 +415,11 @@ describe("bridge ciclo de sesión", () => {
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     // Escena Format D mínima registrada como haría el motor narrativo.
-    narrative.recordSceneLoaded("fd_scene", {
-      scene_id: "fd_scene",
-      scene_description: "prueba",
-      size: { cols: 4, rows: 4, meters_per_cell: 2 },
-      terrain: ["gggg", "gggg", "gggg", "gggg"],
-      __expanded: true,
+    narrative.recordSceneLoaded("fd_scene", escenaExpandidaDePrueba("fd_scene", {
       entities: [
         { id: "caja", kind: "prop", name: "Caja", cell: [1, 1], footprint: [1, 1] },
       ],
-    });
+    }));
     await entrarEnLaPartida(ctx, socket, sessionId);
 
     narrative.startNewSession("plugtest");
@@ -449,18 +445,13 @@ describe("bridge ciclo de sesión", () => {
     const { socket, sent } = makeSocket();
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    narrative.recordSceneLoaded("fd_pelea", {
-      scene_id: "fd_pelea",
-      scene_description: "prueba",
-      size: { cols: 4, rows: 4, meters_per_cell: 2 },
-      terrain: ["gggg", "gggg", "gggg", "gggg"],
-      __expanded: true,
+    narrative.recordSceneLoaded("fd_pelea", escenaExpandidaDePrueba("fd_pelea", {
       entities: [
         { id: "herido_1", kind: "npc", name: "Herido", role: "hostile", cell: [1, 1], footprint: [1, 1] },
         { id: "muerto_1", kind: "npc", name: "Muerto", role: "hostile", cell: [2, 2], footprint: [1, 1] },
         { id: "barkeep", kind: "npc", name: "Tabernero", cell: [3, 3], footprint: [1, 1] },
       ],
-    });
+    }));
     // Lo que dejó la partida anterior en el ledger (lo escribe `save()` desde
     // el runtime del sim; aquí se pone a mano para aislar el sujeto: el WIRE).
     narrative.getEntity("herido_1")!.data.combat = { health: 12, max_health: 60 };
@@ -507,16 +498,11 @@ describe("bridge ciclo de sesión", () => {
     const { socket, sent } = makeSocket();
     await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    narrative.recordSceneLoaded("fd_ilegible", {
-      scene_id: "fd_ilegible",
-      scene_description: "prueba",
-      size: { cols: 4, rows: 4, meters_per_cell: 2 },
-      terrain: ["gggg", "gggg", "gggg", "gggg"],
-      __expanded: true,
+    narrative.recordSceneLoaded("fd_ilegible", escenaExpandidaDePrueba("fd_ilegible", {
       entities: [
         { id: "bandido_1", kind: "npc", name: "Bandido de camino", role: "hostile", cell: [1, 1], footprint: [1, 1] },
       ],
-    });
+    }));
     // Lo que deja en el save una versión anterior del juego: vida sin
     // denominador. El jugador lo había MATADO.
     narrative.getEntity("bandido_1")!.data.combat = { health: 0 };
