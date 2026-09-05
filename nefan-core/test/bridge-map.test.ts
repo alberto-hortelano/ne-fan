@@ -299,18 +299,27 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     assert.deepEqual(scene?.exits?.map((e) => e.place_id), ["claro"]);
   });
 
-  it("si el motor acota el lugar con `place_anchors`, el spawn cae DENTRO del rect", async () => {
+  it("si el motor acota el lugar con `map_upsert_place.anchor.rect` mientras genera, el spawn cae DENTRO del rect", async () => {
+    // El holder existe porque el motor alcanza una sesión que todavía no
+    // existe cuando se construye el ctx: igual que el de verdad, muta el mapa
+    // DENTRO de la llamada, por la tool, no por un campo de la escena (#408).
+    const sesion: { narrative?: NarrativeState } = {};
     const { ctx, broadcasts, narrative } = makeCtx({
       ai: {
-        generateScene: async () => ({
-          ok: true,
+        generateScene: async () => {
           // El motor decide que la forja ocupa las celdas 20..29 × 30..39 del
           // tile: el anclaje se afina y el jugador debe aparecer ahí, no en
-          // el centro del tile.
-          scene: { ...tileScene(), place_anchors: [{ place_id: "forja", rect: [20, 30, 10, 10] }] },
-        }),
+          // el centro del tile. Llega DESPUÉS de que el bridge fijara el
+          // anchor sin rect para generar: el spawn se resuelve al difundir.
+          sesion.narrative!.worldMap.upsertPlace({
+            id: "forja", kind: "site", parent_id: "world", name: "La Forja",
+            anchor: { tx: 1, ty: 0, rect: [20, 30, 10, 10] },
+          });
+          return { ok: true as const, scene: tileScene() };
+        },
       },
     });
+    sesion.narrative = narrative;
     seedTravelWorld(narrative);
     const { socket } = makeSocket();
     await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
@@ -786,20 +795,6 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
 
     assert.equal(narrative.worldMap.serialize().active_place_id, "robledo");
     assert.deepEqual(exitsOf(broadcasts), ["molino"], "el panel ofrece el molino");
-  });
-
-  it("el bootstrap sin place_id pero con place_anchors se ata igual (el bridge lo deduce)", async () => {
-    // Es el caso que QA provocó a mano quitándole el place_id al motor de
-    // bench: con el anchor declarado, el bridge no necesita la prosa.
-    const { ctx, broadcasts, narrative } = bootstrapWith(
-      tileScene({ place_anchors: [{ place_id: "robledo", rect: [52, 48, 24, 16] }] }),
-    );
-    const { socket } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
-    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
-
-    assert.equal(narrative.scenes_loaded["tile_0_0"].scene_data.place_id, "robledo");
-    assert.deepEqual(exitsOf(broadcasts), ["molino"]);
   });
 
   it("un link creado a mitad de sesión llega como exits_changed del tile activo, sin escena y sin sellar el save (#179)", async () => {

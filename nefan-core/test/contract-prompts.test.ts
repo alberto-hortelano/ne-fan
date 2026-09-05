@@ -207,18 +207,17 @@ describe("contrato narrativo — el tool a mano no ofrece campos que el zod no c
     );
   });
 
-  it("la vuelta en la raíz: lo que el zod acepta y el tool NO ofrece es EXACTAMENTE `place_anchors`", () => {
-    // El saneador de ai_server deriva su allow-list de raíz del tool más este
-    // único nombre (#400): si el zod gana un campo emitible que el tool no
-    // ofrece, los dos gates divergen sin que nadie se entere. `place_anchors`
-    // es la brecha conocida (lo escribe el motor del banco y lo leen los
-    // handlers; el tool real no lo pide) y tiene issue derivado.
+  it("la vuelta en la raíz: lo que el zod acepta y el tool NO ofrece es EXACTAMENTE nada", () => {
+    // El saneador de ai_server deriva su allow-list de raíz del tool (#400):
+    // si el zod gana un campo emitible que el tool no ofrece, los dos gates
+    // divergen sin que nadie se entere. Este test es lo que impide que la
+    // lista de brechas (hoy vacía) vuelva a crecer en silencio.
     const delJson = Object.keys(tool.input_schema.properties);
     const emitibles = SCENE_FIELDS.filter((k) => k !== "size" && k !== "terrain");
     assert.deepEqual(
       emitibles.filter((k) => !delJson.includes(k)),
-      ["place_anchors"],
-      "campos de raíz que el zod acepta y el tool no ofrece: o van al tool, o a la allow-list de ai_server con su motivo",
+      [],
+      "campos de raíz que el zod acepta y el tool no ofrece: o van al tool, o se retiran (con su motivo en retired-terrain-fields.ts)",
     );
     // Y la lista que se le ENSEÑA al motor es la del tool, ni uno más ni uno
     // menos: un nombre sin esquema no se le enseña (QA de #400, hallazgo 4).

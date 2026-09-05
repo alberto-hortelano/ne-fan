@@ -566,6 +566,30 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  it("[error] campos-retirados-no-vuelven: las anclas de lugar de la escena (#408) saltan donde reaparezcan, y el anchor vivo no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "campos-retirados-no-vuelven");
+    assert.deepEqual(
+      deLaRegla([
+        // El motor del banco, que era su único productor, volviendo a escribirlo.
+        { path: "labs/narrative/fake-scenes.ts", text: 'place_anchors: [{ place_id: "taberna", rect: [52, 48, 24, 16] }],\n', imports: [] },
+        // El espejo Python reinyectándolo en la allow-list.
+        { path: "ai_server/x.py", text: 'SCENE_FIELDS = [*CAMPOS, "place_anchors"]\n', imports: [] },
+      ]).map((v) => `${v.path}:${v.line}`),
+      ["ai_server/x.py:1", "labs/narrative/fake-scenes.ts:1"],
+      "el campo retirado salta en el banco y en Python",
+    );
+    // Y el canal VIVO, que se parece, no salta: el anchor del lugar por la tool.
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-core/bridge/handlers/scene.ts", text: "place.anchor = anchor;\n", imports: [] },
+        { path: "narrative-mcp/server.ts", text: "anchor: z.object({ tx: z.number(), ty: z.number(), rect: RectSchema.optional() }),\n", imports: [] },
+      ]),
+      [],
+      "`anchor` y `place.anchor` son el canal vivo (map_upsert_place)",
+    );
+  });
+
   it("[error] campos-retirados-no-vuelven: lo que ya no emite nadie salta donde reaparezca", () => {
     const deLaRegla = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "campos-retirados-no-vuelven");

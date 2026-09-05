@@ -47,6 +47,10 @@ MOTIVO_DE_CLAVE_RETIRADA = {
         "ambient_event",
         "la frase de ambiente no la leía nadie; lo que quieras contar del lugar va en `scene_description`",
     ),
+    "place_anchors": _retirado(
+        "place_anchors",
+        "la escena no ancla lugares: el motor los ancla con `map_upsert_place.anchor {tx, ty, rect}`, que ya existe",
+    ),
 }
 
 # Claves de una ENTITY.
