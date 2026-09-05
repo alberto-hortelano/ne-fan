@@ -20,11 +20,9 @@
  *  `.strict()` en los DOS niveles, escena y entity. La entity se cerró en #259
  *  (censadas 95 entities en 7 escenas: cero claves fuera del shape); la escena
  *  en #400, cuando los dos campos que su `.passthrough()` sostenía dejaron de
- *  necesitarlo: las anclas de lugar de la escena se declararon (y en #408 se
- *  retiraron a su vez: el motor ancla lugares con `map_upsert_place.anchor`,
- *  que ya existía) y la frase de ambiente de la escena se retiró (cero
- *  lectores en core, bridge y cliente — la copiaba `formatDToWorld` para
- *  nadie). Un passthrough que no protege tráfico
+ *  necesitarlo (uno se declaró y otro se retiró; hoy los dos están retirados
+ *  y `retired-terrain-fields.ts` dice con qué se sustituye cada uno). Un
+ *  passthrough que no protege tráfico
  *  legítimo solo se traga las erratas del modelo, y ese es justo el
  *  fail-silent que este gate existe para cerrar. Con el cierre, una clave de
  *  raíz desconocida es SIEMPRE el primer issue, así que los rebotes dirigidos
@@ -231,9 +229,8 @@ export const SCENE_FIELDS = Object.keys(sceneBaseShape) as readonly string[];
 /** La lista que se le enseña al MOTOR cuando trae una clave de más: los campos
  *  del tool, ni uno más. De la base sale solo el grid (`size`/`terrain`, que
  *  solo existe en la población expandida). `contract-prompts.test.ts` canda que
- *  esta lista y la raíz del tool sean el MISMO conjunto — desde #408 sin
- *  ninguna brecha: la única (las anclas de lugar, que solo escribía el motor
- *  del banco) se retiró; el saneador de ai_server la lee del tool directamente. */
+ *  esta lista y la raíz del tool sean el MISMO conjunto, sin ninguna brecha;
+ *  el saneador de ai_server la lee del tool directamente. */
 export const EMITTED_SCENE_FIELDS = SCENE_FIELDS.filter((k) => k !== "size" && k !== "terrain");
 
 /** Por qué se rebota una clave de raíz RETIRADA, o `null` si es una clave

@@ -210,9 +210,8 @@ describe("contrato narrativo — el tool a mano no ofrece campos que el zod no c
   it("la vuelta en la raíz: lo que el zod acepta y el tool NO ofrece es EXACTAMENTE nada", () => {
     // El saneador de ai_server deriva su allow-list de raíz del tool (#400):
     // si el zod gana un campo emitible que el tool no ofrece, los dos gates
-    // divergen sin que nadie se entere. Hasta #408 había UNA brecha conocida
-    // (las anclas de lugar, que solo escribía el motor del banco); se retiró,
-    // y este test es lo que impide que la lista vuelva a crecer en silencio.
+    // divergen sin que nadie se entere. Este test es lo que impide que la
+    // lista de brechas (hoy vacía) vuelva a crecer en silencio.
     const delJson = Object.keys(tool.input_schema.properties);
     const emitibles = SCENE_FIELDS.filter((k) => k !== "size" && k !== "terrain");
     assert.deepEqual(

@@ -113,11 +113,10 @@ def _campos_de_la_raiz_del_tool() -> list:
 CAMPOS_DE_LA_RAIZ_DEL_TOOL = _campos_de_la_raiz_del_tool()
 
 # La allow-list del rechazo de clave de raíz desconocida (#400, espejo del
-# `.strict()` de EmittedSceneSchema): EXACTAMENTE los campos del tool. Hasta
-# #408 llevaba uno más (las anclas de lugar, que solo escribía el motor del
-# banco); hoy no hay brecha, y que siga sin haberla lo canda
-# `contract-prompts.test.ts` del lado TS: si el zod gana un campo que el tool
-# no ofrece, el test rompe antes de que los dos gates diverjan.
+# `.strict()` de EmittedSceneSchema): EXACTAMENTE los campos del tool, sin
+# brecha. Que siga sin haberla lo canda `contract-prompts.test.ts` del lado TS:
+# si el zod gana un campo que el tool no ofrece, el test rompe antes de que los
+# dos gates diverjan.
 SCENE_FIELDS = [*CAMPOS_DE_LA_RAIZ_DEL_TOOL]
 
 

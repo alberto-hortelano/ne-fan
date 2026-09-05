@@ -29,8 +29,11 @@ import type { WorldMapManager } from "./world-map.js";
  *  contrario. El primero es legítimo (no hay a dónde viajar); el segundo es
  *  el fallo silencioso. Colapsarlos en un booleano volvería a esconderlo.
  *
- *  `error` va redactado para el MOTOR: llega hasta él por el mismo canal que
- *  el resto de rechazos y tiene que poder corregirlo y re-responder. */
+ *  `error` es el diagnóstico: llega al log del bridge (`runBootstrapTile`
+ *  lanza y la cola lo escribe) y al jugador como fallo de construcción
+ *  («El motor narrativo no pudo construirlo; inténtalo de nuevo»). NO vuelve
+ *  al motor —nadie le pide re-responder—, por eso dice qué añadir: es quien
+ *  lea el log quien tiene que llevárselo. */
 export type BootstrapPlaceResolution =
   | { kind: "place"; placeId: string }
   | { kind: "sin-lugares" }

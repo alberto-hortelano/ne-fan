@@ -10,6 +10,7 @@
  *  tile de bootstrap y los sprite sheets sin GPU ni API de pago.
  */
 import { esperarPartidaEnDisco } from "./saves.mjs";
+import { URLS } from "./stack.mjs";
 
 /** ¿Puede este stack disparar generación SIN gastar un céntimo?
  *
@@ -450,6 +451,29 @@ export async function regenerarMundo(ctx, gameId = "alta_fantasia") {
  *  `libro` es el nombre de la clave en `window.__nefan` (`nombre()` si es
  *  función) y solo se usa para CONTAR QUÉ PASÓ si el cortafuegos salta;
  *  `probe` es la condición, evaluada dentro de la página como en `waitFor`. */
+/** Espera a que el world map que sirve el bridge (`GET /map` del State API, la
+ *  misma lectura que haría el motor por `map_get`) cumpla `predicado` (recibe
+ *  el mapa parseado; devuelve algo verdadero para parar). Devuelve ese valor,
+ *  o `null` si `maxMs` expira — el llamante decide si eso es un rojo.
+ *
+ *  Existe para el guion que mide la activación de un lugar POR POSICIÓN (el
+ *  74: el bridge pone `active_place_id` cuando el cliente reporta que el
+ *  jugador está dentro del rect del anchor), sin escribir un sondeo a mano
+ *  dentro del guion — que es lo que prohíbe `qa-guiones-sin-espera-por-reloj`:
+ *  la espera por condición vive aquí, una vez, como `esperarEnElSave`. */
+export async function esperarEnElMapa(predicado, maxMs = 20_000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < maxMs) {
+    const res = await fetch(`${URLS.state_api}/map`);
+    if (res.ok) {
+      const v = predicado(await res.json());
+      if (v) return v;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return null;
+}
+
 export async function esperarRegistro(ctx, desc, libro, probe, maxMs = 60_000, arg = undefined) {
   try {
     return await ctx.waitFor(desc, probe, maxMs, arg);
