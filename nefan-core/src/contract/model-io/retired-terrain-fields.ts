@@ -25,7 +25,7 @@ export const RETIRED_TERRAIN_FIELDS = ["terrain_legend", "terrain_patches"] as c
 const SUFIJO = "Si viene de un save o snapshot, bórralo o regenéralo";
 
 const MOTIVO_DEL_TERRENO =
-  "el terreno se declara con `biome` + `ground`/`volumes` y la solidez la fija el engine (agua y muro bloquean)";
+  "el terreno se declara con `biome` + `ground`/`volumes` y la solidez la fija el engine (el agua bloquea; los muros son `volumes`)";
 
 /** Clave retirada → con qué se sustituye. Raíz de la escena y entity juntas:
  *  ninguna clave está en las dos, y así quien pregunte por una clave recibe

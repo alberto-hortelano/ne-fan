@@ -1,4 +1,3 @@
-import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -6,11 +5,14 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  DEFAULT_SOLID_CHARS,
   formatDToWorld,
   KIND_DEFAULT_HEIGHT,
   type NpcEnElWire,
   type WorldScene,
 } from "../src/scene/scene-normalize.js";
+import { createTerrainCollider } from "../src/scene/terrain-collision.js";
+import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { npcSkinStyleRef } from "../src/games/style-categories.js";
 import {
   combatForHostileRole,
@@ -165,12 +167,39 @@ describe("formatDToWorld", () => {
     // colisión, y lo que bloquea lo fija `DEFAULT_SOLID_CHARS`.
     const w = formatDToWorld(makeFormatD());
     const tg = w.terrain_grid;
-    assert.deepEqual(tg.solid_chars, ["W", "w"]);
+    assert.deepEqual(tg.solid_chars, ["w"]);
     assert.deepEqual(
       Object.keys(tg).sort(),
       ["cols", "grid", "meters_per_cell", "origin", "rows", "solid_chars"],
       "el wire del grid es exactamente TerrainGridData",
     );
+  });
+
+  it("el agua es el ÚNICO sólido del grid: una \"W\" no bloquea, una \"w\" sí (#407)", () => {
+    // `W` fue «muro» sin que ningún productor la escribiera nunca: los muros
+    // del juego son volúmenes del plan. Se retira del engine, y el candado es
+    // el collider REAL sobre un tile real: la misma celda, con cada char.
+    assert.deepEqual(DEFAULT_SOLID_CHARS, ["w"]);
+    const conCelda = (ch: string): WorldScene => {
+      const tile = expandScenePrimitives({
+        tile: { tx: 0, ty: 0 },
+        scene_id: "tile_0_0",
+        scene_description: "campo",
+        biome: "grass",
+        entities: [],
+      }) as Record<string, unknown>;
+      const terrain = tile.terrain as string[];
+      terrain[10] = terrain[10].slice(0, 10) + ch + terrain[10].slice(11);
+      return formatDToWorld(tile);
+    };
+    // Celda (10,10) del tile (0,0): mundo (-32 + 10,5·0,5) en los dos ejes.
+    const centro = -32 + 10.5 * 0.5;
+    const conW = createTerrainCollider(conCelda("W").terrain_grid);
+    assert.equal(conW, null, "sin ninguna celda sólida el collider no existe: la W no cuenta");
+    const conw = createTerrainCollider(conCelda("w").terrain_grid);
+    assert.ok(conw, "el agua sí crea collider");
+    assert.equal(conw.isSolidCell(10, 10), true, "y bloquea esa celda");
+    assert.equal(conw.blocksCircle(centro, centro, 0.2), true);
   });
 
   it("una world scene ya normalizada NO vuelve a entrar: lanza (la idempotencia murió con __format_d)", () => {

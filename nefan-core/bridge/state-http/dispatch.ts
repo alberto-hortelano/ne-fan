@@ -52,6 +52,21 @@ export async function dispatchStateRequest(
     : undefined;
   if (!match || !handler) return noRoute(method, path);
 
+  // Guardia de PARTIDA: una ruta que el contrato declara mutadora no se
+  // despacha sin sesión activa (#453). Antes entraba, el handler escribía en
+  // el NarrativeState vacío y contestaba 200, y `save()` lanzaba después en
+  // `onMutation` —donde solo lo veía el log del bridge—: el motor se quedaba
+  // con un «hecho» sobre algo que no existía. Va aquí y no en cada handler
+  // por el mismo motivo que la guardia de arriba: repartida, la primera ruta
+  // nueva nacería sin ella. Y va ANTES de leer el body: no hay nada que
+  // validar de una petición que no se va a aplicar. Las lecturas y los POST
+  // que no mutan (`/scene/validate`, `/narrative_progress`) siguen pasando:
+  // la regla es «mutadora», no «POST». La sesión PROVISIONAL (#279) tiene
+  // `session_id` y NO es este caso: muta en memoria y `save()` devuelve
+  // `escrito: false` sin lanzar, que es su diseño.
+  const sinPartida = sinSesionParaMutar(ctx, match.key, method, path);
+  if (sinPartida) return sinPartida;
+
   const body = method === "POST" ? await req.readBody() : undefined;
   const result = await handler(ctx, {
     params: match.params,
@@ -67,6 +82,26 @@ function noRoute(method: string, path: string): RouteResult {
   return {
     status: 404,
     body: { ok: false, error: `no route for ${method} ${path}` } satisfies ErrorResponse,
+  };
+}
+
+function sinSesionParaMutar(
+  ctx: StateHttpContext,
+  key: keyof typeof WorldStateApi,
+  method: string,
+  path: string,
+): RouteResult | null {
+  if (!WorldStateApi[key].mutates) return null;
+  if (ctx.narrative.session_id !== "") return null;
+  return {
+    status: 409,
+    body: {
+      ok: false,
+      error:
+        `no_session: ${method} ${path} muta la partida y el bridge no tiene ninguna activa ` +
+        `(ni start_session ni resume_session han corrido, o el save se borró). No se ha aplicado ` +
+        `nada. Abre o reanuda una partida antes de volver a intentarlo.`,
+    } satisfies ErrorResponse,
   };
 }
 

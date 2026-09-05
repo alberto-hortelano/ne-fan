@@ -99,10 +99,14 @@ export default async function (ctx) {
     );
   }
 
-  // ── 3. `solid_chars` dice qué bloquea (agua y muro, fijados por el engine) ─
+  // ── 3. `solid_chars` dice qué bloquea (el agua, fijada por el engine) ─────
   const solidos = plano.solid_chars ?? [];
   ctx.expect("el agua es un char sólido", solidos.includes("w"), JSON.stringify(solidos));
-  ctx.expect("el muro es un char sólido", solidos.includes("W"), JSON.stringify(solidos));
+  ctx.expect(
+    "y es el ÚNICO: los muros son volúmenes del plan, no chars del grid (#407)",
+    JSON.stringify(solidos) === JSON.stringify(["w"]),
+    JSON.stringify(solidos),
+  );
   ctx.expect("el camino NO es sólido", !solidos.includes("_"), JSON.stringify(solidos));
 
   // ── 4. …y eso llega al colisionador del jugador ─────────────────────────

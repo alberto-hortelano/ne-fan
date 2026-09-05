@@ -23,21 +23,22 @@ function makeState(extra: Record<string, unknown> = {}): NarrativeState {
     entities: [],
     ...extra,
   }) as Record<string, unknown>;
-  // Muro en la fila 10, columnas 10..20 (terrain_grid del esquema).
+  // Agua en la fila 10, columnas 10..20 (terrain_grid del esquema; `w` es el
+  // único char sólido que fija el engine — los muros son volúmenes del plan).
   const terrain = scene.terrain as string[];
-  terrain[10] = terrain[10].slice(0, 10) + "W".repeat(11) + terrain[10].slice(21);
+  terrain[10] = terrain[10].slice(0, 10) + "w".repeat(11) + terrain[10].slice(21);
   s.recordSceneLoaded("tile_0_0", scene);
   return s;
 }
 
 describe("createSimCollisionProvider", () => {
-  it("bloquea sobre los muros del terrain_grid y no en campo abierto", () => {
+  it("bloquea sobre el agua del terrain_grid y no en campo abierto", () => {
     const provider = createSimCollisionProvider(makeState());
     const wall = cellCenter(15, 10);
-    assert.ok(provider.blocksCircle(wall.x, wall.z, 0.5), "celda W debe bloquear");
+    assert.ok(provider.blocksCircle(wall.x, wall.z, 0.5), "celda w debe bloquear");
     const open = cellCenter(64, 64);
     assert.ok(!provider.blocksCircle(open.x, open.z, 0.5), "campo abierto no bloquea");
-    // blocksMove: entrar al muro desde fuera bloquea; moverse en abierto no.
+    // blocksMove: entrar al agua desde fuera bloquea; moverse en abierto no.
     const before = cellCenter(15, 6);
     assert.ok(provider.blocksMove(before.x, before.z, wall.x, wall.z, 0.5));
     assert.ok(!provider.blocksMove(open.x, open.z, open.x + 1, open.z, 0.5));
