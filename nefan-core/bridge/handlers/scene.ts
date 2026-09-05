@@ -175,8 +175,9 @@ async function runPlaceTravel(
       // (coordenadas del tile, "fetch failed") se queda en el log del bridge:
       // quien viaja pulsó el nombre de un lugar, no un par de coordenadas.
       destino: place.name,
-      // Al difundir, no ahora: si el motor declaró `place_anchors` con rect,
-      // el jugador aparece dentro del lugar y no en el centro del tile.
+      // Al difundir, no ahora: si el motor afinó el anchor del lugar con un
+      // rect (`map_upsert_place.anchor`) mientras generaba, el jugador aparece
+      // dentro del lugar y no en el centro del tile.
       spawnAt: () => resolvePlaceTarget(ctx.narrative, placeId) ?? undefined,
     });
   } catch (err) {

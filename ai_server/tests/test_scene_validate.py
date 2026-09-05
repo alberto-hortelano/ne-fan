@@ -134,9 +134,8 @@ class TestVariantesRetiradas(unittest.TestCase):
         self.assertIn("`nota_del_motor`", msg)
         for campo in ("tile", "biome", "scene_id", "entities", "ground", "volumes"):
             self.assertIn(campo, msg)
-        # Ni el grid ni `place_anchors` (sin esquema en el tool) se le enseñan.
+        # Ni el grid se le enseña: un nombre sin esquema en el tool no se enseña.
         self.assertNotIn("`size`", msg)
-        self.assertNotIn("place_anchors", msg)
 
     def test_toda_clave_retirada_vuelve_con_su_motivo_en_la_raiz(self):
         # Espejo de `sceneErrorMap`: el mismo texto que el zod, palabra por
@@ -161,44 +160,6 @@ class TestVariantesRetiradas(unittest.TestCase):
                     validate_scene_response(s)
                 self.assertIn(motivo, str(cm.exception))
                 self.assertNotIn("EXACTAMENTE estos campos", str(cm.exception))
-
-
-class TestPlaceAnchorsEnEspejo(unittest.TestCase):
-    """QA de #400 (hallazgo 1): el zod rechaza la forma mala y aquí se podaba
-    en silencio mientras el comentario decía «espejo exacto». Ahora es espejo:
-    misma forma, y fail-loud nombrando el elemento."""
-
-    def _con(self, anchors):
-        s = base_scene()
-        s["place_anchors"] = anchors
-        return validate_scene_response(s)
-
-    def test_la_forma_buena_pasa_tal_cual(self):
-        out = self._con([{"place_id": "taberna", "rect": [52, 48, 24, 16]}, {"place_id": "plaza"}])
-        self.assertEqual(out["place_anchors"], [{"place_id": "taberna", "rect": [52, 48, 24, 16]}, {"place_id": "plaza"}])
-
-    def test_nueve_anclas_lanzan_con_la_cifra(self):
-        with self.assertRaises(ValueError) as cm:
-            self._con([{"place_id": f"p{i}"} for i in range(9)])
-        self.assertIn("como mucho 8", str(cm.exception))
-        self.assertIn("9", str(cm.exception))
-
-    def test_un_ancla_sin_place_id_lanza_nombrando_el_elemento(self):
-        with self.assertRaises(ValueError) as cm:
-            self._con([{"place_id": "ok"}, {"rect": [1, 2, 3, 4]}])
-        self.assertIn("`place_anchors[1].place_id`", str(cm.exception))
-
-    def test_un_rect_que_no_son_cuatro_enteros_lanza(self):
-        for rect in ([1, 2, 3], [1, 2, 3, 4.5], "1,2,3,4", [1, 2, 3, True]):
-            with self.subTest(rect=rect):
-                with self.assertRaises(ValueError) as cm:
-                    self._con([{"place_id": "x", "rect": rect}])
-                self.assertIn("`place_anchors[0].rect`", str(cm.exception))
-
-    def test_lo_que_no_es_una_lista_lanza(self):
-        with self.assertRaises(ValueError) as cm:
-            self._con({"taberna": [1, 2, 3, 4]})
-        self.assertIn("`place_anchors`", str(cm.exception))
 
 
 class TestAlturaYNombreEnEspejo(unittest.TestCase):

@@ -164,8 +164,8 @@ export async function generateTileScene(
  *  `opts` sirve al viaje a un place anclado: `placeId` engancha el tile al
  *  lugar, `message` narra "Viajando a X..." en vez de "Explorando..." y
  *  `spawnAt` PIDE al cliente que aparezca ahí cuando el tile esté listo. Es
- *  una función porque se resuelve AL DIFUNDIR: el motor pudo declarar
- *  `place_anchors` con rect y afinar el anclaje durante la generación. */
+ *  una función porque se resuelve AL DIFUNDIR: el motor pudo afinar el anchor
+ *  del lugar con un rect (`map_upsert_place.anchor`) durante la generación. */
 export async function runTileGeneration(
   ctx: BridgeContext,
   tx: number,

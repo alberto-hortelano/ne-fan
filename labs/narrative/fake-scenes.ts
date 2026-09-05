@@ -182,6 +182,14 @@ export const BOOTSTRAP_SCATTER = {
   ],
 };
 
+/** Dónde VIVE cada lugar dentro de su tile, en celdas [col, row, ancho, alto]:
+ *  el rect del anchor que el motor del banco fija por `map_upsert_place`
+ *  (el canal real, #408) y que el bridge usa para que el jugador aparezca
+ *  dentro del lugar, no en el centro del tile. La taberna casa con su cutaway
+ *  de `BOOTSTRAP_VOLUMES`; el de un lugar anclado, con `placeVolumes`. */
+export const BOOTSTRAP_PLACE_RECT: [number, number, number, number] = [52, 48, 24, 16];
+export const ANCHORED_PLACE_RECT: [number, number, number, number] = [48, 68, 32, 20];
+
 /** Tile de bootstrap (0,0): la taberna estampada en el plano + camino al este. */
 export function bootstrapTile() {
   return {
@@ -249,7 +257,6 @@ export function bootstrapTile() {
       // cuadrados sin proyectar en iso".
       { id: "casa_lenador", kind: "building", name: "casa del leñador", cell: [92, 82], footprint: [20, 14] },
     ],
-    place_anchors: [{ place_id: "taberna_bench_place", rect: [52, 48, 24, 16] }],
     ground: BOOTSTRAP_GROUND,
     volumes: BOOTSTRAP_VOLUMES,
     ...BOOTSTRAP_SCATTER,
@@ -321,9 +328,6 @@ export function makeTile(gt: GenerateTile) {
     biome: "grass",
     ground,
     ...(place ? { volumes: placeVolumes(place) } : {}),
-    // El motor acota DÓNDE vive el lugar dentro del tile: el bridge afina el
-    // anclaje con esto y el jugador aparece dentro, no en el centro geométrico.
-    ...(place ? { place_anchors: [{ place_id: place.id, rect: [48, 68, 32, 20] }] } : {}),
     vegetation_zones: [{ type: "abeto", area: [4, 4, 30, 20], density: 0.08 }],
     entities: [
       { id: `hito_${tx}_${ty}`, kind: "prop", name: `hito del tile (${tx},${ty})`, cell: [70, 58], footprint: [1, 1] },

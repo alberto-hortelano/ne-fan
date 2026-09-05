@@ -1,5 +1,5 @@
 {
-  "description": "un ancla sin `place_id` no ancla nada: se rechaza en los dos gates (QA de #400: el saneador la descartaba con traza).",
+  "description": "`place_anchors` está RETIRADO (#408): la escena no ancla lugares, el motor los ancla con `map_upsert_place.anchor {tx,ty,rect}`. Se rechaza en los dos gates aunque venga con la forma que un día fue buena — no murió la forma, murió el campo.",
   "expect": "reject",
   "payload": {
     "scene_id": "tile_0_0",
@@ -26,11 +26,12 @@
     ],
     "place_anchors": [
       {
+        "place_id": "taberna",
         "rect": [
-          1,
-          2,
-          3,
-          4
+          52,
+          48,
+          24,
+          16
         ]
       }
     ]

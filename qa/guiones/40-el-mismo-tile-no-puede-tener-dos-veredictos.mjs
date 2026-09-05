@@ -150,20 +150,6 @@ const CASOS = [
   ["scatter_zones basura", { ...base, scatter_zones: "hola" }, "scatter", "#203 metió scatter en el zod; tiene que quedar donde sus hermanos"],
   ["scatter zona sin generador", { ...base, scatter_generators: gen, scatter_zones: [zona({ kind: "no_existe" })] }, "scatter", "ídem"],
   ["scatter density negativa", { ...base, scatter_generators: gen, scatter_zones: [zona({ density: -1 })] }, "scatter", "ídem"],
-  // `place_anchors` entró en el zod con #400 con forma dura (≤8, `place_id`
-  // obligatorio, `rect` de 4 enteros) y en la QA de PR-A ai_server lo podaba
-  // en silencio: hoy es ESPEJO (rechaza nombrando el elemento), así que es
-  // eje `campo` y tiene fixture compartida por cada forma.
-  ["place_anchors 9 elementos", { ...base, place_anchors: Array.from({ length: 9 }, (_, i) => ({ place_id: `p${i}` })) }, "campo", "QA #400: ai_server truncaba a 8 en silencio"],
-  ["place_anchors rect de 3", { ...base, place_anchors: [{ place_id: "x", rect: [1, 2, 3] }] }, "campo", "QA #400: ai_server descartaba el rect"],
-  ["place_anchors sin place_id", { ...base, place_anchors: [{ rect: [1, 2, 3, 4] }] }, "campo", "QA #400: ai_server descartaba el elemento"],
-  ["place_anchors bueno", { ...base, place_anchors: [{ place_id: "taberna", rect: [52, 48, 24, 16] }] }, "campo", "control: la forma buena la aceptan los dos"],
-  // QA de la vuelta de PR-A (2026-09-03): el ancla del zod era `z.object` SIN
-  // `.strict()` (la clave extra se caía muda) y ai_server la rechazaba
-  // nombrándola: la dirección CARA (eje 2), el pre-flight acepta y ai_server
-  // tira el tile. Desde entonces el ancla es `.strict()` y este caso lo canda.
-  ["ancla con clave extra", { ...base, place_anchors: [{ place_id: "taberna", color: 1 }] }, "campo", "QA #400 vuelta: el ancla es .strict() en los dos lados"],
-
   // ── heredados, alineados en la QA de PR-A de T7 (2026-09-03) ────────────
   // Medidos divergentes en `main` (zod rechaza / ai_server descarta o rellena)
   // y arreglados en la misma vuelta: son CAMPOS y llevan fixture compartida.
