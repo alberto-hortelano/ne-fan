@@ -416,6 +416,17 @@ describe("state HTTP API", () => {
     assert.equal((inv.body.inventory as unknown[]).length, 1);
   });
 
+  it("inventario: un ítem SIN `id` es 400 con el campo nombrado, no una entrada que nadie podrá quitar", async () => {
+    // `inventory_remove` busca por `id` (#231b tipó `InventoryItem`): aceptar
+    // un ítem sin él es crear un objeto que ninguna tool puede sacar del
+    // inventario. El gate lo dice al motor en vez de guardarlo en silencio.
+    const sinId = await post("/entity/boris/inventory", { item: { name: "una nota suelta" } });
+    assert.equal(sinId.status, 400);
+    assert.equal(sinId.body.error, "item.id: Required");
+    const inv = await get("/entity/boris/inventory");
+    assert.equal((inv.body.inventory as unknown[]).length, 1, "el inventario no cambió");
+  });
+
   it("plugins: register → list → inspect", async () => {
     const empty = await get("/plugins");
     assert.deepEqual(empty.body.plugins, []);

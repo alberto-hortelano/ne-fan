@@ -10,6 +10,7 @@ import {
   type DialogueChoice,
   type DialogueEvent,
   type EntityRecord,
+  type InventoryItem,
   type LlmContext,
   type NarrativePlayerState,
   type SceneRecord,
@@ -777,7 +778,7 @@ export class NarrativeState {
   /** Append an item to an entity's inventory. Returns false if the entity
    * doesn't exist. The narrative engine uses this to materialize quest items
    * (e.g. a key in an NPC's pocket). */
-  addInventoryItem(entityId: string, item: unknown): boolean {
+  addInventoryItem(entityId: string, item: InventoryItem): boolean {
     if (entityId === "player") {
       this.player.inventory.push(item);
       return true;
@@ -794,8 +795,8 @@ export class NarrativeState {
   }
 
   /** Remove the first inventory item whose `id` matches. Returns false if
-   * the entity doesn't exist or no item carries that id — the items are
-   * untyped (`unknown[]`), so entries without an `id` field never match. */
+   * the entity doesn't exist or no item carries that id — an entity's items
+   * are untyped (`data.inventory`), so entries without an `id` never match. */
   removeInventoryItem(entityId: string, itemId: string): boolean {
     const inv = this.getInventory(entityId);
     if (entityId !== "player" && !this.getEntity(entityId)) return false;

@@ -23,7 +23,7 @@ import { routeMessage } from "../bridge/router.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type { LlmContext } from "../src/narrative/types.js";
 import type { SessionStartedMessage } from "../src/protocol/messages.js";
-import { FIXTURE_GAMES, makeCtx, makeNarrativeState, makeSocket } from "./helpers.js";
+import { FIXTURE_GAMES, hooksDePlugins, makeCtx, makeNarrativeState, makeSocket } from "./helpers.js";
 
 const GAME = "plugtest";
 
@@ -110,6 +110,7 @@ describe("POST /vocabulary (State API)", () => {
       },
       onProgress: () => {},
       onMapChanged: () => {},
+      plugins: hooksDePlugins(narrative),
     });
     await new Promise<void>((res) => server.once("listening", () => res()));
     const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -152,6 +153,7 @@ describe("POST /vocabulary (State API)", () => {
       onMutation: () => {},
       onProgress: () => {},
       onMapChanged: () => {},
+      plugins: hooksDePlugins(narrative),
     });
     await new Promise<void>((res) => server.once("listening", () => res()));
     return { server, baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };

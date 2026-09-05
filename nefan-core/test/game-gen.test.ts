@@ -13,6 +13,7 @@ import { join } from "node:path";
 
 import { routeMessage } from "../bridge/router.js";
 import type { NarrativeAiClient } from "../bridge/context.js";
+import type { SceneGenOutcome } from "../bridge/scene-gen-queue.js";
 import { worldSnapshotPath, type WorldSnapshot } from "../src/games/world-snapshot.js";
 import type { LlmContext } from "../src/narrative/types.js";
 import type {
@@ -130,7 +131,7 @@ describe("generate_game", () => {
       // pre-realizan en la rama tile (el fake lanza si alguien lo intenta).
       assert.equal(bundle.aiCalls.scene.length, 9);
       const snap = JSON.parse(
-        readFileSync(worldSnapshotPath(gamesDir, GAME, "tile"), "utf-8"),
+        readFileSync(worldSnapshotPath(gamesDir, GAME), "utf-8"),
       ) as WorldSnapshot;
       assert.equal(snap.entry_scene_id, "tile_0_0");
       assert.equal(Object.keys(snap.scenes).length, 9);
@@ -174,7 +175,7 @@ describe("generate_game", () => {
       assert.match(final.message ?? "", /Fallos parciales/);
       assert.match(final.message ?? "", /\(1,0\)/);
       const snap = JSON.parse(
-        readFileSync(worldSnapshotPath(gamesDir, GAME, "tile"), "utf-8"),
+        readFileSync(worldSnapshotPath(gamesDir, GAME), "utf-8"),
       ) as WorldSnapshot;
       assert.equal(Object.keys(snap.scenes).length, 8, "todo menos el vecino fallido");
       assert.equal(snap.scenes["tile_1_0"], undefined);
@@ -261,10 +262,16 @@ describe("generate_game abandonado", () => {
     // más difunde kind "game_gen", y el título trata `error` como final.
     const bundle = makeCtx({ gamesDir: FIXTURE_GAMES });
     let soltar!: () => void;
+    // El bloqueo es un job que NO entrega nada al cliente: lo dice con el
+    // `SceneGenOutcome` del contrato, no con un `Promise<void>` que la cola no
+    // sabría leer.
     bundle.ctx.sceneGen.enqueue({
       key: "bloqueo",
       blocking: true,
-      run: () => new Promise<void>((r) => { soltar = r; }),
+      run: () =>
+        new Promise<SceneGenOutcome>((r) => {
+          soltar = () => r({ delivered: false, motivo: "bloqueo de test: no difunde nada" });
+        }),
     });
     const { socket } = makeSocket();
     await routeMessage({ type: "generate_game", requestId: "g1", gameId: GAME }, socket, bundle.ctx);

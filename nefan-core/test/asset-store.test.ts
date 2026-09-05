@@ -19,7 +19,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 
-import type { AssetKind } from "../src/contracts/asset-store.js";
+import type { AssetByHashResponse, AssetKind } from "../src/contracts/asset-store.js";
 import { refDeArteDePersonaje } from "../src/contracts/asset-store.js";
 import { ManifestDb } from "../services/asset-store/manifest-db.js";
 import { loadAssetStoreConfig } from "../services/asset-store/config.js";
@@ -100,9 +100,9 @@ async function getRaw(path: string): Promise<{ status: number; contentType: stri
   };
 }
 
-async function getJson(path: string): Promise<{ status: number; body: Record<string, unknown> }> {
+async function getJson<T = Record<string, unknown>>(path: string): Promise<{ status: number; body: T }> {
   const res = await fetch(`${baseUrl}${path}`);
-  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  return { status: res.status, body: (await res.json()) as T };
 }
 
 async function post(path: string, body: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -341,7 +341,7 @@ describe("registro e índice", () => {
     const blob = await getRaw("/cache/surface/5115115115115115");
     assert.equal(blob.status, 200);
     assert.equal(blob.contentType, "image/png");
-    const by = await getJson("/assets/by_hash/5115115115115115");
+    const by = await getJson<AssetByHashResponse>("/assets/by_hash/5115115115115115");
     assert.equal(by.status, 200);
     assert.equal(by.body.matches[0].cache_url, "/cache/surface/5115115115115115");
   });

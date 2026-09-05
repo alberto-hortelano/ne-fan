@@ -61,13 +61,25 @@ function celdasFueraDeLaHuella(v: Volume): [number, number][] {
   return celdasSolidas(v).filter(([c, r]) => c < cMin || c > cMax || r < rMin || r > rMax);
 }
 
+/** Casa ABIERTA EN CORTE con una puerta en el muro sur. `cutaway` porque es la
+ *  ÚNICA rama en la que la colisión talla las `doors` (`collision.ts`: un
+ *  cuerpo cerrado es un bloque macizo, puerta o no); sin él este ejemplar
+ *  llevaba una puerta que nadie tallaba. Lo que la puerta hace de verdad lo
+ *  sujeta su propio `it()` más abajo, no la tabla: el invariante de la tabla
+ *  («huella ⊇ sólidos») no puede romperse QUITANDO sólidos. */
+const CASA_PUERTA: Volume = {
+  id: "casa_puerta", label: "casa con puerta", type: "building", rect: [50, 50, 8, 6], cutaway: true,
+  doors: [{ edge: "s", at: 4, w: 2 }],
+};
+
 /** Un ejemplar de cada tipo del union, con sus variantes que ramifican
- *  (`angle` en building y prop, prop por rect y por punto). `bush` entra
- *  aunque no colisione: su ausencia de la colisión es parte del contrato. */
+ *  (`angle` en building y prop, prop por rect y por punto, building en corte).
+ *  `bush` entra aunque no colisione: su ausencia de la colisión es parte del
+ *  contrato. */
 const EJEMPLARES: Array<[string, Volume]> = [
   ["building", { id: "casa", label: "casa", type: "building", rect: [50, 50, 8, 6], wall_h: 5 }],
   ["building con angle", { id: "casa_giro", label: "casa girada", type: "building", rect: [50, 50, 8, 6], wall_h: 5, angle: 20 }],
-  ["building con puerta", { id: "casa_puerta", label: "casa con puerta", type: "building", rect: [50, 50, 8, 6], doors: [{ side: "south", at: 4, w: 2 }] }],
+  ["building con puerta", CASA_PUERTA],
   ["wall", { id: "muralla", label: "muralla en L", type: "wall", points: [[40, 40], [56, 40], [56, 56]], width: 3, h: 5 }],
   ["tower", { id: "torre", label: "torre del homenaje", type: "tower", at: [60, 60] }],
   ["tower con r", { id: "torreta", label: "torreta", type: "tower", at: [60, 60], r: 4 }],
@@ -77,9 +89,9 @@ const EJEMPLARES: Array<[string, Volume]> = [
   ["bush", { id: "matorral", label: "matorral", type: "bush", at: [60, 60] }],
   ["rock", { id: "roca", label: "roca", type: "rock", at: [60, 60], s: 1.5 }],
   ["fountain", { id: "fuente", label: "fuente de la plaza", type: "fountain", at: [60, 60] }],
-  ["prop con rect", { id: "carro", label: "carro de heno", type: "prop", rect: [50, 50, 4, 2], h: 2 }],
-  ["prop con rect y angle", { id: "carro_giro", label: "carro atravesado", type: "prop", rect: [50, 50, 4, 2], h: 2, angle: 35 }],
-  ["prop por punto", { id: "barril", label: "barril", type: "prop", at: [60, 60], h: 1.5 }],
+  ["prop con rect", { id: "carro", label: "carro de heno", type: "prop", shape: "box", rect: [50, 50, 4, 2], h: 2 }],
+  ["prop con rect y angle", { id: "carro_giro", label: "carro atravesado", type: "prop", shape: "box", rect: [50, 50, 4, 2], h: 2, angle: 35 }],
+  ["prop por punto", { id: "barril", label: "barril", type: "prop", shape: "cylinder", at: [60, 60], h: 1.5 }],
   ["prism", { id: "arco", label: "arco de piedra", type: "prism", points: [[50, 50], [58, 50], [58, 56], [50, 56]], h: 6 }],
   ["custom", { id: "noria", label: "noria", type: "custom", at: [60, 60], parts: [{ shape: "box", size: [4, 3, 2] }, { shape: "cylinder", rBottom: 2, h: 3, pos: [3, 0, 0] }] }],
   ["gate", { id: "porton", label: "portón", type: "gate", at: [60, 60], w: 8, orient: "x" }],
@@ -127,6 +139,27 @@ describe("huella del volumen", () => {
     // El centro del vano (at) no lo bloquea ninguna: por ahí se pasa.
     assert.equal(solidas.filter(([c, r]) => c === 60 && r === 60).length, 0, "el vano sigue abierto");
   });
+
+  // El mismo control para la puerta de un BUILDING, que es otra rama de la
+  // colisión (`doors` de `cutaway`, no `gate`). Sin esto la tabla salía verde
+  // con la puerta quitada, movida fuera del muro o con la casa cerrada (QA de
+  // #231b, H2): un caso de UN elemento no distingue una regla de su contraria.
+  it("la puerta de un building en corte abre su vano; cerrada o sin puerta, esas celdas son muro", () => {
+    // Las cuatro celdas del vano: `at: 4, w: 2` sobre el muro sur (grosor 1,5)
+    // del rect [50, 50, 8, 6] → columnas 54-55, filas 54-55.
+    const vano: [number, number][] = [[54, 54], [55, 54], [54, 55], [55, 55]];
+    const solidasEnElVano = (v: Volume) =>
+      celdasSolidas(v).filter(([c, r]) => vano.some(([vc, vr]) => vc === c && vr === r)).length;
+    assert.equal(solidasEnElVano(CASA_PUERTA), 0, "con la casa en corte, por la puerta se pasa");
+    assert.equal(solidasEnElVano({ ...CASA_PUERTA, doors: [] }), vano.length, "sin puerta, ahí hay muro");
+    assert.equal(
+      solidasEnElVano({ ...CASA_PUERTA, cutaway: false }),
+      vano.length,
+      "cerrada es un bloque macizo: la misma puerta no talla nada",
+    );
+    // Y el resto de la casa sigue en pie: solo se van las cuatro del vano.
+    assert.equal(celdasSolidas({ ...CASA_PUERTA, doors: [] }).length - celdasSolidas(CASA_PUERTA).length, vano.length);
+  });
 });
 
 describe("la huella de los discos sólidos sale del mismo radio que la colisión", () => {
@@ -137,7 +170,7 @@ describe("la huella de los discos sólidos sale del mismo radio que la colisión
     ["tower", { id: "t", label: "torre", type: "tower", at: [60, 60] }],
     ["rock", { id: "r", label: "roca", type: "rock", at: [60, 60], s: 1.5 }],
     ["fountain", { id: "f", label: "fuente", type: "fountain", at: [60, 60] }],
-    ["prop por punto", { id: "p", label: "barril", type: "prop", at: [60, 60], h: 1.5 }],
+    ["prop por punto", { id: "p", label: "barril", type: "prop", shape: "cylinder", at: [60, 60], h: 1.5 }],
   ];
 
   for (const [nombre, v] of DISCOS) {
@@ -157,7 +190,7 @@ describe("la huella de los discos sólidos sale del mismo radio que la colisión
   });
 
   it("un prop CON rect tampoco: su huella es el rect declarado, no un disco", () => {
-    const carro: Volume = { id: "c", label: "carro", type: "prop", rect: [50, 50, 4, 2], h: 2 };
+    const carro: Volume = { id: "c", label: "carro", type: "prop", shape: "box", rect: [50, 50, 4, 2], h: 2 };
     assert.equal(volumeSolidDiscRadiusCells(carro), null);
     assert.deepEqual(volumeFootprintCells(carro), [50, 50, 4, 2]);
   });
@@ -193,7 +226,7 @@ describe("huella de un rect girado", () => {
 
   it("un prop con rect y angle sigue la misma regla que el building", () => {
     const rect: [number, number, number, number] = [50, 50, 4, 2];
-    const carro: Volume = { id: "c", label: "carro", type: "prop", rect, h: 2, angle: 35 };
+    const carro: Volume = { id: "c", label: "carro", type: "prop", shape: "box", rect, h: 2, angle: 35 };
     const fp = volumeFootprintCells(carro)!;
     assert.ok(fp[2] > 4 && fp[3] > 2, "girado ocupa más planta que el rect declarado");
   });
@@ -242,9 +275,9 @@ describe("altura del volumen", () => {
   it("los defaults en CELDAS escalan con mpc: torre, puerta, muro, prop", () => {
     const dobles = (v: Volume) => volumeHeightM(v, 1) / volumeHeightM(v, 0.5);
     assert.equal(volumeHeightM({ id: "t", label: "torre", type: "tower", at: [0, 0] }, 0.5), 12 * 0.5 + 0.5);
-    assert.equal(volumeHeightM({ id: "g", label: "puerta", type: "gate", at: [0, 0] }, 0.5), 8 * 0.5);
-    assert.ok(dobles({ id: "g", label: "puerta", type: "gate", at: [0, 0] }) === 2, "la puerta es celdas puras");
-    assert.equal(volumeHeightM({ id: "p", label: "barril", type: "prop", at: [0, 0] }, 0.5), 2 * 0.5);
+    assert.equal(volumeHeightM({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x" }, 0.5), 8 * 0.5);
+    assert.ok(dobles({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x" }) === 2, "la puerta es celdas puras");
+    assert.equal(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0] }, 0.5), 2 * 0.5);
     assert.equal(volumeHeightM({ id: "m", label: "arco", type: "prism", points: [[0, 0], [4, 0], [4, 4]], h: 6 }, 0.5), 3);
   });
 
@@ -285,8 +318,8 @@ describe("altura del volumen", () => {
 
   it("una altura declarada gana al default en todos los tipos que la admiten", () => {
     assert.equal(volumeHeightM({ id: "t", label: "torre", type: "tower", at: [0, 0], h: 20 }, 0.5), 20 * 0.5 + 0.5);
-    assert.equal(volumeHeightM({ id: "g", label: "puerta", type: "gate", at: [0, 0], h: 4 }, 0.5), 2);
-    assert.equal(volumeHeightM({ id: "p", label: "barril", type: "prop", at: [0, 0], h: 3 }, 0.5), 1.5);
+    assert.equal(volumeHeightM({ id: "g", label: "puerta", type: "gate", at: [0, 0], orient: "x", h: 4 }, 0.5), 2);
+    assert.equal(volumeHeightM({ id: "p", label: "barril", type: "prop", shape: "cylinder", at: [0, 0], h: 3 }, 0.5), 1.5);
     assert.equal(volumeHeightM({ id: "m", label: "muro", type: "wall", points: [[0, 0], [4, 0]], h: 9 }, 0.5), 4.5);
   });
 

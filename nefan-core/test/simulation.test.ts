@@ -328,7 +328,11 @@ describe("GameSimulation.setCombatSystem", () => {
   it("refuses to swap with live enemy AIs (they capture the system)", () => {
     const sim = new GameSimulation(config, undefined, 42);
     sim.addCombatant(createCombatant("player"));
-    sim.addCombatant(createCombatant("skeleton_01"), { aggression: 0.5 });
+    sim.addCombatant(createCombatant("skeleton_01"), {
+      aggression: 0.5,
+      preferred_attacks: ["quick"],
+      reaction_time: 0.3,
+    });
     assert.throws(
       () => sim.setCombatSystem(combatRegistry.create("basic", config)),
       /call reset\(\) first/,

@@ -80,6 +80,7 @@ describe("bridge routing básico", () => {
             id: "skel_1",
             position: { x: 2, y: 0, z: 2 },
             health: 60,
+            maxHealth: 60,
             weaponId: "short_sword",
             personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.4 },
           },

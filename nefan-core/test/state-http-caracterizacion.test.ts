@@ -547,7 +547,7 @@ describe("State API · CAMBIO DECLARADO 3: POST /vocabulary ve antes el body que
     // no puede producirlo (serializa con JSON.stringify). Lo encontró QA.
     const sin = await levantar({ conStorage: true, gamesDir });
     try {
-      sin.narrative.session_id = null;
+      sin.narrative.session_id = "";
       const roto = await fetch(`${sin.baseUrl}/vocabulary`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
