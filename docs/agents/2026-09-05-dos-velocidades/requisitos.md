@@ -73,16 +73,19 @@ tolera (los tests que comparten estado no lo toleran) y que el score medido **no
 PR reales; derivados #442 y #444) y R en #446 (`perTest` es un no-op con `testRunner: "command"`; candado en
 `test/mutation-config.test.ts`; derivados #441 y #443). #439 sigue **abierto**.
 
-Del plan queda **solo su PR-2** (§4): el campo `aparcado` en la entrada del módulo, su descuento en
-`seleccionDesdeElTag`, el contador de commits desde `desde` en `pendiente`/`deuda`, y el rótulo
-RÁPIDO/PROFUNDO en `pendiente` y `lotes`. Medido antes de decidir si se hace: aparcar `plugins-dsl` y `enemy-ai`
-compra ~700 s de ~12.350 (5,7 % del reloj); el selector vivo ya hace que una PR de núcleo mida solo lo suyo.
+La PR-2 (`aparcado`) **se retira** (crítica en `critica-aparcado.md`): medido sobre `4747917`, aparcar `plugins-dsl` y
+`enemy-ai` compra 668 s de runner (5,4 %) y **0 s de pared** —ninguno de los dos es nunca el lote crítico— y obliga
+a una excepción en `comparaObjetivos`, que #445 acaba de hacer total. El plan además suponía «una PR de núcleo: 6
+módulos · 1 lote»; las reales de T13 (#456, #457, #459) seleccionan 14 módulos · 3 lotes, porque `http.ts`,
+`request-schemas.ts` y `narrative-state.ts` están en el cierre de runtime de 13-14 módulos. El forzador que sí sigue
+costando completas es «ya no está en el árbol» (`afectado.ts:251`): #448 pagó los 42 módulos solo por
+`scripts/gate-snapshots.ts`, cuando sus importadores ya seleccionaban 9. Es **#471**, de la familia de #442/#444.
 
 Hoy `pendiente` dice 42 de 42, COMPLETA, y da **once** motivos: el tag `mutacion-ultima` sigue en `7b817b9`
 (34 commits atrás) y el rango incluye las PR que tocaron el instrumento y tres ficheros borrados. Es la
 corrida completa que #445 predijo para sí misma (R3 del plan): la «rápida» solo se ve después de que una
 corrida mueva el tag.
 
-Pregunta para el crítico: ¿la PR-2 sigue vigente tal como está escrita, se reencuadra (por ejemplo a solo el
+Pregunta que se hizo al crítico: ¿la PR-2 sigue vigente tal como está escrita, se reencuadra (por ejemplo a solo el
 rótulo, o a cerrar #439 con lo fusionado), o es obsoleta? Y qué le falta a #439 para cumplir su criterio de
 cierre sin reintroducir la espera por una corrida.
