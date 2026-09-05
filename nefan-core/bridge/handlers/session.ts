@@ -466,13 +466,19 @@ export async function handleStartSession(
   avisarDeFueraDelMundo(ctx, paraElCliente.fueraDelMundo);
   // Snapshot de mundo pre-generado (data/games/{id}/world/): replay del
   // bootstrap por la ruta normal — el jugador entra sin esperar al motor. Un
-  // snapshot malformado se REPORTA y degrada al bootstrap vivo (nunca se
-  // sirve contenido dudoso ni se deja al jugador sin partida).
+  // snapshot que la puerta rechaza (malformado, de otro schema o INJUGABLE
+  // para el validador de hoy, #302) se REPORTA y degrada al bootstrap vivo
+  // (nunca se sirve contenido dudoso ni se deja al jugador sin partida). Solo
+  // el mensaje, sin traza: es una condición esperable y el mensaje ya nombra
+  // fichero, escena y motivo — la traza lo tapaba (QA 2026-09-05).
   let snapshot: WorldSnapshot | null = null;
   try {
     snapshot = loadWorldSnapshot(ctx.gamesDir, msg.gameId, worldDocHash);
   } catch (err) {
-    console.error(`Bridge: world snapshot ilegible para "${msg.gameId}":`, err);
+    console.error(
+      `Bridge: world snapshot rechazado en la carga para "${msg.gameId}" — ` +
+        `se degrada al bootstrap vivo: ${(err as Error).message}`,
+    );
   }
   if (snapshot) {
     console.log(
