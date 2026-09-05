@@ -509,9 +509,16 @@ describe("lo que se carga pasa por validateScene o no se sirve (#302)", () => {
         broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
       );
       assert.equal(sent[0].type, "session_started", "la sesión arranca igual: se degrada, no se deja al jugador sin partida");
+      // Estrechado en línea por el discriminante (`kind`), sin predicado de
+      // tipo: `source` solo existe en el status DE SESIÓN, no en el de
+      // `game_gen`, y así el aserto no depende de qué nombre de la unión
+      // importe el fichero (#231b).
       const readyDeSnapshot = broadcasts.find(
-        (m): m is NarrativeStatusMessage =>
-          m.type === "narrative_status" && m.phase === "ready" && m.source === "snapshot",
+        (m) =>
+          m.type === "narrative_status" &&
+          m.kind !== "game_gen" &&
+          m.phase === "ready" &&
+          m.source === "snapshot",
       );
       assert.equal(readyDeSnapshot, undefined, "el snapshot injugable se sirvió como ready");
       assert.equal(aiCalls.scene.length, 1, "degradó al bootstrap vivo, que llama al motor");
