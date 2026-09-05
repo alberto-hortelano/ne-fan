@@ -56,7 +56,7 @@ citan (líneas, contadores, «52 grids», «36 imports», «tres sujetos») se m
   literalmente: que el overlay del wire no quepa en la huella por construcción).
 - **El banco no puede mentir**: un camino que solo ejerce el banco y nunca el juego es un camino falso
   (#408).
-- **El CI corre los siete candados headless de `qa/`**; los guiones de navegador siguen siendo corrida
+- **El CI corre los candados headless de `qa/`** (siete al abrir la tanda, ocho al cerrarla: PR-A trajo el octavo); los guiones de navegador siguen siendo corrida
   local. Cualquier guion nuevo declara a cuál de los dos grupos pertenece (`qa/README.md`).
 - Solo se commitean `requisitos.md`, `critica.md`, `qa*.md`. Plan e implementación son efímeros.
 
@@ -127,3 +127,32 @@ Literal, por AskUserQuestion: **#451** «Fuera de la tanda, decidir después» �
 **Corte** «Sí, adelante»: cinco PR en paralelo (#452, #453, #411, #407, #408) y #405 → #410 apiladas.
 La tanda son **siete issues en seis PR**. Los dos «menores» de #451 no entran: #451 queda entero para
 la decisión posterior.
+
+## Cierre (2026-09-05, `main` = `876efef`)
+
+Siete issues cerrados en seis PR fusionadas el mismo día: #455 (#411), #456 (#453), #458 (#407), #457
+(#452), #459 (#408), #460 (#405) y #470 (#410; sustituye a #461, que GitHub cerró solo al borrarse
+su rama base con la fusión de #460). Los seis QA salieron **APTO CON HALLAZGOS** y todos los
+hallazgos de la PR volvieron a su ingeniero antes de fusionar; los preexistentes fueron a issue con
+medida: #462 (nadie mide `dispatcher.ts`/`loadSession`), #463 (lecturas del State API sin sesión, dos
+semánticas), #464 (un char fuera del alfabeto del grid es suelo en silencio), #465 (nada instruye al
+motor real a dar `anchor.rect`), #466 (5 divergencias zod↔Python en `glyph`/`attach`, guion adjunto),
+#467 (la posición viva de los NPC entra en la huella), #468 (`npcs[]`+`position` inalcanzable), #469
+(el muro «sin bridge» reaparece cada ~5 s). #451 sigue aparcado con sus tres opciones escritas.
+
+Medido sobre `main`: `npm run verify` 2091 → **2121** · deuda 83 → **81** (fronteras 15 → 13 por
+#411; 11 CRAP; mutación 57, fuente PARCIAL hasta que la corrida mida `escena-servida`) · `crap --check`
+dentro (`formatDToWorld` 47 → 43; cobertura 89,1 %) · `main.ts` 2379 → 2371 · batería de navegador
++4 guiones (73-76) y **ocho** candados headless en CI (el octavo, `el-state-api-no-muta-sin-partida`)
+· cero créditos. Backlog 47 → **48** (7 cerrados, 8 abiertos: los ocho son deuda que antes no tenía
+dueño; 36 núcleo + 12 `futuro`). Mutación pendiente de pedir: `scene-normalize` (313),
+`contrato-escena` (290), `world-map` (516) y el módulo nuevo `escena-servida` sin base.
+
+Lo que se aprendió: (1) «por función» era prosa y el checker de arquitectura gana `exceptions[].funcion`;
+(2) un candado headless que siembra su población da por vacía la real, y el primer módulo real sin reloj
+lo puso rojo; (3) el fake solo anclaba con rect la primera sesión: el banco mentía en la segunda; (4) un
+`.catch(console.error)` en el banco es un verde que no comprueba nada; (5) una PR apilada con
+`--delete-branch` en su base se cierra sola en GitHub y no se reabre: abrir la G con base `main` desde
+el principio o fusionar sin borrar la rama hasta que la G entre. Los `implementacion-*.md` se perdieron
+al retirar los worktrees antes de copiarlos (eran efímeros por diseño; la lección es copiarlos antes de
+`git worktree remove`).
