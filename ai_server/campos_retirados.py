@@ -17,7 +17,7 @@ el mismo tile no puede recibir dos textos según por dónde entre.
 _SUFIJO = "Si viene de un save o snapshot, bórralo o regenéralo"
 _MOTIVO_DEL_TERRENO = (
     "el terreno se declara con `biome` + `ground`/`volumes` y la solidez la fija el engine "
-    "(agua y muro bloquean)"
+    "(el agua bloquea; los muros son `volumes`)"
 )
 
 

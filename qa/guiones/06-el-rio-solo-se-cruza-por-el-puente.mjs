@@ -1,7 +1,8 @@
 /** El río solo se cruza por el puente — y el jugador lo nota.
  *
  *  `formatDToWorld` emite en `terrain_grid.solid_chars` los chars del grid que
- *  bloquean, y los fija el ENGINE (`DEFAULT_SOLID_CHARS`: muro y agua), no la
+ *  bloquean, y los fija el ENGINE (`DEFAULT_SOLID_CHARS`: solo el agua; los
+ *  muros son volúmenes del plan, #407), no la
  *  escena: nadie puede declarar un río vadeable ni un puente sólido. Esa lista
  *  alimenta el colisionador del cliente y la colisión server-side de NPCs
  *  (`bridge/sim-collision.ts`), así que un fallo aquí encierra al jugador o le

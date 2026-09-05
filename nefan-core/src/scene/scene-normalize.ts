@@ -338,8 +338,9 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       meters_per_cell: mpc,
       // Esquina NW del grid en coordenadas mundo (plano continuo).
       origin: [worldRect.minX, worldRect.minZ] as [number, number],
-      // Chars que bloquean movimiento (muro y agua). Los consume
-      // `createTerrainCollider`; el bridge (sim-collision) lee los mismos.
+      // Chars que bloquean movimiento (el agua; los muros son volúmenes del
+      // plan). Los consume `createTerrainCollider`; el bridge (sim-collision)
+      // lee los mismos.
       solid_chars: [...DEFAULT_SOLID_CHARS],
     },
     // Plan del tile DECLARADO (rasgos de suelo + volúmenes tipados), tal cual

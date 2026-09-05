@@ -802,11 +802,13 @@ describe("floodFill", () => {
  *  `floor(2R/mpc)+1` (3), el candado NACE VERDE sobre el caso que dice
  *  impedir. Por eso el `k=2` de aquí abajo no es redundante: es el criterio
  *  que más pesa de la tanda, y su aserto es que k=2 PASA. */
-describe("floodFill con cuerpo · la puerta de 1 m", () => {
+describe("floodFill con cuerpo · el vado de 1 m entre agua", () => {
   /** Dos orillas de 3 columnas separadas por un canal de 3 celdas de ancho
-   *  (cols 3-5) con un VANO de `hueco` filas. `hueco` es exactamente lo que
-   *  mide la puerta: 2 celdas = 1,00 m, 3 = 1,50 m. Grid 9×9 en los dos
-   *  casos, para que el destino sea la misma celda. */
+   *  (cols 3-5) con un VADO de `hueco` filas. `hueco` es exactamente lo que
+   *  mide el paso: 2 celdas = 1,00 m, 3 = 1,50 m — la misma anchura que una
+   *  puerta del plan, medida aquí sobre el grid a secas (el juego no produce
+   *  vados: el mecanismo es el flood con cuerpo, no el rasgo). Grid 9×9 en los
+   *  dos casos, para que el destino sea la misma celda. */
   const conVano = (hueco: number): string[] => {
     const desde = Math.floor((9 - hueco) / 2);
     return Array.from({ length: 9 }, (_, r) =>
