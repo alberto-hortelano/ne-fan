@@ -606,6 +606,110 @@ describe("dispatchStateRequest · sesión, ruta y body, sin abrir un puerto", ()
   });
 });
 
+/** El tile mínimo que `POST /scene/validate` acepta: un POST que NO muta. */
+const TILE_VALIDO = {
+  scene_id: "tile_0_0",
+  scene_description: "Un claro con una posada.",
+  tile: { tx: 0, ty: 0 },
+  biome: "forest_floor",
+  entities: [{ id: "player", kind: "player", name: "Tú", cell: [15, 80], footprint: [1, 1] }],
+};
+
+describe("dispatchStateRequest · sin partida no se muta (#453)", () => {
+  // Antes: el handler escribía en el NarrativeState vacío, contestaba 200 y
+  // `save()` lanzaba después en `onMutation`, donde solo lo veía el log.
+  it("una mutadora sin sesión activa es 409 `no_session`, sin leer el body ni tocar el estado", async () => {
+    const { ctx } = makeCtx();
+    ctx.narrative.session_id = "";
+    const res = await dispatchStateRequest(ctx, {
+      method: "POST",
+      url: "/entity/player/inventory",
+      readBody: NO_LEER, // la guardia va ANTES del body: leerlo aquí reventaría el test
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.mutated, undefined, "un rechazo no dispara el save");
+    assert.equal((res.body as { ok: boolean }).ok, false, "un 409 con ok:true sería un éxito para quien no mire el status");
+    const error = String((res.body as { error: string }).error);
+    assert.match(error, /^no_session: POST \/entity\/player\/inventory muta la partida/);
+    assert.match(error, /No se ha aplicado nada/);
+    assert.deepEqual(ctx.narrative.player.inventory, []);
+  });
+
+  it("la regla es «mutadora», no «POST»: leer y validar sin sesión siguen contestando", async () => {
+    const { ctx } = makeCtx();
+    ctx.narrative.session_id = "";
+    const lectura = await dispatchStateRequest(ctx, {
+      method: "GET",
+      url: "/entity/player",
+      readBody: NO_LEER,
+    });
+    assert.equal(lectura.status, 200);
+    const preflight = await dispatchStateRequest(ctx, {
+      method: "POST",
+      url: "/scene/validate",
+      readBody: () => Promise.resolve({ scene: TILE_VALIDO }),
+    });
+    assert.equal(preflight.status, 200, JSON.stringify(preflight.body));
+    const latido = await dispatchStateRequest(ctx, {
+      method: "POST",
+      url: "/narrative_progress",
+      readBody: () => Promise.resolve({ message: "sin partida todavía" }),
+    });
+    assert.equal(latido.status, 200);
+  });
+
+  it("y la regla es «sin sesión», no «siempre»: con partida la misma mutadora entra y marca el save", async () => {
+    const { ctx } = makeCtx();
+    const res = await dispatchStateRequest(ctx, {
+      method: "POST",
+      url: "/entity/player/inventory",
+      readBody: () => Promise.resolve({ item: { id: "antorcha" } }),
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.mutated, true);
+    assert.equal(ctx.narrative.player.inventory.length, 1);
+  });
+
+  it("la guardia va después del match: una ruta inexistente sin sesión sigue siendo 404, no 409", async () => {
+    const { ctx } = makeCtx();
+    ctx.narrative.session_id = "";
+    const res = await dispatchStateRequest(ctx, {
+      method: "POST",
+      url: "/entity/player/inventario",
+      readBody: NO_LEER,
+    });
+    assert.equal(res.status, 404);
+  });
+
+  it("toda mutadora del contrato rebota sin sesión, y ninguna otra ruta lo hace", async () => {
+    // Recorre la tabla entera en vez de una ruta: la guardia lee `mutates` de
+    // la declaración, así que la ruta que se declare mañana entra sola — y
+    // este bucle es lo que lo demuestra para las doce de hoy, no para una.
+    const { ctx } = makeCtx();
+    ctx.narrative.session_id = "";
+    const rebotadas: string[] = [];
+    const entradas: string[] = [];
+    for (const [name, ep] of Object.entries(WorldStateApi)) {
+      if ((PLANNED_ROUTES as readonly string[]).includes(name)) continue;
+      const path = fillPath(ep.path, Object.fromEntries([...ep.path.matchAll(/\{(\w+)\}/g)].map((m) => [m[1], "x"])));
+      const res = await dispatchStateRequest(ctx, {
+        method: ep.method,
+        url: path,
+        // Un body vacío basta: la guardia decide antes de leerlo, y quien
+        // pase de ella responderá 400/404 de dominio, que no es 409.
+        readBody: () => Promise.resolve({}),
+      });
+      (res.status === 409 ? rebotadas : entradas).push(name);
+    }
+    const declaradas = Object.entries(WorldStateApi)
+      .filter(([, ep]) => ep.mutates)
+      .map(([name]) => name);
+    assert.equal(declaradas.length, 12);
+    assert.deepEqual(rebotadas.sort(), declaradas.sort());
+    assert.ok(entradas.includes("validateScene") && entradas.includes("getEntity"));
+  });
+});
+
 /** Comprobación de tipo, no de runtime: si algún día un endpoint del contrato
  *  se queda sin handler, esta línea deja de compilar antes de que ningún test
  *  llegue a correr. Es la garantía puesta en el tipo, no en un aserto. */

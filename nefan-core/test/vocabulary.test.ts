@@ -165,7 +165,12 @@ describe("POST /vocabulary (State API)", () => {
   // "cubiertas" 3 de cada 5 pasadas. Era el 100 % del baile de CRAP de `handle`
   // (158.4 ⇄ 159.0). Cubrirlas de verdad es lo que arregla las dos cosas: el
   // agujero de cobertura y el ruido de la medida.
-  it("sin sesión activa ⇒ 404 (el vocabulario pertenece a una partida)", async () => {
+  //
+  // Desde #453 la rama «sin sesión» ya no es del handler: el contrato declara
+  // la ruta `mutates` y el despacho la rebota con 409 antes de leer el body.
+  // Lo que este test sujeta no cambia —sin partida no se escribe vocabulario—;
+  // cambia quién lo dice y con qué código.
+  it("sin sesión activa ⇒ 409 no_session (el vocabulario pertenece a una partida)", async () => {
     const { gamesDir } = tmpGamesDir();
     const { narrative } = makeNarrativeState(); // sin startNewSession: no hay sesión
     const { server, baseUrl } = await servidor(narrative, gamesDir);
@@ -175,10 +180,10 @@ describe("POST /vocabulary (State API)", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entries: makeVocab(hashOf("x")).entries }),
       });
-      assert.equal(res.status, 404);
+      assert.equal(res.status, 409);
       const body = (await res.json()) as { ok: boolean; error?: string };
       assert.equal(body.ok, false);
-      assert.match(body.error ?? "", /no active session/);
+      assert.match(body.error ?? "", /^no_session: POST \/vocabulary/);
       assert.equal(loadWorldVocabulary(gamesDir, GAME, hashOf("x")), null, "no escribió nada");
     } finally {
       server.close();
