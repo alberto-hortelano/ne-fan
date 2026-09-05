@@ -40,6 +40,16 @@ const ExceptionSchema = z.object({
   path: z.string(),
   /** Obligatorio: una excepción sin motivo es una regla que ya no sirve. */
   reason: z.string().min(1),
+  /** Solo en reglas `text`: la PUERTA. El fichero eximido tiene EXACTAMENTE
+   *  una coincidencia del patrón y vive dentro de esta función (`Clase.metodo`
+   *  comprueba también la clase). Existe porque una exención por fichero
+   *  exime al fichero ENTERO: una segunda llamada en el mismo fichero entraba
+   *  sin que saltara nada, y si la función nombrada dejaba de llamar la
+   *  exención seguía viva sin sujeto —`deadExceptions` solo mira que el
+   *  fichero exista— regalando barra libre a la siguiente (QA-C de T13, #411).
+   *  Con `funcion`, cero coincidencias, dos, o una en otra función son
+   *  violaciones de la regla, no prosa del `reason`. */
+  funcion: z.string().min(1).optional(),
 });
 
 const RuleSchema = z
@@ -66,6 +76,9 @@ const RuleSchema = z
   })
   .refine((r) => r.severity === "error" || typeof r.max === "number", {
     message: "una regla `warn` debe declarar `max` (el conteo congelado)",
+  })
+  .refine((r) => Boolean(r.text) || r.exceptions.every((e) => e.funcion === undefined), {
+    message: "`exceptions[].funcion` solo tiene sentido en una regla `text`: cuenta coincidencias del patrón",
   });
 
 export const ArchConfigSchema = z
@@ -179,16 +192,120 @@ function violatesText(rule: ArchRule, file: SourceFile): Violation[] {
   return out;
 }
 
+// ── Puertas: la exención que nombra su función ──────────────────────────────
+
+/** Palabras que abren un bloque con paréntesis y parecen un método. */
+const NO_SON_FUNCION = new Set(["for", "if", "while", "switch", "catch", "return", "else", "do", "try"]);
+
+const indentDe = (t: string): number => t.length - t.trimStart().length;
+
+interface Declaracion {
+  nombre: string;
+  /** true si la forma es la de un método de clase (sin `function`/`const`). */
+  metodo: boolean;
+}
+
+/** Qué función/método/const declara ESTA línea, o null. Tres formas:
+ *  `function f(`, `const f = ` y el método de clase `async f(...): T {`. */
+function declaraFuncion(texto: string): Declaracion | null {
+  const t = texto.trimStart();
+  let m = /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/.exec(t);
+  if (m) return { nombre: m[1], metodo: false };
+  m = /^(?:export\s+)?(?:const|let)\s+(\w+)\s*=/.exec(t);
+  if (m) return { nombre: m[1], metodo: false };
+  m = /^(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:async\s+)?(\w+)\s*(?:<[^>]*>)?\(.*\{\s*$/.exec(t);
+  if (m && !NO_SON_FUNCION.has(m[1])) return { nombre: m[1], metodo: true };
+  return null;
+}
+
+/** La función que envuelve la línea `line` (1-based), como `nombre` o
+ *  `Clase.metodo`, o null si no se encuentra. Sube por la INDENTACIÓN: la
+ *  primera línea menos indentada que declara algo es la dueña. Es la misma
+ *  heurística del guion de QA que descubrió el hueco; no parsea TypeScript,
+ *  y por eso vive detrás de un campo OPCIONAL de la exención: quien lo
+ *  declare acepta que su puerta tenga una de las tres formas de arriba. */
+export function enclosingFunction(text: string, line: number): string | null {
+  const lineas = text.split("\n");
+  if (line < 1 || line > lineas.length) return null;
+  let decl: Declaracion | null = declaraFuncion(lineas[line - 1]);
+  let lineaDecl = line;
+  if (!decl) {
+    let indent = indentDe(lineas[line - 1]);
+    for (let i = line - 2; i >= 0; i--) {
+      const texto = lineas[i];
+      if (texto.trim() === "") continue;
+      const ind = indentDe(texto);
+      if (ind >= indent) continue;
+      indent = ind;
+      decl = declaraFuncion(texto);
+      if (decl) {
+        lineaDecl = i + 1;
+        break;
+      }
+      if (ind === 0) break;
+    }
+  }
+  if (!decl) return null;
+  if (!decl.metodo) return decl.nombre;
+  for (let i = lineaDecl - 2; i >= 0; i--) {
+    const m = /^(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/.exec(lineas[i]);
+    if (m) return `${m[1]}.${decl.nombre}`;
+  }
+  return decl.nombre;
+}
+
+/** Las violaciones de una PUERTA: el fichero eximido con `funcion`. Cero
+ *  coincidencias es una exención sin sujeto; toda coincidencia fuera de la
+ *  función nombrada salta; y dentro de ella solo cabe UNA. */
+function violatesPuerta(rule: ArchRule, exc: { path: string; funcion?: string }, file: SourceFile): Violation[] {
+  const funcion = exc.funcion!;
+  const matches = violatesText(rule, file);
+  if (matches.length === 0) {
+    return [
+      {
+        ruleId: rule.id,
+        severity: rule.severity,
+        path: file.path,
+        line: 1,
+        detail:
+          `exención sin sujeto: \`${funcion}\` ya no casa ${JSON.stringify(rule.text!.pattern)} en este fichero — ` +
+          "borra la exención o vuelve a nombrar la puerta",
+      },
+    ];
+  }
+  const out: Violation[] = [];
+  let dentro = 0;
+  for (const m of matches) {
+    const env = enclosingFunction(file.text, m.line);
+    if (env !== funcion) {
+      out.push({
+        ...m,
+        detail: `fuera de la puerta \`${funcion}\`: esta llamada vive en \`${env ?? "(ninguna función reconocible)"}\``,
+      });
+      continue;
+    }
+    dentro++;
+    if (dentro > 1) {
+      out.push({ ...m, detail: `la puerta \`${funcion}\` es UNA llamada; esta es la ${dentro}ª` });
+    }
+  }
+  return out;
+}
+
 /** Aplica todas las reglas a todos los ficheros. Orden estable: por regla (en
- *  el orden del JSON) y dentro de cada regla por ruta y línea. */
+ *  el orden del JSON) y dentro de cada regla por ruta y línea. Un fichero
+ *  eximido SIN `funcion` no se mira; uno eximido CON ella se mira como puerta. */
 export function checkArchitecture(config: ArchConfig, files: readonly SourceFile[]): Violation[] {
   const out: Violation[] = [];
   for (const rule of config.rules) {
-    const scoped = files.filter(
-      (f) => matchesAny(f.path, rule.files) && !matchesAny(f.path, rule.exceptions.map((e) => e.path)),
-    );
     const found: Violation[] = [];
-    for (const file of scoped) {
+    for (const file of files) {
+      if (!matchesAny(file.path, rule.files)) continue;
+      const exc = rule.exceptions.find((e) => matchesAny(file.path, [e.path]));
+      if (exc) {
+        if (exc.funcion) found.push(...violatesPuerta(rule, exc, file));
+        continue;
+      }
       found.push(...(rule.imports ? violatesImport(rule, file) : violatesText(rule, file)));
     }
     found.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);

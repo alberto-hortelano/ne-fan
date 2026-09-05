@@ -1,5 +1,5 @@
 {
-  "$comment": "Fronteras arquitectónicas de ne-fan, verificadas por test/architecture.test.ts. Cada regla sustituye a un invariante que antes solo vivía como prosa en CLAUDE.md. severity=error: verde hoy, no puede volver a romperse. severity=warn: deuda YA existente, congelada en `max` — el test falla si CRECE. Toda excepción lleva motivo obligatorio. El `ignore` es por NOMBRE de directorio y cubre además los árboles REGENERABLES que ningún escaneo debe recorrer: `capturas` (qa/capturas/<corrida>/ — desde 2026-08-27 se acumula por corrida en vez de vaciarse, y una sola deja ~75 ficheros), `.tmp`, `coverage` y `reports`. Nada de ahí se recolecta nunca, y recorrerlo lo paga cada `npm test`.",
+  "$comment": "Fronteras arquitectónicas de ne-fan, verificadas por test/architecture.test.ts. Cada regla sustituye a un invariante que antes solo vivía como prosa en CLAUDE.md. severity=error: verde hoy, no puede volver a romperse. severity=warn: deuda YA existente, congelada en `max` — el test falla si CRECE. Toda excepción lleva motivo obligatorio; en una regla `text` puede además nombrar su `funcion`: entonces el fichero eximido es una PUERTA con exactamente una coincidencia dentro de esa función (cero = exención sin sujeto, dos = segunda puerta, otra función = fuera de la puerta), y el checker lo cuenta. El `ignore` es por NOMBRE de directorio y cubre además los árboles REGENERABLES que ningún escaneo debe recorrer: `capturas` (qa/capturas/<corrida>/ — desde 2026-08-27 se acumula por corrida en vez de vaciarse, y una sola deja ~75 ficheros), `.tmp`, `coverage` y `reports`. Nada de ahí se recolecta nunca, y recorrerlo lo paga cada `npm test`.",
   "scan": {
     "roots": [
       {
@@ -113,7 +113,7 @@
   "rules": [
     {
       "id": "html-no-importa-core-con-node",
-      "desc": "El cliente 2D no puede importar los módulos del core que usan node:fs/path/crypto",
+      "desc": "El cliente no puede importar los módulos del core que usan node:fs/path/crypto",
       "why": "La frontera browser-safe la sostiene hoy solo una separación deliberada de ficheros (games/style-application-schema vs style-application). Un import nuevo mete node:fs en el bundle de Vite y rompe el cliente en tiempo de carga. `narrative-state` entra en la lista el día que empieza a importar `plugins/hash` (node:crypto) para comprobar que el manifest embebido de un record migrado es de verdad el de su id: hasta entonces solo arrastraba `session-storage` como tipo, que se borra al compilar, y era importable del navegador por accidente. Nadie lo importa hoy desde el cliente, así que la regla nace verde; está aquí para que el día que alguien lo intente lo pare el checker y no un bundle roto en tiempo de carga.",
       "severity": "error",
       "files": [
@@ -164,7 +164,7 @@
     },
     {
       "id": "core-src-no-importa-bridge-ni-cliente",
-      "desc": "src/ no importa de bridge/, services/ ni del cliente 2D",
+      "desc": "src/ no importa de bridge/, services/ ni del cliente",
       "why": "La dirección de dependencia es src ← bridge y src ← services. Invertirla convierte la lógica compartida en lógica de servidor.",
       "severity": "error",
       "files": [
@@ -181,7 +181,7 @@
     {
       "id": "core-puro-sin-node",
       "desc": "Los módulos de lógica pura del core no importan node:*",
-      "why": "Son los que consume el cliente 2D en el navegador Y los que se mutan en el hardener. Un node:fs aquí rompe el bundle y saca al módulo del alcance de mutation testing. `src/session/**` entra el 2026-08-25 con session-facets.ts: colapsa el estado de sesión del CLIENTE en un valor, así que lo importa el bundle del navegador — un node:* ahí lo rompe en tiempo de carga.",
+      "why": "Son los que consume el cliente en el navegador Y los que se mutan en el hardener. Un node:fs aquí rompe el bundle y saca al módulo del alcance de mutation testing. `src/session/**` entra el 2026-08-25 con session-facets.ts: colapsa el estado de sesión del CLIENTE en un valor, así que lo importa el bundle del navegador — un node:* ahí lo rompe en tiempo de carga.",
       "severity": "error",
       "files": [
         "nefan-core/src/combat/**/*.ts",
@@ -223,7 +223,7 @@
     },
     {
       "id": "html-sin-node-ni-rutas-crudas",
-      "desc": "El cliente 2D no importa node:* ni alcanza el core por ruta relativa",
+      "desc": "El cliente no importa node:* ni alcanza el core por ruta relativa",
       "why": "El único punto de acoplamiento con el árbol del core es el alias @nefan-core (vite.config.ts + tsconfig paths). Una ruta relativa se salta el alias y rompe el build.",
       "severity": "error",
       "files": [
@@ -370,7 +370,7 @@
     },
     {
       "id": "html-sin-catch-silencioso",
-      "desc": "El cliente 2D no traga errores en silencio",
+      "desc": "El cliente no traga errores en silencio",
       "why": "Fail-loud: todo catch recuperable debe pasar por errors.push(...) del error-log. Deuda existente congelada; cada PR que baje el número debe bajar también el max. Baja de 5 a 4 al darle canal al re-disparo del atlas fps (fps-atlas.ts): era el único de los cinco sin una línea que dijera qué se estaba tragando, y se comía la ÚLTIMA oportunidad de texturar un tile. Los cuatro que quedan son degradaciones documentadas en su propio catch (localStorage ausente, frame de sprite fuera de rango, blob podado, busto sin skin): bajar de 4 no es tocar el número, es decidir que esas cuatro merecen entrada en el log del jugador.",
       "severity": "warn",
       "max": 4,
@@ -421,10 +421,12 @@
       "exceptions": [
         {
           "path": "nefan-html/src/main.ts",
-          "reason": "`addTileRaw`: las fixtures Format D de `data/scenes/` que ofrece el selector «Room» (preset `html-fixtures`, sin bridge) se normalizan en local porque no hay wire que lo haga. Es la única normalización del juego sin bridge; no recibe escenas del motor."
+          "funcion": "addTileRaw",
+          "reason": "`addTileRaw`: las fixtures Format D de `data/scenes/` que ofrece el selector «Room» (preset `html-fixtures`, sin bridge) se normalizan en local porque no hay wire que lo haga. Es también el hook `window.__nefan.addTileRaw` del banco (`dev/nefan-hook.ts`; lo usan `qa/presupuesto-de-volumenes.mjs` y los guiones 58 y 68, que le pasan a propósito una escena SERVIDA para ver que `formatDToWorld` la rechaza). Es la única normalización del juego sin bridge; no recibe escenas del motor por cable."
         },
         {
           "path": "nefan-html/src/ui/style-apply.ts",
+          "funcion": "StyleApplyController.plan",
           "reason": "`StyleApplyController.plan`: el batch «aplicar estilo a un juego» normaliza las escenas del snapshot de mundo pre-generado para derivar las celdas del atlas y el roster de skins con el MISMO código puro que la partida (cache-hit exacto). Corre desde el título, antes de que exista sesión ni wire: tampoco recibe escenas del motor por cable."
         }
       ]
