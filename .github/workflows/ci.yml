@@ -116,9 +116,11 @@ jobs:
       # surface_atlas_generator.make_tileable, sujeto de test_surface_atlas.
       # El resto de la suite sigue siendo stdlib-only.
       #
-      # uvicorn NO hace falta (#199): solo lo importan main.py y
+      # uvicorn NO hace falta AQUÍ (#199): solo lo importan main.py y
       # remote_gen_main.py, que ningún test importa y que compileall compila
-      # sin ejecutar. Ojo con quitar de más: estos tests NO son skipUnless
+      # sin ejecutar. El job que SÍ arranca `main.py` —`candados-headless`, más
+      # abajo— instala uvicorn y anthropic por su cuenta (#235). Ojo con quitar
+      # de más: estos tests NO son skipUnless
       # salvo los de sprite-forge, así que una dep ausente los volvería
       # verdes y VACÍOS en vez de rojos — comparar el conteo, no el color.
       #
@@ -135,3 +137,46 @@ jobs:
       # (#392). La variable lo desplaza a un temporal; olvidarla no es verde,
       # `SpendTracker` se niega a construirse sobre la ruta real bajo test.
       - run: NEFAN_SPEND_DIR=$(mktemp -d) python -m unittest discover -s ai_server/tests
+
+  # Los candados HEADLESS de `qa/` (#357, T11). Son los ejecutables sueltos de
+  # `qa/*.mjs` que no abren navegador: levantan lo que necesitan en puertos que
+  # elige el kernel, lo matan por PID y se ponen ROJOS por sí solos. Hasta esta
+  # tanda el CI no tocaba `qa/` (cero menciones), y el 2026-09-05 uno de esos
+  # candados llevaba un día rojo en `main` sin que nadie lo supiera. Un paso por
+  # ejecutable, para que el rojo tenga nombre. Los 70 guiones de navegador y
+  # `bateria-`/`esperas-` (spawnean `qa/run.mjs`: preset + Chromium) siguen
+  # siendo corrida local.
+  candados-headless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Los candados de mutación leen el tag `mutacion-ultima` del historial.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            nefan-core/package-lock.json
+            narrative-mcp/package-lock.json
+      - run: npm ci
+        working-directory: nefan-core
+      - run: npm ci
+        working-directory: narrative-mcp
+      # El dist del core: los candados que cargan tests con `@nefan/core` lo
+      # necesitan compilado, igual que el job `nefan-core`.
+      - run: npm run build
+        working-directory: nefan-core
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      # Aquí arranca el ai_server REAL (`main.py` → uvicorn) con el SDK REAL
+      # (`anthropic`) apuntado al stub `labs/narrative/fake-anthropic.ts` por
+      # `ANTHROPIC_BASE_URL`: por eso este job instala lo que `ai-server` no
+      # necesita. La clave de API es falsa; no hay proveedor al que llamar.
+      - run: pip install fastapi uvicorn anthropic httpx pillow numpy
+      # #235: un NPC con `role` y `description` atraviesa ai_server por HTTP y
+      # llega al wire del bridge con los dos campos; rojo si una de las dos
+      # copias de `validate_scene_response` desaparece.
+      - run: node qa/el-npc-cruza-ai-server-con-role-y-description.mjs

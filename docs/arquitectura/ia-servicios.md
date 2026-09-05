@@ -94,7 +94,7 @@ importado) `unittest` **no** está cargado, y pytest no está instalado.
 
 | Modelo | Uso | Donde |
 |--------|-----|-------|
-| **Claude Sonnet 4.5** | Genera escenas open-world, reacciona a las elecciones del jugador esculpiendo el mundo (spawn dinámico de edificios/NPCs/objetos), orienta armas vía visión | llm_client.py via MCP bridge o API |
+| **Claude Sonnet 4.5** | Genera escenas open-world, reacciona a las elecciones del jugador esculpiendo el mundo (spawn dinámico de edificios/NPCs/objetos), orienta armas vía visión | llm_client.py via MCP bridge o API — lo elige `NEFAN_LLM_MCP_URL` (`off` = solo API; el banco pone además `ANTHROPIC_BASE_URL` al stub `labs/narrative/fake-anthropic.ts`, #235) |
 
 Ya no queda generación local con GPU: se fue entera con el gpu-worker (#199),
 y con ella torch/diffusers y sus ~5 GB de `.venv`. Todo lo generativo de
