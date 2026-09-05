@@ -150,7 +150,7 @@ Reglas que hacen que un guion valga algo:
 | `02-colision-desde-huella` | La colisión sale de la huella declarada, nunca de los píxeles |
 | `03-hud-de-ataques` | El HUD se genera desde el catálogo del sistema de combate de la sesión |
 | `05-terreno-desde-ground` | El suelo declarativo (`ground`) se rasteriza al grid y de ahí sale la colisión — incluido un tile generado EN VIVO al explorar, no el snapshot de pre-generación |
-| `06-el-rio-solo-se-cruza-por-el-puente` | `solid_chars` los fija el engine (agua y muro): el jugador cruza el río por el puente y rebota contra el agua, y ni el puente ni el camino bloquean |
+| `06-el-rio-solo-se-cruza-por-el-puente` | `solid_chars` los fija el engine (solo el agua: los muros son volúmenes del plan, #407): el jugador cruza el río por el puente y rebota contra el agua, y ni el puente ni el camino bloquean |
 | `07-npc-clave-del-skin` | `role`/`style_ref`/`description` sobreviven a `formatDToWorld`, y partida y batch de estilo derivan la MISMA clave de caché (si divergen, el skin se paga dos veces) |
 | `08-viaje-a-place-sin-realizar` | Viajar a un destino del panel "Salidas" que el motor aún no ha realizado: se realiza al pisarlo, no antes |
 | `09-viaje-de-vuelta` | La vuelta desde un place ya visitado reusa lo generado en vez de volver a pagarlo |

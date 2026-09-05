@@ -118,7 +118,11 @@ export default async function (ctx) {
 
   // ── 1. Lo que el engine fija como sólido ────────────────────────────────
   ctx.expect("el agua es sólida", (solidez.solid_chars ?? []).includes("w"), JSON.stringify(solidez.solid_chars));
-  ctx.expect("el muro es sólido", (solidez.solid_chars ?? []).includes("W"), JSON.stringify(solidez.solid_chars));
+  ctx.expect(
+    "y es lo ÚNICO sólido: los muros son volúmenes del plan, no chars del grid (#407)",
+    JSON.stringify(solidez.solid_chars ?? []) === JSON.stringify(["w"]),
+    JSON.stringify(solidez.solid_chars),
+  );
   ctx.expect("el puente NO es sólido", !(solidez.solid_chars ?? []).includes("b"), JSON.stringify(solidez.solid_chars));
   ctx.expect("el camino NO es sólido", !(solidez.solid_chars ?? []).includes("_"), JSON.stringify(solidez.solid_chars));
   ctx.expect(

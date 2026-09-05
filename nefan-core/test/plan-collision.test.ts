@@ -81,7 +81,7 @@ describe("unionCollisionGrids", () => {
   });
 
   it("respeta solid_chars distintos de cada fuente", () => {
-    const a: TerrainGridData = { ...mk(["Wg"]), solid_chars: ["W"] };
+    const a: TerrainGridData = { ...mk(["Sg"]), solid_chars: ["S"] };
     const b: TerrainGridData = { ...mk(["gw"]), solid_chars: ["w"] };
     const u = unionCollisionGrids(a, b);
     assert.deepEqual(u?.grid, ["SS"]);

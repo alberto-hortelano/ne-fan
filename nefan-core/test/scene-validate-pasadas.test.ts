@@ -37,7 +37,9 @@ import type { TileEdges } from "../src/scene/tile-edges.js";
 import { BODY_RADIUS_M, celdasLibresParaRadio } from "../src/scene/terrain-collision.js";
 import { TILE_MPC } from "../src/scene/tile.js";
 
-/** Tile de mentira desde un grid ASCII: "W" muro, "~" agua, lo demás pisable. */
+/** Tile de mentira desde un grid ASCII con el alfabeto del engine: "w" agua
+ *  (el único sólido del grid: los muros son volúmenes del plan), lo demás
+ *  pisable. */
 function vista(filas: string[], over: Partial<TileView> = {}): TileView {
   return {
     cols: filas[0].length,
@@ -45,7 +47,7 @@ function vista(filas: string[], over: Partial<TileView> = {}): TileView {
     grid: filas,
     raw: {},
     scene: {},
-    solid: new Set(["W", "~"]),
+    solid: new Set(["w"]),
     ...over,
   };
 }
@@ -137,17 +139,17 @@ describe("openTile — gate de variante", () => {
     assert.equal(r.ok, true);
     if (!r.ok) return;
     assert.equal(r.view.cols, 128);
-    assert.deepEqual([...r.view.solid].sort(), ["W", "w"]);
+    assert.deepEqual([...r.view.solid].sort(), ["w"]);
   });
 });
 
 describe("buildWalkableMap", () => {
   it("el terreno sólido no se pisa y el resto sí", () => {
-    const { map, found } = mapaDe(["gWg", "g~g"]);
+    const { map, found } = mapaDe(["gwg", "gwg"]);
     assert.equal(map.walkableCells, 4);
     assert.equal(found.stats.walkable_cells, 4);
-    assert.equal(map.isWalkable([1, 0]), false, "el muro");
-    assert.equal(map.isWalkable([1, 1]), false, "el agua");
+    assert.equal(map.isWalkable([1, 0]), false, "el agua");
+    assert.equal(map.isWalkable([1, 1]), false, "en cualquier fila");
     assert.equal(map.isWalkable([0, 0]), true);
     // Los cuatro desbordes, y `false` de verdad: un `undefined` de índice
     // fuera de rango cuela en un `if` pero no en un deepEqual de stats.
@@ -338,7 +340,7 @@ describe("checkScatter", () => {
 });
 
 describe("checkPlayerSpawn", () => {
-  const grid = ["ggg", "gWg"];
+  const grid = ["ggg", "gwg"];
 
   it("fuera de bootstrap sobra, y no siembra el flood", () => {
     const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [0, 0] }] });
@@ -391,7 +393,7 @@ describe("checkPlayerSpawn", () => {
     const { view, map, found } = mapaDe(grid, { entities: [{ id: "p", kind: "player", cell: [1, 1] }] });
     assert.equal(checkPlayerSpawn(view, map, SIN_PLAN, { required_crossings: [], bootstrap: true }, found), null);
     assert.deepEqual(found.errors, [
-      'el spawn del player [1, 1] no es transitable: la celda es "W", terreno sólido — muévelo a una celda pisable',
+      'el spawn del player [1, 1] no es transitable: la celda es "w", terreno sólido — muévelo a una celda pisable',
     ]);
   });
 
@@ -470,7 +472,7 @@ describe("checkSeams", () => {
   });
 
   it("un cruce que continúa en AGUA no se exige alcanzable a pie", () => {
-    const { view, map, found } = mapaDe(["~g", "~g"]);
+    const { view, map, found } = mapaDe(["wg", "wg"]);
     const edges: TileEdges = { ...SIN_CRUCES, west: { biome: "grass", crossings: [{ type: "river", at: 1, width: 2 }] } };
     const seams = checkSeams(view, map, edges, {
       required_crossings: [{ edge: "west", type: "river", at: 1, width: 2 }],
@@ -503,7 +505,7 @@ describe("checkSeams", () => {
   });
 
   it("sin `at`, la entrada vale con que el borde tenga un cruce pisable", () => {
-    const { view, map, found } = mapaDe(["~g", "gg"]);
+    const { view, map, found } = mapaDe(["wg", "gg"]);
     const edges: TileEdges = {
       ...SIN_CRUCES,
       west: { biome: "grass", crossings: [{ type: "river", at: 0, width: 1 }, { type: "path", at: 1, width: 1 }] },
@@ -594,7 +596,7 @@ describe("checkSeams", () => {
   });
 
   it("una entrada que solo casa con celdas sólidas no siembra nada", () => {
-    const { view, map, found } = mapaDe(["~g", "~g"]);
+    const { view, map, found } = mapaDe(["wg", "wg"]);
     const edges: TileEdges = { ...SIN_CRUCES, west: { biome: "grass", crossings: [{ type: "river", at: 1, width: 2 }] } };
     const seams = checkSeams(view, map, edges, { required_crossings: [], entry: { edge: "west", at: 1 } }, null, found);
     assert.deepEqual(seams.startCells, []);
@@ -731,34 +733,34 @@ describe("reportPlanBudget", () => {
 });
 
 describe("floodFill", () => {
-  // Seis filas escritas a mano: dos salas separadas por un muro, la de la
+  // Seis filas escritas a mano: dos orillas separadas por un canal, la de la
   // derecha con un vano. Esto es lo que ANTES exigía un tile de 128×128.
   const MAPA = [
-    "gggWggg",
-    "gggWggg",
+    "gggwggg",
+    "gggwggg",
     "ggggggg",
-    "gggWggg",
-    "gggWggg",
-    "gggWggg",
+    "gggwggg",
+    "gggwggg",
+    "gggwggg",
   ];
 
   it("solo alcanza lo conectado por celdas pisables", () => {
     const { view, map } = mapaDe(MAPA);
     const reach = floodFill(view, map, [[0, 0]], 1);
     assert.equal(reach.has([6, 0]), true, "se rodea por el vano de la fila 2");
-    assert.equal(reach.has([3, 0]), false, "el muro no");
+    assert.equal(reach.has([3, 0]), false, "el agua no");
     assert.equal(reach.count, map.walkableCells);
   });
 
   it("con el vano tapiado quedan dos mitades", () => {
-    const { view, map } = mapaDe(MAPA.map((f, r) => (r === 2 ? "gggWggg" : f)));
+    const { view, map } = mapaDe(MAPA.map((f, r) => (r === 2 ? "gggwggg" : f)));
     const reach = floodFill(view, map, [[0, 0]], 1);
     assert.equal(reach.has([6, 0]), false, "ya no hay paso");
     assert.equal(reach.count, 18, "solo la mitad izquierda");
   });
 
   it("varias semillas siembran a la vez y no se cuentan dos veces", () => {
-    const { view, map } = mapaDe(MAPA.map((f, r) => (r === 2 ? "gggWggg" : f)));
+    const { view, map } = mapaDe(MAPA.map((f, r) => (r === 2 ? "gggwggg" : f)));
     const reach = floodFill(view, map, [[0, 0], [6, 0], [0, 0]], 1);
     assert.equal(reach.count, 36, "las dos mitades enteras");
   });
@@ -769,7 +771,7 @@ describe("floodFill", () => {
     // cae, el flood atraviesa el mapa entero por los lados y todo sale
     // «alcanzable» — el fallo más caro posible en un validador de
     // alcanzabilidad, porque aprueba mapas injugables en silencio.
-    const { view, map } = mapaDe(["Wgg", "gWW"]);
+    const { view, map } = mapaDe(["wgg", "gww"]);
     const reach = floodFill(view, map, [[2, 0]], 1);
     assert.equal(reach.count, 2, "solo las dos celdas del tramo de arriba");
     assert.equal(reach.has([0, 1]), false, "la esquina de abajo queda aislada");
@@ -788,7 +790,7 @@ describe("floodFill", () => {
     // cuerpo la pregunta es si CABE ahí, y un flood que arranca dentro de una
     // roca aprueba el mapa entero desde una posición imposible.
     const { view, map } = mapaDe(MAPA);
-    assert.equal(floodFill(view, map, [[3, 0]], 1).count, 0, "el muro no siembra");
+    assert.equal(floodFill(view, map, [[3, 0]], 1).count, 0, "el agua no siembra");
   });
 });
 
@@ -801,14 +803,14 @@ describe("floodFill", () => {
  *  impedir. Por eso el `k=2` de aquí abajo no es redundante: es el criterio
  *  que más pesa de la tanda, y su aserto es que k=2 PASA. */
 describe("floodFill con cuerpo · la puerta de 1 m", () => {
-  /** Dos salas de 3 columnas separadas por un muro de 3 celdas de grosor
+  /** Dos orillas de 3 columnas separadas por un canal de 3 celdas de ancho
    *  (cols 3-5) con un VANO de `hueco` filas. `hueco` es exactamente lo que
    *  mide la puerta: 2 celdas = 1,00 m, 3 = 1,50 m. Grid 9×9 en los dos
    *  casos, para que el destino sea la misma celda. */
   const conVano = (hueco: number): string[] => {
     const desde = Math.floor((9 - hueco) / 2);
     return Array.from({ length: 9 }, (_, r) =>
-      "ggg" + (r >= desde && r < desde + hueco ? "ggg" : "WWW") + "ggg");
+      "ggg" + (r >= desde && r < desde + hueco ? "ggg" : "www") + "ggg");
   };
   const IZQ: Cell = [0, 4];
   const DER: Cell = [8, 4];
@@ -867,7 +869,7 @@ describe("checkReachability", () => {
   });
 
   it("con vecino enlazado y NADA que pisar es injugable", () => {
-    const { view, map, found } = mapaDe(["~~~", "~~~"]);
+    const { view, map, found } = mapaDe(["www", "www"]);
     checkReachability(view, map, { startCells: [], crossingTargets: [] }, [], [], {
       required_crossings: [], entry: { edge: "west", at: 1 },
     }, found);
@@ -888,7 +890,7 @@ describe("checkReachability", () => {
     // arranque ya filtran por transitable), pero que la pasada tiene que
     // sostener sola: es lo único que separa «no se verificó» de un flood
     // que arranca dentro de una roca.
-    const { view, map, found } = mapaDe(["gWg"]);
+    const { view, map, found } = mapaDe(["gwg"]);
     checkReachability(view, map, { startCells: [[1, 0]], crossingTargets: [] }, [], [], {
       required_crossings: [], entry: { edge: "west", at: 0 },
     }, found);
@@ -896,12 +898,12 @@ describe("checkReachability", () => {
     assert.equal(found.stats.reachable_cells, 0, "el flood no llegó a correr");
   });
 
-  /** Dos mitades de 3 columnas separadas por un muro: la mínima que admite el
+  /** Dos mitades de 3 columnas separadas por un río: la mínima que admite el
    *  cuerpo mayor a los dos lados (3 celdas = 1,5 m). Los grids de 2-3
    *  columnas de antes cabían para un punto sin dimensión y para nadie más. */
-  const PARTIDO = ["gggWggg", "gggWggg", "gggWggg", "gggWggg", "gggWggg"];
+  const PARTIDO = ["gggwggg", "gggwggg", "gggwggg", "gggwggg", "gggwggg"];
 
-  it("un cruce al otro lado de un muro es error, y lo dice con su nombre", () => {
+  it("un cruce al otro lado del río es error, y lo dice con su nombre", () => {
     const { view, map, found } = mapaDe(PARTIDO);
     checkReachability(view, map, {
       startCells: [[0, 0]],
@@ -944,12 +946,12 @@ describe("checkReachability", () => {
    *  cabe pero no se llega. Los dos defectos son error y llevan mensajes
    *  distintos porque son arreglos distintos: ensanchar vs. abrir un paso. */
   const CON_NICHO = [
-    "gggggWWggg",
-    "gggggWWggg",
-    "gggggWWggg",
-    "gggggWWggg",
-    "gggggWWggg",
-    "ggggggWggg",
+    "gggggwwggg",
+    "gggggwwggg",
+    "gggggwwggg",
+    "gggggwwggg",
+    "gggggwwggg",
+    "ggggggwggg",
   ];
 
   it("un NPC en un NICHO de una celda es ERROR aunque se le llegue al lado", () => {
@@ -1029,23 +1031,23 @@ describe("checkReachability", () => {
     assert.equal(found.stats.npcs_reachable, 1);
   });
 
-  it("por debajo del 20% pisable, avisa de que el mapa es casi todo muro", () => {
+  it("por debajo del 20% pisable, avisa de que el mapa es casi todo agua", () => {
     // Se mide sobre lo PISABLE declarado, no sobre lo alcanzado: la pregunta
     // es de composición («¿te has pasado de muro y agua?»). El arranque lleva
     // hueco para un cuerpo a propósito, o el flood no correría y la medida no
     // llegaría a hacerse.
     const { view, map, found } = mapaDe([
-      "gggWWWWWWWWWWWWWWWWW",
-      "gggWWWWWWWWWWWWWWWWW",
-      "gggWWWWWWWWWWWWWWWWW",
-      "WWWWWWWWWWWWWWWWWWWW",
+      "gggwwwwwwwwwwwwwwwww",
+      "gggwwwwwwwwwwwwwwwww",
+      "gggwwwwwwwwwwwwwwwww",
+      "wwwwwwwwwwwwwwwwwwww",
     ]);
     checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [], [], { required_crossings: [] }, found);
     assert.deepEqual(found.warnings, ["solo el 11% del mapa es transitable — ¿demasiado muro/agua?"]);
   });
 
   it("justo en el 20% NO avisa (el umbral es estricto)", () => {
-    const { view, map, found } = mapaDe(["gggWW", "gggWW", "gggWW", "WWWWW"]);
+    const { view, map, found } = mapaDe(["gggww", "gggww", "gggww", "wwwww"]);
     checkReachability(view, map, { startCells: [[0, 0]], crossingTargets: [] }, [], [], { required_crossings: [] }, found);
     assert.deepEqual(found.warnings, []);
   });
@@ -1053,7 +1055,7 @@ describe("checkReachability", () => {
   it("un arranque PISABLE donde no cabe un cuerpo nombra la causa y NO lista media escena", () => {
     // Sin esto el flood salía vacío y el informe era una avalancha —todos los
     // cruces, todos los NPCs— sin decir nunca por qué.
-    const { view, map, found } = mapaDe(["WgW", "WgW", "WgW"], {
+    const { view, map, found } = mapaDe(["wgw", "wgw", "wgw"], {
       entities: [{ id: "herrero", kind: "npc", cell: [1, 1] }],
     });
     checkReachability(view, map, {

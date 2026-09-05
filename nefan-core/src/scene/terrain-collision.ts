@@ -1,8 +1,8 @@
 /** Colisión de terreno por celdas (Format D) — lógica pura compartida.
  *
  *  `formatDToWorld` emite `terrain_grid` con `solid_chars` (qué chars del grid
- *  bloquean: muro "W" y agua "w", fijados por el engine en
- *  `DEFAULT_SOLID_CHARS`). Este módulo lo convierte en un lookup O(1) que el cliente consulta
+ *  bloquean: el agua "w", fijada por el engine en `DEFAULT_SOLID_CHARS`; los
+ *  muros son volúmenes del plan). Este módulo lo convierte en un lookup O(1) que el cliente consulta
  *  desde su chequeo de colisión, junto a los AABB de objetos. La conversión
  *  mundo↔celda usa el mismo origen que `formatDToWorld`: el centro del
  *  rectángulo de escena es (0,0).
@@ -107,7 +107,7 @@ export interface TerrainGridData {
    *  emite `formatDToWorld`; ausente = escena legacy centrada en el origen. */
   origin?: [number, number];
   /** Chars del grid que bloquean movimiento. Los emite `formatDToWorld`
-   *  (`DEFAULT_SOLID_CHARS`: W/w); los grids derivados del plan usan `S`. */
+   *  (`DEFAULT_SOLID_CHARS`: el agua `w`); los grids derivados del plan usan `S`. */
   solid_chars?: string[];
 }
 

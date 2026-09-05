@@ -34,8 +34,8 @@ export interface TileEdgeSummary {
 
 export type TileEdges = Record<Edge, TileEdgeSummary>;
 
-/** Char de borde → tipo de cruce. Los muros ("W") NO son cruces (una
- *  estructura tocando la costura es un warning del validador, no un cruce). */
+/** Char de borde → tipo de cruce. Un volumen del plan tocando la costura NO
+ *  es un cruce (es un warning del validador), y el grid no tiene char de muro. */
 const CROSSING_BY_CHAR: Record<string, CrossingType> = {
   _: "path",
   s: "road",
