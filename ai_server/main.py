@@ -32,7 +32,7 @@ class _SilenceHealthcheckFilter(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(_SilenceHealthcheckFilter())
 
-from llm_client import LLMClient
+from llm_client import LLMClient, mcp_ws_url_desde_entorno
 from style_packs import StylePackResolver
 from asset_store_client import AssetStoreClient
 
@@ -59,8 +59,13 @@ async def lifespan(app: FastAPI):
         f"({deps.asset_manifest.total_count()} entries)"
     )
 
+    # El backend se ELIGE, no se descubre (#235): `NEFAN_LLM_MCP_URL=off` deja
+    # solo la API directa (con `ANTHROPIC_BASE_URL` apuntando al stub del banco,
+    # eso es el ai_server real sin un céntimo). Sin la variable, el canal MCP de
+    # siempre.
     deps.llm_client = LLMClient(
         model=deps.config["llm_model"],
+        mcp_ws_url=mcp_ws_url_desde_entorno(),
         timeout=float(deps.config["llm_timeout_s"]),
         asset_manifest=deps.asset_manifest,
     )
@@ -95,9 +100,11 @@ async def lifespan(app: FastAPI):
     if deps.llm_client is not None:
         deps.llm_client.close()
     deps.llm_client = None
-    if deps.remote_gen is not None:
-        deps.remote_gen.close()
-    deps.remote_gen = None
+    # Aquí se cerraba también `deps.remote_gen`, un atributo que `Deps` no tiene
+    # desde que remote-gen es OTRO proceso (F4): cada apagado acababa en
+    # `AttributeError` y «Application shutdown failed», y nadie lo leía porque
+    # ningún guion miraba cómo mueren sus hijos (qa-2.md, hallazgo 5). Lo mira
+    # `qa/el-npc-cruza-ai-server-con-role-y-description.mjs`.
 
 
 app = FastAPI(title="NE-Fan AI Server", lifespan=lifespan)

@@ -463,6 +463,39 @@ ningún otro campo de contrato muerto: `qa/**/*.mjs` es root de la regla
 candado; un guion cubre lo que el candado no puede ver, que es la PANTALLA. Cuando haga falta
 mirar nombres internos, se afirma con **lista blanca** (lo que debe haber), no con lista negra.
 
+## `qa/el-npc-cruza-ai-server-con-role-y-description.mjs`: el tramo ai_server, por HTTP y sin créditos
+
+Hasta T11 (#235) ninguna corrida del banco atravesaba `ai_server`: el preset `e2e-sin-creditos`
+apunta el bridge al `fake-ai-server`, que devuelve la escena sin pasar por el proceso Python, y la
+allow-list donde vivió #173 (`validate_scene_response`, la que copia `role` y `description` de cada
+entity) solo la sujetaban tests en memoria. Este guion recorre el tramo de verdad:
+
+```
+bridge (ws-server.ts real) --HTTP--> ai_server (main.py REAL, SDK anthropic REAL) --HTTP--> stub
+```
+
+Lo único sustituido es el **modelo**: `labs/narrative/fake-anthropic.ts` detrás de
+`ANTHROPIC_BASE_URL`, que contesta un `tool_use generate_scene` con el tile de bootstrap del
+motor falso y **cuenta las llamadas**. El ai_server arranca con `NEFAN_LLM_MCP_URL=off` (la
+palanca que trajo #235): sin ella se engancharía al terminal de Claude Code de otro agente de la
+máquina y le mandaría la petición.
+
+```bash
+node qa/el-npc-cruza-ai-server-con-role-y-description.mjs   # ~2 s; NEFAN_PYTHON=<intérprete> en un worktree sin .venv
+```
+
+Afirma que el ai_server es el real (`fake:false`, «canal MCP desactivado»), que `barkeep` llega al
+wire con `role:"merchant"` y su `description` **verbatim** (leída del stub, no copiada al guion) y
+`bandido_1` con `role:"hostile"` y su `combat`, que el stub recibió **exactamente una** llamada con
+la clave falsa, y que el snapshot del mundo cae en el disco efímero y no en `data/games/` (así
+nacieron los 4 tiles basura que se borraron el 05-09), y que el ai_server se **apaga limpio** con
+SIGTERM (exit 0: su `lifespan` reventaba al cerrar un `deps.remote_gen` inexistente y nadie lo leía).
+Probado en negativo comentando cada copia en `narrative_schemas.py`: 3 rojos sin `role`, 2 sin
+`description`. Una escena que NO venga del stub es ROJO con nombre, no «sin medir». No toca el guion
+40 ni compara salidas saneadas por igualdad. Corre en CI (job `candados-headless`); puertos del bridge
+por `NEFAN_PORT_OFFSET`, los demás los elige el kernel, y con uno ocupado se niega sin matar a nadie.
+Un Ctrl+C a mitad corre la misma limpieza que el `finally` (hijos por PID + disco efímero) y sale 130.
+
 ## `qa/el-selector-ve-lo-que-la-batería-abre.mjs`: los datos que un descarte podría perder
 
 Nace con el desanulado del selector (#404). Hasta entonces cualquier fichero de `data/contract/`

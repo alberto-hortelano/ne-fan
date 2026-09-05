@@ -3,6 +3,12 @@
 Supports two backends:
   - MCP bridge (default): routes through Claude Code via narrative-mcp WebSocket
   - Claude API direct: uses ANTHROPIC_API_KEY (fallback if MCP not available)
+
+Cuál de los dos se intenta lo decide `NEFAN_LLM_MCP_URL` (#235): sin ella, el
+canal MCP de siempre; con una URL, ese canal; con `off`, NINGÚN canal MCP y solo
+la API. Antes el backend lo elegía un efecto de red —si había alguien
+escuchando en el puerto del motor, se le mandaba la petición—, y en una
+máquina con varios agentes ese alguien podía ser el terminal de OTRO.
 """
 
 import os
@@ -43,15 +49,42 @@ except ImportError:
     HAS_ANTHROPIC = False
 
 
+MCP_WS_URL_POR_DEFECTO = "ws://127.0.0.1:3737"
+ENV_MCP_URL = "NEFAN_LLM_MCP_URL"
+
+
+def mcp_ws_url_desde_entorno(env=os.environ) -> str | None:
+    """A qué canal MCP se engancha el cliente, leído de `NEFAN_LLM_MCP_URL`.
+
+    · ausente o en blanco → la URL de siempre (el terminal de Claude Code);
+    · `off` (sin distinguir mayúsculas) → `None`: NO se abre canal MCP;
+    · cualquier otra cosa → tiene que ser una URL `ws://`/`wss://`, y si no lo
+      es se LANZA: una URL mal escrita que degradase a la de siempre mandaría
+      la petición a un proceso que nadie eligió, que es justo lo que la
+      variable existe para impedir."""
+    raw = env.get(ENV_MCP_URL, "").strip()
+    if not raw:
+        return MCP_WS_URL_POR_DEFECTO
+    if raw.lower() == "off":
+        return None
+    if not (raw.startswith("ws://") or raw.startswith("wss://")):
+        raise ValueError(
+            f"{ENV_MCP_URL}={raw!r} no es ni `off` ni una URL ws:// o wss://"
+        )
+    return raw
+
+
 class LLMClient:
     def __init__(
         self,
         model: str = "claude-sonnet-4-5-20250929",
-        mcp_ws_url: str = "ws://127.0.0.1:3737",
+        mcp_ws_url: str | None = MCP_WS_URL_POR_DEFECTO,
         timeout: float = 60.0,
         asset_manifest=None,
     ):
         self.model = model
+        # `None` = canal MCP APAGADO a propósito (`NEFAN_LLM_MCP_URL=off`): no
+        # se abre ningún WebSocket ni se reintenta cada 5 s.
         self.mcp_ws_url = mcp_ws_url
         self.timeout = timeout
         self.asset_manifest = asset_manifest
@@ -89,8 +122,10 @@ class LLMClient:
         # ai_server nuevo por el canal del motor narrativo.
         self._closing = False
 
-        # Try MCP bridge first
-        if HAS_WEBSOCKET:
+        # Try MCP bridge first — salvo que esté apagado por configuración.
+        if not self.mcp_ws_url:
+            print("LLM: canal MCP desactivado (NEFAN_LLM_MCP_URL=off); solo API directa")
+        elif HAS_WEBSOCKET:
             self._try_connect_mcp()
 
         # Direct API: always initialize if a key is available, even if MCP is up.
@@ -184,7 +219,7 @@ class LLMClient:
         def on_open(ws: "websocket.WebSocket") -> None:
             self._ws_connected = True
             ws.send(json.dumps({"type": "hello"}))
-            print("LLM: Connected to narrative-mcp bridge (ws://127.0.0.1:3737)")
+            print(f"LLM: Connected to narrative-mcp bridge ({self.mcp_ws_url})")
 
         def on_close(ws: "websocket.WebSocket", close_code: int, close_msg: str) -> None:
             self._ws_connected = False

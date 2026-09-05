@@ -47,6 +47,29 @@ Orden recomendado (para que el motor tome `:3737` antes de que `ai_server` inten
    cd ~/code/ne-fan/nefan-core && npx tsx bridge/ws-server.ts
    ```
 
+## Elegir el backend del `LLMClient`: `NEFAN_LLM_MCP_URL`
+
+`ai_server` tiene dos backends —el canal MCP del terminal de Claude Code y la API directa con
+`ANTHROPIC_API_KEY`— y hasta #235 el que se usaba lo decidía un efecto de red: si había alguien
+escuchando en el puerto del motor, se le mandaba la petición, fuera quien fuera. La variable lo
+hace explícito: ausente = el canal de siempre; una URL `ws://` = ese canal; **`off` = sin canal
+MCP**, solo API.
+
+## `fake-anthropic.ts`: el MODELO falso, no un ai_server falso
+
+`fake-ai-server.ts` sustituye el proceso Python entero. `fake-anthropic.ts` sustituye solo el
+modelo: se pone detrás de `ANTHROPIC_BASE_URL` y el ai_server **real** (SDK real,
+`validate_scene_response` real) le manda su `POST /v1/messages`; contesta un `tool_use
+generate_scene` con `bootstrapTile()` de `fake-scenes.ts`, cuenta las llamadas (`GET /health` →
+`{fake:true, llamadas}`) y guarda la última petición (`GET /servido`). Lo conduce
+`qa/el-npc-cruza-ai-server-con-role-y-description.mjs`:
+
+```bash
+cd nefan-core && PORT=<p> node --import tsx ../labs/narrative/fake-anthropic.ts
+ANTHROPIC_BASE_URL=http://127.0.0.1:<p> ANTHROPIC_API_KEY=banco-sin-creditos NEFAN_LLM_MCP_URL=off \
+  python ai_server/main.py --port <q>
+```
+
 ## Arrancar el emulador
 
 ```bash
