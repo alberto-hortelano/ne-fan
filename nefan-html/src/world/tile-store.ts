@@ -16,7 +16,8 @@ import {
   type WorldRect,
 } from "@nefan-core/src/scene/tile.js";
 import type { TerrainCollider } from "@nefan-core/src/scene/terrain-collision.js";
-import type { EscenaServida } from "@nefan-core/src/protocol/messages.js";
+import type { SceneExit } from "@nefan-core/src/protocol/messages.js";
+import { huellaDeEscena, type EscenaSinSalidas } from "@nefan-core/src/protocol/escena-servida.js";
 
 export { TILE_SIZE_M, tileKey, tileWorldRect, worldToTile };
 export type { WorldRect };
@@ -27,9 +28,14 @@ export interface TileClientState {
   tx: number;
   ty: number;
   rect: WorldRect;
-  /** La escena tal como la sirvió el bridge (world scene + salidas), en
-   *  posiciones GLOBALES. Tipada (#378): el cliente la lee, no la abre con `as`. */
-  scene: EscenaServida;
+  /** La world scene del tile, en posiciones GLOBALES y SIN las salidas: se
+   *  separan en la frontera (`separarSalidas`, #410) porque tienen otra vida
+   *  —cambian con el mapa, no con la escena— y no pueden entrar en la huella.
+   *  Tipada (#378): el cliente la lee, no la abre con `as`. */
+  escena: EscenaSinSalidas;
+  /** Las salidas del lugar: la otra mitad del wire. Las reescribe
+   *  `actualizarSalidas` cuando el mapa cambia (`exits_changed`). */
+  salidas: SceneExit[];
   collider: TerrainCollider | null;
   /** Colisión base derivada del PLAN declarado (agua∖decks del `ground` +
    *  huellas de los `volumes`). Disponible en cuanto llega el tile. Se UNE al
@@ -42,12 +48,19 @@ export interface TileClientState {
 
 export class TileStore {
   readonly entries = new Map<string, TileClientState>();
-  /** Huella del scene data con el que se registró cada clave. Es lo único que
-   *  distingue "el tile vuelve a llegar igual" (resume, re-broadcast) de "el
-   *  tile CAMBIÓ" — y de eso depende si la colisión derivada se restaura o se
+  /** Huella de la ESCENA con la que se registró cada clave (`huellaDeEscena`:
+   *  sin las salidas, que cambian por su cuenta). Es lo único que distingue
+   *  "el tile vuelve a llegar igual" (resume, re-broadcast) de "el tile
+   *  CAMBIÓ" — y de eso depende si la colisión derivada se restaura o se
    *  recalcula. Vivía en el renderer oblicuo, que era quien re-pintaba; con
    *  una sola vista, el dueño del dato es el modelo de mundo. */
   private fingerprints = new Map<string, string>();
+  /** Cuántas veces se DERIVÓ y cuántas se RESTAURÓ la colisión del plan de cada
+   *  tile. Solo lectura, para `__nefan.colision()` (QA-G H3 de #410): «restaurar
+   *  vs derivar» solo era observable por una traza de dev, y un guion sobre una
+   *  cadena de `console.log` deja de medir sin ponerse rojo el día que alguien
+   *  la reescribe. */
+  private episodios = new Map<string, { derivaciones: number; restauraciones: number }>();
 
   /** ¿Hay mundo? (las reglas de frontera solo aplican entonces). */
   get hasGridTiles(): boolean {
@@ -77,7 +90,7 @@ export class TileStore {
     if (tile.key !== tileKey(tile.tx, tile.ty)) {
       throw new Error(`TileStore.add: clave ${tile.key} ≠ tileKey(${tile.tx}, ${tile.ty})`);
     }
-    const fingerprint = JSON.stringify(tile.scene);
+    const fingerprint = huellaDeEscena(tile.escena);
     const sceneChanged =
       this.entries.has(tile.key) && this.fingerprints.get(tile.key) !== fingerprint;
     this.entries.set(tile.key, tile);
@@ -87,18 +100,35 @@ export class TileStore {
 
   /** Instala la colisión base derivada del plan del tile (null = plan sin
    *  celdas sólidas, aplicado igualmente: los AABBs del esquema se apagan).
-   *  Fail-loud si la clave no existe: se deriva justo tras registrar el tile. */
-  setSvgCollider(key: string, collider: TerrainCollider | null): void {
+   *  `como` dice si se acaba de DERIVAR o se RESTAURA la de antes (la huella no
+   *  cambió): es el dato que #410 hace observable. Fail-loud si la clave no
+   *  existe: se deriva justo tras registrar el tile. */
+  setSvgCollider(key: string, collider: TerrainCollider | null, como: "derivada" | "restaurada"): void {
     const entry = this.entries.get(key);
     if (!entry) throw new Error(`TileStore.setSvgCollider: tile ${key} no registrado`);
     entry.svgCollider = collider;
     entry.svgApplied = true;
+    const e = this.episodios.get(key) ?? { derivaciones: 0, restauraciones: 0 };
+    if (como === "derivada") e.derivaciones += 1;
+    else e.restauraciones += 1;
+    this.episodios.set(key, e);
+  }
+
+  /** Por tile: su huella y cuántas veces la colisión del plan se derivó o se
+   *  restauró. Copias, no las entradas: es un observable de bench. */
+  colision(): { key: string; huella: string; derivaciones: number; restauraciones: number }[] {
+    return [...this.entries.keys()].map((key) => ({
+      key,
+      huella: this.fingerprints.get(key) ?? "",
+      ...(this.episodios.get(key) ?? { derivaciones: 0, restauraciones: 0 }),
+    }));
   }
 
   /** Solo para resetWorld (arranque/resume/fixtures). */
   clear(): void {
     this.entries.clear();
     this.fingerprints.clear();
+    this.episodios.clear();
   }
 
   /** Coords de los tiles que toca el AABB (x±r, z±r) — ≤4. */

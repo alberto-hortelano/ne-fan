@@ -28,7 +28,8 @@
  *  manda el bridge, y copiarlos por frame sería tirar el trabajo del sim.
  */
 
-import type { EscenaServida, SceneExit } from "@nefan-core/src/protocol/messages.js";
+import type { SceneExit } from "@nefan-core/src/protocol/messages.js";
+import type { EscenaSinSalidas } from "@nefan-core/src/protocol/escena-servida.js";
 import type { Entity } from "../renderer/types.js";
 
 export class MundoDelCliente {
@@ -36,7 +37,7 @@ export class MundoDelCliente {
   #enemigos: Entity[] = [];
   #objetos: Entity[] = [];
   #tileActivo: string | null = null;
-  #escenaActiva: EscenaServida | null = null;
+  #escenaActiva: EscenaSinSalidas | null = null;
   #salidas: SceneExit[] = [];
   #colorDeEnemigo = 0;
   /** Ids que el bridge mueve y este cliente no tiene en escena. Es un DEFECTO
@@ -69,13 +70,15 @@ export class MundoDelCliente {
     return this.#tileActivo;
   }
 
-  /** La world scene del tile activo: lo que el hook `__nefan.scene` publica y
-   *  lo que decide si el juego está «listo». */
-  get escenaActiva(): EscenaServida | null {
+  /** La world scene del tile activo, SIN las salidas (`salidas` va aparte,
+   *  #410): decide si el juego está «listo», y el hook `__nefan.scene` la
+   *  vuelve a juntar con las salidas para publicar la forma del wire. */
+  get escenaActiva(): EscenaSinSalidas | null {
     return this.#escenaActiva;
   }
 
-  /** Salidas del world-map de la escena activa (las adjunta el bridge). */
+  /** Salidas del world-map de la escena activa: la otra mitad del wire, que
+   *  cambia con el mapa (`exits_changed`) sin que la escena se toque. */
   get salidas(): readonly SceneExit[] {
     return this.#salidas;
   }
@@ -95,7 +98,7 @@ export class MundoDelCliente {
   }
 
   /** Apunta la escena activa del cliente al tile bajo el jugador. */
-  activarTile(key: string, escena: EscenaServida, salidas: SceneExit[]): void {
+  activarTile(key: string, escena: EscenaSinSalidas, salidas: SceneExit[]): void {
     this.#tileActivo = key;
     this.#escenaActiva = escena;
     this.#salidas = salidas;
