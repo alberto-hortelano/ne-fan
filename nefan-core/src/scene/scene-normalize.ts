@@ -17,7 +17,7 @@
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
 import { composeTilePlan, type TilePlan } from "./tile-plan.js";
-import { tileWorldRect, type TileCoord, type WorldRect } from "./tile.js";
+import { tileCoordDe, tileWorldRect, type TileCoord, type WorldRect } from "./tile.js";
 import type { TerrainGridData } from "./terrain-collision.js";
 import { combatForHostileRole, type HostileCombat } from "../combat/hostiles.js";
 import type { ExpandedScene } from "../contract/model-io/scene-schema.js";
@@ -64,8 +64,9 @@ export interface NpcEnElWire {
  *
  *  Los miembros opcionales lo son porque el MOTOR los declara o no
  *  (`ground`, `volumes`, `vegetation_zones`, `scatter_*`, `biome`,
- *  `place_id`), porque solo un tile del plano los tiene (`tile`), o porque
- *  el plan puede no componerse (`__plan`, con sus avisos). Los declarados
+ *  `place_id`) o porque el plan puede no componerse (`__plan`, con sus
+ *  avisos). `tile` y `world_rect` no lo son: toda escena vive en un tile del
+ *  plano (#405). Los declarados
  *  viajan TAL CUAL (provenance, con el tipo del contrato de escena): lo que se
  *  pinta y colisiona es `__plan`, ya compuesto. */
 export interface WorldScene {
@@ -73,7 +74,7 @@ export interface WorldScene {
   scene_description: string;
   dimensions: { width: number; depth: number; height: number };
   world_rect: WorldRect;
-  tile?: TileCoord;
+  tile: TileCoord;
   /** Color de suelo de reserva cuando no hay atlas. */
   terrain: { color: [number, number, number] };
   /** El grid crudo, para la COLISIÓN de terreno (no para pintar). */
@@ -200,21 +201,13 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
   const cols = size!.cols!;
   const rows = size!.rows!;
   const mpc = size!.meters_per_cell ?? 2;
-  // Rect mundial de la escena — ÚNICA fuente del origen. Un tile vive en su
-  // rect global del plano continuo; una escena legacy queda centrada en el
-  // origen (comportamiento histórico, sin cambios).
-  const tile = raw.tile as { tx?: number; ty?: number } | undefined;
-  const tileCoord: TileCoord | undefined =
-    tile && Number.isInteger(tile.tx) && Number.isInteger(tile.ty) ? { tx: tile.tx!, ty: tile.ty! } : undefined;
-  const worldRect =
-    tileCoord
-      ? tileWorldRect(tileCoord.tx, tileCoord.ty)
-      : {
-          minX: -(cols * mpc) / 2,
-          minZ: -(rows * mpc) / 2,
-          maxX: (cols * mpc) / 2,
-          maxZ: (rows * mpc) / 2,
-        };
+  // Rect mundial de la escena — ÚNICA fuente del origen, y sale del tile:
+  // toda escena vive en su rect global del plano continuo (#405).
+  // `ExpandedSceneSchema` no deja entrar una escena sin `tile`; lo que llega
+  // aquí sin él por otra puerta (una fixture a mano) es un error de quien
+  // llama, y `tileCoordDe` lanza nombrándolo.
+  const tileCoord = tileCoordDe(raw);
+  const worldRect = tileWorldRect(tileCoord.tx, tileCoord.ty);
 
   // El PLAN del tile, compuesto UNA vez y resuelto en el wire: de él salen la
   // geometría 3D, la colisión del jugador y la de los NPCs. Quien lo consume
@@ -319,8 +312,8 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
     scene_id: textoOVacio(raw.scene_id),
     scene_description: textoOVacio(raw.scene_description),
     dimensions: { width: cols * mpc, depth: rows * mpc, height: 3 },
-    // Coordenadas del plano continuo: rect mundial de la escena/tile y, si es
-    // un tile, sus coords de grid. El cliente ancla capas/colisión aquí.
+    // Coordenadas del plano continuo: rect mundial del tile y sus coords de
+    // grid. El cliente ancla capas/colisión aquí.
     world_rect: worldRect,
     tile: tileCoord,
     terrain: { color: [0.18, 0.22, 0.14] },

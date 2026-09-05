@@ -133,7 +133,7 @@ function pickTravelAnchor(ctx: BridgeContext, placeId: string, fromPlaceId: stri
 
   const occupied = new Set<string>();
   for (const rec of Object.values(ctx.narrative.scenes_loaded)) {
-    if (rec.tile) occupied.add(tileKey(rec.tile.tx, rec.tile.ty));
+    occupied.add(tileKey(rec.tile.tx, rec.tile.ty));
   }
   for (const p of Object.values(ctx.narrative.worldMap.map.places)) {
     if (p.anchor) occupied.add(tileKey(p.anchor.tx, p.anchor.ty));

@@ -171,7 +171,17 @@ export const SceneSizeSchema = z.object({
   meters_per_cell: z.number().positive(),
 });
 
-const TileCoordSchema = z.object({ tx: z.number().int(), ty: z.number().int() });
+/** Las coords del tile, OBLIGATORIAS en las dos poblaciones (#405): Format D
+ *  tiene una sola variante y una escena sin sitio en el plano no es una
+ *  escena — ni emitida ni cargada. El `required_error` es lo que lee el
+ *  modelo en el pre-flight. */
+const TileCoordSchema = z.object(
+  { tx: z.number().int(), ty: z.number().int() },
+  {
+    required_error:
+      "una escena necesita `tile` {tx,ty}: es la única variante de Format D (mundo continuo, pídela con generate_tile)",
+  },
+);
 
 /** Lo que las DOS poblaciones tienen en común. Está fuera de los dos schemas
  *  a propósito: la frontera entre lo que el modelo EMITE y lo que el juego
@@ -181,7 +191,7 @@ const sceneBaseShape = {
   scene_id: z.string().min(1),
   scene_description: z.string().min(1),
   place_id: z.string().min(1).optional(),
-  tile: TileCoordSchema.optional(),
+  tile: TileCoordSchema,
   biome: z.enum(SCENE_BIOMES).optional(),
   size: SceneSizeSchema.optional(),
   terrain: z.array(z.string()).optional(),
@@ -330,21 +340,9 @@ export const EmittedSceneSchema = z
   .strict()
   .superRefine((s, ctx) => {
     refineScatter(s, ctx);
-    // CANDADO de las variantes retiradas: Format D tiene UNA forma y ninguna
-    // más. Sin `tile` la escena era la "suelta" (size/terrain a elección del
-    // motor, sin sitio en el mundo) o el `stage` proscenio. El error va en la
-    // RAÍZ: el pre-flight de narrative-mcp se lo devuelve al modelo para que
-    // re-responda con la que toca.
-    if (s.tile === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [],
-        message:
-          "una escena necesita `tile` {tx,ty}: es la única variante de Format D " +
-          "(mundo continuo, pídela con generate_tile)",
-      });
-      return;
-    }
+    // Las variantes retiradas —la "suelta" (size/terrain a elección del motor,
+    // sin sitio en el mundo) y el `stage` proscenio— no llegan aquí: `tile` es
+    // obligatorio en la forma base y su `required_error` nombra la viva.
     // Un tile NO lleva size/terrain (la base es biome + primitivas; el engine
     // sintetiza el grid). Es exactamente lo que prepareTileBase exige.
     if (s.size !== undefined) {

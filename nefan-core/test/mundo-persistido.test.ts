@@ -59,8 +59,9 @@ function escenaConDos(): WorldScene {
     scene_description: "una plaza",
     dimensions: { width: 64, depth: 64, height: 3 },
     world_rect: { minX: -32, minZ: -32, maxX: 32, maxZ: 32 },
+    tile: { tx: 0, ty: 0 },
     terrain: { color: [0.18, 0.22, 0.14] },
-    terrain_grid: { grid: ["g"], cols: 1, rows: 1, meters_per_cell: 0.5 },
+    terrain_grid: { grid: ["g"], cols: 1, rows: 1, meters_per_cell: 0.5, origin: [-32, -32] },
     objects: [],
     npcs: [
       { id: "bandido_1", name: "Bandido", position: [3, 0, 4], combat: combatForHostileRole("hostile") },
@@ -514,10 +515,9 @@ describe("entidadesFueraDelMundo — la viva contra la unión de tiles del save 
   const dosTiles = rectsDelMundo({
     tile_0_0: { tile: { tx: 0, ty: 0 } },
     tile_1_0: { tile: { tx: 1, ty: 0 } },
-    legacy: {},
   });
 
-  it("los rects salen de los tiles del save, y una escena sin tile no aporta ninguno", () => {
+  it("los rects salen de los tiles del save (toda escena del save es un tile, #405)", () => {
     assert.deepEqual(dosTiles, [
       { minX: -32, minZ: -32, maxX: 32, maxZ: 32 },
       { minX: 32, minZ: -32, maxX: 96, maxZ: 32 },
@@ -548,7 +548,7 @@ describe("entidadesFueraDelMundo — la viva contra la unión de tiles del save 
 
   it("sin tiles no hay mundo del que estar fuera: devuelve [] a propósito", () => {
     assert.deepEqual(entidadesFueraDelMundo([rec({ id: "x", position: [999, 0, 999] })], []), []);
-    assert.deepEqual(entidadesFueraDelMundo([rec({ id: "x", position: [999, 0, 999] })], rectsDelMundo({ legacy: {} })), []);
+    assert.deepEqual(entidadesFueraDelMundo([rec({ id: "x", position: [999, 0, 999] })], rectsDelMundo({})), []);
   });
 
   it("con varios, el aviso los cuenta y nombra hasta tres", () => {

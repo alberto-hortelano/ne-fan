@@ -104,8 +104,10 @@ export interface TerrainGridData {
   rows: number;
   meters_per_cell: number;
   /** Esquina NW del grid en coordenadas mundo (plano continuo de tiles). Lo
-   *  emite `formatDToWorld`; ausente = escena legacy centrada en el origen. */
-  origin?: [number, number];
+   *  emite `formatDToWorld` desde el rect del tile, y los grids derivados del
+   *  plan lo escriben del mismo rect. Obligatorio (#405): sin él no hay dónde
+   *  poner las celdas. */
+  origin: [number, number];
   /** Chars del grid que bloquean movimiento. Los emite `formatDToWorld`
    *  (`DEFAULT_SOLID_CHARS`: W/w); los grids derivados del plan usan `S`. */
   solid_chars?: string[];
@@ -139,6 +141,13 @@ export function createTerrainCollider(
       `terrain_grid inconsistente (filas=${Array.isArray(grid) ? grid.length : typeof grid} rows=${rows} cols=${cols} mpc=${mpc})`,
     );
   }
+  // El origen es parte del contrato del grid (viene del wire, así que el tipo
+  // no basta): sin él no hay dónde poner las celdas, y el fallo se dice aquí
+  // en vez de salir como NaN en la primera colisión.
+  const origin = tg.origin as unknown;
+  if (!Array.isArray(origin) || origin.length !== 2 || !origin.every((v) => Number.isFinite(v))) {
+    throw new Error(`terrain_grid inconsistente (origin=${JSON.stringify(origin)}: se espera [x, z] en metros)`);
+  }
 
   const solid = new Uint8Array(cols * rows);
   let solidCellCount = 0;
@@ -157,9 +166,8 @@ export function createTerrainCollider(
   }
   if (solidCellCount === 0) return null;
 
-  // Esquina NW del grid en mundo: global (tiles) o centrada (legacy).
-  const originX = tg.origin?.[0] ?? -(cols * mpc) / 2;
-  const originZ = tg.origin?.[1] ?? -(rows * mpc) / 2;
+  // Esquina NW del grid en mundo (global, del rect del tile).
+  const [originX, originZ] = tg.origin;
 
   const isSolidCell = (col: number, row: number): boolean =>
     col >= 0 && row >= 0 && col < cols && row < rows && solid[row * cols + col] === 1;

@@ -140,6 +140,7 @@ describe("NarrativeState — registro de tiles (v4)", () => {
 
     // El motor realiza la posada y declara a Nogala con su id existente.
     const posada = escenaExpandidaDePrueba("posada_interior", {
+      tile: { tx: 0, ty: 1 },
       entities: [
         { id: "nogala", kind: "npc", name: "Nogala Tres-Tratos", cell: [10, 10], footprint: [1, 1] },
       ],
@@ -148,7 +149,8 @@ describe("NarrativeState — registro de tiles (v4)", () => {
     const records = s.entities.filter((e) => e.id === "nogala");
     assert.equal(records.length, 1, "un solo record — sin duplicado");
     assert.equal(records[0].scene_id, "posada_interior", "movida a la escena nueva");
-    assert.deepEqual(records[0].position, [10, 0, 10], "toma la posición declarada (legacy: celdas locales)");
+    // Celda [10,10] 1×1 del tile (0,1): x = −32 + 10,5·0,5 = −26,75 ; z = 32 + 10,5·0,5 = 37,25.
+    assert.deepEqual(records[0].position, [-26.75, 0, 37.25], "toma la posición declarada, en metros globales de su tile");
     assert.deepEqual(records[0].data.inventory, [{ id: "contratos" }], "el estado viaja con ella");
     assert.equal(records[0].spawn_reason, "react_to_player", "la procedencia se conserva");
 
@@ -173,6 +175,7 @@ describe("NarrativeState — registro de tiles (v4)", () => {
     console.warn = (...args: unknown[]) => { warnings.push(args.join(" ")); };
     try {
       s.recordSceneLoaded("posada_interior", escenaExpandidaDePrueba("posada_interior", {
+        tile: { tx: 0, ty: 1 },
         entities: [
           { id: "nogala_tres_tratos", kind: "npc", name: "Nogala Tres-Tratos", cell: [10, 10], footprint: [1, 1] },
         ],

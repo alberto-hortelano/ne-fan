@@ -117,18 +117,4 @@ describe("expansión de tiles (Format D v3)", () => {
     assert.ok(col.blocksCircle(32.25, -31.75, 0.1));
     assert.ok(!col.blocksCircle(0, 0, 0.1), "el origen del mundo NO pertenece a este tile");
   });
-
-  it("las escenas legacy conservan el rect centrado (identidad)", async () => {
-    const { formatDToWorld } = await import("../src/scene/scene-normalize.js");
-    const legacy = formatDToWorld({
-      scene_id: "s",
-      size: { cols: 10, rows: 6, meters_per_cell: 2 },
-      terrain: Array.from({ length: 6 }, () => "g".repeat(10)),
-      entities: [{ id: "b", kind: "building", name: "B", cell: [2, 1], footprint: [4, 2] }],
-    });
-    assert.deepEqual(legacy.world_rect, { minX: -10, minZ: -6, maxX: 10, maxZ: 6 });
-    assert.equal(legacy.tile, undefined);
-    const obj = (legacy.objects as { position: number[] }[])[0];
-    assert.deepEqual(obj.position, [-2, 0, -2]); // misma posición que siempre
-  });
 });

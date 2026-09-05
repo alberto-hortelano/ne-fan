@@ -30,7 +30,7 @@ import { MAX_VOLUMES, parseVolumes, type Volume } from "./blueprint/volumes.js";
 import { deriveVolumesFromSchema } from "./blueprint/derive.js";
 import { parseVegetationZones, zoneAreaM2 } from "./blueprint/vegetation.js";
 import type { FpsTilePlanInput } from "./blueprint/fps-spec.js";
-import { tileKey } from "./tile.js";
+import { tileCoordDe, tileKey } from "./tile.js";
 
 /** El plan compuesto: lo que pinta el renderer y lo que colisiona. Es el mismo
  *  tipo que consume el builder de la vista fps — una sola definición. */
@@ -80,8 +80,7 @@ export type TilePlan = FpsTilePlanInput;
 export const MAX_TILE_VOLUMES = 200;
 
 export interface TilePlanComposition {
-  /** `null` = no hay nada que componer (ni suelo ni volúmenes): escena legacy
-   *  o tile pelado. */
+  /** `null` = no hay nada que componer (ni suelo ni volúmenes): tile pelado. */
   plan: TilePlan | null;
   /** entityId → id del volumen que la representa. Quien pinta no la dibuja
    *  aparte; sin esto, cada árbol declarado llevaba dentro un poste que no
@@ -93,16 +92,14 @@ export interface TilePlanComposition {
 
 const arr = (v: unknown): unknown[] | null => (Array.isArray(v) ? v : null);
 
-/** Compone el plan de un TILE Format D (ya expandido). Una escena sin `tile`
- *  no tiene plan: Format D tiene una sola variante y el plan es suya (las
- *  fixtures legacy sin sitio en el plano se pintan desde su grid). */
+/** Compone el plan de un TILE Format D (ya expandido). Sin `tile` LANZA
+ *  (#405): Format D tiene una sola variante, el plan es suya y su seed sale de
+ *  las coords — una escena sin sitio en el plano no tiene nada que componer
+ *  ni ningún grid propio desde el que pintarse. */
 export function composeTilePlan(raw: Record<string, unknown>): TilePlanComposition {
   const warnings: string[] = [];
-  const tile = raw.tile as { tx?: number; ty?: number } | undefined;
-  if (!tile || !Number.isInteger(tile.tx) || !Number.isInteger(tile.ty)) {
-    return { plan: null, representedBy: {}, warnings };
-  }
-  const seed = tileKey(tile.tx!, tile.ty!);
+  const tile = tileCoordDe(raw);
+  const seed = tileKey(tile.tx, tile.ty);
 
   let ground: GroundFeature[] = [];
   if (arr(raw.ground)) {

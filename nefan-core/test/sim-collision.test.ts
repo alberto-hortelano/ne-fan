@@ -5,7 +5,6 @@ import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { createSimCollisionProvider } from "../bridge/sim-collision.js";
-import { escenaExpandidaDePrueba } from "./helpers.js";
 import { composeTilePlan } from "../src/scene/tile-plan.js";
 
 /** Tile 0,0: rect mundo [-32,32). Celda (c,r) → mundo (-32 + (c+0.5)·0.5). */
@@ -54,17 +53,10 @@ describe("createSimCollisionProvider", () => {
     assert.ok(!provider.blocksCircle(open.x, open.z, 0.5));
   });
 
-  it("tile inexistente o escena sin tile → sin colisión (degradación, no throw)", () => {
+  it("tile inexistente → sin colisión (degradación, no throw)", () => {
     const provider = createSimCollisionProvider(makeState());
     // Punto en el tile (5,5), que no existe.
     assert.ok(!provider.blocksCircle(320, 320, 0.5));
-    // Una escena expandida SIN tile (el gate de #334 ya no deja entrar
-    // escenas legacy a medias — esta es la mínima válida) no rompe.
-    const s = new NarrativeState(new MemorySessionStorage());
-    s.startNewSession("plugtest");
-    s.recordSceneLoaded("vieja_cripta", escenaExpandidaDePrueba("vieja_cripta"));
-    const legacy = createSimCollisionProvider(s);
-    assert.ok(!legacy.blocksCircle(0, 0, 0.5));
   });
 });
 

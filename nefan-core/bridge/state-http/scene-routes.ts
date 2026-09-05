@@ -19,10 +19,12 @@ import type { SceneAssetRefsResponse, WorldStateApi } from "../../src/contracts/
 import { mutated, notFound, ok, parseBody } from "./context.js";
 import type { RouteGroup } from "./routes.js";
 
-/** Para un tile, el contexto de costuras lo construye el SERVIDOR desde los
- *  edges de los vecinos registrados — el motor no puede olvidarse de pasarlo
- *  y el pre-flight de narrative_respond no cambia. Para lo que no es un tile,
- *  no hay contexto que construir. */
+/** El contexto de costuras lo construye el SERVIDOR desde los edges de los
+ *  vecinos registrados — el motor no puede olvidarse de pasarlo y el
+ *  pre-flight de narrative_respond no cambia. `scene` es lo que el MODELO
+ *  acaba de emitir, aún sin validar: si viene sin `tile` (o roto) no hay
+ *  vecinos que buscar y se devuelve `undefined`; el error se lo da al modelo
+ *  `validateScene`, que es a quien le toca hablarle. */
 export function tileContextFor(
   narrative: NarrativeState,
   scene: Record<string, unknown>,
@@ -37,8 +39,9 @@ export function tileContextFor(
     const shared = rec.edges?.[oppositeEdge(edge)];
     for (const c of shared?.crossings ?? []) required.push({ edge, ...c });
   }
-  const hasAnyTile = Object.values(narrative.scenes_loaded).some((r) => r.tile);
-  return { required_crossings: required, bootstrap: !hasAnyTile };
+  // Bootstrap = el mundo aún no tiene ningún tile (toda escena registrada lo es).
+  const bootstrap = Object.keys(narrative.scenes_loaded).length === 0;
+  return { required_crossings: required, bootstrap };
 }
 
 export const sceneRoutes = {

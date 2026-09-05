@@ -341,14 +341,13 @@ export function npcsFueraDelRect(
 /** El rect en metros de cada tile del save. Su UNIÓN es «el mundo conocido»:
  *  `scenes_loaded` nunca se poda, así que todo sitio donde el jugador ha
  *  estado sigue aquí, y una coordenada que no cae en ninguno es una
- *  coordenada donde no hay suelo. Las escenas sin `tile` (legacy) no aportan
- *  rect: no están en el plano. */
+ *  coordenada donde no hay suelo. Toda escena del save es un tile (#405). */
 export function rectsDelMundo(
   scenes: Readonly<Record<string, Pick<SceneRecord, "tile">>>,
 ): RectDelTile[] {
   const rects: RectDelTile[] = [];
   for (const rec of Object.values(scenes)) {
-    if (rec.tile) rects.push(tileWorldRect(rec.tile.tx, rec.tile.ty));
+    rects.push(tileWorldRect(rec.tile.tx, rec.tile.ty));
   }
   return rects;
 }
@@ -378,8 +377,8 @@ export interface FueraDelMundo {
  *  «— sin errores —».
  *
  *  Con `rects` VACÍO devuelve `[]`, y no es tragarse nada: sin tiles no hay
- *  mundo del que estar fuera (una partida sin escenas, o un save de escenas
- *  legacy sin `tile`). La FORMA de `position` (tres números finitos) no se
+ *  mundo del que estar fuera (una partida sin escenas). La FORMA de
+ *  `position` (tres números finitos) no se
  *  vuelve a comprobar aquí: la garantiza `loadSession` al cargar el save, que
  *  rechaza el fichero nombrando la entidad — una rama para «no es un array»
  *  sería código para un estado que el tipo ya impide. */
