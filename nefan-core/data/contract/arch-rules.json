@@ -409,16 +409,25 @@
     },
     {
       "id": "solo-el-bridge-normaliza-la-escena",
-      "desc": "El cliente 2D no llama a formatDToWorld por su cuenta",
-      "why": "El bridge normaliza en el wire. Que el cliente vuelva a normalizar significa que acepta Format D crudo, que es justo lo que prohíbe cliente-no-convierte-celdas-a-metros: dos caminos hasta la world scene divergen. La asimetría se arregla o se documenta, no crece.",
-      "severity": "warn",
-      "max": 2,
+      "desc": "El cliente no llama a formatDToWorld salvo por sus dos puertas nombradas: las fixtures del selector «Room» (main.ts) y el batch «aplicar estilo» sobre el snapshot de mundo (ui/style-apply.ts)",
+      "why": "El bridge normaliza en el wire (`alWire`, regla `una-sola-salida-de-escena-del-bridge`). Que el cliente vuelva a normalizar significa que acepta Format D crudo, que es justo lo que prohíbe cliente-no-convierte-celdas-a-metros: dos caminos hasta la world scene divergen. Las dos llamadas que existen son legítimas porque no reciben escena del bridge —normalizan un JSON que ya está en el navegador y que ningún cable ha tocado—, y por eso están NOMBRADAS como exenciones y no contadas como deuda: con `warn` y `max: 2` (hasta #411) una tercera llamada en otro fichero podía entrar gratis si una de las dos desaparecía, y nadie sabía cuáles eran las dos. Severity error: fuera de sus dos puertas hoy son CERO, y una tercera es un camino nuevo hasta la world scene, no una asimetría que documentar.",
+      "severity": "error",
       "files": [
         "nefan-html/src/**/*.ts"
       ],
       "text": {
         "pattern": "formatDToWorld\\s*\\("
-      }
+      },
+      "exceptions": [
+        {
+          "path": "nefan-html/src/main.ts",
+          "reason": "`addTileRaw`: las fixtures Format D de `data/scenes/` que ofrece el selector «Room» (preset `html-fixtures`, sin bridge) se normalizan en local porque no hay wire que lo haga. Es la única normalización del juego sin bridge; no recibe escenas del motor."
+        },
+        {
+          "path": "nefan-html/src/ui/style-apply.ts",
+          "reason": "`StyleApplyController.plan`: el batch «aplicar estilo a un juego» normaliza las escenas del snapshot de mundo pre-generado para derivar las celdas del atlas y el roster de skins con el MISMO código puro que la partida (cache-hit exacto). Corre desde el título, antes de que exista sesión ni wire: tampoco recibe escenas del motor por cable."
+        }
+      ]
     },
     {
       "id": "una-sola-salida-de-escena-del-bridge",

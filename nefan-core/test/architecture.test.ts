@@ -1074,6 +1074,64 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // #411: la regla que hasta aquí decía «cliente 2D» y toleraba `max: 2` sin
+  // nombrar cuáles eran las dos. Ahora las nombra como exenciones y es error:
+  // una tercera puerta en cualquier otro fichero del cliente salta, y las dos
+  // nombradas callan. El caso de UNA sola puerta no distingue la regla de su
+  // contraria («ningún fichero del cliente salta»), así que van las dos.
+  it("[error] solo-el-bridge-normaliza-la-escena: una tercera puerta en el cliente salta; las dos nombradas no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "solo-el-bridge-normaliza-la-escena");
+
+    // El fichero que más cerca está de tentarlo (recibe la escena del wire) y
+    // otro cualquiera del cliente.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/world/carga-de-tile.ts",
+          text: "const world = formatDToWorld(msg.scene);\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/title-screen.ts",
+          text: "preview.set(id, formatDToWorld (raw));\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line} [${v.severity}]`),
+      [
+        "nefan-html/src/ui/title-screen.ts:1 [error]",
+        "nefan-html/src/world/carga-de-tile.ts:1 [error]",
+      ],
+      "una normalización local fuera de las dos puertas es un tercer camino hasta la world scene",
+    );
+
+    // Las dos puertas, calladas: las fixtures del selector y el batch de estilo.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/main.ts",
+          text: "const addTileRaw = (raw) => addTile({ ...formatDToWorld(raw), exits: [] });\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/style-apply.ts",
+          text: "for (const [id, scene] of scenes) normalizadas.set(id, formatDToWorld(scene));\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+
+    // Y nombrar un fichero no exime a su vecino: un `formatDToWorld` en otro
+    // módulo de `ui/` sigue saltando aunque `ui/style-apply.ts` esté exento.
+    assert.equal(
+      deLaRegla([
+        { path: "nefan-html/src/ui/style-apply-preview.ts", text: "formatDToWorld(x)\n", imports: [] },
+      ]).length,
+      1,
+    );
+  });
+
   // El candado que sustituye a la prosa del criterio de aceptación de #225
   // («cada pieza se invoca sin levantar un servidor HTTP»). Hace falta porque
   // `bridge/` NO está en el reparto de mutación: nada más lo demuestra. Y
