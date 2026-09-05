@@ -172,10 +172,19 @@ const VIGENTES = [
     // sintéticos). Aquí se descronometran DOS módulos en una copia de la huella
     // —uno solo no distingue «van solos» de «van juntos»— y se afirma que van
     // cada uno a su lote, y solo ellos. La huella vuelve en el `finally`.
+    //
+    // Y LA POBLACIÓN REAL ENTRA EN LA CUENTA. La segunda versión daba por hecho
+    // que el árbol no traía ningún módulo sin reloj (`sin.length === 2`), y el
+    // primer módulo nuevo con `break: "sin medir"` (#410, `escena-servida`) la
+    // puso roja en CI mientras `lotes` lo repartía BIEN, solo en su lote. Lo
+    // real se mide ANTES de sembrar y se suma a lo sembrado: lo que se afirma
+    // es «todo lo sin reloj, real o sembrado, va uno por lote», que es el
+    // invariante y no una foto de cuántos había ese día.
     mira: () => {
       const original = readFileSync(HUELLA, "utf8");
       const huella = JSON.parse(original);
       const plan = JSON.parse(readFileSync(PLAN, "utf8"));
+      const reales = planDeHoy().lotes.filter((l) => !l.medido).flatMap((l) => l.modulos);
       // Módulos de ficheros PLANOS (sin glob ni exclusión), todos con reloj: a
       // esos se les puede quitar el reloj borrando `segundos` fila a fila.
       const planos = (m) => m.mutate.every((f) => !f.startsWith("!") && !f.includes("*"));
@@ -190,10 +199,11 @@ const VIGENTES = [
         const { lotes } = planDeHoy();
         const sin = lotes.filter((l) => !l.medido);
         const ids = sin.flatMap((l) => l.modulos).sort();
+        const esperados = [...reales, ...sembrados].sort();
         return (
-          sin.length === 2 &&
+          sin.length === esperados.length &&
           sin.every((l) => l.modulos.length === 1) &&
-          ids.join() === [...sembrados].sort().join()
+          ids.join() === esperados.join()
         );
       } finally {
         writeFileSync(HUELLA, original);
