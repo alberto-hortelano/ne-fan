@@ -196,11 +196,13 @@ jobs:
       # llega al wire del bridge con los dos campos; rojo si una de las dos
       # copias de `validate_scene_response` desaparece.
       - run: node qa/el-npc-cruza-ai-server-con-role-y-description.mjs
-      # #357: los candados en negativo SIN navegador, en este orden — los que
-      # solo leen antes que los que escriben en el árbol y restauran, y
-      # `contrato-` (que se niega sobre ficheros sucios) detrás de los que
-      # escriben. Cada uno sale con 2 si no puede medir; ninguno gasta un
-      # crédito. Tiempos medidos en local el 2026-09-05 (Ryzen 7 5800X).
+      # #357: los candados en negativo SIN navegador, en este orden: primero el
+      # que estaba rojo en `main`, luego el único que solo lee (`el-selector`),
+      # después los que escriben en el árbol y restauran, y `contrato-` —que se
+      # niega sobre SUS ficheros sucios— detrás de ellos. Los que escriben
+      # restauran también con SIGINT/SIGTERM (130/143). Cada uno sale con 2 si
+      # no puede medir; ninguno gasta un crédito. Tiempos medidos en local el
+      # 2026-09-05 (Ryzen 7 5800X).
       #
       # (6,5 s) el reparto por reloj, la fusión de lotes y la procedencia de la
       # siembra. Estuvo ROJO en `main` del 04-09 al 05-09 sin que nadie lo

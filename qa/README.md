@@ -45,8 +45,11 @@ llevaba un día rojo en `main` sin que nadie lo supiera: `mutacion-reparto-en-lo
 un módulo sin cronometrar» sobre el plan real, #440/#445 cronometraron los 41, y nadie lo corrió.
 Un candado en negativo también envejece. Desde entonces el job **`candados-headless`** de
 `.github/workflows/ci.yml` corre, un paso por ejecutable, los que no abren navegador. Tiempos
-medidos en local el 05-09 (Ryzen 7 5800X), en el orden del job: los que solo leen antes que los que
-escriben en el árbol y restauran, y `contrato-` —que se niega sobre ficheros sucios— detrás.
+medidos en local el 05-09 (Ryzen 7 5800X), en el orden del job: primero el que estaba rojo en `main`
+(`reparto`, que escribe y restaura), luego el único que solo lee (`el-selector`), después los que
+escriben en el árbol y restauran, y `contrato-` —que se niega sobre SUS ficheros sucios— detrás de
+ellos. Los cuatro que escriben restauran también con Ctrl+C (SIGINT/SIGTERM → 130/143, misma
+limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella a medias sin eso).
 
 | Dentro | Tiempo | Qué necesita del runner |
 |---|---|---|
@@ -462,6 +465,12 @@ el `--pedidos ""` del input `TODOS` y las cuatro piezas del paso del workflow. A
 node qa/mutacion-reparto-en-lotes.mjs                 # ~4 min, sin red y sin medir mutación
 node qa/mutacion-reparto-en-lotes.mjs --solo-vigentes # ~7 s, solo los candados de regresión; es lo que corre en CI
 ```
+
+`--solo-vigentes` deja fuera los ABIERTOS y las conductas abiertas, cuyos checkers son los propios
+candados que ya corren como pasos del job (~4 min duplicados). Lo que ESO no ve nunca en CI es una
+**declaración de deuda que mienta** (un `deuda: <issue>` cuyo issue se cerró sin quitar la declaración):
+solo lo ve quien corra la completa en local. Y el guion se niega a arrancar si `mutacion-huella.json`
+trae cambios sin commitear: o son tuyos, o te los dejó una corrida interrumpida.
 
 De la validación de PR-E (la corrida partida en lotes). Dos grupos, y la diferencia es el punto:
 **VIGENTE** son nueve invariantes que hoy se cumplen —determinismo del reparto, ningún lote de

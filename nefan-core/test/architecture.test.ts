@@ -717,6 +717,46 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // La hermana por TEXTO (H3 de QA #454): la forma sin especificador con la
+  // que el repo carga el banco. Se le enseñan las tres formas dinámicas, la
+  // partida en tres líneas, y lo que tiene que callar: test/, labs/ y un
+  // COMENTARIO que nombra `qa/lib/…` — que es lo que hay hoy en dos scripts.
+  it("[error] el-banco-no-entra-en-produccion-ni-por-join: import(join(…\"qa\",\"lib\"…)) y require saltan; el comentario no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "el-banco-no-entra-en-produccion-ni-por-join");
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/src/x.ts",
+          text: 'const m = await import(join(process.cwd(), "..", "qa", "lib", "stack.mjs"));\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/scripts/x.ts",
+          text: 'const { offsetActual } = (await import(\n  join(repoRoot, "qa", "lib", "stack.mjs")\n)) as X;\n',
+          imports: [],
+        },
+        { path: "nefan-html/src/x.ts", text: 'const m = await import("../../qa/lib/sonda.mjs");\n', imports: [] },
+        { path: "narrative-mcp/x.ts", text: 'const m = require("../qa/lib/puertos.mjs");\n', imports: [] },
+      ]).map((v) => `${v.path}:${v.line}`),
+      ["narrative-mcp/x.ts:1", "nefan-core/scripts/x.ts:1", "nefan-core/src/x.ts:1", "nefan-html/src/x.ts:1"],
+      "las tres formas dinámicas de cargar el banco saltan en producción y herramientas",
+    );
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-core/test/x.test.ts", text: 'await import(join(repoRoot, "qa", "lib", "stack.mjs"));\n', imports: [] },
+        { path: "labs/x.ts", text: 'await import(join(repoRoot, "qa", "lib", "stack.mjs"));\n', imports: [] },
+        // Los dos comentarios verdaderos que hay hoy en scripts/, tal cual.
+        { path: "nefan-core/scripts/dump-config.ts", text: " * (`portOffset` en TS, `qa/lib/stack.mjs` en el banco, `start.sh` en bash).\n", imports: [] },
+        { path: "nefan-core/scripts/salud-sprite-forge.ts", text: " *  `qa/lib/presets-clasifica.mjs`, y por la misma razón\n", imports: [] },
+        // Y un join de otra cosa con "qa" dentro.
+        { path: "nefan-core/src/y.ts", text: 'const d = join(raiz, "qa", "capturas");\n', imports: [] },
+      ]),
+      [],
+      "test/, labs/, la prosa que nombra el banco y un join ajeno callan",
+    );
+  });
+
   // El campo `scattered` y las PRIMITIVAS del esquema entran en dos reglas que
   // ya existían; sin verlas saltar sobre el término nuevo, añadirlo al patrón
   // es una lista que nadie ha probado.

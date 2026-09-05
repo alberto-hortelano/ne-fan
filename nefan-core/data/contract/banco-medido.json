@@ -11,7 +11,7 @@
     },
     {
       "fichero": "qa/lib/puertos.mjs",
-      "porque": "Espera por el estado de un puerto TCP —ocupado, arriba, libre— y pregunta a `ss` quién lo tiene, para los guiones que levantan su propio servicio. Es un socket de verdad contra el kernel de la máquina; un doble del socket probaría el doble. Lo ejercen los guiones headless que corren en CI (`fake-enruta-por-pathname`, `el-npc-cruza-ai-server-…`)."
+      "porque": "Espera por el estado de un puerto TCP —ocupado, arriba, libre— y pregunta a `ss` quién lo tiene, para los guiones que levantan su propio servicio. Es un socket de verdad contra el kernel de la máquina; un doble del socket probaría el doble. Lo ejercen los guiones headless: `el-npc-cruza-ai-server-…` en CI y `fake-enruta-por-pathname` en local (fuera del job: su observable lee arte generado)."
     },
     {
       "fichero": "qa/lib/combate.mjs",

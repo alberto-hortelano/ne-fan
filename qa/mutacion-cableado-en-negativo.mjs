@@ -390,6 +390,33 @@ const restauraFuentes = () => { for (const [f, t] of fuentes) writeFileSync(f, t
 const habiaInformes = existsSync(INFORMES);
 if (habiaInformes) renameSync(INFORMES, APARTADO);
 
+/** La limpieza, UNA para el `finally` y para SIGINT/SIGTERM, idempotente. Sin
+ *  manejador, un Ctrl+C dejaba `scripts/mutacion.ts` MUTADO y `reports/` a
+ *  medias sin pasar por ningún `finally` (QA de #454). Se lleva también el
+ *  ensayo de los probes (`reports/lotes-ensayo`, `reports/plan-corrida.json`),
+ *  que antes quedaba como residuo tras una corrida limpia. */
+let limpiado = false;
+function limpiar() {
+  if (limpiado) return;
+  limpiado = true;
+  restauraFuentes();
+  rmSync(INFORMES, { recursive: true, force: true });
+  rmSync(join(CORE, "reports", "lotes-ensayo"), { recursive: true, force: true });
+  rmSync(join(CORE, "reports", "plan-corrida.json"), { force: true });
+  if (habiaInformes) renameSync(APARTADO, INFORMES);
+}
+for (const [señal, codigo] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.on(señal, () => {
+    console.error(`\n⊘ INTERRUMPIDO (${señal}) — restaurando fuentes, huella y reports/ antes de salir`);
+    limpiar();
+    process.exit(codigo);
+  });
+}
+/** Todo lo de arriba es `spawnSync`: un manejador de señal solo corre cuando el
+ *  código síncrono suelta, así que se cede el turno entre invariantes y el
+ *  Ctrl+C corta en la SIGUIENTE frontera. */
+const cede = () => new Promise((r) => setImmediate(r));
+
 const fallidos = [];
 try {
   for (const inv of INVARIANTES) {
@@ -423,11 +450,10 @@ try {
     if (!seEntera) fallidos.push(inv.nombre);
     console.log(`${seEntera ? "🔴 rojo " : "🟢 VERDE"}  ${inv.nombre}`);
     console.log(`     ${seEntera ? inv.porque : "⚠️  ROMPERLO NO CAMBIA EL OBSERVABLE: esto no es un candado"}`);
+    await cede();
   }
 } finally {
-  restauraFuentes();
-  rmSync(INFORMES, { recursive: true, force: true });
-  if (habiaInformes) renameSync(APARTADO, INFORMES);
+  limpiar();
 }
 
 for (const [f, t] of fuentes) {
