@@ -677,6 +677,46 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // La decisión (1) de #357: la dirección entre el banco de pruebas y el
+  // código es test → banco. Se le enseña el import desde cada árbol de
+  // producción y herramientas, y los dos árboles que lo importan
+  // legítimamente — que callen es la mitad del candado.
+  it("[error] el-banco-no-entra-en-produccion: importar qa/ desde producción o scripts salta; desde test/ y labs/ no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "el-banco-no-entra-en-produccion");
+    const banco = (spec: string) => [{ spec, line: 3 }];
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-core/src/x.ts", text: "", imports: banco("../../qa/lib/stack.mjs") },
+        { path: "nefan-core/bridge/handlers/x.ts", text: "", imports: banco("../../../qa/lib/puertos.mjs") },
+        { path: "nefan-core/services/asset-store/x.ts", text: "", imports: banco("../../../qa/lib/sesion.mjs") },
+        { path: "nefan-core/scripts/x.ts", text: "", imports: banco("../../qa/lib/veredictos.mjs") },
+        { path: "nefan-html/src/ui/x.ts", text: "", imports: banco("../../../qa/lib/fixtures.mjs") },
+        { path: "narrative-mcp/x.ts", text: "", imports: banco("../qa/lib/stack.mjs") },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "narrative-mcp/x.ts:3",
+        "nefan-core/bridge/handlers/x.ts:3",
+        "nefan-core/scripts/x.ts:3",
+        "nefan-core/services/asset-store/x.ts:3",
+        "nefan-core/src/x.ts:3",
+        "nefan-html/src/ui/x.ts:3",
+      ],
+      "el import del banco salta en los seis árboles de producción y herramientas",
+    );
+    // Los tests lo miden (test → banco) y los labs SON banco; y un módulo que
+    // solo se LLAMA qa-algo no es el directorio del banco.
+    assert.deepEqual(
+      deLaRegla([
+        { path: "nefan-core/test/x.test.ts", text: "", imports: banco("../../qa/lib/stack.mjs") },
+        { path: "labs/narrative/x.ts", text: "", imports: banco("../../qa/lib/puertos.mjs") },
+        { path: "nefan-core/src/x.ts", text: "", imports: banco("./qa-helpers.js") },
+      ]),
+      [],
+      "test/ y labs/ importan el banco legítimamente; `qa-helpers` no es `qa/`",
+    );
+  });
+
   // El campo `scattered` y las PRIMITIVAS del esquema entran en dos reglas que
   // ya existían; sin verlas saltar sobre el término nuevo, añadirlo al patrón
   // es una lista que nadie ha probado.

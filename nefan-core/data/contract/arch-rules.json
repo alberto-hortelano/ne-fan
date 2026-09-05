@@ -821,6 +821,25 @@
       "text": {
         "pattern": "almac[eé]n paralelo|fuera del prune|sin manifest y sin touch"
       }
+    },
+    {
+      "id": "el-banco-no-entra-en-produccion",
+      "desc": "Ningún fichero de producción ni herramienta importa `qa/` (el banco de pruebas)",
+      "why": "La decisión de #357 (T11, 2026-09-05): la dirección de dependencia entre el banco y el código es test → banco, y nunca al revés. `qa/lib` se mide DESDE `nefan-core/test/` —cuatro tests lo importan hoy (`esperas-de-qa`, `veredictos`, `presets-clasifica`, `port-offset-paridad`) y `test/qa-lib-tiene-quien-lo-mire.test.ts` exige que todo módulo de `qa/lib` tenga quien lo importe o una exención escrita en `data/contract/banco-medido.json`—, y no entra en `mutation-targets.json` (el perímetro es `core-puro-sin-node`; son `.mjs` con `node:*`) ni en los `MEDIDOS` del CRAP (movería el suelo del 89 % con margen 0,2, #388). Lo que esta regla cierra es la otra dirección: si `src/`, `bridge/`, `services/`, `scripts/`, el cliente o narrative-mcp importaran algo de `qa/`, el banco pasaría a ser código de producción sin medida de ninguna clase, y el helper que un test usa para ARRANCAR el juego entraría en el bundle del juego. Medido al nacer: `grep -rn \"qa/\" nefan-core/scripts/*.ts` → cuatro menciones, todas en comentarios, cero imports; la regla nace verde. `test/` y `labs/` quedan FUERA a propósito: importan el banco legítimamente (los tests para medirlo; los labs son banco también).",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/**/*.ts",
+        "nefan-core/bridge/**/*.ts",
+        "nefan-core/services/**/*.ts",
+        "nefan-core/scripts/**/*.ts",
+        "nefan-html/src/**/*.ts",
+        "narrative-mcp/**/*.ts"
+      ],
+      "imports": {
+        "forbid": [
+          "(^|/)qa/"
+        ]
+      }
     }
   ]
 }

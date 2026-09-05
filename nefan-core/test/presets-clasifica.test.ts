@@ -10,9 +10,11 @@
  *  situación contraria a la que se está midiendo. Con el sondeo inyectado el
  *  caso son tres líneas y corre en `npm test`, que es donde se mira.
  *
- *  Precedente del import cruzado: `test/port-offset-paridad.test.ts` ya carga
- *  `qa/lib/stack.mjs` desde aquí (y hasta ejecuta `./start.sh`). El banco es
- *  parte del aparato de este repositorio, no un tercero.
+ *  El import cruzado es la regla, no un precedente (#357): la dirección es
+ *  test → banco (`el-banco-no-entra-en-produccion`, arch-rules.json) y todo
+ *  módulo de `qa/lib` tiene un test que lo importe o una exención escrita
+ *  (`test/qa-lib-tiene-quien-lo-mire.test.ts`). El banco es parte del aparato
+ *  de este repositorio, no un tercero.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
