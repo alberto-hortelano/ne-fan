@@ -7,9 +7,11 @@
  *  corrida MÁS que un rojo (2 > 1), con lo que reconvertir un rojo en ⊘
  *  empeora el veredicto por construcción.
  *
- *  Precedente del import cruzado: `test/presets-clasifica.test.ts` ya carga
- *  módulos de `qa/lib` desde aquí. El banco es parte del aparato de este
- *  repositorio, no un tercero.
+ *  El import cruzado es la regla, no un precedente (#357): la dirección es
+ *  test → banco (`el-banco-no-entra-en-produccion`, arch-rules.json) y todo
+ *  módulo de `qa/lib` tiene un test que lo importe o una exención escrita
+ *  (`test/qa-lib-tiene-quien-lo-mire.test.ts`). El banco es parte del aparato
+ *  de este repositorio, no un tercero.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";

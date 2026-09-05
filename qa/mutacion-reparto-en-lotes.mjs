@@ -162,12 +162,42 @@ const VIGENTES = [
     },
   },
   {
-    nombre: "reparto · lo que nadie cronometró va SOLO, uno por lote (hoy son 17)",
+    nombre: "reparto · lo que nadie cronometró va SOLO, uno por lote",
     porque: "la regla de `permisoLocal`: un coste desconocido no se supone barato",
+    // LA POBLACIÓN SE SIEMBRA. La primera versión miraba el plan REAL y exigía
+    // «más de un módulo sin reloj» —eran 17 el 04-09—; #440 y #445 cronometraron
+    // los 41 y el invariante se quedó sin sujeto: rojo en `main` del 04 al 05-09
+    // sin que nadie lo supiera, por PRECONDICIÓN y no por el planificador
+    // (`empaqueta` seguía bien, y `mutacion-huella.test.ts` lo prueba con datos
+    // sintéticos). Aquí se descronometran DOS módulos en una copia de la huella
+    // —uno solo no distingue «van solos» de «van juntos»— y se afirma que van
+    // cada uno a su lote, y solo ellos. La huella vuelve en el `finally`.
     mira: () => {
-      const { lotes } = planDeHoy();
-      const sin = lotes.filter((l) => !l.medido);
-      return sin.length > 1 && sin.every((l) => l.modulos.length === 1);
+      const original = readFileSync(HUELLA, "utf8");
+      const huella = JSON.parse(original);
+      const plan = JSON.parse(readFileSync(PLAN, "utf8"));
+      // Módulos de ficheros PLANOS (sin glob ni exclusión), todos con reloj: a
+      // esos se les puede quitar el reloj borrando `segundos` fila a fila.
+      const planos = (m) => m.mutate.every((f) => !f.startsWith("!") && !f.includes("*"));
+      const conReloj = plan.modulos.filter(
+        (m) => planos(m) && m.mutate.every((f) => typeof huella.ficheros[f]?.segundos === "number"),
+      );
+      if (conReloj.length < 2) throw new Error("hacen falta dos módulos cronometrados para sembrar la población");
+      const sembrados = conReloj.slice(0, 2).map((m) => m.id);
+      for (const m of conReloj.slice(0, 2)) for (const f of m.mutate) delete huella.ficheros[f].segundos;
+      writeFileSync(HUELLA, `${JSON.stringify(huella, null, 2)}\n`);
+      try {
+        const { lotes } = planDeHoy();
+        const sin = lotes.filter((l) => !l.medido);
+        const ids = sin.flatMap((l) => l.modulos).sort();
+        return (
+          sin.length === 2 &&
+          sin.every((l) => l.modulos.length === 1) &&
+          ids.join() === [...sembrados].sort().join()
+        );
+      } finally {
+        writeFileSync(HUELLA, original);
+      }
     },
   },
   {
@@ -275,16 +305,18 @@ const ABIERTOS = [
   {
     nombre: "lotes · los módulos SIN MEDIDA se agrupan en un solo lote en vez de ir solos",
     porque:
-      "hoy son 17 de 41. Ningún test de la batería llama a `empaqueta` con MÁS DE UNO sin medida, " +
-      "así que «va solo» y «van todos juntos» son la misma cosa para el único caso que se prueba — " +
-      "la misma forma del verde que el propio ingeniero cazó en la mediana con dos jobs",
+      "el 04-09 eran 17 de 41 sin reloj y ningún test de la batería llamaba a `empaqueta` con MÁS DE UNO " +
+      "sin medida, así que «va solo» y «van todos juntos» eran la misma cosa para el único caso probado — " +
+      "la misma forma del verde que el propio ingeniero cazó en la mediana con dos jobs. Desde #357 lo cazan " +
+      "la batería y el vigente sembrado; este probe queda como testigo de que siguen cazándolo",
     checkers: ["bateria", "candados"],
     // LA ROTURA NO TOCA NINGÚN LITERAL QUE EL GUION DE CANDADOS BUSQUE, y eso
     // es deliberado: la primera versión de este probe borraba la línea del
     // `lotes.push`, el guion se ponía rojo porque su patrón desaparecía, y eso
     // se lee igual que cazar el fallo sin serlo. Con la conducta cambiada y los
-    // literales intactos, la batería sigue en 118/0 y el guion en verde — y el
-    // reparto real mete los 17 módulos sin medir en UN SOLO lote.
+    // literales intactos, la primera versión de la batería seguía en 118/0 y el
+    // guion en verde — y el reparto real metía los 17 módulos sin medir en UN
+    // SOLO lote. Hoy (#357) la batería y el vigente sembrado lo ven.
     rompe: [
       PURO,
       `  for (const m of sinMedida) {\n    lotes.push({ lote: lotes.length + 1, modulos: [m.id], segundos: 0, medido: false });\n  }\n  return lotes;`,
@@ -396,10 +428,47 @@ if (existsSync(APARTADO)) {
   process.exit(2);
 }
 
+// La huella es un fichero COMMITEADO que la siembra reescribe. Si ya viene
+// sucia, «restaurar» sería congelar lo sucio como original: o son cambios
+// tuyos (commitéalos) o te la dejó una corrida interrumpida (`git checkout`).
+// Sin esto, la segunda corrida sobre una huella a medias salía roja culpando
+// al planificador (QA de #454).
+const huellaSucia = spawnSync("git", ["status", "--porcelain", "--", "nefan-core/data/contract/mutacion-huella.json"],
+  { cwd: raiz, encoding: "utf8" });
+if ((huellaSucia.stdout ?? "").trim()) {
+  console.error("✖ mutacion-huella.json trae cambios sin commitear. Si son tuyos, commitéalos; si te los dejó una");
+  console.error("  corrida interrumpida de este guion o de sus vecinos, `git checkout -- nefan-core/data/contract/mutacion-huella.json`.");
+  process.exit(2);
+}
+
 const fuentes = new Map([MUT, PURO, MUTATE, YML, PLAN, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
 const restaura = () => { for (const [f, t] of fuentes) writeFileSync(f, t); };
 const habiaReports = existsSync(REPORTS);
 if (habiaReports) renameSync(REPORTS, APARTADO);
+
+/** La limpieza, UNA para todos los caminos —el `finally` del flujo normal y
+ *  los manejadores de SIGINT/SIGTERM— e idempotente. Sin manejador, Node muere
+ *  sin pasar por ningún `finally` y dejaba la huella con relojes borrados y los
+ *  fuentes mutados; el siguiente candado corría verde encima (QA de #454). */
+let limpiado = false;
+function limpiar() {
+  if (limpiado) return;
+  limpiado = true;
+  restaura();
+  rmSync(REPORTS, { recursive: true, force: true });
+  if (habiaReports) renameSync(APARTADO, REPORTS);
+}
+for (const [señal, codigo] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.on(señal, () => {
+    console.error(`\n⊘ INTERRUMPIDO (${señal}) — restaurando fuentes, huella y reports/ antes de salir`);
+    limpiar();
+    process.exit(codigo);
+  });
+}
+/** Entre invariante e invariante se cede el turno al bucle de eventos: todo lo
+ *  de arriba es `spawnSync`, y un manejador de señal solo puede correr cuando
+ *  el código síncrono suelta. Así un Ctrl+C corta en la SIGUIENTE frontera. */
+const cede = () => new Promise((r) => setImmediate(r));
 
 let vigentesRotos = 0;
 /** Hallazgo sin candado y SIN issue: es nuevo, y es rojo. */
@@ -455,6 +524,7 @@ try {
     try { ok = inv.mira() === true; } catch (e) { fallo = ` (${e.message.split("\n")[0]})`; }
     console.log(`${ok ? "✔" : "✖"} ${inv.nombre}${fallo}`);
     if (!ok) { console.log(`     ${inv.porque}`); vigentesRotos += 1; }
+    await cede();
   }
 
   if (!soloVigentes) {
@@ -480,6 +550,7 @@ try {
       const cambios = a.checkers.filter((n) => CHECKERS[n]() !== base[n]);
       restaura();
       if (clasifica(a, cambios.length > 0)) console.log(`✔ ${a.nombre}\n     lo caza: ${cambios.join(", ")}`);
+      await cede();
     }
 
     console.log("\n══ ABIERTO · conducta que falta (no hay línea que romper: es lo que no se comprueba)\n");
@@ -487,12 +558,11 @@ try {
       let ok = false;
       try { ok = c.quiere() === true; } catch (e) { ok = false; void e; }
       if (clasifica(c, ok)) console.log(`✔ ${c.nombre}`);
+      await cede();
     }
   }
 } finally {
-  restaura();
-  rmSync(REPORTS, { recursive: true, force: true });
-  if (habiaReports) renameSync(APARTADO, REPORTS);
+  limpiar();
   const sucios = [...fuentes].filter(([f, t]) => readFileSync(f, "utf8") !== t).map(([f]) => f);
   if (sucios.length > 0) {
     console.error(`\n!!! NO se restauró: ${sucios.join(", ")}`);

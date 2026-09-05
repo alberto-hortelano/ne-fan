@@ -1,0 +1,33 @@
+{
+  "_comment": "Totalidad del banco de pruebas (#357, T11, 2026-09-05). Lo verifica `test/qa-lib-tiene-quien-lo-mire.test.ts`: todo `qa/lib/*.mjs` está IMPORTADO por algún `nefan-core/test/*.test.ts` (dirección test → banco; el detector mira imports de verdad, no menciones en strings) o está aquí, con su motivo. Una exención cuyo módulo pase a estar importado CADUCA y pone el test rojo: se borra de aquí. Una exención a un fichero que ya no existe también es rojo. El criterio para eximir no es «es difícil de probar» sino «su única función es conducir un navegador, un socket o el stack, y probarlo sin eso es probar otra cosa» — la parte pura que tenga se extrae a un módulo propio y se mide (así nacieron `presets-clasifica.mjs` y `veredictos.mjs`). `qa/lib` NO entra en `mutation-targets.json` ni en los `MEDIDOS` del CRAP, por decisión escrita en la regla `el-banco-no-entra-en-produccion` de arch-rules.json.",
+  "exentos": [
+    {
+      "fichero": "qa/lib/sesion.mjs",
+      "porque": "Arranca una PARTIDA real desde el título por el camino del jugador: seis clicks de Playwright sobre la página, el diagnóstico de créditos contra el fake por HTTP y la espera del save en disco. Todo es conducir el navegador y el stack; no hay parte pura que extraer sin inventar un cliente falso que no es el que juega."
+    },
+    {
+      "fichero": "qa/lib/saves.mjs",
+      "porque": "Mira `saves/` desde fuera del juego: lista, espera a que la partida exista en disco (#279) y clona saves para la batería. Sus funciones son I/O de disco y sondeo por reloj sobre el directorio efímero de una corrida real; la semántica del save la prueba `test/bridge-session.test.ts` sobre el bridge, que es su dueño."
+    },
+    {
+      "fichero": "qa/lib/puertos.mjs",
+      "porque": "Espera por el estado de un puerto TCP —ocupado, arriba, libre— y pregunta a `ss` quién lo tiene, para los guiones que levantan su propio servicio. Es un socket de verdad contra el kernel de la máquina; un doble del socket probaría el doble. Lo ejercen los guiones headless: `el-npc-cruza-ai-server-…` en CI y `fake-enruta-por-pathname` en local (fuera del job: su observable lee arte generado)."
+    },
+    {
+      "fichero": "qa/lib/combate.mjs",
+      "porque": "Los dos gestos de pelea que repiten los guiones 41-50 —acercarse andando y pegar hasta bajar la vida— conducidos por teclado sobre la página real, con la espera por estado del sim. El umbral que fija es el que afirman los guiones; la fórmula de combate la prueba `test/combat-resolver.test.ts`, y el módulo `combat-resolver` está en mutación."
+    },
+    {
+      "fichero": "qa/lib/sonda.mjs",
+      "porque": "`nefan` y `waitFor`, la sonda mínima sobre una página abierta con Playwright: evalúa DENTRO del navegador y sondea por estado. Sin página no hay nada que ejecutar; la parte pura que tenía (qué cuenta como espera observada) vive en `esperas.mjs`, que sí está importado por `test/esperas-de-qa.test.ts`."
+    },
+    {
+      "fichero": "qa/lib/fixtures.mjs",
+      "porque": "Carga una fixture del selector «Room» en la página real y SABE que se cargó (#308), usando la compuerta que el cliente expone en `window.__nefan`. Es conducir el DOM del cliente; el contenido de las fixtures lo valida `test/scene-fixtures.test.ts` y su normalización `test/scene-normalize.test.ts`."
+    },
+    {
+      "fichero": "qa/lib/navegador.mjs",
+      "porque": "Cómo abre el bench su Chrome: los flags de ANGLE/GPU medidos el 2026-08-25 y `abrirNavegador(chromium, …)`. Es la configuración del lanzador de Playwright; probarla es lanzar un Chrome, que es justo lo que el CI headless no hace. Un test que solo leyera las constantes afirmaría que una lista es la lista."
+    }
+  ]
+}

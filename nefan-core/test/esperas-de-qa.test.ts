@@ -2,14 +2,17 @@
  *  puede acabar en verde.
  *
  *  El sujeto es `qa/lib/esperas.mjs`, y este fichero existe porque **el CI no
- *  corre la batería de `qa/`**: el candado vive en el runner, que solo se
+ *  corre la BATERÍA de navegador de `qa/`** (sí sus candados headless, job
+ *  `candados-headless`, desde #357): el candado vive en el runner, que solo se
  *  ejecuta a mano, así que sin esto la parte pura del mecanismo —qué cuenta
  *  como observada y qué no— no la comprobaría nadie hasta la siguiente corrida
  *  local. Aquí sí entra en `npm test`.
  *
- *  Precedente del import cruzado: `test/veredictos.test.ts` y
- *  `test/presets-clasifica.test.ts` ya cargan módulos de `qa/lib` desde aquí.
- *  El banco es parte del aparato de este repositorio, no un tercero.
+ *  El import cruzado es la regla, no un precedente (#357): la dirección es
+ *  test → banco (`el-banco-no-entra-en-produccion`, arch-rules.json) y todo
+ *  módulo de `qa/lib` tiene un test que lo importe o una exención escrita
+ *  (`test/qa-lib-tiene-quien-lo-mire.test.ts`). El banco es parte del aparato
+ *  de este repositorio, no un tercero.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";

@@ -254,6 +254,20 @@ const casa = (n) => filtro.length === 0 || filtro.some((f) => n.toLowerCase().in
 const original = new Map([SRC, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
 const restaura = () => { for (const [f, txt] of original) writeFileSync(f, txt); };
 
+// Sin manejador, un Ctrl+C mata al guion SIN pasar por el `finally` y dejaba
+// `mutacion-huella.ts` mutado —producción rota— con el siguiente candado
+// corriendo verde encima (QA de #454). `restaura` es idempotente: vale para
+// los dos caminos. Y como el bucle es `spawnSync`, se cede el turno entre
+// invariantes para que la señal pueda cortar en la siguiente frontera.
+for (const [señal, codigo] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.on(señal, () => {
+    console.error(`\n⊘ INTERRUMPIDO (${señal}) — restaurando ${SRC} y la huella antes de salir`);
+    restaura();
+    process.exit(codigo);
+  });
+}
+const cede = () => new Promise((r) => setImmediate(r));
+
 let fallidos = [];
 try {
   process.stdout.write("Base (nada roto): ");
@@ -285,6 +299,7 @@ try {
     console.log(`${rojo ? "🔴 rojo " : "🟢 VERDE"}  ${nombre}`);
     if (rojo) console.log(`     lo caza: ${r.rotos.slice(0, 2).join(" | ") || "(sin nombre)"}`);
     else console.log(`     ⚠️  ROMPERLO NO CAMBIA NADA: el candado no comprueba lo que dice`);
+    await cede();
   }
 } finally {
   restaura();

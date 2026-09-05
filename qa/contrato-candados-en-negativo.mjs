@@ -233,6 +233,20 @@ if ((sucio.stdout ?? "").trim()) {
 const original = new Map(FICHEROS.map((f) => [f, readFileSync(f, "utf8")]));
 const restaura = () => { for (const [f, txt] of original) writeFileSync(f, txt); };
 
+// Sin manejador, un Ctrl+C mata al guion SIN pasar por el `finally` y dejaba
+// `scene-schema.ts` mutado —producción rota— en el árbol de trabajo (QA de
+// #454). `restaura` es idempotente: vale para los dos caminos. El bucle es
+// `spawnSync`, así que se cede el turno entre invariantes para que la señal
+// pueda cortar en la siguiente frontera.
+for (const [señal, codigo] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.on(señal, () => {
+    console.error(`\n⊘ INTERRUMPIDO (${señal}) — restaurando los ${FICHEROS.length} ficheros antes de salir`);
+    restaura();
+    process.exit(codigo);
+  });
+}
+const cede = () => new Promise((r) => setImmediate(r));
+
 const fallidos = [];
 const obsoletos = [];
 try {
@@ -280,6 +294,7 @@ try {
         ? `     lo caza (${bateria}): ${r.rotos.slice(0, 3).join(" | ") || "(sin nombre)"}`
         : `     ⚠️  ROMPERLO NO CAMBIA NADA: ningún test de ${bateria} se entera`,
     );
+    await cede();
   }
 } finally {
   restaura();

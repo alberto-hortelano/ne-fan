@@ -253,6 +253,17 @@ const INVARIANTES = [
   {
     nombre: "lotes · el PLAN lleva TODO lo pedido, también lo que no se pudo empaquetar por reloj",
     mira: () => {
+      // `apuntado` se DESCRONOMETRA aquí a propósito: el probe necesita un
+      // módulo sin reloj (va a lote propio, `medido: false`) para que la rotura
+      // de abajo lo tire de `modulos_pedidos`. El 04-09 lo estaba de suyo;
+      // #440/#445 cronometraron los 41 y este probe pasó a «romperlo no cambia
+      // el observable» sin que nadie lo viera (medido el 05-09). La huella la
+      // devuelve `restauraFuentes()` después de cada `mira`.
+      const huella = JSON.parse(readFileSync(HUELLA, "utf8"));
+      const apuntado = JSON.parse(readFileSync(PLAN, "utf8")).modulos.find((m) => m.id === "apuntado");
+      if (!apuntado) throw new Error("el plan ya no tiene el módulo `apuntado`: elige otro para el probe");
+      for (const f of apuntado.mutate) delete huella.ficheros[f]?.segundos;
+      writeFileSync(HUELLA, `${JSON.stringify(huella, null, 2)}\n`);
       rmSync(join(CORE, "reports", "plan-corrida.json"), { force: true });
       const r = mutacion([
         "lotes", "--ids", `${E.id} apuntado`, "--origen", "explicito",
@@ -262,9 +273,9 @@ const INVARIANTES = [
       const p = JSON.parse(readFileSync(join(CORE, "reports", "plan-corrida.json"), "utf8"));
       return `${p.modulos_pedidos.join(",")} | lotes=${p.lotes.length}`;
     },
-    // `apuntado` no tiene reloj en la huella, así que va a lote propio; lo que
-    // NO puede pasar es que se caiga de `modulos_pedidos`, porque de ahí sale el
-    // veredicto de la fusión.
+    // `apuntado` va sin reloj (sembrado arriba), así que va a lote propio; lo
+    // que NO puede pasar es que se caiga de `modulos_pedidos`, porque de ahí
+    // sale el veredicto de la fusión.
     bien: (s) => s.startsWith(["apuntado", E.id].sort().join(",")),
     porque: "de `modulos_pedidos` del plan sale el veredicto: un módulo que se caiga de ahí es una medida que nadie echa de menos",
     rompe: [
@@ -379,6 +390,33 @@ const restauraFuentes = () => { for (const [f, t] of fuentes) writeFileSync(f, t
 const habiaInformes = existsSync(INFORMES);
 if (habiaInformes) renameSync(INFORMES, APARTADO);
 
+/** La limpieza, UNA para el `finally` y para SIGINT/SIGTERM, idempotente. Sin
+ *  manejador, un Ctrl+C dejaba `scripts/mutacion.ts` MUTADO y `reports/` a
+ *  medias sin pasar por ningún `finally` (QA de #454). Se lleva también el
+ *  ensayo de los probes (`reports/lotes-ensayo`, `reports/plan-corrida.json`),
+ *  que antes quedaba como residuo tras una corrida limpia. */
+let limpiado = false;
+function limpiar() {
+  if (limpiado) return;
+  limpiado = true;
+  restauraFuentes();
+  rmSync(INFORMES, { recursive: true, force: true });
+  rmSync(join(CORE, "reports", "lotes-ensayo"), { recursive: true, force: true });
+  rmSync(join(CORE, "reports", "plan-corrida.json"), { force: true });
+  if (habiaInformes) renameSync(APARTADO, INFORMES);
+}
+for (const [señal, codigo] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.on(señal, () => {
+    console.error(`\n⊘ INTERRUMPIDO (${señal}) — restaurando fuentes, huella y reports/ antes de salir`);
+    limpiar();
+    process.exit(codigo);
+  });
+}
+/** Todo lo de arriba es `spawnSync`: un manejador de señal solo corre cuando el
+ *  código síncrono suelta, así que se cede el turno entre invariantes y el
+ *  Ctrl+C corta en la SIGUIENTE frontera. */
+const cede = () => new Promise((r) => setImmediate(r));
+
 const fallidos = [];
 try {
   for (const inv of INVARIANTES) {
@@ -412,11 +450,10 @@ try {
     if (!seEntera) fallidos.push(inv.nombre);
     console.log(`${seEntera ? "🔴 rojo " : "🟢 VERDE"}  ${inv.nombre}`);
     console.log(`     ${seEntera ? inv.porque : "⚠️  ROMPERLO NO CAMBIA EL OBSERVABLE: esto no es un candado"}`);
+    await cede();
   }
 } finally {
-  restauraFuentes();
-  rmSync(INFORMES, { recursive: true, force: true });
-  if (habiaInformes) renameSync(APARTADO, INFORMES);
+  limpiar();
 }
 
 for (const [f, t] of fuentes) {
