@@ -22,9 +22,11 @@ import {
   formatFailure,
   globToRegExp,
   reportByRule,
+  matchesAny,
   type SourceFile,
 } from "../src/contract/arch/check.js";
-import { archConfig as config, loadArchFiles } from "../scripts/arch-collect.js";
+import { cierreDesde } from "../src/contract/arch/cierre.js";
+import { archConfig as config, loadArchFiles, resolverImport } from "../scripts/arch-collect.js";
 
 const files = loadArchFiles();
 const violations = checkArchitecture(config, files);
@@ -1728,6 +1730,73 @@ describe("fronteras arquitectónicas", () => {
       [],
       "un void con catch, el sustituto, el GLSL y `void 0` no son promesas mudas",
     );
+  });
+
+  // La pureza browser-safe se DERIVA del grafo (#359). Tres cosas que el verde
+  // del bucle genérico no demuestra: que el cierre real es el que se dice (un
+  // resolver roto lo poda y la regla sale verde sin mirar nada), que cubre lo
+  // que `core-puro-sin-node` deja fuera (el hueco medido que se cierra), y que
+  // la regla del JSON —no una sintética— salta con un `node:fs` a dos saltos.
+  it("[error] el-cliente-no-alcanza-node-ni-a-traves-del-core: el cierre real llega al core y cubre lo que el perímetro puro no", () => {
+    const regla = config.rules.find((r) => r.id === "el-cliente-no-alcanza-node-ni-a-traves-del-core");
+    assert.ok(regla?.cierre, "la regla existe y es de tipo `cierre`");
+    const porRuta = new Map(files.map((f) => [f.path, f] as const));
+    const entradas = files.filter((f) => matchesAny(f.path, regla.files)).map((f) => f.path);
+    const cierre = [...cierreDesde(entradas, porRuta).keys()].filter((p) => p.startsWith("nefan-core/"));
+    // Medido al nacer: 50 entradas → 82 ficheros de nefan-core → 0 node:*.
+    assert.ok(
+      cierre.length >= 80,
+      `el cierre desde el cliente solo alcanza ${cierre.length} ficheros del core: ¿resolver roto?`,
+    );
+    const perimetro = config.rules.find((r) => r.id === "core-puro-sin-node")!.files;
+    const fuera = cierre.filter((p) => !matchesAny(p, perimetro));
+    // Derivado, sin nombrar ninguno: si algún día todo lo que el cliente
+    // alcanza cae dentro del perímetro puro, este assert sobra y se quita.
+    assert.ok(
+      fuera.length >= 1,
+      "el cliente ya no alcanza nada fuera de core-puro-sin-node: revisa si esta comprobación sigue teniendo sentido",
+    );
+    // Y el alias se resuelve desde el tsconfig del cliente, no está copiado.
+    assert.equal(resolverImport("nefan-html/src/main.ts", "@nefan-core/src/types.js"), "nefan-core/src/types.ts");
+    assert.equal(resolverImport("nefan-core/src/scene/tile.ts", "./tile-plan.js"), "nefan-core/src/scene/tile-plan.ts");
+    assert.equal(resolverImport("nefan-html/src/main.ts", "three"), undefined, "un paquete no vive en el repo");
+  });
+
+  it("[error] el-cliente-no-alcanza-node-ni-a-traves-del-core: un node:fs a DOS saltos salta con el camino entero", () => {
+    const deLaRegla = (fs: SourceFile[]) =>
+      checkArchitecture(config, fs).filter((v) => v.ruleId === "el-cliente-no-alcanza-node-ni-a-traves-del-core");
+    const x: SourceFile = {
+      path: "nefan-html/src/x.ts",
+      text: "",
+      imports: [{ spec: "@nefan-core/src/a.js", line: 1, resolved: "nefan-core/src/a.ts" }],
+    };
+    const a: SourceFile = {
+      path: "nefan-core/src/a.ts",
+      text: "",
+      imports: [{ spec: "./b.js", line: 1, resolved: "nefan-core/src/b.ts" }],
+    };
+    const b: SourceFile = { path: "nefan-core/src/b.ts", text: "", imports: [{ spec: "node:fs", line: 2 }] };
+    assert.deepEqual(
+      deLaRegla([x, a, b]).map(({ path, line, detail }) => ({ path, line, detail })),
+      [
+        {
+          path: "nefan-core/src/b.ts",
+          line: 2,
+          detail:
+            '"node:fs" entra en el cliente por: nefan-html/src/x.ts → nefan-core/src/a.ts → nefan-core/src/b.ts → node:fs',
+        },
+      ],
+    );
+    // vite.config.ts está en scan.files pero NO es entrada: corre en Node.
+    const vite: SourceFile = {
+      path: "nefan-html/vite.config.ts",
+      text: "",
+      imports: [
+        { spec: "node:fs", line: 1 },
+        { spec: "../nefan-core/src/a.js", line: 2, resolved: "nefan-core/src/a.ts" },
+      ],
+    };
+    assert.deepEqual(deLaRegla([vite, a, b]), [], "el guion de build no arrastra al cierre del bundle");
   });
 
   for (const report of reports) {

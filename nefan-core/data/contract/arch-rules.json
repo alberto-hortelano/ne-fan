@@ -108,28 +108,25 @@
       ".tmp",
       "coverage",
       "reports"
+    ],
+    "paths_de": [
+      "nefan-html/tsconfig.json"
     ]
   },
   "rules": [
     {
-      "id": "html-no-importa-core-con-node",
-      "desc": "El cliente no puede importar los módulos del core que usan node:fs/path/crypto",
-      "why": "La frontera browser-safe la sostiene hoy solo una separación deliberada de ficheros (games/style-application-schema vs style-application). Un import nuevo mete node:fs en el bundle de Vite y rompe el cliente en tiempo de carga. `narrative-state` entra en la lista el día que empieza a importar `plugins/hash` (node:crypto) para comprobar que el manifest embebido de un record migrado es de verdad el de su id: hasta entonces solo arrastraba `session-storage` como tipo, que se borra al compilar, y era importable del navegador por accidente. Nadie lo importa hoy desde el cliente, así que la regla nace verde; está aquí para que el día que alguien lo intente lo pare el checker y no un bundle roto en tiempo de carga.",
+      "id": "el-cliente-no-alcanza-node-ni-a-traves-del-core",
+      "desc": "Nada de lo que el cliente alcanza por el grafo de imports —directo o a través del core— importa node:*",
+      "why": "La pureza browser-safe se DERIVA del grafo, no de una lista. Hasta #359 la sostenía una lista negra de ocho módulos del core escrita a mano (regla retirada ese día) que perseguía: un módulo nuevo con node:fs que el cliente importara pasaba el checker hasta que alguien lo añadiera, y su propio `why` lo admitía. Medido el 2026-09-05: el cliente importa 41 rutas de @nefan-core/* cuyo cierre son 82 ficheros del core, 0 con node:* — y 11 de esos 82 están FUERA del perímetro de `core-puro-sin-node` (config.ts, types.ts, vec3.ts, rng.ts, narrative/types.ts, plugins/types.ts, games/{style-categories,ui-theme,style-refs,style-application-schema}.ts y data/combat_config.json), así que un node:fs en cualquiera de ellos mañana pasaba las dos reglas y rompía el bundle de Vite en tiempo de carga. Aquí las entradas son los ficheros del cliente, se recorre por los imports resueltos (alias @nefan-core/* leído del tsconfig, relativos, .js→.ts, index.ts) y el mensaje trae el camino entero. `vite.config.ts` NO es entrada a propósito: está en scan.files pero corre en Node y usa node:fs legítimamente — su régimen es el de tsc, no el del bundle. Y un destino que el checker no escanea es violación, no poda silenciosa.",
       "severity": "error",
       "files": [
         "nefan-html/src/**/*.ts"
       ],
-      "imports": {
+      "cierre": {
         "forbid": [
-          "games/loader(\\.js)?$",
-          "games/style-application(\\.js)?$",
-          "games/vocabulary(\\.js)?$",
-          "games/world-snapshot(\\.js)?$",
-          "narrative/narrative-state(\\.js)?$",
-          "narrative/session-storage(\\.js)?$",
-          "plugins/loader(\\.js)?$",
-          "contracts/common(\\.js)?$"
-        ]
+          "^node:"
+        ],
+        "quien": "el cliente"
       }
     },
     {
@@ -181,7 +178,7 @@
     {
       "id": "core-puro-sin-node",
       "desc": "Los módulos de lógica pura del core no importan node:*",
-      "why": "Son los que consume el cliente en el navegador Y los que se mutan en el hardener. Un node:fs aquí rompe el bundle y saca al módulo del alcance de mutation testing. `src/session/**` entra el 2026-08-25 con session-facets.ts: colapsa el estado de sesión del CLIENTE en un valor, así que lo importa el bundle del navegador — un node:* ahí lo rompe en tiempo de carga.",
+      "why": "Son los que se mutan en el hardener: esta regla DEFINE el perímetro de mutación (mutation-targets.json, `REGLA_PERIMETRO`), y un node:fs aquí saca al módulo del alcance de mutation testing. Que el cliente pueda importarlos sin node:* ya no depende de esta lista de carpetas: lo deriva `el-cliente-no-alcanza-node-ni-a-traves-del-core` del grafo de imports, que también cubre lo que queda fuera de estas carpetas (config.ts, types.ts, games/…). `src/session/**` entra el 2026-08-25 con session-facets.ts: colapsa el estado de sesión del CLIENTE en un valor.",
       "severity": "error",
       "files": [
         "nefan-core/src/combat/**/*.ts",
@@ -222,16 +219,15 @@
       }
     },
     {
-      "id": "html-sin-node-ni-rutas-crudas",
-      "desc": "El cliente no importa node:* ni alcanza el core por ruta relativa",
-      "why": "El único punto de acoplamiento con el árbol del core es el alias @nefan-core (vite.config.ts + tsconfig paths). Una ruta relativa se salta el alias y rompe el build.",
+      "id": "html-solo-alcanza-core-por-el-alias",
+      "desc": "El cliente no alcanza el core por ruta relativa: solo por el alias @nefan-core",
+      "why": "El único punto de acoplamiento con el árbol del core es el alias @nefan-core (vite.config.ts + tsconfig paths). Una ruta relativa se salta el alias y rompe el build. La mitad `^node:` que tenía esta regla vive desde #359 en `el-cliente-no-alcanza-node-ni-a-traves-del-core`: las entradas están en su propio cierre, y dos reglas saltando por la misma línea no dicen más que una.",
       "severity": "error",
       "files": [
         "nefan-html/src/**/*.ts"
       ],
       "imports": {
         "forbid": [
-          "^node:",
           "^\\.\\..*nefan-core"
         ]
       }

@@ -20,6 +20,13 @@ import {
   type ImportRef,
   type SourceFile,
 } from "../src/contract/arch/check.js";
+import {
+  aliasDeTsconfig,
+  baseDeAlias,
+  baseRelativa,
+  primeroEnDisco,
+  type AliasDePaths,
+} from "./especificador.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
@@ -27,6 +34,37 @@ const repoRoot = join(here, "..", "..");
 export const archConfig: ArchConfig = ArchConfigSchema.parse(
   JSON.parse(readFileSync(join(here, "..", "data", "contract", "arch-rules.json"), "utf-8")),
 );
+
+/** Los alias de import que declaran los `tsconfig.json` de `scan.paths_de`,
+ *  LEÍDOS de ahí: el cliente importa el core por `@nefan-core/*` y ese alias
+ *  tiene una sola fuente legible (`nefan-html/tsconfig.json#paths`; el de
+ *  `vite.config.ts` es código y `tsc` del cliente ya los mantiene iguales). */
+const alias: readonly AliasDePaths[] = archConfig.scan.paths_de.flatMap((rel) =>
+  aliasDeTsconfig(join(repoRoot, rel)),
+);
+
+const aRutaRepo = (abs: string): string => relative(repoRoot, abs).split(sep).join("/");
+
+/** Resolución en disco cacheada por ruta base: los ~1.500 imports del árbol
+ *  apuntan a unos pocos cientos de destinos distintos. */
+const resueltos = new Map<string, string>();
+
+/** A qué fichero del repo apunta un import, como ruta relativa a la raíz —
+ *  o `undefined` si es un paquete o un builtin (`three`, `node:fs`). Relativos
+ *  y alias por la misma lista de candidatos que usa el plan de mutación
+ *  (`scripts/especificador.ts`). Un especificador que apunta al repo pero no
+ *  casa con ningún fichero devuelve su ruta base tal cual: no se cuela como
+ *  «paquete», y una regla `cierre` lo denuncia como destino no escaneado. */
+export function resolverImport(desdeRel: string, spec: string): string | undefined {
+  const desdeAbs = join(repoRoot, desdeRel);
+  const base = baseRelativa(desdeAbs, spec) ?? baseDeAlias(desdeAbs, spec, alias);
+  if (base === undefined) return undefined;
+  const previo = resueltos.get(base);
+  if (previo !== undefined) return previo;
+  const ruta = aRutaRepo(primeroEnDisco(base) ?? base);
+  resueltos.set(base, ruta);
+  return ruta;
+}
 
 /** Recorre un directorio y devuelve las rutas con alguna de las extensiones. */
 function walk(dir: string, ext: readonly string[], ignore: readonly string[]): string[] {
@@ -57,17 +95,22 @@ function walk(dir: string, ext: readonly string[], ignore: readonly string[]): s
 /** Imports de un fichero TS, con su línea. `preProcessFile` entiende de
  *  verdad la sintaxis: no confunde un "three" escrito en un comentario con un
  *  import — que es justo el falso positivo que tendría una regex. */
-function importsOf(text: string): ImportRef[] {
+function importsOf(pathRel: string, text: string): ImportRef[] {
   const pre = ts.preProcessFile(text, true, true);
-  return pre.importedFiles.map((ref) => ({ spec: ref.fileName, line: lineOf(text, ref.pos) }));
+  return pre.importedFiles.map((ref) => {
+    const resolved = resolverImport(pathRel, ref.fileName);
+    return resolved === undefined
+      ? { spec: ref.fileName, line: lineOf(text, ref.pos) }
+      : { spec: ref.fileName, line: lineOf(text, ref.pos), resolved };
+  });
 }
 
 export function loadArchFiles(): SourceFile[] {
   const out: SourceFile[] = [];
   const añadir = (abs: string): void => {
     const text = readFileSync(abs, "utf-8");
-    const path = relative(repoRoot, abs).split(sep).join("/");
-    out.push({ path, text, imports: abs.endsWith(".ts") ? importsOf(text) : undefined });
+    const path = aRutaRepo(abs);
+    out.push({ path, text, imports: abs.endsWith(".ts") ? importsOf(path, text) : undefined });
   };
   for (const root of archConfig.scan.roots) {
     for (const abs of walk(join(repoRoot, root.dir), root.ext, archConfig.scan.ignore)) añadir(abs);
