@@ -52,7 +52,7 @@ import { ActionBar } from "./ui/action-bar.js";
 import { crearEtiquetasDelMundo } from "./ui/etiquetas-del-mundo.js";
 import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, BASE_UI_THEME } from "./ui/theme.js";
-import { createClientSession } from "@nefan-core/src/session/session-facets.js";
+import { createClientSession, porValor } from "@nefan-core/src/session/session-facets.js";
 import { createEntrada } from "@nefan-core/src/session/entrada.js";
 import { spawnsDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
 import { Mirada } from "@nefan-core/src/simulation/mirada.js";
@@ -255,33 +255,15 @@ const entrada = createEntrada((sessionId) => {
   narrativeClient.sessionEntered(sessionId);
 });
 
-/** De qué sesión es el mundo que hay instalado ahora mismo ("" = ninguno).
- *  Lo escribe SOLO el sink de la faceta `mundo`, que es quien lo vacía. */
-let mundoPintadoDe = "";
-
-/** De qué sesión es el gate del diálogo que hay puesto ("" = ninguno). Lo
- *  escribe SOLO el sink de la faceta `dialogo`, hermano del de arriba. */
-let dialogoDeSesion = "";
-
 const session = createClientSession({
   // El mundo pintado es una FACETA, no una llamada que haya que acordarse de
   // hacer (#282, segunda mitad): la rama `new_game` de `unIntentoDeArrancar`
   // no vaciaba el mundo —solo la de `resume`—, así que un segundo intento
   // heredaba los tiles del primero. Va primera en el record de aplicadores,
   // así que el mundo anterior se va antes de que estilo, tema y atlas armen
-  // nada encima.
-  //
-  // POR VALOR, como los otros seis, y no «vacía siempre»: el módulo promete
-  // que aplicar las mismas facetas dos veces no cambia nada, y un reset
-  // incondicional rompía esa promesa justo en el sink más destructivo —el
-  // primero que quisiera refrescar una faceta a mitad de partida se llevaba
-  // el mundo por delante—. Aquí el argumento se LEE: si el mundo pintado ya
-  // es el de esa sesión, no hay nada que vaciar.
-  mundo: ({ sessionId }) => {
-    if (sessionId === mundoPintadoDe) return;
-    mundoPintadoDe = sessionId;
-    resetWorld();
-  },
+  // nada encima. `porValor` (core) lo hace idempotente: vaciar es destructivo
+  // y solo ocurre cuando el id de sesión CAMBIA.
+  mundo: porValor(() => resetWorld()),
   style: ({ styleId }) => applySessionStyle(styleId),
   theme: ({ uiTheme }) => applyUiTheme(uiTheme),
   renderModes: (f) => applyRenderModes(f),
@@ -291,24 +273,14 @@ const session = createClientSession({
   // El gate del diálogo, que hasta #311 `leave()` no deshacía: volver al
   // título dejaba puesto lo que abrió la conversación. Llama a
   // `cerrarDialogo()`, el dueño único del par panel+gate, en vez de repetir
-  // aquí el emparejamiento — que es justo el error que #311 persigue.
-  //
-  // POR VALOR y con el argumento LEÍDO, igual que `mundo`: cerrar un panel
-  // abierto es destructivo y el módulo promete que aplicar las mismas facetas
-  // dos veces no cambia nada. La guarda NO es hipotética — medido el
-  // 2026-08-28 instrumentando este sink y corriendo `qa/guiones/27-…`:
-  // `dialogo("") · vigente="" · repetido=true`, o sea que un arranque que
-  // falla llama a `leave()` con los neutros ya aplicados. Hoy lo que salta es
-  // idempotente; la guarda existe para que el día que no lo sea, no dependa
-  // de que alguien se acuerde.
+  // aquí el emparejamiento — que es justo el error que #311 persigue. Por
+  // `porValor`, igual que `mundo`: cerrar es destructivo y solo ocurre cuando
+  // el id de sesión CAMBIA (la medida del 2026-08-28 que lo justifica vive
+  // en la doc del ayudante, en core).
   //
   // Lo que esto NO hace, dicho para que no se lea de más: no baja el gate a
   // `puerta-de-teclado.ts`. El porqué sigue escrito allí y no ha cambiado.
-  dialogo: ({ sessionId }) => {
-    if (sessionId === dialogoDeSesion) return;
-    dialogoDeSesion = sessionId;
-    cerrarDialogo();
-  },
+  dialogo: porValor(() => cerrarDialogo()),
 });
 // Pipeline de imagen de la vista fps: atlas de superficies por tile. Las
 // celdas son assets de la LIBRERÍA (kind "surface") — el server pinta solo

@@ -15,6 +15,7 @@ import {
   NOMBRES_DE_SINK,
   NO_SESSION,
   createClientSession,
+  porValor,
   type FacetSinks,
   type SessionFacets,
 } from "../src/session/session-facets.js";
@@ -217,6 +218,79 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       assert.equal(s.esMio(""), true);
       s.enter(PARTIDA);
       assert.equal(s.esMio(""), false, "dentro de una partida, lo de nadie no es mío");
+    });
+  });
+
+  /** `porValor`: la promesa «aplicar las mismas facetas dos veces no cambia
+   *  nada» hecha código una vez, para los sinks destructivos (`mundo`,
+   *  `dialogo`). Antes vivía en el cliente como dos `let` de módulo con la
+   *  misma guarda escrita dos veces; aquí se prueba sin navegador. */
+  describe("porValor: el sink aplica solo cuando el id de sesión CAMBIA", () => {
+    function contador(): { aplicar: () => void; veces: () => number } {
+      let n = 0;
+      return { aplicar: () => void n++, veces: () => n };
+    }
+
+    it("el mismo id dos veces aplica UNA vez", () => {
+      const c = contador();
+      const sink = porValor(c.aplicar);
+      sink({ sessionId: "A" });
+      sink({ sessionId: "A" });
+      assert.equal(c.veces(), 1);
+    });
+
+    it("de A a B aplica las dos veces", () => {
+      const c = contador();
+      const sink = porValor(c.aplicar);
+      sink({ sessionId: "A" });
+      sink({ sessionId: "B" });
+      assert.equal(c.veces(), 2);
+    });
+
+    /** El arranque que falla llama a `leave()` con los neutros ya puestos: el
+     *  sink arranca en el neutro y esa primera llamada NO puede disparar. */
+    it("el neutro primero NO aplica (arranca en NO_SESSION)", () => {
+      const c = contador();
+      const sink = porValor(c.aplicar);
+      sink({ sessionId: NO_SESSION.sessionId });
+      assert.equal(c.veces(), 0);
+      sink({ sessionId: "A" });
+      assert.equal(c.veces(), 1);
+    });
+
+    /** Lo que se recuerda es el ÚLTIMO id, no el conjunto de los vistos: A, al
+     *  título, y de vuelta a A son tres cambios. Un sink que no recordara el id
+     *  (o que lo recordara como «ya visto») fallaría aquí. */
+    it("A → título → A aplica tres veces", () => {
+      const c = contador();
+      const sink = porValor(c.aplicar);
+      sink({ sessionId: "A" });
+      sink({ sessionId: "" });
+      sink({ sessionId: "A" });
+      assert.equal(c.veces(), 3);
+    });
+
+    /** Cableado como en el cliente: `mundo` y `dialogo` van por `porValor` y
+     *  los demás sinks siguen aplicándose SIEMPRE. `enter(P); leave(); leave()`
+     *  son tres transiciones para el módulo y dos cambios de id para el sink
+     *  por valor; el orden lo fija el record. */
+    it("vía createClientSession: enter + leave + leave = dos aplicaciones, en el orden del record", () => {
+      const { sinks, llamadas } = espia();
+      const vaciados: string[] = [];
+      const s = createClientSession({
+        ...sinks,
+        mundo: porValor(() => vaciados.push("mundo")),
+        dialogo: porValor(() => vaciados.push("dialogo")),
+      });
+      s.enter(PARTIDA);
+      s.leave();
+      s.leave();
+      assert.deepEqual(vaciados, ["mundo", "dialogo", "mundo", "dialogo"]);
+      // Los otros seis sinks se aplicaron en las TRES transiciones: `porValor`
+      // filtra el sink que envuelve, no la transición.
+      assert.equal(llamadas.filter(([nombre]) => nombre === "style").length, 3);
+      assert.equal(NOMBRES_DE_SINK[0], "mundo");
+      assert.equal(NOMBRES_DE_SINK[NOMBRES_DE_SINK.length - 1], "dialogo");
     });
   });
 });
