@@ -38,7 +38,10 @@ export interface SourceFile {
   /** Ruta relativa a la raíz del repo, con separador `/`. */
   path: string;
   text: string;
-  imports?: readonly ImportRef[];
+  /** Resueltos por el colector. `[]` para lo que no es TypeScript (JSON, sh):
+   *  un fichero sin imports tiene cero, no «desconocidos» — así nadie tiene que
+   *  defenderse de un `undefined` que solo existía en el tipo. */
+  imports: readonly ImportRef[];
 }
 
 export interface Violation {
@@ -195,7 +198,7 @@ export function lineOf(text: string, index: number): number {
 function violatesImport(rule: ArchRule, file: SourceFile): Violation[] {
   const forbid = rule.imports!.forbid.map((p) => new RegExp(p));
   const out: Violation[] = [];
-  for (const imp of file.imports ?? []) {
+  for (const imp of file.imports) {
     const hit = forbid.find((re) => re.test(imp.spec));
     if (!hit) continue;
     out.push({

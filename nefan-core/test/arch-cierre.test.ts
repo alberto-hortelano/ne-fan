@@ -187,6 +187,18 @@ describe("cierre · el grafo", () => {
     assert.match(v[0].detail, /Camino: nefan-html\/src\/x\.ts → nefan-core\/src\/a\.ts → fuera\/z\.ts$/);
   });
 
+  it("una ENTRADA que no está entre los ficheros también se denuncia, en ella misma y sin camino: no hay quien la importe", () => {
+    // Por `checkArchitecture` no puede pasar (las entradas salen de `files`),
+    // pero `violacionesDeCierre` es pública: quien la llame con una entrada que
+    // no escaneó recibe la violación, no un `TypeError` por leer una arista nula.
+    const v = violacionesDeCierre(regla(), ["nefan-html/src/no-escaneado.ts"], mapa(x, a, b));
+    assert.equal(v.length, 1);
+    assert.equal(v[0].path, "nefan-html/src/no-escaneado.ts");
+    assert.equal(v[0].line, 1);
+    assert.match(v[0].detail, /^"nefan-html\/src\/no-escaneado\.ts" existe pero el checker no lo escanea/);
+    assert.match(v[0].detail, /Camino: nefan-html\/src\/no-escaneado\.ts$/, "el camino es ella sola");
+  });
+
   it("una entrada eximida no abre el grafo: lo que solo se alcanza desde ella no se juzga", () => {
     const cfg = ArchConfigSchema.parse({
       scan: { roots: [{ dir: "x", ext: [".ts"] }] },

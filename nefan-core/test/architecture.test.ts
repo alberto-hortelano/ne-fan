@@ -1261,10 +1261,12 @@ describe("fronteras arquitectónicas", () => {
         {
           path: "nefan-core/bridge/state-http/dispatch.ts",
           text: "function despacha(req: IncomingMessage, res: ServerResponse) {}\n",
+          imports: [],
         },
         {
           path: "nefan-core/bridge/state-http/npc-routes.ts",
           text: "const s = createServer((req, res) => {});\n",
+          imports: [],
         },
       ]).map((v) => `${v.path}:${v.line}`),
       [
@@ -1291,6 +1293,7 @@ describe("fronteras arquitectónicas", () => {
         {
           path: "nefan-core/bridge/state-http/entity-routes.ts",
           text: "export const entityRoutes = { getEntity: (ctx, { params }) => ok(ctx.narrative.getEntity(params.id)) };\n",
+          imports: [],
         },
       ]),
       [],
@@ -1317,42 +1320,50 @@ describe("fronteras arquitectónicas", () => {
         {
           path: "nefan-html/src/ui/uno.ts",
           text: 'window.addEventListener("keydown", f);\n',
+          imports: [],
         },
         // Comillas simples: nada obliga a dobles. `eslint-config-prettier`
         // desactiva las reglas de estilo y el CI no corre prettier.
         {
           path: "nefan-html/src/ui/dos.ts",
           text: "window.addEventListener('keydown', f);\n",
+          imports: [],
         },
         // El idioma MÁS común, y el que la primera versión no veía.
         {
           path: "nefan-html/src/ui/tres.ts",
           text: 'document.addEventListener("keydown", f);\n',
+          imports: [],
         },
         {
           path: "nefan-html/src/ui/cuatro.ts",
           text: 'document.body.addEventListener("mousedown", f);\n',
+          imports: [],
         },
         // La propiedad, sin `addEventListener` de por medio.
         {
           path: "nefan-html/src/ui/cinco.ts",
           text: "window.onkeydown = (e) => manejar(e);\n",
+          imports: [],
         },
         // Multilínea: lo que prettier produce con un manejador de nombre
         // largo. El patrón admite el salto de línea tras el paréntesis.
         {
           path: "nefan-html/src/ui/seis.ts",
           text: 'window.addEventListener(\n  "mousedown",\n  elManejadorDeAtaqueDelJugador,\n);\n',
+          imports: [],
         },
         // Las dos que encontró QA en la tercera pasada: el `window` implícito
         // —la forma más corta que alguien escribe sin pensar— y `globalThis`.
         {
           path: "nefan-html/src/ui/siete.ts",
           text: 'addEventListener("keydown", f);\n',
+          imports: [],
         },
         {
           path: "nefan-html/src/ui/ocho.ts",
           text: 'globalThis.addEventListener("keydown", f);\n',
+          imports: [],
         },
       ]).map((v) => `${v.path}:${v.line}`),
       [
@@ -1374,16 +1385,17 @@ describe("fronteras arquitectónicas", () => {
     // —el texto libre del diálogo— y la propia puerta.
     assert.deepEqual(
       deLaRegla([
-        { path: "nefan-html/src/ui/a.ts", text: 'window.addEventListener("keyup", f);\n' },
-        { path: "nefan-html/src/ui/b.ts", text: 'window.addEventListener("mousemove", f);\n' },
-        { path: "nefan-html/src/ui/c.ts", text: 'this.inputEl.addEventListener("keydown", f);\n' },
+        { path: "nefan-html/src/ui/a.ts", text: 'window.addEventListener("keyup", f);\n', imports: [] },
+        { path: "nefan-html/src/ui/b.ts", text: 'window.addEventListener("mousemove", f);\n', imports: [] },
+        { path: "nefan-html/src/ui/c.ts", text: 'this.inputEl.addEventListener("keydown", f);\n', imports: [] },
         // Un listener sobre un elemento con el receptor CORTO: el `(?<![.\\w])`
         // de la forma a secas tiene que dejarlo pasar, o la regla se comería
         // los controles con foco que el título necesita vivos.
-        { path: "nefan-html/src/ui/d.ts", text: 'el.addEventListener("keydown", f);\n' },
+        { path: "nefan-html/src/ui/d.ts", text: 'el.addEventListener("keydown", f);\n', imports: [] },
         {
           path: "nefan-html/src/input/puerta-de-teclado.ts",
           text: 'window.addEventListener("keydown", conPuerta);\n',
+          imports: [],
         },
       ]),
       [],
@@ -1406,29 +1418,35 @@ describe("fronteras arquitectónicas", () => {
         {
           path: "nefan-core/bridge/handlers/session.ts",
           text: 'ctx.broadcastNarrative({\n  phase: "error",\n  kind: "consequences",\n  message: avisoDeIlegibles(x),\n});\n',
+          imports: [],
         },
         {
           path: "nefan-core/bridge/handlers/simulation.ts",
           text: 'ctx.broadcastNarrative({ phase: "error", kind: "consequences", message: "no se pudo guardar" });\n',
+          imports: [],
         },
         {
           path: "nefan-core/bridge/context.ts",
           text: 'ctx.broadcastNarrative({ phase: "error", kind: "consequences", message: plugin });\n',
+          imports: [],
         },
         {
           path: "nefan-core/bridge/router.ts",
           text: 'return { a: "difusion", frame: { phase: "error", kind: "consequences" } };\n',
+          imports: [],
         },
         // Sin espacio tras los dos puntos: nada obliga a escribirlo con él, y
         // un patrón que pidiera `kind: "` literal dejaría pasar esta.
         {
           path: "nefan-core/bridge/handlers/scene.ts",
           text: 'broadcast({ kind:"consequences" });\n',
+          imports: [],
         },
         // Con el salto de línea que mete prettier cuando el objeto es largo.
         {
           path: "nefan-core/bridge/ws-server.ts",
           text: 'ctx.broadcastNarrative({\n  type: "narrative_status",\n  phase: "ready",\n  kind:\n    "consequences",\n});\n',
+          imports: [],
         },
       ]).map((v) => `${v.path}:${v.line}`),
       [
@@ -1448,17 +1466,18 @@ describe("fronteras arquitectónicas", () => {
     // y el primero saldría igual de verde.
     assert.deepEqual(
       deLaRegla([
-        { path: "nefan-core/bridge/handlers/session.ts", text: 'kind: "restore",\n' },
-        { path: "nefan-core/bridge/handlers/dialogue.ts", text: 'kind: "takeover",\n' },
-        { path: "nefan-core/bridge/handlers/simulation.ts", text: 'kind: "save",\n' },
-        { path: "nefan-core/bridge/context.ts", text: 'kind: "plugin",\n' },
-        { path: "nefan-core/bridge/router.ts", text: 'kind: "action",\n' },
-        { path: "nefan-core/bridge/handlers/tile.ts", text: 'kind: "tile",\n' },
+        { path: "nefan-core/bridge/handlers/session.ts", text: 'kind: "restore",\n', imports: [] },
+        { path: "nefan-core/bridge/handlers/dialogue.ts", text: 'kind: "takeover",\n', imports: [] },
+        { path: "nefan-core/bridge/handlers/simulation.ts", text: 'kind: "save",\n', imports: [] },
+        { path: "nefan-core/bridge/context.ts", text: 'kind: "plugin",\n', imports: [] },
+        { path: "nefan-core/bridge/router.ts", text: 'kind: "action",\n', imports: [] },
+        { path: "nefan-core/bridge/handlers/tile.ts", text: 'kind: "tile",\n', imports: [] },
         // El rechazo REAL del motor, en el fichero exceptuado: es el hecho que
         // el titular describe, y por eso sigue siendo legal.
         {
           path: "nefan-core/bridge/handlers/dialogue.ts",
           text: 'ctx.broadcastNarrative({ phase: "error", kind: "consequences", message: `Narrative engine error: ${e}` });\n',
+          imports: [],
         },
       ]),
       [],
@@ -1982,7 +2001,7 @@ describe("motor de reglas", () => {
         },
       ],
     });
-    const dead = deadExceptions(cfg, [{ path: "x/vivo.ts", text: "" }]);
+    const dead = deadExceptions(cfg, [{ path: "x/vivo.ts", text: "", imports: [] }]);
     assert.deepEqual(
       dead.map((d) => d.path),
       ["x/borrado.ts"],
@@ -1992,8 +2011,8 @@ describe("motor de reglas", () => {
     // Y con el fichero presente, cero ruido.
     assert.deepEqual(
       deadExceptions(cfg, [
-        { path: "x/vivo.ts", text: "" },
-        { path: "x/borrado.ts", text: "" },
+        { path: "x/vivo.ts", text: "", imports: [] },
+        { path: "x/borrado.ts", text: "", imports: [] },
       ]),
       [],
     );
@@ -2068,9 +2087,9 @@ describe("motor de reglas", () => {
         },
       ],
     });
-    const dos = checkArchitecture(cfg, [{ path: "x/a.ts", text: "mal\nmal\n" }]);
+    const dos = checkArchitecture(cfg, [{ path: "x/a.ts", text: "mal\nmal\n", imports: [] }]);
     assert.equal(reportByRule(cfg, dos)[0].budget, "excedido");
-    const cero = checkArchitecture(cfg, [{ path: "x/a.ts", text: "bien\n" }]);
+    const cero = checkArchitecture(cfg, [{ path: "x/a.ts", text: "bien\n", imports: [] }]);
     assert.equal(reportByRule(cfg, cero)[0].budget, "mejorable");
   });
 });
