@@ -13,7 +13,8 @@
  *  Lo que se mide es lo que ve quien juega, que ningún test de core puede
  *  poner rojo: el lector de core (`session/entidades-del-tile.ts`) prueba que
  *  DEVUELVE `nombre`, pero quien lo pinta es el cliente (`world/carga-de-tile.ts`
- *  → `label`, `main.ts` → `#world-labels`) y `nefan-html` no tiene tests. Tres
+ *  → `label`, `ui/etiquetas-del-mundo.ts` → `#world-labels`) y `nefan-html` no
+ *  tiene tests. Tres
  *  bloques sobre `robledo_tile`, la fixture del selector «Room» (cero motor,
  *  cero créditos):
  *
@@ -48,8 +49,8 @@
  *
  *  El rojo nombra el defecto: el wire vuelve a decir «description» donde toca
  *  «name» (los 24 objetos), el cliente se queda sin rótulo (`label ""`) y el
- *  jugador no ve nombre ni mirilla al mirar el pozo (`main.ts` solo rotula
- *  objetos con `label`). Con el emisor nuevo, los 24 llevan `name` y ninguno
+ *  jugador no ve nombre ni mirilla al mirar el pozo (`ui/etiquetas-del-mundo.ts`
+ *  solo rotula objetos con `label`). Con el emisor nuevo, los 24 llevan `name` y ninguno
  *  `description`: 8 de 8 asertos verdes.
  */
 
