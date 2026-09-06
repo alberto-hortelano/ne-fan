@@ -78,6 +78,9 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
 
   function mostrar(titulo: string, detalle: string): void {
     if (!loaderEl) return;
+    // Un muro de espera no es de ninguna fuente de aviso: la fila `mostrar()`
+    // de la tabla de arriba, cumplida aquí y no solo escrita.
+    muroPuestoPorAviso = null;
     loaderEl.classList.remove("error");
     loaderEl.classList.add("visible");
     if (loaderTitle) loaderTitle.textContent = titulo;

@@ -74,10 +74,13 @@ export const AVISO_PERSONAJES = "Los personajes van sin vestir";
 export const AVISO_PARTIDA = "Sin conexión con la partida";
 export const AVISO_TRAMA_ILEGIBLE = "La partida respondió algo que no se entiende";
 /** El detalle de `AVISO_PARTIDA` cuando la causa es que el servidor de la
- *  partida no está: una frase de producto, sin `bridge`, sin `ws://`, sin ms. */
+ *  partida no está: una frase de producto, sin `bridge`, sin `ws://`, sin ms.
+ *  Tiene que ser CIERTA en los dos sitios donde se lee —el arranque sin bridge
+ *  y una partida real a la que se le cae—, así que no nombra nada que solo
+ *  exista en uno de ellos (QA de #469, H1). */
 export const DETALLE_SIN_PARTIDA =
-  "El servidor de la partida no responde: sin él no se puede jugar. " +
-  "Puedes cerrar este aviso para mirar las escenas de prueba.";
+  "El servidor de la partida no responde y se volverá a intentar solo. " +
+  "Puedes cerrar este aviso mientras tanto.";
 
 /** Los titulares de MÁS a MENOS grave, y la lista ES el criterio: sin mundo no
  *  hay juego; sin socket no hay partida; una trama ilegible rompe lo que se

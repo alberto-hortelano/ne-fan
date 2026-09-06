@@ -171,6 +171,21 @@ async function main() {
       () => document.getElementById("narrative-loader")?.classList.contains("error") !== true,
       5000,
     );
+    // Y SOLO con el bootstrap ya fallido se mide: hasta que `createGameClient`
+    // agota su timeout no hay `gameClient` y el loop no pinta, así que medir
+    // antes deja los primeros segundos del aserto de frames sin nada que
+    // contar y el aserto pasa por la holgura de su ventana, no por estado
+    // (QA de #469, H3). La señal es la del 77, el 78 y fixtures-sin-bridge.
+    await ctx.waitFor(
+      "el bootstrap ha fallado (entrada «bootstrap failed» del registro)",
+      () =>
+        [...document.querySelectorAll(".error-log__entry")].some(
+          (e) =>
+            (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "session" &&
+            (e.querySelector(".error-log__msg")?.textContent ?? "").includes("bootstrap failed"),
+        ),
+      20000,
+    );
 
     for (const fixture of FIXTURES) {
       console.log(`▶ ${fixture}`);
