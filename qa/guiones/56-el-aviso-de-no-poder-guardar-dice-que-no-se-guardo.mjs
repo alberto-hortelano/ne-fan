@@ -111,8 +111,8 @@ export default async function (ctx) {
   );
   // QA H-5, y ESTE es el sitio donde puede ponerse rojo: aquí el muro sale en
   // la MISMA carga de página en la que ya corrió el loader del bootstrap
-  // («Generando mundo inicial…»), y ni `hideLoader` ni `setLoaderState`
-  // borraban su cronómetro — solo paraban el intervalo. Así que bajo el aviso
+  // («Generando mundo inicial…»), y ni `ocultar` ni `fallo` del muro
+  // (`ui/muro-de-carga.ts`) borraban su cronómetro — solo paraban el intervalo. Así que bajo el aviso
   // quedaba un «4s» huérfano entre el motivo y «Cerrar»: el reloj de una
   // espera que ya no existe, justo donde el jugador busca qué hacer.
   //
