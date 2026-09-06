@@ -132,3 +132,21 @@ Decisiones, literales de la pregunta y su respuesta:
   (`DepsDeCargaDeTile` + fábrica, getter `() => gameClient`), nunca un objeto de contexto.
 - El corte 3 reescribe el `path` de la excepción de `solo-el-bridge-normaliza-la-escena` en el mismo commit y
   la PR lo dice.
+
+## Tras el corte 4 — decisión del usuario (2026-09-06)
+
+Medida tras fusionar los cortes 1-4 (`main` = `a6ce5dd7`): `main.ts` 1.836 líneas, 17 `let`. Proyección tras los cortes 5-7,
+contada por el ingeniero y por QA por separado y coincidente: **11 `let`** (4 de modos de render + chip + menú dev, 2 destinos de
+facetas de sesión `mundoPintadoDe`/`dialogoDeSesion`, 5 de la raíz) y **≈ 1.585 ± 7 líneas**. No alcanza el cierre aprobado.
+
+Pregunta: «La aritmética de los siete cortes deja main.ts en ≈ 1585 líneas y 11 let, por encima del cierre aprobado (≤ 1550 / ≤ 6).
+¿Qué hacemos?» Respuesta literal: **«Corte 8 + porValor»**.
+
+Consecuencia: el programa pasa a **ocho cortes** más una mejora estructural en core:
+- **Corte 8**: modos de render, chip de gráficos y menú de desarrollo (`scenesMode`, `charactersMode`, `graphicsChip`, `devMenu`;
+  ~150 líneas; la crítica midió 10-11 deps, que es la razón por la que quedó fuera de los siete). Necesita plan del arquitecto:
+  si las deps no bajan al partir el bloque en dos (modos ↔ menú), se para y se consulta.
+- **`porValor`** en `nefan-core/src/session/session-facets.ts` (o donde el arquitecto decida): el ayudante que hace innecesarios
+  los dos `let` de facetas en `main.ts`. Es core: entra en `npm run crap` y, si el módulo `session-facets` está medido, en su
+  suelo de mutación (35 mutantes, 0 vivos; cabe en `local`).
+- El criterio de cierre **no cambia**: ≤ 6 `let` y ≤ 1.550 líneas, excepción reescrita como «raíz de composición» en el último corte.
