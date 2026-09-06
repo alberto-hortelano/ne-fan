@@ -26,7 +26,8 @@ import { FPS_DEBUG_VIEW_LABELS, FpsRenderer } from "./renderer/fps-renderer.js";
 import { FpsAtlasController } from "./scene/fps-atlas.js";
 import { CollisionSystem } from "./world/collision.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
-import { BASE_ANIMS, BASE_MODEL, CharacterSpriteManager } from "./renderer/character-sprites.js";
+import { BASE_MODEL, CharacterSpriteManager } from "./renderer/character-sprites.js";
+import { crearAspectoDelJugador } from "./renderer/aspecto-del-jugador.js";
 import { AnimacionDeEntidades } from "./renderer/animacion-de-entidades.js";
 import { BridgeClient } from "./net/bridge-client.js";
 import { NarrativeClient } from "./net/narrative-client.js";
@@ -43,7 +44,7 @@ import { TileLedger } from "./ui/tile-ledger.js";
 import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { GraphicsModeChip } from "./ui/graphics-mode.js";
-import { AVISO_PERSONAJES, errors } from "./ui/error-log.js";
+import { errors } from "./ui/error-log.js";
 import { crearMuroDeCarga } from "./ui/muro-de-carga.js";
 import { EcoDelCombate } from "./ui/eco-del-combate.js";
 import { HablarConUnNpc } from "./ui/hablar-con-un-npc.js";
@@ -79,81 +80,6 @@ const ARCADE_SPEED_SCALE = 2.2;
 const SPEED = (playerCfg.walk_speed ?? 3.0) * ARCADE_SPEED_SCALE;
 const SPRINT_SPEED = (playerCfg.sprint_speed ?? 5.5) * ARCADE_SPEED_SCALE;
 
-/** Player visual state. When CONFIG.graphics.character_sprites is false the
- *  player is drawn as a coloured circle and playerModel stays null. When
- *  true, setPlayerAppearance resolves the base model (y_bot salvo que el
- *  elegido tenga el set completo en disco) y encola su skin IA. */
-let playerModel: string | null = null;
-let playerSkinPrompt = "";
-
-/** Resolve the player's visual base and queue its AI skin.
- *
- *  - CONFIG.graphics.character_sprites === false → does nothing. The renderer
- *    draws a circle and that's the contract.
- *  - character_sprites === true → la base es y_bot (obligatoria, fail-loud
- *    vía baseSheetsReady). Si `modelId` tiene el set COMPLETO de sheets en
- *    disco, sustituye a y_bot; si no, se usa la base (ya no es un error:
- *    el skin IA es la vía canónica de personalización).
- *  - CONFIG.graphics.ai_skin === false but skinPrompt is non-empty → throws.
- *    Caller asked for something the config does not allow. */
-async function setPlayerAppearance(modelId: string, skinPrompt: string): Promise<void> {
-  if (!CONFIG.graphics.character_sprites) {
-    if (skinPrompt) {
-      const msg = `appearance.skin_path="${skinPrompt}" requires graphics.character_sprites=true`;
-      errors.push("config", msg);
-      throw new Error(msg);
-    }
-    playerModel = null;
-    playerSkinPrompt = "";
-    return;
-  }
-
-  await baseSheetsReady;
-
-  // Entrar o reanudar una partida rearma el cortacircuitos de skins (#236):
-  // es el único momento en que se sabe que empieza una sesión, y hasta ahora
-  // el cortacircuitos solo se rearmaba desde el OFF→ON del menú dev.
-  //
-  // `characterSprites` es un singleton de MÓDULO, así que su mapa de skins
-  // sobrevive a volver al título y reanudar: sin esta línea, una partida
-  // abandonada con el backend caído se llevaba el apagón a la siguiente —ya
-  // con el backend arriba— y sus vecinos de siempre seguían en maniquí toda
-  // la vida de la pestaña. Rearmar OLVIDA a los que fallaron (ver
-  // `rearmarCortacircuitos`), no los re-pide: los que aparezcan en ESTA
-  // partida los pedirá quien los spawnee, y los que no, no se pagan.
-  characterSprites.rearmarCortacircuitos();
-
-  let base = BASE_MODEL;
-  if (modelId && modelId !== BASE_MODEL) {
-    try {
-      // Secuencial y abortando al primer fallo: un modelo sin sheets solo
-      // genera UNA entrada en el error-log (la del fetch), no diez.
-      for (const anim of BASE_ANIMS) {
-        await spriteRenderer.loadAnimation(modelId, anim, worldAngle);
-      }
-      base = modelId;
-    } catch {
-      log(`modelo "${modelId}" sin sheets completos — base ${BASE_MODEL}`);
-    }
-  }
-
-  playerModel = base;
-  playerSkinPrompt = skinPrompt;
-  animacion.jugadorEnReposo(performance.now());
-
-  if (skinPrompt && characterSprites.skinsAllowed) {
-    if (!CONFIG.graphics.ai_skin) {
-      const msg = `appearance.skin_path="${skinPrompt}" requires graphics.ai_skin=true`;
-      errors.push("config", msg);
-      throw new Error(msg);
-    }
-    // Generación progresiva en background: cada anim sustituye a la base
-    // y_bot cuando su sheet skinneado está listo (modelFor por frame).
-    characterSprites.requestSkin(skinPrompt);
-    log(`skin IA encolada: ${skinPrompt.slice(0, 40)}`);
-  }
-}
-
 const config = loadConfig(combatConfigJson);
 
 // --- DOM elements ---
@@ -182,40 +108,18 @@ const characterSprites = new CharacterSpriteManager(spriteRenderer, worldAngle);
 const animacion = new AnimacionDeEntidades(characterSprites, worldAngle);
 /** Retrato del hablante del diálogo: hero-shot ya pagado o busto animado. */
 const portrait = new PortraitView(spriteRenderer, "/sprites");
-/** true cuando el set base y_bot está cargado: el gameLoop solo puebla
- *  `entity.sprite` a partir de ese momento (antes, círculos). */
-let baseSheetsLoaded = false;
-/** Precarga del set base y_bot — obligatorio con character_sprites=true.
- *  setPlayerAppearance espera esta promise; si falta un sheet, la sesión no
- *  arranca (fail-loud) y el error queda registrado. */
-const baseSheetsReady: Promise<void> = CONFIG.graphics.character_sprites
-  ? characterSprites.preloadBase().then(() => {
-      baseSheetsLoaded = true;
-    })
-  : Promise.resolve();
-// El mensaje NOMBRA EL REMEDIO (#255): las hojas son 28 MB fuera de git, así
-// que un clon limpio llega aquí siempre y «incompleto» a secas no le dice a
-// nadie qué hacer. Ni el fallback existe — sin `y_bot` no hay a qué degradar.
-baseSheetsReady.catch((err) =>
-  errors.push(
-    "sprite",
-    `set base ${BASE_MODEL} incompleto — personajes sin sprite. Las hojas no están en el repo: ` +
-      `genéralas con sprite-forge, receta en docs/assets-de-personaje.md`,
-    err,
-    // Y a la PANTALLA (#306): sin hojas los personajes salen en maniquí y
-    // hasta ahora nadie lo decía. Este mensaje llega DESPUÉS que los de las
-    // hojas sueltas y con el mismo titular, así que es el suyo el que se lee.
-    //
-    // El detalle NO es el `message`: ese está escrito para quien programa y no
-    // se puede cambiar (el guion 13 exige `y_bot`, «incompleto» y el documento
-    // en el registro). Lo traduce el traductor de la casa, que tiene rama
-    // propia para este código desde #255.
-    {
-      alJugador: AVISO_PERSONAJES,
-      detalleAlJugador: motivoDeSesionParaElJugador(err),
-    },
-  ),
-);
+/** El aspecto del jugador (`renderer/aspecto-del-jugador.ts`): su modelo
+ *  base, su skin IA y la precarga del set base y_bot, que arranca AQUÍ, detrás
+ *  del check de `CONFIG.graphics.character_sprites`. Los modelos alternativos
+ *  y los skins IA se cargan bajo demanda (`aspecto.vestir` / `requestSkin`).
+ *  El bucle le pregunta cada frame; `resetWorld` lo desviste. */
+const aspecto = crearAspectoDelJugador({
+  characterSprites,
+  spriteRenderer,
+  animacion,
+  worldAngle,
+  log,
+});
 /** El renderer del mundo, construido EAGER: es el único que hay, así que no
  *  espera a que la sesión decida nada. three.js entra por import dinámico
  *  dentro de la fachada (y con él el único contexto WebGL de la pestaña);
@@ -407,7 +311,8 @@ function applyRenderModes({ renderMode, characterMode }: {
 /** Re-encola los skins IA de todas las entidades vivas (player + NPCs +
  *  enemigos). requestSkin es idempotente por prompt y respeta ai_skin. */
 function reRequestAllSkins(): void {
-  if (playerSkinPrompt) characterSprites.requestSkin(playerSkinPrompt);
+  const propio = aspecto.skinPrompt();
+  if (propio) characterSprites.requestSkin(propio);
   for (const e of mundo.personajes) {
     if (e.skinPrompt) characterSprites.requestSkin(e.skinPrompt, { role: e.styleRole });
   }
@@ -443,9 +348,6 @@ document.addEventListener("pointerlockchange", () => {
   gameUiEl.dataset.locked = document.pointerLockElement !== null ? "true" : "false";
 });
 
-// El set base y_bot se precarga arriba (baseSheetsReady) detrás del check de
-// CONFIG.graphics.character_sprites; los modelos alternativos y los skins IA
-// se cargan bajo demanda desde setPlayerAppearance / requestSkin.
 const playerStatusEl = document.getElementById("player-status") as HTMLElement;
 playerStatusEl.innerHTML =
   `<div class="nf-vital"><span class="nf-vital-label">Vida</span>` +
@@ -671,7 +573,7 @@ function resetWorld(): void {
   // El aspecto del jugador es del mundo que se va: dejarlo puesto hace que
   // volver al título re-pida su skin IA (imagen de pago) por un mundo que ya
   // no existe.
-  playerSkinPrompt = "";
+  aspecto.desvestir();
   mundo.vaciar();
   animacion.olvidar();
 }
@@ -1109,10 +1011,11 @@ function gameLoop(now: number): void {
   // Y el set base y_bot terminó de cargar (antes, círculos — explícitamente,
   // no como fallback). Cada entidad avanza su máquina de estados de anim y
   // resuelve por frame si dibuja la base o su variante skinneada por IA.
-  const spritesOn = CONFIG.graphics.character_sprites && baseSheetsLoaded;
+  const spritesOn = CONFIG.graphics.character_sprites && aspecto.hojasBaseListas();
+  const modelo = aspecto.modelo();
   let playerSprite: Entity["sprite"];
-  if (spritesOn && playerModel !== null) {
-    playerSprite = animacion.spriteDelJugador(now, playerModel, playerSkinPrompt, {
+  if (spritesOn && modelo !== null) {
+    playerSprite = animacion.spriteDelJugador(now, modelo, aspecto.skinPrompt(), {
       vivo: eco.jugadorVivo,
       andando:
         !dialoguePanel.isVisible &&
@@ -1211,7 +1114,8 @@ function listFakeItems(): FakeItem[] {
     });
   }
   const prompts = new Set<string>();
-  if (playerSkinPrompt) prompts.add(playerSkinPrompt);
+  const propio = aspecto.skinPrompt();
+  if (propio) prompts.add(propio);
   for (const e of mundo.personajes) {
     if (e.skinPrompt) prompts.add(e.skinPrompt);
   }
@@ -1697,7 +1601,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         uiTheme: res.uiTheme ?? BASE_UI_THEME,
       });
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
-      await setPlayerAppearance(action.appearance.model_id, action.appearance.skin_path);
+      await aspecto.vestir(action.appearance.model_id, action.appearance.skin_path);
     } else {
       const res = await narrativeClient.resumeSession(action.sessionId);
       session.enter({
@@ -1712,14 +1616,14 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       log(`Reanudada: ${res.state.session_id}`);
       // El mundo anterior ya se fue —lo vació la faceta `mundo` del
       // `session.enter` de arriba— y por eso se puede vestir al jugador aquí:
-      // `resetWorld` borra también su prompt de skin, así que vestir primero
+      // `resetWorld` lo desviste (`aspecto.desvestir`), así que vestir primero
       // dejaría al muñeco desnudo.
       //
       // resume: trust the save's appearance verbatim. Un model_id sin sheets
-      // completos (o vacío) cae a la base y_bot dentro de setPlayerAppearance.
+      // completos (o vacío) cae a la base y_bot dentro de `aspecto.vestir`.
       const desiredModel = res.state.player.appearance.model_id;
       const skinPath = res.state.player.appearance.skin_path || "";
-      await setPlayerAppearance(desiredModel, skinPath);
+      await aspecto.vestir(desiredModel, skinPath);
 
       // Materialise the world the player was in: TODOS los tiles del save se
       // re-añaden (el plano continuo sobrevive al resume), y la escena activa
@@ -1797,7 +1701,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
   }
   // Solo aquí: la partida está en marcha y el título deja de hacer falta.
   titleScreen.hide();
-  // …y solo aquí el jugador tiene cuerpo: `setPlayerAppearance` ya volvió sin
+  // …y solo aquí el jugador tiene cuerpo: `aspecto.vestir` ya volvió sin
   // lanzar. Es la otra mitad de la entrada (#279). Un clon sin hojas no llega
   // hasta esta línea —cae en el catch de arriba, que abandona la partida—, así
   // que su tile, que llegó ANTES, no basta para escribir nada.
