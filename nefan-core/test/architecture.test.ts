@@ -1126,15 +1126,20 @@ describe("fronteras arquitectónicas", () => {
     assert.deepEqual(
       regla.exceptions.map((e) => [e.path, e.funcion]),
       [
-        ["nefan-html/src/main.ts", "addTileRaw"],
+        ["nefan-html/src/world/fixtures-del-selector.ts", "addTileRaw"],
         ["nefan-html/src/ui/style-apply.ts", "StyleApplyController.plan"],
       ],
     );
 
     // Las dos puertas tal como están escritas hoy (misma forma que el árbol).
-    const MAIN = [
-      "const addTile = cargaDeTile.addTile;",
-      "const addTileRaw = (raw: Record<string, unknown>, opts?: OpcionesDeCarga) => addTile({ ...formatDToWorld(raw), exits: [] }, opts);",
+    const FIXTURES = [
+      "export function crearFixturesDelSelector(deps: DepsDeFixturesDelSelector): FixturesDelSelector {",
+      "  const { addTile } = deps;",
+      "  function addTileRaw(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void> {",
+      "    return addTile({ ...formatDToWorld(raw), exits: [] }, opts);",
+      "  }",
+      "  return { addTileRaw };",
+      "}",
       "",
     ].join("\n");
     const STYLE = [
@@ -1154,7 +1159,7 @@ describe("fronteras arquitectónicas", () => {
       "",
     ].join("\n");
     const puertas: SourceFile[] = [
-      { path: "nefan-html/src/main.ts", text: MAIN, imports: [] },
+      { path: "nefan-html/src/world/fixtures-del-selector.ts", text: FIXTURES, imports: [] },
       { path: "nefan-html/src/ui/style-apply.ts", text: STYLE, imports: [] },
     ];
     assert.deepEqual(deLaRegla(puertas), [], "las dos puertas, UNA llamada cada una dentro de su función, callan");
@@ -1180,38 +1185,46 @@ describe("fronteras arquitectónicas", () => {
     // G1 · una SEGUNDA llamada en el fichero eximido: antes entraba gratis.
     assert.deepEqual(
       deLaRegla([
-        { path: "nefan-html/src/main.ts", text: MAIN + "const __segunda = formatDToWorld({} as never);\n", imports: [] },
+        {
+          path: "nefan-html/src/world/fixtures-del-selector.ts",
+          text: FIXTURES + "const __segunda = formatDToWorld({} as never);\n",
+          imports: [],
+        },
       ]),
-      ["nefan-html/src/main.ts:3 [error] fuera de la puerta `addTileRaw`: esta llamada vive en `__segunda`"],
+      ["nefan-html/src/world/fixtures-del-selector.ts:8 [error] fuera de la puerta `addTileRaw`: esta llamada vive en `__segunda`"],
     );
     // …y dos DENTRO de la misma función tampoco: la puerta es UNA llamada.
     assert.deepEqual(
       deLaRegla([
         {
-          path: "nefan-html/src/main.ts",
+          path: "nefan-html/src/world/fixtures-del-selector.ts",
           text: "const addTileRaw = (raw) => addTile({ ...formatDToWorld(raw), otra: formatDToWorld(raw) });\n",
           imports: [],
         },
       ]),
-      ["nefan-html/src/main.ts:1 [error] la puerta `addTileRaw` es UNA llamada; esta es la 2ª"],
+      ["nefan-html/src/world/fixtures-del-selector.ts:1 [error] la puerta `addTileRaw` es UNA llamada; esta es la 2ª"],
     );
 
     // G2 · la función nombrada deja de llamar: exención sin sujeto, no barra libre.
     assert.deepEqual(
       deLaRegla([
-        { path: "nefan-html/src/main.ts", text: "const addTileRaw = (raw) => addTile(raw as WorldScene);\n", imports: [] },
+        { path: "nefan-html/src/world/fixtures-del-selector.ts", text: "const addTileRaw = (raw) => addTile(raw as WorldScene);\n", imports: [] },
       ]),
       [
-        `nefan-html/src/main.ts:1 [error] exención sin sujeto: \`addTileRaw\` ya no casa ${JSON.stringify(regla.text!.pattern)} en este fichero — borra la exención o vuelve a nombrar la puerta`,
+        `nefan-html/src/world/fixtures-del-selector.ts:1 [error] exención sin sujeto: \`addTileRaw\` ya no casa ${JSON.stringify(regla.text!.pattern)} en este fichero — borra la exención o vuelve a nombrar la puerta`,
       ],
     );
 
     // G4 · la puerta se renombra: la llamada ya no vive donde dice el JSON.
     assert.deepEqual(
       deLaRegla([
-        { path: "nefan-html/src/main.ts", text: MAIN.replace("addTileRaw =", "addTileRaw2 ="), imports: [] },
+        {
+          path: "nefan-html/src/world/fixtures-del-selector.ts",
+          text: FIXTURES.replace("function addTileRaw(", "function addTileRaw2("),
+          imports: [],
+        },
       ]),
-      ["nefan-html/src/main.ts:2 [error] fuera de la puerta `addTileRaw`: esta llamada vive en `addTileRaw2`"],
+      ["nefan-html/src/world/fixtures-del-selector.ts:4 [error] fuera de la puerta `addTileRaw`: esta llamada vive en `addTileRaw2`"],
     );
 
     // G5 · la llamada se mueve de `plan()` a `run()` de la misma clase.

@@ -80,12 +80,13 @@ export interface DepsDelHook {
   combatSystemId(): string;
   attackCatalog(): readonly AttackSpec[];
   /** Format D crudo → escena servida sin salidas → `addTile`. La normalización
-   *  vive en `main.ts`, que es el único sitio del cliente que la hace. */
+   *  vive en `world/fixtures-del-selector.ts`, el único sitio del cliente que
+   *  la hace. */
   addTileRaw(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void>;
   loadSceneData(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void>;
-  /** Conduce el `<select>` de fixtures y DEVUELVE la carga. Se queda en
-   *  `main.ts` porque es quien tiene el desplegable y la promesa que su
-   *  manejador de `change` no sabe devolver. */
+  /** Conduce el `<select>` de fixtures y DEVUELVE la carga. Vive en
+   *  `world/fixtures-del-selector.ts` porque es quien tiene el desplegable y
+   *  la promesa que su manejador de `change` no sabe devolver. */
   cargarFixture(name: string): Promise<void>;
 }
 
@@ -309,7 +310,7 @@ export function instalarNefanHook(deps: DepsDelHook): void {
       /** TOMA el mundo con una escena Format D cruda, sin pasar por el selector
        *  «Room»: el hermano de `addTileRaw` para el PRIMER tile de un bench.
        *  Existe porque el selector se puebla con `import.meta.glob`, que vite
-       *  expande al transformar `main.ts`: una fixture escrita en disco con el
+       *  expande al transformar el módulo: una fixture escrita en disco con el
        *  cliente ya arrancado NO está en el glob, y el bench de presupuesto
        *  fallaba siempre su primera corrida por ese camino (#332) — la
        *  asimetría (sus otros 3 tiles ya entraban crudos) era el bug. Solo DEV,
@@ -318,8 +319,8 @@ export function instalarNefanHook(deps: DepsDelHook): void {
       /** Carga una fixture del selector Room por nombre parcial, conduciendo el
        *  <select> real, y DEVUELVE la carga. Fail-loud si no existe: un guion
        *  que "no encuentra" la escena y sigue en verde no vale nada. La
-       *  implementación vive en `main.ts` con el desplegable — ver
-       *  `cargarFixture`. */
+       *  implementación vive en `world/fixtures-del-selector.ts` con el
+       *  desplegable — ver `cargarFixture`. */
       loadFixture: (name: string): Promise<void> => deps.cargarFixture(name),
       // Driver programático del provider "scripted" (?input=scripted) — API
       // limpia para el bench en vez de sintetizar KeyboardEvents.
