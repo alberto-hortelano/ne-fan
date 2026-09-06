@@ -121,8 +121,9 @@ Tres cosas que en una vista cenital daba la propia perspectiva:
   (`attackFlashQuality`, core): también la PROYECCIÓN del enemigo al plano del
   ataque es fórmula, no dibujo — escrita a mano en el cliente se saltaba el
   cono frontal y un enemigo a la espalda salía verde pleno.
-- **Nombre del NPC y mirilla** (`ui/world-labels.ts`): etiquetas DOM temadas,
-  no texto dentro del lienzo.
+- **Nombre del NPC y mirilla** (`ui/etiquetas-del-mundo.ts` decide qué se
+  rotula y qué enfila la cámara; `ui/world-labels.ts` coloca las cajas):
+  etiquetas DOM temadas, no texto dentro del lienzo.
 - **Frontera del mundo**: un muro de niebla sobre el borde del tile activo, y
   su DISIPACIÓN —no un destello— es el aviso de que el vecino ya existe.
 

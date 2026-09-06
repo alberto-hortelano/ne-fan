@@ -331,7 +331,7 @@ export default async function (ctx) {
   if (!rotulo.mundo.includes(BANDIDO)) {
     ctx.log(
       `⚠ HALLAZGO: un enemigo no recibe rótulo de mundo ni enciende la mirilla ` +
-        `(updateWorldLabels solo recorre npcEntities) — rótulos colocados: ${JSON.stringify(rotulo.mundo)}`,
+        `(ui/etiquetas-del-mundo.ts solo recorre a los NPC) — rótulos colocados: ${JSON.stringify(rotulo.mundo)}`,
     );
   }
 
