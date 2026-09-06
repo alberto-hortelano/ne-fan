@@ -85,10 +85,10 @@ export interface InputProvider extends IntentSink {
  *
  *  «HAY UN DIÁLOGO ABIERTO» SE PREGUNTA, NO SE COPIA (#314). Hasta hoy era un
  *  campo público mutable del proveedor —una TERCERA representación del mismo
- *  estado junto a `dialoguePanel.isVisible` y al `[hidden]` del DOM—: el bucle
+ *  estado junto al `isVisible` del panel y al `[hidden]` del DOM—: el bucle
  *  lo escribía a mano al abrir y al cerrar, y cualquier módulo del cliente
  *  podía escribirlo también. #311 le puso un dueño único
- *  (`abrirDialogo`/`cerrarDialogo`) y dejó dicho que colapsar las
+ *  (`abrir`/`cerrar` en `ui/conversacion.ts`) y dejó dicho que colapsar las
  *  representaciones era este issue. Quedan las DOS que #314 no funde a
  *  propósito: el panel y su reflejo en el DOM.
  *
@@ -100,7 +100,7 @@ export interface InputProvider extends IntentSink {
  *  (arch-rules.json) cubre lo que el tipo no puede: que nadie lo re-declare. */
 export interface InputDeps {
   /** ¿Hay una conversación en pantalla ahora mismo? La contesta el dueño del
-   *  panel (`main.ts`), que es quien lo abre y lo cierra. */
+   *  panel (`ui/conversacion.ts`), que es quien lo abre y lo cierra. */
   dialogoAbierto(): boolean;
   /** ¿Hay una propuesta de explorar el tile vecino en pantalla? De ella
    *  dependen Y/N: sin propuesta, `N` es de las teclas dev y `Y` no es nada.

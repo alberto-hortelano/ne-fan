@@ -1,13 +1,13 @@
 /** Con una conversación en pantalla, el jugador no anda. Es el hecho de #311
  *  que ve quien juega, y lo sostienen DOS gates independientes: la puerta del
  *  proveedor de teclado (`keyboard-input-provider.ts`, que no llega a poner
- *  `state.up`) y el bucle de juego (`main.ts`, `if (!dialoguePanel.isVisible)`
+ *  `state.up`) y el bucle de juego (`main.ts`, `if (!dialogoAbierto())`
  *  alrededor del WASD). Cualquiera de los dos basta.
  *
  *  QUÉ MIDE ESTE GUION, Y CUÁNDO PUEDE PONERSE ROJO. Medido el 2026-08-30, los
  *  tres sabotajes, cada uno restaurado antes del siguiente:
  *
- *    · solo el gate del BUCLE (`if (!dialoguePanel.isVisible)` → `if (true)`)
+ *    · solo el gate del BUCLE (`if (!dialogoAbierto())` → `if (true)`)
  *      ................................................. VERDE (0,00 m)
  *    · solo el gate del PROVEEDOR (`if (this.deps.dialogoAbierto()) return;`
  *      → `if (false) return;`) ......................... VERDE (0,00 m)
@@ -35,9 +35,10 @@
  *  podían desemparejarse, y eso es lo que vigilaba.
  *
  *  #314 se llevó la copia — el proveedor PREGUNTA (`InputDeps.dialogoAbierto()`,
- *  que es `() => dialoguePanel.isVisible`)—, y con ella se llevó el sujeto del
- *  vigilante: `__nefan.dialogue().visible` y `__nefan.state().dialogueActive`
- *  pasaron a ser LA MISMA expresión. (Esa segunda clave ya no existe: se retiró
+ *  que es `conversacion.abierta()`, el panel preguntado a su dueño)—, y con
+ *  ella se llevó el sujeto del vigilante: `__nefan.dialogue().visible` y
+ *  `__nefan.state().dialogueActive` pasaron a ser LA MISMA expresión. (Esa
+ *  segunda clave ya no existe: se retiró
  *  del hook el 2026-09-01 con #329, precisamente por ser un segundo nombre de
  *  la primera que nadie leía.) El vigilante comparaba un booleano consigo
  *  mismo por dos caminos de una línea, y no podía ponerse rojo: QA lo midió el

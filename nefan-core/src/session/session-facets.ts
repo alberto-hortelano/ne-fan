@@ -117,7 +117,7 @@ export interface FacetSinks {
    *
    *  Cuelga de aquí desde #311 por la razón de siempre: era un espejo a mano
    *  —un campo público del proveedor de input, escrito suelto en el cliente,
-   *  más `dialoguePanel.isVisible`— y `leave()` no lo deshacía. La forma
+   *  más el `isVisible` del panel— y `leave()` no lo deshacía. La forma
    *  exacta del bug de #249, que es para lo que existe este módulo. #314 se
    *  llevó el espejo (hoy el proveedor PREGUNTA por el panel), pero esta
    *  faceta no sobra: lo que garantiza es que volver al título CIERRE la
