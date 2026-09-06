@@ -735,7 +735,7 @@ const setActiveClientTile = cargaDeTile.activarTile;
 const fixtures = crearFixturesDelSelector({
   addTile,
   resetWorld,
-  log: (msg) => log(msg),
+  log,
 });
 
 function rebuildEnemyBars(): void {
