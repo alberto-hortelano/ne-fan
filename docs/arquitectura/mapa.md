@@ -56,7 +56,9 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
                            character-sprites, types
     scene/                 fps-atlas: pipeline de imagen del atlas de superficies
     world/                 Modelo de mundo del cliente: tile-store, frontier
-    ui/                    Capa DOM in-game + pantalla de título (ver ui.md)
+    ui/                    Capa DOM in-game + pantalla de título (ver ui.md);
+                           muro-de-carga: el overlay de espera/fallo y el único
+                           pintor de avisos al jugador (#306)
     net/                   bridge-client / narrative-client (WS al bridge)
     input/                 Providers: keyboard (default) y scripted (bench)
 

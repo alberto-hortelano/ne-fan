@@ -17,12 +17,8 @@ import {
   motivoDeFixtureParaElJugador,
   motivoDeSesionParaElJugador,
 } from "@nefan-core/src/protocol/status-motivo.js";
-import {
-  rotuloDeStatus,
-  type SalidaDelOverlay,
-  type StatusRotulable,
-} from "@nefan-core/src/protocol/status-rotulo.js";
-import { elTituloManda, marcarTitulo } from "./ui/titulo-manda.js";
+import { rotuloDeStatus, type StatusRotulable } from "@nefan-core/src/protocol/status-rotulo.js";
+import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
 import { FrontierManager } from "./world/frontier.js";
 import { crearFronteraDelJugador } from "./world/frontera-del-jugador.js";
@@ -53,6 +49,7 @@ import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { GraphicsModeChip } from "./ui/graphics-mode.js";
 import { AVISO_PERSONAJES, errors } from "./ui/error-log.js";
+import { crearMuroDeCarga } from "./ui/muro-de-carga.js";
 import { EcoDelCombate } from "./ui/eco-del-combate.js";
 import { HablarConUnNpc } from "./ui/hablar-con-un-npc.js";
 import { paso } from "./ui/async-ui.js";
@@ -1592,62 +1589,19 @@ graphicsChip = new GraphicsModeChip({
 // propio título, así que quien añada un panel nuevo no tiene que acordarse de
 // nada. Desde #285 el interruptor apaga también el INPUT de juego, por la
 // misma lectura: `ui/titulo-manda.ts`.
-/** La fuente del aviso que pintó el muro, o `null` si no lo puso un aviso.
- *  Permite apagarlo sin tocar los muros legítimos (arranque fallido, fallo de
- *  generación). */
-let muroPuestoPorAviso: string | null = null;
+//
+// El muro de carga es también el único pintor de avisos (#306), y por eso se
+// construye aquí: necesita el título, que acaba de nacer. `volverAlTitulo` es
+// una declaración de función, así que existe aunque esté más abajo.
+const muro = crearMuroDeCarga({ titleScreen, volverAlTitulo });
 titleScreen.onVisibilityChange = (visible) => {
   graphicsChip?.setHidden(visible);
-  // El título solo TAPA el muro (`#narrative-loader` vive dentro de
-  // `#game-ui`), así que uno puesto por un aviso seguía armado y salía a
-  // pantalla completa al cerrar el título por su propio botón, con un fallo
-  // que el jugador acababa de leer arriba (QA de T9, H-1). No se pierde nada:
-  // el aviso lo tiene el título, que es quien manda ahora.
-  if (visible && muroPuestoPorAviso !== null) {
-    hideLoader();
-    muroPuestoPorAviso = null;
-  }
+  muro.alCambiarElTitulo(visible);
   // El único escritor del interruptor. Lo leen la regla de CSS que apaga los
   // píxeles y la puerta de teclado que descarta el input (#285): la misma
   // lectura para las dos, así que no pueden divergir.
   marcarTitulo(visible);
 };
-// EL ÚNICO PINTOR DE AVISOS (#306). Los fallos que saltan SOLOS durante el
-// arranque —three.js que no carga, las hojas base que no llegan, el socket de
-// la partida— solo existían en `#error-log`, que el interruptor de #246 apaga
-// mientras el título manda: un título normal encima de un cliente roto.
-//
-// El aviso es una PROYECCIÓN del mismo `errors.push` que lo registró (el texto
-// es su `message`), así que log y pantalla no pueden divergir. Aquí solo se
-// decide DÓNDE se lee:
-//
-//  - El título lo APUNTA siempre. No es doble verdad: es el mismo aviso, y los
-//    dos huecos no pueden verse a la vez porque `html[data-titulo="1"] #game-ui`
-//    esconde el muro mientras el título manda. Apuntarlo siempre es lo que
-//    salva el caso que da nombre al issue: los tres fallos saltan ANTES del
-//    primer `show()` del título, así que enrutar solo por el estado de ahora
-//    los pintaría en un muro que el título tapa medio segundo después.
-//  - Y si el título NO manda, además se pinta el muro, que es lo que el
-//    jugador tiene delante en ese momento.
-//
-// `setLoaderState` es una declaración de función: existe aquí aunque se lea
-// 130 líneas más abajo.
-// La entrega llega SIEMPRE en microtarea (`ErrorLog.entrega`), así que aquí el
-// módulo ya ha terminado de evaluarse y `loaderEl` existe.
-errors.onAviso((e) => {
-  // «Resuelto» es la mitad que faltaba: un aviso que no caduca acaba
-  // contradiciendo a la pantalla que lo enseña (QA de T9, H-3).
-  if (e.tipo === "resuelto") {
-    titleScreen.retirarAvisos(e.source);
-    if (muroPuestoPorAviso === e.source) hideLoader();
-    return;
-  }
-  titleScreen.avisar(e.aviso);
-  if (!elTituloManda()) {
-    setLoaderState("error", e.aviso.titulo, e.aviso.mensaje);
-    muroPuestoPorAviso = e.aviso.source;
-  }
-});
 // El seam del banco de pruebas (`window.__nefan`), en UNA construcción y AQUÍ:
 // después de `titleScreen` y `narrativeClient`, que son los últimos
 // colaboradores que mira. Estaba en tres puntos de escritura separados por
@@ -1712,117 +1666,17 @@ dialoguePanel.onFreeText = (freeText) => {
 
 travelPanel.onTravel = (placeId) => {
   if (!session.active) return;
-  showLoader("Viajando...", "El motor narrativo está preparando el lugar.");
+  muro.mostrar("Viajando...", "El motor narrativo está preparando el lugar.");
   travelLedger.pedido(placeId);
   narrativeClient.enterPlace(placeId);
 };
-
-// --- Narrative loader (status-driven overlay) ---
-const loaderEl = document.getElementById("narrative-loader") as HTMLDivElement | null;
-const loaderTitle = document.getElementById("narrative-loader-title");
-const loaderDetail = document.getElementById("narrative-loader-detail");
-const loaderElapsed = document.getElementById("narrative-loader-elapsed");
-const loaderDismiss = document.getElementById("narrative-loader-dismiss");
-const loaderBack = document.getElementById("narrative-loader-back");
-
-let loaderStartedAt = 0;
-let loaderTicker: ReturnType<typeof setInterval> | null = null;
-
-function showLoader(title: string, detail: string): void {
-  if (!loaderEl) return;
-  loaderEl.classList.remove("error");
-  loaderEl.classList.add("visible");
-  if (loaderTitle) loaderTitle.textContent = title;
-  if (loaderDetail) loaderDetail.textContent = detail;
-  loaderStartedAt = Date.now();
-  if (loaderElapsed) loaderElapsed.textContent = "0s";
-  if (loaderTicker) clearInterval(loaderTicker);
-  loaderTicker = setInterval(() => {
-    if (!loaderElapsed) return;
-    const s = Math.floor((Date.now() - loaderStartedAt) / 1000);
-    loaderElapsed.textContent = `${s}s`;
-  }, 500);
-}
-
-/** Actualiza SOLO el detalle del loader con un latido de progreso del motor
- *  (sin resetear el cronómetro ni pisar un estado de error). No-op si el
- *  loader no está visible — el progreso también llega en momentos sin
- *  overlay (p. ej. tiles de frontera en segundo plano). */
-function updateLoaderProgress(message: string): void {
-  if (!loaderEl || !loaderEl.classList.contains("visible")) return;
-  if (loaderEl.classList.contains("error")) return;
-  if (loaderDetail) loaderDetail.textContent = message;
-}
-
-/** El motivo del último muro que ofrecía volver al título. Se lo lleva el
- *  título en la vuelta: quien pulsa «Volver al título» acaba de leerlo, pero
- *  llegar a una pantalla que no dice nada de lo que acaba de pasar es la
- *  mitad muda de #189 («vuelve al título VIVO, con el motivo en pantalla»). */
-let motivoDelUltimoMuro: string | null = null;
-
-function hideLoader(): void {
-  if (!loaderEl) return;
-  loaderEl.classList.remove("visible", "error");
-  if (loaderBack) loaderBack.hidden = true;
-  if (loaderDismiss) loaderDismiss.hidden = false;
-  // El muro se va y su motivo con él: quien lo lea después
-  // (`volverAlTitulo`) tiene que leerlo ANTES de cerrarlo, no heredarlo de un
-  // fallo viejo.
-  motivoDelUltimoMuro = null;
-  if (loaderTicker) {
-    clearInterval(loaderTicker);
-    loaderTicker = null;
-  }
-}
-
-/** `salida` dice qué puede HACER el jugador con este muro. Por defecto,
- *  cerrarlo y seguir con su partida; `volver-al-titulo` cuando detrás no hay
- *  partida ninguna y cerrar le dejaría sin nada que pulsar (#189). */
-function setLoaderState(
-  state: "error",
-  title: string,
-  detail: string,
-  salida: SalidaDelOverlay = "cerrar",
-): void {
-  if (!loaderEl) return;
-  loaderEl.classList.remove("error");
-  loaderEl.classList.add("visible", state);
-  if (loaderTitle) loaderTitle.textContent = title;
-  if (loaderDetail) loaderDetail.textContent = detail;
-  const sinMundo = salida === "volver-al-titulo";
-  if (loaderBack) loaderBack.hidden = !sinMundo;
-  // Y sin mundo NO HAY ADÓNDE CERRAR: «Cerrar» dejaba al jugador en el mismo
-  // callejón de #189 que la salida de al lado venía a abrir —cielo vacío,
-  // cinco botones de ataque y recargar— y con el mismo peso visual, así que
-  // media pantalla pulsaba la que no era. Donde sí sigue estando es en los
-  // muros que tienen partida detrás (`salida: "cerrar"`), que son todos los
-  // demás — incluido el del arranque sin bridge, que es el que cierra
-  // `qa/fixtures-sin-bridge.mjs` para entrar al modo fixtures.
-  if (loaderDismiss) loaderDismiss.hidden = sinMundo;
-  motivoDelUltimoMuro = sinMundo ? `${title}. ${detail}` : null;
-  if (loaderTicker) {
-    clearInterval(loaderTicker);
-    loaderTicker = null;
-  }
-  // …y se BORRA el contador, no solo se para (QA 2026-09-01, H-5). Paraba el
-  // intervalo y dejaba el último texto puesto, así que bajo un muro de error
-  // quedaba un «0s» huérfano entre el motivo y «Cerrar»: el reloj de una
-  // espera que ya no existe. Un fallo no tarda segundos en fallar, y esta
-  // tanda le pone cinco avisos nuevos encima a este mismo widget.
-  if (loaderElapsed) loaderElapsed.textContent = "";
-}
-
-if (loaderDismiss) loaderDismiss.onclick = () => hideLoader();
-if (loaderBack) {
-  loaderBack.onclick = () => paso(volverAlTitulo(), "session", "volver a la pantalla de título");
-}
 
 narrativeClient.onStatusDeLaPartida((status) => {
   // ── Latido de progreso del motor narrativo ────────────────────────────
   // Un paso observable (petición recogida, tool de estado llamada): el
   // loader deja de ser una espera muda de minutos y narra qué está pasando.
   if (status.phase === "progress") {
-    if (status.message) updateLoaderProgress(status.message);
+    if (status.message) muro.progreso(status.message);
     return;
   }
 
@@ -1856,12 +1710,12 @@ narrativeClient.onStatusDeLaPartida((status) => {
       case "generating":
         if (t) frontier.onStatusText(t.tx, t.ty, status.message ?? "Generando el mundo");
         if (!tileStore.hasGridTiles) {
-          showLoader("Generando mundo inicial...", status.message ?? "El motor narrativo está construyendo el mundo.");
+          muro.mostrar("Generando mundo inicial...", status.message ?? "El motor narrativo está construyendo el mundo.");
         }
         break;
       case "ready":
         // La escena llega por scene_init (addTile dispara el flash allí).
-        hideLoader();
+        muro.ocultar();
         break;
       case "error": {
         if (t) frontier.onTileError(t.tx, t.ty);
@@ -1884,7 +1738,7 @@ narrativeClient.onStatusDeLaPartida((status) => {
         // es lo que el jugador acaba de pulsar y lo que va a leer durante toda
         // la espera (30-60 s con el motor real). «Generando escena…» es jerga
         // de motor y además no casa con su propio detalle («Viajando a X…»).
-        showLoader(
+        muro.mostrar(
           status.placeId ? "Viajando..." : "Generando escena...",
           status.message ?? "El motor narrativo está construyendo el mundo. Puede tardar un momento.",
         );
@@ -1925,11 +1779,11 @@ narrativeClient.onFalloAjeno((fallo) => {
 function pintarFalloDelMotor(status: StatusRotulable): void {
   const rotulo = rotuloDeStatus(status, {
     mundoVacio: !tileStore.hasGridTiles,
-    overlayAbierto: loaderEl?.classList.contains("visible") ?? false,
+    overlayAbierto: muro.visible(),
   });
   errors.push("narrative", rotulo.detalle);
   if (rotulo.destino === "overlay") {
-    setLoaderState("error", rotulo.titulo, rotulo.detalle, rotulo.salida);
+    muro.fallo(rotulo.titulo, rotulo.detalle, rotulo.salida);
   }
   else log(`⚠ ${rotulo.detalle.slice(0, 100)}`);
 }
@@ -2137,8 +1991,7 @@ async function bootstrap(): Promise<void> {
     // render(), así que el selector de fixtures cargaba la escena sobre un
     // lienzo NEGRO — que es justo lo que el preset `html-fixtures` promete
     // poder hacer sin backend (issue #215).
-    setLoaderState(
-      "error",
+    muro.fallo(
       "No se pudo arrancar la partida",
       (err as Error).message,
     );
@@ -2154,8 +2007,7 @@ async function bootstrap(): Promise<void> {
   try {
     await runTitleFlow();
   } catch (err) {
-    setLoaderState(
-      "error",
+    muro.fallo(
       "No se pudo arrancar la partida",
       (err as Error).message,
     );
@@ -2208,8 +2060,8 @@ async function runTitleFlow(avisoInicial?: string): Promise<void> {
  *  Esto lo devuelve al título por el mismo camino que un fallo de sesión: el
  *  mundo a cero, la sesión soltada y el bucle otra vez en marcha. */
 async function volverAlTitulo(): Promise<void> {
-  const motivo = motivoDelUltimoMuro ?? undefined;
-  hideLoader();
+  const motivo = muro.motivoDelUltimoMuro() ?? undefined;
+  muro.ocultar();
   // Soltar la partida ES vaciar el mundo: el mundo es una faceta más
   // (`session-facets.ts`), así que `leave()` lo deshace todo por el mismo
   // camino que lo puso.
@@ -2226,8 +2078,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
     action = await titleScreen.show({ aviso });
   } catch (err) {
     titleScreen.hide();
-    setLoaderState(
-      "error",
+    muro.fallo(
       "No se pudo mostrar la pantalla de título",
       (err as Error).message,
     );
@@ -2239,7 +2090,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
     if (action.kind === "new_game") {
       // Show loader immediately so the canvas isn't blank while we wait on
       // start_session + the bridge's "generating" broadcast.
-      showLoader(
+      muro.mostrar(
         "Iniciando partida...",
         "Pidiendo al motor narrativo que construya la escena inicial.",
       );
@@ -2340,7 +2191,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
     // El error va AL TÍTULO, no al loader: el título tiene z-index 9999 y el
     // loader 70, así que un título de vuelta escondería el error debajo y el
     // jugador volvería a la pantalla inicial sin saber por qué.
-    hideLoader();
+    muro.ocultar();
     // La sesión pudo quedar a medio aplicar (el fallo puede llegar DESPUÉS de
     // `session.enter`): sin esto, el segundo intento arrancaría sobre los
     // tiles del primero. `leave()` es el mismo camino que usa `volverAlTitulo`
