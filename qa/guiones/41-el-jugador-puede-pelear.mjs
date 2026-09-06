@@ -39,7 +39,7 @@
  *
  *  EN NEGATIVO: con el código anterior a la tanda el bloque 1 se pone rojo en
  *  su primer aserto (el hostil llega sin `combat`, así que no hay barra que
- *  esperar); quitando el alta en el sim de `materializeSpawn` se pone rojo el
+ *  esperar); quitando el alta en el sim de `world/materializar-spawn.ts` se pone rojo el
  *  bloque 2 sin tocar el 1. Las dos salidas están en el implementacion.md de
  *  la tanda 2026-08-29-que-el-jugador-pueda-pelear.
  */

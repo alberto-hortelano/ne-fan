@@ -6,7 +6,7 @@
  *  rehidratar —la SEGUNDA PUERTA—, porque una puerta de más no se ve en el
  *  primer resume: se ve cuando el mundo rehidratado se vuelve a guardar y a
  *  rehidratar encima. Si el resume dejara al spawn en el ledger por partida
- *  doble, o si el `materializeSpawn` del resume acabara escribiendo una
+ *  doble, o si el materializador del resume (`world/materializar-spawn.ts`) acabara escribiendo una
  *  entity nueva, el segundo resume traería dos Nogalas, dos cofres o dos
  *  barras con el mismo nombre. Hoy no: se afirma id a id.
  *
@@ -19,7 +19,7 @@
  *  mientras el resto de lo que puso el motor sí.
  *
  *  PROBADO EN NEGATIVO (2026-08-31, sobre el árbol de la tanda):
- *   · Bloque 1 — quitando el `for (const spawn of spawns) materializeSpawn(spawn)`
+ *   · Bloque 1 — quitando el `for (const spawn of spawns) spawnDelMotor.materializar(spawn, …)`
  *     del resume (`nefan-html/src/main.ts`), «los cuatro siguen ahí tras el
  *     SEGUNDO resume» se pone rojo: vuelven `bandido_1` y el tabernero (los de
  *     la escena) y nada más.
@@ -42,7 +42,7 @@
  *  lo reparaba —el mundo se curaba solo, que es peor que romperse—. Se mide
  *  DOS veces, y las dos hacen falta: sin reanudar (bloque 0b) y tras dos
  *  resumes (bloque 2). La segunda es la que caza la trampa: si el dueño de un
- *  spawn se escribiera en el llamante en vez de dentro de `materializeSpawn`,
+ *  spawn se escribiera en el llamante en vez de dentro de `world/materializar-spawn.ts`,
  *  el rehidratado volvería sin dueño y solo el bloque 2 se pondría rojo.
  *
  *  Cero créditos: preset `e2e-sin-creditos`; el trío del turno 3 y el hostil
@@ -318,7 +318,7 @@ export default async function (ctx) {
   //
   // Y aquí, no solo en el 0b, porque los objetos que hay ahora son los
   // REHIDRATADOS por dos resumes: si el dueño de una entity de runtime se
-  // escribiera en el llamante en vez de dentro de `materializeSpawn`, el
+  // escribiera en el llamante en vez de dentro de `world/materializar-spawn.ts`, el
   // bloque 0b saldría verde y este rojo. Es la trampa del §3 de la crítica,
   // puesta donde se ve.
   afirmarQueSobreviven(ctx, await idaYVuelta(ctx, "tras dos resumes"), "tras dos resumes");

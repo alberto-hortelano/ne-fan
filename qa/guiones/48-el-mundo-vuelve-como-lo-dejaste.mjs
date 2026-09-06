@@ -30,7 +30,7 @@
  *
  *  PROBADO EN NEGATIVO (2026-08-31, sobre el árbol de la tanda): quitando la
  *  rehidratación del resume —el `for (const spawn of spawns)
- *  materializeSpawn(spawn)` de `nefan-html/src/main.ts`— el guion se pone
+ *  spawnDelMotor.materializar(spawn, …)` de `nefan-html/src/main.ts`— el guion se pone
  *  rojo en «lo que el motor puso a mitad de partida SIGUE ahí tras reanudar»,
  *  y el volcado enseña el defecto entero: tras reanudar solo quedan
  *  `bandido_1` y el tabernero (los de la escena), sin Secuaz, sin Nogala, sin

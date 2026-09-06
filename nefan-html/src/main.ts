@@ -8,8 +8,6 @@ import { instalarNefanHook } from "./dev/nefan-hook.js";
 import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
-import { KIND_DEFAULT_HEIGHT } from "@nefan-core/src/scene/scene-normalize.js";
-import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import { pickNearestTarget } from "@nefan-core/src/scene/aim.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
@@ -22,10 +20,10 @@ import { aplicarLoQueMandaElBridge } from "./world/lo-que-manda-el-bridge.js";
 import { MundoDelCliente } from "./world/mundo-del-cliente.js";
 import { crearCargaDeTile } from "./world/carga-de-tile.js";
 import { crearFixturesDelSelector } from "./world/fixtures-del-selector.js";
+import { crearMaterializadorDeSpawn } from "./world/materializar-spawn.js";
 import type { Entity } from "./renderer/types.js";
 import { FPS_DEBUG_VIEW_LABELS, FpsRenderer } from "./renderer/fps-renderer.js";
 import { FpsAtlasController } from "./scene/fps-atlas.js";
-import { enemigoDesdeCombat } from "./scene/enemigo.js";
 import { CollisionSystem } from "./world/collision.js";
 import { SpriteRenderer } from "./renderer/sprite-renderer.js";
 import { BASE_ANIMS, BASE_MODEL, CharacterSpriteManager } from "./renderer/character-sprites.js";
@@ -56,7 +54,7 @@ import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, BASE_UI_THEME } from "./ui/theme.js";
 import { createClientSession } from "@nefan-core/src/session/session-facets.js";
 import { createEntrada } from "@nefan-core/src/session/entrada.js";
-import { spawnsDeRuntime, type SpawnDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
+import { spawnsDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
 import { Mirada } from "@nefan-core/src/simulation/mirada.js";
 import { intencionDeTeclas, pasoDelJugador } from "@nefan-core/src/simulation/paso-del-jugador.js";
 import {
@@ -1503,114 +1501,17 @@ function pintarFalloDelMotor(status: StatusRotulable): void {
   else log(`⚠ ${rotulo.detalle.slice(0, 100)}`);
 }
 
-/** Materializa un `spawn_entity` del motor narrativo EN LA ESCENA VIVA, sin
- *  recargar. El `position` ya viene resuelto en metros mundo por el bridge
- *  (consequence-handler.ts:resolvePositionHint, relativo al jugador). NPCs van a
- *  la lista de NPCs (interactuables con E); building/object a la de objetos, con
- *  `sizeXZ` para que sean sólidos (collidesAt) y tengan volumen que instalar
- *  en el renderer, que es la "geometría base" sobre la que luego se
- *  superponen imágenes IA. */
-function materializeSpawn(
-  /** La forma del effect `spawn_entity` sin su `eventId`: la misma que come
-   *  el resume (`spawnsDeRuntime`). `name` es el rótulo, siempre;
-   *  `description` la procedencia, si la hay (#397). */
-  effect: SpawnDeRuntime,
-  /** `true` cuando esto NO acaba de pasar: el mundo se está rehidratando desde
-   *  el save. Lo único que cambia es lo que se le CUENTA al jugador — «⚔ Secuaz
-   *  ataca» y «✨ Nogala aparece» son mentira al reanudar: nadie ha atacado ni
-   *  aparecido, ha vuelto a su partida (QA 2026-08-31, H-8). */
-  opts: { rehidratado?: boolean } = {},
-): void {
-  const [x, y, z] = effect.position;
-  const pos: Vec3 = { x, y, z };
-  // El rótulo ES `name`: la descripción es la procedencia y no se rotula.
-  const label = effect.name.slice(0, 40);
-
-  if (effect.entityKind === "npc") {
-    // VÍA (b) al combate: un `spawn_entity` con `role:"hostile"`. El bloque
-    // `combat` lo puso el core en `dispatchConsequences` (mismo
-    // `combatForHostileRole` que la escena inicial), y aquí se registra por la
-    // MISMA puerta. Sin esto, el enemigo aparecería como un vecino más: se
-    // pintaría y no se le podría pegar.
-    if (effect.data.combat !== undefined) {
-      const nuevo = enemigoDesdeCombat({
-        id: effect.entityId,
-        pos,
-        combat: effect.data.combat,
-        descripcion: effect.description,
-        styleRef: typeof effect.data.style_ref === "string" ? effect.data.style_ref : undefined,
-        nombre: effect.name,
-        indiceColor: mundo.siguienteColorDeEnemigo(),
-        // DE RUNTIME, y se escribe AQUÍ DENTRO y nunca en el llamante (#350).
-        // Es la trampa concreta que este tipo cierra: con el dueño puesto
-        // fuera, el rehidratado del resume volvería sin él y el bug —el spawn
-        // que desaparece al re-emitir su tile— reaparecería tras resume +
-        // viaje. Con `dueno` obligatorio, olvidarlo no compila.
-        dueno: { de: "runtime" },
-      });
-      if (nuevo) {
-        mundo.anadirEnemigo(nuevo.entidad);
-        characterSprites.requestSkin(nuevo.entidad.skinPrompt ?? effect.entityId, {
-          role: nuevo.entidad.styleRole,
-        });
-        // El alta en el sim es lo que lo convierte en algo a lo que se puede
-        // pegar; la barra de vida, en algo que el jugador ve perder vida.
-        gameClient?.addEnemies([nuevo.combatiente]);
-        rebuildEnemyBars();
-        log(opts.rehidratado ? `↩ ${effect.name} sigue ahí` : `⚔ ${effect.name} ataca`);
-      }
-      return;
-    }
-    // El caso central del skin IA: la PROCEDENCIA (`description`) es el prompt
-    // con el que se repinta la base y_bot frame a frame; sin ella, el nombre.
-    // Nada se inventa aquí ni antes: lo que llega es lo que declaró el motor.
-    const npcPrompt = effect.description ?? effect.name;
-    const spawnStyleRole = npcSkinStyleRef({
-      style_ref: typeof effect.data.style_ref === "string" ? effect.data.style_ref : undefined,
-      role: typeof effect.data.role === "string" ? effect.data.role : undefined,
-    });
-    mundo.anadirNpc({
-      id: effect.entityId,
-      pos,
-      forward: { x: 0, y: 0, z: -1 },
-      radius: 7,
-      color: "#68c",
-      label,
-      name: effect.name,
-      alive: true,
-      category: "creature",
-      skinPrompt: npcPrompt,
-      styleRole: spawnStyleRole,
-      dueno: { de: "runtime" },
-    });
-    characterSprites.requestSkin(npcPrompt, { role: spawnStyleRole });
-    log(opts.rehidratado ? `↩ ${effect.name} sigue ahí` : `✨ ${effect.name} aparece`);
-    return;
-  }
-
-  // building / object: caja sólida colocada en la escena actual.
-  const isBuilding = effect.entityKind === "building";
-  mundo.anadirObjeto({
-    id: effect.entityId,
-    pos,
-    radius: isBuilding ? 8 : 5,
-    color: isBuilding ? "#5a4a38" : "#666",
-    label,
-    alive: true,
-    category: isBuilding ? "building" : "prop",
-    sizeXZ: isBuilding ? { x: 4, z: 4 } : { x: 1.4, z: 1.4 },
-    // Altura coherente con la de las escenas del motor (defaults por kind).
-    sizeY: KIND_DEFAULT_HEIGHT[isBuilding ? "building" : "prop"],
-    // EL ARREGLO DE #350, en una línea: este cofre y esta forja no son de
-    // ningún tile, así que la purga de `addTile` ya no se los lleva por caer
-    // dentro de su rect. Antes desaparecían en cuanto el jugador viajaba por
-    // «Salidas» y volvía, y solo reaparecían al reanudar — el mundo se curaba
-    // solo, que es peor que romperse.
-    dueno: { de: "runtime" },
-  });
-  const que = isBuilding ? "edificio" : "objeto";
-  log(opts.rehidratado ? `↩ ${que}: ${label} sigue ahí` : `✨ ${que}: ${label}`);
-}
+/** Los spawns del motor (`spawn_entity`) se materializan en
+ *  `world/materializar-spawn.ts`, por la misma puerta en vivo y al reanudar.
+ *  De aquí reciben el mundo, el gestor de skins, el cliente de juego (que se
+ *  construye después), las barras del HUD y la línea del juego. */
+const spawnDelMotor = crearMaterializadorDeSpawn({
+  mundo,
+  characterSprites,
+  gameClient: () => gameClient,
+  rebuildEnemyBars,
+  log,
+});
 
 narrativeClient.onNarrativeEvent((event) => {
   hablar.yaContestaron();
@@ -1674,7 +1575,7 @@ narrativeClient.onNarrativeEvent((event) => {
       }
       case "spawn_entity":
         // Una entidad suelta que se materializa in-place en la escena viva.
-        materializeSpawn(effect);
+        spawnDelMotor.materializar(effect);
         break;
       case "schedule_event":
         log(`⏳ scheduled: ${effect.description.slice(0, 60)}`);
@@ -1868,10 +1769,10 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       // ninguna escena y hasta #326 desaparecían enteras al reanudar — el
       // enemigo que el motor te echó encima, el NPC con el que hablabas, el
       // edificio que apareció. Vuelven por la MISMA puerta por la que
-      // llegaron (`materializeSpawn`), así que no hay un segundo constructor
-      // que se olvide de la mitad.
+      // llegaron (`world/materializar-spawn.ts`), así que no hay un segundo
+      // constructor que se olvide de la mitad.
       //
-      // DESPUÉS de los tiles, y el orden importa: `materializeSpawn` da de
+      // DESPUÉS de los tiles, y el orden importa: materializar un hostil da de
       // alta combatientes en el sim del bridge, y el bridge resiembra el sim
       // al procesar el `resume_session` — que ya ha terminado cuando esta
       // respuesta llega, pero los tiles de arriba también mandan altas y
@@ -1884,7 +1785,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       // lógica de juego en el cliente.
       const { spawns, errores } = spawnsDeRuntime(res.state.entities ?? []);
       for (const err of errores) errors.push("session", err);
-      for (const spawn of spawns) materializeSpawn(spawn, { rehidratado: true });
+      for (const spawn of spawns) spawnDelMotor.materializar(spawn, { rehidratado: true });
       if (spawns.length > 0) log(`El mundo vuelve con ${spawns.length} cosa(s) que puso el motor`);
       // La posición viene del save, y ahora está VIVA: el bridge ata el
       // combatiente del sim al NarrativeState al sembrarlo, así que cualquiera

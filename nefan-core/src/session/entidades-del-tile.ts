@@ -62,8 +62,8 @@ import type { NpcEnElWire, ObjetoEnElWire } from "../scene/scene-normalize.js";
  *  Es una unión discriminada y OBLIGATORIA, y ahí está el arreglo de #350.
  *  Antes esto era `tileKey?: string`, y entonces «es de runtime» y «se me
  *  olvidó ponerlo» eran el mismo `undefined`. De esa confusión salió el bug:
- *  `materializeSpawn` no escribía `tileKey` en ninguna de sus tres clases, así
- *  que la purga de NPCs (por identidad) dejaba vivo al spawn de runtime… y la
+ *  el materializador de spawns del cliente no escribía `tileKey` en ninguna
+ *  de sus tres clases, así que la purga de NPCs (por identidad) dejaba vivo al spawn de runtime… y la
  *  de objetos, que era por GEOMETRÍA (`!inRect`), se llevaba por delante el
  *  cofre y la forja en cuanto el tile se volvía a difundir. Con `dueno`
  *  obligatorio, el estado malo no se puede escribir: `tsc` exige los sitios

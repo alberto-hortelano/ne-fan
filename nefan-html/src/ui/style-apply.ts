@@ -6,7 +6,7 @@
  *  Corre en el CLIENTE contra remote-gen (:8768) porque reutiliza las claves
  *  de caché naturales del juego: las celdas del atlas se computan con el
  *  MISMO código puro que la partida (buildFpsTileSpec + buildLayout) y los
- *  prompts/roles de skin con las MISMAS reglas que main.ts — lo pre-pintado
+ *  prompts/roles de skin con las MISMAS reglas que la partida (`npcSkinStyleRef`) — lo pre-pintado
  *  aquí es cache-hit exacto en partida. Idempotente: re-ejecutar tras un
  *  corte continúa por cache-hits ($0 en lo ya pagado). */
 import type {
@@ -254,7 +254,7 @@ export class StyleApplyController {
       missingCells = await this.resolveMissing(cells, sceneDescription, styleId);
     }
 
-    // ── Skins: mismas reglas de prompt/rol que la partida (main.ts) ──
+    // ── Skins: mismas reglas de prompt/rol que la partida (carga-de-tile, materializar-spawn) ──
     const skinSeen = new Set<string>();
     const skins: Array<{ prompt: string; role?: string }> = [];
     for (const [sceneId] of scenes) {

@@ -57,7 +57,9 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
     scene/                 fps-atlas: pipeline de imagen del atlas de superficies
     world/                 Modelo de mundo del cliente: tile-store, frontier;
                            fixtures-del-selector: el selector «Room» y la única
-                           normalización local (puerta `addTileRaw`, sin bridge)
+                           normalización local (puerta `addTileRaw`, sin bridge);
+                           materializar-spawn: la puerta única del `spawn_entity`
+                           del motor, en vivo y al reanudar
     ui/                    Capa DOM in-game + pantalla de título (ver ui.md);
                            muro-de-carga: el overlay de espera/fallo y el único
                            pintor de avisos al jugador (#306)
