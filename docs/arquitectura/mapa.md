@@ -53,7 +53,8 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
     main.ts                Game loop, importa nefan-core directamente
     renderer/              fps-gl (three: el único contexto WebGL de la pestaña),
                            fps-renderer (fachada + import dinámico), sprite-renderer,
-                           character-sprites, types
+                           character-sprites, types; aspecto-del-jugador: el modelo
+                           base, el skin IA y las hojas base del jugador
     scene/                 fps-atlas: pipeline de imagen del atlas de superficies
     world/                 Modelo de mundo del cliente: tile-store, frontier;
                            fixtures-del-selector: el selector «Room» y la única

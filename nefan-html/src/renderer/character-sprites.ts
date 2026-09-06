@@ -135,7 +135,7 @@ export class CharacterSpriteManager {
       // recuento que no dice dónde mirar.
       //
       // Y el CÓDIGO va delante porque este rechazo no se queda aquí: sube por
-      // `setPlayerAppearance` hasta el catch del arranque, que lo traduce con
+      // `vestir` (`aspecto-del-jugador.ts`) hasta el catch del arranque, que lo traduce con
       // `motivoDeSesionParaElJugador`. Sin código, esa traducción no lo
       // reconocía y le decía al jugador que el servidor había fallado y que
       // reintentara (#255 p2, hallazgo H1 de QA).

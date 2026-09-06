@@ -137,7 +137,7 @@ export function motivoDeSesionParaElJugador(err: unknown): string {
   const raw = (err as Error)?.message ?? String(err);
   // No todo fallo de arranque es del servidor, y este es el que le pasa a
   // TODO el que clona el repo: sin las hojas de `y_bot` el jugador no puede
-  // tener cuerpo, así que `setPlayerAppearance` rechaza y el intento entero
+  // tener cuerpo, así que vestirlo (`aspecto-del-jugador.ts`) rechaza y el intento entero
   // vuelve al título. Hasta 2026-08-25 caía en el motivo genérico y se leía
   // «El servidor del juego no pudo completarlo; inténtalo de nuevo»: un
   // fichero que falta disfrazado de servidor con hipo, y con un consejo

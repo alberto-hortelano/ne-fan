@@ -6,7 +6,7 @@
  *  Eso deja fuera al jugador que hace lo único que se hace en esa pantalla:
  *  elegir un mundo y darle a empezar. Este guion recorre ESE camino.
  *
- *  Lo que pasa hoy, medido: `setPlayerAppearance` espera a `baseSheetsReady`,
+ *  Lo que pasa hoy, medido: `aspecto.vestir` espera a las hojas base,
  *  que en un clon rechaza; el fallo llega DESPUÉS de `session.enter`, así que
  *  `unIntentoDeArrancar` (main.ts) lo caza, abandona la partida y vuelve al
  *  título con `aviso`. El aviso lo redacta `motivoDeSesionParaElJugador`
@@ -37,7 +37,8 @@
 import { esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
 import { listarSaves } from "../lib/saves.mjs";
 
-/** La entrada accionable que el cliente escribe en el registro (main.ts). */
+/** La entrada accionable que el cliente escribe en el registro
+ *  (`renderer/aspecto-del-jugador.ts`). */
 const REMEDIO = "docs/assets-de-personaje.md";
 
 export default async function (ctx) {
@@ -49,8 +50,8 @@ export default async function (ctx) {
   // El 404 se contesta CUANDO EL MUNDO YA ESTÁ PINTADO, no al instante. No es
   // un adorno ni un sleep: es la única forma de que este guion mida la
   // CONJUNCIÓN de #279 en vez de solo su primera mitad. Medido el 2026-08-26
-  // instrumentando `main.ts`: con el 404 instantáneo, `baseSheetsReady` ya está
-  // rechazada cuando el jugador pulsa «Comenzar», así que el orden real es
+  // instrumentando el cliente: con el 404 instantáneo, la precarga de las hojas
+  // base ya está rechazada cuando el jugador pulsa «Comenzar», así que el orden real es
   //   sesión → abandonar → sesión:(ninguna) → addTile(active=false)
   // y lo que impide el save es el reset de la faceta, no la conjunción —
   // disparar el ack solo con `mundoPintado()` dejaba el guion VERDE. Con el
