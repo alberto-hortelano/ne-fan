@@ -39,18 +39,15 @@ export function cierreDesde(
   entradas: readonly string[],
   files: ReadonlyMap<string, SourceFile>,
 ): Map<string, Arista | null> {
-  const padres = new Map<string, Arista | null>();
-  const cola: string[] = [];
-  for (const e of entradas) {
-    if (padres.has(e)) continue;
-    padres.set(e, null);
-    cola.push(e);
-  }
-  for (let i = 0; i < cola.length; i++) {
-    const actual = cola[i];
+  // Un `Map` deduplica las entradas por sí mismo, y el iterador de un array ve
+  // lo que se le empuja mientras se recorre: la búsqueda en anchura no necesita
+  // ni índice ni comprobación de duplicados.
+  const padres = new Map<string, Arista | null>(entradas.map((e) => [e, null]));
+  const cola = [...padres.keys()];
+  for (const actual of cola) {
     const file = files.get(actual);
     if (!file) continue;
-    for (const imp of file.imports ?? []) {
+    for (const imp of file.imports) {
       if (imp.resolved === undefined || padres.has(imp.resolved)) continue;
       padres.set(imp.resolved, imp.roto ? { desde: actual, line: imp.line, roto: true } : { desde: actual, line: imp.line });
       cola.push(imp.resolved);
@@ -107,7 +104,7 @@ export function violacionesDeCierre(
       });
       continue;
     }
-    for (const imp of file.imports ?? []) {
+    for (const imp of file.imports) {
       if (!forbid.some((re) => re.test(imp.spec))) continue;
       out.push({
         ruleId: rule.id,

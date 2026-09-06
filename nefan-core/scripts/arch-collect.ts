@@ -122,7 +122,7 @@ export function loadArchFiles(): SourceFile[] {
   const añadir = (abs: string): void => {
     const text = readFileSync(abs, "utf-8");
     const path = aRutaRepo(abs);
-    out.push({ path, text, imports: abs.endsWith(".ts") ? importsOf(path, text) : undefined });
+    out.push({ path, text, imports: abs.endsWith(".ts") ? importsOf(path, text) : [] });
   };
   for (const root of archConfig.scan.roots) {
     for (const abs of walk(join(repoRoot, root.dir), root.ext, archConfig.scan.ignore)) añadir(abs);
