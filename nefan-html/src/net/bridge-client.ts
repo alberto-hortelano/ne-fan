@@ -21,7 +21,7 @@ import type {
   ExitsChangedMessage,
 } from "@nefan-core/src/protocol/messages.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
-import { AVISO_PARTIDA, AVISO_TRAMA_ILEGIBLE, errors } from "../ui/error-log.js";
+import { AVISO_PARTIDA, AVISO_TRAMA_ILEGIBLE, DETALLE_SIN_PARTIDA, errors } from "../ui/error-log.js";
 
 export type BridgeEvent =
   | "state_update"
@@ -140,12 +140,16 @@ export class BridgeClient {
       // mostly as a breadcrumb. Without this push the user sees only a
       // generic "disconnected" later, with no hint that the disconnect
       // came from an error rather than a clean close.
-      // Y A LA PANTALLA (#306): sin este socket no hay partida ninguna, y el
-      // aviso llega mucho antes que el muro de `bootstrap` —que espera cinco
-      // segundos a que el bridge conteste—. Es idempotente por su texto, que
-      // no cambia: el reintento cada 5 s no lo repite.
+      // Y A LA PANTALLA (#306): sin este socket no hay partida ninguna. Es
+      // idempotente por su trío, que no cambia: el reintento cada 5 s no lo
+      // repite. El `message` cita la URL EFECTIVA del socket para el REGISTRO
+      // (#341: con `?offset=` o `?bridge=` no está donde dice el snapshot); el
+      // jugador lee `DETALLE_SIN_PARTIDA`, el MISMO que pone el timeout de
+      // `createGameClient` por esta misma causa, para que los dos colapsen en
+      // un solo muro (#469).
       errors.push("bridge", `el socket de la partida no abre (${this._url})`, event, {
         alJugador: AVISO_PARTIDA,
+        detalleAlJugador: DETALLE_SIN_PARTIDA,
       });
     };
 
@@ -223,10 +227,13 @@ export class BridgeClient {
       const type = typeof msg.type === "string" ? msg.type : "<no type>";
       // A la pantalla con el mismo titular que el `onerror` (#306): para quien
       // juega, «se perdió lo que acabas de pedir porque no hay socket» y «el
-      // socket no abre» son la misma noticia, y colapsan en un aviso. El tipo
-      // de trama perdida sigue en el detalle.
+      // socket no abre» son la misma noticia, y el título los encaja en un
+      // aviso. El detalle es OTRO a propósito —es otro hecho: algo que el
+      // jugador pidió no llegó—; el tipo de trama perdida se queda en el
+      // `message`, para el registro.
       errors.push("bridge", `se perdió el mensaje '${type}': no hay conexión con la partida`, undefined, {
         alJugador: AVISO_PARTIDA,
+        detalleAlJugador: "La partida no recibió tu última acción: el servidor no responde.",
       });
     }
   }

@@ -151,17 +151,17 @@ async function main() {
     });
     await ctx.waitFor("window.__nefan", () => Boolean(window.__nefan));
     // Sin bridge el arranque de partida falla a propósito y el jugador ve el
-    // muro; se cierra (lo mide `fixtures-sin-bridge.mjs`, aquí es el camino).
-    // Se espera al muro DE BOOTSTRAP por su titular y no a «un muro en rojo»:
-    // el del socket sale a los ~0 ms y el del arranque a los ~5 s; cerrar el
-    // primero deja el segundo encima de todas las capturas (medido el día que
-    // nace este guion).
+    // muro «Sin conexión con la partida»; se cierra (lo mide
+    // `fixtures-sin-bridge.mjs`, aquí es el camino). Desde #469 es UN muro por
+    // esa causa —el `onerror` del socket y el timeout del bootstrap entran al
+    // canal con el mismo trío—, así que cerrarlo una vez basta; que no vuelva
+    // ni cambie de texto lo canda el guion 77.
     await ctx.waitFor(
-      "el muro de arranque del bridge",
+      "el muro de arranque sin bridge",
       () =>
         document.getElementById("narrative-loader")?.classList.contains("error") === true &&
         (document.getElementById("narrative-loader-title")?.textContent ?? "").includes(
-          "No se pudo arrancar la partida",
+          "Sin conexión con la partida",
         ),
       20000,
     );

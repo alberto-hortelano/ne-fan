@@ -66,42 +66,59 @@ async function waitPort(port, ms) {
   return false;
 }
 
-/** Espera el muro de arranque y afirma que cita la URL EFECTIVA del socket
- *  (#341): la que la propia página dice haber resuelto con `serviceUrl`, ya
- *  aplicados los overrides de la query. Se compara contra lo que declara la
- *  página y NO contra una URL que escriba este guion, porque escribirla aquí
- *  sería la tautología de siempre: el runner afirmando su propio texto.
+/** Jerga de desarrollo que no puede llegar al muro del jugador (#469): el
+ *  nombre del proceso, el esquema del socket y los milisegundos del timeout. */
+const JERGA = /bridge|ws:\/\/|\d+\s*ms\b/i;
+
+/** Espera a que el bootstrap haya fallado —por ESTADO: la entrada `session`
+ *  «bootstrap failed» que deja el `catch` de `main.ts`, no 5 s de reloj— y
+ *  afirma las dos mitades de #469 + #341:
  *
- *  La aserción vieja —`/bridge/i.test(detalle)`— la implica y se fue con ella:
- *  la palabra «bridge» sale igual en un muro que manda a mirar al puerto
- *  equivocado. */
-async function muroCitaElSocket(page, ctx, fallos, etiqueta) {
-  // Se espera al muro DE BOOTSTRAP por su titular, no a «un muro cualquiera en
-  // rojo». Desde #306 el `onerror` del socket pinta el suyo un instante antes
-  // (a los ~0 ms, contra los 5 s que tarda el timeout de `createGameClient`):
-  // esperar por la clase `error` a secas mediría ese, y este candado dejaría de
-  // mirar el mensaje que #341 arregla.
+ *  - El MURO es uno, en el idioma del jugador: titular «Sin conexión con la
+ *    partida» y un detalle sin `ws://`, sin `bridge`, sin ms. Hasta #469 aquí
+ *    se esperaba el SEGUNDO muro, el del timeout del bootstrap, con el texto
+ *    técnico en inglés dentro.
+ *  - El REGISTRO cita la URL EFECTIVA del socket (#341): la que la propia
+ *    página dice haber resuelto con `serviceUrl`, ya aplicados los overrides de
+ *    la query. Se compara contra lo que declara la página y NO contra una URL
+ *    que escriba este guion, porque escribirla aquí sería la tautología de
+ *    siempre: el runner afirmando su propio texto. Vive en el `message` de las
+ *    entradas `bridge` (`.error-log__msg`), que es donde #469 lo relegó. */
+async function unMuroYElRegistroConLaUrl(page, ctx, fallos, etiqueta) {
   await ctx.waitFor(
-    `el muro de arranque del bridge · ${etiqueta}`,
+    `el bootstrap falla sin bridge (entrada «bootstrap failed» del registro) · ${etiqueta}`,
     () =>
-      document.getElementById("narrative-loader")?.classList.contains("error") === true &&
-      (document.getElementById("narrative-loader-title")?.textContent ?? "").includes(
-        "No se pudo arrancar la partida",
+      [...document.querySelectorAll(".error-log__entry")].some(
+        (e) =>
+          (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "session" &&
+          (e.querySelector(".error-log__msg")?.textContent ?? "").includes("bootstrap failed"),
       ),
     20000,
   );
-  const { detalle, socket } = await page.evaluate(() => ({
+  const { enError, titulo, detalle, socket, mensajesBridge } = await page.evaluate(() => ({
+    enError: document.getElementById("narrative-loader")?.classList.contains("error") === true,
+    titulo: document.getElementById("narrative-loader-title")?.textContent ?? "",
     detalle: document.getElementById("narrative-loader-detail")?.textContent ?? "",
     socket: window.__nefan.servicios()["game-gateway"],
+    mensajesBridge: [...document.querySelectorAll(".error-log__entry")]
+      .filter((e) => (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "bridge")
+      .map((e) => e.querySelector(".error-log__msg")?.textContent ?? ""),
   }));
   console.log(`· ${etiqueta} · socket efectivo ${socket}`);
-  console.log(`  muro: "${detalle.slice(0, 100)}…"`);
-  if (!detalle.includes(socket)) {
+  console.log(`  muro: «${titulo}» — "${detalle.slice(0, 100)}"`);
+  console.log(`  registro (bridge): ${mensajesBridge.length} entrada(s) · "${(mensajesBridge[0] ?? "").slice(0, 100)}"`);
+  if (!enError || !titulo.includes("Sin conexión con la partida")) {
+    fallos.push(`${etiqueta}: con el bootstrap fallido el muro no es el de «Sin conexión con la partida» — «${titulo}»`);
+  }
+  if (JERGA.test(detalle)) {
+    fallos.push(`${etiqueta}: el muro le enseña jerga de desarrollo al jugador (#469) — "${detalle.slice(0, 130)}"`);
+  }
+  if (!mensajesBridge.some((m) => m.includes(socket))) {
     fallos.push(
-      `${etiqueta}: el muro no cita la URL efectiva del socket (${socket}) — dice "${detalle.slice(0, 130)}"`,
+      `${etiqueta}: el registro no cita la URL efectiva del socket (${socket}) — dice ${JSON.stringify(mensajesBridge.slice(0, 2))}`,
     );
   }
-  return detalle;
+  return { detalle, mensajesBridge };
 }
 
 // La espera por ESTADO es la de `qa/lib/sonda.mjs` — la MISMA que usa el
@@ -142,15 +159,11 @@ async function main() {
     // el jugador ve el muro de error. Eso es CORRECTO y se comprueba: lo que
     // no puede pasar es que además se lleve por delante el visor.
     //
-    // Se espera por el MURO concreto (#narrative-loader en estado error), no
-    // por «un botón que ponga Cerrar»: el título tiene el suyo y aparece al
-    // instante, así que esa espera devolvía el control ~4 s antes de que el
-    // bootstrap terminara y medía el juego a medio arrancar.
-    // Y ANTES que el muro del arranque, el aviso del SOCKET (#306). Es la otra
-    // mitad del canal: con el título todavía sin pintar no hay `#ts-error`
-    // donde escribir, así que el aviso va al muro — el sitio que el jugador
-    // tiene delante en ese instante. Sin esto, el cliente se queda cinco
-    // segundos mudo mientras el socket ya ha fallado.
+    // El aviso del SOCKET llega al muro mucho antes del timeout del bootstrap
+    // (#306): con el título todavía sin pintar no hay `#ts-error` donde
+    // escribir, así que va al muro — el sitio que el jugador tiene delante en
+    // ese instante. Sin esto, el cliente se queda cinco segundos mudo mientras
+    // el socket ya ha fallado. Se afirma con su propia ventana (4 s).
     const avisoDelSocket = await ctx
       .waitFor(
         "el aviso del socket llega al muro antes que el timeout del arranque",
@@ -171,7 +184,10 @@ async function main() {
       console.log(`· aviso del socket: "${avisoDelSocket.detalle.slice(0, 80)}"`);
     }
 
-    await muroCitaElSocket(page, ctx, fallos, "sin bridge");
+    // Y con el bootstrap ya fallido, el muro sigue siendo ESE (uno por causa,
+    // #469) y el registro tiene la URL. Hasta aquí se medía el muro a medio
+    // arrancar (#308) si no se esperaba por estado.
+    await unMuroYElRegistroConLaUrl(page, ctx, fallos, "sin bridge");
     await page.screenshot({ path: join(SHOTS, "sin-bridge-01-error-de-arranque.png") });
     await page.evaluate(() => document.getElementById("narrative-loader-dismiss")?.click());
 
@@ -200,7 +216,7 @@ async function main() {
     // SEGUNDA PASADA, y es la que le da dientes al candado de arriba: el
     // socket movido a otro host y otro puerto con `?bridge=`. Con el bloque de
     // puertos por defecto, `ws://localhost:<snapshot>` y la URL efectiva solo
-    // se diferencian en el nombre del host, así que un muro mentiroso casi
+    // se diferencian en el nombre del host, así que un registro mentiroso casi
     // colaba; aquí no coincide nada. Es además el caso REAL del stack E2E de
     // labs/narrative, donde el muro mandaba a mirar a una máquina que no era.
     const q = new URLSearchParams();
@@ -208,9 +224,9 @@ async function main() {
     q.set("bridge", BRIDGE_MOVIDO);
     await page.goto(`http://localhost:${PORT}/?${q}`, { waitUntil: "domcontentloaded" });
     await ctx.waitFor("window.__nefan (bridge movido)", () => Boolean(window.__nefan));
-    const detalleMovido = await muroCitaElSocket(page, ctx, fallos, "bridge movido");
-    if (!detalleMovido.includes(HOST_MOVIDO)) {
-      fallos.push(`con \`?bridge=\` el muro no nombra el host al que apunta el socket (${HOST_MOVIDO})`);
+    const movido = await unMuroYElRegistroConLaUrl(page, ctx, fallos, "bridge movido");
+    if (!movido.mensajesBridge.some((m) => m.includes(HOST_MOVIDO))) {
+      fallos.push(`con \`?bridge=\` el registro no nombra el host al que apunta el socket (${HOST_MOVIDO})`);
     }
     await page.screenshot({ path: join(SHOTS, "sin-bridge-03-bridge-movido.png") });
 

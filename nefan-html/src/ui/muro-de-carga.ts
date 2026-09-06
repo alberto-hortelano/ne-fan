@@ -58,9 +58,23 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
   let loaderStartedAt = 0;
   let loaderTicker: ReturnType<typeof setInterval> | null = null;
   let motivoDelUltimoMuro: string | null = null;
-  /** La fuente del aviso que pintó el muro, o `null` si no lo puso un aviso.
-   *  Permite apagarlo sin tocar los muros legítimos (arranque fallido, fallo de
-   *  generación). */
+  /** QUIÉN puso el muro que hay en pantalla: la fuente del aviso que lo pintó,
+   *  o `null` si lo puso una llamada directa (`mostrar`, `fallo`). Es la
+   *  POLÍTICA de retirada del muro, y está escrita porque hasta #469 era un
+   *  accidente que funcionaba: `fallo()` no la tocaba, así que un muro legítimo
+   *  pintado encima de uno de aviso heredaba su fuente y lo cerraba el
+   *  `resuelto` de otra causa.
+   *
+   *  | Quién puso el muro            | `resuelto(source)` de esa causa | `resuelto` de otra | `alCambiarElTitulo(true)`     | `fallo()` legítimo después          |
+   *  |-------------------------------|---------------------------------|--------------------|-------------------------------|-------------------------------------|
+   *  | aviso (`= source`)            | se retira solo                  | nada               | se retira (el título lo tiene) | lo sustituye y toma la propiedad    |
+   *  | `fallo()` del motor/título (`null`) | nada                      | nada               | nada                          | lo sustituye                        |
+   *  | `mostrar()` (espera, `null`)  | nada                            | nada               | nada                          | lo sustituye                        |
+   *
+   *  Corolario: el bridge que LLEGA tras un bootstrap fallido por su ausencia
+   *  retira el muro —«sin conexión con la partida» dejó de ser cierto, y el
+   *  muro lo puso ese aviso—. Que el cliente siga siendo un visor hasta
+   *  recargar es otra decisión, y no vive aquí. Lo demuestra el guion 78. */
   let muroPuestoPorAviso: string | null = null;
 
   function mostrar(titulo: string, detalle: string): void {
@@ -102,6 +116,10 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
 
   function fallo(titulo: string, detalle: string, salida: SalidaDelOverlay = "cerrar"): void {
     if (!loaderEl) return;
+    // Quien pinta un muro es su dueño: si venía de un aviso, el suscriptor de
+    // abajo vuelve a escribir la fuente justo después de llamar aquí. Sin este
+    // reset, un `resuelto` de una causa ajena cerraba un muro que no era suyo.
+    muroPuestoPorAviso = null;
     loaderEl.classList.remove("error");
     loaderEl.classList.add("visible", "error");
     if (loaderTitle) loaderTitle.textContent = titulo;
@@ -113,8 +131,8 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     // cinco botones de ataque y recargar— y con el mismo peso visual, así que
     // media pantalla pulsaba la que no era. Donde sí sigue estando es en los
     // muros que tienen partida detrás (`salida: "cerrar"`), que son todos los
-    // demás — incluido el del arranque sin bridge, que es el que cierra
-    // `qa/fixtures-sin-bridge.mjs` para entrar al modo fixtures.
+    // demás — incluido el de «sin conexión con la partida», que es el que
+    // cierra `qa/fixtures-sin-bridge.mjs` para entrar al modo fixtures.
     if (loaderDismiss) loaderDismiss.hidden = sinMundo;
     motivoDelUltimoMuro = sinMundo ? `${titulo}. ${detalle}` : null;
     if (loaderTicker) {
@@ -163,6 +181,8 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     }
     titleScreen.avisar(e.aviso);
     if (!elTituloManda()) {
+      // DESPUÉS de `fallo()`, que pone la propiedad a `null`: aquí el dueño es
+      // el aviso, y es lo que permite que `resuelto` lo retire.
       fallo(e.aviso.titulo, e.aviso.mensaje);
       muroPuestoPorAviso = e.aviso.source;
     }
