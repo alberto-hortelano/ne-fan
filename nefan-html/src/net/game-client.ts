@@ -252,7 +252,7 @@ export function createGameClient(
     const timer = setTimeout(() => {
       // La URL que se cita es la EFECTIVA (`bridge.url`), no el puerto del
       // snapshot: este texto lo pinta el muro que ve el jugador
-      // (`setLoaderState` en bootstrap), y con `?offset=` o `?bridge=` el
+      // (`muro.fallo` en bootstrap), y con `?offset=` o `?bridge=` el
       // socket no está donde dice el snapshot (#341).
       const msg = `bridge did not connect within ${timeoutMs}ms — is nefan-core bridge running on ${bridge.url}?`;
       errors.push("session", msg);

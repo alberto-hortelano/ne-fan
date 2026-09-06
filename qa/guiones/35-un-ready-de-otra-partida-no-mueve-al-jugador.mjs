@@ -36,7 +36,7 @@
  *    · «no retira el overlay» comparaba `"" === ""` porque el loader ya estaba
  *      cerrado — verde incluso con el bug puesto. Ahora el bloque 1 ABRE el
  *      overlay por el camino del juego (un `generating` propio) antes de
- *      entregar lo ajeno, así que el `hideLoader()` que teme sí tiene algo que
+ *      entregar lo ajeno, así que el `muro.ocultar()` que teme sí tiene algo que
  *      cerrar.
  *    · «el error tampoco mueve al jugador» era infalsificable por
  *      construcción: un `phase:"error"` no lleva `spawn` y la escritura de
@@ -134,7 +134,7 @@ export default async function (ctx) {
   // retira el loader» comparaba `"" === ""` y salía VERDE CON EL BUG PUESTO —
   // lo cazó QA en la corrida donde el jugador se teletransportaba 17 m. Se
   // abre por el camino del juego (un `generating` de MI sesión, que es lo que
-  // hace `showLoader`), no tocando el DOM: así lo que se mide después es lo
+  // hace `muro.mostrar`), no tocando el DOM: así lo que se mide después es lo
   // que le pasa a quien está esperando de verdad.
   const conOverlay = await entregar(ctx, {
     type: "narrative_status",
@@ -166,7 +166,7 @@ export default async function (ctx) {
       `(el spawn ajeno pedía ${JSON.stringify(destinoAjeno)})`,
   );
   ctx.expect(
-    "…y tampoco le retira el overlay al que SÍ está esperando (`hideLoader` del ready ajeno)",
+    "…y tampoco le retira el overlay al que SÍ está esperando (`muro.ocultar()` del ready ajeno)",
     ajeno.despues.overlay.includes("visible"),
     `#narrative-loader "${ajeno.antes.overlay}" → "${ajeno.despues.overlay}"`,
   );

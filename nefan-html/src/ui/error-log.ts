@@ -155,11 +155,12 @@ const MAX_ENTRIES = 200;
 export class ErrorLog {
   private entries: ErrorEntry[] = [];
   private container: HTMLElement | null = null;
-  /** El ÚNICO suscriptor de avisos, registrado por `main.ts`. Uno, y el tipo
+  /** El ÚNICO suscriptor de avisos: el muro de carga (`ui/muro-de-carga.ts`),
+   *  que se suscribe desde su fábrica. Uno, y el tipo
    *  lo defiende: con dos, el mismo fallo se pintaría dos veces y la «una sola
    *  verdad» de #306 quedaría en una promesa que nadie puede romper en verde. */
   private suscriptor: ((e: EventoDeAviso) => void) | null = null;
-  /** Los eventos emitidos ANTES de que `main.ts` se suscriba: los fallos que
+  /** Los eventos emitidos ANTES de que el muro se suscriba: los fallos que
    *  #306 persigue pueden saltar antes de que exista el pintor. */
   private pendientes: EventoDeAviso[] = [];
   /** Los avisos ya notificados, por (fuente, titulo, mensaje). `bridge-client`
@@ -186,7 +187,7 @@ export class ErrorLog {
     if (this.suscriptor) {
       throw new Error(
         "ErrorLog.onAviso: ya hay un suscriptor de avisos. El aviso al jugador tiene UN " +
-          "pintor (main.ts), que decide dónde según el estado de la pantalla.",
+          "pintor (ui/muro-de-carga.ts), que decide dónde según el estado de la pantalla.",
       );
     }
     this.suscriptor = cb;
@@ -256,16 +257,16 @@ export class ErrorLog {
 
   /** SIEMPRE en una microtarea, y esa es toda la gracia.
    *
-   *  El pintor vive en `main.ts` y toca cosas que ese módulo declara MÁS ABAJO
-   *  que el punto donde se suscribe (`loaderEl`). Entregar en el mismo turno
-   *  síncrono significaba que el día que alguien etiquetara un `push` que
-   *  ocurre durante la evaluación del módulo —que es justo lo que la cola de
-   *  pendientes invita a hacer— el cliente moría con un `ReferenceError` de
-   *  zona muerta temporal: sin hook, sin título, página en blanco. Medido por
-   *  QA con una sonda (T9, H-5).
+   *  El pintor (`ui/muro-de-carga.ts`) se suscribe desde su fábrica, a mitad
+   *  de la evaluación de `main.ts`, y lo que hace al pintar toca cosas de esa
+   *  raíz. Entregar en el mismo turno síncrono significa que el día que alguien
+   *  etiquete un `push` que ocurre durante esa evaluación —que es justo lo que
+   *  la cola de pendientes invita a hacer— el cliente muere con un
+   *  `ReferenceError` de zona muerta temporal: sin hook, sin título, página en
+   *  blanco. Medido por QA con una sonda (T9, H-5).
    *
    *  Aplazar un tick lo hace IMPOSIBLE en vez de improbable: cuando la
-   *  microtarea corre, el módulo ha terminado de evaluarse entero. El orden
+   *  microtarea corre, la raíz ha terminado de evaluarse entera. El orden
    *  entre eventos se conserva (las microtareas son FIFO), y va por el mismo
    *  camino haya suscriptor o no: dos caminos serían dos comportamientos. */
   private entrega(e: EventoDeAviso): void {

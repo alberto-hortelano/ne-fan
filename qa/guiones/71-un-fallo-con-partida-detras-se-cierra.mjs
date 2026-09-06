@@ -3,9 +3,9 @@
  *  Escrito por QA-B al validar T10 (#383a). El corte de `status-labels.ts` deja
  *  el titular, el destino y la SALIDA del muro en `status-rotulo.ts` y la frase
  *  en cristiano en `status-motivo.ts`, y con eso deja **un solo sitio** donde
- *  las dos mitades vuelven a encontrarse en ejecución: `nefan-html/src/main.ts`,
- *  que llama a `rotuloDeStatus(...)` y le pasa a `setLoaderState` el titular, el
- *  detalle y la salida del mismo rótulo. Si ese trío se desparejara, no lo vería
+ *  las dos mitades vuelven a encontrarse en ejecución: `pintarFalloDelMotor` en
+ *  `nefan-html/src/main.ts`, que llama a `rotuloDeStatus(...)` y le pasa a
+ *  `muro.fallo` el titular, el detalle y la salida del mismo rótulo. Si ese trío se desparejara, no lo vería
  *  ningún test de core —cada mitad tiene el suyo y los dos seguirían verdes—:
  *  lo vería el jugador, aquí.
  *
