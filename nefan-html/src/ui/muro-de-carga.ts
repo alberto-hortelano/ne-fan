@@ -60,10 +60,9 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
   let motivoDelUltimoMuro: string | null = null;
   /** QUIÉN puso el muro que hay en pantalla: la fuente del aviso que lo pintó,
    *  o `null` si lo puso una llamada directa (`mostrar`, `fallo`). Es la
-   *  POLÍTICA de retirada del muro, y está escrita porque hasta #469 era un
-   *  accidente que funcionaba: `fallo()` no la tocaba, así que un muro legítimo
-   *  pintado encima de uno de aviso heredaba su fuente y lo cerraba el
-   *  `resuelto` de otra causa.
+   *  POLÍTICA de retirada del muro (#469): quien pinta es el dueño, y solo un
+   *  muro puesto por un aviso se retira cuando su fuente demuestra que la causa
+   *  ya no es cierta.
    *
    *  | Quién puso el muro            | `resuelto(source)` de esa causa | `resuelto` de otra | `alCambiarElTitulo(true)`     | `fallo()` legítimo después          |
    *  |-------------------------------|---------------------------------|--------------------|-------------------------------|-------------------------------------|
@@ -117,8 +116,9 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
   function fallo(titulo: string, detalle: string, salida: SalidaDelOverlay = "cerrar"): void {
     if (!loaderEl) return;
     // Quien pinta un muro es su dueño: si venía de un aviso, el suscriptor de
-    // abajo vuelve a escribir la fuente justo después de llamar aquí. Sin este
-    // reset, un `resuelto` de una causa ajena cerraba un muro que no era suyo.
+    // abajo vuelve a escribir la fuente justo después de llamar aquí. Este
+    // reset es lo que impide que un `resuelto` de una causa ajena cierre un
+    // muro que no es suyo.
     muroPuestoPorAviso = null;
     loaderEl.classList.remove("error");
     loaderEl.classList.add("visible", "error");

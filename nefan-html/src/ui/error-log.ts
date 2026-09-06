@@ -63,12 +63,12 @@ export type EventoDeAviso =
  *
  *  Y cuando VARIOS emisores comparten una causa, el DETALLE también es una
  *  constante compartida (#469): el trío `(source, titulo, mensaje)` es la
- *  unidad de dedupe de `ErrorLog.avisa`, así que dos emisores de la misma
- *  causa con dos detalles distintos son dos avisos —dos muros consecutivos para
- *  quien juega, con textos distintos, por el mismo hecho—. El `onerror` del
- *  socket y el timeout de `createGameClient` dicen los dos «sin conexión con la
- *  partida» con `DETALLE_SIN_PARTIDA`; lo técnico (la URL efectiva, los ms) va
- *  en el `message` de cada uno, que es lo que lee el registro. */
+ *  unidad de dedupe de `ErrorLog.avisa`, y solo un trío idéntico garantiza que
+ *  la misma causa sea UN aviso para quien juega, con un texto que no cambia. El
+ *  `onerror` del socket y el timeout de `createGameClient` dicen los dos «sin
+ *  conexión con la partida» con `DETALLE_SIN_PARTIDA`; lo técnico (la URL
+ *  efectiva, los ms) va en el `message` de cada uno, que es lo que lee el
+ *  registro. */
 export const AVISO_MUNDO = "No se puede dibujar el mundo";
 export const AVISO_PERSONAJES = "Los personajes van sin vestir";
 export const AVISO_PARTIDA = "Sin conexión con la partida";

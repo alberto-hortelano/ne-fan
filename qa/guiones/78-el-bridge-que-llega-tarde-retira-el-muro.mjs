@@ -2,12 +2,11 @@
  *  retira el muro «Sin conexión con la partida» (#469, política de
  *  `muroPuestoPorAviso`).
  *
- *  Es la fila de la tabla de `ui/muro-de-carga.ts` que nadie ejercía: el muro
- *  lo puso un AVISO (fuente `bridge`), así que `resuelto("bridge")` —que
- *  `bridge-client` llama al abrir el socket— lo retira. Hasta #469 salía igual
- *  por accidente: `fallo()` no tocaba la propiedad y el muro del bootstrap
- *  heredaba la fuente del aviso. Ahora `fallo()` la pone a `null` y el muro
- *  que se retira es el del aviso, que es el único que hay.
+ *  Es la fila de la tabla de `ui/muro-de-carga.ts` que ningún otro guion
+ *  ejerce: el muro lo puso un AVISO (fuente `bridge`), así que
+ *  `resuelto("bridge")` —que `bridge-client` llama al abrir el socket— lo
+ *  retira. `fallo()` pone la propiedad a `null`, de modo que lo que se retira
+ *  es exactamente el muro del aviso, que sin bridge es el único que hay.
  *
  *  Cómo se llega, sin tocar ningún proceso ajeno: se pide al kernel un puerto
  *  libre (como el 20) y el socket de la página se apunta ahí con `?bridge=`

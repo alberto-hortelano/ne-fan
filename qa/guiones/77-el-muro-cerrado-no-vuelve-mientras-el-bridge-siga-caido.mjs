@@ -2,23 +2,17 @@
  *  CERRÓ no vuelve con los reintentos del socket (#469).
  *
  *  Escrito por QA al validar el corte 1 de #358 (2026-09-06), que saca el muro
- *  de `main.ts` a `ui/muro-de-carga.ts`. Lo que midió entonces (sonda con
- *  `MutationObserver` sobre el muro, bloque 500): el aviso del socket a los
- *  ~180 ms («Sin conexión con la partida», `onerror` de bridge-client) y, a los
- *  ~5.100 ms, el timeout de `createGameClient` pintando OTRO muro con otro
- *  titular y un detalle en inglés; quien cerraba el primero veía el segundo
- *  cinco segundos después, y eso era lo que el issue llamaba «reaparecer». Con
- *  el segundo cerrado, 12 reintentos (≈ 60 s) no volvían a levantarlo:
- *  `ErrorLog` colapsa el aviso por (fuente, titular, mensaje) desde #423.
- *
- *  #469 abolió el segundo muro: el timeout del bootstrap entra al canal de
- *  avisos con el MISMO trío que el `onerror` del socket (`DETALLE_SIN_PARTIDA`)
- *  y la dedupe hace que para el jugador no exista. Por eso el paso 2 afirma
- *  que, cuando el bootstrap ya ha fallado (por ESTADO: la entrada `session`
- *  «bootstrap failed» del registro), el muro sigue siendo el mismo —igual
- *  titular, igual detalle— y que ni el titular ni el detalle han cambiado ni
- *  una vez por debajo desde el aviso (un `MutationObserver` cuenta los
- *  cambios de texto; comparar antes/después se perdería un ida-y-vuelta).
+ *  de `main.ts` a `ui/muro-de-carga.ts`, y reescrito con #469. Sin bridge hay
+ *  dos emisores de la misma causa: el `onerror` del socket (a los ~180 ms) y el
+ *  timeout de `createGameClient` (a los ~5 s). Los dos entran al canal de
+ *  avisos con el MISMO trío (fuente `bridge`, `AVISO_PARTIDA`,
+ *  `DETALLE_SIN_PARTIDA`), y la dedupe de `ErrorLog` (#423) garantiza que el
+ *  segundo no sea noticia: un solo muro, con un solo texto. Por eso el paso 2
+ *  afirma que, cuando el bootstrap ya ha fallado (por ESTADO: la entrada
+ *  `session` «bootstrap failed» del registro), el muro sigue siendo el mismo
+ *  —igual titular, igual detalle— y que ni el titular ni el detalle han
+ *  cambiado ni una vez por debajo desde el aviso (un `MutationObserver` cuenta
+ *  los cambios de texto; comparar antes/después se perdería un ida-y-vuelta).
  *
  *  Y lo de siempre, por ESTADO y no por reloj: se cierra ese único muro y se
  *  espera a que el socket haya reintentado CUATRO veces más —cada reintento
@@ -92,7 +86,7 @@ export default async function (ctx) {
       const titulo = document.getElementById("narrative-loader-title")?.textContent ?? "";
       if (!l?.classList.contains("error") || !titulo.includes("Sin conexión con la partida")) return null;
       // Desde aquí se cuentan los cambios de TEXTO del titular y del detalle:
-      // un segundo muro por la misma causa se vería como un cambio, aunque
+      // cualquier otro aviso por la misma causa se vería como un cambio, aunque
       // volviera al texto de antes.
       const cambios = [];
       const mira = (id) => {

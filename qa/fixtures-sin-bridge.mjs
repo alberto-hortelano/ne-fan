@@ -75,9 +75,9 @@ const JERGA = /bridge|ws:\/\/|\d+\s*ms\b/i;
  *  afirma las dos mitades de #469 + #341:
  *
  *  - El MURO es uno, en el idioma del jugador: titular «Sin conexión con la
- *    partida» y un detalle sin `ws://`, sin `bridge`, sin ms. Hasta #469 aquí
- *    se esperaba el SEGUNDO muro, el del timeout del bootstrap, con el texto
- *    técnico en inglés dentro.
+ *    partida» y un detalle sin `ws://`, sin `bridge`, sin ms. El `onerror` del
+ *    socket y el timeout del bootstrap entran al canal con el mismo trío, y por
+ *    eso con el bootstrap ya fallido el muro sigue siendo este.
  *  - El REGISTRO cita la URL EFECTIVA del socket (#341): la que la propia
  *    página dice haber resuelto con `serviceUrl`, ya aplicados los overrides de
  *    la query. Se compara contra lo que declara la página y NO contra una URL
