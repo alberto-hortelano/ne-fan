@@ -3,11 +3,8 @@
  *  UNA vista: primera persona (FpsRenderer → three.js). Conecta al bridge de
  *  nefan-core por WebSocket o cae a simulación local. */
 
-import type { Vec3, EffectiveParams } from "@nefan-core/src/types.js";
+import type { Vec3 } from "@nefan-core/src/types.js";
 import { instalarNefanHook } from "./dev/nefan-hook.js";
-import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
-import { combatRegistry } from "@nefan-core/src/combat/registry.js";
-import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import { pickNearestTarget } from "@nefan-core/src/scene/aim.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
@@ -50,6 +47,7 @@ import { EcoDelCombate } from "./ui/eco-del-combate.js";
 import { HablarConUnNpc } from "./ui/hablar-con-un-npc.js";
 import { paso } from "./ui/async-ui.js";
 import { ActionBar } from "./ui/action-bar.js";
+import { crearHudDeCombate } from "./ui/hud-de-combate.js";
 import { crearEtiquetasDelMundo } from "./ui/etiquetas-del-mundo.js";
 import { PortraitView } from "./ui/portrait.js";
 import { applyUiTheme, BASE_UI_THEME } from "./ui/theme.js";
@@ -79,8 +77,6 @@ const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record
 const ARCADE_SPEED_SCALE = 2.2;
 const SPEED = (playerCfg.walk_speed ?? 3.0) * ARCADE_SPEED_SCALE;
 const SPRINT_SPEED = (playerCfg.sprint_speed ?? 5.5) * ARCADE_SPEED_SCALE;
-
-const config = loadConfig(combatConfigJson);
 
 // --- DOM elements ---
 /** Caja del MUNDO: el renderer mete aquí dentro su lienzo WebGL (y la UI de
@@ -171,7 +167,7 @@ const session = createClientSession({
   style: ({ styleId }) => applySessionStyle(styleId),
   theme: ({ uiTheme }) => applyUiTheme(uiTheme),
   renderModes: (f) => applyRenderModes(f),
-  combat: ({ combatSystem }) => applySessionCombatSystem(combatSystem),
+  combat: ({ combatSystem }) => hud.aplicarSistema(combatSystem),
   history: ({ sessionId }) => historyBrowser.setSession(sessionId),
   entrada: ({ sessionId }) => entrada.sesion(sessionId),
   // El gate del diálogo, que hasta #311 `leave()` no deshacía: volver al
@@ -357,8 +353,6 @@ const playerHpBar = document.getElementById("player-hp") as HTMLElement;
 const playerHpText = document.getElementById("player-hp-text") as HTMLElement;
 const enemyBarsContainer = document.getElementById("enemy-bars") as HTMLElement;
 const combatLog = document.getElementById("combat-log") as HTMLElement;
-/** Ataques del sistema de combate de la sesión, clicables y con su tecla. */
-const attackBar = new ActionBar(document.getElementById("action-bar") as HTMLElement);
 /** Acción contextual (hablar, reaparecer) y confirmación Y/N: mismos botones,
  *  distinta región. */
 const promptBar = new ActionBar(document.getElementById("interact-prompt") as HTMLElement);
@@ -484,43 +478,15 @@ try {
   errors.push("input", `proveedor de input inválido (?input=${requestedInputId})`, err);
   throw err;
 }
-input.onAttackTypeChanged = () => renderAttackBar();
 
 // Teclas de desarrollo (G/B): fijas, independientes del provider.
 const devInput = new DevToolsInput({ dialogoAbierto, propuestaDeTileAbierta });
 
 
-// --- Sistema de combate de la sesión (catálogo → HUD + teclas) ---
-// Espejo de applyRenderModes: el id viene congelado en el save
-// (world.combat_system); "" (sin sesión / saves previos) = estándar. El HUD
-// y el mapeo 1..N se regeneran desde el catálogo que declara el sistema.
-let attackCatalog: readonly AttackSpec[] = [];
-/** Id efectivo del sistema de combate de la sesión ("" = sin sesión). */
-let sessionCombatSystemId = "";
-
-/** Selector de ataque: un botón por ataque del catálogo de la sesión, con su
- *  tecla. El provider sigue siendo el dueño de la selección — el click es un
- *  origen más de intención, igual que la tecla. */
-function renderAttackBar(): void {
-  attackBar.set(
-    attackCatalog.map((spec, i) => ({
-      id: `attack:${spec.id}`,
-      label: spec.label,
-      key: String(i + 1),
-      active: input.state.selectedAttack === spec.id,
-      invoke: () => input.selectAttack(spec.id),
-    })),
-  );
-}
-
-function applySessionCombatSystem(id: string): void {
-  sessionCombatSystemId = id;
-  attackCatalog = combatRegistry.create(id || undefined, config).attacks;
-  input.setAttackBindings(attackCatalog.map((a) => a.id));
-  renderAttackBar();
-  if (id) log(`Combate: ${id} (${attackCatalog.length} ataque${attackCatalog.length === 1 ? "" : "s"})`);
-}
-applySessionCombatSystem(""); // arranque sin sesión: catálogo estándar
+/** El HUD de combate: el catálogo del sistema de la sesión, su barra con las
+ *  teclas 1..N y los parámetros del ataque elegido. Nace con el catálogo
+ *  estándar (sin sesión) y el sink `combat` le instala el de cada partida. */
+const hud = crearHudDeCombate({ input: () => input, armaDelJugador: playerWeaponId, log });
 
 /** Lo que el jugador VE y LEE de lo que resuelve el sim: el aro del ataque, las
  *  líneas del registro de combate y si sigue de pie. El combate se resuelve en
@@ -528,7 +494,7 @@ applySessionCombatSystem(""); // arranque sin sesión: catálogo estándar
 const eco = new EcoDelCombate({
   log: (msg) => log(msg),
   respingo: (id) => animacion.respingo(id),
-  paramsDelAtaque: () => getSelectedParams(),
+  paramsDelAtaque: () => hud.parametrosSeleccionados(),
   ataqueElegido: () => input.state.selectedAttack,
   jugador: () => ({ pos: playerPos, forward: mirada.forward }),
   posicionesDeEnemigosVivos: () => mundo.enemigos.filter((e) => e.alive).map((e) => e.pos),
@@ -706,31 +672,6 @@ fpsRenderer.setCollisionCellsProvider((tileKey) => {
   }
   return { cells, size };
 });
-
-// --- Utility ---
-
-function getSelectedParams(): EffectiveParams {
-  const type = input.state.selectedAttack;
-  if (config.attack_types[type]) {
-    const weaponData = config.weapons[playerWeaponId] ?? config.weapons["unarmed"];
-    return getEffectiveParams(type, config.attack_types, weaponData);
-  }
-  // Ataques fuera de combat_config.json (p.ej. "strike" del combate básico):
-  // params sintéticos desde el catálogo — solo alimentan el feedback visual
-  // del aro de ataque (el daño real lo resuelve el sistema en el bridge).
-  const spec = attackCatalog.find((a) => a.id === type);
-  if (!spec) {
-    throw new Error(`getSelectedParams: attack '${type}' is neither in combat_config nor in the session catalog`);
-  }
-  return {
-    optimal_distance: spec.displayRange / 2,
-    distance_tolerance: spec.displayRange / 2, // el aro cubre [0, displayRange]
-    area_radius: spec.displayRange,
-    base_damage: 0,
-    damage_reduction: 0,
-    wind_up_time: 0,
-  };
-}
 
 // --- Respawn ---
 
@@ -1128,7 +1069,7 @@ instalarNefanHook({
   travelLedger,
   tileLedger,
   characterSprites,
-  attackBar,
+  attackBar: hud.barra,
   promptBar,
   confirmBar,
   dialoguePanel: conversacion.panel,
@@ -1140,8 +1081,8 @@ instalarNefanHook({
   session,
   collidesAt,
   dialogoAbierto,
-  combatSystemId: () => sessionCombatSystemId,
-  attackCatalog: () => attackCatalog,
+  combatSystemId: () => hud.sistemaId(),
+  attackCatalog: () => hud.catalogo(),
   addTileRaw: fixtures.addTileRaw,
   loadSceneData: fixtures.loadSceneData,
   cargarFixture: fixtures.cargarFixture,

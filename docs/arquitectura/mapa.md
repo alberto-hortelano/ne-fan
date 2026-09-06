@@ -67,7 +67,9 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
                            etiquetas-del-mundo: qué se rotula y cuándo se
                            enciende la mirilla (world-labels coloca las cajas);
                            conversacion: abrir y cerrar el diálogo (con el ratón
-                           que suelta y devuelve) y la elección camino del motor
+                           que suelta y devuelve) y la elección camino del motor;
+                           hud-de-combate: el catálogo de ataques de la sesión,
+                           su barra 1..N y los parámetros del ataque elegido
     net/                   bridge-client / narrative-client (WS al bridge)
     input/                 Providers: keyboard (default) y scripted (bench)
 

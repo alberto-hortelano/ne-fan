@@ -74,9 +74,9 @@ export interface DepsDelHook {
   session: { readonly facets: unknown };
   collidesAt(x: number, z: number): boolean;
   dialogoAbierto(): boolean;
-  /** Id del sistema de combate de la sesión y su catálogo: son `let` de
-   *  módulo en `main.ts` (los reescribe cada partida), así que llegan como
-   *  preguntas y no como valores congelados en el arranque. */
+  /** Id del sistema de combate de la sesión y su catálogo: los reescribe cada
+   *  partida `ui/hud-de-combate.ts`, así que llegan como preguntas y no como
+   *  valores congelados en el arranque. */
   combatSystemId(): string;
   attackCatalog(): readonly AttackSpec[];
   /** Format D crudo → escena servida sin salidas → `addTile`. La normalización

@@ -32,7 +32,9 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
   elegir ataque, confirmar Y/N, viajar, reaparecer y las opciones de
   diálogo. El click entra por el MISMO camino que la tecla — el
   `IntentSink` del `InputProvider` (`queueAttack/queueInteract/…`), sin
-  lógica duplicada en main.ts. Con el ratón capturado los botones se
+  lógica duplicada en el cliente; la barra de ataques la pinta
+  `ui/hud-de-combate.ts` desde el catálogo del sistema de combate de la
+  sesión. Con el ratón capturado los botones se
   degradan a recordatorio de teclas (ningún botón HTML recibiría el click).
 - **Diálogo con retrato** (`ui/portrait.ts`): el panel muestra al personaje
   con el que se habla. Por orden: el **hero-shot que el pipeline de skins ya
