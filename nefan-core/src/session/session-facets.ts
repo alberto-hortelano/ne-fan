@@ -90,7 +90,8 @@ export interface FacetSinks {
    *  es destructivo, y el módulo promete que aplicar las mismas facetas dos
    *  veces no cambia nada. Un sink que vaciara sin mirar rompería esa promesa
    *  justo aquí — el primero que quisiera refrescar una faceta a mitad de
-   *  partida se llevaría el mundo por delante. */
+   *  partida se llevaría el mundo por delante. Esa lectura la hace `porValor`
+   *  (abajo), que es cómo el cliente cablea este sink y el de `dialogo`. */
   mundo(f: Pick<SessionFacets, "sessionId">): void;
   /** Estilo visual → generadores de imagen (atlas de superficies, skins). */
   style(f: Pick<SessionFacets, "styleId">): void;
@@ -228,5 +229,29 @@ export function createClientSession(sinks: FacetSinks): ClientSession {
     leave() {
       apply(NO_SESSION);
     },
+  };
+}
+
+/** Un sink «por valor»: aplica solo cuando el id de sesión CAMBIA.
+ *
+ *  Es la promesa del módulo —aplicar las mismas facetas dos veces no cambia
+ *  nada— hecha código UNA vez, para los sinks cuyo efecto es destructivo
+ *  (vaciar el mundo, cerrar la conversación) y que por eso no pueden ejecutar
+ *  a ciegas. Antes eran una variable de módulo por sink en el cliente, con la
+ *  guarda escrita dos veces y un comentario cada una explicando lo mismo.
+ *
+ *  Arranca en el neutro (`NO_SESSION.sessionId`): el `leave()` de un arranque
+ *  que falla llega con los neutros ya puestos y NO dispara (medido el
+ *  2026-08-28 instrumentando el sink del cliente con `qa/guiones/27-…`:
+ *  `dialogo("") · vigente="" · repetido=true`). Cambiar de A a B, o de A al
+ *  título y de vuelta a A, dispara cada vez: lo que se recuerda es el ÚLTIMO id
+ *  aplicado, no el conjunto de los vistos. `aplicar` no recibe el id porque
+ *  ningún sink de los dos lo usa; si un tercero lo necesita, se añade entonces. */
+export function porValor(aplicar: () => void): (f: Pick<SessionFacets, "sessionId">) => void {
+  let vigente = NO_SESSION.sessionId;
+  return ({ sessionId }) => {
+    if (sessionId === vigente) return;
+    vigente = sessionId;
+    aplicar();
   };
 }
