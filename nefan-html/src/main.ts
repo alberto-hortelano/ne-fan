@@ -37,7 +37,6 @@ import { HistoryBrowser } from "./ui/history-browser.js";
 import { inputRegistry } from "./input/registry.js";
 import type { InputProvider } from "./input/input-provider.js";
 import { DevToolsInput } from "./input/dev-tools-input.js";
-import { DialoguePanel } from "./ui/dialogue-panel.js";
 import { TravelPanel } from "./ui/travel-panel.js";
 import { TravelLedger } from "./ui/travel-ledger.js";
 import { TileLedger } from "./ui/tile-ledger.js";
@@ -46,6 +45,7 @@ import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { GraphicsModeChip } from "./ui/graphics-mode.js";
 import { errors } from "./ui/error-log.js";
 import { crearMuroDeCarga } from "./ui/muro-de-carga.js";
+import { crearConversacion } from "./ui/conversacion.js";
 import { EcoDelCombate } from "./ui/eco-del-combate.js";
 import { HablarConUnNpc } from "./ui/hablar-con-un-npc.js";
 import { paso } from "./ui/async-ui.js";
@@ -176,7 +176,7 @@ const session = createClientSession({
   entrada: ({ sessionId }) => entrada.sesion(sessionId),
   // El gate del diálogo, que hasta #311 `leave()` no deshacía: volver al
   // título dejaba puesto lo que abrió la conversación. Llama a
-  // `cerrarDialogo()`, el dueño único del par panel+gate, en vez de repetir
+  // `conversacion.cerrar()`, el dueño único del par panel+gate, en vez de repetir
   // aquí el emparejamiento — que es justo el error que #311 persigue. Por
   // `porValor`, igual que `mundo`: cerrar es destructivo y solo ocurre cuando
   // el id de sesión CAMBIA (la medida del 2026-08-28 que lo justifica vive
@@ -184,7 +184,7 @@ const session = createClientSession({
   //
   // Lo que esto NO hace, dicho para que no se lea de más: no baja el gate a
   // `puerta-de-teclado.ts`. El porqué sigue escrito allí y no ha cambiado.
-  dialogo: porValor(() => cerrarDialogo()),
+  dialogo: porValor(() => conversacion.cerrar()),
 });
 // Pipeline de imagen de la vista fps: atlas de superficies por tile. Las
 // celdas son assets de la LIBRERÍA (kind "surface") — el server pinta solo
@@ -384,7 +384,14 @@ function setConfirmPrompt(
 }
 const connectionStatus = document.getElementById("connection-status") as HTMLElement;
 
-const dialoguePanel = new DialoguePanel();
+/** La conversación con un personaje (`ui/conversacion.ts`): el panel, el ratón
+ *  que suelta y devuelve, y la elección camino del motor. `narrativeClient`
+ *  nace más abajo, en el Init: cruza como función y se lee al elegir. */
+const conversacion = crearConversacion({
+  lienzo: () => fpsRenderer.element,
+  session,
+  enviarEleccion: (eleccion) => narrativeClient.sendDialogueChoice(eleccion),
+});
 const travelPanel = new TravelPanel();
 /** Lo que el juego recuerda del último viaje pedido por «Salidas», paso a
  *  paso: sin esto, un viaje que no llega y uno lento son el mismo silencio. */
@@ -446,13 +453,14 @@ const frontera = crearFronteraDelJugador({
 const requestedInputId = new URLSearchParams(location.search).get("input") ?? undefined;
 /** «Hay una conversación abierta», y SOLO desde su dueño (#314).
  *
- *  Antes esto era un campo público del proveedor que `abrirDialogo` ponía y
- *  `cerrarDialogo` quitaba: una tercera representación del panel, escribible
+ *  Antes esto era un campo público del proveedor que abrir la conversación
+ *  ponía y cerrarla quitaba: una tercera representación del panel, escribible
  *  desde cualquier módulo del cliente. Ahora el proveedor PREGUNTA y la
- *  respuesta se deriva del panel, así que no hay nada que desincronizar ni
+ *  respuesta la deriva del panel su dueño (`ui/conversacion.ts`), así que no
+ *  hay nada que desincronizar ni
  *  nadie de fuera que pueda mentir. Lo comparten el proveedor de juego y las
  *  teclas dev porque es la misma pregunta. */
-const dialogoAbierto = (): boolean => dialoguePanel.isVisible;
+const dialogoAbierto = (): boolean => conversacion.abierta();
 /** «Hay una propuesta de explorar el tile vecino», DERIVADA de su dueño (#329).
  *
  *  Era `input.tileProposalActive`, campo público del proveedor que este bucle
@@ -675,7 +683,7 @@ function aplicarMirada(): void {
 // Pointer lock sobre el lienzo del mundo: oculta el cursor, habilita el mouse
 // look y atacar con LMB.
 fpsRenderer.element.addEventListener("click", () => {
-  if (!dialoguePanel.isVisible) {
+  if (!dialogoAbierto()) {
     // El navegador RECHAZA la captura si el documento no tiene el foco o si
     // se sale del lock y se vuelve a pedir demasiado pronto. El cliente no
     // tiene handler de `unhandledrejection`, así que sin este canal el ratón
@@ -723,93 +731,6 @@ function getSelectedParams(): EffectiveParams {
     wind_up_time: 0,
   };
 }
-
-// --- Dialogue callbacks ---
-
-/** ABRIR Y CERRAR UN DIÁLOGO SON DOS COSAS QUE TIENEN QUE IR JUNTAS (#311).
- *
- *  «Hay una conversación abierta» vivía en dos sitios que nadie obligaba a
- *  coincidir: el panel (`dialoguePanel`) y el gate del input —un campo público
- *  del proveedor que suprimía moverse y atacar—. Estaban emparejados A MANO en
- *  cinco sitios, y bastaba apagar uno sin su `hide()` —o al revés— para dejar
- *  al jugador con el panel puesto y el mundo respondiendo, o con el panel fuera
- *  y los controles muertos. Eso compilaba, pasaba lint y pasaba la batería.
- *
- *  #311 le puso un dueño único, que son estas dos funciones. #314 se llevó el
- *  espejo entero: el proveedor PREGUNTA por `dialogoAbierto()` en vez de
- *  guardar una copia, así que ya no hay par que desemparejar — queda UNA
- *  representación (el panel) y su reflejo en el DOM, que #314 no funde a
- *  propósito. Estas funciones siguen existiendo porque abrir y cerrar tienen
- *  más partes que el panel (el ratón, que el panel suelta y no devuelve), y el
- *  sink de la faceta `dialogo` va ENCIMA y cubre otra cosa: que volver al
- *  título lo deshaga aunque nadie se acuerde. */
-function abrirDialogo(
-  speaker: string,
-  text: string,
-  choices: string[],
-  who?: { id?: string },
-): void {
-  // El panel SUELTA el ratón al abrirse (dialogue-panel.ts: sin cursor no se
-  // pueden clicar las opciones). Hay que apuntar si lo teníamos, porque
-  // devolverlo al cerrar es cosa nuestra y hasta el 2026-08-29 no lo hacía
-  // nadie — ver `cerrarDialogo`.
-  ratonCapturadoAntesDelDialogo = document.pointerLockElement !== null;
-  // Y con el panel en pantalla, el input de juego queda suprimido solo: el
-  // proveedor PREGUNTA por `dialogoAbierto()`, que es este mismo panel (#314).
-  // Aquí había un flag del proveedor que había que levantar a mano junto al
-  // `show()`, y apagar a mano junto al `hide()` de `cerrarDialogo`.
-  dialoguePanel.show(speaker, text, choices, who);
-}
-
-/** Cierra el diálogo: el panel fuera y el input devuelto al jugador.
- *
- *  Idempotente a propósito — el panel se cierra a sí mismo antes de invocar
- *  sus callbacks (`chooseByIndex`, `advance`), así que este `hide()` suele ser
- *  el segundo, y `hide()` solo asigna. Poder llamarlo de más es lo que permite
- *  que el sink de la faceta lo use sin saber si había algo abierto. */
-function cerrarDialogo(): void {
-  dialoguePanel.hide();
-  devolverElRatonTrasElDialogo();
-}
-
-/** ¿Tenía el jugador el ratón capturado cuando se abrió la conversación? Lo
- *  apunta `abrirDialogo` porque el panel lo suelta por dentro. */
-let ratonCapturadoAntesDelDialogo = false;
-
-/** DEVOLVER EL RATÓN AL CERRAR ES PARTE DE CERRAR (#323).
- *
- *  El panel suelta el pointer lock al abrirse y hasta hoy no lo recuperaba
- *  nadie. Con NPCs pacíficos eso solo era un click de más; con enemigos es una
- *  ejecución: atacar con LMB exige el lock
- *  (`keyboard-input-provider.ts`: «e.button === 0 && document.pointerLockElement
- *  !== null»), así que tras hablar el jugador se quedaba pegando a un enemigo a
- *  1,5 m SIN HACER DAÑO y sin que nada se lo dijera. Medido por QA: 50 s a cero
- *  de daño y muerto; recapturando el ratón a mano, el mismo enemigo cayó en 3 s.
- *
- *  Va emparejado con `abrirDialogo` y por el mismo motivo que #311: soltar y
- *  devolver son las dos mitades de un acto, y separarlas deja al jugador con
- *  los controles a medias sin que nada falle.
- *
- *  Solo se devuelve si lo teníamos: quien estaba en modo cursor (mirando
- *  fixtures, con el título recién cerrado) no quiere que una conversación le
- *  capture el ratón por su cuenta. Y el navegador puede NEGARSE (pide gesto
- *  del usuario, y rechaza un lock pedido demasiado pronto tras soltarlo): por
- *  eso va por `paso()`, que lo deja escrito en el registro de errores en vez
- *  de tragárselo. El click sobre el mundo sigue siendo la vía de recuperación. */
-function devolverElRatonTrasElDialogo(): void {
-  if (!ratonCapturadoAntesDelDialogo) return;
-  ratonCapturadoAntesDelDialogo = false;
-  if (document.pointerLockElement !== null) return;
-  paso(
-    fpsRenderer.element.requestPointerLock(),
-    "input",
-    "no se pudo devolver el ratón al cerrar la conversación: haz click en el mundo para volver a atacar",
-  );
-}
-
-dialoguePanel.onAdvanced = () => {
-  cerrarDialogo();
-};
 
 // --- Respawn ---
 
@@ -911,13 +832,13 @@ function gameLoop(now: number): void {
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
   // generación de mundo: la frontera bloquea solo direccionalmente.
-  if (dialoguePanel.isVisible) {
+  if (dialogoAbierto()) {
     // El diálogo suspende la propuesta de tile: sus teclas Y/N quedan mudas.
     // Ya no hay que decírselo al proveedor — lo DERIVA él
     // (`propuestaDeTileAbierta`, #329) de la misma guarda que hay aquí.
     tileConfirmPromptEl.style.display = "none";
   }
-  if (!dialoguePanel.isVisible) {
+  if (!dialogoAbierto()) {
     aplicarMirada();
 
     // El PASO: las reglas (marco relativo al facing, diagonal renormalizada,
@@ -968,10 +889,10 @@ function gameLoop(now: number): void {
       : []),
   ]);
 
-  if (dialoguePanel.isVisible) portrait.tick(now);
+  if (dialogoAbierto()) portrait.tick(now);
 
   // Attack
-  const attackRequested = dialoguePanel.isVisible ? false : input.consumeAttack();
+  const attackRequested = dialogoAbierto() ? false : input.consumeAttack();
 
   // Tick — pero NO mientras el título cubre la pantalla: ahí no hay jugador
   // que simular. El frame que se mandaba llevaba la posición por defecto del
@@ -1018,7 +939,7 @@ function gameLoop(now: number): void {
     playerSprite = animacion.spriteDelJugador(now, modelo, aspecto.skinPrompt(), {
       vivo: eco.jugadorVivo,
       andando:
-        !dialoguePanel.isVisible &&
+        !dialogoAbierto() &&
         (input.state.up || input.state.down || input.state.left || input.state.right),
       esprintando: input.state.sprint,
       unaVez: playerOneShot,
@@ -1210,7 +1131,7 @@ instalarNefanHook({
   attackBar,
   promptBar,
   confirmBar,
-  dialoguePanel,
+  dialoguePanel: conversacion.panel,
   devPanel,
   fpsRenderer,
   fpsAtlas: fpsAtlasController,
@@ -1225,33 +1146,6 @@ instalarNefanHook({
   loadSceneData: fixtures.loadSceneData,
   cargarFixture: fixtures.cargarFixture,
 });
-
-dialoguePanel.onChoice = (idx, text) => {
-  cerrarDialogo();
-  if (!session.active) return;
-  const cur = dialoguePanel.current();
-  narrativeClient.sendDialogueChoice({
-    eventId: `client_${Date.now()}`,  // bridge generates the canonical id
-    choiceIndex: idx,
-    speaker: cur.speaker,
-    speakerId: cur.speakerId,
-    chosenText: text,
-  });
-};
-
-dialoguePanel.onFreeText = (freeText) => {
-  cerrarDialogo();
-  if (!session.active) return;
-  const cur = dialoguePanel.current();
-  narrativeClient.sendDialogueChoice({
-    eventId: `client_${Date.now()}`,
-    choiceIndex: -1,
-    speaker: cur.speaker,
-    speakerId: cur.speakerId,
-    chosenText: freeText,
-    freeText,
-  });
-};
 
 travelPanel.onTravel = (placeId) => {
   if (!session.active) return;
@@ -1402,7 +1296,7 @@ narrativeClient.onNarrativeEvent((event) => {
           mundo.npcs.find((n) => (n.name ?? "") === effect.speaker) ??
           (hablar.ultimoHablado ? mundo.npc(hablar.ultimoHablado) : undefined);
         const skinPrompt = npc?.skinPrompt ?? effect.speakerSkinPrompt;
-        abrirDialogo(
+        conversacion.abrir(
           effect.speaker,
           effect.text,
           effect.choices.map((c) => (typeof c === "string" ? c : c.text)),
@@ -1413,7 +1307,7 @@ narrativeClient.onNarrativeEvent((event) => {
           skinModel: skinPrompt ? spriteRenderer.skinKey(BASE_MODEL, skinPrompt) : undefined,
           baseModel: BASE_MODEL,
         });
-        dialoguePanel.setPortrait(portrait.element);
+        conversacion.panel.setPortrait(portrait.element);
         break;
       }
       case "story_delta":

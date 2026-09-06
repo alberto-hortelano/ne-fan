@@ -6,7 +6,7 @@
  *  El guion 37 vigilaba que el panel y el gate no discreparan… pero desde #314
  *  las dos mitades que comparaba salen de la MISMA expresión:
  *  `__nefan.dialogue().visible` y `__nefan.state().dialogueActive` eran las dos
- *  `dialoguePanel.isVisible` (`main.ts`). Su vigilante comparaba un booleano
+ *  el `isVisible` del panel de diálogo. Su vigilante comparaba un booleano
  *  consigo mismo. (La segunda clave se retiró del hook el 2026-09-01 con #329,
  *  por eso mismo: un segundo nombre de la primera, sin un solo lector.) Al reportarlo se le quitó, y el 37 quedó con lo único que sí
  *  puede ponerse rojo: que hablando el jugador no anda — que es el gate del
@@ -24,11 +24,11 @@
  *     arma en mitad de la conversación (rojo con el sabotaje);
  *   · **las teclas de DESARROLLO** (`dev-tools-input.ts`, el fichero al que
  *     #314 le quitó `DevToolsDeps`) — el bucle llama a
- *     `consumeToggleCollisionDebug()` ANTES del `if (dialoguePanel.isVisible)`,
+ *     `consumeToggleCollisionDebug()` ANTES del `if (dialogoAbierto())`,
  *     así que `B` solo la para el gate (rojo con su propio sabotaje).
  *
  *  QUÉ NO AÍSLA, dicho para que no se lea de más: el WASD, el giro por flechas
- *  (`applyTurnKeys` vive DENTRO del `if (!dialoguePanel.isVisible)` del bucle),
+ *  (`applyTurnKeys` vive DENTRO del `if (!dialogoAbierto())` del bucle),
  *  el ataque, la interacción y la propuesta de tile están gateados DOS veces.
  *  El aserto de las flechas se conserva porque es el hecho que ve el jugador
  *  —hablando, la cámara no se mueve— pero NO mide el gate del proveedor: con

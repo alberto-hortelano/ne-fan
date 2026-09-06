@@ -442,7 +442,7 @@ export default async function (ctx) {
     ctx.log(`spawn en runtime: ${JSON.stringify(nuevo)}`);
     // Cerrar la conversación ANTES de pelear, como haría quien juega: con el
     // panel abierto el cliente SUPRIME el ataque (`main.ts`: «attackRequested
-    // = dialoguePanel.isVisible ? false : …»), así que el secuaz pegaba y el
+    // = dialogoAbierto() ? false : …»), así que el secuaz pegaba y el
     // jugador no podía devolver un solo golpe. Sin este cierre, el guion
     // medía "no le quitó vida" cuando lo que pasaba es que no dejaba atacar.
     await ctx.nefan("advanceDialogue");

@@ -65,7 +65,9 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
                            muro-de-carga: el overlay de espera/fallo y el único
                            pintor de avisos al jugador (#306)
                            etiquetas-del-mundo: qué se rotula y cuándo se
-                           enciende la mirilla (world-labels coloca las cajas)
+                           enciende la mirilla (world-labels coloca las cajas);
+                           conversacion: abrir y cerrar el diálogo (con el ratón
+                           que suelta y devuelve) y la elección camino del motor
     net/                   bridge-client / narrative-client (WS al bridge)
     input/                 Providers: keyboard (default) y scripted (bench)
 
