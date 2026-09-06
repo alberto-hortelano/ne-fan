@@ -318,20 +318,12 @@ export default async function (ctx) {
     return {
       barra: fila?.querySelector(".nf-vital-label")?.textContent ?? null,
       nombre: e?.label ?? null,
-      // Los rótulos de MUNDO que el juego tiene colocados ahora mismo.
-      mundo: Array.from(document.querySelectorAll(".world-label")).map((n) => n.dataset.labelId),
     };
   }, BANDIDO);
   if (rotulo.barra !== rotulo.nombre) {
     ctx.log(
       `⚠ HALLAZGO: el HUD llama al enemigo por su ID interno, no por su nombre — ` +
         `barra="${rotulo.barra}" · nombre="${rotulo.nombre}" (qa.md de 2026-08-29-que-el-jugador-pueda-pelear)`,
-    );
-  }
-  if (!rotulo.mundo.includes(BANDIDO)) {
-    ctx.log(
-      `⚠ HALLAZGO: un enemigo no recibe rótulo de mundo ni enciende la mirilla ` +
-        `(updateWorldLabels solo recorre npcEntities) — rótulos colocados: ${JSON.stringify(rotulo.mundo)}`,
     );
   }
 

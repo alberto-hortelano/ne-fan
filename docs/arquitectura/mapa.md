@@ -59,6 +59,8 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
     ui/                    Capa DOM in-game + pantalla de título (ver ui.md);
                            muro-de-carga: el overlay de espera/fallo y el único
                            pintor de avisos al jugador (#306)
+                           etiquetas-del-mundo: qué se rotula y cuándo se
+                           enciende la mirilla (world-labels coloca las cajas)
     net/                   bridge-client / narrative-client (WS al bridge)
     input/                 Providers: keyboard (default) y scripted (bench)
 
