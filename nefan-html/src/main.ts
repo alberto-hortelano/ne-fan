@@ -1984,17 +1984,16 @@ async function bootstrap(): Promise<void> {
   try {
     client = await createGameClient(sharedBridge);
   } catch (err) {
-    // Sin bridge NO hay partida (CONFIG.session.require_bridge): el error se
-    // dice y se registra, igual que antes. Lo que cambia es lo que queda
-    // después: un cliente inerte para que el game loop pinte. Sin él,
-    // `gameClient` se quedaba a null y el loop salía por su guarda antes de
-    // render(), así que el selector de fixtures cargaba la escena sobre un
-    // lienzo NEGRO — que es justo lo que el preset `html-fixtures` promete
-    // poder hacer sin backend (issue #215).
-    muro.fallo(
-      "No se pudo arrancar la partida",
-      (err as Error).message,
-    );
+    // Sin bridge NO hay partida (CONFIG.session.require_bridge). Aquí NO se
+    // pinta nada: la causa entra al canal de avisos desde quien la conoce
+    // (`createGameClient`, con el mismo trío que el `onerror` del socket), y el
+    // muro es del único pintor (`ui/muro-de-carga.ts`); así el jugador ve UN
+    // muro por esa causa, en su idioma (#469). Se registra, y queda un cliente
+    // inerte para que el game loop pinte: sin él, `gameClient` se quedaba a
+    // null y el loop salía por su guarda antes de render(), así que el
+    // selector de fixtures cargaba la escena sobre un lienzo NEGRO — que es
+    // justo lo que el preset `html-fixtures` promete poder hacer sin backend
+    // (issue #215).
     errors.push("session", "bootstrap failed", err);
     gameClient = createViewerClient();
     updateConnectionStatus(false, true);
@@ -2007,10 +2006,9 @@ async function bootstrap(): Promise<void> {
   try {
     await runTitleFlow();
   } catch (err) {
-    muro.fallo(
-      "No se pudo arrancar la partida",
-      (err as Error).message,
-    );
+    // Solo relanza `unIntentoDeArrancar` cuando el propio título no se puede
+    // pintar, y ese camino ya dejó su muro puesto («No se pudo mostrar la
+    // pantalla de título»): aquí solo se registra, un muro por causa (#469).
     errors.push("session", "bootstrap failed", err);
   }
 }

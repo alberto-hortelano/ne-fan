@@ -59,11 +59,28 @@ export type EventoDeAviso =
  *  llega y el recuento de las que faltan son la misma noticia.
  *
  *  Son texto de producto: dicen qué está roto PARA EL JUGADOR, no dónde se
- *  rompió. El «dónde» va en el `message`, que es el detalle que se lee debajo. */
+ *  rompió. El «dónde» va en el `message`, que es el detalle que se lee debajo.
+ *
+ *  Y cuando VARIOS emisores comparten una causa, el DETALLE también es una
+ *  constante compartida (#469): el trío `(source, titulo, mensaje)` es la
+ *  unidad de dedupe de `ErrorLog.avisa`, y solo un trío idéntico garantiza que
+ *  la misma causa sea UN aviso para quien juega, con un texto que no cambia. El
+ *  `onerror` del socket y el timeout de `createGameClient` dicen los dos «sin
+ *  conexión con la partida» con `DETALLE_SIN_PARTIDA`; lo técnico (la URL
+ *  efectiva, los ms) va en el `message` de cada uno, que es lo que lee el
+ *  registro. */
 export const AVISO_MUNDO = "No se puede dibujar el mundo";
 export const AVISO_PERSONAJES = "Los personajes van sin vestir";
 export const AVISO_PARTIDA = "Sin conexión con la partida";
 export const AVISO_TRAMA_ILEGIBLE = "La partida respondió algo que no se entiende";
+/** El detalle de `AVISO_PARTIDA` cuando la causa es que el servidor de la
+ *  partida no está: una frase de producto, sin `bridge`, sin `ws://`, sin ms.
+ *  Tiene que ser CIERTA en los dos sitios donde se lee —el arranque sin bridge
+ *  y una partida real a la que se le cae—, así que no nombra nada que solo
+ *  exista en uno de ellos (QA de #469, H1). */
+export const DETALLE_SIN_PARTIDA =
+  "El servidor de la partida no responde y se volverá a intentar solo. " +
+  "Puedes cerrar este aviso mientras tanto.";
 
 /** Los titulares de MÁS a MENOS grave, y la lista ES el criterio: sin mundo no
  *  hay juego; sin socket no hay partida; una trama ilegible rompe lo que se

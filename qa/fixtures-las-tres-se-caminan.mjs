@@ -165,6 +165,20 @@ async function main() {
       20000,
     );
     await page.evaluate(() => document.getElementById("narrative-loader-dismiss")?.click());
+    // Y SOLO con el bootstrap ya fallido se mide (misma clase de defecto y
+    // mismo arreglo que en `las-fixtures-solo-chocan-con-el-agua.mjs`, QA de
+    // #469 H3): sin `gameClient` el loop no pinta, y medir frames antes de que
+    // `createGameClient` agote su timeout es medir contra la holgura.
+    await ctx.waitFor(
+      "el bootstrap ha fallado (entrada «bootstrap failed» del registro)",
+      () =>
+        [...document.querySelectorAll(".error-log__entry")].some(
+          (e) =>
+            (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "session" &&
+            (e.querySelector(".error-log__msg")?.textContent ?? "").includes("bootstrap failed"),
+        ),
+      20000,
+    );
 
     for (const fixture of FIXTURES) await medirFixture(page, ctx, fixture, fallos);
 

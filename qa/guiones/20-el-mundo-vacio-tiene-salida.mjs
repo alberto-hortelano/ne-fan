@@ -292,8 +292,8 @@ export default async function (ctx) {
     // ── 3. El título de vuelta está VIVO ──────────────────────────────────
     // Con el motor muerto no hay partida que arrancar, así que la prueba de
     // vida es la otra mitad: que «Comenzar» vuelva a RESOLVER. Si `show()` no
-    // rearmara su promesa, el segundo «Comenzar» sería un no-op mudo y no
-    // habría segundo muro nunca.
+    // rearmara su promesa, el segundo «Comenzar» sería un no-op mudo y el
+    // muro de ese segundo intento no llegaría nunca.
     await ctx.page.evaluate(() => {
       document.getElementById("narrative-loader")?.classList.remove("error", "visible");
     });

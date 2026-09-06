@@ -1,23 +1,21 @@
-/** El muro «sin bridge» que el jugador CERRÓ no vuelve con los reintentos del socket (#469).
+/** Sin bridge el jugador ve UN muro, que no cambia de texto por debajo, y el que
+ *  CERRÓ no vuelve con los reintentos del socket (#469).
  *
  *  Escrito por QA al validar el corte 1 de #358 (2026-09-06), que saca el muro
- *  de `main.ts` a `ui/muro-de-carga.ts` y mueve #469 tal cual. El issue dice que
- *  en `html-fixtures` «cada ~5 s el reintento del socket vuelve a levantar el
- *  muro que el jugador ya cerró», y pide que `fixtures-sin-bridge.mjs` afirme
- *  que no reaparece. Nadie lo medía: la QA de T13 que lo abrió lo vio a ojo.
+ *  de `main.ts` a `ui/muro-de-carga.ts`, y reescrito con #469. Sin bridge hay
+ *  dos emisores de la misma causa: el `onerror` del socket (a los ~180 ms) y el
+ *  timeout de `createGameClient` (a los ~5 s). Los dos entran al canal de
+ *  avisos con el MISMO trío (fuente `bridge`, `AVISO_PARTIDA`,
+ *  `DETALLE_SIN_PARTIDA`), y la dedupe de `ErrorLog` (#423) garantiza que el
+ *  segundo no sea noticia: un solo muro, con un solo texto. Por eso el paso 2
+ *  afirma que, cuando el bootstrap ya ha fallado (por ESTADO: la entrada
+ *  `session` «bootstrap failed» del registro), el muro sigue siendo el mismo
+ *  —igual titular, igual detalle— y que ni el titular ni el detalle han
+ *  cambiado ni una vez por debajo desde el aviso (un `MutationObserver` cuenta
+ *  los cambios de texto; comparar antes/después se perdería un ida-y-vuelta).
  *
- *  MEDIDO antes de escribirlo (sonda con `MutationObserver` sobre el muro,
- *  bloque 500, 2026-09-06): sin bridge el arranque pinta DOS muros con causas
- *  distintas —el aviso del socket a los ~180 ms («Sin conexión con la partida»,
- *  `onerror` de bridge-client) y el de `bootstrap` a los ~5.100 ms («No se pudo
- *  arrancar la partida», el timeout de `createGameClient`)—, y quien cierra el
- *  primero ve aparecer el segundo cinco segundos después: eso es lo que parece
- *  «reaparecer cada ~5 s». Cerrado el segundo, 12 reintentos del socket (≈ 60 s)
- *  no volvieron a levantarlo ni una vez: `ErrorLog` colapsa el aviso por
- *  (fuente, titular, mensaje) desde #423, y el reintento repite el texto.
- *
- *  Lo que se afirma, por ESTADO y no por reloj: se cierra el muro de bootstrap y
- *  se espera a que el socket haya reintentado CUATRO veces más —cada reintento
+ *  Y lo de siempre, por ESTADO y no por reloj: se cierra ese único muro y se
+ *  espera a que el socket haya reintentado CUATRO veces más —cada reintento
  *  deja una entrada `bridge` en `#error-log`, que sí crece aunque el aviso se
  *  colapse— vigilando el muro en cada sondeo. Un muro que reaparece se queda
  *  puesto hasta que alguien lo cierre, así que el sondeo no puede perdérselo.
@@ -31,8 +29,11 @@
  *  (`if (this.yaAvisados.has(clave)) return;` comentado), el muro vuelve a
  *  pintarse en el PRIMER reintento y este guion se pone ROJO en su aserto de
  *  reaparición («reapareció tras 1 reintento(s)») y, por arrastre, en el del
- *  recuento —la vigilia corta en cuanto el muro asoma—; los dos asertos de
- *  arriba (botones y cierre) siguen verdes. Restaurado después.
+ *  recuento —la vigilia corta en cuanto el muro asoma—; los asertos de arriba
+ *  siguen verdes. Y el paso 2, con `detalleAlJugador` quitado del `push` del
+ *  timeout de `createGameClient`: el detalle cambia por debajo al fallar el
+ *  bootstrap y salen ROJOS «el muro sigue siendo el mismo» y «ni una vez por
+ *  debajo». Restaurado después.
  *
  *  Cero créditos: sin socket no hay partida, y no se le pide nada al motor.
  */
@@ -77,30 +78,63 @@ export default async function (ctx) {
   await ctx.page.goto(url.toString(), { waitUntil: "domcontentloaded" });
   await ctx.waitFor("el cliente arranca sin bridge", () => Boolean(window.__nefan));
 
-  // ── 2 · los dos muros del arranque sin bridge, en su orden ──────────────
-  await ctx.waitFor(
+  // ── 2 · UN muro por la causa «sin bridge», y no cambia por debajo ───────
+  const alAvisar = await ctx.waitFor(
     "el aviso del socket llega al muro (#306)",
-    () =>
-      (document.getElementById("narrative-loader-title")?.textContent ?? "").includes(
-        "Sin conexión con la partida",
-      )
-        ? true
-        : null,
+    () => {
+      const l = document.getElementById("narrative-loader");
+      const titulo = document.getElementById("narrative-loader-title")?.textContent ?? "";
+      if (!l?.classList.contains("error") || !titulo.includes("Sin conexión con la partida")) return null;
+      // Desde aquí se cuentan los cambios de TEXTO del titular y del detalle:
+      // cualquier otro aviso por la misma causa se vería como un cambio, aunque
+      // volviera al texto de antes.
+      const cambios = [];
+      const mira = (id) => {
+        const el = document.getElementById(id);
+        new MutationObserver(() => cambios.push(`${id}=${el?.textContent ?? ""}`)).observe(el, {
+          childList: true,
+          characterData: true,
+          subtree: true,
+        });
+      };
+      mira("narrative-loader-title");
+      mira("narrative-loader-detail");
+      window.__qa77 = { cambios };
+      return { titulo, detalle: document.getElementById("narrative-loader-detail")?.textContent ?? "" };
+    },
     8_000,
   );
+  ctx.log(`al avisar: ${JSON.stringify(alAvisar)}`);
+  // El bootstrap ha fallado cuando lo dice el REGISTRO (`bootstrap failed`,
+  // fuente `session`, el `catch` de `main.ts`), no cuando pasan 5 s de reloj.
   await ctx.waitFor(
-    "el muro de bootstrap (el timeout de createGameClient)",
+    "el bootstrap agota su timeout (la entrada «bootstrap failed» del registro)",
     () =>
-      document.getElementById("narrative-loader")?.classList.contains("error") === true &&
-      (document.getElementById("narrative-loader-title")?.textContent ?? "").includes(
-        "No se pudo arrancar la partida",
+      [...document.querySelectorAll(".error-log__entry")].some(
+        (e) =>
+          (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "session" &&
+          (e.querySelector(".error-log__msg")?.textContent ?? "").includes("bootstrap failed"),
       )
         ? true
         : null,
     20_000,
   );
   const puesto = await leerMuro(ctx);
-  ctx.log(`muro de bootstrap: ${JSON.stringify(puesto)}`);
+  const cambios = await ctx.page.evaluate(() => window.__qa77.cambios);
+  ctx.log(`tras el timeout del bootstrap: ${JSON.stringify(puesto)} · cambios de texto: ${JSON.stringify(cambios)}`);
+  ctx.expect(
+    "#469: tras el timeout del bootstrap el muro sigue siendo el MISMO (un muro por causa: igual titular, igual detalle)",
+    puesto.visible &&
+      puesto.enError &&
+      puesto.titulo === alAvisar.titulo &&
+      puesto.detalle === alAvisar.detalle,
+    `antes ${JSON.stringify(alAvisar)} · después ${JSON.stringify({ titulo: puesto.titulo, detalle: puesto.detalle })}`,
+  );
+  ctx.expect(
+    "…y ni el titular ni el detalle cambiaron ni una vez por debajo",
+    cambios.length === 0,
+    `${cambios.length} cambio(s): ${JSON.stringify(cambios)}`,
+  );
   ctx.expect(
     "el muro del arranque sin bridge ofrece «Cerrar» y no «Volver al título» (detrás queda el visor de fixtures)",
     puesto.cerrarVisible && !puesto.volverVisible,

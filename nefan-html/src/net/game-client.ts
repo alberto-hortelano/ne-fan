@@ -12,7 +12,7 @@ import type { CombatEvent, Vec3, EnemyPersonality } from "@nefan-core/src/types.
 import type { StateUpdateMessage } from "@nefan-core/src/protocol/messages.js";
 import type { WorldScene } from "@nefan-core/src/scene/scene-normalize.js";
 import { CONFIG } from "@nefan-core/src/config.js";
-import { errors } from "../ui/error-log.js";
+import { AVISO_PARTIDA, DETALLE_SIN_PARTIDA, errors } from "../ui/error-log.js";
 import { BridgeClient } from "./bridge-client.js";
 
 export interface FrameResult {
@@ -241,7 +241,14 @@ export function createGameClient(
 ): Promise<GameClient> {
   if (!CONFIG.session.require_bridge) {
     const msg = "session.require_bridge is false but no offline mode exists — refusing to start";
-    errors.push("session", msg);
+    // Quien lo pinta es el canal de avisos, no el `catch` de `bootstrap`: la
+    // causa se dice desde quien la conoce (#469). Solo se llega aquí con la
+    // configuración rota, y es el único fallo de arranque con titular propio.
+    errors.push("session", msg, undefined, {
+      alJugador: "No se pudo arrancar la partida",
+      detalleAlJugador:
+        "La configuración pide jugar sin servidor de partida y ese modo no existe. Revisa `session.require_bridge`.",
+    });
     return Promise.reject(new Error(msg));
   }
   const store = new GameStore();
@@ -250,12 +257,19 @@ export function createGameClient(
   }
   return new Promise<GameClient>((resolve, reject) => {
     const timer = setTimeout(() => {
-      // La URL que se cita es la EFECTIVA (`bridge.url`), no el puerto del
-      // snapshot: este texto lo pinta el muro que ve el jugador
-      // (`muro.fallo` en bootstrap), y con `?offset=` o `?bridge=` el
-      // socket no está donde dice el snapshot (#341).
+      // Este timeout es «el bridge no está», la MISMA causa que el `onerror`
+      // del socket (`bridge-client.ts`), así que entra al canal con la misma
+      // fuente, el mismo titular y el mismo detalle: la dedupe por trío de
+      // `ErrorLog` hace que para el jugador sea UN muro y no dos (#469). La URL
+      // que se cita es la EFECTIVA (`bridge.url`), no el puerto del snapshot
+      // (#341), y va al REGISTRO —el `message`—, no al muro: el jugador no
+      // tiene que leer `ws://` ni ms. El `Error` que se rechaza sigue siendo el
+      // técnico: `bootstrap` lo registra y monta el visor, no lo pinta.
       const msg = `bridge did not connect within ${timeoutMs}ms — is nefan-core bridge running on ${bridge.url}?`;
-      errors.push("session", msg);
+      errors.push("bridge", msg, undefined, {
+        alJugador: AVISO_PARTIDA,
+        detalleAlJugador: DETALLE_SIN_PARTIDA,
+      });
       reject(new Error(msg));
     }, timeoutMs);
     bridge.on("connected", () => {
