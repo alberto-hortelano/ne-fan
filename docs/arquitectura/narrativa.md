@@ -26,6 +26,6 @@ Cómo viaja una escena desde Claude hasta el cliente, y cómo una elección de d
 3. ai_server envía `narrative_event` por MCP con el contexto compacto del NarrativeState
 4. Claude responde con `consequences: [story_update | spawn_entity | schedule_event | plugin_event]`
 5. El bridge aplica las consequences (dispatchConsequences + tick de plugins), guarda, y difunde `narrative_event` con los effects
-6. El cliente los materializa sin recargar la escena (diálogo, `materializeSpawn` para las entidades nuevas, delta de historia…) — solo pinta lo que el bridge ya guardó
+6. El cliente los materializa sin recargar la escena (diálogo, `world/materializar-spawn.ts` para las entidades nuevas, delta de historia…) — solo pinta lo que el bridge ya guardó
 
 El usuario tiene cuenta Claude Max — preferir MCP bridge sobre API key directa.

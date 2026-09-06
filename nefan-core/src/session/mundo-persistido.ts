@@ -15,9 +15,9 @@
  *     el Format D como siempre y `escenaConCombateVivo` le baja la vida al
  *     herido y saca del `npcs[]` al muerto, sobre la copia que sale al wire.
  *   · `spawn_reason: "narrative_request"` → vuelve por el LEDGER.
- *     `spawnsDeRuntime` lo convierte en lo que come `materializeSpawn`, la
- *     puerta única que el cliente ya tenía para las tres clases (npc, objeto,
- *     edificio).
+ *     `spawnsDeRuntime` lo convierte en lo que come el materializador de
+ *     spawns del cliente (`world/materializar-spawn.ts`), la puerta única que
+ *     ya tenía para las tres clases (npc, objeto, edificio).
  *
  *  Nunca las dos: `spawnsDeRuntime` no devuelve jamás un `scene_init`, y el
  *  overlay de la escena solo toca lo que la escena ya nombra. Un id que
@@ -423,7 +423,7 @@ export function avisoDeFueraDelMundo(fuera: readonly FueraDelMundo[]): string {
   );
 }
 
-/** Lo que `materializeSpawn` come: la forma del effect `spawn_entity`, sin el
+/** Lo que come `world/materializar-spawn.ts`: la forma del effect `spawn_entity`, sin el
  *  `eventId` (que es del turno en el que ocurrió, y esto es un resume). */
 export interface SpawnDeRuntime {
   entityId: string;

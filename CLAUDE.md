@@ -223,7 +223,7 @@ Posiciones y escalas en METROS (anclaje por BASE: `position.y` es la base del ob
 
 **Reuse de assets**: la librería que ve el motor (`available_assets`) son las SUPERFICIES pintadas, y se reusan por DESCRIPCIÓN, no por hash: repetir verbatim una `surface_desc` ya pintada es un cache-hit. La cadena por hash (`texture_hash`/`model_hash`) murió con el gpu-worker (#199) y tiene candado de reaparición en `arch-rules.json`.
 
-**Spawn dinámico**: vía consequences `spawn_entity` que devuelve `react_to_player` (`materializeSpawn` en el cliente). Las entidades se materializan en el mundo en runtime sin recargar la escena.
+**Spawn dinámico**: vía consequences `spawn_entity` que devuelve `react_to_player` (`world/materializar-spawn.ts` en el cliente). Las entidades se materializan en el mundo en runtime sin recargar la escena.
 
 Categorias: item (amarillo), prop (gris), building (marron), creature (rojo), terrain (verde), decor (gris apagado).
 
