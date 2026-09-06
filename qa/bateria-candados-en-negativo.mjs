@@ -54,7 +54,7 @@ import { dirname, join, relative } from "node:path";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const MAIN = join(raiz, "nefan-html/src/main.ts");
+const FIXTURES = join(raiz, "nefan-html/src/world/fixtures-del-selector.ts");
 const TECLADO = join(raiz, "nefan-html/src/input/keyboard-input-provider.ts");
 
 /** [nombre, fichero, guion, [ [buscar, poner], … ], huella, codigoEsperado? ]
@@ -73,12 +73,12 @@ const TECLADO = join(raiz, "nefan-html/src/input/keyboard-input-provider.ts");
 const INVARIANTES = [
   [
     "#308 · `loadFixture` vuelve a ser fire-and-forget (dice «hecho» sin esperar la fixture)",
-    MAIN,
+    FIXTURES,
     "22-telegraph",
     [
       [
-        "      const carga = ultimaCargaDeFixture;\n",
-        "      const carga = Promise.resolve();\n      void ultimaCargaDeFixture;\n",
+        "    const carga = ultimaCargaDeFixture;\n",
+        "    const carga = Promise.resolve();\n    void ultimaCargaDeFixture;\n",
       ],
     ],
     /se pidió la fixture|no había llegado|se quedó en/i,
@@ -94,12 +94,12 @@ const INVARIANTES = [
   // rojo es el INSTANTE de la segunda.
   [
     "#308 · el mismo destrozo contra el guion que ejerce la SEGUNDA carga (el camino original)",
-    MAIN,
+    FIXTURES,
     "44-la-carga",
     [
       [
-        "      const carga = ultimaCargaDeFixture;\n",
-        "      const carga = Promise.resolve();\n      void ultimaCargaDeFixture;\n",
+        "    const carga = ultimaCargaDeFixture;\n",
+        "    const carga = Promise.resolve();\n    void ultimaCargaDeFixture;\n",
       ],
     ],
     // Anclada al ✘: «sigue PENDIENTE» es parte de la descripción del aserto y
@@ -114,12 +114,12 @@ const INVARIANTES = [
   // de la promesa rota y el rojo NOMBRA la escena que había.
   [
     "#308 · el mismo destrozo contra un guion MIGRADO en esta pasada (#332: la migración compra algo)",
-    MAIN,
+    FIXTURES,
     "01-arranque",
     [
       [
-        "      const carga = ultimaCargaDeFixture;\n",
-        "      const carga = Promise.resolve();\n      void ultimaCargaDeFixture;\n",
+        "    const carga = ultimaCargaDeFixture;\n",
+        "    const carga = Promise.resolve();\n    void ultimaCargaDeFixture;\n",
       ],
     ],
     /se pidió la fixture|se quedó en/i,

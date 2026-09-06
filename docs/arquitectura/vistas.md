@@ -187,8 +187,8 @@ metros. Si el cliente se trajera esa conversión (`size.cols`,
 se enteraría tarde de cada cambio del primero. Candados
 `cliente-no-convierte-celdas-a-metros` (error) y
 `solo-el-bridge-normaliza-la-escena` (error con dos PUERTAS nombradas por
-fichero y función: `addTileRaw` en `main.ts`, las fixtures del selector «Room» y
-el hook del banco; `StyleApplyController.plan` en `ui/style-apply.ts`, el batch
+fichero y función: `addTileRaw` en `world/fixtures-del-selector.ts`, las fixtures
+del selector «Room» y el hook del banco; `StyleApplyController.plan` en `ui/style-apply.ts`, el batch
 «aplicar estilo» sobre el snapshot. Ninguna recibe escenas del motor por cable, y
 el checker cuenta que cada puerta sea UNA llamada dentro de esa función: la
 segunda en el mismo fichero salta, y una puerta que deja de llamar es una

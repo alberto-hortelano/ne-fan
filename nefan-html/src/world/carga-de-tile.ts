@@ -126,7 +126,7 @@ function declaradoDePersonaje(d: NpcDeclarado): Pick<Entity, "label" | "name"> |
 export interface CargaDeTile {
   /** Añade un tile/escena al mundo del cliente. Recibe la escena YA servida
    *  (world scene + salidas): la única normalización del cliente es la de la
-   *  fixture del selector «Room», en `main.ts`. */
+   *  fixture del selector «Room», en `world/fixtures-del-selector.ts`. */
   addTile(data: EscenaServida, opts?: OpcionesDeCarga): Promise<void>;
   /** Apunta la «escena activa» del cliente (imagen IA, exits, TravelPanel) al
    *  tile bajo el jugador. */
