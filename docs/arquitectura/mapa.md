@@ -13,7 +13,8 @@ Plan de división en microservicios: `docs/microservices/README.md` (servicios, 
 ```
 nefan-core/               TypeScript — logica de juego (bridge + cliente web)
   src/
-    combat/                Resolver, state machines, manager, enemy AI
+    combat/                Resolver, state machines, manager, enemy AI;
+                           params-de-telegraph: el aro que ve el jugador
     store/                 GameStore (dispatch/subscribe/snapshot)
     simulation/            GameSimulation tick loop + NpcBehaviorSystem
     protocol/              Mensajes frontend ↔ logica
@@ -76,8 +77,10 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
                            enciende la mirilla (world-labels coloca las cajas);
                            conversacion: abrir y cerrar el diálogo (con el ratón
                            que suelta y devuelve) y la elección camino del motor;
-                           hud-de-combate: el catálogo de ataques de la sesión,
-                           su barra 1..N y los parámetros del ataque elegido;
+                           hud-de-combate: el catálogo de ataques de la sesión
+                           y su barra 1..N; los parámetros del aro los calcula
+                           core (combat/params-de-telegraph) con el arma que
+                           trae el state_update;
                            modos-de-graficos: el chip que enseña y cambia qué
                            imagen IA nueva se genera (escenarios y personajes) y
                            el rearme de skins al pasar personajes a ON; la

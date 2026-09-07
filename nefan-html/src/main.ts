@@ -277,8 +277,6 @@ applyUiTheme(BASE_UI_THEME);
 
 // --- State ---
 const playerPos: Vec3 = { x: 0, y: 0, z: 2 };
-const playerMaxHp = 100;
-const playerWeaponId = "short_sword";
 /** LA MIRADA: yaw continuo, pitch acotado y el `forward` horizontal que sale
  *  del yaw. Eran tres `let` de módulo aquí (`playerYaw`, `playerPitch`,
  *  `mirada.forward`), cuatro más de flanco de tecla y cuatro constantes; ahora
@@ -361,8 +359,10 @@ const devInput = new DevToolsInput({ dialogoAbierto, propuestaDeTileAbierta });
 
 /** El HUD de combate: el catálogo del sistema de la sesión, su barra con las
  *  teclas 1..N y los parámetros del ataque elegido. Nace con el catálogo
- *  estándar (sin sesión) y el sink `combat` le instala el de cada partida. */
-const hud = crearHudDeCombate({ input: () => input, armaDelJugador: playerWeaponId, log });
+ *  estándar (sin sesión) y el sink `combat` le instala el de cada partida.
+ *  El arma del aro la dice el bridge en cada frame (#504): pregunta, no valor. */
+const armaDelJugador = () => gameClient?.getCombatant("player")?.weaponId ?? "";
+const hud = crearHudDeCombate({ input: () => input, arma: armaDelJugador, log });
 
 /** Lo que el jugador VE y LEE de lo que resuelve el sim: el aro del ataque, las
  *  líneas del registro de combate y si sigue de pie. El combate se resuelve en
@@ -721,7 +721,7 @@ function gameLoop(now: number): void {
   aplicarLoQueMandaElBridge(mundo, result);
 
   // Update HUD
-  const pHpPct = Math.max(0, result.playerHp / playerMaxHp * 100);
+  const pHpPct = Math.max(0, result.playerHp / result.playerMaxHp * 100);
   playerHpBar.style.width = pHpPct + "%";
   playerHpText.textContent = Math.ceil(result.playerHp).toString();
 
@@ -771,7 +771,7 @@ function gameLoop(now: number): void {
         pos: playerPos,
         forward: mirada.forward,
         hp: result.playerHp,
-        maxHp: playerMaxHp,
+        maxHp: result.playerMaxHp,
         sprite: playerSprite,
       },
       mundo.enemigos,

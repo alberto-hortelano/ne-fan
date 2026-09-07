@@ -2080,6 +2080,83 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  it("[error] la-logica-de-juego-no-vuelve-al-cliente: el arma y el máximo inventados saltan; leerlos del wire no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
+
+    // PR 4 de #241 (#504): las cuatro líneas que había el día que se movió —
+    // las dos constantes de `main.ts`, la mitad muerta de `getCombatant` y los
+    // params sintéticos del aro—, y la misma invención escrita en el bridge.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/main.ts",
+          text: 'const playerMaxHp = 100;\nconst playerWeaponId = "short_sword";\n',
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/net/game-client.ts",
+          text: 'return { health: hp, maxHealth: 100, weaponId: "short_sword" };\n',
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/hud-de-combate.ts",
+          text: "optimal_distance: spec.displayRange / 2,\ndistance_tolerance: spec.displayRange / 2,\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/simulation.ts",
+          text: 'ctx.send(ws, { type: "state_update", playerMaxHp: 100, playerWeaponId: "short_sword" });\n',
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/handlers/simulation.ts:1",
+        "nefan-html/src/main.ts:1",
+        "nefan-html/src/main.ts:2",
+        "nefan-html/src/net/game-client.ts:1",
+        "nefan-html/src/net/game-client.ts:1",
+        "nefan-html/src/ui/hud-de-combate.ts:1",
+        "nefan-html/src/ui/hud-de-combate.ts:2",
+      ],
+    );
+
+    // Lo que sigue siendo del cliente: LEER del wire lo que dice el bridge y
+    // pintarlo — incluida la barra de vida, que ya no inventa su divisor.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/main.ts",
+          text: "const pct = result.playerHp / result.playerMaxHp * 100;\nconst arma = () => gameClient?.getCombatant('player')?.weaponId ?? '';\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/hud-de-combate.ts",
+          text: "return paramsDeTelegraph(tipo, config, deps.arma(), catalogoDeAtaques);\n",
+          imports: [],
+        },
+        // El bridge leyendo su propio store no es inventar nada.
+        {
+          path: "nefan-core/bridge/handlers/simulation.ts",
+          text: "playerMaxHp: ctx.store.state.player.max_hp || 100,\n",
+          imports: [],
+        },
+        // Y en core viven el literal del arma y la fórmula del aro sintético.
+        {
+          path: "nefan-core/src/store/game-store.ts",
+          text: 'weapon_id: "short_sword",\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/combat/params-de-telegraph.ts",
+          text: "const medio = spec.displayRange / 2;\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {

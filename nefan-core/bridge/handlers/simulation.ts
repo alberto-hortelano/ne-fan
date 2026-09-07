@@ -20,6 +20,25 @@ import type {
   StateUpdateMessage,
 } from "../../src/protocol/messages.js";
 
+/** El arma y el máximo de vida del jugador, que son del STORE: el bridge se
+ *  los da al sim al sembrar al combatiente y desde #504 los pone además en
+ *  cada `state_update`, porque el cliente los necesita para pintar la barra de
+ *  vida y el aro del telegraph y hasta entonces se los inventaba con dos
+ *  literales suyos que no podían cambiar nunca.
+ *
+ *  El HP VIVO no entra aquí a propósito: lo lee cada emisor del sim con su
+ *  propia caída (0 en el hot loop, 100 en los one-shot), y colapsarlas sería
+ *  cambiar de conducta de tapadillo. El `|| 100` del máximo es el que ya tenía
+ *  `handleLoadRoom`: `state.player` lo pueden parchear los plugins
+ *  (`plugins/dispatcher.ts`, root "player") y un máximo a 0 dejaría al cliente
+ *  dividiendo por cero la barra de vida. */
+function estadoDelJugador(ctx: BridgeContext): { playerMaxHp: number; playerWeaponId: string } {
+  return {
+    playerMaxHp: ctx.store.state.player.max_hp || 100,
+    playerWeaponId: ctx.store.state.player.weapon_id,
+  };
+}
+
 export async function handleInput(
   msg: InputMessage,
   ws: ClientSocket,
@@ -71,6 +90,7 @@ export async function handleInput(
     type: "state_update",
     events: result.events,
     playerHp: ctx.sim.getCombatant("player")?.health ?? 0,
+    ...estadoDelJugador(ctx),
     enemies: getEnemyStates(ctx),
     npcs: getNpcStates(ctx),
   });
@@ -117,7 +137,7 @@ export function handleLoadRoom(
   // HP del combatiente vivo (leído antes del reset). Sin sesión (rooms de
   // test legacy) se mantiene el arranque a tope de vida.
   const livePlayer = ctx.sim.getCombatant("player");
-  const playerMaxHp = ctx.store.state.player.max_hp || 100;
+  const { playerMaxHp, playerWeaponId } = estadoDelJugador(ctx);
   const inSession = ctx.narrative.session_id !== "" && livePlayer !== undefined;
   const playerHp = inSession ? livePlayer!.health : playerMaxHp;
   // Cargar una fixture del selector «Room» es TOMAR EL MUNDO para una escena
@@ -139,7 +159,7 @@ export function handleLoadRoom(
     createCombatant(
       "player",
       playerHp,
-      ctx.store.state.player.weapon_id,
+      playerWeaponId,
       { x: 0, y: 0, z: 0 },
       { x: 0, y: 0, z: -1 },
     ),
@@ -185,6 +205,8 @@ export function handleLoadRoom(
     type: "state_update",
     events: inSession ? [] : [{ type: "player_respawned", hp: playerHp }],
     playerHp: playerHp,
+    playerMaxHp,
+    playerWeaponId,
     enemies: getEnemyStates(ctx),
   };
   ctx.send(ws, roomResponse);
@@ -199,6 +221,7 @@ export function handleRespawn(msg: RespawnMessage, ws: ClientSocket, ctx: Bridge
     type: "state_update",
     events,
     playerHp: ctx.sim.getCombatant("player")?.health ?? 100,
+    ...estadoDelJugador(ctx),
     enemies: getEnemyStates(ctx),
   };
   ctx.send(ws, response);
@@ -254,6 +277,7 @@ export function handleAddCombatants(
     type: "state_update",
     events: [],
     playerHp: ctx.sim.getCombatant("player")?.health ?? 100,
+    ...estadoDelJugador(ctx),
     enemies: getEnemyStates(ctx),
   };
   ctx.send(ws, response);

@@ -296,6 +296,21 @@ export interface StateUpdateMessage {
   type: "state_update";
   events: CombatEvent[];
   playerHp: number;
+  /** Y sobre cuánta. El máximo lo sabe el store del bridge (`player.max_hp`),
+   *  que es quien siembra al combatiente; hasta #504 el cliente lo inventaba
+   *  con un `const playerMaxHp = 100` y su barra de vida era una promesa de
+   *  que nadie cambiaría nunca ese número. Requerido, sin default: derivarlo
+   *  del HP vivo es la misma mentira que ya costó la barra llena de un herido
+   *  (#326). */
+  playerMaxHp: number;
+  /** Con qué pega el jugador. Decide el ALCANCE y el wind-up reales del sim
+   *  (`getEffectiveParams`), y por eso también el aro del telegraph que el
+   *  cliente dibuja: si el arma del aro no es la del sim, el jugador apunta a
+   *  una distancia óptima que no es la suya. El arma vive en el store
+   *  (`player.weapon_id`, hoy la única fuente del literal `short_sword`) y
+   *  puede cambiar en partida (reducer `weapon_changed`), así que viaja en
+   *  cada frame y no solo al sembrar. */
+  playerWeaponId: string;
   enemies: {
     id: string;
     hp: number;

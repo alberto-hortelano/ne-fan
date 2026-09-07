@@ -10,7 +10,8 @@
  *  selección, y este módulo se repinta cuando él avisa. */
 
 import type { EffectiveParams } from "@nefan-core/src/types.js";
-import { getEffectiveParams, loadConfig } from "@nefan-core/src/combat/combat-data.js";
+import { loadConfig } from "@nefan-core/src/combat/combat-data.js";
+import { paramsDeTelegraph } from "@nefan-core/src/combat/params-de-telegraph.js";
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import combatConfigJson from "@nefan-core/data/combat_config.json";
@@ -24,8 +25,11 @@ export interface DepsDelHudDeCombate {
    *  cada sistema y se le pregunta el ataque elegido. Es un `let` del
    *  bootstrap de `main.ts`, así que cruza como pregunta. */
   input(): Pick<InputProvider, "state" | "selectAttack" | "setAttackBindings" | "onAttackTypeChanged">;
-  /** El arma con la que se calculan los parámetros del ataque elegido. */
-  armaDelJugador: string;
+  /** El arma con la que se calculan los parámetros del ataque elegido. La
+   *  dice el bridge en cada `state_update` (#504) y puede cambiar a mitad de
+   *  partida, así que cruza como pregunta y no como valor. `""` = todavía sin
+   *  frame: manos desnudas. */
+  arma(): string;
   log(msg: string): void;
 }
 
@@ -83,27 +87,11 @@ export function crearHudDeCombate(deps: DepsDelHudDeCombate): HudDeCombate {
     }
   }
 
+  /** A qué distancia hay que ponerse: regla de juego, y por eso la calcula
+   *  core (`combat/params-de-telegraph.ts`). Aquí solo se le pasan el ataque
+   *  elegido, el arma que dice el bridge y el catálogo de la sesión. */
   function parametrosSeleccionados(): EffectiveParams {
-    const type = deps.input().state.selectedAttack;
-    if (config.attack_types[type]) {
-      const weaponData = config.weapons[deps.armaDelJugador] ?? config.weapons["unarmed"];
-      return getEffectiveParams(type, config.attack_types, weaponData);
-    }
-    // Ataques fuera de combat_config.json (p.ej. "strike" del combate básico):
-    // params sintéticos desde el catálogo — solo alimentan el feedback visual
-    // del aro de ataque (el daño real lo resuelve el sistema en el bridge).
-    const spec = catalogoDeAtaques.find((a) => a.id === type);
-    if (!spec) {
-      throw new Error(`parametrosSeleccionados: attack '${type}' is neither in combat_config nor in the session catalog`);
-    }
-    return {
-      optimal_distance: spec.displayRange / 2,
-      distance_tolerance: spec.displayRange / 2, // el aro cubre [0, displayRange]
-      area_radius: spec.displayRange,
-      base_damage: 0,
-      damage_reduction: 0,
-      wind_up_time: 0,
-    };
+    return paramsDeTelegraph(deps.input().state.selectedAttack, config, deps.arma(), catalogoDeAtaques);
   }
 
   // Cada cambio de selección (tecla o click) repinta la barra. El proveedor
