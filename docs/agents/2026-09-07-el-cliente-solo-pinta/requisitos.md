@@ -112,3 +112,13 @@ Pregunta única del arquitecto (`plan.md` §9): con «manda el bridge», ¿qué 
 por defecto del mundo NO casa por tags? Recomendación (a): ofrecer los compatibles Y el del mundo marcado «(del mundo · otro tema)»,
 preseleccionado. **Sin respuesta del usuario, se aplica (a)** en la PR 7; se le pregunta al abrirla. Paralelismo aceptado por el
 coordinador: {1, 2, 3} ahora (offsets 100/200/300), {4, 5, 6} después, 7 tras 1 y sola, 8 tras 4.
+
+## Cierre (2026-09-07, `main` = `cf017c76`)
+
+Ocho PR fusionadas el mismo día (#523, #518, #521, #528, #533, #531, #534, #535), #241 cerrado con el censo y la medida final en su
+comentario de cierre. Cliente 14.466 → 14.116 líneas físicas (9.158 → 9.073 de código); 12 módulos nuevos en core, todos `sin medir`
+hasta la autorización 1 (que sale COMPLETA); regla `la-logica-de-juego-no-vuelve-al-cliente` con 8 grupos, más
+`el-umbral-del-borrador-no-se-copia-a-mano`; guiones 86-93. Un solo cambio de conducta, declarado y medido (PR 5: los spawns del
+motor son sólidos). Dos «sin cambio observable» falsos cazados por QA (PR 1 y PR 5) y devueltos a la base. Los agentes corrieron en
+Opus desde la QA de la tanda 1-3 por petición del usuario (crédito de Fable al 8 %). Derivados: #513-#517, #519-#520, #522, #524-#527,
+#529-#530, #532, #536-#539.
