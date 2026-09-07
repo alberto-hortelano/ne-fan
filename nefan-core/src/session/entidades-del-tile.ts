@@ -136,8 +136,10 @@ export interface NpcDeclarado {
   role?: string;
   /** El bloque de combate que derivó el core para un `role:"hostile"`. Su
    *  PRESENCIA es lo que distingue a un enemigo de un vecino; su contenido lo
-   *  valida el cliente en su puerta (`enemigoDesdeCombat`), y duplicar aquí
-   *  esa validación sería un segundo criterio de «qué es un enemigo». */
+   *  valida `parseHostileCombat` (`src/combat/hostil-desde-combat.ts`), al que
+   *  llama el cliente en su puerta y el borde WS del bridge en la suya, y
+   *  duplicar aquí esa validación sería un segundo criterio de «qué es un
+   *  enemigo». */
   combat?: unknown;
 }
 
@@ -288,7 +290,8 @@ export function objetosDeclarados(raw: readonly ObjetoEnElWire[] | undefined): D
 }
 
 /** Los personajes que declara la world scene de un tile (vecinos y hostiles:
- *  los separa la presencia de `combat`, y esa puerta es del cliente). */
+ *  los separa la presencia de `combat`, y esa puerta es `parseHostileCombat`
+ *  de `combat/hostil-desde-combat.ts`: la misma en cliente y bridge, #241). */
 export function npcsDeclarados(raw: readonly NpcEnElWire[] | undefined): Declaraciones<NpcDeclarado> {
   return declaraciones(raw, "npc", leerNpc);
 }

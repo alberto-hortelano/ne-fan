@@ -19,6 +19,8 @@
 
 import { z } from "zod";
 import type { ClientMessage } from "./messages.js";
+import type { EnemyPersonality } from "../types.js";
+import { parseHostileCombat } from "../combat/hostil-desde-combat.js";
 
 const Vec3Schema = z.object({
   x: z.number(),
@@ -26,32 +28,47 @@ const Vec3Schema = z.object({
   z: z.number(),
 });
 
-const EnemyPersonalitySchema = z.object({
-  aggression: z.number(),
-  preferred_attacks: z.array(z.string()),
-  reaction_time: z.number(),
-  combat_range: z.number().optional(),
-  difficulty: z.string().optional(),
-  aggression_style: z.string().optional(),
-  attack_cooldown_mult: z.number().optional(),
-  block_chance: z.number().optional(),
-  preferred_distance: z.number().optional(),
-  move_speed: z.number().optional(),
-});
+/** La personalidad no tiene schema propio: aquí solo declara su TIPO (el
+ *  espejo del contrato, que es lo que sujeta la guardia de deriva de abajo).
+ *  Quién decide si sirve es `parseHostileCombat` en el refinamiento del bloque,
+ *  UNA vez y en el orden del parser. */
+const EnemyPersonalitySchema = z.custom<EnemyPersonality>();
 
-const EnemySpawnSchema = z.object({
-  id: z.string(),
-  position: Vec3Schema,
-  /** La vida que le queda AHORA (un herido que vuelve de un save trae la
-   *  suya, no la del contrato). */
-  health: z.number(),
-  /** …y sobre cuánta. REQUERIDO, sin default: derivarlo de `health` es
-   *  exactamente la mentira que había —barra llena para un herido, y la IA
-   *  creyéndolo entero— y un default lo dejaría entrar otra vez en silencio. */
-  maxHealth: z.number(),
-  weaponId: z.string(),
-  personality: EnemyPersonalitySchema,
-});
+const EnemySpawnSchema = z
+  .object({
+    id: z.string(),
+    position: Vec3Schema,
+    /** La vida que le queda AHORA (un herido que vuelve de un save trae la
+     *  suya, no la del contrato). */
+    health: z.number(),
+    /** …y sobre cuánta. REQUERIDO, sin default: derivarlo de `health` es
+     *  exactamente la mentira que había —barra llena para un herido, y la IA
+     *  creyéndolo entero— y un default lo dejaría entrar otra vez en silencio. */
+    maxHealth: z.number(),
+    weaponId: z.string(),
+    personality: EnemyPersonalitySchema,
+  })
+  // El TIPO de cada campo lo dice el zod de arriba (es el espejo del contrato);
+  // qué VALORES hacen utilizable a un enemigo lo dice el MISMO parser que el
+  // cliente, sobre el bloque `combat` que estos cuatro campos son en el resto
+  // del juego, y el mensaje del issue es su motivo palabra por palabra.
+  //
+  // Hasta la PR 6 de #241 esto era un `z.object` que decía otra cosa: aceptaba
+  // `health: 0`, `maxHealth: 0`, `weaponId: ""`, `preferred_attacks: []`,
+  // `aggression: Infinity` y la ausencia de `combat_range` —todos rechazados
+  // por el cliente—, así que `sim.addCombatant` podía dar de alta un muerto o
+  // un enemigo sin ataques, y un enemigo que el cliente daba por bueno podía
+  // morir aquí con otro motivo. Dos criterios de «qué es un enemigo», y el de
+  // este lado sin nada que lo midiera.
+  .superRefine((e, ctx) => {
+    const r = parseHostileCombat({
+      health: e.health,
+      max_health: e.maxHealth,
+      weapon_id: e.weaponId,
+      personality: e.personality,
+    });
+    if (!r.ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: r.error });
+  });
 
 const EdgeSchema = z.enum(["north", "south", "east", "west"]);
 

@@ -30,7 +30,8 @@
  *   · Y un negativo que NO sirve, contado porque cuesta descubrirlo dos veces:
  *     quitar el filtro de muertos de `spawnsDeRuntime` deja el guion VERDE. El
  *     muerto sí sale de ahí, pero el cliente lo rechaza en su segunda puerta
- *     (`enemigoDesdeCombat` exige `health > 0`); lo único que cambia es que el
+ *     (`enemigoDesdeCombat` → `parseHostileCombat` de core exige `health > 0`,
+ *     el mismo criterio que aplica el bridge); lo único que cambia es que el
  *     registro de errores se llena de un descarte que no es un fallo. Ese
  *     filtro lo mide `test/mundo-persistido.test.ts`, no esto.
  *

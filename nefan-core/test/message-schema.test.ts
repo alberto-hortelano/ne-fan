@@ -50,7 +50,17 @@ test("un frame válido de cada tipo pasa la validación", () => {
           health: 100,
           maxHealth: 100,
           weaponId: "short_sword",
-          personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.3 },
+          // `combat_range` va porque desde la PR 6 de #241 el borde aplica el
+          // criterio ÚNICO (`parseHostileCombat`), que es el del cliente y lo
+          // exige. Antes este zod lo tenía por opcional y esta fixture pasaba:
+          // era el segundo criterio, y ningún productor real emite una
+          // personalidad sin él (`combatForHostileRole` siempre lo pone).
+          personality: {
+            aggression: 0.5,
+            preferred_attacks: ["quick"],
+            reaction_time: 0.3,
+            combat_range: 4,
+          },
         },
       ],
     },
@@ -103,7 +113,11 @@ test("add_combatants con enemigo sin personality se rechaza", () => {
     ],
   });
   assert.equal(res.ok, false);
-  if (!res.ok) assert.match(res.error, /personality/);
+  // El motivo es EL DEL PARSER DE CORE, no un «Required» de zod: es el mismo
+  // que el jugador lee en el registro del cliente cuando la escena trae ese
+  // bloque (PR 6 de #241). La tabla entera de equivalencias entre las dos
+  // puertas vive en test/hostil-desde-combat.test.ts.
+  if (!res.ok) assert.equal(res.error, "enemies[0]: combat.personality ausente");
 });
 
 test("campos extra no modelados se toleran (strip, no rechazo)", () => {
