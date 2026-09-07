@@ -22,14 +22,20 @@ import unicodedata
 
 from fastapi import APIRouter, HTTPException
 from PIL import Image
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from deps import deps
-from style_packs import REF_FOLDERS, ref_folder
+from style_packs import LAMINA, REF_FOLDERS, STYLE_UPLOAD, ref_folder
 
 router = APIRouter()
 
-_SAFE_ID = re.compile(r"[A-Za-z0-9_.-]+")
+#: Las reglas de la subida NO se escriben aquí: se leen del snapshot que vuelca
+#: nefan-core desde src/contracts/style-upload.ts (ver style_packs.py). Los
+#: límites y los MOTIVOS son los mismos que comprueba el título antes de subir,
+#: así que el jugador lee la misma frase la cace quien la cace.
+_LIMITES = STYLE_UPLOAD["limites"]
+_MOTIVOS = STYLE_UPLOAD["motivos"]
+_SAFE_ID = re.compile(STYLE_UPLOAD["ref_id_pattern"])
 
 
 class StyleUploadImage(BaseModel):
@@ -37,26 +43,96 @@ class StyleUploadImage(BaseModel):
     CARPETA es el rol del contenido dentro del pack, no una vista de mundo (el
     juego tiene una sola y no se elige): surfaces/ es la lámina de materiales,
     faces/ una cara del mundo, characters/ un model sheet.
-    En base64 (JSON, no multipart — evita la dependencia python-multipart)."""
-    folder: str = Field(pattern="^(" + "|".join(REF_FOLDERS) + ")$")
-    description: str = Field(default="", max_length=300)
-    image_b64: str = Field(min_length=1)
-    id: str = Field(default="", max_length=60)
+    En base64 (JSON, no multipart — evita la dependencia python-multipart).
+
+    Sin `Field(...)`: los LÍMITES no son del wire, son del contrato compartido y
+    los aplica `validar_subida` con el motivo que también enseña el título. Con
+    la mitad aquí (que era como estaba) el mismo cuerpo daba un 422 estructurado
+    de Pydantic o un motivo en español según qué regla incumpliera."""
+    folder: str = ""
+    description: str = ""
+    image_b64: str = ""
+    id: str = ""
 
 
 class StyleUploadRequest(BaseModel):
     """Subida de un estilo de usuario."""
-    name: str = Field(min_length=2, max_length=60)
-    description: str = Field(default="", max_length=500)
-    style_token: str = Field(default="", max_length=300)
-    tags: list[str] = Field(min_length=1, max_length=8)
-    images: list[StyleUploadImage] = Field(min_length=1, max_length=12)
+    name: str = ""
+    description: str = ""
+    style_token: str = ""
+    tags: list[str] = []
+    images: list[StyleUploadImage] = []
 
 
 class StyleCompleteRequest(BaseModel):
     """Confirmación explícita del usuario para generar las refs que faltan
     (coste real en créditos)."""
     confirm: bool = False
+
+
+def _ref(n: int, img_id: str) -> str:
+    """Cómo se nombra la imagen n en un motivo — espejo de `refDeImagen` del
+    zod: su id si quien sube lo declaró y, si no, su POSICIÓN, que es lo único
+    que las dos puntas pueden decir igual (el título no deriva ids)."""
+    return img_id if img_id else f"la imagen {n + 1}"
+
+
+def _motivo(clave: str, ref: str = "") -> str:
+    return str(_MOTIVOS[clave]).replace("{ref}", ref)
+
+
+def validar_subida(body: StyleUploadRequest) -> tuple[list[str], list[str]]:
+    """Las reglas de `POST /styles/upload`: las MISMAS que el zod de
+    `nefan-core/src/contracts/style-upload.ts` (leídas de su snapshot) y en el
+    MISMO orden, para que un cuerpo con un solo fallo dé el mismo motivo en los
+    dos procesos.
+
+    Devuelve (etiquetas normalizadas, id de cada imagen) para que el escritor no
+    vuelva a derivarlos. Fail-loud con 422 y ANTES de crear el directorio del
+    pack: hasta la PR 7 de #241 la mitad de estas comprobaciones vivían dentro
+    del bucle que ya había hecho `mkdir` y guardado las imágenes anteriores.
+
+    Lo que NO está aquí, porque exige los BYTES y solo puede mirarlo este
+    proceso: que el base64 decodifique, que pese menos de 12 MB y que PIL sepa
+    abrir la imagen."""
+    if not _LIMITES["nombre"]["min"] <= len(body.name.strip()) <= _LIMITES["nombre"]["max"]:
+        raise HTTPException(status_code=422, detail=_motivo("nombre"))
+    if len(body.description.strip()) > _LIMITES["descripcion_del_pack_max"]:
+        raise HTTPException(status_code=422, detail=_motivo("descripcion_del_pack"))
+    if len(body.style_token.strip()) > _LIMITES["style_token_max"]:
+        raise HTTPException(status_code=422, detail=_motivo("style_token"))
+
+    tags = [t.strip() for t in body.tags if t.strip()]
+    if not _LIMITES["tags"]["min"] <= len(tags) <= _LIMITES["tags"]["max"]:
+        raise HTTPException(status_code=422, detail=_motivo("tags"))
+    if not _LIMITES["imagenes"]["min"] <= len(body.images) <= _LIMITES["imagenes"]["max"]:
+        raise HTTPException(status_code=422, detail=_motivo("imagenes"))
+    if len([i for i in body.images if i.folder == LAMINA]) > _LIMITES["laminas_max"]:
+        raise HTTPException(status_code=422, detail=_motivo("mas_de_una_lamina"))
+
+    ref_ids: list[str] = []
+    seen: set[str] = set()
+    for n, img in enumerate(body.images):
+        ref = _ref(n, img.id)
+        if img.folder not in REF_FOLDERS:
+            raise HTTPException(status_code=422, detail=_motivo("carpeta", ref))
+        if not img.image_b64:
+            raise HTTPException(status_code=422, detail=_motivo("imagen_vacia", ref))
+        # El id que no viene se DERIVA de la descripción, y por eso este proceso
+        # comprueba duplicados que el título no puede ver: él no deriva.
+        ref_id = img.id or _slug(img.description, f"ref_{n + 1}")
+        if len(ref_id) > _LIMITES["ref_id_max"] or not _SAFE_ID.fullmatch(ref_id):
+            raise HTTPException(status_code=422, detail=_motivo("id_invalido", ref_id))
+        if ref_id in seen:
+            raise HTTPException(status_code=422, detail=_motivo("id_duplicado", ref_id))
+        seen.add(ref_id)
+        description = img.description.strip()
+        if len(description) > _LIMITES["descripcion_de_imagen_max"]:
+            raise HTTPException(status_code=422, detail=_motivo("descripcion_de_imagen", ref))
+        if not description and img.folder != LAMINA:
+            raise HTTPException(status_code=422, detail=_motivo("sin_descripcion", ref))
+        ref_ids.append(ref_id)
+    return tags, ref_ids
 
 
 def _slug(text: str, fallback: str) -> str:
@@ -108,11 +184,19 @@ STARTER_REFS: dict[str, list[dict]] = {
 }
 
 
+if set(STARTER_REFS) != set(REF_FOLDERS):
+    raise RuntimeError(
+        "STARTER_REFS no cubre exactamente las carpetas del pack "
+        f"({sorted(STARTER_REFS)} vs {sorted(REF_FOLDERS)}): las tres son obligatorias para que "
+        "un pack cargue, así que una carpeta nueva en nefan-core necesita su starter aquí."
+    )
+
+
 def _starter_file(folder: str, entry: dict) -> str:
     """Archivo de una ref de starter. La lámina conserva el nombre
     `surfaces.jpg` que ya tienen los packs shipped; el resto va por id."""
-    if folder == "surfaces":
-        return "surfaces/surfaces.jpg"
+    if folder == LAMINA:
+        return f"{LAMINA}/{LAMINA}.jpg"
     return f"{folder}/{entry['id']}.jpg"
 
 
@@ -125,39 +209,26 @@ async def styles_upload(body: StyleUploadRequest):
     from style_pack_builder import missing_refs
     from style_packs import _styles_dir_from_config
 
+    # Todo lo que se puede rechazar SIN mirar los bytes, antes de crear nada.
+    tags, ref_ids = validar_subida(body)
+    name = body.name.strip()
+
     styles_dir = _styles_dir_from_config()
-    base = "user_" + _slug(body.name, "estilo")
+    base = "user_" + _slug(name, "estilo")
     style_id = base
     i = 2
     while (styles_dir / style_id).exists():
         style_id = f"{base}_{i}"
         i += 1
 
-    tags = [t.strip() for t in body.tags if t.strip()]
-    if not tags:
-        raise HTTPException(status_code=422, detail="tags vacíos: declara al menos una etiqueta temática")
-    laminas = [img for img in body.images if img.folder == "surfaces"]
-    if len(laminas) > 1:
-        raise HTTPException(
-            status_code=422,
-            detail="más de una lámina de materiales: surfaces/ admite exactamente una imagen",
-        )
-
     pack_dir = styles_dir / style_id
     pack_dir.mkdir(parents=True)
     refs: list[dict] = []
-    seen_ids: set[str] = set()
+    seen_ids: set[str] = set(ref_ids)
     uploaded: list[str] = []
     for n, img in enumerate(body.images):
-        ref_id = img.id or _slug(img.description, f"ref_{n + 1}")
-        if not _SAFE_ID.fullmatch(ref_id):
-            raise HTTPException(status_code=422, detail=f"id inválido: {ref_id}")
-        if ref_id in seen_ids:
-            raise HTTPException(status_code=422, detail=f"id duplicado: {ref_id}")
-        seen_ids.add(ref_id)
+        ref_id = ref_ids[n]
         description = img.description.strip()
-        if not description and img.folder != "surfaces":
-            raise HTTPException(status_code=422, detail=f"ref {ref_id} sin descripción")
         b64 = img.image_b64
         if "," in b64[:64]:  # tolerar data URIs
             b64 = b64.split(",", 1)[1]
@@ -181,7 +252,7 @@ async def styles_upload(body: StyleUploadRequest):
         refs.append({
             "id": ref_id,
             "file": file,
-            "description": description or STARTER_REFS["surfaces"][0]["description"],
+            "description": description or STARTER_REFS[LAMINA][0]["description"],
         })
         uploaded.append(ref_id)
 
@@ -201,10 +272,10 @@ async def styles_upload(body: StyleUploadRequest):
 
     manifest = {
         "style_id": style_id,
-        "name": body.name,
-        "description": body.description or f"Estilo subido por el jugador: {body.name}.",
-        "style_token": body.style_token
-            or f"consistent hand-crafted art style of the reference images ({body.name})",
+        "name": name,
+        "description": body.description.strip() or f"Estilo subido por el jugador: {name}.",
+        "style_token": body.style_token.strip()
+            or f"consistent hand-crafted art style of the reference images ({name})",
         "cover": "cover.jpg",
         "tags": tags,
         "refs": refs,

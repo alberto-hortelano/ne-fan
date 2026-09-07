@@ -1,0 +1,5 @@
+{
+  "$comment": "GENERADO por nefan-core/scripts/dump-borrador-de-mundo.ts desde src/protocol/borrador-de-mundo.ts. NO editar a mano: lo canda test/contract-borrador-de-mundo.test.ts, que compara este fichero con la fuente TS y falla si divergen. Lo lee ai_server/narrative_schemas.py para que el `draft_text` de POST /develop_world se tope con el MISMO umbral que aplican el título y el bridge, en vez de con una tercera copia escrita a mano.",
+  "min": 20,
+  "max": 64000
+}

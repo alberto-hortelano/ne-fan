@@ -921,6 +921,82 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Hermana exacta de la anterior, y con el mismo origen: la copia que hubo que
+  // retirar existía de verdad (`ai_server/routers/narrative.py:32`, hallazgo H1
+  // de la QA de la PR 7 de #241). Sin verla saltar aquí, la regla nueva sería
+  // una lista que nadie ha probado.
+  it("[error] el-umbral-del-borrador-no-se-copia-a-mano: re-declarar el umbral salta; leerlo del snapshot no", () => {
+    const borrador = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter(
+        (v) => v.ruleId === "el-umbral-del-borrador-no-se-copia-a-mano",
+      );
+
+    // Las dos formas de volver a escribir el umbral: por el nombre del contrato
+    // y por el `Field` del wire. La primera línea es LITERALMENTE la que había
+    // en narrative.py hasta esta vuelta de QA.
+    assert.deepEqual(
+      borrador([
+        {
+          path: "ai_server/routers/narrative.py",
+          text: "    draft_text: str = Field(min_length=20, max_length=64_000)\n",
+          imports: [],
+        },
+        {
+          path: "ai_server/otro.py",
+          text: "BORRADOR_MIN = 20\nBORRADOR_MAX = 64_000\n",
+          imports: [],
+        },
+        {
+          path: "qa/guiones/99-lo-que-sea.mjs",
+          text: "const BORRADOR_MIN = 20;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: "const limites = { BORRADOR_MAX: 64_000 };\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "ai_server/otro.py:1",
+        "ai_server/otro.py:2",
+        "ai_server/routers/narrative.py:1",
+        "nefan-core/bridge/handlers/session.ts:1",
+        "qa/guiones/99-lo-que-sea.mjs:1",
+      ],
+      "re-declarar el umbral del borrador fuera de su fuente salta en los procesos escaneados",
+    );
+
+    // Vecinos inocentes: leer el snapshot, derivar el `Field` de lo leído,
+    // nombrar la constante en prosa o mandar un `draft_text` cualquiera es
+    // justo lo que la regla quiere que se haga.
+    assert.deepEqual(
+      borrador([
+        {
+          path: "ai_server/narrative_schemas.py",
+          text: 'BORRADOR_MIN = _BORRADOR["min"]\nBORRADOR_MAX = _BORRADOR["max"]\n',
+          imports: [],
+        },
+        {
+          path: "ai_server/routers/narrative.py",
+          text: "    draft_text: str = Field(min_length=BORRADOR_MIN, max_length=BORRADOR_MAX)\n",
+          imports: [],
+        },
+        {
+          path: "qa/guiones/99-lo-que-sea.mjs",
+          text: '// el mínimo (BORRADOR_MIN) lo aplica el bridge\nws.send({ draftText: "A".repeat(19) });\n',
+          imports: [],
+        },
+        {
+          path: "labs/narrative/fake-ai-server.ts",
+          text: 'console.error(`[fake-ai] develop_world (${String(body.draft_text ?? "").length} chars)`);\n',
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   // Hermana de la anterior una capa más arriba: allí es un número de física
   // re-escrito, aquí es DÓNDE escucha un servicio compuesto a mano en el único
   // proceso que no puede saberlo del snapshot. Sobre el árbol de hoy la regla
@@ -2367,6 +2443,86 @@ describe("fronteras arquitectónicas", () => {
         {
           path: "nefan-core/src/simulation/reaparicion.ts",
           text: "x: (rectDelTile.minX + rectDelTile.maxX) / 2,\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
+  it("[error] la-logica-de-juego-no-vuelve-al-cliente: el título vuelve a decidir sobre el borrador, el estilo y la subida; pintarlos no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
+
+    // PR 7 de #241: literalmente lo que había el día que se movió — el umbral
+    // del borrador (en las DOS puntas: título y bridge), la constante de
+    // carpetas del título, el filtro y el fallback de la preselección, y los
+    // cuatro umbrales de la subida.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/title-screen.ts",
+          text:
+            'const UPLOAD_FOLDER_LABELS = [{ id: "faces" }];\n' +
+            "const compatible = styles.filter((st) => casa(st));\n" +
+            "const preferred = compatible[0].style_id;\n" +
+            "if (name.length < 2) return;\n" +
+            "if (tags.length === 0) return;\n" +
+            "if (images.length === 0) return;\n" +
+            'if (!description && folder !== "surfaces") return;\n' +
+            "if (draft.length < 20) return;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: "if (draft.length > 64_000) return fail();\nconst hay = styles.some((st) => st.style_id === id);\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/handlers/session.ts:1",
+        "nefan-core/bridge/handlers/session.ts:2",
+        "nefan-html/src/ui/title-screen.ts:1",
+        "nefan-html/src/ui/title-screen.ts:2",
+        "nefan-html/src/ui/title-screen.ts:3",
+        "nefan-html/src/ui/title-screen.ts:4",
+        "nefan-html/src/ui/title-screen.ts:5",
+        "nefan-html/src/ui/title-screen.ts:6",
+        "nefan-html/src/ui/title-screen.ts:7",
+        "nefan-html/src/ui/title-screen.ts:8",
+      ],
+    );
+
+    // Lo que SÍ es del cliente y tiene que seguir compilando: llamar a las
+    // funciones de core y pintar lo que devuelven; indexar los estilos por id
+    // (`styles.map`, que NO es elegir); comprobar la compatibilidad de UN
+    // estilo, que es lo que hace `start_session` para avisar; y medir el largo
+    // de cualquier otra cosa que no sean los cuatro umbrales de la subida.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/title-screen.ts",
+          text:
+            "const { ofrecidos, porDefecto } = eleccionDeEstilo(styles, selectedGame);\n" +
+            "const styleById = new Map(styles.map((st) => [st.style_id, st]));\n" +
+            "const comprobado = validarSubidaDeEstilo({ name, tags, images });\n" +
+            "if (!validarBorrador(draftEl.value).ok) return;\n" +
+            "const ROTULO_DE_CARPETA: Record<StyleRefFolder, string> = { faces: rotulo };\n" +
+            "if (avisos.length === 0) return;\n" +
+            "if (nombreDelModelo.length < 3) return;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text:
+            "const { porDefecto } = eleccionDeEstilo(styles, { style_id: game.style_id, tags });\n" +
+            "if (!styleCompatibleWithGame(style.tags, meta.tags)) console.warn(aviso);\n",
+          imports: [],
+        },
+        // Y en core los mismos nombres no son asunto de esta regla.
+        {
+          path: "nefan-core/src/session/eleccion-de-estilo.ts",
+          text: "const compatibles = styles.filter((s) => casa(s));\nreturn compatible[0];\n",
           imports: [],
         },
       ]),

@@ -889,6 +889,47 @@
         }
       ],
       "porque": "El grafo de imports del checker de fronteras (#359): el cierre transitivo desde los ficheros del cliente, el camino más corto y la denuncia del destino no escaneado. Nace con batería propia y SINTÉTICA —`SourceFile[]` fabricados, sin recorrer el repo— justo para poder medirse: `check.ts` lleva en `sin_mutar` porque su única batería escanea 600 ficheros por mutante, y este módulo es la plantilla de cómo sacarlo de ahí. Suelo `sin medir` porque estrena: la primera medida exige una corrida autorizada (`permisoLocal` rechaza el coste desconocido) y el candado de mutation-config.test.ts lo caduca en cuanto la huella traiga el número. Y lo hizo: la corrida 33990281788 (2026-09-05) midió 59 mutantes con 6 vivos, los seis en código defensivo que ningún test podía observar (`imports ?? []` dos veces sobre un campo que el colector siempre rellena, la deduplicación y el índice de la cola del BFS, y un `arista?.roto` sin caso). Se quitó el código, no se añadieron tests contra él —`imports` pasó a obligatorio en `SourceFile`, con `[]` para lo que no es TS— y el único test nuevo es el de la entrada no escaneada, que sí es comportamiento. Suelo 100 PUESTO A LA MEDIDA local del mismo día: 0 vivos de 48."
+    },
+    {
+      "id": "borrador-de-mundo",
+      "mutate": [
+        "src/protocol/borrador-de-mundo.ts"
+      ],
+      "tests": [
+        "test/borrador-de-mundo.test.ts",
+        "test/contract-borrador-de-mundo.test.ts"
+      ],
+      "break": "sin medir",
+      "excluidos": [
+        {
+          "test": "test/bridge-session.test.ts",
+          "porque": "Importa los dos motivos para AFIRMAR que el `game_created.error` del bridge es el mismo texto que ve el título, que es justo lo que esta PR unifica — pero para eso levanta un BridgeContext entero con su gamesDir temporal y sus 53 casos, y con `coverageAnalysis: off` eso se pagaría una vez por mutante. Lo que puede matar un mutante del umbral o del recorte lo cubre `borrador-de-mundo.test.ts`, que es puro; lo que este aporta —que el bridge no se invente su propia redacción— lo mide `npm test` en cada corrida, que es donde tiene que estar."
+        }
+      ],
+      "porque": "El umbral que decide si se llama al motor narrativo para desarrollar un mundo entero (PR 7 de #241, 2026-09-07): mínimo 20 caracteres, máximo 64.000, medidos sobre el texto YA recortado. Hasta hoy estaba escrito en las dos puntas y no era el mismo — `title-screen.ts` solo miraba el mínimo (un .md de 200 kB viajaba entero por el cable para que lo rechazara el bridge) y cada punta traía su redacción, así que el mismo borrador daba dos mensajes distintos según quién lo cazara primero. Y desde la vuelta de QA de esa PR (hallazgo H1) hay un TERCER consumidor que no puede importar TypeScript: `ai_server/routers/narrative.py` topaba el `draft_text` de `POST /develop_world` con una copia en bruto del 20 y del 64.000, y ahora lee los dos números del snapshot `data/contract/borrador-de-mundo.json` que vuelca `scripts/dump-borrador-de-mundo.ts`, molde de `physics.json` y de `style-upload.json`. Batería de DOS ficheros, como `style-upload`: `borrador-de-mundo.test.ts`, que tiene por sujeto el umbral y escribe a mano el motivo de cada rechazo, y `contract-borrador-de-mundo.test.ts`, que alcanza `borradorSnapshot()` y es quien afirma que lo commiteado es lo que produce la fuente de hoy. Los mutantes que IMPORTAN son los dos filos, el recorte y ahora el snapshot: `<` por `<=` en el mínimo deja pasar un borrador de 19 caracteres a una génesis de 1-3 min; quitar el `.trim()` hace que «   » mida 3 y no 0, que es exactamente la divergencia que se cierra; cambiar cualquiera de los dos motivos rompe el «el mismo texto por los dos caminos», que es la mitad del sentido del módulo (el jugador lee el del bridge cuando el título ya no lo caza); y un `borradorSnapshot()` que devuelva otro número deja a ai_server rechazando con un 422 de Pydantic borradores que el título y el bridge aceptan. Nace con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido); ~25 líneas de código, estimados ~15 mutantes; la autorización 2 del programa trae el número y el candado de `test/mutation-config.test.ts` obliga a copiarlo."
+    },
+    {
+      "id": "eleccion-de-estilo",
+      "mutate": [
+        "src/session/eleccion-de-estilo.ts"
+      ],
+      "tests": [
+        "test/eleccion-de-estilo.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "Qué estilos se le ofrecen a un mundo y cuál viene puesto (PR 7 de #241, 2026-09-07). Hasta hoy lo contestaban dos criterios distintos y se sabía: el título EXIGÍA compatibilidad de tags al estilo que el mundo declara —si no casaba ni lo ofrecía, y con cero compatibles bloqueaba «continuar»— y el bridge NO, así que un mundo podía arrancar con un estilo distinto del que dice su `game.json` sin que nadie lo dijera (divergencia viva anotada por la crítica de #241). Manda el bridge, por decisión del usuario. Batería de un fichero porque es el único test que lo importa: sus dos consumidores son `handleCreateGame` y el título, y el cliente no entra en la mutación de core. Los mutantes que IMPORTAN: girar el orden de las dos caídas (`delMundo` antes que `compatible`) devuelve el criterio del título y con él la divergencia; quitar el `|| o === elegido` del filtro deja el preseleccionado FUERA de la lista ofrecida, o sea un `<select>` con un `value` que no es ninguna de sus opciones; invertir `compatible` ofrece justo los que no casan; y devolver `\"\"` en vez de `null` sin estilos hace que el bridge cree un mundo con `style_id` vacío en vez de fallar. Nace con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido); ~15 líneas de código, estimados ~15 mutantes; la autorización 2 del programa trae el número."
+    },
+    {
+      "id": "style-upload",
+      "mutate": [
+        "src/contracts/style-upload.ts"
+      ],
+      "tests": [
+        "test/style-upload.test.ts",
+        "test/contract-style-upload.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "Qué subida de un style pack es válida y con qué motivo se rechaza la que no (PR 7 de #241, 2026-09-07): el criterio que comparten el título y `ai_server/routers/styles.py`, que hasta hoy eran cuatro comprobaciones con sus textos en el cliente y ocho con los suyos y sus números a mano en Python — más las carpetas del pack escritas por tercera vez en `style_packs.py`. Python ya no las copia: lee el snapshot `data/contract/style-upload.json` que vuelca `scripts/dump-style-upload.ts`, molde de `physics.json`. Batería de DOS ficheros: `style-upload.test.ts`, que tiene por sujeto el zod y escribe a mano el motivo de cada rechazo, y `contract-style-upload.test.ts`, que lo alcanza por `styleUploadSnapshot()` y es quien afirma que lo commiteado es lo que produce la fuente de hoy. Los mutantes que IMPORTAN: cada límite es una puerta a un pack roto (subir `laminas_max` mete dos rejillas de materiales en un pack que solo pinta con una; invertir `folder !== CARPETA_LAMINA` exige descripción justo a la única que no la necesita y se la perdona a las que sí; quitar el `.trim()` del nombre deja pasar un estilo llamado «   »); el ORDEN de las comprobaciones importa tanto como ellas, porque es lo que hace que un cuerpo con un solo fallo dé el mismo motivo en los dos procesos; y cambiar una plantilla de motivo rompe ese mismo contrato por el lado del texto. Lo que NO se mide aquí porque no está aquí: que el base64 decodifique, que pese menos de 12 MB y que PIL sepa abrir la imagen — eso exige los bytes y solo puede mirarlo ai_server. Nace con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido); ~70 líneas de código, estimados ~50 mutantes; la autorización 2 del programa trae el número."
     }
   ]
 }

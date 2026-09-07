@@ -211,6 +211,13 @@ sin gastar. El manifest declara además un **starter mínimo** en las carpetas
 donde no se subió nada (la lámina, una cara y un personaje); esas refs
 "declaradas sin archivo" son lo que `GET /styles/{id}/missing` presupuesta y
 `POST /styles/{id}/complete` (confirm=true) genera calcando las subidas.
+Qué subida VALE (cuántas imágenes, cuántas etiquetas, qué carpetas, quién
+puede ir sin descripción) y el motivo exacto de cada rechazo se declaran UNA
+vez, en `src/contracts/style-upload.ts`; el título los comprueba antes de
+subir y `ai_server` los lee del snapshot `data/contract/style-upload.json`
+(`npm run dump-style-upload`), así que el jugador ve la misma frase la cace
+quien la cace. Lo que solo puede mirar el servidor, porque exige los bytes:
+que el base64 decodifique, que pese menos de 12 MB y que sea una imagen.
 
 **3. A mano** — cualquier imagen propia vale si cumple las reglas de
 composición de su rol. Colocarla en la carpeta correcta, declararla en

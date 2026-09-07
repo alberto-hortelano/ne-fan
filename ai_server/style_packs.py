@@ -32,11 +32,50 @@ RUNTIME_CONFIG_PATH = (
 )
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-#: Carpetas admitidas en un pack (espejo de STYLE_REF_FOLDERS en
-#: nefan-core/src/games/style-refs.ts). Cada una es un ROL: surfaces/ la
+#: Contrato de la subida de un style pack: NO se copia, se LEE del snapshot que
+#: vuelca nefan-core/scripts/dump-style-upload.ts desde la fuente única
+#: (src/contracts/style-upload.ts). Mismo patrón que physics.json y
+#: runtime_config.json, y por la misma razón aprendida cara (#300): un número o
+#: una lista declarados en dos procesos divergen en silencio y ninguna suite se
+#: entera. Hasta la PR 7 de #241 las tres carpetas del pack estaban escritas
+#: aquí a mano, otra vez en el título (`UPLOAD_FOLDER_LABELS`) y una tercera en
+#: el zod de core. Que el snapshot esté fresco lo canda
+#: nefan-core/test/contract-style-upload.test.ts.
+CONTRACT_STYLE_UPLOAD_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "nefan-core" / "data" / "contract" / "style-upload.json"
+)
+
+
+def _load_style_upload(path: Path | None = None) -> dict:
+    """El snapshot del contrato de subida. Fail-loud: sin él no hay defaults
+    inventados — inventarlos es exactamente cómo se diverge."""
+    p = Path(path) if path else CONTRACT_STYLE_UPLOAD_PATH
+    if not p.exists():
+        raise FileNotFoundError(
+            f"style-upload.json not found at {p}. "
+            "Run `cd nefan-core && npm run dump-style-upload` to regenerate it."
+        )
+    with open(p, encoding="utf-8") as f:
+        data = json.load(f)
+    for key in ("carpetas", "lamina", "ref_id_pattern", "limites", "motivos"):
+        if key not in data:
+            raise ValueError(
+                f"{p} has no `{key}`. Regenerate it with `npm run dump-style-upload`."
+            )
+    return data
+
+
+STYLE_UPLOAD = _load_style_upload()
+
+#: Carpetas admitidas en un pack, del snapshot. Cada una es un ROL: surfaces/ la
 #: lámina de materiales, faces/ las caras temáticas, characters/ los model
 #: sheets. El rol de una ref ES la carpeta de su archivo.
-REF_FOLDERS = ("surfaces", "faces", "characters")
+REF_FOLDERS = tuple(STYLE_UPLOAD["carpetas"])
+
+#: La carpeta cuyo contenido es la lámina de materiales (la única que puede ir
+#: sin descripción y de la que un pack admite exactamente una).
+LAMINA = STYLE_UPLOAD["lamina"]
 
 
 def ref_folder(file: str) -> str:

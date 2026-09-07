@@ -21,10 +21,13 @@ nefan-core/               TypeScript — logica de juego (bridge + cliente web)
                            paso-del-jugador (andar y su velocidad), mirada,
                            obstaculos-del-jugador, reaparicion (dónde vuelve al
                            morir) y hablar-con-un-npc (el saludo y su espera)
-    protocol/              Mensajes frontend ↔ logica
+    protocol/              Mensajes frontend ↔ logica; borrador-de-mundo: cuándo
+                           un borrador vale una génesis (bridge y título, #241)
     plugins/               Plugins declarativos: tipos zod, hash, DSL, loader, dispatcher
     contract/              model-io/ (zod del I/O del modelo) + arch/ (checker de fronteras)
-    contracts/             Wire tipado entre procesos (asset-store, remote-gen, State API…)
+    contracts/             Wire tipado entre procesos (asset-store, remote-gen, State API…);
+                           style-upload: qué subida de style pack vale, con su
+                           snapshot para que ai_server no copie los números (#241)
     games/                 Loaders de juegos y estilos (game.json, style.json, snapshots)
     narrative/             NarrativeState (save canónico), serialización para el LLM
     scene/                 Format D → world scene, builders greybox, validador,
@@ -33,7 +36,9 @@ nefan-core/               TypeScript — logica de juego (bridge + cliente web)
                            y qué run manda (no pagar dos veces, #241)
     session/               Facetas de sesión que consume el cliente; gates-de-imagen:
                            cuándo se gasta en imagen IA, por faceta (#508);
-                           fusible-de-skins: el cortacircuitos de skins IA (#236)
+                           fusible-de-skins: el cortacircuitos de skins IA (#236);
+                           eleccion-de-estilo: qué estilos se le ofrecen a un mundo
+                           y cuál viene puesto (título y bridge, #241)
     systems/               Registry genérico de implementaciones de hot loop
     world-map/             Mapa multinivel, lugares, triggers
   bridge/
