@@ -108,6 +108,21 @@ export class BridgeGameClient implements GameClient {
 
     bridge.on("state_update", (msg) => {
       if (!msg) return;
+      // Fail-loud (QA de la PR 4 de #241, H1): el canal servidor→cliente solo
+      // está TIPADO, ningún zod lo valida, y el HUD depende de estos dos campos.
+      // Sin la guarda, un `state_update` que no los traiga deja la barra de vida
+      // en `width: NaN%` (congelada) y el aro a manos desnudas, con el registro
+      // diciendo «sin errores». Se conserva el último frame bueno y se avisa.
+      if (typeof msg.playerMaxHp !== "number" || typeof msg.playerWeaponId !== "string") {
+        errors.push(
+          "bridge",
+          `state_update sin playerMaxHp/playerWeaponId (${JSON.stringify({
+            playerMaxHp: msg.playerMaxHp,
+            playerWeaponId: msg.playerWeaponId,
+          })}): el bridge no es de esta versión`,
+        );
+        return;
+      }
       const frame: FrameResult = {
         events: msg.events ?? [],
         playerHp: msg.playerHp,
