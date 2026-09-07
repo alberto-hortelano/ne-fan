@@ -5,7 +5,7 @@
     {
       "fichero": "src/main.ts",
       "lineas": 1417,
-      "porque": "Raíz de composición del cliente: cableado, bucle, arranque y suscripciones al motor. Mide 1417 (2026-09, cierre de #358: de 3.079 a 1417 en ocho cortes más `porValor` en core). Lo que queda es lo que la crítica de #358 midió como pegamento —el bucle (34 colaboradores), el arranque (19), los eventos del motor (20)—, el seam del banco y el menú dev, que es un inventario sobre todo lo demás (8 colaboradores). No se trocea más: hacerlo exige el objeto de contexto de treinta campos que se rechazó dos veces (T3 §4.2, 2026-09-01; crítica de #358, 2026-09-06). Si esta cifra sube, el motivo va aquí como siempre; si alguien quiere bajarla, abre un issue con la frontera MEDIDA (≤ 6 colaboradores), no un «#358 bis».",
+      "porque": "Raíz de composición del cliente: cableado, bucle, arranque y suscripciones al motor. Mide 1417 (2026-09, cierre de #358: de 3.079 a 1417 en ocho cortes más `porValor` en core). Lo que queda es lo que la crítica de #358 midió como pegamento —el bucle (34 colaboradores), el arranque (19), los eventos del motor (20)—, el seam del banco y el menú dev, que el plan del corte 8 midió como inventario sobre todo lo demás (8 colaboradores). No se trocea más: hacerlo exige el objeto de contexto de treinta campos que se rechazó dos veces (T3 §4.2, 2026-09-01; crítica de #358, 2026-09-06). Si esta cifra sube, el motivo va aquí como siempre; si alguien quiere bajarla, abre un issue con la frontera MEDIDA (≤ 6 colaboradores), no un «#358 bis».",
       "issue": null
     },
     {
