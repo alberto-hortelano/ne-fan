@@ -229,6 +229,55 @@ TILE_MPC = _PHYSICS["tile_mpc"]
 FOOTPRINT_MAX_CELLS_POR_KIND = dict(_PHYSICS["footprint_max_cells"])
 
 
+# Umbral del BORRADOR DE MUNDO: tampoco se copia. La regla ("cuándo un borrador
+# vale una génesis") vive en nefan-core/src/protocol/borrador-de-mundo.ts, la
+# aplican el título y el bridge, y este proceso —que es quien llama al motor en
+# POST /develop_world— la topaba con una TERCERA declaración escrita a mano
+# (`Field(min_length=20, max_length=64_000)` en routers/narrative.py), que es el
+# hallazgo H1 de la QA de la PR 7 de #241: la misma enfermedad que esa PR vino a
+# curar, un piso más allá. Aquí llegan los dos números del snapshot.
+#
+# Solo viajan los números, no los MOTIVOS: el texto que lee el jugador se lo da
+# quien caza el borrador primero (el título o el bridge, los dos con
+# `validarBorrador`), y lo de aquí es la red de debajo — un 422 estructurado de
+# Pydantic que solo se alcanza llamando a /develop_world sin pasar por el bridge.
+# Que el snapshot esté fresco lo canda
+# nefan-core/test/contract-borrador-de-mundo.test.ts; que nadie vuelva a escribir
+# estos números a mano, la regla `el-umbral-del-borrador-no-se-copia-a-mano` de
+# arch-rules.json.
+CONTRACT_BORRADOR_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "nefan-core" / "data" / "contract" / "borrador-de-mundo.json"
+)
+
+
+def _load_contract_borrador(path: Path | None = None) -> dict:
+    """El snapshot del umbral del borrador. Fail-loud: sin él no hay defaults
+    inventados — inventarlos es exactamente cómo se diverge."""
+    p = Path(path) if path else CONTRACT_BORRADOR_PATH
+    if not p.exists():
+        raise FileNotFoundError(
+            f"borrador-de-mundo.json not found at {p}. "
+            "Run `cd nefan-core && npm run dump-borrador-de-mundo` to regenerate it."
+        )
+    with open(p, encoding="utf-8") as f:
+        data = json.load(f)
+    for key in ("min", "max"):
+        if key not in data:
+            raise ValueError(
+                f"{p} has no `{key}`. Regenerate it with `npm run dump-borrador-de-mundo`."
+            )
+    return data
+
+
+_BORRADOR = _load_contract_borrador()
+
+#: Mínimo y máximo en caracteres del borrador de mundo (ya recortado: el bridge
+#: manda el texto que devuelve `validarBorrador`, que recorta dentro).
+BORRADOR_MIN = _BORRADOR["min"]
+BORRADOR_MAX = _BORRADOR["max"]
+
+
 def _num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 

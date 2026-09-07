@@ -14,6 +14,19 @@
  *  redacción, así que el mismo borrador daba dos mensajes distintos según
  *  quién lo cazara primero. Aquí hay un umbral y un texto.
  *
+ *  Y hay un TERCER proceso que también mide el borrador: ai_server, que es
+ *  quien llama al motor (`POST /develop_world`). Su umbral estaba escrito en
+ *  bruto —`Field(min_length=20, max_length=64_000)` en
+ *  `ai_server/routers/narrative.py`, hallazgo H1 de la QA de esta PR— y no
+ *  puede importar TypeScript, así que lee los dos números del snapshot
+ *  `data/contract/borrador-de-mundo.json` que vuelca
+ *  `scripts/dump-borrador-de-mundo.ts`, igual que lee `physics.json` y
+ *  `style-upload.json` y por el mismo motivo medido (#300): dos declaraciones
+ *  del mismo número divergen en silencio y ninguna suite se entera. La
+ *  frescura del snapshot la canda `test/contract-borrador-de-mundo.test.ts`;
+ *  que nadie los vuelva a escribir a mano, la regla
+ *  `el-umbral-del-borrador-no-se-copia-a-mano` de `arch-rules.json`.
+ *
  *  Módulo PURO: sin DOM, sin `node:*`. Devuelve `Result` porque «vacío» y
  *  «error» se confundirían al colapsarse — un borrador que no vale no es un
  *  borrador corto, es un borrador con motivo. */
@@ -57,4 +70,33 @@ export function validarBorrador(texto: string): ResultadoDeBorrador {
   if (borrador.length < BORRADOR_MIN) return { ok: false, error: MOTIVOS_DE_BORRADOR.corto };
   if (borrador.length > BORRADOR_MAX) return { ok: false, error: MOTIVOS_DE_BORRADOR.largo };
   return { ok: true, borrador };
+}
+
+/** Lo que se serializa a `data/contract/borrador-de-mundo.json` para que
+ *  ai_server tope el `draft_text` de `POST /develop_world` con estos números
+ *  en vez de copiarlos.
+ *
+ *  Viajan los DOS números y nada más. Los MOTIVOS no viajan a propósito: el
+ *  texto que lee el jugador se lo da quien lo caza primero —el título o el
+ *  bridge, los dos con `validarBorrador`— y la comprobación de ai_server es la
+ *  red de debajo, un 422 estructurado de Pydantic que solo se alcanza si algo
+ *  llama a `/develop_world` sin pasar por el bridge. Mandarle una redacción
+ *  que no emite sería snapshot que nadie lee. */
+export interface BorradorSnapshot {
+  $comment: string;
+  min: number;
+  max: number;
+}
+
+export function borradorSnapshot(): BorradorSnapshot {
+  return {
+    $comment:
+      "GENERADO por nefan-core/scripts/dump-borrador-de-mundo.ts desde src/protocol/borrador-de-mundo.ts. " +
+      "NO editar a mano: lo canda test/contract-borrador-de-mundo.test.ts, que compara este fichero con " +
+      "la fuente TS y falla si divergen. Lo lee ai_server/narrative_schemas.py para que el `draft_text` de " +
+      "POST /develop_world se tope con el MISMO umbral que aplican el título y el bridge, en vez de con " +
+      "una tercera copia escrita a mano.",
+    min: BORRADOR_MIN,
+    max: BORRADOR_MAX,
+  };
 }

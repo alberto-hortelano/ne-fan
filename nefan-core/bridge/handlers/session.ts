@@ -381,8 +381,12 @@ export async function handleStartSession(
     }
     const characterMode = modoEfectivoDePersonajes({ renderMode, characterMode: charElegido });
     // Compatibilidad TEMÁTICA estilo↔juego (tags): warning, no abort — el
-    // matching es heurístico sobre vocabulario libre y el selector del
-    // título ya filtra; un typo en un tag no debe brickear una partida.
+    // matching es heurístico sobre vocabulario libre y un typo en un tag no
+    // debe brickear una partida. Y desde la PR 7 de #241 el título YA NO
+    // filtra: ofrece el estilo que declara el mundo aunque no case, marcado
+    // «(del mundo · otro tema)», y viene preseleccionado, así que este aviso
+    // es lo único que queda. Hoy es un `console.warn` del servidor que el
+    // jugador no ve; que llegue a su registro lo pide #537.
     if (!styleCompatibleWithGame(style.tags, meta.tags)) {
       console.warn(
         `Bridge: estilo "${style.style_id}" (tags: ${style.tags.join(",")}) no casa ` +

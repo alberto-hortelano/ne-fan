@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from deps import deps
 from llm_client import NarrativeUnavailable
+from narrative_schemas import BORRADOR_MAX, BORRADOR_MIN
 
 router = APIRouter()
 
@@ -28,8 +29,22 @@ class ReportPlayerChoiceRequest(BaseModel):
 
 class DevelopWorldRequest(BaseModel):
     """Borrador de mundo del jugador (textarea o archivo .md/.txt) que el
-    motor narrativo desarrolla contra la plantilla de 10 secciones."""
-    draft_text: str = Field(min_length=20, max_length=64_000)
+    motor narrativo desarrolla contra la plantilla de 10 secciones.
+
+    El umbral NO se escribe aquí: sale del snapshot `borrador-de-mundo.json`
+    (ver narrative_schemas.py), que es la misma fuente que aplican el título y
+    el bridge con `validarBorrador`. Hasta la QA de la PR 7 de #241 estaba aquí
+    a mano —`Field(min_length=20, max_length=64_000)`—, o sea una TERCERA
+    declaración ejecutable del mismo umbral en un tercer proceso: subir el
+    máximo en TS dejaba pasar un borrador que aquí moría con un 422 que el
+    jugador lee como `develop_world: HTTP 422 …`.
+
+    El texto llega YA RECORTADO (el bridge manda lo que devuelve
+    `validarBorrador`), así que medirlo en bruto aquí y recortado allí da el
+    mismo veredicto; esta comprobación es la red de debajo para quien llame al
+    endpoint sin pasar por el bridge, y su rechazo es el 422 estructurado de
+    Pydantic, no un motivo de producto."""
+    draft_text: str = Field(min_length=BORRADOR_MIN, max_length=BORRADOR_MAX)
 
 
 @router.post("/develop_world")

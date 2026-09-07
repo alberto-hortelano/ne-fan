@@ -921,6 +921,82 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Hermana exacta de la anterior, y con el mismo origen: la copia que hubo que
+  // retirar existía de verdad (`ai_server/routers/narrative.py:32`, hallazgo H1
+  // de la QA de la PR 7 de #241). Sin verla saltar aquí, la regla nueva sería
+  // una lista que nadie ha probado.
+  it("[error] el-umbral-del-borrador-no-se-copia-a-mano: re-declarar el umbral salta; leerlo del snapshot no", () => {
+    const borrador = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter(
+        (v) => v.ruleId === "el-umbral-del-borrador-no-se-copia-a-mano",
+      );
+
+    // Las dos formas de volver a escribir el umbral: por el nombre del contrato
+    // y por el `Field` del wire. La primera línea es LITERALMENTE la que había
+    // en narrative.py hasta esta vuelta de QA.
+    assert.deepEqual(
+      borrador([
+        {
+          path: "ai_server/routers/narrative.py",
+          text: "    draft_text: str = Field(min_length=20, max_length=64_000)\n",
+          imports: [],
+        },
+        {
+          path: "ai_server/otro.py",
+          text: "BORRADOR_MIN = 20\nBORRADOR_MAX = 64_000\n",
+          imports: [],
+        },
+        {
+          path: "qa/guiones/99-lo-que-sea.mjs",
+          text: "const BORRADOR_MIN = 20;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: "const limites = { BORRADOR_MAX: 64_000 };\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "ai_server/otro.py:1",
+        "ai_server/otro.py:2",
+        "ai_server/routers/narrative.py:1",
+        "nefan-core/bridge/handlers/session.ts:1",
+        "qa/guiones/99-lo-que-sea.mjs:1",
+      ],
+      "re-declarar el umbral del borrador fuera de su fuente salta en los procesos escaneados",
+    );
+
+    // Vecinos inocentes: leer el snapshot, derivar el `Field` de lo leído,
+    // nombrar la constante en prosa o mandar un `draft_text` cualquiera es
+    // justo lo que la regla quiere que se haga.
+    assert.deepEqual(
+      borrador([
+        {
+          path: "ai_server/narrative_schemas.py",
+          text: 'BORRADOR_MIN = _BORRADOR["min"]\nBORRADOR_MAX = _BORRADOR["max"]\n',
+          imports: [],
+        },
+        {
+          path: "ai_server/routers/narrative.py",
+          text: "    draft_text: str = Field(min_length=BORRADOR_MIN, max_length=BORRADOR_MAX)\n",
+          imports: [],
+        },
+        {
+          path: "qa/guiones/99-lo-que-sea.mjs",
+          text: '// el mínimo (BORRADOR_MIN) lo aplica el bridge\nws.send({ draftText: "A".repeat(19) });\n',
+          imports: [],
+        },
+        {
+          path: "labs/narrative/fake-ai-server.ts",
+          text: 'console.error(`[fake-ai] develop_world (${String(body.draft_text ?? "").length} chars)`);\n',
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   // Hermana de la anterior una capa más arriba: allí es un número de física
   // re-escrito, aquí es DÓNDE escucha un servicio compuesto a mano en el único
   // proceso que no puede saberlo del snapshot. Sobre el árbol de hoy la regla

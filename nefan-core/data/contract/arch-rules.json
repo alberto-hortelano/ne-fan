@@ -716,6 +716,24 @@
       }
     },
     {
+      "id": "el-umbral-del-borrador-no-se-copia-a-mano",
+      "desc": "Cuántos caracteres hace falta que tenga un borrador de mundo no se re-declara fuera de su fuente",
+      "why": "Hermana exacta de `la-fisica-no-se-copia-a-mano`, y nace de lo que la QA de la PR 7 de #241 encontró EN la PR que venía a curar esa enfermedad (hallazgo H1). La PR movió el umbral del borrador —cuándo un texto describe bastante mundo como para pagar una génesis— a `src/protocol/borrador-de-mundo.ts` y dejó al título y al bridge llamando a `validarBorrador`: un umbral y un texto. Pero hay un TERCER proceso que también lo mide, `ai_server/routers/narrative.py`, y ahí seguía escrito en bruto (`draft_text: str = Field(min_length=20, max_length=64_000)`), fuera del snapshot y fuera de esta regla porque el fichero ni siquiera estaba en los `files` del grupo 7 de `la-logica-de-juego-no-vuelve-al-cliente`, que solo escanea el cliente y el bridge. Medido antes de retirarlo: con `BORRADOR_MAX = 100_000` en TS, un borrador de 70.000 caracteres pasaba el título y el bridge y moría en ai_server con un 422 de Pydantic que el jugador lee como `develop_world: HTTP 422 …`, con las tres suites en verde. Hoy la vía es la de siempre: `scripts/dump-borrador-de-mundo.ts` vuelca `data/contract/borrador-de-mundo.json` y `ai_server/narrative_schemas.py` lo lee fail-loud. Lo que esta regla caza es la RE-DECLARACIÓN por sus dos formas: los nombres del contrato asignados a un número, y un `min_length`/`max_length` numérico sobre el `draft_text` del wire. La FUENTE no entra en `files` (src/protocol/borrador-de-mundo.ts, su volcado y sus tests), porque ahí es donde los números tienen que estar; en TypeScript el resto los importa, así que el ámbito real son los procesos que NO pueden importar. OJO a lo que NO caza: un nombre nuevo (`MIN_DRAFT = 20`) pasa, igual que en la regla de los puertos pasa un puerto con nombre inventado, y un `len(texto) < 20` escrito a pelo también — el candado de esa clase no es un regex más ancho, que cazaría medio repo, sino que el número entre en el snapshot, que es lo que se hizo aquí.",
+      "severity": "error",
+      "files": [
+        "ai_server/**/*.py",
+        "qa/**/*.mjs",
+        "labs/**/*.mjs",
+        "labs/**/*.ts",
+        "narrative-mcp/**/*.ts",
+        "nefan-core/bridge/**/*.ts",
+        "nefan-html/src/**/*.ts"
+      ],
+      "text": {
+        "pattern": "\\b(BORRADOR_MIN|BORRADOR_MAX)\\s*[:=]\\s*[0-9]|\\bdraft_text\\b[^\\n]*\\b(?:min|max)_length\\s*=\\s*[0-9]"
+      }
+    },
+    {
       "id": "las-respuestas-de-red-no-se-redefinen-en-linea",
       "desc": "El cliente no se inventa la forma de una respuesta HTTP: la importa del contrato",
       "why": "Tercera de la familia de `nadie-inventa-un-puerto` y `la-fisica-no-se-copia-a-mano`: una forma que vive copiada a mano diverge en silencio de su fuente. Medido al entrar (#318): CINCO sitios de nefan-html/src casteaban `(await res.json()) as { … }` con la forma escrita en línea — dos de ellos el MISMO endpoint (`/skin_sprite_sheet`) con formas DISTINTAS, dos leían un `error?: string` que el servicio real no emite jamás con 200 (fail-loud por HTTPException), y dos redactaban `/styles/{id}/complete` con opcionalidad contradictoria entre sí — mientras `StyleCompleteResponse` y `StyleUploadResponse` existían en el contrato sin que nadie los importara ahí. Lo que esta regla caza es el cast a OBJETO ANÓNIMO sobre un `.json()`: `json()) as {` y `json() as {`, con saltos de línea incluidos (el patrón corre con «gm» y `\\s` cruza líneas). Los usos sanos castan a un identificador importado del contrato (`as GenerateSurfaceAtlasResponse`) y no casan con la llave. OJO a lo que NO caza, para que nadie lo cite como garantía: un `interface` local con nombre y su cast (`as RespuestaLocal`), un cast a genérico con objeto dentro (`as Array<{…}>`), y los casts en `nefan-core/test/**`, que queda FUERA a propósito: 14 casts legítimos sobre servidores fake, 3 de ellos el fixture negativo de esta misma regla. T4 (2026-09-02, #344) amplió los roots a `nefan-core/src`, `bridge` y `services` al borrar `AiClient.health()` (casteaba `/health` a `{status?}` sin un solo llamador) y al tipar `prune.ts` con `AssetRefsResponse`, que existía en el contrato sin que nadie lo importara ahí. La garantía total sería de tipo (un fetch tipado por endpoint); esto es el tripwire del modo de fallo observado.",

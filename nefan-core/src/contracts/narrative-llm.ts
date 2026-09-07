@@ -62,7 +62,10 @@ export interface ReportPlayerChoiceResponse {
 }
 
 export interface DevelopWorldRequest {
-  /** Borrador del jugador, 20–64 000 chars. */
+  /** Borrador del jugador, ya recortado y dentro del umbral que aplica
+   *  `validarBorrador` (`protocol/borrador-de-mundo.ts`). El número no se
+   *  repite aquí a propósito: era la cuarta copia de un umbral que ya vivía en
+   *  tres sitios, y una prosa desactualizada miente más barato que el código. */
   draft_text: string;
 }
 

@@ -68,6 +68,50 @@ describe("validarSubidaDeEstilo · lo que pasa", () => {
     assert.equal(res.subida.images[0].folder, "faces");
   });
 
+  // Lo que devuelve la puerta NO es un detalle interno: es literalmente el
+  // cuerpo que el título sube (`body: JSON.stringify(comprobado.subida)`), y lo
+  // que Python guarda en el manifest. Hasta la vuelta de QA de la PR 7 de #241
+  // (hallazgo H7) ninguna de estas cuatro ramas del `.transform` tenía un solo
+  // aserto: un mutante que tirara el `id` o el `style_token` del camino de ÉXITO
+  // sobrevivía al suite entero, y el pack se escribía sin ellos.
+  it("lo que VIAJA al servidor conserva la descripción del pack, el style_token y el id de cada imagen", () => {
+    const res = validarSubidaDeEstilo(
+      subida({
+        description: "  Ilustración a tinta sobre pergamino envejecido.  ",
+        style_token: "  tinta y pergamino, trazo grueso  ",
+        images: [
+          { folder: "faces", description: "  un portón claveteado  ", image_b64: B64, id: "porton_norte" },
+        ],
+      }),
+    );
+    assert.equal(res.ok, true);
+    if (!res.ok) return;
+    // Los dos del pack salen RECORTADOS (es lo que se escribe en style.json).
+    assert.equal(res.subida.description, "Ilustración a tinta sobre pergamino envejecido.");
+    assert.equal(res.subida.style_token, "tinta y pergamino, trazo grueso");
+    // El id NO se toca: es el que entra en la clave de caché de la imagen, así
+    // que recortarlo o normalizarlo aquí sería cambiarlo a espaldas de quien lo
+    // eligió (y ya lo valida `SAFE_ID`, que no admite espacios).
+    assert.equal(res.subida.images[0].id, "porton_norte");
+    assert.equal(res.subida.images[0].description, "un portón claveteado");
+    assert.equal(res.subida.images[0].image_b64, B64);
+  });
+
+  it("lo que no se mandó no se inventa: la lámina sin `description` ni `id` sale con la cadena vacía y sin id", () => {
+    const res = validarSubidaDeEstilo(
+      subida({ images: [{ folder: CARPETA_LAMINA, image_b64: B64 }] }),
+    );
+    assert.equal(res.ok, true);
+    if (!res.ok) return;
+    // `description` ausente y `description: ""` tienen que dar lo MISMO: Python
+    // recibe siempre la clave (su modelo la tiene con default "") y el manifest
+    // no puede acabar con un `undefined` serializado a nada.
+    assert.equal(res.subida.images[0].description, "");
+    assert.equal("id" in res.subida.images[0], false);
+    assert.equal("description" in res.subida, false);
+    assert.equal("style_token" in res.subida, false);
+  });
+
   it("las tres carpetas del pack valen, y solo esas", () => {
     for (const folder of STYLE_REF_FOLDERS) {
       const img = { folder, description: "algo", image_b64: B64 };
