@@ -37,7 +37,7 @@ import type { InputProvider } from "../input/input-provider.js";
 import type { EscenaServida } from "@nefan-core/src/protocol/messages.js";
 import type { MundoDelCliente } from "../world/mundo-del-cliente.js";
 import type { TileStore } from "../world/tile-store.js";
-import type { FrontierManager } from "../world/frontier.js";
+import type { Frontera } from "@nefan-core/src/scene/frontera.js";
 import type { TravelLedger } from "../ui/travel-ledger.js";
 import type { TileLedger } from "../ui/tile-ledger.js";
 import type { CharacterSpriteManager } from "../renderer/character-sprites.js";
@@ -58,7 +58,7 @@ export interface DepsDelHook {
   mirada: Mirada;
   mundo: MundoDelCliente;
   tileStore: TileStore;
-  frontier: FrontierManager;
+  frontier: Frontera;
   travelLedger: TravelLedger;
   tileLedger: TileLedger;
   characterSprites: CharacterSpriteManager;

@@ -226,7 +226,7 @@ export class FpsRenderer {
   }
 
   /** Muro de niebla sobre la frontera del tile activo, o null para que se
-   *  disipe. El velo lo sigue DECIDIENDO el FrontierManager. */
+   *  disipe. El velo lo DECIDE la `Frontera` de core; esto lo pinta. */
   setFrontierVeil(edge: Edge | null): void {
     this.veilEdge = edge;
     this.gl?.setVeil(edge); // por frame: mismo motivo que el telegraph

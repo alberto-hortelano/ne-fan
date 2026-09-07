@@ -170,8 +170,8 @@ const TELEGRAPH_Y_M = GROUND_OVERLAY_Y;
 const TELEGRAPH_GAIN = 2.2;
 
 // ── Muro de niebla de la frontera ─────────────────────────────────────────
-/** Alto del muro en metros: a 0,25 m del ojo tapa 88° de vertical; a 8 m
- *  (VEIL_M del FrontierManager) sigue por encima del borde superior del FOV. */
+/** Alto del muro en metros: a 0,25 m del ojo tapa 88° de vertical; a 8 m (donde
+ *  la `Frontera` de core enciende el velo) sigue sobre el borde superior del FOV. */
 const VEIL_H_M = 12;
 /** Sobreancho respecto al lado del tile: el difuminado lateral cae FUERA del
  *  tile, así que la frontera queda cubierta de esquina a esquina. */
@@ -1180,8 +1180,8 @@ export class FpsGl {
   }
 
   /** Velo direccional de la frontera: muro de niebla sobre el borde del tile
-   *  activo, o null para que se disipe. Quién DECIDE el velo sigue siendo el
-   *  FrontierManager; esto solo lo pinta. */
+   *  activo, o null para que se disipe. Quién DECIDE el velo es la `Frontera`
+   *  de core (`scene/frontera.ts`); esto solo lo pinta. */
   setVeil(edge: Edge | null): void {
     if (!edge) {
       if (this.veil) this.veil.target = 0;

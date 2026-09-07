@@ -699,6 +699,17 @@
       "porque": "Los bordes entre tiles del mundo continuo y el bloqueo direccional: qué lado de un tile continúa en el vecino y por dónde NO se puede salir. Sale de `sin_mutar` con #339 por el mismo motivo que `scene-validate` y con su misma frase escrita. Batería derivada del árbol de imports: `tile-edges.test.ts`, que lo tiene por sujeto, y `scene-validate-pasadas.test.ts`, que entra por el `import type TileEdges` de su línea 36 — un import de tipo cuenta para el candado de baterías porque el cierre de imports lo ve, y dejarlo fuera sería una excepción sin motivo. Módulo aparte de `scene-validate` y no junto a él: comparten UN test de los cuatro, así que juntarlos haría que cada mutante de los bordes pagase las otras tres suites. 120 líneas, estimadas ~80 mutantes. Suelo 70 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 33 supervivientes de 113 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número."
     },
     {
+      "id": "frontera",
+      "mutate": [
+        "src/scene/frontera.ts"
+      ],
+      "tests": [
+        "test/frontera.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "La frontera del jugador: cuándo se le PROPONE generar el tile vecino (a 16 m del borde), cuándo se le enseña el velo (8 m), cuándo la petición se promueve a blocking (2 m), cuánto se espera una respuesta (5 min) y cuánto se enfría un tile tras un error del bridge (15 s). Es la única regla de GASTO que decide el jugador —cada «sí» dispara `generate_scene` y, con imagen IA, el atlas del tile— y hasta el 2026-09-07 vivía en el cliente (`nefan-html/src/world/frontier.ts`, #512, PR 2 de #241), donde nada se medía y donde `alError` leía su propio reloj. Aquí el reloj entra por parámetro en TODAS las entradas, y por eso la batería puede cruzar 5 minutos y 15 segundos sin esperar ninguno. Batería de un fichero porque es el único test que lo importa: el consumidor es el cliente, que no entra en la mutación de core. Los mutantes que importan son cada umbral y cada transición del autómata, y todos son una propuesta de gasto de más o de menos: `<` → `<=` en los 16 m propone un metro antes; quitar el dedupe de `#pedidos` pide el tile en cada frame; quitar `#rechazados` vuelve a preguntar lo que el jugador acaba de negar; `<` → `<=` en el cooldown re-pide con el motor caído. `sin medir` porque nace sin corrida: `permisoLocal` lo rechaza (coste desconocido) hasta la primera autorizada, que es la que fija el suelo. Estimación del plan: 110-140 mutantes a 0,66-0,85 por línea, es decir POR ENCIMA de `tope_local` (120): no se parte en dos módulos por cuadrar el número —la propuesta consulta `#pedidos` y `#errorEn`, es UN autómata— y `lotes` lo pone en lote propio como a todo lo que nadie ha cronometrado."
+    },
+    {
       "id": "ai-client",
       "mutate": [
         "src/narrative/ai-client.ts"

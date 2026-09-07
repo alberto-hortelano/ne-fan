@@ -1890,6 +1890,62 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  it("[error] la-logica-de-juego-no-vuelve-al-cliente: la frontera del jugador salta si vuelve al cliente; pintarla no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
+
+    // PR 2 de #241 (#512): literalmente lo que había en `world/frontier.ts` el
+    // día que se movió — la clase y sus cinco umbrales con sus nombres.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/world/frontier.ts",
+          text: "const PREFETCH_M = 16;\nconst VEIL_M = 8;\nconst BLOCKING_M = 2;\nconst TILE_TIMEOUT_MS = 5 * 60_000;\nconst ERROR_COOLDOWN_MS = 15_000;\nexport class FrontierManager {}\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/main.ts",
+          text: "// una copia\nconst frontier = new FrontierManager();\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/main.ts:2",
+        "nefan-html/src/world/frontier.ts:1",
+        "nefan-html/src/world/frontier.ts:2",
+        "nefan-html/src/world/frontier.ts:3",
+        "nefan-html/src/world/frontier.ts:4",
+        "nefan-html/src/world/frontier.ts:5",
+        "nefan-html/src/world/frontier.ts:6",
+      ],
+    );
+
+    // Lo que SÍ es del cliente y tiene que seguir compilando: pintar el velo
+    // (`VEIL_MAX_ALPHA` es la opacidad del material, no el umbral), llamar a
+    // la `Frontera` de core y leer el hook del banco (`__nefan.frontier`).
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/renderer/fps-gl.ts",
+          text: "const VEIL_MAX_ALPHA = 0.94;\nconst VEIL_H_M = 12;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/world/frontera-del-jugador.ts",
+          text: 'import type { Frontera } from "@nefan-core/src/scene/frontera.js";\ndeps.frontier.tick(ahora, x, z, tiles, pedir);\n',
+          imports: [],
+        },
+        // Y en core los mismos nombres no son asunto de esta regla.
+        {
+          path: "nefan-core/src/scene/frontera.ts",
+          text: "export class FrontierManager {}\nconst PREFETCH_M = 16;\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {
