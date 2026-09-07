@@ -359,10 +359,18 @@ describe("fronteras arquitectónicas", () => {
     const deLaRegla = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
 
-    // PR 1 (#508): las dos copias de «"" sigue a escenarios» tal como estaban
-    // en modos-de-graficos.ts:106 y title-screen.ts:1624.
+    // PR 1 (#508): las tres copias de «"" sigue a escenarios» tal como estaban
+    // en modos-de-graficos.ts:106, title-screen.ts:1624 y el bridge
+    // (handlers/session.ts:370) — el bridge entra en `files` porque el `why`
+    // nombra esa copia (QA H3): prometer que la vigila y no verla es peor que
+    // no prometerlo.
     assert.deepEqual(
       deLaRegla([
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: "const characterMode = msg.characterMode || renderMode;\n",
+          imports: [],
+        },
         {
           path: "nefan-html/src/ui/modos-de-graficos.ts",
           text: "function modoEfectivoDePersonajes(): Modo {\n  return charactersMode || scenesMode;\n}\n",
@@ -380,6 +388,7 @@ describe("fronteras arquitectónicas", () => {
         },
       ]).map((v) => `${v.path}:${v.line}`),
       [
+        "nefan-core/bridge/handlers/session.ts:1",
         "nefan-html/src/main.ts:1",
         "nefan-html/src/ui/modos-de-graficos.ts:2",
         "nefan-html/src/ui/title-screen.ts:2",
@@ -400,6 +409,11 @@ describe("fronteras arquitectónicas", () => {
         {
           path: "nefan-html/src/ui/title-screen.ts",
           text: "const label = CHAR_MODE_LABELS[mode] || \"—\";\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: "const characterMode = modoEfectivoDePersonajes({ renderMode, characterMode: charElegido });\n",
           imports: [],
         },
         {

@@ -8,9 +8,17 @@
  *  Aquí vive una vez, y los cuatro la llaman.
  *
  *  Módulo PURO: no lee `localStorage`, ni la config, ni el DOM. El cliente
- *  lee sus toggles y la config y los pasa como booleanos; el bridge y core
- *  pasan lo que traen el wire y el save. Así los tres predicados se miden en
- *  test y en mutación, que es lo que un gate de gasto no tenía. */
+ *  lee sus toggles y los pasa como booleanos; el bridge y core pasan lo que
+ *  traen el wire y el save. Así los predicados se miden en test y en
+ *  mutación, que es lo que un gate de gasto no tenía.
+ *
+ *  Lo que NO decide aquí, a propósito: `CONFIG.graphics.ai_skin`. Es el
+ *  interruptor del BACKEND de skins, no el modo de la partida, y meterlo
+ *  dentro del gate dejaba inalcanzable el fail-loud del cliente que aborta el
+ *  arranque cuando un save pide skins con el backend apagado
+ *  (`renderer/aspecto-del-jugador.ts`) — la conducta de la base, que esta PR
+ *  conserva (hallazgo H1 de QA). El cliente lo sigue aplicando donde estaba:
+ *  el rótulo del registro y el chip. */
 
 /** Modo de render de una faceta. `""` = sin elegir: sin sesión (fixtures) o
  *  save previo al campo. En personajes, `""` sigue a escenarios. */
@@ -43,9 +51,6 @@ export interface EntradaDeGates extends FacetasDeModo {
   toggleLocalEscenarios: boolean;
   /** Toggle local de personajes (sin sesión), ídem. */
   toggleLocalPersonajes: boolean;
-  /** `CONFIG.graphics.ai_skin`: con el backend de skins apagado por config no
-   *  se generan personajes, diga lo que diga la partida. */
-  aiSkin: boolean;
 }
 
 export interface GatesDeImagen {
@@ -61,6 +66,6 @@ export interface GatesDeImagen {
 export function gatesDeImagen(f: EntradaDeGates): GatesDeImagen {
   const escenarios = f.renderMode ? f.renderMode === "image" : f.toggleLocalEscenarios;
   const efectivo = modoEfectivoDePersonajes(f);
-  const personajes = f.aiSkin && (efectivo ? efectivo === "image" : f.toggleLocalPersonajes);
+  const personajes = efectivo ? efectivo === "image" : f.toggleLocalPersonajes;
   return { escenarios, personajes };
 }

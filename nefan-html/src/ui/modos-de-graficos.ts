@@ -10,7 +10,10 @@
  *  («¿se genera escenario?», «¿se generan skins?», «un personajes vacío sigue
  *  a escenarios») no está aquí: es `gatesDeImagen` en core
  *  (`session/gates-de-imagen.ts`, #508), a la que este módulo le pasa los
- *  toggles leídos de `localStorage` y la config como booleanos. El resultado
+ *  toggles leídos de `localStorage` como booleanos. `CONFIG.graphics.ai_skin`
+ *  NO va ahí y se aplica aquí abajo (rótulo y chip): apaga el BACKEND, no el
+ *  modo, y el permiso del manager tiene que seguir siendo el modo para que el
+ *  fail-loud de `renderer/aspecto-del-jugador.ts` pueda dispararse. El resultado
  *  se le comunica a quien gasta: el controller del atlas PREGUNTA
  *  (`escenariosGeneran()`) y el manager de skins RECIBE su permiso
  *  (`setSkinsAllowed`). */
@@ -104,16 +107,15 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
   let charactersMode: Modo = "";
 
   /** Los dos gates de gasto, decididos en core con lo que este cliente sabe:
-   *  los modos de la sesión, los dos toggles de `localStorage` (que mandan sin
-   *  sesión, OFF por defecto: cargar una fixture con NPCs descritos no debe
-   *  gastar créditos sin que nadie lo pida) y el backend de skins de la config. */
+   *  los modos de la sesión y los dos toggles de `localStorage` (que mandan
+   *  sin sesión, OFF por defecto: cargar una fixture con NPCs descritos no
+   *  debe gastar créditos sin que nadie lo pida). */
   function gates(): GatesDeImagen {
     return gatesDeImagen({
       renderMode: scenesMode,
       characterMode: charactersMode,
       toggleLocalEscenarios: localStorage.getItem(AUTOIMG_KEY) === "1",
       toggleLocalPersonajes: localStorage.getItem(AICHAR_KEY) === "1",
-      aiSkin: CONFIG.graphics.ai_skin,
     });
   }
 
@@ -137,7 +139,10 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
         "la partida tiene skins IA activados pero graphics.ai_skin=false en config — los personajes irán en base y_bot",
       );
     }
-    const charLabel = g.personajes ? "skins IA" : "personajes en base y_bot";
+    // `ai_skin` en el RÓTULO y no en el gate: lo que el backend apagado
+    // cambia es lo que el jugador lee (arriba ya se le avisó).
+    const charLabel = effChar !== "vector" && CONFIG.graphics.ai_skin
+      ? "skins IA" : "personajes en base y_bot";
     if (scenesMode === "vector") {
       deps.log(`Gráficos: maqueta 3D (clay local, sin imagen IA nueva; ${charLabel})`);
     } else if (scenesMode === "image") {
@@ -198,7 +203,7 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
   const chip = new GraphicsModeChip({
     getState: () => ({
       scenesOn: gates().escenarios,
-      charsOn: gates().personajes,
+      charsOn: deps.characterSprites.skinsAllowed && CONFIG.graphics.ai_skin,
       charsAvailable: CONFIG.graphics.ai_skin,
       hasSession: deps.session.active,
     }),

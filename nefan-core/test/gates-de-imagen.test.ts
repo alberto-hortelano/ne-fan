@@ -1,7 +1,9 @@
-/** Los gates de imagen (#508): cada rama de los tres predicados es una puerta
+/** Los gates de imagen (#508): cada rama de los dos predicados es una puerta
  *  de GASTO, así que cada caso de la tabla escribe la respuesta a mano — el
- *  mutante que invierta una comparación, cambie la caída al toggle o quite el
- *  candado de `aiSkin` se lleva un caso. */
+ *  mutante que invierta una comparación, gire la herencia del modo vacío o
+ *  cambie la caída al toggle se lleva un caso. `CONFIG.graphics.ai_skin` NO
+ *  entra aquí (es del cliente, ver la cabecera del módulo), así que tampoco
+ *  hay casos suyos. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
@@ -51,7 +53,6 @@ describe("gatesDeImagen", () => {
     characterMode,
     toggleLocalEscenarios: false,
     toggleLocalPersonajes: false,
-    aiSkin: true,
     ...resto,
   });
   const sinSesion = (resto: Partial<EntradaDeGates> = {}): EntradaDeGates => conSesion("", "", resto);
@@ -71,10 +72,6 @@ describe("gatesDeImagen", () => {
     ["sin sesión y toggles ON: las dos", sinSesion(TOGGLES_ON), { escenarios: true, personajes: true }],
     ["sin sesión, solo escenarios ON: los skins NO siguen al toggle de escenarios", sinSesion({ toggleLocalEscenarios: true }), { escenarios: true, personajes: false }],
     ["sin sesión, solo personajes ON", sinSesion({ toggleLocalPersonajes: true }), { escenarios: false, personajes: true }],
-    // --- backend de skins apagado por config: personajes nunca, escenarios igual ---
-    ["aiSkin=false apaga personajes con la partida en image/image", conSesion("image", "image", { aiSkin: false }), { escenarios: true, personajes: false }],
-    ["aiSkin=false apaga personajes también sin sesión con el toggle ON", sinSesion({ ...TOGGLES_ON, aiSkin: false }), { escenarios: true, personajes: false }],
-    ["aiSkin=false no enciende nada por sí solo", conSesion("vector", "vector", { aiSkin: false }), { escenarios: false, personajes: false }],
   ];
   for (const [nombre, entrada, esperado] of casos) {
     it(nombre, () => {
