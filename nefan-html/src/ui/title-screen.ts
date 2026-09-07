@@ -19,6 +19,7 @@ import type {
 import type { NarrativeStatusDeJuego } from "@nefan-core/src/protocol/messages.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
+import { modoEfectivoDePersonajes, normalizarModo, type Modo } from "@nefan-core/src/session/gates-de-imagen.js";
 import {
   SUGGESTED_THEME_TAGS,
   styleCompatibleWithGame,
@@ -721,7 +722,7 @@ export class TitleScreen {
     const facet = btn.dataset.modeFacet as "scenes" | "characters";
     const s = sessions.find((x) => x.session_id === sessionId);
     if (!s) return;
-    const current = facet === "scenes" ? s.render_mode : effectiveCharMode(s);
+    const current = modoDelSave(s, facet);
     const target = current === "image" ? "vector" : "image";
     const key = `${sessionId}:${facet}`;
     if (target === "image" && !this.modeArmed.has(key)) {
@@ -1619,9 +1620,10 @@ function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
   `;
 }
 
-/** Modo EFECTIVO de personajes: sin campo, sigue a los escenarios (legacy). */
-function effectiveCharMode(s: SessionMetadata): string | undefined {
-  return s.character_mode || s.render_mode;
+/** Modo de una faceta del save; la regla (personajes sin campo sigue a escenarios) es de core. */
+function modoDelSave(s: SessionMetadata, facet: "scenes" | "characters"): Modo {
+  const renderMode = normalizarModo(s.render_mode);
+  return facet === "scenes" ? renderMode : modoEfectivoDePersonajes({ renderMode, characterMode: normalizarModo(s.character_mode) });
 }
 const BADGE_CSS = "display:inline-block;padding:1px 7px;border-radius:8px;font-size:10px;background:#23222c;border:1px solid #3a3846;color:#a99";
 /** Badge de modo CLICABLE (selector antes de cargar): misma silueta que el
@@ -1632,7 +1634,7 @@ const MODE_BADGE_CSS = `${BADGE_CSS};cursor:pointer;font-family:inherit`;
  *  image⇄vector ANTES de cargar (onModeBadge). Saves legacy sin el campo: sin
  *  badge (no adivinar). */
 function modeBadgeHtml(s: SessionMetadata, facet: "scenes" | "characters"): string {
-  const mode = facet === "scenes" ? s.render_mode : effectiveCharMode(s);
+  const mode = modoDelSave(s, facet);
   if (mode !== "image" && mode !== "vector") return "";
   const labels = facet === "scenes" ? RENDER_MODE_LABELS : CHAR_MODE_LABELS;
   const target = mode === "image" ? "vector" : "image";

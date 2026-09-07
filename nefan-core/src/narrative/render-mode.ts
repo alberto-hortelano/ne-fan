@@ -5,6 +5,7 @@
  *  y una partida inactiva sobre el `world` leído de disco. Bajar a vector NO
  *  borra lo ya pintado: el cliente conserva las imágenes existentes y solo
  *  deja de generar nuevas. */
+import { modoEfectivoDePersonajes, normalizarModo } from "../session/gates-de-imagen.js";
 import type { NarrativeWorldState } from "./types.js";
 
 export type RenderFacet = "scenes" | "characters";
@@ -35,9 +36,13 @@ export function applyRenderModeChange(
     world.render_mode = mode;
     return { ok: true };
   }
-  // Personajes: "" legacy = sigue a render_mode — comparar contra el modo
-  // EFECTIVO; asignar materializa el valor propio de la faceta.
-  const effective = world.character_mode || world.render_mode;
+  // Personajes: "" legacy = sigue a render_mode (la regla vive en
+  // session/gates-de-imagen.ts) — comparar contra el modo EFECTIVO; asignar
+  // materializa el valor propio de la faceta.
+  const effective = modoEfectivoDePersonajes({
+    renderMode: normalizarModo(world.render_mode),
+    characterMode: normalizarModo(world.character_mode),
+  });
   if (effective === mode) {
     return {
       ok: false,

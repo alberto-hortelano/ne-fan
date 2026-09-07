@@ -575,6 +575,18 @@
       "porque": "El fusible de los skins IA (#236): TRES personajes distintos con fallo de BACKEND (sin status o 5xx) apagan los skins de la sesión una sola vez, un 4xx no cuenta, el mismo personaje repetido es una evidencia, y rearmar olvida. Hasta la PR 3 de #241 (2026-09-07) eran una constante, un flag y un Set dentro del manager de sprites del cliente, y sus únicos candados eran los guiones 51 y 53 (corrida local, no CI). Es regla de GASTO: contra un sprite-forge que cobra antes de fallar, este fusible es lo único que hay. Módulo propio con batería de un fichero porque es el único test que lo importa (el cliente lo usa desde nefan-html, que no entra en la mutación de core), igual que `session-facets`. Los mutantes que importan: bajar el umbral a 1 es volver al radio de antes de #236 (un 500 de un personaje y el mundo entero en maniquí); cambiar `>= 500` por `>` deja pasar el 500 exacto; quitar `status === undefined` deja la red caída sin contar; contar fallos en vez de personajes apaga con un solo NPC que falle en tres anims; y devolver \"apagar\" con el fusible ya apagado anuncia el apagón en cada fallo en vuelo (guion 53 exige UNA vez). Nace con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido); ~30 líneas de código, estimados ~20 mutantes; la autorización 1 del programa trae el número."
     },
     {
+      "id": "gates-de-imagen",
+      "mutate": [
+        "src/session/gates-de-imagen.ts"
+      ],
+      "tests": [
+        "test/gates-de-imagen.test.ts",
+        "test/render-mode.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "Cuándo se GASTA en imagen IA nueva, por faceta (#508, PR 1 de #241): los dos gates —¿se genera atlas de superficies?, ¿se generan skins?— y la regla que los une, «un modo de personajes vacío SIGUE al de escenarios». Hasta hoy vivía en cuatro sitios que la compartían por lectura (el chip del cliente, el badge del save en el título, la creación de la partida en el bridge y `narrative/render-mode.ts`), tres de ellos sin una sola medida. Módulo propio con batería de dos ficheros: `gates-de-imagen.test.ts`, que lo tiene por sujeto y escribe a mano la respuesta de cada rama, y `render-mode.test.ts`, que lo alcanza a través de `applyRenderModeChange` (su caso «'' legacy sigue a render_mode para el estado EFECTIVO» es la regla vista desde el bridge). El cliente lo usa desde nefan-html, que no entra en la mutación de core, igual que `session-facets`. Qué mutantes importan: CADA rama de los tres predicados es una puerta de gasto — invertir `=== \"image\"` enciende el atlas en maqueta o lo apaga en imagen; cambiar la caída `renderMode ? … : toggle` hace que una fixture con NPCs descritos pague skins sin que nadie lo pida (o que una partida en imagen no los pida); quitar el `||` de la regla o girarlo hace que un save legacy deje de seguir a escenarios; pasar `aiSkin &&` a `||` pide skins con el backend apagado por config. Nace `sin medir` como todo módulo nuevo del núcleo puro: `permisoLocal` rechaza medir sin coste conocido, así que la primera medida la trae la corrida autorizada tras las tres PR de gasto de #241 (`npm run mutacion -- pendiente`) y el suelo se pone a lo medido. Estimado: tres funciones de una línea de decisión cada una, del orden de 15-20 mutantes."
+    },
+    {
       "id": "mundo-persistido",
       "mutate": [
         "src/session/mundo-persistido.ts"

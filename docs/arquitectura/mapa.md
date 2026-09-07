@@ -26,7 +26,8 @@ nefan-core/               TypeScript — logica de juego (bridge + cliente web)
                            geometría de tiles y la frontera del jugador (frontera.ts);
                            politica-de-atlas: qué tile arranca, cuál se encola
                            y qué run manda (no pagar dos veces, #241)
-    session/               Facetas de sesión que consume el cliente;
+    session/               Facetas de sesión que consume el cliente; gates-de-imagen:
+                           cuándo se gasta en imagen IA, por faceta (#508);
                            fusible-de-skins: el cortacircuitos de skins IA (#236)
     systems/               Registry genérico de implementaciones de hot loop
     world-map/             Mapa multinivel, lugares, triggers
@@ -77,9 +78,10 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
                            que suelta y devuelve) y la elección camino del motor;
                            hud-de-combate: el catálogo de ataques de la sesión,
                            su barra 1..N y los parámetros del ataque elegido;
-                           modos-de-graficos: qué imagen IA nueva se genera
-                           (escenarios y personajes), el chip que lo cambia y el
-                           rearme de skins al pasar personajes a ON
+                           modos-de-graficos: el chip que enseña y cambia qué
+                           imagen IA nueva se genera (escenarios y personajes) y
+                           el rearme de skins al pasar personajes a ON; la
+                           decisión es de core (session/gates-de-imagen)
     net/                   bridge-client / narrative-client (WS al bridge)
     input/                 Providers: keyboard (default) y scripted (bench)
 
