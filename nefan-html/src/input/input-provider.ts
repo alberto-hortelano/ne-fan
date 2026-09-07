@@ -114,7 +114,7 @@ export interface InputDeps {
    *  falta una.
    *
    *  Ahora se DERIVA de su dueño, que ya existía y ya era consultable: la
-   *  `propuesta` del `FrontierManager`, más las mismas guardas que decidían si
+   *  `propuesta` de la `Frontera` de core, más las mismas guardas que decidían si
    *  el bucle llegaba a mirarla (no hay conversación abierta, hay partida, y el
    *  mundo tiene tiles de grid). Es la misma expresión que escribía el bucle,
    *  escrita UNA vez y en el sitio donde se pregunta. */

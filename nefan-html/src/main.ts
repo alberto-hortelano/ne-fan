@@ -11,7 +11,7 @@ import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-mot
 import { rotuloDeStatus, type StatusRotulable } from "@nefan-core/src/protocol/status-rotulo.js";
 import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
-import { FrontierManager } from "./world/frontier.js";
+import { Frontera } from "@nefan-core/src/scene/frontera.js";
 import { crearFronteraDelJugador } from "./world/frontera-del-jugador.js";
 import { aplicarLoQueMandaElBridge } from "./world/lo-que-manda-el-bridge.js";
 import { MundoDelCliente } from "./world/mundo-del-cliente.js";
@@ -296,9 +296,9 @@ const mirada = new Mirada();
 const mundo = new MundoDelCliente();
 /** Mundo del cliente: colección ACUMULATIVA de tiles (nunca desaparecen). */
 const tileStore = new TileStore();
-/** Prefetch proactivo + velo direccional de fronteras. El jugador nunca se
- *  congela: el bloqueo es solo direccional (colisión virtual del borde). */
-const frontier = new FrontierManager();
+/** La regla de la frontera (proponer el vecino, pedirlo una vez, enfriar el
+ *  error) es de core, con el reloj inyectado; aquí se construye y se pinta. */
+const frontier = new Frontera();
 /** Lo que el jugador VE del borde del mundo (velo, pregunta, peticiones). */
 const frontera = crearFronteraDelJugador({
   frontier,
@@ -991,8 +991,8 @@ narrativeClient.onStatusDeLaPartida((status) => {
   }
 
   // ── Tiles del plano continuo ──────────────────────────────────────────
-  // El feedback de un tile es DIRECCIONAL (velo/flash del FrontierManager),
-  // no el overlay central — salvo el bootstrap (mundo aún vacío).
+  // El feedback de un tile es DIRECCIONAL (el velo que decide la `Frontera`
+  // de core), no el overlay central — salvo el bootstrap (mundo aún vacío).
   if (status.kind === "tile") {
     const t = status.tile;
     if (t) {
@@ -1002,7 +1002,7 @@ narrativeClient.onStatusDeLaPartida((status) => {
     }
     switch (status.phase) {
       case "generating":
-        if (t) frontier.onStatusText(t.tx, t.ty, status.message ?? "Generando el mundo");
+        if (t) frontier.alTexto(t.tx, t.ty, status.message ?? "Generando el mundo");
         if (!tileStore.hasGridTiles) {
           muro.mostrar("Generando mundo inicial...", status.message ?? "El motor narrativo está construyendo el mundo.");
         }
@@ -1012,7 +1012,7 @@ narrativeClient.onStatusDeLaPartida((status) => {
         muro.ocultar();
         break;
       case "error": {
-        if (t) frontier.onTileError(t.tx, t.ty);
+        if (t) frontier.alError(t.tx, t.ty, performance.now()); // el reloj de `tick`
         // Qué se lee y DÓNDE lo decide una función pura de core: con overlay
         // abierto (bootstrap del mundo o viaje desde «Salidas») el error va
         // AL overlay, porque si no el jugador se queda mirando un
@@ -1138,7 +1138,7 @@ narrativeClient.onNarrativeEvent((event) => {
         const t = scene.tile;
         paso(
           addTile(scene).then(() => {
-            const edge = frontier.onTileReady(t.tx, t.ty, playerPos.x, playerPos.z);
+            const edge = frontier.alTileListo(t.tx, t.ty, playerPos.x, playerPos.z);
             if (edge) {
               // Sin destello de llegada: el feedback ES que el muro de
               // niebla de esa frontera se disipa y descubre el terreno
