@@ -18,8 +18,8 @@
  *
  *  DÓNDE SE VE. `session.leave()` aplica las facetas neutras, y con los modos
  *  en `""` los personajes caen al toggle local (OFF por defecto). Al ENTRAR la
- *  partida siguiente, `applyRenderModes` ve OFF→ON y llama a
- *  `reRequestAllSkins()`, que lee `aspecto.skinPrompt()` ANTES de que la
+ *  partida siguiente, `aplicar` (`ui/modos-de-graficos.ts`) ve OFF→ON y
+ *  re-pide todos los skins leyendo `aspecto.skinPrompt()` ANTES de que la
  *  partida nueva vista al jugador (el sink `mundo` corre primero, por eso
  *  `desvestir()` ya ha pasado). Sin `desvestir()`, ahí sale un POST a
  *  `/skin_sprite_sheet` con el prompt de la partida anterior: una imagen de

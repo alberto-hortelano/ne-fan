@@ -274,7 +274,7 @@ export class NarrativeClient {
 
   /** Cambia el modo de render de una partida (image⇄vector) por faceta.
    *  Lanza si el bridge rechaza (ya en ese modo, save inexistente…) —
-   *  fail-loud al caller (menú dev). */
+   *  fail-loud al caller (el chip de gráficos, `ui/modos-de-graficos.ts`). */
   async setRenderMode(
     sessionId: string,
     facet: "scenes" | "characters",

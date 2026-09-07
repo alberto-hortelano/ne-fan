@@ -1,0 +1,209 @@
+/** LOS MODOS DE GRÁFICOS: qué imagen IA NUEVA se genera en esta partida —
+ *  escenarios (el atlas de superficies de la fps) y personajes (los skins)—,
+ *  el chip del HUD que lo enseña y lo cambia en vivo, y el rearme de los skins
+ *  cuando la faceta de personajes pasa de OFF a ON.
+ *
+ *  Es presentación y la puerta del GASTO del cliente, nada más: el modo de
+ *  cada faceta lo elige el jugador (en el título o en el chip); con sesión lo
+ *  persiste y lo difunde el bridge (`world.render_mode` / `character_mode` del
+ *  save, `render_mode_changed`), y sin sesión —fixtures— se recuerda en
+ *  `localStorage`. Aquí se derivan los dos gates («¿se genera escenario?»,
+ *  «¿se generan skins?») y se le comunican a quien gasta: el controller del
+ *  atlas PREGUNTA (`escenariosGeneran()`) y el manager de skins RECIBE su
+ *  permiso (`setSkinsAllowed`). */
+
+import type { ClientSession } from "@nefan-core/src/session/session-facets.js";
+import { CONFIG } from "@nefan-core/src/config.js";
+import type { CharacterSpriteManager } from "../renderer/character-sprites.js";
+import type { MundoDelCliente } from "../world/mundo-del-cliente.js";
+import type { NarrativeClient } from "../net/narrative-client.js";
+import { errors } from "./error-log.js";
+import { GraphicsModeChip, type GraphicsFacet } from "./graphics-mode.js";
+
+/** Modo de render de una faceta: `""` = sin sesión o save previo al campo. */
+type Modo = "image" | "vector" | "";
+
+// --- Generación de imagen SIN sesión (fixtures) ---
+// Persistido en localStorage: es el estado del toggle de escenarios cuando no
+// hay partida; con sesión manda world.render_mode. El toggle visible es el
+// chip de gráficos (GraphicsModeChip).
+const AUTOIMG_KEY = "nefan.autoimg";
+/** Toggle local de skins IA SIN sesión (fixtures) — mismo patrón. */
+const AICHAR_KEY = "nefan.aichar";
+
+export interface DepsDeModosDeGraficos {
+  /** El manager de skins: recibe el permiso de generar y, cuando personajes
+   *  pasa de OFF a ON, se rearma y se le re-piden los skins de todo lo vivo. */
+  characterSprites: Pick<
+    CharacterSpriteManager,
+    "skinsAllowed" | "setSkinsAllowed" | "rearmarCortacircuitos" | "requestSkin"
+  >;
+  /** Con partida, el bridge es la autoridad del cambio; sin ella, localStorage. */
+  session: Pick<ClientSession, "active" | "id">;
+  /** El camino al bridge para pedir el cambio de modo con sesión. */
+  narrativeClient: Pick<NarrativeClient, "setRenderMode">;
+  /** Los personajes en escena, cuyos skins se re-piden al pasar a ON. */
+  mundo: Pick<MundoDelCliente, "personajes">;
+  /** El prompt del skin del jugador (`""` si va en base). */
+  skinPromptDelJugador(): string;
+  /** Aviso a la raíz de que los modos han cambiado, con el de escenarios ya
+   *  normalizado. Repartirlo a sus observadores (panel de dev, menú dev) es
+   *  trabajo de la raíz, que es quien los tiene. */
+  alCambiarLosModos(renderMode: Modo): void;
+  log(msg: string): void;
+}
+
+export interface ModosDeGraficos {
+  /** Aplica los DOS modos de render de la sesión (escenarios y personajes).
+   *
+   *  RECIBE UN OBJETO Y NO DOS `string` POSICIONALES, y no es cosmética (#316).
+   *  Los dos parámetros eran del mismo tipo, así que cruzarlos compilaba con cero
+   *  errores y —a diferencia del resto de cruces que #316 cerró— este SÍ se parece
+   *  a código correcto: es la forma canónica del bug de orden de argumentos, y sus
+   *  llamantes lo escriben con dos ternarias seguidas, que es justo donde se
+   *  cruzan. Lo que alimenta son los gates de generación de IMAGEN, o sea el
+   *  vecindario del bug #249 que `session-facets.ts` existe para evitar; y vive en
+   *  el cliente, que no tiene harness (#241), no entra en mutación y no lo mira
+   *  ningún test — el peor sitio del repo para dejar un cruce silencioso.
+   *
+   *  Con un objeto, cruzarlos deja de ser un desliz de posición y pasa a ser
+   *  escribir mal el nombre del campo, que no compila. */
+  aplicar(f: { renderMode: string; characterMode: string }): void;
+  /** Aplica UNA faceta en local, con la otra como está. Es lo que hace el eco
+   *  del bridge (`render_mode_changed`): ya viene decidido y persistido, así
+   *  que NO se le vuelve a pedir — pedirlo sería «ya en ese modo» y un aviso
+   *  en el registro. */
+  aplicarFaceta(facet: GraphicsFacet, mode: "image" | "vector"): void;
+  /** ¿Debe generarse imagen NUEVA de escenario? (atlas de superficies de la
+   *  fps; la generación MANUAL —tecla G, item del menú dev— no pasa por aquí:
+   *  es siempre permitida). */
+  escenariosGeneran(): boolean;
+  /** Oculta el chip mientras el título está abierto (ahí el modo se elige en
+   *  el propio título). */
+  ocultarChip(oculto: boolean): void;
+}
+
+export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGraficos {
+  /** Modo de render por faceta de la sesión activa. Ya NO está congelado: el
+   *  chip de gráficos del HUD lo cambia en runtime (el bridge lo persiste en
+   *  el save y lo difunde con render_mode_changed). Valores:
+   *  - "image": generación IA activa (atlas de superficies de la fps, skins de
+   *    personaje) — créditos.
+   *  - "vector": sin generación NUEVA; el arte es el clay greybox local y la
+   *    base y_bot. Lo ya pintado se conserva.
+   *  - "" (sin sesión o saves previos al campo): legacy — en escenarios manda
+   *    el toggle persistido en localStorage (AUTOIMG_KEY). */
+  let scenesMode: Modo = "";
+  let charactersMode: Modo = "";
+
+  function escenariosGeneran(): boolean {
+    if (scenesMode) return scenesMode === "image";
+    return localStorage.getItem(AUTOIMG_KEY) === "1";
+  }
+
+  /** Modo efectivo de personajes ("" legacy sigue a escenarios). */
+  function modoEfectivoDePersonajes(): Modo {
+    return charactersMode || scenesMode;
+  }
+
+  /** ¿Skins IA activos? Sin sesión ("" en ambas facetas) manda el toggle local
+   *  persistido — OFF por defecto: cargar una fixture con NPCs descritos no
+   *  debe gastar créditos sin que nadie lo pida. */
+  function personajesGeneran(): boolean {
+    const eff = modoEfectivoDePersonajes();
+    if (eff) return eff === "image";
+    return localStorage.getItem(AICHAR_KEY) === "1";
+  }
+
+  function aplicar({ renderMode, characterMode }: { renderMode: string; characterMode: string }): void {
+    const prevCharOn = deps.characterSprites.skinsAllowed;
+    scenesMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
+    charactersMode =
+      characterMode === "vector" ? "vector" : characterMode === "image" ? "image" : "";
+    const effChar = modoEfectivoDePersonajes();
+    deps.characterSprites.setSkinsAllowed(personajesGeneran());
+    // Fail-loud: la partida pide skins IA pero el backend está apagado por
+    // config — sin este aviso, requestSkin haría no-op silencioso y el jugador
+    // que confirmó el gasto vería y_bot sin explicación.
+    if (effChar === "image" && !CONFIG.graphics.ai_skin) {
+      errors.push(
+        "config",
+        "la partida tiene skins IA activados pero graphics.ai_skin=false en config — los personajes irán en base y_bot",
+      );
+    }
+    const charLabel = effChar !== "vector" && CONFIG.graphics.ai_skin
+      ? "skins IA" : "personajes en base y_bot";
+    if (scenesMode === "vector") {
+      deps.log(`Gráficos: maqueta 3D (clay local, sin imagen IA nueva; ${charLabel})`);
+    } else if (scenesMode === "image") {
+      deps.log(`Gráficos: imagen IA (${charLabel})`);
+    }
+    // Personajes OFF→ON: los requestSkin que no-opearon con el toggle apagado
+    // no dejaron rastro — re-pedir los skins de todo lo ya spawneado.
+    if (!prevCharOn && deps.characterSprites.skinsAllowed) {
+      deps.characterSprites.rearmarCortacircuitos();
+      rePedirTodosLosSkins();
+    }
+    deps.alCambiarLosModos(scenesMode);
+    chip.refresh();
+  }
+
+  /** Re-encola los skins IA de todas las entidades vivas (player + NPCs +
+   *  enemigos). requestSkin es idempotente por prompt y respeta ai_skin. */
+  function rePedirTodosLosSkins(): void {
+    const propio = deps.skinPromptDelJugador();
+    if (propio) deps.characterSprites.requestSkin(propio);
+    for (const e of deps.mundo.personajes) {
+      if (e.skinPrompt) deps.characterSprites.requestSkin(e.skinPrompt, { role: e.styleRole });
+    }
+  }
+
+  function aplicarFaceta(facet: GraphicsFacet, mode: "image" | "vector"): void {
+    aplicar({
+      renderMode: facet === "scenes" ? mode : scenesMode,
+      characterMode: facet === "characters" ? mode : charactersMode,
+    });
+  }
+
+  /** Cambio de modo pedido por el usuario (chip de gráficos). Con sesión, el
+   *  bridge es la autoridad (persiste el save y difunde); sin sesión, estado
+   *  local puro (facet scenes se persiste en AUTOIMG_KEY, patrón legacy).
+   *  Lanza si el bridge rechaza — el chip lo captura y se re-lee (revert). */
+  async function cambiarFaceta(facet: GraphicsFacet, mode: "image" | "vector"): Promise<void> {
+    if (deps.session.active) {
+      await deps.narrativeClient.setRenderMode(deps.session.id, facet, mode);
+    } else if (facet === "scenes") {
+      localStorage.setItem(AUTOIMG_KEY, mode === "image" ? "1" : "0");
+    } else {
+      localStorage.setItem(AICHAR_KEY, mode === "image" ? "1" : "0");
+    }
+    aplicarFaceta(facet, mode);
+  }
+
+  // Arranque sin sesión: los skins IA parten del toggle local (OFF por
+  // defecto) — el manager nace con allowed=true y sin esto una fixture con
+  // NPCs descritos encolaría skins de pago nada más cargar. Va ANTES del
+  // chip: su primer `refresh()` ya lee el permiso real.
+  deps.characterSprites.setSkinsAllowed(personajesGeneran());
+
+  // Chip de gráficos (UI de cliente): el MISMO modo que se elige al crear la
+  // partida en el título, visible y cambiable en juego. El cambio va por
+  // `cambiarFaceta` (bridge con sesión / localStorage sin ella) — nunca por
+  // bridge-client directo. Nace oculto: el título está abierto al arrancar.
+  const chip = new GraphicsModeChip({
+    getState: () => ({
+      scenesOn: escenariosGeneran(),
+      charsOn: deps.characterSprites.skinsAllowed && CONFIG.graphics.ai_skin,
+      charsAvailable: CONFIG.graphics.ai_skin,
+      hasSession: deps.session.active,
+    }),
+    setMode: cambiarFaceta,
+  });
+
+  return {
+    aplicar,
+    aplicarFaceta,
+    escenariosGeneran,
+    ocultarChip: (oculto) => chip.setHidden(oculto),
+  };
+}
