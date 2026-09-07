@@ -954,6 +954,62 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // El censo de #241 hecho candado. Nació ROJA en la PR 3 (2026-09-07): 23
+  // violaciones sobre el árbol de ese día (15 en character-sprites.ts, 8 en
+  // fps-atlas.ts), a cero al mover las dos piezas a core. Una regla verde no
+  // demuestra nada por sí sola: se le enseña lo que existe para cortar —la
+  // copia del cliente volviendo con sus nombres de entonces— y lo que NO debe
+  // cortar: el cliente llamando a la clase de core que hoy decide.
+  it("[error] la-logica-de-juego-no-vuelve-al-cliente: la copia del cliente salta con su nombre de entonces; la llamada a core no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
+
+    // PR 3: la política del atlas y el fusible de skins, tal y como estaban.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/scene/fps-atlas.ts",
+          text: "private pendingTiles = new Set<string>();\nprivate queuedTiles = new Set<string>();\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/renderer/character-sprites.ts",
+          text:
+            "export const UMBRAL_APAGADO_DE_SESION = 3;\n" +
+            "private skinsDisabled = false;\n" +
+            "if (this.personajesFallidos.size < 3) return;\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/renderer/character-sprites.ts:1",
+        "nefan-html/src/renderer/character-sprites.ts:2",
+        "nefan-html/src/renderer/character-sprites.ts:3",
+        "nefan-html/src/scene/fps-atlas.ts:1",
+        "nefan-html/src/scene/fps-atlas.ts:2",
+      ],
+      "cada nombre de estado de la copia del cliente salta con su línea",
+    );
+
+    // Vecino inocente: el cliente PREGUNTA a core. Y la regla es del cliente:
+    // el módulo de core que declara la constante no la infringe.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/scene/fps-atlas.ts",
+          text: "if (this.politica.pedir(key) === \"encolado\") return;\nif (this.fusible.apagado) return;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/session/fusible-de-skins.ts",
+          text: "export const UMBRAL_APAGADO_DE_SESION = 3;\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   // Es EL criterio de la operación "solo la vista 3D": un único importador de
   // three en el cliente ⇒ un único contexto WebGL en la pestaña. Probado en
   // negativo contra la config real, porque la regla verde de hoy no distingue

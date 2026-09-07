@@ -7,7 +7,7 @@
  *  lleguen, y por dónde. La batería no levanta el asset-store real (el motor
  *  falso lo emula: `/generate_surface_atlas` + `/cache/surface/{hash}`), así
  *  que lo que se mide es la FORMA del cable y la conducta del cliente, que son
- *  las dos cosas que un cambio en `fps-atlas.ts` o en `http-server.ts` puede
+ *  las dos cosas que un cambio en `fps-atlas.ts` (o en `politica-de-atlas.ts` de core) o en `http-server.ts` puede
  *  romper sin que `npm test` se entere (`nefan-html` no tiene tests).
  *
  *  Dos partidas, en el orden en que se rompería:
