@@ -193,6 +193,84 @@ describe("bridge routing básico", () => {
     assert.equal(sent.length, 1);
     assert.equal((sent[0] as StateUpdateMessage).type, "state_update");
   });
+
+  /** #504 (PR 4 de #241): el arma y el máximo de vida del jugador viajan en el
+   *  `state_update`. Antes se los inventaba el cliente con dos constantes
+   *  (`playerMaxHp = 100`, `playerWeaponId = "short_sword"`), así que la barra
+   *  de vida y el aro del telegraph no podían enterarse nunca de un cambio.
+   *  Los CUATRO emisores del hot loop tienen que llevarlos: uno que se olvide
+   *  deja al cliente pintando el frame anterior. */
+  describe("state_update lleva el arma y el máximo del jugador (#504)", () => {
+    const mensajes: Record<string, ClientMessage> = {
+      input: {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: 0, y: 0, z: 0 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: false,
+        },
+      },
+      load_room: { type: "load_room", roomId: "crypt_001", enemies: [] },
+      respawn: { type: "respawn" },
+      add_combatants: {
+        type: "add_combatants",
+        enemies: [
+          {
+            id: "skel_9",
+            position: { x: 3, y: 0, z: 3 },
+            health: 20,
+            maxHealth: 20,
+            weaponId: "unarmed",
+            personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.4 },
+          },
+        ],
+      },
+    };
+
+    for (const [nombre, msg] of Object.entries(mensajes)) {
+      it(`${nombre} los emite tal como están en el store`, async () => {
+        const { ctx, store } = makeCtx();
+        // Valores DISTINTOS de los de arranque a propósito: con 100 y
+        // `short_sword` un emisor que se los inventara pasaría igual, que es
+        // exactamente el defecto que esta PR viene a cerrar (medido: con la
+        // constante de vuelta en `handleRespawn`, la versión de este test que
+        // leía el store recién creado seguía verde).
+        store.dispatch("weapon_changed", { weapon_id: "war_hammer" });
+        (store.state.player as { max_hp: number }).max_hp = 77;
+        const { socket, sent } = makeSocket();
+        await routeMessage(msg, socket, ctx);
+        const update = sent.find((m) => m.type === "state_update") as StateUpdateMessage;
+        assert.ok(update, "el emisor tiene que contestar con un state_update");
+        assert.equal(update.playerMaxHp, 77);
+        assert.equal(update.playerWeaponId, "war_hammer");
+        assert.equal(update.playerMaxHp, store.state.player.max_hp);
+        assert.equal(update.playerWeaponId, store.state.player.weapon_id);
+      });
+    }
+
+    it("el arma la mueve el reducer que hoy no tiene productor (`weapon_changed`)", async () => {
+      // El día que un plugin lo despache, el aro del jugador lo verá solo:
+      // este es el test que lo demuestra sin esperar a ese plugin.
+      const { ctx, store } = makeCtx();
+      const { socket, sent } = makeSocket();
+      await routeMessage(mensajes.input, socket, ctx);
+      assert.equal((sent[0] as StateUpdateMessage).playerWeaponId, "short_sword");
+      store.dispatch("weapon_changed", { weapon_id: "war_hammer" });
+      await routeMessage(mensajes.input, socket, ctx);
+      assert.equal((sent[1] as StateUpdateMessage).playerWeaponId, "war_hammer");
+    });
+
+    it("un máximo a 0 no viaja: el cliente divide la barra de vida por él", async () => {
+      // `state.player` lo pueden parchear los plugins; la caída `|| 100` es la
+      // que ya tenía `handleLoadRoom` antes de que el máximo viajara.
+      const { ctx, store } = makeCtx();
+      (store.state.player as { max_hp: number }).max_hp = 0;
+      const { socket, sent } = makeSocket();
+      await routeMessage(mensajes.respawn, socket, ctx);
+      assert.equal((sent[0] as StateUpdateMessage).playerMaxHp, 100);
+    });
+  });
 });
 
 describe("respuestaAlFalloDeHandler (la red por mensaje, caso a caso)", () => {

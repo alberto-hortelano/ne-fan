@@ -18,6 +18,12 @@ import { BridgeClient } from "./bridge-client.js";
 export interface FrameResult {
   events: CombatEvent[];
   playerHp: number;
+  /** Sobre cuánta vida, y con qué pega. Los dos los dice el bridge en cada
+   *  `state_update` (#504): antes eran dos constantes de `main.ts` y el
+   *  cliente decidía por su cuenta el máximo de la barra y el arma con la que
+   *  se calcula el aro del telegraph. */
+  playerMaxHp: number;
+  playerWeaponId: string;
   enemies: {
     id: string;
     hp: number;
@@ -52,6 +58,15 @@ export interface RoomEnemy {
   personality: EnemyPersonality;
 }
 
+/** El arma y el máximo con los que se pinta ANTES del primer `state_update`:
+ *  los del store, que son los MISMOS con los que arranca el bridge (el mismo
+ *  `createInitialState`). Aquí no se escribe ningún literal: el día que el
+ *  jugador nazca con otra arma, nace en un sitio. */
+const jugadorDeArranque = (store: GameStore) => ({
+  playerMaxHp: store.state.player.max_hp,
+  playerWeaponId: store.state.player.weapon_id,
+});
+
 export type GameClientEvent = "connected" | "disconnected";
 type EventHandler = (...args: unknown[]) => void;
 
@@ -80,7 +95,7 @@ export interface GameClient {
 export class BridgeGameClient implements GameClient {
   private bridge: BridgeClient;
   store: GameStore;
-  private lastState: FrameResult = { events: [], playerHp: 100, enemies: [] };
+  private lastState: FrameResult;
   private pendingFrame: FrameResult | null = null;
   isConnected = false;
   isBridge = true;
@@ -89,12 +104,30 @@ export class BridgeGameClient implements GameClient {
   constructor(bridge: BridgeClient, store: GameStore) {
     this.bridge = bridge;
     this.store = store;
+    this.lastState = { events: [], playerHp: 100, enemies: [], ...jugadorDeArranque(store) };
 
     bridge.on("state_update", (msg) => {
       if (!msg) return;
+      // Fail-loud (QA de la PR 4 de #241, H1): el canal servidor→cliente solo
+      // está TIPADO, ningún zod lo valida, y el HUD depende de estos dos campos.
+      // Sin la guarda, un `state_update` que no los traiga deja la barra de vida
+      // en `width: NaN%` (congelada) y el aro a manos desnudas, con el registro
+      // diciendo «sin errores». Se conserva el último frame bueno y se avisa.
+      if (typeof msg.playerMaxHp !== "number" || typeof msg.playerWeaponId !== "string") {
+        errors.push(
+          "bridge",
+          `state_update sin playerMaxHp/playerWeaponId (${JSON.stringify({
+            playerMaxHp: msg.playerMaxHp,
+            playerWeaponId: msg.playerWeaponId,
+          })}): el bridge no es de esta versión`,
+        );
+        return;
+      }
       const frame: FrameResult = {
         events: msg.events ?? [],
         playerHp: msg.playerHp,
+        playerMaxHp: msg.playerMaxHp,
+        playerWeaponId: msg.playerWeaponId,
         enemies: msg.enemies ?? [],
         npcs: msg.npcs,
       };
@@ -171,8 +204,13 @@ export class BridgeGameClient implements GameClient {
   }
 
   getCombatant(id: string) {
+    // Los tres del último frame del bridge. Hasta #504 el máximo y el arma
+    // eran literales de aquí que nadie leía —solo se consultaba `health`, para
+    // el respawn—, así que llevaban mintiendo desde que se escribieron; hoy el
+    // arma la lee el HUD para el aro del telegraph.
     if (id === "player") {
-      return { health: this.lastState.playerHp, maxHealth: 100, weaponId: "short_sword" };
+      const s = this.lastState;
+      return { health: s.playerHp, maxHealth: s.playerMaxHp, weaponId: s.playerWeaponId };
     }
     const e = this.lastState.enemies.find(e => e.id === id);
     if (!e) return undefined;
@@ -193,13 +231,17 @@ export class BridgeGameClient implements GameClient {
 export class ViewerGameClient implements GameClient {
   store: GameStore;
   /** Frame neutro y CONSTANTE: se reusa en cada tick porque no cambia nunca —
-   *  un objeto nuevo por frame sería basura para el GC a 60 fps. */
-  private readonly frame: FrameResult = { events: [], playerHp: 100, enemies: [] };
+   *  un objeto nuevo por frame sería basura para el GC a 60 fps. Sin bridge no
+   *  hay quien diga el arma, pero el aro del telegraph se pinta igual sobre las
+   *  fixtures y tiene que ser el mismo que en partida: el del jugador de
+   *  arranque. */
+  private readonly frame: FrameResult;
   isConnected = false;
   isBridge = false;
 
   constructor(store: GameStore) {
     this.store = store;
+    this.frame = { events: [], playerHp: 100, enemies: [], ...jugadorDeArranque(store) };
   }
 
   tick(): FrameResult {
@@ -218,8 +260,9 @@ export class ViewerGameClient implements GameClient {
   respawn(): void {}
 
   getCombatant(id: string) {
+    const f = this.frame;
     return id === "player"
-      ? { health: this.frame.playerHp, maxHealth: 100, weaponId: "unarmed" }
+      ? { health: f.playerHp, maxHealth: f.playerMaxHp, weaponId: f.playerWeaponId }
       : undefined;
   }
 

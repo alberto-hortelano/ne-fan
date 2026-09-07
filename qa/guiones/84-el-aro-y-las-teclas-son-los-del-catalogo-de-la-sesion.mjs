@@ -15,14 +15,19 @@
  *  de bench no pasa por él.
  *
  *  La referencia del aro es `getEffectiveParams` de nefan-core (`dist/`): la
- *  misma función que llama el cliente, con `short_sword`, que es el arma con la
- *  que hoy nace el jugador (`game-store.ts`). Si el cliente pintara el aro con
- *  otra arma —o con otro ataque que el elegido— la distancia óptima no casa:
- *  espada/manos difieren en los cinco ataques (1,3/1,2 · 1,7/1,6 · …).
+ *  misma función que acaba llamando el cliente, con `short_sword`, que es el
+ *  arma con la que hoy nace el jugador (`game-store.ts`). Si el cliente pintara
+ *  el aro con otra arma —o con otro ataque que el elegido— la distancia óptima
+ *  no casa: espada/manos difieren en los cinco ataques (1,3/1,2 · 1,7/1,6 · …).
+ *  Desde #504 el arma la dice el BRIDGE en cada `state_update` y el aro lo
+ *  calcula `combat/params-de-telegraph.ts` (core), así que este guion mide
+ *  además que ese dato llegue vivo por el wire: con el arma sin viajar, el
+ *  cliente no tendría de dónde sacarla.
  *
- *  EN NEGATIVO (2026-09-06): con `armaDelJugador: "unarmed"` en `main.ts`, los
- *  cinco asertos del aro salen rojos (aro 1.2 · core 1.3, …); con
- *  `key: String(i + 2)` en el módulo, el de «un botón por ataque con su tecla».
+ *  EN NEGATIVO (2026-09-06): con `armaDelJugador: "unarmed"` en `main.ts` —la
+ *  dep de entonces; hoy es `arma()` y sale del wire— los cinco asertos del aro
+ *  salen rojos (aro 1.2 · core 1.3, …); con `key: String(i + 2)` en el módulo,
+ *  el de «un botón por ataque con su tecla».
  *
  *  Cero créditos: preset `e2e-sin-creditos`, `charMode: "vector"` (sin skins).
  *  Se ataca al aire a propósito: el aro se pinta con o sin objetivo, y así el

@@ -205,10 +205,11 @@ export default async function (ctx) {
     JSON.stringify(tPuerto.borde.lejos),
   );
   // El CERCANO cae a los pies —a 0,2 m del jugador con la espada corta, que es
-  // el arma que el cliente equipa SIEMPRE (`main.ts`: `playerWeaponId` es una
-  // constante, no hay estado de "desarmado" alcanzable hoy)—, así que con la
-  // mirada a −30° queda por debajo del cuadro y exigirlo sería exigir que el
-  // jugador se mire las botas. Lo que sí se exige es que exista y esté
+  // con la que nace el jugador (`store/game-store.ts`) y la que el bridge le
+  // dice al cliente en cada `state_update` desde #504; hoy no hay productor de
+  // `weapon_changed`, así que no hay estado de "desarmado" alcanzable—, así que
+  // con la mirada a −30° queda por debajo del cuadro y exigirlo sería exigir que
+  // el jugador se mire las botas. Lo que sí se exige es que exista y esté
   // PROYECTADO (no detrás del ojo): es el otro extremo del alcance.
   ctx.expect(
     "el borde CERCANO del alcance existe y está proyectado",
