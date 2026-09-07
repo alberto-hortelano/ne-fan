@@ -182,9 +182,11 @@ function numero(v: unknown): number | null {
  *  Solo mira los DOS números que el runtime escribe (`health` / `max_health`):
  *  son los únicos que el save puede saber y los únicos que hacen falta para
  *  decidir si vuelve, con cuánta vida y sobre qué denominador. El resto del
- *  bloque —arma y personalidad— lo pone el core al derivarlo y lo valida el
- *  cliente en su puerta (`enemigoDesdeCombat`); duplicar aquí esa validación
- *  sería un segundo criterio de «qué es un enemigo utilizable». */
+ *  bloque —arma y personalidad— lo pone el core al derivarlo y lo valida
+ *  `parseHostileCombat` (`src/combat/hostil-desde-combat.ts`), al que llaman
+ *  las dos puertas por las que un enemigo entra al juego (la del cliente y el
+ *  borde WS del bridge); duplicar aquí esa validación sería un tercer criterio
+ *  de «qué es un enemigo utilizable». */
 export function combateDeEntity(rec: EntityRecord): CombateDelLedger {
   const bruto = rec.data.combat;
   if (bruto === undefined) return { tipo: "ninguno" };

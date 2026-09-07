@@ -136,8 +136,10 @@ export interface NpcDeclarado {
   role?: string;
   /** El bloque de combate que derivó el core para un `role:"hostile"`. Su
    *  PRESENCIA es lo que distingue a un enemigo de un vecino; su contenido lo
-   *  valida el cliente en su puerta (`enemigoDesdeCombat`), y duplicar aquí
-   *  esa validación sería un segundo criterio de «qué es un enemigo». */
+   *  valida `parseHostileCombat` (`src/combat/hostil-desde-combat.ts`), al que
+   *  llama el cliente en su puerta y el borde WS del bridge en la suya, y
+   *  duplicar aquí esa validación sería un segundo criterio de «qué es un
+   *  enemigo». */
   combat?: unknown;
 }
 

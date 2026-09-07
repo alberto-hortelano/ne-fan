@@ -235,10 +235,26 @@
           "porque": "Igual que los otros dos: usa `combatForHostileRole` para SEMBRAR un hostil con el combate real y comprobar que `npcSync` lo excluye de la vida ambiental. No afirma ningún número del módulo, así que no puede matar un mutante suyo; y además arranca sesión de bridge, que es la batería más cara del repo."
         },
         {
+          "test": "test/hostil-desde-combat.test.ts",
+          "porque": "Igual que los otros cuatro: importa `combatForHostileRole` para SEMBRAR el bloque de combate real y comprobar que el parser de hostiles (`parseHostileCombat`, PR 6 de #241) lo deja pasar entero, y lo compara CONTRA ÉL MISMO (`deepEqual(r.hostil, combatForHostileRole('hostile'))`). Un mutante de hostiles.ts mueve los dos lados de esa igualdad a la vez, así que este test no puede matar ni uno — sería CPU quemada una vez por mutante. Los números del balance los escribe a mano test/hostiles.test.ts; lo que este mide es el criterio de validez, y su módulo es `hostil-desde-combat`."
+        },
+        {
           "test": "test/mundo-persistido.test.ts",
           "porque": "Como los otros tres: usa `combatForHostileRole` para SEMBRAR un bloque de combate realista sobre el que probar el overlay del resume, y donde lo compara lo hace consigo mismo (`combat.weapon_id === combatForHostileRole('hostile').weapon_id`). Un mutante de hostiles.ts mueve los dos lados a la vez, así que este test no puede matar ni uno — sería CPU quemada una vez por mutante. Quien mide esos números es test/hostiles.test.ts, que los escribe a mano."
         }
       ]
+    },
+    {
+      "id": "hostil-desde-combat",
+      "mutate": [
+        "src/combat/hostil-desde-combat.ts"
+      ],
+      "tests": [
+        "test/hostil-desde-combat.test.ts",
+        "test/message-schema.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El ÚNICO criterio de «qué es un enemigo utilizable» (PR 6 de #241, 2026-09-07): qué bloque `combat` entra al sim y con qué motivo se rechaza el que no. Hasta hoy ese criterio estaba escrito DOS veces y no decían lo mismo — el parser de `nefan-html/src/scene/enemigo.ts` (55 líneas sin una sola medida: `nefan-html` no entra en la mutación) y el `EnemyPersonalitySchema` de `protocol/message-schema.ts`, que dejaba pasar `preferred_attacks: []`, `aggression: Infinity` y la ausencia de `combat_range`, pero comprobaba el tipo de los opcionales que el otro ignoraba. El módulo es la UNIÓN de los dos y las dos puertas lo llaman: el cliente en `enemigoDesdeCombat` y el borde WS del bridge por `z.custom` en `EnemySpawnSchema`. Batería de DOS ficheros: `test/hostil-desde-combat.test.ts`, que lo tiene por sujeto y escribe a mano el motivo de cada rechazo, y `test/message-schema.test.ts`, que lo alcanza por el import de `message-schema.ts` y es quien afirma que el motivo que sale al cable es el mismo. Los mutantes que IMPORTAN son los que meten en el sim un enemigo que el resolver no sabe resolver: quitar `Number.isFinite` deja entrar un NaN de vida al que nadie puede matar; `attacks.length === 0` → `!== 0`, o quitar ese término, admite un hostil sin ningún ataque que elegir (`EnemyAI.preferredAttacks` vacío); `health <= 0` → `< 0` resucita al muerto que vuelve de un save con 0 PV; quitar la comprobación de `max_health` reabre la barra llena del herido (#326); y cambiar cualquiera de los strings de motivo rompe el único criterio en dos, porque el motivo es lo que el jugador lee en el registro y lo que el bridge escribe en su log. Nace con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido); ~70 líneas de código, estimados ~45 mutantes; la autorización 2 del programa trae el número y el candado de `test/mutation-config.test.ts` obliga a copiarlo."
     },
     {
       "id": "enemy-ai",

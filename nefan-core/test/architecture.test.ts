@@ -1088,6 +1088,83 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // PR 6 (2026-09-07): el parser del enemigo hostil. Nació ROJA con 12
+  // violaciones sobre el árbol de ese día, las 12 en
+  // `nefan-html/src/scene/enemigo.ts` (líneas 75, 77×2, 85, 87×2, 89, 91, 93,
+  // 94, 101, 107), a cero al mover el criterio a `parseHostileCombat`. Lo que
+  // el grupo caza es la LECTURA CRUDA de los campos del bloque, que es como se
+  // escribe un parser; lo que no debe cazar es leer el resultado ya validado ni
+  // pasar el bloque de largo.
+  it("[error] la-logica-de-juego-no-vuelve-al-cliente: el parser del enemigo salta campo a campo; leer lo ya validado no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
+
+    // Las cuatro comprobaciones del bloque, tal y como estaban en el cliente.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/scene/enemigo.ts",
+          text:
+            "const health = numero(combat.health);\n" +
+            "return rechazar(`combat.max_health inválido (${JSON.stringify(combat.max_health)})`);\n" +
+            "const weaponId = combat.weapon_id;\n" +
+            "const p = combat.personality;\n",
+          imports: [],
+        },
+        {
+          // Y en el bridge, que también entra en los `files` de la regla: un
+          // segundo criterio escrito en el borde WS es exactamente lo que esta
+          // PR vino a borrar.
+          path: "nefan-core/bridge/handlers/simulation.ts",
+          text: "if (!Number.isFinite(e.combat.health)) return;\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/handlers/simulation.ts:1",
+        "nefan-html/src/scene/enemigo.ts:1",
+        "nefan-html/src/scene/enemigo.ts:2",
+        "nefan-html/src/scene/enemigo.ts:2",
+        "nefan-html/src/scene/enemigo.ts:3",
+        "nefan-html/src/scene/enemigo.ts:4",
+      ],
+      "cada campo del bloque leído a pelo en el cliente o en el bridge tiene que saltar",
+    );
+
+    // Vecinos inocentes: el cliente PREGUNTA a core y lee el resultado ya
+    // comprobado; pasa el bloque entero de largo sin mirarlo dentro; el módulo
+    // de core donde hoy vive el criterio no infringe la regla (no está en sus
+    // `files`); y una palabra que ACABA en "combat" no es el bloque.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/scene/enemigo.ts",
+          text:
+            "const comprobado = parseHostileCombat(datos.combat);\n" +
+            "const { health, max_health: maxHealth } = comprobado.hostil;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/world/carga-de-tile.ts",
+          text: "enemigoDesdeCombat({ id, pos, combat: npc.combat, dueno });\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/combat/hostil-desde-combat.ts",
+          text: "return { ok: false, error: `combat.health inválido (${JSON.stringify(v.health)})` };\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/hud-de-combate.ts",
+          text: "const antes = precombat.health;\n",
+          imports: [],
+        },
+      ]),
+      [],
+      "leer lo que core ya validó, pasar el bloque de largo y el propio módulo de core no son el parser",
+    );
+  });
+
   // Es EL criterio de la operación "solo la vista 3D": un único importador de
   // three en el cliente ⇒ un único contexto WebGL en la pestaña. Probado en
   // negativo contra la config real, porque la regla verde de hoy no distingue
