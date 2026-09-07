@@ -6,6 +6,7 @@ import { resolveSpeaker } from "./speaker-resolve.js";
 import type { Consequence, ConsequenceEffect, Vec3Like } from "./types.js";
 import { toTuple } from "./types.js";
 import { combatForHostileRole } from "../combat/hostiles.js";
+import { huellaEnMetros } from "../scene/scene-normalize.js";
 
 export type { ConsequenceEffect };
 
@@ -128,16 +129,25 @@ export function dispatchConsequences(
         const finalId = state.recordEntitySpawned(
           entityId, kind, sceneId, pos, data, "narrative_request", eventId,
         );
-        result.effects.push({
-          kind: "spawn_entity",
+        const comun = {
+          kind: "spawn_entity" as const,
           entityId: finalId,
-          entityKind: kind,
           name: c.name,
           ...(c.description !== undefined ? { description: c.description } : {}),
           position: pos,
           data,
           eventId,
-        });
+        };
+        // La HUELLA colisionable viaja con el effect, derivada por la misma
+        // función que la de una entity del tile (`huellaEnMetros`). Antes no
+        // viajaba y el cliente se la inventaba con dos literales en metros, así
+        // que la forja que el motor pone medía una cosa y la que declara una
+        // escena otra (#489). Un `npc` no la lleva: colisiona por su radio.
+        result.effects.push(
+          kind === "npc"
+            ? { ...comun, entityKind: "npc" }
+            : { ...comun, entityKind: kind, sizeXZ: huellaEnMetros(kind) },
+        );
         break;
       }
       case "schedule_event": {

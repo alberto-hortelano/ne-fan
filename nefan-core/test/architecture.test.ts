@@ -2234,6 +2234,69 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  it("[error] la-logica-de-juego-no-vuelve-al-cliente: la huella inventada y la colisión del jugador saltan; leer la que trae el effect no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
+
+    // PR 5 de #241 (#489): literalmente lo que había el día que se movió — la
+    // huella escrita a mano en metros y los dos nombres de la colisión.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/world/materializar-spawn.ts",
+          text: "mundo.anadirObjeto({\n  sizeXZ: isBuilding ? { x: 4, z: 4 } : { x: 1.4, z: 1.4 },\n});\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/world/collision.ts",
+          text: "frontierBlocksMove(x, z) {\n  return false;\n}\nconst alreadyInside = true;\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/world/collision.ts:1",
+        "nefan-html/src/world/collision.ts:4",
+        "nefan-html/src/world/materializar-spawn.ts:2",
+      ],
+    );
+
+    // Lo que SÍ es del cliente y tiene que seguir compilando: copiar al mundo
+    // la huella que YA viene derivada —entera o campo a campo, que es la que
+    // el token de QA H6 casaba de más antes de exigir el NÚMERO—, declarar el
+    // campo en un tipo, y llamar a las funciones de core con sus nombres.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/world/materializar-spawn.ts",
+          text: "mundo.anadirObjeto({ sizeXZ: effect.sizeXZ });\nconst caja = { sizeXZ: { x: h.x, z: h.z } };\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/renderer/types.ts",
+          text: "  sizeXZ?: { x: number; z: number };\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/world/collision.ts",
+          text: "return aabbBloquea(desde, hasta, PLAYER_RADIUS, obstaculos, this.tiles) || fronteraBloquea(desde, hasta, r, tiles);\n",
+          imports: [],
+        },
+        // Y en core los mismos nombres no son asunto de esta regla.
+        {
+          path: "nefan-core/src/simulation/obstaculos-del-jugador.ts",
+          text: "export function aabbBloquea() {\n  const yaDentro = false;\n}\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/session/entidades-del-tile.ts",
+          text: "    sizeXZ: { x: rec.scale[0], z: rec.scale[2] },\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {

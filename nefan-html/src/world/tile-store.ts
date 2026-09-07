@@ -39,10 +39,16 @@ export interface TileClientState {
   collider: TerrainCollider | null;
   /** Colisión base derivada del PLAN declarado (agua∖decks del `ground` +
    *  huellas de los `volumes`). Disponible en cuanto llega el tile. Se UNE al
-   *  collider de terreno. Con `svgApplied`, los AABBs del esquema dejan de
-   *  bloquear (el plan ya dibuja esos edificios con sus muros y puertas); si
-   *  la derivación falla, el flag queda a false y los AABBs siguen. */
+   *  collider de terreno. */
   svgCollider: TerrainCollider | null;
+  /** ¿Se le instaló ya la colisión del plan a este tile? Gobierna dos cosas: si
+   *  al re-emitir la misma escena hay que RESTAURARLA o volver a derivarla
+   *  (`carga-de-tile.ts`), y si las cajas de los objetos que ESTE tile declara
+   *  aplican (`aabbBloquea`, core: con el plan instalado no, porque el grid ya
+   *  los frena con sus puertas; sin él sí, que es la red de seguridad). Hasta
+   *  la PR 5 de #241 apagaba TODAS las cajas del mundo, incluidas las de lo que
+   *  el motor spawnea, y por eso una forja de 4×4 m se atravesaba (#489): lo
+   *  que puso el motor no es de ningún tile y este flag no responde por ello. */
   svgApplied: boolean;
 }
 
@@ -99,10 +105,11 @@ export class TileStore {
   }
 
   /** Instala la colisión base derivada del plan del tile (null = plan sin
-   *  celdas sólidas, aplicado igualmente: los AABBs del esquema se apagan).
-   *  `como` dice si se acaba de DERIVAR o se RESTAURA la de antes (la huella no
-   *  cambió): es el dato que #410 hace observable. Fail-loud si la clave no
-   *  existe: se deriva justo tras registrar el tile. */
+   *  celdas sólidas, aplicado igualmente: las cajas de sus objetos se apagan,
+   *  y no hay nada que volver a derivar). `como` dice si se acaba de DERIVAR o
+   *  se RESTAURA la de antes
+   *  (la huella no cambió): es el dato que #410 hace observable. Fail-loud si
+   *  la clave no existe: se deriva justo tras registrar el tile. */
   setSvgCollider(key: string, collider: TerrainCollider | null, como: "derivada" | "restaurada"): void {
     const entry = this.entries.get(key);
     if (!entry) throw new Error(`TileStore.setSvgCollider: tile ${key} no registrado`);

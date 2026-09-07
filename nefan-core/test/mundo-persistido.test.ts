@@ -420,6 +420,22 @@ describe("spawnsDeRuntime — UNA puerta por entidad, y la decide el spawn_reaso
     assert.equal((spawns.find((s) => s.entityId === "forja_1")!).entityKind, "building");
   });
 
+  it("el objeto y el edificio vuelven CON su huella colisionable, derivada al leer (#489)", () => {
+    const { spawns } = spawnsDeRuntime(mundo);
+    const huella = (id: string) => {
+      const s = spawns.find((x) => x.entityId === id)!;
+      return s.entityKind === "npc" ? null : s.sizeXZ;
+    };
+    // Los mismos metros que en vivo: 8×8 y 3×3 celdas de 0,5 m. No están en el
+    // save y no hacen falta ahí — salen del `type` del record por la misma
+    // función que la huella de una entity del tile, así que afinarlas mañana no
+    // exige migrar ningún save.
+    assert.deepEqual(huella("forja_1"), { x: 4, z: 4 });
+    assert.deepEqual(huella("cofre_1"), { x: 1.5, z: 1.5 });
+    // Un personaje NO la lleva, y el tipo lo impide: colisiona por su radio.
+    assert.equal("sizeXZ" in spawns.find((s) => s.entityId === "secuaz_1")!, false);
+  });
+
   it("NO devuelve lo que declara una escena: sería la segunda puerta al mismo enemigo", () => {
     const { spawns } = spawnsDeRuntime(mundo);
     assert.equal(
