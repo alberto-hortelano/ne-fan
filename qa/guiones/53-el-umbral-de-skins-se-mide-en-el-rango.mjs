@@ -54,7 +54,7 @@ import { cargarFixture } from "../lib/fixtures.mjs";
 export const aisla = ["saves"];
 
 const FIXTURE = "robledo_tile";
-/** El valor que declara `nefan-html/src/renderer/character-sprites.ts`. Se
+/** El valor que declara `nefan-core/src/session/fusible-de-skins.ts` (`UMBRAL_APAGADO_DE_SESION`). Se
  *  escribe aquí porque este guion mide el COMPORTAMIENTO en su rango, no la
  *  constante: cambiar una sin la otra tiene que ponerse rojo. */
 const UMBRAL = 3;
