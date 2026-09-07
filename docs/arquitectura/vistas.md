@@ -144,7 +144,11 @@ caras en celdas de material + celdas hero; `FpsAtlasController`
 escenas, pinta solo lo que falta con nano-banana-pro/gpt-image-2) y aplica las
 texturas. La clave de caché del cliente es el hash de
 `canonicalSurfaceLayoutJson(layout)` + estilo + versión, así que el resume hace
-cache-hit. Sin `render_mode` imagen todo queda en clay, gratis.
+cache-hit. Sin `render_mode` imagen todo queda en clay, gratis. Qué tile
+arranca, cuál se encola (la MISMA clave en vuelo se deduplica y se re-dispara
+al terminar) y qué run sigue mandando (un tile activo NUEVO supera al run en
+vuelo por token) lo decide `PoliticaDeAtlas` (`src/scene/politica-de-atlas.ts`,
+con test y mutación): el controller solo pregunta.
 
 Los volúmenes `building|wall|prop|prism` admiten `surface_desc` opcional:
 string = celda hero para las caras del CUERPO (tejado/puerta conservan su

@@ -48,9 +48,11 @@
  *       `layout_key` = hash del layout + estilo, y lo identifica. En el falso
  *       el tile equivocado sale $0 porque sus celdas ya se pintaron en la
  *       partida; el `layout_key` es lo que delata su POST.
- *   5 · **A3, la guarda que no puede regresar** (`pendingTiles`: la MISMA clave
- *       disparada dos veces antes del primer await pagaba dos veces,
- *       $0.15×2 el 2026-08-14), en su propio bloque, porque en el flujo normal
+ *   5 · **A3, la guarda que no puede regresar** (la deduplicación por clave de
+ *       `PoliticaDeAtlas`, en core desde la PR 3 de #241; entonces el Set
+ *       `pendingTiles` del controller: la MISMA clave disparada dos veces antes
+ *       del primer await pagaba dos veces, $0.15×2 el 2026-08-14), en su
+ *       propio bloque, porque en el flujo normal
  *       del banco NO hay segundo disparo de la misma clave que deduplicar —
  *       QA lo midió anulando la guarda con el guion en verde. Hoy ese doble
  *       disparo solo ocurre al RE-AÑADIR el tile activo (`carga-de-tile.ts`:

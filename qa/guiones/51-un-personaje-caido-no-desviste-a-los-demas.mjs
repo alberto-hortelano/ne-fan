@@ -1,7 +1,8 @@
 /** «Un solo HTTP 500 apaga los skins de la sesión entera» (#236), medido por
  *  donde el jugador lo nota: cuántos vecinos se quedan en maniquí.
  *
- *  El cortacircuitos de `character-sprites.ts` se disparaba al PRIMER 5xx y
+ *  El cortacircuitos de skins (hoy `FusibleDeSkins`, en core; entonces dentro
+ *  de `character-sprites.ts`) se disparaba al PRIMER 5xx y
  *  apagaba la generación de skins para toda la sesión. Con un backend que se
  *  atraganta con UN personaje, el jugador recuperaba el mundo de gente
  *  idéntica que #173 vino a arreglar, y no salía de ahí sin recargar. El radio
@@ -9,10 +10,11 @@
  *  (`UMBRAL_APAGADO_DE_SESION`), porque contra un servicio que cobra antes de
  *  fallar cada reintento es dinero.
  *
- *  POR QUÉ ESTE GUION Y NO UN TEST. `nefan-html` no tiene suite ni entra en
- *  mutación (`package.json`, `ci.yml`): para el cliente, «queda candado» es el
- *  tipo o un guion de `qa/`. Y esto no es de tipo — es una decisión de radio
- *  que solo se ve con varios personajes vivos en una partida de verdad.
+ *  POR QUÉ ESTE GUION ADEMÁS DEL TEST. Desde la PR 3 de #241 la regla vive en
+ *  core (`src/session/fusible-de-skins.ts`) con test y mutación; lo que sigue
+ *  sin tener otro candado es lo que hace el CLIENTE con el veredicto —dejar de
+ *  pedir, decirlo una vez, no desvestir a los demás—, que solo se ve con varios
+ *  personajes vivos en una partida de verdad.
  *
  *  EL FALLO SE INYECTA EN EL BORDE, no dentro del cliente: se intercepta
  *  `/skin_sprite_sheet` y se devuelve 500 SOLO para la descripción del primer
@@ -30,7 +32,8 @@
  */
 import { nuevaPartida, comenzar, esperarRegistro } from "../lib/sesion.mjs";
 
-/** El umbral que declara `character-sprites.ts`. Aquí solo se usa para SABER
+/** El umbral que declara `nefan-core/src/session/fusible-de-skins.ts`
+ *  (`UMBRAL_APAGADO_DE_SESION`). Aquí solo se usa para SABER
  *  si este escenario puede medir la rama de «por debajo del umbral»: el rango
  *  entero lo recorre el guion 53. */
 const UMBRAL = 3;

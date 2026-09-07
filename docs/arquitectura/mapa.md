@@ -23,8 +23,11 @@ nefan-core/               TypeScript — logica de juego (bridge + cliente web)
     games/                 Loaders de juegos y estilos (game.json, style.json, snapshots)
     narrative/             NarrativeState (save canónico), serialización para el LLM
     scene/                 Format D → world scene, builders greybox, validador,
-                           geometría de tiles y la frontera del jugador (frontera.ts)
-    session/               Facetas de sesión que consume el cliente
+                           geometría de tiles y la frontera del jugador (frontera.ts);
+                           politica-de-atlas: qué tile arranca, cuál se encola
+                           y qué run manda (no pagar dos veces, #241)
+    session/               Facetas de sesión que consume el cliente;
+                           fusible-de-skins: el cortacircuitos de skins IA (#236)
     systems/               Registry genérico de implementaciones de hot loop
     world-map/             Mapa multinivel, lugares, triggers
   bridge/
@@ -57,6 +60,7 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
                            character-sprites, types; aspecto-del-jugador: el modelo
                            base, el skin IA y las hojas base del jugador
     scene/                 fps-atlas: pipeline de imagen del atlas de superficies
+                           (fetch, imágenes y renderer; la política es de core)
     world/                 Modelo de mundo del cliente: tile-store; la frontera
                            del jugador (proponer el tile vecino) vive en core
                            (`scene/frontera.ts`) y aquí solo se pinta;

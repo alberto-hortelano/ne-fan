@@ -16,6 +16,7 @@ import {
   canonicalSurfaceLayoutJson,
   type SurfaceLayout,
 } from "@nefan-core/src/scene/greybox/surfaces.js";
+import { PoliticaDeAtlas } from "@nefan-core/src/scene/politica-de-atlas.js";
 import { errors } from "../ui/error-log.js";
 import type { AtlasImage } from "../renderer/fps-gl.js";
 
@@ -55,15 +56,10 @@ async function sha256Hex(text: string): Promise<string> {
 export class FpsAtlasController {
   private styleId = "";
   private cache = new Map<string, { layoutKey: string; images: Map<string, AtlasImage> }>();
-  private token = 0;
-  private inFlight = false;
-  /** Tiles con un onActiveTile en curso — guarda SÍNCRONA contra el doble
-   *  disparo del arranque (dos triggers antes del primer await pagaban dos
-   *  veces la misma página; visto en vivo 2026-08-14, $0.15×2). */
-  private pendingTiles = new Set<string>();
-  /** Triggers de la MISMA clave llegados con el suyo en vuelo: se re-ejecutan
-   *  al terminar. Una clave DISTINTA no se encola: supera al run en vuelo. */
-  private queuedTiles = new Set<string>();
+  /** Qué tile arranca, cuál se encola y qué run sigue mandando lo decide core
+   *  (`PoliticaDeAtlas`: no pagar dos veces, no descartar en silencio). Aquí
+   *  solo queda el fetch, las imágenes y el renderer. */
+  private politica = new PoliticaDeAtlas();
 
   constructor(
     private urls: FpsAtlasUrls,
@@ -75,27 +71,20 @@ export class FpsAtlasController {
   }
 
   get running(): boolean {
-    return this.inFlight;
+    return this.politica.enVuelo;
   }
 
   /** Tile activo nuevo. El arte YA PAGADO se restaura SIEMPRE (también en
    *  modo vector — lo ya pintado se conserva): memoria →
    *  mapping persistido (solo asset-store) → resolve_only contra la librería
    *  ($0). Pintar celdas nuevas solo con la generación activa. Un tile activo
-   *  NUEVO supera al run en vuelo (el `token` de `runFor` desecha el anterior
-   *  antes de aplicar nada); la MISMA clave se deduplica en `pendingTiles`.
-   *  Hasta #390 aquí había un `if (this.inFlight) return;` que descartaba en
-   *  silencio el tile del jugador cuando el resume activaba otro antes. */
+   *  NUEVO supera al run en vuelo (el token de `runFor` desecha el anterior
+   *  antes de aplicar nada); la MISMA clave se deduplica y se re-dispara al
+   *  terminar. Las dos reglas y sus incidentes ($0.15×2 el 2026-08-14; el
+   *  tile del jugador descartado al reanudar, #390) viven en
+   *  `PoliticaDeAtlas`, en core. */
   async onActiveTile(key: string): Promise<void> {
-    // Un trigger solapado no se DESCARTA: se re-encola para cuando acabe el
-    // actual — el disparo temprano del arranque corre sin estilo/modos de la
-    // sesión y el retro-trigger correcto debe poder reintentar (sin esto, el
-    // resume con remote-gen caído se quedaba en clay pese al mapping local).
-    if (this.pendingTiles.has(key)) {
-      this.queuedTiles.add(key);
-      return;
-    }
-    this.pendingTiles.add(key);
+    if (this.politica.pedir(key) === "encolado") return;
     try {
       if (await this.reinstallIfCached(key)) return;
       // Sin estilo NO se resuelve nada. El estilo llega con la respuesta de
@@ -110,11 +99,10 @@ export class FpsAtlasController {
       if (await this.reinstallFromStorage(key)) return;
       await this.runFor(key, { resolveOnly: !this.deps.generationOn() });
     } finally {
-      this.pendingTiles.delete(key);
       // El re-disparo es la ÚLTIMA oportunidad de ese tile: si se lo come un
       // catch mudo, el jugador se queda en clay sin que nada lo diga y el
       // síntoma aparece a un pipeline de distancia.
-      if (this.queuedTiles.delete(key)) {
+      if (this.politica.terminar(key) === "re-disparar") {
         void this.onActiveTile(key).catch((err) =>
           errors.push("fps-atlas", `re-disparo del atlas de ${key}`, err),
         );
@@ -148,8 +136,7 @@ export class FpsAtlasController {
       );
       return;
     }
-    const token = ++this.token;
-    this.inFlight = true;
+    const token = this.politica.nuevoRun();
     try {
       const layoutKey = await this.layoutKeyFor(tile.layout);
       const cells = this.flattenCells(tile.layout);
@@ -191,7 +178,7 @@ export class FpsAtlasController {
       // el prune no debe podarlo. Sin esto, «último gana» convertía arte
       // pagado en podable.
       void this.registerRefs(key, Object.values(data.cells).map((c) => c.hash));
-      if (token !== this.token) return; // el tile activo cambió en vuelo
+      if (!this.politica.vigente(token)) return; // el tile activo cambió en vuelo
 
       const resolvedKeys = Object.keys(data.cells);
       if (resolvedKeys.length === 0) {
@@ -217,7 +204,7 @@ export class FpsAtlasController {
           }
         }),
       );
-      if (token !== this.token) return;
+      if (!this.politica.vigente(token)) return;
       if (images.size === 0) throw new Error("atlas sin celdas descargables");
       if (failures.length) {
         errors.push("scene", `atlas fps de ${key}: ${failures.length} celdas sin textura (clay)`);
@@ -244,7 +231,7 @@ export class FpsAtlasController {
     } catch (err) {
       errors.push("scene", `el atlas fps de ${key} falló — se queda en clay`, err);
     } finally {
-      if (token === this.token) this.inFlight = false;
+      this.politica.finDeRun(token);
     }
   }
 
