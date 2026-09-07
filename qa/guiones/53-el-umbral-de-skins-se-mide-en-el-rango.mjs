@@ -36,7 +36,7 @@
  *      bloque D corre SIN máscara y deja escrito lo que pasa en el banco.
  *
  *  ORDEN QUE IMPORTA, y costó una corrida en rojo: el toggle de personajes IA
- *  se PERSISTE en localStorage (`AICHAR_KEY`, `main.ts:380`), así que a partir
+ *  se PERSISTE en localStorage (`nefan.aichar`, `ui/modos-de-graficos.ts`), así que a partir
  *  del segundo bloque la recarga de página vuelve con los skins ya encendidos
  *  y la fixture empieza a pedirlos ANTES de que el guion pueda hablar. Por eso
  *  el plan de sabotaje se fija SIEMPRE antes de recargar, y el reparto se lee

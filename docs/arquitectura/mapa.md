@@ -69,7 +69,10 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
                            conversacion: abrir y cerrar el diálogo (con el ratón
                            que suelta y devuelve) y la elección camino del motor;
                            hud-de-combate: el catálogo de ataques de la sesión,
-                           su barra 1..N y los parámetros del ataque elegido
+                           su barra 1..N y los parámetros del ataque elegido;
+                           modos-de-graficos: qué imagen IA nueva se genera
+                           (escenarios y personajes), el chip que lo cambia y el
+                           rearme de skins al pasar personajes a ON
     net/                   bridge-client / narrative-client (WS al bridge)
     input/                 Providers: keyboard (default) y scripted (bench)
 

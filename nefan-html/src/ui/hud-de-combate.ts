@@ -50,7 +50,7 @@ export function crearHudDeCombate(deps: DepsDelHudDeCombate): HudDeCombate {
   /** Ataques del sistema de combate de la sesión, clicables y con su tecla. */
   const barra = new ActionBar(document.getElementById("action-bar") as HTMLElement);
 
-  // Espejo de applyRenderModes: el id viene congelado en el save
+  // Espejo de `ui/modos-de-graficos.ts`: el id viene congelado en el save
   // (world.combat_system); "" (sin sesión / saves previos) = estándar. El HUD
   // y el mapeo 1..N se regeneran desde el catálogo que declara el sistema.
   let catalogoDeAtaques: readonly AttackSpec[] = [];

@@ -39,7 +39,7 @@ import { TravelLedger } from "./ui/travel-ledger.js";
 import { TileLedger } from "./ui/tile-ledger.js";
 import { DevStatusPanel } from "./ui/dev-status-panel.js";
 import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
-import { GraphicsModeChip } from "./ui/graphics-mode.js";
+import { crearModosDeGraficos } from "./ui/modos-de-graficos.js";
 import { errors } from "./ui/error-log.js";
 import { crearMuroDeCarga } from "./ui/muro-de-carga.js";
 import { crearConversacion } from "./ui/conversacion.js";
@@ -125,14 +125,6 @@ const fpsRenderer = new FpsRenderer(appShell, { spriteRenderer });
 // de imágenes IA, contadores de caché, gasto estimado en € (poll a
 // GET /dev/status de remote-gen) y config activa. Siempre visible.
 const devPanel = new DevStatusPanel(REMOTE_GEN_URL, (msg) => log(msg));
-/** Menú dev de imágenes (lista de fakes con generación por item). Se
- *  construye tras el bridge (sus deps tocan narrativeClient); hasta entonces
- *  los refresh son no-op. */
-let devMenu: DevMenu | null = null;
-/** Chip de gráficos del HUD (UI de cliente): modo de generación de imágenes
- *  IA de la partida, siempre visible en juego. Misma ventana de construcción
- *  que devMenu. */
-let graphicsChip: GraphicsModeChip | null = null;
 
 /** La sesión del cliente: UN valor con todo lo que una partida imprime aquí
  *  (id, estilo, modos de render, sistema de combate, tema de UI), y los dos
@@ -166,7 +158,7 @@ const session = createClientSession({
   mundo: porValor(() => resetWorld()),
   style: ({ styleId }) => applySessionStyle(styleId),
   theme: ({ uiTheme }) => applyUiTheme(uiTheme),
-  renderModes: (f) => applyRenderModes(f),
+  renderModes: (f) => graficos.aplicar(f),
   combat: ({ combatSystem }) => hud.aplicarSistema(combatSystem),
   history: ({ sessionId }) => historyBrowser.setSession(sessionId),
   entrada: ({ sessionId }) => entrada.sesion(sessionId),
@@ -200,11 +192,11 @@ const fpsAtlasController = new FpsAtlasController(
     apply: (key, images) => fpsRenderer.applyAtlas(key, images),
     clear: (key) => fpsRenderer.clearAtlas(key),
     // Gate por sesión: entre el broadcast de la escena y la respuesta de
-    // start/resume, scenesMode aún es el default del cliente ("image") — sin
-    // el gate, reanudar una partida VECTOR pintaba atlas de pago en esa
-    // ventana (visto en vivo 2026-08-14). Hasta aplicar los modos del save,
-    // el controller solo RESUELVE contra la librería ($0).
-    generationOn: () => session.active && scenesGenerationOn(),
+    // start/resume, el modo de escenarios aún es el default del cliente
+    // ("image") — sin el gate, reanudar una partida VECTOR pintaba atlas de
+    // pago en esa ventana (visto en vivo 2026-08-14). Hasta aplicar los modos
+    // del save, el controller solo RESUELVE contra la librería ($0).
+    generationOn: () => session.active && graficos.escenariosGeneran(),
     log: (msg) => log(msg),
     onGeneration: (e) => devPanel.recordGeneration(e),
   },
@@ -217,122 +209,6 @@ function applySessionStyle(styleId: string): void {
   spriteRenderer.setStyle(styleId);
   devPanel.setSession({ styleId });
   if (styleId) log(`Estilo visual: ${styleId}`);
-}
-
-/** Modo de render por faceta de la sesión activa. Ya NO está congelado: el
- *  chip de gráficos del HUD lo cambia en runtime (el bridge lo persiste en
- *  el save y lo difunde con render_mode_changed). Valores:
- *  - "image": generación IA activa (atlas de superficies de la fps, skins de
- *    personaje) — créditos.
- *  - "vector": sin generación NUEVA; el arte es el clay greybox local y la
- *    base y_bot. Lo ya pintado se conserva.
- *  - "" (sin sesión o saves previos al campo): legacy — en escenarios manda
- *    el toggle persistido en localStorage (AUTOIMG_KEY). */
-let scenesMode: "image" | "vector" | "" = "";
-let charactersMode: "image" | "vector" | "" = "";
-
-/** ¿Debe generarse imagen NUEVA de escenario? (atlas de superficies de la
- *  fps; la generación MANUAL —tecla G, item del menú dev— no pasa por aquí:
- *  es siempre permitida). */
-function scenesGenerationOn(): boolean {
-  if (scenesMode) return scenesMode === "image";
-  return localStorage.getItem(AUTOIMG_KEY) === "1";
-}
-
-/** Modo efectivo de personajes ("" legacy sigue a escenarios). */
-function effectiveCharactersMode(): "image" | "vector" | "" {
-  return charactersMode || scenesMode;
-}
-
-/** ¿Skins IA activos? Sin sesión ("" en ambas facetas) manda el toggle local
- *  persistido — OFF por defecto: cargar una fixture con NPCs descritos no
- *  debe gastar créditos sin que nadie lo pida. */
-function charactersGenerationOn(): boolean {
-  const eff = effectiveCharactersMode();
-  if (eff) return eff === "image";
-  return localStorage.getItem(AICHAR_KEY) === "1";
-}
-
-/** Aplica los DOS modos de render de la sesión (escenarios y personajes).
- *
- *  RECIBE UN OBJETO Y NO DOS `string` POSICIONALES, y no es cosmética (#316).
- *  Los dos parámetros eran del mismo tipo, así que cruzarlos compilaba con cero
- *  errores y —a diferencia del resto de cruces que #316 cerró— este SÍ se parece
- *  a código correcto: es la forma canónica del bug de orden de argumentos, y sus
- *  tres llamantes lo escriben con dos ternarias seguidas, que es justo donde se
- *  cruzan. Lo que alimenta son los gates de generación de IMAGEN, o sea el
- *  vecindario del bug #249 que `session-facets.ts` existe para evitar; y vive en
- *  `main.ts`, que no tiene harness (#241), no entra en mutación y no lo mira
- *  ningún test — el peor sitio del repo para dejar un cruce silencioso.
- *
- *  Con un objeto, cruzarlos deja de ser un desliz de posición y pasa a ser
- *  escribir mal el nombre del campo, que no compila. */
-function applyRenderModes({ renderMode, characterMode }: {
-  renderMode: string;
-  characterMode: string;
-}): void {
-  const prevCharOn = characterSprites.skinsAllowed;
-  scenesMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
-  charactersMode =
-    characterMode === "vector" ? "vector" : characterMode === "image" ? "image" : "";
-  devPanel.setSession({ renderMode: scenesMode });
-  const effChar = effectiveCharactersMode();
-  characterSprites.setSkinsAllowed(charactersGenerationOn());
-  // Fail-loud: la partida pide skins IA pero el backend está apagado por
-  // config — sin este aviso, requestSkin haría no-op silencioso y el jugador
-  // que confirmó el gasto vería y_bot sin explicación.
-  if (effChar === "image" && !CONFIG.graphics.ai_skin) {
-    errors.push(
-      "config",
-      "la partida tiene skins IA activados pero graphics.ai_skin=false en config — los personajes irán en base y_bot",
-    );
-  }
-  const charLabel = effChar !== "vector" && CONFIG.graphics.ai_skin
-    ? "skins IA" : "personajes en base y_bot";
-  if (scenesMode === "vector") {
-    log(`Gráficos: maqueta 3D (clay local, sin imagen IA nueva; ${charLabel})`);
-  } else if (scenesMode === "image") {
-    log(`Gráficos: imagen IA (${charLabel})`);
-  }
-  // Personajes OFF→ON: los requestSkin que no-opearon con el toggle apagado
-  // no dejaron rastro — re-pedir los skins de todo lo ya spawneado.
-  if (!prevCharOn && characterSprites.skinsAllowed) {
-    characterSprites.rearmarCortacircuitos();
-    reRequestAllSkins();
-  }
-  devMenu?.refresh();
-  graphicsChip?.refresh();
-}
-
-/** Re-encola los skins IA de todas las entidades vivas (player + NPCs +
- *  enemigos). requestSkin es idempotente por prompt y respeta ai_skin. */
-function reRequestAllSkins(): void {
-  const propio = aspecto.skinPrompt();
-  if (propio) characterSprites.requestSkin(propio);
-  for (const e of mundo.personajes) {
-    if (e.skinPrompt) characterSprites.requestSkin(e.skinPrompt, { role: e.styleRole });
-  }
-}
-
-/** Cambio de modo pedido por el usuario (chip de gráficos). Con sesión, el
- *  bridge es la autoridad (persiste el save y difunde); sin sesión, estado
- *  local puro (facet scenes se persiste en AUTOIMG_KEY, patrón legacy).
- *  Lanza si el bridge rechaza — el chip lo captura y se re-lee (revert). */
-async function requestModeChange(
-  facet: "scenes" | "characters",
-  mode: "image" | "vector",
-): Promise<void> {
-  if (session.active) {
-    await narrativeClient.setRenderMode(session.id, facet, mode);
-  } else if (facet === "scenes") {
-    localStorage.setItem(AUTOIMG_KEY, mode === "image" ? "1" : "0");
-  } else {
-    localStorage.setItem(AICHAR_KEY, mode === "image" ? "1" : "0");
-  }
-  applyRenderModes({
-    renderMode: facet === "scenes" ? mode : scenesMode,
-    characterMode: facet === "characters" ? mode : charactersMode,
-  });
 }
 
 const gameUiEl = document.getElementById("game-ui") as HTMLElement;
@@ -507,19 +383,6 @@ const hablar = new HablarConUnNpc({
   saludar: (id, nombre) => narrativeClient.interactEntity(id, nombre),
   log: (msg) => log(msg),
 });
-
-// --- Generación de imagen SIN sesión (fixtures) ---
-// Persistido en localStorage: es el estado del toggle de escenarios cuando no
-// hay partida; con sesión manda world.render_mode. El toggle visible es el
-// chip de gráficos (GraphicsModeChip).
-const AUTOIMG_KEY = "nefan.autoimg";
-/** Toggle local de skins IA SIN sesión (fixtures) — mismo patrón. */
-const AICHAR_KEY = "nefan.aichar";
-
-// Arranque sin sesión: los skins IA parten del toggle local (OFF por
-// defecto) — el manager nace con allowed=true y sin esto una fixture con
-// NPCs descritos encolaría skins de pago nada más cargar.
-characterSprites.setSkinsAllowed(charactersGenerationOn());
 
 // El toggle Dev-cache vive ahora en el panel de dev (DevStatusPanel es su
 // único dueño: estado inicial, cambios y deshabilitado con ai_server caído).
@@ -942,16 +805,32 @@ const narrativeClient = new NarrativeClient(sharedBridge, {
 });
 const titleScreen = new TitleScreen(narrativeClient);
 const historyBrowser = new HistoryBrowser(narrativeClient);
+/** Los modos de gráficos de la partida (escenarios y personajes), el chip del
+ *  HUD que los enseña y cambia, y el rearme de skins al pasar personajes a ON.
+ *  Se construye aquí porque pide al bridge por `narrativeClient`, que acaba de
+ *  nacer; el sink `renderModes` y el gate del atlas, más arriba, lo leen en
+ *  cierres que no corren hasta que hay sesión. Repartir «los modos han
+ *  cambiado» a sus observadores es trabajo de esta raíz, que es quien los
+ *  tiene: el panel de dev y el menú dev (`const` de más abajo; el primer
+ *  `aplicar` es el del título, después del Init). */
+const graficos = crearModosDeGraficos({
+  characterSprites,
+  session,
+  narrativeClient,
+  mundo,
+  skinPromptDelJugador: () => aspecto.skinPrompt(),
+  alCambiarLosModos: (renderMode) => {
+    devPanel.setSession({ renderMode });
+    devMenu.refresh();
+  },
+  log,
+});
 
 // Las salidas del tile activo cambiaron sin que cambie la escena (#179): solo el panel.
 sharedBridge.on("exits_changed", (msg) => { if (session.esMio(msg.sessionId)) cargaDeTile.actualizarSalidas(msg.sceneId, msg.exits); });
 // Cambio de modo de render difundido por el bridge (otro cliente de la misma sesión, o el eco de este — re-aplicar es idempotente).
 sharedBridge.on("render_mode_changed", (msg) => {
-  if (!session.esMio(msg.sessionId)) return;
-  applyRenderModes({
-    renderMode: msg.facet === "scenes" ? msg.renderMode : scenesMode,
-    characterMode: msg.facet === "characters" ? msg.renderMode : charactersMode,
-  });
+  if (session.esMio(msg.sessionId)) graficos.aplicarFaceta(msg.facet, msg.renderMode);
 });
 
 /** Imágenes actualmente FAKE: tiles del grid sin atlas de superficies y skins
@@ -1012,27 +891,18 @@ async function generateFakeItem(item: FakeItem): Promise<void> {
   characterSprites.requestSkin(item.id, { force: true });
 }
 
-devMenu = new DevMenu({
+/** Menú dev de imágenes (lista de fakes con generación por item). Es un
+ *  inventario sobre todo el cliente —renderer, tiles, atlas, mundo, skins—,
+ *  así que vive en la raíz, que es la única que lo ve todo. */
+const devMenu = new DevMenu({
   listFakeItems,
   generate: generateFakeItem,
   log: (msg) => log(msg),
 });
 
-// Chip de gráficos (UI de cliente): el MISMO modo que se elige al crear la
-// partida en el título, visible y cambiable en juego. El cambio va por
-// requestModeChange (bridge con sesión / localStorage sin ella) — nunca por
-// bridge-client directo.
-graphicsChip = new GraphicsModeChip({
-  getState: () => ({
-    scenesOn: scenesGenerationOn(),
-    charsOn: characterSprites.skinsAllowed && CONFIG.graphics.ai_skin,
-    charsAvailable: CONFIG.graphics.ai_skin,
-    hasSession: session.active,
-  }),
-  setMode: (facet, mode) => requestModeChange(facet, mode),
-});
-// Oculto mientras el título está abierto (ahí el modo se elige en el propio
-// título); reaparece al cerrarlo — incluido el cierre fixtures (#ts-close).
+// El chip de gráficos va oculto mientras el título está abierto (ahí el modo
+// se elige en el propio título); reaparece al cerrarlo — incluido el cierre
+// fixtures (#ts-close).
 //
 // Y con él, TODO lo que se leía por debajo del título: el HUD de juego y el
 // error-log asomaban entre el texto porque la partida seguía pintando detrás
@@ -1046,7 +916,7 @@ graphicsChip = new GraphicsModeChip({
 // una declaración de función, así que existe aunque esté más abajo.
 const muro = crearMuroDeCarga({ titleScreen, volverAlTitulo });
 titleScreen.onVisibilityChange = (visible) => {
-  graphicsChip?.setHidden(visible);
+  graficos.ocultarChip(visible);
   muro.alCambiarElTitulo(visible);
   // El único escritor del interruptor. Lo leen la regla de CSS que apaga los
   // píxeles y la puerta de teclado que descarta el input (#285): la misma

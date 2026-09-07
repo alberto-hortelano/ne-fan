@@ -171,8 +171,8 @@ export default async function (ctx) {
   // que es justo el gesto que esta tanda cableó como rearme.
   //
   // El gesto es del jugador y no del guion: el chip de gráficos, Personajes
-  // OFF y otra vez ON — el mismo camino (`applyRenderModes`) que dispara el
-  // rearme al entrar o reanudar una partida.
+  // OFF y otra vez ON — el mismo camino (`aplicar` de `ui/modos-de-graficos.ts`)
+  // que dispara el rearme al entrar o reanudar una partida.
   //
   // SE MIDE EL DELTA, no el estado final, y no es un rodeo: en el banco toda
   // hoja que no sea `idle` da 500, así que el personaje recuperado vuelve a

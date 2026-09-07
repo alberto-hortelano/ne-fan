@@ -112,8 +112,8 @@ export class GraphicsModeChip {
     if (hidden) this.close();
   }
 
-  /** Re-sincroniza chip y panel con el estado real. Barato: se llama desde
-   *  applyRenderModes en cada cambio de modo (local o difundido). */
+  /** Re-sincroniza chip y panel con el estado real. Barato: lo llama
+   *  `modos-de-graficos.ts` (`aplicar`) en cada cambio de modo (local o difundido). */
   refresh(): void {
     const now = performance.now();
     for (const [facet, at] of this.armed) {
@@ -210,7 +210,7 @@ export class GraphicsModeChip {
     } catch (err) {
       errors.push("graphics-mode", `no se pudo cambiar ${facet} a ${mode}`, err);
     } finally {
-      // setMode desemboca en applyRenderModes → refresh(); este refresh cubre
+      // setMode desemboca en `aplicar` (modos-de-graficos) → refresh(); este refresh cubre
       // el camino de error (revert implícito: se relee el estado real).
       this.refresh();
     }
