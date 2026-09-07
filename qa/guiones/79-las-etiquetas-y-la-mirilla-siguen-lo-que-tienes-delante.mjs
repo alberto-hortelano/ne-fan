@@ -61,7 +61,7 @@ const A_UN_PASO = 1.2;
 /** Altura del ojo (`EYE_M`, fps-gl.ts) y centro de un prop de altura por defecto. */
 const OJO_M = 1.6;
 const CENTRO_PROP_M = 0.5;
-/** Grados de mirada por píxel de ratón (MOUSE_SENS_RAD_PER_PX de main.ts). */
+/** Grados de mirada por píxel de ratón (la sensibilidad vive en `nefan-core/src/simulation/mirada.ts`, no en `main.ts`). */
 const GRADOS_POR_PX = (0.0025 * 180) / Math.PI;
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
