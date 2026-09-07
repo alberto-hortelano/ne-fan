@@ -33,6 +33,7 @@
     "dev": "tsx bridge/ws-server.ts",
     "dump-config": "tsx scripts/dump-config.ts",
     "dump-physics": "tsx scripts/dump-physics.ts",
+    "dump-style-upload": "tsx scripts/dump-style-upload.ts",
     "gen:contract": "tsx scripts/gen-contract.ts",
     "prebuild": "tsx scripts/dump-config.ts",
     "predev": "tsx scripts/dump-config.ts",

@@ -52,6 +52,8 @@ import { avisoDeFueraDelMundo, type FueraDelMundo } from "../../src/session/mund
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { applyRenderModeChange } from "../../src/narrative/render-mode.js";
 import { modoEfectivoDePersonajes } from "../../src/session/gates-de-imagen.js";
+import { eleccionDeEstilo } from "../../src/session/eleccion-de-estilo.js";
+import { validarBorrador } from "../../src/protocol/borrador-de-mundo.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
 import type {
   CreateGameMessage,
@@ -156,13 +158,12 @@ export async function handleCreateGame(
     console.error(`Bridge: create_game failed: ${error}`);
     ctx.send(ws, { type: "game_created", requestId: msg.requestId, ok: false, error });
   };
-  const draft = (msg.draftText ?? "").trim();
-  if (draft.length < 20) {
-    return fail("draft_too_short: describe el mundo con al menos unas frases");
-  }
-  if (draft.length > 64_000) {
-    return fail("draft_too_long: máximo ~64k caracteres");
-  }
+  // El umbral y su motivo son de core (`protocol/borrador-de-mundo.ts`): el
+  // título comprueba lo mismo antes de mandar y el jugador lee el mismo texto
+  // lo cace quien lo cace.
+  const comprobado = validarBorrador(msg.draftText ?? "");
+  if (!comprobado.ok) return fail(comprobado.error);
+  const draft = comprobado.borrador;
 
   const res = await ctx.aiClient.developWorld(draft);
   if (!res.ok) {
@@ -185,15 +186,18 @@ export async function handleCreateGame(
   }
 
   // El estilo sugerido debe existir; si no, el primer estilo COMPATIBLE con
-  // los tags del mundo (o el primero disponible como último recurso).
+  // los tags del mundo (o el primero disponible como último recurso). La regla
+  // es de core (`session/eleccion-de-estilo.ts`) y es la MISMA que preselecciona
+  // el desplegable del título: hasta la PR 7 de #241 el título exigía además
+  // compatibilidad y aquí no, así que un mundo podía arrancar con un estilo
+  // distinto del que declara. `porDefecto` es null solo si no hay ni uno.
   const styles = listStyles(ctx.stylesDir);
-  if (styles.length === 0) {
+  const gameTags = Array.isArray(game.tags) ? game.tags.map((t) => String(t)) : [];
+  const { porDefecto } = eleccionDeEstilo(styles, { style_id: game.style_id, tags: gameTags });
+  if (porDefecto === null) {
     return fail("no_styles_available: no hay estilos en data/styles");
   }
-  const gameTags = Array.isArray(game.tags) ? game.tags.map((t) => String(t)) : [];
-  const styleId = styles.some((st) => st.style_id === game.style_id)
-    ? game.style_id
-    : (styles.find((st) => styleCompatibleWithGame(st.tags, gameTags)) ?? styles[0]).style_id;
+  const styleId = porDefecto;
 
   const meta = GameMetaSchema.safeParse({
     game_id: gameId,

@@ -2374,6 +2374,86 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  it("[error] la-logica-de-juego-no-vuelve-al-cliente: el título vuelve a decidir sobre el borrador, el estilo y la subida; pintarlos no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
+
+    // PR 7 de #241: literalmente lo que había el día que se movió — el umbral
+    // del borrador (en las DOS puntas: título y bridge), la constante de
+    // carpetas del título, el filtro y el fallback de la preselección, y los
+    // cuatro umbrales de la subida.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/title-screen.ts",
+          text:
+            'const UPLOAD_FOLDER_LABELS = [{ id: "faces" }];\n' +
+            "const compatible = styles.filter((st) => casa(st));\n" +
+            "const preferred = compatible[0].style_id;\n" +
+            "if (name.length < 2) return;\n" +
+            "if (tags.length === 0) return;\n" +
+            "if (images.length === 0) return;\n" +
+            'if (!description && folder !== "surfaces") return;\n' +
+            "if (draft.length < 20) return;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: "if (draft.length > 64_000) return fail();\nconst hay = styles.some((st) => st.style_id === id);\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/handlers/session.ts:1",
+        "nefan-core/bridge/handlers/session.ts:2",
+        "nefan-html/src/ui/title-screen.ts:1",
+        "nefan-html/src/ui/title-screen.ts:2",
+        "nefan-html/src/ui/title-screen.ts:3",
+        "nefan-html/src/ui/title-screen.ts:4",
+        "nefan-html/src/ui/title-screen.ts:5",
+        "nefan-html/src/ui/title-screen.ts:6",
+        "nefan-html/src/ui/title-screen.ts:7",
+        "nefan-html/src/ui/title-screen.ts:8",
+      ],
+    );
+
+    // Lo que SÍ es del cliente y tiene que seguir compilando: llamar a las
+    // funciones de core y pintar lo que devuelven; indexar los estilos por id
+    // (`styles.map`, que NO es elegir); comprobar la compatibilidad de UN
+    // estilo, que es lo que hace `start_session` para avisar; y medir el largo
+    // de cualquier otra cosa que no sean los cuatro umbrales de la subida.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/title-screen.ts",
+          text:
+            "const { ofrecidos, porDefecto } = eleccionDeEstilo(styles, selectedGame);\n" +
+            "const styleById = new Map(styles.map((st) => [st.style_id, st]));\n" +
+            "const comprobado = validarSubidaDeEstilo({ name, tags, images });\n" +
+            "if (!validarBorrador(draftEl.value).ok) return;\n" +
+            "const ROTULO_DE_CARPETA: Record<StyleRefFolder, string> = { faces: rotulo };\n" +
+            "if (avisos.length === 0) return;\n" +
+            "if (nombreDelModelo.length < 3) return;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text:
+            "const { porDefecto } = eleccionDeEstilo(styles, { style_id: game.style_id, tags });\n" +
+            "if (!styleCompatibleWithGame(style.tags, meta.tags)) console.warn(aviso);\n",
+          imports: [],
+        },
+        // Y en core los mismos nombres no son asunto de esta regla.
+        {
+          path: "nefan-core/src/session/eleccion-de-estilo.ts",
+          text: "const compatibles = styles.filter((s) => casa(s));\nreturn compatible[0];\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {

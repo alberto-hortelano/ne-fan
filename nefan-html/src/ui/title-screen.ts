@@ -22,8 +22,11 @@ import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-mot
 import { modoEfectivoDePersonajes, normalizarModo, type Modo } from "@nefan-core/src/session/gates-de-imagen.js";
 import {
   SUGGESTED_THEME_TAGS,
-  styleCompatibleWithGame,
+  type StyleRefFolder,
 } from "@nefan-core/src/games/style-refs.js";
+import { eleccionDeEstilo } from "@nefan-core/src/session/eleccion-de-estilo.js";
+import { validarBorrador } from "@nefan-core/src/protocol/borrador-de-mundo.js";
+import { validarSubidaDeEstilo } from "@nefan-core/src/contracts/style-upload.js";
 import type {
   StyleCompleteResponse,
   StyleUploadResponse,
@@ -68,15 +71,17 @@ const ASSET_STORE_URL = serviceUrl("asset-store");
  *  visible. */
 const AI_SERVER_HTTP = serviceUrl("remote-gen");
 
-/** Carpetas del pack a las que puede ir una imagen subida. NO son vistas (el
- *  juego tiene una sola): son el ROL del contenido dentro del pack, y por eso
- *  la carpeta basta para saber qué es cada imagen — no hace falta marcar
- *  aparte cuál es la lámina. */
-const UPLOAD_FOLDER_LABELS: Array<{ id: string; label: string }> = [
-  { id: "faces", label: "Cara del mundo (fachada, portón, muro…)" },
-  { id: "surfaces", label: "Lámina de materiales (rejilla de muestras planas)" },
-  { id: "characters", label: "Personaje (model sheet)" },
-];
+/** Cómo se le llama a cada carpeta del pack en el desplegable de la subida, y
+ *  en qué orden se ofrecen (lo primero que sube un jugador es una cara: eso sí
+ *  es de aquí, es presentación). Las carpetas NO se declaran aquí: son las
+ *  claves de `StyleRefFolder` (`STYLE_REF_FOLDERS` en core, PR 7 de #241), así
+ *  que una carpeta nueva allí no compila hasta que se le ponga rótulo, y una
+ *  inventada tampoco. */
+const ROTULO_DE_CARPETA: Record<StyleRefFolder, string> = {
+  faces: "Cara del mundo (fachada, portón, muro…)",
+  surfaces: "Lámina de materiales (rejilla de muestras planas)",
+  characters: "Personaje (model sheet)",
+};
 
 /** Vida del estado "armado" (¿confirmar gasto?) antes de desarmarse solo —
  *  mismo TTL que el chip de gráficos y el menú dev. */
@@ -883,32 +888,30 @@ export class TitleScreen {
     worldsEl.innerHTML = games.map((g) => worldCardHtml(g, styleById.get(g.style_id))).join("");
 
     const refreshStyleOptions = (): void => {
-      // Estilos temáticamente compatibles con el mundo (intersección de
-      // tags — un pack medieval no se ofrece para un juego futurista).
-      const compatible = styles.filter((st) =>
-        styleCompatibleWithGame(st.tags, selectedGame.tags),
-      );
-      styleSel.innerHTML = compatible
-        .map((st) => {
-          const def = st.style_id === selectedGame.style_id ? " (del mundo)" : "";
-          return `<option value="${escapeAttr(st.style_id)}">${escapeHtml(st.name)}${def}</option>`;
+      // QUÉ SE OFRECE Y QUÉ VIENE PUESTO lo decide `eleccionDeEstilo` de core,
+      // que es la misma función con la que el bridge le pone estilo a un mundo
+      // nuevo. Aquí solo se pinta: el rótulo dice por qué está ahí un pack que
+      // el filtro temático no habría traído.
+      const { ofrecidos, porDefecto } = eleccionDeEstilo(styles, selectedGame);
+      styleSel.innerHTML = ofrecidos
+        .map(({ estilo, compatible, delMundo }) => {
+          const marca = delMundo
+            ? compatible ? " (del mundo)" : " (del mundo · otro tema)"
+            : compatible ? "" : " (otro tema)";
+          return `<option value="${escapeAttr(estilo.style_id)}">${escapeHtml(estilo.name)}${marca}</option>`;
         })
         .join("");
-      if (compatible.length === 0) {
-        styleSel.innerHTML = `<option value="" disabled selected>— ningún estilo compatible con este mundo —</option>`;
-        styleDesc.innerHTML = `<span style="color:#a44">Ningún estilo compatible con los tags del mundo todavía.</span>`;
+      if (porDefecto === null) {
+        styleSel.innerHTML = `<option value="" disabled selected>— no hay ningún estilo instalado —</option>`;
+        styleDesc.innerHTML = `<span style="color:#a44">No hay ni un style pack en data/styles.</span>`;
         continueBtn.disabled = true;
         continueBtn.style.opacity = "0.4";
         return;
       }
       continueBtn.disabled = false;
       continueBtn.style.opacity = "";
-      // Preselección: el estilo del mundo si es compatible; si no, el primero.
-      const preferred = compatible.some((st) => st.style_id === selectedGame.style_id)
-        ? selectedGame.style_id
-        : compatible[0].style_id;
-      styleSel.value = preferred;
-      styleDesc.textContent = styleById.get(preferred)?.description ?? "";
+      styleSel.value = porDefecto;
+      styleDesc.textContent = styleById.get(porDefecto)?.description ?? "";
     };
     const refreshSelection = (): void => {
       for (const card of worldsEl.querySelectorAll<HTMLElement>("[data-game-id]")) {
@@ -1162,7 +1165,9 @@ export class TitleScreen {
         <input data-file type="file" accept="image/*" style="color:#777;font-size:11px;max-width:170px">
         <input data-desc type="text" placeholder="qué muestra (ej: catedral gótica al atardecer)" style="${INPUT_CSS}">
         <select data-folder style="${SELECT_CSS};width:auto">
-          ${UPLOAD_FOLDER_LABELS.map((f) => `<option value="${f.id}">${f.label}</option>`).join("")}
+          ${(Object.entries(ROTULO_DE_CARPETA) as Array<[StyleRefFolder, string]>)
+            .map(([id, label]) => `<option value="${id}">${label}</option>`)
+            .join("")}
         </select>
       </div>`;
     this.content.innerHTML = `
@@ -1225,19 +1230,11 @@ export class TitleScreen {
     // fuera del `try` (ver abajo). Arreglado en su sitio, este handler queda
     // como los otros cinco — cuerpo entero en `try/catch`, sin canal especial.
     const subirElEstilo = async (): Promise<void> => {
-      const name = nameEl.value.trim();
-      if (name.length < 2) {
-        statusEl.innerHTML = `<span style="color:#a44">Ponle un nombre al estilo.</span>`;
-        return;
-      }
+      const name = nameEl.value;
       const tags = [
         ...selectedTags,
         ...tagsFreeEl.value.split(",").map((t) => t.trim()).filter(Boolean),
       ];
-      if (tags.length === 0) {
-        statusEl.innerHTML = `<span style="color:#a44">Elige al menos una etiqueta temática.</span>`;
-        return;
-      }
       // EL `try` EMPIEZA AQUÍ Y NO TRES PASOS MÁS ABAJO, y ese era el bug de
       // #260: el `await` de este `FileReader` quedaba FUERA, así que un
       // fichero ilegible rechazaba sin catch — el handler era `async`, el
@@ -1247,17 +1244,14 @@ export class TitleScreen {
       try {
         const rows = [...rowsEl.querySelectorAll<HTMLElement>("[data-upload-row]")];
         const images: Array<{ folder: string; description: string; image_b64: string }> = [];
+        /** El fichero de cada imagen, en su orden: lo único del rechazo que el
+         *  servidor no puede saber, así que se le añade al motivo. */
+        const ficheros: string[] = [];
         for (const row of rows) {
           const file = (row.querySelector("[data-file]") as HTMLInputElement).files?.[0];
           if (!file) continue;
           const description = (row.querySelector("[data-desc]") as HTMLInputElement).value.trim();
           const folder = (row.querySelector("[data-folder]") as HTMLSelectElement).value;
-          // La lámina es la única que puede ir sin descripción: lo que muestra
-          // no lo elige el motor, lo dicta su rol (muestras planas de material).
-          if (!description && folder !== "surfaces") {
-            statusEl.innerHTML = `<span style="color:#a44">Cada imagen necesita su descripción (${escapeHtml(file.name)}).</span>`;
-            return;
-          }
           const b64 = await new Promise<string>((res, rej) => {
             const r = new FileReader();
             r.onload = () => res(String(r.result ?? ""));
@@ -1265,9 +1259,15 @@ export class TitleScreen {
             r.readAsDataURL(file);
           });
           images.push({ folder, description, image_b64: b64 });
+          ficheros.push(file.name);
         }
-        if (images.length === 0) {
-          statusEl.innerHTML = `<span style="color:#a44">Sube al menos una imagen.</span>`;
+        // QUÉ SUBIDA VALE lo decide `validarSubidaDeEstilo` de core, y es lo
+        // MISMO que comprueba ai_server leyendo su snapshot: el motivo que se
+        // pinta es el que devolvería el 422, más el fichero cuando se sabe.
+        const comprobado = validarSubidaDeEstilo({ name, tags, images });
+        if (!comprobado.ok) {
+          const cual = comprobado.imagen === null ? "" : ` (${ficheros[comprobado.imagen] ?? ""})`;
+          statusEl.innerHTML = `<span style="color:#a44">${escapeHtml(comprobado.error + cual)}</span>`;
           return;
         }
         uploadBtn.disabled = true;
@@ -1275,7 +1275,7 @@ export class TitleScreen {
         const res = await fetch(`${AI_SERVER_HTTP}/styles/upload`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, tags, images }),
+          body: JSON.stringify(comprobado.subida),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
         const data = (await res.json()) as StyleUploadResponse;
@@ -1378,11 +1378,15 @@ export class TitleScreen {
       paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
     );
     const crearElMundo = async (): Promise<void> => {
-      const draft = draftEl.value.trim();
-      if (draft.length < 20) {
-        statusEl.innerHTML = `<span style="color:#a44">El borrador es demasiado corto — describe el mundo con al menos unas frases.</span>`;
+      // El umbral y su texto son de core: el bridge comprueba lo MISMO antes de
+      // llamar al motor. Aquí solo se miraba el mínimo, y el máximo lo cazaba
+      // el bridge después de mandar el fichero entero por el cable.
+      const comprobado = validarBorrador(draftEl.value);
+      if (!comprobado.ok) {
+        statusEl.innerHTML = `<span style="color:#a44">${escapeHtml(comprobado.error)}</span>`;
         return;
       }
+      const draft = comprobado.borrador;
       createBtn.disabled = true;
       backBtn.disabled = true;
       statusEl.innerHTML = `<span style="color:#da6">🌍 El motor narrativo está desarrollando tu mundo (1-3 min)... no cierres esta pantalla.</span>`;

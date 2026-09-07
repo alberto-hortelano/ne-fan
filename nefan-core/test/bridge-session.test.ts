@@ -18,6 +18,7 @@ import type {
   StateUpdateMessage,
 } from "../src/protocol/messages.js";
 import { listGames as listGamesFs } from "../src/games/loader.js";
+import { BORRADOR_MAX, MOTIVOS_DE_BORRADOR } from "../src/protocol/borrador-de-mundo.js";
 import {
   capturarLogDelBridge,
   combatConfig,
@@ -125,12 +126,25 @@ describe("bridge ciclo de sesión", () => {
       const created2 = sent2[0] as Extract<ServerMessage, { type: "game_created" }>;
       assert.equal(created2.gameId, "user_mundo_prueba_2");
 
-      // Borrador vacío ⇒ fail-loud sin tocar el LLM.
+      // Borrador vacío ⇒ fail-loud sin tocar el LLM, y con el MISMO motivo que
+      // enseña el título antes de mandarlo (PR 7 de #241: el umbral y su texto
+      // son `protocol/borrador-de-mundo.ts`, no dos redacciones que divergen).
       const { socket: s3, sent: sent3 } = makeSocket();
       await routeMessage({ type: "create_game", requestId: "r3", draftText: "  " }, s3, ctx);
       const created3 = sent3[0] as Extract<ServerMessage, { type: "game_created" }>;
       assert.equal(created3.ok, false);
-      assert.match(created3.error ?? "", /draft_too_short/);
+      assert.equal(created3.error, MOTIVOS_DE_BORRADOR.corto);
+
+      // Y el máximo, que el título NO miraba: lo caza el mismo módulo.
+      const { socket: s4, sent: sent4 } = makeSocket();
+      await routeMessage(
+        { type: "create_game", requestId: "r4", draftText: "a".repeat(BORRADOR_MAX + 1) },
+        s4,
+        ctx,
+      );
+      const created4 = sent4[0] as Extract<ServerMessage, { type: "game_created" }>;
+      assert.equal(created4.ok, false);
+      assert.equal(created4.error, MOTIVOS_DE_BORRADOR.largo);
     } finally {
       rmSync(tmpGames, { recursive: true, force: true });
     }
