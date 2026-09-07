@@ -80,3 +80,28 @@ Precedentes vivos que el crítico debe tener delante:
   ejecutable —no prosa— que impide que vuelva a crecer lógica ahí.
 - #241 se cierra con la medida final (líneas y ficheros del cliente, módulos movidos, cobertura/mutación de cada uno).
 - Los 85 guiones siguen verdes sin retocarlos; `verify`, `crap`, `deuda` sin empeorar.
+
+## Tras la crítica — decisiones del usuario (2026-09-07)
+
+Veredicto del crítico: **REENCUADRADA** (`critica.md`): ≈ 860 líneas de decisión sin DOM sobre 14.466, de las que
+≈ 555 son regla de juego estricta y ≈ 290 presentación derivada del sim. Tres correcciones de premisa: la fórmula del daño
+ya no está duplicada en `fps-gl.ts`; `world/frontier.ts` (la única regla de GASTO del jugador) no tenía issue y la nota de
+`frontera-del-jugador.ts:14` que la sitúa en core es falsa; #508 es mayor (la regla «`""` sigue a escenarios» vive en core y
+en tres sitios del cliente, con una divergencia viva en la preselección de estilo).
+
+Preguntas del crítico y respuestas literales del usuario (todas la opción recomendada):
+- **A. Alcance** → «Solo la regla estricta (Recomendado)»: ≈ 555 líneas en 8 PR; las ≈ 290 blandas se quedan con motivo escrito.
+- **B. `style-apply.ts`** → «Issue propio, fuera del programa (Recomendado)»: **#513**, para el arquitecto, después de este programa.
+- **C. Preselección de estilo** → «Manda el bridge (Recomendado)»: el criterio del título se borra; el cliente pide la del bridge.
+- **D. Orden con #346** → «Extraer antes de trocear (Recomendado)»: la PR 7 (título) va antes de #346; nunca en paralelo.
+
+Issues abiertos por el coordinador a raíz de la crítica: **#512** (frontera del jugador → core, PR 2) y **#513** (style-apply).
+
+## Aceptación reencuadrada (la que toma el arquitecto)
+
+- Las ocho PR del corte del crítico (§ «Corte propuesto»), cada una: la pieza en core como función pura sin `node:*`, con test
+  y entrada `break: "sin medir"` en `mutation-targets.json`; el cliente la llama y su copia se borra (`grep` a 0); token en la
+  regla `text` de `arch-rules.json` que impide que vuelva (molde `cliente-no-convierte-celdas-a-metros`); `client-file-size.json`
+  si toca un eximido; guiones verdes sin retocar.
+- Dos corridas de mutación autorizadas: una tras las tres PR de gasto (1-3), otra antes de cerrar.
+- Cierre de #241: el censo hecho lista (estricta movida / blanda con motivo / pintar), la medida final y ningún issue paraguas.
