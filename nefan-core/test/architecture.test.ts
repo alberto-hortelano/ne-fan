@@ -2261,13 +2261,14 @@ describe("fronteras arquitectónicas", () => {
     );
 
     // Lo que SÍ es del cliente y tiene que seguir compilando: copiar al mundo
-    // la huella que YA viene derivada, declarar el campo en un tipo, y llamar a
-    // las funciones de core con sus nombres.
+    // la huella que YA viene derivada —entera o campo a campo, que es la que
+    // el token de QA H6 casaba de más antes de exigir el NÚMERO—, declarar el
+    // campo en un tipo, y llamar a las funciones de core con sus nombres.
     assert.deepEqual(
       deLaRegla([
         {
           path: "nefan-html/src/world/materializar-spawn.ts",
-          text: "mundo.anadirObjeto({ sizeXZ: effect.sizeXZ });\n",
+          text: "mundo.anadirObjeto({ sizeXZ: effect.sizeXZ });\nconst caja = { sizeXZ: { x: h.x, z: h.z } };\n",
           imports: [],
         },
         {
@@ -2277,7 +2278,7 @@ describe("fronteras arquitectónicas", () => {
         },
         {
           path: "nefan-html/src/world/collision.ts",
-          text: "return aabbBloquea(desde, hasta, PLAYER_RADIUS, obstaculos) || fronteraBloquea(desde, hasta, r, tiles);\n",
+          text: "return aabbBloquea(desde, hasta, PLAYER_RADIUS, obstaculos, this.tiles) || fronteraBloquea(desde, hasta, r, tiles);\n",
           imports: [],
         },
         // Y en core los mismos nombres no son asunto de esta regla.

@@ -31,8 +31,11 @@
  *  colisión del plan aplicada (`svgApplied`), y todo tile del motor la tiene,
  *  así que el jugador veía una forja de 4×4 m y la atravesaba—; era #489, se
  *  pagó moviendo la frontera y las cajas a `nefan-core/src/simulation/
- *  obstaculos-del-jugador.ts` con el salto por OBJETO (`volume_id`) en vez de
- *  por tile, y las dos medidas pasaron a `expect`. La huella también dejó de
+ *  obstaculos-del-jugador.ts`, donde qué caja se aplica lo decide el ORIGEN del
+ *  objeto (`dueno`): lo que DECLARA un tile conserva la semántica de siempre
+ *  (su caja se apaga con el plan del tile, que es quien lo frena con sus
+ *  puertas) y lo que puso el MOTOR, que no está en el plan de nadie, es sólido
+ *  siempre. Las dos medidas pasaron a `expect`. La huella también dejó de
  *  inventarse: la deriva `huellaEnMetros` (core), así que el cofre pasó de los
  *  1,4 m escritos a mano a 1,5 (3 celdas de 0,5 m) y la forja sigue en 4×4.
  *
@@ -175,11 +178,21 @@ export default async function (ctx) {
         pc(e.pos.x + d, e.pos.z), pc(e.pos.x - d, e.pos.z),
         pc(e.pos.x, e.pos.z + d), pc(e.pos.x, e.pos.z - d),
       ];
+      /** ¿Qué OTRO objeto del mundo tiene ese punto dentro de su caja inflada?
+       *  Es lo que explica que un punto más allá del borde siga bloqueado, y
+       *  se nombra en vez de suponerse. */
+      const tapadoPor = (yo, x, z) =>
+        o.find((x2) => {
+          if (x2.id === yo.id || !x2.sizeXZ) return false;
+          if (x2.category !== "building" && x2.category !== "prop") return false;
+          return Math.abs(x - x2.pos.x) < x2.sizeXZ.x / 2 + 0.4 && Math.abs(z - x2.pos.z) < x2.sizeXZ.z / 2 + 0.4;
+        })?.label ?? null;
       const medir = (id, s) => {
         const e = o.find((x) => x.id === id);
+        const d = s + 0.25;
         return {
           sizeXZ: e.sizeXZ,
-          volumeId: e.volumeId,
+          dueno: e.dueno,
           centro: pc(e.pos.x, e.pos.z),
           // Justo DENTRO del borde de la caja + el radio del jugador: bloquea
           // por los cuatro lados.
@@ -189,7 +202,14 @@ export default async function (ctx) {
           // otros (`SEPARACION_M`) y la caja de 4×4 de la forja llega hasta
           // casi el cofre, así que exigir las cuatro libres sería afirmar la
           // separación del motor, no el tamaño de esta caja.
-          libre: cruz(e, s + 0.25),
+          libre: cruz(e, d),
+          // Y por qué NO se pasa por las otras: quién tapa cada punto. Un
+          // `null` con el punto bloqueado es una caja que creció (o el plan del
+          // tile), y es justo lo que el `some` de arriba no vería.
+          tapan: [
+            tapadoPor(e, e.pos.x + d, e.pos.z), tapadoPor(e, e.pos.x - d, e.pos.z),
+            tapadoPor(e, e.pos.x, e.pos.z + d), tapadoPor(e, e.pos.x, e.pos.z - d),
+          ],
         };
       };
       const tile = o.find((x) => x.category === "building" && !x.id.startsWith("narr_"));
@@ -197,7 +217,7 @@ export default async function (ctx) {
         forja: medir(ids.forja, semiForja),
         cofre: medir(ids.cofre, semiCofre),
         edificioDelTile: tile
-          ? { id: tile.id, volumeId: tile.volumeId, centro: pc(tile.pos.x, tile.pos.z) }
+          ? { id: tile.id, dueno: tile.dueno, centro: pc(tile.pos.x, tile.pos.z) }
           : null,
       };
     },
@@ -217,18 +237,28 @@ export default async function (ctx) {
     ctx.expect(`el centro del ${que} spawneado BLOQUEA (#489)`, m.centro === true);
     ctx.expect(`y su caja entera: los cuatro bordes del ${que} bloquean`, m.borde.every((b) => b === true), JSON.stringify(m.borde));
     ctx.expect(`un palmo más allá del ${que} se pasa por algún lado (la caja no es infinita)`, m.libre.some((b) => b === false), JSON.stringify(m.libre));
+    // POR QUÉ no se exige que se pase por las CUATRO, con la medida delante en
+    // vez de la suposición (QA H5): se dice quién tapa cada dirección que sigue
+    // bloqueada a un palmo del borde. `null` con el punto bloqueado NO es
+    // necesariamente esta caja creciendo — puede ser el GRID del plan del tile,
+    // y `probeCollide` es la unión de las tres fuentes sin desglose, así que
+    // desde aquí no se pueden separar. Medido el 2026-09-07: el cofre tiene el
+    // +z tapado por el plan y ninguna caja al lado, o sea que el aserto exacto
+    // saldría rojo sin que nada esté mal. Quien sujeta el TAMAÑO de la caja es
+    // el guion 91, que barre la pared eje a eje contra lo que declara core.
+    ctx.log(`${que}: a un palmo del borde, bloqueado=${JSON.stringify(m.libre)} · lo tapa=${JSON.stringify(m.tapan)}`);
   }
-  // POR QUÉ el spawn choca y el edificio del tile no cambia: el criterio es
-  // `volume_id`. Lo del plan es sólido por el GRID (con sus puertas); lo
-  // spawneado, que no está en ningún plan, por su caja.
+  // POR QUÉ el spawn choca y el edificio del tile no cambia: el criterio es el
+  // ORIGEN. Lo del tile es sólido por el GRID de su plan (con sus puertas); lo
+  // spawneado, que no es de ningún tile, por su caja.
   ctx.expect(
-    "lo spawneado NO lo representa ningún volumen del plan (por eso su caja es lo único que lo hace sólido)",
-    huella.forja.volumeId === undefined && huella.cofre.volumeId === undefined,
-    `forja=${huella.forja.volumeId} cofre=${huella.cofre.volumeId}`,
+    "lo spawneado es de RUNTIME: no es de ningún tile, así que su caja es lo único que lo hace sólido",
+    huella.forja.dueno?.de === "runtime" && huella.cofre.dueno?.de === "runtime",
+    `forja=${JSON.stringify(huella.forja.dueno)} cofre=${JSON.stringify(huella.cofre.dueno)}`,
   );
   ctx.expect(
-    "el edificio del tile SÍ lo representa un volumen del plan, y sigue bloqueando en su centro por el grid",
-    Boolean(huella.edificioDelTile?.volumeId) && huella.edificioDelTile?.centro === true,
+    "el edificio del tile es de SU TILE, y sigue bloqueando en su centro por el grid del plan",
+    huella.edificioDelTile?.dueno?.de === "tile" && huella.edificioDelTile?.centro === true,
     JSON.stringify(huella.edificioDelTile),
   );
   await ctx.shot("spawns-en-vivo");

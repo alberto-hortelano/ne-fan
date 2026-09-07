@@ -97,7 +97,7 @@ export interface DepsDeCargaDeTile {
 function declaradoDeObjeto(
   d: ObjetoDeclarado,
   tipoDeVolumen: ReadonlyMap<string, string>,
-): Pick<Entity, "pos" | "radius" | "color" | "label" | "category" | "sizeXZ" | "sizeY" | "shape" | "volumeType" | "volumeId"> {
+): Pick<Entity, "pos" | "radius" | "color" | "label" | "category" | "sizeXZ" | "sizeY" | "shape" | "volumeType"> {
   return {
     pos: { ...d.pos },
     radius: 5,
@@ -111,9 +111,6 @@ function declaradoDeObjeto(
     // scene). Presente = no se dibuja billboard encima; `building` además no se
     // puede mirar (su centro no es un punto al que apuntar).
     volumeType: d.volumeId === undefined ? undefined : tipoDeVolumen.get(d.volumeId),
-    // Y el id crudo, que es lo que mira la COLISIÓN: representado por el plan =
-    // sólido por el grid, no por su caja (`aabbBloquea`).
-    volumeId: d.volumeId,
   };
 }
 

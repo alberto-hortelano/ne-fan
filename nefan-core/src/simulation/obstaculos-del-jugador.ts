@@ -12,9 +12,14 @@
  *  es XZ (CLAUDE.md), y aquí no hay ni campo que leer.
  */
 
+import type { DuenoDeEntity } from "../session/entidades-del-tile.js";
 import type { TileCoord } from "../scene/tile.js";
 
-/** El mundo de tiles visto por la frontera: solo lo que necesita preguntar. Lo
+/** Re-exportado porque quien monte un `ObstaculoAabb` lo necesita, como hace
+ *  `renderer/types.ts` con el tipo al que pertenece el campo. */
+export type { DuenoDeEntity };
+
+/** El mundo de tiles visto por la FRONTERA: solo lo que necesita preguntar. Lo
  *  implementa el `TileStore` del cliente. */
 export interface TilesDelMundo {
   /** ¿Hay mundo? Sin un solo tile no hay frontera que cruzar. */
@@ -22,6 +27,15 @@ export interface TilesDelMundo {
   /** Coords de los tiles que toca el círculo (x, z, radio) — a lo sumo 4. */
   tocados(x: number, z: number, radio: number): readonly TileCoord[];
   tiene(tx: number, ty: number): boolean;
+}
+
+/** El mundo de tiles visto por las CAJAS: aparte de `TilesDelMundo` porque le
+ *  hacen otra pregunta, y una sola. El cliente lo implementa con el mismo
+ *  `TileStore`; el motivo de la pregunta está en `aabbBloquea`. */
+export interface PlanDeLosTiles {
+  /** ¿El tile que contiene (x, z) tiene INSTALADA la colisión de su plan
+   *  (`svgApplied`)? */
+  planAplicadoEn(x: number, z: number): boolean;
 }
 
 /** Un obstáculo de caja: lo que el cliente monta como objeto desde la world
@@ -32,9 +46,12 @@ export interface ObstaculoAabb {
   sizeXZ?: { x: number; z: number } | null;
   /** Categoría de render: solo `building` y `prop` frenan. */
   category?: string;
-  /** El `volume_id` de la world scene: qué volumen del PLAN ya representa a
-   *  este objeto. Ver `aabbBloquea`, que es quien lo usa. */
-  volumeId?: string;
+  /** DE QUIÉN ES, que es lo que decide qué caja se le aplica. Es la unión
+   *  discriminada y OBLIGATORIA de `session/entidades-del-tile.ts` (#350), no
+   *  un booleano suelto: «lo puso el motor» y «se me olvidó decirlo» no pueden
+   *  colapsar en el mismo valor, y `tsc` exige el campo en todo sitio que
+   *  construya una entity. Ver `aabbBloquea`, que es quien lo lee. */
+  dueno: DuenoDeEntity;
 }
 
 /** La FRONTERA del plano: un tile INEXISTENTE es un sólido virtual con
@@ -63,28 +80,39 @@ export function fronteraBloquea(
  *  «salir sí, entrar no»: un obstáculo que ya solapa el ORIGEN no bloquea (se
  *  puede des-penetrar tras un spawn solapado); solo bloquean los NUEVOS.
  *
- *  El salto es POR OBJETO y no por tile, y ahí está el arreglo de #489: hasta
- *  el 2026-09-07 se preguntaba si el TILE bajo el objeto tenía la colisión del
- *  plan aplicada (`svgApplied`) y, como todo tile del motor la tiene desde que
- *  llega, se saltaban TODAS las cajas — incluidas las de lo que el motor
- *  spawnea a mitad de partida, que no está en el plan de ningún tile y no era
- *  sólido por ninguna otra vía. El jugador veía una forja de 4×4 m y la
+ *  QUÉ CAJA SE APLICA LO DECIDE EL ORIGEN DEL OBJETO, y ahí está el arreglo de
+ *  #489. Hasta el 2026-09-07 se preguntaba UNA cosa para todos —si el TILE de
+ *  debajo tenía la colisión del plan aplicada— y, como todo tile del motor la
+ *  tiene desde que llega, se saltaban TODAS las cajas: también las de lo que el
+ *  motor spawnea a mitad de partida, que no está en el plan de ningún tile y no
+ *  era sólido por ninguna otra vía. El jugador veía una forja de 4×4 m y la
  *  atravesaba.
  *
- *  La pregunta correcta es si ESE objeto ya lo representa un volumen del plan
- *  (`volumeId`): si lo representa, su solidez sale del grid —con sus puertas y
- *  sus huecos, que es justo lo que la caja ciega no tiene— y aplicarle además
- *  la caja taparía el vano; si no, la caja es lo único que hay. */
+ *  Los dos orígenes no tienen el mismo problema, así que no comparten regla:
+ *
+ *   · lo que DECLARA un tile conserva su semántica de siempre (su caja se
+ *     aplica solo mientras el plan de ese tile no esté instalado). El plan
+ *     dibuja esos edificios con sus muros y sus puertas, y aplicar además la
+ *     caja ciega taparía el vano; pero si la derivación falla el tile se
+ *     quedaría SIN NINGUNA fuente de solidez, así que la caja sigue siendo su
+ *     red de seguridad. Un `prop` tapado por un volumen declarado tampoco
+ *     cambia de conducta: es del tile, y el plan responde por él.
+ *   · lo que puso el MOTOR a mitad de partida no está en el plan de nadie: su
+ *     caja es lo único que hay y se aplica siempre.
+ *
+ *  Nótese que la pregunta por el plan es POR PUNTO y no por dueño: el tile que
+ *  responde es el que contiene al objeto, igual que antes. */
 export function aabbBloquea(
   desde: { x: number; z: number },
   hasta: { x: number; z: number },
   radio: number,
   obstaculos: readonly ObstaculoAabb[],
+  plan: PlanDeLosTiles,
 ): boolean {
   for (const obj of obstaculos) {
     if (!obj.sizeXZ) continue;
     if (obj.category !== "building" && obj.category !== "prop") continue;
-    if (obj.volumeId !== undefined) continue;
+    if (obj.dueno.de === "tile" && plan.planAplicadoEn(obj.pos.x, obj.pos.z)) continue;
     const hx = obj.sizeXZ.x / 2 + radio;
     const hz = obj.sizeXZ.z / 2 + radio;
     if (Math.abs(hasta.x - obj.pos.x) < hx && Math.abs(hasta.z - obj.pos.z) < hz) {

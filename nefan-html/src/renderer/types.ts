@@ -54,11 +54,6 @@ export interface Entity {
    *  copa un poste que se atravesaba. Ausente = spawn dinámico o item, que se
    *  pintan como billboard. */
   volumeType?: string;
-  /** El `volume_id` crudo, que es lo que lee la COLISIÓN (`aabbBloquea`, core:
-   *  representado por el plan = sólido por el grid, no por su caja).
-   *  `volumeType` no vale para eso: es el id ya BUSCADO en el plan, y uno que
-   *  no esté en el mapa daría `undefined` sin dejar de estar representado. */
-  volumeId?: string;
   name?: string;
   /** Scene category — drives the conceptual rendering shape (building/prop/item/creature). */
   category?: string;

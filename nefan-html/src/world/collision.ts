@@ -9,15 +9,19 @@
  *
  *  Aquí queda lo que no es regla: el `TileStore`, los colliders instalados y el
  *  `errors.push` de la derivación. Las dos reglas salieron en la PR 5 de #241
- *  (#489), que de paso arregló el salto de las cajas: era POR TILE
- *  (`svgApplied`) y hoy es POR OBJETO (`volume_id`), así que lo que el motor
- *  spawnea pasó a ser sólido. */
+ *  (#489), que de paso arregló el salto de las cajas: se saltaban TODAS
+ *  mirando el tile, y hoy solo las de los objetos que DECLARA un tile (que es
+ *  lo que se saltaba antes y sigue igual), así que lo que el motor spawnea a
+ *  mitad de partida pasó a ser sólido. Qué caja se aplica lo decide core; el
+ *  cliente solo le pasa el dueño de cada objeto y el `svgApplied` del tile de
+ *  debajo. */
 
 import { createTerrainCollider, PLAYER_RADIUS_M, type TerrainCollider } from "@nefan-core/src/scene/terrain-collision.js";
 import {
   aabbBloquea,
   fronteraBloquea,
   type ObstaculoAabb,
+  type PlanDeLosTiles,
   type TilesDelMundo,
 } from "@nefan-core/src/simulation/obstaculos-del-jugador.js";
 import {
@@ -46,10 +50,12 @@ export interface CollisionDeps {
 }
 
 export class CollisionSystem {
-  /** El `TileStore` visto como el mundo que pregunta la frontera de core. Se
-   *  construye una vez y lee en vivo (`hayGrid` es un getter): el store es
-   *  mutable y la respuesta tiene que ser la de este frame. */
-  private readonly tiles: TilesDelMundo;
+  /** El `TileStore` visto como el mundo que preguntan las dos reglas de core:
+   *  qué tiles EXISTEN (la frontera) y si el de debajo de un objeto tiene ya
+   *  instalada la colisión de su plan (las cajas). Se construye una vez y lee
+   *  en vivo (`hayGrid` es un getter): el store es mutable y la respuesta tiene
+   *  que ser la de este frame. */
+  private readonly tiles: TilesDelMundo & PlanDeLosTiles;
 
   constructor(private deps: CollisionDeps) {
     const { tileStore } = deps;
@@ -59,6 +65,7 @@ export class CollisionSystem {
       },
       tocados: (x, z, r) => tileStore.keysTouching(x, z, r),
       tiene: (tx, ty) => tileStore.has(tx, ty),
+      planAplicadoEn: (x, z) => tileStore.getAt(x, z)?.svgApplied === true,
     };
   }
 
@@ -73,7 +80,7 @@ export class CollisionSystem {
       const tile = tileStore.get(t.tx, t.ty);
       if (tile && this.tileBlocks(tile, desde, x, z)) return true;
     }
-    return aabbBloquea(desde, hasta, PLAYER_RADIUS, this.deps.getObstacles());
+    return aabbBloquea(desde, hasta, PLAYER_RADIUS, this.deps.getObstacles(), this.tiles);
   }
 
   /** Unión de los dos colliders de un tile sobre el mismo movimiento. */
@@ -94,9 +101,10 @@ export class CollisionSystem {
 
 /** Colisión base del plan declarado: agua∖decks del `ground` + huellas de los
  *  volúmenes — instalada como collider base del tile, activa desde que llega
- *  el tile. Analítica pura (sin rasterizar nada). Si la derivación falla, el
- *  tile se queda sin esa fuente (`svgApplied` a false) y se dice: las cajas de
- *  sus objetos no la sustituyen, porque los objetos del plan no las llevan.
+ *  el tile. Analítica pura (sin rasterizar nada). Si la derivación falla,
+ *  `svgApplied` se queda a false y se dice: las cajas de los objetos de ESE
+ *  tile vuelven a aplicar, que es la red de seguridad de siempre — toscas
+ *  (tapan vanos), pero mejor que un pueblo entero atravesable.
  *
  *  Ya no lleva deps: el espejo visual del grid (celdas azules del overlay B)
  *  era del renderer oblicuo. En primera persona el overlay de colisión
@@ -119,6 +127,6 @@ export function applyPlanCollision(
       `[collision] ${key}: plan aplicado — ${collider?.solidCellCount ?? 0} celdas sólidas`,
     );
   } catch (err) {
-    errors.push("scene", `plan de ${key} no deriva colisión; ese tile se queda sin la solidez del plan`, err);
+    errors.push("scene", `plan de ${key} no deriva colisión; siguen las cajas de sus objetos`, err);
   }
 }
