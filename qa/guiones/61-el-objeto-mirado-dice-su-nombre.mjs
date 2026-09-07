@@ -72,7 +72,7 @@ const DISTANCIA_M = 3;
  *  para enfilar el brocal, que a 3 m queda 20° por debajo del horizonte. */
 const OJO_M = 1.6;
 const CENTRO_PROP_M = 0.5;
-/** Grados de mirada por píxel de ratón (MOUSE_SENS_RAD_PER_PX de main.ts). */
+/** Grados de mirada por píxel de ratón (la sensibilidad vive en `nefan-core/src/simulation/mirada.ts`, no en `main.ts`). */
 const GRADOS_POR_PX = (0.0025 * 180) / Math.PI;
 
 /** Mueve el RATÓN hasta que la mirada llega al ángulo pedido (positivo =

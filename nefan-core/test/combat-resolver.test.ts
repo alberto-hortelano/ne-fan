@@ -267,3 +267,72 @@ describe("applyDefensiveReduction", () => {
     assert.equal(applyDefensiveReduction(100, -0.5), 100);
   });
 });
+
+/** LO QUE EL CONFIG DEBE TRAER, y qué pasa si no lo trae (#241, PR 8).
+ *
+ *  `loadConfig` es la ÚNICA puerta del `combat_config.json`: la cruzan el
+ *  bridge al arrancar y el cliente al montar el HUD y el paso del jugador. Los
+ *  números del bloque `player` entraron aquí porque el cliente los tenía
+ *  escritos a mano encima de los del config (`ARCADE_SPEED_SCALE`,
+ *  `INTERACT_RANGE_M`), así que lo que hay que afirmar es que NO hay default:
+ *  un `?? 2.2` escondido en la puerta sería la misma mentira por el otro lado
+ *  —el config diciendo una cosa y el juego haciendo otra— y nadie se enteraría
+ *  hasta jugar. */
+describe("loadConfig · el config del jugador es obligatorio", () => {
+  /** El de verdad, clonado, para poder quitarle cosas de una en una. */
+  const bueno = () => JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+
+  it("el combat_config.json REAL carga y trae los cuatro números del jugador", () => {
+    const p = loadConfig(bueno()).player;
+    assert.equal(typeof p.walk_speed, "number");
+    assert.equal(typeof p.sprint_speed, "number");
+    assert.equal(typeof p.speed_scale, "number");
+    assert.equal(typeof p.interact_range_m, "number");
+    // Y son los del juego: si alguien los cambia, este aserto lo dice.
+    assert.deepEqual(
+      { w: p.walk_speed, s: p.sprint_speed, e: p.speed_scale, i: p.interact_range_m },
+      { w: 1.9, s: 3.8, e: 2.2, i: 2.5 },
+    );
+  });
+
+  it("sin bloque `player` no hay partida: lanza nombrando lo que falta", () => {
+    const sinJugador = bueno();
+    delete sinJugador.player;
+    assert.throws(() => loadConfig(sinJugador), /player/);
+  });
+
+  it("cada uno de los cuatro campos, por separado, es obligatorio", () => {
+    for (const campo of ["walk_speed", "sprint_speed", "speed_scale", "interact_range_m"]) {
+      const roto = bueno();
+      delete (roto.player as Record<string, unknown>)[campo];
+      assert.throws(
+        () => loadConfig(roto),
+        new RegExp(`player\\.${campo}`),
+        `quitar player.${campo} tiene que fallar en la puerta, no a mitad de partida`,
+      );
+    }
+  });
+
+  it("un campo que no es un número finito tampoco pasa (ni string, ni null, ni NaN)", () => {
+    for (const valor of ["2.2", null, Number.NaN, Number.POSITIVE_INFINITY, {}]) {
+      const roto = bueno();
+      (roto.player as Record<string, unknown>).speed_scale = valor;
+      assert.throws(() => loadConfig(roto), /player\.speed_scale/, `${JSON.stringify(valor)} no es una velocidad`);
+    }
+  });
+
+  it("el error nombra TODOS los campos que faltan, no solo el primero", () => {
+    const roto = bueno();
+    delete (roto.player as Record<string, unknown>).speed_scale;
+    delete (roto.player as Record<string, unknown>).interact_range_m;
+    assert.throws(() => loadConfig(roto), /player\.speed_scale, player\.interact_range_m/);
+  });
+
+  it("las tres secciones de siempre siguen siendo obligatorias", () => {
+    for (const seccion of ["attack_types", "weapons", "tactical_matrix"]) {
+      const roto = bueno();
+      delete roto[seccion];
+      assert.throws(() => loadConfig(roto), /invalid combat config/);
+    }
+  });
+});

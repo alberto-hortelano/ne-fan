@@ -67,7 +67,7 @@ import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from 
 
 export const aisla = ["saves", "fake-ai"];
 
-/** Rango de interacción del cliente (`main.ts`, `INTERACT_RANGE`). Se planta
+/** Rango de interacción del jugador (`combat_config.json.player.interact_range_m`, leído por core; PR 8 de #241). Se planta
  *  al jugador algo más cerca para que un descuadre de medio metro no convierta
  *  el guion en una moneda al aire. */
 const A_UN_PASO = 1.2;

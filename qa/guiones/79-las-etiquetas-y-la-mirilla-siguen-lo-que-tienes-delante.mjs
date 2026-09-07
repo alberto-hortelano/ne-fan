@@ -55,12 +55,13 @@ const EDIFICIO = "casa_lenador";
 const ALCANCE_M = 18;
 /** Recorte del rótulo (`LABEL_MAX_CHARS`). */
 const MAX_CHARS = 42;
-/** Alcance de la tecla E (`INTERACT_RANGE_M`, main.ts): a un paso. */
+/** Alcance de la tecla E (`player.interact_range_m` de
+ *  `nefan-core/data/combat_config.json`, 2,5 m): a un paso. */
 const A_UN_PASO = 1.2;
 /** Altura del ojo (`EYE_M`, fps-gl.ts) y centro de un prop de altura por defecto. */
 const OJO_M = 1.6;
 const CENTRO_PROP_M = 0.5;
-/** Grados de mirada por píxel de ratón (MOUSE_SENS_RAD_PER_PX de main.ts). */
+/** Grados de mirada por píxel de ratón (la sensibilidad vive en `nefan-core/src/simulation/mirada.ts`, no en `main.ts`). */
 const GRADOS_POR_PX = (0.0025 * 180) / Math.PI;
 
 const AQUI = dirname(fileURLToPath(import.meta.url));

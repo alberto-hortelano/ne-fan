@@ -2297,6 +2297,83 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  it("[error] la-logica-de-juego-no-vuelve-al-cliente: la velocidad, el alcance de la E y el punto de reaparición saltan; leerlos del config no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
+
+    // PR 8 de #241: literalmente lo que había en el cliente el día que se
+    // movió — las dos constantes, el tope y el guard de la espera, y la única
+    // línea que calculaba a mano el centro de un rect.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/main.ts",
+          text:
+            "const ARCADE_SPEED_SCALE = 2.2;\n" +
+            "const INTERACT_RANGE_M = 2.5;\n" +
+            "rp = { x: (under.rect.minX + under.rect.maxX) / 2, y: 0, z: 0 };\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/hablar-con-un-npc.ts",
+          text: "const ESPERA_MAX_MS = 30_000;\n#esperaHasta = 0;\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/main.ts:1",
+        "nefan-html/src/main.ts:2",
+        "nefan-html/src/main.ts:3",
+        "nefan-html/src/ui/hablar-con-un-npc.ts:1",
+        "nefan-html/src/ui/hablar-con-un-npc.ts:2",
+      ],
+    );
+
+    // Lo que SIGUE siendo del cliente y tiene que compilar: leer los números
+    // del config, llamar a core, y los dos verbos del saludo que sobreviven
+    // (`yaContestaron`, `ultimoHablado`) — por eso no son tokens. Y las dos
+    // formas legítimas de calcular un centro que el token NO puede casar: la
+    // del velo (`minX + TILE_SIZE_M / 2`) y el bbox en píxeles del retrato,
+    // que no lleva punto delante de `minX`.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/main.ts",
+          text:
+            "const playerCfg = loadConfig(combatConfigJson).player;\n" +
+            "velocidad: velocidadDelJugador(playerCfg, input.state.sprint),\n" +
+            "pickNearestTarget(playerPos, vivos, { maxDistanceM: playerCfg.interact_range_m });\n" +
+            "const rp = puntoDeReaparicion(playerPos, collidesAt, under?.rect ?? null);\n" +
+            "hablar.yaContestaron();\nmundo.npc(hablar.ultimoHablado);\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/renderer/fps-gl.ts",
+          text: "const cx = rect.minX + TILE_SIZE_M / 2;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/portrait.ts",
+          text: "const cx = (minX + maxX) / 2;\n",
+          imports: [],
+        },
+        // Y en core los mismos nombres no son asunto de esta regla: es donde
+        // viven.
+        {
+          path: "nefan-core/src/simulation/hablar-con-un-npc.ts",
+          text: "const ESPERA_MAX_MS = 30_000;\n#esperaHasta = 0;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/simulation/reaparicion.ts",
+          text: "x: (rectDelTile.minX + rectDelTile.maxX) / 2,\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {

@@ -44,7 +44,6 @@ import { errors } from "./ui/error-log.js";
 import { crearMuroDeCarga } from "./ui/muro-de-carga.js";
 import { crearConversacion } from "./ui/conversacion.js";
 import { EcoDelCombate } from "./ui/eco-del-combate.js";
-import { HablarConUnNpc } from "./ui/hablar-con-un-npc.js";
 import { paso } from "./ui/async-ui.js";
 import { ActionBar } from "./ui/action-bar.js";
 import { crearHudDeCombate } from "./ui/hud-de-combate.js";
@@ -55,7 +54,13 @@ import { createClientSession, porValor } from "@nefan-core/src/session/session-f
 import { createEntrada } from "@nefan-core/src/session/entrada.js";
 import { spawnsDeRuntime } from "@nefan-core/src/session/mundo-persistido.js";
 import { Mirada } from "@nefan-core/src/simulation/mirada.js";
-import { intencionDeTeclas, pasoDelJugador } from "@nefan-core/src/simulation/paso-del-jugador.js";
+import {
+  intencionDeTeclas,
+  pasoDelJugador,
+  velocidadDelJugador,
+} from "@nefan-core/src/simulation/paso-del-jugador.js";
+import { puntoDeReaparicion } from "@nefan-core/src/simulation/reaparicion.js";
+import { HablarConUnNpc } from "@nefan-core/src/simulation/hablar-con-un-npc.js";
 import {
   createGameClient,
   createViewerClient,
@@ -64,19 +69,14 @@ import {
 } from "./net/game-client.js";
 
 import combatConfigJson from "@nefan-core/data/combat_config.json";
+import { loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 
-const playerCfg = (combatConfigJson as Record<string, unknown>).player as Record<string, number> | undefined ?? {};
-// El cliente web camina más rápido que el walk_speed realista (1.9 m/s) del
-// config compartido, y lo hace con un multiplicador propio para no alterar
-// ese config. OJO al heredarlo: el 2,2 se calibró para la vista CENITAL,
-// donde el jugador se veía entero y el mundo pasaba por debajo. En primera
-// persona nadie lo ha vuelto a mirar — 4,2 m/s de paseo es un trote largo a
-// la altura de los ojos. Es una decisión de feel, no un bug, así que se queda
-// donde estaba hasta que se juegue y se decida.
-const ARCADE_SPEED_SCALE = 2.2;
-const SPEED = (playerCfg.walk_speed ?? 3.0) * ARCADE_SPEED_SCALE;
-const SPRINT_SPEED = (playerCfg.sprint_speed ?? 5.5) * ARCADE_SPEED_SCALE;
+/** Los números del jugador: velocidades, escala de arcade y alcance de la `E`.
+ *  Los declara `combat_config.json` y los EXIGE `loadConfig` (#241): aquí no
+ *  hay ni multiplicador ni caída a un literal — si el config no los trae, no
+ *  hay partida, y se sabe en el arranque. */
+const playerCfg = loadConfig(combatConfigJson).player;
 
 // --- DOM elements ---
 /** Caja del MUNDO: el renderer mete aquí dentro su lienzo WebGL (y la UI de
@@ -543,15 +543,10 @@ fpsRenderer.setCollisionCellsProvider((tileKey) => {
 function handleRespawnRequest(): void {
   const p = gameClient?.getCombatant("player");
   if (!p || p.health > 0) return;
-  // Punto libre cercano: la posición actual si no colisiona; si no, el
-  // centro del tile actual; último recurso, el origen del mundo.
-  let rp = { x: playerPos.x, y: 0, z: playerPos.z };
-  if (collidesAt(rp.x, rp.z)) {
-    const under = tileStore.getAt(playerPos.x, playerPos.z);
-    rp = under
-      ? { x: (under.rect.minX + under.rect.maxX) / 2, y: 0, z: (under.rect.minZ + under.rect.maxZ) / 2 }
-      : { x: 0, y: 0, z: 2 };
-  }
+  // DÓNDE se vuelve lo decide core (`puntoDeReaparicion`): aquí solo se le da
+  // la posición del cadáver, la pregunta de qué es sólido y el rect del tile
+  // de debajo.
+  const rp = puntoDeReaparicion(playerPos, collidesAt, tileStore.getAt(playerPos.x, playerPos.z)?.rect ?? null);
   gameClient?.respawn(rp);
   playerPos.x = rp.x;
   playerPos.z = rp.z;
@@ -576,9 +571,6 @@ function updateConnectionStatus(connected: boolean, isBridge: boolean): void {
 // --- Game Loop ---
 
 let lastTime = performance.now();
-
-/** Alcance de la tecla E: con quién se puede hablar desde aquí. */
-const INTERACT_RANGE_M = 2.5;
 
 /** Nombres sobre la cabeza y mirilla: DOM temado sincronizado con la cámara
  *  del frame recién pintado (`ui/etiquetas-del-mundo.ts`). */
@@ -653,7 +645,7 @@ function gameLoop(now: number): void {
       desde: playerPos,
       forward: mirada.forward,
       intencion: intencionDeTeclas(input.state),
-      velocidad: input.state.sprint ? SPRINT_SPEED : SPEED,
+      velocidad: velocidadDelJugador(playerCfg, input.state.sprint),
       delta,
       solido: collidesAt,
     });
@@ -675,11 +667,12 @@ function gameLoop(now: number): void {
   }
 
   // Con quién se puede hablar aquí: el NPC vivo más cercano dentro del alcance
-  // de la tecla E. El criterio es de core (`pickNearestTarget`), hermano del
-  // que decide qué enfila la cámara — dos criterios de «a qué me refiero» en
-  // dos ficheros es como divergen.
+  // de la tecla E, que lo declara `combat_config.json` (`interact_range_m`). El
+  // criterio es de core (`pickNearestTarget`), hermano del que decide qué
+  // enfila la cámara — dos criterios de «a qué me refiero» en dos ficheros es
+  // como divergen.
   const vivos = mundo.npcs.filter((n) => n.alive !== false);
-  const cerca = pickNearestTarget(playerPos, vivos, { maxDistanceM: INTERACT_RANGE_M });
+  const cerca = pickNearestTarget(playerPos, vivos, { maxDistanceM: playerCfg.interact_range_m });
   const npcInRange = cerca ? (mundo.npc(cerca.id) ?? null) : null;
 
   // Acciones contextuales: lo que el jugador puede hacer AQUÍ, como botones

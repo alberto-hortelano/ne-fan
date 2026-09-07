@@ -27,10 +27,36 @@ export interface Weapon {
   modifiers: Record<string, WeaponModifiers>;
 }
 
+/** LO QUE EL JUGADOR PUEDE HACER, en números editables sin recompilar.
+ *
+ *  Las dos velocidades y la escala de arcade salen juntas porque el metro por
+ *  segundo real del juego es su producto: el `walk_speed` de aquí es la
+ *  velocidad HUMANA (1,9 m/s es andar de verdad) y `speed_scale` es lo que se
+ *  le sube para que el mundo abierto no se haga eterno. Antes ese multiplicador
+ *  vivía en el cliente (`ARCADE_SPEED_SCALE`, #241), así que el config decía
+ *  1,9 y el jugador andaba a 4,18 sin que ningún fichero lo dijera. */
+export interface PlayerConfig {
+  /** m/s andando, antes de `speed_scale`. */
+  walk_speed: number;
+  /** m/s esprintando, antes de `speed_scale`. */
+  sprint_speed: number;
+  /** Multiplicador de arcade sobre las dos velocidades. OJO al heredarlo: el
+   *  2,2 se calibró para la vista CENITAL, donde el jugador se veía entero y el
+   *  mundo pasaba por debajo. En primera persona nadie lo ha vuelto a mirar —
+   *  4,2 m/s de paseo es un trote largo a la altura de los ojos. Es una
+   *  decisión de feel, no un bug, así que se queda hasta que se juegue y se
+   *  decida. */
+  speed_scale: number;
+  /** Alcance de la tecla E en METROS: hasta dónde llega el jugador para hablar
+   *  con alguien (`pickNearestTarget` lo usa como `maxDistanceM`). */
+  interact_range_m: number;
+}
+
 export interface CombatConfig {
   attack_types: Record<string, AttackType>;
   weapons: Record<string, Weapon>;
   tactical_matrix: Record<string, Record<string, number>>;
+  player: PlayerConfig;
 }
 
 export type CombatState = "idle" | "moving" | "winding_up" | "attacking" | "dead";

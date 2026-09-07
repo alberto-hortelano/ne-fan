@@ -3,25 +3,43 @@
  *  Eran tres trozos separados por doscientas líneas de `main.ts` —la acción
  *  contextual del HUD, la pulsación, y dos `let` de módulo con tres escritores
  *  repartidos— y forman una sola cosa: el saludo del jugador y la espera que
- *  abre.
+ *  abre. Vivieron un tiempo en `nefan-html/src/ui/hablar-con-un-npc.ts`, ya
+ *  puras y sin una línea de DOM, y aun así sin una sola medida detrás: eso es
+ *  #241 en una frase, y por eso están aquí.
  *
  *  LA ESPERA ES EL MOTIVO DE QUE ESTO TENGA ESTADO. `interact_entity` viaja al
  *  motor narrativo, que tarda; una segunda `E` antes de que llegue la respuesta
  *  duplicaba el saludo en los `recent_dialogues` del LLM. El guard se abre al
  *  pulsar y lo cierra quien recibe la respuesta —el evento narrativo o el error
  *  del motor—, con un tope de 30 s por si no llega nada. Tres escritores para
- *  un mismo dato es justo la forma de la que salen los espejos que esta tanda
+ *  un mismo dato es justo la forma de la que salen los espejos que #241
  *  persigue, así que aquí hay UN dueño y dos verbos.
  *
  *  El otro dato, `ultimoHablado`, existe porque una línea de diálogo puede
  *  llegar sin nombre reconocible: entonces el retrato es el del último con
  *  quien se habló, que es lo que el jugador tiene delante.
+ *
+ *  EL RELOJ ENTRA POR PARÁMETRO (`frame(now, …)`), como en `Frontera` y
+ *  `Mirada`: sin eso, la batería tendría que esperar treinta segundos de verdad
+ *  para comprobar el tope, y nadie escribe ese test.
  */
-
-import type { Entity } from "../renderer/types.js";
 
 /** Tope de la espera: si el motor no contesta, la `E` vuelve a funcionar. */
 const ESPERA_MAX_MS = 30_000;
+
+/** Lo mínimo que hay que saber de un NPC para saludarle: el resto de la
+ *  `Entity` del cliente (color, sprite, huella) es de pintar. */
+export interface AQuienSeSaluda {
+  id: string;
+  name?: string;
+}
+
+/** La acción contextual que se ofrece: un botón con su tecla. */
+export interface AccionDeHablar {
+  id: string;
+  label: string;
+  key: string;
+}
 
 export interface DepsDeHablar {
   hayConversacionAbierta(): boolean;
@@ -55,7 +73,7 @@ export class HablarConUnNpc {
    *  Devuelve la acción contextual que hay que ofrecer, o `null`: con una
    *  conversación ya en pantalla no se ofrece hablar otra vez. Y el saludo NO
    *  sale si el motor todavía no ha contestado al anterior. */
-  frame(now: number, quien: Entity | null, pulsado: boolean): { id: string; label: string; key: string } | null {
+  frame(now: number, quien: AQuienSeSaluda | null, pulsado: boolean): AccionDeHablar | null {
     if (!quien || this.deps.hayConversacionAbierta()) return null;
     const nombre = quien.name ?? quien.id;
     if (pulsado && now >= this.#esperaHasta) {
