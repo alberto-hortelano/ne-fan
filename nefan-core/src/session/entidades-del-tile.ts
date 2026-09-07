@@ -290,7 +290,8 @@ export function objetosDeclarados(raw: readonly ObjetoEnElWire[] | undefined): D
 }
 
 /** Los personajes que declara la world scene de un tile (vecinos y hostiles:
- *  los separa la presencia de `combat`, y esa puerta es del cliente). */
+ *  los separa la presencia de `combat`, y esa puerta es `parseHostileCombat`
+ *  de `combat/hostil-desde-combat.ts`: la misma en cliente y bridge, #241). */
 export function npcsDeclarados(raw: readonly NpcEnElWire[] | undefined): Declaraciones<NpcDeclarado> {
   return declaraciones(raw, "npc", leerNpc);
 }
