@@ -42,10 +42,24 @@ export function getEffectiveWindUp(
   return baseWup * globalMod * typeMod;
 }
 
+/** Los números del jugador que el config DEBE traer. Sin default a propósito:
+ *  un `?? 2.2` escondido aquí sería la misma mentira que el multiplicador que
+ *  vivía en el cliente (#241) — el config diría una cosa y el juego haría otra,
+ *  y nadie tendría por qué enterarse. Si falta uno, no hay partida. */
+const CAMPOS_DEL_JUGADOR = ["walk_speed", "sprint_speed", "speed_scale", "interact_range_m"] as const;
+
 export function loadConfig(json: unknown): CombatConfig {
   const data = json as CombatConfig;
   if (!data?.attack_types || !data?.weapons || !data?.tactical_matrix) {
     throw new Error("CombatData: invalid combat config");
+  }
+  const player = data.player as Partial<Record<(typeof CAMPOS_DEL_JUGADOR)[number], unknown>> | undefined;
+  if (!player) {
+    throw new Error("CombatData: combat config sin bloque `player` (velocidades y alcance del jugador)");
+  }
+  const faltan = CAMPOS_DEL_JUGADOR.filter((k) => typeof player[k] !== "number" || !Number.isFinite(player[k]));
+  if (faltan.length > 0) {
+    throw new Error(`CombatData: player.${faltan.join(", player.")} debe(n) ser número finito en combat_config.json`);
   }
   return data;
 }

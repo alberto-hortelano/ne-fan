@@ -55,7 +55,8 @@ const EDIFICIO = "casa_lenador";
 const ALCANCE_M = 18;
 /** Recorte del rótulo (`LABEL_MAX_CHARS`). */
 const MAX_CHARS = 42;
-/** Alcance de la tecla E (`INTERACT_RANGE_M`, main.ts): a un paso. */
+/** Alcance de la tecla E (`player.interact_range_m` de
+ *  `nefan-core/data/combat_config.json`, 2,5 m): a un paso. */
 const A_UN_PASO = 1.2;
 /** Altura del ojo (`EYE_M`, fps-gl.ts) y centro de un prop de altura por defecto. */
 const OJO_M = 1.6;

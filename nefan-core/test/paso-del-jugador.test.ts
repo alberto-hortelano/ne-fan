@@ -9,7 +9,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { intencionDeTeclas, pasoDelJugador } from "../src/simulation/paso-del-jugador.js";
+import {
+  intencionDeTeclas,
+  pasoDelJugador,
+  velocidadDelJugador,
+} from "../src/simulation/paso-del-jugador.js";
 
 /** Mirando a −Z, que es como arranca el juego. */
 const NORTE = { x: 0, z: -1 };
@@ -181,5 +185,63 @@ describe("pasoDelJugador · el eje lateral se mide igual que el frontal", () => 
     assert.equal(d.dx, 0, "ir hacia el muro se bloquea");
     const izquierda = paso({ adelante: 0, derecha: -1 }, muroAlEste);
     assert.equal(izquierda.dx, -1, "alejarse del muro no se bloquea");
+  });
+});
+
+/** LOS METROS POR SEGUNDO, que hasta hoy los ponía el cliente (#241, PR 8).
+ *
+ *  Los tres números son del `combat_config.json` y aquí se afirman ANDANDO Y
+ *  ESPRINTANDO con una escala que no es 1 ni 2: con `speed_scale: 1` el
+ *  producto no se distinguiría de no multiplicar, y con 2 no se distinguiría
+ *  de sumar consigo mismo. */
+describe("velocidadDelJugador · el config manda y la tecla solo elige cuál", () => {
+  /** Los del juego, para que un cambio en el config se vea aquí. */
+  const REAL = { walk_speed: 1.9, sprint_speed: 3.8, speed_scale: 2.2 };
+
+  it("andando son walk_speed × speed_scale, en metros por segundo", () => {
+    assert.equal(velocidadDelJugador(REAL, false), 1.9 * 2.2);
+    // Y el número, escrito a mano: 4,18 m/s es lo que anda el jugador hoy.
+    assert.ok(Math.abs(velocidadDelJugador(REAL, false) - 4.18) < 1e-9);
+  });
+
+  it("esprintando son sprint_speed × speed_scale, y no la de andar", () => {
+    assert.equal(velocidadDelJugador(REAL, true), 3.8 * 2.2);
+    assert.ok(Math.abs(velocidadDelJugador(REAL, true) - 8.36) < 1e-9);
+    assert.notEqual(velocidadDelJugador(REAL, true), velocidadDelJugador(REAL, false));
+  });
+
+  it("la escala MULTIPLICA: con otra distinta cambian las dos a la vez", () => {
+    // Escala 3 sobre velocidades 2 y 5: si la operación fuese una división o
+    // una suma, ninguno de los dos números saldría.
+    const cfg = { walk_speed: 2, sprint_speed: 5, speed_scale: 3 };
+    assert.equal(velocidadDelJugador(cfg, false), 6);
+    assert.equal(velocidadDelJugador(cfg, true), 15);
+  });
+
+  it("con la escala a 1 el jugador anda exactamente lo que dice el config", () => {
+    const cfg = { walk_speed: 1.9, sprint_speed: 3.8, speed_scale: 1 };
+    assert.equal(velocidadDelJugador(cfg, false), 1.9);
+    assert.equal(velocidadDelJugador(cfg, true), 3.8);
+  });
+});
+
+/** LA VELOCIDAD ENTRA EN EL PASO: los metros del frame son los de la función,
+ *  no los que quiera el llamante. Es la costura entre los dos, y sin este
+ *  aserto `velocidadDelJugador` podría estar bien y no llegar a moverse nada. */
+describe("velocidadDelJugador + pasoDelJugador · los metros andados de un frame", () => {
+  const REAL = { walk_speed: 1.9, sprint_speed: 3.8, speed_scale: 2.2 };
+
+  it("un segundo andando al norte recorre 4,18 m; esprintando, 8,36", () => {
+    const frame = (sprint: boolean) =>
+      pasoDelJugador({
+        desde: ORIGEN,
+        forward: NORTE,
+        intencion: { adelante: 1, derecha: 0 },
+        velocidad: velocidadDelJugador(REAL, sprint),
+        delta: 1,
+        solido: LIBRE,
+      });
+    assert.ok(Math.abs(frame(false).dz + 4.18) < 1e-9);
+    assert.ok(Math.abs(frame(true).dz + 8.36) < 1e-9);
   });
 });

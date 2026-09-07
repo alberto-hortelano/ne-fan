@@ -12,6 +12,24 @@
  *  mismo mundo delante.
  */
 
+/** LOS METROS POR SEGUNDO de este frame: los del config, escalados.
+ *
+ *  Vivía en el cliente como `ARCADE_SPEED_SCALE = 2.2` y dos constantes de
+ *  módulo colgadas de él (#241), encima del `walk_speed`/`sprint_speed` del
+ *  `combat_config.json` y con caída a dos literales propios que nadie veía: el
+ *  config decía 1,9 m/s y el jugador andaba a 4,18. Hoy los tres números están
+ *  en el mismo sitio y esta función es el único lugar donde se multiplican, así
+ *  que la velocidad del juego se lee del config y no se deduce de dos ficheros.
+ *
+ *  Andar o esprintar es lo ÚNICO que decide el llamante: es una tecla, no una
+ *  regla. */
+export function velocidadDelJugador(
+  jugador: { walk_speed: number; sprint_speed: number; speed_scale: number },
+  sprint: boolean,
+): number {
+  return (sprint ? jugador.sprint_speed : jugador.walk_speed) * jugador.speed_scale;
+}
+
 /** Hacia dónde quiere ir el jugador, en SU marco: `adelante` positivo es hacia
  *  donde mira, `derecha` positivo es strafe a su derecha. */
 export interface Intencion {

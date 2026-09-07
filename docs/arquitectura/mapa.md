@@ -16,7 +16,11 @@ nefan-core/               TypeScript — logica de juego (bridge + cliente web)
     combat/                Resolver, state machines, manager, enemy AI;
                            params-de-telegraph: el aro que ve el jugador
     store/                 GameStore (dispatch/subscribe/snapshot)
-    simulation/            GameSimulation tick loop + NpcBehaviorSystem
+    simulation/            GameSimulation tick loop + NpcBehaviorSystem; y las
+                           reglas del jugador que el cliente solo ejecuta (#241):
+                           paso-del-jugador (andar y su velocidad), mirada,
+                           obstaculos-del-jugador, reaparicion (dónde vuelve al
+                           morir) y hablar-con-un-npc (el saludo y su espera)
     protocol/              Mensajes frontend ↔ logica
     plugins/               Plugins declarativos: tipos zod, hash, DSL, loader, dispatcher
     contract/              model-io/ (zod del I/O del modelo) + arch/ (checker de fronteras)
@@ -45,7 +49,8 @@ nefan-core/               TypeScript — logica de juego (bridge + cliente web)
                            — #257, #376) + manifest SQLite + styles
                            binarios; ai_server proxya /cache|/assets
   data/
-    combat_config.json     Tipos ataque, armas, animaciones, velocidades
+    combat_config.json     Tipos ataque, armas, animaciones y el bloque `player`:
+                           velocidades, escala de arcade y alcance de la E (#241)
     scenes/                Escenas Format D de ejemplo/fixture (robledo_tile, zorder_test) — tiles del selector del cliente
     games/{id}/            Juego = mundo: game.json + world.md + plugins/ (user_* = subidos)
     plugins/               Plugins shipped comunes a TODOS los juegos (economy); un plugins/ local con mismo name lo pisa
