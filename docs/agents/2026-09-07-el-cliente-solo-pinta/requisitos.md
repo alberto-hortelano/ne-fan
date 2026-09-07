@@ -105,3 +105,10 @@ Issues abiertos por el coordinador a raíz de la crítica: **#512** (frontera de
   si toca un eximido; guiones verdes sin retocar.
 - Dos corridas de mutación autorizadas: una tras las tres PR de gasto (1-3), otra antes de cerrar.
 - Cierre de #241: el censo hecho lista (estricta movida / blanda con motivo / pintar), la medida final y ningún issue paraguas.
+
+## Tras el plan (2026-09-07)
+
+Pregunta única del arquitecto (`plan.md` §9): con «manda el bridge», ¿qué hace el desplegable de estilos del título cuando el estilo
+por defecto del mundo NO casa por tags? Recomendación (a): ofrecer los compatibles Y el del mundo marcado «(del mundo · otro tema)»,
+preseleccionado. **Sin respuesta del usuario, se aplica (a)** en la PR 7; se le pregunta al abrirla. Paralelismo aceptado por el
+coordinador: {1, 2, 3} ahora (offsets 100/200/300), {4, 5, 6} después, 7 tras 1 y sola, 8 tras 4.
