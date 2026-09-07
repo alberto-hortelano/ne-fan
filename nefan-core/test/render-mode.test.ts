@@ -58,6 +58,29 @@ describe("applyRenderModeChange", () => {
     assert.equal(w.character_mode, "");
   });
 
+  it("characters: un character_mode DESCONOCIDO cuenta como propio, no hereda y se deja cambiar", () => {
+    // Save editado a mano o corrupto. La conducta de siempre: un valor que no
+    // es image|vector no es igual a ninguno de los dos, así que el cambio se
+    // acepta y lo materializa — el jugador puede salir del estado raro. Si en
+    // vez de eso se colapsara a «sin elegir», heredaría de escenarios y el
+    // bridge rechazaría el cambio dejando el valor corrupto puesto.
+    const w = world({ render_mode: "image", character_mode: "foo" });
+    const res = applyRenderModeChange(w, "characters", "image");
+    assert.deepEqual(res, { ok: true });
+    assert.equal(w.character_mode, "image");
+
+    const w2 = world({ render_mode: "vector", character_mode: "foo" });
+    assert.deepEqual(applyRenderModeChange(w2, "characters", "vector"), { ok: true });
+    assert.equal(w2.character_mode, "vector");
+
+    // Y el campo AUSENTE (save anterior a que existiera) no es «desconocido»:
+    // es «sin elegir» y hereda, igual que "".
+    const w3 = world({ render_mode: "image", character_mode: undefined as unknown as string });
+    const res3 = applyRenderModeChange(w3, "characters", "image");
+    assert.equal(res3.ok, false);
+    assert.match((res3 as { error: string }).error, /ya tiene los personajes/);
+  });
+
   it("scenes ya en el modo pedido: Result de error sin mutar", () => {
     const w = world({ render_mode: "image", character_mode: "vector" });
     const res = applyRenderModeChange(w, "scenes", "image");

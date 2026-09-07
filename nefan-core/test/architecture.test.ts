@@ -349,6 +349,84 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Nace ROJA en cada PR de #241 a propósito: el grupo de tokens se añade con
+  // la copia todavía en el cliente y el test la lista con su línea; mover la
+  // pieza a core es lo que la pone verde. Este test fija, grupo a grupo, lo
+  // que cada uno caza (las copias LITERALES que había) y lo que deja pasar (la
+  // llamada a core que las sustituye), para que el verde de mañana no sea «el
+  // patrón dejó de cazar».
+  it("[error] la-logica-de-juego-no-vuelve-al-cliente: las copias que #241 sacó del cliente saltan; la llamada a core no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
+
+    // PR 1 (#508): las tres copias de «"" sigue a escenarios» tal como estaban
+    // en modos-de-graficos.ts:106, title-screen.ts:1624 y el bridge
+    // (handlers/session.ts:370) — el bridge entra en `files` porque el `why`
+    // nombra esa copia (QA H3): prometer que la vigila y no verla es peor que
+    // no prometerlo.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: "const characterMode = msg.characterMode || renderMode;\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/modos-de-graficos.ts",
+          text: "function modoEfectivoDePersonajes(): Modo {\n  return charactersMode || scenesMode;\n}\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/title-screen.ts",
+          text: "function effectiveCharMode(s: SessionMetadata): string | undefined {\n  return s.character_mode || s.render_mode;\n}\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/main.ts",
+          text: "const eff = facets.characterMode || facets.renderMode;\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/handlers/session.ts:1",
+        "nefan-html/src/main.ts:1",
+        "nefan-html/src/ui/modos-de-graficos.ts:2",
+        "nefan-html/src/ui/title-screen.ts:2",
+      ],
+      "la caída «personajes || escenarios» escrita en el cliente tiene que saltar",
+    );
+
+    // Y lo que NO es una copia: la llamada a core, pasar la faceta por su
+    // nombre, y el mismo `||` sobre otra cosa. Y la regla en CORE, que es
+    // donde vive (fuera del alcance de la regla a propósito).
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/modos-de-graficos.ts",
+          text: "const effChar = modoEfectivoDePersonajes({ renderMode: scenesMode, characterMode: charactersMode });\n",
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/title-screen.ts",
+          text: "const label = CHAR_MODE_LABELS[mode] || \"—\";\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: "const characterMode = modoEfectivoDePersonajes({ renderMode, characterMode: charElegido });\n",
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/session/gates-de-imagen.ts",
+          text: "return f.characterMode || f.renderMode;\n",
+          imports: [],
+        },
+      ]),
+      [],
+      "llamar a core no es copiar la regla, y core es quien la tiene",
+    );
+  });
+
   // Nace ROJA a propósito (#318): al entrar listó los CINCO sitios reales de
   // nefan-html/src que se redefinían la respuesta en línea, y la misma PR los
   // migró al contrato. Este test fija lo que el patrón caza y lo que deja

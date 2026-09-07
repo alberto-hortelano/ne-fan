@@ -1,27 +1,37 @@
-/** LOS MODOS DE GRÁFICOS: qué imagen IA NUEVA se genera en esta partida —
- *  escenarios (el atlas de superficies de la fps) y personajes (los skins)—,
- *  el chip del HUD que lo enseña y lo cambia en vivo, y el rearme de los skins
+/** LOS MODOS DE GRÁFICOS: el chip del HUD que enseña y cambia en vivo qué
+ *  imagen IA NUEVA se genera en esta partida —escenarios (el atlas de
+ *  superficies de la fps) y personajes (los skins)—, y el rearme de los skins
  *  cuando la faceta de personajes pasa de OFF a ON.
  *
- *  Es presentación y la puerta del GASTO del cliente, nada más: el modo de
- *  cada faceta lo elige el jugador (en el título o en el chip); con sesión lo
- *  persiste y lo difunde el bridge (`world.render_mode` / `character_mode` del
- *  save, `render_mode_changed`), y sin sesión —fixtures— se recuerda en
- *  `localStorage`. Aquí se derivan los dos gates («¿se genera escenario?»,
- *  «¿se generan skins?») y se le comunican a quien gasta: el controller del
- *  atlas PREGUNTA (`escenariosGeneran()`) y el manager de skins RECIBE su
- *  permiso (`setSkinsAllowed`). */
+ *  Es presentación, nada más: el modo de cada faceta lo elige el jugador (en
+ *  el título o en el chip); con sesión lo persiste y lo difunde el bridge
+ *  (`world.render_mode` / `character_mode` del save, `render_mode_changed`), y
+ *  sin sesión —fixtures— se recuerda en `localStorage`. La DECISIÓN de gasto
+ *  («¿se genera escenario?», «¿se generan skins?», «un personajes vacío sigue
+ *  a escenarios») no está aquí: es `gatesDeImagen` en core
+ *  (`session/gates-de-imagen.ts`, #508), a la que este módulo le pasa los
+ *  toggles leídos de `localStorage` como booleanos. `CONFIG.graphics.ai_skin`
+ *  NO va ahí y se aplica aquí abajo (rótulo y chip): apaga el BACKEND, no el
+ *  modo, y el permiso del manager tiene que seguir siendo el modo para que el
+ *  fail-loud de `renderer/aspecto-del-jugador.ts` pueda dispararse. El resultado
+ *  se le comunica a quien gasta: el controller del atlas PREGUNTA
+ *  (`escenariosGeneran()`) y el manager de skins RECIBE su permiso
+ *  (`setSkinsAllowed`). */
 
 import type { ClientSession } from "@nefan-core/src/session/session-facets.js";
+import {
+  gatesDeImagen,
+  modoEfectivoDePersonajes,
+  normalizarModo,
+  type GatesDeImagen,
+  type Modo,
+} from "@nefan-core/src/session/gates-de-imagen.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import type { CharacterSpriteManager } from "../renderer/character-sprites.js";
 import type { MundoDelCliente } from "../world/mundo-del-cliente.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
 import { errors } from "./error-log.js";
 import { GraphicsModeChip, type GraphicsFacet } from "./graphics-mode.js";
-
-/** Modo de render de una faceta: `""` = sin sesión o save previo al campo. */
-type Modo = "image" | "vector" | "";
 
 // --- Generación de imagen SIN sesión (fixtures) ---
 // Persistido en localStorage: es el estado del toggle de escenarios cuando no
@@ -96,32 +106,30 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
   let scenesMode: Modo = "";
   let charactersMode: Modo = "";
 
+  /** Los dos gates de gasto, decididos en core con lo que este cliente sabe:
+   *  los modos de la sesión y los dos toggles de `localStorage` (que mandan
+   *  sin sesión, OFF por defecto: cargar una fixture con NPCs descritos no
+   *  debe gastar créditos sin que nadie lo pida). */
+  function gates(): GatesDeImagen {
+    return gatesDeImagen({
+      renderMode: scenesMode,
+      characterMode: charactersMode,
+      toggleLocalEscenarios: localStorage.getItem(AUTOIMG_KEY) === "1",
+      toggleLocalPersonajes: localStorage.getItem(AICHAR_KEY) === "1",
+    });
+  }
+
   function escenariosGeneran(): boolean {
-    if (scenesMode) return scenesMode === "image";
-    return localStorage.getItem(AUTOIMG_KEY) === "1";
-  }
-
-  /** Modo efectivo de personajes ("" legacy sigue a escenarios). */
-  function modoEfectivoDePersonajes(): Modo {
-    return charactersMode || scenesMode;
-  }
-
-  /** ¿Skins IA activos? Sin sesión ("" en ambas facetas) manda el toggle local
-   *  persistido — OFF por defecto: cargar una fixture con NPCs descritos no
-   *  debe gastar créditos sin que nadie lo pida. */
-  function personajesGeneran(): boolean {
-    const eff = modoEfectivoDePersonajes();
-    if (eff) return eff === "image";
-    return localStorage.getItem(AICHAR_KEY) === "1";
+    return gates().escenarios;
   }
 
   function aplicar({ renderMode, characterMode }: { renderMode: string; characterMode: string }): void {
     const prevCharOn = deps.characterSprites.skinsAllowed;
-    scenesMode = renderMode === "vector" ? "vector" : renderMode === "image" ? "image" : "";
-    charactersMode =
-      characterMode === "vector" ? "vector" : characterMode === "image" ? "image" : "";
-    const effChar = modoEfectivoDePersonajes();
-    deps.characterSprites.setSkinsAllowed(personajesGeneran());
+    scenesMode = normalizarModo(renderMode);
+    charactersMode = normalizarModo(characterMode);
+    const effChar = modoEfectivoDePersonajes({ renderMode: scenesMode, characterMode: charactersMode });
+    const g = gates();
+    deps.characterSprites.setSkinsAllowed(g.personajes);
     // Fail-loud: la partida pide skins IA pero el backend está apagado por
     // config — sin este aviso, requestSkin haría no-op silencioso y el jugador
     // que confirmó el gasto vería y_bot sin explicación.
@@ -131,6 +139,8 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
         "la partida tiene skins IA activados pero graphics.ai_skin=false en config — los personajes irán en base y_bot",
       );
     }
+    // `ai_skin` en el RÓTULO y no en el gate: lo que el backend apagado
+    // cambia es lo que el jugador lee (arriba ya se le avisó).
     const charLabel = effChar !== "vector" && CONFIG.graphics.ai_skin
       ? "skins IA" : "personajes en base y_bot";
     if (scenesMode === "vector") {
@@ -184,7 +194,7 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
   // defecto) — el manager nace con allowed=true y sin esto una fixture con
   // NPCs descritos encolaría skins de pago nada más cargar. Va ANTES del
   // chip: su primer `refresh()` ya lee el permiso real.
-  deps.characterSprites.setSkinsAllowed(personajesGeneran());
+  deps.characterSprites.setSkinsAllowed(gates().personajes);
 
   // Chip de gráficos (UI de cliente): el MISMO modo que se elige al crear la
   // partida en el título, visible y cambiable en juego. El cambio va por
@@ -192,7 +202,7 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
   // bridge-client directo. Nace oculto: el título está abierto al arrancar.
   const chip = new GraphicsModeChip({
     getState: () => ({
-      scenesOn: escenariosGeneran(),
+      scenesOn: gates().escenarios,
       charsOn: deps.characterSprites.skinsAllowed && CONFIG.graphics.ai_skin,
       charsAvailable: CONFIG.graphics.ai_skin,
       hasSession: deps.session.active,

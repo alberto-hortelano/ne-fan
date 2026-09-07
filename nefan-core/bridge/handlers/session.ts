@@ -51,6 +51,7 @@ import { avisoDeIlegibles, sessionDataForClient } from "../wire-scene.js";
 import { avisoDeFueraDelMundo, type FueraDelMundo } from "../../src/session/mundo-persistido.js";
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { applyRenderModeChange } from "../../src/narrative/render-mode.js";
+import { modoEfectivoDePersonajes } from "../../src/session/gates-de-imagen.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
 import type {
   CreateGameMessage,
@@ -365,12 +366,16 @@ export async function handleStartSession(
     if (renderMode !== "image" && renderMode !== "vector") {
       throw new Error(`modo de render desconocido "${renderMode}" (esperaba image|vector)`);
     }
-    // Personajes por separado: skins IA o base y_bot. Default = el modo de
-    // escenarios (una sola elección sigue funcionando como siempre).
-    const characterMode = msg.characterMode || renderMode;
-    if (characterMode !== "image" && characterMode !== "vector") {
-      throw new Error(`modo de personajes desconocido "${characterMode}" (esperaba image|vector)`);
+    // Personajes por separado: skins IA o base y_bot. Sin elección, la regla
+    // de core (session/gates-de-imagen.ts): sigue al modo de escenarios, así
+    // que una sola elección sigue funcionando como siempre. Un valor
+    // desconocido aborta ANTES de aplicarla: normalizarlo lo colapsaría a
+    // «sin elegir» en silencio.
+    const charElegido = msg.characterMode ?? "";
+    if (charElegido !== "" && charElegido !== "image" && charElegido !== "vector") {
+      throw new Error(`modo de personajes desconocido "${charElegido}" (esperaba image|vector)`);
     }
+    const characterMode = modoEfectivoDePersonajes({ renderMode, characterMode: charElegido });
     // Compatibilidad TEMÁTICA estilo↔juego (tags): warning, no abort — el
     // matching es heurístico sobre vocabulario libre y el selector del
     // título ya filtra; un typo en un tag no debe brickear una partida.

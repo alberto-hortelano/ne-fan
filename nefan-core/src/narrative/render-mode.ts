@@ -5,6 +5,7 @@
  *  y una partida inactiva sobre el `world` leído de disco. Bajar a vector NO
  *  borra lo ya pintado: el cliente conserva las imágenes existentes y solo
  *  deja de generar nuevas. */
+import { modoEfectivoDePersonajes, normalizarModo } from "../session/gates-de-imagen.js";
 import type { NarrativeWorldState } from "./types.js";
 
 export type RenderFacet = "scenes" | "characters";
@@ -35,9 +36,29 @@ export function applyRenderModeChange(
     world.render_mode = mode;
     return { ok: true };
   }
-  // Personajes: "" legacy = sigue a render_mode — comparar contra el modo
-  // EFECTIVO; asignar materializa el valor propio de la faceta.
-  const effective = world.character_mode || world.render_mode;
+  // Personajes: "" legacy = sigue a render_mode (la regla vive en
+  // session/gates-de-imagen.ts) — comparar contra el modo EFECTIVO; asignar
+  // materializa el valor propio de la faceta.
+  //
+  // Un `character_mode` que NO es image|vector (save editado a mano o
+  // corrupto) cuenta como modo PROPIO y no hereda: nunca es igual al pedido,
+  // así que el cambio se acepta y lo materializa. Es la conducta de siempre y
+  // se conserva a propósito — normalizarlo aquí lo colapsaría a «sin elegir»
+  // y el bridge pasaría a RECHAZAR el cambio («ya tiene los personajes en
+  // modo image») dejando el valor corrupto puesto. Que un valor así llegue
+  // vivo hasta aquí es el defecto de verdad, y su sitio es la puerta del save
+  // (loadSession), no este silencio.
+  const propio = normalizarModo(world.character_mode);
+  // Un save legacy trae el campo VACÍO o directamente ausente: las dos cosas
+  // son «sin elegir» y heredan (por eso la guarda es la verdad del valor y no
+  // `!== ""`, que dejaría `undefined` fuera de la herencia).
+  const desconocido = Boolean(world.character_mode) && propio === "";
+  const effective = desconocido
+    ? world.character_mode
+    : modoEfectivoDePersonajes({
+        renderMode: normalizarModo(world.render_mode),
+        characterMode: propio,
+      });
   if (effective === mode) {
     return {
       ok: false,
