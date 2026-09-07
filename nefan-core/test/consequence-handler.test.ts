@@ -100,7 +100,32 @@ describe("dispatchConsequences", () => {
     if (r.effects[0].kind === "spawn_entity") {
       assert.equal(r.effects[0].name, "Marcus");
       assert.equal(r.effects[0].entityKind, "npc");
+      // Un NPC no lleva huella: colisiona por su radio, no por una caja (#489).
+      assert.equal("sizeXZ" in r.effects[0], false);
     }
+  });
+
+  it("un objeto y un edificio salen CON su huella colisionable, la misma que la del tile (#489)", () => {
+    // Hasta el 2026-09-07 el effect no la llevaba y el cliente se la inventaba
+    // con dos literales en metros: la forja que el motor ponía no era sólida y
+    // el cofre no medía lo mismo que un cofre declarado por una escena.
+    const s = makeState();
+    const cs: Consequence[] = [
+      { type: "spawn_entity", entity_kind: "building", name: "Forja de Robledo" },
+      { type: "spawn_entity", entity_kind: "object", name: "Cofre de la posada" },
+    ];
+    let n = 0;
+    const r = dispatchConsequences(s, "evt_0001", cs, {
+      playerPosition: [0, 0, 0],
+      playerForward: [0, 0, -1],
+      generateEntityId: (k) => `narr_${k}_${n++}`,
+    });
+    const huellas = r.effects
+      .filter((e) => e.kind === "spawn_entity")
+      .map((e) => (e.kind === "spawn_entity" && e.entityKind !== "npc" ? e.sizeXZ : null));
+    // 8×8 celdas × 0,5 m y 3×3 × 0,5 m: los mismos metros que emitiría
+    // `formatDToWorld` para una entity con ese footprint.
+    assert.deepEqual(huellas, [{ x: 4, z: 4 }, { x: 1.5, z: 1.5 }]);
   });
 
   it("tres cosas en el MISMO turno no caen en el mismo punto", () => {

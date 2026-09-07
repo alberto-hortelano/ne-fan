@@ -174,6 +174,20 @@ La altura no participa: la huella colisionable es XZ. Render y colisión no
 tienen por qué coincidir (un árbol colisiona por el tronco y se renderiza con
 la copa).
 
+**Lo que frena al JUGADOR y no es terreno** vive en
+`nefan-core/src/simulation/obstaculos-del-jugador.ts` (el cliente solo cablea):
+la FRONTERA del plano —un tile que no existe es un sólido virtual con semántica
+«salir sí, entrar no», que con la resolución por ejes de `pasoDelJugador` da el
+bloqueo direccional— y las CAJAS (AABB) de los objetos. Una caja se aplica si y
+solo si ese objeto NO lo representa ya un volumen del plan (`volume_id`): lo del
+plan es sólido por el grid, con sus puertas y sus huecos, y encima no va nada;
+lo que no está en el plan —todo lo que el motor spawnea a mitad de partida— es
+sólido por su caja, y su huella la deriva `huellaEnMetros` de la MISMA tabla de
+celdas que la de una entity de escena. Hasta el 2026-09-07 ese salto era por
+TILE (`svgApplied`) y, como todo tile del motor tiene la colisión del plan desde
+que llega, apagaba todas las cajas: los spawns no eran sólidos (#489). El sim de
+NPCs no usa ninguna de las dos a propósito (`bridge/sim-collision.ts`).
+
 **PROHIBIDO recortar una imagen generada con siluetas DECLARADAS.** Se probó y
 NO funciona: el modelo de imagen recoloca y reorienta lo declarado, la máscara
 declarada recorta SUELO con forma de objeto y el objeto real queda cocido en la

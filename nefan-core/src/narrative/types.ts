@@ -349,6 +349,23 @@ export function toTuple(v: Vec3Like): [number, number, number] {
   return [v.x, v.y, v.z];
 }
 
+/** La clase de un spawn de runtime Y su huella colisionable, atadas en el
+ *  TIPO: un `object`/`building` viaja SIEMPRE con `sizeXZ` en metros (la
+ *  deriva `huellaEnMetros`, la misma que la huella de una entity del tile) y un
+ *  `npc` NUNCA la lleva — un personaje colisiona por su radio, no por un AABB.
+ *
+ *  Es una unión y no un campo opcional a propósito (#489): con `sizeXZ?` el
+ *  productor podía olvidarlo y el consumidor tenía que inventarse un tamaño o
+ *  dejar la caja sin colisión, que es exactamente lo que pasaba cuando la
+ *  huella se escribía a mano en el cliente. Así no compila.
+ *
+ *  La comparten el effect en vuelo (`ConsequenceEffect`) y el del resume
+ *  (`SpawnDeRuntime`, session/mundo-persistido.ts), que son la misma forma por
+ *  contrato: el materializador del cliente come las dos por la misma puerta. */
+export type HuellaDelSpawn =
+  | { entityKind: "npc" }
+  | { entityKind: "object" | "building"; sizeXZ: { x: number; z: number } };
+
 /** Renderer-agnostic effects produced by dispatchConsequences. Lives here (not
  * in consequence-handler.ts) so the browser bundle can import the type without
  * pulling in Node-only modules. */
@@ -368,10 +385,9 @@ export type ConsequenceEffect =
       speakerStyleRef?: string;
     }
   | { kind: "story_delta"; delta: string }
-  | {
+  | ({
       kind: "spawn_entity";
       entityId: string;
-      entityKind: "npc" | "object" | "building";
       /** El rótulo. Siempre: el contrato lo exige y el cliente no tiene con
        *  qué sustituirlo. */
       name: string;
@@ -381,7 +397,7 @@ export type ConsequenceEffect =
       position: [number, number, number];
       data: Record<string, unknown>;
       eventId: string;
-    }
+    } & HuellaDelSpawn)
   | { kind: "schedule_event"; id: string; description: string; trigger?: string }
   | { kind: "ambient_message"; message: string }
   /** Tick de plugins aplicado (F4): qué plugin procesó qué evento, qué paths

@@ -3,7 +3,14 @@
  *  Es uno de los invariantes más repetidos del proyecto y hasta ahora solo se
  *  comprobaba a ojo. El guion no usa coordenadas mágicas: descubre el borde
  *  del edificio sondeando con probeCollide, así sigue valiendo si la fixture
- *  se reordena. */
+ *  se reordena.
+ *
+ *  QUÉ FUENTE lo hace sólido, dicho aquí porque es lo que este guion no
+ *  distingue: el edificio de una fixture lleva `volume_id`, así que su solidez
+ *  sale del GRID del plan (`planCollisionGrid`) y no de su caja — su caja no se
+ *  aplica, y por eso los vanos y las puertas se cruzan (guion 45). La caja solo
+ *  gobierna lo que el plan no pinta, o sea lo que el motor spawnea en runtime
+ *  (guion 81, #489). Los dos caminos entran por el mismo `probeCollide`. */
 
 /** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
  *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en

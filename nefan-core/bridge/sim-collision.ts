@@ -15,8 +15,14 @@
  *  no se invalida. Un grid inconsistente degrada ese tile a "sin esa fuente"
  *  con warning (mismo patrón que el cliente), nunca tumba el tick.
  *
- *  DIVERGENCIA INTENCIONAL con el cliente: la frontera de tiles y los AABBs
- *  del esquema son del jugador (cliente), no de los NPCs. */
+ *  LO QUE NO ENTRA AQUÍ, y no es una divergencia de proceso: la frontera del
+ *  plano y las cajas de los objetos sin volumen son del JUGADOR. Desde la PR 5
+ *  de #241 son funciones de core (`src/simulation/obstaculos-del-jugador.ts`),
+ *  no código del cliente, y este proveedor no las llama A PROPÓSITO — un NPC no
+ *  se frena en el borde del mundo conocido (su tile existe: es donde vive) ni
+ *  necesita la caja ciega de lo que el plan ya le pone delante. Hasta ese día
+ *  aquí se leía «divergencia intencional con el cliente», que describía dónde
+ *  vivía el código y no qué decide cada uno. */
 
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import { createTerrainCollider, type TerrainCollider } from "../src/scene/terrain-collision.js";

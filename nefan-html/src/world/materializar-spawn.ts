@@ -59,9 +59,10 @@ export function crearMaterializadorDeSpawn(deps: DepsDeMaterializarSpawn): Mater
   const { mundo, characterSprites, log } = deps;
 
   /** NPCs van a la lista de NPCs (interactuables con E); building/object a la
-   *  de objetos, con `sizeXZ` para que sean sólidos (collidesAt) y tengan
-   *  volumen que instalar en el renderer, que es la "geometría base" sobre la
-   *  que luego se superponen imágenes IA. */
+   *  de objetos, con la `sizeXZ` que trae el effect para que sean sólidos
+   *  (`collidesAt` → `aabbBloquea`) y tengan volumen que instalar en el
+   *  renderer, que es la "geometría base" sobre la que luego se superponen
+   *  imágenes IA. */
   function materializar(effect: SpawnDeRuntime, opts: { rehidratado?: boolean } = {}): void {
     const [x, y, z] = effect.position;
     const pos: Vec3 = { x, y, z };
@@ -140,8 +141,12 @@ export function crearMaterializadorDeSpawn(deps: DepsDeMaterializarSpawn): Mater
       label,
       alive: true,
       category: isBuilding ? "building" : "prop",
-      sizeXZ: isBuilding ? { x: 4, z: 4 } : { x: 1.4, z: 1.4 },
+      // La huella VIENE DADA (`huellaEnMetros`, core): la misma aritmética
+      // celdas→metros que la de una entity del tile. Aquí se inventaba con dos
+      // literales en metros (#489).
+      sizeXZ: effect.sizeXZ,
       // Altura coherente con la de las escenas del motor (defaults por kind).
+      // No entra en la colisión, que es solo XZ: es el volumen que se pinta.
       sizeY: KIND_DEFAULT_HEIGHT[isBuilding ? "building" : "prop"],
       // EL ARREGLO DE #350, en una línea: este cofre y esta forja no son de
       // ningún tile, así que la purga de `addTile` ya no se los lleva por caer

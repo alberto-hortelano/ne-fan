@@ -17,7 +17,7 @@
 
 import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
 import { composeTilePlan, type TilePlan } from "./tile-plan.js";
-import { tileCoordDe, tileWorldRect, type TileCoord, type WorldRect } from "./tile.js";
+import { tileCoordDe, tileWorldRect, TILE_MPC, type TileCoord, type WorldRect } from "./tile.js";
 import type { TerrainGridData } from "./terrain-collision.js";
 import { combatForHostileRole, type HostileCombat } from "../combat/hostiles.js";
 import type { ExpandedScene } from "../contract/model-io/scene-schema.js";
@@ -156,6 +156,50 @@ export const KIND_DEFAULT_HEIGHT: Record<string, number> = {
  *  recorta en vez de tumbar la escena. */
 const MAX_ENTITY_HEIGHT_M = 20;
 
+/** Huella EN CELDAS de lo que el motor spawnea a mitad de partida, por clase
+ *  del effect `spawn_entity` (`npc | object | building`). Un spawn no lleva
+ *  `footprint`: el contrato de la consequence no lo pide, así que el tamaño lo
+ *  pone el juego — y lo pone AQUÍ, en celdas, para que pase por la MISMA
+ *  aritmética que la huella de una entity del tile (`huellaEnMetros`) y no por
+ *  dos metros escritos a mano en otro proceso.
+ *
+ *  De dónde salen los dos números: son lo que el cliente venía inventando en
+ *  `world/materializar-spawn.ts` (#489) traducido a celdas — `building` 8×8
+ *  celdas son los 4×4 m de siempre; `object` 3×3 son 1,5×1,5 m, tres celdas
+ *  enteras en vez de los 1,4 m que no eran múltiplo de nada. `npc` no está
+ *  porque un personaje no es un AABB: colisiona por su radio, no por huella. */
+export const FOOTPRINT_POR_DEFECTO: Record<string, readonly [number, number]> = {
+  building: [8, 8],
+  object: [3, 3],
+};
+
+/** La huella colisionable de algo del mundo, EN METROS (XZ), desde su huella en
+ *  CELDAS. Es la conversión que hacía `formatDToWorld` en línea para las
+ *  entities del tile (`[w * mpc, h, h * mpc]`) y que el cliente NO hacía para
+ *  los spawns de runtime: los inventaba en metros, con dos literales, y así el
+ *  mismo cofre medía una cosa puesto por la escena y otra puesto por el motor
+ *  (#489).
+ *
+ *  `footprintCells` es la del contrato cuando la hay (entity de escena); sin
+ *  ella se aplica la del kind (`FOOTPRINT_POR_DEFECTO`, spawn de runtime), y un
+ *  kind sin defecto es fail-loud: nadie inventa un tamaño en silencio. La
+ *  ALTURA no entra — la colisión es solo XZ (CLAUDE.md), y quien pinte volumen
+ *  la pide aparte a `KIND_DEFAULT_HEIGHT`. */
+export function huellaEnMetros(
+  kind: string,
+  footprintCells?: readonly [number, number] | null,
+  mpc: number = TILE_MPC,
+): { x: number; z: number } {
+  const celdas = footprintCells ?? FOOTPRINT_POR_DEFECTO[kind];
+  if (!celdas) {
+    throw new Error(
+      `huellaEnMetros: "${kind}" no declara footprint y no tiene huella por defecto ` +
+        `(hay para ${Object.keys(FOOTPRINT_POR_DEFECTO).join(" | ")})`,
+    );
+  }
+  return { x: celdas[0] * mpc, z: celdas[1] * mpc };
+}
+
 /** Chars del grid que bloquean el paso: solo "w", el agua que rasteriza
  *  `expandScenePrimitives` desde `ground` (el puente "b" es transitable). Los
  *  MUROS no son chars del grid: son volúmenes del plan, y su solidez sale de
@@ -287,10 +331,14 @@ export function formatDToWorld(raw: Record<string, unknown>): WorldScene {
       typeof ent.h === "number" && Number.isFinite(ent.h) && ent.h > 0
         ? Math.min(ent.h, MAX_ENTITY_HEIGHT_M)
         : (KIND_DEFAULT_HEIGHT[ent.kind] ?? 1);
+    // La huella en metros sale de la MISMA función que la de un spawn de
+    // runtime: un cofre de 3 celdas mide 1,5 m lo ponga la escena o lo ponga el
+    // motor a mitad de partida (#489).
+    const huella = huellaEnMetros(ent.kind, [w, h], mpc);
     const obj: ObjetoEnElWire = {
       id: ent.id,
       position: [x, 0, z],
-      scale: [w * mpc, entH, h * mpc],
+      scale: [huella.x, entH, huella.z],
       category,
       // El mismo par que lleva un NPC: `name` es la ETIQUETA (lo que el
       // jugador lee al mirarlo) y `description`, solo si el motor la declaró,

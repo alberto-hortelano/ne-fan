@@ -39,10 +39,13 @@ export interface TileClientState {
   collider: TerrainCollider | null;
   /** Colisión base derivada del PLAN declarado (agua∖decks del `ground` +
    *  huellas de los `volumes`). Disponible en cuanto llega el tile. Se UNE al
-   *  collider de terreno. Con `svgApplied`, los AABBs del esquema dejan de
-   *  bloquear (el plan ya dibuja esos edificios con sus muros y puertas); si
-   *  la derivación falla, el flag queda a false y los AABBs siguen. */
+   *  collider de terreno. */
   svgCollider: TerrainCollider | null;
+  /** ¿Se le instaló ya la colisión del plan a este tile? Gobierna UNA cosa: si
+   *  al re-emitir la misma escena hay que RESTAURARLA o volver a derivarla
+   *  (`carga-de-tile.ts`). Hasta la PR 5 de #241 gobernaba además qué cajas de
+   *  objetos aplicaban, y las apagaba todas (#489); ese salto es hoy por OBJETO
+   *  (`volume_id`) y vive en core. */
   svgApplied: boolean;
 }
 
@@ -99,10 +102,10 @@ export class TileStore {
   }
 
   /** Instala la colisión base derivada del plan del tile (null = plan sin
-   *  celdas sólidas, aplicado igualmente: los AABBs del esquema se apagan).
-   *  `como` dice si se acaba de DERIVAR o se RESTAURA la de antes (la huella no
-   *  cambió): es el dato que #410 hace observable. Fail-loud si la clave no
-   *  existe: se deriva justo tras registrar el tile. */
+   *  celdas sólidas, y se marca aplicado igualmente: no hay nada que derivar
+   *  otra vez). `como` dice si se acaba de DERIVAR o se RESTAURA la de antes
+   *  (la huella no cambió): es el dato que #410 hace observable. Fail-loud si
+   *  la clave no existe: se deriva justo tras registrar el tile. */
   setSvgCollider(key: string, collider: TerrainCollider | null, como: "derivada" | "restaurada"): void {
     const entry = this.entries.get(key);
     if (!entry) throw new Error(`TileStore.setSvgCollider: tile ${key} no registrado`);

@@ -208,13 +208,17 @@ export function instalarNefanHook(deps: DepsDelHook): void {
        *  `npcs()` y `enemies()`: un guion tiene que poder afirmar que el cofre
        *  que el motor puso delante SIGUE ahí tras reanudar, y sin esto solo
        *  podía sondear la colisión — que dice «aquí hay algo», no «aquí está
-       *  ESE algo». Solo lectura. */
+       *  ESE algo». `sizeXZ` y `volumeId` son los dos campos de los que depende
+       *  que algo sea sólido (`aabbBloquea`, core): sin ellos un guion dice
+       *  «choca» y no «choca con la caja que dice tener» (#489). Solo lectura. */
       objects: () =>
         deps.mundo.objetos.map((o) => ({
           id: o.id,
           label: o.label,
           pos: { ...o.pos },
           category: o.category,
+          sizeXZ: o.sizeXZ ? { ...o.sizeXZ } : undefined,
+          volumeId: o.volumeId,
         })),
       /** ¿Puede el jugador ATACAR ahora mismo? Es la MISMA condición que lee la
        *  puerta real (`keyboard-input-provider.ts`: LMB solo cuenta con pointer

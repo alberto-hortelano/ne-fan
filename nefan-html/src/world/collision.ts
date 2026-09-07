@@ -1,21 +1,25 @@
-/** Colisión del mundo del cliente — extraída de main.ts.
+/** Colisión del mundo del cliente — CABLEADO, no decisión.
  *
- *  Dos fuentes de solidez por tile, en UNIÓN (las dos bloquean):
- *  1. `collider`      — terrain_grid del esquema (el agua w; los muros son plan);
- *  2. `svgCollider`   — PLAN declarado: agua∖decks del `ground` + huellas de
- *                       los `volumes`, derivados por la función de core
- *                       compartida `planCollisionGrid` (el MISMO cálculo que el
- *                       bridge en sim-collision → jugador y NPCs no divergen).
- *                       Activa desde que llega el tile.
- *  Los AABBs de objetos del esquema solo aplican mientras el tile no tiene el
- *  plan aplicado: en cuanto hay mapa real, los muros con puertas y huecos
- *  sustituyen a la caja ciega.
+ *  «¿(x, z) está bloqueado?» es la unión de tres fuentes, y ninguna se decide
+ *  aquí: la FRONTERA del plano y las CAJAS de los objetos son de core
+ *  (`simulation/obstaculos-del-jugador.ts`), y los colliders de cada tile
+ *  tocado son `collider` (terrain_grid: el agua w) y `svgCollider` (el PLAN,
+ *  derivado por `planCollisionGrid` — el MISMO cálculo que el bridge en
+ *  sim-collision, así que jugador y NPCs no divergen).
  *
- *  Semántica "salir sí, entrar no" en todas las fuentes: un obstáculo que YA
- *  solapa la posición actual no bloquea (permite des-penetrar tras un spawn
- *  solapado); solo bloquean los obstáculos NUEVOS del destino. */
+ *  Aquí queda lo que no es regla: el `TileStore`, los colliders instalados y el
+ *  `errors.push` de la derivación. Las dos reglas salieron en la PR 5 de #241
+ *  (#489), que de paso arregló el salto de las cajas: era POR TILE
+ *  (`svgApplied`) y hoy es POR OBJETO (`volume_id`), así que lo que el motor
+ *  spawnea pasó a ser sólido. */
 
 import { createTerrainCollider, PLAYER_RADIUS_M, type TerrainCollider } from "@nefan-core/src/scene/terrain-collision.js";
+import {
+  aabbBloquea,
+  fronteraBloquea,
+  type ObstaculoAabb,
+  type TilesDelMundo,
+} from "@nefan-core/src/simulation/obstaculos-del-jugador.js";
 import {
   planCollisionGrid,
   type GroundFeature,
@@ -29,71 +33,47 @@ import type { TileStore } from "./tile-store.js";
  *  Reexporta la fuente única de core (`PLAYER_RADIUS_M`) — no redefinir aquí. */
 export const PLAYER_RADIUS = PLAYER_RADIUS_M;
 
-/** Obstáculo AABB del esquema (objeto de escena con footprint). */
-export interface CollisionObstacle {
-  pos: { x: number; z: number };
-  sizeXZ?: { x: number; z: number } | null;
-  category?: string;
-}
+/** Obstáculo de caja del esquema. El tipo es el de core: lo que el cliente
+ *  aporta es la LISTA (sus `Entity` de objeto), no qué significa cada campo. */
+export type CollisionObstacle = ObstaculoAabb;
 
 export interface CollisionDeps {
   tileStore: TileStore;
   /** Posición ACTUAL del jugador — origen del movimiento que se resuelve. */
   getPlayerPos(): { x: number; z: number };
-  /** Objetos del esquema que colisionan por AABB (buildings/props). */
+  /** Objetos del esquema que colisionan por caja (buildings/props). */
   getObstacles(): readonly CollisionObstacle[];
 }
 
 export class CollisionSystem {
-  constructor(private deps: CollisionDeps) {}
+  /** El `TileStore` visto como el mundo que pregunta la frontera de core. Se
+   *  construye una vez y lee en vivo (`hayGrid` es un getter): el store es
+   *  mutable y la respuesta tiene que ser la de este frame. */
+  private readonly tiles: TilesDelMundo;
 
-  /** Frontera del plano: un tile INEXISTENTE es un sólido virtual con
-   *  semántica "salir sí, entrar no" — bloquea el movimiento HACIA él pero
-   *  nunca el de vuelta. Con la resolución por ejes del gameLoop esto da el
-   *  bloqueo DIRECCIONAL gratis: pegado al borde este solo se bloquea +x;
-   *  ±z y -x siguen libres. Sin mundo no hay frontera. */
-  frontierBlocksMove(x: number, z: number): boolean {
-    const { tileStore } = this.deps;
-    if (!tileStore.hasGridTiles) return false;
-    const destMissing = tileStore
-      .keysTouching(x, z, PLAYER_RADIUS)
-      .filter((t) => !tileStore.has(t.tx, t.ty));
-    if (destMissing.length === 0) return false;
-    const p = this.deps.getPlayerPos();
-    const fromKeys = new Set(
-      tileStore.keysTouching(p.x, p.z, PLAYER_RADIUS).map((t) => `${t.tx},${t.ty}`),
-    );
-    return destMissing.some((t) => !fromKeys.has(`${t.tx},${t.ty}`));
+  constructor(private deps: CollisionDeps) {
+    const { tileStore } = deps;
+    this.tiles = {
+      get hayGrid() {
+        return tileStore.hasGridTiles;
+      },
+      tocados: (x, z, r) => tileStore.keysTouching(x, z, r),
+      tiene: (tx, ty) => tileStore.has(tx, ty),
+    };
   }
 
-  /** ¿El destino (x,z) está bloqueado para el jugador? Unión de frontera,
-   *  colliders de terreno/plan de los tiles tocados (≤4, coordenadas
-   *  globales) y AABBs del esquema donde aún aplican. */
+  /** ¿El destino (x,z) está bloqueado para el jugador? Unión de las tres
+   *  fuentes de la cabecera, en el orden más barato primero. */
   collidesAt(x: number, z: number): boolean {
-    if (this.frontierBlocksMove(x, z)) return true;
     const { tileStore } = this.deps;
-    const p = this.deps.getPlayerPos();
+    const desde = this.deps.getPlayerPos();
+    const hasta = { x, z };
+    if (fronteraBloquea(desde, hasta, PLAYER_RADIUS, this.tiles)) return true;
     for (const t of tileStore.keysTouching(x, z, PLAYER_RADIUS)) {
       const tile = tileStore.get(t.tx, t.ty);
-      if (tile && this.tileBlocks(tile, p, x, z)) return true;
+      if (tile && this.tileBlocks(tile, desde, x, z)) return true;
     }
-    for (const obj of this.deps.getObstacles()) {
-      if (!obj.sizeXZ) continue;
-      if (obj.category !== "building" && obj.category !== "prop") continue;
-      // El PLAN manda: en un tile con colisión del plan aplicada, los AABBs
-      // del esquema dejan de aplicar — la colisión sale de los muros/troncos
-      // reales, con sus puertas y huecos.
-      const owner = tileStore.getAt(obj.pos.x, obj.pos.z);
-      if (owner?.svgApplied) continue;
-      const hx = obj.sizeXZ.x / 2 + PLAYER_RADIUS;
-      const hz = obj.sizeXZ.z / 2 + PLAYER_RADIUS;
-      if (Math.abs(x - obj.pos.x) < hx && Math.abs(z - obj.pos.z) < hz) {
-        const alreadyInside =
-          Math.abs(p.x - obj.pos.x) < hx && Math.abs(p.z - obj.pos.z) < hz;
-        if (!alreadyInside) return true;
-      }
-    }
-    return false;
+    return aabbBloquea(desde, hasta, PLAYER_RADIUS, this.deps.getObstacles());
   }
 
   /** Unión de los dos colliders de un tile sobre el mismo movimiento. */
@@ -114,8 +94,9 @@ export class CollisionSystem {
 
 /** Colisión base del plan declarado: agua∖decks del `ground` + huellas de los
  *  volúmenes — instalada como collider base del tile, activa desde que llega
- *  el tile. Analítica pura (sin rasterizar nada). Si la derivación falla, los
- *  AABBs del esquema siguen aplicando (svgApplied queda a false).
+ *  el tile. Analítica pura (sin rasterizar nada). Si la derivación falla, el
+ *  tile se queda sin esa fuente (`svgApplied` a false) y se dice: las cajas de
+ *  sus objetos no la sustituyen, porque los objetos del plan no las llevan.
  *
  *  Ya no lleva deps: el espejo visual del grid (celdas azules del overlay B)
  *  era del renderer oblicuo. En primera persona el overlay de colisión
@@ -138,6 +119,6 @@ export function applyPlanCollision(
       `[collision] ${key}: plan aplicado — ${collider?.solidCellCount ?? 0} celdas sólidas`,
     );
   } catch (err) {
-    errors.push("scene", `plan de ${key} no deriva colisión; siguen los AABBs del esquema`, err);
+    errors.push("scene", `plan de ${key} no deriva colisión; ese tile se queda sin la solidez del plan`, err);
   }
 }

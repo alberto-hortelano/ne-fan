@@ -37,8 +37,8 @@
  *  (para el resume), que es exactamente por qué no puede tocar `node:*`.
  */
 
-import type { EntityRecord, SceneRecord } from "../narrative/types.js";
-import type { NpcEnElWire, WorldScene } from "../scene/scene-normalize.js";
+import type { EntityRecord, HuellaDelSpawn, SceneRecord } from "../narrative/types.js";
+import { huellaEnMetros, type NpcEnElWire, type WorldScene } from "../scene/scene-normalize.js";
 import { tileWorldRect } from "../scene/tile.js";
 
 /** El runtime de un combatiente que el SAVE sí puede saber: cuánta vida le
@@ -426,10 +426,15 @@ export function avisoDeFueraDelMundo(fuera: readonly FueraDelMundo[]): string {
 }
 
 /** Lo que come `world/materializar-spawn.ts`: la forma del effect `spawn_entity`, sin el
- *  `eventId` (que es del turno en el que ocurrió, y esto es un resume). */
-export interface SpawnDeRuntime {
+ *  `eventId` (que es del turno en el que ocurrió, y esto es un resume).
+ *
+ *  La clase y la huella vienen atadas en `HuellaDelSpawn`, compartida con el
+ *  effect en vuelo: un `object`/`building` trae `sizeXZ` y un `npc` no. La
+ *  huella se DERIVA aquí, al leer el ledger — no está en el save y no hace
+ *  falta que esté: sale del `type` del record por la misma función que la del
+ *  tile, así que ningún save cambia y afinarla mañana no exige migrar nada. */
+export type SpawnDeRuntime = {
   entityId: string;
-  entityKind: "npc" | "object" | "building";
   /** El rótulo: `data.name` del ledger. Un record sin él no vuelve (se dice). */
   name: string;
   /** La procedencia, si el motor la declaró. NUNCA se inventa: sin ella el
@@ -437,7 +442,7 @@ export interface SpawnDeRuntime {
   description?: string;
   position: [number, number, number];
   data: Record<string, unknown>;
-}
+} & HuellaDelSpawn;
 
 const CLASES_QUE_VUELVEN = new Set(["npc", "object", "building"]);
 
@@ -499,14 +504,18 @@ export function spawnsDeRuntime(entities: readonly EntityRecord[]): {
     // `narr_npc_…` tras reanudar (guion 66).
     const descripcion =
       typeof data.description === "string" && data.description ? data.description : undefined;
-    spawns.push({
+    const comun = {
       entityId: rec.id,
-      entityKind: rec.type as SpawnDeRuntime["entityKind"],
       name: nombre,
       ...(descripcion !== undefined ? { description: descripcion } : {}),
-      position: [rec.position[0], rec.position[1], rec.position[2]],
+      position: [rec.position[0], rec.position[1], rec.position[2]] as [number, number, number],
       data,
-    });
+    };
+    spawns.push(
+      rec.type === "npc"
+        ? { ...comun, entityKind: "npc" }
+        : { ...comun, entityKind: rec.type as "object" | "building", sizeXZ: huellaEnMetros(rec.type) },
+    );
   }
   return { spawns, errores };
 }

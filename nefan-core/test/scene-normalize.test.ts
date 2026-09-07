@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   DEFAULT_SOLID_CHARS,
+  FOOTPRINT_POR_DEFECTO,
   formatDToWorld,
+  huellaEnMetros,
   KIND_DEFAULT_HEIGHT,
   type NpcEnElWire,
   type WorldScene,
@@ -695,5 +697,51 @@ describe("formatDToWorld — altura y forma degeneradas", () => {
     // Un prop sin shape NO recibe forma: el cliente cae a su caja por defecto.
     const barril = objectsOf(formatDToWorld(conProp(1))).find((o) => o.id === "barril");
     assert.ok(!("shape" in barril!), `un prop sin shape no debería llevar la clave: ${JSON.stringify(barril)}`);
+  });
+});
+
+/** LA HUELLA COLISIONABLE, UNA SOLA (#489, PR 5 de #241).
+ *
+ *  Lo que pide el issue en una frase: un `object` que pone el motor a mitad de
+ *  partida y un `prop` de 3×3 celdas declarado por la escena tienen que medir lo
+ *  MISMO, porque los dos pasan por aquí. Hasta el 2026-09-07 el spawn ni pasaba:
+ *  el cliente le escribía 1,4 m a mano. */
+describe("huellaEnMetros — la misma aritmética para el tile y para el spawn", () => {
+  it("con footprint declarado son celdas × meters_per_cell, y NADA más", () => {
+    assert.deepEqual(huellaEnMetros("prop", [4, 2]), { x: 2, z: 1 });
+    // Rectangular y asimétrica: x sale de w y z de h, no al revés.
+    assert.deepEqual(huellaEnMetros("building", [8, 2]), { x: 4, z: 1 });
+    // El mpc entra por parámetro: una escena con otro grid escala igual.
+    assert.deepEqual(huellaEnMetros("prop", [4, 2], 2), { x: 8, z: 4 });
+  });
+
+  it("sin footprint aplica el defecto POR KIND del spawn de runtime", () => {
+    // 8×8 celdas a 0,5 m = los 4×4 m de siempre; 3×3 = 1,5 m (antes 1,4 escritos
+    // a mano en el cliente, que no eran múltiplo de ninguna celda).
+    assert.deepEqual(huellaEnMetros("building"), { x: 4, z: 4 });
+    assert.deepEqual(huellaEnMetros("object"), { x: 1.5, z: 1.5 });
+    assert.deepEqual(FOOTPRINT_POR_DEFECTO.building, [8, 8]);
+    assert.deepEqual(FOOTPRINT_POR_DEFECTO.object, [3, 3]);
+  });
+
+  it("un footprint declarado GANA al defecto del kind", () => {
+    assert.deepEqual(huellaEnMetros("building", [2, 2]), { x: 1, z: 1 });
+  });
+
+  it("un kind sin defecto y sin footprint es fail-loud: nadie inventa un tamaño", () => {
+    // `npc` no tiene huella a propósito: colisiona por radio, no por caja.
+    assert.throws(() => huellaEnMetros("npc"), /npc.*no declara footprint/s);
+    assert.throws(() => huellaEnMetros("dragon"), /building \| object/);
+  });
+
+  it("un `object` spawneado mide lo mismo que un prop de 3×3 celdas de la escena", () => {
+    const d = makeFormatD();
+    (d.entities as Record<string, unknown>[]).push({
+      id: "cofre_escena", kind: "prop", name: "Cofre", cell: [10, 10], footprint: [3, 3],
+    });
+    const cofre = objectsOf(formatDToWorld(d)).find((o) => o.id === "cofre_escena")!;
+    const spawneado = huellaEnMetros("object");
+    assert.equal(cofre.scale[0], spawneado.x);
+    assert.equal(cofre.scale[2], spawneado.z);
   });
 });
