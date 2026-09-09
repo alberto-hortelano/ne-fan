@@ -12,7 +12,7 @@
  * The screen is purely a UI; the caller (main.ts) decides what to do with the
  * resolved choice (call narrativeClient.startSession or .resumeSession).
  */
-import type { NarrativeClient, GameInfo } from "../net/narrative-client.js";
+import type { NarrativeClient } from "../net/narrative-client.js";
 import type {
   SessionMetadata,
 } from "@nefan-core/src/narrative/types.js";
@@ -25,16 +25,11 @@ import {
   type StyleRefFolder,
 } from "@nefan-core/src/games/style-refs.js";
 import { eleccionDeEstilo } from "@nefan-core/src/session/eleccion-de-estilo.js";
-import { validarBorrador } from "@nefan-core/src/protocol/borrador-de-mundo.js";
 import { validarSubidaDeEstilo } from "@nefan-core/src/contracts/style-upload.js";
 import type {
   StyleCompleteResponse,
   StyleUploadResponse,
 } from "@nefan-core/src/contracts/remote-gen.js";
-import {
-  modelosCompletos,
-  type SpriteCensusResponse,
-} from "@nefan-core/src/contracts/sprite-census.js";
 import { type AvisoAlJugador, encajarAviso, errors } from "./error-log.js";
 import { paso } from "./async-ui.js";
 import { StyleApplyController, type StyleApplyPlan } from "./style-apply.js";
@@ -55,12 +50,18 @@ import {
   INPUT_CSS,
   SELECT_CSS,
   coverHtml,
+  type DestinoDelTitulo,
   escapeAttr,
   escapeHtml,
   marcadorHtml,
   type TitleAction,
   worldCardHtml,
 } from "./titulo/atomos.js";
+import { pintarCrearMundo } from "./titulo/crear-mundo.js";
+import {
+  pintarEditorDePersonaje,
+  type EleccionDeMundo,
+} from "./titulo/editor-de-personaje.js";
 
 /** Lo que resuelve `show()`. Vive en `titulo/atomos.ts` desde el primer corte
  *  de #346 —es vocabulario del título y lo van a leer varias de sus pantallas,
@@ -1047,7 +1048,12 @@ export class TitleScreen {
       // es inocuo; si el paso falla antes, vuelve a ser pulsable.
       continueBtn.disabled = true;
       paso(
-        this.renderCharacterEditor(selectedGame, styleSel.value, selectedRenderMode, selectedCharMode),
+        this.editorDePersonaje({
+          game: selectedGame,
+          styleId: styleSel.value,
+          renderMode: selectedRenderMode,
+          characterMode: selectedCharMode,
+        }),
         "title",
         "abrir el editor de personaje",
         () => {
@@ -1056,7 +1062,7 @@ export class TitleScreen {
       );
     });
     (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
-      .addEventListener("click", () => this.renderCreateWorld());
+      .addEventListener("click", () => this.crearMundo());
     (this.content.querySelector("#ts-upload-style") as HTMLButtonElement)
       .addEventListener("click", () => this.renderUploadStyle());
   }
@@ -1322,219 +1328,68 @@ export class TitleScreen {
     );
   }
 
-  /** Crear un mundo propio: textarea o archivo .md/.txt. El borrador se
-   *  desarrolla con el motor narrativo (tarda 1-3 min) y aparece como un
-   *  mundo más en el selector. */
-  private renderCreateWorld(): void {
-    this.content.style.maxWidth = "720px";
-    this.content.innerHTML = `
-      <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Crear mundo</h1>
-      <p style="margin-bottom:16px;color:#888;font-size:12px">
-        Describe tu mundo (reinos, pueblos, magia, tono…) o sube un archivo .md/.txt.
-        El motor narrativo lo completará y desarrollará — cuanto más des, más tuyo será el resultado.
-      </p>
-      <label style="display:block;margin-bottom:12px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Borrador del mundo</div>
-        <textarea id="ts-draft" rows="10" placeholder="ej: Un archipiélago de islas voladoras ancladas por cadenas gigantes. Clanes de pastores de nubes..." style="${INPUT_CSS};resize:vertical;min-height:160px"></textarea>
-      </label>
-      <label style="display:block;margin-bottom:18px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">…o sube un archivo</div>
-        <input id="ts-draft-file" type="file" accept=".md,.txt,text/plain,text/markdown" style="color:#999;font-size:12px">
-      </label>
-      <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:#999">
-        <input id="ts-pregen" type="checkbox" checked>
-        Generar el mundo al crearlo (mapa, escenas iniciales y personajes — el motor tarda varios
-        minutos en segundo plano; el estilo se aplica después con su coste a la vista)
-      </label>
-      <div id="ts-create-status" style="margin-bottom:14px;font-size:12px;color:#888"></div>
-      <div style="display:flex;gap:12px">
-        <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
-        <button id="ts-create" style="${BTN_PRIMARY_CSS}">Crear mundo</button>
-      </div>
-    `;
-    const draftEl = this.content.querySelector("#ts-draft") as HTMLTextAreaElement;
-    const fileEl = this.content.querySelector("#ts-draft-file") as HTMLInputElement;
-    const statusEl = this.content.querySelector("#ts-create-status") as HTMLElement;
-    const backBtn = this.content.querySelector("#ts-back") as HTMLButtonElement;
-    const createBtn = this.content.querySelector("#ts-create") as HTMLButtonElement;
-
-    fileEl.addEventListener("change", () => {
-      const file = fileEl.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        draftEl.value = String(reader.result ?? "");
-        statusEl.textContent = `Archivo cargado: ${file.name} (${draftEl.value.length} caracteres).`;
-      };
-      reader.onerror = () => {
-        statusEl.innerHTML = `<span style="color:#a44">No se pudo leer ${escapeHtml(file.name)}.</span>`;
-      };
-      reader.readAsText(file);
-    });
-
-    backBtn.addEventListener("click", () =>
-      paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
-    );
-    const crearElMundo = async (): Promise<void> => {
-      // El umbral y su texto son de core: el bridge comprueba lo MISMO antes de
-      // llamar al motor. Aquí solo se miraba el mínimo, y el máximo lo cazaba
-      // el bridge después de mandar el fichero entero por el cable.
-      const comprobado = validarBorrador(draftEl.value);
-      if (!comprobado.ok) {
-        statusEl.innerHTML = `<span style="color:#a44">${escapeHtml(comprobado.error)}</span>`;
-        return;
-      }
-      const draft = comprobado.borrador;
-      createBtn.disabled = true;
-      backBtn.disabled = true;
-      statusEl.innerHTML = `<span style="color:#da6">🌍 El motor narrativo está desarrollando tu mundo (1-3 min)... no cierres esta pantalla.</span>`;
-      try {
-        const created = await this.narrative.createGame(draft);
-        statusEl.innerHTML = `<span style="color:#4a4">Mundo creado: ${escapeHtml(created.title)}.</span>`;
-        // Encadenar la pre-generación del mundo del juego recién creado:
-        // corre en el bridge en segundo plano; el selector muestra el
-        // progreso (kind "game_gen") y los chips al terminar. El estilo se
-        // aplica después desde el panel (necesita confirmar su coste).
-        const pregen = (this.content.querySelector("#ts-pregen") as HTMLInputElement | null)?.checked;
-        if (pregen) {
-          try {
-            await this.narrative.generateGame(created.gameId);
-          } catch (err) {
-            statusEl.innerHTML += ` <span style="color:#a44">(pre-generación no encolada: ${escapeHtml((err as Error).message)})</span>`;
-          }
-        }
-        await this.renderWorldSelect(created.gameId);
-      } catch (err) {
-        statusEl.innerHTML = `<span style="color:#a44">No se pudo crear el mundo: ${escapeHtml((err as Error).message)}</span>`;
-        createBtn.disabled = false;
-        backBtn.disabled = false;
-      }
-    };
-    createBtn.addEventListener("click", () =>
-      paso(crearElMundo(), "title", "crear el mundo a partir del borrador"),
-    );
+  /** A DÓNDE va el título cuando una de sus pantallas termina.
+   *
+   *  Es el único camino de vuelta que tienen las hojas de `ui/titulo/`: no
+   *  pueden importarse entre sí (candado
+   *  `las-hojas-del-titulo-no-se-atan-entre-si`), así que enruta quien puede
+   *  importarlas todas. La tabla está entera desde el primer corte a propósito
+   *  —los cinco destinos son las pantallas de #346, y el tipo los declara en
+   *  `atomos.ts`—; hoy la usan las dos hojas de esta PR, que vuelven al
+   *  selector, y los demás casos apuntan a los métodos que todavía viven aquí
+   *  y los estrenarán las PR 4 y 5 al sacarlos.
+   *
+   *  DEVUELVE la promesa del repintado en vez de tragársela con un `paso()`
+   *  de dentro: «Crear mundo» encadena el selector DENTRO de su `try`, y
+   *  hacerla fire-and-forget movería de sitio ese fallo. Lo midió QA-3 sobre el
+   *  juego real (guion 96): con la promesa tragada, un fallo del repintado deja
+   *  la pantalla en «Mundo creado» con los dos botones apagados y sin salida.
+   *  Quien no la espera la pasa por `paso()`, que es lo que ya hacía cada
+   *  pantalla del título.
+   *
+   *  Y es `async` por los dos destinos SÍNCRONOS: sin él, un fallo al pintar
+   *  «Crear mundo» o «Subir estilo» saldría por un `throw` de aquí —antes de
+   *  que haya promesa— y `paso(this.ir(…), …)` no podría encauzarlo, que es
+   *  justo lo que el llamante cree estar contratando (QA-3 H6). Hoy no tiene
+   *  ocupante; la palabra cuesta lo que cuesta y la deuda no llega a la PR 5. */
+  private async ir(destino: DestinoDelTitulo): Promise<void> {
+    switch (destino.a) {
+      case "home":
+        return this.renderHome(destino.aviso, destino.tono);
+      case "selector":
+        return this.renderWorldSelect(destino.preselect);
+      case "crear-mundo":
+        return this.crearMundo();
+      case "subir-estilo":
+        return this.renderUploadStyle();
+      case "editor":
+        return this.editorDePersonaje(destino);
+    }
   }
 
-  private async renderCharacterEditor(
-    game: GameInfo,
-    styleId: string,
-    renderMode: "image" | "vector",
-    characterMode: "image" | "vector",
-  ): Promise<void> {
-    const spritesOn = CONFIG.graphics.character_sprites;
-    const skinOn = CONFIG.graphics.ai_skin;
-
-    // El desplegable NO es una lista que alguien recuerda actualizar (#216:
-    // prometía 7 modelos de los que 6 no tenían hojas): se deriva del censo
-    // vivo del dev server (`/sprites/index.json`) filtrado por
-    // `modelosCompletos` — ofrecer un modelo es consecuencia de tener su set
-    // completo cargable. Los tres estados hablan; ninguno calla.
-    let modelBlock: string;
-    if (!spritesOn) {
-      modelBlock = `<div style="margin-bottom:14px;color:#666;font-size:11px;font-style:italic">
-           Modelo Mixamo deshabilitado (activa <code>graphics.character_sprites</code> en config.ts para usarlo).
-         </div>`;
-    } else {
-      let modelos: string[] = [];
-      let fallo = "";
-      try {
-        const res = await fetch("/sprites/index.json");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const censo = (await res.json()) as SpriteCensusResponse;
-        // Guard de forma (QA H3): un JSON válido que no es un censo caía en
-        // el catch con la jerga del TypeError («Cannot read properties of
-        // undefined…») pintada en la nota. El motivo que ve el jugador tiene
-        // que estar en su idioma; el objeto crudo va al error-log de abajo.
-        if (!Array.isArray(censo?.models) || !Array.isArray(censo?.required?.anims)) {
-          throw new Error("la respuesta no es un censo de modelos");
-        }
-        modelos = modelosCompletos(censo);
-      } catch (err) {
-        // Criterio 6 de #216: la derivación falla CON canal. El error-log
-        // está oculto por CSS mientras el título está delante (#246/#306),
-        // así que además de registrarlo se dice en la pantalla donde ocurre.
-        fallo = err instanceof Error ? err.message : String(err);
-        errors.push(
-          "title",
-          `no se pudo leer el censo de modelos de personaje (${fallo}) — se usará la base y_bot`,
-          err,
-        );
-      }
-      const NOTA_CSS = "margin-bottom:14px;color:#a86;font-size:11px";
-      if (fallo) {
-        modelBlock = `<div id="ts-model-nota" data-motivo="fallo" style="${NOTA_CSS}">
-             No se pudo leer el censo de modelos (${escapeHtml(fallo)}) — se usará la base y_bot.
-           </div>`;
-      } else if (modelos.length === 0) {
-        // El clon limpio. Se puede Comenzar igual: el arranque fail-louda con
-        // FALLO_HOJAS_BASE y su remedio (camino medido por el guion 27).
-        modelBlock = `<div id="ts-model-nota" data-motivo="vacio" style="${NOTA_CSS}">
-             Ningún modelo con hojas completas en disco — genéralas con sprite-forge
-             (receta en <code>docs/assets-de-personaje.md</code>).
-           </div>`;
-      } else {
-        // En modo personajes "image" el desplegable SE QUEDA (criterio 5):
-        // el skin IA se genera siempre sobre y_bot, pero el modelo elegido es
-        // la base de RESPALDO que se ve mientras el skin no llega o si falla
-        // (modelFor, character-sprites.ts) — una elección viva, y se anota.
-        const notaImage =
-          characterMode === "image"
-            ? `<div id="ts-model-nota" data-motivo="image" style="margin-top:4px;color:#887;font-size:11px">
-                 El skin IA se genera sobre y_bot; este modelo es el que ves mientras el skin no llega o si falla.
-               </div>`
-            : "";
-        modelBlock = `<label style="display:block;margin-bottom:14px">
-           <div style="font-size:12px;color:#999;margin-bottom:4px">Modelo base (con hojas completas en disco)</div>
-           <select id="ts-model" style="${SELECT_CSS}">
-             ${modelos.map((id) => `<option value="${escapeAttr(id)}">${escapeHtml(nombreDeModelo(id))}</option>`).join("")}
-           </select>
-           ${notaImage}
-         </label>`;
-      }
-    }
-
-    const skinBlock = skinOn
-      ? `<label style="display:block;margin-bottom:18px">
-           <div style="font-size:12px;color:#999;margin-bottom:4px">Skin AI (prompt opcional)</div>
-           <input id="ts-skin" type="text" placeholder="ej: caballero con armadura roja"
-                  style="${INPUT_CSS}">
-         </label>`
-      : `<div style="margin-bottom:18px;color:#666;font-size:11px;font-style:italic">
-           Skin AI deshabilitada (activa <code>graphics.ai_skin</code> en config.ts para usarla).
-         </div>`;
-
-    this.content.style.maxWidth = "720px";
-    this.content.innerHTML = `
-      <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Crear personaje</h1>
-      <p style="margin-bottom:18px;color:#888;font-size:12px">Mundo: <span style="color:#bdf">${escapeHtml(game.title)}</span></p>
-      ${modelBlock}
-      ${skinBlock}
-      <div style="display:flex;gap:12px">
-        <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
-        <button id="ts-start" style="${BTN_PRIMARY_CSS}">Comenzar</button>
-      </div>
-    `;
-    const back = this.content.querySelector("#ts-back") as HTMLButtonElement;
-    const start = this.content.querySelector("#ts-start") as HTMLButtonElement;
-    const modelSel = this.content.querySelector("#ts-model") as HTMLSelectElement | null;
-    const skinInput = this.content.querySelector("#ts-skin") as HTMLInputElement | null;
-
-    back.addEventListener("click", () =>
-      paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
-    );
-    start.addEventListener("click", () => {
-      this.resolve?.({
-        kind: "new_game",
-        gameId: game.game_id,
-        styleId,
-        renderMode,
-        characterMode,
-        appearance: {
-          model_id: modelSel ? modelSel.value : "",
-          skin_path: skinInput ? skinInput.value.trim() : "",
-        },
-      });
+  /** Cablea «Crear mundo» y la pinta. Los colaboradores se construyen aquí, en
+   *  el enrutador, porque son lo único que una hoja no puede saber de esta
+   *  clase. */
+  private crearMundo(): void {
+    pintarCrearMundo({
+      content: this.content,
+      narrative: this.narrative,
+      ir: (destino) => this.ir(destino),
     });
+  }
+
+  /** Cablea «Crear personaje» y la pinta. `elegir` es `this.resolve` visto
+   *  desde la hoja, con su `?.` donde estaba: la promesa la arma y la resuelve
+   *  esta clase (ver `show()`), no la pantalla. */
+  private editorDePersonaje(eleccion: EleccionDeMundo): Promise<void> {
+    return pintarEditorDePersonaje(
+      {
+        content: this.content,
+        elegir: (accion) => this.resolve?.(accion),
+        ir: (destino) => this.ir(destino),
+      },
+      eleccion,
+    );
   }
 }
 
@@ -1610,12 +1465,4 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
-}
-
-/** Nombre legible de un modelo del censo, derivado del id (`y_bot` → «Y bot»):
- *  pintar es del cliente, y una tabla id→nombre sería otra lista a mano — la
- *  enfermedad que #216 mató. */
-function nombreDeModelo(id: string): string {
-  const conEspacios = id.replace(/_/g, " ");
-  return conEspacios.charAt(0).toUpperCase() + conEspacios.slice(1);
 }
