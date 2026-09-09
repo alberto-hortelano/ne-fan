@@ -40,24 +40,28 @@ export function applyRenderModeChange(
   // session/gates-de-imagen.ts) — comparar contra el modo EFECTIVO; asignar
   // materializa el valor propio de la faceta.
   //
-  // Un `character_mode` que NO es image|vector (save editado a mano o
-  // corrupto) cuenta como modo PROPIO y no hereda: nunca es igual al pedido,
-  // así que el cambio se acepta y lo materializa. Es la conducta de siempre y
-  // se conserva a propósito — normalizarlo aquí lo colapsaría a «sin elegir»
-  // y el bridge pasaría a RECHAZAR el cambio («ya tiene los personajes en
-  // modo image») dejando el valor corrupto puesto. Que un valor así llegue
-  // vivo hasta aquí es el defecto de verdad, y su sitio es la puerta del save
-  // (loadSession), no este silencio.
-  const propio = normalizarModo(world.character_mode);
-  // Un save legacy trae el campo VACÍO o directamente ausente: las dos cosas
-  // son «sin elegir» y heredan (por eso la guarda es la verdad del valor y no
-  // `!== ""`, que dejaría `undefined` fuera de la herencia).
-  const desconocido = Boolean(world.character_mode) && propio === "";
-  const effective = desconocido
+  // Un `character_mode` con VALOR —sea image|vector o algo corrupto (save
+  // editado a mano)— es modo PROPIO y no hereda; solo el campo vacío o
+  // ausente sigue a los escenarios. Por eso la guarda es la verdad del valor
+  // y no `!== ""`, que dejaría `undefined` fuera de la herencia. Un valor
+  // corrupto nunca es igual al pedido, así que el cambio se acepta y lo
+  // materializa: es la conducta de siempre y se conserva a propósito, porque
+  // colapsarlo a «sin elegir» haría que el bridge RECHAZARA el cambio («ya
+  // tiene los personajes en modo image») dejando el valor corrupto puesto.
+  // Que un valor así llegue vivo hasta aquí es el defecto de verdad, y su
+  // sitio es la puerta del save (loadSession), no este silencio.
+  //
+  // La normalización del propio NO va aquí: para un valor válido `world
+  // .character_mode` y su normalizado son el mismo string, así que la rama
+  // que los distinguía no era observable en ninguna de las 110 entradas
+  // posibles y su mutante sobrevivía a cualquier test (corrida 34339870322,
+  // `render-mode` 40/41). Un mutante equivalente no se mata con más test: se
+  // quita el código que lo hospeda.
+  const effective = world.character_mode
     ? world.character_mode
     : modoEfectivoDePersonajes({
         renderMode: normalizarModo(world.render_mode),
-        characterMode: propio,
+        characterMode: "",
       });
   if (effective === mode) {
     return {
