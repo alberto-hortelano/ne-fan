@@ -1,9 +1,10 @@
 /** Lo que se rompe SOLO durante el título llega a quien juega (#306).
  *
  *  EL AGUJERO, medido antes de esta tanda: `#ts-error` guardaba UN mensaje
- *  (`el.innerHTML = …`) y cada `renderHome` lo borraba, así que los fallos que
- *  saltan sin que nadie pulse nada —three.js que no carga, las hojas base que
- *  no llegan, el socket de la partida— solo existían en un `error-log` que
+ *  (`el.innerHTML = …`) y cada pintado del home lo borraba, así que los
+ *  fallos que saltan sin que nadie pulse nada —three.js que no carga, las
+ *  hojas base que no llegan, el socket de la partida— solo existían en un
+ *  `error-log` que
  *  `html[data-titulo="1"] #error-log{display:none}` (#246) mantiene apagado
  *  mientras el título manda. El jugador veía un título normal encima de un
  *  cliente roto.
@@ -17,7 +18,7 @@
  *  2 · **El texto de la pantalla es el del registro.** Una sola verdad: el
  *      aviso es una proyección del mismo `errors.push`, no una segunda
  *      redacción que pueda divergir. Se comparan los dos textos del MISMO DOM.
- *  3 · **Sobrevive al repintado.** El `innerHTML` de `renderHome` era
+ *  3 · **Sobrevive al repintado.** El `innerHTML` del home era
  *      literalmente el bug: se entra al selector de mundos y se vuelve, y el
  *      aviso tiene que seguir puesto.
  *  4 · **Un aviso por fallo, y no crece.** `bridge-client` reintenta cada 5 s
@@ -152,9 +153,10 @@ export default async function (ctx) {
 
   // ─── 2 · Sobrevive al repintado ────────────────────────────────────────
   //
-  // `renderHome` reescribe `this.content.innerHTML` entero: hasta esta tanda
-  // eso borraba el hueco de error y con él el motivo. Se va al selector de
-  // mundos y se vuelve, que es el repintado que hace quien juega.
+  // `pintarHome` (`ui/titulo/home.ts`) reescribe `content.innerHTML` entero:
+  // hasta esta tanda eso borraba el hueco de error y con él el motivo. Se va
+  // al selector de mundos y se vuelve, que es el repintado que hace quien
+  // juega.
   await abrirSelectorDeMundos(ctx);
   await ctx.page.click("#ts-back");
   await esperarTituloListo(ctx);

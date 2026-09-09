@@ -10,7 +10,7 @@
  *      partida» dentro de la ventana de carga de saves, pero se para en el
  *      selector de mundos. Quien puede quedar sin armar es `this.resolve`,
  *      que no se lee hasta «Comenzar», dos pantallas más allá. Con el orden
- *      viejo (`resolve` después del `await renderHome()`) el bloque 1 se pone
+ *      viejo (`resolve` después del `await` que pinta el home) el bloque 1 se pone
  *      rojo y el 18 sigue verde.
  *
  *   2. **El botón no se desplaza BAJO EL CURSOR.** El 18 mide el offset

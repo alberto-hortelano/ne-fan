@@ -151,7 +151,7 @@ export async function diagnosticoDeCreditos(ctx, timeoutMs = 5000) {
 /** El título está en pantalla y su botón de partida nueva, pintado.
  *
  *  HASTA #181 esto no bastaba, y aquí vivía el workaround que lo decía: el
- *  botón se pintaba de una tacada en el `innerHTML` y `renderHome` solo le
+ *  botón se pintaba de una tacada en el `innerHTML` y el home solo le
  *  colgaba el handler DESPUÉS de `await listSessions()` —151 ms medidos, hasta
  *  30 s si el bridge tardaba—, así que la espera tenía que colarse por la
  *  puerta de atrás y mirar el texto de `#ts-status` para adivinar que el
