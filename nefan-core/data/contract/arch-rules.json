@@ -253,6 +253,21 @@
       ]
     },
     {
+      "id": "las-hojas-del-titulo-no-se-atan-entre-si",
+      "desc": "Un módulo de ui/titulo/ solo importa a otro módulo de ui/titulo/ por atomos.ts",
+      "why": "El troceo de #346 vale mientras las siete hojas del título sigan siendo hojas. Una hoja que importa a otra —el home llamando al selector, el selector al editor— reconstruye el god-file repartido en siete ficheros atados en anillo: el diff mental vuelve a ser el fichero entero y el orden de carga pasa a importar. La navegación es del ENRUTADOR (title-screen.ts, que puede importarlas todas) y viaja de vuelta por el callback `ir(destino)`, no por un import. `atomos.ts` es la única excepción y por eso no tiene estado ni colaboradores: son constantes de CSS, escapes y funciones que devuelven string, más los tipos compartidos. Contra la CONCENTRACIÓN —repartir el god-file en siete ficheros de 430— no hay checker y lo dice el $comment de client-file-size.json: eso es revisión.",
+      "severity": "error",
+      "files": [
+        "nefan-html/src/ui/titulo/**/*.ts"
+      ],
+      "imports": {
+        "forbid": [
+          "^\\./(?!atomos\\.js$)",
+          "^\\.\\./titulo/(?!atomos\\.js$)"
+        ]
+      }
+    },
+    {
       "id": "cliente-no-convierte-celdas-a-metros",
       "desc": "El cliente no interpreta Format D crudo (meters_per_cell / primitivas del esquema)",
       "why": "El bridge normaliza con formatDToWorld y el cliente pinta world scene en metros. Si el cliente porta la conversión hay dos formatos que mantener y divergirán, y la segunda copia se entera tarde de cada cambio del primero. Las PRIMITIVAS del esquema entran con la tanda del bosque (#243 #233 #232): el cliente las leía para componer el plan del tile por su cuenta, que es la misma frontera por el otro lado — no convertía celdas a metros, pero sí derivaba geometría del crudo, y su bosque podía no ser el del bridge. Hoy el plan viaja RESUELTO en la world scene (`__plan`) y el cliente lo lee. De las dos primitivas que nombraba este patrón solo queda `vegetation_zones`: la de salas se retiró entera con #301 y su token vive ahora en `campos-retirados-no-vuelven`, que cubre los cinco procesos y no solo el cliente. Y el 2026-09-02 (#335) sale también el primer token que tuvo este patrón: la leyenda del grid se retiró entera del contrato, así que ya no es algo que el cliente pueda convertir — su nombre vive ahora en `campos-retirados-no-vuelven`, que cubre los cinco procesos.",

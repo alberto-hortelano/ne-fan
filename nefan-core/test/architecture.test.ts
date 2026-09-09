@@ -1390,6 +1390,89 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // #346, PR 1. La regla nace VERDE —hoy `ui/titulo/` solo tiene `atomos.ts`,
+  // que no importa a nadie de dentro— y una regla verde no demuestra nada por
+  // sí sola: se le enseña al motor lo que existe para cortar. Los cuatro casos
+  // rojos son los cuatro caminos por los que una hoja puede atarse a otra, y
+  // el tercero y el cuarto son los que no se ven venir: `preProcessFile`
+  // reporta también los `import type`, así que compartir un tipo entre dos
+  // hojas ata igual (y el sitio de un tipo compartido es `atomos.ts`); y la
+  // puerta de atrás `../titulo/…` es el mismo import escrito desde `ui/`.
+  it("[error] las-hojas-del-titulo-no-se-atan-entre-si: una hoja que importa a otra hoja salta; atomos y los vecinos de ui/ no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter(
+        (v) => v.ruleId === "las-hojas-del-titulo-no-se-atan-entre-si",
+      );
+
+    assert.deepEqual(
+      deLaRegla([
+        // El anillo por el camino corto: el home llamando al selector.
+        {
+          path: "nefan-html/src/ui/titulo/home.ts",
+          text: "",
+          imports: [{ spec: "./selector-de-mundo.js", line: 6 }],
+        },
+        // Un tipo compartido entre dos hojas ata lo mismo: `import type` NO es
+        // una excepción, y el recolector lo ve.
+        {
+          path: "nefan-html/src/ui/titulo/plan-de-estilo.ts",
+          text: "",
+          imports: [{ spec: "./subir-estilo.js", line: 3 }],
+        },
+        // La puerta de atrás: el mismo import por la ruta larga.
+        {
+          path: "nefan-html/src/ui/titulo/selector-de-mundo.ts",
+          text: "",
+          imports: [{ spec: "../titulo/home.js", line: 9 }],
+        },
+        // Y un subdirectorio dentro de `titulo/` tampoco abre una vía nueva.
+        {
+          path: "nefan-html/src/ui/titulo/editor-de-personaje.ts",
+          text: "",
+          imports: [{ spec: "./sub/hondo.js", line: 2 }],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/ui/titulo/editor-de-personaje.ts:2",
+        "nefan-html/src/ui/titulo/home.ts:6",
+        "nefan-html/src/ui/titulo/plan-de-estilo.ts:3",
+        "nefan-html/src/ui/titulo/selector-de-mundo.ts:9",
+      ],
+    );
+
+    // Lo legítimo, callado: los átomos (la única excepción), los vecinos de
+    // `ui/` que NO son hojas del título, el core por alias y el resto del
+    // cliente por ruta relativa que sale de `titulo/`.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/titulo/selector-de-mundo.ts",
+          text: "",
+          imports: [
+            { spec: "./atomos.js", line: 1 },
+            { spec: "../async-ui.js", line: 2 },
+            { spec: "../error-log.js", line: 3 },
+            { spec: "../style-apply.js", line: 4 },
+            { spec: "@nefan-core/src/session/eleccion-de-estilo.js", line: 5 },
+            { spec: "../../net/narrative-client.js", line: 6 },
+          ],
+        },
+        // Y el enrutador, que está FUERA de `titulo/` y por eso puede
+        // importarlas todas: es el único que sabe navegar.
+        {
+          path: "nefan-html/src/ui/title-screen.ts",
+          text: "",
+          imports: [
+            { spec: "./titulo/atomos.js", line: 1 },
+            { spec: "./titulo/home.js", line: 2 },
+            { spec: "./titulo/selector-de-mundo.js", line: 3 },
+          ],
+        },
+      ]),
+      [],
+    );
+  });
+
   // #411: la regla que hasta aquí decía «cliente 2D» y toleraba `max: 2` sin
   // nombrar cuáles eran las dos. Ahora las nombra como exenciones CON
   // `funcion` y es error: una tercera puerta en cualquier otro fichero del
