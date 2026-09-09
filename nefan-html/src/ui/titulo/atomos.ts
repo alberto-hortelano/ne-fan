@@ -30,8 +30,10 @@
  *  La excepción declarada al criterio de los dos dueños es la TARJETA de mundo
  *  (`worldCardHtml` + `generationChipsHtml`), que hoy solo pinta el selector:
  *  partir la tarjeta entre dos módulos —la caja de la portada aquí, el resto
- *  allí— es peor que tenerla entera en un sitio, y además es lo que deja al
- *  selector por debajo del tope de 450 cuando le toque salir.
+ *  allí— es peor que tenerla entera en un sitio. Al cerrar #346 esa excepción
+ *  dejó de ser un juicio y tiene su NÚMERO: devolverle la tarjeta al selector
+ *  lo llevaría de 432 a ~471 líneas, o sea POR ENCIMA del tope de 450 que este
+ *  programa acaba de conseguir. Se queda medida, no opinada.
  */
 import type { GameInfo, StyleInfo } from "../../net/narrative-client.js";
 import { serviceUrl } from "../../net/service-urls.js";
@@ -110,20 +112,25 @@ export const BTN_SECONDARY_CSS = [
   "background:transparent","color:#999","border:1px solid #444","padding:10px 22px",
   "font-family:inherit","font-size:14px","cursor:pointer","border-radius:3px",
 ].join(";");
-export const BTN_SMALL_PRIMARY_CSS = [
-  "background:#3a6","color:#fff","border:none","padding:5px 12px",
-  "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
-].join(";");
-export const BTN_SMALL_DANGER_CSS = [
-  "background:transparent","color:#a55","border:1px solid #533","padding:5px 12px",
-  "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
-].join(";");
+// Los dos botones pequeños de la fila de save (`BTN_SMALL_PRIMARY_CSS` y
+// `BTN_SMALL_DANGER_CSS`) vivían aquí y se fueron a `home.ts` al cerrarse #346:
+// el censo por importador dio UN dueño, el home, así que dejaron de ser
+// vocabulario en cuanto la PR 4 sacó esa pantalla. Ver la cabecera.
 export const SELECT_CSS = [
   "width:100%","padding:8px 10px","background:#1a1a22","color:#ddd",
   "border:1px solid #444","font-family:inherit","font-size:13px",
 ].join(";");
 export const INPUT_CSS = SELECT_CSS;
 
+/** El badge base. Su ÚNICO importador de fuera es `home.ts` (el badge de modo
+ *  del save), así que por el censo de importadores tocaba irse con él al cerrar
+ *  #346 — como se fueron los dos botones pequeños de arriba. **Se queda, y el
+ *  motivo es el candado**: `generationChipsHtml`, aquí abajo, lo usa para los
+ *  chips de la tarjeta de mundo. Si la constante se mudara a `home.ts`, este
+ *  fichero tendría que importarla de vuelta, y `las-hojas-del-titulo-no-se-atan-entre-si`
+ *  prohíbe exactamente eso. El censo por IMPORTADOR no ve el uso que un módulo
+ *  hace de lo suyo: con ese uso dentro, BADGE_CSS tiene dos dueños y es
+ *  vocabulario. */
 export const BADGE_CSS = "display:inline-block;padding:1px 7px;border-radius:8px;font-size:10px;background:#23222c;border:1px solid #3a3846;color:#a99";
 
 /** Chips de estado de generación de la tarjeta: si el mundo está generado y

@@ -18,8 +18,10 @@
  *  del cliente, y se pone antes de abrir el selector para que ninguna portada
  *  venga de la caché del navegador.
  *
- *  EN NEGATIVO (QA, 2026-08-25): quitando `vigilarPortadas()` de
- *  `title-screen.ts`, la tarjeta repintada se queda con su `<img>` a 0 px y
+ *  EN NEGATIVO (QA, 2026-08-25): quitando `vigilarPortadas()` —hoy en
+ *  `nefan-html/src/ui/titulo/chasis.ts`, desde la PR 6 de #346; se nombra el
+ *  módulo y no la línea porque el número caduca en cada corte—, la tarjeta
+ *  repintada se queda con su `<img>` a 0 px y
  *  los dos asertos de este guion se ponen rojos; el 26 los pone rojos por su
  *  cuenta en su propio estado, así que no es el mismo aserto dos veces.
  */

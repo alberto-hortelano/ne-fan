@@ -46,10 +46,19 @@
  *
  *      LO QUE ESTA RAMA SIGUE SIN VER, dicho para que nadie lo cuente de más:
  *      un oyente puesto sobre un nodo TODAVÍA DESCONECTADO (`isConnected` en
- *      false) que se conecte después fuera del título. No tiene ocupante hoy
- *      —los cinco de por vida se registran así a propósito, dentro del
- *      constructor del chasis, y por eso la foto de referencia los incluye— y
- *      reconocerlo exigiría vigilar también los `appendChild`.
+ *      false) que se conecte después fuera del título. No tiene ocupante hoy, y
+ *      reconocerlo exigiría vigilar también los `appendChild`. Lo cubre por el
+ *      otro lado el guion 102, que en vez de clasificar en el instante del
+ *      registro guarda el objetivo y pregunta dónde vive con el DOM ya montado.
+ *
+ *      Y CUÁNTOS DE LOS CINCO DE POR VIDA ENTRAN EN LA FOTO: **dos**, no los
+ *      cinco. Esta cabecera decía que los incluía y era falso (QA-6, H2): los
+ *      que el chasis registra con el árbol aún huérfano —el `scroll` de la
+ *      columna y el click de `#ts-close`, enganchados antes de que `root`
+ *      cuelgue del `<body>`— no los ve ninguna de las tres ramas de la sonda.
+ *      No es una fuga ni una regresión: el orden de registro es idéntico al de
+ *      antes del troceo, y esos dos mueren con la página. Es el alcance real de
+ *      lo que este guion promete, y decirlo mal es peor que no decirlo.
  *
  *      LA FOTO SE TOMA TRAS UNA IDA Y VUELTA DE CALENTAMIENTO, y está medido
  *      por qué: el PRIMER `page.click` del harness instala trece oyentes de

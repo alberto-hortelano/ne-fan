@@ -127,9 +127,10 @@ export default tseslint.config(
   // con el resto de los contratos del repo, y este bloque los CONSUME. No es
   // orden: es que un número escrito solo aquí no lo puede vigilar nadie.
   // Eslint sabe decir «te has pasado» y no sabe decir «esta excepción sobra
-  // desde que troceaste el fichero» — el día que #346 baje `title-screen.ts`
-  // de 1.651 a 900, una excepción que siga diciendo 1.651 le regala 751 líneas
-  // de recrecimiento en silencio (QA 2026-09-01, H-2). Ese es el trabajo de
+  // desde que troceaste el fichero» — se escribió como hipótesis sobre
+  // `title-screen.ts` y #346 la ejecutó: acabó en 368, y una excepción que
+  // siguiera diciendo 1.738 le habría regalado 1.370 líneas de recrecimiento
+  // en silencio (QA 2026-09-01, H-2). Ese es el trabajo de
   // `nefan-core/test/client-file-size.test.ts`, que exige que cada cifra sea
   // EXACTAMENTE el `wc -l` de su fichero y denuncia la que sobre.
   //
@@ -167,13 +168,15 @@ export default tseslint.config(
   // dentro del ruido: `max-lines` cuenta saltos de línea sobre un AST que
   // eslint ya tenía parseado, no vuelve a leer nada.
   //
-  // `error` y no `warn`: entra con CUATRO ocupantes, todos conocidos, todos
-  // eximidos con su cifra de HOY. Un `warn` es una lista que crece.
+  // `error` y no `warn`: entró con CUATRO ocupantes, todos conocidos, todos
+  // eximidos con su cifra de ese día; hoy son TRES, porque #346 troceó
+  // `title-screen.ts` hasta meterlo bajo el tope general. Un `warn` es una
+  // lista que crece.
   {
     files: ["src/**/*.ts"],
     rules: { "max-lines": ["error", topeDe(tamano.tope)] },
   },
-  // Las cuatro excepciones, generadas desde el contrato. El motivo de cada una
+  // Las tres excepciones, generadas desde el contrato. El motivo de cada una
   // viaja con su número, en el JSON: separarlos es como se acaba con una cifra
   // que nadie sabe por qué está.
   ...tamano.excepciones.map((e) => ({

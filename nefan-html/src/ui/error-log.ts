@@ -119,8 +119,11 @@ export const MAX_AVISOS = 3;
  *  descartando el menos grave. Sale ORDENADA por gravedad.
  *
  *  Pura y aquí, con el tipo y la gravedad, en vez de dentro del título: es
- *  decisión de qué se enseña, no de cómo se pinta, y `title-screen.ts` es uno
- *  de los ficheros que #346 quiere trocear. */
+ *  decisión de qué se enseña, no de cómo se pinta. Se escribió cuando
+ *  `title-screen.ts` era «uno de los ficheros que #346 quiere trocear»; hoy ese
+ *  troceo está hecho y su consumidor es `ui/titulo/avisos.ts`, que solo guarda
+ *  la lista y la pinta — el corte no tuvo que mover ni una decisión porque
+ *  ésta ya estaba fuera. */
 export function encajarAviso(
   lista: readonly AvisoAlJugador[],
   aviso: AvisoAlJugador,
