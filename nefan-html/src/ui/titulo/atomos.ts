@@ -34,7 +34,6 @@
  *  selector por debajo del tope de 450 cuando le toque salir.
  */
 import type { GameInfo, StyleInfo } from "../../net/narrative-client.js";
-import type { Modo } from "@nefan-core/src/session/gates-de-imagen.js";
 import { serviceUrl } from "../../net/service-urls.js";
 
 export type TitleAction =
@@ -69,7 +68,16 @@ export type DestinoDelTitulo =
   | { a: "selector"; preselect?: string }
   | { a: "crear-mundo" }
   | { a: "subir-estilo" }
-  | { a: "editor"; game: GameInfo; styleId: string; renderMode: Modo; characterMode: Modo };
+  | {
+      a: "editor";
+      game: GameInfo;
+      styleId: string;
+      /** Los dos modos son `"image" | "vector"` y no `Modo`: el `""` de core
+       *  significa «sin decidir» y aquí ya está decidido — es lo que viaja
+       *  dentro de `TitleAction`, que no admite el vacío. */
+      renderMode: "image" | "vector";
+      characterMode: "image" | "vector";
+    };
 
 /** asset-store — sirve las covers de los estilos como estáticos, con o sin
  *  ai_server (movido desde el State API en F2; preset 4 arranca el store). */
