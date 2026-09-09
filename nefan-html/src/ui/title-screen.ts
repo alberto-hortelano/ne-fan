@@ -20,19 +20,10 @@ import type { NarrativeStatusDeJuego } from "@nefan-core/src/protocol/messages.j
 import { CONFIG } from "@nefan-core/src/config.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
 import { modoEfectivoDePersonajes, normalizarModo, type Modo } from "@nefan-core/src/session/gates-de-imagen.js";
-import {
-  SUGGESTED_THEME_TAGS,
-  type StyleRefFolder,
-} from "@nefan-core/src/games/style-refs.js";
 import { eleccionDeEstilo } from "@nefan-core/src/session/eleccion-de-estilo.js";
-import { validarSubidaDeEstilo } from "@nefan-core/src/contracts/style-upload.js";
-import type {
-  StyleCompleteResponse,
-  StyleUploadResponse,
-} from "@nefan-core/src/contracts/remote-gen.js";
 import { type AvisoAlJugador, encajarAviso, errors } from "./error-log.js";
 import { paso } from "./async-ui.js";
-import { StyleApplyController, type StyleApplyPlan } from "./style-apply.js";
+import { StyleApplyController } from "./style-apply.js";
 import {
   CHAR_MODE_LABELS,
   MODE_COST_LABELS,
@@ -47,6 +38,7 @@ import {
   BTN_SECONDARY_CSS,
   BTN_SMALL_DANGER_CSS,
   BTN_SMALL_PRIMARY_CSS,
+  type DestinoDelTitulo,
   INPUT_CSS,
   SELECT_CSS,
   coverHtml,
@@ -62,6 +54,8 @@ import {
   pintarEditorDePersonaje,
   type EleccionDeMundo,
 } from "./titulo/editor-de-personaje.js";
+import { pintarPlanDeEstilo } from "./titulo/plan-de-estilo.js";
+import { type DepsDeSubirEstilo, pintarSubirEstilo } from "./titulo/subir-estilo.js";
 
 /** Lo que resuelve `show()`. Vive en `titulo/atomos.ts` desde el primer corte
  *  de #346 —es vocabulario del título y lo van a leer varias de sus pantallas,
@@ -69,18 +63,6 @@ import {
  *  fuera (`main.ts:32`) lo siga importando del título, sin tener que saber cómo
  *  está troceado por dentro. */
 export type { TitleAction };
-
-/** Cómo se le llama a cada carpeta del pack en el desplegable de la subida, y
- *  en qué orden se ofrecen (lo primero que sube un jugador es una cara: eso sí
- *  es de aquí, es presentación). Las carpetas NO se declaran aquí: son las
- *  claves de `StyleRefFolder` (`STYLE_REF_FOLDERS` en core, PR 7 de #241), así
- *  que una carpeta nueva allí no compila hasta que se le ponga rótulo, y una
- *  inventada tampoco. */
-const ROTULO_DE_CARPETA: Record<StyleRefFolder, string> = {
-  faces: "Cara del mundo (fachada, portón, muro…)",
-  surfaces: "Lámina de materiales (rejilla de muestras planas)",
-  characters: "Personaje (model sheet)",
-};
 
 /** Vida del estado "armado" (¿confirmar gasto?) antes de desarmarse solo —
  *  mismo TTL que el chip de gráficos y el menú dev. */
@@ -1028,7 +1010,11 @@ export class TitleScreen {
     );
     applyStyleBtn.addEventListener("click", () => {
       paso(
-        this.renderStylePlan(stylePlanEl, selectedGame.game_id, styleSel.value),
+        pintarPlanDeEstilo(
+          { hueco: stylePlanEl, styleApply: this.styleApply, ir: (d) => this.ir(d) },
+          selectedGame.game_id,
+          styleSel.value,
+        ),
         "title",
         "calcular el coste de aplicar el estilo",
       );
@@ -1064,268 +1050,14 @@ export class TitleScreen {
     (this.content.querySelector("#ts-create-world") as HTMLButtonElement)
       .addEventListener("click", () => this.crearMundo());
     (this.content.querySelector("#ts-upload-style") as HTMLButtonElement)
-      .addEventListener("click", () => this.renderUploadStyle());
+      .addEventListener("click", () => pintarSubirEstilo(this.subirEstilo()));
   }
 
-  /** Panel de aplicación de estilo: plan con coste (SIN gastar) → checkboxes
-   *  por bloque → confirmación con el importe → batch con progreso. Patrón
-   *  upload→coste→complete de los estilos de usuario. */
-  private async renderStylePlan(
-    el: HTMLElement,
-    gameId: string,
-    styleId: string,
-  ): Promise<void> {
-    el.innerHTML = `<div style="font-size:12px;color:#da6;margin-top:6px">Calculando el coste (sin gastar)…</div>`;
-    let plan: StyleApplyPlan;
-    try {
-      plan = await this.styleApply.plan(gameId, styleId);
-    } catch (err) {
-      el.innerHTML = `<div style="font-size:12px;color:#a44;margin-top:6px">${escapeHtml((err as Error).message)}</div>`;
-      return;
-    }
-    const blocksHtml = plan.blocks
-      .map(
-        (b, i) => `
-          <label style="display:block;font-size:12px;color:#bbb;margin-bottom:3px">
-            <input type="checkbox" data-block-idx="${i}" ${b.selected ? "checked" : ""} ${b.missing === 0 ? "disabled" : ""}>
-            ${escapeHtml(b.label)} — ${b.missing === 0 ? "en caché ($0)" : b.estCostUsd === null ? "coste no disponible" : `${b.exact ? "" : "~"}$${b.estCostUsd.toFixed(2)}`}
-          </label>`,
-      )
-      .join("");
-    const notesHtml = plan.notes
-      .map((n) => `<div style="color:#886;font-size:11px;margin-top:2px">· ${escapeHtml(n)}</div>`)
-      .join("");
-    el.innerHTML = `
-      <div style="margin-top:8px;padding:8px 10px;border:1px solid #333;border-radius:4px;background:#101016">
-        ${blocksHtml}
-        ${notesHtml}
-        <div id="ts-style-total" style="font-size:12px;color:#dcb;margin:8px 0 6px"></div>
-        <div style="display:flex;gap:8px">
-          <button id="ts-style-run" style="${BTN_PRIMARY_CSS};font-size:12px;padding:6px 14px"></button>
-          <button id="ts-style-cancel" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px">Cancelar</button>
-        </div>
-        <div id="ts-style-progress" style="font-size:12px;margin-top:6px;color:#da6"></div>
-      </div>`;
-    const totalEl = el.querySelector("#ts-style-total") as HTMLElement;
-    const runBtn = el.querySelector("#ts-style-run") as HTMLButtonElement;
-    const cancelBtn = el.querySelector("#ts-style-cancel") as HTMLButtonElement;
-    const progressEl = el.querySelector("#ts-style-progress") as HTMLElement;
-    const refreshTotal = (): void => {
-      const activos = plan.blocks.filter((b) => b.selected && b.missing > 0);
-      const total = activos.reduce((acc, b) => acc + (b.estCostUsd ?? 0), 0);
-      // Un bloque sin precio (el catálogo no pudo costearlo) no desaparece del
-      // total en silencio: el total lleva un «+ ?» y la causa está en las notas.
-      const sinPrecio = activos.some((b) => b.estCostUsd === null);
-      const anything = activos.length > 0;
-      const cifra = `~$${total.toFixed(2)}${sinPrecio ? " + ?" : ""}`;
-      totalEl.textContent = anything
-        ? `Coste estimado: ${cifra}${sinPrecio ? " — hay bloques con coste no disponible" : ""} (los skins y páginas ya en caché no se repagan)`
-        : "Nada seleccionado que genere coste.";
-      runBtn.textContent = anything ? `Aplicar estilo (${cifra})` : "Registrar (sin coste)";
-    };
-    for (const cb of el.querySelectorAll<HTMLInputElement>("input[data-block-idx]")) {
-      cb.addEventListener("change", () => {
-        plan.blocks[Number(cb.dataset.blockIdx)].selected = cb.checked;
-        refreshTotal();
-      });
-    }
-    refreshTotal();
-    cancelBtn.addEventListener("click", () => {
-      el.innerHTML = "";
-    });
-    const aplicarElEstilo = async (): Promise<void> => {
-      runBtn.disabled = true;
-      cancelBtn.disabled = true;
-      try {
-        const result = await this.styleApply.run(plan, (msg) => {
-          progressEl.textContent = msg;
-        });
-        const failNote = result.failures.length
-          ? ` · <span style="color:#a44">${result.failures.length} fallos (ver registro)</span>`
-          : "";
-        progressEl.innerHTML =
-          `<span style="color:#4a4">Estilo aplicado: ${result.cellsPainted} celdas y ` +
-          `${result.skinsPainted} skins nuevos ($${result.costUsd.toFixed(2)})${failNote}</span>`;
-        await new Promise((r) => setTimeout(r, 1200));
-        await this.renderWorldSelect(gameId);
-      } catch (err) {
-        progressEl.innerHTML = `<span style="color:#a44">${escapeHtml((err as Error).message)}</span>`;
-        runBtn.disabled = false;
-        cancelBtn.disabled = false;
-      }
-    };
-    runBtn.addEventListener("click", () =>
-      paso(aplicarElEstilo(), "title", "aplicar el estilo al mundo pre-generado"),
-    );
-  }
-
-  /** Subir un estilo propio: nombre + al menos una imagen por categoría; las
-   *  categorías que falten se generan con IA usando las subidas como
-   *  referencia — PREVIA confirmación explícita del coste. */
-  private renderUploadStyle(): void {
-    this.content.style.maxWidth = "720px";
-    const rowHtml = (): string => `
-      <div data-upload-row style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;margin-bottom:8px;padding:8px;border:1px solid #2a2a30;border-radius:6px">
-        <input data-file type="file" accept="image/*" style="color:#777;font-size:11px;max-width:170px">
-        <input data-desc type="text" placeholder="qué muestra (ej: catedral gótica al atardecer)" style="${INPUT_CSS}">
-        <select data-folder style="${SELECT_CSS};width:auto">
-          ${(Object.entries(ROTULO_DE_CARPETA) as Array<[StyleRefFolder, string]>)
-            .map(([id, label]) => `<option value="${id}">${label}</option>`)
-            .join("")}
-        </select>
-      </div>`;
-    this.content.innerHTML = `
-      <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Subir estilo</h1>
-      <p style="margin-bottom:16px;color:#888;font-size:12px">
-        Sube una o más imágenes de referencia LIBRES — cada una con una descripción de lo que muestra
-        (el motor narrativo la usa para elegir la referencia de cada NPC y de cada cara) y a qué sirve.
-        Las refs mínimas que falten se generarán con IA a partir de las tuyas — se te pedirá confirmación con el coste.
-      </p>
-      <label style="display:block;margin-bottom:12px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Nombre del estilo</div>
-        <input id="ts-style-name" type="text" placeholder="ej: Tinta y pergamino" style="${INPUT_CSS}">
-      </label>
-      <div style="margin-bottom:12px">
-        <div style="font-size:12px;color:#999;margin-bottom:4px">Etiquetas temáticas (para casarlo con mundos compatibles)</div>
-        <div id="ts-style-tags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
-          ${SUGGESTED_THEME_TAGS.map((t) => `
-            <button data-tag="${t}" style="${BTN_SECONDARY_CSS};font-size:11px;padding:2px 8px">${t}</button>`).join("")}
-        </div>
-        <input id="ts-style-tags-free" type="text" placeholder="otras etiquetas, separadas por comas" style="${INPUT_CSS}">
-      </div>
-      <div id="ts-upload-rows">${rowHtml()}</div>
-      <button id="ts-add-row" style="${BTN_SECONDARY_CSS};font-size:11px;margin-bottom:14px">+ otra imagen</button>
-      <div id="ts-style-status" style="margin-bottom:14px;font-size:12px;color:#888"></div>
-      <div style="display:flex;gap:12px">
-        <button id="ts-back" style="${BTN_SECONDARY_CSS}">← Volver</button>
-        <button id="ts-upload" style="${BTN_PRIMARY_CSS}">Subir</button>
-        <button id="ts-complete" style="${BTN_PRIMARY_CSS};display:none">Generar imágenes</button>
-      </div>
-    `;
-    const nameEl = this.content.querySelector("#ts-style-name") as HTMLInputElement;
-    const statusEl = this.content.querySelector("#ts-style-status") as HTMLElement;
-    const backBtn = this.content.querySelector("#ts-back") as HTMLButtonElement;
-    const uploadBtn = this.content.querySelector("#ts-upload") as HTMLButtonElement;
-    const completeBtn = this.content.querySelector("#ts-complete") as HTMLButtonElement;
-    const rowsEl = this.content.querySelector("#ts-upload-rows") as HTMLElement;
-    const tagsEl = this.content.querySelector("#ts-style-tags") as HTMLElement;
-    const tagsFreeEl = this.content.querySelector("#ts-style-tags-free") as HTMLInputElement;
-    const selectedTags = new Set<string>();
-    let pendingStyleId = "";
-
-    for (const btn of tagsEl.querySelectorAll<HTMLElement>("[data-tag]")) {
-      btn.addEventListener("click", () => {
-        const tag = btn.dataset.tag!;
-        if (selectedTags.has(tag)) selectedTags.delete(tag);
-        else selectedTags.add(tag);
-        btn.style.borderColor = selectedTags.has(tag) ? "#da6" : "#2a2a30";
-        btn.style.background = selectedTags.has(tag) ? "#201c14" : "#181820";
-      });
-    }
-    (this.content.querySelector("#ts-add-row") as HTMLButtonElement).addEventListener(
-      "click",
-      () => rowsEl.insertAdjacentHTML("beforeend", rowHtml()),
-    );
-    backBtn.addEventListener("click", () =>
-      paso(this.renderWorldSelect(), "title", "volver al selector de mundos"),
-    );
-
-    // EL ÚNICO DE LOS SEIS QUE MORDÍA (#260): el `await` del `FileReader` iba
-    // fuera del `try` (ver abajo). Arreglado en su sitio, este handler queda
-    // como los otros cinco — cuerpo entero en `try/catch`, sin canal especial.
-    const subirElEstilo = async (): Promise<void> => {
-      const name = nameEl.value;
-      const tags = [
-        ...selectedTags,
-        ...tagsFreeEl.value.split(",").map((t) => t.trim()).filter(Boolean),
-      ];
-      // EL `try` EMPIEZA AQUÍ Y NO TRES PASOS MÁS ABAJO, y ese era el bug de
-      // #260: el `await` de este `FileReader` quedaba FUERA, así que un
-      // fichero ilegible rechazaba sin catch — el handler era `async`, el
-      // cliente no tiene `unhandledrejection`, y pulsar «Subir» no hacía nada
-      // (#181 otra vez). Dentro del `try`, el mismo `catch` que ya traduce los
-      // fallos de red escribe también este, sin canal aparte que mantener.
-      try {
-        const rows = [...rowsEl.querySelectorAll<HTMLElement>("[data-upload-row]")];
-        const images: Array<{ folder: string; description: string; image_b64: string }> = [];
-        /** El fichero de cada imagen, en su orden: lo único del rechazo que el
-         *  servidor no puede saber, así que se le añade al motivo. */
-        const ficheros: string[] = [];
-        for (const row of rows) {
-          const file = (row.querySelector("[data-file]") as HTMLInputElement).files?.[0];
-          if (!file) continue;
-          const description = (row.querySelector("[data-desc]") as HTMLInputElement).value.trim();
-          const folder = (row.querySelector("[data-folder]") as HTMLSelectElement).value;
-          const b64 = await new Promise<string>((res, rej) => {
-            const r = new FileReader();
-            r.onload = () => res(String(r.result ?? ""));
-            r.onerror = () => rej(new Error(`no se pudo leer ${file.name}`));
-            r.readAsDataURL(file);
-          });
-          images.push({ folder, description, image_b64: b64 });
-          ficheros.push(file.name);
-        }
-        // QUÉ SUBIDA VALE lo decide `validarSubidaDeEstilo` de core, y es lo
-        // MISMO que comprueba ai_server leyendo su snapshot: el motivo que se
-        // pinta es el que devolvería el 422, más el fichero cuando se sabe.
-        const comprobado = validarSubidaDeEstilo({ name, tags, images });
-        if (!comprobado.ok) {
-          const cual = comprobado.imagen === null ? "" : ` (${ficheros[comprobado.imagen] ?? ""})`;
-          statusEl.innerHTML = `<span style="color:#a44">${escapeHtml(comprobado.error + cual)}</span>`;
-          return;
-        }
-        uploadBtn.disabled = true;
-        statusEl.textContent = "Subiendo imágenes al ai_server...";
-        const res = await fetch(`${AI_SERVER_HTTP}/styles/upload`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(comprobado.subida),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-        const data = (await res.json()) as StyleUploadResponse;
-        pendingStyleId = data.style_id;
-        if (data.missing.length === 0) {
-          statusEl.innerHTML = `<span style="color:#4a4">Estilo ${escapeHtml(data.style_id)} completo.</span>`;
-          await this.renderWorldSelect();
-          return;
-        }
-        statusEl.innerHTML = `<span style="color:#da6">Subidas ${data.uploaded.length}. Faltan ${data.missing.length} refs `
-          + `(${data.missing.map((m) => m.id).join(", ")}). Generarlas costará ~$${data.estimated_cost_usd.toFixed(2)} en créditos.</span>`;
-        uploadBtn.style.display = "none";
-        completeBtn.style.display = "";
-        completeBtn.textContent = `Generar ${data.missing.length} imágenes (~$${data.estimated_cost_usd.toFixed(2)})`;
-      } catch (err) {
-        statusEl.innerHTML = `<span style="color:#a44">Subida fallida: ${escapeHtml((err as Error).message)}</span>`;
-        uploadBtn.disabled = false;
-      }
-    };
-    uploadBtn.addEventListener("click", () =>
-      paso(subirElEstilo(), "title", "subir el estilo"),
-    );
-
-    const generarLasRefsQueFaltan = async (): Promise<void> => {
-      completeBtn.disabled = true;
-      backBtn.disabled = true;
-      statusEl.innerHTML = `<span style="color:#da6">🎨 Generando las refs que faltan (varios minutos)...</span>`;
-      try {
-        const res = await fetch(`${AI_SERVER_HTTP}/styles/${encodeURIComponent(pendingStyleId)}/complete`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ confirm: true }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-        const data = (await res.json()) as StyleCompleteResponse;
-        statusEl.innerHTML = `<span style="color:#4a4">Generadas ${data.generated.length} imágenes ($${data.cost_usd.toFixed(2)}).</span>`;
-        await this.renderWorldSelect();
-      } catch (err) {
-        statusEl.innerHTML = `<span style="color:#a44">Generación fallida: ${escapeHtml((err as Error).message)}</span>`;
-        completeBtn.disabled = false;
-        backBtn.disabled = false;
-      }
-    };
-    completeBtn.addEventListener("click", () =>
-      paso(generarLasRefsQueFaltan(), "title", "generar las refs que faltan del estilo"),
-    );
+  /** Los colaboradores de la pantalla de subida de estilo, en un solo sitio:
+   *  la llaman el botón del selector y el enrutador, y dos listas de campos
+   *  que hay que mantener iguales acaban siendo dos listas distintas. */
+  private subirEstilo(): DepsDeSubirEstilo {
+    return { content: this.content, ir: (d) => this.ir(d) };
   }
 
   /** A DÓNDE va el título cuando una de sus pantallas termina.
@@ -1361,7 +1093,8 @@ export class TitleScreen {
       case "crear-mundo":
         return this.crearMundo();
       case "subir-estilo":
-        return this.renderUploadStyle();
+        pintarSubirEstilo(this.subirEstilo());
+        return;
       case "editor":
         return this.editorDePersonaje(destino);
     }
