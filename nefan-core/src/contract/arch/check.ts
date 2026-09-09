@@ -24,7 +24,9 @@ export interface ImportRef {
    *  el colector (relativos, `.js`→`.ts`, `index.ts` y los alias del
    *  `tsconfig.json` que declare `scan.paths_de`). Ausente = paquete o builtin
    *  (`three`, `node:fs`): no vive en el repo. Es la arista que recorre una
-   *  regla `cierre`; las reglas `imports` siguen mirando `spec`. */
+   *  regla `cierre`, y también lo que mira una regla `imports` que declare
+   *  `sobre: "resuelto"` — la única forma de expresar «este import ATERRIZA
+   *  ahí» sin enumerar las maneras de escribir la ruta. */
   resolved?: string;
   /** El colector buscó `resolved` en disco y no estaba: el import está ROTO
    *  (typo, fichero borrado). Se distingue de «existe pero no se escanea»
@@ -77,8 +79,31 @@ const RuleSchema = z
     severity: z.enum(["error", "warn"]),
     /** Globs de los ficheros a los que aplica. */
     files: z.array(z.string()).min(1),
-    /** Prohibición sobre especificadores de import (regex). */
-    imports: z.object({ forbid: z.array(z.string()).min(1) }).optional(),
+    /** Prohibición sobre los imports del fichero (regex).
+     *
+     *  `sobre` dice CONTRA QUÉ casa el regex, y no es un detalle de estilo:
+     *  - `"escrito"` (el defecto, y lo que hacían todas las reglas hasta
+     *    2026-09-09) casa contra el especificador tal cual lo tecleó el autor.
+     *    Es lo correcto cuando el sujeto ES el especificador: `^three($|/)` o
+     *    `^\.\..*nefan-core` prohíben una FORMA DE ESCRIBIR, y por eso da igual
+     *    a dónde apunte.
+     *  - `"resuelto"` casa contra `ImportRef.resolved`, la ruta del repo a la
+     *    que el import apunta de verdad. Es lo único que expresa «no importes
+     *    lo que VIVE ahí», porque un mismo fichero se alcanza por infinitas
+     *    rutas: `./home.js`, `../titulo/home.js`, `../../ui/titulo/home.js`,
+     *    `../../../src/ui/titulo/home.js`, `../home.js` desde un subdirectorio
+     *    y hasta un alias que da la vuelta (`@nefan-core/../nefan-html/…`).
+     *    QA midió esas cuatro últimas coladas en `las-hojas-del-titulo-no-se-
+     *    atan-entre-si` el 2026-09-09: con `"escrito"`, la regla era una lista
+     *    de formas de teclear una ruta, y esa lista no acaba nunca. Los
+     *    imports SIN `resolved` (paquetes y builtins: `three`, `node:fs`) no
+     *    pueden aterrizar en el repo, así que no se miran. */
+    imports: z
+      .object({
+        forbid: z.array(z.string()).min(1),
+        sobre: z.enum(["escrito", "resuelto"]).default("escrito"),
+      })
+      .optional(),
     /** Prohibición sobre el texto del fichero (regex, se aplica con "gm"). */
     text: z.object({ pattern: z.string().min(1) }).optional(),
     /** Prohibición sobre el CIERRE transitivo de imports: los ficheros que
@@ -197,16 +222,27 @@ export function lineOf(text: string, index: number): number {
 
 function violatesImport(rule: ArchRule, file: SourceFile): Violation[] {
   const forbid = rule.imports!.forbid.map((p) => new RegExp(p));
+  const porResuelto = rule.imports!.sobre === "resuelto";
   const out: Violation[] = [];
   for (const imp of file.imports) {
-    const hit = forbid.find((re) => re.test(imp.spec));
+    // Con `sobre: "resuelto"`, un import sin `resolved` es un paquete o un
+    // builtin: no vive en el repo, así que no puede aterrizar en lo prohibido.
+    const sujeto = porResuelto ? imp.resolved : imp.spec;
+    if (sujeto === undefined) continue;
+    const hit = forbid.find((re) => re.test(sujeto));
     if (!hit) continue;
     out.push({
       ruleId: rule.id,
       severity: rule.severity,
       path: file.path,
       line: imp.line,
-      detail: `import prohibido: "${imp.spec}"`,
+      // Con `resuelto` se dicen las DOS cosas: quien lo lee en CI escribió el
+      // especificador y no le basta con que le señalen la ruta a la que apunta
+      // (ni al revés, si lo que escribió es una vuelta larga que no se parece
+      // a lo que la regla prohíbe).
+      detail: porResuelto
+        ? `import prohibido: "${imp.spec}" → ${imp.resolved}`
+        : `import prohibido: "${imp.spec}"`,
     });
   }
   return out;

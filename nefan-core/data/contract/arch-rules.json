@@ -255,15 +255,16 @@
     {
       "id": "las-hojas-del-titulo-no-se-atan-entre-si",
       "desc": "Un módulo de ui/titulo/ solo importa a otro módulo de ui/titulo/ por atomos.ts",
-      "why": "El troceo de #346 vale mientras las siete hojas del título sigan siendo hojas. Una hoja que importa a otra —el home llamando al selector, el selector al editor— reconstruye el god-file repartido en siete ficheros atados en anillo: el diff mental vuelve a ser el fichero entero y el orden de carga pasa a importar. La navegación es del ENRUTADOR (title-screen.ts, que puede importarlas todas) y viaja de vuelta por el callback `ir(destino)`, no por un import. `atomos.ts` es la única excepción y por eso no tiene estado ni colaboradores: son constantes de CSS, escapes y funciones que devuelven string, más los tipos compartidos. Contra la CONCENTRACIÓN —repartir el god-file en siete ficheros de 430— no hay checker y lo dice el $comment de client-file-size.json: eso es revisión.",
+      "why": "El troceo de #346 vale mientras las siete hojas del título sigan siendo hojas. Una hoja que importa a otra —el home llamando al selector, el selector al editor— reconstruye el god-file repartido en siete ficheros atados en anillo: el diff mental vuelve a ser el fichero entero y el orden de carga pasa a importar. La navegación es del ENRUTADOR (title-screen.ts, que puede importarlas todas) y viaja de vuelta por el callback `ir(destino)`, no por un import. `atomos.ts` es la única excepción y por eso no tiene estado ni colaboradores: son constantes de CSS, escapes y funciones que devuelven string, más los tipos compartidos. Contra la CONCENTRACIÓN —repartir el god-file en siete ficheros de 430— no hay checker y lo dice el $comment de client-file-size.json: eso es revisión. POR QUÉ `sobre: \"resuelto\"` Y NO EL ESPECIFICADOR: la regla nació casando contra la ruta tal como se teclea (`^\\./(?!atomos\\.js$)` y su hermana `^\\.\\./titulo/`) y QA la midió con la cadena real el 2026-09-09: se colaban CUATRO caminos que aterrizan exactamente en el mismo fichero — la vuelta larga `../../ui/titulo/home.js`, su variante por la raíz del paquete `../../../src/ui/titulo/home.js`, el subdirectorio que sube a su padre (`titulo/sub/x.ts` → `../home.js`) y un alias que da la vuelta (`@nefan-core/../nefan-html/src/ui/titulo/home.js`). Añadir un patrón por cada uno habría dejado la regla siendo lo que era: una lista de formas de escribir una ruta, y esa lista no acaba. El invariante no es «no teclees esto», es «no importes lo que VIVE ahí», y eso solo se dice sobre `ImportRef.resolved`. EL ENRUTADOR TAMBIÉN ESTÁ PROHIBIDO, y es el segundo patrón: una hoja que importa `../title-screen.js` —para tipar a su llamador, que es la línea que se escribe sola— cierra el anillo hoja → raíz → hoja, que es literalmente lo que este `why` dice que no debe pasar. Lo que una hoja necesita de la raíz son los tipos compartidos, y esos viven en `atomos.ts`. LO QUE ESTA REGLA NO CANDA, dicho para que nadie lo cuente de más: que una hoja COPIE una constante de `atomos.ts` en vez de importarla. Eso compila, no toca ningún import y no lo ve ningún checker — lo mide el guion 94 conduciendo el juego real (el mismo botón primario en las cinco pantallas).",
       "severity": "error",
       "files": [
         "nefan-html/src/ui/titulo/**/*.ts"
       ],
       "imports": {
+        "sobre": "resuelto",
         "forbid": [
-          "^\\./(?!atomos\\.js$)",
-          "^\\.\\./titulo/(?!atomos\\.js$)"
+          "^nefan-html/src/ui/titulo/(?!atomos\\.ts$)",
+          "^nefan-html/src/ui/title-screen\\.ts$"
         ]
       }
     },

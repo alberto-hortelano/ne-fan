@@ -11,9 +11,21 @@
  *  Por eso este fichero es la ÚNICA excepción del candado
  *  `las-hojas-del-titulo-no-se-atan-entre-si` (arch-rules.json): un módulo de
  *  `ui/titulo/` no puede importar a otro salvo a éste. Y puede serlo porque no
- *  tiene nada que atar — CERO colaboradores, cero estado, cero `this`: son
- *  constantes, tipos y funciones que reciben datos y devuelven string. El día
- *  que algo de aquí necesite un colaborador, no es un átomo y no es de aquí.
+ *  tiene nada que atar — cero estado, cero `this`: son constantes, tipos y
+ *  funciones que reciben datos y devuelven string. El día que algo de aquí
+ *  necesite un colaborador, no es un átomo y no es de aquí.
+ *
+ *  CON UNA SALVEDAD MEDIDA, que no es «cero colaboradores» del todo: las dos
+ *  constantes de URL de abajo llaman a `serviceUrl` AL CARGAR el módulo, y
+ *  `serviceUrl` lee `location.search`. O sea que importar este fichero en Node
+ *  revienta con `location is not defined` — QA-1 (H6) lo descubrió al tener que
+ *  stubear el DOM para poder medirlo. Importa porque este módulo lo van a
+ *  importar las SIETE hojas del título, así que mientras siga así ninguna se
+ *  puede testear en Node sin arrastrar ese stub. Hacerlas perezosas (funciones
+ *  en vez de constantes) ARREGLA eso —probado— pero perturbó dos corridas de
+ *  dos del guion 80 sin que nadie encontrara el mecanismo, así que NO viaja en
+ *  esta PR de movimiento: tiene issue propio. Un cambio que no se sabe explicar
+ *  no entra en la PR que promete no cambiar el comportamiento.
  *
  *  La excepción declarada al criterio de los dos dueños es la TARJETA de mundo
  *  (`worldCardHtml` + `generationChipsHtml`), que hoy solo pinta el selector:
