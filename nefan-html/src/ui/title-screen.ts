@@ -1341,20 +1341,27 @@ export class TitleScreen {
    *
    *  DEVUELVE la promesa del repintado en vez de tragársela con un `paso()`
    *  de dentro: «Crear mundo» encadena el selector DENTRO de su `try`, y
-   *  hacerla fire-and-forget movería de sitio ese fallo. Quien no la espera la
-   *  pasa por `paso()`, que es lo que ya hacía cada pantalla del título. */
-  private ir(destino: DestinoDelTitulo): Promise<void> {
+   *  hacerla fire-and-forget movería de sitio ese fallo. Lo midió QA-3 sobre el
+   *  juego real (guion 96): con la promesa tragada, un fallo del repintado deja
+   *  la pantalla en «Mundo creado» con los dos botones apagados y sin salida.
+   *  Quien no la espera la pasa por `paso()`, que es lo que ya hacía cada
+   *  pantalla del título.
+   *
+   *  Y es `async` por los dos destinos SÍNCRONOS: sin él, un fallo al pintar
+   *  «Crear mundo» o «Subir estilo» saldría por un `throw` de aquí —antes de
+   *  que haya promesa— y `paso(this.ir(…), …)` no podría encauzarlo, que es
+   *  justo lo que el llamante cree estar contratando (QA-3 H6). Hoy no tiene
+   *  ocupante; la palabra cuesta lo que cuesta y la deuda no llega a la PR 5. */
+  private async ir(destino: DestinoDelTitulo): Promise<void> {
     switch (destino.a) {
       case "home":
         return this.renderHome(destino.aviso, destino.tono);
       case "selector":
         return this.renderWorldSelect(destino.preselect);
       case "crear-mundo":
-        this.crearMundo();
-        return Promise.resolve();
+        return this.crearMundo();
       case "subir-estilo":
-        this.renderUploadStyle();
-        return Promise.resolve();
+        return this.renderUploadStyle();
       case "editor":
         return this.editorDePersonaje(destino);
     }

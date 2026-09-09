@@ -7,12 +7,15 @@
  *  mandar una frase suelta, y el bridge, que es quien de verdad no puede
  *  llamar al motor con basura.
  *
- *  Hasta la PR 7 de #241 (2026-09-07) el umbral estaba escrito en las dos
- *  (`title-screen.ts:1382` y `bridge/handlers/session.ts:160`) y NO decían lo
- *  mismo: el título solo miraba el mínimo —un fichero de 200 kB pegado en el
- *  textarea viajaba entero y lo rechazaba el bridge— y cada uno traía su
- *  redacción, así que el mismo borrador daba dos mensajes distintos según
- *  quién lo cazara primero. Aquí hay un umbral y un texto.
+ *  Hasta la PR 7 de #241 (2026-09-07) el umbral estaba escrito en las dos —la
+ *  pantalla de crear mundo del título, que la PR 3 de #346 sacó a
+ *  `nefan-html/src/ui/titulo/crear-mundo.ts`, y `bridge/handlers/session.ts`;
+ *  se nombran los MÓDULOS y no las líneas porque un número de línea caduca en
+ *  el corte siguiente y acaba señalando a otra cosa— y NO decían lo mismo: el
+ *  título solo miraba el mínimo —un fichero de 200 kB pegado en el textarea
+ *  viajaba entero y lo rechazaba el bridge— y cada uno traía su redacción, así
+ *  que el mismo borrador daba dos mensajes distintos según quién lo cazara
+ *  primero. Aquí hay un umbral y un texto.
  *
  *  Y hay un TERCER proceso que también mide el borrador: ai_server, que es
  *  quien llama al motor (`POST /develop_world`). Su umbral estaba escrito en
