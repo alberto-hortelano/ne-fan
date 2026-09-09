@@ -62,7 +62,14 @@ export type TitleAction =
  *  y quien enruta es la raíz, que es la única que puede importarlas todas.
  *
  *  Lo estrena la PR 2 de #346; nace aquí porque el candado no deja que dos
- *  hojas compartan un tipo por ningún otro camino. */
+ *  hojas compartan un tipo por ningún otro camino.
+ *
+ *  Los dos modos del editor son los literales y NO el `Modo` de core, que la
+ *  PR 1 escribió aquí sin consumidor: `Modo` incluye `""` («sin elegir») y el
+ *  editor de personaje exige uno de los dos: quien llega hasta él ya eligió en
+ *  el selector. Con `Modo`, el enrutador de la PR 2 no compilaba. Es el mismo
+ *  par de literales que usa `TitleAction` doce líneas más arriba, que es a
+ *  donde va a parar esta elección. */
 export type DestinoDelTitulo =
   | { a: "home"; aviso?: string; tono?: "error" | "aviso" }
   | { a: "selector"; preselect?: string }
