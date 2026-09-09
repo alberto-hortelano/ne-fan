@@ -18,17 +18,29 @@
  *  de la tanda lo llama riesgo 4 y dice que ningún test verde lo ve; esto es
  *  lo que lo ve.
  *
- *  Las tres afirmaciones son distintas y las tres hacen falta:
- *   1. EL CHASIS no crece: `#title-screen` sigue con sus tres hijos
+ *  Las cuatro afirmaciones son distintas y las cuatro hacen falta:
+ *   1. LOS OYENTES DE POR VIDA no crecen: se envuelve `addEventListener` ANTES
+ *      de cargar la página y se cuentan los que se registran sobre `window`,
+ *      `document`, `document.body`, `#title-screen` y sus hijos directos
+ *      (`content`, `#ts-mas`, `#ts-close`). Tras las cuatro idas y vueltas, el
+ *      contador tiene que valer lo mismo que antes de empezar.
+ *   2. EL CHASIS no crece: `#title-screen` sigue con sus tres hijos
  *      (`content`, `#ts-mas`, `#ts-close`) y `#title-screen-responsive` sigue
  *      siendo uno solo, visita tras visita.
- *   2. LA PANTALLA es la misma cada vez: el digest estructural de lo pintado
+ *   3. LA PANTALLA es la misma cada vez: el digest estructural de lo pintado
  *      —etiquetas, ids, atributos y texto— es idéntico en las cuatro visitas.
  *      Una hoja que acumulara estado propio entre visitas saldría aquí.
- *   3. UN CLICK, UNA FILA: «+ otra imagen» añade EXACTAMENTE una fila en la
+ *   4. UN CLICK, UNA FILA: «+ otra imagen» añade EXACTAMENTE una fila en la
  *      cuarta visita igual que en la primera. Es el control positivo del
- *      listener duplicado, que es la avería concreta que (1) y (2) no verían
- *      si la hoja se enganchara a un nodo que ella misma recrea.
+ *      listener duplicado sobre un nodo que la hoja SÍ crea, que es la avería
+ *      que (1) no ve porque ese nodo muere con cada repintado.
+ *
+ *  La (1) la trajo la QA de esta PR (H3): la primera versión anunciaba en esta
+ *  cabecera que perseguía la fuga sobre `document` y `window`, y no la
+ *  perseguía — QA metió un `document.addEventListener` por visita y el guion
+ *  salió VERDE. Ninguna de las otras tres puede verla: un oyente sobre
+ *  `document` no añade un nodo, no cambia el chasis y no toca el HTML pintado.
+ *  Ahora se cuenta, que es lo único que la ve.
  *
  *  Y de paso mide lo único que el callback nuevo puede romper de forma
  *  invisible: que «Volver» VUELVE — cuatro veces, no una.
@@ -70,9 +82,48 @@ function digestEnLaPagina() {
   return out.join("\n");
 }
 
+/** Envuelve `addEventListener` ANTES de que cargue nada y apunta los registros
+ *  sobre los objetos que SOBREVIVEN a un repintado del título. Es lo único que
+ *  ve una fuga ahí: `document` no gana un nodo ni cambia el HTML, así que
+ *  ninguna de las otras tres medidas puede notarla.
+ *
+ *  Va como `addInitScript` y no como `evaluate` porque el chasis del título se
+ *  monta en el arranque de `main.ts`: enganchar después dejaría fuera
+ *  precisamente los cinco oyentes de por vida que hay que ver estables. */
+function espiarOyentes() {
+  window.__oyentesQueSobreviven = [];
+  const original = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function (tipo, fn, opts) {
+    let donde = null;
+    if (this === window) donde = "window";
+    else if (this === document) donde = "document";
+    else if (this === document.body) donde = "document.body";
+    else if (this && this.nodeType === 1) {
+      if (this.id === "title-screen") donde = "#title-screen";
+      else if (this.parentElement && this.parentElement.id === "title-screen") {
+        donde = `#title-screen > ${this.id || this.tagName.toLowerCase()}`;
+      }
+    }
+    if (donde !== null) window.__oyentesQueSobreviven.push(`${donde} · ${tipo}`);
+    return original.call(this, tipo, fn, opts);
+  };
+}
+
 export default async function (ctx) {
+  // ANTES de la recarga: si no, el chasis ya está montado y sus oyentes de por
+  // vida no se cuentan.
+  await ctx.page.addInitScript(espiarOyentes);
   await recargarAlTitulo(ctx);
   await abrirSelectorDeMundos(ctx);
+
+  const oyentes = () => ctx.page.evaluate(() => [...(window.__oyentesQueSobreviven ?? [])]);
+  const oyentesAntes = await oyentes();
+  ctx.log(`oyentes que sobreviven al repintado, al entrar: ${oyentesAntes.length}`);
+  ctx.expect(
+    "la sonda de oyentes está puesta (sin esto, la afirmación de abajo sería verde por vacía)",
+    oyentesAntes.length > 0,
+    `${oyentesAntes.length} registros — ${oyentesAntes.join(" | ")}`,
+  );
 
   const chasis = () =>
     ctx.page.evaluate(() => {
@@ -135,6 +186,18 @@ export default async function (ctx) {
     digests
       .map((d, i) => `${i + 1}: ${d === digests[0] ? "igual" : "DISTINTA"}`)
       .join(" · "),
+  );
+
+  const oyentesDespues = await oyentes();
+  const nuevos = oyentesDespues.slice(oyentesAntes.length);
+  ctx.log(
+    `oyentes al salir: ${oyentesDespues.length}` +
+      (nuevos.length ? ` — NUEVOS: ${nuevos.join(" | ")}` : " (ninguno nuevo)"),
+  );
+  ctx.expect(
+    `ninguna hoja engancha a document, window ni al chasis: 0 oyentes nuevos tras ${VISITAS} idas y vueltas`,
+    nuevos.length === 0,
+    `${oyentesAntes.length} → ${oyentesDespues.length}; nuevos: ${nuevos.join(" | ") || "(ninguno)"}`,
   );
 
   const despues = await chasis();

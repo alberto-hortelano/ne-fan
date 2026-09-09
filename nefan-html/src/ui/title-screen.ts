@@ -39,10 +39,8 @@ import {
   BTN_SMALL_DANGER_CSS,
   BTN_SMALL_PRIMARY_CSS,
   type DestinoDelTitulo,
-  INPUT_CSS,
   SELECT_CSS,
   coverHtml,
-  type DestinoDelTitulo,
   escapeAttr,
   escapeHtml,
   marcadorHtml,
@@ -1079,6 +1077,12 @@ export class TitleScreen {
    *  Quien no la espera la pasa por `paso()`, que es lo que ya hacía cada
    *  pantalla del título.
    *
+   *  Tres de las cuatro vueltas al selector se `await`ean dentro de un `try`
+   *  cuyo `catch` le pinta el motivo al jugador donde está
+   *  (`#ts-style-progress`, `#ts-style-status`): tragarse el rechazo con un
+   *  `paso()` propio mandaría esos fallos al registro —que el título tapa por
+   *  CSS (#246/#306)— y dejaría la pantalla muda, que es el no-op de #181.
+   *
    *  Y es `async` por los dos destinos SÍNCRONOS: sin él, un fallo al pintar
    *  «Crear mundo» o «Subir estilo» saldría por un `throw` de aquí —antes de
    *  que haya promesa— y `paso(this.ir(…), …)` no podría encauzarlo, que es
@@ -1098,6 +1102,13 @@ export class TitleScreen {
       case "editor":
         return this.editorDePersonaje(destino);
     }
+    // EL `never` ES EL CANDADO, y hay que ponerlo porque el `async` se llevó el
+    // que había (TS2366): caerse por el final de una función `async` devuelve
+    // `Promise<undefined>`, que es un `Promise<void>` válido, así que un destino
+    // nuevo sin `case` compilaría y no haría nada. Aquí no compila. Va DESPUÉS
+    // del switch y no en un `default`, que mataría el estrechamiento.
+    const nunca: never = destino;
+    throw new Error(`destino del título no contemplado: ${JSON.stringify(nunca)}`);
   }
 
   /** Cablea «Crear mundo» y la pinta. Los colaboradores se construyen aquí, en
