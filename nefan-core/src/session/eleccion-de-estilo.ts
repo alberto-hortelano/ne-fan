@@ -9,8 +9,10 @@
  *       que el jugador acaba de crear si el que sugirió el motor no existe).
  *
  *  Hasta la PR 7 de #241 (2026-09-07) las contestaban dos criterios distintos y
- *  se sabía: `title-screen.ts:905-909` EXIGÍA compatibilidad al estilo del
- *  mundo (si el suyo no casaba, preseleccionaba otro y ni siquiera lo ofrecía,
+ *  se sabía: el desplegable de estilo del título EXIGÍA compatibilidad al
+ *  estilo del mundo —hoy `nefan-html/src/ui/titulo/selector-de-mundo.ts`,
+ *  desde la PR 5 de #346; se nombra el módulo y no la línea porque el número
+ *  caduca en cada corte— (si el suyo no casaba, preseleccionaba otro y ni siquiera lo ofrecía,
  *  y con cero compatibles bloqueaba el botón de continuar), mientras
  *  `bridge/handlers/session.ts:194-196` respetaba el `style_id` del mundo
  *  existiera o no en la lista de compatibles. Divergencia viva, anotada por la

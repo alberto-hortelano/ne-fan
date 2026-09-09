@@ -8,7 +8,9 @@
  *  para no subir 12 MB de base64 que van a volver en un 422.
  *
  *  Hasta la PR 7 de #241 (2026-09-07) esa comprobación estaba escrita DOS veces
- *  y no eran la misma: `title-screen.ts:1228-1268` miraba cuatro cosas (nombre
+ *  y no eran la misma: la pantalla de subir estilo del título —hoy
+ *  `nefan-html/src/ui/titulo/subir-estilo.ts`, desde la PR 2 de #346— miraba
+ *  cuatro cosas (nombre
  *  ≥ 2, alguna etiqueta, descripción salvo lámina, alguna imagen) con sus
  *  textos, y `ai_server/routers/styles.py:49-159` miraba ocho con los suyos y
  *  con sus números escritos a mano (60, 500, 300, 8, 12, 300, 60) más la lista

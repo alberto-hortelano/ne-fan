@@ -1,6 +1,7 @@
 /** La DESVIACIÓN que sostiene la PR 3 de #346: «Crear mundo» salió del título
  *  a `ui/titulo/crear-mundo.ts` y su navegación de vuelta dejó de ser una
- *  llamada a un método (`await this.renderWorldSelect(created.gameId)`) para
+ *  llamada al método del selector que vivía en la clase (el selector es hoy
+ *  `ui/titulo/selector-de-mundo.ts`, PR 5 de #346) para
  *  ser un callback (`await deps.ir({ a: "selector", preselect: created.gameId })`).
  *
  *  El plan §4 escribió ese callback como `ir(destino): void` con un `paso()`

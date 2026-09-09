@@ -5,7 +5,9 @@
  *  (`ui/titulo/subir-estilo.ts`) y la primera que estrena el callback
  *  `ir(destino)`: una hoja del título no puede llamar a otra —lo impide el
  *  candado `las-hojas-del-titulo-no-se-atan-entre-si`—, así que «Volver» ya no
- *  es `this.renderWorldSelect()` sino un callback que resuelve la raíz.
+ *  llama al método del selector que vivía en la clase (el selector es hoy
+ *  `ui/titulo/selector-de-mundo.ts`, PR 5 de #346) sino a un callback que
+ *  resuelve la raíz.
  *
  *  QUÉ MIDE, y por qué no lo mide nadie más. Las cinco PR que quedan mueven
  *  cinco pantallas más por el mismo camino, y el modo de fallo de un

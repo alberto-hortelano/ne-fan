@@ -4,7 +4,8 @@
  *  (`session/eleccion-de-estilo.ts`, `protocol/borrador-de-mundo.ts`) y las
  *  llaman las dos puntas.
  *
- *  Hasta esta PR eran DOS criterios y se sabía: `title-screen.ts:905-909`
+ *  Hasta esta PR eran DOS criterios y se sabía: el desplegable de estilo del
+ *  título (hoy `ui/titulo/selector-de-mundo.ts`, PR 5 de #346)
  *  EXIGÍA compatibilidad temática al estilo que declara el mundo —si no
  *  casaba ni lo ofrecía, ponía otro y con cero compatibles bloqueaba
  *  «Continuar»— mientras `bridge/handlers/session.ts:194-196` respetaba el
