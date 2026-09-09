@@ -2,7 +2,7 @@
  *
  *  `deleteSession` devolvía `res.ok` como booleano y el título lo TIRABA: un
  *  borrado rechazado por el bridge era un no-op mudo. El jugador pulsaba
- *  Borrar, la lista se repintaba igual —`renderHome` la reelee, así que la
+ *  Borrar, la lista se repintaba igual —el home la reelee, así que la
  *  tarjeta volvía al instante— y no había ni una línea que dijera por qué.
  *  Y el `ok:false` colapsaba además DOS causas que el almacén sí distingue:
  *  «no estaba» (ENOENT) y «no se pudo» (EACCES/EBUSY).

@@ -120,7 +120,7 @@ export default async function (ctx) {
   // NO CONCLUYENTE antes que verde: si el espía llegó tarde —después de que
   // volviera `listSessions`— el click habría registrado por la razón
   // equivocada y este guion no estaría probando nada. El status que pinta
-  // `renderHome` justo antes del `await` es la marca de agua de ese instante.
+  // el home justo antes del `await` es la marca de agua de ese instante.
   ctx.expect(
     "el click cae DENTRO de la ventana muerta (si no, el guion no prueba nada)",
     /^Cargando saves/.test(espiado.status ?? ""),

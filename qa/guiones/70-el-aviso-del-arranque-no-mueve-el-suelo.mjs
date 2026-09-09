@@ -5,10 +5,11 @@
  *  cueste al jugador ni el botón que estaba a punto de pulsar, ni la pantalla
  *  entera, ni la única frase que le dice qué pasó con sus partidas.
  *
- *  1 · **#250 otra vez, por otra puerta.** `renderHome` ordena su columna a
- *      propósito —«todo lo que puede cambiar DESPUÉS del primer pintado va
- *      POR DEBAJO del botón»— porque un panel que crecía movía «Nueva
- *      partida» bajo el cursor de quien lo estaba pulsando (+24 px medidos).
+ *  1 · **#250 otra vez, por otra puerta.** El home (`ui/titulo/home.ts`)
+ *      ordena su columna a propósito —«todo lo que puede cambiar DESPUÉS
+ *      del primer pintado va POR DEBAJO del botón»— porque un panel que
+ *      crecía movía «Nueva partida» bajo el cursor de quien lo estaba
+ *      pulsando (+24 px medidos).
  *      `#ts-error` está ENCIMA del botón y desde #306 es justo eso: un hueco
  *      que se rellena después, con un fallo que puede tardar lo que tarde la
  *      red — o llegar cinco segundos más tarde, cuando el socket reintenta.

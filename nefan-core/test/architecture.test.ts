@@ -360,8 +360,9 @@ describe("fronteras arquitectónicas", () => {
       checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
 
     // PR 1 (#508): las tres copias de «"" sigue a escenarios» tal como estaban
-    // en modos-de-graficos.ts:106, title-screen.ts:1624 y el bridge
-    // (handlers/session.ts:370) — el bridge entra en `files` porque el `why`
+    // en modos-de-graficos.ts:106, el badge del save del título (hoy
+    // `modoDelSave` en ui/titulo/home.ts, movido por la PR 4 de #346) y el
+    // bridge (handlers/session.ts:370) — el bridge entra en `files` porque el `why`
     // nombra esa copia (QA H3): prometer que la vigila y no verla es peor que
     // no prometerlo.
     assert.deepEqual(
