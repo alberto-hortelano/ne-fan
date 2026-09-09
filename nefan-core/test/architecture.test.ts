@@ -1390,6 +1390,141 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // #346, PR 1. La regla nace VERDE —hoy `ui/titulo/` solo tiene `atomos.ts`,
+  // que no importa a nadie de dentro— y una regla verde no demuestra nada por
+  // sí sola: se le enseña al motor lo que existe para cortar.
+  //
+  // ESTE `it` PASA POR LA CADENA REAL, y no es un detalle: construye los
+  // imports con `importsOf` (o sea `ts.preProcessFile` + el resolutor de rutas)
+  // en vez de escribirlos a mano. La primera versión los fabricaba, y con eso
+  // (a) su comentario PROMETÍA que `preProcessFile` reporta los `import type`
+  // sin demostrarlo nunca —si mañana dejara de reportarlos, el test seguiría
+  // verde y la puerta quedaría abierta (QA-1 H2)— y (b) no podía ver las
+  // cuatro puertas de atrás que QA midió, porque todas se distinguen en el
+  // RESOLUTOR y no en el texto del especificador (QA-1 H1). Fabricar la
+  // entrada de un candado es medir el candado sin la mitad que lo hace cierto.
+  //
+  // Los casos son los quince que QA recorrió, en las dos direcciones.
+  it("[error] las-hojas-del-titulo-no-se-atan-entre-si: los diez caminos hasta otra hoja saltan por el RESUELTO; atomos y los vecinos de ui/ no", () => {
+    // `importsOf` es el colector de verdad: `ts.preProcessFile` para encontrar
+    // los imports (incluidos los `import type`, los dinámicos, los re-export y
+    // los `require`) y el resolutor para saber a qué fichero del repo apuntan.
+    // El fichero destino NO tiene que existir: un import roto conserva su
+    // `resolved`, y atarse a una hoja que aún no está escrita ata igual.
+    const hoja = (path: string, text: string): SourceFile => ({ path, text, imports: importsOf(path, text) });
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter(
+        (v) => v.ruleId === "las-hojas-del-titulo-no-se-atan-entre-si",
+      );
+
+    const rojos = deLaRegla([
+      // El anillo por el camino corto: el home llamando al selector.
+      hoja("nefan-html/src/ui/titulo/home.ts", `import { X } from "./selector-de-mundo.js";\n`),
+      // Un tipo compartido entre dos hojas ata lo mismo: `import type` NO es
+      // una excepción, y el colector lo ve. El sitio de un tipo compartido es
+      // `atomos.ts`.
+      hoja("nefan-html/src/ui/titulo/plan-de-estilo.ts", `import type { X } from "./subir-estilo.js";\n`),
+      // La vuelta corta: el mismo import escrito desde `ui/`.
+      hoja("nefan-html/src/ui/titulo/selector-de-mundo.ts", `import { X } from "../titulo/home.js";\n`),
+      // Un subdirectorio dentro de `titulo/` no abre una vía nueva…
+      hoja("nefan-html/src/ui/titulo/editor-de-personaje.ts", `import { X } from "./sub/hondo.js";\n`),
+      // …y tampoco la abre en la otra dirección: el hijo que sube a su padre.
+      // Deja de ser teórico en la PR 5, donde el selector roza el tope de 450
+      // y podría partirse.
+      hoja("nefan-html/src/ui/titulo/sub/hondo.ts", `import { X } from "../home.js";\n`),
+      // Las tres vueltas largas que se colaban cuando la regla miraba el
+      // especificador escrito: por `ui/`, por la raíz del paquete, y por un
+      // alias del core que da media vuelta y entra por la puerta de al lado.
+      hoja("nefan-html/src/ui/titulo/crear-mundo.ts", `import { X } from "../../ui/titulo/home.js";\n`),
+      hoja("nefan-html/src/ui/titulo/subir-estilo.ts", `import { X } from "../../../src/ui/titulo/home.js";\n`),
+      hoja("nefan-html/src/ui/titulo/avisos.ts", `import { X } from "@nefan-core/../nefan-html/src/ui/titulo/home.js";\n`),
+      // Las tres formas de importar que no se escriben `import … from`.
+      hoja(
+        "nefan-html/src/ui/titulo/chasis.ts",
+        `const a = await import("./home.js");\n` +
+          `export * from "./avisos.js";\n` +
+          `export { X } from "./crear-mundo.js";\n` +
+          `const b = require("./subir-estilo.js");\n`,
+      ),
+      // La quinta puerta, la que cierra el anillo por arriba: una hoja que
+      // importa al ENRUTADOR para tipar a su llamador. Lo que necesita de él
+      // son los tipos compartidos, y esos están en `atomos.ts`.
+      hoja("nefan-html/src/ui/titulo/editor-de-personaje.ts", `import type { TitleScreen } from "../title-screen.js";\n`),
+      // Y los átomos tampoco pueden atarse a una hoja: son `files` de la regla
+      // como cualquier otro, y por eso pueden ser la excepción de todos.
+      hoja("nefan-html/src/ui/titulo/atomos.ts", `import { X } from "./home.js";\n`),
+    ]);
+
+    assert.deepEqual(
+      rojos.map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/ui/titulo/atomos.ts:1",
+        "nefan-html/src/ui/titulo/avisos.ts:1",
+        "nefan-html/src/ui/titulo/chasis.ts:1",
+        "nefan-html/src/ui/titulo/chasis.ts:2",
+        "nefan-html/src/ui/titulo/chasis.ts:3",
+        "nefan-html/src/ui/titulo/chasis.ts:4",
+        "nefan-html/src/ui/titulo/crear-mundo.ts:1",
+        "nefan-html/src/ui/titulo/editor-de-personaje.ts:1",
+        "nefan-html/src/ui/titulo/editor-de-personaje.ts:1",
+        "nefan-html/src/ui/titulo/home.ts:1",
+        "nefan-html/src/ui/titulo/plan-de-estilo.ts:1",
+        "nefan-html/src/ui/titulo/selector-de-mundo.ts:1",
+        "nefan-html/src/ui/titulo/sub/hondo.ts:1",
+        "nefan-html/src/ui/titulo/subir-estilo.ts:1",
+      ],
+      "los diez caminos hasta otra hoja (y el que va al enrutador) tienen que saltar",
+    );
+
+    // El mensaje dice las DOS cosas: lo que el autor escribió y dónde aterriza.
+    // Sin la segunda mitad, «import prohibido: "../../../src/ui/titulo/home.js"»
+    // no se parece a nada de lo que la regla prohíbe.
+    //
+    // La EXTENSIÓN del resuelto se afirma como `.ts|.js` a propósito, y no es
+    // laxitud: el resolutor devuelve `home.ts` cuando esa hoja ya existe en
+    // disco y la ruta base `home.js` cuando todavía no (import roto, que
+    // conserva su `resolved`). Las siete hojas van naciendo entre la PR 2 y la
+    // PR 6, así que clavar una de las dos extensiones sería poner una mina que
+    // estalla en la PR que cree el fichero — pasó en esta misma vuelta al
+    // probar el candado con hojas de verdad en disco. Que la regla no distinga
+    // los dos casos es justamente lo que se quiere: atarse a una hoja que aún
+    // no está escrita ata igual.
+    assert.match(
+      rojos.find((v) => v.path === "nefan-html/src/ui/titulo/subir-estilo.ts")?.detail ?? "",
+      /^import prohibido: "\.\.\/\.\.\/\.\.\/src\/ui\/titulo\/home\.js" → nefan-html\/src\/ui\/titulo\/home\.(?:ts|js)$/,
+    );
+
+    // Lo legítimo, callado: los átomos (la única excepción), desde una hoja y
+    // desde un subdirectorio; los vecinos de `ui/` que NO son hojas del
+    // título; el core por alias; el resto del cliente por ruta relativa que
+    // SALE de `titulo/`; y un paquete, que no vive en el repo y por tanto no
+    // puede aterrizar en ningún sitio prohibido.
+    assert.deepEqual(
+      deLaRegla([
+        hoja(
+          "nefan-html/src/ui/titulo/selector-de-mundo.ts",
+          `import { escapeHtml } from "./atomos.js";\n` +
+            `import { paso } from "../async-ui.js";\n` +
+            `import { errors } from "../error-log.js";\n` +
+            `import { StyleApplyController } from "../style-apply.js";\n` +
+            `import { eleccionDeEstilo } from "@nefan-core/src/session/eleccion-de-estilo.js";\n` +
+            `import type { GameInfo } from "../../net/narrative-client.js";\n` +
+            `import * as THREE from "three";\n`,
+        ),
+        hoja("nefan-html/src/ui/titulo/sub/hondo.ts", `import { escapeHtml } from "../atomos.js";\n`),
+        // Y el enrutador, que está FUERA de `titulo/` y por eso puede
+        // importarlas todas: es el único que sabe navegar.
+        hoja(
+          "nefan-html/src/ui/title-screen.ts",
+          `import { escapeHtml } from "./titulo/atomos.js";\n` +
+            `import { pintarHome } from "./titulo/home.js";\n` +
+            `import { pintarSelectorDeMundo } from "./titulo/selector-de-mundo.js";\n`,
+        ),
+      ]),
+      [],
+    );
+  });
+
   // #411: la regla que hasta aquí decía «cliente 2D» y toleraba `max: 2` sin
   // nombrar cuáles eran las dos. Ahora las nombra como exenciones CON
   // `funcion` y es error: una tercera puerta en cualquier otro fichero del

@@ -12,7 +12,7 @@
  * The screen is purely a UI; the caller (main.ts) decides what to do with the
  * resolved choice (call narrativeClient.startSession or .resumeSession).
  */
-import type { NarrativeClient, GameInfo, StyleInfo } from "../net/narrative-client.js";
+import type { NarrativeClient, GameInfo } from "../net/narrative-client.js";
 import type {
   SessionMetadata,
 } from "@nefan-core/src/narrative/types.js";
@@ -35,7 +35,6 @@ import {
   modelosCompletos,
   type SpriteCensusResponse,
 } from "@nefan-core/src/contracts/sprite-census.js";
-import { serviceUrl } from "../net/service-urls.js";
 import { type AvisoAlJugador, encajarAviso, errors } from "./error-log.js";
 import { paso } from "./async-ui.js";
 import { StyleApplyController, type StyleApplyPlan } from "./style-apply.js";
@@ -45,31 +44,30 @@ import {
   RENDER_MODE_ICONS,
   RENDER_MODE_LABELS,
 } from "./mode-labels.js";
+import {
+  AI_SERVER_HTTP,
+  ASSET_STORE_URL,
+  BADGE_CSS,
+  BTN_PRIMARY_CSS,
+  BTN_SECONDARY_CSS,
+  BTN_SMALL_DANGER_CSS,
+  BTN_SMALL_PRIMARY_CSS,
+  INPUT_CSS,
+  SELECT_CSS,
+  coverHtml,
+  escapeAttr,
+  escapeHtml,
+  marcadorHtml,
+  type TitleAction,
+  worldCardHtml,
+} from "./titulo/atomos.js";
 
-export type TitleAction =
-  | { kind: "resume"; sessionId: string }
-  | {
-      kind: "new_game";
-      gameId: string;
-      /** Estilo visual elegido ("" = el por defecto del juego). */
-      styleId: string;
-      /** Modo de render, congelado en la sesión: imagen IA o maqueta 3D clay
-       *  (id interno "vector", heredado del compositor SVG — congelado en
-       *  saves y contratos, NO renombrar). */
-      renderMode: "image" | "vector";
-      /** Modo de imagen de los PERSONAJES (skins IA vs base y_bot),
-       *  independiente de los escenarios. */
-      characterMode: "image" | "vector";
-      appearance: { model_id: string; skin_path: string };
-    };
-
-/** asset-store — sirve las covers de los estilos como estáticos, con o sin
- *  ai_server (movido desde el State API en F2; preset 4 arranca el store). */
-const ASSET_STORE_URL = serviceUrl("asset-store");
-/** remote-gen (proceso propio desde F4) — subida de estilos y generación de las
- *  categorías que falten (Meshy). Sin él, "Subir estilo" falla con error
- *  visible. */
-const AI_SERVER_HTTP = serviceUrl("remote-gen");
+/** Lo que resuelve `show()`. Vive en `titulo/atomos.ts` desde el primer corte
+ *  de #346 —es vocabulario del título y lo van a leer varias de sus pantallas,
+ *  no solo esta clase— y se re-exporta aquí para que su único consumidor de
+ *  fuera (`main.ts:32`) lo siga importando del título, sin tener que saber cómo
+ *  está troceado por dentro. */
+export type { TitleAction };
 
 /** Cómo se le llama a cada carpeta del pack en el desplegable de la subida, y
  *  en qué orden se ofrecen (lo primero que sube un jugador es una cara: eso sí
@@ -1540,96 +1538,11 @@ export class TitleScreen {
   }
 }
 
-/** Chips de estado de generación de la tarjeta: si el mundo está generado y
- *  qué estilos aplicados — "los generados" visibles de un vistazo. */
-function generationChipsHtml(g: GameInfo): string {
-  const STATUS_CHIP: Record<string, { icon: string; color: string }> = {
-    ready: { icon: "✓", color: "#4a4" },
-    stale: { icon: "⟳", color: "#da6" },
-    missing: { icon: "—", color: "#555" },
-  };
-  const chip = (label: string, status: string): string => {
-    const s = STATUS_CHIP[status] ?? STATUS_CHIP.missing;
-    return `<span style="${BADGE_CSS};color:${s.color}">${escapeHtml(label)} ${s.icon}</span>`;
-  };
-  const chips = [
-    chip("Mundo", g.generation ?? "missing"),
-    ...(g.styles_applied ?? []).map((a) => chip(`🎨 ${a.style_id}`, a.status)),
-  ];
-  return `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${chips.join(" ")}</div>`;
-}
-
-/** Caja de la portada. 3:2 — la MISMA proporción a la que se capturan
- *  (`qa/capturar-portadas.mjs`, viewport 1536×1024), así que `object-fit:
- *  cover` no recorta nada. A 96×64 una captura de juego era un sello de
- *  correos: la portada existe para enseñar qué se va a ver, y a ese tamaño
- *  no enseñaba nada. */
-const COVER_W = 192;
-const COVER_H = 128;
-const COVER_BOX = `width:${COVER_W}px;height:${COVER_H}px;flex:none;border:1px solid #333`;
-
-/** La portada NO elige entre imagen y marcador (#218): el marcador —el nombre
- *  del ESTILO— está SIEMPRE debajo y la imagen se pinta encima cuando hay
- *  `cover_url`. Antes eran dos ramas excluyentes, así que una portada
- *  declarada que no llegaba (el asset-store caído, un pack a medias, el fake
- *  del bench sin esa ruta) dejaba el icono de imagen rota del navegador: lo
- *  primero que ve quien abre el juego, y sin rastro en ningún sitio. Con el
- *  marcador debajo, quitar el `<img>` basta para degradar a algo legible —lo
- *  hace `vigilarPortadas`, que además deja la entrada en el error-log. */
-const COVER_MARK_CSS =
-  "position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;text-align:center;padding:4px";
-
-/** El marcador que hay debajo de toda portada, en sus DOS estados, y juntos a
- *  propósito: son lo mismo visto por quien mira la tarjeta, y hasta ahora se
- *  veían IGUAL.
- *
- *  - `hueco`: el pack no declara portada (`cover_url` ausente — `loader.ts`
- *    solo la pone si el fichero existe). Nada ha fallado: es un mundo sin arte
- *    de portada todavía, y se pinta apagado y en silencio.
- *  - `fallo`: la portada estaba declarada y NO llegó (asset-store caído, pack
- *    a medias, ruta que el bench no sirve). Eso es una avería y se dice, con
- *    el mismo texto que el registro de errores guarda entero.
- *
- *  Sin la diferencia, un asset-store caído y un pack sin arte eran el mismo
- *  cuadro gris y lo único que los separaba era una entrada del error-log que
- *  el título esconde (#218; hallazgo C2/H2 de QA). */
-function marcadorHtml(nombre: string, fallo: boolean): string {
-  const fondo = fallo
-    ? "background:linear-gradient(135deg,#2c211d,#1a1512);border:1px solid #6b4636"
-    : "background:linear-gradient(135deg,#23202b,#161419)";
-  const aviso = fallo
-    ? `<div data-cover-aviso style="color:#c9825e;font-size:10px;letter-spacing:0.3px">⚠ portada no disponible</div>`
-    : "";
-  return `<div data-cover-marker style="${COVER_MARK_CSS};${fondo};color:${fallo ? "#9a8880" : "#555"}"><div data-cover-nombre>${escapeHtml(nombre)}</div>${aviso}</div>`;
-}
-
-function coverHtml(g: GameInfo, style: StyleInfo | undefined): string {
-  const marcador = marcadorHtml(style?.name ?? g.style_id, false);
-  const img = style?.cover_url
-    ? `<img data-cover-img="${escapeAttr(style.style_id)}" alt="${escapeAttr(style.name)}" src="${escapeAttr(ASSET_STORE_URL + style.cover_url)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">`
-    : "";
-  return `<div data-cover-for="${escapeAttr(g.game_id)}" style="${COVER_BOX};overflow:hidden;position:relative">${marcador}${img}</div>`;
-}
-
-function worldCardHtml(g: GameInfo, style: StyleInfo | undefined): string {
-  return `
-    <div data-game-id="${escapeAttr(g.game_id)}" style="display:flex;gap:12px;padding:10px;background:#181820;border:2px solid #2a2a30;cursor:pointer;border-radius:4px">
-      ${coverHtml(g, style)}
-      <div style="flex:1;min-width:0">
-        <div style="color:#dcb;font-size:14px;margin-bottom:3px">${escapeHtml(g.title)} <span data-style-label-for="${escapeAttr(g.game_id)}" style="color:#666;font-size:11px;font-weight:normal">· Estilo: ${escapeHtml(style?.name ?? g.style_id)}</span></div>
-        <div style="color:#999;font-size:11px;line-height:1.45">${escapeHtml(g.description)}</div>
-        ${generationChipsHtml(g)}
-      </div>
-    </div>
-  `;
-}
-
 /** Modo de una faceta del save; la regla (personajes sin campo sigue a escenarios) es de core. */
 function modoDelSave(s: SessionMetadata, facet: "scenes" | "characters"): Modo {
   const renderMode = normalizarModo(s.render_mode);
   return facet === "scenes" ? renderMode : modoEfectivoDePersonajes({ renderMode, characterMode: normalizarModo(s.character_mode) });
 }
-const BADGE_CSS = "display:inline-block;padding:1px 7px;border-radius:8px;font-size:10px;background:#23222c;border:1px solid #3a3846;color:#a99";
 /** Badge de modo CLICABLE (selector antes de cargar): misma silueta que el
  *  badge informativo, con cursor y hover del lado de button. */
 const MODE_BADGE_CSS = `${BADGE_CSS};cursor:pointer;font-family:inherit`;
@@ -1699,10 +1612,6 @@ function formatDate(iso: string): string {
   }
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
-}
-
 /** Nombre legible de un modelo del censo, derivado del id (`y_bot` → «Y bot»):
  *  pintar es del cliente, y una tabla id→nombre sería otra lista a mano — la
  *  enfermedad que #216 mató. */
@@ -1710,29 +1619,3 @@ function nombreDeModelo(id: string): string {
   const conEspacios = id.replace(/_/g, " ");
   return conEspacios.charAt(0).toUpperCase() + conEspacios.slice(1);
 }
-
-function escapeAttr(s: string): string {
-  return escapeHtml(s);
-}
-
-const BTN_PRIMARY_CSS = [
-  "background:#da6","color:#111","border:none","padding:10px 22px",
-  "font-family:inherit","font-size:14px","cursor:pointer","border-radius:3px",
-].join(";");
-const BTN_SECONDARY_CSS = [
-  "background:transparent","color:#999","border:1px solid #444","padding:10px 22px",
-  "font-family:inherit","font-size:14px","cursor:pointer","border-radius:3px",
-].join(";");
-const BTN_SMALL_PRIMARY_CSS = [
-  "background:#3a6","color:#fff","border:none","padding:5px 12px",
-  "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
-].join(";");
-const BTN_SMALL_DANGER_CSS = [
-  "background:transparent","color:#a55","border:1px solid #533","padding:5px 12px",
-  "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
-].join(";");
-const SELECT_CSS = [
-  "width:100%","padding:8px 10px","background:#1a1a22","color:#ddd",
-  "border:1px solid #444","font-family:inherit","font-size:13px",
-].join(";");
-const INPUT_CSS = SELECT_CSS;
