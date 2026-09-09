@@ -132,3 +132,31 @@ Ya estaba decidido el 07-09 y se confirma: **#513 (style-apply) arranca cuando #
 - **Trampa medida para la PR 6**: los guiones 19, 20 y 34 leen
   `getElementById("title-screen").firstElementChild`. El chasis debe seguir dejando `content` como
   primer hijo.
+
+### Decisión de programa tomada en el corte 4 (2026-09-09): qué NO va a `atomos.ts`
+
+El criterio del arquitecto era «a `atomos.ts` lo que tiene **≥ 2 dueños**; lo de dueño único viaja
+con su pantalla». El corte 4 encontró el caso que ese enunciado no cubría y hay que fijarlo **antes
+del corte 5**, que es la otra dueña: los cuatro rótulos del modo de gráficos (`RENDER_MODE_LABELS`,
+`CHAR_MODE_LABELS`, `RENDER_MODE_ICONS`, `MODE_COST_LABELS`) tienen dos dueños dentro del título —el
+home y el selector— pero **ya viven fuera de `title-screen.ts`**, en `nefan-html/src/ui/mode-labels.ts`,
+y tienen un **tercer dueño fuera del título**: `ui/graphics-mode.ts`, el chip de gráficos del HUD en
+partida.
+
+**Se quedan donde están**, y el criterio se enuncia entero: *a `atomos.ts` va lo que tiene ≥ 2 dueños
+**y hoy vive dentro de `title-screen.ts`***. Un símbolo que ya está en un módulo compartido de `ui/`
+no se toca. Las dos razones son de fondo, no de comodidad:
+
+1. `mode-labels.ts` existe para ser **fuente única del título y del chip del HUD** — los dos controles
+   escriben el MISMO campo del save y deben leerse como la misma cosa. Llevarse los rótulos a
+   `atomos.ts` deja al chip leyendo de otro sitio: exactamente la divergencia que el módulo vino a
+   cerrar.
+2. Si el chip los siguiera hasta `atomos.ts`, `ui/graphics-mode.ts` pasaría a importar `ui/titulo/`, o
+   sea la **dirección inversa** del candado nuevo — hoy medida en 0: el único importador de
+   `ui/titulo/*` es `title-screen.ts`, y esa es la propiedad que hace barato ampliar la regla el día
+   que haga falta.
+
+Queda anotado, con su medida y sin decidirse aquí: `BADGE_CSS`, `BTN_SMALL_PRIMARY_CSS` y
+`BTN_SMALL_DANGER_CSS` pasaron a ser de **un solo dueño** (el home) al ejecutarse el corte 4, y siguen
+en `atomos.ts` por la excepción que la PR 1 declaró y QA-1 verificó. No se re-litiga a mitad de
+programa: revisarlo es trabajo del cierre, cuando las siete hojas estén en su sitio.
