@@ -28,7 +28,12 @@
  *  Los mensajes no le hablan a un humano sino al motor, así que su TEXTO y su
  *  ORDEN son contrato: los congela `test/scene-validate-golden.test.ts`. */
 
-import { expandScenePrimitives, hasUnexpandedPrimitives } from "./scene-expand.js";
+import {
+  celdaFueraDelAlfabeto,
+  expandScenePrimitives,
+  hasUnexpandedPrimitives,
+  motivoDeCharFueraDelAlfabeto,
+} from "./scene-expand.js";
 import { DERIVED_ENT_PREFIX } from "./blueprint/derive.js";
 import { MAX_GROUND_FEATURES } from "./blueprint/ground.js";
 import { planCollisionGrid } from "./blueprint/plan-collision.js";
@@ -349,6 +354,25 @@ export function openTile(rawScene: Record<string, unknown>): OpenTileResult {
     return {
       ok: false,
       rejected: { ok: false, errors: [(err as Error).message], warnings: [], stats: emptyStats(dims.cols, dims.rows) },
+    };
+  }
+  // El ALFABETO del grid (#464): el hueco que quedaba entre las filas y el
+  // bioma. Un char que el expander no escribe nunca no es «desconocido», es
+  // suelo transitable y sin pintar —`DEFAULT_SOLID_CHARS` solo bloquea el agua
+  // y el render sale de `ground`—, así que un tile partido por una pared de
+  // chars ajenos salía `ok:true` con `reachable == walkable` y el jugador la
+  // cruzaba. Va DESPUÉS del bioma porque el alfabeto lo incluye: con el bioma
+  // roto, el motivo accionable es el bioma.
+  const malaCelda = celdaFueraDelAlfabeto(terrain as string[]);
+  if (malaCelda) {
+    return {
+      ok: false,
+      rejected: {
+        ok: false,
+        errors: [`${motivoDeCharFueraDelAlfabeto(malaCelda)} — ${salida}`],
+        warnings: [],
+        stats: emptyStats(dims.cols, dims.rows),
+      },
     };
   }
 

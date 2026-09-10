@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { respuestaAlFalloDeHandler, routeMessage } from "../bridge/router.js";
+import { respuestaAlFalloDeHandler } from "../bridge/router.js";
 import type {
   ClientMessage,
   ServerMessage,
@@ -12,25 +12,26 @@ import type {
 import { join } from "node:path";
 
 import {
+  REAL_GAMES_DIR,
+  REAL_STYLES_DIR,
   capturarLogDelBridge,
   makeCtx,
   makeSocket,
-  REAL_GAMES_DIR,
-  REAL_STYLES_DIR,
+  porElBorde,
 } from "./helpers.js";
 
 describe("bridge routing básico", () => {
   it("ping → pong", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "ping" }, socket, ctx);
+    await porElBorde({ type: "ping" }, socket, ctx);
     assert.deepEqual(sent, [{ type: "pong" }]);
   });
 
   it("list_games devuelve los juegos del directorio real", async () => {
     const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "list_games", requestId: "r1" }, socket, ctx);
+    await porElBorde({ type: "list_games", requestId: "r1" }, socket, ctx);
     assert.equal(sent.length, 1);
     const msg = sent[0] as Extract<ServerMessage, { type: "games_listed" }>;
     assert.equal(msg.requestId, "r1");
@@ -52,7 +53,7 @@ describe("bridge routing básico", () => {
     const { socket, sent } = makeSocket();
     const log = capturarLogDelBridge();
     try {
-      await routeMessage({ type: "list_games", requestId: "r1" }, socket, ctx);
+      await porElBorde({ type: "list_games", requestId: "r1" }, socket, ctx);
     } finally {
       log.soltar();
     }
@@ -71,7 +72,7 @@ describe("bridge routing básico", () => {
   it("load_room resetea al player y proyecta los enemigos", async () => {
     const { ctx, store } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       {
         type: "load_room",
         roomId: "crypt_001",
@@ -82,7 +83,7 @@ describe("bridge routing básico", () => {
             health: 60,
             maxHealth: 60,
             weaponId: "short_sword",
-            personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.4 },
+            personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.4, combat_range: 4 },
           },
         ],
       },
@@ -100,7 +101,7 @@ describe("bridge routing básico", () => {
   it("respawn responde con state_update y HP restaurado", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "respawn" }, socket, ctx);
+    await porElBorde({ type: "respawn" }, socket, ctx);
     const update = sent[0] as StateUpdateMessage;
     assert.equal(update.type, "state_update");
     assert.equal(update.playerHp, 100);
@@ -119,7 +120,7 @@ describe("bridge routing básico", () => {
     const { socket, sent } = makeSocket();
     const log = capturarLogDelBridge();
     try {
-      await routeMessage({ type: "list_sessions", requestId: "r9" }, socket, ctx);
+      await porElBorde({ type: "list_sessions", requestId: "r9" }, socket, ctx);
     } finally {
       log.soltar();
     }
@@ -148,7 +149,7 @@ describe("bridge routing básico", () => {
     const { socket } = makeSocket();
     const log = capturarLogDelBridge();
     try {
-      await routeMessage(
+      await porElBorde(
         { type: "interact_entity", entityId: "npc_1", entityName: "Guardia" },
         socket,
         ctx,
@@ -177,7 +178,7 @@ describe("bridge routing básico", () => {
   it("input produce un state_update con eventos del tick", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       {
         type: "input",
         delta: 0.016,
@@ -222,7 +223,7 @@ describe("bridge routing básico", () => {
             health: 20,
             maxHealth: 20,
             weaponId: "unarmed",
-            personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.4 },
+            personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.4, combat_range: 4 },
           },
         ],
       },
@@ -239,7 +240,7 @@ describe("bridge routing básico", () => {
         store.dispatch("weapon_changed", { weapon_id: "war_hammer" });
         (store.state.player as { max_hp: number }).max_hp = 77;
         const { socket, sent } = makeSocket();
-        await routeMessage(msg, socket, ctx);
+        await porElBorde(msg, socket, ctx);
         const update = sent.find((m) => m.type === "state_update") as StateUpdateMessage;
         assert.ok(update, "el emisor tiene que contestar con un state_update");
         assert.equal(update.playerMaxHp, 77);
@@ -254,10 +255,10 @@ describe("bridge routing básico", () => {
       // este es el test que lo demuestra sin esperar a ese plugin.
       const { ctx, store } = makeCtx();
       const { socket, sent } = makeSocket();
-      await routeMessage(mensajes.input, socket, ctx);
+      await porElBorde(mensajes.input, socket, ctx);
       assert.equal((sent[0] as StateUpdateMessage).playerWeaponId, "short_sword");
       store.dispatch("weapon_changed", { weapon_id: "war_hammer" });
-      await routeMessage(mensajes.input, socket, ctx);
+      await porElBorde(mensajes.input, socket, ctx);
       assert.equal((sent[1] as StateUpdateMessage).playerWeaponId, "war_hammer");
     });
 
@@ -267,7 +268,7 @@ describe("bridge routing básico", () => {
       const { ctx, store } = makeCtx();
       (store.state.player as { max_hp: number }).max_hp = 0;
       const { socket, sent } = makeSocket();
-      await routeMessage(mensajes.respawn, socket, ctx);
+      await porElBorde(mensajes.respawn, socket, ctx);
       assert.equal((sent[0] as StateUpdateMessage).playerMaxHp, 100);
     });
   });

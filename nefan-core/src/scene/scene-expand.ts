@@ -26,9 +26,61 @@
  *  que corrija; si llega hasta el bridge, el catch existente la difunde como
  *  `narrative_status: error`. */
 
-import { TILE_CELLS, TILE_MPC, resolveBiome, tileCoordDe } from "./tile.js";
+import { BIOME_CATALOG, TILE_CELLS, TILE_MPC, resolveBiome, tileCoordDe } from "./tile.js";
 import { parseGround } from "./blueprint/ground.js";
 import { shapeContains, GROUND_WATER_CHAR } from "./blueprint/ground-collision.js";
+
+/** Los chars a los que se rasteriza cada rasgo de `ground`. El del agua no
+ *  está aquí sino en `ground-collision.ts`, porque allí además BLOQUEA
+ *  (`DEFAULT_SOLID_CHARS`) y el char es el mismo hecho contado dos veces. */
+export const GROUND_PATH_CHAR = "_";
+export const GROUND_DECK_CHAR = "b";
+
+/** EL ALFABETO CERRADO del grid de terreno: todo lo que este expander —el
+ *  ÚNICO productor del grid— puede escribir en una celda. Son los chars base
+ *  del catálogo de biomas más los tres que rasteriza `ground`.
+ *
+ *  Existe porque el grid VIAJA (save, snapshot, `scenes_loaded`) y vuelve por
+ *  puertas que no lo sintetizaron. Un char que nadie declara no es un char
+ *  desconocido: es SUELO TRANSITABLE y SIN PINTAR, porque `DEFAULT_SOLID_CHARS`
+ *  solo bloquea el agua y el cliente pinta desde `ground` (#464 lo midió: una
+ *  fila de 128 chars ajenos partiendo el tile pasaba el zod, salía `ok:true` de
+ *  `validateScene` con `reachable == walkable`, y el jugador la cruzaba). El
+ *  `S` de los grids de COLISIÓN (`IMAGE_SOLID_CHAR`) NO entra: esos son otros
+ *  grids —los que derivan `planCollisionGrid` y `groundCollisionGrid`—, y
+ *  ningún camino los escribe en `scene.terrain`. Meterlo por si acaso sería
+ *  abrirle la puerta al único char ajeno que además MIENTE sobre lo que
+ *  bloquea. */
+export const TERRAIN_ALPHABET: readonly string[] = [
+  ...new Set([...Object.values(BIOME_CATALOG), GROUND_PATH_CHAR, GROUND_WATER_CHAR, GROUND_DECK_CHAR]),
+];
+
+/** La PRIMERA celda del grid cuyo char no está en el alfabeto, o `null` si el
+ *  grid entero cabe en él. Devuelve la celda además del char porque el motivo
+ *  tiene que ser accionable sobre 16.384 celdas. Recorre en orden de lectura
+ *  (fila, columna): con varias celdas malas se nombra siempre la misma. */
+export function celdaFueraDelAlfabeto(
+  terrain: readonly string[],
+): { char: string; col: number; row: number } | null {
+  const alfabeto = new Set(TERRAIN_ALPHABET);
+  for (let r = 0; r < terrain.length; r++) {
+    const fila = terrain[r];
+    for (let c = 0; c < fila.length; c++) {
+      if (!alfabeto.has(fila[c])) return { char: fila[c], col: c, row: r };
+    }
+  }
+  return null;
+}
+
+/** El motivo con el que los dos gates rebotan esa celda — escrito UNA vez para
+ *  que el zod de la población cargada y `validateScene` digan lo mismo. */
+export function motivoDeCharFueraDelAlfabeto(mala: { char: string; col: number; row: number }): string {
+  return (
+    `terrain[${mala.row}][${mala.col}] trae el char ${JSON.stringify(mala.char)}, que no está en el ` +
+    `alfabeto del grid (${TERRAIN_ALPHABET.join(" ")}): un char que nadie declara no se pinta y no ` +
+    `bloquea, así que el jugador lo cruza como si fuera suelo`
+  );
+}
 
 /** ¿Tiene la escena primitivas pendientes de expandir? Todo lo que no lleve
  *  la marca: el fill del bioma es obligatorio aunque no traiga ninguna otra
@@ -61,7 +113,7 @@ function rasterizePath(grid: string[][], points: [number, number][], width: numb
         const qx = x0 + t * dx;
         const qy = y0 + t * dy;
         const d2 = (px - qx) * (px - qx) + (py - qy) * (py - qy);
-        if (d2 <= radius * radius) grid[r][c] = "_";
+        if (d2 <= radius * radius) grid[r][c] = GROUND_PATH_CHAR;
       }
     }
   }
@@ -110,7 +162,7 @@ function rasterizeGroundToGrid(rawGround: unknown, grid: string[][]): void {
   for (const f of parsed.features) {
     if (f.kind !== "deck") continue;
     for (let r = 0; r < TILE_CELLS; r++) for (let c = 0; c < TILE_CELLS; c++) {
-      if (shapeContains(f, c + 0.5, r + 0.5)) grid[r][c] = "b";
+      if (shapeContains(f, c + 0.5, r + 0.5)) grid[r][c] = GROUND_DECK_CHAR;
     }
   }
 }

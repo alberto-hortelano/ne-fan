@@ -28,10 +28,25 @@ const Vec3Schema = z.object({
   z: z.number(),
 });
 
-/** La personalidad no tiene schema propio: aquí solo declara su TIPO (el
- *  espejo del contrato, que es lo que sujeta la guardia de deriva de abajo).
- *  Quién decide si sirve es `parseHostileCombat` en el refinamiento del bloque,
- *  UNA vez y en el orden del parser. */
+/** LOS CUATRO CAMPOS DEL BLOQUE `combat` SOLO DECLARAN SU TIPO AQUÍ; quién
+ *  decide si sirven es `parseHostileCombat`, UNA vez y en el orden del parser.
+ *
+ *  `z.custom<T>()` acepta cualquier cosa en runtime y sigue infiriendo `T`, así
+ *  que la guardia de deriva de `message-schema.test.ts` (que fuerza a `tsc` a
+ *  romper si este zod y el union TS se separan) sigue sujetándolos.
+ *
+ *  Por qué, y es lo que arregla #530-p3: un `z.number()` en `health` rechaza el
+ *  frame ANTES del refinamiento —zod no llega al `superRefine` si el objeto ya
+ *  falló—, así que un error de TIPO daba el mensaje de zod («Expected number,
+ *  received string») donde el cliente daba el del parser («combat.health
+ *  inválido ("x")»). Medido por QA en la PR 6 de #241: en 11 de 49 casos el
+ *  motivo difería entre las dos puertas, todos de tipo o de ausencia; en los 38
+ *  de VALOR era idéntico. «Mismo criterio, mismo desenlace» no puede depender
+ *  de si el error es de tipo o de valor. Hoy los cuatro cruzan el zod y los
+ *  juzga el parser, que es el que sabe decirlo como lo dice el cliente.
+ *
+ *  `id` y `position` SÍ llevan zod de verdad: no son del bloque `combat` —el
+ *  parser no los mira— y sin ellos no hay a quién dar de alta ni dónde. */
 const EnemyPersonalitySchema = z.custom<EnemyPersonality>();
 
 const EnemySpawnSchema = z
@@ -40,16 +55,16 @@ const EnemySpawnSchema = z
     position: Vec3Schema,
     /** La vida que le queda AHORA (un herido que vuelve de un save trae la
      *  suya, no la del contrato). */
-    health: z.number(),
+    health: z.custom<number>(),
     /** …y sobre cuánta. REQUERIDO, sin default: derivarlo de `health` es
      *  exactamente la mentira que había —barra llena para un herido, y la IA
-     *  creyéndolo entero— y un default lo dejaría entrar otra vez en silencio. */
-    maxHealth: z.number(),
-    weaponId: z.string(),
+     *  creyéndolo entero— y un default lo dejaría entrar otra vez en silencio.
+     *  Quien exige que esté y sea usable es el parser, abajo. */
+    maxHealth: z.custom<number>(),
+    weaponId: z.custom<string>(),
     personality: EnemyPersonalitySchema,
   })
-  // El TIPO de cada campo lo dice el zod de arriba (es el espejo del contrato);
-  // qué VALORES hacen utilizable a un enemigo lo dice el MISMO parser que el
+  // Qué VALORES hacen utilizable a un enemigo lo dice el MISMO parser que el
   // cliente, sobre el bloque `combat` que estos cuatro campos son en el resto
   // del juego, y el mensaje del issue es su motivo palabra por palabra.
   //

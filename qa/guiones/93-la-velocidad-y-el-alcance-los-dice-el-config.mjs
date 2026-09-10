@@ -24,6 +24,17 @@
  *     el config de verdad ofrece) deja de ofrecerse. El alcance no está escrito
  *     en el cliente: viene del config.
  *
+ *  Y **bloque 5** (#539): servido un `speed_scale` IMPOSIBLE (−1: el jugador
+ *  andaría hacia atrás), el cliente no arranca —no puede: sin esos números no
+ *  hay partida— pero DICE POR QUÉ. Hasta esa tanda `loadConfig` solo miraba el
+ *  TIPO, así que el −1 cargaba sin una queja; y con el config mutilado de
+ *  verdad la página se quedaba NEGRA con el motivo únicamente en la consola del
+ *  navegador. Se afirma lo que ve quien juega: el muro con el campo, el valor,
+ *  el fichero y qué pasaría, la entrada en el registro de errores, y que el
+ *  cliente de verdad NO arrancó (`window.__nefan` ausente) — sin eso, «lo dice»
+ *  podría estar diciéndolo encima de un juego que funciona. Y el control:
+ *  quitada la intercepción, el título vuelve.
+ *
  *  Y **bloque 4**: al morir y pulsar `R`, el jugador vuelve EXACTAMENTE donde
  *  cayó y ese punto se puede pisar (`puntoDeReaparicion`, escalón 1). Se afirma
  *  «exactamente donde cayó» y no solo «en un sitio libre» porque es lo único
@@ -429,5 +440,75 @@ export default async function (ctx) {
           `(${dentroDeUnSolido.desdeLejos}) y NO lo es con el jugador encima (${dentroDeUnSolido.desdeSiMismo}) — ` +
           `collidesAt es una consulta de movimiento, no de punto (world/collision.ts:74-84)`
       : "no había ningún objeto sólido con el que medir el escalón 2 en esta partida",
+  );
+
+  // ── 5 · Un config IMPOSIBLE no deja al jugador delante de una negra ──────
+  // `speed_scale: -1` pasa el tipo y no pasa el rango: el jugador andaría hacia
+  // atrás. Antes de #539 cargaba sin una queja; y un config mutilado tiraba la
+  // evaluación de la raíz antes de que existiera un solo pintor de avisos.
+  // Y el cliente MUERE al hacerlo, que es media medida: sin esos números no
+  // hay partida, y seguir con un default escondido sería la mentira que #241
+  // cerró. La excepción no capturada es LA MEDIDA, no un defecto — se declara
+  // con su motivo, y si no ocurriera este guion saldría rojo por no haberla
+  // provocado.
+  ctx.excepcionEsperada(
+    /CombatData: combat_config\.json: player\.speed_scale/,
+    "el bloque 5 sirve un `speed_scale` imposible a propósito: el cliente aborta su arranque —eso es " +
+      "lo que se está midiendo— y el motivo llega al muro y al registro antes de morir",
+  );
+  const cuenta5 = await servirConfigCon(ctx, { speed_scale: -1 });
+  await ctx.page.reload({ waitUntil: "domcontentloaded" });
+  const muro = await ctx.waitFor(
+    "5 · con un `speed_scale` imposible, el jugador tiene un muro delante y no una pantalla negra",
+    () => {
+      const el = document.getElementById("narrative-loader");
+      if (!el || !el.classList.contains("visible")) return null;
+      return {
+        error: el.classList.contains("error"),
+        titulo: document.getElementById("narrative-loader-title")?.textContent ?? "",
+        detalle: document.getElementById("narrative-loader-detail")?.textContent ?? "",
+        registro: document.getElementById("error-log")?.textContent ?? "",
+        arrancado: Boolean(window.__nefan),
+      };
+    },
+    30_000,
+  );
+  ctx.expect(
+    `5 · el config que recibe el cliente se sirvió con speed_scale = -1 (si no, esto no mide nada)`,
+    cuenta5.sustituciones > 0 && !cuenta5.falta_speed_scale,
+    JSON.stringify(cuenta5),
+  );
+  ctx.log(`5 · muro: ${JSON.stringify({ ...muro, registro: muro.registro.slice(0, 160) })}`);
+  ctx.expect("5 · el muro es de ERROR, no el de espera del motor", muro.error === true, JSON.stringify(muro));
+  ctx.expect(
+    "5 · el detalle dice el CAMPO, el VALOR, el FICHERO y qué pasaría — todo lo que hace falta para arreglarlo",
+    muro.detalle.includes("player.speed_scale") &&
+      muro.detalle.includes("vale -1") &&
+      muro.detalle.includes("combat_config.json") &&
+      muro.detalle.includes("mayor que 0"),
+    muro.detalle,
+  );
+  ctx.expect(
+    "5 · …y el mismo motivo queda en el registro de errores (los dos canales de la casa, una sola verdad)",
+    muro.registro.includes("player.speed_scale"),
+    muro.registro.slice(0, 300),
+  );
+  ctx.expect(
+    "5 · el cliente NO arrancó: sin esos números no hay partida, y eso es lo que el muro está contando",
+    muro.arrancado === false,
+    `window.__nefan ${muro.arrancado ? "existe" : "ausente"}`,
+  );
+  await ctx.shot("93-el-config-imposible-dice-por-que");
+
+  // Control: quitada la intercepción, el juego vuelve a arrancar. Sin esto, el
+  // bloque 5 sería igual de verde con el cliente roto por cualquier otra cosa.
+  await ctx.page.unroute("**/combat_config.json*");
+  await recargarAlTitulo(ctx);
+  ctx.expect(
+    "5 · control: con el config de verdad el título vuelve y no hay muro puesto",
+    await ctx.page.evaluate(
+      () => Boolean(window.__nefan) && !document.getElementById("narrative-loader")?.classList.contains("visible"),
+    ),
+    "el control es lo que separa «el muro lo puso el config» de «el cliente está roto»",
   );
 }

@@ -78,7 +78,12 @@ export interface EnemyPersonality {
   aggression: number;
   preferred_attacks: string[];
   reaction_time: number;
-  combat_range?: number;
+  /** A qué distancia ataca. OBLIGATORIO, y no es una promesa nueva: es la que
+   *  el borde ya EXIGÍA. `parseHostileCombat` —el único criterio de «qué es un
+   *  enemigo utilizable», y lo aplican las dos puertas— rechaza en runtime al
+   *  que no lo trae, así que dejarlo opcional aquí era un tipo que compilaba lo
+   *  que el cable tira (#530). La garantía va en el tipo. */
+  combat_range: number;
   difficulty?: string;
   aggression_style?: string;
   /** Distancia (m) a la que el enemigo empieza a hacer caso al jugador.

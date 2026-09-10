@@ -2,6 +2,9 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { validateScene, type TileValidationContext } from "../src/scene/scene-validate.js";
+import { motivoDeCharFueraDelAlfabeto, TERRAIN_ALPHABET } from "../src/scene/scene-expand.js";
+import { IMAGE_SOLID_CHAR } from "../src/scene/image-collision.js";
+import { TILE_CELLS, TILE_MPC } from "../src/scene/tile.js";
 import { forestTile, CAMINO_OESTE_ESTE } from "./fixtures/tiles.js";
 
 /** Tile de bootstrap jugable: el camino del fixture, un edificio enterable
@@ -393,5 +396,88 @@ describe("validateScene — el hueco tiene que admitir el cuerpo mayor", () => {
     const r = validateScene(escena, bootstrap);
     assert.deepEqual(r.errors, []);
     assert.equal(r.stats.npcs_reachable, 1);
+  });
+});
+
+/** #464: EL ALFABETO DEL GRID.
+ *
+ *  `openTile` validaba tres cosas —número de filas, longitud de cada fila y el
+ *  bioma— y el alfabeto no era ninguna. Un char que el expander no escribe
+ *  nunca no se pinta (el suelo sale de `ground`) y no bloquea
+ *  (`DEFAULT_SOLID_CHARS` es solo el agua), así que un tile PARTIDO por una
+ *  pared de chars ajenos salía `ok:true` con `reachable == walkable` y el
+ *  jugador la cruzaba. Solo entra por save o snapshot: el motor no escribe
+ *  `terrain`. */
+describe("validateScene — el alfabeto del grid (#464)", () => {
+  const FUERA = "W";
+
+  /** Tile YA EXPANDIDO escrito a mano: es la única forma de que un char ajeno
+   *  llegue a `openTile`, porque lo que expande el engine cabe en el alfabeto
+   *  por construcción. */
+  function expandido(fila?: { row: number; texto: string }): Record<string, unknown> {
+    const base = Array.from({ length: TILE_CELLS }, () => "g".repeat(TILE_CELLS));
+    if (fila) base[fila.row] = fila.texto;
+    return {
+      tile: { tx: 3, ty: 3 },
+      scene_id: "tile_3_3",
+      scene_description: "Un prado liso.",
+      biome: "grass",
+      entities: [],
+      __expanded: true,
+      size: { cols: TILE_CELLS, rows: TILE_CELLS, meters_per_cell: TILE_MPC },
+      terrain: base,
+    };
+  }
+
+  it("un grid entero dentro del alfabeto pasa (sin esto, «rechaza» sería un verde vacío)", () => {
+    const r = validateScene(expandido(), { required_crossings: [] });
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.ok, true);
+  });
+
+  it("todos los chars del alfabeto pasan, incluidos los tres de `ground`", () => {
+    const fila = TERRAIN_ALPHABET.join("").padEnd(TILE_CELLS, "g").slice(0, TILE_CELLS);
+    const r = validateScene(expandido({ row: 7, texto: fila }), { required_crossings: [] });
+    assert.deepEqual(r.errors, []);
+  });
+
+  it("un char fuera del alfabeto se RECHAZA nombrando el char, la celda y el alfabeto", () => {
+    const fila = "g".repeat(20) + FUERA + "g".repeat(TILE_CELLS - 21);
+    const r = validateScene(expandido({ row: 12, texto: fila }), { required_crossings: [] });
+    assert.equal(r.ok, false);
+    assert.equal(r.errors.length, 1, r.errors.join(" | "));
+    assert.match(r.errors[0], /terrain\[12\]\[20\] trae el char "W"/);
+    assert.ok(r.errors[0].includes(TERRAIN_ALPHABET.join(" ")), r.errors[0]);
+    assert.ok(r.errors[0].includes("el jugador lo cruza como si fuera suelo"), r.errors[0]);
+    // El MISMO texto que da el zod de la población cargada: la igualdad se
+    // afirma contra la fuente en los dos lados (el espejo, en
+    // `scene-schema.test.ts`), y no importando el otro gate — que metería este
+    // fichero en la batería de mutación del vecino.
+    assert.ok(
+      r.errors[0].startsWith(motivoDeCharFueraDelAlfabeto({ char: FUERA, col: 20, row: 12 })),
+      r.errors[0],
+    );
+  });
+
+  it("se nombra SIEMPRE la primera celda mala en orden de lectura", () => {
+    const escena = expandido({ row: 40, texto: "g".repeat(5) + FUERA + "g".repeat(TILE_CELLS - 6) });
+    (escena.terrain as string[])[80] = FUERA.repeat(TILE_CELLS);
+    const r = validateScene(escena, { required_crossings: [] });
+    assert.match(r.errors[0], /terrain\[40\]\[5\]/);
+  });
+
+  it("con el BIOMA roto manda el bioma: el motivo accionable es el de más arriba", () => {
+    const escena = expandido({ row: 2, texto: FUERA.repeat(TILE_CELLS) });
+    escena.biome = "lava";
+    const r = validateScene(escena, { required_crossings: [] });
+    assert.equal(r.ok, false);
+    assert.ok(r.errors[0].includes("desconocido"), r.errors[0]);
+  });
+
+  it("el `S` de los grids de COLISIÓN no está en el alfabeto del terreno", () => {
+    // Son otros grids (`planCollisionGrid`, `groundCollisionGrid`) y nadie los
+    // escribe en `scene.terrain`; admitirlo aquí sería abrirle la puerta al
+    // único char ajeno que además miente sobre lo que bloquea.
+    assert.ok(!TERRAIN_ALPHABET.includes(IMAGE_SOLID_CHAR));
   });
 });

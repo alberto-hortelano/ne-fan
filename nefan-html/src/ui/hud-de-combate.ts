@@ -10,15 +10,12 @@
  *  selección, y este módulo se repinta cuando él avisa. */
 
 import type { EffectiveParams } from "@nefan-core/src/types.js";
-import { loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { paramsDeTelegraph } from "@nefan-core/src/combat/params-de-telegraph.js";
 import { combatRegistry } from "@nefan-core/src/combat/registry.js";
 import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
-import combatConfigJson from "@nefan-core/data/combat_config.json";
+import { combatConfig as config } from "../config-de-combate.js";
 import type { InputProvider } from "../input/input-provider.js";
 import { ActionBar } from "./action-bar.js";
-
-const config = loadConfig(combatConfigJson);
 
 export interface DepsDelHudDeCombate {
   /** El proveedor de input, dueño de la selección: recibe el mapeo 1..N de

@@ -3,7 +3,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { routeMessage } from "../bridge/router.js";
 import { runTileGeneration } from "../bridge/handlers/tile.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type {
@@ -18,8 +17,9 @@ import type { SceneGenOutcome } from "../bridge/scene-gen-queue.js";
 import {
   makeCtx,
   makeSocket,
+  porElBorde,
   waitFor,
-  } from "./helpers.js";
+} from "./helpers.js";
 
 describe("bridge request_tile (plano continuo)", () => {
   /** Tile mínimo válido: bioma + los rasgos de `ground` que continúan los
@@ -51,7 +51,7 @@ describe("bridge request_tile (plano continuo)", () => {
     seedTile00(narrative);
     broadcasts.length = 0;
     const { socket } = makeSocket();
-    await routeMessage({ type: "request_tile", tx: 0, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 0, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
     assert.equal(aiCalls.scene.length, 0, "sin LLM");
     const sceneEvent = broadcasts.find(
       (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
@@ -98,7 +98,7 @@ describe("bridge request_tile (plano continuo)", () => {
     });
     seedTile00(narrative);
     const { socket } = makeSocket();
-    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "prefetch", edge: "east" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 1, ty: 0, reason: "prefetch", edge: "east" }, socket, ctx);
     await waitFor(() =>
       broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready" && m.kind === "tile"),
     );
@@ -114,7 +114,7 @@ describe("bridge request_tile (plano continuo)", () => {
     });
     seedTile00(narrative);
     const { socket } = makeSocket();
-    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
     await waitFor(() =>
       broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
     );
@@ -160,7 +160,7 @@ describe("bridge request_tile (plano continuo)", () => {
     console.warn = (...args: unknown[]) => void motivos.push(args.map(String).join(" "));
     seedTile00(narrative);
     const { socket } = makeSocket();
-    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
     assert.ok(!narrative.hasTile(1, 0), "el tile injugable NO se persiste");
     // Y se rechaza POR ESTO, no por otra cosa: sin el motivo, el test seguiría
@@ -184,7 +184,7 @@ describe("bridge request_tile (plano continuo)", () => {
     });
     narrative.startNewSession("plugtest");
     const { socket } = makeSocket();
-    await routeMessage({ type: "request_tile", tx: 0, ty: 0, reason: "blocking" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 0, ty: 0, reason: "blocking" }, socket, ctx);
     await waitFor(() =>
       broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
     );
@@ -236,10 +236,10 @@ describe("bridge request_tile (plano continuo)", () => {
     });
     seedTile00(narrative);
     const { socket } = makeSocket();
-    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
     await waitFor(() => release !== null);
     const before = broadcasts.length;
-    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
     assert.equal(aiCalls.scene.length, 1);
     const regen = broadcasts.slice(before).find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "generating",
@@ -252,7 +252,7 @@ describe("bridge request_tile (plano continuo)", () => {
   it("add_combatants es aditivo y respawn acepta pos", async () => {
     const { ctx, sim } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       {
         type: "add_combatants",
         enemies: [
@@ -262,7 +262,7 @@ describe("bridge request_tile (plano continuo)", () => {
             health: 40,
             maxHealth: 60,
             weaponId: "unarmed",
-            personality: { aggression: 0.7, preferred_attacks: ["quick"], reaction_time: 0.3 },
+            personality: { aggression: 0.7, preferred_attacks: ["quick"], reaction_time: 0.3, combat_range: 4 },
           },
         ],
       },
@@ -284,14 +284,14 @@ describe("bridge request_tile (plano continuo)", () => {
       "…y su denominador APARTE: colapsarlos es lo que pintaba la barra llena",
     );
     // Duplicado ignorado.
-    await routeMessage(
-      { type: "add_combatants", enemies: [{ id: "lobo_1", position: { x: 0, y: 0, z: 0 }, health: 99, maxHealth: 99, weaponId: "unarmed", personality: { aggression: 0, preferred_attacks: ["quick"], reaction_time: 1 } }] },
+    await porElBorde(
+      { type: "add_combatants", enemies: [{ id: "lobo_1", position: { x: 0, y: 0, z: 0 }, health: 99, maxHealth: 99, weaponId: "unarmed", personality: { aggression: 0, preferred_attacks: ["quick"], reaction_time: 1, combat_range: 4 } }] },
       socket,
       ctx,
     );
     assert.equal(sim.getCombatant("lobo_1")!.health, 40, "el duplicado no pisa el HP");
 
-    await routeMessage({ type: "respawn", pos: { x: 66, y: 0, z: 2 } }, socket, ctx);
+    await porElBorde({ type: "respawn", pos: { x: 66, y: 0, z: 2 } }, socket, ctx);
     assert.deepEqual(sim.getCombatant("player")!.position, { x: 66, y: 0, z: 2 });
     assert.ok((sent.at(-1) as StateUpdateMessage).playerHp > 0);
   });
@@ -319,7 +319,7 @@ describe("bridge: de dónde salió la escena (`source` del ready)", () => {
     );
     const { socket } = makeSocket();
 
-    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
     assert.equal(readyDe(broadcasts)?.source, "engine", "recién generado por el motor");
     assert.equal(aiCalls.scene.length, 1);
@@ -327,7 +327,7 @@ describe("bridge: de dónde salió la escena (`source` del ready)", () => {
     // Volver a pedirlo: mismo tile, sin LLM — y el cliente tiene que poder
     // distinguirlo.
     broadcasts.length = 0;
-    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
     assert.equal(readyDe(broadcasts)?.source, "cache");
     assert.equal(aiCalls.scene.length, 1, "el re-render no gastó motor");
   });
@@ -362,7 +362,7 @@ describe("bridge: la cola abandonada avisa a quien la espera", () => {
     );
     const soltar = ocuparCola(ctx);
     const { socket } = makeSocket();
-    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
     assert.deepEqual(ctx.sceneGen.pending, ["tile_1_0"]);
 
     ctx.sceneGen.abandonAll();
@@ -386,7 +386,7 @@ describe("bridge: la cola abandonada avisa a quien la espera", () => {
     );
     const soltar = ocuparCola(ctx);
     const { socket } = makeSocket();
-    await routeMessage({ type: "request_tile", tx: 0, ty: 1, reason: "prefetch", edge: "south" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 0, ty: 1, reason: "prefetch", edge: "south" }, socket, ctx);
     ctx.sceneGen.abandonAll();
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"), 1000)
       .catch(() => assert.fail("el prefetch abandonado se perdió en silencio"));

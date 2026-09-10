@@ -45,6 +45,14 @@
  *  overlay es la conducta de #352, y lo que esta PR cambia es cuántos frames
  *  llegan hasta él.
  *
+ *  LO QUE EL BLOQUE A3-ter NO AFIRMA: el texto del CLIENTE para un error de
+ *  TIPO. La igualdad de la frase se mide en el bloque B, que fabrica el bloque
+ *  roto donde el juego lo guarda y compara las dos orillas — y ahí el caso es
+ *  de VALOR, porque es el que un save puede traer. Para el de tipo, lo que se
+ *  afirma aquí es que el bridge deja de contestar con el mensaje de zod, que es
+ *  lo que lo separaba del cliente; el cliente llama a la MISMA función y no
+ *  tiene otra rama por la que salir.
+ *
  *  PROBADO EN NEGATIVO (2026-09-07), sabotaje en `hostil-desde-combat.ts` y
  *  restaurado byte a byte: aceptar la lista de ataques vacía
  *  (`attacks.length === 0` fuera del criterio) → A2 rojo (el bridge deja pasar
@@ -76,6 +84,19 @@ const MOTIVO_ATAQUES = "combat.personality.preferred_attacks no es una lista de 
 /** Uno de los seis casos que el bridge ACEPTABA antes de la PR 6 (tabla base↔hoy
  *  de `implementacion-6.md`): tipo correcto, valor imposible. */
 const MOTIVO_MAXHP = "combat.max_health inválido (0)";
+/** …y un error de TIPO, que es la otra mitad y la que faltaba (#530-p3). Hasta
+ *  esta tanda los cuatro campos del bloque llevaban zod de verdad
+ *  (`z.number()`, `z.string()`), y zod NO llega al `superRefine` si el objeto
+ *  ya falló: un `health: "mucha"` moría con el mensaje de zod («Expected
+ *  number, received string») mientras el cliente, con el MISMO bloque, decía el
+ *  del parser. QA lo midió en la PR 6: 11 de 49 casos con dos motivos, todos de
+ *  tipo o de ausencia; en los 38 de VALOR eran idénticos. Hoy los cuatro solo
+ *  DECLARAN su tipo en el zod y los juzga `parseHostileCombat`. */
+const MOTIVO_TIPO = 'combat.health inválido ("mucha")';
+/** La ausencia es el otro caso de esa mitad: el cliente nunca vio un
+ *  `Required` de zod, veía el motivo del parser. */
+const MOTIVO_RANGO_AUSENTE =
+  "combat.personality necesita aggression, reaction_time y combat_range numéricos";
 
 /** El bloque que deriva el core (`combatForHostileRole` + `buildPersonality`
  *  medium/aggressive), aplanado como viaja por `add_combatants`. Escrito a
@@ -226,6 +247,27 @@ export default async function (ctx) {
     lineaMax.includes(`enemies[0]: ${MOTIVO_MAXHP}`),
     lineaMax || "(ninguna línea «WS frame rejected» nueva)",
   );
+
+  // A3-ter · EL ERROR DE TIPO da el motivo del PARSER, no el de zod (#530-p3).
+  // Es la mitad que faltaba de «un solo criterio»: el veredicto ya coincidía,
+  // el MOTIVO no — y un motivo distinto en cada puerta son dos criterios que
+  // hoy coinciden por casualidad. Se miden los dos casos de esa mitad: el tipo
+  // equivocado y la ausencia.
+  for (const [que, frame, motivo] of [
+    ["`health: \"mucha\"` (tipo equivocado)", enemigoValido({ health: "mucha" }), MOTIVO_TIPO],
+    ["una personalidad SIN `combat_range`", conPersonalidad({ combat_range: undefined }), MOTIVO_RANGO_AUSENTE],
+  ]) {
+    const antes = rechazosDelBridge(logBridge)?.length ?? null;
+    await porElSocketDelJuego(ctx, { type: "add_combatants", enemies: [frame] });
+    const tras = rechazosDelBridge(logBridge);
+    const linea = tras && antes !== null ? (tras.slice(antes)[0] ?? "") : "";
+    ctx.log(`A3-ter · ${que} → ${linea.slice(0, 200)}`);
+    ctx.expect(
+      `A3-ter · ${que} se rechaza con el motivo del PARSER (el mismo string que escribe el cliente), no con el de zod`,
+      linea.includes(`enemies[0]: ${motivo}`) && !/Expected .* received/.test(linea),
+      linea || "(ninguna línea «WS frame rejected» nueva)",
+    );
+  }
 
   // A3-bis · QUÉ TIENE DELANTE EL JUGADOR cuando el rechazo pasa en el bridge.
   // Va como `⚠ HALLAZGO` y no como `expect`: el overlay es la conducta de #352

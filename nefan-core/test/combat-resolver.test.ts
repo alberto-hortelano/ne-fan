@@ -13,7 +13,7 @@ import {
   resolveAttack,
   applyDefensiveReduction,
 } from "../src/combat/combat-resolver.js";
-import { getEffectiveParams, loadConfig } from "../src/combat/combat-data.js";
+import { getEffectiveParams, loadConfig, motivoDeConfigInvalido } from "../src/combat/combat-data.js";
 import type { CombatConfig, EffectiveParams, Vec3 } from "../src/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -332,7 +332,65 @@ describe("loadConfig · el config del jugador es obligatorio", () => {
     for (const seccion of ["attack_types", "weapons", "tactical_matrix"]) {
       const roto = bueno();
       delete roto[seccion];
-      assert.throws(() => loadConfig(roto), /invalid combat config/);
+      assert.throws(() => loadConfig(roto), /attack_types, weapons y tactical_matrix/);
     }
+  });
+
+  /** #539-H5: el TIPO no era el criterio. `speed_scale: -1` (el jugador anda
+   *  hacia atrás) e `interact_range_m: 0` (la `E` no alcanza a nadie) cargaban
+   *  sin una queja, y el fallo no se veía en el arranque sino jugando: la tecla
+   *  no hacía nada y no había dónde mirar. Un valor imposible es un error de
+   *  configuración, y su sitio es la puerta. */
+  it("los cuatro son ESTRICTAMENTE positivos: el 0 y el negativo no son configuraciones", () => {
+    for (const campo of ["walk_speed", "sprint_speed", "speed_scale", "interact_range_m"]) {
+      for (const valor of [0, -1, -0.0001]) {
+        const roto = bueno();
+        (roto.player as Record<string, unknown>)[campo] = valor;
+        assert.throws(
+          () => loadConfig(roto),
+          new RegExp(`player\\.${campo} vale ${valor === 0 ? "0" : "-"}`),
+          `player.${campo} = ${valor} tiene que fallar en la puerta`,
+        );
+      }
+    }
+  });
+
+  it("el motivo del rango dice el campo, el valor, el fichero y QUÉ pasaría con él", () => {
+    const roto = bueno();
+    (roto.player as Record<string, unknown>).interact_range_m = 0;
+    const motivo = motivoDeConfigInvalido(roto);
+    assert.ok(motivo, "un alcance de 0 m no es un config válido");
+    assert.match(motivo, /combat_config\.json/, "el jugador tiene que saber QUÉ fichero mirar");
+    assert.match(motivo, /player\.interact_range_m vale 0/);
+    assert.match(motivo, /mayor que 0/);
+    assert.match(motivo, /la tecla E no alcanzaría a nadie/, "y qué le pasaría al jugar");
+  });
+
+  it("el config REAL no tiene motivo: `motivoDeConfigInvalido` devuelve null", () => {
+    // Sin esto, «devuelve el motivo» podría estar devolviendo siempre algo.
+    assert.equal(motivoDeConfigInvalido(bueno()), null);
+  });
+
+  it("`motivoDeConfigInvalido` y `loadConfig` son el MISMO criterio", () => {
+    // Dos puertas con dos criterios es la enfermedad que este módulo cierra:
+    // el cliente pinta lo que dice la primera y el bridge muere por la segunda.
+    for (const romper of [
+      (c: Record<string, unknown>) => delete c.weapons,
+      (c: Record<string, unknown>) => delete (c.player as Record<string, unknown>).walk_speed,
+      (c: Record<string, unknown>) => ((c.player as Record<string, unknown>).speed_scale = -2),
+      (c: Record<string, unknown>) => ((c.player as Record<string, unknown>).sprint_speed = "rápido"),
+    ]) {
+      const roto = bueno();
+      romper(roto);
+      const motivo = motivoDeConfigInvalido(roto);
+      assert.ok(motivo, "el criterio tiene que ver el config roto");
+      assert.throws(() => loadConfig(roto), new RegExp(motivo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
+  });
+
+  it("`jump_velocity` no vuelve: se retiró sin lector (#539-H7)", () => {
+    // El grep está a cero; lo que este aserto impide es que alguien lo
+    // reintroduzca en el JSON creyendo que el juego lo lee.
+    assert.equal((bueno().player as Record<string, unknown>).jump_velocity, undefined);
   });
 });

@@ -38,8 +38,9 @@
  *  vuelven es lo que separa «el cliente sigue al wire» de «el cliente se quedó
  *  con el último aro que pintó».
  *
- *  PROBADO EN NEGATIVO (2026-09-07, QA de la PR 4): con
- *  `getCombatant("player")` de `net/game-client.ts` devolviendo otra vez
+ *  PROBADO EN NEGATIVO (2026-09-07, QA de la PR 4): con el lector del wire de
+ *  `net/game-client.ts` —`getCombatant("player")` entonces, `jugadorEnCombate()`
+ *  desde #526, que borró la rama muerta del enemigo— devolviendo otra vez
  *  `weaponId: "short_sword"` fijo, los cinco asertos del martillo salen rojos
  *  (aro 1.3 · core 1.8, …) y el control sigue verde; con la barra dividiendo
  *  por `100` en vez de por `result.playerMaxHp`, cae el aserto del máximo

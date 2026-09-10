@@ -242,6 +242,12 @@ jobs:
       # (3,5 s) rompe schemas y saneadores (TS con tsx, Python con
       # `python3 -m unittest`) y exige que sus tests se enteren.
       - run: node qa/contrato-candados-en-negativo.mjs
+      # (0,2 s) los DOS gates de escena rebotan cada clave retirada con el mismo
+      # texto (#466). Nació rojo con cinco divergencias medidas y entra aquí
+      # verde; recorre los registros de los dos lados, así que una retirada
+      # nueva entra sola. Necesita tsx (el zod) y las deps de ai_server que este
+      # job ya instala (el saneador).
+      - run: node qa/los-dos-gates-rebotan-igual.mjs
       # (45 s) la suite de ai_server no escribe el ledger de gasto REAL (#392);
       # spawnea `python3 -m unittest discover` con el entorno controlado.
       - run: node qa/el-ledger-de-gasto-no-lo-escribe-la-suite.mjs

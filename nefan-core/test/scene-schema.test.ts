@@ -20,7 +20,11 @@ import {
   SCENE_FIELDS,
   RADIO_SIMULADO_POR_KIND,
 } from "../src/contract/model-io/scene-schema.js";
-import { expandScenePrimitives } from "../src/scene/scene-expand.js";
+import {
+  expandScenePrimitives,
+  motivoDeCharFueraDelAlfabeto,
+  TERRAIN_ALPHABET,
+} from "../src/scene/scene-expand.js";
 import { validateContract } from "../src/contract/model-io/validate.js";
 import { MIN_VANO_CELDAS } from "../src/scene/blueprint/volumes.js";
 import { BODY_RADIUS_M, celdasLibresParaRadio, celdasQueCubreRadio } from "../src/scene/terrain-collision.js";
@@ -482,5 +486,58 @@ describe("ExpandedSceneSchema — `tile` es obligatorio también en lo que se CA
     if (r.success) return;
     assert.deepEqual(r.error.issues[0].path, ["tile"]);
     assert.match(r.error.issues[0].message, /`tile`.*generate_tile/);
+  });
+});
+
+/** #464: el ALFABETO del grid, en la población que puede traerlo mal. El motor
+ *  no escribe `terrain`, así que un char ajeno solo entra por un save o un
+ *  snapshot — y entraba: el grid pasaba como `z.array(z.string())`, el char no
+ *  bloqueaba ni se pintaba, y `validateScene` daba `ok:true` con
+ *  `reachable == walkable`. El mismo texto en las dos puertas: si divergen, el
+ *  mismo tile recibe dos motivos según por dónde entre. */
+describe("ExpandedSceneSchema — un char fuera del alfabeto del grid no es suelo (#464)", () => {
+  const cargada = expandScenePrimitives({
+    tile: { tx: 4, ty: 4 },
+    scene_id: "tile_4_4",
+    scene_description: "campo",
+    biome: "grass",
+    entities: [],
+  }) as Record<string, unknown>;
+
+  it("el grid que SINTETIZA el engine cabe entero en el alfabeto", () => {
+    const alfabeto = new Set(TERRAIN_ALPHABET);
+    const chars = new Set((cargada.terrain as string[]).join(""));
+    assert.deepEqual(
+      [...chars].filter((c) => !alfabeto.has(c)),
+      [],
+      "el productor del grid no puede escribir un char que su propio gate rechaza",
+    );
+    assert.equal(ExpandedSceneSchema.safeParse(cargada).success, true);
+  });
+
+  it("un char ajeno en una celda falla nombrando `terrain`, el char y la celda", () => {
+    const filas = [...(cargada.terrain as string[])];
+    filas[9] = "W".repeat(filas[9].length);
+    const r = ExpandedSceneSchema.safeParse({ ...cargada, terrain: filas });
+    assert.equal(r.success, false);
+    if (r.success) return;
+    const issue = r.error.issues.find((i) => i.path[0] === "terrain");
+    assert.ok(issue, r.error.issues.map((i) => i.message).join(" | "));
+    assert.match(issue.message, /terrain\[9\]\[0\] trae el char "W"/);
+  });
+
+  it("y el motivo es EL de core, palabra por palabra (el mismo que da `validateScene`)", () => {
+    // La igualdad entre las dos puertas se afirma contra la FUENTE del texto y
+    // no importando el otro gate: `scene-validate.ts` es un módulo de mutación
+    // propio, y traérselo aquí metería este fichero entero en su batería.
+    // Cada lado exige el mismo `motivoDeCharFueraDelAlfabeto`; el espejo de
+    // este aserto vive en `scene-validate.test.ts`.
+    const filas = [...(cargada.terrain as string[])];
+    filas[3] = filas[3].slice(0, 11) + "W" + filas[3].slice(12);
+    const r = ExpandedSceneSchema.safeParse({ ...cargada, terrain: filas });
+    assert.equal(r.success, false);
+    if (r.success) return;
+    const delZod = r.error.issues.find((i) => i.path[0] === "terrain")!.message;
+    assert.equal(delZod, motivoDeCharFueraDelAlfabeto({ char: "W", col: 11, row: 3 }));
   });
 });

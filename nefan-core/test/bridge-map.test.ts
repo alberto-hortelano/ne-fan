@@ -3,7 +3,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { routeMessage } from "../bridge/router.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import type {
@@ -21,8 +20,9 @@ import {
   escenaExpandidaDePrueba,
   makeCtx,
   makeSocket,
+  porElBorde,
   waitFor,
-  } from "./helpers.js";
+} from "./helpers.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 
 /** El `ready` DE PARTIDA: el status de juego (`game_gen`) no lleva `spawn`,
@@ -46,7 +46,7 @@ describe("bridge player_entered_place + map triggers", () => {
     const { ctx, broadcasts } = makeCtx();
     ctx.narrative.startNewSession("plugtest");
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "nowhere" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "nowhere" }, socket, ctx);
     const err = broadcasts.find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
     );
@@ -70,7 +70,7 @@ describe("bridge player_entered_place + map triggers", () => {
     });
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "tavern" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "tavern" }, socket, ctx);
 
     // Escena cacheada re-difundida…
     const sceneEvent = broadcasts.find(
@@ -131,7 +131,7 @@ describe("bridge player_entered_place + map triggers", () => {
     assert.notEqual(migrado.id, alta.id);
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "cueva" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "cueva" }, socket, ctx);
 
     assert.deepEqual(
       narrative.getPluginRecord(migrado.id)?.slice,
@@ -160,7 +160,7 @@ describe("bridge player_entered_place + map triggers", () => {
     });
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "cueva" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "cueva" }, socket, ctx);
 
     assert.ok(
       narrative.story_so_far.includes("La cueva huele a humedad."),
@@ -184,7 +184,7 @@ describe("bridge player_entered_place + map triggers", () => {
     narrative.recordSceneLoaded("scene_bosque", escenaExpandidaDePrueba("scene_bosque", { place_id: "bosque" }));
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "aldea" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "aldea" }, socket, ctx);
     const fromAldea = broadcasts.find(
       (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
     );
@@ -193,7 +193,7 @@ describe("bridge player_entered_place + map triggers", () => {
     assert.equal(aldeaScene?.exits?.[0]?.edge, "south");
 
     broadcasts.length = 0;
-    await routeMessage({ type: "player_entered_place", placeId: "bosque" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "bosque" }, socket, ctx);
     const fromBosque = broadcasts.find(
       (m): m is NarrativeEventMessage => m.type === "narrative_event" && m.eventId === "scene_init",
     );
@@ -246,7 +246,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     );
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
 
     // Se pidió un TILE (nunca una escena suelta), en el primer hueco del rayo
@@ -322,7 +322,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     sesion.narrative = narrative;
     seedTravelWorld(narrative);
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
 
     assert.deepEqual(narrative.worldMap.get("forja")?.anchor, { tx: 1, ty: 0, rect: [20, 30, 10, 10] });
@@ -344,13 +344,13 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     });
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
     assert.ok(!narrative.story_so_far.includes("Suena el yunque."), "aún no ha llegado");
 
     // El cliente aplica el spawn y su siguiente sim_input lo delata.
     const ready = broadcasts.find(readyDeSesion);
-    await routeMessage(
+    await porElBorde(
       {
         type: "input",
         delta: 0.016,
@@ -386,7 +386,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     broadcasts.length = 0;
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     assert.equal(aiCalls.scene.length, 0, "sin LLM: la escena ya existía");
     const ready = broadcasts.find(readyDeSesion);
     assert.deepEqual(ready?.spawn, { x: 64, z: 0 }, "centro del tile (1,0)");
@@ -394,7 +394,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
 
     // …y el sim_input que llega después NO los repite.
     const antes = narrative.story_so_far.split("Suena el yunque.").length;
-    await routeMessage(
+    await porElBorde(
       {
         type: "input",
         delta: 0.016,
@@ -420,7 +420,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     // «sin escena».
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
     const err = broadcasts.find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
@@ -448,7 +448,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     });
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     assert.deepEqual(ctx.sceneGen.pending, ["place_forja"], "el viaje espera en la cola");
 
     // Mientras espera, OTRO camino realiza el lugar (el jugador exploró hasta
@@ -487,7 +487,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     });
     seedTravelWorld(narrative);
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
     const err = broadcasts.find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
@@ -504,7 +504,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     });
     seedTravelWorld(narrative);
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     // El acuse va ANTES de que el job corra: es lo que el cliente apunta para
     // saber que el bridge cogió el viaje, y en qué estado.
     const acuse = broadcasts.find(
@@ -534,8 +534,8 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     });
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
-    await routeMessage({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     assert.deepEqual(ctx.sceneGen.pending, ["place_forja"], "el viaje espera en la cola");
 
     ctx.sceneGen.abandonAll();
@@ -588,7 +588,7 @@ describe("bridge activación por posición (tiles + anchors)", () => {
     });
 
     const { socket } = makeSocket();
-    const input = (x: number, z: number) => routeMessage(
+    const input = (x: number, z: number) => porElBorde(
       { type: "input", delta: 0.016, inputs: { playerPosition: { x, y: 0, z }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: true } },
       socket, ctx,
     );
@@ -655,7 +655,7 @@ describe("bridge cambiar de tile guarda la partida (#395)", () => {
       await write(id, data);
     };
     const input = (x: number, z: number) =>
-      routeMessage(
+      porElBorde(
         { type: "input", delta: 0.016, inputs: { playerPosition: { x, y: 0, z }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: true } },
         socket,
         h.ctx,
@@ -766,7 +766,7 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
     const { socket } = makeSocket();
     const log = capturarLogDelBridge();
     try {
-      await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+      await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
       await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
     } finally {
       log.soltar();
@@ -790,7 +790,7 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
   it("el bootstrap CON place_id queda atado y el panel ofrece el destino", async () => {
     const { ctx, broadcasts, narrative } = bootstrapWith(tileScene({ place_id: "robledo" }));
     const { socket } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
 
     assert.equal(narrative.worldMap.serialize().active_place_id, "robledo");
@@ -800,7 +800,7 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
   it("un link creado a mitad de sesión llega como exits_changed del tile activo, sin escena y sin sellar el save (#179)", async () => {
     const { ctx, broadcasts, narrative } = bootstrapWith(tileScene({ place_id: "robledo" }));
     const { socket } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
     assert.deepEqual(exitsOf(broadcasts), ["molino"]);
     // La escena PERSISTIDA sigue siendo Format D crudo: las salidas no se sellan.
@@ -888,7 +888,7 @@ describe("el tile queda atado a su lugar (issue #172, hallazgo 3 de QA)", () => 
     );
 
     const { socket } = makeSocket();
-    await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
+    await porElBorde({ type: "request_tile", tx: 1, ty: 0, reason: "blocking", edge: "east" }, socket, ctx);
     await waitFor(() => narrative.hasTile(1, 0));
 
     const persisted = narrative.scenes_loaded["tile_1_0"].scene_data;

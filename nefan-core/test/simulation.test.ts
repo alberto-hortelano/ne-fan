@@ -29,6 +29,7 @@ describe("GameSimulation", () => {
       aggression: 0.7,
       preferred_attacks: ["quick", "medium"],
       reaction_time: 0.6,
+      combat_range: 4.0,
     });
 
     assert.ok(sim.getCombatant("player"));
@@ -126,6 +127,7 @@ describe("GameSimulation", () => {
       aggression: 1.0, // Always attacks
       preferred_attacks: ["quick"],
       reaction_time: 0.1,
+      combat_range: 4.0,
     };
 
     sim.addCombatant(player);
@@ -227,6 +229,7 @@ describe("GameSimulation", () => {
         aggression: 0.7,
         preferred_attacks: ["quick", "medium"],
         reaction_time: 0.5,
+        combat_range: 4.0,
       });
 
       const hps: number[] = [];
@@ -271,6 +274,7 @@ describe("GameSimulation", () => {
       aggression: 0.9,
       preferred_attacks: ["quick"],
       reaction_time: 0.3,
+      combat_range: 4.0,
     });
 
     const npcRecord = {
@@ -332,6 +336,7 @@ describe("GameSimulation.setCombatSystem", () => {
       aggression: 0.5,
       preferred_attacks: ["quick"],
       reaction_time: 0.3,
+      combat_range: 4.0,
     });
     assert.throws(
       () => sim.setCombatSystem(combatRegistry.create("basic", config)),
