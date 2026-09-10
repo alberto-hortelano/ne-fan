@@ -6,13 +6,15 @@
  *  no sabe decir «esta exención sobra desde que troceaste el fichero».
  *
  *  Y esa mitad es la que importa aquí, porque es por donde se deshace la
- *  congelación sin que nadie se entere (QA 2026-09-01, H-2): el día que #346
- *  baje `title-screen.ts` de 1.651 a 900, una excepción que siga diciendo 1.651
- *  le acaba de regalar **751 líneas de recrecimiento** — el candado seguiría
- *  verde y el fichero podría volver a crecer hasta donde estaba. Lo único que
- *  lo impedía era una frase en un comentario («cada entrega que corte BAJA su
- *  número en el mismo commit»), o sea la misma clase de prosa que esta tanda
- *  vino a sustituir por un candado.
+ *  congelación sin que nadie se entere (QA 2026-09-01, H-2). Se escribió como
+ *  hipótesis —«el día que #346 baje `title-screen.ts`»— y #346 la ejecutó: el
+ *  fichero acabó en 368, y una excepción que siguiera diciendo 1.738 le habría
+ *  regalado **1.370 líneas de recrecimiento** con el candado en verde. Lo único
+ *  que lo impedía era una frase en un comentario («cada entrega que corte BAJA
+ *  su número en el mismo commit»), o sea la misma clase de prosa que esta tanda
+ *  vino a sustituir por un candado. Los seis cortes bajaron la cifra uno a uno,
+ *  y el sexto puso rojo el último `it` de este fichero hasta que la excepción
+ *  se borró entera: es la primera que muere por TROCEO y no por borrado.
  *
  *  LA CIFRA ES EXACTA, no un techo cómodo, y ese es todo el mecanismo: como la
  *  excepción tiene que valer justo lo que mide el fichero, quitarle líneas pone

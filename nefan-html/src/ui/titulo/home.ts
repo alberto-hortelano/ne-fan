@@ -33,13 +33,29 @@ import {
 import {
   BADGE_CSS,
   BTN_PRIMARY_CSS,
-  BTN_SMALL_DANGER_CSS,
-  BTN_SMALL_PRIMARY_CSS,
   type DestinoDelTitulo,
   escapeAttr,
   escapeHtml,
   type TitleAction,
 } from "./atomos.js";
+
+/** Los dos botones de la fila de una partida guardada. Vivían en `atomos.ts`
+ *  hasta el cierre de #346: el censo por importador dio UN dueño —esta
+ *  pantalla— en cuanto la PR 4 la sacó, y lo que tiene un dueño viaja con él.
+ *  Es el criterio del programa aplicado a sí mismo, para que el módulo común no
+ *  se convierta en el cajón que toca cualquier retoque de UI.
+ *
+ *  `BADGE_CSS` sí se queda allí, y no por inercia: `generationChipsHtml` lo usa
+ *  DENTRO de `atomos.ts`, así que traerlo aquí obligaría a aquel fichero a
+ *  importar de éste — lo que prohíbe `las-hojas-del-titulo-no-se-atan-entre-si`. */
+const BTN_SMALL_PRIMARY_CSS = [
+  "background:#3a6","color:#fff","border:none","padding:5px 12px",
+  "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
+].join(";");
+const BTN_SMALL_DANGER_CSS = [
+  "background:transparent","color:#a55","border:1px solid #533","padding:5px 12px",
+  "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
+].join(";");
 
 /** La caja de avisos del título, vista DESDE EL HOME: solo las tres puertas
  *  que el home empuja, de las cinco que tiene.
