@@ -40,13 +40,16 @@
  *  No es estado sintético — es exactamente lo que pasa cuando el bridge se
  *  reinicia a media trama.
  *
- *  LO QUE ESTE GUION NO ES EL PRIMERO EN VER, dicho para que nadie lo cuente
- *  de más: si la divergencia se inyecta por el lado del ESCRITOR (renombrar el
- *  rótulo en `home.ts`), quien salta primero es el helper compartido
- *  `esperarListaDeSaves`, que casa ese mismo prefijo y expira antes de llegar
- *  aquí. Esa red ya existía y no es de este guion. La que sí es suya es la del
- *  lado del LECTOR —cambiar el prefijo en `avisos.ts`—, que ningún otro guion
- *  ve y que deja el bloque 1 en verde y el 2 en rojo (medido).
+ *  ESTE GUION ES HOY EL ÚNICO QUE VE LA COSTURA, y desde #550 lo es por las dos
+ *  puntas. Cuando se escribió, renombrar el rótulo en `home.ts` (el lado del
+ *  ESCRITOR) lo cazaba antes el helper compartido `esperarListaDeSaves`, que
+ *  casaba ese mismo prefijo; ese helper ya no mira la frase sino el sello
+ *  `#ts-status[data-lista]` —su rama del fallo era una frase muerta y no podía
+ *  ponerse roja—, así que esa red se retiró y lo que queda es el bloque 2 de
+ *  aquí: si el rótulo del home cambia sin que `avisos.ts` se entere, «el título
+ *  deja de afirmar que la lista está al día» agota su espera. La otra punta —el
+ *  lado del LECTOR, cambiar el prefijo en `avisos.ts`— sigue siendo suya y de
+ *  nadie más: deja el bloque 1 en verde y el 2 en rojo (medido).
  *
  *  Cero créditos: motor falso; se juega una partida para tener tarjetas que
  *  mirar y no se le pide nada más a nadie.

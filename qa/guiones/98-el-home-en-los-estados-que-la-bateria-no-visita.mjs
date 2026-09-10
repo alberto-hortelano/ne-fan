@@ -411,19 +411,28 @@ export default async function (ctx) {
   try {
     await ctx.page.reload({ waitUntil: "domcontentloaded" });
     await ctx.waitFor("el cliente arranca", () => Boolean(window.__nefan));
-    // NO se usa `esperarListaDeSaves`: su alternativa para el fallo busca «No
-    // se puede contactar al bridge», un texto que el home ya no escribe (hoy
-    // dice «No se pudieron cargar las partidas guardadas»), así que en este
-    // estado esa espera solo puede expirar. Es hallazgo del BANCO, no del juego.
+    // Se espera al SELLO del home (`#ts-status[data-lista]`), no a la frase, y
+    // se le exige el valor `error`: este bloque es el único sitio del banco que
+    // ejerce esa rama del `try`, así que es también el candado del sello — si
+    // alguien se lleva el `dataset.lista = "error"` del `catch`, esto se pone
+    // rojo aquí, y no 20 guiones más allá esperando algo que ya no llega.
+    //
+    // Hasta #550 este bloque tenía que mirar la frase a mano y decirlo: el
+    // helper compartido `esperarListaDeSaves` casaba «No se puede contactar con
+    // el bridge», un texto que el home no escribe desde #306, así que en este
+    // estado solo podía expirar. Era hallazgo del BANCO, no del juego, y hoy
+    // está cerrado: el helper mira este mismo sello.
+    //
     // `expectEspera` y no `waitFor` (#261): así el hecho de que el título
     // ACABE de intentarlo es un aserto con su último valor sondeado, y no un
     // timeout opaco que hay que investigar para saber qué se rompió.
     const espera = await ctx.expectEspera(
-      "el título termina de intentarlo y no se queda en «Cargando saves…»",
+      "el título termina de intentarlo (sello data-lista=error) y no se queda en «Cargando saves…»",
       true,
       () => {
-        const t = document.getElementById("ts-status")?.textContent?.trim() ?? "";
-        return t && !/^Cargando saves/.test(t) ? t : null;
+        const el = document.getElementById("ts-status");
+        if (el?.dataset.lista !== "error") return null;
+        return el.textContent?.trim() || "(#ts-status sellado pero vacío)";
       },
       { ms: 60_000 },
     );

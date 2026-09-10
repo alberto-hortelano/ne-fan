@@ -171,21 +171,55 @@ export async function esperarTituloListo(ctx, maxMs = 30_000) {
   );
 }
 
-/** La lista de partidas del bridge ya ha llegado al título.
+/** Cuánto se espera a que el título acabe de pedir la lista.
+ *
+ *  Tiene que ser MAYOR que el timeout de una petición del cliente
+ *  (`nefan-html/src/net/bridge-client.ts`, `request(msg, timeoutMs = 30_000)`),
+ *  y esa es la mitad del arreglo de #550 que el issue no pedía: con los dos
+ *  presupuestos en 30 s, la rama del fallo solo podía observarse por suerte —la
+ *  «banda garantizada» contra la que avisa la regla 1 de `qa/README.md`—, porque
+ *  la espera expira en el mismo instante en el que el cliente escribe el
+ *  motivo. Si alguien sube el timeout del cliente, este número sube con él. */
+const ESPERA_DE_LA_LISTA_MS = 45_000;
+
+/** El título ha terminado de pedir la lista de partidas — con éxito o con
+ *  fallo. Devuelve el texto de `#ts-status`, que es lo que algunos guiones
+ *  afirman después.
  *
  *  NO es el workaround de arriba con otro nombre, y la diferencia es toda:
  *  aquello gateaba el CLICK de «Nueva partida» —una acción que no depende de
  *  los saves— en la señal de otra cosa. Esto lo espera SOLO quien va a leer la
- *  lista (la tarjeta de un save, una revisión del home entero), que es
- *  esperar lo que de verdad se necesita. Vale el bridge caído a propósito: el
- *  guion debe seguir y fallar por su propia afirmación, no por un timeout
- *  opaco aquí. */
-export async function esperarListaDeSaves(ctx, maxMs = 30_000) {
+ *  lista (la tarjeta de un save, una revisión del home entero), que es esperar
+ *  lo que de verdad se necesita.
+ *
+ *  MIRA EL SELLO, NO LA FRASE (#550). Hasta esta tanda casaba dos textos, y uno
+ *  de ellos —«No se puede contactar al bridge»— llevaba muerto desde #306: solo
+ *  sobrevivía DENTRO de un comentario del cliente que lo cita como pasado. O
+ *  sea que la rama del fallo no podía cumplirse nunca y esta espera era un
+ *  guardián incapaz de ponerse rojo por lo que decía cubrir. El sello
+ *  `#ts-status[data-lista]` lo escribe `ui/titulo/home.ts` en las DOS salidas
+ *  del `try` (`ok` / `error`), así que reescribir un rótulo ya no rompe nada y
+ *  quitar el sello rompe TODOS los guiones que pasan por aquí, en el acto.
+ *
+ *  Lo que cubre y lo que no, dicho para que nadie cuente de más: el bridge que
+ *  no está DESDE EL ARRANQUE no llega hasta aquí — el cliente cae al visor de
+ *  fixtures y el título no se pinta (medido en el guion 98, bloque E), así que
+ *  no hay `#ts-status` que sellar y esta espera expira diciéndolo. La rama
+ *  `error` es la del bridge que SÍ está y no puede servir la lista (el
+ *  directorio de partidas ilegible, el socket que se cae con el título ya
+ *  delante), y esa la ejerce el guion 98. */
+export async function esperarListaDeSaves(ctx, maxMs = ESPERA_DE_LA_LISTA_MS) {
   return ctx.waitFor(
     "el título termina de listar las partidas guardadas del bridge",
     () => {
-      const t = document.getElementById("ts-status")?.textContent ?? "";
-      return /^Bridge OK/.test(t) || /No se puede contactar al bridge/.test(t) ? t : null;
+      const el = document.getElementById("ts-status");
+      if (!el) return null; // el título no está pintado: no hay nada que esperar aquí
+      const estado = el.dataset.lista ?? "";
+      if (estado !== "ok" && estado !== "error") return null;
+      // Nunca vacío: `waitFor` para cuando la sonda devuelve algo TRUTHY, así
+      // que un texto en blanco sellado dejaría esperando para siempre a una
+      // espera que ya se cumplió.
+      return el.textContent || `(#ts-status sellado «${estado}» y sin texto)`;
     },
     maxMs,
   );

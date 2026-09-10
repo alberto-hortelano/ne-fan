@@ -36,7 +36,10 @@
  *    node qa/run.mjs colision hud     solo los que casen con esos nombres
  *    node qa/run.mjs --headed         con ventana, para mirar qué hace
  *    node qa/run.mjs --keep           deja el stack arriba y el tmp sin borrar
- *    node qa/run.mjs --url URL        usa un stack ya arrancado, en esa URL
+ *    node qa/run.mjs --url URL        usa un stack ya arrancado, en esa URL. Su
+ *                                     query se RESPETA y se mezcla con la del
+ *                                     bench (`?offset=500` dice de qué bloque
+ *                                     de puertos es ese stack)
  *    node qa/run.mjs --adoptar        usa el stack que ya esté en los puertos
  *                                     del catálogo (sin esto, encontrárselos
  *                                     ocupados es un error: puede ser el de
@@ -63,6 +66,10 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
 import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } from "./lib/veredictos.mjs";
 import { ctxDeSonda } from "./lib/sonda.mjs";
+// Cómo se compone la URL de la página: pura, y con su propio test en core
+// (`test/url-del-bench.test.ts`). Estaba aquí dentro como una concatenación de
+// cadenas, y ahí es donde nadie la miraba (#476).
+import { offsetDeLaUrl, urlDeLaPagina } from "./lib/url-del-bench.mjs";
 import {
   esperaExpiradaEn,
   fallosDeEsperasEnVuelo,
@@ -83,6 +90,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -140,8 +148,18 @@ function pidVivo(pid) {
  *  arrancan a la vez sondean el bloque +0, las dos lo ven libre y las dos
  *  intentan levantarlo. El fichero se crea con `wx` (falla si existe), que es
  *  atómico en el sistema de ficheros — la carrera la resuelve el kernel, no la
- *  suerte. Un lock cuyo dueño ya murió se reclama. */
-const DIR_BLOQUES = join(here, ".tmp", ".bloques");
+ *  suerte. Un lock cuyo dueño ya murió se reclama.
+ *
+ *  VIVE FUERA DEL ÁRBOL, y esa es toda la corrección de #501: los puertos son
+ *  de la MÁQUINA y el lock estaba en `qa/.tmp/.bloques` del checkout, o sea uno
+ *  por worktree. Con dos ingenieros en dos worktrees —el estado normal de esta
+ *  máquina— cada uno reservaba «su» +0 sin enterarse del otro, y lo único que
+ *  quedaba entre ellos era el sondeo de puertos (`elegirBloque`), que es
+ *  precisamente el que tiene la carrera que este lock existe para cerrar. Un
+ *  directorio por USUARIO (no por árbol): los `/proc` de otro usuario no se
+ *  pueden leer y sus locks tampoco se podrían reclamar, así que compartir el
+ *  fichero con él sería fingir una exclusión que no se puede arbitrar. */
+const DIR_BLOQUES = join(tmpdir(), `nefan-qa-bloques-${process.getuid?.() ?? "sin-uid"}`);
 function reservarBloque(off) {
   mkdirSync(DIR_BLOQUES, { recursive: true });
   const f = join(DIR_BLOQUES, `${off}.lock`);
@@ -174,7 +192,14 @@ function reservarBloque(off) {
 let lockDelBloque = null;
 async function elegirBloque() {
   if (process.env.NEFAN_PORT_OFFSET) return offsetActual();
-  if (ADOPTAR || flag("--url")) return 0;
+  // El bloque de un stack ajeno lo dice SU URL. `--url http://…/?offset=500`
+  // es la forma en que se mide contra el stack del bloque +500, y hasta #476
+  // el runner lo leía como 0: apuntaba el `ai=` de la página al motor falso del
+  // bloque BASE (el del vecino, o ninguno) y sondeaba los puertos equivocados
+  // para decidir si el stack seguía en pie. La query manda; el resto de la
+  // corrida sale de ahí como si lo hubiera puesto el entorno.
+  if (flag("--url")) return offsetDeLaUrl(opt("--url", ""));
+  if (ADOPTAR) return 0;
   const claves = ["fake_ai", "bridge", "html"];
   for (let off = 0; off <= 900; off += 100) {
     const lock = reservarBloque(off);
@@ -236,16 +261,29 @@ const TMP_GAMES = join(TMP, "games");
 const TMP_PLUGINS = join(TMP, "plugins");
 const GAMES_ORIGEN = join(repoRoot, "nefan-core", "data", "games");
 const PLUGINS_ORIGEN = join(repoRoot, "nefan-core", "data", "plugins");
-/** ?raf=timer: en headless la pestaña no está "visible" y el rAF se pausaría;
- *  el pump por Web Worker mantiene el game loop vivo. */
-/** `&offset=`: el navegador no tiene entorno, así que el bloque de puertos de
+/** Los parámetros con los que el bench abre la página.
+ *
+ *  `raf=timer`: en headless la pestaña no está "visible" y el rAF se pausaría;
+ *  el pump por Web Worker mantiene el game loop vivo.
+ *
+ *  `offset`: el navegador no tiene entorno, así que el bloque de puertos de
  *  esta corrida viaja en la URL. Sin él, la página resolvería la State API
  *  —que no tiene override propio como `?ai=` o `?bridge=`— al bloque de
  *  siempre, o sea al stack del otro agente. Con offset 0 no se escribe: la URL
  *  del uso de una sola persona no cambia ni un carácter. */
-const URL_QS =
-  `?input=scripted&ai=${encodeURIComponent(MOTOR_FALSO)}&raf=timer` +
-  (OFFSET ? `&offset=${OFFSET}` : "");
+const PARAMS_DEL_BENCH = {
+  input: "scripted",
+  ai: MOTOR_FALSO,
+  raf: "timer",
+  ...(OFFSET ? { offset: String(OFFSET) } : {}),
+};
+
+/** La URL con la que se abre la página. La composición vive en
+ *  `lib/url-del-bench.mjs`: es pura, la mide `test/url-del-bench.test.ts` y el
+ *  defecto que cierra (#476) se ve leyendo una cadena, no corriendo 71
+ *  guiones. */
+const URL_PAGINA = urlDeLaPagina(BASE, PARAMS_DEL_BENCH);
+if (flag("--url")) console.log(`· página: ${URL_PAGINA}`);
 
 // Los TRES veredictos y el exit viven en la escala ÚNICA (`lib/veredictos.mjs`)
 // desde #331: `presets-clasifica` tenía una escala paralela con el mismo `⊘` y
@@ -271,6 +309,62 @@ async function serviciosCaidos() {
   const caidos = [];
   for (const [port, label] of PUERTOS_DEL_STACK) if (!(await puertoOcupado(port))) caidos.push(`${label} (:${port})`);
   return caidos;
+}
+
+/** ¿Tiene este stack las hojas base de personaje? Motivo si NO, null si sí.
+ *
+ *  `nefan-html/public/sprites/` es arte GENERADO y está en `.gitignore`, así
+ *  que un worktree recién montado (o un clon limpio) NO las tiene. Sin ellas el
+ *  cliente se niega a empezar partida —`character_sheets_missing`, fail-loud a
+ *  propósito: sin `y_bot` no hay a qué degradar— y hasta #476 el desenlace era
+ *  una batería en rojo de arriba abajo culpando a los guiones. Un árbol mal
+ *  montado parecía un juego roto, que es la mentira más cara que puede decir un
+ *  banco de pruebas: manda a leer el guion equivocado durante horas.
+ *
+ *  Se pregunta POR HTTP y no al disco de este árbol porque con `--url` o
+ *  `--adoptar` la página la sirve otro checkout: la precondición es de quien
+ *  sirve las hojas, no de quien lanza la corrida.
+ *
+ *  Y el criterio NO se reescribe aquí: es `modelosCompletos` de core, la misma
+ *  función con la que el título decide qué modelos puede ofrecer, con la lista
+ *  de anims exigidas viajando dentro de la propia respuesta. Un segundo
+ *  criterio en el banco sería el espejo que deriva.
+ *
+ *  Solo se ABORTA con prueba positiva de que faltan. Un censo que no se puede
+ *  leer (la ruta existe solo bajo vite dev) se dice y se sigue: negarse por no
+ *  poder mirar sería la otra mitad del mismo defecto. */
+async function hojasBaseQueFaltan() {
+  const censo = await fetch(new URL("/sprites/index.json", BASE))
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  if (!censo?.required?.anims || !Array.isArray(censo.models)) {
+    console.log(
+      "· OJO: no se pudo leer el censo de hojas (`/sprites/index.json`) — no se comprueba si el\n" +
+        "       personaje se puede vestir. Es normal fuera de vite dev.",
+    );
+    return null;
+  }
+  let modelosCompletos;
+  try {
+    ({ modelosCompletos } = await import("../nefan-core/dist/src/contracts/sprite-census.js"));
+  } catch (err) {
+    console.log(
+      `· OJO: sin \`nefan-core/dist\` (${err.code ?? err.message}) no se comprueban las hojas base:\n` +
+        "       corre `npm run build` en nefan-core si quieres esa red.",
+    );
+    return null;
+  }
+  if (modelosCompletos(censo).length > 0) return null;
+  const inventario = censo.models.length
+    ? censo.models.map((m) => `${m.id} (${m.anims.length}/${censo.required.anims.length})`).join(", ")
+    : "ninguno";
+  return (
+    `no hay ni un modelo de personaje con su set completo de hojas en ${BASE} — ` +
+    `en disco: ${inventario}. Son arte generado y NO viajan en git (.gitignore): ` +
+    `cópialas de otro checkout (\`cp -r ../ne-fan/nefan-html/public/sprites nefan-html/public/\`) ` +
+    `o genéralas con sprite-forge (docs/assets-de-personaje.md). Sin ellas el cliente rechaza ` +
+    `empezar partida y TODA la batería saldría roja culpando a los guiones`
+  );
 }
 
 async function ensureStack() {
@@ -471,7 +565,10 @@ function limpiarTmpViejos() {
   const raiz = join(here, ".tmp");
   if (!existsSync(raiz)) return;
   const candidatos = readdirSync(raiz)
-    .filter((d) => !d.startsWith(".")) // .bloques: los locks de puertos, no son corridas
+    // Un `RUN_ID` es una fecha ISO: nada de lo que empiece por punto es una
+    // corrida. (Los locks de bloque ya no están aquí: son de la máquina y
+    // viven en `DIR_BLOQUES`, fuera del árbol — #501.)
+    .filter((d) => !d.startsWith("."))
     .filter((d) => join(raiz, d) !== TMP);
   const muertos = candidatos.filter((d) => !corridaViva(join(raiz, d)));
   const vivos = candidatos.length - muertos.length;
@@ -899,6 +996,15 @@ async function main() {
   // una vez y se dice, en vez de que su ausencia pase por «ninguno gastó». Que
   // esta red pueda no existir es justo la razón por la que NO puede ser la
   // protección principal: la principal es el gate, que no depende de nadie.
+  // ── La red que el stack tiene que traer puesta, ANTES del primer guion ──
+  // Un ⊘ con su motivo, que es el canal que ya existe para «no llegué a
+  // medir», aplicado a la corrida entera: sin hojas base no hay partida que
+  // conducir, y 71 rojos no dirían nada del juego.
+  const sinHojas = await hojasBaseQueFaltan();
+  if (sinHojas) {
+    console.log(`\n⊘ LA CORRIDA NO MIDE: ${sinHojas}`);
+    salir(exitDeCorrida(0, 1), "la corrida se apaga sin abrir el navegador");
+  }
   const hayContadorDeGasto = (await gastoDelFake()) !== null;
   if (!hayContadorDeGasto) {
     console.log(
@@ -949,7 +1055,7 @@ async function main() {
     let sinMedir = null;
     const t0 = Date.now();
     try {
-      await page.goto(`${BASE}/${URL_QS}`, { waitUntil: "domcontentloaded" });
+      await page.goto(URL_PAGINA, { waitUntil: "domcontentloaded" });
       await ctx.waitFor("window.__nefan disponible", () => Boolean(window.__nefan));
       // ── Guardarraíl de gasto (#295) ──────────────────────────────────────
       // Aquí y no en el guion: la obligación de preguntar vivía en un prólogo

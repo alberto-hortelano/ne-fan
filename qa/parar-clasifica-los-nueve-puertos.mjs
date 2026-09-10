@@ -25,15 +25,16 @@
  *       menos una línea AJENO**. Un `saltados` encendido por un fantasma —el
  *       bug de #393— rompe esa equivalencia en cuanto la línea que lo encendió
  *       no exista, y un aviso que salga sin ajenos también.
- *
- *  Y una SONDA, que se dice pero no puntúa (hallazgo H5 de `qa-2.md`): la foto
- *  de dueños se toma antes de matar, pero se mata **por PUERTO** y no por los
- *  pids de la foto (`kill_port`, que es `fuser` con su bandera de matar sobre
- *  `<puerto>/tcp`), así que un proceso AJENO que tome un puerto del
- *  catálogo mientras dura el barrido muere igual, y el informe lo apunta como
- *  propio citando la línea de comandos del ocupante ANTERIOR. La ventana pasó
- *  de ~0 (antes se resolvía y se mataba puerto a puerto) a la duración de la
- *  segunda pasada.
+ *   4 · **El AJENO de OTRO BLOQUE de puertos** (#424). La rama segura mira los
+ *       diez bloques, pero `--parar-todo` solo barre el vigente: el aviso «para
+ *       llevarte también lo ajeno» salía igual y prometía un barrido que sobre
+ *       ese proceso no puede nada. Se planta un señuelo en un bloque libre que
+ *       no sea el vigente y se exige que el informe lo enumere, lo deje vivo y
+ *       diga la verdad sobre lo que ese comando alcanza.
+ *   5 · **El intruso que llega A MITAD del barrido.** Era una sonda que no
+ *       puntuaba (hallazgo H5 de `qa-2.md`, cuando se mataba por PUERTO con la
+ *       clasificación de la foto); desde que #393 mata por PID es la garantía
+ *       al revés y se afirma: el que llega después ni se entera.
  *
  *  Todos los señuelos son NUESTROS: los arranca este guion y los retira por SU
  *  pid. **Nunca se mata por puerto ni por nombre**, y el único `--parar` que se
@@ -59,7 +60,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PUERTOS_BASE, PUERTOS_TODOS } from "./lib/stack.mjs";
+import { PUERTOS_BASE, PUERTOS_TODOS, offsetActual } from "./lib/stack.mjs";
 import { puertoOcupado, esperarPuertoLibre } from "./lib/puertos.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -136,8 +137,9 @@ async function main() {
   // ── Preflight ────────────────────────────────────────────────────────────
   // Se ejecuta `--parar`, que se lleva lo de este worktree: con un stack arriba
   // no se puede saber si es tuyo. Se mira el bloque VIGENTE (base + offset),
-  // que es donde van los señuelos; los otros nueve bloques son de quien sean y
-  // este guion ni los toca ni los afirma.
+  // que es donde van casi todos los señuelos. De los otros nueve bloques este
+  // guion solo usa uno, y solo si lo encuentra LIBRE (el aserto 8): plantar un
+  // señuelo encima del stack de otro agente sería el pecado que viene a medir.
   const sucios = [];
   for (const clave of Object.keys(PUERTOS_BASE)) {
     if (await puertoOcupado(PUERTOS_TODOS[clave])) sucios.push(`${clave} (:${PUERTOS_TODOS[clave]})`);
@@ -230,17 +232,97 @@ async function main() {
   else mal("el informe no se parte con la salida de fuser", `líneas con pids: ${conPids.map((l) => l.trim().slice(0, 60)).join(" / ")}`);
 
   // 7 · El aviso de `--parar-todo`, en su forma SIEMPRE evaluable: sale si y
-  //     solo si el informe imprimió al menos un AJENO. Así se puede afirmar
-  //     con stacks de otros worktrees delante, que es el estado normal de esta
-  //     máquina — y es donde el guion hermano se abstiene.
-  const aconseja = /Para llevarte también lo ajeno/.test(informe);
+  //     solo si el informe imprimió al menos un AJENO DEL BLOQUE VIGENTE. Así
+  //     se puede afirmar con stacks de otros worktrees delante, que es el
+  //     estado normal de esta máquina — y es donde el guion hermano se
+  //     abstiene.
+  //
+  //     «del bloque vigente» es la corrección de #424 y no un matiz: la rama
+  //     segura de `cmd_stop` mira los DIEZ bloques, pero `--parar-todo` solo
+  //     barre `ALL_PORTS`, o sea el vigente. Con el aviso saliendo ante
+  //     cualquier ajeno de cualquier bloque, el consejo mandaba a ejecutar el
+  //     arma más peligrosa del launcher para que no pasara nada. El señuelo del
+  //     bloque de al lado (más abajo, aserto 8) es el que ejerce ese caso: el
+  //     que miente. Aquí el AJENO está en el bloque vigente, así que el aviso
+  //     tiene que salir.
+  const aconseja = /Para llevarte también lo ajeno DEL BLOQUE VIGENTE/.test(informe);
   if (aconseja === ajenasDelInforme.length > 0) {
-    ok(`el aviso de barrido total sale si y solo si hay ajenos (aviso=${aconseja}, ajenos=${ajenasDelInforme.length})`);
+    ok(`el aviso de barrido total sale si y solo si hay ajenos del bloque (aviso=${aconseja}, ajenos=${ajenasDelInforme.length})`);
   } else {
-    mal("el aviso de barrido total sale si y solo si hay ajenos", `aviso=${aconseja} pero ajenos=${ajenasDelInforme.length}`);
+    mal("el aviso de barrido total sale si y solo si hay ajenos del bloque", `aviso=${aconseja} pero ajenos=${ajenasDelInforme.length}`);
   }
 
-  // ── SONDA (no puntúa): matar por PUERTO con una clasificación de la foto ──
+  // 8 · EL CASO QUE MENTÍA (#424): un AJENO en OTRO bloque de puertos.
+  //
+  //     `--parar` lo VE —mira los diez bloques— y hasta ahora, al verlo,
+  //     imprimía «para llevarte también lo ajeno: --parar-todo», que sobre ese
+  //     proceso no puede nada. Lo que se afirma es que el informe (a) lo
+  //     enumera como ajeno, (b) NO lo mata, y (c) dice la verdad sobre lo que
+  //     `--parar-todo` alcanza.
+  //
+  //     El bloque se ELIGE libre: los otros nueve son de quien sean y plantar
+  //     un señuelo encima del stack de otro agente sería el pecado que este
+  //     guion mide. Si no hay ninguno libre, este aserto se declara no medido
+  //     en vez de inventarse un veredicto.
+  await retirar(ajeno);
+  const vigente = offsetActual();
+  let otroBloque = null;
+  for (let off = 0; off <= 900; off += 100) {
+    if (off === vigente) continue;
+    const p1 = PUERTOS_BASE.html + off;
+    const p2 = PUERTOS_BASE.fake_ai + off;
+    if (!(await puertoOcupado(p1)) && !(await puertoOcupado(p2))) {
+      otroBloque = { off, puertos: [p1, p2] };
+      break;
+    }
+  }
+  if (!otroBloque) {
+    nota("no se pudo medir el aviso con un ajeno de OTRO bloque", "los otros nueve bloques están ocupados");
+  } else {
+    const forastero = await señuelo(otroBloque.puertos, {
+      cwd: "/tmp",
+      etiqueta: `AJENO en el bloque +${otroBloque.off}`,
+    });
+    arrancados.push(forastero);
+    const informe2 = parar();
+    const lineas2 = informe2.split("\n");
+    const ajenas2 = lineas2.filter((l) => /AJENO, no se toca/.test(l));
+    const suLinea = ajenas2.filter((l) => puertosDe(l).includes(otroBloque.puertos[0]));
+    if (suLinea.length === 1) ok(`el ajeno del bloque +${otroBloque.off} sale enumerado como AJENO`);
+    else mal(`el ajeno del bloque +${otroBloque.off} sale enumerado`, `líneas que lo citan: ${suLinea.length}`);
+
+    const sigueVivo = !(await esperarMuerte(forastero, 1_000)) && (await puertoOcupado(otroBloque.puertos[0]));
+    if (sigueVivo) ok("…y sigue vivo: `--parar` mira los diez bloques pero solo mata lo suyo");
+    else mal("el ajeno de otro bloque sigue vivo", "lo mató: es «no le cerreis sus servers» incumplido");
+
+    // La equivalencia que arregla #424: con el ÚNICO ajeno fuera del bloque
+    // vigente, el aviso de `--parar-todo` NO sale (no lo alcanzaría), y en su
+    // lugar el informe dice que no lo alcanza.
+    const aconseja2 = /Para llevarte también lo ajeno DEL BLOQUE VIGENTE/.test(informe2);
+    const dice = /NO lo alcanza --parar-todo/.test(informe2);
+    if (!aconseja2 && dice) {
+      ok("el informe NO promete un barrido que no alcanza a ese proceso, y lo dice");
+    } else {
+      mal(
+        "el informe dice la verdad sobre lo que --parar-todo alcanza",
+        `aviso de barrido total=${aconseja2} · dice que no lo alcanza=${dice}`,
+      );
+    }
+  }
+
+  // ── 9 · El intruso que llega A MITAD del barrido NO se come el tiro ──────
+  //
+  //     Nació como SONDA que no puntuaba, y confirmaba el hallazgo H5 de
+  //     `qa-2.md`: se mataba por PUERTO con la clasificación de la foto, así
+  //     que un ajeno que tomara un puerto del catálogo durante la 2ª pasada
+  //     moría con la línea de comandos del ocupante ANTERIOR en el informe.
+  //     #393 lo arregló matando por PID, y desde entonces la sonda contestaba
+  //     lo contrario de lo que su prosa decía — un rastro que confunde. Hoy es
+  //     un ASERTO de la garantía: el intruso sobrevive.
+  //
+  //     Sigue habiendo una salida sin veredicto, y es honesta: si el intruso no
+  //     llega a escuchar dentro de la ventana, no hay experimento. Eso se dice
+  //     y no puntúa; lo que puntúa es el intruso que SÍ entró.
   await retirar(ajeno);
   const cebo = await señuelo([P.bridge, P.state_api], { cwd: repoRoot, etiqueta: "PROPIO (para alargar el barrido)" });
   const tardio = await señuelo([P.fake_ai], { cwd: repoRoot, etiqueta: "PROPIO en el último puerto" });
@@ -260,14 +342,14 @@ async function main() {
     /* el puerto no se soltó a tiempo: la sonda no concluye, y lo dice abajo */
   }
   await enVuelo;
-  if (!intruso) nota("sonda H5 no concluyente: el intruso no llegó a escuchar dentro de la ventana");
+  if (!intruso) nota("sin veredicto sobre el intruso: no llegó a escuchar dentro de la ventana");
   else if (await esperarMuerte(intruso, 3_000)) {
-    nota(
-      "H5 CONFIRMADO: un proceso AJENO que toma un puerto del catálogo DURANTE el barrido muere igual",
-      "se mata por PUERTO (`kill_port`) con la clasificación de la foto; la ventana es toda la 2ª pasada",
+    mal(
+      "un AJENO que toma un puerto del catálogo DURANTE el barrido sobrevive",
+      "murió con la clasificación del ocupante ANTERIOR: se está matando por PUERTO y no por los pids de la foto",
     );
   } else {
-    nota("sonda H5: el intruso sobrevivió en esta corrida (la ventana no le alcanzó)");
+    ok("un AJENO que toma un puerto del catálogo a mitad del barrido SOBREVIVE (se mata por PID)");
   }
 }
 
