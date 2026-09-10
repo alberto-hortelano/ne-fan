@@ -369,6 +369,19 @@ export interface SessionStartedMessage {
    *  `world` entero al modelo en cada turno, y una paleta ahí sería coste y
    *  ruido puros. Ausente = tema base. */
   uiTheme?: UiTheme;
+  /** UN AVISO SOBRE LA PARTIDA QUE ACABA DE EMPEZAR, ya redactado para quien
+   *  juega (#537). Hoy tiene un solo emisor: el estilo del mundo que no casa
+   *  temáticamente con él (`avisoDeEstiloDeOtroTema`, core).
+   *
+   *  No es un fallo y por eso no viaja por `narrative_status`: un `phase:
+   *  "error"` sacaría el muro a pantalla completa por algo que no impide jugar.
+   *  Va aquí, en la respuesta del arranque, porque es un hecho DE ESTA sesión y
+   *  se sabe exactamente una vez — el cliente lo apunta en el registro del
+   *  jugador y lo dice en la línea del juego, sin repetirlo en cada turno.
+   *
+   *  Ausente cuando no hay nada que avisar: un `""` sería un aviso que el
+   *  cliente tendría que aprender a distinguir de «no pasa nada». */
+  avisoDeEstilo?: string;
   error?: string;
 }
 

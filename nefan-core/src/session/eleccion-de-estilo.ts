@@ -94,3 +94,35 @@ export function eleccionDeEstilo<S extends EstiloElegible>(
     porDefecto: elegido?.estilo.style_id ?? null,
   };
 }
+
+/** Los dos nombres que el jugador reconoce, no sus ids: lo que se lee en la
+ *  tarjeta del mundo y en el desplegable de estilo. */
+export interface EstiloYMundoQueNoCasan {
+  /** El `name` del pack («Acero y neón»), no su `style_id`. */
+  estilo: string;
+  /** El `title` del mundo («Miravanda»), no su `game_id`. */
+  mundo: string;
+}
+
+/** LO QUE SE LE DICE AL JUGADOR cuando la partida arranca con un estilo que no
+ *  casa temáticamente con su mundo (#537).
+ *
+ *  Hasta el 2026-09-10 este hecho existía SOLO como `console.warn` del bridge:
+ *  el jugador veía la marca «(del mundo · otro tema)» en el desplegable, la
+ *  marca desaparecía al entrar y ya no había forma de saber por qué el arte no
+ *  pega con el mundo. La política no se revisa aquí —manda el estilo del mundo,
+ *  decisión (a) de #241— solo se hace visible su consecuencia.
+ *
+ *  Vive con la regla que lo provoca y no en el bridge por lo de siempre: es
+ *  texto de PRODUCTO con criterio, y aquí se puede poner rojo sin levantar un
+ *  socket. La causa CRUDA (las dos listas de tags) no está en esta frase: se
+ *  queda en el `console.warn` del servidor y en el `message` del registro. Lo
+ *  que el jugador recibe es una frase accionable —qué pasa, qué no pasa y qué
+ *  puede hacer—, que es el patrón de #469 y #479. */
+export function avisoDeEstiloDeOtroTema(v: EstiloYMundoQueNoCasan): string {
+  return (
+    `Esta partida usa «${v.estilo}», un estilo de otro tema: su arte no está hecho ` +
+    `para «${v.mundo}» y no va a pegar con lo que veas. La partida funciona igual; ` +
+    `si prefieres otro, elígelo en el selector de mundos antes de empezar.`
+  );
+}

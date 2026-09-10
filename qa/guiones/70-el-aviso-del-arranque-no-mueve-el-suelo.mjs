@@ -156,12 +156,19 @@ export default async function (ctx) {
   await esperarTituloListo(ctx);
   // El request del bridge expira a los 30 s: la espera es por ESTADO, y el
   // maxMs es el cortafuegos.
+  //
+  // Se espera al SELLO (`data-lista`), no a «que el texto deje de empezar por
+  // Cargando»: desde #425 el hueco HABLA mientras espera (cuenta los segundos),
+  // así que aquel prefijo deja de estar puesto a los pocos segundos y esta
+  // espera resolvía con el texto de la ESPERA en vez de con el desenlace. Es la
+  // lección de #550 otra vez —una espera colgada de la prosa se rompe cuando la
+  // prosa mejora—, y aquí la cazó el propio cambio que la provocó.
   const estado = await ctx.waitFor(
     "el título dice qué ha pasado con las partidas guardadas",
     () => {
       const el = document.getElementById("ts-status");
       const t = el?.textContent ?? "";
-      return t && !/^Cargando/.test(t)
+      return el?.dataset.lista === "ok" || el?.dataset.lista === "error"
         ? {
             texto: t,
             alto: Math.round(el.getBoundingClientRect().height),

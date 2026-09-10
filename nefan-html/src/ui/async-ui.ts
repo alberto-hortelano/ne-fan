@@ -93,3 +93,41 @@ export function paso(
     alFallar?.(err);
   });
 }
+
+/** A partir de cuándo una espera deja de ser «tarda un poco» y se convierte en
+ *  silencio, y cada cuánto se refresca la cuenta. */
+const ESPERA_MUDA_MS = 3000;
+const LATIDO_MS = 1000;
+
+/** UNA ESPERA QUE NO SE CALLA (#425). El hermano de `paso()`: aquél es una
+ *  promesa cuyo FALLO no se pierde, y ésta una promesa cuya ESPERA no se
+ *  pierde. Las dos existen por lo mismo — que el jugador no se quede delante de
+ *  una pantalla que no dice nada.
+ *
+ *  El caso que la motiva: `listSessions()` es una `request` del bridge con 30 s
+ *  de timeout, así que con el socket ABIERTO y el bridge mudo —el servidor
+ *  vivo pero atascado, `saves/` en un volumen que no responde— el título se
+ *  quedaba medio minuto con el mismo texto puesto. Medio minuto de texto fijo
+ *  es indistinguible de un cuelgue.
+ *
+ *  Lo que se hace es HABLAR, no acortar el plazo: cortar el timeout convertiría
+ *  en fallo una espera larga que iba a acabar bien (muchas partidas, un disco
+ *  lento), y eso cambia un silencio por una mentira.
+ *
+ *  Aquí vive el MECANISMO (cuándo se empieza a hablar, cada cuánto, y cómo se
+ *  para); las PALABRAS son de quien espera, que es el único que sabe qué se
+ *  está esperando y dónde se lee. Devuelve el apagador, que hay que llamar
+ *  ANTES de escribir el desenlace: si no, el último latido pisaría el resultado.
+ *
+ *  `cada` recibe los segundos enteros transcurridos, y no se llama hasta que la
+ *  espera cruza `ESPERA_MUDA_MS`: lo normal es que la promesa vuelva antes y no
+ *  se diga nada, que es lo correcto. */
+export function contarLaEspera(cada: (segundos: number) => void): () => void {
+  const desde = performance.now();
+  const timer = setInterval(() => {
+    const transcurrido = performance.now() - desde;
+    if (transcurrido < ESPERA_MUDA_MS) return;
+    cada(Math.round(transcurrido / 1000));
+  }, LATIDO_MS);
+  return () => clearInterval(timer);
+}

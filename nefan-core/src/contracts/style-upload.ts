@@ -68,20 +68,40 @@ export function refDeImagen(indice: number, id?: string): string {
  *
  *  Son texto de PRODUCTO: el título los enseña tal cual y Python los devuelve
  *  como `detail` del 422, así que el jugador lee lo mismo lo cace quien lo
- *  cace. */
+ *  cace. Por eso hay DOS reglas sobre cómo están escritos, y las dos las canda
+ *  `test/style-upload.test.ts`, que RECORRE este objeto entero — un motivo
+ *  nuevo entra bajo la regla sin que nadie tenga que acordarse:
+ *
+ *  1. **UN LÍMITE, UNA FRASE** (#536). Hasta el 2026-09-10 el mínimo y el
+ *     máximo de `nombre`, `tags` e `imagenes` compartían motivo, así que quien
+ *     subía TRECE imágenes leía «Sube al menos una imagen (máximo 12)» — una
+ *     orden que ya había cumplido, con el número que la contradice entre
+ *     paréntesis. Un motivo no puede decir «al menos» y «máximo» a la vez: se
+ *     parten en dos, y el emisor elige por qué lado se pasó.
+ *  2. **FRASE COMPLETA EN ESPAÑOL**: empieza en mayúscula y termina en punto.
+ *     `imagen_vacia` y `sin_descripcion` arrancaban con `{ref}`, que se
+ *     sustituye por un id (`torre`) o por «la imagen 3»: minúscula, siempre.
+ *     Se reescriben para que el hueco caiga DENTRO de la frase.
+ *
+ *  Y una tercera que NO se canda aquí porque no es de este objeto: que el
+ *  jugador lea ESTE texto y no el envoltorio del 422. Eso es de quien pinta
+ *  (`ui/titulo/subir-estilo.ts`, que saca el `detail`) y lo mide el guion 124. */
 export const MOTIVOS_DE_SUBIDA = {
-  nombre: `Ponle un nombre al estilo (entre ${R.nombre.min} y ${R.nombre.max} caracteres).`,
+  nombre_corto: `Ponle un nombre al estilo: al menos ${R.nombre.min} caracteres.`,
+  nombre_largo: `El nombre del estilo no puede pasar de ${R.nombre.max} caracteres.`,
   descripcion_del_pack: `La descripción del estilo no puede pasar de ${R.descripcion_del_pack_max} caracteres.`,
   style_token: `El style_token no puede pasar de ${R.style_token_max} caracteres.`,
-  tags: `Elige al menos una etiqueta temática (máximo ${R.tags.max}).`,
-  imagenes: `Sube al menos una imagen (máximo ${R.imagenes.max}).`,
+  sin_etiquetas: `Elige al menos una etiqueta temática: es lo que casa el estilo con los mundos que puede vestir.`,
+  demasiadas_etiquetas: `Demasiadas etiquetas temáticas: un estilo admite como mucho ${R.tags.max}.`,
+  sin_imagenes: `Sube al menos una imagen de referencia.`,
+  demasiadas_imagenes: `Demasiadas imágenes: un pack admite como mucho ${R.imagenes.max}.`,
   mas_de_una_lamina: `Más de una lámina de materiales: ${CARPETA_LAMINA}/ admite exactamente una imagen.`,
   carpeta: `Carpeta desconocida en {ref}: cada imagen del pack va en ${STYLE_REF_FOLDERS.join("/, ")}/.`,
-  imagen_vacia: `{ref} no trae ninguna imagen.`,
+  imagen_vacia: `No llegó ningún fichero de imagen para {ref}.`,
   descripcion_de_imagen: `La descripción de {ref} no puede pasar de ${R.descripcion_de_imagen_max} caracteres.`,
-  sin_descripcion: `{ref} necesita una descripción: solo la lámina de materiales puede ir sin ella.`,
-  id_invalido: `Id inválido: {ref}`,
-  id_duplicado: `Id duplicado: {ref}`,
+  sin_descripcion: `Falta la descripción de {ref}: solo la lámina de materiales puede ir sin ella.`,
+  id_invalido: `Id inválido: {ref}.`,
+  id_duplicado: `Id duplicado: {ref}.`,
 } as const;
 
 /** Lo que el título tiene en la mano antes de comprobar nada: la carpeta es un
@@ -134,9 +154,10 @@ export const SubidaDeEstiloSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, message, path });
     };
     const nombre = v.name.trim();
-    if (nombre.length < R.nombre.min || nombre.length > R.nombre.max) {
-      err(MOTIVOS_DE_SUBIDA.nombre, ["name"]);
-    }
+    // Cada límite por su lado (#536): el emisor sabe por dónde se pasó, así
+    // que no hay motivo para darle al jugador los dos y que elija.
+    if (nombre.length < R.nombre.min) err(MOTIVOS_DE_SUBIDA.nombre_corto, ["name"]);
+    else if (nombre.length > R.nombre.max) err(MOTIVOS_DE_SUBIDA.nombre_largo, ["name"]);
     if ((v.description ?? "").trim().length > R.descripcion_del_pack_max) {
       err(MOTIVOS_DE_SUBIDA.descripcion_del_pack, ["description"]);
     }
@@ -144,10 +165,10 @@ export const SubidaDeEstiloSchema = z
       err(MOTIVOS_DE_SUBIDA.style_token, ["style_token"]);
     }
     const tags = v.tags.map((t) => t.trim()).filter((t) => t.length > 0);
-    if (tags.length < R.tags.min || tags.length > R.tags.max) err(MOTIVOS_DE_SUBIDA.tags, ["tags"]);
-    if (v.images.length < R.imagenes.min || v.images.length > R.imagenes.max) {
-      err(MOTIVOS_DE_SUBIDA.imagenes, ["images"]);
-    }
+    if (tags.length < R.tags.min) err(MOTIVOS_DE_SUBIDA.sin_etiquetas, ["tags"]);
+    else if (tags.length > R.tags.max) err(MOTIVOS_DE_SUBIDA.demasiadas_etiquetas, ["tags"]);
+    if (v.images.length < R.imagenes.min) err(MOTIVOS_DE_SUBIDA.sin_imagenes, ["images"]);
+    else if (v.images.length > R.imagenes.max) err(MOTIVOS_DE_SUBIDA.demasiadas_imagenes, ["images"]);
     const laminas = v.images.filter((img) => img.folder === CARPETA_LAMINA);
     if (laminas.length > R.laminas_max) err(MOTIVOS_DE_SUBIDA.mas_de_una_lamina, ["images"]);
 

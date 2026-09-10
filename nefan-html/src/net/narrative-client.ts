@@ -5,6 +5,7 @@
  */
 import type { UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import { BridgeClient } from "./bridge-client.js";
+import { errors } from "../ui/error-log.js";
 import type {
   SessionMetadata,
   ConsequenceEffect,
@@ -263,6 +264,28 @@ export class NarrativeClient {
     if (!res.ok || !res.sessionId || !res.state) {
       throw new Error(res.error ?? "start_session failed");
     }
+    // EL AVISO DEL ARRANQUE, UNA SOLA VEZ (#537). El bridge sabe cosas de la
+    // partida que el jugador tiene que oír y que no son fallos —hoy, que el
+    // estilo del mundo es de otro tema— y hasta esta tanda se quedaban en su
+    // `console.warn`: el jugador entraba a un mundo cuyo arte no pega con él
+    // sin una sola línea que lo dijera.
+    //
+    // AL REGISTRO Y SOLO AL REGISTRO (`#error-log`), que es el sitio del
+    // cliente donde se busca lo que ha pasado y que sigue en pantalla mientras
+    // se juega (`dev-ui.css`: solo lo esconde el título).
+    //
+    // NO a la línea del juego, y esto se MIDIÓ: `crearRegistroDeLaPartida`
+    // conserva ocho líneas y este aviso llega ANTES que las del arranque
+    // («Nueva partida», el tile, el atlas, el combate), así que es el primero
+    // en salir por abajo — el guion 92 lo cazó buscándolo allí. Una llamada
+    // cuyo efecto se borra a los dos segundos es decoración, no un canal.
+    //
+    // Y SIN `alJugador`: ese canal levanta el muro a pantalla completa (lo
+    // pinta `ui/muro-de-carga.ts`) y esto no impide jugar. Aquí y no en
+    // `main.ts` porque es el mismo sitio donde el wire se traduce a lo que el
+    // cliente entiende, y porque la raíz de composición está congelada en su
+    // tamaño (`client-file-size.json`).
+    if (res.avisoDeEstilo) errors.push("session", res.avisoDeEstilo);
     return { sessionId: res.sessionId, gameId: res.gameId ?? gameId, state: res.state, uiTheme: res.uiTheme };
   }
 

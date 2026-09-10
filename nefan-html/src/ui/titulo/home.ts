@@ -10,8 +10,9 @@
  *  enrutador del título por `ir(destino)` — esta hoja no conoce a ninguna otra
  *  (candado `las-hojas-del-titulo-no-se-atan-entre-si`).
  *
- *  Sale de `title-screen.ts` en la PR 4 de #346. El código es el que estaba,
- *  con `this.x` → `deps.x`: ni una decisión cambia de sitio.
+ *  Sale de `title-screen.ts` en la PR 4 de #346 (movimiento puro); lo que ha
+ *  cambiado desde entonces son los DOS defectos de #427 y la espera de #425,
+ *  cada uno anotado donde vive.
  */
 import type { SessionMetadata } from "@nefan-core/src/narrative/types.js";
 import { CONFIG } from "@nefan-core/src/config.js";
@@ -22,7 +23,7 @@ import {
   type Modo,
 } from "@nefan-core/src/session/gates-de-imagen.js";
 import type { NarrativeClient } from "../../net/narrative-client.js";
-import { paso } from "../async-ui.js";
+import { contarLaEspera, paso } from "../async-ui.js";
 import { errors } from "../error-log.js";
 import {
   CHAR_MODE_LABELS,
@@ -57,19 +58,14 @@ const BTN_SMALL_DANGER_CSS = [
   "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
 ].join(";");
 
-/** La caja de avisos del título, vista DESDE EL HOME: solo las tres puertas
- *  que el home empuja, de las cinco que tiene.
+/** La caja de avisos del título (`ui/titulo/avisos.ts`), vista DESDE EL HOME:
+ *  las tres puertas que el home empuja, de las cinco que tiene. Las otras dos
+ *  (`avisar`, `retirar`) son API de la clase y el home no las llama nunca.
  *
- *  Es una interfaz y no un import porque la caja todavía vive en la raíz
- *  (`#ts-error` lo reescriben `mostrarErrorEnHome`/`pintarAvisos`, que salen a
- *  `ui/titulo/avisos.ts` en la PR 6). La raíz la construye inline y se la pasa;
- *  cuando `crearAvisos(deps)` exista, encaja aquí por FORMA —TypeScript es
- *  estructural— sin que `avisos.ts` tenga que importar a esta hoja, que es lo
- *  que el candado prohíbe. Por eso los nombres son los que la PR 6 ya tiene
- *  escritos, y por eso este módulo no se toca dos veces.
- *
- *  Las otras dos (`avisar`, `retirar`) son API pública de la clase, la usa
- *  `main.ts` desde el registro de errores, y el home no las llama nunca. */
+ *  Es una INTERFAZ y no un import de aquella hoja: el candado
+ *  `las-hojas-del-titulo-no-se-atan-entre-si` no deja que dos se toquen, y
+ *  `crearAvisos(deps)` encaja aquí por FORMA porque TypeScript es
+ *  estructural. */
 export interface AvisosDelHome {
   /** Pinta el motivo de la ÚLTIMA acción que falló, con su tono, y repinta. */
   mostrarAccion(motivo: string, tono?: "error" | "aviso"): void;
@@ -186,13 +182,29 @@ export async function pintarHome(
   // este sello se queda en «ok», que es la verdad de lo que se pregunta aquí.
   statusEl.dataset.lista = "pidiendo";
   statusEl.textContent = "Cargando saves desde el bridge...";
-  let sessions: SessionMetadata[] = [];
+  // La espera no se calla (#425): pasados unos segundos el hueco cuenta cuánto
+  // lleva, así que la pantalla se ve VIVA. El mecanismo es de `async-ui.ts`, las
+  // palabras de aquí, y el sello `data-lista` se queda en «pidiendo».
+  const dejarDeContar = contarLaEspera((s) => {
+    statusEl.textContent =
+      `El servidor de la partida todavía no ha contestado (${s} s). ` +
+      `Sigue esperando; mientras tanto, «Nueva partida» funciona.`;
+    statusEl.style.color = "#a86";
+  });
+  // `null` NO es lo mismo que `[]`, y ese era el defecto (#427): el `catch`
+  // dejaba el array vacío que ya estaba, así que «no se pudieron cargar» y
+  // «— Ninguna partida todavía —» compartían pantalla con TRES partidas en
+  // disco, y la segunda era falsa.
+  let sessions: SessionMetadata[] | null = null;
   try {
-    sessions = await deps.narrative.listSessions();
+    const lista = await deps.narrative.listSessions();
+    dejarDeContar(); // ANTES del desenlace: un latido tardío lo pisaría
+    sessions = lista;
     statusEl.dataset.lista = "ok";
-    statusEl.textContent = `Bridge OK — ${sessions.length} partidas guardadas.`;
+    statusEl.textContent = `Bridge OK — ${lista.length} partidas guardadas.`;
     statusEl.style.color = "#4a4";
   } catch (err) {
+    dejarDeContar();
     // Hermano de `#ts-error`, y hasta ahora con el mismo defecto: aquí se
     // leía «No se puede contactar al bridge (…). Arranca ./start.sh y elige
     // un preset con bridge» — instrucciones de desarrollo a quien no tiene
@@ -204,10 +216,14 @@ export async function pintarHome(
     )}</span>`;
   }
 
-  if (sessions.length === 0) {
+  if (sessions === null) {
+    // Lo que falta es la LISTA, no las partidas: no se afirma ningún número.
+    sessionsEl.innerHTML = `<div style="color:#a87;font-style:italic">— No sabemos qué partidas tienes: la lista no se pudo leer —</div>`;
+  } else if (sessions.length === 0) {
     sessionsEl.innerHTML = `<div style="color:#666;font-style:italic">— Ninguna partida todavía —</div>`;
   } else {
-    sessionsEl.innerHTML = sessions
+    const lista = sessions;
+    sessionsEl.innerHTML = lista
       .map((s) => sessionRowHtml(s))
       .join("");
     for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-action=resume]")) {
@@ -260,7 +276,7 @@ export async function pintarHome(
     // partida, el mismo campo lo cambia el chip de gráficos (🎨/🧱).
     for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-mode-facet]")) {
       btn.addEventListener("click", () =>
-        paso(onModeBadge(deps, btn, sessions), "title", "cambiar el modo del save"),
+        paso(onModeBadge(deps, btn, lista), "title", "cambiar el modo del save"),
       );
     }
   }
@@ -331,11 +347,29 @@ async function onModeBadge(
   try {
     await deps.narrative.setRenderMode(sessionId, facet, target as "image" | "vector");
   } catch (err) {
+    // EL MISMO CANAL QUE «BORRAR», Y POR EL MISMO MOTIVO (#427, #365). Era el
+    // ÚNICO fallo de acción del home que escribía en `#ts-status` —la línea de
+    // ESTADO DEL BRIDGE—, y eso costaba tres cosas: se llevaba por delante
+    // «Bridge OK — 3 partidas guardadas», no era pegajoso (cualquier repintado
+    // lo borraba) y contradecía la cabecera de `avisos.ts`, que promete UN SOLO
+    // escritor de ese hueco. El aviso va DESPUÉS del repintado: `pintarHome`
+    // abre con `limpiarAccion()` y borraría el que se escribiera antes.
+    errors.push("title", `cambiar el modo de ${facet} de ${sessionId}`, err);
     await pintarHome(deps);
-    const st = deps.content.querySelector<HTMLElement>("#ts-status");
-    if (st) {
-      st.innerHTML = `<span style="color:#a44">No se pudo cambiar el modo de ${escapeHtml(sessionId)}: ${escapeHtml((err as Error).message)}</span>`;
-    }
+    // La tarjeta se MARCA, igual que en el borrado fallido: el aviso vive a
+    // media pantalla de la fila. Se busca el botón NUEVO — el repintado se
+    // llevó el que se pulsó.
+    const reciente = deps.content.querySelector<HTMLElement>(
+      `button[data-mode-facet="${facet}"][data-session-id="${CSS.escape(sessionId)}"]`,
+    );
+    if (reciente) marcarTarjetaFallida(reciente);
+    // Frase accionable primero y causa detrás: lo que el guion 52 le exige a
+    // «Borrar» (#469/#479).
+    deps.avisos.mostrarAccion(
+      `El modo de ${sessionId} SIGUE como estaba: el juego no pudo guardar el cambio y la ` +
+        `partida no se ha tocado. Comprueba los permisos de su carpeta en saves/ y vuelve a ` +
+        `intentarlo. Causa: ${(err as Error).message}`,
+    );
     return;
   }
   await pintarHome(deps);

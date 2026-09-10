@@ -34,7 +34,10 @@
  *  en memoria que sobrevive a la pantalla, y esa memoria autoriza un gasto.
  *
  *  **D · `set_render_mode` que FALLA.** El `catch` de `onModeBadge` repinta el
- *  home y escribe el motivo en `#ts-status`. No lo ejercía nadie. El fallo se
+ *  home, marca la tarjeta y escribe el motivo en la CAJA DE AVISOS
+ *  (`#ts-error`), como «Borrar». No lo ejercía nadie, y hasta el 2026-09-10
+ *  escribía en `#ts-status` —la línea de estado del bridge— lo que le costaba
+ *  al jugador esa línea y la persistencia del aviso (#427). El fallo se
  *  inyecta EN EL BORDE, sin tocar una línea de cliente ni fabricar estado: al
  *  directorio del save se le quita el permiso de escritura (`0o500`, el mismo
  *  repro del guion 52), con lo que el bridge lee la partida y revienta al
@@ -46,8 +49,9 @@
  *  método: la carpeta de partidas se deja ilegible (`0o000`) y el almacén del
  *  bridge lanza. Se afirma que el título no se queda en «Cargando saves…»,
  *  que el motivo va TRADUCIDO (sin `./start.sh` ni jerga del transporte, que
- *  es lo que se leía antes de #306) y que «Nueva partida» sigue siendo una
- *  salida. Nota medida para quien lo intente por el otro camino: con
+ *  es lo que se leía antes de #306), que el hueco de la lista NO dice «no hay
+ *  ninguna» con tres partidas en disco (#427) y que «Nueva partida» sigue
+ *  siendo una salida. Nota medida para quien lo intente por el otro camino: con
  *  `?bridge=` a un puerto muerto el TÍTULO NO SE PINTA (el cliente cae al
  *  visor de fixtures), así que ese camino no ejerce este `catch`.
  *
@@ -80,6 +84,22 @@ const fotoDelHome = () => ({
   status: document.getElementById("ts-status")?.textContent?.trim() ?? "",
   sesiones: document.getElementById("ts-sessions")?.textContent?.trim() ?? "",
   tarjetas: document.querySelectorAll(".ts-save").length,
+  aviso: document.getElementById("ts-error")?.textContent?.trim() ?? "",
+  // Las tarjetas que el home ha RESALTADO por una acción fallida
+  // (`marcarTarjetaFallida`). Se identifica la que DESENTONA, no un color
+  // escrito aquí: todas las filas nacen con el mismo borde inline, así que la
+  // marcada es la que no lo comparte con la mayoría. Si mañana cambia la
+  // paleta, el aserto sigue diciendo lo mismo.
+  marcadas: (() => {
+    const filas = [...document.querySelectorAll(".ts-save")];
+    const borde = (f) => getComputedStyle(f).borderTopColor;
+    const cuentas = new Map();
+    for (const f of filas) cuentas.set(borde(f), (cuentas.get(borde(f)) ?? 0) + 1);
+    const comun = [...cuentas.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    return filas
+      .filter((f) => borde(f) !== comun)
+      .map((f) => f.textContent.replace(/\s+/g, " ").trim().slice(0, 60));
+  })(),
   nuevaPartida: {
     hay: Boolean(document.getElementById("ts-new")),
     texto: document.getElementById("ts-new")?.textContent ?? "",
@@ -138,6 +158,7 @@ async function pulsarBadge(ctx, sel, desc) {
       return {
         texto,
         status: status.trim(),
+        aviso: document.getElementById("ts-error")?.textContent?.trim() ?? "",
         borde: el instanceof HTMLElement ? el.style.borderColor : "",
         color: el instanceof HTMLElement ? el.style.color : "",
         pintado: { borde: cs.borderTopColor, color: cs.color },
@@ -366,18 +387,43 @@ export default async function (ctx) {
   } finally {
     chmodSync(dirFallo, 0o700);
   }
+  // El motivo se escribe DESPUÉS del repintado (`pintarHome` abre limpiando la
+  // caja de avisos), y el repintado espera a `listSessions`: la sonda de
+  // `pulsarBadge` puede resolver por el rótulo del badge antes de que llegue.
+  // Se espera al aviso, por estado.
+  const avisoDelFallo = await ctx.waitFor(
+    "el título dice en su caja de avisos que el modo no se pudo cambiar",
+    ([id]) => {
+      const t = document.getElementById("ts-error")?.textContent ?? "";
+      return t.includes(id) ? t.trim() : null;
+    },
+    30_000,
+    [paraFallar],
+  );
   await ctx.shot("modo-que-no-se-pudo-cambiar");
+  ctx.log(`#ts-error: ${avisoDelFallo}`);
   ctx.log(`#ts-status: ${fallo.status}`);
 
+  // #427, y hasta el 2026-09-10 este bloque afirmaba lo contrario: el motivo se
+  // escribía en `#ts-status` —la línea de ESTADO DEL BRIDGE— y no en la caja de
+  // avisos. Era el ÚNICO fallo de acción del home que iba por ahí, así que se
+  // llevaba por delante «Bridge OK — 3 partidas guardadas», no era pegajoso, y
+  // contradecía la cabecera de `avisos.ts`, que promete UN SOLO escritor de ese
+  // hueco. Los cuatro asertos de abajo son el issue convertido en afirmación.
   ctx.expect(
-    "un cambio de modo que el bridge rechaza NO es mudo: el título lo dice en pantalla",
-    /No se pudo cambiar el modo de/i.test(fallo.status) && fallo.status.includes(paraFallar),
-    fallo.status || "(el título no dijo nada: el cambio se perdió en silencio)",
+    "un cambio de modo que el bridge rechaza NO es mudo: el título lo dice en su caja de avisos",
+    /SIGUE como estaba/i.test(avisoDelFallo) && avisoDelFallo.includes(paraFallar),
+    avisoDelFallo || "(el título no dijo nada: el cambio se perdió en silencio)",
   );
   ctx.expect(
     "…con la causa dentro, que es lo que lo hace accionable",
-    /no se pudo escribir|EACCES|permission/i.test(fallo.status),
-    fallo.status,
+    /no se pudo escribir|EACCES|permission/i.test(avisoDelFallo),
+    avisoDelFallo,
+  );
+  ctx.expect(
+    "…y NO se lleva por delante la línea de estado del bridge (#427)",
+    /^Bridge OK/.test(fallo.status) && /\b3 partidas guardadas/.test(fallo.status),
+    `#ts-status: "${fallo.status}"`,
   );
   ctx.expect(
     "…y el badge NO miente: sigue enseñando el modo que de verdad tiene el save",
@@ -389,6 +435,13 @@ export default async function (ctx) {
     "…y la lista sigue entera: un cambio fallido no se lleva por delante las tarjetas",
     trasElFallo.tarjetas === 3,
     `tarjetas=${trasElFallo.tarjetas}`,
+  );
+  // El aviso vive ~350 px por encima de la fila y el único vínculo era un id de
+  // veinte caracteres: se marca la tarjeta, como en el borrado fallido (#365).
+  ctx.expect(
+    "…y se ve CUÁL: la tarjeta de esa partida queda marcada, como en el borrado fallido",
+    trasElFallo.marcadas.length === 1 && trasElFallo.marcadas[0].includes(paraFallar),
+    JSON.stringify(trasElFallo.marcadas),
   );
 
   // ── E · EL BRIDGE NO PUEDE LISTAR: `listSessions()` REVIENTA ────────────
@@ -460,15 +513,28 @@ export default async function (ctx) {
     JSON.stringify(foto.nuevaPartida),
   );
 
-  // ⚠ HALLAZGO MEDIDO SIN PONERLO ROJO (preexistente, verbatim de antes del
-  // corte): `sessions` nace en `[]` y el `catch` no lo distingue de «no hay
-  // ninguna», así que el mismo hueco que en el bloque A dice «— Ninguna
-  // partida todavía —» justo debajo de «no se pudieron cargar». Con tres
-  // partidas EN DISCO, a quien pierde el acceso se le está diciendo que no
-  // tiene ninguna. No lo causa esta PR: se mide y se declara.
+  // #427, y hasta el 2026-09-10 esto era un HALLAZGO MEDIDO SIN PONERLO ROJO:
+  // `sessions` nacía en `[]` y el `catch` no lo distinguía de «no hay ninguna»,
+  // así que el mismo hueco que en el bloque A dice «— Ninguna partida todavía —»
+  // aparecía debajo de «no se pudieron cargar». Con TRES partidas en disco, a
+  // quien pierde el acceso se le decía a la vez que no se pudieron leer y que
+  // no tiene ninguna — la segunda, directamente falsa.
+  //
+  // Lo que se afirma es la NEGATIVA («no digas que no hay ninguna») más la
+  // positiva («di que lo que falta es la lista»): sin la primera, cambiar el
+  // texto del hueco vacío dejaría pasar la mentira otra vez.
   ctx.log(
-    `⚠ con ${trasElFallo.tarjetas} partidas EN DISCO y la lista rota, el hueco dice ` +
-      `"${foto.sesiones}" (tarjetas=${foto.tarjetas}): «no se pudieron cargar» y «no hay ninguna» ` +
-      `comparten pantalla, y el segundo es falso`,
+    `sin lista, con ${trasElFallo.tarjetas} partidas EN DISCO, el hueco dice ` +
+      `"${foto.sesiones}" (tarjetas=${foto.tarjetas})`,
+  );
+  ctx.expect(
+    "con la lista rota y partidas EN DISCO, el título NO dice que no haya ninguna (#427)",
+    !/Ninguna partida todavía/i.test(foto.sesiones),
+    `"${foto.sesiones}" con ${trasElFallo.tarjetas} partidas en disco`,
+  );
+  ctx.expect(
+    "…dice lo que de verdad pasa: que no se ha podido leer la lista",
+    /no se pudo leer|no sabemos qué partidas/i.test(foto.sesiones),
+    `"${foto.sesiones}"`,
   );
 }

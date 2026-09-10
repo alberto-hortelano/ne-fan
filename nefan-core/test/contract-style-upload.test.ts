@@ -66,9 +66,12 @@ describe("data/contract/style-upload.json — el espejo de la subida no puede qu
     // lección de `physics.json`: se vuelca el tope derivado, no los
     // ingredientes). Los límites viajan igual porque Python los aplica.
     const snap = JSON.parse(readFileSync(RUTA, "utf-8")) as ReturnType<typeof styleUploadSnapshot>;
-    assert.match(snap.motivos.nombre, new RegExp(`${REGLAS_DE_SUBIDA.nombre.max}`));
-    assert.match(snap.motivos.tags, new RegExp(`${REGLAS_DE_SUBIDA.tags.max}`));
-    assert.match(snap.motivos.imagenes, new RegExp(`${REGLAS_DE_SUBIDA.imagenes.max}`));
+    // Cada LÍMITE en la frase que le toca (#536): el máximo del nombre en
+    // `nombre_largo` y no en el que pide el mínimo, y así los tres pares.
+    assert.match(snap.motivos.nombre_corto, new RegExp(`${REGLAS_DE_SUBIDA.nombre.min}`));
+    assert.match(snap.motivos.nombre_largo, new RegExp(`${REGLAS_DE_SUBIDA.nombre.max}`));
+    assert.match(snap.motivos.demasiadas_etiquetas, new RegExp(`${REGLAS_DE_SUBIDA.tags.max}`));
+    assert.match(snap.motivos.demasiadas_imagenes, new RegExp(`${REGLAS_DE_SUBIDA.imagenes.max}`));
     assert.match(snap.motivos.mas_de_una_lamina, new RegExp(CARPETA_LAMINA));
     // Y los que hablan de UNA imagen traen el hueco que rellena quien emite.
     for (const clave of [
