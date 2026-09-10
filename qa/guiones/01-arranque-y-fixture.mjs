@@ -16,12 +16,29 @@ export const sinMotor = "cierra el título y carga una fixture del selector; nun
 import { cargarFixture } from "../lib/fixtures.mjs";
 
 export default async function (ctx) {
-  await ctx.waitFor("el título aparece al arrancar", () => {
+  // Se espera al ESTADO que se va a afirmar, no al botón (#544). `#ts-close` lo
+  // crea `armarChasis` desde el constructor de `TitleScreen`
+  // (`ui/titulo/chasis.ts`), pero el overlay nace en `display:none` y no tapa
+  // nada hasta `show()`, que llega seis `await` más tarde (`main.ts`: el
+  // constructor a la 799, el `show` a la 1266). Entre las dos cosas hay una
+  // ventana en la que el botón existe y `status().title` todavía es `false`:
+  // afirmarlo ahí era afirmar antes de tiempo, y el guion salía rojo por una
+  // carrera y no por un defecto del juego.
+  //
+  // La foto trae DOS señales independientes de que el título está de verdad
+  // arriba —la del hook y la geometría del botón que este guion va a pulsar—,
+  // para que el aserto no sea un eco de la espera.
+  const tapando = await ctx.waitFor("el título aparece al arrancar y TAPA el juego", () => {
+    const st = window.__nefan?.status();
+    if (!st || st.title !== true) return null;
     const btn = document.getElementById("ts-close");
-    return btn ? { hay: true } : null;
+    return { ...st, cierrePulsable: Boolean(btn && btn.getBoundingClientRect().width > 0) };
   });
-  const tapando = await ctx.nefan("status");
-  ctx.expect("el título tapa el juego al arrancar (estado 1 del sistema)", tapando.title === true, JSON.stringify(tapando));
+  ctx.expect(
+    "el título tapa el juego al arrancar (estado 1 del sistema) y su botón de cierre está en pantalla",
+    tapando.title === true && tapando.cierrePulsable === true,
+    JSON.stringify(tapando),
+  );
   await ctx.shot("titulo");
 
   // Camino del usuario: el botón de cierre, no ocultar el overlay.

@@ -1526,6 +1526,83 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // #557: LA OTRA DIRECCIÓN. La regla de arriba mira de dentro hacia fuera
+  // (una hoja no se ata a otra) y no dice nada de quien entra desde fuera:
+  // hasta esta tanda, un `import { pintarHome } from "./titulo/home.js"` en
+  // `main.ts` compilaba y no lo veía ningún checker. El enrutador sale por
+  // `exceptions` y no por el `files` porque los globs de `check.ts` no restan
+  // (`globToRegExp`: `**`, `*` y `?`, todo lo demás escapado), y eso es una
+  // ventaja: la exención lleva `reason` escrito y la audita `deadExceptions`.
+  //
+  // Los rojos son las cuatro CLASES de importador de fuera —la raíz de
+  // composición, un vecino de `ui/`, uno de otra carpeta del cliente y un
+  // subdirectorio nuevo—, cada uno por un camino de escritura distinto, y por
+  // el RESUELTO como su hermana: aquí también la vuelta larga aterriza en el
+  // mismo sitio que la corta.
+  it("[error] el-titulo-solo-entra-por-su-enrutador: importar una hoja desde fuera salta, venga por donde venga; el enrutador y las propias hojas no", () => {
+    const f = (path: string, text: string): SourceFile => ({ path, text, imports: importsOf(path, text) });
+    const deLaRegla = (archivos: SourceFile[]) =>
+      checkArchitecture(config, archivos).filter(
+        (v) => v.ruleId === "el-titulo-solo-entra-por-su-enrutador",
+      );
+
+    const rojos = deLaRegla([
+      // La línea del issue, literal: la raíz de composición llamando al home.
+      f("nefan-html/src/main.ts", `import { pintarHome } from "./ui/titulo/home.js";\n`),
+      // Un vecino de `ui/` que se salta al enrutador, por el camino corto.
+      f("nefan-html/src/ui/game-ui.ts", `import { pintarSelectorDeMundo } from "./titulo/selector-de-mundo.js";\n`),
+      // Otra carpeta del cliente, por la vuelta larga y por un `import type`:
+      // atarse para TIPAR ata igual, y el colector lo ve.
+      f("nefan-html/src/net/narrative-client.ts", `import type { DepsDeSubirEstilo } from "../../src/ui/titulo/subir-estilo.js";\n`),
+      // Y los átomos tampoco son puerta de entrada desde fuera: son el
+      // vocabulario del título, no el del cliente. Si algo de ahí le hace
+      // falta a otra pantalla, no era un átomo del título.
+      f("nefan-html/src/ui/dev-menu.ts", `import { BTN_PRIMARY_CSS } from "./titulo/atomos.js";\n`),
+    ]);
+
+    assert.deepEqual(
+      rojos.map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/main.ts:1",
+        "nefan-html/src/net/narrative-client.ts:1",
+        "nefan-html/src/ui/dev-menu.ts:1",
+        "nefan-html/src/ui/game-ui.ts:1",
+      ],
+      "cualquier importador de fuera de `ui/titulo/` que no sea el enrutador tiene que saltar",
+    );
+    // El detalle dice las dos cosas, como en la regla hermana: lo que se
+    // escribió y dónde aterriza. La extensión se afirma `.ts|.js` por el mismo
+    // motivo de allí (un import a un fichero que no está en disco conserva su
+    // `resolved` con la ruta base).
+    assert.match(
+      rojos.find((v) => v.path === "nefan-html/src/main.ts")?.detail ?? "",
+      /^import prohibido: "\.\/ui\/titulo\/home\.js" → nefan-html\/src\/ui\/titulo\/home\.(?:ts|js)$/,
+    );
+
+    // Lo legítimo, callado: el ENRUTADOR con las nueve —que son las nueve que
+    // hay en el cliente de verdad—, una hoja importando sus átomos (a ésa la
+    // juzga la regla hermana, y esta no puede contarla dos veces), y el resto
+    // del cliente hablando entre sí sin pasar por el título.
+    assert.deepEqual(
+      deLaRegla([
+        f(
+          "nefan-html/src/ui/title-screen.ts",
+          `import { escapeHtml } from "./titulo/atomos.js";\n` +
+            `import { pintarHome } from "./titulo/home.js";\n` +
+            `import { montarChasis } from "./titulo/chasis.js";\n`,
+        ),
+        f("nefan-html/src/ui/titulo/home.ts", `import { BADGE_CSS } from "./atomos.js";\n`),
+        f("nefan-html/src/ui/titulo/sub/hondo.ts", `import { escapeHtml } from "../atomos.js";\n`),
+        f(
+          "nefan-html/src/main.ts",
+          `import { TitleScreen } from "./ui/title-screen.js";\n` +
+            `import { errors } from "./ui/error-log.js";\n`,
+        ),
+      ]),
+      [],
+    );
+  });
+
   // #411: la regla que hasta aquí decía «cliente 2D» y toleraba `max: 2` sin
   // nombrar cuáles eran las dos. Ahora las nombra como exenciones CON
   // `funcion` y es error: una tercera puerta en cualquier otro fichero del

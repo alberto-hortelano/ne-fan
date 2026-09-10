@@ -34,6 +34,36 @@
  *  dejó de ser un juicio y tiene su NÚMERO: devolverle la tarjeta al selector
  *  lo llevaría de 432 a ~471 líneas, o sea POR ENCIMA del tope de 450 que este
  *  programa acaba de conseguir. Se queda medida, no opinada.
+ *
+ *  LA TRAYECTORIA, para que nadie tenga que reconstruirla (#558): del primer
+ *  corte al sexto este fichero fue de 196 a 218 líneas, y las 22 que subió son
+ *  PROSA — el código BAJÓ de 98 a 95 líneas y los exports de 19 a 17, porque
+ *  los cortes se llevaron de aquí más de lo que trajeron. Por eso NO tiene
+ *  tope propio y sigue bajo el régimen general de 450
+ *  (`data/contract/client-file-size.json`): un número recortado a la medida de
+ *  este fichero estaría midiendo sobre todo el comentario que lo explica, y
+ *  ponerlo hoy sería inventarse un umbral — el anti-patrón que
+ *  `quality-thresholds.json` prohíbe por escrito.
+ *
+ *  LA SEÑAL DE ACTUAR, y va AQUÍ porque es donde se lee justo cuando toca:
+ *  añadiendo un export. Se actúa —trocear los átomos, o devolverle a su
+ *  pantalla lo que se coló— cuando pase una de estas dos:
+ *
+ *    1. el export nuevo entra con UN SOLO dueño y sin excepción declarada
+ *       arriba (eso es lo de una pantalla viajando de gorra en el vocabulario
+ *       común, que es el god-file repartido empezando otra vez); o
+ *    2. el censo de exports con DOS O MÁS dueños baja de la mitad.
+ *
+ *  Hoy son **9 de 17**, y «dueño» es una HOJA de `ui/titulo/` que lo importa:
+ *  ni el enrutador ni este fichero cuentan. Los OCHO que no llegan a dos son
+ *  exactamente las dos excepciones de arriba —los cinco de la tarjeta de mundo
+ *  (`worldCardHtml`, `generationChipsHtml`, `COVER_BOX`, `COVER_MARK_CSS`,
+ *  `marcadorHtml`) y `BADGE_CSS`— más las dos URL de servicio: o sea que hoy
+ *  el censo no tiene ni un hueco sin motivo escrito, y esa es la condición que
+ *  el punto 1 vigila. El número se RECUENTA, no se cree:
+ *
+ *      grep -c "^export " nefan-html/src/ui/titulo/atomos.ts
+ *      grep -lw <export> nefan-html/src/ui/titulo/*.ts | grep -v atomos.ts | wc -l
  */
 import type { GameInfo, StyleInfo } from "../../net/narrative-client.js";
 import { serviceUrl } from "../../net/service-urls.js";

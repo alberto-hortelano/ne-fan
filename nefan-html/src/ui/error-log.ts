@@ -81,6 +81,17 @@ export const AVISO_TRAMA_ILEGIBLE = "La partida respondió algo que no se entien
 export const DETALLE_SIN_PARTIDA =
   "El servidor de la partida no responde y se volverá a intentar solo. " +
   "Puedes cerrar este aviso mientras tanto.";
+/** El detalle de `AVISO_TRAMA_ILEGIBLE` (#479). Sin él, al muro iba el
+ *  `message` del registro, que cita los 200 primeros caracteres de la trama
+ *  que no se pudo leer: JSON crudo —o lo que fuera— delante de quien juega.
+ *  Ese recorte es la pista que hace falta para DEPURAR, así que se queda donde
+ *  sirve (el registro, junto a la excepción) y el jugador lee lo único que
+ *  puede hacer con ello. Misma medicina que #469, otra causa: allí eran dos
+ *  emisores de la misma noticia, aquí es un `message` escrito para quien
+ *  programa. */
+export const DETALLE_TRAMA_ILEGIBLE =
+  "Se ha perdido un mensaje de la partida, así que lo que ves puede estar incompleto. " +
+  "Vuelve a cargar la página para ponerla al día; si la partida se recupera sola, este aviso se retira.";
 
 /** Los titulares de MÁS a MENOS grave, y la lista ES el criterio: sin mundo no
  *  hay juego; sin socket no hay partida; una trama ilegible rompe lo que se

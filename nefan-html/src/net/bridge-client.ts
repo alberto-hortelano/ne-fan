@@ -21,7 +21,13 @@ import type {
   ExitsChangedMessage,
 } from "@nefan-core/src/protocol/messages.js";
 import type { Vec3 } from "@nefan-core/src/types.js";
-import { AVISO_PARTIDA, AVISO_TRAMA_ILEGIBLE, DETALLE_SIN_PARTIDA, errors } from "../ui/error-log.js";
+import {
+  AVISO_PARTIDA,
+  AVISO_TRAMA_ILEGIBLE,
+  DETALLE_SIN_PARTIDA,
+  DETALLE_TRAMA_ILEGIBLE,
+  errors,
+} from "../ui/error-log.js";
 
 export type BridgeEvent =
   | "state_update"
@@ -164,8 +170,14 @@ export class BridgeClient {
         // abierto y contestando, así que decirle al jugador que no hay conexión
         // sería mandarlo a mirar su red por un fallo que no es suyo. La partida
         // está igual de rota, pero por otro motivo.
+        // El `preview` es para el REGISTRO: sin esos 200 caracteres no hay por
+        // dónde empezar a mirar qué mandó el servidor. Al jugador va
+        // `DETALLE_TRAMA_ILEGIBLE`, que es lo que puede hacer con ello (#479):
+        // sin ese campo, `ErrorLog.avisa` usa el `message` y el muro le
+        // enseñaba el JSON crudo.
         errors.push("bridge", `el servidor de la partida mandó algo ilegible: ${preview}`, err, {
           alJugador: AVISO_TRAMA_ILEGIBLE,
+          detalleAlJugador: DETALLE_TRAMA_ILEGIBLE,
         });
       }
     };
