@@ -226,6 +226,10 @@ describe("validarSubidaDeEstilo · lo que NO pasa, con su motivo", () => {
       1,
     ],
   ];
+  /** Los campos del cuerpo, DERIVADOS de un cuerpo completo y no escritos a
+   *  mano: un campo nuevo del wire entra aquí solo con añadirlo a `subida()`. */
+  const CAMPOS_DEL_CUERPO = Object.keys(subida({ description: "d", style_token: "t" }));
+
   for (const [nombre, cuerpo, motivo, imagen] of casos) {
     it(`${nombre} ⇒ «${motivo}»`, () => {
       const res = validarSubidaDeEstilo(cuerpo);
@@ -233,6 +237,27 @@ describe("validarSubidaDeEstilo · lo que NO pasa, con su motivo", () => {
       if (res.ok) return;
       assert.equal(res.error, motivo);
       assert.equal(res.imagen, imagen, "el índice de la imagen culpable (o null)");
+
+      // Y el motivo no viaja solo: el `path` del issue dice de QUÉ CAMPO habla,
+      // y de ahí sale el `imagen` de arriba (`path[0] === "images"`). Es una
+      // REGLA y no una lista —«el path nombra un campo que existe»—, así que un
+      // `err(...)` nuevo la hereda sin que nadie se acuerde. La corrida
+      // 34493904935 la pidió: los tres límites que #536 partió en dos añadieron
+      // tres `err(...)`, sus seis mutantes de `path` (`["name"]` → `[]` y →
+      // `[""]`) sobrevivieron a la batería entera y el módulo cruzó por debajo
+      // de su suelo — no porque el código empeorara, sino porque el hueco de
+      // siempre se hizo más grande.
+      const crudo = SubidaDeEstiloSchema.safeParse(cuerpo);
+      assert.equal(crudo.success, false);
+      if (crudo.success) return;
+      const path = crudo.error.issues[0]?.path ?? [];
+      assert.ok(
+        CAMPOS_DEL_CUERPO.includes(String(path[0])),
+        `el path del issue nombra un campo del cuerpo, y «${String(path[0])}» no lo es`,
+      );
+      if (imagen !== null) {
+        assert.deepEqual(path, ["images", imagen], "de una imagen, el path la señala por índice");
+      }
     });
   }
 
