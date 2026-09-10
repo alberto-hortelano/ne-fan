@@ -262,11 +262,22 @@ const VIGENTES = [
     mira: () => {
       const h = JSON.parse(readFileSync(HUELLA, "utf8"));
       const con = Object.values(h.ficheros).filter((f) => typeof f.segundos === "number");
-      const unSoloSha = new Set(con.map((f) => f.sha)).size === 1;
+      // Cada reloj dice de qué corrida sale. ESTO ERA «un solo sha» hasta el
+      // 2026-09-10 y era un proxy sin darse cuenta: las tres primeras corridas
+      // en matriz fueron COMPLETAS, así que todos los relojes se refrescaban a
+      // la vez y un segundo sha solo podía significar que alguien había metido
+      // un número a mano. La corrida 34455812779 fue la primera de RANGO que
+      // actualiza relojes —21 de 55 módulos— y dejó dos grupos legítimos: 33
+      // ficheros medidos en `ba6b534` y 54 que conservan el de `1c7bf18`. Con
+      // eso, «un solo sha» pasó a significar «nunca se ha hecho una corrida
+      // parcial», que no es un invariante de nada. Lo que sí lo es, y es lo que
+      // el nombre de este candado promete, es que NINGÚN reloj esté huérfano:
+      // un número sin sha es un número sin procedencia.
+      const todosConProcedencia = con.every((f) => typeof f.sha === "string" && f.sha.length > 0);
       const c = h._comment ?? "";
       return (
         con.length > 0 &&
-        unSoloSha &&
+        todosConProcedencia &&
         /33866958770/.test(c) && // la corrida
         /e67ae4d/.test(c) && // el sha medido
         /2026-09-04/.test(c) && // la fecha
