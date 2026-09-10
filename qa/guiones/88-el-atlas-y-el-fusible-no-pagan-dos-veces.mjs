@@ -72,7 +72,7 @@ const FIXTURE = "robledo_tile";
  *  (`UMBRAL_APAGADO_DE_SESION`). Aquí se escribe para saber cuántos personajes
  *  hacen falta en cada rama; el rango entero lo recorre el guion 53. */
 const UMBRAL = 3;
-const APAGADO = /skins IA desactivados para la sesión/g;
+const APAGADO = /skins IA desactivados/g;
 
 const registro = (ctx) =>
   ctx.page.evaluate(() => document.getElementById("error-log")?.textContent ?? "");
@@ -237,7 +237,7 @@ export default async function (ctx) {
   await ctx.expectEspera(
     `con ${UMBRAL} personajes en 5xx el juego apaga los skins de la sesión y lo dice`,
     true,
-    () => (/skins IA desactivados para la sesión/.test(
+    () => (/skins IA desactivados/.test(
       document.getElementById("error-log")?.textContent ?? "") ? true : null),
     { ms: 90_000 },
   );

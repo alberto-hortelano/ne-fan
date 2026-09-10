@@ -8,6 +8,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  esModo,
   gatesDeImagen,
   modoEfectivoDePersonajes,
   normalizarModo,
@@ -15,6 +16,21 @@ import {
   type GatesDeImagen,
   type Modo,
 } from "../src/session/gates-de-imagen.js";
+
+/** `esModo` no es un detalle de `normalizarModo`: es la pregunta que las
+ *  PUERTAS necesitan (#522, la del save). Se mide aparte porque a través de
+ *  `normalizarModo` su rama del «sin elegir» es invisible —quitarla devuelve
+ *  `""` igual— y un mutante así no lo mata ningún test de normalización. */
+describe("esModo", () => {
+  it("los tres valores que el juego sabe leer, y ninguno más", () => {
+    for (const bueno of ["image", "vector", ""]) {
+      assert.equal(esModo(bueno), true, `${JSON.stringify(bueno)} SÍ es un modo`);
+    }
+    for (const raro of [undefined, null, "IMAGE", "imagen", "vectorial", " ", "foo", 1, 0, true, {}, []]) {
+      assert.equal(esModo(raro), false, `${JSON.stringify(raro)} NO es un modo`);
+    }
+  });
+});
 
 describe("normalizarModo", () => {
   it("deja pasar los dos modos y colapsa todo lo demás a «sin elegir»", () => {
@@ -51,27 +67,26 @@ describe("gatesDeImagen", () => {
   const conSesion = (renderMode: Modo, characterMode: Modo, resto: Partial<EntradaDeGates> = {}): EntradaDeGates => ({
     renderMode,
     characterMode,
-    toggleLocalEscenarios: false,
     toggleLocalPersonajes: false,
     ...resto,
   });
   const sinSesion = (resto: Partial<EntradaDeGates> = {}): EntradaDeGates => conSesion("", "", resto);
-  const TOGGLES_ON = { toggleLocalEscenarios: true, toggleLocalPersonajes: true };
+  const TOGGLES_ON = { toggleLocalPersonajes: true };
 
   const casos: Array<[string, EntradaDeGates, GatesDeImagen]> = [
     // --- con sesión: manda la partida, no los toggles ---
     ["image/image gasta en las dos aunque los toggles estén OFF", conSesion("image", "image"), { escenarios: true, personajes: true }],
-    ["vector/vector no gasta en ninguna aunque los toggles estén ON", conSesion("vector", "vector", TOGGLES_ON), { escenarios: false, personajes: false }],
+    ["vector/vector no gasta en ninguna aunque el toggle esté ON", conSesion("vector", "vector", TOGGLES_ON), { escenarios: false, personajes: false }],
     ["image/vector: atlas sí, skins no", conSesion("image", "vector"), { escenarios: true, personajes: false }],
     ["vector/image: atlas no, skins sí", conSesion("vector", "image"), { escenarios: false, personajes: true }],
     // --- «""» de personajes SIGUE a escenarios, y no al toggle local ---
     ["image/«» → skins siguen a escenarios (sí) con el toggle OFF", conSesion("image", ""), { escenarios: true, personajes: true }],
     ["vector/«» → skins siguen a escenarios (no) aunque el toggle esté ON", conSesion("vector", "", TOGGLES_ON), { escenarios: false, personajes: false }],
-    // --- sin sesión (fixtures): mandan los toggles, cada uno el suyo ---
-    ["sin sesión y toggles OFF: nada gasta (una fixture con NPCs no paga sola)", sinSesion(), { escenarios: false, personajes: false }],
-    ["sin sesión y toggles ON: las dos", sinSesion(TOGGLES_ON), { escenarios: true, personajes: true }],
-    ["sin sesión, solo escenarios ON: los skins NO siguen al toggle de escenarios", sinSesion({ toggleLocalEscenarios: true }), { escenarios: true, personajes: false }],
-    ["sin sesión, solo personajes ON", sinSesion({ toggleLocalPersonajes: true }), { escenarios: false, personajes: true }],
+    // --- sin sesión (fixtures): los escenarios NO se generan pase lo que pase
+    //     (#519: sin partida no hay tile que pedir, así que no hay toggle que
+    //     valga); los personajes caen a su toggle local ---
+    ["sin sesión y toggle OFF: nada gasta (una fixture con NPCs no paga sola)", sinSesion(), { escenarios: false, personajes: false }],
+    ["sin sesión, el toggle de personajes ON no enciende los escenarios", sinSesion(TOGGLES_ON), { escenarios: false, personajes: true }],
   ];
   for (const [nombre, entrada, esperado] of casos) {
     it(nombre, () => {

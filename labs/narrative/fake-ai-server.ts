@@ -180,15 +180,57 @@ const SPRITES_DIR = fileURLToPath(new URL("../../nefan-html/public/sprites/", im
 // mismo que serviría el asset-store con GET /styles/{id}/{file}.
 const STYLES_DIR = fileURLToPath(new URL("../../nefan-core/data/styles/", import.meta.url));
 // ── Tiles del plano continuo ─────────────────────────────────────────────
-// TILE_DELAY_MS: retardo por tile (simula el motor real). TILE_MODE=error →
-// HTTP 500 en tiles no-bootstrap (test de reintento del cliente).
-const TILE_DELAY_MS = Number(process.env.TILE_DELAY_MS ?? 0);
-const TILE_MODE = process.env.TILE_MODE ?? "";
+// CÓMO SE CONFORMA EL MOTOR FALSO ANTE UN TILE: al instante (lo de siempre),
+// tardando (`delay_ms`) o fallando (`mode: "error"` → HTTP 500 en tiles
+// no-bootstrap). Las tres son estados del MOTOR, no del cliente.
+//
+// El arranque las toma del entorno (`TILE_DELAY_MS`, `TILE_MODE`) porque así
+// se han pedido siempre a mano, y `POST /dev/tiles` las cambia EN CALIENTE.
+// Sin esa ruta, la conducta se fijaba a la carga del módulo y era del proceso
+// entero: quien quisiera un tile que TARDE o que FALLE tenía que arrancar su
+// propio stack con la variable puesta, así que las tres ramas caras de la
+// frontera —la promoción a `blocking` a 2 m, el timeout y el cooldown de 15 s
+// tras un error— no las podía ejercer ningún guion del banco (#516, dicho en
+// la cabecera del guion 86 y en el hallazgo 4 de qa-2.md de #512). Un guion
+// que las quiera pide la conducta, la ejerce y la devuelve a su sitio.
+const TILE_DELAY_MS_AL_ARRANCAR = Number(process.env.TILE_DELAY_MS ?? 0);
+const TILE_MODE_AL_ARRANCAR = process.env.TILE_MODE ?? "";
+/** Las conductas que el motor falso sabe hacer. Cualquier otra cosa es un
+ *  guion equivocado y se dice (400), no se ignora en silencio. */
+const MODOS_DE_TILE = ["", "error"] as const;
+type ModoDeTile = (typeof MODOS_DE_TILE)[number];
+/** El modo con el que arrancó el proceso, o `""` si pidió uno que no existe.
+ *  Se escribe UNA vez porque lo leen dos sitios: el arranque y `/dev/reset`. */
+const modoDeTileDelArranque = (): ModoDeTile =>
+  MODOS_DE_TILE.includes(TILE_MODE_AL_ARRANCAR as ModoDeTile)
+    ? (TILE_MODE_AL_ARRANCAR as ModoDeTile)
+    : "";
+let tileDelayMs = TILE_DELAY_MS_AL_ARRANCAR;
+let tileMode: ModoDeTile = modoDeTileDelArranque();
+if (TILE_MODE_AL_ARRANCAR !== tileMode) {
+  console.error(
+    `[fake-ai] TILE_MODE="${TILE_MODE_AL_ARRANCAR}" no es una conducta conocida ` +
+      `(${MODOS_DE_TILE.map((m) => `"${m}"`).join(", ")}) — se arranca sin ella`,
+  );
+}
+/** La conducta vigente, en la forma en que viaja por `/dev/tiles`. */
+const conductaDeTiles = () => ({ delay_ms: tileDelayMs, mode: tileMode });
 const tileByKey = new Map<string, ReturnType<typeof makeTile>>();
 
 async function handleGenerateTile(gt: GenerateTile) {
-  if (TILE_DELAY_MS > 0 && !gt?.bootstrap) await new Promise((r) => setTimeout(r, TILE_DELAY_MS));
-  if (TILE_MODE === "error" && !gt?.bootstrap) {
+  // El retardo se mide contra la conducta VIVA, no contra la que había al
+  // entrar la petición: pedir `delay_ms: 0` suelta también el tile que ya
+  // estaba durmiendo. Con un `setTimeout` de una sola pieza, un guion se
+  // llevaba su espera al SIGUIENTE —el bridge encola las generaciones, así que
+  // el `start_session` del guion de al lado se quedaba detrás de 400 s y moría
+  // por timeout (medido el 2026-09-10: el guion 14 en rojo solo cuando corría
+  // detrás del 109, verde en solitario)—. Un retardo que no se puede soltar no
+  // es una palanca, es una trampa para el vecino.
+  const empezoAEsperar = Date.now();
+  while (!gt?.bootstrap && Date.now() - empezoAEsperar < tileDelayMs) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  if (tileMode === "error" && !gt?.bootstrap) {
     throw new Error("fake-ai: TILE_MODE=error — el motor rechazó el tile");
   }
   if (gt?.bootstrap) {
@@ -390,7 +432,16 @@ const server = http.createServer((req, res) => {
       // Peticiones servidas a rutas que en el motor real COBRAN. Es la red que
       // caza al guion que dispara generación sin declararlo (#295).
       gasto: gastoServido(),
+      // Cómo se está conformando ante un tile AHORA MISMO (#516): un guion que
+      // deja el retardo puesto se lo lleva al siguiente, y sin esto habría que
+      // adivinarlo mirando relojes.
+      tilesConducta: conductaDeTiles(),
     });
+  }
+  // Cómo se conforma el motor ante un tile (#516): mirar sin tocar. El POST
+  // que lo cambia va abajo, con los demás POST de /dev/*.
+  if (req.method === "GET" && ruta === "/dev/tiles") {
+    return send(200, conductaDeTiles());
   }
   // Toggle del dev API cache (espejo trivial del ai_server real, en memoria):
   // el fake no llama APIs de pago, pero el checkbox del cliente debe operar.
@@ -638,14 +689,54 @@ const server = http.createServer((req, res) => {
           dialogueTurn: fakeDialogueTurn,
           apiCache: fakeDevCacheEnabled,
           gasto: gastoServido(),
+          tilesConducta: conductaDeTiles(),
         };
         tileByKey.clear();
         surfaceImages.clear();
         gastoPorRuta.clear();
         fakeDialogueTurn = 0;
         fakeDevCacheEnabled = false;
-        console.error(`[fake-ai] /dev/reset: ${JSON.stringify(antes)} → todo a cero`);
+        // La conducta ante los tiles vuelve a la del ARRANQUE, no a cero: quien
+        // arrancó el proceso con `TILE_DELAY_MS` la pidió para toda la corrida,
+        // y el reset entre guiones no está para desdecirle. Lo que sí deshace
+        // es lo que pidió el guion anterior por `/dev/tiles` (#516).
+        tileDelayMs = TILE_DELAY_MS_AL_ARRANCAR;
+        tileMode = modoDeTileDelArranque();
+        console.error(
+          `[fake-ai] /dev/reset: ${JSON.stringify(antes)} → contadores a cero, ` +
+            `tiles como al arrancar (${JSON.stringify(conductaDeTiles())})`,
+        );
         return send(200, { ok: true, limpiado: antes });
+      }
+      // Cómo se conforma el motor ante un tile, EN CALIENTE (#516): `delay_ms`
+      // (tarda) y `mode: "error"` (falla) son lo que hace ejercitables el
+      // `blocking`, el timeout y el cooldown de la frontera. Campo ausente =
+      // no se toca; campo con basura = 400 con el motivo (un guion que pide una
+      // conducta que no existe está midiendo otra cosa y tiene que enterarse).
+      if (req.method === "POST" && ruta === "/dev/tiles") {
+        const body = leerBody<{ delay_ms?: unknown; mode?: unknown }>(raw);
+        if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
+        if (body.delay_ms !== undefined) {
+          const ms = Number(body.delay_ms);
+          if (!Number.isFinite(ms) || ms < 0) {
+            return send(400, {
+              detail: `fake-ai: delay_ms debe ser un número ≥ 0, no ${JSON.stringify(body.delay_ms)}`,
+            });
+          }
+          tileDelayMs = ms;
+        }
+        if (body.mode !== undefined) {
+          if (!MODOS_DE_TILE.includes(body.mode as ModoDeTile)) {
+            return send(400, {
+              detail:
+                `fake-ai: mode ${JSON.stringify(body.mode)} no es una conducta conocida ` +
+                `(${MODOS_DE_TILE.map((m) => JSON.stringify(m)).join(", ")})`,
+            });
+          }
+          tileMode = body.mode as ModoDeTile;
+        }
+        console.error(`[fake-ai] /dev/tiles → ${JSON.stringify(conductaDeTiles())}`);
+        return send(200, conductaDeTiles());
       }
       if (req.method === "POST" && ruta === "/dev/api_cache") {
         const body = leerBody<{ enabled?: boolean }>(raw);

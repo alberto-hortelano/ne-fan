@@ -24,11 +24,24 @@
  *  save previo al campo. En personajes, `""` sigue a escenarios. */
 export type Modo = "image" | "vector" | "";
 
+/** ¿Es esto un modo, tal cual? Los tres valores que el juego sabe leer —los
+ *  dos elegibles y el «sin elegir»— y ninguno más.
+ *
+ *  Existe aparte de `normalizarModo` porque las dos preguntas son distintas y
+ *  se confundían al colapsarse: normalizar CONTESTA con un modo siempre, y por
+ *  eso no sirve para las puertas que tienen que RECHAZAR (la del save en
+ *  `loadSession`, #522). Quien normaliza acepta lo que venga; quien pregunta
+ *  esto se entera de que no venía nada bueno. */
+export function esModo(v: unknown): v is Modo {
+  return v === "image" || v === "vector" || v === "";
+}
+
 /** Lo que llega del wire o del save, a un `Modo`: cualquier otra cosa es
- *  «sin elegir». Quien necesite fail-loud ante un valor desconocido (el
- *  bridge al crear la partida) lo comprueba ANTES de normalizar. */
+ *  «sin elegir». Quien necesite fail-loud ante un valor desconocido —el bridge
+ *  al crear la partida, la puerta del save— lo comprueba ANTES de normalizar,
+ *  con `esModo`. */
 export function normalizarModo(v: unknown): Modo {
-  return v === "image" || v === "vector" ? v : "";
+  return esModo(v) ? v : "";
 }
 
 export interface FacetasDeModo {
@@ -46,10 +59,16 @@ export function modoEfectivoDePersonajes(f: FacetasDeModo): Modo {
 }
 
 export interface EntradaDeGates extends FacetasDeModo {
-  /** Toggle local de escenarios (sin sesión). Lo lee el cliente de
-   *  `localStorage`; aquí solo entra su valor. */
-  toggleLocalEscenarios: boolean;
-  /** Toggle local de personajes (sin sesión), ídem. */
+  /** Toggle local de personajes SIN sesión (fixtures). Lo lee el cliente de
+   *  `localStorage`; aquí solo entra su valor.
+   *
+   *  De escenarios NO hay toggle, y no es un olvido: sin sesión no hay a quién
+   *  pedirle un tile, así que el atlas no se genera pase lo que pase
+   *  (`generationOn: () => session.active && …` en el cliente). El que había
+   *  no tenía consumidor alcanzable y se retiró entero, con candado de
+   *  reaparición en `arch-rules.json` (#519). Los skins sí: una fixture con
+   *  NPCs descritos los pediría nada más cargar, y por eso su toggle nace
+   *  OFF. */
   toggleLocalPersonajes: boolean;
 }
 
@@ -61,10 +80,15 @@ export interface GatesDeImagen {
 }
 
 /** Los dos gates de gasto. Con la faceta elegida manda la faceta (`image`
- *  gasta, `vector` no); sin elegir manda el toggle local, que es cómo una
- *  fixture con NPCs descritos no gasta créditos sin que nadie lo pida. */
+ *  gasta, `vector` no).
+ *
+ *  Sin elegir —fixtures, sin partida— los dos se separan, y a propósito: los
+ *  ESCENARIOS no se generan (no hay partida a la que pedirle el tile, así que
+ *  el gate del cliente ya era `session.active && …` y el toggle no decidía
+ *  nada: #519); los PERSONAJES caen a su toggle local, que nace OFF para que
+ *  una fixture con NPCs descritos no gaste créditos sin que nadie lo pida. */
 export function gatesDeImagen(f: EntradaDeGates): GatesDeImagen {
-  const escenarios = f.renderMode ? f.renderMode === "image" : f.toggleLocalEscenarios;
+  const escenarios = f.renderMode === "image";
   const efectivo = modoEfectivoDePersonajes(f);
   const personajes = efectivo ? efectivo === "image" : f.toggleLocalPersonajes;
   return { escenarios, personajes };

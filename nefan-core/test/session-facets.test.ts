@@ -44,6 +44,7 @@ function espia(): { sinks: FacetSinks; llamadas: Array<[string, unknown]> } {
   const llamadas: Array<[string, unknown]> = [];
   const sinks: FacetSinks = {
     mundo: ({ sessionId }) => llamadas.push(["mundo", sessionId]),
+    frontera: ({ sessionId }) => llamadas.push(["frontera", sessionId]),
     style: ({ styleId }) => llamadas.push(["style", styleId]),
     theme: ({ uiTheme }) => llamadas.push(["theme", uiTheme]),
     renderModes: ({ renderMode, characterMode }) =>
@@ -74,6 +75,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     assert.deepEqual(s.facets, PARTIDA);
     assert.deepEqual(llamadas, [
       ["mundo", "1787-abc"],
+      ["frontera", "1787-abc"],
       ["style", "acuarela"],
       ["theme", TEMA],
       ["renderModes", "image/vector"],
@@ -105,6 +107,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     assert.equal(NOMBRES_DE_SINK.length, Object.keys(sinks).length, "el doble cubre el record");
     assert.deepEqual(llamadas, [
       ["mundo", ""],
+      ["frontera", ""],
       ["style", ""],
       ["theme", BASE_UI_THEME],
       ["renderModes", "/"],
@@ -146,6 +149,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     assert.deepEqual(s.facets, { ...NO_SESSION, sessionId: "segunda" });
     assert.deepEqual(llamadas, [
       ["mundo", "segunda"],
+      ["frontera", "segunda"],
       ["style", ""],
       ["theme", BASE_UI_THEME],
       ["renderModes", "/"],

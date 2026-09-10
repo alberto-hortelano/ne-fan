@@ -33,6 +33,7 @@ import { InventoryListSchema, describirInventarioInvalido } from "../contracts/r
 import type { ZodError } from "zod";
 import { buildLlmContext } from "./serialize-llm.js";
 import { registerSceneNpcs } from "./npc-records.js";
+import { esModo } from "../session/gates-de-imagen.js";
 
 /** Dónde vive la partida AHORA MISMO.
  *
@@ -165,6 +166,25 @@ function describirNombreInvalido(name: unknown): string | null {
   if (typeof name !== "string") return `no es un texto (recibido ${JSON.stringify(name)})`;
   if (name.trim().length === 0) return `está vacío (${JSON.stringify(name)})`;
   return null;
+}
+
+/** Por qué un modo de render del save NO es un modo, o `null` si lo es.
+ *
+ *  `undefined` pasa: `world` es aditivo (`{...DEFAULT_WORLD, ...data.world}`)
+ *  y un save anterior al campo cae a su default. Lo que NO pasa es un valor
+ *  con algo dentro que nadie sabe leer, y eso es #522: el modo de render es la
+ *  PUERTA DEL GASTO de imagen, y un `"imagen"` mal escrito en el save lo
+ *  interpretaba distinto cada lector. `normalizarModo` lo colapsa a «sin
+ *  elegir» (el cliente y el gate), `applyRenderModeChange` lo trata como modo
+ *  PROPIO —así que los personajes dejan de seguir a los escenarios— y la State
+ *  API lo publicaba tal cual (`world.render_mode || "image"`). Tres lecturas de
+ *  un mismo byte; ninguna de las tres es «rechazar», que es la única correcta.
+ *  Hermano de `describirPosicionInvalida` y `describirNombreInvalido`, y por
+ *  el mismo motivo: hay varios lectores y no pueden decidir cada uno lo suyo. */
+function describirModoInvalido(v: unknown): string | null {
+  if (v === undefined) return null;
+  if (esModo(v)) return null;
+  return `es ${JSON.stringify(v)} y solo vale "image", "vector" o "" (sin elegir)`;
 }
 
 /** Cómo llamar, para quien juega, a un record que no tiene nombre: su
@@ -584,6 +604,25 @@ export class NarrativeState {
           `save "${sessionId}": ${describirInventarioInvalido(inv.error)} — ` +
             "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
         );
+      }
+    }
+    // Y LOS DOS MODOS DE RENDER (#522), que son la puerta del gasto de imagen.
+    // Un valor que nadie sabe leer no se colapsa a «sin elegir» aquí: se
+    // rechaza. El propio `applyRenderModeChange` lo dejó escrito —«que un valor
+    // así llegue vivo hasta aquí es el defecto de verdad, y su sitio es la
+    // puerta del save»—, y hasta hoy pasaba entero: el cliente lo leía como
+    // «sin elegir», el bridge como modo PROPIO de la faceta (los personajes
+    // dejaban de seguir a los escenarios) y la State API lo publicaba tal cual.
+    // Mismo criterio aditivo que el resto: falta → default; viene → bien.
+    if (data.world !== undefined) {
+      for (const campo of ["render_mode", "character_mode"] as const) {
+        const motivo = describirModoInvalido(data.world[campo]);
+        if (motivo) {
+          throw new Error(
+            `save "${sessionId}": world.${campo} ${motivo} — ` +
+              "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
+          );
+        }
       }
     }
     // Mismo motivo que en startNewSession: el runtime atado era de la sesión

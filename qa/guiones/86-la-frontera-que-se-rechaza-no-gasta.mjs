@@ -33,19 +33,19 @@
  *  `KeyboardInputProvider`, tras el mismo gate `propuestaDeTileAbierta()` que
  *  la `Y`, y el driver de bench no pasa por él.
  *
- *  LO QUE ESTE GUION NO PUEDE MEDIR, y dónde vive. Las tres ramas que necesitan
- *  un tile QUE TARDE: la promoción a **`blocking`** a 2 m, el **timeout de
- *  5 min** y el **cooldown de 15 s tras un error del bridge**. El motor falso
- *  del banco contesta al instante, así que el tile ya está instalado antes de
- *  que el jugador llegue al muro (y un tile que existe ni se mira: la promoción
- *  deja de tener sentido); y decidir que falle o que tarde es una variable de
- *  entorno de SU proceso (`TILE_MODE=error`, `TILE_DELAY_MS`) que el guion no
- *  arranca — falsear `performance.now()` desde la página movería el reloj del
- *  game loop entero, y eso ya no sería el juego. Las tres viven en
- *  `nefan-core/test/frontera.test.ts` (reloj inyectado) y QA las comprobó a mano
- *  en el juego real con esas dos variables (qa-2.md de #512: `blocking` a 1,61 m
- *  y solo uno en 40 fotogramas; timeout a los 300 s exactos con su aviso;
- *  propuesta de vuelta al segundo 15 tras el error, con cero re-peticiones).
+ *  LO QUE ESTE GUION NO MIDE, y dónde vive hoy. Las tres ramas que necesitan un
+ *  tile QUE TARDE o QUE FALLE —la promoción a **`blocking`** a 2 m, el
+ *  **timeout de 5 min** y el **cooldown de 15 s tras un error del bridge**— no
+ *  las podía ejercer ningún guion mientras el motor falso leyera su conducta a
+ *  la carga del módulo (`TILE_MODE`, `TILE_DELAY_MS`): era una decisión del
+ *  proceso entero y de toda la corrida. Desde #516 se pide en caliente con
+ *  `POST /dev/tiles`, y **el `blocking` y el cooldown los mide el guion 109**.
+ *  El timeout sigue fuera: son 300 s de reloj de PARED y su umbral es una
+ *  constante de core, así que vive en `nefan-core/test/frontera.test.ts` (reloj
+ *  inyectado) y en la comprobación a mano de QA en el juego real (qa-2.md de
+ *  #512: `blocking` a 1,61 m y solo uno en 40 fotogramas; timeout a los 300 s
+ *  exactos con su aviso; propuesta de vuelta al segundo 15 tras el error, con
+ *  cero re-peticiones). Lo de aquí sigue siendo la `N` y solo la `N`.
  *
  *  PROBADO EN NEGATIVO (QA, 2026-09-07, un sabotaje cada vez y revertido después):
  *   · `rechazar()` sin `this.#rechazados.add(this.#propuesta.key)` — la `N`

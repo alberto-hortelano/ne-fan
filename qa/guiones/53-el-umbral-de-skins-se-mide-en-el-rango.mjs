@@ -70,7 +70,7 @@ const FIXTURE = "robledo_tile";
  *  escribe aquí porque este guion mide el COMPORTAMIENTO en su rango, no la
  *  constante: cambiar una sin la otra tiene que ponerse rojo. */
 const UMBRAL = 3;
-const APAGADO = /skins IA desactivados para la sesión/g;
+const APAGADO = /skins IA desactivados/g;
 const CANCELADA = /skin IA cancelada/g;
 
 /** El texto del registro de errores del cliente, tal y como lo ve el jugador. */
@@ -259,7 +259,7 @@ export default async function (ctx) {
       `con ${UMBRAL} personajes caídos el juego apaga los skins de la sesión y lo dice`,
       () => {
         const t = document.getElementById("error-log")?.textContent ?? "";
-        return /skins IA desactivados para la sesión/.test(t) ? t : null;
+        return /skins IA desactivados/.test(t) ? t : null;
       },
       90_000,
     );
@@ -376,7 +376,7 @@ export default async function (ctx) {
       (k) => {
         const l = window.__nefan.skins;
         const t = document.getElementById("error-log")?.textContent ?? "";
-        if (/skins IA desactivados para la sesión/.test(t)) return { l, t };
+        if (/skins IA desactivados/.test(t)) return { l, t };
         return l.length >= k && l.every((s) => s.ready.length > 0 || s.failed) ? { l, t } : null;
       },
       90_000,

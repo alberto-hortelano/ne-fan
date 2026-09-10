@@ -16,7 +16,7 @@
  *  cartel, hablarle al motor—. La decisión no está aquí: a core le llegan el
  *  reloj (`performance.now()`), la posición y los tiles como argumentos. */
 
-import type { Frontera } from "@nefan-core/src/scene/frontera.js";
+import type { Frontera, Velo } from "@nefan-core/src/scene/frontera.js";
 import type { Edge } from "@nefan-core/src/world-map/types.js";
 import type { TileStore } from "./tile-store.js";
 import { errors } from "../ui/error-log.js";
@@ -51,8 +51,16 @@ export interface DepsDeFrontera {
     consumeTileConfirm(): boolean;
     consumeTileDecline(): boolean;
   };
-  /** El muro de niebla del borde, o `null` para disiparlo. */
-  velo(edge: Edge | null): void;
+  /** El muro de niebla: sobre qué borde y CON QUÉ TEXTO, o `null` para
+   *  disiparlo. Las dos mitades salen de core y las dos se pintan: el borde en
+   *  la niebla del renderer, el texto en el rótulo del HUD.
+   *
+   *  El texto llegaba aquí y se tiraba (`deps.velo(velo?.edge ?? null)`), así
+   *  que core calculaba tres estados —«Zona sin generar», el progreso que manda
+   *  el motor, «Explorando lo desconocido»— con sus tres tests, para nada, y el
+   *  jugador pegado al muro no recibía NINGÚN motivo de por qué no puede
+   *  cruzar: justo lo que el fail-loud uniforme prohíbe (#515). */
+  velo(velo: Velo | null): void;
   preguntar(q: PreguntaDeFrontera | null): void;
   /** Qué tile se pidió (para el ledger de episodios). */
   pedido(key: string): void;
@@ -91,8 +99,9 @@ export function crearFronteraDelJugador(deps: DepsDeFrontera): { tick(x: number,
       const { velo, vencidos, propuesta } = deps.frontier.tick(ahora, x, z, tiles, pedir);
       // El velo es un MURO DE NIEBLA sobre la frontera, no una banda de HUD.
       // Ahí el mundo se acaba de verdad, y verlo disiparse al llegar el vecino
-      // cuenta «el mundo continúa» sin escribirlo.
-      deps.velo(velo?.edge ?? null);
+      // cuenta «el mundo continúa» sin escribirlo. Lo que sí es texto —qué es
+      // ese muro— viaja entero: el sink pinta las dos mitades (#515).
+      deps.velo(velo);
       for (const key of vencidos) {
         errors.push(
           "narrative",
