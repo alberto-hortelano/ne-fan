@@ -290,6 +290,16 @@ async function onModeBadge(
   if (target === "image" && !modeArmed.has(key)) {
     modeArmed.set(key, performance.now());
     const orig = btn.textContent ?? "";
+    // Los colores base se GUARDAN, igual que el rótulo, porque desarmarse es
+    // volver a ellos y no quedarse sin ninguno (#549). Venían del atributo
+    // `style` del propio botón (`MODE_BADGE_CSS` → `BADGE_CSS`), así que el
+    // `btn.style.borderColor = ""` que había aquí no restauraba: BORRABA los
+    // longhands, y el badge se quedaba con el `color` heredado de su fila
+    // —medido: `rgb(0,0,0)` sobre `#23222c`— hasta el siguiente repintado.
+    // Guardarlos en vez de reescribir las literales evita además la copia de
+    // `BADGE_CSS` que ningún checker vería.
+    const origBorde = btn.style.borderColor;
+    const origColor = btn.style.color;
     btn.textContent = "¿Confirmar? Gastará créditos";
     btn.style.borderColor = "#a63";
     btn.style.color = "#da6";
@@ -297,8 +307,8 @@ async function onModeBadge(
       if (!modeArmed.has(key) || !btn.isConnected) return;
       modeArmed.delete(key);
       btn.textContent = orig;
-      btn.style.borderColor = "";
-      btn.style.color = "";
+      btn.style.borderColor = origBorde;
+      btn.style.color = origColor;
     }, ARM_TTL_MS);
     return;
   }

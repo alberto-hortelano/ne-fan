@@ -272,10 +272,24 @@ export default async function (ctx) {
     Boolean(socket.aviso),
     JSON.stringify(conSocketRoto.avisos),
   );
+  // #479, y hasta el 2026-09-10 esto afirmaba `Boolean(socket.entrada)`: que
+  // el jugador leía LITERALMENTE el `message` del registro. Lo leía, y ese
+  // `message` cita los 200 primeros caracteres de la trama que no se pudo
+  // parsear — o sea que el muro le enseñaba el JSON crudo. Esta familia pasa a
+  // ser la SEGUNDA excepción a la una-sola-verdad literal, por el mismo motivo
+  // que las hojas base de arriba: su `message` está escrito para quien
+  // programa. Y como allí, se afirman las DOS mitades, que es lo que impide
+  // que «traducir» acabe siendo «perder la pista».
   ctx.expect(
-    "…con el mensaje del registro, no con una segunda redacción",
-    Boolean(socket.entrada),
-    `aviso "${socket.aviso?.texto}" · registro ${JSON.stringify(conSocketRoto.log.slice(0, 3))}`,
+    "…y lo que lee el jugador es una frase accionable, no la trama que no se entendió (#479)",
+    /Vuelve a cargar la página/.test(socket.aviso?.detalle ?? "") &&
+      !/esto no es json|[{}]/.test(socket.aviso?.detalle ?? ""),
+    socket.aviso?.detalle ?? "(sin aviso)",
+  );
+  ctx.expect(
+    "…y el REGISTRO sí conserva la trama entera, que es la única pista para depurarlo",
+    conSocketRoto.log.some((e) => /mandó algo ilegible/.test(e.msg) && /esto no es json/.test(e.msg)),
+    JSON.stringify(conSocketRoto.log.slice(0, 3)),
   );
   await ctx.shot("306-el-socket-no-se-entiende");
 

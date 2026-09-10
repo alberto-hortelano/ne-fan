@@ -252,27 +252,30 @@ export default async function (ctx) {
     `armado ${JSON.stringify(armado.pintado)} → desarmado ${JSON.stringify(desarmado.pintado)}`,
   );
 
-  // ⚠ HALLAZGO MEDIDO SIN PONERLO ROJO (QA de la PR 4 de #346, preexistente):
-  // el desarme por TTL escribe `btn.style.borderColor = ""` y
-  // `btn.style.color = ""`, y esas dos líneas no restauran el color base: lo
-  // BORRAN. El base venía del atributo `style` del propio botón
-  // (`BADGE_CSS`: `border:1px solid #3a3846;color:#a99`), así que al quitar
-  // los longhands el badge se queda con el `color` heredado de su fila
-  // (`#bdf`) y un borde de `currentColor`. Un badge que se desarma solo se
-  // queda AZUL entre sus vecinos grises hasta el siguiente repintado. Viene
-  // verbatim de antes del corte (la PR 4 lo mueve sin tocarlo), así que no se
-  // afirma rojo: se MIDE y se declara. Si se arregla, este bloque pasa a ser
-  // un aserto.
+  // #549, y hasta el 2026-09-10 este bloque era un HALLAZGO MEDIDO SIN PONERLO
+  // ROJO (QA de la PR 4 de #346): el desarme por TTL escribía
+  // `btn.style.borderColor = ""` y `btn.style.color = ""`, y esas dos líneas no
+  // restauran el color base sino que lo BORRAN — venía del atributo `style` del
+  // propio botón (`BADGE_CSS`: `border:1px solid #3a3846;color:#a99`), así que
+  // al quitar los longhands el badge se quedaba con el color heredado de su
+  // fila y un borde de `currentColor`: ilegible entre sus vecinos grises hasta
+  // el siguiente repintado. Arreglado guardando los dos valores base al armar,
+  // el log pasa a ser el ASERTO que él mismo pedía.
+  //
+  // Lo que se compara es el badge desarmado contra un GEMELO intacto de otro
+  // save, no contra literales: si mañana `BADGE_CSS` cambia de color, el aserto
+  // sigue diciendo lo mismo —«un badge que se desarma solo se ve como los que
+  // nadie tocó»— sin tener que actualizar ninguna cifra aquí.
   await ctx.shot("badge-tras-el-desarme-automatico");
   const gemelo = await ctx.page.evaluate(fotoDelBadge, badge(paraFallar));
   const igualQueSuVecino =
     desarmado.pintado.borde === gemelo.pintado.borde &&
     desarmado.pintado.color === gemelo.pintado.color;
-  ctx.log(
-    `⚠ tras el TTL el badge NO vuelve al aspecto de sus vecinos: ` +
-      `desarmado ${JSON.stringify(desarmado.pintado)} vs intacto ${JSON.stringify(gemelo.pintado)} ` +
-      `(inline borrado: borde="${desarmado.borde}" color="${desarmado.color}") — ` +
-      `${igualQueSuVecino ? "HOY COINCIDEN: el defecto está arreglado, conviértelo en aserto" : "declarado, no afirmado"}`,
+  ctx.expect(
+    "…y al desarmarse VUELVE a verse como sus vecinos: el TTL restaura el color base, no lo borra (#549)",
+    igualQueSuVecino,
+    `desarmado ${JSON.stringify(desarmado.pintado)} vs intacto ${JSON.stringify(gemelo.pintado)} ` +
+      `(inline tras el TTL: borde="${desarmado.borde}" color="${desarmado.color}")`,
   );
 
   // LA AFIRMACIÓN QUE IMPORTA: el desarme OLVIDÓ. Si el `setTimeout` hubiera
