@@ -29,6 +29,8 @@ import {
   duenosDeLaMedida,
   duenosLegibles,
   empaqueta,
+  lotesQueNoCaben,
+  presupuestoDelLote,
   fusionaCorrida,
   lotesSinNoticias,
   estadoLegible,
@@ -54,6 +56,7 @@ import {
   type InformeSellado,
   type JobDeCI,
   type MedidaDeFichero,
+  type Lote,
   type ModuloAEmpaquetar,
   type PlanDeCorrida,
   type MutanteMedido,
@@ -689,6 +692,67 @@ describe("descarga · ni falta, ni sobra, ni es otro informe con el mismo nombre
       verificaDescarga(corrida, [sello("world-map"), sello("store")]),
       [],
       "el orden en disco tampoco decide nada",
+    );
+  });
+});
+
+/** EL TECHO DEL JOB, que es otra pregunta distinta de `tope_lote` y hasta el
+ *  2026-09-10 no la contestaba nadie. Pasarse del tope da un lote lento que
+ *  deja su medida igual; pasarse del techo no deja NADA —el job muere sin subir
+ *  informe— y además tumba la corrida entera: sale INCOMPLETA, el tag no se
+ *  mueve y la siguiente vuelve a pedir hasta lo que sí midió. */
+describe("lotes · lo que NO CABE en el job que ha de medirlo", () => {
+  const lote = (segundos: number, medido = true): Lote => ({
+    lote: 1,
+    modulos: ["cualquiera"],
+    segundos,
+    medido,
+    margen: 1800 - segundos,
+  });
+
+  it("el caso REAL que lo obligó: `scene-validate` contra los 45 minutos de entonces", () => {
+    // 2.532 s medidos contra un techo de 2.700. «Cabe por poco» era la lectura
+    // de la corrida 34493904935, y el job lo mató con 766 de 836 mutantes
+    // probados. Con la holgura puesta, se declara imposible ANTES de gastarlo.
+    assert.equal(presupuestoDelLote(2532), 3225);
+    assert.deepEqual(
+      lotesQueNoCaben([lote(2532)], 2700).length,
+      1,
+      "con los 45 minutos de entonces no cabía, y la cuenta lo dice sin correr nada",
+    );
+    assert.deepEqual(lotesQueNoCaben([lote(2532)], 3600), [], "con los 60 de hoy cabe");
+  });
+
+  it("un lote LLENO hasta `tope_lote` cabe de sobra: la holgura no estrecha lo normal", () => {
+    // 1.800 × 1,25 + 60 = 2.310. El aviso no puede convertirse en ruido sobre
+    // los lotes que van bien, o se aprende a ignorar en dos semanas.
+    assert.deepEqual(lotesQueNoCaben([lote(1800)], 2700), [], "cabían en 45 y siguen cabiendo");
+    assert.deepEqual(lotesQueNoCaben([lote(1800)], 3600), []);
+  });
+
+  it("el filo: justo dentro y justo fuera", () => {
+    // Sin los dos lados, un `<=` por `<` no se ve. 2.832 × 1,25 + 60 = 3.600.
+    assert.deepEqual(lotesQueNoCaben([lote(2832)], 3600), [], "3.600 exactos SÍ caben");
+    assert.equal(lotesQueNoCaben([lote(2833)], 3600).length, 1, "un segundo más, y no");
+  });
+
+  it("un lote SIN RELOJ no se juzga: no es que quepa, es que nadie sabe lo que cuesta", () => {
+    // La regla de `permisoLocal`. Darlo por bueno sería suponerlo barato, que
+    // es justo lo que revienta el job que lo acoja; darlo por imposible pararía
+    // la primera medida de todo módulo nuevo. Sale por su propio camino, el de
+    // «va solo».
+    assert.deepEqual(lotesQueNoCaben([lote(0, false)], 60), []);
+  });
+
+  it("se nombran TODOS los que no caben, no el primero", () => {
+    const malos = lotesQueNoCaben(
+      [lote(3000), lote(100), lote(4000)],
+      3600,
+    );
+    assert.deepEqual(
+      malos.map((l) => l.segundos),
+      [3000, 4000],
+      "dos lotes imposibles son dos avisos: con uno solo, el segundo se descubre la corrida siguiente",
     );
   });
 });

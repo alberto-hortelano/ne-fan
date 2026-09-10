@@ -224,6 +224,36 @@ const VIGENTES = [
     },
   },
   {
+    nombre: "presupuesto · `techo_job` es EL MISMO número que el `timeout-minutes` del job",
+    porque:
+      "el reparto no puede contrastarse con un techo que no sea el que de verdad mata el job; " +
+      "duplicado sin candado es la forma de que uno de los dos envejezca solo",
+    mira: () => {
+      const techo = JSON.parse(readFileSync(PLAN, "utf8")).techo_job;
+      const yml = readFileSync(YML, "utf8");
+      const medir = yml.slice(yml.indexOf("\n  medir:"), yml.indexOf("\n  reunir:"));
+      const m = /timeout-minutes:\s*(\d+)/.exec(medir);
+      return m !== null && techo === Number(m[1]) * 60;
+    },
+  },
+  {
+    nombre: "presupuesto · NINGÚN lote se pasa del techo del job",
+    porque:
+      "pasarse de `tope_lote` da un lote lento que deja su medida; pasarse del techo no deja nada y " +
+      "tumba la corrida entera — el tag no se mueve y hay que repetir hasta lo que sí midió",
+    // LO QUE ESTE CANDADO NO ES: una foto. Mira el plan REAL de hoy con la
+    // huella REAL, así que el día que un módulo engorde hasta no caber, se pone
+    // rojo aquí —en CI, en segundos— y no dentro de 45 minutos de runner. Lo
+    // midió la corrida 34493904935: `scene-validate` con 2.532 s contra los
+    // 2.700 de entonces «cabía por poco», y por poco es menos que el ruido.
+    //
+    // Y se pregunta al PROPIO `lotes`, no a una copia de su aritmética aquí: la
+    // holgura y el arranque viven en `mutacion-huella.ts` con su medida escrita
+    // y tienen batería propia (`test/mutacion-huella.test.ts`). Repetir la
+    // cuenta en este fichero sería el candado más fácil de dejar envejecido.
+    mira: () => !mutacion(["lotes", "--todos"]).salida.includes("NO CABE EN EL JOB"),
+  },
+  {
     nombre: "fusión · UN LOTE MUERTO deja la corrida INCOMPLETA y el tag QUIETO",
     porque: "es todo el diseño de PR-E: `modulos_pedidos` sale del plan, no de los lotes que llegaron",
     mira: () => {
@@ -416,9 +446,14 @@ const ABIERTOS = [
     // NEGATIVO no se ejercía en ninguna parte; ahora el par vive también en la
     // batería, que sí corre en cada PR.
     nombre: "presupuesto · `tope_lote` sube por encima del `timeout-minutes` del job",
-    porque: "un tope de 60 min con jobs de 45 mata a mitad de camino a los lotes más llenos",
+    porque: "un tope mayor que el job mata a mitad de camino a los lotes más llenos",
     checkers: ["bateria", "cableado"],
-    rompe: [PLAN, `"tope_lote": 1800,`, `"tope_lote": 3600,`],
+    // 90 MINUTOS, Y EL NÚMERO IMPORTA. Rompía con 60 min, y el 2026-09-10 el
+    // job subió a 60: el probe dejó de romper nada y siguió pareciendo verde
+    // por el lado equivocado —nadie se entera porque no hay nada de lo que
+    // enterarse—. Un sabotaje se calibra CONTRA lo que sujeta, y lo que sujeta
+    // se mueve.
+    rompe: [PLAN, `"tope_lote": 1800,`, `"tope_lote": 5400,`],
   },
   {
     // #437, ítem 3. No estaba declarado en ninguna parte: `argv.includes("--todos")`

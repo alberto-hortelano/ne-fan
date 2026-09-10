@@ -780,10 +780,20 @@ export function idsDeLotes(todos: boolean, crudos: string | undefined): IdsPedid
  *  un coste desconocido no se supone barato. Meterlo en un hueco con un 0
  *  implícito es la forma exacta de reventar el reloj del job que lo acoja.
  *
- *  UN MÓDULO QUE SOLO YA PASA DEL TOPE VA SOLO Y NO ES UN ERROR: se empaqueta,
- *  se le calcula un margen negativo y quien lea la salida lo ve venir. La
+ *  UN MÓDULO QUE SOLO YA PASA DEL TOPE VA SOLO Y NO ES UN ERROR *del
+ *  empaquetado*: se empaqueta, se le calcula un margen negativo y sigue. La
  *  respuesta cuando pase es partir su batería, nunca subir el tope — igual que
  *  con `tope_local`.
+ *
+ *  Lo que esta prosa daba por hecho y la medida desmintió es el resto: decía
+ *  «quien lea la salida lo ve venir», y el 2026-09-10 nadie lo vio. La corrida
+ *  34493904935 lanzó `scene-validate` (2.532 s medidos, −732 del tope) en su
+ *  lote propio y el job lo mató a los 45 minutos con 766 de 836 mutantes
+ *  probados: sin informe, corrida INCOMPLETA y tag quieto, o sea que los 54
+ *  módulos que SÍ midieron habrá que volver a medirlos. Por eso el que no cabe
+ *  ya no se enseña con un margen negativo y nada más: `lotesQueNoCaben` lo
+ *  contrasta contra el techo del job, que es el número que decide si vuelve
+ *  algo o no vuelve nada.
  *
  *  Descendente por segundos y primer hueco que quepa (first-fit decreasing). No
  *  es óptimo y no hace falta que lo sea: el desempate va por id para que dos
@@ -821,6 +831,56 @@ export function empaqueta(modulos: readonly ModuloAEmpaquetar[], tope: number): 
     lotes.push({ lote: lotes.length + 1, modulos: [m.id], segundos: 0, medido: false });
   }
   return lotes;
+}
+
+/** Lo que tarda el job en LLEGAR a medir: checkout, setup-node y `npm ci`.
+ *
+ *  Medido y no supuesto: 14 s en el job de `scene-validate` de la corrida
+ *  34493904935 (15:11:18 → 15:11:32, con la caché de npm caliente). Se
+ *  presupuestan 60 para no planificar sobre el mejor día, que es la misma
+ *  razón por la que `tope_lote` se calibra con el día malo. El comentario de
+ *  `mutation.yml` decía que los 45 minutos eran «los 30 de `tope_lote` más el
+ *  arranque»: el arranque son 14 segundos, así que aquellos 15 minutos no eran
+ *  arranque, eran margen. */
+export const ARRANQUE_DEL_JOB_S = 60;
+
+/** Cuánto se le concede a un lote por encima de su reloj medido antes de dar
+ *  por hecho que cabe.
+ *
+ *  NO ES UN COLCHÓN DE OPINIÓN: los segundos de un módulo son UNA muestra, la
+ *  de la última corrida que lo midió, y entre dos corridas el mismo módulo se
+ *  mueve. Medido el 2026-09-10 comparando la corrida 34455812779 con la
+ *  34493904935 sobre los 61 ficheros que ambas midieron: mediana ×0,97, y los
+ *  extremos ×0,75 y ×1,14. El 1,25 cubre ese extremo con algo de sitio.
+ *
+ *  Y es la lección de la corrida que lo obligó: `scene-validate` tenía 2.532 s
+ *  medidos contra un techo de 2.700 (los 45 minutos de entonces). El 6 % de
+ *  margen que eso deja es MÁS PEQUEÑO QUE EL RUIDO del propio reloj, así que
+ *  «cabe por poco» no era una lectura optimista: era una lectura sin sentido.
+ *  Con esta holgura, ese lote se habría declarado imposible ANTES de gastar los
+ *  45 minutos. */
+export const HOLGURA_DEL_TECHO = 1.25;
+
+/** Los lotes que NO CABEN en el job que ha de medirlos, con el arranque ya
+ *  descontado. Es la pregunta que `tope_lote` no contesta.
+ *
+ *  Pasarse de `tope_lote` da un lote lento que deja su medida igual; pasarse
+ *  del techo del job no deja nada, y además tumba la corrida entera (el tag no
+ *  se mueve, así que la siguiente vuelve a pedirlo todo). Son dos fallos
+ *  distintos y hasta el 2026-09-10 solo el primero tenía aviso.
+ *
+ *  UN LOTE SIN RELOJ NO SE JUZGA. No es que quepa: es que nadie sabe lo que
+ *  cuesta, y suponerlo barato es exactamente lo que `permisoLocal` se niega a
+ *  hacer. Sale en la salida de `lotes` por su propio camino, el de «va solo». */
+export function lotesQueNoCaben(lotes: readonly Lote[], techoJob: number): Lote[] {
+  return lotes.filter((l) => l.medido && presupuestoDelLote(l.segundos) > techoJob);
+}
+
+/** Lo que hay que reservarle a un lote de `segundos` medidos: su reloj con la
+ *  holgura del ruido, más el arranque del job. Separada para que la batería
+ *  pueda medir la cuenta sin fabricar lotes. */
+export function presupuestoDelLote(segundos: number): number {
+  return Math.round(segundos * HOLGURA_DEL_TECHO) + ARRANQUE_DEL_JOB_S;
 }
 
 /** Lo que CI sube ANTES de medir, para que la fusión sepa qué se pidió aunque

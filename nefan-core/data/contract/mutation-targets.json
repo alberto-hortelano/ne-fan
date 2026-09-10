@@ -3,6 +3,7 @@
   "comando": "NODE_OPTIONS=--max-old-space-size=1024 node --import tsx --test --test-concurrency=1",
   "tope_local": 120,
   "tope_lote": 1800,
+  "techo_job": 3600,
   "directorios_completos": [
     {
       "directorio": "src/narrative",
