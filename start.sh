@@ -124,19 +124,20 @@ track_started() {
 
 have_cmd()  { command -v "$1" >/dev/null 2>&1; }
 port_busy() { fuser "$1/tcp" >/dev/null 2>&1; }
-# `>/dev/null` no es cosmética: al matar, `fuser` escribe los pids en STDOUT y
-# SIN salto de línea, así que se pegaban delante de la línea siguiente del
-# informe de `--parar` (`89419    ⏭  :9978 …`). La lista quedaba ilegible justo
-# donde hay que decidir si algo es ajeno.
-# (El texto de esta explicación no repite el flag junto al comando a propósito:
-#  `solo-se-mata-el-puerto-propio` cuenta apariciones literales, y una prosa que
-#  lo cite sube la deuda como si hubiera un segundo sitio que mata.)
-kill_port() { fuser -k "$1/tcp" >/dev/null 2>&1; sleep 0.5; }
+# `>/dev/null` no es cosmética: `fuser` escribe los pids en STDOUT y SIN salto
+# de línea, así que se pegaban delante de la línea siguiente del informe de
+# `--parar` (`89419    ⏭  :9978 …`). La lista quedaba ilegible justo donde hay
+# que decidir si algo es ajeno.
+# (Ninguna prosa de este fichero escribe el comando junto a su bandera de matar
+#  a propósito: `solo-se-mata-el-puerto-propio` cuenta apariciones literales, y
+#  una explicación que lo cite sube la deuda como si hubiera un sitio que mata.)
 
-# Matar unos PIDS CONCRETOS, los que se demostraron nuestros. Es lo que usa
-# `cmd_stop`, y la diferencia con `kill_port` no es de estilo:
+# Matar unos PIDS CONCRETOS, los que se demostraron nuestros. Es la ÚNICA forma
+# de matar que le queda al launcher, y la diferencia con matar por PUERTO —lo
+# que hacía el difunto `kill_port`, retirado con su último llamador en #428— no
+# es de estilo:
 #
-# `kill_port` pregunta «¿quién tiene este puerto AHORA?» y mata a quien conteste
+# Matar por puerto pregunta «¿quién tiene esto AHORA?» y mata a quien conteste
 # — que puede no ser el que se clasificó. Con el barrido en dos pasadas esa
 # ventana pasó de ~0 a la pasada entera (medio segundo de `sleep` por proceso
 # matado), y QA lo midió: un ajeno que toma un puerto del bloque durante el
@@ -147,8 +148,8 @@ kill_port() { fuser -k "$1/tcp" >/dev/null 2>&1; sleep 0.5; }
 # introducido la única forma en que `--parar` podía matar uno de verdad.
 #
 # Con los pids de la foto no hay ventana: el que llegó después ni se entera.
-# TERM primero y KILL medio segundo después, como `kill_tree`: al matar,
-# `fuser` manda SIGKILL a pelo, y el bridge escribe saves.
+# TERM primero y KILL medio segundo después, como `kill_tree`: matar por puerto
+# manda SIGKILL a pelo, y el bridge escribe saves.
 kill_pids() {
     local p
     for p in $1; do kill -TERM "$p" 2>/dev/null; done
@@ -246,12 +247,44 @@ worktree_de_pids() {
 }
 port_de_este_worktree() { worktree_de_pids "$(pids_del_puerto "$1")"; }
 
+# ─── ¿DE QUIÉN ES ESTE PUERTO? Una foto, y la misma para los tres ───────────
+#
+# La subida (`require_port_free`), la tecla `k` (`cmd_stop`) y el Ctrl+C
+# (`cleanup`) necesitan la MISMA respuesta, y cada uno la componía por su cuenta
+# con las primitivas de arriba. No es simetría de adorno: `cleanup` ni siquiera
+# la preguntaba —mataba por PUERTO lo que sobreviviera a su proceso—, así que un
+# ajeno que llegara en ese hueco se comía el tiro con la clasificación del
+# ocupante anterior. Es exactamente el defecto que #393 arregló dentro de
+# `cmd_stop`, vivo en el camino que se recorre en CADA Ctrl+C (#428).
+#
+# Bash no devuelve tuplas, así que la foto sale por tres globales:
+#   FOTO_PIDS   los pids que lo tienen, separados por espacios. Vacío es «no hay
+#               ninguno LEGIBLE»: o no lo tiene nadie, o es de otro usuario y
+#               `fuser` no lo ve (para eso está la foto de `ss` en `cmd_stop`).
+#   FOTO_QUIEN  la línea de comandos del primero, para poder NOMBRARLO antes de
+#               tocarlo.
+#   FOTO_MIO    1 solo si se puede DEMOSTRAR de este worktree (su cwd o sus
+#               argumentos). Ilegible cuenta como AJENO, nunca al revés.
+#
+# Quién está OCUPADO no lo decide esto y es a propósito: `cmd_stop` mira 90
+# puertos y lo saca de una sola foto de `ss`; los otros dos miran uno y pueden
+# preguntar. Meter esa decisión aquí obligaría a todos a pagar la foto entera.
+FOTO_PIDS=""
+FOTO_QUIEN=""
+FOTO_MIO=0
+foto_del_puerto() {
+    FOTO_PIDS=$(pids_del_puerto "$1")
+    FOTO_PIDS=${FOTO_PIDS//$'\n'/ }
+    FOTO_QUIEN=$(owner_de_pids "$FOTO_PIDS")
+    if worktree_de_pids "$FOTO_PIDS"; then FOTO_MIO=1; else FOTO_MIO=0; fi
+}
+
 # El puerto tiene que estar LIBRE para arrancar. Si no lo está, se dice quién
 # lo ocupa y se para.
 #
-# Hasta hoy las nueve funciones `start_*` hacían `port_busy && kill_port`: se
-# cargaban al ocupante sin preguntar de quién era. Con un solo agente eso era
-# una comodidad; con varios es exactamente lo que prohíbe «no le cerreis sus
+# Hasta hoy las nueve funciones `start_*` mataban al ocupante de su puerto sin
+# preguntar de quién era. Con un solo agente eso era una comodidad; con varios
+# es exactamente lo que prohíbe «no le cerreis sus
 # servers» — y el arranque más tonto (html-fixtures) se llevaba por delante el
 # cliente de otro. La intención correcta ya estaba escrita en la BAJADA de este
 # mismo fichero (`cleanup` solo toca STARTED_PORTS y lo dice); lo que faltaba
@@ -260,15 +293,15 @@ port_de_este_worktree() { worktree_de_pids "$(pids_del_puerto "$1")"; }
 # Negarse en vez de saltar a otro puerto es deliberado: así la URL que sale por
 # pantalla es la que uno espera, y quien quiera otro bloque lo pide.
 require_port_free() {
-    local port=$1 label=$2 quien pids
+    local port=$1 label=$2
     # Un solo `fuser`, y sus pids sirven para las dos preguntas que vienen
-    # detrás («quién es» y «¿es de este worktree?»). Eran tres llamadas.
-    pids=$(pids_del_puerto "$port")
-    [[ -n "${pids// /}" ]] || return 0
-    quien=$(owner_de_pids "$pids")
+    # detrás («quién es» y «¿es de este worktree?»). Eran tres llamadas, y
+    # luego fueron tres copias de la misma composición (#428): hoy es la foto.
+    foto_del_puerto "$port"
+    [[ -n "${FOTO_PIDS// /}" ]] || return 0
     echo "❌ :$port ocupado — $label NO arranca (este launcher no mata lo que no arrancó)."
-    echo "   lo tiene: ${quien:-(no se puede leer: proceso de otro usuario)}"
-    if worktree_de_pids "$pids"; then
+    echo "   lo tiene: ${FOTO_QUIEN:-(no se puede leer: proceso de otro usuario)}"
+    if (( FOTO_MIO == 1 )); then
         echo "   · es de ESTE worktree: párale con la tecla k del menú, o ./start.sh --parar"
     else
         echo "   · NO es de este worktree: puede ser otro agente de la máquina, o el"
@@ -1292,6 +1325,21 @@ cmd_status() {
 # cmd_stop y el fallback de cleanup para que ningún servicio quede colgado.
 ALL_PORTS=("$PORT_BRIDGE" "$PORT_STATE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_RGEN" "$PORT_FORGE" "$PORT_FAKE")
 
+# ¿Alguno de los puertos de esta línea del informe («:<uno> :<otro>», ya agrupada
+# por proceso) está en el bloque VIGENTE? Es la pregunta «¿lo alcanzaría
+# --parar-todo?», porque esa rama barre `ALL_PORTS` y nada más. Se mira el GRUPO
+# entero y no su primer puerto: un proceso con un pie en el bloque vigente muere
+# por ese pie.
+grupo_en_bloque_vigente() {
+    local etiqueta base
+    for etiqueta in $1; do
+        for base in "${ALL_PORTS[@]}"; do
+            [[ "${etiqueta#:}" == "$base" ]] && return 0
+        done
+    done
+    return 1
+}
+
 # La tecla `k`: parar el stack de ESTE worktree.
 #
 # Antes barría los nueve puertos del catálogo «lo hubiera arrancado este
@@ -1311,7 +1359,7 @@ ALL_PORTS=("$PORT_BRIDGE" "$PORT_STATE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$P
 # los puertos ocupados, y solo después se barre. En una sola pasada, el bridge y
 # la State API —que son un proceso con dos puertos, `track_started $!
 # "$PORT_BRIDGE" "$PORT_STATE"`— salían así: al llegar a :$PORT_STATE el proceso
-# ya había muerto por el `kill_port` de :$PORT_BRIDGE, `worktree_de_pids` no
+# ya había muerto en el barrido de :$PORT_BRIDGE, `worktree_de_pids` no
 # podía demostrar nada y el puerto salía «AJENO, no se toca». Consecuencia: TODO
 # teardown recomendaba `--parar-todo` por un fantasma — el arma que «no le
 # cerreis sus servers» prohíbe.
@@ -1345,31 +1393,32 @@ cmd_stop() {
     snapshot_escuchando
 
     # ── Pasada 1 · la foto de dueños. No se mata NADA todavía. ──────────────
-    local port pids
+    local port
     local -a f_port=() f_pids=() f_who=() f_mio=()
     for port in "${puertos[@]}"; do
         port_en_foto "$port" || continue
-        pids=$(pids_del_puerto "$port")
+        # `foto_del_puerto` es la MISMA respuesta que usan la subida y el
+        # Ctrl+C (#428). `fuser` no ve los procesos de otros USUARIOS, así que
+        # unos pids vacíos sobre un socket que `ss` sí ve son un ajeno de
+        # verdad — y uno que además no se podría matar.
+        foto_del_puerto "$port"
         f_port+=("$port")
-        f_pids+=("${pids//$'\n'/ }")
-        f_who+=("$(owner_de_pids "$pids")")
-        # `fuser` no ve los procesos de otros USUARIOS, así que unos pids
-        # vacíos sobre un socket que `ss` sí ve son un ajeno de verdad — y uno
-        # que además no se podría matar.
-        if [[ "$todo" == "todo" ]] || worktree_de_pids "$pids"; then f_mio+=(1); else f_mio+=(0); fi
+        f_pids+=("$FOTO_PIDS")
+        f_who+=("$FOTO_QUIEN")
+        if [[ "$todo" == "todo" ]]; then f_mio+=(1); else f_mio+=("$FOTO_MIO"); fi
     done
 
     # ── Pasada 2 · imprimir y barrer, un PROCESO por línea. ─────────────────
     # Los puertos que comparten el mismo conjunto de pids son el mismo proceso
     # (bridge + State API), así que se dicen juntos y se mata UNA vez.
     #
-    # Y se mata por PID, no por puerto (`kill_pids`, no `kill_port`): la foto ya
-    # tiene los pids, y usarla entera es lo coherente con el propio diseño de
+    # Y se mata por PID y no por puerto (`kill_pids`): la foto ya tiene los
+    # pids, y usarla entera es lo coherente con el propio diseño de
     # las dos pasadas — resolver todo antes de mutar nada, y luego actuar sobre
     # lo resuelto. Matar por puerto aquí abría una ventana del tamaño de esta
     # pasada en la que un ajeno recién llegado se comía el tiro con la
     # clasificación del ocupante anterior.
-    local i j etiquetas alguno=0 saltados=0
+    local i j etiquetas alguno=0 saltados_vigente=0 saltados_otro=0
     local -a hecho=()
     for i in "${!f_port[@]}"; do
         [[ "${hecho[$i]:-0}" == 1 ]] && continue
@@ -1385,7 +1434,9 @@ cmd_stop() {
         fi
         if [[ "${f_mio[$i]}" == 0 ]]; then
             echo "    ⏭  $etiquetas  ${f_who[$i]:-(desconocido)}  — AJENO, no se toca"
-            saltados=1
+            # ¿Lo alcanzaría `--parar-todo`? Solo si alguno de SUS puertos está
+            # en el bloque vigente, que es el único que esa rama barre (#424).
+            if grupo_en_bloque_vigente "$etiquetas"; then saltados_vigente=1; else saltados_otro=1; fi
             continue
         fi
         # Sin pids no hay a quién matar, y matar por PUERTO aquí sería matar a
@@ -1399,8 +1450,26 @@ cmd_stop() {
         alguno=1
     done
     (( alguno == 0 )) && echo "    (nada que parar aquí)"
-    if [[ "$todo" != "todo" ]] && (( saltados == 1 )); then
-        echo "   Para llevarte también lo ajeno: ./start.sh --parar-todo (o la tecla K)."
+    # EL AVISO DICE LO QUE `--parar-todo` ALCANZA, Y NADA MÁS (#424).
+    #
+    # Antes salía con CUALQUIER ajeno de CUALQUIERA de los diez bloques —la rama
+    # segura los mira todos— y prometía un barrido que la rama `todo` no hace:
+    # esa solo toca `ALL_PORTS`, o sea el bloque vigente, y lo dice ella misma.
+    # O sea que el consejo mandaba a ejecutar el arma más peligrosa del launcher
+    # para que no pasara nada, con el ajeno de otro bloque intacto detrás.
+    #
+    # Y no se arregla ampliando `--parar-todo` a los diez bloques: matar a
+    # ciegas 90 puertos es justo lo que prohíbe «arrancar no mata a nadie».
+    # Se arregla diciendo la verdad.
+    if [[ "$todo" != "todo" ]]; then
+        if (( saltados_vigente == 1 )); then
+            echo "   Para llevarte también lo ajeno DEL BLOQUE VIGENTE (+$PORT_OFFSET): ./start.sh --parar-todo (o la tecla K)."
+        fi
+        if (( saltados_otro == 1 )); then
+            echo "   Lo ajeno de OTROS bloques de puertos NO lo alcanza --parar-todo, que solo barre el"
+            echo "   bloque vigente (+$PORT_OFFSET): es de otro worktree o de otro agente de la máquina."
+            echo "   Habla con su dueño — desde aquí no se puede demostrar que sobre."
+        fi
     fi
     echo "✅ stack cleaned"
 }
@@ -1439,10 +1508,24 @@ cleanup() {
     done
     # Un puerto NUESTRO que sobreviva a su proceso se libera, pero diciéndolo:
     # un puerto ajeno no se toca ni aunque esté en el catálogo.
+    #
+    # Y AHORA SE PREGUNTA DE QUIÉN ES, que era la mitad que faltaba (#428). Esto
+    # decía en su comentario lo que no hacía: mataba por PUERTO —a ciegas, con
+    # la bandera de matar de `fuser`— lo que estuviera ahí en ese instante, que
+    # no tiene por qué ser lo que
+    # arrancamos. `start.sh` se NIEGA a arrancar sobre un puerto ocupado, así
+    # que quien espera a que se libere un bloque arranca JUSTO en este hueco; es
+    # el mismo defecto que #393 cerró en la tecla `k`, y aquí se recorría en
+    # cada Ctrl+C. Con la foto se mata por PID y solo lo demostrablemente
+    # nuestro.
     for p in "${STARTED_PORTS[@]}"; do
-        if port_busy "$p"; then
-            echo "    ⚠️  :$p sigue ocupado tras parar su proceso — liberándolo"
-            kill_port "$p"
+        port_busy "$p" || continue
+        foto_del_puerto "$p"
+        if (( FOTO_MIO == 1 )) && [[ -n "${FOTO_PIDS// /}" ]]; then
+            echo "    ⚠️  :$p sigue ocupado tras parar su proceso — liberándolo (${FOTO_QUIEN:-?})"
+            kill_pids "$FOTO_PIDS"
+        else
+            echo "    ⏭  :$p lo tiene ahora ${FOTO_QUIEN:-(no se puede leer)} — AJENO, no se toca"
         fi
     done
 }

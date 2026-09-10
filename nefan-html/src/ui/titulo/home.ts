@@ -173,10 +173,23 @@ export async function pintarHome(
     });
   });
 
+  // `data-lista` es el ESTADO de la petición, aparte de la frase que se lee:
+  // «pidiendo» → «ok» | «error». Existe porque el banco necesitaba saber que
+  // la lista ya llegó y solo tenía la prosa para averiguarlo: `qa/lib/sesion.mjs`
+  // casaba dos frases y una de ellas —«No se puede contactar al bridge»— llevaba
+  // muerta desde #306, así que esa mitad de la espera no podía cumplirse NUNCA
+  // (#550). Un rótulo se reescribe cada vez que alguien mejora una frase; el
+  // estado de una petición son tres valores y no cambia con la redacción.
+  //
+  // Dice qué pasó con la PETICIÓN, no si la lista sigue al día: cuando el
+  // socket se cae después, `avisos.caducarEstadoDeSaves` reescribe la frase y
+  // este sello se queda en «ok», que es la verdad de lo que se pregunta aquí.
+  statusEl.dataset.lista = "pidiendo";
   statusEl.textContent = "Cargando saves desde el bridge...";
   let sessions: SessionMetadata[] = [];
   try {
     sessions = await deps.narrative.listSessions();
+    statusEl.dataset.lista = "ok";
     statusEl.textContent = `Bridge OK — ${sessions.length} partidas guardadas.`;
     statusEl.style.color = "#4a4";
   } catch (err) {
@@ -185,6 +198,7 @@ export async function pintarHome(
     // un preset con bridge» — instrucciones de desarrollo a quien no tiene
     // terminal. El motivo crudo va al error-log, como en todo lo demás.
     errors.push("title", "listar las partidas guardadas", err);
+    statusEl.dataset.lista = "error";
     statusEl.innerHTML = `<span style="color:#a44">${escapeHtml(
       `No se pudieron cargar las partidas guardadas. ${motivoDeSesionParaElJugador(err)}`,
     )}</span>`;

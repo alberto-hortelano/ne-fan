@@ -75,9 +75,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUERTOS_TODOS } from "./lib/stack.mjs";
 import { puertoOcupado } from "./lib/puertos.mjs";
+import { interpretePython } from "./lib/python.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
+/** El Python que arranca remote-gen y al que se le pregunta la clave.
+ *  `NEFAN_PYTHON` primero: es lo que necesita un worktree, que no tiene `.venv`
+ *  propio (`.gitignore`) y quiere el del checkout principal sin escribir esa
+ *  ruta en el repo. Fail-loud si la variable apunta a nada. */
+const PYTHON = interpretePython(repoRoot);
 const KEEP = process.argv.includes("--keep");
 /** Reutilizar un remote-gen que ya esté arriba. Por defecto NO: ver abajo. */
 const REUSAR = process.argv.includes("--reusar");
@@ -187,9 +193,12 @@ async def main():
                       "directions": hoja["meta"]["directions"], "ai_model": ai_model}))
 asyncio.run(main())
 `;
-  const r = spawnSync("bash", ["-c",
-    `source .venv/bin/activate && exec python -c "$1" "$2" "$3" "$4" "$5" "$6"`,
-    "--", py, model, anim, angle, prompt, FORGE_URL], { cwd: repoRoot, encoding: "utf8" });
+  // El intérprete sale de `lib/python.mjs` (NEFAN_PYTHON → `.venv` del árbol →
+  // `python3`), no de un `source .venv/bin/activate` escrito aquí: un worktree
+  // nace sin `.venv` —está en `.gitignore`— y ese `source` lo ponía ROJO
+  // diciendo que el adaptador no sabe su clave (#494).
+  const r = spawnSync(PYTHON, ["-c", py, model, anim, angle, prompt, FORGE_URL],
+    { cwd: repoRoot, encoding: "utf8" });
   if (r.status !== 0) {
     throw new Error(`no se pudo preguntar la clave al adaptador:\n${(r.stderr || r.stdout || "").trim()}`);
   }
@@ -359,7 +368,7 @@ async function main() {
     console.log(`  ⚠️  reutilizo el remote-gen que ya estaba en :${RGEN_PORT} (--reusar):`);
     console.log("      este verde vale por el código que ESE proceso cargó, no por el del disco.\n");
   } else {
-    arrancar("bash", ["-c", "source .venv/bin/activate && exec python -u ai_server/remote_gen_main.py"],
+    arrancar(PYTHON, ["-u", "ai_server/remote_gen_main.py"],
       { cwd: repoRoot, env: { ...process.env, NEFAN_URL_ASSET_STORE: STORE_URL } }, "rgen");
     if (!(await waitPort(RGEN_PORT, 120_000))) {
       console.log(`ROJO — remote-gen no llegó a escuchar en :${RGEN_PORT}.`);

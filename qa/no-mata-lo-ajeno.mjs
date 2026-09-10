@@ -47,6 +47,15 @@ import { fileURLToPath } from "node:url";
 import { PUERTOS_BASE, PUERTOS, PUERTOS_TODOS } from "./lib/stack.mjs";
 import { puertoOcupado, esperarPuertoLibre } from "./lib/puertos.mjs";
 
+/** Los nueve puertos del catálogo EN EL BLOQUE VIGENTE (los que barre
+ *  `--parar-todo`). Hacen falta para poder decir si una línea AJENA del informe
+ *  es de este bloque o de otro, que es lo que distingue las dos mitades del
+ *  aviso desde #424. */
+const PUERTOS_DEL_CATALOGO = new Set(
+  ["bridge", "state_api", "narrative_ws", "ai_server", "html", "asset_store", "remote_gen", "sprite_forge", "fake_ai"]
+    .map((k) => PUERTOS_TODOS[k]),
+);
+
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
 
@@ -244,21 +253,43 @@ async function main() {
   else mal("ningún puerto propio sale como AJENO", miasAjenas.map((l) => l.trim()).join(" / ").slice(0, 200));
 
   // El aviso, en su forma SIEMPRE EVALUABLE: sale si y solo si el informe
-  // imprimió al menos una línea AJENO. La forma anterior («no aparece el
-  // aviso») dependía de que no hubiera nadie más en la máquina, así que se
-  // marcaba «sin veredicto» casi siempre — y en la corrida en negativo tampoco
-  // se evaluaba, que es lo peor que le puede pasar a un aserto (H6 de QA). Con
-  // esta y con la hermética de arriba el fantasma queda cazado igual: el aviso
-  // solo puede encenderse por un AJENO, y ningún puerto mío puede serlo.
-  const hayAviso = /Para llevarte también lo ajeno/.test(informe);
-  if (hayAviso === (ajenas.length > 0)) {
-    ok(`el aviso de \`--parar-todo\` sale si y solo si hay ajenos (aquí: ${ajenas.length} ajeno(s), aviso ${hayAviso ? "sí" : "no"})`);
+  // imprimió al menos una línea AJENO **del bloque vigente**. La forma anterior
+  // («no aparece el aviso») dependía de que no hubiera nadie más en la máquina,
+  // así que se marcaba «sin veredicto» casi siempre — y en la corrida en
+  // negativo tampoco se evaluaba, que es lo peor que le puede pasar a un aserto
+  // (H6 de QA). Con esta y con la hermética de arriba el fantasma queda cazado
+  // igual: el aviso solo puede encenderse por un AJENO, y ningún puerto mío
+  // puede serlo.
+  //
+  // «DEL BLOQUE VIGENTE» es #424, y no es un matiz de redacción: la rama segura
+  // mira los DIEZ bloques y `--parar-todo` solo barre el vigente, así que un
+  // aviso encendido por el stack de otro worktree recomendaba un barrido que
+  // sobre ese proceso no puede nada. Aquí se afirman las DOS mitades, y en esta
+  // máquina las dos se evalúan de verdad: el señuelo ajeno de este guion ya se
+  // retiró antes de este informe, así que lo que queda son los stacks de los
+  // otros árboles — normalmente en OTROS bloques, que es justo la mitad nueva.
+  const enElBloqueVigente = (linea) =>
+    [...linea.matchAll(/:(\d+)/g)].some((m) => PUERTOS_DEL_CATALOGO.has(Number(m[1])));
+  const ajenasVigentes = ajenas.filter(enElBloqueVigente);
+  const ajenasDeOtroBloque = ajenas.filter((l) => !enElBloqueVigente(l));
+
+  const hayAviso = /Para llevarte también lo ajeno DEL BLOQUE VIGENTE/.test(informe);
+  if (hayAviso === (ajenasVigentes.length > 0)) {
+    ok(`el aviso de \`--parar-todo\` sale si y solo si hay ajenos DEL BLOQUE (aquí: ${ajenasVigentes.length}, aviso ${hayAviso ? "sí" : "no"})`);
   } else {
-    mal("el aviso de --parar-todo va atado a que haya ajenos",
-        `ajenos=${ajenas.length} aviso=${hayAviso} — antes salía en TODO teardown por el fantasma de :state_api`);
+    mal("el aviso de --parar-todo va atado a que haya ajenos del bloque vigente",
+        `ajenos vigentes=${ajenasVigentes.length} aviso=${hayAviso} — antes salía en TODO teardown por el fantasma de :state_api`);
+  }
+
+  const diceQueNoAlcanza = /NO lo alcanza --parar-todo/.test(informe);
+  if (diceQueNoAlcanza === (ajenasDeOtroBloque.length > 0)) {
+    ok(`…y lo de OTROS bloques se dice si y solo si lo hay (aquí: ${ajenasDeOtroBloque.length}, se dice ${diceQueNoAlcanza ? "sí" : "no"})`);
+  } else {
+    mal("el informe dice la verdad sobre lo que --parar-todo NO alcanza",
+        `ajenos de otro bloque=${ajenasDeOtroBloque.length} se dice=${diceQueNoAlcanza}`);
   }
   if (forasteras.length) {
-    console.log(`    (nota: los ${forasteras.length} ajeno(s) son de otro worktree, así que el aviso es correcto aquí)`);
+    console.log(`    (nota: los ${forasteras.length} ajeno(s) son de otro worktree; ${ajenasVigentes.length} en el bloque vigente)`);
   }
 
   // Al matar, `fuser` escupía los pids a stdout y ensuciaba el informe. Se

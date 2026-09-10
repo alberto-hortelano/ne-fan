@@ -17,7 +17,17 @@
  *  SU guion y se exige rojo; y se vuelve a demostrar cada vez que alguien lo
  *  ejecute, que es la diferencia entre una prueba y una afirmación.
  *
- *  Los dos invariantes, y por qué NO valía repetir la batería:
+ *  LA TABLA VIVE EN `qa/lib/invariantes-en-negativo.mjs` desde #486, y con ella
+ *  la explicación de cada invariante. Se movió porque la comprobación barata que
+ *  lleva dentro —«cada ancla aparece EXACTAMENTE una vez en su fichero»— solo se
+ *  hacía cuando alguien pagaba esta corrida, y es justo la que caduca sola: el
+ *  código se mueve y el candado deja de apuntar a donde cree. Ahora la mide
+ *  `nefan-core/test/las-anclas-de-los-candados.test.ts` en cada `npm test`; aquí
+ *  se queda lo que cuesta un Chromium, que es comprobar que el guion se pone
+ *  ROJO de verdad y que su rojo NOMBRA la causa.
+ *
+ *  Los dos primeros invariantes, y por qué NO valía repetir la batería (los
+ *  demás llevan su porqué al lado, en la tabla):
  *
  *  · **#308 · `loadFixture` devuelve su promesa.** Sin esto el guion 22 medía la
  *    escena ANTERIOR; y no de vez en cuando: la corrida verde del 2026-08-30
@@ -40,8 +50,8 @@
  *      node qa/bateria-candados-en-negativo.mjs
  *      node qa/bateria-candados-en-negativo.mjs 320   # solo los que casen
  *
- *  Verde = los dos guiones se ponen rojos al romper lo que dicen defender, y el
- *          rojo nombra la causa.
+ *  Verde = cada guion se pone rojo al romper lo que dice defender, y el rojo
+ *          nombra la causa.
  *  Rojo  = hay un guion que no comprueba lo que dice; el nombre lo dice.
  *
  *  AVISO: escribe en el árbol de trabajo. Se niega a arrancar si los ficheros
@@ -51,204 +61,18 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
+// La TABLA salió de aquí a `lib/` (#486): la comprobación barata que lleva
+// dentro —«cada ancla aparece exactamente una vez»— caduca sola cuando el
+// código se mueve, y aquí solo se hacía cuando alguien pagaba una corrida de
+// Chromium por invariante. Ahora la mide además `npm test` de nefan-core, en
+// cada PR. La tabla es UNA, así que las dos no pueden divergir.
+import { INVARIANTES as INVARIANTES_REL } from "./lib/invariantes-en-negativo.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const FIXTURES = join(raiz, "nefan-html/src/world/fixtures-del-selector.ts");
-const TECLADO = join(raiz, "nefan-html/src/input/keyboard-input-provider.ts");
+/** La tabla con los ficheros ya resueltos contra este checkout. */
+const INVARIANTES = INVARIANTES_REL.map(([nombre, fichero, ...resto]) => [nombre, join(raiz, fichero), ...resto]);
 
-/** [nombre, fichero, guion, [ [buscar, poner], … ], huella, codigoEsperado? ]
- *
- *  `buscar` tiene que aparecer EXACTAMENTE una vez: si el código se mueve, el
- *  candado deja de apuntar a donde cree y esto lo dice en vez de dar un falso
- *  verde. `huella` es lo que el veredicto tiene que NOMBRAR — un rojo genérico
- *  no vale: el defecto de #308 ya se manifestaba como un aserto de telegraph
- *  fallando tres pasos más abajo, que es justo lo que no se puede diagnosticar.
- *
- *  `codigoEsperado` (defecto 1, rojo) existe por el canal `⊘` de #331: hay
- *  candados cuyo desenlace correcto NO es un rojo sino un ⊘ declarado, y el
- *  runner sale con 2 ante cualquier ⊘. Un 2 que NO se esperaba sigue contando
- *  como «la corrida no midió», nunca como éxito.
- */
-const INVARIANTES = [
-  [
-    "#308 · `loadFixture` vuelve a ser fire-and-forget (dice «hecho» sin esperar la fixture)",
-    FIXTURES,
-    "22-telegraph",
-    [
-      [
-        "    const carga = ultimaCargaDeFixture;\n",
-        "    const carga = Promise.resolve();\n    void ultimaCargaDeFixture;\n",
-      ],
-    ],
-    /se pidió la fixture|no había llegado|se quedó en/i,
-  ],
-  // El MISMO destrozo, contra el guion que sí ejerce el camino original de #308.
-  // Lo pidió QA el 2026-08-30 y tiene razón: con `loadFixture` roto para TODAS
-  // las cargas, el 22 muere en su bloque 1 —la PRIMERA fixture— y la segunda,
-  // que es donde vivía el bug, no se llega a pedir. O sea que este script
-  // demostraba que el 22 caza *una* regresión del hook, no que cace LA de #308;
-  // y el día que alguien deje el 22 con una sola fixture seguiría verde sin
-  // avisar. El guion 44 sí lo ejerce: su precondición espera (no afirma) a
-  // propósito, así que la primera carga sobrevive al destrozo y lo que se pone
-  // rojo es el INSTANTE de la segunda.
-  [
-    "#308 · el mismo destrozo contra el guion que ejerce la SEGUNDA carga (el camino original)",
-    FIXTURES,
-    "44-la-carga",
-    [
-      [
-        "    const carga = ultimaCargaDeFixture;\n",
-        "    const carga = Promise.resolve();\n    void ultimaCargaDeFixture;\n",
-      ],
-    ],
-    // Anclada al ✘: «sigue PENDIENTE» es parte de la descripción del aserto y
-    // se imprime también en verde. Una huella que casa en las dos direcciones
-    // no distingue nada, que es el defecto que este script persigue.
-    /✘[^\n]*sigue PENDIENTE/,
-  ],
-  // ¿La migración de #332 COMPRÓ algo? El mismo destrozo del hook, contra un
-  // guion migrado en esta pasada (el 01, que antes esperaba por su cuenta con
-  // `status().scene` — una espera que este destrozo NO pone roja, porque
-  // acaba cumpliéndose sola). Con `cargarFixture` la afirmación corre detrás
-  // de la promesa rota y el rojo NOMBRA la escena que había.
-  [
-    "#308 · el mismo destrozo contra un guion MIGRADO en esta pasada (#332: la migración compra algo)",
-    FIXTURES,
-    "01-arranque",
-    [
-      [
-        "    const carga = ultimaCargaDeFixture;\n",
-        "    const carga = Promise.resolve();\n    void ultimaCargaDeFixture;\n",
-      ],
-    ],
-    /se pidió la fixture|se quedó en/i,
-  ],
-  // El canal ⊘ de #331, probado por sus DOS caras contra el guion 34 — el
-  // usuario natural del verbo (su precondición es que el selector ofrezca la
-  // fixture donde están medidos sus márgenes).
-  //
-  // Cara 1: precondición rota → el guion DECLARA y sale ⊘ con su motivo (el
-  // runner degrada la corrida a exit 2, que es el precedente de `:954-957`:
-  // «esta corrida NO es un veredicto del juego»). Hasta #331 esto solo podía
-  // salir rojo (mintiendo sobre QUÉ está roto) o verde.
-  [
-    "#331 · precondición rota → el guion declara ⊘ con su motivo, no un rojo que miente",
-    join(raiz, "qa/guiones/34-con-el-titulo-delante-el-teclado-no-juega.mjs"),
-    "34-con-el-titulo",
-    [['const FIXTURE = "puerto_tile";\n', 'const FIXTURE = "puerto_tile_inexistente";\n']],
-    /declarado por el guion.*puerto_tile_inexistente/,
-    2,
-  ],
-  // Cara 2: un guion que YA empujó fallos NO puede reconvertirse a ⊘ — un ⊘
-  // es una declaración, no una amnistía. El cebo se inyecta ANTES de la
-  // precondición rota: el runner tiene que vetar la reconversión y dejar el
-  // guion en ROJO (exit 1, el defecto de `codigoEsperado`).
-  [
-    "#331 · con fallos ya empujados, sinMedir NO reconvierte: el rojo se queda",
-    join(raiz, "qa/guiones/34-con-el-titulo-delante-el-teclado-no-juega.mjs"),
-    "34-con-el-titulo",
-    [
-      ['const FIXTURE = "puerto_tile";\n', 'const FIXTURE = "puerto_tile_inexistente";\n'],
-      [
-        "  const opcion = await ctx.page.evaluate((f) => {\n",
-        '  ctx.expect("cebo inyectado por la batería de candados (debe vetar la reconversión)", false);\n' +
-          "  const opcion = await ctx.page.evaluate((f) => {\n",
-      ],
-    ],
-    /no puede reconvertirse|amnistía/,
-  ],
-  // Cara 3: el motivo vacío se RECHAZA como error del guion (rojo), no como un
-  // ⊘ mudo. Entrada de QA (2026-08-31): la única cara del canal que la batería
-  // no cubría. El `"" ??` evalúa a `""` y fuerza el motivo vacío sin tocar el
-  // template del guion.
-  [
-    "#331 · el motivo vacío se RECHAZA: rojo que exige el motivo, no un ⊘ mudo",
-    join(raiz, "qa/guiones/34-con-el-titulo-delante-el-teclado-no-juega.mjs"),
-    "34-con-el-titulo",
-    [
-      ['const FIXTURE = "puerto_tile";\n', 'const FIXTURE = "puerto_tile_inexistente";\n'],
-      ["    ctx.sinMedir(\n", '    ctx.sinMedir(\n      "" ??\n'],
-    ],
-    /sinMedir exige el MOTIVO/,
-  ],
-  // Cara 4: el guion se TRAGA la sentinela (hallazgo de QA: un try/catch del
-  // propio guion la capturaba y el guion salía VERDE). La declaración deja
-  // marca en el ctx ANTES de lanzar, y el runner la honra al volver: un trago
-  // no puede fabricar un verde. Sin el arreglo, esta entrada sale VERDE — es
-  // exactamente la mentira que caza.
-  [
-    "#331 · tragarse la sentinela no deshace la declaración: sale ⊘, no verde",
-    join(raiz, "qa/guiones/34-con-el-titulo-delante-el-teclado-no-juega.mjs"),
-    "34-con-el-titulo",
-    [
-      ['const FIXTURE = "puerto_tile";\n', 'const FIXTURE = "puerto_tile_inexistente";\n'],
-      [
-        "  if (!opcion) {\n    ctx.sinMedir(\n",
-        '  if (!opcion) {\n    try {\n      ctx.sinMedir("me quedé sin fixture (sentinela tragada a propósito por la batería de candados)");\n    } catch {\n      return; // el trago: la sentinela muere aquí y el guion «acaba bien»\n    }\n  }\n  if (!opcion) {\n    ctx.sinMedir(\n',
-      ],
-    ],
-    /la declaración se honra igual/,
-    2,
-  ],
-  // #261 · el libro de esperas: una espera que expira y NADIE observa no puede
-  // acabar en verde. El sujeto es el guion 02, cuya espera expira SIEMPRE por
-  // diseño (se espera a que el jugador atraviese un muro, que es el fallo que
-  // el guion viene a descartar): es el único sitio del árbol donde el destrozo
-  // no depende de que algo salga mal, así que la corrida es determinista.
-  //
-  // El destrozo devuelve el `.catch(() => null)` sobre la espera —el gesto
-  // reflejo que había 89 veces en `qa/guiones/`— dejando intacto el aserto: si
-  // el candado no existiera, el guion saldría VERDE con la espera tragada, que
-  // es exactamente la mentira de #261. Con él, el ÚNICO ✘ es la línea del
-  // libro, y nombra el sitio.
-  [
-    "#261 · una espera que expira sin que nadie la observe NO puede acabar en verde",
-    join(raiz, "qa/guiones/02-colision-desde-huella.mjs"),
-    "02-colision",
-    [
-      [
-        `  const { ocurrio: atraveso } = await ctx.expectEspera(
-    "el jugador atraviesa la huella del edificio",
-    false,
-    (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
-    {
-      ms: 6000,
-      arg: zBorde - 0.5,
-      tecla: "up",
-      aserto: "el jugador NO atraviesa la huella del edificio",
-    },
-  );
-`,
-        `  let atraveso = true;
-  await ctx
-    .holdUntil(
-      "up",
-      "el jugador ATRAVIESA el muro (esto sería el fallo)",
-      (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
-      6000,
-      zBorde - 0.5,
-    )
-    .catch(() => {
-      atraveso = false;
-    });
-  ctx.expect("el jugador NO atraviesa la huella del edificio", !atraveso);
-`,
-      ],
-    ],
-    /expiró.*nadie la observó/,
-  ],
-  [
-    "#320 · muere UNA sola tecla de movimiento (`a`) en el proveedor de teclado",
-    TECLADO,
-    "34-con-el-titulo",
-    [
-      ['        case "a": this.state.left = true; break;\n', ""],
-      ['        case "a": this.state.left = false; break;\n', ""],
-    ],
-    /NO RESPONDEN: «a»/,
-  ],
-];
 
 /** Corre UN guion de la batería y devuelve su veredicto y su salida.
  *
