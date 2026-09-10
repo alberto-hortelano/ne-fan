@@ -4,7 +4,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { createCombatant } from "../src/combat/combatant.js";
-import { routeMessage } from "../bridge/router.js";
 import { npcSync } from "../bridge/context.js";
 import type { BridgeContext, ClientSocket } from "../bridge/context.js";
 import type {
@@ -15,14 +14,15 @@ import { combatForHostileRole } from "../src/combat/hostiles.js";
 import {
   makeCtx,
   makeSocket,
+  porElBorde,
   waitFor,
-  } from "./helpers.js";
+} from "./helpers.js";
 
 describe("bridge vida ambiental de NPCs", () => {
   async function startAmbientSession() {
     const setup = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       setup.ctx,
@@ -40,7 +40,7 @@ describe("bridge vida ambiental de NPCs", () => {
     delta = 0.05,
   ): Promise<void> {
     for (let i = 0; i < n; i++) {
-      await routeMessage(
+      await porElBorde(
         {
           type: "input",
           delta,
@@ -121,7 +121,7 @@ describe("bridge vida ambiental de NPCs", () => {
     // Enemigo agresivo pegado al jugador → pelea inmediata.
     ctx.sim.addCombatant(
       createCombatant("bandido_1", 60, "unarmed", { x: 0, y: 0, z: -1.5 }, { x: 0, y: 0, z: 1 }),
-      { aggression: 1.0, preferred_attacks: ["quick"], reaction_time: 0.1 },
+      { aggression: 1.0, preferred_attacks: ["quick"], reaction_time: 0.1, combat_range: 4 },
     );
     const dialoguesBefore = narrative.dialogue_history.length;
     await tickInput(ctx, socket, 100);

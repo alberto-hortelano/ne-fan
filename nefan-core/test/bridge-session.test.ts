@@ -6,9 +6,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { routeMessage } from "../bridge/router.js";
+import { intakeClientMessage } from "../bridge/message-intake.js";
 import { combatRegistry } from "../src/combat/registry.js";
 import { createCombatant } from "../src/combat/combatant.js";
-import { routeMessage } from "../bridge/router.js";
 import type {
   LoadRoomMessage,
   ServerMessage,
@@ -20,22 +21,23 @@ import type {
 import { listGames as listGamesFs } from "../src/games/loader.js";
 import { BORRADOR_MAX, MOTIVOS_DE_BORRADOR } from "../src/protocol/borrador-de-mundo.js";
 import {
+  REAL_GAMES_DIR,
+  REAL_STYLES_DIR,
   capturarLogDelBridge,
   combatConfig,
   entrarEnLaPartida,
+  escenaExpandidaDePrueba,
   makeCtx,
   makeSocket,
+  porElBorde,
   waitFor,
-  REAL_GAMES_DIR,
-  REAL_STYLES_DIR,
-  escenaExpandidaDePrueba,
 } from "./helpers.js";
 
 describe("bridge ciclo de sesión", () => {
   it("start_session activa los plugins shipped y difunde la escena generada", async () => {
     const { ctx, broadcasts, narrative, aiCalls } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -80,7 +82,7 @@ describe("bridge ciclo de sesión", () => {
   it("start_session adjunta world_document al bootstrap y world.description en el contexto", async () => {
     const { ctx, broadcasts, aiCalls } = makeCtx();
     const { socket } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -103,7 +105,7 @@ describe("bridge ciclo de sesión", () => {
     try {
       const { ctx } = makeCtx({ gamesDir: tmpGames });
       const { socket, sent } = makeSocket();
-      await routeMessage(
+      await porElBorde(
         { type: "create_game", requestId: "r1", draftText: "Un mundo de islas voladoras con clanes rivales." },
         socket,
         ctx,
@@ -118,7 +120,7 @@ describe("bridge ciclo de sesión", () => {
 
       // Segundo mundo con el mismo slug ⇒ dedupe con sufijo.
       const { socket: s2, sent: sent2 } = makeSocket();
-      await routeMessage(
+      await porElBorde(
         { type: "create_game", requestId: "r2", draftText: "Otro borrador cualquiera con más de veinte chars." },
         s2,
         ctx,
@@ -130,14 +132,14 @@ describe("bridge ciclo de sesión", () => {
       // enseña el título antes de mandarlo (PR 7 de #241: el umbral y su texto
       // son `protocol/borrador-de-mundo.ts`, no dos redacciones que divergen).
       const { socket: s3, sent: sent3 } = makeSocket();
-      await routeMessage({ type: "create_game", requestId: "r3", draftText: "  " }, s3, ctx);
+      await porElBorde({ type: "create_game", requestId: "r3", draftText: "  " }, s3, ctx);
       const created3 = sent3[0] as Extract<ServerMessage, { type: "game_created" }>;
       assert.equal(created3.ok, false);
       assert.equal(created3.error, MOTIVOS_DE_BORRADOR.corto);
 
       // Y el máximo, que el título NO miraba: lo caza el mismo módulo.
       const { socket: s4, sent: sent4 } = makeSocket();
-      await routeMessage(
+      await porElBorde(
         { type: "create_game", requestId: "r4", draftText: "a".repeat(BORRADOR_MAX + 1) },
         s4,
         ctx,
@@ -153,7 +155,7 @@ describe("bridge ciclo de sesión", () => {
   it("start_session respeta el styleId elegido y rechaza estilos inexistentes", async () => {
     const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "toledo_1200", styleId: "acuarela_luminosa" },
       socket,
       ctx,
@@ -163,7 +165,7 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(started.state?.world.style_id, "acuarela_luminosa");
 
     const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r2", gameId: "toledo_1200", styleId: "no_existe" },
       s2,
       ctx,
@@ -176,7 +178,7 @@ describe("bridge ciclo de sesión", () => {
   it("start_session ignora el campo legacy `perspective` de clientes viejos", async () => {
     const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       {
         type: "start_session",
         requestId: "r1",
@@ -195,7 +197,7 @@ describe("bridge ciclo de sesión", () => {
   it("start_session congela el modo de render (default image, vector explícito, inválido aborta)", async () => {
     const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "toledo_1200", renderMode: "vector" },
       socket,
       ctx,
@@ -205,11 +207,11 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(started.state?.world.render_mode, "vector");
 
     const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r2", gameId: "toledo_1200" }, s2, ctx);
+    await porElBorde({ type: "start_session", requestId: "r2", gameId: "toledo_1200" }, s2, ctx);
     assert.equal((sent2[0] as SessionStartedMessage).state?.world.render_mode, "image");
 
     const { socket: s3, sent: sent3 } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r3", gameId: "toledo_1200", renderMode: "ascii" },
       s3,
       ctx,
@@ -226,7 +228,7 @@ describe("bridge ciclo de sesión", () => {
   it("resume: la sesión reanudada trae su mundo (nunca un ok:true vacío)", async () => {
     const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "toledo_1200" },
       socket,
       ctx,
@@ -240,7 +242,7 @@ describe("bridge ciclo de sesión", () => {
     await entrarEnLaPartida(ctx, socket, sessionId);
 
     const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
     const resumed = sent2[0] as SessionStartedMessage;
     assert.equal(resumed.ok, true);
     assert.equal(
@@ -255,7 +257,7 @@ describe("bridge ciclo de sesión", () => {
     // Tolerancia del borde: un cliente viejo que siga mandando `view` no
     // rompe nada (el zod hace strip) — el campo simplemente ya no existe.
     const { socket: s3, sent: sent3 } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r4", gameId: "toledo_1200", view: "vr" } as never,
       s3,
       ctx,
@@ -268,7 +270,7 @@ describe("bridge ciclo de sesión", () => {
   it("start_session congela el sistema de combate de game.json (default standard)", async () => {
     const { ctx, sim } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "combatbasic" },
       socket,
       ctx,
@@ -282,7 +284,7 @@ describe("bridge ciclo de sesión", () => {
     // El input con "strike" simula; con un ataque estándar el sim lanza. Va
     // por el socket de la partida: con sesión abierta, el sim solo lo conduce
     // quien está DENTRO (el que pasó por start_session).
-    await routeMessage(
+    await porElBorde(
       {
         type: "input",
         delta: 0.016,
@@ -304,7 +306,7 @@ describe("bridge ciclo de sesión", () => {
 
     // Sin systems en game.json ⇒ estándar.
     const { socket: s3, sent: sent3 } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r2", gameId: "plugtest" }, s3, ctx);
+    await porElBorde({ type: "start_session", requestId: "r2", gameId: "plugtest" }, s3, ctx);
     assert.equal((sent3[0] as SessionStartedMessage).state?.world.combat_system, "standard");
     assert.equal(sim.combatSystem.id, "standard");
   });
@@ -314,14 +316,14 @@ describe("bridge ciclo de sesión", () => {
     ctx.sim.reset();
     ctx.sim.setCombatSystem(combatRegistry.create("basic", combatConfig));
     const { socket } = makeSocket();
-    await routeMessage({ type: "load_room", roomId: "crypt_001", enemies: [] }, socket, ctx);
+    await porElBorde({ type: "load_room", roomId: "crypt_001", enemies: [] }, socket, ctx);
     assert.equal(sim.combatSystem.id, "standard");
   });
 
   it("start_session con systems.combat desconocido aborta (fail-loud)", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "combatbad" },
       socket,
       ctx,
@@ -334,7 +336,7 @@ describe("bridge ciclo de sesión", () => {
   it("resume restaura el sistema de combate congelado; un id desconocido en el save aborta", async () => {
     const { ctx, narrative, sim } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "combatbasic" },
       socket,
       ctx,
@@ -347,7 +349,7 @@ describe("bridge ciclo de sesión", () => {
     ctx.sim.reset();
     ctx.sim.setCombatSystem(combatRegistry.create("standard", combatConfig));
     const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
     const resumed = sent2[0] as SessionStartedMessage;
     assert.equal(resumed.ok, true);
     assert.equal(resumed.state?.world.combat_system, "basic");
@@ -357,7 +359,7 @@ describe("bridge ciclo de sesión", () => {
     narrative.world.combat_system = "retirado";
     await ctx.narrative.save();
     const { socket: s3, sent: sent3 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r5", sessionId }, s3, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r5", sessionId }, s3, ctx);
     const bad = sent3[0] as SessionStartedMessage;
     assert.equal(bad.ok, false);
     assert.match(bad.error ?? "", /combat_system_unknown: "retirado"/);
@@ -366,7 +368,7 @@ describe("bridge ciclo de sesión", () => {
   it("start_session con juego inexistente o roto responde ok:false (fail-loud)", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "no_existe" },
       socket,
       ctx,
@@ -386,7 +388,7 @@ describe("bridge ciclo de sesión", () => {
       ai: { generateScene: async () => ({ ok: false, error: "MCP caído" }) },
     });
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -413,7 +415,7 @@ describe("bridge ciclo de sesión", () => {
       },
     });
     const { socket } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     await waitFor(() =>
       broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"),
     );
@@ -426,7 +428,7 @@ describe("bridge ciclo de sesión", () => {
   it("resume normaliza scene_data en el wire y deja la persistencia en Format D crudo", async () => {
     const { ctx, narrative } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     // Escena Format D mínima registrada como haría el motor narrativo.
     narrative.recordSceneLoaded("fd_scene", escenaExpandidaDePrueba("fd_scene", {
@@ -438,7 +440,7 @@ describe("bridge ciclo de sesión", () => {
 
     narrative.startNewSession("plugtest");
     const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
     const resumed = sent2[0] as SessionStartedMessage;
     assert.equal(resumed.ok, true);
     const wire = resumed.state!.scenes_loaded["fd_scene"].scene_data;
@@ -457,7 +459,7 @@ describe("bridge ciclo de sesión", () => {
     // que reanudar devolvía enteros a los heridos y VIVOS a los muertos.
     const { ctx, narrative } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     narrative.recordSceneLoaded("fd_pelea", escenaExpandidaDePrueba("fd_pelea", {
       entities: [
@@ -474,7 +476,7 @@ describe("bridge ciclo de sesión", () => {
 
     narrative.startNewSession("plugtest");
     const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
     const resumed = sent2[0] as SessionStartedMessage;
     assert.equal(resumed.ok, true, JSON.stringify(resumed.error));
     const wire = resumed.state!.scenes_loaded["fd_pelea"].scene_data;
@@ -510,7 +512,7 @@ describe("bridge ciclo de sesión", () => {
     // había ni una línea.
     const { ctx, narrative, broadcasts } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     narrative.recordSceneLoaded("fd_ilegible", escenaExpandidaDePrueba("fd_ilegible", {
       entities: [
@@ -525,7 +527,7 @@ describe("bridge ciclo de sesión", () => {
     narrative.startNewSession("plugtest");
     const { socket: s2, sent: sent2 } = makeSocket();
     broadcasts.length = 0;
-    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
     const resumed = sent2[0] as SessionStartedMessage;
     assert.equal(resumed.ok, true, JSON.stringify(resumed.error));
     const npcs = resumed.state!.scenes_loaded["fd_ilegible"].scene_data.npcs as unknown[];
@@ -548,7 +550,7 @@ describe("bridge ciclo de sesión", () => {
     // decía «— sin errores —» con el tabernero desaparecido.
     const { ctx, narrative, broadcasts } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     await waitFor(() => Object.keys(ctx.narrative.scenes_loaded).length > 0);
     narrative.recordEntitySpawned("barkeep", "npc", "tile_0_0", [7.75, 0, -0.25], { name: "Tabernero corpulento" });
@@ -560,7 +562,7 @@ describe("bridge ciclo de sesión", () => {
     broadcasts.length = 0;
     const log = capturarLogDelBridge();
     try {
-      await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+      await porElBorde({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
     } finally {
       log.soltar();
     }
@@ -583,7 +585,7 @@ describe("bridge ciclo de sesión", () => {
     // save que no vale (#334/#336), y ANTES de tocar la sesión viva.
     const { ctx, narrative, storage } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     await waitFor(() => Object.keys(ctx.narrative.scenes_loaded).length > 0);
     narrative.recordEntitySpawned("barkeep", "npc", "tile_0_0", [7.75, 0, -0.25], { name: "Tabernero corpulento" });
@@ -596,7 +598,7 @@ describe("bridge ciclo de sesión", () => {
     const { socket: s2, sent: sent2 } = makeSocket();
     const log = capturarLogDelBridge();
     try {
-      await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+      await porElBorde({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
     } finally {
       log.soltar();
     }
@@ -611,7 +613,7 @@ describe("bridge ciclo de sesión", () => {
   it("resume_session devuelve session_not_found para un id inexistente", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "resume_session", requestId: "r2", sessionId: "no_such" },
       socket,
       ctx,
@@ -627,7 +629,7 @@ describe("bridge ciclo de sesión", () => {
     // motivo — antes loadSession colapsaba ambos en false.
     const { ctx, narrative, storage } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     await entrarEnLaPartida(ctx, socket, sessionId);
     const data = (await storage.read(sessionId))!;
@@ -636,7 +638,7 @@ describe("bridge ciclo de sesión", () => {
 
     narrative.startNewSession("plugtest");
     const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
     const started = sent2[0] as SessionStartedMessage;
     assert.equal(started.ok, false);
     assert.match(started.error ?? "", /^save_invalido: /, "molde de plugin_integrity");
@@ -646,7 +648,7 @@ describe("bridge ciclo de sesión", () => {
   it("start → save → resume rebindea los plugins por id", async () => {
     const { ctx, narrative } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -657,7 +659,7 @@ describe("bridge ciclo de sesión", () => {
     // Simular proceso nuevo: vaciar los plugins activos y reanudar.
     ctx.activePlugins = new Map();
     const { socket: socket2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, socket2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r3", sessionId }, socket2, ctx);
     const resumed = sent2[0] as SessionStartedMessage;
     assert.equal(resumed.ok, true);
     assert.equal(resumed.isResume, true);
@@ -671,7 +673,7 @@ describe("bridge ciclo de sesión", () => {
       stylesDir: REAL_STYLES_DIR,
     });
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "toledo_1200" },
       socket,
       ctx,
@@ -689,7 +691,7 @@ describe("bridge ciclo de sesión", () => {
 
     narrative.startNewSession("toledo_1200");
     const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r3", sessionId }, s2, ctx);
     const resumed = sent2[0] as SessionStartedMessage;
     assert.equal(resumed.ok, true);
   });
@@ -707,7 +709,7 @@ describe("bridge ciclo de sesión", () => {
       },
     });
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -722,7 +724,7 @@ describe("bridge ciclo de sesión", () => {
     assert.deepEqual(await storage.list(), [], "y el jugador NO se encuentra una partida que nadie jugó");
 
     // Y el título no la ofrece, que es donde lo ve quien juega.
-    await routeMessage({ type: "list_sessions", requestId: "r2" }, socket, ctx);
+    await porElBorde({ type: "list_sessions", requestId: "r2" }, socket, ctx);
     const listed = sent.find((m) => m.type === "sessions_listed") as Extract<
       ServerMessage,
       { type: "sessions_listed" }
@@ -733,7 +735,7 @@ describe("bridge ciclo de sesión", () => {
   it("start_session no escribe nada: la partida existe cuando el jugador entra", async () => {
     const { ctx, storage } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -754,7 +756,7 @@ describe("bridge ciclo de sesión", () => {
   it("un ack de OTRA sesión no escribe nada, y se dice", async () => {
     const { ctx, storage } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -776,7 +778,7 @@ describe("bridge ciclo de sesión", () => {
   it("reanudar NO necesita ack: la partida ya existe y sigue guardando", async () => {
     const { ctx, storage } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -787,7 +789,7 @@ describe("bridge ciclo de sesión", () => {
     // Proceso nuevo: solo el save. Reanudar y guardar, sin ningún ack.
     ctx.narrative.startNewSession("plugtest");
     const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
     assert.equal((sent2[0] as SessionStartedMessage).ok, true);
     ctx.narrative.appendStory("el jugador siguió jugando");
     assert.deepEqual(await ctx.narrative.save(), { escrito: true });
@@ -801,7 +803,7 @@ describe("bridge ciclo de sesión", () => {
   it("un resume que falla NO deja la sesión viva sin plugins (la tecla H)", async () => {
     const { ctx } = makeCtx();
     const { socket } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -810,7 +812,7 @@ describe("bridge ciclo de sesión", () => {
     const sessionId = ctx.narrative.session_id;
 
     const { socket: s2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
     assert.equal((sent2[0] as SessionStartedMessage).ok, false);
     assert.equal((sent2[0] as SessionStartedMessage).error, "session_not_found");
     assert.equal(ctx.activePlugins.size, 3, "los plugins de la partida viva siguen ahí");
@@ -820,13 +822,13 @@ describe("bridge ciclo de sesión", () => {
   it("set_render_mode con el mundo todavía en vuelo no miente con un ok", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
     );
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
-    await routeMessage(
+    await porElBorde(
       { type: "set_render_mode", requestId: "r2", sessionId, renderMode: "vector", facet: "scenes" },
       socket,
       ctx,
@@ -846,7 +848,7 @@ describe("bridge ciclo de sesión", () => {
   it("list_sessions y delete_session operan sobre el storage", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -854,7 +856,7 @@ describe("bridge ciclo de sesión", () => {
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     await entrarEnLaPartida(ctx, socket, sessionId);
 
-    await routeMessage({ type: "list_sessions", requestId: "r2" }, socket, ctx);
+    await porElBorde({ type: "list_sessions", requestId: "r2" }, socket, ctx);
     const listed = sent.find((m) => m.type === "sessions_listed") as Extract<
       ServerMessage,
       { type: "sessions_listed" }
@@ -862,7 +864,7 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(listed.sessions.length, 1);
     assert.equal(listed.sessions[0].session_id, sessionId);
 
-    await routeMessage({ type: "delete_session", requestId: "r3", sessionId }, socket, ctx);
+    await porElBorde({ type: "delete_session", requestId: "r3", sessionId }, socket, ctx);
     const deleted = sent.find((m) => m.type === "session_deleted") as Extract<
       ServerMessage,
       { type: "session_deleted" }
@@ -884,7 +886,7 @@ describe("bridge ciclo de sesión", () => {
   it("borrar un save que NO está no se confunde con borrarlo", async () => {
     const { ctx } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "delete_session", requestId: "r1", sessionId: "no-existe" },
       socket,
       ctx,
@@ -901,7 +903,7 @@ describe("bridge ciclo de sesión", () => {
     // quedaba apuntando a un directorio que ya no existe.
     const { ctx, narrative } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctx,
@@ -910,7 +912,7 @@ describe("bridge ciclo de sesión", () => {
     await entrarEnLaPartida(ctx, socket, sessionId);
     assert.equal(narrative.session_id, sessionId);
 
-    await routeMessage({ type: "delete_session", requestId: "r2", sessionId }, socket, ctx);
+    await porElBorde({ type: "delete_session", requestId: "r2", sessionId }, socket, ctx);
     assert.equal(narrative.session_id, "");
     assert.equal(narrative.enDisco, false);
   });
@@ -927,7 +929,7 @@ describe("bridge ciclo de sesión", () => {
     };
     const log = capturarLogDelBridge();
     try {
-      await routeMessage(
+      await porElBorde(
         { type: "delete_session", requestId: "r1", sessionId: "x" },
         socket,
         ctx,
@@ -951,7 +953,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   it("input actualiza store.player.pos (player_moved)", async () => {
     const { ctx, store } = makeCtx();
     const { socket } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       {
         type: "input",
         delta: 0.016,
@@ -971,7 +973,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const { ctx, sim } = makeCtx();
     sim.reset(); // bridge recién arrancado / title screen: sin player sembrado
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       {
         type: "input",
         delta: 0.016,
@@ -996,7 +998,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   it("un guardado cualquiera del bridge lleva la posición y la vida VIVAS", async () => {
     const { ctx, narrative, sim, storage } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     await entrarEnLaPartida(ctx, socket, sessionId);
 
@@ -1005,7 +1007,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     player.health = 42;
     // Un diálogo: guarda porque cambió la historia, no porque nadie le pida
     // un snapshot del jugador.
-    await routeMessage(
+    await porElBorde(
       {
         type: "dialogue_choice",
         eventId: "e1",
@@ -1031,7 +1033,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   it("matar a un enemigo llega AL DISCO en el mismo tick (handleInput guarda)", async () => {
     const { ctx, narrative, sim, storage } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     await entrarEnLaPartida(ctx, socket, sessionId);
 
@@ -1051,7 +1053,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     );
 
     const golpear = (attackRequested: boolean) =>
-      routeMessage(
+      porElBorde(
         {
           type: "input",
           delta: 0.05,
@@ -1091,7 +1093,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   it("empezar otra partida suelta el runtime de la anterior", async () => {
     const { ctx, narrative, sim, storage } = makeCtx();
     const { socket } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     sim.getCombatant("player")!.position = { x: 40, y: 1, z: 40 };
 
     // Sesión nueva EN CRUDO (sin pasar por el handler, que resiembra y vuelve
@@ -1111,7 +1113,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   it("con sesión abierta, un socket de fuera NO conduce el sim", async () => {
     const { ctx, sim } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     sim.getCombatant("player")!.position = { x: 12, y: 1, z: -6 };
 
     // Otro socket: conectado al mismo bridge, pero nunca pasó por
@@ -1126,7 +1128,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
         playerMoving: true,
       },
     });
-    await routeMessage(paso(0, 2), fuera, ctx);
+    await porElBorde(paso(0, 2), fuera, ctx);
     assert.deepEqual(
       sim.getCombatant("player")!.position,
       { x: 12, y: 1, z: -6 },
@@ -1136,7 +1138,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
 
     // Y el de DENTRO sí, que es lo que impide que este verde sea vacío.
     const antes = sent.length;
-    await routeMessage(paso(0, 2), socket, ctx);
+    await porElBorde(paso(0, 2), socket, ctx);
     assert.deepEqual(sim.getCombatant("player")!.position, { x: 0, y: 0, z: 2 });
     assert.ok(sent.length > antes, "el socket de la sesión sí conduce y recibe estado");
   });
@@ -1153,7 +1155,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   it("mirar una fixture tras un F5 no se lleva la partida guardada", async () => {
     const { ctx, sim, storage } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     sim.getCombatant("player")!.position = { x: 30, y: 1, z: 30 };
     await entrarEnLaPartida(ctx, socket, sessionId);
@@ -1163,8 +1165,8 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
 
     // La pestaña nueva abre una fixture del selector y anda por ella.
     const { socket: fixtura, sent: sentFixtura } = makeSocket();
-    await routeMessage({ type: "load_room", roomId: "robledo_tile", enemies: [] }, fixtura, ctx);
-    await routeMessage(
+    await porElBorde({ type: "load_room", roomId: "robledo_tile", enemies: [] }, fixtura, ctx);
+    await porElBorde(
       {
         type: "input",
         delta: 0.016,
@@ -1200,14 +1202,14 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   it("…y tampoco volviendo al título con la misma pestaña", async () => {
     const { ctx, sim, storage } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     sim.getCombatant("player")!.position = { x: 30, y: 1, z: 30 };
     await entrarEnLaPartida(ctx, socket, sessionId);
 
     // Mismo socket, ahora mirando una fixture.
-    await routeMessage({ type: "load_room", roomId: "robledo_tile", enemies: [] }, socket, ctx);
-    await routeMessage(
+    await porElBorde({ type: "load_room", roomId: "robledo_tile", enemies: [] }, socket, ctx);
+    await porElBorde(
       {
         type: "input",
         delta: 0.016,
@@ -1229,15 +1231,15 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   it("un load_room ajeno no le roba el mundo a la partida viva", async () => {
     const { ctx, sim } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     assert.equal((sent[0] as SessionStartedMessage).ok, true);
 
     const { socket: ajeno, sent: sentAjeno } = makeSocket();
-    await routeMessage({ type: "load_room", roomId: "robledo_tile", enemies: [] }, ajeno, ctx);
+    await porElBorde({ type: "load_room", roomId: "robledo_tile", enemies: [] }, ajeno, ctx);
     assert.equal(sentAjeno.length, 0, "al socket ajeno no se le contesta nada");
 
     // El jugador de verdad sigue conduciendo.
-    await routeMessage(
+    await porElBorde(
       {
         type: "input",
         delta: 0.016,
@@ -1258,13 +1260,13 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   it("un respawn ajeno no teletransporta al jugador de la partida", async () => {
     const { ctx, sim, storage } = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     await entrarEnLaPartida(ctx, socket, sessionId);
     sim.getCombatant("player")!.position = { x: 12, y: 1, z: -6 };
 
     const { socket: ajeno, sent: sentAjeno } = makeSocket();
-    await routeMessage({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, ajeno, ctx);
+    await porElBorde({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, ajeno, ctx);
     assert.equal(sentAjeno.length, 0, "al socket ajeno no se le contesta nada");
     assert.deepEqual(sim.getCombatant("player")!.position, { x: 12, y: 1, z: -6 });
 
@@ -1276,7 +1278,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const bundle = makeCtx();
     const { ctx, sim, store } = bundle;
     const { socket, sent } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
     await entrarEnLaPartida(ctx, socket, sessionId);
     const player = sim.getCombatant("player")!;
@@ -1289,7 +1291,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     player.position = { x: 0, y: 0, z: 0 };
     ctx.activePlugins = new Map();
     const { socket: socket2, sent: sent2 } = makeSocket();
-    await routeMessage({ type: "resume_session", requestId: "r3", sessionId }, socket2, ctx);
+    await porElBorde({ type: "resume_session", requestId: "r3", sessionId }, socket2, ctx);
     assert.equal((sent2[0] as SessionStartedMessage).ok, true);
 
     const reseeded = sim.getCombatant("player")!;
@@ -1301,11 +1303,11 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
   it("start_session resetea el runtime: no hereda el HP de la sesión anterior", async () => {
     const { ctx, sim, store } = makeCtx();
     const { socket } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
     sim.getCombatant("player")!.health = 12; // sesión 1 termina malherida
 
     const { socket: s2 } = makeSocket();
-    await routeMessage({ type: "start_session", requestId: "r2", gameId: "plugtest" }, s2, ctx);
+    await porElBorde({ type: "start_session", requestId: "r2", gameId: "plugtest" }, s2, ctx);
     assert.equal(sim.getCombatant("player")!.health, 100);
     assert.equal(store.state.player.hp, 100);
   });
@@ -1324,7 +1326,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
           health: 40,
           maxHealth: 60,
           weaponId: "unarmed",
-          personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.3 },
+          personality: { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.3, combat_range: 4 },
         },
       ],
     };
@@ -1332,7 +1334,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     // Con sesión: el HP vivo sobrevive a la transición de escena.
     const withSession = makeCtx();
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       withSession.ctx,
@@ -1342,7 +1344,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     // su pestaña y abre el selector «Room»). Un socket ajeno no puede tomar
     // el mundo de una partida viva — eso lo canda el test de abajo.
     sent.length = 0;
-    await routeMessage({ ...loadRoom }, socket, withSession.ctx);
+    await porElBorde({ ...loadRoom }, socket, withSession.ctx);
     const inSessionUpdate = sent[0] as StateUpdateMessage;
     assert.equal(inSessionUpdate.playerHp, 55);
     // Transición de escena, NO respawn: sin evento player_respawned (el
@@ -1353,7 +1355,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     const noSession = makeCtx();
     noSession.sim.getCombatant("player")!.health = 55;
     const { socket: s3, sent: sent3 } = makeSocket();
-    await routeMessage({ ...loadRoom }, s3, noSession.ctx);
+    await porElBorde({ ...loadRoom }, s3, noSession.ctx);
     const legacyUpdate = sent3[0] as StateUpdateMessage;
     assert.equal(legacyUpdate.playerHp, 100);
     assert.equal(legacyUpdate.events[0]?.type, "player_respawned");
@@ -1400,7 +1402,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     const { ctx, storage } = makeCtx();
     await storage.write("s1", legacyVectorSave("s1"));
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "set_render_mode", requestId: "r1", sessionId: "s1", renderMode: "image", facet: "scenes" },
       socket,
       ctx,
@@ -1419,7 +1421,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     const { ctx, storage } = makeCtx();
     await storage.write("s2", legacyVectorSave("s2"));
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "set_render_mode", requestId: "r1", sessionId: "s2", renderMode: "image", facet: "characters" },
       socket,
       ctx,
@@ -1436,15 +1438,15 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     const { ctx, storage } = makeCtx();
     await storage.write("s3", legacyVectorSave("s3"));
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "set_render_mode", requestId: "r1", sessionId: "s3", renderMode: "image", facet: "scenes" },
       socket, ctx,
     );
-    await routeMessage(
+    await porElBorde(
       { type: "set_render_mode", requestId: "r2", sessionId: "s3", renderMode: "image", facet: "scenes" },
       socket, ctx,
     );
-    await routeMessage(
+    await porElBorde(
       { type: "set_render_mode", requestId: "r3", sessionId: "no_existe", renderMode: "image" },
       socket, ctx,
     );
@@ -1452,6 +1454,20 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     assert.match((sent[1] as { error?: string }).error ?? "", /ya tiene los escenarios/);
     assert.equal((sent[2] as { ok: boolean }).ok, false);
     assert.match((sent[2] as { error?: string }).error ?? "", /no existe/);
+    // Los dos de abajo NO pasan por `porElBorde` y hay que decir por qué: son
+    // frames que el BORDE ya rechaza (los enums del zod), así que mandarlos por
+    // ahí mediría el borde y no lo que este test quiere, que es la guarda del
+    // HANDLER — defensa en profundidad para el día que alguien afloje el zod.
+    // Primero se AFIRMA que el borde los tira, y luego se llama al router a
+    // mano, que es la única forma honesta de ejercer un camino que en
+    // producción no se alcanza (#530-p4).
+    for (const [que, frame] of [
+      ["facet", { type: "set_render_mode", requestId: "rx", sessionId: "s3", renderMode: "image", facet: "scene" }],
+      ["renderMode", { type: "set_render_mode", requestId: "ry", sessionId: "s3", renderMode: "clay", facet: "scenes" }],
+    ] as const) {
+      const intake = intakeClientMessage(JSON.stringify(frame));
+      assert.equal(intake.ok, false, `el borde WS tiene que tirar el ${que} fuera del enum`);
+    }
     // Facet desconocido: rechazar, no adivinar (un typo activaría otra faceta).
     await routeMessage(
       { type: "set_render_mode", requestId: "r4", sessionId: "s3", renderMode: "image", facet: "scene" as never },
@@ -1459,7 +1475,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     );
     assert.equal((sent[3] as { ok: boolean }).ok, false);
     assert.match((sent[3] as { error?: string }).error ?? "", /facet desconocido/);
-    // renderMode fuera del enum: rechazar (mismo motivo, el wire no está validado aquí).
+    // renderMode fuera del enum: rechazar (mismo motivo).
     await routeMessage(
       { type: "set_render_mode", requestId: "r5", sessionId: "s3", renderMode: "clay" as never, facet: "scenes" },
       socket, ctx,
@@ -1474,7 +1490,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     (save.world as { render_mode: string }).render_mode = "image";
     await storage.write("s6", save);
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "set_render_mode", requestId: "r1", sessionId: "s6", renderMode: "vector", facet: "scenes" },
       socket, ctx,
     );
@@ -1495,7 +1511,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     narrative.world.render_mode = "image";
     narrative.world.character_mode = "image";
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "set_render_mode", requestId: "r1", sessionId: "s7", renderMode: "vector", facet: "characters" },
       socket, ctx,
     );
@@ -1515,7 +1531,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     narrative.world.render_mode = "vector";
     narrative.world.character_mode = "";
     const { socket } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "set_render_mode", requestId: "r1", sessionId: "s4", renderMode: "image", facet: "scenes" },
       socket, ctx,
     );
@@ -1534,7 +1550,7 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
     narrative.world.character_mode = "";
     narrative.story_so_far = "el jugador cruzó tres tiles";
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "set_render_mode", requestId: "r1", sessionId: "s5", renderMode: "image", facet: "scenes" },
       socket, ctx,
     );

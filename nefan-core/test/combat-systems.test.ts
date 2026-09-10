@@ -79,7 +79,7 @@ const SYSTEMS: SystemCase[] = [
     outOfRange: { x: 0, y: 0, z: -5 }, // fuera de los 2.0 m
     aiEnemyPos: { x: 0, y: 0, z: -1.5 },
     killableHp: 30,
-    personality: { aggression: 1.0, preferred_attacks: ["quick", "medium"], reaction_time: 0.1 },
+    personality: { aggression: 1.0, preferred_attacks: ["quick", "medium"], reaction_time: 0.1, combat_range: 4 },
   },
   {
     id: "shooting",

@@ -206,7 +206,6 @@
   "player": {
     "walk_speed": 1.9,
     "sprint_speed": 3.8,
-    "jump_velocity": 4.5,
     "speed_scale": 2.2,
     "interact_range_m": 2.5
   },

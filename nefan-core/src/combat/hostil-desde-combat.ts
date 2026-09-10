@@ -29,22 +29,24 @@
 import type { EnemyPersonality } from "../types.js";
 import type { HostileCombat } from "./hostiles.js";
 
-/** La personalidad ya comprobada. `combat_range` deja de ser opcional: el
- *  criterio lo exige, y decirlo en el TIPO es lo que impide que el siguiente
- *  consumidor le ponga un `?? 4` «por si acaso» que reabra la duda. */
-export type PersonalidadValidada = EnemyPersonality & { combat_range: number };
-
 /** El bloque `combat` ya comprobado. Mismos campos que `HostileCombat`, con la
- *  personalidad TIPADA en vez de `Record<string, unknown>`. */
+ *  personalidad TIPADA en vez de `Record<string, unknown>`.
+ *
+ *  Hasta #530 la personalidad comprobada tenía tipo propio
+ *  (`EnemyPersonality & { combat_range: number }`) porque el contrato dejaba
+ *  `combat_range` opcional y este criterio lo exigía: un tipo que existía solo
+ *  para tapar que el otro mentía. Hoy el contrato lo exige, así que la
+ *  personalidad comprobada ES `EnemyPersonality` y no hay dos formas de decir
+ *  lo mismo. */
 export type HostileCombatValidado = Omit<HostileCombat, "personality"> & {
-  personality: PersonalidadValidada;
+  personality: EnemyPersonality;
 };
 
-/** `Result<PersonalidadValidada, string>`: «vacío» y «error» no se colapsan.
+/** `Result<EnemyPersonality, string>`: «vacío» y «error» no se colapsan.
  *  Interno: las dos puertas entran por `parseHostileCombat`, con el bloque
  *  entero, que es como viaja. */
 type ResultadoDePersonalidad =
-  | { ok: true; personality: PersonalidadValidada }
+  | { ok: true; personality: EnemyPersonality }
   | { ok: false; error: string };
 
 /** `Result<HostileCombatValidado, string>`. */
@@ -132,7 +134,7 @@ function parseHostilePersonality(v: unknown): ResultadoDePersonalidad {
       reaction_time: reactionTime,
       combat_range: combatRange,
       preferred_attacks: attacks as string[],
-    } as PersonalidadValidada,
+    } as EnemyPersonality,
   };
 }
 

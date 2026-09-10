@@ -23,6 +23,7 @@ import { createSimCollisionProvider } from "../bridge/sim-collision.js";
 import { SceneGenQueue } from "../bridge/scene-gen-queue.js";
 import { createWorldClaim } from "../bridge/world-claim.js";
 import { routeMessage } from "../bridge/router.js";
+import { intakeClientMessage } from "../bridge/message-intake.js";
 import {
   sellarSesion,
   type BridgeContext,
@@ -269,6 +270,36 @@ export function makeCtx(
   return { ctx, broadcasts, storage, narrative, store, sim, aiCalls, subscribers };
 }
 
+/** MANDA UN FRAME COMO LO MANDA EL CLIENTE: por el BORDE, no por el router.
+ *
+ *  `routeMessage` recibe un `ClientMessage` YA validado; en producción no hay
+ *  forma de llegar a él sin pasar por `intakeClientMessage` (`ws-server.ts`).
+ *  Un test que llame al router directamente puede mandar una fixture que el
+ *  cable rechaza y quedarse verde para siempre — y eso ya pasó: cinco fixtures
+ *  de `bridge-*.test.ts` mandaban personalidades sin `combat_range`, que el
+ *  borde tira desde la PR 6 de #241 (#530-p4). Aquí el frame se SERIALIZA y se
+ *  vuelve a leer, exactamente como llega por el socket, así que una fixture no
+ *  representativa se pone roja en el test que la escribe.
+ *
+ *  Un mensaje que el borde rechaza a propósito NO se manda por aquí: se le
+ *  pregunta a `intakeClientMessage` y se afirma el rechazo, que es lo que ese
+ *  test quería medir. */
+export async function porElBorde(
+  msg: unknown,
+  ws: ClientSocket,
+  ctx: BridgeContext,
+): Promise<void> {
+  const intake = intakeClientMessage(JSON.stringify(msg));
+  if (!intake.ok) {
+    throw new Error(
+      `el borde WS rechazaría esta fixture (${intake.reason}): ${intake.error}. ` +
+        "No es un fallo del harness: el cliente no puede mandar este frame. Arregla la fixture, o " +
+        "si el test quiere medir el rechazo, pregúntale a `intakeClientMessage` en vez de enrutar.",
+    );
+  }
+  await routeMessage(intake.msg, ws, ctx);
+}
+
 /** El ack del cliente: «el jugador ya entró en la partida».
  *
  *  Desde #279 es lo ÚNICO que hace que una sesión exista en `saves/`: nace
@@ -281,7 +312,7 @@ export async function entrarEnLaPartida(
   ws: ClientSocket,
   sessionId: string,
 ): Promise<void> {
-  await routeMessage({ type: "session_entered", sessionId }, ws, ctx);
+  await porElBorde({ type: "session_entered", sessionId }, ws, ctx);
 }
 
 /** Espera a que se cumpla una condición (para el trabajo fire-and-forget de

@@ -2451,8 +2451,9 @@ describe("fronteras arquitectónicas", () => {
       checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
 
     // PR 4 de #241 (#504): las cuatro líneas que había el día que se movió —
-    // las dos constantes de `main.ts`, la mitad muerta de `getCombatant` y los
-    // params sintéticos del aro—, y la misma invención escrita en el bridge.
+    // las dos constantes de `main.ts`, la mitad muerta del lector del wire
+    // (`getCombatant` entonces; #526 la borró con su tipo) y los params
+    // sintéticos del aro—, y la misma invención escrita en el bridge.
     assert.deepEqual(
       deLaRegla([
         {
@@ -2493,7 +2494,7 @@ describe("fronteras arquitectónicas", () => {
       deLaRegla([
         {
           path: "nefan-html/src/main.ts",
-          text: "const pct = result.playerHp / result.playerMaxHp * 100;\nconst arma = () => gameClient?.getCombatant('player')?.weaponId ?? '';\n",
+          text: "const pct = result.playerHp / result.playerMaxHp * 100;\nconst arma = () => gameClient?.jugadorEnCombate().weaponId ?? '';\n",
           imports: [],
         },
         {

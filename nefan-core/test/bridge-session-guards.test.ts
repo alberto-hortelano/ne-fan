@@ -6,12 +6,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { routeMessage } from "../bridge/router.js";
 import type {
   NarrativeStatusMessage,
   SessionStartedMessage,
 } from "../src/protocol/messages.js";
-import { capturarLogDelBridge, fakeBootstrapTile, makeCtx, makeSocket, waitFor } from "./helpers.js";
+import { capturarLogDelBridge, fakeBootstrapTile, makeCtx, makeSocket, porElBorde, waitFor } from "./helpers.js";
 
 type SceneResult = Awaited<ReturnType<import("../bridge/context.js").NarrativeAiClient["generateScene"]>>;
 
@@ -28,7 +27,7 @@ describe("guardas anti-takeover de sesión", () => {
     });
 
     const first = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "s1", gameId: "plugtest" },
       first.socket,
       ctx,
@@ -41,7 +40,7 @@ describe("guardas anti-takeover de sesión", () => {
     // Takeover: otra sesión arranca con el bootstrap A en vuelo. Se permite
     // (el título nunca se bloquea) y la generación A queda abandonada.
     const second = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "s2", gameId: "plugtest" },
       second.socket,
       ctx,
@@ -110,7 +109,7 @@ describe("guardas anti-takeover de sesión", () => {
     });
 
     const first = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "s1", gameId: "plugtest" },
       first.socket,
       ctx,
@@ -119,7 +118,7 @@ describe("guardas anti-takeover de sesión", () => {
     await waitFor(() => aiCalls.scene.length === 1);
 
     const second = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "resume_session", requestId: "s2", sessionId },
       second.socket,
       ctx,
@@ -153,7 +152,7 @@ describe("guardas anti-takeover de sesión", () => {
     });
 
     const { socket } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "s1", gameId: "plugtest" },
       socket,
       ctx,
@@ -196,7 +195,7 @@ describe("guardas anti-takeover de sesión", () => {
     });
 
     const { socket } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "s1", gameId: "plugtest" },
       socket,
       ctx,
@@ -206,7 +205,7 @@ describe("guardas anti-takeover de sesión", () => {
       broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
     );
 
-    const routed = routeMessage(
+    const routed = porElBorde(
       {
         type: "dialogue_choice",
         eventId: "evt_test",

@@ -3,7 +3,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { routeMessage } from "../bridge/router.js";
 import type { NarrativeAiClient } from "../bridge/context.js";
 import type {
   NarrativeEventMessage,
@@ -15,13 +14,14 @@ import {
   capturarLogDelBridge,
   makeCtx,
   makeSocket,
+  porElBorde,
   waitFor,
-  } from "./helpers.js";
+} from "./helpers.js";
 
 describe("bridge dialogue_choice", () => {
   async function startSession(ctxBundle: ReturnType<typeof makeCtx>) {
     const { socket, sent } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "start_session", requestId: "r1", gameId: "plugtest" },
       socket,
       ctxBundle.ctx,
@@ -56,7 +56,7 @@ describe("bridge dialogue_choice", () => {
 
     const before = broadcasts.length;
     const { socket } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       {
         type: "dialogue_choice",
         eventId: "ignored",
@@ -86,7 +86,7 @@ describe("bridge dialogue_choice", () => {
     const { ctx, broadcasts } = bundle;
     const before = broadcasts.length;
     const { socket } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       {
         type: "dialogue_choice",
         eventId: "ignored",
@@ -141,7 +141,7 @@ describe("bridge dialogue_choice", () => {
     const { socket } = makeSocket();
     const log = capturarLogDelBridge();
     try {
-      await routeMessage(
+      await porElBorde(
         {
           type: "dialogue_choice",
           eventId: "ignored",
@@ -204,7 +204,7 @@ describe("bridge dialogue_choice", () => {
     const { ctx, broadcasts, aiCalls } = bundle;
     const before = broadcasts.length;
     const { socket } = makeSocket();
-    await routeMessage(
+    await porElBorde(
       { type: "interact_entity", entityId: "boris", entityName: "Boris" },
       socket,
       ctx,

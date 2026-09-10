@@ -83,7 +83,14 @@ export interface GameClient {
    *  sim ni al player — el mundo es un plano continuo. */
   addEnemies(enemies: RoomEnemy[]): void;
   respawn(pos: Vec3): void;
-  getCombatant(id: string): { health: number; maxHealth: number; weaponId: string } | undefined;
+  /** Los tres números del JUGADOR del último frame del bridge. Sin `id` a
+   *  propósito (#526): la rama de ENEMIGO existía, no la llamaba nadie, y
+   *  devolvía `maxHealth: e.hp` —el máximo derivado de la vida ACTUAL, la
+   *  mentira que #326 arregló en el otro canal— con el arma escrita a mano.
+   *  Borrarla con su tipo es lo que impide que el siguiente consumidor la
+   *  encuentre y se la crea. El máximo y el arma de un enemigo los tiene el
+   *  sim; el día que el cliente los necesite, viajan en el `state_update`. */
+  jugadorEnCombate(): { health: number; maxHealth: number; weaponId: string };
   isConnected: boolean;
   isBridge: boolean;
   on(event: GameClientEvent, handler: EventHandler): void;
@@ -203,18 +210,13 @@ export class BridgeGameClient implements GameClient {
     this.bridge.sendRespawn(pos);
   }
 
-  getCombatant(id: string) {
+  jugadorEnCombate() {
     // Los tres del último frame del bridge. Hasta #504 el máximo y el arma
     // eran literales de aquí que nadie leía —solo se consultaba `health`, para
     // el respawn—, así que llevaban mintiendo desde que se escribieron; hoy el
     // arma la lee el HUD para el aro del telegraph.
-    if (id === "player") {
-      const s = this.lastState;
-      return { health: s.playerHp, maxHealth: s.playerMaxHp, weaponId: s.playerWeaponId };
-    }
-    const e = this.lastState.enemies.find(e => e.id === id);
-    if (!e) return undefined;
-    return { health: e.hp, maxHealth: e.hp, weaponId: "unarmed" };
+    const s = this.lastState;
+    return { health: s.playerHp, maxHealth: s.playerMaxHp, weaponId: s.playerWeaponId };
   }
 }
 
@@ -259,11 +261,9 @@ export class ViewerGameClient implements GameClient {
   addEnemies(): void {}
   respawn(): void {}
 
-  getCombatant(id: string) {
+  jugadorEnCombate() {
     const f = this.frame;
-    return id === "player"
-      ? { health: f.playerHp, maxHealth: f.playerMaxHp, weaponId: f.playerWeaponId }
-      : undefined;
+    return { health: f.playerHp, maxHealth: f.playerMaxHp, weaponId: f.playerWeaponId };
   }
 
   /** Nunca emite: no hay conexión que se caiga ni que vuelva. */

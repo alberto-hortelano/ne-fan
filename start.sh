@@ -330,17 +330,39 @@ kill_tree() {
     for p in "${all[@]}"; do kill -KILL "$p" 2>/dev/null; done
 }
 
+# Espera a que un servicio ESCUCHE en su puerto. Con `pid` y `log` (los mismos
+# que `wait_for_http_health`, y por el mismo motivo), un hijo que MUERE antes de
+# escuchar no se cobra el timeout callando: se dice el código de salida y se
+# enseñan las últimas líneas de su log, que es donde el servicio ha escrito POR
+# QUÉ. Medido con un `combat_config.json` mutilado (#539): el bridge moría en
+# `loadConfig` a los 300 ms y el launcher contestaba «bridge did not come up on
+# :<su puerto> within 30s» — treinta segundos de espera y ni una palabra de la
+# causa, que estaba entera en la primera línea del log.
 wait_for_port() {
-    local port=$1 timeout=${2:-30} label=${3:-port}
-    local i=0
+    local port=$1 timeout=${2:-30} label=${3:-port} pid=${4:-} log=${5:-}
+    local i=0 rc
     while (( i < timeout )); do
         if nc -z localhost "$port" 2>/dev/null; then
             return 0
+        fi
+        if [[ -n $pid ]] && proceso_terminado "$pid"; then
+            wait "$pid" 2>/dev/null
+            rc=$?
+            echo "❌ $label murió antes de escuchar en :$port (exit $rc)"
+            if [[ -n $log && -r $log ]]; then
+                echo "   últimas líneas de $log:"
+                tail -n 12 "$log" | sed 's/^/   │ /'
+            fi
+            return 1
         fi
         sleep 1
         ((i++))
     done
     echo "❌ $label did not come up on :$port within ${timeout}s"
+    if [[ -n $log && -r $log ]]; then
+        echo "   últimas líneas de $log:"
+        tail -n 12 "$log" | sed 's/^/   │ /'
+    fi
     return 1
 }
 
@@ -455,8 +477,9 @@ start_bridge() {
         NEFAN_BRIDGE_PORT="$PORT_BRIDGE" NEFAN_STATE_HTTP_PORT="$PORT_STATE" \
         npx tsx bridge/ws-server.ts ) \
         >>"$LOG_DIR/nefan-bridge.log" 2>&1 &
-    track_started $! "$PORT_BRIDGE" "$PORT_STATE"
-    wait_for_port "$PORT_BRIDGE" 30 "bridge" || return 1
+    local bridge_pid=$!
+    track_started "$bridge_pid" "$PORT_BRIDGE" "$PORT_STATE"
+    wait_for_port "$PORT_BRIDGE" 30 "bridge" "$bridge_pid" "$LOG_DIR/nefan-bridge.log" || return 1
     echo "✅ bridge :$PORT_BRIDGE (State API :$PORT_STATE)  (log: $LOG_DIR/nefan-bridge.log)"
 }
 

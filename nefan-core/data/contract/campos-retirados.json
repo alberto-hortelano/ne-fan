@@ -1,0 +1,18 @@
+{
+  "$comment": "GENERADO por nefan-core/scripts/dump-campos-retirados.ts desde src/contract/model-io/retired-terrain-fields.ts. NO editar a mano: lo canda test/contract-campos-retirados.test.ts, que compara este fichero con la fuente TS y falla si divergen. Lo lee ai_server (campos_retirados.py) para rebotar una clave retirada con el MISMO texto que el zod, en vez de copiarlo — que es lo que hacía hasta #466, con cinco divergencias.",
+  "motivos": {
+    "terrain_legend": "`terrain_legend` está retirado: el terreno se declara con `biome` + `ground`/`volumes` y la solidez la fija el engine (el agua bloquea; los muros son `volumes`). Si viene de un save o snapshot, bórralo o regenéralo",
+    "terrain_patches": "`terrain_patches` está retirado: el terreno se declara con `biome` + `ground`/`volumes` y la solidez la fija el engine (el agua bloquea; los muros son `volumes`). Si viene de un save o snapshot, bórralo o regenéralo",
+    "ambient_event": "`ambient_event` está retirado: la frase de ambiente no la leía nadie; lo que quieras contar del lugar va en `scene_description`. Si viene de un save o snapshot, bórralo o regenéralo",
+    "glyph": "`glyph` está retirado: el char ASCII de una entity no lo lee nadie; la entity se identifica por `id` y se rotula por `name`. Si viene de un save o snapshot, bórralo o regenéralo",
+    "attach": "`attach` está retirado: el decor ya no se pega a un muro (los muros son `volumes`): declara la `cell` exacta donde va. Si viene de un save o snapshot, bórralo o regenéralo",
+    "place_anchors": "`place_anchors` está retirado: la escena no ancla lugares: el motor los ancla con `map_upsert_place.anchor {tx, ty, rect}`, que ya existe. Si viene de un save o snapshot, bórralo o regenéralo"
+  },
+  "motivos_solo_de_raiz": {
+    "stage": "`stage` era el plató proscenio y se retiró con la vista que lo pintaba: una escena necesita `tile` {tx,ty}, la única variante de Format D (mundo continuo, pídela con generate_tile)",
+    "style_ref": "`style_ref` de escena está retirado (no existe catálogo world.style_refs.scene): quítalo. Para guiar el arte usa `surface_ref` por cara de volumen y `style_ref` en los NPCs",
+    "__expanded": "`__expanded` es la marca interna del expander: una escena emitida no la lleva — quítala y declara `biome` + primitivas; el engine expande y marca él"
+  },
+  "rotulo_de_entity": "la entity \"{id}\"",
+  "rotulo_de_entity_sin_id": "una entity"
+}

@@ -36,10 +36,15 @@ import { GroundSchema } from "../../scene/blueprint/ground.js";
 import { VegetationZonesSchema } from "../../scene/blueprint/vegetation.js";
 import { VolumesSchema } from "../../scene/blueprint/volumes.js";
 import { parseScatter } from "../../scene/blueprint/scatter.js";
+import { celdaFueraDelAlfabeto, motivoDeCharFueraDelAlfabeto } from "../../scene/scene-expand.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
 import { VocabularioDeEntity } from "./entity-vocabulary.js";
 import { enMetros, topeDeFootprint } from "./physics.js";
-import { mensajeDeClaveRetirada } from "./retired-terrain-fields.js";
+import {
+  mensajeDeClaveRetirada,
+  mensajeDeClaveRetiradaDeRaiz,
+  rotuloDeEntity,
+} from "./retired-terrain-fields.js";
 
 export const ENTITY_KINDS = ["building", "prop", "item", "tree", "npc", "player", "decor"] as const;
 export const SCENE_BIOMES = ["grass", "forest_floor", "meadow", "sand", "dirt", "stone", "snow", "swamp"] as const;
@@ -57,8 +62,10 @@ export { RADIO_SIMULADO_POR_KIND } from "./physics.js";
  *  refinamiento). */
 const entityErrorMap: z.ZodErrorMap = (issue, ctx) => {
   if (issue.code !== z.ZodIssueCode.unrecognized_keys) return { message: ctx.defaultError };
-  const id = (ctx.data as { id?: unknown } | null)?.id;
-  const quien = typeof id === "string" && id ? `la entity "${id}"` : "una entity";
+  // El RÓTULO sale de `retired-terrain-fields.ts` (#466): es la plantilla que
+  // viaja al snapshot que lee el espejo Python, y escribirlo aquí a mano era
+  // una de las cinco divergencias entre los dos gates.
+  const quien = rotuloDeEntity((ctx.data as { id?: unknown } | null)?.id);
   // Una clave RETIRADA (el char ASCII, el decor pegado al muro) lleva su
   // motivo: el consejo genérico está escrito para el motor, y por donde
   // vuelven esas dos es por un save o snapshot anterior a su retirada.
@@ -243,37 +250,6 @@ export const SCENE_FIELDS = Object.keys(sceneBaseShape) as readonly string[];
  *  el saneador de ai_server la lee del tool directamente. */
 export const EMITTED_SCENE_FIELDS = SCENE_FIELDS.filter((k) => k !== "size" && k !== "terrain");
 
-/** Por qué se rebota una clave de raíz RETIRADA, o `null` si es una clave
- *  desconocida cualquiera. Un campo retirado no se rebota con el mensaje
- *  genérico: el motor lo copió de un ejemplo viejo y hay que decirle con qué
- *  se sustituye. `stage` era el bloque del plató proscenio (sus salidas), que
- *  murió con la vista que lo pintaba. `style_ref` de ESCENA elegía la lámina temática del repintado
- *  del tile, que murió con la vista oblicua — la de ENTIDAD (npc) sigue viva.
- *  `__expanded` es la marca INTERNA del expander (scene-expand.ts): una escena
- *  EMITIDA que la trae miente sobre su estado, y con `terrain` vacío cruzaba
- *  hasta reventar el validador de jugabilidad como 500 (#195). */
-function motivoDeClaveRetirada(clave: string): string | null {
-  if (clave === "stage") {
-    return (
-      "`stage` era el plató proscenio y se retiró con la vista que lo pintaba: una escena necesita " +
-      "`tile` {tx,ty}, la única variante de Format D (mundo continuo, pídela con generate_tile)"
-    );
-  }
-  if (clave === "style_ref") {
-    return (
-      "`style_ref` de escena está retirado (no existe catálogo world.style_refs.scene): " +
-      "quítalo. Para guiar el arte usa `surface_ref` por cara de volumen y `style_ref` en los NPCs"
-    );
-  }
-  if (clave === "__expanded") {
-    return (
-      "`__expanded` es la marca interna del expander: una escena emitida no la lleva — " +
-      "quítala y declara `biome` + primitivas; el engine expande y marca él"
-    );
-  }
-  return mensajeDeClaveRetirada(clave);
-}
-
 /** Mensaje de la clave de raíz desconocida — el espejo de `entityErrorMap` un
  *  nivel más arriba, con la lista de campos de la población que toca
  *  (`campos`). Va por `errorMap` y no en un `superRefine` porque con
@@ -286,7 +262,7 @@ function sceneErrorMap(campos: readonly string[]): z.ZodErrorMap {
     const partes: string[] = [];
     const desconocidas: string[] = [];
     for (const k of issue.keys) {
-      const motivo = motivoDeClaveRetirada(k);
+      const motivo = mensajeDeClaveRetiradaDeRaiz(k);
       if (motivo === null) desconocidas.push(k);
       else partes.push(motivo);
     }
@@ -363,6 +339,18 @@ export const ExpandedSceneSchema = z
      *  una escena cargable. */
     __expanded: z.literal(true),
   }, { errorMap: sceneErrorMap([...SCENE_FIELDS, "__expanded"]) })
-  .strict();
+  .strict()
+  .superRefine((s, ctx) => {
+    // El ALFABETO del grid (#464). Es la única población que puede traerlo mal:
+    // el motor no escribe `terrain`, así que un char ajeno solo entra por un
+    // save o un snapshot. Y entraba: el grid pasaba como `z.array(z.string())`,
+    // el char no bloqueaba (`DEFAULT_SOLID_CHARS` es el agua) ni se pintaba (el
+    // suelo sale de `ground`), y el jugador cruzaba la pared que alguien creyó
+    // haber puesto. El motivo es el MISMO texto que da `validateScene`.
+    const mala = celdaFueraDelAlfabeto(s.terrain);
+    if (mala) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["terrain"], message: motivoDeCharFueraDelAlfabeto(mala) });
+    }
+  });
 
 export type ExpandedScene = z.infer<typeof ExpandedSceneSchema>;

@@ -11,9 +11,17 @@ import os
 from pathlib import Path
 
 try:
-    from .campos_retirados import MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA, MOTIVO_DE_CLAVE_RETIRADA
+    from .campos_retirados import (
+        MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA,
+        MOTIVO_DE_CLAVE_RETIRADA,
+        rotulo_de_entity,
+    )
 except ImportError:  # importado plano (sys.path = ai_server), como hace llm_client
-    from campos_retirados import MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA, MOTIVO_DE_CLAVE_RETIRADA
+    from campos_retirados import (  # type: ignore[no-redef]
+        MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA,
+        MOTIVO_DE_CLAVE_RETIRADA,
+        rotulo_de_entity,
+    )
 
 
 _PROMPTS_DIR = Path(
@@ -140,7 +148,7 @@ def _mensaje_de_claves_de_raiz_desconocidas(claves: list) -> str:
 
 def _mensaje_de_claves_de_entity_desconocidas(eid: str, claves: list) -> str:
     """Espejo de `entityErrorMap` (nefan-core): ídem para una entity."""
-    quien = f"entity '{eid}'"
+    quien = rotulo_de_entity(eid)
     partes = [f"{quien} trae {MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA[k]}" for k in claves if k in MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA]
     resto = [k for k in claves if k not in MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA]
     if resto:

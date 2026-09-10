@@ -1,64 +1,70 @@
 """Los campos RETIRADOS del contrato de escena y con qué se rebotan.
 
-Espejo de `nefan-core/src/contract/model-io/retired-terrain-fields.ts`, y por
-la misma razón vive en su propio fichero: para nombrar un campo retirado hay
-que escribirlo, y `campos-retirados-no-vuelven` (arch-rules.json) los caza en
-todo `ai_server/**/*.py`. El checker exime por FICHERO entero, así que aquí no
-hay nada más que la tabla: la ceguera que compra la exención se limita a estas
-líneas.
+NO se copian: se LEEN del snapshot `nefan-core/data/contract/campos-retirados.json`
+que vuelca `scripts/dump-campos-retirados.ts` desde la fuente única
+(`nefan-core/src/contract/model-io/retired-terrain-fields.ts`). Mismo patrón que
+`physics.json`, y aprendido igual de caro: hasta #466 este fichero declaraba los
+motivos a mano prometiendo ser «los MISMOS que los del zod, palabra por palabra»,
+y `qa/los-dos-gates-rebotan-igual.mjs` midió CINCO divergencias — dos de las
+claves de entity no estaban en la tabla de la raíz (se rebotaban con el
+genérico) y la entity se rotulaba de otra forma. El mismo tile recibía dos
+textos según por dónde entrase.
 
-Un campo retirado no se rebota con el genérico («no existe en el contrato»):
-los dos sitios por los que vuelve son un motor que copia un ejemplo viejo y un
-save o snapshot anterior a la retirada, y a los dos hay que decirles con qué
-se sustituye. Los motivos son los MISMOS que los del zod, palabra por palabra:
-el mismo tile no puede recibir dos textos según por dónde entre.
+Que el snapshot esté fresco lo canda `nefan-core/test/contract-campos-retirados.test.ts`;
+que los dos gates digan lo mismo de punta a punta, el guion de QA de arriba.
+
+Como aquí ya no se escribe ningún nombre de campo retirado, este fichero dejó de
+necesitar exención en `campos-retirados-no-vuelven` (arch-rules.json).
 """
 
-_SUFIJO = "Si viene de un save o snapshot, bórralo o regenéralo"
-_MOTIVO_DEL_TERRENO = (
-    "el terreno se declara con `biome` + `ground`/`volumes` y la solidez la fija el engine "
-    "(el agua bloquea; los muros son `volumes`)"
+import json
+import os
+from pathlib import Path
+
+CAMPOS_RETIRADOS_PATH = Path(
+    os.environ.get(
+        "NEFAN_CONTRACT_CAMPOS_RETIRADOS",
+        Path(__file__).resolve().parent.parent / "nefan-core" / "data" / "contract" / "campos-retirados.json",
+    )
 )
 
 
-def _retirado(campo: str, motivo: str) -> str:
-    return f"`{campo}` está retirado: {motivo}. {_SUFIJO}"
+def _load(path: Path | None = None) -> dict:
+    """El snapshot. Fail-loud: sin él no hay motivos inventados — inventarlos es
+    exactamente cómo se diverge."""
+    p = Path(path) if path else CAMPOS_RETIRADOS_PATH
+    if not p.exists():
+        raise FileNotFoundError(
+            f"campos-retirados.json not found at {p}. "
+            "Run `cd nefan-core && npm run dump-campos-retirados` to regenerate it."
+        )
+    with open(p, encoding="utf-8") as f:
+        data = json.load(f)
+    for key in ("motivos", "motivos_solo_de_raiz", "rotulo_de_entity", "rotulo_de_entity_sin_id"):
+        if key not in data:
+            raise ValueError(
+                f"{p} has no `{key}`. Regenerate it with `npm run dump-campos-retirados`."
+            )
+    return data
 
 
-# Claves de la RAÍZ de la escena. `stage`, `style_ref` y `__expanded` llevan un
-# motivo con otra forma (nombran la variante viva, el catálogo que ya no existe
-# o la marca interna), como en `motivoDeClaveRetirada` del zod.
-MOTIVO_DE_CLAVE_RETIRADA = {
-    "stage": (
-        "`stage` era el plató proscenio y se retiró con la vista que lo pintaba: una escena necesita "
-        "`tile` {tx,ty}, la única variante de Format D (mundo continuo, pídela con generate_tile)"
-    ),
-    "style_ref": (
-        "`style_ref` de escena está retirado (no existe catálogo world.style_refs.scene): "
-        "quítalo. Para guiar el arte usa `surface_ref` por cara de volumen y `style_ref` en los NPCs"
-    ),
-    "__expanded": (
-        "`__expanded` es la marca interna del expander: una escena emitida no la lleva — "
-        "quítala y declara `biome` + primitivas; el engine expande y marca él"
-    ),
-    "terrain_legend": _retirado("terrain_legend", _MOTIVO_DEL_TERRENO),
-    "terrain_patches": _retirado("terrain_patches", _MOTIVO_DEL_TERRENO),
-    "ambient_event": _retirado(
-        "ambient_event",
-        "la frase de ambiente no la leía nadie; lo que quieras contar del lugar va en `scene_description`",
-    ),
-    "place_anchors": _retirado(
-        "place_anchors",
-        "la escena no ancla lugares: el motor los ancla con `map_upsert_place.anchor {tx, ty, rect}`, que ya existe",
-    ),
-}
+_SNAP = _load()
 
-# Claves de una ENTITY.
-MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA = {
-    "glyph": _retirado(
-        "glyph", "el char ASCII de una entity no lo lee nadie; la entity se identifica por `id` y se rotula por `name`"
-    ),
-    "attach": _retirado(
-        "attach", "el decor ya no se pega a un muro (los muros son `volumes`): declara la `cell` exacta donde va"
-    ),
-}
+# Claves de una ENTITY: la tabla COMPARTIDA del zod (`MOTIVOS` en
+# retired-terrain-fields.ts). Es la misma que sirve a la raíz, porque ninguna
+# clave está en las dos y así quien pregunte por una recibe UNA respuesta.
+MOTIVO_DE_CLAVE_DE_ENTITY_RETIRADA = dict(_SNAP["motivos"])
+
+# Claves de la RAÍZ de la escena: las compartidas más las tres cuyo motivo tiene
+# otra forma (nombran la variante viva, el catálogo que ya no existe o la marca
+# interna del expander), igual que `mensajeDeClaveRetiradaDeRaiz` del zod.
+MOTIVO_DE_CLAVE_RETIRADA = {**_SNAP["motivos"], **_SNAP["motivos_solo_de_raiz"]}
+
+# Cómo se nombra a la entity que trae la clave, con y sin `id`.
+ROTULO_DE_ENTITY = _SNAP["rotulo_de_entity"]
+ROTULO_DE_ENTITY_SIN_ID = _SNAP["rotulo_de_entity_sin_id"]
+
+
+def rotulo_de_entity(eid) -> str:
+    """Espejo de `rotuloDeEntity` (nefan-core): con su `id` si lo trae."""
+    return ROTULO_DE_ENTITY.replace("{id}", eid) if isinstance(eid, str) and eid else ROTULO_DE_ENTITY_SIN_ID

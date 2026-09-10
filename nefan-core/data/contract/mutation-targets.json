@@ -634,6 +634,7 @@
         "src/contract/model-io/validate.ts"
       ],
       "tests": [
+        "test/contract-campos-retirados.test.ts",
         "test/contract-model-io.test.ts",
         "test/contract-physics.test.ts",
         "test/contract-prompts.test.ts",

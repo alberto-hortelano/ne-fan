@@ -792,6 +792,20 @@ function makeCtx(page, name) {
      *  pero el guion sigue midiendo lo demás. */
     bloquesSinMedir: [],
 
+    /** Las excepciones de página que este guion DECLARA esperar, con el motivo.
+     *
+     *  Existe para el guion cuyo sujeto es que el cliente NO arranca: ahí la
+     *  excepción no capturada no es un defecto, es la MEDIDA — sin ella el
+     *  cliente habría seguido con números imposibles, que es justo lo que el
+     *  fail-loud prohíbe. Sin este canal, un guion así no se puede escribir:
+     *  o sale rojo midiendo lo correcto, o alguien lo tuerce para que pase.
+     *
+     *  NO es una amnistía: cada patrón declarado TIENE que casar con alguna
+     *  excepción, y si no casa con ninguna el guion sale ROJO. Una excusa que
+     *  no se usa es una excusa que envejece — que es exactamente lo que le pasa
+     *  a una exención sin candado. Y lo que no case sigue siendo un fallo. */
+    excepcionesEsperadas: [],
+
     /** Mantiene una tecla hasta que se cumple `untilFn`, y la suelta SIEMPRE.
      *  `maxMs` es un cortafuegos, no la condición de parada: esperar por
      *  tiempo de pared no es determinista (el movimiento va por delta de rAF). */
@@ -850,6 +864,27 @@ function makeCtx(page, name) {
       }
       ctx.bloquesSinMedir.push(motivo);
       console.log(`    ⊘ bloque no medido: ${motivo}`);
+    },
+
+    /** Declara que ESTE guion provoca a propósito una excepción no capturada en
+     *  la página, y por qué. `patron` es una RegExp o un texto que tiene que
+     *  aparecer en el mensaje. Ver `excepcionesEsperadas`. */
+    excepcionEsperada(patron, motivo) {
+      const queja = quejaDelMotivo(motivo);
+      if (queja) {
+        throw new Error(
+          `${name}: ctx.excepcionEsperada exige el MOTIVO por el que esta excepción es la MEDIDA ` +
+            `y no un defecto —una frase—, y el que llegó ${queja}.`,
+        );
+      }
+      if (!(patron instanceof RegExp) && (typeof patron !== "string" || patron.trim() === "")) {
+        throw new Error(
+          `${name}: ctx.excepcionEsperada exige un patrón (RegExp o texto) que identifique ` +
+            `LA excepción, no un comodín; llegó ${JSON.stringify(patron)}.`,
+        );
+      }
+      ctx.excepcionesEsperadas.push({ patron, motivo, casadas: 0 });
+      console.log(`    ⚑ excepción esperada: ${motivo}`);
     },
 
     /** Espera, y AFIRMA el hecho de si ocurrió o no (#261).
@@ -1217,13 +1252,33 @@ async function main() {
       console.log(`    ⓘ ${Date.now() - t0} ms · ${JSON.stringify(await diagnostico())}`);
       console.log(`    ⓘ libros: ${JSON.stringify(libros)}`);
     }
-    if (errores.length) {
-      console.log(`    ✘ ${errores.length} excepción(es) en la página`);
-      errores.slice(0, 3).forEach((e) => console.log(`      ${e.split("\n")[0]}`));
+    // Las que el guion DECLARÓ esperar salen de la lista de fallos y quedan
+    // dichas; lo demás sigue siendo un fallo. Un patrón declarado que no casa
+    // con NADA también lo es: una excusa que no se usa envejece sola.
+    const casa = (e, { patron }) => (patron instanceof RegExp ? patron.test(e) : e.includes(patron));
+    const inesperadas = errores.filter((e) => {
+      const esperada = ctx.excepcionesEsperadas.find((x) => casa(e, x));
+      if (!esperada) return true;
+      esperada.casadas++;
+      return false;
+    });
+    for (const x of ctx.excepcionesEsperadas) {
+      if (x.casadas > 0) {
+        console.log(`    ⚑ ${x.casadas} excepción(es) esperadas: ${x.motivo}`);
+      } else {
+        ctx.fallos.push(
+          `la excepción declarada como esperada NO ocurrió (${x.patron}): «${x.motivo}» — ` +
+            `una excusa que no se usa es una excusa que envejece, quítala o arregla lo que la esperaba`,
+        );
+      }
+    }
+    if (inesperadas.length) {
+      console.log(`    ✘ ${inesperadas.length} excepción(es) en la página`);
+      inesperadas.slice(0, 3).forEach((e) => console.log(`      ${e.split("\n")[0]}`));
       // La primera va EN el fallo, no solo en el log en línea: el resumen es
       // lo que se lee, y un recuento sin texto no se puede diagnosticar.
       ctx.fallos.push(
-        `${errores.length} excepción(es) no capturadas en la página: ${errores[0].split("\n")[0]}`,
+        `${inesperadas.length} excepción(es) no capturadas en la página: ${inesperadas[0].split("\n")[0]}`,
       );
     }
     await page.close();

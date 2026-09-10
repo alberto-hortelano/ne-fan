@@ -70,15 +70,13 @@ import {
   type FrameResult,
 } from "./net/game-client.js";
 
-import combatConfigJson from "@nefan-core/data/combat_config.json";
-import { loadConfig } from "@nefan-core/src/combat/combat-data.js";
 import { CONFIG } from "@nefan-core/src/config.js";
-
 /** Los números del jugador: velocidades, escala de arcade y alcance de la `E`.
- *  Los declara `combat_config.json` y los EXIGE `loadConfig` (#241): aquí no
- *  hay ni multiplicador ni caída a un literal — si el config no los trae, no
- *  hay partida, y se sabe en el arranque. */
-const playerCfg = loadConfig(combatConfigJson).player;
+ *  Los declara `combat_config.json` y los comprueba `config-de-combate.ts`
+ *  (#241, #539): aquí no hay ni multiplicador ni caída a un literal — si el
+ *  config no los trae o los trae imposibles, no hay partida, y el jugador lee
+ *  POR QUÉ en el arranque en vez de mirar una pantalla negra. */
+import { playerCfg } from "./config-de-combate.js";
 
 // --- DOM elements ---
 /** Caja del MUNDO: el renderer mete aquí dentro su lienzo WebGL (y la UI de
@@ -354,7 +352,7 @@ const devInput = new DevToolsInput({ dialogoAbierto, propuestaDeTileAbierta });
  *  teclas 1..N y los parámetros del ataque elegido. Nace con el catálogo
  *  estándar (sin sesión) y el sink `combat` le instala el de cada partida.
  *  El arma del aro la dice el bridge en cada frame (#504): pregunta, no valor. */
-const armaDelJugador = () => gameClient?.getCombatant("player")?.weaponId ?? "";
+const armaDelJugador = () => gameClient?.jugadorEnCombate().weaponId ?? "";
 const hud = crearHudDeCombate({ input: () => input, arma: armaDelJugador, log });
 
 /** Lo que el jugador VE y LEE de lo que resuelve el sim: el aro del ataque, las
@@ -527,7 +525,7 @@ fpsRenderer.setCollisionCellsProvider((tileKey) => {
 /** R (one-shot del provider): revive al player si está muerto. La condición
  *  de negocio vive aquí; el provider solo transporta la intención. */
 function handleRespawnRequest(): void {
-  const p = gameClient?.getCombatant("player");
+  const p = gameClient?.jugadorEnCombate();
   if (!p || p.health > 0) return;
   // DÓNDE se vuelve lo decide core (`puntoDeReaparicion`): aquí solo se le da
   // la posición del cadáver, la pregunta de qué es sólido y el rect del tile

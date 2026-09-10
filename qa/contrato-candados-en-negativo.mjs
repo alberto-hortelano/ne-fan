@@ -95,7 +95,12 @@ const INVARIANTES = [
     SCHEMA, "ts:test/scene-schema.test.ts",
     [
       ["  .object(sceneBaseShape, { errorMap: sceneErrorMap(EMITTED_SCENE_FIELDS) })\n  .strict()", "  .object(sceneBaseShape, { errorMap: sceneErrorMap(EMITTED_SCENE_FIELDS) })\n  .passthrough()"],
-      ['  }, { errorMap: sceneErrorMap([...SCENE_FIELDS, "__expanded"]) })\n  .strict();', '  }, { errorMap: sceneErrorMap([...SCENE_FIELDS, "__expanded"]) })\n  .passthrough();'],
+      // Sin `;` al final desde #464: el `.strict()` de la escena expandida ya no
+      // cierra la expresión — le sigue el `.superRefine` que valida el ALFABETO
+      // del grid. La sonda buscaba `.strict();` y dejó de casar, así que este
+      // candado pasó a no comprobar nada y lo cazó el propio guion («patrón
+      // obsoleto»), que es exactamente para lo que existe esa cuenta.
+      ['  }, { errorMap: sceneErrorMap([...SCENE_FIELDS, "__expanded"]) })\n  .strict()', '  }, { errorMap: sceneErrorMap([...SCENE_FIELDS, "__expanded"]) })\n  .passthrough()'],
     ],
   ],
   // ── #237 · la frontera entre las dos poblaciones ────────────────────────
