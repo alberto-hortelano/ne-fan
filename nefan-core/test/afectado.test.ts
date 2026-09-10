@@ -1158,7 +1158,19 @@ describe("borrado · quién lo cargaba en una revisión, leído de git", () => {
 
     const revisionSintetica = (ficheros: Record<string, string>): string => {
       const idx = join(mkdtempSync(join(tmpdir(), "nefan-idx-")), "index");
-      const env = { ...process.env, GIT_INDEX_FILE: idx };
+      // La identidad va EXPLÍCITA, no heredada: `commit-tree` la exige, y un
+      // runner de CI arranca sin `user.name` ni `user.email` configurados
+      // («Author identity unknown», visto en la corrida 102874008855). Que el
+      // test pase en local y falle en el runner por la config de git de quien
+      // lo corre es la peor forma de intermitencia: no depende del código.
+      const env = {
+        ...process.env,
+        GIT_INDEX_FILE: idx,
+        GIT_AUTHOR_NAME: "ensayo",
+        GIT_AUTHOR_EMAIL: "ensayo@nefan.local",
+        GIT_COMMITTER_NAME: "ensayo",
+        GIT_COMMITTER_EMAIL: "ensayo@nefan.local",
+      };
       const git = (args: string[], input?: string): string =>
         execFileSync("git", args, { cwd: raizRepo, encoding: "utf8", env, input }).trim();
       for (const [ruta, cuerpo] of Object.entries(ficheros)) {
