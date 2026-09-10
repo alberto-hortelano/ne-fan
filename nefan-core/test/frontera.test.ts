@@ -458,6 +458,20 @@ describe("Frontera · cambiar de partida", () => {
       "Zona sin generar",
       "el velo del mundo nuevo dice la verdad de ESTE mundo",
     );
+
+    // Y ese aserto de arriba sale verde SIN vaciar `#textoDeEstado`: el velo
+    // dice «Zona sin generar» porque el tile ya no está PEDIDO, no porque el
+    // texto se haya ido. Lo midió la corrida 34493904935, donde quitar el
+    // `#textoDeEstado.clear()` de `olvidarLaPartida` sobrevivía a esta batería
+    // entera. El texto heredado solo asoma por la puerta de atrás: pedir el
+    // MISMO tile en el mundo nuevo, que es justo lo que hace el jugador que
+    // vuelve al título y arranca otra partida en el mismo borde.
+    f.confirmar(2, pedir);
+    assert.equal(
+      f.tick(3, 25, 0, plano([0, 0]), pedir).velo?.text,
+      "Explorando lo desconocido",
+      "el molino era del mundo anterior: el velo de ESTE arranca en genérico",
+    );
   });
 
   it("la PROPUESTA sobre la mesa se retira, y el blocking vuelve a poder enviarse", () => {
