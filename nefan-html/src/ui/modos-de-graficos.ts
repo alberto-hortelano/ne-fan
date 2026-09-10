@@ -46,7 +46,12 @@ export interface DepsDeModosDeGraficos {
    *  pasa de OFF a ON, se rearma y se le re-piden los skins de todo lo vivo. */
   characterSprites: Pick<
     CharacterSpriteManager,
-    "skinsAllowed" | "setSkinsAllowed" | "rearmarCortacircuitos" | "requestSkin"
+    | "skinsAllowed"
+    | "skinsSuspendidos"
+    | "alSaltarElFusible"
+    | "setSkinsAllowed"
+    | "rearmarCortacircuitos"
+    | "requestSkin"
   >;
   /** Con partida, el bridge es la autoridad del cambio; sin ella, localStorage. */
   session: Pick<ClientSession, "active" | "id">;
@@ -123,6 +128,31 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
     return gates().escenarios;
   }
 
+  /** La última línea «Gráficos: …» que se escribió, o `null` si la última
+   *  aplicación no tenía nada que decir (sin sesión y sin modo). */
+  let ultimoRotulo: string | null = null;
+
+  /** UN GESTO, UNA LÍNEA (#510 H3).
+   *
+   *  `aplicar` es idempotente en ESTADO pero no lo era en el registro, y se
+   *  llama dos veces por gesto sin que nadie se haya equivocado: el chip pide
+   *  el cambio (`cambiarFaceta` → `aplicarFaceta` → aquí) y el bridge difunde
+   *  `render_mode_changed` también al que lo pidió —«re-aplicarlo es
+   *  idempotente», `bridge/handlers/session.ts`—, que vuelve a entrar por
+   *  `aplicarFaceta`. El jugador leía «Gráficos: imagen IA (skins IA)» dos
+   *  veces por un solo click, y dos veces también al entrar en una partida.
+   *
+   *  Se compara el RÓTULO y no los modos: lo que el jugador no quiere leer dos
+   *  veces es la misma frase, y la frase depende también de `ai_skin` y del
+   *  modo efectivo de personajes. Volver al título aplica los neutros
+   *  (`renderMode: ""`), que no tienen rótulo y dejan esto a `null`: la partida
+   *  siguiente vuelve a anunciarse aunque tenga los mismos modos. */
+  function anotarSiCambia(rotulo: string | null): void {
+    const repetido = rotulo !== null && rotulo === ultimoRotulo;
+    ultimoRotulo = rotulo;
+    if (rotulo !== null && !repetido) deps.log(rotulo);
+  }
+
   function aplicar({ renderMode, characterMode }: { renderMode: string; characterMode: string }): void {
     const prevCharOn = deps.characterSprites.skinsAllowed;
     scenesMode = normalizarModo(renderMode);
@@ -143,11 +173,13 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
     // cambia es lo que el jugador lee (arriba ya se le avisó).
     const charLabel = effChar !== "vector" && CONFIG.graphics.ai_skin
       ? "skins IA" : "personajes en base y_bot";
+    let rotulo: string | null = null;
     if (scenesMode === "vector") {
-      deps.log(`Gráficos: maqueta 3D (clay local, sin imagen IA nueva; ${charLabel})`);
+      rotulo = `Gráficos: maqueta 3D (clay local, sin imagen IA nueva; ${charLabel})`;
     } else if (scenesMode === "image") {
-      deps.log(`Gráficos: imagen IA (${charLabel})`);
+      rotulo = `Gráficos: imagen IA (${charLabel})`;
     }
+    anotarSiCambia(rotulo);
     // Personajes OFF→ON: los requestSkin que no-opearon con el toggle apagado
     // no dejaron rastro — re-pedir los skins de todo lo ya spawneado.
     if (!prevCharOn && deps.characterSprites.skinsAllowed) {
@@ -204,11 +236,20 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
     getState: () => ({
       scenesOn: gates().escenarios,
       charsOn: deps.characterSprites.skinsAllowed && CONFIG.graphics.ai_skin,
+      // El estado EFECTIVO va aparte del modo (#510): el fusible de #236 no
+      // toca `skinsAllowed` —el rearme es el OFF→ON de esta misma fila— pero
+      // sí para la generación, y el chip decía «Skins IA» mientras el registro
+      // decía que estaban apagados.
+      charsSuspendidos: deps.characterSprites.skinsSuspendidos,
       charsAvailable: CONFIG.graphics.ai_skin,
       hasSession: deps.session.active,
     }),
     setMode: cambiarFaceta,
   });
+
+  // El fusible salta a mitad de partida sin que ningún modo se mueva, así que
+  // nadie llamaría a `refresh()`: el chip se quedaría con el rótulo de antes.
+  deps.characterSprites.alSaltarElFusible = () => chip.refresh();
 
   return {
     aplicar,

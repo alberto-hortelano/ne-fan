@@ -131,4 +131,9 @@ body {
   width: 100%;
   height: 100%;
   cursor: crosshair;
+  /* EL MUNDO VA DEBAJO DE LA UI DE JUEGO (#483). El lienzo lo inserta
+     `FpsRenderer` DESPUÉS de #game-ui, así que sin bandas ganaba él y tapaba
+     todo lo que no tuviera z-index propio — empezando por la mirilla. La otra
+     mitad de la decisión (`#game-ui { z-index: 1 }`) vive en game-ui.css. */
+  z-index: 0;
 }

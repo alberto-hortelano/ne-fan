@@ -46,6 +46,18 @@
  *  Cero créditos: preset `e2e-sin-creditos`, motor falso, y las peticiones
  *  saboteadas ni le llegan.
  *
+ *  Y EL BLOQUE C MIDE ADEMÁS LO QUE EL JUGADOR LEE DEL CHIP (#510, 2026-09-10).
+ *  Aquí es donde el fusible salta de verdad, así que es el único sitio del banco
+ *  donde se puede afirmar que el chip de gráficos DEJA de decir «Skins IA»
+ *  cuando ya no se genera ninguno —medido antes de arreglarlo: `title:
+ *  "personajes: Skins IA"` con el registro diciendo lo contrario dos líneas más
+ *  abajo—. Rojo con `charsSuspendidos` fuera de `ui/graphics-mode.ts`.
+ *
+ *  Y de paso deja MEDIDO #509: con tres personajes caídos el registro de errores
+ *  (z-index 8900) tapa el chip (z-index 30) y el click no le llega. El bloque
+ *  sondea la capa con `elementFromPoint` y, si está tapado, se declara sin medir
+ *  con su motivo en vez de morir en un timeout de 30 s.
+ *
  *  PROBADO EN NEGATIVO (2026-09-01): con `UMBRAL_APAGADO_DE_SESION = 1` —el
  *  comportamiento anterior a #236— los bloques A y B se ponen rojos.
  */
@@ -273,6 +285,82 @@ export default async function (ctx) {
       /y_bot/.test(f.texto),
       f.texto.replace(/\s+/g, " ").slice(0, 400),
     );
+
+    // Y EL CHIP NO DICE LO CONTRARIO (#510). Medido antes de arreglarlo:
+    // `title: "personajes: Skins IA"` con el registro diciendo «skins IA
+    // desactivados… (umbral 3)». Dos verdades en pantalla a la vez, que es la
+    // clase de fallo que T9 ya cazó en el título. La causa: `charsOn` leía
+    // `skinsAllowed && ai_skin`, y el fusible de #236 no toca `skinsAllowed`
+    // —no puede: el rearme ES el OFF→ON del chip, que canda el guion 51—, así
+    // que el chip enseña ahora el estado EFECTIVO por su cuenta.
+    const chip = await ctx.page.evaluate(() => {
+      const c = document.getElementById("gfx-chip");
+      return { texto: c?.textContent ?? null, title: c?.title ?? null, oculto: c?.hidden ?? null };
+    });
+    ctx.log(`chip de gráficos con el fusible saltado: ${JSON.stringify(chip)}`);
+    ctx.expect(
+      "con el cortacircuitos saltado, el chip DICE que los skins están suspendidos (#510)",
+      /suspendidos/i.test(chip.title ?? ""),
+      JSON.stringify(chip),
+    );
+    ctx.expect(
+      "…y dice cómo se rearman, que es lo accionable",
+      /apaga y enciende/i.test(chip.title ?? ""),
+      JSON.stringify(chip),
+    );
+    await ctx.shot("chip-con-el-fusible-saltado");
+
+    // El panel es donde el jugador viene a mirar el gasto, así que el aviso va
+    // también ahí… PERO ABRIRLO ES #509. Este bloque acaba de tumbar a TRES
+    // personajes, o sea que `#error-log` (z-index 8900, `position: fixed`,
+    // creciendo desde `top: 34px`) está lleno justo cuando hay que tocar el
+    // chip, que vive en `#ui-bottom-right` con z-index 30. Medido aquí el
+    // 2026-09-10: el click de Playwright sobre `#gfx-chip` expira a los 30 s
+    // con «<span class="error-log__time"> from <div id="error-log"> subtree
+    // intercepts pointer events». Es EXACTAMENTE el enunciado de #509 —«el
+    // registro tapa el panel del chip y se come el click»— y no es de este
+    // guion arreglarlo: se SONDEA la capa, y si el registro tapa el chip el
+    // bloque se declara sin medir con su motivo en vez de morirse en un
+    // timeout. El chip en sí ya está medido arriba, que es lo de #510.
+    const puerta = await ctx.page.evaluate(() => {
+      const c = document.getElementById("gfx-chip");
+      if (!c) return { hay: false };
+      const r = c.getBoundingClientRect();
+      const arriba = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return {
+        hay: true,
+        abierto: document.getElementById("gfx-panel")?.hidden === false,
+        alcanzable: Boolean(arriba) && (arriba === c || c.contains(arriba)),
+        tapa: arriba
+          ? `${arriba.tagName.toLowerCase()}${arriba.id ? `#${arriba.id}` : ""}` +
+            `${arriba.closest("#error-log") ? " (dentro de #error-log)" : ""}`
+          : null,
+      };
+    });
+    ctx.log(`puerta del chip: ${JSON.stringify(puerta)}`);
+    if (!puerta.hay || (!puerta.abierto && !puerta.alcanzable)) {
+      ctx.sinMedirBloque(
+        `#509 EN VIVO: el registro de errores tapa el chip de gráficos (el click del centro cae en ` +
+          `${puerta.tapa}), así que su panel no se puede abrir por el camino del jugador y el aviso de ` +
+          `suspensión no se puede leer ahí. El CHIP sí queda medido arriba (#510). Cuando #509 cierre, ` +
+          `este bloque mide solo`,
+      );
+    } else {
+      if (!puerta.abierto) await ctx.page.click("#gfx-chip");
+      const panel = await ctx.page.evaluate(() => {
+        const s = document.querySelector("#gfx-panel .gfx-suspension");
+        return { visible: Boolean(s) && !s.hidden, texto: s?.textContent ?? null };
+      });
+      ctx.log(`panel del chip: ${JSON.stringify(panel)}`);
+      ctx.expect(
+        "el panel del chip trae el aviso de suspensión con el gesto que la deshace",
+        panel.visible === true && /apaga y enciende/i.test(panel.texto ?? ""),
+        JSON.stringify(panel),
+      );
+      // Y se deja como se encontró: el bloque D vuelve a recargar, pero un panel
+      // abierto tapando media pantalla no es el estado del que se parte.
+      await ctx.page.click("#gfx-chip");
+    }
   }
 
   // ── D · El banco tal cual, sin sabotaje y sin máscara ────────────────────

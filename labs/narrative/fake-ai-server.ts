@@ -160,6 +160,20 @@ const gastoServido = () => ({
 let fakeDevCacheEnabled = false;
 /** Turnos de diálogo servidos (el texto los numera: se ve el ida y vuelta). */
 let fakeDialogueTurn = 0;
+/** La marca que el jugador escribe en el TEXTO LIBRE para que este motor
+ *  conteste con DOS `dialogue` en la misma respuesta (#502). Va sin acentos ni
+ *  eñes a propósito: viaja por el wire y se compara literal. La escribe el
+ *  guion 83; el mecanismo, abajo en `/report_player_choice`. */
+const MARCA_DOS_LINEAS = "DOS LINEAS SEGUIDAS";
+/** El prefijo de esa SEGUNDA línea, para que el guion pueda afirmar cuál de
+ *  las dos se quedó en pantalla. */
+const SEGUNDA_LINEA = "(bench bis)";
+/** Y la que hace que este motor se caiga (500) contestando a esa elección: el
+ *  fallo que el jugador provoca sin que nadie toque un proceso. El bridge lo
+ *  traduce a `narrative_status: error` con kind `consequences`
+ *  (`bridge/handlers/dialogue.ts`), que es lo que pinta el muro con «Cerrar».
+ *  La pide el guion 83 para llegar a #503. */
+const MARCA_MOTOR_CAIDO = "MOTOR CAIDO";
 const SPRITES_DIR = fileURLToPath(new URL("../../nefan-html/public/sprites/", import.meta.url));
 // Imágenes de los packs de estilo (portadas y refs). Son ficheros COMMITEADOS
 // del repo, no generación: aquí no se paga ni se inventa nada — se sirve lo
@@ -479,6 +493,10 @@ const server = http.createServer((req, res) => {
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         const speaker = String(body.speaker || "Aldeano");
         fakeDialogueTurn += 1;
+        // El motor se cae contestando, a petición del jugador (ver la marca).
+        if (String(body.free_text ?? "").includes(MARCA_MOTOR_CAIDO)) {
+          return send(500, { detail: "el motor se cayó contestando (simulado por el banco)" });
+        }
         // SEGUNDO turno: además de contestar, el motor MANDA algo hostil. Es
         // la otra vía por la que aparece un enemigo (spawn en runtime, sin
         // recargar la escena) y hasta el 2026-08-29 este fichero no emitía un
@@ -561,6 +579,20 @@ const server = http.createServer((req, res) => {
                 },
               ]
             : [];
+        // DOS LÍNEAS EN UNA SOLA RESPUESTA. `dialogue` es una entrada de
+        // `consequences[]`, así que el contrato permite varias y el cliente las
+        // abre una detrás de otra con el panel YA en pantalla — que es donde
+        // vivía #502: la segunda `abrir()` encontraba el pointer lock ya
+        // soltado por la primera y pisaba el apunte de «lo tenía» con `false`.
+        // Ningún guion podía llegar a ese estado porque este fichero solo
+        // emitía una.
+        //
+        // Se dispara con una MARCA en el texto libre y no con un número de
+        // turno (que es como se disparan el hostil, el mundo y el spawn sin
+        // procedencia): los turnos son un recurso compartido entre guiones —el
+        // 83 ya llega al 5— y una marca no puede colisionar con nadie. La pide
+        // el guion 83.
+        const dosLineas = String(body.free_text ?? "").includes(MARCA_DOS_LINEAS);
         return send(200, {
           consequences: [
             ...spawnHostil,
@@ -579,6 +611,16 @@ const server = http.createServer((req, res) => {
                 `Dijiste: "${String(body.chosen_text || body.free_text || "").slice(0, 60)}".`,
               choices: ["Seguir preguntando", "Despedirse"],
             },
+            ...(dosLineas
+              ? [
+                  {
+                    type: "dialogue" as const,
+                    speaker,
+                    text: `${SEGUNDA_LINEA} Y otra cosa, forastero: no te vayas todavía.`,
+                    choices: ["Te escucho", "Despedirse"],
+                  },
+                ]
+              : []),
           ],
         } satisfies ReportPlayerChoiceResponse);
       }

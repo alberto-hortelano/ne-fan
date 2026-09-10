@@ -22,6 +22,22 @@
  *     manda otro `interact_entity` (el turno del motor falso no sube). Rojo si
  *     el proveedor deja pasar la E con la conversación abierta.
  *
+ *  Y dos más, de la tanda del 2026-09-10, que son el mismo mecanismo —quién
+ *  posee el pointer lock— visto desde los dos sitios que lo tocan:
+ *
+ *   · DOS LÍNEAS SEGUIDAS (#502): el motor manda dos `dialogue` en la MISMA
+ *     respuesta (son entradas de `consequences[]`) y el cliente las abre una
+ *     detrás de otra. `abrir()` apuntaba «tenía el ratón» en cada llamada, y la
+ *     segunda encontraba el lock ya soltado por la primera: `false`, y al
+ *     cerrar el ratón no volvía. Rojo sin el `if (!panel.isVisible)` de
+ *     `ui/conversacion.ts` (medido: `[]` en vez de `[true]` al cerrar).
+ *   · EL MURO CON BOTÓN (#503): con el motor caído, elegir una opción cierra el
+ *     panel, devuelve el lock y acto seguido el fallo pinta el muro a pantalla
+ *     completa con «Cerrar» — un botón, el ratón capturado y ningún cursor.
+ *     Rojo sin `soltarElRatonParaLosBotones()` en `fallo()`
+ *     (`ui/muro-de-carga.ts`): `pointerLockElement !== null` con el muro
+ *     delante, y el centro de «Cerrar» sin recibir el click.
+ *
  *  SE CORRE SIN `?input=scripted` A PROPÓSITO, como el 37 y el 43: el driver
  *  de bench no pasa por la puerta del teclado ni por el panel. El lock se
  *  observa con un `pointerlockchange` instalado ANTES de hablar, no leyendo
@@ -36,6 +52,16 @@ export const aisla = ["saves", "fake-ai"];
 
 const A_UN_PASO = 1.2;
 const NPC = "barkeep";
+/** La marca que hace que el motor falso conteste con DOS `dialogue` en la misma
+ *  respuesta, y el prefijo de esa segunda línea. Las declara
+ *  `labs/narrative/fake-ai-server.ts` (`MARCA_DOS_LINEAS` / `SEGUNDA_LINEA`);
+ *  aquí se copian porque el guion es `.mjs` y el motor falso `.ts`, y cambiar
+ *  una sin la otra tiene que ponerse rojo — el bloque 4 afirma las dos. */
+const MARCA_DOS_LINEAS = "DOS LINEAS SEGUIDAS";
+const SEGUNDA_LINEA = "(bench bis)";
+/** Y la que hace que el motor falso conteste 500 a esa elección
+ *  (`MARCA_MOTOR_CAIDO`), que es como se llega al muro de fallo del bloque 5. */
+const MARCA_MOTOR_CAIDO = "MOTOR CAIDO";
 
 async function frames(ctx, n) {
   const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
@@ -241,6 +267,143 @@ export default async function (ctx) {
     JSON.stringify(alCerrar) === "[true]",
     JSON.stringify(alCerrar),
   );
+  // ── 4 · DOS LÍNEAS SEGUIDAS: la segunda no pisa el apunte (#502) ─────────
+  // El motor puede mandar dos `dialogue` en la MISMA respuesta —son entradas de
+  // `consequences[]`— y el cliente las abre una detrás de otra. `abrir()`
+  // apuntaba «tenía el ratón» en CADA llamada, y la segunda encontraba el lock
+  // ya soltado por la primera (`pointerLockElement` se vacía síncrono tras
+  // `exitPointerLock()`): el apunte pasaba a `false` y al cerrar el ratón no
+  // volvía, aunque el jugador lo tuviera capturado antes de hablar. Se pide con
+  // la marca del motor falso en el texto libre.
+  await plantarse(ctx);
+  const caja4 = await (await ctx.page.$("canvas")).boundingBox();
+  await ctx.page.mouse.click(caja4.x + caja4.width / 2, caja4.y + caja4.height / 2);
+  await ctx.expectEspera(
+    "precondición del bloque 4: el click sobre el mundo captura el ratón",
+    true,
+    () => (document.pointerLockElement !== null ? { lock: true } : null),
+    { ms: 10_000 },
+  );
+  await ctx.waitFor("el pointerlockchange del click queda anotado", () => (window.__g83.lock.length > 0 ? { n: window.__g83.lock.length } : null), 5_000);
+  await cronologia();
+  const abierto4 = await hablar(ctx);
+  await panelPintado(ctx);
+  await ctx.page.keyboard.press("t");
+  await ctx.waitFor(
+    "T abre la caja de texto libre (bloque 4)",
+    () => (document.getElementById("dialogue-input")?.style.display === "block" ? { abierta: true } : null),
+    5_000,
+  );
+  await ctx.page.keyboard.type(MARCA_DOS_LINEAS);
+  await ctx.page.keyboard.press("Enter");
+  const segunda = await respuestaDelMotor(ctx, abierto4.text);
+  await panelPintado(ctx);
+  ctx.expect(
+    "el motor mandó DOS líneas en una respuesta y la que queda en pantalla es la SEGUNDA",
+    segunda.startsWith(SEGUNDA_LINEA),
+    segunda.slice(0, 120),
+  );
+  const dosLineas = await cronologia();
+  ctx.log(`cronología con dos líneas seguidas: ${JSON.stringify(dosLineas)}`);
+  ctx.expect(
+    "abrir suelta (false) → el texto libre cierra y DEVUELVE (true) → las dos líneas nuevas lo sueltan UNA vez (false)",
+    JSON.stringify(dosLineas) === "[false,true,false]",
+    JSON.stringify(dosLineas),
+  );
+  await ctx.shot("dos-lineas-seguidas");
+  await cerrarConElSeam(ctx);
+  const trasDosLineas = await cronologia();
+  ctx.expect(
+    "cerrar tras DOS líneas seguidas devuelve el ratón: la segunda `abrir()` no pisó el apunte (#502)",
+    JSON.stringify(trasDosLineas) === "[true]",
+    JSON.stringify(trasDosLineas),
+  );
+
+  // ── 5 · EL MURO CON BOTÓN SUELTA EL RATÓN (#503) ─────────────────────────
+  // Medido por QA del corte 6: con una conversación abierta y el motor muerto,
+  // elegir una opción cierra el panel y DEVUELVE el lock (#323, correcto), y
+  // acto seguido el fallo del motor pinta el muro a pantalla completa con
+  // «Cerrar». Resultado: un botón, el ratón capturado y ningún cursor con el
+  // que pulsarlo —y `#game-ui[data-locked="true"] .nf-action` le quita además
+  // los `pointer-events`—. Esc lo salvaba y nada en pantalla lo decía.
+  // El motor se mata en el BORDE (`page.route`), no dentro del cliente.
+  await plantarse(ctx);
+  const caja5 = await (await ctx.page.$("canvas")).boundingBox();
+  await ctx.page.mouse.click(caja5.x + caja5.width / 2, caja5.y + caja5.height / 2);
+  await ctx.expectEspera(
+    "precondición del bloque 5: el jugador vuelve a tener el ratón capturado",
+    true,
+    () => (document.pointerLockElement !== null ? { lock: true } : null),
+    { ms: 10_000 },
+  );
+  await hablar(ctx);
+  await panelPintado(ctx);
+  await cronologia();
+  // El motor se cae CONTESTANDO, y lo pide el jugador con su propio texto: el
+  // 500 lo sirve el motor falso ante la marca (`MARCA_MOTOR_CAIDO`) y el bridge
+  // lo traduce a `narrative_status: error` kind `consequences`. No se toca
+  // ningún proceso, y el fallo recorre la cadena entera —que es lo que
+  // `page.route` NO podía hacer: `/report_player_choice` lo llama el BRIDGE, no
+  // el navegador.
+  await ctx.page.keyboard.press("t");
+  await ctx.waitFor(
+    "T abre la caja de texto libre (bloque 5)",
+    () => (document.getElementById("dialogue-input")?.style.display === "block" ? { abierta: true } : null),
+    5_000,
+  );
+  await ctx.page.keyboard.type(MARCA_MOTOR_CAIDO);
+  await ctx.page.keyboard.press("Enter");
+  const muro = await ctx.waitFor(
+    "el fallo del motor pinta el muro con «Cerrar»",
+    () => {
+      const el = document.getElementById("narrative-loader");
+      const boton = document.getElementById("narrative-loader-dismiss");
+      if (!el?.classList.contains("visible") || !el.classList.contains("error") || !boton || boton.hidden) return null;
+      const r = boton.getBoundingClientRect();
+      const arriba = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return {
+        lock: document.pointerLockElement !== null,
+        locked: document.getElementById("game-ui")?.dataset.locked ?? null,
+        alcanzable: arriba === boton || boton.contains(arriba),
+        titulo: document.getElementById("narrative-loader-title")?.textContent ?? "",
+      };
+    },
+    60_000,
+  );
+  ctx.log(`muro de fallo: ${JSON.stringify(muro)}`);
+  ctx.expect(
+    "con el muro de fallo en pantalla, el ratón ya NO está capturado: hay cursor con el que pulsar (#503)",
+    muro.lock === false && muro.locked === "false",
+    JSON.stringify(muro),
+  );
+  ctx.expect(
+    "…y el click en el centro de «Cerrar» le llega al botón, no a otra capa",
+    muro.alcanzable === true,
+    JSON.stringify(muro),
+  );
+  await ctx.shot("muro-con-boton-y-cursor");
+  await cronologia();
+  await ctx.page.click("#narrative-loader-dismiss");
+  await ctx.waitFor(
+    "«Cerrar» retira el muro",
+    () => (!document.getElementById("narrative-loader")?.classList.contains("visible") ? { fuera: true } : null),
+    10_000,
+  );
+  // Se ESPERA al `pointerlockchange`, no se lee en el acto: la clase del muro se
+  // quita síncrona y el evento del lock llega después (el mismo cuidado que el
+  // bloque 3 con el click del mundo).
+  await ctx.expectEspera(
+    "cerrar el muro DEVUELVE el ratón que soltó (#503): soltar y devolver son las dos mitades de un acto",
+    true,
+    () =>
+      document.pointerLockElement !== null &&
+      window.__g83.lock.length === 1 &&
+      window.__g83.lock[0] === true
+        ? true
+        : null,
+    { ms: 15_000 },
+  );
+  await cronologia();
   const errores = await ctx.page.evaluate(() =>
     Array.from(document.querySelectorAll("#error-log > div")).map((n) => (n.textContent ?? "").replace(/\s+/g, " ").trim()),
   );

@@ -19,7 +19,15 @@ export type GraphicsFacet = "scenes" | "characters";
 
 export interface GraphicsModeState {
   scenesOn: boolean;
+  /** El MODO de personajes de la partida, que es lo que el panel ofrece
+   *  cambiar. NO es lo que se está generando: ver `charsSuspendidos`. */
   charsOn: boolean;
+  /** El cortacircuitos de #236 tiene los skins apagados: el modo dice «imagen»
+   *  y no se genera ni uno (#510). Va aparte de `charsOn` a propósito — el
+   *  botón activo del panel tiene que seguir siendo el modo REAL de la partida,
+   *  porque el gesto de rearme es apagar Personajes y volver a encenderlo (lo
+   *  canda el guion 51) y con el botón ya en «maqueta» ese gesto no existe. */
+  charsSuspendidos: boolean;
   /** false = backend de skins apagado por config (graphics.ai_skin). */
   charsAvailable: boolean;
   hasSession: boolean;
@@ -36,6 +44,13 @@ const ARM_TTL_MS = 5000;
 
 const CHARS_OFF_REASON =
   "Backend de skins apagado por config: activa graphics.ai_skin en nefan-core/src/config.ts";
+
+/** Lo que se le dice al jugador cuando el modo es «imagen» y el cortacircuitos
+ *  de #236 ha apagado la generación: qué pasa y CÓMO se sale (#510). El gesto
+ *  que lo rearma es el OFF→ON de esta misma fila (`aplicar` en
+ *  `ui/modos-de-graficos.ts`), que es el que mide el bloque 4 del guion 51. */
+const CHARS_SUSPENDIDOS =
+  "(suspendidos: demasiados fallos del servicio — apaga y enciende Personajes para reintentar)";
 
 interface FacetSpec {
   facet: GraphicsFacet;
@@ -63,6 +78,9 @@ export class GraphicsModeChip {
   private chip: HTMLButtonElement;
   private panel: HTMLElement;
   private note: HTMLElement;
+  /** El aviso de que el cortacircuitos tiene la generación de skins apagada
+   *  (#510): el panel es donde el jugador viene a mirar qué se está gastando. */
+  private suspension: HTMLElement;
   private buttons = new Map<string, HTMLButtonElement>(); // "facet:mode"
   /** Facetas armadas (primer click de encendido) → timestamp del click. */
   private armed = new Map<GraphicsFacet, number>();
@@ -80,6 +98,10 @@ export class GraphicsModeChip {
     for (const spec of FACETS) {
       this.panel.append(this.buildRow(spec));
     }
+    this.suspension = document.createElement("div");
+    this.suspension.className = "gfx-note gfx-suspension";
+    this.suspension.hidden = true;
+    this.panel.append(this.suspension);
     this.chip.addEventListener("click", () => (this.isOpen ? this.close() : this.open()));
     // Click fuera del chip/panel = cerrar (comportamiento de popover).
     document.addEventListener("pointerdown", (ev) => {
@@ -126,8 +148,14 @@ export class GraphicsModeChip {
 
   private renderChip(st: GraphicsModeState): void {
     this.chip.hidden = this.hiddenByTitle;
+    // EL CHIP ENSEÑA LO QUE SE GENERA, NO LO QUE DICE EL SAVE (#510). Con el
+    // cortacircuitos saltado el modo sigue siendo «imagen» —y el panel tiene
+    // que seguir ofreciéndolo así, ver `charsSuspendidos`— pero no se genera un
+    // solo skin, y el chip decía «🎨 Imagen IA» con el registro diciendo lo
+    // contrario dos líneas más abajo.
+    const charsGenerando = st.charsOn && !st.charsSuspendidos;
     let text: string;
-    if (st.scenesOn === st.charsOn) {
+    if (st.scenesOn === charsGenerando) {
       const mode = st.scenesOn ? "image" : "vector";
       text = `${RENDER_MODE_ICONS[mode]} ${RENDER_MODE_LABELS[mode]}`;
     } else {
@@ -136,9 +164,12 @@ export class GraphicsModeChip {
     this.chip.textContent = text;
     const sc = st.scenesOn ? "image" : "vector";
     const ch = st.charsOn ? "image" : "vector";
+    // El aviso solo tiene sentido si el MODO pide skins: con personajes en
+    // maqueta, «suspendidos» sobra —no se generaría ninguno de todas formas—.
+    const suspension = st.charsOn && st.charsSuspendidos ? ` ${CHARS_SUSPENDIDOS}` : "";
     this.chip.title =
       `Gráficos de la partida — escenarios: ${RENDER_MODE_LABELS[sc]} · ` +
-      `personajes: ${CHAR_MODE_LABELS[ch]}. Click para cambiar.`;
+      `personajes: ${CHAR_MODE_LABELS[ch]}${suspension}. Click para cambiar.`;
   }
 
   private renderPanel(st: GraphicsModeState): void {
@@ -146,6 +177,9 @@ export class GraphicsModeChip {
     this.note.textContent = st.hasSession
       ? "El cambio se aplica en vivo y se guarda en la partida."
       : "Sin partida (modo fixtures): el modo se recuerda en este navegador.";
+    const suspendido = st.charsOn && st.charsSuspendidos;
+    this.suspension.hidden = !suspendido;
+    this.suspension.textContent = suspendido ? `Personajes ${CHARS_SUSPENDIDOS}` : "";
     for (const spec of FACETS) {
       const on = spec.facet === "scenes" ? st.scenesOn : st.charsOn;
       const active = on ? "image" : "vector";

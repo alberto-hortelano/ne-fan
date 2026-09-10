@@ -28,6 +28,24 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
   Retocar una paleta y reanudar basta para verla. Sin estilo (fixtures,
   offline) rige el tema base. `test/ui-theme.test.ts` mide el contraste WCAG
   de los cinco temas shipped: un tema ilegible rompe el test.
+- **Las capas están decididas, no heredadas del orden del DOM** (#483):
+  `#app-shell > canvas` (el mundo) va en `z-index: 0` y `#game-ui` en `1`,
+  porque `FpsRenderer` inserta su lienzo DESPUÉS de la capa de UI y con los dos
+  en `auto` ganaba el mundo. Lo de DEV vive fuera de `#app-shell` y por encima
+  (`#error-log` 8900, `#dev-status` 10000). Dentro de `#game-ui` mandan las
+  bandas `--z-*`, y la mirilla lleva la suya (`--z-hud`) en vez de depender de
+  quién sea su hermano. Lo canda el guion 103 con `elementFromPoint`: los
+  guiones que leen `data-target` daban verde con el punto tapado.
+- **La vida se lee `vida / máximo`** (#527): la barra pinta el PORCENTAJE y el
+  número de al lado la vida ABSOLUTA, así que con un máximo distinto de 100 —el
+  día que un plugin lo dé— «100» con la barra a dos tercios no dice nada. El
+  número vivo es `#player-hp-text` y el denominador `#player-hp-max`, apagado:
+  dos nodos para que el primero siga siendo UN número. Guion 89.
+- **El registro de partida cabe entero**: cuántas líneas se conservan y cuánto
+  alto tiene la caja son el mismo número (`LINEAS_DEL_REGISTRO` en
+  `ui/registro-de-la-partida.ts`, que escribe `--nf-log-lineas`). Estaban en dos
+  ficheros y no coincidían: 8 líneas de tope contra 6,67 de caja, y la última
+  salía partida por la mitad en cualquier resolución (#506). Guion 104.
 - **Toda acción es tecla Y botón** (`ui/action-bar.ts`): hablar, atacar,
   elegir ataque, confirmar Y/N, viajar, reaparecer y las opciones de
   diálogo. El click entra por el MISMO camino que la tecla — el
@@ -35,7 +53,10 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
   lógica duplicada en el cliente; la barra de ataques la pinta
   `ui/hud-de-combate.ts` desde el catálogo del sistema de combate de la
   sesión. Con el ratón capturado los botones se
-  degradan a recordatorio de teclas (ningún botón HTML recibiría el click).
+  degradan a recordatorio de teclas (ningún botón HTML recibiría el click) —
+  **menos el activo, que no se atenúa** (#506): lo único que marca el ataque
+  elegido es su borde de acento, y atenuarlo con los demás lo dejaba en lo
+  menos legible de la barra justo cuando se pelea. Guion 84.
 - **Diálogo con retrato** (`ui/portrait.ts`): el panel muestra al personaje
   con el que se habla. Por orden: el **hero-shot que el pipeline de skins ya
   pagó** (1024², servido por el asset-store en `/cache/sprite_hero/{key}`,
@@ -44,6 +65,21 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
   casa por NOMBRE contra las entidades en el bridge
   (`src/narrative/speaker-resolve.ts`) y viaja en el efecto `show_dialogue`
   como `speakerId`/`speakerSkinPrompt`: el contrato del modelo NO cambia.
+- **Quien tapa la pantalla con algo pulsable SUELTA el ratón, y lo devuelve al
+  quitarlo.** Son las dos mitades de un acto (#311/#323) y valen para los dos
+  que existen: la conversación (`ui/conversacion.ts`, que apunta si lo tenía en
+  la TRANSICIÓN cerrado→abierto y no en cada línea — el motor puede mandar dos
+  `dialogue` seguidas, #502) y el muro de fallo (`ui/muro-de-carga.ts`, solo
+  cuando pinta botones: el muro de espera no tiene ninguno, #503). Se devuelve
+  solo si lo soltamos nosotros, y en el muro solo por su botón «Cerrar»: los
+  demás caminos que lo quitan (el título, «Volver al título», un aviso
+  resuelto) no llevan al jugador de vuelta al mundo. Guion 83.
+- **El chip de gráficos enseña lo que se GENERA, no lo que dice el save**
+  (#510): con el cortacircuitos de #236 saltado el modo sigue siendo «imagen» y
+  no sale un skin, así que el chip lo dice y el panel explica cómo rearmarlo. El
+  botón activo del panel sigue siendo el modo real — el rearme ES apagar y
+  encender Personajes (guion 51). Y un gesto escribe UNA línea «Gráficos: …»: el
+  bridge difunde `render_mode_changed` también al que lo pidió.
 - La UI de **desarrollo** (barra `#dev-status`, menú de imágenes,
   `#error-log`) vive FUERA de `#game-ui` y no se tematiza nunca: el tema de
   un pack subido por un jugador no puede tocar el panel del gasto.
