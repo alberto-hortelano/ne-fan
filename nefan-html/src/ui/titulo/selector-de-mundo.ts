@@ -135,6 +135,12 @@ export async function pintarSelectorDeMundo(
   // — la lista de mundos scrollea DENTRO de su columna si hace falta. Las
   // demás pantallas restauran el ancho de una columna.
   deps.content.style.maxWidth = "1100px";
+  // EL TOPE DE LA LISTA DE MUNDOS sale de `base.css` y no de un número aquí
+  // (#553): era `calc(100vh - 220px)`, y esos 220 px se quedaban 65 cortos —a
+  // 1440×900 la columna pedía 725 de los 708 que hay y «Continuar →» quedaba
+  // cortado 17 px de sus 39—. La variable `--ts-fuera-de-la-lista` es la suma
+  // de lo que NO es la lista, derivada del mismo sitio donde vive el padding
+  // del overlay, así que retocar la barra de dev no vuelve a descuadrarla.
   // Botón de opción compacto (misma estética, menos padding vertical).
   const OPT = `${BTN_SECONDARY_CSS};flex:1;text-align:left;padding:7px 10px`;
   deps.content.innerHTML = `
@@ -143,7 +149,7 @@ export async function pintarSelectorDeMundo(
       <p style="color:#888;font-size:12px">La historia la improvisa el motor narrativo dentro del mundo que elijas.</p>
     </div>
     <div id="ts-columns" style="display:grid;grid-template-columns:minmax(340px,1.15fr) minmax(330px,1fr);gap:20px;align-items:start;margin-bottom:14px">
-      <div id="ts-worlds" style="display:flex;flex-direction:column;gap:8px;overflow-y:auto;max-height:calc(100vh - 220px);min-height:120px;padding-right:4px"></div>
+      <div id="ts-worlds" style="display:flex;flex-direction:column;gap:8px;overflow-y:auto;max-height:calc(100vh - var(--ts-fuera-de-la-lista));min-height:120px;padding-right:4px"></div>
       <div style="min-width:0;display:flex;flex-direction:column;gap:12px">
         <label style="display:block">
           <div style="font-size:12px;color:#999;margin-bottom:4px">Estilo visual</div>

@@ -95,18 +95,29 @@ def validar_subida(body: StyleUploadRequest) -> tuple[list[str], list[str]]:
     Lo que NO está aquí, porque exige los BYTES y solo puede mirarlo este
     proceso: que el base64 decodifique, que pese menos de 12 MB y que PIL sepa
     abrir la imagen."""
-    if not _LIMITES["nombre"]["min"] <= len(body.name.strip()) <= _LIMITES["nombre"]["max"]:
-        raise HTTPException(status_code=422, detail=_motivo("nombre"))
+    # UN LÍMITE, UNA FRASE (#536): el mínimo y el máximo de nombre, etiquetas e
+    # imágenes tienen motivo propio, así que quien sube trece imágenes lee
+    # «Demasiadas imágenes» y no «Sube al menos una imagen (máximo 12)». El
+    # orden de las ramas es el del `superRefine` del zod, para que un cuerpo con
+    # un solo fallo dé el MISMO motivo en los dos procesos.
+    if len(body.name.strip()) < _LIMITES["nombre"]["min"]:
+        raise HTTPException(status_code=422, detail=_motivo("nombre_corto"))
+    if len(body.name.strip()) > _LIMITES["nombre"]["max"]:
+        raise HTTPException(status_code=422, detail=_motivo("nombre_largo"))
     if len(body.description.strip()) > _LIMITES["descripcion_del_pack_max"]:
         raise HTTPException(status_code=422, detail=_motivo("descripcion_del_pack"))
     if len(body.style_token.strip()) > _LIMITES["style_token_max"]:
         raise HTTPException(status_code=422, detail=_motivo("style_token"))
 
     tags = [t.strip() for t in body.tags if t.strip()]
-    if not _LIMITES["tags"]["min"] <= len(tags) <= _LIMITES["tags"]["max"]:
-        raise HTTPException(status_code=422, detail=_motivo("tags"))
-    if not _LIMITES["imagenes"]["min"] <= len(body.images) <= _LIMITES["imagenes"]["max"]:
-        raise HTTPException(status_code=422, detail=_motivo("imagenes"))
+    if len(tags) < _LIMITES["tags"]["min"]:
+        raise HTTPException(status_code=422, detail=_motivo("sin_etiquetas"))
+    if len(tags) > _LIMITES["tags"]["max"]:
+        raise HTTPException(status_code=422, detail=_motivo("demasiadas_etiquetas"))
+    if len(body.images) < _LIMITES["imagenes"]["min"]:
+        raise HTTPException(status_code=422, detail=_motivo("sin_imagenes"))
+    if len(body.images) > _LIMITES["imagenes"]["max"]:
+        raise HTTPException(status_code=422, detail=_motivo("demasiadas_imagenes"))
     if len([i for i in body.images if i.folder == LAMINA]) > _LIMITES["laminas_max"]:
         raise HTTPException(status_code=422, detail=_motivo("mas_de_una_lamina"))
 

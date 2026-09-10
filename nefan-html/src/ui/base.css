@@ -53,6 +53,30 @@ body {
      para él. Escrito en los dos sitios, el día que cambie la tipografía el
      botón crece y la reserva no — que es la forma exacta del bug de #310. */
   --ts-close-alto: 26px;
+  /* EL HUECO SUPERIOR DEL TÍTULO, en UN solo sitio. Lo usa el `padding` de
+     `#title-screen` (abajo) y lo necesita el selector de mundos para saber
+     cuánta ventana le queda a su lista (#553): escrito dos veces, el día que
+     alguien retoque la barra de dev una de las dos se queda atrás y la lista
+     vuelve a comerse la fila de botones. Es la misma expresión que había
+     inline en el `padding`, sin cambiar un valor. */
+  --ts-hueco-superior: max(
+    calc(var(--dev-status-alto) + var(--ts-close-alto) + 18px),
+    min(160px, 20vh)
+  );
+  /* TODO LO QUE NO ES LA LISTA DE MUNDOS dentro de la ventana, para que la
+     lista sepa cuánto puede crecer sin cortar nada (#553): el hueco superior,
+     el encabezado del selector (30 px de `h1` + 10 de margen) y su fila de
+     acciones (14 de margen + 39 de botón), más el padding inferior del
+     overlay. Los 93 px están MEDIDOS a 1440×900 el 2026-09-10, con el bug
+     delante: `#ts-worlds` se paraba en su tope de `100vh - 220px` = 680, la
+     columna pedía 725 px de los 708 que hay, y «Continuar →» quedaba cortado
+     17 px de sus 39 (44 %) contra el borde de un `overflow-y:auto`.
+
+     Lo que NO cubre, dicho porque el aviso de corte sí lo cubre: si el
+     encabezado envuelve a dos líneas (ventanas estrechas) la cuenta se queda
+     corta otra vez. Entonces la banda `#ts-mas` lo dice, que es el mecanismo
+     que #553 extendió a esta pantalla. */
+  --ts-fuera-de-la-lista: calc(var(--ts-hueco-superior) + 93px + 32px);
 }
 
 /* EL HUECO QUE EL TÍTULO LE RESERVA A LA BARRA, derivado de la misma variable
@@ -71,11 +95,7 @@ body {
    guion 33 lo dice. Un respaldo silencioso sería el tercer sitio donde vive
    el número. */
 #title-screen {
-  padding: max(
-      calc(var(--dev-status-alto) + var(--ts-close-alto) + 18px),
-      min(160px, 20vh)
-    )
-    32px 32px;
+  padding: var(--ts-hueco-superior) 32px 32px;
 }
 
 /* EL BOTÓN DE CERRAR, dentro del MISMO mecanismo derivado (#310).

@@ -130,25 +130,25 @@ describe("validarSubidaDeEstilo · lo que NO pasa, con su motivo", () => {
     [
       "sin nombre",
       subida({ name: "" }),
-      MOTIVOS_DE_SUBIDA.nombre,
+      MOTIVOS_DE_SUBIDA.nombre_corto,
       null,
     ],
     [
       "nombre de 1 carácter (el mínimo es 2)",
       subida({ name: "a" }),
-      MOTIVOS_DE_SUBIDA.nombre,
+      MOTIVOS_DE_SUBIDA.nombre_corto,
       null,
     ],
     [
       "nombre de solo espacios (el recorte es parte de la regla)",
       subida({ name: "        " }),
-      MOTIVOS_DE_SUBIDA.nombre,
+      MOTIVOS_DE_SUBIDA.nombre_corto,
       null,
     ],
     [
-      "nombre de 61 caracteres",
+      "nombre de 61 caracteres (el máximo, con SU frase y no la del mínimo — #536)",
       subida({ name: largo(REGLAS_DE_SUBIDA.nombre.max + 1) }),
-      MOTIVOS_DE_SUBIDA.nombre,
+      MOTIVOS_DE_SUBIDA.nombre_largo,
       null,
     ],
     [
@@ -163,24 +163,24 @@ describe("validarSubidaDeEstilo · lo que NO pasa, con su motivo", () => {
       MOTIVOS_DE_SUBIDA.style_token,
       null,
     ],
-    ["sin etiquetas", subida({ tags: [] }), MOTIVOS_DE_SUBIDA.tags, null],
+    ["sin etiquetas", subida({ tags: [] }), MOTIVOS_DE_SUBIDA.sin_etiquetas, null],
     [
       "etiquetas que son solo espacios",
       subida({ tags: ["  ", ""] }),
-      MOTIVOS_DE_SUBIDA.tags,
+      MOTIVOS_DE_SUBIDA.sin_etiquetas,
       null,
     ],
     [
-      "nueve etiquetas (el máximo es 8)",
+      "nueve etiquetas (el máximo es 8): NO se le dice «elige al menos una» — #536",
       subida({ tags: ["a", "b", "c", "d", "e", "f", "g", "h", "i"] }),
-      MOTIVOS_DE_SUBIDA.tags,
+      MOTIVOS_DE_SUBIDA.demasiadas_etiquetas,
       null,
     ],
-    ["sin imágenes", subida({ images: [] }), MOTIVOS_DE_SUBIDA.imagenes, null],
+    ["sin imágenes", subida({ images: [] }), MOTIVOS_DE_SUBIDA.sin_imagenes, null],
     [
-      "trece imágenes (el máximo es 12)",
+      "trece imágenes (el máximo es 12): el caso literal de #536",
       subida({ images: Array.from({ length: 13 }, () => cara()) }),
-      MOTIVOS_DE_SUBIDA.imagenes,
+      MOTIVOS_DE_SUBIDA.demasiadas_imagenes,
       null,
     ],
     [
@@ -269,7 +269,66 @@ describe("validarSubidaDeEstilo · lo que NO pasa, con su motivo", () => {
     // texto en los dos procesos, y un cuerpo con dos dé uno de ellos y no un
     // tercero inventado.
     const res = validarSubidaDeEstilo(subida({ name: "", tags: [], images: [] }));
-    assert.equal(res.ok === false && res.error, MOTIVOS_DE_SUBIDA.nombre);
+    assert.equal(res.ok === false && res.error, MOTIVOS_DE_SUBIDA.nombre_corto);
+  });
+});
+
+/** LOS MOTIVOS COMO TEXTO DE PRODUCTO (#536), recorridos uno a uno.
+ *
+ *  Los casos de arriba comprueban QUÉ motivo sale para cada cuerpo malo; esto
+ *  comprueba cómo está ESCRITO cada uno, que es lo que lee el jugador y lo que
+ *  Python devuelve como `detail` del 422. Recorre el objeto entero a propósito:
+ *  un motivo nuevo entra bajo estas reglas sin que nadie tenga que acordarse de
+ *  añadirlo aquí, que es lo contrario de la tabla de arriba.
+ *
+ *  Probado en NEGATIVO al escribirlo, cada sonda revertida (2026-09-10):
+ *  devolver `demasiadas_imagenes` a «Sube al menos una imagen (máximo 12).»
+ *  pone rojo el del límite doble; quitarle el punto final a `id_invalido` pone
+ *  rojo el de la frase completa; devolver `imagen_vacia` a «{ref} no trae
+ *  ninguna imagen.» pone rojo el del hueco — y NO el de la mayúscula, que es
+ *  justo por lo que son DOS asertos y no uno: `"{".toLocaleUpperCase()` es `"{"`,
+ *  así que una frase que abre con el hueco pasa la prueba de la mayúscula
+ *  mientras el jugador lee una minúscula. Medido, no supuesto. */
+describe("MOTIVOS_DE_SUBIDA · lo que lee el jugador", () => {
+  const motivos = Object.entries(MOTIVOS_DE_SUBIDA) as Array<[string, string]>;
+
+  it("hay motivos que recorrer (si no, los tres asertos de abajo no miran nada)", () => {
+    assert.ok(motivos.length >= 10, `solo ${motivos.length} motivos`);
+  });
+
+  for (const [clave, texto] of motivos) {
+    it(`«${clave}» es una frase completa, en mayúscula y con un solo límite`, () => {
+      // 1 · MAYÚSCULA INICIAL. El caso que lo motiva no es un descuido de
+      // estilo: dos motivos empezaban por `{ref}`, que se sustituye por un id
+      // («torre») o por «la imagen 3», así que la frase que leía el jugador
+      // arrancaba SIEMPRE en minúscula y no había forma de arreglarla desde el
+      // emisor. Se mira la plantilla, que es donde vive la decisión.
+      const primera = texto[0];
+      assert.equal(
+        primera,
+        primera.toLocaleUpperCase("es-ES"),
+        `«${texto}» empieza en minúscula (¿arranca con {ref}?)`,
+      );
+      // 2 · FRASE COMPLETA: termina en punto. Barato, y es lo que separa un
+      // motivo de una etiqueta de log.
+      assert.ok(texto.endsWith("."), `«${texto}» no termina en punto`);
+      // 3 · UN LÍMITE, UNA FRASE. Con trece imágenes se leía «Sube al menos una
+      // imagen (máximo 12)»: la orden ya cumplida y el número que la
+      // contradice, juntos. Un motivo que dice «al menos» no puede decir además
+      // «máximo» ni «como mucho».
+      const pideMinimo = /\bal menos\b/i.test(texto);
+      const declaraMaximo = /\bm[áa]ximo\b|\bcomo mucho\b|no puede pasar de/i.test(texto);
+      assert.ok(
+        !(pideMinimo && declaraMaximo),
+        `«${texto}» mezcla el mínimo y el máximo en la misma frase (#536)`,
+      );
+    });
+  }
+
+  it("el hueco {ref} nunca abre la frase: cae dentro, donde la minúscula es correcta", () => {
+    for (const [clave, texto] of motivos) {
+      assert.ok(!texto.startsWith("{ref}"), `«${clave}» abre con {ref}: ${texto}`);
+    }
   });
 });
 

@@ -27,17 +27,20 @@
     "ref_id_max": 60
   },
   "motivos": {
-    "nombre": "Ponle un nombre al estilo (entre 2 y 60 caracteres).",
+    "nombre_corto": "Ponle un nombre al estilo: al menos 2 caracteres.",
+    "nombre_largo": "El nombre del estilo no puede pasar de 60 caracteres.",
     "descripcion_del_pack": "La descripción del estilo no puede pasar de 500 caracteres.",
     "style_token": "El style_token no puede pasar de 300 caracteres.",
-    "tags": "Elige al menos una etiqueta temática (máximo 8).",
-    "imagenes": "Sube al menos una imagen (máximo 12).",
+    "sin_etiquetas": "Elige al menos una etiqueta temática: es lo que casa el estilo con los mundos que puede vestir.",
+    "demasiadas_etiquetas": "Demasiadas etiquetas temáticas: un estilo admite como mucho 8.",
+    "sin_imagenes": "Sube al menos una imagen de referencia.",
+    "demasiadas_imagenes": "Demasiadas imágenes: un pack admite como mucho 12.",
     "mas_de_una_lamina": "Más de una lámina de materiales: surfaces/ admite exactamente una imagen.",
     "carpeta": "Carpeta desconocida en {ref}: cada imagen del pack va en surfaces/, faces/, characters/.",
-    "imagen_vacia": "{ref} no trae ninguna imagen.",
+    "imagen_vacia": "No llegó ningún fichero de imagen para {ref}.",
     "descripcion_de_imagen": "La descripción de {ref} no puede pasar de 300 caracteres.",
-    "sin_descripcion": "{ref} necesita una descripción: solo la lámina de materiales puede ir sin ella.",
-    "id_invalido": "Id inválido: {ref}",
-    "id_duplicado": "Id duplicado: {ref}"
+    "sin_descripcion": "Falta la descripción de {ref}: solo la lámina de materiales puede ir sin ella.",
+    "id_invalido": "Id inválido: {ref}.",
+    "id_duplicado": "Id duplicado: {ref}."
   }
 }

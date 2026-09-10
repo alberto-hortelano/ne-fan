@@ -21,6 +21,7 @@ import {
   type StyleRefFolder,
 } from "@nefan-core/src/games/style-refs.js";
 import { paso } from "../async-ui.js";
+import { errors } from "../error-log.js";
 import {
   AI_SERVER_HTTP,
   BTN_PRIMARY_CSS,
@@ -36,12 +37,59 @@ import {
  *  es de aquí, es presentación). Las carpetas NO se declaran aquí: son las
  *  claves de `StyleRefFolder` (`STYLE_REF_FOLDERS` en core, PR 7 de #241), así
  *  que una carpeta nueva allí no compila hasta que se le ponga rótulo, y una
- *  inventada tampoco. */
+ *  inventada tampoco.
+ *
+ *  EL RÓTULO CORTO Y LA EXPLICACIÓN APARTE (#548): la fila es
+ *  `auto 1fr auto` y el `<select>` va a `width:auto`, así que su opción más
+ *  larga decidía el ancho de la fila entera —«Lámina de materiales (rejilla de
+ *  muestras planas)», 48 caracteres— y dejaba a la DESCRIPCIÓN, que es el campo
+ *  donde va el texto más largo de la pantalla, con lo que sobraba. Los rótulos
+ *  se quedan en el nombre del rol y lo que explicaba el paréntesis va al
+ *  `title` de cada opción, que es donde se lee cuando hace falta. Los `value`
+ *  no cambian: son los ids del rol y es lo que viaja al servidor (y lo que
+ *  afirma el guion 12). */
 const ROTULO_DE_CARPETA: Record<StyleRefFolder, string> = {
-  faces: "Cara del mundo (fachada, portón, muro…)",
-  surfaces: "Lámina de materiales (rejilla de muestras planas)",
-  characters: "Personaje (model sheet)",
+  faces: "Cara del mundo",
+  surfaces: "Lámina de materiales",
+  characters: "Personaje",
 };
+const AYUDA_DE_CARPETA: Record<StyleRefFolder, string> = {
+  faces: "Una cara del mundo: fachada, portón, muro…",
+  surfaces: "La lámina de materiales: una rejilla de muestras planas (un pack lleva exactamente una)",
+  characters: "Un model sheet de personaje",
+};
+
+/** EL MOTIVO QUE LEE EL JUGADOR CUANDO EL SERVIDOR RECHAZA (#536).
+ *
+ *  ai_server contesta 422 con `{"detail": "…"}`, y ese `detail` es el MISMO
+ *  texto que comprueba `validarSubidaDeEstilo` antes de subir (los dos salen
+ *  del snapshot de core). Hasta el 2026-09-10 el título pintaba el envoltorio:
+ *  «Subida fallida: HTTP 422: {"detail":"Id duplicado: torre."}» — jerga del
+ *  transporte y JSON crudo delante de una frase que ya estaba escrita para él.
+ *
+ *  Si el cuerpo no es ese JSON (un 500 con una traza, un proxy por medio) no se
+ *  inventa un motivo: al jugador se le dice que el servidor rechazó sin decir
+ *  por qué, con el código para que sirva de algo, y el CRUDO se va al registro
+ *  —que es donde se busca después— en vez de a la pantalla. Un servidor que
+ *  contesta algo que no es su contrato es un hecho que alguien tiene que poder
+ *  ver, y no es el jugador quien lo va a arreglar. */
+async function motivoDelRechazo(res: Response, que: string): Promise<Error> {
+  const cuerpo = await res.text();
+  let detail: unknown;
+  try {
+    detail = (JSON.parse(cuerpo) as { detail?: unknown }).detail;
+  } catch (err) {
+    errors.push(
+      "title",
+      `el ai_server contestó al ${que} algo que no es JSON (HTTP ${res.status}): ${cuerpo.slice(0, 200)}`,
+      err,
+    );
+  }
+  if (typeof detail === "string" && detail.length > 0) return new Error(detail);
+  return new Error(
+    `El servidor del juego rechazó la petición y no dijo por qué (HTTP ${res.status}).`,
+  );
+}
 
 export interface DepsDeSubirEstilo {
   /** La columna del título, que esta pantalla reescribe entera. */
@@ -65,7 +113,7 @@ export function pintarSubirEstilo(deps: DepsDeSubirEstilo): void {
       <input data-desc type="text" placeholder="qué muestra (ej: catedral gótica al atardecer)" style="${INPUT_CSS}">
       <select data-folder style="${SELECT_CSS};width:auto">
         ${(Object.entries(ROTULO_DE_CARPETA) as Array<[StyleRefFolder, string]>)
-          .map(([id, label]) => `<option value="${id}">${label}</option>`)
+          .map(([id, label]) => `<option value="${id}" title="${escapeHtml(AYUDA_DE_CARPETA[id])}">${label}</option>`)
           .join("")}
       </select>
     </div>`;
@@ -176,7 +224,7 @@ export function pintarSubirEstilo(deps: DepsDeSubirEstilo): void {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(comprobado.subida),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      if (!res.ok) throw await motivoDelRechazo(res, "subir el estilo");
       const data = (await res.json()) as StyleUploadResponse;
       pendingStyleId = data.style_id;
       if (data.missing.length === 0) {
@@ -208,7 +256,7 @@ export function pintarSubirEstilo(deps: DepsDeSubirEstilo): void {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirm: true }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      if (!res.ok) throw await motivoDelRechazo(res, "generar las refs que faltan");
       const data = (await res.json()) as StyleCompleteResponse;
       statusEl.innerHTML = `<span style="color:#4a4">Generadas ${data.generated.length} imágenes ($${data.cost_usd.toFixed(2)}).</span>`;
       await ir({ a: "selector" });

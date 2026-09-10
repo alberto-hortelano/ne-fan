@@ -11,7 +11,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { eleccionDeEstilo } from "../src/session/eleccion-de-estilo.js";
+import {
+  avisoDeEstiloDeOtroTema,
+  eleccionDeEstilo,
+} from "../src/session/eleccion-de-estilo.js";
 
 interface Estilo {
   style_id: string;
@@ -123,5 +126,53 @@ describe("eleccionDeEstilo", () => {
     const original = [...TODOS];
     eleccionDeEstilo(TODOS, { style_id: "acero_neon", tags: ["medieval"] });
     assert.deepEqual(TODOS, original);
+  });
+});
+
+/** EL AVISO QUE LEE EL JUGADOR cuando su partida arranca con un estilo de otro
+ *  tema (#537). Es texto de producto y por eso se prueba por HECHOS y no
+ *  comparándolo con una copia de sí mismo: una aserción contra el literal
+ *  entero se actualiza sola con cualquier retoque y deja de decir nada.
+ *
+ *  Los cuatro hechos son los que el aviso tiene que llevar para servir de algo:
+ *  QUÉ estilo, QUÉ mundo, que la partida se juega igual (o sea: esto no es un
+ *  fallo) y QUÉ puede hacer si no le gusta. Cada uno mata su trozo de la
+ *  plantilla — medido: sin ellos la mutación de este módulo bajaba de 100 % a
+ *  84 % con los cuatro literales vivos. */
+describe("avisoDeEstiloDeOtroTema", () => {
+  const aviso = avisoDeEstiloDeOtroTema({ estilo: "Acero y neón", mundo: "Miravanda" });
+
+  it("nombra los DOS, y por su nombre de pantalla: el estilo y el mundo", () => {
+    assert.match(aviso, /«Acero y neón»/);
+    assert.match(aviso, /«Miravanda»/);
+  });
+
+  it("dice QUÉ pasa: que el estilo es de otro tema y que el arte no va a pegar", () => {
+    assert.match(aviso, /estilo de otro tema/);
+    assert.match(aviso, /no va a pegar/);
+  });
+
+  it("dice que NO es un fallo: la partida se juega igual", () => {
+    // Sin esto, el jugador lee un aviso sobre la pantalla donde acaba de pulsar
+    // «Comenzar» y no puede saber si la partida arrancó o no.
+    assert.match(aviso, /funciona igual/);
+  });
+
+  it("y dice qué HACER, con el sitio exacto donde se hace", () => {
+    // La mitad accionable (#469/#479): un aviso que solo describe deja al
+    // jugador con la queja y sin la salida.
+    assert.match(aviso, /selector de mundos/);
+    assert.match(aviso, /antes de empezar/);
+  });
+
+  it("NO lleva la causa cruda: los tags y los ids se quedan en el servidor", () => {
+    const conIds = avisoDeEstiloDeOtroTema({ estilo: "Acero y neón", mundo: "Miravanda" });
+    assert.ok(!/tags/i.test(conIds), conIds);
+    assert.ok(!/style_id|game_id/i.test(conIds), conIds);
+  });
+
+  it("es UNA frase de producto: empieza en mayúscula y termina en punto", () => {
+    assert.match(aviso, /^[A-ZÁÉÍÓÚÑ]/);
+    assert.ok(aviso.endsWith("."), aviso);
   });
 });

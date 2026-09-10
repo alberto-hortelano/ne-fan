@@ -235,6 +235,49 @@ export default async function (ctx) {
     );
     ctx.log(`partida ${enMarcha.sessionId} · estilo ${enMarcha.styleId}`);
 
+    // …Y EL JUGADOR SE ENTERA (#537). La política —el estilo del mundo manda
+    // aunque no case— no se revisa aquí; lo que se afirma es su CONSECUENCIA
+    // visible. Hasta el 2026-09-10 este hecho existía solo en el `console.warn`
+    // del bridge: la marca «(del mundo · otro tema)» del desplegable
+    // desaparecía al entrar y ya no había forma de saber por qué el arte no
+    // pega con el mundo. Ahora el bridge lo manda en la respuesta del arranque
+    // y el cliente lo apunta en el REGISTRO y lo dice en la LÍNEA DEL JUEGO.
+    const dicho = await ctx.waitFor(
+      "el registro del jugador recoge el aviso del estilo de otro tema",
+      () => {
+        const reg = document.getElementById("error-log")?.textContent ?? "";
+        const linea = document.getElementById("combat-log")?.textContent ?? "";
+        return /otro tema/i.test(reg) ? { reg: reg.trim(), linea: linea.trim() } : null;
+      },
+      30_000,
+    );
+    ctx.log(`registro: ${dicho.reg.slice(-260)}`);
+    const estiloCruzado = dicho.reg.slice(dicho.reg.indexOf("Esta partida usa"));
+    ctx.expect(
+      "B · el aviso nombra el estilo y el mundo, y dice qué se puede hacer (#537)",
+      /un estilo de otro tema/.test(estiloCruzado) &&
+        estiloCruzado.includes(FABRICADOS.fab_otro_tema.title) &&
+        /selector de mundos/.test(estiloCruzado),
+      estiloCruzado.slice(0, 260) || "(el registro no lo dice)",
+    );
+    ctx.expect(
+      "B · …sin la causa cruda: las listas de tags se quedan en el servidor",
+      !/tags:|style_id|acero_neon/.test(estiloCruzado),
+      estiloCruzado.slice(0, 260),
+    );
+    ctx.expect(
+      "B · …UNA sola vez, no una por turno",
+      (dicho.reg.match(/un estilo de otro tema/g) ?? []).length === 1,
+      `${(dicho.reg.match(/un estilo de otro tema/g) ?? []).length} apariciones en el registro`,
+    );
+    // NO se afirma la línea del juego, y se dice por qué: el registro de la
+    // partida conserva ocho líneas y este aviso llega antes que las cinco del
+    // arranque, así que sale por abajo antes de que nadie lo lea. Medido aquí
+    // mismo al escribir el guion; por eso el cliente lo manda al registro y no
+    // a esa línea.
+    ctx.log(`línea del juego (no se afirma, ver arriba): ${dicho.linea.slice(0, 120)}`);
+    await ctx.shot("aviso-de-estilo-de-otro-tema");
+
     // ── C · el mundo sin `style_id` cae al primero compatible ─────────────
     await ctx.page.reload({ waitUntil: "domcontentloaded" });
     await esperarTituloListo(ctx);

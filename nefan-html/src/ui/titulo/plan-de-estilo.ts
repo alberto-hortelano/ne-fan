@@ -16,6 +16,7 @@
  *  Y por ese mismo candado, volver al selector no es una llamada sino el
  *  callback `ir(destino)`: quien enruta es la raíz. */
 import { paso } from "../async-ui.js";
+import { errors } from "../error-log.js";
 import type { StyleApplyController, StyleApplyPlan } from "../style-apply.js";
 import {
   BTN_PRIMARY_CSS,
@@ -96,6 +97,13 @@ export async function pintarPlanDeEstilo(
       ? `Coste estimado: ${cifra}${sinPrecio ? " — hay bloques con coste no disponible" : ""} (los skins y páginas ya en caché no se repagan)`
       : "Nada seleccionado que genere coste.";
     runBtn.textContent = anything ? `Aplicar estilo (${cifra})` : "Registrar (sin coste)";
+    // EL BOTÓN QUE GASTA NO SE VE IGUAL QUE EL QUE NO GASTA (#548). Era UN solo
+    // primario ámbar para los dos, así que la única diferencia entre pulsar y
+    // pagar y pulsar y no pagar estaba en leer su texto. El que cuesta dinero
+    // se queda con el primario —es la acción principal de esta pantalla— y el
+    // que no cuesta baja a secundario, que es lo que hace el resto del título
+    // con lo que no compromete nada.
+    runBtn.style.cssText = `${anything ? BTN_PRIMARY_CSS : BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px`;
   };
   for (const cb of hueco.querySelectorAll<HTMLInputElement>("input[data-block-idx]")) {
     cb.addEventListener("change", () => {
@@ -107,25 +115,56 @@ export async function pintarPlanDeEstilo(
   cancelBtn.addEventListener("click", () => {
     hueco.innerHTML = "";
   });
+  /** EL GASTO Y LA NAVEGACIÓN NO COMPARTEN `try` (#548).
+   *
+   *  Hasta el 2026-09-10 los dos iban dentro del mismo, así que un fallo al
+   *  volver al selector —una pantalla que no se puede pintar, el bridge que se
+   *  cae en ese segundo— entraba por el `catch` de un gasto que YA HABÍA
+   *  OCURRIDO: borraba el «Estilo aplicado ($2.50)» y volvía a encender
+   *  «Aplicar estilo (~$2.50)». Nada en pantalla decía que eso ya estaba pagado
+   *  hace diez segundos, y el botón invitaba a pagarlo otra vez.
+   *
+   *  El corte va en la línea del pago: lo de ARRIBA puede fallar y rearmar el
+   *  botón (no se gastó nada); lo de ABAJO no rearma nada nunca, porque el
+   *  dinero ya salió. Que el segundo cobro además no ocurriría —el servidor es
+   *  idempotente por caché, verificado en la crítica de #513— no arregla esto:
+   *  lo que el jugador ve es una pantalla que le pide pagar dos veces, y esa
+   *  pantalla es la única del juego donde acepta gastar dinero real. */
   const aplicarElEstilo = async (): Promise<void> => {
     runBtn.disabled = true;
     cancelBtn.disabled = true;
+    let result: Awaited<ReturnType<StyleApplyController["run"]>>;
     try {
-      const result = await styleApply.run(plan, (msg) => {
+      result = await styleApply.run(plan, (msg) => {
         progressEl.textContent = msg;
       });
-      const failNote = result.failures.length
-        ? ` · <span style="color:#a44">${result.failures.length} fallos (ver registro)</span>`
-        : "";
-      progressEl.innerHTML =
-        `<span style="color:#4a4">Estilo aplicado: ${result.cellsPainted} celdas y ` +
-        `${result.skinsPainted} skins nuevos ($${result.costUsd.toFixed(2)})${failNote}</span>`;
-      await new Promise((r) => setTimeout(r, 1200));
-      await ir({ a: "selector", preselect: gameId });
     } catch (err) {
       progressEl.innerHTML = `<span style="color:#a44">${escapeHtml((err as Error).message)}</span>`;
       runBtn.disabled = false;
       cancelBtn.disabled = false;
+      return;
+    }
+    // ── A PARTIR DE AQUÍ YA SE PAGÓ ────────────────────────────────────────
+    const failNote = result.failures.length
+      ? ` · <span style="color:#a44">${result.failures.length} fallos (ver registro)</span>`
+      : "";
+    const comprobante =
+      `<span style="color:#4a4">Estilo aplicado: ${result.cellsPainted} celdas y ` +
+      `${result.skinsPainted} skins nuevos ($${result.costUsd.toFixed(2)})${failNote}</span>`;
+    progressEl.innerHTML = comprobante;
+    await new Promise((r) => setTimeout(r, 1200));
+    try {
+      await ir({ a: "selector", preselect: gameId });
+    } catch (err) {
+      // El comprobante SE QUEDA y el botón que cobra NO vuelve: lo que ha
+      // fallado es la navegación, no el estilo. Se le dice al jugador qué pasó
+      // y qué hacer, sin borrarle la prueba de lo que ya pagó.
+      errors.push("title", "volver al selector tras aplicar el estilo", err);
+      progressEl.innerHTML =
+        comprobante +
+        `<div style="color:#a44;margin-top:4px">El estilo YA está aplicado y no hay que ` +
+        `volver a pagarlo; lo que falló es volver al selector de mundos. Recarga la página ` +
+        `para seguir.</div>`;
     }
   };
   runBtn.addEventListener("click", () =>

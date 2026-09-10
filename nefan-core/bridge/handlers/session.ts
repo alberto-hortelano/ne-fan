@@ -52,7 +52,10 @@ import { avisoDeFueraDelMundo, type FueraDelMundo } from "../../src/session/mund
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { applyRenderModeChange } from "../../src/narrative/render-mode.js";
 import { modoEfectivoDePersonajes } from "../../src/session/gates-de-imagen.js";
-import { eleccionDeEstilo } from "../../src/session/eleccion-de-estilo.js";
+import {
+  avisoDeEstiloDeOtroTema,
+  eleccionDeEstilo,
+} from "../../src/session/eleccion-de-estilo.js";
 import { validarBorrador } from "../../src/protocol/borrador-de-mundo.js";
 import { runBootstrapTile } from "./bootstrap-tile.js";
 import type {
@@ -356,6 +359,10 @@ export async function handleStartSession(
   // y `world` viaja entero al modelo en cada turno) — se recalcula aquí y en
   // cada resume, así que retocar una paleta se ve al reanudar.
   let uiTheme: UiTheme;
+  /** El aviso de «estilo de otro tema» (#537), o `""` si el estilo casa. Viaja
+   *  en la respuesta y lo apunta el registro del jugador: hasta hoy este hecho
+   *  solo existía en el `console.warn` de abajo, que el jugador no ve. */
+  let avisoDeEstilo = "";
   let combatId: string;
   let npcBehaviorId: string | undefined;
   try {
@@ -385,13 +392,21 @@ export async function handleStartSession(
     // debe brickear una partida. Y desde la PR 7 de #241 el título YA NO
     // filtra: ofrece el estilo que declara el mundo aunque no case, marcado
     // «(del mundo · otro tema)», y viene preseleccionado, así que este aviso
-    // es lo único que queda. Hoy es un `console.warn` del servidor que el
-    // jugador no ve; que llegue a su registro lo pide #537.
+    // es lo único que queda.
+    //
+    // DESDE #537 SON DOS CANALES Y NO UNO, y la diferencia es quién lee cada
+    // cosa: la CAUSA CRUDA —las dos listas de tags, los ids— se queda en el
+    // `console.warn` del servidor, que es donde sirve para depurar; y el aviso
+    // que lee el JUGADOR viaja en la respuesta (`avisoDeEstilo`) hasta su
+    // registro, redactado por core (`avisoDeEstiloDeOtroTema`). Antes solo
+    // existía el warn, así que el jugador entraba a una partida cuyo arte no
+    // pega con su mundo sin una sola línea que se lo dijera.
     if (!styleCompatibleWithGame(style.tags, meta.tags)) {
       console.warn(
         `Bridge: estilo "${style.style_id}" (tags: ${style.tags.join(",")}) no casa ` +
           `temáticamente con el juego "${msg.gameId}" (tags: ${(meta.tags ?? []).join(",")})`,
       );
+      avisoDeEstilo = avisoDeEstiloDeOtroTema({ estilo: style.name, mundo: meta.title });
     }
     // Sistema de combate: el que declare game.json (systems.combat) o el
     // estándar. Queda CONGELADO en el save como el estilo/perspectiva; un id
@@ -474,6 +489,9 @@ export async function handleStartSession(
     isResume: false,
     state: paraElCliente.state,
     uiTheme,
+    // Solo cuando lo hay: un campo vacío en el wire es un aviso que el cliente
+    // tendría que aprender a distinguir de «no pasa nada».
+    ...(avisoDeEstilo === "" ? {} : { avisoDeEstilo }),
   });
   avisarDeIlegibles(ctx, paraElCliente.ilegibles);
   avisarDeFueraDelMundo(ctx, paraElCliente.fueraDelMundo);

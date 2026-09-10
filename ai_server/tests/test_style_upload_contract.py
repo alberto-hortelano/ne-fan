@@ -96,13 +96,13 @@ class StyleUploadContractTest(unittest.TestCase):
     def test_cada_rechazo_con_su_motivo(self):
         """La tabla espejo de style-upload.test.ts, en el mismo orden."""
         casos = [
-            ("sin nombre", subida(name=""), _motivo("nombre")),
-            ("nombre de 1", subida(name="a"), _motivo("nombre")),
-            ("nombre de solo espacios", subida(name="        "), _motivo("nombre")),
+            ("sin nombre", subida(name=""), _motivo("nombre_corto")),
+            ("nombre de 1", subida(name="a"), _motivo("nombre_corto")),
+            ("nombre de solo espacios", subida(name="        "), _motivo("nombre_corto")),
             (
                 "nombre de max+1",
                 subida(name="a" * (LIM["nombre"]["max"] + 1)),
-                _motivo("nombre"),
+                _motivo("nombre_largo"),
             ),
             (
                 "descripcion del pack de max+1",
@@ -114,18 +114,18 @@ class StyleUploadContractTest(unittest.TestCase):
                 subida(style_token="a" * (LIM["style_token_max"] + 1)),
                 _motivo("style_token"),
             ),
-            ("sin etiquetas", subida(tags=[]), _motivo("tags")),
-            ("etiquetas en blanco", subida(tags=["  ", ""]), _motivo("tags")),
+            ("sin etiquetas", subida(tags=[]), _motivo("sin_etiquetas")),
+            ("etiquetas en blanco", subida(tags=["  ", ""]), _motivo("sin_etiquetas")),
             (
                 "max+1 etiquetas",
                 subida(tags=[str(i) for i in range(LIM["tags"]["max"] + 1)]),
-                _motivo("tags"),
+                _motivo("demasiadas_etiquetas"),
             ),
-            ("sin imagenes", subida(images=[]), _motivo("imagenes")),
+            ("sin imagenes", subida(images=[]), _motivo("sin_imagenes")),
             (
                 "max+1 imagenes",
                 subida(images=[cara(f"fachada {i}") for i in range(LIM["imagenes"]["max"] + 1)]),
-                _motivo("imagenes"),
+                _motivo("demasiadas_imagenes"),
             ),
             (
                 "dos laminas",
@@ -182,7 +182,7 @@ class StyleUploadContractTest(unittest.TestCase):
     def test_el_primer_motivo_es_el_mismo_orden_que_el_zod(self):
         with self.assertRaises(HTTPException) as ctx:
             validar_subida(subida(name="", tags=[], images=[]))
-        self.assertEqual(ctx.exception.detail, _motivo("nombre"))
+        self.assertEqual(ctx.exception.detail, _motivo("nombre_corto"))
 
 
 if __name__ == "__main__":

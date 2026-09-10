@@ -295,7 +295,11 @@ function vigilarPortadas(root: HTMLDivElement): void {
   );
 }
 
-/** «Hay más partidas abajo», cuando la columna no cabe (#251).
+/** Los CONTROLES: lo que un jugador puede pulsar, escribir o elegir. Es lo que
+ *  cuenta la banda fuera del home — ver `actualizarAvisoDeCorte`. */
+const CONTROLES = "button, a[href], input, select, textarea";
+
+/** «Hay más abajo», cuando la columna no cabe (#251, #553).
  *
  *  El scroller NO es la lista: `#ts-sessions` solo lleva margen, y quien
  *  recorta es `content` (`max-height:100%; overflow-y:auto`), que se
@@ -310,20 +314,21 @@ function vigilarPortadas(root: HTMLDivElement): void {
  *
  *  La banda cuelga de la RAÍZ con `position:absolute`, NO de la columna:
  *  cualquier cosa que aparezca dentro del flujo puede volver a mover
- *  «Nueva partida», que es #181-c. */
+ *  «Nueva partida», que es #181-c.
+ *
+ *  CUBRE TODAS LAS PANTALLAS DESDE #553, y hasta entonces no: miraba
+ *  `#ts-sessions` y contaba `.ts-save`, que solo pinta el home, así que en el
+ *  selector de mundos la banda se retiraba SIEMPRE. A 1440×900 —un portátil
+ *  corriente— «Continuar →» queda cortado 17 px de sus 39 contra el borde de
+ *  `content` y nada lo decía: el mecanismo que existe justamente para avisar de
+ *  contenido cortado no cubría la pantalla donde se elige qué se va a jugar.
+ *
+ *  El sujeto sigue derivándose de lo pintado y no de un flag que cada pantalla
+ *  tenga que acordarse de poner (la que se olvidara dejaría la banda mintiendo,
+ *  que es peor que no tenerla): en el HOME se cuentan partidas, porque las hay
+ *  y es el dato que su jugador necesita; en cualquier otra se cuentan
+ *  CONTROLES, que es lo que se puede perder de vista sin enterarse. */
 function actualizarAvisoDeCorte(content: HTMLDivElement, aviso: HTMLDivElement): void {
-  // Solo en el HOME. En el selector de mundos, el editor de personaje o la
-  // subida de estilo no hay partidas que contar, y la banda aparecía ahí
-  // diciendo «hay más abajo» sobre una pantalla que no tiene ninguna: un
-  // aviso cierto sobre el desbordamiento y falso sobre su sujeto.
-  //
-  // Se DERIVA de lo pintado (`#ts-sessions` solo existe en el home) y no de
-  // un flag que las pantallas tengan que acordarse de poner: la que se
-  // olvidara dejaría la banda mintiendo en su pantalla.
-  if (!content.querySelector("#ts-sessions")) {
-    aviso.hidden = true;
-    return;
-  }
   // +1 px de tolerancia: el redondeo subpíxel del layout hace que una
   // columna que cabe justa se declare desbordada.
   // Guarda BARATA antes de leer geometría: si la columna no desborda, no
@@ -332,7 +337,7 @@ function actualizarAvisoDeCorte(content: HTMLDivElement, aviso: HTMLDivElement):
     aviso.hidden = true;
     return;
   }
-  // LA CONDICIÓN ES QUE HAYA TARJETAS FUERA, no que la columna desborde. No
+  // LA CONDICIÓN ES QUE HAYA ALGO FUERA, no que la columna desborde. No
   // es lo mismo, y la diferencia se vio en pantalla: a 1280×800 con cinco
   // partidas la columna desborda por los 24 px de `margin-bottom` de la
   // lista, con las CINCO tarjetas a la vista, y el aviso decía «hay 0
@@ -344,9 +349,15 @@ function actualizarAvisoDeCorte(content: HTMLDivElement, aviso: HTMLDivElement):
   // El `getBoundingClientRect` va después de esa guarda: leerlo en cada
   // scroll de una columna que cabe era un reflow para nada.
   const caja = content.getBoundingClientRect();
-  const fuera = [...content.querySelectorAll<HTMLElement>(".ts-save")].filter(
-    (fila) => fila.getBoundingClientRect().bottom > caja.bottom + 1,
-  ).length;
+  const enElHome = content.querySelector("#ts-sessions") !== null;
+  const fuera = [...content.querySelectorAll<HTMLElement>(enElHome ? ".ts-save" : CONTROLES)]
+    .filter((el) => el.getBoundingClientRect().bottom > caja.bottom + 1)
+    // Lo que se esconde DENTRO de otro scroller no lo esconde esta columna, y
+    // desplazarla no lo traería: la lista de mundos del selector tiene su
+    // propio `overflow-y`, así que sus hijos pueden caer por debajo de esta
+    // caja estando perfectamente a mano. Contarlos sería una banda que manda
+    // desplazar donde no hay nada que desplazar.
+    .filter((el) => !enOtroScroller(el, content)).length;
   if (fuera === 0) {
     aviso.hidden = true;
     return;
@@ -356,6 +367,16 @@ function actualizarAvisoDeCorte(content: HTMLDivElement, aviso: HTMLDivElement):
   // cuántas HAY, no cuántas se están escondiendo. Al llegar abajo del todo
   // el conteo cae a 0 solo, así que el aviso se retira sin una segunda
   // condición que mantener.
-  aviso.textContent = `↓ hay ${fuera} partida${fuera === 1 ? "" : "s"} más — desplaza la lista`;
+  aviso.textContent = enElHome
+    ? `↓ hay ${fuera} partida${fuera === 1 ? "" : "s"} más — desplaza la lista`
+    : `↓ ${fuera === 1 ? "queda 1 botón" : `quedan ${fuera} botones`} más abajo — desplaza`;
   aviso.hidden = false;
+}
+
+/** ¿Este elemento cuelga de un scroller propio DENTRO de la columna? */
+function enOtroScroller(el: HTMLElement, content: HTMLDivElement): boolean {
+  for (let p = el.parentElement; p !== null && p !== content; p = p.parentElement) {
+    if (p.scrollHeight > p.clientHeight + 1) return true;
+  }
+  return false;
 }
