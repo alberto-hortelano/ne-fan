@@ -65,7 +65,18 @@ export function crearConversacion(deps: DepsDeConversacion): Conversacion {
     // pueden clicar las opciones). Hay que apuntar si lo teníamos, porque
     // devolverlo al cerrar es cosa nuestra y hasta el 2026-08-29 no lo hacía
     // nadie — ver `cerrar`.
-    ratonCapturadoAntesDelDialogo = document.pointerLockElement !== null;
+    //
+    // SE APUNTA EN LA TRANSICIÓN cerrado→abierto, NO EN CADA LÍNEA (#502). El
+    // motor puede mandar dos `dialogue` en una sola respuesta (son entradas de
+    // `consequences[]`, y el cliente las abre una detrás de otra), o programar
+    // una línea con la conversación ya en pantalla. La segunda `abrir()`
+    // encontraba el lock YA SOLTADO por la primera —`pointerLockElement` se
+    // vacía síncrono tras `exitPointerLock()`— y pisaba el apunte con `false`,
+    // así que al cerrar el ratón no volvía y el jugador se quedaba pegándole a
+    // un enemigo sin hacer daño, que es exactamente el caso de #323.
+    if (!panel.isVisible) {
+      ratonCapturadoAntesDelDialogo = document.pointerLockElement !== null;
+    }
     // Y con el panel en pantalla, el input de juego queda suprimido solo: el
     // proveedor PREGUNTA por `abierta()`, que es este mismo panel (#314).
     // Aquí había un flag del proveedor que había que levantar a mano junto al

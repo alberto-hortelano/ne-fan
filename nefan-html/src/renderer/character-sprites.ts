@@ -150,6 +150,24 @@ export class CharacterSpriteManager {
     return this.allowed;
   }
 
+  /** ¿El cortacircuitos tiene los skins apagados AHORA MISMO? (#510)
+   *
+   *  `skinsAllowed` es el MODO que eligió la partida y el fusible no lo toca —a
+   *  propósito: el rearme se pide apagando y encendiendo Personajes en el chip
+   *  (lo canda el guion 51), y eso deja de funcionar si el fusible mueve el
+   *  modo—. Pero entonces el chip decía «Skins IA» con el registro diciendo que
+   *  estaban desactivados: dos verdades en pantalla. Este getter es el estado
+   *  EFECTIVO, que es lo que el chip enseña. */
+  get skinsSuspendidos(): boolean {
+    return this.fusible.apagado;
+  }
+
+  /** Aviso de que el fusible ACABA de saltar. El chip solo se re-pinta cuando
+   *  cambian los modos, y el fusible salta a mitad de partida sin que ningún
+   *  modo se mueva: sin esto el chip seguiría mintiendo hasta el siguiente
+   *  gesto del jugador. Lo cablea `ui/modos-de-graficos.ts`. */
+  alSaltarElFusible: (() => void) | null = null;
+
   setSkinsAllowed(allowed: boolean): void {
     this.allowed = allowed;
   }
@@ -280,6 +298,8 @@ export class CharacterSpriteManager {
             `distintos han fallado con error de backend (umbral ${this.fusible.umbral}). ` +
             `Los personajes usan la base y_bot. Último motivo: ${(err as Error).message}`,
         );
+        // …y que el chip de gráficos deje de decir lo contrario (#510).
+        this.alSaltarElFusible?.();
       }
     });
   }

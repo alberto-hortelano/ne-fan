@@ -14,6 +14,9 @@ import { paso } from "./async-ui.js";
 export interface DepsDelMuroDeCarga {
   /** El otro destino de los avisos: los apunta siempre, mande o no. */
   titleScreen: Pick<TitleScreen, "avisar" | "retirarAvisos">;
+  /** El lienzo del mundo: a él se le pide de vuelta el pointer lock al cerrar
+   *  un muro que lo soltó para que sus botones fueran pulsables (#503). */
+  lienzo(): HTMLElement;
   /** Lo que hace el botón «Volver al título» de un muro sin partida detrás
    *  (#189). Es una función de la raíz: soltar la partida y volver a pintar
    *  el título es cosa de quien cablea. */
@@ -76,6 +79,63 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
    *  recargar es otra decisión, y no vive aquí. Lo demuestra el guion 78. */
   let muroPuestoPorAviso: string | null = null;
 
+  /** UN MURO CON BOTÓN NECESITA CURSOR, Y SOLTARLO Y DEVOLVERLO SON LAS DOS
+   *  MITADES DE UN ACTO (#503, misma disciplina que #311/#323).
+   *
+   *  Medido: con una conversación abierta y el motor muerto, elegir una opción
+   *  cierra el panel y DEVUELVE el lock al lienzo (#323, correcto), y acto
+   *  seguido el fallo del motor pinta el muro a pantalla completa con
+   *  «Cerrar». Resultado: un botón, el ratón capturado y ningún cursor con el
+   *  que pulsarlo —y encima `#game-ui[data-locked="true"] .nf-action` le quita
+   *  los `pointer-events`, así que ni a ciegas—. Esc lo salvaba, y nada en
+   *  pantalla lo decía.
+   *
+   *  Solo lo hace `fallo()`: el muro de ESPERA no pinta botones (la regla
+   *  `#narrative-loader .dismiss { display: none }` de game-ui.css solo los
+   *  saca con `.error`), así que soltar ahí le quitaría el ratón al jugador
+   *  cada vez que el motor tarda en contestar.
+   *
+   *  `true` solo si lo soltamos NOSOTROS: quien ya estaba en modo cursor
+   *  (mirando fixtures, con el título recién cerrado) no quiere que un muro le
+   *  capture el ratón al cerrarse. */
+  let ratonSoltadoPorElMuro = false;
+
+  function soltarElRatonParaLosBotones(): void {
+    if (document.pointerLockElement === null) return;
+    ratonSoltadoPorElMuro = true;
+    document.exitPointerLock();
+  }
+
+  /** La otra mitad, y CUELGA DEL BOTÓN «Cerrar», no de `ocultar()`.
+   *
+   *  No es un detalle de cableado: `ocultar()` tiene varios llamantes más y en
+   *  ninguno de ellos el jugador vuelve al mundo con el muro por delante — el
+   *  título abriéndose
+   *  (`alCambiarElTitulo`), «Volver al título», un aviso que se declara
+   *  `resuelto` y el `ocultar()` normal cuando la escena por fin llega.
+   *  Colgarlo de `ocultar()` le robaba el cursor a quien acababa de pedir el
+   *  título: `onVisibilityChange` llama a `alCambiarElTitulo` ANTES que a
+   *  `marcarTitulo`, así que ni siquiera el guardia de `elTituloManda()` lo
+   *  habría parado. «Cerrar» es el único gesto que significa «sigo jugando», y
+   *  además es un gesto DEL USUARIO, que es lo que el navegador exige para
+   *  conceder el lock.
+   *
+   *  Aun así puede NEGARSE (rechaza un lock pedido demasiado pronto tras
+   *  soltarlo), por eso va por `paso()`: queda escrito en el registro en vez de
+   *  tragarse. El click sobre el mundo sigue siendo la vía de recuperación —y
+   *  la única para los otros cuatro caminos, que dejan el cursor puesto. */
+  function devolverElRatonTrasElMuro(): void {
+    if (!ratonSoltadoPorElMuro) return;
+    ratonSoltadoPorElMuro = false;
+    if (elTituloManda()) return;
+    if (document.pointerLockElement !== null) return;
+    paso(
+      deps.lienzo().requestPointerLock(),
+      "input",
+      "no se pudo devolver el ratón al cerrar el aviso: haz click en el mundo para volver a jugar",
+    );
+  }
+
   function mostrar(titulo: string, detalle: string): void {
     if (!loaderEl) return;
     // Un muro de espera no es de ninguna fuente de aviso: la fila `mostrar()`
@@ -114,6 +174,10 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
       clearInterval(loaderTicker);
       loaderTicker = null;
     }
+    // El muro que soltó el ratón ya no está, así que la deuda se cancela: si el
+    // jugador no volvió al mundo por «Cerrar» (ver `devolverElRatonTrasElMuro`),
+    // no se le devuelve, y un muro POSTERIOR no puede heredar esta deuda.
+    ratonSoltadoPorElMuro = false;
   }
 
   function fallo(titulo: string, detalle: string, salida: SalidaDelOverlay = "cerrar"): void {
@@ -142,6 +206,10 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
       clearInterval(loaderTicker);
       loaderTicker = null;
     }
+    // Y el ratón, para que el botón que acabamos de pintar se pueda pulsar
+    // (#503). Va DESPUÉS de pintarlo: el muro ya está en pantalla cuando el
+    // cursor reaparece.
+    soltarElRatonParaLosBotones();
     // …y se BORRA el contador, no solo se para (QA 2026-09-01, H-5). Paraba el
     // intervalo y dejaba el último texto puesto, así que bajo un muro de error
     // quedaba un «0s» huérfano entre el motivo y «Cerrar»: el reloj de una
@@ -149,7 +217,15 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     if (loaderElapsed) loaderElapsed.textContent = "";
   }
 
-  if (loaderDismiss) loaderDismiss.onclick = () => ocultar();
+  // «Cerrar» es volver al mundo: el muro se va Y el ratón vuelve si lo soltamos
+  // nosotros (#503). El orden importa poco, pero `devolver` lee el flag que
+  // `ocultar` limpia, así que va ANTES.
+  if (loaderDismiss) {
+    loaderDismiss.onclick = () => {
+      devolverElRatonTrasElMuro();
+      ocultar();
+    };
+  }
   if (loaderBack) {
     loaderBack.onclick = () => paso(deps.volverAlTitulo(), "session", "volver a la pantalla de título");
   }

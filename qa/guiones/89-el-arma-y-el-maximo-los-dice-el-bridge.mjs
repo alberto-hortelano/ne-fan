@@ -141,12 +141,22 @@ async function instalarElEspiaDelWire(ctx) {
 /** Lo que dice el bridge que el jugador lleva, tal cual salió del socket. */
 const delWire = async (ctx) => ctx.page.evaluate(() => window.__qaWire.ultimoOriginal);
 
-/** La barra de vida del HUD: el ancho que pinta `main.ts` (hp / máximo) y su
- *  número, que es el hp a secas. */
+/** La barra de vida del HUD: el ancho que pinta `main.ts` (hp / máximo), el
+ *  número —que es el hp a secas— y su DENOMINADOR (#527).
+ *
+ *  Son dos nodos y no uno a propósito: `#player-hp-text` sigue siendo UN número
+ *  (es lo que leen este guion y `qa/lib/combate.mjs` para saber si el jugador
+ *  vive) y `#player-hp-max` lleva el « / máximo» que el jugador lee. Con un
+ *  máximo distinto de 100 el HUD decía «100» con la barra a dos tercios. */
 const barraDeVida = async (ctx) =>
   ctx.page.evaluate(() => ({
     ancho: document.getElementById("player-hp").style.width,
     texto: document.getElementById("player-hp-text").textContent,
+    maximo: document.getElementById("player-hp-max")?.textContent ?? null,
+    // Lo que se LEE de un vistazo, los dos nodos juntos y sin espacios de más.
+    leido: (document.getElementById("player-hp").parentElement.parentElement.textContent ?? "")
+      .replace(/\s+/g, " ")
+      .trim(),
   }));
 
 /** Ataca con cada ataque del catálogo y devuelve la distancia óptima del aro
@@ -272,6 +282,11 @@ export default async function (ctx) {
     vidaEntera.ancho === "100%" && Number(vidaEntera.texto) === Math.ceil(wire.playerHp),
     JSON.stringify(vidaEntera),
   );
+  ctx.expect(
+    `…y lleva su DENOMINADOR, el máximo que dice el bridge (#527): «/ ${Math.ceil(wire.playerMaxHp)}»`,
+    vidaEntera.maximo === ` / ${Math.ceil(wire.playerMaxHp)}`,
+    JSON.stringify(vidaEntera),
+  );
   const aroEspada = await fotoDelAro(ctx, catalogo, "espada");
   await ctx.shot("aro-y-barra-con-el-arma-de-arranque");
 
@@ -317,6 +332,16 @@ export default async function (ctx) {
     Number.isFinite(hpVivo) && hpVivo > 0,
     JSON.stringify(vidaSobreOtroMaximo),
   );
+  // EL PUNTO DE #527. Con la barra a dos tercios y el número diciendo «100», lo
+  // que el jugador leía no decía nada: 100 ¿de cuánto? El denominador es lo que
+  // desambigua, y tiene que seguir al wire igual que la barra.
+  ctx.expect(
+    `el HUD enseña «vida / máximo» con el máximo que viaja: «${hpVivo} / ${MAXIMO_NUEVO}»`,
+    vidaSobreOtroMaximo.maximo === ` / ${MAXIMO_NUEVO}` &&
+      vidaSobreOtroMaximo.leido.endsWith(`${hpVivo} / ${MAXIMO_NUEVO}`),
+    JSON.stringify(vidaSobreOtroMaximo),
+  );
+  await ctx.shot("vida-sobre-otro-maximo");
   const aroMartillo = await fotoDelAro(ctx, catalogo, "martillo");
   ctx.expect(
     "el ALCANCE dibujado también cambia con el arma (el aro se ve más lejos con el martillo)",
@@ -346,6 +371,11 @@ export default async function (ctx) {
   ctx.expect(
     "y la barra vuelve a llenarse con el máximo del bridge",
     vidaDeVuelta.ancho === "100%",
+    JSON.stringify(vidaDeVuelta),
+  );
+  ctx.expect(
+    `y el denominador vuelve con ella («/ ${Math.ceil(wire.playerMaxHp)}»): no se queda con el último que pintó`,
+    vidaDeVuelta.maximo === ` / ${Math.ceil(wire.playerMaxHp)}`,
     JSON.stringify(vidaDeVuelta),
   );
 }

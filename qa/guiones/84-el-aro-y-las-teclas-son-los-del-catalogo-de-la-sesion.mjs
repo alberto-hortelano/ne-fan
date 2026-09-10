@@ -139,6 +139,44 @@ export default async function (ctx) {
     { ms: 10_000 },
   );
 
+  // …Y EL ELEGIDO SIGUE SIENDO EL MÁS LEGIBLE (#506). El atenuado es el
+  // «recordatorio de teclas» que documenta `docs/arquitectura/ui.md`, y se los
+  // llevaba a TODOS: lo único que marca el ataque elegido es su borde y su
+  // tinta de acento, así que con el ratón capturado —el único momento en que se
+  // pelea— el elegido pasaba a ser lo menos legible de la barra. Se mide la
+  // opacidad COMPUTADA, que es lo que llega a la pantalla, y se compara el
+  // activo contra sus vecinos: un aserto sobre el número absoluto se lo lleva
+  // por delante el primer retoque de la hoja de estilo.
+  await ctx.page.keyboard.press("2");
+  const opacidades = await ctx.page.$$eval("#action-bar button.nf-action", (els) =>
+    els.map((e) => ({
+      id: e.dataset.action,
+      activo: e.dataset.active === "true",
+      opacidad: Number(getComputedStyle(e).opacity),
+    })),
+  );
+  ctx.log(`opacidad con el ratón capturado: ${JSON.stringify(opacidades)}`);
+  const activo = opacidades.find((b) => b.activo);
+  const inactivos = opacidades.filter((b) => !b.activo);
+  ctx.expect(
+    "precondición: con el ratón capturado hay UN botón activo y varios inactivos",
+    Boolean(activo) && inactivos.length > 0,
+    JSON.stringify(opacidades),
+  );
+  ctx.expect(
+    "el ataque ELEGIDO no se atenúa con el ratón capturado (#506)",
+    activo?.opacidad === 1,
+    `activo ${activo?.id} · opacidad ${activo?.opacidad}`,
+  );
+  ctx.expect(
+    "…y los demás sí, que es lo que hace que el elegido destaque",
+    inactivos.every((b) => b.opacidad < 1),
+    JSON.stringify(inactivos.map((b) => [b.id, b.opacidad])),
+  );
+  // Captura de referencia del issue: la barra con el ratón capturado, para que
+  // un humano vea que el elegido se distingue.
+  await ctx.shot("barra-con-el-raton-capturado");
+
   // ── 5 · El aro lleva los params del ataque ELEGIDO, con el arma del jugador
   for (let i = 0; i < catalogo.length; i++) {
     const tipo = catalogo[i];

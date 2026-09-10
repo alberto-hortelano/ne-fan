@@ -55,6 +55,18 @@
 
   position: absolute;
   inset: 0;
+  /* LA CAPA DEL LIENZO, DECIDIDA DE UNA VEZ (#483). `FpsRenderer` inserta su
+     <canvas> como hijo de #app-shell, o sea DESPUÉS de este div en el DOM: con
+     los dos `absolute` y `z-index:auto` ganaba el último, y el mundo se pintaba
+     encima de todo lo de aquí que no llevara z-index propio. Las regiones y el
+     diálogo se salvaban por sus bandas y las etiquetas por el `zIndex` inline
+     que les pone `world-labels.ts`; `#reticle` no tenía nada y la mirilla —la
+     única señal de «esto se puede tratar» en primera persona— no existía en
+     pantalla. Este 1 contra el `z-index: 0` del lienzo (`base.css`) es lo que
+     lo decide, y de paso hace que un panel nuevo nazca visible. No afecta a lo
+     de DEV, que vive fuera de #app-shell con su propia banda (#error-log 8900,
+     #dev-status 10000). */
+  z-index: 1;
   /* El hueco entre paneles sigue llegando al lienzo (pointer lock, clicks). */
   pointer-events: none;
   font-family: var(--nf-font);
@@ -136,14 +148,27 @@
 
 /* Con el ratón CAPTURADO (pointer lock de fps/oblicua) ningún botón HTML
    puede recibir un click: la barra se degrada a recordatorio de teclas en
-   vez de ofrecer una afordancia imposible. */
-#game-ui[data-locked="true"] .nf-action { pointer-events: none; opacity: 0.75; }
-#game-ui[data-locked="true"] .nf-action .nf-label { opacity: 0.8; }
+   vez de ofrecer una afordancia imposible.
+
+   EL ACTIVO NO SE ATENÚA (#506). El atenuado es el «recordatorio de teclas» que
+   documenta `docs/arquitectura/ui.md`, y hasta hoy se los llevaba a todos: lo
+   ÚNICO que marca el ataque elegido es su borde y su tinta de acento
+   (`.nf-action[data-active="true"]`), así que con el ratón capturado —el único
+   momento en que se pelea— el elegido pasaba a ser lo menos legible de la
+   barra. El `pointer-events: none` sí es para todos: con el lock puesto
+   ninguno recibiría el click, activo incluido. */
+#game-ui[data-locked="true"] .nf-action { pointer-events: none; }
+#game-ui[data-locked="true"] .nf-action:not([data-active="true"]) { opacity: 0.75; }
+#game-ui[data-locked="true"] .nf-action:not([data-active="true"]) .nf-label { opacity: 0.8; }
 
 /* ── Estado del jugador ─────────────────────────────────────────────────── */
 #player-status { display: flex; align-items: center; gap: 10px; font-size: var(--nf-fs-sm); }
 .nf-vital { display: flex; align-items: center; gap: 6px; }
 .nf-vital-label { color: var(--nf-ink-dim); letter-spacing: var(--nf-tracking); }
+/* El denominador de la vida (#527): apagado al lado del número, que es el que
+   se lee de un vistazo. Sin él, «100» con la barra a dos tercios era ambiguo
+   en cuanto un plugin diera un máximo distinto de 100. */
+#player-hp-max { color: var(--nf-ink-dim); }
 .nf-bar {
   width: 128px; height: 9px;
   background: var(--nf-raised);
@@ -253,11 +278,22 @@
 .travel-exit--highlight { border-color: var(--nf-accent); color: var(--nf-accent); }
 
 /* ── Log de partida ─────────────────────────────────────────────────────── */
+/* LA ALTURA SALE DEL TOPE DE LÍNEAS, Y NO DE UN PX ELEGIDO APARTE (#506).
+   Aquí ponía `max-height: 110px` con `line-height: 1.5` sobre 11px, o sea
+   16,5 px por línea: 6,67 líneas de caja para un tope de 8 que aplicaba
+   `main.ts`. La séptima salía partida por la mitad SIEMPRE, en cualquier
+   resolución — no era el borde del viewport, que es lo que decía el issue.
+   `--nf-log-lineas` lo escribe `ui/registro-de-la-partida.ts`, que es el mismo
+   sitio que decide cuántas se conservan; sin él la declaración es inválida y
+   la caja crece, que es preferible a que los dos números vuelvan a discrepar.
+   `overflow: hidden` se queda como cinturón: una línea larga envuelve (la
+   región mide 34vw) y entonces sí sobra alto. */
 #combat-log {
+  --nf-log-interlineado: 1.5;
   color: var(--nf-ink-dim);
   font-size: var(--nf-fs-xs);
-  line-height: 1.5;
-  max-height: 110px;
+  line-height: var(--nf-log-interlineado);
+  max-height: calc(var(--nf-log-lineas) * var(--nf-log-interlineado) * 1em);
   overflow: hidden;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
@@ -278,6 +314,11 @@
 #gfx-panel { width: 340px; font-size: var(--nf-fs-sm); color: var(--nf-ink); }
 #gfx-panel[hidden] { display: none; }
 #gfx-panel .gfx-note { color: var(--nf-ink-dim); font-size: var(--nf-fs-xs); line-height: 1.4; margin-bottom: 10px; }
+/* El aviso de generación suspendida por el cortacircuitos (#510): va DEBAJO de
+   las filas, en el tono de peligro, porque contradice al modo que enseña la
+   fila de arriba. */
+#gfx-panel .gfx-suspension { color: var(--nf-danger); margin: 10px 0 0; }
+#gfx-panel .gfx-suspension[hidden] { display: none; }
 #gfx-panel .gfx-row { margin-bottom: 10px; }
 #gfx-panel .gfx-row:last-child { margin-bottom: 0; }
 #gfx-panel .gfx-row-label { color: var(--nf-ink-dim); margin-bottom: 4px; }
@@ -452,6 +493,11 @@
   border-radius: 50%;
   background: var(--nf-ink);
   opacity: 0.55;
+  /* Su banda, EXPLÍCITA y no heredada del orden del DOM (#483): la mirilla es
+     HUD, y con z-index:auto quedaba por debajo de cualquier hermano con banda.
+     Lo mide el guion 103 con `elementFromPoint`, no con `data-target`: los
+     guiones 10, 61 y 79 leen el atributo y salían verdes con el punto tapado. */
+  z-index: var(--z-hud);
 }
 #reticle[data-target="true"] { background: var(--nf-accent); opacity: 1; }
 

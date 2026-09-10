@@ -42,6 +42,7 @@ import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { crearModosDeGraficos } from "./ui/modos-de-graficos.js";
 import { errors } from "./ui/error-log.js";
 import { crearMuroDeCarga } from "./ui/muro-de-carga.js";
+import { crearRegistroDeLaPartida } from "./ui/registro-de-la-partida.js";
 import { crearConversacion } from "./ui/conversacion.js";
 import { EcoDelCombate } from "./ui/eco-del-combate.js";
 import { paso } from "./ui/async-ui.js";
@@ -104,6 +105,9 @@ const characterSprites = new CharacterSpriteManager(spriteRenderer, worldAngle);
 const animacion = new AnimacionDeEntidades(characterSprites, worldAngle);
 /** Retrato del hablante del diálogo: hero-shot ya pagado o busto animado. */
 const portrait = new PortraitView(spriteRenderer, "/sprites");
+// --- Registro de la partida (tope de líneas y alto de la caja: un número, #506) ---
+const combatLog = document.getElementById("combat-log") as HTMLElement;
+const log = crearRegistroDeLaPartida(combatLog);
 /** El aspecto del jugador (`renderer/aspecto-del-jugador.ts`): su modelo
  *  base, su skin IA y la precarga del set base y_bot, que arranca AQUÍ, detrás
  *  del check de `CONFIG.graphics.character_sprites`. Los modelos alternativos
@@ -224,11 +228,13 @@ const playerStatusEl = document.getElementById("player-status") as HTMLElement;
 playerStatusEl.innerHTML =
   `<div class="nf-vital"><span class="nf-vital-label">Vida</span>` +
   `<div class="nf-bar"><div class="nf-bar-fill" id="player-hp" style="width:100%"></div></div>` +
-  `<span id="player-hp-text">100</span></div>`;
+  `<span id="player-hp-text">100</span><span id="player-hp-max"></span></div>`;
 const playerHpBar = document.getElementById("player-hp") as HTMLElement;
 const playerHpText = document.getElementById("player-hp-text") as HTMLElement;
+/** El denominador de la vida (#527), en su propio span para que
+ *  `#player-hp-text` siga siendo UN número. El porqué, en `game-ui.css`. */
+const playerHpMax = document.getElementById("player-hp-max") as HTMLElement;
 const enemyBarsContainer = document.getElementById("enemy-bars") as HTMLElement;
-const combatLog = document.getElementById("combat-log") as HTMLElement;
 /** Acción contextual (hablar, reaparecer) y confirmación Y/N: mismos botones,
  *  distinta región. */
 const promptBar = new ActionBar(document.getElementById("interact-prompt") as HTMLElement);
@@ -487,13 +493,6 @@ const collision = new CollisionSystem({
 });
 const collidesAt = (x: number, z: number): boolean => collision.collidesAt(x, z);
 
-// --- Combat log ---
-function log(msg: string): void {
-  const line = document.createElement("div");
-  line.textContent = msg;
-  combatLog.prepend(line);
-  while (combatLog.children.length > 8) combatLog.lastChild?.remove();
-}
 
 /** Último error de render registrado — dedup para no inundar el ErrorLog a
  *  60 fps con la misma excepción. */
@@ -717,6 +716,7 @@ function gameLoop(now: number): void {
   const pHpPct = Math.max(0, result.playerHp / result.playerMaxHp * 100);
   playerHpBar.style.width = pHpPct + "%";
   playerHpText.textContent = Math.ceil(result.playerHp).toString();
+  playerHpMax.textContent = ` / ${Math.ceil(result.playerMaxHp)}`;
 
   for (const ee of mundo.enemigos) {
     const bar = document.getElementById(`hp-${ee.id}`);
@@ -907,7 +907,7 @@ const devMenu = new DevMenu({
 // El muro de carga es también el único pintor de avisos (#306), y por eso se
 // construye aquí: necesita el título, que acaba de nacer. `volverAlTitulo` es
 // una declaración de función, así que existe aunque esté más abajo.
-const muro = crearMuroDeCarga({ titleScreen, volverAlTitulo });
+const muro = crearMuroDeCarga({ titleScreen, volverAlTitulo, lienzo: () => fpsRenderer.element });
 titleScreen.onVisibilityChange = (visible) => {
   graficos.ocultarChip(visible);
   muro.alCambiarElTitulo(visible);

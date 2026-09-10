@@ -39,6 +39,14 @@
  *       cliente. El registro del juego dice «Gráficos: maqueta 3D…», el chip
  *       «Maqueta 3D», y el cable sigue con un solo pedido.
  *
+ *  Y desde el 2026-09-10, lo que el gesto ESCRIBE (#510 H3): un click en el chip
+ *  deja UNA línea «Gráficos: …» en el registro, no dos, y entrar en partida no
+ *  repite la misma frase. La segunda la ponía el eco del propio pedido, que
+ *  vuelve a entrar por `aplicar` — idempotente en estado, no en el registro. Se
+ *  mide con un observador del DOM porque `#combat-log` conserva 8 entradas y el
+ *  rebose no se ve contando hijos. Rojo quitando `anotarSiCambia` de
+ *  `ui/modos-de-graficos.ts` (medido: 2 líneas por click).
+ *
  *  PROBADO EN NEGATIVO (2026-09-07), un sabotaje por vez y restaurado:
  *   · `aplicarFaceta` → `void cambiarFaceta(facet, mode)` en el módulo (la
  *     fusión que §9 temía): el bloque 1 se pone rojo con DOS `set_render_mode`
@@ -158,6 +166,23 @@ export default async function (ctx) {
     Object.assign(Envuelto, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
     window.WebSocket = Envuelto;
   });
+  // ── Y el libro de LÍNEAS del registro de partida (#510 H3) ───────────────
+  // Lo que ve el jugador cuando toca el chip: `aplicar` es idempotente en
+  // ESTADO pero escribía en el registro las DOS veces que se le llama por
+  // gesto —la del chip y la del eco que el bridge difunde también al que lo
+  // pidió—, así que un click daba dos «Gráficos: imagen IA (skins IA)»
+  // seguidas. Se observa el DOM y no se cuentan hijos: `#combat-log` conserva
+  // 8 entradas, así que el rebose sería invisible.
+  await ctx.page.addInitScript(() => {
+    window.__qa85lineas = [];
+    document.addEventListener("DOMContentLoaded", () => {
+      const el = document.getElementById("combat-log");
+      if (!el) return;
+      new MutationObserver((ms) => {
+        for (const m of ms) for (const n of m.addedNodes) window.__qa85lineas.push(n.textContent ?? "");
+      }).observe(el, { childList: true });
+    });
+  });
   await recargarAlTitulo(ctx);
 
   /** Cada POST de skin que sale hacia el motor falso (prompt, anim). */
@@ -194,6 +219,17 @@ export default async function (ctx) {
     "el chip se ve en partida y dice «Personajes base»",
     chip0 !== null && !chip0.hidden && /personajes: Personajes base/.test(chip0.title),
     JSON.stringify(chip0),
+  );
+  // AL ENTRAR EN PARTIDA, LA LÍNEA NO SE REPITE (#510 H3). Se afirma «ninguna
+  // línea idéntica seguida» y no «exactamente una»: cuántas veces se apliquen
+  // las facetas al arrancar es cosa de la sesión, y lo que el issue reporta —lo
+  // que el jugador lee— es la MISMA frase dos veces.
+  const alEntrar = (await ctx.page.evaluate(() => window.__qa85lineas)).filter((l) => l.startsWith("Gráficos:"));
+  ctx.log(`líneas «Gráficos:» al entrar: ${JSON.stringify(alEntrar)}`);
+  ctx.expect(
+    "entrar en partida no escribe la misma línea «Gráficos: …» dos veces",
+    new Set(alEntrar).size === alEntrar.length,
+    JSON.stringify(alEntrar),
   );
 
   // ── 1 · El chip pide UNA vez, y el eco de su propio pedido no vuelve a pedir ─
@@ -233,6 +269,17 @@ export default async function (ctx) {
     "el chip dice «Skins IA» tras aplicar el eco",
     chip1 !== null && /personajes: Skins IA/.test(chip1.title),
     JSON.stringify(chip1),
+  );
+  // UN GESTO, UNA LÍNEA (#510 H3). El eco del propio pedido ya llegó y se
+  // aplicó (`esperarEcoCerrado` de arriba lo esperó por ESTADO), así que si
+  // `aplicar` volviera a anotar, la segunda línea ya estaría escrita.
+  const trasElGesto = (await ctx.page.evaluate(() => window.__qa85lineas)).filter((l) => l.startsWith("Gráficos:"));
+  const nuevas = trasElGesto.slice(alEntrar.length);
+  ctx.log(`líneas «Gráficos:» tras UN click en el chip: ${JSON.stringify(nuevas)}`);
+  ctx.expect(
+    "un gesto en el chip escribe UNA sola línea «Gráficos: …» (el eco del bridge no la repite)",
+    nuevas.length === 1,
+    JSON.stringify(nuevas),
   );
   const skins = await esperarRegistro(
     ctx,
