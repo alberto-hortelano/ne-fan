@@ -56,11 +56,11 @@ El ciclo entero es `npm run mutacion` (en `nefan-core`):
 | Verbo | Quién | Qué hace |
 |---|---|---|
 | `pendiente` | el usuario y el coordinador | qué falta por medir desde el tag `mutacion-ultima`, con su coste en mutantes |
-| `local <id>` | el ingeniero | mide UN módulo con dos núcleos; **rechaza** el que pase de `tope_local` diciendo su coste. Corrido ENCIMA de una descarga bloquea el reparto: sobreescribe el informe de CI y su sello deja de casar |
+| `local <id>` | el ingeniero | mide UN módulo con dos núcleos; **rechaza** el que pase de `tope_local` diciendo su coste — el de HOY, escalado por lo que el fichero haya crecido desde la última corrida, no el de la foto anterior. Corrido ENCIMA de una descarga bloquea el reparto: sobreescribe el informe de CI y su sello deja de casar |
 | `traer [run-id]` | el coordinador | vacía `reports/mutation/` y baja el artefacto; rechaza la descarga a la que le falte un informe, le sobre uno, o traiga uno cuyo **sello no case** con el que midió la corrida |
 | `repartir [--comentar]` | el coordinador | delta contra la huella de HEAD, atribución honesta —anclada en el `desde` que trae la corrida, no en el tag que ella misma mueve— y comentario en la PR de origen; repite el guardia del sello |
 | `lotes [--ids …]` | cualquiera, y CI | cómo se partiría la corrida en jobs, por los SEGUNDOS medidos de cada módulo. Sin flags solo imprime: es la forma de mirar el reparto sin gastar un runner |
-| `cola <run-id>` | el coordinador | cuánto esperó cada job de esa corrida y cuánto paga la matriz por venir partida. Es lo que ajusta `max-parallel`, y se MIDE |
+| `cola <run-id>` | el coordinador | cuánto esperó cada job de esa corrida y cuánto paga la matriz por venir partida. Sabe de QUÉ corrida opina: sobre la matriz, la cola es interna y bajar `max-parallel` la alargaría; el presupuesto es para una PR ajena. Es lo que ajusta `max-parallel`, y se MIDE |
 
 Autorizar es entrar en Actions → *Mutation testing* → **Run workflow** (funciona
 desde el navegador del móvil). Input vacío = lo que falta desde el tag; `TODOS` =

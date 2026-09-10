@@ -13,6 +13,7 @@ import {
   activatePluginsForNewSession,
   bindPluginsForResume,
   loadGamePluginManifests,
+  pluginsHermanosDe,
 } from "../src/plugins/loader.js";
 
 const FIXTURE_GAMES = fileURLToPath(new URL("fixtures/games", import.meta.url));
@@ -51,7 +52,7 @@ function counterManifest(): Record<string, unknown> {
 
 describe("loadGamePluginManifests", () => {
   it("loads and validates the plugtest fixtures in file order", () => {
-    const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest");
+    const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest", pluginsHermanosDe(FIXTURE_GAMES));
     assert.deepEqual(
       loaded.map((lp) => lp.manifest.name),
       ["gold_giver", "test_counter", "test_listener"],
@@ -63,14 +64,14 @@ describe("loadGamePluginManifests", () => {
   });
 
   it("returns [] when the plugins dir does not exist", () => {
-    assert.deepEqual(loadGamePluginManifests(FIXTURE_GAMES, "no_such_game"), []);
+    assert.deepEqual(loadGamePluginManifests(FIXTURE_GAMES, "no_such_game", pluginsHermanosDe(FIXTURE_GAMES)), []);
   });
 
   it("rejects a manifest whose declared id diverges from the computed one", () => {
     const m = counterManifest();
     m.id = "f".repeat(64);
     const { gamesDir, gameId } = tmpGame({ "bad_id.json": m });
-    assert.throws(() => loadGamePluginManifests(gamesDir, gameId), PluginLoadError);
+    assert.throws(() => loadGamePluginManifests(gamesDir, gameId, pluginsHermanosDe(gamesDir)), PluginLoadError);
   });
 
   it("rejects a manifest whose fixture fails", () => {
@@ -78,7 +79,7 @@ describe("loadGamePluginManifests", () => {
     (m.fixtures as Array<{ after: { count: number } }>)[0].after.count = 99;
     const { gamesDir, gameId } = tmpGame({ "bad_fixture.json": m });
     assert.throws(
-      () => loadGamePluginManifests(gamesDir, gameId),
+      () => loadGamePluginManifests(gamesDir, gameId, pluginsHermanosDe(gamesDir)),
       (err: unknown) => err instanceof PluginLoadError && /fixture\[0\]/.test(err.message),
     );
   });
@@ -86,13 +87,13 @@ describe("loadGamePluginManifests", () => {
   it("rejects invalid JSON and invalid schema with the file path in the error", () => {
     const { gamesDir, gameId } = tmpGame({ "broken.json": "{not json" });
     assert.throws(
-      () => loadGamePluginManifests(gamesDir, gameId),
+      () => loadGamePluginManifests(gamesDir, gameId, pluginsHermanosDe(gamesDir)),
       (err: unknown) => err instanceof PluginLoadError && err.file.includes("broken.json"),
     );
     const m = counterManifest();
     delete m.description;
     const t2 = tmpGame({ "noschema.json": m });
-    assert.throws(() => loadGamePluginManifests(t2.gamesDir, t2.gameId), PluginLoadError);
+    assert.throws(() => loadGamePluginManifests(t2.gamesDir, t2.gameId, pluginsHermanosDe(t2.gamesDir)), PluginLoadError);
   });
 
   it("rejects effects that write outside slice without `writes` coverage", () => {
@@ -106,7 +107,7 @@ describe("loadGamePluginManifests", () => {
     m.fixtures = [];
     const { gamesDir, gameId } = tmpGame({ "sneaky.json": m });
     assert.throws(
-      () => loadGamePluginManifests(gamesDir, gameId),
+      () => loadGamePluginManifests(gamesDir, gameId, pluginsHermanosDe(gamesDir)),
       (err: unknown) => err instanceof PluginLoadError && /player\.gold/.test(err.message),
     );
   });
@@ -115,7 +116,7 @@ describe("loadGamePluginManifests", () => {
     const m = counterManifest();
     const { gamesDir, gameId } = tmpGame({ "a.json": m, "b.json": m });
     assert.throws(
-      () => loadGamePluginManifests(gamesDir, gameId),
+      () => loadGamePluginManifests(gamesDir, gameId, pluginsHermanosDe(gamesDir)),
       (err: unknown) => err instanceof PluginLoadError && /duplicado/.test(err.message),
     );
   });
@@ -123,10 +124,10 @@ describe("loadGamePluginManifests", () => {
   it("loads shared plugins from the data/plugins sibling for every game", () => {
     const shared = counterManifest();
     const { gamesDir, gameId } = tmpGame({}, { "test_counter.json": shared });
-    const loaded = loadGamePluginManifests(gamesDir, gameId);
+    const loaded = loadGamePluginManifests(gamesDir, gameId, pluginsHermanosDe(gamesDir));
     assert.deepEqual(loaded.map((lp) => lp.manifest.name), ["test_counter"]);
     // Un juego sin directorio local también recibe los comunes.
-    const other = loadGamePluginManifests(gamesDir, "otro_juego_sin_plugins");
+    const other = loadGamePluginManifests(gamesDir, "otro_juego_sin_plugins", pluginsHermanosDe(gamesDir));
     assert.deepEqual(other.map((lp) => lp.manifest.name), ["test_counter"]);
   });
 
@@ -138,7 +139,7 @@ describe("loadGamePluginManifests", () => {
       { "test_counter.json": local },
       { "test_counter.json": shared },
     );
-    const loaded = loadGamePluginManifests(gamesDir, gameId);
+    const loaded = loadGamePluginManifests(gamesDir, gameId, pluginsHermanosDe(gamesDir));
     assert.equal(loaded.length, 1);
     assert.equal(loaded[0].manifest.description, "variante local del contador para este mundo");
   });
@@ -151,7 +152,7 @@ describe("loadGamePluginManifests", () => {
       { "otro_contador.json": local },
       { "test_counter.json": shared },
     );
-    const loaded = loadGamePluginManifests(gamesDir, gameId);
+    const loaded = loadGamePluginManifests(gamesDir, gameId, pluginsHermanosDe(gamesDir));
     assert.deepEqual(loaded.map((lp) => lp.manifest.name), ["test_counter", "otro_contador"]);
   });
 
@@ -161,7 +162,7 @@ describe("loadGamePluginManifests", () => {
     b.version = 2; // contenido distinto (id distinto) pero mismo name
     const { gamesDir, gameId } = tmpGame({ "a.json": a, "b.json": b });
     assert.throws(
-      () => loadGamePluginManifests(gamesDir, gameId),
+      () => loadGamePluginManifests(gamesDir, gameId, pluginsHermanosDe(gamesDir)),
       (err: unknown) => err instanceof PluginLoadError && /name 'test_counter' duplicado/.test(err.message),
     );
   });
@@ -176,7 +177,7 @@ describe("activatePluginsForNewSession / bindPluginsForResume", () => {
 
   it("genesis registers records with initial slices and no embedded manifest", () => {
     const s = newState();
-    const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest");
+    const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest", pluginsHermanosDe(FIXTURE_GAMES));
     const active = activatePluginsForNewSession(s, loaded);
     assert.equal(s.plugins.length, 3);
     assert.equal(active.size, 3);
@@ -190,21 +191,21 @@ describe("activatePluginsForNewSession / bindPluginsForResume", () => {
     const storage = new MemorySessionStorage();
     const s1 = new NarrativeState(storage);
     s1.startNewSession("plugtest");
-    const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest");
+    const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest", pluginsHermanosDe(FIXTURE_GAMES));
     activatePluginsForNewSession(s1, loaded);
     s1.setPluginSlice(loaded[1].id, { count: 7 }); // test_counter
     await s1.establecer();
 
     const s2 = new NarrativeState(storage);
     assert.equal(await s2.loadSession(s1.session_id), true);
-    const active = bindPluginsForResume(s2, loadGamePluginManifests(FIXTURE_GAMES, "plugtest"));
+    const active = bindPluginsForResume(s2, loadGamePluginManifests(FIXTURE_GAMES, "plugtest", pluginsHermanosDe(FIXTURE_GAMES)));
     assert.equal(active.size, 3);
     assert.deepEqual(s2.getPluginRecord(loaded[1].id)?.slice, { count: 7 });
   });
 
   it("resume fails loud when the FS manifest changed (same name, other hash)", () => {
     const s = newState();
-    const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest");
+    const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest", pluginsHermanosDe(FIXTURE_GAMES));
     activatePluginsForNewSession(s, loaded);
     // Simula un save creado con otra versión del manifest de test_counter.
     const rec = s.plugins.find((p) => p.name === "test_counter");
@@ -229,21 +230,21 @@ describe("activatePluginsForNewSession / bindPluginsForResume", () => {
       activated_at: "2026-01-01T00:00:00Z",
     });
     assert.throws(
-      () => bindPluginsForResume(s, loadGamePluginManifests(FIXTURE_GAMES, "plugtest")),
+      () => bindPluginsForResume(s, loadGamePluginManifests(FIXTURE_GAMES, "plugtest", pluginsHermanosDe(FIXTURE_GAMES))),
       (err: unknown) => err instanceof PluginIntegrityError && err.fsId === null,
     );
   });
 
   it("resume ignores FS plugins not present in the save (no genesis on resume)", () => {
     const s = newState(); // save sin plugins
-    const active = bindPluginsForResume(s, loadGamePluginManifests(FIXTURE_GAMES, "plugtest"));
+    const active = bindPluginsForResume(s, loadGamePluginManifests(FIXTURE_GAMES, "plugtest", pluginsHermanosDe(FIXTURE_GAMES)));
     assert.equal(active.size, 0);
     assert.equal(s.plugins.length, 0);
   });
 
   it("resume keeps AI plugins via their embedded manifest", () => {
     const s = newState();
-    const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest");
+    const loaded = loadGamePluginManifests(FIXTURE_GAMES, "plugtest", pluginsHermanosDe(FIXTURE_GAMES));
     s.plugins.push({
       id: loaded[1].id,
       name: "test_counter",

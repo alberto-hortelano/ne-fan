@@ -50,7 +50,7 @@ import { availableParallelism } from "node:os";
 import { dirname, join, relative } from "node:path";
 
 import { contextoDe, ficherosCambiados, seleccionar } from "./afectado.js";
-import { costeDe, leerHuella } from "./mutacion.js";
+import { costeDe, estimaCoste, leerHuella } from "./mutacion.js";
 import { muroDeMutacion, permisoLocal } from "./mutacion-huella.js";
 import {
   concurrenciaDe,
@@ -231,8 +231,17 @@ function main(): void {
     const c = costeDe(plan, huella, m.id);
     return n === undefined || c === undefined ? undefined : n + c;
   }, 0);
+  // Y LO QUE COSTARÍA HOY, que no es lo mismo (#429). `costeDe` sale de la
+  // huella, o sea de la última corrida autorizada: un módulo que engorde
+  // después se cuela por debajo del tope hasta que alguien pida otra corrida.
+  // `estimaCoste` escala esa medida por lo que ha crecido el fichero, y solo
+  // puede NEGAR — nunca autoriza por debajo de lo que dice la huella.
+  const estimado = modulos.reduce<number | undefined>((n, m) => {
+    const c = estimaCoste(plan, huella, m.id);
+    return n === undefined || c === undefined ? undefined : n + c;
+  }, 0);
   const que = modulos.length === 1 ? `"${modulos[0].id}"` : `estos ${modulos.length} módulos`;
-  const permiso = permisoLocal(que, coste, plan.tope_local, Boolean(process.env.CI));
+  const permiso = permisoLocal(que, coste, plan.tope_local, Boolean(process.env.CI), estimado);
   if (!permiso.ok) {
     console.error(`\nNO se mide aquí: ${permiso.porque}\n`);
     process.exitCode = 1;

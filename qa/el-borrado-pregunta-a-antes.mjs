@@ -43,10 +43,11 @@
  *  QA). Verde con la rama intacta (~10 s).
  *
  *  Juzga el instrumento del ÁRBOL DE TRABAJO (se copian `scripts/` y el plan encima del clon
- *  y se sellan en un commit), así que sirve antes de commitear. Lo que NO ve: un import de
- *  directorio (`./x` → `x/index.ts`): el prefiltro `git grep` busca el basename y no lo
- *  encuentra. `Node16` lo rechaza y hoy no hay ninguno; está anotado en `qa-471.md` y en el
- *  comentario de `importadoresEn`.
+ *  y se sellan en un commit), así que sirve antes de commitear. El import de DIRECTORIO
+ *  (`./x` → `x/index.ts`) dejó de ser el agujero de esta lista el 2026-09-10 (#473): cuando
+ *  el borrado es un `index`, `importadoresEn` busca ADEMÁS el nombre de su carpeta, y el caso
+ *  H de `qa-471.md` lo ejerce `test/afectado.test.ts` sobre una revisión fabricada con
+ *  plumbing — el caso no cabe en el repo porque `Node16` lo rechaza en ESM.
  *
  *  NO mide mutación: no lanza Stryker, ni `npm run mutate`, ni `mutacion -- local`. Cero
  *  créditos, cero servicios. No toca el árbol del repo: todo pasa en el clon, que se borra.

@@ -638,6 +638,134 @@ export interface Lote {
   margen?: number;
 }
 
+// ── la cadena del reloj: mutate → manifiesto → repartir → huella ─────────────
+//
+// El segundo que reparte la corrida en lotes viaja por cuatro eslabones y hasta
+// el 2026-09-10 solo el primero tenía candado (#436): `mutate.ts` cronometra,
+// `manifiesto` lo sella en el informe, `repartir` lo lleva a la huella y
+// `segundosDe` lo agrega con MÁXIMO. Los dos de en medio eran un spread de una
+// línea dentro de un verbo que llama a git y escribe en disco, o sea
+// inejercitable desde la batería; aquí están, puros, para que perder el
+// cronómetro por el camino ponga algo en rojo.
+
+/** El manifiesto de la corrida: cada informe sellado, con su reloj si lo hay.
+ *
+ *  La ausencia de `segundos` NO se rellena con un cero: viaja como campo
+ *  ausente hasta `segundosDe`, que la traduce a `undefined`, y de ahí al lote
+ *  propio. Un cero diría «este módulo es gratis» y lo metería en el hueco de
+ *  cualquier lote, que es la forma exacta de reventar el reloj del job que lo
+ *  acoja. */
+export function conCronometro(
+  informes: readonly InformeSellado[],
+  tiempos: Readonly<Record<string, number>>,
+): InformeSellado[] {
+  return informes.map((i) => ({
+    ...i,
+    ...(typeof tiempos[i.modulo] === "number" ? { segundos: tiempos[i.modulo] } : {}),
+  }));
+}
+
+/** Una fila de la huella: lo que `repartir` deja escrito de un fichero medido.
+ *
+ *  El reloj va REPETIDO en cada fila del módulo porque la huella se indexa por
+ *  fichero y la corrida cronometra el módulo entero de una vez; `segundosDe` lo
+ *  vuelve a juntar con MÁXIMO, no con suma. Sin reloj el campo no se escribe:
+ *  ver `conCronometro`. */
+export function filaDeHuella(args: {
+  corrida: Pick<Corrida, "sha" | "run_id" | "fecha">;
+  delta: DeltaDeFichero;
+  blob: string;
+  duenos: DuenosDeLaMedida;
+  segundos: number | undefined;
+}): MedidaDeFichero {
+  const { corrida, delta, blob, duenos, segundos } = args;
+  return {
+    sha: corrida.sha,
+    run: corrida.run_id,
+    fecha: corrida.fecha,
+    blob,
+    total: delta.total,
+    vivos: [...delta.vivos].sort(),
+    nuevos: [...delta.nuevos].sort(),
+    resueltos: delta.resueltos.length,
+    base: delta.base,
+    duenos,
+    ...(segundos === undefined ? {} : { segundos }),
+  };
+}
+
+/** La matriz que consume `fromJSON` en el workflow: un objeto por lote con sus
+ *  ids ya formateados, para que el job de medir no tenga que leer el plan.
+ *
+ *  LAS CLAVES SON EL CONTRATO, y romperlo no da error: si `ids` se llamara otra
+ *  cosa, `matrix.ids` quedaría VACÍO, cada lote llamaría a `npm run mutate` sin
+ *  argumentos y sin argumentos `mutate` mide los 55 módulos. N jobs midiendo la
+ *  corrida entera a la vez, con el YAML válido y los jobs arrancando: parecería
+ *  una corrida cara pero correcta hasta el `timeout-minutes` (#437). Por eso
+ *  vive aquí y no dentro del verbo: `test/mutacion-el-reloj-y-el-score.test.ts`
+ *  compara estas claves con las que el YAML nombra. */
+export function matrizDeLotes(lotes: readonly Lote[]): { lote: number; ids: string }[] {
+  return lotes.map((l) => ({ lote: l.lote, ids: l.modulos.join(" ") }));
+}
+
+/** Qué módulos pide una invocación de `lotes`, mirando SOLO lo que se escribió
+ *  en la línea de órdenes. Tres respuestas legítimas y dos formas de escribirlo
+ *  mal, y las dos se rechazan aquí en vez de resolverse a algo (#437):
+ *
+ *   · `--todos` Y `--ids` a la vez → hasta el 2026-09-10 ganaba `--todos` y los
+ *     ids se tiraban EN SILENCIO. Es la forma exacta del bug que ya costó una
+ *     corrida entera (`--pedidos ""`, que mataba el manifiesto después de medir
+ *     131 minutos): la orden hace algo distinto de lo que dice y nadie se
+ *     entera hasta que la factura llega.
+ *   · un id REPETIDO → `moduloPorId` valida que exista, no que venga una sola
+ *     vez. En el mejor caso se mide dos veces; en el peor, dos lotes reclaman el
+ *     mismo módulo y la fusión encuentra dos informes para él.
+ *   · `--ids ""` → una lista vacía escrita a mano no es «todos» ni «lo que diga
+ *     el tag»: es un flag que se quedó sin valor, y suponerle intención es lo
+ *     que hay que dejar de hacer.
+ *
+ *  Vive aquí, sin git ni disco, porque el resto de `lotes` no se puede ejercer
+ *  desde la batería y esta decisión sí. */
+export type IdsPedidos =
+  | { ok: true; ids: readonly string[] }
+  /** El input TODOS del workflow: el plan entero. */
+  | { ok: true; ids: "todos" }
+  /** Nada dicho: lo decide el selector sobre el diff desde el tag. */
+  | { ok: true; ids: "del-tag" }
+  | { ok: false; porque: string };
+
+export function idsDeLotes(todos: boolean, crudos: string | undefined): IdsPedidos {
+  if (todos && crudos !== undefined) {
+    return {
+      ok: false,
+      porque:
+        `--todos y --ids "${crudos}" piden cosas distintas y solo una puede ganar. Escribe una: ` +
+        `--todos para la corrida completa, o --ids para esos módulos`,
+    };
+  }
+  if (todos) return { ok: true, ids: "todos" };
+  if (crudos === undefined) return { ok: true, ids: "del-tag" };
+  const ids = crudos.split(/\s+/).filter(Boolean);
+  if (ids.length === 0) {
+    return {
+      ok: false,
+      porque:
+        `--ids llegó vacío. Una lista vacía no es «todos» ni «lo que haya cambiado»: si querías la ` +
+        `corrida completa, pídela con --todos`,
+    };
+  }
+  const repetidos = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+  if (repetidos.length > 0) {
+    return {
+      ok: false,
+      porque:
+        `--ids trae repetido(s): ${repetidos.join(" ")}. Un módulo pedido dos veces se mide dos veces, ` +
+        `y si cae en dos lotes la fusión encuentra dos informes para él`,
+    };
+  }
+  return { ok: true, ids };
+}
+
 /** Cómo se parte la corrida en trozos que quepan en el reloj de un job.
  *
  *  SE EMPAQUETA POR SEGUNDOS MEDIDOS Y POR NADA MÁS. La primera versión del
@@ -847,12 +975,39 @@ export interface JobDeCI {
   completed_at?: string | null;
 }
 
+/** Sobre QUÉ corrida se está opinando, que es lo que decide si una espera es un
+ *  fallo o un dato. Las dos preguntas usan los mismos tres instantes y NO
+ *  significan lo mismo:
+ *
+ *   · `"la-matriz"` — la propia corrida de mutación. Sus jobs se encolan todos a
+ *     la vez y los que pasan de `max-parallel` esperan a que se libere un slot
+ *     DE ELLA MISMA. Esa espera no es competencia con nadie: es el dial haciendo
+ *     su trabajo, y bajarlo la ALARGA.
+ *   · `"una-pr"` — una corrida ajena lanzada mientras la matriz ocupa el pool.
+ *     Ahí la espera sí es lo que esa PR pagó, tiene presupuesto y su remedio es
+ *     bajar `max-parallel`.
+ *
+ *  Confundirlas es #541: `cola` aconsejaba bajar `max-parallel` sobre la espera
+ *  interna de la matriz (peor 36,0 min de 21 jobs con `max-parallel: 6`), o sea
+ *  exactamente lo contrario de lo que decía el dato. */
+export type SujetoDeLaCola = "la-matriz" | "una-pr";
+
 export interface CosteDeLaMatriz {
-  /** El peor hueco entre «encolado» y «empezado», en segundos. Es lo que espera
-   *  quien tiene una PR mientras la matriz ocupa el pool. */
+  /** El peor hueco entre «encolado» y «empezado», en segundos. Sobre `"una-pr"`
+   *  es lo que esa PR esperó; sobre `"la-matriz"` es la cola INTERNA, o sea lo
+   *  que el último lote esperó a un slot propio. */
   esperaPeor: number;
   esperaPeorJob: string;
   esperaMediana: number;
+  /** El hueco MÁS CORTO. Sobre la matriz es lo que la corrida esperó a que el
+   *  pool le hiciera sitio: sus primeros `max-parallel` jobs arrancan juntos, y
+   *  si el pool estuviera ocupado por otra cosa esperarían TODOS. Es la única
+   *  parte de la espera de la matriz que no se explica sola. */
+  esperaDeArranque: number;
+  /** Cuántos jobs de esta corrida llegaron a correr A LA VEZ. Es el número que
+   *  dice si `max-parallel` se está aprovechando, y el que se mueve — no la
+   *  espera, que es su consecuencia. */
+  paralelismoMaximo: number;
   /** Reloj de pared de la corrida entera. */
   pared: number;
   /** Suma de las duraciones de todos los jobs. */
@@ -862,8 +1017,13 @@ export interface CosteDeLaMatriz {
    *  honesto de la partición. */
   sobrecoste: number;
   jobs: number;
-  /** Si el peor hueco cabe en el presupuesto de espera. */
+  sujeto: SujetoDeLaCola;
+  /** Si la espera que SÍ tiene presupuesto cabe en él. Cuál es depende del
+   *  sujeto: sobre `"una-pr"`, la peor; sobre `"la-matriz"`, la de arranque —
+   *  la interna no tiene presupuesto porque no es un coste, es el dial. */
   cabe: boolean;
+  /** La espera que `cabe` mide, para que el mensaje no tenga que adivinarla. */
+  esperaPresupuestada: number;
 }
 
 /** El coste del día después, medido y no estimado.
@@ -874,10 +1034,22 @@ export interface CosteDeLaMatriz {
  *  corrida de 23 lotes que ocupe el pool bloquea a quien está trabajando — el
  *  reloj de la mutación es diferido y el de una PR no.
  *
+ *  Y CONTESTA SABIENDO SOBRE QUÉ CORRIDA OPINA (`sujeto`). Sin eso, la misma
+ *  espera se leía igual viniera de donde viniera, y sobre la propia matriz el
+ *  veredicto salía INVERTIDO: la corrida `34339870322` (21 jobs,
+ *  `max-parallel: 6`) daba «peor job esperó 36,0 min ⇒ BAJA max-parallel»
+ *  cuando esos 36 minutos son los lotes 8-19 esperando un slot de la PROPIA
+ *  matriz — bajarlo los alarga. Una herramienta que aconseja al revés es peor
+ *  que una que calla (#541).
+ *
  *  Vive aquí, pura y sobre los tres instantes, para que se pueda ejercer con
  *  datos sintéticos: pedírselo a `gh` dentro haría un test que en CI no
  *  comprueba nada, que es de lo que va la cabecera de este fichero. */
-export function costeDeLaMatriz(jobs: readonly JobDeCI[], topeEsperaS: number): CosteDeLaMatriz {
+export function costeDeLaMatriz(
+  jobs: readonly JobDeCI[],
+  topeEsperaS: number,
+  sujeto: SujetoDeLaCola = "una-pr",
+): CosteDeLaMatriz {
   if (jobs.length === 0) throw new Error("no hay jobs que medir: ¿es el id de una corrida que existe?");
   const ms = (s: string): number => Date.parse(s);
   const esperas = jobs
@@ -887,18 +1059,50 @@ export function costeDeLaMatriz(jobs: readonly JobDeCI[], topeEsperaS: number): 
   const pared = (Math.max(...jobs.map(fin)) - Math.min(...jobs.map((j) => ms(j.created_at)))) / 1000;
   const runner = jobs.reduce((n, j) => n + (fin(j) - ms(j.started_at)) / 1000, 0);
   const ordenadas = [...esperas].sort((a, b) => a.s - b.s);
+  const esperaDeArranque = ordenadas[0].s;
+  const esperaPresupuestada = sujeto === "la-matriz" ? esperaDeArranque : esperas[0].s;
   return {
     esperaPeor: esperas[0].s,
     esperaPeorJob: esperas[0].name,
     esperaMediana: ordenadas[Math.floor(ordenadas.length / 2)].s,
+    esperaDeArranque,
+    paralelismoMaximo: paralelismoMaximo(jobs),
     pared,
     runner,
     // Con un solo job la partición no paga nada: el sobrecoste es lo que la
     // matriz añade SOBRE el reloj de pared, y con jobs en serie sería negativo.
     sobrecoste: Math.max(0, runner - pared),
     jobs: jobs.length,
-    cabe: esperas[0].s <= topeEsperaS,
+    sujeto,
+    cabe: esperaPresupuestada <= topeEsperaS,
+    esperaPresupuestada,
   };
+}
+
+/** Cuántos jobs de la corrida estuvieron corriendo A LA VEZ, como más. Se barre
+ *  la línea de tiempo por sus eventos —un job entra al empezar y sale al
+ *  acabar— en vez de contar jobs, que daría el total y no el simultáneo.
+ *
+ *  Es el número que se ajusta cuando la cola interna estorba: con 21 jobs y
+ *  `max-parallel: 6` sale 6, y eso dice que el dial está saturado y que la
+ *  espera de los últimos lotes se explica sola. Si saliera POR DEBAJO del dial
+ *  con jobs esperando, la cola no la estaría causando la matriz. */
+function paralelismoMaximo(jobs: readonly JobDeCI[]): number {
+  const ms = (s: string): number => Date.parse(s);
+  const eventos = jobs.flatMap((j) => [
+    { t: ms(j.started_at), d: 1 },
+    { t: ms(j.completed_at ?? j.started_at), d: -1 },
+  ]);
+  // Las salidas van ANTES que las entradas del mismo instante: dos jobs que se
+  // relevan exactamente no estuvieron nunca juntos.
+  eventos.sort((a, b) => a.t - b.t || a.d - b.d);
+  let vivos = 0;
+  let peor = 0;
+  for (const e of eventos) {
+    vivos += e.d;
+    if (vivos > peor) peor = vivos;
+  }
+  return peor;
 }
 
 /** Los lotes de los que no ha llegado ni un parcial. No es un error de fusión
@@ -942,10 +1146,27 @@ export function permisoLocal(
   coste: number | undefined,
   tope: number,
   enCI = false,
+  estimado?: number,
 ): PermisoLocal {
   // En el runner no hay nadie delante y la corrida completa es justo lo que se
   // le pide: el tope es una propiedad de la MÁQUINA, no del repositorio.
   if (enCI) return { ok: true, coste: coste ?? 0 };
+  // EL CÓDIGO DE HOY, ANTES QUE LA FOTO DE AYER (#429). El `coste` sale de la
+  // huella, o sea de la última corrida autorizada, así que un módulo que engorde
+  // DESPUÉS sigue colándose por debajo del tope hasta que alguien pida otra
+  // corrida. Le pasó a `status-labels`: la huella decía 119 mientras el fichero
+  // costaba ya 160, y `local` aceptaba y luego instrumentaba 160 en la máquina
+  // de quien programa. `estimado` es lo que costaría HOY; se mira ANTES porque
+  // es el número más nuevo de los dos, y solo puede NEGAR (ver `costeEstimado`).
+  if (estimado !== undefined && estimado > tope) {
+    return {
+      ok: false,
+      porque:
+        `${que} ha crecido desde la última medida: la huella dice ${coste ?? "?"} mutantes, pero con el ` +
+        `código de HOY salen ≈${estimado} y el tope local es ${tope}. La huella es la foto de la corrida ` +
+        `anterior; lo que se instrumentaría aquí es lo de ahora. Pídelo: npm run mutacion -- pendiente`,
+    };
+  }
   if (coste === undefined) {
     return {
       ok: false,
@@ -963,6 +1184,58 @@ export function permisoLocal(
     };
   }
   return { ok: true, coste };
+}
+
+/** Un fichero medido, con su tamaño ENTONCES y AHORA. `lineas` son líneas de
+ *  código —las que emiten JavaScript, `lineasDeCodigo` de `crap-score.ts`— y no
+ *  líneas físicas: documentar un fichero no le añade mutantes, y un estimador
+ *  que contara la prosa negaría la medida a quien acaba de escribir una
+ *  cabecera. `undefined` en cualquiera de las dos = no se pudo comparar. */
+export interface CrecimientoDeFichero {
+  fichero: string;
+  /** Mutantes que la última corrida midió en él. */
+  total: number;
+  /** Líneas de código que tenía cuando se midió, contadas sobre el blob que la
+   *  propia huella guarda. */
+  lineasMedidas: number | undefined;
+  /** Las que tiene en el árbol de trabajo. */
+  lineasAhora: number | undefined;
+}
+
+/** Lo que costaría medir HOY lo que la huella midió AYER, para poder NEGARSE.
+ *
+ *  POR QUÉ NO SE COMPARAN BLOBS Y YA. Un gate que rechazara cualquier fichero
+ *  cambiado apagaría el flujo entero: `local` se usa justo DESPUÉS de editar el
+ *  módulo —es su razón de ser, comprobar que los supervivientes que tocabas
+ *  mueren—, así que ahí el blob difiere por construcción. El blob se usa para
+ *  otra cosa: recuperar el TAMAÑO que tenía el fichero cuando se midió, y con
+ *  él la densidad de mutantes POR LÍNEA de ese fichero concreto.
+ *
+ *  POR QUÉ LA DENSIDAD DEL PROPIO FICHERO Y NO LA DE LA CASA. Medida el
+ *  2026-09-10 sobre los 87 ficheros de la huella: 1,49 mutantes por línea de
+ *  código de media, pero con un reparto de 0,05 (`entity-vocabulary.ts`) a 3,28
+ *  (`deep-equal.ts`) — sesenta veces. Una media así niega medidas que caben y
+ *  autoriza las que no. La densidad de un fichero contra sí mismo es estable:
+ *  lo que se pregunta es cuánto ha crecido, no cuánto muta esta casa.
+ *
+ *  SOLO NIEGA. Un fichero que no se puede comparar aporta su `total` tal cual,
+ *  así que la estimación NUNCA sale por debajo de lo que ya dice la huella: es
+ *  la huella más el crecimiento de lo que sí se pudo medir. Y `permisoLocal`
+ *  sigue aplicando el `coste` de la huella, que es el otro filo.
+ *
+ *  Redondea hacia ARRIBA por lo mismo: entre negar de más y autorizar de más,
+ *  este gate existe para lo segundo. */
+export function costeEstimado(ficheros: readonly CrecimientoDeFichero[]): number | undefined {
+  if (ficheros.length === 0) return undefined;
+  let total = 0;
+  for (const f of ficheros) {
+    const comparable =
+      f.lineasMedidas !== undefined && f.lineasMedidas > 0 && f.lineasAhora !== undefined;
+    total += comparable
+      ? Math.ceil((f.total * (f.lineasAhora as number)) / (f.lineasMedidas as number))
+      : f.total;
+  }
+  return total;
 }
 
 // ── lo que `npm run deuda` dice de cada fichero ──────────────────────────────

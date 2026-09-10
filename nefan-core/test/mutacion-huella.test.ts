@@ -24,6 +24,7 @@ import {
   avisoDeFrescura,
   claveDeMutante,
   costeDeLaMatriz,
+  costeEstimado,
   deltaDeCorrida,
   duenosDeLaMedida,
   duenosLegibles,
@@ -1037,6 +1038,61 @@ describe("el coste del día después se MIDE, no se estima", () => {
     // la verdadera («no se ha medido»).
     assert.throws(() => costeDeLaMatriz([], 120), /no hay jobs/);
   });
+
+  /** #541 · La MISMA espera significa cosas opuestas según de qué corrida sea, y
+   *  el veredicto tiene que saberlo. La población es la corrida real
+   *  `34339870322` en miniatura: seis jobs que arrancan a la vez con
+   *  `max-parallel: 6` y uno que espera a que se libere un slot. */
+  describe("y el veredicto sabe sobre qué corrida opina (#541)", () => {
+    // Seis lotes arrancan en el minuto 00 y duran 10; el séptimo se encola con
+    // todos pero no arranca hasta que uno acaba.
+    const matriz = [
+      ...[1, 2, 3, 4, 5, 6].map((n) => job(`medir (${n})`, "00", "00", "10")),
+      job("medir (7)", "00", "10", "12"),
+    ];
+
+    it("sobre LA MATRIZ, la cola interna no gasta presupuesto: bajar el dial la alargaría", () => {
+      const c = costeDeLaMatriz(matriz, 120, "la-matriz");
+      assert.equal(c.esperaPeor, 600, "el lote 7 esperó diez minutos");
+      assert.equal(c.esperaDeArranque, 0, "y la corrida arrancó sin esperar: el pool estaba libre");
+      assert.equal(c.paralelismoMaximo, 6, "seis a la vez, que es el dial");
+      assert.equal(c.cabe, true, "600 s de cola INTERNA no son un fallo del pool");
+      assert.equal(c.esperaPresupuestada, 0, "lo presupuestado es el arranque, no la cola de uno mismo");
+    });
+
+    it("y la MISMA corrida, leída como ajena, sí se sale del presupuesto", () => {
+      // El contraste es el test: si las dos lecturas dieran lo mismo, `sujeto`
+      // no estaría decidiendo nada y esto sería un verde que no comprueba nada.
+      const ajena = costeDeLaMatriz(matriz, 120, "una-pr");
+      assert.equal(ajena.cabe, false, "para quien espera fuera, 10 min de cola sí son el coste");
+      assert.equal(ajena.esperaPresupuestada, 600);
+      assert.notEqual(ajena.cabe, costeDeLaMatriz(matriz, 120, "la-matriz").cabe);
+    });
+
+    it("una matriz que NO llegó a arrancar sí se pone roja: el pool lo tenía otro", () => {
+      // La única espera de la matriz que no se explica sola. Aquí los siete
+      // jobs esperan cinco minutos ANTES de que arranque ninguno.
+      const tarde = [
+        ...[1, 2, 3, 4, 5, 6].map((n) => job(`medir (${n})`, "00", "05", "15")),
+        job("medir (7)", "00", "15", "17"),
+      ];
+      const c = costeDeLaMatriz(tarde, 120, "la-matriz");
+      assert.equal(c.esperaDeArranque, 300);
+      assert.equal(c.cabe, false, "300 s de arranque no caben en 120");
+    });
+
+    it("el paralelismo cuenta lo SIMULTÁNEO, no los jobs", () => {
+      // Dos jobs que se relevan exactamente no estuvieron nunca juntos: si esto
+      // contara jobs, o cerrara los intervalos por el otro lado, daría 2.
+      assert.equal(costeDeLaMatriz([job("a", "00", "00", "10"), job("b", "00", "10", "20")], 120).paralelismoMaximo, 1);
+      assert.equal(costeDeLaMatriz([job("a", "00", "00", "10"), job("b", "00", "09", "20")], 120).paralelismoMaximo, 2);
+    });
+
+    it("sin decir el sujeto se lee como AJENA, que es el lado que tiene presupuesto", () => {
+      assert.equal(costeDeLaMatriz(matriz, 120).sujeto, "una-pr");
+      assert.equal(costeDeLaMatriz(matriz, 120).cabe, false);
+    });
+  });
 });
 
 describe("tope local · no se puede equivocar hacia arriba", () => {
@@ -1068,6 +1124,80 @@ describe("tope local · no se puede equivocar hacia arriba", () => {
     assert.equal(p.ok, false);
     if (p.ok) return;
     assert.match(p.porque, /9082 mutantes/);
+  });
+
+  /** #429 · El tope decidía con la foto de la corrida anterior, así que lo que
+   *  engordara después se colaba por debajo. El caso real: `status-labels`, con
+   *  la huella diciendo 119 mientras el fichero costaba ya 160. */
+  describe("y con el código de HOY, no con la foto de ayer (#429)", () => {
+    const crecio = (total: number, antes: number, ahora: number) => [
+      { fichero: "src/x.ts", total, lineasMedidas: antes, lineasAhora: ahora },
+    ];
+
+    it("un fichero que crece cuesta más, en proporción a su PROPIA densidad", () => {
+      // 119 mutantes en 100 líneas de código; hoy tiene 135 → ≈161. Es
+      // exactamente el caso de `status-labels`, que la huella dejaba pasar.
+      assert.equal(costeEstimado(crecio(119, 100, 135)), 161);
+    });
+
+    it("y el tope se aplica a ESE número, no al de la huella", () => {
+      const p = permisoLocal("status-labels", 119, 120, false, 161);
+      assert.equal(p.ok, false, "119 cabía en 120; 161 no, y es lo que se instrumentaría");
+      if (p.ok) return;
+      assert.match(p.porque, /ha crecido/);
+      assert.match(p.porque, /119/, "dice lo que decía la huella");
+      assert.match(p.porque, /161/, "y lo que costaría hoy");
+      assert.match(p.porque, /pendiente/, "y qué hacer en su lugar");
+    });
+
+    it("EDITAR sin engordar no niega nada, que es lo que mata al gate por blob", () => {
+      // `local` se usa justo DESPUÉS de tocar el módulo: si cambiar el fichero
+      // bastara para rechazarlo, el flujo entero se apagaría. Lo que niega es
+      // crecer, no cambiar.
+      assert.equal(costeEstimado(crecio(119, 100, 100)), 119);
+      assert.equal(permisoLocal("x", 119, 120, false, 119).ok, true);
+    });
+
+    it("un fichero que ADELGAZA no autoriza por debajo de la huella: `coste` sigue mandando", () => {
+      // La estimación solo puede negar. Aquí dice 60, y el permiso se sigue
+      // decidiendo también con los 200 medidos.
+      assert.equal(costeEstimado(crecio(200, 100, 30)), 60);
+      assert.equal(permisoLocal("x", 200, 120, false, 60).ok, false, "los 200 de la huella siguen contando");
+    });
+
+    it("redondea hacia ARRIBA: entre negar de más y autorizar de más, este gate es para lo segundo", () => {
+      assert.equal(costeEstimado(crecio(10, 100, 101)), 11, "10,1 mutantes son 11, no 10");
+    });
+
+    it("un fichero que no se puede comparar aporta su medida y no un cero", () => {
+      // Blob que git no saca (clon superficial, rama reescrita) o fichero que ya
+      // no está: se cuenta lo que la huella sabía. Así la estimación nunca sale
+      // POR DEBAJO de la huella — es la huella más lo que sí creció.
+      assert.equal(costeEstimado([{ fichero: "a", total: 40, lineasMedidas: undefined, lineasAhora: 90 }]), 40);
+      assert.equal(costeEstimado([{ fichero: "a", total: 40, lineasMedidas: 30, lineasAhora: undefined }]), 40);
+      assert.equal(costeEstimado([{ fichero: "a", total: 40, lineasMedidas: 0, lineasAhora: 90 }]), 40);
+    });
+
+    it("suma los ficheros del módulo, mezclando comparables y no comparables", () => {
+      assert.equal(
+        costeEstimado([
+          { fichero: "a", total: 40, lineasMedidas: 40, lineasAhora: 80 },
+          { fichero: "b", total: 10, lineasMedidas: undefined, lineasAhora: 5 },
+        ]),
+        90,
+      );
+    });
+
+    it("sin ni una fila medida no inventa un número", () => {
+      // `undefined` cae en la otra rama de `permisoLocal` («no se sabe cuánto
+      // cuesta»), que también rechaza. Un 0 habría autorizado.
+      assert.equal(costeEstimado([]), undefined);
+      assert.equal(permisoLocal("estrenado", undefined, 120, false, undefined).ok, false);
+    });
+
+    it("en CI la estimación tampoco frena: el tope es de la máquina, no del repo", () => {
+      assert.equal(permisoLocal("x", 119, 120, true, 9999).ok, true);
+    });
   });
 
   it("en CI el tope NO aplica: allí no hay nadie delante", () => {
