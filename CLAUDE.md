@@ -111,7 +111,7 @@ Cosas a tener en cuenta:
 - El preflight es condicional: solo comprueba las dependencias de los servicios seleccionados (elegir "HTML fixtures" no exige el `.venv` ni las deps del bridge).
 - Cada servicio espera al puerto del anterior (`wait_for_port` real, no `sleep` ciego).
 - **Arrancar no mata a nadie.** Si un puerto del catálogo está ocupado, el servicio NO
-  arranca: se dice quién lo tiene (`port_owner`) y se sale con 1. Antes las nueve
+  arranca: se dice quién lo tiene (`foto_del_puerto`) y se sale con 1. Antes las nueve
   funciones `start_*` mataban al ocupante sin preguntar, así que el preset más tonto se
   llevaba por delante el stack de otro agente de la máquina.
 - Ctrl+C para **solo lo que arrancó este launcher** (`trap EXIT` → el proceso y su
@@ -130,7 +130,8 @@ Cosas a tener en cuenta:
   worktree. No lo honran ai_server, remote-gen, narrative-mcp ni sprite-forge (leen el
   snapshot, que es uno por checkout, o viven en otro repo): con offset ≠ 0 el launcher se
   NIEGA a arrancarlos en vez de ponerlos donde nadie los busca. `qa/run.mjs` sí elige
-  bloque libre solo (con lock atómico en `qa/.tmp/.bloques/`), y el cliente lo recibe por
+  bloque libre solo (con lock atómico en `$TMPDIR/nefan-qa-bloques-<uid>/`, fuera del árbol
+  desde #501: estaba en `qa/.tmp/` y dos worktrees cogían el mismo bloque), y el cliente lo recibe por
   `?offset=N`.
 - **`start.sh` ya no declara ningún puerto**: los lee de `nefan-core/data/runtime_config.json`,
   el snapshot de la fuente única (`src/config.ts` → registro de servicios). Lo canda

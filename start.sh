@@ -199,9 +199,6 @@ owner_de_pids() {
     [[ -n "${1// /}" ]] && ps -o comm=,args= -p $1 2>/dev/null | head -1 | cut -c1-60
 }
 
-# Quién escucha en un puerto, para poder decirlo antes de matarlo.
-port_owner() { owner_de_pids "$(pids_del_puerto "$1")"; }
-
 # ¿El proceso que escucha en $1 vive en ESTE worktree?
 #
 # En esta máquina trabajan varios agentes a la vez, cada uno en su worktree, y
