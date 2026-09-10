@@ -139,6 +139,63 @@ describe("las puertas del save (#334, #336)", () => {
     assert.deepEqual(b.player.inventory, []);
   });
 
+  /** #522 · Los dos modos de render son la PUERTA DEL GASTO de imagen, y un
+   *  valor que nadie sabe leer tenía tres lecturas distintas en el mismo byte:
+   *  «sin elegir» para el cliente, modo PROPIO para `applyRenderModeChange` (que
+   *  rompe el «los personajes siguen a los escenarios») y tal cual para la State
+   *  API. La puerta del save es donde se para. */
+  for (const campo of ["render_mode", "character_mode"] as const) {
+    it(`un save con world.${campo} desconocido NO carga: rejects nombrando el campo y el valor`, async () => {
+      const storage = new MemorySessionStorage();
+      const seed = new NarrativeState(storage);
+      seed.startNewSession("toledo_1200");
+      const data = seed.toSessionData();
+      data.session_id = `modo_${campo}`;
+      // Lo que deja un save editado a mano o una era anterior del campo.
+      (data.world as unknown as Record<string, unknown>)[campo] = "imagen";
+      await storage.write(data.session_id, data);
+      const s = new NarrativeState(storage);
+      await assert.rejects(
+        () => s.loadSession(data.session_id),
+        (err: Error) => {
+          assert.match(err.message, new RegExp(`"${data.session_id}"`), "nombra el save");
+          assert.match(err.message, new RegExp(`world\\.${campo}`), "nombra el campo");
+          assert.match(err.message, /"imagen"/, "dice el valor que traía");
+          assert.match(err.message, /image.*vector/, "dice lo que sí vale");
+          return true;
+        },
+      );
+      assert.equal(s.session_id, "", "el throw llega ANTES de mutar la sesión");
+    });
+  }
+
+  it("los tres modos que el juego sabe leer cargan, y el campo ausente cae al default", async () => {
+    const storage = new MemorySessionStorage();
+    const seed = new NarrativeState(storage);
+    seed.startNewSession("toledo_1200");
+    for (const modo of ["image", "vector", ""] as const) {
+      const data = seed.toSessionData();
+      data.session_id = `modo_ok_${modo || "vacio"}`;
+      data.world.render_mode = modo;
+      data.world.character_mode = modo;
+      await storage.write(data.session_id, data);
+      const s = new NarrativeState(storage);
+      assert.equal(await s.loadSession(data.session_id), true, `"${modo}" debía cargar`);
+      assert.equal(s.world.render_mode, modo);
+      assert.equal(s.world.character_mode, modo);
+    }
+    // Convención ADITIVA: un save anterior al campo no es un save corrupto.
+    const viejo = seed.toSessionData();
+    viejo.session_id = "modo_ausente";
+    delete (viejo.world as Partial<typeof viejo.world>).render_mode;
+    delete (viejo.world as Partial<typeof viejo.world>).character_mode;
+    await storage.write("modo_ausente", viejo);
+    const s = new NarrativeState(storage);
+    assert.equal(await s.loadSession("modo_ausente"), true);
+    assert.equal(s.world.render_mode, "", "cae al default de DEFAULT_WORLD");
+    assert.equal(s.world.character_mode, "");
+  });
+
   it("false queda SOLO para «no existe»", async () => {
     const s = makeState();
     assert.equal(await s.loadSession("no_existe"), false);

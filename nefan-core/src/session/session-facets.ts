@@ -93,6 +93,21 @@ export interface FacetSinks {
    *  partida se llevaría el mundo por delante. Esa lectura la hace `porValor`
    *  (abajo), que es cómo el cliente cablea este sink y el de `dialogo`. */
   mundo(f: Pick<SessionFacets, "sessionId">): void;
+  /** La FRONTERA del mundo: qué tiles vecinos se han pedido, cuáles rechazó
+   *  el jugador y cuáles están enfriándose tras un error.
+   *
+   *  Va junto al mundo y por la misma razón: lo que guarda son claves de tile,
+   *  y `tile_1_0` es un sitio distinto en cada partida. Sin la faceta, la
+   *  `Frontera` es una instancia de MÓDULO del cliente (`main.ts`) que
+   *  sobrevive a volver al título, así que lo pedido en una partida seguía
+   *  pedido en la siguiente: el vecino no se volvía a proponer nunca (está
+   *  «en vuelo»), el velo mentía y el timeout del mundo anterior vencía en el
+   *  nuevo. Y es GASTO en los dos sentidos — un error o un rechazo heredados
+   *  callan la propuesta que el jugador sí quiere (#517).
+   *
+   *  Recibe el id por valor y el cliente lo cablea con `porValor`, como
+   *  `mundo` y `dialogo`: olvidar es destructivo. */
+  frontera(f: Pick<SessionFacets, "sessionId">): void;
   /** Estilo visual → generadores de imagen (atlas de superficies, skins). */
   style(f: Pick<SessionFacets, "styleId">): void;
   /** Tema de UI → custom properties de #game-ui. */
@@ -185,6 +200,9 @@ const APLICADORES: {
   // activo del mundo que se está yendo y pedía su imagen con el estilo de la
   // partida nueva.
   mundo: (s, f) => s.mundo(f),
+  // Detrás del mundo, porque es lo mismo que el mundo: los tiles se van y con
+  // ellos lo que la frontera creía saber de sus vecinos.
+  frontera: (s, f) => s.frontera(f),
   style: (s, f) => s.style(f),
   theme: (s, f) => s.theme(f),
   renderModes: (s, f) => s.renderModes(f),

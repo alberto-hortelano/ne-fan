@@ -126,7 +126,10 @@ export function crearAspectoDelJugador(deps: DepsDeAspectoDelJugador): AspectoDe
     // con el backend arriba— y sus vecinos de siempre seguían en maniquí toda
     // la vida de la pestaña. Rearmar OLVIDA a los que fallaron (ver
     // `rearmarCortacircuitos`), no los re-pide: los que aparezcan en ESTA
-    // partida los pedirá quien los spawnee, y los que no, no se pagan.
+    // partida los pedirá quien los spawnee, y los que no, no se pagan. Y desde
+    // #520 el que se quedó a medias —anims encoladas que el apagón SALTÓ sin
+    // pedirlas— también vuelve por ahí: su petición completa lo que le falte
+    // del set automático en vez de salirse por «ya tiene estado».
     characterSprites.rearmarCortacircuitos();
 
     let base = BASE_MODEL;

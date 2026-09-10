@@ -35,11 +35,11 @@
 #dev-status .ds-gen.paused { color: #e88; }
 @keyframes ds-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 #dev-status .ds-spend { color: #8af; }
-#dev-status .autoimg {
+#dev-status .dev-toggle {
   display: flex; align-items: center; gap: 5px;
   cursor: pointer; user-select: none; color: #aaa; white-space: nowrap;
 }
-#dev-status .autoimg input { accent-color: #da6; width: 14px; height: 14px; cursor: pointer; margin: 0; }
+#dev-status .dev-toggle input { accent-color: #da6; width: 14px; height: 14px; cursor: pointer; margin: 0; }
 #ds-menu-btn {
   background: #222; color: #ccc; border: 1px solid #555;
   padding: 1px 8px; font-size: 11px; cursor: pointer;

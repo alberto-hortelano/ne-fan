@@ -41,7 +41,7 @@ const UMBRAL = 3;
 /** Lo que el cliente escribe en el registro por CADA skin que se le cae. */
 const CANCELADA = /skin IA cancelada/g;
 /** …y lo que escribe UNA sola vez, si se alcanza el umbral de la sesión. */
-const APAGADO_DE_SESION = /skins IA desactivados para la sesión/g;
+const APAGADO_DE_SESION = /skins IA desactivados/g;
 
 export default async function (ctx) {
   // El primer personaje que pida skin es el saboteado; los demás pasan.

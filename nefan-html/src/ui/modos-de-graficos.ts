@@ -34,11 +34,17 @@ import { errors } from "./error-log.js";
 import { GraphicsModeChip, type GraphicsFacet } from "./graphics-mode.js";
 
 // --- Generación de imagen SIN sesión (fixtures) ---
-// Persistido en localStorage: es el estado del toggle de escenarios cuando no
-// hay partida; con sesión manda world.render_mode. El toggle visible es el
-// chip de gráficos (GraphicsModeChip).
-const AUTOIMG_KEY = "nefan.autoimg";
-/** Toggle local de skins IA SIN sesión (fixtures) — mismo patrón. */
+/** Toggle local de skins IA SIN sesión (fixtures): persistido en localStorage,
+ *  con sesión manda `world.character_mode`. El mando visible es el chip de
+ *  gráficos (GraphicsModeChip).
+ *
+ *  De ESCENARIOS no hay toggle, y no es un olvido (#519): sin partida no hay
+ *  motor al que pedirle un tile, así que el único consumidor del gate lo
+ *  tapaba (`generationOn: () => session.active && …`) y el interruptor no
+ *  decidía nada observable. Uno de gasto que nadie puede tocar y que nada lee
+ *  no se conserva —pre-producción—, y su clave tiene candado de reaparición en
+ *  `arch-rules.json`. Los skins sí se generan sin partida —una fixture con
+ *  NPCs descritos los pide nada más cargar—, y por eso este sigue vivo. */
 const AICHAR_KEY = "nefan.aichar";
 
 export interface DepsDeModosDeGraficos {
@@ -101,20 +107,20 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
    *    personaje) — créditos.
    *  - "vector": sin generación NUEVA; el arte es el clay greybox local y la
    *    base y_bot. Lo ya pintado se conserva.
-   *  - "" (sin sesión o saves previos al campo): legacy — en escenarios manda
-   *    el toggle persistido en localStorage (AUTOIMG_KEY). */
+   *  - "" (sin sesión o saves previos al campo): en escenarios no se genera
+   *    nada (sin partida no hay tile que pedir); en personajes manda el toggle
+   *    persistido en localStorage (AICHAR_KEY). */
   let scenesMode: Modo = "";
   let charactersMode: Modo = "";
 
   /** Los dos gates de gasto, decididos en core con lo que este cliente sabe:
-   *  los modos de la sesión y los dos toggles de `localStorage` (que mandan
-   *  sin sesión, OFF por defecto: cargar una fixture con NPCs descritos no
-   *  debe gastar créditos sin que nadie lo pida). */
+   *  los modos de la sesión y el toggle de personajes de `localStorage` (que
+   *  manda sin sesión, OFF por defecto: cargar una fixture con NPCs descritos
+   *  no debe gastar créditos sin que nadie lo pida). */
   function gates(): GatesDeImagen {
     return gatesDeImagen({
       renderMode: scenesMode,
       characterMode: charactersMode,
-      toggleLocalEscenarios: localStorage.getItem(AUTOIMG_KEY) === "1",
       toggleLocalPersonajes: localStorage.getItem(AICHAR_KEY) === "1",
     });
   }
@@ -176,14 +182,24 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
   }
 
   /** Cambio de modo pedido por el usuario (chip de gráficos). Con sesión, el
-   *  bridge es la autoridad (persiste el save y difunde); sin sesión, estado
-   *  local puro (facet scenes se persiste en AUTOIMG_KEY, patrón legacy).
+   *  bridge es la autoridad (persiste el save y difunde); sin sesión, los
+   *  personajes son estado local puro (AICHAR_KEY).
    *  Lanza si el bridge rechaza — el chip lo captura y se re-lee (revert). */
   async function cambiarFaceta(facet: GraphicsFacet, mode: "image" | "vector"): Promise<void> {
     if (deps.session.active) {
       await deps.narrativeClient.setRenderMode(deps.session.id, facet, mode);
     } else if (facet === "scenes") {
-      localStorage.setItem(AUTOIMG_KEY, mode === "image" ? "1" : "0");
+      // Sin partida no hay a quién pedirle un tile, así que encender los
+      // escenarios no encendería nada: se DICE por el canal del cliente y no se
+      // apunta en una clave que nadie lee (#519). No se lanza: el chip trata
+      // una excepción como «el bridge rechazó» y le pega la traza al registro
+      // del jugador, que para esto es ruido. Sin aplicar nada, su `finally`
+      // re-lee el estado real y el botón revierte solo.
+      errors.push(
+        "graphics-mode",
+        "sin partida no se generan escenarios: el atlas de superficies se pide para el tile de una sesión — empieza o reanuda una partida",
+      );
+      return;
     } else {
       localStorage.setItem(AICHAR_KEY, mode === "image" ? "1" : "0");
     }

@@ -12,6 +12,7 @@ import { rotuloDeStatus, type StatusRotulable } from "@nefan-core/src/protocol/s
 import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
 import { Frontera } from "@nefan-core/src/scene/frontera.js";
+import { crearFronteraEnPantalla } from "./ui/frontera-en-pantalla.js";
 import { crearFronteraDelJugador } from "./world/frontera-del-jugador.js";
 import { aplicarLoQueMandaElBridge } from "./world/lo-que-manda-el-bridge.js";
 import { MundoDelCliente } from "./world/mundo-del-cliente.js";
@@ -156,6 +157,10 @@ const session = createClientSession({
   // nada encima. `porValor` (core) lo hace idempotente: vaciar es destructivo
   // y solo ocurre cuando el id de sesión CAMBIA.
   mundo: porValor(() => resetWorld()),
+  // Y con el mundo, lo que la frontera creía saber de sus vecinos: es una
+  // instancia de MÓDULO y sin esto lo pedido en una partida seguía pedido en
+  // la siguiente (#517; el motivo entero, en `session-facets.ts`).
+  frontera: porValor(() => frontier.olvidarLaPartida()),
   style: ({ styleId }) => applySessionStyle(styleId),
   theme: ({ uiTheme }) => applyUiTheme(uiTheme),
   renderModes: (f) => graficos.aplicar(f),
@@ -232,26 +237,9 @@ const combatLog = document.getElementById("combat-log") as HTMLElement;
 /** Acción contextual (hablar, reaparecer) y confirmación Y/N: mismos botones,
  *  distinta región. */
 const promptBar = new ActionBar(document.getElementById("interact-prompt") as HTMLElement);
-const confirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLElement;
-const confirmTextEl = document.getElementById("tile-confirm-text") as HTMLElement;
-const confirmBar = new ActionBar(document.getElementById("tile-confirm-actions") as HTMLElement);
-
-/** Pregunta de sí/no del juego (explorar una zona nueva): panel propio con
- *  las teclas Y/N, ahora también clicables. `null` la retira. */
-function setConfirmPrompt(
-  q: { text: string; yes: string; no: string; onYes: () => void; onNo: () => void } | null,
-): void {
-  confirmPromptEl.hidden = q === null;
-  if (!q) {
-    confirmBar.set([]);
-    return;
-  }
-  confirmTextEl.textContent = q.text;
-  confirmBar.set([
-    { id: "confirm-yes", label: q.yes, key: "Y", invoke: q.onYes },
-    { id: "confirm-no", label: q.no, key: "N", invoke: q.onNo },
-  ]);
-}
+/** Todo lo que el jugador ve del borde del mundo: el muro de niebla con su
+ *  rótulo, la pregunta de sí/no y su silencio durante el diálogo (#515). */
+const fronteraEnPantalla = crearFronteraEnPantalla((edge) => fpsRenderer.setFrontierVeil(edge));
 const connectionStatus = document.getElementById("connection-status") as HTMLElement;
 
 /** La conversación con un personaje (`ui/conversacion.ts`): el panel, el ratón
@@ -268,7 +256,6 @@ const travelPanel = new TravelPanel();
 const travelLedger = new TravelLedger();
 /** Qué tile se pidió, cuál llegó y DE DÓNDE salió (motor / caché / snapshot). */
 const tileLedger = new TileLedger();
-const tileConfirmPromptEl = document.getElementById("tile-confirm-prompt") as HTMLElement;
 errors.attach(document.getElementById("error-log") as HTMLElement);
 // Tema base: la partida lo sustituye por el del estilo al abrir sesión. Ya
 // no se empuja a ningún renderer: el único que queda no pinta texto dentro
@@ -309,8 +296,8 @@ const frontera = crearFronteraDelJugador({
   get input() {
     return input;
   },
-  velo: (edge) => fpsRenderer.setFrontierVeil(edge),
-  preguntar: (q) => setConfirmPrompt(q),
+  velo: (v) => fronteraEnPantalla.velo(v),
+  preguntar: (q) => fronteraEnPantalla.preguntar(q),
   pedido: (key) => tileLedger.pedido(key),
   pedirTile: (tx, ty, reason, edge) => narrativeClient.requestTile(tx, ty, reason, edge),
   log: (msg) => log(msg),
@@ -632,7 +619,7 @@ function gameLoop(now: number): void {
     // El diálogo suspende la propuesta de tile: sus teclas Y/N quedan mudas.
     // Ya no hay que decírselo al proveedor — lo DERIVA él
     // (`propuestaDeTileAbierta`, #329) de la misma guarda que hay aquí.
-    tileConfirmPromptEl.style.display = "none";
+    fronteraEnPantalla.callarDuranteElDialogo();
   }
   if (!dialogoAbierto()) {
     aplicarMirada();
@@ -934,7 +921,7 @@ instalarNefanHook({
   characterSprites,
   attackBar: hud.barra,
   promptBar,
-  confirmBar,
+  confirmBar: fronteraEnPantalla.barraDeConfirmacion,
   dialoguePanel: conversacion.panel,
   devPanel,
   fpsRenderer,

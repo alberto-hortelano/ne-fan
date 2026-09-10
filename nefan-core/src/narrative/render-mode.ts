@@ -48,8 +48,12 @@ export function applyRenderModeChange(
   // materializa: es la conducta de siempre y se conserva a propósito, porque
   // colapsarlo a «sin elegir» haría que el bridge RECHAZARA el cambio («ya
   // tiene los personajes en modo image») dejando el valor corrupto puesto.
-  // Que un valor así llegue vivo hasta aquí es el defecto de verdad, y su
-  // sitio es la puerta del save (loadSession), no este silencio.
+  // Que un valor así llegue vivo hasta aquí era el defecto de verdad, y desde
+  // #522 la puerta del save lo rechaza (`loadSession`, `describirModoInvalido`)
+  // en vez de callárselo. Aquí sigue habiendo un camino, y es el bueno: la
+  // partida INACTIVA cuyo modo se cambia desde el título no pasa por
+  // `loadSession` (read-modify-write de disco), y este `else` es lo que le
+  // permite REPARARSE — el valor corrupto sale escrito como el modo pedido.
   //
   // La normalización del propio NO va aquí: para un valor válido `world
   // .character_mode` y su normalizado son el mismo string, así que la rama

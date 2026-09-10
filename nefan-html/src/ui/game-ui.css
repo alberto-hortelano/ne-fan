@@ -45,6 +45,12 @@
   --nf-gap: 8px;
   --nf-pad: 10px 14px;
   --nf-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+  /* Legibilidad SOBRE EL MUNDO: lo que se pinta sin panel debajo (el registro
+     de combate, el rótulo del muro de niebla) queda a merced de lo que haya
+     detrás — un cielo claro o la propia niebla. Un token y no un literal por
+     componente: es la misma necesidad, y la regla de esta hoja es que ni un
+     color se escriba a mano. */
+  --nf-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 
   /* Bandas de z DENTRO de la UI de juego. Por encima queda solo lo de dev. */
   --z-hud: 20;
@@ -175,6 +181,22 @@
 #tile-confirm-prompt .nf-question { color: var(--nf-ink); }
 #tile-confirm-prompt b { color: var(--nf-accent); }
 
+/* El rótulo del muro de niebla (#515): NO es `.nf-panel`. Lo que nombra está
+   pintado en el mundo —la niebla ocupa media pantalla— y una caja opaca
+   encima competiría con ella; esto es una leyenda del paisaje, no un panel de
+   HUD. Por eso va sin fondo, en cursiva y con la sombra que lo hace legible
+   contra la niebla clara y contra el cielo. */
+#frontier-veil {
+  font-size: var(--nf-fs-sm);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  color: var(--nf-ink-dim);
+  text-shadow: var(--nf-text-shadow);
+  padding: 2px 6px;
+  margin-bottom: 4px;
+}
+#frontier-veil[hidden] { display: none; }
+
 /* ── Diálogo con retrato ────────────────────────────────────────────────── */
 #dialogue-panel {
   display: grid;
@@ -259,7 +281,7 @@
   line-height: 1.5;
   max-height: 110px;
   overflow: hidden;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  text-shadow: var(--nf-text-shadow);
 }
 
 /* ── Chip de gráficos ───────────────────────────────────────────────────── */

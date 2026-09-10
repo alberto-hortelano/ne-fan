@@ -175,6 +175,16 @@ export class CharacterSpriteManager {
    *  Y no se toca `readySkins`: el arte YA PAGADO se conserva, y la caché del
    *  renderer sirve esas anims sin una sola petición.
    *
+   *  LO QUE ESTO NO ARREGLA SOLO, dicho para que no se lea de más: el personaje
+   *  que no falló pero se quedó a medias —sus anims encoladas se SALTARON al
+   *  fundirse el fusible— no está en `skins` como `failed`, así que no se
+   *  borra aquí ni tiene por qué. Vuelve por su camino natural: la próxima
+   *  `requestSkin` completa lo que le falte del set automático y `modelFor`
+   *  encola lo demás cuando la entidad entra en esa anim (#520). Lo que hace
+   *  posible ese regreso es que una anim SALTADA se desapunte de `queued`, en
+   *  `enqueueAnim`: sin eso los dos caminos preguntaban por un apunte que
+   *  mentía y ninguno volvía a encolar nada.
+   *
    *  Se llama al ENTRAR o REANUDAR una sesión y cuando el usuario reactiva los
    *  personajes IA desde el menú dev. Lo primero es nuevo: hasta #236 el único
    *  llamante era el OFF→ON del menú dev. */
@@ -213,15 +223,32 @@ export class CharacterSpriteManager {
     const skinnedModel = this.sprites.skinKey(BASE_MODEL, prompt);
     const existing = this.skins.get(skinnedModel);
     if (existing) {
-      if (!opts.force || !existing.failed) return;
-      // Reintento explícito de ESTE personaje. El orden importa: primero se
-      // rearma la sesión —que de paso OLVIDA a todos los fallidos, este
-      // incluido— y luego se vuelve a sembrar su estado con su `role`, que es
-      // lo que elige la ref de personaje del pack y no se puede perder.
-      this.rearmarCortacircuitos();
-      const state: SkinState = { prompt, role: opts.role ?? existing.role, failed: false, queued: new Set() };
-      this.skins.set(skinnedModel, state);
-      for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, state, anim);
+      if (existing.failed) {
+        // Un skin FALLIDO no se reintenta solo (sin bucles): hace falta el
+        // botón `force` del menú dev.
+        if (!opts.force) return;
+        // Reintento explícito de ESTE personaje. El orden importa: primero se
+        // rearma la sesión —que de paso OLVIDA a todos los fallidos, este
+        // incluido— y luego se vuelve a sembrar su estado con su `role`, que es
+        // lo que elige la ref de personaje del pack y no se puede perder.
+        this.rearmarCortacircuitos();
+        const state: SkinState = { prompt, role: opts.role ?? existing.role, failed: false, queued: new Set() };
+        this.skins.set(skinnedModel, state);
+        for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, state, anim);
+        return;
+      }
+      // VIVO, pero puede tener HUECOS, y es el caso de #520: cuando el fusible
+      // se fundió, las anims que este personaje tenía ENCOLADAS y aún sin pedir
+      // se saltaron. No falló —el apagón fue de otros tres—, así que
+      // `rearmarCortacircuitos` no lo olvida y este `if (existing)` salía
+      // derecho: el vecino se quedaba en maniquí el resto de la vida de la
+      // pestaña, porque `CharacterSpriteManager` es un singleton de módulo y su
+      // mapa sobrevive a volver al título. Pedir lo que falta del set
+      // automático NO es re-pedir en bloque: se piden las anims de un personaje
+      // que ESTA partida acaba de pedir, y solo las que nadie ha encolado.
+      for (const anim of AUTO_SKIN_ANIMS) {
+        if (!existing.queued.has(anim)) this.enqueueAnim(skinnedModel, existing, anim);
+      }
       return;
     }
     if (opts.force) this.rearmarCortacircuitos();
@@ -250,7 +277,17 @@ export class CharacterSpriteManager {
   private enqueueAnim(skinnedModel: string, state: SkinState, anim: string): void {
     state.queued.add(anim);
     this.chain = this.chain.then(async () => {
-      if (state.failed || this.fusible.apagado) return;
+      if (state.failed) return;
+      if (this.fusible.apagado) {
+        // El apagón de la SESIÓN saltó esta anim ANTES de pedirla: no se pidió,
+        // así que no puede quedarse apuntada como pedida (#520). Con el apunte
+        // puesto, `queued` mentía: ni `requestSkin` ni `modelFor` volvían a
+        // encolarla nunca —los dos preguntan por él—, y al rearmar el fusible
+        // el personaje seguía en maniquí sin más salida que recargar. Olvidar
+        // no gasta: deja que la SIGUIENTE petición empiece limpia.
+        state.queued.delete(anim);
+        return;
+      }
       try {
         const sheet = await this.sprites.loadSkinnedAnimation(
           BASE_MODEL, anim, this.angle, state.prompt, state.role,
@@ -274,11 +311,21 @@ export class CharacterSpriteManager {
           err,
         );
         if (this.fusible.fallo(skinnedModel, (err as { status?: number }).status) !== "apagar") return;
+        // SIN «la sesión» (#510-p3): el fusible es de esta PESTAÑA, y se funde
+        // igual jugando una partida que mirando una fixture del selector, donde
+        // no hay ninguna sesión de la que hablar. El aviso decía «desactivados
+        // para la sesión» en los dos casos, así que en el segundo nombraba algo
+        // que el jugador no tiene delante. Lo que sí es cierto siempre es qué
+        // pasa (van con la base) y cómo se deshace (el chip de gráficos), y eso
+        // es lo que se dice. `CharacterSpriteManager` no sabe si hay partida y
+        // no tiene por qué: un texto que vale en los dos mundos no puede
+        // equivocarse en ninguno.
         errors.push(
           "sprite",
-          `skins IA desactivados para la sesión: ${this.fusible.caidos} personajes ` +
-            `distintos han fallado con error de backend (umbral ${this.fusible.umbral}). ` +
-            `Los personajes usan la base y_bot. Último motivo: ${(err as Error).message}`,
+          `skins IA desactivados: ${this.fusible.caidos} personajes distintos han fallado ` +
+            `con error de backend (umbral ${this.fusible.umbral}). Los personajes van con la ` +
+            `base y_bot hasta que los reactives en el chip de gráficos. ` +
+            `Último motivo: ${(err as Error).message}`,
         );
       }
     });
@@ -297,7 +344,15 @@ export class CharacterSpriteManager {
     const skinned = this.sprites.skinKey(BASE_MODEL, skinPrompt);
     if (this.readySkins.has(`${skinned}/${anim}`)) return skinned;
     const state = this.skins.get(skinned);
-    if (state && !state.failed && !state.queued.has(anim) && BASE_ANIM_SET.has(anim)) {
+    // `fusible.apagado` en la guarda, y no solo dentro de la cadena: con los
+    // skins de la sesión apagados, `enqueueAnim` sale por su puerta de arriba y
+    // desapunta la anim (#520) — así que sin esto se re-encolaría una promesa
+    // por personaje y por FOTOGRAMA. Lo que ya está pagado se sigue dibujando:
+    // la guarda es de la generación LAZY, no de `readySkins`.
+    if (
+      state && !state.failed && !this.fusible.apagado &&
+      !state.queued.has(anim) && BASE_ANIM_SET.has(anim)
+    ) {
       this.enqueueAnim(skinned, state, anim);
     }
     return baseModel;

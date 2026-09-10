@@ -259,6 +259,33 @@ export class Frontera {
     return this.#olvidar(key);
   }
 
+  /** OLVIDA LA PARTIDA: todo lo que esta frontera sabía era de UN mundo.
+   *
+   *  Lo que guarda —qué tiles se pidieron, cuáles rechazó el jugador, qué
+   *  bordes ya se promovieron a `blocking`, qué error enfría a cuál y hasta
+   *  cuándo— son coordenadas de tile (`tile_1_0`), y esas coordenadas
+   *  significan otra cosa en cada partida. Sin este olvido, `#pedidos`
+   *  sobrevivía al cambio de mundo y la frontera creía en vuelo un tile que
+   *  nadie ha pedido: no se propone (`#puedeProponer` sale por `#pedidos`), no
+   *  se pinta el velo de «sin generar» sino el de «explorando», y el timeout
+   *  del mundo anterior vence en el nuevo con el aviso de un tile que no
+   *  existe. Y al revés cuesta dinero: un `#errorEn` heredado calla la
+   *  propuesta 15 s, y un rechazo heredado la calla hasta que el jugador se
+   *  aleje 16 m de un borde que en este mundo puede ser el de partida.
+   *
+   *  Lo llama el cliente como FACETA de sesión (`session-facets.ts`), por el
+   *  mismo camino que vaciar el mundo y cerrar el diálogo: no es una línea que
+   *  nadie tenga que acordarse de escribir en los dos retornos al título
+   *  (#517; la forma exacta del bug de #249). */
+  olvidarLaPartida(): void {
+    this.#pedidos.clear();
+    this.#bloqueoEnviado.clear();
+    this.#errorEn.clear();
+    this.#textoDeEstado.clear();
+    this.#rechazados.clear();
+    this.#propuesta = null;
+  }
+
   /** La propuesta que hay AHORA MISMO sobre la mesa, o `null`.
    *
    *  Es la fuente de la que el proveedor de input deriva si Y/N significan algo

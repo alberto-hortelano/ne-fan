@@ -62,7 +62,7 @@
     <span id="connection-status" class="disconnected">Local</span>
     <span class="ds-gen" id="ds-gen"></span>
     <span class="ds-cache" id="ds-cache"></span>
-    <label class="autoimg" title="Modo dev: las APIs de IA de pago (Meshy/fal) devuelven su última respuesta cacheada — 0 créditos por llamada">
+    <label class="dev-toggle" title="Modo dev: las APIs de IA de pago (Meshy/fal) devuelven su última respuesta cacheada — 0 créditos por llamada">
       <input type="checkbox" id="devcache-toggle"><span>Dev-cache</span>
     </label>
     <span class="ds-spend" id="ds-spend"></span>
@@ -101,6 +101,13 @@
         <div id="travel-panel" class="nf-panel" hidden></div>
       </div>
       <div class="ui-region" id="ui-bottom-center">
+        <!-- Qué es el muro de niebla que se tiene delante (#515). El velo lo
+             decide la `Frontera` de core, que ya calculaba este texto y sus
+             tres estados; hasta ahora el cliente se quedaba solo con el borde
+             y lo tiraba, así que el jugador pegado a la frontera no recibía
+             ningún motivo. Va ENCIMA de la pregunta: primero qué hay, luego
+             qué se puede hacer. -->
+        <div id="frontier-veil" role="status" aria-live="polite" hidden></div>
         <div id="tile-confirm-prompt" class="nf-panel" hidden>
           <span class="nf-question" id="tile-confirm-text"></span>
           <div id="tile-confirm-actions"></div>

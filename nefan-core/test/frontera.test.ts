@@ -386,3 +386,110 @@ describe("Frontera · el tile llega", () => {
     assert.equal(f.alTileListo(1, 1, 64, 0), "south");
   });
 });
+
+/** #517 · La `Frontera` del cliente es una instancia de MÓDULO: vive lo que
+ *  vive la pestaña, y lo que guarda son claves de tile (`tile_1_0`) que
+ *  significan un sitio distinto en cada mundo. Sin este olvido, cambiar de
+ *  partida heredaba las cinco cosas de aquí abajo, y cada una calla o desvía
+ *  la única regla de gasto que decide el jugador. */
+describe("Frontera · cambiar de partida", () => {
+  it("lo PEDIDO en la partida anterior no sigue en vuelo: el vecino se vuelve a ofrecer", () => {
+    const f = new Frontera();
+    const { pedir, llamadas } = espia();
+    f.tick(0, 16.5, 0, plano([0, 0]), pedir);
+    f.confirmar(0, pedir);
+    assert.deepEqual(f.debugState().requested, ["tile_1_0"], "el tile quedó pedido");
+
+    f.olvidarLaPartida();
+
+    assert.deepEqual(f.debugState().requested, []);
+    // Y es proponible otra vez: sin el olvido, `#puedeProponer` sale por
+    // `#pedidos` y ese borde no se ofrece nunca más en toda la pestaña.
+    const frame = f.tick(1, 16.5, 0, plano([0, 0]), pedir);
+    assert.deepEqual(frame.propuesta, { key: "tile_1_0", tx: 1, ty: 0, edge: "east" });
+    assert.equal(llamadas.length, 1, "olvidar no pide nada por su cuenta: no gasta");
+  });
+
+  it("el RECHAZO de la partida anterior no calla la propuesta de la nueva", () => {
+    const f = new Frontera();
+    const { pedir } = espia();
+    f.tick(0, 16.5, 0, plano([0, 0]), pedir);
+    f.rechazar();
+    assert.deepEqual(f.debugState().declined, ["tile_1_0"]);
+    // Sin olvidar, el rechazo solo caduca alejándose 16 m del borde — que en
+    // el mundo nuevo puede ser justo donde arranca el jugador.
+    assert.equal(f.tick(1, 16.5, 0, plano([0, 0]), pedir).propuesta, null);
+
+    f.olvidarLaPartida();
+
+    assert.deepEqual(f.debugState().declined, []);
+    assert.equal(f.tick(2, 16.5, 0, plano([0, 0]), pedir).propuesta?.key, "tile_1_0");
+  });
+
+  it("el COOLDOWN de un error de la partida anterior no enfría la nueva", () => {
+    const f = new Frontera();
+    const { pedir } = espia();
+    f.tick(0, 16.5, 0, plano([0, 0]), pedir);
+    f.confirmar(0, pedir);
+    f.alError(1, 0, 1_000);
+    assert.equal(f.tick(2_000, 16.5, 0, plano([0, 0]), pedir).propuesta, null, "enfriado");
+
+    f.olvidarLaPartida();
+
+    assert.equal(
+      f.tick(2_001, 16.5, 0, plano([0, 0]), pedir).propuesta?.key,
+      "tile_1_0",
+      "en la partida nueva el error de la anterior no cuenta",
+    );
+  });
+
+  it("el TEXTO de estado heredado no pinta «explorando» sobre un tile que nadie pidió", () => {
+    const f = new Frontera();
+    const { pedir } = espia();
+    f.tick(0, 16.5, 0, plano([0, 0]), pedir);
+    f.confirmar(0, pedir);
+    assert.equal(f.alTexto(1, 0, "Levantando el molino"), true);
+    assert.equal(f.tick(1, 25, 0, plano([0, 0]), pedir).velo?.text, "Levantando el molino");
+
+    f.olvidarLaPartida();
+
+    assert.equal(
+      f.tick(2, 25, 0, plano([0, 0]), pedir).velo?.text,
+      "Zona sin generar",
+      "el velo del mundo nuevo dice la verdad de ESTE mundo",
+    );
+  });
+
+  it("la PROPUESTA sobre la mesa se retira, y el blocking vuelve a poder enviarse", () => {
+    const f = new Frontera();
+    const { pedir, llamadas } = espia();
+    f.tick(0, 16.5, 0, plano([0, 0]), pedir);
+    f.confirmar(0, pedir);
+    f.tick(1, 31, 0, plano([0, 0]), pedir); // a 1 m: promueve a blocking
+    assert.deepEqual(llamadas.at(-1), [1, 0, "east", "blocking"]);
+    f.tick(2, 16.5, 0, plano([0, 0]), pedir);
+
+    f.olvidarLaPartida();
+    assert.equal(f.propuesta, null);
+
+    // Mundo nuevo, mismo borde: se propone, se confirma y el blocking sale
+    // otra vez. Sin olvidar `#bloqueoEnviado`, el jugador pegado al muro de la
+    // partida nueva esperaba detrás de la cola de prefetch para siempre.
+    f.tick(3, 16.5, 0, plano([0, 0]), pedir);
+    f.confirmar(3, pedir);
+    f.tick(4, 31, 0, plano([0, 0]), pedir);
+    assert.deepEqual(llamadas.slice(-2), [
+      [1, 0, "east", "prefetch"],
+      [1, 0, "east", "blocking"],
+    ]);
+  });
+
+  it("olvidar sin nada que olvidar no rompe el frame siguiente", () => {
+    const f = new Frontera();
+    const { pedir, llamadas } = espia();
+    f.olvidarLaPartida();
+    assert.deepEqual(f.debugState(), { requested: [], declined: [], proposal: null });
+    assert.deepEqual(f.tick(0, 0, 0, plano(), pedir), { velo: null, vencidos: [], propuesta: null });
+    assert.equal(llamadas.length, 0);
+  });
+});
