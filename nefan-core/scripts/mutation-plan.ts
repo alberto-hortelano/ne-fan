@@ -118,6 +118,23 @@ const PlanSchema = z.object({
    *  las veces. Planificar sobre el día malo es un margen de un tercio ya
    *  pagado. Obligatorio y sin defecto, por lo mismo que `tope_local`. */
   tope_lote: z.number().int().positive(),
+  /** Cuántos SEGUNDOS dura como mucho el job que mide un lote: el
+   *  `timeout-minutes` del job `medir` de `mutation.yml`, en segundos.
+   *
+   *  No es un presupuesto que nadie aplique aquí —lo aplica GitHub, matando el
+   *  job— sino el TECHO contra el que hay que contrastar el reparto ANTES de
+   *  gastarlo. Está aquí, y no solo en el workflow, porque el que reparte tiene
+   *  que poder compararse con él; que los dos números sean el mismo lo canda
+   *  `qa/mutacion-reparto-en-lotes.mjs`, que lee el yml.
+   *
+   *  LA DIFERENCIA CON `tope_lote` NO ES DE GRADO. Pasarse del tope da un lote
+   *  lento que deja su medida igual. Pasarse del techo no da nada: el job muere
+   *  a mitad, no sube informe, y la corrida entera sale INCOMPLETA con el tag
+   *  quieto — o sea que la siguiente vuelve a pedirlo TODO. Lo midió la corrida
+   *  34493904935 el 2026-09-10: `scene-validate` a solas se comió los 45
+   *  minutos con 766 de 836 mutantes probados (91 %) y tiró abajo la corrida de
+   *  los otros 54, que sí habían medido. */
+  techo_job: z.number().int().positive(),
   /** Directorios que se miden ENTEROS. El candado exige que cada `.ts` de
    *  estos esté nombrado por algún módulo: si no, un fichero nuevo se cuela
    *  sin que nadie lo mida y nada falla — el agujero por el que un objetivo
@@ -337,6 +354,7 @@ export const NO_SELECCIONAN: Record<string, string> = {
   porque: "prosa, y es la clave del asunto: aquí se ESCRIBE lo que una corrida acaba de medir, así que si contara, anotar la medida costaría la corrida completa siguiente",
   tope_local: "cuántos mutantes se dejan medir en la máquina de quien programa: una puerta de coste, no toca a un mutante",
   tope_lote: "cuántos segundos puede durar un lote en CI: empaqueta la corrida, no cambia su resultado",
+  techo_job: "cuántos segundos vive el job que mide un lote: es el techo contra el que se contrasta el reparto, y como `tope_lote` no toca a un mutante",
   directorios_completos: "ensancha el PERÍMETRO, que `mutate.ts` no mira: sale en `npm test`, en `npm run deuda` y en la pregunta que este selector hace por un huérfano, no en el score de un módulo",
   sin_mutar: "declara quién NO se muta y por qué; como `directorios_completos`, vive en el perímetro y no en la medida",
   modulos: "es el contenedor del reparto: lo que decide va clave a clave dentro de cada módulo",

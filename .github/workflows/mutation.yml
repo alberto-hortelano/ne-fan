@@ -140,11 +140,26 @@ jobs:
   medir:
     needs: planificar
     runs-on: ubuntu-latest
-    # 45 = los 30 minutos de `tope_lote` más el arranque (checkout, npm ci,
-    # dry-run) y margen sobre el día malo. El tope del lote está en
-    # `mutation-targets.json` y es lo que `lotes` presupuesta; este número es su
-    # red, no su fuente.
-    timeout-minutes: 45
+    # EL TECHO DEL LOTE, y va DUPLICADO A PROPÓSITO en
+    # `mutation-targets.json` (`techo_job`, en segundos) porque el que reparte
+    # tiene que poder compararse con él; que los dos números sean el mismo lo
+    # canda `qa/mutacion-reparto-en-lotes.mjs`, que lee este fichero.
+    #
+    # Era 45 y decía ser «los 30 minutos de `tope_lote` más el arranque». El
+    # arranque son 14 SEGUNDOS (medidos en la corrida 34493904935: checkout,
+    # setup-node y `npm ci` con caché caliente), así que aquellos 15 minutos no
+    # eran arranque: eran margen sin nombre. Y no bastaron. `scene-validate`
+    # entró con 2.532 s medidos —el 94 % de los 45 minutos— y el job lo mató con
+    # 766 de 836 mutantes probados: sin informe, corrida INCOMPLETA, tag quieto
+    # y los 54 módulos que SÍ midieron a repetir. Un margen del 6 % es más
+    # pequeño que el ruido del propio reloj (entre las dos últimas corridas, el
+    # mismo módulo se movió entre ×0,75 y ×1,14).
+    #
+    # 60 es lo que hace falta para que el lote de `scene-validate` quepa con la
+    # holgura puesta (3.225 s presupuestados). NO es permiso para engordar: los
+    # lotes normales siguen presupuestando 2.310 s y cabían de sobra en 45. En
+    # cuanto #441 parta ese fichero, este número vuelve a bajar.
+    timeout-minutes: 60
     strategy:
       # OBLIGATORIO. Sin esto, un lote que se cae cancela a los demás y se
       # pierden medidas ya hechas — el equivalente exacto de que `mutate.ts` no

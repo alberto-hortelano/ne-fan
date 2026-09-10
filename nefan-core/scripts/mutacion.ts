@@ -82,6 +82,8 @@ import {
   empaqueta,
   filaDeHuella,
   fusionaCorrida,
+  lotesQueNoCaben,
+  presupuestoDelLote,
   lotesSinNoticias,
   estadoLegible,
   estadoDeReparto,
@@ -89,6 +91,8 @@ import {
   modulosConInforme,
   yaComentada,
   fusiona,
+  ARRANQUE_DEL_JOB_S,
+  HOLGURA_DEL_TECHO,
   HUELLA_VACIA,
   huellaDeMutante,
   idsDeLotes,
@@ -999,10 +1003,53 @@ function lotes(argv: readonly string[]): void {
   if (peor) {
     const margen = tope - peor.s;
     console.log(
-      `\n  El más caro es ${peor.id} con ${peor.s}s: está a ${margen}s (${(margen / 60).toFixed(1)} min) de ` +
-        `no caber él solo. El primer test que se le añada lo saca del empaquetado, y entonces la ` +
-        `respuesta es partir su batería, nunca subir tope_lote.`,
+      margen >= 0
+        ? `\n  El más caro es ${peor.id} con ${peor.s}s: está a ${margen}s (${(margen / 60).toFixed(1)} min) de ` +
+            `no caber él solo. El primer test que se le añada lo saca del empaquetado, y entonces la ` +
+            `respuesta es partir su batería, nunca subir tope_lote.`
+        : // EN PRESENTE CUANDO YA PASÓ. La frase de arriba avisaba de un futuro
+          // que el 2026-09-10 ya era pasado: `scene-validate` llevaba días
+          // fuera del empaquetado y la salida seguía diciendo que le faltaba
+          // «el primer test que se le añada» para salirse. Un número escrito
+          // para justificar una decisión que nadie vuelve a leer en voz alta.
+          `\n  El más caro es ${peor.id} con ${peor.s}s y YA NO CABE ÉL SOLO: se pasa del tope en ` +
+            `${-margen}s (${(-margen / 60).toFixed(1)} min). La respuesta es partir su batería, ` +
+            `nunca subir tope_lote.`,
     );
+  }
+
+  // EL TECHO DEL JOB, que es otra pregunta. Un lote que se pasa del tope llega
+  // tarde; uno que se pasa del techo no llega: el job muere, no sube informe y
+  // la corrida entera sale INCOMPLETA con el tag quieto. Esto se dice ANTES de
+  // gastar los 45 minutos, no después (corrida 34493904935).
+  const noCaben = lotesQueNoCaben(paquetes, plan.techo_job);
+  for (const l of noCaben) {
+    const presupuesto = presupuestoDelLote(l.segundos);
+    const falta = presupuesto - plan.techo_job;
+    console.log(
+      `\n  ⛔ El lote ${l.lote} (${l.modulos.join(" ")}) NO CABE EN EL JOB: ${l.segundos}s medidos ` +
+        `× ${HOLGURA_DEL_TECHO} de holgura más ${ARRANQUE_DEL_JOB_S}s de arranque son ${presupuesto}s, ` +
+        `contra un techo de ${plan.techo_job}s (${(plan.techo_job / 60).toFixed(0)} min). Se pasa por ` +
+        `${falta}s (${(falta / 60).toFixed(1)} min).\n` +
+        `     No es que llegue tarde: MUERE Y NO DEJA INFORME, así que la corrida sale INCOMPLETA, el ` +
+        `tag no se mueve y la siguiente vuelve a pedirlo todo — incluidos los módulos que sí midieron.`,
+    );
+  }
+  if (noCaben.length === 0 && conReloj.length > 0) {
+    // El margen del lote MÁS APRETADO contra el techo, siempre. Es el número
+    // que hay que ver crecer o encogerse en la PR, no uno que solo aparece
+    // cuando ya es tarde.
+    const apretado = paquetes
+      .filter((l) => l.medido)
+      .sort((a, b) => b.segundos - a.segundos)[0];
+    if (apretado) {
+      const holgura = plan.techo_job - presupuestoDelLote(apretado.segundos);
+      console.log(
+        `\n  Contra el techo del job (${plan.techo_job}s), el lote más apretado es el ${apretado.lote} ` +
+          `(${apretado.segundos}s): le sobran ${holgura}s (${(holgura / 60).toFixed(1)} min) con la ` +
+          `holgura puesta.`,
+      );
+    }
   }
 
   const sinMedida = paquetes.filter((l) => !l.medido).length;
