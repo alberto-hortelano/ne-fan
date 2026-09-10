@@ -302,10 +302,16 @@ function planDeHoy() {
 /** Los checkers que PODRÍAN enterarse. Cada uno devuelve una firma; «se entera»
  *  es que la firma CAMBIE respecto de la del árbol limpio. */
 const CHECKERS = {
+  // LAS DOS BATERÍAS DEL REPARTO, y las dos hacen falta: `mutacion-huella`
+  // mira el fichero puro y `mutacion-el-reloj-y-el-score` (#436/#437/#432) los
+  // trozos que hasta el 2026-09-10 vivían dentro de los verbos y no ejercía
+  // nadie — la cadena del reloj, el score y lo que `lotes` acepta que le pidan.
   bateria: () => {
-    const r = spawnSync("node", ["--import", "tsx", "--test", "test/mutacion-huella.test.ts"], {
-      cwd: CORE, encoding: "utf8", timeout: 300000,
-    });
+    const r = spawnSync(
+      "node",
+      ["--import", "tsx", "--test", "test/mutacion-huella.test.ts", "test/mutacion-el-reloj-y-el-score.test.ts"],
+      { cwd: CORE, encoding: "utf8", timeout: 300000 },
+    );
     return `bateria:${r.status}`;
   },
   candados: () => {
@@ -353,31 +359,35 @@ const ABIERTOS = [
     rompe: [MUT, `    const errores = verificaDescarga(parcial, presentes);`, `    const errores: string[] = [];`],
   },
   {
+    // CERRADO EL 2026-09-10 (#436). El spread vivía dentro del verbo
+    // `manifiesto`, que llama a git y escribe en `reports/`, así que la batería
+    // no podía tocarlo; salió a `conCronometro` en `mutacion-huella.ts` y desde
+    // ahí sí se ejerce. El probe apunta al sitio nuevo.
     nombre: "reloj · `manifiesto` deja de meter el cronómetro en el informe sellado",
-    deuda: 436,
-    porque: "es el segundo eslabón de la cadena mutate→manifiesto→repartir→huella, y solo el primero tiene candado",
+    porque: "es el segundo eslabón de la cadena mutate→manifiesto→repartir→huella",
     checkers: ["bateria", "cableado"],
-    rompe: [MUT, `      ...(typeof tiempos[i.modulo] === "number" ? { segundos: tiempos[i.modulo] } : {}),`, ``],
+    rompe: [PURO, `    ...(typeof tiempos[i.modulo] === "number" ? { segundos: tiempos[i.modulo] } : {}),`, ``],
   },
   {
+    // CERRADO EL 2026-09-10 (#436), igual que el de arriba: la fila de la
+    // huella salió del bucle de `repartir` a `filaDeHuella`.
     nombre: "reloj · `repartir` deja de llevar el cronómetro a la huella",
-    deuda: 436,
     porque: "es el último eslabón: sin él la huella no gana `segundos` nunca y TODO vuelve a lote propio",
     checkers: ["bateria", "cableado"],
-    rompe: [MUT, `        ...(segundos === undefined ? {} : { segundos }),`, ``],
+    rompe: [PURO, `    ...(segundos === undefined ? {} : { segundos }),`, ``],
   },
   {
     nombre: "reloj · `segundosDe` suma las filas del módulo en vez de coger el MÁXIMO",
-    deuda: 436,
     // EL PEOR DE LOS CINCO, y por eso su motivo dice lo que PASA y no «falta un
     // test»: sumar en vez de coger el máximo multiplica por cuatro un módulo de
     // cuatro ficheros —`blueprint-derive` pasaría de 1.647 s a 6.588—, y con
     // eso el reparto entero cambia: dejaría de caber en ningún lote y se iría
-    // solo, arrastrando a los demás a una partición que nadie pidió. Todo en
-    // verde, porque el MÁXIMO solo está declarado en el tipo y en la prosa.
+    // solo, arrastrando a los demás a una partición que nadie pidió. Estuvo en
+    // verde hasta el 2026-09-10 porque el MÁXIMO solo estaba declarado en el
+    // tipo y en la prosa; hoy lo mira `test/mutacion-el-reloj-y-el-score`.
     porque:
       "sumar cuadruplica un módulo de cuatro ficheros (`blueprint-derive` pasaría de 1.647 s a " +
-      "6.588) y el reparto entero cambia; el MÁXIMO solo está declarado en el tipo y en la prosa",
+      "6.588) y el reparto entero cambia",
     checkers: ["bateria", "cableado"],
     rompe: [
       MUT,
@@ -386,24 +396,53 @@ const ABIERTOS = [
     ],
   },
   {
+    // CERRADO EL 2026-09-10 (#437, ítem 1). La matriz se construía dentro del
+    // verbo; salió a `matrizDeLotes` y el candado compara sus claves con los
+    // `matrix.<clave>` que el propio YAML nombra, que es el oráculo bueno.
     nombre: "matriz · la salida de `lotes` deja de casar con las claves que lee el YAML",
-    deuda: 437,
     porque:
       "`matrix.ids` vacío hace que cada lote llame a `npm run mutate` SIN argumentos, y sin " +
-      "argumentos `mutate` mide los 41 módulos: 23 jobs midiendo la corrida entera hasta el timeout",
+      "argumentos `mutate` mide los 55 módulos: N jobs midiendo la corrida entera hasta el timeout",
     checkers: ["bateria", "cableado"],
     rompe: [
-      MUT,
-      `    const matriz = paquetes.map((l) => ({ lote: l.lote, ids: l.modulos.join(" ") }));`,
-      `    const matriz = paquetes.map((l) => ({ numero: l.lote, modulos: l.modulos.join(" ") }));`,
+      PURO,
+      `  return lotes.map((l) => ({ lote: l.lote, ids: l.modulos.join(" ") }));`,
+      `  return lotes.map((l) => ({ numero: l.lote, modulos: l.modulos.join(" ") }));`,
     ],
   },
   {
+    // CERRADO EL 2026-09-10 (#437, ítem 2). El positivo ya estaba en la lista
+    // VIGENTES de este mismo guion, pero CI lo corre con `--solo-vigentes` y el
+    // NEGATIVO no se ejercía en ninguna parte; ahora el par vive también en la
+    // batería, que sí corre en cada PR.
     nombre: "presupuesto · `tope_lote` sube por encima del `timeout-minutes` del job",
-    deuda: 437,
     porque: "un tope de 60 min con jobs de 45 mata a mitad de camino a los lotes más llenos",
     checkers: ["bateria", "cableado"],
     rompe: [PLAN, `"tope_lote": 1800,`, `"tope_lote": 3600,`],
+  },
+  {
+    // #437, ítem 3. No estaba declarado en ninguna parte: `argv.includes("--todos")`
+    // ganaba y `idsCrudos` se tiraba en silencio.
+    nombre: "orden · `lotes --todos --ids a b c` vuelve a tirar los ids sin decir nada",
+    porque:
+      "es la forma exacta del `--pedidos \"\"` que mató el manifiesto DESPUÉS de medir 131 minutos: " +
+      "la orden hace algo distinto de lo que dice y la factura llega media hora más tarde",
+    checkers: ["bateria", "cableado"],
+    rompe: [PURO, `  if (todos && crudos !== undefined) {`, `  if (false) {`],
+  },
+  {
+    // #437, ítem 4. Tampoco estaba declarado: `moduloPorId` valida existencia,
+    // no unicidad.
+    nombre: "orden · `lotes --ids a a b` vuelve a aceptar el duplicado",
+    porque:
+      "en el mejor caso se mide dos veces; en el peor, dos lotes reclaman el mismo módulo y la " +
+      "fusión encuentra dos informes para él",
+    checkers: ["bateria", "cableado"],
+    rompe: [
+      PURO,
+      `  const repetidos = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];`,
+      `  const repetidos: string[] = [];`,
+    ],
   },
 ];
 

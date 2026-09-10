@@ -21,6 +21,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { NarrativeState } from "../narrative/narrative-state.js";
 import { runProjections, replayFixture } from "./dsl/evaluate.js";
@@ -57,13 +58,37 @@ export interface LoadedPlugin {
   file: string;
 }
 
-/** Carga y valida los manifests que aplican al juego: los comunes de
- *  `{gamesDir}/../plugins` más los locales de `{gamesDir}/{gameId}/plugins`;
- *  un local con el mismo `name` reemplaza al común. Directorios ausentes ⇒ [].
- *  Cualquier manifest inválido aborta la carga entera con PluginLoadError —
- *  fail-loud, sin activaciones parciales. */
-export function loadGamePluginManifests(gamesDir: string, gameId: string): LoadedPlugin[] {
-  const shared = loadManifestsFromDir(resolve(gamesDir, "..", "plugins"));
+/** Dónde viven los manifests comunes del PAQUETE: `data/plugins/*.json`, los que
+ *  aplican a todos los juegos.
+ *
+ *  ESTÁ ESCRITO, y no solo compuesto desde `gamesDir`, por dos razones que van
+ *  juntas. La primera es que es la ruta real de la casa y estaba dicha solo en
+ *  prosa. La segunda es que el selector de mutación deriva qué baterías lee cada
+ *  dato de las rutas que encuentra EN EL CÓDIGO DEL LECTOR, y con el directorio
+ *  llegando por parámetro no había nada que encontrar: un plugin nuevo bajo
+ *  `data/plugins/` no seleccionaba las baterías que lo cargan y la corrida salía
+ *  verde sin haber medido lo que tocaba (#442). El parámetro sigue existiendo —
+ *  el bench con `NEFAN_GAMES_DIR` trae los suyos y los pasa. */
+export const DIR_PLUGINS_COMUNES = fileURLToPath(new URL("../../data/plugins", import.meta.url));
+
+/** Los manifests comunes que le tocan a un `gamesDir`: su `plugins/` hermano.
+ *  Es la convención que usan el bridge y los tests, y estaba implícita dentro
+ *  del loader; aquí está escrita una vez y la nombran sus llamantes. */
+export function pluginsHermanosDe(gamesDir: string): string {
+  return resolve(gamesDir, "..", "plugins");
+}
+
+/** Carga y valida los manifests que aplican al juego: los comunes (por defecto
+ *  los del paquete, `data/plugins`) más los locales de
+ *  `{gamesDir}/{gameId}/plugins`; un local con el mismo `name` reemplaza al
+ *  común. Directorios ausentes ⇒ []. Cualquier manifest inválido aborta la carga
+ *  entera con PluginLoadError — fail-loud, sin activaciones parciales. */
+export function loadGamePluginManifests(
+  gamesDir: string,
+  gameId: string,
+  dirComun: string = DIR_PLUGINS_COMUNES,
+): LoadedPlugin[] {
+  const shared = loadManifestsFromDir(dirComun);
   const local = loadManifestsFromDir(join(gamesDir, gameId, "plugins"));
 
   const localNames = new Set(local.map((lp) => lp.manifest.name));

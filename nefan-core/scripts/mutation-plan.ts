@@ -844,17 +844,48 @@ const nombreLlamado = (n: ts.CallExpression): string | undefined =>
       ? n.expression.name.text
       : undefined;
 
-/** La CABEZA de un nombre compuesto: en `join(DIR, \`${x}.json\`)` es `DIR`.
- *  `undefined` si el último tramo es un literal —entonces el nombre SÍ está
- *  escrito y lo contesta la vía 1— o si no es un `join`/`resolve`. */
-function cabezaCompuesta(n: ts.Node): ts.Node | undefined {
-  if (!ts.isCallExpression(n)) return undefined;
-  const nombre = nombreLlamado(n);
-  if (nombre !== "join" && nombre !== "resolve") return undefined;
-  if (n.arguments.length < 2) return undefined;
-  if (esCadena(n.arguments[n.arguments.length - 1])) return undefined;
-  return n.arguments[0];
-}
+/** Qué se sabe de la ruta que abre una lectura de fichero. TRES respuestas, y
+ *  la tercera es la que faltaba (#444):
+ *
+ *   · `no-descubre` — o el nombre del fichero está ESCRITO
+ *     (`readFileSync("x.json")`, `join(DIR, "robledo_tile.json")`,
+ *     `` `${DIR}/robledo_tile.json` ``), y entonces lo contesta la vía del
+ *     basename; o la expresión no permite AFIRMAR que se componga
+ *     (`readFileSync(ruta)`, `readFileSync(rutaInforme(id))`), y afirmarlo
+ *     devolvería el «ejecuta todo» que se quiere acotar.
+ *   · `descubre` con directorios — el último tramo se compone, y el directorio
+ *     se sabe. El dato lo lee quien lea un ancestro suyo.
+ *   · `descubre` SIN directorios — el último tramo se compone y NO se sabe de
+ *     dónde. Eso es estar ciego, y hay que decirlo.
+ *
+ *  Hasta el 2026-09-10 la tercera no existía: `cabezaCompuesta` devolvía
+ *  `undefined` para todo lo que no fuera un `join`/`resolve`, y pasada 3 se
+ *  saltaba la llamada ENTERA — ni sumaba directorio ni incrementaba
+ *  `descubrimientosCiegos`. Un `readFileSync(\`${DIR}/${x}.json\`)` era
+ *  invisible y la totalidad no lo reclamaba: descarte silencioso, que es
+ *  exactamente la forma de fallo que el selector no puede permitirse desde que
+ *  DESCARTA en vez de ejecutar de más.
+ *
+ *  DÓNDE SIGUE EL LÍMITE, y está medido: un identificador suelto
+ *  (`readFileSync(ruta)`) o una llamada cualquiera no dicen si el nombre se
+ *  compone o está escrito tres líneas más arriba. Tratarlos como
+ *  descubrimientos añadía QUINCE ficheros a la lista de ciegos el 2026-09-10 y
+ *  los quince eran falsos: `test/contract-physics.test.ts` abre una constante
+ *  que nombra su fichero, `test/scene-fixtures.test.ts` abre lo que su propio
+ *  `readdirSync` ya declaró, `test/derive-vegetation.test.ts` escribe la ruta
+ *  entera dentro de un `new URL`. Un candado que grita quince veces en falso se
+ *  desactiva en una semana. Lo que este análisis afirma es lo que VE
+ *  componerse: `join`/`resolve` con la cola no literal, un template cuyo último
+ *  tramo lleva interpolación, y una concatenación cuyo último sumando no es un
+ *  literal con `/`. */
+type Apertura = { tipo: "no-descubre" } | { tipo: "descubre"; dirs: string[] };
+
+const NO_DESCUBRE: Apertura = { tipo: "no-descubre" };
+
+/** Si ese texto trae el último tramo de la ruta ENTERO, o sea si contiene un
+ *  `/`: `"/robledo.json"` sí (el nombre está escrito), `".json"` no (es la cola
+ *  de un nombre compuesto). */
+const cierraElNombre = (texto: string): boolean => texto.includes("/");
 
 function analizaLectura(texto: string, base: string): Lectura {
   const sf = ts.createSourceFile(join(base, "x.ts"), texto, ts.ScriptTarget.ESNext, true);
@@ -866,6 +897,15 @@ function analizaLectura(texto: string, base: string): Lectura {
    *  parámetros que una llamada del MISMO fichero ata a un directorio. */
   const nombresDeDirectorio = new Map<string, Set<string>>();
   const parametrosDe = new Map<string, string[]>();
+  /** Nombres a los que ALGUIEN ata algo que no se resuelve. No es lo contrario
+   *  de `nombresDeDirectorio`: un mismo parámetro puede recibir un directorio
+   *  conocido por una llamada y uno desconocido por otra, y entonces lo que se
+   *  descubre con él está a medias — se sabe una parte y la otra no. Sin esto,
+   *  la parte conocida tapaba a la desconocida y el descubrimiento dejaba de
+   *  contarse como ciego (#442). */
+  const nombresDeOrigenDesconocido = new Set<string>();
+  const tieneOrigenDesconocido = (n: ts.Node): boolean =>
+    ts.isIdentifier(n) && nombresDeOrigenDesconocido.has(n.text);
 
   const apunta = (nombre: string, dirs: readonly string[]): void => {
     if (dirs.length === 0) return;
@@ -911,6 +951,53 @@ function analizaLectura(texto: string, base: string): Lectura {
       .map((c) => dirDelPaquete(coreRoot, cola === "" ? c : `${c}/${cola}`))
       .filter((d): d is string => d !== undefined);
 
+  /** El tramo de DIRECTORIO de un texto de ruta: `"/fixtures/"` → `fixtures`,
+   *  `"/"` → `""`, `".json"` → `""`. Lo que va detrás del último `/` es el
+   *  nombre del fichero, y ése es justo el que no está escrito. */
+  const soloDirectorio = (texto: string): string =>
+    texto.slice(0, Math.max(0, texto.lastIndexOf("/"))).replace(/^\/+/, "");
+
+  /** Ver `Apertura`. El argumento es el primero de un `readFileSync` y
+   *  compañía. */
+  const aperturaDe = (n: ts.Node): Apertura => {
+    if (esCadena(n)) return NO_DESCUBRE;
+    // `data/scenes/${x}.json` y `${DIR}/${x}.json`: el último tramo se compone,
+    // así que es un descubrimiento, y el directorio está o en la cabecera
+    // literal o en la primera interpolación. Antes, ni una cosa ni la otra.
+    if (ts.isTemplateExpression(n)) {
+      const ultimo = n.templateSpans[n.templateSpans.length - 1];
+      // `${DIR}/${x}/y.json` cierra con un literal que trae el nombre entero.
+      if (ultimo !== undefined && cierraElNombre(ultimo.literal.text)) return NO_DESCUBRE;
+      if (n.head.text !== "") {
+        const dir = soloDirectorio(n.head.text);
+        const d = dir === "" ? undefined : dirDelPaquete(coreRoot, dir);
+        return { tipo: "descubre", dirs: d === undefined ? [] : [d] };
+      }
+      const primero = n.templateSpans[0];
+      if (primero === undefined) return { tipo: "descubre", dirs: [] };
+      return { tipo: "descubre", dirs: junta(resuelve(primero.expression), soloDirectorio(primero.literal.text)) };
+    }
+    // `DIR + "/" + x`: la cabeza es el operando de más a la izquierda, y el de
+    // más a la derecha dice si el nombre acaba escrito o compuesto.
+    if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+      if (esCadena(n.right) && cierraElNombre(n.right.text)) return NO_DESCUBRE;
+      let izq: ts.Expression = n;
+      while (ts.isBinaryExpression(izq) && izq.operatorToken.kind === ts.SyntaxKind.PlusToken) izq = izq.left;
+      return { tipo: "descubre", dirs: resuelve(izq) };
+    }
+    if (ts.isCallExpression(n)) {
+      const nombre = nombreLlamado(n);
+      if (nombre === "join" || nombre === "resolve") {
+        // Con el último tramo literal el nombre SÍ está escrito.
+        if (n.arguments.length < 2 || esCadena(n.arguments[n.arguments.length - 1])) return NO_DESCUBRE;
+        return { tipo: "descubre", dirs: resuelve(n.arguments[0]) };
+      }
+    }
+    // Un identificador o una llamada cualquiera no permiten AFIRMAR que el
+    // nombre se componga; ver la cabecera de `Apertura` y sus quince falsos.
+    return NO_DESCUBRE;
+  };
+
   // Pasada 1 · literales, alias de import, constantes que son un directorio y
   // la firma de cada función del fichero.
   const pasada1 = (n: ts.Node): void => {
@@ -921,6 +1008,13 @@ function analizaLectura(texto: string, base: string): Lectura {
       }
     }
     if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
+      apunta(n.name.text, resuelve(n.initializer));
+    }
+    // EL VALOR POR DEFECTO DE UN PARÁMETRO es lo que el fichero dice que lee
+    // cuando nadie le dice otra cosa, y por eso cuenta como que lo nombra: es
+    // la vía por la que `src/plugins/loader.ts` deja de estar ciego sobre
+    // `data/plugins` sin dejar de aceptar el directorio que le pasen (#442).
+    if (ts.isParameter(n) && ts.isIdentifier(n.name) && n.initializer) {
       apunta(n.name.text, resuelve(n.initializer));
     }
     if (ts.isFunctionDeclaration(n) && n.name) {
@@ -958,7 +1052,10 @@ function analizaLectura(texto: string, base: string): Lectura {
       if (params !== undefined) {
         n.arguments.forEach((arg, i) => {
           const nombre = params[i];
-          if (nombre) apunta(nombre, resuelve(arg));
+          if (!nombre) return;
+          const dirs = resuelve(arg);
+          if (dirs.length === 0) nombresDeOrigenDesconocido.add(nombre);
+          apunta(nombre, dirs);
         });
       }
     }
@@ -973,16 +1070,19 @@ function analizaLectura(texto: string, base: string): Lectura {
     if (ts.isCallExpression(n) && n.arguments.length > 0) {
       const llamado = nombreLlamado(n);
       const nombre = llamado === undefined ? undefined : (alias.get(llamado) ?? llamado);
-      const donde =
+      const apertura: Apertura | undefined =
         nombre !== undefined && API_ENUMERA.has(nombre)
-          ? n.arguments[0]
+          ? { tipo: "descubre", dirs: resuelve(n.arguments[0]) }
           : nombre !== undefined && API_ABRE.has(nombre)
-            ? cabezaCompuesta(n.arguments[0])
+            ? aperturaDe(n.arguments[0])
             : undefined;
-      if (donde !== undefined) {
-        const dirs = resuelve(donde);
-        if (dirs.length === 0) descubrimientosCiegos++;
-        for (const d of dirs) directorios.add(d);
+      if (apertura !== undefined && apertura.tipo === "descubre") {
+        // Sin directorio, o con directorio pero atado también a algo que no se
+        // resuelve: las dos son estar ciego. La segunda es media ceguera y
+        // cuenta igual — `src/plugins/loader.ts` enumera `data/plugins` (que sí
+        // se sabe) y el `plugins/` del juego que le pasan (que no).
+        if (apertura.dirs.length === 0 || tieneOrigenDesconocido(n.arguments[0])) descubrimientosCiegos++;
+        for (const d of apertura.dirs) directorios.add(d);
       }
     }
     ts.forEachChild(n, pasada3);

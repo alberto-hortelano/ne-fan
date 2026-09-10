@@ -772,18 +772,22 @@ const CARGABLES = ["*.ts", "*.mts", "*.cts", "*.js", "*.mjs", "*.cjs"];
  *  disco ya no está. El segundo paso es lo que evita el falso positivo del
  *  mismo basename en dos carpetas: `src/types.ts` y `src/plugins/types.ts`.
  *
- *  LÍMITE, y por qué este grafo no es el de `resolverEspecificador`: un import
- *  de DIRECTORIO (`from "./x"` → `x/index.ts`) no escribe «index» en ninguna
- *  parte, así que el prefiltro no lo encuentra y el candidato `index.ts` de
- *  `resuelveSinDisco` no llega a compararse nunca; borrar ese `index.ts` saldría
- *  «nadie lo importaba» aunque el importador siguiera vivo (QA de #471, caso H).
- *  Hoy no hay ninguno en el repo y `moduleResolution: Node16` lo rechaza en
- *  ESM; si alguna vez entra uno, el prefiltro tiene que buscar también el
- *  nombre del directorio. */
+ *  EL IMPORT DE DIRECTORIO ENTRA POR EL NOMBRE DE LA CARPETA (#473). `from
+ *  "./x"` resuelve a `x/index.ts` y no escribe «index» en ninguna parte, así que
+ *  un prefiltro que solo buscara el basename no encontraba al importador y el
+ *  candidato `index.ts` que `resuelveSinDisco` sí conoce no llegaba a
+ *  compararse: borrar ese `index.ts` salía «nadie lo importaba» con el
+ *  importador vivo y fuera del diff (QA de #471, caso H). Y ésa es la dirección
+ *  peligrosa — descartar de más. Cuando el fichero borrado es un `index`, se
+ *  busca ADEMÁS el nombre de su carpeta; el segundo paso sigue decidiendo, así
+ *  que ampliar el prefiltro no puede producir un falso positivo, solo trabajo. */
 export function importadoresEn(rev: string, fichero: string): string[] {
   const objetivo = resolve(coreRoot, fichero);
-  const nombre = fichero.split("/").pop()!.replace(/\.[mc]?[tj]s$/, "");
-  const candidatos = gitGrepL(rev, nombre, CARGABLES);
+  const tramos = fichero.split("/");
+  const nombre = tramos[tramos.length - 1].replace(/\.[mc]?[tj]s$/, "");
+  const carpeta = tramos[tramos.length - 2];
+  const terminos = nombre === "index" && carpeta !== undefined ? [nombre, carpeta] : [nombre];
+  const candidatos = gitGrepL(rev, terminos, CARGABLES);
   const out: string[] = [];
   for (const c of candidatos) {
     const abs = join(raizRepo, c);
@@ -798,10 +802,14 @@ export function importadoresEn(rev: string, fichero: string): string[] {
 }
 
 /** `git grep -l -F`, que sale con 1 cuando no hay ninguna coincidencia: eso es
- *  una lista vacía, no un error. Cualquier otro código sí lo es. */
-function gitGrepL(rev: string, texto: string, patrones: readonly string[]): string[] {
+ *  una lista vacía, no un error. Cualquier otro código sí lo es.
+ *
+ *  Varios `-e` se leen como O, que es lo que necesita el import de directorio:
+ *  o el basename, o el nombre de la carpeta. */
+function gitGrepL(rev: string, textos: readonly string[], patrones: readonly string[]): string[] {
   try {
-    return execFileSync("git", ["grep", "-l", "-F", "-e", texto, rev, "--", ...patrones], {
+    const busca = textos.flatMap((t) => ["-e", t]);
+    return execFileSync("git", ["grep", "-l", "-F", ...busca, rev, "--", ...patrones], {
       cwd: raizRepo,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],

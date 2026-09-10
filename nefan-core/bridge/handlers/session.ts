@@ -33,7 +33,7 @@ import {
 } from "../../src/games/world-snapshot.js";
 import { listStyleApplications } from "../../src/games/style-application.js";
 import { WorldMapManager } from "../../src/world-map/world-map.js";
-import { loadGamePluginManifests } from "../../src/plugins/loader.js";
+import { loadGamePluginManifests, pluginsHermanosDe } from "../../src/plugins/loader.js";
 import {
   activarPluginsDeSesionNueva,
   atarPluginsDeResume,
@@ -459,7 +459,7 @@ export async function handleStartSession(
   // Génesis de plugins shipped (F3): validación + projections. Un
   // manifest inválido aborta el arranque de sesión — fail-loud.
   try {
-    const loaded = loadGamePluginManifests(ctx.gamesDir, msg.gameId);
+    const loaded = loadGamePluginManifests(ctx.gamesDir, msg.gameId, pluginsHermanosDe(ctx.gamesDir));
     activarPluginsDeSesionNueva(ctx, loaded);
   } catch (err) {
     console.error("Bridge: plugin load failed on start_session:", err);
@@ -613,7 +613,7 @@ export async function handleResumeSession(
   // Bind de plugins shipped (F3): el slice vive en el save, el manifest
   // se relee del FS y se casa por id (integridad fail-loud).
   try {
-    const loaded = loadGamePluginManifests(ctx.gamesDir, ctx.narrative.game_id);
+    const loaded = loadGamePluginManifests(ctx.gamesDir, ctx.narrative.game_id, pluginsHermanosDe(ctx.gamesDir));
     atarPluginsDeResume(ctx, loaded);
   } catch (err) {
     console.error("Bridge: plugin bind failed on resume_session:", err);

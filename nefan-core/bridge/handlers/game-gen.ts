@@ -22,7 +22,7 @@ import {
   styleApplicationPinRef,
 } from "../../src/games/style-application.js";
 import { resolveServiceUrl } from "../../src/contracts/common.js";
-import { loadGamePluginManifests } from "../../src/plugins/loader.js";
+import { loadGamePluginManifests, pluginsHermanosDe } from "../../src/plugins/loader.js";
 import {
   activarPluginsDeSesionNueva,
   vaciarPluginsActivos,
@@ -181,7 +181,7 @@ export async function runGameGeneration(
     });
     // Plugins activos como en un start_session real: el motor genera con el
     // mismo contexto que verá en partida (sus slices mueren con el save).
-    const manifests = loadGamePluginManifests(ctx.gamesDir, gameId);
+    const manifests = loadGamePluginManifests(ctx.gamesDir, gameId, pluginsHermanosDe(ctx.gamesDir));
     activarPluginsDeSesionNueva(ctx, manifests);
     await ctx.aiClient.notifySessionStart(ephemeralSession, gameId, false);
 

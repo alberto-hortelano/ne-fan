@@ -61,6 +61,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { dirname, join, relative, resolve } from "node:path";
 
 import { contextoDe, seleccionar, SIN_RENOMBRAR, type Seleccion } from "./afectado.js";
+import { lineasDeCodigo } from "./crap-score.js";
 import {
   coreRoot,
   esVivo,
@@ -73,10 +74,13 @@ import {
 } from "./mutation-plan.js";
 import {
   atribuir,
+  conCronometro,
+  costeEstimado,
   deltaDeCorrida,
   costeDeLaMatriz,
   duenosDeLaMedida,
   empaqueta,
+  filaDeHuella,
   fusionaCorrida,
   lotesSinNoticias,
   estadoLegible,
@@ -87,6 +91,8 @@ import {
   fusiona,
   HUELLA_VACIA,
   huellaDeMutante,
+  idsDeLotes,
+  matrizDeLotes,
   permisoLocal,
   prDelAsunto,
   rangoDe,
@@ -96,11 +102,13 @@ import {
   type Atribucion,
   type Corrida,
   type CommitDelRango,
+  type CrecimientoDeFichero,
   type DeltaDeFichero,
   type DuenosDeLaMedida,
   type JobDeCI,
   type OrigenCorrida,
   type PlanDeCorrida,
+  type SujetoDeLaCola,
   type Huella,
   type InformeSellado,
   type MedidaDeFichero,
@@ -256,6 +264,47 @@ export function costeDe(plan: PlanMutacion, huella: Huella, id: string): number 
   const medidos = ficheros.map((f) => huella.ficheros[f]).filter(Boolean);
   if (medidos.length === 0) return undefined;
   return medidos.reduce((n, m) => n + m.total, 0);
+}
+
+/** Lo que costaría medir HOY ese módulo, para que el tope local no decida con
+ *  la foto de la corrida anterior (#429).
+ *
+ *  Aquí vive solo lo que toca el mundo: sacar del objeto de git el fichero tal
+ *  y como estaba cuando se midió —su blob lo guarda la propia huella— y contar
+ *  las líneas de código de las dos versiones. La aritmética y la regla de «solo
+ *  puede negar» están en `costeEstimado`, que es puro y tiene batería.
+ *
+ *  `undefined` = no hay ni una fila medida de este módulo, que es el caso que
+ *  ya rechaza `permisoLocal` por otro motivo («no se sabe cuánto cuesta»). Un
+ *  blob que git no pueda sacar NO se lanza: es un clon superficial o una rama
+ *  reescrita, y el gate tiene que seguir funcionando con lo que sí sabe. */
+export function estimaCoste(plan: PlanMutacion, huella: Huella, id: string): number | undefined {
+  const filas: CrecimientoDeFichero[] = [];
+  for (const fichero of ficherosMutados(moduloPorId(plan, id))) {
+    const medida = huella.ficheros[fichero];
+    if (!medida) continue;
+    filas.push({
+      fichero,
+      total: medida.total,
+      lineasMedidas: lineasDeBlob(medida.blob, fichero),
+      lineasAhora: lineasEnDisco(fichero),
+    });
+  }
+  return costeEstimado(filas);
+}
+
+function lineasDeBlob(blob: string, fichero: string): number | undefined {
+  const r = spawnSync("git", ["cat-file", "blob", blob], {
+    cwd: raizRepo,
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  return r.status === 0 ? lineasDeCodigo(r.stdout, fichero).size : undefined;
+}
+
+function lineasEnDisco(fichero: string): number | undefined {
+  const abs = join(coreRoot, fichero);
+  return existsSync(abs) ? lineasDeCodigo(readFileSync(abs, "utf8"), fichero).size : undefined;
 }
 
 /** Los segundos de reloj de un módulo según su última medida, con MÁXIMO y no
@@ -590,19 +639,13 @@ function repartir(argv: readonly string[]): void {
     const segundos = corrida.informes.find((i) => i.modulo === id)?.segundos;
 
     for (const d of deltas) {
-      medidos[d.fichero] = {
-        sha: corrida.sha,
-        run: corrida.run_id,
-        fecha: corrida.fecha,
+      medidos[d.fichero] = filaDeHuella({
+        corrida,
+        delta: d,
         blob: ahora[d.fichero].blob,
-        total: d.total,
-        vivos: [...d.vivos].sort(),
-        nuevos: [...d.nuevos].sort(),
-        resueltos: d.resueltos.length,
-        base: d.base,
         duenos,
-        ...(segundos === undefined ? {} : { segundos }),
-      };
+        segundos,
+      });
     }
     repartos.push({
       modulo: id,
@@ -836,8 +879,12 @@ function local(argv: readonly string[]): void {
   if (!id) throw new Error("falta el id del módulo: npm run mutacion -- local <id>");
   const plan = leerPlan();
   moduloPorId(plan, id); // fail-loud si el id no existe, con la lista de los que sí
-  const coste = costeDe(plan, leerHuella(), id);
-  const permiso = permisoLocal(id, coste, plan.tope_local);
+  const huella = leerHuella();
+  const coste = costeDe(plan, huella, id);
+  // El mismo par de números que aplica `mutate.ts`, para que el verbo no diga
+  // «adelante» y la puerta de abajo se niegue medio segundo después: la huella
+  // (la corrida anterior) y lo que costaría HOY (#429).
+  const permiso = permisoLocal(id, coste, plan.tope_local, false, estimaCoste(plan, huella, id));
   if (!permiso.ok) {
     console.error(`\nNO se mide aquí: ${permiso.porque}\n`);
     process.exitCode = 1;
@@ -885,17 +932,23 @@ function lotes(argv: readonly string[]): void {
     return i < 0 ? undefined : argv[i + 1];
   };
 
-  const idsCrudos = opcional("--ids");
-  const ids = argv.includes("--todos")
-    ? // El input TODOS del workflow. Explícito y no una lista vacía que alguien
-      // tenga que interpretar: `--pedidos ""` ya costó una corrida entera.
-      plan.modulos.map((m) => m.id)
-    : idsCrudos === undefined
-      ? (() => {
-          const sel = seleccionDesdeElTag(plan, shaDelTag());
-          return sel.todos ? plan.modulos.map((m) => m.id) : sel.ids;
-        })()
-      : idsCrudos.split(/\s+/).filter(Boolean);
+  // Qué se ha pedido lo decide `idsDeLotes`, que es puro y tiene batería: aquí
+  // solo se traducen sus tres respuestas legítimas a una lista de módulos. Las
+  // dos ilegítimas —`--todos` con `--ids`, y un id repetido— mueren antes de
+  // tocar el plan (#437).
+  const pedido = idsDeLotes(argv.includes("--todos"), opcional("--ids"));
+  if (!pedido.ok) throw new Error(`lotes: ${pedido.porque}`);
+  const ids =
+    pedido.ids === "todos"
+      ? // El input TODOS del workflow. Explícito y no una lista vacía que
+        // alguien tenga que interpretar: `--pedidos ""` ya costó una corrida.
+        plan.modulos.map((m) => m.id)
+      : pedido.ids === "del-tag"
+        ? (() => {
+            const sel = seleccionDesdeElTag(plan, shaDelTag());
+            return sel.todos ? plan.modulos.map((m) => m.id) : sel.ids;
+          })()
+        : [...pedido.ids];
   // Fail-loud: un id inventado en el input del workflow tiene que morir AQUÍ,
   // no en el job que intente medirlo media hora después.
   for (const id of ids) moduloPorId(plan, id);
@@ -993,8 +1046,11 @@ function lotes(argv: readonly string[]): void {
     // formateados: el job de medir no necesita leer el plan para saber qué le
     // toca, y así un fallo al bajar el artefacto no puede convertirse en un
     // lote que mide otra cosa.
-    const matriz = paquetes.map((l) => ({ lote: l.lote, ids: l.modulos.join(" ") }));
-    writeFileSync(salida, `matriz=${JSON.stringify(matriz)}\nlotes=${paquetes.length}\n`, { flag: "a" });
+    writeFileSync(
+      salida,
+      `matriz=${JSON.stringify(matrizDeLotes(paquetes))}\nlotes=${paquetes.length}\n`,
+      { flag: "a" },
+    );
   }
 }
 
@@ -1103,30 +1159,77 @@ function fusionar(argv: readonly string[]): void {
  *  del usuario, que puede moverlo:
  *
  *    · sobre la corrida de MUTACIÓN → el sobrecoste de partir (N × checkout +
- *      `npm ci` + dry-run), que son minutos de runner y no de reloj;
+ *      `npm ci` + dry-run), que son minutos de runner y no de reloj, más la
+ *      cola INTERNA de la matriz, que es información sobre el dial;
  *    · sobre la corrida de una PR NORMAL lanzada mientras la matriz corre → lo
  *      que esa PR esperó. Si pasa de dos minutos, se baja `max-parallel`: el
  *      reloj de la mutación es diferido y el de una PR no, y el hook
  *      `ci-verde.sh` no deja cerrar una tarea con el CI pendiente.
  *
+ *  DE QUÉ CORRIDA SE TRATA NO SE PREGUNTA, SE MIRA: el workflow de la corrida
+ *  lo dice la propia API, y por eso no hay flag que ponerle mal. Antes los dos
+ *  usos estaban distinguidos SOLO en esta prosa mientras `cabe` y el
+ *  `process.exitCode = 1` se aplicaban igual a los dos, y sobre la propia
+ *  matriz eso aconsejaba lo contrario del dato (#541).
+ *
  *    npm run mutacion -- cola <run-id>
  */
 const TOPE_ESPERA_S = 120;
 
+/** El fichero de workflow de una corrida, para saber si es la matriz o es otra
+ *  cosa. Sin respuesta no se supone: se lanza. Suponer «es una PR» convertiría
+ *  un fallo de `gh` en el veredicto equivocado, que es justo lo que #541
+ *  arregla. */
+function workflowDeCorrida(id: string): string {
+  const run = JSON.parse(gh(["api", `repos/{owner}/{repo}/actions/runs/${id}`])) as { path?: unknown };
+  if (typeof run.path !== "string" || run.path === "") {
+    throw new Error(`la corrida ${id} no dice de qué workflow es (campo \`path\`): no se puede saber qué mide`);
+  }
+  return run.path;
+}
+
 function cola(argv: readonly string[]): void {
   const id = argv.find((a) => /^\d+$/.test(a));
   if (!id) throw new Error("falta el id de la corrida: npm run mutacion -- cola <run-id>");
+  const sujeto: SujetoDeLaCola = workflowDeCorrida(id).endsWith(`/${WORKFLOW}`) ? "la-matriz" : "una-pr";
   const jobs = JSON.parse(gh(["api", `repos/{owner}/{repo}/actions/runs/${id}/jobs?per_page=100`, "--paginate"]))
     .jobs as JobDeCI[];
-  const c = costeDeLaMatriz(jobs, TOPE_ESPERA_S);
+  const c = costeDeLaMatriz(jobs, TOPE_ESPERA_S, sujeto);
   const min = (s: number): string => `${(s / 60).toFixed(1)} min`;
   console.log(
-    `\nCorrida ${id} · ${c.jobs} job(s)\n` +
+    `\nCorrida ${id} · ${c.jobs} job(s) · ${sujeto === "la-matriz" ? `la MATRIZ (${WORKFLOW})` : "una corrida AJENA a la matriz"}\n` +
       `  espera de cola   peor ${min(c.esperaPeor)} (${c.esperaPeorJob}) · mediana ${min(c.esperaMediana)}\n` +
+      `  arranque         ${min(c.esperaDeArranque)} — lo que esperó el primer job a que el pool le hiciera sitio\n` +
+      `  a la vez         ${c.paralelismoMaximo} job(s) como máximo\n` +
       `  reloj de pared   ${min(c.pared)}\n` +
       `  runner gastado   ${min(c.runner)}\n` +
       `  sobrecoste       ${min(c.sobrecoste)} — lo que se paga por venir partida (N × checkout + npm ci + dry-run)\n`,
   );
+  if (sujeto === "la-matriz") {
+    // LA COLA INTERNA ES UN DATO, NO UN FALLO. Los jobs que pasan de
+    // `max-parallel` esperan a un slot de la propia matriz: bajar el dial los
+    // haría esperar MÁS. Lo único que aquí puede ir mal es que la corrida no
+    // arrancara, y eso no lo arregla `max-parallel` porque el pool lo tenía
+    // otro.
+    console.log(
+      `  · la cola de ${min(c.esperaPeor)} es INTERNA: con ${c.jobs} jobs y ${c.paralelismoMaximo} a la vez, los\n` +
+        `    últimos lotes esperan un slot de esta misma matriz. BAJAR max-parallel la ALARGA; subirlo\n` +
+        `    acorta el reloj de pared a costa de ocupar más pool.\n`,
+    );
+    if (c.cabe) {
+      console.log(
+        `  ✔ la matriz arrancó en ${min(c.esperaDeArranque)}, dentro del presupuesto de ${min(TOPE_ESPERA_S)}:\n` +
+          `    el pool estaba libre y toda la espera se explica sola.\n`,
+      );
+      return;
+    }
+    console.log(
+      `  ✗ la matriz TARDÓ ${min(c.esperaDeArranque)} en arrancar, por encima del presupuesto de ${min(TOPE_ESPERA_S)}:\n` +
+        `    el pool lo tenía otra cosa. Eso NO lo arregla max-parallel — mira qué más corría entonces.\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
   if (c.cabe) {
     console.log(`  ✔ el peor job esperó ${min(c.esperaPeor)}, dentro del presupuesto de ${min(TOPE_ESPERA_S)}.\n`);
     return;
@@ -1194,10 +1297,7 @@ function manifiesto(argv: readonly string[]): void {
     run_id: valor("--run"),
     origen,
     modulos_pedidos: pedidos.length > 0 ? pedidos : leerPlan().modulos.map((m) => m.id),
-    informes: informesEnDisco().map((i) => ({
-      ...i,
-      ...(typeof tiempos[i.modulo] === "number" ? { segundos: tiempos[i.modulo] } : {}),
-    })),
+    informes: conCronometro(informesEnDisco(), tiempos),
     fecha: new Date().toISOString(),
   };
   mkdirSync(DIR_INFORMES, { recursive: true });

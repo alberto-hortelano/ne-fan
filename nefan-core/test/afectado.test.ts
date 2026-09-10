@@ -13,9 +13,11 @@
  *  para no tener. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   clasifica,
@@ -822,6 +824,87 @@ describe("de qué directorio habla un descubrimiento", () => {
   it("y enumerar algo que llega de fuera del fichero también", () => {
     assert.equal(como(`export function f(dir) { return readdirSync(dir); }`).ciegos, 1);
   });
+
+  /** #444 · Una ruta armada por concatenación o por template no se veía Y
+   *  TAMPOCO contaba como ciega: `cabezaCompuesta` devolvía `undefined` y
+   *  pasada 3 se saltaba la llamada entera. Descarte silencioso — y con un
+   *  selector que DESCARTA, un lector invisible no es una corrida más cara: es
+   *  una medida que no existe con aspecto de medida que sí. */
+  describe("y una ruta armada por concatenación o template (#444)", () => {
+    it("`${DIR}/${x}.json` habla del directorio de la cabeza", () => {
+      const r = como(`${DIR}readFileSync(\`\${DIR}/\${x}.json\`);`);
+      assert.deepEqual(r.directorios, ["data/scenes"]);
+      assert.equal(r.ciegos, 0);
+    });
+
+    it("y con un tramo literal en medio, del subdirectorio", () => {
+      const r = como(`const D = fileURLToPath(new URL("../data", import.meta.url));\nreadFileSync(\`\${D}/scenes/\${x}.json\`);`);
+      assert.deepEqual(r.directorios, ["data/scenes"]);
+    });
+
+    it("el template que escribe su directorio en la cabecera también", () => {
+      const r = como('readFileSync(`data/scenes/${x}.json`);');
+      assert.deepEqual(r.directorios, ["data/scenes"]);
+      assert.equal(r.ciegos, 0);
+    });
+
+    it("`DIR + \"/\" + x` igual", () => {
+      const r = como(`${DIR}readFileSync(DIR + "/" + x);`);
+      assert.deepEqual(r.directorios, ["data/scenes"]);
+      assert.equal(r.ciegos, 0);
+    });
+
+    it("y una cabeza que NO resuelve es CIEGA, no invisible — que es todo el issue", () => {
+      // ANTES: cero directorios, cero ciegos, y la totalidad no lo reclamaba.
+      assert.equal(como('readFileSync(`${dir}/${x}.json`).length;').ciegos, 1);
+      assert.equal(como('readFileSync(dir + "/" + x).length;').ciegos, 1);
+    });
+
+    it("pero el NOMBRE escrito sigue sin ser un descubrimiento, se escriba como se escriba", () => {
+      // La otra mitad, y es la que evita devolver el «ejecuta todo»: lo contesta
+      // la vía del basename.
+      for (const cuerpo of [
+        `${DIR}readFileSync(\`\${DIR}/robledo_tile.json\`);`,
+        `${DIR}readFileSync(DIR + "/robledo_tile.json");`,
+        `${DIR}readFileSync(\`\${DIR}/\${sub}/robledo_tile.json\`);`,
+      ]) {
+        const r = como(cuerpo);
+        assert.deepEqual(r.directorios, [], cuerpo);
+        assert.equal(r.ciegos, 0, cuerpo);
+      }
+    });
+
+    it("y un identificador suelto tampoco: no se puede AFIRMAR que se componga", () => {
+      // Es el límite, y está medido: tratarlo como descubrimiento metía quince
+      // ficheros en la lista de ciegos y los quince eran falsos.
+      const r = como(`const RUTA = "x";\nreadFileSync(RUTA, "utf-8");\nreadFileSync(rutaInforme(id));`);
+      assert.equal(r.ciegos, 0);
+    });
+  });
+
+  /** #442 · El valor por defecto de un parámetro es lo que el fichero dice que
+   *  lee cuando nadie le dice otra cosa, y con eso `src/plugins/loader.ts` deja
+   *  de estar ciego sobre `data/plugins` sin dejar de aceptar el directorio que
+   *  le pasen. */
+  describe("y el valor por defecto de un parámetro (#442)", () => {
+    it("un parámetro con defecto conocido resuelve, aunque el llamante no diga nada", () => {
+      const r = como(
+        `${DIR}export function carga(dir = DIR) { return readdirSync(dir); }\ncarga();`,
+      );
+      assert.deepEqual(r.directorios, ["data/scenes"]);
+    });
+
+    it("y si ADEMÁS alguien le pasa algo que no se resuelve, cuenta como ciego IGUAL", () => {
+      // Media ceguera es ceguera: la parte conocida no puede tapar a la
+      // desconocida. Es la forma exacta del loader de plugins — los comunes se
+      // saben, el `plugins/` del juego llega por parámetro.
+      const r = como(
+        `${DIR}export function carga(dir = DIR) { return readdirSync(dir); }\ncarga(loQueSea);`,
+      );
+      assert.deepEqual(r.directorios, ["data/scenes"], "lo que sí sabe, lo dice");
+      assert.equal(r.ciegos, 1, "y lo que no, también");
+    });
+  });
 });
 
 /** El candado de totalidad del agujero: ningún fichero de datos puede salir
@@ -853,7 +936,9 @@ describe("candado · quien abre un directorio del paquete se ve, y lo que no se 
     "src/games/loader.ts":
       "enumera el gamesDir/stylesDir que le pasan. COSTE: añadir o quitar un JUEGO o un ESTILO entero se ve igual, porque trae su `game.json` o su `style.json` y esos SÍ los nombra este fichero; lo que no se vería es un fichero suelto dentro de uno ya existente",
     "src/plugins/loader.ts":
-      "enumera el directorio de plugins que le pasan. COSTE: un plugin nuevo en `data/plugins/`, en `data/games/{id}/plugins/` o en las fixtures de `test/fixtures/games/*/plugins/` no selecciona por sí solo a las baterías que cargan plugins de verdad (las de `state-http-*`)",
+      "los COMUNES ya los nombra (`DIR_PLUGINS_COMUNES` = `data/plugins`, #442), así que un plugin nuevo ahí sí selecciona las baterías que lo cargan; lo que sigue llegando por parámetro es el directorio del JUEGO. COSTE: un plugin nuevo en `data/games/{id}/plugins/` o en las fixtures de `test/fixtures/games/*/plugins/` no selecciona por sí solo a las baterías que cargan plugins de verdad (las de `state-http-*`)",
+    "test/scene-fixtures.test.ts":
+      "enumera `data/scenes` (que sí resuelve, y por eso TODA fixture de ahí selecciona sus dos baterías) y ADEMÁS un directorio temporal que el propio test fabrica con `mkdtempSync` para los casos de error. COSTE: ninguno sobre datos del repo — bajo un tmp no cuelga nada versionado",
     "scripts/manifest-kinds-con-productor.ts":
       "enumera el `cacheDir` del asset-store, que está en .gitignore: no hay dato versionado debajo",
   };
@@ -897,6 +982,33 @@ describe("candado · quien abre un directorio del paquete se ve, y lo que no se 
       }
     }
     assert.ok(mirados > 20, `solo ${mirados} datos mirados: el candado estaría aprobando sin mirar`);
+  });
+
+  it("un plugin común de `data/plugins/` selecciona a TODA batería que cargue plugins (#442)", () => {
+    // EL CANDADO QUE FALTABA, y su forma importa: el de arriba recorre los
+    // directorios que cada fichero dice leer, así que el día que `loader.ts`
+    // dejara de nombrar `data/plugins` simplemente no iteraría nada y saldría
+    // verde — un verde que no comprueba nada. Éste parte del DATO y exige que
+    // llegue a quien lo carga.
+    //
+    // El oráculo se deriva, no se escribe: quien carga plugins es quien tiene
+    // `src/plugins/loader.ts` en su alcance. Hoy son las baterías de
+    // `state-http-*` y `npc-director`, y mañana las que sean.
+    const cargan = [...alcance].filter(([f]) => f === "src/plugins/loader.ts").flatMap(([, ids]) => ids);
+    assert.ok(cargan.length > 0, "nadie carga plugins: este candado no compararía nada");
+    const comunes = readdirSync(join(coreRoot, "data", "plugins")).filter((f) => f.endsWith(".json"));
+    assert.ok(comunes.length > 0, "no hay manifests comunes que mirar");
+    for (const nombre of comunes) {
+      const dato = `data/plugins/${nombre}`;
+      const selecciona = new Set([...alcance].filter(([f]) => leeElDato(f, dato)).flatMap(([, ids]) => ids));
+      for (const id of cargan) {
+        assert.ok(
+          selecciona.has(id),
+          `${dato} lo carga la batería de ${id} y no la selecciona: el loader ha dejado de nombrar su ` +
+            `directorio y un plugin nuevo saldría verde sin medir lo que toca (#442)`,
+        );
+      }
+    }
   });
 
   /** Quién selecciona ese dato, contra el plan REAL. */
@@ -1026,6 +1138,74 @@ describe("borrado · quién lo cargaba en una revisión, leído de git", () => {
 
   it("un fichero que nadie importa da la lista vacía, no un error", () => {
     assert.deepEqual(importadoresEn("HEAD", "src/no-existe-jamas.ts"), []);
+  });
+
+  /** #473 · Un import de DIRECTORIO (`from "./x"` → `x/index.ts`) no escribe
+   *  «index» en ninguna parte, así que el prefiltro por basename no encontraba
+   *  al importador y el candidato `index.ts` que `resuelveSinDisco` sí conoce no
+   *  llegaba a compararse. Borrar ese `index.ts` salía «nadie lo importaba» con
+   *  el importador vivo: descartar de más, que es la dirección peligrosa.
+   *
+   *  EL CASO NO ESTÁ EN EL REPO Y NO PUEDE ESTARLO —`moduleResolution: Node16`
+   *  rechaza `./x` sin extensión en ESM—, así que la revisión se FABRICA con
+   *  plumbing: blobs sueltos, un índice temporal fuera del de verdad y un
+   *  `commit-tree` que no cuelga de ninguna rama. No toca el árbol de trabajo ni
+   *  mueve un solo puntero; los objetos quedan huérfanos y los recoge `git gc`.
+   *  Sin esto, el candado tendría que esperar a que el caso apareciera solo, que
+   *  es justamente cuando ya no avisa. */
+  describe("y el import de DIRECTORIO, que no escribe «index» en ninguna parte (#473)", () => {
+    const raizRepo = fileURLToPath(new URL("../..", import.meta.url));
+
+    const revisionSintetica = (ficheros: Record<string, string>): string => {
+      const idx = join(mkdtempSync(join(tmpdir(), "nefan-idx-")), "index");
+      const env = { ...process.env, GIT_INDEX_FILE: idx };
+      const git = (args: string[], input?: string): string =>
+        execFileSync("git", args, { cwd: raizRepo, encoding: "utf8", env, input }).trim();
+      for (const [ruta, cuerpo] of Object.entries(ficheros)) {
+        const blob = git(["hash-object", "-w", "--stdin"], cuerpo);
+        git(["update-index", "--add", "--cacheinfo", `100644,${blob},${ruta}`]);
+      }
+      return git(["commit-tree", git(["write-tree"]), "-m", "revisión de ensayo (#473)"]);
+    };
+
+    it("el importador que escribe `from \"./x\"` SÍ sale como importador de `x/index.ts`", () => {
+      const rev = revisionSintetica({
+        "nefan-core/src/ensayo473/x/index.ts": "export const marca = 1;\n",
+        "nefan-core/src/ensayo473/vecino.ts": 'import { marca } from "./x";\nexport const usa = marca;\n',
+      });
+      assert.deepEqual(importadoresEn(rev, "src/ensayo473/x/index.ts"), ["src/ensayo473/vecino.ts"]);
+    });
+
+    it("y el import CON extensión sigue saliendo, que es el camino de todos los días", () => {
+      const rev = revisionSintetica({
+        "nefan-core/src/ensayo473/x/index.ts": "export const marca = 1;\n",
+        "nefan-core/src/ensayo473/vecino.ts": 'import { marca } from "./x/index.js";\nexport const usa = marca;\n',
+      });
+      assert.deepEqual(importadoresEn(rev, "src/ensayo473/x/index.ts"), ["src/ensayo473/vecino.ts"]);
+    });
+
+    it("ampliar el prefiltro NO inventa importadores: el segundo paso sigue decidiendo", () => {
+      // Nombrar la carpeta no basta: hay que importarla. Sin esto, el arreglo
+      // habría cambiado descartar de más por afirmar de más.
+      const rev = revisionSintetica({
+        "nefan-core/src/ensayo473/x/index.ts": "export const marca = 1;\n",
+        "nefan-core/src/ensayo473/vecino.ts": '// habla de la carpeta x sin importarla\nexport const usa = 1;\n',
+        "nefan-core/src/ensayo473/otro.ts": 'import { marca } from "../ensayo473/x/index.js";\nexport const usa = marca;\n',
+      });
+      assert.deepEqual(importadoresEn(rev, "src/ensayo473/x/index.ts"), ["src/ensayo473/otro.ts"]);
+    });
+
+    it("y sobre el `index.ts` REAL del repo la respuesta no cambia", () => {
+      // `src/scene/blueprint/index.ts` sí escribe «index» en sus importadores,
+      // así que esto comprueba que buscar además «blueprint» —que aparece por
+      // todas partes— no le añade ni uno.
+      const imp = importadoresEn("HEAD", "src/scene/blueprint/index.ts");
+      assert.ok(imp.length > 3, `solo ${imp.length} importadores: este test no compararía nada`);
+      for (const f of imp) {
+        const texto = readFileSync(join(coreRoot, f), "utf8");
+        assert.match(texto, /blueprint\/index\.js"/, `${f} sale como importador y no lo importa`);
+      }
+    });
   });
 
   it("sin revisiones no hay dónde mirar, y se dice", () => {
