@@ -11,7 +11,12 @@
  *   1. En partida (motor falso, tile_0_0): el NPC y el ENEMIGO reciben rótulo
  *      por su nombre —el 42 lleva desde el 08-29 logueando como hallazgo que
  *      «el enemigo no recibe rótulo»; aquí se afirma lo que hace el juego de
- *      hoy—; el rótulo de un personaje aparece a ≤ 18 m y NO a más de 18 m; la
+ *      hoy—, y se afirma UNO POR UNO desde delante de cada cual: desde el
+ *      2026-09-14 (#484) dos rótulos cuyas cajas se pisan no se emiten los dos,
+ *      así que «los dos a la vez» dejó de ser propiedad del sistema y pasó a
+ *      depender de dónde mire la cámara (MEDIDO: desde donde arranca la partida
+ *      esos dos quedan a 4 px de pisarse, y el tabernero pasea); el rótulo de
+ *      un personaje aparece a ≤ 18 m y NO a más de 18 m; la
  *      mirilla se enciende al enfilar a un personaje y ese rótulo, y solo ese,
  *      lleva `data-focus`; con la mirada al cielo la mirilla se apaga y el
  *      rótulo por distancia se queda; un EDIFICIO no enciende la mirilla ni se
@@ -178,38 +183,38 @@ export default async function (ctx) {
   );
   ctx.log(`tabernero en ${JSON.stringify(cuerpos.npc.pos)} · bandido en ${JSON.stringify(cuerpos.enemigo.pos)}`);
 
-  // 1a · Ambos personajes con rótulo, por su NOMBRE, desde donde aparece el jugador.
-  const alLlegar = await ctx.waitFor(
-    "aparecen los rótulos de los dos personajes",
-    (ids) => {
-      const n = document.querySelector(`#world-labels [data-label-id="${ids.npc}"]`);
-      const e = document.querySelector(`#world-labels [data-label-id="${ids.enemigo}"]`);
-      if (!n || !e) return null;
-      const p = window.__nefan.state().pos;
-      const dn = window.__nefan.npcs().find((x) => x.id === ids.npc).pos;
-      const de = window.__nefan.enemies().find((x) => x.id === ids.enemigo).pos;
-      return {
-        npc: { texto: n.textContent, dist: Math.hypot(dn.x - p.x, dn.z - p.z) },
-        enemigo: { texto: e.textContent, dist: Math.hypot(de.x - p.x, de.z - p.z) },
-      };
-    },
-    30_000,
-    { npc: NPC, enemigo: ENEMIGO },
-  );
-  ctx.log(`al llegar: ${JSON.stringify(alLlegar)}`);
-  ctx.expect(
-    `el NPC lleva su nombre sobre la cabeza («${NPC_NOMBRE}»)`,
-    alLlegar.npc.texto === NPC_NOMBRE,
-    JSON.stringify(alLlegar.npc),
-  );
-  ctx.expect(
-    `el ENEMIGO también (« ${ENEMIGO_NOMBRE}»): es a lo que apuntas, y el 42 lo tenía por hallazgo abierto`,
-    alLlegar.enemigo.texto === ENEMIGO_NOMBRE,
-    JSON.stringify(alLlegar.enemigo),
-  );
-  // La foto, mirando hacia los dos (los rótulos son DOM: fuera de cámara no se ven).
-  await ctx.nefan("setYaw", Math.atan2(cuerpos.enemigo.pos.x - 0.25, cuerpos.enemigo.pos.z - 3.25));
-  await frames(ctx, 2);
+  // 1a · Cada personaje con su NOMBRE sobre la cabeza. DOS asertos y no uno,
+  // desde donde se ve a cada uno: desde el 2026-09-14 (#484) dos rótulos cuyas
+  // cajas se pisan no se emiten los dos —se ve el del cercano, o el del
+  // enfilado—, así que «los dos a la vez» dejó de ser una propiedad del sistema
+  // y pasó a depender de dónde mire la cámara. Y estos dos se pisaban de
+  // verdad: MEDIDO desde el sitio en el que arranca la partida, sus cajas de
+  // 21 px quedan a 9 px una de otra en vertical y sus bordes horizontales se
+  // rozan (entre −5 y +5 px según dónde ande el tabernero, que pasea). Lo que
+  // el guion afirma sigue siendo lo mismo —cada uno lleva SU nombre, y el
+  // enemigo también, que es lo que el 42 tenía por hallazgo abierto—, medido
+  // donde no hay duda: plantado delante de cada uno, que es además donde lo
+  // mira quien juega.
+  for (const quien of [
+    { id: NPC, nombre: NPC_NOMBRE, pos: cuerpos.npc.pos, que: "el NPC" },
+    { id: ENEMIGO, nombre: ENEMIGO_NOMBRE, pos: cuerpos.enemigo.pos, que: "el ENEMIGO" },
+  ]) {
+    const delante = await plantarse(ctx, quien.pos.x, quien.pos.z + 4, quien.pos);
+    const rotulo = delante.labels.find((l) => l.id === quien.id) ?? null;
+    ctx.log(`delante de ${quien.id} (a ${delante.dist?.toFixed(1)} m): ${JSON.stringify(delante.labels)}`);
+    ctx.expect(
+      `${quien.que} lleva su nombre sobre la cabeza («${quien.nombre}»)`,
+      rotulo?.texto === quien.nombre,
+      JSON.stringify({ rotulo, ids: delante.ids }),
+    );
+  }
+  // La foto, delante del enemigo (los rótulos son DOM: fuera de cámara no se
+  // ven). Cambió de significado con la criba: donde antes enseñaba los dos
+  // nombres pisados a la altura del horizonte, ahora enseña que a la vista
+  // queda UNO, legible. Se deja asentar el billboard del personaje antes de
+  // disparar: recién teletransportado, la carta del sheet aún no tiene su
+  // dirección resuelta y sale como un cuadro blanco, que no enseña nada.
+  await frames(ctx, 10);
   await ctx.shot("npc-y-enemigo-rotulados");
 
   // 1b · Alcance: a más de 18 m no hay rótulo; a menos, sí.

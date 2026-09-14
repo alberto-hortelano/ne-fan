@@ -500,10 +500,27 @@
   /* Sin transición: la etiqueta persigue un punto del mundo cada frame y
      cualquier interpolación la deja arrastrándose por detrás de la cabeza. */
 }
+/* DOS REGLAS QUE NO COMPARTEN NI UNA PROPIEDAD, y ese es el diseño (#484).
+   Antes el foco pisaba el `color`, así que un hostil perdía el rojo JUSTO al
+   apuntarle, que es cuando más falta hace. La respuesta no es ganar por
+   especificidad —un truco que nadie entiende dentro de un mes— sino repartir:
+     · QUIÉN es      → el COLOR DEL TEXTO (único escritor de `color`);
+     · a quién APUNTAS → el BORDE, con el mismo acento que la mirilla.
+   Como ninguna toca la propiedad de la otra, el orden del fichero deja de
+   decidir nada y un bandido enfilado sale rojo con aro de acento.
+
+   Y NINGUNA DE LAS DOS PUEDE CAMBIAR EL TAMAÑO DE LA CAJA. `world-labels.ts` la
+   mide en píxeles UNA vez por texto (leerla por frame es un reflow por frame) y
+   con esa medida core decide qué rótulo tapa a cuál. Por eso el foco se marca
+   con `outline`, que no ocupa layout, y no engordando el borde o el padding:
+   una regla que hiciera crecer la caja al enfocar dejaría la medida mintiendo
+   sin que nada se pusiera rojo. */
+#world-labels .world-label[data-peligro="true"] { color: var(--nf-danger); }
 #world-labels .world-label[data-focus="true"] {
-  color: var(--nf-accent);
   border-color: var(--nf-accent);
   box-shadow: var(--nf-glow);
+  outline: var(--nf-hairline) solid var(--nf-accent);
+  outline-offset: 2px;
 }
 
 /* ── Mirilla ────────────────────────────────────────────────────────────── */
