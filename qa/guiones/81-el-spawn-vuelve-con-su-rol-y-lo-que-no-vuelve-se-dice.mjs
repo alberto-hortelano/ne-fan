@@ -20,7 +20,8 @@
  *  banco en que la petición del pacífico de runtime se puede observar.
  *
  *  Y la otra mitad: un record de runtime que el juego no sabe pintar (un
- *  `type` que no es npc|object|building) no tumba el resume ni desaparece
+ *  `type` que no es ninguna de las clases que el contrato admite) no tumba el
+ *  resume ni desaparece
  *  callado — el panel de errores lo nombra UNA vez, el resto vuelve, y la línea
  *  del juego cuenta 3 y no 4. Lo filtra el core (`spawnsDeRuntime`); lo que se
  *  afirma aquí es lo que ve quien juega. Ningún otro guion llega a esa rama.

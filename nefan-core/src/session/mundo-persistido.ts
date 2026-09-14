@@ -37,6 +37,7 @@
  *  (para el resume), que es exactamente por qué no puede tocar `node:*`.
  */
 
+import { TOPE_DE_FOOTPRINT_CELDAS } from "../contract/model-io/schemas.js";
 import type { EntityRecord, HuellaDelSpawn, SceneRecord } from "../narrative/types.js";
 import { huellaEnMetros, type NpcEnElWire, type WorldScene } from "../scene/scene-normalize.js";
 import { tileWorldRect } from "../scene/tile.js";
@@ -430,8 +431,9 @@ export function avisoDeFueraDelMundo(fuera: readonly FueraDelMundo[]): string {
  *
  *  La clase y el tamaño vienen atados en `HuellaDelSpawn`, compartido con el
  *  effect en vuelo: las clases que ocupan sitio traen `sizeXZ` y un `npc` no.
- *  El tamaño se DERIVA aquí, al leer el ledger, por la misma función que el
- *  del tile (`huellaEnMetros`). */
+ *  El tamaño sale de lo que el motor DECLARÓ (`data.footprint`) o del defecto
+ *  de su clase, por la misma función y con los mismos argumentos que el effect
+ *  en vivo (`huellaEnMetros`): son las dos vías al mismo número. */
 export type SpawnDeRuntime = {
   entityId: string;
   /** El rótulo: `data.name` del ledger. Un record sin él no vuelve (se dice). */
@@ -443,24 +445,61 @@ export type SpawnDeRuntime = {
   data: Record<string, unknown>;
 } & HuellaDelSpawn;
 
-/** Qué clases de spawn sabe devolver el resume.
+/** Qué clases de spawn sabe devolver el resume: las MISMAS que el motor puede
+ *  declarar (`entity_kind` en `contract/model-io/schemas.ts`). Que sean las
+ *  mismas no es casualidad ni cortesía — es la condición de que el mundo que
+ *  vuelve sea el que el jugador dejó: cada clase que el contrato admita y esta
+ *  lista no, es una cosa que el motor pone y que desaparece al reanudar. */
+const CLASES_QUE_VUELVEN = new Set(["npc", "object", "building", "item"]);
+
+/** Por qué el `footprint` guardado en el ledger NO es una huella, o `null` si
+ *  lo es: un par de enteros de 1 a `TOPE_DE_FOOTPRINT_CELDAS` (el lado del
+ *  tile). Hermano de `describirPosicionInvalida` y `describirNombreInvalido` y
+ *  por el mismo motivo: lo lee la PUERTA (`loadSession`) para que un save con
+ *  una huella imposible no llegue al mundo, y lo vuelve a mirar el lector de
+ *  aquí abajo — que no decide: si un ledger llega con ella rota, es que se
+ *  saltó la puerta, y eso se rompe.
  *
- *  ⚠ INCOHERENCIA CONOCIDA, y la trae #532 (la PR 1 de su tanda): desde ella el
- *  motor puede declarar `entity_kind:"item"` y un `footprint` en celdas, y el
- *  effect EN VIVO los honra — pero aquí no. Un `item` reanudado no vuelve (se
- *  dice, con su nombre, en los `errores`) y un `object` que declaró `[6,6]`
- *  vuelve midiendo el defecto de su clase, porque la huella se deriva del
- *  `type` del record e ignora lo que el motor declaró, que SÍ está en `data`.
- *  Medido por QA: un carro de 3×3 m vuelve de 1,5×1,5 y el jugador gana 0,75 m
- *  por lado de suelo que ayer era el carro (el volumen encoge con la caja, así
- *  que no se atraviesa un carro visible).
+ *  `undefined` NO es inválido: el campo es opcional en el contrato y el motor
+ *  puede no declararlo. Lo que se rechaza es lo que viene mal. */
+export function motivoDeFootprintInvalido(fp: unknown): string | null {
+  if (fp === undefined) return null;
+  if (!Array.isArray(fp)) return `no es un par [ancho, fondo] (recibido ${JSON.stringify(fp)})`;
+  if (fp.length !== 2) return `tiene ${fp.length} componentes en vez de 2 (${JSON.stringify(fp)})`;
+  for (const v of fp) {
+    if (typeof v !== "number" || !Number.isInteger(v) || v < 1) {
+      return `tiene un lado que no es un entero ≥ 1 (${JSON.stringify(fp)})`;
+    }
+    if (v > TOPE_DE_FOOTPRINT_CELDAS) {
+      return `tiene un lado de ${v} celdas y el tope es ${TOPE_DE_FOOTPRINT_CELDAS} (el lado del tile)`;
+    }
+  }
+  return null;
+}
+
+/** La huella que el motor DECLARÓ para este record, si la declaró. La misma
+ *  que viajó en el effect el día que lo puso: vive en `data` desde #532 porque
+ *  `data` es la consequence entera.
  *
- *  Lo NUEVO no es el tamaño: es que vivo y resume dejen de coincidir. Antes de
- *  #532 los dos decían 1,5 m. **Lo cierra la PR 2 de esa tanda** (el resume +
- *  #490), que añade `item` aquí y lee `data.footprint` abajo; hasta entonces
- *  main queda con esta incoherencia a sabiendas, y el guion
- *  `qa/guiones/119-…` la mide con sus tres líneas marcadas `[PR 2]`. */
-const CLASES_QUE_VUELVEN = new Set(["npc", "object", "building"]);
+ *  Lo que esta función cierra (QA de la PR 1 de #532, H-1): hasta ahora el
+ *  resume re-derivaba el tamaño del `type` del record e ignoraba lo declarado,
+ *  así que un carro de `[6,6]` volvía midiendo los 3×3 celdas del defecto de
+ *  su clase — 1,5 m en vez de 3, y 0,75 m por lado de suelo que el día antes
+ *  era el carro. Lo grave no era el tamaño: era que vivo y resume dejaran de
+ *  coincidir. */
+function footprintDeclarado(rec: EntityRecord): readonly [number, number] | null {
+  const fp = rec.data.footprint;
+  const motivo = motivoDeFootprintInvalido(fp);
+  if (motivo) {
+    // Un lector no decide (mismo trato que `data.name`): `loadSession` rechaza
+    // el save entero con este mismo criterio, así que llegar aquí con la
+    // huella rota significa que el ledger entró por otro sitio.
+    throw new Error(
+      `«${rec.id}» llegó al resume con data.footprint que ${motivo}: el save tenía que haberse rechazado al cargarlo`,
+    );
+  }
+  return fp === undefined ? null : [(fp as number[])[0], (fp as number[])[1]];
+}
 
 /** Las entities que puso el MOTOR a mitad de partida, listas para volver a
  *  materializarse en el cliente.
@@ -484,7 +523,7 @@ export function spawnsDeRuntime(entities: readonly EntityRecord[]): {
     if (!CLASES_QUE_VUELVEN.has(rec.type)) {
       errores.push(
         `«${nombreDeEntity(rec)}» no vuelve al mundo: el juego no sabe pintar nada de ` +
-          `tipo "${rec.type}" (esperaba npc|object|building)`,
+          `tipo "${rec.type}" (esperaba ${[...CLASES_QUE_VUELVEN].join("|")})`,
       );
       continue;
     }
@@ -530,7 +569,15 @@ export function spawnsDeRuntime(entities: readonly EntityRecord[]): {
     spawns.push(
       rec.type === "npc"
         ? { ...comun, entityKind: "npc" }
-        : { ...comun, entityKind: rec.type as "object" | "building", sizeXZ: huellaEnMetros(rec.type) },
+        : {
+            ...comun,
+            entityKind: rec.type as "object" | "building" | "item",
+            // Lo DECLARADO manda sobre el defecto de la clase, igual que en el
+            // effect en vivo (`consequence-handler`): las dos vías llaman a la
+            // misma función con los mismos argumentos, que es lo que hace que
+            // el carro mida lo mismo jugando y al volver.
+            sizeXZ: huellaEnMetros(rec.type, footprintDeclarado(rec)),
+          },
     );
   }
   return { spawns, errores };

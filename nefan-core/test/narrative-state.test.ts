@@ -59,6 +59,77 @@ describe("las puertas del save (#334, #336)", () => {
     assert.equal(s2.session_id, "", "el throw llega ANTES de mutar la sesión");
   });
 
+  it("un save con DOS records del mismo id NO carga: rejects nombrando el id (#490)", async () => {
+    // El agujero que QA del corte 4 de #358 dejó abierto: `recordEntitySpawned`
+    // ya sufija el id repetido, y el sim y `getEntity` están keyed por id — lo
+    // único que faltaba era que la PUERTA lo comprobara. Solo se alcanza
+    // editando el save, que es exactamente lo que se hace aquí; sin el gate, el
+    // cliente pintaba dos entidades iguales SIN DECIRLO.
+    const storage = new MemorySessionStorage();
+    const seed = new NarrativeState(storage);
+    seed.startNewSession("toledo_1200");
+    seed.recordEntitySpawned("narr_object_1", "object", "s1", [1, 0, 2], { name: "Cofre" }, "narrative_request");
+    const data = seed.toSessionData();
+    data.session_id = "ids_repetidos";
+    // El duplicado, tal como lo deja un save editado a mano.
+    data.entities.push({ ...data.entities[0], position: [5, 0, 5] });
+    await storage.write("ids_repetidos", data);
+    await assert.rejects(
+      () => new NarrativeState(storage).loadSession("ids_repetidos"),
+      (err: Error) => {
+        assert.match(err.message, /entities\["narr_object_1"\] aparece dos veces/);
+        assert.match(err.message, /Cofre/, "dice QUIÉN es, en palabras del jugador");
+        assert.match(err.message, /sin migraciones \(#336\)/);
+        return true;
+      },
+    );
+  });
+
+  it("un save con un `footprint` imposible en el ledger NO carga: rejects nombrando entidad y campo (#532)", async () => {
+    // La huella del ledger tiene DOS lectores (el resume del cliente y la
+    // resiembra del sim), así que el criterio va en la puerta y no en cada uno
+    // — la misma decisión que con `position` y `data.name`. Lo que se prueba
+    // es lo que el motor NO puede declarar y un save editado sí trae.
+    const storage = new MemorySessionStorage();
+    for (const [caso, fp] of [
+      ["lado cero", [0, 3]],
+      ["media celda", [2.5, 3]],
+      ["un solo número", [3]],
+      ["más grande que el tile", [400, 400]],
+      ["ni siquiera un par", "grande"],
+    ] as const) {
+      const seed = new NarrativeState(storage);
+      seed.startNewSession("toledo_1200");
+      seed.recordEntitySpawned("narr_object_1", "object", "s1", [1, 0, 2], { name: "Carro" }, "narrative_request");
+      const data = seed.toSessionData();
+      data.session_id = `fp_${caso.replace(/\s/g, "_")}`;
+      data.entities[0].data.footprint = fp;
+      await storage.write(data.session_id, data);
+      await assert.rejects(
+        () => new NarrativeState(storage).loadSession(data.session_id),
+        (err: Error) => {
+          assert.match(err.message, /entities\["narr_object_1"\]\.data\.footprint/, `${caso}: nombra el campo`);
+          assert.match(err.message, /sin migraciones \(#336\)/, `${caso}: la salida del jugador`);
+          return true;
+        },
+        `un footprint «${caso}» tenía que rechazar el save`,
+      );
+    }
+  });
+
+  it("…y el que SÍ es una huella carga y llega entero al resume", async () => {
+    const storage = new MemorySessionStorage();
+    const seed = new NarrativeState(storage);
+    seed.startNewSession("toledo_1200");
+    seed.recordEntitySpawned("narr_object_1", "object", "s1", [1, 0, 2], { name: "Carro", footprint: [6, 6] }, "narrative_request");
+    const data = seed.toSessionData();
+    data.session_id = "fp_bueno";
+    await storage.write("fp_bueno", data);
+    const s = new NarrativeState(storage);
+    assert.equal(await s.loadSession("fp_bueno"), true);
+    assert.deepEqual(s.entities[0].data.footprint, [6, 6], "lo declarado sigue en el ledger tras cargar");
+  });
+
   it("un save de versión anterior rejects por versión — distinguible de «no existe»", async () => {
     const storage = new MemorySessionStorage();
     const s1 = new NarrativeState(storage);
