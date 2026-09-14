@@ -2,6 +2,11 @@
 
 import { createCombatant } from "../../src/combat/combatant.js";
 import { combatRegistry } from "../../src/combat/registry.js";
+import {
+  avisoDeCriba,
+  cribarHostiles,
+  type CribaDeHostiles,
+} from "../../src/combat/criba-de-hostiles.js";
 import { activateByPosition } from "./tile.js";
 import { guardarOAvisar } from "../guardar.js";
 import {
@@ -37,6 +42,43 @@ function estadoDelJugador(ctx: BridgeContext): { playerMaxHp: number; playerWeap
     playerMaxHp: ctx.store.state.player.max_hp || 100,
     playerWeaponId: ctx.store.state.player.weapon_id,
   };
+}
+
+/** EL DESENLACE de un lote con algún enemigo que no sirve (#529), y es UNO
+ *  para las dos puertas del cliente (`add_combatants` y `load_room`).
+ *
+ *  Quién NO sirve lo dice `cribarHostiles`, sobre el criterio único de core
+ *  (`parseHostileCombat`); aquí solo se decide dónde va el motivo, que es lo
+ *  que ninguna función pura puede hacer: el diagnóstico técnico al log del
+ *  bridge —una línea por enemigo, con su id y su motivo verbatim, que es lo
+ *  que el guion 90 compara contra el registro del cliente— y el aviso para
+ *  quien juega al socket que mandó el frame, UNICAST y con el sello que pone
+ *  el transporte.
+ *
+ *  `kind:"combatientes"` y no `protocolo`: esto NO es un frame ilegible, es un
+ *  lote del que entró una parte, y su rótulo (`status-rotulo.ts`) va a la
+ *  línea de mensajes y no al modal. Antes del 2026-09-14 el criterio vivía en
+ *  el intake y el frame entero moría con el peor de sus enemigos.
+ *
+ *  Es el `null` del aviso el que decide si se avisa, y no un `length === 0`
+ *  escrito aquí: un segundo sitio donde preguntar «¿hay descartes?» es un
+ *  segundo sitio donde equivocarse. */
+function avisarDeLosDescartados(
+  criba: CribaDeHostiles,
+  ws: ClientSocket,
+  ctx: BridgeContext,
+): void {
+  const aviso = avisoDeCriba(criba);
+  if (aviso === null) return;
+  for (const d of criba.descartes) {
+    console.warn(`Bridge: enemigo "${d.id}" descartado: ${d.motivo}`);
+  }
+  ctx.enviarNarrativo(ws, {
+    type: "narrative_status",
+    phase: "error",
+    kind: "combatientes",
+    message: aviso,
+  });
 }
 
 export async function handleInput(
@@ -170,32 +212,41 @@ export function handleLoadRoom(
     ctx.sim.setRoomBounds(msg.dimensions.width, msg.dimensions.depth);
   }
 
-  // Add enemies from room data
-  for (const enemy of msg.enemies) {
+  // Add enemies from room data. El lote se criba ENEMIGO A ENEMIGO (#529): el
+  // que no sirve se cae solo y los demás entran, que es lo que hace el cliente
+  // con el mismo criterio. Los valores que entran al sim son los del PARSER
+  // (`alta.combat`), no los del cable: el parser reescribe los tres números ya
+  // comprobados de la personalidad.
+  const criba = cribarHostiles(msg.enemies);
+  for (const alta of criba.altas) {
     const combatant = createCombatant(
-      enemy.id,
-      enemy.health,
-      enemy.weaponId,
-      enemy.position,
+      alta.id,
+      alta.hostil.health,
+      alta.hostil.weapon_id,
+      alta.position,
       { x: 0, y: 0, z: 1 }, // Default forward
-      enemy.maxHealth,
+      alta.hostil.max_health,
     );
-    ctx.sim.addCombatant(combatant, enemy.personality);
+    ctx.sim.addCombatant(combatant, alta.hostil.personality);
   }
 
   ctx.store.dispatch("enemies_projected", {
-    enemies: msg.enemies.map((e) => ({
-      id: e.id,
-      pos: [e.position.x, e.position.y, e.position.z],
-      hp: e.health,
-      max_hp: e.maxHealth,
-      weapon_id: e.weaponId,
+    enemies: criba.altas.map((a) => ({
+      id: a.id,
+      pos: [a.position.x, a.position.y, a.position.z],
+      hp: a.hostil.health,
+      max_hp: a.hostil.max_health,
+      weapon_id: a.hostil.weapon_id,
       combat_state: "idle",
       alive: true,
     })),
   });
 
-  console.log(`Bridge: room loaded '${msg.roomId}' with ${msg.enemies.length} enemies`);
+  console.log(
+    `Bridge: room loaded '${msg.roomId}' with ${criba.altas.length} enemies` +
+      (criba.descartes.length > 0 ? ` (${criba.descartes.length} descartado(s))` : ""),
+  );
+  avisarDeLosDescartados(criba, ws, ctx);
   // Send state_update with the (possibly preserved) HP so the client syncs.
   // In-session, this is a scene TRANSITION, not a respawn: emitting the
   // player_respawned event would make the client run its respawn side-effects
@@ -241,28 +292,32 @@ export function handleAddCombatants(
   if (!ctx.world.canDrive(ws)) return;
   const projected = [...ctx.store.state.enemies];
   let added = 0;
-  for (const enemy of msg.enemies) {
-    if (ctx.sim.getCombatant(enemy.id)) continue;
+  // Mismo desenlace que en `load_room` y que en el cliente (#529): cada
+  // enemigo responde de sí mismo, y los valores que entran al sim son los del
+  // parser, no los del cable.
+  const criba = cribarHostiles(msg.enemies);
+  for (const alta of criba.altas) {
+    if (ctx.sim.getCombatant(alta.id)) continue;
     ctx.sim.addCombatant(
       createCombatant(
-        enemy.id,
-        enemy.health,
-        enemy.weaponId,
-        enemy.position,
+        alta.id,
+        alta.hostil.health,
+        alta.hostil.weapon_id,
+        alta.position,
         { x: 0, y: 0, z: 1 },
-        enemy.maxHealth,
+        alta.hostil.max_health,
       ),
-      enemy.personality,
+      alta.hostil.personality,
     );
     // Proyección al store (getEnemyStates itera store.enemies): CONCAT, no
     // reemplazo — los enemigos de otros tiles siguen vivos.
-    if (!projected.some((p) => p.id === enemy.id)) {
+    if (!projected.some((p) => p.id === alta.id)) {
       projected.push({
-        id: enemy.id,
-        pos: [enemy.position.x, enemy.position.y, enemy.position.z],
-        hp: enemy.health,
-        max_hp: enemy.maxHealth,
-        weapon_id: enemy.weaponId,
+        id: alta.id,
+        pos: [alta.position.x, alta.position.y, alta.position.z],
+        hp: alta.hostil.health,
+        max_hp: alta.hostil.max_health,
+        weapon_id: alta.hostil.weapon_id,
         combat_state: "idle",
         alive: true,
       });
@@ -273,6 +328,7 @@ export function handleAddCombatants(
     ctx.store.dispatch("enemies_projected", { enemies: projected });
     console.log(`Bridge: ${added} combatiente(s) añadidos (aditivo)`);
   }
+  avisarDeLosDescartados(criba, ws, ctx);
   const response: StateUpdateMessage = {
     type: "state_update",
     events: [],

@@ -105,19 +105,62 @@ test("start_session sin gameId se rechaza (campo requerido)", () => {
   if (!res.ok) assert.match(res.error, /gameId/);
 });
 
-test("add_combatants con enemigo sin personality se rechaza", () => {
+/** EL INTAKE MIRA LA FORMA DEL FRAME, NO LA VALIDEZ DE CADA ENEMIGO (#529).
+ *
+ *  Estos dos tests sustituyen a «add_combatants con enemigo sin personality se
+ *  rechaza», que afirmaba lo contrario y era CIERTO del 2026-09-07 al 09-14:
+ *  el criterio vivía en el `superRefine` de `EnemySpawnSchema`, así que un
+ *  enemigo malo tumbaba el frame entero y el jugador se comía un modal de
+ *  «Fallo interno del juego» — mientras su propio cliente, con el MISMO
+ *  criterio, descartaba ese enemigo y seguía con los demás.
+ *
+ *  El aserto no desaparece, se muda: el veredicto y el motivo de ese mismo
+ *  bloque los sigue afirmando `test/hostil-desde-combat.test.ts` (tabla de las
+ *  dos puertas, hoy sobre `cribarHostiles`), y el DESENLACE —dos entran, uno
+ *  no, el motivo al log y al jugador— lo afirma
+ *  `test/bridge-enemigo-invalido.test.ts` sobre los dos handlers reales. Lo
+ *  que se mide AQUÍ es que aflojar el intake no lo dejó sin puerta. */
+test("add_combatants con un enemigo INVÁLIDO pasa el intake: el desenlace es del handler (#529)", () => {
   const res = validateContract(ClientMessageSchema, {
     type: "add_combatants",
     enemies: [
       { id: "g", position: { x: 0, y: 0, z: 0 }, health: 10, maxHealth: 60, weaponId: "unarmed" },
     ],
   });
-  assert.equal(res.ok, false);
-  // El motivo es EL DEL PARSER DE CORE, no un «Required» de zod: es el mismo
-  // que el jugador lee en el registro del cliente cuando la escena trae ese
-  // bloque (PR 6 de #241). La tabla entera de equivalencias entre las dos
-  // puertas vive en test/hostil-desde-combat.test.ts.
-  if (!res.ok) assert.equal(res.error, "enemies[0]: combat.personality ausente");
+  assert.equal(res.ok, true, res.ok ? "" : res.error);
+});
+
+test("…pero un enemigo sin id o sin position SÍ lo rechaza: eso es un frame ilegible", () => {
+  // La otra mitad del gate, y la que justifica que `id` y `position` sigan
+  // llevando zod de verdad mientras los cuatro del bloque `combat` solo
+  // declaran su tipo: sin ellos no hay a quién dar de alta ni dónde, así que
+  // no hay criba posible — no es un enemigo malo, es un frame que no se puede
+  // leer, y ése sí se contesta con `kind:"protocolo"`.
+  const personality = { aggression: 0.5, preferred_attacks: ["quick"], reaction_time: 0.3, combat_range: 4 };
+  const sinId = validateContract(ClientMessageSchema, {
+    type: "add_combatants",
+    enemies: [{ position: { x: 0, y: 0, z: 0 }, health: 10, maxHealth: 60, weaponId: "unarmed", personality }],
+  });
+  assert.equal(sinId.ok, false);
+  if (!sinId.ok) assert.match(sinId.error, /enemies\[0\]\.id/);
+
+  const sinPosition = validateContract(ClientMessageSchema, {
+    type: "add_combatants",
+    enemies: [{ id: "g", health: 10, maxHealth: 60, weaponId: "unarmed", personality }],
+  });
+  assert.equal(sinPosition.ok, false);
+  if (!sinPosition.ok) assert.match(sinPosition.error, /enemies\[0\]\.position/);
+
+  // Y en `load_room`, que es la otra puerta con enemigos: el gate de forma es
+  // el mismo schema, y comprobarlo en una sola de las dos no distinguiría
+  // «las dos puertas lo miran» de «una lo mira».
+  const room = validateContract(ClientMessageSchema, {
+    type: "load_room",
+    roomId: "robledo_tile",
+    enemies: [{ id: "g", position: { x: 0, y: 0, z: "lejos" }, health: 10, maxHealth: 60, weaponId: "unarmed", personality }],
+  });
+  assert.equal(room.ok, false);
+  if (!room.ok) assert.match(room.error, /enemies\[0\]\.position\.z/);
 });
 
 test("campos extra no modelados se toleran (strip, no rechazo)", () => {

@@ -148,6 +148,7 @@ const DETALLE_POR_DEFECTO: Record<NarrativeStatusDeSesion["kind"], string> = {
   plugin: "Un sistema del juego no pudo completar el turno.",
   action: "El juego no pudo completar esa acción.",
   protocolo: "El juego mandó un mensaje que el servidor no pudo leer.",
+  combatientes: "Alguno de los enemigos de ese lote no pudo entrar al mundo.",
 };
 
 /** Lo que `rotuloDeStatus` LEE de un status, y nada más.
@@ -267,6 +268,23 @@ export function rotuloDeStatus(
       // el lugar»— hasta el 2026-09-01 (QA H-7): un titular que manda a mirar
       // la generación del sitio para decir que el propio juego mandó basura.
       return { destino: "overlay", titulo: "Fallo interno del juego", detalle, salida };
+
+    case "combatientes":
+      // EL ÚNICO FALLO QUE NO TAPA LA PANTALLA APARTE DE LA FRONTERA, y por la
+      // misma razón que aquélla: lo que ha fallado NO es lo que el jugador
+      // está esperando. El mundo está pintado, los enemigos buenos del lote
+      // acaban de entrar y la partida sigue; lo que falta es uno de ellos.
+      //
+      // Hasta el 2026-09-14 este hecho salía por `protocolo` —o sea «Fallo
+      // interno del juego» a pantalla completa— y además con el frame ENTERO
+      // descartado, porque el criterio del enemigo vivía dentro del intake
+      // (`EnemySpawnSchema`). El cliente, con el MISMO criterio, descartaba un
+      // enemigo y seguía: un solo veredicto con dos desenlaces, y mandaba el
+      // destructivo (#529, hallazgo A3-bis del guion 90). No lleva `salida`
+      // porque no hay nada que cerrar: el motivo va a la línea de mensajes y
+      // al registro de errores, que es donde el jugador lo puede leer sin
+      // dejar de jugar.
+      return { destino: "log", detalle };
   }
 
   // Exhaustividad: un kind nuevo sin titular propio no compila. Es el candado

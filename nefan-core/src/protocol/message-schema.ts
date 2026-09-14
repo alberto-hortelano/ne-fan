@@ -20,7 +20,6 @@
 import { z } from "zod";
 import type { ClientMessage } from "./messages.js";
 import type { EnemyPersonality } from "../types.js";
-import { parseHostileCombat } from "../combat/hostil-desde-combat.js";
 
 const Vec3Schema = z.object({
   x: z.number(),
@@ -29,61 +28,50 @@ const Vec3Schema = z.object({
 });
 
 /** LOS CUATRO CAMPOS DEL BLOQUE `combat` SOLO DECLARAN SU TIPO AQUÍ; quién
- *  decide si sirven es `parseHostileCombat`, UNA vez y en el orden del parser.
+ *  decide si sirven es `parseHostileCombat`, UNA vez y en el orden del parser,
+ *  y desde #529 lo hace YA DENTRO DEL HANDLER (`cribarHostiles`), no en este
+ *  refinamiento.
  *
  *  `z.custom<T>()` acepta cualquier cosa en runtime y sigue infiriendo `T`, así
  *  que la guardia de deriva de `message-schema.test.ts` (que fuerza a `tsc` a
  *  romper si este zod y el union TS se separan) sigue sujetándolos.
  *
- *  Por qué, y es lo que arregla #530-p3: un `z.number()` en `health` rechaza el
- *  frame ANTES del refinamiento —zod no llega al `superRefine` si el objeto ya
- *  falló—, así que un error de TIPO daba el mensaje de zod («Expected number,
- *  received string») donde el cliente daba el del parser («combat.health
- *  inválido ("x")»). Medido por QA en la PR 6 de #241: en 11 de 49 casos el
- *  motivo difería entre las dos puertas, todos de tipo o de ausencia; en los 38
- *  de VALOR era idéntico. «Mismo criterio, mismo desenlace» no puede depender
- *  de si el error es de tipo o de valor. Hoy los cuatro cruzan el zod y los
- *  juzga el parser, que es el que sabe decirlo como lo dice el cliente.
+ *  Por qué, y es lo que arregló #530-p3: un `z.number()` en `health` rechaza el
+ *  frame ANTES del refinamiento —zod no llega a un `superRefine` si el objeto
+ *  ya falló—, así que un error de TIPO daba el mensaje de zod («Expected
+ *  number, received string») donde el cliente daba el del parser
+ *  («combat.health inválido ("x")»). Medido por QA en la PR 6 de #241: en 11 de
+ *  49 casos el motivo difería entre las dos puertas, todos de tipo o de
+ *  ausencia; en los 38 de VALOR era idéntico. «Mismo criterio, mismo
+ *  desenlace» no puede depender de si el error es de tipo o de valor, y con el
+ *  criterio fuera del zod tampoco puede hacerlo el desenlace.
  *
- *  `id` y `position` SÍ llevan zod de verdad: no son del bloque `combat` —el
- *  parser no los mira— y sin ellos no hay a quién dar de alta ni dónde. */
+ *  ESTE ZOD MIRA LA FORMA DEL FRAME, NO LA VALIDEZ DE CADA ENEMIGO (#529). El
+ *  criterio vivió aquí dentro, en un `superRefine`, del 2026-09-07 al 09-14, y
+ *  el precio era que un enemigo malo tumbaba el frame ENTERO: un
+ *  `add_combatants` que no pasa el intake se contesta con `kind:"protocolo"`,
+ *  o sea un modal a pantalla completa, y los dos enemigos buenos que venían al
+ *  lado se iban con él. El cliente, con el MISMO criterio, descartaba uno y
+ *  seguía. Hoy el desenlace es el del cliente en las dos puertas: `id` y
+ *  `position` SÍ llevan zod de verdad —sin ellos no hay a quién dar de alta ni
+ *  dónde, y eso sí es un frame ilegible—, y los cuatro del bloque los juzga
+ *  `cribarHostiles` enemigo a enemigo en `bridge/handlers/simulation.ts`. */
 const EnemyPersonalitySchema = z.custom<EnemyPersonality>();
 
-const EnemySpawnSchema = z
-  .object({
-    id: z.string(),
-    position: Vec3Schema,
-    /** La vida que le queda AHORA (un herido que vuelve de un save trae la
-     *  suya, no la del contrato). */
-    health: z.custom<number>(),
-    /** …y sobre cuánta. REQUERIDO, sin default: derivarlo de `health` es
-     *  exactamente la mentira que había —barra llena para un herido, y la IA
-     *  creyéndolo entero— y un default lo dejaría entrar otra vez en silencio.
-     *  Quien exige que esté y sea usable es el parser, abajo. */
-    maxHealth: z.custom<number>(),
-    weaponId: z.custom<string>(),
-    personality: EnemyPersonalitySchema,
-  })
-  // Qué VALORES hacen utilizable a un enemigo lo dice el MISMO parser que el
-  // cliente, sobre el bloque `combat` que estos cuatro campos son en el resto
-  // del juego, y el mensaje del issue es su motivo palabra por palabra.
-  //
-  // Hasta la PR 6 de #241 esto era un `z.object` que decía otra cosa: aceptaba
-  // `health: 0`, `maxHealth: 0`, `weaponId: ""`, `preferred_attacks: []`,
-  // `aggression: Infinity` y la ausencia de `combat_range` —todos rechazados
-  // por el cliente—, así que `sim.addCombatant` podía dar de alta un muerto o
-  // un enemigo sin ataques, y un enemigo que el cliente daba por bueno podía
-  // morir aquí con otro motivo. Dos criterios de «qué es un enemigo», y el de
-  // este lado sin nada que lo midiera.
-  .superRefine((e, ctx) => {
-    const r = parseHostileCombat({
-      health: e.health,
-      max_health: e.maxHealth,
-      weapon_id: e.weaponId,
-      personality: e.personality,
-    });
-    if (!r.ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: r.error });
-  });
+const EnemySpawnSchema = z.object({
+  id: z.string(),
+  position: Vec3Schema,
+  /** La vida que le queda AHORA (un herido que vuelve de un save trae la
+   *  suya, no la del contrato). */
+  health: z.custom<number>(),
+  /** …y sobre cuánta. REQUERIDO, sin default: derivarlo de `health` es
+   *  exactamente la mentira que había —barra llena para un herido, y la IA
+   *  creyéndolo entero— y un default lo dejaría entrar otra vez en silencio.
+   *  Quien exige que esté y sea usable es el parser, en la criba del handler. */
+  maxHealth: z.custom<number>(),
+  weaponId: z.custom<string>(),
+  personality: EnemyPersonalitySchema,
+});
 
 const EdgeSchema = z.enum(["north", "south", "east", "west"]);
 
