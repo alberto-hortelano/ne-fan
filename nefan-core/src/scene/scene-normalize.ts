@@ -157,20 +157,26 @@ export const KIND_DEFAULT_HEIGHT: Record<string, number> = {
 const MAX_ENTITY_HEIGHT_M = 20;
 
 /** Huella EN CELDAS de lo que el motor spawnea a mitad de partida, por clase
- *  del effect `spawn_entity` (`npc | object | building`). Un spawn no lleva
- *  `footprint`: el contrato de la consequence no lo pide, así que el tamaño lo
- *  pone el juego — y lo pone AQUÍ, en celdas, para que pase por la MISMA
- *  aritmética que la huella de una entity del tile (`huellaEnMetros`) y no por
- *  dos metros escritos a mano en otro proceso.
+ *  del effect `spawn_entity` (`npc | object | building | item`). Es el DEFECTO,
+ *  no el tamaño: desde #532 la consequence puede declarar su `footprint` (en
+ *  celdas, igual que una entity del tile) y entonces manda el declarado. Sin
+ *  él se aplica el de la clase, y se aplica AQUÍ, en celdas, para que pase por
+ *  la MISMA aritmética que la huella de una entity del tile (`huellaEnMetros`)
+ *  y no por dos metros escritos a mano en otro proceso.
  *
- *  De dónde salen los dos números: son lo que el cliente venía inventando en
- *  `world/materializar-spawn.ts` (#489) traducido a celdas — `building` 8×8
- *  celdas son los 4×4 m de siempre; `object` 3×3 son 1,5×1,5 m, tres celdas
- *  enteras en vez de los 1,4 m que no eran múltiplo de nada. `npc` no está
- *  porque un personaje no es un AABB: colisiona por su radio, no por huella. */
+ *  De dónde salen los números: `building` 8×8 celdas y `object` 3×3 son lo que
+ *  el cliente venía inventando en `world/materializar-spawn.ts` (#489)
+ *  traducido a celdas — los 4×4 m de siempre y 1,5×1,5 m, tres celdas enteras
+ *  en vez de los 1,4 m que no eran múltiplo de nada. `npc` no está porque un
+ *  personaje no es un AABB: colisiona por su radio, no por huella. */
 export const FOOTPRINT_POR_DEFECTO: Record<string, readonly [number, number]> = {
   building: [8, 8],
   object: [3, 3],
+  // `item` entra con #532, y su celda es la misma que su altura por defecto:
+  // 1×1 celda = 0,5 m, el número de `KIND_DEFAULT_HEIGHT.item`. Lo que hace
+  // que se pueda PISAR no es este tamaño sino su categoría (`aabbBloquea` solo
+  // frena `building`/`prop`); esto solo dice cuánto abulta lo que se ve.
+  item: [1, 1],
 };
 
 /** La huella colisionable de algo del mundo, EN METROS (XZ), desde su huella en

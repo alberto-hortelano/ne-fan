@@ -128,6 +128,64 @@ describe("dispatchConsequences", () => {
     assert.deepEqual(huellas, [{ x: 4, z: 4 }, { x: 1.5, z: 1.5 }]);
   });
 
+  it("LO QUE EL MOTOR DECLARA manda sobre el defecto de la clase: el carro de [6,6] mide 3 m (#532)", () => {
+    // Antes de #532 el motor no podía decir cuánto ocupa lo que pone, así que
+    // TODO `object` medía 1,5 m: una bolsa de monedas era un muro y un carro
+    // cabía en una celda y media. Lo declarado entra por `footprint`, en
+    // CELDAS, y la conversión a metros la hace core (`huellaEnMetros`) — el
+    // cliente no convierte celdas (`cliente-no-convierte-celdas-a-metros`).
+    const s = makeState();
+    const cs: Consequence[] = [
+      { type: "spawn_entity", entity_kind: "object", name: "Carro de heno", footprint: [6, 6] },
+      { type: "spawn_entity", entity_kind: "object", name: "Cofre de la posada" },
+      { type: "spawn_entity", entity_kind: "building", name: "Granero", footprint: [20, 14] },
+    ];
+    let n = 0;
+    const r = dispatchConsequences(s, "evt_0001", cs, {
+      playerPosition: [0, 0, 0],
+      playerForward: [0, 0, -1],
+      generateEntityId: (k) => `narr_${k}_${n++}`,
+    });
+    const huellas = r.effects
+      .filter((e) => e.kind === "spawn_entity")
+      .map((e) => (e.kind === "spawn_entity" && e.entityKind !== "npc" ? e.sizeXZ : null));
+    assert.deepEqual(huellas, [
+      { x: 3, z: 3 }, // 6×6 celdas declaradas
+      { x: 1.5, z: 1.5 }, // sin declarar: el defecto del `object`, el de siempre
+      { x: 10, z: 7 }, // un granero no cabe en los 8×8 por defecto, y ya puede decirlo
+    ]);
+  });
+
+  it("un `item` sale con su clase y con tamaño: lo que NO lleva es permiso para frenar (#532)", () => {
+    // La bolsa de monedas del criterio 1. `item` viaja hasta el cliente, que
+    // la pinta con `category:"item"`, y `aabbBloquea` solo frena `building` y
+    // `prop` — el tamaño no es el permiso (test/obstaculos-del-jugador.test.ts
+    // tiene la otra mitad).
+    const s = makeState();
+    const cs: Consequence[] = [
+      { type: "spawn_entity", entity_kind: "item", name: "Bolsa de monedas" },
+      { type: "spawn_entity", entity_kind: "item", name: "Fardo de lana", footprint: [2, 2] },
+    ];
+    let n = 0;
+    const r = dispatchConsequences(s, "evt_0001", cs, {
+      playerPosition: [0, 0, 0],
+      playerForward: [0, 0, -1],
+      generateEntityId: (k) => `narr_${k}_${n++}`,
+    });
+    const spawns = r.effects.filter((e) => e.kind === "spawn_entity");
+    assert.equal(spawns.length, 2);
+    for (const e of spawns) {
+      assert.equal(e.kind === "spawn_entity" && e.entityKind, "item");
+    }
+    assert.deepEqual(
+      spawns.map((e) => (e.kind === "spawn_entity" && e.entityKind !== "npc" ? e.sizeXZ : null)),
+      [{ x: 0.5, z: 0.5 }, { x: 1, z: 1 }],
+    );
+    // Y queda en el ledger como `item`, que es lo que lee el motor y lo que
+    // tendrá que devolver el resume.
+    assert.deepEqual(s.entities.map((e) => e.type), ["item", "item"]);
+  });
+
   it("tres cosas en el MISMO turno no caen en el mismo punto", () => {
     // Medido jugando (QA 2026-08-31, H-5): el cofre y la forja del turno 3 del
     // motor salían con la coordenada EXACTA, así que al reanudar el jugador

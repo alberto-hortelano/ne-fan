@@ -1,0 +1,15 @@
+{
+  "description": "un `npc` con `footprint`: se rechaza. Un personaje colisiona por el radio de su cuerpo, no por una huella, así que declararle una es pedir algo que el juego no honra — y honrarlo a medias es peor (#532).",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "npc",
+        "name": "Telmo",
+        "description": "un aprendiz nervioso",
+        "footprint": [2, 2]
+      }
+    ]
+  }
+}

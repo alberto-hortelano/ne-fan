@@ -1,0 +1,29 @@
+{
+  "description": "spawn_entity de un `object` que DECLARA su huella: un carro de 6×6 celdas (3 m), no los 3×3 por defecto. El campo tiene que SOBREVIVIR al saneador de las dos vías — si Python lo poda, el carro mide 3 m por MCP y 1,5 m por API y nadie se entera (#532).",
+  "expect": "accept",
+  "sobrevive": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "object",
+        "footprint": [6, 6],
+        "name": "Carro de heno",
+        "description": "carro de varas con la carga cubierta por una lona parda",
+        "character_type": "cart"
+      }
+    ]
+  },
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "object",
+        "footprint": [6, 6],
+        "name": "Carro de heno",
+        "description": "carro de varas con la carga cubierta por una lona parda",
+        "character_type": "cart",
+        "position_hint": "near_player"
+      }
+    ]
+  }
+}

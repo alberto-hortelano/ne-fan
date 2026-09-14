@@ -41,11 +41,13 @@
  *  entre sus caras y cuántas sondas quedan libres en la línea que las une: es
  *  el dato de §9.1 de la PR 5 (la separación no mira el TAMAÑO de lo que separa).
  *
- *  POR QUÉ TRAS REANUDAR TAMBIÉN. La huella NO está en el save: el resume la
- *  deriva del `type` del record (`spawnsDeRuntime` → `huellaEnMetros`). Si
- *  alguien la escribiera en disco «para no recalcularla», el día que cambie el
- *  defecto la partida guardada seguiría con la vieja y nadie se enteraría. El
- *  bloque 5 es lo que se enteraría.
+ *  POR QUÉ TRAS REANUDAR TAMBIÉN. El tamaño de un spawn sale de lo que el motor
+ *  declaró (`footprint`, en celdas) o del defecto de su clase, y la cuenta la
+ *  hace core (`huellaEnMetros`) en las dos vías: la de en vivo y la del resume.
+ *  Si una de las dos se pusiera a medir por su cuenta, la misma forja mediría
+ *  una cosa jugando y otra al volver a la partida. El bloque 5 es lo que se
+ *  enteraría. (Lo que el motor falso pone aquí no declara `footprint`, así que
+ *  éste mide los DEFECTOS; el que mide lo declarado es el guion 118.)
  *
  *  PROBADO EN NEGATIVO (2026-09-07), un sabotaje por vez sobre
  *  `nefan-core/src/simulation/obstaculos-del-jugador.ts` y restaurado byte a
@@ -101,14 +103,17 @@ const DENTRO_M = -0.02;
  *  del barrido (5 cm) más un pelo. */
 const PASO_DEL_BARRIDO_M = 0.06;
 
-/** La huella que declara core para cada clase de spawn, o el error si
- *  `nefan-core/dist` no está construido. */
+/** El tamaño que declara core para un spawn —de su `footprint` en celdas si el
+ *  motor lo declaró, del defecto de su clase si no—, o el error si
+ *  `nefan-core/dist` no está construido. Los dos argumentos son el contrato de
+ *  `huellaEnMetros` desde #532: con uno solo, este guion mediría siempre el
+ *  defecto y daría por bueno un carro de 3 m pintado de 1,5. */
 async function huellaDeCore() {
   try {
     const { huellaEnMetros } = await import(
       path.join(RAIZ, "nefan-core", "dist", "src", "scene", "scene-normalize.js")
     );
-    return (kind) => huellaEnMetros(kind);
+    return (kind, footprintCeldas = null) => huellaEnMetros(kind, footprintCeldas);
   } catch (err) {
     return { error: String(err) };
   }

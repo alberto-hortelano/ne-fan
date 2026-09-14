@@ -722,6 +722,12 @@ describe("huellaEnMetros — la misma aritmética para el tile y para el spawn",
     assert.deepEqual(huellaEnMetros("object"), { x: 1.5, z: 1.5 });
     assert.deepEqual(FOOTPRINT_POR_DEFECTO.building, [8, 8]);
     assert.deepEqual(FOOTPRINT_POR_DEFECTO.object, [3, 3]);
+    // `item` entra con #532: una celda, los mismos 0,5 m que su altura por
+    // defecto. Es el tamaño de lo que se suelta en el suelo, y tenerlo es lo
+    // que impide que un spawn de item tumbe el turno por fail-loud.
+    assert.deepEqual(huellaEnMetros("item"), { x: 0.5, z: 0.5 });
+    assert.deepEqual(FOOTPRINT_POR_DEFECTO.item, [1, 1]);
+    assert.equal(KIND_DEFAULT_HEIGHT.item, 0.5);
   });
 
   it("un footprint declarado GANA al defecto del kind", () => {

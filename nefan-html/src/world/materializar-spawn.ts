@@ -1,7 +1,7 @@
 /** La materialización de un `spawn_entity` del motor narrativo EN LA ESCENA
- *  VIVA, sin recargar: la puerta única por la que entran al cliente las tres
+ *  VIVA, sin recargar: la puerta única por la que entran al cliente las cuatro
  *  clases que el motor pone a mitad de partida (npc —hostil o pacífico—,
- *  objeto, edificio).
+ *  objeto, edificio y, desde #532, el objeto suelto que se pisa).
  *
  *  Tiene DOS llamantes y los dos pasan por aquí a propósito: el evento
  *  `react_to_player` del motor (acaba de pasar) y el resume (`spawnsDeRuntime`,
@@ -54,6 +54,27 @@ export interface MaterializadorDeSpawn {
     opts?: { rehidratado?: boolean },
   ): void;
 }
+
+/** Cómo se pinta cada clase de spawn que ocupa sitio, en UN sitio y no en tres
+ *  ternarios. El booleano `isBuilding` que vivía aquí no admitía una tercera
+ *  clase, y era lo que había mientras solo hubo dos (#532).
+ *
+ *  `category` es la pieza que trabaja: `aabbBloquea` (core) solo frena
+ *  `building` y `prop`, así que `item` es lo que se pisa. `altura` es la clave
+ *  de `KIND_DEFAULT_HEIGHT`, que habla el vocabulario de la ESCENA (`prop`,
+ *  no `object`) — los dos vocabularios conviven desde antes de esto, y
+ *  traducirlos aquí es justamente lo que impide que ninguno se filtre. */
+const PINTURA_POR_CLASE: Record<
+  "building" | "object" | "item",
+  { category: string; color: string; radius: number; altura: string; que: string }
+> = {
+  building: { category: "building", color: "#5a4a38", radius: 8, altura: "building", que: "edificio" },
+  object: { category: "prop", color: "#666", radius: 5, altura: "prop", que: "objeto" },
+  // El mismo amarillo apagado con el que el tile pinta sus items
+  // (`carga-de-tile.ts`): lo que el motor suelta en el suelo y lo que declara
+  // una escena se ven igual porque son lo mismo.
+  item: { category: "item", color: "#aa8", radius: 3, altura: "item", que: "objeto suelto" },
+};
 
 export function crearMaterializadorDeSpawn(deps: DepsDeMaterializarSpawn): MaterializadorDeSpawn {
   const { mundo, characterSprites, log } = deps;
@@ -131,23 +152,29 @@ export function crearMaterializadorDeSpawn(deps: DepsDeMaterializarSpawn): Mater
       return;
     }
 
-    // building / object: caja sólida colocada en la escena actual.
-    const isBuilding = effect.entityKind === "building";
+    // building / object / item: un volumen colocado en la escena actual. Que
+    // FRENE o no lo decide su categoría, y la decide este mapa (#532): la
+    // colisión del jugador solo mira `building` y `prop` (`aabbBloquea`), así
+    // que un `item` se pinta y se pisa — es lo que hace de una bolsa de
+    // monedas una bolsa de monedas y no un muro de 1,5 m.
+    const pinta = PINTURA_POR_CLASE[effect.entityKind];
     mundo.anadirObjeto({
       id: effect.entityId,
       pos,
-      radius: isBuilding ? 8 : 5,
-      color: isBuilding ? "#5a4a38" : "#666",
+      radius: pinta.radius,
+      color: pinta.color,
       label,
       alive: true,
-      category: isBuilding ? "building" : "prop",
-      // La huella VIENE DADA (`huellaEnMetros`, core): la misma aritmética
-      // celdas→metros que la de una entity del tile. Aquí se inventaba con dos
-      // literales en metros (#489).
+      category: pinta.category,
+      // El tamaño VIENE DADO (`huellaEnMetros`, core): la misma aritmética
+      // celdas→metros que la de una entity del tile, ya sea del `footprint`
+      // que declaró el motor o del defecto de su clase. Aquí se inventaba con
+      // dos literales en metros (#489), y el cliente no convierte celdas
+      // (candado `cliente-no-convierte-celdas-a-metros`).
       sizeXZ: effect.sizeXZ,
       // Altura coherente con la de las escenas del motor (defaults por kind).
       // No entra en la colisión, que es solo XZ: es el volumen que se pinta.
-      sizeY: KIND_DEFAULT_HEIGHT[isBuilding ? "building" : "prop"],
+      sizeY: KIND_DEFAULT_HEIGHT[pinta.altura],
       // EL ARREGLO DE #350, en una línea: este cofre y esta forja no son de
       // ningún tile, así que la purga de `addTile` ya no se los lleva por caer
       // dentro de su rect. Antes desaparecían en cuanto el jugador viajaba por
@@ -155,8 +182,7 @@ export function crearMaterializadorDeSpawn(deps: DepsDeMaterializarSpawn): Mater
       // solo, que es peor que romperse.
       dueno: { de: "runtime" },
     });
-    const que = isBuilding ? "edificio" : "objeto";
-    log(opts.rehidratado ? `↩ ${que}: ${label} sigue ahí` : `✨ ${que}: ${label}`);
+    log(opts.rehidratado ? `↩ ${pinta.que}: ${label} sigue ahí` : `✨ ${pinta.que}: ${label}`);
   }
 
   return { materializar };

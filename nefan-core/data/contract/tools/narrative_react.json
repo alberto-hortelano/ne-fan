@@ -71,8 +71,26 @@
                   "enum": [
                     "npc",
                     "building",
-                    "object"
-                  ]
+                    "object",
+                    "item"
+                  ],
+                  "description": "Qué clase de cosa es, y con ello si el jugador la RODEA o la PISA: `building` y `object` son sólidos (una forja, un carro, un yunque); `item` NO frena — se le pasa por encima, que es lo que hace de algo un objeto suelto (una bolsa de monedas, una llave caída, una carta en el suelo); `npc` es un personaje. El tamaño lo afina `footprint`, no esto"
+                },
+                "footprint": {
+                  "type": "array",
+                  "items": [
+                    {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "description": "Cuánto ocupa en el suelo: [ancho, fondo] en CELDAS de 0,5 m, enteros ≥ 1. Solo afina el tamaño; lo que decide si frena es `entity_kind`. Ausente ⇒ el de su clase (object 3×3 = 1,5 m, building 8×8 = 4 m, item 1×1 = 0,5 m). Un carro es [6,6] y una moneda [1,1]. Un `npc` no lo declara"
                 },
                 "name": {
                   "type": "string",

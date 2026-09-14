@@ -141,7 +141,14 @@ export type Consequence =
   | { type: "story_update"; delta: string }
   | {
       type: "spawn_entity";
-      entity_kind: "npc" | "object" | "building";
+      /** La clase, y con ella si se rodea o se pisa: `object`/`building` son
+       *  sólidos, `item` no frena (#532). */
+      entity_kind: "npc" | "object" | "building" | "item";
+      /** Cuánto ocupa en el suelo, EN CELDAS ([ancho, fondo], enteros ≥ 1),
+       *  como la de una entity del tile: la conversión a metros es de core
+       *  (`huellaEnMetros`) y el cliente no la hace. Ausente ⇒ el defecto de
+       *  su clase. Un `npc` no la declara (lo rechaza el zod). */
+      footprint?: [number, number];
       /** La etiqueta: lo que se rotula. Obligatoria, como en una entity de
        *  escena (vocabulario compartido, entity-vocabulary.ts). */
       name: string;
@@ -349,10 +356,17 @@ export function toTuple(v: Vec3Like): [number, number, number] {
   return [v.x, v.y, v.z];
 }
 
-/** La clase de un spawn de runtime Y su huella colisionable, atadas en el
- *  TIPO: un `object`/`building` viaja SIEMPRE con `sizeXZ` en metros (la
- *  deriva `huellaEnMetros`, la misma que la huella de una entity del tile) y un
- *  `npc` NUNCA la lleva — un personaje colisiona por su radio, no por un AABB.
+/** La clase de un spawn de runtime Y su tamaño, atados en el TIPO: las tres
+ *  clases que ocupan sitio —`object`, `building` e `item`— viajan SIEMPRE con
+ *  `sizeXZ` en metros (lo deriva `huellaEnMetros` del `footprint` declarado o
+ *  del defecto de la clase, la misma función que la huella de una entity del
+ *  tile) y un `npc` NUNCA lo lleva — un personaje colisiona por su radio, no
+ *  por un AABB.
+ *
+ *  `sizeXZ` es el TAMAÑO, no el permiso: un `item` lo lleva porque se pinta
+ *  como volumen, y aun así no frena — quien decide eso es la categoría, en
+ *  `aabbBloquea` (#532). Confundir las dos cosas es lo que hacía que una bolsa
+ *  de monedas fuera un muro de 1,5 m.
  *
  *  Es una unión y no un campo opcional a propósito (#489): con `sizeXZ?` el
  *  productor podía olvidarlo y el consumidor tenía que inventarse un tamaño o
@@ -364,7 +378,7 @@ export function toTuple(v: Vec3Like): [number, number, number] {
  *  contrato: el materializador del cliente come las dos por la misma puerta. */
 export type HuellaDelSpawn =
   | { entityKind: "npc" }
-  | { entityKind: "object" | "building"; sizeXZ: { x: number; z: number } };
+  | { entityKind: "object" | "building" | "item"; sizeXZ: { x: number; z: number } };
 
 /** Renderer-agnostic effects produced by dispatchConsequences. Lives here (not
  * in consequence-handler.ts) so the browser bundle can import the type without

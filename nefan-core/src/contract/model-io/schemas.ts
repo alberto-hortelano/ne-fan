@@ -35,10 +35,35 @@ const StoryUpdateConsequence = z.object({
   delta: z.string().min(1).describe("Frase que se añade al hilo narrativo (story_so_far)"),
 });
 
+/** Por qué se rechaza un `footprint` en un NPC. La MISMA frase en el zod y en
+ *  el espejo Python (`narrative_schemas.py`), como `MOTIVO_NAME_INVALIDO`: el
+ *  modelo entra por las dos vías —MCP y API directa— y tiene que leer el mismo
+ *  motivo por las dos. Lo canda `test/entity-vocabulary.test.ts`. */
+export const MOTIVO_FOOTPRINT_EN_NPC =
+  "un `npc` no declara `footprint`: un personaje colisiona por el radio de su cuerpo, no por una huella. " +
+  "Si lo que quieres es algo grande que se rodea, ponlo como `building` o `object` con su `footprint`";
+
 const SpawnEntityConsequence = z
   .object({
     type: z.literal("spawn_entity"),
-    entity_kind: z.enum(["npc", "building", "object"]),
+    entity_kind: z
+      .enum(["npc", "building", "object", "item"])
+      .describe(
+        "Qué clase de cosa es, y con ello si el jugador la RODEA o la PISA: `building` y " +
+          "`object` son sólidos (una forja, un carro, un yunque); `item` NO frena — se le " +
+          "pasa por encima, que es lo que hace de algo un objeto suelto (una bolsa de " +
+          "monedas, una llave caída, una carta en el suelo); `npc` es un personaje. El " +
+          "tamaño lo afina `footprint`, no esto",
+      ),
+    footprint: z
+      .tuple([z.number().int().min(1), z.number().int().min(1)])
+      .optional()
+      .describe(
+        "Cuánto ocupa en el suelo: [ancho, fondo] en CELDAS de 0,5 m, enteros ≥ 1. Solo " +
+          "afina el tamaño; lo que decide si frena es `entity_kind`. Ausente ⇒ el de su " +
+          "clase (object 3×3 = 1,5 m, building 8×8 = 4 m, item 1×1 = 0,5 m). Un carro es " +
+          "[6,6] y una moneda [1,1]. Un `npc` no lo declara",
+      ),
     // El MISMO vocabulario que una entity de `generate_scene`
     // (entity-vocabulary.ts): `name` obligatorio y es el rótulo,
     // `description` opcional y es la procedencia (#397).
@@ -99,12 +124,30 @@ export const MAX_CONSEQUENCES = 4;
 
 /** Payload completo de una respuesta narrative_event. `dialogue` es SIEMPRE
  *  una entrada del array `consequences`, nunca un campo de nivel superior. */
-export const NarrativeReactionSchema = z.object({
-  consequences: z
-    .array(ConsequenceSchema)
-    .max(MAX_CONSEQUENCES)
-    .describe(`Lista de consecuencias (máx ${MAX_CONSEQUENCES}). [] si no hay reacción`),
-});
+export const NarrativeReactionSchema = z
+  .object({
+    consequences: z
+      .array(ConsequenceSchema)
+      .max(MAX_CONSEQUENCES)
+      .describe(`Lista de consecuencias (máx ${MAX_CONSEQUENCES}). [] si no hay reacción`),
+  })
+  // La regla cruzada (`footprint` solo en lo que tiene huella) vive AQUÍ y no
+  // en `SpawnEntityConsequence` por una restricción de zod, dicha para que
+  // nadie la "arregle": un `.superRefine()` convierte el objeto en ZodEffects y
+  // `z.discriminatedUnion` solo admite ZodObject, así que ponerla dentro deja
+  // de compilar. El `path` completo la devuelve al motor igual de precisa.
+  .superRefine((r, ctx) => {
+    r.consequences.forEach((c, i) => {
+      if (c.type !== "spawn_entity") return;
+      if (c.entity_kind === "npc" && c.footprint !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["consequences", i, "footprint"],
+          message: MOTIVO_FOOTPRINT_EN_NPC,
+        });
+      }
+    });
+  });
 
 export type Consequence = z.infer<typeof ConsequenceSchema>;
 export type NarrativeReaction = z.infer<typeof NarrativeReactionSchema>;

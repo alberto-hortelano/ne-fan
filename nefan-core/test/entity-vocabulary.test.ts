@@ -17,7 +17,7 @@ import type { ZodObject, ZodRawShape, ZodTypeAny } from "zod";
 
 import { MOTIVO_NAME_INVALIDO, VocabularioDeEntity } from "../src/contract/model-io/entity-vocabulary.js";
 import { EntitySchema } from "../src/contract/model-io/scene-schema.js";
-import { ConsequenceSchema, NarrativeReactionSchema } from "../src/contract/model-io/schemas.js";
+import { ConsequenceSchema, MOTIVO_FOOTPRINT_EN_NPC, NarrativeReactionSchema } from "../src/contract/model-io/schemas.js";
 import { validateContract } from "../src/contract/model-io/validate.js";
 import { renderContract } from "../src/contract/model-io/render.js";
 
@@ -116,6 +116,33 @@ describe("entity-vocabulary · lo que el motor VE por spawn_entity", () => {
     });
     assert.equal(ko.ok, false);
     if (!ko.ok) assert.match(ko.error, /name/);
+  });
+
+  it("lo que OCUPA y lo que FRENA son dos cosas, y el contrato las separa (#532)", () => {
+    const acepta = (c: Record<string, unknown>) =>
+      validateContract(NarrativeReactionSchema, { consequences: [{ type: "spawn_entity", ...c }] });
+    // `item` es la clase que no frena; `footprint` (celdas) solo afina.
+    assert.equal(acepta({ entity_kind: "item", name: "Bolsa de monedas" }).ok, true);
+    assert.equal(acepta({ entity_kind: "object", name: "Carro", footprint: [6, 6] }).ok, true);
+    // Y lo que no se admite: un tamaño en un personaje, medias celdas, y el 0.
+    const enNpc = acepta({ entity_kind: "npc", name: "Telmo", footprint: [2, 2] });
+    assert.equal(enNpc.ok, false);
+    if (!enNpc.ok) assert.equal(enNpc.error, `consequences[0].footprint: ${MOTIVO_FOOTPRINT_EN_NPC}`);
+    assert.equal(acepta({ entity_kind: "object", name: "Carro", footprint: [2.5, 3] }).ok, false);
+    assert.equal(acepta({ entity_kind: "object", name: "Carro", footprint: [0, 3] }).ok, false);
+    assert.equal(acepta({ entity_kind: "object", name: "Carro", footprint: [3] }).ok, false);
+  });
+
+  it("y el espejo Python rechaza el `footprint` de un npc con la MISMA frase", () => {
+    // Mismo criterio que `name`: el modelo entra por las dos vías (pre-flight
+    // MCP y API directa) y el motivo que lee tiene que ser el mismo, o corrige
+    // hacia dos sitios distintos. La frase vive en el zod y Python la copia.
+    const python = readFileSync(join(raizDelRepo(), "ai_server", "narrative_schemas.py"), "utf-8");
+    const plano = python.replace(/"\s*\n\s*"/g, "");
+    assert.ok(
+      plano.includes(MOTIVO_FOOTPRINT_EN_NPC),
+      "narrative_schemas.py no dice la misma frase que el zod para `footprint` en un npc",
+    );
   });
 
   it("el bloque renderizado del prompt enseña `name` obligatorio y `description?` opcional, y en ese orden", () => {
