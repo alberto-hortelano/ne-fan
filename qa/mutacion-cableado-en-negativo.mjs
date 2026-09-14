@@ -34,18 +34,25 @@
  *  cronómetro de `mutate.ts` y el `fail-fast: false` de la matriz. Todo eso vive
  *  en scripts y en YAML, o sea donde ningún test llega.
  *
+ *  La tanda D añade uno AL REVÉS: el verbo `comparar` existe para NO escribir
+ *  (si escribiera, medir con un instrumento nuevo destruiría la base contra la
+ *  que había que compararlo), así que su invariante no exige que diga algo sino
+ *  que no deje rastro — huella byte a byte igual, tag quieto y `git status`
+ *  como estaba.
+ *
  *  Verde = todos los invariantes del cableado se pueden ver rotos.
  *  Rojo  = hay una pieza del ciclo que se puede deshacer sin que se note.
  *
  *  QUÉ TOCA Y CÓMO LO DEVUELVE. Escribe en el árbol de trabajo: aparta
  *  `nefan-core/reports/mutation/` (que es material descargado, no versionado),
- *  y modifica temporalmente `scripts/mutacion.ts`, `scripts/mutate.ts`, el
- *  workflow y `data/contract/mutacion-huella.json` —que `repartir` reescribe por
- *  diseño—.
+ *  y modifica temporalmente `scripts/mutacion.ts`, `scripts/mutate.ts`,
+ *  `scripts/mutacion-comparar.ts`, el workflow y
+ *  `data/contract/mutacion-huella.json` —que `repartir` reescribe por diseño—.
  *  Todo vuelve en el `finally` y se verifica byte a byte al terminar; si algo no
  *  volvió, sale con 2 y lo dice.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, renameSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -57,6 +64,9 @@ const MUT = join(CORE, "scripts", "mutacion.ts");
 /** `mutate.ts` entra con PR-E: es quien cronometra cada módulo, y ese número es
  *  lo único que hace posible repartir la corrida por el reloj. */
 const MUTATE = join(CORE, "scripts", "mutate.ts");
+/** El verbo que existe para NO escribir. Su candado es al revés que los de
+ *  arriba: no se comprueba que haga algo, sino que no deja rastro. */
+const COMPARAR = join(CORE, "scripts", "mutacion-comparar.ts");
 const YML = join(raiz, ".github", "workflows", "mutation.yml");
 const HUELLA = join(CORE, "data", "contract", "mutacion-huella.json");
 const PLAN = join(CORE, "data", "contract", "mutation-targets.json");
@@ -126,6 +136,22 @@ function soloInforme(marca = "x") {
   };
   writeFileSync(join(INFORMES, `${E.id}.json`), JSON.stringify(informe));
 }
+
+/** La foto de lo que un verbo EN SECO no puede tocar: la huella commiteada, el
+ *  tag y el árbol de git.
+ *
+ *  Se toma ANTES y DESPUÉS dentro del mismo `mira`, y eso no es un detalle: el
+ *  propio probe modifica el fuente para romperlo, así que esa modificación sale
+ *  en las DOS fotos y se cancela. Comparar contra una foto tomada fuera diría
+ *  «el árbol cambió» por culpa del guion y el candado se pondría rojo sin que
+ *  el verbo hubiera escrito nada — un rojo por el motivo equivocado es tan
+ *  inútil como un verde que no comprueba. */
+const fotoDelArbol = () =>
+  [
+    `huella:${createHash("sha256").update(readFileSync(HUELLA)).digest("hex").slice(0, 16)}`,
+    `tag:${git(["rev-parse", "mutacion-ultima"]).slice(0, 12)}`,
+    `status:${createHash("sha256").update(git(["status", "--porcelain"])).digest("hex").slice(0, 16)}`,
+  ].join(" ");
 
 /** El manifiesto lo escribe la herramienta, no este guion: si lo fabricara a
  *  mano, el sello sería el que yo digo y no el que ella calcula — y lo que se
@@ -248,6 +274,35 @@ const INVARIANTES = [
       /DESDE: \$\{\{ steps\.seleccion\.outputs\.desde \}\}/.test(s),
     porque: "sin el ancla en el manifiesto, `repartir` no tiene de dónde sacarla y el reparto vuelve a colgar del tag",
     rompe: [YML, `          DESDE="$(npm run --silent mutacion -- ancla)"\n`, ``],
+  },
+
+  // ── Tanda D · la comparación EN SECO ───────────────────────────────────────
+  {
+    nombre: "comparar · el verbo EN SECO no escribe: ni la huella, ni el tag, ni el árbol",
+    // El candado al revés de los de arriba: allí se exige que el verbo DIGA
+    // algo, aquí que no DEJE nada. Y hace falta aquí y no en la batería por lo
+    // de siempre: ningún test importa `scripts/mutacion.ts`, así que una
+    // escritura colada en el camino del verbo sale verde en `npm run verify`.
+    // La regla `comparar-no-escribe` de arch-rules.json mira el fichero; esto
+    // mira el EFECTO, venga de donde venga.
+    mira: () => {
+      siembraInforme();
+      manifiesta({ run: "999913" });
+      const antes = fotoDelArbol();
+      const r = mutacion(["comparar"]);
+      const despues = fotoDelArbol();
+      return `arbol:${antes === despues ? "intacto" : "TOCADO"} veredicto:${/VEREDICTO DE ADOPCIÓN/.test(r.salida)}`;
+    },
+    bien: (s) => s === "arbol:intacto veredicto:true",
+    porque:
+      "sin una comparación que no escriba, medir con el instrumento nuevo DESTRUYE la base contra la que había " +
+      "que compararlo (`repartir` acaba en escribeHuella y CI le mueve el tag detrás): la regla dura de #443 " +
+      "—«si un solo score se mueve fichero a fichero, no se adopta»— sería inaplicable por construcción",
+    rompe: [
+      COMPARAR,
+      `  return ok ? 0 : 1;`,
+      `  fs.writeFileSync(join(coreRoot, "data", "contract", "mutacion-huella.json"), "{}\\n");\n  return ok ? 0 : 1;`,
+    ],
   },
 
   // ── PR-E · la corrida partida en lotes ─────────────────────────────────────
@@ -391,7 +446,7 @@ if (existsSync(APARTADO)) {
 // instancias a la vez se fotografían la mutación de la otra y la «restauran»
 // como si fuera el original. Pasó el 2026-09-10.
 turnoDeCandados();
-const fuentes = new Map([MUT, MUTATE, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
+const fuentes = new Map([MUT, MUTATE, COMPARAR, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
 const restauraFuentes = () => { for (const [f, t] of fuentes) writeFileSync(f, t); };
 const habiaInformes = existsSync(INFORMES);
 if (habiaInformes) renameSync(INFORMES, APARTADO);

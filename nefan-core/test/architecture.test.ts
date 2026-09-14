@@ -2744,6 +2744,72 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // Nace VERDE, como `qa-guiones-sin-espera-por-reloj`: el fichero que vigila
+  // se escribió sin escritores. Una regla verde no demuestra nada por sí sola,
+  // así que se le enseña lo que existe para cortar (las cinco escrituras, y las
+  // dos vueltas obvias: la asíncrona y el stream) y lo que NO debe cortar (la
+  // prosa de la cabecera, que nombra `writeFileSync` para explicar por qué no
+  // está, y los vecinos, que escriben por diseño).
+  it("[error] comparar-no-escribe: la llamada salta, el comentario y los vecinos no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "comparar-no-escribe");
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/scripts/mutacion-comparar.ts",
+          text:
+            "export function comparaEnSeco(c: ComparacionEnSeco): number {\n" +
+            '  writeFileSync(rutaHuella(), "{}\\n");\n' +
+            "  fs.rmSync(dir, { recursive: true });\n" +
+            "  mkdirSync(dir, { recursive: true });\n" +
+            "  renameSync(a, b);\n" +
+            '  appendFileSync(log, "x");\n' +
+            '  fs.writeFile(ruta, "{}", () => {});\n' +
+            "  const s = createWriteStream(ruta);\n" +
+            "  return 0;\n" +
+            "}\n",
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/scripts/mutacion-comparar.ts:2",
+        "nefan-core/scripts/mutacion-comparar.ts:3",
+        "nefan-core/scripts/mutacion-comparar.ts:4",
+        "nefan-core/scripts/mutacion-comparar.ts:5",
+        "nefan-core/scripts/mutacion-comparar.ts:6",
+        "nefan-core/scripts/mutacion-comparar.ts:7",
+        "nefan-core/scripts/mutacion-comparar.ts:8",
+      ],
+      "las siete formas de escribir un fichero tienen que saltar, se llamen sueltas o por el espacio de nombres",
+    );
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/scripts/mutacion-comparar.ts",
+          text:
+            "/** No importa `writeFileSync` a propósito: este verbo mira y no toca.\n" +
+            " *  Ni `rmSync`, ni `mkdirSync`, ni `renameSync`, ni `appendFileSync`.\n" +
+            " */\n" +
+            "// tampoco writeFileSync aquí abajo\n" +
+            "const informe = JSON.parse(fs.readFileSync(ruta, \"utf8\"));\n" +
+            "console.log(`escribiendo nada: ${informe.files.length}`);\n",
+          imports: [],
+        },
+        // `repartir` y el resto de la herramienta escriben por diseño: la regla
+        // es de UN fichero, no de `scripts/`.
+        {
+          path: "nefan-core/scripts/mutacion.ts",
+          text: 'writeFileSync(rutaHuella(), `${JSON.stringify(h, null, 2)}\\n`);\n',
+          imports: [],
+        },
+      ]),
+      [],
+      "explicar por qué no se escribe no es escribir, y el vecino que sí escribe no es asunto de esta regla",
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {

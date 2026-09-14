@@ -976,6 +976,18 @@
       "text": {
         "pattern": "import\\(\\s*(?:join|resolve)\\((?:(?:[^()]|\\([^()]*\\))*?,\\s*)?\"qa\"\\s*,\\s*\"lib\"|import\\(\\s*[\"'`][^\"'`\\n]*qa/lib/|require\\(\\s*[\"'`][^\"'`\\n]*qa/lib/"
       }
+    },
+    {
+      "id": "comparar-no-escribe",
+      "desc": "`scripts/mutacion-comparar.ts` no escribe en disco: ni writeFileSync, ni rmSync, ni mkdirSync, ni renameSync, ni appendFileSync",
+      "why": "El verbo `comparar` existe para que se pueda juzgar un cambio de instrumento de medida (#443) SIN destruir la base contra la que se juzga: hasta esta tanda el único verbo que comparaba era `repartir`, que acaba en `escribeHuella` y al que CI le mueve el tag detrás, así que medir con el runner nuevo borraba la medida anterior y la regla dura del usuario («si un solo score se mueve fichero a fichero, no se adopta») era inaplicable por construcción. La alternativa barata era una bandera `--en-seco` en `repartir`, y una bandera se olvida una vez y cuesta una corrida entera. Esto es lo que hace que «no escribe» no dependa de que alguien se acuerde: el fichero no puede escribir, y el patrón mira la LLAMADA y no la prosa (la cabecera del fichero nombra `writeFileSync` para explicar por qué no está, igual que `core-sin-dom` deja hablar a los comentarios). Complementaria y no redundante con el invariante de `qa/mutacion-cableado-en-negativo.mjs`, que corre el verbo REAL y exige la huella byte a byte igual: éste caza la línea en el momento de escribirla, aquél caza la escritura venga de donde venga.",
+      "severity": "error",
+      "files": [
+        "nefan-core/scripts/mutacion-comparar.ts"
+      ],
+      "text": {
+        "pattern": "^(?!\\s*(?://|\\*|/\\*))[^\\n]*\\b(?:writeFileSync|writeFile|rmSync|mkdirSync|renameSync|appendFileSync|createWriteStream)\\b"
+      }
     }
   ]
 }

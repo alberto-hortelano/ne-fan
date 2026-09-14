@@ -29,6 +29,7 @@
  *    npm run mutacion -- pendiente --ids    # los ids, para el runner
  *    npm run mutacion -- traer [run-id]     # vacía reports/ y baja el artefacto
  *    npm run mutacion -- repartir           # delta + atribución (--comentar publica)
+ *    npm run mutacion -- comparar           # el MISMO delta EN SECO: mira y no toca
  *    npm run mutacion -- local <id>         # medir UN módulo barato, aquí
  *    npm run mutacion -- lotes              # cómo se partiría la corrida en jobs
  *    npm run mutacion -- fusionar …         # lo corre CI, junta los lotes
@@ -62,6 +63,7 @@ import { dirname, join, relative, resolve } from "node:path";
 
 import { contextoDe, seleccionar, SIN_RENOMBRAR, type Seleccion } from "./afectado.js";
 import { lineasDeCodigo } from "./crap-score.js";
+import { comparaEnSeco } from "./mutacion-comparar.js";
 import {
   coreRoot,
   esVivo,
@@ -100,6 +102,7 @@ import {
   permisoLocal,
   prDelAsunto,
   rangoDe,
+  timeoutsDeFichero,
   veredictoDeCorrida,
   verificaDescarga,
   vivosDeFichero,
@@ -112,6 +115,7 @@ import {
   type JobDeCI,
   type OrigenCorrida,
   type PlanDeCorrida,
+  type RangoDeCommits,
   type SujetoDeLaCola,
   type Huella,
   type InformeSellado,
@@ -554,7 +558,36 @@ function traer(argv: readonly string[]): void {
 
   // Vaciar ANTES de bajar, y no fusionar: un informe de la semana pasada que se
   // quedara aquí se leería como parte de esta foto.
+  //
+  // Y ESO SE DICE ANTES DE HACERLO, porque lo que se borra puede ser la BASE de
+  // una comparación. La huella commiteada guarda `vivos` y `total`, y ahí un
+  // `Timeout` es indistinguible de un `Killed`: los mutantes que clasificó el
+  // reloj solo están en los INFORMES. Bajar la corrida nueva sin apartar los
+  // viejos deja a `comparar --timeouts` sin nada que mirar, y recuperarlos
+  // cuesta otra descarga (`gh run download <run-id>`) si es que el artefacto no
+  // ha caducado.
   mkdirSync(DIR_INFORMES, { recursive: true });
+  const viejos = readdirSync(DIR_INFORMES).filter((f) => f.endsWith(".json") && f !== "corrida.json");
+  if (viejos.length > 0) {
+    let previa: string | undefined;
+    if (existsSync(RUTA_CORRIDA)) {
+      try {
+        previa = (JSON.parse(readFileSync(RUTA_CORRIDA, "utf8")) as Partial<Corrida>).run_id;
+      } catch (err) {
+        // Se dice, no se calla: sin el id, la línea de recuperación de abajo no
+        // se puede escribir y quien la necesite tiene que ir a buscarlo a mano.
+        console.log(`  (el manifiesto que hay aquí no se puede leer: ${(err as Error).message})`);
+      }
+    }
+    console.log(
+      `Vaciando ${relative(coreRoot, DIR_INFORMES)}: ${viejos.length} informe(s)` +
+        `${previa === undefined ? "" : ` de la corrida ${previa}`}.\n` +
+        `  Eso es la BASE de una comparación: los \`Timeout\` solo viven en los informes, y la huella\n` +
+        `  commiteada no los guarda. El ritual es apartarla ANTES de traer la siguiente:\n` +
+        `    mv reports/mutation reports/mutation-base\n` +
+        `${previa === undefined ? "" : `  Si ya se fue: gh run download ${previa} -n ${ARTEFACTO} -D ${nombrePaquete}/reports/mutation-base\n`}`,
+    );
+  }
   for (const f of readdirSync(DIR_INFORMES)) rmSync(join(DIR_INFORMES, f), { force: true });
   console.log(`Bajando el artefacto "${ARTEFACTO}" de la corrida ${id}…`);
   gh(["run", "download", id, "-n", ARTEFACTO, "-D", relative(raizRepo, DIR_INFORMES)]);
@@ -599,7 +632,22 @@ interface Reparto {
   bateria: readonly string[];
 }
 
-function repartir(argv: readonly string[]): void {
+/** Todo lo que hay que leer ANTES de poder comparar nada: el plan, el
+ *  manifiesto de la corrida bajada, la huella COMMITEADA y el rango de commits
+ *  sin medir.
+ *
+ *  Compartido por `repartir` y `comparar`: los dos contestan la misma pregunta
+ *  y solo se diferencian en lo que hacen con la respuesta. Con dos preámbulos
+ *  gemelos, un guardia añadido a uno deja al otro leyendo una corrida que el
+ *  primero ya se niega a leer. */
+interface ContextoDeCorrida {
+  plan: PlanMutacion;
+  corrida: Corrida;
+  base: Huella;
+  rango: RangoDeCommits;
+}
+
+function contextoDeLaCorrida(): ContextoDeCorrida {
   const plan = leerPlan();
   const corrida = leerCorrida();
   exigeDescargaLimpia(corrida);
@@ -621,11 +669,31 @@ function repartir(argv: readonly string[]): void {
         `falta la historia (git fetch --unshallow).`,
     );
   }
+  return { plan, corrida, base, rango };
+}
 
-  if (yaRepartida(corrida, base)) return;
-
+/** El delta de la corrida, fichero a fichero, con quién pudo traerlo y lo que
+ *  hace falta para escribir la huella.
+ *
+ *  UNA SOLA COPIA, y no es preferencia de estilo. `repartir` (que lo escribe) y
+ *  `comparar` (que solo lo imprime) miden lo MISMO; dos cálculos gemelos del
+ *  mismo delta es el fallo que `mutacion-huella.ts` ya documenta de los dos
+ *  ternarios de `estadoLegible`: un tercer estado añadido a uno se lee como «0
+ *  nuevos» en el otro, y aquí ese «0 nuevos» sería la luz verde para cambiar el
+ *  instrumento con el que se mide la casa entera.
+ *
+ *  Devuelve además los `Timeout` de esta corrida, que la huella NO guarda —ahí
+ *  `Timeout` y `Killed` son lo mismo—, porque son los únicos mutantes que
+ *  pueden cambiar de bando sin que ningún test cambie de opinión. */
+function repartosDeLaCorrida(ctx: ContextoDeCorrida): {
+  repartos: Reparto[];
+  medidos: Record<string, MedidaDeFichero>;
+  timeouts: Record<string, string[]>;
+} {
+  const { plan, corrida, base, rango } = ctx;
   const repartos: Reparto[] = [];
   const medidos: Record<string, MedidaDeFichero> = {};
+  const timeouts: Record<string, string[]> = {};
 
   for (const id of modulosConInforme(corrida)) {
     const modulo = moduloPorId(plan, id);
@@ -633,6 +701,7 @@ function repartir(argv: readonly string[]): void {
     const ahora: Record<string, { vivos: string[]; total: number; blob: string }> = {};
     for (const [fichero, info] of Object.entries(informe.files)) {
       ahora[fichero] = { ...vivosDeFichero(fichero, info.mutants), blob: blobEnCommit(corrida.sha, fichero) };
+      timeouts[fichero] = timeoutsDeFichero(fichero, info.mutants);
     }
     const deltas = deltaDeCorrida(ahora, base);
     const atribucion = atribuir(id, rango);
@@ -661,6 +730,16 @@ function repartir(argv: readonly string[]): void {
       bateria: modulo.tests,
     });
   }
+  return { repartos, medidos, timeouts };
+}
+
+function repartir(argv: readonly string[]): void {
+  const ctx = contextoDeLaCorrida();
+  const { corrida, base } = ctx;
+
+  if (yaRepartida(corrida, base)) return;
+
+  const { repartos, medidos } = repartosDeLaCorrida(ctx);
 
   escribeHuella(fusiona(base, medidos));
   console.log(`\nHuella actualizada: ${RUTA_HUELLA} — commítala con la tanda, el delta se ve en el diff.\n`);
@@ -874,6 +953,57 @@ function comentarioDe(pr: number, repartos: readonly Reparto[], corrida: Corrida
       `\`npm run mutacion -- pendiente\`. La cola viva está en \`npm run deuda\`.`,
   );
   return lineas.join("\n");
+}
+
+// ── verbo: comparar (mira y no toca) ─────────────────────────────────────────
+
+/** Dónde están los informes de la corrida BASE, que es lo único que puede
+ *  contar los movimientos de `Timeout`: la huella no los guarda.
+ *
+ *  Fail-loud si el flag llega sin valor. Degradarlo a «sin base» imprimiría el
+ *  bloque del reloj vacío y se leería como «no se movió ninguno», que es
+ *  exactamente lo contrario de lo que habría pasado. */
+function dirDeTimeouts(argv: readonly string[]): string | undefined {
+  const i = argv.indexOf("--timeouts");
+  if (i < 0) return undefined;
+  const dir = argv[i + 1];
+  if (dir === undefined || dir.startsWith("-")) {
+    throw new Error(
+      "--timeouts necesita el directorio con los informes de la corrida BASE (p.ej. reports/mutation-base).\n" +
+        "  Ojo al ritual: `traer` VACÍA reports/mutation/ antes de bajar, así que la base hay que apartarla\n" +
+        "  ANTES (mv reports/mutation reports/mutation-base). Si ya se perdió:\n" +
+        "    gh run download <run-id> -n informe-mutacion -D nefan-core/reports/mutation-base",
+    );
+  }
+  return dir;
+}
+
+/** El mismo delta que `repartir` y NINGUNA escritura: ni la huella, ni el tag,
+ *  ni un comentario en la PR.
+ *
+ *  Existe porque sin él la regla dura de #443 es inaplicable por construcción:
+ *  el único verbo que comparaba escribía la huella y CI le movía el tag detrás,
+ *  así que medir con un instrumento nuevo destruía la base contra la que había
+ *  que compararlo. Quien decide y quien imprime viven en
+ *  `scripts/mutacion-comparar.ts` (que no puede escribir: regla
+ *  `comparar-no-escribe`) y en `mutacion-huella.ts` (puro, con batería). */
+function comparar(argv: readonly string[]): void {
+  const ctx = contextoDeLaCorrida();
+  const { repartos, timeouts } = repartosDeLaCorrida(ctx);
+  const veredicto = veredictoDeCorrida(ctx.corrida);
+  process.exitCode = comparaEnSeco({
+    corrida: {
+      run_id: ctx.corrida.run_id,
+      sha: ctx.corrida.sha,
+      desde: ctx.corrida.desde,
+      origen: ctx.corrida.origen,
+      completa: veredicto.completa,
+      porque: veredicto.porque,
+    },
+    modulos: repartos,
+    timeouts,
+    dirBase: dirDeTimeouts(argv),
+  });
 }
 
 // ── verbo: local ─────────────────────────────────────────────────────────────
@@ -1370,6 +1500,7 @@ const VERBOS: Record<string, (argv: string[]) => void> = {
   pendiente,
   traer,
   repartir,
+  comparar,
   local,
   lotes,
   fusionar,
@@ -1387,6 +1518,7 @@ function main(): void {
         `  pendiente [--ids]   qué hay sin medir desde ${TAG}, y cuánto cuesta\n` +
         `  traer [run-id]      vacía reports/mutation/ y baja el artefacto de CI\n` +
         `  repartir [--comentar]  delta contra la corrida anterior y atribución\n` +
+        `  comparar [--timeouts <dir>]  el MISMO delta sin escribir nada, con el veredicto de adopción\n` +
         `  local <id>          mide UN módulo barato en esta máquina\n` +
         `  lotes [--ids …]     parte la corrida en jobs por los SEGUNDOS medidos\n` +
         `  fusionar --entrada  junta los lotes en un solo corrida.json (lo corre CI)\n` +

@@ -109,6 +109,27 @@ export function vivosDeFichero(
   return { vivos: [...vivos].sort(), total: vivos.length + detectados };
 }
 
+/** Los mutantes que en esta medida clasificó el RELOJ, no un test.
+ *
+ *  `Timeout` cuenta como DETECTADO (arriba, la rama de `detectados`), así que
+ *  en la huella es INDISTINGUIBLE de un `Killed`: allí solo viajan `vivos` y
+ *  `total`. Y no son lo mismo — a un `Killed` lo mató un aserto y a un
+ *  `Timeout` lo mató el reloj de la máquina que lo midió. Cambiar de runner
+ *  cambia la forma del proceso (un hijo por fichero de test en vez de uno por
+ *  módulo), así que estos se mueven SOLOS, sin que ningún test haya cambiado de
+ *  opinión: 136 de los 8.542 detectados de la corrida 34816474906, repartidos
+ *  en 13 módulos.
+ *
+ *  Por eso se leen del INFORME y no de la huella, y por eso los informes de la
+ *  corrida base hay que apartarlos (`reports/mutation-base/`) ANTES de `traer`,
+ *  que vacía `reports/mutation/` antes de bajar. */
+export function timeoutsDeFichero(fichero: string, mutantes: readonly MutanteMedido[]): string[] {
+  return mutantes
+    .filter((m) => m.status === "Timeout")
+    .map((m) => huellaDeMutante(fichero, m))
+    .sort();
+}
+
 // ── el fichero de huella ─────────────────────────────────────────────────────
 
 /** La medida de UN fichero fuente en la última corrida que lo tocó. */
@@ -338,6 +359,178 @@ export function deltaDeCorrida(
   return Object.keys(medidos)
     .sort()
     .map((f) => deltaDeFichero(f, medidos[f], base.ficheros[f]));
+}
+
+// ── el criterio de ADOPCIÓN: cambiar de instrumento sin perder medida ────────
+
+/** Lo que hay que cumplir para cambiar el instrumento con el que se mide
+ *  (#443: `command` → `tap-runner`), contado en vez de leído a ojo.
+ *
+ *  La regla del usuario es «si un solo score se mueve fichero a fichero, no se
+ *  adopta». Aquí se cumple MÁS FUERTE y sin costar un segundo más, porque el
+ *  score deja un agujero: es `(total − |vivos|)/total`, así que 92
+ *  supervivientes antes y otros 92 DISTINTOS después dan el mismo número. Lo
+ *  que se exige es lo que la casa ya distingue: `nuevos` y `resueltos` contados
+ *  aparte (ver `deltaDeFichero`).
+ *
+ *  Y LOS DOS ESTADOS SIN COMPARACIÓN ENTRAN EN EL CRITERIO, que es la parte que
+ *  parece adorno y es la trampa: un fichero `incomparable` devuelve `nuevos: []`
+ *  y `resueltos: []` —no ha comparado nada—, y `deltaDeFichero` lo declara
+ *  justo cuando cambia el número de mutantes con el mismo código, o sea CUANDO
+ *  CAMBIA EL INSTRUMENTO, que es el caso que esto existe para juzgar. Pedir
+ *  solo «0 nuevos y 0 resueltos» se cumpliría en verde sobre cero
+ *  comparaciones; por eso `comparables > 0` es también condición. */
+export interface VeredictoDeAdopcion {
+  /** Ficheros que SÍ se compararon con su medida anterior. */
+  comparables: number;
+  /** Supervivientes que no estaban, sumados sobre los comparables. */
+  nuevos: number;
+  /** Supervivientes que estaban y ya no, sumados sobre los comparables. */
+  resueltos: number;
+  sinBase: string[];
+  incomparables: string[];
+  adopta: boolean;
+  /** TODOS los motivos, no el primero: arreglar uno y descubrir el siguiente en
+   *  la vuelta de después es lo que hace que nadie termine de mirar. */
+  porque: string;
+}
+
+/** Los primeros de una lista y cuántos quedan, para que un motivo quepa en una
+ *  línea sin perder el número. */
+function muestraDe(ficheros: readonly string[], cuantos = 3): string {
+  const cabeza = ficheros.slice(0, cuantos).join(", ");
+  return ficheros.length > cuantos ? `${cabeza} y ${ficheros.length - cuantos} más` : cabeza;
+}
+
+export function veredictoDeAdopcion(deltas: readonly DeltaDeFichero[]): VeredictoDeAdopcion {
+  const conEstado = (e: DeltaDeFichero["base"]): string[] =>
+    deltas
+      .filter((d) => d.base === e)
+      .map((d) => d.fichero)
+      .sort();
+  const sinBase = conEstado("sin base");
+  const incomparables = conEstado("incomparable");
+  const comparados = deltas.filter((d) => d.base === "con base");
+  const nuevos = comparados.reduce((n, d) => n + d.nuevos.length, 0);
+  const resueltos = comparados.reduce((n, d) => n + d.resueltos.length, 0);
+
+  const peros: string[] = [];
+  if (comparados.length === 0) {
+    peros.push(
+      "no se comparó NI UN fichero: «0 nuevos y 0 resueltos» sobre cero comparaciones no dice nada de la medida",
+    );
+  }
+  if (nuevos > 0) {
+    const ficheros = comparados.filter((d) => d.nuevos.length > 0).map((d) => d.fichero);
+    peros.push(`${nuevos} superviviente(s) NUEVOS en ${ficheros.length} fichero(s): ${muestraDe(ficheros)}`);
+  }
+  if (resueltos > 0) {
+    const ficheros = comparados.filter((d) => d.resueltos.length > 0).map((d) => d.fichero);
+    peros.push(
+      `${resueltos} superviviente(s) RESUELTOS en ${ficheros.length} fichero(s): ${muestraDe(ficheros)} — ` +
+        "el score puede no haberse movido y el conjunto sí",
+    );
+  }
+  if (incomparables.length > 0) {
+    peros.push(
+      `${incomparables.length} fichero(s) INCOMPARABLES (${muestraDe(incomparables)}): ahí nuevos y resueltos ` +
+        "salen a cero SIN haber comparado nada, así que contarlos como verdes sería el verde que no comprueba",
+    );
+  }
+  if (sinBase.length > 0) {
+    peros.push(`${sinBase.length} fichero(s) SIN BASE (${muestraDe(sinBase)}): nadie los había medido antes`);
+  }
+
+  return {
+    comparables: comparados.length,
+    nuevos,
+    resueltos,
+    sinBase,
+    incomparables,
+    adopta: peros.length === 0,
+    porque:
+      peros.length === 0
+        ? `los ${comparados.length} fichero(s) medidos se compararon uno a uno contra la medida anterior y el ` +
+          "conjunto de supervivientes es EL MISMO, no solo el score"
+        : peros.join("; "),
+  };
+}
+
+// ── los mutantes que clasifica el RELOJ, aparte del veredicto ────────────────
+
+/** Cómo se movieron los `Timeout` de UN fichero entre dos medidas.
+ *
+ *  Se cuenta aparte porque son el único sitio donde el veredicto puede cambiar
+ *  sin que ningún test haya cambiado de opinión, y porque las tres transiciones
+ *  mandan a sitios distintos: `Timeout → detectado` no mueve el score y no es
+ *  hallazgo de nadie, `Timeout → vivo` sale ADEMÁS como `nuevo` en el delta (y
+ *  tumba la adopción), y `otro → Timeout` es medida que pasa a depender del
+ *  reloj de la máquina. No se restan del veredicto: la regla del usuario no
+ *  distingue y no se negocia — lo que este bloque hace es decir cuántos de los
+ *  movimientos vinieron de ahí.
+ *
+ *  PRECONDICIÓN: las dos medidas son del MISMO fichero medido en las dos
+ *  corridas. Con un fichero que la base no midió, `timeoutsBase` llega vacío y
+ *  todos los `Timeout` de ahora se leerían como `otro → Timeout`; quien llama
+ *  tiene que dejar fuera esos ficheros y decir que no tienen base. */
+export interface RelojDeFichero {
+  fichero: string;
+  /** Cuántos clasificó el reloj en la medida anterior. */
+  base: number;
+  /** Cuántos clasifica el reloj ahora. */
+  ahora: number;
+  /** Los que ahora mata un test: invisibles en el score. */
+  aDetectado: number;
+  /** Los que ahora están vivos: salen también como `nuevo`. */
+  aVivo: number;
+  /** Los que antes tenían veredicto de test y ahora los clasifica el reloj. */
+  aTimeout: number;
+  /** Los que siguen clasificados por el reloj en las dos medidas. */
+  siguen: number;
+}
+
+export function movimientosDeReloj(
+  fichero: string,
+  timeoutsBase: readonly string[],
+  timeoutsAhora: readonly string[],
+  vivosAhora: readonly string[],
+): RelojDeFichero {
+  const antes = new Set(timeoutsBase);
+  const despues = new Set(timeoutsAhora);
+  const vivos = new Set(vivosAhora);
+  let aDetectado = 0;
+  let aVivo = 0;
+  let siguen = 0;
+  for (const h of antes) {
+    if (despues.has(h)) siguen += 1;
+    else if (vivos.has(h)) aVivo += 1;
+    else aDetectado += 1;
+  }
+  return {
+    fichero,
+    base: antes.size,
+    ahora: despues.size,
+    aDetectado,
+    aVivo,
+    aTimeout: [...despues].filter((h) => !antes.has(h)).length,
+    siguen,
+  };
+}
+
+/** El mismo recuento sobre varios ficheros. Vive aquí porque el informe lo
+ *  necesita DOS veces —por módulo y al final— y dos sumas escritas a mano
+ *  acaban discrepando sobre la misma tabla, que es lo que `estadoLegible` ya
+ *  documenta de los dos ternarios gemelos. */
+export function totalDeReloj(filas: readonly RelojDeFichero[]): Omit<RelojDeFichero, "fichero"> {
+  const suma = (f: (r: RelojDeFichero) => number): number => filas.reduce((n, r) => n + f(r), 0);
+  return {
+    base: suma((r) => r.base),
+    ahora: suma((r) => r.ahora),
+    aDetectado: suma((r) => r.aDetectado),
+    aVivo: suma((r) => r.aVivo),
+    aTimeout: suma((r) => r.aTimeout),
+    siguen: suma((r) => r.siguen),
+  };
 }
 
 /** La huella nueva: lo medido se sustituye, lo NO medido se conserva.
