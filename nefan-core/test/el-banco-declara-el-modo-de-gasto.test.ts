@@ -62,7 +62,45 @@ export function arrancaPartida(fuente: string): boolean {
  *  prosa no escribe; vale tanto el click directo como la tabla de casos del
  *  guion 106, que los guarda en datos y los pulsa en bucle. */
 export function declaraElModo(fuente: string): boolean {
-  return /\bnuevaPartida\(\s*ctx\b/.test(fuente) || /#ts-rendermode \[data-rendermode=/.test(fuente);
+  return llamadasANuevaPartida(fuente).every(conRenderMode) && (todasDeclaran(fuente) || porElBoton(fuente));
+}
+
+const porElBoton = (fuente: string): boolean => /#ts-rendermode \[data-rendermode=/.test(fuente);
+const todasDeclaran = (fuente: string): boolean => llamadasANuevaPartida(fuente).length > 0;
+/** Con dos puntos o en forma abreviada: `{ …, renderMode }` es lo que escriben
+ *  el 59 y el 60, que reciben el modo por parámetro y lo reenvían. Pedir el
+ *  `:` los habría acusado de mudos teniendo el campo puesto — un falso rojo
+ *  sobre los dos únicos guiones que ya lo hacían bien. */
+const conRenderMode = (llamada: string): boolean => /\brenderMode\s*(?::|,|\})/.test(llamada);
+
+/** Cada llamada a `nuevaPartida`, desde su nombre hasta el `)` que la cierra.
+ *
+ *  HACE FALTA MIRAR EL ARGUMENTO, Y ESTO ES LO QUE ESTE TEST NO HACÍA. La
+ *  primera versión daba por declarado cualquier fichero que NOMBRARA
+ *  `nuevaPartida`, razonando que la función exige `renderMode` y lanza sin él.
+ *  Y lanza — pero **en el navegador**, y los guiones de navegador no los corre
+ *  el CI. Resultado medido el 2026-09-14: cinco guiones (114, 115, 118, 119,
+ *  126) entraron en `main` llamándola sin el campo, rojos desde el primer día,
+ *  con este test en VERDE y `candados-headless` en verde. Los trajeron PR que
+ *  no se tocaban entre sí: compartían el CONTRATO de `qa/lib/sesion.mjs`, y el
+ *  orden de fusión decidió cuál se enteraba.
+ *
+ *  O sea que el candado candaba la mitad barata —que alguien pensara en el
+ *  modo— y dejaba fuera la que rompe: que lo haya escrito. Contar paréntesis es
+ *  feo, pero es lo que separa «lo nombra» de «se lo pasa». */
+function llamadasANuevaPartida(fuente: string): string[] {
+  const llamadas: string[] = [];
+  for (const m of fuente.matchAll(/\bnuevaPartida\(/g)) {
+    let nivel = 0;
+    for (let i = m.index + m[0].length - 1; i < fuente.length; i++) {
+      if (fuente[i] === "(") nivel++;
+      else if (fuente[i] === ")" && --nivel === 0) {
+        llamadas.push(fuente.slice(m.index, i + 1));
+        break;
+      }
+    }
+  }
+  return llamadas;
 }
 
 describe("el banco declara con qué modo de gasto arranca cada partida (QA H2)", () => {
@@ -118,6 +156,41 @@ describe("el banco declara con qué modo de gasto arranca cada partida (QA H2)",
       declaraElModo("await ctx.page.click(`#ts-rendermode [data-rendermode=\"${renderMode}\"]`);"),
       true,
       "el selector parametrizado (59 y 60 lo hacían así antes de pasarlo a `nuevaPartida`)",
+    );
+    // LA MITAD QUE FALTABA, y la que se cobró cinco guiones rojos en `main` el
+    // 2026-09-14: nombrar la función no es pasarle el campo. Lanza, sí — pero
+    // en el navegador, y el CI no corre guiones de navegador.
+    assert.equal(
+      declaraElModo('await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image" });'),
+      false,
+      "llama a `nuevaPartida` SIN `renderMode`: rojo en el navegador y verde aquí hasta hoy",
+    );
+    assert.equal(
+      declaraElModo('await nuevaPartida(ctx, { gameId: G, renderMode: "image", charMode: "image" });'),
+      true,
+      "con el campo puesto, que es lo que se pide",
+    );
+    assert.equal(
+      declaraElModo(
+        'await nuevaPartida(ctx, { gameId: A, renderMode: "vector" });\nawait nuevaPartida(ctx, { gameId: B });',
+      ),
+      false,
+      "UNA llamada muda basta para romperlo: con `some` en vez de `every`, la segunda se cuela",
+    );
+    assert.equal(
+      declaraElModo('await nuevaPartida(ctx, { gameId: G, renderMode: modoDe(caso) });'),
+      true,
+      "el campo puede venir de una variable: se mira que esté, no cuánto vale",
+    );
+    assert.equal(
+      declaraElModo('await nuevaPartida(ctx, { gameId: G, charMode: "vector", renderMode });'),
+      true,
+      "abreviado, que es como lo escriben el 59 y el 60: exigir los dos puntos los acusaba en falso",
+    );
+    assert.equal(
+      declaraElModo('// antes esto llamaba a nuevaPartida(ctx) y ya no'),
+      false,
+      "una mención en un comentario con la forma de llamada tampoco pasa: el detector no lee prosa",
     );
     // Los dos verdes vacíos que este detector tiene que saber rechazar.
     assert.equal(
