@@ -130,16 +130,46 @@ function leerSnapshotDeDisco(path: string): SnapshotEnDisco {
  *  cambia respecto de #302 es la GRANULARIDAD del rechazo, no que se deje de
  *  validar: lo que se sirve sigue pasando `validateScene` entero. El tile
  *  cribado no existe para la sesión, así que `request_tile` lo vuelve a pedir
- *  al motor cuando el jugador llegue — «solo se vuelve a pedir el malo». */
+ *  al motor cuando el jugador llegue — «solo se vuelve a pedir el malo».
+ *
+ *  Y se lo vuelve a pedir en CADA PARTIDA NUEVA, porque la carga no reescribe
+ *  el fichero y nadie más lo hace: los dos llamantes de `writeSessionSnapshot`
+ *  son el bootstrap vivo y `generate_game`, y ninguno corre cuando el snapshot
+ *  se sirve bien. Medido (QA de #451, H-3): `[1,1,1]` llamadas en tres
+ *  partidas seguidas; REANUDAR sí es gratis, porque el tile regenerado vive en
+ *  el save. Curarlo exige un TERCER escritor del snapshot y contestar antes si
+ *  este fichero es la foto de la GÉNESIS o el mundo CONOCIDO — decisión de
+ *  producto, no arreglo: **issue #577**. */
 export function loadWorldSnapshot(
   gamesDir: string,
   gameId: string,
   expectedWorldDocHash: string,
 ): WorldSnapshot | null {
+  return cargarConDetalle(gamesDir, gameId, expectedWorldDocHash).snapshot;
+}
+
+/** Lo mismo que `loadWorldSnapshot` MÁS el recuento de la criba, en la misma
+ *  pasada (#451, hallazgo H-2 de QA).
+ *
+ *  Existe porque el recuento se sabe aquí dentro y en ningún otro sitio: el
+ *  snapshot que sale ya viene cribado, así que quien lo recibe no puede decir
+ *  cuántas escenas traía el fichero. Y volver a leerlo desde fuera para
+ *  contarlas pagaría un segundo `validateScene` de todo el mundo cada vez que
+ *  alguien abre el título.
+ *
+ *  `loadWorldSnapshot` se queda como la puerta de SIEMPRE —misma firma, mismo
+ *  contrato— para que sus otros dos llamantes (`start_session` y el batch de
+ *  estilo) no tengan que enterarse de nada. */
+export function cargarConDetalle(
+  gamesDir: string,
+  gameId: string,
+  expectedWorldDocHash: string,
+): { snapshot: WorldSnapshot | null; servibles: number; total: number; cribadas: string[] } {
   const path = worldSnapshotPath(gamesDir, gameId);
+  const vacio = { snapshot: null, servibles: 0, total: 0, cribadas: [] as string[] };
   const leido = leerSnapshotDeDisco(path);
   if (!leido.ok) {
-    if (leido.ausente) return null;
+    if (leido.ausente) return vacio;
     // Malformado o de otro schema: fail-loud, y el mensaje dice qué hacer.
     throw new Error(`${leido.motivo} — bórralo o regenera el mundo desde el título`);
   }
@@ -149,7 +179,7 @@ export function loadWorldSnapshot(
       `world snapshot stale para "${gameId}": world.md cambió desde la ` +
         `generación — se ignora (regenera el mundo desde el título)`,
     );
-    return null;
+    return vacio;
   }
   // Lo que se carga pasa por el validador de JUGABILIDAD o no se sirve (#302).
   // El zod de arriba dice que la escena está bien FORMADA; esto dice que se
@@ -189,6 +219,13 @@ export function loadWorldSnapshot(
       );
     }
     cribadas.push(id);
+    // UNA LÍNEA POR ESCENA, y no un resumen por carga, aunque se repita: la
+    // puerta se atraviesa dos veces por partida (el chip del título y
+    // `start_session`), así que con 8 malas salen 16 líneas cada vez que
+    // alguien abre el título (QA de #451, H-4). Es ruido y se acepta: lo
+    // accionable es el MOTIVO de cada escena —qué NPC, en qué celda—, que es
+    // justo lo que un resumen pierde, y el aserto E1 del guion 127 fija el
+    // número de hoy para que se entere quien lo empeore.
     console.warn(
       `world snapshot (${path}): la escena "${id}" no pasa el validador de hoy ` +
         `y se CRIBA (el resto del mundo se sirve igual): ${check.errors.join(" · ")} ` +
@@ -204,8 +241,10 @@ export function loadWorldSnapshot(
   // escenas viajan POR REFERENCIA — el zod sigue siendo la puerta, no un
   // transformador. Y la carga NO reescribe el fichero: una lectura que
   // escribe sería un segundo escritor del snapshot, y el único es el bridge.
-  if (cribadas.length === 0) return snapshot;
-  return { ...snapshot, scenes: servibles };
+  const total = Object.keys(snapshot.scenes).length;
+  const contado = { servibles: total - cribadas.length, total, cribadas };
+  if (cribadas.length === 0) return { snapshot, ...contado };
+  return { snapshot: { ...snapshot, scenes: servibles }, ...contado };
 }
 
 /** Las escenas del snapshot en disco que un write puede CONSERVAR (#451).
@@ -217,7 +256,15 @@ export function loadWorldSnapshot(
  *  se niega a servir.
  *
  *  NO filtra por jugabilidad a propósito: eso lo juzga `loadWorldSnapshot` al
- *  servir, con el validador del día. Aquí solo se decide qué se guarda. */
+ *  servir, con el validador del día. Aquí solo se decide qué se guarda, y quien
+ *  escribe no destruye dato por un juicio que es del que lee.
+ *
+ *  La consecuencia, que estaba sin declarar (QA de #451, H-5): cuando la cura
+ *  de la ENTRADA reescribe el fichero, un tile del anillo que no pasa el
+ *  validador vuelve al disco IDÉNTICO, roto. O sea que el fichero no se limpia
+ *  nunca por sí solo, el aviso de criba es permanente y la factura de #577 se
+ *  hereda. Es el precio de no tirar dato del jugador desde el escritor; lo
+ *  fija el aserto E3 del guion 127. */
 export function escenasQueSobreviven(
   gamesDir: string,
   gameId: string,
@@ -238,6 +285,40 @@ export function escenasQueSobreviven(
     return {};
   }
   return snapshot.scenes;
+}
+
+/** Las escenas que declaran un `place_id` que ese world_map NO nombra (#451,
+ *  hallazgo H-1 de QA).
+ *
+ *  Nace con la mitad «conservar»: las escenas que sobreviven de un fichero
+ *  traen el `place_id` que les puso la generación ANTERIOR, y el mapa que se
+ *  escribe con ellas es el de la sesión VIVA, que el bootstrap acaba de
+ *  sembrar. Con el motor falso los ids coinciden y no se ve; con uno real, el
+ *  bootstrap es otra llamada al LLM y siembra los lugares que le parece, así
+ *  que la coincidencia es la excepción.
+ *
+ *  Lo que le pasa al jugador si nadie lo dice: `placeDeLaEscena` devuelve ese
+ *  id porque la escena lo declara (`world-map/exits.ts`), `getOutgoingLinks`
+ *  de un lugar que no existe devuelve `[]`, y el panel «Salidas» de esos tiles
+ *  sale VACÍO — el defecto que `world-map/bootstrap-place.ts` describe como
+ *  #172: la única vía de viaje del cliente apagándose sin un solo aviso.
+ *
+ *  Función PURA y aquí, no un `if` dentro del bridge, porque es la decisión y
+ *  no la escritura: tiene su propio test y no hace falta un snapshot en disco
+ *  para ejercerla. */
+export function escenasSinLugarEnElMapa(
+  scenes: Record<string, Record<string, unknown>>,
+  worldMap: WorldMap,
+): Array<{ sceneId: string; placeId: string }> {
+  const lugares = new Set(Object.keys(worldMap?.places ?? {}));
+  const colgando: Array<{ sceneId: string; placeId: string }> = [];
+  for (const [sceneId, scene] of Object.entries(scenes)) {
+    const placeId = scene?.place_id;
+    if (typeof placeId !== "string" || placeId === "") continue;
+    if (lugares.has(placeId)) continue;
+    colgando.push({ sceneId, placeId });
+  }
+  return colgando;
 }
 
 export function writeWorldSnapshot(gamesDir: string, snapshot: WorldSnapshot): void {
@@ -261,19 +342,36 @@ export function deleteWorldSnapshot(gamesDir: string, gameId: string): boolean {
 /** Estado del contenido pre-generado de un juego, para games_listed (los
  *  chips del título). Degrada por juego: cualquier error ⇒ "stale" con
  *  warning en vez de tumbar el listado (listGames ya filtró los juegos
- *  ilegibles) — cargarlo de verdad (start_session) sigue siendo fail-loud. */
-export function gameGenerationStatus(
-  gamesDir: string,
-  gameId: string,
-): "ready" | "stale" | "missing" {
+ *  ilegibles) — cargarlo de verdad (start_session) sigue siendo fail-loud.
+ *
+ *  Trae además el RECUENTO de la criba (#451, H-2). Hasta que hubo criba, un
+ *  `ready` significaba «el mundo entero está ahí» y no hacía falta contar
+ *  nada; desde #451 puede significar «queda 1 de 9», y el jugador no tiene
+ *  ninguna otra forma de saberlo: el mundo cribado se ve exactamente igual
+ *  que uno sano (lo midió QA en pantalla). No es la opción (c) —que el título
+ *  DIGA EL MOTIVO del stale, que el usuario descartó—: es un número. */
+export interface EstadoDelMundoGenerado {
+  estado: "ready" | "stale" | "missing";
+  /** Cuántas escenas del fichero puede servir HOY la puerta de carga, de
+   *  cuántas hay. `null` cuando no hay fichero que contar (missing, stale, o
+   *  ilegible): un 0/0 sería un recuento inventado. */
+  escenas: { servibles: number; total: number } | null;
+}
+
+export function gameGenerationStatus(gamesDir: string, gameId: string): EstadoDelMundoGenerado {
   try {
     const hash = createHash("sha256")
       .update(loadWorldDoc(gamesDir, gameId), "utf-8")
       .digest("hex");
-    return worldSnapshotStatus(gamesDir, gameId, hash);
+    if (!existsSync(worldSnapshotPath(gamesDir, gameId))) {
+      return { estado: "missing", escenas: null };
+    }
+    const { snapshot, servibles, total } = cargarConDetalle(gamesDir, gameId, hash);
+    if (!snapshot) return { estado: "stale", escenas: null };
+    return { estado: "ready", escenas: { servibles, total } };
   } catch (err) {
     console.warn(`gameGenerationStatus("${gameId}"): ${(err as Error).message}`);
-    return "stale";
+    return { estado: "stale", escenas: null };
   }
 }
 

@@ -21,6 +21,11 @@
  *     título del issue: el snapshot ya no se queda en UNA escena. La entrada
  *     se cura y las ocho buenas siguen ahí, idénticas.
  *
+ *  Y el RECUENTO del chip (hallazgo H-2 de la QA de esta PR): con el mundo
+ *  entero servible el título no cuenta nada, y con uno cribado dice «8 de 9».
+ *  Las dos mitades juntas, porque un recuento pintado siempre saldría verde
+ *  con solo la segunda.
+ *
  *  El B es el que medía el bug: antes de #451, `writeSessionSnapshot`
  *  reescribía el fichero con lo que hubiera en `scenes_loaded` —una escena— y
  *  el mundo pre-generado entero moría por un tile malo.
@@ -173,6 +178,15 @@ export default async function (ctx) {
   if (!intacto.scenes[MALO] || !intacto.scenes[BUENO]) {
     ctx.sinMedir(`el anillo pre-generado no trae ${MALO} y ${BUENO}: ${JSON.stringify(ids)}`);
   }
+  // El mundo SANO no cuenta nada: el recuento solo aparece cuando falta algo,
+  // o sería un número que el jugador aprende a ignorar. Es la mitad negativa
+  // del aserto de abajo — sin ella, un recuento pintado SIEMPRE saldría verde.
+  const sano = await panelDeGeneracion(ctx);
+  ctx.expect(
+    "1. con el mundo entero servible el título NO cuenta nada: solo «✓ generado»",
+    /✓ generado/.test(sano.estado) && !/de 9 escenas/.test(sano.estado),
+    sano.estado,
+  );
 
   // ── 2 · CASO A · la injugable es del anillo ────────────────────────────
   const conAnilloRoto = leerSnapshot();
@@ -185,6 +199,15 @@ export default async function (ctx) {
   ctx.expect(
     "2. un tile del anillo malo NO deja el mundo obsoleto: el título sigue diciendo «✓ generado»",
     /✓ generado/.test(conAnillo.estado),
+    conAnillo.estado,
+  );
+  // …pero lo CUENTA (hallazgo H-2 de la QA): un mundo cribado se ve igual que
+  // uno sano —lo midió QA en pantalla—, así que el chip del título es el único
+  // sitio donde el jugador puede enterarse de que le van a pedir tiles al
+  // motor. No dice el MOTIVO, que es la opción que el usuario descartó: cuenta.
+  ctx.expect(
+    "2. …y DICE de cuántas escenas habla: «8 de 9», no un «generado» a secas",
+    /8 de 9 escenas/.test(conAnillo.estado),
     conAnillo.estado,
   );
 

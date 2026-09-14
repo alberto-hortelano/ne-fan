@@ -16,6 +16,8 @@ import {
   WorldSnapshotSchema,
   deleteWorldSnapshot,
   escenasQueSobreviven,
+  escenasSinLugarEnElMapa,
+  gameGenerationStatus,
   loadWorldSnapshot,
   worldSnapshotPath,
   worldSnapshotStatus,
@@ -26,6 +28,7 @@ import { routeMessage } from "../bridge/router.js";
 import type {
   NarrativeEventMessage,
   NarrativeStatusDeSesion,
+  ServerMessage,
 } from "../src/protocol/messages.js";
 import { FIXTURE_GAMES, makeCtx, makeSocket, waitFor } from "./helpers.js";
 
@@ -751,6 +754,234 @@ describe("el anillo bueno no se pierde: la política de escritura del snapshot (
       // carga con el validador del día, no el que escribe.
       escribirADisco(gamesDir, worldDocHash, { tile_0_0: entradaInjugable(), ...anilloSano() });
       assert.equal(Object.keys(escenasQueSobreviven(gamesDir, GAME, worldDocHash)).length, 9);
+    } finally {
+      console.warn = warn;
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+});
+
+/** Los dos huecos que abrió la mitad «conservar» y que la QA de #451 midió:
+ *  un mundo conservado contra un mapa que ya no es el suyo (H-1) y un `ready`
+ *  que no dice de cuántas escenas habla (H-2). Los dos son decisiones PURAS,
+ *  así que se miden aquí y el guion 127 los ejerce en el juego. */
+describe("lo que la conservación abre y hay que contar (#451, QA H-1/H-2)", () => {
+  /** Las mismas dos escenas del bloque de #302 —una sana y una con el NPC en
+   *  la huella de un volumen sólido— y el mismo `aDisco` que escribe sin pasar
+   *  por el validador de escritura: es la forma de «lo generó una versión
+   *  anterior». Se repiten aquí porque allí viven dentro de su `describe`. */
+  const posadaSinPuerta = (tx: number, conPlayer: boolean): Record<string, unknown> =>
+    expandScenePrimitives({
+      scene_id: `tile_${tx}_0`,
+      scene_description: "Una posada sin puerta con el posadero dentro",
+      tile: { tx, ty: 0 },
+      biome: "grass",
+      volumes: [{ id: "posada", label: "posada", type: "building", rect: [52, 20, 24, 16] }],
+      entities: [
+        ...(conPlayer ? [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1] }] : []),
+        { id: "posadero", kind: "npc", name: "Posadero", cell: [60, 27], footprint: [1, 1] },
+      ],
+    });
+  const sana = (tx: number, conPlayer: boolean): Record<string, unknown> =>
+    expandScenePrimitives({
+      scene_id: `tile_${tx}_0`,
+      scene_description: conPlayer ? "Tile de arranque" : "Vecino este",
+      tile: { tx, ty: 0 },
+      biome: "grass",
+      entities: conPlayer ? [{ id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1] }] : [],
+    });
+  const aDisco = (
+    gamesDir: string,
+    worldDocHash: string,
+    scenes: Record<string, Record<string, unknown>>,
+  ): void => {
+    mkdirSync(join(gamesDir, GAME, "world"), { recursive: true });
+    writeFileSync(
+      worldSnapshotPath(gamesDir, GAME),
+      JSON.stringify({
+        schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
+        game_id: GAME,
+        world_doc_hash: worldDocHash,
+        generated_at: "2026-08-18T00:00:00.000Z",
+        world_map: new WorldMapManager(WorldMapManager.createEmpty()).serialize(),
+        scenes,
+        entry_scene_id: "tile_0_0",
+      }),
+      "utf-8",
+    );
+  };
+
+  const mapaCon = (...ids: string[]) => {
+    const wm = new WorldMapManager(WorldMapManager.createEmpty());
+    for (const id of ids) {
+      wm.upsertPlace({
+        id,
+        kind: "settlement",
+        name: id,
+        description: `lugar ${id}`,
+        parent_id: wm.serialize().root_id,
+      });
+    }
+    return wm.serialize();
+  };
+
+  it("`escenasSinLugarEnElMapa` nombra escena y lugar, y no se inventa ninguna", () => {
+    const mapa = mapaCon("aldea");
+    const colgando = escenasSinLugarEnElMapa(
+      {
+        tile_0_0: { place_id: "aldea" },
+        tile_1_0: { place_id: "molino_que_ya_no_existe" },
+        tile_0_1: { place_id: "" },
+        tile_1_1: {},
+        tile_2_0: { place_id: 7 },
+      },
+      mapa,
+    );
+    assert.deepEqual(colgando, [{ sceneId: "tile_1_0", placeId: "molino_que_ya_no_existe" }]);
+    // Un tile sin `place_id` NO cuelga: campo ausente, vacío o de otro tipo es
+    // «esta escena no declara lugar», que es legítimo y es la mayoría.
+    assert.deepEqual(escenasSinLugarEnElMapa({ a: {}, b: { place_id: "aldea" } }, mapa), []);
+    // Y un mapa sin lugares los cuelga a todos: el caso del bootstrap que
+    // siembra ids nuevos, que es de donde sale el hallazgo.
+    assert.equal(
+      escenasSinLugarEnElMapa({ a: { place_id: "aldea" } }, mapaCon()).length,
+      1,
+    );
+  });
+
+  it("el bootstrap vivo que conserva escenas de otro mapa lo DICE: lugar, escenas y cuántas", async () => {
+    const { gamesDir, worldDocHash } = tmpGamesDir();
+    const error = console.error;
+    const warn = console.warn;
+    const avisos: string[] = [];
+    console.error = () => {};
+    console.warn = (...args: unknown[]) => void avisos.push(args.map(String).join(" "));
+    try {
+      // Entrada injugable (degrada al bootstrap vivo) + dos vecinos sanos que
+      // apuntan a un lugar que el mapa del bootstrap NO va a sembrar.
+      const vecino = (tx: number) => {
+        const s = expandScenePrimitives({
+          scene_id: `tile_${tx}_0`,
+          scene_description: `Vecino (${tx},0)`,
+          tile: { tx, ty: 0 },
+          biome: "grass",
+          entities: [],
+        });
+        s.place_id = "lugar_que_ya_no_existe";
+        return s;
+      };
+      aDisco(gamesDir, worldDocHash, {
+        tile_0_0: posadaSinPuerta(0, true),
+        tile_1_0: vecino(1),
+        tile_2_0: vecino(2),
+      });
+      const { ctx, broadcasts } = makeCtx({ gamesDir, persistWorldSnapshots: true });
+      const { socket } = makeSocket();
+      await routeMessage({ type: "start_session", requestId: "r1", gameId: GAME }, socket, ctx);
+      await waitFor(() =>
+        broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+      );
+      const aviso = avisos.find((a) => a.includes("lugar_que_ya_no_existe"));
+      assert.ok(aviso, `el snapshot se guardó en silencio: ${avisos.join(" | ")}`);
+      assert.match(aviso, /2 escena\(s\) CONSERVADAS/);
+      assert.match(aviso, /Salidas/, "el aviso dice QUÉ le pasa al jugador, no solo qué falta");
+      assert.ok(
+        aviso.includes("tile_1_0") && aviso.includes("tile_2_0"),
+        `el aviso no nombra las escenas: ${aviso}`,
+      );
+      // Y la entrada RECIÉN generada no entra en la cuenta: su lugar sí está
+      // en el mapa vivo, y contarla sería un falso positivo permanente.
+      assert.ok(!aviso.includes("tile_0_0"), aviso);
+    } finally {
+      console.error = error;
+      console.warn = warn;
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  it("el mundo SANO no genera ningún aviso de lugares colgando (control)", async () => {
+    const { gamesDir, worldDocHash } = tmpGamesDir();
+    const warn = console.warn;
+    const avisos: string[] = [];
+    console.warn = (...args: unknown[]) => void avisos.push(args.map(String).join(" "));
+    try {
+      const { ctx, broadcasts } = makeCtx({ gamesDir, persistWorldSnapshots: true });
+      const { socket } = makeSocket();
+      await routeMessage({ type: "start_session", requestId: "r1", gameId: GAME }, socket, ctx);
+      await waitFor(() =>
+        broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+      );
+      assert.equal(
+        avisos.filter((a) => a.includes("CONSERVADAS")).length,
+        0,
+        `avisa sin motivo: ${avisos.join(" | ")}`,
+      );
+      assert.equal(worldSnapshotStatus(gamesDir, GAME, worldDocHash), "ready");
+    } finally {
+      console.warn = warn;
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  it("`gameGenerationStatus` CUENTA lo servible: 1 de 3 con el anillo cribado, y nada que contar si no hay fichero", () => {
+    const { gamesDir, worldDocHash } = tmpGamesDir();
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      assert.deepEqual(gameGenerationStatus(gamesDir, GAME), { estado: "missing", escenas: null });
+
+      aDisco(gamesDir, worldDocHash, {
+        tile_0_0: sana(0, true),
+        tile_1_0: posadaSinPuerta(1, false),
+        tile_2_0: posadaSinPuerta(2, false),
+      });
+      assert.deepEqual(gameGenerationStatus(gamesDir, GAME), {
+        estado: "ready",
+        escenas: { servibles: 1, total: 3 },
+      });
+
+      // Mundo entero sano: el recuento viaja igual, y es el que hace que el
+      // título pueda callarse (servibles === total ⇒ no se pinta nada).
+      aDisco(gamesDir, worldDocHash, { tile_0_0: sana(0, true), tile_1_0: sana(1, false) });
+      assert.deepEqual(gameGenerationStatus(gamesDir, GAME), {
+        estado: "ready",
+        escenas: { servibles: 2, total: 2 },
+      });
+
+      // Stale y entrada injugable: NO se cuenta. Un 0/0 sería un recuento
+      // inventado de un mundo que no se va a servir.
+      writeFileSync(join(gamesDir, GAME, "world.md"), "# Otro mundo\n" + "lore ".repeat(200));
+      assert.deepEqual(gameGenerationStatus(gamesDir, GAME), { estado: "stale", escenas: null });
+    } finally {
+      console.warn = warn;
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  it("y el recuento llega al título por el wire: `games_listed` lo trae SOLO cuando hay algo que contar", async () => {
+    const { gamesDir, worldDocHash } = tmpGamesDir();
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const pedirListado = async () => {
+        const { ctx } = makeCtx({ gamesDir });
+        const { socket, sent } = makeSocket();
+        await routeMessage({ type: "list_games", requestId: "g" }, socket, ctx);
+        const msg = sent[0] as Extract<ServerMessage, { type: "games_listed" }>;
+        return msg.games?.find((g) => g.game_id === GAME);
+      };
+
+      const sinMundo = await pedirListado();
+      assert.equal(sinMundo?.generation, "missing");
+      assert.equal(sinMundo?.escenas, undefined, "sin snapshot no viaja recuento");
+
+      aDisco(gamesDir, worldDocHash, {
+        tile_0_0: sana(0, true),
+        tile_1_0: posadaSinPuerta(1, false),
+      });
+      const cribado = await pedirListado();
+      assert.equal(cribado?.generation, "ready");
+      assert.deepEqual(cribado?.escenas, { servibles: 1, total: 2 });
     } finally {
       console.warn = warn;
       rmSync(gamesDir, { recursive: true, force: true });

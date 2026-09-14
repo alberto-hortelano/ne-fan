@@ -18,6 +18,7 @@ import { loadWorldDoc } from "../src/games/loader.js";
 import {
   WORLD_SNAPSHOT_SCHEMA_VERSION,
   escenasQueSobreviven,
+  escenasSinLugarEnElMapa,
   writeWorldSnapshot,
 } from "../src/games/world-snapshot.js";
 import { loadWorldVocabulary } from "../src/games/vocabulary.js";
@@ -180,22 +181,44 @@ export function writeSessionSnapshot(
         ? escenasQueSobreviven(ctx.gamesDir, gameId, worldDocHash)
         : {};
     const scenes = { ...conservadas, ...vivas };
+    const mapaVivo = structuredClone(ctx.narrative.worldMap.serialize());
     writeWorldSnapshot(ctx.gamesDir, {
       schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
       game_id: gameId,
       world_doc_hash: worldDocHash,
       generated_at: new Date().toISOString(),
-      world_map: structuredClone(ctx.narrative.worldMap.serialize()),
+      world_map: mapaVivo,
       scenes,
       entry_scene_id: entrySceneId,
     });
-    const heredadas = Object.keys(scenes).length - Object.keys(vivas).length;
+    const heredadas = Object.keys(scenes).filter((id) => !(id in vivas));
     console.log(
       `Bridge: world snapshot escrito para "${gameId}" ` +
         `(${Object.keys(scenes).length} escenas: ${Object.keys(vivas).length} de la sesión` +
-        `${heredadas > 0 ? ` + ${heredadas} conservadas del mundo en disco` : ""}` +
+        `${heredadas.length > 0 ? ` + ${heredadas.length} conservadas del mundo en disco` : ""}` +
         `, política ${politica})`,
     );
+    // El mapa que se escribe es el de la sesión VIVA; las conservadas traen el
+    // `place_id` de la generación ANTERIOR. Si el bootstrap sembró otros ids
+    // —con un motor real es lo normal, con el falso coinciden— esas escenas
+    // quedan apuntando a lugares que el mapa nuevo no nombra, y su panel
+    // «Salidas» saldrá vacío: el defecto de #172, que aquí llegaba SIN UN
+    // SOLO AVISO (QA de #451, H-1). Conservarlas sigue siendo mejor que
+    // tirarlas —que es el bug que esta PR arregla—, pero callarlo no: quien
+    // conoce la causa es este escritor, y es donde se dice.
+    const colgando = escenasSinLugarEnElMapa(
+      Object.fromEntries(heredadas.map((id) => [id, scenes[id]])),
+      mapaVivo,
+    );
+    if (colgando.length > 0) {
+      const lugares = [...new Set(colgando.map((c) => c.placeId))];
+      console.warn(
+        `Bridge: world snapshot de "${gameId}": ${colgando.length} escena(s) CONSERVADAS ` +
+          `apuntan a lugares que el world_map nuevo no nombra ` +
+          `(${lugares.map((l) => `"${l}"`).join(", ")}) — su panel «Salidas» saldrá vacío ` +
+          `hasta que el motor las regenere: ${colgando.map((c) => c.sceneId).join(", ")}`,
+      );
+    }
   } catch (err) {
     console.warn(`Bridge: world snapshot no se pudo escribir para "${gameId}":`, err);
   }
