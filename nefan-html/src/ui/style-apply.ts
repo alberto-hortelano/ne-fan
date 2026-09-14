@@ -20,7 +20,6 @@ import { npcSkinStyleRef } from "@nefan-core/src/games/style-categories.js";
 import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import {
   AUTO_SKIN_ANIMS,
-  SKIN_CALLS_FALLBACK,
   SpriteCatalogSchema,
   skinImageCalls,
   type SpriteCatalog,
@@ -36,28 +35,32 @@ import type { NarrativeClient } from "../net/narrative-client.js";
 
 /** Tope de celdas por petición del server (SurfaceAtlasRequest max_length). */
 const MAX_CELLS_PER_REQUEST = 64;
-/** Celdas por página pintada (pack_missing) — para estimar coste. */
-const CELLS_PER_PAGE = 12;
-/** Coste aprox. por página de atlas (nano-banana-pro vía fal). */
-const ATLAS_PAGE_EST_USD = 0.15;
 /** Ángulo del set de sprites: la constante única del censo (nefan-core), la
  *  misma que usa el `worldAngle` de main.ts — eran dos literales atados por
  *  un «DEBE coincidir». El ángulo entra en la clave de caché del skin, así
  *  que cambiarlo EN EL CENSO repaga todo el arte de personaje ya generado. */
 const SKIN_ANGLE = HOJAS_ANGLE;
 
+/** El precio de un bloque del plan, y **de qué clase** es esa cifra: `exacto`
+ *  es lo que se va a cobrar (lo dice quien empaqueta); `cota` es una cota
+ *  SUPERIOR —se cobrará eso o menos, nunca un suelo—; `desconocido` no se puede
+ *  saber y se enseña como «coste no disponible», con su motivo.
+ *
+ *  Unión discriminada y no el par `{estCostUsd, exact}` que había aquí hasta el
+ *  2026-09-14: con dos campos sueltos, pintar una cota como precio exacto es un
+ *  `if` que alguien se deja, y dos de sus cuatro combinaciones no significaban
+ *  nada. Así el estado malo no se puede escribir. */
+export type PrecioDeBloque =
+  | { clase: "exacto"; usd: number }
+  | { clase: "cota"; usd: number }
+  | { clase: "desconocido"; porque: string };
+
 export interface StyleApplyBlock {
   id: "pack" | "atlas" | "skins";
   label: string;
   /** Items que faltan por generar (0 = todo en caché). */
   missing: number;
-  /** `null` = coste NO DISPONIBLE (el catálogo contestó pero no puede costear
-   *  y dijo por qué — la causa va en `notes`). Se enseña como «coste no
-   *  disponible» y decide el usuario: jamás una cifra optimista presentada
-   *  como real. */
-  estCostUsd: number | null;
-  /** true = coste exacto del server; false = estimación (~). */
-  exact: boolean;
+  precio: PrecioDeBloque;
   selected: boolean;
 }
 
@@ -149,47 +152,46 @@ export class StyleApplyController {
     const scenes = Object.entries(snapshot.scenes);
     const notes: string[] = [];
 
-    // ── Pack del estilo (dry-run exacto del server) ──
+    // ── Pack del estilo (dry-run del server) ──
     const missRes = await fetch(`${this.urls.remote}/styles/${encodeURIComponent(styleId)}/missing`);
     if (!missRes.ok) throw new Error(`/styles/${styleId}/missing HTTP ${missRes.status}`);
     const pack = (await missRes.json()) as StylesMissingResponse;
 
     // ── Cuánto cuesta vestir un personaje: se PREGUNTA, no se estima ──
-    // El catálogo lo publica sprite-forge y remote-gen lo reexpone. Antes esta
-    // cuenta estaba copiada a mano aquí, y es la que se le enseña al usuario
-    // justo antes de gastar.
+    // El catálogo lo publica sprite-forge y remote-gen lo reexpone; esta cuenta
+    // estuvo copiada a mano aquí, y es la que se lee justo antes de gastar.
     let catalog: SpriteCatalog | null = null;
     try {
       const catRes = await fetch(`${this.urls.remote}/sprite_catalog`);
       if (!catRes.ok) {
-        notes.push(`No se pudo leer el catálogo de sprites (HTTP ${catRes.status}): el coste de los skins es una cota baja.`);
+        notes.push(`No se pudo leer el catálogo de sprites (HTTP ${catRes.status}): sin él no se puede saber el coste de los skins.`);
       } else {
         // Se valida contra el contrato zod (validado a su vez contra las
         // fixtures del servicio): un catálogo con otra forma es la misma
         // situación que no tenerlo, y se dice.
         const parsed = SpriteCatalogSchema.safeParse(await catRes.json());
         if (parsed.success) catalog = parsed.data;
-        else notes.push(`El catálogo de sprites no cumple el contrato (${parsed.error.issues[0]?.message ?? "?"}): el coste de los skins es una cota baja.`);
+        else notes.push(`El catálogo de sprites no cumple el contrato (${parsed.error.issues[0]?.message ?? "?"}): sin él no se puede saber el coste de los skins.`);
       }
     } catch (err) {
-      notes.push(`No se pudo leer el catálogo de sprites (${(err as Error).message}): el coste de los skins es una cota baja.`);
+      notes.push(`No se pudo leer el catálogo de sprites (${(err as Error).message}): sin él no se puede saber el coste de los skins.`);
     }
     if (catalog && !catalog.skin.enabled) {
       notes.push(`El servicio de sprites no puede vestir personajes: ${catalog.skin.reason}.`);
     }
-    // Catálogo INALCANZABLE ⇒ el suelo, etiquetado como estimación en la nota
-    // de arriba. Catálogo que contesta pero no puede costear ⇒ coste NO
-    // disponible con su causa: el suelo (4 llamadas frente a ~17 reales) no se
-    // enseña nunca como si fuera el precio.
-    let callsPerSkin: number | null;
+    // Sin catálogo NO HAY PRECIO, y punto. Aquí vivía un suelo de 4 llamadas
+    // por personaje (frente a ~17 reales): no es una cota superior sino una
+    // cifra por DEBAJO de la factura — la mentira que esta pantalla no cuenta.
+    let callsPerSkin: number | null = null;
+    let porqueSinPrecio = "";
     if (!catalog) {
-      callsPerSkin = SKIN_CALLS_FALLBACK;
+      porqueSinPrecio = "no se pudo leer el catálogo de sprites (ver notas)";
     } else {
       const info = skinImageCalls(catalog);
       if (info.ok) {
         callsPerSkin = info.calls;
       } else {
-        callsPerSkin = null;
+        porqueSinPrecio = info.reason;
         notes.push(`El coste de vestir los personajes no está disponible: ${info.reason}`);
       }
     }
@@ -204,6 +206,9 @@ export class StyleApplyController {
     for (const [sceneId, scene] of scenes) normalizadas.set(sceneId, formatDToWorld(scene));
     let cells: SurfaceCellSpec[] = [];
     let missingCells: number;
+    /** Lo que el SERVIDOR cotiza por esas celdas (`null` = no lo dijo): aquí no
+     *  se calcula, lo tiene quien empaqueta. */
+    let cotizadoAtlas: number | null;
     let sceneDescription = "";
     {
       const seen = new Set<string>();
@@ -251,7 +256,12 @@ export class StyleApplyController {
         usedKeys.add(k);
         return k === c.key ? c : { ...c, key: k };
       });
-      missingCells = await this.resolveMissing(cells, sceneDescription, styleId);
+      const resuelto = await this.resolveMissing(cells, sceneDescription, styleId);
+      missingCells = resuelto.missing;
+      cotizadoAtlas = resuelto.cotizado;
+    }
+    if (cotizadoAtlas === null && missingCells > 0) {
+      notes.push("El servidor de imagen no cotizó las páginas que faltan (`quoted_cost_usd` ausente).");
     }
 
     // ── Skins: mismas reglas de prompt/rol que la partida (carga-de-tile, materializar-spawn) ──
@@ -279,33 +289,47 @@ export class StyleApplyController {
     }
     if (skins.length === 0) notes.push("El mundo generado no declara personajes con skin.");
 
+    // El único bloque que NO puede ser exacto: remote-gen no publica dry-run
+    // de skins (`SkinSpriteSheetRequest` es `extra="forbid"`), así que se
+    // cotiza el roster ENTERO. Es una cota SUPERIOR, y se dice.
+    if (callsPerSkin !== null && skins.length > 0) {
+      notes.push(
+        "Los skins: como mucho pagarás eso. Se cuentan todos los personajes del " +
+          "mundo, y los que ya estén pintados no se vuelven a pagar.",
+      );
+    }
     const blocks: StyleApplyBlock[] = [
       {
         id: "pack",
         label: `Referencias del estilo (${pack.missing.length} categorías)`,
         missing: pack.missing.length,
-        estCostUsd: pack.estimated_cost_usd,
-        exact: true,
+        // Dry-run del servidor, cotizado por CARPETA con el mismo mapa
+        // carpeta→modelo que las va a pintar (antes las multiplicaba todas por
+        // el modelo más caro y se enseñaba igual de exacto: ×1,32 de más).
+        precio: { clase: "exacto", usd: pack.estimated_cost_usd },
         selected: pack.missing.length > 0,
       },
       {
         id: "atlas",
         label: `Librería de superficies (${cells.length} celdas, ${missingCells} por pintar)`,
         missing: missingCells,
-        estCostUsd:
-          Math.round(Math.ceil(missingCells / CELLS_PER_PAGE) * ATLAS_PAGE_EST_USD * 100) / 100,
-        exact: false,
+        precio:
+          cotizadoAtlas === null
+            ? { clase: "desconocido", porque: "el servidor de imagen no cotizó las páginas" }
+            : { clase: "exacto", usd: cotizadoAtlas },
         selected: missingCells > 0,
       },
       {
         id: "skins",
         label: `Skins de personaje (${skins.length} personajes × ${AUTO_SKIN_ANIMS.length} anims)`,
         missing: skins.length,
-        estCostUsd:
+        precio:
           callsPerSkin === null
-            ? null
-            : Math.round(skins.length * callsPerSkin * costPerImage * 100) / 100,
-        exact: false,
+            ? { clase: "desconocido", porque: porqueSinPrecio }
+            : {
+                clase: "cota",
+                usd: Math.round(skins.length * callsPerSkin * costPerImage * 100) / 100,
+              },
         selected: skins.length > 0,
       },
     ];
@@ -442,8 +466,9 @@ export class StyleApplyController {
       }
     }
 
-    // Pin de lo pre-generado contra el prune (aún no hay save que lo
-    // referencie). Los sprite sheets no pasan por el manifest — no se pinean.
+    // Pin de las CELDAS pre-generadas contra el prune (aún no hay save que las
+    // referencie). El arte de personaje no entra aquí porque no le hace falta:
+    // desde #376 lo indexa y lo pinea el servidor, bajo `character:{hero_key}`.
     if (pinnedHashes.size > 0) {
       onProgress("Protegiendo los assets pre-generados…");
       try {
@@ -504,13 +529,20 @@ export class StyleApplyController {
     };
   }
 
-  /** resolve_only contra la librería ($0): cuántas celdas faltan por pintar. */
+  /** resolve_only contra la librería ($0): cuántas celdas faltan y **cuánto
+   *  cuestan**, según quien las va a empaquetar. El coste lo da el servidor por
+   *  lote, y son los MISMOS lotes de 64 que `run()` va a pagar. Aquí no hay
+   *  aritmética de precios: hasta el 2026-09-14 la había (`ceil(missing/12) ×
+   *  $0.15`), divergida del empaquetador real. `cotizado: null` = algún lote no
+   *  trajo precio, y el bloque entero se queda sin él (media suma no es un
+   *  presupuesto). */
   private async resolveMissing(
     cells: SurfaceCellSpec[],
     sceneDescription: string,
     styleId: string,
-  ): Promise<number> {
+  ): Promise<{ missing: number; cotizado: number | null }> {
     let missing = 0;
+    let cotizado: number | null = 0;
     for (let i = 0; i < cells.length; i += MAX_CELLS_PER_REQUEST) {
       const res = await fetch(`${this.urls.remote}/generate_surface_atlas`, {
         method: "POST",
@@ -525,7 +557,12 @@ export class StyleApplyController {
       if (!res.ok) throw new Error(`/generate_surface_atlas (resolve) HTTP ${res.status}`);
       const data = (await res.json()) as GenerateSurfaceAtlasResponse;
       missing += data.missing;
+      if (cotizado !== null && Number.isFinite(data.quoted_cost_usd)) {
+        cotizado = Math.round((cotizado + data.quoted_cost_usd) * 100) / 100;
+      } else {
+        cotizado = null;
+      }
     }
-    return missing;
+    return { missing, cotizado };
   }
 }

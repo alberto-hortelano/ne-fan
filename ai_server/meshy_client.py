@@ -363,6 +363,20 @@ class FalImageToImage:
     #: Coste aproximado por imagen 1K/1024² (dashboard de fal).
     COST_USD = {"gpt-image-2": 0.17, "nano-banana-pro": 0.15}
 
+    @classmethod
+    def cost_usd(cls, ai_model: str) -> float:
+        """Lo que cuesta una imagen de ese modelo. LANZA si no lo conoce, como
+        el de Meshy: un `.get(modelo, 0.17)` cotizaba un precio inventado para
+        un modelo que `run_one` ni siquiera sabe llamar (rechaza lo que no está
+        en `MODELS`), o sea que la cifra optimista solo podía llegar al jugador,
+        nunca a la factura. Fail-silent en el único sitio donde hay dinero."""
+        precio = cls.COST_USD.get(ai_model)
+        if precio is None:
+            raise ValueError(
+                f"unknown fal ai_model: {ai_model} (conocidos: {sorted(cls.COST_USD)})"
+            )
+        return precio
+
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.environ.get("FAL_KEY", "")
         if not self.api_key:

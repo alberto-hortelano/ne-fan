@@ -48,12 +48,11 @@ def _load_dotenv() -> None:
 
 def main() -> int:
     _load_dotenv()
-    from meshy_client import FalImageToImage, MeshyImageToImage
+    from meshy_client import MeshyImageToImage
     from style_pack_builder import (
-        FACE_AI_MODEL,
-        SHEET_AI_MODEL,
         generate_missing_sync,
         missing_refs,
+        precio_de_ref,
     )
     from style_packs import REF_FOLDERS, _styles_dir_from_config, ref_folder
 
@@ -89,15 +88,11 @@ def main() -> int:
         parser.error("--out (staging) admite un solo style_id")
 
     def cost_of(folders: list[str]) -> float:
-        out = 0.0
-        for v in folders:
-            if v == "surfaces":
-                out += FalImageToImage.COST_USD.get(SHEET_AI_MODEL, 0.18)
-            elif v == "faces":
-                out += FalImageToImage.COST_USD.get(FACE_AI_MODEL, 0.17)
-            else:
-                out += MeshyImageToImage.cost_usd(args.model)
-        return out
+        # EL PRECIO LO DICE QUIEN EMPAQUETA: esto era una CUARTA copia del mapa
+        # carpeta→modelo→tarifa (con sus propios fallbacks, 0.18 y 0.17), en la
+        # herramienta que le dice al operador cuánto va a gastar antes de
+        # gastarlo. Hoy pregunta a la misma función que cobra `generate_missing`.
+        return round(sum(precio_de_ref(v, args.model) for v in folders), 2)
 
     total = 0.0
     for style_id in ids:

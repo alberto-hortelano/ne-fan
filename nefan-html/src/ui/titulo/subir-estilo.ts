@@ -232,11 +232,17 @@ export function pintarSubirEstilo(deps: DepsDeSubirEstilo): void {
         await ir({ a: "selector" });
         return;
       }
+      // Sin `~`: desde el 2026-09-14 este importe lo cotiza quien lo cobra
+      // (`style_pack_builder.cotizar_refs`, el mismo mapa carpeta→modelo que
+      // pinta las refs), así que es el precio y no una estimación. Tenía tilde
+      // porque no lo era: multiplicaba TODAS las refs por el modelo más caro.
+      // Y el panel de «Aplicar estilo» enseña este MISMO número, así que las
+      // dos pantallas tienen que decir lo mismo de él.
       statusEl.innerHTML = `<span style="color:#da6">Subidas ${data.uploaded.length}. Faltan ${data.missing.length} refs `
-        + `(${data.missing.map((m) => m.id).join(", ")}). Generarlas costará ~$${data.estimated_cost_usd.toFixed(2)} en créditos.</span>`;
+        + `(${data.missing.map((m) => m.id).join(", ")}). Generarlas costará $${data.estimated_cost_usd.toFixed(2)} en créditos.</span>`;
       uploadBtn.style.display = "none";
       completeBtn.style.display = "";
-      completeBtn.textContent = `Generar ${data.missing.length} imágenes (~$${data.estimated_cost_usd.toFixed(2)})`;
+      completeBtn.textContent = `Generar ${data.missing.length} imágenes ($${data.estimated_cost_usd.toFixed(2)})`;
     } catch (err) {
       statusEl.innerHTML = `<span style="color:#a44">Subida fallida: ${escapeHtml((err as Error).message)}</span>`;
       uploadBtn.disabled = false;

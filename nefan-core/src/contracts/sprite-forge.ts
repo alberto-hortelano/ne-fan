@@ -122,15 +122,12 @@ export type SpriteCatalog = z.infer<typeof SpriteCatalogSchema>;
  *  partida pide al materializar un NPC con skin). */
 export const AUTO_SKIN_ANIMS = ["idle", "walk", "run"] as const;
 
-/** Llamadas de imagen por personaje si el catálogo es INALCANZABLE: 1 hero +
- *  una por anim. Es un SUELO deliberadamente bajo y solo vale etiquetado como
- *  estimación (nota + `~` en la UI); el número bueno sale del catálogo.
- *
- *  Aquí vivía `1 + 8 + 4 + 4`, copiado a mano del planificador del servicio.
- *  Es el número que se le enseña al usuario ANTES de gastar, así que en cuanto
- *  alguien retocara un perfil de keyframes se quedaba mintiendo — y el
- *  planificador vive en otro repo. */
-export const SKIN_CALLS_FALLBACK = 1 + AUTO_SKIN_ANIMS.length;
+// Aquí vivía `SKIN_CALLS_FALLBACK` (1 hero + una llamada por anim = 4), el
+// suelo que se usaba cuando el catálogo era inalcanzable. Se va con la tanda
+// «el dinero no miente» (2026-09-14): frente a las ~17 llamadas reales es una
+// cifra por DEBAJO de la factura, y la pantalla que decide el gasto ya no
+// admite eso — su precio es exacto, cota SUPERIOR o «no disponible», y un suelo
+// no es ninguna de las tres. Sin catálogo no hay precio, y se dice.
 
 /** Coste en llamadas de imagen de vestir un personaje, o el motivo por el que
  *  no se puede saber. Result y no `number | null`: «no sé el precio» y «el

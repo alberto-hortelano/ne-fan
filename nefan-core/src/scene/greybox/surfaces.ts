@@ -378,7 +378,16 @@ export interface LayoutOptions {
 /** Shelf packing determinista: celdas tile = cuadradas; únicas = aspecto de
  *  mundo cuantizado a {0.5, 1, 1.5, 2}. Tiles primero, heroes al final (con
  *  varias páginas caen juntos y la página previa les ancla la paleta).
- *  ≤12 celdas/página — hallazgo skinning V4: más celdas colapsan al modelo. */
+ *
+ *  QUÉ DECIDE ESTE REPARTO, y qué NO. Decide cómo el CLIENTE compone su atlas
+ *  local (`scene/fps-atlas.ts` lo aplana a celdas y lo hashea como clave de
+ *  caché): ninguna de estas páginas manda una llamada de pago. El reparto que
+ *  se PINTA y se COBRA es `pack_missing` (`ai_server/surface_atlas_generator.py`),
+ *  que agrupa distinto —tiles aparte de uniques, y un subgrupo por ref de
+ *  cara— y del que sale el precio. **No son el mismo algoritmo**, y decir que
+ *  lo eran es lo que dejó al cliente cotizando con una fórmula ajena. Cambiar
+ *  `maxCellsPerPage` aquí repaga la caché local del atlas ensamblado (mueve
+ *  `canonicalSurfaceLayoutJson`) y no mueve ni un dólar del servidor. */
 export function layoutAtlas(
   cellList: SurfaceCell[],
   { pagePx = 1024, gutterPx = 24, inset = 6, maxCellsPerPage = 12 }: LayoutOptions = {},

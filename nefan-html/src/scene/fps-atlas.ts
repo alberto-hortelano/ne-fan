@@ -10,6 +10,7 @@
 
 import type {
   GenerateSurfaceAtlasResponse,
+  SurfaceCellResult,
   SurfaceCellSpec,
 } from "@nefan-core/src/contracts/remote-gen.js";
 import {
@@ -144,13 +145,18 @@ export class FpsAtlasController {
       if (!resolveOnly) this.deps.log(`Atlas fps del tile ${key}: ${cells.length} superficies…`);
       // El server capa cells a 64 por petición: trocear y fusionar (cada
       // celda se resuelve independiente contra la librería — mismo resultado).
-      const data: GenerateSurfaceAtlasResponse = {
-        cells: {},
+      //
+      // El acumulador NO es una `GenerateSurfaceAtlasResponse`: lo era, y eso
+      // obligaba a arrastrar campos que aquí no lee nadie (`quoted_*`, la
+      // cotización del panel de coste), sumándolos sin comprobar que fueran
+      // números — un servidor que no los mandara propagaba `NaN` en silencio.
+      // Lo que esta vista necesita de cada lote es esto y nada más.
+      const data = {
+        cells: {} as Record<string, SurfaceCellResult>,
         pages_painted: 0,
         cached: true,
         cost_usd: 0,
         missing: 0,
-        generation_time_ms: 0,
       };
       for (let i = 0; i < cells.length; i += MAX_CELLS_PER_REQUEST) {
         const res = await fetch(`${this.urls.remote}/generate_surface_atlas`, {

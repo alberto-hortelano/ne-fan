@@ -63,6 +63,20 @@ export interface GenerateSurfaceAtlasResponse {
   generation_time_ms: number;
   /** Celdas de la petición SIN pintar aún (con resolve_only no se pintan). */
   missing: number;
+  /** Páginas que hará falta pintar para esas `missing` celdas. */
+  quoted_pages: number;
+  /** Y lo que costarán. EL PRECIO LO DICE QUIEN EMPAQUETA: sale del mismo
+   *  `pack_missing` y la misma tabla de precios que van a cobrar, sobre las
+   *  MISMAS celdas (refs muertas ya limpiadas). Con `resolve_only` es el
+   *  presupuesto sin gastar; en el camino que pinta es lo que se ha cobrado, y
+   *  coincide con `cost_usd` por construcción (candado:
+   *  `ai_server/tests/test_atlas_cotizacion.py`).
+   *
+   *  OBLIGATORIO, y por eso no es opcional: hasta el 2026-09-14 el cliente lo
+   *  calculaba él con una fórmula que había divergido del servidor y enseñaba
+   *  hasta 3,1× menos de lo que iba a cobrar. Un servidor que no lo mande hace
+   *  que el cliente diga «coste no disponible» — jamás una cifra inventada. */
+  quoted_cost_usd: number;
 }
 
 /** Sprite sheet de personaje vestido por IA. Lo produce **sprite-forge** (repo

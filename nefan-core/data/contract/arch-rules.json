@@ -775,6 +775,41 @@
       }
     },
     {
+      "id": "el-precio-lo-dice-quien-empaqueta",
+      "desc": "Ningún precio de la pantalla que gasta se re-declara fuera del pintor que lo cobra",
+      "why": "Hermana de `la-fisica-no-se-copia-a-mano` y de `el-umbral-del-borrador-no-se-copia-a-mano`, y nace del mismo fallo en la única pantalla donde se acepta gastar dinero real. Hasta el 2026-09-14 el panel de «Aplicar estilo» enseñaba DOS importes que nadie cotizaba desde donde se cobran:\n\n1. **El atlas**: el CLIENTE lo calculaba con una fórmula propia (`nefan-html/src/ui/style-apply.ts`: `ceil(missing/12) × $0.15` sobre `CELLS_PER_PAGE` y `ATLAS_PAGE_EST_USD`) divergida del empaquetador que manda las llamadas de pago (`pack_missing`), que abre página por GRUPO —tiles aparte de uniques, y un subgrupo por cada ref de cara— y cobra cada página al precio de SU modelo ($0.15 nano-banana-pro con tiles, $0.17 gpt-image-2 sin ellos). Medido sobre el mundo pre-generado de `alta_fantasia` (23 celdas, una petición): **$0.30 prometidos contra $0.81 cobrados, ×2,70**; sobre las tres fixtures de `data/scenes` fusionadas como las manda `plan()` (15 celdas), ×1,57; el peor fichero suelto, ×3,13; y el techo de una petición de 64 celdas con ref propia cada una, ×12,09 ($0.90 → $10.88).\n2. **El pack de estilo**: el dry-run (`/styles/{id}/missing`, `/styles/upload`) multiplicaba TODAS las refs por el precio del modelo de personajes —el más caro— mientras `generate_missing` cobra por CARPETA. Medido sobre un pack de 1 surface + 2 faces + 1 character: **$0.96 contra $0.73, ×1,32**. Lo encontró el QA de la PR que arreglaba el atlas, una fila más arriba de la misma lista, y con `exacto` recién estampado encima.\n\nHoy los dos los cotiza quien los cobra: `SurfaceAtlasGenerator.cotizar` (la MISMA función que da el `cost_usd` de `generate`) y `style_pack_builder.precio_de_ref` (la MISMA que cobra cada ref en `generate_missing`). La paridad la candan `ai_server/tests/test_atlas_cotizacion.py` y `ai_server/tests/test_pack_cotizacion.py`, los dos con la llamada que gasta sustituida.\n\nLO QUE CAZA, exactamente: (a) `CELLS_PER_PAGE`, `MAX_CELLS_PER_PAGE`, `ATLAS_PAGE_EST_USD`, `COST_USD`, `USD_PER_CREDIT` o `MODEL_CREDITS` asignados a un número fuera de su fuente; (b) una de las cuatro tarifas vivas o históricas (`0.15`, `0.17`, `0.18`, `0.24`) asignada a un identificador que hable de coste, precio o usd; (c) un decimal en una asignación a `per_image`/`perImage`, que es la forma exacta que tenía el defecto del pack (`per_image = MeshyImageToImage.cost_usd(...) if deps.config else 0.18`). Las tres FUENTES están exentas, porque ahí es donde los números tienen que estar.\n\nQUÉ PRECIO NO CUBRE, y es deliberado: **el de los skins**. Su tarifa y su plan de llamadas los publica sprite-forge, que vive en OTRO REPO, y ne-fan solo es su consumidor: no hay aquí una fuente que vigilar, y por eso ese bloque del panel no es `exacto` sino una **cota superior declarada** («hasta $X»). El día que remote-gen publique un dry-run de skins, ese precio entra aquí. Nació cubriendo solo el atlas y se amplió al pack el 2026-09-14 tras el QA de la PR: una regla llamada «el precio lo dice quien empaqueta» que vigilara un precio de tres se citaría como garantía de la pantalla entera sin serlo.\n\nLO QUE NO CAZA, dicho para que nadie lo cite como garantía: un nombre nuevo (`PAGINA_CARA = 0.19`) pasa, igual que en la regla de los puertos pasa un puerto inventado; un literal suelto en una expresión sin nombre también; las variantes cosméticas de un decimal (`.15`, `0.150`, `15/100`) también; y un diccionario (`COST_USD = {\"gpt-image-2\": 0.17}`) se le escapa a las dos primeras mitades, porque ahí el identificador es la clave. Un campo llamado EXACTAMENTE `usd` queda fuera a propósito: son las filas de un ledger de gasto (`qa/el-ledger-de-gasto-no-lo-escribe-la-suite.mjs`), datos y no tarifas. El candado de esa clase no es un regex más ancho —cazar `0.15` cazaría media geometría del repo— sino que el número venga de quien cobra, que es lo que se hizo aquí: el contrato declara `quoted_cost_usd` OBLIGATORIO y un cliente que no lo reciba enseña «coste no disponible». PROBADA EN NEGATIVO las dos veces que se tocó, y la primera versión del patrón NO cazaba `costePorPagina = 0.17` (exigía un carácter antes de la palabra clave, así que solo veía los identificadores donde `cost`/`precio`/`usd` iba en medio): sin la sonda revertida habría nacido con medio candado.\n\nNota sobre el banco: `labs/narrative/fake-ai-server.ts` sí cotiza, con cifras de ATREZO que a propósito no son ninguna de las cuatro — es el servidor de mentira, o sea el que empaqueta en el bench, y su cotización y su cobro salen de la misma cuenta.",
+      "severity": "error",
+      "files": [
+        "nefan-html/src/**/*.ts",
+        "nefan-core/src/**/*.ts",
+        "nefan-core/bridge/**/*.ts",
+        "nefan-core/services/**/*.ts",
+        "nefan-core/scripts/**/*.ts",
+        "narrative-mcp/**/*.ts",
+        "qa/**/*.mjs",
+        "labs/**/*.ts",
+        "labs/**/*.mjs",
+        "ai_server/**/*.py"
+      ],
+      "text": {
+        "pattern": "\\b(CELLS_PER_PAGE|MAX_CELLS_PER_PAGE|ATLAS_PAGE_EST_USD|COST_USD|USD_PER_CREDIT|MODEL_CREDITS)\\s*[:=]\\s*[0-9]|\\b(?![Uu][Ss][Dd]\\s*[:=])[A-Za-z0-9_]*(?:[Cc]ost|COST|[Cc]oste|[Pp]recio|PRECIO|[Uu]sd|USD)[A-Za-z0-9_]*\\s*[:=]\\s*(?:0\\.1[578]|0\\.24)\\b|\\b(per_image|perImage)\\s*[:=][^\\n]*\\b\\d*\\.\\d"
+      },
+      "exceptions": [
+        {
+          "path": "ai_server/surface_atlas_generator.py",
+          "reason": "es la FUENTE del reparto en páginas del atlas: aquí es donde MAX_CELLS_PER_PAGE tiene que estar"
+        },
+        {
+          "path": "ai_server/meshy_client.py",
+          "reason": "es la FUENTE de las dos tablas de tarifas (FalImageToImage.COST_USD y MeshyImageToImage.MODEL_CREDITS × USD_PER_CREDIT)"
+        },
+        {
+          "path": "ai_server/style_pack_builder.py",
+          "reason": "es la FUENTE del mapa carpeta→modelo del pack de estilo (`precio_de_ref`), la función que cotiza y cobra las refs"
+        }
+      ]
+    },
+    {
       "id": "las-respuestas-de-red-no-se-redefinen-en-linea",
       "desc": "El cliente no se inventa la forma de una respuesta HTTP: la importa del contrato",
       "why": "Tercera de la familia de `nadie-inventa-un-puerto` y `la-fisica-no-se-copia-a-mano`: una forma que vive copiada a mano diverge en silencio de su fuente. Medido al entrar (#318): CINCO sitios de nefan-html/src casteaban `(await res.json()) as { … }` con la forma escrita en línea — dos de ellos el MISMO endpoint (`/skin_sprite_sheet`) con formas DISTINTAS, dos leían un `error?: string` que el servicio real no emite jamás con 200 (fail-loud por HTTPException), y dos redactaban `/styles/{id}/complete` con opcionalidad contradictoria entre sí — mientras `StyleCompleteResponse` y `StyleUploadResponse` existían en el contrato sin que nadie los importara ahí. Lo que esta regla caza es el cast a OBJETO ANÓNIMO sobre un `.json()`: `json()) as {` y `json() as {`, con saltos de línea incluidos (el patrón corre con «gm» y `\\s` cruza líneas). Los usos sanos castan a un identificador importado del contrato (`as GenerateSurfaceAtlasResponse`) y no casan con la llave. OJO a lo que NO caza, para que nadie lo cite como garantía: un `interface` local con nombre y su cast (`as RespuestaLocal`), un cast a genérico con objeto dentro (`as Array<{…}>`), y los casts en `nefan-core/test/**`, que queda FUERA a propósito: 14 casts legítimos sobre servidores fake, 3 de ellos el fixture negativo de esta misma regla. T4 (2026-09-02, #344) amplió los roots a `nefan-core/src`, `bridge` y `services` al borrar `AiClient.health()` (casteaba `/health` a `{status?}` sin un solo llamador) y al tipar `prune.ts` con `AssetRefsResponse`, que existía en el contrato sin que nadie lo importara ahí. La garantía total sería de tipo (un fetch tipado por endpoint); esto es el tripwire del modo de fallo observado.",
