@@ -34,12 +34,14 @@
  *     jugando (se le puede pisar el sitio, y no está en la lista de objetos).
  *
  *  LO QUE NO SE AFIRMA, y se DICE con su medida: que el jugador llegue a tocar
- *  el cofre. Los tres spawns de un turno caen a 1,8 m unos de otros
- *  (`SEPARACION_M`) y entre los volúmenes del plan, así que a veces queda
- *  encajonado sin una cara libre por la que encararlo — exigir contacto ahí
- *  sería afirmar la suerte del spawn, no la caja. El guion registra el hueco
- *  entre sus caras y cuántas sondas quedan libres en la línea que las une: es
- *  el dato de §9.1 de la PR 5 (la separación no mira el TAMAÑO de lo que separa).
+ *  el cofre. Los tres spawns de un turno caen entre los volúmenes del plan, así
+ *  que a veces no queda una cara libre por la que encararlo — exigir contacto
+ *  ahí sería afirmar la suerte del spawn, no la caja. El guion registra el
+ *  hueco entre sus caras y cuántas sondas quedan libres en la línea que las
+ *  une. Ese hueco era el dato de §9.1 de la PR 5 —la separación del turno no
+ *  miraba el TAMAÑO de lo que separaba— y desde #524 lo mira: el reparto deja
+ *  entre caras el cuerpo del jugador y un palmo, y quien lo AFIRMA es
+ *  `test/reparto-de-spawns.test.ts`; aquí sigue siendo el dato que se registra.
  *
  *  POR QUÉ TRAS REANUDAR TAMBIÉN. El tamaño de un spawn sale de lo que el motor
  *  declaró (`footprint`, en celdas) o del defecto de su clase, y la cuenta la
@@ -233,9 +235,8 @@ async function revivirSiHaceFalta(ctx) {
  *
  *  DÓNDE está la pared no se mide aquí sino en `afirmaLaCaja`, con sondas: en
  *  este bench el jugador no siempre puede LLEGAR a la cara de un spawn (los
- *  tres caen a 1,8 m unos de otros y entre los volúmenes del plan, §9.1 de la
- *  PR 5), y exigirle contacto sería afirmar la suerte del spawn en vez de la
- *  caja. Andar y sondear miden dos cosas distintas y las dos hacen falta. */
+ *  tres caen entre los volúmenes del plan del tile), y exigirle contacto sería
+ *  afirmar la suerte del spawn en vez de la caja. Andar y sondear miden dos cosas distintas y las dos hacen falta. */
 async function chocaConLaCajaQueDice(ctx, obj, etiqueta, cuando) {
   const antes = await vidaDelHud(ctx);
   const p = await empujarContra(ctx, obj.pos);
@@ -263,7 +264,7 @@ async function chocaConLaCajaQueDice(ctx, obj, etiqueta, cuando) {
  *  esto pregunta DÓNDE acaba.
  *
  *  Se afirma sobre el MÍNIMO de los cuatro: un lado puede seguir bloqueado más
- *  allá porque tiene otra cosa pegada (en este bench, el cofre a 1,8 m), pero
+ *  allá porque tiene otra cosa pegada (en este bench, el cofre al lado), pero
  *  ninguno puede acabar ANTES de lo que dice core ni los cuatro pueden pasarse. */
 async function paredMedida(ctx, obj) {
   return ctx.page.evaluate((e) => {
@@ -426,9 +427,10 @@ export default async function (ctx) {
   // …y luego, andando contra la forja, que es la medida fuerte: dónde está la
   // pared del spawn cuando quien la prueba es el motor de movimiento.
   await chocaConLaCajaQueDice(ctx, trio.forja, `«${FORJA}»`, "en vivo");
-  // Del cofre se DICE el hueco que deja con la forja, que no es un aserto sino
-  // el dato de §9.1: la separación del motor es fija (1,8 m) y no mira el
-  // tamaño de lo que separa.
+  // Del cofre se DICE el hueco que deja con la forja. Era el dato de §9.1 —la
+  // separación del turno era fija y no miraba el tamaño de lo que separaba— y
+  // desde #524 la mira; quien lo afirma es `test/reparto-de-spawns.test.ts`,
+  // aquí se registra lo que salió en el juego.
   const hueco = await huecoEntre(ctx, trio.cofre, trio.forja);
   ctx.log(
     `hueco entre «${COFRE}» y «${FORJA}»: centros a ${hueco.separacion.toFixed(2)} m, caras a ` +

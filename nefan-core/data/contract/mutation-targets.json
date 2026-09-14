@@ -829,6 +829,17 @@
       "porque": "El despacho de las consequences del motor: lo que la narrativa dice que PASA (spawn, inventario, diálogo, eventos) traducido a cambios en la partida. Entra con #340. Batería de un fichero, derivada del árbol de imports; el porqué de un módulo por fichero y no uno para los cinco está en `ai-client`. Suelo 59 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 60 supervivientes de 149 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número."
     },
     {
+      "id": "reparto-de-spawns",
+      "mutate": [
+        "src/narrative/reparto-de-spawns.ts"
+      ],
+      "tests": [
+        "test/reparto-de-spawns.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "DÓNDE cae cada cosa que el motor pone en el mismo turno (#524). Entra con la PR 3 de la tanda B, que retira el `SEPARACION_M = 1.8` que no miraba el tamaño de lo que separaba: con las cajas sólidas (#489) dos edificios de un turno se solapaban 2,2 m y un `npc` caía dentro de la caja del edificio. Módulo propio y no dentro de `consequence-handler` (break 59) porque es aritmética con casos y merece batería y medida propias: su test afirma una PROPIEDAD sobre todos los pares del turno —entre dos cualesquiera cabe el jugador— y no tres números sueltos. Batería de un fichero, derivada del árbol de imports. `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el suelo se pone a la medida de su primera corrida, como se hizo con `consequence-handler`."
+    },
+    {
       "id": "render-mode",
       "mutate": [
         "src/narrative/render-mode.ts"

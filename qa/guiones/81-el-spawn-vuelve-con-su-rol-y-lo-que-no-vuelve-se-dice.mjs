@@ -199,8 +199,8 @@ export default async function (ctx) {
           // por los cuatro lados.
           borde: cruz(e, s - 0.1),
           // Y un palmo MÁS ALLÁ: la caja tiene que acabarse por algún lado. No
-          // por los cuatro: los tres spawns del turno caen a 1,8 m unos de
-          // otros (`SEPARACION_M`) y la caja de 4×4 de la forja llega hasta
+          // por los cuatro: los tres spawns del turno caen cerca unos de
+          // otros y la caja de 4×4 de la forja llega hasta
           // casi el cofre, así que exigir las cuatro libres sería afirmar la
           // separación del motor, no el tamaño de esta caja.
           libre: cruz(e, d),

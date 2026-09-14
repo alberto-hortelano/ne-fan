@@ -237,7 +237,7 @@ export default async function (ctx) {
   }
 
   // ── 0 · Partida y los tres spawns que NO declaran nada (turno 3) ─────────
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "vector" });
   const partida = await comenzar(ctx);
   await ctx.waitFor(
     "el tabernero está en escena",
