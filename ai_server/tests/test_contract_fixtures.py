@@ -59,7 +59,7 @@ def contenido_en(esperado, obtenido, ruta: str):
             return f"{ruta}: esperaba una lista, obtuve {obtenido!r}"
         if len(esperado) != len(obtenido):
             return f"{ruta}: la lista tiene {len(obtenido)} elemento(s) y `sobrevive` declara {len(esperado)}"
-        for i, (e, o) in enumerate(zip(esperado, obtenido)):
+        for i, (e, o) in enumerate(zip(esperado, obtenido, strict=True)):
             fallo = contenido_en(e, o, f"{ruta}[{i}]")
             if fallo:
                 return fallo
