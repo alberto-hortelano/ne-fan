@@ -38,6 +38,26 @@ _MOTIVOS = STYLE_UPLOAD["motivos"]
 _SAFE_ID = re.compile(STYLE_UPLOAD["ref_id_pattern"])
 
 
+def _precio_del_pack(missing: list[dict]) -> dict:
+    """Los dos campos de precio del dry-run, cotizados por QUIEN LOS COBRA
+    (`style_pack_builder.cotizar_refs`, el mismo mapa carpeta→modelo que usa
+    `generate_missing`). Antes esto multiplicaba TODAS las refs por el precio
+    del modelo de personajes —el más caro— y el panel de «Aplicar estilo» lo
+    presentaba como cifra exacta: ×1,32 de más sobre un pack de prueba.
+
+    `cost_per_image_usd` NO es el precio medio de este pack: es el del modelo
+    de PERSONAJES, y sigue aquí porque el cliente lo usa como suelo del coste
+    de un skin cuando el catálogo de sprite-forge no contesta."""
+    from meshy_client import MeshyImageToImage
+    from style_pack_builder import cotizar_refs
+
+    ai_model = deps.config["sprite_skin_model"] if deps.config else "gpt-image-2"
+    return {
+        "cost_per_image_usd": MeshyImageToImage.cost_usd(ai_model),
+        "estimated_cost_usd": cotizar_refs(missing, ai_model),
+    }
+
+
 class StyleUploadImage(BaseModel):
     """Una imagen del pack: carpeta + descripción libre (+ id opcional). La
     CARPETA es el rol del contenido dentro del pack, no una vista de mundo (el
@@ -300,15 +320,12 @@ async def styles_upload(body: StyleUploadRequest):
     if first:
         (pack_dir / "cover.jpg").write_bytes((pack_dir / str(first["file"])).read_bytes())
 
-    from meshy_client import MeshyImageToImage
     missing = missing_refs(styles_dir, style_id)
-    per_image = MeshyImageToImage.cost_usd(deps.config["sprite_skin_model"]) if deps.config else 0.18
     return {
         "style_id": style_id,
         "uploaded": uploaded,
         "missing": missing,
-        "cost_per_image_usd": per_image,
-        "estimated_cost_usd": round(len(missing) * per_image, 2),
+        **_precio_del_pack(missing),
     }
 
 
@@ -328,14 +345,11 @@ async def styles_missing(style_id: str):
     if not (styles_dir / style_id / "style.json").exists():
         raise HTTPException(status_code=404, detail=f"style not found: {style_id}")
 
-    from meshy_client import MeshyImageToImage
     missing = missing_refs(styles_dir, style_id)
-    per_image = MeshyImageToImage.cost_usd(deps.config["sprite_skin_model"]) if deps.config else 0.18
     return {
         "style_id": style_id,
         "missing": missing,
-        "cost_per_image_usd": per_image,
-        "estimated_cost_usd": round(len(missing) * per_image, 2),
+        **_precio_del_pack(missing),
     }
 
 

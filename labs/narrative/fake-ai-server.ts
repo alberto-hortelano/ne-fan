@@ -406,7 +406,10 @@ const server = http.createServer((req, res) => {
     return send(200, {
       style_id: ruta.split("/")[2],
       missing: [],
-      cost_per_image_usd: 0.18,
+      // ATREZO, como el resto de precios de este motor: no es la tarifa de
+      // nadie. Era 0.18 — justo el fallback inventado que el dry-run del pack
+      // usaba cuando no había config, y que se retiró el 2026-09-14.
+      cost_per_image_usd: 0.02,
       estimated_cost_usd: 0,
     } satisfies StylesMissingResponse);
   }
@@ -754,8 +757,10 @@ const server = http.createServer((req, res) => {
       }
       if (req.method === "GET" && ruta === "/sprite_catalog") {
         // El catálogo del servicio de sprites, tal como lo reexpone remote-gen.
-        // Sin esta ruta el cliente caería a su cota baja de coste y el bench
-        // estaría probando el camino de respaldo para siempre en vez del bueno.
+        // Sin esta ruta el cliente NO puede costear los skins y los enseña como
+        // «coste no disponible» (desde el 2026-09-14 no hay cota baja a la que
+        // caer: ese suelo se fue con `SKIN_CALLS_FALLBACK`), así que el bench
+        // estaría midiendo esa pantalla y no la buena.
         // Los perfiles son los del set que usa el juego: idle 8 keyframes (8
         // llamadas), walk/run 4 (4 lotes de 2 direcciones).
         const perfiles = { idle: [8, 2.2, 8], walk: [4, 3.6, 4], run: [4, 6.0, 4] };

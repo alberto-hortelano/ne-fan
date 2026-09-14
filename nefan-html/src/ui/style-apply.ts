@@ -152,15 +152,14 @@ export class StyleApplyController {
     const scenes = Object.entries(snapshot.scenes);
     const notes: string[] = [];
 
-    // ── Pack del estilo (dry-run exacto del server) ──
+    // ── Pack del estilo (dry-run del server) ──
     const missRes = await fetch(`${this.urls.remote}/styles/${encodeURIComponent(styleId)}/missing`);
     if (!missRes.ok) throw new Error(`/styles/${styleId}/missing HTTP ${missRes.status}`);
     const pack = (await missRes.json()) as StylesMissingResponse;
 
     // ── Cuánto cuesta vestir un personaje: se PREGUNTA, no se estima ──
-    // El catálogo lo publica sprite-forge y remote-gen lo reexpone. Antes esta
-    // cuenta estaba copiada a mano aquí, y es la que se le enseña al usuario
-    // justo antes de gastar.
+    // El catálogo lo publica sprite-forge y remote-gen lo reexpone; esta cuenta
+    // estuvo copiada a mano aquí, y es la que se lee justo antes de gastar.
     let catalog: SpriteCatalog | null = null;
     try {
       const catRes = await fetch(`${this.urls.remote}/sprite_catalog`);
@@ -181,9 +180,8 @@ export class StyleApplyController {
       notes.push(`El servicio de sprites no puede vestir personajes: ${catalog.skin.reason}.`);
     }
     // Sin catálogo NO HAY PRECIO, y punto. Aquí vivía un suelo de 4 llamadas
-    // por personaje (frente a ~17 reales): eso no es una cota superior sino una
-    // cifra por DEBAJO de la factura, o sea la mentira que esta pantalla no
-    // puede contar.
+    // por personaje (frente a ~17 reales): no es una cota superior sino una
+    // cifra por DEBAJO de la factura — la mentira que esta pantalla no cuenta.
     let callsPerSkin: number | null = null;
     let porqueSinPrecio = "";
     if (!catalog) {
@@ -291,13 +289,13 @@ export class StyleApplyController {
     }
     if (skins.length === 0) notes.push("El mundo generado no declara personajes con skin.");
 
-    // Los skins son el único bloque que NO puede ser exacto: remote-gen no
-    // publica dry-run de skins (`SkinSpriteSheetRequest` es `extra="forbid"`),
-    // así que se cotiza el roster ENTERO. Es una cota SUPERIOR, y se dice.
+    // El único bloque que NO puede ser exacto: remote-gen no publica dry-run
+    // de skins (`SkinSpriteSheetRequest` es `extra="forbid"`), así que se
+    // cotiza el roster ENTERO. Es una cota SUPERIOR, y se dice.
     if (callsPerSkin !== null && skins.length > 0) {
       notes.push(
-        "El coste de los skins es una COTA SUPERIOR: sin dry-run de skins se cotiza " +
-          "el roster entero, y lo que ya esté pintado no se vuelve a pagar.",
+        "Los skins: como mucho pagarás eso. Se cuentan todos los personajes del " +
+          "mundo, y los que ya estén pintados no se vuelven a pagar.",
       );
     }
     const blocks: StyleApplyBlock[] = [
@@ -305,7 +303,9 @@ export class StyleApplyController {
         id: "pack",
         label: `Referencias del estilo (${pack.missing.length} categorías)`,
         missing: pack.missing.length,
-        // Dry-run del propio servidor: las refs que faltan, una imagen cada una.
+        // Dry-run del servidor, cotizado por CARPETA con el mismo mapa
+        // carpeta→modelo que las va a pintar (antes las multiplicaba todas por
+        // el modelo más caro y se enseñaba igual de exacto: ×1,32 de más).
         precio: { clase: "exacto", usd: pack.estimated_cost_usd },
         selected: pack.missing.length > 0,
       },

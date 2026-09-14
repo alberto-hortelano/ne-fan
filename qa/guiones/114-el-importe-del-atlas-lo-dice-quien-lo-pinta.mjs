@@ -34,6 +34,10 @@
  *      tres anims, así que en el bench los skins salen sin precio—, y se
  *      construye sirviendo el catálogo que sí lo publica, como el servicio de
  *      verdad. Sin esto, «hasta» sería una palabra que ningún guion ve.
+ *   4. Y las TRES clases a la vez, que es el estado de un jugador con un estilo
+ *      subido a medias: un bloque exacto, uno cota y uno sin precio. La mezcla
+ *      se lee «hasta $X + ?» — el «hasta» del que no es exacto y el «+ ?» del
+ *      que no tiene precio, sin que uno se coma al otro (hallazgo H9 del QA).
  *
  *  LO QUE NO MIDE, dicho para que nadie lo cuente de más: que la cotización del
  *  servidor sea la factura. Eso no se puede afirmar aquí sin gastar, y su sitio
@@ -102,7 +106,38 @@ export default async function (ctx) {
    *  servidor que no cotiza, caso (2). `catalogoQueCostea`: el catálogo de
    *  sprites publica el plan de las tres anims, con lo que los skins pasan a
    *  tener precio y son la COTA del caso (3). */
-  const plan = { sinCotizar: false, catalogoQueCostea: false };
+  const plan = { sinCotizar: false, catalogoQueCostea: false, packIncompleto: false };
+
+  // Un estilo SUBIDO y no completado: su pack declara refs sin imagen, así que
+  // el bloque «Referencias del estilo» tiene precio en vez de estar en caché.
+  // Es un flujo soportado del juego (/styles/upload → confirmar → /complete) y
+  // el motor falso no lo sirve, porque sus packs están completos.
+  await ctx.page.route("**/styles/*/missing", async (route) => {
+    const res = await route.fetch();
+    const texto = await res.text();
+    if (!plan.packIncompleto) {
+      await route.fulfill({ response: res, body: texto });
+      return;
+    }
+    let cuerpo;
+    try {
+      cuerpo = JSON.parse(texto);
+    } catch {
+      await route.fulfill({ response: res, body: texto });
+      return;
+    }
+    cuerpo.missing = [{ id: "fachada", folder: "faces", description: "una fachada de piedra" }];
+    // Cifra de ATREZO, y a propósito no una tarifa real: quien cotiza el pack
+    // es `style_pack_builder.precio_de_ref` y aquí solo hace falta un número
+    // que se lea en pantalla. Escribir $0.17 haría saltar —con razón— la regla
+    // `el-precio-lo-dice-quien-empaqueta`, que vigila también `qa/**`.
+    cuerpo.estimated_cost_usd = 0.11;
+    await route.fulfill({
+      response: res,
+      contentType: "application/json",
+      body: JSON.stringify(cuerpo),
+    });
+  });
 
   await ctx.page.route("**/sprite_catalog", async (route) => {
     const res = await route.fetch();
@@ -297,6 +332,45 @@ export default async function (ctx) {
     );
   }
   await ctx.shot("importe-con-una-cota-encendida");
+
+  // ── 4 · las TRES clases a la vez: exacto + cota + desconocido ────────────
+  await ctx.page.click("#ts-style-cancel");
+  plan.sinCotizar = true;       // el atlas se queda sin precio
+  plan.packIncompleto = true;   // el pack tiene uno exacto
+  plan.catalogoQueCostea = true; // y los skins, una cota
+  await ctx.page.click("#ts-apply-style");
+  await ctx.page.waitForSelector("#ts-style-run", { timeout: 60_000 });
+  const mezcla = await ctx.page.evaluate(() => {
+    const filas = [...document.querySelectorAll("#ts-style-plan label")].map((l) =>
+      (l.textContent ?? "").replace(/\s+/g, " ").trim(),
+    );
+    return {
+      filas,
+      exactos: filas.filter((t) => /—\s*\$\d/.test(t)).length,
+      cotas: filas.filter((t) => /—\s*hasta\s+\$/.test(t)).length,
+      sinPrecio: filas.filter((t) => /coste no disponible/i.test(t)).length,
+      total: (document.getElementById("ts-style-total")?.textContent ?? "").trim(),
+      boton: (document.getElementById("ts-style-run")?.textContent ?? "").trim(),
+    };
+  });
+  ctx.log(`mezcla: ${JSON.stringify(mezcla.filas)}`);
+  ctx.log(`total «${mezcla.total}» · botón «${mezcla.boton}»`);
+  ctx.expect(
+    "PRECONDICIÓN — el plan trae una fila de cada clase: exacta, cota y sin precio",
+    mezcla.exactos >= 1 && mezcla.cotas >= 1 && mezcla.sinPrecio >= 1,
+    JSON.stringify({ exactos: mezcla.exactos, cotas: mezcla.cotas, sinPrecio: mezcla.sinPrecio }),
+  );
+  ctx.expect(
+    "con las tres clases encendidas el total dice «hasta $X + ?»: ni el «hasta» ni el «+ ?» se comen al otro",
+    /hasta\s+\$\d/.test(mezcla.total) && /\+\s*\?/.test(mezcla.total),
+    `«${mezcla.total}»`,
+  );
+  ctx.expect(
+    "…y el botón que dispara el gasto promete lo mismo",
+    /hasta\s+\$\d/.test(mezcla.boton) && /\+\s*\?/.test(mezcla.boton),
+    `«${mezcla.boton}»`,
+  );
+  await ctx.shot("importe-con-las-tres-clases");
 
   // ── Salir por «Cancelar»: ni un céntimo ──────────────────────────────────
   await ctx.page.click("#ts-style-cancel");

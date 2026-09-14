@@ -168,6 +168,30 @@ def missing_refs(styles_dir: Path, style_id: str) -> list[dict]:
     return out
 
 
+def precio_de_ref(folder: str, ai_model: str) -> float:
+    """Lo que cuesta pintar UNA ref de esa carpeta. EL PRECIO LO DICE QUIEN
+    EMPAQUETA: es el mismo mapa carpeta→modelo con el que `generate_missing`
+    la pinta y la cobra, y por eso vive aquí y no en el router.
+
+    Hasta el 2026-09-14 el dry-run (`/styles/{id}/missing` y `/styles/upload`)
+    cotizaba TODAS las refs al precio del modelo de personajes, que es el más
+    caro: medido sobre un pack de 1 surface + 2 faces + 1 character, $0.96
+    cotizados contra $0.73 cobrados (×1,32), y el panel de «Aplicar estilo» lo
+    presentaba como precio exacto. Es el mismo defecto que el del atlas, una
+    fila más arriba de la misma pantalla."""
+    if folder in ("surfaces", "faces"):
+        modelo = SHEET_AI_MODEL if folder == "surfaces" else FACE_AI_MODEL
+        return FalImageToImage.cost_usd(modelo)
+    return MeshyImageToImage.cost_usd(ai_model)
+
+
+def cotizar_refs(missing: list[dict], ai_model: str) -> float:
+    """Lo que costará completar esas refs, SIN pintar ni gastar nada. Es la
+    cifra que el jugador ve antes de aceptar, y sale de la misma función que
+    cobra `generate_missing` (candado: `ai_server/tests/test_pack_cotizacion.py`)."""
+    return round(sum(precio_de_ref(str(m.get("folder", "")), ai_model) for m in missing), 2)
+
+
 async def generate_missing(
     styles_dir: Path,
     style_id: str,
@@ -257,17 +281,17 @@ async def generate_missing(
             fal_model = SHEET_AI_MODEL if folder == "surfaces" else FACE_AI_MODEL
             log(f"StylePackBuilder: {style_id}/{ref_id} ← {len(refs)} refs, model={fal_model} (fal)")
             png, _task = await fal_api.run_one(prompt, refs, ai_model=fal_model, aspect=aspect)
-            per_image = FalImageToImage.COST_USD.get(fal_model, 0.17)
-            cost += per_image
-            SPEND.add(per_image, f"style {style_id}/{ref_id}", "remote-gen")
         else:
             if meshy_api is None:
                 meshy_api = MeshyImageToImage()
             log(f"StylePackBuilder: {style_id}/{ref_id} ← {len(refs)} refs, model={ai_model}")
             png, _task = await meshy_api.run_one(ai_model, prompt, refs)
-            per_image = MeshyImageToImage.cost_usd(ai_model)
-            cost += per_image
-            SPEND.add(per_image, f"style {style_id}/{ref_id}", "remote-gen")
+        # El precio de la ref lo da `precio_de_ref`, la MISMA función que
+        # cotiza el dry-run: dos ramas de precio aquí y una fórmula allí es
+        # como el presupuesto se separó de la factura.
+        per_image = precio_de_ref(folder, ai_model)
+        cost += per_image
+        SPEND.add(per_image, f"style {style_id}/{ref_id}", "remote-gen")
         out_path = dest_dir / str(entry["file"])
         out_path.parent.mkdir(parents=True, exist_ok=True)
         img = Image.open(io.BytesIO(png)).convert("RGB")

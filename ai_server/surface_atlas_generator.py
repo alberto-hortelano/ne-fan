@@ -402,7 +402,7 @@ class SurfaceAtlasGenerator:
 
     def cotizar_paginas(self, pages: list[list[dict]]) -> dict:
         """→ {"pages": n, "cost_usd": x} de un reparto YA empaquetado."""
-        cost = sum(FalImageToImage.COST_USD.get(self._page_model(p), 0.17) for p in pages)
+        cost = sum(FalImageToImage.cost_usd(self._page_model(p)) for p in pages)
         return {"pages": len(pages), "cost_usd": round(cost, 2)}
 
     def cotizar(self, missing_cells: list[dict]) -> dict:
@@ -428,7 +428,7 @@ class SurfaceAtlasGenerator:
 
         blobs, cached = DEV_API_CACHE.through_sync("fal_i2i_atlas", _call, note=prompt)
         if not cached:
-            SPEND.add(FalImageToImage.COST_USD.get(ai_model, 0.17), prompt[:60], "remote-gen")
+            SPEND.add(FalImageToImage.cost_usd(ai_model), prompt[:60], "remote-gen")
         return blobs[0]
 
     def generate(

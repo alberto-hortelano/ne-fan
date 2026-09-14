@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image  # noqa: E402
 
+from meshy_client import FalImageToImage  # noqa: E402
 from surface_atlas_generator import (  # noqa: E402
     PAGE_PX,
     SurfaceAtlasGenerator,
@@ -112,7 +113,22 @@ class ParidadDelGeneradorTest(unittest.TestCase):
         gen = GeneradorSinRed()
         presupuesto = gen.cotizar(CELDAS)
         self.assertEqual(presupuesto["pages"], 4, "cada grupo abre página propia")
-        self.assertAlmostEqual(presupuesto["cost_usd"], 0.15 + 0.17 * 3, places=2)
+        # Las tarifas salen de la tabla de producción y NO se escriben aquí: un
+        # `0.15 + 0.17 * 3` literal sería un candado invertido — no se pondría
+        # rojo cuando la tabla envejeciera, sino el día que alguien la corrige.
+        # Lo que se canda es la ASIGNACIÓN modelo→página, no el precio.
+        self.assertAlmostEqual(
+            presupuesto["cost_usd"],
+            FalImageToImage.COST_USD["nano-banana-pro"]
+            + 3 * FalImageToImage.COST_USD["gpt-image-2"],
+            places=2,
+        )
+        self.assertNotAlmostEqual(
+            presupuesto["cost_usd"],
+            4 * FalImageToImage.COST_USD["nano-banana-pro"],
+            places=2,
+            msg="si los dos modelos costaran igual, este test dejaría de tener sujeto",
+        )
 
     def test_sin_celdas_no_hay_presupuesto(self):
         self.assertEqual(
@@ -207,6 +223,82 @@ class ParidadDelEndpointTest(unittest.TestCase):
         self.assertEqual(otra["missing"], 0)
         self.assertEqual(otra["quoted_pages"], 0)
         self.assertEqual(otra["quoted_cost_usd"], 0.0)
+
+
+class CacheCalienteYLotesTest(ParidadDelEndpointTest):
+    """Los estados que el camino frío no toca, y que son los del jugador real.
+
+    Suben del scratchpad del QA de la PR (`qa-3.md`, apéndice A): la caché
+    CALIENTE PARCIAL —lo normal en cuanto alguien ha pagado una vez— y el
+    troceado en lotes de 64, que es el camino que más dinero mueve y que **no
+    ejerce ningún guion de la batería**, porque ningún mundo del banco llega a
+    64 celdas (`alta_fantasia` pre-generado da 23).
+    """
+
+    def test_caliente_parcial_cotiza_y_cobra_lo_mismo(self):
+        # Se pintan 6 de 15 y luego se cotiza y se paga el mundo entero: el
+        # reparto de las 9 que faltan NO es el de las 15, así que una cuenta
+        # hecha sobre el total (o sobre el layout completo) diría otra cosa.
+        self._pedir(CELDAS[:6])
+        cotizado = self._pedir(CELDAS, resolve_only=True)
+        self.assertEqual(cotizado["missing"], len(CELDAS) - 6)
+        cobrado = self._pedir(CELDAS)
+        self.assertEqual(cobrado["cost_usd"], cotizado["quoted_cost_usd"])
+        self.assertEqual(cobrado["pages_painted"], cotizado["quoted_pages"])
+        self.assertLess(
+            cotizado["quoted_pages"],
+            len(pack_missing([dict(c) for c in CELDAS])),
+            "en caliente hacen falta MENOS páginas que en frío: si no, el caso no tiene sujeto",
+        )
+
+    def test_dos_lotes_como_los_parte_el_cliente(self):
+        # El cliente trocea a 64 por petición (`MAX_CELLS_PER_REQUEST`) y suma
+        # lo que le cotiza cada lote. Aquí se comprueba la otra mitad: que cada
+        # lote cobre lo que cotizó, también cuando son dos.
+        muchas = [
+            celda(f"tile_{i}") if i % 3 else celda(f"uni_{i}", kind="unique", ref=f"r{i % 4}")
+            for i in range(100)
+        ]
+        total_cot = total_cob = 0.0
+        paginas_cot = paginas_cob = 0
+        for i in range(0, len(muchas), 64):
+            lote = muchas[i : i + 64]
+            cot = self._pedir(lote, resolve_only=True)
+            cob = self._pedir(lote)
+            total_cot += cot["quoted_cost_usd"]
+            total_cob += cob["cost_usd"]
+            paginas_cot += cot["quoted_pages"]
+            paginas_cob += cob["pages_painted"]
+        self.assertEqual(round(total_cot, 2), round(total_cob, 2))
+        self.assertEqual(paginas_cot, paginas_cob)
+        self.assertGreater(paginas_cot, 0)
+
+    def test_entre_lotes_el_error_solo_puede_ir_a_favor_del_jugador(self):
+        # Hallazgo H5 del QA: dos celdas que el CLIENTE considera distintas
+        # (identidad `[en, mat, kind, hints, ref]`) pueden colapsar en la MISMA
+        # clave del servidor (`desc` + contexto, donde una ref muerta se
+        # normaliza a ""). En lotes distintos se cotizan dos veces y se cobra
+        # una. No se arregla aquí —el cliente tendría que derivar la clave de
+        # caché del servidor, que es justo lo que esta tanda le quitó— pero SÍ
+        # se canda la dirección: lo que se cobra nunca puede pasar de lo que se
+        # cotizó. Mentir por abajo es un defecto; por arriba es una factura.
+        gemelas = [
+            celda("gargola", kind="unique", ref="fantasma_a", w=1.0, h=1.0),
+            celda("gargola", kind="unique", ref="fantasma_b", w=1.0, h=1.0),
+        ]
+        # El orden importa y es el del cliente: `plan()` cotiza TODOS los lotes
+        # primero y `run()` los paga después. Intercalarlos escondería el caso,
+        # porque el segundo lote ya cotizaría contra la caché que llenó el
+        # primero.
+        cotizado = sum(self._pedir([u], resolve_only=True)["quoted_cost_usd"] for u in gemelas)
+        cobrado = sum(self._pedir([u])["cost_usd"] for u in gemelas)
+        self.assertLessEqual(
+            round(cobrado, 2),
+            round(cotizado, 2),
+            "el cobro NUNCA puede pasar de lo cotizado, ni troceando",
+        )
+        self.assertLess(round(cobrado, 2), round(cotizado, 2),
+                        "si dejaran de colapsar, este caso perdería su sujeto (ver H5)")
 
 
 class PacksFalsos:
