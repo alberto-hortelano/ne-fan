@@ -313,11 +313,20 @@ export function createGameClient(
         alJugador: AVISO_PARTIDA,
         detalleAlJugador: DETALLE_SIN_PARTIDA,
       });
+      // El oyente se SUELTA al rendirse, y no es higiene: tras el timeout esta
+      // promesa ya está rechazada, así que el socket que abriera DESPUÉS
+      // construía un `BridgeGameClient` que no iba a recibir nadie —suscrito a
+      // `state_update` para siempre, escribiendo en un store que no lee ni
+      // pinta nadie— y encima llamaba a un `resolve` sin efecto. Con la oferta
+      // del bridge que llega tarde (#478) ese momento dejó de ser hipotético:
+      // es el caso normal, y el cliente bueno lo construye la segunda vuelta.
+      bridge.off("connected", alConectar);
       reject(new Error(msg));
     }, timeoutMs);
-    bridge.on("connected", () => {
+    function alConectar(): void {
       clearTimeout(timer);
       resolve(new BridgeGameClient(bridge, store));
-    });
+    }
+    bridge.on("connected", alConectar);
   });
 }

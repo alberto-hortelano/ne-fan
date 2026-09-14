@@ -5,7 +5,11 @@
  *  aquí porque aquí están los dos destinos —el título y el muro— y es el único
  *  sitio que puede decidir entre ellos. */
 
-import type { SalidaDelOverlay } from "@nefan-core/src/protocol/status-rotulo.js";
+import {
+  botonesDelMuro,
+  type SalidaDeFallo,
+  type SalidaDelOverlay,
+} from "@nefan-core/src/protocol/status-rotulo.js";
 import { errors } from "./error-log.js";
 import type { TitleScreen } from "./title-screen.js";
 import { elTituloManda } from "./titulo-manda.js";
@@ -36,7 +40,15 @@ export interface MuroDeCarga {
    *  defecto, cerrarlo y seguir con su partida; `volver-al-titulo` cuando
    *  detrás no hay partida ninguna y cerrar le dejaría sin nada que pulsar
    *  (#189). */
-  fallo(titulo: string, detalle: string, salida?: SalidaDelOverlay): void;
+  fallo(titulo: string, detalle: string, salida?: SalidaDeFallo): void;
+  /** El muro que OFRECE algo en vez de lamentar algo (#478): mismo overlay,
+   *  mismo peso en pantalla, y un botón «Reintentar» con «Cerrar» al lado.
+   *
+   *  La ACCIÓN es un parámetro y no un cableado aparte, y eso es la garantía:
+   *  un botón que ofrece entrar sin saber adónde lleva no se puede escribir.
+   *  Por eso `fallo()` no admite `"reintentar"` —su tipo lo excluye— y esta es
+   *  la única puerta de esa salida. */
+  ofrecer(titulo: string, detalle: string, accion: () => Promise<void>): void;
   visible(): boolean;
   /** El motivo del último muro que ofrecía volver al título, o `null`. Se lo
    *  lleva el título en la vuelta: quien pulsa «Volver al título» acaba de
@@ -57,6 +69,7 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
   const loaderElapsed = document.getElementById("narrative-loader-elapsed");
   const loaderDismiss = document.getElementById("narrative-loader-dismiss");
   const loaderBack = document.getElementById("narrative-loader-back");
+  const loaderRetry = document.getElementById("narrative-loader-retry");
 
   let loaderStartedAt = 0;
   let loaderTicker: ReturnType<typeof setInterval> | null = null;
@@ -73,11 +86,22 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
    *  | `fallo()` del motor/título (`null`) | nada                      | nada               | nada                          | lo sustituye                        |
    *  | `mostrar()` (espera, `null`)  | nada                            | nada               | nada                          | lo sustituye                        |
    *
-   *  Corolario: el bridge que LLEGA tras un bootstrap fallido por su ausencia
-   *  retira el muro —«sin conexión con la partida» dejó de ser cierto, y el
-   *  muro lo puso ese aviso—. Que el cliente siga siendo un visor hasta
-   *  recargar es otra decisión, y no vive aquí. Lo demuestra el guion 78. */
+   *  Corolario, y CAMBIÓ DE ESCENARIO el 2026-09-14 (#478): la fila «aviso» la
+   *  ejerce hoy la caída y vuelta del socket CON PARTIDA EN MARCHA —el aviso lo
+   *  puso el `onerror` del socket, `resuelto("bridge")` lo retira al reabrir—.
+   *  El caso que la estrenó, el bridge que llega tras un bootstrap fallido por
+   *  su ausencia, ya no pasa por aquí: al abrir el socket, `connected` pinta
+   *  ENCIMA la oferta de entrar (`ui/la-partida-llego-tarde.ts`), y pintar es
+   *  tomar la propiedad, así que el `resuelto` que llega detrás en microtarea
+   *  ya no tiene muro suyo que retirar. Quedarse en el visor hasta recargar era
+   *  la otra mitad de aquello y dejó de ser cierta: hay botón. El guion 78 mide
+   *  hoy la oferta; la fila «aviso» se quedó sin guion y eso es el #584. */
   let muroPuestoPorAviso: string | null = null;
+
+  /** Adónde lleva «Reintentar» en el muro que hay puesto, o `null` si el que
+   *  hay no ofrece nada. Lo pone `ofrecer()` justo antes de pintar y lo borra
+   *  `ocultar()` con el botón: la acción no sobrevive a su muro. */
+  let accionDeLaOferta: (() => Promise<void>) | null = null;
 
   /** UN MURO CON BOTÓN NECESITA CURSOR, Y SOLTARLO Y DEVOLVERLO SON LAS DOS
    *  MITADES DE UN ACTO (#503, misma disciplina que #311/#323).
@@ -141,6 +165,14 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     // Un muro de espera no es de ninguna fuente de aviso: la fila `mostrar()`
     // de la tabla de arriba, cumplida aquí y no solo escrita.
     muroPuestoPorAviso = null;
+    // Un muro de ESPERA no tiene botones. «Cerrar» lo esconde el CSS (solo sale
+    // con `.error`), pero los otros dos no llevan esa regla, así que se apagan
+    // aquí: sin esto, una espera que llegue detrás de un muro con botón lo
+    // heredaría, y con la oferta de #478 eso sería «Reintentar» encima de un
+    // «Iniciando partida…», llevando a un sitio que ya no es.
+    if (loaderBack) loaderBack.hidden = true;
+    if (loaderRetry) loaderRetry.hidden = true;
+    accionDeLaOferta = null;
     loaderEl.classList.remove("error");
     loaderEl.classList.add("visible");
     if (loaderTitle) loaderTitle.textContent = titulo;
@@ -165,7 +197,11 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     if (!loaderEl) return;
     loaderEl.classList.remove("visible", "error");
     if (loaderBack) loaderBack.hidden = true;
+    if (loaderRetry) loaderRetry.hidden = true;
     if (loaderDismiss) loaderDismiss.hidden = false;
+    // La oferta se va con su botón: un muro posterior no puede heredar un
+    // destino que ya no es el suyo.
+    accionDeLaOferta = null;
     // El muro se va y su motivo con él: quien lo lea después
     // (`volverAlTitulo`) tiene que leerlo ANTES de cerrarlo, no heredarlo de un
     // fallo viejo.
@@ -180,28 +216,36 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     ratonSoltadoPorElMuro = false;
   }
 
-  function fallo(titulo: string, detalle: string, salida: SalidaDelOverlay = "cerrar"): void {
+  /** El muro a pantalla completa que pide una decisión al jugador: un fallo
+   *  (`fallo`) o una oferta (`ofrecer`). Los dos se pintan igual y solo se
+   *  diferencian en los botones, que los decide core (`botonesDelMuro`). */
+  function pintarMuro(titulo: string, detalle: string, salida: SalidaDelOverlay): void {
     if (!loaderEl) return;
     // Quien pinta un muro es su dueño: si venía de un aviso, el suscriptor de
     // abajo vuelve a escribir la fuente justo después de llamar aquí. Este
     // reset es lo que impide que un `resuelto` de una causa ajena cierre un
-    // muro que no es suyo.
+    // muro que no es suyo. Y es lo que deja en pie la OFERTA de #478: cuando
+    // el socket abre, `bridge-client` llama `resuelto("bridge")` —que entrega
+    // en microtarea— y emite `connected`, que pinta la oferta en el mismo
+    // turno síncrono; para cuando la microtarea corre, el muro del aviso ya no
+    // es de nadie y no se retira una oferta que acaba de ponerse.
     muroPuestoPorAviso = null;
     loaderEl.classList.remove("error");
     loaderEl.classList.add("visible", "error");
     if (loaderTitle) loaderTitle.textContent = titulo;
     if (loaderDetail) loaderDetail.textContent = detalle;
-    const sinMundo = salida === "volver-al-titulo";
-    if (loaderBack) loaderBack.hidden = !sinMundo;
-    // Y sin mundo NO HAY ADÓNDE CERRAR: «Cerrar» dejaba al jugador en el mismo
-    // callejón de #189 que la salida de al lado venía a abrir —cielo vacío,
-    // cinco botones de ataque y recargar— y con el mismo peso visual, así que
-    // media pantalla pulsaba la que no era. Donde sí sigue estando es en los
-    // muros que tienen partida detrás (`salida: "cerrar"`), que son todos los
-    // demás — incluido el de «sin conexión con la partida», que es el que
-    // cierra `qa/fixtures-sin-bridge.mjs` para entrar al modo fixtures.
-    if (loaderDismiss) loaderDismiss.hidden = sinMundo;
-    motivoDelUltimoMuro = sinMundo ? `${titulo}. ${detalle}` : null;
+    // QUÉ BOTONES lleva no se deriva aquí: lo dice core con un `switch`
+    // exhaustivo sobre la salida. Aquí solo se aplican los tres `hidden`
+    // —incluido el de «Cerrar», que es el que cierra `qa/fixtures-sin-bridge.mjs`
+    // para entrar al modo fixtures—.
+    const botones = botonesDelMuro(salida);
+    if (loaderBack) loaderBack.hidden = !botones.volver;
+    if (loaderRetry) loaderRetry.hidden = !botones.reintentar;
+    if (loaderDismiss) loaderDismiss.hidden = !botones.cerrar;
+    // El motivo cuelga del BOTÓN que lo lee, no de la salida: quien lo
+    // recoge es `volverAlTitulo()`, y a esa función solo se llega desde
+    // «Volver al título». Atado así no pueden divergir.
+    motivoDelUltimoMuro = botones.volver ? `${titulo}. ${detalle}` : null;
     if (loaderTicker) {
       clearInterval(loaderTicker);
       loaderTicker = null;
@@ -217,6 +261,17 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     if (loaderElapsed) loaderElapsed.textContent = "";
   }
 
+  function fallo(titulo: string, detalle: string, salida: SalidaDeFallo = "cerrar"): void {
+    accionDeLaOferta = null;
+    pintarMuro(titulo, detalle, salida);
+  }
+
+  function ofrecer(titulo: string, detalle: string, accion: () => Promise<void>): void {
+    // La acción ANTES de pintar: el botón no llega a existir sin destino.
+    accionDeLaOferta = accion;
+    pintarMuro(titulo, detalle, "reintentar");
+  }
+
   // «Cerrar» es volver al mundo: el muro se va Y el ratón vuelve si lo soltamos
   // nosotros (#503). El orden importa poco, pero `devolver` lee el flag que
   // `ocultar` limpia, así que va ANTES.
@@ -228,6 +283,26 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
   }
   if (loaderBack) {
     loaderBack.onclick = () => paso(deps.volverAlTitulo(), "session", "volver a la pantalla de título");
+  }
+  // «Reintentar» (#478) es aceptar la oferta: el muro se va —la oferta no se
+  // vuelve a ver— y la acción que vino con ella hace el resto. Se oculta AQUÍ
+  // y no en la acción, al revés que «Volver al título»: aquel tiene que leer
+  // `motivoDelUltimoMuro()` antes de que `ocultar()` lo borre, y una oferta no
+  // tiene motivo que llevarse.
+  if (loaderRetry) {
+    loaderRetry.onclick = () => {
+      const accion = accionDeLaOferta;
+      if (!accion) {
+        // Inalcanzable por construcción —`ofrecer()` es lo único que pinta
+        // este botón y arma la acción antes de pintarlo—, pero un botón mudo
+        // es exactamente el callejón sin salida que #478 viene a cerrar: se
+        // dice en vez de no hacer nada.
+        errors.push("session", "«Reintentar» pulsado sin oferta armada: el muro pintó un botón sin destino");
+        return;
+      }
+      ocultar();
+      paso(accion(), "session", "entrar a la partida que llegó tarde");
+    };
   }
 
   // EL ÚNICO PINTOR DE AVISOS (#306). Los fallos que saltan SOLOS durante el
@@ -272,6 +347,7 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     progreso,
     ocultar,
     fallo,
+    ofrecer,
     visible: () => loaderEl?.classList.contains("visible") ?? false,
     motivoDelUltimoMuro: () => motivoDelUltimoMuro,
     alCambiarElTitulo(visible) {

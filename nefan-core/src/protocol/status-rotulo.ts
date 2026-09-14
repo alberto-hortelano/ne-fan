@@ -43,7 +43,7 @@ export interface ContextoDeRotulo {
   overlayAbierto: boolean;
 }
 
-/** Qué puede HACER el jugador con el overlay de error.
+/** Qué puede HACER el jugador con el overlay, y por tanto QUÉ BOTONES lleva.
  *
  *  `cerrar` es la salida normal: detrás hay una partida en marcha a la que
  *  volver. `volver-al-titulo` es la del mundo vacío — cerrar ahí deja al
@@ -52,8 +52,72 @@ export interface ContextoDeRotulo {
  *  literalmente la frase de #189, y pasa con el fallo MÁS probable de los
  *  primeros segundos: `start_session` contesta `ok:true` antes de generar el
  *  tile, así que un motor mudo no rechaza y no pasa por el catch del bucle del
- *  título. */
-export type SalidaDelOverlay = "cerrar" | "volver-al-titulo";
+ *  título.
+ *
+ *  `reintentar` (#478) es la tercera, y no la produce ningún fallo: es la
+ *  OFERTA del bridge que llega tarde. Quien arrancó sin servidor de partida se
+ *  quedaba en el visor de fixtures con el socket ya abierto y sin un solo
+ *  botón que le devolviera al juego —«Volver al título» está oculto en ese
+ *  muro, porque el aviso lo pinta con `cerrar`—, así que la única salida era
+ *  recargar la página. Con ella el muro deja de lamentar y ofrece. */
+export type SalidaDelOverlay = "cerrar" | "volver-al-titulo" | "reintentar";
+
+/** Las salidas que puede pedir un FALLO, que no son todas.
+ *
+ *  `reintentar` queda fuera A PROPÓSITO y es una garantía de tipo, no una
+ *  convención: el botón que ofrece entrar necesita SABER adónde lleva, y la
+ *  acción viaja con la oferta (`MuroDeCarga.ofrecer`) en vez de cablearse
+ *  aparte. Un `fallo(...)` que pintara «Reintentar» sin destino no compila, y
+ *  `rotuloDeStatus` —que rotula fallos— no puede devolverla ni por accidente. */
+export type SalidaDeFallo = Exclude<SalidaDelOverlay, "reintentar">;
+
+/** Qué botones lleva puestos el overlay. */
+export interface BotonesDelMuro {
+  /** «Volver al título». */
+  volver: boolean;
+  /** «Cerrar». */
+  cerrar: boolean;
+  /** «Reintentar». */
+  reintentar: boolean;
+}
+
+/** LA TABLA DE BOTONES DEL MURO, y vive aquí por lo mismo que el rótulo: es
+ *  una decisión sobre lo que el jugador puede hacer, no pintura, y aquí se
+ *  puede probar sin navegador y la mide la mutación. El cliente solo aplica
+ *  tres `hidden`.
+ *
+ *  Era una pareja de booleanos derivados a mano en `ui/muro-de-carga.ts`
+ *  (`const sinMundo = salida === "volver-al-titulo"`, y el otro botón por su
+ *  negación), que con dos salidas colaba y con tres deja de colar: «Reintentar»
+ *  va CON «Cerrar», así que ya no hay ninguna negación que valga. Con el
+ *  `switch` exhaustivo, una salida nueva sin su fila no compila. */
+export function botonesDelMuro(salida: SalidaDelOverlay): BotonesDelMuro {
+  switch (salida) {
+    case "cerrar":
+      // Detrás hay partida: cerrar es seguir jugando.
+      return { volver: false, cerrar: true, reintentar: false };
+
+    case "volver-al-titulo":
+      // Y sin mundo NO HAY ADÓNDE CERRAR: «Cerrar» dejaba al jugador en el
+      // mismo callejón de #189 que la salida de al lado venía a abrir —cielo
+      // vacío, cinco botones de ataque y recargar— y con el mismo peso visual,
+      // así que media pantalla pulsaba la que no era.
+      return { volver: true, cerrar: false, reintentar: false };
+
+    case "reintentar":
+      // Aquí sí hay adónde cerrar —el visor de fixtures que el jugador estaba
+      // mirando—, así que «Cerrar» se queda: la oferta se puede declinar. Lo
+      // que NO se ofrece es «Volver al título», porque a ese título se va
+      // justamente pulsando «Reintentar»: dos botones al mismo sitio, uno de
+      // ellos sin partida detrás, son el reparto de pulsaciones de #189 otra
+      // vez.
+      return { volver: false, cerrar: true, reintentar: true };
+  }
+
+  // Exhaustividad: una salida nueva sin política de botones no compila.
+  const nunca: never = salida;
+  throw new Error(`botonesDelMuro no sabe qué botones lleva la salida "${String(nunca)}"`);
+}
 
 /** Unión discriminada y no un objeto con `titulo` siempre: un fallo que va a
  *  la línea de mensajes NO TIENE título, y darle uno era dato muerto. Lo dijo
@@ -62,7 +126,7 @@ export type SalidaDelOverlay = "cerrar" | "volver-al-titulo";
  *  algo que no se pinta: es que el estado no se pueda escribir. */
 export type Rotulo =
   /** El error tapa la pantalla y el jugador tiene que descartarlo. */
-  | { destino: "overlay"; titulo: string; detalle: string; salida: SalidaDelOverlay }
+  | { destino: "overlay"; titulo: string; detalle: string; salida: SalidaDeFallo }
   /** Fallo de segundo plano: a la línea de mensajes del juego, sin título. */
   | { destino: "log"; detalle: string };
 
@@ -117,7 +181,7 @@ export function rotuloDeStatus(
   // tiene que ofrecer la única salida que queda, el título. Se decide aquí y
   // no en el cliente porque es la misma decisión que el rótulo, y aquí se
   // puede probar.
-  const salida: SalidaDelOverlay = ctx.mundoVacio ? "volver-al-titulo" : "cerrar";
+  const salida: SalidaDeFallo = ctx.mundoVacio ? "volver-al-titulo" : "cerrar";
 
   // UN `switch` EXHAUSTIVO Y NO UN `return` AL FINAL, y esa es toda la
   // diferencia de #352. Hasta el 2026-09-01 aquí abajo había un catch-all que
