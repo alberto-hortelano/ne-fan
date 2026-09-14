@@ -50,6 +50,11 @@ const SCHEMA = join(CORE, "src/contract/model-io/scene-schema.ts");
 const PROMPT = join(CORE, "data/contract/prompts/ui_systems.md");
 const SNAP = join(CORE, "src/games/world-snapshot.ts");
 const PY = join(raiz, "ai_server/narrative_schemas.py");
+// Los dos del candado de SUPERVIVENCIA (#532): el tool que el modelo ve y una
+// fixture con su `sobrevive`. Se tocan igual que los fuentes — escribir, exigir
+// el rojo, restaurar— y entran en la comprobación byte a byte del final.
+const TOOL = join(CORE, "data/contract/tools/narrative_react.json");
+const FIXTURE_CARRO = join(CORE, "data/contract/fixtures/reaction/valid/spawn_object_footprint.json");
 
 /** [nombre, fichero, batería, [ [buscar, poner], … ] ]
  *
@@ -195,6 +200,34 @@ const INVARIANTES = [
       "        desconocidas = []\n        if desconocidas:\n",
     ]],
   ],
+  // ── #532 · el campo que SOBREVIVE, y su totalidad ────────────────────────
+  // La clase de fallo que estos tres cierran es la de #397 y #532: un campo
+  // declarado en el zod, ofrecido al modelo en el tool y MUERTO en el saneador
+  // Python. Las fixtures comparaban accept/reject, así que salía verde en las
+  // dos suites y no llegaba nunca. Vivían en prosa en el informe de la PR 1
+  // hasta que QA los pidió aquí (H-6): un rojo que solo existe si alguien lo
+  // reproduce a mano deja de existir en dos tandas.
+  [
+    "python · el saneador vuelve a PODAR el `footprint` declarado (válido de contrato, muerto de datos)",
+    PY, "py:ai_server.tests.test_contract_fixtures",
+    [[
+      "        if valor is not _AUSENTE:\n            entry[campo] = valor",
+      '        if campo == "footprint":\n            valor = _AUSENTE\n        if valor is not _AUSENTE:\n            entry[campo] = valor',
+    ]],
+  ],
+  [
+    "totalidad · una fixture pierde el `sobrevive` de un campo y nadie prueba que llegue vivo",
+    FIXTURE_CARRO, "ts:test/contract-fixtures.test.ts",
+    [['        "character_type": "cart"\n      }\n    ]\n  },\n  "payload"', '        "name": "Carro de heno"\n      }\n    ]\n  },\n  "payload"']],
+  ],
+  [
+    "totalidad · el tool ofrece al modelo un campo que NINGUNA fixture prueba (el `tono` de la QA de la PR 1)",
+    TOOL, "ts:test/contract-fixtures.test.ts",
+    [[
+      '                "choices": {\n                  "type": "array",',
+      '                "tono": {\n                  "type": "string"\n                },\n                "choices": {\n                  "type": "array",',
+    ]],
+  ],
 ];
 
 function corre(bateria) {
@@ -221,7 +254,7 @@ function corre(bateria) {
 const filtro = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const casa = (n) => filtro.length === 0 || filtro.some((f) => n.toLowerCase().includes(f.toLowerCase()));
 
-const FICHEROS = [SCHEMA, PROMPT, SNAP, PY];
+const FICHEROS = [SCHEMA, PROMPT, SNAP, PY, TOOL, FIXTURE_CARRO];
 
 // Se niega a arrancar sobre un árbol sucio: si el fichero ya trae cambios, la
 // restauración de este guion los borraría. Es la única forma de que escribir

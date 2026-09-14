@@ -154,47 +154,104 @@ for (const [kind, run] of Object.entries(VALIDATORS)) {
   });
 }
 
-// ── Totalidad: ningún campo del spawn sin quien pruebe que llega vivo ──────
+// ── Totalidad: ningún campo del CONTRATO sin quien pruebe que llega vivo ───
 
-/** Campos de `spawn_entity` que NINGUNA fixture puede afirmar, con su motivo.
+/** Campos que NINGUNA fixture puede afirmar, por variante y con su motivo.
  *  Vacío hoy, y el mecanismo se queda escrito: una exención se ve en el diff y
  *  un olvido no. `type` no entra en la cuenta — es el discriminante, y sin él
- *  la consequence ni siquiera se despacha. */
-const CAMPOS_EXENTOS: Record<string, string> = {};
+ *  la consequence ni siquiera se despacha.
+ *
+ *  La forma es `{ variante: { campo: motivo } }` y NO `{ campo: motivo }`: dos
+ *  variantes pueden tener un campo con el mismo nombre (`description` está en
+ *  `spawn_entity` y en `schedule_event`, y no son la misma cosa), así que una
+ *  exención global eximiría de más. */
+const CAMPOS_EXENTOS: Record<string, Record<string, string>> = {};
 
-describe("contrato — totalidad del spawn: todo campo declarado tiene quien lo mida (#532)", () => {
-  it("cada propiedad de `spawn_entity` está en el `sobrevive` de alguna fixture válida", () => {
-    const tool = JSON.parse(
-      readFileSync(resolve(FIXTURES_DIR, "..", "tools", "narrative_react.json"), "utf-8"),
-    ) as { input_schema: { properties: { consequences: { items: { anyOf: Array<{ properties: Record<string, unknown> }> } } } } };
-    const variantes = tool.input_schema.properties.consequences.items.anyOf;
-    const spawn = variantes.find(
-      (v) => (v.properties.type as { const?: string } | undefined)?.const === "spawn_entity",
-    );
-    assert.ok(spawn, "narrative_react.json no declara la variante spawn_entity");
+/** Las variantes de `consequences[]` del tool, indexadas por su `type`. Se lee
+ *  el TOOL y no el zod a propósito: el tool es lo que ve el modelo por la vía
+ *  de API, y un campo que el modelo ve tiene que llegar vivo. */
+function variantesDelTool(): Map<string, Record<string, unknown>> {
+  const tool = JSON.parse(
+    readFileSync(resolve(FIXTURES_DIR, "..", "tools", "narrative_react.json"), "utf-8"),
+  ) as {
+    input_schema: {
+      properties: { consequences: { items: { anyOf: Array<{ properties: Record<string, unknown> }> } } };
+    };
+  };
+  const out = new Map<string, Record<string, unknown>>();
+  for (const v of tool.input_schema.properties.consequences.items.anyOf) {
+    const t = (v.properties.type as { const?: string } | undefined)?.const;
+    assert.ok(t, `narrative_react.json trae una variante de consequence sin \`type.const\`: ${JSON.stringify(Object.keys(v.properties))}`);
+    out.set(t, v.properties);
+  }
+  return out;
+}
 
-    const cubiertos = new Set<string>();
-    for (const { fx } of loadFixtures("reaction")) {
-      for (const c of (fx.sobrevive?.consequences as Array<Record<string, unknown>> | undefined) ?? []) {
-        if (c.type === "spawn_entity") for (const k of Object.keys(c)) cubiertos.add(k);
+/** Qué campos prueba alguna fixture válida, por variante. */
+function cubiertosPorLasFixtures(): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const { fx } of loadFixtures("reaction")) {
+    for (const c of (fx.sobrevive?.consequences as Array<Record<string, unknown>> | undefined) ?? []) {
+      const t = typeof c.type === "string" ? c.type : null;
+      if (!t) continue;
+      const set = out.get(t) ?? new Set<string>();
+      for (const k of Object.keys(c)) set.add(k);
+      out.set(t, set);
+    }
+  }
+  return out;
+}
+
+describe("contrato — totalidad: todo campo declarado tiene quien lo mida (#532)", () => {
+  it("cada propiedad de CADA variante está en el `sobrevive` de alguna fixture válida", () => {
+    // El universo es el tool ENTERO y no solo `spawn_entity`, y está medido por
+    // qué: con `spawn_entity` solo, un `tono` añadido a `DialogueConsequence`
+    // entraba al tool y al prompt —o sea, el modelo lo veía—, moría en el
+    // saneador Python y las DOS suites salían verdes (QA de la PR 1, H-2). Es
+    // el mismo agujero de #397 y #532 un `type` más allá.
+    const variantes = variantesDelTool();
+    const cubiertos = cubiertosPorLasFixtures();
+    const huerfanos: string[] = [];
+    for (const [tipo, props] of variantes) {
+      const suyos = cubiertos.get(tipo) ?? new Set<string>();
+      const exentos = CAMPOS_EXENTOS[tipo] ?? {};
+      for (const campo of Object.keys(props)) {
+        if (campo === "type" || suyos.has(campo) || campo in exentos) continue;
+        huerfanos.push(`${tipo}.${campo}`);
       }
     }
-    const huerfanos = Object.keys(spawn.properties).filter(
-      (campo) => campo !== "type" && !cubiertos.has(campo) && !(campo in CAMPOS_EXENTOS),
-    );
     assert.deepEqual(
       huerfanos,
       [],
-      `estos campos de \`spawn_entity\` no los prueba ninguna fixture: ${huerfanos.join(", ")}. ` +
+      `estos campos del contrato no los prueba ninguna fixture: ${huerfanos.join(", ")}. ` +
         "Añade el campo al `sobrevive` de una fixture `valid/` (y mira que el espejo Python lo " +
         "propague) o exímelo en CAMPOS_EXENTOS con su motivo. Un campo sin fixture es un campo " +
         "que puede morir en el saneador sin que nada se ponga rojo",
     );
   });
 
+  it("y NINGUNA variante se queda sin fixture que la pruebe, ni siquiera la que no tiene campos", () => {
+    // La otra mitad del agujero: una variante entera sin `sobrevive` no tiene
+    // campos huérfanos que contar, así que el aserto de arriba la daría por
+    // buena. `noop` es la única sin campos y por eso se nombra aquí: no hay
+    // nada que pueda morir en ella.
+    const variantes = variantesDelTool();
+    const cubiertos = cubiertosPorLasFixtures();
+    const sinPruebas = [...variantes.keys()].filter(
+      (t) => t !== "noop" && !cubiertos.has(t) && !CAMPOS_EXENTOS[t],
+    );
+    assert.deepEqual(
+      sinPruebas,
+      [],
+      `estas variantes de consequence no tienen NINGUNA fixture con \`sobrevive\`: ${sinPruebas.join(", ")}`,
+    );
+  });
+
   it("una exención sin motivo escrito no vale", () => {
-    for (const [campo, motivo] of Object.entries(CAMPOS_EXENTOS)) {
-      assert.ok(motivo.trim().length > 20, `la exención de \`${campo}\` no explica por qué`);
+    for (const [variante, campos] of Object.entries(CAMPOS_EXENTOS)) {
+      for (const [campo, motivo] of Object.entries(campos)) {
+        assert.ok(motivo.trim().length > 20, `la exención de \`${variante}.${campo}\` no explica por qué`);
+      }
     }
   });
 });

@@ -1,0 +1,14 @@
+{
+  "description": "`footprint` más ancho que el tile: se rechaza. [400,400] celdas son 200×200 m sobre un suelo de 64, así que el tile entero se volvería sólido — y el gate de la escena ya acota por ahí mientras el del spawn no acotaba por ninguna parte (QA de la PR 1, H-5). El tope es el lado del tile y viaja por `physics.json`, no copiado.",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "object",
+        "name": "Muro imposible",
+        "footprint": [400, 400]
+      }
+    ]
+  }
+}

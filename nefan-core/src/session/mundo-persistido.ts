@@ -443,6 +443,23 @@ export type SpawnDeRuntime = {
   data: Record<string, unknown>;
 } & HuellaDelSpawn;
 
+/** Qué clases de spawn sabe devolver el resume.
+ *
+ *  ⚠ INCOHERENCIA CONOCIDA, y la trae #532 (la PR 1 de su tanda): desde ella el
+ *  motor puede declarar `entity_kind:"item"` y un `footprint` en celdas, y el
+ *  effect EN VIVO los honra — pero aquí no. Un `item` reanudado no vuelve (se
+ *  dice, con su nombre, en los `errores`) y un `object` que declaró `[6,6]`
+ *  vuelve midiendo el defecto de su clase, porque la huella se deriva del
+ *  `type` del record e ignora lo que el motor declaró, que SÍ está en `data`.
+ *  Medido por QA: un carro de 3×3 m vuelve de 1,5×1,5 y el jugador gana 0,75 m
+ *  por lado de suelo que ayer era el carro (el volumen encoge con la caja, así
+ *  que no se atraviesa un carro visible).
+ *
+ *  Lo NUEVO no es el tamaño: es que vivo y resume dejen de coincidir. Antes de
+ *  #532 los dos decían 1,5 m. **Lo cierra la PR 2 de esa tanda** (el resume +
+ *  #490), que añade `item` aquí y lee `data.footprint` abajo; hasta entonces
+ *  main queda con esta incoherencia a sabiendas, y el guion
+ *  `qa/guiones/119-…` la mide con sus tres líneas marcadas `[PR 2]`. */
 const CLASES_QUE_VUELVEN = new Set(["npc", "object", "building"]);
 
 /** Las entities que puso el MOTOR a mitad de partida, listas para volver a

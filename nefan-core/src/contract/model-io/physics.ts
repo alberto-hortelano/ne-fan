@@ -22,7 +22,7 @@
  *  habla en metros y tiene que decir los mismos que el TS. */
 
 import { NPC_RADIUS_M, PLAYER_RADIUS_M, celdasQueCubreRadio } from "../../scene/terrain-collision.js";
-import { TILE_MPC } from "../../scene/tile.js";
+import { TILE_CELLS, TILE_MPC } from "../../scene/tile.js";
 
 /** Los kinds que ALGUIEN MUEVE, con el radio del cuerpo que se mueve de
  *  verdad: `npc` lo mueve el simulador (`npc-behavior.ts`) y `player` lo mueve
@@ -50,6 +50,12 @@ export const enMetros = (celdas: number): string => (celdas * TILE_MPC).toFixed(
 export interface PhysicsSnapshot {
   $comment: string;
   tile_mpc: number;
+  /** El lado del tile EN CELDAS (`TILE_SIZE_M / TILE_MPC`). Es el techo duro de
+   *  cualquier huella declarada: nada de lo que el motor pone puede ser más
+   *  ancho que el suelo sobre el que se pone. Viaja aquí, ya derivado, por el
+   *  mismo motivo que el tope de los móviles — repetir la división en Python
+   *  serían dos fórmulas capaces de divergir. */
+  tile_cells: number;
   radio_simulado_m: Record<string, number>;
   footprint_max_cells: Record<string, number>;
 }
@@ -63,6 +69,7 @@ export function physicsSnapshot(): PhysicsSnapshot {
       "fuente TS y falla si divergen. Lo lee ai_server (narrative_schemas.py) para topar el " +
       "`footprint` de una entity móvil con el mismo número que el zod, en vez de copiarlo.",
     tile_mpc: TILE_MPC,
+    tile_cells: TILE_CELLS,
     radio_simulado_m: { ...RADIO_SIMULADO_POR_KIND },
     footprint_max_cells: Object.fromEntries(
       Object.keys(RADIO_SIMULADO_POR_KIND).map((kind) => [kind, topeDeFootprint(kind)!]),

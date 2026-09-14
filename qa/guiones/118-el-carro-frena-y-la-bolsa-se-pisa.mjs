@@ -74,6 +74,12 @@ const CARRO = { nombre: "Carro de heno", kind: "object", footprint: [6, 6] };
 const BOLSA = { nombre: "Bolsa de monedas", kind: "item", footprint: [2, 2] };
 /** Radio del cuerpo del jugador (`PLAYER_RADIUS_M`, core). */
 const RADIO = 0.4;
+/** Metros por celda del tile (`TILE_MPC`). Escrito A MANO y no importado de
+ *  core, igual que `RADIO`: es el ORÁCULO de este guion, y un oráculo que se
+ *  lee del código bajo prueba no puede ponerse rojo cuando ese código cambia
+ *  (QA de la PR 1, H-3). Si el tile cambiara de escala, esto sale rojo — y ese
+ *  rojo es correcto: querría decir que hay que volver a mirar la medida. */
+const METROS_POR_CELDA = 0.5;
 /** Cuánto puede meterse el jugador en una caja al pararse: nada, salvo el error
  *  de leer la posición entre frames. Por debajo de −0,02 está DENTRO. */
 const DENTRO_M = -0.02;
@@ -107,6 +113,40 @@ async function huellaDeCore() {
 }
 
 const posicion = (ctx) => ctx.page.evaluate(() => ({ ...window.__nefan.state().pos }));
+const vidaDelHud = (ctx) =>
+  ctx.page.evaluate(() => Number(document.getElementById("player-hp-text")?.textContent ?? "NaN"));
+
+/** Levanta al jugador si el hostil de la escena inicial lo ha matado, y lo dice.
+ *
+ *  No es un apaño: es lo que hace quien juega cuando le matan, y el 91 lo hace
+ *  por lo mismo. Aquí entra por las CAPTURAS (QA de la PR 1, H-10: las dos del
+ *  118 enseñaban «YOU DIED» y un bosque, con la bolsa y el carro fuera de
+ *  cuadro), y de paso por el paseo: un cadáver no anda, y ese rojo diría otra
+ *  cosa de la que este guion mide. La R es one-shot y el bucle solo la aplica
+ *  con el jugador ya muerto PARA EL SIM, así que se repulsa en cada muestra. */
+async function revivirSiHaceFalta(ctx) {
+  if ((await vidaDelHud(ctx)) > 0) return false;
+  const vivo = await ctx.absorbe(
+    "cortafuegos del respawn: si no revive, los asertos de andar de abajo lo dirán en rojo — un cadáver no anda",
+    () =>
+      ctx.waitFor(
+        "el jugador vuelve a la vida tras pulsar R",
+        () => {
+          const hp = Number(document.getElementById("player-hp-text")?.textContent ?? "0");
+          if (hp > 0) return { hp };
+          window.__nefan.inputDriver.queueRespawn();
+          return null;
+        },
+        15_000,
+      ),
+  );
+  ctx.log(
+    vivo
+      ? `el bench mató al jugador: reaparecido (R) con ${vivo.hp} de vida para seguir midiendo`
+      : "el bench mató al jugador y la R no lo levantó: los asertos de andar lo dirán en rojo",
+  );
+  return true;
+}
 
 /** El panel de diálogo TERMINADO de pintar: con el typewriter corriendo, la
  *  primera `T` solo completa el texto (`dialogue-panel.ts`) y no abre la caja
@@ -444,11 +484,36 @@ async function pedirDondeQuepa(ctx, marca, etiqueta) {
  *  de su clase) y es de runtime, que es lo que hace que su caja sea lo único
  *  que puede decidir si frena. */
 function afirmaElTamano(ctx, huella, etiqueta, obj, decl) {
+  // EL ORÁCULO ES ESTE GUION, no la función que se está midiendo. La aritmética
+  // se escribe aquí —celdas × 0,5 m— y `huellaEnMetros` entra después como
+  // SEGUNDO testigo. Con el oráculo puesto solo en ella, un `huellaEnMetros`
+  // que ignorara su segundo argumento dejaba este guion ENTERO en verde con la
+  // bolsa midiendo la mitad de lo declarado, y la línea salía diciéndose a sí
+  // misma «✔ la bolsa mide lo que el motor DECLARÓ (2×2 celdas = 0.5×0.5 m)»
+  // (QA de la PR 1, H-3, sabotaje 5b).
+  const esperado = { x: decl.footprint[0] * METROS_POR_CELDA, z: decl.footprint[1] * METROS_POR_CELDA };
+  ctx.expect(
+    `${etiqueta} mide lo que el motor DECLARÓ: ${decl.footprint.join("×")} celdas × ${METROS_POR_CELDA} m = ${esperado.x}×${esperado.z} m`,
+    obj.sizeXZ?.x === esperado.x && obj.sizeXZ?.z === esperado.z,
+    `${JSON.stringify(obj.sizeXZ)} vs lo declarado ${JSON.stringify(esperado)}`,
+  );
+  // Y la segunda ancla, la que no depende de la aritmética: lo declarado tiene
+  // que salirse del DEFECTO de su clase. Si el footprint se ignorara, saldría
+  // exactamente el defecto — así que esto lo caza aunque el número de arriba se
+  // escribiera mal.
+  const porDefecto = huella(decl.kind);
+  ctx.expect(
+    `…y no el defecto de su clase (un \`${decl.kind}\` sin declarar nada mide ${porDefecto.x} m)`,
+    obj.sizeXZ?.x !== porDefecto.x || obj.sizeXZ?.z !== porDefecto.z,
+    `${JSON.stringify(obj.sizeXZ)} vs el defecto ${JSON.stringify(porDefecto)}`,
+  );
+  // Tercer testigo, ya sí con la función del juego: el guion y core dicen lo
+  // mismo. Si divergen, uno de los dos está mal y hay que mirarlo.
   const dice = huella(decl.kind, decl.footprint);
   ctx.expect(
-    `${etiqueta} mide lo que el motor DECLARÓ (${decl.footprint.join("×")} celdas = ${dice.x}×${dice.z} m), no el defecto de su clase`,
-    obj.sizeXZ?.x === dice.x && obj.sizeXZ?.z === dice.z,
-    `${JSON.stringify(obj.sizeXZ)} vs core ${JSON.stringify(dice)}`,
+    `…y core deriva ese mismo tamaño para ${etiqueta} (el guion y el juego no se han separado)`,
+    dice.x === esperado.x && dice.z === esperado.z,
+    `core ${JSON.stringify(dice)} vs lo declarado ${JSON.stringify(esperado)}`,
   );
   ctx.expect(
     `${etiqueta} es de RUNTIME: su caja es lo único que puede decidir si frena`,
@@ -520,12 +585,18 @@ export default async function (ctx) {
     } else {
       // Llegar a menos de media huella + radio del centro es IMPOSIBLE si la
       // caja frenara: ahí es justo donde estaría su pared.
+      await revivirSiHaceFalta(ctx);
       const objetivo = bolsa.puesto.sizeXZ.x / 2 + RADIO - 0.1;
       const cerca = await acercarse(ctx, bolsa.puesto.id, { objetivo, lista: "objects" });
       ctx.expect(
         "el jugador ANDA hasta ponerse ENCIMA de la bolsa (si frenara, su pared estaría justo ahí)",
         cerca !== null && cerca.d <= objetivo,
         JSON.stringify(cerca),
+      );
+      ctx.expect(
+        "…y la captura de abajo enseña lo que dice enseñar: el jugador está VIVO y delante de ella",
+        (await vidaDelHud(ctx)) > 0,
+        `vida ${await vidaDelHud(ctx)}`,
       );
       await ctx.shot("encima-de-la-bolsa");
     }
@@ -590,6 +661,7 @@ export default async function (ctx) {
           "una parada por el camino no diría nada de la caja del carro",
       );
     } else {
+      await revivirSiHaceFalta(ctx);
       const parada = await empujarContra(ctx, carro.puesto.pos);
       const sobra = sobraDelBorde(parada, carro.puesto);
       const detalle =
@@ -605,6 +677,11 @@ export default async function (ctx) {
         detalle,
       );
       ctx.log(`empujón contra el carro: ${detalle}`);
+      ctx.expect(
+        "…y la captura de abajo enseña lo que dice enseñar: el jugador está VIVO y pegado al carro",
+        (await vidaDelHud(ctx)) > 0,
+        `vida ${await vidaDelHud(ctx)}`,
+      );
       await ctx.shot("contra-el-carro");
     }
   }
