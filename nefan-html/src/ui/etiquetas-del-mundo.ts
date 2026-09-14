@@ -16,8 +16,12 @@ import { WorldLabels, type WorldLabel } from "./world-labels.js";
 export interface DepsDeEtiquetasDelMundo {
   /** La cámara del frame recién pintado: rayo de puntería, suelo y proyección. */
   fpsRenderer: Pick<FpsRenderer, "cameraRay" | "groundYAt" | "projectToScreen">;
-  /** Los cuerpos con nombre: personajes (NPCs y enemigos) y objetos. */
-  mundo: Pick<MundoDelCliente, "personajes" | "objetos">;
+  /** Los cuerpos con nombre: personajes (NPCs y enemigos) y objetos.
+   *  `enemigos` va ADEMÁS de `personajes` y no en su lugar: rotular y apuntar
+   *  se hacen sobre todos los cuerpos por igual —un hostil es un personaje— y
+   *  duplicar esa lista aquí sería tener dos censos de quién tiene cuerpo. Lo
+   *  que la hostilidad decide es una sola cosa, el COLOR del nombre. */
+  mundo: Pick<MundoDelCliente, "personajes" | "objetos" | "enemigos">;
   /** La posición del jugador: un `const` mutado in situ en `main.ts`, así que
    *  cruza por referencia. */
   playerPos: Vec3;
@@ -84,6 +88,11 @@ export function crearEtiquetasDelMundo(deps: DepsDeEtiquetasDelMundo): Etiquetas
     // justo lo único sin rótulo y sin mirilla: un bulto anónimo que pega. Un
     // enemigo es la entidad que MÁS necesita nombre — es a lo que apuntas.
     const personajes = mundo.personajes.filter((n) => n.alive !== false);
+    // A QUIÉN PUEDES PEGAR, de lejos y sin leer el HUD (#484). El HUD ya
+    // nombraba al hostil en rojo, pero su rótulo de mundo era la misma caja
+    // crema que la del tabernero: el dato llegaba al cliente —`MundoDelCliente`
+    // guarda npcs y enemigos aparte— y se tiraba justo aquí, al aplanar.
+    const hostiles = new Set(mundo.enemigos.map((e) => e.id));
     // Solo objetos CON nombre: sin descripción no hay nada que enseñar, y la
     // mirilla debe encenderse únicamente sobre lo que sí se puede nombrar.
     // Los EDIFICIOS quedan fuera: su centro no es un punto al que se pueda
@@ -140,6 +149,7 @@ export function crearEtiquetasDelMundo(deps: DepsDeEtiquetasDelMundo): Etiquetas
         text,
         pos: { x: n.pos.x, y: fps.groundYAt(n.pos.x, n.pos.z) + NPC_LABEL_Y_M, z: n.pos.z },
         focus: aim?.id === n.id,
+        peligro: hostiles.has(n.id),
       });
     }
     // Los objetos se nombran solo cuando los MIRAS: una aldea entera etiquetada

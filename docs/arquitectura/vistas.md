@@ -123,7 +123,21 @@ Tres cosas que en una vista cenital daba la propia perspectiva:
   cono frontal y un enemigo a la espalda salía verde pleno.
 - **Nombre del NPC y mirilla** (`ui/etiquetas-del-mundo.ts` decide qué se
   rotula y qué enfila la cámara; `ui/world-labels.ts` coloca las cajas):
-  etiquetas DOM temadas, no texto dentro del lienzo.
+  etiquetas DOM temadas, no texto dentro del lienzo. Dos preguntas distintas se
+  pintan con dos propiedades distintas: **quién ES** el cuerpo va en el color
+  del texto (un hostil, en `--nf-danger`) y **a quién APUNTAS** va en el borde,
+  con el acento de la mirilla. Así un enemigo enfilado sigue en rojo, que es
+  cuando más falta hace — antes el foco pisaba el color y el peligro
+  desaparecía justo al apuntarle.
+  **El rótulo se ve A TRAVÉS de la pared, y es DECISIÓN, no omisión**
+  (2026-09-14, #484): no hay raycast por rótulo ni oclusión por geometría, y no
+  se va a meter. Un nombre que atraviesa la pared te dice dónde está la gente
+  del pueblo y es gratis; la línea de visión de cada rótulo y cada frame no lo
+  es. Queda escrito aquí y junto a `FADE_FROM_M` en `ui/world-labels.ts` —los
+  dos sitios que abre quien fuera a meter ese raycast— porque hay prosa de una
+  QA anterior que lo juzgó como defecto visual, y sin esto se «arregla» solo.
+  Sin candado, también por decisión: costaría un guion de navegador con fixture
+  de muro.
 - **Frontera del mundo**: un muro de niebla sobre el borde del tile activo, y
   su DISIPACIÓN —no un destello— es el aviso de que el vecino ya existe.
 
