@@ -40,6 +40,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { turnoDeCandados } from "./lib/turno-exclusivo.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE = join(raiz, "nefan-core");
@@ -251,6 +252,11 @@ function corre() {
 const filtro = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const casa = (n) => filtro.length === 0 || filtro.some((f) => n.toLowerCase().includes(f.toLowerCase()));
 
+// EL TURNO, antes de la foto (#572). Estos candados rompen fuentes de
+// producción a mano y las restauran con una copia hecha al arrancar; dos
+// instancias a la vez se fotografían la mutación de la otra y la «restauran»
+// como si fuera el original. Pasó el 2026-09-10.
+turnoDeCandados();
 const original = new Map([SRC, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
 const restaura = () => { for (const [f, txt] of original) writeFileSync(f, txt); };
 

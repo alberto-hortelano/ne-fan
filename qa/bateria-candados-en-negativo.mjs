@@ -67,6 +67,7 @@ import { dirname, join, relative } from "node:path";
 // Chromium por invariante. Ahora la mide además `npm test` de nefan-core, en
 // cada PR. La tabla es UNA, así que las dos no pueden divergir.
 import { INVARIANTES as INVARIANTES_REL } from "./lib/invariantes-en-negativo.mjs";
+import { turnoDeCandados } from "./lib/turno-exclusivo.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -114,6 +115,11 @@ if ((sucio.stdout ?? "").trim()) {
   process.exit(2);
 }
 
+// EL TURNO, antes de la foto (#572). Estos candados rompen fuentes de
+// producción a mano y las restauran con una copia hecha al arrancar; dos
+// instancias a la vez se fotografían la mutación de la otra y la «restauran»
+// como si fuera el original. Pasó el 2026-09-10.
+turnoDeCandados();
 const original = new Map(FICHEROS.map((f) => [f, readFileSync(f, "utf8")]));
 const restaura = () => {
   for (const [f, txt] of original) writeFileSync(f, txt);
