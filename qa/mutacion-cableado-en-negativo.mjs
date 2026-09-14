@@ -51,7 +51,7 @@
  *  Todo vuelve en el `finally` y se verifica byte a byte al terminar; si algo no
  *  volvió, sale con 2 y lo dice.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, renameSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, writeFileSync, existsSync, mkdirSync, rmSync, renameSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -72,6 +72,9 @@ const HUELLA = join(CORE, "data", "contract", "mutacion-huella.json");
 const PLAN = join(CORE, "data", "contract", "mutation-targets.json");
 const INFORMES = join(CORE, "reports", "mutation");
 const APARTADO = join(CORE, "reports", "mutation.qa-cableado");
+/** Lo que deja el probe de la escritura indirecta: una ruta GITIGNORADA dentro
+ *  de `reports/`, que es donde vive la base de la comparación. */
+const COLADO = join(CORE, "reports", "colado");
 const CORRIDA = join(INFORMES, "corrida.json");
 
 const git = (args) => execFileSync("git", args, { cwd: raiz, encoding: "utf8" }).trim();
@@ -138,19 +141,48 @@ function soloInforme(marca = "x") {
 }
 
 /** La foto de lo que un verbo EN SECO no puede tocar: la huella commiteada, el
- *  tag y el árbol de git.
+ *  tag, el árbol de git **y el árbol entero de `nefan-core/reports/`**.
+ *
+ *  LO ÚLTIMO NO ES ADORNO, y es lo que la primera versión no miraba. `reports/`
+ *  está en `.gitignore`, así que una escritura ahí NO la ve `git status`: QA
+ *  coló un fichero en `nefan-core/reports/colado/rastro.txt` desde el verbo y
+ *  las tres señales de esta foto decían «árbol intacto». Y `reports/` es donde
+ *  vive `reports/mutation-base/`, o sea la base cuya destrucción es el motivo
+ *  entero de que exista `comparar`.
  *
  *  Se toma ANTES y DESPUÉS dentro del mismo `mira`, y eso no es un detalle: el
  *  propio probe modifica el fuente para romperlo, así que esa modificación sale
  *  en las DOS fotos y se cancela. Comparar contra una foto tomada fuera diría
  *  «el árbol cambió» por culpa del guion y el candado se pondría rojo sin que
  *  el verbo hubiera escrito nada — un rojo por el motivo equivocado es tan
- *  inútil como un verde que no comprueba. */
+ *  inútil como un verde que no comprueba.
+ *
+ *  Lo que esta foto NO ve, dicho para que nadie lo suponga: una escritura fuera
+ *  del repo (`/tmp`, `$HOME`). */
+const inventarioDeReports = (dir) => {
+  const salida = [];
+  const anda = (d, rel) => {
+    if (!existsSync(d)) return;
+    for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const hijo = join(d, e.name);
+      const ruta = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) anda(hijo, ruta);
+      else {
+        const s = statSync(hijo);
+        salida.push(`${ruta}:${s.size}:${Math.round(s.mtimeMs)}`);
+      }
+    }
+  };
+  anda(dir, "");
+  return salida.join("\n");
+};
+
 const fotoDelArbol = () =>
   [
     `huella:${createHash("sha256").update(readFileSync(HUELLA)).digest("hex").slice(0, 16)}`,
     `tag:${git(["rev-parse", "mutacion-ultima"]).slice(0, 12)}`,
     `status:${createHash("sha256").update(git(["status", "--porcelain"])).digest("hex").slice(0, 16)}`,
+    `reports:${createHash("sha256").update(inventarioDeReports(join(CORE, "reports"))).digest("hex").slice(0, 16)}`,
   ].join(" ");
 
 /** El manifiesto lo escribe la herramienta, no este guion: si lo fabricara a
@@ -277,14 +309,17 @@ const INVARIANTES = [
   },
 
   // ── Tanda D · la comparación EN SECO ───────────────────────────────────────
+  //
+  // Los dos candados de aquí abajo son al revés de los de arriba: allí se exige
+  // que el verbo DIGA algo, aquí que no DEJE nada. Y hacen falta aquí y no en la
+  // batería por lo de siempre —ningún test importa `scripts/mutacion.ts`—, pero
+  // sobre todo porque las reglas de `arch-rules.json` que sujetan a
+  // `mutacion-comparar.ts` (`comparar-solo-lee` y `comparar-no-escribe`) NO
+  // pueden cubrir las líneas del verbo que viven en `mutacion.ts`: ese fichero
+  // escribe la huella por diseño. Ésa es exactamente la costura por la que QA
+  // coló un fichero, así que hay un probe por costura.
   {
     nombre: "comparar · el verbo EN SECO no escribe: ni la huella, ni el tag, ni el árbol",
-    // El candado al revés de los de arriba: allí se exige que el verbo DIGA
-    // algo, aquí que no DEJE nada. Y hace falta aquí y no en la batería por lo
-    // de siempre: ningún test importa `scripts/mutacion.ts`, así que una
-    // escritura colada en el camino del verbo sale verde en `npm run verify`.
-    // La regla `comparar-no-escribe` de arch-rules.json mira el fichero; esto
-    // mira el EFECTO, venga de donde venga.
     mira: () => {
       siembraInforme();
       manifiesta({ run: "999913" });
@@ -299,9 +334,37 @@ const INVARIANTES = [
       "que compararlo (`repartir` acaba en escribeHuella y CI le mueve el tag detrás): la regla dura de #443 " +
       "—«si un solo score se mueve fichero a fichero, no se adopta»— sería inaplicable por construcción",
     rompe: [
-      COMPARAR,
-      `  return ok ? 0 : 1;`,
-      `  fs.writeFileSync(join(coreRoot, "data", "contract", "mutacion-huella.json"), "{}\\n");\n  return ok ? 0 : 1;`,
+      MUT,
+      `  const veredicto = veredictoDeCorrida(ctx.corrida);`,
+      `  escribeHuella(HUELLA_VACIA);\n  const veredicto = veredictoDeCorrida(ctx.corrida);`,
+    ],
+  },
+  {
+    nombre: "comparar · tampoco escribe en reports/, que es donde vive la base y git no lo mira",
+    // H6(b) de QA, hecho probe. `reports/` está en `.gitignore`: una escritura
+    // ahí no sale en `git status`, no mueve la huella y no mueve el tag, así que
+    // las tres señales de la foto anterior decían «árbol intacto» mientras el
+    // verbo dejaba un fichero dentro del directorio que contiene
+    // `reports/mutation-base/` — la base cuya destrucción es el motivo entero de
+    // que exista este verbo. Lo que lo caza es el inventario de `reports/`.
+    mira: () => {
+      siembraInforme();
+      manifiesta({ run: "999914" });
+      const antes = fotoDelArbol();
+      mutacion(["comparar"]);
+      const despues = fotoDelArbol();
+      return `arbol:${antes === despues ? "intacto" : "TOCADO"} colado:${existsSync(COLADO)}`;
+    },
+    bien: (s) => s === "arbol:intacto colado:false",
+    porque:
+      "una escritura a una ruta gitignorada no la ve `git status`, y `nefan-core/reports/` es justo donde está " +
+      "la base de la comparación: sin el inventario, el candado daba VERDE sobre un verbo que escribía",
+    rompe: [
+      MUT,
+      `  const base: Record<string, BaseDeFichero> = {};`,
+      `  mkdirSync(join(coreRoot, "reports", "colado"), { recursive: true });\n` +
+        `  writeFileSync(join(coreRoot, "reports", "colado", "rastro.txt"), "x");\n` +
+        `  const base: Record<string, BaseDeFichero> = {};`,
     ],
   },
 
@@ -464,6 +527,7 @@ function limpiar() {
   rmSync(INFORMES, { recursive: true, force: true });
   rmSync(join(CORE, "reports", "lotes-ensayo"), { recursive: true, force: true });
   rmSync(join(CORE, "reports", "plan-corrida.json"), { force: true });
+  rmSync(COLADO, { recursive: true, force: true });
   if (habiaInformes) renameSync(APARTADO, INFORMES);
 }
 for (const [señal, codigo] of [["SIGINT", 130], ["SIGTERM", 143]]) {

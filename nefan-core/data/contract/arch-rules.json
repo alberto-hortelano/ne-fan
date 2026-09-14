@@ -978,15 +978,27 @@
       }
     },
     {
-      "id": "comparar-no-escribe",
-      "desc": "`scripts/mutacion-comparar.ts` no escribe en disco: ni writeFileSync, ni rmSync, ni mkdirSync, ni renameSync, ni appendFileSync",
-      "why": "El verbo `comparar` existe para que se pueda juzgar un cambio de instrumento de medida (#443) SIN destruir la base contra la que se juzga: hasta esta tanda el único verbo que comparaba era `repartir`, que acaba en `escribeHuella` y al que CI le mueve el tag detrás, así que medir con el runner nuevo borraba la medida anterior y la regla dura del usuario («si un solo score se mueve fichero a fichero, no se adopta») era inaplicable por construcción. La alternativa barata era una bandera `--en-seco` en `repartir`, y una bandera se olvida una vez y cuesta una corrida entera. Esto es lo que hace que «no escribe» no dependa de que alguien se acuerde: el fichero no puede escribir, y el patrón mira la LLAMADA y no la prosa (la cabecera del fichero nombra `writeFileSync` para explicar por qué no está, igual que `core-sin-dom` deja hablar a los comentarios). Complementaria y no redundante con el invariante de `qa/mutacion-cableado-en-negativo.mjs`, que corre el verbo REAL y exige la huella byte a byte igual: éste caza la línea en el momento de escribirla, aquél caza la escritura venga de donde venga.",
+      "id": "comparar-solo-lee",
+      "desc": "`scripts/mutacion-comparar.ts` solo puede traer de `node:fs` la lectura (`existsSync`, `readFileSync`), y no puede importar `node:child_process`",
+      "why": "LISTA BLANCA, y nació siendo una lista negra que QA midió y desarmó. El verbo `comparar` existe para juzgar un cambio de instrumento de medida (#443) SIN destruir la base contra la que se juzga —`repartir` acaba en `escribeHuella` y CI le mueve el tag detrás—, así que «este fichero no escribe» es su contrato entero. La primera versión lo sujetaba prohibiendo siete nombres; QA probó el patrón contra las evasiones plausibles y pasaban SIETE de catorce: `unlinkSync`, `rmdirSync`, `cpSync`, `copyFileSync`, `truncateSync`, `openSync`+`writeSync` y `execFileSync(\"git\", [\"tag\", \"-f\", \"mutacion-ultima\"])`. Una lista negra de un espacio de nombres abierto no acaba nunca; la lista blanca cabe en una línea y es total, que es lo que esta casa llama «la garantía va en el tipo». Por lo mismo se retiró el `import * as fs`: importar el espacio de nombres entero para que romper el candado costara UNA línea optimizaba la comodidad de probarlo a costa de ensanchar justo la superficie que vigila. Lo que esta regla NO cubre, dicho aquí para que nadie lo suponga: las líneas del verbo que viven en `scripts/mutacion.ts` (ese fichero escribe la huella por diseño) y cualquier escritura a una ruta de fuera del repo. Lo primero lo vigila el invariante `comparar · tampoco por la puerta de al lado` de `qa/mutacion-cableado-en-negativo.mjs`, que fotografía además el árbol de `nefan-core/reports/` porque está en `.gitignore` y ahí vive la base; lo segundo no lo vigila nadie.",
       "severity": "error",
       "files": [
         "nefan-core/scripts/mutacion-comparar.ts"
       ],
       "text": {
-        "pattern": "^(?!\\s*(?://|\\*|/\\*))[^\\n]*\\b(?:writeFileSync|writeFile|rmSync|mkdirSync|renameSync|appendFileSync|createWriteStream)\\b"
+        "pattern": "^import(?! \\{ existsSync, readFileSync \\} from \"node:fs\";$)[^\\n]*\"(?:node:)?fs(?:/[^\"\\n]*)?\"|^(?!\\s*(?://|\\*|/\\*))[^\\n]*\"(?:node:)?child_process\""
+      }
+    },
+    {
+      "id": "comparar-no-escribe",
+      "desc": "`scripts/mutacion-comparar.ts` tampoco NOMBRA una escritura: ni writeFileSync, ni rmSync, ni mkdirSync, ni renameSync, ni appendFileSync, ni sus vecinas",
+      "why": "El cinturón de `comparar-solo-lee`, y no es redundante: aquella mira la línea de import y ésta la LLAMADA, así que sigue en pie si algún día alguien relaja la lista blanca o si la escritura llega por un camino que no es un import de `node:fs` (un `globalThis.require`, un helper importado de otro sitio). Como toda lista negra es incompleta —QA midió que siete evasiones plausibles la pasan—, no se lee como la garantía: la garantía es la lista blanca. El patrón mira la llamada y no la prosa (la cabecera del fichero nombra `writeFileSync` para explicar por qué no está), igual que `core-sin-dom` deja hablar a los comentarios.",
+      "severity": "error",
+      "files": [
+        "nefan-core/scripts/mutacion-comparar.ts"
+      ],
+      "text": {
+        "pattern": "^(?!\\s*(?://|\\*|/\\*))[^\\n]*\\b(?:writeFileSync|writeFile|rmSync|rmdirSync|mkdirSync|renameSync|appendFileSync|createWriteStream|unlinkSync|cpSync|copyFileSync|truncateSync|openSync|writeSync)\\b"
       }
     }
   ]

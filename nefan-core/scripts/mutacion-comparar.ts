@@ -11,37 +11,50 @@
  *  Una bandera `--en-seco` en un verbo que escribe habría sido más barata y es
  *  exactamente el fallo a impedir: una bandera se olvida, y el olvido sale caro
  *  una sola vez. El precedente de la casa es `lotes`, que «sin flags solo
- *  imprime». Aquí se va un paso más allá y el fichero no PUEDE escribir: no
- *  importa nada que escriba, y hay una regla de `arch-rules.json`
- *  (`comparar-no-escribe`, severidad `error`) que lo comprueba en cada
- *  `npm test`, más un invariante en `qa/mutacion-cableado-en-negativo.mjs` que
- *  corre el verbo de verdad y exige la huella byte a byte igual, el tag quieto y
- *  `git status` limpio.
+ *  imprime». Aquí se va un paso más allá y el fichero no PUEDE escribir.
  *
- *  SE IMPORTA EL ESPACIO DE NOMBRES DE `node:fs` A PROPÓSITO. Con un
- *  `import { readFileSync }` selectivo, añadir una escritura obligaría a tocar
- *  DOS sitios (la línea de import y la llamada), y el candado de QA estaría
- *  probándose contra una rotura que nadie escribiría por accidente. Con el
- *  espacio de nombres, lo único que separa a este fichero de escribir es la
- *  regla — que es donde se quiere que esté.
+ *  QUÉ SUJETA CADA CAPA, dicho con precisión porque ninguna cubre a la otra:
  *
- *  Lo que decide algo (el veredicto de adopción, el recuento de los mutantes
- *  clasificados por el reloj) vive en `mutacion-huella.ts`, puro y con batería.
- *  Aquí solo queda leer informes e imprimir.
+ *   1. `arch-rules.json` · `comparar-solo-lee` — de `node:fs` este fichero solo
+ *      puede importar `existsSync` y `readFileSync`, y `node:child_process` no
+ *      lo puede importar en absoluto. Es una LISTA BLANCA sobre una línea, no
+ *      una lista negra de nombres: QA midió que un denylist de siete dejaba
+ *      pasar `unlinkSync`, `cpSync`, `copyFileSync`, `truncateSync`,
+ *      `openSync`+`writeSync` y un `execFileSync("git", ["tag", "-f", …])`.
+ *   2. `arch-rules.json` · `comparar-no-escribe` — el denylist, que sigue como
+ *      cinturón por si la lista blanca se relaja algún día.
+ *   3. `qa/mutacion-cableado-en-negativo.mjs` — corre el VERBO real y fotografía
+ *      lo que no puede cambiar: la huella, el tag, `git status` y el árbol
+ *      entero de `nefan-core/reports/`. Esa última parte no es adorno: `reports/`
+ *      está en `.gitignore`, así que una escritura ahí no la ve `git status`, y
+ *      es donde vive `reports/mutation-base/` —la base cuya destrucción es el
+ *      motivo entero de este verbo—. QA lo demostró colando un fichero desde
+ *      `mutacion.ts`, que es el sitio que las capas 1 y 2 no pueden cubrir
+ *      porque ese fichero escribe la huella por diseño.
+ *
+ *  Lo que NO está cubierto, dicho entero: una escritura a una ruta de fuera del
+ *  repo (`/tmp`, `$HOME`). No la ve ninguna de las tres, y no se vigila.
+ *
+ *  Lo que decide algo (el veredicto de adopción, los recuentos de `Timeout` y de
+ *  `NoCoverage`) vive en `mutacion-huella.ts`, puro y con batería. Aquí solo
+ *  queda leer informes e imprimir.
  */
-import * as fs from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
-import { coreRoot } from "./mutation-plan.js";
 import {
   estadoLegible,
   movimientosDeReloj,
+  movimientosSinEjercer,
+  sinEjercerDeFichero,
   timeoutsDeFichero,
   totalDeReloj,
+  totalSinEjercer,
   veredictoDeAdopcion,
   type DeltaDeFichero,
   type MutanteMedido,
   type RelojDeFichero,
+  type SinEjercerDeFichero,
 } from "./mutacion-huella.js";
 
 /** Un módulo de la corrida nueva con el delta de sus ficheros — la MISMA
@@ -54,23 +67,50 @@ export interface ModuloComparado {
   ficheros: readonly DeltaDeFichero[];
 }
 
+/** Las poblaciones de un fichero en la corrida NUEVA que la huella no sabe
+ *  expresar. Salen del mismo recorrido de informes que el delta. */
+export interface PoblacionesAhora {
+  timeouts: readonly string[];
+  sinEjercer: readonly string[];
+  /** Todo lo que entró en el denominador: sin esto, un `Timeout` que salió de
+   *  la medida se rotularía «lo mata ahora un test». */
+  medidos: readonly string[];
+}
+
+/** Lo que la huella COMMITEADA sabe de un fichero, y si habla del mismo código. */
+export interface BaseDeFichero {
+  vivos: readonly string[];
+  mismoCodigo: boolean;
+}
+
 export interface ComparacionEnSeco {
   corrida: {
     run_id: string;
     sha: string;
     desde: string;
     origen: string;
-    /** Lo que dictamina `veredictoDeCorrida`: una corrida a la que le faltan
-     *  módulos no puede sostener un «no se movió nada». */
+    /** Lo que dictamina `veredictoDeCorrida`. Los dos entran en el criterio: una
+     *  corrida a la que le faltan módulos no sostiene un «no se movió nada», y
+     *  una que no puede mover el tag no declara medida la casa. */
     completa: boolean;
+    mueveTag: boolean;
     porque: string;
   };
   modulos: readonly ModuloComparado[];
-  /** Huellas de los mutantes que el RELOJ clasificó en ESTA corrida, por
-   *  fichero. Salen del mismo recorrido de informes que el delta. */
-  timeouts: Readonly<Record<string, readonly string[]>>;
-  /** Directorio con los informes de la corrida BASE, para poder contar los
-   *  movimientos de `Timeout`. Sin él no hay bloque: la huella no los guarda. */
+  ahora: Readonly<Record<string, PoblacionesAhora>>;
+  base: Readonly<Record<string, BaseDeFichero>>;
+  /** Ficheros cuyo fuente cambió desde la medida anterior. Parten en dos el
+   *  `incomparable`: el del instrumento (que es el hallazgo) y el del código
+   *  (que es un falso rojo con otro remedio). */
+  codigoCambiado: readonly string[];
+  /** Contra qué revisión se leyó la huella. Se imprime SIEMPRE. */
+  revBase: string;
+  /** Los ficheros que la huella espera ver medidos. El conjunto lo fija la
+   *  HUELLA, no la corrida: ver `CorridaQueJuzga`. */
+  esperados: readonly string[];
+  /** Directorio (ya resuelto y comprobado por `dirDeTimeouts`) con los informes
+   *  de la corrida BASE. Sin él no hay forma de saber qué `Timeout` y qué
+   *  `NoCoverage` había antes: la huella no los guarda. */
   dirBase?: string;
 }
 
@@ -78,16 +118,22 @@ interface InformeCrudo {
   files: Record<string, { mutants: MutanteMedido[] }>;
 }
 
-/** Los `Timeout` de un módulo en la corrida base, por fichero. `undefined` =
- *  esa corrida no midió este módulo, que NO es lo mismo que «no tuvo ninguno»:
- *  con cero, todos los de ahora se leerían como `otro → Timeout`. */
-function timeoutsDeLaBase(dir: string, modulo: string): Record<string, string[]> | undefined {
+/** Lo que la corrida base tenía de un módulo y la huella no puede contar.
+ *  `undefined` = esa corrida no midió este módulo, que NO es lo mismo que «no
+ *  tenía ninguno»: con cero, todo lo de ahora se leería como movimiento. */
+function poblacionesDeLaBase(
+  dir: string,
+  modulo: string,
+): Record<string, { timeouts: string[]; sinEjercer: string[] }> | undefined {
   const ruta = join(dir, `${modulo}.json`);
-  if (!fs.existsSync(ruta)) return undefined;
-  const informe = JSON.parse(fs.readFileSync(ruta, "utf8")) as InformeCrudo;
-  const out: Record<string, string[]> = {};
+  if (!existsSync(ruta)) return undefined;
+  const informe = JSON.parse(readFileSync(ruta, "utf8")) as InformeCrudo;
+  const out: Record<string, { timeouts: string[]; sinEjercer: string[] }> = {};
   for (const [fichero, info] of Object.entries(informe.files)) {
-    out[fichero] = timeoutsDeFichero(fichero, info.mutants);
+    out[fichero] = {
+      timeouts: timeoutsDeFichero(fichero, info.mutants),
+      sinEjercer: sinEjercerDeFichero(fichero, info.mutants),
+    };
   }
   return out;
 }
@@ -95,7 +141,8 @@ function timeoutsDeLaBase(dir: string, modulo: string): Record<string, string[]>
 const columnas = (celdas: readonly (string | number)[], anchos: readonly number[]): string =>
   `  ${celdas.map((c, i) => (i === 0 ? String(c).padEnd(anchos[i]) : String(c).padStart(anchos[i]))).join(" ")}`;
 
-const ANCHOS = [30, 6, 6, 12, 8, 8, 8];
+const ANCHOS = [28, 5, 6, 12, 7, 7, 9, 8, 5];
+const CABECERA = ["módulo", "base", "ahora", "T→detectado", "T→vivo", "vivo→T", "killed→T", "T→fuera", "T→T"];
 
 function imprimeDeltas(modulos: readonly ModuloComparado[]): void {
   for (const m of modulos) {
@@ -106,99 +153,190 @@ function imprimeDeltas(modulos: readonly ModuloComparado[]): void {
   }
 }
 
+/** Lo que hay que leer de la corrida base para contar lo que la huella no
+ *  guarda: los `Timeout` y los `NoCoverage` de antes.
+ *
+ *  Se calcula ANTES de imprimir nada porque los `NoCoverage` son CONDICIÓN del
+ *  veredicto, no decoración. Y se hace en una sola pasada: leer dos veces 141 MB
+ *  de informes para dos recuentos es tonto, y dos recorridos del mismo material
+ *  acaban discrepando.
+ *
+ *  SIN BASE SOLO PUEDE NEGAR. Un módulo del que no hay informe base entra con
+ *  listas vacías: sus `Timeout` no se cuentan como movimiento (se dice, aparte)
+ *  y sus `NoCoverage` salen TODOS como nuevos. Entre negar de más y autorizar de
+ *  más, esto existe para lo segundo. */
+function leeLaBase(c: ComparacionEnSeco): {
+  reloj: RelojDeFichero[];
+  sinEjercer: SinEjercerDeFichero[];
+  modulosSinBase: string[];
+  ficherosSinBase: string[];
+} {
+  const reloj: RelojDeFichero[] = [];
+  const sinEjercer: SinEjercerDeFichero[] = [];
+  const modulosSinBase: string[] = [];
+  const ficherosSinBase: string[] = [];
+
+  for (const m of c.modulos) {
+    const delModulo = c.dirBase === undefined ? undefined : poblacionesDeLaBase(c.dirBase, m.modulo);
+    if (c.dirBase !== undefined && delModulo === undefined) modulosSinBase.push(m.modulo);
+    for (const d of m.ficheros) {
+      const ahora = c.ahora[d.fichero] ?? { timeouts: [], sinEjercer: [], medidos: [] };
+      // Si el fuente cambió, las huellas llevan línea y columna de otro código y
+      // no hablan de estos mutantes: ese fichero ya sale `incomparable` en el
+      // veredicto y aquí se queda fuera en vez de inventar transiciones.
+      if (c.base[d.fichero]?.mismoCodigo !== true) continue;
+      const base = delModulo?.[d.fichero];
+      if (base === undefined && c.dirBase !== undefined && delModulo !== undefined) {
+        ficherosSinBase.push(d.fichero);
+      }
+      reloj.push(
+        movimientosDeReloj(d.fichero, {
+          timeoutsBase: base?.timeouts ?? [],
+          vivosBase: c.base[d.fichero]?.vivos ?? [],
+          timeoutsAhora: ahora.timeouts,
+          vivosAhora: d.vivos,
+          medidosAhora: ahora.medidos,
+        }),
+      );
+      sinEjercer.push(movimientosSinEjercer(d.fichero, base?.sinEjercer ?? [], ahora.sinEjercer));
+    }
+  }
+  return { reloj, sinEjercer, modulosSinBase, ficherosSinBase };
+}
+
 /** El bloque de los mutantes que clasifica el reloj. Va al FINAL y aparte: se
  *  pega literal en #443 y NO se resta del veredicto. */
-function imprimeReloj(c: ComparacionEnSeco): void {
+function imprimeReloj(c: ComparacionEnSeco, leido: ReturnType<typeof leeLaBase>): void {
   console.log(`\n${"─".repeat(78)}`);
   console.log("MUTANTES CLASIFICADOS POR EL RELOJ (`Timeout`) — bloque aparte, NO se resta del veredicto");
-  const totalAhora = Object.values(c.timeouts).reduce((n, t) => n + t.length, 0);
   if (c.dirBase === undefined) {
+    const total = totalDeReloj(leido.reloj);
     console.log(
-      `\n  esta corrida trae ${totalAhora} mutante(s) clasificados por el reloj, y NO hay con qué compararlos:\n` +
+      `\n  esta corrida trae ${total.ahora} mutante(s) clasificados por el reloj, y NO hay con qué compararlos:\n` +
         `  la huella guarda \`vivos\` y \`total\`, y ahí un Timeout es indistinguible de un Killed.\n` +
         `  Pásale los informes de la corrida base:  npm run mutacion -- comparar --timeouts reports/mutation-base\n` +
-        `  (si se perdieron: gh run download <run-id> -n informe-mutacion -D reports/mutation-base)`,
+        `  (si se perdieron: gh run download <run-id> -n informe-mutacion -D nefan-core/reports/mutation-base)`,
     );
     return;
   }
-  const dir = resolve(coreRoot, c.dirBase);
-  console.log(`  base: ${dir}\n`);
-  console.log(columnas(["módulo", "base", "ahora", "T→detectado", "T→vivo", "otro→T", "T→T"], ANCHOS));
-  const filasGlobales: RelojDeFichero[] = [];
-  const sinBase: string[] = [];
-  for (const m of c.modulos) {
-    const base = timeoutsDeLaBase(dir, m.modulo);
-    if (base === undefined) {
-      sinBase.push(m.modulo);
-      continue;
-    }
-    const filas = m.ficheros
-      // Solo los ficheros que las DOS medidas tienen: con uno que la base no
-      // midió, sus Timeout de hoy saldrían como `otro → Timeout` sin que nadie
-      // haya cambiado nada.
-      .filter((d) => base[d.fichero] !== undefined)
-      .map((d) => movimientosDeReloj(d.fichero, base[d.fichero], c.timeouts[d.fichero] ?? [], d.vivos));
-    filasGlobales.push(...filas);
-    const t = totalDeReloj(filas);
-    if (t.base === 0 && t.ahora === 0) continue;
-    console.log(columnas([m.modulo, t.base, t.ahora, t.aDetectado, t.aVivo, t.aTimeout, t.siguen], ANCHOS));
-  }
-  const total = totalDeReloj(filasGlobales);
-  console.log(columnas(["TOTAL", total.base, total.ahora, total.aDetectado, total.aVivo, total.aTimeout, total.siguen], ANCHOS));
-  if (sinBase.length > 0) {
+  console.log(`  base: ${c.dirBase}`);
+  // Los avisos van ARRIBA, antes de la tabla. Debajo del TOTAL nadie los lee: el
+  // TOTAL es lo que se pega en el issue (QA, H5).
+  for (const [lista, que] of [
+    [leido.modulosSinBase, "módulo(s) de esta corrida no están en la corrida base"],
+    [leido.ficherosSinBase, "fichero(s) no los midió la corrida base"],
+  ] as const) {
+    if (lista.length === 0) continue;
     console.log(
-      `\n  ⚠ ${sinBase.length} módulo(s) de esta corrida no están en la base de Timeout: ${sinBase.join(", ")}\n` +
-        `    no se cuentan como «0 movimientos»: es que no hay con qué compararlos.`,
+      `\n  ⚠ ${lista.length} ${que}: ${lista.slice(0, 6).join(", ")}${lista.length > 6 ? ` y ${lista.length - 6} más` : ""}\n` +
+        `    sus Timeout salen como 0 movimientos porque no hay con qué compararlos, NO porque no se movieran.`,
     );
   }
+  console.log("");
+  console.log(columnas(CABECERA, ANCHOS));
+  const porModulo = new Map(c.modulos.map((m) => [m.modulo, new Set(m.ficheros.map((f) => f.fichero))]));
+  for (const m of c.modulos) {
+    const suyas = leido.reloj.filter((r) => porModulo.get(m.modulo)?.has(r.fichero) === true);
+    const t = totalDeReloj(suyas);
+    if (t.base === 0 && t.ahora === 0) continue;
+    console.log(
+      columnas(
+        [m.modulo, t.base, t.ahora, t.aDetectado, t.aVivo, t.vivoATimeout, t.killedATimeout, t.aFuera, t.siguen],
+        ANCHOS,
+      ),
+    );
+  }
+  const total = totalDeReloj(leido.reloj);
   console.log(
-    `\n  T→detectado  el mutante lo mata ahora un test: el score no se mueve, y no es hallazgo de nadie.\n` +
+    columnas(
+      ["TOTAL", total.base, total.ahora, total.aDetectado, total.aVivo, total.vivoATimeout, total.killedATimeout, total.aFuera, total.siguen],
+      ANCHOS,
+    ),
+  );
+  console.log(
+    `\n  T→detectado  lo mata ahora un test: el score no se mueve, y no es hallazgo de nadie.\n` +
       `  T→vivo       sale ADEMÁS como superviviente NUEVO en el veredicto de arriba.\n` +
-      `  otro→T       medida que pasa a depender del reloj de la máquina que la mide.`,
+      `  vivo→T       un superviviente que «resolvió» EL RELOJ y no un test: alimenta los RESUELTOS.\n` +
+      `  killed→T     lo mataba un test y ahora lo mata el reloj.\n` +
+      `  T→fuera      ya no tiene veredicto (RuntimeError, CompileError, Ignored): no lo mató nadie,\n` +
+      `               SALIÓ DEL DENOMINADOR — y eso mueve el total, o sea que deja el fichero incomparable.`,
+  );
+}
+
+/** El bloque de los mutantes que ya no ejerce ningún test. Éste SÍ es condición
+ *  del veredicto, y por eso se imprime aunque salga a cero: es el que dice si el
+ *  instrumento nuevo mide lo mismo o mide menos. */
+function imprimeSinEjercer(c: ComparacionEnSeco, leido: ReturnType<typeof leeLaBase>): void {
+  const total = totalSinEjercer(leido.sinEjercer);
+  console.log(`\n${"─".repeat(78)}`);
+  console.log("MUTANTES QUE NO EJERCE NINGÚN TEST (`NoCoverage`) — esto SÍ es condición");
+  console.log(`  antes: ${total.base} · ahora: ${total.ahora} · que antes sí se ejercían: ${total.nuevos}`);
+  if (c.dirBase === undefined) {
+    console.log(
+      `  (sin --timeouts no se sabe cuáles ya lo eran, así que se cuentan TODOS: esto solo puede negar)`,
+    );
+  }
+  if (total.nuevos === 0) {
+    console.log("  ✔ ningún mutante ha dejado de ser ejercido: el instrumento nuevo no mide menos.");
+    return;
+  }
+  const peores = leido.sinEjercer
+    .filter((f) => f.nuevos > 0)
+    .sort((a, b) => b.nuevos - a.nuevos)
+    .slice(0, 10);
+  for (const f of peores) console.log(`  ${String(f.nuevos).padStart(5)}  ${f.fichero}`);
+  console.log(
+    `\n  \`Survived\` es «un test pasó por la línea y no se enteró»; \`NoCoverage\` es «nadie pasó siquiera».\n` +
+      `  \`esVivo\` los colapsa, así que el delta no los distingue — y el segundo es MEDIDA QUE SE PIERDE.`,
   );
 }
 
 /** Imprime la comparación y devuelve el código de salida.
  *
- *  EXIT ≠ 0 SALVO QUE SE CUMPLA TODO. El criterio son las cinco condiciones de
- *  `veredictoDeAdopcion`; aquí se le suma la única que no es del delta: que la
- *  corrida esté COMPLETA. No es un sexto umbral inventado —`traer` y `repartir`
- *  ya salen con 1 sobre una corrida incompleta—, es que «no se movió nada» sobre
- *  20 de 55 módulos no es una comparación, es un trozo de una. */
+ *  EXIT ≠ 0 SALVO QUE SE CUMPLA TODO. Las siete condiciones viven en
+ *  `veredictoDeAdopcion`, puro y con batería: aquí no se decide nada, se enseña. */
 export function comparaEnSeco(c: ComparacionEnSeco): number {
   const deltas = c.modulos.flatMap((m) => m.ficheros);
-  const veredicto = veredictoDeAdopcion(deltas);
+  const leido = leeLaBase(c);
+  const veredicto = veredictoDeAdopcion(deltas, {
+    esperados: c.esperados,
+    mueveTag: c.corrida.mueveTag,
+    completa: c.corrida.completa,
+    sinEjercer: leido.sinEjercer,
+    codigoCambiado: c.codigoCambiado,
+  });
   const { corrida } = c;
 
   console.log(
     `\nComparación EN SECO de la corrida ${corrida.run_id} sobre ${corrida.sha.slice(0, 7)} ` +
       `(${corrida.desde.slice(0, 7)}..${corrida.sha.slice(0, 7)}, ${corrida.origen})\n` +
-      `  contra la huella COMMITEADA de HEAD. No se escribe nada: ni la huella, ni el tag, ni un comentario.\n` +
+      `  contra la huella COMMITEADA en ${c.revBase}. No se escribe nada: ni la huella, ni el tag, ni un\n` +
+      `  comentario, ni reports/.\n` +
       `  ${corrida.completa ? "COMPLETA" : "INCOMPLETA"} — ${corrida.porque}\n`,
   );
   imprimeDeltas(c.modulos);
 
   console.log(`\n${"─".repeat(78)}`);
   console.log("VEREDICTO DE ADOPCIÓN");
-  console.log(`  comparables    : ${veredicto.comparables} fichero(s)`);
+  console.log(`  comparables    : ${veredicto.comparables} fichero(s) de los ${c.esperados.length} de la huella`);
   console.log(`  nuevos         : ${veredicto.nuevos}`);
   console.log(`  resueltos      : ${veredicto.resueltos}`);
-  console.log(`  incomparables  : ${veredicto.incomparables.length} fichero(s)`);
+  console.log(`  incomparables  : ${veredicto.incomparables.length} fichero(s) (cambió el instrumento)`);
+  console.log(`  base de otro código : ${veredicto.incomparablesPorCodigo.length} fichero(s) (cambió el fuente, NO el runner)`);
   console.log(`  sin base       : ${veredicto.sinBase.length} fichero(s)`);
-  console.log(`  corrida        : ${corrida.completa ? "COMPLETA" : "INCOMPLETA"}`);
-  const ok = veredicto.adopta && corrida.completa;
-  console.log(
-    `\n  ⇒ ${ok ? "SE PUEDE ADOPTAR" : "NO SE ADOPTA"} — ${veredicto.porque}` +
-      (corrida.completa ? "" : "; y la corrida está INCOMPLETA: falta medida, no falta hallazgo"),
-  );
-  if (!ok) {
+  console.log(`  sin medir      : ${veredicto.sinMedir.length} fichero(s)`);
+  console.log(`  sin ejercer    : ${veredicto.sinEjercer} mutante(s)`);
+  console.log(`  corrida        : ${corrida.completa ? "COMPLETA" : "INCOMPLETA"}${corrida.mueveTag ? " y mueve el tag" : ", NO mueve el tag"}`);
+  console.log(`\n  ⇒ ${veredicto.adopta ? "SE PUEDE ADOPTAR" : "NO SE ADOPTA"} — ${veredicto.porque}`);
+  if (!veredicto.adopta) {
     console.log(
       `\n  La regla es del usuario y no se negocia: si un solo score se mueve fichero a fichero, no se adopta\n` +
         `  y el issue se cierra con el número.`,
     );
   }
 
-  imprimeReloj(c);
+  imprimeSinEjercer(c, leido);
+  imprimeReloj(c, leido);
   console.log("");
-  return ok ? 0 : 1;
+  return veredicto.adopta ? 0 : 1;
 }

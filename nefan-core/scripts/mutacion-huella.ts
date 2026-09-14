@@ -124,8 +124,51 @@ export function vivosDeFichero(
  *  corrida base hay que apartarlos (`reports/mutation-base/`) ANTES de `traer`,
  *  que vacía `reports/mutation/` antes de bajar. */
 export function timeoutsDeFichero(fichero: string, mutantes: readonly MutanteMedido[]): string[] {
+  return huellasDe(fichero, mutantes, (m) => m.status === "Timeout");
+}
+
+/** Los mutantes que en esta medida NO EJERCE NINGÚN TEST (`NoCoverage`).
+ *
+ *  Hermano del de arriba, y por el mismo motivo: `esVivo` cuenta `NoCoverage`
+ *  como vivo (`mutation-plan.ts`), así que en la huella un `NoCoverage` y un
+ *  `Survived` son la MISMA cosa y el delta no puede verlos moverse el uno al
+ *  otro. Y no son la misma cosa: `Survived` es «un test pasó por la línea y no
+ *  se enteró» y `NoCoverage` es «nadie pasó siquiera». Lo primero es deuda de
+ *  test; lo segundo es MEDIDA QUE SE PIERDE.
+ *
+ *  Medido por QA el 2026-09-14 sobre este mismo verbo: 20 `Survived` pasados a
+ *  `NoCoverage` daban `0 nuevos · 0 resueltos` y «SE PUEDE ADOPTAR». Y es el
+ *  caso PROBABLE de #443, no uno rebuscado: la corrida base tiene
+ *  `Survived 4.137 · NoCoverage 0` porque el runner `command` corre con
+ *  `coverageAnalysis: "off"` y todo ejercita todo; con `perTest` de verdad, esos
+ *  4.137 son exactamente los candidatos a volverse `NoCoverage`. Un instrumento
+ *  que mide MENOS no se puede presentar como idéntico. */
+export function sinEjercerDeFichero(fichero: string, mutantes: readonly MutanteMedido[]): string[] {
+  return huellasDe(fichero, mutantes, (m) => m.status === "NoCoverage");
+}
+
+/** Los mutantes que ENTRARON EN EL DENOMINADOR de esta medida: los que tienen
+ *  veredicto, vivos o detectados. Es el mismo conjunto que cuenta `total` en
+ *  `vivosDeFichero`, y existe porque sin él no se puede distinguir «este
+ *  `Timeout` lo mata ahora un test» de «este `Timeout` ya no lo mide nadie»: un
+ *  `RuntimeError`, un `CompileError` o un `Ignored` no están ni vivos ni
+ *  detectados — **salieron de la medida**.
+ *
+ *  Que su tamaño coincida con el `total` de `vivosDeFichero` NO se deja a la
+ *  vista: hay un test que lo afirma sobre una entrada con los seis estados. Dos
+ *  definiciones del denominador acabarían discrepando sobre el mismo informe,
+ *  que es lo que ya documenta `esVivo`. */
+export function medidosDeFichero(fichero: string, mutantes: readonly MutanteMedido[]): string[] {
+  return huellasDe(fichero, mutantes, (m) => esVivo(m.status) || m.status === "Killed" || m.status === "Timeout");
+}
+
+function huellasDe(
+  fichero: string,
+  mutantes: readonly MutanteMedido[],
+  casa: (m: MutanteMedido) => boolean,
+): string[] {
   return mutantes
-    .filter((m) => m.status === "Timeout")
+    .filter(casa)
     .map((m) => huellaDeMutante(fichero, m))
     .sort();
 }
@@ -363,6 +406,52 @@ export function deltaDeCorrida(
 
 // ── el criterio de ADOPCIÓN: cambiar de instrumento sin perder medida ────────
 
+/** Lo que la corrida tiene que ser para poder DICTAR una adopción, además de lo
+ *  que digan sus deltas.
+ *
+ *  Nace de un agujero medido (QA de esta PR, H1): con una corrida de UN módulo
+ *  —`blueprint-plan`, 38 mutantes de 12.841— el verbo decía «SE PUEDE ADOPTAR» y
+ *  salía con 0. Y no era rebuscado: es el camino BARATO, porque el input
+ *  `modulos` del workflow admite «ids separados por espacios» y
+ *  `veredictoDeCorrida` declara COMPLETA a toda corrida `explicito`. Probar el
+ *  runner nuevo con un módulo suelto —lo primero que haría cualquiera— producía
+ *  el veredicto de la casa entera.
+ *
+ *  La regla del usuario habla de «los ficheros», no de «los ficheros que esta
+ *  corrida haya decidido mirar». Así que el conjunto lo fija la HUELLA y no la
+ *  corrida, y lo que no se midió se nombra. */
+export interface CorridaQueJuzga {
+  /** Los ficheros que la huella ya midió y el plan sigue mutando hoy: el
+   *  conjunto de la casa. Hoy son 87 (el 88º, `src/protocol/status-labels.ts`,
+   *  ya no existe y por eso no se espera). */
+  esperados: readonly string[];
+  /** Si esta corrida midió TODO lo que había desde el tag. Lo calcula
+   *  `veredictoDeCorrida` y es `false` para `origen: "explicito"`, que es
+   *  justamente el atajo de H1: una corrida que no puede mover el tag tampoco
+   *  puede declarar medida la casa. */
+  mueveTag: boolean;
+  /** Si dejó informe todo lo que pidió. Entra AQUÍ, y no en el verbo, porque si
+   *  no la función pura —que es la que tiene batería— devolvía `adopta: true`
+   *  sobre una corrida incompleta y quien la reutilizara heredaba eso. */
+  completa: boolean;
+  /** Los mutantes que esta corrida ya no ejerce y antes sí, por fichero. Ver
+   *  `sinEjercerDeFichero`: con `esVivo` colapsando `Survived` y `NoCoverage`,
+   *  el delta no puede verlos. */
+  sinEjercer: readonly SinEjercerDeFichero[];
+  /** Los ficheros cuya medida anterior es de OTRO CÓDIGO (el blob no casa).
+   *
+   *  Existe para partir en dos el motivo `incomparable`, que son dos hechos que
+   *  mandan a sitios opuestos: «cambió el número de mutantes con el mismo
+   *  código» es el INSTRUMENTO, que es lo que se está juzgando; «el fuente
+   *  cambió desde la medida anterior» no tiene nada que ver con el runner y es
+   *  un FALSO ROJO esperando — basta con que otra tanda toque un fichero entre
+   *  el último `repartir` y la corrida de #443 para que el issue se cierre con
+   *  un número que no es suyo. `deltaDeFichero` ya distingue los dos en su
+   *  `porque`; lo que faltaba era que el veredicto los separara y dijera el
+   *  remedio (`--base <rev>`). */
+  codigoCambiado: readonly string[];
+}
+
 /** Lo que hay que cumplir para cambiar el instrumento con el que se mide
  *  (#443: `command` → `tap-runner`), contado en vez de leído a ojo.
  *
@@ -373,13 +462,22 @@ export function deltaDeCorrida(
  *  que se exige es lo que la casa ya distingue: `nuevos` y `resueltos` contados
  *  aparte (ver `deltaDeFichero`).
  *
- *  Y LOS DOS ESTADOS SIN COMPARACIÓN ENTRAN EN EL CRITERIO, que es la parte que
+ *  Y LOS ESTADOS SIN COMPARACIÓN ENTRAN EN EL CRITERIO, que es la parte que
  *  parece adorno y es la trampa: un fichero `incomparable` devuelve `nuevos: []`
  *  y `resueltos: []` —no ha comparado nada—, y `deltaDeFichero` lo declara
  *  justo cuando cambia el número de mutantes con el mismo código, o sea CUANDO
  *  CAMBIA EL INSTRUMENTO, que es el caso que esto existe para juzgar. Pedir
  *  solo «0 nuevos y 0 resueltos» se cumpliría en verde sobre cero
- *  comparaciones; por eso `comparables > 0` es también condición. */
+ *  comparaciones; por eso `comparables > 0` es también condición.
+ *
+ *  Las SIETE condiciones, y cada una cierra una forma medida de mentir:
+ *    1. `nuevos = 0`          · un superviviente que no estaba
+ *    2. `resueltos = 0`       · uno que estaba y ya no (el score puede no moverse)
+ *    3. `incomparables = 0`   · se comparó un fichero sin poder compararlo
+ *    4. `sin base = 0`        · no había contra qué
+ *    5. `comparables > 0`     · no se comparó nada en absoluto
+ *    6. `sin medir = 0` y `mueveTag` · se juzgó la casa con una fracción (H1)
+ *    7. `sin ejercer = 0`     · el instrumento nuevo mide MENOS (H2) */
 export interface VeredictoDeAdopcion {
   /** Ficheros que SÍ se compararon con su medida anterior. */
   comparables: number;
@@ -388,7 +486,16 @@ export interface VeredictoDeAdopcion {
   /** Supervivientes que estaban y ya no, sumados sobre los comparables. */
   resueltos: number;
   sinBase: string[];
+  /** Incomparables porque cambió el INSTRUMENTO: mismo código, otro número de
+   *  mutantes. Es el hallazgo que este verbo existe para ver. */
   incomparables: string[];
+  /** Incomparables porque cambió el CÓDIGO: la medida anterior es de otro
+   *  fuente. No dice nada del runner. */
+  incomparablesPorCodigo: string[];
+  /** Ficheros que la huella espera y esta corrida NO midió. */
+  sinMedir: string[];
+  /** Mutantes que ya no ejerce ningún test y antes sí. */
+  sinEjercer: number;
   adopta: boolean;
   /** TODOS los motivos, no el primero: arreglar uno y descubrir el siguiente en
    *  la vuelta de después es lo que hace que nadie termine de mirar. */
@@ -402,17 +509,26 @@ function muestraDe(ficheros: readonly string[], cuantos = 3): string {
   return ficheros.length > cuantos ? `${cabeza} y ${ficheros.length - cuantos} más` : cabeza;
 }
 
-export function veredictoDeAdopcion(deltas: readonly DeltaDeFichero[]): VeredictoDeAdopcion {
+export function veredictoDeAdopcion(
+  deltas: readonly DeltaDeFichero[],
+  corrida: CorridaQueJuzga,
+): VeredictoDeAdopcion {
   const conEstado = (e: DeltaDeFichero["base"]): string[] =>
     deltas
       .filter((d) => d.base === e)
       .map((d) => d.fichero)
       .sort();
   const sinBase = conEstado("sin base");
-  const incomparables = conEstado("incomparable");
+  const otroCodigo = new Set(corrida.codigoCambiado);
+  const todosIncomparables = conEstado("incomparable");
+  const incomparables = todosIncomparables.filter((f) => !otroCodigo.has(f));
+  const incomparablesPorCodigo = todosIncomparables.filter((f) => otroCodigo.has(f));
   const comparados = deltas.filter((d) => d.base === "con base");
   const nuevos = comparados.reduce((n, d) => n + d.nuevos.length, 0);
   const resueltos = comparados.reduce((n, d) => n + d.resueltos.length, 0);
+  const medidos = new Set(deltas.map((d) => d.fichero));
+  const sinMedir = [...corrida.esperados].filter((f) => !medidos.has(f)).sort();
+  const sinEjercer = corrida.sinEjercer.reduce((n, f) => n + f.nuevos, 0);
 
   const peros: string[] = [];
   if (comparados.length === 0) {
@@ -437,8 +553,50 @@ export function veredictoDeAdopcion(deltas: readonly DeltaDeFichero[]): Veredict
         "salen a cero SIN haber comparado nada, así que contarlos como verdes sería el verde que no comprueba",
     );
   }
+  if (incomparablesPorCodigo.length > 0) {
+    // El falso rojo. Se nombra APARTE del de arriba porque manda a otro sitio:
+    // aquel dice «el instrumento nuevo mide otra cosa» (que es el hallazgo) y
+    // éste dice «estás comparando contra la huella equivocada» (que no es un
+    // hallazgo de nadie). Colapsarlos cerraría #443 con un número que no es del
+    // runner.
+    peros.push(
+      `${incomparablesPorCodigo.length} fichero(s) con la BASE DE OTRO CÓDIGO ` +
+        `(${muestraDe(incomparablesPorCodigo)}): su fuente cambió desde la medida anterior, así que esto NO ` +
+        `dice nada del instrumento — compara contra la huella del commit que midió la base: ` +
+        `npm run mutacion -- comparar --base <sha>`,
+    );
+  }
   if (sinBase.length > 0) {
     peros.push(`${sinBase.length} fichero(s) SIN BASE (${muestraDe(sinBase)}): nadie los había medido antes`);
+  }
+  if (sinMedir.length > 0) {
+    peros.push(
+      `${sinMedir.length} de los ${corrida.esperados.length} fichero(s) de la huella SIN MEDIR en esta corrida ` +
+        `(${muestraDe(sinMedir)}): un veredicto sobre una fracción no es el veredicto de la casa. Pídela entera ` +
+        `(Actions → Mutation testing → Run workflow con el input TODOS)`,
+    );
+  }
+  if (!corrida.mueveTag) {
+    peros.push(
+      "esta corrida NO MUEVE EL TAG (midió una lista explícita, o le faltan informes), así que no declara " +
+        "medido nada más que lo suyo: una corrida que no puede decir «desde aquí está todo medido» tampoco " +
+        "puede dictar que se cambie el instrumento",
+    );
+  }
+  if (!corrida.completa) {
+    peros.push(
+      "la corrida está INCOMPLETA: pidió módulos que no dejaron informe, así que falta medida — que no es lo " +
+        "mismo que faltar hallazgos",
+    );
+  }
+  if (sinEjercer > 0) {
+    const ficheros = corrida.sinEjercer.filter((f) => f.nuevos > 0).map((f) => f.fichero);
+    peros.push(
+      `${sinEjercer} mutante(s) que ya NO EJERCE NINGÚN TEST (\`NoCoverage\`) y antes sí, en ` +
+        `${ficheros.length} fichero(s): ${muestraDe(ficheros)} — el instrumento nuevo mide MENOS, y eso no es ` +
+        "«el mismo conjunto de supervivientes»: `esVivo` colapsa `Survived` y `NoCoverage`, así que el delta " +
+        "no puede verlo",
+    );
   }
 
   return {
@@ -447,11 +605,15 @@ export function veredictoDeAdopcion(deltas: readonly DeltaDeFichero[]): Veredict
     resueltos,
     sinBase,
     incomparables,
+    incomparablesPorCodigo,
+    sinMedir,
+    sinEjercer,
     adopta: peros.length === 0,
     porque:
       peros.length === 0
-        ? `los ${comparados.length} fichero(s) medidos se compararon uno a uno contra la medida anterior y el ` +
-          "conjunto de supervivientes es EL MISMO, no solo el score"
+        ? `los ${comparados.length} fichero(s) de la huella se compararon uno a uno contra la medida anterior, ` +
+          "el conjunto de supervivientes es EL MISMO (no solo el score) y no hay ni uno que haya dejado de " +
+          "ejercer ningún test"
         : peros.join("; "),
   };
 }
@@ -461,50 +623,87 @@ export function veredictoDeAdopcion(deltas: readonly DeltaDeFichero[]): Veredict
 /** Cómo se movieron los `Timeout` de UN fichero entre dos medidas.
  *
  *  Se cuenta aparte porque son el único sitio donde el veredicto puede cambiar
- *  sin que ningún test haya cambiado de opinión, y porque las tres transiciones
- *  mandan a sitios distintos: `Timeout → detectado` no mueve el score y no es
- *  hallazgo de nadie, `Timeout → vivo` sale ADEMÁS como `nuevo` en el delta (y
- *  tumba la adopción), y `otro → Timeout` es medida que pasa a depender del
- *  reloj de la máquina. No se restan del veredicto: la regla del usuario no
- *  distingue y no se negocia — lo que este bloque hace es decir cuántos de los
- *  movimientos vinieron de ahí.
+ *  sin que ningún test haya cambiado de opinión, y porque cada transición manda
+ *  a un sitio distinto. Las CINCO, y ninguna se colapsa con otra:
  *
- *  PRECONDICIÓN: las dos medidas son del MISMO fichero medido en las dos
- *  corridas. Con un fichero que la base no midió, `timeoutsBase` llega vacío y
- *  todos los `Timeout` de ahora se leerían como `otro → Timeout`; quien llama
- *  tiene que dejar fuera esos ficheros y decir que no tienen base. */
+ *   · `T → detectado`  ahora lo mata un test. No mueve el score, no es de nadie.
+ *   · `T → vivo`       sale ADEMÁS como `nuevo` en el delta y tumba la adopción.
+ *   · `T → fuera`      ya no está en la medida (`RuntimeError`, `CompileError`,
+ *                      `Ignored`): no lo mató nadie, SALIÓ DEL DENOMINADOR.
+ *                      Estaba metido en el `else` de `T → detectado` y la tabla
+ *                      afirmaba «lo mata ahora un test» de un mutante que había
+ *                      desaparecido (QA, H4) — y un runner que ejecuta cada
+ *                      fichero directo es justo donde salen `RuntimeError`.
+ *   · `vivo → T`       un superviviente que «resolvió» EL RELOJ, no un test:
+ *                      alimenta `resueltos`. Antes se sumaba con el de abajo en
+ *                      un `otro → T` que no distinguía nada, así que la tabla
+ *                      tenía columna para lo que alimenta `nuevos` y ninguna
+ *                      para lo que alimenta `resueltos` (QA, H3).
+ *   · `killed → T`     lo mataba un test y ahora lo mata el reloj.
+ *
+ *  No se restan del veredicto: la regla del usuario no distingue y no se
+ *  negocia — lo que este bloque hace es decir cuántos de los movimientos
+ *  vinieron de ahí.
+ *
+ *  PRECONDICIÓN: las dos medidas son del MISMO fichero y del MISMO código. Con
+ *  un fichero que la base no midió, o cuyo fuente cambió, las huellas llevan
+ *  línea y columna de otro sitio y esto contaría cualquier cosa; quien llama
+ *  tiene que dejar esos ficheros fuera y decirlo. */
 export interface RelojDeFichero {
   fichero: string;
   /** Cuántos clasificó el reloj en la medida anterior. */
   base: number;
   /** Cuántos clasifica el reloj ahora. */
   ahora: number;
-  /** Los que ahora mata un test: invisibles en el score. */
   aDetectado: number;
-  /** Los que ahora están vivos: salen también como `nuevo`. */
   aVivo: number;
-  /** Los que antes tenían veredicto de test y ahora los clasifica el reloj. */
-  aTimeout: number;
+  /** `Timeout` de la base que ya no tiene veredicto ninguno: salió de la medida. */
+  aFuera: number;
+  vivoATimeout: number;
+  killedATimeout: number;
   /** Los que siguen clasificados por el reloj en las dos medidas. */
   siguen: number;
 }
 
-export function movimientosDeReloj(
-  fichero: string,
-  timeoutsBase: readonly string[],
-  timeoutsAhora: readonly string[],
-  vivosAhora: readonly string[],
-): RelojDeFichero {
-  const antes = new Set(timeoutsBase);
-  const despues = new Set(timeoutsAhora);
-  const vivos = new Set(vivosAhora);
+/** Las cinco poblaciones que hacen falta para clasificar sin adivinar. Van en
+ *  un objeto y no en cinco posicionales porque cinco listas de hashes seguidas
+ *  se intercambian sin que el compilador diga nada. */
+export interface PoblacionesDeFichero {
+  timeoutsBase: readonly string[];
+  /** Los supervivientes de la medida anterior — de la huella, no del delta: un
+   *  fichero incomparable deja el delta vacío y aquí haría falta igual. */
+  vivosBase: readonly string[];
+  timeoutsAhora: readonly string[];
+  vivosAhora: readonly string[];
+  /** Todo lo que entró en el denominador de la medida de ahora. Sin esto, un
+   *  mutante que desapareció se cuenta como detectado. */
+  medidosAhora: readonly string[];
+}
+
+export function movimientosDeReloj(fichero: string, p: PoblacionesDeFichero): RelojDeFichero {
+  const antes = new Set(p.timeoutsBase);
+  const despues = new Set(p.timeoutsAhora);
+  const vivos = new Set(p.vivosAhora);
+  const medidos = new Set(p.medidosAhora);
+  const vivosAntes = new Set(p.vivosBase);
   let aDetectado = 0;
   let aVivo = 0;
+  let aFuera = 0;
   let siguen = 0;
   for (const h of antes) {
     if (despues.has(h)) siguen += 1;
     else if (vivos.has(h)) aVivo += 1;
+    // El orden importa: «no está en la medida» se pregunta ANTES de dar por
+    // hecho que lo mató un test. Al revés es el `else` de H4.
+    else if (!medidos.has(h)) aFuera += 1;
     else aDetectado += 1;
+  }
+  let vivoATimeout = 0;
+  let killedATimeout = 0;
+  for (const h of despues) {
+    if (antes.has(h)) continue;
+    if (vivosAntes.has(h)) vivoATimeout += 1;
+    else killedATimeout += 1;
   }
   return {
     fichero,
@@ -512,7 +711,9 @@ export function movimientosDeReloj(
     ahora: despues.size,
     aDetectado,
     aVivo,
-    aTimeout: [...despues].filter((h) => !antes.has(h)).length,
+    aFuera,
+    vivoATimeout,
+    killedATimeout,
     siguen,
   };
 }
@@ -528,9 +729,49 @@ export function totalDeReloj(filas: readonly RelojDeFichero[]): Omit<RelojDeFich
     ahora: suma((r) => r.ahora),
     aDetectado: suma((r) => r.aDetectado),
     aVivo: suma((r) => r.aVivo),
-    aTimeout: suma((r) => r.aTimeout),
+    aFuera: suma((r) => r.aFuera),
+    vivoATimeout: suma((r) => r.vivoATimeout),
+    killedATimeout: suma((r) => r.killedATimeout),
     siguen: suma((r) => r.siguen),
   };
+}
+
+// ── los mutantes que ya no ejerce nadie ──────────────────────────────────────
+
+/** Cómo se movió la población de `NoCoverage` de UN fichero.
+ *
+ *  `nuevos` es lo que decide, y por eso está separado del `ahora`: un
+ *  `NoCoverage` que ya lo era no dice nada del instrumento nuevo; uno que ANTES
+ *  se ejercía dice que el instrumento nuevo mide menos.
+ *
+ *  SOLO PUEDE NEGAR, igual que `costeEstimado`: si no hay base con la que
+ *  comparar —porque no se pasó `--timeouts`, o porque esa corrida no midió este
+ *  módulo—, quien llama pasa `base: []` y TODOS los de ahora salen como nuevos.
+ *  Entre negar de más y autorizar de más, esto existe para lo segundo. */
+export interface SinEjercerDeFichero {
+  fichero: string;
+  base: number;
+  ahora: number;
+  nuevos: number;
+}
+
+export function movimientosSinEjercer(
+  fichero: string,
+  base: readonly string[],
+  ahora: readonly string[],
+): SinEjercerDeFichero {
+  const antes = new Set(base);
+  return {
+    fichero,
+    base: antes.size,
+    ahora: ahora.length,
+    nuevos: ahora.filter((h) => !antes.has(h)).length,
+  };
+}
+
+export function totalSinEjercer(filas: readonly SinEjercerDeFichero[]): Omit<SinEjercerDeFichero, "fichero"> {
+  const suma = (f: (r: SinEjercerDeFichero) => number): number => filas.reduce((n, r) => n + f(r), 0);
+  return { base: suma((r) => r.base), ahora: suma((r) => r.ahora), nuevos: suma((r) => r.nuevos) };
 }
 
 /** La huella nueva: lo medido se sustituye, lo NO medido se conserva.

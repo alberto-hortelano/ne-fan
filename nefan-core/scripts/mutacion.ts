@@ -63,7 +63,7 @@ import { dirname, join, relative, resolve } from "node:path";
 
 import { contextoDe, seleccionar, SIN_RENOMBRAR, type Seleccion } from "./afectado.js";
 import { lineasDeCodigo } from "./crap-score.js";
-import { comparaEnSeco } from "./mutacion-comparar.js";
+import { comparaEnSeco, type BaseDeFichero, type PoblacionesAhora } from "./mutacion-comparar.js";
 import {
   coreRoot,
   esVivo,
@@ -101,7 +101,9 @@ import {
   matrizDeLotes,
   permisoLocal,
   prDelAsunto,
+  medidosDeFichero,
   rangoDe,
+  sinEjercerDeFichero,
   timeoutsDeFichero,
   veredictoDeCorrida,
   verificaDescarga,
@@ -242,27 +244,42 @@ function escribeHuella(h: Huella): void {
   writeFileSync(rutaHuella(), `${JSON.stringify(h, null, 2)}\n`);
 }
 
-/** La huella COMMITEADA (la de HEAD), que es contra la que se calcula el delta.
+/** La huella commiteada en UNA revisión cualquiera.
  *
- *  No la del árbol de trabajo, y la diferencia se pagó en la primera pasada
- *  real: `repartir` escribe la huella nueva, así que una SEGUNDA pasada antes de
- *  commitear comparaba contra lo que ella misma acababa de escribir y el delta
- *  se colapsaba a cero — el comentario de la PR salía sin los supervivientes
- *  NUEVOS y sin decir que los había perdido. Con la base en HEAD, `repartir` es
- *  idempotente: correrlo dos veces da el mismo reparto, y «el delta se ve en el
- *  diff» pasa a ser literal (base = HEAD, resultado = árbol de trabajo).
- *
- *  Que el fichero no esté en HEAD es la primera vez y se dice; que git no pueda
- *  contestar es otra cosa y se lanza. */
-function huellaEnHead(): Huella {
+ *  `repartir` siempre usa HEAD (ver abajo), pero `comparar` necesita poder
+ *  elegir, y no por comodidad: la huella de HEAD cambia en cuanto otra tanda
+ *  reparte, y entonces cualquier fuente tocado entre medias sale `incomparable`
+ *  por blob. Como `incomparable` es condición dura, #443 se cerraría con un
+ *  `NO SE ADOPTA` que no tiene nada que ver con el runner (QA, H7). El remedio
+ *  es comparar contra la huella del commit que midió la base. */
+function huellaEnRevision(rev: string): Huella {
   const ruta = `${nombrePaquete}/${RUTA_HUELLA}`;
-  const existe = spawnSync("git", ["cat-file", "-e", `HEAD:${ruta}`], { cwd: raizRepo });
+  const existe = spawnSync("git", ["cat-file", "-e", `${rev}:${ruta}`], { cwd: raizRepo });
   if (existe.status !== 0) {
+    if (rev !== "HEAD") {
+      throw new Error(
+        `en ${rev} no hay ${RUTA_HUELLA}: o la revisión no existe en este clon (git fetch), o es anterior a ` +
+          `que la huella se commiteara. Sin base no hay comparación que valga.`,
+      );
+    }
     console.log(`(${RUTA_HUELLA} no está en HEAD: primera corrida, todo saldrá SIN BASE)`);
     return HUELLA_VACIA;
   }
-  return JSON.parse(git(["show", `HEAD:${ruta}`])) as Huella;
+  return JSON.parse(git(["show", `${rev}:${ruta}`])) as Huella;
 }
+
+/** POR QUÉ `repartir` NO ELIGE REVISIÓN Y SIEMPRE USA HEAD. Es la huella
+ *  COMMITEADA, no la del árbol de trabajo, y la diferencia se pagó en la primera
+ *  pasada real: `repartir` escribe la huella nueva, así que una SEGUNDA pasada
+ *  antes de commitear comparaba contra lo que ella misma acababa de escribir y
+ *  el delta se colapsaba a cero — el comentario de la PR salía sin los
+ *  supervivientes NUEVOS y sin decir que los había perdido. Con la base en HEAD,
+ *  `repartir` es idempotente: correrlo dos veces da el mismo reparto, y «el
+ *  delta se ve en el diff» pasa a ser literal (base = HEAD, resultado = árbol de
+ *  trabajo). `comparar`, que no escribe, sí puede elegir: ver `huellaEnRevision`.
+ *
+ *  Que el fichero no esté en HEAD es la primera vez y se dice; que git no pueda
+ *  contestar es otra cosa y se lanza. */
 
 /** El coste de un módulo en mutantes, según la última medida que haya de sus
  *  ficheros. Sale de la huella (≈75 KB) y no de los informes (76 MB): es lo que
@@ -559,33 +576,39 @@ function traer(argv: readonly string[]): void {
   // Vaciar ANTES de bajar, y no fusionar: un informe de la semana pasada que se
   // quedara aquí se leería como parte de esta foto.
   //
-  // Y ESO SE DICE ANTES DE HACERLO, porque lo que se borra puede ser la BASE de
-  // una comparación. La huella commiteada guarda `vivos` y `total`, y ahí un
-  // `Timeout` es indistinguible de un `Killed`: los mutantes que clasificó el
-  // reloj solo están en los INFORMES. Bajar la corrida nueva sin apartar los
-  // viejos deja a `comparar --timeouts` sin nada que mirar, y recuperarlos
-  // cuesta otra descarga (`gh run download <run-id>`) si es que el artefacto no
-  // ha caducado.
+  // PERO NO A CIEGAS, porque lo que se borra es la BASE de una comparación. La
+  // huella commiteada guarda `vivos` y `total`, y ahí un `Timeout` es
+  // indistinguible de un `Killed` y un `NoCoverage` de un `Survived`: esas tres
+  // poblaciones SOLO están en los informes. Bajar la corrida nueva sin apartar
+  // los viejos deja a `comparar` sin nada con que juzgar un cambio de
+  // instrumento, y recuperarlos cuesta otra descarga — si el artefacto no ha
+  // caducado.
+  //
+  // La primera versión de esto IMPRIMÍA el ritual justo antes del `rmSync`, o
+  // sea que quien lo leía ya no podía hacer nada con él: prosa, no guardia (QA,
+  // H10). Ahora se NIEGA y dice las dos salidas. El coste es un paso por tanda,
+  // y es justo el paso que protege la base.
   mkdirSync(DIR_INFORMES, { recursive: true });
   const viejos = readdirSync(DIR_INFORMES).filter((f) => f.endsWith(".json") && f !== "corrida.json");
-  if (viejos.length > 0) {
+  if (viejos.length > 0 && !argv.includes("--sobrescribir")) {
     let previa: string | undefined;
     if (existsSync(RUTA_CORRIDA)) {
       try {
         previa = (JSON.parse(readFileSync(RUTA_CORRIDA, "utf8")) as Partial<Corrida>).run_id;
       } catch (err) {
-        // Se dice, no se calla: sin el id, la línea de recuperación de abajo no
-        // se puede escribir y quien la necesite tiene que ir a buscarlo a mano.
-        console.log(`  (el manifiesto que hay aquí no se puede leer: ${(err as Error).message})`);
+        // Se dice, no se calla: sin el id, la línea de recuperación no se puede
+        // escribir y quien la necesite tiene que ir a buscarlo a mano.
+        console.error(`  (el manifiesto que hay aquí no se puede leer: ${(err as Error).message})`);
       }
     }
-    console.log(
-      `Vaciando ${relative(coreRoot, DIR_INFORMES)}: ${viejos.length} informe(s)` +
-        `${previa === undefined ? "" : ` de la corrida ${previa}`}.\n` +
-        `  Eso es la BASE de una comparación: los \`Timeout\` solo viven en los informes, y la huella\n` +
-        `  commiteada no los guarda. El ritual es apartarla ANTES de traer la siguiente:\n` +
-        `    mv reports/mutation reports/mutation-base\n` +
-        `${previa === undefined ? "" : `  Si ya se fue: gh run download ${previa} -n ${ARTEFACTO} -D ${nombrePaquete}/reports/mutation-base\n`}`,
+    throw new Error(
+      `en ${relative(coreRoot, DIR_INFORMES)} hay ${viejos.length} informe(s)` +
+        `${previa === undefined ? "" : ` de la corrida ${previa}`}, y traer los de ${id} los BORRA.\n` +
+        `  Son la base de una comparación: los \`Timeout\` y los \`NoCoverage\` solo viven en los informes,\n` +
+        `  la huella commiteada no los guarda. Elige:\n` +
+        `    mv reports/mutation reports/mutation-base   (y luego: npm run mutacion -- traer ${id})\n` +
+        `    npm run mutacion -- traer ${id} --sobrescribir   (si no los vas a necesitar)\n` +
+        `${previa === undefined ? "" : `  Para recuperarlos después: gh run download ${previa} -n ${ARTEFACTO} -D ${nombrePaquete}/reports/mutation-base\n`}`,
     );
   }
   for (const f of readdirSync(DIR_INFORMES)) rmSync(join(DIR_INFORMES, f), { force: true });
@@ -644,14 +667,18 @@ interface ContextoDeCorrida {
   plan: PlanMutacion;
   corrida: Corrida;
   base: Huella;
+  /** De qué revisión salió `base`, resuelta a sha. Se imprime SIEMPRE: quien
+   *  lee un `incomparable` tiene que poder saber contra qué se comparó. */
+  revBase: string;
   rango: RangoDeCommits;
 }
 
-function contextoDeLaCorrida(): ContextoDeCorrida {
+function contextoDeLaCorrida(rev = "HEAD"): ContextoDeCorrida {
   const plan = leerPlan();
   const corrida = leerCorrida();
   exigeDescargaLimpia(corrida);
-  const base = huellaEnHead();
+  const base = huellaEnRevision(rev);
+  const revBase = `${rev}${rev === "HEAD" ? ` (${git(["rev-parse", "--short", "HEAD"])})` : ""}`;
   // EL ANCLA LA TRAE LA CORRIDA, no el tag (#381). `shaDelTag()` aquí leería un
   // tag que esta misma corrida ya adelantó a `corrida.sha` al terminar
   // (`mutation.yml`), así que el rango salía vacío por construcción y los 33
@@ -669,7 +696,7 @@ function contextoDeLaCorrida(): ContextoDeCorrida {
         `falta la historia (git fetch --unshallow).`,
     );
   }
-  return { plan, corrida, base, rango };
+  return { plan, corrida, base, revBase, rango };
 }
 
 /** El delta de la corrida, fichero a fichero, con quién pudo traerlo y lo que
@@ -682,18 +709,24 @@ function contextoDeLaCorrida(): ContextoDeCorrida {
  *  nuevos» en el otro, y aquí ese «0 nuevos» sería la luz verde para cambiar el
  *  instrumento con el que se mide la casa entera.
  *
- *  Devuelve además los `Timeout` de esta corrida, que la huella NO guarda —ahí
- *  `Timeout` y `Killed` son lo mismo—, porque son los únicos mutantes que
- *  pueden cambiar de bando sin que ningún test cambie de opinión. */
+ *  Devuelve además las tres poblaciones que la huella NO sabe expresar, porque
+ *  ahí solo viajan `vivos` y `total`: los `Timeout` (indistinguibles de un
+ *  `Killed`), los `NoCoverage` (indistinguibles de un `Survived`, porque
+ *  `esVivo` los colapsa) y todo lo que entró en el denominador (sin eso, un
+ *  mutante que SALIÓ de la medida se cuenta como detectado). Son los tres
+ *  sitios donde el veredicto puede moverse sin que ningún test cambie de
+ *  opinión. */
 function repartosDeLaCorrida(ctx: ContextoDeCorrida): {
   repartos: Reparto[];
   medidos: Record<string, MedidaDeFichero>;
-  timeouts: Record<string, string[]>;
+  ahora: Record<string, PoblacionesAhora>;
+  blobs: Record<string, string>;
 } {
   const { plan, corrida, base, rango } = ctx;
   const repartos: Reparto[] = [];
   const medidos: Record<string, MedidaDeFichero> = {};
-  const timeouts: Record<string, string[]> = {};
+  const poblaciones: Record<string, PoblacionesAhora> = {};
+  const blobs: Record<string, string> = {};
 
   for (const id of modulosConInforme(corrida)) {
     const modulo = moduloPorId(plan, id);
@@ -701,7 +734,12 @@ function repartosDeLaCorrida(ctx: ContextoDeCorrida): {
     const ahora: Record<string, { vivos: string[]; total: number; blob: string }> = {};
     for (const [fichero, info] of Object.entries(informe.files)) {
       ahora[fichero] = { ...vivosDeFichero(fichero, info.mutants), blob: blobEnCommit(corrida.sha, fichero) };
-      timeouts[fichero] = timeoutsDeFichero(fichero, info.mutants);
+      blobs[fichero] = ahora[fichero].blob;
+      poblaciones[fichero] = {
+        timeouts: timeoutsDeFichero(fichero, info.mutants),
+        sinEjercer: sinEjercerDeFichero(fichero, info.mutants),
+        medidos: medidosDeFichero(fichero, info.mutants),
+      };
     }
     const deltas = deltaDeCorrida(ahora, base);
     const atribucion = atribuir(id, rango);
@@ -730,7 +768,7 @@ function repartosDeLaCorrida(ctx: ContextoDeCorrida): {
       bateria: modulo.tests,
     });
   }
-  return { repartos, medidos, timeouts };
+  return { repartos, medidos, ahora: poblaciones, blobs };
 }
 
 function repartir(argv: readonly string[]): void {
@@ -957,25 +995,58 @@ function comentarioDe(pr: number, repartos: readonly Reparto[], corrida: Corrida
 
 // ── verbo: comparar (mira y no toca) ─────────────────────────────────────────
 
-/** Dónde están los informes de la corrida BASE, que es lo único que puede
- *  contar los movimientos de `Timeout`: la huella no los guarda.
+/** Dónde están los informes de la corrida BASE, resuelto y COMPROBADO.
  *
- *  Fail-loud si el flag llega sin valor. Degradarlo a «sin base» imprimiría el
- *  bloque del reloj vacío y se leería como «no se movió ninguno», que es
- *  exactamente lo contrario de lo que habría pasado. */
+ *  Es lo único que puede contar los movimientos de `Timeout` y de `NoCoverage`:
+ *  la huella guarda `vivos` y `total`, y ahí un `Timeout` es un `Killed` y un
+ *  `NoCoverage` es un `Survived`.
+ *
+ *  FAIL-LOUD TAMBIÉN CON LA RUTA MAL ESCRITA, que es la mitad del caso que la
+ *  primera versión dejó abierta (QA, H5): con un directorio que no existe —o el
+ *  que `traer` acaba de vaciar— el bloque del reloj salía con TODO A CERO, y una
+ *  tabla de ceros se lee «no se movió ningún Timeout», que es exactamente lo
+ *  contrario de lo que habría pasado. El aviso existía, pero debajo del TOTAL y
+ *  detrás de 55 nombres: lo que se pega en el issue es el TOTAL. */
 function dirDeTimeouts(argv: readonly string[]): string | undefined {
   const i = argv.indexOf("--timeouts");
   if (i < 0) return undefined;
   const dir = argv[i + 1];
+  const comoSeArregla =
+    "  Ojo al ritual: `traer` VACÍA reports/mutation/ antes de bajar, así que la base hay que apartarla\n" +
+    "  ANTES (mv reports/mutation reports/mutation-base). Si ya se perdió:\n" +
+    "    gh run download <run-id> -n informe-mutacion -D nefan-core/reports/mutation-base";
   if (dir === undefined || dir.startsWith("-")) {
     throw new Error(
-      "--timeouts necesita el directorio con los informes de la corrida BASE (p.ej. reports/mutation-base).\n" +
-        "  Ojo al ritual: `traer` VACÍA reports/mutation/ antes de bajar, así que la base hay que apartarla\n" +
-        "  ANTES (mv reports/mutation reports/mutation-base). Si ya se perdió:\n" +
-        "    gh run download <run-id> -n informe-mutacion -D nefan-core/reports/mutation-base",
+      `--timeouts necesita el directorio con los informes de la corrida BASE (p.ej. reports/mutation-base).\n${comoSeArregla}`,
     );
   }
-  return dir;
+  const abs = resolve(coreRoot, dir);
+  if (!existsSync(abs)) {
+    throw new Error(`--timeouts apunta a ${abs}, que no existe.\n${comoSeArregla}`);
+  }
+  const informes = readdirSync(abs).filter((f) => f.endsWith(".json") && f !== "corrida.json");
+  if (informes.length === 0) {
+    throw new Error(
+      `--timeouts apunta a ${abs} y ahí no hay ni un informe de módulo.\n` +
+        `  Un directorio vacío no es «la base no tenía Timeout»: es que no hay base.\n${comoSeArregla}`,
+    );
+  }
+  return abs;
+}
+
+/** Los ficheros que la huella espera ver medidos: el conjunto de LA CASA.
+ *
+ *  Es la respuesta a H1 —«SE PUEDE ADOPTAR» sobre 1 fichero de 87— y la
+ *  intersección es deliberada por los dos lados: una fila de la huella cuyo
+ *  fuente ya no muta el plan (hoy `src/protocol/status-labels.ts`, que ni
+ *  existe) no se puede exigir, y un fichero que el plan muta y la huella no
+ *  tiene no se puede comparar contra nada — si la corrida lo mide, sale
+ *  `sin base`, que ya es condición. */
+function ficherosEsperados(plan: PlanMutacion, base: Huella): string[] {
+  const delPlan = new Set(plan.modulos.flatMap((m) => ficherosMutados(m)));
+  return Object.keys(base.ficheros)
+    .filter((f) => delPlan.has(f))
+    .sort();
 }
 
 /** El mismo delta que `repartir` y NINGUNA escritura: ni la huella, ni el tag,
@@ -984,13 +1055,35 @@ function dirDeTimeouts(argv: readonly string[]): string | undefined {
  *  Existe porque sin él la regla dura de #443 es inaplicable por construcción:
  *  el único verbo que comparaba escribía la huella y CI le movía el tag detrás,
  *  así que medir con un instrumento nuevo destruía la base contra la que había
- *  que compararlo. Quien decide y quien imprime viven en
- *  `scripts/mutacion-comparar.ts` (que no puede escribir: regla
- *  `comparar-no-escribe`) y en `mutacion-huella.ts` (puro, con batería). */
+ *  que compararlo. Quien decide vive en `mutacion-huella.ts` (puro, con
+ *  batería) y quien imprime en `scripts/mutacion-comparar.ts`, que no puede
+ *  escribir: reglas `comparar-solo-lee` y `comparar-no-escribe`.
+ *
+ *  ESTAS LÍNEAS DE AQUÍ NO LAS CUBRE NINGUNA DE LAS DOS REGLAS, porque viven en
+ *  el fichero que escribe la huella por diseño. Lo que las vigila es el
+ *  invariante de `qa/mutacion-cableado-en-negativo.mjs`, que corre el verbo y
+ *  fotografía la huella, el tag, `git status` y el árbol de `reports/` — ese
+ *  último porque está en `.gitignore`, así que una escritura ahí no la ve
+ *  `git status`, y es donde vive la base que esto existe para no destruir. */
 function comparar(argv: readonly string[]): void {
-  const ctx = contextoDeLaCorrida();
-  const { repartos, timeouts } = repartosDeLaCorrida(ctx);
+  const ctx = contextoDeLaCorrida(valorDe(argv, "--base") ?? "HEAD");
+  const { repartos, ahora, blobs } = repartosDeLaCorrida(ctx);
   const veredicto = veredictoDeCorrida(ctx.corrida);
+  const base: Record<string, BaseDeFichero> = {};
+  const codigoCambiado: string[] = [];
+  for (const fichero of Object.keys(blobs)) {
+    const fila = ctx.base.ficheros[fichero];
+    if (fila !== undefined && fila.blob !== "" && fila.blob !== blobs[fichero]) codigoCambiado.push(fichero);
+    base[fichero] = {
+      vivos: fila?.vivos ?? [],
+      // Mismo blob = las dos medidas hablan del mismo código, así que las
+      // huellas (que llevan línea y columna) son comparables. Es una pregunta
+      // DISTINTA de la de `deltaDeFichero`, que además exige el mismo `total`:
+      // un fichero cuyo total cambió sigue siendo comparable por POSICIÓN, y es
+      // justo el caso en el que hay que saber qué mutante desapareció.
+      mismoCodigo: fila !== undefined && fila.blob === blobs[fichero],
+    };
+  }
   process.exitCode = comparaEnSeco({
     corrida: {
       run_id: ctx.corrida.run_id,
@@ -998,12 +1091,27 @@ function comparar(argv: readonly string[]): void {
       desde: ctx.corrida.desde,
       origen: ctx.corrida.origen,
       completa: veredicto.completa,
+      mueveTag: veredicto.mueveTag,
       porque: veredicto.porque,
     },
     modulos: repartos,
-    timeouts,
+    ahora,
+    base,
+    codigoCambiado,
+    revBase: ctx.revBase,
+    esperados: ficherosEsperados(ctx.plan, ctx.base),
     dirBase: dirDeTimeouts(argv),
   });
+}
+
+/** El valor de un flag `--x <valor>`, o `undefined` si no está. Fail-loud si
+ *  está y llega vacío: un flag sin valor no significa «el defecto». */
+function valorDe(argv: readonly string[], flag: string): string | undefined {
+  const i = argv.indexOf(flag);
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  if (v === undefined || v.startsWith("-")) throw new Error(`${flag} necesita un valor`);
+  return v;
 }
 
 // ── verbo: local ─────────────────────────────────────────────────────────────
@@ -1518,7 +1626,8 @@ function main(): void {
         `  pendiente [--ids]   qué hay sin medir desde ${TAG}, y cuánto cuesta\n` +
         `  traer [run-id]      vacía reports/mutation/ y baja el artefacto de CI\n` +
         `  repartir [--comentar]  delta contra la corrida anterior y atribución\n` +
-        `  comparar [--timeouts <dir>]  el MISMO delta sin escribir nada, con el veredicto de adopción\n` +
+        `  comparar [--timeouts <dir>] [--base <rev>]  el MISMO delta sin escribir nada, con el veredicto\n` +
+        `                      de adopción (las SIETE condiciones). --base elige contra qué huella\n` +
         `  local <id>          mide UN módulo barato en esta máquina\n` +
         `  lotes [--ids …]     parte la corrida en jobs por los SEGUNDOS medidos\n` +
         `  fusionar --entrada  junta los lotes en un solo corrida.json (lo corre CI)\n` +

@@ -2810,6 +2810,59 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // La LISTA BLANCA, que es la que de verdad garantiza «este fichero no
+  // escribe». Nació porque QA midió el denylist de al lado contra catorce
+  // evasiones plausibles y pasaban siete. Una lista negra sobre un espacio de
+  // nombres abierto no acaba nunca; ésta cabe en una línea y es total, así que
+  // lo que se le enseña es justo eso: que la única forma de traer `node:fs` es
+  // la que el fichero ya usa.
+  it("[error] comparar-solo-lee: solo la lectura de node:fs entra, y child_process no entra nunca", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "comparar-solo-lee");
+    const enComparar = (text: string): SourceFile[] => [
+      { path: "nefan-core/scripts/mutacion-comparar.ts", text, imports: [] },
+    ];
+
+    assert.deepEqual(
+      deLaRegla(enComparar('import { existsSync, readFileSync } from "node:fs";\n')),
+      [],
+      "la línea que el fichero ya tiene es la única que pasa",
+    );
+
+    assert.deepEqual(
+      deLaRegla(
+        enComparar(
+          // Las cuatro formas de ensanchar la superficie, incluida la que la
+          // primera versión de este fichero usaba a propósito.
+          'import * as fs from "node:fs";\n' +
+            'import { existsSync, readFileSync, writeFileSync } from "node:fs";\n' +
+            'import fs2 from "node:fs";\n' +
+            'import { writeFile } from "node:fs/promises";\n' +
+            'import { writeFileSync } from "fs";\n' +
+            // Y la puerta que no es `node:fs` en absoluto: un `git tag -f` es
+            // una escritura que ningún denylist de nombres de `fs` ve.
+            'import { execFileSync } from "node:child_process";\n' +
+            'const { execSync } = await import("child_process");\n',
+        ),
+      ).map((v) => v.line),
+      [1, 2, 3, 4, 5, 6, 7],
+      "cualquier otra forma de traer node:fs —y child_process entero— tiene que saltar",
+    );
+
+    assert.deepEqual(
+      deLaRegla(
+        enComparar(
+          "/** Ni `node:child_process`, ni el espacio de nombres entero de `node:fs`.\n" +
+            ' *  Se explica aquí para que nadie lo suponga: import * as fs from "node:fs".\n' +
+            " */\n" +
+            'import { existsSync, readFileSync } from "node:fs";\n',
+        ),
+      ),
+      [],
+      "la prosa que explica la regla no es la regla: el `why` de esta casa vive en los comentarios",
+    );
+  });
+
   for (const report of reports) {
     const { rule } = report;
     if (rule.severity === "error") {
