@@ -44,6 +44,37 @@ export function normalizarModo(v: unknown): Modo {
   return esModo(v) ? v : "";
 }
 
+/** Los dos modos ELEGIBLES: los que una partida puede tener de verdad. `Modo`
+ *  incluye el `""` de «sin elegir», que no es una elección sino su ausencia, y
+ *  quien tiene que DECIDIR —el selector del título, el fallback del wire— no
+ *  puede contestar con él. El tipo se lo impide. */
+export type ModoElegido = Exclude<Modo, "">;
+
+/** CON QUÉ MODO ARRANCA UNA PARTIDA NUEVA: maqueta 3D, o sea sin gastar.
+ *
+ *  Decisión del usuario (2026-09-14, triaje del backlog): *«Nace en Maqueta 3D,
+ *  y encender Imagen IA es explícito, como en el home.»* Hasta ese día las dos
+ *  puertas de la MISMA decisión no se trataban igual: en el home, encender
+ *  Imagen IA sobre un save exige dos clicks y dice «Gastará créditos»; en el
+ *  selector, una partida nueva nacía en `image` **por omisión** — nadie había
+ *  elegido gastar y ya se gastaba.
+ *
+ *  VIVE AQUÍ Y NO EN EL CLIENTE porque el defecto se leía desde TRES sitios: el
+ *  literal de escenarios del selector, el de PERSONAJES del mismo selector —que
+ *  solo sigue a escenarios en un *click*, así que dejarlo atrás paría partidas
+ *  en maqueta pagando skins— y el fallback del wire
+ *  (`bridge/handlers/session.ts`), que es el que decide de verdad: un
+ *  `new_game` sin modo nace con esto, diga lo que diga el cliente. Tres copias
+ *  de una decisión de GASTO es la avería que persigue
+ *  `la-logica-de-juego-no-vuelve-al-cliente`.
+ *
+ *  Es un modo ELEGIDO y no `""`: «sin elegir» no es un defecto, y por el wire
+ *  aborta — el bridge rechaza lo que no sabe leer, que es lo correcto.
+ *
+ *  Lo que NO cambia: el save. Una partida guardada lleva SU modo congelado y
+ *  esto no la toca; solo decide con qué nace la que no lo trae. */
+export const MODO_AL_EMPEZAR: ModoElegido = "vector";
+
 export interface FacetasDeModo {
   /** Modo de escenarios (`world.render_mode`). */
   renderMode: Modo;

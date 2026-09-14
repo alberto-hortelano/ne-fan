@@ -58,11 +58,10 @@ async function gastoDelFake() {
 
 /** Nueva partida con el modo de ESCENARIOS elegido en el título (Maqueta 3D =
  *  `vector`, Imagen IA = `image`) y personajes base (los skins no son el
- *  sujeto). `nuevaPartida` no expone el modo de escenarios: se pulsa aquí el
- *  mismo botón que pulsa el jugador. */
+ *  sujeto). El modo lo pulsa `nuevaPartida`, que desde 2026-09-14 lo EXIGE:
+ *  este guion es de los que miden las dos caras, así que se lo pasa. */
 async function partidaEnModo(ctx, renderMode) {
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
-  await ctx.page.click(`#ts-rendermode [data-rendermode="${renderMode}"]`);
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode });
   return comenzar(ctx);
 }
 

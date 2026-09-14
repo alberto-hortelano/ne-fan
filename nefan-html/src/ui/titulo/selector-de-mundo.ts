@@ -32,6 +32,7 @@ import type { NarrativeClient } from "../../net/narrative-client.js";
 import type { NarrativeStatusDeJuego } from "@nefan-core/src/protocol/messages.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { eleccionDeEstilo } from "@nefan-core/src/session/eleccion-de-estilo.js";
+import { MODO_AL_EMPEZAR, type ModoElegido } from "@nefan-core/src/session/gates-de-imagen.js";
 import { paso } from "../async-ui.js";
 import {
   CHAR_MODE_LABELS,
@@ -207,14 +208,14 @@ export async function pintarSelectorDeMundo(
   const renderModeEl = deps.content.querySelector("#ts-rendermode") as HTMLElement;
   const charModeEl = deps.content.querySelector("#ts-charmode") as HTMLElement;
   const continueBtn = deps.content.querySelector("#ts-continue") as HTMLButtonElement;
-  let selectedRenderMode: "image" | "vector" = "image";
-  // Personajes: sigue a Escenarios hasta que el jugador lo toque — elegir
-  // "Maqueta 3D (sin coste)" no debe dejar los skins IA activados a
-  // escondidas. Con graphics.ai_skin apagado el backend de skins no existe:
-  // forzar vector para no vender una opción muerta.
+  let selectedRenderMode: ModoElegido = MODO_AL_EMPEZAR;
+  // Los dos defectos salen de core (`MODO_AL_EMPEZAR`, el mismo valor con el
+  // que el wire decide): personajes NACE en el de escenarios y solo lo sigue en
+  // un CLICK, así que otro valor aquí pare partidas en maqueta pagando skins.
+  // Sin `graphics.ai_skin` no hay backend de skins: vector, no se vende lo muerto.
   const skinBackendOn = CONFIG.graphics.ai_skin;
   let charModeTouched = false;
-  let selectedCharMode: "image" | "vector" = skinBackendOn ? "image" : "vector";
+  let selectedCharMode: ModoElegido = skinBackendOn ? MODO_AL_EMPEZAR : "vector";
   const refreshRenderMode = (): void => {
     for (const btn of renderModeEl.querySelectorAll<HTMLElement>("[data-rendermode]")) {
       const active = btn.dataset.rendermode === selectedRenderMode;

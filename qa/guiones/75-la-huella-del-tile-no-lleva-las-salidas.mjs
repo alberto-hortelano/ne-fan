@@ -175,8 +175,7 @@ export default async function (ctx) {
   });
   await recargarAlTitulo(ctx);
 
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
-  await ctx.page.click('#ts-rendermode [data-rendermode="vector"]');
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "vector" });
   await comenzar(ctx);
   const tile0 = await ctx.page.evaluate(() => window.__nefan.currentTile);
   // Por ESTADO: la derivación es síncrona al añadir el tile, pero el hook se

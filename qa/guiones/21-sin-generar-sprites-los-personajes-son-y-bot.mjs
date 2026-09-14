@@ -78,7 +78,7 @@ export default async function (ctx) {
     });
   });
 
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "image" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "image", renderMode: "image" });
   await comenzar(ctx);
 
   const gente = await ctx.waitFor(

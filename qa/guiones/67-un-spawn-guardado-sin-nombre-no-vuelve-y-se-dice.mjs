@@ -123,7 +123,7 @@ async function alTitulo(ctx) {
 }
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   const partida = await comenzar(ctx);
 
   // ── 0 · El motor pone a Nogala a mitad de conversación (turno 3) ────────

@@ -12,6 +12,7 @@ import {
   gatesDeImagen,
   modoEfectivoDePersonajes,
   normalizarModo,
+  MODO_AL_EMPEZAR,
   type EntradaDeGates,
   type GatesDeImagen,
   type Modo,
@@ -41,6 +42,30 @@ describe("normalizarModo", () => {
     for (const raro of [undefined, null, "IMAGE", "imagen", "foo", 1, true, {}]) {
       assert.equal(normalizarModo(raro), "", `${JSON.stringify(raro)} debía colapsar a ""`);
     }
+  });
+});
+
+/** Con qué modo arranca una partida nueva (decisión del usuario 2026-09-14).
+ *  Los dos casos miden cosas distintas y hacen falta los dos: el primero dice
+ *  QUÉ CONSIGUE —que ninguna de las dos puertas de gasto se abra sola— y el
+ *  segundo que es una ELECCIÓN y no el vacío, que por el wire aborta. Con solo
+ *  el primero, `MODO_AL_EMPEZAR = ""` pasaría (los escenarios no gastan y los
+ *  personajes caen al toggle) y por el bridge reventaría toda partida nueva. */
+describe("MODO_AL_EMPEZAR", () => {
+  it("una partida nueva no abre NINGUNA puerta de gasto, ni con el toggle local encendido", () => {
+    assert.deepEqual(
+      gatesDeImagen({
+        renderMode: MODO_AL_EMPEZAR,
+        characterMode: "",
+        toggleLocalPersonajes: true,
+      }),
+      { escenarios: false, personajes: false },
+    );
+  });
+
+  it("…y nace DECIDIDA: es uno de los dos modos elegibles, no «sin elegir»", () => {
+    assert.equal(esModo(MODO_AL_EMPEZAR), true, `${JSON.stringify(MODO_AL_EMPEZAR)} no es un modo`);
+    assert.notEqual(MODO_AL_EMPEZAR, "", "«sin elegir» no es un defecto: el bridge lo rechazaría");
   });
 });
 

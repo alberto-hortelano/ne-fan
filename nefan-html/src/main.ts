@@ -582,10 +582,10 @@ function gameLoop(now: number): void {
     return;
   }
 
-  // Aviso de pintura en vuelo del panel dev: el único pipeline que puede
-  // gastar mientras se juega es el atlas de superficies. El panel solo
-  // repinta en el cambio de estado.
-  devPanel.setPainting(fpsAtlasController.running);
+  // Aviso de pintura en vuelo del panel dev: el único pipeline que puede gastar
+  // mientras se juega es el atlas. `pintando` y no `running` porque en maqueta
+  // se pide igual con resolve_only y el rótulo gritaba «GENERANDO» (QA H3).
+  devPanel.setPainting(fpsAtlasController.pintando);
 
   // R: respawn (solo surte efecto con el player muerto).
   if (input.consumeRespawn()) handleRespawnRequest();

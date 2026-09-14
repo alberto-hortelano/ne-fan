@@ -147,7 +147,7 @@ export default async function (ctx) {
   // ── 1 · La propuesta de explorar, con la tecla que pulsa el jugador ──────
   await esperarTituloListo(ctx);
   await esperarListaDeSaves(ctx);
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   await comenzar(ctx);
   await ctx.waitFor("la partida arranca y el mundo está pintado", () => window.__nefan.ready());
 

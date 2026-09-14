@@ -185,7 +185,7 @@ async function volverAlSelector(ctx) {
 export default async function (ctx) {
   // ── 0. Una partida sembrada: sin ella el home no tiene fila de save y los
   //       dos botones pequeños (la excepción declarada del corte) no existen.
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   await recargarAlTitulo(ctx);
   const filas = await ctx.page.evaluate(

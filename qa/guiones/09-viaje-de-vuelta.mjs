@@ -115,7 +115,7 @@ function comprobarLedger(ctx, llegada, desc) {
 
 export default async function (ctx) {
   await regenerarMundo(ctx, GAME_ID);
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   // ── Punto de partida ────────────────────────────────────────────────────

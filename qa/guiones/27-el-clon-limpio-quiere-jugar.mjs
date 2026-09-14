@@ -139,7 +139,7 @@ export default async function (ctx) {
   ctx.log(`saves antes de intentarlo: ${savesAntes.ids.length} · fuente: ${savesAntes.fuente}`);
 
   // El camino del jugador, entero: Nueva partida → mundo → Comenzar.
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await ctx.page.click("#ts-continue");
   await ctx.page.waitForSelector("#ts-start", { timeout: 30_000 });
   await ctx.page.click("#ts-start");

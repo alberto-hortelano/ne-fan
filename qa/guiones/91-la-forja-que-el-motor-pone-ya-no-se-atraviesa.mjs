@@ -339,7 +339,7 @@ export default async function (ctx) {
   }
 
   // ── 0 · La partida, y la condición de la que depende que nada más cambie ──
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   const partida = await comenzar(ctx);
   const delTile = (await objetos(ctx)).filter((o) => o.category === "building" || o.category === "prop");
   const deRuntime = delTile.filter((o) => o.dueno?.de !== "tile");

@@ -430,7 +430,7 @@ export default async function (ctx) {
     });
   });
 
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   const jugada = await comenzar(ctx);
   const generando = await ctx.waitFor(
     "el panel entra en «GENERANDO…» al pintar el atlas del primer tile",

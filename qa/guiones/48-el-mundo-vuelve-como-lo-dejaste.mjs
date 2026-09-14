@@ -118,7 +118,7 @@ export default async function (ctx) {
   await ctx.page.reload({ waitUntil: "domcontentloaded" });
   await ctx.waitFor("window.__nefan disponible tras el reload", () => Boolean(window.__nefan));
 
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   const partida = await comenzar(ctx);
 
   // ── 1 · EL MOTOR PUEBLA EL MUNDO A MITAD DE CONVERSACIÓN ────────────────

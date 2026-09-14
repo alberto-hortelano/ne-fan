@@ -91,8 +91,7 @@ function afirmar(ctx, puerta, r) {
 }
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
-  await ctx.page.click('#ts-rendermode [data-rendermode="vector"]');
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "vector" });
   const partida = await comenzar(ctx);
 
   // ── Puerta 1: el broadcast del arranque (`scene_loaded`) ─────────────────

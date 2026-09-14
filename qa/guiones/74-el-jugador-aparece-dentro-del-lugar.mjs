@@ -154,7 +154,7 @@ export default async function (ctx) {
   const retirados = camposRetirados();
   ctx.log(`claves retiradas que la escena no puede traer: ${retirados.join(", ")}`);
   await regenerarMundo(ctx, GAME_ID);
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   // ── 1 y 2. La escena no ancla; el mapa del bridge sí, con rect ──────────

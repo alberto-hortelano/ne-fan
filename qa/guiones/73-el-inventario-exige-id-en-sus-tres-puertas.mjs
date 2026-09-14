@@ -182,7 +182,7 @@ export default async function (ctx) {
   }
   ctx.log(`el plugin de prueba entra por: ${puertaPlugin}`);
 
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   const { sessionId } = await comenzar(ctx);
 
   let regalo;

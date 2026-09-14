@@ -155,7 +155,7 @@ export default async function (ctx) {
   });
 
   // ── 0 · Una partida real, por el camino del jugador ──────────────────────
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   const { sessionId } = await comenzar(ctx);
   await esperarPartidaEnDisco(ctx, sessionId);
   const ruta = rutaDelSave(sessionId);

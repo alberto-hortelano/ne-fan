@@ -48,7 +48,7 @@ export default async function (ctx) {
   // Partida REAL desde el título, no una fixture: el mundo entero (tile,
   // atlas, sprites) tiene que estar en pie para que un segundo contexto, si
   // lo hubiera, ya se hubiese abierto.
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   // Esperar a que el mundo 3D esté montado: three entra por import dinámico y

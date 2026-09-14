@@ -327,7 +327,7 @@ async function capturarElRaton(ctx) {
 }
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   await comenzar(ctx);
 
   // ── ACTO 1 · el hostil de la ESCENA INICIAL ────────────────────────────

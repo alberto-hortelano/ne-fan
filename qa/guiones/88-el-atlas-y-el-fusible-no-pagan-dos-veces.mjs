@@ -162,8 +162,7 @@ export default async function (ctx) {
 
   // ── A · el atlas del tile del jugador se paga UNA vez ────────────────────
   await recargarAlTitulo(ctx);
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
-  await ctx.page.click('#ts-rendermode [data-rendermode="image"]');
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   const partida = await comenzar(ctx);
   await ctx.expectEspera(
     "el atlas del tile de entrada termina y el renderer lo da por texturado",

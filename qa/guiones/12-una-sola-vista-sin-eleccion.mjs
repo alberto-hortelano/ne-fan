@@ -13,7 +13,12 @@
  *  históricamente vivió una elección de escenario.
  *
  *  Cero créditos: preset 5, y la partida se abre en «Maqueta 3D» (vector), que
- *  no pide una sola imagen.
+ *  no pide una sola imagen. Esta línea fue FALSA hasta el 2026-09-14 y ahora es
+ *  cierta por construcción: el guion solo pulsaba `#ts-charmode`, así que los
+ *  escenarios heredaban el defecto del selector —que era Imagen IA— y el censo
+ *  de gasto de `qa/run.mjs` lo pillaba ejerciendo la puerta del atlas. Hoy
+ *  pulsa también `#ts-rendermode`, que es la única forma de que lo escrito aquí
+ *  no dependa de un defecto que este guion no declara.
  *
  *  ALCANCE del bloque de teclado (§7): la batería entra con `?input=scripted`,
  *  así que `KeyboardInputProvider` ni se instancia. Lo que ese bloque puede ver
@@ -189,6 +194,12 @@ export default async function (ctx) {
   );
 
   // ── 5. Apariencia ─────────────────────────────────────────────────────
+  // El modo de ESCENARIOS, declarado a mano porque este guion conduce el
+  // selector sin pasar por `nuevaPartida` (que lo exige desde 2026-09-14):
+  // maqueta, que es lo que este guion mide. Antes lo heredaba del defecto y
+  // cambiaba con él en silencio. Va ANTES del de personajes: sin tocar, el
+  // de personajes SIGUE al de escenarios.
+  await ctx.page.click('#ts-rendermode [data-rendermode="vector"]');
   await ctx.page.click(`#ts-charmode [data-charmode="vector"]`);
   await ctx.page.click("#ts-continue");
   await ctx.page.waitForSelector("#ts-start", { timeout: 30_000 });

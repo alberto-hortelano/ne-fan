@@ -118,7 +118,7 @@ const opt = (name, fallback) => {
   return i >= 0 ? args[i + 1] : fallback;
 };
 /** Opciones que llevan valor: su valor NO es un filtro de nombre de guion. */
-const CON_VALOR = new Set(["--url", "--orden"]);
+const CON_VALOR = new Set(["--url", "--orden", "--censo"]);
 const filters = args.filter((a, i) => !a.startsWith("--") && !CON_VALOR.has(args[i - 1]));
 
 const HEADED = flag("--headed");
@@ -129,6 +129,10 @@ const DIAG = flag("--diag");
  *  stack" no significa "el mío". */
 const ADOPTAR = flag("--adoptar");
 const ORDEN = opt("--orden", "alfabetico");
+/** `--censo <fichero>`: además de imprimirlo, vuelca el censo de gasto por
+ *  guion a JSON. Sirve para comparar DOS corridas (antes y después de cambiar
+ *  un defecto de gasto) sin leer dos scrollbacks de mil líneas. */
+const CENSO_JSON = opt("--censo", "");
 
 /** ¿Sigue vivo ese pid? (señal 0: no manda nada, solo pregunta.) */
 function pidVivo(pid) {
@@ -630,15 +634,54 @@ function limpiarMundos() {
  *  `null` cuando no se puede preguntar (una corrida `--url`/`--adoptar` contra
  *  un backend que no es el fake). Eso NO se colapsa con «no gastó»: se dice una
  *  vez al arrancar que esta red no está puesta. */
-async function gastoDelFake() {
+async function contadoresDelFake() {
   try {
     const r = await fetch(`${MOTOR_FALSO}/dev/counters`);
     if (!r.ok) return null;
     const c = await r.json();
-    return typeof c?.gasto?.total === "number" ? c.gasto : null;
+    if (typeof c?.gasto?.total !== "number") return null;
+    // `ejercicio` es el hermano de `gasto` (las puertas ejercidas cobren o no).
+    // Se lee con caída porque un stack adoptado puede ser de un checkout
+    // anterior al campo; ausente ≠ «no ejerció ninguna», pero el censo solo
+    // informa y quien decide los ⊘ sigue siendo `gasto`.
+    return { gasto: c.gasto, ejercicio: c.ejercicio ?? { total: 0, rutas: {} } };
   } catch {
     return null;
   }
+}
+
+/** Lo que UN guion hizo, en los dos contadores del motor falso: `gasto` (lo que
+ *  habría COSTADO: `{"/generate_scene":2}`) y `ejercicio` (las puertas de gasto
+ *  que EJERCIÓ, cobrasen o no: `{"pintar-superficies":1}`). `null` cuando no se
+ *  pudo preguntar (sin `/dev/counters`), que NO es «no gastó».
+ *
+ *  Se calcula para TODOS los guiones y no solo para los `sinMotor` (que es
+ *  donde nació, #295). El motivo es que la pregunta «¿qué puerta de gasto
+ *  ejerce de verdad este guion?» no la contesta ninguna otra cosa: leerla del
+ *  código es opinión —la puerta la abre el modo de la partida, que decide
+ *  core— y el censo que hace falta para cambiar un defecto de gasto es una
+ *  MEDIDA. Sin esto, el día que el modo por defecto cambia, los guiones que
+ *  afirmaban conducta de imagen se quedan verdes sin medir nada y no hay forma
+ *  de saber cuáles eran.
+ *
+ *  Los DOS y no solo el dinero: un guion en Imagen IA cuyo tile ya pintó otro
+ *  guion antes manda la misma petición y sale con $0, así que el censo por
+ *  dinero lo daría por «no ejerce imagen» y su declaración se perdería.
+ *
+ *  Solo se cuentan los deltas POSITIVOS: el `/dev/reset` de `aisla:["fake-ai"]`
+ *  corre antes de la muestra de entrada, así que un negativo sería un contador
+ *  que se movió por detrás y no un ahorro. */
+function deltaDeContadores(antes, despues) {
+  if (!antes || !despues) return null;
+  const delta = (a, b) => {
+    const d = {};
+    for (const [k, n] of Object.entries(b.rutas)) {
+      const sube = n - (a.rutas[k] ?? 0);
+      if (sube > 0) d[k] = sube;
+    }
+    return d;
+  };
+  return { gasto: delta(antes.gasto, despues.gasto), ejercicio: delta(antes.ejercicio, despues.ejercicio) };
 }
 
 /** Reset del estado de PROCESO del motor falso (tiles servidos, atlas
@@ -1040,7 +1083,7 @@ async function main() {
     console.log(`\n⊘ LA CORRIDA NO MIDE: ${sinHojas}`);
     salir(exitDeCorrida(0, 1), "la corrida se apaga sin abrir el navegador");
   }
-  const hayContadorDeGasto = (await gastoDelFake()) !== null;
+  const hayContadorDeGasto = (await contadoresDelFake()) !== null;
   if (!hayContadorDeGasto) {
     console.log(
       "· OJO: el motor de esta corrida no publica /dev/counters — la red que caza a un\n" +
@@ -1080,7 +1123,7 @@ async function main() {
       });
       continue;
     }
-    const gastoAntes = await gastoDelFake();
+    const contadoresAntes = await contadoresDelFake();
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     const errores = [];
     page.on("pageerror", (e) => errores.push(String(e)));
@@ -1303,20 +1346,22 @@ async function main() {
     // la protección de verdad porque no depende de nadie; esto vive en el motor
     // falso y contra el backend caro no existe. Sirve igual: no puede impedir
     // el gasto a posteriori, pero sí impedir que acabe en verde.
-    const gastoDespues = await gastoDelFake();
-    if (exento && gastoAntes && gastoDespues && gastoDespues.total > gastoAntes.total) {
-      const delta = {};
-      for (const [ruta, n] of Object.entries(gastoDespues.rutas)) {
-        const d = n - (gastoAntes.rutas[ruta] ?? 0);
-        if (d > 0) delta[ruta] = d;
-      }
+    const contadoresDespues = await contadoresDelFake();
+    // El delta se calcula SIEMPRE (censo del final); la red pequeña solo lee su
+    // mitad de DINERO, y solo cuando el guion declaró `sinMotor`.
+    const censo = deltaDeContadores(contadoresAntes, contadoresDespues);
+    const gastoDelGuion = censo ? censo.gasto : null;
+    if (censo && (Object.keys(censo.gasto).length || Object.keys(censo.ejercicio).length)) {
+      console.log(`    $ gasto ${JSON.stringify(censo.gasto)} · puertas ${JSON.stringify(censo.ejercicio)}`);
+    }
+    if (exento && gastoDelGuion && Object.keys(gastoDelGuion).length) {
       sinMedir =
-        `declara \`sinMotor\` («${mod.sinMotor}») y disparó generación: ${JSON.stringify(delta)}. ` +
+        `declara \`sinMotor\` («${mod.sinMotor}») y disparó generación: ${JSON.stringify(gastoDelGuion)}. ` +
         `La declaración es falsa: quítala y el runner lo gateará como a los demás.`;
     }
     if (sinMedir) {
       console.log(`    ⊘ ${sinMedir}`);
-      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo: sinMedir });
+      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo: sinMedir, censo });
       continue;
     }
 
@@ -1325,6 +1370,7 @@ async function main() {
       estado: ctx.fallos.length === 0 ? VERDE : ROJO,
       fallos: ctx.fallos,
       motivo: null,
+      censo,
     });
   }
 
@@ -1349,6 +1395,38 @@ async function main() {
   const partes = [`${verdes} en verde`, `${rojos} en rojo`];
   if (sinMedir) partes.push(`${sinMedir} SIN MEDIR`);
   console.log(`${partes.join(" · ")} de ${resultados.length} · capturas en ${SHOTS}`);
+
+  // ── Censo de gasto ───────────────────────────────────────────────────────
+  // Qué guiones ejercen de verdad cada puerta de gasto, MEDIDO y no deducido
+  // del código. Es lo que hay que mirar cuando se cambia un defecto de gasto:
+  // un guion que deja de aparecer aquí dejó de medir lo que medía, y eso no lo
+  // dice ningún rojo. `null` (no se pudo preguntar) no se colapsa con «cero».
+  const hizoAlgo = (c) => c && (Object.keys(c.gasto).length || Object.keys(c.ejercicio).length);
+  const conCenso = resultados.filter((r) => hizoAlgo(r.censo));
+  const sinContador = resultados.filter((r) => r.censo === null).length;
+  console.log(`\n${"─".repeat(60)}\ncenso de gasto · ${conCenso.length} guion(es) tocaron alguna puerta`);
+  const enLinea = (m) =>
+    Object.entries(m)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, n]) => `${k}×${n}`)
+      .join(" · ") || "—";
+  for (const r of conCenso) {
+    console.log(`  $ ${r.nombre}\n      gasto: ${enLinea(r.censo.gasto)}\n      puertas: ${enLinea(r.censo.ejercicio)}`);
+  }
+  if (sinContador) {
+    console.log(`  (${sinContador} sin contador: el motor de esta corrida no publica /dev/counters)`);
+  }
+  if (CENSO_JSON) {
+    writeFileSync(
+      CENSO_JSON,
+      JSON.stringify(
+        resultados.map(({ nombre, estado, censo }) => ({ nombre, estado, censo: censo ?? null })),
+        null,
+        2,
+      ),
+    );
+    console.log(`  censo escrito en ${CENSO_JSON}`);
+  }
 
   // El veredicto de la CORRIDA, que no es la suma de los veredictos de los
   // guiones: si algo no llegó a medirse, esto no dice si el juego está bien.

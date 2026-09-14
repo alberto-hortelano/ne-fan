@@ -134,7 +134,7 @@ export default async function (ctx) {
   );
 
   // --- 2. Partida real desde el título, con la base y_bot (sin IA) ---
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   const estado = await ctx.waitFor(

@@ -132,7 +132,7 @@ async function reanudarHastaNogala(ctx, sessionId) {
 
 export default async function (ctx) {
   // ── 0 · La partida y los spawns del motor (turnos 2 y 3) ─────────────────
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   const partida = await comenzar(ctx);
   await ctx.waitFor(
     "el tabernero está en escena",

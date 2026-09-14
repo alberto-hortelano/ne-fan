@@ -341,14 +341,43 @@ export async function borrarSaveComoOtroCliente(ctx, sessionId, wsUrl = null) {
   return desenlace.outcome;
 }
 
-/** Abre partida nueva: mundo → modo de personajes → estilo → Continuar →
- *  Comenzar. Devuelve `{ gameId, styleId }` para que el guion compare contra
- *  lo que el juego usa después (p. ej. el `style_id` que viaja en la petición
- *  de skin).
+/** Abre partida nueva: mundo → modo de ESCENARIOS → modo de personajes →
+ *  estilo → Continuar → Comenzar. Devuelve `{ gameId, styleId, renderMode,
+ *  charMode }` para que el guion compare contra lo que el juego usa después
+ *  (p. ej. el `style_id` que viaja en la petición de skin).
+ *
+ *  `renderMode` es OBLIGATORIO y no tiene defecto, a propósito. Es la puerta
+ *  del GASTO de escenarios (el atlas de superficies del tile), y hasta el
+ *  2026-09-14 esta función no la tocaba: los 77 guiones que la llaman corrían
+ *  en el modo que el selector trajera puesto, que era `image`. El día que ese
+ *  defecto cambió a maqueta (`MODO_AL_EMPEZAR`, decisión del usuario), los que
+ *  afirmaban conducta de IMAGEN habrían pasado a maqueta EN SILENCIO: verdes
+ *  sin medir nada, que es la enfermedad que esta casa tiene fichada. Un
+ *  defecto de producto no puede cambiar lo que mide el banco sin que nadie lo
+ *  escriba, así que aquí se escribe — y quien no lo escriba se entera.
+ *
+ *  Qué poner: lo que el guion MIDE, y se supo midiéndolo. El censo de gasto de
+ *  `qa/run.mjs` dice qué guiones abren de verdad la puerta del atlas
+ *  (`puertas: pintar-superficies`, una petición SIN `resolve_only`); ésos
+ *  declaran `"image"` y el resto `"vector"`.
+ *
+ *  El ORDEN importa y por eso escenarios va primero: el selector hace que
+ *  personajes SIGA a escenarios mientras nadie lo haya tocado, así que pulsar
+ *  escenarios después se llevaría por delante el `charMode` que pide el guion.
  *
  *  Ya no hay paso de VISTA: el cliente tiene una sola (primera persona) y el
  *  título dejó de ofrecer el selector. */
-export async function nuevaPartida(ctx, { gameId = "alta_fantasia", charMode = "image" } = {}) {
+export async function nuevaPartida(
+  ctx,
+  { gameId = "alta_fantasia", charMode = "image", renderMode } = {},
+) {
+  if (renderMode !== "image" && renderMode !== "vector") {
+    throw new Error(
+      `nuevaPartida exige renderMode ("image" | "vector") y llegó ${JSON.stringify(renderMode)}. ` +
+        `Es la puerta del gasto de escenarios y ya no tiene defecto: declara el modo que este ` +
+        `guion MIDE — "image" si afirma conducta de imagen (el atlas del tile), "vector" si no.`,
+    );
+  }
   await abrirSelectorDeMundos(ctx);
 
   const mundos = await ctx.page.$$eval("[data-game-id]", (els) => els.map((e) => e.dataset.gameId));
@@ -356,9 +385,10 @@ export async function nuevaPartida(ctx, { gameId = "alta_fantasia", charMode = "
     throw new Error(`el título no ofrece el mundo "${gameId}"; hay: ${mundos.join(", ")}`);
   }
   await ctx.page.click(`[data-game-id="${gameId}"]`);
+  await ctx.page.click(`#ts-rendermode [data-rendermode="${renderMode}"]`);
   await ctx.page.click(`#ts-charmode [data-charmode="${charMode}"]`);
   const styleId = await ctx.page.$eval("#ts-style", (s) => s.value);
-  return { gameId, styleId };
+  return { gameId, styleId, renderMode, charMode };
 }
 
 /** Segundo tramo: apariencia y Comenzar. Vuelve cuando LA PARTIDA ESTÁ EN

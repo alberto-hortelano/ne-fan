@@ -151,7 +151,7 @@ async function afirmarElLedger(ctx, ids, etiqueta) {
 }
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   const partida = await comenzar(ctx);
 
   // ── 0 · El motor puebla el mundo a mitad de conversación (turnos 2, 3 y 4) ─

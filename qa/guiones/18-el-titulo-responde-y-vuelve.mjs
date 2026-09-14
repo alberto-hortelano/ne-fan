@@ -102,7 +102,7 @@ export default async function (ctx) {
   // ── 0. Una partida de verdad, para que el título tenga algo que listar ──
   // El fallo de sesión del bloque 2 se produce borrando ESE save por el cable
   // del bridge: sin una tarjeta que pulsar no hay «Reanudar» que falle.
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   ctx.log("partida sembrada: el título tendrá una tarjeta que listar");
 

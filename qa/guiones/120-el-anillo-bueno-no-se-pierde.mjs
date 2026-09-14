@@ -212,7 +212,7 @@ export default async function (ctx) {
   );
 
   const antesDeA = await generacionesServidas();
-  await nuevaPartida(ctx, { gameId: GAME });
+  await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
   await comenzar(ctx);
   const trasA = await generacionesServidas();
   ctx.expect(
@@ -278,7 +278,7 @@ export default async function (ctx) {
   );
 
   const antesDeB = await generacionesServidas();
-  await nuevaPartida(ctx, { gameId: GAME });
+  await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
   await comenzar(ctx);
   const trasB = await generacionesServidas();
   ctx.expect(

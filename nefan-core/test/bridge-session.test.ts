@@ -194,21 +194,43 @@ describe("bridge ciclo de sesión", () => {
     assert.ok(!("perspective" in started.state.world), "el campo legacy no entra en el mundo de la sesión");
   });
 
-  it("start_session congela el modo de render (default image, vector explícito, inválido aborta)", async () => {
+  it("start_session congela el modo de render (sin modo NO gasta, image explícito, inválido aborta)", async () => {
     const { ctx } = makeCtx({ gamesDir: REAL_GAMES_DIR, stylesDir: REAL_STYLES_DIR });
     const { socket, sent } = makeSocket();
     await porElBorde(
-      { type: "start_session", requestId: "r1", gameId: "toledo_1200", renderMode: "vector" },
+      { type: "start_session", requestId: "r1", gameId: "toledo_1200", renderMode: "image" },
       socket,
       ctx,
     );
     const started = sent[0] as SessionStartedMessage;
     assert.equal(started.ok, true);
-    assert.equal(started.state?.world.render_mode, "vector");
+    assert.equal(started.state?.world.render_mode, "image");
 
+    // SIN modo en el mensaje: manda `MODO_AL_EMPEZAR`, y lo que se afirma no es
+    // el string sino lo que consigue — que la partida nueva no abra NINGUNA de
+    // las dos puertas de gasto. Las dos facetas, porque arreglar solo la de
+    // escenarios pariría una partida en maqueta pagando skins: el modo de
+    // personajes llega ausente y hereda lo que decida esta línea. Éste es el
+    // fallback que decide de verdad — un `new_game` sin modo nace aquí, diga lo
+    // que diga el literal del selector (decisión del usuario, 2026-09-14).
     const { socket: s2, sent: sent2 } = makeSocket();
     await porElBorde({ type: "start_session", requestId: "r2", gameId: "toledo_1200" }, s2, ctx);
-    assert.equal((sent2[0] as SessionStartedMessage).state?.world.render_mode, "image");
+    // Que ese par de valores no abra NINGUNA puerta de gasto lo mide
+    // `gates-de-imagen.test.ts` sobre `MODO_AL_EMPEZAR`; aquí se afirma lo que
+    // es del bridge: que las dos facetas del save salen con él.
+    const sinModo = (sent2[0] as SessionStartedMessage).state?.world;
+    assert.equal(sinModo?.render_mode, "vector");
+    assert.equal(sinModo?.character_mode, "vector");
+
+    // Y un modo VACÍO en el mensaje cae al mismo sitio: «sin elegir» por el
+    // cable no es un modo desconocido (no aborta), es «decide tú».
+    const { socket: sVacio, sent: sentVacio } = makeSocket();
+    await porElBorde(
+      { type: "start_session", requestId: "r2b", gameId: "toledo_1200", renderMode: "" },
+      sVacio,
+      ctx,
+    );
+    assert.equal((sentVacio[0] as SessionStartedMessage).state?.world.render_mode, "vector");
 
     const { socket: s3, sent: sent3 } = makeSocket();
     await porElBorde(
@@ -828,8 +850,12 @@ describe("bridge ciclo de sesión", () => {
       ctx,
     );
     const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    // Se pide `image` porque la partida nueva nace en `MODO_AL_EMPEZAR`
+    // (maqueta): pedirle el modo que YA tiene se rechaza por otro motivo —«la
+    // partida ya tiene los escenarios en modo vector»— y este test mide el del
+    // mundo en vuelo, no el del no-cambio.
     await porElBorde(
-      { type: "set_render_mode", requestId: "r2", sessionId, renderMode: "vector", facet: "scenes" },
+      { type: "set_render_mode", requestId: "r2", sessionId, renderMode: "image", facet: "scenes" },
       socket,
       ctx,
     );

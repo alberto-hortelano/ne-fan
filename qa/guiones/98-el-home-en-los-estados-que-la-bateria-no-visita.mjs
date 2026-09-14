@@ -201,8 +201,7 @@ export default async function (ctx) {
   );
 
   // ── Siembra: una partida real en MAQUETA, y dos clones para los badges ───
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
-  await ctx.page.click('#ts-rendermode [data-rendermode="vector"]');
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "vector" });
   const { sessionId } = await comenzar(ctx);
 
   if (!dirDelSave(sessionId)) {

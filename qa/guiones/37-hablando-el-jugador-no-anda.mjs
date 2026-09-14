@@ -121,7 +121,7 @@ export default async function (ctx) {
   );
   await esperarTituloListo(ctx);
   await esperarListaDeSaves(ctx);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   // ── 1 · CONTROL: sin diálogo, `W` mueve ─────────────────────────────────

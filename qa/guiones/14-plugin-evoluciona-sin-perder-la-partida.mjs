@@ -129,7 +129,7 @@ function celdaDe(scene, x, z) {
 }
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   const scene = await ctx.nefan("scene");

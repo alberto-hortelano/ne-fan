@@ -149,8 +149,13 @@ describe("state HTTP API", () => {
     const { status, body } = await get("/ui_doc");
     assert.equal(status, 200);
     const uiState = body.ui_state as Record<string, unknown>;
-    // Sesión de test sin campos congelados → defaults explícitos.
-    assert.equal(uiState.render_mode, "image");
+    // Sesión de test sin campos congelados → defaults explícitos. El del modo
+    // es `MODO_AL_EMPEZAR` desde 2026-09-14: la ausencia significa maqueta en
+    // todo el juego, y este endpoint —que le describe al motor narrativo el
+    // modo ACTIVO— era el único sitio que seguía contestando «imagen». En el
+    // juego real no se alcanza (los dos creadores de sesión materializan el
+    // campo); aquí sí, porque la sesión se fabrica a mano.
+    assert.equal(uiState.render_mode, "vector");
     assert.equal(uiState.combat_system, "standard");
     assert.ok(Array.isArray(uiState.plugins));
     const doc = String(body.ui_doc);

@@ -51,7 +51,7 @@ import { avisoDeIlegibles, sessionDataForClient } from "../wire-scene.js";
 import { avisoDeFueraDelMundo, type FueraDelMundo } from "../../src/session/mundo-persistido.js";
 import { npcBehaviorRegistry } from "../../src/simulation/npc-behavior-registry.js";
 import { applyRenderModeChange } from "../../src/narrative/render-mode.js";
-import { modoEfectivoDePersonajes } from "../../src/session/gates-de-imagen.js";
+import { MODO_AL_EMPEZAR, modoEfectivoDePersonajes } from "../../src/session/gates-de-imagen.js";
 import {
   avisoDeEstiloDeOtroTema,
   eleccionDeEstilo,
@@ -378,7 +378,13 @@ export async function handleStartSession(
     // Modo de render: imagen IA (créditos) o mundo vectorial (blueprints
     // compuestos). Congelado como el estilo: mezclar tiles pintados y
     // vectoriales rompe la continuidad visual entre vecinos.
-    const renderMode = msg.renderMode || "image";
+    //
+    // Sin modo en el mensaje manda `MODO_AL_EMPEZAR` (core), que es maqueta:
+    // una partida nueva no puede nacer gastando porque alguien se dejara un
+    // campo. Y ÉSTE es el fallback que decide de verdad —el literal del
+    // selector solo decide lo que el jugador ve antes de pulsar—, así que el
+    // defecto no puede vivir solo allí (decisión del usuario, 2026-09-14).
+    const renderMode = msg.renderMode || MODO_AL_EMPEZAR;
     if (renderMode !== "image" && renderMode !== "vector") {
       throw new Error(`modo de render desconocido "${renderMode}" (esperaba image|vector)`);
     }

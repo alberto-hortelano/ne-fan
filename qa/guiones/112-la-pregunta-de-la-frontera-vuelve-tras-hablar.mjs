@@ -143,7 +143,7 @@ export default async function (ctx) {
   await ctx.waitFor("el cliente arranca sin el driver de bench", () => Boolean(window.__nefan));
   await esperarTituloListo(ctx);
   await esperarListaDeSaves(ctx);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   await ctx.waitFor("el mundo está pintado", () => window.__nefan.ready());
 

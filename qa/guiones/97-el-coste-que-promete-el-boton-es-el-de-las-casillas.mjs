@@ -162,7 +162,7 @@ export default async function (ctx) {
   // El mundo lo genera ESTE guion (el runner acaba de borrar el que hubiera):
   // sin snapshot, «Aplicar estilo» está deshabilitado y no hay panel que leer.
   await regenerarMundo(ctx, GAME_ID);
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image", renderMode: "vector" });
 
   await ctx.page.click("#ts-apply-style");
   await ctx.page.waitForSelector("#ts-style-run", { timeout: 60_000 });

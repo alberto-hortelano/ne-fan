@@ -105,7 +105,7 @@ const pedirTile = (ctx, tx, ty) =>
   );
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   const partida = await comenzar(ctx);
   await ctx.waitFor(
     "el tabernero de la escena está en el mundo",

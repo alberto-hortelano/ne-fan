@@ -192,7 +192,7 @@ export default async function (ctx) {
   await ctx.waitFor("el cliente está en pie con el espía del socket puesto", () => Boolean(window.__nefan));
   await esperarTituloListo(ctx);
 
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   const partida = await comenzar(ctx);
   ctx.log(`partida ${partida.sessionId} · escena ${partida.scene}`);
 

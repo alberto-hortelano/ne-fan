@@ -124,7 +124,7 @@ export default async function (ctx) {
   const antes1 = await listarSaves(ctx);
   ctx.log(`saves antes del clon limpio: ${antes1.ids.length} · fuente: ${antes1.fuente}`);
 
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await pulsarComenzar(ctx);
 
   const desenlace1 = await ctx
@@ -210,7 +210,7 @@ export default async function (ctx) {
   await recargarAlTitulo(ctx);
 
   const antes2 = await listarSaves(ctx);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await pulsarComenzar(ctx);
   const arrancada = await ctx.waitFor(
     "la partida arranca: el título fuera y la escena dentro",
@@ -288,7 +288,7 @@ export default async function (ctx) {
   try {
     await recargarAlTitulo(ctx);
     const antes3 = await listarSaves(ctx);
-    await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+    await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
     await pulsarComenzar(ctx);
 
     // La ventana: el mundo YA está pintado y el título sigue delante.

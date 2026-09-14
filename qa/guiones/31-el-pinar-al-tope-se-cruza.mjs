@@ -78,7 +78,7 @@ async function esperarFrames(ctx, n = 3) {
 }
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   // ── 1. El caso peor que el contrato admite, declarado por el motor ──────

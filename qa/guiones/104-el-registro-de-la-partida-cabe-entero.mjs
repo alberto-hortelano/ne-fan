@@ -62,7 +62,7 @@ function geometria() {
 export default async function (ctx) {
   await esperarTituloListo(ctx);
   await esperarListaDeSaves(ctx);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   // Observador de líneas AÑADIDAS: el DOM tope a N, así que sin esto el rebose

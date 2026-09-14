@@ -25,7 +25,7 @@ import { nuevaPartida, comenzar, celdaAMundo, esperarRegistro } from "../lib/ses
 export const aisla = ["mundo"];
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   const plano = await ctx.page.evaluate(() => {

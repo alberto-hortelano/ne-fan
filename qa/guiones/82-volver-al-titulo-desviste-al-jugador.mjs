@@ -107,6 +107,12 @@ async function comenzarCon(ctx, prompt) {
   await ctx.page.click("#ts-new");
   await ctx.page.waitForSelector("[data-game-id]", { timeout: 30_000 });
   await ctx.page.click(`[data-game-id="${GAME_ID}"]`);
+  // El modo de ESCENARIOS, declarado a mano porque este guion conduce el
+  // selector sin pasar por `nuevaPartida` (que lo exige desde 2026-09-14):
+  // maqueta, que es lo que este guion mide. Antes lo heredaba del defecto y
+  // cambiaba con él en silencio. Va ANTES del de personajes: sin tocar, el
+  // de personajes SIGUE al de escenarios.
+  await ctx.page.click('#ts-rendermode [data-rendermode="vector"]');
   await ctx.page.click(`#ts-charmode [data-charmode="image"]`);
   await ctx.page.click("#ts-continue");
   await ctx.page.waitForSelector("#ts-start", { timeout: 30_000 });

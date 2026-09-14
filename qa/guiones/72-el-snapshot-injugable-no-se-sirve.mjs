@@ -92,7 +92,7 @@ export default async function (ctx) {
 
   // ── 1 · el bootstrap vivo deja el snapshot ─────────────────────────────
   const antes = await generacionesServidas();
-  await nuevaPartida(ctx, { gameId: GAME });
+  await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
   await comenzar(ctx);
   const tras1 = await generacionesServidas();
   ctx.expect("1. el primer arranque llama al motor (bootstrap vivo)", tras1 === antes + 1, `/generate_scene ${antes} → ${tras1}`);
@@ -103,7 +103,7 @@ export default async function (ctx) {
   await recargarAlTitulo(ctx);
   const sano = await panelDeGeneracion(ctx);
   ctx.expect("2. con el snapshot sano el título dice «✓ generado»", /✓ generado/.test(sano.estado), sano.estado);
-  await nuevaPartida(ctx, { gameId: GAME });
+  await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
   await comenzar(ctx);
   const tras2 = await generacionesServidas();
   ctx.expect("2. el segundo arranque REPLAYEA: el motor no recibe ninguna llamada", tras2 === tras1, `/generate_scene ${tras1} → ${tras2}`);
@@ -128,7 +128,7 @@ export default async function (ctx) {
   await ctx.shot("titulo-stale-injugable");
 
   // ── 4 · «Comenzar» no lo sirve ─────────────────────────────────────────
-  await nuevaPartida(ctx, { gameId: GAME });
+  await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
   await comenzar(ctx);
   const tras3 = await generacionesServidas();
   ctx.expect("4. Comenzar NO sirve el snapshot: degrada al bootstrap vivo (una llamada más al motor)", tras3 === tras2 + 1, `/generate_scene ${tras2} → ${tras3}`);
