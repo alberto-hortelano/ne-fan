@@ -108,7 +108,7 @@ export default async function (ctx) {
   // ── 2 · Una PARTIDA real: el tile que fabrica el motor en vivo ──────────
   await ctx.page.reload();
   await ctx.waitFor("el título vuelve", () => Boolean(document.getElementById("ts-close")));
-  await nuevaPartida(ctx, { gameId: "alta_fantasia" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", renderMode: "image" });
   const partida = await comenzar(ctx);
 
   const enPartida = await ctx.page.evaluate(CUERPOS_EN_LA_PAGINA);

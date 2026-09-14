@@ -68,7 +68,7 @@ const fotoDelPanel = () => {
 
 export default async function (ctx) {
   await regenerarMundo(ctx, GAME_ID);
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image", renderMode: "image" });
 
   // ── 4 · el botón que gasta no se ve como el que no gasta ───────────────
   await ctx.page.click("#ts-apply-style");
@@ -135,7 +135,7 @@ export default async function (ctx) {
   // se abrió antes de instalarla. Se rehace el camino hasta el panel.
   await ctx.page.reload({ waitUntil: "domcontentloaded" });
   await ctx.waitFor("el cliente arranca", () => Boolean(window.__nefan));
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image", renderMode: "image" });
   await ctx.page.click("#ts-apply-style");
   await ctx.page.waitForSelector("#ts-style-run", { timeout: 60_000 });
   const antesDePagar = await ctx.page.evaluate(fotoDelPanel);

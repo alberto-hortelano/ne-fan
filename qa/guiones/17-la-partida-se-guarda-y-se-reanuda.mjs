@@ -111,7 +111,7 @@ const SISTEMA = {
 
 export default async function (ctx) {
   // ── 1. Partida nueva por el camino del jugador ──────────────────────────
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   const escena = await ctx.nefan("scene");

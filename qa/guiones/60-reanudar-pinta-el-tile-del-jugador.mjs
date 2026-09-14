@@ -147,10 +147,10 @@ async function gastoDelFake() {
 const pagosDeAtlas = (gasto) => gasto.rutas["/generate_surface_atlas"] ?? 0;
 
 /** Nueva partida con el modo de ESCENARIOS elegido en el título (Maqueta 3D =
- *  `vector`, Imagen IA = `image`) y personajes base. */
+ *  `vector`, Imagen IA = `image`) y personajes base. El modo lo pulsa
+ *  `nuevaPartida`, que desde 2026-09-14 lo EXIGE. */
 async function partidaEnModo(ctx, renderMode) {
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
-  await ctx.page.click(`#ts-rendermode [data-rendermode="${renderMode}"]`);
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode });
   return comenzar(ctx);
 }
 

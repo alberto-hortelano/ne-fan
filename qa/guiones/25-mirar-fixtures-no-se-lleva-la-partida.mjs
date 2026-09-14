@@ -136,7 +136,7 @@ async function escrituraDelMotor(id, nombre) {
 
 export default async function (ctx) {
   // ── 1. Una partida real, y el jugador se ALEJA de su punto de arranque ──
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   const salud = await api("GET", "/health");

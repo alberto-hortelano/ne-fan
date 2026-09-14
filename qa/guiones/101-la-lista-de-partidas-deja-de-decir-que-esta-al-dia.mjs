@@ -103,7 +103,7 @@ function esperarAviso(ctx, titulo, maxMs = 25_000) {
 export default async function (ctx) {
   // ─── siembra: tarjetas de verdad que mirar ────────────────────────────
   await esperarTituloListo(ctx);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   const jugada = await comenzar(ctx);
   clonarSaves(jugada.sessionId, 2);
 

@@ -426,6 +426,58 @@ describe("fronteras arquitectónicas", () => {
       [],
       "llamar a core no es copiar la regla, y core es quien la tiene",
     );
+
+    // Tanda A (2026-09-14): CON QUÉ MODO ARRANCA UNA PARTIDA NUEVA. Las dos
+    // copias del selector tal como estaban — y son DOS, que es la mitad que no
+    // se ve: `selectedCharMode` solo sigue a escenarios en un *click*, así que
+    // dejarlo en "image" paría partidas en maqueta pagando skins.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/titulo/selector-de-mundo.ts",
+          text:
+            'let selectedRenderMode: "image" | "vector" = "image";\n' +
+            'let selectedCharMode: "image" | "vector" = skinBackendOn ? "image" : "vector";\n',
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/titulo/otra-pantalla.ts",
+          text: 'let selectedCharMode: ModoElegido = "image";\n',
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-html/src/ui/titulo/otra-pantalla.ts:1",
+        "nefan-html/src/ui/titulo/selector-de-mundo.ts:1",
+        "nefan-html/src/ui/titulo/selector-de-mundo.ts:2",
+      ],
+      "escribir el modo por defecto a mano en el selector tiene que saltar, con el tipo bueno o sin él",
+    );
+
+    // Y lo que NO es una copia: la llamada a core, el forzado a vector cuando
+    // no hay backend de skins (una opción muerta no se vende, y eso no es el
+    // defecto) y los dos handlers, que LEEN lo que el jugador acaba de pulsar
+    // — sin ellos el selector no compila.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/titulo/selector-de-mundo.ts",
+          text:
+            "let selectedRenderMode: ModoElegido = MODO_AL_EMPEZAR;\n" +
+            'let selectedCharMode: ModoElegido = skinBackendOn ? MODO_AL_EMPEZAR : "vector";\n' +
+            'selectedRenderMode = btn.dataset.rendermode === "vector" ? "vector" : "image";\n' +
+            'selectedCharMode = btn.dataset.charmode === "vector" ? "vector" : "image";\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/src/session/gates-de-imagen.ts",
+          text: 'export const MODO_AL_EMPEZAR: ModoElegido = "vector";\n',
+          imports: [],
+        },
+      ]),
+      [],
+      "leer el botón pulsado no es inventarse el defecto, y core es quien lo tiene",
+    );
   });
 
   // Nace ROJA a propósito (#318): al entrar listó los CINCO sitios reales de

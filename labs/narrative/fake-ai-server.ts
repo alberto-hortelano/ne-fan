@@ -165,6 +165,30 @@ const gastoServido = () => ({
 const PAGINA_DE_ATREZO_USD = 0.05;
 const CELDAS_POR_PAGINA_DE_ATREZO = 9;
 
+// ── Contador de puertas de gasto EJERCIDAS ───────────────────────────────
+// Hermano del de arriba y NO lo mismo, que es justo por lo que existe: `gasto`
+// cuenta lo que HABRÍA COSTADO y por eso deja fuera el acierto de caché, pero
+// la pregunta «¿ejerce este guion el gate de imagen de escenarios?» no la
+// contesta el dinero. Un guion en Imagen IA cuyo tile ya pintó el guion
+// anterior manda exactamente la misma petición —sin `resolve_only`, la que
+// MANDA PINTAR— y sale con $0 porque otro pagó antes.
+//
+// Hace falta para el CENSO del banco: el día que el modo por defecto de una
+// partida nueva cambia, hay que saber qué guiones estaban midiendo conducta de
+// imagen para que la declaren a mano, y con el contador de dinero esos se
+// pierden en silencio (quedan verdes sin medir nada). Se cuenta aquí, en la
+// misma línea de la ruta, por el mismo motivo que `dePago`: la lista de rutas
+// no puede vivir en `qa/run.mjs`.
+const ejercicioPorRuta = new Map<string, number>();
+function ejercida(puerta: string): void {
+  ejercicioPorRuta.set(puerta, (ejercicioPorRuta.get(puerta) ?? 0) + 1);
+}
+/** Las puertas ejercidas hasta ahora, en la forma que lee el runner. */
+const ejercicioServido = () => ({
+  total: [...ejercicioPorRuta.values()].reduce((a, b) => a + b, 0),
+  rutas: Object.fromEntries(ejercicioPorRuta),
+});
+
 let fakeDevCacheEnabled = false;
 /** Turnos de diálogo servidos (el texto los numera: se ve el ida y vuelta). */
 let fakeDialogueTurn = 0;
@@ -473,6 +497,10 @@ const server = http.createServer((req, res) => {
       // Peticiones servidas a rutas que en el motor real COBRAN. Es la red que
       // caza al guion que dispara generación sin declararlo (#295).
       gasto: gastoServido(),
+      // Qué PUERTAS de gasto ejerció, cobrasen o no. Es lo que contesta «¿este
+      // guion mide conducta de imagen?», que el dinero no contesta: con la
+      // caché caliente, pedir que se pinte sale gratis.
+      ejercicio: ejercicioServido(),
       // Cómo se está conformando ante un tile AHORA MISMO (#516): un guion que
       // deja el retardo puesto se lo lleva al siguiente, y sin esto habría que
       // adivinarlo mirando relojes.
@@ -768,11 +796,13 @@ const server = http.createServer((req, res) => {
           dialogueTurn: fakeDialogueTurn,
           apiCache: fakeDevCacheEnabled,
           gasto: gastoServido(),
+          ejercicio: ejercicioServido(),
           tilesConducta: conductaDeTiles(),
         };
         tileByKey.clear();
         surfaceImages.clear();
         gastoPorRuta.clear();
+        ejercicioPorRuta.clear();
         fakeDialogueTurn = 0;
         fakeDevCacheEnabled = false;
         motorConducidoPorMarcas = false;
@@ -905,6 +935,9 @@ const server = http.createServer((req, res) => {
         // resolve_only ($0, camino del resume y del plan de "aplicar estilo"):
         // solo lo ya pintado, con el recuento de missing — como el server real.
         const resolveOnly = body.resolve_only === true;
+        // Pedir que se pinte ES ejercer el gate de escenarios, cobre o no
+        // (con la caché caliente sale $0 y el `dePago` de abajo no salta).
+        if (!resolveOnly) ejercida("pintar-superficies");
         const out: Record<string, SurfaceCellResult> = {};
         let painted = 0;
         let missing = 0;

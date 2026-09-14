@@ -94,7 +94,7 @@ const dentroDelRect = (p, r) =>
   Array.isArray(p) && r && p[0] >= r.minX && p[0] < r.maxX && p[2] >= r.minZ && p[2] < r.maxZ;
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   const partida = await comenzar(ctx);
   await ctx.waitFor(
     "el tabernero de la escena está en el mundo",

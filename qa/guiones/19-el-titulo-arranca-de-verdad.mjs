@@ -150,7 +150,7 @@ async function arranca(ctx, maxMs = 90_000) {
 
 export default async function (ctx) {
   // ── 0. Una partida sembrada: el título tendrá algo que listar ───────────
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   ctx.log("partida sembrada");
   await instalarEspia(ctx.page);

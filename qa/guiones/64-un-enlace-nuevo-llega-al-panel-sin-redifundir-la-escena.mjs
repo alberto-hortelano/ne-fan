@@ -141,8 +141,7 @@ export default async function (ctx) {
   ctx.page.on("request", (r) => peticiones.push({ method: r.method(), url: r.url() }));
   await recargarAlTitulo(ctx);
 
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
-  await ctx.page.click('#ts-rendermode [data-rendermode="vector"]');
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "vector" });
   const partida = await comenzar(ctx);
   await espiarHud(ctx);
   const tile0 = await ctx.page.evaluate(() => window.__nefan.currentTile);

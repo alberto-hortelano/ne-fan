@@ -149,11 +149,10 @@ async function capturarMundo(browser, gameId) {
   await page.goto(`${BASE}/?input=scripted&raf=timer`, { waitUntil: "domcontentloaded" });
   await ctx.waitFor("window.__nefan disponible", () => Boolean(window.__nefan));
 
-  const { styleId } = await nuevaPartida(ctx, { gameId, charMode: "vector" });
+  const { styleId } = await nuevaPartida(ctx, { gameId, charMode: "vector", renderMode: "image" });
   // Escenarios en "image" a propósito: es lo que se quiere fotografiar.
   // Personajes en "vector" (y_bot): esta tanda es sin figuras, y así no se
   // paga ni un skin.
-  await page.click('#ts-rendermode [data-rendermode="image"]');
   console.log(`  · mundo=${gameId} estilo=${styleId} escenarios=image personajes=vector`);
 
   console.log("  · esperando la escena del motor (soy yo por MCP: puede tardar)…");

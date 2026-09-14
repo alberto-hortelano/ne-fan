@@ -77,7 +77,7 @@ async function intentarCruzar(ctx, x, zSalida, zMeta, debeCruzar, aserto) {
 }
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   // ── 1. La partida trae un portón declarado ───────────────────────────────

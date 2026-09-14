@@ -164,7 +164,7 @@ export default async function (ctx) {
 
   // ── 1 · En partida ───────────────────────────────────────────────────────
   await esperarListaDeSaves(ctx);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   const cuerpos = await ctx.waitFor(
     "el tile de partida trae al tabernero (NPC) y al bandido (enemigo)",

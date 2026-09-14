@@ -68,7 +68,7 @@ function completoEnDisco(modelo, required) {
 }
 
 async function abrirEditor(ctx, charMode = "vector") {
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode, renderMode: "vector" });
   await ctx.page.click("#ts-continue");
 }
 

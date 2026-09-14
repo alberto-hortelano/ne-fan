@@ -214,7 +214,7 @@ function afirmarQueSobreviven(ctx, viaje, etiqueta) {
 const sinRepetir = (xs) => new Set(xs).size === xs.length;
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   const partida = await comenzar(ctx);
 
   // ── 0 · EL MOTOR PUEBLA EL MUNDO A MITAD DE CONVERSACIÓN ────────────────

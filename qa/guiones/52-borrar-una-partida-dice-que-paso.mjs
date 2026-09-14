@@ -107,7 +107,7 @@ export default async function (ctx) {
   // sin este handler el guion mediría un borrado que nunca se pidió.
   ctx.page.on("dialog", (d) => void d.accept());
 
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   const { sessionId } = await comenzar(ctx);
 
   // Dos copias baratas del save real: hacen falta tres tarjetas para recorrer

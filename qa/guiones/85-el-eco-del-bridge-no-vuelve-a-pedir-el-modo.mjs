@@ -199,7 +199,7 @@ export default async function (ctx) {
   });
 
   // Personajes en BASE desde el título: el OFF→ON del bloque 1 es del jugador.
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   const { sessionId } = await comenzar(ctx);
   const facetas = await ctx.nefan("sesion");
   ctx.log(`facetas al entrar: renderMode=${facetas.renderMode} characterMode=${facetas.characterMode}`);

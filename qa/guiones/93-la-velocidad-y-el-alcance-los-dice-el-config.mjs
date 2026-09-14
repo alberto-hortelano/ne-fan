@@ -296,7 +296,7 @@ export default async function (ctx) {
   ctx.log(`config del árbol: ${JSON.stringify(delArbol)}`);
 
   // ── 1 · La velocidad del juego ES la del config ──────────────────────────
-  await nuevaPartida(ctx, { charMode: "vector" });
+  await nuevaPartida(ctx, { charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   const base = {
     andar: await medirVelocidad(ctx, { sprint: false }),
@@ -319,7 +319,7 @@ export default async function (ctx) {
   const escala = Number((delArbol.speed_scale * FACTOR).toFixed(4));
   const cuenta = await servirConfigCon(ctx, { speed_scale: escala });
   await recargarAlTitulo(ctx);
-  await nuevaPartida(ctx, { charMode: "vector" });
+  await nuevaPartida(ctx, { charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   ctx.expect(
     `el config que recibe el cliente se sirvió con speed_scale = ${escala} (si no, lo de abajo no mide nada)`,
@@ -349,7 +349,7 @@ export default async function (ctx) {
   // ── 3 · El alcance de la E también sale del config ───────────────────────
   const cuenta3 = await servirConfigCon(ctx, { interact_range_m: ALCANCE_CORTO_M });
   await recargarAlTitulo(ctx);
-  await nuevaPartida(ctx, { charMode: "vector" });
+  await nuevaPartida(ctx, { charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   ctx.expect(
     `el config que recibe el cliente se sirvió con interact_range_m = ${ALCANCE_CORTO_M}`,
@@ -377,7 +377,7 @@ export default async function (ctx) {
 
   // ── 4 · Reaparecer devuelve a un punto que se puede pisar ────────────────
   await recargarAlTitulo(ctx);
-  await nuevaPartida(ctx, { charMode: "vector" });
+  await nuevaPartida(ctx, { charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   const alcanceReal = configDelArbol().interact_range_m;
   const bordeReal = await bordeDeLaE(ctx, alcanceReal);

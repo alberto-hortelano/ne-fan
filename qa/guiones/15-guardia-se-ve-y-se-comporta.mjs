@@ -294,7 +294,7 @@ const enElLibro = (ctx, npc) =>
 
 export default async function (ctx) {
   await regenerarMundo(ctx, GAME_ID);
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image", renderMode: "image" });
   await comenzar(ctx);
 
   // ── 1. El NPC del tile de entrada llega VESTIDO y con oficio ────────────

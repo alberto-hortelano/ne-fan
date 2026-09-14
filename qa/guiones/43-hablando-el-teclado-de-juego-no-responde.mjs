@@ -130,7 +130,7 @@ export default async function (ctx) {
   );
   await esperarTituloListo(ctx);
   await esperarListaDeSaves(ctx);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   // El catálogo tiene que dar para distinguir tres ataques, o los asertos de

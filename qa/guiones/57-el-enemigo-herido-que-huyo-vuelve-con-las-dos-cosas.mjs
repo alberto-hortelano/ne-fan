@@ -64,7 +64,7 @@ const VUELVE_AHI_M = 0.5;
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   const partida = await comenzar(ctx);
   await ctx.waitFor(
     "el bandido de la escena está en el mundo",

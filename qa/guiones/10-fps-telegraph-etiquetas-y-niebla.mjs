@@ -110,7 +110,7 @@ const ningunoEnCuadro = (ep) =>
     ep.screenYMax <= 0);
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
 
   // three entra por import dinámico: hasta que llega no hay nada que mirar.

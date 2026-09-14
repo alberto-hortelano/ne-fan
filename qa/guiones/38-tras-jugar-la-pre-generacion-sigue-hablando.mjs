@@ -88,7 +88,7 @@ export default async function (ctx) {
   await recargarAlTitulo(ctx);
 
   // ── 1 · Se juega: el bridge se queda con una partida cargada ────────────
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   const partida = await comenzar(ctx);
   ctx.log(`se jugó la partida ${partida.sessionId}`);
 

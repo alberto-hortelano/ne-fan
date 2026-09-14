@@ -127,7 +127,7 @@ export default async function (ctx) {
   ctx.log(`alfabeto del grid según core: ${alfabeto.join(" ")} · char ajeno elegido: ${JSON.stringify(ajeno)}`);
 
   // ── 0. Una partida real, jugada por el camino del jugador ────────────────
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   const salud = await (await fetch(`${URLS.state_api}/health`)).json();
   const sessionId = salud?.session_id;

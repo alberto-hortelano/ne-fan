@@ -67,7 +67,7 @@ export default async function (ctx) {
   await regenerarMundo(ctx, GAME_ID);
 
   // ── 1. Vía B: el batch de estilo, desde el título ────────────────────────
-  const { styleId } = await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image" });
+  const { styleId } = await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image", renderMode: "image" });
   await ctx.page.click("#ts-apply-style");
   await ctx.page.waitForSelector("#ts-style-run", { timeout: 60_000 });
   const plan = await ctx.page.$eval("#ts-style-plan", (e) => e.innerText);

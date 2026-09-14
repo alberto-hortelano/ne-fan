@@ -29,8 +29,14 @@
  *  gates por faceta (`gates-de-imagen.test.ts`) y los tres modos que sí cargan
  *  con el campo ausente cayendo al default (`narrative-state.test.ts`).
  *
- *  Cero créditos: la partida se juega en `vector` y el save se corrompe en el
- *  disco EFÍMERO de la corrida.
+ *  Cero créditos (motor falso del runner), y el save se corrompe en el disco
+ *  EFÍMERO de la corrida. La partida se juega en `image` y esta línea decía
+ *  `vector` hasta el 2026-09-14: era falsa porque `nuevaPartida` solo fijaba
+ *  el modo de PERSONAJES y el de escenarios venía puesto en Imagen IA por
+ *  omisión — medido por el censo de gasto de `qa/run.mjs`, que vio a este
+ *  guion pagar un atlas. Hoy el modo se declara (y se mide corriendo en él):
+ *  `image`, que es lo que este guion venía midiendo, y que además es la cara
+ *  interesante — el save que se corrompe es el de una partida que SÍ gastaba.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -73,7 +79,7 @@ const clavesDeGraficos = (ctx) =>
 
 export default async function (ctx) {
   // ── 0 · Una partida real, jugada por el camino del jugador ───────────────
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   const salud = await (await fetch(`${URLS.state_api}/health`)).json();
   const sessionId = salud?.session_id;

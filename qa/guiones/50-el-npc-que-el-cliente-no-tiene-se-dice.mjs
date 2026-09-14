@@ -61,7 +61,7 @@ const PACIFICO = "Nogala";
 
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   const partida = await comenzar(ctx);
   await ctx.waitFor("el tabernero está en escena", (id) => window.__nefan.npcs().find((n) => n.id === id) ?? null, 60_000, MERCADER);
   await acercarse(ctx, MERCADER, { objetivo: 2.2, lista: "npcs" });

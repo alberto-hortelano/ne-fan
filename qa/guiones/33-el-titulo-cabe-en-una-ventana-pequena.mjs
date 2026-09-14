@@ -321,7 +321,7 @@ export default async function (ctx) {
   // DESBORDA por los 24 px de `margin-bottom` de la lista con las cinco
   // tarjetas a la vista, y el aviso decía «↓ hay 0 partidas más».
   await ctx.page.setViewportSize(ANCHA);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   const jugada = await comenzar(ctx);
   clonarSaves(jugada.sessionId, 4);
   await recargarAlTitulo(ctx);

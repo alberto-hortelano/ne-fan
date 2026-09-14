@@ -70,7 +70,7 @@ export default async function (ctx) {
     await route.continue();
   });
 
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "image" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "image", renderMode: "image" });
   await comenzar(ctx);
 
   await ctx.waitFor(

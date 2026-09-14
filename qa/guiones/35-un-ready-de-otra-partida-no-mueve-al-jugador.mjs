@@ -119,7 +119,7 @@ const readyConSpawn = (sessionId, spawn) => ({
 export default async function (ctx) {
   await quedarseConElSocket(ctx);
   await recargarAlTitulo(ctx);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   const partida = await comenzar(ctx);
   ctx.log(`la partida viva es ${partida.sessionId}`);
 

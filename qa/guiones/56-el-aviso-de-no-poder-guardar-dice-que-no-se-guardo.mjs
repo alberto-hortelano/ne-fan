@@ -40,7 +40,7 @@ const GAME_ID = "alta_fantasia";
 const MERCADER = "barkeep";
 
 export default async function (ctx) {
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image" });
   const partida = await comenzar(ctx);
 
   const dir = dirDelSave(partida.sessionId);

@@ -88,7 +88,7 @@ export default async function (ctx) {
 
   // ── 2 · La partida: barra = catálogo de la SESIÓN ─────────────────────────
   await esperarListaDeSaves(ctx);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
   await comenzar(ctx);
   const st = await ctx.nefan("state");
   const catalogo = st.attackCatalog;

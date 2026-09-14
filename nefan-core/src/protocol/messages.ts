@@ -94,7 +94,9 @@ export interface StartSessionMessage {
   /** Modo de render del mundo 2D elegido en el título: "image" (el modelo de
    *  imagen repinta cada blueprint — gasta créditos) | "vector" (el mundo se
    *  ve con los blueprints compuestos del plan del motor narrativo — gratis).
-   *  Ausente = "image". Congelado en el save: mezclar tiles pintados y
+   *  Ausente = `MODO_AL_EMPEZAR` (`session/gates-de-imagen.ts`): maqueta, o
+   *  sea sin gastar — una partida nueva no nace pagando porque el mensaje se
+   *  dejara un campo. Congelado en el save: mezclar tiles pintados y
    *  vectoriales rompe la continuidad visual entre vecinos. */
   renderMode?: string;
   /** Modo de imagen de PERSONAJES: "image" (skins IA por descripción) |

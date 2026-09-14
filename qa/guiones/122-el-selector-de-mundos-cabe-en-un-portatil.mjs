@@ -166,8 +166,7 @@ export default async function (ctx) {
   // siembra una y se clona.
   await ctx.page.setViewportSize(PORTATIL);
   await recargarAlTitulo(ctx);
-  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector" });
-  await ctx.page.click('#ts-rendermode [data-rendermode="vector"]');
+  await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "vector" });
   const { sessionId } = await comenzar(ctx);
   clonarSaves(sessionId, 8);
   await ctx.page.setViewportSize(BAJA);
