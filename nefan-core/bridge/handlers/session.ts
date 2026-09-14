@@ -136,9 +136,14 @@ export function handleListGames(
       } catch (err) {
         console.warn(`handleListGames: world.md ilegible para "${g.game_id}":`, err);
       }
+      // El recuento de la criba viaja SOLO cuando hay snapshot que contar
+      // (#451): un campo vacío en el wire es un aviso que el cliente tendría
+      // que aprender a distinguir de «no pasa nada».
+      const mundo = gameGenerationStatus(ctx.gamesDir, g.game_id);
       return {
         ...g,
-        generation: gameGenerationStatus(ctx.gamesDir, g.game_id),
+        generation: mundo.estado,
+        ...(mundo.escenas ? { escenas: mundo.escenas } : {}),
         styles_applied: worldDocHash
           ? listStyleApplications(ctx.gamesDir, g.game_id, worldDocHash)
           : [],

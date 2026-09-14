@@ -570,6 +570,14 @@ export interface GamesListedMessage {
      *  (`ExpandedSceneSchema .strict()` + `validateScene`, #302),
      *  "missing" = nunca generado. */
     generation: "ready" | "stale" | "missing";
+    /** Cuántas de las escenas del snapshot puede servir HOY la puerta de carga,
+     *  de cuántas hay en el fichero (#451). Solo viaja cuando hay snapshot que
+     *  contar: con `generation` "missing" o "stale" no hay recuento, y un 0/0
+     *  sería inventado. Un `ready` con `servibles < total` es un mundo del que
+     *  se sirve una parte y el resto se le pedirá al motor cuando el jugador
+     *  llegue: sin este número, el título dice «generado» de un mundo del que
+     *  solo queda la entrada y nada en pantalla lo delata (QA de #451, H-2). */
+    escenas?: { servibles: number; total: number };
     /** Estilos aplicados al juego (batch de assets estilizados): "ready" =
      *  vigente, "stale" = el mundo se regeneró/editó después. */
     styles_applied: Array<{ style_id: string; status: "ready" | "stale" }>;

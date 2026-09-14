@@ -336,8 +336,19 @@ export async function pintarSelectorDeMundo(
   const refreshGenPanel = (): void => {
     const cs = contentStatus();
     const as = appliedStatus();
+    // Un mundo «generado» puede tener escenas que la puerta de carga ya no
+    // sirve: se le pedirán al motor cuando el jugador llegue a ellas, y NADA
+    // en pantalla lo delata (un mundo cribado se ve igual que uno sano, lo
+    // midió QA). Así que se CUENTA — no se explica el motivo, que es la
+    // opción que el usuario descartó en #451: es un número (H-2).
+    const cuenta = selectedGame.escenas;
+    const recorte =
+      cuenta && cuenta.servibles < cuenta.total
+        ? ` <span style="color:#da6">(${cuenta.servibles} de ${cuenta.total} escenas;` +
+          ` el resto se generará al llegar)</span>`
+        : "";
     const CONTENT_LABEL: Record<string, string> = {
-      ready: `<span style="color:#4a4">✓ generado</span>`,
+      ready: `<span style="color:#4a4">✓ generado</span>${recorte}`,
       stale: `<span style="color:#da6">⟳ obsoleto (regenera el mundo)</span>`,
       missing: `<span style="color:#a66">— sin generar</span>`,
     };

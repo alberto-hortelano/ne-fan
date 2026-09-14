@@ -7,7 +7,7 @@
  *  mismo camino que las map tools (escribe en ctx.narrative.worldMap). */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -179,6 +179,44 @@ describe("generate_game", () => {
       ) as WorldSnapshot;
       assert.equal(Object.keys(snap.scenes).length, 8, "todo menos el vecino fallido");
       assert.equal(snap.scenes["tile_1_0"], undefined);
+    } finally {
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  /** El otro lado de la política de #451: `writeSessionSnapshot` recibe
+   *  `reemplaza-el-mundo` aquí y `conserva-el-mundo-en-disco` en el bootstrap
+   *  vivo. Si alguien le pusiera un defecto —o cambiara este llamante— una
+   *  escena de la génesis ANTERIOR resucitaría dentro del mundo nuevo, que es
+   *  el bug contrario al que se arregla: «Regenerar mundo» es regenerar. */
+  it("regenerar REEMPLAZA: ninguna escena de la génesis anterior sobrevive en el mundo nuevo", async () => {
+    const gamesDir = tmpGamesDir();
+    try {
+      // Primera génesis: deja 9 escenas y una firma reconocible en la entrada.
+      const primera = makeCtx({ gamesDir, persistWorldSnapshots: true });
+      motorFake(primera);
+      await runGenerate(primera);
+      const viejo = JSON.parse(
+        readFileSync(worldSnapshotPath(gamesDir, GAME), "utf-8"),
+      ) as WorldSnapshot;
+      // Un tile que el anillo 3×3 NO vuelve a generar: si sobrevive, es que se
+      // conservó, y aquí no se conserva nada.
+      viejo.scenes["tile_7_7"] = viejo.scenes["tile_1_1"];
+      writeFileSync(worldSnapshotPath(gamesDir, GAME), JSON.stringify(viejo), "utf-8");
+
+      const segunda = makeCtx({ gamesDir, persistWorldSnapshots: true });
+      motorFake(segunda);
+      const { final } = await runGenerate(segunda);
+      assert.equal(final.phase, "ready");
+      const nuevo = JSON.parse(
+        readFileSync(worldSnapshotPath(gamesDir, GAME), "utf-8"),
+      ) as WorldSnapshot;
+      assert.equal(Object.keys(nuevo.scenes).length, 9, "el mundo nuevo y nada más");
+      assert.equal(
+        nuevo.scenes["tile_7_7"],
+        undefined,
+        "una escena de la génesis anterior resucitó en el mundo nuevo",
+      );
     } finally {
       rmSync(gamesDir, { recursive: true, force: true });
     }
