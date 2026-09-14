@@ -142,3 +142,22 @@ bloqueo, es coste — y que nadie lo descubra a mitad.
 **Prosa que muere con la tanda**: `ui/style-apply.ts:446` dice que los sprite sheets no pasan por el
 manifest y no se pinean; desde #376 los pina el servidor bajo `character:{hero_key}`. Un rastro que
 miente confunde a los agentes, así que se barre con el cambio.
+
+---
+
+## La pregunta que abrió el arquitecto, contestada (2026-09-14)
+
+**«Encender Imagen IA es explícito, como en el home»: ¿un click, o el patrón armado de dos con
+"¿Confirmar? Gastará créditos"?**
+
+**Un click.** Y el motivo, para que no se vuelva a abrir:
+
+Lo que «explícito» tiene que proteger es *gastar sin haberlo decidido*. Con la decisión (b) puesta,
+para que se gaste hacen falta **dos actos deliberados**: encender Imagen IA y pulsar «Jugar». El
+patrón armado del home existe porque allí el click **es** la orden de gasto sobre una partida viva —
+no hay segundo paso que lo confirme. En el selector sí lo hay, y pedir tres interacciones para una
+sola intención es fricción que nadie pidió.
+
+Si el usuario prefiere paridad literal con el home, es un cambio pequeño y posterior: subir el patrón
+armado de `home.ts:290-345` a `atomos.ts`, que es la única forma de compartirlo sin que el candado
+`las-hojas-del-titulo-no-se-atan-entre-si` lo tumbe. Queda anotado por si lo pide.
