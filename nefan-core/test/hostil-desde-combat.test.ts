@@ -5,13 +5,15 @@
  *  bridge escribe en su log al rechazar el frame, y comprobar solo `ok:false`
  *  dejaría vivo el mutante que cambia un rechazo por otro. El último bloque es
  *  el que da sentido a la PR: la puerta del cliente (`parseHostileCombat`) y la
- *  del bridge (`ClientMessageSchema`) contestan lo MISMO al mismo bloque. */
+ *  del bridge (`cribarHostiles`, que lo llama por enemigo desde #529)
+ *  contestan lo MISMO al mismo bloque. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { parseHostileCombat } from "../src/combat/hostil-desde-combat.js";
+import { cribarHostiles } from "../src/combat/criba-de-hostiles.js";
 import { combatForHostileRole } from "../src/combat/hostiles.js";
-import { ClientMessageSchema } from "../src/protocol/message-schema.js";
+import type { EnemyPersonality } from "../src/types.js";
 
 /** La personalidad que emite el core hoy, que es la ÚNICA que existe en
  *  producción: `combatForHostileRole` → `buildPersonality`. */
@@ -225,29 +227,33 @@ describe("la personalidad: los tres números, la lista de ataques y los opcional
 });
 
 describe("un solo criterio: la puerta del cliente y la del bridge contestan lo mismo", () => {
-  /** Lo que el borde WS del bridge hace con un `add_combatants` que trae ese
-   *  bloque (el cable lo lleva en camelCase y desmontado; es el mismo bloque).
-   *  Se mira el ISSUE de zod (mensaje y ruta) y no el string ya formateado: el
-   *  formateador es de otro módulo (`contract/model-io/validate.ts`) y quien
-   *  afirma su salida entera —«enemies[0]: …»— es
-   *  `test/message-schema.test.ts`. */
-  const porElCable = (combat: Record<string, unknown>): { mensaje: string; ruta: unknown[] } | null => {
-    const r = ClientMessageSchema.safeParse({
-      type: "add_combatants",
-      enemies: [
-        {
-          id: "bandido_1",
-          position: { x: 0, y: 0, z: 0 },
-          health: combat.health,
-          maxHealth: combat.max_health,
-          weaponId: combat.weapon_id,
-          personality: combat.personality,
-        },
-      ],
-    });
-    if (r.success) return null;
-    const primero = r.error.issues[0];
-    return { mensaje: primero.message, ruta: [...primero.path] };
+  /** Lo que la puerta del BRIDGE hace con un enemigo de `add_combatants` que
+   *  trae ese bloque (el cable lo lleva en camelCase y desmontado; es el mismo
+   *  bloque).
+   *
+   *  Desde #529 esa puerta es `cribarHostiles` y no el `superRefine` de
+   *  `EnemySpawnSchema`: el criterio no ha cambiado —sigue siendo
+   *  `parseHostileCombat`, y por eso esta tabla sigue aquí—, lo que ha cambiado
+   *  es el DESENLACE. Antes un enemigo malo hacía fallar el intake y con él se
+   *  iba el frame entero; hoy se cae solo él y el motivo viaja con SU ID, que
+   *  es más de lo que decía la ruta `["enemies", 0]` del issue de zod. */
+  const porElCable = (combat: Record<string, unknown>): { mensaje: string; quien: string } | null => {
+    const { altas, descartes } = cribarHostiles([
+      {
+        id: "bandido_1",
+        position: { x: 0, y: 0, z: 0 },
+        health: combat.health as number,
+        maxHealth: combat.max_health as number,
+        weaponId: combat.weapon_id as string,
+        personality: combat.personality as EnemyPersonality,
+      },
+    ]);
+    if (descartes.length === 0) {
+      assert.equal(altas.length, 1, "si no se descarta a nadie, el enemigo tiene que haber entrado");
+      return null;
+    }
+    assert.deepEqual(altas, [], "un lote de uno que se descarta no puede dar además un alta");
+    return { mensaje: descartes[0].motivo, quien: descartes[0].id };
   };
 
   const porLaPuertaDelCliente = (combat: unknown): string | null => {
@@ -284,30 +290,16 @@ describe("un solo criterio: la puerta del cliente y la del bridge contestan lo m
       }
       assert.notEqual(cable, null, `el cliente lo rechaza («${cliente}») y el bridge lo acepta`);
       assert.equal(cable?.mensaje, cliente);
-      assert.deepEqual(cable?.ruta, ["enemies", 0]);
+      assert.equal(cable?.quien, "bandido_1");
     });
   }
 
-  it("load_room pasa por el MISMO criterio que add_combatants (las dos vías del cliente)", () => {
-    const enemigo = {
-      id: "bandido_1",
-      position: { x: 0, y: 0, z: 0 },
-      health: 60,
-      maxHealth: 60,
-      weaponId: "unarmed",
-      personality: { ...PERSONALIDAD_REAL, preferred_attacks: [] },
-    };
-    const r = ClientMessageSchema.safeParse({
-      type: "load_room",
-      roomId: "robledo_tile",
-      enemies: [enemigo],
-    });
-    assert.equal(r.success, false);
-    if (r.success) return;
-    assert.equal(
-      r.error.issues[0].message,
-      "combat.personality.preferred_attacks no es una lista de ataques no vacía",
-    );
-    assert.deepEqual([...r.error.issues[0].path], ["enemies", 0]);
+  /** El frame de `load_room` lleva el MISMO enemigo que el de
+   *  `add_combatants`, así que la criba es la misma llamada y no hay dos
+   *  criterios que puedan separarse aquí. Que los DOS HANDLERS la llamen —que
+   *  es donde sí cabría olvidarse de uno— lo afirma
+   *  `test/bridge-enemigo-invalido.test.ts` sobre el bridge real. */
+  it("el enemigo que el core deriva no lo descarta nadie (sin esto, «rechaza» sería un verde vacío)", () => {
+    assert.equal(porElCable(combatCon(PERSONALIDAD_REAL)), null);
   });
 });

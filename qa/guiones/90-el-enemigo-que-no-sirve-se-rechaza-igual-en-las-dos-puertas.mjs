@@ -34,16 +34,18 @@
  *  bloque `combat` roto (el motor no escribe los números: los deriva
  *  `combatForHostileRole`).
  *
- *  LO QUE ESTE GUION NO AFIRMA, y por qué: el TEXTO que ve el jugador cuando el
- *  rechazo pasa en el bridge. Es genérico por diseño («El juego mandó un
- *  mensaje que el servidor no reconoce», `kind:"protocolo"`, #352) y el motivo
- *  del parser se queda en el log del servidor, así que la igualdad de la frase
- *  se afirma entre el REGISTRO DEL CLIENTE y el LOG DEL BRIDGE, que es donde
- *  cada uno la escribe. Lo que el jugador SÍ tiene delante —un modal a pantalla
- *  completa que vela la partida, y el frame entero descartado— lo MIDE el
- *  bloque A3-bis y lo deja escrito como `⚠ HALLAZGO` sin ponerlo rojo: el
- *  overlay es la conducta de #352, y lo que esta PR cambia es cuántos frames
- *  llegan hasta él.
+ *  EL DESENLACE, que era la mitad que faltaba (#529, 2026-09-14). Hasta esa
+ *  fecha el bloque A3-bis medía —y dejaba escrito como `⚠ HALLAZGO`, sin
+ *  ponerlo rojo— que el veredicto y el motivo eran UNO pero el desenlace NO:
+ *  el bridge descartaba el FRAME ENTERO y plantaba un modal a pantalla completa
+ *  («Fallo interno del juego», `kind:"protocolo"`) mientras el cliente, con el
+ *  MISMO criterio, descartaba UN enemigo y seguía. Hoy las dos puertas hacen lo
+ *  del cliente, el hallazgo es ASERTO (A3-bis) y el rechazo se lee en el log
+ *  del bridge como `enemigo "<id>" descartado: <motivo>` — con el id de quién,
+ *  que la ruta `enemies[0]` de zod no decía. Que los enemigos BUENOS del mismo
+ *  lote entren mientras el malo no es el sujeto del guion 129; aquí se sigue
+ *  midiendo la igualdad del MOTIVO entre el registro del cliente y el log del
+ *  bridge, que es donde cada uno lo escribe.
  *
  *  LO QUE EL BLOQUE A3-ter NO AFIRMA: el texto del CLIENTE para un error de
  *  TIPO. La igualdad de la frase se mide en el bloque B, que fabrica el bloque
@@ -58,7 +60,10 @@
  *  (`attacks.length === 0` fuera del criterio) → A2 rojo (el bridge deja pasar
  *  al hostil sin ataques y no escribe línea de rechazo) y B rojo por partida
  *  doble (el registro del cliente no dice el motivo y el enemigo roto ENTRA al
- *  mundo).
+ *  mundo). El bloque A3-bis, que hoy es aserto, se probó en negativo con #529
+ *  desde el otro lado: devolver el criterio al `superRefine` de
+ *  `EnemySpawnSchema` pone rojos sus dos `expect` (el modal vuelve y aparece la
+ *  línea de «WS frame rejected»).
  *
  *  Cero créditos: `e2e-sin-creditos`, motor falso, personajes en vector.
  */
@@ -124,8 +129,22 @@ const enemigoValido = (over = {}) => ({
 
 const conPersonalidad = (over) => enemigoValido({ personality: { ...enemigoValido().personality, ...over } });
 
-/** Las líneas de rechazo del borde WS que el bridge lleva escritas. */
+/** Las líneas de DESCARTE que el bridge lleva escritas.
+ *
+ *  Eran las de «WS frame rejected» del intake hasta #529: el criterio vivía en
+ *  el zod del borde, así que un enemigo malo hacía fallar el frame entero. Hoy
+ *  el intake solo mira la FORMA y el descarte lo escribe el handler, con el id
+ *  de QUIÉN al lado del motivo. */
 function rechazosDelBridge(log) {
+  if (!existsSync(log)) return null;
+  return readFileSync(log, "utf8")
+    .split("\n")
+    .filter((l) => l.includes("descartado:"));
+}
+
+/** Y las del intake, que para un enemigo malo tienen que seguir siendo CERO:
+ *  si vuelve una, el criterio volvió al zod y con él el descarte del lote. */
+function framesRechazados(log) {
   if (!existsSync(log)) return null;
   return readFileSync(log, "utf8")
     .split("\n")
@@ -226,13 +245,13 @@ export default async function (ctx) {
   ctx.log(`A2 · roto: ${JSON.stringify(erroresRoto.map((m) => ({ kind: m.kind, message: m.message })))}`);
   ctx.log(`A2 · log del bridge: ${nuevaLinea.slice(0, 200)}`);
   ctx.expect(
-    "A2 · el borde WS RECHAZA al hostil sin ataques y lo dice con el motivo del criterio de core",
-    nuevaLinea.includes(`enemies[0]: ${MOTIVO_ATAQUES}`),
-    nuevaLinea || "(ninguna línea «WS frame rejected» nueva)",
+    "A2 · el bridge RECHAZA al hostil sin ataques y lo dice con el motivo del criterio de core, nombrando a QUIÉN",
+    nuevaLinea.includes('enemigo "qa90_sonda" descartado') && nuevaLinea.includes(MOTIVO_ATAQUES),
+    nuevaLinea || "(ninguna línea «descartado:» nueva)",
   );
   ctx.expect(
-    "A2 · …y al jugador le llega el aviso de protocolo (fail-loud, no silencio)",
-    erroresRoto.some((m) => m.kind === "protocolo"),
+    "A2 · …y al jugador le llega el aviso del hecho (`combatientes`, #529), fail-loud y no silencio",
+    erroresRoto.some((m) => m.kind === "combatientes"),
     JSON.stringify(erroresRoto),
   );
 
@@ -243,9 +262,9 @@ export default async function (ctx) {
   const lineaMax = trasMax && antesMax !== null ? (trasMax.slice(antesMax)[0] ?? "") : "";
   ctx.log(`A3 · maxHealth 0 → ${lineaMax.slice(0, 200)}`);
   ctx.expect(
-    "A3 · `maxHealth: 0` (que el borde ACEPTABA antes de esta PR: un muerto dado de alta) hoy se rechaza con el motivo del parser",
-    lineaMax.includes(`enemies[0]: ${MOTIVO_MAXHP}`),
-    lineaMax || "(ninguna línea «WS frame rejected» nueva)",
+    "A3 · `maxHealth: 0` (que el borde ACEPTABA antes de la PR 6: un muerto dado de alta) se rechaza con el motivo del parser",
+    lineaMax.includes(MOTIVO_MAXHP),
+    lineaMax || "(ninguna línea «descartado:» nueva)",
   );
 
   // A3-ter · EL ERROR DE TIPO da el motivo del PARSER, no el de zod (#530-p3).
@@ -264,41 +283,48 @@ export default async function (ctx) {
     ctx.log(`A3-ter · ${que} → ${linea.slice(0, 200)}`);
     ctx.expect(
       `A3-ter · ${que} se rechaza con el motivo del PARSER (el mismo string que escribe el cliente), no con el de zod`,
-      linea.includes(`enemies[0]: ${motivo}`) && !/Expected .* received/.test(linea),
-      linea || "(ninguna línea «WS frame rejected» nueva)",
+      linea.includes(motivo) && !/Expected .* received/.test(linea),
+      linea || "(ninguna línea «descartado:» nueva)",
     );
   }
 
   // A3-bis · QUÉ TIENE DELANTE EL JUGADOR cuando el rechazo pasa en el bridge.
-  // Va como `⚠ HALLAZGO` y no como `expect`: el overlay es la conducta de #352
-  // (`kind:"protocolo"` → `destino:"overlay"`, `status-rotulo.ts:204`) y no la
-  // trajo esta PR. Lo que la PR cambia es CUÁNTOS frames llegan hasta aquí:
-  // los seis casos de VALOR de la tabla base↔hoy (`maxHealth: 0`,
-  // `preferred_attacks: []`, `weaponId: ""`…) antes entraban al sim en silencio
-  // y hoy plantan este modal. Se mide, se dice y se cierra como el jugador.
+  // ERA UN `⚠ HALLAZGO` sin rojo: el overlay venía de #352 (`kind:"protocolo"`
+  // → `destino:"overlay"`) y lo que la PR 6 cambió fue cuántos frames llegaban
+  // hasta él. #529 cerró la brecha y por eso HOY ES ASERTO: el desenlace es el
+  // del cliente en las dos puertas, así que un rechazo de enemigo no puede
+  // volver a velar la partida ni a llevarse el frame entero. Las dos mitades,
+  // porque el modal y el descarte del lote eran la misma causa: ni overlay, ni
+  // una línea de «WS frame rejected» nueva.
+  //
+  // Y lo que se mira es el MURO DE FALLO, no «el overlay»: el mismo
+  // `#narrative-loader` pinta las esperas del arranque («Iniciando partida…»),
+  // así que preguntarle solo si está visible daba un rojo que no era el del
+  // sujeto — medido al estrenar el aserto. Lo que separa un fallo de una
+  // espera es la clase `error`, que solo pone `fallo()` (`ui/muro-de-carga.ts`).
   const overlay = await ctx.page.evaluate(() => {
     const el = document.getElementById("narrative-loader");
-    if (!el || el.hidden) return { visible: false };
+    const visible = Boolean(el?.classList.contains("visible") && el.classList.contains("error"));
     return {
-      visible: true,
-      titulo: document.getElementById("narrative-loader-title")?.textContent ?? "",
-      detalle: document.getElementById("narrative-loader-detail")?.textContent ?? "",
-      salida: document.getElementById("narrative-loader-dismiss")?.textContent ?? "",
+      visible,
+      titulo: visible ? document.getElementById("narrative-loader-title")?.textContent ?? "" : "",
+      detalle: visible ? document.getElementById("narrative-loader-detail")?.textContent ?? "" : "",
+      salida: visible ? document.getElementById("narrative-loader-dismiss")?.textContent ?? "" : "",
     };
   });
-  ctx.log(`A3-bis · overlay tras los rechazos: ${JSON.stringify(overlay)}`);
-  if (overlay.visible) {
-    ctx.log(
-      `⚠ HALLAZGO (#352, pre-existente; alcance NUEVO desde la PR 6): un enemigo de VALOR ` +
-        `inválido por el cable ya no entra al sim en silencio — planta un modal a pantalla ` +
-        `completa («${overlay.titulo}») que vela la partida hasta que el jugador lo cierra, y ` +
-        `descarta el FRAME ENTERO (los demás enemigos del lote incluidos). El cliente, con el ` +
-        `MISMO criterio, descarta UN enemigo y sigue: el veredicto y el motivo son uno, el ` +
-        `desenlace no.`,
-    );
-    await ctx.shot("90-A3-el-modal-que-ve-el-jugador");
-    await ctx.page.click("#narrative-loader-dismiss").catch(() => {});
-  }
+  ctx.log(`A3-bis · muro de fallo tras los rechazos: ${JSON.stringify(overlay)}`);
+  ctx.expect(
+    "A3-bis · NINGÚN muro de fallo vela la partida por un enemigo que no sirve (#529: el desenlace también es uno)",
+    !overlay.visible,
+    JSON.stringify(overlay),
+  );
+  const framesTirados = framesRechazados(logBridge);
+  ctx.expect(
+    "A3-bis · …y el borde no tiró un solo frame: el criterio está en el handler, no en el intake",
+    framesTirados === null || framesTirados.length === 0,
+    JSON.stringify(framesTirados?.slice(-2) ?? null),
+  );
+  if (overlay.visible) await ctx.page.click("#narrative-loader-dismiss").catch(() => {});
 
   // A4 · rechazar no es caerse: la partida sigue y el jugador se mueve.
   const antesDeAndar = await ctx.nefan("state");

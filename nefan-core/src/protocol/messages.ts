@@ -453,6 +453,12 @@ interface CuerpoDeNarrativeStatus {
  *   · `action` — reventó el handler de algo que el jugador pidió.
  *   · `protocolo` — el cliente mandó un frame que el bridge no puede leer.
      *     No es el mundo ni el motor: es el juego consigo mismo.
+ *   · `combatientes` — del lote de enemigos que el cliente mandó, alguno no
+ *     entró al mundo. Los demás SÍ, y la partida sigue: es el único kind que
+ *     NO tapa la pantalla (#529). Existe porque hasta el 2026-09-14 este
+ *     hecho salía como `protocolo` —con el frame entero descartado y un modal
+ *     encima de la partida— mientras el cliente, con el mismo criterio,
+ *     descartaba un enemigo y seguía.
  *
  *  Añadir uno sin darle título propio NO COMPILA: `rotuloDeStatus` cierra
  *  su `switch` con `const nunca: never`, y `DETALLE_POR_DEFECTO` es un
@@ -466,7 +472,8 @@ export type KindDeStatusDeSesion =
     | "save"
     | "plugin"
     | "action"
-    | "protocolo";
+    | "protocolo"
+    | "combatientes";
 
 /** Qué FASES admite cada kind. Un `ready` es «el sitio está listo» (`tile`:
  *  desde #405 toda escena servida es un tile, así que es el único ready del

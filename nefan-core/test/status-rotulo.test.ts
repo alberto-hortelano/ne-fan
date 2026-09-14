@@ -16,6 +16,35 @@ import { botonesDelMuro, rotuloDeStatus } from "../src/protocol/status-rotulo.js
 import type { SalidaDelOverlay } from "../src/protocol/status-rotulo.js";
 import type { NarrativeStatusDeSesion } from "../src/protocol/messages.js";
 
+/** TODOS los kinds, DERIVADOS DEL TIPO y no de una lista copiada a mano.
+ *
+ *  Era exactamente eso —tres listas de nueve literales escritas a mano en este
+ *  fichero— y por eso entra aquí: `combatientes` (#529) es el primer kind cuyo
+ *  destino NO es el overlay, y con las listas de antes se habría añadido sin
+ *  que ninguna de las tres lo mirara. Verde sin comprobar nada.
+ *
+ *  El `Record` sobre la unión hace que `tsc` exija una fila por kind: uno
+ *  nuevo no compila hasta que alguien decide si tapa la pantalla o no, que es
+ *  la misma garantía que el `never` del `switch` de producción.
+ *
+ *  El destino de la tabla es el del jugador ESPERANDO (`overlayAbierto`), que
+ *  es el contexto en el que cada kind enseña lo suyo; `tile` tiene además su
+ *  caso de segundo plano, que va al log y se mide aparte. */
+const DESTINO_POR_KIND: Record<NarrativeStatusDeSesion["kind"], "overlay" | "log"> = {
+  tile: "overlay",
+  scene: "overlay",
+  consequences: "overlay",
+  restore: "overlay",
+  takeover: "overlay",
+  save: "overlay",
+  plugin: "overlay",
+  action: "overlay",
+  protocolo: "overlay",
+  combatientes: "log",
+};
+const TODOS_LOS_KINDS = Object.keys(DESTINO_POR_KIND) as NarrativeStatusDeSesion["kind"][];
+const KINDS_DE_OVERLAY = TODOS_LOS_KINDS.filter((k) => DESTINO_POR_KIND[k] === "overlay");
+
 /** Lo que el bridge manda en el ARRANQUE del mundo: motivo traducido y SIN
  *  nombre de destino, porque en el arranque no se viaja a ningún sitio.
  *
@@ -81,6 +110,28 @@ describe("rótulo de un fallo del motor", () => {
     assert.equal(r.detalle, "Error: fetch failed");
   });
 
+  it("combatientes: a la línea de mensajes, NUNCA al modal, mire como mire la pantalla", () => {
+    // #529. Es el otro caso —con el tile de fondo— en el que tapar la pantalla
+    // sería interrumpir una partida que va bien: el mundo está pintado, los
+    // enemigos buenos del lote acaban de entrar y lo que falta es uno. Hasta
+    // el 2026-09-14 este hecho salía por `protocolo`, o sea «Fallo interno del
+    // juego» a pantalla completa, y además con el frame entero descartado.
+    //
+    // Se prueban los CUATRO contextos y no uno: el destino de este kind no
+    // depende de la pantalla, y un `if (ctx.mundoVacio)` colado aquí —como el
+    // que sí tiene `tile`— lo devolvería al overlay justo en el arranque.
+    for (const mundoVacio of [true, false]) {
+      for (const overlayAbierto of [true, false]) {
+        const r = rotuloDeStatus(
+          fallo({ kind: "combatientes", message: "Enemigos que no entraron al mundo (1 de 3): «roto_2» (x)" }),
+          { mundoVacio, overlayAbierto },
+        );
+        assert.equal(r.destino, "log", `${mundoVacio}/${overlayAbierto}: ${JSON.stringify(r)}`);
+        assert.equal(r.detalle, "Enemigos que no entraron al mundo (1 de 3): «roto_2» (x)");
+      }
+    }
+  });
+
   it("escena de un VIAJE (trae placeId): no se pudo llegar", () => {
     const r = rotuloDeStatus(
       fallo({ kind: "scene", placeId: "ermita_del_vado", message: "No se pudo viajar a Ermita del vado. El motor narrativo no responde; inténtalo de nuevo en un momento." }),
@@ -139,6 +190,11 @@ describe("rótulo de un fallo del motor", () => {
     assert.equal(cuerpo("plugin"), "Un sistema del juego no pudo completar el turno.");
     assert.equal(cuerpo("action"), "El juego no pudo completar esa acción.");
     assert.equal(cuerpo("protocolo"), "El juego mandó un mensaje que el servidor no pudo leer.");
+    assert.equal(cuerpo("combatientes"), "Alguno de los enemigos de ese lote no pudo entrar al mundo.");
+    // Y el conjunto es TOTAL: si mañana entra un kind más, esta línea cae con
+    // su nombre en vez de dejarlo sin cuerpo comprobado.
+    assert.equal(TODOS_LOS_KINDS.length, 10, JSON.stringify(TODOS_LOS_KINDS));
+    assert.equal(new Set(TODOS_LOS_KINDS.map(cuerpo)).size, 10, "dos kinds comparten cuerpo por defecto");
   });
 
   it("un `message` vacío NO se sustituye por el de por defecto", () => {
@@ -228,43 +284,35 @@ describe("un titular por hecho: ningún aviso culpa a quien no ha sido", () => {
     assert.equal(titulo("consequences"), "El motor narrativo rechazó la respuesta");
   });
 
-  it("SOLO el rechazo del motor nombra al motor: los otros ocho titulares no", () => {
+  it("la TABLA de destinos es la de verdad: cada kind cae donde dice, no donde nos conviene", () => {
+    // Sin esto, `DESTINO_POR_KIND` sería decoración: los tres bucles de este
+    // fichero la usarían para decidir a quién NO mirar, y meter un kind en la
+    // fila equivocada lo sacaría del examen en silencio. Aquí se confronta con
+    // `rotuloDeStatus` kind a kind, con el jugador esperando.
+    for (const kind of TODOS_LOS_KINDS) {
+      const r = rotuloDeStatus(fallo({ kind }), { mundoVacio: false, overlayAbierto: true });
+      assert.equal(r.destino, DESTINO_POR_KIND[kind], `${kind}: ${JSON.stringify(r)}`);
+    }
+  });
+
+  it("SOLO el rechazo del motor nombra al motor: los otros titulares no", () => {
     // El criterio 3 de la tanda, dicho como aserto: «ningún aviso sale bajo un
     // titular que nombra a otro culpable». Sin esto, un titular nuevo escrito
     // como «El motor narrativo no pudo guardar» pasaría los `it` de arriba
     // (cada uno mira su cadena) y volvería a poner el defecto en pantalla.
-    const kinds: NarrativeStatusDeSesion["kind"][] = [
-      "tile",
-      "scene",
-      "consequences",
-      "restore",
-      "takeover",
-      "save",
-      "plugin",
-      "action",
-      "protocolo",
-    ];
+    const kinds = KINDS_DE_OVERLAY;
     const culpan = kinds.filter((k) => /motor narrativo/i.test(titulo(k)));
     assert.deepEqual(culpan, ["consequences"], JSON.stringify(kinds.map((k) => [k, titulo(k)])));
   });
 
-  it("cada kind tiene SU titular: nueve kinds, nueve hechos, ningún catch-all", () => {
+  it("cada kind de overlay tiene SU titular: un hecho cada uno, ningún catch-all", () => {
     // El aserto que se pone rojo si alguien devuelve el catch-all: con un
-    // `return` al final, los seis kinds nuevos colapsarían en un solo título
-    // y este conjunto tendría 4 elementos en vez de 9.
-    const kinds: NarrativeStatusDeSesion["kind"][] = [
-      "tile",
-      "scene",
-      "consequences",
-      "restore",
-      "takeover",
-      "save",
-      "plugin",
-      "action",
-      "protocolo",
-    ];
+    // `return` al final, los kinds nuevos colapsarían en un solo título y este
+    // conjunto tendría 4 elementos en vez de uno por kind. La cuenta sale de
+    // la tabla y no de un literal: un kind nuevo de overlay entra solo.
+    const kinds = KINDS_DE_OVERLAY;
     const titulos = kinds.map((k) => titulo(k));
-    assert.equal(new Set(titulos).size, 9, JSON.stringify(titulos));
+    assert.equal(new Set(titulos).size, kinds.length, JSON.stringify(titulos));
     // Los DOS que sí pueden coincidir lo hacen por contexto y no por kind: un
     // `scene` CON `placeId` es el mismo hecho que un `tile` con el jugador
     // esperando —no poder ir donde iba—, y ahí compartir titular es correcto.
@@ -319,18 +367,7 @@ describe("la salida del overlay: qué puede hacer el jugador con el muro", () =>
     // Sin esto, `salida` podría estar clavada al caso del tile de bootstrap y
     // un fallo de escena en el arranque —el mismo callejón— saldría con la
     // salida equivocada sin que nadie se enterara.
-    const kinds = [
-      "tile",
-      "scene",
-      "consequences",
-      "restore",
-      "takeover",
-      "save",
-      "plugin",
-      "action",
-      "protocolo",
-    ] as const;
-    for (const kind of kinds) {
+    for (const kind of KINDS_DE_OVERLAY) {
       for (const overlayAbierto of [true, false]) {
         const r = rotuloDeStatus(fallo({ kind, placeId: "x" }), { mundoVacio: true, overlayAbierto });
         assert.equal(r.destino, "overlay", `${kind}/${overlayAbierto}`);
