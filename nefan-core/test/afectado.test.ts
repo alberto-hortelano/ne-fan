@@ -604,8 +604,8 @@ describe("perímetro · la proyección que se compara es la que se usa", () => {
  *  una corrida acaba de medir. Tratándolo entero, anotar la medida costaba la
  *  corrida completa siguiente (#416: los 41 módulos por subir un suelo). Se
  *  evalúa por su estructura, y el candado va en las TRES direcciones: la prosa
- *  no selecciona, un módulo tocado selecciona ese módulo, y el comando los
- *  selecciona a todos. */
+ *  no selecciona, un módulo tocado selecciona ese módulo, y los `node_args` los
+ *  seleccionan a todos. */
 describe("selector · mutation-targets.json se evalúa por ESTRUCTURA, no entero", () => {
   const OBJ = "data/contract/mutation-targets.json";
   const selObj = (objetivos: EfectoObjetivos, ...mas: string[]) =>
@@ -625,9 +625,9 @@ describe("selector · mutation-targets.json se evalúa por ESTRUCTURA, no entero
   });
 
   it("si cambió lo global, corrida completa y diciendo cuál", () => {
-    const s = selObj({ fuerzaTodo: true, ids: [], porque: "cambia el `comando`" });
+    const s = selObj({ fuerzaTodo: true, ids: [], porque: "cambian los `node_args`" });
     assert.equal(s.todos, true);
-    assert.match(s.efectos[0].porque, /comando/);
+    assert.match(s.efectos[0].porque, /node_args/);
   });
 
   it("aunque no cambie nada suyo, selecciona a quien LO LEA en runtime", () => {
@@ -647,7 +647,7 @@ describe("selector · mutation-targets.json se evalúa por ESTRUCTURA, no entero
 });
 
 const planDe = (o: Record<string, unknown>): string =>
-  JSON.stringify({ comando: "node --test", tope_local: 120, tope_lote: 1800, modulos: [], ...o });
+  JSON.stringify({ node_args: ["--import", "tsx"], tope_local: 120, tope_lote: 1800, modulos: [], ...o });
 const modulo = (o: Record<string, unknown> = {}) => ({
   id: "alfa",
   mutate: ["src/scene/alfa.ts"],
@@ -700,10 +700,10 @@ describe("objetivos · comparar dos versiones del plan de mutación", () => {
     assert.deepEqual(v.ids, ["beta"]);
   });
 
-  it("cambiar el `comando` sí fuerza la corrida completa", () => {
-    const v = compara(base, planDe({ modulos: [modulo()], comando: "node --test --otra-cosa" }));
+  it("cambiar los `node_args` sí fuerza la corrida completa", () => {
+    const v = compara(base, planDe({ modulos: [modulo()], node_args: ["--import", "tsx", "--otra-cosa"] }));
     assert.equal(v.fuerzaTodo, true);
-    assert.match(v.porque, /comando/);
+    assert.match(v.porque, /node_args/);
   });
 
   it("un módulo que DESAPARECE la fuerza: ya no se le puede seleccionar", () => {

@@ -256,6 +256,65 @@ describe("plan de mutación · el reparto es TOTAL sobre el perímetro", () => {
     );
   });
 
+  it("el config generado le da al runner la batería EXACTA, no un patrón", () => {
+    // `tap-runner` resuelve `tap.testFiles` con `glob()`, así que acepta
+    // patrones — y ahí está la trampa: un `test/*.test.ts` haría que la batería
+    // de un módulo creciera sola cada vez que alguien añade un fichero de test,
+    // que es justo la puerta que cerró el reparto por módulos. Una ruta literal
+    // se resuelve a sí misma, así que lo que hay que candar es que sean las
+    // rutas del plan y nada más.
+    //
+    // Y `nodeArgs` tiene que ser el del plan por lo mismo que `mutate`: el
+    // config generado es lo ÚNICO que Stryker lee, así que el tope de heap y el
+    // reporter TAP que valen son los que salgan de aquí, no los que ponga el
+    // contrato.
+    const base = leer("stryker.config.json") as Record<string, unknown>;
+    for (const m of plan.modulos) {
+      const cfg = configDe(base, plan, m, 2) as {
+        tap?: { testFiles?: string[]; nodeArgs?: string[] };
+        commandRunner?: unknown;
+      };
+      assert.deepEqual(
+        cfg.tap?.testFiles,
+        m.tests,
+        `${nombre(m)}: el config no le pasa su batería literal a tap-runner`,
+      );
+      assert.deepEqual(
+        cfg.tap?.nodeArgs,
+        plan.node_args,
+        `${nombre(m)}: el config no le pasa los node_args del plan (heap y reporter TAP van ahí)`,
+      );
+      assert.equal(
+        cfg.commandRunner,
+        undefined,
+        `${nombre(m)}: el config sigue trayendo \`commandRunner\`, del runner que se retiró en #443`,
+      );
+    }
+  });
+
+  it("el runner que el config nombra está instalado", () => {
+    // Un `testRunner` sin su plugin es una corrida que muere en el arranque —
+    // en CI, después de pagar el checkout y el `npm ci`. Y al revés: una
+    // dependencia instalada que nadie nombra es rastro.
+    // `command` es el único que viaja DENTRO de `@stryker-mutator/core`; los
+    // demás son un paquete aparte que hay que instalar.
+    const EN_CORE = new Set(["command"]);
+    const base = leer("stryker.config.json") as { testRunner?: string };
+    const deps = (leer("package.json") as { devDependencies: Record<string, string> }).devDependencies;
+    const paquete = `@stryker-mutator/${base.testRunner}-runner`;
+    for (const [nombrePaquete, hace_falta] of Object.entries({
+      [paquete]: !EN_CORE.has(String(base.testRunner)),
+      "@stryker-mutator/tap-runner": String(base.testRunner) === "tap",
+    })) {
+      if (!hace_falta) continue;
+      assert.ok(
+        deps[nombrePaquete],
+        `stryker.config.json pide testRunner "${base.testRunner}" y ${nombrePaquete} no está en devDependencies: ` +
+          `la corrida moriría en el arranque del job, después de pagar el checkout y el npm ci`,
+      );
+    }
+  });
+
   it("un suelo `sin medir` caduca en cuanto la huella trae la medida", () => {
     // EL CANDADO QUE HACE INEXPRESABLE EL GATE PERMANENTEMENTE VERDE.
     //
@@ -458,15 +517,39 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
         `y con varios mutantes en vuelo eso multiplica`,
     );
 
-    // Segunda barrera, independiente del reloj: el tope de heap. Va en el
-    // `comando` del plan y no por argv porque `node --test` abre un proceso
-    // hijo por fichero, y los hijos NO heredan las flags de la línea de
-    // comandos del padre — medido: con `node --max-old-space-size=512 --test …`
-    // los hijos seguían llegando a 4,2 GB.
-    assert.match(
-      plan.comando,
-      /NODE_OPTIONS=[^\s]*--max-old-space-size=\d+/,
-      "el comando del plan no pone tope de heap: un mutante desbocado crece hasta agotar la RAM de la máquina",
+    // Segunda barrera, independiente del reloj: el tope de heap. Con
+    // `tap-runner` va por ARGV en `node_args`, y ahí SÍ aplica: el runner lanza
+    // `node -r <hook.cjs> <node_args> <fichero>`, o sea que el proceso que
+    // recibe la flag es el mismo que ejecuta el test. Con el runner anterior
+    // había que meterlo por `NODE_OPTIONS` porque `node --test` abría un hijo
+    // por fichero y los hijos no heredan el argv del padre.
+    //
+    // MEDIDO el 2026-09-14, las tres ramas del asunto, sobre scene-validate:
+    //   · `node -r hook --max-old-space-size=16 --import tsx --test-reporter=tap <f>`
+    //     → exit 134, «FATAL ERROR: Reached heap limit» (a 32 y a 1024 pasa)
+    //   · `node --max-old-space-size=16 --import tsx --test <f>` → exit 0: el
+    //     tope se queda en el padre y el hijo ni se entera
+    //   · `NODE_OPTIONS=--max-old-space-size=16 node --import tsx --test <f>`
+    //     → exit 1: por entorno sí llega al hijo
+    assert.ok(
+      plan.node_args.some((a) => /^--max-old-space-size=\d+$/.test(a)),
+      `los node_args del plan son ${JSON.stringify(plan.node_args)}: sin tope de heap un mutante desbocado ` +
+        `crece hasta agotar la RAM de la máquina`,
+    );
+  });
+
+  /** Node 24 emite `spec` POR DEFECTO, también sin TTY (comprobado el
+   *  2026-09-14: `node --import tsx test/scene-validate.test.ts` redirigido a
+   *  fichero sale con ✔/▶, no con `ok`). `tap-runner` clasifica al mutante
+   *  leyendo TAP de stdout con `tap-parser`: sin esta flag no ve un solo
+   *  `not ok`, `result.ok` sale `true` y **todos los mutantes saldrían
+   *  detectados sin que ningún test haya opinado**. Es el verde que no
+   *  comprueba nada, y aquí cuesta la medida entera de la casa. */
+  it("el reporte que el runner sabe leer está pedido explícitamente", () => {
+    assert.ok(
+      plan.node_args.includes("--test-reporter=tap"),
+      `los node_args del plan son ${JSON.stringify(plan.node_args)}: sin --test-reporter=tap Node emite ` +
+        `\`spec\` y tap-parser no ve un solo veredicto — la corrida entera saldría en verde sin medir nada`,
     );
   });
 
@@ -488,11 +571,18 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
     // ficheros de test y re-correr devolvía el score viejo en 3 s. Antes eso se
     // compensaba con `--force`; ahora la caché no se enciende siquiera, y lo
     // que daba `mutate:quick` lo da correr un módulo suelto.
+    //
+    // CON `tap-runner` LA PREMISA PUEDE HABER CAMBIADO —el runner sí enumera
+    // sus ficheros de test— y NADIE LO HA MEDIDO (#443 midió el reloj y el
+    // score, no la caché). Hasta que alguien lo mida, la caché sigue apagada:
+    // encenderla sobre una premisa que se supone es exactamente el verde que no
+    // comprueba nada, y aquí el verde sería el gate entero.
     const base = leer("stryker.config.json") as { incremental?: boolean };
     assert.notEqual(
       base.incremental,
       true,
-      'incremental con testRunner "command" da verde sobre veredictos viejos al editar un test',
+      "incremental da verde sobre veredictos viejos al editar un test, y con tap-runner nadie ha medido " +
+        "si la caché se invalida — se enciende cuando esté medido, no antes",
     );
   });
 
@@ -517,18 +607,49 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
     //
     // Por qué es un candado y no una nota: un no-op silencioso es PEOR que no
     // tocarlo. Quien lo ponga leerá un cambio donde no hay ninguno, y la
-    // siguiente medida se atribuirá a una palanca que nunca se accionó. La
-    // palanca de verdad exige cambiar de runner (`@stryker-mutator/tap-runner`
-    // filtra por FICHERO de test y sí reporta cobertura), y eso es otra tarea
-    // con otro riesgo: ahí el score sí puede moverse.
+    // siguiente medida se atribuirá a una palanca que nunca se accionó.
+    //
+    // #443 accionó la palanca de verdad: con `testRunner: "tap"` el valor que
+    // NO hace nada es el otro. `@stryker-mutator/tap-runner` reporta
+    // `mutantCoverage.perTest` con granularidad de fichero de test y honra el
+    // `testFilter` (`const testFiles = testFilter ?? testFilesToRun`), así que
+    // con `perTest` cada mutante corre solo los ficheros que lo cubren y con
+    // "off" se vuelve a pagar la batería entera. Medido el 2026-09-14,
+    // A/B intercalado a concurrencia 2: blueprint-plan 24,7 s → 10,9 s
+    // (−55,9 %) y npc-director con los mismos supervivientes.
+    //
+    // EL CANDADO NO PUEDE AUTO-DESARMARSE. Antes empezaba por
+    // `if (base.testRunner !== "command") return`, o sea que cambiar de runner
+    // lo dejaba verde sin comprobar nada. Ahora cada runner conocido trae el
+    // valor que HAY que ponerle, y un runner desconocido es un fallo: si
+    // alguien mete un tercero, este test le exige escribir aquí qué significa
+    // `coverageAnalysis` para él antes de medir con él.
+    const ESPERADO: Record<string, { valor: string; porque: string }> = {
+      tap: {
+        valor: "perTest",
+        porque:
+          `tap-runner SÍ filtra: sin "perTest" cada mutante vuelve a ejecutar la batería entera y ` +
+          `se tira el único motivo por el que se cambió de runner (#443)`,
+      },
+      command: {
+        valor: "off",
+        porque:
+          `con testRunner "command" Stryker acepta "perTest", lo imprime en el log y lo IGNORA — ` +
+          `medido el 2026-09-04 sobre 4 módulos y 409 mutantes: idénticos uno a uno y cero segundos de ahorro`,
+      },
+    };
     const base = leer("stryker.config.json") as { coverageAnalysis?: string; testRunner?: string };
-    if (base.testRunner !== "command") return; // otro runner, otra conversación: este candado no opina
+    const esperado = ESPERADO[String(base.testRunner)];
+    assert.ok(
+      esperado,
+      `testRunner: "${base.testRunner}" no está en esta tabla. Qué significa \`coverageAnalysis\` depende ` +
+        `del runner —con "command" es un no-op y con "tap" es la palanca entera—, así que un runner nuevo ` +
+        `tiene que declarar aquí el suyo en vez de heredar un candado que no le opina`,
+    );
     assert.equal(
       base.coverageAnalysis,
-      "off",
-      `coverageAnalysis: "${base.coverageAnalysis}" con testRunner "command" NO filtra nada — Stryker lo acepta ` +
-        `sin avisar y sigue corriendo la batería entera por mutante. Si quieres el filtrado de verdad, ` +
-        `hay que cambiar de test runner (ver la medida del 2026-09-04 en docs/agents/2026-09-05-dos-velocidades/)`,
+      esperado.valor,
+      `coverageAnalysis: "${base.coverageAnalysis}" con testRunner "${base.testRunner}": ${esperado.porque}`,
     );
   });
 
@@ -561,10 +682,16 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
    *  comprueba contra esta máquina —el test corre también en un runner de 4
    *  núcleos— sino contra la fórmula, para cualquier tamaño de máquina. */
   it("el comando de test no abre un paralelismo dentro de cada worker", () => {
+    // Con `tap-runner` el 1 es ESTRUCTURAL: el runner recorre su batería con un
+    // `for … await` y lanza `node <fichero>` de uno en uno. Lo único que puede
+    // romperlo es colar `--test` en `node_args`, que devuelve el paralelismo
+    // interno de `node --test` dentro de cada worker — y además manda la
+    // cobertura a procesos hijos cuyo `stryker-output-<pid>.json` nadie lee,
+    // porque el hook lo escribe con SU pid y el runner solo mira el que lanzó.
     assert.equal(
-      testConcurrencyDe(plan.comando),
+      testConcurrencyDe(plan.node_args),
       1,
-      `el comando del plan es "${plan.comando}": sin --test-concurrency=1, node --test arranca ` +
+      `los node_args del plan son ${JSON.stringify(plan.node_args)}: con --test ahí, node arranca ` +
         `un proceso por fichero de test DENTRO de cada worker de Stryker, y los dos paralelismos se multiplican`,
     );
   });
@@ -580,7 +707,7 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
   });
 
   it("los procesos simultáneos nunca son un múltiplo de los núcleos", () => {
-    const porWorker = testConcurrencyDe(plan.comando);
+    const porWorker = testConcurrencyDe(plan.node_args);
     assert.notEqual(porWorker, "sin tope");
     for (const nucleos of [1, 2, 4, 8, 12, 16, 64, 128]) {
       const simultaneos = concurrenciaDe(nucleos) * (porWorker as number);

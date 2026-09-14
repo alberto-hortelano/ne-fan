@@ -959,7 +959,7 @@ export function comparaObjetivos(
     return {
       fuerzaTodo: true,
       ids: [],
-      porque: `cambia el \`comando\` de ${RUTA_OBJETIVOS}: con qué se ejecuta cada mutante es otro para todos`,
+      porque: `cambian los \`node_args\` de ${RUTA_OBJETIVOS}: con qué se ejecuta cada mutante es otro para todos`,
     };
   }
   // Un módulo que DESAPARECE deja de medirse, y lo que mutaba puede haberse
