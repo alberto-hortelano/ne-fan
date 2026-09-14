@@ -137,7 +137,15 @@ Tres cosas que en una vista cenital daba la propia perspectiva:
   dos sitios que abre quien fuera a meter ese raycast— porque hay prosa de una
   QA anterior que lo juzgó como defecto visual, y sin esto se «arregla» solo.
   Sin candado, también por decisión: costaría un guion de navegador con fixture
-  de muro.
+  de muro. Lo que sí se mira es que dos rótulos no se pisen ENTRE ELLOS, y eso
+  es lógica pura de core (`src/scene/rotulos-apilados.ts`): se ordenan por
+  prioridad —el enfilado primero, luego por profundidad ascendente— y el que
+  interseque a uno ya colocado no se emite. La excepción del enfilado no es un
+  adorno: `pickAimTarget` gana por desviación ANGULAR, así que el enfilado puede
+  ser el más lejano, y «ocultar el lejano» apagaría el nombre de aquello a lo
+  que apuntas. La caja se MIDE en píxeles (`offsetWidth`) una vez por texto y se
+  guarda con el nodo: leerla por frame es un reflow por frame, y estimarla por
+  longitud del texto mentiría con la primera fuente que traiga un pack.
 - **Frontera del mundo**: un muro de niebla sobre el borde del tile activo, y
   su DISIPACIÓN —no un destello— es el aviso de que el vecino ya existe.
 

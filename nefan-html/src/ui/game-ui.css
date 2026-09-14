@@ -507,7 +507,14 @@
      · QUIÉN es      → el COLOR DEL TEXTO (único escritor de `color`);
      · a quién APUNTAS → el BORDE, con el mismo acento que la mirilla.
    Como ninguna toca la propiedad de la otra, el orden del fichero deja de
-   decidir nada y un bandido enfilado sale rojo con aro de acento. */
+   decidir nada y un bandido enfilado sale rojo con aro de acento.
+
+   Y NINGUNA DE LAS DOS PUEDE CAMBIAR EL TAMAÑO DE LA CAJA. `world-labels.ts` la
+   mide en píxeles UNA vez por texto (leerla por frame es un reflow por frame) y
+   con esa medida core decide qué rótulo tapa a cuál. Por eso el foco se marca
+   con `outline`, que no ocupa layout, y no engordando el borde o el padding:
+   una regla que hiciera crecer la caja al enfocar dejaría la medida mintiendo
+   sin que nada se pusiera rojo. */
 #world-labels .world-label[data-peligro="true"] { color: var(--nf-danger); }
 #world-labels .world-label[data-focus="true"] {
   border-color: var(--nf-accent);
