@@ -110,3 +110,68 @@ compartida y cierta con la máquina quieta** — cinco medidas del 2026-09-10.
 - Hay otras instancias de Claude trabajando en esta máquina: **ninguna medida local puede ocupar la
   CPU sin acotarla**, y `tope_local` (120 mutantes) es la puerta que lo sujeta.
 - Cero créditos.
+
+---
+
+## Correcciones del coordinador tras la crítica (2026-09-14)
+
+La crítica está en `critica.md`, al lado. Se acepta entera. Esto es lo que cambia.
+
+**#443 sigue en pie, y el paso 2 se reescribe.** La frase del issue —«`node --test` emite TAP»— es
+**falsa hoy**: en Node v24.11.1 `node --import tsx --test <f>` emite `spec`, no TAP, también sin TTY.
+Pero no tumba nada, porque **`tap-runner` no usa `--test` en absoluto**: lanza un proceso por fichero
+ejecutándolo directo con un hook (`-r hook.cjs`), y `--test` allí está de hecho **prohibido** — el
+hook escribe `stryker-output-<pid>.json` con su propio pid y con `--test` la cobertura acaba en hijos
+cuyo pid nadie lee. Medido por el crítico: los cuatro ficheros de la batería de `scene-validate` más
+`narrative-state`, `asset-store-server` y `bridge-session` —los de servidor, que eran el riesgo— salen
+**exit 0 y TAP 13 válido** ejecutados directos. El paso 2 pasa a ser «comprobar que la batería corre
+fichero a fichero SIN `--test`», que es lo que de verdad hace falta.
+
+**El paso 3 ya tiene cota, calculada gratis desde la huella**: techo de ahorro **73 %** (12.874 s →
+3.514 s), suelo por arranque de proceso **15 %**, y **30 de los 55 módulos no pueden ahorrar nada**
+pero son solo el 6 % del reloj. La palanca es real y está concentrada. `tap-runner@10.0.0` existe y es
+la última, pero **no está instalado**: es coste, no bloqueo.
+
+**La regla dura del usuario se cumple MÁS FUERTE de lo que pide, y no cuesta más.** «Que ningún score
+se mueva fichero a fichero» es verificable —`mutacion-huella.json` va commiteada con `blob`, `total` y
+las huellas de cada superviviente, y `deltaDeFichero` ya compara fichero a fichero; 87 de los 88 blobs
+casan con HEAD— pero **es más débil que lo que la casa ya mide**: 92 supervivientes antes y otros 92
+**distintos** después dan el mismo score. Así que el criterio pasa a ser **0 nuevos y 0 resueltos** en
+los ficheros comparables, que es justo la distinción que `repartir` ya hace y que no cuesta un segundo
+más. Se cumple el espíritu de la regla del usuario, no se relaja.
+
+**Y aparecen dos agujeros de proceso que la tanda tiene que cerrar, porque sin ellos la regla no se
+puede aplicar:**
+
+1. **Ningún verbo compara sin escribir.** `repartir` acaba en `escribeHuella` y mueve el tag, así que
+   medir una corrida con el runner nuevo **destruye la base contra la que había que compararla**.
+   Hace falta una comparación **en seco**: mira y no toca. Sin eso, la regla dura del usuario es
+   inaplicable por construcción — y ése es exactamente el tipo de criterio que se «cumple en verde»
+   sin comprobar nada.
+2. **136 mutantes (1,6 % de los detectados) están clasificados por el RELOJ y no por un test**:
+   `Timeout`, repartidos en 13 módulos. Con otro runner esos se mueven solos. Van **reportados
+   aparte**, o la decisión muere por ruido.
+
+**#441: la cifra de hoy, y es peor de lo que parece.** 2.551 s = **19,8 %** del reloj (el 20 % no se
+ha movido) y 1,42× `tope_lote`. Pero lo que importa es el otro número: su `presupuestoDelLote` son
+3.249 s = **90,3 % del techo del job**, y solo aguanta un crecimiento de **×1,110** cuando la deriva
+medida entre corridas llega a **×1,14**. O sea: **el margen que compró #571 ya está dentro del
+ruido.** Sigue detrás de #443 —si el ahorro es del 73 %, #441 se disuelve— pero si #443 no compensa,
+esto es urgente y no «la palanca siguiente».
+
+**#430 se confirma PREMATURA, y su cuerpo miente en tres cifras**: ~900 mutantes cuando el plan del
+mismo día decía ~675; 18 de 21 ficheros cuando hoy son **19**; y «arriesga el `timeout-minutes: 180`»
+**ya no tiene sujeto** desde que #438 partió la corrida en matriz (hoy son 60 min por lote). Entra en
+la tanda solo para **corregir esas tres cifras y escribir la respuesta** en cuanto #443 la tenga.
+
+**#545 se reencuadra, y el alcance estaba mal por 30×.** No es un guion: son **30 de 112** los que
+miden por reloj de pared algo que depende del reloj de simulación. El clamp está en `main.ts:577`. El
+**reproductor bajo carga sintética es pieza nueva de cero**: el banco no tiene con qué. Y
+`qa/README.md:120-134` **ya escribe la regla** y ya cita el tope de 0,1 s — la prosa existía y no
+sujetó nada, que es el argumento de esta casa contra la prosa, aplicado a sí misma.
+
+**Aviso que vale la tanda entera**: **#496 es una causa raíz DISTINTA y ya diagnosticada** de los
+rojos de los guiones 80 y 75 (el bridge compartido difunde la vida ambiental del guion anterior a una
+página sin sesión). **Arreglar asertos puede taparlo.** Ningún aserto de esta tanda puede volver
+verde un guion cuyo rojo venga de #496: si al arreglar uno desaparece un rojo que era de #496, eso es
+un hallazgo, no un éxito.
