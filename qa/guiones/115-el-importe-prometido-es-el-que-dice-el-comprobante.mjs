@@ -113,7 +113,7 @@ export default async function (ctx) {
   });
 
   await regenerarMundo(ctx, GAME_ID);
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "image" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "image", charMode: "image" });
 
   // ── 1 · un plan de precio EXACTO: solo el atlas ─────────────────────────
   await ctx.page.click("#ts-apply-style");
