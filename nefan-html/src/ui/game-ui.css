@@ -383,6 +383,10 @@
 }
 #narrative-loader.visible { display: flex; }
 #narrative-loader.error { color: var(--nf-danger); }
+/* La OFERTA de entrar (#478) usa el chasis del muro de error porque es el que
+   trae los botones, pero no es un fallo: «el juego ya está disponible» en rojo
+   de peligro es una buena noticia con cara de alarma. Solo el color. */
+#narrative-loader.error.oferta { color: var(--nf-accent); }
 #narrative-loader .spinner {
   width: 34px; height: 34px;
   border: 3px solid var(--nf-border);

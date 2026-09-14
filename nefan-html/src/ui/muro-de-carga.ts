@@ -232,6 +232,12 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     muroPuestoPorAviso = null;
     loaderEl.classList.remove("error");
     loaderEl.classList.add("visible", "error");
+    // UNA OFERTA NO ES UNA ALARMA. `.error` saca los botones y de paso pinta el
+    // título en `--nf-danger`, así que «El juego ya está disponible» salía en el
+    // rojo de peligro: una buena noticia con cara de fallo. Lo vio QA en la
+    // captura del 478. Se marca aparte y el CSS le devuelve el acento; la clase
+    // no cambia los botones, que los sigue diciendo `botonesDelMuro`.
+    loaderEl.classList.toggle("oferta", salida === "reintentar");
     if (loaderTitle) loaderTitle.textContent = titulo;
     if (loaderDetail) loaderDetail.textContent = detalle;
     // QUÉ BOTONES lleva no se deriva aquí: lo dice core con un `switch`
