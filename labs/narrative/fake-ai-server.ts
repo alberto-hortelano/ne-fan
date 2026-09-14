@@ -229,6 +229,19 @@ const MARCA_MOTOR_CAIDO = "MOTOR CAIDO";
 const MARCA_DECLARA = "LO QUE DECLARA EL MOTOR";
 const MARCA_DECLARA_BOLSA = `${MARCA_DECLARA}: BOLSA`;
 const MARCA_DECLARA_CARRO = `${MARCA_DECLARA}: CARRO`;
+/** Y la tercera: CUATRO cosas de tamaños distintos en el MISMO turno, que es
+ *  lo único que ejerce el reparto (#524). Las de arriba van de una en una a
+ *  propósito —el guion 118 mide cada caja por separado—; ésta existe para lo
+ *  contrario: que el jugador vea que no se pisan entre ellas. La pide el
+ *  guion 128. */
+const MARCA_DECLARA_TURNO = `${MARCA_DECLARA}: TURNO`;
+/** El turno entero, para que el guion no repita los literales del wire. */
+const TURNO_DECLARADO = [
+  { nombre: "Forja del camino", kind: "building" as const, footprint: undefined },
+  { nombre: "Carro de heno", kind: "object" as const, footprint: [6, 6] as [number, number] },
+  { nombre: "Nogala", kind: "npc" as const, footprint: undefined },
+  { nombre: "Bolsa de monedas", kind: "item" as const, footprint: [2, 2] as [number, number] },
+];
 /** Quien conduce el motor con esas marcas se queda CON EL MOTOR PARA ÉL: a
  *  partir de la primera, los spawns por número de turno (el hostil del 2, el
  *  mundo del 3, el spawn sin procedencia del 4) dejan de salir en esta sesión.
@@ -726,7 +739,16 @@ const server = http.createServer((req, res) => {
         // tampoco lo emitía — el carro salía midiendo lo mismo que un cofre y
         // la bolsa de monedas era un muro. Una entidad por marca (ver arriba).
         const texto = String(body.free_text ?? "");
-        const loQueDeclara = texto.includes(MARCA_DECLARA_CARRO)
+        const loQueDeclara = texto.includes(MARCA_DECLARA_TURNO)
+          ? TURNO_DECLARADO.map((e) => ({
+              type: "spawn_entity" as const,
+              entity_kind: e.kind,
+              name: e.nombre,
+              description: `${e.nombre.toLowerCase()} del bench`,
+              ...(e.footprint ? { footprint: e.footprint } : {}),
+              position_hint: "near_player",
+            }))
+          : texto.includes(MARCA_DECLARA_CARRO)
           ? [
               {
                 type: "spawn_entity" as const,

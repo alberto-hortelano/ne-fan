@@ -245,6 +245,56 @@ describe("dispatchConsequences", () => {
     ]);
   });
 
+  it("y las cajas de un turno NO SE TOCAN: el reparto mira la huella de cada una (#524)", () => {
+    // El cableado entero, medido sobre las POSICIONES que salen del despacho:
+    // `repartirEnElTurno` puede estar perfecto y no llegar a `resolvePositionHint`.
+    // El turno es el del criterio: un edificio grande, un carro declarado, un
+    // personaje y una bolsa — con el número fijo de 1,8 m, el personaje caía
+    // DENTRO del edificio y las dos cajas se solapaban.
+    const s = makeState();
+    const cs: Consequence[] = [
+      { type: "spawn_entity", entity_kind: "building", name: "Granero", footprint: [20, 14] },
+      { type: "spawn_entity", entity_kind: "npc", name: "Nogala" },
+      { type: "spawn_entity", entity_kind: "object", name: "Carro de heno", footprint: [6, 6] },
+      { type: "spawn_entity", entity_kind: "item", name: "Bolsa de monedas" },
+    ];
+    let n = 0;
+    const r = dispatchConsequences(s, "evt_0001", cs, {
+      playerPosition: [0, 0, 0],
+      playerForward: [0, 0, -1],
+      generateEntityId: (k) => `narr_${k}_${n++}`,
+    });
+    // LAS MEDIAS ANCHURAS, ESCRITAS AQUÍ y no importadas de `reparto-de-spawns`:
+    // el oráculo de un test no puede ser el código que mide (QA de la PR 1,
+    // H-3). Salen de la aritmética del contrato — celdas × 0,5 m, y el radio
+    // simulado para un personaje: granero [20,14] → 10 m de lado → 5; npc →
+    // 0,5; carro [6,6] → 3 → 1,5; bolsa sin declarar → 0,5 → 0,25.
+    const MITADES = [5, 0.5, 1.5, 0.25];
+    /** El cuerpo del jugador, que es lo que tiene que caber entre dos caras. */
+    const CUERPO_M = 0.8;
+    const puestos = r.effects
+      .filter((e) => e.kind === "spawn_entity")
+      .map((e, i) => ({
+        etiqueta: e.kind === "spawn_entity" ? e.name : "",
+        pos: e.kind === "spawn_entity" ? e.position : [0, 0, 0],
+        mitad: MITADES[i],
+      }));
+    assert.equal(puestos.length, 4);
+    for (let i = 0; i < puestos.length; i++) {
+      for (let j = i + 1; j < puestos.length; j++) {
+        const a = puestos[i];
+        const b = puestos[j];
+        const centros = Math.hypot(a.pos[0] - b.pos[0], a.pos[2] - b.pos[2]);
+        const hueco = centros - a.mitad - b.mitad;
+        assert.ok(
+          hueco >= CUERPO_M,
+          `«${a.etiqueta}» y «${b.etiqueta}» dejan ${hueco.toFixed(2)} m entre caras y el jugador mide ` +
+            `${CUERPO_M} (centros a ${centros.toFixed(2)} m)`,
+        );
+      }
+    }
+  });
+
   it("tres cosas en el MISMO turno no caen en el mismo punto", () => {
     // Medido jugando (QA 2026-08-31, H-5): el cofre y la forja del turno 3 del
     // motor salían con la coordenada EXACTA, así que al reanudar el jugador

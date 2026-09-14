@@ -531,7 +531,7 @@ export default async function (ctx) {
   }
 
   // ── 0 · Partida y conversación con el tabernero ─────────────────────────
-  await nuevaPartida(ctx, { gameId: GAME_ID });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "vector" });
   await comenzar(ctx);
   await ctx.waitFor(
     "el tabernero está en escena",

@@ -111,7 +111,7 @@ async function ponerUnSpawnDeRuntime(ctx) {
 
 export default async function (ctx) {
   // ── 0 · Una partida real, con algo que el motor haya puesto ──────────────
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector" });
+  await nuevaPartida(ctx, { gameId: GAME_ID, renderMode: "vector", charMode: "vector" });
   await comenzar(ctx);
   await ctx.waitFor(
     "el tabernero está en escena",
