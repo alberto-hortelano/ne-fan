@@ -14,5 +14,19 @@
         }
       }
     ]
+  },
+  "sobrevive": {
+    "consequences": [
+      {
+        "type": "plugin_event",
+        "plugin_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "event_type": "trade_offered",
+        "payload": {
+          "market_id": "m1",
+          "item_id": "potion",
+          "price": 5
+        }
+      }
+    ]
   }
 }

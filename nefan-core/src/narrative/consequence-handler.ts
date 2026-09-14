@@ -138,15 +138,22 @@ export function dispatchConsequences(
           data,
           eventId,
         };
-        // La HUELLA colisionable viaja con el effect, derivada por la misma
-        // función que la de una entity del tile (`huellaEnMetros`). Antes no
-        // viajaba y el cliente se la inventaba con dos literales en metros, así
-        // que la forja que el motor pone medía una cosa y la que declara una
-        // escena otra (#489). Un `npc` no la lleva: colisiona por su radio.
+        // El TAMAÑO viaja con el effect, derivado por la misma función que el
+        // de una entity del tile (`huellaEnMetros`). Antes no viajaba y el
+        // cliente se lo inventaba con dos literales en metros, así que la forja
+        // que el motor pone medía una cosa y la que declara una escena otra
+        // (#489). Un `npc` no lo lleva: colisiona por su radio.
+        //
+        // Y desde #532 el motor puede DECLARARLO (`footprint`, en celdas): si
+        // viene, manda el declarado; si no, el defecto de la clase. La
+        // conversión celdas→metros se hace aquí, en core, y por eso el cliente
+        // no la porta (candado `cliente-no-convierte-celdas-a-metros`). Lo que
+        // decide si frena NO es este número sino la clase: un `item` sale con
+        // su tamaño y aun así se pisa.
         result.effects.push(
           kind === "npc"
             ? { ...comun, entityKind: "npc" }
-            : { ...comun, entityKind: kind, sizeXZ: huellaEnMetros(kind) },
+            : { ...comun, entityKind: kind, sizeXZ: huellaEnMetros(kind, c.footprint ?? null) },
         );
         break;
       }

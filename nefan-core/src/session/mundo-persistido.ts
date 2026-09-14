@@ -428,11 +428,10 @@ export function avisoDeFueraDelMundo(fuera: readonly FueraDelMundo[]): string {
 /** Lo que come `world/materializar-spawn.ts`: la forma del effect `spawn_entity`, sin el
  *  `eventId` (que es del turno en el que ocurrió, y esto es un resume).
  *
- *  La clase y la huella vienen atadas en `HuellaDelSpawn`, compartida con el
- *  effect en vuelo: un `object`/`building` trae `sizeXZ` y un `npc` no. La
- *  huella se DERIVA aquí, al leer el ledger — no está en el save y no hace
- *  falta que esté: sale del `type` del record por la misma función que la del
- *  tile, así que ningún save cambia y afinarla mañana no exige migrar nada. */
+ *  La clase y el tamaño vienen atados en `HuellaDelSpawn`, compartido con el
+ *  effect en vuelo: las clases que ocupan sitio traen `sizeXZ` y un `npc` no.
+ *  El tamaño se DERIVA aquí, al leer el ledger, por la misma función que el
+ *  del tile (`huellaEnMetros`). */
 export type SpawnDeRuntime = {
   entityId: string;
   /** El rótulo: `data.name` del ledger. Un record sin él no vuelve (se dice). */
@@ -444,6 +443,23 @@ export type SpawnDeRuntime = {
   data: Record<string, unknown>;
 } & HuellaDelSpawn;
 
+/** Qué clases de spawn sabe devolver el resume.
+ *
+ *  ⚠ INCOHERENCIA CONOCIDA, y la trae #532 (la PR 1 de su tanda): desde ella el
+ *  motor puede declarar `entity_kind:"item"` y un `footprint` en celdas, y el
+ *  effect EN VIVO los honra — pero aquí no. Un `item` reanudado no vuelve (se
+ *  dice, con su nombre, en los `errores`) y un `object` que declaró `[6,6]`
+ *  vuelve midiendo el defecto de su clase, porque la huella se deriva del
+ *  `type` del record e ignora lo que el motor declaró, que SÍ está en `data`.
+ *  Medido por QA: un carro de 3×3 m vuelve de 1,5×1,5 y el jugador gana 0,75 m
+ *  por lado de suelo que ayer era el carro (el volumen encoge con la caja, así
+ *  que no se atraviesa un carro visible).
+ *
+ *  Lo NUEVO no es el tamaño: es que vivo y resume dejen de coincidir. Antes de
+ *  #532 los dos decían 1,5 m. **Lo cierra la PR 2 de esa tanda** (el resume +
+ *  #490), que añade `item` aquí y lee `data.footprint` abajo; hasta entonces
+ *  main queda con esta incoherencia a sabiendas, y el guion
+ *  `qa/guiones/119-…` la mide con sus tres líneas marcadas `[PR 2]`. */
 const CLASES_QUE_VUELVEN = new Set(["npc", "object", "building"]);
 
 /** Las entities que puso el MOTOR a mitad de partida, listas para volver a

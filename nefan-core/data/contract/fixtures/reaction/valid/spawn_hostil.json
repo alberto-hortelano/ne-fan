@@ -1,12 +1,25 @@
 {
-  "description": "spawn_entity de un NPC HOSTIL: el motor declara `role:\"hostile\"` (no un entity_kind nuevo, ni un bloque `combat` propio) y el juego deriva su vida, arma y agresividad. Es la vía por la que el motor pone algo contra lo que pelear en mitad de una escena; su pareja en negativo es invalid/spawn_kind_invalido.json, que sigue exigiendo que `creature` se rechace.",
+  "description": "spawn_entity de un NPC HOSTIL: el motor declara `role:\"hostile\"` (no un entity_kind nuevo, ni un bloque `combat` propio) y el juego deriva su vida, arma y agresividad. Es la vía por la que el motor pone algo contra lo que pelear en mitad de una escena; su pareja en negativo es invalid/spawn_kind_invalido.json, que sigue exigiendo que `creature` se rechace. Lleva además `style_ref`, la ref de personaje del pack que el motor elige: los dos campos ya murieron una vez en el saneador Python (#397) y por eso están en `sobrevive`.",
   "expect": "accept",
+  "sobrevive": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "npc",
+        "role": "hostile",
+        "style_ref": "bandido_de_camino",
+        "description": "bandido de camino con cota remendada y la cara marcada",
+        "name": "Bandido"
+      }
+    ]
+  },
   "payload": {
     "consequences": [
       {
         "type": "spawn_entity",
         "entity_kind": "npc",
         "role": "hostile",
+        "style_ref": "bandido_de_camino",
         "description": "bandido de camino con cota remendada y la cara marcada",
         "name": "Bandido",
         "position_hint": "near_player"

@@ -1,0 +1,26 @@
+{
+  "description": "spawn_entity de un `item`: la clase que NO frena al jugador (una bolsa de monedas se pisa, no se rodea) con su huella declarada. `item` y `footprint` entran juntos en #532 y viajan por el mismo sitio.",
+  "expect": "accept",
+  "sobrevive": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "item",
+        "footprint": [2, 2],
+        "name": "Bolsa de monedas",
+        "position_hint": "junto a la fuente"
+      }
+    ]
+  },
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "item",
+        "footprint": [2, 2],
+        "name": "Bolsa de monedas",
+        "position_hint": "junto a la fuente"
+      }
+    ]
+  }
+}

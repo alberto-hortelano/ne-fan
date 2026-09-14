@@ -1,0 +1,14 @@
+{
+  "description": "un campo del contrato con el TIPO cambiado: se rechaza. El tool declara `character_type: {\"type\":\"string\"}` y aquí llega un objeto; el zod lo rechaza y el saneador Python tiene que rechazarlo también, o la basura cruza hasta el `EntityRecord.data` y el save (QA de la PR 1, H-4: la derivación por nombres se llevó por delante la validación que hacía la allow-list a mano).",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "object",
+        "name": "Carro de heno",
+        "character_type": { "a": 1 }
+      }
+    ]
+  }
+}

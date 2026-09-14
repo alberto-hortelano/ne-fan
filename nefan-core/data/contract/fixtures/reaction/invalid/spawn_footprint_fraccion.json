@@ -1,0 +1,14 @@
+{
+  "description": "`footprint` con fracción: se rechaza. Las celdas del tile son enteras (el `cell` de una entity admite media celda, la HUELLA no), y es justo donde los dos espejos pueden separarse: `z.number().int()` en el zod y `isinstance(v, int)` en Python.",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "object",
+        "name": "Carro de heno",
+        "footprint": [2.5, 3]
+      }
+    ]
+  }
+}

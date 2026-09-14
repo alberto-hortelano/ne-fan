@@ -52,8 +52,16 @@ to.
 no reload:
 - NPCs/creatures: appear with an AI-skinned character sprite from their
   Spanish description; hostile ones carry `role: "hostile"` (see 5).
-- Props/buildings: appear as schematic boxes until the scene is next
-  regenerated/repainted. Their footprint blocks movement either way.
+- Props/buildings (`entity_kind: "object"` / `"building"`): appear as
+  schematic boxes until the scene is next regenerated/repainted, and they
+  BLOCK the player, who has to walk around them.
+- Loose objects (`entity_kind: "item"`): the player walks OVER them — a coin
+  pouch, a dropped key, a letter on the ground. Use `item` whenever the thing
+  is small enough to step on; an `object` that small would be an invisible
+  wall.
+- `footprint: [width, depth]` in 0.5 m cells sizes any of them (a cart is
+  [6,6], a coin [1,1]). Omit it and the engine uses the default for that
+  class; it only changes the SIZE, never whether it blocks.
 Use spawns to react to choices ("quiero ir a la forja" → spawn the smith),
 never to rebuild whole scenes.
 

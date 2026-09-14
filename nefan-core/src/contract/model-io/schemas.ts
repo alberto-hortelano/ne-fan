@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
+import { TILE_CELLS, TILE_MPC } from "../../scene/tile.js";
 import { VocabularioDeEntity } from "./entity-vocabulary.js";
 
 // ── narrative_event (reacción del motor a una elección del jugador) ─────────
@@ -35,10 +36,58 @@ const StoryUpdateConsequence = z.object({
   delta: z.string().min(1).describe("Frase que se añade al hilo narrativo (story_so_far)"),
 });
 
+/** Por qué se rechaza un `footprint` en un NPC. La MISMA frase en el zod y en
+ *  el espejo Python (`narrative_schemas.py`), como `MOTIVO_NAME_INVALIDO`: el
+ *  modelo entra por las dos vías —MCP y API directa— y tiene que leer el mismo
+ *  motivo por las dos. Lo canda `test/entity-vocabulary.test.ts`. */
+/** El tope del `footprint` de un spawn, en celdas: el LADO DEL TILE. No es un
+ *  número inventado —lo pedía el plan y con razón—: es el mismo suelo sobre el
+ *  que se pone la cosa. Una caja más ancha que el tile lo vuelve sólido entero,
+ *  y el gate de la escena ya acota por aquí (`topeDeFootprint` para los móviles,
+ *  y el grid para el resto); el del spawn no acotaba por ninguna (QA de la PR 1,
+ *  H-5: `[400,400]` pasaba los dos gates y salían 200×200 m sobre un tile de
+ *  64). Viaja al espejo Python por `physics.json` (`tile_cells`), no copiado. */
+export const TOPE_DE_FOOTPRINT_CELDAS = TILE_CELLS;
+
+export const MOTIVO_FOOTPRINT_DEMASIADO_GRANDE =
+  `un \`footprint\` no puede pasar de ${TILE_CELLS} celdas de lado (${TILE_CELLS * TILE_MPC} m, el lado del tile): ` +
+  "lo que pones tiene que caber en el suelo sobre el que lo pones. Si querías algo enorme, " +
+  "son varias entidades o un `building` del tamaño del tile";
+
+/** Por qué se rechazan `role` y `style_ref` en algo que no es un `npc`. Los dos
+ *  campos son de PERSONAJE —preset de conducta y ref de skin— y en un objeto no
+ *  los lee nadie: aceptarlos en silencio deja al motor creyendo que puso algo
+ *  hostil cuando puso una bolsa (QA de la PR 1, H-8). Simétrico del de abajo. */
+export const MOTIVO_CAMPO_DE_NPC_EN_OTRA_CLASE =
+  "`role` y `style_ref` son de PERSONAJE (la conducta y la ref de su skin) y solo valen en un " +
+  "`entity_kind: \"npc\"`: en un objeto, un edificio o un item no los lee nadie. Si querías algo " +
+  "hostil, ponlo como `npc` con `role: \"hostile\"`";
+
+export const MOTIVO_FOOTPRINT_EN_NPC =
+  "un `npc` no declara `footprint`: un personaje colisiona por el radio de su cuerpo, no por una huella. " +
+  "Si lo que quieres es algo grande que se rodea, ponlo como `building` o `object` con su `footprint`";
+
 const SpawnEntityConsequence = z
   .object({
     type: z.literal("spawn_entity"),
-    entity_kind: z.enum(["npc", "building", "object"]),
+    entity_kind: z
+      .enum(["npc", "building", "object", "item"])
+      .describe(
+        "Qué clase de cosa es, y con ello si el jugador la RODEA o la PISA: `building` y " +
+          "`object` son sólidos (una forja, un carro, un yunque); `item` NO frena — se le " +
+          "pasa por encima, que es lo que hace de algo un objeto suelto (una bolsa de " +
+          "monedas, una llave caída, una carta en el suelo); `npc` es un personaje. El " +
+          "tamaño lo afina `footprint`, no esto",
+      ),
+    footprint: z
+      .tuple([z.number().int().min(1), z.number().int().min(1)])
+      .optional()
+      .describe(
+        "Cuánto ocupa en el suelo: [ancho, fondo] en CELDAS de 0,5 m, enteros ≥ 1. Solo " +
+          "afina el tamaño; lo que decide si frena es `entity_kind`. Ausente ⇒ el de su " +
+          "clase (object 3×3 = 1,5 m, building 8×8 = 4 m, item 1×1 = 0,5 m). Un carro es " +
+          "[6,6] y una moneda [1,1]. Un `npc` no lo declara",
+      ),
     // El MISMO vocabulario que una entity de `generate_scene`
     // (entity-vocabulary.ts): `name` obligatorio y es el rótulo,
     // `description` opcional y es la procedencia (#397).
@@ -99,12 +148,52 @@ export const MAX_CONSEQUENCES = 4;
 
 /** Payload completo de una respuesta narrative_event. `dialogue` es SIEMPRE
  *  una entrada del array `consequences`, nunca un campo de nivel superior. */
-export const NarrativeReactionSchema = z.object({
-  consequences: z
-    .array(ConsequenceSchema)
-    .max(MAX_CONSEQUENCES)
-    .describe(`Lista de consecuencias (máx ${MAX_CONSEQUENCES}). [] si no hay reacción`),
-});
+export const NarrativeReactionSchema = z
+  .object({
+    consequences: z
+      .array(ConsequenceSchema)
+      .max(MAX_CONSEQUENCES)
+      .describe(`Lista de consecuencias (máx ${MAX_CONSEQUENCES}). [] si no hay reacción`),
+  })
+  // La regla cruzada (`footprint` solo en lo que tiene huella) vive AQUÍ y no
+  // en `SpawnEntityConsequence` por una restricción de zod, dicha para que
+  // nadie la "arregle": un `.superRefine()` convierte el objeto en ZodEffects y
+  // `z.discriminatedUnion` solo admite ZodObject, así que ponerla dentro deja
+  // de compilar. El `path` completo la devuelve al motor igual de precisa.
+  .superRefine((r, ctx) => {
+    r.consequences.forEach((c, i) => {
+      if (c.type !== "spawn_entity") return;
+      const esNpc = c.entity_kind === "npc";
+      if (esNpc && c.footprint !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["consequences", i, "footprint"],
+          message: MOTIVO_FOOTPRINT_EN_NPC,
+        });
+      }
+      // El TECHO de la huella: el lado del tile. Va aquí y no como `.max()` en
+      // el tuple porque el mensaje es la pieza que trabaja —este gate es el
+      // único cuyo error vuelve al modelo— y un `.max()` solo sabe decir
+      // «Number must be less than or equal to 128», sin metros ni salida.
+      if (c.footprint !== undefined && Math.max(c.footprint[0], c.footprint[1]) > TOPE_DE_FOOTPRINT_CELDAS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["consequences", i, "footprint"],
+          message: MOTIVO_FOOTPRINT_DEMASIADO_GRANDE,
+        });
+      }
+      // Y la simétrica: los campos de PERSONAJE solo valen en un personaje.
+      for (const campo of ["role", "style_ref"] as const) {
+        if (!esNpc && c[campo] !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["consequences", i, campo],
+            message: MOTIVO_CAMPO_DE_NPC_EN_OTRA_CLASE,
+          });
+        }
+      }
+    });
+  });
 
 export type Consequence = z.infer<typeof ConsequenceSchema>;
 export type NarrativeReaction = z.infer<typeof NarrativeReactionSchema>;

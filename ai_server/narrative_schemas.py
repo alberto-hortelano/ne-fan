@@ -185,7 +185,6 @@ MAX_VEG_DENSITY = 0.08
 MAX_VEGETATION_ZONES = 8
 
 
-TILE_CELLS = 128
 # Márgenes de celda fuera del tile que admite cada schema (espejo de los
 # `cell` de volumes.ts (−8..136) y ground.ts (−16..144)).
 VOLUME_CELL_MARGIN = 8
@@ -221,7 +220,7 @@ def _load_contract_physics(path: Path | None = None) -> dict:
         )
     with open(p, encoding="utf-8") as f:
         data = json.load(f)
-    for key in ("tile_mpc", "footprint_max_cells"):
+    for key in ("tile_mpc", "tile_cells", "footprint_max_cells"):
         if key not in data:
             raise ValueError(f"{p} has no `{key}`. Regenerate it with `npm run dump-physics`.")
     return data
@@ -230,6 +229,12 @@ def _load_contract_physics(path: Path | None = None) -> dict:
 _PHYSICS = _load_contract_physics()
 
 TILE_MPC = _PHYSICS["tile_mpc"]
+
+# El lado del tile EN CELDAS. Era un `TILE_CELLS = 128` escrito a mano treinta
+# líneas más arriba —la misma clase de copia que #300 vino a cerrar— y hoy sale
+# del snapshot ya derivado, como el resto de la física. Es además el techo de
+# cualquier huella declarada (QA de la PR 1, H-5).
+TILE_CELLS = _PHYSICS["tile_cells"]
 
 # Tope del `footprint` de una entity MÓVIL, en celdas (#300): lo declarado no
 # puede ser más ancho que el cuerpo que el simulador mueve. Los cinco kinds
@@ -1059,6 +1064,262 @@ NARRATIVE_REACT_SYSTEM_PROMPT = (
 NARRATIVE_REACT_TOOL = _tool("narrative_react.json")
 
 
+def _variante_de_spawn_del_contrato() -> dict:
+    """La variante `spawn_entity` del tool compartido, LEÍDA y no copiada.
+
+    De aquí salen las DOS listas que este saneador escribía a mano —los kinds
+    válidos y los campos que puede traer un spawn— por el mismo motivo que
+    `_npc_roles_del_contrato`: una lista copiada es una lista de la que
+    separarse. Y la separación no era hipotética: hasta #397 `role` y
+    `style_ref` estaban en el zod, los consumía el cliente y morían aquí sin
+    ruido, y hasta #532 pasaba lo mismo con `footprint`. Fail-loud al importar.
+    """
+    items = NARRATIVE_REACT_TOOL["input_schema"]["properties"]["consequences"]["items"]
+    for variante in items.get("anyOf", []):
+        props = variante.get("properties", {})
+        if props.get("type", {}).get("const") == "spawn_entity":
+            return variante
+    raise ValueError(
+        "narrative_react.json: `consequences[].anyOf` sin la variante spawn_entity — "
+        "sin ella el saneador no sabe qué kinds ni qué campos admite un spawn"
+    )
+
+
+_SPAWN_DEL_CONTRATO = _variante_de_spawn_del_contrato()
+
+
+def _kinds_de_spawn_del_contrato() -> set:
+    """Las clases que un `spawn_entity` puede declarar (npc/building/object/item),
+    leídas del enum del tool. Espejo del `z.enum` de `SpawnEntityConsequence`."""
+    kinds = _SPAWN_DEL_CONTRATO["properties"].get("entity_kind", {}).get("enum")
+    if not isinstance(kinds, list) or not kinds:
+        raise ValueError(
+            "narrative_react.json: `spawn_entity.entity_kind` sin enum — el vocabulario "
+            "de clases es obligatorio (espejo de SpawnEntityConsequence en nefan-core)"
+        )
+    return set(kinds)
+
+
+def _campos_de_spawn_del_contrato() -> dict:
+    """Los campos que un spawn puede traer CON SU TIPO, en el orden del
+    contrato. `type` no entra: es el discriminante y lo escribe el saneador.
+
+    Se lee también el TIPO y no solo el nombre, y es la corrección de un fallo
+    que esta derivación introdujo (QA de la PR 1, H-4): copiando solo los
+    nombres, un `character_type: {"a": 1}` que el zod rechaza cruzaba entero
+    hasta el `EntityRecord.data` y el save. La allow-list escrita a mano lo
+    tiraba; el olvido que la derivación cierra se llevó por delante la
+    validación que nadie había escrito.
+
+    Fail-loud al importar si un campo del contrato no declara `type`: sin él no
+    se puede comprobar, y dejarlo pasar en silencio es el fallo de arriba otra
+    vez.
+    """
+    props = _SPAWN_DEL_CONTRATO.get("properties")
+    if not isinstance(props, dict) or not props:
+        raise ValueError(
+            "narrative_react.json: `spawn_entity.properties` vacío — sin la lista de "
+            "campos el saneador los tiraría todos en silencio"
+        )
+    out = {}
+    for campo, esquema in props.items():
+        if campo == "type":
+            continue
+        tipo = esquema.get("type") if isinstance(esquema, dict) else None
+        if not isinstance(tipo, str):
+            raise ValueError(
+                f"narrative_react.json: `spawn_entity.{campo}` no declara `type` — el saneador "
+                "no puede comprobar lo que no está tipado, y copiarlo a ciegas es lo que dejaba "
+                "cruzar la basura (QA de la PR 1, H-4)"
+            )
+        out[campo] = tipo
+    return out
+
+
+#: Qué acepta cada `type` del JSON Schema. `bool` va aparte porque en Python es
+#: un `int` y un `True` colándose como número es exactamente el tipo de cruce
+#: que esto viene a cerrar.
+_TIPOS_DEL_CONTRATO = {
+    "string": lambda v: isinstance(v, str),
+    "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+    "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+    "boolean": lambda v: isinstance(v, bool),
+    "object": lambda v: isinstance(v, dict),
+    "array": lambda v: isinstance(v, list),
+}
+
+
+SPAWN_ENTITY_KINDS = _kinds_de_spawn_del_contrato()
+SPAWN_ENTITY_TIPOS = _campos_de_spawn_del_contrato()
+SPAWN_ENTITY_FIELDS = list(SPAWN_ENTITY_TIPOS)
+
+
+def _exige_el_tipo_del_contrato(idx: int, campo: str, valor):
+    """El campo tiene el tipo que el contrato declara, o vuelve al modelo. Es
+    el espejo del zod para todo campo SIN saneador propio."""
+    tipo = SPAWN_ENTITY_TIPOS[campo]
+    predicado = _TIPOS_DEL_CONTRATO.get(tipo)
+    if predicado is None:
+        raise ValueError(
+            f"spawn_entity[{idx}].{campo}: el contrato declara el tipo '{tipo}', que este "
+            "saneador no sabe comprobar — amplía _TIPOS_DEL_CONTRATO en vez de dejarlo pasar"
+        )
+    if not predicado(valor):
+        raise ValueError(
+            f"spawn_entity[{idx}].{campo}: el contrato lo declara `{tipo}` y llegó "
+            f"{type(valor).__name__} ({valor!r})"
+        )
+    return valor
+
+# La MISMA frase que el zod (MOTIVO_FOOTPRINT_EN_NPC en
+# contract/model-io/schemas.ts); test/entity-vocabulary.test.ts la busca aquí,
+# porque el modelo entra por las dos vías y tiene que leer el mismo motivo.
+MOTIVO_FOOTPRINT_EN_NPC = (
+    "un `npc` no declara `footprint`: un personaje colisiona por el radio de su cuerpo, no por una huella. "
+    "Si lo que quieres es algo grande que se rodea, ponlo como `building` o `object` con su `footprint`"
+)
+
+# Las otras dos frases del contrato, también espejadas literal (el modelo entra
+# por las dos vías y tiene que leer el mismo motivo por las dos).
+MOTIVO_FOOTPRINT_DEMASIADO_GRANDE = (
+    f"un `footprint` no puede pasar de {TILE_CELLS} celdas de lado ({TILE_CELLS * TILE_MPC:g} m, el lado del tile): "
+    "lo que pones tiene que caber en el suelo sobre el que lo pones. Si querías algo enorme, "
+    "son varias entidades o un `building` del tamaño del tile"
+)
+
+MOTIVO_CAMPO_DE_NPC_EN_OTRA_CLASE = (
+    "`role` y `style_ref` son de PERSONAJE (la conducta y la ref de su skin) y solo valen en un "
+    '`entity_kind: "npc"`: en un objeto, un edificio o un item no los lee nadie. Si querías algo '
+    'hostil, ponlo como `npc` con `role: "hostile"`'
+)
+
+#: Marca de «este campo no viaja» — distinta de `None`, que es un valor.
+_AUSENTE = object()
+
+
+def _spawn_entity_kind(idx: int, c: dict):
+    kind = c.get("entity_kind")
+    if kind not in SPAWN_ENTITY_KINDS:
+        raise ValueError(
+            f"spawn_entity[{idx}].entity_kind='{kind}' invalid; allowed: {sorted(SPAWN_ENTITY_KINDS)}"
+        )
+    return kind
+
+
+def _spawn_name(idx: int, c: dict):
+    # El MISMO vocabulario que una entity de generate_scene
+    # (entity-vocabulary.ts, #397): `name` obligatorio y es el rótulo;
+    # `description` opcional y es la procedencia (el texto del que sale su
+    # arte). Si viene, no puede ir en blanco — el zod la rechaza y aquí antes
+    # se colaba tras el `.strip()`.
+    name_raw = c.get("name")
+    if not isinstance(name_raw, str) or not name_raw.strip():
+        # La MISMA frase que el `.refine()` del zod (MOTIVO_NAME_INVALIDO en
+        # entity-vocabulary.ts); test/entity-vocabulary.test.ts la busca aquí.
+        raise ValueError(
+            f"spawn_entity[{idx}].name: `name` no puede faltar, estar vacío ni ser solo espacios: "
+            "es el rótulo que lee el jugador (la procedencia va en `description`)"
+        )
+    return name_raw
+
+
+def _spawn_description(idx: int, c: dict):
+    if "description" not in c or c["description"] is None:
+        return _AUSENTE
+    description = c["description"]
+    if not isinstance(description, str) or not description.strip():
+        raise ValueError(
+            f"spawn_entity[{idx}].description no puede ir vacía ni ser solo espacios: "
+            "es el texto del que se genera su arte (omítela si no la hay)"
+        )
+    return description
+
+
+def _spawn_position_hint(idx: int, c: dict):
+    return str(c.get("position_hint", "near_player"))
+
+
+def _spawn_role(idx: int, c: dict):
+    # `role` contra el enum, fail-loud como en la escena.
+    if c.get("role") is None:
+        return _AUSENTE
+    if c.get("entity_kind") != "npc":
+        raise ValueError(f"spawn_entity[{idx}].role: {MOTIVO_CAMPO_DE_NPC_EN_OTRA_CLASE}")
+    if c["role"] not in NPC_ROLES:
+        raise ValueError(
+            f"spawn_entity[{idx}].role='{c['role']}' invalid; allowed: {sorted(NPC_ROLES)}"
+        )
+    return c["role"]
+
+
+def _spawn_style_ref(idx: int, c: dict):
+    if not c.get("style_ref"):
+        return _AUSENTE
+    if c.get("entity_kind") != "npc":
+        raise ValueError(f"spawn_entity[{idx}].style_ref: {MOTIVO_CAMPO_DE_NPC_EN_OTRA_CLASE}")
+    return str(c["style_ref"])
+
+
+def _spawn_footprint(idx: int, c: dict):
+    """La huella declarada, EN CELDAS: par de enteros ≥ 1, y nunca en un `npc`
+    (#532). Espejo literal del zod (`z.tuple([int().min(1), int().min(1)])` más
+    el `superRefine` de la raíz): lo que el motor declara tiene que medir lo
+    mismo por las dos vías, o el carro mide 3 m por MCP y 1,5 m por API."""
+    if "footprint" not in c or c["footprint"] is None:
+        return _AUSENTE
+    fp = c["footprint"]
+    if c.get("entity_kind") == "npc":
+        raise ValueError(f"spawn_entity[{idx}].footprint: {MOTIVO_FOOTPRINT_EN_NPC}")
+    if (
+        not isinstance(fp, list)
+        or len(fp) != 2
+        or any(isinstance(v, bool) or not isinstance(v, int) or v < 1 for v in fp)
+    ):
+        raise ValueError(
+            f"spawn_entity[{idx}].footprint={fp!r} invalid: son [ancho, fondo] en CELDAS "
+            "de 0,5 m, dos enteros ≥ 1 (un carro es [6, 6] y una moneda [1, 1])"
+        )
+    if max(fp) > TILE_CELLS:
+        raise ValueError(f"spawn_entity[{idx}].footprint: {MOTIVO_FOOTPRINT_DEMASIADO_GRANDE}")
+    return list(fp)
+
+
+#: Campos del spawn con validación PROPIA. Los que no están aquí viajan tal
+#: cual: es lo que hace que un campo nuevo del zod llegue vivo sin tocar este
+#: fichero, que es justo lo que no pasaba con `role`, `style_ref` y `footprint`.
+_SANEADORES_DE_SPAWN = {
+    "entity_kind": _spawn_entity_kind,
+    "name": _spawn_name,
+    "description": _spawn_description,
+    "position_hint": _spawn_position_hint,
+    "role": _spawn_role,
+    "style_ref": _spawn_style_ref,
+    "footprint": _spawn_footprint,
+}
+
+
+def _spawn_entry(idx: int, c: dict) -> dict:
+    """Un `spawn_entity` saneado: los campos que DECLARA EL CONTRATO, con su
+    validación propia si la tienen y tal cual si no.
+
+    No hay allow-list escrita a mano — la lista es `SPAWN_ENTITY_FIELDS`, leída
+    del tool. Lo que no está en el contrato no viaja (poda muda deliberada, el
+    espejo de `.strict()`/`clean_ent`); lo que está, llega.
+    """
+    entry: dict = {"type": "spawn_entity"}
+    for campo in SPAWN_ENTITY_FIELDS:
+        saneador = _SANEADORES_DE_SPAWN.get(campo)
+        if saneador is not None:
+            valor = saneador(idx, c)
+        elif campo in c and c[campo] is not None:
+            valor = _exige_el_tipo_del_contrato(idx, campo, c[campo])
+        else:
+            valor = _AUSENTE
+        if valor is not _AUSENTE:
+            entry[campo] = valor
+    return entry
+
+
 def validate_narrative_reaction(data: dict | None) -> dict:
     """Validate a Claude response to react_to_player.
 
@@ -1077,7 +1338,6 @@ def validate_narrative_reaction(data: dict | None) -> dict:
         raise ValueError(f"react_to_player returned {len(raw)} consequences, max is 4")
 
     valid_types = {"dialogue", "story_update", "spawn_entity", "schedule_event", "plugin_event", "noop"}
-    valid_kinds = {"npc", "building", "object"}
     out: list[dict] = []
     for idx, c in enumerate(raw):
         if not isinstance(c, dict):
@@ -1122,54 +1382,11 @@ def validate_narrative_reaction(data: dict | None) -> dict:
                 )
             out.append({"type": "story_update", "delta": delta_raw.strip()})
         elif t == "spawn_entity":
-            kind = c.get("entity_kind")
-            if kind not in valid_kinds:
-                raise ValueError(
-                    f"spawn_entity[{idx}].entity_kind='{kind}' invalid; allowed: {sorted(valid_kinds)}"
-                )
-            # El MISMO vocabulario que una entity de generate_scene
-            # (entity-vocabulary.ts, #397): `name` obligatorio y es el rótulo;
-            # `description` opcional y es la procedencia (el texto del que sale
-            # su arte). Si viene, no puede ir en blanco — el zod la rechaza y
-            # aquí antes se colaba tras el `.strip()`.
-            name_raw = c.get("name")
-            if not isinstance(name_raw, str) or not name_raw.strip():
-                # La MISMA frase que el `.refine()` del zod (MOTIVO_NAME_INVALIDO en
-                # entity-vocabulary.ts); test/entity-vocabulary.test.ts la busca aquí.
-                raise ValueError(
-                    f"spawn_entity[{idx}].name: `name` no puede faltar, estar vacío ni ser solo espacios: "
-                    "es el rótulo que lee el jugador (la procedencia va en `description`)"
-                )
-            entry = {
-                "type": "spawn_entity",
-                "entity_kind": kind,
-                "name": name_raw,
-                "position_hint": str(c.get("position_hint", "near_player")),
-            }
-            if "description" in c and c["description"] is not None:
-                description = c["description"]
-                if not isinstance(description, str) or not description.strip():
-                    raise ValueError(
-                        f"spawn_entity[{idx}].description no puede ir vacía ni ser solo espacios: "
-                        "es el texto del que se genera su arte (omítela si no la hay)"
-                    )
-                entry["description"] = description
-            # El MISMO par que en una entity de escena (clean_ent), y por el
-            # mismo motivo: esta reconstrucción por allow-list corre en las DOS
-            # vías —API directa y MCP (llm_client.sendVisionResponse)— así que
-            # `role` y `style_ref` estaban declarados en el zod, consumidos por
-            # el cliente y NO llegaban nunca: vivos de contrato, muertos de
-            # datos. `role` contra el enum, fail-loud como en la escena.
-            if c.get("role") is not None:
-                if c["role"] not in NPC_ROLES:
-                    raise ValueError(
-                        f"spawn_entity[{idx}].role='{c['role']}' invalid; "
-                        f"allowed: {sorted(NPC_ROLES)}"
-                    )
-                entry["role"] = c["role"]
-            if c.get("style_ref"):
-                entry["style_ref"] = str(c["style_ref"])
-            out.append(entry)
+            # La allow-list NO se escribe aquí: son los campos que declara el
+            # contrato (`SPAWN_ENTITY_FIELDS`, leídos del tool), cada uno con su
+            # validación propia si la tiene. Escrita a mano, esta lista se
+            # separó tres veces del zod y el campo olvidado moría sin ruido.
+            out.append(_spawn_entry(idx, c))
         elif t == "schedule_event":
             description = str(c.get("description", "")).strip()
             if not description:

@@ -15,5 +15,20 @@
         "position_hint": "near_player"
       }
     ]
+  },
+  "sobrevive": {
+    "consequences": [
+      {
+        "type": "story_update",
+        "delta": "El herrero acepta el encargo."
+      },
+      {
+        "type": "spawn_entity",
+        "entity_kind": "npc",
+        "name": "Telmo",
+        "description": "un aprendiz nervioso",
+        "position_hint": "near_player"
+      }
+    ]
   }
 }

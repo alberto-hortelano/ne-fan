@@ -17,7 +17,14 @@ import type { ZodObject, ZodRawShape, ZodTypeAny } from "zod";
 
 import { MOTIVO_NAME_INVALIDO, VocabularioDeEntity } from "../src/contract/model-io/entity-vocabulary.js";
 import { EntitySchema } from "../src/contract/model-io/scene-schema.js";
-import { ConsequenceSchema, NarrativeReactionSchema } from "../src/contract/model-io/schemas.js";
+import {
+  ConsequenceSchema,
+  MOTIVO_CAMPO_DE_NPC_EN_OTRA_CLASE,
+  MOTIVO_FOOTPRINT_DEMASIADO_GRANDE,
+  MOTIVO_FOOTPRINT_EN_NPC,
+  NarrativeReactionSchema,
+  TOPE_DE_FOOTPRINT_CELDAS,
+} from "../src/contract/model-io/schemas.js";
 import { validateContract } from "../src/contract/model-io/validate.js";
 import { renderContract } from "../src/contract/model-io/render.js";
 
@@ -116,6 +123,73 @@ describe("entity-vocabulary · lo que el motor VE por spawn_entity", () => {
     });
     assert.equal(ko.ok, false);
     if (!ko.ok) assert.match(ko.error, /name/);
+  });
+
+  it("lo que OCUPA y lo que FRENA son dos cosas, y el contrato las separa (#532)", () => {
+    const acepta = (c: Record<string, unknown>) =>
+      validateContract(NarrativeReactionSchema, { consequences: [{ type: "spawn_entity", ...c }] });
+    // `item` es la clase que no frena; `footprint` (celdas) solo afina.
+    assert.equal(acepta({ entity_kind: "item", name: "Bolsa de monedas" }).ok, true);
+    assert.equal(acepta({ entity_kind: "object", name: "Carro", footprint: [6, 6] }).ok, true);
+    // Y lo que no se admite: un tamaño en un personaje, medias celdas, y el 0.
+    const enNpc = acepta({ entity_kind: "npc", name: "Telmo", footprint: [2, 2] });
+    assert.equal(enNpc.ok, false);
+    if (!enNpc.ok) assert.equal(enNpc.error, `consequences[0].footprint: ${MOTIVO_FOOTPRINT_EN_NPC}`);
+    assert.equal(acepta({ entity_kind: "object", name: "Carro", footprint: [2.5, 3] }).ok, false);
+    assert.equal(acepta({ entity_kind: "object", name: "Carro", footprint: [0, 3] }).ok, false);
+    assert.equal(acepta({ entity_kind: "object", name: "Carro", footprint: [3] }).ok, false);
+  });
+
+  it("la huella tiene TECHO, y es el suelo sobre el que se pone (#532, H-5 de QA)", () => {
+    const acepta = (c: Record<string, unknown>) =>
+      validateContract(NarrativeReactionSchema, { consequences: [{ type: "spawn_entity", ...c }] });
+    // 200×200 m sobre un tile de 64: el tile entero sólido, sin un aviso. El
+    // tope no se inventa —es `TILE_CELLS`— y el gate de la escena ya acotaba.
+    const enorme = acepta({ entity_kind: "object", name: "Muro", footprint: [400, 400] });
+    assert.equal(enorme.ok, false);
+    if (!enorme.ok) assert.equal(enorme.error, `consequences[0].footprint: ${MOTIVO_FOOTPRINT_DEMASIADO_GRANDE}`);
+    // Y la asimetría: un lado enorme y el otro de una celda también.
+    assert.equal(acepta({ entity_kind: "object", name: "Muro", footprint: [1, 100000] }).ok, false);
+    // El tile entero SÍ cabe: el tope es «no mayor que el suelo», no «pequeño».
+    assert.equal(
+      acepta({ entity_kind: "building", name: "Muralla", footprint: [TOPE_DE_FOOTPRINT_CELDAS, TOPE_DE_FOOTPRINT_CELDAS] }).ok,
+      true,
+    );
+  });
+
+  it("`role` y `style_ref` solo valen en un `npc`, con la misma vara que `footprint` (H-8 de QA)", () => {
+    const acepta = (c: Record<string, unknown>) =>
+      validateContract(NarrativeReactionSchema, { consequences: [{ type: "spawn_entity", ...c }] });
+    // `combatForHostileRole` solo corre para `npc`, así que un `item` con
+    // `role:"hostile"` dejaba al motor creyendo que puso algo contra lo que
+    // pelear. Se aceptaba en silencio mientras el `footprint` de un npc era
+    // fail-loud: dos varas para la misma clase de error.
+    const item = acepta({ entity_kind: "item", name: "Bolsa maldita", role: "hostile" });
+    assert.equal(item.ok, false);
+    if (!item.ok) assert.equal(item.error, `consequences[0].role: ${MOTIVO_CAMPO_DE_NPC_EN_OTRA_CLASE}`);
+    assert.equal(acepta({ entity_kind: "object", name: "Cofre", style_ref: "bandido" }).ok, false);
+    assert.equal(acepta({ entity_kind: "building", name: "Forja", role: "guard" }).ok, false);
+    // Y en un `npc` siguen siendo lo que eran.
+    assert.equal(acepta({ entity_kind: "npc", name: "Bandido", role: "hostile", style_ref: "bandido" }).ok, true);
+  });
+
+  it("y el espejo Python rechaza el `footprint` de un npc con la MISMA frase", () => {
+    // Mismo criterio que `name`: el modelo entra por las dos vías (pre-flight
+    // MCP y API directa) y el motivo que lee tiene que ser el mismo, o corrige
+    // hacia dos sitios distintos. La frase vive en el zod y Python la copia.
+    const python = readFileSync(join(raizDelRepo(), "ai_server", "narrative_schemas.py"), "utf-8");
+    // Los literales adyacentes de Python se pegan; el f-string del tope lleva
+    // el número interpolado, así que se compara la parte que no lo es.
+    // Los literales adyacentes se pegan sin mirar con qué comilla están
+    // escritos: una frase que lleva comillas dentro alterna las dos en Python.
+    const plano = python.replace(/["']\s*\n\s*["']/g, "");
+    for (const [que, frase] of [
+      ["`footprint` en un npc", MOTIVO_FOOTPRINT_EN_NPC],
+      ["`role`/`style_ref` fuera de un npc", MOTIVO_CAMPO_DE_NPC_EN_OTRA_CLASE],
+      ["la huella demasiado grande", MOTIVO_FOOTPRINT_DEMASIADO_GRANDE.slice(MOTIVO_FOOTPRINT_DEMASIADO_GRANDE.indexOf("): ") + 3)],
+    ] as const) {
+      assert.ok(plano.includes(frase), `narrative_schemas.py no dice la misma frase que el zod para ${que}`);
+    }
   });
 
   it("el bloque renderizado del prompt enseña `name` obligatorio y `description?` opcional, y en ese orden", () => {

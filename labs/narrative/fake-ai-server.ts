@@ -182,6 +182,36 @@ const SEGUNDA_LINEA = "(bench bis)";
  *  (`bridge/handlers/dialogue.ts`), que es lo que pinta el muro con «Cerrar».
  *  La pide el guion 83 para llegar a #503. */
 const MARCA_MOTOR_CAIDO = "MOTOR CAIDO";
+/** Y las dos que hacen que el motor ponga LO QUE DECLARA SU TAMAÑO Y SU CLASE
+ *  (#532): un carro de 6×6 celdas (3 m, el doble del defecto de un `object`) y
+ *  una bolsa de monedas `item`, que es la clase que NO frena. Marca y no turno,
+ *  por lo mismo que las dos líneas: los turnos son un recurso compartido entre
+ *  guiones y una marca no colisiona con nadie.
+ *
+ *  Y DOS marcas, una por entidad, en vez de una que ponga las dos: el reparto
+ *  de un turno separa 1,8 m fijos sin mirar el tamaño (#524, la PR 3 de esta
+ *  tanda), y la caja del carro de 3 m se come esa separación entera, así que
+ *  puestos a la vez el jugador no puede llegar a pisar la bolsa. Pedidos por
+ *  separado, cada uno cae donde `near_player` deja al primero de su turno y el
+ *  guion mide uno y luego el otro. Las pide el guion 118. */
+const MARCA_DECLARA = "LO QUE DECLARA EL MOTOR";
+const MARCA_DECLARA_BOLSA = `${MARCA_DECLARA}: BOLSA`;
+const MARCA_DECLARA_CARRO = `${MARCA_DECLARA}: CARRO`;
+/** Quien conduce el motor con esas marcas se queda CON EL MOTOR PARA ÉL: a
+ *  partir de la primera, los spawns por número de turno (el hostil del 2, el
+ *  mundo del 3, el spawn sin procedencia del 4) dejan de salir en esta sesión.
+ *
+ *  No es comodidad, es una MEDIDA: el guion 118 mide dónde acaba la caja de lo
+ *  que pide, y el cofre y la forja del turno 3 caen en el mismo sitio (todo lo
+ *  que pone `near_player` cae 5 m al norte del jugador). Sin esto, el guion
+ *  medía la caja del cofre creyendo medir la suya, y la segunda vuelta de su
+ *  bucle encontraba un mundo distinto del de la primera — medido el
+ *  2026-09-14, con tres intentos seguidos contestando lo contrario en el mismo
+ *  punto. `/dev/reset` lo devuelve a false entre guiones. */
+let motorConducidoPorMarcas = false;
+/** Lo que ponen esas marcas, para que el guion no repita los literales del wire. */
+const CARRO = { nombre: "Carro de heno", footprint: [6, 6] as [number, number] };
+const BOLSA = { nombre: "Bolsa de monedas", footprint: [2, 2] as [number, number] };
 const SPRITES_DIR = fileURLToPath(new URL("../../nefan-html/public/sprites/", import.meta.url));
 // Imágenes de los packs de estilo (portadas y refs). Son ficheros COMMITEADOS
 // del repo, no generación: aquí no se paga ni se inventa nada — se sirve lo
@@ -655,11 +685,49 @@ const server = http.createServer((req, res) => {
         // 83 ya llega al 5— y una marca no puede colisionar con nadie. La pide
         // el guion 83.
         const dosLineas = String(body.free_text ?? "").includes(MARCA_DOS_LINEAS);
+        // LO QUE EL MOTOR DECLARA (#532): hasta esta tanda el motor no podía
+        // decir cuánto ocupa lo que pone ni si se pisa, así que este fichero
+        // tampoco lo emitía — el carro salía midiendo lo mismo que un cofre y
+        // la bolsa de monedas era un muro. Una entidad por marca (ver arriba).
+        const texto = String(body.free_text ?? "");
+        const loQueDeclara = texto.includes(MARCA_DECLARA_CARRO)
+          ? [
+              {
+                type: "spawn_entity" as const,
+                entity_kind: "object" as const,
+                name: CARRO.nombre,
+                description: "carro de varas con la carga cubierta por una lona parda",
+                footprint: CARRO.footprint,
+                position_hint: "near_player",
+              },
+            ]
+          : texto.includes(MARCA_DECLARA_BOLSA)
+            ? [
+                {
+                  type: "spawn_entity" as const,
+                  entity_kind: "item" as const,
+                  name: BOLSA.nombre,
+                  description: "bolsa de cuero atada con un cordel, pesada de monedas",
+                  footprint: BOLSA.footprint,
+                  position_hint: "near_player",
+                },
+              ]
+            : [];
+        // Con la marca puesta, el turno trae SOLO lo que ella pide: el resto de
+        // spawns son de los turnos 2-4 y el guion 118 escribe su texto libre
+        // cuando le toca, así que sin esto el carro podría llegar con un hostil
+        // pegándole al jugador a mitad de la medida. Solo afecta a quien
+        // escribe la marca.
+        // El PREFIJO toma el mando aunque no pida nada: el guion lo manda a
+        // secas en su primera línea para que los turnos 2-4 no le pongan un
+        // cofre encima de lo que va a medir (ver `motorConducidoPorMarcas`).
+        if (texto.includes(MARCA_DECLARA)) motorConducidoPorMarcas = true;
+        const spawns = motorConducidoPorMarcas
+          ? loQueDeclara
+          : [...spawnHostil, ...spawnMundo, ...spawnSinProcedencia];
         return send(200, {
           consequences: [
-            ...spawnHostil,
-            ...spawnMundo,
-            ...spawnSinProcedencia,
+            ...spawns,
             {
               type: "dialogue",
               speaker,
@@ -707,6 +775,7 @@ const server = http.createServer((req, res) => {
         gastoPorRuta.clear();
         fakeDialogueTurn = 0;
         fakeDevCacheEnabled = false;
+        motorConducidoPorMarcas = false;
         // La conducta ante los tiles vuelve a la del ARRANQUE, no a cero: quien
         // arrancó el proceso con `TILE_DELAY_MS` la pidió para toda la corrida,
         // y el reset entre guiones no está para desdecirle. Lo que sí deshace

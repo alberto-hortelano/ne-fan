@@ -43,6 +43,42 @@ def accepts_reaction(payload) -> bool:
         return False
 
 
+def contenido_en(esperado, obtenido, ruta: str):
+    """¿Está `esperado` contenido en `obtenido`? Espejo literal de `contenidoEn`
+    (nefan-core/test/contract-fixtures.test.ts): objeto por claves, array por
+    índice con la MISMA longitud, escalar por igualdad. Devuelve el motivo del
+    primer desajuste o None.
+
+    Subconjunto y no igualdad profunda porque este saneador NORMALIZA
+    (`position_hint` y `trigger` salen con su defecto) y el zod no: exigir
+    igualdad obligaría a escribir dos ficheros distintos para las dos vías, que
+    es justo lo que las fixtures compartidas existen para evitar.
+    """
+    if isinstance(esperado, list):
+        if not isinstance(obtenido, list):
+            return f"{ruta}: esperaba una lista, obtuve {obtenido!r}"
+        if len(esperado) != len(obtenido):
+            return f"{ruta}: la lista tiene {len(obtenido)} elemento(s) y `sobrevive` declara {len(esperado)}"
+        for i, (e, o) in enumerate(zip(esperado, obtenido, strict=True)):
+            fallo = contenido_en(e, o, f"{ruta}[{i}]")
+            if fallo:
+                return fallo
+        return None
+    if isinstance(esperado, dict):
+        if not isinstance(obtenido, dict):
+            return f"{ruta}: esperaba un objeto, obtuve {obtenido!r}"
+        for k, v in esperado.items():
+            if k not in obtenido:
+                return f"{ruta}.{k}: NO SOBREVIVE al saneador (el campo se cae en silencio)"
+            fallo = contenido_en(v, obtenido[k], f"{ruta}.{k}")
+            if fallo:
+                return fallo
+        return None
+    return None if esperado == obtenido else (
+        f"{ruta}: sale {obtenido!r} y `sobrevive` declara {esperado!r}"
+    )
+
+
 def accepts_scene(payload) -> bool:
     try:
         validate_scene_response(copy.deepcopy(payload))
@@ -67,6 +103,36 @@ class TestContractFixtures(unittest.TestCase):
 
     def test_reaction(self):
         self._run("reaction", lambda fx: accepts_reaction(fx["payload"]))
+
+    def test_reaction_sobrevive(self):
+        """EL CAMPO LLEGA VIVO, que no es lo mismo que pasar el gate (#532).
+
+        Éste es el candado que cazaba el drop silencioso: hasta aquí las dos
+        suites comparaban accept/reject, así que un campo declarado en el zod y
+        ausente de la allow-list de este saneador salía VERDE en las dos y
+        moría en el wire — medido con `footprint`, y ya había pasado con `role`
+        y `style_ref` (#397). La totalidad (que todo campo del tool tenga una
+        fixture con `sobrevive`) la vigila el lado TS, que corre en
+        `npm run verify`; aquí se comprueba la SUPERVIVENCIA, que es lo que
+        este proceso puede romper.
+        """
+        for name, fx in load_fixtures("reaction"):
+            if "sobrevive" not in fx:
+                continue
+            with self.subTest(fixture=name):
+                self.assertEqual(
+                    fx["expect"],
+                    "accept",
+                    f"reaction/{name}: `sobrevive` solo tiene sentido en una fixture que se acepta",
+                )
+                salida = validate_narrative_reaction(copy.deepcopy(fx["payload"]))
+                fallo = contenido_en(fx["sobrevive"], salida, "salida")
+                self.assertIsNone(
+                    fallo,
+                    f"reaction/{name}: {fallo} — lo que el contrato declara tiene que LLEGAR, no "
+                    "solo pasar el gate. Si el campo ya no viaja, quítalo del zod y de la fixture; "
+                    "si viaja, arregla la allow-list de validate_narrative_reaction.",
+                )
 
     def test_scene(self):
         """Escena Format D: espejo de EmittedSceneSchema (el gate del

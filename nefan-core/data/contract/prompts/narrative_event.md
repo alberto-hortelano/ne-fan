@@ -109,7 +109,8 @@ NarrativeReaction = {
     }
     | {
       type: "spawn_entity";
-      entity_kind: "npc"|"building"|"object";
+      entity_kind: "npc"|"building"|"object"|"item";  // Qué clase de cosa es, y con ello si el jugador la RODEA o la PISA: `building` y `object` son sólidos (una forja, un carro, un yunque); `item` NO frena — se le pasa por encima, que es lo que hace de algo un objeto suelto (una bolsa de monedas, una llave caída, una carta en el suelo); `npc` es un personaje. El tamaño lo afina `footprint`, no esto
+      footprint?: [number /* entero, ≥1 */, number /* entero, ≥1 */];  // Cuánto ocupa en el suelo: [ancho, fondo] en CELDAS de 0,5 m, enteros ≥ 1. Solo afina el tamaño; lo que decide si frena es `entity_kind`. Ausente ⇒ el de su clase (object 3×3 = 1,5 m, building 8×8 = 4 m, item 1×1 = 0,5 m). Un carro es [6,6] y una moneda [1,1]. Un `npc` no lo declara
       name: string /* no vacío */;  // Etiqueta: lo que el jugador lee al mirarla (el rótulo). Nombre propio si lo tiene
       description?: string /* no vacío */;  // Procedencia: el texto exacto (en español) del que se genera su arte — aspecto, no biografía; en un NPC, el prompt del skin. Sin ella se pinta con `name`
       position_hint?: string;  // Pista de dónde aparece, p.ej. 'junto a la fuente'

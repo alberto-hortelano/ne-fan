@@ -1,0 +1,14 @@
+{
+  "description": "`role` en algo que no es un `npc`: se rechaza. `role` y `style_ref` son de PERSONAJE, y `combatForHostileRole` solo corre para `npc`, así que aceptarlos aquí deja al motor creyendo que puso algo hostil cuando puso una bolsa (QA de la PR 1, H-8). Es la simétrica de spawn_footprint_en_npc.json: la misma clase de error con la misma vara.",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "item",
+        "name": "Bolsa maldita",
+        "role": "hostile"
+      }
+    ]
+  }
+}

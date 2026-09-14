@@ -1,0 +1,14 @@
+{
+  "description": "`footprint` con un lado 0: se rechaza. La huella son celdas enteras ≥ 1; un 0 daría una caja de 0 m de lado, que ni se pinta ni se rodea.",
+  "expect": "reject",
+  "payload": {
+    "consequences": [
+      {
+        "type": "spawn_entity",
+        "entity_kind": "object",
+        "name": "Carro de heno",
+        "footprint": [0, 3]
+      }
+    ]
+  }
+}
