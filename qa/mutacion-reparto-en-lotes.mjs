@@ -59,6 +59,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { turnoDeCandados } from "./lib/turno-exclusivo.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE = join(raiz, "nefan-core");
@@ -518,8 +519,25 @@ const CONDUCTAS_ABIERTAS = [
 
 // ── el bucle ─────────────────────────────────────────────────────────────────
 
+// EL TURNO VA PRIMERO (#572), antes del guardia de abajo y antes de la foto de
+// los fuentes. Estos candados rompen ficheros de producción a mano y los
+// restauran con una copia hecha al arrancar; dos instancias a la vez se
+// fotografían la mutación de la otra y la «restauran» como si fuera el
+// original. El 2026-09-10 eso dejó en el árbol `fusionar` SIN verificar el
+// sello de cada lote —el agujero de #420— sin un solo error de tipos.
+turnoDeCandados();
+
+// Y AHORA el guardia puede decir la verdad. Antes decía «de una corrida
+// anterior que no terminó» sin poder saberlo: un apartado de una corrida VIVA
+// y el de una MUERTA se ven igual, y su receta —mirarlo y borrarlo a mano— es
+// lo peor que se puede hacer con la primera, porque le quita el suelo a quien
+// está corriendo. Con el turno tomado, si llegamos hasta aquí es que no hay
+// nadie vivo, así que el apartado SÍ es de una corrida muerta.
 if (existsSync(APARTADO)) {
-  console.error(`Hay un ${APARTADO} de una corrida anterior que no terminó. Míralo y bórralo a mano.`);
+  console.error(
+    `Hay un ${APARTADO} de una corrida que murió sin restaurar (nadie lo tiene tomado ahora).\n` +
+      `Dentro está el \`reports/\` de verdad: míralo, devuélvelo a su sitio y borra el apartado.`,
+  );
   process.exit(2);
 }
 

@@ -49,6 +49,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, renameSync 
 import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { turnoDeCandados } from "./lib/turno-exclusivo.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE = join(raiz, "nefan-core");
@@ -385,6 +386,11 @@ if (existsSync(APARTADO)) {
   process.exit(2);
 }
 
+// EL TURNO, antes de la foto (#572). Estos candados rompen fuentes de
+// producción a mano y las restauran con una copia hecha al arrancar; dos
+// instancias a la vez se fotografían la mutación de la otra y la «restauran»
+// como si fuera el original. Pasó el 2026-09-10.
+turnoDeCandados();
 const fuentes = new Map([MUT, MUTATE, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
 const restauraFuentes = () => { for (const [f, t] of fuentes) writeFileSync(f, t); };
 const habiaInformes = existsSync(INFORMES);
