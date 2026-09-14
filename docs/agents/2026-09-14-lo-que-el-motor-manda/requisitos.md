@@ -70,3 +70,74 @@ más destructivo.
   **solo los spawns de runtime son sólidos**. Cualquier plan que toque la colisión tiene que decir
   qué pasa con esa distinción.
 - **Cero créditos**: motor falso (`e2e-sin-creditos`) y fixtures.
+
+---
+
+## Correcciones del coordinador tras la crítica (2026-09-14)
+
+La crítica está en `critica.md`, al lado. Se acepta entera. Esto es lo que cambia, más las
+decisiones que ella dejaba abiertas.
+
+**§1 · la contradicción de #532, resuelta.** El cuerpo del issue se contradice al sumar (a) y (b):
+(a) dice que un `object` sin footprint dejaría de ser sólido y (b) dice lo contrario. Con (c)
+elegida, **la mitad viva es la de (b)**:
+
+- `object` **conserva** su huella 3×3 por defecto y **sigue frenando**;
+- `item` es la clase que NO frena — es lo que hace que una bolsa de monedas se pueda pisar;
+- `footprint` (en **celdas**, que las convierte core: candado `cliente-no-convierte-celdas-a-metros`)
+  solo afina el tamaño.
+
+**Ningún spawn deja de ser sólido por omitir un campo.** Estamos en pre-producción y no se conserva
+nada por ser antiguo, pero eso no es licencia para cambiar en silencio la conducta de lo que el
+motor ya pone: lo que cambia es **lo que el motor PUEDE declarar**, no lo que pasa cuando no declara
+nada.
+
+**§1 · no son tres sitios, son siete, y tres no estaban escritos.** El contrato se escribe en UN
+sitio (el zod de `src/contract/model-io/schemas.ts`) y el tool JSON y el prompt los genera
+`npm run gen:contract`. A mano se tocan:
+
+1. el **espejo Python**: `valid_kinds` **y la allow-list de `validate_narrative_reaction`**, que hoy
+   tira en silencio cualquier campo nuevo — medido por el crítico;
+2. el **resume** (`session/mundo-persistido.ts`): `CLASES_QUE_VUELVEN` no tiene `item`, y la huella se
+   re-deriva del `type` ignorando lo declarado, así que un carro de `[6,6]` vuelve de 3×3;
+3. el **materializador del cliente** (`world/materializar-spawn.ts`);
+4. el **rastro de prosa** que quedaría mintiendo: `prompts/ui_systems.md:56`, la cabecera de
+   `mundo-persistido.ts:432` y la del guion 91.
+
+Y un aviso que vale su peso: **las fixtures compartidas comparan accept/reject, no si el campo
+sobrevive**. Que el espejo Python tire `footprint` en silencio sale VERDE en las dos suites. Eso hay
+que candarlo aparte, y es parte de la tanda.
+
+**§3 · #529 se reduce al DESENLACE.** El criterio de «enemigo utilizable» ya es **uno solo** desde
+#531/#530 (`parseHostileCombat`, candado en `test/architecture.test.ts:1174-1232` y guion 90): el
+**criterio de aceptación 4 ya se cumple hoy** y aquí solo se vigila, no se construye. Y dos premisas
+del issue son falsas: el motor **no** produce el bloque `combat` (lo deriva `combatForHostileRole`),
+y «el motivo vuelve al motor» no tiene destinatario en ese borde — al otro lado del WS está el
+cliente, no el modelo.
+
+**Criterio de aceptación 3, reescrito**: si un frame de `add_combatants`/`load_room` trae un enemigo
+inválido junto a dos válidos, **entran los dos válidos, el malo no, y el motivo llega al log del
+bridge y al registro del jugador — sin modal**. Hoy ningún camino de jugador llega a ese modal (QA lo
+alcanzó inyectando frames por el socket), así que el valor de #529 es coherencia y defensa en
+profundidad, no dolor medido: **si hay que recortar la tanda, ésta es la pieza que espera.**
+
+**§2 · #524, la mitad que no se sostiene.** «El jugador queda encajonado» no se aguanta: hay regla
+«salir sí, entrar no». Lo demostrable es **el solape de cajas**: con `SEPARACION_M = 1.8`
+(`consequence-handler.ts:186`) y radio de jugador 0,4 m, dos `object` dejan 0,3 m —intransitable—,
+dos `building` **se solapan 0,4 m**, y un `npc` del mismo turno cae **dentro** de la caja del
+edificio. Ése es el criterio, medido.
+
+**Vecinos: uno entra y otro no, decidido ahora y no a mitad.**
+
+- **#490 ENTRA** (el gate de `loadSession` acepta dos records de runtime con el mismo id). Vive en
+  `loadSession`/`spawnsDeRuntime`, que es justo donde #532 obliga a entrar: hacerlo aquí es casi
+  gratis y hacerlo después es abrir otra vez la misma puerta.
+- **#509 y #497 NO entran.** Son el registro de errores donde #529 escribirá más líneas, pero son
+  otro sujeto (uno es de pintado y el otro de ciclo de vida de la partida). Se quedan fuera **a
+  propósito**, no por olvido.
+
+**El guion que pide #532 no es el 91** (ese ya existe, es el de #489): el siguiente libre es el
+**100**.
+
+**Orden con las otras tandas**: B va **antes** que C, porque `etiquetas-del-mundo.ts:124` lee el
+`sizeXZ` que esta tanda cambia. Con A no hay solape.

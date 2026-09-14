@@ -83,3 +83,63 @@ Respuesta literal: **«- R: b»**, sobre estas opciones:
   **es** la de entrada.
 - Crítica visual de director de arte en la QA: no vale un checklist técnico.
 - **Cero créditos**: `html-fixtures` y `e2e-sin-creditos`.
+
+---
+
+## Correcciones del coordinador tras la crítica (2026-09-14)
+
+La crítica está en `critica.md`, al lado. Se acepta entera. Esto es lo que cambia, más las
+decisiones que ella dejaba abiertas — que eran cuatro y las contesto todas, para que no las decida
+el plan por moneda.
+
+**4.3 · el rótulo que se oculta NO es simplemente «el más lejano».** `pickAimTarget` gana por
+**desviación angular, no por distancia** (`scene/aim.ts:127-131`), así que «oculta el lejano» puede
+apagar el rótulo de aquello a lo que estás apuntando y dejar la mirilla encendida sobre un bulto
+anónimo — el defecto exacto que el módulo vino a cerrar. **Criterio 2, reescrito**: de dos rótulos
+que se pisan se ve el del cercano, **salvo que el lejano sea el que la mirilla enfila**, en cuyo caso
+se oculta el otro. Y antes de diseñar, **se mide el solape en píxeles**: el aserto 1a del guion 79
+exige hoy los dos rótulos a la vez.
+
+**4.1 · un hostil ENFOCADO sigue siendo rojo.** Hoy `[data-focus="true"]` pisa el color
+(`game-ui.css:503-507`), así que sin decidir esto el rojo desaparecería **justo al apuntar**, que es
+cuando más falta hace. Decisión: **el peligro manda sobre el foco**. El foco se expresa con lo demás
+(borde, opacidad, lo que el diseño elija), nunca sustituyendo el color de peligro.
+
+**4.2 · dónde se escribe.** En `ui/world-labels.ts`, junto a `FADE_FROM_M` —que es el fichero que
+abre quien vaya a meter un raycast— y en `docs/arquitectura/vistas.md:124-126`, que es lo que
+CLAUDE.md manda leer al tocar el renderer. Con fecha, y el cierre de #484 la cita. **No se abre
+candado**: costaría un guion de navegador con fixture de muro, más que la tanda entera. Y hay algo
+commiteado empujando en la otra dirección (`docs/agents/2026-09-06-lo-que-le-queda-a-main/qa-2.md:68`
+y `:80`, donde se juzgó como defecto visual): esa es exactamente la razón de escribirlo.
+
+**#484 NO SE CIERRA con esta tanda.** De los cinco puntos de su cuerpo, aquí se contestan 1-3. El 4
+(un rótulo fuera de encuadre sigue en el DOM: `sync` no recorta por viewport) y el 5 (ruido del
+selector «Room» con partida viva) **siguen vivos y se quedan en el issue**. El 4 puede caer gratis
+dentro del cálculo de solape de 4.3: si cae, que se diga y se cierre entero.
+
+**#478 · el chip dice «Bridge», no «Connected».** (`main.ts:543-545`.) Cambiar el literal es otra
+petición y no entra. El criterio 4 se lee con ese literal. Y **el guion 78 pierde su aserto «…y se
+queda retirado»** si la conexión pinta un muro nuevo con «Reintentar»: el plan tiene que decir qué
+afirma el 78 después.
+
+**#451 · la pregunta que faltaba, contestada: (i).** Si la injugable **es la de entrada**, se degrada
+al bootstrap vivo **como hoy**, y lo único que cambia es que **las buenas del anillo no se pierden**
+— o sea, impedir que `writeSessionSnapshot` (`bridge/context.ts:158`) reescriba el snapshot con una
+sola escena. Se elige (i) y no «regenerar solo la entrada» porque es lo que ataca el título del issue
+(«se tira entero; Continuar lo sustituye por uno de 1»), porque conserva verdes
+`world-snapshot.test.ts:446` y `:499`, y porque abrir un camino nuevo de regeneración parcial de la
+entrada es una funcionalidad, no un arreglo. Las dos opciones obligan igual a reescribir el de `:476`.
+
+**#451 · los dos menores QUEDAN FUERA, y es decisión, no olvido.** Que el título diga el MOTIVO del
+`stale` era la opción (c) y el usuario eligió la (b). Y que `get_world_snapshot` conteste
+`ok:true/stale` por hash y `ok:false` por jugabilidad se resuelve casi de paso
+(`style-apply.ts:32`), pero no entra al criterio del ingeniero: si cae solo, se dice; si no, se
+queda.
+
+**Un hallazgo de la crítica que cambia dónde está el sujeto**: quien destruye las 8 buenas **no es**
+`loadWorldSnapshot`, es **`writeSessionSnapshot`** (`bridge/context.ts:145-165`). El plan que apunte
+al sitio equivocado no arregla nada.
+
+**Orden con las otras tandas**: esta va **después de B** (`etiquetas-del-mundo.ts:124` lee el
+`sizeXZ` que B cambia, y la QA de C debe correr sobre el mundo posterior a B). Con A comparte un solo
+fichero, `bridge/handlers/style-apply.ts`: **A primero y #451 rebasa encima**.
