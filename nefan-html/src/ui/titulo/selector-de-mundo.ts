@@ -15,8 +15,8 @@
  *  Lo que NO está aquí y podría parecer que sí:
  *  - El MAPA de progresos por juego (#313) y la memoria de qué tarjeta se está
  *    mirando. Son de la raíz, que es quien escucha al bridge y sigue viva cuando
- *    esta pantalla ya no está; aquí se apunta la tarjeta mirada con
- *    `recordarMundo`.
+ *    esta pantalla ya no está; aquí se le cuenta lo elegido con
+ *    `recordarEleccion`, y ella se lo devuelve cuando repinta.
  *  - El PANEL DE GENERACIÓN (`ui/titulo/panel-de-generacion.ts`): el estado del
  *    mundo y de su estilo, los dos botones que los encargan y la línea de
  *    progreso. Esta pantalla solo le deja el hueco `#ts-gen` y le dice qué par
@@ -63,11 +63,15 @@ export interface DepsDeSelectorDeMundo {
    *  encola la pre-generación de un mundo (`generateGame`). Es lo único de esta
    *  hoja que habla por la red. */
   narrative: NarrativeClient;
-  /** Apunta qué tarjeta está mirando el jugador. La memoria es de la RAÍZ
-   *  porque quien la lee es su oyente del bridge, que sigue vivo cuando esta
-   *  pantalla ya no está: sin ella, el progreso de un mundo se pintaría bajo la
-   *  tarjeta de otro (#313). */
-  recordarMundo(gameId: string): void;
+  /** Apunta LO QUE EL JUGADOR LLEVA ELEGIDO, y la memoria es de la RAÍZ por dos
+   *  motivos que se juntan en el mismo oyente del bridge: con el mundo mirado
+   *  decide bajo qué tarjeta se pinta el progreso (#313 — sin eso, el de un
+   *  mundo se pintaba bajo la tarjeta de otro), y con lo demás REPINTA esta
+   *  pantalla sin llevarse por delante el estilo y los dos modos cuando una
+   *  pre-generación acaba. Se llama DESPUÉS de cada cambio, nunca antes: en el
+   *  click de tarjeta el estilo lo fija `refreshStyleOptions`, así que contarlo
+   *  antes contaría el del mundo anterior. */
+  recordarEleccion(eleccion: LoElegidoEnElSelector): void;
   /** A dónde va el título cuando esta pantalla termina: al home («Volver»), al
    *  editor de personaje («Continuar»), a «Crear mundo» o a «Subir estilo». Es
    *  el único camino de vuelta que tiene una hoja —no puede importar a otra— y
@@ -82,11 +86,18 @@ export interface DepsDeSelectorDeMundo {
   montarPanelDeGeneracion(hueco: HTMLElement, mundo: GameInfo, estilo: StyleInfo | undefined): void;
 }
 
+/** LO QUE YA ESTABA ELEGIDO al entrar aquí. Se DERIVA del destino en vez de
+ *  declararse otra vez: son exactamente los campos que viajan en
+ *  `ir({a:"selector", …})`, y dos listas que hay que mantener iguales acaban
+ *  siendo dos listas distintas. Sin ninguno (la primera visita), rigen
+ *  `MODO_AL_EMPEZAR` y `eleccionDeEstilo`. */
+export type LoElegidoEnElSelector = Extract<DestinoDelTitulo, { a: "selector" }>;
+
 /** Paso de selección de mundo: una tarjeta por juego (cover + descripción)
  *  y selector de estilo con el del juego preseleccionado. */
 export async function pintarSelectorDeMundo(
   deps: DepsDeSelectorDeMundo,
-  preselectGameId?: string,
+  loElegido: LoElegidoEnElSelector = { a: "selector" },
 ): Promise<void> {
   // listGames must succeed — there's no scripted fallback any more. If it
   // throws, the title-screen surfaces the error and stops here.
@@ -95,8 +106,7 @@ export async function pintarSelectorDeMundo(
     throw new Error("no games available in bridge — check nefan-core/data/games/");
   }
   const styleById = new Map(styles.map((st) => [st.style_id, st]));
-  let selectedGame = games.find((g) => g.game_id === preselectGameId) ?? games[0];
-  deps.recordarMundo(selectedGame.game_id);
+  let selectedGame = games.find((g) => g.game_id === loElegido.preselect) ?? games[0];
 
   // Pantalla ancha a dos columnas (mundos | opciones): sin scroll de página
   // — la lista de mundos scrollea DENTRO de su columna si hace falta. Las
@@ -171,14 +181,33 @@ export async function pintarSelectorDeMundo(
    *  lo que hacía `refreshGenPanel` con sus nodos. */
   const montarGen = (): void =>
     deps.montarPanelDeGeneracion(genEl, selectedGame, styleById.get(styleSel.value));
-  let selectedRenderMode: ModoElegido = MODO_AL_EMPEZAR;
+  /** Le cuenta a la raíz lo que hay elegido: es lo que le devolverá si repinta
+   *  esta pantalla, y lo que decide de qué tarjeta es el progreso que pinta. */
+  const recordar = (): void =>
+    deps.recordarEleccion({
+      a: "selector",
+      preselect: selectedGame.game_id,
+      styleId: styleSel.value,
+      renderMode: selectedRenderMode,
+      characterMode: selectedCharMode,
+    });
+  let selectedRenderMode: ModoElegido = loElegido.renderMode ?? MODO_AL_EMPEZAR;
   // Los dos defectos salen de core (`MODO_AL_EMPEZAR`, el mismo valor con el
   // que el wire decide): personajes NACE en el de escenarios y solo lo sigue en
   // un CLICK, así que otro valor aquí pare partidas en maqueta pagando skins.
+  // Y lo que VUELVE manda sobre el defecto: quien ya eligió no vuelve a elegir
+  // por navegar (#552), en ninguna de las dos direcciones — volver del editor
+  // no puede apagar Imagen IA, y tampoco encenderla.
   // Sin `graphics.ai_skin` no hay backend de skins: vector, no se vende lo muerto.
   const skinBackendOn = CONFIG.graphics.ai_skin;
-  let charModeTouched = false;
-  let selectedCharMode: ModoElegido = skinBackendOn ? MODO_AL_EMPEZAR : "vector";
+  let selectedCharMode: ModoElegido = skinBackendOn
+    ? (loElegido.characterMode ?? MODO_AL_EMPEZAR)
+    : "vector";
+  // EL SEGUIMIENTO SE RECONSTRUYE y no viaja: personajes sigue a escenarios
+  // mientras nadie lo haya tocado, y lo que vuelve solo delata ese toque cuando
+  // los dos modos DIFIEREN. Si vuelven iguales, dejarlo «sin tocar» es
+  // exactamente el estado en que lo tendría quien no se ha ido a ningún sitio.
+  let charModeTouched = selectedCharMode !== selectedRenderMode;
   const refreshRenderMode = (): void => {
     for (const btn of renderModeEl.querySelectorAll<HTMLElement>("[data-rendermode]")) {
       const active = btn.dataset.rendermode === selectedRenderMode;
@@ -194,6 +223,7 @@ export async function pintarSelectorDeMundo(
         refreshCharMode();
       }
       refreshRenderMode();
+      recordar();
     });
   }
   refreshRenderMode();
@@ -210,17 +240,24 @@ export async function pintarSelectorDeMundo(
       charModeTouched = true;
       selectedCharMode = btn.dataset.charmode === "vector" ? "vector" : "image";
       refreshCharMode();
+      recordar();
     });
   }
   refreshCharMode();
   worldsEl.innerHTML = games.map((g) => worldCardHtml(g, styleById.get(g.style_id))).join("");
 
+  // EL ESTILO QUE VUELVE (#552) se gasta en el PRIMER pintado y en ninguno más:
+  // cambiar de tarjeta vuelve a mandar `eleccionDeEstilo`, porque el estilo que
+  // traía el jugador era el del mundo que acaba de dejar de mirar.
+  let estiloQueVuelve = loElegido.styleId;
   const refreshStyleOptions = (): void => {
     // QUÉ SE OFRECE Y QUÉ VIENE PUESTO lo decide `eleccionDeEstilo` de core,
     // que es la misma función con la que el bridge le pone estilo a un mundo
     // nuevo. Aquí solo se pinta: el rótulo dice por qué está ahí un pack que
     // el filtro temático no habría traído.
     const { ofrecidos, porDefecto } = eleccionDeEstilo(styles, selectedGame);
+    const vuelve = estiloQueVuelve;
+    estiloQueVuelve = undefined;
     styleSel.innerHTML = ofrecidos
       .map(({ estilo, compatible, delMundo }) => {
         const marca = delMundo
@@ -238,8 +275,16 @@ export async function pintarSelectorDeMundo(
     }
     continueBtn.disabled = false;
     continueBtn.style.opacity = "";
-    styleSel.value = porDefecto;
-    styleDesc.textContent = styleById.get(porDefecto)?.description ?? "";
+    // Lo que vuelve manda sobre el defecto, pero solo si SIGUE OFRECIDO: un
+    // pack que ya no está —desinstalado, o de otro mundo tras cambiar de
+    // tarjeta— dejaría el desplegable en un valor que no existe entre sus
+    // opciones, y el navegador lo colapsa a la primera sin decir nada.
+    const elegido =
+      vuelve !== undefined && ofrecidos.some(({ estilo }) => estilo.style_id === vuelve)
+        ? vuelve
+        : porDefecto;
+    styleSel.value = elegido;
+    styleDesc.textContent = styleById.get(elegido)?.description ?? "";
   };
   const refreshSelection = (): void => {
     for (const card of worldsEl.querySelectorAll<HTMLElement>("[data-game-id]")) {
@@ -253,11 +298,11 @@ export async function pintarSelectorDeMundo(
       const game = games.find((g) => g.game_id === card.dataset.gameId);
       if (!game) return;
       selectedGame = game;
-      deps.recordarMundo(game.game_id);
       refreshSelection();
       refreshStyleOptions();
       refreshCover(); // el desplegable acaba de cambiar de preselección
       montarGen();
+      recordar();
     });
   }
   /** La tarjeta del mundo enseña la portada del estilo ELEGIDO, no la del
@@ -279,11 +324,20 @@ export async function pintarSelectorDeMundo(
     styleDesc.textContent = styleById.get(styleSel.value)?.description ?? "";
     refreshCover();
     montarGen();
+    recordar();
   });
 
   refreshSelection();
   refreshStyleOptions();
+  // LA PORTADA TAMBIÉN EN EL PRIMER PINTADO, y es #552 quien lo hace falta: la
+  // tarjeta nace con la portada y el rótulo del estilo que declara el MUNDO, y
+  // hasta ahora eso coincidía siempre con el desplegable porque el primer
+  // pintado lo dejaba en el del mundo. Con un estilo que vuelve del editor ya
+  // no coinciden: la tarjeta decía «· Estilo: Medievo crudo» con «Anime» en el
+  // desplegable y en el panel de generación — visto en la captura del 107.
+  refreshCover();
   montarGen();
+  recordar();
 
   (deps.content.querySelector("#ts-back") as HTMLButtonElement)
     .addEventListener("click", () => paso(deps.ir({ a: "home" }), "title", "volver al home del título"));

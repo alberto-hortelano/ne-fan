@@ -43,7 +43,10 @@ import {
   pintarProgresoDeMundo,
 } from "./titulo/panel-de-generacion.js";
 import { pintarPlanDeEstilo } from "./titulo/plan-de-estilo.js";
-import { pintarSelectorDeMundo } from "./titulo/selector-de-mundo.js";
+import {
+  type LoElegidoEnElSelector,
+  pintarSelectorDeMundo,
+} from "./titulo/selector-de-mundo.js";
 import { type DepsDeSubirEstilo, pintarSubirEstilo } from "./titulo/subir-estilo.js";
 
 /** Lo que resuelve `show()`. Vive en `titulo/atomos.ts` desde el primer corte
@@ -86,10 +89,14 @@ export class TitleScreen {
    *  falta para poder NO pintar lo que no es de esta tarjeta, y el `gameId` que
    *  lo indexa es el que trajo el mensaje desde #313. */
   private readonly gameGenStatus = new Map<string, NarrativeStatusDeJuego>();
-  /** Mundo seleccionado la última vez que se pintó el selector — el refresh
-   *  tras un game_gen ready lo conserva, y es la clave con la que se decide
-   *  QUÉ progreso se pinta. */
-  private lastSelectedGameId: string | null = null;
+  /** LO QUE EL JUGADOR LLEVABA ELEGIDO la última vez que se pintó el selector:
+   *  el mundo, el estilo y los dos modos. Es la clave con la que se decide QUÉ
+   *  progreso se pinta —el del mundo que se está mirando (#313)— y es lo que se
+   *  le devuelve a la hoja cuando el refresh tras un `game_gen` la repinta: sin
+   *  esto último, una pre-generación que acaba mientras el jugador está en el
+   *  selector le borraba el estilo y los dos modos que acababa de elegir, que
+   *  es el mismo #552 por la otra puerta. */
+  private ultimaEleccion: LoElegidoEnElSelector | null = null;
 
   /** El progreso del mundo que el jugador está mirando, ya resuelto: es lo que
    *  la hoja del selector necesita para pintarlo sin conocer ni el mapa ni la
@@ -97,9 +104,8 @@ export class TitleScreen {
    *  todavía) y «seleccionado pero sin progreso» se colapsan a propósito: los
    *  dos se pintan igual, que es vaciando la línea. */
   private progresoDelMundoMirado(): NarrativeStatusDeJuego | undefined {
-    return this.lastSelectedGameId === null
-      ? undefined
-      : this.gameGenStatus.get(this.lastSelectedGameId);
+    const mirado = this.ultimaEleccion?.preselect;
+    return mirado === undefined ? undefined : this.gameGenStatus.get(mirado);
   }
 
   constructor(private narrative: NarrativeClient) {
@@ -138,7 +144,7 @@ export class TitleScreen {
         const panel = this.chasis.content.querySelector("#ts-gen");
         if (panel && this.chasis.visible) {
           paso(
-            this.pintarElSelector(this.lastSelectedGameId ?? undefined),
+            this.pintarElSelector(this.ultimaEleccion ?? { a: "selector" }),
             "title",
             "refrescar el selector de mundos tras la generación",
           );
@@ -244,7 +250,7 @@ export class TitleScreen {
       case "home":
         return this.pintarElHome(destino.aviso, destino.tono);
       case "selector":
-        return this.pintarElSelector(destino.preselect);
+        return this.pintarElSelector(destino);
       case "crear-mundo":
         return this.crearMundo();
       case "subir-estilo":
@@ -265,7 +271,7 @@ export class TitleScreen {
   /** Cablea el SELECTOR DE MUNDOS y lo pinta. Cinco colaboradores desde que el
    *  panel de generación salió a su propia hoja.
    *
-   *  `recordarMundo` apunta qué tarjeta se está mirando; el mapa de progresos
+   *  `recordarEleccion` apunta lo elegido; el mapa de progresos
    *  por juego (#313) se queda en esta clase porque el suscriptor del bridge
    *  vive aquí y sobrevive a cualquier repintado. La hoja no ve ninguno de los
    *  dos campos, y eso es lo que la deja sin `this`.
@@ -282,13 +288,13 @@ export class TitleScreen {
    *  oyente del bridge llama a este método dentro de un `paso(...)`, así que un
    *  `throw` SÍNCRONO de este cableado saldría antes de que exista promesa y
    *  `paso()` no podría encauzarlo. Hoy no tiene ocupante. */
-  private async pintarElSelector(preselect?: string): Promise<void> {
+  private async pintarElSelector(loElegido: LoElegidoEnElSelector): Promise<void> {
     return pintarSelectorDeMundo(
       {
         content: this.chasis.content,
         narrative: this.narrative,
-        recordarMundo: (gameId) => {
-          this.lastSelectedGameId = gameId;
+        recordarEleccion: (eleccion) => {
+          this.ultimaEleccion = eleccion;
         },
         ir: (destino) => this.ir(destino),
         montarPanelDeGeneracion: (hueco, mundo, estilo) =>
@@ -308,7 +314,7 @@ export class TitleScreen {
             estilo,
           ),
       },
-      preselect,
+      loElegido,
     );
   }
 
