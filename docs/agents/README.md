@@ -44,6 +44,11 @@ cp -r ../ne-fan/nefan-html/public/sprites nefan-html/public/   # las hojas base 
 mkdir -p docs/agents/<tarea> && cp ../ne-fan/docs/agents/<tarea>/{plan,implementacion*}.md docs/agents/<tarea>/
 ```
 
+**El scratchpad de sesión es COMPARTIDO entre los agentes de la misma tanda.** Dos ingenieros
+escribiendo `bateria.log` con el mismo nombre se machacan: el 2026-09-14 uno perdió una corrida
+entera de 120 guiones a media lectura, y el 2026-09-06 pasó lo mismo. El fichero de salida de una
+corrida larga lleva **el nombre del worktree**: `bateria-c3.log`, no `bateria.log`.
+
 **Y tras cada `git rebase` que traiga cambios de CONTRATO, `npm run build` otra vez.** El 2026-09-14
 costó cinco rojos que no eran del código: `test/contract-fixtures.test.ts` decía «esperaba accept,
 obtuve `entity_kind: Invalid enum value`» sobre una fixture perfectamente válida, porque el `dist/`
