@@ -82,6 +82,7 @@ limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella 
 |---|---|
 | `qa/run.mjs` y los 71 guiones de `qa/guiones/` | preset `e2e-sin-creditos` + Chromium: corrida local. Un job de navegador en CI es programa aparte, con su reloj medido antes |
 | `bateria-candados-en-negativo.mjs`, `esperas-candados-en-negativo.mjs` | parecen headless y **no lo son**: spawnean `qa/run.mjs` (preset + Playwright) |
+| `comparar-el-criterio-en-negativo.mjs` | necesita `nefan-core/reports/mutation-base/` — los 55 informes de una corrida real, **141 MB y gitignorados**. En CI habría que bajarlos con `gh run download <run-id>` en cada PR, y el artefacto caduca: el día que expire, el job se pondría rojo por un motivo que no es del código. Corrida LOCAL, y se niega diciendo cómo conseguir la base |
 | `fake-enruta-por-pathname.mjs` | su observable (`POST /skin_sprite_sheet?x=1 → 200`) depende de que el fake encuentre `nefan-html/public/sprites/paladin/idle/frontal_8/meta.json`, que es arte GENERADO y gitignored: en un clon limpio contesta 500 y el guion sale rojo (medido el 05-09: verde en el checkout del usuario, rojo en un worktree recién clonado). Entra el día que la ruta se pruebe sin leer del disco |
 | `el-arte-de-personaje-…`, `el-indice-del-store-…`, `perfil-de-repintado-…`, `sprites-sin-servicio` | levantan asset-store, remote-gen o sprite-forge (Python con las deps de `ai_server`, elegido por `qa/lib/python.mjs`); nadie los ha cronometrado. Candidatos siguientes, con reloj medido antes |
 | `guardarrail-sin-creditos`, `dos-corridas`, `fixtures-sin-bridge`, `las-fixtures-solo-chocan-con-el-agua`, `captura-de-fixture`, `capturar-portadas`, `presupuesto-de-volumenes`, `presets`, `no-mata-lo-ajeno`, `parar-clasifica-los-nueve-puertos` | conducen el runner, un Chromium o `start.sh` sobre los puertos del catálogo de la máquina |
@@ -573,6 +574,27 @@ PR incluidos. Cubre el ancla del reparto, la contradicción del rango vacío, el
 el `--pedidos ""` del input `TODOS` y las cuatro piezas del paso del workflow. Aparta
 `reports/mutation/` mientras corre y lo devuelve; verifica byte a byte los fuentes y la huella
 —que `repartir` reescribe por diseño— y sale con 2 si algo no volvió.
+
+## `qa/comparar-el-criterio-en-negativo.mjs`: el criterio de adopción de #443, contra el verbo real
+
+```bash
+node qa/comparar-el-criterio-en-negativo.mjs   # ~2 min, sin red, sin navegador y sin medir mutación
+```
+
+Catorce propiedades que la decisión de #443 —«se cambia de runner o no»— necesita que sean ciertas,
+ejercidas sobre corridas de ENSAYO fabricadas desde `reports/mutation-base/`: cada una simula UNA
+transición de estado en un informe real (`Killed→Survived`, `Survived→NoCoverage`, `Timeout→Survived`,
+`Timeout→RuntimeError`…), corre `npm run mutacion -- comparar` y afirma qué tiene que decir el
+veredicto. Lo escribió QA al validar la PR del verbo, y **nació discriminando**: 9 verdes y 5 rojas,
+que son los hallazgos H1-H5 de `docs/agents/2026-09-14-el-reloj-y-la-bateria/qa-1.md`. Un guion que
+saliera entero verde el primer día no habría probado nada.
+
+**Necesita la base y se niega sin ella**: los 55 informes de la corrida `34816474906` en
+`nefan-core/reports/mutation-base/` (141 MB, gitignorados). Si no están, sale con 2 diciendo el
+`gh run download`. Por eso no entra en `candados-headless`: bajarlos en cada PR cuesta 141 MB, y el
+artefacto caduca — el día que expirara, el job se pondría rojo por un motivo que no es del código.
+Solo toca `reports/mutation/`, que aparta al empezar y devuelve en el `finally`;
+`reports/mutation-base/` **solo se lee**.
 
 ## `qa/mutacion-reparto-en-lotes.mjs`: la corrida partida, y lo que aún no tiene quien la cace
 

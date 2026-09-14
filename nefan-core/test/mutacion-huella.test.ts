@@ -46,11 +46,22 @@ import {
   permisoLocal,
   prDelAsunto,
   queHacerCon,
+  medidosDeFichero,
+  movimientosDeReloj,
+  movimientosSinEjercer,
   rangoDe,
+  sinEjercerDeFichero,
+  timeoutsDeFichero,
+  totalDeReloj,
+  totalSinEjercer,
+  veredictoDeAdopcion,
   veredictoDeCorrida,
   verificaDescarga,
   vivosDeFichero,
   type Corrida,
+  type CorridaQueJuzga,
+  type DeltaDeFichero,
+  type PoblacionesDeFichero,
   type CommitDelRango,
   type Huella,
   type InformeSellado,
@@ -1585,5 +1596,430 @@ describe("la huella commiteada es el histórico que este repo no tenía", () => 
       // que el fichero traía con otra forma.
       assert.ok(duenosLegibles(d).length > 0, `${f}: sus dueños no se pueden leer`);
     }
+  });
+});
+
+describe("adopción · el criterio para cambiar de instrumento de medida (#443)", () => {
+  const h = (r: string) => huellaDeMutante("src/a.ts", mutante({ replacement: r }));
+  const delta = (over: Partial<DeltaDeFichero> = {}): DeltaDeFichero => ({
+    fichero: "src/a.ts",
+    base: "con base",
+    vivos: [],
+    nuevos: [],
+    yaEstaban: [],
+    resueltos: [],
+    total: 10,
+    ...over,
+  });
+  /** Una corrida que SÍ puede dictar: mide la casa entera, la cubre y no deja
+   *  mutantes sin ejercer. Cada test rompe UNA de esas cosas, para que se vea
+   *  cuál es la que decide. */
+  const corrida = (over: Partial<CorridaQueJuzga> = {}): CorridaQueJuzga => ({
+    esperados: ["src/a.ts"],
+    mueveTag: true,
+    completa: true,
+    sinEjercer: [],
+    codigoCambiado: [],
+    ...over,
+  });
+
+  it("el conjunto de supervivientes idéntico fichero a fichero → SE ADOPTA", () => {
+    const v = veredictoDeAdopcion(
+      [
+        delta({ fichero: "src/a.ts", vivos: [h("a")], yaEstaban: [h("a")] }),
+        delta({ fichero: "src/b.ts", vivos: [], yaEstaban: [] }),
+      ],
+      corrida({ esperados: ["src/a.ts", "src/b.ts"] }),
+    );
+    assert.equal(v.adopta, true);
+    assert.equal(v.comparables, 2, "y dice sobre cuántos ficheros se pronuncia");
+    assert.equal(v.nuevos, 0);
+    assert.equal(v.resueltos, 0);
+  });
+
+  it("un solo superviviente NUEVO lo tumba, y dice en qué fichero", () => {
+    const v = veredictoDeAdopcion(
+      [
+        delta({ fichero: "src/a.ts", vivos: [h("a")], yaEstaban: [h("a")] }),
+        delta({ fichero: "src/b.ts", vivos: [h("z")], nuevos: [h("z")] }),
+      ],
+      corrida({ esperados: ["src/a.ts", "src/b.ts"] }),
+    );
+    assert.equal(v.adopta, false);
+    assert.equal(v.nuevos, 1);
+    assert.match(v.porque, /NUEVOS/);
+    assert.match(v.porque, /src\/b\.ts/);
+  });
+
+  it("un RESUELTO también lo tumba: cambiar de instrumento no es 'mejorar'", () => {
+    // Un superviviente que desaparece sin que nadie haya escrito un test es
+    // medida que se pierde, no deuda que se paga: el instrumento nuevo dejó de
+    // ver un mutante que el viejo veía.
+    const v = veredictoDeAdopcion([delta({ vivos: [], resueltos: [h("viejo")] })], corrida());
+    assert.equal(v.adopta, false);
+    assert.equal(v.resueltos, 1);
+    assert.match(v.porque, /RESUELTOS/);
+  });
+
+  it("el caso que el SCORE no ve: uno nuevo donde murió uno viejo", () => {
+    // El agujero de la regla escrita. 92 supervivientes antes y otros 92
+    // DISTINTOS después dan el mismo `(total − |vivos|)/total`, así que un
+    // criterio por score diría «no se movió nada» teniendo dos hallazgos
+    // dentro. Contarlos aparte es lo que la casa ya hace, y no cuesta un
+    // segundo más.
+    const v = veredictoDeAdopcion(
+      [delta({ vivos: [h("nuevo")], nuevos: [h("nuevo")], resueltos: [h("viejo")] })],
+      corrida(),
+    );
+    assert.equal(v.adopta, false);
+    assert.equal(v.nuevos, 1);
+    assert.equal(v.resueltos, 1);
+    assert.match(v.porque, /NUEVOS[\s\S]*RESUELTOS/, "los dos motivos, no el primero");
+  });
+
+  it("INCOMPARABLE entra en el criterio: sus nuevos y resueltos salen a cero SIN comparar", () => {
+    // LA TRAMPA, y por eso el veredicto la nombra. `deltaDeFichero` declara
+    // `incomparable` cuando cambia el número de mutantes con el mismo código —y
+    // cambiar de runner ES cambiar el instrumento—, y entonces devuelve
+    // `nuevos: []` y `resueltos: []`. Un criterio de «0 nuevos y 0 resueltos» a
+    // secas se cumpliría en verde sin haber comparado nada.
+    const v = veredictoDeAdopcion(
+      [
+        delta({ fichero: "src/a.ts", vivos: [h("a")], yaEstaban: [h("a")] }),
+        delta({ fichero: "src/b.ts", base: "incomparable", vivos: [h("x")], porque: "cambió el instrumento" }),
+      ],
+      corrida({ esperados: ["src/a.ts", "src/b.ts"] }),
+    );
+    assert.equal(v.nuevos, 0, "el contador de nuevos NO se entera: es el punto");
+    assert.equal(v.resueltos, 0, "ni el de resueltos");
+    assert.equal(v.adopta, false, "y aun así no se adopta");
+    assert.deepEqual(v.incomparables, ["src/b.ts"]);
+    assert.match(v.porque, /INCOMPARABLES/);
+  });
+
+  it("H7 · «cambió el instrumento» y «cambió el fuente» son DOS motivos, no uno", () => {
+    // Los dos salen `incomparable` de `deltaDeFichero` y mandan a sitios
+    // opuestos. El primero ES el hallazgo que este verbo busca; el segundo es un
+    // FALSO ROJO —basta con que otra tanda toque un fichero entre el último
+    // `repartir` y la corrida de #443— y su remedio no es tocar el runner sino
+    // comparar contra la huella del commit que midió la base.
+    const v = veredictoDeAdopcion(
+      [
+        delta({ fichero: "src/instrumento.ts", base: "incomparable" }),
+        delta({ fichero: "src/movido.ts", base: "incomparable" }),
+      ],
+      corrida({ esperados: [], codigoCambiado: ["src/movido.ts"] }),
+    );
+    assert.deepEqual(v.incomparables, ["src/instrumento.ts"]);
+    assert.deepEqual(v.incomparablesPorCodigo, ["src/movido.ts"]);
+    assert.match(v.porque, /1 fichero\(s\) INCOMPARABLES \(src\/instrumento\.ts\)/);
+    assert.match(v.porque, /BASE DE OTRO CÓDIGO \(src\/movido\.ts\)/);
+    assert.match(v.porque, /--base <sha>/, "y dice el remedio, que no es tocar el runner");
+  });
+
+  it("SIN BASE tampoco vale: no hay contra qué comparar", () => {
+    const v = veredictoDeAdopcion(
+      [
+        delta({ fichero: "src/a.ts", vivos: [], yaEstaban: [] }),
+        delta({ fichero: "src/nuevo.ts", base: "sin base", vivos: [h("a")] }),
+      ],
+      corrida({ esperados: ["src/a.ts"] }),
+    );
+    assert.equal(v.adopta, false);
+    assert.deepEqual(v.sinBase, ["src/nuevo.ts"]);
+    assert.match(v.porque, /SIN BASE/);
+  });
+
+  it("CERO comparables no es un verde: es no haber comprobado nada", () => {
+    // El verde que no comprueba nada, en su forma más pura: una corrida que no
+    // compara ni un fichero tiene 0 nuevos y 0 resueltos por construcción.
+    for (const deltas of [[], [delta({ base: "incomparable" })], [delta({ base: "sin base" })]]) {
+      const v = veredictoDeAdopcion(deltas, corrida({ esperados: [] }));
+      assert.equal(v.comparables, 0);
+      assert.equal(v.adopta, false, `${JSON.stringify(deltas)} no puede adoptar`);
+    }
+    assert.match(veredictoDeAdopcion([], corrida({ esperados: [] })).porque, /NI UN fichero/);
+  });
+
+  it("H1 · una corrida que mide una FRACCIÓN de la huella no dicta nada", () => {
+    // El agujero que midió QA: con UN módulo (`blueprint-plan`, 38 mutantes de
+    // 12.841) el verbo decía «SE PUEDE ADOPTAR» y salía con 0. Y es el camino
+    // BARATO: el input `modulos` del workflow admite ids sueltos, así que
+    // probar el runner nuevo con un módulo —lo primero que haría cualquiera—
+    // producía el veredicto de la casa entera. El conjunto lo fija la HUELLA.
+    const v = veredictoDeAdopcion([delta({ fichero: "src/a.ts", vivos: [], yaEstaban: [] })], {
+      esperados: ["src/a.ts", "src/b.ts", "src/c.ts"],
+      mueveTag: true,
+      completa: true,
+      sinEjercer: [],
+      codigoCambiado: [],
+    });
+    assert.equal(v.comparables, 1, "comparó uno…");
+    assert.equal(v.nuevos + v.resueltos, 0, "…y nada se movió en él");
+    assert.equal(v.adopta, false, "pero eso no es el veredicto de la casa");
+    assert.deepEqual(v.sinMedir, ["src/b.ts", "src/c.ts"]);
+    assert.match(v.porque, /SIN MEDIR/);
+  });
+
+  it("H1 · una corrida que NO MUEVE EL TAG tampoco dicta, aunque las mida todas", () => {
+    // `veredictoDeCorrida` devuelve `mueveTag: false` para `origen: "explicito"`
+    // —una lista de ids escrita a mano— y ése es justo el atajo del agujero. Una
+    // corrida que no puede decir «desde aquí está todo medido» no puede decir
+    // que se cambie el instrumento con el que se mide todo.
+    const v = veredictoDeAdopcion([delta({ vivos: [], yaEstaban: [] })], corrida({ mueveTag: false }));
+    assert.equal(v.sinMedir.length, 0, "no falta ningún fichero…");
+    assert.equal(v.adopta, false, "…y aun así no dicta");
+    assert.match(v.porque, /NO MUEVE EL TAG/);
+  });
+
+  it("una corrida INCOMPLETA no adopta, y lo dice la función PURA", () => {
+    // Estaba en el verbo y no aquí, así que la función con batería devolvía
+    // `adopta: true` sobre una corrida incompleta y quien la reutilizara lo
+    // heredaba (QA, H8). Y con ella fuera, el `porque` pegaba el texto de ÉXITO
+    // detrás de un «NO SE ADOPTA».
+    const v = veredictoDeAdopcion([delta({ vivos: [], yaEstaban: [] })], corrida({ completa: false }));
+    assert.equal(v.adopta, false);
+    assert.match(v.porque, /INCOMPLETA/);
+    assert.doesNotMatch(v.porque, /EL MISMO/, "y no cuela la frase de éxito dentro del motivo del fallo");
+  });
+
+  it("H2 · un superviviente que pasa a NoCoverage tumba la adopción y sale nombrado", () => {
+    // El caso PROBABLE de #443 y el que el informe razonó al revés: `esVivo`
+    // colapsa `Survived` y `NoCoverage`, así que la huella del mutante no
+    // cambia y el delta no ve NADA — 0 nuevos, 0 resueltos, «el conjunto de
+    // supervivientes es EL MISMO». Y no es el mismo hecho: `Survived` es «un
+    // test pasó y no se enteró», `NoCoverage` es «nadie pasó siquiera».
+    const v = veredictoDeAdopcion([delta({ vivos: [h("a")], yaEstaban: [h("a")] })], {
+      esperados: ["src/a.ts"],
+      mueveTag: true,
+      completa: true,
+      sinEjercer: [{ fichero: "src/a.ts", base: 0, ahora: 20, nuevos: 20 }],
+      codigoCambiado: [],
+    });
+    assert.equal(v.nuevos, 0, "el delta no lo ve: es el punto");
+    assert.equal(v.resueltos, 0);
+    assert.equal(v.sinEjercer, 20);
+    assert.equal(v.adopta, false);
+    assert.match(v.porque, /NO EJERCE NINGÚN TEST/);
+    assert.match(v.porque, /src\/a\.ts/);
+  });
+
+  it("H2 · un NoCoverage que YA lo era no cuenta: lo que decide es la transición", () => {
+    const v = veredictoDeAdopcion([delta({ vivos: [h("a")], yaEstaban: [h("a")] })], {
+      esperados: ["src/a.ts"],
+      mueveTag: true,
+      completa: true,
+      sinEjercer: [{ fichero: "src/a.ts", base: 7, ahora: 7, nuevos: 0 }],
+      codigoCambiado: [],
+    });
+    assert.equal(v.sinEjercer, 0);
+    assert.equal(v.adopta, true, "medir lo mismo que antes no es medir menos");
+  });
+
+  it("`porque` nombra TODOS los motivos, no el primero", () => {
+    // Arreglar uno y descubrir el siguiente a la vuelta siguiente es cómo se
+    // deja de mirar una salida.
+    const v = veredictoDeAdopcion(
+      [
+        delta({ fichero: "src/a.ts", vivos: [h("z")], nuevos: [h("z")], resueltos: [h("y")] }),
+        delta({ fichero: "src/b.ts", base: "incomparable" }),
+        delta({ fichero: "src/c.ts", base: "sin base" }),
+      ],
+      {
+        esperados: ["src/a.ts", "src/b.ts", "src/z.ts"],
+        mueveTag: false,
+        completa: false,
+        sinEjercer: [{ fichero: "src/a.ts", base: 0, ahora: 1, nuevos: 1 }],
+        codigoCambiado: [],
+      },
+    );
+    for (const motivo of [
+      /NUEVOS/,
+      /RESUELTOS/,
+      /INCOMPARABLES/,
+      /SIN BASE/,
+      /SIN MEDIR/,
+      /NO MUEVE EL TAG/,
+      /INCOMPLETA/,
+      /NO EJERCE NINGÚN TEST/,
+    ]) {
+      assert.match(v.porque, motivo);
+    }
+  });
+});
+
+describe("reloj · los mutantes que clasifica el cronómetro, contados aparte", () => {
+  const h = (r: string) => huellaDeMutante("src/a.ts", mutante({ replacement: r }));
+  const conEstado = (status: string, replacement: string) => mutante({ status, replacement });
+  /** Las cinco poblaciones, con lo que no se dice puesto a vacío. */
+  const pobl = (over: Partial<PoblacionesDeFichero> = {}): PoblacionesDeFichero => ({
+    timeoutsBase: [],
+    vivosBase: [],
+    timeoutsAhora: [],
+    vivosAhora: [],
+    medidosAhora: [],
+    ...over,
+  });
+
+  it("`timeoutsDeFichero` coge los Timeout y solo los Timeout", () => {
+    const t = timeoutsDeFichero("src/a.ts", [
+      conEstado("Timeout", "a"),
+      conEstado("Killed", "b"),
+      conEstado("Survived", "c"),
+      conEstado("NoCoverage", "d"),
+      conEstado("Timeout", "e"),
+    ]);
+    assert.deepEqual(t, [h("a"), h("e")].sort());
+  });
+
+  it("`sinEjercerDeFichero` coge los NoCoverage, que `esVivo` confunde con un Survived", () => {
+    const s = sinEjercerDeFichero("src/a.ts", [
+      conEstado("NoCoverage", "a"),
+      conEstado("Survived", "b"),
+      conEstado("Killed", "c"),
+    ]);
+    assert.deepEqual(s, [h("a")], "un Survived no es «nadie lo ejerció»");
+  });
+
+  it("`medidosDeFichero` es EXACTAMENTE el denominador de `vivosDeFichero`", () => {
+    // Dos definiciones del denominador acabarían discrepando sobre el mismo
+    // informe, y la discrepancia se leería como «este mutante desapareció».
+    const mutantes = [
+      conEstado("Killed", "a"),
+      conEstado("Survived", "b"),
+      conEstado("Timeout", "c"),
+      conEstado("NoCoverage", "d"),
+      conEstado("RuntimeError", "e"),
+      conEstado("CompileError", "f"),
+      conEstado("Ignored", "g"),
+    ];
+    assert.equal(medidosDeFichero("src/a.ts", mutantes).length, vivosDeFichero("src/a.ts", mutantes).total);
+    assert.deepEqual(
+      medidosDeFichero("src/a.ts", mutantes),
+      [h("a"), h("b"), h("c"), h("d")].sort(),
+      "los tres que no tienen veredicto no están en la medida",
+    );
+  });
+
+  it("un Timeout y un vivo en el MISMO sitio tienen la misma huella: el estado no entra en la identidad", () => {
+    // Es lo que hace posible seguir a un mutante de una medida a la otra. Si el
+    // estado entrara en la clave, un `Timeout` que pasa a `Survived` sería otro
+    // mutante y el movimiento no se podría ver.
+    assert.deepEqual(timeoutsDeFichero("src/a.ts", [conEstado("Timeout", "a")]), [h("a")]);
+  });
+
+  it("Timeout → detectado no mueve el score, y se dice", () => {
+    const r = movimientosDeReloj("src/a.ts", pobl({ timeoutsBase: [h("a")], medidosAhora: [h("a")] }));
+    assert.equal(r.aDetectado, 1);
+    assert.equal(r.aFuera, 0, "está en la medida: lo mató un test");
+  });
+
+  it("H4 · un Timeout que SALE del denominador NO se rotula «lo mata ahora un test»", () => {
+    // `RuntimeError`, `CompileError` e `Ignored` no entran en `total`: el
+    // mutante desapareció de la medida y no lo mató nadie. Estaba en el `else`
+    // final, bajo una leyenda que decía lo contrario del hecho — y esa tabla se
+    // pega literal en #443. Un runner que ejecuta cada fichero de batería
+    // DIRECTO es justo donde salen los `RuntimeError`.
+    const r = movimientosDeReloj("src/a.ts", pobl({ timeoutsBase: [h("a")], medidosAhora: [] }));
+    assert.equal(r.aFuera, 1);
+    assert.equal(r.aDetectado, 0, "no lo mató nadie");
+    assert.equal(r.aVivo, 0);
+  });
+
+  it("Timeout → vivo: el único que además tumba la adopción", () => {
+    // Nadie ha cambiado de opinión sobre ese mutante: lo que cambió fue la
+    // forma del proceso que lo mide. Sale aquí Y como `nuevo` en el delta, y el
+    // bloque del reloj es lo que deja decir de dónde vino ese nuevo.
+    const r = movimientosDeReloj(
+      "src/a.ts",
+      pobl({ timeoutsBase: [h("a")], vivosAhora: [h("a")], medidosAhora: [h("a")] }),
+    );
+    assert.equal(r.aVivo, 1);
+    assert.equal(r.aDetectado, 0, "no se cuenta dos veces");
+    const d = deltaDeFichero(
+      "src/a.ts",
+      { vivos: [h("a")], total: 10, blob: "blob-del-mismo-codigo" },
+      medida({ vivos: [] }),
+    );
+    assert.deepEqual(d.nuevos, [h("a")], "y el delta lo ve como NUEVO");
+  });
+
+  it("H3 · vivo → Timeout se distingue de killed → Timeout", () => {
+    // Los dos daban la misma fila, byte a byte, bajo un `otro→T` que no
+    // distinguía nada: la tabla tenía columna para lo que alimenta los NUEVOS
+    // (`T→vivo`) y ninguna para lo que alimenta los RESUELTOS. Si el veredicto
+    // cae por tres resueltos y a los tres los «resolvió» el reloj, el issue se
+    // cierra atribuyendo a los tests una diferencia que no es suya — el error
+    // exacto que este bloque nació para evitar.
+    const deVivo = movimientosDeReloj(
+      "src/a.ts",
+      pobl({ vivosBase: [h("a")], timeoutsAhora: [h("a")], medidosAhora: [h("a")] }),
+    );
+    const deKilled = movimientosDeReloj(
+      "src/a.ts",
+      pobl({ vivosBase: [], timeoutsAhora: [h("a")], medidosAhora: [h("a")] }),
+    );
+    assert.equal(deVivo.vivoATimeout, 1);
+    assert.equal(deVivo.killedATimeout, 0);
+    assert.equal(deKilled.vivoATimeout, 0);
+    assert.equal(deKilled.killedATimeout, 1);
+    assert.notDeepEqual(deVivo, deKilled, "dos hechos distintos no pueden dar la misma fila");
+  });
+
+  it("los que siguen clasificados por el reloj no son un movimiento", () => {
+    const r = movimientosDeReloj(
+      "src/a.ts",
+      pobl({
+        timeoutsBase: [h("a"), h("b")],
+        timeoutsAhora: [h("a"), h("b")],
+        medidosAhora: [h("a"), h("b")],
+      }),
+    );
+    assert.deepEqual(
+      { ...r },
+      {
+        fichero: "src/a.ts",
+        base: 2,
+        ahora: 2,
+        aDetectado: 0,
+        aVivo: 0,
+        aFuera: 0,
+        vivoATimeout: 0,
+        killedATimeout: 0,
+        siguen: 2,
+      },
+    );
+  });
+
+  it("`totalDeReloj` suma las filas, para que la tabla y su TOTAL no discrepen", () => {
+    const t = totalDeReloj([
+      movimientosDeReloj("src/a.ts", pobl({ timeoutsBase: [h("a")], vivosAhora: [h("a")], medidosAhora: [h("a")] })),
+      movimientosDeReloj(
+        "src/b.ts",
+        pobl({ timeoutsBase: [h("c")], timeoutsAhora: [h("c"), h("d")], medidosAhora: [h("c"), h("d")] }),
+      ),
+    ]);
+    assert.deepEqual(t, {
+      base: 2,
+      ahora: 2,
+      aDetectado: 0,
+      aVivo: 1,
+      aFuera: 0,
+      vivoATimeout: 0,
+      killedATimeout: 1,
+      siguen: 1,
+    });
+  });
+
+  it("`movimientosSinEjercer` solo puede NEGAR: sin base, todos salen como nuevos", () => {
+    // Es la misma regla que `costeEstimado`: entre negar de más y autorizar de
+    // más, esto existe para lo segundo. Sin `--timeouts` no hay forma de saber
+    // cuáles ya nadie ejercía, y suponer que ya lo eran es la suposición que
+    // deja pasar el instrumento que mide menos.
+    const sinBase = movimientosSinEjercer("src/a.ts", [], [h("a"), h("b")]);
+    assert.deepEqual(sinBase, { fichero: "src/a.ts", base: 0, ahora: 2, nuevos: 2 });
+    const conBase = movimientosSinEjercer("src/a.ts", [h("a")], [h("a"), h("b")]);
+    assert.deepEqual(conBase, { fichero: "src/a.ts", base: 1, ahora: 2, nuevos: 1 });
+    assert.deepEqual(totalSinEjercer([sinBase, conBase]), { base: 1, ahora: 4, nuevos: 3 });
   });
 });

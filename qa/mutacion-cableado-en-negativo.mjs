@@ -34,18 +34,25 @@
  *  cronómetro de `mutate.ts` y el `fail-fast: false` de la matriz. Todo eso vive
  *  en scripts y en YAML, o sea donde ningún test llega.
  *
+ *  La tanda D añade uno AL REVÉS: el verbo `comparar` existe para NO escribir
+ *  (si escribiera, medir con un instrumento nuevo destruiría la base contra la
+ *  que había que compararlo), así que su invariante no exige que diga algo sino
+ *  que no deje rastro — huella byte a byte igual, tag quieto y `git status`
+ *  como estaba.
+ *
  *  Verde = todos los invariantes del cableado se pueden ver rotos.
  *  Rojo  = hay una pieza del ciclo que se puede deshacer sin que se note.
  *
  *  QUÉ TOCA Y CÓMO LO DEVUELVE. Escribe en el árbol de trabajo: aparta
  *  `nefan-core/reports/mutation/` (que es material descargado, no versionado),
- *  y modifica temporalmente `scripts/mutacion.ts`, `scripts/mutate.ts`, el
- *  workflow y `data/contract/mutacion-huella.json` —que `repartir` reescribe por
- *  diseño—.
+ *  y modifica temporalmente `scripts/mutacion.ts`, `scripts/mutate.ts`,
+ *  `scripts/mutacion-comparar.ts`, el workflow y
+ *  `data/contract/mutacion-huella.json` —que `repartir` reescribe por diseño—.
  *  Todo vuelve en el `finally` y se verifica byte a byte al terminar; si algo no
  *  volvió, sale con 2 y lo dice.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, renameSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, writeFileSync, existsSync, mkdirSync, rmSync, renameSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -57,11 +64,17 @@ const MUT = join(CORE, "scripts", "mutacion.ts");
 /** `mutate.ts` entra con PR-E: es quien cronometra cada módulo, y ese número es
  *  lo único que hace posible repartir la corrida por el reloj. */
 const MUTATE = join(CORE, "scripts", "mutate.ts");
+/** El verbo que existe para NO escribir. Su candado es al revés que los de
+ *  arriba: no se comprueba que haga algo, sino que no deja rastro. */
+const COMPARAR = join(CORE, "scripts", "mutacion-comparar.ts");
 const YML = join(raiz, ".github", "workflows", "mutation.yml");
 const HUELLA = join(CORE, "data", "contract", "mutacion-huella.json");
 const PLAN = join(CORE, "data", "contract", "mutation-targets.json");
 const INFORMES = join(CORE, "reports", "mutation");
 const APARTADO = join(CORE, "reports", "mutation.qa-cableado");
+/** Lo que deja el probe de la escritura indirecta: una ruta GITIGNORADA dentro
+ *  de `reports/`, que es donde vive la base de la comparación. */
+const COLADO = join(CORE, "reports", "colado");
 const CORRIDA = join(INFORMES, "corrida.json");
 
 const git = (args) => execFileSync("git", args, { cwd: raiz, encoding: "utf8" }).trim();
@@ -126,6 +139,51 @@ function soloInforme(marca = "x") {
   };
   writeFileSync(join(INFORMES, `${E.id}.json`), JSON.stringify(informe));
 }
+
+/** La foto de lo que un verbo EN SECO no puede tocar: la huella commiteada, el
+ *  tag, el árbol de git **y el árbol entero de `nefan-core/reports/`**.
+ *
+ *  LO ÚLTIMO NO ES ADORNO, y es lo que la primera versión no miraba. `reports/`
+ *  está en `.gitignore`, así que una escritura ahí NO la ve `git status`: QA
+ *  coló un fichero en `nefan-core/reports/colado/rastro.txt` desde el verbo y
+ *  las tres señales de esta foto decían «árbol intacto». Y `reports/` es donde
+ *  vive `reports/mutation-base/`, o sea la base cuya destrucción es el motivo
+ *  entero de que exista `comparar`.
+ *
+ *  Se toma ANTES y DESPUÉS dentro del mismo `mira`, y eso no es un detalle: el
+ *  propio probe modifica el fuente para romperlo, así que esa modificación sale
+ *  en las DOS fotos y se cancela. Comparar contra una foto tomada fuera diría
+ *  «el árbol cambió» por culpa del guion y el candado se pondría rojo sin que
+ *  el verbo hubiera escrito nada — un rojo por el motivo equivocado es tan
+ *  inútil como un verde que no comprueba.
+ *
+ *  Lo que esta foto NO ve, dicho para que nadie lo suponga: una escritura fuera
+ *  del repo (`/tmp`, `$HOME`). */
+const inventarioDeReports = (dir) => {
+  const salida = [];
+  const anda = (d, rel) => {
+    if (!existsSync(d)) return;
+    for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const hijo = join(d, e.name);
+      const ruta = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) anda(hijo, ruta);
+      else {
+        const s = statSync(hijo);
+        salida.push(`${ruta}:${s.size}:${Math.round(s.mtimeMs)}`);
+      }
+    }
+  };
+  anda(dir, "");
+  return salida.join("\n");
+};
+
+const fotoDelArbol = () =>
+  [
+    `huella:${createHash("sha256").update(readFileSync(HUELLA)).digest("hex").slice(0, 16)}`,
+    `tag:${git(["rev-parse", "mutacion-ultima"]).slice(0, 12)}`,
+    `status:${createHash("sha256").update(git(["status", "--porcelain"])).digest("hex").slice(0, 16)}`,
+    `reports:${createHash("sha256").update(inventarioDeReports(join(CORE, "reports"))).digest("hex").slice(0, 16)}`,
+  ].join(" ");
 
 /** El manifiesto lo escribe la herramienta, no este guion: si lo fabricara a
  *  mano, el sello sería el que yo digo y no el que ella calcula — y lo que se
@@ -248,6 +306,66 @@ const INVARIANTES = [
       /DESDE: \$\{\{ steps\.seleccion\.outputs\.desde \}\}/.test(s),
     porque: "sin el ancla en el manifiesto, `repartir` no tiene de dónde sacarla y el reparto vuelve a colgar del tag",
     rompe: [YML, `          DESDE="$(npm run --silent mutacion -- ancla)"\n`, ``],
+  },
+
+  // ── Tanda D · la comparación EN SECO ───────────────────────────────────────
+  //
+  // Los dos candados de aquí abajo son al revés de los de arriba: allí se exige
+  // que el verbo DIGA algo, aquí que no DEJE nada. Y hacen falta aquí y no en la
+  // batería por lo de siempre —ningún test importa `scripts/mutacion.ts`—, pero
+  // sobre todo porque las reglas de `arch-rules.json` que sujetan a
+  // `mutacion-comparar.ts` (`comparar-solo-lee` y `comparar-no-escribe`) NO
+  // pueden cubrir las líneas del verbo que viven en `mutacion.ts`: ese fichero
+  // escribe la huella por diseño. Ésa es exactamente la costura por la que QA
+  // coló un fichero, así que hay un probe por costura.
+  {
+    nombre: "comparar · el verbo EN SECO no escribe: ni la huella, ni el tag, ni el árbol",
+    mira: () => {
+      siembraInforme();
+      manifiesta({ run: "999913" });
+      const antes = fotoDelArbol();
+      const r = mutacion(["comparar"]);
+      const despues = fotoDelArbol();
+      return `arbol:${antes === despues ? "intacto" : "TOCADO"} veredicto:${/VEREDICTO DE ADOPCIÓN/.test(r.salida)}`;
+    },
+    bien: (s) => s === "arbol:intacto veredicto:true",
+    porque:
+      "sin una comparación que no escriba, medir con el instrumento nuevo DESTRUYE la base contra la que había " +
+      "que compararlo (`repartir` acaba en escribeHuella y CI le mueve el tag detrás): la regla dura de #443 " +
+      "—«si un solo score se mueve fichero a fichero, no se adopta»— sería inaplicable por construcción",
+    rompe: [
+      MUT,
+      `  const veredicto = veredictoDeCorrida(ctx.corrida);`,
+      `  escribeHuella(HUELLA_VACIA);\n  const veredicto = veredictoDeCorrida(ctx.corrida);`,
+    ],
+  },
+  {
+    nombre: "comparar · tampoco escribe en reports/, que es donde vive la base y git no lo mira",
+    // H6(b) de QA, hecho probe. `reports/` está en `.gitignore`: una escritura
+    // ahí no sale en `git status`, no mueve la huella y no mueve el tag, así que
+    // las tres señales de la foto anterior decían «árbol intacto» mientras el
+    // verbo dejaba un fichero dentro del directorio que contiene
+    // `reports/mutation-base/` — la base cuya destrucción es el motivo entero de
+    // que exista este verbo. Lo que lo caza es el inventario de `reports/`.
+    mira: () => {
+      siembraInforme();
+      manifiesta({ run: "999914" });
+      const antes = fotoDelArbol();
+      mutacion(["comparar"]);
+      const despues = fotoDelArbol();
+      return `arbol:${antes === despues ? "intacto" : "TOCADO"} colado:${existsSync(COLADO)}`;
+    },
+    bien: (s) => s === "arbol:intacto colado:false",
+    porque:
+      "una escritura a una ruta gitignorada no la ve `git status`, y `nefan-core/reports/` es justo donde está " +
+      "la base de la comparación: sin el inventario, el candado daba VERDE sobre un verbo que escribía",
+    rompe: [
+      MUT,
+      `  const base: Record<string, BaseDeFichero> = {};`,
+      `  mkdirSync(join(coreRoot, "reports", "colado"), { recursive: true });\n` +
+        `  writeFileSync(join(coreRoot, "reports", "colado", "rastro.txt"), "x");\n` +
+        `  const base: Record<string, BaseDeFichero> = {};`,
+    ],
   },
 
   // ── PR-E · la corrida partida en lotes ─────────────────────────────────────
@@ -391,7 +509,7 @@ if (existsSync(APARTADO)) {
 // instancias a la vez se fotografían la mutación de la otra y la «restauran»
 // como si fuera el original. Pasó el 2026-09-10.
 turnoDeCandados();
-const fuentes = new Map([MUT, MUTATE, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
+const fuentes = new Map([MUT, MUTATE, COMPARAR, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
 const restauraFuentes = () => { for (const [f, t] of fuentes) writeFileSync(f, t); };
 const habiaInformes = existsSync(INFORMES);
 if (habiaInformes) renameSync(INFORMES, APARTADO);
@@ -409,6 +527,7 @@ function limpiar() {
   rmSync(INFORMES, { recursive: true, force: true });
   rmSync(join(CORE, "reports", "lotes-ensayo"), { recursive: true, force: true });
   rmSync(join(CORE, "reports", "plan-corrida.json"), { force: true });
+  rmSync(COLADO, { recursive: true, force: true });
   if (habiaInformes) renameSync(APARTADO, INFORMES);
 }
 for (const [señal, codigo] of [["SIGINT", 130], ["SIGTERM", 143]]) {
