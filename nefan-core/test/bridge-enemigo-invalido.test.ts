@@ -43,7 +43,15 @@ const roto = (id: string) => ({
   personality: { ...DERIVADO.personality, preferred_attacks: [] } as unknown as EnemyPersonality,
 });
 
+/** Otras dos familias del parser, para el lote entero malo: el aviso ENUMERA,
+ *  y con un solo motivo repetido no se vería el mutante que colapsa la lista en
+ *  el primero. */
+const muerto = (id: string) => ({ ...bueno(id), health: 0 });
+const sinArma = (id: string) => ({ ...bueno(id), weaponId: "" });
+
 const MOTIVO = "combat.personality.preferred_attacks no es una lista de ataques no vacía";
+const MOTIVO_MUERTO = "combat.health inválido (0)";
+const MOTIVO_SIN_ARMA = 'combat.weapon_id inválido ("")';
 
 const statusDeError = (sent: ServerMessage[]): NarrativeStatusMessage[] =>
   sent.filter(
@@ -111,6 +119,74 @@ describe("un enemigo inválido se cae SOLO ÉL: add_combatants", () => {
       sent.some((m) => m.type === "state_update"),
       "el handler sigue contestando su state_update",
     );
+  });
+
+  it("un lote ENTERO inválido: no entra ninguno y el jugador se entera IGUAL (`added === 0` no se traga el aviso)", async () => {
+    // QA H1. El lote del criterio de aceptación (2 buenos + 1 malo) NO
+    // distingue las dos posiciones posibles de `avisarDeLosDescartados`:
+    // con al menos un bueno, el `if (added > 0)` de `handleAddCombatants` se
+    // cumple siempre, así que meter el aviso dentro del `if` dejaba 26 de 26
+    // tests en verde —medido por QA— con el jugador sin enterarse de nada
+    // justo en el caso en que más falta le hace: el mundo se queda SIN los
+    // enemigos que debía tener y nadie lo dice.
+    //
+    // Este es el único camino en el que `added` vale 0 con descartes, y por eso
+    // el lote va entero malo. Con TRES motivos de familias distintas, además,
+    // porque el aviso enumera y un mutante que colapse la lista en el primero
+    // no se vería con uno solo.
+    const { ctx, sim, store } = makeCtx();
+    const { socket, sent } = makeSocket();
+    // Primero un lote sano: el mundo tiene algo que perder, y así el store no
+    // está intacto al final por estar vacío desde el principio.
+    await porElBorde({ type: "add_combatants", enemies: [bueno("lobo_1")] }, socket, ctx);
+    const yaVistos = sent.length;
+
+    const log = capturarLogDelBridge();
+    try {
+      await porElBorde(
+        { type: "add_combatants", enemies: [roto("sin_ataques"), muerto("muerto"), sinArma("sin_arma")] },
+        socket,
+        ctx,
+      );
+    } finally {
+      log.soltar();
+    }
+
+    // Nadie entra: `added` se queda en 0 y el `if` no se ejecuta.
+    for (const id of ["sin_ataques", "muerto", "sin_arma"]) {
+      assert.equal(sim.getCombatant(id), undefined, `${id} no puede entrar al sim`);
+    }
+    // …y lo que YA estaba sigue donde estaba: el lote malo no borra el mundo.
+    assert.ok(sim.getCombatant("lobo_1"), "el combatiente previo sobrevive al lote malo");
+    assert.deepEqual(store.state.enemies.map((e) => e.id), ["lobo_1"]);
+
+    // LO QUE ESTE TEST EXISTE PARA VER: el aviso sale igual.
+    const errores = statusDeError(sent.slice(yaVistos));
+    assert.equal(errores.length, 1, `un aviso y solo uno: ${JSON.stringify(errores)}`);
+    assert.equal(errores[0].kind, "combatientes");
+    assert.equal(
+      errores[0].message,
+      "Enemigos que no entraron al mundo (3 de 3): " +
+        `«sin_ataques» (${MOTIVO}); «muerto» (${MOTIVO_MUERTO}); «sin_arma» (${MOTIVO_SIN_ARMA})`,
+    );
+    assert.equal(
+      rotuloDeStatus(errores[0], { mundoVacio: true, overlayAbierto: true }).destino,
+      "log",
+      "tampoco aquí tapa la pantalla",
+    );
+    // Y una línea por enemigo en el log del bridge, no una que valga por todos.
+    const lineas = log.lineas.filter((l) => l.includes("descartado:"));
+    assert.equal(lineas.length, 3, log.lineas.join(" | "));
+    for (const [id, motivo] of [
+      ["sin_ataques", MOTIVO],
+      ["muerto", MOTIVO_MUERTO],
+      ["sin_arma", MOTIVO_SIN_ARMA],
+    ]) {
+      assert.ok(
+        lineas.some((l) => l.includes(`enemigo "${id}" descartado`) && l.includes(motivo)),
+        `falta la línea de ${id}: ${lineas.join(" | ")}`,
+      );
+    }
   });
 
   it("un lote entero bueno no manda ningún aviso (sin esto, el candado no distingue «avisa» de «avisa siempre»)", async () => {

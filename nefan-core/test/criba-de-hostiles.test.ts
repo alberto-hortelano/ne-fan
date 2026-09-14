@@ -51,14 +51,42 @@ describe("cribarHostiles · uno malo entre dos buenos", () => {
     assert.deepEqual(descartes, [{ id: "roto_2", motivo: MOTIVO_ATAQUES }]);
   });
 
-  it("los valores que entran son los del PARSER, no los del cable", () => {
-    // El parser reescribe los tres números ya comprobados de la personalidad,
-    // y es lo que el handler mete en el sim. Si `altas` llevara el bloque del
-    // cable, un `aggression: "0.6"` entraría como texto al `EnemyAI`.
+  it("el alta lleva el bloque en la FORMA DEL JUEGO (`max_health`), no en la del cable (`maxHealth`)", () => {
+    // ESTE ASERTO DECÍA OTRA COSA Y NO PODÍA PONERSE ROJO POR ELLA (QA H4).
+    // Prometía «los valores que entran son los del PARSER, no los del cable», y
+    // QA lo midió: sustituyendo `r.hostil` por los campos crudos del cable,
+    // 63 de 63 tests seguían verdes. La razón es del diseño y no del test —
+    // `parseHostileCombat` VALIDA, no normaliza (`numero()` exige
+    // `typeof === "number"`, no convierte), así que para todo lo que pasa el
+    // criterio el cable y el parser son idénticos VALOR A VALOR y no hay
+    // diferencia que afirmar. Un aserto que no puede fallar por su causa es
+    // peor que ninguno: se cuenta como cobertura.
+    //
+    // Lo que SÍ es falsable, y es la mitad que importa hoy: la FORMA. El cable
+    // habla en camelCase y el resto del juego (escena, effect del spawn, save,
+    // `HostileCombat`) en snake_case, así que pasar el objeto del cable tal
+    // cual deja `max_health` a `undefined` y este `deepEqual` en rojo.
     const { altas } = cribarHostiles([bueno("lobo_1")]);
     assert.equal(altas.length, 1);
     assert.deepEqual(altas[0].hostil, DERIVADO);
     assert.deepEqual(altas[0].position, { x: 1, y: 0, z: 2 });
+
+    // Y LA GARANTÍA DE VERDAD VA EN EL TIPO, no en un aserto: `AltaDeHostil` no
+    // tiene los campos del cable, así que el handler NO PUEDE leer el dato sin
+    // comprobar aunque quiera — `alta.maxHealth` no compila. Este
+    // `@ts-expect-error` es su candado: el día que el tipo se ensanche y vuelva
+    // a caber el bloque del cable, `tsc` cae con TS2578 («Unused
+    // '@ts-expect-error' directive») dentro de `npm run verify`.
+    // @ts-expect-error — `maxHealth` es del cable y `AltaDeHostil` solo lleva el
+    // bloque ya comprobado (`hostil`), que habla en snake_case.
+    const delCable: unknown = altas[0].maxHealth;
+    assert.equal(delCable, undefined);
+
+    // LO QUE ESTE TEST NO PRUEBA, dicho para que nadie lo cuente de más: que
+    // usar el bloque del cable en vez del del parser cambie un valor. Hoy no lo
+    // cambia. El día que el parser normalice algo (un `difficulty` que caiga a
+    // su preset, un clamp), ese día habrá diferencia que medir y este es el
+    // sitio.
   });
 
   it("dos malos entre un bueno: cada uno con SU motivo, no uno que valga por todos", () => {
