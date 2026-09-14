@@ -208,21 +208,11 @@ export async function pintarSelectorDeMundo(
   const renderModeEl = deps.content.querySelector("#ts-rendermode") as HTMLElement;
   const charModeEl = deps.content.querySelector("#ts-charmode") as HTMLElement;
   const continueBtn = deps.content.querySelector("#ts-continue") as HTMLButtonElement;
-  // Con qué modo viene puesta una partida nueva lo dice core
-  // (`MODO_AL_EMPEZAR`), no esta pantalla: el mismo valor rige el fallback del
-  // wire, que es quien decide si el mensaje no lo trae. Decisión del usuario
-  // (2026-09-14): nace en Maqueta 3D y encender Imagen IA es un acto explícito
-  // —un click, y el gasto lo confirma «Comenzar» dos pantallas después.
   let selectedRenderMode: ModoElegido = MODO_AL_EMPEZAR;
-  // Personajes: sigue a Escenarios hasta que el jugador lo toque — elegir
-  // "Maqueta 3D (sin coste)" no debe dejar los skins IA activados a
-  // escondidas. Con graphics.ai_skin apagado el backend de skins no existe:
-  // forzar vector para no vender una opción muerta.
-  //
-  // Y ARRANCA EN EL MISMO DEFECTO, que es la mitad que no se ve: el seguimiento
-  // automático solo ocurre en un CLICK de escenarios, así que un valor inicial
-  // distinto aquí pariría partidas en Maqueta 3D pagando skins IA sin que nadie
-  // hubiera tocado nada.
+  // Los dos defectos salen de core (`MODO_AL_EMPEZAR`, el mismo valor con el
+  // que el wire decide): personajes NACE en el de escenarios y solo lo sigue en
+  // un CLICK, así que otro valor aquí pare partidas en maqueta pagando skins.
+  // Sin `graphics.ai_skin` no hay backend de skins: vector, no se vende lo muerto.
   const skinBackendOn = CONFIG.graphics.ai_skin;
   let charModeTouched = false;
   let selectedCharMode: ModoElegido = skinBackendOn ? MODO_AL_EMPEZAR : "vector";

@@ -437,7 +437,12 @@ describe("fronteras arquitectónicas", () => {
           path: "nefan-html/src/ui/titulo/selector-de-mundo.ts",
           text:
             'let selectedRenderMode: "image" | "vector" = "image";\n' +
-            'let selectedCharMode: "image" | "vector" = skinBackendOn ? "image" : "vector";\n',
+            'let selectedCharMode: "image" | "vector" = skinBackendOn ? "image" : "vector";\n' +
+            // La forma que QA (H1) demostró que el grupo dejaba pasar: basta
+            // conservar el tipo nuevo para que el TERNARIO de personajes cuele,
+            // y con eso `npm test` salía verde y el juego paría partidas en
+            // maqueta pagando skins.
+            'let selectedCharMode: ModoElegido = skinBackendOn ? "image" : "vector";\n',
           imports: [],
         },
         {
@@ -445,13 +450,30 @@ describe("fronteras arquitectónicas", () => {
           text: 'let selectedCharMode: ModoElegido = "image";\n',
           imports: [],
         },
+        // Las dos patas de SERVIDOR del mismo defecto: el fallback del wire
+        // como estaba, y la cuarta copia (la que le describe al motor el modo
+        // de la sesión viva), que decía "image" cuando el juego ya decide
+        // maqueta.
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text: 'const renderMode = msg.renderMode || "image";\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/state-http/doc-routes.ts",
+          text: 'render_mode: narrative.world.render_mode || "image",\n',
+          imports: [],
+        },
       ]).map((v) => `${v.path}:${v.line}`),
       [
+        "nefan-core/bridge/handlers/session.ts:1",
+        "nefan-core/bridge/state-http/doc-routes.ts:1",
         "nefan-html/src/ui/titulo/otra-pantalla.ts:1",
         "nefan-html/src/ui/titulo/selector-de-mundo.ts:1",
         "nefan-html/src/ui/titulo/selector-de-mundo.ts:2",
+        "nefan-html/src/ui/titulo/selector-de-mundo.ts:3",
       ],
-      "escribir el modo por defecto a mano en el selector tiene que saltar, con el tipo bueno o sin él",
+      "escribir el modo por defecto a mano tiene que saltar en las cuatro formas, con el tipo bueno o sin él",
     );
 
     // Y lo que NO es una copia: la llamada a core, el forzado a vector cuando
@@ -472,6 +494,20 @@ describe("fronteras arquitectónicas", () => {
         {
           path: "nefan-core/src/session/gates-de-imagen.ts",
           text: 'export const MODO_AL_EMPEZAR: ModoElegido = "vector";\n',
+          imports: [],
+        },
+        // Las dos patas de servidor llamando a core, y el `??` que NORMALIZA el
+        // modo de personajes (no decide: lo resuelve `modoEfectivoDePersonajes`).
+        {
+          path: "nefan-core/bridge/handlers/session.ts",
+          text:
+            "const renderMode = msg.renderMode || MODO_AL_EMPEZAR;\n" +
+            'const charElegido = msg.characterMode ?? "";\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/state-http/doc-routes.ts",
+          text: "render_mode: narrative.world.render_mode || MODO_AL_EMPEZAR,\n",
           imports: [],
         },
       ]),

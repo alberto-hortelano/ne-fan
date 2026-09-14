@@ -75,6 +75,23 @@ export class FpsAtlasController {
     return this.politica.enVuelo;
   }
 
+  /** ¿La corrida en vuelo puede PINTAR, o solo restaura lo ya pagado?
+   *
+   *  `running` no distingue las dos, y desde que una partida nueva nace en
+   *  maqueta esa diferencia la ve el jugador: en maqueta el cliente SÍ pide el
+   *  atlas —con `resolve_only`, que no pinta ni cobra— y el panel de dev
+   *  anunciaba «GENERANDO atlas de superficies» igual que en Imagen IA
+   *  (hallazgo H3 de QA, tanda A). O sea, le decía que estaba gastando a quien
+   *  acababa de elegir no gastar, en la pantalla de la tanda que se llama «el
+   *  dinero no miente». */
+  get pintando(): boolean {
+    return this.politica.enVuelo && this.corridaQuePinta;
+  }
+
+  /** Con qué intención salió la corrida en vuelo. Se fija en `runFor`, que es
+   *  quien sabe si lleva `resolve_only`, y se apaga al terminar el tile. */
+  private corridaQuePinta = false;
+
   /** Tile activo nuevo. El arte YA PAGADO se restaura SIEMPRE (también en
    *  modo vector — lo ya pintado se conserva): memoria →
    *  mapping persistido (solo asset-store) → resolve_only contra la librería
@@ -86,6 +103,10 @@ export class FpsAtlasController {
    *  `PoliticaDeAtlas`, en core. */
   async onActiveTile(key: string): Promise<void> {
     if (this.politica.pedir(key) === "encolado") return;
+    // Hasta que `runFor` diga otra cosa, esta corrida NO pinta: restaurar de
+    // memoria o del mapping persistido es $0, y el rótulo del panel no puede
+    // heredar la intención de la corrida anterior.
+    this.corridaQuePinta = false;
     try {
       if (await this.reinstallIfCached(key)) return;
       // Sin estilo NO se resuelve nada. El estilo llega con la respuesta de
@@ -126,6 +147,9 @@ export class FpsAtlasController {
   async runFor(key: string, { resolveOnly = false } = {}): Promise<void> {
     const tile = this.deps.getTile(key);
     if (!tile) return;
+    // La intención de ESTA corrida, para que el panel no anuncie pintura donde
+    // solo hay restauración (ver `pintando`).
+    this.corridaQuePinta = !resolveOnly;
     // Generación manual sin estilo: fail-loud. Pintar un atlas contra
     // `style_id` vacío gasta créditos en arte que ninguna partida volverá a
     // encontrar (la clave de caché del server lleva el estilo dentro).

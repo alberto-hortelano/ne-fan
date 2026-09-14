@@ -179,6 +179,14 @@ const CELDAS_POR_PAGINA_DE_ATREZO = 9;
 // pierden en silencio (quedan verdes sin medir nada). Se cuenta aquí, en la
 // misma línea de la ruta, por el mismo motivo que `dePago`: la lista de rutas
 // no puede vivir en `qa/run.mjs`.
+//
+// HOY SOLO CUBRE UNA DE LAS DOS PUERTAS, y está dicho porque el día que deje de
+// valer no se va a notar (QA H8 de la tanda A): la otra puerta de gasto de una
+// partida son los SKINS, y ésos se siguen censando por dinero — lo cual hoy da
+// lo mismo porque `/skin_sprite_sheet` de este motor NO cachea y cobra siempre.
+// El día que alguien le ponga caché, el censo de skins empezará a mentir
+// exactamente como mentía el del atlas, y sin hermano que lo tape: entonces esa
+// ruta necesita su `ejercida("pedir-skins")` aquí mismo.
 const ejercicioPorRuta = new Map<string, number>();
 function ejercida(puerta: string): void {
   ejercicioPorRuta.set(puerta, (ejercicioPorRuta.get(puerta) ?? 0) + 1);

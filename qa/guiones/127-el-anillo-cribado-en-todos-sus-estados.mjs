@@ -172,7 +172,7 @@ export default async function (ctx) {
     const antesCribas = cribas().length;
     const antes = await generaciones();
     await recargarAlTitulo(ctx);
-    await nuevaPartida(ctx, { gameId: GAME });
+    await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
     await comenzar(ctx);
     const tras = await generaciones();
     ctx.expect("E0 · con el mundo SANO la partida arranca sin motor", tras === antes, `/generate_scene ${antes} → ${tras}`);
@@ -199,7 +199,7 @@ export default async function (ctx) {
 
     const antesCribas = cribas().length;
     const antes = await generaciones();
-    await nuevaPartida(ctx, { gameId: GAME });
+    await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
     await comenzar(ctx);
     const tras = await generaciones();
     ctx.expect("E1 · la partida arranca igual y sin motor", tras === antes, `/generate_scene ${antes} → ${tras}`);
@@ -259,7 +259,7 @@ export default async function (ctx) {
 
     const antesCribas = cribas().length;
     const antes = await generaciones();
-    await nuevaPartida(ctx, { gameId: GAME });
+    await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
     await comenzar(ctx);
     const tras = await generaciones();
     ctx.expect("E2 · con las ocho malas la partida arranca igual y sin motor", tras === antes, `/generate_scene ${antes} → ${tras}`);
@@ -298,7 +298,7 @@ export default async function (ctx) {
     ctx.expect("E3 · con la entrada mala el título lo marca obsoleto", /obsoleto/.test(panel.estado), panel.estado);
 
     const antes = await generaciones();
-    await nuevaPartida(ctx, { gameId: GAME });
+    await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
     await comenzar(ctx);
     const tras = await generaciones();
     ctx.expect("E3 · se degrada al bootstrap vivo: una sola llamada", tras === antes + 1, `/generate_scene ${antes} → ${tras}`);
@@ -319,7 +319,7 @@ export default async function (ctx) {
     const antesCribas = cribas().length;
     const antes2 = await generaciones();
     await recargarAlTitulo(ctx);
-    await nuevaPartida(ctx, { gameId: GAME });
+    await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
     await comenzar(ctx);
     const tras2 = await generaciones();
     ctx.expect("E3 · la partida siguiente ya arranca sin motor (la entrada se curó)", tras2 === antes2, `/generate_scene ${antes2} → ${tras2}`);
@@ -340,7 +340,7 @@ export default async function (ctx) {
     let sesion = null;
     for (let vuelta = 1; vuelta <= 3; vuelta += 1) {
       await recargarAlTitulo(ctx);
-      await nuevaPartida(ctx, { gameId: GAME });
+      await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
       const arrancada = await comenzar(ctx);
       if (vuelta === 1) sesion = arrancada.sessionId;
       const antes = await generaciones();
@@ -386,7 +386,7 @@ export default async function (ctx) {
     else {
       escribir(roto);
       await recargarAlTitulo(ctx);
-      await nuevaPartida(ctx, { gameId: GAME });
+      await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
       await comenzar(ctx);
       const curado = leer();
       const antesPlaces = Object.keys(intacto.world_map?.places ?? {}).sort();
@@ -409,7 +409,7 @@ export default async function (ctx) {
     escribir(fantasma);
     const antesLog = readFileSync(logBridge, "utf8").length;
     await recargarAlTitulo(ctx);
-    await nuevaPartida(ctx, { gameId: GAME });
+    await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
     await comenzar(ctx);
     const curado = leer();
     const lugares = new Set(Object.keys(curado.world_map?.places ?? {}));

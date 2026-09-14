@@ -17,6 +17,7 @@ import type {
   VocabularySetResponse,
   WorldDocResponse,
 } from "../../src/contracts/world-state.js";
+import { MODO_AL_EMPEZAR } from "../../src/session/gates-de-imagen.js";
 import { bad, mutated, notFound, ok, parseBody } from "./context.js";
 import type { RouteGroup } from "./routes.js";
 
@@ -54,7 +55,22 @@ export const docRoutes = {
     try {
       return ok({
         ui_state: {
-          render_mode: narrative.world.render_mode || "image",
+          // La CUARTA copia del defecto del modo (QA H1/H5 de la tanda A), y
+          // la única que quedaba diciendo `"image"`: desde el 2026-09-14 la
+          // ausencia significa maqueta en todo el juego, y este sitio decía lo
+          // contrario justo al motor narrativo, que es quien adapta su salida
+          // a lo que hay activo.
+          //
+          // HOY ES INALCANZABLE, y se comprobó por el PRODUCTOR y no por la
+          // puerta: los dos únicos creadores de sesión materializan el campo
+          // —`handleStartSession` con su fail-loud `image|vector` y
+          // `games/game-gen.ts` con `"vector"`—, y el save serializa `world`
+          // entero, así que ningún save nacido en esta versión trae `""` ni
+          // ausencia. Solo lo produciría uno anterior al campo, y en
+          // pre-producción ésos no cuentan. Se arregla igual porque una cuarta
+          // copia inalcanzable es una cuarta copia: el día que alguien añada un
+          // creador de sesión, esto contesta lo que no es sin que nada falle.
+          render_mode: narrative.world.render_mode || MODO_AL_EMPEZAR,
           combat_system: narrative.world.combat_system || "standard",
           style_id: narrative.world.style_id,
           plugins: ctx.plugins.list(),

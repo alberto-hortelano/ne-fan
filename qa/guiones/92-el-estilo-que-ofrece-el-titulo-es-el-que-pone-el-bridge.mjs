@@ -214,6 +214,12 @@ export default async function (ctx) {
     await ctx.shot("desplegable-tema-cruzado");
 
     // …y la partida arranca DE VERDAD con ese estilo.
+    // El modo de ESCENARIOS, declarado a mano porque este guion conduce el
+    // selector sin pasar por `nuevaPartida` (que lo exige desde 2026-09-14):
+    // maqueta, que es lo que este guion mide. Antes lo heredaba del defecto y
+    // cambiaba con él en silencio. Va ANTES del de personajes: sin tocar, el
+    // de personajes SIGUE al de escenarios.
+    await ctx.page.click('#ts-rendermode [data-rendermode="vector"]');
     await ctx.page.click(`#ts-charmode [data-charmode="vector"]`);
     await ctx.page.click("#ts-continue");
     await ctx.page.waitForSelector("#ts-start", { timeout: 30_000 });
