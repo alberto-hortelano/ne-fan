@@ -13,6 +13,18 @@ Lo que canda este fichero es que las dos cifras salgan de la misma función
 (`precio_de_ref`) sobre las mismas refs, con las dos APIs de imagen sustituidas
 por un doble: cero llamadas, cero créditos.
 
+EL TEST PLANTA SU PROPIO SUJETO, y no es cosmética: el seed de encuadre de una
+ref `characters/` es un frame de las hojas de sprites
+(`nefan-html/public/sprites/y_bot/…`), que están **gitignored**. Leerlas del
+disco hacía pasar este fichero en la máquina de quien lo escribió y reventarlo
+en CI con un `FileNotFoundError` desde un clon limpio — la enfermedad que esta
+casa ya tiene fichada (`qa/sprites-sin-servicio.mjs`, cuando dependía de
+`rembg`). Aquí los tres seeds se plantan en un temporal y `CHAR_SEED` apunta a
+él: el camino `seed_for → characters → _to_data_uri` se ejerce ENTERO, con bytes
+de PNG de verdad, sin depender de un fichero que el repo no lleva. Lo que NO se
+hace es saltar el test si las hojas faltan: un candado que se vuelve verde y
+vacío cuando falta un fichero es peor que uno rojo.
+
 Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_server/tests -v
 """
 
@@ -72,6 +84,12 @@ class ParidadDelPackTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.styles = Path(self._tmp.name)
+        # El seed de personaje: unos bytes de PNG puestos por este test, no las
+        # hojas de sprites del árbol (gitignored — ver la cabecera).
+        self._char_seed = self.styles / "_seed_personaje.png"
+        self._char_seed.write_bytes(_png())
+        self._orig_char_seed = spb.CHAR_SEED
+        spb.CHAR_SEED = self._char_seed
         pack = self.styles / "mi_estilo"
         pack.mkdir()
         (pack / "style.json").write_text(
@@ -92,6 +110,7 @@ class ParidadDelPackTest(unittest.TestCase):
     def tearDown(self):
         for p in self._parches:
             p.stop()
+        spb.CHAR_SEED = self._orig_char_seed
         self._tmp.cleanup()
 
     def test_lo_cotizado_es_lo_cobrado(self):
@@ -126,6 +145,19 @@ class ParidadDelPackTest(unittest.TestCase):
             spb.cotizar_refs(faltan, self.AI_MODEL),
             len(faltan) * MeshyImageToImage.cost_usd(self.AI_MODEL),
             places=2,
+        )
+
+    def test_ningun_seed_sale_del_arbol_ignorado(self):
+        # El candado del candado: si alguien devuelve el seed de personaje a las
+        # hojas de sprites, este fichero vuelve a ser verde aquí y rojo en CI.
+        # Lo que se afirma es que el seed que usa el test EXISTE y es suyo.
+        ref_personaje = next(r for r in REFS if r["file"].startswith("characters/"))
+        seed = spb.seed_for(ref_personaje)
+        self.assertEqual(seed, self._char_seed)
+        self.assertTrue(seed.exists(), "el test tiene que plantar su propio seed, no buscarlo")
+        self.assertFalse(
+            str(seed).startswith(str(spb.REPO_ROOT / "nefan-html" / "public" / "sprites")),
+            "el seed no puede salir de nefan-html/public/sprites: está gitignored",
         )
 
     def test_un_pack_completo_no_cuesta_nada(self):
