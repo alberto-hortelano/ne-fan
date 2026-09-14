@@ -12,7 +12,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { rotuloDeStatus } from "../src/protocol/status-rotulo.js";
+import { botonesDelMuro, rotuloDeStatus } from "../src/protocol/status-rotulo.js";
+import type { SalidaDelOverlay } from "../src/protocol/status-rotulo.js";
 import type { NarrativeStatusDeSesion } from "../src/protocol/messages.js";
 
 /** Lo que el bridge manda en el ARRANQUE del mundo: motivo traducido y SIN
@@ -336,5 +337,56 @@ describe("la salida del overlay: qué puede hacer el jugador con el muro", () =>
         assert.equal(r.salida, "volver-al-titulo", `${kind}/${overlayAbierto}`);
       }
     }
+  });
+});
+
+/** LA TABLA DE BOTONES del muro: qué puede PULSAR el jugador en cada salida.
+ *
+ *  Se prueba entera y por filas, no por la propiedad que a uno le apetezca
+ *  («siempre hay al menos un botón» sale verde con la tabla equivocada): las
+ *  tres filas, los tres botones de cada una, y el reverso —que cada botón
+ *  aparece exactamente donde debe y en ningún otro sitio—, que es lo que caza
+ *  un booleano volteado. Era una pareja de booleanos derivados a mano en el
+ *  cliente y no se podía probar sin navegador. */
+describe("botonesDelMuro", () => {
+  it("con partida detrás solo se puede cerrar", () => {
+    assert.deepEqual(botonesDelMuro("cerrar"), { volver: false, cerrar: true, reintentar: false });
+  });
+
+  it("sin mundo, la ÚNICA salida es el título: «Cerrar» no se pinta (#189)", () => {
+    assert.deepEqual(botonesDelMuro("volver-al-titulo"), {
+      volver: true,
+      cerrar: false,
+      reintentar: false,
+    });
+  });
+
+  it("la oferta del bridge que llega tarde se puede aceptar o declinar, y no ofrece el título (#478)", () => {
+    assert.deepEqual(botonesDelMuro("reintentar"), { volver: false, cerrar: true, reintentar: true });
+  });
+
+  it("cada botón sale en sus salidas y en ninguna otra", () => {
+    const salidas: SalidaDelOverlay[] = ["cerrar", "volver-al-titulo", "reintentar"];
+    const conElBoton = (cual: "volver" | "cerrar" | "reintentar") =>
+      salidas.filter((s) => botonesDelMuro(s)[cual]);
+    assert.deepEqual(conElBoton("volver"), ["volver-al-titulo"]);
+    assert.deepEqual(conElBoton("cerrar"), ["cerrar", "reintentar"]);
+    assert.deepEqual(conElBoton("reintentar"), ["reintentar"]);
+  });
+
+  it("ninguna salida deja el muro sin un solo botón que pulsar", () => {
+    // El callejón de #189, escrito como propiedad: un muro a pantalla completa
+    // sin nada que pulsar solo se sale recargando.
+    for (const salida of ["cerrar", "volver-al-titulo", "reintentar"] as const) {
+      const b = botonesDelMuro(salida);
+      assert.ok(b.volver || b.cerrar || b.reintentar, salida);
+    }
+  });
+
+  it("una salida que no existe no se rotula en silencio", () => {
+    assert.throws(
+      () => botonesDelMuro("inventada" as SalidaDelOverlay),
+      /botonesDelMuro no sabe qué botones lleva la salida "inventada"/,
+    );
   });
 });

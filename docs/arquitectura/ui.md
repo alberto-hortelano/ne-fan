@@ -72,8 +72,15 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
   `dialogue` seguidas, #502) y el muro de fallo (`ui/muro-de-carga.ts`, solo
   cuando pinta botones: el muro de espera no tiene ninguno, #503). Se devuelve
   solo si lo soltamos nosotros, y en el muro solo por su botón «Cerrar»: los
-  demás caminos que lo quitan (el título, «Volver al título», un aviso
-  resuelto) no llevan al jugador de vuelta al mundo. Guion 83.
+  demás caminos que lo quitan (el título, «Volver al título», «Reintentar», un
+  aviso resuelto) no llevan al jugador de vuelta al mundo. Guion 83.
+- **Un muro a pantalla completa siempre tiene algo que pulsar, y qué botones
+  lleva lo decide core**, no el cliente: `botonesDelMuro` en
+  `src/protocol/status-rotulo.ts` (#189, #478), con `switch` exhaustivo sobre la
+  salida —«Cerrar» con partida detrás, «Volver al título» sin mundo, y
+  «Reintentar» + «Cerrar» cuando el muro OFRECE algo en vez de lamentarlo—. El
+  cliente solo aplica tres `hidden`. La oferta llega con su acción dentro
+  (`muro.ofrecer`), así que un botón sin destino no compila.
 - **El chip de gráficos enseña lo que se GENERA, no lo que dice el save**
   (#510): con el cortacircuitos de #236 saltado el modo sigue siendo «imagen» y
   no sale un skin, así que el chip lo dice y el panel explica cómo rearmarlo. El

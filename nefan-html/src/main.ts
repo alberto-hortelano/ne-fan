@@ -43,6 +43,8 @@ import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
 import { crearModosDeGraficos } from "./ui/modos-de-graficos.js";
 import { errors } from "./ui/error-log.js";
 import { crearMuroDeCarga } from "./ui/muro-de-carga.js";
+import { crearChipDeConexion } from "./ui/chip-de-conexion.js";
+import { atarLaOfertaDeEntrar } from "./ui/la-partida-llego-tarde.js";
 import { crearRegistroDeLaPartida } from "./ui/registro-de-la-partida.js";
 import { crearConversacion } from "./ui/conversacion.js";
 import { EcoDelCombate } from "./ui/eco-del-combate.js";
@@ -244,7 +246,9 @@ const promptBar = new ActionBar(document.getElementById("interact-prompt") as HT
 /** Todo lo que el jugador ve del borde del mundo: el muro de niebla con su
  *  rótulo, la pregunta de sí/no y su silencio durante el diálogo (#515). */
 const fronteraEnPantalla = crearFronteraEnPantalla((edge) => fpsRenderer.setFrontierVeil(edge));
-const connectionStatus = document.getElementById("connection-status") as HTMLElement;
+/** El chip del cable: qué se lee cuando hay servidor de partida y qué cuando
+ *  no (`ui/chip-de-conexion.ts`). El texto es suyo, no de aquí. */
+const chip = crearChipDeConexion();
 
 /** La conversación con un personaje (`ui/conversacion.ts`): el panel, el ratón
  *  que suelta y devuelve, y la elección camino del motor. `narrativeClient`
@@ -535,21 +539,6 @@ function handleRespawnRequest(): void {
   playerPos.x = rp.x;
   playerPos.z = rp.z;
   log("Respawned!");
-}
-
-// --- Connection status UI ---
-
-function updateConnectionStatus(connected: boolean, isBridge: boolean): void {
-  if (isBridge && connected) {
-    connectionStatus.textContent = "Bridge";
-    connectionStatus.className = "connected";
-  } else if (isBridge) {
-    connectionStatus.textContent = "Disconnected";
-    connectionStatus.className = "disconnected";
-  } else {
-    connectionStatus.textContent = "Local";
-    connectionStatus.className = "disconnected";
-  }
 }
 
 // --- Game Loop ---
@@ -1155,9 +1144,8 @@ narrativeClient.onNarrativeEvent((event) => {
 paso(bootstrap(), "session", "arrancar el cliente");
 
 async function bootstrap(): Promise<void> {
-  let client: GameClient;
   try {
-    client = await createGameClient(sharedBridge);
+    await entrarPorElTitulo();
   } catch (err) {
     // Sin bridge NO hay partida (CONFIG.session.require_bridge). Aquí NO se
     // pinta nada: la causa entra al canal de avisos desde quien la conoce
@@ -1171,13 +1159,25 @@ async function bootstrap(): Promise<void> {
     // (issue #215).
     errors.push("session", "bootstrap failed", err);
     gameClient = createViewerClient();
-    updateConnectionStatus(false, true);
-    return;
+    chip(false);
+    // Y la vía de vuelta, que hasta #478 no existía: si el bridge llega
+    // DESPUÉS, se entra por un botón y no recargando. Ni un literal de
+    // pantalla aquí: qué se dice y cuándo es del módulo (#469).
+    atarLaOfertaDeEntrar({ bridge: sharedBridge, muro, chip, entrar: entrarPorElTitulo });
   }
+}
+
+/** El camino de ÉXITO del arranque: cliente de bridge, chip cableado y el bucle
+ *  del título. Extraído de `bootstrap` porque hay que recorrerlo DOS veces
+ *  (#478) — al arrancar, y cuando el bridge llega tarde y el jugador acepta
+ *  entrar; el porqué, y qué pasa con la fixture que se estuviera mirando, en
+ *  `ui/la-partida-llego-tarde.ts`. */
+async function entrarPorElTitulo(): Promise<void> {
+  const client = await createGameClient(sharedBridge);
   gameClient = client;
-  updateConnectionStatus(client.isConnected, true);
-  client.on("connected", () => updateConnectionStatus(true, true));
-  client.on("disconnected", () => updateConnectionStatus(false, true));
+  chip(client.isConnected);
+  client.on("connected", () => chip(true));
+  client.on("disconnected", () => chip(false));
   try {
     await runTitleFlow();
   } catch (err) {

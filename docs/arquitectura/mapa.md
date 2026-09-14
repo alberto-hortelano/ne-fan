@@ -82,7 +82,13 @@ nefan-html/               Cliente web en PRIMERA PERSONA (three.js/WebGL)
                            del motor, en vivo y al reanudar
     ui/                    Capa DOM in-game + pantalla de título (ver ui.md);
                            muro-de-carga: el overlay de espera/fallo y el único
-                           pintor de avisos al jugador (#306)
+                           pintor de avisos al jugador (#306); qué botones lleva
+                           cada muro lo dice core (protocol/status-rotulo);
+                           la-partida-llego-tarde: el bridge que llega DESPUÉS
+                           de que el arranque se rindiera, y la oferta de entrar
+                           sin recargar (#478);
+                           chip-de-conexion: qué se lee en #connection-status
+                           cuando hay servidor de partida y cuando no;
                            etiquetas-del-mundo: qué se rotula y cuándo se
                            enciende la mirilla (world-labels coloca las cajas);
                            conversacion: abrir y cerrar el diálogo (con el ratón
