@@ -6,6 +6,7 @@ import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { dispatchConsequences } from "../src/narrative/consequence-handler.js";
 import type { Consequence } from "../src/narrative/types.js";
 import { combatForHostileRole } from "../src/combat/hostiles.js";
+import { spawnsDeRuntime } from "../src/session/mundo-persistido.js";
 import { escenaExpandidaDePrueba } from "./helpers.js";
 
 function makeState() {
@@ -184,6 +185,64 @@ describe("dispatchConsequences", () => {
     // Y queda en el ledger como `item`, que es lo que lee el motor y lo que
     // tendrá que devolver el resume.
     assert.deepEqual(s.entities.map((e) => e.type), ["item", "item"]);
+  });
+
+  it("LAS DOS VÍAS MIDEN LO MISMO: lo que el effect emite en vivo y lo que el resume devuelve (#532, PR 2)", () => {
+    // EL CANDADO DE ESTA PR, y el aviso del arquitecto en una línea: de los
+    // siete sitios por los que viaja el `footprint`, olvidarlo en UNO —el
+    // effect o el lector del ledger— es el único cuyo síntoma sale VERDE y
+    // DIVERGENTE: el carro mide 1,5 m jugando y 3 m al reanudar, o al revés,
+    // y cada mitad tiene su test en verde. Lo que no puede pasar es que
+    // difieran, así que eso es lo que se afirma: el mismo spawn, las dos
+    // puertas, el mismo número. Medido por QA sobre la PR 1 (H-1): en vivo 3 m
+    // y al volver 1,5 — 0,75 m por lado de suelo que el día antes era el carro.
+    const s = makeState();
+    const cs: Consequence[] = [
+      { type: "spawn_entity", entity_kind: "object", name: "Carro de heno", footprint: [6, 6] },
+      { type: "spawn_entity", entity_kind: "object", name: "Cofre de la posada" },
+      { type: "spawn_entity", entity_kind: "item", name: "Bolsa de monedas", footprint: [2, 2] },
+      { type: "spawn_entity", entity_kind: "item", name: "Llave del portón" },
+    ];
+    let n = 0;
+    const r = dispatchConsequences(s, "evt_0001", cs, {
+      playerPosition: [0, 0, 0],
+      playerForward: [0, 0, -1],
+      generateEntityId: (k) => `narr_${k}_${n++}`,
+    });
+    const enVivo = new Map(
+      r.effects
+        .filter((e) => e.kind === "spawn_entity")
+        .map((e) => [
+          e.kind === "spawn_entity" ? e.entityId : "",
+          e.kind === "spawn_entity" && e.entityKind !== "npc" ? e.sizeXZ : null,
+        ]),
+    );
+    // Y ahora el MISMO ledger leído por la otra puerta, que es lo que pasa al
+    // reanudar. Nada de fixtures a mano: los records son los que acaba de
+    // escribir el despacho de arriba.
+    const alVolver = new Map(
+      spawnsDeRuntime(s.entities).spawns.map((sp) => [
+        sp.entityId,
+        sp.entityKind === "npc" ? null : sp.sizeXZ,
+      ]),
+    );
+    assert.equal(enVivo.size, 4, "los cuatro salieron en vivo");
+    assert.deepEqual(
+      [...alVolver.keys()].sort(),
+      [...enVivo.keys()].sort(),
+      "los mismos cuatro vuelven: ninguna clase del contrato se queda sin puerta de vuelta",
+    );
+    for (const [id, tamano] of enVivo) {
+      assert.deepEqual(alVolver.get(id), tamano, `«${id}» mide distinto en vivo y al reanudar`);
+    }
+    // Y el número concreto, para que el aserto de arriba no pueda cumplirse
+    // con las dos vías equivocadas del mismo modo.
+    assert.deepEqual([...enVivo.values()], [
+      { x: 3, z: 3 }, // carro: 6×6 celdas declaradas
+      { x: 1.5, z: 1.5 }, // cofre: el defecto del `object`
+      { x: 1, z: 1 }, // bolsa: 2×2 declaradas
+      { x: 0.5, z: 0.5 }, // llave: el defecto del `item`
+    ]);
   });
 
   it("tres cosas en el MISMO turno no caen en el mismo punto", () => {

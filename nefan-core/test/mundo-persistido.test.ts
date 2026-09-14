@@ -495,6 +495,55 @@ describe("spawnsDeRuntime — UNA puerta por entidad, y la decide el spawn_reaso
   });
 });
 
+describe("el resume devuelve lo que el motor DECLARÓ (#532, PR 2)", () => {
+  const declarado: EntityRecord[] = [
+    rec({ id: "carro_1", type: "object", data: { name: "Carro de heno", footprint: [6, 6] } }),
+    rec({ id: "cofre_1", type: "object", data: { name: "Cofre de la posada" } }),
+    rec({ id: "bolsa_1", type: "item", data: { name: "Bolsa de monedas", footprint: [2, 2] } }),
+    rec({ id: "llave_1", type: "item", data: { name: "Llave del portón" } }),
+    rec({ id: "granero_1", type: "building", data: { name: "Granero", footprint: [20, 14] } }),
+  ];
+
+  it("un `item` VUELVE, que hasta ahora no sabía volver", () => {
+    // `CLASES_QUE_VUELVEN` no lo tenía, así que una bolsa de monedas puesta por
+    // el motor desaparecía al reanudar — se decía en el registro, pero el
+    // mundo ya no era el que el jugador dejó (QA de la PR 1, H-1).
+    const { spawns, errores } = spawnsDeRuntime(declarado);
+    assert.deepEqual(errores, [], "ninguna clase del contrato se queda fuera");
+    assert.deepEqual(
+      spawns.map((s) => s.entityId).sort(),
+      ["bolsa_1", "carro_1", "cofre_1", "granero_1", "llave_1"],
+    );
+    const bolsa = spawns.find((s) => s.entityId === "bolsa_1")!;
+    assert.equal(bolsa.entityKind, "item");
+  });
+
+  it("el tamaño sale de lo DECLARADO, y el que no declara nada sigue con el defecto de su clase", () => {
+    const spawns = spawnsDeRuntime(declarado).spawns;
+    const mide = (id: string) => {
+      const s = spawns.find((x) => x.entityId === id)!;
+      return s.entityKind === "npc" ? null : s.sizeXZ;
+    };
+    assert.deepEqual(mide("carro_1"), { x: 3, z: 3 }, "6×6 celdas declaradas, no los 3×3 del defecto");
+    assert.deepEqual(mide("cofre_1"), { x: 1.5, z: 1.5 }, "sin declarar: el defecto de siempre");
+    assert.deepEqual(mide("bolsa_1"), { x: 1, z: 1 });
+    assert.deepEqual(mide("llave_1"), { x: 0.5, z: 0.5 }, "un item sin declarar: una celda");
+    assert.deepEqual(mide("granero_1"), { x: 10, z: 7 }, "y un granero no cabe en los 8×8 por defecto");
+  });
+
+  it("un `footprint` roto en el ledger NO se degrada al defecto: se rompe, porque la puerta ya lo rechazaba", () => {
+    // Mismo trato que `data.name`: hay dos lectores del ledger y ninguno
+    // decide. Si esto llega, el save entró sin pasar por `loadSession`.
+    for (const fp of [[0, 3], [2.5, 3], [3], "grande", [1, 100000]]) {
+      assert.throws(
+        () => spawnsDeRuntime([rec({ id: "malo", type: "object", data: { name: "X", footprint: fp } })]),
+        /footprint/,
+        `footprint ${JSON.stringify(fp)} tendría que romper`,
+      );
+    }
+  });
+});
+
 describe("combateDeEntity — tres desenlaces, ninguno colapsable", () => {
   it("sin bloque no es un error: la mayoría de las entities no pelean", () => {
     assert.deepEqual(combateDeEntity(rec({ id: "barril" })), { tipo: "ninguno" });

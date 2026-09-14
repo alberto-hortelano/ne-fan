@@ -20,18 +20,18 @@
  *   rechaza el contrato antes de llegar aquí, y eso lo miden el zod y su espejo
  *   Python en `test/entity-vocabulary.test.ts`).
  *
- *  LO QUE HOY SE MIDE Y NO SE AFIRMA, con su motivo. El resume de esta PR está
- *  incompleto a propósito: `CLASES_QUE_VUELVEN` (`session/mundo-persistido.ts`)
- *  no tiene `item` y la huella se re-deriva del `type` del record ignorando el
- *  `footprint` que SÍ está en el save. Así que las tres líneas `[PR 2]` van con
- *  `ctx.log` y no con `ctx.expect`: un rojo a propósito se aprende a ignorar
- *  (regla T10), y lo que aquí hace falta es el NÚMERO, no el color. **Con la
- *  PR 2 esas líneas pasan a `ctx.expect`** y este guion se convierte en su
- *  candado — está escrito para que sea un cambio de verbo.
+ *  EL RESUME, AFIRMADO. Este guion nació con tres líneas `[PR 2]` en `ctx.log`
+ *  y no en `ctx.expect`, porque la PR 1 dejaba el resume incompleto a
+ *  propósito: `CLASES_QUE_VUELVEN` no tenía `item` y la huella se re-derivaba
+ *  del `type` ignorando el `footprint` que SÍ estaba en el save, y un rojo a
+ *  propósito se aprende a ignorar (regla T10). **La PR 2 las convirtió en
+ *  `ctx.expect`**, que es el cambio de verbo para el que se escribieron: hoy
+ *  la bolsa vuelve, el carro vuelve midiendo lo que el motor declaró y su
+ *  pared sigue donde estaba antes de reanudar.
  *
- *  Lo que SÍ se afirma del resume, porque es cierto hoy y tiene que seguir
- *  siéndolo: que lo que no vuelve SE DICE en el registro del jugador con su
- *  nombre (fail-loud), y que lo que no declaró nada vuelve exactamente igual.
+ *  Y lo que ya se afirmaba y sigue: que lo que el resume no sabe devolver SE
+ *  DICE en el registro del jugador con su nombre (fail-loud), y que lo que no
+ *  declaró nada vuelve exactamente igual.
  *
  *  Cero créditos: preset `e2e-sin-creditos`; los spawns del turno 3 los pone el
  *  motor falso y los declarados salen de sus dos marcas. `aisla` deja saves y
@@ -61,6 +61,15 @@ const CARRO = { nombre: "Carro de heno", kind: "object", footprint: [6, 6] };
 const RADIO = 0.4;
 /** Tolerancia de la pared medida por sondas: el paso del barrido (5 cm) y un pelo. */
 const PASO_DEL_BARRIDO_M = 0.06;
+/** Cuántos tramos se le dan al paseo hasta el tabernero. Los 12 por defecto se
+ *  quedaban cortos: es un NPC con vida ambiental —pasea mientras el jugador va
+ *  hacia él— y este guion le habla TRES veces, así que la carrera se paga tres
+ *  veces. Medido: 1 de cada 4 corridas expiraba el último tramo y el guion
+ *  salía rojo por el paseo, no por lo que mide. Subir un CORTAFUEGOS no afloja
+ *  nada: el umbral que se afirma sigue siendo el mismo (`acercarse` afirma el
+ *  predicado con el que espera), solo se le dan más oportunidades de alcanzar
+ *  a alguien que se mueve. */
+const TRAMOS_TRAS_EL_TABERNERO = 24;
 
 /** El tamaño que declara core: del `footprint` en CELDAS si el motor lo
  *  declaró, del defecto de su clase si no. DOS argumentos, que es el contrato
@@ -236,7 +245,7 @@ export default async function (ctx) {
     60_000,
     TABERNERO,
   );
-  await acercarse(ctx, TABERNERO, { objetivo: 2.2, lista: "npcs" });
+  await acercarse(ctx, TABERNERO, { objetivo: 2.2, lista: "npcs", tramos: TRAMOS_TRAS_EL_TABERNERO });
   await ctx.nefan("inputDriver.queueInteract");
   await ctx.waitFor("el tabernero contesta (turno 1)", () => window.__nefan.dialogueVisible || null, 60_000);
   await ctx.nefan("chooseDialogue", 0);
@@ -311,7 +320,7 @@ export default async function (ctx) {
   // donde esté el jugador (`near_player` + `playerForward` fijo), así que
   // pedidos sin moverse caerían uno DENTRO del otro y no habría dos cajas que
   // comparar. El paseo a la bolsa es además el criterio del jugador: se pisa.
-  await acercarse(ctx, TABERNERO, { objetivo: 2.2, lista: "npcs" });
+  await acercarse(ctx, TABERNERO, { objetivo: 2.2, lista: "npcs", tramos: TRAMOS_TRAS_EL_TABERNERO });
   await ctx.nefan("inputDriver.queueInteract");
   await ctx.waitFor("el tabernero vuelve a contestar", () => window.__nefan.dialogueVisible || null, 60_000);
   const bolsa = await pedirAlMotor(ctx, MARCA_BOLSA, BOLSA.nombre);
@@ -355,7 +364,7 @@ export default async function (ctx) {
     );
   }
 
-  await acercarse(ctx, TABERNERO, { objetivo: 2.2, lista: "npcs" });
+  await acercarse(ctx, TABERNERO, { objetivo: 2.2, lista: "npcs", tramos: TRAMOS_TRAS_EL_TABERNERO });
   await ctx.nefan("inputDriver.queueInteract");
   await ctx.waitFor("el tabernero contesta otra vez", () => window.__nefan.dialogueVisible || null, 60_000);
   const carro = await pedirAlMotor(ctx, MARCA_CARRO, CARRO.nombre);
@@ -472,33 +481,42 @@ export default async function (ctx) {
     };
   }, { ca: CARRO.nombre, bo: BOLSA.nombre });
 
-  // LO QUE SÍ SE AFIRMA HOY: lo que no vuelve, se DICE, y con su nombre.
+  // Lo que el resume NO sabe devolver se DICE, con su nombre. Sigue siendo
+  // cierto y tiene que seguir siéndolo: el fail-loud no se retira porque ahora
+  // vuelvan más clases — lo que cambia es QUÉ cae en él (hoy, nada de lo que
+  // el contrato admite).
   ctx.expect(
-    "lo que el motor puso y el resume no sabe devolver SE DICE en el registro del jugador, con su nombre",
-    despues.registro.includes(BOLSA.nombre) && despues.registro.includes("no vuelve al mundo"),
+    "el registro del jugador no acusa a NADIE de no volver: lo que el motor puso, el resume lo sabe devolver",
+    !despues.registro.includes("no vuelve al mundo"),
     `registro: ${JSON.stringify(despues.registro.slice(0, 500))}`,
   );
 
-  // LAS MEDIDAS DE LA PR 2 — `ctx.log` hasta que exista (ver la cabecera).
-  ctx.log(
-    `[PR 2] la bolsa (un \`item\`) ${despues.bolsa ? "VUELVE" : "NO vuelve"} al mundo tras reanudar ` +
-      "— `CLASES_QUE_VUELVEN` no tiene `item`. Con la PR 2 esta línea es un `ctx.expect`",
+  // LAS TRES DE LA PR 2, que nacieron `ctx.log` y hoy son asertos.
+  ctx.expect(
+    "la bolsa (un `item`) VUELVE al mundo tras reanudar — era la clase que el resume no sabía devolver",
+    despues.bolsa === true,
+    `objetos tras reanudar: ${JSON.stringify(despues.carro)} · bolsa presente: ${despues.bolsa}`,
   );
-  if (despues.carro === null) {
-    ctx.log("[PR 2] el carro tampoco volvió: no hay tamaño que comparar");
-  } else {
+  ctx.expect(
+    "y el carro también, que sin él no hay tamaño que comparar",
+    despues.carro !== null,
+    JSON.stringify(despues.carro),
+  );
+  if (despues.carro !== null) {
     const declarado = huella(CARRO.kind, CARRO.footprint);
     const porDefecto = huella(CARRO.kind);
-    ctx.log(
-      `[PR 2] el carro vuelve midiendo ${despues.carro.sizeXZ.x}×${despues.carro.sizeXZ.z} m; el motor había ` +
-        `declarado ${declarado.x}×${declarado.z} m y el defecto de su clase es ${porDefecto.x} m. Con la PR 2 ` +
-        "esta línea es un `ctx.expect` de que vuelve con lo DECLARADO",
+    ctx.expect(
+      `el carro vuelve midiendo lo que el motor DECLARÓ (${declarado.x}×${declarado.z} m), no el defecto de su clase (${porDefecto.x} m)`,
+      despues.carro.sizeXZ.x === declarado.x && despues.carro.sizeXZ.z === declarado.z,
+      `${JSON.stringify(despues.carro.sizeXZ)} · declarado ${JSON.stringify(declarado)} · defecto ${JSON.stringify(porDefecto)}`,
     );
     const paredDespues = await paredMedida(ctx, despues.carro);
-    ctx.log(
-      `[PR 2] y su pared pasa de ${Math.min(...paredAntes).toFixed(2)} m a ${Math.min(...paredDespues).toFixed(2)} m ` +
-        `del centro: el jugador gana ${(Math.min(...paredAntes) - Math.min(...paredDespues)).toFixed(2)} m por ` +
-        "cada lado de donde antes estaba el carro",
+    const antes = Math.min(...paredAntes);
+    const ahora = Math.min(...paredDespues);
+    ctx.expect(
+      "y su PARED sigue donde estaba: el jugador no gana ni un palmo de lo que ayer era el carro",
+      Math.abs(antes - ahora) <= PASO_DEL_BARRIDO_M,
+      `antes ${antes.toFixed(2)} m · tras reanudar ${ahora.toFixed(2)} m · por eje ${JSON.stringify(paredDespues)}`,
     );
     await mirarDesdeElSur(ctx, despues.carro, 9);
     await ctx.shot("el-mismo-carro-tras-reanudar");

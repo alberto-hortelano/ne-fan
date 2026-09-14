@@ -34,6 +34,7 @@ import type { ZodError } from "zod";
 import { buildLlmContext } from "./serialize-llm.js";
 import { registerSceneNpcs } from "./npc-records.js";
 import { esModo } from "../session/gates-de-imagen.js";
+import { motivoDeFootprintInvalido } from "../session/mundo-persistido.js";
 
 /** Dónde vive la partida AHORA MISMO.
  *
@@ -193,7 +194,19 @@ function describirModoInvalido(v: unknown): string | null {
 function quienEs(rec: EntityRecord): string {
   const d = rec.data.description;
   if (typeof d === "string" && d.trim().length > 0) return `«${d}»`;
-  const clase: Record<string, string> = { npc: "un personaje", object: "un objeto", building: "un edificio" };
+  // El NOMBRE antes que la clase: es el rótulo que el jugador leyó en el mundo
+  // («Cofre de la posada» dice más que «un objeto que puso el motor»). Va
+  // detrás de la procedencia porque ésa es el texto del que salió su arte. No
+  // sirve cuando el motivo del rechazo ES el nombre: entonces no pasa el
+  // filtro y se cae a la clase, que es lo que hacía antes siempre.
+  const n = rec.data.name;
+  if (typeof n === "string" && n.trim().length > 0) return `«${n}»`;
+  const clase: Record<string, string> = {
+    npc: "un personaje",
+    object: "un objeto",
+    building: "un edificio",
+    item: "un objeto suelto",
+  };
   return `${clase[rec.type] ?? `algo de tipo "${rec.type}"`} que puso el motor`;
 }
 
@@ -586,6 +599,42 @@ export class NarrativeState {
             "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
         );
       }
+      // Y su HUELLA (#532): `data.footprint` es lo que el motor declaró el día
+      // que lo puso, y desde la PR 2 de esa tanda es de donde sale el tamaño al
+      // reanudar. Tiene DOS lectores —`spawnsDeRuntime` para el cliente y la
+      // resiembra del sim en el bridge—, así que el criterio se aplica aquí y
+      // no en cada uno: es la misma decisión que se tomó con `position` y con
+      // `data.name`. Lo que no es una huella no entra, y lo que sí entra ya no
+      // lo tiene que dudar nadie.
+      const huellaMala = motivoDeFootprintInvalido(rec.data.footprint);
+      if (huellaMala) {
+        throw new Error(
+          `save "${sessionId}": entities["${rec.id}"].data.footprint ${huellaMala} — ${quienEs(rec)} — ` +
+            "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
+        );
+      }
+    }
+    // Y LOS IDS, que tienen que ser únicos en TODO el ledger (#490). No es una
+    // exigencia nueva: `recordEntitySpawned` ya la mantiene —sufija el id
+    // repetido en vez de crear un choque— y el sim y `getEntity` la dan por
+    // hecha (están keyed por id). Lo que faltaba era que la PUERTA la
+    // comprobara: un save editado a mano con dos records del mismo id entraba
+    // entero y el cliente pintaba dos entidades iguales SIN DECIRLO, que es la
+    // misma familia de #382/#405 (posición nula → `save_invalido` con motivo).
+    // Se mira el ledger ENTERO y no solo los de runtime: un spawn del motor
+    // que reusara el id de un NPC del tile entraría por las dos puertas del
+    // resume, que es exactamente lo que la cabecera de este módulo llama «la
+    // señal temprana de que alguien abrió una segunda puerta».
+    const vistos = new Set<string>();
+    for (const rec of data.entities) {
+      if (vistos.has(rec.id)) {
+        throw new Error(
+          `save "${sessionId}": entities["${rec.id}"] aparece dos veces — dos entidades con el mismo ` +
+            `id colapsan en el sim y el mundo las pinta las dos sin decirlo (${quienEs(rec)}) — ` +
+            "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
+        );
+      }
+      vistos.add(rec.id);
     }
     // Y el INVENTARIO del jugador (#452): `InventoryItem.id` es por lo que
     // `inventory_remove` encuentra un ítem, y el save es la tercera puerta por
