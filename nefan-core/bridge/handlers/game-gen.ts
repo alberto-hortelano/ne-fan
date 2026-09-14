@@ -207,7 +207,9 @@ export async function runGameGeneration(
       }
     }
 
-    writeSessionSnapshot(ctx, gameId, entrySceneId);
+    // REEMPLAZA: «Regenerar mundo» es exactamente eso, y conservar aquí
+    // resucitaría tiles de la génesis anterior dentro del mundo nuevo (#451).
+    writeSessionSnapshot(ctx, gameId, entrySceneId, "reemplaza-el-mundo");
     await invalidateStyleApplications(ctx, gameId);
     const sceneCount = Object.keys(ctx.narrative.scenes_loaded).length;
     const parts = [`Mundo de ${meta.title} generado: ${sceneCount} escenas.`];

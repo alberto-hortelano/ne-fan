@@ -78,43 +78,72 @@ export function worldSnapshotPath(gamesDir: string, gameId: string): string {
   return join(gamesDir, gameId, "world", "tile.json");
 }
 
+/** El fichero, leído y pasado por el gate ESTRUCTURAL, sin juzgar ni la
+ *  vigencia ni la jugabilidad. Lo comparten las DOS puertas —`loadWorldSnapshot`,
+ *  que sirve, y `escenasQueSobreviven`, que conserva— porque el gate es el
+ *  mismo y lo que cambia es qué hace cada una con el «no»: la primera LANZA
+ *  (el caller degrada REPORTÁNDOLO) y la segunda avisa y conserva `{}`. Con la
+ *  lectura duplicada, endurecer el zod en una dejaba a la otra tragando lo que
+ *  la primera rechaza.
+ *
+ *  Se devuelve `raw`, lo que había EN DISCO, y NO `parsed.data`: el zod es la
+ *  PUERTA, no un transformador. Devolver la salida del parseo reescribía el
+ *  snapshot en silencio por dos caminos independientes, los dos medidos:
+ *    · una `description` de `"  tabernero  "` volvía sin espacios (lo cazó QA);
+ *    · un sub-objeto en modo por defecto —`size`, `tile`— PODA sus claves
+ *      desconocidas, y eso no lo arregla quitar ningún `.trim()`.
+ *  Arreglar solo el primero habría dejado el segundo abierto, así que la regla
+ *  va donde vale para los dos: quien valida no se queda con el resultado. Es
+ *  lo que hace `validateContract` en todo el resto de la casa. */
+type SnapshotEnDisco =
+  | { ok: true; snapshot: WorldSnapshot }
+  | { ok: false; ausente: true }
+  | { ok: false; ausente: false; motivo: string };
+
+function leerSnapshotDeDisco(path: string): SnapshotEnDisco {
+  if (!existsSync(path)) return { ok: false, ausente: true };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf-8"));
+  } catch (err) {
+    return { ok: false, ausente: false, motivo: `world snapshot malformado (${path}): ${(err as Error).message}` };
+  }
+  const parsed = WorldSnapshotSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      ausente: false,
+      motivo: `world snapshot inválido (${path}): ${parsed.error.message.slice(0, 500)}`,
+    };
+  }
+  return { ok: true, snapshot: raw as WorldSnapshot };
+}
+
 /** Carga el snapshot del juego. Ausente → null. Malformado, de otra versión
- *  de schema o con una escena INJUGABLE → throw (fail-loud: el caller decide
- *  si degrada al bootstrap vivo REPORTÁNDOLO). world_doc_hash distinto del
- *  esperado → null + warn (world.md editado: stale esperable, nunca servir
- *  mundo viejo en silencio). */
+ *  de schema o con la escena de ENTRADA injugable → throw (fail-loud: el
+ *  caller decide si degrada al bootstrap vivo REPORTÁNDOLO). world_doc_hash
+ *  distinto del esperado → null + warn (world.md editado: stale esperable,
+ *  nunca servir mundo viejo en silencio).
+ *
+ *  Una escena del ANILLO injugable NO tumba el snapshot: se CRIBA del `scenes`
+ *  devuelto con un warn que nombra fichero, escena y motivo (#451). Lo que
+ *  cambia respecto de #302 es la GRANULARIDAD del rechazo, no que se deje de
+ *  validar: lo que se sirve sigue pasando `validateScene` entero. El tile
+ *  cribado no existe para la sesión, así que `request_tile` lo vuelve a pedir
+ *  al motor cuando el jugador llegue — «solo se vuelve a pedir el malo». */
 export function loadWorldSnapshot(
   gamesDir: string,
   gameId: string,
   expectedWorldDocHash: string,
 ): WorldSnapshot | null {
   const path = worldSnapshotPath(gamesDir, gameId);
-  if (!existsSync(path)) return null;
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(path, "utf-8"));
-  } catch (err) {
-    throw new Error(`world snapshot malformado (${path}): ${(err as Error).message}`, {
-      cause: err,
-    });
+  const leido = leerSnapshotDeDisco(path);
+  if (!leido.ok) {
+    if (leido.ausente) return null;
+    // Malformado o de otro schema: fail-loud, y el mensaje dice qué hacer.
+    throw new Error(`${leido.motivo} — bórralo o regenera el mundo desde el título`);
   }
-  const parsed = WorldSnapshotSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new Error(
-      `world snapshot inválido (${path}): ${parsed.error.message.slice(0, 500)} — ` +
-        `bórralo o regenera el mundo desde el título`,
-    );
-  }
-  // Se devuelve `raw`, lo que había EN DISCO, y NO `parsed.data`: el zod es la
-  // PUERTA, no un transformador. Devolver la salida del parseo reescribía el
-  // snapshot en silencio por dos caminos independientes, los dos medidos:
-  //   · una `description` de `"  tabernero  "` volvía sin espacios (lo cazó QA);
-  //   · un sub-objeto en modo por defecto —`size`, `tile`— PODA sus claves
-  //     desconocidas, y eso no lo arregla quitar ningún `.trim()`.
-  // Arreglar solo el primero habría dejado el segundo abierto, así que la
-  // regla va donde vale para los dos: quien valida no se queda con el
-  // resultado. Es lo que hace `validateContract` en todo el resto de la casa.
-  const snapshot = raw as WorldSnapshot;
+  const snapshot = leido.snapshot;
   if (snapshot.world_doc_hash !== expectedWorldDocHash) {
     console.warn(
       `world snapshot stale para "${gameId}": world.md cambió desde la ` +
@@ -134,21 +163,81 @@ export function loadWorldSnapshot(
   // tiles del anillo salen con aviso `no-verificado` y NO se rechazan por
   // alcanzabilidad; lo que sí se juzga siempre es el cuerpo de cada NPC
   // (`checkNpcBodies`, #289) y el spawn del jugador en la escena de entrada.
+  //
+  // La ENTRADA y el ANILLO no pagan lo mismo, y esa es toda la diferencia de
+  // #451: sin entrada no hay partida que servir (la sesión degrada al
+  // bootstrap vivo, que es lo que ya hacía), pero un vecino malo solo cuesta
+  // el tile que el jugador todavía no ha pisado. Tirar las otras ocho escenas
+  // buenas por él obligaba a regenerar el mundo ENTERO con el motor real, y
+  // eso pasaba con cada endurecimiento del validador.
+  const servibles: Record<string, Record<string, unknown>> = {};
+  const cribadas: string[] = [];
   for (const [id, scene] of Object.entries(snapshot.scenes)) {
+    const esLaEntrada = id === snapshot.entry_scene_id;
     const check = validateScene(scene, {
       required_crossings: [],
-      bootstrap: id === snapshot.entry_scene_id,
+      bootstrap: esLaEntrada,
     });
-    if (!check.ok) {
+    if (check.ok) {
+      servibles[id] = scene;
+      continue;
+    }
+    if (esLaEntrada) {
       throw new Error(
         `world snapshot injugable (${path}): la escena "${id}" no pasa el validador de hoy: ` +
           `${check.errors.join(" · ")} — regenera el mundo desde el título`,
       );
     }
+    cribadas.push(id);
+    console.warn(
+      `world snapshot (${path}): la escena "${id}" no pasa el validador de hoy ` +
+        `y se CRIBA (el resto del mundo se sirve igual): ${check.errors.join(" · ")} ` +
+        `— el motor la regenerará cuando el jugador llegue a ese tile`,
+    );
   }
   // El world_map lo re-valida WorldMapManager.fromSerialized al restaurarlo
   // (segunda línea).
-  return snapshot;
+  //
+  // Sin nada cribado se devuelve el MISMO objeto: el caso normal no paga ni
+  // una copia, y «lo que sale de la puerta es byte a byte lo que hay en
+  // disco» sigue siendo literal. Con criba, el envoltorio es nuevo pero las
+  // escenas viajan POR REFERENCIA — el zod sigue siendo la puerta, no un
+  // transformador. Y la carga NO reescribe el fichero: una lectura que
+  // escribe sería un segundo escritor del snapshot, y el único es el bridge.
+  if (cribadas.length === 0) return snapshot;
+  return { ...snapshot, scenes: servibles };
+}
+
+/** Las escenas del snapshot en disco que un write puede CONSERVAR (#451).
+ *
+ *  `{}` —y el motivo por `console.warn`— si no hay fichero, si el zod lo
+ *  rechaza (malformado, otro `schema_version`, escena a medio expandir) o si
+ *  su `world_doc_hash` no es el de hoy: conservar contenido de otro world.md
+ *  sería blanquear un snapshot stale, que es justo lo que la puerta de carga
+ *  se niega a servir.
+ *
+ *  NO filtra por jugabilidad a propósito: eso lo juzga `loadWorldSnapshot` al
+ *  servir, con el validador del día. Aquí solo se decide qué se guarda. */
+export function escenasQueSobreviven(
+  gamesDir: string,
+  gameId: string,
+  worldDocHash: string,
+): Record<string, Record<string, unknown>> {
+  const path = worldSnapshotPath(gamesDir, gameId);
+  const leido = leerSnapshotDeDisco(path);
+  if (!leido.ok) {
+    if (!leido.ausente) console.warn(`${leido.motivo} — no se conserva nada de él`);
+    return {};
+  }
+  const snapshot = leido.snapshot;
+  if (snapshot.world_doc_hash !== worldDocHash) {
+    console.warn(
+      `world snapshot en disco (${path}) es de otro world.md: no se conserva ` +
+        `nada de él (conservarlo sería blanquear un snapshot stale)`,
+    );
+    return {};
+  }
+  return snapshot.scenes;
 }
 
 export function writeWorldSnapshot(gamesDir: string, snapshot: WorldSnapshot): void {

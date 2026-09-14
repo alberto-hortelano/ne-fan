@@ -15,6 +15,7 @@ import {
   WORLD_SNAPSHOT_SCHEMA_VERSION,
   WorldSnapshotSchema,
   deleteWorldSnapshot,
+  escenasQueSobreviven,
   loadWorldSnapshot,
   worldSnapshotPath,
   worldSnapshotStatus,
@@ -473,25 +474,98 @@ describe("lo que se carga pasa por validateScene o no se sirve (#302)", () => {
     }
   });
 
-  it("un tile del ANILLO (sin player, bootstrap:false) con un NPC en sólido también se rechaza; el anillo sano entra", () => {
-    // El plan lo AFIRMABA; esto lo mide: sin contexto de costuras, el anillo
-    // solo pierde la alcanzabilidad (aviso `no-verificado`), no el cuerpo.
+  /** #451 cambia la GRANULARIDAD de este rechazo, no lo afloja: el tile del
+   *  anillo sigue sin pasar el validador de hoy (sin contexto de costuras el
+   *  anillo solo pierde la alcanzabilidad, nunca el cuerpo del NPC), pero lo
+   *  que se tira es ESE tile y no las ocho escenas buenas de al lado.
+   *
+   *  Hasta el 2026-09-14 este `it` afirmaba que `loadWorldSnapshot` LANZABA
+   *  con un tile del anillo malo. Esa conducta se retira entera: el usuario
+   *  eligió «se sirve la entrada y las buenas, y solo se vuelve a pedir el
+   *  tile malo». Lo que NO se pierde de cobertura es el juicio: el tile malo
+   *  sigue midiéndose con `validateScene` y sigue sin servirse. */
+  it("un tile del ANILLO con un NPC en sólido se CRIBA y el resto del mundo se sirve igual (#451)", () => {
     const { gamesDir, worldDocHash } = tmpGamesDir();
+    const warn = console.warn;
+    const avisos: string[] = [];
+    console.warn = (...args: unknown[]) => void avisos.push(args.map(String).join(" "));
     try {
       aDisco(gamesDir, worldDocHash, { tile_0_0: sana(0, true), tile_1_0: posadaSinPuerta(1, false) });
-      assert.throws(
-        () => loadWorldSnapshot(gamesDir, GAME, worldDocHash),
-        /injugable.*"tile_1_0".*"posadero"/,
+      const cribado = loadWorldSnapshot(gamesDir, GAME, worldDocHash);
+      assert.ok(cribado, "un anillo malo ya NO tumba el snapshot entero");
+      assert.deepEqual(
+        Object.keys(cribado.scenes),
+        ["tile_0_0"],
+        "se sirve la entrada y se criba el tile injugable, ni una cosa ni la otra",
       );
-      // Control positivo: la misma forma con el anillo sano SÍ se sirve (el
-      // bucle no rechaza de más, ni por el player de la entrada ni por la
-      // falta de player del anillo).
+      // El motivo se REPORTA nombrando fichero, escena y causa: el tile no
+      // desaparece en silencio, que es lo que separa una criba de un bug.
+      const aviso = avisos.join(" | ");
+      assert.match(aviso, /CRIBA/);
+      assert.ok(aviso.includes(worldSnapshotPath(gamesDir, GAME)), `sin la ruta del fichero: ${aviso}`);
+      assert.match(aviso, /"tile_1_0"/);
+      assert.match(aviso, /"posadero".*no transitable/);
+      // El snapshot SE SIRVE, así que el chip del título lo ve `ready`: lo que
+      // queda pendiente es un tile, no el mundo.
+      assert.equal(worldSnapshotStatus(gamesDir, GAME, worldDocHash), "ready");
+      // Y la carga NO reescribe el fichero: el tile malo sigue en disco (se
+      // criba otra vez en la carga siguiente) hasta que el motor lo regenere.
+      const enDisco = JSON.parse(readFileSync(worldSnapshotPath(gamesDir, GAME), "utf-8")) as WorldSnapshot;
+      assert.deepEqual(Object.keys(enDisco.scenes).sort(), ["tile_0_0", "tile_1_0"]);
+
+      // Control positivo: la misma forma con el anillo sano entra ENTERA (la
+      // criba no rechaza de más, ni por el player de la entrada ni por la
+      // falta de player del anillo) y sin un solo aviso.
+      avisos.length = 0;
       aDisco(gamesDir, worldDocHash, { tile_0_0: sana(0, true), tile_1_0: sana(1, false) });
       const cargado = loadWorldSnapshot(gamesDir, GAME, worldDocHash);
       assert.ok(cargado);
       assert.equal(Object.keys(cargado.scenes).length, 2);
+      assert.equal(avisos.length, 0, `el mundo sano no genera avisos: ${avisos.join(" | ")}`);
       assert.equal(worldSnapshotStatus(gamesDir, GAME, worldDocHash), "ready");
     } finally {
+      console.warn = warn;
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  /** El caso que el criterio 5 exige medido de punta a punta: el jugador
+   *  ENTRA y el tile cribado se le sirve generándolo, no se le niega. */
+  it("start_session con el anillo cribado: se replayea sin motor y el tile malo se vuelve a pedir al llegar", async () => {
+    const { gamesDir, worldDocHash } = tmpGamesDir();
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      aDisco(gamesDir, worldDocHash, {
+        tile_0_0: sana(0, true),
+        tile_1_0: posadaSinPuerta(1, false),
+        tile_0_1: sana(0, false),
+      });
+      const { ctx, broadcasts, narrative, aiCalls } = makeCtx({ gamesDir });
+      const { socket, sent } = makeSocket();
+      await routeMessage({ type: "start_session", requestId: "r1", gameId: GAME }, socket, ctx);
+      assert.equal((sent[0] as { ok: boolean }).ok, true);
+      // Cero llamadas al motor para entrar: el mundo bueno se sirvió.
+      assert.equal(aiCalls.scene.length, 0, "la partida arranca del snapshot, no del motor");
+      const ready = broadcasts.find(
+        (m): m is NarrativeStatusDeSesion =>
+          m.type === "narrative_status" && m.kind !== "game_gen" && m.phase === "ready",
+      );
+      assert.equal(ready?.source, "snapshot");
+      assert.ok(narrative.scenes_loaded["tile_0_0"], "la entrada");
+      assert.ok(narrative.scenes_loaded["tile_0_1"], "el vecino bueno");
+      assert.equal(
+        narrative.scenes_loaded["tile_1_0"],
+        undefined,
+        "el tile injugable NO se registra: si estuviera, se serviría de caché sin volver a validarse",
+      );
+      // …y al llegar a él, el bridge lo PIDE al motor (una llamada, la del
+      // tile malo): «solo se vuelve a pedir el malo».
+      await routeMessage({ type: "request_tile", tx: 1, ty: 0, reason: "blocking" }, socket, ctx);
+      await waitFor(() => aiCalls.scene.length === 1);
+      assert.equal(aiCalls.scene.length, 1, "el tile cribado se regenera al llegar");
+    } finally {
+      console.warn = warn;
       rmSync(gamesDir, { recursive: true, force: true });
     }
   });
@@ -526,6 +600,159 @@ describe("lo que se carga pasa por validateScene o no se sirve (#302)", () => {
       assert.match(reportado.join(" | "), /injugable/, "el bridge no se lo traga: lo reporta");
     } finally {
       console.error = error;
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+});
+
+/** #451 · la otra mitad, y la que de verdad destruía el mundo.
+ *
+ *  La carga ya sabía degradar al bootstrap vivo cuando la ENTRADA no pasaba
+ *  el validador de hoy. Lo que nadie miraba es lo que pasaba DESPUÉS: al
+ *  terminar, `writeSessionSnapshot` reescribía `world/tile.json` con lo que
+ *  hubiera en `scenes_loaded` —una escena— y las otras ocho, que estaban
+ *  perfectamente bien, dejaban de existir. Ese es el título del issue: «se
+ *  tira entero; Continuar lo sustituye por uno de 1».
+ *
+ *  Se mide por el FICHERO, que es el sujeto: cuántas escenas quedan y cuál es
+ *  la de entrada. La política es un parámetro sin defecto (`PoliticaDeSnapshot`),
+ *  así que el tercer llamante tendrá que elegir en vez de heredar. */
+describe("el anillo bueno no se pierde: la política de escritura del snapshot (#451)", () => {
+  /** Las ocho del anillo, todas sanas. */
+  const anilloSano = (): Record<string, Record<string, unknown>> => {
+    const scenes: Record<string, Record<string, unknown>> = {};
+    for (const [tx, ty] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) {
+      scenes[`tile_${tx}_${ty}`] = expandScenePrimitives({
+        scene_id: `tile_${tx}_${ty}`,
+        scene_description: `Vecino (${tx},${ty}) pre-generado`,
+        tile: { tx, ty },
+        biome: "grass",
+        entities: [],
+      });
+    }
+    return scenes;
+  };
+
+  /** Posada sólida con el posadero dentro: `nace-en-solido` (#289). */
+  const entradaInjugable = (): Record<string, unknown> =>
+    expandScenePrimitives({
+      scene_id: "tile_0_0",
+      scene_description: "Una posada sin puerta con el posadero dentro",
+      tile: { tx: 0, ty: 0 },
+      biome: "grass",
+      volumes: [{ id: "posada", label: "posada", type: "building", rect: [52, 20, 24, 16] }],
+      entities: [
+        { id: "player", kind: "player", name: "Tú", cell: [4, 4], footprint: [1, 1] },
+        { id: "posadero", kind: "npc", name: "Posadero", cell: [60, 27], footprint: [1, 1] },
+      ],
+    });
+
+  const escribirADisco = (
+    gamesDir: string,
+    worldDocHash: string,
+    scenes: Record<string, Record<string, unknown>>,
+  ): void => {
+    mkdirSync(join(gamesDir, GAME, "world"), { recursive: true });
+    writeFileSync(
+      worldSnapshotPath(gamesDir, GAME),
+      JSON.stringify({
+        schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
+        game_id: GAME,
+        world_doc_hash: worldDocHash,
+        generated_at: "2026-08-18T00:00:00.000Z",
+        world_map: new WorldMapManager(WorldMapManager.createEmpty()).serialize(),
+        scenes,
+        entry_scene_id: "tile_0_0",
+      }),
+      "utf-8",
+    );
+  };
+
+  const leerDeDisco = (gamesDir: string): WorldSnapshot =>
+    JSON.parse(readFileSync(worldSnapshotPath(gamesDir, GAME), "utf-8")) as WorldSnapshot;
+
+  it("ENTRADA injugable + 8 buenas ⇒ el bootstrap vivo cura la entrada y CONSERVA el anillo (9 escenas, no 1)", async () => {
+    const { gamesDir, worldDocHash } = tmpGamesDir();
+    const error = console.error;
+    console.error = () => {};
+    try {
+      escribirADisco(gamesDir, worldDocHash, { tile_0_0: entradaInjugable(), ...anilloSano() });
+      const antes = leerDeDisco(gamesDir);
+      assert.equal(Object.keys(antes.scenes).length, 9, "el montaje: 9 escenas en disco");
+
+      const { ctx, broadcasts, aiCalls } = makeCtx({ gamesDir, persistWorldSnapshots: true });
+      const { socket } = makeSocket();
+      await routeMessage({ type: "start_session", requestId: "r1", gameId: GAME }, socket, ctx);
+      await waitFor(() =>
+        broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"),
+      );
+      // Decisión (i): la entrada injugable degrada al bootstrap vivo COMO HOY.
+      assert.equal(aiCalls.scene.length, 1, "una llamada al motor: la entrada");
+
+      const despues = leerDeDisco(gamesDir);
+      assert.equal(
+        Object.keys(despues.scenes).length,
+        9,
+        "el anillo bueno se perdió: el snapshot volvió a quedarse en una escena",
+      );
+      assert.equal(despues.entry_scene_id, "tile_0_0");
+      // La entrada es la NUEVA (la vieja no pasaba el validador; ésta sí), y
+      // las otras ocho son las de antes, intactas.
+      assert.notDeepEqual(
+        despues.scenes["tile_0_0"],
+        antes.scenes["tile_0_0"],
+        "la entrada tiene que ser la recién generada, no la injugable",
+      );
+      for (const id of Object.keys(anilloSano())) {
+        assert.deepEqual(despues.scenes[id], antes.scenes[id], `el vecino ${id} cambió`);
+      }
+      // Y el fichero quedó CURADO: la partida siguiente entra sin motor.
+      assert.equal(worldSnapshotStatus(gamesDir, GAME, worldDocHash), "ready");
+      const segunda = makeCtx({ gamesDir });
+      const s2 = makeSocket();
+      await routeMessage({ type: "start_session", requestId: "r2", gameId: GAME }, s2.socket, segunda.ctx);
+      assert.equal(segunda.aiCalls.scene.length, 0, "la partida siguiente ya no llama al motor");
+      assert.equal(Object.keys(segunda.narrative.scenes_loaded).length, 9);
+    } finally {
+      console.error = error;
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  it("`escenasQueSobreviven` no conserva lo que no se puede servir: sin fichero, de otro world.md, o que el zod rechaza", () => {
+    const { gamesDir, worldDocHash } = tmpGamesDir();
+    const warn = console.warn;
+    const avisos: string[] = [];
+    console.warn = (...args: unknown[]) => void avisos.push(args.map(String).join(" "));
+    try {
+      assert.deepEqual(escenasQueSobreviven(gamesDir, GAME, worldDocHash), {}, "sin fichero");
+
+      // Contenido de OTRO world.md: conservarlo sería blanquear un stale, que
+      // es exactamente lo que la puerta de carga se niega a servir.
+      escribirADisco(gamesDir, hashOf("otro world.md"), { tile_0_0: entradaInjugable(), ...anilloSano() });
+      assert.deepEqual(escenasQueSobreviven(gamesDir, GAME, worldDocHash), {}, "otro world.md");
+      assert.match(avisos.join(" | "), /otro world\.md/);
+
+      // Malformado y estructuralmente inválido: tampoco, y con motivo.
+      avisos.length = 0;
+      writeFileSync(worldSnapshotPath(gamesDir, GAME), "{no es json", "utf-8");
+      assert.deepEqual(escenasQueSobreviven(gamesDir, GAME, worldDocHash), {}, "malformado");
+      assert.match(avisos.join(" | "), /malformado/);
+
+      avisos.length = 0;
+      const aMedias = anilloSano();
+      delete aMedias["tile_1_0"].__expanded;
+      escribirADisco(gamesDir, worldDocHash, { tile_0_0: entradaInjugable(), ...aMedias });
+      assert.deepEqual(escenasQueSobreviven(gamesDir, GAME, worldDocHash), {}, "escena a medio expandir");
+      assert.match(avisos.join(" | "), /inválido/);
+
+      // Control positivo: el snapshot vigente SÍ se conserva entero — y la
+      // entrada INJUGABLE también, porque quién puede servirse lo juzga la
+      // carga con el validador del día, no el que escribe.
+      escribirADisco(gamesDir, worldDocHash, { tile_0_0: entradaInjugable(), ...anilloSano() });
+      assert.equal(Object.keys(escenasQueSobreviven(gamesDir, GAME, worldDocHash)).length, 9);
+    } finally {
+      console.warn = warn;
       rmSync(gamesDir, { recursive: true, force: true });
     }
   });

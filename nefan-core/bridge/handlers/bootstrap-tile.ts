@@ -112,7 +112,13 @@ export async function runBootstrapTile(
     // Snapshot pasivo del mundo: la segunda partida de este juego arranca sin
     // motor. La escena ya está guardada (generateBootstrapTileScene) y el
     // broadcast no la toca: las salidas se calculan al servir.
-    writeSessionSnapshot(ctx, sessionGameId, sceneId);
+    //
+    // CONSERVA lo que ya hubiera en disco (#451): aquí se llega también cuando
+    // la carga del snapshot rechazó su escena de ENTRADA, y un bootstrap vivo
+    // que escribiera su única escena a secas se llevaba por delante el anillo
+    // bueno — el mundo pre-generado entero por un tile malo. La entrada nueva
+    // gana por id y cura el fichero; el resto sigue ahí.
+    writeSessionSnapshot(ctx, sessionGameId, sceneId, "conserva-el-mundo-en-disco");
     broadcastScene(ctx, sceneId, scene, Date.now() - sceneStart, { source: "engine" });
     return { delivered: true };
   } catch (err) {

@@ -17,6 +17,7 @@ import type { NpcDirector } from "../src/world-map/npc-director.js";
 import { loadWorldDoc } from "../src/games/loader.js";
 import {
   WORLD_SNAPSHOT_SCHEMA_VERSION,
+  escenasQueSobreviven,
   writeWorldSnapshot,
 } from "../src/games/world-snapshot.js";
 import { loadWorldVocabulary } from "../src/games/vocabulary.js";
@@ -138,35 +139,62 @@ export interface BridgeContext {
   difundirDeJuego(msg: NarrativeStatusDeJuego): void;
 }
 
+/** Qué hace un write con el mundo que YA estaba en `world/tile.json` (#451).
+ *
+ *  Es un parámetro SIN DEFECTO a propósito: hasta hoy la política era una sola
+ *  —reemplazar— y no estaba escrita en ningún sitio, así que el bootstrap vivo
+ *  de una partida con el mundo pre-generado en disco lo reescribía con UNA
+ *  escena y se llevaba por delante el anillo entero. Un defecto aquí es el
+ *  mecanismo por el que el tercer llamante hereda en silencio la decisión
+ *  equivocada; sin él, tiene que elegir. */
+export type PoliticaDeSnapshot = "conserva-el-mundo-en-disco" | "reemplaza-el-mundo";
+
 /** Escribe el snapshot de mundo de la sesión actual como artefacto del juego
  *  (`data/games/{id}/world/{branch}.json`): TODAS las escenas registradas —
  *  en el bootstrap vivo, solo la de entrada; en generate_game, el anillo 3×3
  *  y los places realizados. Best-effort REPORTADO: un fallo de escritura no
- *  tumba el arranque de la sesión, se loguea como warning. */
+ *  tumba el arranque de la sesión, se loguea como warning.
+ *
+ *  Con `conserva-el-mundo-en-disco` las escenas VIVAS se funden ENCIMA de las
+ *  que sobrevivan del fichero (mismo world.md, mismo schema): las vivas ganan
+ *  por id, así que el `tile_0_0` recién generado sustituye al injugable que
+ *  mandó la sesión al bootstrap vivo y el fichero se cura solo, sin perder el
+ *  anillo. Con `reemplaza-el-mundo` se escribe solo lo generado — regenerar es
+ *  regenerar, y resucitar una escena vieja ahí sería el bug contrario. */
 export function writeSessionSnapshot(
   ctx: BridgeContext,
   gameId: string,
   entrySceneId: string,
+  politica: PoliticaDeSnapshot,
 ): void {
   if (!ctx.persistWorldSnapshots) return;
   try {
     const worldDoc = loadWorldDoc(ctx.gamesDir, gameId);
-    const scenes: Record<string, Record<string, unknown>> = {};
+    const worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
+    const vivas: Record<string, Record<string, unknown>> = {};
     for (const [id, rec] of Object.entries(ctx.narrative.scenes_loaded)) {
-      scenes[id] = structuredClone(rec.scene_data);
+      vivas[id] = structuredClone(rec.scene_data);
     }
+    const conservadas =
+      politica === "conserva-el-mundo-en-disco"
+        ? escenasQueSobreviven(ctx.gamesDir, gameId, worldDocHash)
+        : {};
+    const scenes = { ...conservadas, ...vivas };
     writeWorldSnapshot(ctx.gamesDir, {
       schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
       game_id: gameId,
-      world_doc_hash: createHash("sha256").update(worldDoc, "utf-8").digest("hex"),
+      world_doc_hash: worldDocHash,
       generated_at: new Date().toISOString(),
       world_map: structuredClone(ctx.narrative.worldMap.serialize()),
       scenes,
       entry_scene_id: entrySceneId,
     });
+    const heredadas = Object.keys(scenes).length - Object.keys(vivas).length;
     console.log(
       `Bridge: world snapshot escrito para "${gameId}" ` +
-        `(${Object.keys(scenes).length} escenas)`,
+        `(${Object.keys(scenes).length} escenas: ${Object.keys(vivas).length} de la sesión` +
+        `${heredadas > 0 ? ` + ${heredadas} conservadas del mundo en disco` : ""}` +
+        `, política ${politica})`,
     );
   } catch (err) {
     console.warn(`Bridge: world snapshot no se pudo escribir para "${gameId}":`, err);
