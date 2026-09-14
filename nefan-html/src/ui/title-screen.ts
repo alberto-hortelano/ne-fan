@@ -38,11 +38,12 @@ import {
   type EleccionDeMundo,
 } from "./titulo/editor-de-personaje.js";
 import { pintarHome } from "./titulo/home.js";
-import { pintarPlanDeEstilo } from "./titulo/plan-de-estilo.js";
 import {
+  montarPanelDeGeneracion,
   pintarProgresoDeMundo,
-  pintarSelectorDeMundo,
-} from "./titulo/selector-de-mundo.js";
+} from "./titulo/panel-de-generacion.js";
+import { pintarPlanDeEstilo } from "./titulo/plan-de-estilo.js";
+import { pintarSelectorDeMundo } from "./titulo/selector-de-mundo.js";
 import { type DepsDeSubirEstilo, pintarSubirEstilo } from "./titulo/subir-estilo.js";
 
 /** Lo que resuelve `show()`. Vive en `titulo/atomos.ts` desde el primer corte
@@ -261,20 +262,20 @@ export class TitleScreen {
     throw new Error(`destino del título no contemplado: ${JSON.stringify(nunca)}`);
   }
 
-  /** Cablea el SELECTOR DE MUNDOS y lo pinta. Seis colaboradores, como el home,
-   *  y por el mismo motivo: es el otro concentrador del título.
+  /** Cablea el SELECTOR DE MUNDOS y lo pinta. Cinco colaboradores desde que el
+   *  panel de generación salió a su propia hoja.
    *
-   *  Los dos que solo tiene esta pantalla son las dos mitades del progreso de
-   *  pre-generación (#313), que esta clase posee porque el suscriptor del bridge
-   *  vive aquí y sobrevive a cualquier repintado: `recordarMundo` apunta qué
-   *  tarjeta se está mirando y `progresoDe` contesta por el mapa. La hoja no ve
-   *  ninguno de los dos campos, y eso es lo que la deja sin `this`.
+   *  `recordarMundo` apunta qué tarjeta se está mirando; el mapa de progresos
+   *  por juego (#313) se queda en esta clase porque el suscriptor del bridge
+   *  vive aquí y sobrevive a cualquier repintado. La hoja no ve ninguno de los
+   *  dos campos, y eso es lo que la deja sin `this`.
    *
-   *  `mostrarPlanDeEstilo` no es un destino de `ir` porque el panel de coste no
-   *  sustituye la pantalla: se monta DENTRO del hueco que el selector le abre.
-   *  Se cablea aquí porque necesita el `StyleApplyController` —uno solo, el de
-   *  esta clase, que es el que consulta el bench— y porque una hoja no puede
-   *  importar a otra.
+   *  NI EL PANEL DE GENERACIÓN NI EL DE COSTE son destinos de `ir`: no
+   *  sustituyen la pantalla, se montan DENTRO del hueco que se les abre — el
+   *  primero en el `#ts-gen` del selector, el segundo en el `#ts-style-plan` del
+   *  primero. Se cablean aquí porque una hoja no puede importar a otra y porque
+   *  el de coste necesita el `StyleApplyController` —uno solo, el de esta clase,
+   *  que es el que consulta el bench.
    *
    *  Y es `async` por lo mismo que `ir` y que `pintarElHome`, que es la familia
    *  que ha mordido tres veces en este programa (QA-2 H2, QA-3 H6, QA-4 H2): el
@@ -289,13 +290,22 @@ export class TitleScreen {
         recordarMundo: (gameId) => {
           this.lastSelectedGameId = gameId;
         },
-        progresoDe: (gameId) => this.gameGenStatus.get(gameId),
         ir: (destino) => this.ir(destino),
-        mostrarPlanDeEstilo: (hueco, gameId, styleId) =>
-          pintarPlanDeEstilo(
-            { hueco, styleApply: this.styleApply, ir: (d) => this.ir(d) },
-            gameId,
-            styleId,
+        montarPanelDeGeneracion: (hueco, mundo, estilo) =>
+          montarPanelDeGeneracion(
+            {
+              narrative: this.narrative,
+              progresoDe: (gameId) => this.gameGenStatus.get(gameId),
+              mostrarPlanDeEstilo: (huecoDelPlan, gameId, styleId) =>
+                pintarPlanDeEstilo(
+                  { hueco: huecoDelPlan, styleApply: this.styleApply, ir: (d) => this.ir(d) },
+                  gameId,
+                  styleId,
+                ),
+            },
+            hueco,
+            mundo,
+            estilo,
           ),
       },
       preselect,

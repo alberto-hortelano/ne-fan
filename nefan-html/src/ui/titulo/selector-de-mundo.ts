@@ -5,22 +5,26 @@
  *  —escenarios y personajes— y el panel de generación, que es el único sitio
  *  del título desde donde se le encarga un mundo al motor narrativo.
  *
- *  SEIS colaboradores y ni uno más, que es lo que la crítica de #346 midió para
- *  los dos concentradores una vez que la navegación deja de ser un método y pasa
- *  a ser el callback `ir(destino)`. Sin él esta pantalla necesitaría nueve
- *  parámetros —volver al home, ir al editor, crear mundo, subir estilo— y el
- *  corte reintroduciría por la puerta de atrás el objeto de contexto que esta
- *  casa lleva rechazado dos veces por escrito.
+ *  CINCO colaboradores y ni uno más, en la línea de lo que la crítica de #346
+ *  midió para los dos concentradores una vez que la navegación deja de ser un
+ *  método y pasa a ser el callback `ir(destino)`. Sin él esta pantalla
+ *  necesitaría nueve parámetros —volver al home, ir al editor, crear mundo,
+ *  subir estilo— y el corte reintroduciría por la puerta de atrás el objeto de
+ *  contexto que esta casa lleva rechazado dos veces por escrito.
  *
  *  Lo que NO está aquí y podría parecer que sí:
  *  - El MAPA de progresos por juego (#313) y la memoria de qué tarjeta se está
  *    mirando. Son de la raíz, que es quien escucha al bridge y sigue viva cuando
- *    esta pantalla ya no está; aquí se tocan por `progresoDe` y `recordarMundo`.
- *    Eso es lo que deja a `pintarProgresoDeMundo` sin un solo `this`.
+ *    esta pantalla ya no está; aquí se apunta la tarjeta mirada con
+ *    `recordarMundo`.
+ *  - El PANEL DE GENERACIÓN (`ui/titulo/panel-de-generacion.ts`): el estado del
+ *    mundo y de su estilo, los dos botones que los encargan y la línea de
+ *    progreso. Esta pantalla solo le deja el hueco `#ts-gen` y le dice qué par
+ *    (mundo, estilo) está mirando.
  *  - El PANEL DE COSTE de «Aplicar estilo» (`ui/titulo/plan-de-estilo.ts`) y la
- *    corrida que gasta (`ui/style-apply.ts`, #513). Una hoja no puede importar a
- *    otra (`las-hojas-del-titulo-no-se-atan-entre-si`), así que el panel se abre
- *    por `mostrarPlanDeEstilo`, que cablea la raíz.
+ *    corrida que gasta (`ui/style-apply.ts`, #513), que cuelgan del anterior.
+ *    Una hoja no puede importar a otra (`las-hojas-del-titulo-no-se-atan-entre-si`),
+ *    así que los dos paneles los monta la raíz dentro del hueco que se les deja.
  *
  *  NINGÚN OYENTE DE POR VIDA: los de esta pantalla cuelgan de nodos que ella
  *  misma crea dentro de `content`, y el `innerHTML` del siguiente pintado se los
@@ -28,8 +32,7 @@
  *  siguen siendo cinco. Enganchar aquí a `document`, `window` o al propio
  *  `content` filtraría un oyente por visita, y eso no lo ve ningún test verde.
  */
-import type { NarrativeClient } from "../../net/narrative-client.js";
-import type { NarrativeStatusDeJuego } from "@nefan-core/src/protocol/messages.js";
+import type { GameInfo, NarrativeClient, StyleInfo } from "../../net/narrative-client.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { eleccionDeEstilo } from "@nefan-core/src/session/eleccion-de-estilo.js";
 import { MODO_AL_EMPEZAR, type ModoElegido } from "@nefan-core/src/session/gates-de-imagen.js";
@@ -65,55 +68,18 @@ export interface DepsDeSelectorDeMundo {
    *  pantalla ya no está: sin ella, el progreso de un mundo se pintaría bajo la
    *  tarjeta de otro (#313). */
   recordarMundo(gameId: string): void;
-  /** El último progreso conocido de un mundo, o `undefined` si no hay ninguno.
-   *  Lo apunta la raíz según se lo cuenta el bridge; aquí solo se pinta. */
-  progresoDe(gameId: string): NarrativeStatusDeJuego | undefined;
   /** A dónde va el título cuando esta pantalla termina: al home («Volver»), al
    *  editor de personaje («Continuar»), a «Crear mundo» o a «Subir estilo». Es
    *  el único camino de vuelta que tiene una hoja —no puede importar a otra— y
    *  devuelve la promesa del repintado para que el llamante la encauce con
    *  `paso()` en vez de perderla. */
   ir(destino: DestinoDelTitulo): Promise<void>;
-  /** Abre el panel de coste de «Aplicar estilo» DENTRO del hueco que este
-   *  selector le deja en su panel de generación (`#ts-style-plan`). No es un
+  /** Monta el PANEL DE GENERACIÓN dentro del hueco que esta pantalla le deja
+   *  (`#ts-gen`), para el par (mundo, estilo) que se está mirando. No es un
    *  destino de `ir` porque no sustituye la pantalla: se monta dentro. Lo cablea
-   *  la raíz porque el panel es otra hoja y necesita además el
-   *  `StyleApplyController`, que esta no puede alcanzar. */
-  mostrarPlanDeEstilo(hueco: HTMLElement, gameId: string, styleId: string): Promise<void>;
-}
-
-/** Pinta el progreso de UN mundo en la línea que se le da, o la vacía si no
- *  hay estado que pintar.
- *
- *  Recibe el ESTADO YA RESUELTO y no el `gameId`: el mapa de progresos por
- *  juego (#313) y la memoria de qué tarjeta se está mirando son de la raíz —
- *  ella es quien escucha al bridge—, así que resolver aquí obligaría a esta
- *  hoja a tener un `this`. Con el estado dentro, la función es pura sobre el
- *  DOM y sus dos llamantes eligen por su cuenta de qué tarjeta hablan: la raíz
- *  del mundo que el jugador está mirando, el panel de generación del suyo. */
-export function pintarProgresoDeMundo(
-  line: HTMLElement,
-  estado: NarrativeStatusDeJuego | undefined,
-): void {
-  if (!estado) {
-    line.textContent = "";
-    line.removeAttribute("data-gen-phase");
-    return;
-  }
-  // La FASE, como dato y no como prosa: `ready` y `error` son estados
-  // terminales, y quien espera (el jugador mirando, o un guion de QA) no
-  // tiene que adivinarlos leyendo el texto. Antes había que casar un regex
-  // contra el mensaje, y bastó añadir un mensaje de error nuevo para que la
-  // espera dejara de reconocer el final y se comiera su tope entero.
-  line.dataset.genPhase = estado.phase;
-  const mins = estado.elapsedMs !== undefined ? ` · ${Math.round(estado.elapsedMs / 60000)} min` : "";
-  if (estado.phase === "error") {
-    line.innerHTML = `<span style="color:#a44">${escapeHtml(estado.message ?? "la generación falló")}</span>`;
-  } else if (estado.phase === "ready") {
-    line.innerHTML = `<span style="color:#4a4">${escapeHtml(estado.message ?? "Mundo generado.")}</span>`;
-  } else {
-    line.innerHTML = `<span style="color:#da6">⚙ ${escapeHtml(estado.message ?? "Generando…")}${mins}</span>`;
-  }
+   *  la raíz porque el panel es otra hoja —y de él cuelga a su vez el panel de
+   *  coste, que necesita el `StyleApplyController` que ésta no alcanza. */
+  montarPanelDeGeneracion(hueco: HTMLElement, mundo: GameInfo, estilo: StyleInfo | undefined): void;
 }
 
 /** Paso de selección de mundo: una tarjeta por juego (cover + descripción)
@@ -183,16 +149,7 @@ export async function pintarSelectorDeMundo(
             </button>
           </div>
         </div>
-        <div id="ts-gen" style="padding:10px 12px;border:1px solid #2a2a30;border-radius:4px;background:#14141a">
-          <div style="font-size:12px;color:#999;margin-bottom:6px">Generación <span style="color:#666">(primero el mundo, sin estilo; el estilo se aplica después sobre el mundo generado)</span></div>
-          <div id="ts-gen-state" style="font-size:12px;margin-bottom:8px;line-height:1.6"></div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px">
-            <button id="ts-gen-world" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
-            <button id="ts-apply-style" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
-          </div>
-          <div id="ts-style-plan"></div>
-          <div id="ts-gen-progress" style="font-size:12px;margin-top:4px"></div>
-        </div>
+        <div id="ts-gen" style="padding:10px 12px;border:1px solid #2a2a30;border-radius:4px;background:#14141a"></div>
       </div>
     </div>
     <div id="ts-actions" style="display:flex;gap:12px">
@@ -208,6 +165,12 @@ export async function pintarSelectorDeMundo(
   const renderModeEl = deps.content.querySelector("#ts-rendermode") as HTMLElement;
   const charModeEl = deps.content.querySelector("#ts-charmode") as HTMLElement;
   const continueBtn = deps.content.querySelector("#ts-continue") as HTMLButtonElement;
+  const genEl = deps.content.querySelector("#ts-gen") as HTMLElement;
+  /** Vuelve a montar el PANEL DE GENERACIÓN para el par (mundo, estilo) que se
+   *  está mirando. Es el refresco de antes: la hoja se reemplaza entera, que es
+   *  lo que hacía `refreshGenPanel` con sus nodos. */
+  const montarGen = (): void =>
+    deps.montarPanelDeGeneracion(genEl, selectedGame, styleById.get(styleSel.value));
   let selectedRenderMode: ModoElegido = MODO_AL_EMPEZAR;
   // Los dos defectos salen de core (`MODO_AL_EMPEZAR`, el mismo valor con el
   // que el wire decide): personajes NACE en el de escenarios y solo lo sigue en
@@ -294,7 +257,7 @@ export async function pintarSelectorDeMundo(
       refreshSelection();
       refreshStyleOptions();
       refreshCover(); // el desplegable acaba de cambiar de preselección
-      refreshGenPanel();
+      montarGen();
     });
   }
   /** La tarjeta del mundo enseña la portada del estilo ELEGIDO, no la del
@@ -315,105 +278,12 @@ export async function pintarSelectorDeMundo(
   styleSel.addEventListener("change", () => {
     styleDesc.textContent = styleById.get(styleSel.value)?.description ?? "";
     refreshCover();
-    refreshGenPanel();
-  });
-
-  // ── Panel de generación: mundo por juego + estilo aplicado encima ──
-  const genStateEl = deps.content.querySelector("#ts-gen-state") as HTMLElement;
-  const genWorldBtn = deps.content.querySelector("#ts-gen-world") as HTMLButtonElement;
-  const applyStyleBtn = deps.content.querySelector("#ts-apply-style") as HTMLButtonElement;
-  const stylePlanEl = deps.content.querySelector("#ts-style-plan") as HTMLElement;
-  const genProgressEl = deps.content.querySelector("#ts-gen-progress") as HTMLElement;
-  /** Confirmación en dos clicks para regenerar (patrón armed del dev-menu). */
-  let regenArmedUntil = 0;
-  const contentStatus = (): "ready" | "stale" | "missing" =>
-    selectedGame.generation ?? "missing";
-  const appliedStatus = (): "ready" | "stale" | null => {
-    const hit = (selectedGame.styles_applied ?? []).find(
-      (a) => a.style_id === styleSel.value,
-    );
-    return hit ? hit.status : null;
-  };
-  const refreshGenPanel = (): void => {
-    const cs = contentStatus();
-    const as = appliedStatus();
-    // Un mundo «generado» puede tener escenas que la puerta de carga ya no
-    // sirve: se le pedirán al motor cuando el jugador llegue a ellas, y NADA
-    // en pantalla lo delata (un mundo cribado se ve igual que uno sano, lo
-    // midió QA). Así que se CUENTA — no se explica el motivo, que es la
-    // opción que el usuario descartó en #451: es un número (H-2).
-    const cuenta = selectedGame.escenas;
-    const recorte =
-      cuenta && cuenta.servibles < cuenta.total
-        ? ` <span style="color:#da6">(${cuenta.servibles} de ${cuenta.total} escenas;` +
-          ` el resto se generará al llegar)</span>`
-        : "";
-    const CONTENT_LABEL: Record<string, string> = {
-      ready: `<span style="color:#4a4">✓ generado</span>${recorte}`,
-      stale: `<span style="color:#da6">⟳ obsoleto (regenera el mundo)</span>`,
-      missing: `<span style="color:#a66">— sin generar</span>`,
-    };
-    const styleLabel = !styleSel.value
-      ? `<span style="color:#666">—</span>`
-      : as === "ready"
-        ? `<span style="color:#4a4">✓ aplicado</span>`
-        : as === "stale"
-          ? `<span style="color:#da6">⟳ obsoleto (regenera el mundo/estilo)</span>`
-          : `<span style="color:#a66">— sin aplicar</span>`;
-    genStateEl.innerHTML =
-      `Mundo: ${CONTENT_LABEL[cs]}` +
-      ` &nbsp;·&nbsp; Estilo <span style="color:#bdf">${escapeHtml(styleById.get(styleSel.value)?.name ?? "(ninguno)")}</span>: ${styleLabel}`;
-    genWorldBtn.textContent = cs === "ready" ? "↻ Regenerar mundo" : "⚙ Generar mundo";
-    genWorldBtn.disabled = false;
-    applyStyleBtn.textContent =
-      as === "ready" ? "↻ Regenerar estilo (ver coste)" : "🎨 Aplicar estilo (ver coste)";
-    const canApply = cs === "ready" && !!styleSel.value;
-    applyStyleBtn.disabled = !canApply;
-    applyStyleBtn.style.opacity = canApply ? "" : "0.45";
-    applyStyleBtn.title = canApply
-      ? "Pre-genera los assets estilizados del mundo (coste estimado antes de gastar)"
-      : "Genera primero el mundo de este juego";
-    stylePlanEl.innerHTML = "";
-    regenArmedUntil = 0;
-    // El progreso que se pinta es el de LA TARJETA que se está enseñando, no
-    // «el último que llegó» (#313). Cambiar de tarjeta repinta este panel, así
-    // que el jugador ve el estado del mundo que está mirando.
-    pintarProgresoDeMundo(genProgressEl, deps.progresoDe(selectedGame.game_id));
-  };
-  const generarElMundo = async (): Promise<void> => {
-    if (contentStatus() === "ready") {
-      // Regenerar pisa el mundo actual y deja obsoletos sus estilos
-      // aplicados: dos clicks (armed, TTL 5 s), como las acciones de pago.
-      if (Date.now() > regenArmedUntil) {
-        regenArmedUntil = Date.now() + 5000;
-        genWorldBtn.textContent = "¿Regenerar? El mundo actual y sus estilos aplicados quedarán obsoletos";
-        return;
-      }
-    }
-    genWorldBtn.disabled = true;
-    genProgressEl.innerHTML = `<span style="color:#da6">⚙ Encolando la generación…</span>`;
-    try {
-      await deps.narrative.generateGame(selectedGame.game_id);
-      genProgressEl.innerHTML = `<span style="color:#da6">⚙ Generando el mundo (el motor narrativo tarda varios minutos)…</span>`;
-    } catch (err) {
-      genProgressEl.innerHTML = `<span style="color:#a44">${escapeHtml((err as Error).message)}</span>`;
-      genWorldBtn.disabled = false;
-    }
-  };
-  genWorldBtn.addEventListener("click", () =>
-    paso(generarElMundo(), "title", "encolar la pre-generación del mundo"),
-  );
-  applyStyleBtn.addEventListener("click", () => {
-    paso(
-      deps.mostrarPlanDeEstilo(stylePlanEl, selectedGame.game_id, styleSel.value),
-      "title",
-      "calcular el coste de aplicar el estilo",
-    );
+    montarGen();
   });
 
   refreshSelection();
   refreshStyleOptions();
-  refreshGenPanel();
+  montarGen();
 
   (deps.content.querySelector("#ts-back") as HTMLButtonElement)
     .addEventListener("click", () => paso(deps.ir({ a: "home" }), "title", "volver al home del título"));
