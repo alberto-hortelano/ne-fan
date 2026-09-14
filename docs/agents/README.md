@@ -44,6 +44,13 @@ cp -r ../ne-fan/nefan-html/public/sprites nefan-html/public/   # las hojas base 
 mkdir -p docs/agents/<tarea> && cp ../ne-fan/docs/agents/<tarea>/{plan,implementacion*}.md docs/agents/<tarea>/
 ```
 
+**Y tras cada `git rebase` que traiga cambios de CONTRATO, `npm run build` otra vez.** El 2026-09-14
+costó cinco rojos que no eran del código: `test/contract-fixtures.test.ts` decía «esperaba accept,
+obtuve `entity_kind: Invalid enum value`» sobre una fixture perfectamente válida, porque el `dist/`
+del worktree seguía siendo el de antes del rebase. El síntoma engaña —parece que el rebase ha
+perdido el cambio de contrato— y `git log` demuestra que no. Regla corta: si el rebase toca
+`src/contract/` o `data/contract/`, se reconstruye antes de creerse un rojo.
+
 Sin las hojas de sprites el cliente se niega a empezar partida («Faltan las hojas de sprites…») y
 la batería lo cuenta como fallo del guion, no como red incompleta (#476 pide que el runner salga `⊘`).
 Y al recoger: copia `plan.md`/`implementacion*.md` al checkout principal ANTES de `git worktree remove`,
