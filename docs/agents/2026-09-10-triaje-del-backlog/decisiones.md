@@ -32,6 +32,8 @@ mintiendo mientras dure — y miente hasta **7,8×** (el atlas cotiza `ceil(miss
 ignorando que cada ref de cara abre página propia; el bloque de skins cotiza el **roster entero**
 cada vez, ~$2,9 por personaje).
 
+- R: Opcion a, el arreglo del importa van en 513
+
 ### 2 · ¿Con qué modo arranca una partida nueva?
 
 Las dos puertas de la misma decisión no se tratan igual, y hoy es por omisión y no por elección:
@@ -46,10 +48,14 @@ Gastará créditos».
 Cuesta lo mismo en los tres casos (una tarde). Lo que cambia es **cuánto gasta quien pulsa «Nueva
 partida» sin mirar**.
 
+- R: b
+
 ### 3 · #465 — ¿Autorizas un playtest con el motor REAL?
 
 Gasta créditos y tiempo suyo. Sirve para confirmar que el motor ancla los lugares con `anchor.rect`.
 **El resto de #465 se hace sin preguntar**: el prompt y las cotas del zod son canónicos.
+
+-R: adelante
 
 ---
 
@@ -62,12 +68,15 @@ Hoy las tres están en «como está» **por omisión, no por decisión**.
 1. **¿El rótulo de un enemigo se ve distinto del de un vecino?** Hoy el HUD lo nombra en rojo pero su
    rótulo de mundo es la misma caja crema que la del tabernero: de lejos no sabes a quién puedes
    pegar. **(A)** sí, en `--nf-danger` (el token existe; barato) · **(B)** no, todos iguales (coste 0).
+  - R: a
 2. **¿Un rótulo desaparece cuando el personaje está detrás de una pared?** Hoy «Alcaldesa Mirla»
    flota sobre la fachada de la posada con ella dentro. **(A)** se oculta · **(B)** se atenúa mucho
    (los dos: test de oclusión por rótulo y frame, coste medio) · **(C)** se sigue viendo a través —
    te dice dónde está la gente del pueblo, y es gratis.
-3. **Dos rótulos alineados se pisan.** **(A)** se oculta el más lejano (barato) · **(B)** se
-   desplazan en vertical (medio) · **(C)** como está.
+  - R: c
+3. **Dos rótulos alineados se pisan.** **(A)** se oculta el más lejano (barato) · **(B)** se desplazan en vertical (medio) · **(C)** como está.
+  - R: a
+
 
 ### 5 · #478 — El bridge llega tarde: ¿qué hace el cliente?
 
@@ -81,11 +90,14 @@ ahí acaba: te quedas en el visor, sin título, y la única salida es recargar.
 
 (La mitad de «el chip deja de mentir» se hace en cualquiera de los tres: eso no es elección.)
 
+- R: b
+
 ### 6 · #451 — Un snapshot de 9 escenas con UNA injugable se tira entero
 
 - **(a)** Como hoy: se tira entero y se regenera desde cero.
 - **(b)** Se sirve la entrada y las 8 buenas, y solo se vuelve a pedir el tile malo.
 - **(c)** Se queda (a), pero el título **dice el motivo**.
+- R: b
 
 ### 7 · #529 — Un enemigo inválido del motor tumba el FRAME entero
 
@@ -93,6 +105,7 @@ ahí acaba: te quedas en el visor, sin título, y la única salida es recargar.
   cliente ya hace. **Recomendada.**
 - **(b)** Se sigue tirando el frame entero, pero el modal dice **qué enemigo y por qué**, en vez de
   «Fallo interno del juego».
+- R: a
 
 ### 8 · #532 — Todo `object` que spawnea el motor es un muro sólido de 1,5 m
 
@@ -101,6 +114,7 @@ mirar su huella): hacer #524 antes es escribir un test que #532 reescribe.
 
 - **(a)** `spawn_entity` gana `footprint` opcional · **(b)** gana `kind: "item"` · **(c)** las dos.
   **Recomendada la (c).** Toca zod, espejo Python y tool JSON.
+- R: c
 
 ### 9 · #538 — Dónde reapareces al morir
 
@@ -108,6 +122,8 @@ Hoy: **donde te mataron, con el enemigo a 60/60 a un paso** — o sea, bucle de 
 
 - **(a)** Como hoy · **(b)** el `__player_start` del tile · **(c)** el último punto seguro ·
   **(d)** donde te mataron, pero el enemigo te suelta.
+
+- R: a
 
 ---
 
@@ -125,6 +141,8 @@ Cada una necesita **una corrida autorizada** para verificarse. La completa son 1
   es en un 70 % el mutante desbocado, no la batería.
 
 (Los pasos 2-4 de #443 se miden en local sin gastar nada; esto solo afecta al paso 1.)
+
+- R: a
 
 ### 11 · #430 — Diferida hasta que #443 tenga respuesta
 
@@ -147,6 +165,8 @@ compartida y cierta con la máquina quieta** (cinco medidas hoy).
 - **(c)** Declararlo en `qa/README.md` («solo válida con la máquina quieta»), que es documentar lo
   que ya pasa.
 
+- R: b
+
 ---
 
 ## D · Una recomendación que no es pregunta
@@ -154,3 +174,31 @@ compartida y cierta con la máquina quieta** (cinco medidas hoy).
 **#417** (el pin del arte de personaje es permanente: sin keep-list, lo medido no se puede reclamar)
 **es vigente pero no urge**: 2 GiB de techo contra 130 MB en disco. Recomiendo **etiquetarlo
 `futuro`** hasta que el disco apriete. Si prefieres que se haga, dilo y entra en la siguiente tanda.
+
+-R: Ok, dejalo en futuro
+
+---
+
+## Respondidas — 2026-09-14
+
+Las doce contestadas por el usuario. Esto es lo que abre cada respuesta, y es el documento que
+citan los `requisitos.md` de las tandas que salen de aquí.
+
+| # | Respuesta | Qué abre |
+|---|---|---|
+| 1 · #513 | **(a)**, y el arreglo del importe **entra en #513** | tanda A · lo pagado queda con dueño y el importe deja de mentir; absorbe **#548** |
+| 2 · modo de partida nueva | **(b)** nace en Maqueta 3D | tanda A · el selector deja de venir en Imagen IA; encenderla es explícito, como en el home. Toca la misma zona que **#552** |
+| 3 · #465 | **adelante** | playtest con el motor REAL (gasta créditos y su tiempo): se agenda aparte, con él delante |
+| 4.1 · #484 | **(A)** el enemigo en `--nf-danger` | tanda C |
+| 4.2 · #484 | **(C)** el rótulo se ve a través de la pared | tanda C · **coste 0**: es lo que ya hace. Se escribe como decisión, no como omisión |
+| 4.3 · #484 | **(A)** se oculta el más lejano | tanda C |
+| 5 · #478 | **(b)** chip «Connected» + **«Reintentar»** en el muro | tanda C |
+| 6 · #451 | **(b)** se sirve la entrada y las buenas; solo se re-pide el tile malo | tanda C |
+| 7 · #529 | **(a)** cae solo el enemigo inválido, el motivo vuelve al motor | tanda B |
+| 8 · #532 | **(c)** `footprint` opcional **y** `kind: "item"` | tanda B · desbloquea **#524** |
+| 9 · #538 | **(a)** se reaparece donde te mataron | **#538 NO se cierra**: (a) zanja el H10 (el bucle de muerte se acepta), pero el H2 sigue vivo y no era decisión suya — el cliente pasa una consulta de MOVIMIENTO donde core espera una de PUNTO, así que medio `puntoDeReaparicion` es inobservable y el guion 93 sale verde con el sabotaje. Eso es «un guardián que no puede ponerse rojo»: se arregla |
+| 10 · #443 vs #441 | **(a)** #443 primero | tanda D · pasos 2-4 en local, sin gastar; el paso 1 pide corrida autorizada |
+| 11 · #430 | diferida, correctamente: depende de lo que conteste #443 | — |
+| 12 · baterías | **(b)** la batería es indicativa bajo carga | tanda D · es **#545**: arreglar los asertos y el reproductor bajo carga sintética, que da el rojo a demanda sin quitarle la máquina a nadie |
+| D · #417 | sin objeción a la recomendación | etiquetado `futuro` |
+
