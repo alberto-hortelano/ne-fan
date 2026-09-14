@@ -134,9 +134,28 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
         else:
             missing.append(cell)
 
+    # Las refs no resueltas se limpian de las celdas ANTES de cotizar (el
+    # packer agrupa por `ref`: una ref muerta no debe fragmentar páginas).
+    # Cotizar sobre las sucias diría más páginas de las que se pintan, y
+    # mentir por arriba sigue siendo mentir. Es UNA sola lista para las dos
+    # cosas: la que se cotiza es exactamente la que se pinta.
+    missing_dicts = []
+    for c in missing:
+        d = c.model_dump()
+        if d.get("ref") and d["ref"] not in cell_refs:
+            d["ref"] = ""
+        missing_dicts.append(d)
+    # El presupuesto lo da quien EMPAQUETA. El cliente no reparte páginas ni
+    # conoce la tabla de precios: hasta el 2026-09-14 lo hacía, con una fórmula
+    # propia que había divergido de ésta, y enseñaba hasta 3,1× menos de lo que
+    # iba a cobrar (medido sobre data/scenes/*.json).
+    presupuesto = gen.cotizar(missing_dicts)
+
     if not missing or body.resolve_only:
         return {"cells": resolved, "pages_painted": 0, "cached": not missing,
-                "cost_usd": 0.0, "generation_time_ms": 0, "missing": len(missing)}
+                "cost_usd": 0.0, "generation_time_ms": 0, "missing": len(missing),
+                "quoted_pages": presupuesto["pages"],
+                "quoted_cost_usd": presupuesto["cost_usd"]}
 
     print(
         f"SurfaceAtlas: {len(missing)} celdas nuevas de {len(body.cells)} "
@@ -144,14 +163,6 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
         flush=True,
     )
     try:
-        # Las refs no resueltas se limpian de las celdas (el packer agrupa
-        # por `ref`: una ref muerta no debe fragmentar páginas).
-        missing_dicts = []
-        for c in missing:
-            d = c.model_dump()
-            if d.get("ref") and d["ref"] not in cell_refs:
-                d["ref"] = ""
-            missing_dicts.append(d)
         result = await asyncio.to_thread(
             gen.generate,
             missing_dicts,
@@ -190,6 +201,10 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
         "cost_usd": result["cost_usd"],
         "generation_time_ms": result["generation_time_ms"],
         "missing": 0,
+        # Lo que se cotizó para ESTA petición, al lado de lo que se cobró: la
+        # paridad queda visible en el propio wire, no solo en un test.
+        "quoted_pages": presupuesto["pages"],
+        "quoted_cost_usd": presupuesto["cost_usd"],
     }
 
 

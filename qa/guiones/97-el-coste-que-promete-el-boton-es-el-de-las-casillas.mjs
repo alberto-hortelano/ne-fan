@@ -18,10 +18,10 @@
  *  quitar bloques para pagar menos.
  *
  *  Las afirmaciones NO están escritas contra números fijos del bench: se
- *  derivan de las ETIQUETAS que el propio panel pinta (`… — ~$0.30`,
- *  `… — en caché ($0)`, `… — coste no disponible`), así que valen con
- *  cualquier mundo, estilo y estado de caché. Lo que se afirma es la RELACIÓN
- *  entre lo que se lee y lo que se promete:
+ *  derivan de las ETIQUETAS que el propio panel pinta (`… — $0.30`,
+ *  `… — hasta $2.90`, `… — en caché ($0)`, `… — coste no disponible`), así que
+ *  valen con cualquier mundo, estilo y estado de caché. Lo que se afirma es la
+ *  RELACIÓN entre lo que se lee y lo que se promete:
  *
  *   1. El total es la suma EXACTA de las casillas encendidas con precio, y el
  *      botón repite esa misma cifra.
@@ -34,6 +34,12 @@
  *   5. Si hay un bloque sin precio, el total y el botón lo dicen con «+ ?» en
  *      vez de tragárselo como 0 — un coste desconocido que desaparece del
  *      total es la forma más barata de cobrar de más.
+ *  Desde la tanda «el dinero no miente» (2026-09-14) el importe lleva además
+ *  una CLASE, y (1) y (3) la afirman con la cifra: «hasta $X» si alguna casilla
+ *  encendida es una cota y «$X» a secas si ninguna lo es. Quien construye el
+ *  caso de la cota ENCENDIDA es el guion 114, que se sirve un catálogo de
+ *  sprites capaz de costear; aquí se afirma la relación, con el estado que
+ *  traiga el mundo.
  *
  *  LO QUE NO MIDE, dicho para que nadie lo cuente de más: que un bloque en
  *  caché no sume en el total. En el bench su precio interno es 0, así que
@@ -48,7 +54,9 @@
  *  tragarse el bloque sin precio (`sinPrecio = false`) pone rojo (5); dejar el
  *  rótulo del botón sin la cifra pone rojo (1) y (5); ignorar `selected` en el
  *  filtro de la suma pone rojo (3); quitar el `disabled` del bloque en caché
- *  pone rojo (2).
+ *  pone rojo (2). Y el (6), probado el 2026-09-14: pintar la cota sin su
+ *  «hasta» (`resumirElImporte` con `esCota` forzado a false) pone rojo el
+ *  total y el botón.
  */
 import { nuevaPartida, regenerarMundo } from "../lib/sesion.mjs";
 
@@ -66,14 +74,14 @@ export const aisla = ["mundo", "fake-ai"];
 const GAME_ID = "alta_fantasia";
 
 /** Lo que el panel PINTA en cada casilla, tal como lo lee el jugador. El
- *  precio se saca del rótulo (`— ~$0.30`, `— $0.30`), no de ninguna API: si el
- *  rótulo y el total dejaran de contar lo mismo, esa divergencia es justo lo
- *  que hay que ver. */
+ *  precio se saca del rótulo (`— $0.30`, `— hasta $2.90`), no de ninguna API:
+ *  si el rótulo y el total dejaran de contar lo mismo, esa divergencia es justo
+ *  lo que hay que ver. */
 function leerElPanel() {
   const filas = [...document.querySelectorAll("#ts-style-plan label")].map((l) => {
     const cb = l.querySelector("input[data-block-idx]");
     const texto = (l.textContent ?? "").replace(/\s+/g, " ").trim();
-    const m = /—\s*~?\$(\d+(?:\.\d+)?)\s*$/.exec(texto);
+    const m = /—\s*(hasta\s+)?\$(\d+(?:\.\d+)?)\s*$/.exec(texto);
     return {
       idx: Number(cb?.dataset.blockIdx ?? -1),
       texto,
@@ -81,7 +89,8 @@ function leerElPanel() {
       disabled: Boolean(cb?.disabled),
       enCache: /en cach[eé] \(\$0\)/i.test(texto),
       sinPrecio: /coste no disponible/i.test(texto),
-      precio: m ? Number(m[1]) : null,
+      esCota: Boolean(m && m[1]),
+      precio: m ? Number(m[2]) : null,
     };
   });
   const totalEl = document.getElementById("ts-style-total");
@@ -93,23 +102,50 @@ function leerElPanel() {
   };
 }
 
-/** La cifra que la pantalla enseña, y si además admite que hay algo sin
- *  precio. `null` cuando la pantalla dice que no hay nada que gastar. */
+/** La cifra que la pantalla enseña, si es una COTA y si además admite que hay
+ *  algo sin precio. `null` cuando la pantalla dice que no hay nada que gastar;
+ *  `valor: null` cuando hay algo que gastar pero NINGÚN bloque publica su
+ *  precio — ahí la pantalla no da cifra, dice «coste no disponible» y ya (antes
+ *  decía «~$0.00 + ?», y el cero es lo primero que se lee). */
 const cifraDe = (texto) => {
   if (/Nada seleccionado|Registrar \(sin coste\)/.test(texto)) return null;
-  const m = /~?\$(\d+(?:\.\d+)?)(\s*\+\s*\?)?/.exec(texto);
-  return m ? { valor: Number(m[1]), masInterrogante: Boolean(m[2]) } : undefined;
+  const m = /(hasta\s+)?\$(\d+(?:\.\d+)?)(\s*\+\s*\?)?/.exec(texto);
+  if (m) return { valor: Number(m[2]), esCota: Boolean(m[1]), masInterrogante: Boolean(m[3]) };
+  if (/coste no disponible/i.test(texto)) {
+    return { valor: null, esCota: false, masInterrogante: true };
+  }
+  return undefined;
 };
 
 /** Lo que el jugador DEBERÍA leer, derivado de las casillas: la suma de las
- *  encendidas con precio, y si alguna encendida no lo tiene. */
+ *  encendidas con precio, si alguna de ellas es una cota, y si alguna no tiene
+ *  precio. `hayCifra` es lo que distingue «$0.15 + ?» de «coste no
+ *  disponible»: sin ningún sumando no hay cifra que dar. */
 const esperadoDe = (filas) => {
   const activos = filas.filter((f) => f.checked && !f.enCache);
+  const conPrecio = activos.filter((f) => !f.sinPrecio);
   return {
-    valor: Number(activos.reduce((a, f) => a + (f.precio ?? 0), 0).toFixed(2)),
+    valor: conPrecio.length === 0
+      ? null
+      : Number(conPrecio.reduce((a, f) => a + (f.precio ?? 0), 0).toFixed(2)),
+    esCota: conPrecio.some((f) => f.esCota),
     masInterrogante: activos.some((f) => f.sinPrecio),
     hayAlgo: activos.length > 0,
+    hayCifra: conPrecio.length > 0,
   };
+};
+
+/** ¿Lo leído es lo esperado? Compara la cifra Y sus dos cualificadores: una
+ *  suma correcta presentada como exacta cuando era cota, o un desconocido que
+ *  se traga, son fallos distintos del mismo importe. */
+const casa = (leido, esp) => {
+  if (!esp.hayAlgo) return leido === null;
+  if (leido === null || leido === undefined) return false;
+  return (
+    leido.valor === esp.valor &&
+    leido.esCota === esp.esCota &&
+    leido.masInterrogante === esp.masInterrogante
+  );
 };
 
 const marcar = (ctx, idx, encendida) =>
@@ -145,11 +181,15 @@ export default async function (ctx) {
   const esp = esperadoDe(inicial.filas);
   const leidoTotal = cifraDe(inicial.total);
   const leidoBoton = cifraDe(inicial.boton);
+  // La CLASE de la cifra entra en la misma afirmación, no en un bloque aparte:
+  // «hasta $X» solo si alguna casilla encendida es una cota, y «$X» a secas si
+  // ninguna lo es. Las dos direcciones se afirman siempre, con el estado que
+  // traiga el mundo del bench — un bloque propio se quedaría sin medir el día
+  // que no hubiera cotas, que es justo el día en que un «hasta» de más pasaría
+  // desapercibido.
   ctx.expect(
-    "el total es la suma EXACTA de las casillas encendidas con precio",
-    esp.hayAlgo
-      ? leidoTotal !== null && leidoTotal !== undefined && leidoTotal.valor === esp.valor
-      : leidoTotal === null,
+    "el total es la suma EXACTA de las casillas encendidas con precio, y de su misma clase",
+    casa(leidoTotal, esp),
     `casillas ⇒ ${JSON.stringify(esp)} · pantalla ⇒ «${inicial.total}»`,
   );
   ctx.expect(
@@ -202,9 +242,7 @@ export default async function (ctx) {
       const leido = cifraDe(apagado.total);
       ctx.expect(
         `apagar «${f.texto.slice(0, 40)}…» baja el total exactamente sus $${f.precio.toFixed(2)}`,
-        espApagado.hayAlgo
-          ? leido !== null && leido !== undefined && leido.valor === espApagado.valor
-          : leido === null,
+        casa(leido, espApagado),
         `esperado ${JSON.stringify(espApagado)} · pantalla «${apagado.total}»`,
       );
       await marcar(ctx, f.idx, true);

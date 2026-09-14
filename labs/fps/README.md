@@ -56,7 +56,10 @@ runs/<run>/
   superficies por prim y grupo de caras (`SHAPE_GROUPS`), catálogo
   `MAT_INFO`, celdas por variante (A = solo materiales tileables;
   C = + celdas hero de prims marcadas `hero`) y shelf packing (≤12
-  celdas/página — hallazgo skinning V4: más celdas colapsan el modelo).
+  celdas/página — hallazgo skinning V4: más celdas colapsan el modelo). Ese 12
+  es un TOPE del bench, no la capacidad de una página ni una tarifa: quien
+  reparte las páginas que se pintan y se cobran es `pack_missing`
+  (`ai_server/surface_atlas_generator.py`), y el precio lo dice él.
 - `lib.mjs` — three.js: prim → mesh multi-material con UVs en metros
   (`DENSITY_M` = 2.5 m/repetición), colisión AABB + deslizamiento, cielo,
   banco de sprites y_bot y billboards 8-dir.

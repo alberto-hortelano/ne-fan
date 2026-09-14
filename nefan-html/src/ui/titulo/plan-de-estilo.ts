@@ -17,7 +17,12 @@
  *  callback `ir(destino)`: quien enruta es la raíz. */
 import { paso } from "../async-ui.js";
 import { errors } from "../error-log.js";
-import type { StyleApplyController, StyleApplyPlan } from "../style-apply.js";
+import type {
+  PrecioDeBloque,
+  StyleApplyBlock,
+  StyleApplyController,
+  StyleApplyPlan,
+} from "../style-apply.js";
 import {
   BTN_PRIMARY_CSS,
   BTN_SECONDARY_CSS,
@@ -39,6 +44,53 @@ export interface DepsDePlanDeEstilo {
    *  pinta el fallo en `#ts-style-progress`, así que un enrutador que la
    *  descartara mandaría ese fallo al registro y dejaría la pantalla muda. */
   ir(destino: DestinoDelTitulo): Promise<void>;
+}
+
+/** Cómo se LEE el precio de un bloque. El cualificador va pegado a la cifra —
+ *  «hasta $3.37» y no un asterisco al pie— porque es lo que el jugador mira
+ *  antes de aceptar, y una cota sin la palabra «hasta» se lee como el precio. */
+function precioEnTexto(precio: PrecioDeBloque): string {
+  switch (precio.clase) {
+    case "exacto":
+      return `$${precio.usd.toFixed(2)}`;
+    case "cota":
+      return `hasta $${precio.usd.toFixed(2)}`;
+    case "desconocido":
+      return "coste no disponible";
+  }
+}
+
+/** El importe de lo ENCENDIDO, con su cualificador. La regla de mezcla es la
+ *  única honesta: un solo bloque que sea cota vuelve cota la suma entera (no se
+ *  puede prometer exactitud de un sumando que no la tiene), y uno sin precio
+ *  añade el «+ ?» en vez de contarse como 0 — un coste desconocido que
+ *  desaparece del total es la forma más barata de cobrar de más.
+ *
+ *  Y si NINGUNO tiene precio no hay cifra que dar: se dice «coste no
+ *  disponible», sin el `$0.00` delante. Era el último punto vivo de #548 — el
+ *  botón decía «Aplicar estilo (~$0.00 + ?)» para un batch que podía costar
+ *  tres dólares, y lo primero que se lee de ahí es el cero. */
+function resumirElImporte(bloques: StyleApplyBlock[]): {
+  hayAlgo: boolean;
+  cifra: string;
+  sinCifra: boolean;
+  sinPrecio: boolean;
+} {
+  const activos = bloques.filter((b) => b.selected && b.missing > 0);
+  const conCifra = activos.flatMap((b) => (b.precio.clase === "desconocido" ? [] : [b.precio]));
+  const sinPrecio = activos.length > conCifra.length;
+  const hayAlgo = activos.length > 0;
+  if (conCifra.length === 0) {
+    return { hayAlgo, cifra: "coste no disponible", sinCifra: true, sinPrecio };
+  }
+  const total = conCifra.reduce((acc, p) => acc + p.usd, 0);
+  const esCota = conCifra.some((p) => p.clase === "cota");
+  return {
+    hayAlgo,
+    cifra: `${esCota ? "hasta " : ""}$${total.toFixed(2)}${sinPrecio ? " + ?" : ""}`,
+    sinCifra: false,
+    sinPrecio,
+  };
 }
 
 /** Panel de aplicación de estilo: plan con coste (SIN gastar) → checkboxes
@@ -63,7 +115,7 @@ export async function pintarPlanDeEstilo(
       (b, i) => `
         <label style="display:block;font-size:12px;color:#bbb;margin-bottom:3px">
           <input type="checkbox" data-block-idx="${i}" ${b.selected ? "checked" : ""} ${b.missing === 0 ? "disabled" : ""}>
-          ${escapeHtml(b.label)} — ${b.missing === 0 ? "en caché ($0)" : b.estCostUsd === null ? "coste no disponible" : `${b.exact ? "" : "~"}$${b.estCostUsd.toFixed(2)}`}
+          ${escapeHtml(b.label)} — ${b.missing === 0 ? "en caché ($0)" : precioEnTexto(b.precio)}
         </label>`,
     )
     .join("");
@@ -86,15 +138,14 @@ export async function pintarPlanDeEstilo(
   const cancelBtn = hueco.querySelector("#ts-style-cancel") as HTMLButtonElement;
   const progressEl = hueco.querySelector("#ts-style-progress") as HTMLElement;
   const refreshTotal = (): void => {
-    const activos = plan.blocks.filter((b) => b.selected && b.missing > 0);
-    const total = activos.reduce((acc, b) => acc + (b.estCostUsd ?? 0), 0);
-    // Un bloque sin precio (el catálogo no pudo costearlo) no desaparece del
-    // total en silencio: el total lleva un «+ ?» y la causa está en las notas.
-    const sinPrecio = activos.some((b) => b.estCostUsd === null);
-    const anything = activos.length > 0;
-    const cifra = `~$${total.toFixed(2)}${sinPrecio ? " + ?" : ""}`;
+    const { hayAlgo: anything, cifra, sinCifra, sinPrecio } = resumirElImporte(plan.blocks);
+    const aviso = sinCifra
+      ? " — ningún bloque seleccionado publica su precio (ver notas)"
+      : sinPrecio
+        ? " — hay bloques con coste no disponible"
+        : "";
     totalEl.textContent = anything
-      ? `Coste estimado: ${cifra}${sinPrecio ? " — hay bloques con coste no disponible" : ""} (los skins y páginas ya en caché no se repagan)`
+      ? `Coste: ${cifra}${aviso} (los skins y páginas ya en caché no se repagan)`
       : "Nada seleccionado que genere coste.";
     runBtn.textContent = anything ? `Aplicar estilo (${cifra})` : "Registrar (sin coste)";
     // EL BOTÓN QUE GASTA NO SE VE IGUAL QUE EL QUE NO GASTA (#548). Era UN solo
@@ -121,7 +172,7 @@ export async function pintarPlanDeEstilo(
    *  volver al selector —una pantalla que no se puede pintar, el bridge que se
    *  cae en ese segundo— entraba por el `catch` de un gasto que YA HABÍA
    *  OCURRIDO: borraba el «Estilo aplicado ($2.50)» y volvía a encender
-   *  «Aplicar estilo (~$2.50)». Nada en pantalla decía que eso ya estaba pagado
+   *  «Aplicar estilo ($2.50)». Nada en pantalla decía que eso ya estaba pagado
    *  hace diez segundos, y el botón invitaba a pagarlo otra vez.
    *
    *  El corte va en la línea del pago: lo de ARRIBA puede fallar y rearmar el

@@ -157,6 +157,14 @@ const gastoServido = () => ({
   rutas: Object.fromEntries(gastoPorRuta),
 });
 
+/** Cuánto «cuesta» una página de atlas en este motor de mentira, y cuántas
+ *  celdas le caben. ATREZO: no son las cifras de fal ni el reparto real (que
+ *  agrupa por tipo y por ref de cara), solo una cuenta estable y distinta de
+ *  cero para que la batería pueda leer un importe en el panel. El precio de
+ *  verdad lo dice quien empaqueta, y eso es `ai_server`. */
+const PAGINA_DE_ATREZO_USD = 0.05;
+const CELDAS_POR_PAGINA_DE_ATREZO = 9;
+
 let fakeDevCacheEnabled = false;
 /** Turnos de diálogo servidos (el texto los numera: se ve el ida y vuelta). */
 let fakeDialogueTurn = 0;
@@ -844,17 +852,35 @@ const server = http.createServer((req, res) => {
         }
         // Cuesta solo si PINTÓ: resolve_only y el acierto de caché son $0.
         if (painted > 0) dePago("/generate_surface_atlas");
+        // EL PRECIO LO DICE QUIEN EMPAQUETA, también aquí: este motor cotiza y
+        // cobra con la MISMA cuenta, porque lo que la batería mide es que el
+        // panel enseñe lo que el servidor le da y no una fórmula propia. Los
+        // números son de ATREZO y a propósito no son los de fal ($0.15/$0.17):
+        // este motor no pinta nada y no cobra nada, y copiar aquí la tabla real
+        // sería la tercera implementación del precio — justo lo que la regla
+        // `el-precio-lo-dice-quien-empaqueta` prohíbe. El reparto de verdad
+        // vive en `ai_server/surface_atlas_generator.py`.
+        const cotizar = (celdas: number) => {
+          const paginas = Math.ceil(celdas / CELDAS_POR_PAGINA_DE_ATREZO);
+          return {
+            pages: paginas,
+            cost_usd: Math.round(paginas * PAGINA_DE_ATREZO_USD * 100) / 100,
+          };
+        };
+        const presupuesto = cotizar(resolveOnly ? missing : painted);
         console.error(
           `[fake-ai] surface_atlas: ${painted} nuevas de ${cells.length} celdas` +
           (resolveOnly ? ` (resolve_only, ${missing} missing)` : ""),
         );
         return send(200, {
           cells: out,
-          pages_painted: painted > 0 ? 1 : 0,
+          pages_painted: painted > 0 ? presupuesto.pages : 0,
           cached: painted === 0,
-          cost_usd: 0,
+          cost_usd: resolveOnly ? 0 : presupuesto.cost_usd,
           generation_time_ms: 5,
           missing,
+          quoted_pages: presupuesto.pages,
+          quoted_cost_usd: presupuesto.cost_usd,
         } satisfies GenerateSurfaceAtlasResponse);
       }
       // Pins del asset-store (batch "aplicar estilo"): en memoria, para que

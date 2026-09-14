@@ -140,10 +140,19 @@ def color_word(hex_color: str) -> str:
 
 
 def pack_missing(cells: list[dict]) -> list[list[dict]]:
-    """Shelf-packer de las celdas que faltan (port de layoutAtlas de
-    nefan-core/src/scene/greybox/surfaces.ts, mismas constantes). Además
-    SEPARA tiles y heroes/unique en páginas distintas: cada grupo se pinta
-    con su modelo. Devuelve páginas de celdas con `rect` asignado."""
+    """Shelf-packer de las celdas que faltan: EL reparto en páginas que se va a
+    pintar, y por tanto el que decide lo que se cobra (una llamada de imagen
+    por página, `SurfaceAtlasGenerator.cotizar`).
+
+    NO es el mismo algoritmo que `layoutAtlas` (nefan-core/src/scene/greybox/
+    surfaces.ts), y hasta el 2026-09-14 este docstring decía que sí («port de
+    layoutAtlas, mismas constantes»): era falso y por eso el cliente cotizaba
+    con la fórmula de allí y se quedaba corto. Aquí se SEPARAN tiles y
+    heroes/unique —cada grupo lleva su modelo— y los uniques se subagrupan por
+    ref temática; `layoutAtlas` mete todo en un flujo continuo porque su
+    reparto solo sirve para componer el atlas local del cliente y no manda
+    ninguna llamada de pago. Los dos pueden diferir sin que nadie pague de
+    más: el único que cobra es éste. Devuelve páginas de celdas con `rect`."""
     quant = lambda a: 0.5 if a <= 0.68 else 1 if a <= 1.2 else 1.5 if a <= 1.7 else 2  # noqa: E731
     row_h = (PAGE_PX - GUTTER_PX * (N_ROWS + 1)) // N_ROWS
     pages: list[list[dict]] = []
@@ -385,6 +394,27 @@ class SurfaceAtlasGenerator:
         self._model = model
         self._hero_model = hero_model
 
+    def _page_model(self, page: list[dict]) -> str:
+        """Qué modelo pinta ESTA página: nano-banana-pro si lleva tiles,
+        gpt-image-2 si es de heroes (mezcla ganadora del bench). De aquí sale
+        también su precio, así que esta elección la hace UNA función."""
+        return self._model if any(c["kind"] == "tile" for c in page) else self._hero_model
+
+    def cotizar_paginas(self, pages: list[list[dict]]) -> dict:
+        """→ {"pages": n, "cost_usd": x} de un reparto YA empaquetado."""
+        cost = sum(FalImageToImage.COST_USD.get(self._page_model(p), 0.17) for p in pages)
+        return {"pages": len(pages), "cost_usd": round(cost, 2)}
+
+    def cotizar(self, missing_cells: list[dict]) -> dict:
+        """Cuánto costará pintar estas celdas, SIN pintar ni gastar nada.
+
+        Es la cifra que el jugador ve antes de aceptar, y sale del MISMO
+        `pack_missing` y la MISMA tabla de precios que va a cobrar `generate`
+        (que la usa para su propio `cost_usd`: una fórmula, no dos). El cliente
+        no reparte páginas ni conoce precios — los pide por
+        `resolve_only` y enseña lo que le den."""
+        return self.cotizar_paginas(pack_missing([dict(c) for c in missing_cells]))
+
     def _run_page(self, prompt: str, refs: list[str], ai_model: str) -> bytes:
         """Una página vía fal directo. Canal DEV_API_CACHE propio del atlas —
         compartir canal con otro pipeline mezclaría blobs en silencio."""
@@ -425,12 +455,11 @@ class SurfaceAtlasGenerator:
         pages = pack_missing([dict(c) for c in missing_cells])
         painted: dict[str, bytes] = {}
         page_pngs: list[bytes] = []
-        cost = 0.0
         prev_page_uri: str | None = None
         anchor_uris = [_bytes_data_uri(a) for a in anchors[:3]]
         for page in pages:
             base = draw_base(page)
-            ai_model = self._model if any(c["kind"] == "tile" for c in page) else self._hero_model
+            ai_model = self._page_model(page)
             page_ref = str(page[0].get("ref") or "")
             cell_ref_uri = (cell_ref_uris or {}).get(page_ref, "")
             refs = build_page_refs(
@@ -451,12 +480,14 @@ class SurfaceAtlasGenerator:
             page_pngs.append(png)
             prev_page_uri = _png_data_uri(gen)
             painted.update(crop_cells(gen, page))
-            cost += FalImageToImage.COST_USD.get(ai_model, 0.17)
+        # Lo cobrado es lo cotizado, por construcción: una sola fórmula sobre
+        # las MISMAS páginas. Sumarlo aquí en paralelo era la segunda, y una
+        # segunda fórmula es lo que deja al presupuesto divergir de la factura.
         return {
             "cells": painted,
             "pages": page_pngs,
             "pages_painted": len(pages),
-            "cost_usd": round(cost, 2),
+            "cost_usd": self.cotizar_paginas(pages)["cost_usd"],
             "generation_time_ms": int((time.time() - t0) * 1000),
         }
 

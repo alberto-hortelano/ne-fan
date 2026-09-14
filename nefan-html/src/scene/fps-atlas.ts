@@ -151,6 +151,8 @@ export class FpsAtlasController {
         cost_usd: 0,
         missing: 0,
         generation_time_ms: 0,
+        quoted_pages: 0,
+        quoted_cost_usd: 0,
       };
       for (let i = 0; i < cells.length; i += MAX_CELLS_PER_REQUEST) {
         const res = await fetch(`${this.urls.remote}/generate_surface_atlas`, {
@@ -171,6 +173,9 @@ export class FpsAtlasController {
         data.cached = data.cached && part.cached;
         data.cost_usd = Math.round((data.cost_usd + part.cost_usd) * 100) / 100;
         data.missing += part.missing;
+        data.quoted_pages += part.quoted_pages;
+        data.quoted_cost_usd =
+          Math.round((data.quoted_cost_usd + part.quoted_cost_usd) * 100) / 100;
       }
       if (!resolveOnly) this.deps.onGeneration?.({ kind: "fps_atlas", cached: data.cached });
       // Keep-list ANTES del corte por token: si otro tile superó a este en
