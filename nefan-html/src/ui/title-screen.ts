@@ -38,9 +38,13 @@ import {
   type EleccionDeMundo,
 } from "./titulo/editor-de-personaje.js";
 import { pintarHome } from "./titulo/home.js";
+import {
+  montarPanelDeGeneracion,
+  pintarProgresoDeMundo,
+} from "./titulo/panel-de-generacion.js";
 import { pintarPlanDeEstilo } from "./titulo/plan-de-estilo.js";
 import {
-  pintarProgresoDeMundo,
+  type LoElegidoEnElSelector,
   pintarSelectorDeMundo,
 } from "./titulo/selector-de-mundo.js";
 import { type DepsDeSubirEstilo, pintarSubirEstilo } from "./titulo/subir-estilo.js";
@@ -85,10 +89,14 @@ export class TitleScreen {
    *  falta para poder NO pintar lo que no es de esta tarjeta, y el `gameId` que
    *  lo indexa es el que trajo el mensaje desde #313. */
   private readonly gameGenStatus = new Map<string, NarrativeStatusDeJuego>();
-  /** Mundo seleccionado la última vez que se pintó el selector — el refresh
-   *  tras un game_gen ready lo conserva, y es la clave con la que se decide
-   *  QUÉ progreso se pinta. */
-  private lastSelectedGameId: string | null = null;
+  /** LO QUE EL JUGADOR LLEVABA ELEGIDO la última vez que se pintó el selector:
+   *  el mundo, el estilo y los dos modos. Es la clave con la que se decide QUÉ
+   *  progreso se pinta —el del mundo que se está mirando (#313)— y es lo que se
+   *  le devuelve a la hoja cuando el refresh tras un `game_gen` la repinta: sin
+   *  esto último, una pre-generación que acaba mientras el jugador está en el
+   *  selector le borraba el estilo y los dos modos que acababa de elegir, que
+   *  es el mismo #552 por la otra puerta. */
+  private ultimaEleccion: LoElegidoEnElSelector | null = null;
 
   /** El progreso del mundo que el jugador está mirando, ya resuelto: es lo que
    *  la hoja del selector necesita para pintarlo sin conocer ni el mapa ni la
@@ -96,9 +104,8 @@ export class TitleScreen {
    *  todavía) y «seleccionado pero sin progreso» se colapsan a propósito: los
    *  dos se pintan igual, que es vaciando la línea. */
   private progresoDelMundoMirado(): NarrativeStatusDeJuego | undefined {
-    return this.lastSelectedGameId === null
-      ? undefined
-      : this.gameGenStatus.get(this.lastSelectedGameId);
+    const mirado = this.ultimaEleccion?.preselect;
+    return mirado === undefined ? undefined : this.gameGenStatus.get(mirado);
   }
 
   constructor(private narrative: NarrativeClient) {
@@ -137,7 +144,7 @@ export class TitleScreen {
         const panel = this.chasis.content.querySelector("#ts-gen");
         if (panel && this.chasis.visible) {
           paso(
-            this.pintarElSelector(this.lastSelectedGameId ?? undefined),
+            this.pintarElSelector(this.ultimaEleccion ?? { a: "selector" }),
             "title",
             "refrescar el selector de mundos tras la generación",
           );
@@ -243,7 +250,7 @@ export class TitleScreen {
       case "home":
         return this.pintarElHome(destino.aviso, destino.tono);
       case "selector":
-        return this.pintarElSelector(destino.preselect);
+        return this.pintarElSelector(destino);
       case "crear-mundo":
         return this.crearMundo();
       case "subir-estilo":
@@ -261,44 +268,53 @@ export class TitleScreen {
     throw new Error(`destino del título no contemplado: ${JSON.stringify(nunca)}`);
   }
 
-  /** Cablea el SELECTOR DE MUNDOS y lo pinta. Seis colaboradores, como el home,
-   *  y por el mismo motivo: es el otro concentrador del título.
+  /** Cablea el SELECTOR DE MUNDOS y lo pinta. Cinco colaboradores desde que el
+   *  panel de generación salió a su propia hoja.
    *
-   *  Los dos que solo tiene esta pantalla son las dos mitades del progreso de
-   *  pre-generación (#313), que esta clase posee porque el suscriptor del bridge
-   *  vive aquí y sobrevive a cualquier repintado: `recordarMundo` apunta qué
-   *  tarjeta se está mirando y `progresoDe` contesta por el mapa. La hoja no ve
-   *  ninguno de los dos campos, y eso es lo que la deja sin `this`.
+   *  `recordarEleccion` apunta lo elegido; el mapa de progresos
+   *  por juego (#313) se queda en esta clase porque el suscriptor del bridge
+   *  vive aquí y sobrevive a cualquier repintado. La hoja no ve ninguno de los
+   *  dos campos, y eso es lo que la deja sin `this`.
    *
-   *  `mostrarPlanDeEstilo` no es un destino de `ir` porque el panel de coste no
-   *  sustituye la pantalla: se monta DENTRO del hueco que el selector le abre.
-   *  Se cablea aquí porque necesita el `StyleApplyController` —uno solo, el de
-   *  esta clase, que es el que consulta el bench— y porque una hoja no puede
-   *  importar a otra.
+   *  NI EL PANEL DE GENERACIÓN NI EL DE COSTE son destinos de `ir`: no
+   *  sustituyen la pantalla, se montan DENTRO del hueco que se les abre — el
+   *  primero en el `#ts-gen` del selector, el segundo en el `#ts-style-plan` del
+   *  primero. Se cablean aquí porque una hoja no puede importar a otra y porque
+   *  el de coste necesita el `StyleApplyController` —uno solo, el de esta clase,
+   *  que es el que consulta el bench.
    *
    *  Y es `async` por lo mismo que `ir` y que `pintarElHome`, que es la familia
    *  que ha mordido tres veces en este programa (QA-2 H2, QA-3 H6, QA-4 H2): el
    *  oyente del bridge llama a este método dentro de un `paso(...)`, así que un
    *  `throw` SÍNCRONO de este cableado saldría antes de que exista promesa y
    *  `paso()` no podría encauzarlo. Hoy no tiene ocupante. */
-  private async pintarElSelector(preselect?: string): Promise<void> {
+  private async pintarElSelector(loElegido: LoElegidoEnElSelector): Promise<void> {
     return pintarSelectorDeMundo(
       {
         content: this.chasis.content,
         narrative: this.narrative,
-        recordarMundo: (gameId) => {
-          this.lastSelectedGameId = gameId;
+        recordarEleccion: (eleccion) => {
+          this.ultimaEleccion = eleccion;
         },
-        progresoDe: (gameId) => this.gameGenStatus.get(gameId),
         ir: (destino) => this.ir(destino),
-        mostrarPlanDeEstilo: (hueco, gameId, styleId) =>
-          pintarPlanDeEstilo(
-            { hueco, styleApply: this.styleApply, ir: (d) => this.ir(d) },
-            gameId,
-            styleId,
+        montarPanelDeGeneracion: (hueco, mundo, estilo) =>
+          montarPanelDeGeneracion(
+            {
+              narrative: this.narrative,
+              progresoDe: (gameId) => this.gameGenStatus.get(gameId),
+              mostrarPlanDeEstilo: (huecoDelPlan, gameId, styleId) =>
+                pintarPlanDeEstilo(
+                  { hueco: huecoDelPlan, styleApply: this.styleApply, ir: (d) => this.ir(d) },
+                  gameId,
+                  styleId,
+                ),
+            },
+            hueco,
+            mundo,
+            estilo,
           ),
       },
-      preselect,
+      loElegido,
     );
   }
 

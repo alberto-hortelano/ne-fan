@@ -3,16 +3,20 @@
  *
  *  Escrito por QA al validar la PR 5 de #346 («El título troceado»), que es
  *  la que MUEVE ESTA COSTURA: `renderGameGenProgress` deja de ser un método de
- *  la clase y pasa a ser `pintarProgresoDeMundo(line, estado)`, una función de
- *  `ui/titulo/selector-de-mundo.ts` que **recibe el estado ya resuelto** en vez
- *  del `gameId`. El mapa por juego (`gameGenStatus`, #313) y la memoria de qué
- *  tarjeta se mira (`lastSelectedGameId`) se quedan en la raíz, que es quien
- *  escucha al bridge; la hoja los ve por dos callbacks (`progresoDe`,
- *  `recordarMundo`). Antes esa resolución ocurría DENTRO de la función; ahora
- *  ocurre en los dos sitios que la llaman, y son dos sitios distintos: el
- *  oyente del bridge (que resuelve por `progresoDelMundoMirado()`) y el panel
- *  de generación de la hoja (que resuelve por `deps.progresoDe(...)`). Que las
- *  dos mitades sigan diciendo lo mismo es lo que este guion afirma.
+ *  la clase y pasa a ser `pintarProgresoDeMundo(line, estado)`, una función que
+ *  **recibe el estado ya resuelto** en vez del `gameId`. El mapa por juego
+ *  (`gameGenStatus`, #313) y la memoria de lo que el jugador lleva elegido se
+ *  quedan en la raíz, que es quien escucha al bridge; quien pinta los ve por
+ *  callbacks (`progresoDe`, `recordarEleccion`). Antes esa resolución ocurría
+ *  DENTRO de la función; ahora ocurre en los dos sitios que la llaman, y son
+ *  dos sitios distintos: el oyente del bridge (que resuelve por
+ *  `progresoDelMundoMirado()`) y el panel de generación (que resuelve por
+ *  `deps.progresoDe(...)`). Que las dos mitades sigan diciendo lo mismo es lo
+ *  que este guion afirma.
+ *
+ *  La función vive hoy en `ui/titulo/panel-de-generacion.ts`: el panel salió
+ *  del selector con la tanda «el dinero no miente» y se la llevó, porque el
+ *  panel es su otro llamante. La costura que se mide aquí no se movió.
  *
  *  POR QUÉ HACÍA FALTA. El 38 mide la mitad que ya existía —que el progreso de
  *  A no se pinta bajo la tarjeta de B (#313), y que una pre-generación de

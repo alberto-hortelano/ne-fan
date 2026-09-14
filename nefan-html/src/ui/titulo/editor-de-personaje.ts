@@ -156,8 +156,19 @@ export async function pintarEditorDePersonaje(
   const modelSel = deps.content.querySelector("#ts-model") as HTMLSelectElement | null;
   const skinInput = deps.content.querySelector("#ts-skin") as HTMLInputElement | null;
 
+  // «Volver» devuelve LO QUE SE ELIGIÓ, no una pantalla en blanco (#552). Era
+  // un `ir({a:"selector"})` pelado, y con él el selector renacía en el primer
+  // mundo de la lista, el estilo por defecto de ese mundo y los dos modos al
+  // valor de empezar: el jugador perdía por NAVEGAR lo que acababa de decidir,
+  // y en los dos sentidos —también se le apagaba la Imagen IA que había
+  // encendido a mano—. Esta pantalla ya lo tiene todo: es lo mismo que
+  // transporta hasta `new_game`, así que devolverlo no le cuesta ni un dato más.
   back.addEventListener("click", () =>
-    paso(deps.ir({ a: "selector" }), "title", "volver al selector de mundos"),
+    paso(
+      deps.ir({ a: "selector", preselect: game.game_id, styleId, renderMode, characterMode }),
+      "title",
+      "volver al selector de mundos",
+    ),
   );
   start.addEventListener("click", () => {
     deps.elegir({

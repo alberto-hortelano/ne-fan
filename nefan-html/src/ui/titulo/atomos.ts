@@ -104,7 +104,28 @@ export type TitleAction =
  *  donde va a parar esta elección. */
 export type DestinoDelTitulo =
   | { a: "home"; aviso?: string; tono?: "error" | "aviso" }
-  | { a: "selector"; preselect?: string }
+  | {
+      a: "selector";
+      /** LO QUE EL JUGADOR YA HABÍA ELEGIDO, para que el selector no renazca en
+       *  blanco cuando se vuelve a él (#552). Los CUATRO son opcionales porque
+       *  la primera visita no trae ninguno: quien llega del home elige de cero,
+       *  y entonces rige `MODO_AL_EMPEZAR` y el estilo que decide
+       *  `eleccionDeEstilo`. Quien vuelve del editor —o quien se encuentra con
+       *  un repintado del selector porque una pre-generación acabó— los trae
+       *  todos, y el selector se reconstruye tal cual lo dejó.
+       *
+       *  Los dos modos son los literales y no el `Modo` de core por lo mismo
+       *  que en el destino `editor`: el `""` de core significa «sin decidir», y
+       *  lo que vuelve ya está decidido. Que estén AQUÍ y no en un tipo propio
+       *  es deliberado — son los campos que viajan por `ir({a:"selector", …})`,
+       *  y el selector DERIVA de aquí el suyo (`LoElegidoEnElSelector`): dos
+       *  listas de campos que hay que mantener iguales acaban siendo dos listas
+       *  distintas, y esta decide qué conserva «Volver». */
+      preselect?: string;
+      styleId?: string;
+      renderMode?: "image" | "vector";
+      characterMode?: "image" | "vector";
+    }
   | { a: "crear-mundo" }
   | { a: "subir-estilo" }
   | {
