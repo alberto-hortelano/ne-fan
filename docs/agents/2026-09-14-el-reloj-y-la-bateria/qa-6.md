@@ -336,3 +336,140 @@ no receta— es H-1**: para ver correr el guion 80 hoy hay que editarlo o editar
 
 El color no cambió. **El motivo sí**, y por eso es hallazgo y no éxito — que es literalmente lo que
 el encargo mandaba mirar.
+
+---
+
+# Segunda vuelta · commit `04dc2fcc` (rama rebasada sobre `main` = `e55c5067`)
+
+Verificación **focalizada** de los seis hallazgos, no una QA entera. Mismo árbol
+(`/home/al/code/ne-fan-qa545b`), `git checkout 04dc2fcc` + `npm run build` en `nefan-core`
+(**exit 0**) antes de creerme ningún color. Nada de §0-§7 se retoca: lo de arriba es el dictamen de
+la primera vuelta y se queda como está.
+
+**Mis dos ficheros llegaron sin tocar una línea**, comprobado por hash antes y después del checkout:
+`qa-6.md` → `67809afc…`, `133-…mjs` → `dfd9d164…`, y `diff` vacío contra mis copias.
+
+## V-0 · Veredicto de la vuelta: **NO APTO** (uno bloqueante, uno importante; los seis, resueltos)
+
+Los seis hallazgos están atendidos y cinco de los seis, bien. **El arreglo de H-1 introdujo un
+defecto nuevo** que ninguna prueba sujeta, y es de los que esta casa nombra por su nombre: **baja un
+umbral sin decirlo**, justo el que PR-4a había hecho proporcional con un motivo medido.
+
+| | Qué | Prioridad |
+|---|---|---|
+| **V-1** | el arreglo de H-1 cambia el cortafuegos de pared de TODA espera conducida con `{sim:N}` sin `ms` escrito: de `N × 10.000 ms` a **30.000 ms planos**. Para los cuatro sitios que esta misma PR convirtió (`{sim: 120}` en 58, 86, 109 y 112) es **×0,025** | **bloqueante** |
+| **V-2** | el candado nuevo (N11) sujeta la mitad `{ms}` y **no la mitad `{sim}`**: dos mutaciones que devuelven toda espera conducida al reloj de pared dejan `npm run verify` en **2847/2847 verde** | importante |
+
+## V-1 · BLOQUEANTE · el arreglo de H-1 baja un umbral, y es el que PR-4a subió a propósito
+
+`expectEspera` desestructura `const { ms = 30_000, … } = opciones` y ahora le pasa **ese `ms` ya
+defectado** a `presupuestoConducido`. Antes le pasaba `opciones.ms`, que es `undefined` cuando el
+guion no lo escribe — y ese `undefined` es justo lo que hacía que `presupuestoDeEspera` aplicara la
+regla ×10 de PR-4a. Medido con la función, no leído:
+
+```
+{sim:  4} · cortafuegos ANTES     40000 ms · AHORA  30000 ms  → ×0.750
+{sim:  6} · cortafuegos ANTES     60000 ms · AHORA  30000 ms  → ×0.500
+{sim: 12} · cortafuegos ANTES    120000 ms · AHORA  30000 ms  → ×0.250
+{sim: 60} · cortafuegos ANTES    600000 ms · AHORA  30000 ms  → ×0.050
+{sim:120} · cortafuegos ANTES   1200000 ms · AHORA  30000 ms  → ×0.025
+```
+
+Por qué importa, en orden de gravedad:
+
+1. **Es un umbral bajado sin declararlo**, y la regla de la casa en este encargo es literal:
+   «Ningún umbral se baja, ni se sube uno para acomodar lo que acaba de crecer».
+2. **Deshace una decisión medida de PR-4a.** Su H-4 (qa-5) pedía «×10 de verdad o el techo con
+   motivo medido», y se verificó: `techoMs = sim × 10.000` para 4, 45, 60, 90 y 600 — «el techo de
+   300 s ya no aplasta a los grandes». Esto vuelve a poner un techo plano, y **más bajo que el que
+   se quitó**.
+3. **Para N ≳ 29 el presupuesto de sim ya no se puede gastar ni en una máquina ociosa**: 60 s de
+   mundo necesitan ~62 s de pared y el techo son 30. Esas esperas ya solo pueden terminar porque la
+   condición ocurra, o en **⊘**. Y el ⊘ sería falso: el mundo sí corría, lo que faltó fue pared.
+4. **Cae sobre los cuatro sitios que esta PR acaba de convertir** (58, 86, 109, 112: `{ms: 120_000}`
+   → `{sim: 120}`). En `main` esperaban 120 s de pared; ahora, 30. Una propuesta de frontera que no
+   llegue deja de dar el rojo que la nombra y pasa a dar un ⊘ a los 30 s.
+5. **Ninguna prueba lo sujeta** (ver V-2) y **la batería no puede verlo**: esas esperas se cumplen en
+   segundos, así que hoy todo sale verde. Lo comprobé: 58, 86, 109, 112, 43, 91, 132 y 133 → **8 en
+   verde de 8**; y el 30 a ×100 (razón 0,120, frames de 22 s) consume sus 6 s de sim en 21 sondeos y
+   **afirma su negativo** — pasa por 10 segundos de margen.
+
+**Arreglo**: pasar `opciones.ms` (sin defectar) y dejar que el defecto de 30 s viva solo en la rama
+de pared, que es donde estaba.
+
+## V-2 · IMPORTANTE · el candado nuevo sujeta la mitad `{ms}` y no la mitad `{sim}`
+
+N11 es real y hace lo que dice **para el defecto del 80**: lo rompí por los dos lados que él
+declara y se puso rojo. Pero probé dos mutaciones más, y las dos pasan:
+
+| # | Mutación de `presupuestoConducido` | `test/sonda-de-qa.test.ts` | Qué significaría en la batería |
+|---|---|---|---|
+| **B1** | `return sim === null ? ms : {sim, ms}` (el defecto de H-1, tal cual) | **fail 1** ✔ | el 80 vuelve a morir |
+| **B3** | `return { sim: ms }` | **fail 1** ✔ | disparate visible |
+| **B2** | `return { ms }` — **se pierde `sim`** | **pass 32 · fail 0** ✘ | TODA espera conducida vuelve a medir en PARED |
+| **B4** | `return sim === null ? {ms} : {sim: ms, ms}` — el valor de sim es el de ms | **pass 32 · fail 0** ✘ | el presupuesto de mundo lo fija el reloj de máquina |
+
+Y con **B2 puesta sobre todo el árbol**, la casa entera sigue verde:
+
+```
+$ cd nefan-core && npm run verify        → exit 0 · tests 2847 · pass 2847 · fail 0
+$ node qa/run.mjs 02 30                  → 4 en verde · 0 en rojo de 4   (02, 30, 102, 130)
+```
+
+O sea: **se puede borrar el reloj de simulación de todas las esperas conducidas de la batería y no
+se entera ni CI ni la batería.** El test que nació de H-1 comprueba «es un objeto» y «la sonda no
+lanza», que es la mitad que costó el 80; lo que no comprueba es **que el presupuesto que sale lleve
+el sim que entró**. Dos asertos lo cierran:
+`deepEqual(presupuestoConducido({sim:4}), {sim:4, ms:<lo que toque>})` y
+`equal(presupuestoDeEspera(presupuestoConducido({sim:4}),"x").sim, 4)` — el segundo, además, habría
+cazado V-1.
+
+## V-3 · Los seis hallazgos, uno a uno
+
+| # | Qué pedía | Veredicto | Lo que medí YO |
+|---|---|---|---|
+| **H-1** | que el 80 vuelva a correr, con el texto y los números de `main` | ✅ **resuelto** | **Cinco parejas seguidas** `node qa/run.mjs 80 75`: las cinco con **30 líneas de aserto** (eran 19), el 75 ✔ en las cinco, y el 80 **✘ en 2 de 5** con el aserto `…ni deja una entrada de error — **7 → 9**` — el mismo TEXTO y los mismos números que en `main`. La intermitencia de #496/#497 restaurada, ni tapada ni inventada. Y la línea que moría ahora sale ✔: `ocurre: el jugador anda 0.4 m…`. **Pero ver V-1** |
+| **H-1b** | que la regla salga de `run.mjs` y se pueda ejercer sin navegador | ✅ **resuelto**, ⚠️ a medias | `presupuestoConducido` vive en `qa/lib/sonda.mjs` y N11 lo ejerce. Roto por su lado (B1) → **1 rojo en `npm run verify`**, sin navegador. Roto por el otro (B2/B4) → verde: **V-2** |
+| **H-2** | que el candado vea el defecto en la forma en la que #545 se encontró | ✅ **resuelto** | Su detector, contra los MISMOS ficheros de `main` donde yo medí 0, 0, 0: **91:150 (1) · 86 (2) · 109 (2) · 118 (2)**. Y el reverso funciona: una espera **después** de soltar la tecla no se marca, y con `{sim}` tampoco (lo probé con material propio). Además mira **todo `qa/**.mjs`** — `fixtures-las-tres-se-caminan.mjs` ya está dentro |
+| **H-2b** | que la frontera declarada sea la real | ❌ **NO cumple** | Declara como única frontera «conducir desde dentro de `page.evaluate`». Hay otra, **más probable y viva en el árbol ahora mismo**: la tecla la pulsa el LLAMANTE y la espera vive en un **helper**. Probado con material propio (`press` en el guion + `waitFor` de pared en otra función) → **0 sitios**. Y no es teórico: mi propio `veredictoDe` del guion 133 espera en pared con la tecla puesta y el candado no lo ve (ve 2 sitios en el 133, los dos exentos, y ése no). Tercera vez en esta PR que el agujero declarado es más estrecho que el real |
+| **H-3** | que la frase de `saltadas` diga lo que mide | ✅ **resuelto** | Reescrita en los dos sitios donde vive (`qa/lib/parada.mjs` y el log del 91) con mis números dentro (26 y 8 en reposo, 0 y 0 a ×40) y con lo que sí mide: la cadencia frente al paso |
+| **H-4** | suelo para `{ms:N}` | ✅ **resuelto** | `presupuestoDeEspera({ms: 0 \| 1 \| 4 \| 149})` **lanza** («no llega ni a la cadencia de sondeo»). El número suelto sigue sin suelo **y me parece bien**: `4` no es lo que sale de teclear `{sim: 4}`, `expectEspera` no lo acepta como presupuesto (se desestructura a `ms = 30_000`), y hay un caso que mira una vez a propósito. **No es una puerta equivalente**: la que se cerró era la confundible |
+| **H-5** | medir el rojo del 93 y anotarlo como lo que es | ✅ **resuelto** | §12.5 trae su corrida (×40, 1/1, las cuatro velocidades a 0,38-0,63 de lo esperado — las mías dieron 0,40-0,56) y la frase honesta: «lo hay, es el 93, y NO es el patrón de la parada». Corrige además su §7.5 sobre el denominador de pared, y manda a issue el clasificador de `bajo-carga.mjs` |
+| **H-6** | que una exención no pueda ser relleno | ✅ **resuelto en lo que se podía** | Mi relleno de 130 caracteres **ya no arranca el test**: ZodError «el motivo tiene que NOMBRAR el proceso al que se espera». Pero probé la vía que queda y **funciona**: reintroduje el defecto en el 58 (el candado lo cazó: `58:186 expectEspera(…, {ms})`) y lo silencié con una exención de **sujeto falso** («el BRIDGE decidiendo cuándo hay propuesta» — la decide el cliente en su `tick`, y su propio contrato lo dice para el 42) y un `porque` de 40 equis con la palabra «bridge» dentro → **6 pass · 0 fail**. El listón sube de «relleno» a «relleno con una palabra clave»; lo demás lo hace la revisión del diff, que es lo que él declara |
+| **H-6b** | que sus exenciones nuevas estén justificadas por su sujeto | ✅ cumple | `43:205`: la tecla mantenida es **`e`** (interactuar), no una de movimiento, y el sujeto es el motor contestando — verificado en el fuente (`43:203`). Las dos del guion 133 son mías y son correctas: con el loop pausado un presupuesto de sim no se gastaría nunca |
+
+## V-4 · La regla dura, otra vez, con los cinco sitios nuevos
+
+Es la primera vez que la PR toca guiones que no estaban en ninguna lista (58, 86, 109, 112 y
+`fixtures-las-tres-se-caminan.mjs`), así que repetí la identidad estática contra el `main` nuevo
+(`e55c5067`): **1.541 sitios de aserto en los 130 guiones, `diff` VACÍO** excluyendo el 132 y el 133.
+Las cinco conversiones son literales (`{ms: 120_000}` → `{sim: 120}`, `8000` → `{sim: 8}`), sin tocar
+un texto, un canal ni un umbral **del guion**. El umbral que sí se movió no está en los guiones, está
+en el runner, y es **V-1**.
+
+## V-5 · Medidas de la vuelta
+
+| # | Orden | Salida |
+|---|---|---|
+| 1 | `npm run build` (nefan-core) | **exit 0** |
+| 2 | `npm run verify` | **exit 0 · 2847 · pass 2847 · fail 0** |
+| 3 | `node qa/run.mjs 80 75` ×5 parejas | 75 ✔✔✔✔✔ · 80 **✘✔✘✔✔** (2 de 5) · **30 líneas de aserto en las cinco** · el rojo, `…ni deja una entrada de error — 7 → 9` |
+| 4 | `node qa/run.mjs 58 86 109 112 132 133 91 43` | **8 en verde · 0 en rojo de 8** |
+| 5 | `node qa/fixtures-las-tres-se-caminan.mjs` | ✔ las tres pintan, se caminan y colisionan |
+| 6 | Detector del candado contra `main`: 91, 86, 109, 118 | **1 · 2 · 2 · 2** sitios (antes 0 · 0 · 0 · 2) |
+| 7 | Reverso del detector (material propio) | espera tras soltar la tecla → **0**; con `{sim}` → **0**; cross-función → **0** (**H-2b**) |
+| 8 | Cuatro mutaciones de `presupuestoConducido` | B1 y B3 **rojas**; **B2 y B4 verdes** (V-2) |
+| 9 | `npm run verify` + `node qa/run.mjs 02 30` con B2 puesta | **2847/2847 verde** y **4 guiones verdes** — nadie se entera |
+| 10 | Exención con sujeto falso sobre un sitio real reintroducido | **6 pass · 0 fail** (H-6, residual medido) |
+| 11 | Exención de puro relleno (mi caso de la 1.ª vuelta) | **el test no arranca** (ZodError) ✔ |
+| 12 | `presupuestoConducido({sim:N})` → techo de pared | **30.000 ms planos** para todo N (V-1) |
+| 13 | `node qa/bajo-carga.mjs 30 --factor 100` | ✔ verde con razón **0,120** y frames de 22 s: los 6 s de sim se consumen en 21 sondeos, a 10 s del techo nuevo |
+
+## V-6 · No probado en esta vuelta
+
+- **Que V-1 rompa un guion hoy**: no lo reproduje, y lo digo — todas las esperas afectadas se
+  cumplen en segundos. Lo que está medido es el cambio de techo (×0,025 en los sitios de 120 s) y
+  que nada lo sujeta. El día que una propuesta tarde, el rojo será un ⊘ falso.
+- **La batería entera**: esta vuelta es focalizada. Corrí 8 guiones + 5 parejas + el script de
+  fixtures, no los 47 de la primera vuelta.
+- **#496/#497**: siguen fuera, y ahora el 80 vuelve a poder medirlos (que era el punto).
