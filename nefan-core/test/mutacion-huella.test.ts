@@ -39,6 +39,7 @@ import {
   muroDeMutacion,
   yaComentada,
   capacidadDeLaBase,
+  instrumentoLegible,
   deltaDeFichero,
   fusiona,
   hash64,
@@ -1871,7 +1872,7 @@ describe("adopción · el criterio para cambiar de instrumento de medida (#443)"
   const incapaz = (fichero: string, ahora: number): SinEjercerDeFichero => ({
     fichero,
     ahora,
-    base: { sabe: false, porque: 'coverageAnalysis "off"' },
+    base: { sabe: false, porque: 'testRunner "command" + coverageAnalysis "off"' },
   });
   const sinInforme = (fichero: string, ahora: number): SinEjercerDeFichero => ({
     fichero,
@@ -2192,7 +2193,7 @@ describe("reloj · los mutantes que clasifica el cronómetro, contados aparte", 
       ahora: 2,
       base: { sabe: true, cuenta: 1, nuevos: 1, recuperados: 0 },
     });
-    const incapaz = movimientosSinEjercer("src/b.ts", { sabe: false, porque: 'coverageAnalysis "off"' }, [h("c")]);
+    const incapaz = movimientosSinEjercer("src/b.ts", { sabe: false, porque: 'testRunner "command" + coverageAnalysis "off"' }, [h("c")]);
     assert.deepEqual(totalSinEjercer([sinBase, conBase, incapaz]), {
       base: 1,
       ahora: 5,
@@ -2209,18 +2210,50 @@ describe("reloj · los mutantes que clasifica el cronómetro, contados aparte", 
     // existe, así que sumarlo no es una decisión que este código tome bien —
     // es una decisión que no se puede escribir. Con un booleano de corrida sí
     // se podía, y de hecho se hacía.
-    const fila = movimientosSinEjercer("src/a.ts", { sabe: false, porque: 'coverageAnalysis "off"' }, [h("a")]);
+    const fila = movimientosSinEjercer("src/a.ts", { sabe: false, porque: 'testRunner "command" + coverageAnalysis "off"' }, [h("a")]);
     assert.equal(fila.base.sabe, false);
     assert.ok(!("nuevos" in fila.base), "la rama incapaz no puede llevar un recuento que nadie midió");
     assert.equal(fila.ahora, 1, "y el hecho crudo sigue ahí, para poder imprimirlo como censo");
   });
 
-  it("`capacidadDeLaBase`: solo `off` abstiene; `perTest` y `all` votan", () => {
-    // Con `off` Stryker NO EMITE `NoCoverage` jamás, así que su cero no es una
+  it("`capacidadDeLaBase`: abstiene el PAR `command`+`off`, no el ajuste solo", () => {
+    // Solo el par conocido-incapaz abstiene: con `command` el runner no reporta
+    // cobertura y con `off` Stryker tampoco la pide, así que ese cero no es una
     // medida. `perTest` y `all` sí pueden emitirlo: su cero SÍ es una medida y
     // tiene que seguir tumbando la adopción.
-    assert.deepEqual(capacidadDeLaBase("off"), { sabe: false, porque: 'coverageAnalysis "off"' });
-    assert.deepEqual(capacidadDeLaBase("perTest"), { sabe: true });
-    assert.deepEqual(capacidadDeLaBase("all"), { sabe: true });
+    assert.deepEqual(capacidadDeLaBase({ runner: "command", cobertura: "off" }), {
+      sabe: false,
+      porque: 'testRunner "command" + coverageAnalysis "off"',
+    });
+    assert.deepEqual(capacidadDeLaBase({ runner: "command", cobertura: "perTest" }), { sabe: true });
+    assert.deepEqual(capacidadDeLaBase({ runner: "command", cobertura: "all" }), { sabe: true });
+    assert.deepEqual(capacidadDeLaBase({ runner: "tap", cobertura: "perTest" }), { sabe: true });
+
+    // EL CASO QUE ESTE CANDADO EXISTE PARA RECHAZAR, y es el que QA midió el
+    // 2026-09-15 (#597, H-1): una base medida con `tap` + `off` SÍ emite
+    // `NoCoverage` —`tap-runner.dryRun()` no lee `options.coverageAnalysis` y
+    // devuelve `mutantCoverage` siempre, y `TestCoverage.hasCoverage` mira lo
+    // que reportó el runner—, así que su cero es una medida y VOTA. Decidirlo
+    // por el ajuste solo la daría por incapaz y la séptima condición se
+    // abstendría sobre un informe que sí midió: un «no se pudo mirar» sobre
+    // algo que se miró, que es el defecto de #599 un escalón más arriba.
+    assert.deepEqual(capacidadDeLaBase({ runner: "tap", cobertura: "off" }), { sabe: true });
+
+    // Y un runner que nadie ha medido vota: negar de más antes que autorizar de
+    // más. Abstenerse es lo único que puede convertir un NO en un SÍ.
+    assert.deepEqual(capacidadDeLaBase({ runner: "loquesea", cobertura: "off" }), { sabe: true });
+  });
+
+  it("`instrumentoLegible` dice el par Y si podía mirar, y nunca «off» a secas", () => {
+    // La línea «qué se mira» del informe la escriben LAS DOS mitades con esta
+    // misma función, así que no pueden divergir. Y «off» a secas no aparece
+    // nunca: sin el runner al lado no dice si ese informe podía emitir
+    // `NoCoverage`, que es toda la pregunta.
+    assert.equal(instrumentoLegible({ runner: "tap", cobertura: "perTest" }), "tap+perTest");
+    assert.equal(instrumentoLegible({ runner: "tap", cobertura: "off" }), "tap+off");
+    assert.equal(
+      instrumentoLegible({ runner: "command", cobertura: "off" }),
+      "command+off (no podía expresar `NoCoverage`)",
+    );
   });
 });

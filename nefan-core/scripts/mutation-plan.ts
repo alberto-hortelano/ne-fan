@@ -93,10 +93,28 @@ const ExentoSchema = z.object({
 
 const PlanSchema = z.object({
   _comment: z.string().optional(),
-  /** Prefijo del comando de test. La batería del módulo se le añade detrás.
-   *  El tope de heap va aquí y no en argv porque `node --test` abre un proceso
-   *  hijo por fichero y los hijos NO heredan las flags del padre. */
-  comando: z.string(),
+  /** Las flags de node con las que `tap-runner` ejecuta CADA fichero de la
+   *  batería: `node -r <hook.cjs> <node_args> <fichero>`, un proceso por
+   *  fichero y nada más.
+   *
+   *  Van por ARGV y no por `NODE_OPTIONS` porque aquí sí se puede: `tap-runner`
+   *  lanza el fichero en el proceso que él arranca, sin un hijo cuyo argv no
+   *  heredaría las flags de la línea de comandos (medido el 2026-09-14:
+   *  `node --max-old-space-size=16 --import tsx --test <f>` pasa en verde y el
+   *  mismo tope por `NODE_OPTIONS` mata al hijo; por argv, con el fichero
+   *  corriendo en el proceso lanzado, mata al que de verdad corre el test).
+   *
+   *  Cuatro cosas tienen que estar y por eso las canda `test/mutation-config.test.ts`:
+   *  el tope de heap (`--max-old-space-size`), el reporter TAP —Node 24 emite
+   *  `spec` por defecto también sin TTY, así que sin esta flag `tap-parser` no
+   *  ve un solo `ok` y TODO mutante saldría detectado—, `--test` —desde #597: es
+   *  lo que hace que un fichero que muere AL IMPORTARSE emita `not ok 1` en vez
+   *  de nada, y con ello que 26 muertes dejen de contarse como `RuntimeError`—
+   *  y, pegado a él, `--test-isolation=none`, sin el cual `--test` abre un hijo
+   *  que reabre el paralelismo dentro del worker, manda la cobertura a un
+   *  `stryker-output-<pid>.json` que nadie lee y deja el tope de heap en no-op
+   *  (`correEnElMismoProceso`). */
+  node_args: z.array(z.string()).min(1),
   /** Cuántos mutantes puede llegar a medir un módulo en la máquina de quien
    *  está programando (`npm run mutacion -- local <id>`). No es una política
    *  sino aritmética: el coste está muy mal repartido —41 mutantes el módulo
@@ -298,8 +316,8 @@ export function patronesDelPerimetro(contenido: string): PatronesPerimetro {
 /** Lo que de `mutation-targets.json` puede cambiar el veredicto de un módulo,
  *  separado de lo que no.
  *
- *  · `global` es lo único que vale para TODOS a la vez: el `comando`, que es
- *    con qué se ejecuta cada mutante.
+ *  · `global` es lo único que vale para TODOS a la vez: los `node_args`, que
+ *    son con qué se ejecuta cada mutante.
  *  · `modulos` es la definición de cada uno sin su motivo escrito: qué muta,
  *    con qué batería, con qué suelo y con qué exclusiones.
  *
@@ -331,7 +349,7 @@ type Registro = Record<string, unknown>;
 /** Las claves del plan que SÍ pueden cambiar el veredicto de un módulo, con la
  *  parte de cada una que se compara. Es la mitad que selecciona. */
 const SELECCIONAN_GLOBAL: Record<string, (p: Registro) => unknown> = {
-  comando: (p) => p.comando,
+  node_args: (p) => p.node_args,
 };
 
 const SELECCIONAN_POR_MODULO: Record<string, (m: Registro) => unknown> = {
@@ -373,11 +391,13 @@ export function proyeccionDeObjetivos(contenido: string): ProyeccionDeObjetivos 
   } catch (err) {
     return { ok: false, porque: `no es JSON válido: ${(err as Error).message}` };
   }
-  const p = plan as { comando?: unknown; modulos?: unknown };
+  const p = plan as { node_args?: unknown; modulos?: unknown };
   if (!Array.isArray(p.modulos) || p.modulos.length === 0) {
     return { ok: false, porque: "no tiene una lista `modulos` con contenido" };
   }
-  if (typeof p.comando !== "string") return { ok: false, porque: "no tiene `comando`" };
+  if (!Array.isArray(p.node_args) || p.node_args.length === 0) {
+    return { ok: false, porque: "no tiene `node_args`" };
+  }
   const proyecta = (fuente: Registro, campos: Record<string, (x: Registro) => unknown>): string =>
     JSON.stringify(Object.keys(campos).sort().map((k) => [k, campos[k](fuente)]));
   const modulos = new Map<string, string>();
@@ -1153,17 +1173,64 @@ export function resumenDeMutantes(mutantes: readonly { status: string }[]): {
   return { total, vivos, score: total === 0 ? 0 : (detectados / total) * 100 };
 }
 
-/** El comando que Stryker ejecuta por cada mutante de este módulo. */
-export function comandoDe(plan: PlanMutacion, modulo: ModuloMutacion): string {
-  return `${plan.comando} ${modulo.tests.join(" ")}`;
+/** Lo que `tap-runner` recibe para este módulo: la batería tal cual (no un
+ *  glob que haya que adivinar) y las flags de node del plan.
+ *
+ *  `tap.testFiles` es la lista EXACTA y no un patrón: el runner la resuelve con
+ *  `glob()`, y una ruta literal se resuelve a sí misma. Un glob aquí volvería a
+ *  abrir la puerta que el reparto cerró — que la batería de un módulo crezca
+ *  sola cuando alguien añade un fichero de test. */
+export function tapDe(plan: PlanMutacion, modulo: ModuloMutacion): Record<string, unknown> {
+  return { testFiles: [...modulo.tests], nodeArgs: [...plan.node_args] };
 }
 
-/** Cuántos procesos de test arranca `node --test` por cada worker de Stryker,
- *  leído del comando del plan. Sin `--test-concurrency`, Node usa
- *  `availableParallelism() - 1` — uno por fichero de test hasta llenar la
- *  máquina, DENTRO de cada worker de Stryker, que ya son varios. */
-export function testConcurrencyDe(comando: string): number | "sin tope" {
-  const m = /--test-concurrency[= ](\d+)/.exec(comando);
+/** ¿El fichero de test lo ejecuta el MISMO proceso que lanza `tap-runner`?
+ *
+ *  El runner lanza `node -r <hook.cjs> <node_args> <fichero>` y después lee
+ *  `stryker-output-<pid>.json` con el pid que ÉL lanzó. Con `--test`, Node abre
+ *  un proceso HIJO por fichero (`--test-isolation` vale `process` por defecto),
+ *  y entonces se apagan a la vez las dos cosas que van en `node_args`:
+ *
+ *  · **la cobertura**, porque la escribe el hijo con SU pid, donde nadie la lee
+ *    — medido el 2026-09-15 mirando los ficheros que aparecen: con `--test` a
+ *    secas salen DOS (`stryker-output-188761.json`, el pid lanzado, y
+ *    `stryker-output-188767.json`, el hijo que de verdad importó el fichero), y
+ *    el runner solo abre el primero; con `--test-isolation=none` sale UNO y es
+ *    el pid lanzado. Que la cobertura sigue VIVA con las dos flags lo dice la
+ *    corrida de verdad: `contrato-sprite-forge` trae exactamente 1 `NoCoverage`,
+ *    ni 0 (sería `perTest` apagado) ni decenas (sería la cobertura vaciada);
+ *  · **el tope de heap**, porque el hijo no hereda el argv del padre — medido el
+ *    2026-09-15 con `--max-old-space-size=16` sobre un test que pide ~3 GB:
+ *    directo muere con «Reached heap limit» (exit 134), con `--test` a secas
+ *    **SOBREVIVE** (exit 0, el tope es un no-op), y con `--test
+ *    --test-isolation=none` vuelve a morir (exit 134).
+ *
+ *  Por eso `--test` no está prohibido sino CONDICIONADO: hace falta desde #597
+ *  —es lo que hace que un fichero que muere al importar emita `not ok 1` en vez
+ *  de nada, y con ello que 26 muertes dejen de contarse como `RuntimeError`—,
+ *  pero sin `--test-isolation=none` al lado se lleva por delante la cobertura y
+ *  el tope de heap sin decir una palabra. */
+export function correEnElMismoProceso(nodeArgs: readonly string[]): boolean {
+  const conTest = nodeArgs.some((a) => a === "--test" || a.startsWith("--test="));
+  if (!conTest) return true;
+  return /--test-isolation[= ]none\b/.test(nodeArgs.join(" "));
+}
+
+/** Cuántos procesos de test arranca de golpe el comando de un worker.
+ *
+ *  Con `tap-runner` la respuesta es estructural y vale 1: el runner recorre su
+ *  batería con un `for … await` y lanza `node <fichero>` de uno en uno. Lo
+ *  único que puede romperlo es colar `--test` en `node_args` SIN
+ *  `--test-isolation=none`, que devuelve el paralelismo interno de `node
+ *  --test` DENTRO de cada worker de Stryker — los dos paralelismos
+ *  multiplicándose, que es el accidente del 2026-08-23. Con
+ *  `--test-isolation=none` no hay hijos que multiplicar: el fichero corre en el
+ *  proceso lanzado y el 1 vuelve a ser estructural. */
+export function testConcurrencyDe(nodeArgs: readonly string[]): number | "sin tope" {
+  const conTest = nodeArgs.some((a) => a === "--test" || a.startsWith("--test="));
+  if (!conTest) return 1;
+  if (correEnElMismoProceso(nodeArgs)) return 1;
+  const m = /--test-concurrency[= ](\d+)/.exec(nodeArgs.join(" "));
   return m ? Number(m[1]) : "sin tope";
 }
 
@@ -1214,7 +1281,7 @@ export function configDe(
     _comment: `GENERADO por scripts/mutate.ts desde data/contract/mutation-targets.json — módulo "${modulo.id}". No lo edites: se reescribe en cada corrida.`,
     concurrency: concurrencia,
     mutate: modulo.mutate,
-    commandRunner: { command: comandoDe(plan, modulo) },
+    tap: tapDe(plan, modulo),
     jsonReporter: { fileName: normaliza(relative(coreRoot, rutaInforme(modulo.id))) },
     thresholds,
   };

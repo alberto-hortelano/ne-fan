@@ -485,8 +485,8 @@ export interface CorridaQueJuzga {
  *    7. `sin ejercer = 0`     · el instrumento nuevo mide MENOS (H2)
  *
  *  Y LA SÉPTIMA SE PARTE EN DOS, que es #599. Tal como estaba, su premisa no se
- *  podía cumplir nunca: con la base en `coverageAnalysis: "off"` Stryker NO
- *  EMITE `NoCoverage` jamás, así que «antes se ejercían: 1122» no era una
+ *  podía cumplir nunca: con la base en `command` + `coverageAnalysis: "off"`
+ *  Stryker NO EMITE `NoCoverage` jamás, así que «antes se ejercían: 1122» no era una
  *  medida, era lo único que la base podía decir — la condición se disparaba POR
  *  CONSTRUCCIÓN contra cualquier runner que activara la cobertura, que son
  *  exactamente los runners por los que uno cambiaría. Ahora:
@@ -523,7 +523,8 @@ export interface VeredictoDeAdopcion {
    *  Es el que vota como «mide menos» (7a). */
   sinEjercer: number;
   /** Mutantes `NoCoverage` de ahora cuya base no podía siquiera expresarlos
-   *  (`coverageAnalysis: "off"`). NO votan: son censo, no medida perdida. Se
+   *  (`command` + `coverageAnalysis: "off"`). NO votan: son censo, no medida
+   *  perdida. Se
    *  expone para que quien lea el veredicto vea el número y no lo confunda con
    *  el de arriba — que es el confusión que costó #599. */
   sinEjercerCenso: number;
@@ -532,8 +533,8 @@ export interface VeredictoDeAdopcion {
   sinEjercerSinMirar: number;
   /** El sentido REVERSO: mutantes que la base daba por no ejercidos y esta
    *  corrida ya no reporta así. Votan (7c). Sin esta cuenta, una corrida nueva
-   *  medida con `coverageAnalysis: "off"` —que no puede emitir `NoCoverage`
-   *  jamás— salía «✔ no mide menos» y ADOPTABLE midiendo estrictamente menos
+   *  medida con `command` + `coverageAnalysis: "off"` —que no puede emitir
+   *  `NoCoverage` jamás— salía «✔ no mide menos» y ADOPTABLE midiendo estrictamente menos
    *  (QA de #599, H-1). */
   sinEjercerRecuperados: number;
   adopta: boolean;
@@ -648,7 +649,7 @@ export function veredictoDeAdopcion(
   // 7c · EL SENTIDO REVERSO (QA de #599, H-1). La base sabía nombrar
   // `NoCoverage` a estos mutantes y esta corrida ya no lo hace. Sobre el MISMO
   // commit no puede haber aparecido un test, así que o el instrumento nuevo
-  // dejó de saber decirlo —el caso de una corrida con `coverageAnalysis: "off"`,
+  // dejó de saber decirlo —el caso de una corrida con `command` y `coverageAnalysis: "off"`,
   // que no puede emitir `NoCoverage` JAMÁS— o cambió lo que reporta. Las dos
   // cosas son la medida moviéndose, y ninguna la ve nadie más: `esVivo` colapsa
   // `Survived` y `NoCoverage`, así que un `NoCoverage → Survived` deja la huella
@@ -658,8 +659,9 @@ export function veredictoDeAdopcion(
     peros.push(
       `${totalSin.recuperados} mutante(s) que la base daba por NO EJERCIDOS (\`NoCoverage\`) y esta corrida ` +
         `ya no reporta así, en ${ficheros.length} fichero(s): ${muestraDe(ficheros)} — es el mismo código, así ` +
-        "que no ha aparecido ningún test: o el instrumento nuevo dejó de saber expresar `NoCoverage` (una " +
-        "corrida con `coverageAnalysis: \"off\"` no puede emitirlo JAMÁS) o cambió lo que reporta. `esVivo` " +
+        "que no ha aparecido ningún test: o el instrumento nuevo dejó de saber expresar `NoCoverage` (un " +
+        "runner que no reporta cobertura, con `coverageAnalysis: \"off\"`, no puede emitirlo JAMÁS) o cambió " +
+        "lo que reporta. `esVivo` " +
         "colapsa `Survived` y `NoCoverage`, así que nuevos y resueltos NO pueden verlo",
     );
   }
@@ -830,15 +832,16 @@ export function totalDeReloj(filas: readonly RelojDeFichero[]): Omit<RelojDeFich
 /** Por qué la corrida BASE no puede contestar si un mutante se ejercía antes.
  *
  *  Son DOS hechos opuestos y no se colapsan:
- *   · `coverageAnalysis "off"` — la base corría sin análisis de cobertura, y
- *     con `off` Stryker NO EMITE `NoCoverage` jamás. O sea que su «cero
- *     NoCoverage» no es una medida: es lo único que podía decir. Contarlo como
- *     medida hace que la séptima condición se dispare POR CONSTRUCCIÓN contra
- *     cualquier runner que active la cobertura, que son exactamente los
- *     runners por los que uno cambiaría (#599, con los 1122 de #443).
+ *   · `testRunner "command" + coverageAnalysis "off"` — la base corría con un
+ *     runner que NO REPORTA cobertura y el análisis apagado, así que Stryker no
+ *     emite `NoCoverage` jamás. Su «cero NoCoverage» no es una medida: es lo
+ *     único que podía decir. Contarlo como medida hace que la séptima condición
+ *     se dispare POR CONSTRUCCIÓN contra cualquier runner que active la
+ *     cobertura, que son exactamente los runners por los que uno cambiaría
+ *     (#599, con los 1122 de #443).
  *   · `sin informe base` — no hay contra qué comparar. Eso no autoriza nada:
  *     sigue negando, y con su propio remedio (`--timeouts <dir>`). */
-export type MotivoDeNoSaber = 'coverageAnalysis "off"' | "sin informe base";
+export type MotivoDeNoSaber = 'testRunner "command" + coverageAnalysis "off"' | "sin informe base";
 
 /** Si la base PODÍA expresar `NoCoverage`, dicho POR FICHERO y en el tipo.
  *
@@ -848,15 +851,50 @@ export type MotivoDeNoSaber = 'coverageAnalysis "off"' | "sin informe base";
  *  motivo diría 501 donde tiene que decir 1. */
 export type CapacidadDeLaBase = { sabe: true } | { sabe: false; porque: MotivoDeNoSaber };
 
-/** La lectura del `coverageAnalysis` de un informe base.
+/** Con qué se midió un informe: el runner Y el ajuste, juntos.
  *
- *  Solo `off` abstiene: `perTest` y `all` SÍ pueden emitir `NoCoverage`, así
- *  que su cero es una medida y vota. Un valor que no se reconozca vota también
- *  —negar de más antes que autorizar de más—, y quien no traiga el campo no
- *  llega hasta aquí: lo rechaza quien lee el informe. */
-export function capacidadDeLaBase(coverageAnalysis: string): CapacidadDeLaBase {
-  return coverageAnalysis === "off" ? { sabe: false, porque: 'coverageAnalysis "off"' } : { sabe: true };
+ *  Van juntos porque la pregunta que contestan —¿podía este informe emitir
+ *  `NoCoverage`?— NO la contesta ninguno de los dos por su cuenta. */
+export interface InstrumentoMedido {
+  runner: string;
+  cobertura: string;
 }
+
+/** Si la base PODÍA emitir `NoCoverage`, decidido por el PAR (runner, ajuste).
+ *
+ *  MEDIDO EL 2026-09-15 (QA de #597, H-1), y corrige a la primera versión de
+ *  #599, que miraba solo el ajuste:
+ *   · `command` + `off` → NO. El runner de comando no reporta cobertura y con
+ *     `off` Stryker tampoco la pide: la corrida base 34872537438 trae CERO
+ *     `NoCoverage` en 12.882 mutantes, y ése es el caso que #599 arregló.
+ *   · `tap` + `off` → **SÍ**. `tap-runner.dryRun()` nunca lee
+ *     `options.coverageAnalysis` y devuelve `mutantCoverage` siempre, y
+ *     `TestCoverage.hasCoverage` es `!!staticCoverage`, o sea depende de lo que
+ *     reportó el runner. Medido cambiando SOLO ese ajuste:
+ *     `contrato-sprite-forge` con `tap`+`off` sigue dando
+ *     `{Killed 56, Survived 6, NoCoverage 1}` y `coveredBy` poblado.
+ *
+ *  Si esto mirara solo el ajuste, una base medida con `tap`+`off` se contaría
+ *  como incapaz y la séptima condición se abstendría sobre un informe que SÍ
+ *  midió: un «no se pudo mirar» sobre algo que se miró. Es el mismo defecto de
+ *  #599 un escalón más arriba.
+ *
+ *  Lo que no se reconoce VOTA —negar de más antes que autorizar de más—, así
+ *  que solo el par conocido-incapaz abstiene. Quien no traiga los campos no
+ *  llega hasta aquí: lo rechaza quien lee el informe. */
+export function capacidadDeLaBase(instrumento: InstrumentoMedido): CapacidadDeLaBase {
+  return instrumento.cobertura === "off" && instrumento.runner === "command"
+    ? { sabe: false, porque: 'testRunner "command" + coverageAnalysis "off"' }
+    : { sabe: true };
+}
+
+/** Cómo se escribe un instrumento cuando el informe dice QUÉ está mirando, con
+ *  su capacidad pegada. El ajuste solo no vale: «off» a secas no dice si ese
+ *  informe podía emitir `NoCoverage` o no, y ésa es toda la pregunta. */
+export const instrumentoLegible = (i: InstrumentoMedido): string =>
+  capacidadDeLaBase(i).sabe
+    ? `${i.runner}+${i.cobertura}`
+    : `${i.runner}+${i.cobertura} (no podía expresar \`NoCoverage\`)`;
 
 /** Lo que se le pasa a `movimientosSinEjercer` como base: o las huellas que la
  *  base tenía, o el motivo por el que no las puede tener. */
@@ -868,7 +906,8 @@ export type BaseDeSinEjercer =
  *
  *  EL ESTADO MALO ES INEXPRESABLE, y ése es el arreglo de #599. Antes esto era
  *  `{base: number, nuevos: number}` y `nuevos` se sumaba siempre; con la base
- *  en `coverageAnalysis: "off"` ese `nuevos` valía «todos los de ahora» por
+ *  en `command` + `coverageAnalysis: "off"` ese `nuevos` valía «todos los de
+ *  ahora» por
  *  construcción, y la séptima condición del veredicto no podía salir más que
  *  en una dirección. Ahora `nuevos` SOLO EXISTE en la rama `sabe: true`: nadie
  *  puede sumarlo de una base que no podía medirlo, porque el campo no está.
@@ -967,7 +1006,7 @@ export function totalSinEjercer(filas: readonly SinEjercerDeFichero[]): TotalSin
     ahora: suma((r) => r.ahora),
     nuevos: deBase((b) => b.nuevos),
     recuperados: deBase((b) => b.recuperados),
-    censo: porMotivo('coverageAnalysis "off"'),
+    censo: porMotivo('testRunner "command" + coverageAnalysis "off"'),
     sinMirar: porMotivo("sin informe base"),
     mirados: filas.filter((r) => r.base.sabe).length,
   };

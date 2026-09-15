@@ -46,9 +46,12 @@ const TMP = mkdtempSync(join(tmpdir(), "nefan-septima-"));
 const HUELLA = join(CORE, "scripts", "mutacion-huella.js");
 const COMPARAR = join(CORE, "scripts", "mutacion-comparar.js");
 
-/** El informe base de ensayo: un solo mutante, y su `coverageAnalysis` es lo
- *  único que se mueve entre un bloque y otro. */
-const informe = (estado, cobertura) =>
+/** El informe base de ensayo: un solo mutante, y su INSTRUMENTO —el par runner
+ *  + ajuste— es lo único que se mueve entre un bloque y otro. Los dos campos,
+ *  porque la capacidad de emitir `NoCoverage` no la decide ninguno por su
+ *  cuenta: `command`+`off` no podía, `tap`+`off` sí (QA de #597, H-1), y
+ *  `comparar` se niega a leer un informe al que le falte cualquiera de los dos. */
+const informe = (estado, cobertura, runner = "command") =>
   JSON.stringify({
     files: {
       "src/x.ts": {
@@ -63,12 +66,14 @@ const informe = (estado, cobertura) =>
         ],
       },
     },
-    config: { coverageAnalysis: cobertura },
+    config: { coverageAnalysis: cobertura, testRunner: runner },
   });
 
 const DIR_BASE = join(TMP, "base");
 spawnSync("mkdir", ["-p", DIR_BASE]);
-writeFileSync(join(DIR_BASE, "m.json"), informe("Survived", "off"));
+// La base del bloque B/C es la REAL de #443: runner `command` con el análisis
+// apagado, el único par que de verdad no podía emitir `NoCoverage`.
+writeFileSync(join(DIR_BASE, "m.json"), informe("Survived", "off", "command"));
 
 const PROBE = join(TMP, "probe.ts");
 writeFileSync(
@@ -118,7 +123,7 @@ try {
     revBase: "HEAD",
     esperados: [F],
     dirBase: ${JSON.stringify(DIR_BASE)},
-    coberturaAhora: "perTest",
+    coberturaAhora: "tap+perTest",
   } as never);
 } finally {
   console.log = real;

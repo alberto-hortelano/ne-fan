@@ -230,9 +230,16 @@ const INVARIANTES = [
     `    nuevos: suma((r) => (r.base.sabe ? r.base.nuevos : r.ahora)),`],
   ["sinEjercer · no se suma NINGUNO: la condición se abstiene para siempre", SRC,
     `    nuevos: deBase((b) => b.nuevos),`, `    nuevos: 0,`],
-  ["sinEjercer · `perTest` también abstiene: la condición no se puede poner roja nunca", SRC,
-    `  return coverageAnalysis === "off" ? { sabe: false, porque: 'coverageAnalysis "off"' } : { sabe: true };`,
-    `  void coverageAnalysis;\n  return { sabe: false, porque: 'coverageAnalysis "off"' };`],
+  ["sinEjercer · todo abstiene, también `perTest`: la condición no se puede poner roja nunca", SRC,
+    `  return instrumento.cobertura === "off" && instrumento.runner === "command"\n    ? { sabe: false, porque: 'testRunner "command" + coverageAnalysis "off"' }\n    : { sabe: true };`,
+    `  void instrumento;\n  return { sabe: false, porque: 'testRunner "command" + coverageAnalysis "off"' };`],
+  // QA de #597, H-1: la capacidad decidida con MEDIO dato. Hasta hoy se miraba
+  // solo el ajuste, y eso es cierto para `command` y FALSO para `tap` — que con
+  // `off` sigue emitiendo `NoCoverage`, medido. Una base así se contaría como
+  // incapaz y la séptima se abstendría sobre un informe que SÍ midió.
+  ["sinEjercer · la capacidad la decide el AJUSTE solo: una base `tap`+`off` sale incapaz (#597 H-1)", SRC,
+    `  return instrumento.cobertura === "off" && instrumento.runner === "command"`,
+    `  return instrumento.cobertura === "off"`],
   ["sinEjercer · el motivo 7b se calla: «no se pudo mirar» pasa a verde", SRC,
     `  if (totalSin.sinMirar > 0) {`, `  if (false as boolean) {`],
   ["sinEjercer · el titular afirma que miró cuando no miró nada", SRC,

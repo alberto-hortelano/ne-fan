@@ -98,6 +98,7 @@ import {
   HUELLA_VACIA,
   huellaDeMutante,
   idsDeLotes,
+  instrumentoLegible,
   matrizDeLotes,
   permisoLocal,
   prDelAsunto,
@@ -121,6 +122,7 @@ import {
   type SujetoDeLaCola,
   type Huella,
   type InformeSellado,
+  type InstrumentoMedido,
   type MedidaDeFichero,
   type MutanteMedido,
 } from "./mutacion-huella.js";
@@ -351,9 +353,10 @@ export function segundosDe(plan: PlanMutacion, huella: Huella, id: string): numb
 interface InformeCrudo {
   files: Record<string, { mutants: MutanteMedido[] }>;
   /** Lo que Stryker deja escrito de su propia configuración. `comparar` lee de
-   *  ahí `coverageAnalysis` — el dato que decide si el «cero NoCoverage» de una
-   *  medida es una medida o es lo único que podía decir (#599). */
-  config?: { coverageAnalysis?: unknown };
+   *  ahí el PAR `testRunner` + `coverageAnalysis` — el dato que decide si el
+   *  «cero NoCoverage» de una medida es una medida o es lo único que podía
+   *  decir (#599, y el par y no el ajuste solo por el H-1 de QA en #597). */
+  config?: { coverageAnalysis?: unknown; testRunner?: unknown };
 }
 
 function leerInforme(id: string): InformeCrudo {
@@ -725,24 +728,30 @@ function repartosDeLaCorrida(ctx: ContextoDeCorrida): {
   medidos: Record<string, MedidaDeFichero>;
   ahora: Record<string, PoblacionesAhora>;
   blobs: Record<string, string>;
-  /** Con qué `coverageAnalysis` midió cada módulo de ESTA corrida. Se recoge
-   *  aquí porque los informes ya se están abriendo, y se deja crudo (con su
-   *  `undefined`) para que quien lo necesite decida si lanzar: `repartir` no lo
-   *  usa y no tiene por qué morirse por un informe que no lo traiga. */
-  coberturas: Record<string, string | undefined>;
+  /** Con qué INSTRUMENTO midió cada módulo de ESTA corrida: runner y ajuste,
+   *  juntos, porque la capacidad de emitir `NoCoverage` depende del par y no
+   *  del ajuste solo (QA de #597, H-1). Se recoge aquí porque los informes ya
+   *  se están abriendo, y se deja crudo (con su `undefined`) para que quien lo
+   *  necesite decida si lanzar: `repartir` no lo usa y no tiene por qué morirse
+   *  por un informe que no lo traiga. */
+  instrumentos: Record<string, InstrumentoMedido | undefined>;
 } {
   const { plan, corrida, base, rango } = ctx;
   const repartos: Reparto[] = [];
   const medidos: Record<string, MedidaDeFichero> = {};
   const poblaciones: Record<string, PoblacionesAhora> = {};
   const blobs: Record<string, string> = {};
-  const coberturas: Record<string, string | undefined> = {};
+  const instrumentos: Record<string, InstrumentoMedido | undefined> = {};
 
   for (const id of modulosConInforme(corrida)) {
     const modulo = moduloPorId(plan, id);
     const informe = leerInforme(id);
     const cobertura = informe.config?.coverageAnalysis;
-    coberturas[id] = typeof cobertura === "string" && cobertura !== "" ? cobertura : undefined;
+    const runner = informe.config?.testRunner;
+    instrumentos[id] =
+      typeof cobertura === "string" && cobertura !== "" && typeof runner === "string" && runner !== ""
+        ? { runner, cobertura }
+        : undefined;
     const ahora: Record<string, { vivos: string[]; total: number; blob: string }> = {};
     for (const [fichero, info] of Object.entries(informe.files)) {
       ahora[fichero] = { ...vivosDeFichero(fichero, info.mutants), blob: blobEnCommit(corrida.sha, fichero) };
@@ -780,7 +789,7 @@ function repartosDeLaCorrida(ctx: ContextoDeCorrida): {
       bateria: modulo.tests,
     });
   }
-  return { repartos, medidos, ahora: poblaciones, blobs, coberturas };
+  return { repartos, medidos, ahora: poblaciones, blobs, instrumentos };
 }
 
 function repartir(argv: readonly string[]): void {
@@ -1079,7 +1088,7 @@ function ficherosEsperados(plan: PlanMutacion, base: Huella): string[] {
  *  `git status`, y es donde vive la base que esto existe para no destruir. */
 function comparar(argv: readonly string[]): void {
   const ctx = contextoDeLaCorrida(valorDe(argv, "--base") ?? "HEAD");
-  const { repartos, ahora, blobs, coberturas } = repartosDeLaCorrida(ctx);
+  const { repartos, ahora, blobs, instrumentos } = repartosDeLaCorrida(ctx);
   const veredicto = veredictoDeCorrida(ctx.corrida);
   const base: Record<string, BaseDeFichero> = {};
   const codigoCambiado: string[] = [];
@@ -1113,7 +1122,7 @@ function comparar(argv: readonly string[]): void {
     revBase: ctx.revBase,
     esperados: ficherosEsperados(ctx.plan, ctx.base),
     dirBase: dirDeTimeouts(argv),
-    coberturaAhora: coberturaDeLaCorrida(coberturas),
+    coberturaAhora: instrumentoDeLaCorrida(instrumentos),
   });
 }
 
@@ -1125,18 +1134,20 @@ function comparar(argv: readonly string[]): void {
  *  mirando, que es literalmente lo que #599 vino a arreglar. Se comprueba aquí
  *  —en el verbo que compara— y no en `leerInforme`, para no matar a `repartir`
  *  ni a `fusionar`, que no necesitan el dato. */
-function coberturaDeLaCorrida(coberturas: Readonly<Record<string, string | undefined>>): string {
-  const sinDecir = Object.keys(coberturas)
-    .filter((id) => coberturas[id] === undefined)
+function instrumentoDeLaCorrida(instrumentos: Readonly<Record<string, InstrumentoMedido | undefined>>): string {
+  const sinDecir = Object.keys(instrumentos)
+    .filter((id) => instrumentos[id] === undefined)
     .sort();
   if (sinDecir.length > 0) {
     throw new Error(
-      `${sinDecir.length} informe(s) de esta corrida no dicen con qué \`coverageAnalysis\` se midieron ` +
-        `(${sinDecir.slice(0, 5).join(", ")}): sin eso, el bloque de NoCoverage no puede decir qué está ` +
-        `mirando — y de eso va #599. No se les supone nada.`,
+      `${sinDecir.length} informe(s) de esta corrida no dicen con qué se midieron (falta \`testRunner\` o ` +
+        `\`coverageAnalysis\` en ${sinDecir.slice(0, 5).join(", ")}): sin eso, el bloque de NoCoverage no ` +
+        `puede decir qué está mirando — y de eso va #599. No se les supone nada.`,
     );
   }
-  const valores = Object.values(coberturas).filter((v): v is string => v !== undefined);
+  const valores = Object.values(instrumentos)
+    .filter((v): v is InstrumentoMedido => v !== undefined)
+    .map(instrumentoLegible);
   return [...new Set(valores)].sort().join(" + ");
 }
 

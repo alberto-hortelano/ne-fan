@@ -13,9 +13,14 @@
  *  defecto `availableParallelism() - 1`) = **hasta 130 procesos node sobre 16
  *  núcleos**. Load average medido: 129 → 140, la máquina inusable para la
  *  persona que la estaba usando, y la propia medida inflada por el
- *  context-switching. Con `--test-concurrency=1` en el comando del plan, cada
- *  worker de Stryker gasta un proceso de test a la vez y el total simultáneo
- *  vuelve a ser ≈ la concurrencia que se pida aquí.
+ *  context-switching. Con `tap-runner` eso es estructural: el runner recorre su
+ *  batería con un `for … await` y lanza `node <fichero>` de uno en uno, así que
+ *  cada worker de Stryker gasta un proceso de test a la vez y el total
+ *  simultáneo es ≈ la concurrencia que se pida aquí. Lo único que lo rompería
+ *  es colar `--test` en los `node_args` del plan SIN `--test-isolation=none`
+ *  al lado (#597): con el aislamiento apagado no hay hijos que multiplicar, y
+ *  sin él vuelven los dos paralelismos anidados. Tiene candado en
+ *  `test/mutation-config.test.ts`.
  *
  *  ESTE SCRIPT NO SE INVOCA A MANO. Lo llaman el runner de CI y
  *  `npm run mutacion -- local <id>`, que son los dos sitios donde una corrida

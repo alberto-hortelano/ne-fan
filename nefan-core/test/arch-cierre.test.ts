@@ -1,8 +1,8 @@
 /** La batería del grafo de imports del checker (`src/contract/arch/cierre.ts`).
  *
  *  TODO SINTÉTICO: ficheros fabricados con sus imports ya resueltos, sin
- *  recorrer el repo. Es lo que la hace barata —con `coverageAnalysis: off` cada
- *  mutante paga la batería entera, y `architecture.test.ts` escanea 600
+ *  recorrer el repo. Es lo que la hace barata —cada mutante paga los ficheros
+ *  de la batería que lo cubren, y `architecture.test.ts` escanea 600
  *  ficheros— y lo que la hace concluyente: el árbol de hoy está verde, y una
  *  regla verde no demuestra nada. Aquí se le enseña al motor justo lo que la
  *  regla existe para cortar: un `node:fs` a DOS saltos del cliente. */

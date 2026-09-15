@@ -45,6 +45,7 @@ import { join } from "node:path";
 import {
   capacidadDeLaBase,
   estadoLegible,
+  instrumentoLegible,
   movimientosDeReloj,
   movimientosSinEjercer,
   sinEjercerDeFichero,
@@ -55,6 +56,7 @@ import {
   veredictoDeAdopcion,
   type BaseDeSinEjercer,
   type DeltaDeFichero,
+  type InstrumentoMedido,
   type MutanteMedido,
   type RelojDeFichero,
   type SinEjercerDeFichero,
@@ -124,30 +126,43 @@ export interface ComparacionEnSeco {
 
 interface InformeCrudo {
   files: Record<string, { mutants: MutanteMedido[] }>;
-  /** Lo que Stryker deja escrito de su propia configuración. Aquí solo
-   *  interesa `coverageAnalysis`, y no es opcional: ver `coberturaDelInforme`. */
-  config?: { coverageAnalysis?: unknown };
+  /** Lo que Stryker deja escrito de su propia configuración. Aquí interesan
+   *  los DOS campos del instrumento —`testRunner` y `coverageAnalysis`—, y
+   *  ninguno es opcional: ver `instrumentoDelInforme`. */
+  config?: { coverageAnalysis?: unknown; testRunner?: unknown };
 }
 
-/** El `coverageAnalysis` con el que se midió un informe, o un error que dice
- *  qué fichero no se entiende.
+/** Con qué se midió un informe —runner Y ajuste—, o un error que dice qué
+ *  fichero no se entiende.
+ *
+ *  LOS DOS CAMPOS, Y NO SOLO EL AJUSTE. Si esto devolviera únicamente el
+ *  `coverageAnalysis`, `capacidadDeLaBase` decidiría con la mitad del dato
+ *  teniendo la otra mitad en el mismo objeto: una base medida con `tap` + `off`
+ *  —que SÍ emite `NoCoverage`, medido— se contaría como incapaz y la séptima
+ *  condición se abstendría sobre un informe que sí midió (QA de #597, H-1).
  *
  *  FAIL-LOUD Y NO UN DEFECTO. Un informe sin `config` no es «off»: es un
  *  informe que no se entiende, y suponerle `off` volvería a meter por la puerta
  *  de atrás el defecto de #599 —dar por medido lo que la base no podía medir—
  *  justo en el sitio donde nadie miraría. Medido el 2026-09-15 sobre los tres
- *  directorios en disco: 58 + 58 + 55 informes de módulo, CERO sin `config`
- *  (`corrida.json` no es un informe y no llega aquí). */
-export function coberturaDelInforme(quien: string, informe: InformeCrudo): string {
-  const valor = informe.config?.coverageAnalysis;
-  if (typeof valor !== "string" || valor === "") {
+ *  directorios en disco: 58 + 58 + 55 informes de módulo, CERO sin `config` y
+ *  CERO sin `testRunner` (`corrida.json` no es un informe y no llega aquí). */
+export function instrumentoDelInforme(quien: string, informe: InformeCrudo): InstrumentoMedido {
+  const cobertura = informe.config?.coverageAnalysis;
+  const runner = informe.config?.testRunner;
+  const falta = [
+    typeof cobertura !== "string" || cobertura === "" ? "config.coverageAnalysis" : undefined,
+    typeof runner !== "string" || runner === "" ? "config.testRunner" : undefined,
+  ].filter((x): x is string => x !== undefined);
+  if (falta.length > 0) {
     throw new Error(
-      `el informe ${quien} no dice con qué \`coverageAnalysis\` se midió (falta config.coverageAnalysis).\n` +
-        `  No se le supone "off": de eso va #599 — con "off" Stryker no puede emitir NoCoverage JAMÁS, así que\n` +
-        `  tratar un informe ilegible como si lo fuera es dar por medido lo que nadie midió.`,
+      `el informe ${quien} no dice con qué se midió (falta ${falta.join(" y ")}).\n` +
+        `  No se le supone nada: de eso va #599 — un runner que no reporta cobertura, con "off", no puede\n` +
+        `  emitir NoCoverage JAMÁS, así que tratar un informe ilegible como si fuera capaz (o incapaz) es\n` +
+        `  inventarse la medida. La capacidad la decide el PAR (runner, ajuste), no uno de los dos.`,
     );
   }
-  return valor;
+  return { runner: runner as string, cobertura: cobertura as string };
 }
 
 /** Lo que la corrida base tenía de un módulo y la huella no puede contar.
@@ -158,7 +173,7 @@ export function coberturaDelInforme(quien: string, informe: InformeCrudo): strin
  *  nadie lo leía, y es el que decide si su «cero NoCoverage» es una medida o es
  *  lo único que podía decir (#599). */
 interface BaseDeModulo {
-  cobertura: string;
+  instrumento: InstrumentoMedido;
   ficheros: Record<string, { timeouts: string[]; sinEjercer: string[] }>;
 }
 
@@ -173,14 +188,16 @@ function poblacionesDeLaBase(dir: string, modulo: string): BaseDeModulo | undefi
       sinEjercer: sinEjercerDeFichero(fichero, info.mutants),
     };
   }
-  return { cobertura: coberturaDelInforme(`base de ${modulo} (${ruta})`, informe), ficheros };
+  return { instrumento: instrumentoDelInforme(`base de ${modulo} (${ruta})`, informe), ficheros };
 }
 
-/** Cómo se lee un `coverageAnalysis` en el informe, con lo que implica pegado.
- *  «off» a secas se lee como un ajuste cualquiera; lo que hay que decir es que
- *  con ese ajuste la base NO PODÍA emitir `NoCoverage`. */
-const comoSeLee = (cobertura: string): string =>
-  cobertura === "off" ? 'off (no podía expresar `NoCoverage`)' : cobertura;
+/** Cómo se lee el instrumento de un informe: lo escribe `instrumentoLegible`,
+ *  el MISMO que usa el lado «ahora», para que las dos mitades de la línea «qué
+ *  se mira» no puedan divergir. «off» a secas no dice nada: lo que hay que
+ *  decir es si con ESE PAR (runner, ajuste) el informe podía emitir
+ *  `NoCoverage`. `command`+`off` no podía; `tap`+`off` sí —el runner reporta
+ *  cobertura aunque el ajuste esté apagado, medido el 2026-09-15. */
+const comoSeLee = instrumentoLegible;
 
 const columnas = (celdas: readonly (string | number)[], anchos: readonly number[]): string =>
   `  ${celdas.map((c, i) => (i === 0 ? String(c).padEnd(anchos[i]) : String(c).padStart(anchos[i]))).join(" ")}`;
@@ -214,21 +231,23 @@ function leeLaBase(c: ComparacionEnSeco): {
   sinEjercer: SinEjercerDeFichero[];
   modulosSinBase: string[];
   ficherosSinBase: string[];
-  /** Los `coverageAnalysis` distintos que traían los informes base que se
-   *  llegaron a abrir. Puede haber varios: una descarga mixta es posible, y es
-   *  justo el caso en el que un booleano de corrida mentiría. */
-  coberturasBase: string[];
+  /** Los instrumentos (runner + ajuste) distintos que traían los informes base
+   *  que se llegaron a abrir. Puede haber varios: una descarga mixta es
+   *  posible, y es justo el caso en el que un booleano de corrida mentiría. */
+  instrumentosBase: InstrumentoMedido[];
 } {
   const reloj: RelojDeFichero[] = [];
   const sinEjercer: SinEjercerDeFichero[] = [];
   const modulosSinBase: string[] = [];
   const ficherosSinBase: string[] = [];
-  const coberturasBase = new Set<string>();
+  const instrumentosBase = new Map<string, InstrumentoMedido>();
 
   for (const m of c.modulos) {
     const delModulo = c.dirBase === undefined ? undefined : poblacionesDeLaBase(c.dirBase, m.modulo);
     if (c.dirBase !== undefined && delModulo === undefined) modulosSinBase.push(m.modulo);
-    if (delModulo !== undefined) coberturasBase.add(delModulo.cobertura);
+    if (delModulo !== undefined) {
+      instrumentosBase.set(`${delModulo.instrumento.runner}+${delModulo.instrumento.cobertura}`, delModulo.instrumento);
+    }
     for (const d of m.ficheros) {
       const ahora = c.ahora[d.fichero] ?? { timeouts: [], sinEjercer: [], medidos: [] };
       // Si el fuente cambió, las huellas llevan línea y columna de otro código y
@@ -261,7 +280,7 @@ function leeLaBase(c: ComparacionEnSeco): {
       // el flag que quien lee acaba de usar: un remedio sin salida.
       let capacidad: BaseDeSinEjercer = { sabe: false, porque: "sin informe base" };
       if (delModulo !== undefined) {
-        const cap = capacidadDeLaBase(delModulo.cobertura);
+        const cap = capacidadDeLaBase(delModulo.instrumento);
         if (!cap.sabe) capacidad = cap;
         else if (base !== undefined) capacidad = { sabe: true, huellas: base.sinEjercer };
         // Base capaz y el fichero fuera del informe: ahí sí falta la medida, y
@@ -270,7 +289,8 @@ function leeLaBase(c: ComparacionEnSeco): {
       sinEjercer.push(movimientosSinEjercer(d.fichero, capacidad, ahora.sinEjercer));
     }
   }
-  return { reloj, sinEjercer, modulosSinBase, ficherosSinBase, coberturasBase: [...coberturasBase].sort() };
+  const instrumentos = [...instrumentosBase.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, i]) => i);
+  return { reloj, sinEjercer, modulosSinBase, ficherosSinBase, instrumentosBase: instrumentos };
 }
 
 /** El bloque de los mutantes que clasifica el reloj. Va al FINAL y aparte: se
@@ -343,9 +363,9 @@ function imprimeSinEjercer(c: ComparacionEnSeco, leido: ReturnType<typeof leeLaB
   // afirmaba «el instrumento nuevo mide MENOS» sin decir —ni poder saber— si la
   // base era capaz de decir lo contrario.
   const base =
-    leido.coberturasBase.length === 0
+    leido.instrumentosBase.length === 0
       ? "(ningún informe base abierto: no se pudo mirar)"
-      : leido.coberturasBase.map(comoSeLee).join(" + ");
+      : leido.instrumentosBase.map(comoSeLee).join(" + ");
   console.log(`  qué se mira: base: ${base} · ahora: ${c.coberturaAhora}`);
   console.log(
     `  antes: ${total.base} · ahora: ${total.ahora} · que antes sí se ejercían: ${total.nuevos} ` +
@@ -392,17 +412,19 @@ function imprimeSinEjercer(c: ComparacionEnSeco, leido: ReturnType<typeof leeLaB
   // EL CENSO SE IMPRIME ENTERO Y NO VOTA. La información vale, y mucho: son los
   // mutantes que el instrumento nuevo sabe separar y el viejo no podía nombrar.
   // Lo que no puede hacer es contarse como «antes se ejercían», porque con la
-  // base en `off` eso no se puede saber por construcción.
+  // base en `command` + `off` eso no se puede saber por construcción.
   if (total.censo > 0) {
     console.log(
       `\n  CENSO (no es condición): ${total.censo} mutante(s) \`NoCoverage\` cuya base midió con\n` +
-        `  \`coverageAnalysis: "off"\`, que NO PUEDE emitir \`NoCoverage\` JAMÁS. Su cero no es una medida, así\n` +
+        `  \`testRunner: "command"\` y \`coverageAnalysis: "off"\`, par que NO PUEDE emitir \`NoCoverage\` JAMÁS. Su cero no es una medida, así\n` +
         `  que esto no dice que se mida menos: dice cuánto separa el instrumento nuevo que el viejo no sabía\n` +
         `  nombrar (#598). Quien cruza si es medida GANADA o PERDIDA son los nuevos y los resueltos de\n` +
         `  arriba: si ningún mutante cambió de bando, nadie perdió nada.`,
     );
     lista(
-      leido.sinEjercer.filter((f) => !f.base.sabe && f.base.porque === 'coverageAnalysis "off"' && f.ahora > 0),
+      leido.sinEjercer.filter(
+        (f) => !f.base.sabe && f.base.porque === 'testRunner "command" + coverageAnalysis "off"' && f.ahora > 0,
+      ),
       (f) => f.ahora,
     );
   }
