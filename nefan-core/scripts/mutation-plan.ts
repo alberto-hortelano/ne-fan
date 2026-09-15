@@ -98,18 +98,22 @@ const PlanSchema = z.object({
    *  fichero y nada más.
    *
    *  Van por ARGV y no por `NODE_OPTIONS` porque aquí sí se puede: `tap-runner`
-   *  lanza el fichero directo, sin un `node --test` padre cuyos hijos no
-   *  heredarían las flags de la línea de comandos (medido el 2026-09-14:
+   *  lanza el fichero en el proceso que él arranca, sin un hijo cuyo argv no
+   *  heredaría las flags de la línea de comandos (medido el 2026-09-14:
    *  `node --max-old-space-size=16 --import tsx --test <f>` pasa en verde y el
-   *  mismo tope por `NODE_OPTIONS` mata al hijo; por argv, sin `--test`, mata
-   *  al proceso que de verdad corre el test).
+   *  mismo tope por `NODE_OPTIONS` mata al hijo; por argv, con el fichero
+   *  corriendo en el proceso lanzado, mata al que de verdad corre el test).
    *
-   *  Tres cosas tienen que estar y por eso las canda `test/mutation-config.test.ts`:
+   *  Cuatro cosas tienen que estar y por eso las canda `test/mutation-config.test.ts`:
    *  el tope de heap (`--max-old-space-size`), el reporter TAP —Node 24 emite
    *  `spec` por defecto también sin TTY, así que sin esta flag `tap-parser` no
-   *  ve un solo `ok` y TODO mutante saldría detectado— y la AUSENCIA de
-   *  `--test`, que reabriría el paralelismo dentro del worker y, peor, mandaría
-   *  la cobertura a procesos hijos cuyo `stryker-output-<pid>.json` nadie lee. */
+   *  ve un solo `ok` y TODO mutante saldría detectado—, `--test` —desde #597: es
+   *  lo que hace que un fichero que muere AL IMPORTARSE emita `not ok 1` en vez
+   *  de nada, y con ello que 26 muertes dejen de contarse como `RuntimeError`—
+   *  y, pegado a él, `--test-isolation=none`, sin el cual `--test` abre un hijo
+   *  que reabre el paralelismo dentro del worker, manda la cobertura a un
+   *  `stryker-output-<pid>.json` que nadie lee y deja el tope de heap en no-op
+   *  (`correEnElMismoProceso`). */
   node_args: z.array(z.string()).min(1),
   /** Cuántos mutantes puede llegar a medir un módulo en la máquina de quien
    *  está programando (`npm run mutacion -- local <id>`). No es una política
@@ -1180,18 +1184,52 @@ export function tapDe(plan: PlanMutacion, modulo: ModuloMutacion): Record<string
   return { testFiles: [...modulo.tests], nodeArgs: [...plan.node_args] };
 }
 
+/** ¿El fichero de test lo ejecuta el MISMO proceso que lanza `tap-runner`?
+ *
+ *  El runner lanza `node -r <hook.cjs> <node_args> <fichero>` y después lee
+ *  `stryker-output-<pid>.json` con el pid que ÉL lanzó. Con `--test`, Node abre
+ *  un proceso HIJO por fichero (`--test-isolation` vale `process` por defecto),
+ *  y entonces se apagan a la vez las dos cosas que van en `node_args`:
+ *
+ *  · **la cobertura**, porque la escribe el hijo con SU pid, donde nadie la lee
+ *    — medido el 2026-09-15 mirando los ficheros que aparecen: con `--test` a
+ *    secas salen DOS (`stryker-output-188761.json`, el pid lanzado, y
+ *    `stryker-output-188767.json`, el hijo que de verdad importó el fichero), y
+ *    el runner solo abre el primero; con `--test-isolation=none` sale UNO y es
+ *    el pid lanzado. Que la cobertura sigue VIVA con las dos flags lo dice la
+ *    corrida de verdad: `contrato-sprite-forge` trae exactamente 1 `NoCoverage`,
+ *    ni 0 (sería `perTest` apagado) ni decenas (sería la cobertura vaciada);
+ *  · **el tope de heap**, porque el hijo no hereda el argv del padre — medido el
+ *    2026-09-15 con `--max-old-space-size=16` sobre un test que pide ~3 GB:
+ *    directo muere con «Reached heap limit» (exit 134), con `--test` a secas
+ *    **SOBREVIVE** (exit 0, el tope es un no-op), y con `--test
+ *    --test-isolation=none` vuelve a morir (exit 134).
+ *
+ *  Por eso `--test` no está prohibido sino CONDICIONADO: hace falta desde #597
+ *  —es lo que hace que un fichero que muere al importar emita `not ok 1` en vez
+ *  de nada, y con ello que 26 muertes dejen de contarse como `RuntimeError`—,
+ *  pero sin `--test-isolation=none` al lado se lleva por delante la cobertura y
+ *  el tope de heap sin decir una palabra. */
+export function correEnElMismoProceso(nodeArgs: readonly string[]): boolean {
+  const conTest = nodeArgs.some((a) => a === "--test" || a.startsWith("--test="));
+  if (!conTest) return true;
+  return /--test-isolation[= ]none\b/.test(nodeArgs.join(" "));
+}
+
 /** Cuántos procesos de test arranca de golpe el comando de un worker.
  *
  *  Con `tap-runner` la respuesta es estructural y vale 1: el runner recorre su
  *  batería con un `for … await` y lanza `node <fichero>` de uno en uno. Lo
- *  único que puede romperlo es colar `--test` en `node_args`, que devuelve el
- *  paralelismo interno de `node --test` DENTRO de cada worker de Stryker — los
- *  dos paralelismos multiplicándose, que es el accidente del 2026-08-23. Por
- *  eso la pregunta ya no es «¿trae `--test-concurrency=1`?» sino «¿está
- *  `--test` ahí?», y la respuesta tiene que ser que no. */
+ *  único que puede romperlo es colar `--test` en `node_args` SIN
+ *  `--test-isolation=none`, que devuelve el paralelismo interno de `node
+ *  --test` DENTRO de cada worker de Stryker — los dos paralelismos
+ *  multiplicándose, que es el accidente del 2026-08-23. Con
+ *  `--test-isolation=none` no hay hijos que multiplicar: el fichero corre en el
+ *  proceso lanzado y el 1 vuelve a ser estructural. */
 export function testConcurrencyDe(nodeArgs: readonly string[]): number | "sin tope" {
   const conTest = nodeArgs.some((a) => a === "--test" || a.startsWith("--test="));
   if (!conTest) return 1;
+  if (correEnElMismoProceso(nodeArgs)) return 1;
   const m = /--test-concurrency[= ](\d+)/.exec(nodeArgs.join(" "));
   return m ? Number(m[1]) : "sin tope";
 }

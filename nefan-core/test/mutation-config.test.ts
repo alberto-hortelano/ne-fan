@@ -30,6 +30,7 @@ import {
   cierreDeRuntime,
   concurrenciaDe,
   configDe,
+  correEnElMismoProceso,
   dueñoDe,
   ficherosDeclarados,
   ficherosExentos,
@@ -536,6 +537,17 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
       `los node_args del plan son ${JSON.stringify(plan.node_args)}: sin tope de heap un mutante desbocado ` +
         `crece hasta agotar la RAM de la máquina`,
     );
+    // Y que la flag ESTÉ no basta para que APLIQUE, que es justo lo que este
+    // aserto se creía comprobando: con `--test` y sin `--test-isolation=none` el
+    // test corre en un hijo que no hereda el argv, y el tope es un no-op.
+    // Medido el 2026-09-15 sobre un test que pide ~3 GB con el tope en 16 MB:
+    // con `--test` a secas SOBREVIVE (exit 0); con `--test-isolation=none` al
+    // lado vuelve a morir con «Reached heap limit» (exit 134).
+    assert.ok(
+      correEnElMismoProceso(plan.node_args),
+      `los node_args del plan son ${JSON.stringify(plan.node_args)}: el tope de heap está escrito pero ` +
+        `no aplica, porque el test corre en un proceso hijo que no hereda el argv`,
+    );
   });
 
   /** Node 24 emite `spec` POR DEFECTO, también sin TTY (comprobado el
@@ -684,15 +696,76 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
   it("el comando de test no abre un paralelismo dentro de cada worker", () => {
     // Con `tap-runner` el 1 es ESTRUCTURAL: el runner recorre su batería con un
     // `for … await` y lanza `node <fichero>` de uno en uno. Lo único que puede
-    // romperlo es colar `--test` en `node_args`, que devuelve el paralelismo
-    // interno de `node --test` dentro de cada worker — y además manda la
-    // cobertura a procesos hijos cuyo `stryker-output-<pid>.json` nadie lee,
-    // porque el hook lo escribe con SU pid y el runner solo mira el que lanzó.
+    // romperlo es colar `--test` SIN `--test-isolation=none`, que devuelve el
+    // paralelismo interno de `node --test` dentro de cada worker — y además
+    // manda la cobertura a procesos hijos cuyo `stryker-output-<pid>.json`
+    // nadie lee, porque el hook lo escribe con SU pid y el runner solo mira el
+    // que lanzó.
     assert.equal(
       testConcurrencyDe(plan.node_args),
       1,
-      `los node_args del plan son ${JSON.stringify(plan.node_args)}: con --test ahí, node arranca ` +
-        `un proceso por fichero de test DENTRO de cada worker de Stryker, y los dos paralelismos se multiplican`,
+      `los node_args del plan son ${JSON.stringify(plan.node_args)}: con --test ahí y sin ` +
+        `--test-isolation=none, node arranca un proceso por fichero de test DENTRO de cada worker de ` +
+        `Stryker, y los dos paralelismos se multiplican`,
+    );
+  });
+
+  /** `--test` ENTRA en `node_args` con #597 y trae compañía obligatoria.
+   *
+   *  Lo que compra: sobre un fichero que muere AL IMPORTARSE —el patrón
+   *  `ObjectLiteral → {}` sobre una tabla que se evalúa al cargar el módulo—
+   *  `node --test … --test-reporter=tap` emite `not ok 1 - <fichero>`, y con esa
+   *  línea `tap-runner` clasifica `Failed` y Stryker cuenta el mutante como
+   *  `Killed`. Sin ella el proceso muere antes de la cabecera TAP, el runner no
+   *  distingue «el test se cayó porque el mutante lo mató» de «el runner falló»,
+   *  y el mutante sale `RuntimeError`: FUERA del denominador. Eran **26** en la
+   *  corrida 34878198682 y son lo único que impidió adoptar el runner (#443).
+   *
+   *  Lo que cuesta si va solo, y es lo que este candado sujeta: `--test` sin
+   *  `--test-isolation=none` abre un proceso HIJO por fichero, y ese hijo no
+   *  hereda ni el pid que el hook usa para escribir la cobertura ni el tope de
+   *  heap del argv. Las dos cosas se apagan EN SILENCIO — la corrida sigue
+   *  saliendo verde, midiendo menos y sin cortafuegos de memoria.
+   *
+   *  Medido el 2026-09-15 con `--max-old-space-size=16` sobre un test que pide
+   *  ~3 GB: directo exit 134 «Reached heap limit» · con `--test` a secas exit 0,
+   *  el test SOBREVIVE · con `--test --test-isolation=none` exit 134 otra vez.
+   *  Y con el runner real, los 26 vuelven a `Killed` (los 5 de
+   *  `contrato-sprite-forge` por `npm run mutacion -- local`, los otros 21 por
+   *  huella con `mutate` acotado a su rango). */
+  it("`--test` está, y solo es admisible acompañado de `--test-isolation=none`", () => {
+    // EL CASO QUE ESTE CANDADO TIENE QUE RECHAZAR: `--test` a secas.
+    assert.equal(
+      correEnElMismoProceso(["--max-old-space-size=1024", "--import", "tsx", "--test", "--test-reporter=tap"]),
+      false,
+      "`--test` sin `--test-isolation=none` abre un hijo: la cobertura se escribe con el pid del hijo, " +
+        "que el runner no lee, y el tope de heap del argv deja de aplicar",
+    );
+    // Y los que sí valen: sin `--test` (el fichero se ejecuta directo) y con la
+    // compañía obligatoria (el fichero corre EN el proceso lanzado).
+    assert.equal(correEnElMismoProceso(["--max-old-space-size=1024", "--import", "tsx", "--test-reporter=tap"]), true);
+    assert.equal(correEnElMismoProceso(["--import", "tsx", "--test", "--test-isolation=none"]), true);
+    assert.equal(correEnElMismoProceso(["--import", "tsx", "--test", "--test-isolation", "none"]), true);
+    // Pedir el aislamiento por procesos EXPLÍCITAMENTE es el mismo agujero que
+    // no pedirlo: el candado mira lo que hace Node, no lo que se quiso decir.
+    assert.equal(correEnElMismoProceso(["--import", "tsx", "--test", "--test-isolation=process"]), false);
+
+    // Y el plan de verdad, que es a quien le toca cumplirlo. Las DOS
+    // direcciones, porque quitar `--test` tampoco se nota: el módulo roto medía
+    // 51/58 = 87,9 % y su suelo era 87, así que los 26 se fueron del
+    // denominador sin poner nada rojo. Lo cazó `comparar`, y solo porque había
+    // una corrida con la que comparar.
+    assert.ok(
+      plan.node_args.includes("--test"),
+      `los node_args del plan son ${JSON.stringify(plan.node_args)}: sin --test, un fichero que muere al ` +
+        `importarse no emite TAP, tap-runner no distingue esa muerte de un fallo suyo y el mutante sale ` +
+        `RuntimeError — fuera del denominador. Eran 26 (#597), y el suelo del módulo no los caza`,
+    );
+    assert.equal(
+      correEnElMismoProceso(plan.node_args),
+      true,
+      `los node_args del plan son ${JSON.stringify(plan.node_args)}: con --test y sin ` +
+        `--test-isolation=none, la cobertura perTest y el tope de heap se apagan sin que nada se ponga rojo`,
     );
   });
 

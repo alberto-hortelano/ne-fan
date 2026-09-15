@@ -17,7 +17,9 @@
  *  batería con un `for … await` y lanza `node <fichero>` de uno en uno, así que
  *  cada worker de Stryker gasta un proceso de test a la vez y el total
  *  simultáneo es ≈ la concurrencia que se pida aquí. Lo único que lo rompería
- *  es colar `--test` en los `node_args` del plan, y eso tiene candado en
+ *  es colar `--test` en los `node_args` del plan SIN `--test-isolation=none`
+ *  al lado (#597): con el aislamiento apagado no hay hijos que multiplicar, y
+ *  sin él vuelven los dos paralelismos anidados. Tiene candado en
  *  `test/mutation-config.test.ts`.
  *
  *  ESTE SCRIPT NO SE INVOCA A MANO. Lo llaman el runner de CI y

@@ -1,4 +1,4 @@
-/** PASO B de #443 — ¿corre la batería fichero a fichero, SIN `--test`?
+/** PASO B de #443 — ¿corre la batería fichero a fichero con las flags del plan?
  *
  *  No simula lo que hace `tap-runner`: importa SUS PROPIAS funciones
  *  (`buildArguments`, `captureTapResult`) del paquete instalado y las usa sobre
@@ -6,11 +6,13 @@
  *  el runner de verdad, no una aproximación mía — y si el paquete cambia de
  *  comportamiento, esta medida cambia con él en vez de quedarse mintiendo.
  *
- *  Por qué sin `--test`: `tap-runner` hace `spawn('node', ['-r', hook.cjs,
- *  ...nodeArgs, testFile])`, o sea que ejecuta el fichero DIRECTO. Con `--test`
- *  Node abriría un hijo por fichero y el hook escribiría su
+ *  Las flags salen de `plan.node_args`, así que desde #597 esto se ejecuta con
+ *  `--test --test-isolation=none`: `tap-runner` hace `spawn('node', ['-r',
+ *  hook.cjs, ...nodeArgs, testFile])` y con el aislamiento apagado el fichero
+ *  corre EN ese proceso. Si alguien quitara `--test-isolation=none`, Node
+ *  abriría un hijo por fichero y el hook escribiría su
  *  `stryker-output-<pid>.json` con el pid del hijo, que nadie lee: la cobertura
- *  se perdería entera.
+ *  se perdería entera. Eso tiene candado en `test/mutation-config.test.ts`.
  *
  *  Uso:  npx tsx scripts/paso-b-tap.ts              (los ficheros del plan)
  *        npx tsx scripts/paso-b-tap.ts <f> [...]    (unos cuantos)
