@@ -341,7 +341,7 @@ export default async function (ctx) {
     );
   }
   const rematado = await herirHasta(ctx, elHostil.id, 0, {
-    maxMs: 120_000,
+    sim: 120,
     alcance: DISTANCIA_DE_GOLPE,
   });
   if (!rematado?.muerto) {

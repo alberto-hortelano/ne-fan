@@ -102,7 +102,9 @@ export const PARED_MINIMA_MS = 3_000;
  *  Medido por QA: a ×4 la corrida trae un frame de **1.150 ms** y la razón
  *  global se queda en 0,951 — el reproductor la rechazaba diciendo «no se ha
  *  reproducido nada», cuando ese frame solo se come **1.050 ms de simulación de
- *  un presupuesto de 4.000 ms** (`qa/lib/combate.mjs:62`), o sea el 26 %. Un
+ *  un presupuesto de 4.000 ms** —el del tramo de `qa/lib/combate.mjs`, que con
+ *  #545 pasó a `{sim: 4}` y ya no se mide con este reloj; el de los 28 guiones
+ *  que presupuestan a mano, sí—, o sea el 26 %. Un
  *  frame así basta para tumbar un aserto y mueve la media 1,6 puntos.
  *
  *  1.000 ms = diez veces el tope. Elegido con margen sobre lo medido: el peor

@@ -19,7 +19,63 @@
  *  Ambos caminan por el camino del jugador —yaw + tecla de avance—, nunca
  *  `setPlayerPos`: teletransportarse sería fabricar el escenario que el guion
  *  viene a medir.
+ *
+ *  Y LOS DOS PRESUPUESTAN EN SEGUNDOS DE MUNDO, no de pared (#545). Andar y
+ *  pegar son las dos cosas del banco que dependen del `delta` del game loop, y
+ *  ese delta está topado en 0,1 s por frame: bajo carga el jugador avanza menos
+ *  metros por segundo de RELOJ aunque su velocidad no haya cambiado, así que un
+ *  cortafuegos de «4.000 ms» dejaba de ser un cortafuegos y pasaba a ser la
+ *  condición de parada — que es exactamente lo que #545 vino a arreglar. Con
+ *  `{sim: 4}` se esperan cuatro segundos de MUNDO, los tarde la máquina lo que
+ *  tarde, y si el mundo no llega a correrlos la espera declara ⊘ en vez de
+ *  afirmar que el jugador no llegó (ver `qa/lib/sonda.mjs`).
+ *
+ *  **Ni un umbral, ni un aserto, ni un canal han cambiado con ese paso**: los
+ *  metros son los mismos, el predicado es el mismo y la vida se sigue leyendo
+ *  del HUD. Lo único que cambia es CON QUÉ RELOJ se espera.
  */
+
+import { esperaExpiradaEn } from "./esperas.mjs";
+
+/** Las opciones que este helper entiende, o LANZA.
+ *
+ *  Existe por el hallazgo H-3 de QA, y es la clase de defecto más barata de
+ *  cometer que hay aquí: cuando `herirHasta` pasó de `maxMs` (milisegundos de
+ *  pared) a `sim` (segundos de mundo), **tres sitios de llamada se quedaron
+ *  escribiendo `maxMs`** y JavaScript se los tragó — una clave desconocida en
+ *  un objeto de opciones se desestructura en silencio y el helper usa su
+ *  defecto. El del guion 49 pedía `maxMs: 120_000` y se quedó con `sim: 60`:
+ *  medio presupuesto, sin que nadie lo escribiera, y su resultado gobierna un
+ *  `ctx.sinMedir` que degrada la corrida entera a exit 2.
+ *
+ *  El arreglo no es corregir los tres —eso ya está hecho— sino que el estado
+ *  malo deje de ser expresable: escribir una opción que no existe para. Y dice
+ *  cuáles hay, porque el que se equivoca está mirando el sitio de llamada, no
+ *  este fichero. */
+function soloEstasOpciones(quien, opciones, conocidas) {
+  // LA FORMA, antes que las claves (H-14 de QA). `herirHasta(ctx, id, 0,
+  // 120_000)` —el presupuesto como número posicional, que es como se escribía
+  // antes de que la firma tuviera objeto de opciones— se colaba entero: de un
+  // número `Object.keys` devuelve `[]`, así que la puerta lo daba por bueno y el
+  // helper se quedaba con su defecto. Cubrir las claves muertas y no la firma
+  // muerta es cubrir media retirada.
+  if (opciones === null || typeof opciones !== "object" || Array.isArray(opciones)) {
+    throw new Error(
+      `${quien}: las opciones son un OBJETO (\`{ ${conocidas.join(", ")} }\`) y llegó ` +
+        `${JSON.stringify(opciones)}. Si eso era el presupuesto, hoy se escribe \`{ sim: N }\` y son ` +
+        `SEGUNDOS DE MUNDO: la firma con el número suelto murió con #545.`,
+    );
+  }
+  const desconocidas = Object.keys(opciones).filter((k) => !conocidas.includes(k));
+  if (desconocidas.length) {
+    throw new Error(
+      `${quien}: opción(es) que no existen: ${desconocidas.map((k) => `\`${k}\``).join(", ")}. ` +
+        `Las que hay son ${conocidas.map((k) => `\`${k}\``).join(", ")}. ` +
+        `Ojo con \`maxMs\`: murió con #545 y su sustituto es \`sim\`, que son SEGUNDOS DE MUNDO, no ` +
+        `milisegundos de pared — escribirlo en silencio dejaba el presupuesto en el defecto.`,
+    );
+  }
+}
 
 /** Dónde está el objetivo respecto al jugador, en metros. `lista` es la del
  *  hook (`enemies` o `npcs`): el mismo paseo sirve para pelear y para hablar. */
@@ -59,7 +115,8 @@ function dondeEsta(ctx, id, lista) {
  *  Devuelve la última medición (`{d, dx, dz}`) o `null` si el objetivo ya no
  *  está en la lista. */
 export async function acercarse(ctx, id, opciones = {}) {
-  const { objetivo = 1.6, tramos = 12, tramoMs = 4_000, lista = "enemies" } = opciones;
+  soloEstasOpciones("acercarse", opciones, ["objetivo", "tramos", "tramoSim", "lista"]);
+  const { objetivo = 1.6, tramos = 12, tramoSim = 4, lista = "enemies" } = opciones;
   const arg = { id, objetivo, lista };
   /** EL predicado. Lo comparten los cortafuegos y el aserto del final. */
   const aTiro = (a) => {
@@ -81,14 +138,14 @@ export async function acercarse(ctx, id, opciones = {}) {
     const n = await encarar();
     if (!n || n.d <= objetivo) break;
     await ctx.absorbe(
-      `cortafuegos de UN tramo (${tramoMs} ms) del paseo hasta ${id}: el bucle vuelve a medir y ` +
-        `el ÚLTIMO tramo afirma este mismo predicado (d ≤ ${objetivo} m), que es donde vive la medida`,
+      `cortafuegos de UN tramo (${tramoSim} s de simulación) del paseo hasta ${id}: el bucle vuelve a ` +
+        `medir y el ÚLTIMO tramo afirma este mismo predicado (d ≤ ${objetivo} m), que es donde vive la medida`,
       () =>
         ctx.holdUntil(
           "up",
           `el jugador se acerca a ${id} (tramo ${i + 1}, ahora ${n.d.toFixed(1)} m)`,
           aTiro,
-          tramoMs,
+          { sim: tramoSim },
           arg,
         ),
     );
@@ -100,7 +157,7 @@ export async function acercarse(ctx, id, opciones = {}) {
     `el jugador LLEGA andando a ${objetivo} m de ${id} (sin teletransportarse)`,
     true,
     aTiro,
-    { ms: tramoMs, arg, tecla: "up" },
+    { sim: tramoSim, arg, tecla: "up" },
   );
   return dondeEsta(ctx, id, lista);
 }
@@ -112,14 +169,35 @@ export async function acercarse(ctx, id, opciones = {}) {
  *  que eso signifique nada. La condición de parada es la vida DEL HUD —lo que
  *  ve el jugador—, no un reloj ni un número de intentos.
  *
+ *  `sim` son SEGUNDOS DE MUNDO de cortafuegos (#545): pegar depende del `delta`
+ *  del loop —wind-up, recuperación, daño por golpe—, así que contarlos en
+ *  milisegundos de pared era contar el reloj equivocado.
+ *
  *  Devuelve `{hud, muerto?}`, `{hud, jugadorMuerto:true}` si al que pega lo
  *  matan primero, o `null` si el cortafuegos salta. El `null` NO es un
  *  desenlace mudo: todos los sitios de llamada lo afirman (`ctx.expect`) o lo
  *  declaran (`ctx.sinMedirBloque`), que es lo que hace que la expiración se
- *  vea. */
+ *  vea. Y no cubre el ⊘: si el mundo no llegó a correr los segundos pedidos,
+ *  eso sube y para el guion. */
 export async function herirHasta(ctx, id, objetivo, opciones = {}) {
-  const { maxMs = 60_000, alcance = 1.6 } = opciones;
+  soloEstasOpciones("herirHasta", opciones, ["sim", "alcance"]);
+  const { sim = 60, alcance = 1.6 } = opciones;
   await ctx.nefan("inputDriver.selectAttack", "quick");
+  // La tecla se suelta SIEMPRE, también cuando sube un ⊘ (H-5 de QA). Antes el
+  // `.catch(() => null)` garantizaba llegar al `release`; ahora el ⊘ pasa de
+  // largo, y sin el `finally` el guion se iba a ⊘ con el jugador andando — la
+  // captura y el diagnóstico se tomaban de un jugador en marcha. `holdUntil` ya
+  // tenía el suyo; esta es la asimetría que faltaba dentro del mismo fichero.
+  try {
+    return await golpearHasta(ctx, id, objetivo, { sim, alcance });
+  } finally {
+    await ctx.nefan("inputDriver.release", "up");
+  }
+}
+
+/** El bucle de golpes, sin el cuidado de soltar la tecla: eso lo hace su
+ *  envoltorio, que es quien puede prometerlo pase lo que pase. */
+async function golpearHasta(ctx, id, objetivo, { sim, alcance }) {
   const fin = await ctx
     .waitFor(
       `la vida de ${id} baja de ${objetivo} en el HUD`,
@@ -144,10 +222,18 @@ export async function herirHasta(ctx, id, objetivo, opciones = {}) {
         }
         return null;
       },
-      maxMs,
+      { sim },
       { id, objetivo, alcance },
     )
-    .catch(() => null);
-  await ctx.nefan("inputDriver.release", "up");
+    // Solo se traga la EXPIRACIÓN, que es el cortafuegos que este helper
+    // declara devolver como `null` y que todos sus sitios de llamada afirman.
+    // El ⊘ de «el mundo no llegó a correr los segundos pedidos» NO es un
+    // desenlace de la pelea y tiene que subir hasta el runner: convertirlo aquí
+    // en `null` sería volver a colapsar «no pude medir» con «no lo maté», que es
+    // la mentira que cuesta una investigación entera cada vez.
+    .catch((err) => {
+      if (esperaExpiradaEn(err)) return null;
+      throw err;
+    });
   return fin;
 }

@@ -311,7 +311,7 @@ export default async function (ctx) {
   // El hostil del turno 2 antes de andar, como haría quien juega: si no, los
   // paseos de abajo son una carrera contra su daño (lo midió el 91).
   await cerrarElPanel(ctx);
-  const pelea = await herirHasta(ctx, hostil.id, 0, { maxMs: 45_000 });
+  const pelea = await herirHasta(ctx, hostil.id, 0, { sim: 45 });
   ctx.log(`el hostil del turno 2 (${hostil.label}): ${JSON.stringify(pelea)}`);
   await revivirSiHaceFalta(ctx);
 

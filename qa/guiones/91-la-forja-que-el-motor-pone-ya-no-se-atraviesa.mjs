@@ -401,7 +401,7 @@ export default async function (ctx) {
   // sin ello lo que se mide es una carrera contra su daño — el jugador muere a
   // mitad del paseo, reaparece lejos y la parada ya no dice nada de la caja.
   // No se AFIRMA (matarlo no es el sujeto de este guion): se dice cómo acabó.
-  const pelea = await herirHasta(ctx, hostil.id, 0, { maxMs: 45_000 });
+  const pelea = await herirHasta(ctx, hostil.id, 0, { sim: 45 });
   ctx.log(`el hostil del turno 2 (${hostil.label}): ${JSON.stringify(pelea)}`);
   await revivirSiHaceFalta(ctx);
 

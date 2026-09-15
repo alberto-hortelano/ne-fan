@@ -280,7 +280,7 @@ export default async function (ctx) {
 
   // 3.b · y se le puede PEGAR: volver pintado no basta (I-3 de #323).
   const segundaHerida = await herirHasta(ctx, vuelto.enemigo.id, (vidaDespues ?? VIDA_OBJETIVO) - 1, {
-    maxMs: 90_000,
+    sim: 90,
     alcance: DISTANCIA_DE_GOLPE,
   });
   const vidaFinal = await vidaEnElHud(ctx, vuelto.enemigo.id);

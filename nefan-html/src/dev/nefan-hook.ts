@@ -27,6 +27,7 @@
  */
 
 import { setDebugLog } from "./debug-log.js";
+import { relojDeSim } from "../world/reloj-de-sim.js";
 import { serviceUrl } from "../net/service-urls.js";
 import { applyUiTheme, currentUiTheme, type UiTheme } from "../ui/theme.js";
 import { ScriptedInputProvider } from "../input/scripted-input-provider.js";
@@ -255,6 +256,11 @@ export function instalarNefanHook(deps: DepsDelHook): void {
       devPanel: deps.devPanel,
       probeCollide: (x: number, z: number) => deps.collidesAt(x, z),
       fps: () => deps.fpsRenderer.debugState(),
+      /** El RELOJ DE SIM del loop: `sim` en segundos de mundo y `frames` del
+       *  propio loop. Es lo que permite a un guion presupuestar en la escala en
+       *  la que el juego progresa de verdad (#545) — `fps()` cuenta lo que
+       *  PINTA el renderer, que es otra pregunta. */
+      reloj: () => relojDeSim.lee(),
       get scene() { return escenaServida(deps.mundo); },
       // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
       // flechas de dirección. Mismo camino que el giro real: yaw → forward.

@@ -264,7 +264,7 @@ export default async function (ctx) {
   const cerca = await acercarse(ctx, BANDIDO, { objetivo: DISTANCIA_DE_GOLPE, tramos: 30 });
   ctx.log(`de vuelta a ${cerca?.d?.toFixed(2)} m de ${BANDIDO} (vida HUD ${vidaTrasViajar})`);
   const segundaHerida = await herirHasta(ctx, BANDIDO, vidaTrasViajar - 1, {
-    maxMs: 90_000,
+    sim: 90,
     alcance: DISTANCIA_DE_GOLPE,
   });
   const vidaFinal = await vidaEnElHud(ctx, BANDIDO);
@@ -335,7 +335,7 @@ export default async function (ctx) {
   // enemigo matado dos veces (medido jugando en el QA de #323, que lo dejó en
   // backlog sin issue). Aquí se mata de verdad, se reanuda por la tarjeta del
   // save —como quien juega— y se afirma que NO está.
-  const rematado = await herirHasta(ctx, BANDIDO, 0, { maxMs: 90_000, alcance: DISTANCIA_DE_GOLPE });
+  const rematado = await herirHasta(ctx, BANDIDO, 0, { sim: 90, alcance: DISTANCIA_DE_GOLPE });
   ctx.expect(
     "el jugador consigue MATAR al enemigo (si no, no hay muerte que persistir)",
     Boolean(rematado?.muerto),
