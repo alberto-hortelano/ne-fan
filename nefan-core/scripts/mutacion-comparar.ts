@@ -43,14 +43,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  capacidadDeLaBase,
   estadoLegible,
   movimientosDeReloj,
   movimientosSinEjercer,
   sinEjercerDeFichero,
   timeoutsDeFichero,
+  titularDeSinEjercer,
   totalDeReloj,
   totalSinEjercer,
   veredictoDeAdopcion,
+  type BaseDeSinEjercer,
   type DeltaDeFichero,
   type MutanteMedido,
   type RelojDeFichero,
@@ -112,31 +115,72 @@ export interface ComparacionEnSeco {
    *  de la corrida BASE. Sin él no hay forma de saber qué `Timeout` y qué
    *  `NoCoverage` había antes: la huella no los guarda. */
   dirBase?: string;
+  /** Con qué `coverageAnalysis` midió la corrida NUEVA, ya legible. Se imprime
+   *  SIEMPRE, al lado del de la base: el informe tiene que decir CUÁL de las
+   *  dos cosas está mirando, porque hasta #599 afirmaba «el instrumento nuevo
+   *  mide MENOS» sin poder saberlo. */
+  coberturaAhora: string;
 }
 
 interface InformeCrudo {
   files: Record<string, { mutants: MutanteMedido[] }>;
+  /** Lo que Stryker deja escrito de su propia configuración. Aquí solo
+   *  interesa `coverageAnalysis`, y no es opcional: ver `coberturaDelInforme`. */
+  config?: { coverageAnalysis?: unknown };
+}
+
+/** El `coverageAnalysis` con el que se midió un informe, o un error que dice
+ *  qué fichero no se entiende.
+ *
+ *  FAIL-LOUD Y NO UN DEFECTO. Un informe sin `config` no es «off»: es un
+ *  informe que no se entiende, y suponerle `off` volvería a meter por la puerta
+ *  de atrás el defecto de #599 —dar por medido lo que la base no podía medir—
+ *  justo en el sitio donde nadie miraría. Medido el 2026-09-15 sobre los tres
+ *  directorios en disco: 58 + 58 + 55 informes de módulo, CERO sin `config`
+ *  (`corrida.json` no es un informe y no llega aquí). */
+export function coberturaDelInforme(quien: string, informe: InformeCrudo): string {
+  const valor = informe.config?.coverageAnalysis;
+  if (typeof valor !== "string" || valor === "") {
+    throw new Error(
+      `el informe ${quien} no dice con qué \`coverageAnalysis\` se midió (falta config.coverageAnalysis).\n` +
+        `  No se le supone "off": de eso va #599 — con "off" Stryker no puede emitir NoCoverage JAMÁS, así que\n` +
+        `  tratar un informe ilegible como si lo fuera es dar por medido lo que nadie midió.`,
+    );
+  }
+  return valor;
 }
 
 /** Lo que la corrida base tenía de un módulo y la huella no puede contar.
  *  `undefined` = esa corrida no midió este módulo, que NO es lo mismo que «no
- *  tenía ninguno»: con cero, todo lo de ahora se leería como movimiento. */
-function poblacionesDeLaBase(
-  dir: string,
-  modulo: string,
-): Record<string, { timeouts: string[]; sinEjercer: string[] }> | undefined {
+ *  tenía ninguno»: con cero, todo lo de ahora se leería como movimiento.
+ *
+ *  Trae además CON QUÉ SE MIDIÓ. Ese dato ya viajaba dentro de cada informe y
+ *  nadie lo leía, y es el que decide si su «cero NoCoverage» es una medida o es
+ *  lo único que podía decir (#599). */
+interface BaseDeModulo {
+  cobertura: string;
+  ficheros: Record<string, { timeouts: string[]; sinEjercer: string[] }>;
+}
+
+function poblacionesDeLaBase(dir: string, modulo: string): BaseDeModulo | undefined {
   const ruta = join(dir, `${modulo}.json`);
   if (!existsSync(ruta)) return undefined;
   const informe = JSON.parse(readFileSync(ruta, "utf8")) as InformeCrudo;
-  const out: Record<string, { timeouts: string[]; sinEjercer: string[] }> = {};
+  const ficheros: Record<string, { timeouts: string[]; sinEjercer: string[] }> = {};
   for (const [fichero, info] of Object.entries(informe.files)) {
-    out[fichero] = {
+    ficheros[fichero] = {
       timeouts: timeoutsDeFichero(fichero, info.mutants),
       sinEjercer: sinEjercerDeFichero(fichero, info.mutants),
     };
   }
-  return out;
+  return { cobertura: coberturaDelInforme(`base de ${modulo} (${ruta})`, informe), ficheros };
 }
+
+/** Cómo se lee un `coverageAnalysis` en el informe, con lo que implica pegado.
+ *  «off» a secas se lee como un ajuste cualquiera; lo que hay que decir es que
+ *  con ese ajuste la base NO PODÍA emitir `NoCoverage`. */
+const comoSeLee = (cobertura: string): string =>
+  cobertura === "off" ? 'off (no podía expresar `NoCoverage`)' : cobertura;
 
 const columnas = (celdas: readonly (string | number)[], anchos: readonly number[]): string =>
   `  ${celdas.map((c, i) => (i === 0 ? String(c).padEnd(anchos[i]) : String(c).padStart(anchos[i]))).join(" ")}`;
@@ -170,22 +214,28 @@ function leeLaBase(c: ComparacionEnSeco): {
   sinEjercer: SinEjercerDeFichero[];
   modulosSinBase: string[];
   ficherosSinBase: string[];
+  /** Los `coverageAnalysis` distintos que traían los informes base que se
+   *  llegaron a abrir. Puede haber varios: una descarga mixta es posible, y es
+   *  justo el caso en el que un booleano de corrida mentiría. */
+  coberturasBase: string[];
 } {
   const reloj: RelojDeFichero[] = [];
   const sinEjercer: SinEjercerDeFichero[] = [];
   const modulosSinBase: string[] = [];
   const ficherosSinBase: string[] = [];
+  const coberturasBase = new Set<string>();
 
   for (const m of c.modulos) {
     const delModulo = c.dirBase === undefined ? undefined : poblacionesDeLaBase(c.dirBase, m.modulo);
     if (c.dirBase !== undefined && delModulo === undefined) modulosSinBase.push(m.modulo);
+    if (delModulo !== undefined) coberturasBase.add(delModulo.cobertura);
     for (const d of m.ficheros) {
       const ahora = c.ahora[d.fichero] ?? { timeouts: [], sinEjercer: [], medidos: [] };
       // Si el fuente cambió, las huellas llevan línea y columna de otro código y
       // no hablan de estos mutantes: ese fichero ya sale `incomparable` en el
       // veredicto y aquí se queda fuera en vez de inventar transiciones.
       if (c.base[d.fichero]?.mismoCodigo !== true) continue;
-      const base = delModulo?.[d.fichero];
+      const base = delModulo?.ficheros[d.fichero];
       if (base === undefined && c.dirBase !== undefined && delModulo !== undefined) {
         ficherosSinBase.push(d.fichero);
       }
@@ -198,10 +248,29 @@ function leeLaBase(c: ComparacionEnSeco): {
           medidosAhora: ahora.medidos,
         }),
       );
-      sinEjercer.push(movimientosSinEjercer(d.fichero, base?.sinEjercer ?? [], ahora.sinEjercer));
+      // AQUÍ VIVE LA DISTINCIÓN DE #599, y por fichero. Tres casos y ninguno se
+      // colapsa con otro: no hay informe base (no se pudo mirar), lo hay pero
+      // midió con `coverageAnalysis: "off"` (no PODÍA expresar `NoCoverage`, así
+      // que su cero no es una medida), o lo hay y sí podía (entonces vota).
+      //
+      // EL ORDEN IMPORTA, y lo destapó QA (#599, H-3). Si el informe base del
+      // módulo EXISTE y midió con `off`, ese informe no podría haber contestado
+      // ni aunque el fichero estuviera dentro: la casilla es CENSO. Ponerlo en
+      // «sin informe base» producía un motivo que se contradecía con su propia
+      // cabecera («base: off» dos líneas más arriba) y prescribía `--timeouts`,
+      // el flag que quien lee acaba de usar: un remedio sin salida.
+      let capacidad: BaseDeSinEjercer = { sabe: false, porque: "sin informe base" };
+      if (delModulo !== undefined) {
+        const cap = capacidadDeLaBase(delModulo.cobertura);
+        if (!cap.sabe) capacidad = cap;
+        else if (base !== undefined) capacidad = { sabe: true, huellas: base.sinEjercer };
+        // Base capaz y el fichero fuera del informe: ahí sí falta la medida, y
+        // «sin informe base» es exactamente lo que pasa.
+      }
+      sinEjercer.push(movimientosSinEjercer(d.fichero, capacidad, ahora.sinEjercer));
     }
   }
-  return { reloj, sinEjercer, modulosSinBase, ficherosSinBase };
+  return { reloj, sinEjercer, modulosSinBase, ficherosSinBase, coberturasBase: [...coberturasBase].sort() };
 }
 
 /** El bloque de los mutantes que clasifica el reloj. Va al FINAL y aparte: se
@@ -270,25 +339,85 @@ function imprimeSinEjercer(c: ComparacionEnSeco, leido: ReturnType<typeof leeLaB
   const total = totalSinEjercer(leido.sinEjercer);
   console.log(`\n${"─".repeat(78)}`);
   console.log("MUTANTES QUE NO EJERCE NINGÚN TEST (`NoCoverage`) — esto SÍ es condición");
-  console.log(`  antes: ${total.base} · ahora: ${total.ahora} · que antes sí se ejercían: ${total.nuevos}`);
-  if (c.dirBase === undefined) {
+  // QUÉ SE MIRA, SIEMPRE Y ARRIBA. Es lo que #599 echó de menos: el bloque
+  // afirmaba «el instrumento nuevo mide MENOS» sin decir —ni poder saber— si la
+  // base era capaz de decir lo contrario.
+  const base =
+    leido.coberturasBase.length === 0
+      ? "(ningún informe base abierto: no se pudo mirar)"
+      : leido.coberturasBase.map(comoSeLee).join(" + ");
+  console.log(`  qué se mira: base: ${base} · ahora: ${c.coberturaAhora}`);
+  console.log(
+    `  antes: ${total.base} · ahora: ${total.ahora} · que antes sí se ejercían: ${total.nuevos} ` +
+      `· que la base daba por no ejercidos y ahora no: ${total.recuperados} ` +
+      `(sobre ${total.mirados} fichero(s) con base capaz)`,
+  );
+  console.log(`  censo (base incapaz): ${total.censo} · sin poder mirar (sin informe base): ${total.sinMirar}`);
+  console.log(`  ${titularDeSinEjercer(total)}`);
+
+  const lista = (filas: readonly SinEjercerDeFichero[], cuantos: (f: SinEjercerDeFichero) => number): void => {
+    for (const f of [...filas].sort((a, b) => cuantos(b) - cuantos(a)).slice(0, 10)) {
+      console.log(`  ${String(cuantos(f)).padStart(5)}  ${f.fichero}`);
+    }
+  };
+
+  if (total.nuevos > 0) {
+    console.log("");
+    lista(
+      leido.sinEjercer.filter((f) => f.base.sabe && f.base.nuevos > 0),
+      (f) => (f.base.sabe ? f.base.nuevos : 0),
+    );
     console.log(
-      `  (sin --timeouts no se sabe cuáles ya lo eran, así que se cuentan TODOS: esto solo puede negar)`,
+      `\n  \`Survived\` es «un test pasó por la línea y no se enteró»; \`NoCoverage\` es «nadie pasó siquiera».\n` +
+        `  \`esVivo\` los colapsa, así que el delta no los distingue — y el segundo es MEDIDA QUE SE PIERDE.`,
     );
   }
-  if (total.nuevos === 0) {
-    console.log("  ✔ ningún mutante ha dejado de ser ejercido: el instrumento nuevo no mide menos.");
-    return;
+
+  // EL SENTIDO REVERSO, con su propia lista: la base sabía decirlo y esta
+  // corrida ya no. Si la cabecera de arriba dice `ahora: off`, ésta es la
+  // explicación entera — `off` no puede emitir `NoCoverage` JAMÁS.
+  if (total.recuperados > 0) {
+    console.log(
+      `\n  EL SENTIDO REVERSO: ${total.recuperados} mutante(s) que la base daba por NO EJERCIDOS y esta\n` +
+        `  corrida ya no reporta así. Es el MISMO código, así que no ha aparecido ningún test: o el\n` +
+        `  instrumento nuevo dejó de saber expresar \`NoCoverage\`, o cambió lo que reporta. Las dos son la\n` +
+        `  medida moviéndose, y \`esVivo\` impide que nuevos y resueltos se enteren.`,
+    );
+    lista(
+      leido.sinEjercer.filter((f) => f.base.sabe && f.base.recuperados > 0),
+      (f) => (f.base.sabe ? f.base.recuperados : 0),
+    );
   }
-  const peores = leido.sinEjercer
-    .filter((f) => f.nuevos > 0)
-    .sort((a, b) => b.nuevos - a.nuevos)
-    .slice(0, 10);
-  for (const f of peores) console.log(`  ${String(f.nuevos).padStart(5)}  ${f.fichero}`);
-  console.log(
-    `\n  \`Survived\` es «un test pasó por la línea y no se enteró»; \`NoCoverage\` es «nadie pasó siquiera».\n` +
-      `  \`esVivo\` los colapsa, así que el delta no los distingue — y el segundo es MEDIDA QUE SE PIERDE.`,
-  );
+
+  // EL CENSO SE IMPRIME ENTERO Y NO VOTA. La información vale, y mucho: son los
+  // mutantes que el instrumento nuevo sabe separar y el viejo no podía nombrar.
+  // Lo que no puede hacer es contarse como «antes se ejercían», porque con la
+  // base en `off` eso no se puede saber por construcción.
+  if (total.censo > 0) {
+    console.log(
+      `\n  CENSO (no es condición): ${total.censo} mutante(s) \`NoCoverage\` cuya base midió con\n` +
+        `  \`coverageAnalysis: "off"\`, que NO PUEDE emitir \`NoCoverage\` JAMÁS. Su cero no es una medida, así\n` +
+        `  que esto no dice que se mida menos: dice cuánto separa el instrumento nuevo que el viejo no sabía\n` +
+        `  nombrar (#598). Quien cruza si es medida GANADA o PERDIDA son los nuevos y los resueltos de\n` +
+        `  arriba: si ningún mutante cambió de bando, nadie perdió nada.`,
+    );
+    lista(
+      leido.sinEjercer.filter((f) => !f.base.sabe && f.base.porque === 'coverageAnalysis "off"' && f.ahora > 0),
+      (f) => f.ahora,
+    );
+  }
+
+  if (total.sinMirar > 0) {
+    console.log(
+      `\n  SIN PODER MIRAR: ${total.sinMirar} mutante(s) \`NoCoverage\` sin informe base con el que saber si\n` +
+        `  antes se ejercían. Eso NIEGA —no es un verde—, y se arregla con los informes de la corrida base:\n` +
+        `    npm run mutacion -- comparar --timeouts reports/mutation-base`,
+    );
+    lista(
+      leido.sinEjercer.filter((f) => !f.base.sabe && f.base.porque === "sin informe base" && f.ahora > 0),
+      (f) => f.ahora,
+    );
+  }
 }
 
 /** Imprime la comparación y devuelve el código de salida.
@@ -325,7 +454,13 @@ export function comparaEnSeco(c: ComparacionEnSeco): number {
   console.log(`  base de otro código : ${veredicto.incomparablesPorCodigo.length} fichero(s) (cambió el fuente, NO el runner)`);
   console.log(`  sin base       : ${veredicto.sinBase.length} fichero(s)`);
   console.log(`  sin medir      : ${veredicto.sinMedir.length} fichero(s)`);
-  console.log(`  sin ejercer    : ${veredicto.sinEjercer} mutante(s)`);
+  // TRES cuentas donde había una, porque eran tres hechos distintos con el
+  // mismo nombre: lo que se midió y se perdió, lo que la base no podía nombrar
+  // y lo que no se pudo mirar. Solo el primero y el tercero votan (#599).
+  console.log(`  sin ejercer    : ${veredicto.sinEjercer} mutante(s) (donde SÍ se pudo mirar)`);
+  console.log(`  · censo        : ${veredicto.sinEjercerCenso} mutante(s) con la base incapaz — NO vota`);
+  console.log(`  · sin mirar    : ${veredicto.sinEjercerSinMirar} mutante(s) sin informe base`);
+  console.log(`  · reverso      : ${veredicto.sinEjercerRecuperados} mutante(s) que la base sí sabía nombrar`);
   console.log(`  corrida        : ${corrida.completa ? "COMPLETA" : "INCOMPLETA"}${corrida.mueveTag ? " y mueve el tag" : ", NO mueve el tag"}`);
   console.log(`\n  ⇒ ${veredicto.adopta ? "SE PUEDE ADOPTAR" : "NO SE ADOPTA"} — ${veredicto.porque}`);
   if (!veredicto.adopta) {

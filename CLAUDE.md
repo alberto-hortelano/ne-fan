@@ -69,7 +69,8 @@ la corrida completa. Una petición pendiente **no bloquea nada**: se cierra la
 tanda y el resultado llega después, al sitio donde se causó.
 
 **La corrida va PARTIDA en lotes** (`planificar` → matriz de `medir` → `reunir`),
-porque una sola se comió el `timeout-minutes: 180` con 25 de 33 módulos. Se
+porque una sola se comió el techo de 180 minutos del job único con 25 de 33
+módulos (hoy la matriz va a 60 por lote). Se
 empaqueta por el reloj MEDIDO de cada módulo —ni los mutantes ni ningún proxy
 ordenan bien el más caro— con tope `tope_lote` (30 min), y lo que nadie ha
 cronometrado va en un lote propio, igual que `permisoLocal` rechaza el coste

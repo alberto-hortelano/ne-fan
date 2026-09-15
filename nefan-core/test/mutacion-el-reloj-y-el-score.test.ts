@@ -288,8 +288,11 @@ describe("la cadena del reloj · `repartir` lo lleva a la huella (#436)", () => 
 
   it("el reloj del módulo entra en la fila del fichero", () => {
     // Es el último eslabón: sin él la huella no gana `segundos` NUNCA y todo
-    // vuelve a lote propio, o sea a la corrida sin partir que se comió el
-    // `timeout-minutes: 180`.
+    // vuelve a lote propio, o sea a la corrida sin partir que se comió el techo
+    // de 180 minutos del job único. Ese techo YA NO EXISTE: #438 partió la
+    // corrida en matriz y #571 lo dejó en 60 min por lote (`mutation.yml:162`),
+    // así que citarlo como si siguiera vivo era un rastro de la versión
+    // anterior — y los rastros confunden.
     const f = filaDeHuella({ corrida, delta, blob: "b1", duenos, segundos: 1647 });
     assert.equal(f.segundos, 1647);
     assert.equal(f.total, 33);
