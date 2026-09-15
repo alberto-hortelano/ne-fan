@@ -471,3 +471,242 @@ comprobé con `git diff main...HEAD --stat`: `nefan-core` solo aparece por `data
 
 **Nada de esto toca #496/#497**, y el color del 80 y del 75 se apunta en §4 sin cerrar nada de
 ninguna de las dos.
+
+
+---
+---
+
+# QA 5 · SEGUNDA VUELTA — la respuesta del ingeniero a los ocho hallazgos
+
+*(2026-09-15, más tarde. **Lo de arriba no se retoca**: es lo que se dictaminó sobre `c240e4e4` y vale
+precisamente por estar fechado. Esto mide la vuelta, sobre `3f75a4ed` — «El reloj solo cuenta lo que
+el mundo simula, y la opción muerta deja de tragarse».)*
+
+Mismo worktree `/home/al/code/ne-fan-qa545a`, desprendido en `3f75a4ed`. Cero créditos, ningún
+servidor ajeno tocado, stack propio en el bloque +500 y `qa/run.mjs` con el suyo. Higiene previa: **ni
+mi guion 131 ni este `qa-5.md` fueron retocados al commitearse** (`diff` contra mis copias: idénticos).
+
+## S1 · Veredicto de la vuelta: **APTO CON RESERVAS**
+
+**Los dos bloqueantes están resueltos y lo he verificado yo, sobre la página real y no sobre su
+informe.** El reloj cuenta ahora lo que el mundo simula (0,00 s de sim con el título delante, contra
+los 5,71 s de la primera vuelta) y la opción muerta ya no se traga. Los otros seis hallazgos también.
+
+Las reservas son **de protección, no de conducta**: lo que la PR hace hoy es correcto; lo que impide
+que deje de serlo mañana es más fino de lo que parece. Dos cosas concretas, las dos medidas: **el
+ancla de posición sigue siendo texto y la he puesto verde con el defecto H-1 dentro**, y **el latido
+del loop no tiene ancla ninguna** — quitarlo de `main.ts` deja los 35 tests en verde y convierte una
+partida sana en ⊘ diciendo lo contrario de lo que pasa. Ninguna de las dos bloquea el commit; las dos
+son deuda que hay que ver escrita.
+
+## S2 · Los ocho hallazgos, contrastados uno a uno
+
+| # | Qué pedía | Veredicto | Lo que medí YO |
+|---|---|---|---|
+| **H-1** | que el reloj cuente el mundo y no el frame | ✅ **resuelto** | `node qa/run.mjs 131` → **1 en verde, exit 0**. Con el título delante: **0,00 s de sim y 0 frames en 6,01 s de pared (razón 0,000)**, contra 5,71 s / razón 0,952 en `c240e4e4`. B (⊘ en vez de afirmar) ✔. **C1 sigue siendo control positivo de verdad**: con el mundo corriendo, 6,05 s de sim y 181 frames en 6,04 s (razón **1,001**) |
+| **H-2** | que el candado del ancla pueda ponerse rojo con el reloj muerto | ✅ **resuelto para la aritmética** · ⚠️ **no para el cableado** | `sim += 0` → **fail 2** (en `c240e4e4` era `pass 21 · fail 0`). `loop++` fuera → fail 1. `frameDelLoop` devolviendo 0 → fail 1. El reloj ya se EJERCE. Pero el ancla de POSICIÓN sigue siendo `grep`: ver **H-10** |
+| **H-3** | los tres `maxMs` huérfanos + una puerta | ✅ **resuelto** | 48 → `sim:90`, 49 → `sim:120`, 91 → `sim:45`, traducción literal; `git grep` de `maxMs:`/`tramoMs:` en llamadas de combate → **cero**. La puerta lanza en los casos realistas, incluidos dos que él no probó: **`{maxMs: undefined}` (undefined EXPLÍCITO)** y **spread**. También caza `acercarse({tramoMs})` y `acercarse({sim})`. Hueco menor en **H-14** |
+| **H-4** | ×10 de verdad o el techo con motivo medido | ✅ **resuelto** | `presupuestoDeEspera({sim})` → `techoMs = sim × 10.000` para 4, 45, 60, 90 y 600: múltiplo **×10,00 uniforme**. El techo de 300 s ya no aplasta a los grandes. La justificación del guardia que lo sustituye, en **H-12** |
+| **H-5** | soltar la tecla también con el ⊘ | ✅ **resuelto** | `try { golpearHasta } finally { release("up") }`. El bucle extraído es la forma correcta |
+| **H-6** | la lectura `NaN` no puede afirmar | ✅ **resuelto, y más ancho de lo que pedí** | `lecturaDelRelojValida`: ILEGIBLE con `NaN`, **`Infinity`**, **`"1"` (string)**, **array**, y **`loop` ausente** (o sea: el cliente de `c240e4e4` ya no se entiende, que es la dirección honesta). VÁLIDA solo lo que lo es |
+| **H-7** | el rastro falso de la cabecera | ✅ **resuelto de raíz** | El reloj sale a `nefan-html/src/world/reloj-de-sim.ts` y la frase «nada de `nefan-html/src` lo consume» vuelve a ser verdad. Bundle de producción re-medido: ver **S3·frontera** |
+| **H-8** | la muestra única | ✅ **aceptado** | Y lo repito con mi extractor: **369 asertos** en `3f75a4ed` contra **370** en `c240e4e4`, **3 entradas** que difieren — dos del 128 (que declaró `sinMedirBloque` por una precondición del tile generado; **en solitario sale verde 2/2**) y una del 118 (que llamó a `acercarse` una vez MÁS). **Ni un texto de aserto cambiado**, con los tres presupuestos corregidos dentro |
+| H-9 | el peor caso de pared | ⚠️ **cambia de forma, no desaparece** | Sin techo, `{sim:120}` (guion 49) tiene un cortafuegos de **1.200.000 ms = 20 min**. Lo que lo acota ya no es un número sino el guardia del latido, que es diez segundos… y que es el punto único de fallo de **H-11** |
+
+## S3 · Hallazgos NUEVOS de esta vuelta
+
+### H-10 · IMPORTANTE — el ancla de POSICIÓN sigue siendo texto, y la he puesto verde con el defecto H-1 dentro
+
+El ancla ahora mira en las dos direcciones (`gameClient.tick(relojDeSim.avanza(delta)` tiene que
+estar, `const delta = relojDeSim.avanza(` no puede estar). Es mejor que la de la primera vuelta —caza
+exactamente la forma vieja— pero **sigue sin mirar la conducta**, y hay una tercera posición que
+satisface las dos direcciones y restaura H-1 entero. Una línea, sin añadir ninguna:
+
+```
+-    ? gameClient.idle()
++    ? (relojDeSim.avanza(delta), gameClient.idle())
+```
+
+Medido con eso puesto:
+
+```
+$ wc -l nefan-html/src/main.ts          → 1395   (la cifra exacta del contrato)
+$ npx tsc --noEmit                      → 0
+$ npx eslint src/main.ts                → 0
+$ npx tsx --test test/sonda-de-qa.test.ts → tests 27 · pass 27 · fail 0
+$ node qa/run.mjs 131                   → 0 en verde · 1 en rojo
+    con el título delante: 5.82 s de sim y 170 frames en 6.08 s de pared (razón 0.956)
+    ✘ A · con el TÍTULO delante el reloj de sim NO avanza …
+    ✘ B · … terminó «afirmó»
+```
+
+O sea: **`npm run verify` pasa entero con el defecto que esta vuelta vino a arreglar**, y el único que
+se entera es mi guion 131 — que vive en `qa/guiones/`, así que **no corre en CI** (`candados-headless`
+solo cubre lo de `qa/` que no abre navegador). La protección contra que H-1 vuelva es una corrida
+local que alguien tiene que acordarse de lanzar. Es la misma familia que cacé en la primera vuelta,
+una muesca más pequeña: *el candado cubre menos de lo que su nombre promete*.
+
+**Lo que lo cerraría**: que el aserto de posición sea de comportamiento y no de texto —el reloj no
+puede subir en un frame en el que `tick` no se llamó—, o que el guion 131 entre en el lote que CI sí
+corre.
+
+### H-11 · IMPORTANTE — `frameDelLoop` no tiene ancla, y su ausencia convierte una partida SANA en ⊘ que miente
+
+El ancla exige la llamada a `avanza` dentro del `tick`. **No hay ninguna que exija `frameDelLoop` en
+el `gameLoop`.** Lo quité (una línea, sustituida por el clamp a pelo):
+
+```
+$ wc -l nefan-html/src/main.ts                → 1395
+$ npx tsc --noEmit                            → 0
+$ npx eslint src/main.ts                      → 0
+$ npx tsx --test sonda-de-qa + combate-de-qa  → tests 35 · pass 35 · fail 0
+```
+
+Y esto es lo que hace en la página real, con una partida en marcha y el mundo simulando de verdad:
+
+```
+reloj con la partida en marcha: {"sim":1.7166,"frames":96,"loop":0}
+
+waitFor({sim:12}) con el MUNDO CORRIENDO → ⊘ en 10.0 s
+   no se pudo medir …: sim pedido 12.00 s vs. sim avanzado 10.02 s, y el GAME LOOP lleva 10018 ms
+   sin dar un solo frame (mínimo 10000 ms). La página contesta, pero no late: no es que el mundo vaya
+   lento, es que no hay loop que lo mueva.
+```
+
+**10,02 segundos de mundo simulados en 10 segundos de pared, 96 frames de mundo contados — y el ⊘ dice
+que no hay loop.** No es solo un falso ⊘: es un diagnóstico que afirma justo lo contrario de lo que
+está pasando, y toda la batería se iría a exit 2 por una línea que ningún candado, ni `tsc`, ni
+`eslint` echan de menos. El guardia del latido descansa en un invariante de `main.ts` —`loop ≥
+frames`— que **nada sujeta**.
+
+**Lo que lo cerraría, y es barato**: que el latido también se dé por bueno cuando el MUNDO avanzó
+(`av.loop > 0 || av.sim > 0 || av.frames > 0`). Un mundo que simula es, por construcción, un loop que
+late; con eso el guardia deja de depender de un contador que puede estar mal. (Y, aparte, un ancla
+para `frameDelLoop`.)
+
+### H-12 · MENOR — la justificación de `LOOP_COLGADO_MS` es numéricamente falsa; la conclusión se salva por otra razón
+
+El comentario dice: «*una página viva emite frames aunque vaya a 3 fps (medido a factor 40: un frame
+cada ~330 ms), así que diez segundos sin NI UNO no es lentitud*». Los ~330 ms son la MEDIA (3 fps), no
+el peor frame. Medido:
+
+| | peor frame | razón sim/pared | fps |
+|---|---|---|---|
+| ×1 (control) | 242 ms | 0,973 | 28,1 |
+| ×40 (su propia §3.4) | **10.300–11.500 ms** | — | 3 |
+| **×100** (el máximo del dial, `FACTOR_MAXIMO`) | **19.112 ms** | 0,121 | 1,3 |
+
+O sea: a los dos regímenes que esta tanda usa, **un solo frame ya dura más que el guardia entero**. Y
+sin embargo el guardia **no se disparó**: `node qa/bajo-carga.mjs 41 --factor 100` salió
+`igual-verde`, 0 ⊘. La razón real —que no está escrita— es estructural: el guardia solo puede
+dispararse en una lectura que **vuelve** con `loop` sin mover, y mientras el hilo principal está
+bloqueado `page.evaluate` está bloqueado con él, así que la congelación no se llega a observar; cuando
+la lectura vuelve, `loop` ya avanzó y el latido se reinicia. Es una buena propiedad y hay que
+escribirla, porque es la que sostiene el número — no el «~330 ms». Corolario útil: lo que el guardia
+caza de verdad **no es la lentitud, es el desacoplo** (la página contesta y el loop no avanza), que es
+exactamente el caso de H-11.
+
+### H-13 · MENOR — el negativo del guardia del latido es una CANCELACIÓN, no un fallo con nombre
+
+Quité el guardia y corrí su test. Sale rojo para el build, que es lo que importa:
+
+```
+EXIT=1
+ℹ tests 27 · pass 26 · fail 0 · cancelled 1
+  'test timed out after 25000ms'
+```
+
+Pero **el contador dice `fail 0`**, el motivo es un timeout sin diagnóstico, y cuesta 25 s. Quien lea
+el resumen (que es el formato que estos informes pegan: `ℹ tests N · pass N · fail 0`) leerá cero
+fallos. El `timeout: 25_000` hace su trabajo —sin él se cuelga— pero conviene que el aserto diga por
+qué, no que expire.
+
+### H-14 · MENOR — un presupuesto pasado como NÚMERO se cuela por la puerta de opciones
+
+De los diez casos con los que ataqué la puerta, nueve se comportan (incluidos `{maxMs: undefined}`,
+spread, `{tramoMs}` y `{sim}` en `acercarse`). El que pasa:
+
+```
+  PASÓ   · herirHasta 120_000   (un NÚMERO, no un objeto)  → presupuesto {"sim":60}
+```
+
+`Object.keys(120000)` es `[]`, así que la puerta no ve nada y el helper usa su defecto. Es justo la
+forma que tendría el error de quien recuerda el `maxMs` viejo y lo escribe posicionalmente. Los otros
+dos huecos son teóricos y los anoto sin darles peso: la clave en el PROTOTIPO y la clave `Symbol`.
+`{sim: {maxMs: 1}}` pasa la puerta pero muere aguas abajo con un mensaje correcto
+(`presupuestoDeEspera`), así que eso está bien.
+
+### La frontera del módulo nuevo (punto 5 del encargo)
+
+- **¿Superficie sin dueño?** No. `nefan-html/src/world/reloj-de-sim.ts` cae bajo el glob
+  `nefan-html/src/**/*.ts` de **once reglas `error`** de `arch-rules.json`
+  (`el-cliente-no-alcanza-node-ni-a-traves-del-core`, `html-solo-alcanza-core-por-el-alias`,
+  `three-solo-en-fps-gl`, `cliente-no-convierte-celdas-a-metros`,
+  `la-logica-de-juego-no-vuelve-al-cliente`, `el-tope-de-tamano-no-se-apaga-con-un-comentario`…).
+  Ninguna lo nombra, y no hace falta.
+- **¿Y la promesa «sin un solo import»?** No tiene candado escrito, pero **se sujeta sola**, y lo
+  comprobé: un import de VALOR de un hermano del cliente o de core tumba el fichero de test entero
+  (`ERR_MODULE_NOT_FOUND: Cannot find package '@nefan-core/src'` → `pass 0 · fail 1`). Un import de
+  TIPO se elide y no rompe nada, que es correcto. Solo quedaría sin sujetar un hipotético import de
+  valor relativo que cargue en node, y eso no existe hoy.
+- **¿Sobrevive al bundle de producción, y el gate sigue sujetando?** Sí y sí, re-medido tras el
+  movimiento: `Ho.frameDelLoop(Math.min((t-Oa)/1e3,.1))` y `fe.tick(Ho.avanza(e),…)` viajan en
+  `dist/assets/index-*.js` (el reloj corre en producción, sin lector); `reloj:` → **0 ocurrencias** y
+  `closeTitle` → **0** en todo `dist/`. El gate de DEV sigue donde tiene que estar.
+
+## S4 · 80 y 75 — la tercera observación
+
+Fuera del diff en las dos vueltas. Tres parejas sobre `3f75a4ed`, con las cinco anteriores para que el
+registro se lea entero:
+
+| árbol | parejas | 75 | 80 |
+|---|---|---|---|
+| `main` (base) | 2 | ✘ ✔ | ✔ ✘ |
+| `c240e4e4` | 3 | ✔ ✔ ✔ | ✘ ✘ ✔ |
+| **`3f75a4ed`** | 3 | ✔ **✘** ✔ | ✔ ✔ ✔ |
+
+**Ocho parejas, tres árboles: el 75 rojo 2 veces y el 80 rojo 3, repartidas por los tres.** Siempre
+los mismos dos asertos, y los dos son CONTADORES sobre un canal compartido — el conteo del
+`#error-log` («7 → 9») en el 80, y el de derivaciones/restauraciones («2 derivaciones (había 1) — la
+escena servida cambió en: npcs (barkeep: position)») en el 75. **Ningún árbol arregla ni rompe a
+ninguno de los dos, y ninguno de los dos rojos es un presupuesto en milisegundos.** Es la firma de
+#496/#497 que describe `critica-2.md`. **No se cierra nada de #496 ni de #497.**
+
+## S5 · Verde, umbrales y lo no probado
+
+```
+$ cd nefan-core && npm run verify                  → EXIT 0
+ℹ tests 2816 · pass 2816 · fail 0 · cancelled 0        (2802 en la primera vuelta: +14)
+
+$ npm run coverage && npm run crap -- --check      → CRAP_EXIT 0
+1365 funciones medidas · cobertura 95.85 % · complejidad máxima 46
+Tope (no empeorar): CRAP ≤ 73 — 0 por encima. · Cobertura mínima 95 % → 95.85 %
+✔ dentro de los umbrales
+
+$ npm run deuda                                    → Deuda medida — 86 items
+$ wc -l nefan-html/src/main.ts                     → 1395  (= la cifra exacta del contrato)
+```
+
+Batería de los 21 ids + 89 sobre `3f75a4ed`: **21 en verde · 0 en rojo · 1 SIN MEDIR** (el 128, por su
+propio `sinMedirBloque` sobre una precondición del tile generado; **en solitario, verde 2/2**).
+
+**No probado, y por qué:**
+
+- **Que el guardia del latido no dé un falso ⊘ en una corrida larga real.** Medí que a ×100 no se
+  dispara y por qué (H-12), pero no he corrido la batería entera bajo carga: son horas de máquina
+  compartida.
+- **El caso desacoplado en producción** (página que contesta y loop parado por algo que no sea el rAF
+  quitado a mano). Lo provoqué sintéticamente en H-11 quitando `frameDelLoop`; no sé de un camino
+  natural que lo produzca.
+- **Mutación**: no aplica, el diff no toca `nefan-core/src`.
+
+## S6 · Qué tiene que volver de ESTA vuelta
+
+Nada bloquea el commit. Por orden de lo que compra:
+
+1. **H-11** — el latido dado por bueno también cuando el mundo avanza (`av.sim > 0 || av.frames > 0`),
+   y un ancla para `frameDelLoop`. Es la única que hoy puede fabricar un ⊘ que miente.
+2. **H-10** — que el ancla de posición mire conducta, o que el guion 131 entre donde CI lo corra.
+3. **H-12** — corregir el número de la justificación y escribir la razón de verdad (el guardia caza
+   desacoplo, no lentitud).
+4. **H-13**, **H-14** — a criterio del ingeniero.
