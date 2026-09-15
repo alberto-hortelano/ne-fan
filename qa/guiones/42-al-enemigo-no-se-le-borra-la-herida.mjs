@@ -193,7 +193,7 @@ export default async function (ctx) {
   await ctx.nefan("setYaw", Math.PI / 2); // este
 
   const propuesta = await ctx
-    .holdUntil("up", "pisar la frontera propone explorar", () => window.__nefan.frontier.proposal ?? null, 120_000)
+    .holdUntil("up", "pisar la frontera propone explorar", () => window.__nefan.frontier.proposal ?? null, { sim: 120 })
     .catch(() => null);
   ctx.expect("caminar al este propone explorar el tile vecino", Boolean(propuesta), JSON.stringify(propuesta));
   if (!propuesta) return;
@@ -207,7 +207,7 @@ export default async function (ctx) {
         const s = window.__nefan.scene;
         return s && !previos.includes(s.scene_id) ? s.scene_id : null;
       },
-      180_000,
+      { ms: 180_000 },
       antesTiles.map((k) => k),
     )
     .catch(() => null);

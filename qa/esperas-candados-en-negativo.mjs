@@ -334,6 +334,33 @@ const CASOS = [
     // Lo que se verifica es que la pendiente SE IMPRIME como detalle del ⊘.
     /⊘ la espera «condición imposible tragada, ajena al bloque declarado»/,
   ],
+  // #545 · una espera que CONDUCE al jugador no puede presupuestar en pared, y
+  // el sitio donde eso se decide es el teclado: `holdUntil` mantiene una tecla,
+  // así que lo que espera es que el JUEGO progrese, y el juego progresa por el
+  // delta del game loop. Antes de esta tanda, `holdUntil(k, d, fn, 6000)` era
+  // la forma normal de escribirlo y el defecto se reproducía solo, PR a PR.
+  [
+    "holdUntil-en-milisegundos",
+    "candado",
+    "✘",
+    "#545 · `holdUntil` con un número de milisegundos: la forma en la que el defecto se reproducía solo",
+    `  await ctx.holdUntil("up", "el jugador anda con presupuesto de PARED", () => null, 6000);
+  ctx.expect("el guion sigue vivo y afirma algo trivial", true);`,
+    /holdUntil.*CONDUCE al jugador/s,
+  ],
+  [
+    // La otra mitad, y la que un defecto por omisión encontraría: sin
+    // presupuesto, `holdUntil` se quedaba con su defecto de 15.000 ms de pared
+    // —quince segundos de reloj de máquina que nadie escribió— y eso es un
+    // presupuesto de pared igual, solo que invisible en el diff.
+    "holdUntil-sin-presupuesto",
+    "candado",
+    "✘",
+    "#545 · `holdUntil` SIN presupuesto: el defecto invisible de 15.000 ms de pared tampoco existe ya",
+    `  await ctx.holdUntil("up", "el jugador anda sin presupuesto escrito", () => null);
+  ctx.expect("el guion sigue vivo y afirma algo trivial", true);`,
+    /holdUntil.*CONDUCE al jugador/s,
+  ],
 ];
 
 const filtro = process.argv.slice(2).filter((a) => !a.startsWith("-"));

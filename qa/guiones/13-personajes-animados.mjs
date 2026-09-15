@@ -196,7 +196,7 @@ export default async function (ctx) {
         const p = window.__nefan.state().pos;
         return Math.hypot(p.x - inicio.x, p.z - inicio.z) > 1 ? p : null;
       },
-      15_000,
+      { sim: 15 },
       antes,
     )
     .catch((err) => {

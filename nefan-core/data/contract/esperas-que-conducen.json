@@ -1,0 +1,20 @@
+{
+  "_comment": "Toda espera del banco que CONDUCE AL JUGADOR —`ctx.holdUntil(...)`, que mantiene una tecla, y `ctx.expectEspera(..., {tecla})`— presupuesta en SEGUNDOS DE SIMULACIÓN (`{sim: N}`), no en milisegundos de pared (#545). Lo verifica `test/esperas-que-conducen.test.ts` leyendo el ÁRBOL DE SINTAXIS de `qa/guiones/*.mjs` y `qa/lib/*.mjs`, no su texto. El motivo es el del issue: el jugador avanza por el `delta` del game loop, topado en 0,1 s por frame, así que bajo carga «0,5 m en 8 s» deja de significar lo que dice — no es que el jugador se pare, es que no ha habido frame. EL CRITERIO PARA EXIMIR NO ES «me viene mal» SINO «el SUJETO de esta espera es otro proceso»: el reloj del mundo no dice nada de un bridge que tarda en generar un tile ni de un save que tarda en aparecer en disco (`qa/README.md`, regla 1). Cada exención nombra el fichero y el TEXTO LITERAL de la descripción de esa espera, así que apunta a UNA y no ciega el fichero entero; y CADUCA sola: si esa espera desaparece o pasa a sim, la entrada se queda sin sujeto y el test se pone rojo, igual que en `banco-medido.json` y en `sin_mutar`.",
+  "exentos": [
+    {
+      "fichero": "qa/guiones/80-el-desplegable-room-dice-lo-que-se-ve.mjs",
+      "desc": "`el jugador anda ${PASO_M} m (si no, «volvió al spawn» no distingue nada)`",
+      "porque": "LA ÚNICA que no se exime por su sujeto, y por eso lleva fecha: el 80 y el 75 quedaron FUERA de la tanda de #545 por escrito (plan-2.md §4.3, 2026-09-15), y no por descuido — sus rojos son contadores sobre un canal compartido (#496/#497) y hay ocho parejas medidas en tres árboles que lo dicen. Se corren antes y después y se apunta su color, y para que ese color signifique algo el fichero tiene que quedar byte a byte igual: tocarle el presupuesto le cambia el reloj a la corrida entera y destruye la atribución que esas parejas sostienen. Su `{ms: 15_000, tecla: \"up\"}` SÍ es un presupuesto de pared de los de #545, está identificado desde PR-4a (implementacion-5.md §5) y va con su línea a la cola de #545 en cuanto #496/#497 se cierren."
+    },
+    {
+      "fichero": "qa/guiones/05-terreno-desde-ground.mjs",
+      "desc": "\"el jugador entra en el tile recién generado\"",
+      "porque": "El SUJETO de esta espera no es el mundo: es el bridge generando y difundiendo un tile nuevo (`scene.scene_id` cambia cuando llega la escena, no cuando el jugador anda). La tecla solo mantiene al jugador caminando mientras tanto. Un presupuesto de sim aquí mediría el reloj equivocado en la otra dirección —el mundo puede correr sus segundos con el tile sin llegar— y su cortafuegos de pared saldría ×10, así que un tile que no llega pasaría de rojo en 3 min a ⊘ en 30. Las otras dos esperas que conducen de este mismo guion SÍ están en sim: esta exención nombra UNA."
+    },
+    {
+      "fichero": "qa/guiones/42-al-enemigo-no-se-le-borra-la-herida.mjs",
+      "desc": "\"el jugador entra en el tile recién generado\"",
+      "porque": "El mismo caso que en el guion 05, y la misma espera: el sujeto es el tile que tiene que llegar del bridge, no los metros que anda el jugador. La otra espera que conduce de este guion («pisar la frontera propone explorar») sí está en sim, porque la propuesta la decide el cliente en su `tick` y ésa sí corre con el mundo."
+    }
+  ]
+}

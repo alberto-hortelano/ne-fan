@@ -141,6 +141,23 @@ export function presupuestoDeEspera(presupuesto, desc) {
   }
   if (presupuesto !== null && typeof presupuesto === "object" && !Array.isArray(presupuesto)) {
     const { sim, ms } = presupuesto;
+    // `{ms: N}` A SECAS: pared DECLARADA, exactamente igual que el número suelto
+    // —mismo techo, mismo camino, sin leer el reloj del juego ni una vez—, pero
+    // con la unidad escrita. Existe desde #545 porque `holdUntil` dejó de
+    // aceptar números: una espera que conduce al jugador y de verdad depende de
+    // OTRO proceso (que el bridge genere un tile) tiene que poder escribirse, y
+    // tiene que verse en el diff que se está escribiendo pared. Quién vigila que
+    // no se abuse de esto: `test/esperas-que-conducen.test.ts`, que la exige
+    // apuntada con su motivo en `data/contract/esperas-que-conducen.json`.
+    if (sim === undefined) {
+      if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) {
+        throw new Error(
+          `waitFor(«${desc}»): un presupuesto \`{ms: N}\` son MILISEGUNDOS de pared ≥ 0 y llegó ` +
+            `${JSON.stringify(ms)}.`,
+        );
+      }
+      return { sim: null, techoMs: ms, rotulo: null };
+    }
     if (typeof sim !== "number" || !Number.isFinite(sim) || sim <= 0) {
       throw new Error(
         `waitFor(«${desc}»): un presupuesto de simulación son SEGUNDOS de mundo > 0 (\`{sim: 4}\`) y ` +

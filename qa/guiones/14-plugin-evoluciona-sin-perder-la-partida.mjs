@@ -320,7 +320,7 @@ export default async function (ctx) {
       const p = window.__nefan.state().pos;
       return Math.hypot(p.x - a.x, p.z - a.z) >= a.paso ? { x: p.x, z: p.z } : null;
     },
-    40_000,
+    { sim: 40 },
     { x: dir.x, z: dir.z, paso: PASO },
   );
   await ctx.shot("tras-cruzar-el-mercado");
@@ -448,7 +448,7 @@ export default async function (ctx) {
       const p = window.__nefan.state().pos;
       return Math.hypot(p.x - a.x, p.z - a.z) >= a.paso ? { x: p.x, z: p.z } : null;
     },
-    40_000,
+    { sim: 40 },
     { x: desde.x, z: desde.z, paso: PASO },
   );
   await ctx.shot("segunda-compra");
@@ -493,7 +493,7 @@ export default async function (ctx) {
       const p = window.__nefan.state().pos;
       return Math.hypot(p.x - a.x, p.z - a.z) >= a.paso ? { x: p.x, z: p.z } : null;
     },
-    40_000,
+    { sim: 40 },
     { x: desdeC.x, z: desdeC.z, paso: PASO },
   );
   await ctx.shot("tercera-zona-trigger-viejo");

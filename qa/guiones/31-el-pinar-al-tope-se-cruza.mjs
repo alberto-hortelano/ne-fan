@@ -197,7 +197,7 @@ export default async function (ctx) {
         const avance = (p.x - a.x0) * a.px + (p.z - a.z0) * a.pz;
         return avance >= 5.5 ? { avance } : null;
       },
-      15_000,
+      { sim: 15 },
       { x0: paso.salidaX, z0: paso.salidaZ, px: paso.px, pz: paso.pz },
     )
     .catch(() => {

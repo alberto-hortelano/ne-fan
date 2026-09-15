@@ -148,7 +148,7 @@ export default async function (ctx) {
     "el jugador atraviesa el tronco del árbol",
     false,
     (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
-    { ms: 6000, arg: objetivo.z - 0.5, tecla: "up", aserto: "el jugador NO atraviesa el tronco" },
+    { sim: 6, arg: objetivo.z - 0.5, tecla: "up", aserto: "el jugador NO atraviesa el tronco" },
   );
   const fin = (await ctx.nefan("state")).pos;
   ctx.log(`z final ${fin.z.toFixed(2)} vs tronco ${objetivo.z.toFixed(2)} (atravesó: ${atraveso})`);

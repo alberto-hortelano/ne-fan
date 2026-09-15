@@ -163,7 +163,7 @@ export default async function (ctx) {
       return Math.hypot(p.x - a.x, p.z - a.z) >= a.minima ? p : null;
     },
     {
-      ms: 15_000,
+      sim: 15,
       arg: { x: posArranque.x, z: posArranque.z, minima: SEPARACION_MINIMA },
       tecla: "up",
     },
@@ -219,7 +219,7 @@ export default async function (ctx) {
       return Math.hypot(p.x - a.x, p.z - a.z) >= a.minima ? p : null;
     },
     {
-      ms: 15_000,
+      sim: 15,
       arg: { x: posFixturaAntes.x, z: posFixturaAntes.z, minima: PASO_EN_FIXTURE },
       tecla: "up",
     },

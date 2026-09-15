@@ -85,6 +85,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { comenzar, nuevaPartida, reanudar } from "../lib/sesion.mjs";
 import { acercarse, herirHasta } from "../lib/combate.mjs";
+import { elJugadorSePara, limpiaLaParada, loQueVioLaParada, paradaEnSim } from "../lib/parada.mjs";
 import { esperarEnElSave } from "../lib/saves.mjs";
 
 export const aisla = ["saves", "fake-ai"];
@@ -132,51 +133,47 @@ const vidaDelHud = (ctx) =>
  *
  *  La condición de parada es ESTADO, no reloj (`qa-guiones-sin-espera-por-reloj`,
  *  que puso roja la primera versión de este guion): el predicado corre en la
- *  página, se acuerda de la última posición en `window.__qa91` y se cumple
- *  cuando el jugador lleva tres muestras sin moverse más de 2 cm. El
- *  cortafuegos se ABSORBE y la parada se lee después, porque una parada tardía
- *  no invalida la medida: quien afirma es el aserto de la caja. */
-async function empujarContra(ctx, centro, maxMs = 12_000) {
+ *  página, se acuerda de la última posición y se cumple cuando el jugador lleva
+ *  tres muestras sin moverse más de 2 cm. El cortafuegos se ABSORBE y la parada
+ *  se lee después, porque una parada tardía no invalida la medida: quien afirma
+ *  es el aserto de la caja.
+ *
+ *  Y DESDE #545 LAS MUESTRAS LAS CUENTA EL RELOJ DEL MUNDO, no el de la máquina
+ *  (`qa/lib/parada.mjs`). Esto estaba escrito aquí a mano y muestreaba cada 150
+ *  ms de PARED: bajo carga, entre dos sondeos puede no haber corrido ni un
+ *  frame, y entonces el jugador está donde estaba **porque el mundo no se ha
+ *  simulado**. Tres de esas seguidas y este guion leía una parada que no
+ *  existía, a mitad de camino, y el aserto de la caja la daba por buena. Era
+ *  literalmente el defecto que da título a #545, en el guion que el issue manda
+ *  investigar. Ni el umbral, ni las tres muestras, ni la puerta del arranque,
+ *  ni lo que se afirma después han cambiado: solo con qué reloj se cuenta. */
+async function empujarContra(ctx, centro, sim = 12) {
   const p0 = await posicion(ctx);
   await ctx.nefan("setYaw", Math.atan2(centro.x - p0.x, centro.z - p0.z));
-  await ctx.page.evaluate((p) => { window.__qa91 = { inicio: p, ult: null, quieto: 0, arranco: false }; }, p0);
-  await ctx.nefan("inputDriver.press", "up");
+  const molde = paradaEnSim({ slot: "__qa91", arranque: 0.15, destino: centro });
+  await limpiaLaParada(ctx, molde);
   let arranco = false;
-  try {
-    const parada = await ctx.absorbe(
-      `cortafuegos del empujón hacia (${centro.x.toFixed(1)}, ${centro.z.toFixed(1)}): la parada se lee ` +
-        `justo después y la AFIRMA el aserto de la caja, que es donde vive la medida`,
-      () =>
-        ctx.waitFor(
-          "el jugador anda y se para contra lo que tiene delante",
-          (destino) => {
-            const p = window.__nefan.state().pos;
-            const w = window.__qa91;
-            // Re-encarar en cada muestra, dentro de la página (mismo patrón que
-            // `herirHasta`): el deslizamiento por ejes desvía al jugador en
-            // cuanto roza algo, y sin corregir el rumbo acaba en el borde del
-            // tile en vez de contra lo que se mide. Es lo que hace quien juega.
-            window.__nefan.setYaw(Math.atan2(destino.x - p.x, destino.z - p.z));
-            // Que el jugador ANDE es parte de la condición: si no, un jugador ya
-            // parado contra otra cosa cumpliría «no avanza» sin haber medido nada.
-            if (Math.hypot(p.x - w.inicio.x, p.z - w.inicio.z) > 0.15) w.arranco = true;
-            if (!w.arranco) return null;
-            if (!w.ult || Math.hypot(p.x - w.ult.x, p.z - w.ult.z) > 0.02) {
-              w.ult = { x: p.x, z: p.z };
-              w.quieto = 0;
-              return null;
-            }
-            w.quieto++;
-            return w.quieto >= 3 ? { x: p.x, z: p.z, arranco: true } : null;
-          },
-          maxMs,
-          centro,
-        ),
-    );
-    arranco = Boolean(parada?.arranco);
-  } finally {
-    await ctx.nefan("inputDriver.releaseAll");
-  }
+  const parada = await ctx.absorbe(
+    `cortafuegos del empujón hacia (${centro.x.toFixed(1)}, ${centro.z.toFixed(1)}): la parada se lee ` +
+      `justo después y la AFIRMA el aserto de la caja, que es donde vive la medida`,
+    () =>
+      ctx.holdUntil(
+        "up",
+        "el jugador anda y se para contra lo que tiene delante",
+        elJugadorSePara,
+        { sim },
+        molde,
+      ),
+  );
+  arranco = Boolean(parada?.arranco);
+  // Qué vio el molde, haya habido parada o no: cuántas muestras de MUNDO contó
+  // y cuántos sondeos se saltó por no haber corrido ni un frame. Ese segundo
+  // número es el que dice si la carga estaba haciendo algo, y antes no existía.
+  const visto = await loQueVioLaParada(ctx, molde);
+  ctx.log(
+    `empujón hacia (${centro.x.toFixed(1)}, ${centro.z.toFixed(1)}): ${visto.muestras} muestras de mundo, ` +
+      `${visto.saltadas} sondeos saltados sin frame, ${parada ? "parado" : "sin parada dentro del cortafuegos"}`,
+  );
   // Si el cortafuegos expiró, el jugador puede haber andado igualmente (un
   // trayecto largo, o un roce que no le deja quedarse tres muestras quieto): lo
   // que dice si ANDUVO es la distancia recorrida, no quién resolvió la espera.

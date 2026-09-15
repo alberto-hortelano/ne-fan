@@ -80,7 +80,7 @@ export default async function (ctx) {
       const p = window.__nefan.state().pos;
       return Math.hypot(p.x - inicio.x, p.z - inicio.z) > 1 ? p : null;
     },
-    10_000,
+    { sim: 10 },
     antes,
   ).catch((err) => {
     ctx.expect("el jugador se mueve (rAF vivo en headless)", false, err.message);

@@ -187,7 +187,7 @@ export default async function (ctx) {
       if (z < zSalida - 0.5) return { entro: false, z };
       return null;
     },
-    60_000,
+    { sim: 60 },
     { zAgua: salida.zAgua, zSalida: salida.zSalida },
   );
   const fin = (await ctx.nefan("state")).pos;
@@ -218,7 +218,7 @@ export default async function (ctx) {
   await ctx.nefan("setPlayerPos", plano.origin[0] + (cols - 8) * plano.mpc, 0);
   await ctx.nefan("setYaw", Math.PI / 2); // este
   const propuesta = await ctx
-    .holdUntil("up", "pisar la frontera propone explorar", () => window.__nefan.frontier.proposal ?? null, 120_000)
+    .holdUntil("up", "pisar la frontera propone explorar", () => window.__nefan.frontier.proposal ?? null, { sim: 120 })
     .catch((err) => {
       ctx.expect("caminar al este propone explorar el tile vecino", false, err.message);
       return null;
@@ -252,7 +252,7 @@ export default async function (ctx) {
           });
         return { scene_id: s.scene_id, rasgos: (s.ground ?? []).length, cuenta, caminos };
       },
-      180_000,
+      { ms: 180_000 },
       antesTiles.map((k) => k),
     )
     .catch((err) => {

@@ -884,10 +884,30 @@ function makeCtx(page, name) {
      *  El presupuesto es un cortafuegos, no la condición de parada: esperar por
      *  tiempo de pared no es determinista (el movimiento va por delta de rAF).
      *
-     *  Y desde #545 admite el reloj bueno: `{sim: N}` presupuesta SEGUNDOS DE
-     *  MUNDO, que es la escala en la que el jugador anda. Con un número sigue
-     *  siendo pared, igual que siempre. */
-    async holdUntil(key, desc, untilFn, presupuesto = 15_000, arg = undefined) {
+     *  Y desde #545 el presupuesto **es un objeto, nunca un número suelto**:
+     *  `{sim: N}` son SEGUNDOS DE MUNDO —la escala en la que el jugador anda— y
+     *  `{ms: N}` es pared DECLARADA, para la espera cuyo sujeto es otro proceso.
+     *  El número suelto murió con el issue: `holdUntil` CONDUCE al jugador, y un
+     *  presupuesto de pared sobre el progreso del jugador deja de ser un
+     *  cortafuegos y pasa a ser la condición de parada en cuanto la máquina se
+     *  ocupa — no es que el jugador se pare, es que no ha habido frame.
+     *
+     *  El defecto que esto cierra es el de PR-4a con `maxMs`: una unidad que
+     *  cambia y un sitio de llamada que sigue escribiendo la vieja, en silencio.
+     *  Aquí no hay silencio posible; y que el `{ms}` esté DECLARADO y con motivo
+     *  escrito lo verifica `test/esperas-que-conducen.test.ts`, en CI, que es
+     *  donde hace falta: esta batería no corre en ningún job. */
+    async holdUntil(key, desc, untilFn, presupuesto, arg = undefined) {
+      if (presupuesto === null || typeof presupuesto !== "object" || Array.isArray(presupuesto)) {
+        throw new Error(
+          `${name}: holdUntil(«${desc}») CONDUCE al jugador, así que su presupuesto se escribe con la ` +
+            `unidad delante: \`{sim: N}\` son SEGUNDOS DE MUNDO (lo que hace falta casi siempre: andar, ` +
+            `pegar, encajar daño) y \`{ms: N}\` es pared declarada, solo para la espera cuyo SUJETO es otro ` +
+            `proceso —y esa además se apunta en data/contract/esperas-que-conducen.json con su motivo—. ` +
+            `Llegó ${JSON.stringify(presupuesto)}: el número suelto de milisegundos murió con #545, porque ` +
+            `el jugador avanza por el delta del game loop y no por el reloj de la máquina.`,
+        );
+      }
       await ctx.nefan("inputDriver.press", key);
       try {
         return await ctx.waitFor(desc, untilFn, presupuesto, arg);

@@ -64,7 +64,7 @@ export default async function (ctx) {
     false,
     (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
     {
-      ms: 6000,
+      sim: 6,
       arg: zBorde - 0.5,
       tecla: "up",
       aserto: "el jugador NO atraviesa la huella del edificio",

@@ -42,6 +42,7 @@
  *  que el tile vecino tenga que venir del MOTOR y no del snapshot.
  */
 
+import { elJugadorSePara, limpiaLaParada, paradaEnSim } from "../lib/parada.mjs";
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
 
@@ -145,7 +146,24 @@ async function andarHastaLaPropuesta(ctx, maxMs = 120_000) {
 
 /** Anda al este hasta pegarse al muro (el jugador deja de avanzar: la colisión
  *  direccional lo retiene) y devuelve a cuántos metros del borde se quedó. */
-async function andarHastaElMuro(ctx, bordeEste, maxMs = 60_000) {
+async function andarHastaElMuro(ctx, bordeEste, sim = 60) {
+  // La parada la cuenta el RELOJ DEL MUNDO (#545, `qa/lib/parada.mjs`). Esto
+  // estaba escrito aquí a mano y declaraba el tope con UNA sola muestra
+  // separada por reloj de PARED: bajo carga, entre dos sondeos puede no haber
+  // corrido ni un frame, y entonces `x` es la misma porque el mundo no se ha
+  // simulado — el jugador se «pegaba al muro» a mitad de camino. Mismos 0,01 m,
+  // misma muestra única, misma banda de 2 m: solo cambia con qué reloj se
+  // cuenta. El eje es X y no la distancia euclídea porque el motor DESLIZA al
+  // jugador por la cara de lo que toca: moverse en Z no es avanzar al este.
+  const molde = paradaEnSim({
+    slot: "__qaMuro",
+    eje: "x",
+    umbral: 0.01,
+    muestras: 1,
+    referencia: "muestra-anterior",
+    dentroDe: { eje: "x", de: bordeEste, holgura: 2 },
+  });
+  await limpiaLaParada(ctx, molde);
   await ctx.page.keyboard.down("w");
   try {
     await ctx.absorbe(
@@ -153,19 +171,13 @@ async function andarHastaElMuro(ctx, bordeEste, maxMs = 60_000) {
       () =>
         ctx.waitFor(
           "el jugador se pega al muro de la frontera y deja de avanzar",
-          (b) => {
-            const x = window.__nefan.playerPos.x;
-            const previo = window.__ultimaX;
-            window.__ultimaX = x;
-            return b - x < 2 && previo !== undefined && Math.abs(x - previo) < 0.01 ? { x } : null;
-          },
-          maxMs,
-          bordeEste,
+          elJugadorSePara,
+          { sim },
+          molde,
         ),
     );
   } finally {
     await ctx.page.keyboard.up("w");
-    await ctx.page.evaluate(() => { delete window.__ultimaX; });
   }
 }
 

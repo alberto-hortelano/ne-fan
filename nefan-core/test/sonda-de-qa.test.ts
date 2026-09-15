@@ -189,11 +189,23 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
     assert.deepEqual(presupuestoDeEspera({ sim: 2, ms: 500 }, "x").techoMs, 500);
   });
 
+  it("**`{ms: N}` a secas es PARED DECLARADA**: idéntica al número suelto, con la unidad escrita", () => {
+    // Nace en PR-4b de #545 y hasta entonces LANZABA (su caso estaba en la lista
+    // de «lo que no se entiende», justo abajo). Cambia porque `holdUntil` dejó
+    // de aceptar números: la espera que conduce al jugador pero de verdad
+    // depende de OTRO proceso —que el bridge genere un tile— tiene que poder
+    // escribirse, y tiene que VERSE en el diff que se escribe pared. Lo que no
+    // cambia es el camino: mismo techo, `sim: null`, sin rótulo, y por tanto sin
+    // leer el reloj del juego ni una vez.
+    assert.deepEqual(presupuestoDeEspera({ ms: 400 }, "x"), presupuestoDeEspera(400, "x"));
+    assert.deepEqual(presupuestoDeEspera({ ms: 180_000 }, "x"), { sim: null, techoMs: 180_000, rotulo: null });
+  });
+
   it("lo que no se entiende LANZA, en vez de esperar `undefined` ms", () => {
     // Sin esto, `Date.now() - t0 < undefined` es siempre falso: la espera haría
     // UN sondeo y se daría por expirada — o sea, un guion que mira una vez y
     // afirma un negativo.
-    for (const malo of [undefined, null, "4s", { ms: 400 }, { sim: 0 }, { sim: -1 }, { sim: "4" }, -1, NaN]) {
+    for (const malo of [undefined, null, "4s", { ms: "400" }, { ms: -1 }, { sim: 0 }, { sim: -1 }, { sim: "4" }, -1, NaN]) {
       assert.throws(() => presupuestoDeEspera(malo, "la espera de prueba"), /waitFor/);
     }
   });

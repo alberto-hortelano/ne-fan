@@ -206,7 +206,7 @@ export default async function (ctx) {
         const p = window.__nefan.state().pos;
         return Math.hypot(p.x - p0.x, p.z - p0.z) > 1.5 ? { ...p } : null;
       },
-      15_000,
+      { sim: 15 },
       desde,
     );
     const dx = llegada.x - desde.x;
@@ -426,7 +426,7 @@ export default async function (ctx) {
       const v = window.__nefan.fps()?.veil ?? null;
       return v && v.edge === e && v.opacity > 0.5 ? v : null;
     },
-    20_000,
+    { sim: 20 },
     ruta.edge,
   );
   ctx.log(`velo: ${JSON.stringify(velo)} · jugador en ${JSON.stringify((await ctx.nefan("state")).pos)}`);

@@ -38,7 +38,7 @@ const FIXTURE = "robledo_tile";
  *  `expectEspera` (#261): en el caso negativo el timeout ES el éxito, y así se
  *  escribe donde se espera en vez de viajar en un `let cruzo = true` que
  *  alguien tiene que acordarse de mirar. */
-async function cruzarPorLaFila(ctx, r, debeCruzar, aserto, maxMs = 7000) {
+async function cruzarPorLaFila(ctx, r, debeCruzar, aserto, sim = 7) {
   const punto = await ctx.page.evaluate((fila) => {
     const g = window.__nefan.scene.terrain_grid;
     const [ox, oz] = g.origin;
@@ -68,7 +68,7 @@ async function cruzarPorLaFila(ctx, r, debeCruzar, aserto, maxMs = 7000) {
     `el jugador llega al otro lado por la fila ${r}`,
     debeCruzar,
     (m) => (window.__nefan.state().pos.x >= m ? true : null),
-    { ms: maxMs, arg: punto.xMeta, tecla: "up", aserto },
+    { sim, arg: punto.xMeta, tecla: "up", aserto },
   );
   const fin = (await ctx.nefan("state")).pos;
   return { ...punto, libre, cruzo, fin };
