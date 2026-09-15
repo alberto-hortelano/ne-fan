@@ -91,6 +91,7 @@ limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella 
 |---|---|
 | `qa/run.mjs` y los 116 guiones de `qa/guiones/` | preset `e2e-sin-creditos` + Chromium: corrida local. Un job de navegador en CI es programa aparte, con su reloj medido antes |
 | `bateria-candados-en-negativo.mjs`, `esperas-candados-en-negativo.mjs` | parecen headless y **no lo son**: spawnean `qa/run.mjs` (preset + Playwright) |
+| `bajo-carga.mjs` | igual: spawnea `qa/run.mjs` DOS veces (control y frenada) y la frenada tarda por definición. Es una medida que se pide a mano sobre un guion concreto, no una puerta de PR |
 | `comparar-el-criterio-en-negativo.mjs` | necesita `nefan-core/reports/mutation-base/` — los 55 informes de una corrida real, **141 MB y gitignorados**. En CI habría que bajarlos con `gh run download <run-id>` en cada PR, y el artefacto caduca: el día que expire, el job se pondría rojo por un motivo que no es del código. Corrida LOCAL, y se niega diciendo cómo conseguir la base |
 | `fake-enruta-por-pathname.mjs` | su observable (`POST /skin_sprite_sheet?x=1 → 200`) depende de que el fake encuentre `nefan-html/public/sprites/paladin/idle/frontal_8/meta.json`, que es arte GENERADO y gitignored: en un clon limpio contesta 500 y el guion sale rojo (medido el 05-09: verde en el checkout del usuario, rojo en un worktree recién clonado). Entra el día que la ruta se pruebe sin leer del disco |
 | `el-arte-de-personaje-…`, `el-indice-del-store-…`, `perfil-de-repintado-…`, `sprites-sin-servicio` | levantan asset-store, remote-gen o sprite-forge (Python con las deps de `ai_server`, elegido por `qa/lib/python.mjs`); nadie los ha cronometrado. Candidatos siguientes, con reloj medido antes |
@@ -189,6 +190,60 @@ Reglas que hacen que un guion valga algo:
    reconvertirse — un ⊘ es una declaración, no una amnistía. Si lo que se pierde es UN bloque y
    el guion puede seguir midiendo los demás, `ctx.sinMedirBloque(motivo)`, que no aborta: es la
    versión honesta del `if (…) { ctx.log("⚠ … no se midió"); return; }`, que salía VERDE.
+
+## El reproductor bajo carga: `qa/bajo-carga.mjs` (#545)
+
+La regla 1 de aquí arriba lleva escrita desde que existe esta página y **no ha sujetado nada**: la
+crítica de #545 encontró **48 guiones de 129** esperando por reloj de pared a que el juego progrese.
+Es el argumento de esta casa contra la prosa, aplicado a su propia documentación. Lo que faltaba no
+era otra regla, era poder **provocar el rojo a demanda**, porque los 48 estaban señalados por
+INSPECCIÓN: sin un rojo reproducido, un arreglo no se puede juzgar contra nada.
+
+```bash
+node qa/bajo-carga.mjs 91 --factor 20          # el guion, quieto y frenado, con las dos razones
+node qa/bajo-carga.mjs 41 42 --factor 20 --sin-quieto
+node qa/bajo-carga.mjs 80 --factor 20 --concurrente 2   # bandera explícita: ocupa la máquina
+```
+
+Abre el guion **por el camino de siempre** (`qa/run.mjs`, con su preset sin créditos, su disco
+efímero y su guardarraíl de gasto) y le frena el hilo principal a la página con
+`Emulation.setCPUThrottlingRate` por CDP, antes del `goto`. No toca ni un guion, ni un aserto, ni el
+juego: lo único que añade el runner es una sonda de reloj y la lectura de su cuenta.
+
+**Qué mide, y por qué esa magnitud.** El `gameLoop` avanza el mundo con `delta = min(Δpared, 0,1 s)`.
+Ese tope es una protección buena, y también el defecto: **cuando un frame pasa de 100 ms, el mundo
+avanza menos tiempo del que marca el reloj**, así que un presupuesto como «0,5 m en 8 s de pared» deja
+de significar lo que dice. La magnitud es la **razón sim/pared**, y el tope con que la calcula el banco
+está ANCLADO al del cliente por `nefan-core/test/carga-sintetica.test.ts`: cambiar uno sin el otro
+pone rojo el test, en vez de dejar la sonda midiendo contra un tope que ya no existe. «Los fps» no
+valdría: 12 fps con frames de 83 ms no roban ni un milisegundo de simulación, y 8 fps sí.
+
+**Se niega a salir verde sin haber frenado nada.** Si la razón no baja del umbral, sale con **exit 1**
+diciendo que no reprodujo nada — con `--factor 1` ése es justo el desenlace, medido. Un reproductor
+que no reproduce se lee como prueba de que no hay defecto, y eso es peor que no tenerlo. Sus tres
+códigos son los de la casa: 0 la carga fue real y está medida · 1 no fue real · 2 no se pudo medir.
+
+**Lo que mide una corrida tranquila, y por eso el umbral es 0,90.** Medido el 2026-09-15 sobre el
+guion 91 en esta máquina: **razón 0,981-0,989 · 28,7-29,2 fps · peor frame 245-313 ms**. O sea, el
+bench NO corre con margen de sobra — ya pierde un 1-2 % de simulación sin que nadie lo frene, y su
+peor frame tranquilo **triplica el tope de 100 ms**. El umbral se pone hacia el lado seguro: el error
+caro no es negarse a firmar una carga floja, es firmar como «carga reproducida» un hipo de la máquina
+y atribuirle a #545 un rojo que no era suyo. Con `--factor 20` la razón medida es **0,53**.
+
+**Lo que NO se usa como palanca, y por qué — para que nadie lo reintente.** `NEFAN_QA_GPU=0`
+(SwiftShader) queda **descartado**. Está medido en `qa/lib/navegador.mjs:1-23`, en esta máquina:
+pone el `gpu-process` al **791 % de CPU** y el load average a **25 sobre 16 hilos**. Reproducir el
+defecto así sería quitarles la máquina a los demás agentes que trabajan en paralelo, que es
+exactamente lo que se está tratando de no hacer; y además no es un dial (no tiene grados) y lo que
+frena es el PINTADO, no el hilo donde corre el `gameLoop`. El throttling de CDP frena **un solo
+renderer**: por eso esta herramienta se puede correr con alguien delante. `NEFAN_QA_GPU=0` sigue
+valiendo para lo que nació —imitar el runner de CI, descartar el driver ante una captura rara—, y
+para nada más. Aun así, cargar la máquina a propósito es el punto y el peligro, así que el
+reproductor imprime el `load` antes y después: si subiera el load global, quedaría escrito en su
+propia salida.
+
+**Va FUERA del job `candados-headless`** (abre Chromium y levanta un stack), y no se mete en la
+batería: la carga se pide guion a guion, nunca sobre los 129.
 
 ## Los guiones sembrados
 

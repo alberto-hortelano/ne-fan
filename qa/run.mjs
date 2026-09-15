@@ -47,6 +47,12 @@
  *    node qa/run.mjs --orden inverso  al revés (criterio: mismo veredicto)
  *    node qa/run.mjs --diag           una línea de diagnóstico por guion
  *
+ *  Carga sintética (#545): `NEFAN_QA_CPU_FACTOR=N` frena el hilo principal de la
+ *  página por CDP y mide la razón sim/pared; `NEFAN_QA_CARGA_JSON=fichero` la
+ *  vuelca. No se pide por flag a propósito: quien las pone es `qa/bajo-carga.mjs`,
+ *  que sabe correr el control y comparar. Una flag aquí invitaría a correr la
+ *  batería «un poco frenada» y a leer su color como el de siempre.
+ *
  *  Código de salida — son TRES, porque el veredicto de la corrida no es la
  *  suma de los veredictos de los guiones:
  *    0  todo verde
@@ -77,6 +83,19 @@ import {
   huboSondeo,
   quejaDelMotivo,
 } from "./lib/esperas.mjs";
+// La carga sintética (#545): frenar el hilo principal de ESTA página por CDP y
+// medir si el mundo avanzó menos de lo que marcó el reloj. Vive en `qa/lib`
+// porque la parte que juzga es pura y la mide `test/carga-sintetica.test.ts`;
+// aquí solo se cablea. Sin `NEFAN_QA_CPU_FACTOR` no hace nada.
+import {
+  CLAMP_DEL_LOOP,
+  POTE,
+  aplicarCarga,
+  factorDelEntorno,
+  leerLaSonda,
+  lineaDeMedida,
+  sondaDeReloj,
+} from "./lib/carga.mjs";
 import { spawn } from "node:child_process";
 import {
   readdirSync,
@@ -133,6 +152,17 @@ const ORDEN = opt("--orden", "alfabetico");
  *  guion a JSON. Sirve para comparar DOS corridas (antes y después de cambiar
  *  un defecto de gasto) sin leer dos scrollbacks de mil líneas. */
 const CENSO_JSON = opt("--censo", "");
+
+/** Carga sintética sobre la página (#545), pedida por entorno y no por flag: la
+ *  lanza `qa/bajo-carga.mjs`, que es quien sabe comparar dos corridas y juzgar
+ *  si la carga fue real. Una flag aquí invitaría a correr la batería «un poco
+ *  frenada» y a leer su color como si fuera el de siempre. `null` = corrida
+ *  normal; un valor ilegible LANZA (ver `factorDelEntorno`). */
+const FACTOR_CPU = factorDelEntorno(process.env);
+/** Dónde vuelca esta corrida su medida de carga por guion, para que la lea
+ *  quien la lanzó. Mismo molde que `--censo`: comparar dos corridas leyendo dos
+ *  scrollbacks de mil líneas no es comparar. */
+const CARGA_JSON = process.env.NEFAN_QA_CARGA_JSON ?? "";
 
 /** ¿Sigue vivo ese pid? (señal 0: no manda nada, solo pregunta.) */
 function pidVivo(pid) {
@@ -1125,6 +1155,13 @@ async function main() {
     }
     const contadoresAntes = await contadoresDelFake();
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    // La carga y su sonda van ANTES del `goto`: frenar a mitad de arranque
+    // mediría media página tranquila, y una sonda instalada después se perdería
+    // justo los frames del arranque, que son los más caros del guion.
+    if (FACTOR_CPU !== null) {
+      await aplicarCarga(page, FACTOR_CPU);
+      await page.addInitScript(sondaDeReloj(), [POTE, CLAMP_DEL_LOOP]);
+    }
     const errores = [];
     page.on("pageerror", (e) => errores.push(String(e)));
     const ctx = makeCtx(page, nombre);
@@ -1324,6 +1361,15 @@ async function main() {
         `${inesperadas.length} excepción(es) no capturadas en la página: ${inesperadas[0].split("\n")[0]}`,
       );
     }
+    // La medida de carga se lee con la página TODAVÍA abierta y se anota pase
+    // lo que pase con el guion: si solo se leyera en el camino verde, el rojo
+    // que esta herramienta existe para provocar llegaría sin su medida — o sea,
+    // sin lo único que distingue «rojo por carga» de «rojo».
+    let cargaDelGuion = null;
+    if (FACTOR_CPU !== null) {
+      cargaDelGuion = await leerLaSonda(page).catch(() => null);
+      console.log(`    ${lineaDeMedida(cargaDelGuion, FACTOR_CPU)}`);
+    }
     await page.close();
     if (fatal) ctx.fallos.push(`ERROR: ${fatal.message}`);
 
@@ -1336,7 +1382,7 @@ async function main() {
       const motivo = `el stack se cayó durante «${nombre}» (${caidos.join(", ")} dejó de contestar)`;
       stackCaido = { nombre, motivo, caidos };
       console.log(`    ⊘ ${motivo}`);
-      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo });
+      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo, carga: cargaDelGuion });
       continue;
     }
 
@@ -1361,7 +1407,7 @@ async function main() {
     }
     if (sinMedir) {
       console.log(`    ⊘ ${sinMedir}`);
-      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo: sinMedir, censo });
+      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo: sinMedir, censo, carga: cargaDelGuion });
       continue;
     }
 
@@ -1371,6 +1417,7 @@ async function main() {
       fallos: ctx.fallos,
       motivo: null,
       censo,
+      carga: cargaDelGuion,
     });
   }
 
@@ -1426,6 +1473,35 @@ async function main() {
       ),
     );
     console.log(`  censo escrito en ${CENSO_JSON}`);
+  }
+
+  // ── La medida de carga, para quien lanzó esta corrida (#545) ────────────
+  // Se vuelca SIEMPRE que se pidió carga, con el color de cada guion al lado:
+  // el veredicto de un guion bajo carga no significa nada sin la razón sim/pared
+  // de esa misma corrida, y separarlos en dos ficheros es invitar a cruzarlos
+  // mal. Los `fallos` van enteros porque son el diagnóstico: qué aserto cayó es
+  // lo que distingue un presupuesto de reloj de un contador sobre un canal
+  // compartido (#496), y esa distinción es toda la frontera de esta tanda.
+  if (CARGA_JSON) {
+    writeFileSync(
+      CARGA_JSON,
+      JSON.stringify(
+        {
+          factor: FACTOR_CPU,
+          clamp: CLAMP_DEL_LOOP,
+          guiones: resultados.map(({ nombre, estado, fallos, motivo, carga }) => ({
+            nombre,
+            estado,
+            fallos,
+            motivo: motivo ?? null,
+            carga: carga ?? null,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(`  medida de carga escrita en ${CARGA_JSON}`);
   }
 
   // El veredicto de la CORRIDA, que no es la suma de los veredictos de los
