@@ -183,11 +183,9 @@ un hallazgo, no un éxito.
 Petición literal del usuario: **«sigue con la tanda D»**, después de autorizar las dos corridas
 («Autorizo la corrida, lánzala cuando acabe el ingeniero»).
 
-**#443 está CERRADO en «no se adopta», con el número.** Lo que eso cambia para lo que queda:
-
-Medido con dos corridas COMPLETAS sobre el MISMO commit (`e777c59a`): `34872537438` con `command`
-y `34878198682` con `tap-runner` desde `feature/tap-runner`, rama que no toca ni un fichero del
-perímetro mutado.
+**#443 está CERRADO en «no se adopta», con el número.** Medido con dos corridas COMPLETAS sobre el
+MISMO commit (`e777c59a`): `34872537438` con `command` y `34878198682` con `tap-runner` desde
+`feature/tap-runner`, rama que no toca ni un fichero del perímetro mutado.
 
 | medida | `command` | `tap-runner` | |
 |---|---|---|---|
@@ -196,39 +194,93 @@ perímetro mutado.
 | `scene-validate` | 43 min | 21 min | **−50,6 %** |
 
 Lo tumbaron **26 mutantes** que `command` MATABA y que `tap-runner` devuelve como `RuntimeError`
-—el proceso muere antes de emitir la cabecera TAP— y que por tanto salen del denominador: el score
-baja en cinco ficheros y la regla dura del usuario dice que entonces no se adopta. Fuera de esos 26:
-**0 nuevos y 0 resueltos** en los 85 ficheros comparables. Los 26 nominales están en **#597**.
+—el proceso muere antes de emitir la cabecera TAP—, así que salen del denominador y el score baja en
+cinco ficheros. Fuera de esos 26: **0 nuevos y 0 resueltos** en los 85 comparables. Los 26 nominales,
+en **#597**; la contabilidad la verificó la crítica: `contrato-sprite-forge` 5 · `blueprint-suelo` 6
+· `blueprint-derive` 2 · `blueprint-volumenes` 12 · `state-http-dispatch` 1, **y cada uno salió de
+`Killed`**.
 
-### Lo que entra ahora
+### 0 · #599 va PRIMERO, y es bloqueante — no es un vecino
 
-**1 · #441, con las cifras de HOY y una pregunta nueva.** `scene-validate` son **2.594 s = 20,8 %**
-del reloj de CPU de la corrida entera, y su lote —él solo— tardó **43 de los 44,5 min** que tardó la
-corrida completa: **es el camino crítico él solo**. Su `presupuestoDelLote` son 3.285 s = **91,3 %
-del `techo_job`**, y la deriva medida entre corridas llega a ×1,14: el margen que compró #571 está
-dentro del ruido. La respuesta escrita sigue siendo **partir el FICHERO** —nunca subir `tope_lote`
-ni `timeout-minutes`—, pero ahora hay una alternativa medida que antes no existía: **si se arreglan
-los 26 de #597, `scene-validate` baja a 1.242 s (−52 %) y #441 se disuelve sin tocar producción.**
-Eso es exactamente lo que el crítico tiene que juzgar: cuál de las dos es la tarea que hay que
-hacer, no cuál es más bonita.
+`veredictoDeAdopcion` hace `adopta = peros.length === 0` y la séptima condición es `sinEjercer = 0`.
+Con la base en `coverageAnalysis: "off"` —que **no puede** emitir `NoCoverage` jamás— esos **1122**
+vuelven a salir enteros: si se arreglan los 26 y se pide otra corrida, `comparar` **vuelve a decir
+NO por el mismo motivo**, que no es del runner, y se gasta una corrida autorizada para nada. Se
+arregla leyendo el `config.coverageAnalysis` que **ya viaja dentro de cada informe**. Cero
+producción, cero runner.
 
-**2 · #545, que ya se puede hacer porque la máquina está quieta.** Es lo que abrió la respuesta
-**(b)** del usuario a la pregunta 12 del triaje («la batería es indicativa bajo carga y el veredicto
-es la corrida aislada»), junto con **arreglar los asertos** y **el reproductor bajo carga sintética,
-que da el rojo a demanda sin quitarle la máquina a nadie**. Alcance real medido por el crítico
-anterior: **30 de 112 guiones**, no uno; el clamp está en `main.ts:577`; el reproductor es **pieza
-nueva de cero**; y `qa/README.md:120-134` **ya escribe la regla y ya cita el tope de 0,1 s** — la
-prosa existía y no sujetó nada, que es el argumento de esta casa contra la prosa aplicado a sí
-misma. Se hace **con la máquina quieta a propósito**: su trabajo ES medir la batería bajo carga.
+### 1 · #597, con su vía 1 FALSADA y una tercera vía medida
 
-**3 · #430 sigue siendo del usuario.** Sus tres cifras están corregidas en el issue y la decisión
-está servida: entra `narrative-state.ts` pagando lo que cueste, o se declara aparcado por escrito
-con el número en `sin_mutar`. Lo que el cierre de #443 añade es que **la rebaja del −63,4 % vuelve a
-la mesa si #597 se arregla**, así que la respuesta puede salir sola. No se toca sin él.
+**La vía 1 del issue —que el fichero de test emita TAP antes de morir— está medida y NO funciona**:
+`captureTapResult` lanza si `exit ≠ 0` y no hay ninguna línea `not ok`, y con TAP limpio salen
+`TAP version 13`, `ok 1`, `1..1`, `# fail 0`, exit 1 → sigue siendo `RuntimeError`. Peor: si además
+se neutraliza el exit code, **26 muertes pasarían a contarse como 26 supervivientes**.
 
-### El aviso que vale la tanda entera, otra vez
+**Tercera vía, medida**: `--test --test-isolation=none --test-reporter=tap` emite `not ok 1` cuando
+el fichero muere al importar → `Failed` → mutante `Killed`, y deja **UN solo pid** (1 con la flag,
+2 sin ella), que es lo que el hook de `tap-runner` necesita. Coste: **+9 ms sobre 231 (+3,9 %)**, sin
+warning en Node v24.11.1. Falta probarla con `tap-runner` instalado y con cobertura real.
 
-**#496 es una causa raíz DISTINTA y ya diagnosticada** de los rojos de los guiones 80 y 75: el
-bridge compartido difunde la vida ambiental del guion anterior a una página sin sesión. **Arreglar
-asertos puede taparlo.** Ningún aserto de esta tanda puede volver verde un guion cuyo rojo venga de
-#496: si al arreglar uno desaparece un rojo que era de #496, **eso es un hallazgo, no un éxito**.
+**Y se contesta en LOCAL en 11 s**: `contrato-sprite-forge` son 63 mutantes (caben en `tope_local`
+120) y **5 de los 26 viven ahí**. Antes de tocar nada, esa medida.
+
+### 2 · #441 NO entra en esta tanda
+
+Su problema es real: `presupuestoDelLote(2594)` = **3.302 s = 91,7 % del `techo_job`**, margen
+**×1,090** contra una deriva medida de ×1,14. (Las cifras que este mismo documento publicó ayer
+—3.285 s, 91,3 %, ×1,110— estaban mal; éstas salen de ejecutar la función.)
+
+Pero **partir el fichero compra −21 % de pared y 0 % de CPU**: en la corrida base el **segundo** lote
+más largo fue de **35 min**, así que partir `scene-validate` lleva la corrida a ~35 min, no a 22. Y
+cuesta **dos corridas autorizadas**, no una: el módulo nuevo nace `sin medir`, y `sinBase` e
+`incomparablesPorCodigo` son condiciones duras del veredicto, así que **partir un fichero y juzgar un
+runner no caben en el mismo ciclo**. La decisión de #441 es la SALIDA del punto 1, no su alternativa.
+
+El comentario del 04-09 en #441 («partir la batería ataca el 30 %») queda **falsado** por el −50,6 %
+que midió `perTest` sobre ese mismo módulo.
+
+### 3 · #545, reencuadrada otra vez y hacia ARRIBA
+
+**48 de 129 guiones** (37 %), no 30 de 112; perímetro estricto 43. Veinte por `acercarse`/
+`herirHasta` y 28 a mano. El clamp está en **`nefan-html/src/main.ts:566`**.
+
+El sujeto es **un patrón, no una lista de asertos**: leer una parada muestreando la posición cada
+150 ms de RELOJ DE PARED y declararla con tres muestras quietas. Son **13** de los 48 (41, 42, 46,
+62, 67, 73, 88, 91, 93, 110, 111, 113, 126), y es exactamente lo que falló en el 91
+(`guiones/91-…:146-172`): bajo carga no hubo frame, así que no hubo movimiento, así que «parado».
+
+**Los tres guiones que la tanda de ayer añadió o tocó (90, 129, 130) heredaron el presupuesto más
+apretado de todos: 0,5 m en 8 s de pared.**
+
+Y hay una mitad que va **al revés** de como está escrito el issue: `debeOcurrir:false` hace del
+timeout un éxito (`qa/README.md:130`), así que bajo carga 2 guiones enteros (02, 30) y 2 mitades (06,
+45) salen **VERDES**, y `ctx.absorbe` se traga la expiración en 14 más. Un rojo se ve; un verde así,
+no.
+
+**El reproductor bajo carga sintética va PRIMERO y no es el lujo**: hoy los 48 están por INSPECCIÓN,
+sin un solo rojo reproducido. Es pieza nueva de cero.
+
+### 4 · #496 sí se distingue, y es POR ASERTO
+
+- **#496 es siempre un CONTADOR sobre un canal compartido** (80:148, igualdad de conteo de
+  `#error-log`; 75:222, conteo a cero de `scene_init` sobre los frames de ws que el guion recoge).
+- **#545 es siempre un PRESUPUESTO en ms** para que el juego progrese (80:116). **El 75 no tiene
+  ninguno: si el 75 sale rojo, no es carga.**
+- Tres controles: el **texto del aserto** · correr el guion **el primero** · y el **diff**, que
+  *solo puede cambiar CÓMO se espera, nunca QUÉ se cuenta ni sobre qué canal*.
+- **Donde NO se distingue** —contaminación que causa inanición— falta atribuir cada frame a su
+  sesión: `state_update` sale **sin sellar** (`ctx.send`, `bridge/handlers/simulation.ts:131`), el
+  cliente no filtra por sesión y `aisla` solo sabe `saves|mundo|fake-ai`. Por eso **80 y 75 quedan
+  fuera por escrito**, y con ellos **#497**, que es una TERCERA causa del mismo contador.
+
+### 5 · Orden, y qué queda fuera a propósito
+
+**#599 → #597 en local → #545** (reproductor primero, luego los 13 y el presupuesto de 90/129/130).
+**#441 no entra**: su decisión es la salida de #597. Fuera a propósito: **#598** (depende de #597),
+**#596** (no bloquea a nadie), **#430** (es del usuario, y la contesta #597), **#496 y #497** (se
+nombran para no taparlas).
+
+### 6 · Aviso de proceso
+
+**Los CUERPOS de #441 y #430 siguen publicando las cifras falsas**; las correcciones viven solo en
+comentarios, y un agente lee `gh api … --jq .body`. Se editan los cuerpos.
