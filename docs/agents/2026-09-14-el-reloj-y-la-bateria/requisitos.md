@@ -175,3 +175,60 @@ rojos de los guiones 80 y 75 (el bridge compartido difunde la vida ambiental del
 página sin sesión). **Arreglar asertos puede taparlo.** Ningún aserto de esta tanda puede volver
 verde un guion cuyo rojo venga de #496: si al arreglar uno desaparece un rojo que era de #496, eso es
 un hallazgo, no un éxito.
+
+---
+
+## La segunda mitad de la tanda (2026-09-15)
+
+Petición literal del usuario: **«sigue con la tanda D»**, después de autorizar las dos corridas
+(«Autorizo la corrida, lánzala cuando acabe el ingeniero»).
+
+**#443 está CERRADO en «no se adopta», con el número.** Lo que eso cambia para lo que queda:
+
+Medido con dos corridas COMPLETAS sobre el MISMO commit (`e777c59a`): `34872537438` con `command`
+y `34878198682` con `tap-runner` desde `feature/tap-runner`, rama que no toca ni un fichero del
+perímetro mutado.
+
+| medida | `command` | `tap-runner` | |
+|---|---|---|---|
+| corrida completa, reloj de pared | 44,5 min | 22,4 min | **−49,7 %** |
+| reloj de CPU | 12.492 s | 4.566 s | **−63,4 %** |
+| `scene-validate` | 43 min | 21 min | **−50,6 %** |
+
+Lo tumbaron **26 mutantes** que `command` MATABA y que `tap-runner` devuelve como `RuntimeError`
+—el proceso muere antes de emitir la cabecera TAP— y que por tanto salen del denominador: el score
+baja en cinco ficheros y la regla dura del usuario dice que entonces no se adopta. Fuera de esos 26:
+**0 nuevos y 0 resueltos** en los 85 ficheros comparables. Los 26 nominales están en **#597**.
+
+### Lo que entra ahora
+
+**1 · #441, con las cifras de HOY y una pregunta nueva.** `scene-validate` son **2.594 s = 20,8 %**
+del reloj de CPU de la corrida entera, y su lote —él solo— tardó **43 de los 44,5 min** que tardó la
+corrida completa: **es el camino crítico él solo**. Su `presupuestoDelLote` son 3.285 s = **91,3 %
+del `techo_job`**, y la deriva medida entre corridas llega a ×1,14: el margen que compró #571 está
+dentro del ruido. La respuesta escrita sigue siendo **partir el FICHERO** —nunca subir `tope_lote`
+ni `timeout-minutes`—, pero ahora hay una alternativa medida que antes no existía: **si se arreglan
+los 26 de #597, `scene-validate` baja a 1.242 s (−52 %) y #441 se disuelve sin tocar producción.**
+Eso es exactamente lo que el crítico tiene que juzgar: cuál de las dos es la tarea que hay que
+hacer, no cuál es más bonita.
+
+**2 · #545, que ya se puede hacer porque la máquina está quieta.** Es lo que abrió la respuesta
+**(b)** del usuario a la pregunta 12 del triaje («la batería es indicativa bajo carga y el veredicto
+es la corrida aislada»), junto con **arreglar los asertos** y **el reproductor bajo carga sintética,
+que da el rojo a demanda sin quitarle la máquina a nadie**. Alcance real medido por el crítico
+anterior: **30 de 112 guiones**, no uno; el clamp está en `main.ts:577`; el reproductor es **pieza
+nueva de cero**; y `qa/README.md:120-134` **ya escribe la regla y ya cita el tope de 0,1 s** — la
+prosa existía y no sujetó nada, que es el argumento de esta casa contra la prosa aplicado a sí
+misma. Se hace **con la máquina quieta a propósito**: su trabajo ES medir la batería bajo carga.
+
+**3 · #430 sigue siendo del usuario.** Sus tres cifras están corregidas en el issue y la decisión
+está servida: entra `narrative-state.ts` pagando lo que cueste, o se declara aparcado por escrito
+con el número en `sin_mutar`. Lo que el cierre de #443 añade es que **la rebaja del −63,4 % vuelve a
+la mesa si #597 se arregla**, así que la respuesta puede salir sola. No se toca sin él.
+
+### El aviso que vale la tanda entera, otra vez
+
+**#496 es una causa raíz DISTINTA y ya diagnosticada** de los rojos de los guiones 80 y 75: el
+bridge compartido difunde la vida ambiental del guion anterior a una página sin sesión. **Arreglar
+asertos puede taparlo.** Ningún aserto de esta tanda puede volver verde un guion cuyo rojo venga de
+#496: si al arreglar uno desaparece un rojo que era de #496, **eso es un hallazgo, no un éxito**.
