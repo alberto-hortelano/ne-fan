@@ -530,6 +530,12 @@ export interface VeredictoDeAdopcion {
   /** Mutantes `NoCoverage` de ahora sin informe base con el que compararlos.
    *  Votan (7b), pero por «no se pudo mirar», no por «mide menos». */
   sinEjercerSinMirar: number;
+  /** El sentido REVERSO: mutantes que la base daba por no ejercidos y esta
+   *  corrida ya no reporta así. Votan (7c). Sin esta cuenta, una corrida nueva
+   *  medida con `coverageAnalysis: "off"` —que no puede emitir `NoCoverage`
+   *  jamás— salía «✔ no mide menos» y ADOPTABLE midiendo estrictamente menos
+   *  (QA de #599, H-1). */
+  sinEjercerRecuperados: number;
   adopta: boolean;
   /** TODOS los motivos, no el primero: arreglar uno y descubrir el siguiente en
    *  la vuelta de después es lo que hace que nadie termine de mirar. */
@@ -639,6 +645,24 @@ export function veredictoDeAdopcion(
         "no puede verlo",
     );
   }
+  // 7c · EL SENTIDO REVERSO (QA de #599, H-1). La base sabía nombrar
+  // `NoCoverage` a estos mutantes y esta corrida ya no lo hace. Sobre el MISMO
+  // commit no puede haber aparecido un test, así que o el instrumento nuevo
+  // dejó de saber decirlo —el caso de una corrida con `coverageAnalysis: "off"`,
+  // que no puede emitir `NoCoverage` JAMÁS— o cambió lo que reporta. Las dos
+  // cosas son la medida moviéndose, y ninguna la ve nadie más: `esVivo` colapsa
+  // `Survived` y `NoCoverage`, así que un `NoCoverage → Survived` deja la huella
+  // intacta y el delta devuelve 0 nuevos y 0 resueltos.
+  if (totalSin.recuperados > 0) {
+    const ficheros = corrida.sinEjercer.filter((f) => f.base.sabe && f.base.recuperados > 0).map((f) => f.fichero);
+    peros.push(
+      `${totalSin.recuperados} mutante(s) que la base daba por NO EJERCIDOS (\`NoCoverage\`) y esta corrida ` +
+        `ya no reporta así, en ${ficheros.length} fichero(s): ${muestraDe(ficheros)} — es el mismo código, así ` +
+        "que no ha aparecido ningún test: o el instrumento nuevo dejó de saber expresar `NoCoverage` (una " +
+        "corrida con `coverageAnalysis: \"off\"` no puede emitirlo JAMÁS) o cambió lo que reporta. `esVivo` " +
+        "colapsa `Survived` y `NoCoverage`, así que nuevos y resueltos NO pueden verlo",
+    );
+  }
   // 7b · el motivo que antes no existía y se disfrazaba del de arriba: sin
   // informe base no se está midiendo de menos, es que no se ha mirado. Niega
   // igual —«no se pudo comprobar» nunca es un verde— pero manda a otro sitio.
@@ -665,6 +689,7 @@ export function veredictoDeAdopcion(
     sinEjercer,
     sinEjercerCenso: totalSin.censo,
     sinEjercerSinMirar: totalSin.sinMirar,
+    sinEjercerRecuperados: totalSin.recuperados,
     adopta: peros.length === 0,
     porque:
       peros.length === 0
@@ -674,8 +699,8 @@ export function veredictoDeAdopcion(
           // sin sujeto que arregla #599: no se puede decir «no hay ni uno» de
           // algo que la base no podía nombrar. Se dice lo que sí se sabe.
           (totalSin.mirados > 0
-            ? `no hay ni uno que haya dejado de ejercer ningún test en los ${totalSin.mirados} fichero(s) ` +
-              "cuya base podía decirlo"
+            ? `la población de \`NoCoverage\` no se movió en NINGUNO de los dos sentidos en los ` +
+              `${totalSin.mirados} fichero(s) cuya base podía decirlo`
             : `de los \`NoCoverage\` no se pudo comprobar nada: NINGUNA base podía expresarlos, así que los ` +
               `${totalSin.censo} de ahora son CENSO y no medida perdida (#598)`)
         : peros.join("; "),
@@ -856,7 +881,24 @@ export type BaseDeSinEjercer =
  *  SOLO PUEDE NEGAR, igual que `costeEstimado`: sin informe base, los de ahora
  *  no se dan por buenos — salen como «no se pudo mirar», que es un motivo del
  *  veredicto con su propio remedio. Entre negar de más y autorizar de más,
- *  esto existe para lo segundo. */
+ *  esto existe para lo segundo.
+ *
+ *  Y SE MIRA EN LOS DOS SENTIDOS, que es lo que faltaba (QA de #599, H-1). La
+ *  primera versión sabía si la BASE pudo mirar y no si puede la corrida NUEVA,
+ *  y eso deja abierto el ESPEJO EXACTO de #443: base `perTest` con 1122
+ *  `NoCoverage` y corrida nueva en `off` —que no puede emitirlos jamás— daba
+ *  «✔ el instrumento nuevo no mide menos» y SE PUEDE ADOPTAR sobre un
+ *  instrumento que mide estrictamente menos. Por eso `recuperados` cuenta el
+ *  movimiento contrario, y no hay que preguntarle a nadie con qué se midió
+ *  ahora: si la base sabía nombrar `NoCoverage` a un mutante y esta corrida ya
+ *  no lo reporta así, o bien apareció un test (imposible: es el MISMO commit) o
+ *  bien el instrumento dejó de saber decirlo.
+ *
+ *  Y NO LO CRUZA NADIE MÁS, que es la razón de que tenga que votar aquí:
+ *  `esVivo` colapsa `Survived` y `NoCoverage` (`mutation-plan.ts`), así que un
+ *  `NoCoverage → Survived` deja la huella del mutante intacta y el delta
+ *  devuelve `nuevos: 0` y `resueltos: 0`. Las condiciones 1 y 2 NO son la red
+ *  de seguridad de esto: no pueden verlo. */
 export interface SinEjercerDeFichero {
   fichero: string;
   /** Los `NoCoverage` de ESTA corrida. Existe se pueda comparar o no. */
@@ -865,7 +907,7 @@ export interface SinEjercerDeFichero {
 }
 
 export type BaseSinEjercerDeFichero =
-  | { sabe: true; cuenta: number; nuevos: number }
+  | { sabe: true; cuenta: number; nuevos: number; recuperados: number }
   | { sabe: false; porque: MotivoDeNoSaber };
 
 export function movimientosSinEjercer(
@@ -875,23 +917,35 @@ export function movimientosSinEjercer(
 ): SinEjercerDeFichero {
   if (!base.sabe) return { fichero, ahora: ahora.length, base: { sabe: false, porque: base.porque } };
   const antes = new Set(base.huellas);
+  const despues = new Set(ahora);
   return {
     fichero,
     ahora: ahora.length,
-    base: { sabe: true, cuenta: antes.size, nuevos: ahora.filter((h) => !antes.has(h)).length },
+    base: {
+      sabe: true,
+      cuenta: antes.size,
+      nuevos: ahora.filter((h) => !antes.has(h)).length,
+      recuperados: [...antes].filter((h) => !despues.has(h)).length,
+    },
   };
 }
 
-/** Las CINCO cuentas del bloque, que antes eran tres y colapsaban dos hechos
+/** Las SEIS cuentas del bloque, que antes eran tres y colapsaban hechos
  *  opuestos en la misma columna. */
 export interface TotalSinEjercer {
   /** Los `NoCoverage` que la base tenía, sumados SOLO donde sabía decirlo. */
   base: number;
   /** Los de ahora, en TODOS los ficheros. */
   ahora: number;
-  /** Los que ANTES SÍ SE EJERCÍAN, donde se pudo mirar. Lo único que VOTA
-   *  como «el instrumento nuevo mide menos». */
+  /** Los que ANTES SÍ SE EJERCÍAN, donde se pudo mirar. VOTA como «el
+   *  instrumento nuevo mide menos» (7a). */
   nuevos: number;
+  /** El movimiento CONTRARIO: los que la base daba por no ejercidos y esta
+   *  corrida ya no reporta así. Sobre el MISMO commit no puede haber aparecido
+   *  un test, así que es el instrumento cambiando lo que sabe expresar — y si
+   *  la corrida nueva midió con `off`, es que dejó de saber decirlo. VOTA (7c),
+   *  y es el sentido que la primera versión de #599 no miraba (QA, H-1). */
+  recuperados: number;
   /** Los de ahora en ficheros cuya base NO PODÍA expresar `NoCoverage`. No
    *  votan: son el censo de lo que el instrumento nuevo sabe separar (#598). */
   censo: number;
@@ -912,6 +966,7 @@ export function totalSinEjercer(filas: readonly SinEjercerDeFichero[]): TotalSin
     base: deBase((b) => b.cuenta),
     ahora: suma((r) => r.ahora),
     nuevos: deBase((b) => b.nuevos),
+    recuperados: deBase((b) => b.recuperados),
     censo: porMotivo('coverageAnalysis "off"'),
     sinMirar: porMotivo("sin informe base"),
     mirados: filas.filter((r) => r.base.sabe).length,
@@ -932,10 +987,20 @@ export function titularDeSinEjercer(t: TotalSinEjercer): string {
       "así que la séptima condición no se pronuncia sobre ningún fichero."
     );
   }
-  if (t.nuevos > 0) {
+  // LOS DOS SENTIDOS, y ninguno se colapsa con el otro: uno dice que el
+  // instrumento nuevo dejó de ejercer lo que se ejercía, y el otro que dejó de
+  // SABER DECIR lo que la base sabía decir. Los dos son el instrumento moviendo
+  // la medida sobre el mismo código, y los dos prohíben la frase de abajo.
+  const males: string[] = [];
+  if (t.nuevos > 0) males.push(`${t.nuevos} que antes SÍ ejercía algún test y ahora no`);
+  if (t.recuperados > 0) {
+    males.push(`${t.recuperados} que la base daba por NO EJERCIDOS y esta corrida ya no reporta así`);
+  }
+  if (males.length > 0) {
     return (
-      `✖ ${t.nuevos} mutante(s) han dejado de ser ejercidos en los ${t.mirados} fichero(s) que se pudo ` +
-      "mirar: el instrumento nuevo mide MENOS."
+      `✖ ${males.join("; ")} — sobre los ${t.mirados} fichero(s) que se pudo mirar. Es el MISMO código, ` +
+      "así que no ha aparecido ningún test: el instrumento nuevo NO MIDE LO MISMO" +
+      (t.nuevos > 0 ? ", y por el primer sentido mide MENOS." : ".")
     );
   }
   return (

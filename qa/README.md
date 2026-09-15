@@ -83,6 +83,7 @@ limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella 
 | `el-cierre-ve-el-node-a-saltos.mjs` | ~10 s | git y el `node_modules` de nefan-core (`tsx`, `typescript`); clona superficial en `qa/.tmp/` y no toca el árbol (#359) |
 | `mutacion-candados-en-negativo.mjs` | 36 s | tsx; escribe y restaura `mutacion-huella.ts` y la huella |
 | `mutacion-cableado-en-negativo.mjs` | 26 s | el tag `mutacion-ultima` y su historia (`fetch-depth: 0`); escribe y restaura |
+| `mutacion-la-septima-en-los-dos-sentidos.mjs` | 0,7 s | tsx; solo lee (su base de ensayo vive en el temporal del sistema, no en `reports/`) |
 | `contrato-candados-en-negativo.mjs` | 3,5 s | tsx + `python3 -m unittest`; exige SUS ficheros limpios |
 | `el-ledger-de-gasto-no-lo-escribe-la-suite.mjs` | 45 s | python3 con las deps de la suite de ai_server |
 | `los-dos-gates-rebotan-igual.mjs` | 0,2 s | tsx (el zod) y python3 con las deps de ai_server (el saneador) |

@@ -242,6 +242,20 @@ const INVARIANTES = [
   // así que «✔ no mide menos» vuelve a ser una frase sin sujeto.
   ["sinEjercer · nunca se dice sobre cuántos ficheros se pudo mirar", SRC,
     `    mirados: filas.filter((r) => r.base.sabe).length,`, `    mirados: 0,`],
+  // ── #599 H-1 · el SENTIDO REVERSO, también en las dos direcciones ──
+  //
+  // La primera versión de #599 sabía si la BASE pudo mirar y no si puede la
+  // corrida NUEVA, y eso deja abierto el espejo exacto de #443. Las tres de
+  // aquí abajo vuelven a ser opuestas entre sí: no contarlo nunca (el agujero
+  // que reportó QA), contarlo siempre (un tumbe permanente, que es la
+  // abstención al revés) y callar su motivo.
+  ["sinEjercer · el sentido REVERSO no se cuenta (vuelve el agujero de H-1)", SRC,
+    `    recuperados: deBase((b) => b.recuperados),`, `    recuperados: 0,`],
+  ["sinEjercer · el sentido REVERSO cuenta SIEMPRE (tumba aunque no se mueva nada)", SRC,
+    `      recuperados: [...antes].filter((h) => !despues.has(h)).length,`,
+    `      recuperados: antes.size,`],
+  ["sinEjercer · el motivo 7c se calla: el instrumento que perdió la cobertura pasa", SRC,
+    `  if (totalSin.recuperados > 0) {`, `  if (false as boolean) {`],
   ["repartir · el guardia del comentario deja de mirar (los dos comentarios de #273)", SRC,
     `export function yaComentada(cuerpos: readonly string[], runId: string): boolean {\n  const marca = marcaDeCorrida(runId);`,
     `export function yaComentada(cuerpos: readonly string[], runId: string): boolean {\n  if (cuerpos.length >= 0) return false;\n  const marca = marcaDeCorrida(runId);`],

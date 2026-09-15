@@ -134,11 +134,12 @@ function soloInforme(marca = "x", estado = "Survived", cobertura = "perTest") {
 }
 
 /** El mismo informe mínimo, como texto, para poder sembrarlo también en un
- *  directorio de base. */
-function informeDe(marca = "x", estado = "Survived", cobertura = "perTest") {
+ *  directorio de base. `fichero` se puede cambiar para sembrar una base que
+ *  EXISTE y no contiene el fichero que se compara (probe de H-3). */
+function informeDe(marca = "x", estado = "Survived", cobertura = "perTest", fichero = E.fichero) {
   return JSON.stringify({
     files: {
-      [E.fichero]: {
+      [fichero]: {
         mutants: [
           {
             id: "1",
@@ -427,8 +428,44 @@ const INVARIANTES = [
       "los runners por los que uno cambiaría",
     rompe: [
       COMPARAR,
-      `        const cap = capacidadDeLaBase(delModulo.cobertura);\n        capacidad = cap.sabe ? { sabe: true, huellas: base.sinEjercer } : cap;`,
-      `        capacidad = { sabe: true, huellas: base.sinEjercer };`,
+      `        if (!cap.sabe) capacidad = cap;\n        else if (base !== undefined) capacidad = { sabe: true, huellas: base.sinEjercer };`,
+      `        void cap;\n        if (base !== undefined) capacidad = { sabe: true, huellas: base.sinEjercer };`,
+    ],
+  },
+
+  {
+    // #599 H-3 (QA). Si el informe base del módulo EXISTE y midió con `off`,
+    // ese informe no podría haber contestado ni con el fichero dentro: la
+    // casilla es CENSO. Cuando caía en «sin informe base», el motivo se
+    // contradecía con su propia cabecera —que dos líneas más arriba dice
+    // `base: off`— y prescribía `--timeouts`, el flag que quien lee acaba de
+    // usar: un remedio sin salida.
+    nombre: "comparar · un fichero fuera de un informe base `off` es CENSO, no «sin informe base» (#599 H-3)",
+    mira: () => {
+      siembraInforme();
+      soloInforme("x", "NoCoverage", "perTest");
+      manifiesta({ run: "999916" });
+      rmSync(BASE_ENSAYO, { recursive: true, force: true });
+      mkdirSync(BASE_ENSAYO, { recursive: true });
+      // La base EXISTE, midió con `off`, y NO contiene el fichero que se compara.
+      writeFileSync(
+        join(BASE_ENSAYO, `${E.id}.json`),
+        informeDe("x", "Survived", "off", "src/UN-FICHERO-QUE-NO-SE-COMPARA.ts"),
+      );
+      const s = mutacion(["comparar", "--timeouts", "reports/base-ensayo"]).salida;
+      const c = /· censo\s+: (\d+) mutante/.exec(s)?.[1] ?? "?";
+      const sm = /· sin mirar\s+: (\d+) mutante/.exec(s)?.[1] ?? "?";
+      return `censo:${c} sinMirar:${sm} remedioSinSalida:${/NO SE PUDO MIRAR \(/.test(s)}`;
+    },
+    bien: (s) => s === "censo:1 sinMirar:0 remedioSinSalida:false",
+    porque:
+      "con la base en `off` ese informe no podría haber contestado ni con el fichero dentro: mandar a " +
+      "`--timeouts` a quien acaba de pasarlo es un remedio sin salida, y el bloque se contradice con su " +
+      "propia cabecera `base: off`",
+    rompe: [
+      COMPARAR,
+      `        if (!cap.sabe) capacidad = cap;\n        else if (base !== undefined) capacidad = { sabe: true, huellas: base.sinEjercer };`,
+      `        if (base !== undefined) capacidad = cap.sabe ? { sabe: true, huellas: base.sinEjercer } : cap;`,
     ],
   },
 

@@ -1796,7 +1796,7 @@ describe("adopción · el criterio para cambiar de instrumento de medida (#443)"
       esperados: ["src/a.ts"],
       mueveTag: true,
       completa: true,
-      sinEjercer: [{ fichero: "src/a.ts", ahora: 20, base: { sabe: true, cuenta: 0, nuevos: 20 } }],
+      sinEjercer: [{ fichero: "src/a.ts", ahora: 20, base: { sabe: true, cuenta: 0, nuevos: 20, recuperados: 0 } }],
       codigoCambiado: [],
     });
     assert.equal(v.nuevos, 0, "el delta no lo ve: es el punto");
@@ -1812,7 +1812,7 @@ describe("adopción · el criterio para cambiar de instrumento de medida (#443)"
       esperados: ["src/a.ts"],
       mueveTag: true,
       completa: true,
-      sinEjercer: [{ fichero: "src/a.ts", ahora: 7, base: { sabe: true, cuenta: 7, nuevos: 0 } }],
+      sinEjercer: [{ fichero: "src/a.ts", ahora: 7, base: { sabe: true, cuenta: 7, nuevos: 0, recuperados: 0 } }],
       codigoCambiado: [],
     });
     assert.equal(v.sinEjercer, 0);
@@ -1832,7 +1832,7 @@ describe("adopción · el criterio para cambiar de instrumento de medida (#443)"
         esperados: ["src/a.ts", "src/b.ts", "src/z.ts"],
         mueveTag: false,
         completa: false,
-        sinEjercer: [{ fichero: "src/a.ts", ahora: 1, base: { sabe: true, cuenta: 0, nuevos: 1 } }],
+        sinEjercer: [{ fichero: "src/a.ts", ahora: 1, base: { sabe: true, cuenta: 0, nuevos: 1, recuperados: 0 } }],
         codigoCambiado: [],
       },
     );
@@ -1863,10 +1863,10 @@ describe("adopción · el criterio para cambiar de instrumento de medida (#443)"
   //  son los que impiden que el arreglo sea una abstención permanente. Un
   //  candado que no puede ponerse rojo en ninguna dirección es peor que el
   //  defecto que arregla.
-  const capaz = (fichero: string, ahora: number, nuevos: number): SinEjercerDeFichero => ({
+  const capaz = (fichero: string, ahora: number, nuevos: number, recuperados = 0): SinEjercerDeFichero => ({
     fichero,
     ahora,
-    base: { sabe: true, cuenta: ahora - nuevos, nuevos },
+    base: { sabe: true, cuenta: ahora - nuevos + recuperados, nuevos, recuperados },
   });
   const incapaz = (fichero: string, ahora: number): SinEjercerDeFichero => ({
     fichero,
@@ -1967,7 +1967,52 @@ describe("adopción · el criterio para cambiar de instrumento de medida (#443)"
     assert.match(titular, /no mide menos/);
     assert.match(titular, /1 fichero\(s\) que se pudo mirar/);
   });
+  it("#599 · caso 7 · EL SENTIDO REVERSO: la base sabía nombrar 1122 y la corrida nueva ya no → NO adopta", () => {
+    // El espejo exacto de #443, y el agujero que encontró la QA de #599 (H-1):
+    // base `perTest` con 1122 `NoCoverage`, corrida nueva medida con `off` —que
+    // NO PUEDE emitirlos jamás—. El instrumento nuevo mide ESTRICTAMENTE MENOS
+    // y hasta este caso el verbo decía «✔ no mide menos» y SE PUEDE ADOPTAR.
+    //
+    // Y NO LO CRUZA NADIE: `esVivo` colapsa `Survived` y `NoCoverage`, así que
+    // esos 1122 siguen «vivos» antes y después, el delta devuelve 0 nuevos y 0
+    // resueltos, y el total no se mueve. El delta se construye AQUÍ como la casa
+    // lo produciría —los 1122 en `vivos` y en `yaEstaban`— para que se vea que
+    // las condiciones 1 y 2 pasan en verde.
+    const huellas = Array.from({ length: 1122 }, (_, i) => `h${i}`);
+    const fila = movimientosSinEjercer("src/a.ts", { sabe: true, huellas }, []);
+    assert.equal(fila.base.sabe && fila.base.recuperados, 1122);
+    const v = veredictoDeAdopcion(
+      [delta({ vivos: huellas, yaEstaban: huellas, total: 2000 })],
+      corrida({ sinEjercer: [fila] }),
+    );
+    assert.equal(v.nuevos, 0, "el delta no lo ve: ése es el punto");
+    assert.equal(v.resueltos, 0);
+    assert.equal(v.sinEjercer, 0, "y la condición 7a tampoco, porque mira el sentido contrario");
+    assert.equal(v.sinEjercerRecuperados, 1122);
+    assert.equal(v.adopta, false, "aun así NO se adopta un instrumento que perdió la cobertura");
+    assert.match(v.porque, /NO EJERCIDOS/);
+    assert.doesNotMatch(
+      titularDeSinEjercer(totalSinEjercer([fila])),
+      /no mide menos/,
+      "y el titular no puede afirmar lo que no puede saber",
+    );
+  });
+
+  it("#599 · caso 8 · el reverso NO se dispara cuando la población no se movió", () => {
+    // El control del caso 7: mismos 1122 antes y después → `recuperados: 0`, y
+    // la adopción sigue siendo posible. Sin este caso, «cuenta el reverso»
+    // podría implementarse como «cualquier base con `NoCoverage` tumba», que es
+    // una abstención permanente con otro disfraz.
+    const huellas = Array.from({ length: 1122 }, (_, i) => `h${i}`);
+    const fila = movimientosSinEjercer("src/a.ts", { sabe: true, huellas }, huellas);
+    assert.equal(fila.base.sabe && fila.base.recuperados, 0);
+    const v = veredictoDeAdopcion([limpio()], corrida({ sinEjercer: [fila] }));
+    assert.equal(v.sinEjercerRecuperados, 0);
+    assert.equal(v.adopta, true);
+    assert.match(titularDeSinEjercer(totalSinEjercer([fila])), /no mide menos/);
+  });
 });
+
 
 
 describe("reloj · los mutantes que clasifica el cronómetro, contados aparte", () => {
@@ -2142,12 +2187,17 @@ describe("reloj · los mutantes que clasifica el cronómetro, contados aparte", 
     const sinBase = movimientosSinEjercer("src/a.ts", { sabe: false, porque: "sin informe base" }, [h("a"), h("b")]);
     assert.deepEqual(sinBase, { fichero: "src/a.ts", ahora: 2, base: { sabe: false, porque: "sin informe base" } });
     const conBase = movimientosSinEjercer("src/a.ts", { sabe: true, huellas: [h("a")] }, [h("a"), h("b")]);
-    assert.deepEqual(conBase, { fichero: "src/a.ts", ahora: 2, base: { sabe: true, cuenta: 1, nuevos: 1 } });
+    assert.deepEqual(conBase, {
+      fichero: "src/a.ts",
+      ahora: 2,
+      base: { sabe: true, cuenta: 1, nuevos: 1, recuperados: 0 },
+    });
     const incapaz = movimientosSinEjercer("src/b.ts", { sabe: false, porque: 'coverageAnalysis "off"' }, [h("c")]);
     assert.deepEqual(totalSinEjercer([sinBase, conBase, incapaz]), {
       base: 1,
       ahora: 5,
       nuevos: 1,
+      recuperados: 0,
       censo: 1,
       sinMirar: 2,
       mirados: 1,

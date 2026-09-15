@@ -239,6 +239,15 @@ jobs:
       # VERBO real sobre un `reports/mutation/` de ensayo. Lee el tag
       # `mutacion-ultima` y su historia: de ahí el `fetch-depth: 0`.
       - run: node qa/mutacion-cableado-en-negativo.mjs
+      # (0,7 s) la séptima condición del veredicto de adopción, en los DOS
+      # sentidos (#599 + QA H-1/H-2). Entra porque la capa que IMPRIME ese
+      # bloque no la miraba NADIE: QA borró el censo entero y el titular, y
+      # `verify`, `candados` (50/50) y `cableado` (16/16) seguían verdes — con
+      # ellos desaparecían el rótulo, el puntero a #598 y la lista de 43
+      # ficheros de la que sale #598. Llama a las funciones reales con material
+      # sintético y captura lo que imprimen; no toca `reports/` (su base de
+      # ensayo vive en el temporal del sistema) y no gasta un crédito.
+      - run: node qa/mutacion-la-septima-en-los-dos-sentidos.mjs
       # (3,5 s) rompe schemas y saneadores (TS con tsx, Python con
       # `python3 -m unittest`) y exige que sus tests se enteren.
       - run: node qa/contrato-candados-en-negativo.mjs

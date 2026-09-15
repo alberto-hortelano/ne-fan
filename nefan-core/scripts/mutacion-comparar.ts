@@ -252,10 +252,20 @@ function leeLaBase(c: ComparacionEnSeco): {
       // colapsa con otro: no hay informe base (no se pudo mirar), lo hay pero
       // midió con `coverageAnalysis: "off"` (no PODÍA expresar `NoCoverage`, así
       // que su cero no es una medida), o lo hay y sí podía (entonces vota).
+      //
+      // EL ORDEN IMPORTA, y lo destapó QA (#599, H-3). Si el informe base del
+      // módulo EXISTE y midió con `off`, ese informe no podría haber contestado
+      // ni aunque el fichero estuviera dentro: la casilla es CENSO. Ponerlo en
+      // «sin informe base» producía un motivo que se contradecía con su propia
+      // cabecera («base: off» dos líneas más arriba) y prescribía `--timeouts`,
+      // el flag que quien lee acaba de usar: un remedio sin salida.
       let capacidad: BaseDeSinEjercer = { sabe: false, porque: "sin informe base" };
-      if (base !== undefined && delModulo !== undefined) {
+      if (delModulo !== undefined) {
         const cap = capacidadDeLaBase(delModulo.cobertura);
-        capacidad = cap.sabe ? { sabe: true, huellas: base.sinEjercer } : cap;
+        if (!cap.sabe) capacidad = cap;
+        else if (base !== undefined) capacidad = { sabe: true, huellas: base.sinEjercer };
+        // Base capaz y el fichero fuera del informe: ahí sí falta la medida, y
+        // «sin informe base» es exactamente lo que pasa.
       }
       sinEjercer.push(movimientosSinEjercer(d.fichero, capacidad, ahora.sinEjercer));
     }
@@ -339,6 +349,7 @@ function imprimeSinEjercer(c: ComparacionEnSeco, leido: ReturnType<typeof leeLaB
   console.log(`  qué se mira: base: ${base} · ahora: ${c.coberturaAhora}`);
   console.log(
     `  antes: ${total.base} · ahora: ${total.ahora} · que antes sí se ejercían: ${total.nuevos} ` +
+      `· que la base daba por no ejercidos y ahora no: ${total.recuperados} ` +
       `(sobre ${total.mirados} fichero(s) con base capaz)`,
   );
   console.log(`  censo (base incapaz): ${total.censo} · sin poder mirar (sin informe base): ${total.sinMirar}`);
@@ -359,6 +370,22 @@ function imprimeSinEjercer(c: ComparacionEnSeco, leido: ReturnType<typeof leeLaB
     console.log(
       `\n  \`Survived\` es «un test pasó por la línea y no se enteró»; \`NoCoverage\` es «nadie pasó siquiera».\n` +
         `  \`esVivo\` los colapsa, así que el delta no los distingue — y el segundo es MEDIDA QUE SE PIERDE.`,
+    );
+  }
+
+  // EL SENTIDO REVERSO, con su propia lista: la base sabía decirlo y esta
+  // corrida ya no. Si la cabecera de arriba dice `ahora: off`, ésta es la
+  // explicación entera — `off` no puede emitir `NoCoverage` JAMÁS.
+  if (total.recuperados > 0) {
+    console.log(
+      `\n  EL SENTIDO REVERSO: ${total.recuperados} mutante(s) que la base daba por NO EJERCIDOS y esta\n` +
+        `  corrida ya no reporta así. Es el MISMO código, así que no ha aparecido ningún test: o el\n` +
+        `  instrumento nuevo dejó de saber expresar \`NoCoverage\`, o cambió lo que reporta. Las dos son la\n` +
+        `  medida moviéndose, y \`esVivo\` impide que nuevos y resueltos se enteren.`,
+    );
+    lista(
+      leido.sinEjercer.filter((f) => f.base.sabe && f.base.recuperados > 0),
+      (f) => (f.base.sabe ? f.base.recuperados : 0),
     );
   }
 
@@ -433,6 +460,7 @@ export function comparaEnSeco(c: ComparacionEnSeco): number {
   console.log(`  sin ejercer    : ${veredicto.sinEjercer} mutante(s) (donde SÍ se pudo mirar)`);
   console.log(`  · censo        : ${veredicto.sinEjercerCenso} mutante(s) con la base incapaz — NO vota`);
   console.log(`  · sin mirar    : ${veredicto.sinEjercerSinMirar} mutante(s) sin informe base`);
+  console.log(`  · reverso      : ${veredicto.sinEjercerRecuperados} mutante(s) que la base sí sabía nombrar`);
   console.log(`  corrida        : ${corrida.completa ? "COMPLETA" : "INCOMPLETA"}${corrida.mueveTag ? " y mueve el tag" : ", NO mueve el tag"}`);
   console.log(`\n  ⇒ ${veredicto.adopta ? "SE PUEDE ADOPTAR" : "NO SE ADOPTA"} — ${veredicto.porque}`);
   if (!veredicto.adopta) {
