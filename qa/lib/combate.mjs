@@ -53,6 +53,19 @@ import { esperaExpiradaEn } from "./esperas.mjs";
  *  cuáles hay, porque el que se equivoca está mirando el sitio de llamada, no
  *  este fichero. */
 function soloEstasOpciones(quien, opciones, conocidas) {
+  // LA FORMA, antes que las claves (H-14 de QA). `herirHasta(ctx, id, 0,
+  // 120_000)` —el presupuesto como número posicional, que es como se escribía
+  // antes de que la firma tuviera objeto de opciones— se colaba entero: de un
+  // número `Object.keys` devuelve `[]`, así que la puerta lo daba por bueno y el
+  // helper se quedaba con su defecto. Cubrir las claves muertas y no la firma
+  // muerta es cubrir media retirada.
+  if (opciones === null || typeof opciones !== "object" || Array.isArray(opciones)) {
+    throw new Error(
+      `${quien}: las opciones son un OBJETO (\`{ ${conocidas.join(", ")} }\`) y llegó ` +
+        `${JSON.stringify(opciones)}. Si eso era el presupuesto, hoy se escribe \`{ sim: N }\` y son ` +
+        `SEGUNDOS DE MUNDO: la firma con el número suelto murió con #545.`,
+    );
+  }
   const desconocidas = Object.keys(opciones).filter((k) => !conocidas.includes(k));
   if (desconocidas.length) {
     throw new Error(

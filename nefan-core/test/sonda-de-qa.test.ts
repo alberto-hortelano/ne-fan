@@ -34,6 +34,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import ts from "typescript";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -65,7 +66,8 @@ const esperas = (await import(join(repoRoot, "qa", "lib", "esperas.mjs"))) as {
   relojDeSimNoAvanzoEn: (err: unknown) => { pedido: number; avanzado: number } | null;
   fallosDeEsperasPendientes: (libro: unknown) => string[];
 };
-const { ctxDeSonda, presupuestoDeEspera, avanceDelReloj, lecturaDelRelojValida, CORTAFUEGOS_POR_SIM } = sonda;
+const { ctxDeSonda, presupuestoDeEspera, avanceDelReloj, lecturaDelRelojValida, CORTAFUEGOS_POR_SIM, LOOP_COLGADO_MS } =
+  sonda;
 
 /** EL RELOJ DEL CLIENTE, importado para ejercerlo. Vive en un módulo sin un
  *  solo import justo para que esto sea posible (ver el bloque del final). */
@@ -81,16 +83,21 @@ function paginaFalsa(opciones: { reloj?: () => Reloj; conteste?: boolean } = {})
   const estado = { evaluaciones: 0 };
   const win = { __nefan: opciones.reloj ? { reloj: opciones.reloj } : {} };
   (globalThis as unknown as { window?: unknown }).window = win;
-  return {
+  // `muerta` se enciende DESPUÉS, desde el test: es como se apaga una espera que
+  // se quedó atrás en una carrera, para que el proceso no arrastre detrás un
+  // sondeo de veinte minutos (ver el bloque del guardia del rAF).
+  const falsa = {
     estado,
+    muerta: false,
     page: {
       evaluate: async (fn: (arg?: unknown) => unknown, arg?: unknown): Promise<unknown> => {
         estado.evaluaciones++;
-        if (opciones.conteste === false) throw new Error("Execution context was destroyed");
+        if (falsa.muerta || opciones.conteste === false) throw new Error("Execution context was destroyed");
         return fn(arg);
       },
     },
   };
+  return falsa;
 }
 
 /** Un reloj de sim conducido a mano: avanza `porLectura` segundos cada vez que
@@ -112,6 +119,45 @@ function relojQueCorre(porLectura: number, { late = true } = {}): () => Reloj {
 /** La condición que no se cumple jamás: el material con el que se mide qué
  *  hace la espera al agotarse. */
 const NUNCA = (): unknown => null;
+
+/** Las llamadas del `gameLoop` del cliente, leídas del ÁRBOL DE SINTAXIS.
+ *
+ *  Un `grep` sabe que un texto está; no sabe DÓNDE. Ésa es toda la diferencia
+ *  entre este candado y el que QA puso verde con el defecto dentro: lo que
+ *  importa no es que `relojDeSim.avanza(delta)` aparezca en `main.ts`, es que
+ *  sea **argumento de `gameClient.tick`** y de nada más. */
+function llamadasDelLoop() {
+  const fuente = readFileSync(join(repoRoot, "nefan-html", "src", "main.ts"), "utf8");
+  const src = ts.createSourceFile("main.ts", fuente, ts.ScriptTarget.Latest, true);
+  const esLlamadaA = (n: ts.Node, objeto: string, metodo: string): n is ts.CallExpression =>
+    ts.isCallExpression(n) &&
+    ts.isPropertyAccessExpression(n.expression) &&
+    ts.isIdentifier(n.expression.expression) &&
+    n.expression.expression.text === objeto &&
+    n.expression.name.text === metodo;
+  const dentroDeGameLoop = (n: ts.Node): boolean => {
+    for (let p: ts.Node | undefined = n; p; p = p.parent) {
+      if (ts.isFunctionDeclaration(p) && p.name?.text === "gameLoop") return true;
+    }
+    return false;
+  };
+  const tick: ts.CallExpression[] = [];
+  const avanzaN: ts.CallExpression[] = [];
+  const latidoN: ts.CallExpression[] = [];
+  const visita = (n: ts.Node): void => {
+    if (esLlamadaA(n, "gameClient", "tick")) tick.push(n);
+    if (esLlamadaA(n, "relojDeSim", "avanza")) avanzaN.push(n);
+    if (esLlamadaA(n, "relojDeSim", "frameDelLoop")) latidoN.push(n);
+    ts.forEachChild(n, visita);
+  };
+  visita(src);
+  const argumentosDeTick = new Set<ts.Node>(tick.flatMap((c) => [...c.arguments]));
+  return {
+    tick,
+    avanza: avanzaN.map((c) => ({ esArgumentoDeTick: argumentosDeTick.has(c), enGameLoop: dentroDeGameLoop(c) })),
+    latido: latidoN.map((c) => ({ enGameLoop: dentroDeGameLoop(c) })),
+  };
+}
 
 describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () => {
   it("un número son milisegundos de pared, como siempre", () => {
@@ -318,29 +364,83 @@ describe("el cortafuegos de pared solo puede declarar ⊘, nunca «no ocurrió»
   });
 });
 
-describe("el LATIDO del loop es el cortafuegos contra el rAF colgado (#545, H-4)", () => {
-  // El `timeout` es parte del candado, no un adorno: SIN el guardia del latido
-  // este caso no se pone rojo, se CUELGA —el cortafuegos de pared de `{sim:120}`
-  // son 1.200.000 ms—, y un candado cuyo negativo es colgar la suite no sirve
-  // para enterarse de nada. Con él, quitar el guardia sale rojo en 25 s.
-  it("una página que no da NI UN frame se declara ⊘ por el latido, sin esperar al cortafuegos entero", { timeout: 25_000 }, async () => {
+describe("el guardia del rAF DESACOPLADO (#545, H-4 y H-11)", () => {
+  // EL NEGATIVO DE ESTE CANDADO NO PUEDE SER UNA CANCELACIÓN (H-13 de QA). La
+  // primera versión confiaba en el `timeout` del runner: quitar el guardia daba
+  // `fail 0 · cancelled 1 · 'test timed out after 25000ms'`, que es el primo del
+  // «cuelga la suite» que yo mismo había escrito que no sirve — dice que algo
+  // tardó, no QUÉ falló. Aquí la espera corre contra un reloj propio y lo que
+  // sale es un ✘ con su frase.
+  const SE_LE_DA = 20_000;
+
+  /** Corre la espera contra un plazo y devuelve o su desenlace o la marca de que
+   *  seguía esperando. La espera que se quede atrás se apaga sola: se le corta la
+   *  página, que es lo que hace que el proceso de test no arrastre un sondeo de
+   *  veinte minutos detrás. */
+  async function loQuePasePrimero(pagina: { muerta: boolean }, espera: Promise<unknown>) {
+    let plazo: NodeJS.Timeout;
+    const marca = Symbol("sigue esperando");
+    const desenlace = await Promise.race([
+      espera.then(
+        () => "se cumplió (imposible)",
+        (e: unknown) => e,
+      ),
+      new Promise((r) => {
+        plazo = setTimeout(() => r(marca), SE_LE_DA);
+      }),
+    ]);
+    clearTimeout(plazo!);
+    if (desenlace === marca) {
+      pagina.muerta = true;
+      void espera.catch(() => {});
+    }
+    return desenlace === marca ? null : desenlace;
+  }
+
+  it("una página que CONTESTA y no mueve nada se declara ⊘ enseguida, no tras el cortafuegos entero", async () => {
     // Es lo que permite que el cortafuegos de pared sea proporcional al sim
-    // pedido en vez de estar topado: un `{sim:120}` sobre un cadáver se
-    // resolvía antes en 300 s (el techo) y ahora en diez, y el techo ya no
-    // aplasta el múltiplo de los presupuestos grandes.
-    //
-    // Cuesta sus diez segundos de reloj y no hay forma barata de tenerlos: el
-    // guardia es de PARED por definición. Corre en paralelo con el resto de la
-    // suite (`--test-concurrency`), así que no alarga la corrida.
-    const { page } = paginaFalsa({ reloj: relojQueCorre(0, { late: false }) });
+    // pedido en vez de estar topado: un `{sim:120}` sobre una página desacoplada
+    // se resolvía antes en 300 s (el techo) y ahora en diez.
+    const falsa = paginaFalsa({ reloj: relojQueCorre(0, { late: false }) });
+    const espera = ctxDeSonda(falsa.page).waitFor("el jugador llega", NUNCA, { sim: 120 });
     const t0 = Date.now();
-    const err = (await ctxDeSonda(page)
-      .waitFor("el jugador llega", NUNCA, { sim: 120 })
-      .catch((e: unknown) => e)) as Error;
-    const tardó = Date.now() - t0;
+    const err = await loQuePasePrimero(falsa, espera);
+    assert.ok(
+      err !== null,
+      `la espera seguía viva a los ${SE_LE_DA} ms: sin el guardia, un {sim:120} sobre una página ` +
+        `desacoplada se queda 1.200.000 ms mirando un cadáver, y la corrida entera cuelga detrás`,
+    );
     assert.ok(err instanceof RelojDeSimNoAvanzo, `esperaba ⊘ y llegó ${String(err)}`);
-    assert.match(err.message, /el GAME LOOP lleva \d+ ms sin dar un solo frame/);
-    assert.ok(tardó < 20_000, `tardó ${tardó} ms: el cortafuegos de pared de {sim:120} son 1.200.000 ms`);
+    assert.match((err as Error).message, /no se ha movido NADA/);
+    assert.match((err as Error).message, /está desacoplada/);
+    assert.ok(Date.now() - t0 < SE_LE_DA, `tardó ${Date.now() - t0} ms`);
+  });
+
+  it("pero un MUNDO QUE AVANZA no se declara muerto jamás, aunque el latido del loop no llegue", async () => {
+    // H-11, y era un defecto de conducta con medida sobre el juego real: mirando
+    // solo `loop`, un `waitFor({sim:12})` sobre una página que simulaba
+    // (`{sim:1.7166, frames:96, loop:0}`) salía ⊘ a los 10 s diciendo «la página
+    // contesta, pero no late», con 10,02 s de mundo corridos. El guardia
+    // descansaba en un invariante de `main.ts` que nada sujetaba.
+    //
+    // EL PRESUPUESTO TIENE QUE DURAR MÁS QUE EL GUARDIA o este test no mide
+    // nada: con uno pequeño la espera se agota antes de que el guardia pueda
+    // dispararse y pasa igual con el defecto puesto. Me pasó, y lo cacé al
+    // probarlo en negativo — que es justo para lo que se prueban en negativo.
+    // A ~2,7 s de sim por segundo de pared, 34 s de mundo son ~13 s de reloj:
+    // por encima de `LOOP_COLGADO_MS` con margen.
+    const falsa = paginaFalsa({ reloj: relojQueCorre(0.4, { late: false }) });
+    const t0 = Date.now();
+    const espera = ctxDeSonda(falsa.page).waitFor("el jugador llega", NUNCA, { sim: 34, ms: 60_000 });
+    const err = await loQuePasePrimero(falsa, espera);
+    const tardó = Date.now() - t0;
+    assert.ok(
+      tardó > LOOP_COLGADO_MS,
+      `solo esperó ${tardó} ms, menos que el guardia (${LOOP_COLGADO_MS}): así el guardia ni se asoma y ` +
+        `este caso pasaría también con el defecto puesto`,
+    );
+    assert.ok(err instanceof EsperaExpirada, `un mundo que avanza tiene que poder AFIRMAR, y llegó ${String(err)}`);
+    assert.doesNotMatch((err as Error).message, /no se ha movido NADA/);
   });
 });
 
@@ -401,41 +501,52 @@ describe("el reloj de sim del cliente CUENTA, y cuenta lo que el mundo simula (#
     assert.deepEqual(crearRelojDeSim().lee(), { sim: 0, frames: 0, loop: 0 });
   });
 
-  it("EL MUNDO avanza el reloj desde el argumento del `tick`, que es la llamada que lo simula", () => {
-    // El ancla de POSICIÓN, y ahora apunta a la posición correcta: alimentar el
-    // reloj arriba del loop contaba los frames del TÍTULO, donde `tick` no se
-    // llama y `idle()` sí — y ahí una espera de sim se agotaba y AFIRMABA «el
-    // mundo avanzó sus N segundos» sobre un mundo parado (H-1, medido: 7,65 s
-    // de sim en 8 s de pared con el título delante). Que la llamada esté DENTRO
-    // del `tick` es lo que hace que `sim` no pueda subir sin que el mundo corra.
-    const main = readFileSync(join(repoRoot, "nefan-html", "src", "main.ts"), "utf8");
-    assert.match(
-      main,
-      /gameClient\.tick\(relojDeSim\.avanza\(delta\)/,
-      "el mundo ya no avanza el reloj desde el argumento de `tick`: si se alimenta en otro sitio, `sim` " +
-        "vuelve a contar frames en los que el mundo no se simula y la espera de sim afirma lo que no midió",
+  it("EL MUNDO avanza el reloj desde el argumento del `tick`, y se lee del ÁRBOL, no del texto", () => {
+    // ESTE ANCLA ERA UNA REGEX Y QA LA PUSO VERDE CON EL DEFECTO DENTRO. Escribió
+    //     : (relojDeSim.avanza(delta), gameClient.idle())
+    // en la rama del TÍTULO —o sea, el mundo volviendo a contar donde no se
+    // simula, que es H-1 otra vez— y obtuvo `wc` 1395, tsc 0, eslint 0 y esta
+    // batería en 27/27. `npm run verify` entero pasaba con el defecto puesto, y
+    // el único que se enteraba era el guion 131, que abre navegador y no corre en
+    // CI. Una regex no sabe DÓNDE está una llamada; el AST sí, y es el mismo
+    // camino que ya recorrió `qa-lib-tiene-quien-lo-mire` por el mismo motivo.
+    const { avanza, tick } = llamadasDelLoop();
+    assert.equal(avanza.length, 1, `hay ${avanza.length} llamadas a relojDeSim.avanza y tiene que haber UNA`);
+    assert.equal(tick.length, 1, `hay ${tick.length} llamadas a gameClient.tick y tiene que haber UNA`);
+    assert.ok(
+      avanza.every((a) => a.esArgumentoDeTick),
+      "hay una llamada a `relojDeSim.avanza` que NO es argumento de `gameClient.tick`: el mundo vuelve a " +
+        "contar donde no se simula (H-1), y eso es exactamente lo que la forma anterior de este candado " +
+        "—una regex sobre el texto— dejaba pasar en verde",
     );
-    assert.doesNotMatch(
-      main,
-      /const delta = relojDeSim\.avanza\(/,
-      "el reloj vuelve a alimentarse con el delta del LOOP, antes de saber si el mundo se va a simular: " +
-        "es exactamente el defecto H-1",
-    );
+    assert.ok(avanza.every((a) => a.enGameLoop), "la llamada a `relojDeSim.avanza` se ha ido fuera de `gameLoop`");
   });
 
-  it("y esa llamada es la ÚNICA en todo el cliente", () => {
-    // «Una sola definición de avanzó el juego» es el criterio de la PR, y sin
-    // esto es una frase: dos sitios que acumulen dan dos relojes que nadie
-    // obliga a coincidir.
+  it("y el LATIDO tiene su propia ancla: `frameDelLoop` no se puede borrar en silencio", () => {
+    // H-11 de QA: `frameDelLoop` no lo sujetaba nada. Quitarlo de `main.ts` daba
+    // 35/35 verdes, tsc 0 y eslint 0 — y sobre la página real dejaba al guardia
+    // del latido declarando MUERTA una página que simulaba. El guardia ya no
+    // depende de él (mira si se movió ALGO), pero el DIAGNÓSTICO sí: sin `loop`,
+    // un ⊘ no puede distinguir «late y no simula» de «no se mueve nada».
+    const { latido } = llamadasDelLoop();
+    assert.equal(latido.length, 1, `hay ${latido.length} llamadas a relojDeSim.frameDelLoop y tiene que haber UNA`);
+    assert.ok(latido[0].enGameLoop, "`frameDelLoop` se ha ido fuera de `gameLoop`: ya no cuenta el latido de nadie");
+  });
+
+  it("y ningún OTRO módulo del cliente toca el reloj: `main.ts` es el único que lo alimenta", () => {
+    // Aquí un escaneo de texto SÍ vale y conviene decir por qué: lo que se
+    // afirma es una AUSENCIA («no aparece en ningún otro fichero»), y para eso
+    // la presencia del texto es condición necesaria. Lo que un `grep` no sabe
+    // es DÓNDE está lo que sí aparece, y de eso se ocupa el AST de arriba.
     const ficherosDelCliente = (dir: string): string[] =>
       readdirSync(dir).flatMap((n) => {
-        const p = join(dir, n);
-        return statSync(p).isDirectory() ? ficherosDelCliente(p) : p.endsWith(".ts") ? [p] : [];
+        const f = join(dir, n);
+        return statSync(f).isDirectory() ? ficherosDelCliente(f) : f.endsWith(".ts") ? [f] : [];
       });
-    const usos = ficherosDelCliente(join(repoRoot, "nefan-html", "src"))
-      .filter((f) => readFileSync(f, "utf8").includes("relojDeSim.avanza("))
+    const alimentan = ficherosDelCliente(join(repoRoot, "nefan-html", "src"))
+      .filter((f) => /relojDeSim\.(avanza|frameDelLoop)\(/.test(readFileSync(f, "utf8")))
       .map((f) => f.slice(repoRoot.length + 1));
-    assert.deepEqual(usos, ["nefan-html/src/main.ts"]);
+    assert.deepEqual(alimentan, ["nefan-html/src/main.ts"]);
   });
 
   it("el hook lo publica para el banco, y no lo define", () => {

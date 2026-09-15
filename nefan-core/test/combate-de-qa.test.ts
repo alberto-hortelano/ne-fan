@@ -112,6 +112,25 @@ describe("el presupuesto con el que espera `herirHasta` es el que se le pide (#5
     );
   });
 
+  it("**la FIRMA vieja también**: el presupuesto como número posicional no se cuela", async () => {
+    // H-14 de QA: `herirHasta(ctx, id, 0, 120_000)` es como se escribía antes de
+    // que la firma tuviera objeto de opciones, y se colaba ENTERO por la puerta
+    // nueva — de un número `Object.keys` devuelve `[]`, así que la criba de
+    // claves lo daba por bueno y el helper se quedaba con `sim: 60`. Cubrir las
+    // claves muertas y no la firma muerta es cubrir media retirada.
+    for (const forma of [120_000, "120s", null, [120]]) {
+      await assert.rejects(
+        () => herirHasta(ctxDeMentira(), "bandido_1", 0, forma as never) as Promise<unknown>,
+        /las opciones son un OBJETO/,
+        `se coló ${JSON.stringify(forma)}`,
+      );
+    }
+    await assert.rejects(
+      () => acercarse(ctxDeMentira(), "bandido_1", 4 as never) as Promise<unknown>,
+      /las opciones son un OBJETO/,
+    );
+  });
+
   it("y cualquier otra inventada también, diciendo cuáles hay", async () => {
     await assert.rejects(
       () => herirHasta(ctxDeMentira(), "bandido_1", 0, { alcanze: 2 }) as Promise<unknown>,

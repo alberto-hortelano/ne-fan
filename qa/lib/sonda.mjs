@@ -88,16 +88,30 @@ export const CORTAFUEGOS_POR_SIM = 10;
  *  segundos y eso es normal; diez, no. */
 export const RELOJ_ILEGIBLE_MS = 10_000;
 
-/** Cuánto se tolera que el GAME LOOP no dé un solo frame antes de declarar ⊘.
+/** Cuánto se tolera que no se mueva NADA —ni el mundo ni el game loop— antes de
+ *  declarar ⊘. Es el cortafuegos contra el rAF desacoplado, y por eso el de
+ *  pared puede ser proporcional al sim pedido en vez de estar topado (H-4).
  *
- *  Es el cortafuegos de verdad contra el rAF colgado, y por eso el de pared
- *  puede ser proporcional: una página viva emite frames aunque vaya a 3 fps
- *  (medido a factor 40: un frame cada ~330 ms), así que diez segundos sin NI
- *  UNO no es lentitud, es que la página dejó de latir. Mide `loop`, que cuenta
- *  los frames del game loop se simule el mundo o no — justo la distinción que
- *  hace falta aquí: «el mundo no corre» (título delante) y «la página está
- *  muerta» piden respuestas distintas, y colapsarlas es lo que produjo el
- *  defecto que arregló este mismo fichero. */
+ *  ── LO QUE ESTO CAZA NO ES LENTITUD, Y LA PRIMERA VERSIÓN LO DIJO MAL ──────
+ *  Aquí había escrito «una página viva emite frames aunque vaya a 3 fps (un
+ *  frame cada ~330 ms)», y eso es la MEDIA. QA midió el peor frame ENTRE
+ *  LECTURAS y el número es otro: ×1 → **242 ms**; ×40 → **10.300-11.500 ms**;
+ *  ×100, el máximo del dial → **19.112 ms**. O sea que en los dos regímenes de
+ *  carga de esta tanda **un solo frame ya dura más que este guardia entero**, y
+ *  la justificación que había era falsa aunque su conclusión fuese correcta.
+ *
+ *  Por qué el guardia no se dispara aun así, que es lo que faltaba escribir:
+ *  solo puede dispararse en una lectura que **VUELVE** con el reloj sin mover, y
+ *  mientras el hilo principal está bloqueado `page.evaluate` está bloqueado con
+ *  él — no vuelve nadie a quien contarle nada. Cuando el frame larguísimo
+ *  termina, la lectura trae el avance de golpe y el latido se renueva. Así que
+ *  lo que este guardia caza **no es que la página vaya lenta: es que está viva,
+ *  contesta, y aun así no avanza** — el rAF que dejó de reprogramarse, que es el
+ *  estado 3 del guion 131. Con carga, cuanto más lento va el frame, MENOS puede
+ *  disparar esto.
+ *
+ *  Diez segundos son, entonces, «diez segundos contestando sin haber movido ni
+ *  un milisegundo de mundo ni un frame de loop», no «diez segundos lento». */
 export const LOOP_COLGADO_MS = 10_000;
 
 /** El reloj de sim TAL Y COMO LO PUBLICA EL JUEGO, leído dentro de la página.
@@ -279,11 +293,20 @@ export function ctxDeSonda(page) {
         let loop = 0;
         let ilegibleDesde = null;
         let porQueIlegible = null;
-        // EL LATIDO: cuándo fue la última vez que el game loop dio un frame.
-        // Es lo que distingue «el mundo no corre» (título delante, partida sin
-        // empezar) de «la página está muerta», y lo que permite que el
-        // cortafuegos de pared sea proporcional al sim pedido en vez de estar
-        // topado (H-4): el cadáver lo caza esto en diez segundos.
+        // EL LATIDO: cuándo fue la última vez que se movió ALGO — el mundo o el
+        // propio game loop. Es lo que permite que el cortafuegos de pared sea
+        // proporcional al sim pedido en vez de estar topado (H-4): el cadáver lo
+        // caza esto en diez segundos.
+        //
+        // «ALGO» y no «el loop», y la diferencia costó un defecto (H-11 de QA):
+        // mirando solo `loop`, el guardia declaraba MUERTA una página que estaba
+        // viva y simulando —medido sobre el juego real, `{sim:1.7166, frames:96,
+        // loop:0}` con 10,02 s de mundo corridos en 10 s de pared— porque
+        // descansaba en un invariante de `main.ts` (`loop ≥ frames`) que **nada
+        // sujetaba**. Un mundo que avanza no se puede declarar muerto: ésa es la
+        // regla, y se escribe aquí para que no dependa de cómo esté cableado el
+        // cliente. `loop` sigue contándose porque es lo que DIAGNOSTICA el estado
+        // —late pero no simula— y eso no lo dice ninguna otra cifra.
         let ultimoLatido = Date.now();
         const leeElReloj = async (base = false) => {
           if (p.sim === null) return;
@@ -317,23 +340,26 @@ export function ctxDeSonda(page) {
           consumido += av.sim;
           frames += av.frames;
           loop += av.loop;
-          if (previa === null || av.loop > 0) ultimoLatido = Date.now();
+          if (previa === null || av.loop > 0 || av.sim > 0 || av.frames > 0) ultimoLatido = Date.now();
           previa = r;
-          if (Date.now() - ultimoLatido >= LOOP_COLGADO_MS) throw loopColgado();
+          if (Date.now() - ultimoLatido >= LOOP_COLGADO_MS) throw nadaSeMueve();
         };
-        /** El ⊘ del rAF colgado: la página contesta pero su game loop no da un
-         *  frame. No es «el mundo no avanza» —eso es el título delante, y se
-         *  dice con las otras cifras—: es que no hay loop. */
-        const loopColgado = () => {
+        /** El ⊘ del rAF DESACOPLADO: la página contesta y aun así no se mueve
+         *  nada, ni el mundo ni el loop. No es lentitud —con el hilo bloqueado
+         *  la lectura tampoco vuelve, así que esto no puede dispararse— y no es
+         *  «el mundo no corre», que es el título delante y sale por el otro ⊘
+         *  con sus dos cifras. */
+        const nadaSeMueve = () => {
           const paradoMs = Date.now() - ultimoLatido;
           esperas.expira(id);
-          esperas.resuelve(id, `⊘ el game loop lleva ${Math.round(paradoMs)} ms sin dar un frame`);
+          esperas.resuelve(id, `⊘ no se mueve nada desde hace ${Math.round(paradoMs)} ms`);
           return new RelojDeSimNoAvanzo(
             `no se pudo medir «${desc}»: sim pedido ${p.sim.toFixed(2)} s vs. sim avanzado ` +
-              `${consumido.toFixed(2)} s, y el GAME LOOP lleva ${Math.round(paradoMs)} ms sin dar un solo ` +
-              `frame (mínimo ${LOOP_COLGADO_MS} ms). La página contesta, pero no late: no es que el mundo vaya ` +
-              `lento, es que no hay loop que lo mueva. Se declara ⊘ en vez de esperar al cortafuegos entero ` +
-              `para afirmar algo que nadie ha medido.`,
+              `${consumido.toFixed(2)} s, y en ${Math.round(paradoMs)} ms no se ha movido NADA (mínimo ` +
+              `${LOOP_COLGADO_MS} ms): ni el mundo (${frames} frames) ni el propio game loop (${loop}). La ` +
+              `página CONTESTA —si estuviera bloqueada, esta lectura tampoco habría vuelto—, así que no va ` +
+              `lenta: está desacoplada, el rAF dejó de reprogramarse. Se declara ⊘ en vez de esperar al ` +
+              `cortafuegos entero para afirmar algo que nadie ha medido.`,
             { esperaId: id, desc, sitio: p.rotulo, pedido: p.sim, avanzado: consumido, frames, paredMs: Date.now() - t0 },
           );
         };
