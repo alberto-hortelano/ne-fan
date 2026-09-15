@@ -367,10 +367,12 @@ describe("plan de mutación · el reparto es alcanzable", () => {
   });
 
   it("ningún test de una batería es peso muerto", () => {
-    // Con coverageAnalysis "off" la batería entera se ejecuta UNA VEZ POR
-    // MUTANTE. Un test que no llega a ningún fichero mutado no puede matar
-    // nada y multiplica el coste: así se iban 8 ficheros de test por cada uno
-    // de los 1684 mutantes de la corrida única.
+    // Con el runner `command` la batería entera se ejecutaba UNA VEZ POR
+    // MUTANTE: así se iban 8 ficheros de test por cada uno de los 1684 mutantes
+    // de la corrida única. Con `tap-runner` ese peso se paga una vez por
+    // corrida, en el dry run — pero un test que no llega a ningún fichero
+    // mutado sigue siendo una promesa falsa sobre quién vigila ese código, y
+    // por eso el candado no se afloja con el runner nuevo.
     for (const m of plan.modulos) {
       const mutados = new Set(ficherosMutados(m));
       for (const t of m.tests) {
@@ -598,7 +600,7 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
     );
   });
 
-  it("coverageAnalysis no puede prometer un filtrado que el runner tira a la basura", () => {
+  it("el `coverageAnalysis` escrito DESCRIBE lo que el runner hace, y no compra el reloj", () => {
     // MEDIDO EL 2026-09-04, y el resultado es que aquí no hay palanca: con
     // `testRunner: "command"` Stryker ACEPTA `perTest`, lo imprime en el log
     // ("command test runner with \"perTest\" coverage analysis") y luego lo
@@ -621,14 +623,26 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
     // tocarlo. Quien lo ponga leerá un cambio donde no hay ninguno, y la
     // siguiente medida se atribuirá a una palanca que nunca se accionó.
     //
-    // #443 accionó la palanca de verdad: con `testRunner: "tap"` el valor que
-    // NO hace nada es el otro. `@stryker-mutator/tap-runner` reporta
-    // `mutantCoverage.perTest` con granularidad de fichero de test y honra el
-    // `testFilter` (`const testFiles = testFilter ?? testFilesToRun`), así que
-    // con `perTest` cada mutante corre solo los ficheros que lo cubren y con
-    // "off" se vuelve a pagar la batería entera. Medido el 2026-09-14,
-    // A/B intercalado a concurrencia 2: blueprint-plan 24,7 s → 10,9 s
-    // (−55,9 %) y npc-director con los mismos supervivientes.
+    // Y CON `tap` EL AJUSTE TAMBIÉN ES INERTE. Medido el 2026-09-15 (QA de
+    // #597, H-1), y corrige lo que este docblock afirmaba: `off` y `perTest`
+    // dan el MISMO resultado, el MISMO reloj y el MISMO filtrado —blueprint-plan
+    // `Ran 0.97 tests per mutant`, 10 s, {Killed 37, Timeout 1} con los dos;
+    // contrato-sprite-forge {Killed 56, Survived 6, NoCoverage 1} con los dos—
+    // porque `tap-runner.dryRun()` nunca lee `options.coverageAnalysis` y
+    // devuelve `mutantCoverage` siempre, y `TestCoverage.hasCoverage` es
+    // `!!staticCoverage`: depende de lo que REPORTÓ el runner, no del ajuste.
+    //
+    // CONSECUENCIA QUE NO SE PUEDE ESCRIBIR MAL: el ahorro de #443 —blueprint-plan
+    // 24,7 s → 10,9 s (−55,9 %), la corrida completa −63,4 % de CPU— es del
+    // RUNNER, no del ajuste. Quien mida «cuánto aporta perTest» medirá cero, y
+    // si esto dijera otra cosa creería haber roto algo.
+    //
+    // ENTONCES, ¿QUÉ SUJETA ESTE CANDADO? Que el valor escrito DESCRIBA lo que
+    // la corrida hace. No es decoración: queda en `config.coverageAnalysis` de
+    // cada informe, y de ahí lo leen `capacidadDeLaBase` —junto al runner, que
+    // por eso van juntos— y cualquiera que abra el informe dentro de seis
+    // meses. Un `"off"` con `tap` describiría una corrida sin filtrado que sí
+    // filtró. Lo que este candado NO hace es proteger el reloj.
     //
     // EL CANDADO NO PUEDE AUTO-DESARMARSE. Antes empezaba por
     // `if (base.testRunner !== "command") return`, o sea que cambiar de runner
@@ -640,8 +654,9 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
       tap: {
         valor: "perTest",
         porque:
-          `tap-runner SÍ filtra: sin "perTest" cada mutante vuelve a ejecutar la batería entera y ` +
-          `se tira el único motivo por el que se cambió de runner (#443)`,
+          `tap-runner filtra por su cuenta y el ajuste le es INERTE (medido el 2026-09-15: con "off" da el ` +
+          `mismo resultado, el mismo reloj y el mismo filtrado), así que "perTest" es el valor que DESCRIBE ` +
+          `lo que hace — y es lo que queda escrito en cada informe para capacidadDeLaBase y para quien lo lea`,
       },
       command: {
         valor: "off",
@@ -724,15 +739,22 @@ describe("plan de mutación · el instrumento no puede quemar la máquina ni med
    *  Lo que cuesta si va solo, y es lo que este candado sujeta: `--test` sin
    *  `--test-isolation=none` abre un proceso HIJO por fichero, y ese hijo no
    *  hereda ni el pid que el hook usa para escribir la cobertura ni el tope de
-   *  heap del argv. Las dos cosas se apagan EN SILENCIO — la corrida sigue
-   *  saliendo verde, midiendo menos y sin cortafuegos de memoria.
+   *  heap del argv. Las dos se apagan, pero NO igual de calladas, y la
+   *  diferencia importa (QA de #597, H-3):
+   *   · la cobertura se apaga A GRITOS — el padre lee cero, los 63 mutantes de
+   *     `contrato-sprite-forge` salen `NoCoverage` y el módulo cae a **0,00 %
+   *     contra un suelo de 87**, exit 1. Y el rojo es universal, no una
+   *     casualidad de este módulo: los 58 tienen `break` numérico ≥ 31;
+   *   · el tope de heap se apaga EN SILENCIO, y ésa es la mitad que este
+   *     candado existe para cazar: la flag sigue escrita y no aplica, así que
+   *     nada se pone rojo mientras el cortafuegos de memoria no está.
    *
    *  Medido el 2026-09-15 con `--max-old-space-size=16` sobre un test que pide
    *  ~3 GB: directo exit 134 «Reached heap limit» · con `--test` a secas exit 0,
    *  el test SOBREVIVE · con `--test --test-isolation=none` exit 134 otra vez.
    *  Y con el runner real, los 26 vuelven a `Killed` (los 5 de
    *  `contrato-sprite-forge` por `npm run mutacion -- local`, los otros 21 por
-   *  huella con `mutate` acotado a su rango). */
+   *  huella con `mutate` acotado a su rango, y los 26 reproducidos por QA). */
   it("`--test` está, y solo es admisible acompañado de `--test-isolation=none`", () => {
     // EL CASO QUE ESTE CANDADO TIENE QUE RECHAZAR: `--test` a secas.
     assert.equal(

@@ -67,6 +67,8 @@ const MUTATE = join(CORE, "scripts", "mutate.ts");
 /** El verbo que existe para NO escribir. Su candado es al revés que los de
  *  arriba: no se comprueba que haga algo, sino que no deja rastro. */
 const COMPARAR = join(CORE, "scripts", "mutacion-comparar.ts");
+/** Donde vive la decisión de si una medida PUDO mirar: `capacidadDeLaBase`. */
+const HUELLA_TS = join(CORE, "scripts", "mutacion-huella.ts");
 const YML = join(raiz, ".github", "workflows", "mutation.yml");
 const HUELLA = join(CORE, "data", "contract", "mutacion-huella.json");
 const PLAN = join(CORE, "data", "contract", "mutation-targets.json");
@@ -77,7 +79,8 @@ const APARTADO = join(CORE, "reports", "mutation.qa-cableado");
 const COLADO = join(CORE, "reports", "colado");
 const CORRIDA = join(INFORMES, "corrida.json");
 /** La corrida BASE de ensayo del invariante de #599: el mismo material medido,
- *  y lo único que cambia entre las dos lecturas es su `coverageAnalysis`. */
+ *  y lo único que cambia entre las lecturas es el INSTRUMENTO que declara
+ *  (runner + ajuste), porque la capacidad la decide el par y no el ajuste. */
 const BASE_ENSAYO = join(CORE, "reports", "base-ensayo");
 
 const git = (args) => execFileSync("git", args, { cwd: raiz, encoding: "utf8" }).trim();
@@ -125,18 +128,20 @@ function siembraInforme(marca = "x") {
  *  estuviera: es lo que hace `npm run mutacion -- local <id>` encima de una
  *  descarga, y es el caso exacto de #420.
  *
- *  Lleva `config.coverageAnalysis` porque un informe de Stryker lo lleva
- *  siempre (medido el 2026-09-15: 171 informes en disco, cero sin él) y porque
- *  desde #599 `comparar` se NIEGA a leer uno que no lo traiga: sin ese dato no
- *  puede decir qué está mirando, que es justo lo que había que arreglar. */
-function soloInforme(marca = "x", estado = "Survived", cobertura = "perTest") {
-  writeFileSync(join(INFORMES, `${E.id}.json`), informeDe(marca, estado, cobertura));
+ *  Lleva `config.coverageAnalysis` **y `config.testRunner`** porque un informe
+ *  de Stryker lleva los dos siempre (medido el 2026-09-15: 171 informes en
+ *  disco, cero sin ellos) y porque `comparar` se NIEGA a leer uno al que le
+ *  falte cualquiera de los dos: la capacidad de emitir `NoCoverage` depende del
+ *  PAR —`command`+`off` no podía, `tap`+`off` sí—, así que con medio dato no se
+ *  puede decir qué se está mirando (#599, y el par por el H-1 de QA en #597). */
+function soloInforme(marca = "x", estado = "Survived", cobertura = "perTest", runner = "tap") {
+  writeFileSync(join(INFORMES, `${E.id}.json`), informeDe(marca, estado, cobertura, E.fichero, runner));
 }
 
 /** El mismo informe mínimo, como texto, para poder sembrarlo también en un
  *  directorio de base. `fichero` se puede cambiar para sembrar una base que
  *  EXISTE y no contiene el fichero que se compara (probe de H-3). */
-function informeDe(marca = "x", estado = "Survived", cobertura = "perTest", fichero = E.fichero) {
+function informeDe(marca = "x", estado = "Survived", cobertura = "perTest", fichero = E.fichero, runner = "tap") {
   return JSON.stringify({
     files: {
       [fichero]: {
@@ -151,7 +156,7 @@ function informeDe(marca = "x", estado = "Survived", cobertura = "perTest", fich
         ],
       },
     },
-    config: { coverageAnalysis: cobertura },
+    config: { coverageAnalysis: cobertura, testRunner: runner },
   });
 }
 
@@ -390,16 +395,23 @@ const INVARIANTES = [
     // la misma base con ese mutante como `Survived`— y lo único que cambia
     // entre las dos es el `coverageAnalysis` que declara el informe base.
     //
-    // Con `off` la base NO PODÍA emitir `NoCoverage` jamás, así que su cero no
-    // es una medida: el mutante sale como CENSO y la séptima condición no se
-    // pronuncia. Con `perTest` sí podía, así que su cero SÍ es una medida y la
-    // condición tumba la adopción, igual que antes de #599.
+    // Con `command` + `off` la base NO PODÍA emitir `NoCoverage` jamás, así que
+    // su cero no es una medida: el mutante sale como CENSO y la séptima
+    // condición no se pronuncia. Con `perTest` sí podía, así que su cero SÍ es
+    // una medida y la condición tumba la adopción, igual que antes de #599.
     //
-    // Si las dos lecturas salen iguales, el verbo está contestando sin mirar —
-    // que es el defecto que #599 cerró (la condición solo podía salir en una
+    // Y LA TERCERA LECTURA ES LA QUE PRUEBA QUE MIRA EL PAR (QA de #597, H-1):
+    // el MISMO `off`, cambiando solo el runner a `tap`, tiene que salir CAPAZ —
+    // `tap-runner.dryRun()` no lee `options.coverageAnalysis` y devuelve
+    // `mutantCoverage` siempre, medido el 2026-09-15. Si la capacidad se
+    // decidiera por el ajuste, esa base se contaría como incapaz y la séptima
+    // se abstendría sobre un informe que SÍ midió.
+    //
+    // Si las lecturas salen iguales, el verbo está contestando sin mirar — que
+    // es el defecto que #599 cerró (la condición solo podía salir en una
     // dirección) o el defecto opuesto (abstenerse siempre), y los dos se ven
     // aquí como «el observable no cambia».
-    nombre: "comparar · la séptima condición sabe SI PUDO MIRAR: mismo material, dos lecturas (#599)",
+    nombre: "comparar · la séptima condición sabe SI PUDO MIRAR, y lo decide el PAR (#599, #597 H-1)",
     mira: () => {
       // El mutante va como `NoCoverage` en la corrida de AHORA y como
       // `Survived` en la base: es el movimiento exacto de #443 en miniatura.
@@ -408,28 +420,64 @@ const INVARIANTES = [
       manifiesta({ run: "999915" });
       rmSync(BASE_ENSAYO, { recursive: true, force: true });
       mkdirSync(BASE_ENSAYO, { recursive: true });
-      const lee = (cobertura) => {
-        writeFileSync(join(BASE_ENSAYO, `${E.id}.json`), informeDe("x", "Survived", cobertura));
+      const lee = (runner, cobertura) => {
+        writeFileSync(join(BASE_ENSAYO, `${E.id}.json`), informeDe("x", "Survived", cobertura, E.fichero, runner));
         const s = mutacion(["comparar", "--timeouts", "reports/base-ensayo"]).salida;
         const n = /sin ejercer\s+: (\d+) mutante/.exec(s)?.[1] ?? "?";
         const c = /· censo\s+: (\d+) mutante/.exec(s)?.[1] ?? "?";
         // El motivo 7a, no el título del bloque (que lleva las mismas palabras
         // y estaría siempre): lo que se busca es la frase del `porque`.
         const siete = /mutante\(s\) que ya NO EJERCE NINGÚN TEST/.test(s);
-        return `${cobertura}[sinEjercer:${n} censo:${c} 7a:${siete}]`;
+        return `${runner}+${cobertura}[sinEjercer:${n} censo:${c} 7a:${siete}]`;
       };
-      return `${lee("off")} ${lee("perTest")}`;
+      return `${lee("command", "off")} ${lee("tap", "off")} ${lee("tap", "perTest")}`;
     },
-    bien: (s) => s === "off[sinEjercer:0 censo:1 7a:false] perTest[sinEjercer:1 censo:0 7a:true]",
+    bien: (s) =>
+      s ===
+      "command+off[sinEjercer:0 censo:1 7a:false] tap+off[sinEjercer:1 censo:0 7a:true] " +
+        "tap+perTest[sinEjercer:1 censo:0 7a:true]",
     porque:
-      "con la base en `coverageAnalysis: \"off\"` Stryker NO EMITE `NoCoverage` jamás, así que «antes se " +
-      "ejercían: 1122» no era una medida sino lo único que la base podía decir: la séptima condición se " +
-      "disparaba POR CONSTRUCCIÓN contra cualquier runner que activara la cobertura — que son exactamente " +
-      "los runners por los que uno cambiaría",
+      "con la base en `command` + `coverageAnalysis: \"off\"` Stryker NO EMITE `NoCoverage` jamás, así que " +
+      "«antes se ejercían: 1122» no era una medida sino lo único que la base podía decir: la séptima " +
+      "condición se disparaba POR CONSTRUCCIÓN contra cualquier runner que activara la cobertura — que son " +
+      "exactamente los runners por los que uno cambiaría. Y el mismo `off` con `tap` SÍ es una medida: " +
+      "decidirlo por el ajuste sería abstenerse sobre un informe que midió",
     rompe: [
       COMPARAR,
       `        if (!cap.sabe) capacidad = cap;\n        else if (base !== undefined) capacidad = { sabe: true, huellas: base.sinEjercer };`,
       `        void cap;\n        if (base !== undefined) capacidad = { sabe: true, huellas: base.sinEjercer };`,
+    ],
+  },
+
+  {
+    // QA de #597, H-1, por su propia puerta: la capacidad decidida con MEDIO
+    // dato. Este probe rompe `capacidadDeLaBase` para que mire solo el ajuste
+    // —que es como estaba escrito hasta hoy— y exige que el observable cambie.
+    // Sin esto, «se mira el par» sería una frase: el probe de arriba también
+    // pasaría con una implementación que mirase solo el runner.
+    nombre: "comparar · la capacidad NO se puede decidir con medio dato (#597 H-1)",
+    mira: () => {
+      siembraInforme();
+      soloInforme("x", "NoCoverage", "perTest");
+      manifiesta({ run: "999917" });
+      rmSync(BASE_ENSAYO, { recursive: true, force: true });
+      mkdirSync(BASE_ENSAYO, { recursive: true });
+      // Una base medida con `tap` + `off`: el runner reporta cobertura aunque
+      // el ajuste esté apagado, así que su `Survived` SÍ es una medida.
+      writeFileSync(join(BASE_ENSAYO, `${E.id}.json`), informeDe("x", "Survived", "off", E.fichero, "tap"));
+      const s = mutacion(["comparar", "--timeouts", "reports/base-ensayo"]).salida;
+      const censo = /· censo\s+: (\d+) mutante/.exec(s)?.[1] ?? "?";
+      const mira = /qué se mira: base: ([^·]+)·/.exec(s)?.[1]?.trim() ?? "?";
+      return `${mira} censo:${censo}`;
+    },
+    bien: (s) => s === "tap+off censo:0",
+    porque:
+      "una base de `tap` + `off` SÍ emite `NoCoverage` (medido el 2026-09-15), así que contarla como " +
+      "incapaz es un «no se pudo mirar» sobre algo que se miró — el defecto de #599 un escalón más arriba",
+    rompe: [
+      HUELLA_TS,
+      `  return instrumento.cobertura === "off" && instrumento.runner === "command"`,
+      `  return instrumento.cobertura === "off"`,
     ],
   },
 
@@ -450,7 +498,7 @@ const INVARIANTES = [
       // La base EXISTE, midió con `off`, y NO contiene el fichero que se compara.
       writeFileSync(
         join(BASE_ENSAYO, `${E.id}.json`),
-        informeDe("x", "Survived", "off", "src/UN-FICHERO-QUE-NO-SE-COMPARA.ts"),
+        informeDe("x", "Survived", "off", "src/UN-FICHERO-QUE-NO-SE-COMPARA.ts", "command"),
       );
       const s = mutacion(["comparar", "--timeouts", "reports/base-ensayo"]).salida;
       const c = /· censo\s+: (\d+) mutante/.exec(s)?.[1] ?? "?";
@@ -610,7 +658,7 @@ if (existsSync(APARTADO)) {
 // instancias a la vez se fotografían la mutación de la otra y la «restauran»
 // como si fuera el original. Pasó el 2026-09-10.
 turnoDeCandados();
-const fuentes = new Map([MUT, MUTATE, COMPARAR, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
+const fuentes = new Map([MUT, MUTATE, COMPARAR, HUELLA_TS, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
 const restauraFuentes = () => { for (const [f, t] of fuentes) writeFileSync(f, t); };
 const habiaInformes = existsSync(INFORMES);
 if (habiaInformes) renameSync(INFORMES, APARTADO);
