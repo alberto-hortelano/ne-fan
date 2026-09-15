@@ -82,6 +82,7 @@ import {
   fallosDeEsperasPendientes,
   huboSondeo,
   quejaDelMotivo,
+  relojDeSimNoAvanzoEn,
 } from "./lib/esperas.mjs";
 // La carga sintética (#545): frenar el hilo principal de ESTA página por CDP y
 // medir si el mundo avanzó menos de lo que marcó el reloj. Vive en `qa/lib`
@@ -880,12 +881,16 @@ function makeCtx(page, name) {
     excepcionesEsperadas: [],
 
     /** Mantiene una tecla hasta que se cumple `untilFn`, y la suelta SIEMPRE.
-     *  `maxMs` es un cortafuegos, no la condición de parada: esperar por
-     *  tiempo de pared no es determinista (el movimiento va por delta de rAF). */
-    async holdUntil(key, desc, untilFn, maxMs = 15_000, arg = undefined) {
+     *  El presupuesto es un cortafuegos, no la condición de parada: esperar por
+     *  tiempo de pared no es determinista (el movimiento va por delta de rAF).
+     *
+     *  Y desde #545 admite el reloj bueno: `{sim: N}` presupuesta SEGUNDOS DE
+     *  MUNDO, que es la escala en la que el jugador anda. Con un número sigue
+     *  siendo pared, igual que siempre. */
+    async holdUntil(key, desc, untilFn, presupuesto = 15_000, arg = undefined) {
       await ctx.nefan("inputDriver.press", key);
       try {
-        return await ctx.waitFor(desc, untilFn, maxMs, arg);
+        return await ctx.waitFor(desc, untilFn, presupuesto, arg);
       } finally {
         await ctx.nefan("inputDriver.releaseAll");
       }
@@ -976,14 +981,20 @@ function makeCtx(page, name) {
      *  Devuelve `{ ocurrio, ultimo }`: `ultimo` es el último valor sondeado, o
      *  el valor de la espera si se cumplió. */
     async expectEspera(desc, debeOcurrir, probeFn, opciones = {}) {
-      const { ms = 30_000, arg = undefined, tecla = undefined, aserto = undefined } = opciones;
+      const { ms = 30_000, arg = undefined, tecla = undefined, aserto = undefined, sim = null } = opciones;
+      // `sim` presupuesta SEGUNDOS DE MUNDO (#545) y es el que manda cuando
+      // está: `ms`, si además se escribe, pasa a ser el cortafuegos de pared —
+      // no el presupuesto. Sin `sim`, todo es exactamente como antes.
+      const presupuesto = sim === null ? ms : { sim, ms: opciones.ms };
+      /** Con qué reloj se agotó esto, para el detalle del ✔/✘. */
+      const gastado = sim === null ? `${ms} ms` : `${sim} s de sim`;
       let ocurrio = false;
       let ultimo;
       let sondeo = { muestras: 0, rotos: 0 };
       try {
         ultimo = tecla
-          ? await ctx.holdUntil(tecla, desc, probeFn, ms, arg)
-          : await ctx.waitFor(desc, probeFn, ms, arg);
+          ? await ctx.holdUntil(tecla, desc, probeFn, presupuesto, arg)
+          : await ctx.waitFor(desc, probeFn, presupuesto, arg);
         ocurrio = true;
       } catch (err) {
         const exp = esperaExpiradaEn(err);
@@ -1000,7 +1011,7 @@ function makeCtx(page, name) {
       // expiración hay que haberla sondeado bien al menos una vez.
       const frase = aserto ?? `${debeOcurrir ? "ocurre" : "NO ocurre"}: ${desc}`;
       const detalle =
-        `${ocurrio ? "ocurrió" : `no ocurrió en ${ms} ms`} · ` +
+        `${ocurrio ? "ocurrió" : `no ocurrió en ${gastado}`} · ` +
         `${sondeo.muestras} sondeo(s), ${sondeo.rotos} con la sonda rota · ` +
         `último valor ${JSON.stringify(ultimo)}`;
       if (!ocurrio && !huboSondeo(sondeo)) {
@@ -1216,6 +1227,24 @@ async function main() {
             `declaró sinMedir(«${err.motivo}») con ${ctx.fallos.length} fallo(s) ya ` +
               `empujados: un ⊘ es una declaración, no una amnistía — el guion no puede ` +
               `reconvertirse y se queda en rojo`,
+          );
+          console.log(`    ✘ ${ctx.fallos[ctx.fallos.length - 1]}`);
+        }
+      } else if (relojDeSimNoAvanzoEn(err)) {
+        // EL RELOJ DE SIMULACIÓN NO LLEGÓ AL PRESUPUESTO (#545). No es un rojo:
+        // el cortafuegos de pared saltó antes de que el mundo corriera los
+        // segundos que se le pidieron, así que el guion no ha mirado lo que
+        // venía a mirar. Mismo canal ⊘ que `sinMedir`, y con la MISMA regla —
+        // un ⊘ es una declaración, no una amnistía—: si el guion ya arrastra
+        // fallos, se queda en rojo. Y como todo ⊘, degrada la corrida a exit 2,
+        // que es PEOR que el rojo: nadie va a usar esto para tapar nada.
+        const r = relojDeSimNoAvanzoEn(err);
+        if (ctx.fallos.length === 0) {
+          sinMedir = `el reloj de simulación no llegó al presupuesto: ${r.message}`;
+        } else {
+          ctx.fallos.push(
+            `el reloj de simulación no llegó al presupuesto con ${ctx.fallos.length} fallo(s) ya ` +
+              `empujados: se queda en rojo — ${r.message}`,
           );
           console.log(`    ✘ ${ctx.fallos[ctx.fallos.length - 1]}`);
         }

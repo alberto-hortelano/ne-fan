@@ -18,10 +18,6 @@
       "porque": "Los dos gestos de pelea que repiten los guiones 41-50 —acercarse andando y pegar hasta bajar la vida— conducidos por teclado sobre la página real, con la espera por estado del sim. El umbral que fija es el que afirman los guiones; la fórmula de combate la prueba `test/combat-resolver.test.ts`, y el módulo `combat-resolver` está en mutación."
     },
     {
-      "fichero": "qa/lib/sonda.mjs",
-      "porque": "`nefan` y `waitFor`, la sonda mínima sobre una página abierta con Playwright: evalúa DENTRO del navegador y sondea por estado. Sin página no hay nada que ejecutar; la parte pura que tenía (qué cuenta como espera observada) vive en `esperas.mjs`, que sí está importado por `test/esperas-de-qa.test.ts`."
-    },
-    {
       "fichero": "qa/lib/fixtures.mjs",
       "porque": "Carga una fixture del selector «Room» en la página real y SABE que se cargó (#308), usando la compuerta que el cliente expone en `window.__nefan`. Es conducir el DOM del cliente; el contenido de las fixtures lo valida `test/scene-fixtures.test.ts` y su normalización `test/scene-normalize.test.ts`."
     },

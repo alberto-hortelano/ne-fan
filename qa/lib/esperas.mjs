@@ -111,6 +111,45 @@ export class EsperaExpirada extends Error {
   }
 }
 
+/** Lo que lanza `waitFor` cuando el presupuesto era de SIMULACIÓN y el que
+ *  saltó fue el cortafuegos de PARED (#545).
+ *
+ *  NO es una expiración, y por eso no hereda de `EsperaExpirada`: una
+ *  expiración afirma un hecho del juego («no ocurrió»), y aquí no hay hecho
+ *  ninguno — el mundo no llegó a avanzar los segundos que se le pidieron, así
+ *  que nadie ha mirado lo que el guion venía a mirar. Se distinguen porque las
+ *  bocas que consumen expiraciones (`ctx.absorbe`, `ctx.expectEspera`,
+ *  `herirHasta`) las consumen POR TIPO: esto pasa de largo por todas ellas y
+ *  llega al runner, que lo clasifica ⊘ (exit 2, que degrada MÁS que el rojo).
+ *
+ *  Esa asimetría es el punto entero: un guion que no pudo medir no puede
+ *  terminar diciendo que midió, ni en verde ni en rojo. */
+export class RelojDeSimNoAvanzo extends Error {
+  constructor(mensaje, { esperaId, desc, sitio, pedido, avanzado, frames, paredMs }) {
+    super(mensaje);
+    this.name = "RelojDeSimNoAvanzo";
+    this.esperaId = esperaId;
+    this.desc = desc;
+    this.sitio = sitio;
+    this.pedido = pedido;
+    this.avanzado = avanzado;
+    this.frames = frames;
+    this.paredMs = paredMs;
+  }
+}
+
+/** ¿Hay un `RelojDeSimNoAvanzo` en este error o en su cadena de causas?
+ *
+ *  Por la cadena, como `esperaExpiradaEn`: un helper que lo envuelva en un
+ *  error propio no puede convertir un ⊘ en un rojo sin querer. */
+export function relojDeSimNoAvanzoEn(err) {
+  for (let e = err, salto = 0; e && salto < 10; e = e.cause, salto++) {
+    if (e instanceof RelojDeSimNoAvanzo) return e;
+    if (e && e.name === "RelojDeSimNoAvanzo" && typeof e.pedido === "number") return e;
+  }
+  return null;
+}
+
 /** ¿La sonda llegó a evaluarse alguna vez SIN error?
  *
  *  `waitFor` enmascara los errores de la página en `{__err}` y sigue sondeando
@@ -197,10 +236,16 @@ export function libroDeEsperas() {
 
   const libro = {
     /** Una espera ARRANCA. Se apunta como abierta para que el runner sepa, al
-     *  cerrar el guion, que todavía hay algo en vuelo. */
-    abre(desc, ms, sitio) {
+     *  cerrar el guion, que todavía hay algo en vuelo.
+     *
+     *  `rotulo` es CON QUÉ RELOJ se midió, y existe porque desde #545 no todas
+     *  se miden con el mismo: una espera con presupuesto de simulación dice
+     *  «4,00 s de sim», y escribir sus milisegundos de pared sería contar el
+     *  reloj que justamente no decide. Sin rótulo se imprime `${ms} ms`, que es
+     *  lo que se imprimía siempre. */
+    abre(desc, ms, sitio, rotulo = null) {
       const id = ++ultimo;
-      abiertas.set(id, { id, desc, ms, sitio, posada: null });
+      abiertas.set(id, { id, desc, ms, sitio, rotulo, posada: null });
       return id;
     },
 
@@ -223,7 +268,7 @@ export function libroDeEsperas() {
       const e = abiertas.get(id);
       if (!e) return null;
       abiertas.delete(id);
-      anotaciones.set(id, { id, desc: e.desc, ms: e.ms, sitio: e.sitio, resolucion: null });
+      anotaciones.set(id, { id, desc: e.desc, ms: e.ms, sitio: e.sitio, rotulo: e.rotulo, resolucion: null });
       return id;
     },
 
@@ -262,10 +307,16 @@ export function libroDeEsperas() {
  *  observó. El texto nombra el sitio y las TRES bocas, porque quien lo lee
  *  está viendo este candado por primera vez y tiene que poder arreglarlo sin
  *  buscar documentación. */
+/** Con qué RELOJ se midió una espera, para escribirlo donde se lee. Sin rótulo,
+ *  milisegundos de pared: exactamente lo que se imprimía antes de #545. */
+function relojDe(a) {
+  return a.rotulo ?? `${a.ms} ms`;
+}
+
 export function fallosDeEsperasPendientes(libro) {
   return libro.pendientes().map(
     (a) =>
-      `la espera «${a.desc}» expiró a los ${a.ms} ms en ${a.sitio} y nadie la observó: ` +
+      `la espera «${a.desc}» expiró a los ${relojDe(a)} en ${a.sitio} y nadie la observó: ` +
       `un bloque que no se midió no puede acabar en verde. Obsérvala — ` +
       `\`ctx.expectEspera(desc, debeOcurrir, …)\` si expirar es un dato que afirmar, ` +
       `\`ctx.absorbe(motivo, …)\` si la medida vive en otro sitio (dilo en el motivo), ` +
@@ -283,7 +334,7 @@ export function fallosDeEsperasPendientes(libro) {
 export function fallosDeEsperasEnVuelo(libro) {
   return libro.enVuelo().map(
     (e) =>
-      `la espera «${e.desc}» (${e.ms} ms, ${e.sitio}) SEGUÍA EN VUELO cuando el guion terminó y ` +
+      `la espera «${e.desc}» (${relojDe(e)}, ${e.sitio}) SEGUÍA EN VUELO cuando el guion terminó y ` +
       `no se posó en el margen que le dio el runner: nadie la esperó, así que no ha decidido ` +
       `nada — un bloque que no se midió no puede acabar en verde. Ponle el \`await\` que le ` +
       `falta (y luego obsérvala como cualquier otra), o no la arranques.`,

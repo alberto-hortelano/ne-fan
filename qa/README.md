@@ -106,8 +106,11 @@ se sabía pagando la corrida cara.
 La otra mitad de #357 no corre en el job sino en `npm test`: todo módulo de `qa/lib` lo importa
 algún test de `nefan-core/test/` (dirección **test → banco**; `qa/` nunca entra en producción,
 regla `el-banco-no-entra-en-produccion`) o está eximido con motivo en
-`nefan-core/data/contract/banco-medido.json` (`test/qa-lib-tiene-quien-lo-mire.test.ts`; los 7
+`nefan-core/data/contract/banco-medido.json` (`test/qa-lib-tiene-quien-lo-mire.test.ts`; los 6
 exentos conducen navegador, disco o sockets). `qa/lib` NO entra en mutación ni en el CRAP.
+`sonda.mjs` salió de esa lista con #545 (`test/sonda-de-qa.test.ts`): la decisión de cuándo una
+espera se ha agotado no necesita un navegador, necesita una página que conteste — y es donde vive
+la medida del reloj de simulación.
 
 Y por el mismo camino —test → banco, sin navegador, en CI— corre desde la tanda A
 `test/el-banco-declara-el-modo-de-gasto.test.ts`: **todo guion que ARRANQUE una partida**
@@ -126,10 +129,10 @@ Un fichero en `guiones/` que exporta `async (ctx) => {}`. El contexto ofrece:
 | | |
 |---|---|
 | `ctx.nefan(path, ...args)` | llama o lee `window.__nefan.<path>` |
-| `ctx.waitFor(desc, fn, ms, arg)` | espera a que `fn` (en la página) devuelva algo truthy |
-| `ctx.holdUntil(key, desc, fn, ms, arg)` | mantiene una tecla hasta que se cumple `fn`, y la suelta siempre |
+| `ctx.waitFor(desc, fn, ms \| {sim}, arg)` | espera a que `fn` (en la página) devuelva algo truthy. `ms` es reloj de PARED; `{sim: N}` son segundos de SIMULACIÓN, y entonces manda el sim (regla 1) |
+| `ctx.holdUntil(key, desc, fn, ms \| {sim}, arg)` | mantiene una tecla hasta que se cumple `fn`, y la suelta siempre |
 | `ctx.expect(desc, cond, detalle)` | apunta un criterio; los fallos deciden el veredicto |
-| `ctx.expectEspera(desc, debeOcurrir, fn, {ms, arg, tecla, aserto})` | espera y AFIRMA si ocurrió o no: un umbral, escrito una vez. `debeOcurrir:false` es «el timeout ES el éxito» |
+| `ctx.expectEspera(desc, debeOcurrir, fn, {ms, sim, arg, tecla, aserto})` | espera y AFIRMA si ocurrió o no: un umbral, escrito una vez. `debeOcurrir:false` es «el timeout ES el éxito». Con `sim`, el `ms` pasa a ser el cortafuegos de pared y no el presupuesto |
 | `ctx.absorbe(motivo, fn)` | consume la expiración de una espera DICIENDO dónde vive la medida de verdad (cortafuegos de un bucle que remide, esperas que solo sirven para una foto) |
 | `ctx.sinMedir(motivo)` | declara «no pude medir» y ABORTA el guion: sale `⊘` con su motivo, aparte de verdes y rojos (y degrada la corrida a exit 2) |
 | `ctx.sinMedirBloque(motivo)` | lo mismo para UN bloque, sin abortar: el guion sigue midiendo los demás |
@@ -141,16 +144,40 @@ Reglas que hacen que un guion valga algo:
 
 1. **Nunca esperes por tiempo de pared, y no dejes expirar una espera sin mirarla.** El
    movimiento va por delta de rAF y el typewriter por `setInterval`: ningún `sleep` es
-   determinista. Espera por ESTADO (`waitFor`). Los `maxMs` son cortafuegos, no la condición de
-   parada — pero un `waitFor` cuya condición no se cumple nunca es un sleep con mejores modales,
-   así que **toda expiración se anota y alguien tiene que observarla** (#261): o propaga, o la
-   afirma `ctx.expectEspera`, o la absorbe `ctx.absorbe` diciendo dónde vive la medida. Lo que
-   expire sin observador es un fallo con nombre y el guion sale ROJO; el `.catch(() => null)`
-   sobre una espera dejó de ser gratis. Y cuidado con el hueco entre el umbral de la ESPERA y el
-   del ASERTO: si la espera pide más que el `expect`, queda una banda garantizada de «expiró y
-   verde igual» — `expectEspera` existe para escribir el umbral una sola vez. Corolario que costó un guion intermitente: si el
+   determinista. Espera por ESTADO (`waitFor`). Los cortafuegos son cortafuegos, no la condición
+   de parada — pero un `waitFor` cuya condición no se cumple nunca es un sleep con mejores
+   modales, así que **toda expiración se anota y alguien tiene que observarla** (#261): o
+   propaga, o la afirma `ctx.expectEspera`, o la absorbe `ctx.absorbe` diciendo dónde vive la
+   medida. Lo que expire sin observador es un fallo con nombre y el guion sale ROJO; el
+   `.catch(() => null)` sobre una espera dejó de ser gratis. Y cuidado con el hueco entre el
+   umbral de la ESPERA y el del ASERTO: si la espera pide más que el `expect`, queda una banda
+   garantizada de «expiró y verde igual» — `expectEspera` existe para escribir el umbral una
+   sola vez.
+
+   **Y el cortafuegos de lo que depende del JUEGO se escribe en segundos de SIMULACIÓN, no en
+   milisegundos de pared** (#545). El `gameLoop` topa su delta en 0,1 s por frame
+   (`nefan-html/src/main.ts`), así que un frame de 300 ms mueve el mundo 100: bajo carga el juego
+   avanza MENOS de lo que marca el reloj de la máquina, y un presupuesto de pared —«0,5 m en 8 s»,
+   «cuatro segundos para acercarse»— deja de significar lo que dice. No es que el jugador se
+   parase: es que no hubo frame. Escrito `{sim: 4}` en vez de `4_000`, **quien decide la
+   expiración es el reloj del mundo**: se sondea hasta que el juego ha corrido sus cuatro
+   segundos, tarde lo que tarde la máquina. El cortafuegos de pared sigue existiendo (el rAF no
+   corre en una pestaña oculta y de ahí hay que poder salir), pero cuando salta ANTES que el sim
+   ya no puede afirmar nada: declara **⊘** con «sim pedido vs. sim avanzado», nunca «no ocurrió».
+   Un guion que no pudo medir no puede terminar diciendo que midió, ni en verde ni en rojo.
+
+   **Qué va en sim y qué no.** En sim, lo que depende del `delta` del loop: andar, pegar, encajar
+   daño, cualquier cosa que el jugador haga con el cuerpo — `acercarse` y `herirHasta`
+   (`qa/lib/combate.mjs`) ya lo hacen, así que los 20 guiones que pasan por ahí lo heredan. En
+   pared se quedan las esperas cuyo sujeto es OTRO proceso (que conteste el bridge, que llegue un
+   frame de websocket, que el save aparezca en disco): el reloj del mundo no dice nada de un
+   servidor. El reloj lo publica el cliente en `__nefan.reloj()` → `{sim, frames}`, y `frames` es
+   el del propio game loop —no el del renderer— para poder afirmar «no avanzó NI un frame» sin
+   depender de que se llegue a pintar.
+
+   Corolario que costó un guion intermitente: si el
    estado que quieres afirmar es TRANSITORIO (el destello de impacto del telegraph dura 0,3 s
-   de tiempo de sim, y el sim corre con el `delta` del game loop topado a 0,1 s), ningún
+   de tiempo de sim), ningún
    observador externo puede garantizar verlo por mucho que muestree más fino — el problema no
    es la resolución, es que la ventana la mide un reloj distinto del que consume el estado. Eso
    se arregla haciendo que el juego lo RECUERDE (un recuento en `debugState()`), no bajándole
@@ -194,8 +221,10 @@ Reglas que hacen que un guion valga algo:
 
 ## El reproductor bajo carga: `qa/bajo-carga.mjs` (#545)
 
-La regla 1 de aquí arriba lleva escrita desde que existe esta página y **no ha sujetado nada**: la
-crítica de #545 encontró **48 guiones de 129** esperando por reloj de pared a que el juego progrese.
+La regla 1 de aquí arriba llevaba escrita desde que existe esta página y **no había sujetado nada**:
+la crítica de #545 encontró **48 guiones de 129** esperando por reloj de pared a que el juego
+progrese. Desde el paso a `{sim: N}` los **20** que andan y pegan por `qa/lib/combate.mjs` ya no lo
+hacen; los **28 restantes**, escritos a mano guion a guion, siguen en pared y siguen siendo el sujeto.
 Es el argumento de esta casa contra la prosa, aplicado a su propia documentación. Lo que faltaba no
 era otra regla, era poder **provocar el rojo a demanda**, porque los 48 estaban señalados por
 INSPECCIÓN: sin un rojo reproducido, un arreglo no se puede juzgar contra nada.
@@ -229,7 +258,8 @@ medir (o la corrida de CONTROL ya venía frenada: toda la comparación cuelga de
 **Dos criterios, porque la razón es una MEDIA y el defecto vive en la COLA.** La carga cuenta como
 real si la razón cae por debajo de `0,90` **o** si algún frame llega a **1.000 ms**. Medido: a ×4 la
 razón se queda en 0,951 con un frame de **1.150 ms** dentro — ese solo frame se come **el 26 % de un
-presupuesto de 4.000 ms** (`qa/lib/combate.mjs:62`) y mueve la media 1,6 puntos. Con un criterio solo
+presupuesto de 4.000 ms** (el del tramo de `qa/lib/combate.mjs`, que con #545 pasó a `{sim: 4}`; los
+28 guiones que presupuestan a mano siguen ahí) y mueve la media 1,6 puntos. Con un criterio solo
 de media, la condición que produce el defecto estaba presente y el instrumento decía «no se ha
 reproducido nada». El veredicto dice **cuál de los dos disparó**.
 
@@ -255,7 +285,10 @@ solo, un rojo de #545**. Medido: `node qa/bajo-carga.mjs 75 --factor 20` pone el
 que este banco puede mirar sin inventar nada es el **texto del fallo**, así que clasifica en dos y lo
 dice: **con firma** de presupuesto de reloj (`no ocurrió en N ms`, `timeout esperando`, `expiró a los
 N ms`) → *compatible* con #545 y **no probado**; **sin firma** → **no atribuible**, mira el aserto
-antes de tocar una espera. La decisión sigue siendo de quien lee. Corolario para quien vaya a arreglar
+antes de tocar una espera. Ojo desde el paso a sim: una espera con presupuesto de simulación que se
+agota dice «no ocurrió en N s de sim», que **no casa** con esa firma — y está bien que no case,
+porque ahí el mundo SÍ corrió sus segundos y el hecho es del juego, no de la carga. Lo que declara la
+inanición es el ⊘, que no es un color. La decisión sigue siendo de quien lee. Corolario para quien vaya a arreglar
 guiones: **el separador «si el 75 sale rojo, no es carga» está falsado** — sale rojo *por* la carga, y
 aun así su rojo es de #496.
 

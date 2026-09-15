@@ -24,6 +24,9 @@
  *  EL GATE DE DEV SE CONSERVA, y no es cosmético: las claves que conducen el
  *  juego (teletransportar, cerrar el título, cargar fixtures) no viajan en el
  *  bundle de producción. `qa/run.mjs` levanta vite en dev, así que las ve.
+ *
+ *  LO ÚNICO QUE ESTE FICHERO EXPORTA ADEMÁS DEL SEAM es el RELOJ DE SIM, y
+ *  está aquí por la misma razón: el juego no lo usa, solo lo alimenta.
  */
 
 import { setDebugLog } from "./debug-log.js";
@@ -49,6 +52,51 @@ import type { TitleScreen } from "../ui/title-screen.js";
 import type { FpsAtlasController } from "../scene/fps-atlas.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
 import type { OpcionesDeCarga } from "../world/carga-de-tile.js";
+
+/** EL RELOJ DE SIMULACIÓN DEL CLIENTE: cuánto ha avanzado EL MUNDO, que no es
+ *  lo que marca el reloj de pared.
+ *
+ *  POR QUÉ EXISTE (#545). El `gameLoop` topa su delta en 0,1 s por frame
+ *  (`main.ts`), así que un frame que tarda 300 ms mueve el mundo 100: bajo
+ *  carga el juego avanza MENOS de lo que pasa en la máquina. El banco
+ *  presupuestaba el progreso en milisegundos de PARED («0,5 m en 8 s») y por eso
+ *  leía paradas que no existían — no porque el jugador se parase, sino porque no
+ *  había habido frame. Éste es el reloj contra el que hay que presupuestar, y
+ *  hasta hoy el cliente lo calculaba y lo TIRABA.
+ *
+ *  POR QUÉ VIVE JUNTO AL SEAM Y NO EN EL LOOP: el juego no lo consulta para
+ *  nada. Su único lector es el banco, igual que `fps()` o `state()`; lo que el
+ *  loop hace es alimentarlo.
+ *
+ *  UNA SOLA DEFINICIÓN DE «AVANZÓ EL JUEGO», y es del tipo y no de la
+ *  convención: `avanza` DEVUELVE el mismo delta que recibe, así que el único
+ *  camino por el que el cliente obtiene su delta pasa por aquí. Un frame que
+ *  mueva el mundo sin contarse no se puede escribir sin borrar esta llamada —
+ *  que es visible en el diff—, en vez de olvidándose de añadir una.
+ *
+ *  `frames` es el contador del PROPIO loop, no el de `FpsRenderer.debugState()`:
+ *  quien lea esto tiene que poder afirmar «no avanzó NI un frame» sin depender
+ *  de que el renderer llegue a pintar. */
+function crearRelojDeSim(): {
+  avanza(delta: number): number;
+  lee(): { sim: number; frames: number };
+} {
+  let sim = 0;
+  let frames = 0;
+  return {
+    avanza(delta: number): number {
+      sim += delta;
+      frames++;
+      return delta;
+    },
+    lee(): { sim: number; frames: number } {
+      return { sim, frames };
+    },
+  };
+}
+
+/** El reloj de sim de ESTA página: uno por cliente, como el game loop. */
+export const relojDeSim = crearRelojDeSim();
 
 /** Todo lo que el hook mira. Son colaboradores del cliente, y llegan por aquí
  *  en vez de por clausura para que este fichero no pueda alcanzar nada más. */
@@ -255,6 +303,11 @@ export function instalarNefanHook(deps: DepsDelHook): void {
       devPanel: deps.devPanel,
       probeCollide: (x: number, z: number) => deps.collidesAt(x, z),
       fps: () => deps.fpsRenderer.debugState(),
+      /** El RELOJ DE SIM del loop: `sim` en segundos de mundo y `frames` del
+       *  propio loop. Es lo que permite a un guion presupuestar en la escala en
+       *  la que el juego progresa de verdad (#545) — `fps()` cuenta lo que
+       *  PINTA el renderer, que es otra pregunta. */
+      reloj: () => relojDeSim.lee(),
       get scene() { return escenaServida(deps.mundo); },
       // Gira al jugador desde el bench a un yaw arbitrario, sin pasar por las
       // flechas de dirección. Mismo camino que el giro real: yaw → forward.

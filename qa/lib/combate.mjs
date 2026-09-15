@@ -19,7 +19,23 @@
  *  Ambos caminan por el camino del jugador —yaw + tecla de avance—, nunca
  *  `setPlayerPos`: teletransportarse sería fabricar el escenario que el guion
  *  viene a medir.
+ *
+ *  Y LOS DOS PRESUPUESTAN EN SEGUNDOS DE MUNDO, no de pared (#545). Andar y
+ *  pegar son las dos cosas del banco que dependen del `delta` del game loop, y
+ *  ese delta está topado en 0,1 s por frame: bajo carga el jugador avanza menos
+ *  metros por segundo de RELOJ aunque su velocidad no haya cambiado, así que un
+ *  cortafuegos de «4.000 ms» dejaba de ser un cortafuegos y pasaba a ser la
+ *  condición de parada — que es exactamente lo que #545 vino a arreglar. Con
+ *  `{sim: 4}` se esperan cuatro segundos de MUNDO, los tarde la máquina lo que
+ *  tarde, y si el mundo no llega a correrlos la espera declara ⊘ en vez de
+ *  afirmar que el jugador no llegó (ver `qa/lib/sonda.mjs`).
+ *
+ *  **Ni un umbral, ni un aserto, ni un canal han cambiado con ese paso**: los
+ *  metros son los mismos, el predicado es el mismo y la vida se sigue leyendo
+ *  del HUD. Lo único que cambia es CON QUÉ RELOJ se espera.
  */
+
+import { esperaExpiradaEn } from "./esperas.mjs";
 
 /** Dónde está el objetivo respecto al jugador, en metros. `lista` es la del
  *  hook (`enemies` o `npcs`): el mismo paseo sirve para pelear y para hablar. */
@@ -59,7 +75,7 @@ function dondeEsta(ctx, id, lista) {
  *  Devuelve la última medición (`{d, dx, dz}`) o `null` si el objetivo ya no
  *  está en la lista. */
 export async function acercarse(ctx, id, opciones = {}) {
-  const { objetivo = 1.6, tramos = 12, tramoMs = 4_000, lista = "enemies" } = opciones;
+  const { objetivo = 1.6, tramos = 12, tramoSim = 4, lista = "enemies" } = opciones;
   const arg = { id, objetivo, lista };
   /** EL predicado. Lo comparten los cortafuegos y el aserto del final. */
   const aTiro = (a) => {
@@ -81,14 +97,14 @@ export async function acercarse(ctx, id, opciones = {}) {
     const n = await encarar();
     if (!n || n.d <= objetivo) break;
     await ctx.absorbe(
-      `cortafuegos de UN tramo (${tramoMs} ms) del paseo hasta ${id}: el bucle vuelve a medir y ` +
-        `el ÚLTIMO tramo afirma este mismo predicado (d ≤ ${objetivo} m), que es donde vive la medida`,
+      `cortafuegos de UN tramo (${tramoSim} s de simulación) del paseo hasta ${id}: el bucle vuelve a ` +
+        `medir y el ÚLTIMO tramo afirma este mismo predicado (d ≤ ${objetivo} m), que es donde vive la medida`,
       () =>
         ctx.holdUntil(
           "up",
           `el jugador se acerca a ${id} (tramo ${i + 1}, ahora ${n.d.toFixed(1)} m)`,
           aTiro,
-          tramoMs,
+          { sim: tramoSim },
           arg,
         ),
     );
@@ -100,7 +116,7 @@ export async function acercarse(ctx, id, opciones = {}) {
     `el jugador LLEGA andando a ${objetivo} m de ${id} (sin teletransportarse)`,
     true,
     aTiro,
-    { ms: tramoMs, arg, tecla: "up" },
+    { sim: tramoSim, arg, tecla: "up" },
   );
   return dondeEsta(ctx, id, lista);
 }
@@ -112,13 +128,18 @@ export async function acercarse(ctx, id, opciones = {}) {
  *  que eso signifique nada. La condición de parada es la vida DEL HUD —lo que
  *  ve el jugador—, no un reloj ni un número de intentos.
  *
+ *  `sim` son SEGUNDOS DE MUNDO de cortafuegos (#545): pegar depende del `delta`
+ *  del loop —wind-up, recuperación, daño por golpe—, así que contarlos en
+ *  milisegundos de pared era contar el reloj equivocado.
+ *
  *  Devuelve `{hud, muerto?}`, `{hud, jugadorMuerto:true}` si al que pega lo
  *  matan primero, o `null` si el cortafuegos salta. El `null` NO es un
  *  desenlace mudo: todos los sitios de llamada lo afirman (`ctx.expect`) o lo
  *  declaran (`ctx.sinMedirBloque`), que es lo que hace que la expiración se
- *  vea. */
+ *  vea. Y no cubre el ⊘: si el mundo no llegó a correr los segundos pedidos,
+ *  eso sube y para el guion. */
 export async function herirHasta(ctx, id, objetivo, opciones = {}) {
-  const { maxMs = 60_000, alcance = 1.6 } = opciones;
+  const { sim = 60, alcance = 1.6 } = opciones;
   await ctx.nefan("inputDriver.selectAttack", "quick");
   const fin = await ctx
     .waitFor(
@@ -144,10 +165,19 @@ export async function herirHasta(ctx, id, objetivo, opciones = {}) {
         }
         return null;
       },
-      maxMs,
+      { sim },
       { id, objetivo, alcance },
     )
-    .catch(() => null);
+    // Solo se traga la EXPIRACIÓN, que es el cortafuegos que este helper
+    // declara devolver como `null` y que todos sus sitios de llamada afirman.
+    // El ⊘ de «el mundo no llegó a correr los segundos pedidos» NO es un
+    // desenlace de la pelea y tiene que subir hasta el runner: convertirlo aquí
+    // en `null` sería volver a colapsar «no pude medir» con «no lo maté», que es
+    // la mentira que cuesta una investigación entera cada vez.
+    .catch((err) => {
+      if (esperaExpiradaEn(err)) return null;
+      throw err;
+    });
   await ctx.nefan("inputDriver.release", "up");
   return fin;
 }
