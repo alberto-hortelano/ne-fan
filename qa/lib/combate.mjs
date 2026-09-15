@@ -37,6 +37,33 @@
 
 import { esperaExpiradaEn } from "./esperas.mjs";
 
+/** Las opciones que este helper entiende, o LANZA.
+ *
+ *  Existe por el hallazgo H-3 de QA, y es la clase de defecto más barata de
+ *  cometer que hay aquí: cuando `herirHasta` pasó de `maxMs` (milisegundos de
+ *  pared) a `sim` (segundos de mundo), **tres sitios de llamada se quedaron
+ *  escribiendo `maxMs`** y JavaScript se los tragó — una clave desconocida en
+ *  un objeto de opciones se desestructura en silencio y el helper usa su
+ *  defecto. El del guion 49 pedía `maxMs: 120_000` y se quedó con `sim: 60`:
+ *  medio presupuesto, sin que nadie lo escribiera, y su resultado gobierna un
+ *  `ctx.sinMedir` que degrada la corrida entera a exit 2.
+ *
+ *  El arreglo no es corregir los tres —eso ya está hecho— sino que el estado
+ *  malo deje de ser expresable: escribir una opción que no existe para. Y dice
+ *  cuáles hay, porque el que se equivoca está mirando el sitio de llamada, no
+ *  este fichero. */
+function soloEstasOpciones(quien, opciones, conocidas) {
+  const desconocidas = Object.keys(opciones).filter((k) => !conocidas.includes(k));
+  if (desconocidas.length) {
+    throw new Error(
+      `${quien}: opción(es) que no existen: ${desconocidas.map((k) => `\`${k}\``).join(", ")}. ` +
+        `Las que hay son ${conocidas.map((k) => `\`${k}\``).join(", ")}. ` +
+        `Ojo con \`maxMs\`: murió con #545 y su sustituto es \`sim\`, que son SEGUNDOS DE MUNDO, no ` +
+        `milisegundos de pared — escribirlo en silencio dejaba el presupuesto en el defecto.`,
+    );
+  }
+}
+
 /** Dónde está el objetivo respecto al jugador, en metros. `lista` es la del
  *  hook (`enemies` o `npcs`): el mismo paseo sirve para pelear y para hablar. */
 function dondeEsta(ctx, id, lista) {
@@ -75,6 +102,7 @@ function dondeEsta(ctx, id, lista) {
  *  Devuelve la última medición (`{d, dx, dz}`) o `null` si el objetivo ya no
  *  está en la lista. */
 export async function acercarse(ctx, id, opciones = {}) {
+  soloEstasOpciones("acercarse", opciones, ["objetivo", "tramos", "tramoSim", "lista"]);
   const { objetivo = 1.6, tramos = 12, tramoSim = 4, lista = "enemies" } = opciones;
   const arg = { id, objetivo, lista };
   /** EL predicado. Lo comparten los cortafuegos y el aserto del final. */
@@ -139,8 +167,24 @@ export async function acercarse(ctx, id, opciones = {}) {
  *  vea. Y no cubre el ⊘: si el mundo no llegó a correr los segundos pedidos,
  *  eso sube y para el guion. */
 export async function herirHasta(ctx, id, objetivo, opciones = {}) {
+  soloEstasOpciones("herirHasta", opciones, ["sim", "alcance"]);
   const { sim = 60, alcance = 1.6 } = opciones;
   await ctx.nefan("inputDriver.selectAttack", "quick");
+  // La tecla se suelta SIEMPRE, también cuando sube un ⊘ (H-5 de QA). Antes el
+  // `.catch(() => null)` garantizaba llegar al `release`; ahora el ⊘ pasa de
+  // largo, y sin el `finally` el guion se iba a ⊘ con el jugador andando — la
+  // captura y el diagnóstico se tomaban de un jugador en marcha. `holdUntil` ya
+  // tenía el suyo; esta es la asimetría que faltaba dentro del mismo fichero.
+  try {
+    return await golpearHasta(ctx, id, objetivo, { sim, alcance });
+  } finally {
+    await ctx.nefan("inputDriver.release", "up");
+  }
+}
+
+/** El bucle de golpes, sin el cuidado de soltar la tecla: eso lo hace su
+ *  envoltorio, que es quien puede prometerlo pase lo que pase. */
+async function golpearHasta(ctx, id, objetivo, { sim, alcance }) {
   const fin = await ctx
     .waitFor(
       `la vida de ${id} baja de ${objetivo} en el HUD`,
@@ -178,6 +222,5 @@ export async function herirHasta(ctx, id, objetivo, opciones = {}) {
       if (esperaExpiradaEn(err)) return null;
       throw err;
     });
-  await ctx.nefan("inputDriver.release", "up");
   return fin;
 }

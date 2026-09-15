@@ -106,11 +106,13 @@ se sabía pagando la corrida cara.
 La otra mitad de #357 no corre en el job sino en `npm test`: todo módulo de `qa/lib` lo importa
 algún test de `nefan-core/test/` (dirección **test → banco**; `qa/` nunca entra en producción,
 regla `el-banco-no-entra-en-produccion`) o está eximido con motivo en
-`nefan-core/data/contract/banco-medido.json` (`test/qa-lib-tiene-quien-lo-mire.test.ts`; los 6
+`nefan-core/data/contract/banco-medido.json` (`test/qa-lib-tiene-quien-lo-mire.test.ts`; los 5
 exentos conducen navegador, disco o sockets). `qa/lib` NO entra en mutación ni en el CRAP.
-`sonda.mjs` salió de esa lista con #545 (`test/sonda-de-qa.test.ts`): la decisión de cuándo una
-espera se ha agotado no necesita un navegador, necesita una página que conteste — y es donde vive
-la medida del reloj de simulación.
+`sonda.mjs` y `combate.mjs` salieron de esa lista con #545 (`test/sonda-de-qa.test.ts`,
+`test/combate-de-qa.test.ts`): la decisión de cuándo una espera se ha agotado no necesita un
+navegador, necesita una página que conteste; y con qué presupuesto espera un gesto de pelea, tampoco.
+Lo segundo se cobró antes de medirse: al cambiar `maxMs` por `sim`, **tres sitios de llamada se
+quedaron escribiendo la opción muerta** y JavaScript se los tragó — hoy eso LANZA.
 
 Y por el mismo camino —test → banco, sin navegador, en CI— corre desde la tanda A
 `test/el-banco-declara-el-modo-de-gasto.test.ts`: **todo guion que ARRANQUE una partida**
@@ -171,9 +173,19 @@ Reglas que hacen que un guion valga algo:
    (`qa/lib/combate.mjs`) ya lo hacen, así que los 20 guiones que pasan por ahí lo heredan. En
    pared se quedan las esperas cuyo sujeto es OTRO proceso (que conteste el bridge, que llegue un
    frame de websocket, que el save aparezca en disco): el reloj del mundo no dice nada de un
-   servidor. El reloj lo publica el cliente en `__nefan.reloj()` → `{sim, frames}`, y `frames` es
-   el del propio game loop —no el del renderer— para poder afirmar «no avanzó NI un frame» sin
-   depender de que se llegue a pintar.
+   servidor.
+
+   **El reloj lo publica el cliente en `__nefan.reloj()` → `{sim, frames, loop}`, y las tres cifras
+   son tres porque colapsarlas costó un defecto.** `sim` son segundos de MUNDO y solo sube cuando el
+   mundo se simula: se alimenta desde el argumento de `gameClient.tick(…)`, no desde el frame. La
+   primera versión lo alimentaba arriba del `gameLoop` y contaba **7,65 s en 8 s de pared con el
+   título delante**, donde el loop llama a `idle()` y `tick()` no se llama ni una vez — y ahí la
+   asimetría se INVIERTE: la espera se agota y AFIRMA «el mundo corrió sus N segundos» sobre un mundo
+   parado. `frames` son los frames en los que el mundo se simuló; `loop` los que dio el game loop,
+   se simulara o no. Con los dos separados, un ⊘ sabe decir «la página late pero el mundo no corre»
+   (título delante) y distinguirlo de «la página está muerta», que piden respuestas distintas — y el
+   segundo es el cortafuegos de verdad contra el rAF colgado, lo que permite que el de pared sea
+   proporcional al sim pedido en vez de estar topado.
 
    Corolario que costó un guion intermitente: si el
    estado que quieres afirmar es TRANSITORIO (el destello de impacto del telegraph dura 0,3 s

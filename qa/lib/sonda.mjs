@@ -63,27 +63,42 @@ import {
 export const CADENCIA_MS = 150;
 
 /** Cuánta pared se le da a un presupuesto de sim antes de rendirse, en veces el
- *  propio presupuesto.
+ *  propio presupuesto. **Proporcional SIEMPRE, sin techo absoluto**, y esa
+ *  palabra es el arreglo de un defecto medido.
  *
  *  MEDIDO, no elegido a ojo: `qa/bajo-carga.mjs` midió la razón sim/pared de
  *  esta máquina a ×20 (0,465-0,551) y a ×40 (0,152-0,309), que es el régimen
- *  donde el 91 sale rojo 5 de 6 veces. Para que 4 s de sim quepan con razón
- *  0,152 hacen falta 6,6 s de pared por cada uno: ×10 los cubre con margen y
- *  deja el ⊘ para cuando el mundo de verdad no avanza.
+ *  donde el 91 sale rojo 5 de 6 veces. Para que un segundo de sim quepa con
+ *  razón 0,152 hacen falta 6,6 de pared: ×10 los cubre con margen y deja el ⊘
+ *  para cuando el mundo de verdad no avanza.
  *
- *  Y no cuesta nada en la corrida normal: con la máquina quieta (razón 0,98) el
- *  presupuesto de sim se agota a ~1,02× de su valor, así que el que decide
- *  sigue siendo el sim y una espera que falla tarda lo mismo que hoy. */
+ *  POR QUÉ NO HAY TECHO ABSOLUTO, y lo hubo. La primera versión topaba esto en
+ *  300 s «para no mirar un cadáver quince minutos», y con el tope puesto el ×10
+ *  solo era ×10 para el presupuesto más pequeño (QA, H-4): `{sim:45}` era
+ *  ×6,67, `{sim:60}` ×5,00 y `{sim:90}` **×3,33** — o sea que un `{sim:90}`
+ *  bajo una carga de razón 0,3 (la que yo mismo medí a factor 40) se rendía por
+ *  PARED en vez de medir. El cortafuegos volvía a decidir justo en el régimen
+ *  que motivó la tanda. El cadáver se ataja mucho mejor con el LATIDO del loop
+ *  (`LOOP_COLGADO_MS`), que lo caza en diez segundos y no en cinco minutos,
+ *  así que el techo no compraba nada que no estuviera ya comprado. */
 export const CORTAFUEGOS_POR_SIM = 10;
-
-/** Techo absoluto del cortafuegos de pared. Sin él, un `{sim: 90}` sobre una
- *  página muerta se queda quince minutos mirando un cadáver. */
-export const CORTAFUEGOS_MAXIMO_MS = 300_000;
 
 /** Cuánto se tolera que el reloj de la página no se pueda LEER antes de
  *  declarar ⊘. Una navegación tumba el contexto de ejecución un par de
  *  segundos y eso es normal; diez, no. */
 export const RELOJ_ILEGIBLE_MS = 10_000;
+
+/** Cuánto se tolera que el GAME LOOP no dé un solo frame antes de declarar ⊘.
+ *
+ *  Es el cortafuegos de verdad contra el rAF colgado, y por eso el de pared
+ *  puede ser proporcional: una página viva emite frames aunque vaya a 3 fps
+ *  (medido a factor 40: un frame cada ~330 ms), así que diez segundos sin NI
+ *  UNO no es lentitud, es que la página dejó de latir. Mide `loop`, que cuenta
+ *  los frames del game loop se simule el mundo o no — justo la distinción que
+ *  hace falta aquí: «el mundo no corre» (título delante) y «la página está
+ *  muerta» piden respuestas distintas, y colapsarlas es lo que produjo el
+ *  defecto que arregló este mismo fichero. */
+export const LOOP_COLGADO_MS = 10_000;
 
 /** El reloj de sim TAL Y COMO LO PUBLICA EL JUEGO, leído dentro de la página.
  *  `null` si el cliente no lo publica (bundle de producción, o la página
@@ -124,7 +139,7 @@ export function presupuestoDeEspera(presupuesto, desc) {
           `llegó ${JSON.stringify(ms)}.`,
       );
     }
-    const techoMs = ms ?? Math.min(Math.round(sim * 1000 * CORTAFUEGOS_POR_SIM), CORTAFUEGOS_MAXIMO_MS);
+    const techoMs = ms ?? Math.round(sim * 1000 * CORTAFUEGOS_POR_SIM);
     return { sim, techoMs, rotulo: `${sim.toFixed(2)} s de sim (cortafuegos de pared ${techoMs} ms)` };
   }
   throw new Error(
@@ -142,11 +157,34 @@ export function presupuestoDeEspera(presupuesto, desc) {
  *  corrido desde la recarga. Restar daría negativo y el presupuesto no se
  *  agotaría jamás. */
 export function avanceDelReloj(previa, actual) {
-  if (!previa) return { sim: 0, frames: 0 };
+  const desdeCero = { sim: actual.sim, frames: actual.frames, loop: actual.loop };
+  if (!previa) return { sim: 0, frames: 0, loop: 0 };
   if (actual.sim >= previa.sim) {
-    return { sim: actual.sim - previa.sim, frames: actual.frames - previa.frames };
+    return {
+      sim: actual.sim - previa.sim,
+      frames: actual.frames - previa.frames,
+      loop: actual.loop - previa.loop,
+    };
   }
-  return { sim: actual.sim, frames: actual.frames };
+  return desdeCero;
+}
+
+/** ¿Se entiende esta lectura del reloj?
+ *
+ *  `typeof NaN === "number"`, y ese detalle abría la misma puerta que
+ *  `presupuestoDeEspera` cierra en la entrada (QA, H-6): con `sim` a `NaN` el
+ *  acumulado es `NaN`, `NaN < presupuesto` es falso, y la espera sale del bucle
+ *  **por el camino de la AFIRMACIÓN** tras un solo sondeo — «el mundo avanzó
+ *  sus N segundos y no ocurrió» con cero segundos mirados. Un reloj que no se
+ *  entiende es un reloj que no se puede leer, y eso es ⊘. */
+export function lecturaDelRelojValida(r) {
+  return (
+    r !== null &&
+    typeof r === "object" &&
+    Number.isFinite(r.sim) &&
+    Number.isFinite(r.frames) &&
+    Number.isFinite(r.loop)
+  );
 }
 
 /** El subconjunto de `ctx` que no necesita runner: para scripts con page
@@ -238,8 +276,15 @@ export function ctxDeSonda(page) {
         let previa = null;
         let consumido = 0;
         let frames = 0;
+        let loop = 0;
         let ilegibleDesde = null;
         let porQueIlegible = null;
+        // EL LATIDO: cuándo fue la última vez que el game loop dio un frame.
+        // Es lo que distingue «el mundo no corre» (título delante, partida sin
+        // empezar) de «la página está muerta», y lo que permite que el
+        // cortafuegos de pared sea proporcional al sim pedido en vez de estar
+        // topado (H-4): el cadáver lo caza esto en diez segundos.
+        let ultimoLatido = Date.now();
         const leeElReloj = async (base = false) => {
           if (p.sim === null) return;
           let r = null;
@@ -250,8 +295,13 @@ export function ctxDeSonda(page) {
           } catch (e) {
             porQueIlegible = `la página no contestó (${String(e?.message ?? e)})`;
           }
-          if (r === null || typeof r?.sim !== "number") {
-            if (contestó) porQueIlegible = "el cliente no publica `window.__nefan.reloj()`";
+          if (!lecturaDelRelojValida(r)) {
+            if (contestó) {
+              porQueIlegible =
+                r === null
+                  ? "el cliente no publica `window.__nefan.reloj()`"
+                  : `el reloj contestó algo que no se entiende (${JSON.stringify(r)})`;
+            }
             // En la BASE es fatal y no hay que esperar diez segundos a decirlo:
             // si el cliente contestó y no tiene reloj, no lo va a tener luego —
             // es un bundle de producción o una página que no es el juego, y ese
@@ -266,8 +316,28 @@ export function ctxDeSonda(page) {
           const av = avanceDelReloj(previa, r);
           consumido += av.sim;
           frames += av.frames;
+          loop += av.loop;
+          if (previa === null || av.loop > 0) ultimoLatido = Date.now();
           previa = r;
+          if (Date.now() - ultimoLatido >= LOOP_COLGADO_MS) throw loopColgado();
         };
+        /** El ⊘ del rAF colgado: la página contesta pero su game loop no da un
+         *  frame. No es «el mundo no avanza» —eso es el título delante, y se
+         *  dice con las otras cifras—: es que no hay loop. */
+        const loopColgado = () => {
+          const paradoMs = Date.now() - ultimoLatido;
+          esperas.expira(id);
+          esperas.resuelve(id, `⊘ el game loop lleva ${Math.round(paradoMs)} ms sin dar un frame`);
+          return new RelojDeSimNoAvanzo(
+            `no se pudo medir «${desc}»: sim pedido ${p.sim.toFixed(2)} s vs. sim avanzado ` +
+              `${consumido.toFixed(2)} s, y el GAME LOOP lleva ${Math.round(paradoMs)} ms sin dar un solo ` +
+              `frame (mínimo ${LOOP_COLGADO_MS} ms). La página contesta, pero no late: no es que el mundo vaya ` +
+              `lento, es que no hay loop que lo mueva. Se declara ⊘ en vez de esperar al cortafuegos entero ` +
+              `para afirmar algo que nadie ha medido.`,
+            { esperaId: id, desc, sitio: p.rotulo, pedido: p.sim, avanzado: consumido, frames, paredMs: Date.now() - t0 },
+          );
+        };
+
         /** El ⊘ de «no se pudo leer el reloj», hermano del de «no avanzó».
          *
          *  Cierra el asiento del libro ANTES de devolver el error: si no, la
@@ -314,10 +384,15 @@ export function ctxDeSonda(page) {
           esperas.resuelve(id, `⊘ el reloj de sim no llegó al presupuesto: ${consumido.toFixed(2)}/${p.sim} s`);
           throw new RelojDeSimNoAvanzo(
             `no se pudo medir «${desc}»: sim pedido ${p.sim.toFixed(2)} s vs. sim avanzado ` +
-              `${consumido.toFixed(2)} s (${frames} frames del loop en ${(paredMs / 1000).toFixed(1)} s de ` +
-              `pared, cortafuegos ${p.techoMs} ms). Saltó el cortafuegos de PARED antes que el reloj de ` +
-              `SIMULACIÓN, así que el juego no llegó a correr los segundos que se le pidieron: esto NO es ` +
-              `«no ocurrió», es que nadie ha mirado. Se declara ⊘ (exit 2, que degrada más que el rojo).`,
+              `${consumido.toFixed(2)} s (${frames} frames de MUNDO y ${loop} del LOOP en ` +
+              `${(paredMs / 1000).toFixed(1)} s de pared, cortafuegos ${p.techoMs} ms). Saltó el cortafuegos ` +
+              `de PARED antes que el reloj de SIMULACIÓN, así que el juego no llegó a correr los segundos que ` +
+              `se le pidieron: esto NO es «no ocurrió», es que nadie ha mirado. Se declara ⊘ (exit 2, que ` +
+              `degrada más que el rojo).` +
+              (loop > 0 && frames === 0
+                ? ` Y las dos cifras dicen QUÉ pasó: la página late (${loop} frames) pero el mundo no se ` +
+                  `simula ni uno — el título delante, o una partida sin empezar.`
+                : ""),
             { esperaId: id, desc, sitio: p.rotulo, pedido: p.sim, avanzado: consumido, frames, paredMs },
           );
         }

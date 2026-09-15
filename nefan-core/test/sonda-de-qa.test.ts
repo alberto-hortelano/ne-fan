@@ -39,7 +39,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-type Reloj = { sim: number; frames: number } | null;
+type Reloj = { sim: number; frames: number; loop: number } | null;
 type Presupuesto = number | { sim?: unknown; ms?: unknown };
 type Ctx = {
   waitFor: (desc: string, probe: (arg?: unknown) => unknown, presupuesto?: Presupuesto, arg?: unknown) => Promise<unknown>;
@@ -53,10 +53,11 @@ type Ctx = {
 const sonda = (await import(join(repoRoot, "qa", "lib", "sonda.mjs"))) as {
   ctxDeSonda: (page: unknown) => Ctx;
   presupuestoDeEspera: (p: unknown, desc: string) => { sim: number | null; techoMs: number; rotulo: string | null };
-  avanceDelReloj: (previa: Reloj, actual: NonNullable<Reloj>) => { sim: number; frames: number };
+  avanceDelReloj: (previa: Reloj, actual: NonNullable<Reloj>) => { sim: number; frames: number; loop: number };
+  lecturaDelRelojValida: (r: unknown) => boolean;
   CADENCIA_MS: number;
   CORTAFUEGOS_POR_SIM: number;
-  CORTAFUEGOS_MAXIMO_MS: number;
+  LOOP_COLGADO_MS: number;
 };
 const esperas = (await import(join(repoRoot, "qa", "lib", "esperas.mjs"))) as {
   EsperaExpirada: new (...a: never[]) => Error;
@@ -64,7 +65,13 @@ const esperas = (await import(join(repoRoot, "qa", "lib", "esperas.mjs"))) as {
   relojDeSimNoAvanzoEn: (err: unknown) => { pedido: number; avanzado: number } | null;
   fallosDeEsperasPendientes: (libro: unknown) => string[];
 };
-const { ctxDeSonda, presupuestoDeEspera, avanceDelReloj, CORTAFUEGOS_POR_SIM, CORTAFUEGOS_MAXIMO_MS } = sonda;
+const { ctxDeSonda, presupuestoDeEspera, avanceDelReloj, lecturaDelRelojValida, CORTAFUEGOS_POR_SIM } = sonda;
+
+/** EL RELOJ DEL CLIENTE, importado para ejercerlo. Vive en un módulo sin un
+ *  solo import justo para que esto sea posible (ver el bloque del final). */
+const { crearRelojDeSim } = (await import(
+  join(repoRoot, "nefan-html", "src", "world", "reloj-de-sim.ts")
+)) as { crearRelojDeSim: () => { frameDelLoop: (d: number) => number; avanza: (d: number) => number; lee: () => { sim: number; frames: number; loop: number } } };
 const { EsperaExpirada, RelojDeSimNoAvanzo, relojDeSimNoAvanzoEn, fallosDeEsperasPendientes } = esperas;
 
 /** El navegador falso: ejecuta en Node la función que la sonda le entrega, que
@@ -88,13 +95,17 @@ function paginaFalsa(opciones: { reloj?: () => Reloj; conteste?: boolean } = {})
 
 /** Un reloj de sim conducido a mano: avanza `porLectura` segundos cada vez que
  *  alguien lo lee, que es lo que hace el del juego cuando pasan frames. */
-function relojQueCorre(porLectura: number): () => Reloj {
+function relojQueCorre(porLectura: number, { late = true } = {}): () => Reloj {
   let sim = 0;
   let frames = 0;
+  let loop = 0;
   return () => {
     sim += porLectura;
     frames += porLectura > 0 ? 1 : 0;
-    return { sim, frames };
+    // El LATIDO va aparte del mundo: un reloj que late sin simular es el estado
+    // del título delante, y es el que tiene que acabar en ⊘ y no en afirmación.
+    if (late) loop += 1;
+    return { sim, frames, loop };
   };
 }
 
@@ -114,8 +125,18 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
     assert.match(p.rotulo!, /4\.00 s de sim/);
   });
 
-  it("el cortafuegos derivado tiene techo: una página muerta no se mira quince minutos", () => {
-    assert.equal(presupuestoDeEspera({ sim: 600 }, "x").techoMs, CORTAFUEGOS_MAXIMO_MS);
+  it("y el múltiplo es el MISMO para todos los presupuestos, sin techo que lo aplaste", () => {
+    // H-4 de QA: con un techo absoluto de 300 s el «×10» solo era ×10 para el
+    // presupuesto más pequeño — `{sim:45}` era ×6,67, `{sim:60}` ×5,00 y
+    // `{sim:90}` ×3,33, o sea que un `{sim:90}` con la razón 0,3 que yo mismo
+    // medí a factor 40 se rendía por PARED en vez de medir. El cortafuegos
+    // volvía a decidir justo en el régimen que motivó la tanda.
+    for (const sim of [4, 45, 60, 90, 600]) {
+      const p = presupuestoDeEspera({ sim }, "x");
+      assert.equal(p.techoMs, sim * 1000 * CORTAFUEGOS_POR_SIM, `{sim:${sim}} no es ×${CORTAFUEGOS_POR_SIM}`);
+      // Dicho como lo que importa: qué razón sim/pared tolera antes de rendirse.
+      assert.ok(1 / CORTAFUEGOS_POR_SIM <= 0.152, "el múltiplo ya no cubre la razón medida a factor 40");
+    }
   });
 
   it("`ms` junto a `sim` fija el cortafuegos a mano, y el que decide sigue siendo el sim", () => {
@@ -134,17 +155,23 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
 
 describe("el avance del reloj tolera que la página NAVEGUE", () => {
   it("la primera lectura es la base, no un avance", () => {
-    assert.deepEqual(avanceDelReloj(null, { sim: 7, frames: 40 }), { sim: 0, frames: 0 });
+    assert.deepEqual(avanceDelReloj(null, { sim: 7, frames: 40, loop: 99 }), { sim: 0, frames: 0, loop: 0 });
   });
 
   it("dos lecturas seguidas dan la diferencia", () => {
-    assert.deepEqual(avanceDelReloj({ sim: 2, frames: 10 }, { sim: 3.5, frames: 25 }), { sim: 1.5, frames: 15 });
+    assert.deepEqual(
+      avanceDelReloj({ sim: 2, frames: 10, loop: 30 }, { sim: 3.5, frames: 25, loop: 60 }),
+      { sim: 1.5, frames: 15, loop: 30 },
+    );
   });
 
   it("un reloj que va hacia atrás es un `reload`: cuenta lo que lleva el nuevo, no un negativo", () => {
     // Media batería recarga la página para reanudar la partida. Restando, el
     // consumido se volvería negativo y el presupuesto no se agotaría jamás.
-    assert.deepEqual(avanceDelReloj({ sim: 30, frames: 900 }, { sim: 0.5, frames: 12 }), { sim: 0.5, frames: 12 });
+    assert.deepEqual(
+      avanceDelReloj({ sim: 30, frames: 900, loop: 900 }, { sim: 0.5, frames: 12, loop: 12 }),
+      { sim: 0.5, frames: 12, loop: 12 },
+    );
   });
 });
 
@@ -188,13 +215,16 @@ describe("con presupuesto de SIMULACIÓN, quien decide la expiración es el sim"
 });
 
 describe("el cortafuegos de pared solo puede declarar ⊘, nunca «no ocurrió» (#545)", () => {
-  it("dice «sim pedido vs. sim avanzado», con los frames del loop", async () => {
+  it("dice «sim pedido vs. sim avanzado», y separa los frames del MUNDO de los del LOOP", async () => {
     const { page } = paginaFalsa({ reloj: relojQueCorre(0) });
     const ctx = ctxDeSonda(page);
     const err = (await ctx.waitFor("el jugador llega", NUNCA, { sim: 4, ms: 600 }).catch((e: unknown) => e)) as Error;
     assert.ok(err instanceof RelojDeSimNoAvanzo);
     assert.match(err.message, /sim pedido 4\.00 s vs\. sim avanzado 0\.00 s/);
-    assert.match(err.message, /frames del loop/);
+    assert.match(err.message, /frames de MUNDO y \d+ del LOOP/);
+    // Y con la página LATIENDO y el mundo parado, el mensaje dice cuál de los
+    // dos estados es — que es el diagnóstico que le faltó a H-1.
+    assert.match(err.message, /la página late .* pero el mundo no se simula/);
     // Y no puede confundirse con la afirmación de una expiración: «no ocurrió
     // en N ms» es la firma con la que `expectEspera` AFIRMA un hecho del juego
     // (`qa/lib/carga.mjs`, `firmaDePresupuesto`). Este mensaje empieza diciendo
@@ -240,6 +270,35 @@ describe("el cortafuegos de pared solo puede declarar ⊘, nunca «no ocurrió»
     assert.match(ctx.esperas.todas()[0].rotulo!, /4\.00 s de sim/);
   });
 
+  it("una lectura que no se ENTIENDE es ilegible, no un avance: `NaN` no puede afirmar nada", async () => {
+    // H-6 de QA, y es la misma puerta que `presupuestoDeEspera` cierra en la
+    // entrada, en el otro extremo del mismo dato: `typeof NaN === "number"`, así
+    // que con `sim: NaN` el acumulado era `NaN`, `NaN < presupuesto` falso, y la
+    // espera salía del bucle **por el camino de la AFIRMACIÓN** tras un sondeo.
+    assert.equal(lecturaDelRelojValida({ sim: 1, frames: 1, loop: 1 }), true);
+    for (const malo of [null, { sim: NaN, frames: 1, loop: 1 }, { sim: 1, frames: NaN, loop: 1 }, { sim: 1 }]) {
+      assert.equal(lecturaDelRelojValida(malo), false, JSON.stringify(malo));
+    }
+    const { page } = paginaFalsa({ reloj: () => ({ sim: NaN, frames: NaN, loop: NaN }) as unknown as Reloj });
+    const err = (await ctxDeSonda(page)
+      .waitFor("el jugador llega", NUNCA, { sim: 4, ms: 600 })
+      .catch((e: unknown) => e)) as Error;
+    assert.ok(err instanceof RelojDeSimNoAvanzo, `un reloj ilegible tiene que ser ⊘ y llegó ${String(err)}`);
+    assert.match(err.message, /no se entiende/);
+  });
+
+  it("y si la página LATE pero no simula, el ⊘ es por presupuesto y NO por loop colgado", async () => {
+    // El control del guardia de abajo: sin esto, un guardia que disparase
+    // siempre daría el mismo ⊘ por el motivo equivocado, y el diagnóstico —que
+    // es para lo que existen las dos cifras— diría lo contrario de lo que pasa.
+    const { page } = paginaFalsa({ reloj: relojQueCorre(0) });
+    const err = (await ctxDeSonda(page)
+      .waitFor("el jugador llega", NUNCA, { sim: 4, ms: 600 })
+      .catch((e: unknown) => e)) as Error;
+    assert.ok(err instanceof RelojDeSimNoAvanzo);
+    assert.doesNotMatch(err.message, /sin dar un solo frame/);
+  });
+
   it("un cliente sin `reloj()` se dice ENSEGUIDA y no tras el cortafuegos entero", async () => {
     // Un bundle de producción no publica el reloj, y esperar ahí los 40 s del
     // cortafuegos por cada espera sería tardar una tarde en decir algo que se
@@ -256,6 +315,32 @@ describe("el cortafuegos de pared solo puede declarar ⊘, nunca «no ocurrió»
     // cobra además como «seguía en vuelo» y el guion sale ROJO encima del ⊘.
     assert.deepEqual(fallosDeEsperasPendientes(ctx.esperas), []);
     assert.equal(ctx.esperas.enVuelo().length, 0);
+  });
+});
+
+describe("el LATIDO del loop es el cortafuegos contra el rAF colgado (#545, H-4)", () => {
+  // El `timeout` es parte del candado, no un adorno: SIN el guardia del latido
+  // este caso no se pone rojo, se CUELGA —el cortafuegos de pared de `{sim:120}`
+  // son 1.200.000 ms—, y un candado cuyo negativo es colgar la suite no sirve
+  // para enterarse de nada. Con él, quitar el guardia sale rojo en 25 s.
+  it("una página que no da NI UN frame se declara ⊘ por el latido, sin esperar al cortafuegos entero", { timeout: 25_000 }, async () => {
+    // Es lo que permite que el cortafuegos de pared sea proporcional al sim
+    // pedido en vez de estar topado: un `{sim:120}` sobre un cadáver se
+    // resolvía antes en 300 s (el techo) y ahora en diez, y el techo ya no
+    // aplasta el múltiplo de los presupuestos grandes.
+    //
+    // Cuesta sus diez segundos de reloj y no hay forma barata de tenerlos: el
+    // guardia es de PARED por definición. Corre en paralelo con el resto de la
+    // suite (`--test-concurrency`), así que no alarga la corrida.
+    const { page } = paginaFalsa({ reloj: relojQueCorre(0, { late: false }) });
+    const t0 = Date.now();
+    const err = (await ctxDeSonda(page)
+      .waitFor("el jugador llega", NUNCA, { sim: 120 })
+      .catch((e: unknown) => e)) as Error;
+    const tardó = Date.now() - t0;
+    assert.ok(err instanceof RelojDeSimNoAvanzo, `esperaba ⊘ y llegó ${String(err)}`);
+    assert.match(err.message, /el GAME LOOP lleva \d+ ms sin dar un solo frame/);
+    assert.ok(tardó < 20_000, `tardó ${tardó} ms: el cortafuegos de pared de {sim:120} son 1.200.000 ms`);
   });
 });
 
@@ -281,35 +366,85 @@ describe("con presupuesto de PARED no cambia ni un byte del camino de siempre", 
   });
 });
 
-describe("el reloj de sim del cliente está anclado, y es UNO (#545)", () => {
-  const ficherosDelCliente = (dir: string): string[] =>
-    readdirSync(dir).flatMap((n) => {
-      const p = join(dir, n);
-      return statSync(p).isDirectory() ? ficherosDelCliente(p) : p.endsWith(".ts") ? [p] : [];
-    });
+describe("el reloj de sim del cliente CUENTA, y cuenta lo que el mundo simula (#545)", () => {
+  // ESTE BLOQUE ERA UN `grep` Y NO VALÍA NADA, y conviene que quede escrito
+  // dónde falló: sus tres asertos miraban el TEXTO de `main.ts`, así que
+  // `crearRelojDeSim` no lo ejecutaba ni un test del repo. QA lo demostró con
+  // el caso que yo no usé — cambiar `sim += delta` por `sim += 0` dejaba los 21
+  // tests en verde, con toda espera de sim de la batería declarando ⊘ y ningún
+  // candado enterándose. Un candado que se satisface sin haber mirado. Por eso
+  // el reloj vive ahora en un módulo SIN IMPORTS: para poder pedirle cuentas.
 
-  it("el delta TOPADO del game loop pasa por el reloj: no hay forma de mover el mundo sin contarlo", () => {
+  it("`avanza` mueve el reloj por el delta que recibe, y lo devuelve", () => {
+    // El caso que pone rojo `sim += 0`, que es el que faltaba.
+    const r = crearRelojDeSim();
+    assert.equal(r.avanza(0.1), 0.1, "`avanza` tiene que devolver su delta: es lo que lo hace inevitable");
+    r.avanza(0.05);
+    assert.equal(Number(r.lee().sim.toFixed(3)), 0.15);
+    assert.equal(r.lee().frames, 2);
+  });
+
+  it("y el LATIDO del loop se cuenta aparte, sin tocar el sim", () => {
+    const r = crearRelojDeSim();
+    r.frameDelLoop(0.1);
+    r.frameDelLoop(0.1);
+    assert.deepEqual(r.lee(), { sim: 0, frames: 0, loop: 2 });
+    // Las dos cifras juntas son las que dicen «la página late pero el mundo no
+    // corre», que es el estado que se le escapó a la primera versión.
+    r.avanza(r.frameDelLoop(0.1));
+    assert.deepEqual(r.lee(), { sim: 0.1, frames: 1, loop: 3 });
+  });
+
+  it("un reloj recién hecho está a cero y no comparte estado con otro", () => {
+    const a = crearRelojDeSim();
+    a.avanza(1);
+    assert.deepEqual(crearRelojDeSim().lee(), { sim: 0, frames: 0, loop: 0 });
+  });
+
+  it("EL MUNDO avanza el reloj desde el argumento del `tick`, que es la llamada que lo simula", () => {
+    // El ancla de POSICIÓN, y ahora apunta a la posición correcta: alimentar el
+    // reloj arriba del loop contaba los frames del TÍTULO, donde `tick` no se
+    // llama y `idle()` sí — y ahí una espera de sim se agotaba y AFIRMABA «el
+    // mundo avanzó sus N segundos» sobre un mundo parado (H-1, medido: 7,65 s
+    // de sim en 8 s de pared con el título delante). Que la llamada esté DENTRO
+    // del `tick` es lo que hace que `sim` no pueda subir sin que el mundo corra.
     const main = readFileSync(join(repoRoot, "nefan-html", "src", "main.ts"), "utf8");
     assert.match(
       main,
-      /const delta = relojDeSim\.avanza\(Math\.min\(\(now - lastTime\) \/ 1000, [\d.]+\)\)/,
-      "el game loop ya no alimenta el reloj de sim con su delta topado: el banco presupuestaría en sim " +
-        "contra un contador que nadie mueve, y toda espera de sim pasaría a declarar ⊘",
+      /gameClient\.tick\(relojDeSim\.avanza\(delta\)/,
+      "el mundo ya no avanza el reloj desde el argumento de `tick`: si se alimenta en otro sitio, `sim` " +
+        "vuelve a contar frames en los que el mundo no se simula y la espera de sim afirma lo que no midió",
+    );
+    assert.doesNotMatch(
+      main,
+      /const delta = relojDeSim\.avanza\(/,
+      "el reloj vuelve a alimentarse con el delta del LOOP, antes de saber si el mundo se va a simular: " +
+        "es exactamente el defecto H-1",
     );
   });
 
-  it("esa llamada es la ÚNICA en todo el cliente", () => {
+  it("y esa llamada es la ÚNICA en todo el cliente", () => {
     // «Una sola definición de avanzó el juego» es el criterio de la PR, y sin
     // esto es una frase: dos sitios que acumulen dan dos relojes que nadie
     // obliga a coincidir.
+    const ficherosDelCliente = (dir: string): string[] =>
+      readdirSync(dir).flatMap((n) => {
+        const p = join(dir, n);
+        return statSync(p).isDirectory() ? ficherosDelCliente(p) : p.endsWith(".ts") ? [p] : [];
+      });
     const usos = ficherosDelCliente(join(repoRoot, "nefan-html", "src"))
       .filter((f) => readFileSync(f, "utf8").includes("relojDeSim.avanza("))
       .map((f) => f.slice(repoRoot.length + 1));
     assert.deepEqual(usos, ["nefan-html/src/main.ts"]);
   });
 
-  it("y el hook lo publica para el banco", () => {
+  it("el hook lo publica para el banco, y no lo define", () => {
+    // El reloj salió de `dev/nefan-hook.ts` por dos razones: allí no se podía
+    // ejercer (el módulo arrastra medio cliente) y su cabecera declara «nada de
+    // `nefan-html/src` lo consume», que con el reloj dentro era falsa en cada
+    // frame — también en producción.
     const hook = readFileSync(join(repoRoot, "nefan-html", "src", "dev", "nefan-hook.ts"), "utf8");
     assert.match(hook, /reloj: \(\) => relojDeSim\.lee\(\)/);
+    assert.doesNotMatch(hook, /function crearRelojDeSim/);
   });
 });

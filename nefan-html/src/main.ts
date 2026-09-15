@@ -4,7 +4,8 @@
  *  nefan-core por WebSocket o cae a simulación local. */
 
 import type { Vec3 } from "@nefan-core/src/types.js";
-import { instalarNefanHook, relojDeSim } from "./dev/nefan-hook.js";
+import { instalarNefanHook } from "./dev/nefan-hook.js";
+import { relojDeSim } from "./world/reloj-de-sim.js";
 import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import { pickNearestTarget } from "@nefan-core/src/scene/aim.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
@@ -563,9 +564,8 @@ function scheduleNextFrame(): void {
 }
 
 function gameLoop(now: number): void {
-  const delta = relojDeSim.avanza(Math.min((now - lastTime) / 1000, 0.1));
+  const delta = relojDeSim.frameDelLoop(Math.min((now - lastTime) / 1000, 0.1));
   lastTime = now;
-
   if (!gameClient) {
     scheduleNextFrame();
     return;
@@ -670,7 +670,7 @@ function gameLoop(now: number): void {
   // conducía la partida que el jugador acababa de dejar hasta el origen.
   const result: FrameResult = titleScreen.isVisible
     ? gameClient.idle()
-    : gameClient.tick(delta, {
+    : gameClient.tick(relojDeSim.avanza(delta), {
         playerPosition: playerPos,
         playerForward: mirada.forward,
         playerMoving: input.state.up || input.state.down || input.state.left || input.state.right,

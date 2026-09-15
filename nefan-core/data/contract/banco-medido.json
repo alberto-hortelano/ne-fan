@@ -14,10 +14,6 @@
       "porque": "Espera por el estado de un puerto TCP —ocupado, arriba, libre— y pregunta a `ss` quién lo tiene, para los guiones que levantan su propio servicio. Es un socket de verdad contra el kernel de la máquina; un doble del socket probaría el doble. Lo ejercen los guiones headless: `el-npc-cruza-ai-server-…` en CI y `fake-enruta-por-pathname` en local (fuera del job: su observable lee arte generado)."
     },
     {
-      "fichero": "qa/lib/combate.mjs",
-      "porque": "Los dos gestos de pelea que repiten los guiones 41-50 —acercarse andando y pegar hasta bajar la vida— conducidos por teclado sobre la página real, con la espera por estado del sim. El umbral que fija es el que afirman los guiones; la fórmula de combate la prueba `test/combat-resolver.test.ts`, y el módulo `combat-resolver` está en mutación."
-    },
-    {
       "fichero": "qa/lib/fixtures.mjs",
       "porque": "Carga una fixture del selector «Room» en la página real y SABE que se cargó (#308), usando la compuerta que el cliente expone en `window.__nefan`. Es conducir el DOM del cliente; el contenido de las fixtures lo valida `test/scene-fixtures.test.ts` y su normalización `test/scene-normalize.test.ts`."
     },
