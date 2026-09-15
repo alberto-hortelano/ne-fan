@@ -76,6 +76,9 @@ const APARTADO = join(CORE, "reports", "mutation.qa-cableado");
  *  de `reports/`, que es donde vive la base de la comparación. */
 const COLADO = join(CORE, "reports", "colado");
 const CORRIDA = join(INFORMES, "corrida.json");
+/** La corrida BASE de ensayo del invariante de #599: el mismo material medido,
+ *  y lo único que cambia entre las dos lecturas es su `coverageAnalysis`. */
+const BASE_ENSAYO = join(CORE, "reports", "base-ensayo");
 
 const git = (args) => execFileSync("git", args, { cwd: raiz, encoding: "utf8" }).trim();
 
@@ -120,9 +123,20 @@ function siembraInforme(marca = "x") {
 
 /** Reescribe SOLO el informe del módulo, dejando el `corrida.json` que ya
  *  estuviera: es lo que hace `npm run mutacion -- local <id>` encima de una
- *  descarga, y es el caso exacto de #420. */
-function soloInforme(marca = "x") {
-  const informe = {
+ *  descarga, y es el caso exacto de #420.
+ *
+ *  Lleva `config.coverageAnalysis` porque un informe de Stryker lo lleva
+ *  siempre (medido el 2026-09-15: 171 informes en disco, cero sin él) y porque
+ *  desde #599 `comparar` se NIEGA a leer uno que no lo traiga: sin ese dato no
+ *  puede decir qué está mirando, que es justo lo que había que arreglar. */
+function soloInforme(marca = "x", estado = "Survived", cobertura = "perTest") {
+  writeFileSync(join(INFORMES, `${E.id}.json`), informeDe(marca, estado, cobertura));
+}
+
+/** El mismo informe mínimo, como texto, para poder sembrarlo también en un
+ *  directorio de base. */
+function informeDe(marca = "x", estado = "Survived", cobertura = "perTest") {
+  return JSON.stringify({
     files: {
       [E.fichero]: {
         mutants: [
@@ -130,14 +144,14 @@ function soloInforme(marca = "x") {
             id: "1",
             mutatorName: "BooleanLiteral",
             replacement: marca,
-            status: "Survived",
+            status: estado,
             location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
           },
         ],
       },
     },
-  };
-  writeFileSync(join(INFORMES, `${E.id}.json`), JSON.stringify(informe));
+    config: { coverageAnalysis: cobertura },
+  });
 }
 
 /** La foto de lo que un verbo EN SECO no puede tocar: la huella commiteada, el
@@ -368,6 +382,56 @@ const INVARIANTES = [
     ],
   },
 
+  {
+    // #599 · LO QUE PRUEBA ESTE PROBE, dicho con precisión: que el verbo MIRA
+    // EL DATO y no el viento. Se corre DOS VECES sobre EXACTAMENTE el mismo
+    // material —el mismo informe de ahora, con su único mutante `NoCoverage`, y
+    // la misma base con ese mutante como `Survived`— y lo único que cambia
+    // entre las dos es el `coverageAnalysis` que declara el informe base.
+    //
+    // Con `off` la base NO PODÍA emitir `NoCoverage` jamás, así que su cero no
+    // es una medida: el mutante sale como CENSO y la séptima condición no se
+    // pronuncia. Con `perTest` sí podía, así que su cero SÍ es una medida y la
+    // condición tumba la adopción, igual que antes de #599.
+    //
+    // Si las dos lecturas salen iguales, el verbo está contestando sin mirar —
+    // que es el defecto que #599 cerró (la condición solo podía salir en una
+    // dirección) o el defecto opuesto (abstenerse siempre), y los dos se ven
+    // aquí como «el observable no cambia».
+    nombre: "comparar · la séptima condición sabe SI PUDO MIRAR: mismo material, dos lecturas (#599)",
+    mira: () => {
+      // El mutante va como `NoCoverage` en la corrida de AHORA y como
+      // `Survived` en la base: es el movimiento exacto de #443 en miniatura.
+      siembraInforme();
+      soloInforme("x", "NoCoverage", "perTest");
+      manifiesta({ run: "999915" });
+      rmSync(BASE_ENSAYO, { recursive: true, force: true });
+      mkdirSync(BASE_ENSAYO, { recursive: true });
+      const lee = (cobertura) => {
+        writeFileSync(join(BASE_ENSAYO, `${E.id}.json`), informeDe("x", "Survived", cobertura));
+        const s = mutacion(["comparar", "--timeouts", "reports/base-ensayo"]).salida;
+        const n = /sin ejercer\s+: (\d+) mutante/.exec(s)?.[1] ?? "?";
+        const c = /· censo\s+: (\d+) mutante/.exec(s)?.[1] ?? "?";
+        // El motivo 7a, no el título del bloque (que lleva las mismas palabras
+        // y estaría siempre): lo que se busca es la frase del `porque`.
+        const siete = /mutante\(s\) que ya NO EJERCE NINGÚN TEST/.test(s);
+        return `${cobertura}[sinEjercer:${n} censo:${c} 7a:${siete}]`;
+      };
+      return `${lee("off")} ${lee("perTest")}`;
+    },
+    bien: (s) => s === "off[sinEjercer:0 censo:1 7a:false] perTest[sinEjercer:1 censo:0 7a:true]",
+    porque:
+      "con la base en `coverageAnalysis: \"off\"` Stryker NO EMITE `NoCoverage` jamás, así que «antes se " +
+      "ejercían: 1122» no era una medida sino lo único que la base podía decir: la séptima condición se " +
+      "disparaba POR CONSTRUCCIÓN contra cualquier runner que activara la cobertura — que son exactamente " +
+      "los runners por los que uno cambiaría",
+    rompe: [
+      COMPARAR,
+      `        const cap = capacidadDeLaBase(delModulo.cobertura);\n        capacidad = cap.sabe ? { sabe: true, huellas: base.sinEjercer } : cap;`,
+      `        capacidad = { sabe: true, huellas: base.sinEjercer };`,
+    ],
+  },
+
   // ── PR-E · la corrida partida en lotes ─────────────────────────────────────
   {
     nombre: "lotes · el PLAN lleva TODO lo pedido, también lo que no se pudo empaquetar por reloj",
@@ -526,6 +590,7 @@ function limpiar() {
   restauraFuentes();
   rmSync(INFORMES, { recursive: true, force: true });
   rmSync(join(CORE, "reports", "lotes-ensayo"), { recursive: true, force: true });
+  rmSync(BASE_ENSAYO, { recursive: true, force: true });
   rmSync(join(CORE, "reports", "plan-corrida.json"), { force: true });
   rmSync(COLADO, { recursive: true, force: true });
   if (habiaInformes) renameSync(APARTADO, INFORMES);

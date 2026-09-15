@@ -215,6 +215,33 @@ const INVARIANTES = [
   ["repartir · 'a medio repartir' se colapsa a 'ya repartida' (la otra mitad sin dueño para siempre)", SRC,
     `  return { tipo: "a medio repartir", repartidos, total: ficheros.length };`,
     `  return { tipo: "ya repartida" };`],
+  // ── #599 · la séptima condición, en las DOS direcciones ──
+  //
+  // Un candado que no puede ponerse rojo en NINGUNA dirección es peor que el
+  // defecto que arregla, así que las dos reversiones de aquí abajo son
+  // OPUESTAS: la primera devuelve el defecto (sumar también lo que la base no
+  // podía medir, con lo que la condición vuelve a dispararse por construcción
+  // contra cualquier runner con cobertura) y la segunda instala el defecto
+  // contrario (no sumar nada nunca, o sea una abstención permanente que deja
+  // pasar al instrumento que de verdad mide menos). Las dos tienen que poner
+  // roja la batería, y por casos DISTINTOS.
+  ["sinEjercer · se suman TODOS los ficheros, también los que la base no podía medir (vuelve #599)", SRC,
+    `    nuevos: deBase((b) => b.nuevos),`,
+    `    nuevos: suma((r) => (r.base.sabe ? r.base.nuevos : r.ahora)),`],
+  ["sinEjercer · no se suma NINGUNO: la condición se abstiene para siempre", SRC,
+    `    nuevos: deBase((b) => b.nuevos),`, `    nuevos: 0,`],
+  ["sinEjercer · `perTest` también abstiene: la condición no se puede poner roja nunca", SRC,
+    `  return coverageAnalysis === "off" ? { sabe: false, porque: 'coverageAnalysis "off"' } : { sabe: true };`,
+    `  void coverageAnalysis;\n  return { sabe: false, porque: 'coverageAnalysis "off"' };`],
+  ["sinEjercer · el motivo 7b se calla: «no se pudo mirar» pasa a verde", SRC,
+    `  if (totalSin.sinMirar > 0) {`, `  if (false as boolean) {`],
+  ["sinEjercer · el titular afirma que miró cuando no miró nada", SRC,
+    `  if (t.mirados === 0) {`, `  if (false as boolean) {`],
+  // La abstención permanente por la otra puerta: aquí la condición SÍ vota,
+  // pero el informe no puede decir nunca sobre cuántos ficheros se pronuncia,
+  // así que «✔ no mide menos» vuelve a ser una frase sin sujeto.
+  ["sinEjercer · nunca se dice sobre cuántos ficheros se pudo mirar", SRC,
+    `    mirados: filas.filter((r) => r.base.sabe).length,`, `    mirados: 0,`],
   ["repartir · el guardia del comentario deja de mirar (los dos comentarios de #273)", SRC,
     `export function yaComentada(cuerpos: readonly string[], runId: string): boolean {\n  const marca = marcaDeCorrida(runId);`,
     `export function yaComentada(cuerpos: readonly string[], runId: string): boolean {\n  if (cuerpos.length >= 0) return false;\n  const marca = marcaDeCorrida(runId);`],

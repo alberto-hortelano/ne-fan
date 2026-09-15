@@ -422,8 +422,10 @@ export function deltaDeCorrida(
  *  corrida, y lo que no se midió se nombra. */
 export interface CorridaQueJuzga {
   /** Los ficheros que la huella ya midió y el plan sigue mutando hoy: el
-   *  conjunto de la casa. Hoy son 87 (el 88º, `src/protocol/status-labels.ts`,
-   *  ya no existe y por eso no se espera). */
+   *  conjunto de la casa. Hoy son **90** de las 91 filas de la huella (medido
+   *  el 2026-09-15; decía 87, que era de la huella de hace dos semanas). La
+   *  fila que sobra sigue siendo `src/protocol/status-labels.ts`, que ya no
+   *  existe y por eso no se espera. */
   esperados: readonly string[];
   /** Si esta corrida midió TODO lo que había desde el tag. Lo calcula
    *  `veredictoDeCorrida` y es `false` para `origen: "explicito"`, que es
@@ -436,7 +438,10 @@ export interface CorridaQueJuzga {
   completa: boolean;
   /** Los mutantes que esta corrida ya no ejerce y antes sí, por fichero. Ver
    *  `sinEjercerDeFichero`: con `esVivo` colapsando `Survived` y `NoCoverage`,
-   *  el delta no puede verlos. */
+   *  el delta no puede verlos.
+   *
+   *  Cada fila trae en el TIPO si su base podía contestar la pregunta (#599),
+   *  y eso es lo que decide si vota o si solo se cuenta. */
   sinEjercer: readonly SinEjercerDeFichero[];
   /** Los ficheros cuya medida anterior es de OTRO CÓDIGO (el blob no casa).
    *
@@ -477,7 +482,27 @@ export interface CorridaQueJuzga {
  *    4. `sin base = 0`        · no había contra qué
  *    5. `comparables > 0`     · no se comparó nada en absoluto
  *    6. `sin medir = 0` y `mueveTag` · se juzgó la casa con una fracción (H1)
- *    7. `sin ejercer = 0`     · el instrumento nuevo mide MENOS (H2) */
+ *    7. `sin ejercer = 0`     · el instrumento nuevo mide MENOS (H2)
+ *
+ *  Y LA SÉPTIMA SE PARTE EN DOS, que es #599. Tal como estaba, su premisa no se
+ *  podía cumplir nunca: con la base en `coverageAnalysis: "off"` Stryker NO
+ *  EMITE `NoCoverage` jamás, así que «antes se ejercían: 1122» no era una
+ *  medida, era lo único que la base podía decir — la condición se disparaba POR
+ *  CONSTRUCCIÓN contra cualquier runner que activara la cobertura, que son
+ *  exactamente los runners por los que uno cambiaría. Ahora:
+ *
+ *    7a. `sin ejercer = 0`        · DONDE SE PUDO MIRAR: el instrumento nuevo
+ *                                   mide MENOS. Idéntica a la de antes, y sigue
+ *                                   tumbando la adopción.
+ *    7b. `sin poder mirar = 0`    · hay `NoCoverage` de los que no hay informe
+ *                                   base con el que saber si antes se ejercían.
+ *                                   No autoriza: niega, con otro remedio
+ *                                   (`--timeouts <dir>`).
+ *
+ *  Lo que la base NO PODÍA expresar (`off`) ni vota ni se calla: sale como
+ *  CENSO —cuántos separa el instrumento nuevo que el viejo no sabía nombrar
+ *  (#598)—, y quien cruza si eso es medida ganada o perdida son las condiciones
+ *  1 y 2, que sí votan: si ningún mutante cambió de bando, nadie perdió nada. */
 export interface VeredictoDeAdopcion {
   /** Ficheros que SÍ se compararon con su medida anterior. */
   comparables: number;
@@ -494,8 +519,17 @@ export interface VeredictoDeAdopcion {
   incomparablesPorCodigo: string[];
   /** Ficheros que la huella espera y esta corrida NO midió. */
   sinMedir: string[];
-  /** Mutantes que ya no ejerce ningún test y antes sí. */
+  /** Mutantes que ya no ejerce ningún test y antes sí, DONDE SE PUDO MIRAR.
+   *  Es el que vota como «mide menos» (7a). */
   sinEjercer: number;
+  /** Mutantes `NoCoverage` de ahora cuya base no podía siquiera expresarlos
+   *  (`coverageAnalysis: "off"`). NO votan: son censo, no medida perdida. Se
+   *  expone para que quien lea el veredicto vea el número y no lo confunda con
+   *  el de arriba — que es el confusión que costó #599. */
+  sinEjercerCenso: number;
+  /** Mutantes `NoCoverage` de ahora sin informe base con el que compararlos.
+   *  Votan (7b), pero por «no se pudo mirar», no por «mide menos». */
+  sinEjercerSinMirar: number;
   adopta: boolean;
   /** TODOS los motivos, no el primero: arreglar uno y descubrir el siguiente en
    *  la vuelta de después es lo que hace que nadie termine de mirar. */
@@ -528,7 +562,13 @@ export function veredictoDeAdopcion(
   const resueltos = comparados.reduce((n, d) => n + d.resueltos.length, 0);
   const medidos = new Set(deltas.map((d) => d.fichero));
   const sinMedir = [...corrida.esperados].filter((f) => !medidos.has(f)).sort();
-  const sinEjercer = corrida.sinEjercer.reduce((n, f) => n + f.nuevos, 0);
+  // Las tres cuentas salen de la MISMA suma —`totalSinEjercer`, la que imprime
+  // el bloque— para que el veredicto y la tabla no puedan discrepar sobre el
+  // mismo material. Y SOLO SUMA LOS QUE VOTAN: `nuevos` existe únicamente en la
+  // rama `sabe: true` del tipo, así que sumar los de una base incapaz no es una
+  // decisión que este código tome bien, es una decisión que no puede escribir.
+  const totalSin = totalSinEjercer(corrida.sinEjercer);
+  const sinEjercer = totalSin.nuevos;
 
   const peros: string[] = [];
   if (comparados.length === 0) {
@@ -589,13 +629,28 @@ export function veredictoDeAdopcion(
         "mismo que faltar hallazgos",
     );
   }
+  // 7a · la de siempre, acotada a los ficheros cuya base PODÍA contestar.
   if (sinEjercer > 0) {
-    const ficheros = corrida.sinEjercer.filter((f) => f.nuevos > 0).map((f) => f.fichero);
+    const ficheros = corrida.sinEjercer.filter((f) => f.base.sabe && f.base.nuevos > 0).map((f) => f.fichero);
     peros.push(
       `${sinEjercer} mutante(s) que ya NO EJERCE NINGÚN TEST (\`NoCoverage\`) y antes sí, en ` +
         `${ficheros.length} fichero(s): ${muestraDe(ficheros)} — el instrumento nuevo mide MENOS, y eso no es ` +
         "«el mismo conjunto de supervivientes»: `esVivo` colapsa `Survived` y `NoCoverage`, así que el delta " +
         "no puede verlo",
+    );
+  }
+  // 7b · el motivo que antes no existía y se disfrazaba del de arriba: sin
+  // informe base no se está midiendo de menos, es que no se ha mirado. Niega
+  // igual —«no se pudo comprobar» nunca es un verde— pero manda a otro sitio.
+  if (totalSin.sinMirar > 0) {
+    const ficheros = corrida.sinEjercer
+      .filter((f) => !f.base.sabe && f.base.porque === "sin informe base" && f.ahora > 0)
+      .map((f) => f.fichero);
+    peros.push(
+      `${totalSin.sinMirar} mutante(s) \`NoCoverage\` en ${ficheros.length} fichero(s) que NO SE PUDO MIRAR ` +
+        `(${muestraDe(ficheros)}): no hay informe base con el que saber si antes se ejercían, y suponer que ya ` +
+        "lo eran es justo la suposición que deja pasar al instrumento que mide menos — pásale los informes de " +
+        "la corrida base: npm run mutacion -- comparar --timeouts <dir>",
     );
   }
 
@@ -608,12 +663,21 @@ export function veredictoDeAdopcion(
     incomparablesPorCodigo,
     sinMedir,
     sinEjercer,
+    sinEjercerCenso: totalSin.censo,
+    sinEjercerSinMirar: totalSin.sinMirar,
     adopta: peros.length === 0,
     porque:
       peros.length === 0
         ? `los ${comparados.length} fichero(s) de la huella se compararon uno a uno contra la medida anterior, ` +
-          "el conjunto de supervivientes es EL MISMO (no solo el score) y no hay ni uno que haya dejado de " +
-          "ejercer ningún test"
+          "el conjunto de supervivientes es EL MISMO (no solo el score) y " +
+          // Con la base incapaz, la frase de siempre sería la misma afirmación
+          // sin sujeto que arregla #599: no se puede decir «no hay ni uno» de
+          // algo que la base no podía nombrar. Se dice lo que sí se sabe.
+          (totalSin.mirados > 0
+            ? `no hay ni uno que haya dejado de ejercer ningún test en los ${totalSin.mirados} fichero(s) ` +
+              "cuya base podía decirlo"
+            : `de los \`NoCoverage\` no se pudo comprobar nada: NINGUNA base podía expresarlos, así que los ` +
+              `${totalSin.censo} de ahora son CENSO y no medida perdida (#598)`)
         : peros.join("; "),
   };
 }
@@ -738,40 +802,146 @@ export function totalDeReloj(filas: readonly RelojDeFichero[]): Omit<RelojDeFich
 
 // ── los mutantes que ya no ejerce nadie ──────────────────────────────────────
 
+/** Por qué la corrida BASE no puede contestar si un mutante se ejercía antes.
+ *
+ *  Son DOS hechos opuestos y no se colapsan:
+ *   · `coverageAnalysis "off"` — la base corría sin análisis de cobertura, y
+ *     con `off` Stryker NO EMITE `NoCoverage` jamás. O sea que su «cero
+ *     NoCoverage» no es una medida: es lo único que podía decir. Contarlo como
+ *     medida hace que la séptima condición se dispare POR CONSTRUCCIÓN contra
+ *     cualquier runner que active la cobertura, que son exactamente los
+ *     runners por los que uno cambiaría (#599, con los 1122 de #443).
+ *   · `sin informe base` — no hay contra qué comparar. Eso no autoriza nada:
+ *     sigue negando, y con su propio remedio (`--timeouts <dir>`). */
+export type MotivoDeNoSaber = 'coverageAnalysis "off"' | "sin informe base";
+
+/** Si la base PODÍA expresar `NoCoverage`, dicho POR FICHERO y en el tipo.
+ *
+ *  Por fichero y no por corrida, y eso no es purismo: una descarga puede traer
+ *  unos módulos medidos con cobertura y otros sin ella, y un booleano de
+ *  corrida colapsaría «la base es `off`» con «no hay base» — con base mixta el
+ *  motivo diría 501 donde tiene que decir 1. */
+export type CapacidadDeLaBase = { sabe: true } | { sabe: false; porque: MotivoDeNoSaber };
+
+/** La lectura del `coverageAnalysis` de un informe base.
+ *
+ *  Solo `off` abstiene: `perTest` y `all` SÍ pueden emitir `NoCoverage`, así
+ *  que su cero es una medida y vota. Un valor que no se reconozca vota también
+ *  —negar de más antes que autorizar de más—, y quien no traiga el campo no
+ *  llega hasta aquí: lo rechaza quien lee el informe. */
+export function capacidadDeLaBase(coverageAnalysis: string): CapacidadDeLaBase {
+  return coverageAnalysis === "off" ? { sabe: false, porque: 'coverageAnalysis "off"' } : { sabe: true };
+}
+
+/** Lo que se le pasa a `movimientosSinEjercer` como base: o las huellas que la
+ *  base tenía, o el motivo por el que no las puede tener. */
+export type BaseDeSinEjercer =
+  | { sabe: true; huellas: readonly string[] }
+  | { sabe: false; porque: MotivoDeNoSaber };
+
 /** Cómo se movió la población de `NoCoverage` de UN fichero.
  *
- *  `nuevos` es lo que decide, y por eso está separado del `ahora`: un
- *  `NoCoverage` que ya lo era no dice nada del instrumento nuevo; uno que ANTES
- *  se ejercía dice que el instrumento nuevo mide menos.
+ *  EL ESTADO MALO ES INEXPRESABLE, y ése es el arreglo de #599. Antes esto era
+ *  `{base: number, nuevos: number}` y `nuevos` se sumaba siempre; con la base
+ *  en `coverageAnalysis: "off"` ese `nuevos` valía «todos los de ahora» por
+ *  construcción, y la séptima condición del veredicto no podía salir más que
+ *  en una dirección. Ahora `nuevos` SOLO EXISTE en la rama `sabe: true`: nadie
+ *  puede sumarlo de una base que no podía medirlo, porque el campo no está.
  *
- *  SOLO PUEDE NEGAR, igual que `costeEstimado`: si no hay base con la que
- *  comparar —porque no se pasó `--timeouts`, o porque esa corrida no midió este
- *  módulo—, quien llama pasa `base: []` y TODOS los de ahora salen como nuevos.
- *  Entre negar de más y autorizar de más, esto existe para lo segundo. */
+ *  `ahora` se queda fuera de la unión a propósito: los `NoCoverage` de esta
+ *  corrida son un hecho crudo que existe se pueda comparar o no, y con la base
+ *  incapaz son justamente lo que hay que IMPRIMIR (el censo de #598) aunque no
+ *  vote.
+ *
+ *  SOLO PUEDE NEGAR, igual que `costeEstimado`: sin informe base, los de ahora
+ *  no se dan por buenos — salen como «no se pudo mirar», que es un motivo del
+ *  veredicto con su propio remedio. Entre negar de más y autorizar de más,
+ *  esto existe para lo segundo. */
 export interface SinEjercerDeFichero {
   fichero: string;
-  base: number;
+  /** Los `NoCoverage` de ESTA corrida. Existe se pueda comparar o no. */
   ahora: number;
-  nuevos: number;
+  base: BaseSinEjercerDeFichero;
 }
+
+export type BaseSinEjercerDeFichero =
+  | { sabe: true; cuenta: number; nuevos: number }
+  | { sabe: false; porque: MotivoDeNoSaber };
 
 export function movimientosSinEjercer(
   fichero: string,
-  base: readonly string[],
+  base: BaseDeSinEjercer,
   ahora: readonly string[],
 ): SinEjercerDeFichero {
-  const antes = new Set(base);
+  if (!base.sabe) return { fichero, ahora: ahora.length, base: { sabe: false, porque: base.porque } };
+  const antes = new Set(base.huellas);
   return {
     fichero,
-    base: antes.size,
     ahora: ahora.length,
-    nuevos: ahora.filter((h) => !antes.has(h)).length,
+    base: { sabe: true, cuenta: antes.size, nuevos: ahora.filter((h) => !antes.has(h)).length },
   };
 }
 
-export function totalSinEjercer(filas: readonly SinEjercerDeFichero[]): Omit<SinEjercerDeFichero, "fichero"> {
+/** Las CINCO cuentas del bloque, que antes eran tres y colapsaban dos hechos
+ *  opuestos en la misma columna. */
+export interface TotalSinEjercer {
+  /** Los `NoCoverage` que la base tenía, sumados SOLO donde sabía decirlo. */
+  base: number;
+  /** Los de ahora, en TODOS los ficheros. */
+  ahora: number;
+  /** Los que ANTES SÍ SE EJERCÍAN, donde se pudo mirar. Lo único que VOTA
+   *  como «el instrumento nuevo mide menos». */
+  nuevos: number;
+  /** Los de ahora en ficheros cuya base NO PODÍA expresar `NoCoverage`. No
+   *  votan: son el censo de lo que el instrumento nuevo sabe separar (#598). */
+  censo: number;
+  /** Los de ahora en ficheros SIN informe base. No se pudo mirar: votan, pero
+   *  por un motivo distinto y con otro remedio. */
+  sinMirar: number;
+  /** Cuántos FICHEROS tenían una base capaz de contestar. Si es 0, no se miró
+   *  nada y ninguna frase sobre «mide lo mismo» tiene sujeto. */
+  mirados: number;
+}
+
+export function totalSinEjercer(filas: readonly SinEjercerDeFichero[]): TotalSinEjercer {
   const suma = (f: (r: SinEjercerDeFichero) => number): number => filas.reduce((n, r) => n + f(r), 0);
-  return { base: suma((r) => r.base), ahora: suma((r) => r.ahora), nuevos: suma((r) => r.nuevos) };
+  const deBase = (f: (b: Extract<BaseSinEjercerDeFichero, { sabe: true }>) => number) =>
+    suma((r) => (r.base.sabe ? f(r.base) : 0));
+  const porMotivo = (m: MotivoDeNoSaber) => suma((r) => (!r.base.sabe && r.base.porque === m ? r.ahora : 0));
+  return {
+    base: deBase((b) => b.cuenta),
+    ahora: suma((r) => r.ahora),
+    nuevos: deBase((b) => b.nuevos),
+    censo: porMotivo('coverageAnalysis "off"'),
+    sinMirar: porMotivo("sin informe base"),
+    mirados: filas.filter((r) => r.base.sabe).length,
+  };
+}
+
+/** La frase que encabeza el bloque, con sujeto.
+ *
+ *  Vive aquí —puro, con batería— y no en quien imprime porque es justo la
+ *  afirmación que #599 encontró SIN SUJETO: «el instrumento nuevo no mide
+ *  menos» solo se puede decir si la base podía decir lo contrario. Con la base
+ *  en `off` no se dice ni eso ni lo opuesto: se dice que no se pudo mirar, y el
+ *  censo se imprime aparte. */
+export function titularDeSinEjercer(t: TotalSinEjercer): string {
+  if (t.mirados === 0) {
+    return (
+      "⊘ NO SE PUDO MIRAR: ninguna base podía contestar si estos mutantes se ejercían antes, " +
+      "así que la séptima condición no se pronuncia sobre ningún fichero."
+    );
+  }
+  if (t.nuevos > 0) {
+    return (
+      `✖ ${t.nuevos} mutante(s) han dejado de ser ejercidos en los ${t.mirados} fichero(s) que se pudo ` +
+      "mirar: el instrumento nuevo mide MENOS."
+    );
+  }
+  return (
+    `✔ ningún mutante ha dejado de ser ejercido en los ${t.mirados} fichero(s) que se pudo mirar: ` +
+    "el instrumento nuevo no mide menos."
+  );
 }
 
 /** La huella nueva: lo medido se sustituye, lo NO medido se conserva.

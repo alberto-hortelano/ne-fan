@@ -38,6 +38,7 @@ import {
   marcaDeCorrida,
   muroDeMutacion,
   yaComentada,
+  capacidadDeLaBase,
   deltaDeFichero,
   fusiona,
   hash64,
@@ -53,6 +54,7 @@ import {
   sinEjercerDeFichero,
   timeoutsDeFichero,
   totalDeReloj,
+  titularDeSinEjercer,
   totalSinEjercer,
   veredictoDeAdopcion,
   veredictoDeCorrida,
@@ -71,6 +73,7 @@ import {
   type ModuloAEmpaquetar,
   type PlanDeCorrida,
   type MutanteMedido,
+  type SinEjercerDeFichero,
 } from "../scripts/mutacion-huella.js";
 import { leerPlan } from "../scripts/mutation-plan.js";
 
@@ -1793,7 +1796,7 @@ describe("adopción · el criterio para cambiar de instrumento de medida (#443)"
       esperados: ["src/a.ts"],
       mueveTag: true,
       completa: true,
-      sinEjercer: [{ fichero: "src/a.ts", base: 0, ahora: 20, nuevos: 20 }],
+      sinEjercer: [{ fichero: "src/a.ts", ahora: 20, base: { sabe: true, cuenta: 0, nuevos: 20 } }],
       codigoCambiado: [],
     });
     assert.equal(v.nuevos, 0, "el delta no lo ve: es el punto");
@@ -1809,7 +1812,7 @@ describe("adopción · el criterio para cambiar de instrumento de medida (#443)"
       esperados: ["src/a.ts"],
       mueveTag: true,
       completa: true,
-      sinEjercer: [{ fichero: "src/a.ts", base: 7, ahora: 7, nuevos: 0 }],
+      sinEjercer: [{ fichero: "src/a.ts", ahora: 7, base: { sabe: true, cuenta: 7, nuevos: 0 } }],
       codigoCambiado: [],
     });
     assert.equal(v.sinEjercer, 0);
@@ -1829,7 +1832,7 @@ describe("adopción · el criterio para cambiar de instrumento de medida (#443)"
         esperados: ["src/a.ts", "src/b.ts", "src/z.ts"],
         mueveTag: false,
         completa: false,
-        sinEjercer: [{ fichero: "src/a.ts", base: 0, ahora: 1, nuevos: 1 }],
+        sinEjercer: [{ fichero: "src/a.ts", ahora: 1, base: { sabe: true, cuenta: 0, nuevos: 1 } }],
         codigoCambiado: [],
       },
     );
@@ -1846,7 +1849,126 @@ describe("adopción · el criterio para cambiar de instrumento de medida (#443)"
       assert.match(v.porque, motivo);
     }
   });
+  // ── #599 · la séptima condición, que hasta hoy solo podía salir en una
+  //    dirección ────────────────────────────────────────────────────────────
+  //
+  //  El defecto, dicho entero: `sinEjercer = 0` se evaluaba contra una base
+  //  medida con `coverageAnalysis: "off"`, y con `off` Stryker NO EMITE
+  //  `NoCoverage` JAMÁS. Así que «antes se ejercían: 1122» no era una medida:
+  //  era lo único que la base podía decir. La condición se disparaba POR
+  //  CONSTRUCCIÓN contra cualquier runner que activara el análisis de
+  //  cobertura — que son exactamente los runners por los que uno cambiaría.
+  //
+  //  Los SEIS casos de abajo existen en las DOS direcciones a propósito: 1 y 6
+  //  son los que impiden que el arreglo sea una abstención permanente. Un
+  //  candado que no puede ponerse rojo en ninguna dirección es peor que el
+  //  defecto que arregla.
+  const capaz = (fichero: string, ahora: number, nuevos: number): SinEjercerDeFichero => ({
+    fichero,
+    ahora,
+    base: { sabe: true, cuenta: ahora - nuevos, nuevos },
+  });
+  const incapaz = (fichero: string, ahora: number): SinEjercerDeFichero => ({
+    fichero,
+    ahora,
+    base: { sabe: false, porque: 'coverageAnalysis "off"' },
+  });
+  const sinInforme = (fichero: string, ahora: number): SinEjercerDeFichero => ({
+    fichero,
+    ahora,
+    base: { sabe: false, porque: "sin informe base" },
+  });
+  /** Un fichero que se comparó entero y no movió nada: así lo único que decide
+   *  en cada caso es la séptima condición. */
+  const limpio = (fichero = "src/a.ts") => delta({ fichero, vivos: [h("a")], yaEstaban: [h("a")] });
+
+  it("#599 · caso 1 · base CAPAZ con un mutante que dejó de ejercerse → NO adopta (LA DIRECCIÓN ROJA)", () => {
+    const v = veredictoDeAdopcion([limpio()], corrida({ sinEjercer: [capaz("src/a.ts", 1, 1)] }));
+    assert.equal(v.adopta, false, "con la base capaz, la condición sigue tumbando la adopción");
+    assert.equal(v.sinEjercer, 1);
+    assert.equal(v.sinEjercerCenso, 0);
+    assert.equal(v.sinEjercerSinMirar, 0);
+    assert.match(v.porque, /NO EJERCE NINGÚN TEST/);
+    assert.match(v.porque, /mide MENOS/);
+  });
+
+  it("#599 · caso 2 · base INCAPAZ (`off`) con 1122 → SÍ adopta, y los 1122 salen como CENSO", () => {
+    // Los 1122 de la corrida de #443, que tumbaron el verbo por un motivo que
+    // no era del runner. Con la base en `off` no votan: se cuentan y se
+    // imprimen, que es medida GANADA hasta que los nuevos y los resueltos
+    // digan lo contrario (#598).
+    const filas = [incapaz("src/a.ts", 1122)];
+    const v = veredictoDeAdopcion([limpio()], corrida({ sinEjercer: filas }));
+    assert.equal(v.adopta, true);
+    assert.equal(v.sinEjercer, 0, "no se puede afirmar que se mida menos de lo que la base no podía nombrar");
+    assert.equal(v.sinEjercerCenso, 1122, "…pero el número no se pierde");
+    assert.doesNotMatch(v.porque, /NO EJERCE NINGÚN TEST/);
+    assert.match(v.porque, /CENSO/);
+    const t = totalSinEjercer(filas);
+    assert.equal(t.censo, 1122, "el bloque los imprime enteros");
+    assert.equal(t.mirados, 0);
+  });
+
+  it("#599 · caso 3 · SIN informe base → NO adopta por «no se pudo mirar», y nunca por «✔ ninguno»", () => {
+    const filas = [sinInforme("src/a.ts", 3)];
+    const v = veredictoDeAdopcion([limpio()], corrida({ sinEjercer: filas }));
+    assert.equal(v.adopta, false, "«no se pudo comprobar» no es un verde");
+    assert.equal(v.sinEjercer, 0, "y tampoco se disfraza de «el instrumento mide menos»");
+    assert.equal(v.sinEjercerSinMirar, 3);
+    assert.match(v.porque, /NO SE PUDO MIRAR/);
+    assert.match(v.porque, /--timeouts/, "el motivo trae su remedio");
+    assert.doesNotMatch(titularDeSinEjercer(totalSinEjercer(filas)), /ningún mutante ha dejado de ser ejercido/);
+  });
+
+  it("#599 · caso 4 · base MIXTA: el motivo dice 1, no 501", () => {
+    // El caso que un booleano de corrida no puede contar. Con la capacidad
+    // colapsada a una sola bandera, los 500 del módulo `off` se sumarían a los
+    // del módulo capaz y el motivo acusaría de 501 medidas perdidas teniendo
+    // UNA.
+    const v = veredictoDeAdopcion([limpio("src/a.ts"), limpio("src/b.ts")], {
+      esperados: ["src/a.ts", "src/b.ts"],
+      mueveTag: true,
+      completa: true,
+      sinEjercer: [capaz("src/a.ts", 1, 1), incapaz("src/b.ts", 500)],
+      codigoCambiado: [],
+    });
+    assert.equal(v.adopta, false, "el fichero con base capaz sigue tumbando");
+    assert.equal(v.sinEjercer, 1);
+    assert.equal(v.sinEjercerCenso, 500);
+    assert.match(v.porque, /1 mutante\(s\) que ya NO EJERCE NINGÚN TEST/);
+    assert.doesNotMatch(v.porque, /501/);
+    assert.doesNotMatch(v.porque, /src\/b\.ts/, "y no acusa al módulo cuya base no podía contestar");
+  });
+
+  it("#599 · caso 5 · base INCAPAZ y nada que reprochar: NO se dice «el instrumento no mide menos»", () => {
+    // La afirmación sin sujeto. Salía siempre que la cuenta diera cero, y con
+    // la base en `off` esa cuenta no dice nada de lo que afirma la frase.
+    const filas = [incapaz("src/a.ts", 0)];
+    const t = totalSinEjercer(filas);
+    assert.equal(t.nuevos, 0);
+    assert.equal(t.mirados, 0);
+    assert.doesNotMatch(titularDeSinEjercer(t), /no mide menos/);
+    assert.match(titularDeSinEjercer(t), /NO SE PUDO MIRAR/);
+    const v = veredictoDeAdopcion([limpio()], corrida({ sinEjercer: filas }));
+    assert.equal(v.adopta, true);
+    assert.doesNotMatch(v.porque, /no hay ni uno que haya dejado de ejercer/);
+  });
+
+  it("#599 · caso 6 · base CAPAZ y nada que reprochar → SÍ adopta, y DICE QUE MIRÓ", () => {
+    // El otro extremo, y el que impide que esto sea una abstención permanente:
+    // con la base capaz el bloque sí puede afirmar que el instrumento no mide
+    // menos, y tiene que decir sobre cuántos ficheros lo afirma.
+    const filas = [capaz("src/a.ts", 7, 0)];
+    const v = veredictoDeAdopcion([limpio()], corrida({ sinEjercer: filas }));
+    assert.equal(v.adopta, true);
+    assert.equal(v.sinEjercer, 0);
+    assert.match(v.porque, /cuya base podía decirlo/);
+    const titular = titularDeSinEjercer(totalSinEjercer(filas));
+    assert.match(titular, /no mide menos/);
+    assert.match(titular, /1 fichero\(s\) que se pudo mirar/);
+  });
 });
+
 
 describe("reloj · los mutantes que clasifica el cronómetro, contados aparte", () => {
   const h = (r: string) => huellaDeMutante("src/a.ts", mutante({ replacement: r }));
@@ -2011,15 +2133,44 @@ describe("reloj · los mutantes que clasifica el cronómetro, contados aparte", 
     });
   });
 
-  it("`movimientosSinEjercer` solo puede NEGAR: sin base, todos salen como nuevos", () => {
+  it("`movimientosSinEjercer` solo puede NEGAR: sin informe base no se da nada por bueno", () => {
     // Es la misma regla que `costeEstimado`: entre negar de más y autorizar de
     // más, esto existe para lo segundo. Sin `--timeouts` no hay forma de saber
     // cuáles ya nadie ejercía, y suponer que ya lo eran es la suposición que
-    // deja pasar el instrumento que mide menos.
-    const sinBase = movimientosSinEjercer("src/a.ts", [], [h("a"), h("b")]);
-    assert.deepEqual(sinBase, { fichero: "src/a.ts", base: 0, ahora: 2, nuevos: 2 });
-    const conBase = movimientosSinEjercer("src/a.ts", [h("a")], [h("a"), h("b")]);
-    assert.deepEqual(conBase, { fichero: "src/a.ts", base: 1, ahora: 2, nuevos: 1 });
-    assert.deepEqual(totalSinEjercer([sinBase, conBase]), { base: 1, ahora: 4, nuevos: 3 });
+    // deja pasar el instrumento que mide menos. Lo que cambió con #599 es que
+    // eso ya no se disfraza de «antes se ejercían»: sale con su propio motivo.
+    const sinBase = movimientosSinEjercer("src/a.ts", { sabe: false, porque: "sin informe base" }, [h("a"), h("b")]);
+    assert.deepEqual(sinBase, { fichero: "src/a.ts", ahora: 2, base: { sabe: false, porque: "sin informe base" } });
+    const conBase = movimientosSinEjercer("src/a.ts", { sabe: true, huellas: [h("a")] }, [h("a"), h("b")]);
+    assert.deepEqual(conBase, { fichero: "src/a.ts", ahora: 2, base: { sabe: true, cuenta: 1, nuevos: 1 } });
+    const incapaz = movimientosSinEjercer("src/b.ts", { sabe: false, porque: 'coverageAnalysis "off"' }, [h("c")]);
+    assert.deepEqual(totalSinEjercer([sinBase, conBase, incapaz]), {
+      base: 1,
+      ahora: 5,
+      nuevos: 1,
+      censo: 1,
+      sinMirar: 2,
+      mirados: 1,
+    });
+  });
+
+  it("`movimientosSinEjercer` con la base incapaz NO PUEDE escribir un `nuevos`: el tipo no lo tiene", () => {
+    // La garantía va en el tipo (#599): con `sabe: false` el campo `nuevos` no
+    // existe, así que sumarlo no es una decisión que este código tome bien —
+    // es una decisión que no se puede escribir. Con un booleano de corrida sí
+    // se podía, y de hecho se hacía.
+    const fila = movimientosSinEjercer("src/a.ts", { sabe: false, porque: 'coverageAnalysis "off"' }, [h("a")]);
+    assert.equal(fila.base.sabe, false);
+    assert.ok(!("nuevos" in fila.base), "la rama incapaz no puede llevar un recuento que nadie midió");
+    assert.equal(fila.ahora, 1, "y el hecho crudo sigue ahí, para poder imprimirlo como censo");
+  });
+
+  it("`capacidadDeLaBase`: solo `off` abstiene; `perTest` y `all` votan", () => {
+    // Con `off` Stryker NO EMITE `NoCoverage` jamás, así que su cero no es una
+    // medida. `perTest` y `all` sí pueden emitirlo: su cero SÍ es una medida y
+    // tiene que seguir tumbando la adopción.
+    assert.deepEqual(capacidadDeLaBase("off"), { sabe: false, porque: 'coverageAnalysis "off"' });
+    assert.deepEqual(capacidadDeLaBase("perTest"), { sabe: true });
+    assert.deepEqual(capacidadDeLaBase("all"), { sabe: true });
   });
 });
