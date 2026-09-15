@@ -155,10 +155,23 @@ jobs:
     # pequeño que el ruido del propio reloj (entre las dos últimas corridas, el
     # mismo módulo se movió entre ×0,75 y ×1,14).
     #
-    # 60 es lo que hace falta para que el lote de `scene-validate` quepa con la
-    # holgura puesta (3.225 s presupuestados). NO es permiso para engordar: los
-    # lotes normales siguen presupuestando 2.310 s y cabían de sobra en 45. En
-    # cuanto #441 parta ese fichero, este número vuelve a bajar.
+    # 60 fue lo que hizo falta para que el lote de `scene-validate` cupiera con
+    # la holgura puesta (3.225 s presupuestados con el runner `command`). NO es
+    # permiso para engordar.
+    #
+    # DESDE LA ADOPCIÓN DE `tap-runner` (#597) ESE APRIETO SE FUE, y con el
+    # número de una corrida ordinaria en `main` y no de un experimento: la
+    # 35012863832 midió los 58 módulos en 19,7 min de pared contra los 44,5 de
+    # la última con `command`, y `scene-validate` pasó de 2.594 s a 943 —su
+    # presupuesto cae de 3.285 s (91 % de este techo) a 1.239 (34 %)—. #441 se
+    # cerró por eso SIN partir el fichero, así que la cláusula que había aquí
+    # («en cuanto #441 parta ese fichero») apuntaba a algo que ya no va a pasar.
+    #
+    # Con el lote más caro en 943 s, este techo podría volver a 45. No se baja
+    # hoy porque la medida es UNA corrida ordinaria con el runner nuevo, y el
+    # ruido conocido del reloj entre corridas es de ×0,75 a ×1,14 sobre el mismo
+    # módulo. Se baja cuando haya una segunda que lo confirme — bajarlo aprieta,
+    # y apretar con n = 1 es cómo se perdió la corrida del 10-09.
     timeout-minutes: 60
     strategy:
       # OBLIGATORIO. Sin esto, un lote que se cae cancela a los demás y se
