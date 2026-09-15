@@ -1367,7 +1367,17 @@ async function main() {
     // sin lo único que distingue «rojo por carga» de «rojo».
     let cargaDelGuion = null;
     if (FACTOR_CPU !== null) {
-      cargaDelGuion = await leerLaSonda(page).catch(() => null);
+      // El `.catch(() => null)` de la primera versión colapsaba «la página murió»
+      // con «no había sonda», y el juicio de después imprimía «la sonda no llegó
+      // a instalarse», que en ese caso es falso (H-9 de QA). El desenlace no
+      // cambia —las dos acaban en ⊘— pero el diagnóstico sí, y el `catch` que
+      // devuelve null es donde más se cuela.
+      try {
+        cargaDelGuion = await leerLaSonda(page);
+      } catch (err) {
+        cargaDelGuion = null;
+        console.log(`    ⊘ no se pudo leer la sonda de carga de la página: ${err.message}`);
+      }
       console.log(`    ${lineaDeMedida(cargaDelGuion, FACTOR_CPU)}`);
     }
     await page.close();

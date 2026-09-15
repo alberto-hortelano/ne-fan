@@ -200,9 +200,10 @@ era otra regla, era poder **provocar el rojo a demanda**, porque los 48 estaban 
 INSPECCIÓN: sin un rojo reproducido, un arreglo no se puede juzgar contra nada.
 
 ```bash
-node qa/bajo-carga.mjs 91 --factor 20          # el guion, quieto y frenado, con las dos razones
-node qa/bajo-carga.mjs 41 42 --factor 20 --sin-quieto
-node qa/bajo-carga.mjs 80 --factor 20 --concurrente 2   # bandera explícita: ocupa la máquina
+node qa/bajo-carga.mjs 91                        # el guion, quieto y frenado, con sus razones
+node qa/bajo-carga.mjs 91 --repeticiones 5       # …y con la FRECUENCIA, que es el dato de verdad
+node qa/bajo-carga.mjs 41 42 --sin-quieto
+node qa/bajo-carga.mjs 80 --concurrente 2        # bandera explícita: ocupa la máquina
 ```
 
 Abre el guion **por el camino de siempre** (`qa/run.mjs`, con su preset sin créditos, su disco
@@ -218,17 +219,57 @@ está ANCLADO al del cliente por `nefan-core/test/carga-sintetica.test.ts`: camb
 pone rojo el test, en vez de dejar la sonda midiendo contra un tope que ya no existe. «Los fps» no
 valdría: 12 fps con frames de 83 ms no roban ni un milisegundo de simulación, y 8 fps sí.
 
-**Se niega a salir verde sin haber frenado nada.** Si la razón no baja del umbral, sale con **exit 1**
-diciendo que no reprodujo nada — con `--factor 1` ése es justo el desenlace, medido. Un reproductor
-que no reproduce se lee como prueba de que no hay defecto, y eso es peor que no tenerlo. Sus tres
-códigos son los de la casa: 0 la carga fue real y está medida · 1 no fue real · 2 no se pudo medir.
+**Se niega a salir verde sin haber frenado nada.** Si no baja **ni la media ni la cola**, sale con
+**exit 1** diciendo que no reprodujo nada — con `--factor 1` ése es justo el desenlace, medido. Un
+reproductor que no reproduce se lee como prueba de que no hay defecto, y eso es peor que no tenerlo.
+Sus tres códigos son los de la casa: 0 la carga fue real y está medida · 1 no fue real · 2 no se pudo
+medir (o la corrida de CONTROL ya venía frenada: toda la comparación cuelga de esa base).
 
-**Lo que mide una corrida tranquila, y por eso el umbral es 0,90.** Medido el 2026-09-15 sobre el
-guion 91 en esta máquina: **razón 0,981-0,989 · 28,7-29,2 fps · peor frame 245-313 ms**. O sea, el
-bench NO corre con margen de sobra — ya pierde un 1-2 % de simulación sin que nadie lo frene, y su
-peor frame tranquilo **triplica el tope de 100 ms**. El umbral se pone hacia el lado seguro: el error
-caro no es negarse a firmar una carga floja, es firmar como «carga reproducida» un hipo de la máquina
-y atribuirle a #545 un rojo que no era suyo. Con `--factor 20` la razón medida es **0,53**.
+**Dos criterios, porque la razón es una MEDIA y el defecto vive en la COLA.** La carga cuenta como
+real si la razón cae por debajo de `0,90` **o** si algún frame llega a **1.000 ms**. Medido: a ×4 la
+razón se queda en 0,951 con un frame de **1.150 ms** dentro — ese solo frame se come **el 26 % de un
+presupuesto de 4.000 ms** (`qa/lib/combate.mjs:62`) y mueve la media 1,6 puntos. Con un criterio solo
+de media, la condición que produce el defecto estaba presente y el instrumento decía «no se ha
+reproducido nada». El veredicto dice **cuál de los dos disparó**.
+
+**Lo que mide una corrida tranquila, y por eso esos dos números.** Medido el 2026-09-15 sobre el guion
+91: **razón 0,980-0,989 · 28,5-29,2 fps · peor frame 237-342 ms**. O sea, el bench NO corre con margen
+de sobra — ya pierde un 1-2 % de simulación sin que nadie lo frene. Los umbrales van hacia el lado
+seguro: el error caro no es negarse a firmar una carga floja, es firmar como «carga reproducida» un
+hipo de la máquina. Razones medidas al frenar: **×8 → 0,774 · ×20 → 0,465-0,551 · ×40 → 0,152-0,309**.
+
+**El color de un guion bajo carga es una FRECUENCIA, no un desenlace — y por eso el dial es ×40.**
+Medido sobre el 91 en dos árboles, con carga real en todas: a **×20 sale rojo 4 de 8 veces**; a
+**×40, 5 de 6**, al precio de 134-224 s por corrida en vez de 67. Ni siquiera ×40 es un desenlace —
+una de las seis salió verde—, así que el dial sube porque la frecuencia sube, no porque el rojo pase
+a ser seguro. Un reproductor intermitente que además imprime un verde tranquilizador es peor que uno
+lento, de modo que el veredicto **cuenta**: «rojo en R de N corridas frenadas». `--repeticiones N`
+existe para que ese número sea una medida y no una impresión. Y con pocas muestras el veredicto **se
+niega a decir «aguanta»**: dice cuántas muestras son.
+
+**Lo que este instrumento NO puede decir: de QUIÉN es el rojo.** Un rojo bajo carga **no es, por sí
+solo, un rojo de #545**. Medido: `node qa/bajo-carga.mjs 75 --factor 20` pone el **75 rojo** (razón
+0,266), y el aserto que cae es un CONTADOR contaminado por la vida ambiental (`2 derivaciones (había
+1) — la escena servida cambió en: npcs (barkeep: position)`), o sea familia **#496/#497**. Lo único
+que este banco puede mirar sin inventar nada es el **texto del fallo**, así que clasifica en dos y lo
+dice: **con firma** de presupuesto de reloj (`no ocurrió en N ms`, `timeout esperando`, `expiró a los
+N ms`) → *compatible* con #545 y **no probado**; **sin firma** → **no atribuible**, mira el aserto
+antes de tocar una espera. La decisión sigue siendo de quien lee. Corolario para quien vaya a arreglar
+guiones: **el separador «si el 75 sale rojo, no es carga» está falsado** — sale rojo *por* la carga, y
+aun así su rojo es de #496.
+
+**Lo que NO ve, dicho aquí y no en un fichero que se borra:**
+
+- **La mitad silenciosa de #545 sigue silenciosa.** `debeOcurrir:false` hace del timeout un éxito, así
+  que bajo carga esos asertos salen VERDES — y el reproductor compara colores, o sea que es **invisible
+  por construcción**. Hacerla visible pide atribuir tiempo de simulación a cada espera, que es otro
+  mecanismo. Es **la mitad del defecto**, y no la caza esto.
+- **La carga es del RENDERER y de nadie más.** Un bridge lento, un motor lento o un disco lento no
+  mueven esta razón.
+- **Con la pestaña oculta no se puede medir** (el cliente pasa a `setTimeout` y Chrome congela el rAF
+  de la sonda): sale como «no medido», nunca como «no hubo carga».
+- **`--concurrente` es una confirmación, no una medida** de la intermitencia real de la batería.
+- **Todas las razones de aquí son de ESTA máquina** (RTX 3060, 16 hilos) y de este día.
 
 **Lo que NO se usa como palanca, y por qué — para que nadie lo reintente.** `NEFAN_QA_GPU=0`
 (SwiftShader) queda **descartado**. Está medido en `qa/lib/navegador.mjs:1-23`, en esta máquina:
@@ -397,6 +438,23 @@ navegador se pone rojo si esa caja se aplica de más: medido). Segundos, cero cr
 
 ```bash
 node qa/equivalencia-de-cajas.mjs   # sale 1 si algo que no es un spawn de runtime cambió
+```
+
+Y al lado, `qa/la-esquina-de-la-caja-se-corta.mjs` (QA de la PR-3 de #545), que **no es un candado
+sino una REPRODUCCIÓN**: el jugador entra en un edificio andando hacia su ESQUINA, y no hace falta
+carga ninguna. `pasoDelJugador` prueba los dos ejes por separado, así que en la diagonal cada sondeo
+suelto sigue fuera mientras la suma ya está dentro; y una vez dentro, la regla «salir sí, entrar no»
+de `aabbBloquea` deja cruzar el edificio entero. Medido hoy sobre la forja de 4×4 m del guion 91:
+ventana de entrada **0,95° de 90° a 60 fps · 1,45° a 30 · 3,15° a 20 · 5,25° a 12**, y el tope de
+0,1 s del `gameLoop` la deja de ensanchar por debajo de 10 fps — **la carga no crea el defecto, solo
+lo hace más probable**. Por eso sale **0 mientras se reproduce** y 1 el día que alguien lo arregle,
+que es cuando este fichero se borra. Fuera de la batería y fuera de CI: un ejecutable que solo puede
+salir verde no es un candado. Probado en negativo por las dos puertas (`QA_FIX_SIMULADO=1` → ventana
+0,00° y exit 1; `QA_SIN_CAJA=1` → el control se pone rojo y exit 1). Segundos, sin navegador y sin
+créditos:
+
+```bash
+node qa/la-esquina-de-la-caja-se-corta.mjs   # sale 0 MIENTRAS el defecto viva
 ```
 
 Dos cosas que aprendió el arreglo y que conviene no volver a descubrir:

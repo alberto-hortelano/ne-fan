@@ -38,16 +38,22 @@ type Medida = {
   deltaMaxMs: number;
   oculta: boolean;
   paredMs: number;
+  sobreTope?: number;
   navegaciones?: number;
   almacen?: boolean;
 };
-type Juicio = { medido: boolean; real: boolean; razon: number | null; motivo: string };
+type Juicio = { medido: boolean; real: boolean; razon: number | null; por?: string | null; motivo: string };
+type Control = { vale: boolean; aviso: string | null; motivo: string | null };
 type Fila = { nombre: string; estado: string; fallos?: string[] };
 type Comparada = {
   nombre: string;
   quieto: string | null;
   cargado: string | null;
+  cargados: (string | null)[];
+  rojas: number;
+  corridas: number;
   cambio: string;
+  firma: string | null;
   fallosQuieto: string[];
   fallosCargado: string[];
 };
@@ -56,12 +62,21 @@ const mod = (await import(join(repoRoot, "qa", "lib", "carga.mjs"))) as {
   CLAMP_DEL_LOOP: number;
   UMBRAL_DE_CARGA_REAL: number;
   PARED_MINIMA_MS: number;
+  COLA_MS: number;
+  FACTOR_MAXIMO: number;
   lineaDeMedida: (m: Medida | null, factor: number) => string;
+  opcionNumerica: (
+    nombre: string,
+    raw: string | undefined,
+    o: { min: number; max: number; entero?: boolean; porDefecto?: number },
+  ) => number;
+  firmaDePresupuesto: (fallos: string[]) => boolean;
+  juzgaElControl: (o: { medida: Medida | null; umbral?: number }) => Control;
   factorDelEntorno: (env: Record<string, string | undefined>) => number | null;
   razonDeLaMedida: (m: Medida | null) => number | null;
   juzgaLaCarga: (o: { factor: number; medida: Medida | null; umbral?: number }) => Juicio;
-  comparaCorridas: (a: Fila[] | undefined, b: Fila[] | undefined) => Comparada[];
-  veredictoDelReproductor: (o: { juicios: Juicio[]; comparacion: Comparada[] }) => {
+  comparaCorridas: (a: Fila[] | undefined, b: (Fila[] | undefined)[]) => Comparada[];
+  veredictoDelReproductor: (o: { juicios: Juicio[]; comparacion: Comparada[]; control?: Control }) => {
     exit: number;
     titulo: string;
     detalle: string[];
@@ -71,7 +86,12 @@ const {
   CLAMP_DEL_LOOP,
   UMBRAL_DE_CARGA_REAL,
   PARED_MINIMA_MS,
+  COLA_MS,
+  FACTOR_MAXIMO,
   lineaDeMedida,
+  opcionNumerica,
+  firmaDePresupuesto,
+  juzgaElControl,
   factorDelEntorno,
   razonDeLaMedida,
   juzgaLaCarga,
@@ -84,6 +104,7 @@ const medida = (p: Partial<Medida> = {}): Medida => ({
   sim: 10,
   frames: 600,
   deltaMaxMs: 20,
+  sobreTope: 0,
   oculta: false,
   paredMs: 10_000,
   ...p,
@@ -123,7 +144,7 @@ describe("el factor de frenado se lee del entorno, y lo ilegible LANZA", () => {
     for (const raw of ["abc", "0.5", "0", "-3", "NaN"]) {
       assert.throws(
         () => factorDelEntorno({ NEFAN_QA_CPU_FACTOR: raw }),
-        /no es un factor de frenado/,
+        /No es un factor de frenado/,
         `NEFAN_QA_CPU_FACTOR=«${raw}» debería parar la corrida`,
       );
     }
@@ -241,82 +262,281 @@ describe("la línea de una medida dice lo que la medida no cubre", () => {
   });
 });
 
-describe("el color antes y después: cuatro desenlaces, ninguno colapsado", () => {
+
+describe("las cuatro opciones numéricas son fail-loud (H-2 de QA)", () => {
+  it("un valor ilegible LANZA en vez de colarse como NaN", () => {
+    // El defecto real: `--umbral abc` daba NaN, `razon > NaN` es siempre false,
+    // y TODA corrida pasaba por «carga real» — incluida la de `--factor 1`, que
+    // existe justo para negarse.
+    for (const raw of ["abc", "", "NaN", "Infinity"]) {
+      assert.throws(
+        () => opcionNumerica("--umbral", raw || undefined, { min: 0.01, max: 0.999 }),
+        /necesita un valor|no vale/,
+        `--umbral «${raw}» debería parar la corrida`,
+      );
+    }
+  });
+
+  it("fuera de rango también LANZA, por los dos lados", () => {
+    assert.throws(() => opcionNumerica("--umbral", "1.5", { min: 0.01, max: 0.999 }), /no vale/);
+    assert.throws(() => opcionNumerica("--umbral", "0", { min: 0.01, max: 0.999 }), /no vale/);
+    assert.throws(() => opcionNumerica("--factor", "200", { min: 1, max: FACTOR_MAXIMO }), /no vale/);
+  });
+
+  it("lo entero es entero: `--repeticiones 2.5` no es media corrida", () => {
+    assert.throws(() => opcionNumerica("--repeticiones", "2.5", { min: 1, max: 20, entero: true }), /ENTERO/);
+    assert.equal(opcionNumerica("--repeticiones", "3", { min: 1, max: 20, entero: true }), 3);
+  });
+
+  it("sin valor usa el defecto, y sin defecto LANZA", () => {
+    assert.equal(opcionNumerica("--factor", undefined, { min: 1, max: 100, porDefecto: 40 }), 40);
+    assert.throws(() => opcionNumerica("--factor", undefined, { min: 1, max: 100 }), /necesita un valor/);
+  });
+
+  it("el factor del ENTORNO pasa por el mismo techo", () => {
+    assert.throws(() => factorDelEntorno({ NEFAN_QA_CPU_FACTOR: "500" }), /no vale/);
+    assert.equal(factorDelEntorno({ NEFAN_QA_CPU_FACTOR: "40" }), 40);
+  });
+});
+
+describe("la COLA vota: el defecto vive en el frame largo, no en la media (H-5 de QA)", () => {
+  it("un frame de 1.150 ms cuenta como carga real aunque la media no se mueva", () => {
+    // La corrida a ×4 que QA midió: razón 0,951 (rechazada por la media) con un
+    // frame de 1.150 ms dentro, que se come el 26 % de un presupuesto de 4 s.
+    const j = juzgaLaCarga({ factor: 4, medida: medida({ sim: 62.8, frames: 1828, paredMs: 66_000, deltaMaxMs: 1150, sobreTope: 40 }) });
+    assert.equal(j.real, true);
+    assert.equal(j.por, "cola");
+    assert.match(j.motivo, /COLA/);
+  });
+
+  it("y dice cuál de los dos disparó cuando disparan los dos", () => {
+    const j = juzgaLaCarga({ factor: 40, medida: medida({ sim: 20, frames: 120, paredMs: 100_000, deltaMaxMs: 9000 }) });
+    assert.equal(j.por, "media+cola");
+  });
+
+  it("el peor frame de una corrida de CONTROL medida (342 ms) NO dispara la cola", () => {
+    const j = juzgaLaCarga({ factor: 1, medida: medida({ sim: 25.1, frames: 700, paredMs: 25_600, deltaMaxMs: 342 }) });
+    assert.equal(j.real, false);
+    assert.equal(j.por, null);
+    assert.match(j.motivo, /ni la media ni la cola/);
+  });
+
+  it("el umbral de la cola está acotado POR LOS DOS LADOS por lo medido", () => {
+    // Por abajo: el peor frame de una corrida de CONTROL en este árbol son
+    // 342 ms (seis corridas, mías y de QA), así que el control no se cuela.
+    assert.ok(COLA_MS >= 2.5 * 342, "COLA_MS tiene que dejar margen sobre el peor frame de un control");
+    // Por arriba: el frame de 1.150 ms que QA midió a ×4 TIENE que disparar —
+    // es el caso que motivó todo esto.
+    assert.ok(COLA_MS <= 1150, "COLA_MS no puede dejar fuera el frame de 1.150 ms medido a ×4");
+  });
+});
+
+describe("la FIRMA de un presupuesto de reloj: lo único que se puede mirar sin inventar", () => {
+  it("caza las tres bocas por las que una espera de reloj se vuelve fallo", () => {
+    assert.ok(firmaDePresupuesto(["ocurre: el jugador LLEGA andando a 2.2 m de barkeep — no ocurrió en 4000 ms"]));
+    assert.ok(firmaDePresupuesto(["ERROR: timeout esperando: el tabernero contesta (turno 1)"]));
+    assert.ok(firmaDePresupuesto(["la espera «x» expiró a los 8000 ms en guiones/90.mjs:331 y nadie la observó"]));
+  });
+
+  it("NO la tiene el contador del guion 75, que es el caso que tumbó la atribución", () => {
+    // El fallo literal medido por QA a ×20 sobre el 75: un CONTADOR sobre un
+    // canal compartido contaminado por la vida ambiental, o sea #496/#497.
+    assert.equal(
+      firmaDePresupuesto([
+        "3 · #410 · el tile que vuelve con otras salidas NO re-deriva su colisión (misma huella) — 2 derivaciones (había 1) — la escena servida cambió en: npcs (barkeep: position)",
+      ]),
+      false,
+    );
+  });
+
+  it("tampoco la tiene el rojo de la colisión de la forja, que es del JUEGO", () => {
+    assert.equal(
+      firmaDePresupuesto([
+        "en vivo: empujando contra «Forja de Robledo», el jugador NO entra en su caja — parada (9.43, -9.01) · le sobra -1.70 m al borde",
+      ]),
+      false,
+    );
+  });
+
+  it("sin fallos no hay firma (y no se colapsa con «no atribuible»: no hay rojo)", () => {
+    assert.equal(firmaDePresupuesto([]), false);
+    assert.equal(firmaDePresupuesto(undefined as unknown as string[]), false);
+  });
+});
+
+describe("el color antes y después: CINCO desenlaces y una frecuencia", () => {
   const q: Fila[] = [
     { nombre: "a", estado: "verde" },
     { nombre: "b", estado: "verde" },
     { nombre: "c", estado: "rojo", fallos: ["ya estaba roto"] },
     { nombre: "d", estado: "verde" },
+    { nombre: "e", estado: "rojo", fallos: ["2 derivaciones (había 1)"] },
   ];
-  const c: Fila[] = [
+  const c1: Fila[] = [
     { nombre: "a", estado: "verde" },
-    { nombre: "b", estado: "rojo", fallos: ["el jugador ANDA: false"] },
+    { nombre: "b", estado: "rojo", fallos: ["no ocurrió en 4000 ms"] },
     { nombre: "c", estado: "verde" },
     { nombre: "d", estado: "sin-medir" },
+    { nombre: "e", estado: "rojo", fallos: ["2 derivaciones (había 1)"] },
+  ];
+  const c2: Fila[] = [
+    { nombre: "a", estado: "verde" },
+    { nombre: "b", estado: "verde" },
+    { nombre: "c", estado: "verde" },
+    { nombre: "d", estado: "verde" },
+    { nombre: "e", estado: "rojo", fallos: ["2 derivaciones (había 1)"] },
   ];
   const por = (rs: Comparada[], n: string) => rs.find((r) => r.nombre === n)!;
 
-  it("verde → rojo es el ROJO REPRODUCIDO, y se lleva sus fallos", () => {
-    const r = por(comparaCorridas(q, c), "b");
+  it("verde → rojo es un rojo BAJO CARGA, y trae su frecuencia", () => {
+    const r = por(comparaCorridas(q, [c1, c2]), "b");
     assert.equal(r.cambio, "se-rompio");
-    assert.deepEqual(r.fallosCargado, ["el jugador ANDA: false"]);
+    assert.equal(r.rojas, 1);
+    assert.equal(r.corridas, 2);
+    assert.deepEqual(r.cargados, ["rojo", "verde"]);
+  });
+
+  it("un rojo en 1 de 2 no se colapsa con un rojo en 2 de 2: la frecuencia es el dato", () => {
+    const r = por(comparaCorridas(q, [c1, c1]), "b");
+    assert.equal(r.rojas, 2);
+    assert.equal(r.corridas, 2);
+  });
+
+  it("ROJO en las dos es `igual-rojo` y NUNCA `igual`: no ha aguantado nada (H-3)", () => {
+    const r = por(comparaCorridas(q, [c1, c2]), "e");
+    assert.equal(r.cambio, "igual-rojo");
+  });
+
+  it("verde en las dos es `igual-verde`", () => {
+    assert.equal(por(comparaCorridas(q, [c1, c2]), "a").cambio, "igual-verde");
   });
 
   it("rojo → verde tiene nombre propio: NO es un éxito", () => {
-    assert.equal(por(comparaCorridas(q, c), "c").cambio, "se-arreglo");
+    assert.equal(por(comparaCorridas(q, [c1, c2]), "c").cambio, "se-arreglo");
   });
 
-  it("un guion que no midió no vota: es «no comparable», no «igual»", () => {
-    assert.equal(por(comparaCorridas(q, c), "d").cambio, "no-comparable");
+  it("si NO midió en alguna de las frenadas, no vota: `no-comparable`", () => {
+    assert.equal(por(comparaCorridas(q, [c1, c2]), "d").cambio, "no-comparable");
   });
 
   it("ausente en una de las dos tampoco es «igual»", () => {
-    const r = comparaCorridas([{ nombre: "solo-quieto", estado: "verde" }], []);
+    const r = comparaCorridas([{ nombre: "solo-quieto", estado: "verde" }], [[]]);
     assert.equal(r[0].cambio, "no-comparable");
     assert.equal(r[0].cargado, null);
   });
 
-  it("mismo color en las dos es «igual»", () => {
-    assert.equal(por(comparaCorridas(q, c), "a").cambio, "igual");
+  it("la FIRMA viaja con el rojo, y solo con el rojo", () => {
+    const rs = comparaCorridas(q, [c1, c2]);
+    assert.equal(por(rs, "b").firma, "presupuesto");
+    assert.equal(por(rs, "a").firma, null, "un guion que no se rompió no lleva firma");
+    // El 75: rojo en las dos, así que ni siquiera llega a clasificarse — y si
+    // hubiera sido verde quieto, su firma sería `sin-firma`.
+    const rs75 = comparaCorridas([{ nombre: "e", estado: "verde" }], [[{ nombre: "e", estado: "rojo", fallos: ["2 derivaciones (había 1)"] }]]);
+    assert.equal(rs75[0].cambio, "se-rompio");
+    assert.equal(rs75[0].firma, "sin-firma");
+  });
+});
+
+describe("la corrida de CONTROL también se juzga (H-8 de QA)", () => {
+  it("un control que ya venía frenado invalida la base entera", () => {
+    const ctl = juzgaElControl({ medida: medida({ sim: 5, frames: 60, paredMs: 10_000 }) });
+    assert.equal(ctl.vale, false);
+    assert.match(ctl.motivo!, /ya venía frenada/);
+  });
+
+  it("y entonces el veredicto es exit 2: no se compara contra una base mala", () => {
+    const v = veredictoDelReproductor({
+      juicios: [{ medido: true, real: true, razon: 0.4, motivo: "bajó" }],
+      comparacion: [],
+      control: { vale: false, aviso: null, motivo: "la base no vale" },
+    });
+    assert.equal(v.exit, 2);
+    assert.match(v.titulo, /LA BASE NO VALE/);
+  });
+
+  it("un hipo suelto en el control NO mata la corrida: sale como aviso", () => {
+    const ctl = juzgaElControl({ medida: medida({ deltaMaxMs: 1500 }) });
+    assert.equal(ctl.vale, true);
+    assert.match(ctl.aviso!, /1500 ms/);
+  });
+
+  it("el control medido de verdad (0,981 con peor frame 313 ms) vale y no avisa", () => {
+    const ctl = juzgaElControl({ medida: medida({ sim: 22.9, frames: 669, paredMs: 23_300, deltaMaxMs: 313 }) });
+    assert.deepEqual(ctl, { vale: true, aviso: null, motivo: null });
   });
 });
 
 describe("el veredicto del REPRODUCTOR no es el veredicto de los guiones", () => {
-  const real: Juicio = { medido: true, real: true, razon: 0.4, motivo: "bajó" };
-  const flojo: Juicio = { medido: true, real: false, razon: 0.99, motivo: "no bajó" };
+  const real: Juicio = { medido: true, real: true, razon: 0.4, por: "media", motivo: "bajó" };
+  const flojo: Juicio = { medido: true, real: false, razon: 0.99, por: null, motivo: "no bajó" };
   const ciego: Juicio = { medido: false, real: false, razon: null, motivo: "sin sonda" };
-  const comp = (cambio: string): Comparada => ({
+  const comp = (cambio: string, extra: Partial<Comparada> = {}): Comparada => ({
     nombre: "91",
     quieto: "verde",
     cargado: "rojo",
+    cargados: ["rojo"],
+    rojas: cambio === "se-rompio" ? 1 : 0,
+    corridas: 1,
     cambio,
+    firma: cambio === "se-rompio" ? "presupuesto" : null,
     fallosQuieto: [],
     fallosCargado: [],
+    ...extra,
   });
 
-  it("carga real + rojo reproducido: exit 0, y lo dice con el nombre del guion", () => {
-    const v = veredictoDelReproductor({ juicios: [real], comparacion: [comp("se-rompio")] });
+  it("un rojo bajo carga se anuncia con su FRECUENCIA, no como un desenlace", () => {
+    const v = veredictoDelReproductor({ juicios: [real], comparacion: [comp("se-rompio", { rojas: 1, corridas: 5 })] });
     assert.equal(v.exit, 0);
-    assert.ok(v.detalle.some((d) => d.includes("ROJO REPRODUCIDO") && d.includes("91")));
+    assert.ok(v.detalle.some((d) => d.includes("ROJO BAJO CARGA") && d.includes("1 de 5")));
+  });
+
+  it("NUNCA lo llama «el rojo de #545»: eso es una atribución que no puede hacer (H-4)", () => {
+    const v = veredictoDelReproductor({ juicios: [real], comparacion: [comp("se-rompio")] });
+    assert.ok(!v.detalle.some((d) => /rojo de #545|entregable de #545/.test(d)));
+  });
+
+  it("con firma dice COMPATIBLE con #545 y que no lo prueba", () => {
+    const v = veredictoDelReproductor({ juicios: [real], comparacion: [comp("se-rompio", { firma: "presupuesto" })] });
+    assert.ok(v.detalle.some((d) => d.includes("COMPATIBLE con #545") && d.includes("no lo prueba")));
+  });
+
+  it("SIN firma dice que NO es atribuible a #545 y nombra a #496/#497", () => {
+    // El caso del 75, que es el que tumbó la atribución.
+    const v = veredictoDelReproductor({
+      juicios: [real],
+      comparacion: [comp("se-rompio", { nombre: "75", firma: "sin-firma" })],
+    });
+    assert.ok(v.detalle.some((d) => d.includes("no es atribuible a #545") && d.includes("#496/#497")));
   });
 
   it("sin comparación NO dice «nadie cambió de color»: dice que nadie miró", () => {
-    // `--sin-quieto`. La diferencia importa: «nadie cambió» es un resultado,
-    // «nadie miró» es la ausencia de uno, y se leen igual de tranquilizadores.
     const v = veredictoDelReproductor({ juicios: [real], comparacion: [] });
     assert.equal(v.exit, 0);
     assert.ok(v.detalle.some((d) => d.includes("NINGÚN color se ha comparado")));
-    assert.ok(!v.detalle.some((d) => d.includes("aguantó")));
+    assert.ok(!v.detalle.some((d) => /aguanta la carga/.test(d)));
   });
 
-  it("carga real y nadie cambió de color: exit 0, pero se DICE que aguantó", () => {
-    const v = veredictoDelReproductor({ juicios: [real], comparacion: [comp("igual")] });
+  it("un guion ROJO en las dos NO «aguantó»: se dice que ya estaba roto (H-3)", () => {
+    const v = veredictoDelReproductor({ juicios: [real], comparacion: [comp("igual-rojo", { quieto: "rojo" })] });
     assert.equal(v.exit, 0);
-    assert.ok(v.detalle.some((d) => d.includes("aguantó")));
+    assert.ok(v.detalle.some((d) => d.includes("ya estaban ROJOS sin carga")));
+    // La frase tranquilizadora, la de verdad, no puede aparecer.
+    assert.ok(!v.detalle.some((d) => /aguanta la carga/.test(d)));
   });
 
-  it("la carga que no baja la razón sale con ERROR aunque todo esté verde", () => {
-    const v = veredictoDelReproductor({ juicios: [flojo], comparacion: [comp("igual")] });
+  it("verde en las dos con UNA muestra no es «aguanta»: es una muestra", () => {
+    const v = veredictoDelReproductor({ juicios: [real], comparacion: [comp("igual-verde", { corridas: 1 })] });
+    assert.equal(v.exit, 0);
+    assert.ok(v.detalle.some((d) => d.includes("NO es «aguanta»") && d.includes("probabilístico")));
+  });
+
+  it("…y con cinco muestras sí se puede decir, diciendo cuántas", () => {
+    const v = veredictoDelReproductor({ juicios: [real], comparacion: [comp("igual-verde", { corridas: 5 })] });
+    assert.ok(v.detalle.some((d) => d.includes("0 rojos en 5 corridas") && d.includes("aguanta")));
+  });
+
+  it("la carga que no baja ni la media ni la cola sale con ERROR aunque todo esté verde", () => {
+    const v = veredictoDelReproductor({ juicios: [flojo], comparacion: [comp("igual-verde")] });
     assert.equal(v.exit, 1);
     assert.match(v.titulo, /NO FUE REAL/);
   });
@@ -327,8 +547,6 @@ describe("el veredicto del REPRODUCTOR no es el veredicto de los guiones", () =>
   });
 
   it("cero rotos sobre cero comparables NO es «aguantó la carga»", () => {
-    // El agujero que la sexta condición de `comparar` existe para tapar: un
-    // veredicto tranquilizador que se cumple sin haber comparado nada.
     const v = veredictoDelReproductor({ juicios: [real], comparacion: [comp("no-comparable")] });
     assert.equal(v.exit, 2);
     assert.match(v.titulo, /NO SE COMPARÓ NADA/);
@@ -337,7 +555,7 @@ describe("el veredicto del REPRODUCTOR no es el veredicto de los guiones", () =>
   it("un cambio al revés se reporta como aviso, no como éxito", () => {
     const v = veredictoDelReproductor({
       juicios: [real],
-      comparacion: [comp("se-rompio"), { ...comp("se-arreglo"), nombre: "80" }],
+      comparacion: [comp("se-rompio"), comp("se-arreglo", { nombre: "80", quieto: "rojo" })],
     });
     assert.equal(v.exit, 0);
     assert.ok(v.detalle.some((d) => d.includes("80") && d.includes("NO es un éxito")));

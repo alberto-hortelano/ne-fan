@@ -21,18 +21,19 @@
  *  hilo principal a la página con `Emulation.setCPUThrottlingRate` por CDP. No
  *  toca ni un guion, ni un aserto, ni el juego.
  *
- *  Corre DOS veces: una quieta (`×1`, el control, por el mismo camino de código)
- *  y otra frenada (`×N`), y pone las dos al lado. El entregable no es el color
- *  del guion: es **la pareja** color + razón sim/pared, porque un rojo sin su
- *  razón no se distingue de un rojo cualquiera.
+ *  Corre una vez quieta (`×1`, el control, por el mismo camino de código) y N
+ *  veces frenada (`×N`), y pone las razones al lado de los colores. El entregable
+ *  no es el color del guion: es **la pareja** color + razón sim/pared, porque un
+ *  rojo sin su razón no se distingue de un rojo cualquiera.
  *
  *  ## Por qué se niega a salir verde sin haber frenado nada
  *
- *  Si la carga no baja la razón sim/pared, esta herramienta **sale con error**.
- *  Un reproductor que no reproduce se lee como prueba de que no hay defecto, y
- *  eso es peor que no tenerlo: con `--factor 1` dice que no reprodujo nada en
- *  vez de firmar un verde. El umbral y la magnitud viven en `qa/lib/carga.mjs`,
- *  que es donde los mide `nefan-core/test/carga-sintetica.test.ts`.
+ *  Si no baja **ni la media ni la cola** —la razón sim/pared por un lado, el
+ *  frame más largo por otro—, esta herramienta **sale con error**. Un reproductor
+ *  que no reproduce se lee como prueba de que no hay defecto, y eso es peor que
+ *  no tenerlo: con `--factor 1` dice que no reprodujo nada en vez de firmar un
+ *  verde. Los dos umbrales y la magnitud viven en `qa/lib/carga.mjs`, que es
+ *  donde los mide `nefan-core/test/carga-sintetica.test.ts`.
  *
  *  ## Lo que NO se usa como palanca, y por qué
  *
@@ -47,24 +48,52 @@
  *  imprime el `uptime` antes y después: si esta herramienta subiera el load,
  *  quedaría escrito en su propia salida.
  *
+ *  ## El color de un guion bajo carga es una FRECUENCIA, no un desenlace
+ *
+ *  Medido en dos árboles sobre el 91, con carga real en todas: a **×20 sale rojo
+ *  4 de 8 veces**; a **×40, 5 de 6**. Ni siquiera ×40 es un desenlace. Así que
+ *  este reproductor no dice «se rompió»: dice **«rojo en R de N corridas
+ *  frenadas»**, y `--repeticiones N` existe para que ese número sea una medida.
+ *  El dial por defecto es **×40** y no ×20 porque la frecuencia sube, no porque
+ *  el rojo pase a ser seguro: un reproductor intermitente que además imprime un
+ *  verde tranquilizador es peor que uno lento.
+ *
+ *  ## Lo que este instrumento NO puede decir: de QUIÉN es el rojo
+ *
+ *  Un rojo bajo carga **no es, por sí solo, un rojo de #545**. Medido: el guion
+ *  75 se pone rojo a ×20 y el aserto que cae es un CONTADOR contaminado por la
+ *  vida ambiental — familia **#496/#497**. Lo único que este banco puede mirar
+ *  sin inventar nada es el TEXTO del fallo, así que clasifica en dos y lo dice:
+ *  con firma de presupuesto de reloj (compatible con #545, **no probado**) o sin
+ *  ella (**no atribuible**). La decisión sigue siendo de quien lee.
+ *
  *  ## Uso
  *
- *    node qa/bajo-carga.mjs 91 --factor 20
- *    node qa/bajo-carga.mjs 41 42 46 --factor 20 --sin-quieto
- *    node qa/bajo-carga.mjs 80 --factor 20 --concurrente 2
+ *    node qa/bajo-carga.mjs 91
+ *    node qa/bajo-carga.mjs 91 --factor 40 --repeticiones 5
+ *    node qa/bajo-carga.mjs 41 42 46 --sin-quieto
+ *    node qa/bajo-carga.mjs 80 --concurrente 2
  *
- *    --factor N       cuánto se frena el hilo principal (1 = sin frenar)
- *    --umbral R       razón sim/pared por debajo de la cual la carga es real
- *    --sin-quieto     salta la corrida de control (hay que tenerla ya medida)
- *    --concurrente K  K corridas frenadas A LA VEZ. **Bandera explícita**: es
- *                     el escenario real de la batería, pero ocupa la máquina y
- *                     deja de ser un dial. Solo para confirmar que el rojo
- *                     sintético es el mismo rojo de la batería.
+ *    --factor N        cuánto se frena el hilo principal (1 = sin frenar).
+ *                      Defecto 40; techo 100, porque el cero de más que todo el
+ *                      mundo teclea alguna vez es una tarde en una máquina
+ *                      compartida (medido: ×40 son 134-224 s por corrida)
+ *    --repeticiones N  N corridas frenadas EN SERIE, para que la frecuencia sea
+ *                      una medida y no una impresión
+ *    --umbral R        razón sim/pared por debajo de la cual la carga es real
+ *    --sin-quieto      salta la corrida de control (hay que tenerla ya medida)
+ *    --concurrente K   K corridas frenadas A LA VEZ. **Bandera explícita**: es
+ *                      el escenario real de la batería, pero ocupa la máquina y
+ *                      deja de ser un dial. Solo para confirmar que el rojo
+ *                      sintético es el mismo rojo de la batería.
+ *
+ *  Las cuatro opciones numéricas son **fail-loud**: un `--umbral abc` paraba en
+ *  `NaN` y hacía pasar por buena cualquier medida, incluida la de `--factor 1`.
  *
  *  Salida:
  *    0  la carga fue real y está medida (el guion cambie o no de color)
  *    1  la carga NO fue real: no se ha reproducido nada
- *    2  no se pudo medir
+ *    2  no se pudo medir, o la corrida de CONTROL ya venía frenada
  *
  *  Cero créditos: `qa/run.mjs` levanta `e2e-sin-creditos` y ejerce su
  *  guardarraíl de gasto para todos los guiones.
@@ -77,10 +106,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  FACTOR_MAXIMO,
   UMBRAL_DE_CARGA_REAL,
   comparaCorridas,
+  juzgaElControl,
   juzgaLaCarga,
   lineaDeMedida,
+  opcionNumerica,
   razonDeLaMedida,
   veredictoDelReproductor,
 } from "./lib/carga.mjs";
@@ -89,23 +121,26 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
 
 const args = process.argv.slice(2);
-const CON_VALOR = new Set(["--factor", "--umbral", "--concurrente"]);
+const CON_VALOR = new Set(["--factor", "--umbral", "--concurrente", "--repeticiones"]);
 const opt = (n, d) => {
   const i = args.indexOf(n);
   return i >= 0 ? args[i + 1] : d;
 };
-const FACTOR = Number(opt("--factor", "20"));
-const UMBRAL = Number(opt("--umbral", String(UMBRAL_DE_CARGA_REAL)));
-const CONCURRENTE = Number(opt("--concurrente", "1"));
 const SIN_QUIETO = args.includes("--sin-quieto");
 const FILTROS = args.filter((a, i) => !a.startsWith("--") && !CON_VALOR.has(args[i - 1]));
 
-if (!Number.isFinite(FACTOR) || FACTOR < 1) {
-  console.error(`❌ --factor ${opt("--factor", "")} no es un factor de frenado (≥ 1)`);
-  process.exit(2);
-}
-if (!Number.isFinite(CONCURRENTE) || CONCURRENTE < 1 || !Number.isInteger(CONCURRENTE)) {
-  console.error(`❌ --concurrente ${opt("--concurrente", "")} no es un número de corridas (entero ≥ 1)`);
+// LAS CUATRO opciones numéricas por el MISMO validador fail-loud. `--umbral` se
+// quedó fuera la primera vez y eso bastó: `Number("abc") = NaN`, `razon > NaN`
+// siempre false, y toda corrida pasaba por «carga real», incluida la de
+// `--factor 1` que existe para negarse (H-2 de QA).
+let FACTOR, UMBRAL, CONCURRENTE, REPETICIONES;
+try {
+  FACTOR = opcionNumerica("--factor", opt("--factor"), { min: 1, max: FACTOR_MAXIMO, porDefecto: 40 });
+  UMBRAL = opcionNumerica("--umbral", opt("--umbral"), { min: 0.01, max: 0.999, porDefecto: UMBRAL_DE_CARGA_REAL });
+  CONCURRENTE = opcionNumerica("--concurrente", opt("--concurrente"), { min: 1, max: 8, entero: true, porDefecto: 1 });
+  REPETICIONES = opcionNumerica("--repeticiones", opt("--repeticiones"), { min: 1, max: 20, entero: true, porDefecto: 1 });
+} catch (e) {
+  console.error(`❌ ${e.message}`);
   process.exit(2);
 }
 if (!FILTROS.length) {
@@ -187,6 +222,7 @@ const col = (s, n) => String(s).padEnd(n);
 
 console.log(
   `▶ reproductor bajo carga · guion(es) ${FILTROS.join(" ")} · factor ×${FACTOR} · umbral ${UMBRAL}` +
+    (REPETICIONES > 1 ? ` · ${REPETICIONES} repeticiones` : "") +
     (CONCURRENTE > 1 ? ` · ${CONCURRENTE} corridas A LA VEZ` : ""),
 );
 console.log(`  antes: ${carga()}`);
@@ -200,16 +236,28 @@ if (!SIN_QUIETO) {
   quieta = await lanzar("quieto", 1, join(TMP, "quieto.json"), { soloUna: true });
 }
 
-// ── 2 · la corrida frenada ────────────────────────────────────────────────
-console.log(`\n· corrida BAJO CARGA (×${FACTOR})`);
-const cargadas =
-  CONCURRENTE === 1
-    ? [await lanzar(`carga×${FACTOR}`, FACTOR, join(TMP, "carga.json"), { soloUna: true })]
-    : await Promise.all(
-        Array.from({ length: CONCURRENTE }, (_, i) =>
-          lanzar(`carga×${FACTOR}#${i + 1}`, FACTOR, join(TMP, `carga-${i + 1}.json`), { soloUna: false }),
-        ),
-      );
+// ── 2 · las corridas frenadas ─────────────────────────────────────────────
+// En PLURAL desde la vuelta de QA: el defecto de #545 es probabilístico (medido:
+// el 91 a ×20 sale rojo 1 de cada 5) y un desenlace binario sobre una muestra es
+// una impresión. `--repeticiones N` van EN SERIE, una detrás de otra, porque el
+// punto de este instrumento es no ocupar la máquina; en paralelo solo va lo que
+// pide `--concurrente`, que es otra pregunta.
+const cargadas = [];
+for (let rep = 0; rep < REPETICIONES; rep++) {
+  const sufijo = REPETICIONES > 1 ? ` ${rep + 1}/${REPETICIONES}` : "";
+  console.log(`\n· corrida BAJO CARGA (×${FACTOR})${sufijo}`);
+  const tanda =
+    CONCURRENTE === 1
+      ? [await lanzar(`carga×${FACTOR}${sufijo && `·${rep + 1}`}`, FACTOR, join(TMP, `carga-${rep}.json`), { soloUna: true })]
+      : await Promise.all(
+          Array.from({ length: CONCURRENTE }, (_, i) =>
+            lanzar(`carga×${FACTOR}·${rep + 1}#${i + 1}`, FACTOR, join(TMP, `carga-${rep}-${i + 1}.json`), {
+              soloUna: false,
+            }),
+          ),
+        );
+  cargadas.push(...tanda);
+}
 
 console.log(`\n  después: ${carga()}`);
 
@@ -237,39 +285,39 @@ for (const r of [...(quieta ? [quieta] : []), ...cargadas]) {
   }
 }
 
-// ── 4 · el color, antes y después ─────────────────────────────────────────
-// Se compara contra la PRIMERA corrida frenada; las demás (`--concurrente`)
-// salen con su color al lado, sin promediarse: promediar dos corridas de una
-// intermitencia es la forma más rápida de hacerla desaparecer.
-const comparacion = quieta
-  ? comparaCorridas(quieta.medida?.guiones, cargadas[0].medida?.guiones)
-  : [];
+// ── 4 · el color, antes y después, CON SU FRECUENCIA ──────────────────────
+// Se comparan TODAS las frenadas, no la primera: el color de un guion bajo carga
+// es una frecuencia y no un desenlace, y quedarse con una muestra es la forma
+// más rápida de hacer desaparecer una intermitencia.
+const comparacion = quieta ? comparaCorridas(quieta.medida?.guiones, cargadas.map((r) => r.medida?.guiones)) : [];
 if (comparacion.length) {
   console.log(`\n${"─".repeat(78)}\ncolor antes y después`);
-  console.log(`  ${col("guion", 40)} ${col("quieto", 10)} ${col(`×${FACTOR}`, 10)} cambio`);
+  console.log(`  ${col("guion", 40)} ${col("quieto", 8)} ${col(`×${FACTOR}`, 14)} ${col("rojas", 8)} cambio`);
   for (const c of comparacion) {
+    const colores = c.cargados.map((e) => ICONO[e] ?? "—").join("");
     console.log(
-      `  ${col(c.nombre.slice(0, 38), 40)} ${col(ICONO[c.quieto] ?? "—", 10)} ${col(ICONO[c.cargado] ?? "—", 10)} ${c.cambio}`,
+      `  ${col(c.nombre.slice(0, 38), 40)} ${col(ICONO[c.quieto] ?? "—", 8)} ${col(colores, 14)} ` +
+        `${col(`${c.rojas}/${c.corridas}`, 8)} ${c.cambio}${c.firma ? ` · ${c.firma}` : ""}`,
     );
   }
   for (const c of comparacion) {
-    if (c.cambio === "igual") continue;
+    if (c.cambio === "igual-verde") continue;
     console.log(`\n  ${c.nombre} · ${c.cambio}`);
     for (const f of c.fallosQuieto) console.log(`    quieto ✘ ${f}`);
     for (const f of c.fallosCargado) console.log(`    ×${FACTOR} ✘ ${f}`);
   }
 }
-if (cargadas.length > 1) {
-  console.log(`\n  las ${cargadas.length} corridas frenadas, guion a guion:`);
-  for (const r of cargadas) {
-    for (const g of r.medida?.guiones ?? []) {
-      console.log(`    ${col(r.etiqueta, 18)} ${col(g.nombre.slice(0, 38), 40)} ${ICONO[g.estado] ?? "—"}`);
-    }
-  }
-}
 
 // ── 5 · el veredicto del REPRODUCTOR, que no es el de los guiones ─────────
-const v = veredictoDelReproductor({ juicios, comparacion });
+// De las medidas del control se juzga la de VENTANA MÁS LARGA: es la única que
+// puede decir algo de la máquina. Con `80 75` la primera es la del 80, que dura
+// dos segundos, y una razón sobre 1,9 s no es una razón.
+const medidaDelControl = medidasDe(quieta ?? {})
+  .map((g) => g.carga)
+  .sort((a, b) => (b?.paredMs ?? 0) - (a?.paredMs ?? 0))[0];
+const control = quieta ? juzgaElControl({ medida: medidaDelControl ?? null, umbral: UMBRAL }) : null;
+if (control?.aviso) console.log(`\n  ⚠ ${control.aviso}`);
+const v = veredictoDelReproductor({ juicios, comparacion, control });
 console.log(`\n${"─".repeat(78)}`);
 console.log(`  la salida entera de las dos corridas: ${REGISTRO}`);
 console.log(`${v.exit === 0 ? "✔" : v.exit === 1 ? "✘" : "⊘"} ${v.titulo}`);
