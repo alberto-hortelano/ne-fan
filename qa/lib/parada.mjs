@@ -171,10 +171,20 @@ export async function limpiaLaParada(ctx, arg) {
  *  necesita viaja en `a`.
  *
  *  Devuelve `null` mientras no haya parada y `{x, z, arranco, muestras,
- *  saltadas, sim}` cuando la hay. `saltadas` son los sondeos que NO contaron
- *  porque el mundo no había corrido `paso` segundos — o sea, exactamente las
- *  muestras falsas que la versión de pared se habría apuntado. Es el número que
- *  dice si este arreglo hizo algo, y por eso se devuelve y se registra. */
+ *  saltadas, sim}` cuando la hay.
+ *
+ *  **`saltadas` son los sondeos que NO contaron porque el mundo no había
+ *  corrido `paso` segundos, y NO es una medida de la carga — va al revés.**
+ *  Aquí escribí que era «el número que dice si la carga estaba haciendo algo», y
+ *  QA lo midió: en reposo salen **26 y 8**, y a ×40 **0 y 0**. Tiene su
+ *  explicación y es la misma que la del ×2 de sondeos: con `paso` igual a la
+ *  cadencia y razón sim/pared ≈ 0,96, en reposo casi la mitad de los sondeos
+ *  cae justo por debajo del paso; bajo carga un solo frame trae doce segundos de
+ *  mundo de golpe y no se salta ni uno. Así que `saltadas` mide **la cadencia
+ *  frente al paso**, no la carga, y se registra por lo que sí dice: cuántas
+ *  veces la versión de pared habría podido apuntarse una muestra que el mundo no
+ *  respalda **si el mundo se hubiera quedado quieto ahí** — que es lo que pasa
+ *  en el desacoplo, no en la lentitud. */
 export function elJugadorSePara(a) {
   const nefan = window.__nefan;
   const p = nefan.state().pos;

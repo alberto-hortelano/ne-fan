@@ -47,8 +47,27 @@ const EsperasQueConducenSchema = z
              *  escrito en el fuente (con sus comillas o sus backticks). Apunta a
              *  una y no ciega el fichero entero, que es donde viven las otras. */
             desc: z.string().min(3),
-            /** Obligatorio: una exención sin motivo es una puerta abierta. */
-            porque: z.string().min(120, "el motivo es una FRASE que dice por qué no cabía, no una etiqueta"),
+            /** A QUIÉN se espera de verdad. Va aparte del `porque` porque es el
+             *  CRITERIO —«el sujeto no es el mundo»— y no la excusa: separarlos
+             *  obliga a escribir la respuesta a la pregunta que decide, en vez
+             *  de dejarla diluida en un párrafo (QA, H-6). */
+            sujeto: z.string().min(25, "`sujeto` dice a QUIÉN se espera: «el bridge generando el tile», no «otro»"),
+            /** Obligatorio: una exención sin motivo es una puerta abierta.
+             *
+             *  El mínimo de longitud no distingue una frase honesta de 130
+             *  caracteres de relleno —QA lo demostró rellenando con basura y
+             *  viendo el test verde—, así que además se exige que el motivo
+             *  NOMBRE algo comprobable: el proceso al que se espera, o el número
+             *  del issue por el que la espera queda fuera. Sigue sin distinguir
+             *  una mentira elaborada: eso lo hace la revisión del diff, que es
+             *  el mismo límite declarado de `quejaDelMotivo`. */
+            porque: z
+              .string()
+              .min(120, "el motivo es una FRASE que dice por qué no cabía, no una etiqueta")
+              .regex(
+                /#\d+|bridge|motor|disco|State API|servidor|loop|game loop/i,
+                "el motivo tiene que NOMBRAR el proceso al que se espera, o el issue por el que queda fuera",
+              ),
           })
           .strict(),
       )
@@ -60,13 +79,78 @@ const EsperasQueConducenSchema = z
 export type EsperaDePared = { fichero: string; linea: number; verbo: string; desc: string; presupuesto: string };
 
 /** Los sitios de `texto` en los que una espera que CONDUCE se presupuesta en
- *  pared. Lee el AST: `ctx.holdUntil(k, desc, fn, PRESUPUESTO, arg)` con
- *  presupuesto que no es un objeto, y `ctx.expectEspera(desc, debe, fn, {…})`
- *  con `tecla` y sin `sim`. */
+ *  pared. Lee el AST, en las **tres** formas que tiene el defecto:
+ *
+ *  1. `ctx.holdUntil(k, desc, fn, PRESUPUESTO, arg)` sin `{sim}`;
+ *  2. `ctx.expectEspera(desc, debe, fn, {…})` con `tecla` y sin `sim`;
+ *  3. **`ctx.waitFor(desc, fn, PARED)` CON UNA TECLA MANTENIDA**, que es la
+ *     forma en la que #545 se encontró y la que la primera versión de este
+ *     candado no veía (QA, H-2): corrido contra los guiones 91, 86 y 109 de
+ *     `main` —los tres que tenían el defecto— decía **0 sitios**. O sea que
+ *     prohibía escribirlo con el verbo que el propio arreglo estrenó y lo
+ *     dejaba escribible con el verbo con el que estaba escrito. La pregunta de
+ *     cabecera —¿puede ponerse verde sin que ocurra lo que promete?— tenía un
+ *     «sí» con los tres defectuosos delante.
+ *
+ *  Para la tercera se mira si, EN ORDEN DE FUENTE dentro de la misma función,
+ *  hay una tecla pulsada sin soltar todavía cuando llega la espera: `press` /
+ *  `keyboard.down` la levantan y `release` / `releaseAll` / `keyboard.up` la
+ *  bajan. Es exactamente el patrón del 91 de ayer (press → waitFor → `finally`
+ *  releaseAll), y no marca la espera de un guion que pulsó una tecla en su
+ *  bloque 1 y la soltó antes del 5. */
 export function esperasDeParedQueConducen(texto: string, fichero: string): EsperaDePared[] {
   const sf = ts.createSourceFile(fichero, texto, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const fuera: EsperaDePared[] = [];
   const linea = (n: ts.Node): number => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+  /** Texto de la llamada, para reconocer los verbos del teclado escritos de las
+   *  dos maneras: `ctx.nefan("inputDriver.press", "up")` y
+   *  `ctx.page.keyboard.down("w")`. */
+  const gestoDeTecla = (n: ts.CallExpression): "pulsa" | "suelta" | null => {
+    const t = n.expression.getText(sf);
+    const a0 = n.arguments[0];
+    const arg0 = a0 !== undefined && ts.isStringLiteralLike(a0) ? a0.text : "";
+    if (/\.keyboard\.down$/.test(t) || /inputDriver\.press$/.test(arg0 || t)) return "pulsa";
+    if (/\.keyboard\.up$/.test(t) || /inputDriver\.release(All)?$/.test(arg0 || t)) return "suelta";
+    return null;
+  };
+  /** La función que ENVUELVE a `n`, o el fichero entero si no hay ninguna. Es la
+   *  unidad dentro de la que se mira «¿había una tecla pulsada?»: fuera de ella
+   *  el estado del teclado ya no se puede seguir leyendo el orden del fuente. */
+  const funcionDe = (n: ts.Node): ts.Node => {
+    for (let p: ts.Node | undefined = n.parent; p; p = p.parent) {
+      if (ts.isFunctionDeclaration(p) || ts.isFunctionExpression(p) || ts.isArrowFunction(p) || ts.isMethodDeclaration(p)) {
+        // Una arrow de una línea (`() => ctx.waitFor(…)`, el molde de
+        // `ctx.absorbe`) NO es la unidad: la tecla la pulsa quien la envuelve.
+        if (ts.isArrowFunction(p) && !ts.isBlock(p.body)) continue;
+        return p;
+      }
+    }
+    return sf;
+  };
+  /** Posiciones de los gestos de teclado, por función. */
+  const gestos = new Map<ts.Node, { pos: number; gesto: "pulsa" | "suelta" }[]>();
+  const apunta = (n: ts.Node): void => {
+    if (ts.isCallExpression(n)) {
+      const g = gestoDeTecla(n);
+      if (g) {
+        const f = funcionDe(n);
+        if (!gestos.has(f)) gestos.set(f, []);
+        gestos.get(f)!.push({ pos: n.getStart(sf), gesto: g });
+      }
+    }
+    ts.forEachChild(n, apunta);
+  };
+  apunta(sf);
+  /** ¿Hay una tecla mantenida cuando se llega a `n`? Se mira en la función que
+   *  lo envuelve y en las de fuera: el `waitFor` del 91 vive dentro de una arrow
+   *  de bloque que le pasa `ctx.absorbe`, y la tecla la pulsó su envolvente. */
+  const conTeclaMantenida = (n: ts.Node): boolean => {
+    for (let f: ts.Node | undefined = funcionDe(n); f; f = f === sf ? undefined : funcionDe(f)) {
+      const g = (gestos.get(f) ?? []).filter((x) => x.pos < n.getStart(sf)).sort((a, b) => a.pos - b.pos);
+      if (g.length && g[g.length - 1].gesto === "pulsa") return true;
+    }
+    return false;
+  };
   /** Los nombres de las propiedades de un objeto literal, incluida la forma
    *  abreviada (`{ sim, arg }`), que es como la escribe el guion 06. */
   const claves = (o: ts.ObjectLiteralExpression): string[] =>
@@ -96,17 +180,33 @@ export function esperasDeParedQueConducen(texto: string, fichero: string): Esper
       }
       if (verbo === "expectEspera") {
         const o = n.arguments[3];
-        if (o && ts.isObjectLiteralExpression(o)) {
-          const k = claves(o);
-          if (k.includes("tecla") && !k.includes("sim")) {
-            fuera.push({
-              fichero,
-              linea: linea(n),
-              verbo,
-              desc: n.arguments[0]?.getText(sf) ?? "",
-              presupuesto: `{${k.join(", ")}}`,
-            });
-          }
+        const k = o && ts.isObjectLiteralExpression(o) ? claves(o) : [];
+        const conSim = k.includes("sim");
+        // Con `tecla` conduce por sí misma; sin ella, conduce igual si hay una
+        // tecla mantenida desde fuera (el patrón de los guiones 86 y 109).
+        if (!conSim && (k.includes("tecla") || conTeclaMantenida(n))) {
+          fuera.push({
+            fichero,
+            linea: linea(n),
+            verbo,
+            desc: n.arguments[0]?.getText(sf) ?? "",
+            presupuesto: o ? `{${k.join(", ")}}` : "(sin opciones)",
+          });
+        }
+      }
+      if (verbo === "waitFor" && conTeclaMantenida(n)) {
+        // LA TERCERA FORMA, y la que #545 tenía escrita: la tecla se mantiene
+        // aparte y se espera con `waitFor`. El presupuesto es el 3er argumento.
+        const p = n.arguments[2];
+        const conSim = p !== undefined && ts.isObjectLiteralExpression(p) && claves(p).includes("sim");
+        if (!conSim) {
+          fuera.push({
+            fichero,
+            linea: linea(n),
+            verbo,
+            desc: n.arguments[0]?.getText(sf) ?? "",
+            presupuesto: p ? p.getText(sf) : "(sin presupuesto)",
+          });
         }
       }
     }
@@ -116,12 +216,19 @@ export function esperasDeParedQueConducen(texto: string, fichero: string): Esper
   return fuera;
 }
 
-const ficherosDelBanco = (): string[] =>
-  ["guiones", "lib"].flatMap((d) =>
-    readdirSync(join(repoRoot, "qa", d))
-      .filter((f) => f.endsWith(".mjs"))
-      .map((f) => `qa/${d}/${f}`),
-  );
+/** TODO `qa/**.mjs`, no solo `guiones` y `lib`. La primera versión miraba esas
+ *  dos carpetas y dejaba fuera 14 sitios en 5 ficheros (QA, H-2) — uno de ellos
+ *  `qa/fixtures-las-tres-se-caminan.mjs`, con el presupuesto más apretado de la
+ *  batería («0,5 m en 8.000 ms de pared»). Un candado que mira media carpeta
+ *  cubre media casa. Se excluye `node_modules`. */
+const ficherosDelBanco = (dir = join(repoRoot, "qa")): string[] =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (e.isDirectory()) return e.name === "node_modules" || e.name.startsWith(".") ? [] : ficherosDelBanco(join(dir, e.name));
+    // `qa/run.mjs` DEFINE `waitFor` y `holdUntil`: sus cuerpos no son sitios de
+    // llamada, son el verbo. Es el único fichero excluido y se dice cuál.
+    if (e.name === "run.mjs" && dir === join(repoRoot, "qa")) return [];
+    return e.name.endsWith(".mjs") ? [join(dir, e.name).slice(repoRoot.length + 1)] : [];
+  });
 
 describe("las esperas que conducen al jugador presupuestan en sim (#545)", () => {
   const contrato = EsperasQueConducenSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
@@ -177,6 +284,64 @@ describe("las esperas que conducen al jugador presupuestan en sim (#545)", () =>
       ],
       JSON.stringify(vistas),
     );
+  });
+
+  it("**y en la forma en la que #545 SE ENCONTRÓ**: tecla mantenida aparte + `waitFor` de pared", () => {
+    // El agujero que QA midió (H-2): la primera versión de este detector veía
+    // CERO sitios en los guiones 91, 86 y 109 de `main` —los tres que tenían el
+    // defecto—, porque los tres mantenían la tecla aparte. O sea que prohibía
+    // escribirlo con el verbo que el arreglo estrenó y lo dejaba escribible con
+    // el verbo con el que estaba escrito. Éste es el material de los tres, con
+    // sus dos maneras de pulsar y el `finally` que suelta.
+    const comoEstabaEl91 = `
+      async function empujarContra(ctx, centro, maxMs = 12_000) {
+        await ctx.nefan("inputDriver.press", "up");
+        try {
+          return await ctx.absorbe("cortafuegos", () =>
+            ctx.waitFor("el jugador anda y se para contra lo que tiene delante", pred, maxMs, centro));
+        } finally {
+          await ctx.nefan("inputDriver.releaseAll");
+        }
+      }
+      async function andarHastaElMuro(ctx, borde, maxMs = 60_000) {
+        await ctx.page.keyboard.down("w");
+        try {
+          await ctx.waitFor("el jugador se pega al muro", pred, maxMs, borde);
+        } finally {
+          await ctx.page.keyboard.up("w");
+        }
+      }`;
+    assert.deepEqual(
+      esperasDeParedQueConducen(comoEstabaEl91, "qa/guiones/de-mentira.mjs").map((v) => `${v.verbo}:${v.desc}`),
+      [
+        'waitFor:"el jugador anda y se para contra lo que tiene delante"',
+        'waitFor:"el jugador se pega al muro"',
+      ],
+    );
+  });
+
+  it("…pero una espera DESPUÉS de soltar la tecla no conduce nada (si no, marcaría medio banco)", () => {
+    // La otra dirección, y es la que hace que el detector sirva: un guion que
+    // pulsa en su bloque 1, suelta, y espera al bridge en el 5 NO está
+    // conduciendo al jugador. Sin este caso, el candado marcaría cualquier
+    // espera de pared de cualquier guion que alguna vez haya andado.
+    const sueltaYLuegoEspera = `
+      export default async function (ctx) {
+        await ctx.nefan("inputDriver.press", "up");
+        await ctx.nefan("inputDriver.releaseAll");
+        await ctx.waitFor("el bridge contesta", pred, 60_000);
+        await ctx.page.keyboard.down("w");
+        await ctx.page.keyboard.up("w");
+        await ctx.waitFor("el save aparece en disco", pred, 30_000);
+      }`;
+    assert.deepEqual(esperasDeParedQueConducen(sueltaYLuegoEspera, "qa/guiones/de-mentira.mjs"), []);
+    // Y con `{sim}` tampoco, con la tecla puesta: el control del control.
+    const conSim = `
+      export default async function (ctx) {
+        await ctx.nefan("inputDriver.press", "up");
+        await ctx.waitFor("el jugador anda", pred, { sim: 8 });
+      }`;
+    assert.deepEqual(esperasDeParedQueConducen(conSim, "qa/guiones/de-mentira.mjs"), []);
   });
 
   it("lo que va DENTRO DE UN STRING no es una llamada (por eso se lee el árbol)", () => {

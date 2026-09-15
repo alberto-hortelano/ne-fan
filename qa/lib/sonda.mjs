@@ -150,10 +150,26 @@ export function presupuestoDeEspera(presupuesto, desc) {
     // no se abuse de esto: `test/esperas-que-conducen.test.ts`, que la exige
     // apuntada con su motivo en `data/contract/esperas-que-conducen.json`.
     if (sim === undefined) {
-      if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) {
+      if (typeof ms !== "number" || !Number.isFinite(ms)) {
         throw new Error(
-          `waitFor(«${desc}»): un presupuesto \`{ms: N}\` son MILISEGUNDOS de pared ≥ 0 y llegó ` +
+          `waitFor(«${desc}»): un presupuesto \`{ms: N}\` son MILISEGUNDOS de pared y llegó ` +
             `${JSON.stringify(ms)}.`,
+        );
+      }
+      // SUELO, y es el que la forma de objeto necesita y el número suelto no
+      // (QA, H-4): `{ms: 4}` es lo que sale de teclear `{sim: 4}` con la clave
+      // equivocada, y con 4 ms la espera hace UN sondeo — o sea que un
+      // `expectEspera(desc, false, …)` saldría ✔ afirmando un negativo con una
+      // sola mirada, que es exactamente el defecto que `presupuestoDeEspera`
+      // existe para cerrar. Por debajo de la CADENCIA no hay presupuesto que
+      // gastar: hay una mirada. El número suelto no lleva suelo porque no se
+      // puede teclear por error en lugar de `{sim: N}`.
+      if (ms < CADENCIA_MS) {
+        throw new Error(
+          `waitFor(«${desc}»): un presupuesto \`{ms: ${ms}}\` no llega ni a la cadencia de sondeo ` +
+            `(${CADENCIA_MS} ms), así que solo puede mirar UNA vez — y una mirada no es un presupuesto. ` +
+            `¿Querías \`{sim: ${ms}}\`, o sea ${ms} SEGUNDOS DE MUNDO? Si de verdad querías pared corta, ` +
+            `escríbela como número suelto: la forma de objeto existe para declarar la unidad.`,
         );
       }
       return { sim: null, techoMs: ms, rotulo: null };
@@ -177,6 +193,25 @@ export function presupuestoDeEspera(presupuesto, desc) {
     `waitFor(«${desc}»): el presupuesto es un número de MILISEGUNDOS de pared o un objeto ` +
       `\`{sim: SEGUNDOS de simulación}\`; llegó ${JSON.stringify(presupuesto)}.`,
   );
+}
+
+/** El presupuesto con el que espera una ESPERA CONDUCIDA, armado desde las
+ *  opciones de `ctx.expectEspera({ms, sim})`.
+ *
+ *  Vive aquí, y no dentro de `expectEspera` (`qa/run.mjs`), por el hallazgo H-1
+ *  de QA: allí era una línea suelta que pasaba `ms` **a pelo**, y cuando
+ *  `holdUntil` dejó de aceptar números —en esta misma tanda— el guion 80 se
+ *  quedó sin correr. El fichero del 80 estaba intacto, el contrato de exenciones
+ *  bendecía ese sitio por escrito, y aun así el runner se negaba a ejecutarlo:
+ *  dos candados describiendo estados incompatibles, y nadie entre ellos.
+ *
+ *  Sacándolo aquí, la regla se puede EJERCER sin navegador —que es donde el
+ *  defecto se habría visto— y queda una sola definición de «con qué presupuesto
+ *  espera una espera conducida». Lo que garantiza: **siempre devuelve un objeto**
+ *  (la forma que `holdUntil` exige) y siempre uno que `presupuestoDeEspera`
+ *  entiende. */
+export function presupuestoConducido({ ms = 30_000, sim = null } = {}) {
+  return sim === null ? { ms } : { sim, ms };
 }
 
 /** Cuánto ha avanzado el reloj entre dos lecturas.

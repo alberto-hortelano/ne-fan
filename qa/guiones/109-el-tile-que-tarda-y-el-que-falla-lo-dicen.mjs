@@ -129,14 +129,14 @@ async function mantener(ctx, tecla, nFrames = 4) {
 }
 
 /** Anda al este hasta que haya propuesta sobre la mesa. `null` si no la hay. */
-async function andarHastaLaPropuesta(ctx, maxMs = 120_000) {
+async function andarHastaLaPropuesta(ctx, sim = 120) {
   await ctx.page.keyboard.down("w");
   try {
     const { ocurrio, ultimo } = await ctx.expectEspera(
       "andando hacia el borde, el juego PROPONE generar la zona vecina",
       true,
       () => window.__nefan.frontier.proposal ?? null,
-      { ms: maxMs },
+      { sim },
     );
     return ocurrio ? ultimo : null;
   } finally {

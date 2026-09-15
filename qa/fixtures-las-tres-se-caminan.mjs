@@ -90,7 +90,7 @@ async function medirFixture(page, ctx, fixture, fallos) {
         const p = window.__nefan.state().pos;
         return Math.hypot(p.x - o.x, p.z - o.z) > 0.5 ? true : null;
       },
-      8000,
+      { sim: 8 },
       { x: p0.x, z: p0.z },
     );
     movio = true;

@@ -54,6 +54,7 @@ type Ctx = {
 const sonda = (await import(join(repoRoot, "qa", "lib", "sonda.mjs"))) as {
   ctxDeSonda: (page: unknown) => Ctx;
   presupuestoDeEspera: (p: unknown, desc: string) => { sim: number | null; techoMs: number; rotulo: string | null };
+  presupuestoConducido: (o?: { ms?: number; sim?: number | null }) => { ms?: number; sim?: number };
   avanceDelReloj: (previa: Reloj, actual: NonNullable<Reloj>) => { sim: number; frames: number; loop: number };
   lecturaDelRelojValida: (r: unknown) => boolean;
   CADENCIA_MS: number;
@@ -66,7 +67,7 @@ const esperas = (await import(join(repoRoot, "qa", "lib", "esperas.mjs"))) as {
   relojDeSimNoAvanzoEn: (err: unknown) => { pedido: number; avanzado: number } | null;
   fallosDeEsperasPendientes: (libro: unknown) => string[];
 };
-const { ctxDeSonda, presupuestoDeEspera, avanceDelReloj, lecturaDelRelojValida, CORTAFUEGOS_POR_SIM, LOOP_COLGADO_MS } =
+const { ctxDeSonda, presupuestoDeEspera, presupuestoConducido, avanceDelReloj, lecturaDelRelojValida, CORTAFUEGOS_POR_SIM, LOOP_COLGADO_MS } =
   sonda;
 
 /** EL RELOJ DEL CLIENTE, importado para ejercerlo. Vive en un módulo sin un
@@ -201,11 +202,53 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
     assert.deepEqual(presupuestoDeEspera({ ms: 180_000 }, "x"), { sim: null, techoMs: 180_000, rotulo: null });
   });
 
+  it("**pero con SUELO**: `{ms: 4}` es lo que sale de teclear `{sim: 4}`, y 4 ms son UNA mirada", () => {
+    // H-4 de QA: sin suelo, `expectEspera(desc, false, fn, {ms: 4})` sale ✔
+    // afirmando un negativo con un solo sondeo — el defecto que este validador
+    // existe para cerrar, entrando por la puerta que PR-4b acababa de abrir. Y
+    // no lo veía ninguno de los dos candados: no hay `tecla`, no es `holdUntil`.
+    for (const chico of [0, 1, 4, 149]) {
+      assert.throws(() => presupuestoDeEspera({ ms: chico }, "x"), /no llega ni a la cadencia de sondeo/);
+    }
+    // El número suelto NO lleva suelo, y es deliberado: `0` no se puede teclear
+    // por error en lugar de `{sim: 0}`, y hay un caso que lo usa para mirar una
+    // vez a propósito (su test está más abajo, «un presupuesto de 0 sigue
+    // mirando UNA vez»).
+    assert.deepEqual(presupuestoDeEspera(0, "x"), { sim: null, techoMs: 0, rotulo: null });
+  });
+
+  it("**el presupuesto de una espera CONDUCIDA siempre es un objeto que el runner acepta**", () => {
+    // H-1 de QA, y es el defecto que costó el guion 80: `expectEspera` armaba su
+    // presupuesto pasando `ms` A PELO, `holdUntil` dejó de aceptar números en
+    // esta misma tanda, y el 80 —con su fichero intacto y su sitio BENDECIDO por
+    // el contrato de exenciones— murió en el fail-loud antes de llegar a su
+    // aserto. Dos candados describiendo estados incompatibles y nadie en medio,
+    // porque la regla vivía en una línea de `run.mjs` que ningún test podía
+    // ejercer sin abrir un navegador. Ahora se ejerce aquí, en las dos mitades:
+    // **es un objeto** (lo que `holdUntil` exige) y **lo entiende la sonda**.
+    const casos = [
+      {},
+      { ms: 15_000 },
+      { ms: 6_000, sim: null },
+      { sim: 4 },
+      { sim: 4, ms: 60_000 },
+    ];
+    for (const o of casos) {
+      const p = presupuestoConducido(o);
+      assert.equal(typeof p, "object", `${JSON.stringify(o)} → ${JSON.stringify(p)} no es un objeto`);
+      assert.ok(!Array.isArray(p) && p !== null);
+      // Y la sonda lo entiende: si lanzara, el guion moriría igual que el 80.
+      assert.doesNotThrow(() => presupuestoDeEspera(p, "la espera conducida"), JSON.stringify(o));
+    }
+    // El defecto exacto: el de pared sigue valiendo lo que valía.
+    assert.deepEqual(presupuestoDeEspera(presupuestoConducido({ ms: 15_000 }), "x"), presupuestoDeEspera(15_000, "x"));
+  });
+
   it("lo que no se entiende LANZA, en vez de esperar `undefined` ms", () => {
     // Sin esto, `Date.now() - t0 < undefined` es siempre falso: la espera haría
     // UN sondeo y se daría por expirada — o sea, un guion que mira una vez y
     // afirma un negativo.
-    for (const malo of [undefined, null, "4s", { ms: "400" }, { ms: -1 }, { sim: 0 }, { sim: -1 }, { sim: "4" }, -1, NaN]) {
+    for (const malo of [undefined, null, "4s", { ms: "400" }, { ms: -1 }, { ms: NaN }, { sim: 0 }, { sim: -1 }, { sim: "4" }, -1, NaN]) {
       assert.throws(() => presupuestoDeEspera(malo, "la espera de prueba"), /waitFor/);
     }
   });

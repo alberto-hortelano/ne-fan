@@ -71,7 +71,7 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // bloque decide si dos corridas colisionan — el criterio 3 entero.
 import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
 import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } from "./lib/veredictos.mjs";
-import { ctxDeSonda } from "./lib/sonda.mjs";
+import { ctxDeSonda, presupuestoConducido } from "./lib/sonda.mjs";
 // Cómo se compone la URL de la página: pura, y con su propio test en core
 // (`test/url-del-bench.test.ts`). Estaba aquí dentro como una concatenación de
 // cadenas, y ahí es donde nadie la miraba (#476).
@@ -1004,8 +1004,18 @@ function makeCtx(page, name) {
       const { ms = 30_000, arg = undefined, tecla = undefined, aserto = undefined, sim = null } = opciones;
       // `sim` presupuesta SEGUNDOS DE MUNDO (#545) y es el que manda cuando
       // está: `ms`, si además se escribe, pasa a ser el cortafuegos de pared —
-      // no el presupuesto. Sin `sim`, todo es exactamente como antes.
-      const presupuesto = sim === null ? ms : { sim, ms: opciones.ms };
+      // no el presupuesto.
+      //
+      // Y el presupuesto se arma SIEMPRE con la unidad puesta, también sin
+      // `sim`, y lo arma `presupuestoConducido` (`qa/lib/sonda.mjs`) para que la
+      // regla se pueda EJERCER en CI. Pasar `ms` a pelo costó el guion 80 (QA,
+      // H-1): `holdUntil` dejó de aceptar números en esta misma tanda, así que
+      // `expectEspera(…, {ms, tecla})` —una forma que el contrato de exenciones
+      // BENDICE por escrito— moría en el fail-loud antes de llegar a su aserto,
+      // y el guion que el plan mandaba no tocar se quedó sin medir con el
+      // fichero intacto. El camino de pared no cambia un byte: `{ms: N}` y `N`
+      // dan exactamente el mismo presupuesto (`test/sonda-de-qa.test.ts`).
+      const presupuesto = presupuestoConducido({ ms, sim: sim === null ? null : sim });
       /** Con qué reloj se agotó esto, para el detalle del ✔/✘. */
       const gastado = sim === null ? `${ms} ms` : `${sim} s de sim`;
       let ocurrio = false;

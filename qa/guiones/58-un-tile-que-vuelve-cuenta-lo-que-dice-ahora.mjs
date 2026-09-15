@@ -187,7 +187,7 @@ export default async function (ctx) {
       "caminar al este PROPONE explorar la zona vecina",
       true,
       () => window.__nefan.frontier.proposal ?? null,
-      { ms: 120_000 },
+      { sim: 120 },
     );
   } finally {
     await ctx.page.keyboard.up("w");

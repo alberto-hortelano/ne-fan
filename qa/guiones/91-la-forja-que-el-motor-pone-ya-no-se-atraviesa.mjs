@@ -167,8 +167,13 @@ async function empujarContra(ctx, centro, sim = 12) {
   );
   arranco = Boolean(parada?.arranco);
   // Qué vio el molde, haya habido parada o no: cuántas muestras de MUNDO contó
-  // y cuántos sondeos se saltó por no haber corrido ni un frame. Ese segundo
-  // número es el que dice si la carga estaba haciendo algo, y antes no existía.
+  // y cuántos sondeos se saltó por no haber corrido ni un frame.
+  //
+  // OJO con leer `saltadas` como «cuánta carga había»: va al REVÉS (medido por
+  // QA — 26 y 8 en reposo, 0 y 0 a ×40) y el motivo está escrito en
+  // `qa/lib/parada.mjs`. Lo que registra es cuántas veces el muestreo se quedó
+  // por debajo del paso de mundo; se apunta porque es el diagnóstico de la
+  // espera, no porque mida el dial.
   const visto = await loQueVioLaParada(ctx, molde);
   ctx.log(
     `empujón hacia (${centro.x.toFixed(1)}, ${centro.z.toFixed(1)}): ${visto.muestras} muestras de mundo, ` +

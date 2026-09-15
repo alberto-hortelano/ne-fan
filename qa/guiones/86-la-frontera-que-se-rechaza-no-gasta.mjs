@@ -166,14 +166,14 @@ async function andarHastaElMuro(ctx, bordeEste, sim = 60) {
 
 /** Anda al este hasta que haya propuesta sobre la mesa, y devuelve a qué
  *  distancia del borde nació. `null` si no llega a haberla. */
-async function andarHastaLaPropuesta(ctx, bordeEste, maxMs = 120_000) {
+async function andarHastaLaPropuesta(ctx, bordeEste, sim = 120) {
   await ctx.page.keyboard.down("w");
   try {
     const { ocurrio, ultimo } = await ctx.expectEspera(
       "andando hacia el borde, el juego PROPONE generar la zona vecina",
       true,
       () => window.__nefan.frontier.proposal ?? null,
-      { ms: maxMs },
+      { sim },
     );
     if (!ocurrio) return null;
     const pos = await donde(ctx);
