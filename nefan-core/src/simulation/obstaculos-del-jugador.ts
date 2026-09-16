@@ -128,10 +128,42 @@ export function penetracionEnCaja(
   caja: CajaXZ,
   radio: number,
 ): number {
-  const margenX = caja.sizeXZ.x / 2 + radio - Math.abs(p.x - caja.pos.x);
-  const margenZ = caja.sizeXZ.z / 2 + radio - Math.abs(p.z - caja.pos.z);
-  if (margenX <= 0 || margenZ <= 0) return 0;
-  return Math.min(margenX, margenZ);
+  return salidaDeCaja(p, caja, radio)?.pen ?? 0;
+}
+
+/** POR DÓNDE SE SALE, que es la misma medida mirada del otro lado: la cara más
+ *  cercana y cuánto falta para alcanzarla. `null` fuera.
+ *
+ *  `penetracionEnCaja` contesta CUÁNTO y esta CUÁL, y comparten cuenta a
+ *  propósito: si la dirección de salida saliera de una aritmética propia
+ *  podrían discrepar, y entonces habría un punto en el que la caja dice «estás
+ *  dentro» y la salida apunta a un sitio que no sale.
+ *
+ *  Quién la necesita, y por qué no basta con la regla «salir sí, entrar no»:
+ *  esa regla dice qué pasos NO se frenan, y con eso el JUGADOR sale solo
+ *  —empuja con su teclado hasta que sale—. A un NPC no le empuja nadie: el
+ *  steering solo sondea rumbos hacia su meta, y si la meta está al otro lado de
+ *  la caja, ninguno de ellos le saca (medido: 290 s de 300 dentro de un carro,
+ *  QA de #583). Quien mueve un cuerpo sin teclado necesita que se le diga hacia
+ *  dónde, y eso es esto. */
+export function salidaDeCaja(
+  p: { x: number; z: number },
+  caja: CajaXZ,
+  radio: number,
+): { dir: { x: number; z: number }; pen: number } | null {
+  const dx = p.x - caja.pos.x;
+  const dz = p.z - caja.pos.z;
+  const margenX = caja.sizeXZ.x / 2 + radio - Math.abs(dx);
+  const margenZ = caja.sizeXZ.z / 2 + radio - Math.abs(dz);
+  if (margenX <= 0 || margenZ <= 0) return null;
+  // Por la cara más cercana, y en el empate por la X: da igual cuál se elija
+  // —las dos salen en la misma distancia— pero elegir SIEMPRE la misma hace
+  // la salida determinista, y un NPC que alterna de eje no avanza.
+  // El signo es el del lado en el que se está; justo en el eje central (dx = 0)
+  // se sale hacia +, que es una elección y no un empate con significado.
+  return margenX <= margenZ
+    ? { dir: { x: dx < 0 ? -1 : 1, z: 0 }, pen: margenX }
+    : { dir: { x: 0, z: dz < 0 ? -1 : 1 }, pen: margenZ };
 }
 
 /** ¿ESTA CAJA FRENA ESTE MOVIMIENTO? La regla es la PENETRACIÓN NO CRECIENTE:

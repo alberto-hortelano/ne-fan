@@ -258,6 +258,7 @@ describe("GameSimulation", () => {
       rng: new SeededRng(42),
       world: {
         queImpideElPaso: () => null,
+        porDondeSalirDeAqui: () => null,
         blocksCircle: () => false,
         resolvePlaceTarget: () => null,
         getEntityPosition: () => null,

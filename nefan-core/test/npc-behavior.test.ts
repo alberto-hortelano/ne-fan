@@ -11,6 +11,12 @@ import {
 } from "../src/simulation/npc-behavior.js";
 import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js";
 import {
+  cajaQueBloquea,
+  cajaQueContiene,
+  salidaDeSolido,
+  type CajaDeRuntime,
+} from "../src/simulation/cajas-de-runtime.js";
+import {
   resolveRoleParams,
   AMBIENT_ROLES,
   NPC_ROLES,
@@ -46,6 +52,7 @@ function makeRecord(
 function openWorld(overrides: Partial<NpcWorldAdapter> = {}): NpcWorldAdapter {
   return {
     queImpideElPaso: () => null,
+    porDondeSalirDeAqui: () => null,
     blocksCircle: () => false,
     resolvePlaceTarget: () => null,
     getEntityPosition: () => null,
@@ -61,6 +68,20 @@ function muroDelTile(
   bloquea: (fx: number, fz: number, tx: number, tz: number, r: number) => boolean,
 ): NpcWorldAdapter["queImpideElPaso"] {
   return (fx, fz, tx, tz, r) => (bloquea(fx, fz, tx, tz, r) ? { de: "tile" } : null);
+}
+
+/** UNA CAJA DE VERDAD, con la geometría de producción y sin reimplementar
+ *  nada: el adapter contesta con `cajaQueBloquea`/`salidaDeSolido` sobre una
+ *  lista literal de cajas. Es lo que hace el bridge, sin el ledger en medio. */
+function conCajasDeRuntime(...cajas: CajaDeRuntime[]): Partial<NpcWorldAdapter> {
+  return {
+    queImpideElPaso: (fx, fz, tx, tz, r) => {
+      const caja = cajaQueBloquea({ x: fx, z: fz }, { x: tx, z: tz }, r, cajas);
+      return caja ? { de: "caja", id: caja.id } : null;
+    },
+    porDondeSalirDeAqui: (x, z, r) => salidaDeSolido(x, z, r, cajas),
+    blocksCircle: (x, z, r) => cajaQueContiene(x, z, r, cajas) !== null,
+  };
 }
 
 /** Lo que frena es una CAJA que el motor puso a mitad de partida: la que el
@@ -725,5 +746,115 @@ describe("AmbientNpcBehavior · el encajonado (#583)", () => {
       [],
       "atravesar pudiendo rodear es el defecto de #583 del revés",
     );
+  });
+});
+
+/** EL QUE TIENE UNA CAJA ENCIMA (#583, QA H-2) — y es la mitad del encajonado
+ *  que no se veía. «Salir sí, entrar no» dice qué pasos no se frenan, y con eso
+ *  el JUGADOR sale solo porque empuja él; al NPC no le empuja nadie. El
+ *  steering sondea siete rumbos alrededor de la dirección a su meta, así que
+ *  con la meta al otro lado de la caja ninguno de los siete reducía la
+ *  penetración —los laterales la dejan igual, y son legales, así que tampoco se
+ *  agotan los siete y el escape no se abre—: 290 s de 300 dentro de un carro,
+ *  medido por QA.
+ *
+ *  Estos casos son de SISTEMA y no de consulta, que es exactamente lo que
+ *  faltaba: el candado anterior decía «al que le cae la caja encima sale
+ *  andando» y lo que afirmaba era `blocksMove(...) === false`. */
+describe("AmbientNpcBehavior · al que le cae una caja encima (#583, H-2)", () => {
+  const CARRO: CajaDeRuntime = { id: "carro", pos: { x: 0, z: 0 }, sizeXZ: { x: 6, z: 6 } };
+  /** Con el cuerpo del NPC, la caja acaba en 3,5 m del centro. */
+  const FUERA = 3 + 0.5;
+
+  function aldeanoDentro(overrides: Partial<NpcWorldAdapter> = {}, desde = { x: -0.5, z: 0 }) {
+    const sys = createAmbientNpcBehavior({
+      rng: new SeededRng(31),
+      world: openWorld({
+        ...conCajasDeRuntime(CARRO),
+        resolvePlaceTarget: (id) => (id === "plaza" ? { x: 14, z: 0 } : null),
+        ...overrides,
+      }),
+    });
+    sys.addNpc(makeRecord("aldeano", [desde.x, 0, desde.z], {
+      role: "villager",
+      directive: { type: "goto_place", target_place_id: "plaza" },
+    }));
+    return sys;
+  }
+
+  it("SALE, aunque su meta esté justo al otro lado de la caja", () => {
+    const sys = aldeanoDentro();
+    let fuera = -1;
+    for (let i = 0; i < 600 && fuera < 0; i++) {
+      sys.tick(0.016, ctxWith());
+      const p = sys.states()[0].pos;
+      if (Math.abs(p.x) >= FUERA || Math.abs(p.z) >= FUERA) fuera = i * 0.016;
+    }
+    assert.ok(fuera >= 0, "el NPC tiene que acabar FUERA de la caja que le cayó encima");
+    // Por la cara más cercana (la oeste, a 3 m) a velocidad de paseo: ~2,5 s.
+    // El tope es generoso a propósito; lo que se afirma es que sale, no cuándo.
+    assert.ok(fuera < 6, `y sale andando, no en media partida: ${fuera.toFixed(1)} s`);
+  });
+
+  it("sale por la cara MÁS CERCANA, que es lo que hace que salga siempre", () => {
+    // Pegado a la cara este por dentro: sale por el este, aunque su meta
+    // también esté al este — aquí las dos coinciden, y en el caso de arriba no.
+    const sys = aldeanoDentro({}, { x: 2.5, z: 0 });
+    for (let i = 0; i < 600; i++) sys.tick(0.016, ctxWith());
+    assert.ok(sys.states()[0].pos.x >= FUERA, "debió salir por el este, que es su cara más cercana");
+  });
+
+  it("y lo DICE: la traza nombra al NPC y la caja en la que estaba metido", () => {
+    const avisos: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => { avisos.push(args.map(String).join(" ")); };
+    try {
+      const sys = aldeanoDentro();
+      for (let i = 0; i < 60; i++) sys.tick(0.016, ctxWith());
+    } finally {
+      console.warn = original;
+    }
+    const aviso = avisos.find((a) => a.includes("DENTRO"));
+    assert.ok(aviso, `salir de una caja es un estado anómalo y se declara: ${JSON.stringify(avisos)}`);
+    assert.ok(aviso.includes("aldeano") && aviso.includes("carro"), aviso);
+  });
+
+  it("también de la huella MÁXIMA que el contrato permite (64 m, QA H-6)", () => {
+    // `footprint` topa en 128 celdas (el lado del tile), o sea 64 m: desde su
+    // centro hay 32 m hasta la cara. Antes de que alguien le diera el rumbo,
+    // un NPC ahí dentro se movía 0,03 m en 60 s.
+    const GRANDE: CajaDeRuntime = { id: "muralla", pos: { x: 0, z: 0 }, sizeXZ: { x: 64, z: 64 } };
+    const sys = createAmbientNpcBehavior({
+      rng: new SeededRng(31),
+      world: openWorld({
+        ...conCajasDeRuntime(GRANDE),
+        resolvePlaceTarget: (id) => (id === "plaza" ? { x: 60, z: 0 } : null),
+      }),
+    });
+    sys.addNpc(makeRecord("aldeano", [0, 0, 0], {
+      role: "villager",
+      directive: { type: "goto_place", target_place_id: "plaza" },
+    }));
+    // 40 s: a velocidad de paseo, 32 m se andan en unos 27.
+    let fuera = false;
+    for (let i = 0; i < 40 / 0.016 && !fuera; i++) {
+      sys.tick(0.016, ctxWith());
+      const p = sys.states()[0].pos;
+      fuera = Math.abs(p.x) >= 32.5 || Math.abs(p.z) >= 32.5;
+    }
+    assert.ok(fuera, "de la caja más grande que el contrato admite también se sale andando");
+  });
+
+  it("no se le saca de la geometría del TILE: de ahí no saca nadie (#616)", () => {
+    // El adapter dice que está dentro de algo del tile (sin salida declarada):
+    // el NPC no recibe rumbo de salida y el steering sigue con su meta.
+    const sys = aldeanoDentro({
+      queImpideElPaso: muroDelTile(() => true),
+      porDondeSalirDeAqui: () => null,
+    });
+    for (let i = 0; i < 300; i++) sys.tick(0.016, ctxWith());
+    const p = sys.states()[0].pos;
+    assert.equal(p.x, -0.5, "sin salida declarada, el NPC no se mueve por su cuenta");
+    assert.equal(p.z, 0);
   });
 });

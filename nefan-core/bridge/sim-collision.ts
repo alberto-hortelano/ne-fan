@@ -21,15 +21,32 @@
  *  "sin esa fuente" con warning (mismo patrón que el cliente), nunca tumba el
  *  tick. Las cajas de (3) NO entran en esa caché y no tienen otra: aparecen a
  *  mitad de partida, que es justo cuando una caché por escena miente, así que
- *  se derivan en cada consulta. EL COSTE, medido (Ryzen 7 5800X, Node 22) por
- *  las 1.400 consultas que gasta un segundo de juego —7 deflexiones × 10 NPCs
- *  × 20 tick/s— y en el hilo del bridge: 1,6 ms sin spawns, 5,0 ms con 50 en
- *  el ledger, 18,4 ms con 200 y 62,2 ms con 600 (dos de cada tres, cajas).
- *  Doscientas entities que vengan del TILE cuestan 0,9 ms: lo que no pasó el
- *  filtro de `spawn_reason` no llega a construirse. Es LINEAL y sin tope, que
- *  es lo que hay que mirar el día que una partida larga acumule millares: el
- *  sitio donde se arregla es el ledger, no una caché aquí — una caché sobre
- *  esto vuelve a tener el problema que este diseño evita.
+ *  se derivan en cada consulta.
+ *
+ *  EL COSTE, medido (Ryzen 7 5800X, Node 22, mediana de 7 corridas) AL RITMO
+ *  REAL DEL SIM, que es un tick por FRAME del cliente —60/s, no 20:
+ *  `main.ts` → `handlers/simulation.ts` → `game-loop.ts`—. Por tick y NPC hay
+ *  una consulta de salida y las de paso: UNA si el rumbo directo está libre,
+ *  que es lo normal, y siete en el peor caso. Con 10 NPCs, milisegundos de CPU
+ *  por cada segundo de juego, en el hilo del bridge:
+ *
+ *    entities de runtime │ caso normal │ peor caso
+ *                      0 │     0,4 ms  │    2,8 ms
+ *                     50 │     4,6 ms  │   17,8 ms
+ *                    200 │    15,1 ms  │   62,2 ms
+ *                    600 │    53,9 ms  │  222,5 ms  (22 % de un núcleo)
+ *                  1.200 │   109,6 ms  │  446,9 ms
+ *                  2.400 │   214,9 ms  │  870,2 ms  (87 %)
+ *
+ *  DÓNDE DEJA DE SER GRATIS: hasta 200 es ruido; **a partir de 600** el peor
+ *  caso se lleva un quinto de núcleo del hilo que además mueve el combate, el
+ *  WS y los saves, y a 2.400 se lo come entero. ¿Se llega? El ledger NO SE
+ *  PODA NUNCA (desde #326 hasta los muertos se quedan) y cada `spawn_entity`
+ *  suma uno: son 200-600 turnos narrativos. No es inminente y no es teórico, y
+ *  hoy nada lo limita ni lo avisa. Doscientas entities que vengan del TILE
+ *  cuestan 0,9 ms: lo que no pasa el filtro de `spawn_reason` no llega a
+ *  construirse. Es LINEAL, así que el sitio donde se arregla es el ledger —no
+ *  una caché aquí, que vuelve a tener el problema que este diseño evita.
  *
  *  LO QUE NO ENTRA AQUÍ, y no es una divergencia de proceso: la FRONTERA del
  *  plano, que es del JUGADOR. Un NPC no se frena en el borde del mundo
@@ -56,7 +73,9 @@ import {
   cajaQueBloquea,
   cajaQueContiene,
   cajasDeRuntime,
+  salidaDeSolido,
   type Impedimento,
+  type SalidaDeSolido,
 } from "../src/simulation/cajas-de-runtime.js";
 import { tileKey, tileWorldRect, worldToTile, type WorldRect } from "../src/scene/tile.js";
 
@@ -70,6 +89,14 @@ export interface SimCollisionProvider {
     toZ: number,
     radius: number,
   ): Impedimento;
+  /** POR DÓNDE SALIR de lo que te tiene dentro, o `null` si no te tiene nada:
+   *  el id de la caja y el rumbo hacia su cara más cercana. Solo contesta por
+   *  las cajas de runtime — de la geometría del tile no saca a nadie, y eso
+   *  tiene número propio (#616).
+   *
+   *  Existe porque «salir sí, entrar no» no saca a quien no empuja: un NPC
+   *  sondea rumbos hacia su meta y ninguno le sacaba (#583, QA H-2). */
+  porDondeSalirDeAqui(x: number, z: number, radius: number): SalidaDeSolido | null;
   /** El mismo veredicto colapsado a un sí/no. Producción pregunta por
    *  `queImpideElPaso` desde #583 —el sim necesita saber QUÉ le frena—; esto
    *  se queda para quien solo quiera comparar este proveedor con el collider
@@ -186,6 +213,9 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
     },
     blocksMove(fromX, fromZ, toX, toZ, radius): boolean {
       return provider.queImpideElPaso(fromX, fromZ, toX, toZ, radius) !== null;
+    },
+    porDondeSalirDeAqui(x, z, radius): SalidaDeSolido | null {
+      return salidaDeSolido(x, z, radius, cajasDeRuntime(narrative.entities));
     },
     blocksCircle(x, z, radius): boolean {
       for (const key of touchedKeys(x, z, radius)) {

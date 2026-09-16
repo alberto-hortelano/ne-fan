@@ -495,6 +495,7 @@ export function createSessionNpcBehavior(
     rng: seededRng(`${ctx.narrative.session_id}:npc`),
     world: {
       queImpideElPaso: (fx, fz, tx, tz, r) => ctx.simCollision.queImpideElPaso(fx, fz, tx, tz, r),
+      porDondeSalirDeAqui: (x, z, r) => ctx.simCollision.porDondeSalirDeAqui(x, z, r),
       blocksCircle: (x, z, r) => ctx.simCollision.blocksCircle(x, z, r),
       resolvePlaceTarget: (placeId) => resolvePlaceTarget(ctx.narrative, placeId),
       getEntityPosition: (entityId) => {

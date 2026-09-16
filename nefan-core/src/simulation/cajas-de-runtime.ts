@@ -31,7 +31,12 @@
 
 import type { EntityRecord } from "../narrative/types.js";
 import { spawnsDeRuntime, type SpawnDeRuntime } from "../session/mundo-persistido.js";
-import { cajaBloquea, penetracionEnCaja, type CajaXZ } from "./obstaculos-del-jugador.js";
+import {
+  cajaBloquea,
+  penetracionEnCaja,
+  salidaDeCaja,
+  type CajaXZ,
+} from "./obstaculos-del-jugador.js";
 
 /** Una caja de runtime: la geometría de `CajaXZ` más DE QUIÉN es, porque quien
  *  la atraviesa tiene que poder decir a qué se la saltó. */
@@ -47,6 +52,15 @@ export interface CajaDeRuntime extends CajaXZ {
  *  raro, y uno que atraviesa el muro del pueblo se lee como que el mundo es
  *  mentira. Un booleano colapsa los dos casos y no deja decidir. */
 export type Impedimento = null | { de: "tile" } | { de: "caja"; id: string };
+
+/** POR DÓNDE SE SALE de lo que te tiene dentro: de qué caja y hacia dónde. El
+ *  rumbo es unitario y paralelo a un eje — la salida más corta de un
+ *  rectángulo siempre lo es. */
+export interface SalidaDeSolido {
+  /** `entityId` de la caja que lo tiene dentro: el que sale en la traza. */
+  caja: string;
+  dir: { x: number; z: number };
+}
 
 /** Las cajas de los spawns que OCUPAN SITIO, en metros y coordenadas de mundo.
  *
@@ -84,9 +98,15 @@ export function cajasDeRuntime(entities: readonly EntityRecord[]): CajaDeRuntime
 }
 
 /** La primera caja que frena este paso, o `null`. «Frenar» es lo mismo que
- *  para el jugador: `cajaBloquea`, o sea PENETRACIÓN NO CRECIENTE. Quien ya
- *  está dentro de una —un spawn le cayó encima— puede salir andando, y por eso
- *  el escape no es para él. */
+ *  para el jugador: `cajaBloquea`, o sea PENETRACIÓN NO CRECIENTE.
+ *
+ *  A quien ya está dentro —un spawn le cayó encima— esto **no le frena** los
+ *  pasos que le sacan, y eso es todo lo que promete: es una respuesta sobre UN
+ *  paso, no sobre lo que acabará haciendo el cuerpo. Aquí decía que por eso
+ *  «sale andando», y era falso del sistema: el que no empuja no sale solo, y un
+ *  NPC empuja hacia su meta (#583, QA H-2: 290 s de 300 dentro de un carro con
+ *  esta función contestando que nada se lo impedía). Quien saca es
+ *  `salidaDeSolido`, ahí abajo. */
 export function cajaQueBloquea(
   desde: { x: number; z: number },
   hasta: { x: number; z: number },
@@ -112,6 +132,34 @@ export function cajaQueContiene(
 ): CajaDeRuntime | null {
   for (const caja of cajas) {
     if (penetracionEnCaja({ x, z }, caja, radio) > 0) return caja;
+  }
+  return null;
+}
+
+/** POR DÓNDE SALIR de la caja en la que este cuerpo está metido: su id y el
+ *  rumbo hacia la cara más cercana. `null` si no está dentro de ninguna.
+ *
+ *  Lo pregunta QUIEN MUEVE a alguien que no tiene teclado. «Salir sí, entrar
+ *  no» dice qué pasos no se frenan, y con eso el jugador sale solo porque
+ *  empuja él; un NPC solo sondea rumbos hacia su meta, así que si la caja le
+ *  cayó encima y su meta está al otro lado, ninguno de los siete le saca y se
+ *  queda dentro andando para siempre (#583, QA H-2: 290 s de 300).
+ *
+ *  Con VARIAS cajas solapadas contesta la primera que lo contiene y se sale de
+ *  esa; si al hacerlo sigue dentro de otra, el tick siguiente contesta la otra.
+ *  No hay garantía de que dos salidas opuestas no se peleen —dos cajas
+ *  encajadas pueden empujar en sentidos contrarios— y por eso quien lo use
+ *  tiene que seguir teniendo su escape: lo que esto promete es una DIRECCIÓN,
+ *  no un final feliz. */
+export function salidaDeSolido(
+  x: number,
+  z: number,
+  radio: number,
+  cajas: readonly CajaDeRuntime[],
+): SalidaDeSolido | null {
+  for (const caja of cajas) {
+    const salida = salidaDeCaja({ x, z }, caja, radio);
+    if (salida) return { caja: caja.id, dir: salida.dir };
   }
   return null;
 }

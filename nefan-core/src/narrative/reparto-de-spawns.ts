@@ -45,21 +45,27 @@ import { PLAYER_RADIUS_M } from "../scene/terrain-collision.js";
  *  es de dos constantes que ya están en el árbol:
  *
  *    · este hueco vale **1,0 m** (0,4 × 2 + 0,2);
- *    · el cuerpo del NPC es el MAYOR del juego (`NPC_RADIUS_M` = 0,5) y la
- *      regla de la casa para «¿cabe por aquí?» es `celdasLibresParaRadio(0,5,
- *      0,5)` = 3 celdas = **1,5 m** (#289). Y el propio inverso de
- *      `blocksCircle` pide ESTRICTAMENTE mayor que el diámetro, así que 1,0 m
- *      no admite un cuerpo de 1,0 m ni empatando.
+ *    · el cuerpo del NPC es el MAYOR del juego (`NPC_RADIUS_M` = 0,5), o sea
+ *      **1,0 m de diámetro**: exactamente el hueco. Y la regla de la casa para
+ *      «¿cabe por aquí?» pide margen de verdad —`celdasLibresParaRadio(0,5,
+ *      0,5)` = 3 celdas = **1,5 m** (#289)—, así que lo que el reparto deja no
+ *      es un pasillo para un NPC: es un empate.
  *
- *  O sea: por el pasillo que deja este número pasa el jugador y no pasa un
- *  NPC. Desde #583 las cajas de estos spawns también son sólidas para él, así
- *  que el hueco es suyo tanto como del jugador. No encierra a nadie —cuando un
- *  NPC agota sus siete deflexiones atraviesa la caja y lo dice
- *  (`simulation/npc-behavior.ts`)—, pero ese escape es una red, no la medida
- *  correcta. Quien suba este número a `2 × NPC_RADIUS_M + margen` está
- *  arreglando esto; quien lo baje, reabriéndolo. Rastro de procedencia: #524
- *  (que puso el reparto por tamaño) y #289 (que fijó cuánto hueco pide cada
- *  cuerpo). */
+ *  Qué hace un empate, MEDIDO en el sim (#583, QA H-4) y no deducido: la
+ *  penetración de una caja es 0 cuando el margen es 0 (`margen <= 0` en
+ *  `penetracionEnCaja`), así que por la **línea central exacta** el NPC pasa —y
+ *  solo por ahí—. A **5 cm** de esa línea no pasa: se planta y **el escape NO
+ *  se abre**, porque le quedan rumbos legales hacia atrás y el escape solo mira
+ *  «las siete deflexiones bloqueadas». Cinco trayectorias medidas (z = 0 ·
+ *  0,05 · 0,1 · 0,3 · 0,6): cruza la primera y ninguna más, 0 escapes.
+ *
+ *  O sea: por el pasillo que deja este número pasa el jugador, y un NPC solo si
+ *  entra clavado en el eje. Desde #583 las cajas de estos spawns también son
+ *  sólidas para él, así que el hueco es suyo tanto como del jugador, y esto NO
+ *  lo tapa ningún escape. Quien suba este número a `2 × NPC_RADIUS_M + margen`
+ *  está arreglando esto; quien lo baje, empeorándolo. Rastro de procedencia:
+ *  #524 (que puso el reparto por tamaño) y #289 (que fijó cuánto hueco pide
+ *  cada cuerpo). */
 export const HOLGURA_ENTRE_SPAWNS_M = 2 * PLAYER_RADIUS_M + 0.2;
 
 /** Lo que el reparto necesita saber de cada cosa: su clase y la huella que el

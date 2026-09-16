@@ -171,10 +171,39 @@ describe("createSimCollisionProvider · las cajas de los spawns de RUNTIME (#583
     );
   });
 
-  it("SALIR SÍ, ENTRAR NO también para el NPC: al que le cae la caja encima sale andando", () => {
+  it("SALIR SÍ, ENTRAR NO también para el NPC: la consulta no frena el paso que SACA", () => {
+    // Lo que afirma es de la CONSULTA y solo de ella. Que el NPC salga de
+    // verdad es cosa del steering y se afirma en `npc-behavior.test.ts`: la
+    // primera versión de este caso se llamaba «al que le cae la caja encima
+    // sale andando» y no medía a ningún NPC — se quedó dentro 290 s de 300 con
+    // esto en verde (#583, QA H-2). El nombre prometía el sistema y el aserto
+    // cubría la consulta.
     const provider = createSimCollisionProvider(conLaForja());
     assert.ok(!provider.blocksMove(0, 0, 0.5, 0, 0.5), "alejarse del centro no bloquea");
     assert.ok(provider.blocksMove(1, 0, 0.5, 0, 0.5), "…y meterse más adentro sí");
+  });
+
+  it("dice POR DÓNDE SALIR de la caja que te tiene dentro, con su id", () => {
+    const provider = createSimCollisionProvider(conLaForja());
+    // La forja es 4×4 en (0,0): con el cuerpo, su cara queda a 2,5 m.
+    assert.deepEqual(provider.porDondeSalirDeAqui(-1, 0, 0.5), { caja: "forja", dir: { x: -1, z: 0 } });
+    assert.equal(provider.porDondeSalirDeAqui(10, 10, 0.5), null, "fuera no hay de dónde salir");
+  });
+
+  it("de la geometría del TILE no saca a nadie: eso tiene número propio (#616)", () => {
+    const s = makeState({
+      entities: [
+        { id: "granero", kind: "building", name: "granero", cell: [40, 40], footprint: [12, 10] },
+      ],
+    });
+    const provider = createSimCollisionProvider(s);
+    const dentro = cellCenter(45, 45);
+    assert.ok(provider.blocksCircle(dentro.x, dentro.z, 0.1), "está dentro del granero del tile");
+    assert.equal(
+      provider.porDondeSalirDeAqui(dentro.x, dentro.z, 0.1),
+      null,
+      "esta puerta es solo para las cajas de runtime",
+    );
   });
 
   it("un `item` de runtime NO frena a nadie: se pisa (#532)", () => {
@@ -221,5 +250,32 @@ describe("createSimCollisionProvider · las cajas de los spawns de RUNTIME (#583
 
     assert.ok(provider.blocksCircle(0, 0, 0.5), "la forja recién puesta bloquea ya");
     assert.deepEqual(provider.queImpideElPaso(5, 0, 1.9, 0, 0.5), { de: "caja", id: "forja" });
+  });
+
+  /** La otra mitad del mismo candado, y hace falta porque el ledger solo CRECE
+   *  —desde #326 un muerto se queda dentro— así que una caché con clave en
+   *  «cuántas entities hay» pasaría el caso de arriba: nunca se le repite un
+   *  número. Lo que sí cambia el ledger entero sin cambiar su tamaño es cargar
+   *  OTRA partida (`loadSession` reemplaza `entities`, narrative-state.ts:696),
+   *  y el proveedor se construye UNA vez por proceso (`ws-server.ts:69`): con
+   *  esa caché, la partida nueva colisionaría contra las cajas de la anterior. */
+  it("al cambiar de partida, las cajas son las de la partida NUEVA aunque mida lo mismo", () => {
+    const s = conLaForja();
+    const provider = createSimCollisionProvider(s);
+    assert.deepEqual(provider.queImpideElPaso(5, 0, 1.9, 0, 0.5), { de: "caja", id: "forja" });
+
+    // Otro ledger, la MISMA longitud, la caja en otro sitio: lo que hace el
+    // resume al cargar otro slot.
+    const otra = new NarrativeState(new MemorySessionStorage());
+    otra.startNewSession("otra");
+    otra.recordEntitySpawned(
+      "posada", "building", "tile_0_0", { x: 20, y: 0, z: 0 },
+      { name: "posada del cruce", footprint: [8, 8] }, SPAWN_DE_RUNTIME,
+    );
+    assert.equal(otra.entities.length, s.entities.length, "el caso pierde sentido si no miden igual");
+    s.entities = otra.entities;
+
+    assert.equal(provider.queImpideElPaso(5, 0, 1.9, 0, 0.5), null, "la forja de la otra partida ya no está");
+    assert.deepEqual(provider.queImpideElPaso(25, 0, 21.9, 0, 0.5), { de: "caja", id: "posada" });
   });
 });

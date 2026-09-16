@@ -24,7 +24,7 @@ import { SeededRng } from "../rng.js";
 // cuerpo MAYOR del juego y quien decide cuánto hueco dejar tiene que poder
 // leerlo (issue #289).
 import { NPC_RADIUS_M } from "../scene/terrain-collision.js";
-import type { Impedimento } from "./cajas-de-runtime.js";
+import type { Impedimento, SalidaDeSolido } from "./cajas-de-runtime.js";
 import { resolveRoleParams, type NpcRoleParams } from "./npc-roles.js";
 
 export type NpcMode = "idle" | "wander" | "goto" | "visit" | "flee" | "intervene" | "react";
@@ -50,6 +50,12 @@ export interface NpcWorldAdapter {
     toZ: number,
     radius: number,
   ): Impedimento;
+  /** POR DÓNDE SALIR de lo que te tiene dentro, o `null`. Tampoco es opcional,
+   *  y por el mismo motivo: sin ella el que tiene una caja encima se queda
+   *  dentro andando para siempre, y eso salió VERDE en toda la batería (#583,
+   *  QA H-2) porque la consulta de movimiento no le frena — solo es que nadie
+   *  le empuja hacia fuera. */
+  porDondeSalirDeAqui(x: number, z: number, radius: number): SalidaDeSolido | null;
   blocksCircle(x: number, z: number, radius: number): boolean;
   resolvePlaceTarget(placeId: string): { x: number; z: number } | null;
   getEntityPosition(entityId: string): Vec3 | null;
@@ -654,7 +660,22 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       }
     }
 
-    const dir = { x: (tx - px) / dist, z: (tz - pz) / dist };
+    // PRIMERO SALIR, LUEGO IR: si una caja le cayó encima, el rumbo lo manda
+    // ella y no la meta. El steering solo sondea el abanico de ±135° alrededor
+    // de la dirección que se le dé, así que con la meta al otro lado ninguno de
+    // los siete rumbos reducía la penetración y el NPC se quedaba dentro
+    // andando para siempre (#583, QA H-2: 290 s de 300 dentro de un carro). Con
+    // el rumbo puesto hacia la cara más cercana, cada paso le acerca a la salida
+    // y `cajaBloquea` no frena ninguno, porque ninguno le mete más adentro.
+    const salida = this.world.porDondeSalirDeAqui(px, pz, NPC_RADIUS_M);
+    if (salida) {
+      this.warnOnce(
+        `${rt.record.id}:sale:${salida.caja}`,
+        `"${rt.record.id}" quedó DENTRO de "${salida.caja}" (se la pusieron encima) ` +
+          `y sale andando por su cara más cercana antes de seguir a lo suyo`,
+      );
+    }
+    const dir = salida?.dir ?? { x: (tx - px) / dist, z: (tz - pz) / dist };
     const step = Math.min(speed * delta, dist);
     // TODO(A*): steering por deflexión se atasca en cul-de-sacs; la máscara
     // walkable + BFS de scene-validate.ts es el molde para pathfinding real.
@@ -698,9 +719,12 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
    *  junto a un muro—, y atravesar pudiendo rodear es exactamente el defecto
    *  que #583 arregla, del revés.
    *
-   *  Y el que ya está DENTRO de una caja no necesita el escape: la penetración
-   *  no creciente de `cajaBloquea` (#601) no le frena ningún paso que le saque,
-   *  así que sale andando por la pasada libre.
+   *  Y EL QUE YA ESTÁ DENTRO tampoco pasa por aquí, pero no porque «salga
+   *  solo»: aquí se leía que la penetración no creciente (#601) bastaba, y era
+   *  cierto de la CONSULTA y falso del SISTEMA —el que no empuja no sale, y
+   *  este abanico solo empuja hacia la meta: 290 s de 300 dentro de un carro
+   *  (#583, QA H-2)—. A ese le saca `porDondeSalirDeAqui` en `stepTowards`,
+   *  dándole el rumbo de la cara más cercana antes de llegar hasta aquí.
    *
    *  Se atraviesa DICIÉNDOLO. Un NPC cruzando una caja es el síntoma exacto de
    *  #583, así que si no queda dicho por qué pasó, el arreglo se lee como el
@@ -732,8 +756,8 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     if (escape) {
       this.warnOnce(
         `${rt.record.id}:atraviesa:${cajaDelEscape}`,
-        `"${rt.record.id}" no tiene por dónde rodear "${cajaDelEscape}" (7 deflexiones ` +
-          `bloqueadas) y la ATRAVIESA — el hueco que le dejaron no admite su cuerpo`,
+        `"${rt.record.id}" no tiene por dónde rodear "${cajaDelEscape}" (las siete ` +
+          `deflexiones bloqueadas) y la ATRAVIESA`,
       );
       return escape;
     }
