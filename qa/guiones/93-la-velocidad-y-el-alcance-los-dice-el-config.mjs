@@ -36,26 +36,28 @@
  *  quitada la intercepción, el título vuelve.
  *
  *  Y **bloque 4**: al morir y pulsar `R`, el jugador vuelve EXACTAMENTE donde
- *  cayó y ese punto se puede pisar (`puntoDeReaparicion`, escalón 1). Se afirma
+ *  cayó y ese punto se puede pisar (`puntoDeReaparicion`). Se afirma
  *  «exactamente donde cayó» y no solo «en un sitio libre» porque es lo único
- *  que distingue el escalón 1 de los otros dos: mandarle al centro del tile
- *  también le dejaría en un sitio transitable, y el jugador aparecería a treinta
- *  metros de donde le mataron sin que nada se pusiera rojo.
+ *  que separa la regla de hoy de cualquier otra: teletransportarle a cualquier
+ *  hueco transitable del tile saldría igual de verde, y el jugador aparecería a
+ *  treinta metros de donde le mataron sin que nada se pusiera rojo.
  *
- *  LO QUE ESTE GUION NO PUEDE MEDIR, y se dice para que nadie lo cuente de más:
- *  los escalones 2 y 3 de `puntoDeReaparicion` (centro del tile · origen del
- *  mundo) son INALCANZABLES desde el cliente, hoy y antes de esta PR.
- *  `CollisionSystem.collidesAt(x, z)` no es una consulta de punto sino «¿puedo
- *  MOVERME de donde estoy a (x,z)?» (`world/collision.ts:74-84`, `desde =
- *  getPlayerPos()`), y `handleRespawnRequest` le pregunta por la posición del
- *  propio jugador: un movimiento de longitud cero, que la regla «salir sí,
- *  entrar no» permite siempre. El bloque 4 lo MIDE y lo registra (con el
- *  jugador metido a la fuerza dentro de una huella sólida, su propia posición
- *  le sigue pareciendo libre) sin ponerlo rojo: es la conducta de hoy, la PR
- *  la conserva a propósito y cambiarla es una decisión, no un arreglo.
+ *  Y el bloque 4 AFIRMA además POR QUÉ esa regla no puede preguntar por
+ *  sólidos: `CollisionSystem.collidesAt(x, z)` no es una consulta de punto sino
+ *  «¿puedo MOVERME de donde estoy a (x,z)?» (`world/collision.ts`, `desde =
+ *  getPlayerPos()`), así que la MISMA huella es sólida vista desde fuera y deja
+ *  de serlo con el jugador encima. De ahí que #538 (2026-09-16) borrara la rama
+ *  que colgaba de esa pregunta: ningún llamante podía alcanzarla. Hasta esa
+ *  tanda este guion lo medía y lo REGISTRABA sin ponerlo rojo, y un bloque que
+ *  solo loguea no es un candado; hoy se afirma la asimetría
+ *  (`desdeLejos === true && desdeSiMismo === false`) y se pone rojo también si
+ *  en la partida no hay ningún objeto sólido con el que medirla. Si algún día
+ *  se pone rojo porque la asimetría desapareció, la noticia es buena —el
+ *  cliente tendría por fin una pregunta de PUNTO— y lo que toca entonces es
+ *  volver a decidir la reaparición, no tocar este aserto.
  *
  *  PROBADO EN NEGATIVO (2026-09-07) por QA, un sabotaje por vez y restaurado
- *  byte a byte después (`diff -q` en los tres):
+ *  byte a byte después (`diff -q`):
  *   · **la frontera del config, en `nefan-html/src/main.ts`**: el multiplicador
  *     y el alcance escritos otra vez a mano (`(sprint ? 3.8 : 1.9) * 2.2` y
  *     `maxDistanceM: 2.5`), que es exactamente como estaba antes de la PR →
@@ -63,18 +65,20 @@
  *     6,27, esprintando 8,3600 donde pedía 12,54, y el borde de la `E` se quedó
  *     en el 2,5 del cliente (ofrece a 1,25 m y a 2,4 m con el config servido a
  *     1,2). Es el rojo que hace de este guion un candado y no una foto.
- *   · **`nefan-core/src/simulation/reaparicion.ts`, `if (!solido(...))` →
- *     `if (solido(...))`**: el escalón 1 deja de ganar y el jugador reaparece en
- *     el CENTRO del tile → rojo «vuelve EXACTAMENTE donde cayó» (medido: cayó
- *     en (11,05, 0,14) y volvió a (0, 0), a 11,05 m de allí).
- *   · **el mismo fichero, `return { x: pos.x, y: 0, z: pos.z }` como primera
- *     línea** (el sabotaje «devuelve `pos` sin comprobar sólidos»): este guion
- *     SIGUE VERDE, medido, y es información y no un fallo suyo — por lo de
- *     arriba, `solido(pos)` del punto propio ya vale `false` en el juego, así
- *     que quitar la pregunta no cambia NADA de lo que el jugador vive. Esa
- *     mitad no la puede candar ningún guion de navegador: la candan los 8 casos
- *     de `nefan-core/test/reaparicion.test.ts` (5 rojos con ese mismo
- *     sabotaje). Queda dicho para que nadie cuente este guion de más.
+ *
+ *  Y LOS TRES DEL BLOQUE 4, re-probados el 2026-09-16 al convertirlo en aserto
+ *  (#538), uno por vez y restaurando byte a byte (`diff -q`):
+ *   · **`nefan-core/src/simulation/reaparicion.ts`, los ejes cruzados**
+ *     (`{ x: pos.z, …, z: pos.x }`) → rojo «vuelve EXACTAMENTE donde cayó»:
+ *     cayó en (11,443, 0,338) y volvió a (0,338, 11,443), a 15,705 m de allí.
+ *   · **`nefan-html/src/dev/nefan-hook.ts`, `probeCollide` preguntando desde
+ *     6 m** — o sea la consulta de PUNTO que le falta al cliente, simulada
+ *     sobre la de movimiento → rojo el aserto de la asimetría, y SOLO ese:
+ *     «casa del leñador» desde fuera = true · desde sí mismo = true.
+ *   · **el filtro de objetos de este mismo bloque vaciado** → rojo «hay un
+ *     objeto sólido con el que medir» (objetos con huella: 0). Es la mitad que
+ *     el bloque no tenía cuando solo logueaba: sin objeto no hay medida, y sin
+ *     medida un verde no significa nada.
  *
  *  Cero créditos: preset `e2e-sin-creditos`, motor falso, `aisla` con saves y
  *  falso vírgenes. No pinta nada: `charMode: "vector"`.
@@ -396,7 +400,7 @@ export default async function (ctx) {
   );
   const dist = Math.hypot(r.pos.x - r.cayoEn.x, r.pos.z - r.cayoEn.z);
   ctx.expect(
-    "vuelve EXACTAMENTE donde cayó (escalón 1: el sitio libre gana)",
+    "vuelve EXACTAMENTE donde cayó",
     dist < 0.01,
     `cayó en (${r.cayoEn.x.toFixed(3)}, ${r.cayoEn.z.toFixed(3)}) · volvió a (${r.pos.x.toFixed(3)}, ${r.pos.z.toFixed(3)}) · ${dist.toFixed(3)} m`,
   );
@@ -417,9 +421,11 @@ export default async function (ctx) {
   );
   await ctx.shot("reaparecido");
 
-  // Lo que este guion NO puede afirmar, MEDIDO: con el jugador metido a la
-  // fuerza dentro de una huella sólida, su propia posición le sigue pareciendo
-  // libre, así que el escalón 2 (centro del tile) no se alcanza jugando.
+  // POR QUÉ la reaparición no puede preguntar por sólidos, AFIRMADO y no solo
+  // registrado: con el jugador metido a la fuerza dentro de una huella sólida,
+  // su propia posición le sigue pareciendo libre. `collidesAt` es una consulta
+  // de MOVIMIENTO, no de punto, y por eso #538 borró la rama que colgaba de
+  // ella: nadie podía alcanzarla desde el juego.
   const dentroDeUnSolido = await ctx.page.evaluate(() => {
     const objs = window.__nefan.objects().filter((o) => o.sizeXZ);
     const antes = { ...window.__nefan.state().pos };
@@ -430,16 +436,22 @@ export default async function (ctx) {
       window.__nefan.setPlayerPos(o.pos.x, o.pos.z);
       const desdeSiMismo = window.__nefan.probeCollide(o.pos.x, o.pos.z);
       window.__nefan.setPlayerPos(antes.x, antes.z);
-      return { objeto: o.label, desdeLejos, desdeSiMismo };
+      return { objeto: o.label, desdeLejos, desdeSiMismo, candidatos: objs.length };
     }
-    return null;
+    return { objeto: null, candidatos: objs.length };
   });
-  ctx.log(
-    dentroDeUnSolido
-      ? `⚠ escalón 2 inalcanzable desde el cliente: «${dentroDeUnSolido.objeto}» es sólido visto desde fuera ` +
-          `(${dentroDeUnSolido.desdeLejos}) y NO lo es con el jugador encima (${dentroDeUnSolido.desdeSiMismo}) — ` +
-          `collidesAt es una consulta de movimiento, no de punto (world/collision.ts:74-84)`
-      : "no había ningún objeto sólido con el que medir el escalón 2 en esta partida",
+  // Sin objeto no hay medida, y sin medida este aserto no puede ponerse rojo:
+  // se declara ROJO en vez de verde silencioso.
+  ctx.expect(
+    "hay un objeto sólido con el que medir la consulta de reaparición",
+    dentroDeUnSolido.objeto !== null,
+    `objetos con huella en la partida: ${dentroDeUnSolido.candidatos}`,
+  );
+  ctx.expect(
+    "`collidesAt` NO es una consulta de punto: la misma huella es sólida desde fuera y no con el jugador encima " +
+      "— por eso la reaparición no puede preguntar por sólidos (#538)",
+    dentroDeUnSolido.desdeLejos === true && dentroDeUnSolido.desdeSiMismo === false,
+    `«${dentroDeUnSolido.objeto}» desde fuera = ${dentroDeUnSolido.desdeLejos} · desde sí mismo = ${dentroDeUnSolido.desdeSiMismo}`,
   );
 
   // ── 5 · Un config IMPOSIBLE no deja al jugador delante de una negra ──────
