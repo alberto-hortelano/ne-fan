@@ -286,7 +286,10 @@ export default async function (ctx) {
     );
     const f = await foto(ctx);
     ctx.log(`traza: ${plan.traza.join(" | ")}`);
-    ctx.log(`3 caídos · vestidos ${f.vestidos}/${VECINOS.length} · apagones ${f.apagones}`);
+    ctx.log(
+      `3 caídos · vestidos ${f.vestidos}/${VECINOS.length} · fallidos ${f.fallidos} · ` +
+        `apagones ${f.apagones} · canceladas ${f.canceladas}`,
+    );
     ctx.log(
       `aviso: ${f.texto.replace(/\s+/g, " ").match(/skins IA desactivados[^|]{0,200}/)?.[0] ?? "(?)"}`,
     );
@@ -295,6 +298,22 @@ export default async function (ctx) {
       `alcanzado el umbral (${UMBRAL}), el apagón de sesión se anuncia UNA sola vez`,
       f.apagones === 1,
       `apagones=${f.apagones} · ${f.texto.replace(/\s+/g, " ").slice(0, 400)}`,
+    );
+    // NI UN FALLO MUDO, CON N ≥ 3 — y es aquí y no en el 51 (QA de la tanda F,
+    // hallazgo H-4). El 51 afirma esto mismo (`canceladas === fallidos.length`,
+    // líneas 142-146) pero con **N = 1**: tumba a un solo personaje, así que
+    // «una entrada por fallo» y «una entrada, y punto» son ahí el mismo verde.
+    // La rama muda que el comentario de producción nombra en
+    // `character-sprites.ts:321-325` —un 5xx que no escribe nada cuando ya
+    // había evidencia anotada— es INVISIBLE con N = 1 y no la mide nadie más:
+    // no hay test de `CharacterSpriteManager`, y el único «cancelada» del banco
+    // fuera de aquí es el del 51. Este bloque tumba a TRES, que es donde la
+    // diferencia existe. El `>= UMBRAL` no es adorno: sin él, `0 === 0` sería
+    // un verde vacío el día que el sabotaje dejara de tumbar a nadie.
+    ctx.expect(
+      `…y cada uno de los ${UMBRAL} caídos deja SU entrada en el registro: ni cero (mudo) ni UNA sola por todos`,
+      f.canceladas === f.fallidos && f.fallidos >= UMBRAL,
+      `canceladas=${f.canceladas} fallidos=${f.fallidos} · ${f.texto.replace(/\s+/g, " ").slice(0, 400)}`,
     );
     ctx.expect(
       "…y el aviso dice CUÁNTOS personajes cayeron y cuál es el umbral, no solo que algo falló",
@@ -410,6 +429,15 @@ export default async function (ctx) {
     // ENTERO dentro del `evaluate`: lo que se pasa viaja como fuente y un
     // cierre del guion no existe en la página (medido: `asentado is not
     // defined`).
+    //
+    // LO QUE ESTO SE JUEGA (QA de la tanda F, H-7): `queued` puede CRECER solo
+    // —`modelFor` encola perezosamente la anim de combate que una entidad
+    // empiece a dibujar—, así que un pueblo que peleara podría no asentarse
+    // nunca. Se asume a propósito: aquí nadie pelea (fixture del selector Room,
+    // sin sesión ni combate), y el modo de fallo es una espera que EXPIRA
+    // imprimiendo el libro entero —un rojo legible—, no un verde prematuro.
+    // Mirar solo el set automático evitaría eso, pero dejaría pasar justo lo
+    // que la espera existe para impedir: una petición todavía en vuelo.
     await ctx.waitFor(
       "el banco llega a su desenlace: o cada vecino tiene listas todas sus anims, o alguno falló, o el fusible salta y lo dice",
       (k) => {
@@ -428,22 +456,44 @@ export default async function (ctx) {
       `banco sin máscara · vestidos ${f.vestidos}/${VECINOS.length} · fallidos ${f.fallidos} · ` +
         `apagones ${f.apagones} · canceladas ${f.canceladas} · servidas ${plan.servidas}`,
     );
+    // LA FOTO SE PONE DELANTE DE UN VECINO (QA de la tanda F, hallazgo H-8: la
+    // captura no enseñaba a ninguno de los que el bloque afirma). Se encuadra
+    // UNO de cerca y no los cinco: MEDIDO, los cinco están repartidos en un
+    // círculo de ~23 m de radio y desde el ojo del jugador no caben en un
+    // encuadre con los sprites a un tamaño que se vea — el intento «mirador a
+    // 42 m» salió peor que la foto de antes, con la cámara entre dos edificios
+    // y ni una cara. Lo que esta captura enseña es lo que no se puede leer en
+    // un JSON: que el arte del banco llegó a un CUERPO. Los cinco están en el
+    // libro, que se registra entero aquí al lado. Receta del guion 138: el
+    // jugador a unos metros en +z y mirando a −z (`yaw = π`).
+    const posado = await ctx.page.evaluate(() => {
+      const npc = window.__nefan.npcs()[0];
+      return npc ? { id: npc.id, x: npc.pos.x, z: npc.pos.z } : null;
+    });
+    if (posado) {
+      await ctx.nefan("setPlayerPos", posado.x, posado.z + 3);
+      await ctx.nefan("setYaw", Math.PI);
+      ctx.log(`foto delante de ${posado.id}, a 3 m`);
+    }
     await ctx.shot("banco-sin-mascara");
     ctx.expect(
-      "en el banco tal cual, los CINCO vecinos se visten y NINGUNO cae: el motor falso no tumba a nadie por su cuenta (#498/#627)",
-      f.vestidos === VECINOS.length && f.fallidos === 0,
+      "en el banco tal cual, los CINCO vecinos acaban con sus tres anims LISTAS y NINGUNO cae: el motor falso no tumba a nadie por su cuenta (#498/#627)",
+      f.vestidos === VECINOS.length &&
+        f.fallidos === 0 &&
+        f.libro.length === VECINOS.length &&
+        f.libro.every((s) => ["idle", "walk", "run"].every((a) => s.ready.includes(a))),
       `vestidos=${f.vestidos}/${VECINOS.length} fallidos=${f.fallidos} · ${JSON.stringify(f.libro)}`,
     );
+    // Y LO QUE EL JUGADOR LEE. No es una propiedad independiente y no cuenta
+    // como evidencia aparte: con `fallidos === 0` no puede haber cancelaciones
+    // —la línea y el `state.failed` salen del MISMO `catch`— ni apagón, que
+    // pide tres. Se afirma igual porque el registro es el canal por el que esto
+    // le llega a quien juega, y porque un día el `catch` puede dejar de ser uno
+    // (QA de la tanda F, hallazgo H-6: implicado y declarado como tal).
     ctx.expect(
-      "…así que el registro del jugador queda LIMPIO: ni una cancelación, ni el apagón del fusible de PRODUCCIÓN por una limitación de los assets del banco",
+      "…y el registro del jugador queda LIMPIO: ni una cancelación, ni el apagón del fusible de PRODUCCIÓN por una limitación de los assets del banco",
       f.canceladas === 0 && f.apagones === 0,
       `canceladas=${f.canceladas} apagones=${f.apagones} · ${f.texto.replace(/\s+/g, " ").slice(0, 300)}`,
-    );
-    ctx.expect(
-      "…y las tres anims del set automático llegan LISTAS a cada vecino: «no falla» sin esto sería también «no pidió nada»",
-      f.libro.length === VECINOS.length &&
-        f.libro.every((s) => ["idle", "walk", "run"].every((a) => s.ready.includes(a))),
-      JSON.stringify(f.libro),
     );
   }
 }

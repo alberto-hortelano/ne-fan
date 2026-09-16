@@ -192,8 +192,14 @@ export default async function (ctx) {
     }
     if (anim !== "idle") {
       // 4xx: habla de la PETICIÓN, no del backend — no gasta evidencia del
-      // fusible. Sin esta máscara, el motor falso (que solo tiene `idle`)
-      // tumbaría a todo el pueblo y el apagón dejaría de ser el que pone el guion.
+      // fusible (`FusibleDeSkins.fallo` → "ignorar"), y eso es lo que mantiene
+      // el apagón de este guion en manos del guion y no del banco.
+      // La razón que daba esta línea hasta la tanda F —«sin esta máscara el
+      // motor falso, que solo tiene `idle`, tumbaría a todo el pueblo»— caducó
+      // con #627/#498: `animDelBanco` sirve `idle` para toda anim de
+      // `HOJAS_BASE_ANIMS` que el modelo del banco no tenga. La máscara se
+      // queda por lo primero, que es una propiedad del fusible y no del banco
+      // (medida en negativo en el guion 53: contando los 4xx, su bloque A cae).
       plan.mascaradas++;
       await route.fulfill({
         status: 404,

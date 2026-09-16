@@ -221,6 +221,14 @@ export default async function (ctx) {
     // `character-sprites.ts`), así que la otra mitad tampoco podía cumplirse.
     // La espera expiraba a los 60 s y se llevaba por delante todo lo que viene
     // detrás. Asentada = todo lo encolado está listo, o el personaje falló.
+    //
+    // LO QUE ESTO SE JUEGA (QA de la tanda F, H-7): `queued` puede CRECER solo,
+    // porque `modelFor` encola perezosamente la anim que una entidad empiece a
+    // dibujar. Aquí el sujeto es el JUGADOR de una partida sin mundo (el muro
+    // está puesto, no hay locomoción que dibujar), y el modo de fallo es una
+    // espera que EXPIRA imprimiendo el libro —un rojo legible—, nunca un verde
+    // prematuro. Mirar solo el set automático lo evitaría, pero dejaría pasar
+    // justo lo que esta espera existe para impedir: un POST en vuelo.
     const asentado = await ctx.waitFor(
       "la cola del skin de A se asienta: todo lo que encoló está listo (o el personaje falló)",
       (p) => {

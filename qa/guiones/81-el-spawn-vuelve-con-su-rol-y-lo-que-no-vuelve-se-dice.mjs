@@ -12,12 +12,18 @@
  *  `style_ref`), el juego seguiría PINTANDO a Nogala, pero con la ref de
  *  personaje equivocada, y ningún guion se enteraría.
  *
- *  Se mide por el RESUME y no en vivo a propósito: en el banco toda hoja que
- *  no sea `idle` da 500, así que tras el tabernero, el bandido y el Secuaz el
- *  cortacircuitos de sesión (`UMBRAL_APAGADO_DE_SESION` = 3, guion 51) ya está
- *  saltado cuando llega Nogala y su petición en vivo se descarta. Reanudar
- *  recarga la página y el manager de skins nace limpio: es el único momento del
- *  banco en que la petición del pacífico de runtime se puede observar.
+ *  Se mide por el RESUME y no en vivo. La razón que daba esta línea hasta la
+ *  tanda F —«en el banco toda hoja que no sea `idle` da 500, así que tras el
+ *  tabernero, el bandido y el Secuaz el cortacircuitos de sesión
+ *  (`UMBRAL_APAGADO_DE_SESION` = 3, guion 51) ya está saltado cuando llega
+ *  Nogala y su petición en vivo se descarta»— **ya no vale**: desde #627/#498
+ *  `animDelBanco` sirve `idle` para toda anim de `HOJAS_BASE_ANIMS` que el
+ *  modelo del banco no tenga, así que en el banco no cae nadie y el fusible no
+ *  salta. Lo que sigue siendo cierto del resume es que recarga la página y el
+ *  manager de skins nace limpio, o sea que la petición del pacífico de runtime
+ *  se observa sin ruido de lo que pidiera la partida anterior. Si hoy también
+ *  se podría medir EN VIVO no está comprobado: nadie lo ha corrido así, y esta
+ *  línea no lo va a afirmar sin medirlo.
  *
  *  Y la otra mitad: un record de runtime que el juego no sabe pintar (un
  *  `type` que no es ninguna de las clases que el contrato admite) no tumba el
