@@ -10,6 +10,7 @@ export default async function (ctx) {
   const medida = await ctx.page.evaluate(async () => {
     const { WorldLabels } = await import("/src/ui/world-labels.ts");
     const host = document.createElement("div");
+    host.style.cssText = "width: 100%; height: 100%";
     document.getElementById("world-labels").append(host);
     const pintor = new WorldLabels(host);
     const labels = [

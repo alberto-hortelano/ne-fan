@@ -101,13 +101,14 @@ export class WorldLabels {
     this.placed = [];
     this.tapados = [];
     const vivos = new Set<string>();
+    const ancho = this.el.clientWidth, alto = this.el.clientHeight;
     // 1 · Proyectar y MEDIR, antes de escribir una sola posición: la medida es
     //     una lectura de layout, y entreverarla con las escrituras del frame es
     //     lo que convierte un reflow en uno por rótulo.
     const puestos: { label: WorldLabel; p: { x: number; y: number; depthM: number }; rotulo: Rotulo }[] = [];
     for (const l of labels) {
       const p = project(l.pos.x, l.pos.y, l.pos.z);
-      if (!p) continue;
+      if (!p || p.x < 0 || p.x > ancho || p.y < 0 || p.y > alto) continue;
       vivos.add(l.id);
       let rotulo = this.nodes.get(l.id);
       if (!rotulo) {
