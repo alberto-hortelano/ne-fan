@@ -68,11 +68,10 @@
      diálogo se salvaban por sus bandas y las etiquetas por el `zIndex` inline
      que les pone `world-labels.ts`; `#reticle` no tenía nada y la mirilla —la
      única señal de «esto se puede tratar» en primera persona— no existía en
-     pantalla. Este 1 contra el `z-index: 0` del lienzo (`base.css`) es lo que
+     pantalla. Este 2 contra el `z-index: 0` del lienzo (`base.css`) es lo que
      lo decide, y de paso hace que un panel nuevo nazca visible. No afecta a lo
-     de DEV, que vive fuera de #app-shell con su propia banda (#error-log 8900,
-     #dev-status 10000). */
-  z-index: 1;
+     de DEV: el registro queda debajo (1) y el gasto encima (10000). */
+  z-index: 2;
   /* El hueco entre paneles sigue llegando al lienzo (pointer lock, clicks). */
   pointer-events: none;
   font-family: var(--nf-font);
@@ -333,7 +332,7 @@
 }
 #gfx-chip:hover { border-color: var(--nf-accent); color: var(--nf-accent); }
 #gfx-chip[hidden] { display: none; }
-#gfx-panel { width: 340px; font-size: var(--nf-fs-sm); color: var(--nf-ink); }
+#gfx-panel { width: min(340px, calc(100vw - 24px)); font-size: var(--nf-fs-sm); color: var(--nf-ink); }
 #gfx-panel[hidden] { display: none; }
 #gfx-panel .gfx-note { color: var(--nf-ink-dim); font-size: var(--nf-fs-xs); line-height: 1.4; margin-bottom: 10px; }
 /* El aviso de generación suspendida por el cortacircuitos (#510): va DEBAJO de
@@ -549,6 +548,18 @@
 #ui-bottom-left, #ui-bottom-right { z-index: var(--z-panel); }
 #ui-bottom-center { z-index: var(--z-prompt); }
 #dialogue-panel { z-index: var(--z-dialogue); }
+
+/* Cuando la barra de acciones ocupa el ancho disponible, los gráficos van
+   arriba: ninguno de los dos controles debe tapar al otro. */
+@media (max-width: 760px) {
+  #ui-bottom-right {
+    top: 10px;
+    bottom: auto;
+    flex-direction: column;
+    max-height: calc(100% - 20px);
+  }
+  #gfx-panel { overflow-y: auto; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   #narrative-loader .spinner { animation: none; }

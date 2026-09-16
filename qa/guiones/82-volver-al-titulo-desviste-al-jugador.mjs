@@ -200,7 +200,13 @@ export default async function (ctx) {
 
     // ── 2 · «Volver al título»: el jugador se desviste con el mundo que se va ──
     fase = "vuelta";
+    await ctx.page.evaluate(async () => {
+      const { errors } = await import("/src/ui/error-log.ts");
+      errors.push("session", "QA497: error de la partida abandonada");
+    });
+    ctx.expect("el error de A está registrado antes de salir", await ctx.page.locator("#error-log").textContent().then(t => t.includes("QA497:")));
     await ctx.page.click("#narrative-loader-back");
+    ctx.expect("volver al título retira el error de la partida abandonada (#497)", await ctx.page.locator("#error-log").textContent().then(t => !t.includes("QA497:")));
     await ctx.waitFor(
       "el título vuelve con el motivo escrito",
       () => {

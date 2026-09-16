@@ -89,8 +89,8 @@ export default async function (ctx) {
   const suelta = await ctx.page.evaluate(quienTapaLaMirilla);
   ctx.log(`mirilla en reposo: ${JSON.stringify(suelta)}`);
   ctx.expect(
-    "el lienzo del mundo y la UI de juego tienen capa DECIDIDA (0 y 1), no `auto`",
-    suelta.zLienzo === "0" && suelta.zUi === "1",
+    "el lienzo del mundo y la UI tienen capas explícitas, con la UI por encima",
+    Number.isFinite(Number(suelta.zLienzo)) && Number(suelta.zUi) > Number(suelta.zLienzo),
     `lienzo ${suelta.zLienzo} · #game-ui ${suelta.zUi}`,
   );
   ctx.expect(

@@ -45,6 +45,7 @@ function espia(): { sinks: FacetSinks; llamadas: Array<[string, unknown]> } {
   const sinks: FacetSinks = {
     mundo: ({ sessionId }) => llamadas.push(["mundo", sessionId]),
     frontera: ({ sessionId }) => llamadas.push(["frontera", sessionId]),
+    errores: ({ sessionId }) => llamadas.push(["errores", sessionId]),
     style: ({ styleId }) => llamadas.push(["style", styleId]),
     theme: ({ uiTheme }) => llamadas.push(["theme", uiTheme]),
     renderModes: ({ renderMode, characterMode }) =>
@@ -76,6 +77,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     assert.deepEqual(llamadas, [
       ["mundo", "1787-abc"],
       ["frontera", "1787-abc"],
+      ["errores", "1787-abc"],
       ["style", "acuarela"],
       ["theme", TEMA],
       ["renderModes", "image/vector"],
@@ -108,6 +110,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     assert.deepEqual(llamadas, [
       ["mundo", ""],
       ["frontera", ""],
+      ["errores", ""],
       ["style", ""],
       ["theme", BASE_UI_THEME],
       ["renderModes", "/"],
@@ -150,6 +153,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     assert.deepEqual(llamadas, [
       ["mundo", "segunda"],
       ["frontera", "segunda"],
+      ["errores", "segunda"],
       ["style", ""],
       ["theme", BASE_UI_THEME],
       ["renderModes", "/"],
@@ -167,6 +171,28 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     const leidas = s.facets;
     leidas.styleId = "otro";
     assert.equal(s.facets.styleId, "acuarela");
+  });
+
+  it("el registro cambia con la partida y conserva los errores de sus nuevas facetas (#497)", () => {
+    const { sinks } = espia();
+    const registro = ["fallo de arranque"];
+    const s = createClientSession({
+      ...sinks,
+      errores: porValor(() => { registro.length = 0; }),
+      renderModes: () => { registro.push("fallo de gráficos vigente"); },
+    });
+    s.leave();
+    assert.ok(registro.includes("fallo de arranque"), "el neutro inicial no borra el diagnóstico");
+    s.enter(PARTIDA);
+    assert.deepEqual(registro, ["fallo de gráficos vigente"], "limpia antes de aplicar gráficos");
+    registro.push("fallo durante A");
+    s.enter(PARTIDA);
+    assert.ok(registro.includes("fallo durante A"), "reaplicar A conserva sus errores");
+    s.enter({ ...PARTIDA, sessionId: "B" });
+    assert.deepEqual(registro, ["fallo de gráficos vigente"], "B no hereda errores de A");
+    registro.push("fallo durante B");
+    s.leave();
+    assert.deepEqual(registro, ["fallo de gráficos vigente"], "salir limpia también");
   });
 
   /** #282, segunda mitad. El mundo pintado es una faceta como las otras seis,
