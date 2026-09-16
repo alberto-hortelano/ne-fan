@@ -427,3 +427,13 @@ describe("botonesDelMuro", () => {
     );
   });
 });
+
+it("una reacción sin conexión no se presenta como respuesta rechazada (#481)", () => {
+  const r = rotuloDeStatus(fallo({ kind: "consequences", causaReaccion: "conexion" }), {
+    mundoVacio: false, overlayAbierto: true,
+  });
+  assert.deepEqual(r, {
+    destino: "overlay", titulo: "El motor narrativo no responde",
+    detalle: "El motor narrativo no responde; inténtalo de nuevo en un momento.", salida: "cerrar",
+  });
+});

@@ -15,10 +15,17 @@ import {
   FALLO_HOJAS_BASE,
   etiquetaDeFixture,
   motivoDeFixtureParaElJugador,
-  motivoDeReaccionParaElJugador,
+  falloDeReaccionParaElJugador,
   motivoDeSesionParaElJugador,
   motivoParaElJugador,
 } from "../src/protocol/status-motivo.js";
+
+const motivoDeReaccionParaElJugador = (err: unknown) => falloDeReaccionParaElJugador(err).message;
+
+it("la causa de reacción viaja junto al consejo", () => {
+  assert.equal(falloDeReaccionParaElJugador("fetch failed").causaReaccion, "conexion");
+  assert.equal(falloDeReaccionParaElJugador("HTTP 422").causaReaccion, "respuesta");
+});
 
 describe("motivoParaElJugador: el cuerpo de un fallo de generación", () => {
   /** Excepciones REALES de este camino, copiadas de donde se lanzan. */

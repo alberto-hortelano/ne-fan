@@ -160,7 +160,7 @@ const DETALLE_POR_DEFECTO: Record<NarrativeStatusDeSesion["kind"], string> = {
  *  compilando, que es lo que hace un `Pick`. */
 export type StatusRotulable = Pick<
   NarrativeStatusDeSesion,
-  "phase" | "kind" | "message" | "placeId"
+  "phase" | "kind" | "message" | "placeId" | "causaReaccion"
 >;
 
 /** Título y destino de un `narrative_status` en fase de error.
@@ -218,14 +218,12 @@ export function rotuloDeStatus(
         : { destino: "overlay", titulo: "No se pudo preparar el lugar", detalle, salida };
 
     case "consequences":
-      // El ÚNICO rechazo real del motor: una reacción narrativa que no vale
-      // (p. ej. 422 por una consequence mal formada). El rótulo es el que ya
-      // había en el cliente — se mudó aquí para que ningún rótulo de fallo del
-      // motor quedara suelto en `main.ts`; lo que cambia hoy es que por fin es
-      // CIERTO, porque ya no lo hereda nadie más.
+      // La causa viene de la misma clasificación que escribió el detalle.
       return {
         destino: "overlay",
-        titulo: "El motor narrativo rechazó la respuesta",
+        titulo: status.causaReaccion === "conexion"
+          ? "El motor narrativo no responde"
+          : "El motor narrativo rechazó la respuesta",
         detalle,
         salida,
       };

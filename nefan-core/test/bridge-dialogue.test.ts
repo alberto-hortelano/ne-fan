@@ -104,6 +104,7 @@ describe("bridge dialogue_choice", () => {
           m.type === "narrative_status" && m.phase === "error" && m.kind === "consequences",
       );
     assert.ok(err, "narrative_status error difundido");
+    assert.equal(err.causaReaccion, "conexion", "el titular recibe la misma causa que el consejo");
     // El cuerpo va TRADUCIDO, no crudo (QA 2026-09-01, H-3): hasta hoy esto
     // difundía `Narrative engine error: timeout esperando a Claude` y el
     // cliente lo pintaba verbatim a pantalla completa, en inglés y con el

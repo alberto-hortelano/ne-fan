@@ -10,7 +10,7 @@
  *     copia, y en tile.ts solo se aplicaba si el viaje traía nombre de destino:
  *     en el arranque —el momento que más falla— el jugador leía «Error: No se
  *     pudo generar la escena. fetch failed».
- *   · `motivoDeReaccionParaElJugador` — un fallo de REACCIÓN, el cuarto canal y
+ *   · `falloDeReaccionParaElJugador` — un fallo de REACCIÓN, el cuarto canal y
  *     el último que quedaba en inglés (QA 2026-09-01, H-3).
  *   · `motivoDeSesionParaElJugador` — un fallo de SESIÓN (`#ts-error` del
  *     título), que imprimía `game_load_failed: … (/home/…/games/alta_fantasia/
@@ -55,23 +55,17 @@ export function motivoParaElJugador(err: unknown): string {
   return "El motor narrativo no pudo construirlo; inténtalo de nuevo.";
 }
 
-/** Traduce un fallo de REACCIÓN a algo que quien juega pueda leer.
- *
- *  El cuarto canal, y el último que quedaba en inglés: `reportPlayerChoice`
- *  devuelve `ok:false` y el bridge pintaba `Narrative engine error: <crudo>` a
- *  pantalla completa (QA 2026-09-01, H-3). El titular de ese aviso —«El motor
- *  narrativo rechazó la respuesta»— es el único de los ocho que SÍ nombra a su
- *  culpable de verdad; el cuerpo era lo que no estaba escrito para nadie.
- *
- *  Distingue las dos causas porque el consejo cambia: si el motor no contesta,
- *  reintentar puede funcionar; si contestó algo que no vale, reintentar lo
- *  mismo vuelve a fallar y lo que hay que hacer es decir otra cosa. */
-export function motivoDeReaccionParaElJugador(err: unknown): string {
+/** Una sola clasificación alimenta el titular y el consejo (#481).
+ * La causa viaja tipada: el cliente nunca deduce conexión a partir del texto. */
+export function falloDeReaccionParaElJugador(err: unknown): {
+  causaReaccion: "conexion" | "respuesta";
+  message: string;
+} {
   const raw = (err as Error)?.message ?? String(err);
   if (/fetch failed|ECONNREFUSED|socket hang up|timeout|timed out/i.test(raw)) {
-    return "El motor narrativo no responde; inténtalo de nuevo en un momento.";
+    return { causaReaccion: "conexion", message: "El motor narrativo no responde; inténtalo de nuevo en un momento." };
   }
-  return "El motor narrativo no pudo reaccionar a eso; prueba a decir otra cosa.";
+  return { causaReaccion: "respuesta", message: "El motor narrativo no pudo reaccionar a eso; prueba a decir otra cosa." };
 }
 
 /** La extensión de los módulos de fixture del glob. En una constante para que

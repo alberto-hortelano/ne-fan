@@ -419,6 +419,8 @@ interface CuerpoDeNarrativeStatus {
    *  y alimenta el texto del loader del cliente. */
   phase: "generating" | "progress" | "ready" | "error";
   message?: string;
+  /** Causa clasificada por core al fallar una reacción narrativa. */
+  causaReaccion?: "conexion" | "respuesta";
   elapsedMs?: number;
 }
 

@@ -3,7 +3,7 @@
  *  reportarlo al motor narrativo, aplicar las consequences y hacer broadcast. */
 
 import { dispatchConsequences } from "../../src/narrative/consequence-handler.js";
-import { motivoDeReaccionParaElJugador } from "../../src/protocol/status-motivo.js";
+import { falloDeReaccionParaElJugador } from "../../src/protocol/status-motivo.js";
 import { npcSync, runPluginTick, sessionChangedError, type BridgeContext } from "../context.js";
 import type {
   DialogueChoiceMessage,
@@ -61,16 +61,12 @@ async function reportAndDispatch(
   }
   if (!result.ok) {
     console.warn(`Bridge: reportPlayerChoice (${logLabel}) failed for ${eventId}: ${result.error}`);
-    // El ÚNICO rechazo real del motor, y hasta hoy el único de los siete cuyo
-    // cuerpo estaba en INGLÉS y con el volcado dentro («Narrative engine
-    // error: …»). El titular ya era cierto; lo que el jugador leía debajo, no
-    // era ni suyo ni su idioma (QA 2026-09-01, H-3). El crudo sigue entero en
-    // el `console.warn` de arriba.
+    // El motivo y su causa salen juntos de core; el crudo queda en el log.
     ctx.broadcastNarrative({
       type: "narrative_status",
       phase: "error",
       kind: "consequences",
-      message: motivoDeReaccionParaElJugador(result.error),
+      ...falloDeReaccionParaElJugador(result.error),
     });
     return;
   }
