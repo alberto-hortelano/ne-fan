@@ -383,8 +383,8 @@ const hablar = new HablarConUnNpc({
 // El toggle Dev-cache vive ahora en el panel de dev (DevStatusPanel es su
 // único dueño: estado inicial, cambios y deshabilitado con ai_server caído).
 
-// --- Game client (will be set async) ---
-let gameClient: GameClient | null = null;
+// El visor pinta desde el arranque; el bridge lo sustituye cuando conecte.
+let gameClient: GameClient = createViewerClient();
 
 /** Vacía el mundo del cliente (arranque de sesión, resume, fixtures). */
 function resetWorld(): void {
@@ -565,10 +565,6 @@ function scheduleNextFrame(): void {
 function gameLoop(now: number): void {
   const delta = relojDeSim.frameDelLoop(Math.min((now - lastTime) / 1000, 0.1));
   lastTime = now;
-  if (!gameClient) {
-    scheduleNextFrame();
-    return;
-  }
 
   // Aviso de pintura en vuelo del panel dev: el único pipeline que puede gastar
   // mientras se juega es el atlas. `pintando` y no `running` porque en maqueta
@@ -1150,14 +1146,9 @@ async function bootstrap(): Promise<void> {
     // pinta nada: la causa entra al canal de avisos desde quien la conoce
     // (`createGameClient`, con el mismo trío que el `onerror` del socket), y el
     // muro es del único pintor (`ui/muro-de-carga.ts`); así el jugador ve UN
-    // muro por esa causa, en su idioma (#469). Se registra, y queda un cliente
-    // inerte para que el game loop pinte: sin él, `gameClient` se quedaba a
-    // null y el loop salía por su guarda antes de render(), así que el
-    // selector de fixtures cargaba la escena sobre un lienzo NEGRO — que es
-    // justo lo que el preset `html-fixtures` promete poder hacer sin backend
-    // (issue #215).
+    // muro por esa causa, en su idioma (#469). El visor ya pinta mientras se
+    // espera la conexión: elegir una fixture no espera este timeout (#480).
     errors.push("session", "bootstrap failed", err);
-    gameClient = createViewerClient();
     chip(false);
     // Y la vía de vuelta, que hasta #478 no existía: si el bridge llega
     // DESPUÉS, se entra por un botón y no recargando. Ni un literal de

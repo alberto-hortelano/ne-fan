@@ -155,6 +155,28 @@ async function main() {
     });
     await ctx.waitFor("window.__nefan", () => Boolean(window.__nefan));
 
+    // #480: elegir una fixture mientras el bootstrap SIGUE esperando al
+    // bridge debe emitir frames, no esperar cinco segundos sobre negro.
+    await page.waitForSelector("#narrative-loader.error");
+    await page.click("#narrative-loader-dismiss");
+    await cargarFixture(ctx, "robledo_tile");
+    const temprano = await page.evaluate(async () => {
+      const antes = window.__nefan.fps().frames;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return {
+        antes,
+        despues: window.__nefan.fps().frames,
+        timeout: document.getElementById("error-log").textContent.includes("bootstrap failed"),
+      };
+    });
+    console.log(`· visor antes del timeout: ${JSON.stringify(temprano)}`);
+    if (temprano.timeout) fallos.push("#480: la fixture solo se observó después del timeout del bootstrap");
+    if (!(temprano.despues > temprano.antes)) fallos.push("#480: la fixture no emite frames mientras el bridge conecta");
+    await page.screenshot({ path: join(SHOTS, "sin-bridge-00-fixture-antes-del-timeout.png") });
+    // Otra carga para conservar el escenario original: el muro sin cerrar.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await ctx.waitFor("window.__nefan tras recargar", () => Boolean(window.__nefan));
+
     // Sin bridge, el arranque de partida falla a propósito (require_bridge) y
     // el jugador ve el muro de error. Eso es CORRECTO y se comprueba: lo que
     // no puede pasar es que además se lleve por delante el visor.

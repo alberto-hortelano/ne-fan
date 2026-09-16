@@ -471,8 +471,8 @@
       "exceptions": [
         {
           "path": "nefan-html/src/world/fixtures-del-selector.ts",
-          "funcion": "addTileRaw",
-          "reason": "`addTileRaw`, dentro de la fábrica `crearFixturesDelSelector`: las fixtures Format D de `data/scenes/` que ofrece el selector «Room» (preset `html-fixtures`, sin bridge) se normalizan en local porque no hay wire que lo haga. Es también el hook `window.__nefan.addTileRaw` del banco (`dev/nefan-hook.ts`; lo usan `qa/presupuesto-de-volumenes.mjs` y los guiones 58 y 68, que le pasan a propósito una escena SERVIDA para ver que `formatDToWorld` la rechaza). Es la única normalización del juego sin bridge; no recibe escenas del motor por cable. El módulo tiene el desplegable y el glob, y recibe de `main.ts` la carga de tile por deps."
+          "funcion": "normalizarFixture",
+          "reason": "`normalizarFixture`, dentro de la fábrica `crearFixturesDelSelector`: las fixtures Format D de `data/scenes/` que ofrece el selector «Room» (preset `html-fixtures`, sin bridge) se normalizan en local porque no hay wire que lo haga. Es también el hook `window.__nefan.addTileRaw` del banco (`dev/nefan-hook.ts`; lo usan `qa/presupuesto-de-volumenes.mjs` y los guiones 58 y 68, que le pasan a propósito una escena SERVIDA para ver que `formatDToWorld` la rechaza). Es la única normalización del juego sin bridge; no recibe escenas del motor por cable. El módulo tiene el desplegable y el glob, y recibe de `main.ts` la carga de tile por deps."
         },
         {
           "path": "nefan-html/src/ui/style-apply.ts",

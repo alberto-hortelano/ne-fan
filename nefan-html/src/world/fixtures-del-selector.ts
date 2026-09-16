@@ -12,6 +12,7 @@
  *  la carga de tile, el vaciado del mundo y la línea del juego. */
 
 import { formatDToWorld } from "@nefan-core/src/scene/scene-normalize.js";
+import type { EscenaServida } from "@nefan-core/src/protocol/messages.js";
 import { etiquetaDeFixture, motivoDeFixtureParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
 import { paso } from "../ui/async-ui.js";
 import type { CargaDeTile, OpcionesDeCarga } from "./carga-de-tile.js";
@@ -97,13 +98,18 @@ export function crearFixturesDelSelector(deps: DepsDeFixturesDelSelector): Fixtu
 
   /** La puerta: un tile como cualquier otro, sin salidas (sin bridge no las
    *  hay); la partida usa `addTile` con la escena ya servida. */
+  function normalizarFixture(raw: Record<string, unknown>): EscenaServida {
+    return { ...formatDToWorld(raw), exits: [] };
+  }
+
   function addTileRaw(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void> {
-    return addTile({ ...formatDToWorld(raw), exits: [] }, opts);
+    return addTile(normalizarFixture(raw), opts);
   }
 
   async function loadSceneData(rawData: Record<string, unknown>, opts: OpcionesDeCarga = {}): Promise<void> {
+    const escena = normalizarFixture(rawData);
     resetWorld();
-    await addTileRaw(rawData, opts);
+    await addTile(escena, opts);
   }
 
   /** Carga una fixture del selector «Room». RECHAZA si el módulo no llega, y de
