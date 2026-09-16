@@ -120,6 +120,14 @@ curl -s -XPOST localhost:9899/send \
 
 ## Replay / "película" del log (depurar el render sin motor ni jugador)
 
+El catálogo de mundos y estilos se valida contra el wire actual antes de
+entregarlo al título (#317). Si falta o es incompatible, el registro del
+cliente y el log del replay nombran la grabación y sus campos inválidos. Las
+ocho grabaciones históricas hoy conservadas requieren volver a grabar con el
+contrato vigente; no se fabrican mundos ni estilos para completarlas. El
+guion 141 recorre las ocho y la batería `replay-catalog` prueba también un
+catálogo completo válido.
+
 `replay-server.mjs` reproduce una sesión grabada (`runs/<ts>/events.ndjson`) como película para el
 **cliente** (`nefan-html`), **sin motor narrativo, sin ai_server y sin jugador**. Esto funciona
 porque `events.ndjson` capturó los mismos mensajes `in` que el bridge real envía al cliente

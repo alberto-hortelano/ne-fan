@@ -30,7 +30,8 @@
 //   REAL_TIMING=1 node labs/narrative/replay-server.mjs   # respeta deltas reales (clamp)
 //
 // Luego: en otra terminal `cd nefan-html && npm run dev`, abre el navegador,
-// pulsa "Nueva partida" y elige tavern_intro. La sesión se reproduce sola.
+// pulsa "Nueva partida". Un catálogo incompatible se explica con su archivo
+// y campos; con una grabación compatible la sesión se reproduce sola.
 //
 // Variables de entorno:
 //   LOG          ruta a events.ndjson (default: runs/session-2026-06-25/...)
@@ -40,6 +41,7 @@
 //   REAL_TIMING  =1 respeta los deltas de tiempo reales (clamp 150..HOLD_MS)
 //   LOOP         =1 reinicia la película al terminar
 
+import { catalogoDeReplay, respuestaNoGrabada } from "./replay-catalog.mjs";
 import { readFileSync } from "node:fs";
 import { PUERTOS_TODOS } from "../../qa/lib/stack.mjs";
 import { resolve, dirname } from "node:path";
@@ -113,24 +115,6 @@ console.error(
     `\n[replay] modo=${REAL_TIMING ? "real-timing" : `fijo hold=${HOLD_MS}ms flash=${FLASH_MS}ms`}` +
     (LOOP ? " loop=on" : ""),
 );
-
-// Síntesis de respuestas no grabadas (p.ej. el emulador no llamó list_sessions).
-function synthResponse(respType) {
-  switch (respType) {
-    case "sessions_listed":
-      return { type: "sessions_listed", sessions: [] };
-    case "games_listed":
-      return {
-        type: "games_listed",
-        games: [{ game_id: "tavern_intro", title: "The Calling" }],
-      };
-    case "session_deleted":
-      // Unión discriminada desde #365: el `ok:true` de antes ya no existe.
-      return { type: "session_deleted", outcome: "deleted" };
-    default:
-      return null;
-  }
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -233,12 +217,14 @@ wss.on("connection", (ws) => {
     // Request correlacionado por requestId.
     if (typeof msg?.requestId === "string" && REQUEST_TO_RESPONSE[type]) {
       const respType = REQUEST_TO_RESPONSE[type];
-      const recorded = queues[respType].shift() ?? synthResponse(respType);
+      const recorded = queues[respType].shift() ?? respuestaNoGrabada(respType, LOG);
       if (!recorded) {
         console.error(`[replay] sin respuesta para ${type}; ignorado`);
         return;
       }
-      const reply = { ...recorded, requestId: msg.requestId };
+      const contenido = respType === "games_listed" ? catalogoDeReplay(recorded, LOG) : recorded;
+      const reply = { ...contenido, requestId: msg.requestId };
+      if (reply.error) console.error(`[replay] ${reply.error}`);
       // De aquí sale el sello de la película: es el id que el cliente aplica
       // como sesión suya al recibir el `session_started`.
       if (respType === "session_started" && typeof reply.sessionId === "string") {
