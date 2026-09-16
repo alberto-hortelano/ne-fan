@@ -259,3 +259,8 @@ del selector «Room» y el hook del banco; `StyleApplyController.plan` en `ui/st
 el checker cuenta que cada puerta sea UNA llamada dentro de esa función: la
 segunda en el mismo fichero salta, y una puerta que deja de llamar es una
 exención sin sujeto).
+
+Los rótulos proyectados fuera del encuadre se retiran del DOM y vuelven al
+mirarlos (#484, guion 138). Al tomar el mundo con una fixture, el cliente
+retira el último frame del mundo anterior y el bridge deja de activar lugares
+de la partida por posición: esa activación repoblaría su vida ambiental.

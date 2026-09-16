@@ -1021,16 +1021,16 @@ export class FpsGl {
     return { origin: { x: o.x, y: o.y, z: o.z }, dir: { x: d.x, y: d.y, z: d.z } };
   }
 
-  /** Punto de MUNDO → píxeles CSS del canvas, o null si cae detrás del ojo.
+  /** Punto de MUNDO → píxeles CSS, o null fuera del encuadre.
    *  Es lo que permite colgar las etiquetas de nombre en DOM sobre la cabeza
    *  del NPC sin re-implementar el tema del pack en un atlas de fuente. */
   projectToScreen(x: number, y: number, z: number): { x: number; y: number; depthM: number } | null {
     this.cam.updateMatrixWorld();
     const view = this.projView.set(x, y, z).applyMatrix4(this.cam.matrixWorldInverse);
-    // La cámara mira −z en su espacio: todo lo que tenga z ≥ −near está en el
-    // ojo o detrás, y project() lo proyectaría espejado al otro lado.
+    // La cámara mira −z: detrás del plano cercano la proyección se espeja.
     if (view.z > -this.cam.near) return null;
     const ndc = this.projNdc.set(x, y, z).project(this.cam);
+    if (Math.abs(ndc.x) > 1 || Math.abs(ndc.y) > 1) return null;
     const w = this.canvas.clientWidth || this.canvas.width;
     const h = this.canvas.clientHeight || this.canvas.height;
     return { x: (ndc.x * 0.5 + 0.5) * w, y: (-ndc.y * 0.5 + 0.5) * h, depthM: -view.z };
