@@ -25,11 +25,21 @@
  *  `/skin_sprite_sheet` con el prompt de la partida anterior: una imagen de
  *  pago por un mundo que ya no existe. Eso es lo que se cuenta en el cable.
  *
- *  PROBADO EN NEGATIVO (2026-09-06): con `aspecto.desvestir();` quitado de
- *  `resetWorld` (`main.ts`), los dos asertos de la partida B se ponen ROJOS
- *  con dos POST del prompt de A (`idle` y `walk`, sin rol) al entrar B, y el
- *  libro de B vuelve a tener al jugador de A; las dos precondiciones siguen
- *  verdes.
+ *  QUE EL SKIN DE A ACABE FALLIDO ES LA CONDICIÓN, y desde la tanda F la
+ *  inyecta este guion (500 a todo lo que no sea `idle` del prompt de A, en el
+ *  borde). Hasta #627 se la regalaba el banco por accidente y nadie lo había
+ *  escrito; el porqué está entero junto a la inyección, en el `page.route`.
+ *
+ *  PROBADO EN NEGATIVO. **2026-09-06** (escritura del guion): con
+ *  `aspecto.desvestir();` quitado de `resetWorld` (`main.ts`), los dos asertos
+ *  de la partida B se ponen ROJOS con dos POST del prompt de A (`idle` y
+ *  `walk`, sin rol) al entrar B, y el libro de B vuelve a tener al jugador de
+ *  A; las dos precondiciones siguen verdes. **2026-09-16** (tanda F): ese mismo
+ *  sabotaje salía VERDE —`POST desde «Volver al título»: []`, y el libro de B
+ *  con el jugador de A dentro pero sin pedir nada— porque #627 le había quitado
+ *  al guion su condición. Con la inyección puesta vuelve a ponerse ROJO con los
+ *  mismos dos POST de entonces (`idle` y `walk`, sin rol: el `run` no sale
+ *  porque el fallo de `walk` corta la cola de ese personaje).
  *
  *  Cero créditos: el bridge propio no llega a llamar a ningún servicio y los
  *  skins los sirve el motor falso del runner.
@@ -146,6 +156,37 @@ export default async function (ctx) {
         ctx.log(`cuerpo de /skin_sprite_sheet ilegible: ${String(err).slice(0, 80)}`);
       }
       posts.push({ fase, prompt: String(body.prompt ?? ""), anim: String(body.anim ?? ""), role: body.style_role ?? null });
+      // EL SKIN DE A ACABA FALLIDO, y se inyecta AQUÍ (tanda F, 2026-09-16).
+      // Es la condición sin la cual este guion no mide nada, y hasta hoy se la
+      // regalaba el banco por accidente: `paladin` no tenía `walk` y el motor
+      // falso contestaba 500, así que el skin de A quedaba `failed`. #627/#498
+      // se lo quitó —y con razón: el banco no debe fundir el fusible de
+      // producción por una limitación de sus assets—, y este guion se quedó
+      // VERDE SIN PODER PONERSE ROJO. MEDIDO: con `aspecto.desvestir()`
+      // comentado en `main.ts`, los dos asertos de la partida B salían VERDES y
+      // el cable no traía ni un POST desde la vuelta.
+      //
+      // POR QUÉ HACE FALTA que falle: `requestSkin` es idempotente por prompt.
+      // Con el skin de A VIVO en el mapa del manager —que es un singleton de
+      // módulo y sobrevive a volver al título—, el OFF→ON de la entrada de B
+      // encuentra sus tres anims ya encoladas y no pide nada, haya `desvestir()`
+      // o no. Solo si A quedó FALLIDO lo borra `rearmarCortacircuitos` al entrar
+      // B, y entonces `requestSkin` vuelve a pedirlo con el prompt que tenga
+      // `aspecto.skinPrompt()`: ahí es donde `desvestir()` decide si se paga o
+      // no una imagen por un mundo que ya no existe.
+      //
+      // Se inyecta como en el guion 51 y en los bloques A/B/C del 53 —el borde,
+      // `page.route`, nunca dentro del cliente— y es un 500 de backend, que es
+      // lo que contesta un sprite-forge caído. `idle` sí se sirve para que la
+      // PRECONDICIÓN («A pidió su skin») siga midiendo una petición de verdad.
+      if (String(body.prompt ?? "") === PROMPT_A && String(body.anim ?? "") !== "idle") {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "fallo del proveedor para el skin del jugador (simulado por QA-82)" }),
+        });
+        return;
+      }
       await route.continue();
     });
 
@@ -167,15 +208,32 @@ export default async function (ctx) {
       PROMPT_A,
     );
     ctx.log(`partida A ${sesionA} · libro: ${JSON.stringify(jugadorA)}`);
-    // …y la cola de ESE skin se ha asentado: en el banco `idle` se sirve y
-    // `walk` da 500, así que acaba `failed`. Se espera a que pare, porque un
-    // POST rezagado de la cola de A que llegara tras «Volver al título» se
-    // contaría como re-petición sin serlo.
+    // …y la cola de ESE skin se ha asentado: no queda nada en vuelo. Se espera
+    // a que pare porque un POST rezagado de la cola de A que llegara tras
+    // «Volver al título» se contaría como re-petición sin serlo.
+    //
+    // QUÉ ES «ASENTADA», corregido en la tanda F (2026-09-16). Decía «falló en
+    // `walk`, o no le queda nada encolado», y las dos mitades eran falsas: el
+    // banco ya no contesta 500 a `walk` —desde #627/#498 `animDelBanco` sirve
+    // `idle` para toda anim de `HOJAS_BASE_ANIMS` que `paladin` no tenga, y
+    // `walk` y `run` están dentro—, así que el skin no falla; y `queued` NUNCA
+    // se vacía al acertar (es lo que se ha encolado alguna vez, ver
+    // `character-sprites.ts`), así que la otra mitad tampoco podía cumplirse.
+    // La espera expiraba a los 60 s y se llevaba por delante todo lo que viene
+    // detrás. Asentada = todo lo encolado está listo, o el personaje falló.
+    //
+    // LO QUE ESTO SE JUEGA (QA de la tanda F, H-7): `queued` puede CRECER solo,
+    // porque `modelFor` encola perezosamente la anim que una entidad empiece a
+    // dibujar. Aquí el sujeto es el JUGADOR de una partida sin mundo (el muro
+    // está puesto, no hay locomoción que dibujar), y el modo de fallo es una
+    // espera que EXPIRA imprimiendo el libro —un rojo legible—, nunca un verde
+    // prematuro. Mirar solo el set automático lo evitaría, pero dejaría pasar
+    // justo lo que esta espera existe para impedir: un POST en vuelo.
     const asentado = await ctx.waitFor(
-      "la cola del skin de A se asienta (falló en walk, o no le queda nada encolado)",
+      "la cola del skin de A se asienta: todo lo que encoló está listo (o el personaje falló)",
       (p) => {
         const s = window.__nefan.skins.find((x) => x.prompt === p);
-        return s && (s.failed || s.queued.length === 0) ? s : null;
+        return s && (s.failed || (s.queued.length > 0 && s.queued.every((a) => s.ready.includes(a)))) ? s : null;
       },
       60_000,
       PROMPT_A,

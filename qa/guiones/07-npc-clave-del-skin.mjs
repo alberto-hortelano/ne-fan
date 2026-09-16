@@ -131,13 +131,21 @@ export default async function (ctx) {
   // parecían porque el tile del bench tenía UN solo personaje. Con dos (el
   // bandido hostil de #323 entró en el bootstrap) se ve lo que siempre fue
   // verdad: el libro apunta lo que la partida PIDE y el cable lleva lo que la
-  // cola llega a mandar, y contra el motor falso la cola se corta — el fake
-  // solo tiene hoja `idle` y contesta 500 a `walk`, y ese fallo marca al
-  // PERSONAJE: `state.failed` deja sin salir todo lo que llevara encolado
-  // detrás. (Hasta #236 el fallo apagaba además los skins de la SESIÓN a la
-  // primera; hoy hacen falta tres personajes distintos, y en este tile solo
-  // hay dos, así que el fusible de sesión ni se acerca. El corte de la cola,
-  // que es lo que este bloque tiene que sortear, sigue igual.)
+  // cola llega a mandar, y un fallo corta la cola — `state.failed` deja sin
+  // salir todo lo que ese personaje llevara encolado detrás. (Hasta #236 el
+  // fallo apagaba además los skins de la SESIÓN a la primera; hoy hacen falta
+  // tres personajes distintos, y en este tile solo hay dos, así que el fusible
+  // de sesión ni se acerca. El corte de la COLA, que es lo que este bloque
+  // tiene que sortear, sigue igual.)
+  //
+  // Lo que este comentario decía hasta la tanda F —«contra el motor falso la
+  // cola se corta: el fake solo tiene hoja `idle` y contesta 500 a `walk`»— ya
+  // NO es cierto: desde #627/#498 `animDelBanco` sirve `idle` para toda anim de
+  // `HOJAS_BASE_ANIMS` que el modelo del banco no tenga, así que hoy el banco
+  // no corta ninguna cola. La desigualdad libro ⊇ cable sigue siendo la verdad
+  // del código (un 5xx real la produce), y las dos afirmaciones de abajo siguen
+  // siendo las que cazan el bug; lo que ya no hay es un escenario del banco que
+  // las obligue.
   //
   // Así que la igualdad se sustituye por las DOS afirmaciones que sí son
   // ciertas y que son las que pueden cazar el bug que este bloque persigue

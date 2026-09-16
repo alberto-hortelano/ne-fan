@@ -177,11 +177,16 @@ export default async function (ctx) {
   // OFF y otra vez ON — el mismo camino (`aplicar` de `ui/modos-de-graficos.ts`)
   // que dispara el rearme al entrar o reanudar una partida.
   //
-  // SE MIDE EL DELTA, no el estado final, y no es un rodeo: en el banco toda
-  // hoja que no sea `idle` da 500, así que el personaje recuperado vuelve a
-  // quedar `failed` en cuanto pide `walk`. Lo que prueba el rearme es que
-  // AHORA TIENE ARTE que antes no tenía; exigir `failed:false` sería exigir
-  // que el motor falso tuviera hojas que no tiene.
+  // SE MIDE EL DELTA **Y EL ESTADO FINAL** (tanda F, 2026-09-16). Hasta hoy
+  // solo el delta, y la razón escrita era: «en el banco toda hoja que no sea
+  // `idle` da 500, así que el personaje recuperado vuelve a quedar `failed` en
+  // cuanto pide `walk`; exigir `failed:false` sería exigir que el motor falso
+  // tuviera hojas que no tiene». Esa excusa CADUCÓ con #627/#498 —`animDelBanco`
+  // sirve `idle` para toda anim de `HOJAS_BASE_ANIMS` que el modelo del banco no
+  // tenga—, y el banco sí las tiene ya. Así que se afirma también lo que el
+  // delta no distingue: que el recuperado sale ENTERO y LIMPIO. El delta se
+  // queda porque es lo que ata la afirmación a ESTE rearme y no al estado en el
+  // que hubiera nacido.
   const antes = (await ctx.nefan("skins")).find((s) => s.prompt === victima);
   ctx.expect(
     "precondición: el saboteado llega a este bloque sin una sola anim lista",
@@ -214,5 +219,26 @@ export default async function (ctx) {
     "rearmar OLVIDA al que falló, así que su siguiente petición empieza limpia y se sirve",
     recuperado.ready.length > antes.ready.length,
     `antes ready=${JSON.stringify(antes.ready)} · ahora ready=${JSON.stringify(recuperado.ready)}`,
+  );
+  // …Y SALE ENTERO, que es lo que el delta no puede decir: con `ready.length >
+  // antes.ready.length` bastaría UNA anim servida y el personaje seguiría
+  // marcado `failed`, o sea en el mismo callejón del que el rearme vino a
+  // sacarlo (`requestSkin` sale antes para un `failed` sin `force`, y el
+  // manager es un singleton de módulo). Se puede afirmar desde #627/#498: el
+  // banco sirve hoy todas las anims del contrato.
+  const entero = await ctx.waitFor(
+    "el recuperado termina su cola: las tres anims del set automático, listas",
+    (v) => {
+      const s = window.__nefan.skins.find((x) => x.prompt === v);
+      return s && (s.failed || ["idle", "walk", "run"].every((a) => s.ready.includes(a))) ? s : null;
+    },
+    90_000,
+    victima,
+  );
+  ctx.log(`recuperado al terminar la cola: ${JSON.stringify(entero)}`);
+  ctx.expect(
+    "…y queda LIMPIO: sin la marca `failed`, que es la que le cerraría la puerta a la siguiente petición",
+    entero.failed === false && ["idle", "walk", "run"].every((a) => entero.ready.includes(a)),
+    JSON.stringify(entero),
   );
 }

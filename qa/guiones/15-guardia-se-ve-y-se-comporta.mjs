@@ -28,24 +28,30 @@
  *  que guardó el bridge se contrasta además contra el State API, que es
  *  el mismo cable por el que el motor lee sus entidades (`entity_get`).
  *
- *  GOTCHA del bench, y por eso la parte 1 se mide al final y con la fixture:
- *  el motor falso solo tiene hoja `idle` del modelo de skin y responde 500 a
- *  `walk`, y ese fallo marca al PERSONAJE (`state.failed`), que deja de pedir
- *  nada más. Con los vecinos quemados uno a uno no se puede observar qué ref
- *  pediría el guardia, así que esa mitad se mide en una
- *  pestaña recién cargada sobre `robledo_tile` —la fixture commiteada que
- *  trae un guardia y cuatro paisanos— leyendo el LIBRO DE SKINS del propio
- *  juego (`__nefan.skins`), que es lo que la partida pidió, se le conteste o
- *  no. Misma función y mismo camino de datos que en sesión
- *  (Format D → `formatDToWorld` → cliente).
+ *  POR QUÉ LA PARTE 1 SE MIDE AL FINAL Y CON LA FIXTURE: hace falta una escena
+ *  que traiga a la vez un GUARDIA y varios paisanos, y el tile de entrada del
+ *  bench solo tiene al mercader —el guardia vive detrás de una salida—. Eso lo
+ *  da `robledo_tile`, la fixture commiteada (un guardia y cuatro paisanos), en
+ *  una pestaña recién cargada. Misma función y mismo camino de datos que en
+ *  sesión (Format D → `formatDToWorld` → cliente).
  *
- *  Lo que este comentario decía hasta #236 —«dispara el cortacircuitos del
- *  cliente y deja la SESIÓN sin pedir un skin más»— ya no es cierto: el
- *  fusible de sesión necesita tres personajes distintos caídos
- *  (`UMBRAL_APAGADO_DE_SESION`), y en `robledo_tile` los hay, pero en el tile
- *  del bench no. El aserto no cambia; la razón por la que está escrito así,
- *  sí — y es justo la prosa que impediría que alguien lo «arreglara» de
- *  vuelta.
+ *  Y SE LEE EL LIBRO DE SKINS (`__nefan.skins`) y no el cable, porque lo que
+ *  este bloque afirma es **qué ref PIDE el juego** para cada oficio, y el libro
+ *  es eso por definición: lo que la partida pidió, se le conteste o no. No es
+ *  un sucedáneo del cable — el cable de los skins lo cubre el `07`.
+ *
+ *  DOS RAZONES QUE ESTE COMENTARIO DABA Y YA NO VALEN, dejadas escritas para
+ *  que nadie las restaure:
+ *   · hasta #236: «el fallo dispara el cortacircuitos del cliente y deja la
+ *     SESIÓN sin pedir un skin más». Hoy el fusible necesita TRES personajes
+ *     distintos caídos (`UMBRAL_APAGADO_DE_SESION`), y en el tile del bench
+ *     solo hay dos.
+ *   · hasta la tanda F: «el motor falso solo tiene hoja `idle` y responde 500 a
+ *     `walk`, así que los vecinos se queman uno a uno y no se puede observar
+ *     qué ref pediría el guardia». Desde **#627/#498** `animDelBanco` sirve
+ *     `idle` para toda anim de `HOJAS_BASE_ANIMS` que el modelo del banco no
+ *     tenga, así que en el banco YA NO SE QUEMA NADIE. La fixture sigue por la
+ *     primera razón, que no es del banco sino del reparto.
  */
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
@@ -281,9 +287,11 @@ async function encenderSkinsDePersonaje(ctx) {
 
 /** Entrada del LIBRO DE SKINS del juego (`__nefan.skins`) para un NPC: qué
  *  prompt y qué ref de personaje pidió la partida para él. Se lee del registro
- *  del propio juego —lo que PIDIÓ, se le conteste o no— y no del cable: contra
- *  el bench, el motor falso solo tiene hoja `idle` y el cortacircuitos del
- *  cliente corta la cola en cuanto una anim falla. El cable ya lo cubre `07`. */
+ *  del propio juego —lo que PIDIÓ, se le conteste o no—, que es exactamente lo
+ *  que este guion afirma; el cable de los skins ya lo cubre el `07`. (La razón
+ *  que daba esta línea hasta la tanda F —«el motor falso solo tiene hoja `idle`
+ *  y el cortacircuitos corta la cola en cuanto una anim falla»— caducó con
+ *  #627: el banco sirve hoy todas las anims del contrato.) */
 const enElLibro = (ctx, npc) =>
   ctx.waitFor(
     `la partida apunta en su libro el skin de ${npc.id}`,
