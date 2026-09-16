@@ -96,9 +96,10 @@ describe("un enemigo inválido se cae SOLO ÉL: add_combatants", () => {
     const errores = statusDeError(sent);
     assert.equal(errores.length, 1, `un aviso y solo uno: ${JSON.stringify(errores)}`);
     assert.equal(errores[0].kind, "combatientes");
+    assert.ok(errores[0].detalleTecnico?.includes(MOTIVO), "se conserva el diagnóstico completo");
     assert.equal(
       errores[0].message,
-      `Enemigos que no entraron al mundo (1 de 3): «roto_2» (${MOTIVO})`,
+      "Enemigos que no entraron al mundo (1 de 3): sus datos de combate no son válidos. Consulta el registro de errores.",
     );
 
     // 4 · SIN MODAL. Es la mitad del criterio que no se ve en el `kind`: lo
@@ -164,10 +165,10 @@ describe("un enemigo inválido se cae SOLO ÉL: add_combatants", () => {
     const errores = statusDeError(sent.slice(yaVistos));
     assert.equal(errores.length, 1, `un aviso y solo uno: ${JSON.stringify(errores)}`);
     assert.equal(errores[0].kind, "combatientes");
+    assert.ok(errores[0].detalleTecnico?.includes(MOTIVO), "se conserva el diagnóstico completo");
     assert.equal(
       errores[0].message,
-      "Enemigos que no entraron al mundo (3 de 3): " +
-        `«sin_ataques» (${MOTIVO}); «muerto» (${MOTIVO_MUERTO}); «sin_arma» (${MOTIVO_SIN_ARMA})`,
+      "Enemigos que no entraron al mundo (3 de 3): sus datos de combate no son válidos. Consulta el registro de errores.",
     );
     assert.equal(
       rotuloDeStatus(errores[0], { mundoVacio: true, overlayAbierto: true }).destino,
@@ -219,9 +220,10 @@ describe("un enemigo inválido se cae SOLO ÉL: load_room", () => {
     const errores = statusDeError(sent);
     assert.equal(errores.length, 1, `un aviso y solo uno: ${JSON.stringify(errores)}`);
     assert.equal(errores[0].kind, "combatientes");
+    assert.ok(errores[0].detalleTecnico?.includes(MOTIVO), "se conserva el diagnóstico completo");
     assert.equal(
       errores[0].message,
-      `Enemigos que no entraron al mundo (1 de 3): «roto_2» (${MOTIVO})`,
+      "Enemigos que no entraron al mundo (1 de 3): sus datos de combate no son válidos. Consulta el registro de errores.",
     );
     assert.equal(
       rotuloDeStatus(errores[0], { mundoVacio: true, overlayAbierto: true }).destino,

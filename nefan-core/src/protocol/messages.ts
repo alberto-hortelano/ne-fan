@@ -421,6 +421,8 @@ interface CuerpoDeNarrativeStatus {
   message?: string;
   /** Causa clasificada por core al fallar una reacción narrativa. */
   causaReaccion?: "conexion" | "respuesta";
+  /** Diagnóstico completo para el registro, separado del texto de juego. */
+  detalleTecnico?: string;
   elapsedMs?: number;
 }
 

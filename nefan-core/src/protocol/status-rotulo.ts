@@ -160,7 +160,7 @@ const DETALLE_POR_DEFECTO: Record<NarrativeStatusDeSesion["kind"], string> = {
  *  compilando, que es lo que hace un `Pick`. */
 export type StatusRotulable = Pick<
   NarrativeStatusDeSesion,
-  "phase" | "kind" | "message" | "placeId" | "causaReaccion"
+  "phase" | "kind" | "message" | "placeId" | "causaReaccion" | "detalleTecnico"
 >;
 
 /** Título y destino de un `narrative_status` en fase de error.
