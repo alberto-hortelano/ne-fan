@@ -137,7 +137,13 @@ export class TitleScreen {
         // pre-generación pasó a fallar sin dejar rastro en ningún sitio
         // consultable. El texto rojo de `#ts-gen-progress` desaparece en cuanto
         // se repinta el selector — dos líneas más abajo, precisamente.
-        errors.push("narrative", msg.message ?? "la pre-generación del mundo falló");
+        //
+        // FUENTE `title` Y NO `narrative` (tanda F, QA H-5): `narrative` es de
+        // la PARTIDA y se retira al empezar a jugar, y esto no es de ninguna —
+        // es un MUNDO que no se pudo pre-generar, y sigue sin poderse cuando
+        // estés jugando en otro. El sujeto es la pantalla que vive entre
+        // partidas (`session/pertenencia-del-registro.ts`).
+        errors.push("title", msg.message ?? "la pre-generación del mundo falló");
       }
       if (msg.phase === "ready" || msg.phase === "error") {
         // Refrescar chips/botones si el selector de mundo sigue en pantalla.

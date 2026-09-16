@@ -11,6 +11,7 @@
  *  registro y el flujo se interrumpe. */
 import {
   loQueSobreviveALaPartida,
+  pertenenciaDe,
   type FuenteDeError,
 } from "@nefan-core/src/session/pertenencia-del-registro.js";
 
@@ -183,13 +184,12 @@ export interface OpcionesDePush {
  *  `dev-menu`, `graphics-mode`, `fps-atlas`, `portrait` e `history`, contadas
  *  hoy sobre el árbol y no heredadas del censo del plan, que decía seis—, o
  *  sea indistinguibles entre ellas en la columna que existe para
- *  distinguirlas. */
+ *  distinguirlas. `fps-atlas` murió en la misma tanda, detrás de su emisor. */
 const SOURCE_COLORS: Record<FuenteDeError, string> = {
   arranque: "#e0955c",
   bridge: "#d9a14a",
   config: "#bdbd5e",
   "dev-menu": "#8f9bb3",
-  "fps-atlas": "#4fa8b8",
   "graphics-mode": "#b07ccc",
   history: "#9c8f6e",
   input: "#7f9fd0",
@@ -374,13 +374,24 @@ export class ErrorLog {
     // inventada por `page.evaluate`, y un `undefined` en el `style` dejaría la
     // etiqueta sin color en vez de en gris.
     const color = SOURCE_COLORS[e.source] ?? "#bbb";
+    // LA MARCA, PINTADA. La decisión del usuario fue «marcar cada entrada y
+    // filtrar al pintar», y hasta aquí solo estaba la segunda mitad: el panel
+    // no distinguía una entrada que sobrevive a la partida anterior de una que
+    // acaba de ocurrir en ésta, así que una partida recién empezada se leía
+    // como un mundo que nace roto (QA de la PR 2, Hallazgo 3). Va la MISMA
+    // decisión que retira las otras (`pertenenciaDe`, core) y no una segunda
+    // lectura de la tabla: una etiqueta que no predijera lo que hace el olvido
+    // sería peor que no ponerla.
+    const pertenencia = pertenenciaDe(e.source);
+    const deQuien = pertenencia === "maquina" ? "máquina" : "partida";
     const detail = e.detail
       ? `<pre class="error-log__detail">${escapeHtml(e.detail)}</pre>`
       : "";
     return `
-      <div class="error-log__entry">
+      <div class="error-log__entry" data-pertenencia="${pertenencia}">
         <div class="error-log__meta">
           <span class="error-log__source" style="color:${color}">${escapeHtml(e.source)}</span>
+          <span class="error-log__pertenencia">${deQuien}</span>
           <span class="error-log__time">${time}</span>
         </div>
         <div class="error-log__msg">${escapeHtml(e.message)}</div>

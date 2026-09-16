@@ -126,7 +126,12 @@ export class FpsAtlasController {
       // síntoma aparece a un pipeline de distancia.
       if (this.politica.terminar(key) === "re-disparar") {
         void this.onActiveTile(key).catch((err) =>
-          errors.push("fps-atlas", `re-disparo del atlas de ${key}`, err),
+          // `scene` y no una fuente propia (tanda F, QA H-2): lo que falla es
+          // el atlas de UN TILE de esta partida, que es exactamente lo que
+          // registran los otros tres `push` de este fichero. La fuente
+          // `fps-atlas` que había aquí decía «el atlas como SERVICIO» y era su
+          // único emisor, así que la distinción no existía: se fue con ella.
+          errors.push("scene", `re-disparo del atlas de ${key}`, err),
         );
       }
     }

@@ -172,7 +172,10 @@ export class FpsRenderer {
       this.surfaces.set(key, { fps, layout });
       this.withGl((gl) => gl.installTile(key, fps.primsM, fps.lightsM, layout, rect, { sky: fps.sky, fog: fps.fog }));
     } catch (err) {
-      errors.push("render", `el tile ${key} no compone en la vista fps`, err);
+      // `scene` y no `render` (tanda F, QA H-2): nombra un TILE de esta
+      // partida. Lo de `render` es el motor —el chunk que no carga, arriba— y
+      // eso sí sigue siendo cierto en la partida siguiente.
+      errors.push("scene", `el tile ${key} no compone en la vista fps`, err);
     }
   }
 

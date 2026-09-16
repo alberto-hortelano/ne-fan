@@ -6,17 +6,24 @@
  *  alguna de las cuatro se mueve, el guion que la ata se pone rojo a los treinta
  *  segundos de navegador; este fichero la caza en milisegundos y dice cuál.
  *
- *  Las otras once filas no tienen aserto propio a propósito: no hay conducta
- *  observable colgando de ellas hoy, y un `assert.equal(tabla.x, "maquina")`
- *  por cada una es una copia de la tabla, no una medida. Lo que sí está candado
- *  para las quince es la TOTALIDAD, y la sujeta el compilador: `Record` sobre
- *  la unión cerrada, así que una fuente nueva no compila sin fila. */
+ *  Las otras filas no tienen aserto propio AQUÍ, y el motivo cambió al validar
+ *  la PR: se escribió «no hay conducta observable colgando de ellas», y QA
+ *  demostró que era falso —una fila mal puesta borra un diagnóstico que debía
+ *  quedarse, o conserva uno que debía irse, y eso lo ve quien juega—. Quien las
+ *  recorre una a una por el camino del jugador es
+ *  `qa/guiones/143-el-registro-marca-de-quien-es-cada-entrada.mjs`, que no
+ *  necesita este fichero para nada: lee la tabla del `dist` y la contrasta con
+ *  una lista escrita a mano. Aquí se quedan las cuatro que atan un guion,
+ *  porque son las que un rojo de 30 segundos de navegador tarda en explicar.
+ *  Y la TOTALIDAD la sujeta el compilador: `Record` sobre la unión cerrada, así
+ *  que una fuente nueva no compila sin fila. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
   PERTENENCIA_POR_FUENTE,
   loQueSobreviveALaPartida,
+  pertenenciaDe,
   type FuenteDeError,
 } from "../src/session/pertenencia-del-registro.js";
 
@@ -46,6 +53,21 @@ describe("PERTENENCIA_POR_FUENTE", () => {
     // seguir siendo posibles.
     const lados = new Set(Object.values(PERTENENCIA_POR_FUENTE));
     assert.deepEqual([...lados].sort(), ["maquina", "partida"]);
+  });
+});
+
+describe("pertenenciaDe", () => {
+  it("es la MISMA respuesta que usa el filtro, porque el panel la PINTA", () => {
+    // Existe aparte de `loQueSobreviveALaPartida` porque el cliente la llama
+    // para marcar cada entrada en el panel (decisión del usuario: «marcar cada
+    // entrada y filtrar al pintar»). Si las dos lecturas divergieran, el
+    // jugador leería una etiqueta que no predice lo que hace el olvido.
+    assert.equal(pertenenciaDe("sprite"), "maquina");
+    assert.equal(pertenenciaDe("session"), "partida");
+    // Y la fuente que nadie clasificó cae del mismo lado en las dos: se va.
+    const inventada = "lo-que-sea" as FuenteDeError;
+    assert.equal(pertenenciaDe(inventada), "partida");
+    assert.deepEqual(loQueSobreviveALaPartida([{ source: inventada }]), []);
   });
 });
 

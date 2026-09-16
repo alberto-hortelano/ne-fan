@@ -141,8 +141,12 @@ export class WorldLabels {
         cajas.push({ id: label.id, x: p.x, y: p.y, w: rotulo.w, h: rotulo.h, depthM: p.depthM, focus: label.focus });
       } else if (!this.sinMedida.has(label.id)) {
         this.sinMedida.add(label.id);
+        // `scene` y no `render` (tanda F, QA H-2): `render` es el MOTOR de
+        // dibujo —el chunk de three.js, el bucle— y es de la máquina; esto
+        // nombra a `label.id`, una entidad de ESTA partida que en la siguiente
+        // no existe. Se va con ella, como el resto de lo que nombra la escena.
         errors.push(
-          "render",
+          "scene",
           `rótulo "${label.id}": su caja mide ${rotulo.w}×${rotulo.h} px, así que no se puede saber si pisa a otro; se pinta igual`,
         );
       }

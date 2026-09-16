@@ -1127,7 +1127,7 @@ narrativeClient.onNarrativeEvent((event) => {
 // `bootstrap` se traga sus propios fallos de sesión, pero no los de la vía de
 // escape (crear el cliente visor, pintar el estado de conexión): sin canal,
 // un fallo ahí dejaba el cliente en negro sin una sola línea que lo dijera.
-paso(bootstrap(), "session", "arrancar el cliente");
+paso(bootstrap(), "arranque", "arrancar el cliente");
 
 async function bootstrap(): Promise<void> {
   try {

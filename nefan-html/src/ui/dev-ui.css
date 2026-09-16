@@ -136,10 +136,18 @@ html:has(#plugins-panel:not([hidden])) #error-log,
 html:has(#gfx-panel:not([hidden])) #error-log,
 html:has(#narrative-loader.visible) #error-log { visibility: hidden; }
 #error-log .error-log__empty { color: #666; font-style: italic; font-size: 10px; }
-#error-log .error-log__entry { border-top: 1px solid #2a1a1a; padding: 4px 0; }
+#error-log .error-log__entry { border-top: 1px solid #2a1a1a; padding: 4px 0 4px 5px; }
 #error-log .error-log__entry:first-child { border-top: none; }
-#error-log .error-log__meta { display: flex; justify-content: space-between; font-size: 10px; }
+/* DE QUIÉN ES CADA ENTRADA, a la vista. Un cambio de sesión retira lo de la
+   partida y conserva lo de la máquina (#497 + tanda F), así que el panel mezcla
+   las dos clases y sin marca una partida recién empezada se lee como un mundo
+   que nace roto. El filete de la izquierda separa de un vistazo y la palabra lo
+   dice sin que haya que aprenderse un color. */
+#error-log .error-log__entry[data-pertenencia="maquina"] { border-left: 2px solid #5f7a55; }
+#error-log .error-log__entry[data-pertenencia="partida"] { border-left: 2px solid #8a4f4f; }
+#error-log .error-log__meta { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; }
 #error-log .error-log__source { font-weight: bold; }
+#error-log .error-log__pertenencia { color: #8b8b7a; font-size: 9px; letter-spacing: 0.5px; }
 #error-log .error-log__time { color: #777; }
 #error-log .error-log__msg { color: #f0c8a8; margin-top: 2px; }
 #error-log .error-log__detail {

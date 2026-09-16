@@ -47,14 +47,23 @@
  *  que irse al cambiar de partida y el otro no. Se queda `session` para lo de
  *  la partida (el candado de #497 en el guion 82 sigue inyectando esa fuente,
  *  sin mover un carácter) y `arranque` recoge lo que no es de ninguna: el
- *  `bootstrap` que no levanta, el arranque de partida que falla y vuelve al
- *  título, y el aviso de estilo que el bridge manda al entrar. */
+ *  `bootstrap` que no levanta —por los dos caminos, el `catch` y la vía de
+ *  escape—, el arranque de partida que falla y vuelve al título, y el aviso de
+ *  estilo que el bridge manda al entrar.
+ *
+ *  LA MISMA OPERACIÓN SE HIZO DOS VECES MÁS al validar la PR (QA, Hallazgo 2),
+ *  y las tres veces el arreglo fue mover el EMISOR y no la fila: `render` se
+ *  quedó con el motor y soltó a `scene` lo que nombraba un tile o una entidad;
+ *  la fuente `fps-atlas` se quedó sin emisor y se fue entera, porque su único
+ *  `push` era el re-disparo del atlas de UN TILE —lo mismo que registran sus
+ *  vecinos como `scene`— y la distinción que prometía su nombre no existía.
+ *  Una fuente cuyo `porque` se contradice con su único emisor no es una fuente:
+ *  es una etiqueta suelta, y la señal la dio la prosa antes que ningún test. */
 export type FuenteDeError =
   | "arranque"
   | "bridge"
   | "config"
   | "dev-menu"
-  | "fps-atlas"
   | "graphics-mode"
   | "history"
   | "input"
@@ -86,7 +95,10 @@ export const PERTENENCIA_POR_FUENTE: Record<FuenteDeError, Pertenencia> = {
   // — De la PARTIDA —
   /** Lo que dice el motor narrativo de ESTA partida. */
   narrative: "partida",
-  /** El tile, el atlas, el scatter, la colisión: la escena de ESTA partida. */
+  /** El tile, el atlas, el scatter, la colisión y los rótulos de sus entidades:
+   *  todo lo que nombra la escena de ESTA partida y en la siguiente es otro
+   *  sitio u otro NPC. Recogió en la tanda F los tres emisores que estaban bajo
+   *  `render` y `fps-atlas` nombrando un tile o una entidad. */
   scene: "partida",
   /** Arrancar, reanudar y abandonar ESTA partida. Lo del arranque del cliente
    *  que no cuelga de ninguna partida va en `arranque`. */
@@ -104,18 +116,25 @@ export const PERTENENCIA_POR_FUENTE: Record<FuenteDeError, Pertenencia> = {
   config: "maquina",
   /** Las herramientas de desarrollo del propio checkout. */
   "dev-menu": "maquina",
-  /** El disparo del atlas de superficies como SERVICIO (re-disparos, cuotas);
-   *  lo que le pasa al atlas de un tile concreto va por `scene`. */
-  "fps-atlas": "maquina",
   /** El conmutador de modos de render: es preferencia de esta máquina. */
   "graphics-mode": "maquina",
   /** El libro de historia como ventana: se abre y se lee fuera de la partida. */
   history: "maquina",
   /** Teclado, ratón y el proveedor de input elegido por `?input=`. */
   input: "maquina",
-  /** El retrato del personaje: falta un render del checkout, no un NPC. */
+  /** El retrato del personaje. MÁQUINA aunque el texto nombre al personaje de
+   *  la partida, y la razón está en la cadena de respaldo de su ÚNICO emisor
+   *  (`ui/portrait.ts:104-120`): se prueba primero la skin y DESPUÉS el modelo
+   *  base, y solo se registra si fallan LOS DOS. El base es local
+   *  (`/sprites/y_bot/`) y «no debería fallar», así que llegar aquí significa
+   *  que faltan las hojas del checkout — el mismo caso que `sprite`, y el
+   *  mismo remedio, que sigue siendo cierto en la partida siguiente. */
   portrait: "maquina",
-  /** El motor de dibujo: el chunk de three.js, el contexto WebGL, el bucle. */
+  /** El MOTOR de dibujo, y solo eso: el chunk de three.js que no carga
+   *  (`renderer/fps-renderer.ts:95`) y la excepción del bucle
+   *  (`main.ts:743`). Lo que nombra un tile o una entidad —«el tile X no
+   *  compone», «el rótulo Y no se puede medir»— se fue a `scene` en la tanda
+   *  F: era de la partida y aquí se habría quedado para siempre. */
   render: "maquina",
   /** La pantalla de título, que vive ENTRE partidas por definición. */
   title: "maquina",
@@ -125,18 +144,32 @@ export const PERTENENCIA_POR_FUENTE: Record<FuenteDeError, Pertenencia> = {
   sprite: "maquina",
 };
 
+/** De quién es UNA entrada, y el único sitio donde se consulta la tabla.
+ *
+ *  Existe porque la pertenencia se usa para DOS cosas —filtrar al cambiar de
+ *  sesión y marcar la entrada en el panel— y con dos lecturas sueltas de la
+ *  tabla el día que una tratase distinto a un desconocido el panel diría una
+ *  cosa y el filtro haría otra. Aquí se decide una vez.
+ *
+ *  UNA FUENTE QUE NADIE CLASIFICÓ ES DE LA PARTIDA. No puede llegar por el
+ *  tipo, así que solo entra desde fuera del programa (un guion de `qa/`, la
+ *  consola del navegador), y ahí lo honesto es no prometer supervivencia a algo
+ *  que nadie ha clasificado: sobrevive lo que ALGUIEN decidió que sobrevive. */
+export function pertenenciaDe(source: FuenteDeError): Pertenencia {
+  return PERTENENCIA_POR_FUENTE[source] === "maquina" ? "maquina" : "partida";
+}
+
 /** Lo que SOBREVIVE a que la partida se vaya: las entradas de la máquina.
  *
  *  Genérica por `source` y no atada a `ErrorEntry` porque esa forma es del
  *  cliente —lleva el `ts`, el `detail` y lo que el panel pinta— y core no
  *  conoce el DOM. Lo único que hace falta para decidir es la fuente.
  *
- *  UNA FUENTE QUE NO ESTÁ EN LA TABLA SE VA CON LA PARTIDA. No puede llegar por
- *  el tipo, así que solo entra desde fuera del programa (un guion de `qa/`, la
- *  consola del navegador), y ahí lo honesto es no prometer supervivencia a algo
- *  que nadie ha clasificado: sobrevive lo que ALGUIEN decidió que sobrevive. */
+ *  Pregunta por `pertenenciaDe` y no por la tabla: lo que el panel MARCA y lo
+ *  que el olvido RETIRA tienen que ser la misma decisión, o el jugador lee una
+ *  etiqueta que no predice nada. */
 export function loQueSobreviveALaPartida<E extends { source: FuenteDeError }>(
   entradas: readonly E[],
 ): E[] {
-  return entradas.filter((e) => PERTENENCIA_POR_FUENTE[e.source] === "maquina");
+  return entradas.filter((e) => pertenenciaDe(e.source) === "maquina");
 }
