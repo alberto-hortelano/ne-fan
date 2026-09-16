@@ -39,8 +39,8 @@
  *     macizo: quien acabe dentro no sale. Es anterior a #601 —la misma medida
  *     sobre el paso de la base da exactamente lo mismo— y #601 no lo arregla; lo
  *     que sí hace es cerrar la puerta principal por la que se llegaba ahí, que
- *     era entrar andando por una esquina. Queda como hallazgo H-1 de su QA, con
- *     cuerpo de issue escrito. No lo cuente nadie como resuelto. */
+ *     era entrar andando por una esquina. Vive con número propio en **#616**,
+ *     con esta misma tabla. No lo cuente nadie como resuelto. */
 
 import type { DuenoDeEntity } from "../session/entidades-del-tile.js";
 import type { TileCoord } from "../scene/tile.js";

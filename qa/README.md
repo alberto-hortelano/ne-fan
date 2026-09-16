@@ -483,7 +483,7 @@ batería: la carga se pide guion a guion, nunca sobre los 129.
 
 | `126-dos-rotulos-alineados-no-se-pisan` | DOS PERSONAJES ALINEADOS YA NO PRODUCEN DOS RÓTULOS PISADOS (#484). MEDIDO antes de escribirlo: en el tile de partida, dos personajes a 8 y 12 m proyectan cajas de 21 px a 9 px una de otra. La regla vive en core (`scene/rotulos-apilados.ts`) y aquí se mide que el cliente la USA con cajas de verdad, en sus cuatro estados: sin apuntar queda el CERCANO; apuntando al LEJANO se invierte —y esa excepción no es un adorno, `pickAimTarget` gana por desviación ANGULAR, así que el enfilado puede ser el lejano y ocultarlo dejaría la mirilla encendida sobre un bulto anónimo—; y el CONTROL de que separándolos vuelven los dos, sin el cual los tres primeros saldrían igual de verdes con los rótulos rotos. La geometría se fija por `loadSceneRaw` a propósito: el par del tile de partida se pisa o no por menos de cinco píxeles según dónde ande el tabernero, y un aserto ahí sería un intermitente |
 
-**Nota**: los guiones `18`–`21` no tienen fila en esta tabla; se sembraron sin ella.
+**Nota**: los guiones `19`, `20`, `131`, `132` y `133` no tienen fila en esta tabla. Los dos primeros se sembraron sin ella; los tres últimos nacieron en la tanda D y nadie se la puso. La nota anterior decía «`18`–`21`» y llevaba caducada desde que esos dos SÍ la tuvieron: una nota sobre qué falta hay que volver a mirarla cada vez que se añade un guion.
 
 ## El tercer ejecutable: `qa/fixtures-sin-bridge.mjs`
 
