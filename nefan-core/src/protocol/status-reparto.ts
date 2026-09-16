@@ -92,3 +92,18 @@ export function repartirStatus(
   if (status.phase === "error") return { destino: "fallo-ajeno", status };
   return { destino: "descartado", status };
 }
+
+/** Qué esperas termina un fallo de MI partida (#593). Un aviso de enemigos,
+ * guardado o plugins no es una contestación ni el desenlace de un viaje.
+ * El takeover sí invalida ambas: esta página ya no conduce la partida. */
+const ESPERA_POR_KIND: Record<NarrativeStatusDeSesion["kind"], "viaje" | "saludo" | "ambas" | null> = {
+  tile: "viaje", scene: "viaje", consequences: "saludo", takeover: "ambas",
+  restore: null, save: null, plugin: null, action: null, protocolo: null, combatientes: null,
+};
+
+export function esperasQueTermina(status: Pick<NarrativeStatusDeSesion, "kind" | "phase">): {
+  viaje: boolean; saludo: boolean;
+} {
+  const espera = status.phase === "error" ? ESPERA_POR_KIND[status.kind] : null;
+  return { viaje: espera === "viaje" || espera === "ambas", saludo: espera === "saludo" || espera === "ambas" };
+}

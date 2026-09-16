@@ -9,6 +9,7 @@ import { relojDeSim } from "./world/reloj-de-sim.js";
 import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import { pickNearestTarget } from "@nefan-core/src/scene/aim.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
+import { esperasQueTermina } from "@nefan-core/src/protocol/status-reparto.js";
 import { rotuloDeStatus, type StatusRotulable } from "@nefan-core/src/protocol/status-rotulo.js";
 import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
@@ -936,11 +937,11 @@ narrativeClient.onStatusDeLaPartida((status) => {
     return;
   }
 
-  // ── Ledger de viaje ───────────────────────────────────────────────────
-  // Se apunta ANTES de decidir qué pintar: lo que el juego recuerda del viaje
-  // no puede depender de por qué rama del switch de abajo salga el status.
+  // Core atribuye el fallo a su espera antes de pintar el aviso.
+  const terminadas = esperasQueTermina(status);
+  if (terminadas.saludo) hablar.yaContestaron();
   if (status.placeId && status.enqueued) travelLedger.encolado(status.placeId, status.enqueued);
-  if (status.phase === "error") travelLedger.fallo(status.placeId, status.message ?? "sin mensaje");
+  if (terminadas.viaje) travelLedger.fallo(status.placeId, status.message ?? "sin mensaje");
 
   // ── Spawn PEDIDO por el bridge ────────────────────────────────────────
   // Viajar por el panel «Salidas» a un lugar que no existía lo ancla a un
@@ -1006,13 +1007,8 @@ narrativeClient.onStatusDeLaPartida((status) => {
     return;
   }
 
-  // Estados que no son de escena (consequences / plugins). El bridge sólo los
-  // emite en error: una reacción narrativa rechazada (p.ej. 422 de
-  // /report_player_choice por una consequence mal formada). Sin esto el error
-  // se traga en silencio — el jugador no ve diálogo ni motivo. Lo surgimos al
-  // error-log y a un overlay descartable.
+  // Los demás fallos también se pintan, sin atribuirles esperas ajenas.
   if (status.phase === "error") {
-    hablar.yaContestaron();
     pintarFalloDelMotor(status);
   }
 });
