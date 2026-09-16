@@ -39,7 +39,27 @@ import { PLAYER_RADIUS_M } from "../scene/terrain-collision.js";
  *  rozando no es pasar, y `aabbBloquea` infla cada caja por el radio del
  *  jugador, así que con EXACTAMENTE 0,8 m las dos cajas infladas se tocarían y
  *  el pasillo sería intransitable — el mismo fallo de los 0,3 m, más fino. El
- *  margen es lo único elegido a ojo de este módulo, y se elige por arriba. */
+ *  margen es lo único elegido a ojo de este módulo, y se elige por arriba.
+ *
+ *  ESTÁ DIMENSIONADO PARA EL JUGADOR Y SE QUEDA CORTO PARA EL NPC, y la cuenta
+ *  es de dos constantes que ya están en el árbol:
+ *
+ *    · este hueco vale **1,0 m** (0,4 × 2 + 0,2);
+ *    · el cuerpo del NPC es el MAYOR del juego (`NPC_RADIUS_M` = 0,5) y la
+ *      regla de la casa para «¿cabe por aquí?» es `celdasLibresParaRadio(0,5,
+ *      0,5)` = 3 celdas = **1,5 m** (#289). Y el propio inverso de
+ *      `blocksCircle` pide ESTRICTAMENTE mayor que el diámetro, así que 1,0 m
+ *      no admite un cuerpo de 1,0 m ni empatando.
+ *
+ *  O sea: por el pasillo que deja este número pasa el jugador y no pasa un
+ *  NPC. Desde #583 las cajas de estos spawns también son sólidas para él, así
+ *  que el hueco es suyo tanto como del jugador. No encierra a nadie —cuando un
+ *  NPC agota sus siete deflexiones atraviesa la caja y lo dice
+ *  (`simulation/npc-behavior.ts`)—, pero ese escape es una red, no la medida
+ *  correcta. Quien suba este número a `2 × NPC_RADIUS_M + margen` está
+ *  arreglando esto; quien lo baje, reabriéndolo. Rastro de procedencia: #524
+ *  (que puso el reparto por tamaño) y #289 (que fijó cuánto hueco pide cada
+ *  cuerpo). */
 export const HOLGURA_ENTRE_SPAWNS_M = 2 * PLAYER_RADIUS_M + 0.2;
 
 /** Lo que el reparto necesita saber de cada cosa: su clase y la huella que el

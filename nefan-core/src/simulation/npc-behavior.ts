@@ -24,6 +24,7 @@ import { SeededRng } from "../rng.js";
 // cuerpo MAYOR del juego y quien decide cuánto hueco dejar tiene que poder
 // leerlo (issue #289).
 import { NPC_RADIUS_M } from "../scene/terrain-collision.js";
+import type { Impedimento } from "./cajas-de-runtime.js";
 import { resolveRoleParams, type NpcRoleParams } from "./npc-roles.js";
 
 export type NpcMode = "idle" | "wander" | "goto" | "visit" | "flee" | "intervene" | "react";
@@ -38,7 +39,17 @@ export type NpcDirectiveType = (typeof NPC_DIRECTIVE_TYPES)[number];
 /** Lo que el sistema necesita del mundo — el bridge inyecta el real
  *  (colisión server-side + world map + entities); los tests, un fake. */
 export interface NpcWorldAdapter {
-  blocksMove(fromX: number, fromZ: number, toX: number, toZ: number, radius: number): boolean;
+  /** QUÉ impide el paso, y no solo si algo lo impide. Sustituye al
+   *  `blocksMove` booleano con #583 y NO es opcional: el escape del encajonado
+   *  solo se abre sobre una caja de runtime, así que un adapter que no sepa
+   *  distinguirlas tiene que romper `tsc` y no salir verde atravesando muros. */
+  queImpideElPaso(
+    fromX: number,
+    fromZ: number,
+    toX: number,
+    toZ: number,
+    radius: number,
+  ): Impedimento;
   blocksCircle(x: number, z: number, radius: number): boolean;
   resolvePlaceTarget(placeId: string): { x: number; z: number } | null;
   getEntityPosition(entityId: string): Vec3 | null;
@@ -654,22 +665,79 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     const angles = last !== null && last !== 0
       ? [0, last, ...DEFLECTION_ANGLES.filter((a) => a !== 0 && a !== last)]
       : DEFLECTION_ANGLES;
-    for (const angle of angles) {
-      const d = angle === 0 ? dir : rotate(dir, angle);
-      const nx = px + d.x * step;
-      const nz = pz + d.z * step;
-      if (this.world.blocksMove(px, pz, nx, nz, NPC_RADIUS_M)) continue;
-      rt.record.position[0] = nx;
-      rt.record.position[2] = nz;
-      rt.lastDeflection = angle;
-      rt.forward = this.slewForward(rt, d.x, d.z, delta);
+    const rumbo = this.rumboDePaso(rt, angles, dir, px, pz, step);
+    if (rumbo) {
+      rt.record.position[0] = rumbo.nx;
+      rt.record.position[2] = rumbo.nz;
+      rt.lastDeflection = rumbo.angle;
+      rt.forward = this.slewForward(rt, rumbo.d.x, rumbo.d.z, delta);
       rt.moving = true;
-      return distXZ(nx, nz, tx, tz) <= reachedDist;
+      return distXZ(rumbo.nx, rumbo.nz, tx, tz) <= reachedDist;
     }
     // Bloqueado en todas las direcciones: soltar el waypoint y pausar la
     // rutina. flee/intervene conservan su modo (updateDanger los gestiona).
     this.giveUpMove(rt);
     return false;
+  }
+
+  /** POR DÓNDE PASA, o `null` si no pasa por ningún rumbo.
+   *
+   *  DOS CRITERIOS, y el segundo es el escape del encajonado (#583). Primero
+   *  gana cualquier rumbo LIBRE, en el orden de siempre. Si no hay ninguno
+   *  —las siete deflexiones agotadas, que es lo que aquí significa «no puede
+   *  rodear»— se acepta el primero que solo tropezaba con una CAJA DE RUNTIME
+   *  y el NPC la atraviesa: dos cosas que el motor pone en el mismo turno
+   *  dejan 1,0 m entre caras y el cuerpo del NPC pide 1,5 (#289,
+   *  `reparto-de-spawns.ts`), así que el cercado no es hipotético y un NPC
+   *  congelado para siempre es peor que uno que cruza un carro.
+   *
+   *  LO QUE NO ABRE EL ESCAPE: la geometría del tile (muros, agua, huellas del
+   *  plan) no se atraviesa nunca, y por eso el impedimento viene con su clase
+   *  en vez de un booleano. Tampoco lo abre el WATCHDOG de atasco: ese salta
+   *  habiendo movimientos legales —ciclos límite, el paseo de ida y vuelta
+   *  junto a un muro—, y atravesar pudiendo rodear es exactamente el defecto
+   *  que #583 arregla, del revés.
+   *
+   *  Y el que ya está DENTRO de una caja no necesita el escape: la penetración
+   *  no creciente de `cajaBloquea` (#601) no le frena ningún paso que le saque,
+   *  así que sale andando por la pasada libre.
+   *
+   *  Se atraviesa DICIÉNDOLO. Un NPC cruzando una caja es el síntoma exacto de
+   *  #583, así que si no queda dicho por qué pasó, el arreglo se lee como el
+   *  defecto. */
+  private rumboDePaso(
+    rt: NpcRuntime,
+    angles: readonly number[],
+    dir: { x: number; z: number },
+    px: number,
+    pz: number,
+    step: number,
+  ): { angle: number; d: { x: number; z: number }; nx: number; nz: number } | null {
+    let escape: { angle: number; d: { x: number; z: number }; nx: number; nz: number } | null = null;
+    let cajaDelEscape = "";
+    for (const angle of angles) {
+      const d = angle === 0 ? dir : rotate(dir, angle);
+      const nx = px + d.x * step;
+      const nz = pz + d.z * step;
+      const impedimento = this.world.queImpideElPaso(px, pz, nx, nz, NPC_RADIUS_M);
+      if (impedimento === null) return { angle, d, nx, nz };
+      // El primero que solo tropieza con una caja queda de suplente: si
+      // ninguno sale libre, es por donde se escapa. Recorrer una vez y
+      // recordarlo da el mismo rumbo que dos pasadas y la mitad de consultas.
+      if (impedimento.de === "caja" && escape === null) {
+        escape = { angle, d, nx, nz };
+        cajaDelEscape = impedimento.id;
+      }
+    }
+    if (escape) {
+      this.warnOnce(
+        `${rt.record.id}:atraviesa:${cajaDelEscape}`,
+        `"${rt.record.id}" no tiene por dónde rodear "${cajaDelEscape}" (7 deflexiones ` +
+          `bloqueadas) y la ATRAVIESA — el hueco que le dejaron no admite su cuerpo`,
+      );
+      return escape;
+    }
+    return null;
   }
 
   /** Rendición del steering (bloqueo total o watchdog): soltar waypoint y

@@ -11,18 +11,36 @@
  *     DECLARADOS, así que en un tile cuyo pueblo se derivaba del esquema los
  *     NPCs se metían dentro de las casas.
  *
- *  Lazy + caché por sceneId: nada revisa un plan ya emitido, así que la caché
- *  no se invalida. Un grid inconsistente degrada ese tile a "sin esa fuente"
- *  con warning (mismo patrón que el cliente), nunca tumba el tick.
+ *  3. LAS CAJAS DE LOS SPAWNS DE RUNTIME (#583): lo que el motor pone a mitad
+ *     de partida, que no está en el plan de ningún tile. Fuente y geometría en
+ *     `src/simulation/cajas-de-runtime.ts`, la misma `cajaBloquea` con la que
+ *     se para el jugador.
  *
- *  LO QUE NO ENTRA AQUÍ, y no es una divergencia de proceso: la frontera del
- *  plano y las cajas de los objetos sin volumen son del JUGADOR. Desde la PR 5
- *  de #241 son funciones de core (`src/simulation/obstaculos-del-jugador.ts`),
- *  no código del cliente, y este proveedor no las llama A PROPÓSITO — un NPC no
- *  se frena en el borde del mundo conocido (su tile existe: es donde vive) ni
- *  necesita la caja ciega de lo que el plan ya le pone delante. Hasta ese día
- *  aquí se leía «divergencia intencional con el cliente», que describía dónde
- *  vivía el código y no qué decide cada uno. */
+ *  Lazy + caché por sceneId para (1) y (2): nada revisa un plan ya emitido,
+ *  así que la caché no se invalida. Un grid inconsistente degrada ese tile a
+ *  "sin esa fuente" con warning (mismo patrón que el cliente), nunca tumba el
+ *  tick. Las cajas de (3) NO entran en esa caché y no tienen otra: aparecen a
+ *  mitad de partida, que es justo cuando una caché por escena miente, así que
+ *  se derivan en cada consulta. EL COSTE, medido (Ryzen 7 5800X, Node 22) por
+ *  las 1.400 consultas que gasta un segundo de juego —7 deflexiones × 10 NPCs
+ *  × 20 tick/s— y en el hilo del bridge: 1,6 ms sin spawns, 5,0 ms con 50 en
+ *  el ledger, 18,4 ms con 200 y 62,2 ms con 600 (dos de cada tres, cajas).
+ *  Doscientas entities que vengan del TILE cuestan 0,9 ms: lo que no pasó el
+ *  filtro de `spawn_reason` no llega a construirse. Es LINEAL y sin tope, que
+ *  es lo que hay que mirar el día que una partida larga acumule millares: el
+ *  sitio donde se arregla es el ledger, no una caché aquí — una caché sobre
+ *  esto vuelve a tener el problema que este diseño evita.
+ *
+ *  LO QUE NO ENTRA AQUÍ, y no es una divergencia de proceso: la FRONTERA del
+ *  plano, que es del JUGADOR. Un NPC no se frena en el borde del mundo
+ *  conocido — su tile existe: es donde vive.
+ *
+ *  Hasta #583 esa exclusión decía también «ni necesita la caja ciega de lo que
+ *  el plan ya le pone delante», y era cierta para las cajas DEL TILE y callaba
+ *  sobre las de runtime, que no están en el plan de nadie: una justificación
+ *  escrita sobre un caso y dejada cubriendo dos. Lo que sigue en pie es que la
+ *  caja de una entity del tile NO se aplica aquí (la aplica su volumen
+ *  derivado, con sus vanos); lo que entró es la de lo que el motor spawnea. */
 
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import { createTerrainCollider, type TerrainCollider } from "../src/scene/terrain-collision.js";
@@ -34,9 +52,28 @@ import {
   type Volume,
 } from "../src/scene/blueprint/index.js";
 import type { TilePlan } from "../src/scene/tile-plan.js";
+import {
+  cajaQueBloquea,
+  cajaQueContiene,
+  cajasDeRuntime,
+  type Impedimento,
+} from "../src/simulation/cajas-de-runtime.js";
 import { tileKey, tileWorldRect, worldToTile, type WorldRect } from "../src/scene/tile.js";
 
 export interface SimCollisionProvider {
+  /** QUÉ impide este paso, no solo si algo lo impide: el escape del
+   *  encajonado (#583) solo puede abrirse sobre una caja de runtime. */
+  queImpideElPaso(
+    fromX: number,
+    fromZ: number,
+    toX: number,
+    toZ: number,
+    radius: number,
+  ): Impedimento;
+  /** El mismo veredicto colapsado a un sí/no. Producción pregunta por
+   *  `queImpideElPaso` desde #583 —el sim necesita saber QUÉ le frena—; esto
+   *  se queda para quien solo quiera comparar este proveedor con el collider
+   *  del cliente, que contesta booleanos (`test/plan-collision.test.ts`). */
   blocksMove(fromX: number, fromZ: number, toX: number, toZ: number, radius: number): boolean;
   blocksCircle(x: number, z: number, radius: number): boolean;
 }
@@ -117,14 +154,38 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
     return [...keys];
   }
 
-  return {
-    blocksMove(fromX, fromZ, toX, toZ, radius): boolean {
-      for (const key of touchedKeys(toX, toZ, radius)) {
-        for (const tc of collidersFor(key)) {
-          if (tc.blocksMove(fromX, fromZ, toX, toZ, radius)) return true;
-        }
+  /** La geometría DURA: terreno y plan del tile. Es la que nadie atraviesa. */
+  function tileBloqueaElPaso(
+    fromX: number,
+    fromZ: number,
+    toX: number,
+    toZ: number,
+    radius: number,
+  ): boolean {
+    for (const key of touchedKeys(toX, toZ, radius)) {
+      for (const tc of collidersFor(key)) {
+        if (tc.blocksMove(fromX, fromZ, toX, toZ, radius)) return true;
       }
-      return false;
+    }
+    return false;
+  }
+
+  const provider: SimCollisionProvider = {
+    // El TILE primero y la caja después, y el orden es la regla: quien lee
+    // esto para decidir si atraviesa solo puede atravesar cajas, así que un
+    // paso que además choca con un muro tiene que salir como "tile".
+    queImpideElPaso(fromX, fromZ, toX, toZ, radius): Impedimento {
+      if (tileBloqueaElPaso(fromX, fromZ, toX, toZ, radius)) return { de: "tile" };
+      const caja = cajaQueBloquea(
+        { x: fromX, z: fromZ },
+        { x: toX, z: toZ },
+        radius,
+        cajasDeRuntime(narrative.entities),
+      );
+      return caja ? { de: "caja", id: caja.id } : null;
+    },
+    blocksMove(fromX, fromZ, toX, toZ, radius): boolean {
+      return provider.queImpideElPaso(fromX, fromZ, toX, toZ, radius) !== null;
     },
     blocksCircle(x, z, radius): boolean {
       for (const key of touchedKeys(x, z, radius)) {
@@ -132,7 +193,8 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
           if (tc.blocksCircle(x, z, radius)) return true;
         }
       }
-      return false;
+      return cajaQueContiene(x, z, radius, cajasDeRuntime(narrative.entities)) !== null;
     },
   };
+  return provider;
 }

@@ -210,8 +210,17 @@ que su caja es lo único que hay y se aplica siempre. Su huella la deriva
 `huellaEnMetros` de la MISMA tabla de celdas que la de una entity de escena.
 Hasta el 2026-09-07 la pregunta era solo la del tile y, como todo tile del motor
 tiene la colisión del plan desde que llega, apagaba TODAS las cajas: los spawns
-no eran sólidos (#489). El sim de NPCs no usa ninguna de las dos a propósito
-(`bridge/sim-collision.ts`).
+no eran sólidos (#489).
+
+**El sim de NPCs comparte esa geometría desde #583**, pero solo la mitad que le
+toca: las cajas de los SPAWNS DE RUNTIME (`src/simulation/cajas-de-runtime.ts`,
+con la misma `cajaBloquea` — no hay una segunda), nunca la FRONTERA del plano
+(un NPC no se frena en el borde del mundo conocido: su tile existe, es donde
+vive) ni la caja de lo que DECLARA un tile (responde por él su volumen
+derivado, con sus vanos). Y con una regla de más que el jugador no tiene:
+agotadas las siete deflexiones del steering, el NPC atraviesa la caja y lo dice
+en la traza — un NPC congelado para siempre en un hueco de 1,0 m es peor que
+uno que cruza un carro (`npc-behavior.ts`).
 
 **PROHIBIDO recortar una imagen generada con siluetas DECLARADAS.** Se probó y
 NO funciona: el modelo de imagen recoloca y reorienta lo declarado, la máscara
