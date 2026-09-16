@@ -59,9 +59,9 @@ const NPC = "barkeep";
  *  una sin la otra tiene que ponerse rojo — el bloque 4 afirma las dos. */
 const MARCA_DOS_LINEAS = "DOS LINEAS SEGUIDAS";
 const SEGUNDA_LINEA = "(bench bis)";
-/** Y la que hace que el motor falso conteste 500 a esa elección
+/** Y la que hace que el motor falso corte la conexión al recibir esa elección
  *  (`MARCA_MOTOR_CAIDO`), que es como se llega al muro de fallo del bloque 5. */
-const MARCA_MOTOR_CAIDO = "MOTOR CAIDO";
+const MARCA_MOTOR_CAIDO = "CONEXION INTERRUMPIDA";
 
 async function frames(ctx, n) {
   const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
@@ -339,8 +339,8 @@ export default async function (ctx) {
   await hablar(ctx);
   await panelPintado(ctx);
   await cronologia();
-  // El motor se cae CONTESTANDO, y lo pide el jugador con su propio texto: el
-  // 500 lo sirve el motor falso ante la marca (`MARCA_MOTOR_CAIDO`) y el bridge
+  // El motor corta la CONEXIÓN, y lo pide el jugador con su propio texto: el
+  // socket lo cierra el motor falso ante la marca (`MARCA_MOTOR_CAIDO`) y el bridge
   // lo traduce a `narrative_status: error` kind `consequences`. No se toca
   // ningún proceso, y el fallo recorre la cadena entera —que es lo que
   // `page.route` NO podía hacer: `/report_player_choice` lo llama el BRIDGE, no
@@ -366,11 +366,14 @@ export default async function (ctx) {
         locked: document.getElementById("game-ui")?.dataset.locked ?? null,
         alcanzable: arriba === boton || boton.contains(arriba),
         titulo: document.getElementById("narrative-loader-title")?.textContent ?? "",
+        detalle: document.getElementById("narrative-loader-detail")?.textContent ?? "",
       };
     },
     60_000,
   );
   ctx.log(`muro de fallo: ${JSON.stringify(muro)}`);
+  ctx.expect("el motor caído se anuncia sin fingir una respuesta rechazada (#481)",
+    muro.titulo === "El motor narrativo no responde" && muro.detalle.includes("no responde"), JSON.stringify(muro));
   ctx.expect(
     "con el muro de fallo en pantalla, el ratón ya NO está capturado: hay cursor con el que pulsar (#503)",
     muro.lock === false && muro.locked === "false",

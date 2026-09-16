@@ -634,6 +634,11 @@ const server = http.createServer((req, res) => {
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         const speaker = String(body.speaker || "Aldeano");
         fakeDialogueTurn += 1;
+        // #481: pérdida de conexión real, distinta de una respuesta HTTP 500.
+        if (String(body.free_text ?? "").includes("CONEXION INTERRUMPIDA")) {
+          res.destroy();
+          return;
+        }
         // El motor se cae contestando, a petición del jugador (ver la marca).
         if (String(body.free_text ?? "").includes(MARCA_MOTOR_CAIDO)) {
           return send(500, { detail: "el motor se cayó contestando (simulado por el banco)" });
