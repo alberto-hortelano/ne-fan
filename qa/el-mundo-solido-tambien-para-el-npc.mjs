@@ -10,9 +10,9 @@
  *  NO ABRE NAVEGADOR y no gasta un céntimo: el defecto vive en el SERVIDOR —el
  *  sim mueve a los NPCs en el bridge—, así que lo que se conduce es el camino
  *  real del sim, con el MISMO cableado que `bridge/context.ts`
- *  (`createSimCollisionProvider` → `queImpideElPaso`/`blocksCircle` →
- *  `createAmbientNpcBehavior`). Lee `nefan-core/dist`, o sea lo compilado, no
- *  una reimplementación.
+ *  (`createSimCollisionProvider` + `createSessionNpcBehavior`, el adapter de
+ *  PRODUCCIÓN y no uno escrito aquí — ver `simDeLaSesion`). Lee
+ *  `nefan-core/dist`, o sea lo compilado, no una reimplementación.
  *
  *  LO QUE AFIRMA (rojo si falla): las cinco reglas que la PR promete.
  *    1. control — sin caja el aldeano cruza y llega (si no, lo demás no mide);
@@ -45,8 +45,7 @@ import { NarrativeState } from "../nefan-core/dist/src/narrative/narrative-state
 import { MemorySessionStorage } from "../nefan-core/dist/src/narrative/session-storage.js";
 import { expandScenePrimitives } from "../nefan-core/dist/src/scene/scene-expand.js";
 import { createSimCollisionProvider } from "../nefan-core/dist/bridge/sim-collision.js";
-import { createAmbientNpcBehavior } from "../nefan-core/dist/src/simulation/npc-behavior.js";
-import { SeededRng } from "../nefan-core/dist/src/rng.js";
+import { createSessionNpcBehavior } from "../nefan-core/dist/bridge/context.js";
 
 const TICK = 1 / 60;          // el sim avanza UN tick por frame del cliente
 const RADIO_NPC = 0.5;
@@ -89,21 +88,41 @@ function elMotorPone(s, id, x, z, celdas, kind = "object") {
   );
 }
 
+/** LA META, como un PLACE de verdad del mapa del mundo, porque el adapter real
+ *  la resuelve con `resolvePlaceTarget` y no con un `if` del guion. `anchor.rect`
+ *  es `[col, row, w, h]` en celdas del tile (0,0): mundo = −32 + (col + w/2)·0,5. */
+function laPlaza(s, meta) {
+  s.worldMap.upsertPlace({
+    id: "plaza", kind: "landmark", parent_id: null, name: "la plaza",
+    anchor: { tx: 0, ty: 0, rect: [(meta.x + 32) / 0.5, (meta.z + 32) / 0.5, 0, 0] },
+  });
+}
+
+/** EL SIM DE LA SESIÓN, montado por PRODUCCIÓN y no por este guion.
+ *
+ *  Aquí se construía el adapter a mano, y eso dejaba fuera justo la costura que
+ *  más barata es de romper: las cinco líneas de `createSessionNpcBehavior` que
+ *  atan el proveedor de colisión al sistema de NPCs. Medido por QA en la 2ª
+ *  pasada de #583 — cambiar `queImpideElPaso: (…) => ctx.simCollision…` por
+ *  `() => null` en `bridge/context.ts` deja **2891 de 2891 tests en verde** con
+ *  el defecto entero puesto, y lo mismo con `porDondeSalirDeAqui`. O sea: las
+ *  dos mitades tienen candado y el cable entre ellas no tenía ninguno.
+ *
+ *  El `ctx` va con pato y no con tipo —esto es `.mjs`— y es a propósito: lo
+ *  único que `createSessionNpcBehavior` lee es `narrative` y `simCollision`. Si
+ *  algún día lee más, esto rompe en ejecución con su `TypeError`, que es la
+ *  respuesta correcta. */
+function simDeLaSesion(s, meta) {
+  laPlaza(s, meta);
+  const provider = createSimCollisionProvider(s);
+  return { provider, sys: createSessionNpcBehavior({ narrative: s, simCollision: provider }, undefined) };
+}
+
 /** Un aldeano con una meta fija, movido por el sim REAL. Devuelve la traza que
  *  hace falta para juzgar: hasta dónde llegó, cuánto se metió en la caja que
  *  se le señale, y los avisos del escape que soltó por el camino. */
 function aldeanoVaA(s, { desde, meta, segundos, caja = null }) {
-  const provider = createSimCollisionProvider(s);
-  const sys = createAmbientNpcBehavior({
-    rng: new SeededRng(31),
-    world: {
-      queImpideElPaso: (fx, fz, tx, tz, r) => provider.queImpideElPaso(fx, fz, tx, tz, r),
-      porDondeSalirDeAqui: (x, z, r) => provider.porDondeSalirDeAqui(x, z, r),
-      blocksCircle: (x, z, r) => provider.blocksCircle(x, z, r),
-      resolvePlaceTarget: (id) => (id === "plaza" ? meta : null),
-      getEntityPosition: () => null,
-    },
-  });
+  const { sys } = simDeLaSesion(s, meta);
   sys.addNpc({
     id: "aldeano", type: "npc", scene_id: "tile_0_0",
     spawned_at: "2026-01-01T00:00:00.000Z",
@@ -185,17 +204,7 @@ console.log("\n6 · AL QUE LE CAE UNA CAJA ENCIMA SE LE SACA (sistema, no consul
 // #583 H-2 —290 s de 300 dentro del carro— y hoy es aserto: la consulta nunca
 // le frenó, es que nadie le empujaba hacia fuera.
 const sDentro = tile();
-const provD = createSimCollisionProvider(sDentro);
-const sysD = createAmbientNpcBehavior({
-  rng: new SeededRng(31),
-  world: {
-    queImpideElPaso: (fx, fz, tx, tz, r) => provD.queImpideElPaso(fx, fz, tx, tz, r),
-    porDondeSalirDeAqui: (x, z, r) => provD.porDondeSalirDeAqui(x, z, r),
-    blocksCircle: (x, z, r) => provD.blocksCircle(x, z, r),
-    resolvePlaceTarget: (id) => (id === "plaza" ? { x: 14, z: 0 } : null),
-    getEntityPosition: () => null,
-  },
-});
+const { sys: sysD } = simDeLaSesion(sDentro, { x: 14, z: 0 });
 sysD.addNpc({
   id: "aldeano", type: "npc", scene_id: "tile_0_0", spawned_at: "2026-01-01T00:00:00.000Z",
   spawn_reason: "scene_init", spawn_event_id: "", position: [-12, 0, 0],
@@ -260,6 +269,38 @@ hallazgo(`el MISMO obstáculo de 6 m, mismo centro (${CENTRO}, ${CENTRO}) y 300 
   `IGUAL lo ponga quien lo ponga: del TILE → x máx ${delTile.xMax.toFixed(2)}; de RUNTIME → x máx ` +
   `${deRuntime.xMax.toFixed(2)}. Ninguna de las dos se rodea, y por eso esto es el steering (TODO(A*)) ` +
   `y no la frontera que abre #583`);
+
+// El que NO va a ningún sitio: `porDondeSalirDeAqui` vive dentro de
+// `stepTowards`, o sea que solo saca a quien ya estaba andando. Al que pasea
+// (micro-wander) le saca igual… mientras su elector de waypoints le deje elegir
+// uno: `randomWaypoint` sortea 8 puntos dentro de `wander_radius` y descarta
+// los que `blocksCircle` dé por ocupados, y desde #583 una caja de runtime los
+// ocupa. Con una caja más ancha que ese radio, los ocho caen dentro y el
+// campesino se queda quieto en vez de pasear.
+{
+  const sQuieto = tile();
+  elMotorPone(sQuieto, "granero", 0, 0, 20, "building");   // 10 m de lado
+  const { sys } = simDeLaSesion(sQuieto, { x: 14, z: 0 });
+  sys.addNpc({
+    id: "aldeano", type: "npc", scene_id: "tile_0_0", spawned_at: "2026-01-01T00:00:00.000Z",
+    spawn_reason: "scene_init", spawn_event_id: "", position: [0, 0, 0],
+    data: { role: "peasant" }, asset_refs: [],   // sin directiva: solo pasea
+  });
+  const ctx = { playerPos: { x: 1000, y: 0, z: 1000 }, combatEvents: [], combatantPositions: new Map() };
+  const warn = console.warn; console.warn = () => {};
+  let dMax = 0;
+  try {
+    for (let i = 0; i < 120 / TICK; i++) {
+      sys.tick(TICK, ctx);
+      const st = sys.states()[0];
+      dMax = Math.max(dMax, Math.hypot(st.pos.x, st.pos.z));
+    }
+  } finally { console.warn = warn; }
+  hallazgo(`al que NO va a ningún sitio la salida no le alcanza si la caja es más ancha que su paseo: ` +
+    `campesino (wander_radius 5 m) con un granero de 10 m encima → alejamiento máximo ${dMax.toFixed(2)} m ` +
+    `en 120 s (antes de #583 paseaba 4,5 m, también sin salir del granero). El umbral medido es ` +
+    `«media huella + radio > wander_radius»: con 8 m sale y con 10 no`);
+}
 
 console.log(`\n${rojos === 0 ? "✔ los seis bloques en verde" : `✖ ${rojos} aserto(s) en rojo`}`);
 process.exit(rojos === 0 ? 0 : 1);
