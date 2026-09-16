@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { NarrativeState } from "../src/narrative/narrative-state.js";
+import { registerSceneNpcs } from "../src/narrative/npc-records.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { SCHEMA_VERSION } from "../src/narrative/types.js";
 import { LLM_ENTITIES_MAX, LLM_STORY_MAX_CHARS } from "../src/narrative/serialize-llm.js";
@@ -10,6 +11,55 @@ import { escenaExpandidaDePrueba, makeNarrativeState, mundoDePrueba } from "./he
 function makeState() {
   return makeNarrativeState().narrative;
 }
+
+describe("registro directo de NPCs Format D", () => {
+  it("rechaza datos incompletos antes de alterar los personajes vivos", () => {
+    const s = makeState();
+    s.startNewSession("toledo_1200");
+    const valido = { kind: "npc", id: "guardia", name: "Guardia", cell: [2, 3] };
+    registerSceneNpcs(s, "s1", escenaExpandidaDePrueba("s1", { entities: [valido] }));
+    const antes = structuredClone(s.entities);
+    for (const [cambio, motivo] of [
+      [{ id: undefined }, /missing string id/],
+      [{ id: "" }, /missing string id/],
+      [{ name: undefined }, /missing string name/],
+      [{ name: "" }, /missing string name/],
+      [{ cell: undefined }, /missing cell/],
+      [{ cell: [1] }, /missing cell/],
+      [{ cell: [NaN, 1] }, /finite numbers/],
+      [{ cell: [1, Infinity] }, /finite numbers/],
+      [{ cell: ["1", 1] }, /finite numbers/],
+      [{ cell: [1, "1"] }, /finite numbers/],
+    ] as const) {
+      assert.throws(() => registerSceneNpcs(s, "s1", escenaExpandidaDePrueba("s1", {
+        entities: [{ ...valido, ...cambio }],
+      })), motivo);
+      assert.deepEqual(s.entities, antes);
+    }
+  });
+
+  it("solo registra NPCs y conserva identidad visual y comportamiento", () => {
+    const s = makeState();
+    s.startNewSession("toledo_1200");
+    registerSceneNpcs(s, "s1", escenaExpandidaDePrueba("s1", {
+      entities: [null, 1, { kind: "prop" }, {
+        kind: "npc", id: "guardia", name: "Guardia", cell: [2, 3], footprint: [2, 2],
+        role: "guard", description: "Armadura azul", style_ref: "guardia_azul", behavior: { speed: 2 },
+      }],
+    }));
+    assert.equal(s.entities.length, 1);
+    assert.deepEqual(s.entities[0].data, {
+      name: "Guardia", role: "guard", description: "Armadura azul", style_ref: "guardia_azul", behavior: { speed: 2 },
+    });
+    const posicion = s.entities[0].position;
+    registerSceneNpcs(s, "s1", escenaExpandidaDePrueba("s1", { entities: [{
+      kind: "npc", id: "guardia", name: "Capitana", cell: [7, 8],
+    }] }));
+    assert.deepEqual(s.entities[0].position, posicion, "retransmitir no teletransporta al personaje");
+    assert.equal(s.entities[0].data.name, "Capitana");
+    assert.equal(s.entities[0].data.style_ref, "guardia_azul");
+  });
+});
 
 describe("las puertas del save (#334, #336)", () => {
   it("recordSceneLoaded rechaza una escena que viola el contrato, nombrando entity y campo", () => {
