@@ -1021,7 +1021,7 @@ export class FpsGl {
     return { origin: { x: o.x, y: o.y, z: o.z }, dir: { x: d.x, y: d.y, z: d.z } };
   }
 
-  /** Punto de MUNDO → píxeles CSS, o null fuera del encuadre.
+  /** Punto de MUNDO → píxeles CSS, o null detrás del plano cercano.
    *  Es lo que permite colgar las etiquetas de nombre en DOM sobre la cabeza
    *  del NPC sin re-implementar el tema del pack en un atlas de fuente. */
   projectToScreen(x: number, y: number, z: number): { x: number; y: number; depthM: number } | null {
@@ -1030,7 +1030,7 @@ export class FpsGl {
     // La cámara mira −z: detrás del plano cercano la proyección se espeja.
     if (view.z > -this.cam.near) return null;
     const ndc = this.projNdc.set(x, y, z).project(this.cam);
-    if (Math.abs(ndc.x) > 1 || Math.abs(ndc.y) > 1) return null;
+    // Conserva puntos fuera del viewport: el telegraph necesita ambos extremos.
     const w = this.canvas.clientWidth || this.canvas.width;
     const h = this.canvas.clientHeight || this.canvas.height;
     return { x: (ndc.x * 0.5 + 0.5) * w, y: (-ndc.y * 0.5 + 0.5) * h, depthM: -view.z };

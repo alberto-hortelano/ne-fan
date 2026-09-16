@@ -260,7 +260,9 @@ el checker cuenta que cada puerta sea UNA llamada dentro de esa función: la
 segunda en el mismo fichero salta, y una puerta que deja de llamar es una
 exención sin sujeto).
 
-Los rótulos proyectados fuera del encuadre se retiran del DOM y vuelven al
+El recorte pertenece a `WorldLabels`: la proyección del renderer conserva
+coordenadas fuera del viewport para medir los dos extremos del telegraph
+(guiones 22/23). Los rótulos proyectados fuera del encuadre se retiran del DOM y vuelven al
 mirarlos (#484, guion 138). Al tomar el mundo con una fixture, el cliente
 retira el último frame del mundo anterior y el bridge deja de activar lugares
 de la partida por posición: esa activación repoblaría su vida ambiental.
