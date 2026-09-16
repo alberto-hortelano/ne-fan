@@ -83,9 +83,12 @@ Dos mitades, y solo la primera es técnica:
   muere. El issue ofrece tres reglas: el `__player_start` del tile, el último punto seguro, o el
   centro con el enemigo desenganchado. **Es decisión del usuario, no del equipo.**
 
-Ojo, dato caducado en el cuerpo: cita «el guion 93» y hoy el 93 es
-`93-la-velocidad-y-el-alcance-los-dice-el-config.mjs`. Hay que **re-localizar** qué guion mide hoy
-la reaparición antes de citarlo en ningún criterio.
+~~Ojo, dato caducado en el cuerpo: cita «el guion 93» y hoy el 93 es
+`93-la-velocidad-y-el-alcance-los-dice-el-config.mjs`.~~ **CORREGIDO por el crítico el mismo día: el
+dato NO estaba caducado y el error era mío.** Ese 93 es exactamente el que mide la reaparición
+(bloque 4), documenta H2 palabra por palabra en su cabecera (`:45-56`) y lo registra en ejecución sin
+afirmarlo (`:432`). Es el único guion del banco que afirma algo sobre reaparición. No hay nada que
+re-localizar: lo escribí mirando el título del fichero en vez de su contenido.
 
 ## Lo que se le pide al crítico
 
