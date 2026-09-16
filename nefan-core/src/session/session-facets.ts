@@ -112,7 +112,10 @@ export interface FacetSinks {
    *  Recibe el id por valor y el cliente lo cablea con `porValor`, como
    *  `mundo` y `dialogo`: olvidar es destructivo. */
   frontera(f: Pick<SessionFacets, "sessionId">): void;
-  /** Registro técnico de esta partida. Se vacía por cambio de id, antes de
+  /** Registro técnico. Por cambio de id retira lo que era de la partida que se
+   *  va y CONSERVA lo de la máquina, que sigue siendo cierto sin ella (el clon
+   *  sin hojas de personaje, el pack de estilo que no casa): de quién es cada
+   *  entrada lo dice `session/pertenencia-del-registro.ts`. Corre antes de
    *  aplicar facetas que puedan registrar errores nuevos; no resuelve avisos. */
   errores(f: Pick<SessionFacets, "sessionId">): void;
   /** Estilo visual → generadores de imagen (atlas de superficies, skins). */

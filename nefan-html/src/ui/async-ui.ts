@@ -11,6 +11,8 @@
  *  `paso()` es ese mismo idioma con el canal puesto. El candado
  *  `html-sin-promesa-muda` de `arch-rules.json` impide que vuelva el `void`
  *  pelado. */
+import type { FuenteDeError } from "@nefan-core/src/session/pertenencia-del-registro.js";
+
 import { dlog } from "../dev/debug-log.js";
 import { errors } from "./error-log.js";
 
@@ -40,14 +42,16 @@ let yaSeAvisoDeUnNavegadorSinPromesa = false;
  *
  *  @param promesa  la promesa a descartar, o `undefined` si este navegador no
  *                  la devuelve.
- *  @param fuente  etiqueta del error-log ("title", "scene", "session"…).
+ *  @param fuente  etiqueta del error-log ("title", "scene", "session"…). De
+ *                 ella sale si lo registrado se va con la partida o si sigue
+ *                 siendo cierto después (`session/pertenencia-del-registro.ts`).
  *  @param que     qué se estaba intentando, en español y para quien juega.
  *  @param alFallar  qué deshacer en la pantalla (devolver un botón a su
  *                   sitio, enseñar el motivo). Se llama DESPUÉS de registrar,
  *                   para que un fallo pintando no se coma la entrada del log. */
 export function paso(
   promesa: Promise<unknown> | undefined,
-  fuente: string,
+  fuente: FuenteDeError,
   que: string,
   alFallar?: (err: unknown) => void,
 ): void {

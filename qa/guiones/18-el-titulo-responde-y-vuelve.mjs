@@ -201,9 +201,15 @@ export default async function (ctx) {
       !/session_not_found/.test(trasElFallo.texto),
     trasElFallo.texto,
   );
+  // FUENTE `arranque` DESDE LA TANDA F (2026-09-16), y no es un cambio de gusto:
+  // `session` era de la PARTIDA y de EL INTENTO DE ARRANCAR a la vez, y el
+  // registro no podía retirar una cosa sin llevarse la otra. Este `push` —el
+  // `catch` de `unIntentoDeArrancar`, `main.ts`— es el diagnóstico de por qué
+  // estás de vuelta en el título, o sea de la MÁQUINA: sigue siendo cierto
+  // cuando empieces otra partida. El `message` no ha cambiado.
   ctx.expect(
-    "…y queda registrado en el log de errores con la fuente `session`",
-    trasElFallo.registro.some((e) => e.fuente === "session"),
+    "…y queda registrado en el log de errores con la fuente `arranque`",
+    trasElFallo.registro.some((e) => e.fuente === "arranque"),
     JSON.stringify(trasElFallo.registro.slice(0, 3)),
   );
 

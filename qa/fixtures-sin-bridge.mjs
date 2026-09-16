@@ -70,8 +70,9 @@ async function waitPort(port, ms) {
  *  nombre del proceso, el esquema del socket y los milisegundos del timeout. */
 const JERGA = /bridge|ws:\/\/|\d+\s*ms\b/i;
 
-/** Espera a que el bootstrap haya fallado —por ESTADO: la entrada `session`
- *  «bootstrap failed» que deja el `catch` de `main.ts`, no 5 s de reloj— y
+/** Espera a que el bootstrap haya fallado —por ESTADO: la entrada `arranque`
+ *  («session» hasta la tanda F) «bootstrap failed» que deja el `catch` de
+ *  `main.ts`, no 5 s de reloj— y
  *  afirma las dos mitades de #469 + #341:
  *
  *  - El MURO es uno, en el idioma del jugador: titular «Sin conexión con la
@@ -90,7 +91,7 @@ async function unMuroYElRegistroConLaUrl(page, ctx, fallos, etiqueta) {
     () =>
       [...document.querySelectorAll(".error-log__entry")].some(
         (e) =>
-          (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "session" &&
+          (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "arranque" &&
           (e.querySelector(".error-log__msg")?.textContent ?? "").includes("bootstrap failed"),
       ),
     20000,

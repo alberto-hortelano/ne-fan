@@ -166,9 +166,9 @@ const session = createClientSession({
   // y solo ocurre cuando el id de sesión CAMBIA.
   mundo: porValor(() => resetWorld()),
   // La frontera olvida con el mundo lo pedido en la partida anterior (#517).
-  // El registro técnico empieza limpio para el nuevo id (#497).
+  // El registro retira lo de la partida y conserva lo de la máquina (#497).
   frontera: porValor(() => frontier.olvidarLaPartida()),
-  errores: porValor(() => errors.clear()),
+  errores: porValor(() => errors.olvidarLaPartida()),
   style: ({ styleId }) => applySessionStyle(styleId),
   theme: ({ uiTheme }) => applyUiTheme(uiTheme),
   renderModes: (f) => graficos.aplicar(f),
@@ -1139,7 +1139,7 @@ async function bootstrap(): Promise<void> {
     // muro es del único pintor (`ui/muro-de-carga.ts`); así el jugador ve UN
     // muro por esa causa, en su idioma (#469). El visor ya pinta mientras se
     // espera la conexión: elegir una fixture no espera este timeout (#480).
-    errors.push("session", "bootstrap failed", err);
+    errors.push("arranque", "bootstrap failed", err);
     chip(false);
     // Y la vía de vuelta, que hasta #478 no existía: si el bridge llega
     // DESPUÉS, se entra por un botón y no recargando. Ni un literal de
@@ -1165,7 +1165,7 @@ async function entrarPorElTitulo(): Promise<void> {
     // Solo relanza `unIntentoDeArrancar` cuando el propio título no se puede
     // pintar, y ese camino ya dejó su muro puesto («No se pudo mostrar la
     // pantalla de título»): aquí solo se registra, un muro por causa (#469).
-    errors.push("session", "bootstrap failed", err);
+    errors.push("arranque", "bootstrap failed", err);
   }
 }
 
@@ -1236,7 +1236,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       "No se pudo mostrar la pantalla de título",
       (err as Error).message,
     );
-    errors.push("session", "title-screen failed", err);
+    errors.push("title", "title-screen failed", err);
     throw err;
   }
 
@@ -1343,7 +1343,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
       if (underResume && underResume.key !== mundo.tileActivo) setActiveClientTile(underResume.key);
     }
   } catch (err) {
-    errors.push("session", "session start/resume failed", err);
+    errors.push("arranque", "session start/resume failed", err);
     // El error va AL TÍTULO, no al loader: el título tiene z-index 9999 y el
     // loader 70, así que un título de vuelta escondería el error debajo y el
     // jugador volvería a la pantalla inicial sin saber por qué.

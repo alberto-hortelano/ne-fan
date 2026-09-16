@@ -591,6 +591,17 @@
       "porque": "El estado de sesión del CLIENTE como un solo valor: entrar en una partida y volver al título recorren el MISMO `apply`, «sin partida» es un valor del mismo tipo (`NO_SESSION`), y `porValor` envuelve los sinks destructivos (vaciar el mundo, cerrar la conversación) con la promesa del módulo hecha código: aplicar solo cuando el id de sesión CAMBIA, arrancando en el neutro. Módulo propio con batería de un fichero porque es el único test que lo importa (el cliente lo usa desde nefan-html, que no entra en la mutación de core). Suelo 100 porque es todo o nada: sus mutantes interesantes son EXACTAMENTE los bugs que el módulo existe para hacer inexpresables —quitar la llamada a un sink dentro de `apply` o cambiar un neutro de `NO_SESSION` es #249 (el catch del bucle del título deshacía una de las cinco cosas que ponía el éxito y el gate del gasto se quedaba armado); quitar la guarda de `porValor`, no recordar el id o recordar el primero en vez del último es el sink que vacía el mundo sin mirar—. El suelo se fijó a la medida de la corrida 33990281788 (2026-09-05: 35 mutantes, 0 vivos, huella con base); con `porValor` son 41 mutantes y 0 vivos en `npm run mutacion -- local session-facets` (2026-09-06), pendientes de la siguiente corrida autorizada para entrar en la huella."
     },
     {
+      "id": "pertenencia-del-registro",
+      "mutate": [
+        "src/session/pertenencia-del-registro.ts"
+      ],
+      "tests": [
+        "test/pertenencia-del-registro.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "De quién es cada entrada del registro de errores del cliente: de la PARTIDA, que se va con ella, o de la MÁQUINA, que sigue siendo cierta después. Nace en la tanda F (2026-09-16) con la decisión del usuario sobre #497 —«marcar cada entrada y filtrar al pintar»— porque vaciar el registro entero al cambiar de sesión se llevaba por delante dos diagnósticos vivos: el remedio del clon sin hojas de personaje (guion 27) y el aviso de estilo de otro tema de #537 (guion 92). Módulo propio y no dentro de `session-facets` porque su batería es otra y porque el sujeto es otro: la faceta decide CUÁNDO se olvida, esto decide QUÉ. Sus mutantes se notan jugando, y los cuatro que importan son filas de la tabla: mover `sprite` a `partida` borra el remedio que el clon limpio necesita justo cuando acaba de fallar, `arranque` a `partida` devuelve el 92 a su timeout —ese `push` ocurre dentro de `startSession`, antes del `enter` que dispara el olvido—, y `session` o `scene` a `maquina` dejan el registro arrastrando los tiles y los ids de una partida que ya no existe, que es #497 deshecho. Los mata `test/pertenencia-del-registro.test.ts`, que nombra esas cuatro con el guion que las ata; las otras once filas no tienen aserto propio y se dice por qué allí. BREAK «sin medir» y no un suelo: el módulo nace en esta PR y no hay corrida que lo haya visto, así que cualquier número sería inventado — entra en la siguiente autorizada y el suelo se pone a la medida de lo que salga (`npm run mutacion -- pendiente` lo lista con su coste)."
+    },
+    {
       "id": "entrada-en-la-partida",
       "mutate": [
         "src/session/entrada.ts"

@@ -9,9 +9,15 @@
  *
  *  Filosofía: nunca se hace un fallback silencioso. Si algo falla aquí queda
  *  registro y el flujo se interrumpe. */
+import {
+  loQueSobreviveALaPartida,
+  type FuenteDeError,
+} from "@nefan-core/src/session/pertenencia-del-registro.js";
 
 export interface ErrorEntry {
-  source: string;
+  /** Quién lo registró. De aquí sale, en core, si esta entrada se va con la
+   *  partida o si sigue siendo cierta después (`olvidarLaPartida`). */
+  source: FuenteDeError;
   message: string;
   ts: number;
   detail?: string;
@@ -34,7 +40,7 @@ export interface AvisoAlJugador {
   /** La fuente del registro que lo emitió: `bridge`, `sprite`, `render`… Es
    *  también la unidad de RETIRADA: cuando esa fuente demuestra que vuelve a
    *  funcionar, sus avisos se van (`resuelto`). */
-  source: string;
+  source: FuenteDeError;
   /** El titular, en español y para quien juega. */
   titulo: string;
   /** El detalle: el `message` de la entrada del registro, salvo que el emisor
@@ -48,7 +54,7 @@ export interface AvisoAlJugador {
  *  siempre y acaba contradiciendo a la propia pantalla que lo enseña. */
 export type EventoDeAviso =
   | { tipo: "aviso"; aviso: AvisoAlJugador }
-  | { tipo: "resuelto"; source: string };
+  | { tipo: "resuelto"; source: FuenteDeError };
 
 /** Los titulares con los que un fallo llega a la pantalla de quien juega.
  *
@@ -170,14 +176,29 @@ export interface OpcionesDePush {
   detalleAlJugador?: string;
 }
 
-const SOURCE_COLORS: Record<string, string> = {
+/** El color de la etiqueta de cada fuente, TOTAL sobre `FuenteDeError`: una
+ *  fuente nueva no compila sin color. Hasta la tanda F era un `Record<string,
+ *  string>` con ocho claves, una de ellas (`player`) sin un solo emisor, y
+ *  SIETE fuentes vivas cayendo al gris por defecto —`render`, `input`,
+ *  `dev-menu`, `graphics-mode`, `fps-atlas`, `portrait` e `history`, contadas
+ *  hoy sobre el árbol y no heredadas del censo del plan, que decía seis—, o
+ *  sea indistinguibles entre ellas en la columna que existe para
+ *  distinguirlas. */
+const SOURCE_COLORS: Record<FuenteDeError, string> = {
+  arranque: "#e0955c",
   bridge: "#d9a14a",
-  narrative: "#c46a8a",
-  sprite: "#7ac08a",
-  player: "#a08aff",
-  session: "#e36b6b",
-  scene: "#69b6d9",
   config: "#bdbd5e",
+  "dev-menu": "#8f9bb3",
+  "fps-atlas": "#4fa8b8",
+  "graphics-mode": "#b07ccc",
+  history: "#9c8f6e",
+  input: "#7f9fd0",
+  narrative: "#c46a8a",
+  portrait: "#c98fa8",
+  render: "#a08aff",
+  scene: "#69b6d9",
+  session: "#e36b6b",
+  sprite: "#7ac08a",
   title: "#5fc9c0",
 };
 
@@ -227,7 +248,7 @@ export class ErrorLog {
     for (const e of cola) this.entrega(e);
   }
 
-  push(source: string, message: string, err?: unknown, opts?: OpcionesDePush): void {
+  push(source: FuenteDeError, message: string, err?: unknown, opts?: OpcionesDePush): void {
     const ts = Date.now();
     let detail: string | undefined;
     if (err instanceof Error) detail = err.stack ?? err.message;
@@ -265,7 +286,7 @@ export class ErrorLog {
    *  texto. Las fuentes que NO tienen forma de recuperarse (el chunk de
    *  three.js, las hojas base) no lo llaman nunca, y hacen bien: su aviso sigue
    *  siendo cierto hasta que se recargue la página. */
-  resuelto(source: string): void {
+  resuelto(source: FuenteDeError): void {
     if (!this.fuentesConAviso.has(source)) return;
     this.fuentesConAviso.delete(source);
     for (const clave of this.yaAvisados) {
@@ -309,11 +330,20 @@ export class ErrorLog {
     queueMicrotask(() => cb(e));
   }
 
-  /** Vacía el PANEL. No toca `yaAvisados` a propósito: limpiar la lista no
+  /** LA PARTIDA SE VA: se retira lo que era suyo y se queda lo que sigue
+   *  siendo cierto sin ella (`loQueSobreviveALaPartida`, en core).
+   *
+   *  Sustituye al `clear()` de #497, que vaciaba el panel ENTERO, y el nombre
+   *  no es lo único que cambia: mientras «vaciar el registro» fuera
+   *  expresable, alguien se podía olvidar de filtrar. Ahora no hay a quién
+   *  olvidársele. Quién decide qué sobrevive no es este fichero — aquí solo se
+   *  pinta lo que vuelve.
+   *
+   *  No toca `yaAvisados` a propósito, igual que antes: retirar entradas no
    *  arregla lo que se rompió, así que un fallo que sigue ocurriendo no vuelve
-   *  a saltar a la pantalla del jugador por haber barrido el registro. */
-  clear(): void {
-    this.entries = [];
+   *  a saltar a la pantalla del jugador por haber cambiado de partida. */
+  olvidarLaPartida(): void {
+    this.entries = loQueSobreviveALaPartida(this.entries);
     this.render();
   }
 
@@ -339,6 +369,10 @@ export class ErrorLog {
 
   private renderEntry(e: ErrorEntry): string {
     const time = new Date(e.ts).toLocaleTimeString();
+    // El `??` ya no lo alcanza ningún emisor del cliente —la tabla es total—,
+    // pero sigue puesto: un guion de `qa/` o la consola pueden meter una fuente
+    // inventada por `page.evaluate`, y un `undefined` en el `style` dejaría la
+    // etiqueta sin color en vez de en gris.
     const color = SOURCE_COLORS[e.source] ?? "#bbb";
     const detail = e.detail
       ? `<pre class="error-log__detail">${escapeHtml(e.detail)}</pre>`
