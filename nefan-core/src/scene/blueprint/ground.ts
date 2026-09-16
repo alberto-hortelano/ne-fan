@@ -128,7 +128,42 @@ export const GroundFeatureSchema = z
 /** Cap de rasgos de suelo por tile. */
 export const MAX_GROUND_FEATURES = 64;
 
-export const GroundSchema = z.array(GroundFeatureSchema).max(MAX_GROUND_FEATURES);
+/** Presupuesto de mallas planas por tile (#264). Puerto emite 57 y Robledo 14;
+ *  128 permite dos suelos de la complejidad del puerto más 14 piezas. Es un
+ *  presupuesto de geometría, no una promesa de FPS; medida en docs/arquitectura/vistas.md. */
+export const MAX_GROUND_PRIMS = 128;
+/** El builder omite los segmentos degenerados; el contador usa la misma cota. */
+export const MIN_GROUND_SEGMENT_LENGTH = 1e-3;
+
+/** Cuenta antes de construir: juntas + segmentos de paths; una pieza por
+ *  forma plana. Las colinas deforman la malla existente, sin primitivas nuevas. */
+export function groundPrimCount(features: readonly GroundFeature[]): number {
+  let total = 0;
+  for (const f of features) {
+    switch (f.kind) {
+      case "hill": break;
+      case "area": case "water": case "deck": total++; break;
+      case "path":
+        total += f.points.length;
+        for (let i = 1; i < f.points.length; i++) {
+          const [x, z] = f.points[i];
+          const [px, pz] = f.points[i - 1];
+          if (Math.hypot(x - px, z - pz) >= MIN_GROUND_SEGMENT_LENGTH) total++;
+        }
+        break;
+      default: { const imposible: never = f; return imposible; }
+    }
+  }
+  return total;
+}
+
+export const GroundSchema = z.array(GroundFeatureSchema).max(MAX_GROUND_FEATURES).superRefine((features, ctx) => {
+  const prims = groundPrimCount(features);
+  if (prims > MAX_GROUND_PRIMS) ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: `ground genera ${prims} primitivas planas; máximo ${MAX_GROUND_PRIMS} por tile. Reduce el número de caminos o sus puntos: cada camino emite una junta por punto y una caja por segmento no degenerado.`,
+  });
+}).describe(`At most ${MAX_GROUND_PRIMS} flat primitives per tile: a path emits one joint per point and one box per non-degenerate segment; area/water/deck emit one each, hill emits none.`);
 
 export type GroundFeature = z.infer<typeof GroundFeatureSchema>;
 

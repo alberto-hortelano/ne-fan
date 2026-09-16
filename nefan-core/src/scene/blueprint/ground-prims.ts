@@ -13,7 +13,7 @@
  *  son suelo es quien las emite. */
 
 import { PALETTE } from "./palette.js";
-import type { GroundFeature, GroundLayer } from "./ground.js";
+import { MIN_GROUND_SEGMENT_LENGTH, type GroundFeature, type GroundLayer } from "./ground.js";
 import type { GreyboxPrimitive } from "../greybox/common.js";
 
 /** Colores de suelo por material declarado (rasgos `ground`). */
@@ -126,7 +126,7 @@ function pathPrims(
     const [ax, az] = pts[i];
     const [bx, bz] = pts[i + 1];
     const len = Math.hypot(bx - ax, bz - az);
-    if (len < 1e-3) continue;
+    if (len < MIN_GROUND_SEGMENT_LENGTH) continue;
     prims.push({
       shape: "box",
       size: [len, o.layerT, w],

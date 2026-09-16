@@ -87,6 +87,10 @@ play it safe. Credit economy is not your job either: surface descriptions
 join a reusable library, so describe what the scene needs.
 
 1) "ground" — flat ground FEATURES, as typed objects (max 64):
+   The whole tile also has a budget of 128 flat primitives. Each path emits
+   one joint per point plus one box per non-degenerate segment (16 points =
+   31 primitives); area/water/deck emit one each, hill emits none. If preflight
+   reports an excess, reduce paths or their points; no feature is silently cut.
 Common fields: "id" (unique slug), optional "label" (Spanish noun),
 "kind". Coordinates in cells (0..128). Area-like kinds (area/water/deck)
 take EXACTLY ONE shape: "rect": [col,row,w,d] | "polygon": [[c,r],…] (3..32

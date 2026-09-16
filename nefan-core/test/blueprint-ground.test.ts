@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { groundFeaturePrims } from "../src/scene/blueprint/ground-prims.js";
 
-import { parseGround, groundHasWater, type GroundFeature } from "../src/scene/blueprint/ground.js";
+import { parseGround, groundHasWater, groundPrimCount, GroundSchema, MAX_GROUND_PRIMS, type GroundFeature } from "../src/scene/blueprint/ground.js";
 import { groundCollisionGrid } from "../src/scene/blueprint/ground-collision.js";
 import { TILE_CELLS } from "../src/scene/tile.js";
 
@@ -138,5 +140,51 @@ describe("groundCollisionGrid", () => {
     assert.ok(solid.has(grid.grid[5][32]), "río bloquea");
     assert.ok(!solid.has(grid.grid[19][32]), "el vado perfora");
     assert.ok(!solid.has(grid.grid[5][20]), "orilla libre");
+  });
+});
+
+
+describe("presupuesto de primitivas de suelo (#264)", () => {
+  const opciones = { toXZ: (x: number, z: number): [number, number] => [x, z], scale: 1,
+    layers: { area: 0, path: 0, water: 0, deck: 0 }, layerT: 0.01 };
+  const camino = (i: number, n = 16) => ({ id: `c_${i}`, kind: "path", points: Array.from({ length: n }, (_, j) => [j, i]) });
+
+  it("acepta el límite exacto y rechaza una prim más por ambas puertas del contrato", () => {
+    const limite = [...Array.from({ length: 4 }, (_, i) => camino(i)),
+      ...Array.from({ length: 4 }, (_, i) => ({ id: `agua_${i}`, kind: "water", rect: [0, i, 1, 1] }))];
+    const g = features(limite);
+    assert.equal(groundPrimCount(g), MAX_GROUND_PRIMS);
+    assert.equal(groundFeaturePrims(g, opciones).length, MAX_GROUND_PRIMS);
+    const exceso = [...limite, { id: "extra", kind: "deck", rect: [0, 0, 1, 1] }];
+    assert.equal(GroundSchema.safeParse(exceso).success, false, "también falla el preflight de Format D");
+    const r = parseGround(exceso);
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.error, /129 primitivas.*máximo 128.*Reduce/);
+    const anterior = parseGround(Array.from({ length: 64 }, (_, i) => camino(i)));
+    assert.equal(anterior.ok, false);
+    if (!anterior.ok) assert.match(anterior.error, /1984 primitivas/);
+  });
+
+  it("cuenta lo que emite el builder, incluidas formas, colinas y segmentos degenerados", () => {
+    const g = features([
+      { id: "p", kind: "path", points: [[0, 0], [0, 0], [0.0005, 0], [0.0015, 0], [2, 0]] },
+      { id: "a", kind: "area", material: "stone", ellipse: { center: [4, 4], rx: 1, ry: 1 } },
+      { id: "w", kind: "water", polygon: [[0, 0], [1, 0], [1, 1]] },
+      { id: "d", kind: "deck", rect: [1, 1, 2, 2] },
+      { id: "h", kind: "hill", rect: [2, 2, 3, 3], h: 2 },
+    ]);
+    assert.equal(groundPrimCount(g), 10);
+    assert.equal(groundPrimCount(g), groundFeaturePrims(g, opciones).length);
+    assert.equal(groundPrimCount([]), 0);
+  });
+
+  it("las escenas reales medidas caben sin recortar y el contador casa con sus mallas", () => {
+    for (const [nombre, cuenta] of [["puerto_tile", 57], ["robledo_tile", 14]] as const) {
+      const raw = JSON.parse(readFileSync(new URL(`../data/scenes/${nombre}.json`, import.meta.url), "utf8"));
+      const g = features(raw.ground);
+      assert.equal(groundPrimCount(g), cuenta, nombre);
+      assert.equal(groundFeaturePrims(g, opciones).length, cuenta, nombre);
+      assert.ok(cuenta <= MAX_GROUND_PRIMS);
+    }
   });
 });

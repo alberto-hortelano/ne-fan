@@ -38,7 +38,7 @@ import {
   GROUND_STACK_TOP_CELLS,
 } from "../src/scene/blueprint/greybox.js";
 import { groundFeaturePrims } from "../src/scene/blueprint/ground-prims.js";
-import { MAX_GROUND_FEATURES, parseGround } from "../src/scene/blueprint/ground.js";
+import { MAX_GROUND_FEATURES, MAX_GROUND_PRIMS, parseGround } from "../src/scene/blueprint/ground.js";
 import { TILE_MPC } from "../src/scene/tile.js";
 
 /** Prim del tile ya en METROS, tal como sale de `buildFpsTileSpec`. El tipo se
@@ -78,7 +78,7 @@ function maxPuntosDeCamino(): number {
   return max;
 }
 
-/** El peor tile LEGAL: los 64 rasgos que permite el schema, con los caminos al
+/** El peor tile LEGAL: agota el presupuesto de primitivas, con los caminos al
  *  máximo de puntos (los que más prims emiten) y agua + decks, que son las dos
  *  capas más altas. */
 function peorTileLegal(): ReturnType<typeof parseGround> {
@@ -96,7 +96,14 @@ function peorTileLegal(): ReturnType<typeof parseGround> {
   while (rasgos.length < MAX_GROUND_FEATURES) {
     const i = rasgos.length;
     const pts = Array.from({ length: nPts }, (_, j) => [2 + ((i * 3 + j * 5) % 120), 2 + ((j * 9) % 120)]);
-    rasgos.push({ id: `camino_${i}`, kind: "path", points: pts, w: 4, material: "dirt" });
+    const siguiente = { id: `camino_${i}`, kind: "path", points: pts, w: 4, material: "dirt" };
+    if (!parseGround([...rasgos, siguiente]).ok) break;
+    rasgos.push(siguiente);
+  }
+  while (rasgos.length < MAX_GROUND_FEATURES) {
+    const siguiente = { id: `relleno_${rasgos.length}`, kind: "area", rect: [1, 1, 2, 2], material: "stone" };
+    if (!parseGround([...rasgos, siguiente]).ok) break;
+    rasgos.push(siguiente);
   }
   return parseGround(rasgos);
 }
@@ -109,7 +116,7 @@ describe("techo del suelo y cota de los calcos", () => {
     const suelo = rasgosDeSuelo(primsM);
     // Que de verdad sea un caso duro: si el generador dejara de emitir prims,
     // el techo se cumpliría por vacío y esto no comprobaría nada.
-    assert.ok(suelo.length > 500, `el peor tile legal emite muchas prims planas (hay ${suelo.length})`);
+    assert.equal(suelo.length, MAX_GROUND_PRIMS, "el caso duro agota el presupuesto de primitivas, sin pasarlo");
     const alta = Math.max(...suelo.map(caraAltaM));
     assert.ok(
       alta <= GROUND_STACK_TOP_M + 1e-9,

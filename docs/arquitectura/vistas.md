@@ -266,3 +266,22 @@ coordenadas fuera del viewport para medir los dos extremos del telegraph
 mirarlos (#484, guion 138). Al tomar el mundo con una fixture, el cliente
 retira el último frame del mundo anterior y el bridge deja de activar lugares
 de la partida por posición: esa activación repoblaría su vida ambiental.
+
+
+## Presupuesto del suelo (#264)
+
+`GroundSchema` rechaza más de 128 primitivas planas por tile antes de construir
+geometría; lo comparten el preflight de Format D y `parseGround`. El error indica
+la cuenta, el límite y cómo reducir los caminos, sin borrar rasgos en silencio.
+El contador incluye juntas y segmentos no degenerados, una pieza por área/agua/deck,
+y cero por colina (deforma la malla del terreno). El límite de 64 rasgos sigue
+acotando también el trabajo de relieve y colisión.
+
+Medida reproducible del 2026-09-16: `blueprint-ground.test.ts` contrasta el contador
+con el emisor real sobre `puerto_tile` (15 rasgos, 57 primitivas) y `robledo_tile`
+(8 rasgos, 14 primitivas). El mayor plan de fixtures (`varied`) tiene 15. El
+presupuesto de 128 deja dos veces la geometría de suelo del puerto más 14 piezas;
+es margen explícito sobre las escenas disponibles, no un umbral medido de FPS.
+El caso antes legal de 64 caminos de 16 puntos (1984 piezas) queda rechazado.
+La prueba del techo del suelo sigue agotando el presupuesto legal y ejercitando
+todas sus capas. Se canda también 128 aceptado / 129 rechazado.
