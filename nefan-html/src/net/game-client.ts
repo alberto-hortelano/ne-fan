@@ -185,6 +185,9 @@ export class BridgeGameClient implements GameClient {
   }
 
   loadRoom(roomData: Pick<WorldScene, "dimensions">, roomId: string, enemies: RoomEnemy[]): void {
+    // El mundo anterior ya se retiró: su último frame no describe esta fixture.
+    this.pendingFrame = null;
+    this.lastState = { ...this.lastState, events: [], enemies: [], npcs: [] };
     const { width, depth } = roomData.dimensions;
     this.bridge.sendLoadRoom(
       roomId,

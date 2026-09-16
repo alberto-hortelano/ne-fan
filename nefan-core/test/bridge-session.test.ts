@@ -1233,6 +1233,9 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     sim.getCombatant("player")!.position = { x: 30, y: 1, z: 30 };
     await entrarEnLaPartida(ctx, socket, sessionId);
 
+    ctx.narrative.recordSceneLoaded("tile_0_0", escenaExpandidaDePrueba("tile_0_0", {
+      entities: [{ kind: "npc", id: "vecino_de_la_partida", name: "Vecino", cell: [60, 60], footprint: [1, 1] }],
+    }));
     // Mismo socket, ahora mirando una fixture.
     await porElBorde({ type: "load_room", roomId: "robledo_tile", enemies: [] }, socket, ctx);
     await porElBorde(
@@ -1250,6 +1253,7 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     );
     await ctx.narrative.save();
     assert.deepEqual((await storage.read(sessionId))!.player.position, [30, 1, 30]);
+    assert.deepEqual(sim.npcBehaviorSystem?.states(), [], "caminar por la fixture no repuebla los NPCs de la partida (#484)");
   });
 
   /** Y una pestaña AJENA no le quita el mundo a quien está jugando: antes le

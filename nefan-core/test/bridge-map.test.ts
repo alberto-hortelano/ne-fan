@@ -344,6 +344,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     });
 
     const { socket } = makeSocket();
+    ctx.world.claimForSession(socket);
     await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
     assert.ok(!narrative.story_so_far.includes("Suena el yunque."), "aún no ha llegado");
@@ -588,6 +589,7 @@ describe("bridge activación por posición (tiles + anchors)", () => {
     });
 
     const { socket } = makeSocket();
+    ctx.world.claimForSession(socket);
     const input = (x: number, z: number) => porElBorde(
       { type: "input", delta: 0.016, inputs: { playerPosition: { x, y: 0, z }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: true } },
       socket, ctx,

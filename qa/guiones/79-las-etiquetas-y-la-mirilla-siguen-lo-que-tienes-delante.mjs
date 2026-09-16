@@ -262,15 +262,15 @@ export default async function (ctx) {
   );
   await ctx.shot("tabernero-enfilado");
 
-  // 1d · Al cielo: la mirilla se apaga, el rótulo por distancia se queda.
+  // 1d · Al cielo: la mirilla se apaga, el rótulo sale del encuadre.
   const arriba = await mirarA(ctx, 60);
   await frames(ctx, 2);
   const alCielo = await ctx.page.evaluate(foto);
   ctx.log(`al cielo (${arriba.pitchDeg.toFixed(0)}°): ${JSON.stringify({ ids: alCielo.ids, mirilla: alCielo.mirilla, focos: alCielo.labels.filter((l) => l.focus).map((l) => l.id) })}`);
   ctx.expect("mirando al cielo la mirilla se apaga", alCielo.mirilla === "false", `mirilla=${alCielo.mirilla}`);
   ctx.expect(
-    "…y el rótulo del tabernero (por distancia) se queda, sin foco",
-    alCielo.ids.includes(NPC) && !alCielo.labels.find((l) => l.id === NPC)?.focus,
+    "…y el rótulo fuera del encuadre se retira (#484)",
+    !alCielo.ids.includes(NPC),
     JSON.stringify(alCielo.labels),
   );
   await ctx.shot("al-cielo-sin-mirilla");

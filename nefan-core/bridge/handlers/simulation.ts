@@ -100,7 +100,7 @@ export async function handleInput(
   ctx.store.dispatch("player_moved", { pos: [playerPos.x, playerPos.y, playerPos.z] });
   // Mundo continuo: el tile/place activos se deciden por POSICIÓN (gateado
   // por cambio de celda dentro de activateByPosition).
-  await activateByPosition(ctx, playerPos.x, playerPos.z);
+  if (ctx.world.kind === "session") await activateByPosition(ctx, playerPos.x, playerPos.z);
 
   // Transiciones de la vida ambiental → log para el LLM + cierre del transit
   // del NpcDirector. Son eventos one-shot del FSM (no per-tick), así que el
