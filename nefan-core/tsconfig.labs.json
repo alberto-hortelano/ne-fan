@@ -32,5 +32,5 @@
     "checkJs": false,
     "noEmit": true
   },
-  "include": ["../labs/**/*.ts"]
+  "include": ["../labs/**/*.ts", "../labs/narrative/replay-catalog.mjs"]
 }
