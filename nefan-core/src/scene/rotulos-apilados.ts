@@ -61,6 +61,10 @@ interface Rect {
   y1: number;
 }
 
+/** El paseo medido en #591 mueve el borde ±4,5 px. Seis píxeles de
+ * separación liberan un rótulo oculto sin añadir retraso temporal al giro. */
+export const MARGEN_DE_REAPARICION_PX = 6;
+
 /** Ancla (pie centrado) → rectángulo, igual que el `translate(-50%,-100%)`. */
 function rectDe(c: CajaDeRotulo): Rect {
   return { x0: c.x - c.w / 2, x1: c.x + c.w / 2, y0: c.y - c.h, y1: c.y };
@@ -79,7 +83,7 @@ function seCruzan(a: Rect, b: Rect): boolean {
  *  distinguir «no cabe» de «no pude medir» y no debe preguntar por lo segundo;
  *  colapsarlas aquí devolvería un `Set` vacío que se lee como «no se pisa
  *  ninguno». */
-export function rotulosTapados(cajas: readonly CajaDeRotulo[]): Set<string> {
+export function rotulosTapados(cajas: readonly CajaDeRotulo[], anteriores: ReadonlySet<string> = new Set()): Set<string> {
   const orden = cajas.map((c, i) => {
     if (!Number.isFinite(c.x) || !Number.isFinite(c.y) || !Number.isFinite(c.depthM)) {
       throw new Error(`rotulosTapados: caja "${c.id}" sin posición finita (x=${c.x}, y=${c.y}, depthM=${c.depthM})`);
@@ -103,7 +107,9 @@ export function rotulosTapados(cajas: readonly CajaDeRotulo[]): Set<string> {
   const colocados: Rect[] = [];
   for (const { c } of orden) {
     const r = rectDe(c);
-    if (colocados.some((p) => seCruzan(r, p))) {
+    const margen = anteriores.has(c.id) ? MARGEN_DE_REAPARICION_PX : 0;
+    const salida = { x0: r.x0 - margen, x1: r.x1 + margen, y0: r.y0 - margen, y1: r.y1 + margen };
+    if (colocados.some((p) => seCruzan(salida, p))) {
       tapados.add(c.id);
       continue;
     }

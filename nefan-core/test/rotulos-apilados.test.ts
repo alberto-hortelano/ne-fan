@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { rotulosTapados, type CajaDeRotulo } from "../src/scene/rotulos-apilados.js";
+import { MARGEN_DE_REAPARICION_PX, rotulosTapados, type CajaDeRotulo } from "../src/scene/rotulos-apilados.js";
 
 /** Una caja como la compone el cliente: ancla en el PIE, centrada, medida en
  *  píxeles CSS. Los números son los del juego real —un rótulo de ~140×20 px a
@@ -12,6 +12,33 @@ function caja(id: string, over: Partial<CajaDeRotulo> = {}): CajaDeRotulo {
 }
 
 describe("rotulosTapados — de dos rótulos que se pisan solo se emite uno", () => {
+  it("el paseo de ±4,5 px no hace reaparecer el rótulo cada pocos segundos (#591)", () => {
+    let anteriores = new Set<string>();
+    for (const cruce of [4.5, -4.5, 0, 4.5, -4.5]) {
+      anteriores = rotulosTapados([caja("cerca", { x: 400, depthM: 6 }), caja("lejos", { x: 540 - cruce })], anteriores);
+      assert.deepEqual([...anteriores], ["lejos"]);
+    }
+  });
+
+  it("se libera en el mismo frame al dejar seis píxeles libres, por los cuatro lados", () => {
+    const centro = caja("cerca", { x: 400, y: 360, depthM: 6 });
+    for (const [eje, borde, sentido] of [["x", 540, 1], ["x", 260, -1], ["y", 380, 1], ["y", 340, -1]] as const) {
+      for (const margen of [MARGEN_DE_REAPARICION_PX - 0.1, MARGEN_DE_REAPARICION_PX]) {
+        const lejos = caja("lejos", { x: 400, y: 360, [eje]: borde + margen * sentido });
+        const tapados = rotulosTapados([centro, lejos], new Set(["lejos"]));
+        assert.equal(tapados.has("lejos"), margen < MARGEN_DE_REAPARICION_PX, `${eje} ${sentido} ${margen}`);
+      }
+    }
+  });
+
+  it("apuntar al oculto lo devuelve de inmediato; un ausente pierde su memoria", () => {
+    const cerca = caja("cerca", { depthM: 6 });
+    const lejos = caja("lejos", { focus: true });
+    assert.deepEqual([...rotulosTapados([cerca, lejos], new Set(["lejos"]))], ["cerca"]);
+    const vacio = rotulosTapados([], new Set(["lejos"]));
+    assert.deepEqual([...rotulosTapados([caja("a", { x: 400 }), caja("lejos", { x: 540 })], vacio)], []);
+    assert.deepEqual([...rotulosTapados([caja("lejos")], new Set(["lejos"]))], []);
+  });
   it("dos cajas que no se tocan se emiten las dos", () => {
     const tapados = rotulosTapados([
       caja("cerca", { x: 400, depthM: 6 }),

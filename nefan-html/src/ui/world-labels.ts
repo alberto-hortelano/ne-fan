@@ -97,6 +97,7 @@ export class WorldLabels {
   /** Coloca EXACTAMENTE estas etiquetas; las que ya no vengan se retiran del
    *  DOM (una etiqueta huérfana pegada a la pantalla es peor que ninguna). */
   sync(labels: readonly WorldLabel[], project: ScreenProjector): void {
+    const anteriores = new Set(this.tapados);
     this.placed = [];
     this.tapados = [];
     const vivos = new Set<string>();
@@ -145,7 +146,7 @@ export class WorldLabels {
         );
       }
     }
-    const tapados = rotulosTapados(cajas);
+    const tapados = rotulosTapados(cajas, anteriores);
 
     // 3 · Colocar lo que queda. Lo tapado se DESCUELGA del documento (sigue en
     //     el mapa con su medida, así que volver a enseñarlo no cuesta remedir).
