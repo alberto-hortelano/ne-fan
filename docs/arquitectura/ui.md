@@ -83,6 +83,8 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
   solo si lo soltamos nosotros, y en el muro solo por su botón «Cerrar»: los
   demás caminos que lo quitan (el título, «Volver al título», «Reintentar», un
   aviso resuelto) no llevan al jugador de vuelta al mundo. Guion 83.
+  El guion 140 verifica caída y reconexión con partida viva: `resuelto` retira
+  su muro sin recargar, con procesos propios. No afirma reanudar el simulador.
 - **Un muro a pantalla completa siempre tiene algo que pulsar, y qué botones
   lleva lo decide core**, no el cliente: `botonesDelMuro` en
   `src/protocol/status-rotulo.ts` (#189, #478), con `switch` exhaustivo sobre la

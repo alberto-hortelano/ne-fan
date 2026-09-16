@@ -95,7 +95,7 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
    *  tomar la propiedad, así que el `resuelto` que llega detrás en microtarea
    *  ya no tiene muro suyo que retirar. Quedarse en el visor hasta recargar era
    *  la otra mitad de aquello y dejó de ser cierta: hay botón. El guion 78 mide
-   *  hoy la oferta; la fila «aviso» se quedó sin guion y eso es el #584. */
+   *  hoy la oferta; el guion 140 cubre la retirada con partida viva (#584). */
   let muroPuestoPorAviso: string | null = null;
 
   /** Adónde lleva «Reintentar» en el muro que hay puesto, o `null` si el que
