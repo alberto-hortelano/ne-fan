@@ -2721,7 +2721,7 @@ describe("fronteras arquitectónicas", () => {
             "const playerCfg = loadConfig(combatConfigJson).player;\n" +
             "velocidad: velocidadDelJugador(playerCfg, input.state.sprint),\n" +
             "pickNearestTarget(playerPos, vivos, { maxDistanceM: playerCfg.interact_range_m });\n" +
-            "const rp = puntoDeReaparicion(playerPos, collidesAt, under?.rect ?? null);\n" +
+            "const rp = puntoDeReaparicion(playerPos);\n" +
             "hablar.yaContestaron();\nmundo.npc(hablar.ultimoHablado);\n",
           imports: [],
         },

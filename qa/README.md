@@ -546,6 +546,29 @@ créditos:
 node qa/la-esquina-de-la-caja-se-corta.mjs   # sale 0 MIENTRAS el defecto viva
 ```
 
+Y en la misma familia, `qa/la-puerta-de-la-reaparicion.mjs` (QA de la PR 3 de la tanda E, #538), que
+sí es un **candado**, y de dos cosas que el árbol dejó a medias. Una: la PR retiró de
+`puntoDeReaparicion` la rama que preguntaba por sólidos y candó la puerta con un aserto de ARIDAD
+(`puntoDeReaparicion.length === 1`), pero `Function.length` **deja de contar en el primer parámetro
+con valor por defecto**, así que la forma más probable de que la consulta vuelva —añadirla como
+opcional, que es como se añade un parámetro sin tocar al llamante— pasa por delante del candado:
+medido el 2026-09-16, `npm run verify` da 2847/2847 en verde con la consulta recableada. Aquí se
+afirma además que **un argumento de más ni se llama ni mueve el punto devuelto**, que es lo que la
+aridad no ve (y desde el arreglo de ese hallazgo lo afirma también `test/reaparicion.test.ts`, que es
+lo que corre en CI). Y dos: que la retirada **no movió a nadie**, y eso no se afirma, se mide — sobre
+las TRES fixtures, con las tres fuentes de solidez del cliente montadas como las monta
+`world/collision.ts` y las dos políticas de `planAplicadoEn`, la pregunta del escalón retirado
+(`collidesAt(pos)` con el jugador EN `pos`) vale `false` en **99.932 puntos de 99.932**, con su
+control (12.763 de esos puntos SÍ dan sólido preguntados desde otro sitio del tile). Imprime también,
+medido y sin afirmarlo, el ÚNICO origen = destino que sí bloquea: la tangencia exacta del cuerpo con
+el borde de una celda sólida, que el juego no alcanza pero que deja corto el absoluto «vale `false`
+siempre». Probado en negativo por sus dos puertas (`QA_PUERTA_ABIERTA=1` → bloque 1 rojo con la
+aridad aún en 1; `QA_SIN_SOLIDOS=1` → el control rojo). Segundos, sin navegador y sin créditos:
+
+```bash
+node qa/la-puerta-de-la-reaparicion.mjs   # sale 1 si la consulta vuelve o si la retirada mueve a alguien
+```
+
 Dos cosas que aprendió el arreglo y que conviene no volver a descubrir:
 
 - **El veredicto no son píxeles.** `getImageData` sobre un canvas WebGL sin
