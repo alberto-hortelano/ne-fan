@@ -116,3 +116,70 @@ re-localizar: lo escribí mirando el título del fichero en vez de su contenido.
 - **Ningún umbral se baja** (ni se sube para acomodar lo que acaba de crecer).
 - Lo que se retira se retira entero: prosa, comentarios y docs incluidos, con `grep` a cero.
 - Las cifras se **miden hoy**; copiar un número del issue bajo el rótulo «medido» no es medir.
+
+---
+
+# Decisiones del usuario (2026-09-16, tras la crítica)
+
+Las cuatro se le presentaron con las opciones cerradas y el coste de cada una que escribió el
+crítico. Lo elegido, literal:
+
+### 1 · Alcance — **«Los tres, con #538 dentro»**
+
+Entran #601, #583 y #538. El orden del crítico se respeta: **#601 primero y solo**, **#583 detrás y
+nunca a la vez** (hereda la forma de `aabbBloquea`; el fichero que choca es
+`src/simulation/obstaculos-del-jugador.ts`), y **#538 en paralelo con cualquiera de los dos**, porque
+con la decisión 4 ya no toca ese fichero.
+
+### 2 · El bucle de muerte (#538 H10) — **«A la sesión de combate»**
+
+H10 **sale de esta tanda entero**. Sus tres causas van juntas a una sesión de diseño de combate:
+(1) reapareces donde caíste, (2) el pestillo de `engaged` que no se suelta (**#377**, `futuro`) y
+(3) morir cura a todos los enemigos a tope (`game-loop.ts:237`, **#325**, `futuro`). Partirlo aquí
+arreglaría un tercio y congelaría los otros dos.
+
+**Consecuencia obligatoria**: la tercera causa **no tiene issue propio** —está dentro de #325, que es
+de economía de combate— y las tres juntas no están escritas en ningún sitio. Antes de cerrar #538 hay
+que dejar H10 con dueño: un issue hermano `futuro` + `juego` que nombre las tres causas y las enlace,
+o la anotación en #325 y #377. Cerrar #538 sin eso convierte un hallazgo medido en deuda invisible.
+
+### 3 · El NPC que no puede rodear (#583) — **«Atraviesa si no puede rodear»**
+
+La caja de runtime frena al NPC, **salvo cuando no hay salida**. Es la regla «salir sí, entrar no»
+del jugador más un escape para el encajonado, y evita el NPC congelado sin abrir nada más.
+
+Notas que el arquitecto hereda con esta decisión:
+- «No puede rodear» hay que **definirlo con el código delante**: el steering es por deflexión con
+  `TODO(A*)` declarado y hoy agota **7 deflexiones** y cae a `idle` (`npc-behavior.ts:117`, `:647-649`).
+  La lectura barata es que ese agotamiento sea justo la puerta del escape; el arquitecto decide y lo
+  escribe.
+- El riesgo que motivó la pregunta **no desaparece, se contiene**: dos spawns del mismo turno dejan
+  `HOLGURA_ENTRE_SPAWNS_M` = **1,0 m** y el cuerpo del NPC pide **1,5 m** (#289). Con esta decisión no
+  bloquea a nadie, pero el hueco sigue mal dimensionado para el NPC: **anotarlo en #524** con las dos
+  constantes, sin abrir issue nuevo.
+- El escape es observable y **tiene que declararse**: un NPC atravesando una caja es exactamente el
+  síntoma de #583. Que se vea en la traza de dev por qué pasó, o el arreglo se lee como el defecto.
+
+### 4 · El escalón 2 de `puntoDeReaparicion` — **«Borrarla»**
+
+Se borra la rama «si estás en un sólido, al centro del tile», que ningún llamante puede ejecutar, con
+**todo su rastro**: la prosa de `reaparicion.ts:20-25`, la suite «lo que NO promete» de
+`test/reaparicion.test.ts`, y las líneas `:45-56` de la cabecera del guion 93 que la describen. Regla
+de la casa: lo que ya no tiene camino se borra el mismo día, no se documenta como legacy.
+
+**Esto es lo que resuelve H2, y lo resuelve por retirada**: al morir el escalón 2 muere su parámetro
+`solido`, y con él la consulta de MOVIMIENTO que el cliente le pasaba donde hacía falta una de PUNTO.
+No hay que cablear ninguna consulta de punto. Si al hacerlo aparece que el parámetro sigue teniendo
+otro uso vivo, **eso es un hallazgo y se reporta**, no se apaña.
+
+Queda escrito para quien lo lea dentro de un mes: **la pieza que falta en el repositorio sigue
+faltando** — no hay una pregunta «¿es sólido este PUNTO?» para las cajas, solo «¿puedo moverme hasta
+aquí?». Esta tanda no la crea; la retira del único sitio donde estaba mal usada.
+
+## Corte en PR
+
+| PR | Issue | Qué | Orden |
+|---|---|---|---|
+| **1** | #601 | La entrada por la esquina y el «salir sí, entrar no» por caja entera → celda a celda, o su equivalente. Borra `qa/la-esquina-de-la-caja-se-corta.mjs` y sus dos líneas de `qa/README.md` | Primera y sola |
+| **2** | #583 | Las huellas de los spawns de **runtime** entran en la colisión del sim, con el escape del encajonado. `spawnsDeRuntime` es la fuente, no `narrative.entities`. Ojo a la caché de `collidersFor`, que no invalida nunca | Detrás de la 1 |
+| **3** | #538 | Borrar el escalón 2 con todo su rastro; dejar H10 con dueño antes de cerrar el issue | En paralelo |
