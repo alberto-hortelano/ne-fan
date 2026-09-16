@@ -160,6 +160,68 @@ function llamadasAPresupuestoConducido(): { dentroDe: string; argumentos: string
   return sitios;
 }
 
+/** Las veces que `expectEspera` ESCRIBE sobre su propio parámetro `opciones`,
+ *  leídas del árbol de `qa/run.mjs`.
+ *
+ *  Es la otra mitad del candado del sitio de llamada, y hace falta porque la
+ *  primera sujetaba el ARGUMENTO y no la DECISIÓN (QA, H-7): con la llamada
+ *  literalmente igual —`presupuestoConducido(opciones)`— basta una línea encima,
+ *
+ *      opciones = { ms: 30_000, ...opciones };
+ *
+ *  para devolver V-1 entero. QA lo midió: los dos ficheros de candado 41 pass ·
+ *  0 fail, la casa 2850/2850 verde, y el runner real sobre el 58 devolviendo
+ *  `{"sim":120,"ms":30000} techoMs=30000` con el guion en verde. Un ×0,025 sin
+ *  que se entere nadie.
+ *
+ *  Se cuenta cualquier ESCRITURA: `opciones = …` y sus compuestos (`??=`, `||=`),
+ *  una propiedad (`opciones.ms = …`) y `Object.assign(opciones, …)`. Falla
+ *  CERRADO a propósito: un alias inocente lo pone rojo, y es preferible a una
+ *  puerta que se abre sola. */
+function escriturasSobreOpcionesEnExpectEspera(): string[] {
+  const fuente = readFileSync(join(repoRoot, "qa", "run.mjs"), "utf8");
+  const src = ts.createSourceFile("run.mjs", fuente, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const linea = (n: ts.Node): number => src.getLineAndCharacterOfPosition(n.getStart(src)).line + 1;
+  /** La raíz de una expresión de escritura: `opciones` en `opciones.a.b`. */
+  const raiz = (n: ts.Node): ts.Node => {
+    let e = n;
+    while (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e)) e = e.expression;
+    return e;
+  };
+  const esOpciones = (n: ts.Node): boolean => ts.isIdentifier(raiz(n)) && (raiz(n) as ts.Identifier).text === "opciones";
+  const dentro: string[] = [];
+  const recorre = (n: ts.Node): void => {
+    if (
+      ts.isBinaryExpression(n) &&
+      // `=` y todos los compuestos, incluidos `??=` y `||=`
+      n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      n.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+      esOpciones(n.left)
+    ) {
+      dentro.push(`run.mjs:${linea(n)} · ${n.getText(src).slice(0, 60)}`);
+    }
+    if (
+      ts.isCallExpression(n) &&
+      ts.isPropertyAccessExpression(n.expression) &&
+      n.expression.name.text === "assign" &&
+      n.arguments[0] !== undefined &&
+      esOpciones(n.arguments[0])
+    ) {
+      dentro.push(`run.mjs:${linea(n)} · ${n.getText(src).slice(0, 60)}`);
+    }
+    ts.forEachChild(n, recorre);
+  };
+  const busca = (n: ts.Node): void => {
+    if (ts.isMethodDeclaration(n) && n.name && ts.isIdentifier(n.name) && n.name.text === "expectEspera") {
+      recorre(n);
+      return;
+    }
+    ts.forEachChild(n, busca);
+  };
+  busca(src);
+  return dentro;
+}
+
 function llamadasDelLoop() {
   const fuente = readFileSync(join(repoRoot, "nefan-html", "src", "main.ts"), "utf8");
   const src = ts.createSourceFile("main.ts", fuente, ts.ScriptTarget.Latest, true);
@@ -215,6 +277,15 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
       const p = presupuestoDeEspera({ sim }, "x");
       assert.equal(p.techoMs, sim * 1000 * CORTAFUEGOS_POR_SIM, `{sim:${sim}} no es ×${CORTAFUEGOS_POR_SIM}`);
       // Dicho como lo que importa: qué razón sim/pared tolera antes de rendirse.
+      //
+      // **Esto canda un SUELO MEDIDO, no el número 10**, y conviene saberlo
+      // antes de leer su color: bajar la constante a 5 lo pone ROJO (1/5 = 0,2 >
+      // 0,152, ya no cubre la razón que se midió a factor 40) y subirla a 7 lo
+      // deja VERDE, **y debe dejarlo** — 7 sigue cubriendo la carga medida. Un
+      // candado que exigiera exactamente 10 estaría defendiendo un número que
+      // nadie eligió; lo que hay que defender es que el múltiplo siga cubriendo
+      // el régimen que motivó la tanda. Quien quiera moverlo, que traiga una
+      // razón medida nueva y la cambie aquí.
       assert.ok(1 / CORTAFUEGOS_POR_SIM <= 0.152, "el múltiplo ya no cubre la razón medida a factor 40");
     }
   });
@@ -293,8 +364,14 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
     // `{sim: 120}` de esta tanda—, o sea un umbral bajado sin decirlo y más
     // bajo que el que PR-4a quitó con motivo medido (H-4 de qa-5).
     //
-    // Por eso este caso NO mira la forma, mira **lo que se va a esperar**: el
-    // presupuesto que sale de la composición entera, con sus dos cifras.
+    // Por eso este caso mira **lo que se va a esperar**: el presupuesto que sale
+    // de la composición entera, con sus dos cifras. (Mira también la FORMA, en
+    // el `deepEqual` de la primera línea de cada vuelta, y no es un adorno: un
+    // `ms` en el objeto ES el cortafuegos, así que «no lleva `ms`» y «espera lo
+    // que toca» son la misma afirmación dicha en los dos sitios donde se puede
+    // romper. La primera versión de este comentario decía «NO mira la forma»
+    // teniendo el `deepEqual` debajo, y eso es la clase de frase que esta casa
+    // persigue.)
     for (const sim of [4, 6, 12, 60, 120]) {
       const p = presupuestoConducido({ sim });
       // Sin `ms` ESCRITO, el presupuesto no lleva `ms`: si lo llevara, sería el
@@ -332,8 +409,17 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
     // `qa/run.mjs` que la llamaba —`presupuestoConducido({ ms, sim })` con el
     // `ms` ya defectado a 30.000 por la desestructuración de arriba—. Los casos
     // de este fichero pueden ejercer la función hasta el aburrimiento y no ver
-    // nada, porque el defecto estaba en el sitio de llamada. Así que el defecto
-    // se hace INEXPRESABLE: si el runner no arma nada, no puede armarlo mal.
+    // nada, porque el defecto estaba en el sitio de llamada.
+    //
+    // **NO lo hace «inexpresable», y la primera versión de este comentario decía
+    // que sí.** Eso era documentación falsa y QA lo cobró en una línea (H-7):
+    // con el argumento intacto —`presupuestoConducido(opciones)`— basta escribir
+    // `opciones = { ms: 30_000, ...opciones }` encima para devolver V-1 entero,
+    // y los dos candados salían 41 pass · 0 fail con el runner real dando
+    // `techoMs=30000` sobre un `{sim:120}`. Lo que este caso sujeta es el
+    // ARGUMENTO; la DECISIÓN la sujeta el de debajo. Hacen falta los dos, y
+    // ninguno de los dos hace inexpresable nada: lo que hacen es poner rojas las
+    // dos formas con las que V-1 se escribió y se reescribió.
     //
     // Se lee el ÁRBOL y no el texto, por el mismo motivo que el resto de la
     // casa: lo que importa no es que la cadena aparezca, es que el ÚNICO
@@ -346,6 +432,29 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
         `—un literal, un valor con defecto, cualquier cosa que no sean las opciones tal cual— la ` +
         `decisión vuelve a un sitio que ningún test alcanza, que es exactamente cómo entró V-1 (un ` +
         `cortafuegos de pared bajado ×0,025 sin que nada se pusiera rojo).`,
+    );
+  });
+
+  it("**…y tampoco se las REESCRIBE antes: `opciones` entra en la decisión como llegó** (H-7)", () => {
+    // La mitad que faltaba, y la encontró QA con el arreglo puesto: el caso de
+    // arriba mira el argumento de la llamada, así que deja entera la puerta de
+    // modificar `opciones` una línea antes. Con `opciones = { ms: 30_000,
+    // ...opciones }` la llamada no cambia un byte, los dos ficheros de candado
+    // dan 41 pass · 0 fail, `npm run verify` sale 2850/2850 y el runner real
+    // sobre el guion 58 devuelve `{"sim":120,"ms":30000}` con techo 30.000 y el
+    // guion en VERDE. Es V-1 entero otra vez, ×0,025, sin que se entere nadie.
+    //
+    // Falla CERRADO: un alias inocente sobre `opciones` también lo pone rojo.
+    // Es lo correcto — la salida entonces es no aliasear, no abrir el candado.
+    assert.deepEqual(
+      escriturasSobreOpcionesEnExpectEspera(),
+      [],
+      `\`expectEspera\` no puede tocar su propio \`opciones\` antes de entregárselo a ` +
+        `\`presupuestoConducido\`: lo que llegue escrito en el guion es lo que tiene que decidir el ` +
+        `presupuesto. Una sola línea que le meta un \`ms\` por defecto devuelve V-1 —el cortafuegos ` +
+        `de pared de toda espera en sim a 30 s planos, ×0,025 en los \`{sim: 120}\`— dejando la ` +
+        `llamada intacta y los demás candados en verde. Si hace falta normalizar algo, se normaliza ` +
+        `DENTRO de \`presupuestoConducido\`, que es lo que este fichero ejerce.`,
     );
   });
 

@@ -68,17 +68,21 @@ const EsperasQueConducenSchema = z
                 /#\d+|bridge|motor|disco|State API|servidor|loop|game loop/i,
                 "el motivo tiene que NOMBRAR el proceso al que se espera, o el issue por el que queda fuera",
               )
-              // Y UNA FRASE TIENE PALABRAS. QA volvió a medir el listón después
-              // de que la longitud y la palabra clave estuvieran puestas: «40
-              // equis más la palabra bridge» silenciaba un sitio real (6 pass ·
-              // 0 fail). Los 120 caracteres los cumple un token largo y la
-              // regex la cumple una palabra suelta dentro de él; lo que no
-              // cumple ninguna de las dos formas de relleno es TENER PALABRAS.
-              // Las seis exenciones vivas van de 65 a 159, así que veinte no
-              // aprieta a nadie: aprieta a lo que no es prosa.
+              // Y UNA FRASE TIENE PALABRAS **DISTINTAS**, que es la corrección
+              // de la corrección. QA midió el listón dos veces: con solo la
+              // longitud y la palabra clave, «40 equis más la palabra bridge»
+              // silenciaba un sitio real (6 pass · 0 fail); y con «veinte
+              // palabras» puesto, **la palabra `bridge` repetida veinte veces**
+              // —139 caracteres, 20 palabras, UNA distinta— silenciaba el mismo
+              // sitio, otra vez 7 pass · 0 fail. O sea que lo que yo había
+              // escrito aquí («lo que no cumple ninguna forma de relleno es
+              // TENER PALABRAS») era falso: un relleno tiene palabras si
+              // repites una. Lo que no tiene es VOCABULARIO. Las seis exenciones
+              // vivas van de 44 a 105 distintas, así que veinte deja 2,2× de
+              // margen a la más apretada.
               .refine(
-                (f) => f.trim().split(/\s+/).length >= 20,
-                "el motivo es una FRASE (veinte palabras o más), no un relleno largo con una palabra clave dentro",
+                (f) => new Set(f.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).size >= 20,
+                "el motivo es una FRASE (veinte palabras DISTINTAS o más), no una palabra repetida hasta llenar el mínimo",
               )
               .refine(
                 (f) => !/(.)\1{7,}/.test(f),
