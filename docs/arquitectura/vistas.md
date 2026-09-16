@@ -146,6 +146,10 @@ Tres cosas que en una vista cenital daba la propia perspectiva:
   que apuntas. La caja se MIDE en píxeles (`offsetWidth`) una vez por texto y se
   guarda con el nodo: leerla por frame es un reflow por frame, y estimarla por
   longitud del texto mentiría con la primera fuente que traiga un pack.
+  La criba recuerda los ocultos del frame anterior (#591): tras un solape,
+  exige 6 px libres para reaparecer (la oscilación medida era ±4,5 px).
+  Apuntar al oculto conserva prioridad inmediata y `clear()` olvida la
+  memoria. No hay temporizador: al separar los cuerpos vuelven en ese frame.
 - **Frontera del mundo**: un muro de niebla sobre el borde del tile activo, y
   su DISIPACIÓN —no un destello— es el aviso de que el vecino ya existe.
 
