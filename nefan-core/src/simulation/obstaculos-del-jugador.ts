@@ -40,7 +40,16 @@
  *     sobre el paso de la base da exactamente lo mismo— y #601 no lo arregla; lo
  *     que sí hace es cerrar la puerta principal por la que se llegaba ahí, que
  *     era entrar andando por una esquina. Vive con número propio en **#616**,
- *     con esta misma tabla. No lo cuente nadie como resuelto. */
+ *     con esta misma tabla. No lo cuente nadie como resuelto.
+ *
+ *  Y UN MATIZ QUE #583 OBLIGÓ A ESCRIBIR: «de aquí se sale siempre» es del
+ *  JUGADOR, que empuja con su teclado hasta salir. Lo que la caja promete es
+ *  que NO FRENA el paso que saca, no que alguien lo dé. A un NPC no le empuja
+ *  nadie —su steering solo sondea rumbos hacia su meta— y con una caja encima
+ *  se quedaba dentro andando para siempre (#583). Para eso está `salidaDeCaja`,
+ *  ahí abajo: el RUMBO de salida, que es la pieza que convierte «no te frena»
+ *  en «sales». La tiene la caja y **no la tiene el terreno**, y ese es hoy
+ *  justamente el contenido de #616. */
 
 import type { DuenoDeEntity } from "../session/entidades-del-tile.js";
 import type { TileCoord } from "../scene/tile.js";
@@ -145,7 +154,14 @@ export function penetracionEnCaja(
  *  steering solo sondea rumbos hacia su meta, y si la meta está al otro lado de
  *  la caja, ninguno de ellos le saca (medido: 290 s de 300 dentro de un carro,
  *  QA de #583). Quien mueve un cuerpo sin teclado necesita que se le diga hacia
- *  dónde, y eso es esto. */
+ *  dónde, y eso es esto.
+ *
+ *  SOLO PARA LA CAJA, y conviene que se lea aquí y no solo en el issue: el
+ *  TERRENO no tiene esta pieza, así que de un edificio del plan sigue sin salir
+ *  nadie (**#616**, con la tabla medida en la cabecera). No es un olvido —sacar
+ *  de ahí es otra cuenta, por celdas y no por rectángulo, y otra decisión— y
+ *  hay candado de que esto NO lo tapa (`test/sim-collision.test.ts`, «de la
+ *  geometría del TILE no saca a nadie»). */
 export function salidaDeCaja(
   p: { x: number; z: number },
   caja: CajaXZ,
