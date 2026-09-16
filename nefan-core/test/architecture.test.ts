@@ -1714,7 +1714,7 @@ describe("fronteras arquitectónicas", () => {
     assert.deepEqual(
       regla.exceptions.map((e) => [e.path, e.funcion]),
       [
-        ["nefan-html/src/world/fixtures-del-selector.ts", "addTileRaw"],
+        ["nefan-html/src/world/fixtures-del-selector.ts", "normalizarFixture"],
         ["nefan-html/src/ui/style-apply.ts", "StyleApplyController.plan"],
       ],
     );
@@ -1723,10 +1723,10 @@ describe("fronteras arquitectónicas", () => {
     const FIXTURES = [
       "export function crearFixturesDelSelector(deps: DepsDeFixturesDelSelector): FixturesDelSelector {",
       "  const { addTile } = deps;",
-      "  function addTileRaw(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void> {",
+      "  function normalizarFixture(raw: Record<string, unknown>, opts?: OpcionesDeCarga): Promise<void> {",
       "    return addTile({ ...formatDToWorld(raw), exits: [] }, opts);",
       "  }",
-      "  return { addTileRaw };",
+      "  return { normalizarFixture };",
       "}",
       "",
     ].join("\n");
@@ -1779,27 +1779,27 @@ describe("fronteras arquitectónicas", () => {
           imports: [],
         },
       ]),
-      ["nefan-html/src/world/fixtures-del-selector.ts:8 [error] fuera de la puerta `addTileRaw`: esta llamada vive en `__segunda`"],
+      ["nefan-html/src/world/fixtures-del-selector.ts:8 [error] fuera de la puerta `normalizarFixture`: esta llamada vive en `__segunda`"],
     );
     // …y dos DENTRO de la misma función tampoco: la puerta es UNA llamada.
     assert.deepEqual(
       deLaRegla([
         {
           path: "nefan-html/src/world/fixtures-del-selector.ts",
-          text: "const addTileRaw = (raw) => addTile({ ...formatDToWorld(raw), otra: formatDToWorld(raw) });\n",
+          text: "const normalizarFixture = (raw) => addTile({ ...formatDToWorld(raw), otra: formatDToWorld(raw) });\n",
           imports: [],
         },
       ]),
-      ["nefan-html/src/world/fixtures-del-selector.ts:1 [error] la puerta `addTileRaw` es UNA llamada; esta es la 2ª"],
+      ["nefan-html/src/world/fixtures-del-selector.ts:1 [error] la puerta `normalizarFixture` es UNA llamada; esta es la 2ª"],
     );
 
     // G2 · la función nombrada deja de llamar: exención sin sujeto, no barra libre.
     assert.deepEqual(
       deLaRegla([
-        { path: "nefan-html/src/world/fixtures-del-selector.ts", text: "const addTileRaw = (raw) => addTile(raw as WorldScene);\n", imports: [] },
+        { path: "nefan-html/src/world/fixtures-del-selector.ts", text: "const normalizarFixture = (raw) => addTile(raw as WorldScene);\n", imports: [] },
       ]),
       [
-        `nefan-html/src/world/fixtures-del-selector.ts:1 [error] exención sin sujeto: \`addTileRaw\` ya no casa ${JSON.stringify(regla.text!.pattern)} en este fichero — borra la exención o vuelve a nombrar la puerta`,
+        `nefan-html/src/world/fixtures-del-selector.ts:1 [error] exención sin sujeto: \`normalizarFixture\` ya no casa ${JSON.stringify(regla.text!.pattern)} en este fichero — borra la exención o vuelve a nombrar la puerta`,
       ],
     );
 
@@ -1808,11 +1808,11 @@ describe("fronteras arquitectónicas", () => {
       deLaRegla([
         {
           path: "nefan-html/src/world/fixtures-del-selector.ts",
-          text: FIXTURES.replace("function addTileRaw(", "function addTileRaw2("),
+          text: FIXTURES.replace("function normalizarFixture(", "function normalizarFixture2("),
           imports: [],
         },
       ]),
-      ["nefan-html/src/world/fixtures-del-selector.ts:4 [error] fuera de la puerta `addTileRaw`: esta llamada vive en `addTileRaw2`"],
+      ["nefan-html/src/world/fixtures-del-selector.ts:4 [error] fuera de la puerta `normalizarFixture`: esta llamada vive en `normalizarFixture2`"],
     );
 
     // G5 · la llamada se mueve de `plan()` a `run()` de la misma clase.

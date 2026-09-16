@@ -19,26 +19,9 @@
  *       — y el mundo que se veía SIGUE PUESTO. Esta última afirmación es la que
  *       distingue este caso del guion 24 (allí el JSON no llega y
  *       `loadSceneFile` rechaza ANTES de tocar el mundo): aquí `loadSceneData`
- *       vacía el mundo y normaliza después, así que el rechazo deja el cielo
- *       vacío con el desplegable apuntando a una fixture que ya no está.
+ *       valida antes de vaciar: el rechazo conserva el mundo y su selector.
  *
- *  ESTADO: la última afirmación del bloque 4 («el mundo que se veía SIGUE
- *  PUESTO») es FALSA hoy (2026-09-06, medido sobre `6f23a613` y con el mismo
- *  código en la base `5510963a`: es anterior al corte) y es la deuda de **#487**:
- *  `loadSceneData` vacía el mundo y normaliza después, así que el rechazo deja
- *  el cielo vacío con el desplegable apuntando a la fixture anterior. Regla de
- *  la casa (T10): un guion rojo a propósito se aprende a ignorar, así que ese
- *  punto se DECLARA con `ctx.log` nombrando #487 en vez de afirmarse, y el resto
- *  del bloque (aviso al jugador, línea del juego, desplegable de vuelta) sí
- *  afirma. La PR de #487 devuelve esa línea a `ctx.expect` y el guion es su
- *  candado.
- *
- *  EN NEGATIVO (probado al escribirlo): devolver `cargarFixture` a
- *  fire-and-forget pone rojo el bloque 1; quitar el `if (!value) return` del
- *  manejador pone rojo el 3; quitar `sceneSelector.value = anterior` pone rojo
- *  el 4 por la vuelta del desplegable.
- *
- *  Cero créditos: no le pide nada al motor, solo el selector «Room».
+ *  #487 convierte la deuda declarada del bloque 4 en un aserto de regresión.
  */
 
 import { cargarFixture } from "../lib/fixtures.mjs";
@@ -184,15 +167,7 @@ export default async function (ctx) {
   }
   ctx.expect("la línea del juego nombra la fixture que no cargó", new RegExp(ROTA).test(f4.linea), `«${f4.linea}»`);
   ctx.expect(`el desplegable vuelve a «${SEGUNDA}»`, f4.etiqueta === SEGUNDA, `«${f4.etiqueta}»`);
-  // #487 · DEUDA DECLARADA, no afirmada: lo esperado es que el mundo que se veía
-  // («zorder_test», UN tile) siga puesto cuando la fixture nueva no vale. Hoy
-  // `loadSceneData` vacía antes de normalizar y el cielo se queda vacío con el
-  // desplegable diciendo la anterior. Vuelve a `ctx.expect` con la PR de #487.
   const sigue = f4.scene === SEGUNDA && f4.tiles.length === 1;
-  ctx.log(
-    sigue
-      ? `#487 · el mundo que se veía SIGUE PUESTO («${f4.scene}», tiles ${JSON.stringify(f4.tiles)}): la deuda está pagada, este log puede volver a ser un expect`
-      : `#487 · DEUDA: el mundo que se veía NO sigue puesto — mundo «${f4.scene}» · tiles ${JSON.stringify(f4.tiles)} · el desplegable dice «${f4.etiqueta}»`,
-  );
+  ctx.expect("una fixture inválida conserva el mundo anterior (#487)", sigue, JSON.stringify(f4));
   await ctx.shot("fixture-rota-y-lo-que-queda");
 }
