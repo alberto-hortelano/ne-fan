@@ -43,6 +43,23 @@
  *
  *  Cero créditos: el bridge propio no llega a llamar a ningún servicio y los
  *  skins los sirve el motor falso del runner.
+ *
+ *  EL CANDADO DE #497 VIENE EN PAREJA (tanda F, 2026-09-16), y hasta hoy le
+ *  faltaba la mitad. Medía UNA dirección —que el error de la partida abandonada
+ *  desaparezca al volver al título— y esa mitad la cumple también el defecto que
+ *  la tanda F vino a cerrar: un `clear()` que vacía el registro ENTERO la deja
+ *  verde mientras se lleva por delante diagnósticos que siguen siendo ciertos
+ *  (el remedio del clon sin hojas del guion 27, el aviso de estilo del 92). Un
+ *  candado que no distingue el defecto que vino a cerrar no es un candado. Así
+ *  que en la MISMA transición se inyectan DOS entradas —una de la partida y una
+ *  de la máquina— y se afirman las dos.
+ *
+ *  PROBADO EN NEGATIVO (2026-09-16), los dos sabotajes en `ui/error-log.ts` y
+ *  restaurado entre uno y otro: con `olvidarLaPartida()` haciendo
+ *  `this.entries = []` (el defecto de antes de la tanda F) se pone ROJO el
+ *  aserto de la máquina y el de #497 sigue verde; con `olvidarLaPartida()`
+ *  convertido en no-op se pone ROJO el de #497 y el de la máquina sigue verde.
+ *  Ninguno de los dos sabotajes se lleva a los dos: por eso son dos asertos.
  */
 import { spawn } from "node:child_process";
 import { cpSync, mkdtempSync, mkdirSync, rmSync, readdirSync, existsSync } from "node:fs";
@@ -258,13 +275,35 @@ export default async function (ctx) {
 
     // ── 2 · «Volver al título»: el jugador se desviste con el mundo que se va ──
     fase = "vuelta";
+    // Las DOS entradas de la pareja, en la misma transición y por la misma
+    // puerta que usa el cliente. La fuente no es decoración: de ella sale, en
+    // core (`session/pertenencia-del-registro.ts`), de qué lado está cada una.
+    // `session` es de la PARTIDA y tiene que irse; `sprite` es de la MÁQUINA
+    // —el clon sin hojas de personaje— y tiene que quedarse.
     await ctx.page.evaluate(async () => {
       const { errors } = await import("/src/ui/error-log.ts");
       errors.push("session", "QA497: error de la partida abandonada");
+      errors.push("sprite", "QA-C: lo que la máquina sabe y sigue siendo cierto");
     });
-    ctx.expect("el error de A está registrado antes de salir", await ctx.page.locator("#error-log").textContent().then(t => t.includes("QA497:")));
+    const registroAntes = (await ctx.page.locator("#error-log").textContent()) ?? "";
+    ctx.expect(
+      "las dos entradas están registradas antes de salir (la de la partida y la de la máquina)",
+      registroAntes.includes("QA497:") && registroAntes.includes("QA-C:"),
+      registroAntes.slice(-200),
+    );
     await ctx.page.click("#narrative-loader-back");
-    ctx.expect("volver al título retira el error de la partida abandonada (#497)", await ctx.page.locator("#error-log").textContent().then(t => !t.includes("QA497:")));
+    const registroDespues = (await ctx.page.locator("#error-log").textContent()) ?? "";
+    ctx.log(`registro tras «Volver al título»: ${registroDespues.trim().slice(-220)}`);
+    ctx.expect(
+      "volver al título retira el error de la partida abandonada (#497)",
+      !registroDespues.includes("QA497:"),
+      registroDespues.slice(-200),
+    );
+    ctx.expect(
+      "…y NO se lleva lo que la máquina sabe: eso sigue siendo cierto sin la partida",
+      registroDespues.includes("QA-C:"),
+      registroDespues.slice(-200) || "(el registro se vació entero)",
+    );
     await ctx.waitFor(
       "el título vuelve con el motivo escrito",
       () => {

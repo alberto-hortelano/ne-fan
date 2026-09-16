@@ -280,12 +280,19 @@ export class NarrativeClient {
     // en salir por abajo — el guion 92 lo cazó buscándolo allí. Una llamada
     // cuyo efecto se borra a los dos segundos es decoración, no un canal.
     //
+    // FUENTE `arranque` Y NO `session`, y de ahí sale que sobreviva: este
+    // `push` ocurre DENTRO de `startSession`, o sea ANTES del `session.enter`
+    // que dispara el olvido del registro, así que con la fuente de la partida
+    // se escribía y se borraba en la misma transición y el guion 92 expiraba
+    // esperándolo. El sujeto tampoco es la partida: el pack de estilo no casa
+    // con el mundo lo juegues o no (`session/pertenencia-del-registro.ts`).
+    //
     // Y SIN `alJugador`: ese canal levanta el muro a pantalla completa (lo
     // pinta `ui/muro-de-carga.ts`) y esto no impide jugar. Aquí y no en
     // `main.ts` porque es el mismo sitio donde el wire se traduce a lo que el
     // cliente entiende, y porque la raíz de composición está congelada en su
     // tamaño (`client-file-size.json`).
-    if (res.avisoDeEstilo) errors.push("session", res.avisoDeEstilo);
+    if (res.avisoDeEstilo) errors.push("arranque", res.avisoDeEstilo);
     return { sessionId: res.sessionId, gameId: res.gameId ?? gameId, state: res.state, uiTheme: res.uiTheme };
   }
 

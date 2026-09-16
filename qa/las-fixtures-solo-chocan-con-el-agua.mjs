@@ -181,7 +181,7 @@ async function main() {
       () =>
         [...document.querySelectorAll(".error-log__entry")].some(
           (e) =>
-            (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "session" &&
+            (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "arranque" &&
             (e.querySelector(".error-log__msg")?.textContent ?? "").includes("bootstrap failed"),
         ),
       20000,

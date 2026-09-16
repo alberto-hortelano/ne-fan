@@ -9,7 +9,8 @@
  *  `DETALLE_SIN_PARTIDA`), y la dedupe de `ErrorLog` (#423) garantiza que el
  *  segundo no sea noticia: un solo muro, con un solo texto. Por eso el paso 2
  *  afirma que, cuando el bootstrap ya ha fallado (por ESTADO: la entrada
- *  `session` «bootstrap failed» del registro), el muro sigue siendo el mismo
+ *  `arranque` «bootstrap failed» del registro — fuente `session` hasta la tanda
+ *  F, que partió lo de la partida de lo del arranque), el muro sigue siendo el mismo
  *  —igual titular, igual detalle— y que ni el titular ni el detalle han
  *  cambiado ni una vez por debajo desde el aviso (un `MutationObserver` cuenta
  *  los cambios de texto; comparar antes/después se perdería un ida-y-vuelta).
@@ -106,13 +107,14 @@ export default async function (ctx) {
   );
   ctx.log(`al avisar: ${JSON.stringify(alAvisar)}`);
   // El bootstrap ha fallado cuando lo dice el REGISTRO (`bootstrap failed`,
-  // fuente `session`, el `catch` de `main.ts`), no cuando pasan 5 s de reloj.
+  // fuente `arranque` desde la tanda F —era `session`—, el `catch` de
+  // `main.ts`), no cuando pasan 5 s de reloj.
   await ctx.waitFor(
     "el bootstrap agota su timeout (la entrada «bootstrap failed» del registro)",
     () =>
       [...document.querySelectorAll(".error-log__entry")].some(
         (e) =>
-          (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "session" &&
+          (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "arranque" &&
           (e.querySelector(".error-log__msg")?.textContent ?? "").includes("bootstrap failed"),
       )
         ? true

@@ -25,7 +25,8 @@
  *  Cómo se llega, sin tocar ningún proceso ajeno: se pide al kernel un puerto
  *  libre (como el 20) y el socket de la página se apunta ahí con `?bridge=`
  *  ANTES de que exista nadie; se deja fallar el bootstrap —por ESTADO: la
- *  entrada `session` «bootstrap failed» del registro— y se afirma UN muro con
+ *  entrada `arranque` «bootstrap failed» del registro; era `session` hasta la
+ *  tanda F— y se afirma UN muro con
  *  ese titular y un detalle en el idioma del jugador. Entonces LLEGA el
  *  bridge: uno de verdad (`bridge/ws-server.ts`) en ese puerto, con su propio
  *  disco de saves y el motor apuntado a un puerto muerto (no se le pide nada;
@@ -132,7 +133,7 @@ const leerMuro = (ctx) =>
 const bootstrapFallido = () =>
   [...document.querySelectorAll(".error-log__entry")].some(
     (e) =>
-      (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "session" &&
+      (e.querySelector(".error-log__source")?.textContent ?? "").trim() === "arranque" &&
       (e.querySelector(".error-log__msg")?.textContent ?? "").includes("bootstrap failed"),
   )
     ? true
