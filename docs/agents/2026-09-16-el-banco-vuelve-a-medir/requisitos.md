@@ -124,11 +124,21 @@ Lo que se mide después es que en dos sitios el registro está **vacío cuando d
   registro del jugador recoge el aviso del estilo de otro tema». Los cinco asertos anteriores del
   bloque están verdes; el aviso simplemente no llega nunca al registro.
 
-**Hipótesis, NO verificada**: la faceta se aplica al arrancar la partida y borra lo que se registró
-antes en esa misma transición. El orden de `APLICADORES` pone `errores` detrás de `frontera` y
-delante de `style`, `theme`, `renderModes`… Quien coja esto tiene que **verificarlo antes de tocar
-nada**: puede ser eso, puede ser el momento del vaciado, o pueden ser dos causas distintas para el
-27 y el 92.
+**VERIFICADO por el crítico (2026-09-16)**: es un solo mecanismo en DOS momentos.
+
+- **Al 92 lo borra el `enter`**: `errors.push("session", res.avisoDeEstilo)` vive DENTRO de
+  `startSession` (`nefan-html/src/net/narrative-client.ts:288`), que se `await`ea en `main.ts:1255`;
+  `session.enter(...)` llega después (`main.ts:1257`) y `porValor` dispara (`""` → id) → `clear()`.
+- **Al 27 lo borra el `leave`**: el remedio lo escribe `renderer/aspecto-del-jugador.ts:85-88`, y el
+  `catch` de `unIntentoDeArrancar` llama a `session.leave()` (`main.ts:1356`) → `porValor` (id → `""`)
+  → `clear()`. Se lleva las dos entradas.
+
+**El orden de `APLICADORES` NO interviene, y la pista que daba este documento era un callejón**: en
+los dos casos el `push` ocurre FUERA de la transición, antes de que `apply` recorra el record.
+Reordenar la faceta no arregla ninguno de los dos, y quien se vaya por ahí gasta un plan entero.
+
+**Y un tercer hecho que no estaba medido**: el candado de #497 vive en `qa/guiones/82-…:204-209` y
+**hoy ni se ejecuta**, porque la espera del `walk` (línea 175, causa B) revienta antes de llegar.
 
 La pregunta de diseño que hay debajo, y que #497 no contestó: **¿qué distingue un error que
 pertenece a la partida que se va de uno que pertenece a la MÁQUINA y sigue siendo cierto después?**
@@ -136,14 +146,26 @@ pertenece a la partida que se va de uno que pertenece a la MÁQUINA y sigue sien
 
 ## Lo que se pide
 
-1. **Los seis rojos en verde**, cada uno por su causa y no bajando el aserto. Donde el aserto mide
-   una conducta que cambió A PROPÓSITO (A y B), se reescribe para medir la conducta NUEVA y se dice
-   qué cobertura se pierde si se pierde alguna. Donde haya defecto (C, si se confirma), se arregla
-   el defecto y el guion se queda como está.
-2. **La cobertura del banco que quitó #627 no se pierde en silencio.** El 53 y el 82 medían la
-   cancelación de la cola de skins usando un fallo que el banco ya no produce. O esa cancelación se
-   sigue midiendo con fallo inyectado (como hace el 51), o se declara por escrito qué dejó de
-   medirse. Lo que no vale es que desaparezca sin que nadie lo diga.
+1. **Los seis rojos en verde**, cada uno por su causa y no bajando el aserto. **PARTIDO en dos, por
+   la crítica**: A y B son edición de guiones sin decisión y pueden ir YA; **C necesita decisión del
+   usuario antes del plan** (§2 de `critica.md`), porque tal como estaba escrito —«se arregla el
+   defecto y el guion se queda como está»— **no es ejecutable**: el candado de #497 en el guion 82
+   exige que el error de la partida abandonada DESAPAREZCA al volver al título, y el 27 exige que el
+   remedio SIGA ESCRITO. Dos guiones vivos que se contradicen.
+   En A y B, el aserto se reescribe para medir la conducta NUEVA. Matiz de A: el aserto del 130 lo
+   escribió QA contra un mutante concreto (colapsar los motivos en uno), así que se **re-apunta a
+   `detalleTecnico`**, que es el único sitio donde los tres sobreviven; re-apuntarlo al aserto vecino
+   que ya está verde le quita el poder sin que se note.
+2. **La cobertura del banco que quitó #627 no se pierde en silencio.** **ENCOGIDO por la crítica**:
+   la cobertura NO se pierde. `qa/guiones/51-…:143-146` **ya afirma `canceladas === fallidos.length`**
+   con su propio 500 inyectado —exactamente lo del bloque D del 53— y los bloques A/B/C del 53
+   inyectan los suyos, así que el rango entero del fusible #236 sigue medido. Lo único exclusivo del
+   bloque D era un RETRATO del banco, y #627 cambió el banco a propósito dejando candado de la
+   conducta nueva (guion 139). **Se resuelve con una frase escrita, no con un guion nuevo.**
+   Lo que sí hay que corregir: la cabecera del 53 y la espera del 82 justifican su máscara con «el
+   motor falso solo tiene `idle` y contesta 500 a `walk`», y eso **hoy es FALSO** — `animDelBanco`
+   mapea a `idle` todo `HOJAS_BASE_ANIMS`, y `walk` y `run` están dentro
+   (`nefan-core/src/contracts/sprite-census.ts:31-34`).
 3. **Las ocho filas que faltan en `qa/README.md`.** Los guiones 135-142 nacieron sin fila, y siete
    de los ocho no declaran en ninguna parte —ni en su cabecera ni en el README— haber sido probados
    en negativo. No se afirma que no lo estén: se afirma que no está escrito.
@@ -153,9 +175,14 @@ pertenece a la partida que se va de uno que pertenece a la MÁQUINA y sigue sien
 
 ## Lo que NO entra
 
-- **#39**, que ya estaba rojo antes de esta tanda. Es otro sujeto y tiene que ir a su propio issue
-  si no lo tiene.
-- **#75**, que es la intermitencia ya medida en **#467**.
+- **#39**, que ya estaba rojo antes de esta tanda. **No tiene issue: ninguno** (el crítico revisó la
+  cola abierta entera). Su rojo de hoy señala al guion **116-lo-elegido-vuelve-del-editor**, que
+  declara `sinMotor` y pulsa `#ts-start`. **Se abre issue con eso.**
+- **#75. PREMISA FALSA de este documento, corregida por el crítico**: «es la intermitencia ya medida
+  en #467» es falso por dos lados. **#467 está cerrado desde el 2026-09-10** (a mano, como
+  `not_planned`); el issue que nombra al guion 75 por su número es **#496**, **cerrado hoy a las
+  14:47**; y el propio guion cita #410, cerrado el 09-05. O sea: el rojo que esta tanda deja fuera
+  «porque ya tiene dueño» **no tiene ningún dueño abierto**. Hay que reabrir #496 o abrir uno.
 - **#616 y #618**, que eran la tanda F preparada y esperan.
 - **Revocar ninguna de las tres decisiones de A, B y C.** Las tres parecen correctas; lo que falló
   fue no correr la batería detrás.
