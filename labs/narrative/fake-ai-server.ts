@@ -37,6 +37,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { HOJAS_BASE_ANIMS } from "../../nefan-core/src/contracts/sprite-census.js";
 import { PUERTOS_TODOS } from "../../qa/lib/stack.mjs";
 // La ruta GET /styles/{id}/{file} NO se copia: se IMPORTA del asset-store
 // (#280). Antes vivía aquí escrita a mano —con su propio `SAFE_ID`, su tabla de
@@ -121,10 +122,15 @@ const SCENE_DELAY_MS = Number(process.env.SCENE_DELAY_MS ?? 0);
 // ── Skin de sprite sheets (bench del cliente, sin GPU) ────────────────
 // POST /skin_sprite_sheet: en vez del img2img real, el "skin" son los frames
 // de OTRO modelo (SKIN_SPRITE_MODEL, default paladin — solo tiene idle) para
-// que la sustitución base→skin sea VISIBLE en el cliente. Las anims sin
-// sheet del modelo responden 500, ejercitando la cancelación de la cola de
-// skins del cliente (character-sprites.ts).
+// que la sustitución base→skin sea VISIBLE. Para anims del contrato que ese
+// modelo no tiene, el banco reutiliza idle: no debe disparar el fusible de
+// producción por una limitación de sus assets (#498). Los fallos se inyectan.
 const SKIN_SPRITE_MODEL = process.env.SKIN_SPRITE_MODEL ?? "paladin";
+const ANIMS_DEL_BANCO: ReadonlySet<string> = new Set(HOJAS_BASE_ANIMS);
+function animDelBanco(anim: string, angle: string): string {
+  return !existsSync(`${SPRITES_DIR}${SKIN_SPRITE_MODEL}/${anim}/${angle}/meta.json`) && ANIMS_DEL_BANCO.has(anim)
+    ? "idle" : anim;
+}
 
 // ── Contador de rutas DE PAGO ────────────────────────────────────────────
 // Cuáles de estas rutas cuestan dinero en el motor REAL lo sabe este fichero y
@@ -900,7 +906,7 @@ const server = http.createServer((req, res) => {
         const perfiles = { idle: [8, 2.2, 8], walk: [4, 3.6, 4], run: [4, 6.0, 4] };
         const animaciones: SpriteCatalog["animations"] = [];
         for (const [id, [kf, fps, calls]] of Object.entries(perfiles)) {
-          const metaPath = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/${id}/frontal_8/meta.json`;
+          const metaPath = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/${animDelBanco(id, "frontal_8")}/frontal_8/meta.json`;
           if (!existsSync(metaPath)) continue; // el catálogo sale del DISCO, como el de verdad
           animaciones.push({ id, keyframes: kf, play_fps: fps, calls_per_anim: calls });
         }
@@ -925,7 +931,8 @@ const server = http.createServer((req, res) => {
         if (!anim || !angle || !body.prompt) {
           return send(422, { detail: "fake-ai: anim/angle/prompt requeridos" });
         }
-        const metaPath = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/${anim}/${angle}/meta.json`;
+        const animServida = animDelBanco(anim, angle);
+        const metaPath = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/${animServida}/${angle}/meta.json`;
         if (!existsSync(metaPath)) {
           return send(500, {
             detail: `fake-ai: ${SKIN_SPRITE_MODEL} no tiene sheet ${anim}/${angle} ` +
@@ -934,10 +941,10 @@ const server = http.createServer((req, res) => {
         }
         // Tipado con el contrato, no `any`: si un meta.json del disco dejara
         // de tener la forma de SpriteSheetMeta, que lo diga el que lo lee.
-        const meta = JSON.parse(readFileSync(metaPath, "utf8")) as SpriteSheetMeta;
+        const meta = { ...JSON.parse(readFileSync(metaPath, "utf8")) as SpriteSheetMeta, anim };
         const frame_urls = Array.from({ length: meta.directions }, (_, d) =>
           Array.from({ length: meta.frame_count }, (_, f) =>
-            `/cache/sprite_sheet/fake/${anim}/${angle}/dir_${d}_frame_${String(f).padStart(3, "0")}.png`));
+            `/cache/sprite_sheet/fake/${animServida}/${angle}/dir_${d}_frame_${String(f).padStart(3, "0")}.png`));
         console.error(
           `[fake-ai] skin_sprite_sheet ${anim}/${angle} ← "${String(body.prompt).slice(0, 40)}" ` +
           `(sirviendo frames de ${SKIN_SPRITE_MODEL})`,
