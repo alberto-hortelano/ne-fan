@@ -14,7 +14,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { avisoDeCriba, cribarHostiles, type HostilDelCable } from "../src/combat/criba-de-hostiles.js";
+import { avisoDeHostilDescartado, avisoDeCriba, cribarHostiles, type HostilDelCable } from "../src/combat/criba-de-hostiles.js";
 import { combatForHostileRole } from "../src/combat/hostiles.js";
 import type { EnemyPersonality } from "../src/types.js";
 
@@ -123,16 +123,16 @@ describe("avisoDeCriba · lo que lee quien juega", () => {
   it("dice CUÁNTOS de cuántos y nombra a cada uno con su motivo", () => {
     const criba = cribarHostiles([bueno("lobo_1"), sinAtaques("roto_2"), bueno("lobo_3")]);
     assert.equal(
-      avisoDeCriba(criba),
-      `Enemigos que no entraron al mundo (1 de 3): «roto_2» (${MOTIVO_ATAQUES})`,
+      avisoDeCriba(criba)?.detalleTecnico,
+      `enemigo "roto_2" descartado: ${MOTIVO_ATAQUES}`,
     );
   });
 
   it("con dos descartados los enumera separados, sin colapsarlos en el primero", () => {
     const criba = cribarHostiles([sinAtaques("roto_1"), bueno("lobo_2"), bueno("muerto_3", { health: 0 })]);
     assert.equal(
-      avisoDeCriba(criba),
-      `Enemigos que no entraron al mundo (2 de 3): «roto_1» (${MOTIVO_ATAQUES}); «muerto_3» (${MOTIVO_MUERTO})`,
+      avisoDeCriba(criba)?.detalleTecnico,
+      `enemigo "roto_1" descartado: ${MOTIVO_ATAQUES}; enemigo "muerto_3" descartado: ${MOTIVO_MUERTO}`,
     );
   });
 
@@ -148,6 +148,16 @@ describe("avisoDeCriba · lo que lee quien juega", () => {
     // camino. Un mutante que traduzca, recorte o prefije el motivo rompe la
     // igualdad que el guion 90 mide entre las dos orillas.
     const aviso = avisoDeCriba(cribarHostiles([sinAtaques("roto_1")]));
-    assert.ok(aviso?.includes(MOTIVO_ATAQUES), aviso ?? "(sin aviso)");
+    assert.ok(aviso?.detalleTecnico.includes(MOTIVO_ATAQUES), aviso?.detalleTecnico ?? "(sin aviso)");
   });
+});
+
+it("las dos puertas explican el rechazo sin rutas de campos en el texto de juego", () => {
+  const unitario = avisoDeHostilDescartado("roto", MOTIVO_ATAQUES);
+  assert.deepEqual(unitario, {
+    message: "No pudo aparecer un enemigo: sus datos de combate no son válidos.",
+    detalleTecnico: `enemigo "roto" descartado: ${MOTIVO_ATAQUES}`,
+  });
+  const lote = avisoDeCriba(cribarHostiles([sinAtaques("a"), bueno("b"), sinAtaques("c")]));
+  assert.equal(lote?.message, "Enemigos que no entraron al mundo (2 de 3): sus datos de combate no son válidos. Consulta el registro de errores.");
 });

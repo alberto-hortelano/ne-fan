@@ -122,9 +122,22 @@ export function cribarHostiles(enemies: readonly HostilDelCable[]): CribaDeHosti
  *  Va a la línea de mensajes (`kind:"combatientes"` → `destino:"log"` en
  *  `status-rotulo.ts`) y no a un modal: la partida sigue, y lo que falta es un
  *  enemigo, no el mundo. */
-export function avisoDeCriba(criba: CribaDeHostiles): string | null {
+const MOTIVO_LEGIBLE = "sus datos de combate no son válidos";
+
+/** El mismo aviso en ambas puertas; el diagnóstico del parser queda intacto. */
+export function avisoDeHostilDescartado(id: string, motivo: string): { message: string; detalleTecnico: string } {
+  return {
+    message: `No pudo aparecer un enemigo: ${MOTIVO_LEGIBLE}.`,
+    detalleTecnico: `enemigo "${id}" descartado: ${motivo}`,
+  };
+}
+
+export function avisoDeCriba(criba: CribaDeHostiles): { message: string; detalleTecnico: string } | null {
   if (criba.descartes.length === 0) return null;
   const total = criba.altas.length + criba.descartes.length;
-  const lista = criba.descartes.map((d) => `«${d.id}» (${d.motivo})`).join("; ");
-  return `Enemigos que no entraron al mundo (${criba.descartes.length} de ${total}): ${lista}`;
+  const lista = criba.descartes.map((d) => avisoDeHostilDescartado(d.id, d.motivo).detalleTecnico).join("; ");
+  return {
+    message: `Enemigos que no entraron al mundo (${criba.descartes.length} de ${total}): ${MOTIVO_LEGIBLE}. Consulta el registro de errores.`,
+    detalleTecnico: lista,
+  };
 }

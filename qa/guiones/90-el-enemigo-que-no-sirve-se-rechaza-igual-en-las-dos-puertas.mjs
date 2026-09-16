@@ -318,6 +318,9 @@ export default async function (ctx) {
     !overlay.visible,
     JSON.stringify(overlay),
   );
+  const aviso = await ctx.page.$eval("#combat-log", el => el.textContent ?? "");
+  ctx.expect("el aviso de juego no corta la frase ni muestra rutas técnicas (#592)",
+    aviso.includes("Consulta el registro de errores.") && !aviso.includes("combat.personality"), aviso);
   const framesTirados = framesRechazados(logBridge);
   ctx.expect(
     "A3-bis · …y el borde no tiró un solo frame: el criterio está en el handler, no en el intake",

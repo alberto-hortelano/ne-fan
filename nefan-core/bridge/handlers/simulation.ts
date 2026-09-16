@@ -77,7 +77,7 @@ function avisarDeLosDescartados(
     type: "narrative_status",
     phase: "error",
     kind: "combatientes",
-    message: aviso,
+    ...aviso,
   });
 }
 

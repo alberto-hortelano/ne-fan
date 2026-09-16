@@ -1037,11 +1037,11 @@ function pintarFalloDelMotor(status: StatusRotulable): void {
     mundoVacio: !tileStore.hasGridTiles,
     overlayAbierto: muro.visible(),
   });
-  errors.push("narrative", rotulo.detalle);
+  errors.push("narrative", status.detalleTecnico ?? rotulo.detalle);
   if (rotulo.destino === "overlay") {
     muro.fallo(rotulo.titulo, rotulo.detalle, rotulo.salida);
   }
-  else log(`⚠ ${rotulo.detalle.slice(0, 100)}`);
+  else log(`⚠ ${rotulo.detalle}`);
 }
 
 /** Los spawns del motor (`spawn_entity`) se materializan en

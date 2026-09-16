@@ -1,3 +1,4 @@
+import { avisoDeHostilDescartado } from "@nefan-core/src/combat/criba-de-hostiles.js";
 /** LA puerta por la que un enemigo entra al cliente.
  *
  *  Hay dos vías por las que el motor narrativo pone algo hostil delante del
@@ -63,7 +64,8 @@ export function enemigoDesdeCombat(datos: DatosDeEnemigo): EnemigoNuevo | null {
   const { id, pos } = datos;
   const comprobado = parseHostileCombat(datos.combat);
   if (!comprobado.ok) {
-    errors.push("scene", `enemigo "${id}" descartado: ${comprobado.error}`);
+    const aviso = avisoDeHostilDescartado(id, comprobado.error);
+    errors.push("scene", `${aviso.message}\n${aviso.detalleTecnico}`);
     return null;
   }
   const { health, max_health: maxHealth, weapon_id: weaponId, personality } = comprobado.hostil;
