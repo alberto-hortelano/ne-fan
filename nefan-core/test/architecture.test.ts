@@ -2662,7 +2662,7 @@ describe("fronteras arquitectónicas", () => {
         // Y en core los mismos nombres no son asunto de esta regla.
         {
           path: "nefan-core/src/simulation/obstaculos-del-jugador.ts",
-          text: "export function aabbBloquea() {\n  const yaDentro = false;\n}\n",
+          text: "export function aabbBloquea() {\n  const pen = penetracionEnCaja(hasta, caja, radio);\n}\n",
           imports: [],
         },
         {

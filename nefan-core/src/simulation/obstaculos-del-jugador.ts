@@ -10,7 +10,14 @@
  *  mundo como argumento, y sale un sí o un no. Sin DOM, sin estado y sin tocar
  *  nada. La ALTURA no participa en ninguna de las dos: la huella colisionable
  *  es XZ (CLAUDE.md), y aquí no hay ni campo que leer.
- */
+ *
+ *  LAS TRES FUENTES SON «SALIR SÍ, ENTRAR NO», Y CADA UNA MIRA SU ORIGEN. La
+ *  frontera exime los tiles ausentes que YA se tocaban; el collider de terreno,
+ *  las CELDAS que ya se solapaban (`terrain-collision.ts`); y las cajas, desde
+ *  #601, la PENETRACIÓN que ya se tenía (`cajaBloquea`). Que las tres lo hagan
+ *  por su cuenta es lo que permite que `pasoDelJugador` no tenga escape propio:
+ *  quien aparezca dentro de algo sale andando sin que nadie le abra la puerta
+ *  entera. */
 
 import type { DuenoDeEntity } from "../session/entidades-del-tile.js";
 import type { TileCoord } from "../scene/tile.js";
@@ -76,9 +83,64 @@ export function fronteraBloquea(
   return faltanEnDestino.some((t) => !enElOrigen.has(`${t.tx},${t.ty}`));
 }
 
-/** Las CAJAS de los objetos que el plan del tile NO pinta, con la misma regla
- *  «salir sí, entrar no»: un obstáculo que ya solapa el ORIGEN no bloquea (se
- *  puede des-penetrar tras un spawn solapado); solo bloquean los NUEVOS.
+/** Una caja sólida en el plano XZ: dónde está su centro y cuánto mide su
+ *  huella. Es lo mínimo que necesita la geometría, sin categoría ni dueño: de
+ *  quién es la caja y si se le aplica lo decide quien la monta. */
+export interface CajaXZ {
+  pos: { x: number; z: number };
+  /** Huella en METROS (XZ). */
+  sizeXZ: { x: number; z: number };
+}
+
+/** CUÁNTO SE ESTÁ METIDO en la caja, en metros, contando ya el cuerpo: 0 fuera,
+ *  y dentro la distancia MÁS CORTA hasta salir por una de las cuatro caras.
+ *
+ *  Es la misma medida que usa el jugador para saber si empuja hacia dentro o
+ *  hacia fuera, y por eso se toma el `min` de los dos ejes y no su suma: salir
+ *  se hace por la cara más cercana. En el centro vale el semiancho menor; en el
+ *  borde, cero. La caja se infla por el radio, igual que la prueba de siempre,
+ *  así que «dentro» aquí significa «el cuerpo solapa la huella». */
+export function penetracionEnCaja(
+  p: { x: number; z: number },
+  caja: CajaXZ,
+  radio: number,
+): number {
+  const margenX = caja.sizeXZ.x / 2 + radio - Math.abs(p.x - caja.pos.x);
+  const margenZ = caja.sizeXZ.z / 2 + radio - Math.abs(p.z - caja.pos.z);
+  if (margenX <= 0 || margenZ <= 0) return 0;
+  return Math.min(margenX, margenZ);
+}
+
+/** ¿ESTA CAJA FRENA ESTE MOVIMIENTO? La regla es la PENETRACIÓN NO CRECIENTE:
+ *  se bloquea el paso que deja al cuerpo MÁS metido de lo que ya estaba.
+ *
+ *  Desde fuera `penetracionEnCaja(desde)` es 0, así que la respuesta es byte a
+ *  byte la de siempre: entrar bloquea. Lo que cambia es el de dentro. Hasta
+ *  #601 la exención era la CAJA ENTERA —«ya solapaba el origen» → no bloquea
+ *  nada—, y bastaba rozar una esquina en diagonal para cruzar el edificio de
+ *  lado a lado: medido, 5,99 m de penetración sobre 6 de semiancho. Su hermano
+ *  de terreno nunca tuvo ese agujero porque exime CELDA A CELDA
+ *  (`terrain-collision.ts`), no el grid entero.
+ *
+ *  Celda a celda literal aquí NO vale, y se midió: rasterizar la caja encierra
+ *  a quien aparezca dentro (0 de 8 rumbos salen de una caja de 12×12 m), y eso
+ *  es exactamente lo que la regla existe para evitar — `reparto-de-spawns.ts`
+ *  razona sobre ella. La penetración no creciente acota igual (0,00 m de
+ *  entrada desde fuera) y además deja salir SIEMPRE: alejarse del centro por
+ *  cualquiera de los dos ejes nunca aumenta el `min`, y moverse paralelo a una
+ *  cara lo deja igual, que no es «mayor». */
+export function cajaBloquea(
+  desde: { x: number; z: number },
+  hasta: { x: number; z: number },
+  radio: number,
+  caja: CajaXZ,
+): boolean {
+  return penetracionEnCaja(hasta, caja, radio) > penetracionEnCaja(desde, caja, radio);
+}
+
+/** Las CAJAS de los objetos que el plan del tile NO pinta, con la regla «salir
+ *  sí, entrar no» que aplica `cajaBloquea` caja por caja: se puede
+ *  des-penetrar tras un spawn solapado, pero no meterse más adentro.
  *
  *  QUÉ CAJA SE APLICA LO DECIDE EL ORIGEN DEL OBJETO, y ahí está el arreglo de
  *  #489. Hasta el 2026-09-07 se preguntaba UNA cosa para todos —si el TILE de
@@ -101,7 +163,12 @@ export function fronteraBloquea(
  *     caja es lo único que hay y se aplica siempre.
  *
  *  Nótese que la pregunta por el plan es POR PUNTO y no por dueño: el tile que
- *  responde es el que contiene al objeto, igual que antes. */
+ *  responde es el que contiene al objeto, igual que antes.
+ *
+ *  Esta función es el bucle del JUGADOR: la política (huella, `category`,
+ *  `dueno` y `planAplicadoEn`) es suya; la GEOMETRÍA es de `cajaBloquea`, para
+ *  que quien más adelante haga sólidas estas mismas cajas para otro cuerpo no
+ *  estrene una segunda. */
 export function aabbBloquea(
   desde: { x: number; z: number },
   hasta: { x: number; z: number },
@@ -110,15 +177,11 @@ export function aabbBloquea(
   plan: PlanDeLosTiles,
 ): boolean {
   for (const obj of obstaculos) {
-    if (!obj.sizeXZ) continue;
+    const sizeXZ = obj.sizeXZ;
+    if (!sizeXZ) continue;
     if (obj.category !== "building" && obj.category !== "prop") continue;
     if (obj.dueno.de === "tile" && plan.planAplicadoEn(obj.pos.x, obj.pos.z)) continue;
-    const hx = obj.sizeXZ.x / 2 + radio;
-    const hz = obj.sizeXZ.z / 2 + radio;
-    if (Math.abs(hasta.x - obj.pos.x) < hx && Math.abs(hasta.z - obj.pos.z) < hz) {
-      const yaDentro = Math.abs(desde.x - obj.pos.x) < hx && Math.abs(desde.z - obj.pos.z) < hz;
-      if (!yaDentro) return true;
-    }
+    if (cajaBloquea(desde, hasta, radio, { pos: obj.pos, sizeXZ })) return true;
   }
   return false;
 }

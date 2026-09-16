@@ -58,12 +58,27 @@ export function intencionDeTeclas(teclas: {
  *  puede retroceder o desplazarse de lado sin dejar de encarar al enemigo. La
  *  diagonal se RENORMALIZA o correría un 41 % más rápido que recto.
  *
- *  Resolución POR EJES contra lo sólido, que es lo que hace deslizar por las
- *  paredes en vez de pegarse a ellas: cada eje se prueba por su cuenta y el que
- *  choca se queda a cero. Y si el ORIGEN ya es sólido —un save antiguo dentro
- *  de una huella que hoy bloquea, un teletransporte del bench— el movimiento se
- *  permite ENTERO: se puede salir, nunca se queda atrapado. Esa es la regla
- *  «salir sí, entrar no», y sin ella un jugador mal colocado no tiene juego.
+ *  Resolución por ejes SECUENCIAL contra lo sólido, que es lo que hace deslizar
+ *  por las paredes en vez de pegarse a ellas: se prueba X desde el origen y
+ *  luego Z desde lo que X haya dejado aplicado. La consecuencia es la que
+ *  arregla #601: el punto en el que acaba el jugador SIEMPRE es uno de los que
+ *  se preguntaron. Hasta hoy los dos ejes se probaban sueltos desde el origen y
+ *  nadie miraba el destino COMBINADO, así que andando hacia la ESQUINA de un
+ *  edificio cada sondeo seguía fuera mientras la suma ya estaba dentro —ventana
+ *  medida de 0,95° a 60 fps, y no es túnel por delta grande— y el jugador
+ *  entraba. Si el primer eje choca aporta 0 y el segundo sondeo sale del origen
+ *  exactamente igual que antes, así que el rincón cóncavo no cambia: la
+ *  objeción de «en cadena se pega a las esquinas» valía para encadenar el delta
+ *  BRUTO, no el ya resuelto.
+ *
+ *  Aquí NO hay escape para el que empieza dentro de un sólido, y no hace falta:
+ *  las tres fuentes de solidez son «salir sí, entrar no» cada una por su cuenta
+ *  —la frontera exime los tiles ya tocados, el terreno las celdas ya solapadas
+ *  y la caja la penetración que ya se tenía (`obstaculos-del-jugador.ts`)—, así
+ *  que quien aparezca dentro de una huella sale andando. El `atrapado` que
+ *  vivía aquí (un tercer sondeo, `solido(desde, desde)`) era rama MUERTA:
+ *  ninguna de las tres puede contestar `true` cuando el destino es el propio
+ *  origen, y se retiró con #601.
  *
  *  El `forward` se toma HORIZONTAL (solo x,z): mirar al suelo no puede hacerte
  *  caminar hacia el suelo. Uno de longitud cero no es «no se mueve», es una
@@ -93,9 +108,11 @@ export function pasoDelJugador(p: {
   const mlen = Math.hypot(mx, mz) || 1;
   const dx = (mx / mlen) * p.velocidad * p.delta;
   const dz = (mz / mlen) * p.velocidad * p.delta;
-  const atrapado = p.solido(p.desde.x, p.desde.z);
-  return {
-    dx: atrapado || !p.solido(p.desde.x + dx, p.desde.z) ? dx : 0,
-    dz: atrapado || !p.solido(p.desde.x, p.desde.z + dz) ? dz : 0,
-  };
+  // X desde el origen; Z desde lo que X haya dejado puesto. Con el primer eje
+  // bloqueado el segundo sondeo es el de siempre (aporta 0); con el primero
+  // aplicado, el segundo ES el destino combinado, que es lo que cierra la
+  // esquina. Dos preguntas, ni una más.
+  const ax = p.solido(p.desde.x + dx, p.desde.z) ? 0 : dx;
+  const az = p.solido(p.desde.x + ax, p.desde.z + dz) ? 0 : dz;
+  return { dx: ax, dz: az };
 }

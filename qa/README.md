@@ -520,34 +520,21 @@ Y sin navegador ni stack, `qa/equivalencia-de-cajas.mjs` (QA de la PR 5 de #241,
 pregunta que sostiene TODO el programa: *¿cambió de conducta algo que no fuera lo declarado?* Lleva
 dentro el criterio de las cajas copiado literal de la base (`3cd77d82:nefan-html/src/world/collision.ts`)
 y lo compara con el `aabbBloquea` de hoy sobre las tres fixtures y los DOS estados del plan de un
-tile —instalado y sin derivar, que es el `catch` de `applyPlanCollision`—, 30 sondas por objeto
-bloqueable. Hoy: **2.160 sondas · 0 diferencias**, y la forja de runtime cambiando en 10 de 30, que
+tile —instalado y sin derivar, que es el `catch` de `applyPlanCollision`—, 20 sondas por objeto
+bloqueable. Hoy: **1.440 sondas · 0 diferencias**, y la forja de runtime cambiando en 10 de 20, que
 es #489 pagado. Es lo único que ve la mitad `planAplicadoEn` de la decisión (ningún guion de
-navegador se pone rojo si esa caja se aplica de más: medido). Segundos, cero créditos:
+navegador se pone rojo si esa caja se aplica de más: medido). Los dos orígenes son EXTERIORES: el
+tercero, que salía de dentro de la caja, se retiró con #601 —ahí la conducta ya no es la de la base
+a propósito, porque la exención pasó de la caja entera a la penetración— y compararlo con la base
+sería pedirle a este guion que declare regresión el arreglo. Segundos, cero créditos:
 
 ```bash
 node qa/equivalencia-de-cajas.mjs   # sale 1 si algo que no es un spawn de runtime cambió
 ```
 
-Y al lado, `qa/la-esquina-de-la-caja-se-corta.mjs` (QA de la PR-3 de #545), que **no es un candado
-sino una REPRODUCCIÓN**: el jugador entra en un edificio andando hacia su ESQUINA, y no hace falta
-carga ninguna. `pasoDelJugador` prueba los dos ejes por separado, así que en la diagonal cada sondeo
-suelto sigue fuera mientras la suma ya está dentro; y una vez dentro, la regla «salir sí, entrar no»
-de `aabbBloquea` deja cruzar el edificio entero. Medido hoy sobre la forja de 4×4 m del guion 91:
-ventana de entrada **0,95° de 90° a 60 fps · 1,45° a 30 · 3,15° a 20 · 5,25° a 12**, y el tope de
-0,1 s del `gameLoop` la deja de ensanchar por debajo de 10 fps — **la carga no crea el defecto, solo
-lo hace más probable**. Por eso sale **0 mientras se reproduce** y 1 el día que alguien lo arregle,
-que es cuando este fichero se borra. Fuera de la batería y fuera de CI: un ejecutable que solo puede
-salir verde no es un candado. Probado en negativo por las dos puertas (`QA_FIX_SIMULADO=1` → ventana
-0,00° y exit 1; `QA_SIN_CAJA=1` → el control se pone rojo y exit 1). Segundos, sin navegador y sin
-créditos:
-
-```bash
-node qa/la-esquina-de-la-caja-se-corta.mjs   # sale 0 MIENTRAS el defecto viva
-```
-
-Y en la misma familia, `qa/la-puerta-de-la-reaparicion.mjs` (QA de la PR 3 de la tanda E, #538), que
-sí es un **candado**, y de dos cosas que el árbol dejó a medias. Una: la PR retiró de
+Y en la misma familia —sin navegador, sin stack y con su control—,
+`qa/la-puerta-de-la-reaparicion.mjs` (QA de la PR 3 de la tanda E, #538), que sí es un **candado**,
+y de dos cosas que el árbol dejó a medias. Una: la PR retiró de
 `puntoDeReaparicion` la rama que preguntaba por sólidos y candó la puerta con un aserto de ARIDAD
 (`puntoDeReaparicion.length === 1`), pero `Function.length` **deja de contar en el primer parámetro
 con valor por defecto**, así que la forma más probable de que la consulta vuelva —añadirla como

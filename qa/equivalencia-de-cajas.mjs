@@ -45,8 +45,15 @@ function aabbBase(desde, hasta, radio, obstaculos, svgApplied) {
 
 /** Diez destinos por objeto: su centro, los cuatro puntos justo DENTRO de la
  *  pared (media huella + radio − 1 cm), los cuatro justo FUERA (+1 cm) y uno
- *  lejos. Y tres orígenes: lejos, pegado por el oeste y DENTRO (que es la rama
- *  «salir sí, entrar no»). */
+ *  lejos. Y dos orígenes, los dos EXTERIORES: lejos y pegado por el oeste.
+ *
+ *  Había un tercero, DENTRO de la caja, y se retiró con #601: ahí la conducta
+ *  YA NO es la de la base a propósito. La base eximía la caja ENTERA («si el
+ *  origen solapa, no bloquea nada») y hoy se exime solo la PENETRACIÓN que ya
+ *  se tenía, así que desde dentro un paso hacia el centro bloquea donde antes
+ *  no. Comparar eso con la base sería pedirle a este guion que declare
+ *  regresión el arreglo. Lo que mide —y para lo que existe— es que fuera de los
+ *  spawns de runtime NADA cambió, y el origen exterior es donde eso se ve. */
 function sondas(o) {
   const hx = o.sizeXZ.x / 2 + RADIO;
   const hz = o.sizeXZ.z / 2 + RADIO;
@@ -61,7 +68,6 @@ function sondas(o) {
   const origenes = [
     { x: o.pos.x + 60, z: o.pos.z + 60 },
     { x: o.pos.x - hx - 0.5, z: o.pos.z },
-    { x: o.pos.x + 0.05, z: o.pos.z + 0.05 },
   ];
   return { destinos, origenes };
 }
