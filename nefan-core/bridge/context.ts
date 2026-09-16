@@ -494,7 +494,8 @@ export function createSessionNpcBehavior(
     // resumes y en tests — la flakiness de bridge-npc venía de Date.now().
     rng: seededRng(`${ctx.narrative.session_id}:npc`),
     world: {
-      blocksMove: (fx, fz, tx, tz, r) => ctx.simCollision.blocksMove(fx, fz, tx, tz, r),
+      queImpideElPaso: (fx, fz, tx, tz, r) => ctx.simCollision.queImpideElPaso(fx, fz, tx, tz, r),
+      porDondeSalirDeAqui: (x, z, r) => ctx.simCollision.porDondeSalirDeAqui(x, z, r),
       blocksCircle: (x, z, r) => ctx.simCollision.blocksCircle(x, z, r),
       resolvePlaceTarget: (placeId) => resolvePlaceTarget(ctx.narrative, placeId),
       getEntityPosition: (entityId) => {

@@ -158,7 +158,10 @@ jobs:
   # `bateria-`/`esperas-` (spawnean `qa/run.mjs`: preset + Chromium),
   # `fake-enruta-por-pathname` (su observable lee sprite sheets GENERADOS,
   # gitignored: rojo en un clon limpio) y los tres que levantan asset-store o
-  # sprite-forge (`el-arte-`, `el-indice-`, `perfil-`: sin cronometrar).
+  # sprite-forge (`el-arte-`, `el-indice-`, `perfil-`: sin cronometrar). Y una
+  # regla que la tanda E (2026-09-16) tuvo que aprender mirando la lista: un
+  # ejecutable headless NUEVO entra AQUÍ el día que nace, o no lo corre nadie —
+  # tres llevaban fuera sin figurar en ninguna excepción.
   candados-headless:
     runs-on: ubuntu-latest
     # ~2 min medidos en local (05-09) para los ocho pasos. Un candado que se
@@ -260,3 +263,26 @@ jobs:
       # (45 s) la suite de ai_server no escribe el ledger de gasto REAL (#392);
       # spawnea `python3 -m unittest discover` con el entorno controlado.
       - run: node qa/el-ledger-de-gasto-no-lo-escribe-la-suite.mjs
+      # Los tres de la GEOMETRÍA SÓLIDA, que hasta la tanda E (2026-09-16) no
+      # corría nadie: no abren navegador, leen `dist` —que este job ya
+      # construye— y medidos en un árbol limpio (`git archive` + build) tardan
+      # 70, 264 y 200 ms. Su ausencia no estaba en la lista de excepciones de
+      # arriba: simplemente nacieron fuera, que es como el 2026-09-05 un candado
+      # pasó un día rojo en `main` sin que nadie se enterara.
+      #
+      # #489: la caja del jugador responde igual que la base para todo origen
+      # EXTERIOR (1.440 sondas). Desde #601 ya no mira los interiores, y su
+      # cabecera dice qué dejó de mirar.
+      - run: node qa/equivalencia-de-cajas.mjs
+      # #538: la consulta de solidez no vuelve a `puntoDeReaparicion`. El aserto
+      # de ARIDAD no basta —`Function.length` no cuenta los parámetros con valor
+      # por defecto, #614—, así que afirma que un argumento de más ni se llama
+      # ni mueve el punto, y mide la equivalencia de la retirada en 99.932
+      # puntos de las tres fixtures.
+      - run: node qa/la-puerta-de-la-reaparicion.mjs
+      # #583: un NPC no atraviesa lo que al jugador le frena, y al que le cae
+      # una caja encima el sim le SACA. Monta el adapter de PRODUCCIÓN
+      # (`createSessionNpcBehavior`) a propósito: construido a mano, cortar el
+      # cable de `bridge/context.ts` dejaba la suite entera en verde (2891/2891)
+      # con #583 revertido del todo.
+      - run: node qa/el-mundo-solido-tambien-para-el-npc.mjs

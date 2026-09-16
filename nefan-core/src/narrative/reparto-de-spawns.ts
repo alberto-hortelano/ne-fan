@@ -39,7 +39,33 @@ import { PLAYER_RADIUS_M } from "../scene/terrain-collision.js";
  *  rozando no es pasar, y `aabbBloquea` infla cada caja por el radio del
  *  jugador, así que con EXACTAMENTE 0,8 m las dos cajas infladas se tocarían y
  *  el pasillo sería intransitable — el mismo fallo de los 0,3 m, más fino. El
- *  margen es lo único elegido a ojo de este módulo, y se elige por arriba. */
+ *  margen es lo único elegido a ojo de este módulo, y se elige por arriba.
+ *
+ *  ESTÁ DIMENSIONADO PARA EL JUGADOR Y SE QUEDA CORTO PARA EL NPC, y la cuenta
+ *  es de dos constantes que ya están en el árbol:
+ *
+ *    · este hueco vale **1,0 m** (0,4 × 2 + 0,2);
+ *    · el cuerpo del NPC es el MAYOR del juego (`NPC_RADIUS_M` = 0,5), o sea
+ *      **1,0 m de diámetro**: exactamente el hueco. Y la regla de la casa para
+ *      «¿cabe por aquí?» pide margen de verdad —`celdasLibresParaRadio(0,5,
+ *      0,5)` = 3 celdas = **1,5 m** (#289)—, así que lo que el reparto deja no
+ *      es un pasillo para un NPC: es un empate.
+ *
+ *  Qué hace un empate, MEDIDO en el sim (#583, QA H-4) y no deducido: la
+ *  penetración de una caja es 0 cuando el margen es 0 (`margen <= 0` en
+ *  `penetracionEnCaja`), así que por la **línea central exacta** el NPC pasa —y
+ *  solo por ahí—. A **5 cm** de esa línea no pasa: se planta y **el escape NO
+ *  se abre**, porque le quedan rumbos legales hacia atrás y el escape solo mira
+ *  «las siete deflexiones bloqueadas». Cinco trayectorias medidas (z = 0 ·
+ *  0,05 · 0,1 · 0,3 · 0,6): cruza la primera y ninguna más, 0 escapes.
+ *
+ *  O sea: por el pasillo que deja este número pasa el jugador, y un NPC solo si
+ *  entra clavado en el eje. Desde #583 las cajas de estos spawns también son
+ *  sólidas para él, así que el hueco es suyo tanto como del jugador, y esto NO
+ *  lo tapa ningún escape. Quien suba este número a `2 × NPC_RADIUS_M + margen`
+ *  está arreglando esto; quien lo baje, empeorándolo. Rastro de procedencia:
+ *  #524 (que puso el reparto por tamaño) y #289 (que fijó cuánto hueco pide
+ *  cada cuerpo). */
 export const HOLGURA_ENTRE_SPAWNS_M = 2 * PLAYER_RADIUS_M + 0.2;
 
 /** Lo que el reparto necesita saber de cada cosa: su clase y la huella que el

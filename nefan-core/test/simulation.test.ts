@@ -257,7 +257,8 @@ describe("GameSimulation", () => {
     const behavior = createAmbientNpcBehavior({
       rng: new SeededRng(42),
       world: {
-        blocksMove: () => false,
+        queImpideElPaso: () => null,
+        porDondeSalirDeAqui: () => null,
         blocksCircle: () => false,
         resolvePlaceTarget: () => null,
         getEntityPosition: () => null,

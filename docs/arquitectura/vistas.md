@@ -210,8 +210,27 @@ que su caja es lo único que hay y se aplica siempre. Su huella la deriva
 `huellaEnMetros` de la MISMA tabla de celdas que la de una entity de escena.
 Hasta el 2026-09-07 la pregunta era solo la del tile y, como todo tile del motor
 tiene la colisión del plan desde que llega, apagaba TODAS las cajas: los spawns
-no eran sólidos (#489). El sim de NPCs no usa ninguna de las dos a propósito
-(`bridge/sim-collision.ts`).
+no eran sólidos (#489).
+
+**El sim de NPCs comparte esa geometría desde #583**, pero solo la mitad que le
+toca: las cajas de los SPAWNS DE RUNTIME (`src/simulation/cajas-de-runtime.ts`,
+con la misma `cajaBloquea` — no hay una segunda), nunca la FRONTERA del plano
+(un NPC no se frena en el borde del mundo conocido: su tile existe, es donde
+vive) ni la caja de lo que DECLARA un tile (responde por él su volumen
+derivado, con sus vanos). Y con dos reglas de más que el jugador no
+tiene, porque al jugador le empuja su teclado y al NPC no le empuja nadie
+(`npc-behavior.ts`): al que se queda DENTRO de una caja recién puesta se le da
+el rumbo de su cara más cercana y sale andando —sin eso se quedaba dentro para
+siempre, y la consulta decía que nada se lo impedía—, y al que no tiene por
+dónde rodear —las siete deflexiones bloqueadas— se le deja atravesarla,
+diciéndolo en la traza.
+
+Lo que esas dos reglas NO tapan, medido: el steering sigue siendo por deflexión
+(`TODO(A*)`) y **no rodea un obstáculo centrado en su camino**, venga de donde
+venga. El mismo cajón de 6 m, misma posición, del tile o de runtime, deja al
+NPC plantado delante las dos veces; y por el pasillo de 1,0 m que deja el
+reparto de un turno (`HOLGURA_ENTRE_SPAWNS_M`) solo pasa si entra clavado en su
+eje. Eso es pathfinding y tiene su sitio, no estas reglas.
 
 **PROHIBIDO recortar una imagen generada con siluetas DECLARADAS.** Se probó y
 NO funciona: el modelo de imagen recoloca y reorienta lo declarado, la máscara

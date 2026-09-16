@@ -16,6 +16,7 @@ import {
   cajaBloquea,
   fronteraBloquea,
   penetracionEnCaja,
+  salidaDeCaja,
   type DuenoDeEntity,
   type ObstaculoAabb,
   type PlanDeLosTiles,
@@ -299,5 +300,57 @@ describe("penetracionEnCaja / cajaBloquea — cuánto se está metido y si se em
     assert.equal(penetracionEnCaja(en(0, -3), caja, R), 0, "a 3 m, cero y no −1,6");
     assert.equal(cajaBloquea(en(0, -5), en(0, -3), R, caja), false, "acercarse por z no frena");
     assert.equal(cajaBloquea(en(-5, 0), en(-3, 0), R, caja), false, "ni por x");
+  });
+});
+
+/** POR DÓNDE SE SALE (#583, QA H-2). La regla «salir sí, entrar no» dice qué
+ *  pasos NO se frenan, y con eso sale solo quien empuja: el jugador con su
+ *  teclado. A un NPC hay que decirle hacia dónde, o se queda dentro andando
+ *  hacia una meta que está al otro lado. */
+describe("salidaDeCaja — la misma medida, mirada del otro lado", () => {
+  /** Rectangular (4×2) y fuera del origen, por los mismos dos motivos que la
+   *  suite de arriba. Con radio 0,4: 2,4 m en x y 1,4 en z desde el centro. */
+  const caja = { pos: { x: 7, z: -3 }, sizeXZ: { x: 4, z: 2 } };
+  const en = (dx: number, dz: number) => ({ x: caja.pos.x + dx, z: caja.pos.z + dz });
+  const R = 0.4;
+
+  it("fuera no hay salida que dar, y el borde exacto ya es fuera", () => {
+    assert.equal(salidaDeCaja(en(3, 0), caja, R), null);
+    assert.equal(salidaDeCaja(en(0, 2), caja, R), null);
+    assert.equal(salidaDeCaja(en(2.4, 0), caja, R), null, "el borde inflado cuenta como fuera");
+  });
+
+  it("dentro, apunta a la cara MÁS CERCANA, que en un rectángulo es el eje estrecho", () => {
+    // Desde el centro de una caja 4×2, la salida corta es por z (1,4 contra 2,4).
+    assert.deepEqual(salidaDeCaja(en(0, 0), caja, R)?.dir, { x: 0, z: 1 });
+    // Pegado a la cara este por dentro: ahora la corta es por x.
+    assert.deepEqual(salidaDeCaja(en(2.3, 0), caja, R)?.dir, { x: 1, z: 0 });
+    // Y por el lado contrario, al contrario: el signo es el del lado en el que
+    // se está. Si no lo fuera, la «salida» metería al NPC más adentro.
+    assert.deepEqual(salidaDeCaja(en(-2.3, 0), caja, R)?.dir, { x: -1, z: 0 });
+    assert.deepEqual(salidaDeCaja(en(0, -1.3), caja, R)?.dir, { x: 0, z: -1 });
+  });
+
+  it("el rumbo es UNITARIO y paralelo a un eje: un paso entero hacia la cara", () => {
+    for (const p of [en(0, 0), en(2.3, 0), en(-1, 0.5), en(0, -1.2)]) {
+      const dir = salidaDeCaja(p, caja, R)!.dir;
+      assert.equal(Math.hypot(dir.x, dir.z), 1, `no unitario en ${JSON.stringify(p)}`);
+      assert.ok(dir.x === 0 || dir.z === 0, "la salida más corta de un rectángulo va por un eje");
+    }
+  });
+
+  it("dice la MISMA penetración que `penetracionEnCaja`, porque es la misma cuenta", () => {
+    for (const p of [en(0, 0), en(2.3, 0), en(-1, 0.5), en(0, -1.2), en(3, 0), en(0, 9)]) {
+      assert.equal(
+        salidaDeCaja(p, caja, R)?.pen ?? 0,
+        penetracionEnCaja(p, caja, R),
+        `discrepan en ${JSON.stringify(p)}: habría un punto en el que la caja te tiene dentro y la salida no sale`,
+      );
+    }
+  });
+
+  it("el RADIO infla la caja también aquí: con cuerpo se está dentro antes", () => {
+    assert.deepEqual(salidaDeCaja(en(2.2, 0), caja, 0.4)?.dir, { x: 1, z: 0 }, "con radio 0,4 está dentro");
+    assert.equal(salidaDeCaja(en(2.2, 0), caja, 0.1), null, "sin apenas cuerpo, ya está fuera");
   });
 });

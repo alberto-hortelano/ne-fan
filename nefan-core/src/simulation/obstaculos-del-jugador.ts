@@ -40,7 +40,16 @@
  *     sobre el paso de la base da exactamente lo mismo— y #601 no lo arregla; lo
  *     que sí hace es cerrar la puerta principal por la que se llegaba ahí, que
  *     era entrar andando por una esquina. Vive con número propio en **#616**,
- *     con esta misma tabla. No lo cuente nadie como resuelto. */
+ *     con esta misma tabla. No lo cuente nadie como resuelto.
+ *
+ *  Y UN MATIZ QUE #583 OBLIGÓ A ESCRIBIR: «de aquí se sale siempre» es del
+ *  JUGADOR, que empuja con su teclado hasta salir. Lo que la caja promete es
+ *  que NO FRENA el paso que saca, no que alguien lo dé. A un NPC no le empuja
+ *  nadie —su steering solo sondea rumbos hacia su meta— y con una caja encima
+ *  se quedaba dentro andando para siempre (#583). Para eso está `salidaDeCaja`,
+ *  ahí abajo: el RUMBO de salida, que es la pieza que convierte «no te frena»
+ *  en «sales». La tiene la caja y **no la tiene el terreno**, y ese es hoy
+ *  justamente el contenido de #616. */
 
 import type { DuenoDeEntity } from "../session/entidades-del-tile.js";
 import type { TileCoord } from "../scene/tile.js";
@@ -128,10 +137,49 @@ export function penetracionEnCaja(
   caja: CajaXZ,
   radio: number,
 ): number {
-  const margenX = caja.sizeXZ.x / 2 + radio - Math.abs(p.x - caja.pos.x);
-  const margenZ = caja.sizeXZ.z / 2 + radio - Math.abs(p.z - caja.pos.z);
-  if (margenX <= 0 || margenZ <= 0) return 0;
-  return Math.min(margenX, margenZ);
+  return salidaDeCaja(p, caja, radio)?.pen ?? 0;
+}
+
+/** POR DÓNDE SE SALE, que es la misma medida mirada del otro lado: la cara más
+ *  cercana y cuánto falta para alcanzarla. `null` fuera.
+ *
+ *  `penetracionEnCaja` contesta CUÁNTO y esta CUÁL, y comparten cuenta a
+ *  propósito: si la dirección de salida saliera de una aritmética propia
+ *  podrían discrepar, y entonces habría un punto en el que la caja dice «estás
+ *  dentro» y la salida apunta a un sitio que no sale.
+ *
+ *  Quién la necesita, y por qué no basta con la regla «salir sí, entrar no»:
+ *  esa regla dice qué pasos NO se frenan, y con eso el JUGADOR sale solo
+ *  —empuja con su teclado hasta que sale—. A un NPC no le empuja nadie: el
+ *  steering solo sondea rumbos hacia su meta, y si la meta está al otro lado de
+ *  la caja, ninguno de ellos le saca (medido: 290 s de 300 dentro de un carro,
+ *  QA de #583). Quien mueve un cuerpo sin teclado necesita que se le diga hacia
+ *  dónde, y eso es esto.
+ *
+ *  SOLO PARA LA CAJA, y conviene que se lea aquí y no solo en el issue: el
+ *  TERRENO no tiene esta pieza, así que de un edificio del plan sigue sin salir
+ *  nadie (**#616**, con la tabla medida en la cabecera). No es un olvido —sacar
+ *  de ahí es otra cuenta, por celdas y no por rectángulo, y otra decisión— y
+ *  hay candado de que esto NO lo tapa (`test/sim-collision.test.ts`, «de la
+ *  geometría del TILE no saca a nadie»). */
+export function salidaDeCaja(
+  p: { x: number; z: number },
+  caja: CajaXZ,
+  radio: number,
+): { dir: { x: number; z: number }; pen: number } | null {
+  const dx = p.x - caja.pos.x;
+  const dz = p.z - caja.pos.z;
+  const margenX = caja.sizeXZ.x / 2 + radio - Math.abs(dx);
+  const margenZ = caja.sizeXZ.z / 2 + radio - Math.abs(dz);
+  if (margenX <= 0 || margenZ <= 0) return null;
+  // Por la cara más cercana, y en el empate por la X: da igual cuál se elija
+  // —las dos salen en la misma distancia— pero elegir SIEMPRE la misma hace
+  // la salida determinista, y un NPC que alterna de eje no avanza.
+  // El signo es el del lado en el que se está; justo en el eje central (dx = 0)
+  // se sale hacia +, que es una elección y no un empate con significado.
+  return margenX <= margenZ
+    ? { dir: { x: dx < 0 ? -1 : 1, z: 0 }, pen: margenX }
+    : { dir: { x: 0, z: dz < 0 ? -1 : 1 }, pen: margenZ };
 }
 
 /** ¿ESTA CAJA FRENA ESTE MOVIMIENTO? La regla es la PENETRACIÓN NO CRECIENTE:
