@@ -266,7 +266,7 @@ export default async function (ctx) {
       return d >= a.minima ? { x: p.x, z: p.z, d } : null;
     },
     {
-      ms: 15_000,
+      sim: 15,
       arg: { x: posArranque.x, z: posArranque.z, minima: SEPARACION_MINIMA },
       tecla: "up",
     },

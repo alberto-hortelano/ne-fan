@@ -112,7 +112,11 @@ exentos conducen navegador, disco o sockets). `qa/lib` NO entra en mutación ni 
 `test/combate-de-qa.test.ts`): la decisión de cuándo una espera se ha agotado no necesita un
 navegador, necesita una página que conteste; y con qué presupuesto espera un gesto de pelea, tampoco.
 Lo segundo se cobró antes de medirse: al cambiar `maxMs` por `sim`, **tres sitios de llamada se
-quedaron escribiendo la opción muerta** y JavaScript se los tragó — hoy eso LANZA.
+quedaron escribiendo la opción muerta** y JavaScript se los tragó — hoy eso LANZA. `parada.mjs`
+nace ya medido (`test/parada-de-qa.test.ts`) y por el mismo motivo llevado un paso más lejos: su
+página falsa mueve **el reloj del mundo y la posición del jugador por separado**, que es justo lo
+que ningún navegador deja hacer, así que el candado se puede probar en las dos direcciones sin
+esperar a que la máquina se ocupe.
 
 Y por el mismo camino —test → banco, sin navegador, en CI— corre desde la tanda A
 `test/el-banco-declara-el-modo-de-gasto.test.ts`: **todo guion que ARRANQUE una partida**
@@ -132,7 +136,7 @@ Un fichero en `guiones/` que exporta `async (ctx) => {}`. El contexto ofrece:
 |---|---|
 | `ctx.nefan(path, ...args)` | llama o lee `window.__nefan.<path>` |
 | `ctx.waitFor(desc, fn, ms \| {sim}, arg)` | espera a que `fn` (en la página) devuelva algo truthy. `ms` es reloj de PARED; `{sim: N}` son segundos de SIMULACIÓN, y entonces manda el sim (regla 1) |
-| `ctx.holdUntil(key, desc, fn, ms \| {sim}, arg)` | mantiene una tecla hasta que se cumple `fn`, y la suelta siempre |
+| `ctx.holdUntil(key, desc, fn, {sim} \| {ms}, arg)` | mantiene una tecla hasta que se cumple `fn`, y la suelta siempre. El presupuesto es un OBJETO y nunca un número: conduce al jugador, así que va en `{sim: N}` — `{ms: N}` es pared declarada y hay que apuntarla (regla 1) |
 | `ctx.expect(desc, cond, detalle)` | apunta un criterio; los fallos deciden el veredicto |
 | `ctx.expectEspera(desc, debeOcurrir, fn, {ms, sim, arg, tecla, aserto})` | espera y AFIRMA si ocurrió o no: un umbral, escrito una vez. `debeOcurrir:false` es «el timeout ES el éxito». Con `sim`, el `ms` pasa a ser el cortafuegos de pared y no el presupuesto |
 | `ctx.absorbe(motivo, fn)` | consume la expiración de una espera DICIENDO dónde vive la medida de verdad (cortafuegos de un bucle que remide, esperas que solo sirven para una foto) |
@@ -174,6 +178,45 @@ Reglas que hacen que un guion valga algo:
    pared se quedan las esperas cuyo sujeto es OTRO proceso (que conteste el bridge, que llegue un
    frame de websocket, que el save aparezca en disco): el reloj del mundo no dice nada de un
    servidor.
+
+   **Y ya no es una convención: una espera que CONDUCE al jugador no se puede escribir en pared.**
+   `ctx.holdUntil` mantiene una tecla, así que lo que espera es que el juego progrese; su
+   presupuesto es un OBJETO (`{sim: N}`, o `{ms: N}` para la que de verdad espera a otro proceso) y
+   el número suelto de milisegundos LANZA. Lo mismo vale para `ctx.expectEspera(…, {tecla})`. Quién
+   lo sujeta: el propio `holdUntil` en tiempo de ejecución, y —porque esta batería no corre en
+   ningún job de CI— `nefan-core/test/esperas-que-conducen.test.ts`, que lee el ÁRBOL DE SINTAXIS de
+   **todo `qa/**.mjs`** (menos `qa/run.mjs`, que DEFINE los verbos) en cada `npm run verify`, en las
+   tres formas que tiene el defecto: `holdUntil` sin `{sim}`, `expectEspera(…, {tecla})` sin `sim`, y
+   **una tecla mantenida aparte + un `ctx.waitFor` de pared**, que es como #545 estaba escrito. Su
+   frontera, declarada y con un caso que la mide: el estado del teclado se sigue por anidamiento
+   LÉXICO, así que una tecla pulsada en el llamante con la espera dentro de un helper no se ve. Las esperas que hoy siguen en pared están
+   **apuntadas con su motivo** en `nefan-core/data/contract/esperas-que-conducen.json`, y la
+   exención caduca sola: si la espera pasa a sim, la entrada se queda sin sujeto y el test se pone
+   rojo.
+
+   **La PARADA («el jugador empuja contra algo y deja de avanzar») tiene molde:
+   `qa/lib/parada.mjs`.** No se escribe a mano, y el motivo es que escrita a mano leía paradas que
+   no existen: muestreaba `state().pos` cada 150 ms de PARED y declaraba parada tras tres muestras
+   quietas, así que bastaba con que entre dos sondeos no corriera un frame para que el jugador
+   estuviese «parado» a mitad de camino. Ahora **una muestra solo cuenta si el mundo ha corrido**
+   `PASO_DE_SIM_S` segundos (la cadencia de la sonda, leída en segundos de mundo), y sin muestras no
+   hay parada: el estado malo deja de ser expresable. El molde devuelve además `saltadas`, los
+   sondeos que NO contaron porque el mundo no había corrido el paso — que **no** es una medida de
+   la carga y va al revés que ella (QA lo midió: 26 y 8 en reposo, **0 y 0** a ×40; con `paso`
+   igual a la cadencia, en reposo casi la mitad de los sondeos cae por debajo, y bajo carga un
+   solo frame trae doce segundos de mundo de golpe). Lo que dice es la cadencia frente al paso. Lo ejerce
+   `nefan-core/test/parada-de-qa.test.ts` sin navegador y el **guion 132** sobre la página real, con
+   el patrón viejo al lado para que el contraste signifique algo.
+
+   **Lo que el reproductor de carga NO puede reproducir, medido, para que nadie lo reintente.**
+   `qa/bajo-carga.mjs` frena el hilo principal con CDP, y con eso **no** sale la parada falsa: el
+   sondeo de Playwright corre en ese mismo hilo, así que mientras un frame dura once segundos la
+   lectura tampoco vuelve, y cuando vuelve trae el avance de golpe. Medido el 2026-09-15 sobre el
+   guion 91: ×40 tres veces y ×100 dos veces (razón sim/pared 0,235 · 0,251 · 0,271 · 0,104 ·
+   0,098, frames de hasta 23 s), **verde las cinco**. Lo que el throttling produce es agotar el
+   presupuesto, no descolgar el muestreo. La parada falsa sale del **desacoplo** —la página
+   contesta y el mundo no corre: el título delante, el rAF que deja de reprogramarse— y eso se
+   reproduce de forma determinista en el guion 132, no con el dial.
 
    **El reloj lo publica el cliente en `__nefan.reloj()` → `{sim, frames, loop}`, y las tres cifras
    son tres porque colapsarlas costó un defecto.** `sim` son segundos de MUNDO y solo sube cuando el

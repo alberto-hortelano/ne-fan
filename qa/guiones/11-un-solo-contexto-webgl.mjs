@@ -77,7 +77,7 @@ export default async function (ctx) {
       const p = window.__nefan.state().pos;
       return Math.hypot(p.x - inicio.x, p.z - inicio.z) > 1 ? p : null;
     },
-    { ms: 15_000, arg: (await ctx.nefan("state")).pos, tecla: "up" },
+    { sim: 15, arg: (await ctx.nefan("state")).pos, tecla: "up" },
   );
 
   const contextos = await ctx.page.evaluate(() =>

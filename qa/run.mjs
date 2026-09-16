@@ -71,7 +71,7 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // bloque decide si dos corridas colisionan — el criterio 3 entero.
 import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
 import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } from "./lib/veredictos.mjs";
-import { ctxDeSonda } from "./lib/sonda.mjs";
+import { ctxDeSonda, presupuestoConducido } from "./lib/sonda.mjs";
 // Cómo se compone la URL de la página: pura, y con su propio test en core
 // (`test/url-del-bench.test.ts`). Estaba aquí dentro como una concatenación de
 // cadenas, y ahí es donde nadie la miraba (#476).
@@ -884,10 +884,30 @@ function makeCtx(page, name) {
      *  El presupuesto es un cortafuegos, no la condición de parada: esperar por
      *  tiempo de pared no es determinista (el movimiento va por delta de rAF).
      *
-     *  Y desde #545 admite el reloj bueno: `{sim: N}` presupuesta SEGUNDOS DE
-     *  MUNDO, que es la escala en la que el jugador anda. Con un número sigue
-     *  siendo pared, igual que siempre. */
-    async holdUntil(key, desc, untilFn, presupuesto = 15_000, arg = undefined) {
+     *  Y desde #545 el presupuesto **es un objeto, nunca un número suelto**:
+     *  `{sim: N}` son SEGUNDOS DE MUNDO —la escala en la que el jugador anda— y
+     *  `{ms: N}` es pared DECLARADA, para la espera cuyo sujeto es otro proceso.
+     *  El número suelto murió con el issue: `holdUntil` CONDUCE al jugador, y un
+     *  presupuesto de pared sobre el progreso del jugador deja de ser un
+     *  cortafuegos y pasa a ser la condición de parada en cuanto la máquina se
+     *  ocupa — no es que el jugador se pare, es que no ha habido frame.
+     *
+     *  El defecto que esto cierra es el de PR-4a con `maxMs`: una unidad que
+     *  cambia y un sitio de llamada que sigue escribiendo la vieja, en silencio.
+     *  Aquí no hay silencio posible; y que el `{ms}` esté DECLARADO y con motivo
+     *  escrito lo verifica `test/esperas-que-conducen.test.ts`, en CI, que es
+     *  donde hace falta: esta batería no corre en ningún job. */
+    async holdUntil(key, desc, untilFn, presupuesto, arg = undefined) {
+      if (presupuesto === null || typeof presupuesto !== "object" || Array.isArray(presupuesto)) {
+        throw new Error(
+          `${name}: holdUntil(«${desc}») CONDUCE al jugador, así que su presupuesto se escribe con la ` +
+            `unidad delante: \`{sim: N}\` son SEGUNDOS DE MUNDO (lo que hace falta casi siempre: andar, ` +
+            `pegar, encajar daño) y \`{ms: N}\` es pared declarada, solo para la espera cuyo SUJETO es otro ` +
+            `proceso —y esa además se apunta en data/contract/esperas-que-conducen.json con su motivo—. ` +
+            `Llegó ${JSON.stringify(presupuesto)}: el número suelto de milisegundos murió con #545, porque ` +
+            `el jugador avanza por el delta del game loop y no por el reloj de la máquina.`,
+        );
+      }
       await ctx.nefan("inputDriver.press", key);
       try {
         return await ctx.waitFor(desc, untilFn, presupuesto, arg);
@@ -981,13 +1001,35 @@ function makeCtx(page, name) {
      *  Devuelve `{ ocurrio, ultimo }`: `ultimo` es el último valor sondeado, o
      *  el valor de la espera si se cumplió. */
     async expectEspera(desc, debeOcurrir, probeFn, opciones = {}) {
-      const { ms = 30_000, arg = undefined, tecla = undefined, aserto = undefined, sim = null } = opciones;
+      const { arg = undefined, tecla = undefined, aserto = undefined, sim = null } = opciones;
       // `sim` presupuesta SEGUNDOS DE MUNDO (#545) y es el que manda cuando
       // está: `ms`, si además se escribe, pasa a ser el cortafuegos de pared —
-      // no el presupuesto. Sin `sim`, todo es exactamente como antes.
-      const presupuesto = sim === null ? ms : { sim, ms: opciones.ms };
-      /** Con qué reloj se agotó esto, para el detalle del ✔/✘. */
-      const gastado = sim === null ? `${ms} ms` : `${sim} s de sim`;
+      // no el presupuesto.
+      //
+      // Y el presupuesto se arma SIEMPRE con la unidad puesta, también sin
+      // `sim`, y lo arma `presupuestoConducido` (`qa/lib/sonda.mjs`) para que la
+      // regla se pueda EJERCER en CI. Pasar `ms` a pelo costó el guion 80 (QA,
+      // H-1): `holdUntil` dejó de aceptar números en esta misma tanda, así que
+      // `expectEspera(…, {ms, tecla})` —una forma que el contrato de exenciones
+      // BENDICE por escrito— moría en el fail-loud antes de llegar a su aserto,
+      // y el guion que el plan mandaba no tocar se quedó sin medir con el
+      // fichero intacto. El camino de pared no cambia un byte: `{ms: N}` y `N`
+      // dan exactamente el mismo presupuesto (`test/sonda-de-qa.test.ts`).
+      //
+      // Y se le pasan LAS OPCIONES TAL CUAL, no unas armadas aquí. Esa línea es
+      // V-1: la primera versión desestructuraba `ms = 30_000` arriba y le daba a
+      // `presupuestoConducido` el `ms` ya defectado, con lo que un `{sim: 120}`
+      // sin `ms` escrito se llevaba un cortafuegos de pared de 30 s en vez de los
+      // 1.200.000 del proporcional — un umbral bajado ×0,025 sin decirlo, y en el
+      // único sitio de la tanda que ningún test podía ejercer. Aquí ya no se
+      // decide nada: quien decide es la función, que SÍ se ejerce en CI, y que
+      // esta llamada siga siendo `presupuestoConducido(opciones)` lo canda
+      // `test/sonda-de-qa.test.ts` leyendo el árbol de este fichero.
+      const presupuesto = presupuestoConducido(opciones);
+      /** Con qué reloj se agotó esto, para el detalle del ✔/✘. Sale del
+       *  presupuesto ARMADO y no de las opciones: así el rótulo no puede decir
+       *  una pared que no es la que se gastó. */
+      const gastado = sim === null ? `${presupuesto.ms} ms` : `${sim} s de sim`;
       let ocurrio = false;
       let ultimo;
       let sondeo = { muestras: 0, rotos: 0 };

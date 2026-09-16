@@ -329,7 +329,7 @@ export default async function (ctx) {
         const p = window.__nefan.state().pos;
         return Math.hypot(p.x - a.x, p.z - a.z) >= a.paso ? { x: p.x, z: p.z } : null;
       },
-      40_000,
+      { sim: 40 },
       { x: desde.x, z: desde.z, paso: PASO },
     );
     const { ocurrio, ultimo } = await ctx.expectEspera(

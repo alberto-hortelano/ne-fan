@@ -150,7 +150,7 @@ async function situarse(ctx, id, objetivo, tolerancia = TOLERANCIA_DE_SITIO, tra
           "up",
           `el jugador se sitúa a ${objetivo} m de ${id} (tramo ${i + 1}, ahora ${m.d.toFixed(1)} m)`,
           enSitio,
-          4_000,
+          { sim: 4 },
           arg,
         ),
     );
@@ -161,7 +161,7 @@ async function situarse(ctx, id, objetivo, tolerancia = TOLERANCIA_DE_SITIO, tra
     `el jugador se sitúa a ${objetivo} ± ${tolerancia} m de ${id}, andando (desde ahí su reacción es visible)`,
     true,
     enSitio,
-    { ms: 4_000, arg, tecla: "up" },
+    { sim: 4, arg, tecla: "up" },
   );
   return medir(ctx, id);
 }

@@ -182,7 +182,7 @@ export const INVARIANTES = [
     false,
     (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
     {
-      ms: 6000,
+      sim: 6,
       arg: zBorde - 0.5,
       tecla: "up",
       aserto: "el jugador NO atraviesa la huella del edificio",
@@ -195,7 +195,7 @@ export const INVARIANTES = [
       "up",
       "el jugador ATRAVIESA el muro (esto sería el fallo)",
       (limite) => (window.__nefan.state().pos.z <= limite ? true : null),
-      6000,
+      { sim: 6 },
       zBorde - 0.5,
     )
     .catch(() => {

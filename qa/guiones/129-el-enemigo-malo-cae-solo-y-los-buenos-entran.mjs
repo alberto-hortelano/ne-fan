@@ -296,7 +296,7 @@ export default async function (ctx) {
       const q = window.__nefan.state().pos;
       return Math.hypot(q.x - p.x, q.z - p.z) > 0.5 ? q : null;
     },
-    8_000,
+    { sim: 8 },
     antesDeAndar.pos,
   );
   await ctx.shot("129-los-buenos-entran-y-el-malo-no-tapa-la-pantalla");

@@ -124,7 +124,7 @@ export default async function (ctx) {
         const p = window.__nefan.state().pos;
         return p.x - x0 >= meta ? p : null;
       },
-      60_000,
+      { sim: 60 },
       { x0: xSalida, meta: META_M },
     )
     .catch((err) => {

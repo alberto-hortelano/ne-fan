@@ -71,7 +71,7 @@ async function intentarCruzar(ctx, x, zSalida, zMeta, debeCruzar, aserto) {
     `el jugador avanza hacia el sur desde x=${x.toFixed(2)} hasta z=${zMeta.toFixed(2)}`,
     debeCruzar,
     (meta) => (window.__nefan.state().pos.z >= meta ? { z: window.__nefan.state().pos.z } : null),
-    { ms: 12_000, arg: zMeta, tecla: "up", aserto },
+    { sim: 12, arg: zMeta, tecla: "up", aserto },
   );
   return { cruzo, zFinal: (await ctx.nefan("state")).pos.z };
 }

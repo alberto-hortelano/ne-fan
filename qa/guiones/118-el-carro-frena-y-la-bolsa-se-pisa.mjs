@@ -260,7 +260,7 @@ async function empujarContra(ctx, destino) {
           window.__qa118 = { dist, veces, arranco };
           return veces >= 3 ? { x: p2.x, z: p2.z, arranco, dist } : null;
         },
-        20_000,
+        { sim: 20 },
         destino,
       ),
   );
@@ -337,7 +337,7 @@ async function irA(ctx, destino, etiqueta) {
           const p2 = window.__nefan.state().pos;
           return Math.hypot(p2.x - d.x, p2.z - d.z) < 0.35 ? { ok: true } : null;
         },
-        15_000,
+        { sim: 15 },
         destino,
       ),
   );

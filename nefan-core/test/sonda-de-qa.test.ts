@@ -54,6 +54,7 @@ type Ctx = {
 const sonda = (await import(join(repoRoot, "qa", "lib", "sonda.mjs"))) as {
   ctxDeSonda: (page: unknown) => Ctx;
   presupuestoDeEspera: (p: unknown, desc: string) => { sim: number | null; techoMs: number; rotulo: string | null };
+  presupuestoConducido: (o?: { ms?: number; sim?: number | null }) => { ms?: number; sim?: number };
   avanceDelReloj: (previa: Reloj, actual: NonNullable<Reloj>) => { sim: number; frames: number; loop: number };
   lecturaDelRelojValida: (r: unknown) => boolean;
   CADENCIA_MS: number;
@@ -66,7 +67,7 @@ const esperas = (await import(join(repoRoot, "qa", "lib", "esperas.mjs"))) as {
   relojDeSimNoAvanzoEn: (err: unknown) => { pedido: number; avanzado: number } | null;
   fallosDeEsperasPendientes: (libro: unknown) => string[];
 };
-const { ctxDeSonda, presupuestoDeEspera, avanceDelReloj, lecturaDelRelojValida, CORTAFUEGOS_POR_SIM, LOOP_COLGADO_MS } =
+const { ctxDeSonda, presupuestoDeEspera, presupuestoConducido, avanceDelReloj, lecturaDelRelojValida, CORTAFUEGOS_POR_SIM, LOOP_COLGADO_MS } =
   sonda;
 
 /** EL RELOJ DEL CLIENTE, importado para ejercerlo. Vive en un módulo sin un
@@ -126,6 +127,101 @@ const NUNCA = (): unknown => null;
  *  entre este candado y el que QA puso verde con el defecto dentro: lo que
  *  importa no es que `relojDeSim.avanza(delta)` aparezca en `main.ts`, es que
  *  sea **argumento de `gameClient.tick`** y de nada más. */
+/** Dónde y con qué se llama a `presupuestoConducido` en `qa/run.mjs`, LEÍDO DEL
+ *  ÁRBOL.
+ *
+ *  Es el candado del sitio de llamada, y existe porque ahí vivió V-1: la
+ *  función que decide el presupuesto está aquí medida al detalle, y aun así el
+ *  cortafuegos de pared de toda espera conducida en sim se fue a 30 s planos
+ *  porque el runner le armaba el argumento. La regla es que NO lo arme: un solo
+ *  sitio, y el argumento son las opciones del propio `expectEspera`. */
+function llamadasAPresupuestoConducido(): { dentroDe: string; argumentos: string }[] {
+  const fuente = readFileSync(join(repoRoot, "qa", "run.mjs"), "utf8");
+  const src = ts.createSourceFile("run.mjs", fuente, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  /** El método o la función que envuelve a `n`, por su nombre. */
+  const dentroDe = (n: ts.Node): string => {
+    for (let p: ts.Node | undefined = n.parent; p; p = p.parent) {
+      if (ts.isMethodDeclaration(p) && p.name && ts.isIdentifier(p.name)) return p.name.text;
+      if (ts.isFunctionDeclaration(p) && p.name) return p.name.text;
+      if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name)) return p.name.text;
+    }
+    return "(el módulo)";
+  };
+  const sitios: { dentroDe: string; argumentos: string }[] = [];
+  const visita = (n: ts.Node): void => {
+    // La llamada, no el `import`: el especificador de importación no es una
+    // CallExpression, así que no hay que excluirlo a mano.
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "presupuestoConducido") {
+      sitios.push({ dentroDe: dentroDe(n), argumentos: n.arguments.map((a) => a.getText(src)).join(", ") });
+    }
+    ts.forEachChild(n, visita);
+  };
+  visita(src);
+  return sitios;
+}
+
+/** Las veces que `expectEspera` ESCRIBE sobre su propio parámetro `opciones`,
+ *  leídas del árbol de `qa/run.mjs`.
+ *
+ *  Es la otra mitad del candado del sitio de llamada, y hace falta porque la
+ *  primera sujetaba el ARGUMENTO y no la DECISIÓN (QA, H-7): con la llamada
+ *  literalmente igual —`presupuestoConducido(opciones)`— basta una línea encima,
+ *
+ *      opciones = { ms: 30_000, ...opciones };
+ *
+ *  para devolver V-1 entero. QA lo midió: los dos ficheros de candado 41 pass ·
+ *  0 fail, la casa 2850/2850 verde, y el runner real sobre el 58 devolviendo
+ *  `{"sim":120,"ms":30000} techoMs=30000` con el guion en verde. Un ×0,025 sin
+ *  que se entere nadie.
+ *
+ *  Se cuenta cualquier ESCRITURA: `opciones = …` y sus compuestos (`??=`, `||=`),
+ *  una propiedad (`opciones.ms = …`) y `Object.assign(opciones, …)`. Falla
+ *  CERRADO a propósito: un alias inocente lo pone rojo, y es preferible a una
+ *  puerta que se abre sola. */
+function escriturasSobreOpcionesEnExpectEspera(): string[] {
+  const fuente = readFileSync(join(repoRoot, "qa", "run.mjs"), "utf8");
+  const src = ts.createSourceFile("run.mjs", fuente, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const linea = (n: ts.Node): number => src.getLineAndCharacterOfPosition(n.getStart(src)).line + 1;
+  /** La raíz de una expresión de escritura: `opciones` en `opciones.a.b`. */
+  const raiz = (n: ts.Node): ts.Node => {
+    let e = n;
+    while (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e)) e = e.expression;
+    return e;
+  };
+  const esOpciones = (n: ts.Node): boolean => ts.isIdentifier(raiz(n)) && (raiz(n) as ts.Identifier).text === "opciones";
+  const dentro: string[] = [];
+  const recorre = (n: ts.Node): void => {
+    if (
+      ts.isBinaryExpression(n) &&
+      // `=` y todos los compuestos, incluidos `??=` y `||=`
+      n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      n.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+      esOpciones(n.left)
+    ) {
+      dentro.push(`run.mjs:${linea(n)} · ${n.getText(src).slice(0, 60)}`);
+    }
+    if (
+      ts.isCallExpression(n) &&
+      ts.isPropertyAccessExpression(n.expression) &&
+      n.expression.name.text === "assign" &&
+      n.arguments[0] !== undefined &&
+      esOpciones(n.arguments[0])
+    ) {
+      dentro.push(`run.mjs:${linea(n)} · ${n.getText(src).slice(0, 60)}`);
+    }
+    ts.forEachChild(n, recorre);
+  };
+  const busca = (n: ts.Node): void => {
+    if (ts.isMethodDeclaration(n) && n.name && ts.isIdentifier(n.name) && n.name.text === "expectEspera") {
+      recorre(n);
+      return;
+    }
+    ts.forEachChild(n, busca);
+  };
+  busca(src);
+  return dentro;
+}
+
 function llamadasDelLoop() {
   const fuente = readFileSync(join(repoRoot, "nefan-html", "src", "main.ts"), "utf8");
   const src = ts.createSourceFile("main.ts", fuente, ts.ScriptTarget.Latest, true);
@@ -181,6 +277,15 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
       const p = presupuestoDeEspera({ sim }, "x");
       assert.equal(p.techoMs, sim * 1000 * CORTAFUEGOS_POR_SIM, `{sim:${sim}} no es ×${CORTAFUEGOS_POR_SIM}`);
       // Dicho como lo que importa: qué razón sim/pared tolera antes de rendirse.
+      //
+      // **Esto canda un SUELO MEDIDO, no el número 10**, y conviene saberlo
+      // antes de leer su color: bajar la constante a 5 lo pone ROJO (1/5 = 0,2 >
+      // 0,152, ya no cubre la razón que se midió a factor 40) y subirla a 7 lo
+      // deja VERDE, **y debe dejarlo** — 7 sigue cubriendo la carga medida. Un
+      // candado que exigiera exactamente 10 estaría defendiendo un número que
+      // nadie eligió; lo que hay que defender es que el múltiplo siga cubriendo
+      // el régimen que motivó la tanda. Quien quiera moverlo, que traiga una
+      // razón medida nueva y la cambie aquí.
       assert.ok(1 / CORTAFUEGOS_POR_SIM <= 0.152, "el múltiplo ya no cubre la razón medida a factor 40");
     }
   });
@@ -189,11 +294,175 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
     assert.deepEqual(presupuestoDeEspera({ sim: 2, ms: 500 }, "x").techoMs, 500);
   });
 
+  it("**`{ms: N}` a secas es PARED DECLARADA**: idéntica al número suelto, con la unidad escrita", () => {
+    // Nace en PR-4b de #545 y hasta entonces LANZABA (su caso estaba en la lista
+    // de «lo que no se entiende», justo abajo). Cambia porque `holdUntil` dejó
+    // de aceptar números: la espera que conduce al jugador pero de verdad
+    // depende de OTRO proceso —que el bridge genere un tile— tiene que poder
+    // escribirse, y tiene que VERSE en el diff que se escribe pared. Lo que no
+    // cambia es el camino: mismo techo, `sim: null`, sin rótulo, y por tanto sin
+    // leer el reloj del juego ni una vez.
+    assert.deepEqual(presupuestoDeEspera({ ms: 400 }, "x"), presupuestoDeEspera(400, "x"));
+    assert.deepEqual(presupuestoDeEspera({ ms: 180_000 }, "x"), { sim: null, techoMs: 180_000, rotulo: null });
+  });
+
+  it("**pero con SUELO**: `{ms: 4}` es lo que sale de teclear `{sim: 4}`, y 4 ms son UNA mirada", () => {
+    // H-4 de QA: sin suelo, `expectEspera(desc, false, fn, {ms: 4})` sale ✔
+    // afirmando un negativo con un solo sondeo — el defecto que este validador
+    // existe para cerrar, entrando por la puerta que PR-4b acababa de abrir. Y
+    // no lo veía ninguno de los dos candados: no hay `tecla`, no es `holdUntil`.
+    for (const chico of [0, 1, 4, 149]) {
+      assert.throws(() => presupuestoDeEspera({ ms: chico }, "x"), /no llega ni a la cadencia de sondeo/);
+    }
+    // El número suelto NO lleva suelo, y es deliberado: `0` no se puede teclear
+    // por error en lugar de `{sim: 0}`, y hay un caso que lo usa para mirar una
+    // vez a propósito (su test está más abajo, «un presupuesto de 0 sigue
+    // mirando UNA vez»).
+    assert.deepEqual(presupuestoDeEspera(0, "x"), { sim: null, techoMs: 0, rotulo: null });
+  });
+
+  it("**el presupuesto de una espera CONDUCIDA siempre es un objeto que el runner acepta**", () => {
+    // H-1 de QA, y es el defecto que costó el guion 80: `expectEspera` armaba su
+    // presupuesto pasando `ms` A PELO, `holdUntil` dejó de aceptar números en
+    // esta misma tanda, y el 80 —con su fichero intacto y su sitio BENDECIDO por
+    // el contrato de exenciones— murió en el fail-loud antes de llegar a su
+    // aserto. Dos candados describiendo estados incompatibles y nadie en medio,
+    // porque la regla vivía en una línea de `run.mjs` que ningún test podía
+    // ejercer sin abrir un navegador. Ahora se ejerce aquí, en las dos mitades:
+    // **es un objeto** (lo que `holdUntil` exige) y **lo entiende la sonda**.
+    const casos = [
+      {},
+      { ms: 15_000 },
+      { ms: 6_000, sim: null },
+      { sim: 4 },
+      { sim: 4, ms: 60_000 },
+    ];
+    for (const o of casos) {
+      const p = presupuestoConducido(o);
+      assert.equal(typeof p, "object", `${JSON.stringify(o)} → ${JSON.stringify(p)} no es un objeto`);
+      assert.ok(!Array.isArray(p) && p !== null);
+      // Y la sonda lo entiende: si lanzara, el guion moriría igual que el 80.
+      assert.doesNotThrow(() => presupuestoDeEspera(p, "la espera conducida"), JSON.stringify(o));
+    }
+    // El defecto exacto: el de pared sigue valiendo lo que valía.
+    assert.deepEqual(presupuestoDeEspera(presupuestoConducido({ ms: 15_000 }), "x"), presupuestoDeEspera(15_000, "x"));
+  });
+
+  it("**…y ESPERA EN SIM: el presupuesto lleva el sim que entró y el cortafuegos PROPORCIONAL**", () => {
+    // V-2 de QA, y es la mitad que faltaba: el caso de arriba comprueba «es un
+    // objeto» y «la sonda no lanza», que es lo que costó el guion 80. Con eso
+    // solo, dos mutaciones que devuelven TODA espera conducida al reloj de
+    // pared salían verdes —`return { ms }` y `return sim===null?{ms}:{sim: ms,
+    // ms}`—, y QA midió la primera puesta sobre el árbol entero: `npm run
+    // verify` 2847/2847 y cuatro guiones en verde. O sea que se podía borrar el
+    // corazón de esta tanda sin que se enterase ni CI ni la batería.
+    //
+    // Y la otra mitad es V-1, que entró por el mismo hueco: el presupuesto
+    // salía con el sim correcto y con un `ms: 30_000` que nadie escribió, así
+    // que `presupuestoDeEspera` respetaba ESE cortafuegos en vez de aplicar el
+    // proporcional de PR-4a. Un techo plano de 30 s para todo N —×0,025 en los
+    // `{sim: 120}` de esta tanda—, o sea un umbral bajado sin decirlo y más
+    // bajo que el que PR-4a quitó con motivo medido (H-4 de qa-5).
+    //
+    // Por eso este caso mira **lo que se va a esperar**: el presupuesto que sale
+    // de la composición entera, con sus dos cifras. (Mira también la FORMA, en
+    // el `deepEqual` de la primera línea de cada vuelta, y no es un adorno: un
+    // `ms` en el objeto ES el cortafuegos, así que «no lleva `ms`» y «espera lo
+    // que toca» son la misma afirmación dicha en los dos sitios donde se puede
+    // romper. La primera versión de este comentario decía «NO mira la forma»
+    // teniendo el `deepEqual` debajo, y eso es la clase de frase que esta casa
+    // persigue.)
+    for (const sim of [4, 6, 12, 60, 120]) {
+      const p = presupuestoConducido({ sim });
+      // Sin `ms` ESCRITO, el presupuesto no lleva `ms`: si lo llevara, sería el
+      // cortafuegos y el proporcional no se aplicaría nunca.
+      assert.deepEqual(p, { sim }, `presupuestoConducido({sim:${sim}}) → ${JSON.stringify(p)}`);
+      const gastado = presupuestoDeEspera(p, "la espera conducida");
+      assert.equal(gastado.sim, sim, `el sim que entró (${sim}) no es el que sale (${gastado.sim})`);
+      assert.equal(
+        gastado.techoMs,
+        sim * 1000 * CORTAFUEGOS_POR_SIM,
+        `{sim:${sim}} tiene que esperar hasta ${sim * 1000 * CORTAFUEGOS_POR_SIM} ms de pared ` +
+          `(×${CORTAFUEGOS_POR_SIM}, la regla de PR-4a) y su cortafuegos salió ${gastado.techoMs}: ` +
+          `con un techo plano, un presupuesto de sim grande solo puede acabar en ⊘ — y ese ⊘ sería ` +
+          `falso, porque el mundo sí corría.`,
+      );
+    }
+    // Y el `ms` ESCRITO sigue mandando: la pared declarada es la excepción con
+    // motivo, no una que se aplique sola.
+    assert.deepEqual(presupuestoConducido({ sim: 4, ms: 60_000 }), { sim: 4, ms: 60_000 });
+    assert.equal(presupuestoDeEspera(presupuestoConducido({ sim: 4, ms: 60_000 }), "x").techoMs, 60_000);
+    // Y sólo se defecta lo que nadie ESCRIBIÓ: un `ms` nulo no se convierte en
+    // 30 s por la puerta de atrás, sigue siendo un presupuesto que no se
+    // entiende y lo dice. Ésta es la mitad que un `??` se traga en silencio.
+    for (const nulo of [{ ms: null }, { ms: null, sim: 4 }]) {
+      assert.throws(
+        () => presupuestoDeEspera(presupuestoConducido(nulo as unknown as { ms?: number; sim?: number }), "x"),
+        /waitFor/,
+        JSON.stringify(nulo),
+      );
+    }
+  });
+
+  it("**y el runner no decide nada del presupuesto: le pasa sus opciones TAL CUAL**", () => {
+    // Dónde vivió V-1: no en `presupuestoConducido`, sino en la línea de
+    // `qa/run.mjs` que la llamaba —`presupuestoConducido({ ms, sim })` con el
+    // `ms` ya defectado a 30.000 por la desestructuración de arriba—. Los casos
+    // de este fichero pueden ejercer la función hasta el aburrimiento y no ver
+    // nada, porque el defecto estaba en el sitio de llamada.
+    //
+    // **NO lo hace «inexpresable», y la primera versión de este comentario decía
+    // que sí.** Eso era documentación falsa y QA lo cobró en una línea (H-7):
+    // con el argumento intacto —`presupuestoConducido(opciones)`— basta escribir
+    // `opciones = { ms: 30_000, ...opciones }` encima para devolver V-1 entero,
+    // y los dos candados salían 41 pass · 0 fail con el runner real dando
+    // `techoMs=30000` sobre un `{sim:120}`. Lo que este caso sujeta es el
+    // ARGUMENTO; la DECISIÓN la sujeta el de debajo. Hacen falta los dos, y
+    // ninguno de los dos hace inexpresable nada: lo que hacen es poner rojas las
+    // dos formas con las que V-1 se escribió y se reescribió.
+    //
+    // Se lee el ÁRBOL y no el texto, por el mismo motivo que el resto de la
+    // casa: lo que importa no es que la cadena aparezca, es que el ÚNICO
+    // argumento sea el parámetro `opciones` del propio `expectEspera`.
+    assert.deepEqual(
+      llamadasAPresupuestoConducido(),
+      [{ dentroDe: "expectEspera", argumentos: "opciones" }],
+      `El presupuesto de una espera conducida lo decide \`presupuestoConducido\` (qa/lib/sonda.mjs), ` +
+        `que es lo que este fichero ejerce sin navegador. En cuanto \`qa/run.mjs\` le arma el argumento ` +
+        `—un literal, un valor con defecto, cualquier cosa que no sean las opciones tal cual— la ` +
+        `decisión vuelve a un sitio que ningún test alcanza, que es exactamente cómo entró V-1 (un ` +
+        `cortafuegos de pared bajado ×0,025 sin que nada se pusiera rojo).`,
+    );
+  });
+
+  it("**…y tampoco se las REESCRIBE antes: `opciones` entra en la decisión como llegó** (H-7)", () => {
+    // La mitad que faltaba, y la encontró QA con el arreglo puesto: el caso de
+    // arriba mira el argumento de la llamada, así que deja entera la puerta de
+    // modificar `opciones` una línea antes. Con `opciones = { ms: 30_000,
+    // ...opciones }` la llamada no cambia un byte, los dos ficheros de candado
+    // dan 41 pass · 0 fail, `npm run verify` sale 2850/2850 y el runner real
+    // sobre el guion 58 devuelve `{"sim":120,"ms":30000}` con techo 30.000 y el
+    // guion en VERDE. Es V-1 entero otra vez, ×0,025, sin que se entere nadie.
+    //
+    // Falla CERRADO: un alias inocente sobre `opciones` también lo pone rojo.
+    // Es lo correcto — la salida entonces es no aliasear, no abrir el candado.
+    assert.deepEqual(
+      escriturasSobreOpcionesEnExpectEspera(),
+      [],
+      `\`expectEspera\` no puede tocar su propio \`opciones\` antes de entregárselo a ` +
+        `\`presupuestoConducido\`: lo que llegue escrito en el guion es lo que tiene que decidir el ` +
+        `presupuesto. Una sola línea que le meta un \`ms\` por defecto devuelve V-1 —el cortafuegos ` +
+        `de pared de toda espera en sim a 30 s planos, ×0,025 en los \`{sim: 120}\`— dejando la ` +
+        `llamada intacta y los demás candados en verde. Si hace falta normalizar algo, se normaliza ` +
+        `DENTRO de \`presupuestoConducido\`, que es lo que este fichero ejerce.`,
+    );
+  });
+
   it("lo que no se entiende LANZA, en vez de esperar `undefined` ms", () => {
     // Sin esto, `Date.now() - t0 < undefined` es siempre falso: la espera haría
     // UN sondeo y se daría por expirada — o sea, un guion que mira una vez y
     // afirma un negativo.
-    for (const malo of [undefined, null, "4s", { ms: 400 }, { sim: 0 }, { sim: -1 }, { sim: "4" }, -1, NaN]) {
+    for (const malo of [undefined, null, "4s", { ms: "400" }, { ms: -1 }, { ms: NaN }, { sim: 0 }, { sim: -1 }, { sim: "4" }, -1, NaN]) {
       assert.throws(() => presupuestoDeEspera(malo, "la espera de prueba"), /waitFor/);
     }
   });
