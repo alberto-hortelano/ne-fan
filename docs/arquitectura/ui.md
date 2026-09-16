@@ -90,6 +90,9 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
   «Reintentar» + «Cerrar» cuando el muro OFRECE algo en vez de lamentarlo—. El
   cliente solo aplica tres `hidden`. La oferta llega con su acción dentro
   (`muro.ofrecer`), así que un botón sin destino no compila.
+- **Un aviso solo termina su propia espera** (#593): `esperasQueTermina`
+  en core atribuye viaje, saludo o ambos (takeover). Un aviso de enemigos,
+  plugins o guardado se pinta sin dar por contestadas peticiones ajenas. Guion 137.
 - **El chip de gráficos enseña lo que se GENERA, no lo que dice el save**
   (#510): con el cortacircuitos de #236 saltado el modo sigue siendo «imagen» y
   no sale un skin, así que el chip lo dice y el panel explica cómo rearmarlo. El

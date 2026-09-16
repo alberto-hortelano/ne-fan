@@ -18,7 +18,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { repartirStatus } from "../src/protocol/status-reparto.js";
+import { repartirStatus, esperasQueTermina } from "../src/protocol/status-reparto.js";
 import type {
   NarrativeStatusDeJuego,
   NarrativeStatusDeSesion,
@@ -103,5 +103,28 @@ describe("repartirStatus: a quién le habla cada narrative_status (#312, #313)",
     const enPartida = sello("1787-abc");
     assert.equal(repartirStatus(dePartida("ready", ""), enPartida.esMio).destino, "descartado");
     assert.equal(repartirStatus(dePartida("ready", "1787-abc"), enPartida.esMio).destino, "juego");
+  });
+});
+
+
+describe("cada fallo termina solo su espera (#593)", () => {
+  it("los avisos ajenos conservan viaje y saludo pendientes", () => {
+    for (const kind of ["combatientes", "plugin", "save", "restore", "action", "protocolo"] as const) {
+      assert.deepEqual(esperasQueTermina({ kind, phase: "error" }), { viaje: false, saludo: false });
+    }
+  });
+  it("un viaje fallido no responde al saludo y una reacción fallida no cierra el viaje", () => {
+    for (const kind of ["tile", "scene"] as const) {
+      assert.deepEqual(esperasQueTermina({ kind, phase: "error" }), { viaje: true, saludo: false });
+    }
+    assert.deepEqual(esperasQueTermina({ kind: "consequences", phase: "error" }), { viaje: false, saludo: true });
+    assert.deepEqual(esperasQueTermina({ kind: "takeover", phase: "error" }), { viaje: true, saludo: true });
+  });
+  it("el progreso y la preparación no terminan ninguna espera", () => {
+    for (const phase of ["progress", "generating", "ready"] as const) {
+      for (const kind of ["tile", "scene", "consequences", "takeover"] as const) {
+        assert.deepEqual(esperasQueTermina({ kind, phase }), { viaje: false, saludo: false });
+      }
+    }
   });
 });
