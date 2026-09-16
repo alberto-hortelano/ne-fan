@@ -1001,7 +1001,7 @@ function makeCtx(page, name) {
      *  Devuelve `{ ocurrio, ultimo }`: `ultimo` es el último valor sondeado, o
      *  el valor de la espera si se cumplió. */
     async expectEspera(desc, debeOcurrir, probeFn, opciones = {}) {
-      const { ms = 30_000, arg = undefined, tecla = undefined, aserto = undefined, sim = null } = opciones;
+      const { arg = undefined, tecla = undefined, aserto = undefined, sim = null } = opciones;
       // `sim` presupuesta SEGUNDOS DE MUNDO (#545) y es el que manda cuando
       // está: `ms`, si además se escribe, pasa a ser el cortafuegos de pared —
       // no el presupuesto.
@@ -1015,9 +1015,21 @@ function makeCtx(page, name) {
       // y el guion que el plan mandaba no tocar se quedó sin medir con el
       // fichero intacto. El camino de pared no cambia un byte: `{ms: N}` y `N`
       // dan exactamente el mismo presupuesto (`test/sonda-de-qa.test.ts`).
-      const presupuesto = presupuestoConducido({ ms, sim: sim === null ? null : sim });
-      /** Con qué reloj se agotó esto, para el detalle del ✔/✘. */
-      const gastado = sim === null ? `${ms} ms` : `${sim} s de sim`;
+      //
+      // Y se le pasan LAS OPCIONES TAL CUAL, no unas armadas aquí. Esa línea es
+      // V-1: la primera versión desestructuraba `ms = 30_000` arriba y le daba a
+      // `presupuestoConducido` el `ms` ya defectado, con lo que un `{sim: 120}`
+      // sin `ms` escrito se llevaba un cortafuegos de pared de 30 s en vez de los
+      // 1.200.000 del proporcional — un umbral bajado ×0,025 sin decirlo, y en el
+      // único sitio de la tanda que ningún test podía ejercer. Aquí ya no se
+      // decide nada: quien decide es la función, que SÍ se ejerce en CI, y que
+      // esta llamada siga siendo `presupuestoConducido(opciones)` lo canda
+      // `test/sonda-de-qa.test.ts` leyendo el árbol de este fichero.
+      const presupuesto = presupuestoConducido(opciones);
+      /** Con qué reloj se agotó esto, para el detalle del ✔/✘. Sale del
+       *  presupuesto ARMADO y no de las opciones: así el rótulo no puede decir
+       *  una pared que no es la que se gastó. */
+      const gastado = sim === null ? `${presupuesto.ms} ms` : `${sim} s de sim`;
       let ocurrio = false;
       let ultimo;
       let sondeo = { muestras: 0, rotos: 0 };

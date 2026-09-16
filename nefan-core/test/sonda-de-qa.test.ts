@@ -127,6 +127,39 @@ const NUNCA = (): unknown => null;
  *  entre este candado y el que QA puso verde con el defecto dentro: lo que
  *  importa no es que `relojDeSim.avanza(delta)` aparezca en `main.ts`, es que
  *  sea **argumento de `gameClient.tick`** y de nada más. */
+/** Dónde y con qué se llama a `presupuestoConducido` en `qa/run.mjs`, LEÍDO DEL
+ *  ÁRBOL.
+ *
+ *  Es el candado del sitio de llamada, y existe porque ahí vivió V-1: la
+ *  función que decide el presupuesto está aquí medida al detalle, y aun así el
+ *  cortafuegos de pared de toda espera conducida en sim se fue a 30 s planos
+ *  porque el runner le armaba el argumento. La regla es que NO lo arme: un solo
+ *  sitio, y el argumento son las opciones del propio `expectEspera`. */
+function llamadasAPresupuestoConducido(): { dentroDe: string; argumentos: string }[] {
+  const fuente = readFileSync(join(repoRoot, "qa", "run.mjs"), "utf8");
+  const src = ts.createSourceFile("run.mjs", fuente, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  /** El método o la función que envuelve a `n`, por su nombre. */
+  const dentroDe = (n: ts.Node): string => {
+    for (let p: ts.Node | undefined = n.parent; p; p = p.parent) {
+      if (ts.isMethodDeclaration(p) && p.name && ts.isIdentifier(p.name)) return p.name.text;
+      if (ts.isFunctionDeclaration(p) && p.name) return p.name.text;
+      if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name)) return p.name.text;
+    }
+    return "(el módulo)";
+  };
+  const sitios: { dentroDe: string; argumentos: string }[] = [];
+  const visita = (n: ts.Node): void => {
+    // La llamada, no el `import`: el especificador de importación no es una
+    // CallExpression, así que no hay que excluirlo a mano.
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "presupuestoConducido") {
+      sitios.push({ dentroDe: dentroDe(n), argumentos: n.arguments.map((a) => a.getText(src)).join(", ") });
+    }
+    ts.forEachChild(n, visita);
+  };
+  visita(src);
+  return sitios;
+}
+
 function llamadasDelLoop() {
   const fuente = readFileSync(join(repoRoot, "nefan-html", "src", "main.ts"), "utf8");
   const src = ts.createSourceFile("main.ts", fuente, ts.ScriptTarget.Latest, true);
@@ -242,6 +275,78 @@ describe("el presupuesto de una espera dice CON QUÉ RELOJ se mide (#545)", () =
     }
     // El defecto exacto: el de pared sigue valiendo lo que valía.
     assert.deepEqual(presupuestoDeEspera(presupuestoConducido({ ms: 15_000 }), "x"), presupuestoDeEspera(15_000, "x"));
+  });
+
+  it("**…y ESPERA EN SIM: el presupuesto lleva el sim que entró y el cortafuegos PROPORCIONAL**", () => {
+    // V-2 de QA, y es la mitad que faltaba: el caso de arriba comprueba «es un
+    // objeto» y «la sonda no lanza», que es lo que costó el guion 80. Con eso
+    // solo, dos mutaciones que devuelven TODA espera conducida al reloj de
+    // pared salían verdes —`return { ms }` y `return sim===null?{ms}:{sim: ms,
+    // ms}`—, y QA midió la primera puesta sobre el árbol entero: `npm run
+    // verify` 2847/2847 y cuatro guiones en verde. O sea que se podía borrar el
+    // corazón de esta tanda sin que se enterase ni CI ni la batería.
+    //
+    // Y la otra mitad es V-1, que entró por el mismo hueco: el presupuesto
+    // salía con el sim correcto y con un `ms: 30_000` que nadie escribió, así
+    // que `presupuestoDeEspera` respetaba ESE cortafuegos en vez de aplicar el
+    // proporcional de PR-4a. Un techo plano de 30 s para todo N —×0,025 en los
+    // `{sim: 120}` de esta tanda—, o sea un umbral bajado sin decirlo y más
+    // bajo que el que PR-4a quitó con motivo medido (H-4 de qa-5).
+    //
+    // Por eso este caso NO mira la forma, mira **lo que se va a esperar**: el
+    // presupuesto que sale de la composición entera, con sus dos cifras.
+    for (const sim of [4, 6, 12, 60, 120]) {
+      const p = presupuestoConducido({ sim });
+      // Sin `ms` ESCRITO, el presupuesto no lleva `ms`: si lo llevara, sería el
+      // cortafuegos y el proporcional no se aplicaría nunca.
+      assert.deepEqual(p, { sim }, `presupuestoConducido({sim:${sim}}) → ${JSON.stringify(p)}`);
+      const gastado = presupuestoDeEspera(p, "la espera conducida");
+      assert.equal(gastado.sim, sim, `el sim que entró (${sim}) no es el que sale (${gastado.sim})`);
+      assert.equal(
+        gastado.techoMs,
+        sim * 1000 * CORTAFUEGOS_POR_SIM,
+        `{sim:${sim}} tiene que esperar hasta ${sim * 1000 * CORTAFUEGOS_POR_SIM} ms de pared ` +
+          `(×${CORTAFUEGOS_POR_SIM}, la regla de PR-4a) y su cortafuegos salió ${gastado.techoMs}: ` +
+          `con un techo plano, un presupuesto de sim grande solo puede acabar en ⊘ — y ese ⊘ sería ` +
+          `falso, porque el mundo sí corría.`,
+      );
+    }
+    // Y el `ms` ESCRITO sigue mandando: la pared declarada es la excepción con
+    // motivo, no una que se aplique sola.
+    assert.deepEqual(presupuestoConducido({ sim: 4, ms: 60_000 }), { sim: 4, ms: 60_000 });
+    assert.equal(presupuestoDeEspera(presupuestoConducido({ sim: 4, ms: 60_000 }), "x").techoMs, 60_000);
+    // Y sólo se defecta lo que nadie ESCRIBIÓ: un `ms` nulo no se convierte en
+    // 30 s por la puerta de atrás, sigue siendo un presupuesto que no se
+    // entiende y lo dice. Ésta es la mitad que un `??` se traga en silencio.
+    for (const nulo of [{ ms: null }, { ms: null, sim: 4 }]) {
+      assert.throws(
+        () => presupuestoDeEspera(presupuestoConducido(nulo as unknown as { ms?: number; sim?: number }), "x"),
+        /waitFor/,
+        JSON.stringify(nulo),
+      );
+    }
+  });
+
+  it("**y el runner no decide nada del presupuesto: le pasa sus opciones TAL CUAL**", () => {
+    // Dónde vivió V-1: no en `presupuestoConducido`, sino en la línea de
+    // `qa/run.mjs` que la llamaba —`presupuestoConducido({ ms, sim })` con el
+    // `ms` ya defectado a 30.000 por la desestructuración de arriba—. Los casos
+    // de este fichero pueden ejercer la función hasta el aburrimiento y no ver
+    // nada, porque el defecto estaba en el sitio de llamada. Así que el defecto
+    // se hace INEXPRESABLE: si el runner no arma nada, no puede armarlo mal.
+    //
+    // Se lee el ÁRBOL y no el texto, por el mismo motivo que el resto de la
+    // casa: lo que importa no es que la cadena aparezca, es que el ÚNICO
+    // argumento sea el parámetro `opciones` del propio `expectEspera`.
+    assert.deepEqual(
+      llamadasAPresupuestoConducido(),
+      [{ dentroDe: "expectEspera", argumentos: "opciones" }],
+      `El presupuesto de una espera conducida lo decide \`presupuestoConducido\` (qa/lib/sonda.mjs), ` +
+        `que es lo que este fichero ejerce sin navegador. En cuanto \`qa/run.mjs\` le arma el argumento ` +
+        `—un literal, un valor con defecto, cualquier cosa que no sean las opciones tal cual— la ` +
+        `decisión vuelve a un sitio que ningún test alcanza, que es exactamente cómo entró V-1 (un ` +
+        `cortafuegos de pared bajado ×0,025 sin que nada se pusiera rojo).`,
+    );
   });
 
   it("lo que no se entiende LANZA, en vez de esperar `undefined` ms", () => {

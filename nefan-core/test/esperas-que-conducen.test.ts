@@ -67,6 +67,22 @@ const EsperasQueConducenSchema = z
               .regex(
                 /#\d+|bridge|motor|disco|State API|servidor|loop|game loop/i,
                 "el motivo tiene que NOMBRAR el proceso al que se espera, o el issue por el que queda fuera",
+              )
+              // Y UNA FRASE TIENE PALABRAS. QA volvió a medir el listón después
+              // de que la longitud y la palabra clave estuvieran puestas: «40
+              // equis más la palabra bridge» silenciaba un sitio real (6 pass ·
+              // 0 fail). Los 120 caracteres los cumple un token largo y la
+              // regex la cumple una palabra suelta dentro de él; lo que no
+              // cumple ninguna de las dos formas de relleno es TENER PALABRAS.
+              // Las seis exenciones vivas van de 65 a 159, así que veinte no
+              // aprieta a nadie: aprieta a lo que no es prosa.
+              .refine(
+                (f) => f.trim().split(/\s+/).length >= 20,
+                "el motivo es una FRASE (veinte palabras o más), no un relleno largo con una palabra clave dentro",
+              )
+              .refine(
+                (f) => !/(.)\1{7,}/.test(f),
+                "ocho caracteres iguales seguidos no son prosa: esto es relleno, no un motivo",
               ),
           })
           .strict(),
@@ -97,7 +113,30 @@ export type EsperaDePared = { fichero: string; linea: number; verbo: string; des
  *  `keyboard.down` la levantan y `release` / `releaseAll` / `keyboard.up` la
  *  bajan. Es exactamente el patrón del 91 de ayer (press → waitFor → `finally`
  *  releaseAll), y no marca la espera de un guion que pulsó una tecla en su
- *  bloque 1 y la soltó antes del 5. */
+ *  bloque 1 y la soltó antes del 5.
+ *
+ *  ── LA FRONTERA REAL, Y VA POR LA TERCERA VEZ QUE SE DECLARA MAL ──────────
+ *  El estado del teclado se sigue por el ANIDAMIENTO LÉXICO —la función que
+ *  envuelve a la espera y las de fuera—, **no por el grafo de llamadas**. Así
+ *  que lo que este detector no ve es: **tecla pulsada en el LLAMANTE y espera
+ *  dentro de un helper**, porque el helper no está léxicamente dentro de quien
+ *  pulsó. Lo tiene el `veredictoDe` del guion 133, que espera en pared con la
+ *  tecla puesta y no se marca. (Las dos fronteras que se declararon antes eran
+ *  falsas: ni es «`page.keyboard.down`» —eso lo ve desde H-2— ni es «conducir
+ *  desde dentro de `page.evaluate`», que no existe en el árbol.)
+ *
+ *  **POR QUÉ NO SE EXTIENDE AQUÍ, y está medido**: seguir el grafo de llamadas
+ *  dentro del fichero marca **9 sitios en 8 ficheros**, y **8 de los 9 son el
+ *  mismo helper** —`frames(ctx, n)` en los guiones 37, 43, 58, 83, 86, 109 y
+ *  112—, que espera a que el bucle avance N FOTOGRAMAS. Ésa es una espera por
+ *  el reloj del juego contada en frames, o sea lo contrario del defecto: su
+ *  presupuesto de pared es el cortafuegos y no la condición. Extender el
+ *  detector por «hay una tecla puesta» compraría ocho exenciones de esperas
+ *  correctas y ni un defecto, que es como un candado deja de mirarse. El eje
+ *  que separa de verdad no es quién pulsó la tecla, es **si el PREDICADO de la
+ *  espera lee el progreso del jugador** (`state().pos`) o cuenta un tic del
+ *  juego. Eso es otro detector y va a issue; el agujero de hoy queda declarado
+ *  y MEDIDO abajo, en su propio caso, para que no vuelva a ser prosa. */
 export function esperasDeParedQueConducen(texto: string, fichero: string): EsperaDePared[] {
   const sf = ts.createSourceFile(fichero, texto, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const fuera: EsperaDePared[] = [];
@@ -342,6 +381,49 @@ describe("las esperas que conducen al jugador presupuestan en sim (#545)", () =>
         await ctx.waitFor("el jugador anda", pred, { sim: 8 });
       }`;
     assert.deepEqual(esperasDeParedQueConducen(conSim, "qa/guiones/de-mentira.mjs"), []);
+  });
+
+  it("**el agujero DECLARADO, y medido: tecla en el llamante, espera en un helper → 0 sitios**", () => {
+    // La frontera se ha declarado mal tres veces en esta PR («no ve
+    // `keyboard.down`», «no ve conducir desde `page.evaluate`»), y las tres eran
+    // agujeros que no existían. Ésta es la que sí: el estado del teclado se
+    // sigue por anidamiento LÉXICO, y un helper no está dentro de quien lo
+    // llama. Escrita como caso ejecutable en vez de como prosa, que es lo que
+    // permite que se ponga ROJA el día que alguien la cierre — y entonces se
+    // borra este caso, que es como caduca un agujero declarado.
+    const teclaFuera = `
+      async function esperaEnPared(ctx) {
+        return ctx.waitFor("el jugador anda", pred, 8_000);
+      }
+      export default async function (ctx) {
+        await ctx.nefan("inputDriver.press", "up");
+        try {
+          await esperaEnPared(ctx);
+        } finally {
+          await ctx.nefan("inputDriver.releaseAll");
+        }
+      }`;
+    assert.deepEqual(
+      esperasDeParedQueConducen(teclaFuera, "qa/guiones/de-mentira.mjs"),
+      [],
+      "si esto ya no está vacío, el detector cruzó la frontera léxica: borra este caso y su párrafo",
+    );
+    // Y el control del control: el MISMO material con la espera metida dentro
+    // de la función que pulsa SÍ se marca. Sin esto, un detector roto dejaría
+    // el caso de arriba verde diciendo lo que no es.
+    const teclaDentro = `
+      export default async function (ctx) {
+        await ctx.nefan("inputDriver.press", "up");
+        try {
+          await ctx.waitFor("el jugador anda", pred, 8_000);
+        } finally {
+          await ctx.nefan("inputDriver.releaseAll");
+        }
+      }`;
+    assert.deepEqual(
+      esperasDeParedQueConducen(teclaDentro, "qa/guiones/de-mentira.mjs").map((v) => `${v.verbo}:${v.desc}`),
+      ['waitFor:"el jugador anda"'],
+    );
   });
 
   it("lo que va DENTRO DE UN STRING no es una llamada (por eso se lee el árbol)", () => {

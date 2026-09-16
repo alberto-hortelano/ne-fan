@@ -185,7 +185,11 @@ Reglas que hacen que un guion valga algo:
    el número suelto de milisegundos LANZA. Lo mismo vale para `ctx.expectEspera(…, {tecla})`. Quién
    lo sujeta: el propio `holdUntil` en tiempo de ejecución, y —porque esta batería no corre en
    ningún job de CI— `nefan-core/test/esperas-que-conducen.test.ts`, que lee el ÁRBOL DE SINTAXIS de
-   `qa/guiones` y `qa/lib` en cada `npm run verify`. Las tres esperas que hoy siguen en pared están
+   **todo `qa/**.mjs`** (menos `qa/run.mjs`, que DEFINE los verbos) en cada `npm run verify`, en las
+   tres formas que tiene el defecto: `holdUntil` sin `{sim}`, `expectEspera(…, {tecla})` sin `sim`, y
+   **una tecla mantenida aparte + un `ctx.waitFor` de pared**, que es como #545 estaba escrito. Su
+   frontera, declarada y con un caso que la mide: el estado del teclado se sigue por anidamiento
+   LÉXICO, así que una tecla pulsada en el llamante con la espera dentro de un helper no se ve. Las esperas que hoy siguen en pared están
    **apuntadas con su motivo** en `nefan-core/data/contract/esperas-que-conducen.json`, y la
    exención caduca sola: si la espera pasa a sim, la entrada se queda sin sujeto y el test se pone
    rojo.
@@ -197,7 +201,10 @@ Reglas que hacen que un guion valga algo:
    estuviese «parado» a mitad de camino. Ahora **una muestra solo cuenta si el mundo ha corrido**
    `PASO_DE_SIM_S` segundos (la cadencia de la sonda, leída en segundos de mundo), y sin muestras no
    hay parada: el estado malo deja de ser expresable. El molde devuelve además `saltadas`, los
-   sondeos que NO contaron — el número que dice si la carga estaba haciendo algo. Lo ejerce
+   sondeos que NO contaron porque el mundo no había corrido el paso — que **no** es una medida de
+   la carga y va al revés que ella (QA lo midió: 26 y 8 en reposo, **0 y 0** a ×40; con `paso`
+   igual a la cadencia, en reposo casi la mitad de los sondeos cae por debajo, y bajo carga un
+   solo frame trae doce segundos de mundo de golpe). Lo que dice es la cadencia frente al paso. Lo ejerce
    `nefan-core/test/parada-de-qa.test.ts` sin navegador y el **guion 132** sobre la página real, con
    el patrón viejo al lado para que el contraste signifique algo.
 

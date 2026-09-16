@@ -208,10 +208,40 @@ export function presupuestoDeEspera(presupuesto, desc) {
  *  Sacándolo aquí, la regla se puede EJERCER sin navegador —que es donde el
  *  defecto se habría visto— y queda una sola definición de «con qué presupuesto
  *  espera una espera conducida». Lo que garantiza: **siempre devuelve un objeto**
- *  (la forma que `holdUntil` exige) y siempre uno que `presupuestoDeEspera`
- *  entiende. */
-export function presupuestoConducido({ ms = 30_000, sim = null } = {}) {
-  return sim === null ? { ms } : { sim, ms };
+ *  (la forma que `holdUntil` exige), siempre uno que `presupuestoDeEspera`
+ *  entiende, y —desde V-1— **con el sim que entró y sin inventarle cortafuegos**.
+ *
+ *  ── POR QUÉ EL DEFECTO DE 30 s VIVE AQUÍ Y NO EN EL SITIO DE LLAMADA ───────
+ *  La primera versión de este arreglo dejaba `const { ms = 30_000, … }` en
+ *  `expectEspera` y le pasaba a esta función **el `ms` ya defectado**. El
+ *  resultado, medido por QA (V-1): `{sim: 120}` —que nadie escribió con `ms`—
+ *  salía de aquí como `{sim: 120, ms: 30_000}`, y `presupuestoDeEspera` respeta
+ *  el `ms` ESCRITO en vez de aplicar el proporcional. O sea que el cortafuegos
+ *  de pared de TODA espera conducida en sim pasaba de `N × 10.000 ms` a 30.000
+ *  planos: ×0,500 con `{sim:6}`, ×0,250 con `{sim:12}` y **×0,025** con
+ *  `{sim:120}`, que son los cuatro sitios que esta misma tanda convirtió. Un
+ *  techo plano MÁS BAJO que el que PR-4a quitó con motivo medido (H-4 de qa-5),
+ *  y por debajo de N ≈ 29 hacia arriba el presupuesto de sim ya no se puede
+ *  gastar ni con la máquina ociosa: solo puede acabar en ⊘, y ese ⊘ sería falso.
+ *
+ *  La regla, entonces, en una frase: **`ms` solo existe si alguien lo ESCRIBIÓ**.
+ *  Sin escribir, la pared se defecta a 30 s (que es el defecto de siempre de
+ *  `expectEspera`) y el sim se queda sin `ms` para que mande el proporcional.
+ *  El defecto vive en un único sitio, éste, porque un defecto repartido entre
+ *  el sitio de llamada y la función es exactamente cómo se coló V-1. */
+export function presupuestoConducido({ ms, sim = null } = {}) {
+  // PARED: el defecto de 30 s de siempre. Es el ÚNICO sitio donde vive.
+  //
+  // `=== undefined` y no `??`, y la diferencia es fail-loud: con `??` un
+  // `{ms: null}` —o cualquier cosa que llegue nula por un camino que nadie
+  // quiso— se defectaría en silencio a 30 s, cuando hoy lo rechaza
+  // `presupuestoDeEspera` diciendo qué llegó. Sólo se defecta lo que nadie
+  // ESCRIBIÓ.
+  if (sim === null) return { ms: ms === undefined ? 30_000 : ms };
+  // SIM: si nadie escribió `ms`, NO se inventa un cortafuegos — el
+  // proporcional (`CORTAFUEGOS_POR_SIM`) es el que manda, que es la decisión
+  // medida de PR-4a. Escrito, manda el escrito.
+  return ms === undefined ? { sim } : { sim, ms };
 }
 
 /** Cuánto ha avanzado el reloj entre dos lecturas.
