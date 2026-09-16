@@ -152,7 +152,7 @@ node labs/narrative/replay-server.mjs
 #    otro run: LOG=labs/narrative/runs/<otro>/events.ndjson node labs/narrative/replay-server.mjs
 # 3) Cliente en otra terminal:
 cd nefan-html && npm run dev
-# 4) Abre el navegador, pulsa "Nueva partida", elige tavern_intro → la sesión se reproduce sola.
+# 4) Pulsa "Nueva partida": catálogo compatible → selector; incompatible → diagnóstico en el registro.
 ```
 
 Variables: `LOG`, `PORT` (9877), `HOLD_MS` (3000, cuánto se ve cada escena/diálogo), `FLASH_MS`
