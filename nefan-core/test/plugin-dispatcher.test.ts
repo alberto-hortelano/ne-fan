@@ -56,6 +56,10 @@ describe("dispatchPluginEvents", () => {
         [idOf("test_listener"), "counter_changed"],
       ],
     );
+    assert.deepEqual(result.effects[0].plugin, { id: idOf("test_counter"), name: "test_counter", version: 1, slice: { count: 1 } });
+    assert.deepEqual(result.effects[1].plugin.slice, { last_seen: 1, times: 1 });
+    dispatchPluginEvents(state, manifests, [{ pluginId: idOf("test_counter"), type: "counter_inc", payload: {} }]);
+    assert.deepEqual(result.effects[0].plugin.slice, { count: 1 }, "el siguiente tick no muta el mensaje anterior");
     assert.deepEqual(result.effects[0].emitted, [
       { type: "counter_changed", payload: { count: 1 } },
     ]);

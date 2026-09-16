@@ -249,3 +249,6 @@ export interface PluginInspectResult {
   result?: unknown;
   slice?: unknown;
 }
+
+/** Estado que puede inspeccionar el jugador, sin manifest ni código de ejecución. */
+export type PluginVisible = Pick<PluginRecord, "id" | "name" | "version" | "slice">;

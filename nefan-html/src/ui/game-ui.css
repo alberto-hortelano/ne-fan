@@ -565,3 +565,28 @@
   #narrative-loader .spinner { animation: none; }
   .nf-bar-fill { transition: none; }
 }
+
+/* Estado declarativo de los sistemas: cabecera fija y contenido desplazable. */
+#plugins-panel {
+  position: absolute;
+  inset: 10px 12px auto auto;
+  width: min(420px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  box-sizing: border-box;
+  z-index: var(--z-panel);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+}
+#plugins-panel[hidden] { display: none; }
+#plugins-panel header { display: flex; align-items: center; justify-content: space-between; gap: var(--nf-gap); }
+#plugins-panel h2, #plugins-panel h3 { margin: 0; font-size: var(--nf-fs-md); }
+#plugins-panel p { color: var(--nf-ink-dim); font-size: var(--nf-fs-sm); }
+.plugins-content { overflow: auto; min-height: 0; overflow-wrap: anywhere; }
+.plugins-content article + article { border-top: var(--nf-hairline) solid var(--nf-border); padding-top: var(--nf-pad); }
+.plugins-content dl { margin: var(--nf-gap) 0; }
+.plugins-content dt { color: var(--nf-ink-dim); }
+.plugins-content dd { margin: 0 0 var(--nf-gap) 1em; }
+
+#game-ui:has(#plugins-panel:not([hidden])) > :not(#plugins-panel):not(#narrative-loader) { visibility: hidden; }
+#plugins-open[hidden] { display: none; }

@@ -30,6 +30,7 @@ const PARTIDA: SessionFacets = {
   characterMode: "vector",
   combatSystem: "basic",
   uiTheme: TEMA,
+  plugins: [{ id: "counter", name: "Contador", version: 1, slice: { count: 7 } }],
 };
 
 /** Doble que anota QUÉ sink se llamó y con qué. Se construye como
@@ -52,6 +53,7 @@ function espia(): { sinks: FacetSinks; llamadas: Array<[string, unknown]> } {
       llamadas.push(["renderModes", `${renderMode}/${characterMode}`]),
     combat: ({ combatSystem }) => llamadas.push(["combat", combatSystem]),
     history: ({ sessionId }) => llamadas.push(["history", sessionId]),
+    plugins: ({ plugins }) => llamadas.push(["plugins", plugins]),
     entrada: ({ sessionId }) => llamadas.push(["entrada", sessionId]),
     dialogo: ({ sessionId }) => llamadas.push(["dialogo", sessionId]),
   };
@@ -83,6 +85,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       ["renderModes", "image/vector"],
       ["combat", "basic"],
       ["history", "1787-abc"],
+      ["plugins", PARTIDA.plugins],
       ["entrada", "1787-abc"],
       ["dialogo", "1787-abc"],
     ]);
@@ -116,6 +119,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       ["renderModes", "/"],
       ["combat", ""],
       ["history", ""],
+      ["plugins", []],
       ["entrada", ""],
       ["dialogo", ""],
     ]);
@@ -159,6 +163,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
       ["renderModes", "/"],
       ["combat", ""],
       ["history", "segunda"],
+      ["plugins", []],
       ["entrada", "segunda"],
       ["dialogo", "segunda"],
     ]);

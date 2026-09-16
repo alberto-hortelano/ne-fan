@@ -1,3 +1,4 @@
+import type { PluginVisible } from "../plugins/types.js";
 /** Shared narrative types. */
 import type { Vec3 } from "../types.js";
 import type { WorldMap } from "../world-map/types.js";
@@ -419,6 +420,7 @@ export type ConsequenceEffect =
    *  clientes que no lo entiendan deben ignorar kinds desconocidos. */
   | {
       kind: "plugin_applied";
+      plugin: PluginVisible;
       pluginId: string;
       eventType: string;
       changedPaths: string[];

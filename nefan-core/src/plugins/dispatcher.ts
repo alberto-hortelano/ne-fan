@@ -243,6 +243,7 @@ export function dispatchPluginEvents(
       if (!deepEqual(prevSlice, ctx.slice)) changedPaths.push(`plugins.${id}.slice`);
       effects.push({
         kind: "plugin_applied",
+        plugin: { id, name: manifest.name, version: manifest.version, slice: structuredClone(ctx.slice) },
         pluginId: id,
         eventType: event.type,
         changedPaths,
