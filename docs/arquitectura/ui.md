@@ -29,11 +29,20 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
   offline) rige el tema base. `test/ui-theme.test.ts` mide el contraste WCAG
   de los cinco temas shipped: un tema ilegible rompe el test.
 - **Las capas están decididas, no heredadas del orden del DOM** (#483):
-  `#app-shell > canvas` (el mundo) va en `z-index: 0` y `#game-ui` en `1`,
+  `#app-shell > canvas` (el mundo) va en `z-index: 0` y `#game-ui` en `2`,
   porque `FpsRenderer` inserta su lienzo DESPUÉS de la capa de UI y con los dos
   en `auto` ganaba el mundo. Lo de DEV vive fuera de `#app-shell` y por encima
-  (`#error-log` 8900, `#dev-status` 10000). Dentro de `#game-ui` mandan las
-  bandas `--z-*`, y la mirilla lleva la suya (`--z-hud`) en vez de depender de
+  (`#dev-status` 10000), salvo el registro técnico (`#error-log` 1): queda
+  debajo de los controles del jugador y del muro, para que un registro largo
+  no intercepte el chip de gráficos ni sus toggles (#509, #497). El registro
+  cede sus píxeles mientras gráficos o el muro están abiertos, para que su
+  texto no se transparente a través del panel; al cerrarlo vuelve íntegro.
+  El registro se vacía al cambiar de sesión mediante la faceta `errores` con `porValor`;
+  reaplicar la misma sesión lo conserva y limpiar no resuelve avisos vivos.
+  En ventanas de hasta 760 px el chip y su panel pasan arriba a la derecha,
+  dejando libre la barra de acciones inferior. Guiones 135 y 82.
+  Dentro de `#game-ui` mandan las bandas `--z-*`, y la mirilla lleva la suya
+  (`--z-hud`) en vez de depender de
   quién sea su hermano. Lo canda el guion 103 con `elementFromPoint`: los
   guiones que leen `data-target` daban verde con el punto tapado.
 - **La vida se lee `vida / máximo`** (#527): la barra pinta el PORCENTAJE y el

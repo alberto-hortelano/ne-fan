@@ -108,6 +108,9 @@ export interface FacetSinks {
    *  Recibe el id por valor y el cliente lo cablea con `porValor`, como
    *  `mundo` y `dialogo`: olvidar es destructivo. */
   frontera(f: Pick<SessionFacets, "sessionId">): void;
+  /** Registro técnico de esta partida. Se vacía por cambio de id, antes de
+   *  aplicar facetas que puedan registrar errores nuevos; no resuelve avisos. */
+  errores(f: Pick<SessionFacets, "sessionId">): void;
   /** Estilo visual → generadores de imagen (atlas de superficies, skins). */
   style(f: Pick<SessionFacets, "styleId">): void;
   /** Tema de UI → custom properties de #game-ui. */
@@ -203,6 +206,7 @@ const APLICADORES: {
   // Detrás del mundo, porque es lo mismo que el mundo: los tiles se van y con
   // ellos lo que la frontera creía saber de sus vecinos.
   frontera: (s, f) => s.frontera(f),
+  errores: (s, f) => s.errores(f),
   style: (s, f) => s.style(f),
   theme: (s, f) => s.theme(f),
   renderModes: (s, f) => s.renderModes(f),

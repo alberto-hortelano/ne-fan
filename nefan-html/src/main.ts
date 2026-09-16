@@ -162,10 +162,10 @@ const session = createClientSession({
   // nada encima. `porValor` (core) lo hace idempotente: vaciar es destructivo
   // y solo ocurre cuando el id de sesión CAMBIA.
   mundo: porValor(() => resetWorld()),
-  // Y con el mundo, lo que la frontera creía saber de sus vecinos: es una
-  // instancia de MÓDULO y sin esto lo pedido en una partida seguía pedido en
-  // la siguiente (#517; el motivo entero, en `session-facets.ts`).
+  // La frontera olvida con el mundo lo pedido en la partida anterior (#517).
+  // El registro técnico empieza limpio para el nuevo id (#497).
   frontera: porValor(() => frontier.olvidarLaPartida()),
+  errores: porValor(() => errors.clear()),
   style: ({ styleId }) => applySessionStyle(styleId),
   theme: ({ uiTheme }) => applyUiTheme(uiTheme),
   renderModes: (f) => graficos.aplicar(f),
