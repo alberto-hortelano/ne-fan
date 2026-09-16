@@ -9,10 +9,21 @@
  *  commiteadas, en los DOS estados del plan del tile (instalado y sin derivar,
  *  que es el `catch` de `applyPlanCollision`).
  *
+ *  LO QUE ESTE GUION YA NO MIRA, dicho aquí porque ENCOGIÓ sin cambiar de
+ *  nombre (#601, QA H-5): los **orígenes INTERIORES**. Tenía tres orígenes y
+ *  hoy tiene dos, los dos exteriores, porque desde dentro la conducta dejó de
+ *  ser la de la base A PROPÓSITO —la exención pasó de la caja entera a la
+ *  penetración— y compararla aquí sería pedirle a este guion que declare
+ *  regresión el arreglo. O sea: sus sondas contestan «nada cambió fuera de los
+ *  spawns de runtime» **para quien viene de fuera**, y no dicen nada de quien ya
+ *  está dentro. Esa mitad la sujetan los asertos «SALIR SÍ, ENTRAR NO (#601)» y
+ *  «la PENETRACIÓN se mide por la cara más cercana» de
+ *  `test/obstaculos-del-jugador.test.ts`.
+ *
  *  No abre navegador ni gasta un céntimo: son las fixtures, `formatDToWorld` y
  *  aritmética. Se corre a mano (`node qa/equivalencia-de-cajas.mjs`); el
  *  candado permanente de esta frontera son `test/obstaculos-del-jugador.test.ts`
- *  y los guiones 02/45/81/91.
+ *  y los guiones 02/45/81/91/134.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -45,8 +56,15 @@ function aabbBase(desde, hasta, radio, obstaculos, svgApplied) {
 
 /** Diez destinos por objeto: su centro, los cuatro puntos justo DENTRO de la
  *  pared (media huella + radio − 1 cm), los cuatro justo FUERA (+1 cm) y uno
- *  lejos. Y tres orígenes: lejos, pegado por el oeste y DENTRO (que es la rama
- *  «salir sí, entrar no»). */
+ *  lejos. Y dos orígenes, los dos EXTERIORES: lejos y pegado por el oeste.
+ *
+ *  Había un tercero, DENTRO de la caja, y se retiró con #601: ahí la conducta
+ *  YA NO es la de la base a propósito. La base eximía la caja ENTERA («si el
+ *  origen solapa, no bloquea nada») y hoy se exime solo la PENETRACIÓN que ya
+ *  se tenía, así que desde dentro un paso hacia el centro bloquea donde antes
+ *  no. Comparar eso con la base sería pedirle a este guion que declare
+ *  regresión el arreglo. Lo que mide —y para lo que existe— es que fuera de los
+ *  spawns de runtime NADA cambió, y el origen exterior es donde eso se ve. */
 function sondas(o) {
   const hx = o.sizeXZ.x / 2 + RADIO;
   const hz = o.sizeXZ.z / 2 + RADIO;
@@ -61,7 +79,6 @@ function sondas(o) {
   const origenes = [
     { x: o.pos.x + 60, z: o.pos.z + 60 },
     { x: o.pos.x - hx - 0.5, z: o.pos.z },
-    { x: o.pos.x + 0.05, z: o.pos.z + 0.05 },
   ];
   return { destinos, origenes };
 }

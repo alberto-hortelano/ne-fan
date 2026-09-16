@@ -13,7 +13,9 @@ import assert from "node:assert/strict";
 
 import {
   aabbBloquea,
+  cajaBloquea,
   fronteraBloquea,
+  penetracionEnCaja,
   type DuenoDeEntity,
   type ObstaculoAabb,
   type PlanDeLosTiles,
@@ -168,12 +170,53 @@ describe("aabbBloquea — la caja que se aplica la decide el ORIGEN del objeto",
     assert.equal(aabbBloquea(origen, { x: 10, z: 0 }, R, [{ pos: forja.pos, category: "building", dueno: DE_RUNTIME }], conPlan), false);
   });
 
-  it("SALIR SÍ, ENTRAR NO: quien apareció dentro de la caja puede moverse dentro de ella", () => {
+  it("SALIR SÍ, ENTRAR NO (#601): desde dentro se sale y se va de lado, pero NO más adentro", () => {
+    // La forja está en (10, 0) y su pared queda a 2,4 m del centro (media
+    // huella + radio). El jugador apareció dentro, a 0,5 m del centro hacia el
+    // este: le sobran 1,9 m de penetración.
+    //
+    // Los tres asertos son los tres movimientos que puede hacer, y cada uno
+    // sujeta una mitad distinta de la regla:
+    //  · ALEJARSE es el invariante que `reparto-de-spawns.ts:19-25` da por
+    //    supuesto para no encerrar a quien spawnea solapado. Si se rompe, un
+    //    spawn encima del jugador lo clava para siempre.
+    //  · PARALELO a una cara no cambia la penetración, y «igual» no es «más»:
+    //    sin esto, moverse dentro sería un tobogán hacia la única salida.
+    //  · MÁS ADENTRO es lo que se cierra hoy. Antes de #601 la exención era la
+    //    CAJA ENTERA y desde dentro se permitía todo, así que bastaba rozar una
+    //    esquina en diagonal para cruzar el edificio de lado a lado.
+    //
+    // El paso hacia dentro es de UN CENTÍMETRO, el mismo grano con el que sondea
+    // el resto de esta batería y el que usa `qa/equivalencia-de-cajas.mjs`.
+    // Estaba escrito «un centímetro» y movía DIEZ (QA H-4), y el número importa:
+    // metiendo en `cajaBloquea` una tolerancia de 2 cm —«se puede entrar un poco
+    // por frame», que es lo que escribiría quien creyera que el jugador vibra—
+    // con los 10 cm este aserto salía VERDE y el rojo lo daba el vecino
+    // («EL ARREGLO DE #489», que sondea ±1 cm desde FUERA); con 1 cm se pone
+    // rojo él, que es lo que su texto promete. Medido las dos veces.
+    //
+    // Lo que sigue sin cerrar, dicho para que nadie lo cuente de más: por debajo
+    // del centímetro no lo caza NADIE de este fichero (QA lo midió con 5 mm:
+    // 25/25 verdes). El defecto que eso deja pasar mide milímetros y no es
+    // observable; lo que sí se nota, un frame entero de 7 cm, lo tumba `verify`.
     const dentro = { x: 10.5, z: 0 };
-    assert.equal(aabbBloquea(dentro, { x: 10, z: 0 }, R, [forja], conPlan), false, "moverse dentro no bloquea");
-    assert.equal(aabbBloquea(dentro, { x: 20, z: 0 }, R, [forja], conPlan), false, "salir tampoco");
-    // Pero volver a entrar desde fuera sí.
-    assert.equal(aabbBloquea({ x: 20, z: 0 }, dentro, R, [forja], conPlan), true);
+    assert.equal(aabbBloquea(dentro, { x: 10.6, z: 0 }, R, [forja], conPlan), false, "alejarse del centro nunca bloquea");
+    assert.equal(aabbBloquea(dentro, { x: 20, z: 0 }, R, [forja], conPlan), false, "y salir del todo, tampoco");
+    assert.equal(aabbBloquea(dentro, { x: 10.5, z: 0.5 }, R, [forja], conPlan), false, "ir paralelo a la cara más cercana deja la penetración IGUAL, y eso no es más adentro");
+    assert.equal(aabbBloquea(dentro, { x: 10.49, z: 0 }, R, [forja], conPlan), true, "pero un centímetro MÁS ADENTRO se bloquea");
+    // Y desde fuera todo sigue igual que siempre: entrar bloquea.
+    assert.equal(aabbBloquea({ x: 20, z: 0 }, dentro, R, [forja], conPlan), true, "entrar desde fuera bloquea");
+  });
+
+  it("la PENETRACIÓN se mide por la cara más cercana, no por la distancia al centro", () => {
+    // Pegado a la cara norte de la forja y muy escorado al este: la salida más
+    // corta es hacia el norte (0,2 m), no hacia el este (0,4 m). Ir al este se
+    // acerca al centro en línea recta y aun así NO bloquea, porque la cara que
+    // manda es la otra y el margen hacia ella no empeora. Sin el `min` —con una
+    // suma, o midiendo al centro— este aserto se cae.
+    const esquina = { x: 10 + 2.0, z: 0 + 2.2 };
+    assert.equal(aabbBloquea(esquina, { x: 10 + 1.9, z: 2.2 }, R, [forja], conPlan), false, "acercarse al centro por el eje que NO manda no es meterse más");
+    assert.equal(aabbBloquea(esquina, { x: 10 + 2.0, z: 2.1 }, R, [forja], conPlan), true, "por el eje que manda, sí");
   });
 
   it("el radio del cuerpo cuenta: el mismo destino bloquea con radio grande y no con radio cero", () => {
@@ -195,5 +238,66 @@ describe("aabbBloquea — la caja que se aplica la decide el ORIGEN del objeto",
     const alfombra: ObstaculoAabb = { ...forja, sizeXZ: { x: 4, z: 4 } };
     assert.equal(aabbBloquea(origen, { x: 10, z: 0 }, R, [alfombra], conPlan), true);
     assert.equal("sizeY" in alfombra, false);
+  });
+});
+
+/** LA GEOMETRÍA SOLA, sin la política de quién es cada caja. Se exporta aparte
+ *  (#601) porque el bucle de arriba es el del JUGADOR —`category`, `dueno`,
+ *  `planAplicadoEn`— y la pregunta «¿este paso mete más adentro?» no es suya:
+ *  la misma caja tendrá que frenar a otros cuerpos, y dos geometrías paralelas
+ *  es exactamente cómo nació la asimetría que arregla esta tanda. */
+describe("penetracionEnCaja / cajaBloquea — cuánto se está metido y si se empuja hacia dentro", () => {
+  /** Una caja RECTANGULAR (4×2) y FUERA DEL ORIGEN a propósito. Lo primero
+   *  porque con una cuadrada confundir el eje x con el z sale verde; lo segundo
+   *  porque con el centro en (0,0) da lo mismo restar que sumar la posición de
+   *  la caja, y el mutante del signo sobrevivía por eso en las dos mitades (es
+   *  el que la medida de la corrida 35012863832 dejó vivo dos veces). Con radio
+   *  0,4 la pared queda a 2,4 m del centro en x y a 1,4 en z. */
+  const caja = { pos: { x: 7, z: -3 }, sizeXZ: { x: 4, z: 2 } };
+  const en = (dx: number, dz: number) => ({ x: caja.pos.x + dx, z: caja.pos.z + dz });
+  /** Sacar la caja del origen mete error de coma flotante en los desplazamientos
+   *  (7 + 1,2 − 7 no es 1,2 exacto), así que los metros se comparan con
+   *  tolerancia. Lo que se afirma son centímetros, no bits. */
+  const cerca = (a: number, b: number, msg: string) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} ≠ ${b}`);
+
+  it("fuera es CERO, y el borde exacto cuenta como fuera", () => {
+    assert.equal(penetracionEnCaja(en(5, 0), caja, R), 0, "lejos");
+    assert.equal(penetracionEnCaja(en(2.4, 0), caja, R), 0, "justo en la pared inflada");
+    assert.equal(penetracionEnCaja(en(0, 1.4), caja, R), 0, "y en la del otro eje");
+  });
+
+  it("dentro es la salida MÁS CORTA, que en un rectángulo es el eje estrecho", () => {
+    // En el centro se sale antes por z (1,4 m) que por x (2,4): el `min` es el
+    // que lo dice, y una suma o un producto darían otro número.
+    cerca(penetracionEnCaja(caja.pos, caja, R), 1.4, "en el centro se sale por el eje estrecho");
+    cerca(penetracionEnCaja(en(2.3, 0), caja, R), 0.1, "pegado a la pared de x, la corta es esa");
+  });
+
+  it("el RADIO infla la caja: el mismo punto está más metido con cuerpo que sin él", () => {
+    cerca(penetracionEnCaja(caja.pos, caja, 0), 1, "sin cuerpo, media huella y no media huella + radio");
+    cerca(penetracionEnCaja(en(1.2, 0), caja, 0), 0.8, "y el eje ancho manda cuando el estrecho no");
+  });
+
+  it("bloquea el paso que deja MÁS metido, y solo ese", () => {
+    const fuera = en(5, 0);
+    const medio = en(0, 0.5);
+    assert.equal(cajaBloquea(fuera, caja.pos, R, caja), true, "entrar desde fuera");
+    assert.equal(cajaBloquea(caja.pos, fuera, R, caja), false, "salir del todo");
+    assert.equal(cajaBloquea(medio, caja.pos, R, caja), true, "de dentro a más dentro");
+    assert.equal(cajaBloquea(medio, en(0, 0.6), R, caja), false, "de dentro hacia la cara");
+    assert.equal(cajaBloquea(fuera, en(6, 0), R, caja), false, "de fuera a fuera");
+    assert.equal(cajaBloquea(medio, medio, R, caja), false, "quedarse quieto NUNCA bloquea: la igualdad no es «más»");
+  });
+
+  it("ACERCARSE desde fuera no frena hasta llegar: lo de fuera es CERO, no un número negativo", () => {
+    // El jugador que camina hacia el edificio por el eje z, alineado con su
+    // centro en x: los dos puntos están FUERA y ninguno puede bloquear. Si el
+    // «fuera» se colase como penetración negativa —dejando de comprobar uno de
+    // los dos ejes— acercarse sería siempre «más metido que antes» y el jugador
+    // chocaría con un muro invisible a cinco metros del edificio.
+    assert.equal(penetracionEnCaja(en(0, -5), caja, R), 0, "a 5 m del centro, cero y no −3,6");
+    assert.equal(penetracionEnCaja(en(0, -3), caja, R), 0, "a 3 m, cero y no −1,6");
+    assert.equal(cajaBloquea(en(0, -5), en(0, -3), R, caja), false, "acercarse por z no frena");
+    assert.equal(cajaBloquea(en(-5, 0), en(-3, 0), R, caja), false, "ni por x");
   });
 });
