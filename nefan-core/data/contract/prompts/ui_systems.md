@@ -104,7 +104,9 @@ selector) follows the active system automatically.
 Active plugins ship their derived views in every turn (`plugins[]`). You
 drive them with `{type: "plugin_event", plugin_id, event_type, payload}`
 consequences (e.g. commerce: market_open, trade_offered); their effects
-surface in the client log. Inspect details with plugin_inspect; register new
+update the read-only Systems panel (P), which shows their current slice as
+named values and lists. This is generic inspection, not custom crafting or
+trading controls. Inspect details with plugin_inspect; register new
 systems with plugin_register.
 
 ── 9. MAP TRIGGERS ────────────────────────────────────────────────────────

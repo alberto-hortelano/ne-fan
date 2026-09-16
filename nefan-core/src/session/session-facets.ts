@@ -20,6 +20,7 @@
  *  los sinks — este fichero solo garantiza que se aplican todos, siempre, en
  *  los dos sentidos. */
 
+import type { PluginVisible } from "../plugins/types.js";
 import { BASE_UI_THEME, type UiTheme } from "../games/ui-theme.js";
 
 /** Todo lo que una partida imprime en el cliente. Un campo aquí es una cosa
@@ -37,6 +38,7 @@ export interface SessionFacets {
   combatSystem: string;
   /** Tema de UI del style pack. */
   uiTheme: UiTheme;
+  plugins: readonly PluginVisible[];
 }
 
 /** «Sin partida», como valor. Es el ÚNICO sitio donde se escribe el neutro de
@@ -48,6 +50,7 @@ export const NO_SESSION: SessionFacets = {
   characterMode: "",
   combatSystem: "",
   uiTheme: BASE_UI_THEME,
+  plugins: [],
 };
 
 /** Los efectos de cada faceta, que pone el cliente. Se invocan TODOS en cada
@@ -73,6 +76,7 @@ export const NO_SESSION: SessionFacets = {
  *  partir el record. Partirlo costaba el ORDEN, que es el diseño: `mundo` va
  *  el primero y `dialogo` el último, y los dos mecanismos van INTERCALADOS. */
 export interface FacetSinks {
+  plugins(f: Pick<SessionFacets, "plugins">): void;
   /** El MUNDO pintado: a qué partida pertenecen los tiles que hay instalados.
    *  Se aplica el primero de todos (ver `APLICADORES`) porque las demás
    *  facetas arman cosas sobre el mundo —el atlas de superficies pide el
@@ -212,6 +216,7 @@ const APLICADORES: {
   renderModes: (s, f) => s.renderModes(f),
   combat: (s, f) => s.combat(f),
   history: (s, f) => s.history(f),
+  plugins: (s, f) => s.plugins(f),
   entrada: (s, f) => s.entrada(f),
   dialogo: (s, f) => s.dialogo(f),
 };

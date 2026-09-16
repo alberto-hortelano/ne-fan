@@ -33,6 +33,7 @@ import { BridgeClient } from "./net/bridge-client.js";
 import { NarrativeClient } from "./net/narrative-client.js";
 import { serviceUrl } from "./net/service-urls.js";
 import { TitleScreen, type TitleAction } from "./ui/title-screen.js";
+import { crearPanelDePlugins } from "./ui/panel-de-plugins.js";
 import { HistoryBrowser } from "./ui/history-browser.js";
 import { inputRegistry } from "./input/registry.js";
 import type { InputProvider } from "./input/input-provider.js";
@@ -154,6 +155,7 @@ const entrada = createEntrada((sessionId) => {
   narrativeClient.sessionEntered(sessionId);
 });
 
+const plugins = crearPanelDePlugins(() => fpsRenderer.element);
 const session = createClientSession({
   // El mundo pintado es una FACETA, no una llamada que haya que acordarse de
   // hacer (#282, segunda mitad): la rama `new_game` de `unIntentoDeArrancar`
@@ -172,6 +174,7 @@ const session = createClientSession({
   renderModes: (f) => graficos.aplicar(f),
   combat: ({ combatSystem }) => hud.aplicarSistema(combatSystem),
   history: ({ sessionId }) => historyBrowser.setSession(sessionId),
+  plugins: ({ plugins: estado }) => plugins.aplicar(estado),
   entrada: ({ sessionId }) => entrada.sesion(sessionId),
   // El gate del diálogo, que hasta #311 `leave()` no deshacía: volver al
   // título dejaba puesto lo que abrió la conversación. Llama a
@@ -316,16 +319,8 @@ const frontera = crearFronteraDelJugador({
 // Proveedor de input (plugin): default teclado+ratón; ?input=scripted instala
 // el driver programático de bench. Un id desconocido no arranca — fail-loud.
 const requestedInputId = new URLSearchParams(location.search).get("input") ?? undefined;
-/** «Hay una conversación abierta», y SOLO desde su dueño (#314).
- *
- *  Antes esto era un campo público del proveedor que abrir la conversación
- *  ponía y cerrarla quitaba: una tercera representación del panel, escribible
- *  desde cualquier módulo del cliente. Ahora el proveedor PREGUNTA y la
- *  respuesta la deriva del panel su dueño (`ui/conversacion.ts`), así que no
- *  hay nada que desincronizar ni
- *  nadie de fuera que pueda mentir. Lo comparten el proveedor de juego y las
- *  teclas dev porque es la misma pregunta. */
-const dialogoAbierto = (): boolean => conversacion.abierta();
+/** El input de juego consulta los paneles que lo bloquean, sin flags espejo. */
+const dialogoAbierto = (): boolean => conversacion.abierta() || plugins.abierto();
 /** «Hay una propuesta de explorar el tile vecino», DERIVADA de su dueño (#329).
  *
  *  Era `input.tileProposalActive`, campo público del proveedor que este bucle
@@ -1123,7 +1118,7 @@ narrativeClient.onNarrativeEvent((event) => {
         log(effect.message);
         break;
       case "plugin_applied":
-        log(`⚙️ plugin ${effect.pluginId.slice(0, 8)}…: ${effect.eventType} → ${effect.changedPaths.join(", ") || "(solo slice)"}`);
+        plugins.actualizar(effect.plugin);
         break;
     }
   }
@@ -1268,6 +1263,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         combatSystem: res.state.world?.combat_system ?? "",
         // Sin tema en la respuesta, el neutro: el mismo que aplica `leave()`.
         uiTheme: res.uiTheme ?? BASE_UI_THEME,
+        plugins: res.state.plugins,
       });
       log(`Nueva partida: ${res.sessionId} (${action.gameId})`);
       await aspecto.vestir(action.appearance.model_id, action.appearance.skin_path);
@@ -1281,6 +1277,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         combatSystem: res.state.world?.combat_system ?? "",
         // Sin tema en la respuesta, el neutro: el mismo que aplica `leave()`.
         uiTheme: res.uiTheme ?? BASE_UI_THEME,
+        plugins: res.state.plugins,
       });
       log(`Reanudada: ${res.state.session_id}`);
       // El mundo anterior ya se fue —lo vació la faceta `mundo` del

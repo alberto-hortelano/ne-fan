@@ -124,3 +124,18 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
   input es `no-restricted-syntax` en `nefan-html/eslint.config.js`, que mira la
   llamada; la regla de `arch-rules.json` cubre formas de escritura y lo
   declara.
+
+## Estado de los sistemas (#360)
+
+El botón «P · Sistemas» abre un panel de inspección genérico: nombres, listas y
+valores del slice, sin ejecutar HTML del motor. `session_started` lo llena también
+al reanudar; la faceta `plugins` lo vacía al salir. `plugin_applied` incluye una
+copia de los valores posteriores a cada aplicación del tick y actualiza la ficha
+por nombre (una migración cambia el id). El dispatcher no publica efectos de un
+tick abortado. El panel suelta el ratón y bloquea el input de juego mientras está
+abierto; Cerrar/Escape lo devuelve solo si lo había soltado. Guion 142.
+
+No se añade otro lenguaje de UI al manifest: las `derived_views` siguen siendo
+la vista del motor narrativo. Una mesa de crafting interactiva necesita su propio
+contrato de acciones y se decidirá con ese primer caso concreto; el panel de
+inspección cubre ahora cualquier slice sin cliente a medida.
