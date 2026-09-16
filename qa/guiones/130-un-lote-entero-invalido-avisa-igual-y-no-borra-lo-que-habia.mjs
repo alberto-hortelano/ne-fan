@@ -31,6 +31,12 @@
  *       rechazo del parser (lista de ataques, `max_health`, `weapon_id`), que
  *       es lo que impide que un motivo valga por todos—, más una línea por
  *       enemigo en el log del bridge. Y SIN muro de fallo.
+ *       Desde **#625** ese aviso viaja PARTIDO en dos campos —`message`, la
+ *       frase de juego, y `detalleTecnico`, el diagnóstico— y cada mitad se
+ *       afirma donde vive: la cuenta en `message`, los ids y los motivos en
+ *       `detalleTecnico`, que es el ÚNICO campo donde los tres sobreviven.
+ *       Pedírselos a `message` es lo que este guion hacía hasta la tanda F, y
+ *       por eso salió rojo sin que nada del jugador se hubiera roto.
  *   D · **LO QUE HABÍA SIGUE**: los dos buenos del bloque A continúan dados de
  *       alta después del lote fallido.
  *
@@ -45,6 +51,14 @@
  *  dentro del `if (added > 0)` de `handleAddCombatants`, este guion se pone
  *  ROJO en los tres asertos del bloque C mientras `npm run verify` y el guion
  *  129 siguen verdes.
+ *
+ *  PROBADO EN NEGATIVO (tanda F, 2026-09-16), el aserto re-apuntado: con el
+ *  mutante que este guion existe para cazar —`avisoDeCriba` pasando
+ *  `criba.descartes[0].motivo` a los tres, o sea un motivo valiendo por
+ *  todos— el aserto de los TRES motivos sale ROJO… y el aserto VECINO, «el
+ *  motivo llega al REGISTRO del jugador», sale VERDE. Eso es lo que costaba
+ *  re-apuntar este aserto al registro en vez de a `detalleTecnico`: el mutante
+ *  pasaría sin que se notara.
  *
  *  Cero créditos: preset `e2e-sin-creditos`, motor falso, todo en maqueta
  *  (`renderMode: "vector"`, `charMode: "vector"`).
@@ -135,11 +149,16 @@ async function porElSocketDelJuego(ctx, frame) {
   }, frame);
 }
 
+/** Los avisos de error del cable, con SUS DOS CAMPOS. Desde #625 el aviso viaja
+ *  partido (`avisoDeCriba` → `{message, detalleTecnico}`): `message` es la
+ *  frase de juego y `detalleTecnico` el diagnóstico con los ids y los motivos
+ *  del parser. Los tres motivos DISTINTOS que mide el bloque C solo sobreviven
+ *  en el segundo. */
 const avisosDeError = (ctx) =>
   ctx.page.evaluate(() =>
     window.__qa130.entrantes
       .filter((m) => m.type === "narrative_status" && m.phase === "error")
-      .map((m) => ({ kind: m.kind, message: m.message })),
+      .map((m) => ({ kind: m.kind, message: m.message, detalleTecnico: m.detalleTecnico })),
   );
 
 const registro = (ctx) =>
@@ -269,17 +288,25 @@ export default async function (ctx) {
 
   const avisos = await avisosDeError(ctx);
   ctx.log(`C · avisos de error recibidos: ${JSON.stringify(avisos)}`);
-  const elAviso = avisos.find((a) => a.kind === "combatientes")?.message ?? "";
+  const combatientes = avisos.find((a) => a.kind === "combatientes");
+  const elAviso = combatientes?.message ?? "";
+  // El diagnóstico del aviso, que desde #625 es donde viven los ids y los
+  // motivos: el `message` es la frase de juego y ya no los lleva. Se lee de
+  // AQUÍ y no del aserto vecino del registro, que está verde por otro camino
+  // (`main.ts` vuelca `detalleTecnico` al registro): re-apuntar ahí este aserto
+  // le quitaría el poder —el mutante que colapsara los tres motivos en uno
+  // seguiría saliendo verde— sin que se notara.
+  const elDiagnostico = combatientes?.detalleTecnico ?? "";
   ctx.expect(
     "C · el aviso dice CUÁNTOS de cuántos con la cuenta del lote entero («3 de 3»), no de los que entraron",
     elAviso.includes("3 de 3"),
     elAviso || "(sin aviso)",
   );
   ctx.expect(
-    "C · …y nombra a los TRES con sus TRES motivos distintos: un motivo no vale por todos",
-    ["qa130_sin_ataques", "qa130_sin_maximo", "qa130_sin_arma"].every((id) => elAviso.includes(id)) &&
-      [MOTIVO_ATAQUES, MOTIVO_MAXHP, MOTIVO_ARMA].every((m) => elAviso.includes(m)),
-    elAviso || "(sin aviso)",
+    "C · …y su diagnóstico nombra a los TRES con sus TRES motivos distintos: un motivo no vale por todos",
+    ["qa130_sin_ataques", "qa130_sin_maximo", "qa130_sin_arma"].every((id) => elDiagnostico.includes(id)) &&
+      [MOTIVO_ATAQUES, MOTIVO_MAXHP, MOTIVO_ARMA].every((m) => elDiagnostico.includes(m)),
+    elDiagnostico || "(sin diagnóstico)",
   );
 
   const descartes = descartesDelBridge(logBridge);

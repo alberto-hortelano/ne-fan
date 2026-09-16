@@ -21,7 +21,13 @@
  *   B · **EL MOTIVO LLEGA A LOS DOS CANALES**: al log del bridge con el id de
  *       quién y el motivo del parser VERBATIM, y al registro de errores del
  *       jugador. El mismo string en los dos sitios es lo único que hace verdad
- *       «un solo criterio».
+ *       «un solo criterio». Desde **#625** el aviso del cable viaja PARTIDO
+ *       —`message` es la frase de juego, `detalleTecnico` el diagnóstico— y
+ *       cada mitad se afirma donde vive: la cuenta («1 de 3») en `message`, el
+ *       id y el motivo en `detalleTecnico`, que es el ÚNICO campo del aviso
+ *       donde ya sobreviven. Pedírselos a `message` es lo que este guion hacía
+ *       hasta la tanda F, y por eso salió rojo sin que nada del jugador se
+ *       hubiera roto.
  *   C · **SIN MODAL, y la partida sigue**: ni overlay de fallo, ni escena
  *       perdida — el jugador sigue andando con el mundo puesto.
  *
@@ -37,6 +43,12 @@
  *  no escribe esos números, los deriva `combatForHostileRole`—, que es por lo
  *  que #529 vale por coherencia y defensa en profundidad y no por dolor
  *  medido.
+ *
+ *  PROBADO EN NEGATIVO (tanda F, 2026-09-16), el aserto re-apuntado: quitando
+ *  el id del `detalleTecnico` de `avisoDeHostilDescartado` (`enemigo
+ *  descartado: …`), el aserto del diagnóstico sale ROJO y con él el del
+ *  registro del jugador, mientras la línea del log del bridge —que la escribe
+ *  `simulation.ts` por su cuenta— y la línea de juego («1 de 3») siguen verdes.
  *
  *  Cero créditos: preset `e2e-sin-creditos`, motor falso, todo en maqueta
  *  (`renderMode: "vector"`, `charMode: "vector"`).
@@ -118,11 +130,16 @@ async function porElSocketDelJuego(ctx, frame) {
   }, frame);
 }
 
+/** Los avisos de error del cable, con SUS DOS CAMPOS. Desde #625 el aviso viaja
+ *  partido (`avisoDeCriba` → `{message, detalleTecnico}`): `message` es la
+ *  frase de juego y `detalleTecnico` el diagnóstico con los ids y los motivos
+ *  del parser. Leer solo `message` era lo que medía este guion hasta hoy, y por
+ *  eso salió rojo sin que nada del jugador se hubiera roto. */
 const avisosDeError = (ctx) =>
   ctx.page.evaluate(() =>
     window.__qa129.entrantes
       .filter((m) => m.type === "narrative_status" && m.phase === "error")
-      .map((m) => ({ kind: m.kind, message: m.message })),
+      .map((m) => ({ kind: m.kind, message: m.message, detalleTecnico: m.detalleTecnico })),
   );
 
 const registro = (ctx) =>
@@ -258,9 +275,14 @@ export default async function (ctx) {
     JSON.stringify(avisos),
   );
   ctx.expect(
-    "B · …y el aviso dice CUÁNTOS de cuántos y nombra al que no entró con su motivo",
+    "B · …y la LÍNEA DE JUEGO del aviso dice cuántos de cuántos («1 de 3»), que es lo que el jugador lee sin dejar de jugar",
+    avisos.some((a) => a.kind === "combatientes" && a.message?.includes("1 de 3")),
+    JSON.stringify(avisos),
+  );
+  ctx.expect(
+    "B · …y su DIAGNÓSTICO nombra al que no entró con el motivo del parser verbatim: desde #625 eso vive en `detalleTecnico`, y es el único campo del aviso donde sobrevive",
     avisos.some(
-      (a) => a.kind === "combatientes" && a.message?.includes("1 de 3") && a.message.includes("qa129_roto") && a.message.includes(MOTIVO),
+      (a) => a.kind === "combatientes" && a.detalleTecnico?.includes("qa129_roto") && a.detalleTecnico.includes(MOTIVO),
     ),
     JSON.stringify(avisos),
   );
