@@ -2721,7 +2721,7 @@ describe("fronteras arquitectónicas", () => {
             "const playerCfg = loadConfig(combatConfigJson).player;\n" +
             "velocidad: velocidadDelJugador(playerCfg, input.state.sprint),\n" +
             "pickNearestTarget(playerPos, vivos, { maxDistanceM: playerCfg.interact_range_m });\n" +
-            "const rp = puntoDeReaparicion(playerPos, collidesAt, under?.rect ?? null);\n" +
+            "const rp = puntoDeReaparicion(playerPos);\n" +
             "hablar.yaContestaron();\nmundo.npc(hablar.ultimoHablado);\n",
           imports: [],
         },
@@ -2743,8 +2743,12 @@ describe("fronteras arquitectónicas", () => {
           imports: [],
         },
         {
-          path: "nefan-core/src/simulation/reaparicion.ts",
-          text: "x: (rectDelTile.minX + rectDelTile.maxX) / 2,\n",
+          // El centro de un rect calculado a mano en CORE, que es donde se
+          // puede. Era la línea de `reaparicion.ts` hasta #538, que la borró
+          // por inalcanzable; hoy la escribe `world-map/place-target.ts`, y el
+          // token sigue prohibiéndosela al cliente.
+          path: "nefan-core/src/world-map/place-target.ts",
+          text: "return { x: (rect.minX + rect.maxX) / 2, z: (rect.minZ + rect.maxZ) / 2 };\n",
           imports: [],
         },
       ]),

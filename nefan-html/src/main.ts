@@ -533,9 +533,8 @@ function handleRespawnRequest(): void {
   const p = gameClient?.jugadorEnCombate();
   if (!p || p.health > 0) return;
   // DÓNDE se vuelve lo decide core (`puntoDeReaparicion`): aquí solo se le da
-  // la posición del cadáver, la pregunta de qué es sólido y el rect del tile
-  // de debajo.
-  const rp = puntoDeReaparicion(playerPos, collidesAt, tileStore.getAt(playerPos.x, playerPos.z)?.rect ?? null);
+  // la posición del cadáver.
+  const rp = puntoDeReaparicion(playerPos);
   gameClient?.respawn(rp);
   playerPos.x = rp.x;
   playerPos.z = rp.z;
