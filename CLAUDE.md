@@ -159,7 +159,7 @@ El juego arranca sin ai_server ni bridge — texturas no se generan y el combate
 
 ## Controles in-game
 
-Teclado y ratón en `nefan-html/src/input/keyboard-input-provider.ts`:
+Teclado y ratón en `nefan-html/src/input/keyboard-input-provider.ts`, salvo donde la fila diga otra cosa: todas entran por la misma puerta (`input/puerta-de-teclado.ts`), pero el manejador puede vivir en el módulo dueño del panel.
 
 | Tecla | Accion |
 |-------|--------|
@@ -172,6 +172,7 @@ Teclado y ratón en `nefan-html/src/input/keyboard-input-provider.ts`:
 | LMB | Ejecutar ataque |
 | Y/N | Responder a la propuesta de explorar el tile vecino |
 | R | Respawn |
+| P | Abrir/cerrar el panel de sistemas de la partida. Suelta el raton mientras esta abierto y lo devuelve al cerrar; Esc tambien lo cierra. Se ata en `ui/panel-de-plugins.ts`, no en el provider |
 | Esc | Soltar/capturar raton |
 
 Las teclas de DESARROLLO (G = pedir el atlas de superficies, B = ciclar la vista de
