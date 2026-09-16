@@ -71,14 +71,15 @@ export function intencionDeTeclas(teclas: {
  *  objeción de «en cadena se pega a las esquinas» valía para encadenar el delta
  *  BRUTO, no el ya resuelto.
  *
- *  Aquí NO hay escape para el que empieza dentro de un sólido, y no hace falta:
- *  las tres fuentes de solidez son «salir sí, entrar no» cada una por su cuenta
- *  —la frontera exime los tiles ya tocados, el terreno las celdas ya solapadas
- *  y la caja la penetración que ya se tenía (`obstaculos-del-jugador.ts`)—, así
- *  que quien aparezca dentro de una huella sale andando. El `atrapado` que
- *  vivía aquí (un tercer sondeo, `solido(desde, desde)`) era rama MUERTA:
- *  ninguna de las tres puede contestar `true` cuando el destino es el propio
- *  origen, y se retiró con #601.
+ *  Aquí NO hay escape para el que empieza dentro de un sólido, y el motivo es
+ *  que el que había NO FUNCIONABA: el `atrapado` de esta función (un tercer
+ *  sondeo, `solido(desde, desde)`) era rama MUERTA —ninguna de las tres fuentes
+ *  cableadas puede contestar `true` cuando el destino es el propio origen— y se
+ *  retiró con #601. Quitar código muerto no es dar una garantía: quién saca al
+ *  que empieza dentro, y hasta dónde, lo decide CADA fuente por su cuenta y no
+ *  todas lo mismo. Está escrito y medido en la cabecera de
+ *  `obstaculos-del-jugador.ts`; el resumen es que la caja sí saca siempre y el
+ *  terreno solo al que penetra menos de una celda.
  *
  *  El `forward` se toma HORIZONTAL (solo x,z): mirar al suelo no puede hacerte
  *  caminar hacia el suelo. Uno de longitud cero no es «no se mueve», es una

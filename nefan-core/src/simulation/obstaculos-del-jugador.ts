@@ -11,13 +11,36 @@
  *  nada. La ALTURA no participa en ninguna de las dos: la huella colisionable
  *  es XZ (CLAUDE.md), y aquí no hay ni campo que leer.
  *
- *  LAS TRES FUENTES SON «SALIR SÍ, ENTRAR NO», Y CADA UNA MIRA SU ORIGEN. La
- *  frontera exime los tiles ausentes que YA se tocaban; el collider de terreno,
- *  las CELDAS que ya se solapaban (`terrain-collision.ts`); y las cajas, desde
- *  #601, la PENETRACIÓN que ya se tenía (`cajaBloquea`). Que las tres lo hagan
- *  por su cuenta es lo que permite que `pasoDelJugador` no tenga escape propio:
- *  quien aparezca dentro de algo sale andando sin que nadie le abra la puerta
- *  entera. */
+ *  LAS TRES FUENTES SON «SALIR SÍ, ENTRAR NO» Y CADA UNA MIRA SU ORIGEN, PERO
+ *  NO PROMETEN LO MISMO. Conviene tenerlo escrito con el alcance de cada una,
+ *  porque `pasoDelJugador` ya no tiene escape propio (#601 retiró su `atrapado`,
+ *  que era rama muerta) y es fácil leer eso como si el escape estuviera
+ *  garantizado en todas partes:
+ *
+ *   · FRONTERA (`fronteraBloquea`): exime los tiles ausentes que YA se tocaban
+ *     desde el origen. Volver hacia dentro no se bloquea nunca, así que de aquí
+ *     siempre se sale.
+ *   · CAJA (`cajaBloquea`, desde #601): exime la PENETRACIÓN que ya se tenía.
+ *     De aquí también se sale SIEMPRE, y está medido: alejarse del centro por
+ *     cualquiera de los dos ejes nunca aumenta el `min`, así que desde todo
+ *     punto interior hay rumbo de salida y por los ocho cardinales el jugador
+ *     se mueve (QA de #601: 12.528 carreras desde 348 puntos interiores de
+ *     cuatro cajas, 0 atascados; y con cajas solapadas, una dentro de otra y
+ *     cuatro en cruz, 0 sin salida).
+ *   · TERRENO (`terrain-collision.ts`): exime las CELDAS que ya se solapaban, y
+ *     eso **NO es una garantía de salida**. Saca solo a quien ya solapa TODAS
+ *     las celdas sólidas que tiene delante; en cuanto el sólido es más ancho que
+ *     el cuerpo, la celda siguiente es sólida, no estaba solapada y bloquea.
+ *     Re-medido aquí (banda de celdas de 0,5 m, jugador en su centro, 36 rumbos
+ *     a 60 fps): con la banda **más estrecha que el cuerpo** (≤ 1,5 m) salen
+ *     34 de 36 y se anda hasta 41,8 m; con **2 m o más salen 0 de 36 y se anda
+ *     0,12 m**, y da igual que la banda mida 2 m o 20. Como `planCollisionGrid`
+ *     rasteriza la huella ENTERA de cada volumen, un edificio del pueblo es
+ *     macizo: quien acabe dentro no sale. Es anterior a #601 —la misma medida
+ *     sobre el paso de la base da exactamente lo mismo— y #601 no lo arregla; lo
+ *     que sí hace es cerrar la puerta principal por la que se llegaba ahí, que
+ *     era entrar andando por una esquina. Queda como hallazgo H-1 de su QA, con
+ *     cuerpo de issue escrito. No lo cuente nadie como resuelto. */
 
 import type { DuenoDeEntity } from "../session/entidades-del-tile.js";
 import type { TileCoord } from "../scene/tile.js";

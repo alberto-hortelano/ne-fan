@@ -185,11 +185,25 @@ describe("aabbBloquea — la caja que se aplica la decide el ORIGEN del objeto",
     //  · MÁS ADENTRO es lo que se cierra hoy. Antes de #601 la exención era la
     //    CAJA ENTERA y desde dentro se permitía todo, así que bastaba rozar una
     //    esquina en diagonal para cruzar el edificio de lado a lado.
+    //
+    // El paso hacia dentro es de UN CENTÍMETRO, el mismo grano con el que sondea
+    // el resto de esta batería y el que usa `qa/equivalencia-de-cajas.mjs`.
+    // Estaba escrito «un centímetro» y movía DIEZ (QA H-4), y el número importa:
+    // metiendo en `cajaBloquea` una tolerancia de 2 cm —«se puede entrar un poco
+    // por frame», que es lo que escribiría quien creyera que el jugador vibra—
+    // con los 10 cm este aserto salía VERDE y el rojo lo daba el vecino
+    // («EL ARREGLO DE #489», que sondea ±1 cm desde FUERA); con 1 cm se pone
+    // rojo él, que es lo que su texto promete. Medido las dos veces.
+    //
+    // Lo que sigue sin cerrar, dicho para que nadie lo cuente de más: por debajo
+    // del centímetro no lo caza NADIE de este fichero (QA lo midió con 5 mm:
+    // 25/25 verdes). El defecto que eso deja pasar mide milímetros y no es
+    // observable; lo que sí se nota, un frame entero de 7 cm, lo tumba `verify`.
     const dentro = { x: 10.5, z: 0 };
     assert.equal(aabbBloquea(dentro, { x: 10.6, z: 0 }, R, [forja], conPlan), false, "alejarse del centro nunca bloquea");
     assert.equal(aabbBloquea(dentro, { x: 20, z: 0 }, R, [forja], conPlan), false, "y salir del todo, tampoco");
     assert.equal(aabbBloquea(dentro, { x: 10.5, z: 0.5 }, R, [forja], conPlan), false, "ir paralelo a la cara más cercana deja la penetración IGUAL, y eso no es más adentro");
-    assert.equal(aabbBloquea(dentro, { x: 10.4, z: 0 }, R, [forja], conPlan), true, "pero un centímetro MÁS ADENTRO se bloquea");
+    assert.equal(aabbBloquea(dentro, { x: 10.49, z: 0 }, R, [forja], conPlan), true, "pero un centímetro MÁS ADENTRO se bloquea");
     // Y desde fuera todo sigue igual que siempre: entrar bloquea.
     assert.equal(aabbBloquea({ x: 20, z: 0 }, dentro, R, [forja], conPlan), true, "entrar desde fuera bloquea");
   });
