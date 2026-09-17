@@ -333,3 +333,21 @@ jobs:
       # ejecutable nació fuera del job y `npm test` se puso rojo con su
       # nombre—, que es exactamente para lo que se escribió.
       - run: node qa/la-consulta-de-punto-no-tiene-origen.mjs
+      # (0,42 s) #376/#652: el arte de personaje entra con procedencia y
+      # pineado, y `hero` y `frames` se sueltan JUNTOS. Arranca el entry REAL
+      # del asset-store como proceso hijo, con índice y blobs en `mkdtemp` y el
+      # puerto que elija el kernel, así que no toca el índice del checkout —y lo
+      # AFIRMA al final, que es lo que lo hace seguro aquí—. Entró el 2026-09-17
+      # con lo único que le faltaba: la prueba en un clon LIMPIO (`git archive`
+      # del árbol rastreado + `npm ci` + `npm run build`), que es la lección de
+      # `fake-enruta-por-pathname` —verde en la máquina de quien lo escribió y
+      # rojo en un árbol recién clonado, porque leía arte gitignored—.
+      - run: node qa/el-arte-de-personaje-no-se-pina-a-medias.mjs
+      # (0,81 s) #391/#652: el fail-loud del asset-store se ejerce SIN tocar el
+      # índice del checkout — las tres variables mal puestas, que no llega a
+      # escuchar, y que no deja basura en la raíz del repo (sin la guarda creaba
+      # un fichero llamado dos espacios). Misma familia que el anterior y misma
+      # prueba en clon limpio. OJO a lo que este job NO distingue: el guion se
+      # niega con EXIT 2 si no encuentra el entry, y eso no es lo mismo que un
+      # rojo; el candado de totalidad es estático y no puede verlo.
+      - run: node qa/el-indice-del-store-se-prueba-sin-el-del-checkout.mjs
