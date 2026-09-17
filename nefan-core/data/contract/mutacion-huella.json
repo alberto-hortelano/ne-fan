@@ -2,9 +2,9 @@
   "_comment": "GENERADO por `npm run mutacion -- repartir`. Las huellas (7 componentes hasheadas) de los supervivientes de la última corrida de cada fichero: es lo que deja que el delta diga qué es NUEVO, qué YA ESTABA y qué no tiene base. Se commitea a propósito — reports/ está gitignorado y mutate.ts borra el informe antes de correr. No lo edites a mano. · `segundos` es el RELOJ que costó medir el módulo al que pertenece cada fichero, y es de donde `npm run mutacion -- lotes` presupuesta los jobs de CI. A partir de la corrida en matriz lo escribe `manifiesto` desde el cronómetro de `mutate.ts`; las 52 filas que lo estrenan se SEMBRARON A MANO el 2026-09-04 con los `Done in` del log de la corrida 33866958770 (sha e67ae4d, 2026-09-04) — el campo no existía cuando se midió, así que el número hubo que sacarlo leyendo el log. Se eligió esa corrida y no la anterior (33790710680, 81a7ce0) a propósito: es el DÍA MALO, 1,31x más lenta de forma uniforme sobre los 25 módulos comunes, y presupuestar sobre el día malo es un margen de un tercio ya pagado. `status-labels` estaba en esa medida y NO se sembró: #433 lo partió en status-rotulo y status-motivo, y repartir su reloj entre las dos mitades sería inventarlo — las dos entran sin medida y van a lote propio.",
   "ficheros": {
     "bridge/state-http/dispatch.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "b498864ef94a7208dc478d5e22b3a55a3608aa05",
       "total": 59,
       "vivos": [],
@@ -14,12 +14,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 51
+      "segundos": 41
     },
     "src/combat/attack-area.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -62,24 +66,22 @@
       "segundos": 17
     },
     "src/combat/criba-de-hostiles.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "97c6c1027f647335c2e275a62017c0113bd6b35e",
-      "total": 21,
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "bd0a01ac610b04bfd147c26d224674363dd34bf7",
+      "total": 26,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#625"
         ]
       },
-      "segundos": 5
+      "segundos": 4
     },
     "src/combat/enemy-ai.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -248,9 +250,9 @@
       "segundos": 29
     },
     "src/combat/hostil-desde-combat.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "f2d6d08bea0be724da2c4f3078bca4c4ad02ca69",
       "total": 137,
       "vivos": [
@@ -266,12 +268,10 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#625"
         ]
       },
-      "segundos": 19
+      "segundos": 16
     },
     "src/combat/hostiles.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -316,9 +316,9 @@
       "segundos": 4
     },
     "src/contract/arch/cierre.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "efe31f8ae6e386cdaf353ccf3e5d3fee4c477202",
       "total": 48,
       "vivos": [],
@@ -328,17 +328,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#621",
+          "#617"
         ]
       },
-      "segundos": 9
+      "segundos": 7
     },
     "src/contract/model-io/entity-vocabulary.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "573438264bc714729a2facf5ae2d2f06caea5535",
       "total": 1,
       "vivos": [
@@ -350,17 +349,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 74
+      "segundos": 79
     },
     "src/contract/model-io/physics.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "8a3bc2205fa697cc4c93f5e087758a397cb5460e",
       "total": 18,
       "vivos": [
@@ -372,17 +375,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 74
+      "segundos": 79
     },
     "src/contract/model-io/retired-terrain-fields.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "528bd6da84f02cf8814344644651460d4fabe1d9",
       "total": 39,
       "vivos": [],
@@ -392,17 +399,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 74
+      "segundos": 79
     },
     "src/contract/model-io/scene-schema.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "c70f733e6461655a3d365a55603690c2d03e812b",
       "total": 198,
       "vivos": [
@@ -478,17 +489,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 74
+      "segundos": 79
     },
     "src/contract/model-io/validate.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "e059c3c5331daf329188a849fc5c1b46e6ef82a4",
       "total": 28,
       "vivos": [
@@ -503,12 +518,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 74
+      "segundos": 79
     },
     "src/contracts/asset-store.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -531,9 +550,9 @@
       "segundos": 7
     },
     "src/contracts/http.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "70d18030e75280e2b5918562f7975bb59e7077e2",
       "total": 63,
       "vivos": [],
@@ -543,12 +562,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 51
+      "segundos": 41
     },
     "src/contracts/sprite-census.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -633,9 +656,9 @@
       "segundos": 28
     },
     "src/narrative/ai-client.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "4424883a169a1cae06dea073c41394839db6101e",
       "total": 106,
       "vivos": [
@@ -719,17 +742,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 25
+      "segundos": 23
     },
     "src/narrative/consequence-handler.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "a0ef268d3a911316e40336454bf996430a0a73e3",
       "total": 162,
       "vivos": [
@@ -798,17 +825,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
       "segundos": 39
     },
     "src/narrative/render-mode.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "f107ff63de77e35826d2981ece9f132d61f5beb2",
       "total": 36,
       "vivos": [],
@@ -818,40 +849,43 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 11
+      "segundos": 10
     },
     "src/narrative/reparto-de-spawns.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "0a383320b16924d7609c6a3bd6ee1cf86763e8ed",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "623b3f1fe7d6151e0365b390708013d8e658f545",
       "total": 29,
       "vivos": [
-        "e7ad6bd5bca2d447",
-        "f7f73f7ebd266b17"
+        "da0be789ee7d29f3",
+        "e45f60b6e8bc316f"
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#619"
         ]
       },
-      "segundos": 7
+      "segundos": 5
     },
     "src/narrative/serialize-llm.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "3ce0d0db1c4b4e2c35fb08a74de93ea6ef4377e3",
       "total": 117,
       "vivos": [
@@ -912,12 +946,17 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#621",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 30
+      "segundos": 27
     },
     "src/narrative/speaker-resolve.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -970,9 +1009,9 @@
       "segundos": 12
     },
     "src/plugins/dsl/deep-equal.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "ce633f56a2c12b2e3d88be2f90a1f62a5639e33c",
       "total": 59,
       "vivos": [
@@ -1002,17 +1041,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630"
         ]
       },
-      "segundos": 323
+      "segundos": 355
     },
     "src/plugins/dsl/effects.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "0dc0f48112b8b973127a4738dfe404059a78e938",
       "total": 96,
       "vivos": [
@@ -1038,17 +1076,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630"
         ]
       },
-      "segundos": 323
+      "segundos": 355
     },
     "src/plugins/dsl/errors.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "035b02e90605d1920b948ed84364ca1ab6c66f87",
       "total": 2,
       "vivos": [
@@ -1060,17 +1097,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630"
         ]
       },
-      "segundos": 323
+      "segundos": 355
     },
     "src/plugins/dsl/evaluate.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "a6627cc5a5ecf7a5c733a815e6d316a74b40812b",
       "total": 68,
       "vivos": [
@@ -1095,17 +1131,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630"
         ]
       },
-      "segundos": 323
+      "segundos": 355
     },
     "src/plugins/dsl/paths.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "b2b680b5456a892b3109aa1a2be6b2ce797e9cfd",
       "total": 437,
       "vivos": [
@@ -1286,17 +1321,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630"
         ]
       },
-      "segundos": 323
+      "segundos": 355
     },
     "src/plugins/dsl/predicates.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "cb9d089b0e77ef9ba95585448cf2aaf78d81701b",
       "total": 106,
       "vivos": [
@@ -1330,17 +1364,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630"
         ]
       },
-      "segundos": 323
+      "segundos": 355
     },
     "src/plugins/dsl/values.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "720d5f19166ea6841b2232ddfd2c03a02bf2a6b0",
       "total": 594,
       "vivos": [
@@ -1515,12 +1548,11 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630"
         ]
       },
-      "segundos": 323
+      "segundos": 355
     },
     "src/protocol/borrador-de-mundo.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -1589,64 +1621,59 @@
       }
     },
     "src/protocol/status-motivo.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "c630fe2fe06774855bc9ef65fab2be89410f7449",
-      "total": 82,
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "9d3a3ed09f22dde9f1f5d4c075406b419e7fa482",
+      "total": 86,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#623"
         ]
       },
-      "segundos": 12
+      "segundos": 10
     },
     "src/protocol/status-reparto.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "cdb4f22ce6abaede4de10bff4c865e1cc3162bc4",
-      "total": 18,
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "c588b786fb6a3f8f8d737fac216fb8ac1f27ada3",
+      "total": 47,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#624"
         ]
       },
-      "segundos": 4
+      "segundos": 6
     },
     "src/protocol/status-rotulo.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "a858f3f60bc9f6b6a440dbcf9a8cf1f0756fd4f5",
-      "total": 105,
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "bfe157c33a09157fc9ea97acf778cb4ed00f509e",
+      "total": 110,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#625",
+          "#623"
         ]
       },
-      "segundos": 15
+      "segundos": 13
     },
     "src/scene/aim.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -1714,9 +1741,9 @@
       "segundos": 17
     },
     "src/scene/blueprint/collision.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "8bfb75dc76fb83e03e77e836c4e3d69e87b3061e",
       "total": 558,
       "vivos": [
@@ -1934,17 +1961,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 250
+      "segundos": 266
     },
     "src/scene/blueprint/derive.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "2d400c36e608b73e9243ff47adab2070bc0e2f5b",
       "total": 280,
       "vivos": [
@@ -2013,17 +2038,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 461
+      "segundos": 459
     },
     "src/scene/blueprint/footprint.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "a3be0a71b743af010cd3e2e20779b59619f46213",
       "total": 227,
       "vivos": [
@@ -2186,12 +2209,10 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 250
+      "segundos": 266
     },
     "src/scene/blueprint/fps-ambience.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -2273,9 +2294,9 @@
       "segundos": 23
     },
     "src/scene/blueprint/fps-detail.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "7d1baa9bb44e5d11bfc53db70f28855e906c770f",
       "total": 539,
       "vivos": [
@@ -2637,17 +2658,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 350
+      "segundos": 434
     },
     "src/scene/blueprint/fps-interior.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "28babc2cab50a9583da8651c62ab8d0d8bad9d22",
       "total": 181,
       "vivos": [
@@ -2747,17 +2766,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 350
+      "segundos": 434
     },
     "src/scene/blueprint/fps-relief.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "b9a528fa85e2e7253017e57044b78f6c762fa887",
       "total": 224,
       "vivos": [
@@ -2874,17 +2891,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 350
+      "segundos": 434
     },
     "src/scene/blueprint/fps-spec.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "f0fd225f0aaacbdd8281d2ba122d4281660cbaea",
       "total": 309,
       "vivos": [
@@ -3005,17 +3020,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 144
+      "segundos": 189
     },
     "src/scene/blueprint/greybox.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "1be47f8f7b1ec4da89e1f9c6074e5b1d113e4d45",
       "total": 121,
       "vivos": [
@@ -3111,17 +3124,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 176
+      "segundos": 232
     },
     "src/scene/blueprint/ground-collision.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "8dbe8529fe3663bba3e8e196fee010d3728ff8c5",
       "total": 166,
       "vivos": [
@@ -3157,24 +3168,24 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 159
+      "segundos": 192
     },
     "src/scene/blueprint/ground-prims.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "09dbae0d67e1144b2e67db64a74ccbdc3971a8ba",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "93376bead74906887963160312a2cb1c6406835f",
       "total": 224,
       "vivos": [
         "0117ab85ffcd0a50",
         "073027298957b762",
         "075e0eb8316bf58b",
-        "081f1f508fefb82e",
         "0a1eb2cdd38bd9b7",
         "0dc76e81c9bebd6d",
         "1264b1401ae4cd99",
@@ -3234,7 +3245,6 @@
         "7aac8fd7d8ccd60b",
         "7beeac8d1541ddb4",
         "855ac1f3920ce6a6",
-        "89d3aa2ad1acd137",
         "8a53ea3ac3e9c55c",
         "8e33e46a86bd54f2",
         "8e526093c95cdece",
@@ -3290,65 +3300,69 @@
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 159
+      "segundos": 192
     },
     "src/scene/blueprint/ground.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "e27e94ea69071b21d0bab5ec2862bb51238267a2",
-      "total": 117,
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "cf0aeae9b7108c9fc26f2b629ab93458e8aafffd",
+      "total": 152,
       "vivos": [
-        "0296b050b502e5ef",
-        "03026c1d6836b772",
         "033e75953f77e021",
+        "09e70bd140b1233d",
         "1814ba330e5da4e7",
+        "23fd49d1ba44394d",
+        "2ab1f5554a37f013",
+        "2dc3bbf75c526b22",
         "31df0d25f6f1267a",
-        "35b3e5f0db06e1a1",
-        "38de40768f2fbc42",
         "3b1da5afdb589bcf",
         "3c76aa483e871a59",
-        "4552331e96842acd",
-        "4e7f32051d7d7c18",
+        "4ca436a01044aa23",
+        "4ed4746e2b7fa211",
+        "57ce8ce27862abf5",
+        "65a8eed8f3bb6d0f",
         "693577efd3c0e113",
+        "6cf57ec4f4159ea5",
         "7295164c4afb50ec",
-        "85219c5b483d29c0",
-        "86c21c967e4e8385",
-        "8ecaf20f8937b45f",
-        "b52a2f6295cec78d",
+        "760ab7f0bd5adb31",
+        "a398645e45fbcf10",
         "b66d719fee94fcfb",
         "b73bf2a86586c99a",
-        "d135a76caf8a3667",
-        "d8824bbece78a4e0",
+        "cb259c9bf2b0a719",
+        "d39c84572ea9691a",
         "dd503179ba0e4cf8",
-        "e2c1b8b4c7d0f8af"
+        "e99c65a2e5808fbe",
+        "f992f52b93159780"
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 159
+      "segundos": 192
     },
     "src/scene/blueprint/palette.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "b22db38c71920620dc10eac18bf827fb511ef689",
       "total": 78,
       "vivos": [
@@ -3427,17 +3441,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 461
+      "segundos": 459
     },
     "src/scene/blueprint/plan-collision.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "d627b73fb1c6987cfe3b3e3b308ce126c762908d",
       "total": 38,
       "vivos": [],
@@ -3447,17 +3459,18 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 14
+      "segundos": 15
     },
     "src/scene/blueprint/scatter.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "7139d5b2cc6c23fcc01361bff2c5c35dc5734c0d",
       "total": 1040,
       "vivos": [
@@ -4055,17 +4068,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
       "segundos": 171
     },
     "src/scene/blueprint/time-of-day.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "fa974b06a97395cd9c8c765c3b0924e3f3f0fb4f",
       "total": 15,
       "vivos": [],
@@ -4075,17 +4086,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 461
+      "segundos": 459
     },
     "src/scene/blueprint/vegetation.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "0c92c1baf27e6db19810b30dd01ff4851c3fcad9",
       "total": 111,
       "vivos": [
@@ -4130,17 +4139,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 461
+      "segundos": 459
     },
     "src/scene/blueprint/volume-metrics.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "d08af1088a041b3d084d6aa979155ae974195d9c",
       "total": 183,
       "vivos": [
@@ -4198,17 +4205,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 250
+      "segundos": 266
     },
     "src/scene/blueprint/volumes.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "6438b51409ebc98612656605424e9934ff2fa628",
       "total": 375,
       "vivos": [
@@ -4317,12 +4322,13 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 203
+      "segundos": 253
     },
     "src/scene/frontera.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -4358,9 +4364,9 @@
       "segundos": 25
     },
     "src/scene/greybox/common.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "3e9de874f6e7f144cbd5bb2420b4b585a6fcfa6f",
       "total": 22,
       "vivos": [
@@ -4375,17 +4381,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 176
+      "segundos": 232
     },
     "src/scene/greybox/surfaces.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "0e90cef9a052b9b748828215f46ef6f172e0a720",
       "total": 516,
       "vivos": [
@@ -4481,17 +4485,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 187
+      "segundos": 201
     },
     "src/scene/greybox/volume-prims.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "d0dad43ee8393886f17f05455ab29acd7cfb96d5",
       "total": 795,
       "vivos": [
@@ -5037,12 +5039,10 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 176
+      "segundos": 232
     },
     "src/scene/politica-de-atlas.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -5067,38 +5067,31 @@
       "segundos": 5
     },
     "src/scene/rotulos-apilados.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "32601bfa39ea2b4959843e993635d6de828017be",
-      "total": 75,
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "6f724c11f19d52e8f98fbd2b629de2c0f0c4a00e",
+      "total": 80,
       "vivos": [
-        "0913d85b36b95cb7",
-        "0d4822cc0fe61b71",
-        "384f78e20f914297",
-        "7db31e2ad285d1f6",
-        "a16e08a23a033158",
-        "a4c3e4be9318d61a",
-        "b46eadce618aeb84",
-        "b49968853d45635b"
+        "46ac8966cb33fb33",
+        "a9712201f2258e30",
+        "c7e8182362299efc"
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#622"
         ]
       },
-      "segundos": 10
+      "segundos": 9
     },
     "src/scene/scene-normalize.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "d711de5173eefc3d2cfd2192b1e898b896d6e0a6",
       "total": 228,
       "vivos": [
@@ -5113,17 +5106,18 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 96
+      "segundos": 129
     },
     "src/scene/scene-validate.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "22b68b8cf7e5992440c8cd805223f1ee98745bcd",
       "total": 836,
       "vivos": [
@@ -5226,17 +5220,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 943
+      "segundos": 1255
     },
     "src/scene/tile-edges.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "bb0d5a909ab32c256f3bc46ff272d18de7434f1f",
       "total": 113,
       "vivos": [
@@ -5280,17 +5272,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632"
         ]
       },
-      "segundos": 18
+      "segundos": 19
     },
     "src/scene/tile-plan.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "ec68bdd264df91db11414ef95731e83b5e4b73bb",
       "total": 72,
       "vivos": [],
@@ -5300,12 +5290,13 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 96
+      "segundos": 129
     },
     "src/session/eleccion-de-estilo.ts": {
       "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
@@ -5391,9 +5382,9 @@
       "segundos": 6
     },
     "src/session/gates-de-imagen.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "9981452c4065be8afd8374a4a7b97edd68482d78",
       "total": 32,
       "vivos": [],
@@ -5403,17 +5394,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 7
+      "segundos": 6
     },
     "src/session/mundo-persistido.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "5a8886ea7670ea8a8109e1d1e8b94c22eb069298",
       "total": 335,
       "vivos": [
@@ -5480,29 +5475,72 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 69
+      "segundos": 62
     },
-    "src/session/session-facets.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "9cda4cc0e53a39a7c1e32ab82db4a3cc2b697f55",
-      "total": 42,
+    "src/session/pertenencia-del-registro.ts": {
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "30d4e8484684d901e3d22a7ac0036937b2ec3cb6",
+      "total": 29,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "sin base",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#638"
+        ]
+      },
+      "segundos": 5
+    },
+    "src/session/session-facets.ts": {
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "4608df8f661843a8fa7cc8eec03aded01622f788",
+      "total": 45,
+      "vivos": [],
+      "nuevos": [],
+      "resueltos": 0,
+      "base": "incomparable",
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#638",
+          "#630",
+          "#620"
+        ]
+      },
+      "segundos": 7
+    },
+    "src/simulation/cajas-de-runtime.ts": {
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "dc199f54f86611c259c128aedea95c23e4851e56",
+      "total": 32,
+      "vivos": [],
+      "nuevos": [],
+      "resueltos": 0,
+      "base": "sin base",
+      "duenos": {
+        "veredicto": "con dueño",
+        "quienes": [
+          "#632",
+          "#630",
+          "#619",
+          "#617"
         ]
       },
       "segundos": 8
@@ -5552,83 +5590,73 @@
       "segundos": 9
     },
     "src/simulation/obstaculos-del-jugador.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "58df574bb6332c397fdb320da4b3bc99ea47cba9",
-      "total": 70,
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "ac9ad4ae3fe70fce2cef4bb20b393cebc16c2388",
+      "total": 87,
       "vivos": [
-        "1600007820034088",
-        "4089dbcee9c913a7",
-        "6dcc1117ef41a35b",
-        "7ff72f54c30b82db",
-        "902a8d0d56d049b5",
-        "9047616e553f6393",
-        "a6c565e7bb06b8a7",
-        "b3ec12d64d882652",
-        "d4d8d8166af94630",
-        "efa94d64a7c26305",
-        "fba8173209622b8e"
+        "2f12d29569743546",
+        "897e7013d5d4d4e6",
+        "b048912ab0aa6ddf",
+        "b7df2e5b3496476a",
+        "dbc3709069fdf0bc",
+        "fe23bb80ef0152af"
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 10
+      "segundos": 11
     },
     "src/simulation/paso-del-jugador.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "081c5e6e784c5b26a907eeddf5eeaad264ca47c0",
-      "total": 48,
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "1e138687f844fe56b2b04abeb885deed77cd978b",
+      "total": 41,
       "vivos": [
-        "fbfd5ec035137d3f"
+        "d4ac183e8d165577"
       ],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#617"
         ]
       },
-      "segundos": 8
+      "segundos": 6
     },
     "src/simulation/reaparicion.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
-      "blob": "f7a0cfaa53b04a457868f90ecd4ed35fa3a27156",
-      "total": 14,
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
+      "blob": "c326d776039fbb1d2917b1f1d526088c349d1623",
+      "total": 2,
       "vivos": [],
       "nuevos": [],
       "resueltos": 0,
-      "base": "con base",
+      "base": "incomparable",
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#615"
         ]
       },
-      "segundos": 4
+      "segundos": 2
     },
     "src/store/game-store.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "17c959566bee60c5b87464e1f47f5ce6e05381fc",
       "total": 69,
       "vivos": [
@@ -5680,17 +5708,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#619"
         ]
       },
-      "segundos": 26
+      "segundos": 28
     },
     "src/store/reducers.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "38dcdc048e0ccf74813f58b6970514bf7f37c30f",
       "total": 91,
       "vivos": [],
@@ -5700,17 +5726,15 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#619"
         ]
       },
-      "segundos": 26
+      "segundos": 28
     },
     "src/world-map/bootstrap-place.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "7e4f8bcad37774ceba6326dc49b610dcbd09fed8",
       "total": 38,
       "vivos": [
@@ -5725,17 +5749,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 88
+      "segundos": 97
     },
     "src/world-map/edges.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "4ccf764190a54f18b0d172540916a07c6792b850",
       "total": 50,
       "vivos": [
@@ -5750,17 +5778,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 88
+      "segundos": 97
     },
     "src/world-map/exits.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "598294397148fab168f6590496cfd972e4f6ad58",
       "total": 21,
       "vivos": [
@@ -5772,17 +5804,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 88
+      "segundos": 97
     },
     "src/world-map/map-triggers.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "d37e0bb41bdcf0eeb012a00ea2b999136e5b1413",
       "total": 33,
       "vivos": [
@@ -5795,17 +5831,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 88
+      "segundos": 97
     },
     "src/world-map/npc-director.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "73d1b3ceadcfeab2472d88a61ea40f73b457f11d",
       "total": 115,
       "vivos": [
@@ -5835,17 +5875,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 31
+      "segundos": 26
     },
     "src/world-map/place-anchor.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "366e9d15feef524fdc863d953571407af61f69eb",
       "total": 36,
       "vivos": [
@@ -5858,17 +5902,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 88
+      "segundos": 97
     },
     "src/world-map/place-target.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "02cffcbf32ba35c752ed11c7382ae5237f398294",
       "total": 35,
       "vivos": [
@@ -5914,17 +5962,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 88
+      "segundos": 97
     },
     "src/world-map/types.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "e57c2a7d7c41000d217878f5ee1b2102125eaae6",
       "total": 15,
       "vivos": [
@@ -5947,17 +5999,21 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 88
+      "segundos": 97
     },
     "src/world-map/world-map.ts": {
-      "sha": "866f50ade20fbd50325dd83ea10e1fa630d798a3",
-      "run": "35012863832",
-      "fecha": "2026-09-15T19:38:19.159Z",
+      "sha": "ce20b4c6dd3ec58fdf44a23ea8ecf784d62d13b4",
+      "run": "35147355595",
+      "fecha": "2026-09-16T21:12:06.938Z",
       "blob": "a6e6827d1239c4c964d102c05fd4adbdf191cb19",
       "total": 254,
       "vivos": [
@@ -6032,12 +6088,16 @@
       "duenos": {
         "veredicto": "con dueño",
         "quienes": [
-          "#603",
-          "#600",
-          "#595"
+          "#632",
+          "#630",
+          "#626",
+          "#625",
+          "#623",
+          "#619",
+          "#617"
         ]
       },
-      "segundos": 88
+      "segundos": 97
     }
   }
 }
