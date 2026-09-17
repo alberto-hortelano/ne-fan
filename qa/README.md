@@ -87,6 +87,7 @@ limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella 
 | `contrato-candados-en-negativo.mjs` | 3,5 s | tsx + `python3 -m unittest`; exige SUS ficheros limpios |
 | `el-ledger-de-gasto-no-lo-escribe-la-suite.mjs` | 45 s | python3 con las deps de la suite de ai_server |
 | `los-dos-gates-rebotan-igual.mjs` | 0,2 s | tsx (el zod) y python3 con las deps de ai_server (el saneador) |
+| `el-viaje-no-mete-a-nadie-dentro.mjs` | 0,2 s | solo el `dist` del core; conduce el handler real del bridge sobre las fixtures del árbol (#616) |
 
 | Fuera | Por qué |
 |---|---|
@@ -645,6 +646,26 @@ dentro 290 s de 300». Unos 40 s, sin navegador y sin créditos:
 
 ```bash
 node qa/el-mundo-solido-tambien-para-el-npc.mjs   # sale 1 si un NPC atraviesa algo o se queda dentro
+```
+
+Y el cuarto, `qa/el-viaje-no-mete-a-nadie-dentro.mjs` (PR G2 de la tanda G, **#616**, mitad de
+ARRIBA): que el juego no vuelva a **teletransportar al jugador a una coordenada que nadie ha
+mirado**. `resolvePlaceTarget` devuelve el centro del `anchor.rect` del lugar sin una sola consulta
+de solidez, el bridge lo difunde como `ready.spawn` y el cliente lo obedece — y los edificios del
+plan son macizos, así que los **13 `building` de `robledo_tile` y `puerto_tile` estaban ocupados en
+su centro, 13 de 13**. Conduce el **handler real** (`handlePlayerEnteredPlace`) con el proveedor de
+colisión de producción y mira lo que sale por el wire, porque lo que no tenía candado no era la
+cuenta —`sitioParaAparecer` tiene su batería de unidad— sino el CABLE: que el bridge PREGUNTE. Tres
+bloques: el **control** (los 13 centros ocupados HOY: sin él, todo sale verde sobre un mundo de
+aire), **el viaje** (los 13 spawns libres, a ≤ 4 m del centro y alcanzados por UNA marcha: la puerta
+del lugar, no su cocina) y **el que no puede, lo dice** (mundo sin salida → `narrative_status` de
+error con el NOMBRE del lugar, sin escena, sin `ready` y sin activar el place — nunca un spawn
+mudo). **PROBADO EN NEGATIVO** de las dos formas: `QA_SIN_SITIO=1` juzga el centro crudo —la regla
+de ayer, escrita en el guion y no en el árbol— → **13 rojos**; y revirtiendo de verdad los dos
+sitios del bridge y recompilando `dist` → **21 rojos**. 0,2 s, sin navegador y sin créditos:
+
+```bash
+node qa/el-viaje-no-mete-a-nadie-dentro.mjs   # sale 1 si el viaje vuelve a difundir un punto sin mirar
 ```
 
 Dos cosas que aprendió el arreglo y que conviene no volver a descubrir:
