@@ -35,6 +35,10 @@
     {
       "directorio": "src/world-map",
       "porque": "El mapa multinivel: `world-map` usa glob con TRES exclusiones (`index.ts`, que es un barril que ningún test carga; `npc-director.ts`, que tiene otra batería; y `place-target.ts`, que se fue a la de `npc-director` con #598a porque la de aquí no lo llamaba nunca), así que el candado de huérfanos es lo que garantiza que esas exclusiones sigan siendo deliberadas. Está dentro del perímetro de `core-puro-sin-node`."
+    },
+    {
+      "directorio": "src/games",
+      "porque": "AQUÍ Y NO EN `arch-rules.json`, exactamente por el mismo motivo que `src/narrative`: el perímetro sale de la regla `core-puro-sin-node`, que declara qué es núcleo PURO, y CUATRO de los ocho ficheros de esta carpeta importan `node:` de verdad (`loader.ts`, `style-application.ts`, `vocabulary.ts` y `world-snapshot.ts` — `node:fs`, `node:path`, `node:crypto`). Ampliar la regla a `src/games/**` pondría `npm test` rojo por esos cuatro, y con razón: no son puros. Y el `why` de la propia regla ya declara que `games/` queda fuera A PROPÓSITO, porque la pureza que le importa al cliente se deriva del GRAFO y no de una lista. Pero que cuatro toquen el disco no es motivo para que los otros cuatro —el catálogo de refs del pack, las categorías, el tema de la interfaz y el schema de aplicación de estilo, 261 líneas— se queden fuera de toda medida: `grep -c src/games` sobre este contrato daba 0 hasta #514, y los tres primeros los importa el cliente por seis rutas. Los cinco que no se miden van con `!ruta` en el módulo `estilo-refs`, con su motivo escrito ahí, porque el candado de huérfanos exige que sea un MÓDULO quien los nombre (estar además en `sin_mutar` lo prohíbe el candado de exenciones caducadas). Partir la carpeta no es alternativa: movería ficheros que el cliente importa por ruta."
     }
   ],
   "sin_mutar": [
@@ -1046,6 +1050,53 @@
       ],
       "break": 93,
       "porque": "Qué subida de un style pack es válida y con qué motivo se rechaza la que no (PR 7 de #241, 2026-09-07): el criterio que comparten el título y `ai_server/routers/styles.py`, que hasta hoy eran cuatro comprobaciones con sus textos en el cliente y ocho con los suyos y sus números a mano en Python — más las carpetas del pack escritas por tercera vez en `style_packs.py`. Python ya no las copia: lee el snapshot `data/contract/style-upload.json` que vuelca `scripts/dump-style-upload.ts`, molde de `physics.json`. Batería de DOS ficheros: `style-upload.test.ts`, que tiene por sujeto el zod y escribe a mano el motivo de cada rechazo, y `contract-style-upload.test.ts`, que lo alcanza por `styleUploadSnapshot()` y es quien afirma que lo commiteado es lo que produce la fuente de hoy. Los mutantes que IMPORTAN: cada límite es una puerta a un pack roto (subir `laminas_max` mete dos rejillas de materiales en un pack que solo pinta con una; invertir `folder !== CARPETA_LAMINA` exige descripción justo a la única que no la necesita y se la perdona a las que sí; quitar el `.trim()` del nombre deja pasar un estilo llamado «   »); el ORDEN de las comprobaciones importa tanto como ellas, porque es lo que hace que un cuerpo con un solo fallo dé el mismo motivo en los dos procesos; y cambiar una plantilla de motivo rompe ese mismo contrato por el lado del texto. Lo que NO se mide aquí porque no está aquí: que el base64 decodifique, que pese menos de 12 MB y que PIL sepa abrir la imagen — eso exige los bytes y solo puede mirarlo ai_server. Suelo PUESTO A LA MEDIDA de la corrida 34816474906 (2026-09-14, COMPLETA con 55 módulos): 13 supervivientes de 196 mutantes, score 93,4 %. SUBE de 87 y la historia vale la pena: el suelo anterior (87, de la corrida 34339870322) lo rompió #536 al partir tres límites en dos ramas cada uno, porque cada `err(...)` nuevo trae dos mutantes del `path` del issue y NADIE los mataba — seis nuevos, ni uno más ni uno menos. El hueco no lo abrió #536: el módulo llevaba doce mutantes de `path` inmortales desde el primer día, y #536 solo lo hizo más grande. Se cerró candando una REGLA y no una lista (el `path` nombra un campo que existe en el cuerpo, y si el motivo es de una imagen la señala por índice), así que un `err(...)` nuevo la hereda sin que nadie se acuerde: 18 mutantes muertos de una vez."
+    },
+    {
+      "id": "estilo-refs",
+      "mutate": [
+        "src/games/style-refs.ts",
+        "src/games/style-categories.ts",
+        "!src/games/loader.ts",
+        "!src/games/style-application.ts",
+        "!src/games/vocabulary.ts",
+        "!src/games/world-snapshot.ts",
+        "!src/games/style-application-schema.ts"
+      ],
+      "tests": [
+        "test/contract-style-upload.test.ts",
+        "test/scene-normalize.test.ts",
+        "test/style-refs.test.ts",
+        "test/style-upload.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El catálogo de refs de un style pack y sus categorías: qué ref elige el motor para cada escena y para cada NPC, y qué `style_ref` se rechaza. Entra con #514, que mete `src/games` en `directorios_completos` — hasta hoy `grep -c src/games` sobre este contrato daba 0 y las 1.303 líneas de la carpeta no las medía nadie, con el cliente importando tres de sus ficheros por seis rutas. Los dos van JUNTOS porque comparten batería: `test/style-refs.test.ts` los importa a los dos, y la casa agrupa por batería y no por tema. La batería son los CUATRO tests que importan directamente alguno de los dos —derivada del árbol de imports con `testsQueImportan`, no elegida—: `style-refs` y `style-upload` y `contract-style-upload` sobre `style-refs.ts`, y `scene-normalize` sobre `style-categories.ts`. `style-refs.test.ts` sigue además en la batería de `contrato-escena`, porque ahí ejerce la `style_ref` de NPC contra el zod: un test puede pagar dos módulos, un fichero mutado solo puede tener un dueño. AQUÍ SE DECLARAN, ADEMÁS, LAS CINCO EXCLUSIONES DEL DIRECTORIO, y en este módulo porque es el que lo abre; van con `!ruta` y no en `sin_mutar` porque el candado de huérfanos de un `directorios_completos` exige que las nombre un MÓDULO, y estar en los dos sitios lo prohíbe el candado de exenciones caducadas. Una a una: (1) `loader.ts` (362 líneas) importa `node:fs` y `node:path`, y es el fichero por el que esta carpeta no puede entrar en `core-puro-sin-node`; lo importan CUATRO tests y medirlo aquí les haría pagar a los cuatro por cada mutante de las refs — primero su propio módulo, luego el mutante; (2) `style-application.ts` (116) y (3) `vocabulary.ts` (113) y (4) `world-snapshot.ts` (391), lo mismo: `node:fs`/`node:path`/`node:crypto` de verdad y batería propia y disjunta de ésta; los tres entran cuando alguien los agrupe por SU batería, que es como se hizo con los cinco de `src/narrative`. (5) `style-application-schema.ts` (42) NO LO IMPORTA NI UN TEST —`testsQueImportan` da 0—, así que medirlo hoy solo daría mutantes `NoCoverage`: eso es deuda de COBERTURA y no medida de mutación, y el orden es primero el test y luego el módulo. Suelo `sin medir` porque estrena: una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo caduca en cuanto la huella traiga el número. ESTIMACIÓN, no medida: 144 líneas de código × la densidad de los 93 ficheros de la huella (p25 0,73 · mediana 1,04 · p75 1,48) = 105-213 mutantes, mediana 150 — por encima del `tope_local` de 120 en la mediana, así que la primera medida se pide y la autoriza el usuario."
+    },
+    {
+      "id": "ui-theme",
+      "mutate": [
+        "src/games/ui-theme.ts"
+      ],
+      "tests": [
+        "test/session-facets.test.ts",
+        "test/ui-theme.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El tema de la interfaz de juego que declara un style pack: los colores y las facetas que el cliente pinta, y el fallback cuando el pack no declara ninguno. Entra con #514. Módulo propio y no dentro de `estilo-refs` porque su batería es OTRA y disjunta —la casa agrupa por batería—: `test/ui-theme.test.ts` y `test/session-facets.test.ts` son los dos únicos que lo importan directamente, derivados del árbol de imports. HALLAZGO QUE JUSTIFICA EL MÓDULO: `test/ui-theme.test.ts` existe y no estaba en NINGUNA batería, o sea un test cuyo sujeto no medía nadie — es exactamente la forma del verde que no comprueba nada, con el añadido de que aquí ni siquiera se sabía si el test valía. Suelo `sin medir` porque estrena: la primera medida exige corrida autorizada (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo caduca en cuanto la huella traiga el número. ESTIMACIÓN: 135 líneas × la densidad de la huella = 98-200 mutantes, mediana 140."
+    },
+    {
+      "id": "plugins-dispatcher",
+      "mutate": [
+        "src/plugins/dispatcher.ts"
+      ],
+      "tests": [
+        "test/plugin-commerce.test.ts",
+        "test/plugin-dispatcher.test.ts",
+        "test/plugin-economy.test.ts",
+        "test/plugin-migrate.test.ts",
+        "test/plugin-register.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El despachador de eventos de los plugins: quién traduce lo que pasa en la partida a las reglas declarativas de cada sistema de juego, y por tanto quien decide si el gate del inventario de #452 se aplica o se salta. Entra con #462, cuya mitad viva es ésta: `dispatcher.ts` (351 líneas) no estaba en el `mutate` de ningún módulo y nadie medía si sus tests se enterarían de un cambio, así que aquel gate aterrizó a ciegas. La otra mitad del issue nació falsa y se dice: «(+ `dsl/evaluate.ts`)» ya era mentira al abrirse — `src/plugins/dsl/*.ts` entró el 2026-08-23 (14ea7e2c), trece días antes, y `evaluate.ts` lleva desde entonces en la huella con 68 mutantes y 14 vivos. `loadSession` tampoco entra: vive en `src/narrative/narrative-state.ts`, que es #430 y no se dobla. Batería DERIVADA del árbol de imports (`testsQueImportan`): los CINCO tests que importan el fichero directamente, ni uno elegido a mano. NO se mete `src/plugins` en `directorios_completos` con esto: `src/plugins/**` no está en el perímetro de `core-puro-sin-node` y quedan siete ficheros más (1.321 líneas) sin dueño ahí; cerrar la CLASE es otra tarea, y meterla de rondón en ésta abriría siete huérfanos que nadie ha mirado. Suelo `sin medir` porque estrena: la primera medida exige corrida autorizada y el candado de `test/mutation-config.test.ts` lo caduca en cuanto la huella traiga el número. ESTIMACIÓN: 351 líneas × la densidad de la huella (p25 0,73 · mediana 1,04 · p75 1,48) = 256-519 mutantes, mediana 365 — muy por encima del `tope_local` de 120."
     }
   ]
 }
