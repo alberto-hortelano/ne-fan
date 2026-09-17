@@ -25,8 +25,8 @@ import { type AvisoAlJugador, errors } from "./error-log.js";
 import { paso } from "./async-ui.js";
 import { StyleApplyController } from "./style-apply.js";
 import {
-  AI_SERVER_HTTP,
-  ASSET_STORE_URL,
+  remoteGenUrl,
+  assetStoreUrl,
   type DestinoDelTitulo,
   type TitleAction,
 } from "./titulo/atomos.js";
@@ -110,8 +110,8 @@ export class TitleScreen {
 
   constructor(private narrative: NarrativeClient) {
     this.styleApply = new StyleApplyController(narrative, {
-      remote: AI_SERVER_HTTP,
-      assets: ASSET_STORE_URL,
+      remote: remoteGenUrl(),
+      assets: assetStoreUrl(),
     });
     // Progreso de la pre-generación de mundo: el job corre en el bridge y
     // difunde narrative_status kind "game_gen" — el título lo refleja en la

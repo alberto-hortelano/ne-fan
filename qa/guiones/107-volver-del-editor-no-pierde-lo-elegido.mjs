@@ -37,8 +37,9 @@
  *  camino por el que el selector se repinta —una pre-generación que termina
  *  con el jugador delante— lo mide el 108, y que esta memoria NO se filtre
  *  entre visitas al título (lo que el usuario descartó al elegir la opción b)
- *  lo mide el 116. Y nada de esto se puede afirmar en Node: por #543 ninguna
- *  hoja del título se importa fuera del navegador.
+ *  lo mide el 116. Y nada de esto se puede afirmar en Node: lo que se mide aquí
+ *  es un repintado con el jugador delante, o sea DOM y eventos, que es
+ *  exactamente lo que vive en `qa/` y no en un unitario.
  *
  *  Cero créditos: preset `e2e-sin-creditos` del runner. El bloque B arranca
  *  una partida en Imagen IA y «paga» al motor falso, que es el punto.
