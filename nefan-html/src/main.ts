@@ -8,6 +8,7 @@ import { instalarNefanHook } from "./dev/nefan-hook.js";
 import { relojDeSim } from "./world/reloj-de-sim.js";
 import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import { pickNearestTarget } from "@nefan-core/src/scene/aim.js";
+import { TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
 import { esperasQueTermina } from "@nefan-core/src/protocol/status-reparto.js";
 import { rotuloDeStatus, type StatusRotulable } from "@nefan-core/src/protocol/status-rotulo.js";
@@ -511,14 +512,13 @@ fpsRenderer.element.addEventListener("click", () => {
 fpsRenderer.setCollisionCellsProvider((tileKey) => {
   const entry = tileStore.entries.get(tileKey);
   if (!entry) return null;
-  const size = 0.5; // TILE_MPC
   const cells: [number, number][] = [];
-  for (let z = entry.rect.minZ; z < entry.rect.maxZ - 1e-9; z += size) {
-    for (let x = entry.rect.minX; x < entry.rect.maxX - 1e-9; x += size) {
-      if (collision.ocupadoEn(x + size / 2, z + size / 2)) cells.push([x, z]);
+  for (let z = entry.rect.minZ; z < entry.rect.maxZ - 1e-9; z += TILE_MPC) {
+    for (let x = entry.rect.minX; x < entry.rect.maxX - 1e-9; x += TILE_MPC) {
+      if (collision.ocupadoEn(x + TILE_MPC / 2, z + TILE_MPC / 2)) cells.push([x, z]);
     }
   }
-  return { cells, size };
+  return { cells, size: TILE_MPC };
 });
 
 // --- Respawn ---
