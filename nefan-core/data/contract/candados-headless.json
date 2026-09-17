@@ -1,0 +1,41 @@
+{
+  "_comment": "Totalidad del job `candados-headless` (#645, tanda H, 2026-09-17). «Un ejecutable headless de `qa/` entra en el job el día que nace, o no lo corre nadie» era PROSA —un comentario del yml, una fila de CLAUDE.md y dos tablas de qa/README.md— y no fallaba nada si alguien no lo añadía: los tres ejecutables de geometría de la tanda E nacieron fuera y se supo al cerrarla. Lo verifica `test/candados-headless-totalidad.test.ts`: todo `qa/*.mjs` está en un paso `- run: node qa/…` del job, o CAE POR EL GRAFO (abre navegador: alcanza `playwright-core` por sus imports, directos o a través de `qa/lib`; o spawnea `qa/run.mjs`, que es preset + Chromium), o está aquí con su motivo. Las dos categorías se DERIVAN, no se listan: por eso `qa/run.mjs` no necesita entrada —importa `playwright-core`— y por eso un guion nuevo de navegador no hay que acordarse de eximirlo. Los nueve motivos de abajo no se inventaron: se MOVIERON de la tabla «Fuera» de qa/README.md, que era donde estaban escritos (y donde ya mentían: enumeraba 20 de 21). Una exención que pase a estar en el job CADUCA y pone el test rojo: se borra de aquí. Una exención a un fichero que ya no existe, también. Lo que este candado NO cubre está en la cabecera del test, y hay que leerlo antes de confiar en él.",
+  "exentos": [
+    {
+      "fichero": "qa/comparar-el-criterio-en-negativo.mjs",
+      "porque": "Necesita `nefan-core/reports/mutation-base/`: los informes de una corrida de mutación real, 141 MB y gitignorados. En CI habría que bajarlos con `gh run download <run-id>` en cada PR, y el artefacto CADUCA — el día que expirase, el job se pondría rojo por un motivo que no es del código. Corrida local, y el guion se niega diciendo cómo conseguir la base."
+    },
+    {
+      "fichero": "qa/fake-enruta-por-pathname.mjs",
+      "porque": "Su observable (`POST /skin_sprite_sheet?x=1 → 200`) depende de que el fake encuentre `nefan-html/public/sprites/paladin/idle/frontal_8/meta.json`, que es arte GENERADO y gitignored: en un clon limpio contesta 500 y el guion sale rojo (medido el 2026-09-05: verde en el checkout del usuario, rojo en un worktree recién clonado). Entra el día que la ruta se pruebe sin leer del disco."
+    },
+    {
+      "fichero": "qa/el-arte-de-personaje-no-se-pina-a-medias.mjs",
+      "porque": "Arranca el entry REAL del asset-store como proceso hijo (índice y blobs `mkdtemp`, puerto elegido por el kernel). Es CANDIDATO al job y ya tiene reloj: 0,39 s y salida 0, medido el 2026-09-17 en un worktree. Lo que le falta para entrar es la comprobación en un clon LIMPIO, que es la lección de `fake-enruta-por-pathname`: verde en el checkout del usuario y rojo en un árbol recién clonado."
+    },
+    {
+      "fichero": "qa/el-indice-del-store-se-prueba-sin-el-del-checkout.mjs",
+      "porque": "Misma familia que el anterior: arranca el entry REAL del asset-store contra índices `mkdtemp` y mira con qué sale. También cronometrado el 2026-09-17 —0,79 s, salida 0— y también a falta de la prueba en un clon limpio antes de entrar. Se niega con 2 si no encuentra el entry, que no es lo mismo que un rojo, y eso este candado no lo distingue porque es estático."
+    },
+    {
+      "fichero": "qa/perfil-de-repintado-en-la-clave.mjs",
+      "porque": "Su sujeto es la cadena entera contra sprite-forge DE VERDAD, y sprite-forge vive en OTRO repositorio (`~/code/sprite-forge`, o `NEFAN_SPRITE_FORGE_DIR`) que el runner no clona; además levanta remote-gen con el intérprete de Python y las deps de ai_server. Sin el otro repo el guion no puede medir, y un job que depende de un checkout ajeno no es una puerta de PR."
+    },
+    {
+      "fichero": "qa/sprites-sin-servicio.mjs",
+      "porque": "Levanta sprite-forge (otro repositorio, `bin/sprite-forge.mjs serve`), remote-gen con Python y las deps de ai_server, y el asset-store, para preguntar si el arte YA PAGADO sobrevive a que el servicio esté caído. Tres servicios y un checkout que el runner no tiene; nadie lo ha cronometrado. La prosa del yml que decía «los TRES que levantan asset-store o sprite-forge» se olvidaba justo de este."
+    },
+    {
+      "fichero": "qa/presets.mjs",
+      "porque": "Arranca de verdad cada preset de `./start.sh` sobre los puertos del CATÁLOGO de la máquina y mira qué se levantó, que es lo que hace la tecla `s` del menú. Son 2-3 minutos, exige el `.venv` y las deps de los nueve servicios, y en una máquina compartida se cruza con los stacks de otros. Es la comprobación que se pide a mano cuando se toca el launcher."
+    },
+    {
+      "fichero": "qa/no-mata-lo-ajeno.mjs",
+      "porque": "Para afirmar que el launcher respeta lo que no arrancó hay que poner un proceso AJENO en un puerto del catálogo y verlo sobrevivir a `start.sh`. El sujeto es el estado compartido de una máquina con varios worktrees: en el runner no hay vecinos que respetar, así que el guion mediría otra cosa. Además se abstiene (sale con 2) cuando hay procesos de otro árbol."
+    },
+    {
+      "fichero": "qa/parar-clasifica-los-nueve-puertos.mjs",
+      "porque": "Igual que su hermano, pero con los NUEVE puertos del catálogo ocupados a la vez por cuatro procesos propios y uno ajeno: el sujeto es el barrido de `--parar` sobre los puertos reales de la máquina y las tres vías por las que un proceso se demuestra de este árbol (`/proc/<pid>/cwd` y los argumentos). Nada de eso existe en un runner limpio."
+    }
+  ]
+}
