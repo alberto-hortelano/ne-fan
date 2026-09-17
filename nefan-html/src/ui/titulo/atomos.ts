@@ -15,18 +15,6 @@
  *  funciones que reciben datos y devuelven string. El día que algo de aquí
  *  necesite un colaborador, no es un átomo y no es de aquí.
  *
- *  CON UNA SALVEDAD MEDIDA, que no es «cero colaboradores» del todo: las dos
- *  constantes de URL de abajo llaman a `serviceUrl` AL CARGAR el módulo, y
- *  `serviceUrl` lee `location.search`. O sea que importar este fichero en Node
- *  revienta con `location is not defined` — QA-1 (H6) lo descubrió al tener que
- *  stubear el DOM para poder medirlo. Importa porque este módulo lo van a
- *  importar las SIETE hojas del título, así que mientras siga así ninguna se
- *  puede testear en Node sin arrastrar ese stub. Hacerlas perezosas (funciones
- *  en vez de constantes) ARREGLA eso —probado— pero perturbó dos corridas de
- *  dos del guion 80 sin que nadie encontrara el mecanismo, así que NO viaja en
- *  esta PR de movimiento: tiene issue propio. Un cambio que no se sabe explicar
- *  no entra en la PR que promete no cambiar el comportamiento.
- *
  *  La excepción declarada al criterio de los dos dueños es la TARJETA de mundo
  *  (`worldCardHtml` + `generationChipsHtml`), que hoy solo pinta el selector:
  *  partir la tarjeta entre dos módulos —la caja de la portada aquí, el resto
@@ -140,12 +128,24 @@ export type DestinoDelTitulo =
     };
 
 /** asset-store — sirve las covers de los estilos como estáticos, con o sin
- *  ai_server (movido desde el State API en F2; preset 4 arranca el store). */
-export const ASSET_STORE_URL = serviceUrl("asset-store");
+ *  ai_server (movido desde el State API en F2; preset 4 arranca el store).
+ *
+ *  FUNCIÓN y no constante (#543): resolverla al cargar el módulo leía
+ *  `location.search` en el cuerpo, y eso dejaba fuera de Node a las nueve hojas
+ *  del título y al enrutador. Devuelve siempre lo mismo que la constante
+ *  devolvía —`resolveServiceUrl` es puro y la URL de la página no muta nunca en
+ *  todo el cliente: cero `pushState`, `replaceState`, `location.href =` o
+ *  `location.replace`—, solo que lo resuelve cuando se pide. */
+export function assetStoreUrl(): string {
+  return serviceUrl("asset-store");
+}
 /** remote-gen (proceso propio desde F4) — subida de estilos y generación de las
  *  categorías que falten (Meshy). Sin él, "Subir estilo" falla con error
- *  visible. */
-export const AI_SERVER_HTTP = serviceUrl("remote-gen");
+ *  visible. Perezosa por lo mismo que la de arriba, y con el nombre honesto:
+ *  resuelve `remote-gen`, no ai_server. */
+export function remoteGenUrl(): string {
+  return serviceUrl("remote-gen");
+}
 
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
@@ -250,7 +250,7 @@ export function marcadorHtml(nombre: string, fallo: boolean): string {
 export function coverHtml(g: GameInfo, style: StyleInfo | undefined): string {
   const marcador = marcadorHtml(style?.name ?? g.style_id, false);
   const img = style?.cover_url
-    ? `<img data-cover-img="${escapeAttr(style.style_id)}" alt="${escapeAttr(style.name)}" src="${escapeAttr(ASSET_STORE_URL + style.cover_url)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">`
+    ? `<img data-cover-img="${escapeAttr(style.style_id)}" alt="${escapeAttr(style.name)}" src="${escapeAttr(assetStoreUrl() + style.cover_url)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">`
     : "";
   return `<div data-cover-for="${escapeAttr(g.game_id)}" style="${COVER_BOX};overflow:hidden;position:relative">${marcador}${img}</div>`;
 }

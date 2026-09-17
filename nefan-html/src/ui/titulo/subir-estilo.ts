@@ -23,7 +23,7 @@ import {
 import { paso } from "../async-ui.js";
 import { errors } from "../error-log.js";
 import {
-  AI_SERVER_HTTP,
+  remoteGenUrl,
   BTN_PRIMARY_CSS,
   BTN_SECONDARY_CSS,
   INPUT_CSS,
@@ -219,7 +219,7 @@ export function pintarSubirEstilo(deps: DepsDeSubirEstilo): void {
       }
       uploadBtn.disabled = true;
       statusEl.textContent = "Subiendo imágenes al ai_server...";
-      const res = await fetch(`${AI_SERVER_HTTP}/styles/upload`, {
+      const res = await fetch(`${remoteGenUrl()}/styles/upload`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(comprobado.subida),
@@ -257,7 +257,7 @@ export function pintarSubirEstilo(deps: DepsDeSubirEstilo): void {
     backBtn.disabled = true;
     statusEl.innerHTML = `<span style="color:#da6">🎨 Generando las refs que faltan (varios minutos)...</span>`;
     try {
-      const res = await fetch(`${AI_SERVER_HTTP}/styles/${encodeURIComponent(pendingStyleId)}/complete`, {
+      const res = await fetch(`${remoteGenUrl()}/styles/${encodeURIComponent(pendingStyleId)}/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirm: true }),
