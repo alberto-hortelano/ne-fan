@@ -122,6 +122,26 @@ export interface TerrainCollider {
    *  todas las celdas cubiertas (≤3×3 con radios de jugador), no solo las 4
    *  esquinas: con mpc 0.5 y diámetro 0.8 una celda podría colarse entre ellas. */
   blocksCircle(x: number, z: number, radius: number): boolean;
+  /** LA MISMA PREGUNTA CON EL SOLAPE ABIERTO: tocar el borde de una celda
+   *  sólida NO es solaparla. Es la consulta de PUNTO que consume
+   *  `simulation/salida-del-solido.ts` (`SueloSolido.ocupado`).
+   *
+   *  CONVIVE con `blocksCircle` y su ÚNICA diferencia es la TANGENCIA EXACTA
+   *  —`blocksCircle` recorre el AABB con `floor()` INCLUSIVE, así que la celda
+   *  que el cuerpo solo TOCA cuenta como sólida—, y no es una duplicación por
+   *  descuido: cada convención sujeta una cosa distinta y cambiar cualquiera
+   *  de las dos rompe la otra.
+   *
+   *   · el CERRADO (`blocksCircle`) es el que define el tope del `footprint`
+   *     de una entity móvil (#300, `celdasQueCubreRadio`) y el que elige
+   *     waypoints: ahí lo caro es dar por bueno un hueco que no lo es.
+   *   · el ABIERTO (este) es la convención de `salidaDeCaja` —su `margen <= 0`
+   *     es FUERA— y es lo que hace que la penetración pueda valer 0. Con el
+   *     cerrado, un paso que aterriza EXACTO en una frontera de celda sigue
+   *     «ocupado» y la penetración salta de 0,025 a 0,475 m: 7 puntos de
+   *     robledo, 36 de puerto y 8 de zorder se clavaban ahí (medido en el plan
+   *     de la tanda G). */
+  solapaSolido(x: number, z: number, radius: number): boolean;
   /** ¿El movimiento from→to queda bloqueado? Bloquea solo las celdas sólidas
    *  que solapa el destino Y NO solapa el origen: si el spawn (o un empujón)
    *  te deja penetrando un muro puedes SALIR de él, pero nunca entrar más.
@@ -188,6 +208,23 @@ export function createTerrainCollider(
       const c1 = Math.floor((x + radius - originX) / mpc);
       const r0 = Math.floor((z - radius - originZ) / mpc);
       const r1 = Math.floor((z + radius - originZ) / mpc);
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) {
+          if (isSolidCell(c, r)) return true;
+        }
+      }
+      return false;
+    },
+    solapaSolido(x: number, z: number, radius: number): boolean {
+      // ABIERTO por los cuatro lados: el límite inferior es el mismo `floor`
+      // (la celda que acaba justo en el borde trasero ya no se solapa), y el
+      // superior es `ceil() - 1` en vez de `floor()` (la que empieza justo en
+      // el borde delantero, tampoco). Simétrico, y es toda la diferencia con
+      // `blocksCircle`.
+      const c0 = Math.floor((x - radius - originX) / mpc);
+      const c1 = Math.ceil((x + radius - originX) / mpc) - 1;
+      const r0 = Math.floor((z - radius - originZ) / mpc);
+      const r1 = Math.ceil((z + radius - originZ) / mpc) - 1;
       for (let r = r0; r <= r1; r++) {
         for (let c = c0; c <= c1; c++) {
           if (isSolidCell(c, r)) return true;

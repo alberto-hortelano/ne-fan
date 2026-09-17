@@ -97,6 +97,12 @@ export interface SimCollisionProvider {
    *  Existe porque «salir sí, entrar no» no saca a quien no empuja: un NPC
    *  sondea rumbos hacia su meta y ninguno le sacaba (#583, QA H-2). */
   porDondeSalirDeAqui(x: number, z: number, radius: number): SalidaDeSolido | null;
+  /** ¿ESTE SITIO ESTÁ OCUPADO? La consulta de PUNTO sobre TODAS las fuentes
+   *  —el grid del terreno, el del plan y las cajas de runtime—, con el solape
+   *  ABIERTO de `SueloSolido.ocupado` (`src/simulation/salida-del-solido.ts`).
+   *  Es lo que este proveedor le enseña a la cuenta de salida, y lo que
+   *  consulta quien tiene que poner a alguien en un punto del mundo. */
+  ocupado(x: number, z: number, radius: number): boolean;
   /** El mismo veredicto colapsado a un sí/no. Producción pregunta por
    *  `queImpideElPaso` desde #583 —el sim necesita saber QUÉ le frena—; esto
    *  se queda para quien solo quiera comparar este proveedor con el collider
@@ -221,6 +227,14 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
       for (const key of touchedKeys(x, z, radius)) {
         for (const tc of collidersFor(key)) {
           if (tc.blocksCircle(x, z, radius)) return true;
+        }
+      }
+      return cajaQueContiene(x, z, radius, cajasDeRuntime(narrative.entities)) !== null;
+    },
+    ocupado(x, z, radius): boolean {
+      for (const key of touchedKeys(x, z, radius)) {
+        for (const tc of collidersFor(key)) {
+          if (tc.solapaSolido(x, z, radius)) return true;
         }
       }
       return cajaQueContiene(x, z, radius, cajasDeRuntime(narrative.entities)) !== null;
