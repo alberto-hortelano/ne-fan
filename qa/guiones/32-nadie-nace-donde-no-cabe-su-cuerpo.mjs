@@ -65,7 +65,14 @@ const FIXTURES = ["robledo_tile", "puerto_tile", "zorder_test"];
  *  contesta «libre» por donde el jugador ya está —«salir sí, entrar no»—, y
  *  aquí el jugador está donde lo dejó la fixture que se acaba de cargar. Si su
  *  spawn cayera dentro de un sólido, «el NPC tiene sitio» saldría verde sin
- *  mirar nada. La de PUNTO no tiene origen que olvidar. */
+ *  mirar nada. La de PUNTO no tiene origen que olvidar.
+ *
+ *  Y LA RAZÓN MÁS FUERTE ESTÁ ABAJO, en el aserto del spawn del JUGADOR: con
+ *  `probeCollide` preguntaba por la posición del jugador **estando el jugador
+ *  ahí**, y eso vale `false` POR CONSTRUCCIÓN (es lo que mide
+ *  `qa/la-puerta-de-la-reaparicion.mjs`). O sea que «el jugador no nace dentro
+ *  de un sólido» era literalmente un verde que no podía ponerse rojo, dijera lo
+ *  que dijera el juego. Con `probePoint` mide. Lo encontró la QA de #644. */
 const CUERPOS_EN_LA_PAGINA = () => {
   const libre = (x, z) => {
     for (const dx of [-0.1, 0.1]) {
@@ -128,7 +135,9 @@ export default async function (ctx) {
   );
 
   // El spawn del jugador, con su propio cuerpo (0,4): es la otra mitad de
-  // «jugador o NPC» del issue.
+  // «jugador o NPC» del issue. Por `probePoint` y no por `probeCollide`: la de
+  // movimiento, preguntada por donde el jugador ESTÁ, vale false siempre
+  // (#644).
   const jugador = await ctx.page.evaluate(() => {
     const p = window.__nefan.state().pos;
     return { pos: [Number(p.x.toFixed(2)), Number(p.z.toFixed(2))], libre: !window.__nefan.probePoint(p.x, p.z) };

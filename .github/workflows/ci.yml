@@ -201,9 +201,10 @@ jobs:
       # `ANTHROPIC_BASE_URL`: por eso este job instala lo que `ai-server` no
       # necesita. La clave de API es falsa; no hay proveedor al que llamar.
       - run: pip install fastapi uvicorn anthropic httpx pillow numpy
-      # #235: un NPC con `role` y `description` atraviesa ai_server por HTTP y
-      # llega al wire del bridge con los dos campos; rojo si una de las dos
-      # copias de `validate_scene_response` desaparece.
+      # (2 s) #235: un NPC con `role` y `description` atraviesa ai_server por
+      # HTTP y llega al wire del bridge con los dos campos; rojo si una de las
+      # dos copias de `validate_scene_response` desaparece. Necesita python3 con
+      # `uvicorn` y `anthropic`, y el `dist` del core.
       - run: node qa/el-npc-cruza-ai-server-con-role-y-description.mjs
       # #453: el State API REAL (bridge + motor falso, disco efímero) rebota con
       # 409 cada mutadora del contrato sin partida, muta con 200 en la sesión

@@ -506,8 +506,8 @@ fpsRenderer.element.addEventListener("click", () => {
   }
 });
 
-// Overlay B "colisión": muestreo del CollisionSystem (fuente única de verdad)
-// por celda de 0,5 m del tile — el renderer NO tiene colisión propia.
+// Overlay B "colisión": el MAPA de solidez del tile (el renderer no tiene
+// colisión propia), celda a celda y por PUNTO — `collidesAt` borraba 846 (#644).
 fpsRenderer.setCollisionCellsProvider((tileKey) => {
   const entry = tileStore.entries.get(tileKey);
   if (!entry) return null;
@@ -515,7 +515,7 @@ fpsRenderer.setCollisionCellsProvider((tileKey) => {
   const cells: [number, number][] = [];
   for (let z = entry.rect.minZ; z < entry.rect.maxZ - 1e-9; z += size) {
     for (let x = entry.rect.minX; x < entry.rect.maxX - 1e-9; x += size) {
-      if (collidesAt(x + size / 2, z + size / 2)) cells.push([x, z]);
+      if (collision.ocupadoEn(x + size / 2, z + size / 2)) cells.push([x, z]);
     }
   }
   return { cells, size };

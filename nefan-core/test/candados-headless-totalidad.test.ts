@@ -24,8 +24,11 @@
  *  buscan: `qa/run.mjs` no necesita entrada especial por ser el runner (importa
  *  `playwright-core` como cualquier otro), y un guion de navegador nuevo no hay
  *  que acordarse de eximirlo. Lo que queda —hoy nueve— está en
- *  `data/contract/candados-headless.json` con su motivo, MOVIDO de la tabla
- *  «Fuera» del README, que es donde ya estaba escrito.
+ *  `data/contract/candados-headless.json` con su motivo. De los nueve, DOS
+ *  vienen movidos literalmente de la tabla «Fuera» del README y siete están
+ *  reescritos desde dos filas genéricas de esa misma tabla: la procedencia
+ *  exacta la dice el `_comment` del contrato, porque es él quien pasa a ser la
+ *  fuente de verdad.
  *
  *  SE LEE EL ÁRBOL DE SINTAXIS, NO EL TEXTO, por la lección de #454: un
  *  detector de regex cuenta como import lo que está dentro de un string. Aquí
@@ -46,12 +49,17 @@
  *   (d) que las dependencias de un ejecutable estén instaladas en el runner.
  *       Este test es ESTÁTICO y no ejecuta nada, así que no puede confundir un
  *       `⊘ sin medir` (salida 2) con un rojo. Si un paso del job sale 2, eso es
- *       «no pude medir»: se instala la dependencia, no se baja nada. */
+ *       «no pude medir»: se instala la dependencia, no se baja nada;
+ *   (e) que el `spawn` de `qa/run.mjs` que exime a un fichero esté VIVO: un
+ *       spawn en una rama muerta, o detrás de un flag que nadie pasa, exime
+ *       igual. Es el precio de leer el árbol y no ejecutarlo, y la mitad que sí
+ *       se cubrió es la contraria (un `qa/run.mjs` dentro de un string no
+ *       exime). */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, posix, resolve } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
 
@@ -84,8 +92,6 @@ const CandadosHeadlessSchema = z
 
 type CandadosHeadless = z.infer<typeof CandadosHeadlessSchema>;
 
-const MODULO_DE_LIB = /(?:^|\/)lib\/([\w.-]+\.mjs)$/;
-
 /** Los especificadores que un fichero IMPORTA de verdad, leídos del AST:
  *  `import … from`, `import(…)` y `require(…)` con literal. Un tipo JSDoc
  *  (`@param {import("playwright-core").BrowserType}`) no es un import: es un
@@ -107,26 +113,39 @@ export function especificadoresDeImport(texto: string): string[] {
   return vistos;
 }
 
-/** Los `qa/lib/*.mjs` que ALCANZAN `playwright-core` por sus propios imports,
- *  a cualquier profundidad: si un módulo del banco abre el navegador, quien lo
- *  importe también. Hoy el conjunto está VACÍO —`navegador.mjs` recibe
- *  `chromium` como parámetro y solo lo nombra en un tipo—, y eso no hace inútil
- *  el cierre: lo hace vacío hoy. El día que un módulo de `qa/lib` importe
- *  Playwright, sus clientes entran solos sin tocar este test. */
-export function libsQueAlcanzanElNavegador(libs: ReadonlyMap<string, string>): Set<string> {
+/** LOS QUE ALCANZAN EL NAVEGADOR, por el grafo de imports y a cualquier
+ *  profundidad. Las claves son rutas relativas a `qa/` (`run.mjs`,
+ *  `lib/navegador.mjs`), y cada especificador se resuelve contra el directorio
+ *  de quien lo escribe: así el cierre cruza las dos carpetas.
+ *
+ *  Recorrer SOLO `qa/lib` era un agujero, y lo cazó la QA de esta PR: un
+ *  `qa/x.mjs` que importara a un hermano de navegador quedaba clasificado como
+ *  headless, se le exigía entrar en el job, y el aserto «ningún paso abre
+ *  navegador» lo aprobaba. Hoy entra por el mismo cierre que los demás.
+ *
+ *  Que hoy ningún `qa/lib/*.mjs` importe Playwright —`navegador.mjs` recibe
+ *  `chromium` como parámetro y solo lo nombra en un tipo JSDoc— no hace inútil
+ *  el cierre: lo hace vacío por ese lado. El día que alguien lo importe, sus
+ *  clientes entran solos sin tocar este test. */
+export function losQueAlcanzanElNavegador(ficheros: ReadonlyMap<string, string>): Set<string> {
   const alcanzan = new Set<string>();
-  const importa = new Map([...libs].map(([f, texto]) => [f, especificadoresDeImport(texto)]));
+  const importa = new Map([...ficheros].map(([f, texto]) => [f, especificadoresDeImport(texto)]));
+  const resuelto = (desde: string, spec: string): string | null => {
+    if (!spec.endsWith(".mjs")) return null;
+    const dir = desde.includes("/") ? desde.slice(0, desde.lastIndexOf("/")) : "";
+    const destino = spec.startsWith(".")
+      ? posix.normalize(posix.join(dir, spec))
+      : spec.slice(spec.lastIndexOf("/qa/") + 4);
+    return ficheros.has(destino) ? destino : null;
+  };
   for (let cambio = true; cambio;) {
     cambio = false;
     for (const [f, specs] of importa) {
       if (alcanzan.has(f)) continue;
       const llega = specs.some((s) => {
         if (/^playwright/.test(s)) return true;
-        // Entre hermanos de `qa/lib` el import es `./navegador.mjs`, sin el
-        // `lib/` delante: es el caso REAL de `carga.mjs`, y pedirle el prefijo
-        // dejaba el cierre sin arrastrar a nadie nunca.
-        const m = /(?:^|\/)([\w.-]+\.mjs)$/.exec(s);
-        return m !== null && libs.has(m[1]) && alcanzan.has(m[1]);
+        const d = resuelto(f, s);
+        return d !== null && alcanzan.has(d);
       });
       if (llega) {
         alcanzan.add(f);
@@ -135,16 +154,6 @@ export function libsQueAlcanzanElNavegador(libs: ReadonlyMap<string, string>): S
     }
   }
   return alcanzan;
-}
-
-/** ¿Este ejecutable abre un navegador? Importa `playwright-core` él mismo, o un
- *  módulo de `qa/lib` que lo alcance. */
-export function abreNavegador(texto: string, libsConNavegador: ReadonlySet<string>): boolean {
-  return especificadoresDeImport(texto).some((s) => {
-    if (/^playwright/.test(s)) return true;
-    const m = MODULO_DE_LIB.exec(s);
-    return m !== null && libsConNavegador.has(m[1]);
-  });
 }
 
 const ARRANCA_PROCESO = /^(spawn|spawnSync|execFile|execFileSync|exec|execSync)$/;
@@ -179,14 +188,52 @@ export function spawneaElRunner(texto: string): boolean {
   return visto;
 }
 
-/** Los `qa/*.mjs` que el job `candados-headless` corre, leídos del yml de
- *  verdad. Si el job no está, esto LANZA: un `[]` silencioso convertiría «el
- *  workflow cambió de forma» en «ningún ejecutable está cubierto», que es un
- *  rojo con el nombre equivocado. */
-export function pasosDelJob(yml: string, job = "candados-headless"): string[] {
+/** El cuerpo del job, tal cual está escrito. Si el job no está, esto LANZA: un
+ *  `""` silencioso convertiría «el workflow cambió de forma» en «ningún
+ *  ejecutable está cubierto», que es un rojo con el nombre equivocado. */
+export function bloqueDelJob(yml: string, job = "candados-headless"): string {
   const bloque = new RegExp(`^ {2}${job}:\\n([\\s\\S]*?)(?=^ {2}\\S|$(?![\\s\\S]))`, "m").exec(yml);
   assert.ok(bloque, `no encuentro el job \`${job}\` en ci.yml: ¿se renombró? este test vive de esa lista`);
-  return [...bloque[1].matchAll(/^\s*- run: node (qa\/[\w.-]+\.mjs)/gm)].map((m) => m[1]);
+  return bloque[1];
+}
+
+/** Los `qa/*.mjs` que el job `candados-headless` corre, leídos del yml de
+ *  verdad. */
+export function pasosDelJob(yml: string, job = "candados-headless"): string[] {
+  return [...bloqueDelJob(yml, job).matchAll(/^\s*- run: node (qa\/[\w.-]+\.mjs)/gm)].map((m) => m[1]);
+}
+
+/** LO QUE HACE QUE UN PASO NO CORRA, aunque esté escrito. Es la mitad que la
+ *  primera versión de este test no cubría y que cazó su QA (H-1): sujetaba que
+ *  el ejecutable estuviera NOMBRADO, no que se EJERZA, y salía verde con
+ *  `- run: node qa/x.mjs || true`, con el paso en `if: false` y con el job
+ *  entero en `if: false`. La frase del issue es «o no lo corre nadie», así que
+ *  un paso decorativo cumple la letra y rompe la promesa.
+ *
+ *  Tres formas, y se miran las tres sobre el TEXTO del bloque: un `if:` (a
+ *  nivel de job o de paso) que pueda apagarlo, un `continue-on-error` que se
+ *  trague el rojo, y un comando que se trague su propia salida (`|| true`,
+ *  `|| :`, `; true`). No hay mecanismo de excepción a propósito: si algún día
+ *  hace falta condicionar un paso, se cambia esta regla y se dice por qué. */
+export function pasosQueNoCorren(bloque: string): string[] {
+  const pegas: string[] = [];
+  for (const [i, linea] of bloque.split("\n").entries()) {
+    const sinComentario = linea.replace(/^(\s*)#.*$/, "$1");
+    if (/^\s*(- )?if:/.test(sinComentario)) {
+      pegas.push(
+        `línea ${i + 1}: \`${sinComentario.trim()}\` — un paso (o el job) que se puede apagar no lo corre nadie`,
+      );
+    }
+    if (/^\s*(- )?continue-on-error:\s*true/.test(sinComentario)) {
+      pegas.push(
+        `línea ${i + 1}: \`continue-on-error: true\` — el rojo del candado deja de ser el rojo del job`,
+      );
+    }
+    if (/^\s*- run:.*(\|\|\s*(true|:)|;\s*true\b)/.test(sinComentario)) {
+      pegas.push(`línea ${i + 1}: \`${sinComentario.trim()}\` — el comando se traga su propia salida`);
+    }
+  }
+  return pegas;
 }
 
 /** Los ejecutables que ni los corre el job, ni caen por el grafo, ni están
@@ -207,14 +254,17 @@ const ejecutables = readdirSync(QA)
   .filter((f) => f.endsWith(".mjs"))
   .sort();
 const textos = new Map(ejecutables.map((f) => [f, readFileSync(join(QA, f), "utf8")]));
-const libs = new Map(
-  readdirSync(QA_LIB)
+// El grafo entero: los ejecutables de la raíz y los módulos de `qa/lib`, con
+// las claves que usa el cierre (`x.mjs` y `lib/x.mjs`).
+const grafo = new Map([
+  ...textos,
+  ...readdirSync(QA_LIB)
     .filter((f) => f.endsWith(".mjs"))
-    .map((f) => [f, readFileSync(join(QA_LIB, f), "utf8")]),
-);
+    .map((f): [string, string] => [`lib/${f}`, readFileSync(join(QA_LIB, f), "utf8")]),
+]);
 
-const libsConNavegador = libsQueAlcanzanElNavegador(libs);
-const navegador = new Set(ejecutables.filter((f) => abreNavegador(textos.get(f) ?? "", libsConNavegador)));
+const alcanzanNavegador = losQueAlcanzanElNavegador(grafo);
+const navegador = new Set(ejecutables.filter((f) => alcanzanNavegador.has(f)));
 const spawnean = new Set(ejecutables.filter((f) => spawneaElRunner(textos.get(f) ?? "")));
 const derivados = new Set([...navegador, ...spawnean]);
 const enJob = new Set(pasosDelJob(yml).map((f) => f.slice("qa/".length)));
@@ -268,6 +318,18 @@ describe("candados-headless: la totalidad del job (#645)", () => {
       fantasmas,
       [],
       "el job corre ficheros que no están: el paso se quedó tras renombrar o borrar",
+    );
+  });
+
+  it("y los CORRE de verdad: ni `if:`, ni `continue-on-error`, ni un comando que se trague su salida", () => {
+    // Su QA (H-1) midió que sin esto el test salía `pass 15 · fail 0` con
+    // `- run: node qa/x.mjs || true`, con el paso en `if: false` y con el JOB
+    // entero en `if: false`. Estar nombrado no es correr.
+    const pegas = pasosQueNoCorren(bloqueDelJob(yml));
+    assert.deepEqual(
+      pegas,
+      [],
+      `el job \`candados-headless\` tiene pasos que pueden no correr:\n      ${pegas.join("\n      ")}`,
     );
   });
 
@@ -351,24 +413,36 @@ describe("los detectores del censo headless", () => {
     // `@param {import("playwright-core").BrowserType}`: recibe el `chromium` de
     // quien lo llama. Si eso contara, el módulo arrastraría a sus nueve
     // importadores y el censo de exentos saldría corto sin que nadie lo viera.
-    assert.equal(abreNavegador('import { chromium } from "playwright-core";', new Set()), true);
-    assert.equal(abreNavegador('/** @param {import("playwright-core").BrowserType} c */', new Set()), false);
-    assert.equal(abreNavegador('const s = "playwright-core";', new Set()), false);
+    const uno = (texto: string) => losQueAlcanzanElNavegador(new Map([["x.mjs", texto]])).has("x.mjs");
+    assert.equal(uno('import { chromium } from "playwright-core";'), true);
+    assert.equal(uno('/** @param {import("playwright-core").BrowserType} c */'), false);
+    assert.equal(uno('const s = "playwright-core";'), false);
   });
 
-  it("el cierre por qa/lib arrastra: un lib que importe Playwright se lleva a sus clientes", () => {
-    // La mitad del criterio que hoy no selecciona a nadie. Aquí se demuestra
-    // que PUEDE seleccionar, que es la diferencia entre una cláusula vacía y
-    // una cláusula muerta.
-    const libsFalsas = new Map([
-      ["navegador.mjs", 'import { chromium } from "playwright-core";'],
-      ["carga.mjs", 'import { abrirNavegador } from "./navegador.mjs";'],
-      ["puertos.mjs", 'import { createConnection } from "node:net";'],
+  it("el cierre arrastra por las DOS carpetas: por qa/lib y entre ejecutables de la raíz", () => {
+    // Dos mitades. La de `qa/lib` hoy no selecciona a nadie y aquí se demuestra
+    // que PUEDE, que es la diferencia entre una cláusula vacía y una muerta. La
+    // de la raíz la pidió la QA de esta PR: un ejecutable que importa a un
+    // hermano de navegador no es headless, y antes se le exigía entrar en el
+    // job.
+    const arbol = new Map([
+      ["lib/navegador.mjs", 'import { chromium } from "playwright-core";'],
+      ["lib/carga.mjs", 'import { abrirNavegador } from "./navegador.mjs";'],
+      ["lib/puertos.mjs", 'import { createConnection } from "node:net";'],
+      ["cliente.mjs", 'import { conCarga } from "./lib/carga.mjs";'],
+      ["headless.mjs", 'import { puertoOcupado } from "./lib/puertos.mjs";'],
+      ["capturas.mjs", 'import { chromium } from "playwright-core";'],
+      ["vecino.mjs", 'import { saca } from "./capturas.mjs";'],
+      ["lejano.mjs", 'import { algo } from "./vecino.mjs";'],
     ]);
-    const alcanzan = libsQueAlcanzanElNavegador(libsFalsas);
-    assert.deepEqual([...alcanzan].sort(), ["carga.mjs", "navegador.mjs"]);
-    assert.equal(abreNavegador('import { conCarga } from "./lib/carga.mjs";', alcanzan), true);
-    assert.equal(abreNavegador('import { puertoOcupado } from "./lib/puertos.mjs";', alcanzan), false);
+    assert.deepEqual([...losQueAlcanzanElNavegador(arbol)].sort(), [
+      "capturas.mjs",
+      "cliente.mjs",
+      "lejano.mjs",
+      "lib/carga.mjs",
+      "lib/navegador.mjs",
+      "vecino.mjs",
+    ]);
   });
 
   it("los pasos se leen del job nombrado y se paran en el siguiente", () => {
@@ -387,6 +461,25 @@ describe("los detectores del censo headless", () => {
       "      - run: node qa/tampoco.mjs",
     ].join("\n");
     assert.deepEqual(pasosDelJob(ymlFalso), ["qa/uno.mjs", "qa/dos.mjs"]);
+  });
+
+  it("ve las tres formas de que un paso escrito no corra, y no se inventa una cuarta", () => {
+    // Los tres casos EXACTOS que QA sabotéo a mano sobre el yml real, y el
+    // control: un job sano no tiene ni una pega. El `if:` de un comentario no
+    // cuenta, que es la misma distinción texto/código de siempre.
+    const sano = "    steps:\n      - run: node qa/uno.mjs\n      # sin if: aquí, esto es prosa\n";
+    assert.deepEqual(pasosQueNoCorren(sano), []);
+    assert.equal(pasosQueNoCorren(sano + "      - run: node qa/dos.mjs || true\n").length, 1);
+    assert.equal(pasosQueNoCorren("    if: false\n" + sano).length, 1, "el job entero apagado");
+    assert.equal(
+      pasosQueNoCorren(sano + "      - run: node qa/dos.mjs\n        if: false\n").length,
+      1,
+      "el paso apagado",
+    );
+    assert.equal(
+      pasosQueNoCorren(sano + "      - run: node qa/dos.mjs\n        continue-on-error: true\n").length,
+      1,
+    );
   });
 
   it("si el job desaparece del yml, esto LANZA en vez de decir que no falta nadie", () => {

@@ -51,6 +51,26 @@
  *     propósito y por eso se excluye del bloque 2.
  *   · Mide que las dos consultas coinciden donde deben y difieren donde deben;
  *     no mide que los guiones las usen bien. Eso es del que escribe el guion.
+ *   · **NO VE LA POLÍTICA, y es una CIRCULARIDAD que hay que tener escrita**
+ *     (la cazó su QA): el bloque 2 compara `ocupadoEn` contra `collidesAt`, y
+ *     las dos preguntan por `algunaCajaAplicable` — o sea la MISMA política. Si
+ *     la política cambia, cambian las dos a la vez y aquí no se nota. Medido:
+ *     con `decor` frenando y con el salto por dueño retirado, este guion sale
+ *     **entero en verde** con los mismos 243/6.186, y quien se pone rojo es
+ *     `nefan-core/test/obstaculos-del-jugador.test.ts` (2 y 4 asertos). El
+ *     sistema está cubierto; este candado, no, y por eso se dice. Y de paso:
+ *     en las fixtures la política se ejerce sobre **UNA sola caja**, la del
+ *     motor que planta este guion, porque a todas las del tile las salta su
+ *     plan.
+ *   · La FRONTERA fuera de `ocupadoEn` debilita a los guiones 32 y 91 a menos
+ *     de un radio del borde del mundo conocido. Medido hoy sobre las tres
+ *     fixtures, y separado porque cada guion sondea otra cosa: el **NPC** más
+ *     cercano al borde está a **8,25 m** (`sabela_lonjera`, puerto_tile), con
+ *     un cuerpo de 0,4 de radio, así que al 32 le sobra sitio; el **objeto**
+ *     más cercano está a **3,5 m** (`roble_n1`, robledo_tile), que sigue
+ *     sobrando pero es menos de la mitad, y el barrido de pared del 91 marcha
+ *     hasta 8 m desde el centro. Sobre una fixture con algo pegado al borde,
+ *     ese barrido leería «libre» donde el jugador no puede estar.
  *
  *  ## Contrato de salida (es un CANDADO)
  *
@@ -77,6 +97,10 @@ import { fileURLToPath } from "node:url";
 import { formatDToWorld } from "../nefan-core/dist/src/scene/scene-normalize.js";
 import { planCollisionGrid } from "../nefan-core/dist/src/scene/blueprint/plan-collision.js";
 import { createTerrainCollider, PLAYER_RADIUS_M } from "../nefan-core/dist/src/scene/terrain-collision.js";
+// El lado de celda del tile se LEE de su fuente, no se copia. Lo canda
+// `la-fisica-no-se-copia-a-mano` (arch-rules), que me cazó escribiendo aquí esa
+// constante a mano — y la caza por TEXTO, así que ni en un comentario.
+import { TILE_MPC } from "../nefan-core/dist/src/scene/tile.js";
 import { solidoBloquea } from "../nefan-core/dist/src/simulation/salida-del-solido.js";
 import { aabbBloquea, aabbOcupa, fronteraBloquea } from "../nefan-core/dist/src/simulation/obstaculos-del-jugador.js";
 
@@ -110,8 +134,22 @@ function cuerpoDelMetodo(texto, firma) {
   return fin === -1 ? null : texto.slice(i, fin);
 }
 
+/** El cuerpo de una llamada, equilibrando paréntesis desde su marca. Para lo
+ *  que no es un método con llaves, como el callback del overlay. */
+function cuerpoDeLlamada(texto, marca) {
+  const i = texto.indexOf(marca);
+  if (i === -1) return null;
+  let nivel = 0;
+  for (let j = i + marca.length - 1; j < texto.length; j++) {
+    if (texto[j] === "(") nivel++;
+    else if (texto[j] === ")" && --nivel === 0) return texto.slice(i, j);
+  }
+  return null;
+}
+
 const COLISION = readFileSync(path.join(RAIZ, "nefan-html/src/world/collision.ts"), "utf8");
 const HOOK = readFileSync(path.join(RAIZ, "nefan-html/src/dev/nefan-hook.ts"), "utf8");
+const MAIN = readFileSync(path.join(RAIZ, "nefan-html/src/main.ts"), "utf8");
 
 const cuerpo = cuerpoDelMetodo(COLISION, "ocupadoEn(x: number, z: number");
 if (cuerpo === null) {
@@ -148,6 +186,32 @@ if (probePoints.length !== probeCollides.length || probePoints.length === 0) {
   );
 } else {
   ok(`las ${probePoints.length} publicaciones de \`probePoint\` llaman a \`ocupadoEn\` (y otras tantas de \`probeCollide\`)`);
+}
+
+// LA VISTA B DE COLISIÓN, que es #644 DENTRO DEL JUEGO y no dentro del banco
+// (QA de la PR, H-2). El overlay pinta el mapa de solidez del tile muestreando
+// celda a celda, y lo hacía con `collidesAt`: con el jugador dentro de un
+// sólido, `robledo_tile` pintaba 1.620 celdas en vez de 2.466. Quien mira esa
+// vista para depurar colisión veía un mundo con agujeros donde no los hay.
+const overlay = cuerpoDeLlamada(MAIN, "fpsRenderer.setCollisionCellsProvider(");
+if (overlay === null) {
+  mal(
+    "el overlay de colisión existe en main.ts",
+    "no encuentro `fpsRenderer.setCollisionCellsProvider(`. Si se renombró o se fue, este bloque va con él",
+  );
+} else if (overlay.includes("collidesAt")) {
+  mal(
+    "la vista B de colisión se muestrea por PUNTO",
+    "el callback de `setCollisionCellsProvider` llama a `collidesAt`: el mapa que se PINTA depende de dónde " +
+      "esté el jugador, que es el defecto de #644 en el juego",
+  );
+} else if (!overlay.includes("ocupadoEn")) {
+  mal(
+    "la vista B de colisión pregunta por `ocupadoEn`",
+    `no veo la consulta de punto en su callback:\n      ${overlay.replace(/\s+/g, " ").slice(0, 160)}`,
+  );
+} else {
+  ok("la vista B de colisión muestrea con `ocupadoEn`, no con la consulta de movimiento");
 }
 
 // ── El mundo, montado como lo monta el cliente ───────────────────────────────
@@ -418,6 +482,68 @@ if (variabaLaDeMovimiento === 0) {
   // fixture a fixture. Aquí solo se evita rematar con un verde que contradiga
   // lo que se acaba de imprimir.
   console.log(`    (el defecto existe y se mide: la de movimiento cambia en ${variabaLaDeMovimiento} de ${mundos.size} fixtures)`);
+}
+
+// ── 4 · EL MAPA QUE SE PINTA ────────────────────────────────────────────────
+
+console.log("");
+console.log("4 · LA VISTA B: el mapa de solidez del tile, muestreado como lo muestrea el overlay");
+
+/** Las celdas que pintaría el overlay: el centro de cada celda de 0,5 m del
+ *  rect, preguntado con la sonda que se le pase. Es el bucle de
+ *  `setCollisionCellsProvider` (main.ts), aquí sobre el mismo mundo. */
+function celdasDelOverlay(m, sonda) {
+  let n = 0;
+  for (let z = m.rect.minZ; z < m.rect.maxZ - 1e-9; z += TILE_MPC) {
+    for (let x = m.rect.minX; x < m.rect.maxX - 1e-9; x += TILE_MPC) {
+      if (sonda(x + TILE_MPC / 2, z + TILE_MPC / 2)) n++;
+    }
+  }
+  return n;
+}
+
+let cambiabaElMapa = 0;
+for (const [nombre, m] of mundos) {
+  // El origen «dentro»: la celda sólida más centrada, para que la frontera del
+  // plano —que `collidesAt` sí mira y `ocupadoEn` no— no mande en la cuenta.
+  const cx = (m.rect.minX + m.rect.maxX) / 2;
+  const cz = (m.rect.minZ + m.rect.maxZ) / 2;
+  let dentro = null;
+  for (let z = m.rect.minZ; z < m.rect.maxZ - 1e-9; z += TILE_MPC) {
+    for (let x = m.rect.minX; x < m.rect.maxX - 1e-9; x += TILE_MPC) {
+      const p = { x: x + TILE_MPC / 2, z: z + TILE_MPC / 2 };
+      if (!m.ocupadoEn(p.x, p.z, p)) continue;
+      if (dentro === null || Math.hypot(p.x - cx, p.z - cz) < Math.hypot(dentro.x - cx, dentro.z - cz)) dentro = p;
+    }
+  }
+  if (dentro === null) {
+    mal(`${nombre} tiene alguna celda sólida que pintar`, "el mapa sale entero vacío");
+    continue;
+  }
+  const fuera = { x: m.rect.minX + 1, z: m.rect.minZ + 1 };
+  const puntoFuera = celdasDelOverlay(m, (x, z) => m.ocupadoEn(x, z, fuera));
+  const puntoDentro = celdasDelOverlay(m, (x, z) => m.ocupadoEn(x, z, dentro));
+  const movFuera = celdasDelOverlay(m, (x, z) => m.collidesAt(fuera, { x, z }));
+  const movDentro = celdasDelOverlay(m, (x, z) => m.collidesAt(dentro, { x, z }));
+  console.log(
+    `    ${nombre.padEnd(13)} · por PUNTO ${puntoFuera} celdas desde fuera y ${puntoDentro} desde dentro ` +
+      `de un sólido · por MOVIMIENTO ${movFuera} y ${movDentro} (${movDentro - movFuera})`,
+  );
+  if (movFuera !== movDentro) cambiabaElMapa++;
+  if (puntoFuera !== puntoDentro) {
+    mal(
+      `en ${nombre}, el mapa que pinta la vista B no cambia con el jugador`,
+      `${puntoFuera} celdas desde fuera y ${puntoDentro} desde dentro de un sólido`,
+    );
+  }
+}
+if (cambiabaElMapa === 0) {
+  mal(
+    "el defecto que se mide EXISTE: con la consulta de movimiento el mapa SÍ cambiaba",
+    "ninguna fixture cambia de cuenta. Si `collidesAt` dejó de eximir el origen, este bloque ya no mide nada",
+  );
+} else {
+  ok(`el mapa de la vista B es el mismo desde fuera y desde dentro, y con la de movimiento cambiaba en ${cambiabaElMapa} de ${mundos.size}`);
 }
 
 console.log("");

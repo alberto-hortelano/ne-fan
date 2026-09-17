@@ -277,14 +277,24 @@ describe("aabbOcupa — la misma caja preguntada sin origen", () => {
     assert.equal(aabbOcupa(dentro, R, [forja], conPlan), true);
   });
 
-  it("y no depende de dónde se pregunte: la respuesta es la misma desde cuatro orígenes, uno de ellos dentro", () => {
-    // El aserto que hace inexpresable el defecto. Con `aabbBloquea` este mismo
-    // bucle da cuatro veredictos distintos para el mismo punto.
+  it("y no depende de dónde se pregunte: la misma respuesta desde cuatro orígenes, y la de MOVIMIENTO no", () => {
+    // El aserto que hace inexpresable el defecto, y su control en la misma
+    // vuelta: para el mismo punto, la consulta de punto contesta lo mismo desde
+    // los cuatro orígenes y la de movimiento NO — porque dos de esos orígenes
+    // están dentro de la caja y desde dentro «no te frena» es la respuesta
+    // correcta suya. (La primera versión de este test llamaba cuatro veces a
+    // `aabbOcupa` sin usar `origen`: cuatro llamadas idénticas y un bucle
+    // decorativo. Lo cazó la QA de la PR.)
     const p = { x: 11.5, z: 0 };
-    for (const origen of [{ x: 0, z: 0 }, { x: 30, z: 30 }, { x: 10, z: 0 }, p]) {
-      assert.equal(aabbOcupa(p, R, [forja], conPlan), true, `desde (${origen.x}, ${origen.z})`);
-    }
-    assert.equal(aabbBloquea(p, p, R, [forja], conPlan), false, "la de movimiento, preguntada sobre sí misma, dice que no");
+    const origenes = [{ x: 0, z: 0 }, { x: 30, z: 30 }, { x: 10, z: 0 }, p];
+    const porPunto = origenes.map(() => aabbOcupa(p, R, [forja], conPlan));
+    const porMovimiento = origenes.map((o) => aabbBloquea(o, p, R, [forja], conPlan));
+    assert.deepEqual(porPunto, [true, true, true, true]);
+    assert.deepEqual(
+      porMovimiento,
+      [true, true, false, false],
+      "desde fuera frena y desde dentro no: si esto dejara de variar, el aserto de arriba no mediría nada",
+    );
   });
 
   it("desde un origen LIBRE las dos coinciden punto por punto: no hay segunda geometría", () => {

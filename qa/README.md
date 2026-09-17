@@ -81,7 +81,8 @@ escrito. Aquí había dos tablas y **las dos mentían**: «Dentro» enumeraba 13
 «Fuera» 20 de 21, y el texto hablaba de «los 116 guiones» cuando eran 143. Se borran enteras en vez
 de corregirse, porque dos listas de lo mismo divergen y una sola falla: el tiempo medido de cada
 paso vive en su comentario del yml —donde lo lee quien lo cambia— y los nueve motivos de exención
-se MOVIERON al JSON. Un ejecutable que nazca fuera pone `npm test` rojo con su nombre.
+viven en el JSON (dos movidos de aquí tal cual, siete reescritos desde dos filas que los metían en
+el mismo saco; el `_comment` del contrato lo dice). Un ejecutable que nazca fuera pone `npm test` rojo con su nombre.
 
 Lo que ese candado **no** cubre está escrito en su cabecera y conviene saberlo antes de fiarse: no
 ve al que abra un navegador por un camino que no sea `playwright-core`, no comprueba que un paso

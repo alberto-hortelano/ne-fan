@@ -471,10 +471,14 @@ export default async function (ctx) {
   // protocolo que #644 viene a quitar— sino para demostrar que no le hace
   // falta. Se deja al jugador donde estaba.
   //
-  // (Entre CORRIDAS el número sigue variando, y esa es OTRA causa: el motor
-  // falso planta la forja en un sitio distinto cada vez —medido, (10.0, −11.4)
-  // y (10.2, −7.1)— y la línea cruza otro terreno. Por eso el hueco se DICE y
-  // lo que se AFIRMA es que no depende de dónde esté el jugador.)
+  // (Entre CORRIDAS el número sigue variando, y esa es OTRA causa, que NO es
+  // del motor falso: él emite `position_hint: "near_player"` y quien resuelve
+  // es core —`consequence-handler.ts`, `resolvePositionHint`: jugador +
+  // forward × 5—. O sea que dónde cae la forja depende de dónde para y hacia
+  // dónde mira el jugador en el turno 3, que es cosa de ESTE guion. Medido:
+  // paradas en (7,49, −12,58) y (8,94, −1,32) → 46, 45 y 9 muestras libres.
+  // Por eso el hueco se DICE y lo que se AFIRMA es que no depende de dónde
+  // esté el jugador cuando se pregunta.)
   const dondeEstaba = await posicion(ctx);
   await ctx.nefan("setPlayerPos", trio.forja.pos.x, trio.forja.pos.z);
   const desdeDentro = await huecoEntre(ctx, trio.cofre, trio.forja);
