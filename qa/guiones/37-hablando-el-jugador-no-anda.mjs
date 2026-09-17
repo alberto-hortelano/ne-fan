@@ -64,6 +64,7 @@
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -76,18 +77,11 @@ const A_UN_PASO = 1.2;
  *  metros en este tiempo; con él puesto, cero. */
 const FRAMES_ANDANDO = 20;
 
-async function frames(ctx, n) {
-  const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
-  return ctx.waitFor(
-    `el bucle de juego avanza ${n} fotograma(s)`,
-    (m) => {
-      const f = window.__nefan.fps()?.frames ?? 0;
-      return f >= m.desde + m.n ? { f } : null;
-    },
-    20_000,
-    { desde, n },
-  );
-}
+/** Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "mundo" porque el
+ *  sujeto es si el JUGADOR anda mientras habla: la espera existe para que el
+ *  mundo avance.
+ */
+const frames = esperaDeFotogramas("mundo");
 
 /** Cuánto se desplaza el jugador manteniendo `W` con el teclado REAL. */
 async function cuantoAnda(ctx) {

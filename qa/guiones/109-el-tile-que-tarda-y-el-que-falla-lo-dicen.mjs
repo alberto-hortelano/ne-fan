@@ -45,6 +45,7 @@
 import { elJugadorSePara, limpiaLaParada, paradaEnSim } from "../lib/parada.mjs";
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 // `mundo` además de `saves` y `fake-ai`, y es una precondición DURA: con el
 // snapshot de mundo pre-generado en disco, el bridge sirve el tile vecino desde
@@ -104,19 +105,13 @@ const rotuloDelVelo = (ctx) =>
   });
 
 /** Avanza `n` fotogramas del bucle: la frontera se recalcula UNA vez por
- *  `tick`, no por reloj de pared. */
-async function frames(ctx, n) {
-  const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
-  return ctx.waitFor(
-    `el bucle avanza ${n} fotograma(s)`,
-    (m) => {
-      const f = window.__nefan.fps()?.frames ?? 0;
-      return f >= m.desde + m.n ? { f } : null;
-    },
-    20_000,
-    { desde, n },
-  );
-}
+ *  `tick`, no por reloj de pared.
+ *
+ *  Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "mundo" porque el
+ *  guion empuja al jugador contra la frontera mientras el tile tarda: el
+ *  mundo avanza.
+ */
+const frames = esperaDeFotogramas("mundo");
 
 /** Mantiene una tecla `n` fotogramas y la suelta pase lo que pase. */
 async function mantener(ctx, tecla, nFrames = 4) {

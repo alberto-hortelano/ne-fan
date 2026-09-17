@@ -47,6 +47,7 @@
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -63,18 +64,11 @@ const SEGUNDA_LINEA = "(bench bis)";
  *  (`MARCA_MOTOR_CAIDO`), que es como se llega al muro de fallo del bloque 5. */
 const MARCA_MOTOR_CAIDO = "CONEXION INTERRUMPIDA";
 
-async function frames(ctx, n) {
-  const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
-  return ctx.waitFor(
-    `el bucle de juego avanza ${n} fotograma(s)`,
-    (m) => {
-      const f = window.__nefan.fps()?.frames ?? 0;
-      return f >= m.desde + m.n ? { f } : null;
-    },
-    20_000,
-    { desde, n },
-  );
-}
+/** Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "mundo" porque el
+ *  guion conduce al jugador y abre la conversación: lo que tiene que correr
+ *  es el sim.
+ */
+const frames = esperaDeFotogramas("mundo");
 
 /** Se planta al lado del NPC (teletransporte de bench) y espera a que el juego
  *  OFREZCA hablar en la barra contextual; si el jugador murió por el camino

@@ -41,6 +41,48 @@
  *  mismos dos POST de entonces (`idle` y `walk`, sin rol: el `run` no sale
  *  porque el fallo de `walk` corta la cola de ese personaje).
  *
+ *  Y LA IDENTIDAD, que hasta el 2026-09-17 no la afirmaba nadie (#637). Todo lo
+ *  de arriba mide el CABLE —POSTs a `/skin_sprite_sheet`—, y ese canal solo se
+ *  entera de algo si el skin de A quedó FALLIDO, porque `requestSkin` es
+ *  idempotente por prompt. O sea que el jugador de la partida B podía aparecer
+ *  LLEVANDO PUESTA la armadura del personaje de A y este guion salía verde. Se
+ *  cierra con dos asertos más, sobre dos observables distintos:
+ *
+ *   · `__nefan.aspecto.skinPrompt` (observable NUEVO del hook, #637: lo que el
+ *     jugador lleva puesto, hermano de `skins`, que es lo que PIDIÓ) se afirma
+ *     vacío en la VUELTA al título, no en la partida B: `comenzarCon(ctx, "")`
+ *     llama a `vestir(model, "")`, que pone el prompt a `""` por su cuenta, así
+ *     que ese mismo aserto dentro de B sería verde con y sin el defecto.
+ *   · El libro de B —que el guion ya leía y solo logueaba— no tiene ninguna
+ *     entrada con el prompt de A y sin rol.
+ *
+ *  LOS DOS NUEVOS NO COMPARTEN CEGUERA CON SUS VECINOS DE LA MISMA FAMILIA,
+ *  pero no por igual, y la diferencia importa: el primero NO depende de la
+ *  inyección del 500 (el `page.route` de `82:168-208`, que es el mismo patrón
+ *  del 51 y de los bloques del 53), así que sobrevive a un arreglo ajeno y
+ *  correcto que se lleve esa condición —como hizo #627 y como cuenta el
+ *  párrafo de arriba—. El SEGUNDO sí depende de ella, y está MEDIDO: sin el
+ *  500, la entrada de A sobrevive en el libro por no quedar `failed`, y el
+ *  aserto sale rojo **3 de 3 con el defecto ARREGLADO**. O sea que es un candado
+ *  más frágil que su hermano: un arreglo ajeno que se lleve la inyección lo pone
+ *  rojo sin defecto. Se escribe igual, y con esto dicho, porque un falso rojo
+ *  obliga a mirar y un falso verde no; el que sostiene la medida cuando eso
+ *  pase es el primero.
+ *
+ *  PROBADO EN NEGATIVO (2026-09-17), tres corridas de cada estado y un sabotaje
+ *  por vez:
+ *
+ *   · `aspecto.desvestir();` comentado en `resetWorld` (`main.ts`): **3/3** con
+ *     los DOS nuevos ROJOS (el jugador sigue con el prompt de A puesto al
+ *     volver al título, y su entrada vuelve al libro de B) y los dos del cable
+ *     rojos también, con los mismos dos POST de siempre (`idle` y `walk`).
+ *   · Mismo sabotaje CON LA INYECCIÓN DEL 500 QUITADA: **3/3** con los dos del
+ *     cable VERDES —la ceguera de la tanda F, reproducida— y los dos nuevos
+ *     ROJOS. Ésa es la razón de que el aserto 1 se escriba en la vuelta.
+ *   · Inyección quitada y defecto ARREGLADO (el control): **3/3** con el aserto
+ *     del libro ROJO y los otros tres verdes. Es el falso rojo del párrafo de
+ *     arriba, medido en vez de supuesto.
+ *
  *  Cero créditos: el bridge propio no llega a llamar a ningún servicio y los
  *  skins los sirve el motor falso del runner.
  *
@@ -313,6 +355,30 @@ export default async function (ctx) {
       },
       30_000,
     );
+    // LA IDENTIDAD, no el cable (#637). Hasta hoy el guion solo contaba POSTs, y
+    // ese canal únicamente se entera si el skin de A quedó FALLIDO
+    // (`requestSkin` es idempotente por prompt): el jugador podía seguir VESTIDO
+    // con la armadura de A y el guion salía verde. Aquí se afirma lo que el
+    // jugador LLEVA PUESTO, y este punto es determinista —`resetWorld` ya
+    // corrió— así que no hay espera que tragarse.
+    //
+    // POR QUÉ AQUÍ Y NO EN B: `comenzarCon(ctx, "")` llama a `vestir(model, "")`,
+    // que pone `playerSkinPrompt = ""` por su cuenta
+    // (`renderer/aspecto-del-jugador.ts`). Un aserto sobre `skinPrompt` dentro
+    // de B sale VERDE con y sin `desvestir()`: es el molde exacto de verde que
+    // no puede ponerse rojo que #637 vino a cerrar, y por eso no se escribe.
+    //
+    // Y NO COMPARTE LA CEGUERA DE 51 Y 53: este aserto no depende de la
+    // inyección del 500 sobre `/skin_sprite_sheet` (`82:168-208` ≡ `51:50-71`).
+    // El día que un arreglo ajeno y correcto se lleve esa condición —como hizo
+    // #627—, el 82 sigue pudiendo ponerse rojo por aquí.
+    const aspectoEnElTitulo = await ctx.page.evaluate(() => window.__nefan.aspecto);
+    ctx.log(`aspecto del jugador de vuelta en el título: ${JSON.stringify(aspectoEnElTitulo)}`);
+    ctx.expect(
+      "#637 · volver al título DESVISTE al jugador: ya no lleva puesto el skin de A",
+      aspectoEnElTitulo.skinPrompt === "",
+      `el jugador sigue vestido con ${JSON.stringify(aspectoEnElTitulo.skinPrompt)}`,
+    );
 
     // ── 3 · Partida B, sin prompt: nadie re-pide el skin de A ────────────────
     fase = "B";
@@ -346,6 +412,18 @@ export default async function (ctx) {
       "…y B, sin prompt, no pide ningún skin de jugador (todo POST desde la vuelta lleva rol de NPC)",
       desdeLaVuelta.every((p) => p.role !== null),
       JSON.stringify(desdeLaVuelta.filter((p) => p.role === null)),
+    );
+    // El libro de B lo leía el guion desde el 2026-09-06 y solo lo LOGUEABA
+    // (#637). Es el ESTADO donde el cable es el flujo: una entrada del jugador
+    // de A puede quedar apuntada sin que salga un POST nuevo —el fusible de la
+    // sesión salta la anim antes de pedirla (#520)— y entonces `rePedidos`
+    // sigue a cero con la armadura de A dentro del libro de la partida nueva.
+    // Sin rol = del JUGADOR: los NPC del motor falso siempre traen el suyo.
+    const jugadorDeAEnB = libroB.filter((s) => s.prompt === PROMPT_A && !s.role);
+    ctx.expect(
+      "#637 · …y el libro de B no tiene al jugador de A dentro (ni pedido ni apuntado)",
+      jugadorDeAEnB.length === 0,
+      `${jugadorDeAEnB.length} entrada(s) del jugador de A en el libro de B: ${JSON.stringify(jugadorDeAEnB)}`,
     );
   } finally {
     try { process.kill(-proc.pid, "SIGTERM"); } catch { /* ya se había ido */ }

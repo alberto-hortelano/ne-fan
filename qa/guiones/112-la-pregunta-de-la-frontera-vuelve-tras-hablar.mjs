@@ -30,6 +30,7 @@
  */
 
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 // `mundo` además de `saves` y `fake-ai`: este guion necesita un borde SIN
 // generar para que el juego proponga explorar, y con el snapshot de mundo
@@ -64,18 +65,10 @@ const laPregunta = (ctx) =>
     };
   });
 
-async function frames(ctx, n) {
-  const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
-  return ctx.waitFor(
-    `el bucle avanza ${n} fotograma(s)`,
-    (m) => {
-      const f = window.__nefan.fps()?.frames ?? 0;
-      return f >= m.desde + m.n ? { f } : null;
-    },
-    20_000,
-    { desde, n },
-  );
-}
+/** Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "mundo" porque el
+ *  guion conduce al jugador hasta la frontera dos veces: el mundo avanza.
+ */
+const frames = esperaDeFotogramas("mundo");
 
 /** E con el teclado REAL, cuatro fotogramas (el bucle la consume por frame). */
 async function pulsarE(ctx) {

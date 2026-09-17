@@ -49,6 +49,7 @@
  *  verdad GASTA—: la tecla dev que se mide es `B`, que solo cicla una vista.
  */
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -62,18 +63,11 @@ const ATAQUE_APARCADO = "medium";
 const TECLA_SUELTA = "5";
 const ATAQUE_SUELTO = "precise";
 
-async function frames(ctx, n) {
-  const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
-  return ctx.waitFor(
-    `el bucle de juego avanza ${n} fotograma(s)`,
-    (m) => {
-      const f = window.__nefan.fps()?.frames ?? 0;
-      return f >= m.desde + m.n ? { f } : null;
-    },
-    20_000,
-    { desde, n },
-  );
-}
+/** Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "mundo" porque el
+ *  sujeto es si el teclado de juego mueve al jugador: el mundo tiene que
+ *  avanzar para poder decir que no se movió.
+ */
+const frames = esperaDeFotogramas("mundo");
 
 /** Lo que hace falta leer del jugador para decidir si una tecla pasó. */
 const leer = (ctx) =>

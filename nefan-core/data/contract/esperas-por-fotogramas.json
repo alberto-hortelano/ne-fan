@@ -1,0 +1,47 @@
+{
+  "_comment": "Totalidad de las esperas por un CONTADOR DE FOTOGRAMAS del banco (#606, tanda N, 2026-09-17). Lo verifica `test/espera-de-fotogramas-con-dueno.test.ts`, en DOS niveles. NIVEL DURO, sin exenciones posibles: ningún fichero salvo `qa/lib/fotogramas.mjs` puede DEFINIR un helper de espera por fotogramas — el molde que estaba copiado dieciséis veces. NIVEL CENSO, el de este fichero: toda espera cuyo PREDICADO lea `fps().frames`, `reloj().frames` o `reloj().loop` sale del helper o está apuntada aquí con su motivo. La lista existe porque hay tres clases de espera que NO son el molde: (1) aquella cuyo SUJETO es el contador mismo —afirmar que el renderer sigue pintando—, donde el helper mediría el instrumento con el instrumento; (2) la que necesita un cortafuegos MAYOR que el unificado, y bajárselo es justo lo que el plan de #606 prohíbe; (3) la espera CONDUCIDA, que se presupuesta en segundos de mundo (`{sim: N}`) y cuyo dueño es `qa/lib/esperas.mjs`, no éste. Una exención cuya espera ya no existe CADUCA y pone el test rojo: se borra de aquí.",
+  "exentos": [
+    {
+      "fichero": "qa/fixtures-las-tres-se-caminan.mjs",
+      "linea_orientativa": 69,
+      "desc": "${fixture} · el renderer emite frames",
+      "porque": "El SUJETO de esta espera es el contador: afirma que el renderer SIGUE PINTANDO con la fixture cargada. Sacarla al helper sería medir el instrumento con el instrumento — el helper existe para esperar A QUE PASE algo, y aquí lo que se afirma es que el contador se mueve."
+    },
+    {
+      "fichero": "qa/las-fixtures-solo-chocan-con-el-agua.mjs",
+      "linea_orientativa": 196,
+      "desc": "el renderer emite más frames",
+      "porque": "Misma clase que `fixtures-las-tres-se-caminan.mjs`: el contador es la MEDIDA («las tres fixtures siguen pintando»), no el instrumento de otra medida."
+    },
+    {
+      "fichero": "qa/guiones/69-el-arranque-no-se-calla.mjs",
+      "linea_orientativa": 302,
+      "desc": "el bucle de juego avanza 60 fotogramas con el socket escupiendo basura",
+      "porque": "Pide 60 fotogramas con un cortafuegos de 30 s, mayor que los 20 s del helper unificado, y bajarlo es exactamente lo que #606 prohíbe: la unificación va HACIA ARRIBA porque bajar un cortafuegos puede convertir una espera legítima en una expiración. Sesenta fotogramas bajo un socket que inunda no caben en el tope común."
+    },
+    {
+      "fichero": "qa/guiones/15-guardia-se-ve-y-se-comporta.mjs",
+      "linea_orientativa": 224,
+      "desc": "el mundo se redibuja ya encarando a ${id}",
+      "porque": "ES el molde y SE MIGRÓ, y hubo que DESHACERLO con la medida delante (tanda N, 2026-09-17): con la espera sacada al helper el guion sale rojo 4 veces de 21, y en su versión de siempre 0 de 11 — mismo commit, corridas alternadas, aislado y en lotes de 6 y de 17. El rojo cae SIEMPRE en el mismo sitio y no tiene vía causal hacia esta espera: `page.click('#ts-new')` expira en el TÍTULO, justo tras la pre-generación de las 9 escenas y mucho antes de que `encarar()` corra. Se queda fuera porque meter una intermitencia en la batería es justo lo que esta tanda vino a quitar (#634): un rojo que aparece y desaparece enseña al equipo a ignorar la batería. Tiene issue propio; cuando se sepa por qué, esta exención se borra y la espera vuelve al helper."
+    },
+    {
+      "fichero": "qa/guiones/80-el-desplegable-room-dice-lo-que-se-ve.mjs",
+      "linea_orientativa": 127,
+      "desc": "un frame más tras elegir «-- Room --»",
+      "porque": "El 80 tiene una intermitencia con issue propio y vivo (#659) y está fuera del alcance de la tanda N por decisión escrita en su plan: tocarlo mezclaría su causa con la del 75. Es UN fotograma con cortafuegos de 5 s; cuando #659 se cierre, esta espera es la primera candidata a salir del censo."
+    },
+    {
+      "fichero": "qa/guiones/140-la-reconexion-retira-su-aviso-en-partida.mjs",
+      "linea_orientativa": 60,
+      "desc": "la página sigue avanzando tras reconectar",
+      "porque": "El SUJETO es el reloj: lo que se afirma es que la página NO se ha quedado colgada tras reconectar el bridge (120 fotogramas de mundo). Como en las dos de fixtures, el contador es la medida y no el instrumento."
+    },
+    {
+      "fichero": "qa/guiones/142-los-sistemas-se-pueden-consultar.mjs",
+      "linea_orientativa": 19,
+      "desc": "el mundo avanza mientras se consulta",
+      "porque": "No es una espera por fotogramas del molde: es una espera CONDUCIDA (`ctx.holdUntil` con la tecla `up` mantenida) presupuestada en SEGUNDOS DE MUNDO (`{sim: 5}`), cuyo dueño es `qa/lib/esperas.mjs` y cuyo candado es `test/esperas-que-conducen.test.ts` (#545). Los fotogramas son su condición de parada, no su reloj."
+    }
+  ]
+}

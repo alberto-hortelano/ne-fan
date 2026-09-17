@@ -59,6 +59,7 @@
  */
 
 import { cargarFixture, retenerFixture } from "../lib/fixtures.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 /** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
  *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
@@ -76,16 +77,13 @@ const ABIERTA = "robledo_tile";
 /** Espera a que el renderer EMITA frames nuevos: una captura pedida justo
  *  después de mover al jugador fotografía el frame ANTERIOR (la cámara se
  *  actualiza en el bucle, no en el setter). Se espera por el contador de
- *  frames, nunca por reloj. */
-async function esperarFrames(ctx, n = 3) {
-  const antes = (await ctx.nefan("fps")).frames;
-  await ctx.waitFor(
-    `${n} frames nuevos`,
-    ({ f0, n }) => (window.__nefan.fps().frames >= f0 + n ? true : null),
-    10_000,
-    { f0: antes, n },
-  );
-}
+ *  frames, nunca por reloj.
+ *
+ *  Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "loop", porque lo que
+ *  tiene que pasar es que la PÁGINA repinte —antes de cada captura— y que la
+ *  carga retenida avance; el mundo aquí no simula nada.
+ */
+const esperarFrames = esperaDeFotogramas("loop");
 
 const GRADOS_POR_PX = (0.0025 * 180) / Math.PI;
 

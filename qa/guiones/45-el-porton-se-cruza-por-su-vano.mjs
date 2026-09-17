@@ -39,22 +39,20 @@
  *  guion sigue valiendo si el bench mueve la muralla.
  */
 import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 /** El viaje no interviene, pero la partida tiene que arrancar en el tile de
  *  bootstrap (el que trae la muralla) y no donde la dejó otro guion. */
 export const aisla = ["mundo", "saves"];
 
 /** Espera a que el renderer EMITA frames nuevos: una captura pedida justo
- *  después de mover al jugador fotografía el frame ANTERIOR. */
-async function esperarFrames(ctx, n = 3) {
-  const antes = (await ctx.nefan("fps")).frames;
-  await ctx.waitFor(
-    `${n} frames nuevos`,
-    ({ f0, n }) => (window.__nefan.fps().frames >= f0 + n ? true : null),
-    10_000,
-    { f0: antes, n },
-  );
-}
+ *  después de mover al jugador fotografía el frame ANTERIOR.
+ *
+ *  Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "mundo" porque el
+ *  mundo tiene que asentar cada teletransporte antes de empujar contra el
+ *  portón.
+ */
+const esperarFrames = esperaDeFotogramas("mundo");
 
 /** Anda hacia el sur desde `(x, zSalida)` e informa de hasta dónde llegó.
  *  Devuelve `{ cruzo, zFinal }` — nunca lanza: el fallo del cruce es un dato,

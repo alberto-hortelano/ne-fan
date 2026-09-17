@@ -897,6 +897,7 @@ instalarNefanHook({
   travelLedger,
   tileLedger,
   characterSprites,
+  aspectoDelJugador: aspecto,
   attackBar: hud.barra,
   promptBar,
   confirmBar: fronteraEnPantalla.barraDeConfirmacion,

@@ -51,6 +51,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 export const aisla = ["fake-ai"];
 
@@ -71,19 +72,13 @@ const GRADOS_POR_PX = (0.0025 * 180) / Math.PI;
 
 /** Espera a que el bucle pinte `n` fotogramas más: los rótulos se sincronizan
  *  DESPUÉS de render(), así que tras mover al jugador hay que dejar pasar el
- *  frame antes de leer el DOM. */
-async function frames(ctx, n) {
-  const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
-  return ctx.waitFor(
-    `pasan ${n} fotograma(s)`,
-    (m) => {
-      const f = window.__nefan.fps()?.frames ?? 0;
-      return f >= m.desde + m.n ? { f } : null;
-    },
-    20_000,
-    { desde, n },
-  );
-}
+ *  frame antes de leer el DOM.
+ *
+ *  Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "loop" porque los
+ *  rótulos se colocan al pintar: lo que tiene que correr es el loop del
+ *  renderer.
+ */
+const frames = esperaDeFotogramas("loop");
 
 /** Mueve el RATÓN hasta que la mirada llega al ángulo pedido (calcado del 79). */
 function mirarA(ctx, grados) {
