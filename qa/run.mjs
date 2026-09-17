@@ -70,7 +70,7 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // copias con relojes ya divergidos (500 ms / 800 ms), y la que elige el
 // bloque decide si dos corridas colisionan — el criterio 3 entero.
 import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
-import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } from "./lib/veredictos.mjs";
+import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida, veredictoDeGuion } from "./lib/veredictos.mjs";
 import { ctxDeSonda, presupuestoConducido } from "./lib/sonda.mjs";
 // Cómo se compone la URL de la página: pura, y con su propio test en core
 // (`test/url-del-bench.test.ts`). Estaba aquí dentro como una concatenación de
@@ -846,10 +846,34 @@ class SinMedirDeclarado extends Error {
  *  en vez de la tercera copia de la espera que cada uno llevaba (#332). */
 function makeCtx(page, name) {
   let step = 0;
+  /** Cuántas veces AFIRMÓ este guion (#639). Vive en el CIERRE y no en el
+   *  `ctx` a propósito — ver el getter de abajo. */
+  let afirmaciones = 0;
   const ctx = {
     ...ctxDeSonda(page),
     name,
     fallos: [],
+
+    /** Cuántas veces AFIRMÓ este guion (#639). Un verde exige que esto sea
+     *  > 0: «no falló» y «no miró» no son lo mismo, y hasta ahora el runner
+     *  no sabía distinguirlos — el guion cuyo único `ctx.expect` vive dentro
+     *  de un bucle que no se entra terminaba limpio y salía ✔. La decisión
+     *  vive en `lib/veredictos.mjs`, que es donde se puede medir sin
+     *  navegador.
+     *
+     *  SOLO LECTURA, y la asimetría es la razón (hallazgo H-3 de QA): escribir
+     *  `ctx.fallos` solo puede poner a un guion en ROJO, pero escribir el
+     *  contador FABRICA UN VERDE — `ctx.afirmaciones = 7` en un guion mudo
+     *  compraba el ✔ sin haber mirado nada. Un candado que se puede cumplir
+     *  «en verde» sin que ocurra lo que importa no es un candado, así que el
+     *  estado malo se hace INEXPRESABLE: el contador vive en el cierre de
+     *  `makeCtx`, aquí solo asoma un getter sin setter (en un módulo ESM, que
+     *  es estricto, asignarle LANZA) y la propiedad se cierra a
+     *  `configurable: false` para que tampoco valga redefinirla. La única
+     *  manera de subirlo es afirmar. */
+    get afirmaciones() {
+      return afirmaciones;
+    },
     /** La MARCA de que este guion declaró `sinMedir`, puesta ANTES de lanzar
      *  la sentinela. Existe porque la sentinela es una excepción y un
      *  `try { ctx.sinMedir(…) } catch {}` del propio guion se la traga —
@@ -1073,6 +1097,11 @@ function makeCtx(page, name) {
     },
 
     expect(desc, cond, detalle = "") {
+      // Cuenta ANTES de juzgar, o sea en las dos ramas: afirmar y fallar es
+      // afirmar. Si solo contara el ✔, un guion cuyos asertos salen todos
+      // rojos «no habría afirmado nada» y se le colgaría encima un segundo
+      // diagnóstico falso.
+      afirmaciones++;
       if (cond) console.log(`    ✔ ${desc}`);
       else {
         console.log(`    ✘ ${desc}${detalle ? ` — ${detalle}` : ""}`);
@@ -1086,6 +1115,9 @@ function makeCtx(page, name) {
       return file;
     },
   };
+  // El getter no basta por sí solo: un `Object.defineProperty` lo redefiniría.
+  // Con esto, la única vía para que el contador suba es `expect`.
+  Object.defineProperty(ctx, "afirmaciones", { configurable: false });
   return ctx;
 }
 
@@ -1492,10 +1524,18 @@ async function main() {
       continue;
     }
 
+    // El veredicto NO es `fallos.length === 0`: un verde exige haber afirmado
+    // algo (#639). Vive en `lib/veredictos.mjs` —con los dos ⊘ de arriba ya
+    // resueltos, que un ⊘ declarado sigue siendo ⊘— porque ahí lo mide un test
+    // de `nefan-core` sin levantar ni un navegador.
+    const veredicto = veredictoDeGuion({ fallos: ctx.fallos, afirmaciones: ctx.afirmaciones });
+    if (veredicto.fallos.length > ctx.fallos.length) {
+      console.log(`    ✘ ${veredicto.fallos[veredicto.fallos.length - 1]}`);
+    }
     resultados.push({
       nombre,
-      estado: ctx.fallos.length === 0 ? VERDE : ROJO,
-      fallos: ctx.fallos,
+      estado: veredicto.estado,
+      fallos: veredicto.fallos,
       motivo: null,
       censo,
       carga: cargaDelGuion,

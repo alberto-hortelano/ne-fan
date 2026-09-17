@@ -1,4 +1,4 @@
-/** Las TRECE exenciones del guardarraíl de gasto siguen siendo verdad (#295).
+/** Las exenciones del guardarraíl de gasto siguen siendo verdad (#295).
  *
  *  El guardarraíl invertido gatea por defecto y lo que se declara es la
  *  excepción: `export const sinMotor = "<motivo>"` para el guion que no le
@@ -21,15 +21,55 @@
  *   · `comenzar()`  — pulsa «Comenzar»: el bridge pide el tile de bootstrap al
  *     motor, que es la llamada cara del arranque.
  *   · `regenerarMundo()` — la pre-generación entera del mundo.
- *   · pulsar a mano los dos botones del título que arrancan la partida
- *     (un `click` de Playwright sobre `#ts-start` o `#ts-continue`) — el mismo
- *     acto sin el helper, que
- *     es como se esquivaría una regla que solo mirase los imports. Con una
- *     excepción declarada, y no por nombre: el guion que se trae SU PROPIO
- *     motor (`NEFAN_AI_SERVER` suyo + `?bridge=`) no puede gastar en el motor
- *     compartido — es el 20, que apunta a un puerto muerto a propósito.
- *  `nuevaPartida()` NO entra: abre el selector y elige mundo y estilo, y ahí
- *  todavía no se ha generado nada.
+ *   · pulsar a mano CUALQUIERA de los cinco botones del título que llegan a una
+ *     puerta de gasto — el mismo acto sin el helper, que es como se esquivaría
+ *     una regla que solo mirase los imports. Los cinco, medidos uno a uno
+ *     siguiendo su handler hasta quien cobra (2026-09-17, hallazgo H-2 de QA):
+ *       · `#ts-start` — «Comenzar» del editor (`editor-de-personaje.ts:151`) →
+ *         `elegir({kind:"new_game"})`, el tile de bootstrap.
+ *       · `#ts-gen-world` — `panel-de-generacion.ts:173` → `generarElMundo()` →
+ *         `narrative.generateGame`, la pre-generación entera. Es el botón que
+ *         pulsa el helper `regenerarMundo` (`qa/lib/sesion.mjs:478`), o sea que
+ *         sin esto la fila de arriba tapaba el import y dejaba abierto el click.
+ *       · `#ts-create` — «Crear mundo» (`crear-mundo.ts:65`) →
+ *         `narrative.createGame` (el motor desarrolla el mundo) y ADEMÁS
+ *         `generateGame` encadenado, porque `#ts-pregen` nace `checked`
+ *         (`crear-mundo.ts:58,111`).
+ *       · `#ts-style-run` — «Aplicar estilo ($…)» del panel de coste
+ *         (`plan-de-estilo.ts:131,221`) → `aplicarElEstilo()`, que lleva dentro
+ *         el comentario «A PARTIR DE AQUÍ YA SE PAGÓ».
+ *       · `#ts-complete` — «Generar imágenes» de subir-estilo
+ *         (`subir-estilo.ts:145,275`) → `POST /styles/{id}/complete` con
+ *         `confirm: true`.
+ *     Con una excepción declarada, y no por nombre: el guion que se trae SU
+ *     PROPIO motor (`NEFAN_AI_SERVER` suyo + `?bridge=`) no puede gastar en el
+ *     motor compartido — es el 20, que apunta a un puerto muerto a propósito.
+ *
+ *  Y lo que NO entra, porque la frontera es el GASTO y no el parecido. Los tres
+ *  se parecen mucho a los de arriba y por eso están medidos, no supuestos:
+ *   · `nuevaPartida()`: abre el selector y elige mundo y estilo, y ahí todavía
+ *     no se ha generado nada.
+ *   · **`#ts-apply-style`** — «Aplicar estilo (ver coste)»
+ *     (`panel-de-generacion.ts:176`). QA lo dio por comprador y NO lo es: su
+ *     handler llama a `mostrarPlanDeEstilo`, que solo PINTA el plan de coste
+ *     dentro de `#ts-style-plan`. Quien cobra es el `#ts-style-run` de ese
+ *     panel, y por eso el de la lista es ése. Prohibir aquí el que enseña el
+ *     precio sería exactamente el defecto que se acaba de arreglar, una talla
+ *     más pequeño — y dejaría fuera de juego al 97, que existe para leer ese
+ *     plan.
+ *   · `#ts-create-world` y `#ts-create-status`: se parecen a `#ts-create` hasta
+ *     en el prefijo y no gastan (el primero abre la pantalla, el segundo es un
+ *     hueco de texto). Por eso la regla exige la COMILLA de cierre: sin ella,
+ *     `#ts-create` se comía a los dos.
+ *   · `#ts-continue` — «Continuar →» del selector (`selector-de-mundo.ts:167`),
+ *     cuyo handler hace UNA cosa: `deps.ir({a:"editor"})` (`:344-365`). El
+ *     editor de personaje solo pide el censo local de hojas al dev server
+ *     (`fetch("/sprites/index.json")`, `editor-de-personaje.ts:76`): no toca el
+ *     motor por ningún camino. Este guion lo prohibió desde el día que nació
+ *     —la regla decía «los dos botones que arrancan la partida» y ya entonces
+ *     era falsa, porque ese botón nunca arrancó ninguna— y lo pagó el 116, un
+ *     exento legítimo en rojo durante dos días por un click inocuo (#633). Un
+ *     candado que afirma MÁS de lo que sujeta también miente.
  *
  *  Y de paso, dos comprobaciones que el runner solo hace sobre lo que ejecuta:
  *  que el motivo de cada exención sea una FRASE (no un `true`, no una cadena
@@ -44,11 +84,21 @@
  *  dos juntas siguen sin cubrir «guion exento + backend real + camino raro»:
  *  ese residuo se cierra borrando la excepción, no vigilándola.
  *
+ *  Y el residuo que ABRE estrechar la regla a `#ts-start` (#633): un exento que
+ *  algún día gaste DESDE el editor de personaje —hoy no hay por dónde, solo lee
+ *  el censo local de hojas— no lo vería este aserto, porque llega ahí sin pulsar
+ *  «Comenzar». Se cierra el día que el editor tenga un botón que encargue arte,
+ *  añadiéndolo a la regla con su medida, no ensanchándola por si acaso: eso es
+ *  justo lo que costó dos días de rojo.
+ *
  *  Probado en negativo: con un guion de pega que declara `sinMotor`, importa
  *  `comenzar` y pulsa `#ts-start`, los dos asertos del bloque 2 se ponen rojos
  *  nombrándolo; con `sinMotor = true`, el del bloque 1; con `export const
  *  gasta`, el del 3. Las cuatro salidas están en el qa.md de la tanda
- *  2026-08-29-el-banco-no-puede-mentir.
+ *  2026-08-29-el-banco-no-puede-mentir. Al estrechar la regla a `#ts-start`
+ *  (#633) se repitió el par que la delimita: un exento de pega que pulsa
+ *  `#ts-start` sin `NEFAN_AI_SERVER` sale ROJO nombrándolo, y otro que pulsa
+ *  solo `#ts-continue` sale VERDE.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -62,10 +112,19 @@ const DIR = dirname(fileURLToPath(import.meta.url));
 
 /** Los helpers de `qa/lib/sesion.mjs` que HACEN GENERAR al motor. */
 const HELPERS_CAROS = ["comenzar", "regenerarMundo"];
-/** El mismo acto sin helper: PULSAR los dos botones del título que arrancan
- *  partida. Se busca el click y no la cadena, para no cazar la mención en un
- *  comentario ni en esta misma línea. */
-const CLICK_CARO = /\.click\(\s*["']#ts-(start|continue)/;
+/** El mismo acto sin helper: PULSAR uno de los botones que gastan. Se busca el
+ *  click y no la cadena, para no cazar la mención en un comentario ni en esta
+ *  misma línea.
+ *
+ *  Cinco de los 42 ids `#ts-*` del cliente, no «los dos del título»: esa cuenta
+ *  era de un marco demasiado estrecho —el del editor de personaje— y es el
+ *  mismo error que #633 una talla más pequeño. Cuáles y por qué, en el docblock;
+ *  cada uno está seguido hasta quien cobra.
+ *
+ *  La COMILLA DE CIERRE no es adorno: `#ts-create` sin ella caza también a
+ *  `#ts-create-world` y `#ts-create-status`, que no gastan. La regla tiene que
+ *  ser exactamente tan ancha como la medida. */
+const CLICK_CARO = /\.click\(\s*["'`]#ts-(start|gen-world|create|style-run|complete)["'`]/;
 
 /** El valor de `export const sinMotor`, tal cual está escrito (sin importar el
  *  módulo: importar un guion tiene efectos —el 20 pide puertos al kernel en su
@@ -128,11 +187,17 @@ export default async function (ctx) {
   const aMano = exentos.filter((g) => CLICK_CARO.test(g.src));
   const sinMotorPropio = aMano.filter((g) => !/NEFAN_AI_SERVER/.test(g.src));
   ctx.expect(
-    "…y el exento que pulsa «Comenzar» (#ts-start/#ts-continue) se trae SU propio motor",
+    "…y el exento que pulsa uno de los cinco botones que gastan se trae SU propio motor",
     sinMotorPropio.length === 0,
     sinMotorPropio.map((g) => g.nombre).join(" · "),
   );
-  for (const g of aMano) ctx.log(`  ⚑ ${g.nombre} arranca partida contra su propio motor (revisión humana)`);
+  // La marca de revisión humana es para el que PASA el aserto: el que lo falla
+  // ya sale nombrado arriba, y decir de él que arranca «contra su propio motor»
+  // sería la misma clase de frase que este guion acaba de perder — afirmar más
+  // de lo que se sujeta, en un log que nadie vuelve a comprobar.
+  for (const g of aMano.filter((g) => !sinMotorPropio.includes(g))) {
+    ctx.log(`  ⚑ ${g.nombre} arranca partida contra su propio motor (revisión humana)`);
+  }
 
   // ── 3 · La marca directa no vuelve ───────────────────────────────────────
   const conGasta = guiones.filter((g) => /^export const gasta\b/m.test(g.src));
