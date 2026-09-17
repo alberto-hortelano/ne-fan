@@ -24,6 +24,7 @@ import { createTerrainCollider, PLAYER_RADIUS_M } from "@nefan-core/src/scene/te
 import { solidoBloquea, type SueloSolido } from "@nefan-core/src/simulation/salida-del-solido.js";
 import {
   aabbBloquea,
+  aabbOcupa,
   fronteraBloquea,
   type ObstaculoAabb,
   type PlanDeLosTiles,
@@ -102,6 +103,33 @@ export class CollisionSystem {
     if (fronteraBloquea(desde, hasta, PLAYER_RADIUS, this.tiles)) return true;
     if (solidoBloquea(desde, hasta, PLAYER_RADIUS, this.suelo)) return true;
     return aabbBloquea(desde, hasta, PLAYER_RADIUS, this.deps.getObstacles(), this.tiles);
+  }
+
+  /** ¿ESTÁ OCUPADO ESTE PUNTO? La pregunta SIN ORIGEN, y por eso su respuesta
+   *  no depende de dónde esté el jugador (#644).
+   *
+   *  `collidesAt` es una consulta de MOVIMIENTO: las tres fuentes son «salir
+   *  sí, entrar no», así que contestan que no por donde uno ya está. Eso es lo
+   *  correcto para mover a alguien y es falso como descripción del mundo, y el
+   *  banco lo estaba leyendo como si fuera lo segundo: el guion 91 sacó 46, 38
+   *  y 0 muestras libres de las mismas 121 con el mismo código —dos de esas
+   *  corridas en VERDE— porque el resultado dependía de dónde hubiera quedado
+   *  el jugador. Esto no se arregla aparcándolo entre sondas (eso es un
+   *  protocolo que hay que recordar en cada sitio, y el ejemplar que había lo
+   *  cumplía a medias): se arregla con una pregunta que no tiene origen que
+   *  olvidar.
+   *
+   *  DOS FUENTES, NO TRES, y se dice aquí en vez de dejarlo notar: el TERRENO
+   *  (el suelo de los colliders) y las CAJAS con su política, que son las que
+   *  tienen penetración. La FRONTERA del plano queda fuera a propósito — un
+   *  tile que no existe no está «ocupado», es mundo desconocido, y no tiene una
+   *  medida de cuánto se está metido en él. Consecuencia que hay que saber: a
+   *  menos de un radio del borde del mundo conocido, `collidesAt` bloquea y
+   *  esto contesta «libre». Lo que se pregunta es si HAY ALGO ahí, no si el
+   *  jugador podría ir. */
+  ocupadoEn(x: number, z: number, radio: number = PLAYER_RADIUS): boolean {
+    if (this.suelo.ocupado(x, z, radio)) return true;
+    return aabbOcupa({ x, z }, radio, this.deps.getObstacles(), this.tiles);
   }
 }
 

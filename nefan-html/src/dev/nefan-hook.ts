@@ -73,7 +73,16 @@ export interface DepsDelHook {
   titleScreen: TitleScreen;
   narrativeClient: NarrativeClient;
   session: { readonly facets: unknown };
-  collidesAt(x: number, z: number): boolean;
+  /** Las DOS consultas del sistema de colisión, y llegan juntas a propósito
+   *  (#644): `collidesAt` es «¿me frena ir ahí?» —de MOVIMIENTO, y por eso
+   *  depende de dónde esté el jugador— y `ocupadoEn` es «¿hay algo ahí?», sin
+   *  origen. Tenerlas separadas en dos deps invitaba a cablear una y olvidar la
+   *  otra, que es justo cómo el banco acabó preguntando la de movimiento para
+   *  describir el mundo. */
+  collision: {
+    collidesAt(x: number, z: number): boolean;
+    ocupadoEn(x: number, z: number): boolean;
+  };
   dialogoAbierto(): boolean;
   /** Id del sistema de combate de la sesión y su catálogo: los reescribe cada
    *  partida `ui/hud-de-combate.ts`, así que llegan como preguntas y no como
@@ -122,7 +131,16 @@ export function instalarNefanHook(deps: DepsDelHook): void {
     get tileEpisodios() { return deps.tileLedger.debugState(); },
     /** Libro de skins: qué personajes ha pedido la PARTIDA (y con qué rol). */
     get skins() { return deps.characterSprites.debugState(); },
-    probeCollide(x: number, z: number) { return deps.collidesAt(x, z); },
+    probeCollide(x: number, z: number) { return deps.collision.collidesAt(x, z); },
+    /** ¿HAY ALGO EN ESTE PUNTO? La hermana de `probeCollide` que NO tiene
+     *  origen (#644): `collidesAt` es una consulta de MOVIMIENTO y contesta
+     *  «no» por donde el jugador ya está, así que un guion que barra puntos
+     *  mientras el jugador anda lee un mundo distinto en cada corrida — el 91
+     *  midió 46, 38 y 0 muestras libres de las mismas 121, y dos de esas
+     *  corridas salieron verdes. Un barrido pregunta por aquí; `probeCollide`
+     *  se queda para lo que de verdad es movimiento («¿me frena ir ahí?»).
+     *  Terreno y cajas, no la frontera del plano: ver `ocupadoEn`. */
+    probePoint(x: number, z: number) { return deps.collision.ocupadoEn(x, z); },
     /** UI de juego: acciones ofrecidas y tema activo (bench/E2E). */
     ui: {
       actions: () => ({
@@ -193,10 +211,10 @@ export function instalarNefanHook(deps: DepsDelHook): void {
         combatSystem: deps.combatSystemId(),
         attackCatalog: deps.attackCatalog().map((a) => a.id),
         blocked: {
-          n: deps.collidesAt(deps.playerPos.x, deps.playerPos.z - 0.5),
-          s: deps.collidesAt(deps.playerPos.x, deps.playerPos.z + 0.5),
-          w: deps.collidesAt(deps.playerPos.x - 0.5, deps.playerPos.z),
-          e: deps.collidesAt(deps.playerPos.x + 0.5, deps.playerPos.z),
+          n: deps.collision.collidesAt(deps.playerPos.x, deps.playerPos.z - 0.5),
+          s: deps.collision.collidesAt(deps.playerPos.x, deps.playerPos.z + 0.5),
+          w: deps.collision.collidesAt(deps.playerPos.x - 0.5, deps.playerPos.z),
+          e: deps.collision.collidesAt(deps.playerPos.x + 0.5, deps.playerPos.z),
         },
       }),
       /** `skinPrompt` es con QUÉ se pinta al NPC: su `description` (la
@@ -254,7 +272,9 @@ export function instalarNefanHook(deps: DepsDelHook): void {
       // Panel de dev (#dev-status): los benches E2E pueden leer/conducir su
       // estado (setPainting/recordGeneration) sin tocar píxeles.
       devPanel: deps.devPanel,
-      probeCollide: (x: number, z: number) => deps.collidesAt(x, z),
+      probeCollide: (x: number, z: number) => deps.collision.collidesAt(x, z),
+      /** La consulta de PUNTO, sin origen (#644). Ver la gemela de arriba. */
+      probePoint: (x: number, z: number) => deps.collision.ocupadoEn(x, z),
       fps: () => deps.fpsRenderer.debugState(),
       /** El RELOJ DE SIM del loop: `sim` en segundos de mundo y `frames` del
        *  propio loop. Es lo que permite a un guion presupuestar en la escala en

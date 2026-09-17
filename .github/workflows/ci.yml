@@ -153,19 +153,25 @@ jobs:
   # elige el kernel, lo matan por PID y se ponen ROJOS por sí solos. Hasta esta
   # tanda el CI no tocaba `qa/` (cero menciones), y el 2026-09-05 uno de esos
   # candados llevaba un día rojo en `main` sin que nadie lo supiera. Un paso por
-  # ejecutable, para que el rojo tenga nombre. Lo que NO entra, y por qué, está
-  # en `qa/README.md` («Lo que corre el CI»): los 70 guiones de navegador y
-  # `bateria-`/`esperas-` (spawnean `qa/run.mjs`: preset + Chromium),
-  # `fake-enruta-por-pathname` (su observable lee sprite sheets GENERADOS,
-  # gitignored: rojo en un clon limpio) y los tres que levantan asset-store o
-  # sprite-forge (`el-arte-`, `el-indice-`, `perfil-`: sin cronometrar). Y una
-  # regla que la tanda E (2026-09-16) tuvo que aprender mirando la lista: un
-  # ejecutable headless NUEVO entra AQUÍ el día que nace, o no lo corre nadie —
-  # tres llevaban fuera sin figurar en ninguna excepción.
+  # ejecutable, para que el rojo tenga nombre.
+  #
+  # LA REGLA QUE LA TANDA E TUVO QUE APRENDER MIRANDO ESTA LISTA —un ejecutable
+  # headless NUEVO entra AQUÍ el día que nace, o no lo corre nadie— YA NO ES
+  # PROSA (#645, tanda H): la sujeta
+  # `nefan-core/test/candados-headless-totalidad.test.ts`, que exige que todo
+  # `qa/*.mjs` esté en un paso de este job, o caiga por el GRAFO (su import
+  # alcanza `playwright-core`, o spawnea `qa/run.mjs`: preset + Chromium), o
+  # esté en `nefan-core/data/contract/candados-headless.json` con su motivo.
+  # La lista de excepciones en prosa que vivía aquí se retira ENTERA en vez de
+  # corregirse, y no por pereza: decía «los TRES que levantan asset-store o
+  # sprite-forge» y eran cuatro (`qa/sprites-sin-servicio.mjs:300` arranca
+  # sprite-forge). Dos listas de lo mismo divergen; una sola falla.
   candados-headless:
     runs-on: ubuntu-latest
-    # ~2 min medidos en local (05-09) para los ocho pasos. Un candado que se
-    # quede esperando un puerto no puede comerse el runner seis horas.
+    # El timeout no es un presupuesto: es que un candado que se quede esperando
+    # un puerto no puede comerse el runner seis horas. El reloj medido de cada
+    # paso está en su propio comentario, que es la única cifra que alguien
+    # actualiza al tocarlo.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -195,9 +201,10 @@ jobs:
       # `ANTHROPIC_BASE_URL`: por eso este job instala lo que `ai-server` no
       # necesita. La clave de API es falsa; no hay proveedor al que llamar.
       - run: pip install fastapi uvicorn anthropic httpx pillow numpy
-      # #235: un NPC con `role` y `description` atraviesa ai_server por HTTP y
-      # llega al wire del bridge con los dos campos; rojo si una de las dos
-      # copias de `validate_scene_response` desaparece.
+      # (2 s) #235: un NPC con `role` y `description` atraviesa ai_server por
+      # HTTP y llega al wire del bridge con los dos campos; rojo si una de las
+      # dos copias de `validate_scene_response` desaparece. Necesita python3 con
+      # `uvicorn` y `anthropic`, y el `dist` del core.
       - run: node qa/el-npc-cruza-ai-server-con-role-y-description.mjs
       # #453: el State API REAL (bridge + motor falso, disco efímero) rebota con
       # 409 cada mutadora del contrato sin partida, muta con 200 en la sesión
@@ -316,3 +323,13 @@ jobs:
       # esta misma lista. Solo necesita el `dist` del core, que este job ya
       # construye.
       - run: node qa/el-viaje-no-mete-a-nadie-dentro.mjs
+      # (0,2 s) #644: la consulta de PUNTO no tiene origen. Comprueba el CABLE
+      # (`probePoint` → `ocupadoEn` → `suelo.ocupado` ∪ `aabbOcupa`, y que no
+      # vuelva a apoyarse en `collidesAt`), la equivalencia con la consulta de
+      # movimiento desde un origen libre sobre 48.387 puntos de las tres
+      # fixtures, y el defecto REPRODUCIDO: la misma línea de 121 muestras
+      # contada desde cuatro orígenes da cuatro números con `collidesAt` y uno
+      # solo con `ocupadoEn`. Este paso lo PIDIÓ el candado de #645 —el
+      # ejecutable nació fuera del job y `npm test` se puso rojo con su
+      # nombre—, que es exactamente para lo que se escribió.
+      - run: node qa/la-consulta-de-punto-no-tiene-origen.mjs

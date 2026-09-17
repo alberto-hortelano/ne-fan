@@ -11,7 +11,7 @@
  *
  *  Se mide con el COLLIDER REAL del cliente, no con la máscara del validador:
  *  son dos cosas distintas y la diferencia es justo el residuo que dejó la
- *  tanda («celda pisable» no es «aquí cabe un cuerpo»). `probeCollide` sondea
+ *  tanda («celda pisable» no es «aquí cabe un cuerpo»). `probePoint` sondea
  *  con el radio del JUGADOR (0,4 m) y el cuerpo que hay que medir es el del
  *  NPC (0,5), así que se compone: la colisión bloquea por SOLAPE del AABB, y
  *  el AABB de radio 0,5 centrado en p es EXACTAMENTE la unión de los cuatro
@@ -59,11 +59,24 @@ export const aisla = ["saves"];
 const FIXTURES = ["robledo_tile", "puerto_tile", "zorder_test"];
 
 /** El cuerpo del NPC (0,5 m de radio) compuesto de cuatro sondeos del cuerpo
- *  del jugador (0,4). Vive en la página porque `probeCollide` es del cliente. */
+ *  del jugador (0,4). Vive en la página porque la colisión es del cliente.
+ *
+ *  PREGUNTA POR `probePoint` Y NO POR `probeCollide` (#644): la de movimiento
+ *  contesta «libre» por donde el jugador ya está —«salir sí, entrar no»—, y
+ *  aquí el jugador está donde lo dejó la fixture que se acaba de cargar. Si su
+ *  spawn cayera dentro de un sólido, «el NPC tiene sitio» saldría verde sin
+ *  mirar nada. La de PUNTO no tiene origen que olvidar.
+ *
+ *  Y LA RAZÓN MÁS FUERTE ESTÁ ABAJO, en el aserto del spawn del JUGADOR: con
+ *  `probeCollide` preguntaba por la posición del jugador **estando el jugador
+ *  ahí**, y eso vale `false` POR CONSTRUCCIÓN (es lo que mide
+ *  `qa/la-puerta-de-la-reaparicion.mjs`). O sea que «el jugador no nace dentro
+ *  de un sólido» era literalmente un verde que no podía ponerse rojo, dijera lo
+ *  que dijera el juego. Con `probePoint` mide. Lo encontró la QA de #644. */
 const CUERPOS_EN_LA_PAGINA = () => {
   const libre = (x, z) => {
     for (const dx of [-0.1, 0.1]) {
-      for (const dz of [-0.1, 0.1]) if (window.__nefan.probeCollide(x + dx, z + dz)) return false;
+      for (const dz of [-0.1, 0.1]) if (window.__nefan.probePoint(x + dx, z + dz)) return false;
     }
     return true;
   };
@@ -72,7 +85,7 @@ const CUERPOS_EN_LA_PAGINA = () => {
     label: n.label,
     pos: [Number(n.pos.x.toFixed(2)), Number(n.pos.z.toFixed(2))],
     /** Lo que miraba el validador ANTES de la tanda: el punto sin dimensión. */
-    puntoLibre: !window.__nefan.probeCollide(n.pos.x, n.pos.z),
+    puntoLibre: !window.__nefan.probePoint(n.pos.x, n.pos.z),
     /** Lo que hay que mirar: ¿cabe el cuerpo de 1 m de ancho? */
     cuerpoLibre: libre(n.pos.x, n.pos.z),
   }));
@@ -122,10 +135,12 @@ export default async function (ctx) {
   );
 
   // El spawn del jugador, con su propio cuerpo (0,4): es la otra mitad de
-  // «jugador o NPC» del issue.
+  // «jugador o NPC» del issue. Por `probePoint` y no por `probeCollide`: la de
+  // movimiento, preguntada por donde el jugador ESTÁ, vale false siempre
+  // (#644).
   const jugador = await ctx.page.evaluate(() => {
     const p = window.__nefan.state().pos;
-    return { pos: [Number(p.x.toFixed(2)), Number(p.z.toFixed(2))], libre: !window.__nefan.probeCollide(p.x, p.z) };
+    return { pos: [Number(p.x.toFixed(2)), Number(p.z.toFixed(2))], libre: !window.__nefan.probePoint(p.x, p.z) };
   });
   ctx.expect(`el jugador no nace dentro de un sólido (${jugador.pos})`, jugador.libre);
 

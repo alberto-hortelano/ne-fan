@@ -73,31 +73,22 @@ escriben en el árbol y restauran, y `contrato-` —que se niega sobre SUS fiche
 ellos. Los cuatro que escriben restauran también con Ctrl+C (SIGINT/SIGTERM → 130/143, misma
 limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella a medias sin eso).
 
-| Dentro | Tiempo | Qué necesita del runner |
-|---|---|---|
-| `el-npc-cruza-ai-server-con-role-y-description.mjs` | 2 s | python3 con `uvicorn`+`anthropic`, `dist/` del core |
-| `el-state-api-no-muta-sin-partida.mjs` | 2,4 s | tsx y `dist/` del core; levanta bridge + motor falso en disco efímero (#453) |
-| `mutacion-reparto-en-lotes.mjs --solo-vigentes` | 6,5 s | tsx; escribe y restaura la huella y `reports/` |
-| `el-selector-ve-lo-que-la-bateria-abre.mjs` | 2,6 s | `typescript` de nefan-core; solo lee |
-| `el-borrado-pregunta-a-antes.mjs` | ~10 s | git y el `node_modules` de nefan-core (`tsx`, `typescript`); clona superficial en `qa/.tmp/` y no toca el árbol (#471) |
-| `el-cierre-ve-el-node-a-saltos.mjs` | ~10 s | git y el `node_modules` de nefan-core (`tsx`, `typescript`); clona superficial en `qa/.tmp/` y no toca el árbol (#359) |
-| `mutacion-candados-en-negativo.mjs` | 36 s | tsx; escribe y restaura `mutacion-huella.ts` y la huella |
-| `mutacion-cableado-en-negativo.mjs` | 26 s | el tag `mutacion-ultima` y su historia (`fetch-depth: 0`); escribe y restaura |
-| `mutacion-la-septima-en-los-dos-sentidos.mjs` | 0,7 s | tsx; solo lee (su base de ensayo vive en el temporal del sistema, no en `reports/`) |
-| `contrato-candados-en-negativo.mjs` | 3,5 s | tsx + `python3 -m unittest`; exige SUS ficheros limpios |
-| `el-ledger-de-gasto-no-lo-escribe-la-suite.mjs` | 45 s | python3 con las deps de la suite de ai_server |
-| `los-dos-gates-rebotan-igual.mjs` | 0,2 s | tsx (el zod) y python3 con las deps de ai_server (el saneador) |
-| `el-viaje-no-mete-a-nadie-dentro.mjs` | 0,18 s | solo el `dist` del core; conduce el handler real del bridge sobre las fixtures del árbol, por los DOS caminos del spawn (#616) |
+**Qué entra y qué no YA NO ES PROSA** (#645, tanda H): lo canda
+`nefan-core/test/candados-headless-totalidad.test.ts`. Todo `qa/*.mjs` está en un paso del job, o
+cae por el GRAFO —su grafo de imports alcanza `playwright-core`, o spawnea `qa/run.mjs`, que es
+preset + Chromium—, o está en `nefan-core/data/contract/candados-headless.json` con su motivo
+escrito. Aquí había dos tablas y **las dos mentían**: «Dentro» enumeraba 13 filas para 18 pasos y
+«Fuera» 20 de 21, y el texto hablaba de «los 116 guiones» cuando eran 143. Se borran enteras en vez
+de corregirse, porque dos listas de lo mismo divergen y una sola falla: el tiempo medido de cada
+paso vive en su comentario del yml —donde lo lee quien lo cambia— y los nueve motivos de exención
+viven en el JSON (dos movidos de aquí tal cual, siete reescritos desde dos filas que los metían en
+el mismo saco; el `_comment` del contrato lo dice). Un ejecutable que nazca fuera pone `npm test` rojo con su nombre.
 
-| Fuera | Por qué |
-|---|---|
-| `qa/run.mjs` y los 116 guiones de `qa/guiones/` | preset `e2e-sin-creditos` + Chromium: corrida local. Un job de navegador en CI es programa aparte, con su reloj medido antes |
-| `bateria-candados-en-negativo.mjs`, `esperas-candados-en-negativo.mjs` | parecen headless y **no lo son**: spawnean `qa/run.mjs` (preset + Playwright) |
-| `bajo-carga.mjs` | igual: spawnea `qa/run.mjs` DOS veces (control y frenada) y la frenada tarda por definición. Es una medida que se pide a mano sobre un guion concreto, no una puerta de PR |
-| `comparar-el-criterio-en-negativo.mjs` | necesita `nefan-core/reports/mutation-base/` — los 55 informes de una corrida real, **141 MB y gitignorados**. En CI habría que bajarlos con `gh run download <run-id>` en cada PR, y el artefacto caduca: el día que expire, el job se pondría rojo por un motivo que no es del código. Corrida LOCAL, y se niega diciendo cómo conseguir la base |
-| `fake-enruta-por-pathname.mjs` | su observable (`POST /skin_sprite_sheet?x=1 → 200`) depende de que el fake encuentre `nefan-html/public/sprites/paladin/idle/frontal_8/meta.json`, que es arte GENERADO y gitignored: en un clon limpio contesta 500 y el guion sale rojo (medido el 05-09: verde en el checkout del usuario, rojo en un worktree recién clonado). Entra el día que la ruta se pruebe sin leer del disco |
-| `el-arte-de-personaje-…`, `el-indice-del-store-…`, `perfil-de-repintado-…`, `sprites-sin-servicio` | levantan asset-store, remote-gen o sprite-forge (Python con las deps de `ai_server`, elegido por `qa/lib/python.mjs`); nadie los ha cronometrado. Candidatos siguientes, con reloj medido antes |
-| `guardarrail-sin-creditos`, `dos-corridas`, `fixtures-sin-bridge`, `las-fixtures-solo-chocan-con-el-agua`, `captura-de-fixture`, `capturar-portadas`, `presupuesto-de-volumenes`, `presets`, `no-mata-lo-ajeno`, `parar-clasifica-los-nueve-puertos` | conducen el runner, un Chromium o `start.sh` sobre los puertos del catálogo de la máquina |
+Lo que ese candado **no** cubre está escrito en su cabecera y conviene saberlo antes de fiarse: no
+ve al que abra un navegador por un camino que no sea `playwright-core`, no comprueba que un paso
+EJERZA algo (salir 0 sin medir pasa), y no alcanza a `qa/guiones/*.mjs`, que no son ejecutables
+sueltos sino carga del runner — por eso el guion 39, que no abre navegador porque solo lee ficheros,
+sigue fuera del censo, y es justo el que pasó dos días rojo sin que nadie lo corriera.
 
 Y hay una tercera mitad que tampoco necesita el job, porque no abre navegador ni proceso: las
 ANCLAS de los candados en negativo (`test/las-anclas-de-los-candados.test.ts`, #486) — que cada
