@@ -7,6 +7,7 @@ import {
   broadcastScene,
   fireMapTriggers,
   type BridgeContext,
+  type SitioDeAparicion,
 } from "../context.js";
 import { resolveExitEdge } from "../../src/world-map/edges.js";
 import { resolveTravelAnchor } from "../../src/world-map/place-anchor.js";
@@ -89,6 +90,12 @@ export async function handlePlayerEnteredPlace(
 
 /** DÓNDE APARECE quien viaja, y los TRES desenlaces que tiene esa pregunta.
  *
+ *  Los dos primeros son `SitioDeAparicion` (`bridge/context.ts`) y son los
+ *  únicos que `broadcastScene` acepta. El tercero vive SOLO aquí, y ese corte
+ *  es el candado: no se puede difundir sin haberlo descartado, porque no
+ *  compila. Lo que el tipo no impide —escribir `sin ancla` teniendo un
+ *  `sin sitio`— está dicho en el docblock de `SitioDeAparicion`.
+ *
  *  Son tres y no dos, y colapsarlos era la mitad de ARRIBA de #616:
  *  `resolvePlaceTarget` devuelve el centro del `anchor.rect` del lugar **sin
  *  una sola consulta de solidez**, y el cliente teletransporta ahí
@@ -113,10 +120,7 @@ export async function handlePlayerEnteredPlace(
  *                   haber progreso numérico. Es FAIL-LOUD y hay que decirlo:
  *                   el candidato crudo NO vale como respaldo, porque es
  *                   justamente el punto del que no se sale. */
-type DondeAparecer =
-  | { de: "punto"; spawn: { x: number; z: number } }
-  | { de: "sin ancla" }
-  | { de: "sin sitio" };
+type DondeAparecer = SitioDeAparicion | { de: "sin sitio" };
 
 function dondeAparecer(ctx: BridgeContext, placeId: string): DondeAparecer {
   const punto = resolvePlaceTarget(ctx.narrative, placeId);
@@ -177,13 +181,14 @@ async function difundirPlaceRealizado(
   // #395), en el primer `input` tras el spawn que se pide abajo.
   ctx.narrative.recordSceneLoaded(sceneId, scene);
   await ctx.narrative.save();
-  // El spawn se PIDE al cliente (dueño de la posición).
-  const spawn = donde.de === "punto" ? donde.spawn : undefined;
-  broadcastScene(ctx, sceneId, scene, undefined, { spawn, source: "cache" });
+  // El spawn se PIDE al cliente (dueño de la posición). `donde` entra ENTERO:
+  // aquí ya está estrechado a `SitioDeAparicion` por la guarda de arriba, y
+  // quitarla no compila (#616, H1 de QA).
+  broadcastScene(ctx, sceneId, scene, undefined, { spawn: donde, source: "cache" });
   // Los triggers se disparan AQUÍ; sin esto, el activateByPosition del
   // siguiente sim_input (el jugador acaba de aterrizar en el anchor) los
   // volvería a disparar.
-  if (spawn) ctx.posTracking.placeId = placeId;
+  if (donde.de === "punto") ctx.posTracking.placeId = placeId;
   await fireMapTriggers(ctx, prevPlaceId, placeId);
   return true;
 }
@@ -262,7 +267,7 @@ async function runPlaceTravel(
         if (donde.de === "sin sitio") {
           throw new Error(`${FALLO_SIN_SITIO_DONDE_APARECER}: ${place.name}`);
         }
-        return donde.de === "punto" ? donde.spawn : undefined;
+        return donde;
       },
     });
   } catch (err) {

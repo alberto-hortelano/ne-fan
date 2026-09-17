@@ -9,6 +9,7 @@ import {
   npcSync,
   sessionChangedError,
   type BridgeContext,
+  type SitioDeAparicion,
 } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { validateScene, type TileValidationContext } from "../../src/scene/scene-validate.js";
@@ -177,7 +178,11 @@ export async function runTileGeneration(
     /** Nombre del LUGAR al que se viaja, para el mensaje de error que lee el
      *  jugador. Sin él, un viaje fallido le enseñaba coordenadas de tile. */
     destino?: string;
-    spawnAt?: () => { x: number; z: number } | undefined;
+    /** Devuelve un sitio YA MIRADO, no un punto crudo: el tercer desenlace
+     *  («hay punto y no hay dónde ponerse») no cabe en `SitioDeAparicion`, así
+     *  que quien lo produzca tiene que resolverlo antes de volver de aquí — o
+     *  no compila (#616). */
+    spawnAt?: () => SitioDeAparicion;
   } = {},
 ): Promise<SceneGenOutcome> {
   const key = tileKey(tx, ty);

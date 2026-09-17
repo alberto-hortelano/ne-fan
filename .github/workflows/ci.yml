@@ -305,11 +305,14 @@ jobs:
       # necesitan rodear porque el eje de menor penetración da a un tile que no
       # existe. Ese 126 lo mide y no lo afirma.
       - run: node qa/los-candados-miden-el-mundo-del-cliente.mjs
-      # (0,2 s) #616, mitad de ARRIBA: el viaje por «Salidas» no vuelve a
+      # (0,18 s) #616, mitad de ARRIBA: el viaje por «Salidas» no vuelve a
       # difundir un punto de aparición que nadie ha mirado. Conduce el handler
       # REAL del bridge (`handlePlayerEnteredPlace`) con el proveedor de
       # colisión de producción sobre los 13 `building` de las fixtures, que hoy
-      # están ocupados en su centro 13 de 13. Entra aquí el día que nace, que es
-      # la regla que la tanda E aprendió mirando esta misma lista. Solo necesita
-      # el `dist` del core, que este job ya construye.
+      # están ocupados en su centro 13 de 13, y por los DOS caminos del spawn:
+      # el lugar ya realizado y el viaje que GENERA el tile (el segundo lo pidió
+      # H2 de la QA, midiendo que sin él media PR se revertía en verde). Entra
+      # aquí el día que nace, que es la regla que la tanda E aprendió mirando
+      # esta misma lista. Solo necesita el `dist` del core, que este job ya
+      # construye.
       - run: node qa/el-viaje-no-mete-a-nadie-dentro.mjs

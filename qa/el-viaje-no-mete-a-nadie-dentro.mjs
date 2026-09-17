@@ -40,10 +40,17 @@
  *       ni escena ni spawn. Un spawn mudo —escena nueva, `spawn: undefined`—
  *       deja al jugador en el tile viejo mirando el de otro sitio sin que nada
  *       se lo diga, que es el cuelgue del #210 con otro traje.
+ *    4. EL OTRO CAMINO DEL SPAWN: el viaje que GENERA el tile (`spawnAt`), con
+ *       el motor afinando el `anchor.rect` sobre el edificio que acaba de
+ *       declarar. Nació de **H2 de la QA de G2**: los bloques 1-3 solo montan
+ *       lugares YA REALIZADOS, así que con ese segundo sitio revertido salían
+ *       los tres VERDES y la batería entera también — media PR se podía
+ *       revertir sin que ningún guion ejecutable dijera nada.
  *
  *  ## Contrato de salida (es un CANDADO)
  *
- *    0  el viaje deja a los 13 fuera de la piedra, y el que no puede lo dice
+ *    0  el viaje deja a los 13 fuera de la piedra por sus DOS caminos, y el
+ *       que no puede lo dice
  *    1  o el bridge volvió a difundir un punto que nadie ha mirado, o el
  *       control dejó de medir (si los 13 centros salen libres, o el mundo
  *       cambió o la fixture dejó de tener edificios: mirar eso ANTES de tocar
@@ -55,7 +62,14 @@
  *    QA_SIN_SITIO=1 node qa/el-viaje-no-mete-a-nadie-dentro.mjs
  *      juzga el centro CRUDO de `resolvePlaceTarget` —la regla de ayer,
  *      escrita aquí y no en el árbol— en vez del spawn que difunde el bridge
- *      → **13 rojos, exit 1**.
+ *      → **16 rojos, exit 1**: los 13 edificios, los dos agregados y el del
+ *      bloque 4 (el tile recién generado).
+ *
+ *  Y contra el ÁRBOL, revirtiendo cada sitio del bridge por separado a la
+ *  regla de ayer (escrita para que compile, porque la cruda ya no compila:
+ *  `SitioDeAparicion` no admite el tercer desenlace) y recompilando `dist`:
+ *  `:111` → **22 asertos rojos**; `:181` → **1 rojo, el del bloque 4**; los
+ *  dos → **23**. Antes del bloque 4, `:181` salía exit 0.
  *
  *  Sin navegador, sin stack y sin créditos: `nefan-core/dist`, las tres
  *  fixtures del árbol y aritmética. Corre en el job `candados-headless`.
@@ -99,6 +113,17 @@ const {
   GameStore, GameSimulation, loadConfig, MapTriggerEvaluator, SceneGenQueue, createWorldClaim,
 } = mod;
 
+/** Espera a que la cola de generación entregue algo. El viaje a un lugar sin
+ *  realizar se ENCOLA, así que el handler vuelve antes de que haya escena. */
+async function esperarA(cond, ms = 5000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (cond()) return true;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  return false;
+}
+
 const SIN_SITIO = process.env.QA_SIN_SITIO === "1";
 const FIXTURES = ["robledo_tile", "puerto_tile"];
 /** La puerta de al lado, no el otro barrio: el desplazamiento del spawn es la
@@ -131,6 +156,18 @@ function sesionConElLugarEn(fixture, entity) {
   const crudo = JSON.parse(
     readFileSync(path.join(RAIZ, "nefan-core/data/scenes", `${fixture}.json`), "utf8"),
   );
+  // El `place_id` NO es decoración, y su ausencia hacía VERDE POR CONSTRUCCIÓN
+  // el aserto «el lugar no queda ACTIVO» del bloque 3 (H3 de la QA de G2):
+  // `recordSceneLoaded` resuelve `placeId = scene.place_id ?? sceneId`, y sin
+  // el campo salía `tile_0_0`, que no es un lugar del mapa — así que jamás
+  // llamaba a `setActivePlace` y el aserto no podía ponerse rojo ni con la
+  // guarda movida después del registro. Con el campo puesto, activar es
+  // exactamente lo que haría un `recordSceneLoaded` prematuro.
+  //
+  // El orden importa: la escena se registra ANTES de que el lugar exista en el
+  // mapa, así que ese primer registro no lo activa (es el arranque, no el
+  // viaje). Lo que active el lugar tiene que ser el handler, y solo él.
+  crudo.place_id = "destino";
   const narrative = new NarrativeState(new MemorySessionStorage());
   narrative.startNewSession("qa616");
   narrative.recordSceneLoaded("tile_0_0", expandScenePrimitives(crudo));
@@ -156,13 +193,18 @@ function sesionConElLugarEn(fixture, entity) {
  *  `world`, `store`/`sim` (el combate que viaja con la escena) y las dos
  *  puertas de difusión. Si algún día lee más, esto revienta con su `TypeError`,
  *  que es la respuesta correcta. */
-function bridgeDe(narrative, { sinSalida = false } = {}) {
+function bridgeDe(narrative, { sinSalida = false, generateScene = null } = {}) {
   const store = new GameStore();
   const sim = new GameSimulation(combatConfig, store, 12345);
   const difundidos = [];
   const provider = createSimCollisionProvider(narrative);
   const ctx = {
     sim, store, combatConfig, narrative,
+    // Solo lo necesita el bloque 4 (el viaje que GENERA). El `gamesDir` real
+    // porque `attachWorldVocabulary` lo lee; sin él avisa y sigue, pero el
+    // aviso ensuciaría el bloque 3, que cuenta avisos.
+    gamesDir: path.join(RAIZ, "nefan-core/data/games"),
+    aiClient: { generateScene: generateScene ?? (async () => ({ ok: false, error: "este bloque no genera" })) },
     // El mundo sin salida del bloque 3: la consulta de PUNTO dice «ocupado»
     // siempre, que es lo único que hace `null` a `sitioParaAparecer`.
     // Alcanzarlo con geometría de verdad pide 160 m de sólido continuo (25
@@ -284,6 +326,80 @@ console.log("\n3 · UN VIAJE SIN SITIO LO DICE, Y NO DIFUNDE UN SPAWN MUDO");
   );
   ok(avisos.length > 0, "el motivo técnico queda en el log del bridge",
     avisos[0]?.slice(0, 110) ?? "sin avisos");
+}
+
+// ── 4 · El OTRO camino del spawn: el viaje que GENERA el tile ────────────────
+
+console.log("\n4 · EL VIAJE QUE GENERA EL TILE TAMPOCO DEJA A NADIE DENTRO (`spawnAt`)");
+{
+  // H2 de la QA de G2, y es el hallazgo que obliga a este bloque: con el sitio
+  // `:181` (`spawnAt`) revertido, los bloques 1-3 seguían VERDES y la batería
+  // entera también — la mitad del arreglo se podía revertir sin que ningún
+  // guion ejecutable dijera nada. Los bloques de arriba solo montan lugares YA
+  // REALIZADOS, así que no pasan por ahí ni una vez.
+  //
+  // El banco tampoco puede verlo, y está medido: los DOS rects que ancla el
+  // motor falso (`BOOTSTRAP_PLACE_RECT` y `ANCHORED_PLACE_RECT`) caen en
+  // hueco, así que ningún viaje-que-genera del bench aterriza sobre un macizo.
+  const entity = edificiosDe("robledo_tile").find((e) => e.id === "casa_concejo");
+  const rect = [entity.cell[0], entity.cell[1], entity.footprint[0], entity.footprint[1]];
+
+  const narrative = new NarrativeState(new MemorySessionStorage());
+  narrative.startNewSession("qa616gen");
+  // Campo abierto en el tile de partida: lo que se mide es el tile que se
+  // GENERA, y un origen con geometría metería ruido en el rayo del anclaje.
+  narrative.recordSceneLoaded("tile_0_0", expandScenePrimitives({
+    tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", place_id: "origen",
+    scene_description: "el claro de partida", biome: "grass", ground: [], entities: [],
+  }));
+  narrative.worldMap.upsertPlace({ id: "origen", kind: "landmark", parent_id: null, name: "El Claro" });
+  narrative.worldMap.upsertPlace({ id: "forja", kind: "site", parent_id: null, name: "La Forja" });
+  narrative.worldMap.addLink({ from: "origen", to: "forja", kind: "path", edge: "east" });
+  narrative.worldMap.setActivePlace("origen");
+
+  // EL MOTOR, como el de verdad: declara el edificio Y afina el `anchor.rect`
+  // del lugar encima de él con `map_upsert_place` MIENTRAS genera (#408). Es
+  // exactamente lo que #465 quiere que haga el motor real, y lo que convierte
+  // el estado sin salida de latente en rutinario.
+  const elMotorGenera = async () => {
+    narrative.worldMap.upsertPlace({
+      id: "forja", kind: "site", parent_id: null, name: "La Forja",
+      anchor: { tx: 1, ty: 0, rect },
+    });
+    return {
+      ok: true,
+      scene: {
+        biome: "grass", scene_description: "la forja al borde del camino", ground: [],
+        entities: [{ ...entity, id: "nave_de_la_forja" }],
+      },
+    };
+  };
+
+  const { ctx, difundidos, provider } = bridgeDe(narrative, { generateScene: elMotorGenera });
+  const warn = console.warn;
+  console.warn = () => {};
+  let llego;
+  try {
+    await handlePlayerEnteredPlace({ type: "player_entered_place", placeId: "forja" }, ctx);
+    llego = await esperarA(() =>
+      difundidos.some((m) => m.type === "narrative_status" && (m.phase === "ready" || m.phase === "error")));
+  } finally {
+    console.warn = warn;
+  }
+
+  ok(llego, "el viaje entrega: el tile se generó y se difundió");
+  const ready = difundidos.find((m) => m.type === "narrative_status" && m.phase === "ready");
+  const centro = resolvePlaceTarget(narrative, "forja");
+  const ocupado = centro ? provider.ocupado(centro.x, centro.z, PLAYER_RADIUS_M) : false;
+  ok(ocupado, "CONTROL · el centro del rect que afinó el motor está OCUPADO",
+    centro ? `(${centro.x.toFixed(2)}, ${centro.z.toFixed(2)})` : "sin punto");
+  const spawn = SIN_SITIO ? centro : ready?.spawn;
+  const libre = !!spawn && !provider.ocupado(spawn.x, spawn.z, PLAYER_RADIUS_M);
+  const d = spawn && centro ? Math.hypot(spawn.x - centro.x, spawn.z - centro.z) : Infinity;
+  ok(libre, "y el `ready.spawn` del tile RECIÉN GENERADO está libre",
+    spawn ? `(${spawn.x.toFixed(2)}, ${spawn.z.toFixed(2)}) ${libre ? "libre" : "OCUPADO"}` : "sin spawn");
+  ok(d <= TOPE_DESPLAZAMIENTO_M, `a ≤ ${TOPE_DESPLAZAMIENTO_M} m del centro: la puerta del lugar`,
+    Number.isFinite(d) ? `${d.toFixed(2)} m` : "sin medida");
 }
 
 console.log(`\n${rojos === 0 ? "✔ el viaje no mete a nadie dentro" : `✖ ${rojos} aserto(s) en rojo`}`);
