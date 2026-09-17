@@ -907,7 +907,7 @@ instalarNefanHook({
   titleScreen,
   narrativeClient,
   session,
-  collidesAt,
+  collision,
   dialogoAbierto,
   combatSystemId: () => hud.sistemaId(),
   attackCatalog: () => hud.catalogo(),

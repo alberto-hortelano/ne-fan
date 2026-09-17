@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 
 import {
   aabbBloquea,
+  aabbOcupa,
   cajaBloquea,
   fronteraBloquea,
   penetracionEnCaja,
@@ -239,6 +240,79 @@ describe("aabbBloquea — la caja que se aplica la decide el ORIGEN del objeto",
     const alfombra: ObstaculoAabb = { ...forja, sizeXZ: { x: 4, z: 4 } };
     assert.equal(aabbBloquea(origen, { x: 10, z: 0 }, R, [alfombra], conPlan), true);
     assert.equal("sizeY" in alfombra, false);
+  });
+});
+
+/** LA MISMA POLÍTICA, SIN ORIGEN (#644). `aabbOcupa` contesta «¿está ocupado
+ *  este punto?» en vez de «¿me frena este paso?», y es la mitad que le faltaba
+ *  al banco: las tres fuentes de solidez son «salir sí, entrar no», así que
+ *  contestan que NO por donde uno ya está, y un guion que pregunte con el
+ *  jugador dentro de un sólido lee «libre». Medido en el guion 91: 46, 38 y 0
+ *  muestras libres de las mismas 121, con el mismo código y dos corridas
+ *  verdes. Lo que estos casos afirman es que la respuesta NO cambia la política
+ *  —que sería estrenar la segunda copia de #489— y que desde un origen libre
+ *  las dos funciones coinciden punto por punto. */
+describe("aabbOcupa — la misma caja preguntada sin origen", () => {
+  const forja: ObstaculoAabb = { pos: { x: 10, z: 0 }, sizeXZ: { x: 4, z: 4 }, category: "building", dueno: DE_RUNTIME };
+  const casa: ObstaculoAabb = { ...forja, dueno: DEL_TILE };
+
+  it("la política es la de aabbBloquea, entera: el mismo bulto ocupa si es del motor y no si el plan del tile responde por él", () => {
+    assert.equal(aabbOcupa({ x: 10, z: 0 }, R, [forja], conPlan), true, "la forja del motor ocupa su centro");
+    assert.equal(aabbOcupa({ x: 10, z: 0 }, R, [casa], conPlan), false, "la casa del tile con su plan instalado, no");
+    assert.equal(aabbOcupa({ x: 10, z: 0 }, R, [casa], sinPlan), true, "y sin plan derivado vuelve a ser su red de seguridad");
+    assert.equal(aabbOcupa({ x: 10, z: 0 }, R, [{ ...forja, category: "decor" }], conPlan), false, "lo que no frena, no ocupa");
+    assert.equal(aabbOcupa({ x: 10, z: 0 }, R, [{ ...forja, sizeXZ: null }], conPlan), false, "sin huella no hay caja");
+    assert.equal(aabbOcupa({ x: 10, z: 0 }, R, [], conPlan), false);
+  });
+
+  it("EL DEFECTO DE #644: desde dentro, `aabbBloquea` dice «no te frena» y esto dice «está ocupado»", () => {
+    // Las dos respuestas son correctas y contestan a preguntas distintas. La
+    // de movimiento es la que el guion 91 estaba leyendo como si fuera la del
+    // mundo, y por eso su veredicto dependía de dónde hubiera quedado el
+    // jugador: dentro de la forja, «¿me frena ir a 10 cm de aquí?» es que no.
+    const dentro = { x: 10.5, z: 0 };
+    const unPocoMasAfuera = { x: 10.6, z: 0 };
+    assert.equal(aabbBloquea(dentro, unPocoMasAfuera, R, [forja], conPlan), false, "alejarse no se frena (regla de salida)");
+    assert.equal(aabbOcupa(unPocoMasAfuera, R, [forja], conPlan), true, "pero ese punto SIGUE ocupado");
+    assert.equal(aabbOcupa(dentro, R, [forja], conPlan), true);
+  });
+
+  it("y no depende de dónde se pregunte: la respuesta es la misma desde cuatro orígenes, uno de ellos dentro", () => {
+    // El aserto que hace inexpresable el defecto. Con `aabbBloquea` este mismo
+    // bucle da cuatro veredictos distintos para el mismo punto.
+    const p = { x: 11.5, z: 0 };
+    for (const origen of [{ x: 0, z: 0 }, { x: 30, z: 30 }, { x: 10, z: 0 }, p]) {
+      assert.equal(aabbOcupa(p, R, [forja], conPlan), true, `desde (${origen.x}, ${origen.z})`);
+    }
+    assert.equal(aabbBloquea(p, p, R, [forja], conPlan), false, "la de movimiento, preguntada sobre sí misma, dice que no");
+  });
+
+  it("desde un origen LIBRE las dos coinciden punto por punto: no hay segunda geometría", () => {
+    // 1.681 puntos de una rejilla de 4 m alrededor de la forja, comparados uno
+    // a uno. Es la equivalencia conocida (`penetracionEnCaja(desde) === 0`), y
+    // el sitio donde se vería si `aabbOcupa` naciera midiendo otra cosa —que es
+    // el fallo de la tanda G, un candado que montaba el mundo equivocado.
+    const libre = { x: -50, z: -50 };
+    let comparados = 0;
+    let ocupados = 0;
+    for (let i = -20; i <= 20; i++) {
+      for (let j = -20; j <= 20; j++) {
+        const p = { x: 10 + i * 0.2, z: j * 0.2 };
+        const ocupa = aabbOcupa(p, R, [forja], conPlan);
+        assert.equal(ocupa, aabbBloquea(libre, p, R, [forja], conPlan), `(${p.x}, ${p.z})`);
+        comparados++;
+        if (ocupa) ocupados++;
+      }
+    }
+    assert.equal(comparados, 41 * 41);
+    // Sin esto la comparación se cumpliría con las dos diciendo siempre que no.
+    assert.ok(ocupados > 100 && ocupados < comparados, `${ocupados} ocupados de ${comparados}`);
+  });
+
+  it("el radio del cuerpo cuenta, igual que en la de movimiento", () => {
+    const rozando = { x: 10 - 2.2, z: 0 };
+    assert.equal(aabbOcupa(rozando, 0.4, [forja], conPlan), true);
+    assert.equal(aabbOcupa(rozando, 0, [forja], conPlan), false);
   });
 });
 

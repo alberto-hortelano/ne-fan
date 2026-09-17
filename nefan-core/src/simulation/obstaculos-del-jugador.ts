@@ -249,12 +249,58 @@ export function aabbBloquea(
   obstaculos: readonly ObstaculoAabb[],
   plan: PlanDeLosTiles,
 ): boolean {
+  return algunaCajaAplicable(obstaculos, plan, (caja) => cajaBloquea(desde, hasta, radio, caja));
+}
+
+/** LA POLÍTICA, y vive UNA sola vez: qué caja se le aplica a un cuerpo (huella
+ *  declarada, `category` que frena, y el salto por ORIGEN del objeto). Recorre
+ *  y corta en el primer sí, igual que el bucle que tenía dentro `aabbBloquea`;
+ *  lo que cambia por caja es la PREGUNTA, no a quién se le hace.
+ *
+ *  Está extraída porque la consulta de PUNTO (`aabbOcupa`, #644) tiene que
+ *  aplicar exactamente esta misma política, y dos copias de esta decisión es
+ *  #489 otra vez: la primera vez que se preguntó una cosa distinta por cada
+ *  lado, el jugador atravesó una forja de 4×4 m durante semanas. */
+function algunaCajaAplicable(
+  obstaculos: readonly ObstaculoAabb[],
+  plan: PlanDeLosTiles,
+  pregunta: (caja: CajaXZ) => boolean,
+): boolean {
   for (const obj of obstaculos) {
     const sizeXZ = obj.sizeXZ;
     if (!sizeXZ) continue;
     if (obj.category !== "building" && obj.category !== "prop") continue;
     if (obj.dueno.de === "tile" && plan.planAplicadoEn(obj.pos.x, obj.pos.z)) continue;
-    if (cajaBloquea(desde, hasta, radio, { pos: obj.pos, sizeXZ })) return true;
+    if (pregunta({ pos: obj.pos, sizeXZ })) return true;
   }
   return false;
+}
+
+/** ¿ALGUNA CAJA APLICABLE OCUPA ESTE PUNTO? La hermana SIN ORIGEN de
+ *  `aabbBloquea`: misma política (`algunaCajaAplicable`) y misma geometría
+ *  (`penetracionEnCaja`), pero la pregunta no es «¿me frena este paso?» sino
+ *  «¿está esto ocupado?».
+ *
+ *  POR QUÉ HACE FALTA UNA PREGUNTA SIN ORIGEN (#644). Las tres fuentes de
+ *  solidez son «salir sí, entrar no», así que contestan que NO por donde uno ya
+ *  está: preguntarles con el cuerpo dentro devuelve «libre», que es correcto
+ *  para el movimiento y falso como descripción del mundo. Un observador que
+ *  quiera saber si un punto está ocupado —el banco de pruebas, un validador de
+ *  spawn— no tiene ni debe tener un origen: con él, la respuesta depende de
+ *  dónde estuviera el jugador cuando se preguntó, y eso es un dato vivo. Medido:
+ *  el guion 91 sacó 46, 38 y 0 muestras libres de las mismas 121 con el mismo
+ *  código, y dos de esas corridas salieron VERDES.
+ *
+ *  NO ES UNA SEGUNDA GEOMETRÍA y ese es el punto: `penetracionEnCaja > 0` es
+ *  exactamente lo que `cajaBloquea` compara contra el origen, así que desde un
+ *  origen libre las dos coinciden siempre. Lo único que cambia es desde dentro,
+ *  que es donde `cajaBloquea` tiene que decir «no te frena» y esta «sí, está
+ *  ocupado». */
+export function aabbOcupa(
+  p: { x: number; z: number },
+  radio: number,
+  obstaculos: readonly ObstaculoAabb[],
+  plan: PlanDeLosTiles,
+): boolean {
+  return algunaCajaAplicable(obstaculos, plan, (caja) => penetracionEnCaja(p, caja, radio) > 0);
 }

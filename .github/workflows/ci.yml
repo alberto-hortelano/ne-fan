@@ -322,3 +322,13 @@ jobs:
       # esta misma lista. Solo necesita el `dist` del core, que este job ya
       # construye.
       - run: node qa/el-viaje-no-mete-a-nadie-dentro.mjs
+      # (0,2 s) #644: la consulta de PUNTO no tiene origen. Comprueba el CABLE
+      # (`probePoint` → `ocupadoEn` → `suelo.ocupado` ∪ `aabbOcupa`, y que no
+      # vuelva a apoyarse en `collidesAt`), la equivalencia con la consulta de
+      # movimiento desde un origen libre sobre 48.387 puntos de las tres
+      # fixtures, y el defecto REPRODUCIDO: la misma línea de 121 muestras
+      # contada desde cuatro orígenes da cuatro números con `collidesAt` y uno
+      # solo con `ocupadoEn`. Este paso lo PIDIÓ el candado de #645 —el
+      # ejecutable nació fuera del job y `npm test` se puso rojo con su
+      # nombre—, que es exactamente para lo que se escribió.
+      - run: node qa/la-consulta-de-punto-no-tiene-origen.mjs

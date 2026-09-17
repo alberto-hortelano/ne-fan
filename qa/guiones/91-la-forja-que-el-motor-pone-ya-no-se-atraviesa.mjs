@@ -33,6 +33,18 @@
  *     `HuellaDelSpawn` no le deja llevar huella, y aquí se ve por donde se ve
  *     jugando (se le puede pisar el sitio, y no está en la lista de objetos).
  *
+ *  SUS SONDAS PREGUNTAN POR `probePoint`, NO POR `probeCollide` (#644), y por
+ *  eso este guion dejó de medir por azar. `probeCollide` es `collidesAt`, una
+ *  consulta de MOVIMIENTO: las tres fuentes de solidez son «salir sí, entrar
+ *  no», así que contestan que NO por donde el jugador ya está. Como aquí el
+ *  jugador ANDA —es medio guion—, el veredicto dependía de dónde hubiera
+ *  quedado: de las 121 muestras de la línea entre el cofre y la forja salieron
+ *  **46 libres, 38 libres y 0 libres** en tres corridas del MISMO código, y dos
+ *  de esas corridas estaban en VERDE. `probePoint` es `ocupadoEn`, la misma
+ *  colisión preguntada SIN ORIGEN, así que dos corridas dan el mismo número.
+ *  Lo que sigue midiéndose andando (el empujón, la parada) no ha cambiado: eso
+ *  sí es movimiento.
+ *
  *  LO QUE NO SE AFIRMA, y se DICE con su medida: que el jugador llegue a tocar
  *  el cofre. Los tres spawns de un turno caen entre los volúmenes del plan, así
  *  que a veces no queda una cara libre por la que encararlo — exigir contacto
@@ -270,7 +282,7 @@ async function chocaConLaCajaQueDice(ctx, obj, etiqueta, cuando) {
  *  ninguno puede acabar ANTES de lo que dice core ni los cuatro pueden pasarse. */
 async function paredMedida(ctx, obj) {
   return ctx.page.evaluate((e) => {
-    const pc = window.__nefan.probeCollide;
+    const pc = window.__nefan.probePoint;
     const paso = 0.05;
     return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => {
       let d = 0;
@@ -307,7 +319,7 @@ async function afirmaLaCaja(ctx, obj, etiqueta, cuando) {
  *  depende de que el jugador pueda llegar, y es el dato de §9.1 de la PR 5. */
 async function huecoEntre(ctx, a, b) {
   return ctx.page.evaluate(({ a, b }) => {
-    const pc = window.__nefan.probeCollide;
+    const pc = window.__nefan.probePoint;
     const n = 120;
     let libres = 0;
     for (let i = 0; i <= n; i++) {
@@ -324,7 +336,7 @@ async function huecoEntre(ctx, a, b) {
  *  dentro) bloquean. */
 async function sondaDeCaja(ctx, obj) {
   return ctx.page.evaluate((e) => {
-    const pc = window.__nefan.probeCollide;
+    const pc = window.__nefan.probePoint;
     const d = e.sizeXZ.x / 2 + 0.4 - 0.1;
     return {
       centro: pc(e.pos.x, e.pos.z),
@@ -421,6 +433,11 @@ export default async function (ctx) {
     );
   }
 
+  // La MISMA línea, medida ANTES de andar: el jugador está donde lo dejó la
+  // conversación y la pelea. Abajo se vuelve a medir con él pegado a la forja,
+  // y los dos números tienen que ser el mismo (#644).
+  const huecoAntes = await huecoEntre(ctx, trio.cofre, trio.forja);
+
   // ── 3 · #489: son sólidos, su pared está donde core la pone, y el jugador
   //        andando se para en ella ────────────────────────────────────────
   for (const [etiqueta, obj] of [["la forja", trio.forja], ["el cofre", trio.cofre]]) {
@@ -439,12 +456,41 @@ export default async function (ctx) {
       `${hueco.hueco.toFixed(2)} m (el cuerpo del jugador mide ${(RADIO * 2).toFixed(2)}); de ${hueco.sondas} sondas ` +
       `en la línea que los une, ${hueco.libres} libres`,
   );
+  // EL ASERTO DE #644, y es el que este guion no podía hacer: la misma línea,
+  // las mismas 121 muestras, los mismos objetos quietos — y el jugador en tres
+  // sitios distintos, el tercero DENTRO de la forja.
+  //
+  // El tercero no es ceremonia y se midió: entre «antes de andar» y «pegado a
+  // la forja» los dos orígenes están LIBRES, y desde un origen libre la
+  // consulta de movimiento contesta lo mismo que la de punto — o sea que con
+  // esos dos solos el aserto salía VERDE aunque se volviera a sondear con
+  // `probeCollide` (probado el 2026-09-17: verde con el defecto puesto). Donde
+  // `collidesAt` miente es desde DENTRO, que es donde acababa el jugador
+  // cuando este guion daba 46, 38 y 0 libres en tres corridas del mismo código.
+  // Por eso aquí se usa `setPlayerPos`: no para PROTEGER la sonda —eso es el
+  // protocolo que #644 viene a quitar— sino para demostrar que no le hace
+  // falta. Se deja al jugador donde estaba.
+  //
+  // (Entre CORRIDAS el número sigue variando, y esa es OTRA causa: el motor
+  // falso planta la forja en un sitio distinto cada vez —medido, (10.0, −11.4)
+  // y (10.2, −7.1)— y la línea cruza otro terreno. Por eso el hueco se DICE y
+  // lo que se AFIRMA es que no depende de dónde esté el jugador.)
+  const dondeEstaba = await posicion(ctx);
+  await ctx.nefan("setPlayerPos", trio.forja.pos.x, trio.forja.pos.z);
+  const desdeDentro = await huecoEntre(ctx, trio.cofre, trio.forja);
+  await ctx.nefan("setPlayerPos", dondeEstaba.x, dondeEstaba.z);
+  ctx.expect(
+    `la misma línea da las mismas ${hueco.sondas} muestras desde tres sitios del jugador, uno DENTRO de la forja`,
+    hueco.libres === huecoAntes.libres && desdeDentro.libres === huecoAntes.libres,
+    `antes de andar ${huecoAntes.libres} libres · pegado a la forja ${hueco.libres} · desde su centro ` +
+      `${desdeDentro.libres} — si difieren, la sonda vuelve a depender del origen`,
+  );
   await ctx.shot("chocando-con-lo-que-puso-el-motor");
 
   // ── 4 · Un NPC no es una caja ────────────────────────────────────────────
   const npcSolido = await ctx.page.evaluate((id) => {
     const n = window.__nefan.npcs().find((x) => x.id === id);
-    return n ? { pos: n.pos, solido: window.__nefan.probeCollide(n.pos.x, n.pos.z) } : null;
+    return n ? { pos: n.pos, solido: window.__nefan.probePoint(n.pos.x, n.pos.z) } : null;
   }, TABERNERO);
   ctx.expect(
     "donde está un NPC no hay caja: su sitio se puede pisar",
