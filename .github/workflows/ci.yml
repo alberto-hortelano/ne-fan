@@ -351,6 +351,18 @@ jobs:
       # niega con EXIT 2 si no encuentra el entry, y eso no es lo mismo que un
       # rojo; el candado de totalidad es estático y no puede verlo.
       - run: node qa/el-indice-del-store-se-prueba-sin-el-del-checkout.mjs
+      # (0,6 s) #643: el rumbo de salida no lo frena la otra fuente. Es el
+      # candado de un defecto VIVO y sin arreglar —decisión del usuario del
+      # 2026-09-17, «candado sin tocar geometría»—, así que congela su TAMAÑO
+      # (212 rumbos) en vez de exigir 0: la PR que lo mejore lo baja en su
+      # propio diff y la que lo empeore no pasa. No afirma que nadie se quede
+      # encerrado: eso nace VERDE (357/357 NPCs salen, medido por la crítica de
+      # la tanda I) y habría sido el cuarto candado sin sujeto vivo en tres
+      # tandas. Monta el proveedor de PRODUCCIÓN y clasifica los puntos con las
+      # mismas dos mitades que compone `ocupado`, porque el primer intento
+      # clasificaba con un tile «vacío» que no lo estaba (`vegetation_zones`
+      # sigue dando volúmenes) y metía 294 puntos de bosque en el control.
+      - run: node qa/el-rumbo-de-salida-no-lo-frena-la-otra-fuente.mjs
       # (0,98 s) #655: los guiones de `qa/guiones/` que NO tocan el navegador.
       # Se declaran ellos (`export const sinNavegador = "<motivo>"`) y el runner
       # corre la CLASE ENTERA con `--sin-navegador`: sin preset, sin puertos, sin

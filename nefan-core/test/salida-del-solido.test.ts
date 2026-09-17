@@ -300,6 +300,109 @@ describe("salidaDelSolido — la misma geometría que la caja, medida por celdas
     assert.equal(sitioParaAparecer({ x: 200, z: 200 }, PLAYER_RADIUS_M, suelo), null);
   });
 
+  it("el alcance de `sitioParaAparecer` son CUATRO marchas de 40 m: a 155 m se sale, a 180 no", () => {
+    // El mismo macizo de 400 × 400 m del caso de arriba, y los dos lados de la
+    // regla. Por qué hacen falta los DOS puntos y por qué el (200, 200) de
+    // arriba no vale para esto: desde el centro exacto la quinta marcha
+    // también satura, así que dar un paso de más no cambia el veredicto. Desde
+    // (220, 200) sí lo cambia —la quinta marcha ya ve la cara— y desde
+    // (245, 200) la cuarta la alcanza, que es donde se lee el paso de salida.
+    const cols = Math.ceil(400 / TILE_MPC);
+    const { suelo } = macizo([0, 0], { cols, rows: cols, c0: 0, c1: cols - 1, r0: 0, r1: cols - 1 });
+    const radio = PLAYER_RADIUS_M;
+
+    // 180 m hasta la cara +X: 4 × 40 = 160 se quedan cortos y es `null`.
+    assert.ok(suelo.ocupado(220, 200, radio), "control: el punto de partida está dentro");
+    assert.equal(sitioParaAparecer({ x: 220, z: 200 }, radio, suelo), null, "a 180 m de la cara no se llega en cuatro marchas");
+
+    // 155 m: la cuarta marcha ya ve la cara y devuelve el punto de salida.
+    assert.ok(suelo.ocupado(245, 200, radio), "control: el punto de partida está dentro");
+    const sitio = sitioParaAparecer({ x: 245, z: 200 }, radio, suelo);
+    assert.deepEqual(sitio, { x: 400 + radio, z: 200 }, "se sale por la cara +X, que es la más cercana");
+    assert.equal(suelo.ocupado(sitio!.x, sitio!.z, radio), false, "y el punto queda LIBRE");
+  });
+
+  it("cuando la salida va por Z, `sitioParaAparecer` no mueve la X ni un ulp", () => {
+    // Una banda de 1 m de grosor en Z y 15,5 m de largo en X: la transpuesta
+    // de la «banda de 1 m» de CASOS. Aquí el eje corto es Z SIEMPRE, así que
+    // el punto devuelto conserva la X del candidato exactamente.
+    //
+    // No es un detalle cosmético: es el único caso en el que se llega a MIRAR
+    // la coordenada Z del corte de progreso (`siguiente.z === p.z`). Con la
+    // salida por X ese `&&` se corta antes y la mitad derecha no se ejecuta
+    // nunca — que es por lo que estaba sin cubrir.
+    for (const radio of [PLAYER_RADIUS_M, NPC_RADIUS_M]) {
+      const { suelo, caja } = macizo([-16, -16], { cols: 64, rows: 64, c0: 10, c1: 40, r0: 33, r1: 34 });
+      const X0 = caja.pos.x - caja.sizeXZ.x / 2;
+      const X1 = caja.pos.x + caja.sizeXZ.x / 2;
+      let dentro = 0;
+      for (let x = X0 + 0.6; x <= X1 - 0.6; x += 0.25) {
+        for (let z = caja.pos.z - 0.4; z <= caja.pos.z + 0.4; z += 0.2) {
+          if (!suelo.ocupado(x, z, radio)) continue;
+          dentro++;
+          const sitio = sitioParaAparecer({ x, z }, radio, suelo);
+          assert.notEqual(sitio, null, `(${x}, ${z}) radio ${radio}: de una banda de 1 m se sale`);
+          assert.equal(sitio!.x, x, `(${x}, ${z}) radio ${radio}: la salida es por Z, la X no se toca`);
+          assert.equal(suelo.ocupado(sitio!.x, sitio!.z, radio), false, `(${x}, ${z}) radio ${radio}: el punto devuelto tiene que quedar libre`);
+        }
+      }
+      // Un punto suelto no distinguiría la regla de su contraria.
+      assert.ok(dentro > 200, `la banda tiene que tener puntos que medir: ${dentro}`);
+    }
+  });
+
+  it("DESDE DENTRO `solidoBloquea` frena lo que mete más adentro — y solo eso", () => {
+    // Lo que el resto del fichero NO mira: todos los asertos de `solidoBloquea`
+    // de aquí arriba salen `false` o entran desde FUERA (el corte en seco del
+    // origen libre). Con el origen DENTRO nadie comprobaba que frenar siga
+    // ocurriendo, así que la función podía contestar «desde dentro no frena
+    // nada nunca» sin que se enterase nadie.
+    //
+    // El veredicto esperado NO se calcula con este módulo: se calcula con
+    // `salidaDeCaja`, la otra geometría, que es la premisa de todo el fichero.
+    // Se saltan los empates —donde las dos cuentas deciden por el último bit,
+    // igual que en el aserto de acuerdo de arriba— y los pasos que salen del
+    // sólido, para que el que mande sea siempre la rama de dentro.
+    for (const radio of [PLAYER_RADIUS_M, NPC_RADIUS_M]) {
+      const { suelo, caja } = macizo([-16, -16], { cols: 64, rows: 64, c0: 20, c1: 29, r0: 20, r1: 33 });
+      const penCaja = (p: { x: number; z: number }) => salidaDeCaja(p, caja, radio)?.pen ?? 0;
+      const X0 = caja.pos.x - caja.sizeXZ.x / 2;
+      const X1 = caja.pos.x + caja.sizeXZ.x / 2;
+      const Z0 = caja.pos.z - caja.sizeXZ.z / 2;
+      const Z1 = caja.pos.z + caja.sizeXZ.z / 2;
+      const paso = 0.25;
+      let frena = 0;
+      let deja = 0;
+
+      for (let x = X0 + 0.1; x <= X1 - 0.1; x += paso) {
+        for (let z = Z0 + 0.1; z <= Z1 - 0.1; z += paso) {
+          const desde = { x, z };
+          if (!suelo.ocupado(x, z, radio)) continue;
+          for (const [dx, dz] of [[paso, 0], [-paso, 0], [0, paso], [0, -paso]]) {
+            const hasta = { x: x + dx, z: z + dz };
+            if (!suelo.ocupado(hasta.x, hasta.z, radio)) continue;
+            const penDesde = penCaja(desde);
+            const penHasta = penCaja(hasta);
+            if (Math.abs(penHasta - penDesde) <= EPS_M) continue;
+            const esperado = penHasta > penDesde;
+            assert.equal(
+              solidoBloquea(desde, hasta, radio, suelo),
+              esperado,
+              `radio ${radio}: (${x}, ${z}) → (${hasta.x}, ${hasta.z}) — la caja dice pen ${penDesde} → ${penHasta}, ` +
+                `así que frenar tendría que ser ${esperado}`,
+            );
+            if (esperado) frena++;
+            else deja++;
+          }
+        }
+      }
+      // Los DOS veredictos, y en cantidad: con solo uno de ellos este aserto no
+      // distinguiría la regla de la constante que siempre contesta lo mismo.
+      assert.ok(frena > 100, `tiene que haber pasos FRENADOS desde dentro: ${frena}`);
+      assert.ok(deja > 100, `y pasos que NO se frenan desde dentro: ${deja}`);
+    }
+  });
+
   it("un suelo sin sólidos no tiene penetración ni salida, y no frena nada", () => {
     const vacio: SueloSolido = { ocupado: () => false };
     assert.equal(penetracionEnSolido(3, 4, PLAYER_RADIUS_M, vacio), 0);
