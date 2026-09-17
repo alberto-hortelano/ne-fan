@@ -578,14 +578,15 @@ la regla de paso del terreno eximía «las celdas que ya se solapaban», lo que 
 un muro fino y **no saca de un macizo** — y los edificios del plan lo son. Recorre las tres fixtures
 con una malla de 0,5 m, y de cada punto en el que el cuerpo del jugador solapa algo sólido prueba
 **36 rumbos** conducidos por `pasoDelJugador`, con el cableado de `world/collision.ts`: origen vivo y
-las dos fuentes del tile unidas en UNA consulta de punto. Afirma tres cosas: que no queda ni un punto
-sin salida (**0 de 3.941**), que se sale **por lo más corto** —el rumbo más rápido no tarda más que
+las dos fuentes del tile —el grid del terreno y el del PLAN COMPUESTO, que es el que instala el
+cliente y no los `volumes` declarados del crudo— unidas en UNA consulta de punto. Afirma tres cosas: que no queda ni un punto
+sin salida (**0 de 6.007**), que se sale **por lo más corto** —el rumbo más rápido no tarda más que
 `penetración / velocidad`, que es un límite DERIVADO y no un número elegido: cambiar la salida por «el
 primer eje libre» lo pondría rojo sin que el primer bloque se enterara— y el **control** de que hay
-mundo sólido que medir. Imprime, sin afirmarla, la penetración máxima de cada fixture (2,40 · 5,90 ·
+mundo sólido que medir. Imprime, sin afirmarla, la penetración máxima de cada fixture (2,90 · 5,90 ·
 3,90 m), que es cómo se ve venir el tope de marcha de 40 m. **Probado en negativo**: `QA_SIN_ESCAPE=1`
-cablea la regla de AYER —escrita en el guion, no en el árbol— y da **2.307 de 3.941 puntos sin
-salida**, exit 1. 27 s, sin navegador y sin créditos:
+cablea la regla de AYER —escrita en el guion, no en el árbol— y da **3.069 de 6.007 puntos sin
+salida**, exit 1. 40 s, sin navegador y sin créditos:
 
 ```bash
 node qa/nadie-se-queda-encerrado.mjs   # sale 1 si hay un solo punto del que no se salga andando

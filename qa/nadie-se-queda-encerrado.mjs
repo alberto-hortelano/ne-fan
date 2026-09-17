@@ -26,9 +26,10 @@
  *  entre ellos), a 60 fps y con el horizonte DERIVADO de su penetración
  *  (`pen / velocidad + 0,25 s`), conducidos por `pasoDelJugador` con el
  *  mismo cableado que `nefan-html/src/world/collision.ts` — origen vivo, las
- *  dos fuentes del tile (grid del terreno y grid del plan) unidas en UNA
- *  consulta de punto, y la velocidad de andar leída de `combat_config.json`,
- *  no copiada aquí.
+ *  dos fuentes del tile (grid del terreno y grid del PLAN COMPUESTO, que es el
+ *  que instala el cliente y no los `volumes` declarados del crudo) unidas en
+ *  UNA consulta de punto, y la velocidad de andar leída de
+ *  `combat_config.json`, no copiada aquí.
  *
  *   1. **DE TODO PUNTO SE SALE**: cero puntos sin salida en las tres.
  *   2. **Y SE SALE POR LO MÁS CORTO**: el rumbo más rápido de cada punto no
@@ -150,7 +151,13 @@ function mundoDeLaFixture(nombre) {
   const crudo = JSON.parse(readFileSync(path.join(RAIZ, "nefan-core/data/scenes", `${nombre}.json`), "utf8"));
   const w = formatDToWorld(crudo);
   const rect = w.world_rect;
-  const gridDelPlan = planCollisionGrid(crudo.ground, crudo.volumes, rect);
+  // EL PLAN COMPUESTO (`__plan`), que es el que instala el cliente
+  // (`world/carga-de-tile.ts:335`) y el que rasteriza el bridge — NO los
+  // `volumes` declarados del crudo. La diferencia no es cosmética: robledo y
+  // puerto declaran CERO volumes y sacan sus 38 y 23 del esquema, así que con
+  // el crudo este guion medía 960 celdas sólidas de 1.608 y 2.144 de 3.072. Un
+  // candado sobre un mundo un 40 % menos sólido que el de verdad.
+  const gridDelPlan = planCollisionGrid(w.__plan?.ground, w.__plan?.volumes, rect);
 
   const grids = [w.terrain_grid, gridDelPlan].filter(Boolean);
   const colliders = grids.map((g) => createTerrainCollider(g)).filter(Boolean);

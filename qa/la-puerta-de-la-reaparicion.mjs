@@ -157,7 +157,12 @@ function mundoDeLaFixture(nombre, planAplicado) {
   const w = formatDToWorld(crudo);
   const rect = w.world_rect;
 
-  const gridDelPlan = planCollisionGrid(crudo.ground, crudo.volumes, rect);
+  // El plan COMPUESTO (`__plan`), que es el que el cliente instala
+  // (`world/carga-de-tile.ts:335`). Con los `volumes` DECLARADOS del crudo este
+  // control medía un mundo un 40 % menos sólido: robledo y puerto declaran cero
+  // y derivan del esquema sus 38 y 23 volúmenes (960 celdas de 1.608 y 2.144 de
+  // 3.072). Corregido con #616, al ir a verificar una cifra que se citaba.
+  const gridDelPlan = planCollisionGrid(w.__plan?.ground, w.__plan?.volumes, rect);
   const colliderTerreno = SIN_SOLIDOS ? null : createTerrainCollider(w.terrain_grid);
   const colliderPlan = SIN_SOLIDOS || !gridDelPlan ? null : createTerrainCollider(gridDelPlan);
 

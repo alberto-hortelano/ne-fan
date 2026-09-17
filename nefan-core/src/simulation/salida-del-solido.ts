@@ -54,8 +54,9 @@
  *  cuenta»: descartarlo dejaría la penetración en 0 y volvería a encerrar a
  *  todo el mundo. Con la saturación lo que ocurre es lo honesto — dentro de
  *  esa masa nada bloquea y se anda libre hasta ver el gradiente. El peor caso
- *  real medido hoy es de 5,7 m, y `qa/nadie-se-queda-encerrado.mjs` imprime la
- *  penetración máxima de cada fixture en cada corrida para verlo venir.
+ *  real medido hoy es de 5,90 m (puerto), y `qa/nadie-se-queda-encerrado.mjs`
+ *  imprime la penetración máxima de cada fixture en cada corrida para verlo
+ *  venir.
  *
  *  ## Efecto colateral QUERIDO (y que no pide ningún issue)
  *
@@ -235,10 +236,11 @@ export function solidoBloquea(
  *
  *  Existe porque teletransportar a una coordenada que nadie ha mirado es la
  *  mitad de ARRIBA de #616: `resolvePlaceTarget` devuelve el centro del
- *  `anchor.rect` del lugar, y los 13 `building` de robledo y puerto son estado
- *  sin salida en su centro, 13 de 13. Con esto se aparece en la PUERTA del
- *  lugar y no en su cocina: menor penetración = desplazamiento mínimo (≤ 3,91 m
- *  medido sobre esos 13).
+ *  `anchor.rect` del lugar, y los 13 `building` de robledo y puerto tienen el
+ *  centro OCUPADO, 13 de 13 (medido con el plan compuesto, que es el que
+ *  instala el cliente). Con esto se aparece en la PUERTA del lugar y no en su
+ *  cocina: menor penetración = desplazamiento mínimo, **≤ 3,90 m sobre esos
+ *  13**, y los 13 puntos que devuelve quedan libres.
  *
  *  `null` es fail-loud y hay que tratarlo: significa que la marcha saturó el
  *  tope `maxPasos` veces seguidas (hasta 160 m de sólido continuo) o que dejó
