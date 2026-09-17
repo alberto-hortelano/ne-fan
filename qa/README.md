@@ -792,7 +792,8 @@ allí; ese workaround ERA el defecto, y `NEFAN_MANIFEST_DB` lo cierra. Esto es s
 mide arrancando el **entry real** (el mismo que lanza `start.sh`) contra índices de usar y tirar.
 
 ```bash
-node qa/el-indice-del-store-se-prueba-sin-el-del-checkout.mjs   # 17 comprobaciones, ~10 s
+node qa/el-indice-del-store-se-prueba-sin-el-del-checkout.mjs   # 17 comprobaciones, 0,81 s
+# Desde #652 lo corre también el job `candados-headless` de CI, medido en clon limpio.
 ```
 
 Las cuatro cosas que afirma: el **negativo** (`exit 1`, el motivo, el script de purga y que el
@@ -850,7 +851,8 @@ podría borrar por LRU la skin de un NPC vivo— sino indexarlos **con su proced
 hero y frames a la vez**. Ese «a la vez» es la pieza cara, y este guion es su candado.
 
 ```bash
-node qa/el-arte-de-personaje-no-se-pina-a-medias.mjs   # 24 comprobaciones, ~8 s
+node qa/el-arte-de-personaje-no-se-pina-a-medias.mjs   # 24 comprobaciones, 0,42 s
+# Desde #652 lo corre también el job `candados-headless` de CI, medido en clon limpio.
 ```
 
 Lo mide donde se decide: arrancando el **entry real** del asset-store (el mismo que lanza
