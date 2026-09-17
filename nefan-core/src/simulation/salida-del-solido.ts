@@ -54,7 +54,7 @@
  *  cuenta»: descartarlo dejaría la penetración en 0 y volvería a encerrar a
  *  todo el mundo. Con la saturación lo que ocurre es lo honesto — dentro de
  *  esa masa nada bloquea y se anda libre hasta ver el gradiente. El peor caso
- *  real medido hoy es de 5,90 m (puerto), y `qa/nadie-se-queda-encerrado.mjs`
+ *  real medido hoy es de 5,94 m (puerto), y `qa/nadie-se-queda-encerrado.mjs`
  *  imprime la penetración máxima de cada fixture en cada corrida para verlo
  *  venir.
  *
