@@ -1,5 +1,5 @@
 /** EL PANEL DE GENERACIÓN del selector de mundos: en qué estado está el mundo
- *  de la tarjeta que se mira, en qué estado su estilo encima, y los dos botones
+ *  de la tarjeta que se mira, en qué estado su estilo encima, y los botones
  *  que encargan lo que falte.
  *
  *  SALE DEL SELECTOR y no se lleva nada suyo: no sabe qué tarjeta está
@@ -28,7 +28,10 @@
  *  Los IDs del DOM son los MISMOS que tenía dentro del selector (`#ts-gen-state`,
  *  `#ts-gen-world`, `#ts-apply-style`, `#ts-style-plan`, `#ts-gen-progress`):
  *  los conduce el banco desde hace diez guiones y mudarlos habría sido un
- *  cambio de contrato disfrazado de refactor.
+ *  cambio de contrato disfrazado de refactor. `#ts-gen-repair` es el tercer
+ *  botón y nace con #577 — el remedio BARATO al lado del caro: «Regenerar»
+ *  cuesta nueve llamadas al motor y deja obsoleto el estilo aplicado,
+ *  «Completar» cuesta una por escena que falte y no toca el arte.
  */
 import type { GameInfo, NarrativeClient, StyleInfo } from "../../net/narrative-client.js";
 import type { NarrativeStatusDeJuego } from "@nefan-core/src/protocol/messages.js";
@@ -95,6 +98,7 @@ export function montarPanelDeGeneracion(
     <div id="ts-gen-state" style="font-size:12px;margin-bottom:8px;line-height:1.6"></div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px">
       <button id="ts-gen-world" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
+      <button id="ts-gen-repair" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px;display:none"></button>
       <button id="ts-apply-style" style="${BTN_SECONDARY_CSS};font-size:12px;padding:6px 14px"></button>
     </div>
     <div id="ts-style-plan"></div>
@@ -102,6 +106,7 @@ export function montarPanelDeGeneracion(
   `;
   const genStateEl = hueco.querySelector("#ts-gen-state") as HTMLElement;
   const genWorldBtn = hueco.querySelector("#ts-gen-world") as HTMLButtonElement;
+  const repairBtn = hueco.querySelector("#ts-gen-repair") as HTMLButtonElement;
   const applyStyleBtn = hueco.querySelector("#ts-apply-style") as HTMLButtonElement;
   const stylePlanEl = hueco.querySelector("#ts-style-plan") as HTMLElement;
   const genProgressEl = hueco.querySelector("#ts-gen-progress") as HTMLElement;
@@ -137,6 +142,19 @@ export function montarPanelDeGeneracion(
     `Mundo: ${CONTENT_LABEL[cs]}` +
     ` &nbsp;·&nbsp; Estilo <span style="color:#bdf">${escapeHtml(estilo?.name ?? "(ninguno)")}</span>: ${styleLabel}`;
   genWorldBtn.textContent = cs === "ready" ? "↻ Regenerar mundo" : "⚙ Generar mundo";
+  // «Curar» solo existe cuando hay algo que curar, y eso es EXACTAMENTE la
+  // condición del recorte de arriba: un mundo servible al que la puerta de
+  // carga le descarta escenas. Sin recorte no hay nada que pedirle al motor y
+  // el botón no aparece; sin mundo (o con uno obsoleto) tampoco, porque lo que
+  // toca entonces es generarlo. Es el remedio BARATO al lado del caro:
+  // regenerar cuesta nueve llamadas y deja obsoleto el estilo aplicado; esto
+  // cuesta una por escena y no toca el arte.
+  const faltan = cs === "ready" && cuenta ? cuenta.total - cuenta.servibles : 0;
+  repairBtn.style.display = faltan > 0 ? "" : "none";
+  repairBtn.textContent = `✚ Completar el mundo (${faltan} escena${faltan === 1 ? "" : "s"})`;
+  repairBtn.title =
+    "Le pide al motor SOLO las escenas que faltan y las guarda en el mundo. " +
+    "No regenera lo que ya está ni afecta al estilo aplicado.";
   applyStyleBtn.textContent =
     as === "ready" ? "↻ Regenerar estilo (ver coste)" : "🎨 Aplicar estilo (ver coste)";
   const canApply = cs === "ready" && !!estilo;
@@ -172,6 +190,25 @@ export function montarPanelDeGeneracion(
   };
   genWorldBtn.addEventListener("click", () =>
     paso(generarElMundo(), "title", "encolar la pre-generación del mundo"),
+  );
+
+  const curarElMundo = async (): Promise<void> => {
+    // SIN confirmación armada, al revés que «Regenerar»: esto no pisa nada ni
+    // deja obsoleto el estilo aplicado — solo rellena huecos. Pedir dos clicks
+    // para una acción que no destruye nada enseñaría al jugador a hacer doble
+    // click en la que sí.
+    repairBtn.disabled = true;
+    genProgressEl.innerHTML = `<span style="color:#da6">⚙ Encolando la cura del mundo…</span>`;
+    try {
+      await deps.narrative.repairGameWorld(mundo.game_id);
+      genProgressEl.innerHTML = `<span style="color:#da6">⚙ Completando el mundo (una llamada al motor por escena)…</span>`;
+    } catch (err) {
+      genProgressEl.innerHTML = `<span style="color:#a44">${escapeHtml((err as Error).message)}</span>`;
+      repairBtn.disabled = false;
+    }
+  };
+  repairBtn.addEventListener("click", () =>
+    paso(curarElMundo(), "title", "encolar la cura del mundo pre-generado"),
   );
   applyStyleBtn.addEventListener("click", () => {
     if (!estilo) return; // el botón está apagado sin estilo; esto es el tipo

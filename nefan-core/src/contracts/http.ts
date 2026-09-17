@@ -30,6 +30,24 @@ export interface Endpoint<Req, Res, Params extends string = never, Query = never
    *  responder sin partida. La tabla de test/state-http-caracterizacion.test.ts
    *  contrasta esta declaración con el flag `mutated` que devuelve cada handler. */
   readonly mutates?: true;
+  /** `true` = la respuesta describe una PARTIDA, así que sin sesión activa no
+   *  hay nada honesto que contestar: 404. Es parte del CONTRATO por el mismo
+   *  motivo que `mutates` —quien llama tiene que poder saberlo de antemano— y
+   *  porque repartido por handler nace un agujero con cada ruta nueva: hasta
+   *  hoy eran tres `if (!session_id)` escritos a mano en `doc-routes.ts` y una
+   *  CUARTA ruta, `GET /entity/player`, que se los había saltado y contestaba
+   *  200 con un jugador INVENTADO (`DEFAULT_PLAYER`: nivel 1, pícaro, 100 de
+   *  vida). Es la única lectura del State API que fabricaba contenido en vez
+   *  de devolver un vacío honesto, y el daño era que el motor narrara «tienes
+   *  100 de vida y 0 de oro» de un personaje que no existe (#463).
+   *
+   *  ALCANCE, y es un recorte deliberado: se declara en las lecturas que
+   *  INVENTAN o que hablan de la partida como tal, NO en «todas las lecturas
+   *  que dependen de la sesión». `GET /entity/{id}/inventory` sin partida
+   *  sigue contestando 200 con `[]`, y ese 200 es la única prueba que tiene
+   *  `qa/el-state-api-no-muta-sin-partida.mjs` de que las mutadoras rebotadas
+   *  no aplicaron nada. Un vacío honesto no es una invención. */
+  readonly requiere_sesion?: true;
   readonly _req?: Req;
   readonly _res?: Res;
   readonly _params?: Record<Params, string>;
@@ -39,8 +57,13 @@ export interface Endpoint<Req, Res, Params extends string = never, Query = never
 export const endpoint = <Req, Res, Params extends string = never, Query = never>(
   method: HttpMethod,
   path: string,
-  opts?: { mutates: true },
-): Endpoint<Req, Res, Params, Query> => (opts?.mutates ? { method, path, mutates: true } : { method, path });
+  opts?: { mutates?: true; requiere_sesion?: true },
+): Endpoint<Req, Res, Params, Query> => ({
+  method,
+  path,
+  ...(opts?.mutates ? { mutates: true as const } : {}),
+  ...(opts?.requiere_sesion ? { requiere_sesion: true as const } : {}),
+});
 
 /** Extractores para clientes tipados. */
 export type RequestOf<E> = E extends Endpoint<infer Req, unknown, string, unknown> ? Req : never;
@@ -67,7 +90,12 @@ export function fillPath(template: string, params: Record<string, string> = {}):
  *  `WorldStateApi` —29 endpoints con 29 pares de tipos distintos— no casara. */
 export type EndpointTable = Record<
   string,
-  { readonly method: HttpMethod; readonly path: string; readonly mutates?: true }
+  {
+    readonly method: HttpMethod;
+    readonly path: string;
+    readonly mutates?: true;
+    readonly requiere_sesion?: true;
+  }
 >;
 
 export interface RouteMatch<K extends string> {

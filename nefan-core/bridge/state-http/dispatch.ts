@@ -67,6 +67,18 @@ export async function dispatchStateRequest(
   const sinPartida = sinSesionParaMutar(ctx, match.key, method, path);
   if (sinPartida) return sinPartida;
 
+  // Guardia de LECTURA (#463), hermana de la de arriba y por el mismo motivo:
+  // una ruta que el contrato declara `requiere_sesion` no se despacha sin
+  // partida activa. Antes cada handler lo decidía por su cuenta y la cuarta
+  // ruta se lo saltó: `GET /entity/player` contestaba 200 con un jugador
+  // INVENTADO mientras `GET /story` —el mismo estado, el mismo momento—
+  // contestaba 404. Dos semánticas de «sin partida» para leer lo mismo. El 404
+  // se elige porque ya era la respuesta de las otras tres y porque «no hay
+  // partida» no es un conflicto que reintentar (409) sino una cosa que no
+  // existe.
+  const sinPartidaParaLeer = sinSesionParaLeer(ctx, match.key, method, path);
+  if (sinPartidaParaLeer) return sinPartidaParaLeer;
+
   const body = method === "POST" ? await req.readBody() : undefined;
   const result = await handler(ctx, {
     params: match.params,
@@ -101,6 +113,26 @@ function sinSesionParaMutar(
         `no_session: ${method} ${path} muta la partida y el bridge no tiene ninguna activa ` +
         `(ni start_session ni resume_session han corrido, o el save se borró). No se ha aplicado ` +
         `nada. Abre o reanuda una partida antes de volver a intentarlo.`,
+    } satisfies ErrorResponse,
+  };
+}
+
+function sinSesionParaLeer(
+  ctx: StateHttpContext,
+  key: keyof typeof WorldStateApi,
+  method: string,
+  path: string,
+): RouteResult | null {
+  if (!WorldStateApi[key].requiere_sesion) return null;
+  if (ctx.narrative.session_id !== "") return null;
+  return {
+    status: 404,
+    body: {
+      ok: false,
+      error:
+        `no_session: ${method} ${path} describe una partida y el bridge no tiene ninguna activa ` +
+        `(ni start_session ni resume_session han corrido, o el save se borró). No hay nada que ` +
+        `leer: abre o reanuda una partida antes de volver a intentarlo.`,
     } satisfies ErrorResponse,
   };
 }

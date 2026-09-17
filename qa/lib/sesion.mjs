@@ -502,6 +502,47 @@ export async function regenerarMundo(ctx, gameId = "alta_fantasia") {
   await ctx.page.click("#ts-back");
 }
 
+/** CURA el mundo pre-generado desde el título, por el camino del jugador: el
+ *  botón «Completar el mundo», que solo existe cuando la puerta de carga
+ *  descarta escenas (#577). Deja al guion de vuelta en el home.
+ *
+ *  Vive aquí y no dentro del guion por lo mismo que `regenerarMundo`: la
+ *  espera es por la FASE que publica el título (`data-gen-phase`) y no por un
+ *  regex sobre el texto, que es lo que dejó de reconocer el final cuando se
+ *  añadió un mensaje nuevo. Y NO se copia el `pedirYEsperar` del guion 127
+ *  para nada que llame al motor: aquel mide 90 s de reloj de PARED y por eso
+ *  es intermitente (#656).
+ *
+ *  Devuelve `{ fase, texto }` del estado terminal, o `null` si el botón no
+ *  estaba (queda AFIRMADO con `ctx.expect`: el llamante decide si sigue). */
+export async function curarMundo(ctx, gameId = "alta_fantasia") {
+  await abrirSelectorDeMundos(ctx);
+  await ctx.page.click(`[data-game-id="${gameId}"]`);
+  const visible = await ctx.page.$eval(
+    "#ts-gen-repair",
+    (b) => b.style.display !== "none" && b.textContent,
+  );
+  ctx.expect("el título ofrece completar el mundo cribado", Boolean(visible), String(visible));
+  if (!visible) {
+    await ctx.page.click("#ts-back");
+    return null;
+  }
+  ctx.log(`botón de cura: «${visible}»`);
+  await ctx.page.click("#ts-gen-repair");
+  const fin = await ctx.waitFor(
+    "la cura del mundo llega a un estado terminal",
+    () => {
+      const el = document.getElementById("ts-gen-progress");
+      const fase = el?.dataset.genPhase ?? "";
+      return fase === "ready" || fase === "error" ? { fase, texto: el?.textContent ?? "" } : null;
+    },
+    240_000,
+  );
+  ctx.log(`cura (${fin.fase}): ${fin.texto}`);
+  await ctx.page.click("#ts-back");
+  return fin;
+}
+
 /** Espera a que un REGISTRO del juego cumpla una condición, y devuelve el
  *  registro entero.
  *

@@ -29,6 +29,13 @@ export const entityRoutes = {
 
   getEntity: (ctx, { params }) => {
     // El jugador no es una EntityRecord: viaja con su propio shape.
+    //
+    // SIN PARTIDA NO SE LLEGA AQUÍ (#463): el contrato declara la ruta
+    // `requiere_sesion` y el despacho contesta 404 antes. Hasta entonces esta
+    // línea devolvía `ctx.narrative.player` a secas, que sin sesión es
+    // `DEFAULT_PLAYER` —un aventurero inventado de nivel 1 con 100 de vida—,
+    // mientras `/entity/otro` en ese mismo estado contestaba 404. El motor
+    // narraba la ficha de un personaje que no existía.
     if (params.id === "player") {
       return ok({ id: "player", type: "player", player: ctx.narrative.player } satisfies PlayerEntityResponse);
     }

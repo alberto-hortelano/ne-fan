@@ -187,6 +187,28 @@ export interface GenerateGameMessage {
   gameId: string;
 }
 
+/** CURAR el mundo pre-generado de un juego: pedirle al motor SOLO las escenas
+ *  que la puerta de carga criba hoy (`cargarConDetalle().cribadas`) y
+ *  reescribir `data/games/{id}/world/tile.json` con ellas dentro.
+ *
+ *  POR QUÉ ES OTRO MENSAJE Y NO UNA BANDERA DE `generate_game` (#577). Los dos
+ *  encargan tiles al motor, y ahí se acaba el parecido: `generate_game`
+ *  REEMPLAZA el mundo —nueve llamadas— e invalida las aplicaciones de estilo,
+ *  que es arte ya pagado; éste CONSERVA lo que hay, cuesta una llamada por
+ *  escena cribada y no toca el registro de estilo. Un flag con dos semánticas
+ *  así es lo que `PoliticaDeSnapshot` nació para prohibir: un defecto en el
+ *  flag convertiría una cura en una regeneración de pago.
+ *
+ *  Respuesta `game_world_repaired` al ENCOLAR; el progreso y el final viajan
+ *  por narrative_status kind "game_gen", como la pre-generación: es la MISMA
+ *  línea de la MISMA tarjeta del título, y partirla en dos canales obligaría
+ *  al título a saber cuál de los dos trabajos corre para saber dónde mirar. */
+export interface RepairGameWorldMessage {
+  type: "repair_game_world";
+  requestId: string;
+  gameId: string;
+}
+
 /** The player walked into a world-map place. The bridge realizes the place's
  *  low-level scene on demand (lazy realize): if it already has a scene it is
  *  re-broadcast, otherwise the narrative engine generates one. */
@@ -285,6 +307,7 @@ export type ClientMessage =
   | CreateGameMessage
   | ListGamesMessage
   | GenerateGameMessage
+  | RepairGameWorldMessage
   | GetWorldSnapshotMessage
   | RecordStyleApplicationMessage
   | PlayerEnteredPlaceMessage
@@ -672,6 +695,19 @@ export interface GameGeneratedMessage {
   error?: string;
 }
 
+/** Respuesta a repair_game_world: llega al ENCOLAR (ok:false si el juego no
+ *  carga o si no hay nada que curar). La cura real termina por narrative_status
+ *  kind "game_gen" (phase ready|error), igual que la pre-generación. */
+export interface GameWorldRepairedMessage {
+  type: "game_world_repaired";
+  requestId: string;
+  ok: boolean;
+  gameId?: string;
+  /** Resultado del encolado ("queued" | "duplicate" | "promoted"). */
+  queued?: string;
+  error?: string;
+}
+
 /** Qué pasó al borrar una partida. Son TRES desenlaces y no dos, y la
  *  diferencia la conoce solo `SessionStorage.delete`: ENOENT («no estaba»)
  *  devuelve `not_found`, mientras que EACCES o EBUSY LANZAN. */
@@ -741,6 +777,7 @@ export type ServerMessage =
   | GamesListedMessage
   | GameCreatedMessage
   | GameGeneratedMessage
+  | GameWorldRepairedMessage
   | WorldSnapshotMessage
   | StyleApplicationRecordedMessage
   | SessionDeletedMessage

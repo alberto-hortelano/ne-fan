@@ -13,6 +13,7 @@ import type {
   GamesListedMessage,
   GameCreatedMessage,
   GameGeneratedMessage,
+  GameWorldRepairedMessage,
   WorldSnapshotMessage,
   StyleApplicationRecordedMessage,
   SessionDeletedMessage,
@@ -332,6 +333,13 @@ export class BridgeClient {
    *  "game_gen". */
   generateGame(gameId: string): Promise<GameGeneratedMessage> {
     return this.request<GameGeneratedMessage>({ type: "generate_game", gameId });
+  }
+
+  /** CURAR el mundo pre-generado: pedirle al motor solo las escenas que la
+   *  carga criba. Como `generateGame`, la respuesta llega al ENCOLAR y el
+   *  progreso viaja por narrative_status kind "game_gen". */
+  repairGameWorld(gameId: string): Promise<GameWorldRepairedMessage> {
+    return this.request<GameWorldRepairedMessage>({ type: "repair_game_world", gameId });
   }
 
   /** Snapshot de mundo pre-generado + vocabulario (batch de aplicar estilo).

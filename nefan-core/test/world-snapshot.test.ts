@@ -619,7 +619,10 @@ describe("lo que se carga pasa por validateScene o no se sirve (#302)", () => {
  *
  *  Se mide por el FICHERO, que es el sujeto: cuántas escenas quedan y cuál es
  *  la de entrada. La política es un parámetro sin defecto (`PoliticaDeSnapshot`),
- *  así que el tercer llamante tendrá que elegir en vez de heredar. */
+ *  así que cada llamante elige en vez de heredar — y el tercero, la cura de
+ *  #577, eligió `conserva` por una razón que se mide en `game-repair.test.ts`:
+ *  con `reemplaza`, la escena cribada que la cura no arregla desaparecería del
+ *  fichero y el chip del título dejaría de avisar. */
 describe("el anillo bueno no se pierde: la política de escritura del snapshot (#451)", () => {
   /** Las ocho del anillo, todas sanas. */
   const anilloSano = (): Record<string, Record<string, unknown>> => {

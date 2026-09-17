@@ -173,6 +173,12 @@ const GenerateGameMessageSchema = z.object({
   gameId: z.string(),
 });
 
+const RepairGameWorldMessageSchema = z.object({
+  type: z.literal("repair_game_world"),
+  requestId: z.string(),
+  gameId: z.string(),
+});
+
 const GetWorldSnapshotMessageSchema = z.object({
   type: z.literal("get_world_snapshot"),
   requestId: z.string(),
@@ -229,6 +235,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   CreateGameMessageSchema,
   ListGamesMessageSchema,
   GenerateGameMessageSchema,
+  RepairGameWorldMessageSchema,
   GetWorldSnapshotMessageSchema,
   RecordStyleApplicationMessageSchema,
   PlayerEnteredPlaceMessageSchema,
