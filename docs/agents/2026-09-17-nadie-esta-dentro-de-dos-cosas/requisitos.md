@@ -59,7 +59,11 @@ devuelve `porDondeSalirDeAqui` no lo frena ninguna fuente**.
    cada fuente». Ojo a lo ya tumbado con medida en la tanda E: «celda a celda» literal **encierra** (0 de
    8 rumbos salen de una caja de 12×12 m), y la «puerta del destino combinado» **clava** al jugador en la
    esquina. Si la unión tiene el mismo problema, mejor saberlo antes de escribir.
-3. **¿Los 7 de `sitioParaAparecer` se matan o se quita el código que los hospeda?** El precedente de la
+3. **¿Los 8 de `sitioParaAparecer` se matan o se quita el código que los hospeda?** RESUELTO: **se matan**,
+   y la crítica trae el instrumento — un `SueloSolido` **analítico de tres líneas** con un macizo
+   **ASIMÉTRICO** (`x ∈ [0,400]`, `z ∈ [0,800]`, cuerpo en (245, 400)) da `{x: 400.5, z: 400}` con el
+   original y `null` con el mutante. El macizo **simétrico** de `test/salida-del-solido.test.ts:296` da
+   `null` con los dos, y por eso sobreviven hoy. El precedente de la
    casa es claro y va en la segunda dirección cuando el código es inobservable (`arch-cierre` el
    2026-09-06, `render-mode` el 09-09). Aquí NO parece el caso —la función es observable y la conducta
    está sujeta por `qa/el-viaje-no-mete-a-nadie-dentro.mjs`—, pero eso hay que **medirlo**, no suponerlo.
@@ -98,8 +102,8 @@ devuelve `porDondeSalirDeAqui` no lo frena ninguna fuente**.
   en **912 de 1.106** puntos). **Un candado que afirme «nadie se queda encerrado dentro de las dos» NACE
   VERDE** —medido— y sería el cuarto sin sujeto vivo en tres tandas: no vale. Si va como barrido en `qa/`,
   con `probePoint` y no `probeCollide`, o nace con **#651** puesto.
-- **#648**: los **7 de `sitioParaAparecer` muertos**, verificado con `npm run mutacion -- local
-  salida-del-solido`, y el suelo **subido** a lo que dé. Los 10 restantes, clasificados uno a uno con su
-  medida.
+- **#648**: los **8 de `sitioParaAparecer` muertos** (L256 ×1, L261 ×4, L262 ×3), verificado con
+  `npm run mutacion -- local salida-del-solido`, y el suelo **subido** a lo que dé. Los **9** restantes,
+  clasificados uno a uno con su medida — y **L229 no va en el renglón de L227**: es conducta, se mata.
 - `npm run verify` verde, batería sin rojos nuevos, ningún umbral bajado.
 - **Si hay que sacrificar algo, se sacrifica #643** (recomendación de la crítica).
