@@ -44,9 +44,24 @@
  *
  *  El disco lo localiza `QA_RUN_TMP` (lo pone el runner cuando arranca él el
  *  stack); contra un stack ajeno (`--url`) no hay tile que editar y se declara
- *  `sinMedir`. Ninguna espera es de reloj: el snapshot pasivo se escribe ANTES
- *  de difundir la escena (`bootstrap-tile.ts`), así que cuando `comenzar`
- *  vuelve el fichero ya está.
+ *  `sinMedir`. Ese disco es de LA CORRIDA, no de este guion, y el
+ *  `nefan-bridge.log` que hay dentro lo escriben todos los que compartan stack:
+ *  la regla no es «no lo leas» —ahí están el `tile.json` y los logs, por
+ *  diseño— sino **no des por tuya una línea que no has marcado** (#653). Este
+ *  guion se quedaba con la PRIMERA línea «se CRIBA» del fichero y exigía que
+ *  nombrara lo suyo, así que cualquier guion anterior que cribara le robaba la
+ *  evidencia: latente porque en orden alfabético el otro que criba es el 127 y
+ *  120 < 127, y reproducido con `node qa/run.mjs --orden inverso 127 120` (rojo
+ *  con la línea de `tile_-1_-1`, que es del 127). Hoy se mide por MARCA DE
+ *  AGUA, como el 127 y como el 90/129/130: se cuenta lo que hay ANTES de
+ *  provocar la criba y se lee lo que apareció DESPUÉS. Filtrar por `MALO` y
+ *  `npcRoto` —la otra salida que proponía el issue— habría arreglado el robo
+ *  dejando el aserto TAUTOLÓGICO: seleccionaría la línea por exactamente lo
+ *  que el aserto afirma de ella, y ya no podría ponerse rojo.
+ *
+ *  Ninguna espera es de reloj: el snapshot pasivo se escribe ANTES de difundir
+ *  la escena (`bootstrap-tile.ts`), así que cuando `comenzar` vuelve el fichero
+ *  ya está.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -167,6 +182,12 @@ export default async function (ctx) {
   const logBridge = join(tmp, "logs", "nefan-bridge.log");
   const leerSnapshot = () => JSON.parse(readFileSync(tileJson, "utf8"));
   const escribirSnapshot = (s) => writeFileSync(tileJson, JSON.stringify(s, null, 2) + "\n", "utf8");
+  /** Las líneas «se CRIBA» que lleva el log del bridge AHORA MISMO. El fichero
+   *  es de la CORRIDA, no de este guion (#653): se mide por MARCA DE AGUA —lo
+   *  que hay antes de provocar la criba y lo que hay después—, que es el mismo
+   *  molde que usan el 127 (`antesCribas` + `slice`) y el 90/129/130 con sus
+   *  «descartado:». */
+  const cribas = () => readFileSync(logBridge, "utf8").split("\n").filter((l) => l.includes("se CRIBA"));
 
   // ── 1 · un mundo pre-generado de verdad, con sus 9 escenas ─────────────
   await regenerarMundo(ctx, GAME);
@@ -193,6 +214,14 @@ export default async function (ctx) {
   const npcRoto = romperElAnillo(conAnilloRoto.scenes[MALO], [10, 10]);
   escribirSnapshot(conAnilloRoto);
   ctx.log(`${MALO} roto: «${npcRoto}» nace en [10, 10], celda de agua fabricada en su grid`);
+  // LA MARCA, antes de tocar nada: a partir de aquí, toda línea «se CRIBA»
+  // nueva la ha causado este guion. Sin ella se cogía la PRIMERA del fichero,
+  // que es de quien cribara antes (#653).
+  const cribasAntes = cribas().length;
+  ctx.log(
+    `marca: ${cribasAntes} línea(s) «se CRIBA» en el log de la corrida antes de que este guion cribe` +
+      (cribasAntes ? " — todas ajenas, y el `.find` de antes se habría quedado con la primera" : ""),
+  );
 
   await recargarAlTitulo(ctx);
   const conAnillo = await panelDeGeneracion(ctx);
@@ -222,13 +251,17 @@ export default async function (ctx) {
   );
   await ctx.shot("partida-con-el-anillo-cribado");
 
-  const criba = readFileSync(logBridge, "utf8")
-    .split("\n")
-    .find((l) => l.includes("se CRIBA"));
+  // Lo que se ha cribado DESDE LA MARCA, y de ahí la primera: es la criba que
+  // provocó este guion. Lo que se afirma sigue siendo lo mismo —que la línea
+  // nombre la escena y el NPC—, y por eso la selección NO puede ser por esos
+  // ids: seleccionar por lo que se va a afirmar deja un aserto tautológico que
+  // no puede ponerse rojo.
+  const nuevas = cribas().slice(cribasAntes);
+  const criba = nuevas[0];
   ctx.expect(
     "2. el bridge dice POR QUÉ criba: la escena y el NPC, no un silencio",
     Boolean(criba) && criba.includes(`"${MALO}"`) && criba.includes(`"${npcRoto}"`),
-    criba || "(sin línea «se CRIBA» en nefan-bridge.log)",
+    criba || `(ninguna línea «se CRIBA» nueva desde la marca: ${cribasAntes} antes, ${cribas().length} ahora)`,
   );
 
   // …y solo se vuelve a pedir el malo: el bueno viene de la sesión (0

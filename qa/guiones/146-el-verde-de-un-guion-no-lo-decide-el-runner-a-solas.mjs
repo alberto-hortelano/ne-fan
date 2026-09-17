@@ -54,6 +54,10 @@ import { VERDE, veredictoDeGuion } from "../lib/veredictos.mjs";
 /** La EXCEPCIÓN del guardarraíl (#295): este guion no abre el juego — solo lee
  *  el árbol de `qa/run.mjs`. */
 export const sinMotor = "solo lee el árbol de qa/run.mjs; no arranca partida ni habla con el motor";
+/** Tampoco necesita PÁGINA (#655): lee el árbol de `qa/run.mjs` y ejerce el
+ *  `ctx` que tiene en la mano. Es además el que más gana con entrar en CI: lo
+ *  que vigila es el CABLE del veredicto, o sea el color de todos los demás. */
+export const sinNavegador = "lee el árbol de qa/run.mjs y ejerce el ctx que tiene en la mano; no abre página";
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(DIR, "..", "..");

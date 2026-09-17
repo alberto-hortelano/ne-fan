@@ -86,6 +86,9 @@ import { fileURLToPath } from "node:url";
 /** La EXCEPCIÓN del guardarraíl de gasto: este guion no abre el juego — lanza
  *  dos subprocesos que parsean JSON en memoria. */
 export const sinMotor = "compara dos validadores en subprocesos (tsx + python3); no abre partida ni habla con el motor";
+/** Tampoco necesita PÁGINA (#655): los dos gates se ejercen en subprocesos y lo
+ *  que se compara son sus veredictos. Ver la cabecera de `qa/run.mjs`. */
+export const sinNavegador = "ejerce los dos gates en subprocesos (tsx y python3) y compara sus veredictos; no hay cliente que conducir";
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CORE = join(RAIZ, "nefan-core");

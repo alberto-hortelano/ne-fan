@@ -46,6 +46,35 @@
  *                                     otro agente de la máquina)
  *    node qa/run.mjs --orden inverso  al revés (criterio: mismo veredicto)
  *    node qa/run.mjs --diag           una línea de diagnóstico por guion
+ *    node qa/run.mjs --sin-navegador  SOLO los guiones que declaran
+ *                                     `export const sinNavegador = "<motivo>"`,
+ *                                     y sin levantar preset ni Chromium
+ *
+ *  ── LOS GUIONES QUE NO TOCAN EL NAVEGADOR (#655) ──────────────────────────
+ *  Hay guiones cuyo sujeto es el ÁRBOL o dos gates comparados entre sí: leen
+ *  ficheros, lanzan un subproceso y afirman. No necesitan preset, ni puerto, ni
+ *  Chromium, y por eso lo único que los corría —la batería de navegador, que no
+ *  está en ningún job— los dejaba fuera del CI: el 39 estuvo ROJO desde que
+ *  nació (2026-08-29) hasta que lo arregló #633, porque nadie lo corría.
+ *
+ *  No se pueden derivar por sus imports: un guion NO importa `playwright`, lo
+ *  recibe inyectado en su `ctx`, así que un detector por imports diría que los
+ *  145 son headless, que es lo contrario de la verdad. Así que se DECLARAN,
+ *  igual que `sinMotor`, y la declaración se EJERCE en vez de creerse: a un
+ *  guion que la lleva se le entrega un `ctx` con `page`, `nefan`, `waitFor`,
+ *  `shot`, `holdUntil`, `expectEspera` y `excepcionEsperada` ENVENENADOS
+ *  (leerlos lanza), en los dos modos. O sea que una declaración falsa sale roja también en la batería
+ *  normal, que es donde se escribiría.
+ *
+ *  Lo que NO cubre, dicho para que nadie lo cite de más: un guion que PODRÍA
+ *  ser headless y no lo declara se queda fuera del job, como hasta ahora. La
+ *  declaración se puede olvidar; lo que no se puede es mentir.
+ *
+ *  Y NO se mueven a `qa/` (la otra salida que se estudió): allí heredarían el
+ *  candado de totalidad de #645 tal cual, pero perderían el `ctx` del runner —y
+ *  con él el contador de afirmaciones de #639, o sea el candado del veredicto—.
+ *  Mover algo a un sitio mejor vigilado dejándolo sin el candado que ya tenía es
+ *  la enfermedad de esta casa; aquí se trae el job al guion y no al revés.
  *
  *  Carga sintética (#545): `NEFAN_QA_CPU_FACTOR=N` frena el hilo principal de la
  *  página por CDP y mide la razón sim/pared; `NEFAN_QA_CARGA_JSON=fichero` la
@@ -60,7 +89,6 @@
  *    2  algo no llegó a medir (stack caído, precondición perdida, el runner
  *       murió): la corrida NO dice nada del juego, ni bueno ni malo
  */
-import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
 // El guardarraíl de gasto lo ejerce el RUNNER, no cada guion (#295): la
 // obligación de preguntar no puede vivir en un prólogo que se copia a mano.
@@ -149,6 +177,10 @@ const DIAG = flag("--diag");
  *  stack" no significa "el mío". */
 const ADOPTAR = flag("--adoptar");
 const ORDEN = opt("--orden", "alfabetico");
+/** Corrida SIN navegador y SIN stack (#655): solo los guiones que declaran
+ *  `export const sinNavegador = "<motivo>"`. Es el modo que puede correr un job
+ *  de CI en segundos — ver la cabecera. */
+const SIN_NAVEGADOR = flag("--sin-navegador");
 /** `--censo <fichero>`: además de imprimirlo, vuelca el censo de gasto por
  *  guion a JSON. Sirve para comparar DOS corridas (antes y después de cambiar
  *  un defecto de gasto) sin leer dos scrollbacks de mil líneas. */
@@ -226,6 +258,9 @@ function reservarBloque(off) {
  *  sabe lo que quiere) y no se busca nada al adoptar un stack ajeno. */
 let lockDelBloque = null;
 async function elegirBloque() {
+  // Sin navegador no hay stack, así que no hay bloque que reservar: pedirlo
+  // sondearía nueve puertos y le quitaría un bloque a una corrida de verdad.
+  if (SIN_NAVEGADOR) return 0;
   if (process.env.NEFAN_PORT_OFFSET) return offsetActual();
   // El bloque de un stack ajeno lo dice SU URL. `--url http://…/?offset=500`
   // es la forma en que se mide contra el stack del bloque +500, y hasta #476
@@ -553,7 +588,7 @@ function salir(code, motivo) {
   }
   if (!KEEP) rmSync(TMP, { recursive: true, force: true });
   else console.log(`· disco efímero sin borrar: ${TMP}`);
-  apuntarUltima();
+  if (!SIN_NAVEGADOR) apuntarUltima();
   // El bloque de puertos vuelve al pozo aunque la corrida muera mal. Si no
   // llegara a soltarse, la siguiente lo reclama al ver que su dueño no existe.
   if (lockDelBloque) rmSync(lockDelBloque, { force: true });
@@ -729,6 +764,17 @@ async function resetFakeAi() {
  *  existe no debe inventarse por simetría. */
 async function aislar(nombre, aisla, propio) {
   if (!Array.isArray(aisla) || aisla.length === 0) return [];
+  // Sin navegador no hay stack NINGUNO: ni disco efímero que vaciar ni motor
+  // falso que resetear. Y el motor falso del bloque BASE puede ser el de la
+  // batería del vecino, así que resetearlo sería romperle la corrida a otro
+  // (#655). Se para y se dice, como con el stack ajeno.
+  if (SIN_NAVEGADOR) {
+    throw new Error(
+      `declara aisla [${aisla.join(", ")}] y esta corrida es \`--sin-navegador\`: no hay stack ` +
+        `que aislar, y el motor falso que hubiera en los puertos base sería el de OTRA corrida. ` +
+        `Un guion que necesita aislar algo necesita stack: quítale el \`sinNavegador\`.`,
+    );
+  }
   // Sin stack propio no hay disco efímero que vaciar: no sabemos dónde guarda
   // sus saves ni sus mundos el stack que ya estaba. Antes esto se saltaba en
   // SILENCIO y el guion daba una roja que no era del juego sino de su
@@ -788,6 +834,30 @@ function exentoDeMotor(nombre, sinMotor) {
   return true;
 }
 
+/** Cómo se declara un guion SIN NAVEGADOR (#655), leído del FICHERO para poder
+ *  elegir a quién importar: importar un guion tiene efectos (el 20 pide puertos
+ *  al kernel en su top-level await), así que no se pueden importar los 145 para
+ *  preguntarles. La declaración de verdad sigue siendo el `export` del módulo —
+ *  esto solo preselecciona, y `exentoDeNavegador` es quien la valida. */
+const DECLARA_SIN_NAVEGADOR = /^export const sinNavegador\s*=/m;
+
+/** ¿Declara este guion que no toca el navegador? Mismo contrato que
+ *  `exentoDeMotor`: el MOTIVO es parte de la declaración y cualquier otra cosa
+ *  es un error con nombre, no un silencioso «pues no lo eximo».
+ *
+ *  Ausente = NO exento, o sea que corre con navegador como todos: el descuido
+ *  cae del lado que mide de más, nunca del que se salta la comprobación. */
+function exentoDeNavegador(nombre, sinNavegador) {
+  if (sinNavegador === undefined) return false;
+  if (typeof sinNavegador !== "string" || sinNavegador.trim() === "") {
+    throw new Error(
+      `${nombre}: \`export const sinNavegador\` tiene que ser el MOTIVO por el que este guion no ` +
+        `necesita página (una frase), y llegó ${JSON.stringify(sinNavegador)}.`,
+    );
+  }
+  return true;
+}
+
 /** Cuánto tarda el título en tener su lista de partidas — el `list_sessions`
  *  del bridge, por su propio cable. Es lo que espera el jugador mirando el home
  *  y crece con cada save que se acumula. */
@@ -836,6 +906,13 @@ class SinMedirDeclarado extends Error {
     this.motivo = motivo;
   }
 }
+
+/** Lo que un guion SIN NAVEGADOR no puede tocar del `ctx` (#655). No es una
+ *  lista de cortesía: leerlos LANZA, así que una declaración falsa sale roja
+ *  —también en la batería normal, que es donde se escribiría—. Lo que sigue
+ *  entero es lo que no necesita página: `expect` (con su contador de #639),
+ *  `log`, `sinMedir`, `sinMedirBloque` y `fallos`. */
+const CTX_DE_PAGINA = ["page", "nefan", "waitFor", "shot", "holdUntil", "expectEspera", "excepcionEsperada"];
 
 /** Contexto que recibe cada guion. Todo lo que ofrece espera por estado; no
  *  hay sleep en la API, a propósito.
@@ -920,7 +997,9 @@ function makeCtx(page, name) {
      *  cambia y un sitio de llamada que sigue escribiendo la vieja, en silencio.
      *  Aquí no hay silencio posible; y que el `{ms}` esté DECLARADO y con motivo
      *  escrito lo verifica `test/esperas-que-conducen.test.ts`, en CI, que es
-     *  donde hace falta: esta batería no corre en ningún job. */
+     *  donde hace falta: la batería de NAVEGADOR no corre en ningún job (desde
+     *  #655 sí corren en uno los guiones que declaran `sinNavegador`, y a esos
+     *  este verbo no les llega: lo tienen envenenado). */
     async holdUntil(key, desc, untilFn, presupuesto, arg = undefined) {
       if (presupuesto === null || typeof presupuesto !== "object" || Array.isArray(presupuesto)) {
         throw new Error(
@@ -1118,13 +1197,53 @@ function makeCtx(page, name) {
   // El getter no basta por sí solo: un `Object.defineProperty` lo redefiniría.
   // Con esto, la única vía para que el contador suba es `expect`.
   Object.defineProperty(ctx, "afirmaciones", { configurable: false });
+  // Sin página, los verbos que la conducen se ENVENENAN en vez de fallar con
+  // un «Cannot read properties of null» a cien líneas de aquí (#655). Es lo que
+  // convierte `sinNavegador` en una declaración EJERCIDA: el guion que la lleva
+  // y toca la página sale rojo con su nombre y el del verbo.
+  if (page === null) {
+    for (const miembro of CTX_DE_PAGINA) {
+      Object.defineProperty(ctx, miembro, {
+        get() {
+          throw new Error(
+            `${name}: declara \`export const sinNavegador\` y ha pedido \`ctx.${miembro}\`, que conduce ` +
+              `la página. O la declaración es falsa —quítala y correrá con navegador como los demás—, o ` +
+              `ese trozo del guion sobra.`,
+          );
+        },
+        configurable: false,
+      });
+    }
+  }
   return ctx;
+}
+
+/** `playwright-core`, cargado cuando de verdad hace falta. Un módulo que falta
+ *  se dice con una FRASE y no con un `ERR_MODULE_NOT_FOUND` de veinte líneas:
+ *  el runner ya ha arrancado el stack cuando llega aquí, así que quien lo lea
+ *  tiene que saber en un renglón qué le falta y qué hacer. */
+async function cargarChromium() {
+  try {
+    return (await import("playwright-core")).chromium;
+  } catch (err) {
+    throw new Error(
+      `no encuentro \`playwright-core\`, que es con lo que el banco abre el navegador: corre ` +
+        `\`npm ci\` en qa/. (Si lo que querías era la corrida sin navegador, es ` +
+        `\`node qa/run.mjs --sin-navegador\`, y ésa no necesita qa/node_modules.) — ${err.message}`,
+    );
+  }
 }
 
 async function main() {
   const guiones = readdirSync(join(here, "guiones"))
     .filter((f) => f.endsWith(".mjs"))
     .filter((f) => filters.length === 0 || filters.some((q) => f.includes(q)))
+    // El modo sin navegador (#655) corre la CLASE ENTERA de los que lo
+    // declaran, no una lista: un guion headless nuevo entra en el job el día
+    // que escribe su `sinNavegador`, sin que nadie tenga que acordarse de
+    // añadirlo a un yml. Se mira el fichero porque importar los 145 para
+    // preguntarles tiene efectos; quien valida la declaración es el módulo.
+    .filter((f) => !SIN_NAVEGADOR || DECLARA_SIN_NAVEGADOR.test(readFileSync(join(here, "guiones", f), "utf8")))
     .sort();
   if (ORDEN === "inverso") guiones.reverse();
   else if (ORDEN !== "alfabetico") {
@@ -1133,7 +1252,12 @@ async function main() {
   }
 
   if (guiones.length === 0) {
-    console.error("No hay guiones que casen con:", filters.join(", ") || "(todos)");
+    console.error(
+      SIN_NAVEGADOR
+        ? `Ningún guion declara \`export const sinNavegador\`${filters.length ? ` entre los que casan con ${filters.join(", ")}` : ""}: ` +
+            "esta corrida no mediría nada, y un job en verde sin guiones es peor que no tener job."
+        : `No hay guiones que casen con: ${filters.join(", ") || "(todos)"}`,
+    );
     process.exit(2);
   }
 
@@ -1152,11 +1276,22 @@ async function main() {
   // (§6e) y no se hace aquí. Lo que sí se hizo el mismo día es que el escaneo
   // de arquitectura deje de recorrerlo (`scan.ignore` en arch-rules.json), que
   // era quien pagaba el crecimiento en cada `npm test`.
-  rmSync(SHOTS, { recursive: true, force: true });
-  mkdirSync(SHOTS, { recursive: true });
+  // Sin navegador no hay capturas, así que no se crea el directorio ni se mueve
+  // el enlace `ultima`: si no, una corrida de un segundo le robaría el puntero a
+  // la batería de navegador que alguien acaba de correr, apuntándolo a una
+  // carpeta VACÍA. Es la misma regla que ya protege a dos baterías simultáneas.
+  if (!SIN_NAVEGADOR) {
+    rmSync(SHOTS, { recursive: true, force: true });
+    mkdirSync(SHOTS, { recursive: true });
+  }
 
   prepararDisco();
-  const stack = await ensureStack();
+  // El modo sin navegador no levanta stack ni lo adopta: sus guiones leen el
+  // árbol y lanzan subprocesos, así que un preset arriba solo sería tiempo y
+  // puertos (#655). `stack = null` es el mismo valor que con un stack ajeno,
+  // pero el aviso de abajo no aplica: aquí no hay stack NINGUNO, y decirle a
+  // quien lee «usa SU disco» sería falso.
+  const stack = SIN_NAVEGADOR ? null : await ensureStack();
   stackPropio = stack;
   // Los tmp de corridas muertas se borran AQUÍ y no en `prepararDisco()`, y el
   // orden es el arreglo entero de #283: mientras no se sepa si el stack lo
@@ -1173,7 +1308,7 @@ async function main() {
   // quedándose con el primero alfabético —el RUN_ID más ANTIGUO, o sea el
   // disco de la corrida de al lado—: un verde midiendo los saves de otro.
   if (stack) process.env.QA_RUN_TMP = TMP;
-  if (!stack) {
+  if (!stack && !SIN_NAVEGADOR) {
     // El stack que ya estaba no sabe de nuestro disco efímero, así que la
     // corrida NO es hermética. Puede ser de otra persona o el huérfano de una
     // corrida anterior que murió a lo bruto: desde aquí no se distingue, así
@@ -1185,6 +1320,12 @@ async function main() {
     );
   }
   console.log(`· orden: ${ORDEN}`);
+  if (SIN_NAVEGADOR) {
+    console.log(
+      `· SIN NAVEGADOR: ${guiones.length} guion(es) que lo declaran, sin preset, sin puertos y sin Chromium.\n` +
+        "       Los verbos del ctx que conducen la página están envenenados: si uno los toca, sale ROJO.",
+    );
+  }
   // ¿Está puesta la red que caza al que declara `sinMotor` y gasta? Se pregunta
   // una vez y se dice, en vez de que su ausencia pase por «ninguno gastó». Que
   // esta red pueda no existir es justo la razón por la que NO puede ser la
@@ -1193,19 +1334,27 @@ async function main() {
   // Un ⊘ con su motivo, que es el canal que ya existe para «no llegué a
   // medir», aplicado a la corrida entera: sin hojas base no hay partida que
   // conducir, y 71 rojos no dirían nada del juego.
-  const sinHojas = await hojasBaseQueFaltan();
+  const sinHojas = SIN_NAVEGADOR ? null : await hojasBaseQueFaltan();
   if (sinHojas) {
     console.log(`\n⊘ LA CORRIDA NO MIDE: ${sinHojas}`);
     salir(exitDeCorrida(0, 1), "la corrida se apaga sin abrir el navegador");
   }
-  const hayContadorDeGasto = (await contadoresDelFake()) !== null;
-  if (!hayContadorDeGasto) {
+  const hayContadorDeGasto = SIN_NAVEGADOR ? false : (await contadoresDelFake()) !== null;
+  if (!hayContadorDeGasto && !SIN_NAVEGADOR) {
     console.log(
       "· OJO: el motor de esta corrida no publica /dev/counters — la red que caza a un\n" +
         "       `sinMotor` que sí gasta no está puesta. El guardarraíl de los demás sigue entero.",
     );
   }
-  const browser = await abrirNavegador(chromium, { headed: HEADED });
+  // `playwright-core` se carga AQUÍ y no arriba (#655): con la corrida
+  // `--sin-navegador` no hace falta, y así ese modo corre con lo que trae node
+  // —sin `qa/node_modules`, que es lo que hay en un runner de CI, donde solo se
+  // instalan `nefan-core` y `narrative-mcp`—. Medido: con `qa/node_modules`
+  // apartado, `--sin-navegador` sale 0 y la corrida normal muere diciendo que
+  // le falta el módulo. El import dinámico sigue contando como import para el
+  // grafo de `test/candados-headless-totalidad.test.ts` (lee el AST y mira
+  // `import(…)`), así que este fichero sigue clasificado como «abre navegador».
+  const browser = SIN_NAVEGADOR ? null : await abrirNavegador(await cargarChromium(), { headed: HEADED });
 
   const resultados = [];
   /** El guion durante el cual se cayó el stack, si se cayó. A partir de ahí no
@@ -1221,9 +1370,22 @@ async function main() {
     const mod = await import(pathToFileURL(join(here, "guiones", file)).href);
     // Precondición DECLARADA del guion, ejecutada antes de abrir su página.
     let exento = false;
+    let sinPagina = false;
     try {
       exento = exentoDeMotor(nombre, mod.sinMotor);
       if (exento) console.log(`    ⛨ sin motor: ${mod.sinMotor}`);
+      // La declaración de #655 se VALIDA aquí contra el módulo: el filtro de
+      // arriba solo lee el fichero para elegir a quién importar. En una corrida
+      // normal también, y a propósito: así el `ctx` envenenado se le entrega
+      // igual y una declaración falsa sale roja donde se escribe.
+      sinPagina = exentoDeNavegador(nombre, mod.sinNavegador);
+      if (sinPagina) console.log(`    ⌨ sin navegador: ${mod.sinNavegador}`);
+      if (SIN_NAVEGADOR && !sinPagina) {
+        throw new Error(
+          "el fichero declara `sinNavegador` pero el módulo no lo exporta como una frase: la " +
+            "preselección y la declaración tienen que decir lo mismo",
+        );
+      }
       const hechos = await aislar(nombre, mod.aisla, Boolean(stack));
       if (hechos.length) console.log(`    ⟲ aisla: ${hechos.join(" · ")}`);
     } catch (err) {
@@ -1238,25 +1400,37 @@ async function main() {
       });
       continue;
     }
-    const contadoresAntes = await contadoresDelFake();
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    // Sin stack propio NO se pregunta por los contadores del motor falso, y
+    // esto se pagó nada más escribirlo: `/dev/counters` va al bloque de puertos
+    // BASE, así que una corrida `--sin-navegador` con una batería de navegador
+    // en marcha leía los contadores de ESA y le colgaba su gasto al guion
+    // headless — ⊘ «declara `sinMotor` y disparó generación» por el gasto de
+    // otro. Es el defecto de #653 (dar por tuyo lo que no marcaste) en el
+    // runner, y aquí se cierra por construcción: no se pregunta.
+    const contadoresAntes = SIN_NAVEGADOR ? null : await contadoresDelFake();
+    // Sin página cuando el guion la declara innecesaria (#655). Es lo que hace
+    // de `sinNavegador` una declaración ejercida y no una etiqueta: el `ctx`
+    // que recibe lleva envenenados los verbos que conducen la página.
+    const page = sinPagina ? null : await browser.newPage({ viewport: { width: 1280, height: 800 } });
     // La carga y su sonda van ANTES del `goto`: frenar a mitad de arranque
     // mediría media página tranquila, y una sonda instalada después se perdería
     // justo los frames del arranque, que son los más caros del guion.
-    if (FACTOR_CPU !== null) {
+    if (page && FACTOR_CPU !== null) {
       await aplicarCarga(page, FACTOR_CPU);
       await page.addInitScript(sondaDeReloj(), [POTE, CLAMP_DEL_LOOP]);
     }
     const errores = [];
-    page.on("pageerror", (e) => errores.push(String(e)));
+    if (page) page.on("pageerror", (e) => errores.push(String(e)));
     const ctx = makeCtx(page, nombre);
     let fatal = null;
     /** Por qué este guion NO llegó a medir (⊘), o null si midió. */
     let sinMedir = null;
     const t0 = Date.now();
     try {
-      await page.goto(URL_PAGINA, { waitUntil: "domcontentloaded" });
-      await ctx.waitFor("window.__nefan disponible", () => Boolean(window.__nefan));
+      if (page) {
+        await page.goto(URL_PAGINA, { waitUntil: "domcontentloaded" });
+        await ctx.waitFor("window.__nefan disponible", () => Boolean(window.__nefan));
+      }
       // ── Guardarraíl de gasto (#295) ──────────────────────────────────────
       // Aquí y no en el guion: la obligación de preguntar vivía en un prólogo
       // copiado a mano en cuatro ficheros, así que el guion que se olvidaba de
@@ -1277,7 +1451,17 @@ async function main() {
       // ninguna de pago. Lo que no llega a ejecutarse es `mod.default`, que es
       // quien pediría generación. El estado malo deja de ser expresable en vez
       // de quedar prohibido y vigilado.
-      if (!exento) {
+      // El guardarraíl de gasto se pregunta DESDE LA PÁGINA (sus dos `/health`,
+      // con su CORS), así que sin página no hay forma de hacer esa pregunta. El
+      // desenlace del descuido sigue siendo el barato y no el caro: un guion sin
+      // navegador que NO declare `sinMotor` no corre — ⊘ y a otra cosa. Lo que
+      // no se puede es correr un cuerpo sin gatear y sin poder gatear (#655).
+      if (!exento && !page) {
+        sinMedir =
+          "declara `sinNavegador` y NO declara `sinMotor`: sin página no se puede ejercer el " +
+          "guardarraíl de gasto (son dos `/health` desde el cliente), así que el runner no puede " +
+          "garantizar que su cuerpo no llame a un motor que cobra. Declara las dos cosas.";
+      } else if (!exento) {
         const d = await diagnosticoDeCreditos(ctx);
         if (!d.ok) sinMedir = `el guardarraíl de gasto se niega: ${d.motivo}`;
         else ctx.log(`⛨ guardarraíl: ${d.motivo}`);
@@ -1331,7 +1515,7 @@ async function main() {
         if (exp) ctx.esperas.resuelve(exp.esperaId, "propagó al runner y paró el guion");
         fatal = err;
         console.log(`    ✘ ERROR: ${err.message}`);
-        await ctx.shot("error").catch(() => {});
+        if (page) await ctx.shot("error").catch(() => {});
       }
     }
     // La marca sigue puesta = el guion declaró sinMedir y la sentinela NUNCA
@@ -1424,7 +1608,7 @@ async function main() {
         );
       }
     }
-    if (DIAG) {
+    if (DIAG && page) {
       const libros = await page
         .evaluate(() => ({
           viaje: window.__nefan.viaje ?? null,
@@ -1469,7 +1653,7 @@ async function main() {
     // que esta herramienta existe para provocar llegaría sin su medida — o sea,
     // sin lo único que distingue «rojo por carga» de «rojo».
     let cargaDelGuion = null;
-    if (FACTOR_CPU !== null) {
+    if (page && FACTOR_CPU !== null) {
       // El `.catch(() => null)` de la primera versión colapsaba «la página murió»
       // con «no había sonda», y el juicio de después imprimía «la sonda no llegó
       // a instalarse», que en ese caso es falso (H-9 de QA). El desenlace no
@@ -1483,14 +1667,14 @@ async function main() {
       }
       console.log(`    ${lineaDeMedida(cargaDelGuion, FACTOR_CPU)}`);
     }
-    await page.close();
+    if (page) await page.close();
     if (fatal) ctx.fallos.push(`ERROR: ${fatal.message}`);
 
     // ¿Sigue en pie el stack que acaba de conducir este guion? Se pregunta
     // DESPUÉS de cada uno porque la respuesta cambia lo que significa lo que
     // se acaba de medir: con el stack muerto, ni este veredicto ni ninguno de
     // los siguientes es del juego.
-    const caidos = await serviciosCaidos();
+    const caidos = SIN_NAVEGADOR ? [] : await serviciosCaidos();
     if (caidos.length) {
       const motivo = `el stack se cayó durante «${nombre}» (${caidos.join(", ")} dejó de contestar)`;
       stackCaido = { nombre, motivo, caidos };
@@ -1505,7 +1689,7 @@ async function main() {
     // la protección de verdad porque no depende de nadie; esto vive en el motor
     // falso y contra el backend caro no existe. Sirve igual: no puede impedir
     // el gasto a posteriori, pero sí impedir que acabe en verde.
-    const contadoresDespues = await contadoresDelFake();
+    const contadoresDespues = SIN_NAVEGADOR ? null : await contadoresDelFake();
     // El delta se calcula SIEMPRE (censo del final); la red pequeña solo lee su
     // mitad de DINERO, y solo cuando el guion declaró `sinMotor`.
     const censo = deltaDeContadores(contadoresAntes, contadoresDespues);
@@ -1542,7 +1726,7 @@ async function main() {
     });
   }
 
-  await browser.close();
+  if (browser) await browser.close();
 
   const cuenta = (e) => resultados.filter((r) => r.estado === e).length;
   const verdes = cuenta(VERDE);
@@ -1562,7 +1746,9 @@ async function main() {
   }
   const partes = [`${verdes} en verde`, `${rojos} en rojo`];
   if (sinMedir) partes.push(`${sinMedir} SIN MEDIR`);
-  console.log(`${partes.join(" · ")} de ${resultados.length} · capturas en ${SHOTS}`);
+  console.log(
+    `${partes.join(" · ")} de ${resultados.length}` + (SIN_NAVEGADOR ? " · sin capturas: no hay página" : ` · capturas en ${SHOTS}`),
+  );
 
   // ── Censo de gasto ───────────────────────────────────────────────────────
   // Qué guiones ejercen de verdad cada puerta de gasto, MEDIDO y no deducido
@@ -1582,7 +1768,11 @@ async function main() {
     console.log(`  $ ${r.nombre}\n      gasto: ${enLinea(r.censo.gasto)}\n      puertas: ${enLinea(r.censo.ejercicio)}`);
   }
   if (sinContador) {
-    console.log(`  (${sinContador} sin contador: el motor de esta corrida no publica /dev/counters)`);
+    console.log(
+      SIN_NAVEGADOR
+        ? `  (${sinContador} sin contador: esta corrida no levanta motor, así que no hay a quién preguntarle el gasto)`
+        : `  (${sinContador} sin contador: el motor de esta corrida no publica /dev/counters)`,
+    );
   }
   if (CENSO_JSON) {
     writeFileSync(

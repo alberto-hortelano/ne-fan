@@ -82,6 +82,16 @@ function celdaSolidaDe(escena) {
   return { id: solido.id, celda: [Math.floor(c0 + w / 2), Math.floor(r0 + d / 2)] };
 }
 
+/** En qué LÍNEAS del log del bridge está el rechazo en la carga. Devuelve
+ *  índices y no texto porque el aserto de la traza mira la línea siguiente.
+ *
+ *  El log es de la CORRIDA, no de este guion (#653): lo escriben todos los que
+ *  compartan stack, y este mensaje lo provocan además el 120 y el 127 —los tres
+ *  dejan la ENTRADA injugable—, así que se mide por MARCA DE AGUA, como el 127
+ *  y el 90/129/130. */
+const RECHAZO = "world snapshot rechazado en la carga";
+const rechazos = (lineas) => lineas.flatMap((l, n) => (l.includes(RECHAZO) ? [n] : []));
+
 export default async function (ctx) {
   const tmp = process.env.QA_RUN_TMP;
   if (!tmp) {
@@ -119,6 +129,16 @@ export default async function (ctx) {
   npc.cell = solido.celda;
   writeFileSync(tileJson, JSON.stringify(snap, null, 2) + "\n", "utf8");
   ctx.log(`${npc.id} movido a [${solido.celda}] (huella de «${solido.id}») en ${snap.entry_scene_id}`);
+  // LA MARCA, antes de tocar nada: a partir de aquí, todo rechazo en la carga
+  // lo ha causado este guion (#653). Se DICE cuántos había, porque ese número
+  // es la medida del defecto: con uno solo, la versión de antes —que cogía el
+  // PRIMERO del fichero— ya estaba afirmando sobre la partida de otro guion.
+  const previos = rechazos(readFileSync(logBridge, "utf8").split("\n"));
+  const rechazosAntes = previos.length;
+  ctx.log(
+    `marca: ${rechazosAntes} «${RECHAZO}» en el log de la corrida antes de que este guion lo provoque` +
+      (rechazosAntes ? " — todos ajenos, y el `findIndex` de antes se habría quedado con el primero" : ""),
+  );
 
   await recargarAlTitulo(ctx);
   const roto = await panelDeGeneracion(ctx);
@@ -133,13 +153,18 @@ export default async function (ctx) {
   const tras3 = await generacionesServidas();
   ctx.expect("4. Comenzar NO sirve el snapshot: degrada al bootstrap vivo (una llamada más al motor)", tras3 === tras2 + 1, `/generate_scene ${tras2} → ${tras3}`);
 
+  // El primer rechazo DESDE LA MARCA, que es el que provocó este guion. La
+  // selección no puede ser por la escena ni por el NPC: son justo lo que el
+  // aserto afirma de la línea, y seleccionar por ellos lo dejaría tautológico.
   const lineas = readFileSync(logBridge, "utf8").split("\n");
-  const i = lineas.findIndex((l) => l.includes("world snapshot rechazado en la carga"));
+  const nuevos = rechazos(lineas).slice(rechazosAntes);
+  const i = nuevos.length ? nuevos[0] : -1;
   const linea = i >= 0 ? lineas[i] : "";
   ctx.expect(
     "4. el bridge lo dice: «injugable», la escena y el NPC",
     linea.includes("injugable") && linea.includes(`"${snap.entry_scene_id}"`) && linea.includes(`"${npc.id}"`),
-    linea || "(sin línea «rechazado en la carga» en nefan-bridge.log)",
+    linea ||
+      `(ningún «${RECHAZO}» nuevo desde la marca: ${rechazosAntes} antes, ${rechazos(lineas).length} ahora)`,
   );
   ctx.expect(
     "4. …y sin traza de pila detrás",

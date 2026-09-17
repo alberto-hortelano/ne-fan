@@ -33,6 +33,19 @@
  *  DICE en el registro del jugador con su nombre (fail-loud), y que lo que no
  *  declaró nada vuelve exactamente igual.
  *
+ *  SUS SONDAS PREGUNTAN POR `probePoint`, MENOS UNA (#644 y #651). Las que
+ *  DESCRIBEN el mundo —la pared de una caja y su solidez en centro y bordes—
+ *  son `ocupadoEn`, la colisión sin origen: `collidesAt` es una consulta de
+ *  MOVIMIENTO y sus tres fuentes son «salir sí, entrar no», así que contestan
+ *  que no por donde el jugador ya está. Aquí el jugador ANDA hasta el tabernero
+ *  tres veces y el turno cae a 5 m de él, así que el centro que se sondea puede
+ *  ser justo donde está: con `probeCollide`, la pared de una caja medía 0 en
+ *  los cuatro ejes desde dentro. La excepción es `caminoALaBolsa`, que sigue
+ *  siendo `probeCollide` A PROPÓSITO porque lo que pregunta es si el jugador
+ *  puede IR —ahí el origen vivo es el sujeto— y tiene su motivo escrito en el
+ *  sitio. El 145 lo canda: declara que este fichero tiene UNA consulta de
+ *  movimiento, ni más ni menos.
+ *
  *  Cero créditos: preset `e2e-sin-creditos`; los spawns del turno 3 los pone el
  *  motor falso y los declarados salen de sus dos marcas. `aisla` deja saves y
  *  motor falso vírgenes (este guion depende del turno del falso, como el 91).
@@ -108,10 +121,14 @@ const panelPintado = (ctx) =>
   );
 
 /** Dónde acaba la caja de `obj`: desde su centro hacia los cuatro ejes, a qué
- *  distancia deja de bloquear. La MISMA sonda del 91 y del 118. */
+ *  distancia deja de estar ocupado. La MISMA sonda del 91 y del 118, y desde
+ *  #651 también la misma PREGUNTA: `probePoint` (`ocupadoEn`), que no tiene
+ *  origen. Con `probeCollide` esto medía 0 en los cuatro ejes en cuanto el
+ *  jugador estaba dentro de la caja, porque la consulta de movimiento es
+ *  «salir sí, entrar no». */
 const paredMedida = (ctx, obj) =>
   ctx.page.evaluate((e) => {
-    const pc = window.__nefan.probeCollide;
+    const pc = window.__nefan.probePoint;
     const paso = 0.05;
     return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => {
       let d = 0;
@@ -271,9 +288,14 @@ export default async function (ctx) {
   // ── 1 · LA MITAD QUE NO SE TOCA: omitir el campo no cambia nada ──────────
   afirmaElTamano(ctx, huella, "el cofre", trio.cofre, "object", null, "en vivo");
   afirmaElTamano(ctx, huella, "la forja", trio.forja, "building", null, "en vivo");
+  // Por `probePoint` y no por `probeCollide` (#651): es la sonda de caja del
+  // 91 —centro y cuatro bordes—, y describir el mundo con la consulta de
+  // MOVIMIENTO depende de dónde esté el jugador. Aquí acaba de hablar con el
+  // tabernero y el turno cae a 5 m: el centro del cofre que se sondea puede ser
+  // justo donde él está.
   const solidez = await ctx.page.evaluate(
     (ids) => {
-      const pc = window.__nefan.probeCollide;
+      const pc = window.__nefan.probePoint;
       const o = window.__nefan.objects();
       const box = (id) => {
         const e = o.find((x) => x.id === id);
@@ -338,6 +360,18 @@ export default async function (ctx) {
   // medir el paseo diría que un `item` frena cuando lo que frena es otra cosa.
   // (Medido: una de cada tres corridas de este guion, con el cofre del turno 4
   // en medio.) Es un motivo para declarar, no un rojo.
+  //
+  // ── ESTA SONDA ES `probeCollide` A PROPÓSITO, Y NO SE «ARREGLA» (#651) ────
+  // #644 y #651 migraron a `probePoint` las sondas que DESCRIBEN el mundo, y en
+  // este guion son todas menos ésta. Aquí no se describe nada: se pregunta si
+  // el jugador puede IR de donde está hasta la bolsa, que es exactamente lo que
+  // contesta `collidesAt` —el origen vivo ES el sujeto de la pregunta— y es lo
+  // que va a decidir si el paseo de abajo mide la bolsa o mide un muro. Con
+  // `probePoint` la pregunta cambiaría de sentido: diría si hay algo en cada
+  // punto de la recta, sin saber si desde el jugador se llega. Es el mismo caso
+  // que el `state().blocked` del hook (`nefan-hook.ts:213`), correcto por
+  // diseño. Si algún día esto sale de aquí, el 145 se pone rojo: declara que
+  // este fichero tiene UNA consulta de movimiento, ni más ni menos.
   const caminoALaBolsa = await ctx.page.evaluate((b) => {
     const pc = window.__nefan.probeCollide;
     const p = window.__nefan.state().pos;

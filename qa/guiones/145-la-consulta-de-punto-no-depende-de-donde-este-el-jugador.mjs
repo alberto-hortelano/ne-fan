@@ -1,15 +1,16 @@
 /** La consulta de PUNTO no depende de dónde esté el jugador, EN EL CLIENTE VIVO
- *  — y los dos guiones que se migraron a ella no pueden volver atrás en verde
- *  (QA de #644, tanda H, 2026-09-17).
+ *  — y los guiones que se migraron a ella no pueden volver atrás en verde
+ *  (QA de #644, tanda H, 2026-09-17; ampliado en #651, tanda J).
  *
  *  ## Por qué existe, si #644 ya trae candado
  *
  *  La PR de #644 trae `qa/la-consulta-de-punto-no-tiene-origen.mjs`, que es
  *  headless y bueno, pero mide DOS cosas de la mitad de abajo: el CABLE leído
  *  como TEXTO del árbol (`ocupadoEn` = `suelo.ocupado` ∪ `aabbOcupa`) y la
- *  equivalencia sobre un mundo que monta ÉL con `nefan-core/dist`. Nadie ejerce
- *  `window.__nefan.probePoint` contra el cliente de verdad salvo los guiones 91
- *  y 32, y esos dos:
+ *  equivalencia sobre un mundo que monta ÉL con `nefan-core/dist`. Cuando esto
+ *  se escribió, nadie ejercía `window.__nefan.probePoint` contra el cliente de
+ *  verdad salvo los guiones 91 y 32 (desde #651 también el 118, el 119 y el
+ *  128, que es lo que ha ampliado el bloque 1), y esos dos:
  *
  *   · **91** solo se pone rojo si se corre la batería larga, que el CI no corre;
  *   · **32** se puede devolver a `probeCollide` y NO SE PONE ROJO NADA — medido
@@ -24,11 +25,16 @@
  *
  *  ## Qué afirma
  *
- *   1. Los guiones 91 y 32 preguntan por `__nefan.probePoint` y NINGUNO llama a
- *      `__nefan.probeCollide`. Se lee el fichero, no la corrida: sale rojo
- *      aunque nadie los ejecute. (Las menciones en prosa van con acento grave y
- *      no llevan el `__nefan.` delante, así que no cuentan — es la misma
- *      distinción texto/llamada de #454.)
+ *   1. Los CINCO guiones de `MIGRADOS` preguntan por `__nefan.probePoint`, y
+ *      cada uno tiene EXACTAMENTE las consultas de movimiento que declara: cero
+ *      el 91, el 32, el 118 y el 128, y UNA el 119 —`caminoALaBolsa`, que
+ *      pregunta si el jugador puede IR y por eso no se migra (#651)—. Se lee el
+ *      fichero, no la corrida: sale rojo aunque nadie los ejecute. (Las
+ *      menciones en prosa van con acento grave y no llevan el `__nefan.`
+ *      delante, así que no cuentan — es la misma distinción texto/llamada de
+ *      #454.) Que el número sea el DECLARADO y no «cero» es lo que hace que
+ *      este bloque sujete las dos direcciones: quitar la sonda legítima del 119
+ *      también lo pone rojo.
  *   2. Sobre `robledo_tile`, la misma malla contada desde DOS orígenes —el
  *      spawn, libre, y el centro de un sólido— da el MISMO número de celdas
  *      ocupadas con `probePoint`.
@@ -66,9 +72,28 @@ import { fileURLToPath } from "node:url";
 export const sinMotor = "cierra el título y carga una fixture del selector; nunca arranca partida";
 
 const DIR = dirname(fileURLToPath(import.meta.url));
+/** Los guiones que sondean por PUNTO, con cuántas consultas de MOVIMIENTO le
+ *  quedan a cada uno y por qué.
+ *
+ *  El número es parte del ancla y por eso no es «cero» a secas (#651): el 119
+ *  tiene UNA que es correcta —pregunta si el jugador puede IR de donde está
+ *  hasta la bolsa, o sea que el origen vivo ES el sujeto— y escribirla aquí
+ *  hace dos cosas de golpe: que añadir otra salga rojo, y que QUITAR ésa
+ *  también. Lo segundo importa tanto como lo primero: es la sonda que el issue
+ *  pide no «arreglar», y un comentario pidiéndolo no lo sujeta. */
 const MIGRADOS = [
-  "91-la-forja-que-el-motor-pone-ya-no-se-atraviesa.mjs",
-  "32-nadie-nace-donde-no-cabe-su-cuerpo.mjs",
+  { fichero: "91-la-forja-que-el-motor-pone-ya-no-se-atraviesa.mjs", movimiento: 0, porque: null },
+  { fichero: "32-nadie-nace-donde-no-cabe-su-cuerpo.mjs", movimiento: 0, porque: null },
+  { fichero: "118-el-carro-frena-y-la-bolsa-se-pisa.mjs", movimiento: 0, porque: null },
+  {
+    fichero: "119-lo-que-el-motor-declaro-al-reanudar-la-partida.mjs",
+    movimiento: 1,
+    porque:
+      "`caminoALaBolsa`: recorre el segmento del jugador al objeto preguntando si HAY PASO, que es " +
+      "una consulta de movimiento de verdad — el origen vivo es el sujeto, como el `state().blocked` " +
+      "del hook. No se migra, y si desaparece este aserto lo dice",
+  },
+  { fichero: "128-lo-que-el-motor-pone-de-golpe-no-se-pisa.mjs", movimiento: 0, porque: null },
 ];
 const FIXTURE = "robledo_tile";
 /** Paso de la malla, en metros. 1 m sobre un tile de 64×64 son ~4.096 celdas:
@@ -78,19 +103,24 @@ const PASO_M = 1;
 
 export default async function (ctx) {
   // ── 1 · El ancla de la migración: se lee del ÁRBOL ────────────────────────
-  for (const fichero of MIGRADOS) {
+  for (const { fichero, movimiento: esperadas, porque } of MIGRADOS) {
+    const nombre = fichero.split("-")[0];
     const texto = readFileSync(join(DIR, fichero), "utf8");
     const punto = (texto.match(/__nefan\.probePoint/g) ?? []).length;
     const movimiento = (texto.match(/__nefan\.probeCollide/g) ?? []).length;
     ctx.expect(
-      `${fichero.slice(0, 2)} sondea por PUNTO (${punto} llamada(s) a probePoint)`,
+      `${nombre} sondea por PUNTO (${punto} llamada(s) a probePoint)`,
       punto > 0,
       `${punto} probePoint · ${movimiento} probeCollide`,
     );
     ctx.expect(
-      `${fichero.slice(0, 2)} no ha vuelto a la consulta de MOVIMIENTO para describir el mundo`,
-      movimiento === 0,
-      `${movimiento} llamada(s) a __nefan.probeCollide — es #644 otra vez, y desde un origen libre no se nota`,
+      esperadas === 0
+        ? `${nombre} no ha vuelto a la consulta de MOVIMIENTO para describir el mundo`
+        : `${nombre} conserva sus ${esperadas} consulta(s) de MOVIMIENTO declaradas, ni una más ni una menos`,
+      movimiento === esperadas,
+      esperadas === 0
+        ? `${movimiento} llamada(s) a __nefan.probeCollide — es #644 otra vez, y desde un origen libre no se nota`
+        : `${movimiento} llamada(s) a __nefan.probeCollide contra las ${esperadas} declaradas. ${porque}`,
     );
   }
 
