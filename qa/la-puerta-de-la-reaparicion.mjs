@@ -32,17 +32,25 @@
  *      `world/collision.ts`, la pregunta que hacía el escalón retirado
  *      (`collidesAt(pos)` **con el jugador EN `pos`**) vale `false` en todos
  *      los puntos de una malla de 0,5 m. Cada uno de esos puntos es un
- *      veredicto IDÉNTICO entre la función de ayer y la de hoy.
+ *      veredicto IDÉNTICO entre la función de ayer y la de hoy. Desde #616 lo
+ *      es por CONSTRUCCIÓN y no por casualidad de los datos —la regla compara
+ *      la penetración del destino con la del origen, y consigo mismo son el
+ *      mismo número—, así que el bloque 2 mide hoy MENOS de lo que medía: es
+ *      el control (3) el que sigue demostrando que hay mundo debajo.
  *   3. **CONTROL**: los MISMOS puntos, preguntados desde otro sitio, sí
  *      dan sólido en unos cuantos. Sin él, el punto 2 saldría igual de verde
  *      sobre un mundo de aire, que es medir nada.
  *
- *  Y una cosa que MIDE y no afirma: el único caso en que la respuesta NO es
- *  `false` con origen = destino, que es la TANGENCIA EXACTA (el cuerpo del
- *  jugador tocando el borde de una celda sólida sin solaparla en abierto).
- *  Existe, no es alcanzable desde las coordenadas que produce el juego, y está
- *  aquí porque el absoluto «vale `false` siempre» que escriben el módulo y el
- *  `porque` de `mutation-targets.json` es más fuerte que lo medido.
+ *  Y una cosa que MIDE: la TANGENCIA EXACTA (el cuerpo del jugador tocando el
+ *  borde de una celda sólida sin solaparla en abierto), que era el ÚNICO caso
+ *  en que la respuesta no era `false` con origen = destino. **Ya no lo es**:
+ *  #616 (tanda G, 2026-09-17) se llevó la regla de paso al núcleo
+ *  (`simulation/salida-del-solido.ts`, penetración no creciente sobre el
+ *  solape abierto), y ahí `pen(p) > pen(p)` es falso sin excepción. El bloque
+ *  sigue aquí, y ahora AFIRMA las dos mitades: que el caso desapareció y que
+ *  las dos convenciones de solape —la abierta y la cerrada de `blocksCircle`,
+ *  que sujeta el tope de footprint de #300— siguen distinguiéndose. Si
+ *  colapsaran, este bloque saldría verde midiendo una sola.
  *
  *  ## Contrato de salida (es un CANDADO)
  *
@@ -76,6 +84,7 @@ import { fileURLToPath } from "node:url";
 
 import { puntoDeReaparicion } from "../nefan-core/dist/src/simulation/reaparicion.js";
 import { aabbBloquea, fronteraBloquea } from "../nefan-core/dist/src/simulation/obstaculos-del-jugador.js";
+import { solidoBloquea } from "../nefan-core/dist/src/simulation/salida-del-solido.js";
 import { createTerrainCollider, PLAYER_RADIUS_M } from "../nefan-core/dist/src/scene/terrain-collision.js";
 import { formatDToWorld } from "../nefan-core/dist/src/scene/scene-normalize.js";
 import { planCollisionGrid } from "../nefan-core/dist/src/scene/blueprint/plan-collision.js";
@@ -148,7 +157,12 @@ function mundoDeLaFixture(nombre, planAplicado) {
   const w = formatDToWorld(crudo);
   const rect = w.world_rect;
 
-  const gridDelPlan = planCollisionGrid(crudo.ground, crudo.volumes, rect);
+  // El plan COMPUESTO (`__plan`), que es el que el cliente instala
+  // (`world/carga-de-tile.ts:335`). Con los `volumes` DECLARADOS del crudo este
+  // control medía un mundo un 40 % menos sólido: robledo y puerto declaran cero
+  // y derivan del esquema sus 38 y 23 volúmenes (960 celdas de 1.608 y 2.144 de
+  // 3.072). Corregido con #616, al ir a verificar una cifra que se citaba.
+  const gridDelPlan = planCollisionGrid(w.__plan?.ground, w.__plan?.volumes, rect);
   const colliderTerreno = SIN_SOLIDOS ? null : createTerrainCollider(w.terrain_grid);
   const colliderPlan = SIN_SOLIDOS || !gridDelPlan ? null : createTerrainCollider(gridDelPlan);
 
@@ -187,10 +201,18 @@ function mundoDeLaFixture(nombre, planAplicado) {
     planAplicadoEn: () => planAplicado,
   };
 
+  // El SUELO tal y como lo monta `world/collision.ts`: los dos colliders del
+  // tile unidos en UNA consulta de punto, que es lo que consume la regla de
+  // core. Se conserva la distinción terreno/plan para el mensaje del
+  // contraejemplo — preguntando a cada uno por separado, no partiendo la regla.
+  const ocupadoEn = (collider) => (x, z, r) => Boolean(collider?.solapaSolido(x, z, r));
+  const sueloTerreno = { ocupado: ocupadoEn(colliderTerreno) };
+  const sueloPlan = { ocupado: ocupadoEn(colliderPlan) };
+
   const collidesAt = (desde, hasta) => {
     if (fronteraBloquea(desde, hasta, PLAYER_RADIUS_M, tiles)) return "frontera";
-    if (colliderTerreno?.blocksMove(desde.x, desde.z, hasta.x, hasta.z, PLAYER_RADIUS_M)) return "terreno";
-    if (colliderPlan?.blocksMove(desde.x, desde.z, hasta.x, hasta.z, PLAYER_RADIUS_M)) return "plan";
+    if (solidoBloquea(desde, hasta, PLAYER_RADIUS_M, sueloTerreno)) return "terreno";
+    if (solidoBloquea(desde, hasta, PLAYER_RADIUS_M, sueloPlan)) return "plan";
     if (aabbBloquea(desde, hasta, PLAYER_RADIUS_M, objetos, tiles)) return "caja";
     return null;
   };
@@ -269,7 +291,7 @@ if (solidosDesdeElCentro > 0) {
 // ── El caso que el absoluto no cubre, MEDIDO ────────────────────────────────
 
 console.log("");
-console.log("· medido, no afirmado: el único origen=destino que SÍ bloquea");
+console.log("· medido, no afirmado: la TANGENCIA EXACTA, que era el único origen=destino que bloqueaba");
 const rejilla = {
   grid: Array.from({ length: 8 }, (_, r) => Array.from({ length: 8 }, (_, c) => (r >= 4 && c >= 4 ? "w" : ".")).join("")),
   cols: 8,
@@ -280,16 +302,35 @@ const rejilla = {
 };
 const col = createTerrainCollider(rejilla);
 const tangente = { x: 4 * 0.5 - PLAYER_RADIUS_M, z: 4 * 0.5 + 0.25 }; // x + radio == borde exacto
-const bloqueaTangente = col.blocksMove(tangente.x, tangente.z, tangente.x, tangente.z, PLAYER_RADIUS_M);
+const sueloTangente = { ocupado: (x, z, r) => col.solapaSolido(x, z, r) };
+const bloqueaTangente = solidoBloquea(tangente, tangente, PLAYER_RADIUS_M, sueloTangente);
+const laVeCerrada = col.blocksCircle(tangente.x, tangente.z, PLAYER_RADIUS_M);
 console.log(
   `    tangencia exacta (x + ${PLAYER_RADIUS_M} justo en el borde de una celda sólida): ` +
-    `blocksMove(origen = destino) = ${bloqueaTangente}`,
+    `paso(origen = destino) = ${bloqueaTangente} · la consulta CERRADA la sigue viendo sólida = ${laVeCerrada}`,
 );
 console.log(
-  "    La exención de `blocksMove` («celda que ya solapabas») usa un solape ABIERTO, así que la celda que\n" +
-    "    el cuerpo solo TOCA no queda eximida. No lo alcanza el juego —pide x ≡ 0,1 mod 0,5 exacto en binario\n" +
-    "    y los arranques del motor caen en ≡ 0,25—, pero deja de ser cierto el absoluto «vale `false` siempre».",
+  "    ESE CASO YA NO EXISTE, y es la noticia de esta corrida: hasta #616 la regla del terreno vivía dentro\n" +
+    "    del collider y su exención («celda que ya solapabas») usaba un solape ABIERTO mientras la prueba del\n" +
+    "    destino usaba el CERRADO, así que la celda que el cuerpo solo TOCA bloqueaba sin quedar eximida. Hoy\n" +
+    "    la regla es la penetración no creciente sobre el solape abierto y `pen(p) > pen(p)` es falso siempre:\n" +
+    "    el absoluto «vale `false` siempre» pasa a ser cierto SIN excepción medida. La convención cerrada sigue\n" +
+    "    viva (`blocksCircle`, el tope de footprint de #300) y por eso se imprimen las dos.",
 );
+if (bloqueaTangente !== false) {
+  mal(
+    "la tangencia exacta ya no bloquea consigo misma",
+    `la consulta de paso con origen = destino devolvió ${bloqueaTangente} en el punto tangente: ` +
+      "ha vuelto a entrar una convención cerrada en la regla de paso",
+  );
+}
+if (!laVeCerrada) {
+  mal(
+    "la convención CERRADA sigue distinguiéndose de la abierta",
+    "`blocksCircle` ya no ve sólido el punto tangente: si las dos convenciones colapsan, este bloque " +
+      "deja de medir la diferencia que existe para medir",
+  );
+}
 
 console.log("");
 if (fallos.length) {

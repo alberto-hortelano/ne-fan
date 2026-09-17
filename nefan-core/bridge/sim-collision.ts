@@ -16,6 +16,13 @@
  *     `src/simulation/cajas-de-runtime.ts`, la misma `cajaBloquea` con la que
  *     se para el jugador.
  *
+ *  LA REGLA DE PASO ES DE CORE Y ES LA MISMA PARA LAS DOS GEOMETRÍAS desde
+ *  #616: penetración no creciente. Lo que este fichero aporta del TILE es el
+ *  SUELO —la unión de los colliders de los tiles tocados en una sola consulta
+ *  de punto—, no una segunda cuenta. Hasta entonces la regla del tile vivía
+ *  dentro del collider, eximía CELDAS en vez de penetración y no sacaba a
+ *  nadie de un macizo.
+ *
  *  Lazy + caché por sceneId para (1) y (2): nada revisa un plan ya emitido,
  *  así que la caché no se invalida. Un grid inconsistente degrada ese tile a
  *  "sin esa fuente" con warning (mismo patrón que el cliente), nunca tumba el
@@ -23,20 +30,39 @@
  *  mitad de partida, que es justo cuando una caché por escena miente, así que
  *  se derivan en cada consulta.
  *
- *  EL COSTE, medido (Ryzen 7 5800X, Node 22, mediana de 7 corridas) AL RITMO
- *  REAL DEL SIM, que es un tick por FRAME del cliente —60/s, no 20:
- *  `main.ts` → `handlers/simulation.ts` → `game-loop.ts`—. Por tick y NPC hay
- *  una consulta de salida y las de paso: UNA si el rumbo directo está libre,
- *  que es lo normal, y siete en el peor caso. Con 10 NPCs, milisegundos de CPU
- *  por cada segundo de juego, en el hilo del bridge:
+ *  EL COSTE, RE-MEDIDO con la regla de #616 puesta (Ryzen 7 5800X, Node 24,
+ *  mediana de 7 corridas) AL RITMO REAL DEL SIM, que es un tick por FRAME del
+ *  cliente —60/s, no 20: `main.ts` → `handlers/simulation.ts` →
+ *  `game-loop.ts`—. Por tick y NPC hay una consulta de salida y las de paso:
+ *  UNA si el rumbo directo está libre, que es lo normal, y siete en el peor
+ *  caso. Con 10 NPCs EN ABIERTO, milisegundos de CPU por cada segundo de
+ *  juego, en el hilo del bridge:
  *
  *    entities de runtime │ caso normal │ peor caso
- *                      0 │     0,4 ms  │    2,8 ms
- *                     50 │     4,6 ms  │   17,8 ms
- *                    200 │    15,1 ms  │   62,2 ms
- *                    600 │    53,9 ms  │  222,5 ms  (22 % de un núcleo)
- *                  1.200 │   109,6 ms  │  446,9 ms
- *                  2.400 │   214,9 ms  │  870,2 ms  (87 %)
+ *                      0 │     1,8 ms  │    3,4 ms
+ *                     50 │     4,5 ms  │   18,5 ms
+ *                    200 │    15,6 ms  │   63,4 ms
+ *                    600 │    52,8 ms  │  218,3 ms  (22 % de un núcleo)
+ *                  1.200 │   108,9 ms  │  436,8 ms
+ *                  2.400 │   219,8 ms  │  879,8 ms  (88 %)
+ *
+ *  La tabla NO SE MOVIÓ con #616, y ese es el dato: el cuerpo que está FUERA
+ *  de todo corta en seco —`solidoBloquea` con el origen libre es una consulta
+ *  de punto y nada más— y aislada, la regla nueva es incluso más barata que la
+ *  que sustituye (0,05 µs contra 0,08). El coste sigue mandándolo el número de
+ *  cajas de runtime, que es código que esta tanda no toca.
+ *
+ *  LO QUE SÍ ESTRENA #616 es el precio del cuerpo que está DENTRO de algo, que
+ *  antes no se pagaba porque no se salía: aislada, la regla pasa de 0,05 a
+ *  0,98 µs (×19), y a través de este proveedor —que por cada consulta de punto
+ *  resuelve los tiles tocados y sus colliders— `queImpideElPaso` cuesta 18 µs
+ *  contra 0,66 fuera, y `porDondeSalirDeAqui` 8,4 contra 0,34. Con los DIEZ
+ *  NPCs metidos en geometría a la vez y en el peor caso son 86 ms por segundo
+ *  de juego, un 9 % de núcleo, y es TRANSITORIO: se paga mientras salen, uno o
+ *  dos segundos, donde antes se quedaban dentro para siempre. Si algún día
+ *  dejara de ser transitorio, lo barato es memoizar la penetración del ORIGEN
+ *  —`pasoDelJugador` la pide dos veces por frame con el mismo punto—, no
+ *  cachear aquí.
  *
  *  DÓNDE DEJA DE SER GRATIS: hasta 200 es ruido; **a partir de 600** el peor
  *  caso se lleva un quinto de núcleo del hilo que además mueve el combate, el
@@ -73,10 +99,15 @@ import {
   cajaQueBloquea,
   cajaQueContiene,
   cajasDeRuntime,
-  salidaDeSolido,
+  salidaDeLasCajas,
   type Impedimento,
-  type SalidaDeSolido,
+  type PorDondeSalir,
 } from "../src/simulation/cajas-de-runtime.js";
+import {
+  salidaDelSolido,
+  solidoBloquea,
+  type SueloSolido,
+} from "../src/simulation/salida-del-solido.js";
 import { tileKey, tileWorldRect, worldToTile, type WorldRect } from "../src/scene/tile.js";
 
 export interface SimCollisionProvider {
@@ -90,18 +121,28 @@ export interface SimCollisionProvider {
     radius: number,
   ): Impedimento;
   /** POR DÓNDE SALIR de lo que te tiene dentro, o `null` si no te tiene nada:
-   *  el id de la caja y el rumbo hacia su cara más cercana. Solo contesta por
-   *  las cajas de runtime — de la geometría del tile no saca a nadie, y eso
-   *  tiene número propio (#616).
+   *  de QUÉ se sale y el rumbo hacia su cara más cercana.
    *
    *  Existe porque «salir sí, entrar no» no saca a quien no empuja: un NPC
-   *  sondea rumbos hacia su meta y ninguno le sacaba (#583, QA H-2). */
-  porDondeSalirDeAqui(x: number, z: number, radius: number): SalidaDeSolido | null;
+   *  sondea rumbos hacia su meta y ninguno le sacaba (#583, QA H-2). Desde #616
+   *  contesta por las DOS fuentes, y el TERRENO va primero: es la que nadie
+   *  atraviesa, así que un cuerpo metido en un muro Y en una caja tiene que
+   *  salir del muro — el otro orden le mandaría contra él. */
+  porDondeSalirDeAqui(x: number, z: number, radius: number): PorDondeSalir | null;
+  /** ¿ESTE SITIO ESTÁ OCUPADO? La consulta de PUNTO sobre TODAS las fuentes
+   *  —el grid del terreno, el del plan y las cajas de runtime—, con el solape
+   *  ABIERTO de `SueloSolido.ocupado` (`src/simulation/salida-del-solido.ts`).
+   *  Es lo que este proveedor le enseña a la cuenta de salida, y lo que
+   *  consulta quien tiene que poner a alguien en un punto del mundo. */
+  ocupado(x: number, z: number, radius: number): boolean;
   /** El mismo veredicto colapsado a un sí/no. Producción pregunta por
    *  `queImpideElPaso` desde #583 —el sim necesita saber QUÉ le frena—; esto
-   *  se queda para quien solo quiera comparar este proveedor con el collider
-   *  del cliente, que contesta booleanos (`test/plan-collision.test.ts`). */
-  blocksMove(fromX: number, fromZ: number, toX: number, toZ: number, radius: number): boolean;
+   *  se queda para quien solo quiera comparar este proveedor con la colisión
+   *  del cliente, que contesta booleanos (`test/plan-collision.test.ts`).
+   *  Lleva el nombre de la pregunta que contesta y no el del método inglés del
+   *  collider de terreno, que es como se llamaba: ese método lo retiró #616 y
+   *  su nombre está hoy en `campos-retirados-no-vuelven`. */
+  algoImpideElPaso(fromX: number, fromZ: number, toX: number, toZ: number, radius: number): boolean;
   blocksCircle(x: number, z: number, radius: number): boolean;
 }
 
@@ -181,28 +222,29 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
     return [...keys];
   }
 
-  /** La geometría DURA: terreno y plan del tile. Es la que nadie atraviesa. */
-  function tileBloqueaElPaso(
-    fromX: number,
-    fromZ: number,
-    toX: number,
-    toZ: number,
-    radius: number,
-  ): boolean {
-    for (const key of touchedKeys(toX, toZ, radius)) {
-      for (const tc of collidersFor(key)) {
-        if (tc.blocksMove(fromX, fromZ, toX, toZ, radius)) return true;
+  /** La geometría DURA vista como un SUELO: terreno y plan de los tiles que
+   *  toca el cuerpo, unidos en una sola consulta de punto. Es lo que
+   *  `salida-del-solido.ts` necesita para medir sobre la UNIÓN y no tile a
+   *  tile: un cuerpo a caballo de dos tiles tiene UNA penetración, no dos. */
+  const sueloDelTile: SueloSolido = {
+    ocupado(x, z, radio) {
+      for (const key of touchedKeys(x, z, radio)) {
+        for (const tc of collidersFor(key)) {
+          if (tc.solapaSolido(x, z, radio)) return true;
+        }
       }
-    }
-    return false;
-  }
+      return false;
+    },
+  };
 
   const provider: SimCollisionProvider = {
     // El TILE primero y la caja después, y el orden es la regla: quien lee
     // esto para decidir si atraviesa solo puede atravesar cajas, así que un
     // paso que además choca con un muro tiene que salir como "tile".
     queImpideElPaso(fromX, fromZ, toX, toZ, radius): Impedimento {
-      if (tileBloqueaElPaso(fromX, fromZ, toX, toZ, radius)) return { de: "tile" };
+      if (solidoBloquea({ x: fromX, z: fromZ }, { x: toX, z: toZ }, radius, sueloDelTile)) {
+        return { de: "tile" };
+      }
       const caja = cajaQueBloquea(
         { x: fromX, z: fromZ },
         { x: toX, z: toZ },
@@ -211,11 +253,16 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
       );
       return caja ? { de: "caja", id: caja.id } : null;
     },
-    blocksMove(fromX, fromZ, toX, toZ, radius): boolean {
+    algoImpideElPaso(fromX, fromZ, toX, toZ, radius): boolean {
       return provider.queImpideElPaso(fromX, fromZ, toX, toZ, radius) !== null;
     },
-    porDondeSalirDeAqui(x, z, radius): SalidaDeSolido | null {
-      return salidaDeSolido(x, z, radius, cajasDeRuntime(narrative.entities));
+    // El TERRENO primero, por el mismo motivo que en `queImpideElPaso`: es lo
+    // que no se atraviesa. A quien le cae una caja encima DENTRO de un muro,
+    // sacarle primero por la cara de la caja le empujaría contra el muro.
+    porDondeSalirDeAqui(x, z, radius): PorDondeSalir | null {
+      const delTile = salidaDelSolido(x, z, radius, sueloDelTile);
+      if (delTile) return { de: "tile", dir: delTile.dir };
+      return salidaDeLasCajas(x, z, radius, cajasDeRuntime(narrative.entities));
     },
     blocksCircle(x, z, radius): boolean {
       for (const key of touchedKeys(x, z, radius)) {
@@ -223,6 +270,10 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
           if (tc.blocksCircle(x, z, radius)) return true;
         }
       }
+      return cajaQueContiene(x, z, radius, cajasDeRuntime(narrative.entities)) !== null;
+    },
+    ocupado(x, z, radius): boolean {
+      if (sueloDelTile.ocupado(x, z, radius)) return true;
       return cajaQueContiene(x, z, radius, cajasDeRuntime(narrative.entities)) !== null;
     },
   };

@@ -85,15 +85,13 @@ export function celdasLibresParaRadio(radioM: number, mpc: number): number {
  *  cuerpo que ya nadie honra.
  *
  *  Y ese cuerpo es un CUADRADO, no un círculo: quien lo estampa es
- *  `blocksCircle` (`:164-175`), cuyo propio bucle recorre el AABB `x±r` con
- *  `floor()` INCLUSIVE. No lo estampa `circleOverlapsCell` —que sí parece la
- *  candidata por el nombre y es lo que decía este comentario hasta que QA lo
- *  midió—: esa tiene UN llamante, la exención de «celda que ya solapabas» de
- *  `blocksMove` (`:185`), y convertirla en una prueba de distancia deja la
- *  batería entera verde. La diferencia importa porque el tope se justifica
- *  sobre la forma del cuerpo: si `blocksCircle` pasara a ser un círculo de
- *  verdad, esta cuenta dejaría de describirlo, y por eso hay una sonda que se
- *  pone roja cuando eso ocurre (`test/terrain-collision.test.ts`). */
+ *  `blocksCircle`, cuyo propio bucle recorre el AABB `x±r` con `floor()`
+ *  INCLUSIVE. Importa porque el tope se justifica sobre la FORMA del cuerpo:
+ *  si `blocksCircle` pasara a ser un círculo de verdad, esta cuenta dejaría de
+ *  describirlo, y por eso hay una sonda que se pone roja cuando eso ocurre
+ *  (`test/terrain-collision.test.ts`). Quien NO lo estampa es `solapaSolido`,
+ *  su gemela de solape abierto: la diferencia entre las dos es la tangencia,
+ *  que no cambia cuántas celdas de ANCHO cubre un cuerpo. */
 export function celdasQueCubreRadio(radioM: number, mpc: number): number {
   return Math.floor((2 * radioM) / mpc);
 }
@@ -122,11 +120,26 @@ export interface TerrainCollider {
    *  todas las celdas cubiertas (≤3×3 con radios de jugador), no solo las 4
    *  esquinas: con mpc 0.5 y diámetro 0.8 una celda podría colarse entre ellas. */
   blocksCircle(x: number, z: number, radius: number): boolean;
-  /** ¿El movimiento from→to queda bloqueado? Bloquea solo las celdas sólidas
-   *  que solapa el destino Y NO solapa el origen: si el spawn (o un empujón)
-   *  te deja penetrando un muro puedes SALIR de él, pero nunca entrar más.
-   *  Evita el deadlock de bloquear ambos ejes estando ya en colisión. */
-  blocksMove(fromX: number, fromZ: number, toX: number, toZ: number, radius: number): boolean;
+  /** LA MISMA PREGUNTA CON EL SOLAPE ABIERTO: tocar el borde de una celda
+   *  sólida NO es solaparla. Es la consulta de PUNTO que consume
+   *  `simulation/salida-del-solido.ts` (`SueloSolido.ocupado`).
+   *
+   *  CONVIVE con `blocksCircle` y su ÚNICA diferencia es la TANGENCIA EXACTA
+   *  —`blocksCircle` recorre el AABB con `floor()` INCLUSIVE, así que la celda
+   *  que el cuerpo solo TOCA cuenta como sólida—, y no es una duplicación por
+   *  descuido: cada convención sujeta una cosa distinta y cambiar cualquiera
+   *  de las dos rompe la otra.
+   *
+   *   · el CERRADO (`blocksCircle`) es el que define el tope del `footprint`
+   *     de una entity móvil (#300, `celdasQueCubreRadio`) y el que elige
+   *     waypoints: ahí lo caro es dar por bueno un hueco que no lo es.
+   *   · el ABIERTO (este) es la convención de `salidaDeCaja` —su `margen <= 0`
+   *     es FUERA— y es lo que hace que la penetración pueda valer 0. Con el
+   *     cerrado, un paso que aterriza EXACTO en una frontera de celda sigue
+   *     «ocupado» y la penetración salta de 0,025 a 0,475 m: 7 puntos de
+   *     robledo, 36 de puerto y 8 de zorder se clavaban ahí (medido en el plan
+   *     de la tanda G). */
+  solapaSolido(x: number, z: number, radius: number): boolean;
 }
 
 export function createTerrainCollider(
@@ -172,14 +185,6 @@ export function createTerrainCollider(
   const isSolidCell = (col: number, row: number): boolean =>
     col >= 0 && row >= 0 && col < cols && row < rows && solid[row * cols + col] === 1;
 
-  /** ¿El AABB (x±radius, z±radius) solapa la celda (c, r)? */
-  const circleOverlapsCell = (x: number, z: number, radius: number, c: number, r: number): boolean => {
-    const cellX0 = originX + c * mpc;
-    const cellZ0 = originZ + r * mpc;
-    return x + radius > cellX0 && x - radius < cellX0 + mpc &&
-      z + radius > cellZ0 && z - radius < cellZ0 + mpc;
-  };
-
   return {
     solidCellCount,
     isSolidCell,
@@ -195,17 +200,19 @@ export function createTerrainCollider(
       }
       return false;
     },
-    blocksMove(fromX: number, fromZ: number, toX: number, toZ: number, radius: number): boolean {
-      const c0 = Math.floor((toX - radius - originX) / mpc);
-      const c1 = Math.floor((toX + radius - originX) / mpc);
-      const r0 = Math.floor((toZ - radius - originZ) / mpc);
-      const r1 = Math.floor((toZ + radius - originZ) / mpc);
+    solapaSolido(x: number, z: number, radius: number): boolean {
+      // ABIERTO por los cuatro lados: el límite inferior es el mismo `floor`
+      // (la celda que acaba justo en el borde trasero ya no se solapa), y el
+      // superior es `ceil() - 1` en vez de `floor()` (la que empieza justo en
+      // el borde delantero, tampoco). Simétrico, y es toda la diferencia con
+      // `blocksCircle`.
+      const c0 = Math.floor((x - radius - originX) / mpc);
+      const c1 = Math.ceil((x + radius - originX) / mpc) - 1;
+      const r0 = Math.floor((z - radius - originZ) / mpc);
+      const r1 = Math.ceil((z + radius - originZ) / mpc) - 1;
       for (let r = r0; r <= r1; r++) {
         for (let c = c0; c <= c1; c++) {
-          if (!isSolidCell(c, r)) continue;
-          // Celda que ya solapábamos en el origen → no bloquea la salida.
-          if (circleOverlapsCell(fromX, fromZ, radius, c, r)) continue;
-          return true;
+          if (isSolidCell(c, r)) return true;
         }
       }
       return false;

@@ -13,7 +13,7 @@ import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js"
 import {
   cajaQueBloquea,
   cajaQueContiene,
-  salidaDeSolido,
+  salidaDeLasCajas,
   type CajaDeRuntime,
 } from "../src/simulation/cajas-de-runtime.js";
 import {
@@ -71,7 +71,7 @@ function muroDelTile(
 }
 
 /** UNA CAJA DE VERDAD, con la geometría de producción y sin reimplementar
- *  nada: el adapter contesta con `cajaQueBloquea`/`salidaDeSolido` sobre una
+ *  nada: el adapter contesta con `cajaQueBloquea`/`salidaDeLasCajas` sobre una
  *  lista literal de cajas. Es lo que hace el bridge, sin el ledger en medio. */
 function conCajasDeRuntime(...cajas: CajaDeRuntime[]): Partial<NpcWorldAdapter> {
   return {
@@ -79,7 +79,7 @@ function conCajasDeRuntime(...cajas: CajaDeRuntime[]): Partial<NpcWorldAdapter> 
       const caja = cajaQueBloquea({ x: fx, z: fz }, { x: tx, z: tz }, r, cajas);
       return caja ? { de: "caja", id: caja.id } : null;
     },
-    porDondeSalirDeAqui: (x, z, r) => salidaDeSolido(x, z, r, cajas),
+    porDondeSalirDeAqui: (x, z, r) => salidaDeLasCajas(x, z, r, cajas),
     blocksCircle: (x, z, r) => cajaQueContiene(x, z, r, cajas) !== null,
   };
 }
@@ -760,7 +760,7 @@ describe("AmbientNpcBehavior · el encajonado (#583)", () => {
  *
  *  Estos casos son de SISTEMA y no de consulta, que es exactamente lo que
  *  faltaba: el candado anterior decía «al que le cae la caja encima sale
- *  andando» y lo que afirmaba era `blocksMove(...) === false`. */
+ *  andando» y lo que afirmaba era que la consulta de paso valía `false`. */
 describe("AmbientNpcBehavior · al que le cae una caja encima (#583, H-2)", () => {
   const CARRO: CajaDeRuntime = { id: "carro", pos: { x: 0, z: 0 }, sizeXZ: { x: 6, z: 6 } };
   /** Con el cuerpo del NPC, la caja acaba en 3,5 m del centro. */

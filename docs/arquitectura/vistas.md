@@ -200,6 +200,27 @@ La altura no participa: la huella colisionable es XZ. Render y colisión no
 tienen por qué coincidir (un árbol colisiona por el tronco y se renderiza con
 la copa).
 
+**LA REGLA DE PASO ES UNA SOLA Y ES DE CORE, para el terreno y para las cajas**
+(`src/simulation/salida-del-solido.ts`, desde **#616**): la PENETRACIÓN NO
+CRECIENTE. Se bloquea el paso que deja al cuerpo más metido de lo que ya
+estaba; desde fuera eso es la respuesta de siempre —entrar bloquea— y desde
+dentro es lo que hace que de un sólido se SALGA ANDANDO. La penetración es la
+distancia mínima, por los cuatro ejes, hasta dejar de solapar, y `salidaDelSolido`
+contesta además POR DÓNDE, igual que `salidaDeCaja` hace con un rectángulo. No
+son dos geometrías: sobre un macizo rasterizado las dos cuentas coinciden, con
+candado (`test/salida-del-solido.test.ts`). Lo que el cliente y el bridge aportan
+es el SUELO —la unión de los colliders de los tiles que toca el cuerpo, en una
+consulta de PUNTO (`solapaSolido`, solape abierto)—, no una regla propia.
+
+Hasta #616 el terreno tenía su propia regla dentro del collider: eximía las
+CELDAS que ya se solapaban, lo que devuelve a quien penetra un muro fino y **no
+saca de un macizo** — y los edificios del plan lo son, porque se rasteriza la
+huella entera del volumen. Medido entonces sobre las tres fixtures con el
+cableado del cliente: **3.117 de 6.007 puntos sólidos eran estado sin salida**;
+hoy, 0 (`qa/nadie-se-queda-encerrado.mjs`). Un sólido más ancho que
+`TOPE_MARCHA_M` (40 m) satura y dentro de él nada bloquea, que es lo honesto: el
+peor caso real de las fixtures es 5,9 m.
+
 **Lo que frena al JUGADOR y no es terreno** vive en
 `nefan-core/src/simulation/obstaculos-del-jugador.ts` (el cliente solo cablea):
 la FRONTERA del plano —un tile que no existe es un sólido virtual con semántica
@@ -223,11 +244,22 @@ con la misma `cajaBloquea` — no hay una segunda), nunca la FRONTERA del plano
 vive) ni la caja de lo que DECLARA un tile (responde por él su volumen
 derivado, con sus vanos). Y con dos reglas de más que el jugador no
 tiene, porque al jugador le empuja su teclado y al NPC no le empuja nadie
-(`npc-behavior.ts`): al que se queda DENTRO de una caja recién puesta se le da
-el rumbo de su cara más cercana y sale andando —sin eso se quedaba dentro para
-siempre, y la consulta decía que nada se lo impedía—, y al que no tiene por
-dónde rodear —las siete deflexiones bloqueadas— se le deja atravesarla,
-diciéndolo en la traza.
+(`npc-behavior.ts`): al que se queda DENTRO de algo se le da el rumbo de su cara
+más cercana y sale andando —sin eso se quedaba dentro para siempre, y la
+consulta decía que nada se lo impedía—, y al que no tiene por dónde rodear —las
+siete deflexiones bloqueadas— se le deja atravesar la CAJA, diciéndolo en la
+traza. Ese rumbo lo contesta `porDondeSalirDeAqui`, y desde #616 lo contesta por
+las DOS geometrías, con el TERRENO primero (es lo que nadie atraviesa) y con el
+dueño puesto (`{de:"tile"}` o `{de:"caja",id}`): hasta entonces solo sabía de
+cajas, así que un NPC metido en la geometría de un tile se quedaba dentro. Que
+ahora salga es conducta NUEVA, querida y declarada — y no es #618, que es el NPC
+que no está dentro de nada y no sabe rodear.
+
+Lo que esa unión NO resuelve todavía, y está medido: con el cuerpo dentro del
+TILE **y** de una caja a la vez, el rumbo que contesta el terreno lo puede frenar
+la caja (y con el orden inverso pasa lo simétrico). La salida es la penetración
+sobre la UNIÓN de las dos fuentes, no sobre cada una por su lado; queda como
+backlog.
 
 Lo que esas dos reglas NO tapan, medido: el steering sigue siendo por deflexión
 (`TODO(A*)`) y **no rodea un obstáculo centrado en su camino**, venga de donde

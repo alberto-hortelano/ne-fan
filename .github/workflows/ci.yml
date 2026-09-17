@@ -286,3 +286,22 @@ jobs:
       # cable de `bridge/context.ts` dejaba la suite entera en verde (2891/2891)
       # con #583 revertido del todo.
       - run: node qa/el-mundo-solido-tambien-para-el-npc.mjs
+      # (50 s) #616: de TODO punto sólido de las tres fixtures se sale andando,
+      # con `pasoDelJugador` y el cableado ENTERO del cliente (frontera + suelo
+      # + cajas). Entra AQUÍ el día que nace, que es la regla que la tanda E
+      # tuvo que aprender mirando esta lista. Es el más lento de los headless y
+      # se sabe por qué: 6.007 puntos × 36 rumbos a 60 fps, en dos pasadas. El
+      # horizonte de la primera se deriva de una medida de penetración hecha
+      # APARTE —no de la función que juzga, que es como su bloque 2 salía verde
+      # con el defecto puesto (QA de G1)— y la segunda recoge a los 126 que
+      # tienen que rodear porque su eje más corto da a un tile que no existe.
+      - run: node qa/nadie-se-queda-encerrado.mjs
+      # (16 s) QA de la PR G1 de #616: que el SUELO y el CABLEADO sobre los que
+      # se afirma «de aquí se sale» sean los del cliente. Censo de quién
+      # rasteriza el plan en `qa/` (el guion de arriba nació montando los
+      # `volumes` DECLARADOS y medía 960 celdas de 1.608), y el `collidesAt`
+      # ENTERO —frontera del plano + suelo + cajas— sobre las tres fixtures: con
+      # las tres fuentes tampoco queda un punto sin salida, y 126 de 6.007
+      # necesitan rodear porque el eje de menor penetración da a un tile que no
+      # existe. Ese 126 lo mide y no lo afirma.
+      - run: node qa/los-candados-miden-el-mundo-del-cliente.mjs

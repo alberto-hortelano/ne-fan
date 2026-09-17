@@ -11,11 +11,12 @@
  *  nada. La ALTURA no participa en ninguna de las dos: la huella colisionable
  *  es XZ (CLAUDE.md), y aquí no hay ni campo que leer.
  *
- *  LAS TRES FUENTES SON «SALIR SÍ, ENTRAR NO» Y CADA UNA MIRA SU ORIGEN, PERO
- *  NO PROMETEN LO MISMO. Conviene tenerlo escrito con el alcance de cada una,
- *  porque `pasoDelJugador` ya no tiene escape propio (#601 retiró su `atrapado`,
- *  que era rama muerta) y es fácil leer eso como si el escape estuviera
- *  garantizado en todas partes:
+ *  LAS TRES FUENTES SON «SALIR SÍ, ENTRAR NO» Y CADA UNA MIRA SU ORIGEN. Desde
+ *  #616 (tanda G, 2026-09-17) LAS TRES PROMETEN LO MISMO —de las tres se
+ *  sale—, que no era cierto hasta entonces y por eso conviene seguir teniendo
+ *  escrito el alcance de cada una: `pasoDelJugador` no tiene escape propio
+ *  (#601 retiró su `atrapado`, que era rama muerta), así que lo que saca es lo
+ *  que cada fuente haga por su cuenta.
  *
  *   · FRONTERA (`fronteraBloquea`): exime los tiles ausentes que YA se tocaban
  *     desde el origen. Volver hacia dentro no se bloquea nunca, así que de aquí
@@ -27,29 +28,28 @@
  *     se mueve (QA de #601: 12.528 carreras desde 348 puntos interiores de
  *     cuatro cajas, 0 atascados; y con cajas solapadas, una dentro de otra y
  *     cuatro en cruz, 0 sin salida).
- *   · TERRENO (`terrain-collision.ts`): exime las CELDAS que ya se solapaban, y
- *     eso **NO es una garantía de salida**. Saca solo a quien ya solapa TODAS
- *     las celdas sólidas que tiene delante; en cuanto el sólido es más ancho que
- *     el cuerpo, la celda siguiente es sólida, no estaba solapada y bloquea.
- *     Re-medido aquí (banda de celdas de 0,5 m, jugador en su centro, 36 rumbos
- *     a 60 fps): con la banda **más estrecha que el cuerpo** (≤ 1,5 m) salen
- *     34 de 36 y se anda hasta 41,8 m; con **2 m o más salen 0 de 36 y se anda
- *     0,12 m**, y da igual que la banda mida 2 m o 20. Como `planCollisionGrid`
- *     rasteriza la huella ENTERA de cada volumen, un edificio del pueblo es
- *     macizo: quien acabe dentro no sale. Es anterior a #601 —la misma medida
- *     sobre el paso de la base da exactamente lo mismo— y #601 no lo arregla; lo
- *     que sí hace es cerrar la puerta principal por la que se llegaba ahí, que
- *     era entrar andando por una esquina. Vive con número propio en **#616**,
- *     con esta misma tabla. No lo cuente nadie como resuelto.
+ *   · TERRENO (`salida-del-solido.ts`, sobre el suelo que monta cada cliente):
+ *     la MISMA regla de la caja —penetración no creciente— medida por marcha
+ *     sobre celdas. De aquí también se sale siempre, salvo dentro de un macizo
+ *     más ancho que `TOPE_MARCHA_M` (40 m), donde la penetración satura y no
+ *     frena nada. Hasta #616 esta fuente eximía las CELDAS que ya se solapaban
+ *     y eso NO era una garantía de salida: sacaba solo a quien ya solapaba
+ *     TODAS las celdas sólidas que tenía delante, así que con el sólido más
+ *     ancho que el cuerpo la celda siguiente bloqueaba. Medido entonces (banda
+ *     de celdas, jugador en su centro, 36 rumbos a 60 fps): con la banda más
+ *     estrecha que el cuerpo (≤ 1,5 m) salían 34 de 36; con 2 m o más, **0 de
+ *     36 y 0,12 m andados**, midiera la banda 2 m o 20. Como
+ *     `planCollisionGrid` rasteriza la huella ENTERA de cada volumen, un
+ *     edificio del pueblo es macizo y quien acabara dentro no salía.
  *
- *  Y UN MATIZ QUE #583 OBLIGÓ A ESCRIBIR: «de aquí se sale siempre» es del
- *  JUGADOR, que empuja con su teclado hasta salir. Lo que la caja promete es
- *  que NO FRENA el paso que saca, no que alguien lo dé. A un NPC no le empuja
- *  nadie —su steering solo sondea rumbos hacia su meta— y con una caja encima
- *  se quedaba dentro andando para siempre (#583). Para eso está `salidaDeCaja`,
- *  ahí abajo: el RUMBO de salida, que es la pieza que convierte «no te frena»
- *  en «sales». La tiene la caja y **no la tiene el terreno**, y ese es hoy
- *  justamente el contenido de #616. */
+ *  Y UN MATIZ QUE #583 OBLIGÓ A ESCRIBIR Y QUE SIGUE EN PIE: «de aquí se sale
+ *  siempre» es del JUGADOR, que empuja con su teclado hasta salir. Lo que estas
+ *  reglas prometen es que NO FRENAN el paso que saca, no que alguien lo dé. A
+ *  un NPC no le empuja nadie —su steering solo sondea rumbos hacia su meta— y
+ *  con una caja encima se quedaba dentro andando para siempre (#583). Para eso
+ *  está el RUMBO de salida, que es la pieza que convierte «no te frena» en
+ *  «sales»: `salidaDeCaja` ahí abajo para la caja, y `salidaDelSolido` para el
+ *  terreno. */
 
 import type { DuenoDeEntity } from "../session/entidades-del-tile.js";
 import type { TileCoord } from "../scene/tile.js";
@@ -156,12 +156,14 @@ export function penetracionEnCaja(
  *  QA de #583). Quien mueve un cuerpo sin teclado necesita que se le diga hacia
  *  dónde, y eso es esto.
  *
- *  SOLO PARA LA CAJA, y conviene que se lea aquí y no solo en el issue: el
- *  TERRENO no tiene esta pieza, así que de un edificio del plan sigue sin salir
- *  nadie (**#616**, con la tabla medida en la cabecera). No es un olvido —sacar
- *  de ahí es otra cuenta, por celdas y no por rectángulo, y otra decisión— y
- *  hay candado de que esto NO lo tapa (`test/sim-collision.test.ts`, «de la
- *  geometría del TILE no saca a nadie»). */
+ *  SOLO PARA LA CAJA, y conviene que se lea aquí: el TERRENO tiene la suya
+ *  desde **#616** (`salidaDelSolido`, por celdas y no por rectángulo), y no es
+ *  una segunda geometría — es esta misma cuenta generalizada, con candado de
+ *  que las dos coinciden sobre un macizo rasterizado
+ *  (`test/salida-del-solido.test.ts`: 78.189 puntos, |Δpen| máx 5,7e-15 m).
+ *  Quien las une es el proveedor del bridge, que pregunta primero por el
+ *  terreno (`test/sim-collision.test.ts`, «de la geometría del TILE también
+ *  saca»). */
 export function salidaDeCaja(
   p: { x: number; z: number },
   caja: CajaXZ,

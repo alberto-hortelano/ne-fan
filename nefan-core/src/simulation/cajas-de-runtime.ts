@@ -53,14 +53,17 @@ export interface CajaDeRuntime extends CajaXZ {
  *  mentira. Un booleano colapsa los dos casos y no deja decidir. */
 export type Impedimento = null | { de: "tile" } | { de: "caja"; id: string };
 
-/** POR DÓNDE SE SALE de lo que te tiene dentro: de qué caja y hacia dónde. El
- *  rumbo es unitario y paralelo a un eje — la salida más corta de un
- *  rectángulo siempre lo es. */
-export interface SalidaDeSolido {
-  /** `entityId` de la caja que lo tiene dentro: el que sale en la traza. */
-  caja: string;
-  dir: { x: number; z: number };
-}
+/** POR DÓNDE SE SALE de lo que te tiene dentro: DE QUÉ y hacia dónde. El rumbo
+ *  es unitario y paralelo a un eje — la salida más corta siempre lo es.
+ *
+ *  LLEVA DUEÑO, y es el espejo exacto de `Impedimento`: desde #616 la
+ *  geometría del TILE también contesta a esta pregunta, así que quien la lee ya
+ *  no puede suponer que hay una caja detrás. Colapsarlo a un id de caja
+ *  obligaría a inventar uno para el terreno, que es la clase de campo que
+ *  alguien acaba leyendo como si nombrara algo. */
+export type PorDondeSalir =
+  | { de: "tile"; dir: { x: number; z: number } }
+  | { de: "caja"; id: string; dir: { x: number; z: number } };
 
 /** Las cajas de los spawns que OCUPAN SITIO, en metros y coordenadas de mundo.
  *
@@ -106,7 +109,8 @@ export function cajasDeRuntime(entities: readonly EntityRecord[]): CajaDeRuntime
  *  «sale andando», y era falso del sistema: el que no empuja no sale solo, y un
  *  NPC empuja hacia su meta (#583, QA H-2: 290 s de 300 dentro de un carro con
  *  esta función contestando que nada se lo impedía). Quien saca es
- *  `salidaDeSolido`, ahí abajo. */
+ *  `salidaDeLasCajas`, ahí abajo — y, para la geometría del tile,
+ *  `salidaDelSolido` (`salida-del-solido.ts`, #616). */
 export function cajaQueBloquea(
   desde: { x: number; z: number },
   hasta: { x: number; z: number },
@@ -136,7 +140,7 @@ export function cajaQueContiene(
   return null;
 }
 
-/** POR DÓNDE SALIR de la caja en la que este cuerpo está metido: su id y el
+/** POR DÓNDE SALIR de la CAJA en la que este cuerpo está metido: su id y el
  *  rumbo hacia la cara más cercana. `null` si no está dentro de ninguna.
  *
  *  Lo pregunta QUIEN MUEVE a alguien que no tiene teclado. «Salir sí, entrar
@@ -145,21 +149,28 @@ export function cajaQueContiene(
  *  cayó encima y su meta está al otro lado, ninguno de los siete le saca y se
  *  queda dentro andando para siempre (#583, QA H-2: 290 s de 300).
  *
+ *  SOLO MIRA LAS CAJAS, y el nombre lo dice porque ya no es lo único que saca:
+ *  desde #616 el TERRENO tiene su propia cuenta (`salidaDelSolido`, en
+ *  `salida-del-solido.ts`) y quien las une es el proveedor del bridge, que
+ *  pregunta primero por la geometría dura. El nombre lleva «las cajas» dentro
+ *  a propósito: mientras decía «del sólido» a secas prometía más de lo que
+ *  hacía, y se lee a un carácter de la función del terreno.
+ *
  *  Con VARIAS cajas solapadas contesta la primera que lo contiene y se sale de
  *  esa; si al hacerlo sigue dentro de otra, el tick siguiente contesta la otra.
  *  No hay garantía de que dos salidas opuestas no se peleen —dos cajas
  *  encajadas pueden empujar en sentidos contrarios— y por eso quien lo use
  *  tiene que seguir teniendo su escape: lo que esto promete es una DIRECCIÓN,
  *  no un final feliz. */
-export function salidaDeSolido(
+export function salidaDeLasCajas(
   x: number,
   z: number,
   radio: number,
   cajas: readonly CajaDeRuntime[],
-): SalidaDeSolido | null {
+): PorDondeSalir | null {
   for (const caja of cajas) {
     const salida = salidaDeCaja({ x, z }, caja, radio);
-    if (salida) return { caja: caja.id, dir: salida.dir };
+    if (salida) return { de: "caja", id: caja.id, dir: salida.dir };
   }
   return null;
 }

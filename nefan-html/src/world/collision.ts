@@ -2,10 +2,14 @@
  *
  *  «¿(x, z) está bloqueado?» es la unión de tres fuentes, y ninguna se decide
  *  aquí: la FRONTERA del plano y las CAJAS de los objetos son de core
- *  (`simulation/obstaculos-del-jugador.ts`), y los colliders de cada tile
- *  tocado son `collider` (terrain_grid: el agua w) y `svgCollider` (el PLAN,
+ *  (`simulation/obstaculos-del-jugador.ts`) y el TERRENO también lo es desde
+ *  #616 (`simulation/salida-del-solido.ts`, penetración no creciente). Lo que
+ *  el cliente aporta de este último es solo el SUELO: los colliders de cada
+ *  tile tocado —`collider` (terrain_grid: el agua w) y `svgCollider` (el PLAN,
  *  derivado por `planCollisionGrid` — el MISMO cálculo que el bridge en
- *  sim-collision, así que jugador y NPCs no divergen).
+ *  sim-collision, así que jugador y NPCs no divergen)— unidos en una sola
+ *  consulta de punto. Hasta #616 la regla del terreno vivía DENTRO del
+ *  collider —eximía las celdas que ya se solapaban— y no sacaba de un macizo.
  *
  *  Aquí queda lo que no es regla: el `TileStore`, los colliders instalados y el
  *  `errors.push` de la derivación. Las dos reglas salieron en la PR 5 de #241
@@ -16,7 +20,8 @@
  *  cliente solo le pasa el dueño de cada objeto y el `svgApplied` del tile de
  *  debajo. */
 
-import { createTerrainCollider, PLAYER_RADIUS_M, type TerrainCollider } from "@nefan-core/src/scene/terrain-collision.js";
+import { createTerrainCollider, PLAYER_RADIUS_M } from "@nefan-core/src/scene/terrain-collision.js";
+import { solidoBloquea, type SueloSolido } from "@nefan-core/src/simulation/salida-del-solido.js";
 import {
   aabbBloquea,
   fronteraBloquea,
@@ -67,33 +72,36 @@ export class CollisionSystem {
       tiene: (tx, ty) => tileStore.has(tx, ty),
       planAplicadoEn: (x, z) => tileStore.getAt(x, z)?.svgApplied === true,
     };
+    this.suelo = {
+      ocupado: (x, z, radio) => {
+        for (const t of tileStore.keysTouching(x, z, radio)) {
+          const tile = tileStore.get(t.tx, t.ty);
+          if (tile?.collider?.solapaSolido(x, z, radio)) return true;
+          if (tile?.svgCollider?.solapaSolido(x, z, radio)) return true;
+        }
+        return false;
+      },
+    };
   }
+
+  /** EL SUELO del jugador visto por la regla de core: los dos colliders
+   *  (`collider` = terrain_grid, `svgCollider` = el PLAN) de TODOS los tiles
+   *  que toca el cuerpo, unidos en una sola consulta de punto.
+   *
+   *  La unión es el cableado y no es un detalle: un cuerpo a caballo de dos
+   *  tiles tiene UNA penetración, no dos, y preguntar tile a tile daría dos
+   *  rumbos de salida que se pelean. Se construye una vez y lee en vivo — el
+   *  store es mutable y la respuesta tiene que ser la de este frame. */
+  private readonly suelo: SueloSolido;
 
   /** ¿El destino (x,z) está bloqueado para el jugador? Unión de las tres
    *  fuentes de la cabecera, en el orden más barato primero. */
   collidesAt(x: number, z: number): boolean {
-    const { tileStore } = this.deps;
     const desde = this.deps.getPlayerPos();
     const hasta = { x, z };
     if (fronteraBloquea(desde, hasta, PLAYER_RADIUS, this.tiles)) return true;
-    for (const t of tileStore.keysTouching(x, z, PLAYER_RADIUS)) {
-      const tile = tileStore.get(t.tx, t.ty);
-      if (tile && this.tileBlocks(tile, desde, x, z)) return true;
-    }
+    if (solidoBloquea(desde, hasta, PLAYER_RADIUS, this.suelo)) return true;
     return aabbBloquea(desde, hasta, PLAYER_RADIUS, this.deps.getObstacles(), this.tiles);
-  }
-
-  /** Unión de los dos colliders de un tile sobre el mismo movimiento. */
-  private tileBlocks(
-    tile: { collider: TerrainCollider | null; svgCollider: TerrainCollider | null },
-    from: { x: number; z: number },
-    x: number,
-    z: number,
-  ): boolean {
-    return Boolean(
-      tile.collider?.blocksMove(from.x, from.z, x, z, PLAYER_RADIUS) ||
-      tile.svgCollider?.blocksMove(from.x, from.z, x, z, PLAYER_RADIUS),
-    );
   }
 }
 

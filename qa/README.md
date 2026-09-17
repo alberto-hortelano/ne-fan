@@ -558,14 +558,69 @@ lo que corre en CI). Y dos: que la retirada **no movió a nadie**, y eso no se a
 las TRES fixtures, con las tres fuentes de solidez del cliente montadas como las monta
 `world/collision.ts` y las dos políticas de `planAplicadoEn`, la pregunta del escalón retirado
 (`collidesAt(pos)` con el jugador EN `pos`) vale `false` en **99.932 puntos de 99.932**, con su
-control (12.763 de esos puntos SÍ dan sólido preguntados desde otro sitio del tile). Imprime también,
-medido y sin afirmarlo, el ÚNICO origen = destino que sí bloquea: la tangencia exacta del cuerpo con
-el borde de una celda sólida, que el juego no alcanza pero que deja corto el absoluto «vale `false`
-siempre». Probado en negativo por sus dos puertas (`QA_PUERTA_ABIERTA=1` → bloque 1 rojo con la
+control (12.763 de esos puntos SÍ dan sólido preguntados desde otro sitio del tile). Mide también la TANGENCIA EXACTA
+—el cuerpo tocando el borde de una celda sólida sin solaparla—, que era el ÚNICO origen = destino que
+bloqueaba y que **#616 hizo desaparecer**: con la regla de paso en el núcleo, `pen(p) > pen(p)` es
+falso sin excepción, así que ese bloque pasó de registrar un caso a AFIRMAR dos cosas (que el caso ya
+no existe, y que las dos convenciones de solape —la abierta y la cerrada de `blocksCircle`— siguen
+distinguiéndose; si colapsaran, saldría verde midiendo una sola). Y con ese arreglo su bloque 2 mide
+MENOS que antes, porque el `false` pasó a ser por construcción: quien demuestra que hay mundo debajo
+es el control. Probado en negativo por sus dos puertas (`QA_PUERTA_ABIERTA=1` → bloque 1 rojo con la
 aridad aún en 1; `QA_SIN_SOLIDOS=1` → el control rojo). Segundos, sin navegador y sin créditos:
 
 ```bash
 node qa/la-puerta-de-la-reaparicion.mjs   # sale 1 si la consulta vuelve o si la retirada mueve a alguien
+```
+
+Y el cuarto de la familia, `qa/nadie-se-queda-encerrado.mjs` (tanda G, **#616**): que de **todo punto
+sólido del mundo se SALE ANDANDO**. Es el candado del issue que la QA de la tanda E abrió midiendo:
+la regla de paso del terreno eximía «las celdas que ya se solapaban», lo que devuelve a quien penetra
+un muro fino y **no saca de un macizo** — y los edificios del plan lo son. Recorre las tres fixtures
+con una malla de 0,5 m, y de cada punto en el que el cuerpo del jugador solapa algo sólido prueba
+**36 rumbos** conducidos por `pasoDelJugador` con el cableado **ENTERO** de `world/collision.ts` y en
+su orden —frontera del plano + suelo + cajas—, sobre un tile solo con los ocho vecinos ausentes, que es
+lo que hay en `html-fixtures`. El suelo es el grid del terreno más el del PLAN COMPUESTO, que es el que
+instala el cliente y no los `volumes` declarados del crudo. Afirma tres cosas: que no queda ni un punto
+sin salida (**0 de 6.007**), que se sale **por lo más corto** —la penetración que devuelve el módulo
+coincide con una medida de REFERENCIA hecha aparte, y el rumbo más rápido no tarda más que ella
+dividida por la velocidad— y el **control** de que hay mundo sólido que medir. Mide sin afirmarlos los
+**126** puntos que no salen dentro de esa cota y tienen que RODEAR (su eje de menor penetración da a un
+tile que no existe; el más lento sale en 1,4 s), y la penetración máxima de cada fixture (2,94 · 5,94 ·
+3,94 m), que es cómo se ve venir el tope de marcha de 40 m.
+
+Sus dos primeras versiones **afirmaban más de lo que sujetaban**, y las dos las cazó QA: la primera
+montaba el plan DECLARADO en vez del compuesto (un mundo un 40 % menos sólido) y la segunda derivaba el
+límite del bloque 2 de `penetracionEnSolido`, o sea de la función bajo prueba, así que salía VERDE con
+el sabotaje que su docblock decía cazar. Por eso hoy la referencia se mide aparte.
+
+**Probado en negativo**: `QA_SIN_ESCAPE=1` cablea la regla de AYER —escrita en el guion, no en el
+árbol— y da **3.117 de 6.007 puntos sin salida**, exit 1; y sustituir `salidaMedida` por «el primer eje
+libre» pone **los dos asertos del bloque 2 en rojo** (4.076 penetraciones fuera de la referencia, 542
+puntos por encima de su cota). 50 s, sin navegador y sin créditos:
+
+```bash
+node qa/nadie-se-queda-encerrado.mjs   # sale 1 si hay un solo punto del que no se salga andando
+```
+
+Y su vigilante, `qa/los-candados-miden-el-mundo-del-cliente.mjs` (QA de esa misma PR): que el **suelo**
+y el **cableado** sobre los que los dos de arriba afirman «de aquí se sale» sean los del juego. Nace de
+dos cosas medidas al validar la PR G1. Una: el candado de #616 nació montando el grid del plan con los
+`volumes` **DECLARADOS** del crudo mientras el cliente instala `escena.__plan`, el **compuesto** — robledo
+y puerto declaran CERO y derivan del esquema sus 38 y 23, así que corría sobre **960 celdas sólidas de
+1.608** y **2.144 de 3.072**, un mundo un 40 % menos sólido. Se arregló en los dos guiones que lo hacían,
+y esto es el **censo** que impide que entre por un tercero: se leen los `.mjs` del árbol y se mira si cada
+llamada a `planCollisionGrid(` nombra `__plan`, con su control (si el patrón deja de casar, lo dice).
+Dos: aquel guion conduce `pasoDelJugador` con **una** de las tres fuentes que el cliente une en
+`collidesAt`, así que este monta las **tres** —frontera del plano + suelo + cajas, en el orden del
+cliente— sobre un tile solo con los ocho vecinos ausentes. Resultado: **0 de 6.007 sin salida también
+así**, y **126 de 6.007** que no salen dentro del horizonte corto del otro guion porque el eje de menor
+penetración da a un tile que no existe y hay que rodear (el más lento sale en 1,42 s). Ese 126 lo **mide
+y no lo afirma**. **Probado en negativo** por sus dos puertas (`QA_SUELO_CRUDO=1` → bloque 2 rojo y el
+mundo baja a 3.941 puntos; `QA_REGLA_DE_AYER=1` → bloque 3 rojo, 3.117 de 6.007) y el censo cambiando
+`__plan` por `crudo` en un guion real. 16 s, sin navegador y sin créditos:
+
+```bash
+node qa/los-candados-miden-el-mundo-del-cliente.mjs   # sale 1 si el suelo o el cableado no son los del cliente
 ```
 
 Y el tercero de la familia, `qa/el-mundo-solido-tambien-para-el-npc.mjs` (QA de la PR 2 de la tanda

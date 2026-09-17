@@ -6,7 +6,7 @@ import {
   cajaQueContiene,
   cajasDeRuntime,
   cajasDeSpawns,
-  salidaDeSolido,
+  salidaDeLasCajas,
 } from "../src/simulation/cajas-de-runtime.js";
 import { SPAWN_DE_RUNTIME } from "../src/session/mundo-persistido.js";
 import type { EntityRecord } from "../src/narrative/types.js";
@@ -126,13 +126,13 @@ describe("cajasDeRuntime · qué caja contesta", () => {
     assert.equal(cajaQueContiene(2.49, 0, 0.5, cajas)?.id, "forja");
   });
 
-  it("salidaDeSolido: de QUÉ caja hay que salir y hacia dónde (#583, H-2)", () => {
+  it("salidaDeLasCajas: de QUÉ caja hay que salir y hacia dónde (#583, H-2)", () => {
     // Dentro de la forja, un poco al oeste del centro: su cara más cercana.
-    assert.deepEqual(salidaDeSolido(-1, 0, 0.5, cajas), { caja: "forja", dir: { x: -1, z: 0 } });
+    assert.deepEqual(salidaDeLasCajas(-1, 0, 0.5, cajas), { de: "caja", id: "forja", dir: { x: -1, z: 0 } });
     // Dentro del carro, al norte: por el norte.
-    assert.deepEqual(salidaDeSolido(20, 1, 0.5, cajas), { caja: "carro", dir: { x: 0, z: 1 } });
+    assert.deepEqual(salidaDeLasCajas(20, 1, 0.5, cajas), { de: "caja", id: "carro", dir: { x: 0, z: 1 } });
     // Fuera de todo no hay de dónde salir, y eso NO es «no sé»: es que no hay.
-    assert.equal(salidaDeSolido(10, 10, 0.5, cajas), null);
+    assert.equal(salidaDeLasCajas(10, 10, 0.5, cajas), null);
   });
 
   it("el RADIO infla la caja también aquí: el cuerpo cuenta", () => {

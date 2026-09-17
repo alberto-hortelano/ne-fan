@@ -256,7 +256,7 @@ async function pelearContra(
     // un forward FIJO (0,0,−1) en vez de hacia dónde mira el jugador. Con las
     // dos cosas, un `near_player` puede materializar al enemigo dentro de un
     // muro. Que la pelea de abajo funcione igual no lo absuelve: funciona
-    // porque la IA de combate no consulta `blocksMove` y lo saca atravesando
+    // porque la IA de combate no consulta la colisión y lo saca atravesando
     // el sólido. Las dos son de OTRA tanda; aquí se dejan medidas.
     ctx.log(`⚠ ${etiqueta}: el spawn nació DENTRO de un sólido — ${dondeNace}`);
   }
