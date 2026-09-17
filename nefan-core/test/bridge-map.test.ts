@@ -23,6 +23,7 @@ import {
   porElBorde,
   waitFor,
 } from "./helpers.js";
+import { PLAYER_RADIUS_M } from "../src/scene/terrain-collision.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 
 /** El `ready` DE PARTIDA: el status de juego (`game_gen`) no lleva `spawn`,
@@ -213,6 +214,32 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     ground: [],
     entities: [],
   });
+
+  /** El mismo tile CON el edificio del lugar dentro, en las celdas 20..29 ×
+   *  30..39 — o sea justo donde el `anchor.rect` de la forja dice que está.
+   *
+   *  Es lo que produce el mundo de verdad y lo que `tileScene()` no tiene:
+   *  `planCollisionGrid` rasteriza la HUELLA ENTERA del volumen (los edificios
+   *  del plan son macizos, no cuatro muros), así que el centro del rect —lo
+   *  que devuelve `resolvePlaceTarget`— es un punto sólido. Con el tile vacío
+   *  los dos caminos del spawn salen verdes midiendo aire. */
+  const tileConLaNave = () => ({
+    ...tileScene(),
+    entities: [
+      {
+        id: "nave_de_la_forja",
+        kind: "building",
+        name: "la nave de la forja",
+        cell: [20, 30],
+        footprint: [10, 10],
+      },
+    ],
+  });
+
+  /** El rect de la forja en celdas del tile (1,0) y su centro en metros:
+   *  minX 32 + 25·0,5 = 44,5; minZ −32 + 35·0,5 = −14,5. */
+  const RECT_DE_LA_FORJA: [number, number, number, number] = [20, 30, 10, 10];
+  const CENTRO_DEL_RECT = { x: 44.5, z: -14.5 };
 
   /** Mundo de tiles con el jugador en el tile (0,0) = place "claro", y un
    *  link hacia "forja" que sale por el ESTE. */
@@ -564,6 +591,165 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     }
     assert.equal(aiCalls.scene.length, 0, "el job abandonado no llegó a correr");
     soltarBloqueo();
+  });
+
+  // ── #616, mitad de ARRIBA: el juego no mete a nadie dentro ────────────────
+  //
+  // Los dos caminos del spawn —el lugar ya realizado y el que se genera ahora—
+  // difundían el centro del `anchor.rect` SIN una sola consulta de solidez, y
+  // el cliente teletransporta ahí (`main.ts:946`). Sobre las fixtures del
+  // selector «Room» eso son los 13 `building` de robledo y puerto ocupados en
+  // su centro, 13 de 13: estado sin salida. Estos cuatro tests miden el CABLE
+  // (que el bridge pregunte) y no la cuenta (que la mide `salida-del-solido`).
+
+  it("viajar a un lugar YA realizado deja al jugador en la PUERTA, no dentro del edificio (#616)", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    seedTravelWorld(narrative);
+    narrative.recordSceneLoaded(
+      "tile_1_0",
+      expandScenePrimitives({
+        tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", place_id: "forja", ...tileConLaNave(),
+      }),
+      [],
+      { activate: false },
+    );
+    narrative.worldMap.get("forja")!.anchor = { tx: 1, ty: 0, rect: RECT_DE_LA_FORJA };
+    broadcasts.length = 0;
+
+    // CONTROL: el punto que se difundía hasta hoy está OCUPADO. Sin esto, lo
+    // de abajo saldría igual de verde sobre un tile de aire.
+    assert.equal(
+      ctx.simCollision.ocupado(CENTRO_DEL_RECT.x, CENTRO_DEL_RECT.z, PLAYER_RADIUS_M),
+      true,
+      "el centro del rect de la forja es sólido: es el estado sin salida de #616",
+    );
+
+    const { socket } = makeSocket();
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+
+    const ready = broadcasts.find(readyDeSesion);
+    // La nave ocupa x 42..47: se sale por su cara ESTE, a un radio de ella.
+    assert.deepEqual(ready?.spawn, { x: 47.4, z: -14.5 }, "la puerta, no la cocina");
+    assert.equal(
+      ctx.simCollision.ocupado(ready!.spawn!.x, ready!.spawn!.z, PLAYER_RADIUS_M),
+      false,
+      "y el sitio al que se manda al jugador está libre",
+    );
+    assert.ok(
+      Math.hypot(ready!.spawn!.x - CENTRO_DEL_RECT.x, ready!.spawn!.z - CENTRO_DEL_RECT.z) <= 4,
+      "sin teletransportarlo a otro barrio: el desplazamiento es el mínimo",
+    );
+  });
+
+  it("si el motor ancla el lugar SOBRE lo que acaba de construir, el spawn sale a la puerta (#616)", async () => {
+    // El camino del `spawnAt`: el motor afina el `anchor.rect` DURANTE la
+    // generación (`map_upsert_place.anchor`) y lo pone encima del edificio que
+    // está declarando. Es el caso que #465 convierte en rutinario el día que
+    // el motor real escriba rects.
+    const sesion: { narrative?: NarrativeState } = {};
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: {
+        generateScene: async () => {
+          sesion.narrative!.worldMap.upsertPlace({
+            id: "forja", kind: "site", parent_id: "world", name: "La Forja",
+            anchor: { tx: 1, ty: 0, rect: RECT_DE_LA_FORJA },
+          });
+          return { ok: true as const, scene: tileConLaNave() };
+        },
+      },
+    });
+    sesion.narrative = narrative;
+    seedTravelWorld(narrative);
+    const { socket } = makeSocket();
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
+
+    const ready = broadcasts.find(readyDeSesion);
+    assert.deepEqual(ready?.spawn, { x: 47.4, z: -14.5 });
+    assert.equal(
+      ctx.simCollision.ocupado(ready!.spawn!.x, ready!.spawn!.z, PLAYER_RADIUS_M),
+      false,
+      "el jugador aparece EN el lugar, pero no dentro de su geometría",
+    );
+  });
+
+  it("un lugar realizado SIN sitio libre: error con el nombre, y NI escena NI spawn mudo (#616)", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx();
+    seedTravelWorld(narrative);
+    narrative.recordSceneLoaded(
+      "tile_1_0",
+      expandScenePrimitives({
+        tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", place_id: "forja", ...tileConLaNave(),
+      }),
+      [],
+      { activate: false },
+    );
+    narrative.worldMap.get("forja")!.anchor = { tx: 1, ty: 0, rect: RECT_DE_LA_FORJA };
+    // Un mundo sin una sola salida: `sitioParaAparecer` satura el tope las
+    // cuatro veces y devuelve `null`. Se monta sustituyendo la consulta de
+    // PUNTO y no el mundo porque alcanzarlo con geometría de verdad pide 160 m
+    // de sólido continuo (25 tiles de agua), y lo que se mide aquí es qué hace
+    // el bridge con ese `null`, no cuándo se produce.
+    const provider = ctx.simCollision;
+    ctx.simCollision = { ...provider, ocupado: () => true };
+    broadcasts.length = 0;
+    const log = capturarLogDelBridge();
+
+    const { socket } = makeSocket();
+    try {
+      await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    } finally {
+      log.soltar();
+    }
+
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.match(err?.message ?? "", /No se pudo viajar a La Forja/, "nombra el lugar que se pulsó");
+    assert.match(err?.message ?? "", /No hay un sitio libre donde aparecer allí/);
+    assert.equal(err?.kind, "scene");
+    assert.equal(err?.placeId, "forja", "el cliente cierra su «Viajando…» por el id");
+    // Un spawn mudo —escena nueva, `spawn: undefined`— dejaba al jugador en el
+    // tile viejo mirando el de otro sitio, sin que nada se lo dijera.
+    assert.equal(
+      broadcasts.some((m) => m.type === "narrative_event" && m.eventId === "scene_init"),
+      false,
+      "no se difunde la escena del destino",
+    );
+    assert.equal(broadcasts.some(readyDeSesion), false, "ni un ready sin spawn");
+    // Y el estado no se toca: el place no queda activo en un sitio al que el
+    // jugador nunca llegó.
+    assert.notEqual(narrative.worldMap.serialize().active_place_id, "forja");
+    assert.ok(
+      log.lineas.some((l) => l.includes("forja") && l.includes("sitio libre")),
+      `el motivo técnico queda en el log del bridge: ${log.lineas.join(" | ")}`,
+    );
+  });
+
+  it("un viaje que GENERA y no encuentra sitio: error con el destino y sin difundir el tile (#616)", async () => {
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: { generateScene: async () => ({ ok: true, scene: tileConLaNave() }) },
+    });
+    seedTravelWorld(narrative);
+    ctx.simCollision = { ...ctx.simCollision, ocupado: () => true };
+    const log = capturarLogDelBridge();
+
+    const { socket } = makeSocket();
+    await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
+    log.soltar();
+
+    const err = broadcasts.findLast(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.match(err?.message ?? "", /No se pudo llegar a La Forja/, "nombra el destino");
+    assert.match(err?.message ?? "", /No hay un sitio libre donde aparecer allí/);
+    assert.doesNotMatch(
+      err?.message ?? "",
+      /no pudo construirlo/,
+      "y NO lo cuelga del motor, que construyó el tile perfectamente",
+    );
+    assert.equal(broadcasts.some(readyDeSesion), false, "ningún ready: nada de spawn mudo");
   });
 });
 

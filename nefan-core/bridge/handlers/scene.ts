@@ -7,6 +7,7 @@ import {
   broadcastScene,
   fireMapTriggers,
   type BridgeContext,
+  type SitioDeAparicion,
 } from "../context.js";
 import { resolveExitEdge } from "../../src/world-map/edges.js";
 import { resolveTravelAnchor } from "../../src/world-map/place-anchor.js";
@@ -14,7 +15,12 @@ import { resolvePlaceTarget } from "../../src/world-map/place-target.js";
 import { tileKey, type TileCoord } from "../../src/scene/tile.js";
 import { activeTileOf, runTileGeneration } from "./tile.js";
 import type { SceneGenOutcome } from "../scene-gen-queue.js";
-import { motivoParaElJugador } from "../../src/protocol/status-motivo.js";
+import {
+  FALLO_SIN_SITIO_DONDE_APARECER,
+  motivoParaElJugador,
+} from "../../src/protocol/status-motivo.js";
+import { sitioParaAparecer } from "../../src/simulation/salida-del-solido.js";
+import { PLAYER_RADIUS_M } from "../../src/scene/terrain-collision.js";
 import type { PlayerEnteredPlaceMessage } from "../../src/protocol/messages.js";
 
 export async function handlePlayerEnteredPlace(
@@ -82,6 +88,47 @@ export async function handlePlayerEnteredPlace(
   });
 }
 
+/** DÓNDE APARECE quien viaja, y los TRES desenlaces que tiene esa pregunta.
+ *
+ *  Los dos primeros son `SitioDeAparicion` (`bridge/context.ts`) y son los
+ *  únicos que `broadcastScene` acepta. El tercero vive SOLO aquí, y ese corte
+ *  es el candado: no se puede difundir sin haberlo descartado, porque no
+ *  compila. Lo que el tipo no impide —escribir `sin ancla` teniendo un
+ *  `sin sitio`— está dicho en el docblock de `SitioDeAparicion`.
+ *
+ *  Son tres y no dos, y colapsarlos era la mitad de ARRIBA de #616:
+ *  `resolvePlaceTarget` devuelve el centro del `anchor.rect` del lugar **sin
+ *  una sola consulta de solidez**, y el cliente teletransporta ahí
+ *  (`main.ts:946`). Los edificios del plan son MACIZOS —`planCollisionGrid`
+ *  rasteriza la huella entera del volumen—, así que ese centro es un punto del
+ *  que no se sale: medido sobre las fixtures del selector «Room», los **13
+ *  `building` de robledo y puerto están ocupados en su centro, 13 de 13**.
+ *
+ *  La cuenta la hace core (`sitioParaAparecer`) y el suelo lo pone el
+ *  proveedor de la sesión, que es el que conoce las TRES fuentes —grid del
+ *  terreno, grid del plan y cajas de runtime— con el solape ABIERTO. El bridge
+ *  solo las ata: el cliente no decide dónde aparece, solo pinta.
+ *
+ *   · `punto`     — hay sitio: el candidato si ya estaba libre, y si no la
+ *                   PUERTA del lugar (menor penetración = desplazamiento
+ *                   mínimo; ≤ 3,90 m medido sobre esos 13).
+ *   · `sin ancla` — el lugar no da punto de aparición (sin `anchor` y sin tile
+ *                   realizado): viaje narrative-paced, nadie se mueve. Es el
+ *                   `undefined` de siempre y NO es un fallo.
+ *   · `sin sitio` — hay punto pero no hay dónde ponerse: la marcha saturó el
+ *                   tope cuatro veces (160 m de sólido continuo) o dejó de
+ *                   haber progreso numérico. Es FAIL-LOUD y hay que decirlo:
+ *                   el candidato crudo NO vale como respaldo, porque es
+ *                   justamente el punto del que no se sale. */
+type DondeAparecer = SitioDeAparicion | { de: "sin sitio" };
+
+function dondeAparecer(ctx: BridgeContext, placeId: string): DondeAparecer {
+  const punto = resolvePlaceTarget(ctx.narrative, placeId);
+  if (!punto) return { de: "sin ancla" };
+  const sitio = sitioParaAparecer(punto, PLAYER_RADIUS_M, ctx.simCollision);
+  return sitio ? { de: "punto", spawn: sitio } : { de: "sin sitio" };
+}
+
 /** Difunde la escena de un place YA realizado y pide el spawn: viajar a un
  *  lugar que existe es APARECER en él, no solo re-difundir su tile. Devuelve
  *  false si el place todavía no tiene escena.
@@ -100,6 +147,33 @@ async function difundirPlaceRealizado(
   const sceneId = place?.realized_scene_id;
   if (!sceneId || !ctx.narrative.scenes_loaded[sceneId]) return false;
   const scene = ctx.narrative.scenes_loaded[sceneId].scene_data;
+  // El sitio se decide ANTES de tocar el estado: si el lugar no tiene dónde
+  // poner al jugador, esto no activa el place, no guarda y no difunde. La
+  // consulta ya se puede hacer porque la escena está en `scenes_loaded` —de
+  // ahí sale `scene` dos líneas arriba—, que es de donde el proveedor deriva
+  // los colliders del tile.
+  const donde = dondeAparecer(ctx, placeId);
+  if (donde.de === "sin sitio") {
+    // FAIL-LOUD, y con el nombre del lugar: la alternativa era difundir la
+    // escena con `spawn: undefined`, o sea un SPAWN MUDO — el jugador se queda
+    // donde estaba, viendo el tile de otro sitio, y nada se lo dice.
+    console.warn(
+      `Bridge: "${placeId}" está realizado pero no tiene sitio libre donde aparecer`,
+    );
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "scene",
+      placeId,
+      // La frase del jugador sale de la MISMA traducción que usa el viaje que
+      // aún no está realizado (abajo, por el `throw` de `spawnAt`): dos
+      // literales iguales en dos canales divergen, y aquí el hecho es uno.
+      message: `No se pudo viajar a ${place.name}. ${motivoParaElJugador(
+        new Error(FALLO_SIN_SITIO_DONDE_APARECER),
+      )}`,
+    });
+    return true;
+  }
   // recordSceneLoaded re-activates the place AND (re-)registers the
   // scene's NPCs into entities so the narrative engine sees them. Este save
   // persiste la activación del place y el ledger de NPCs; la POSICIÓN del
@@ -107,13 +181,14 @@ async function difundirPlaceRealizado(
   // #395), en el primer `input` tras el spawn que se pide abajo.
   ctx.narrative.recordSceneLoaded(sceneId, scene);
   await ctx.narrative.save();
-  // El spawn se PIDE al cliente (dueño de la posición).
-  const spawn = resolvePlaceTarget(ctx.narrative, placeId) ?? undefined;
-  broadcastScene(ctx, sceneId, scene, undefined, { spawn, source: "cache" });
+  // El spawn se PIDE al cliente (dueño de la posición). `donde` entra ENTERO:
+  // aquí ya está estrechado a `SitioDeAparicion` por la guarda de arriba, y
+  // quitarla no compila (#616, H1 de QA).
+  broadcastScene(ctx, sceneId, scene, undefined, { spawn: donde, source: "cache" });
   // Los triggers se disparan AQUÍ; sin esto, el activateByPosition del
   // siguiente sim_input (el jugador acaba de aterrizar en el anchor) los
   // volvería a disparar.
-  if (spawn) ctx.posTracking.placeId = placeId;
+  if (donde.de === "punto") ctx.posTracking.placeId = placeId;
   await fireMapTriggers(ctx, prevPlaceId, placeId);
   return true;
 }
@@ -165,6 +240,10 @@ async function runPlaceTravel(
     // El anchor se fija ANTES de generar: buildGenerateTileCtx lo lee para
     // decirle al motor QUÉ lugar está construyendo en ese tile.
     place.anchor = anchor;
+    // Aquí se comprueba que HAY punto, no que esté libre: el tile todavía no
+    // existe, así que preguntar por solidez ahora contestaría «libre» sobre un
+    // mundo que aún no se ha construido. La solidez se mira al difundir, que
+    // es cuando el tile ya está registrado (`spawnAt`, abajo).
     if (!resolvePlaceTarget(ctx.narrative, placeId)) {
       throw new Error(`el anclaje de ${place.name} no da punto de aparición`);
     }
@@ -177,8 +256,19 @@ async function runPlaceTravel(
       destino: place.name,
       // Al difundir, no ahora: si el motor afinó el anchor del lugar con un
       // rect (`map_upsert_place.anchor`) mientras generaba, el jugador aparece
-      // dentro del lugar y no en el centro del tile.
-      spawnAt: () => resolvePlaceTarget(ctx.narrative, placeId) ?? undefined,
+      // EN el lugar y no en el centro del tile. Y el tile ya está registrado,
+      // así que aquí sí se puede preguntar por solidez: el centro de un
+      // edificio macizo es estado sin salida (#616), y lo que viaja es la
+      // puerta. El `throw` lo recoge el catch de `runTileGeneration`, que lo
+      // difunde con el nombre del destino delante — volver `undefined` sería
+      // un spawn mudo: escena nueva, jugador en el tile viejo y nadie avisa.
+      spawnAt: () => {
+        const donde = dondeAparecer(ctx, placeId);
+        if (donde.de === "sin sitio") {
+          throw new Error(`${FALLO_SIN_SITIO_DONDE_APARECER}: ${place.name}`);
+        }
+        return donde;
+      },
     });
   } catch (err) {
     console.warn(`Bridge: viaje a "${placeId}" falló:`, err);

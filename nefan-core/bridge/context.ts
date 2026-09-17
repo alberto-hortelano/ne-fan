@@ -334,6 +334,28 @@ export function sellarSesion<T extends { type: string }>(
   return { ...msg, sessionId };
 }
 
+/** UN SITIO YA MIRADO donde pedirle al cliente que aparezca — y el tipo es el
+ *  candado, no un adorno.
+ *
+ *  Difundir un `spawn` es mandar al jugador a una coordenada, así que el punto
+ *  crudo NO entra aquí: entra el veredicto de haber preguntado por su solidez
+ *  (`handlers/scene.ts`, `dondeAparecer`). El tercer desenlace de esa pregunta
+ *  —«hay punto pero no hay dónde ponerse»— NO está en esta unión **a
+ *  propósito**: quien lo tenga en la mano no puede pasar por aquí sin haberlo
+ *  descartado antes, y el compilador se lo dice. Esa es la mitad que el tipo
+ *  garantiza; lo que el tipo NO impide es que alguien escriba `sin ancla`
+ *  teniendo un `sin sitio`, o que no pase `spawn` en absoluto —los cuatro
+ *  broadcasts que no son un viaje lo omiten, y es correcto—. Se dice aquí
+ *  porque la primera versión de #616 prometía «el spawn mudo es inexpresable»
+ *  y QA lo desmintió en una corrida de `tsc`: borrar la guarda compilaba.
+ *
+ *   · `punto`     — aparece ahí, y ese punto se ha consultado.
+ *   · `sin ancla` — el lugar no da punto de aparición: nadie se mueve. Es el
+ *                   viaje narrative-paced, y NO es un fallo. */
+export type SitioDeAparicion =
+  | { de: "punto"; spawn: { x: number; z: number } }
+  | { de: "sin ancla" };
+
 /** Push a freshly loaded/realized scene to every narrative subscriber as the
  *  `scene_loaded` effect (`eventId: "scene_init"`) the clients render. Only
  *  real scenes pass through here — there is no "fallback minimal scene" any
@@ -346,8 +368,9 @@ export function broadcastScene(
   meta?: {
     edge?: import("../src/world-map/types.js").Edge;
     /** Punto de aparición que se PIDE al cliente en el `ready` (viaje a un
-     *  place anclado): el cliente es dueño de su posición. */
-    spawn?: { x: number; z: number };
+     *  place anclado): el cliente es dueño de su posición. Omitirlo es «esta
+     *  difusión no mueve a nadie»; pasarlo exige un sitio YA MIRADO. */
+    spawn?: SitioDeAparicion;
     /** De dónde sale esta escena: generada ahora, ya en sesión, o del mundo
      *  pre-generado. Viaja en el `ready` para que el cliente pueda AFIRMAR la
      *  diferencia en vez de suponerla. */
@@ -398,7 +421,10 @@ export function broadcastScene(
     kind: "tile",
     tile: worldScene.tile,
     edge: meta?.edge,
-    spawn: meta?.spawn,
+    // El colapso a coordenada-o-nada ocurre AQUÍ y en ningún otro sitio: el
+    // wire lleva `{x,z}` opcional desde siempre y no cambia. Lo que cambia es
+    // que para llegar hasta aquí hay que traer el veredicto entero.
+    spawn: meta?.spawn?.de === "punto" ? meta.spawn.spawn : undefined,
     source: meta?.source,
     elapsedMs,
   });

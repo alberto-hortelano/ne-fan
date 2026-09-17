@@ -30,6 +30,16 @@
  *  `tope_local` de 120: fuera del conjunto medible en local. Cero llamadas
  *  cruzadas entre las dos mitades el día del corte, y el candado de baterías de
  *  `test/mutation-config.test.ts` se pone rojo si alguien las vuelve a atar. */
+/** Código del viaje que llega a un sitio donde el jugador no CABE (#616, tanda
+ *  G). Mismo patrón y mismo motivo que `FALLO_HOJAS_BASE`, unas líneas más
+ *  abajo: los dos extremos están lejos —lo lanza `bridge/handlers/scene.ts` al
+ *  resolver el spawn y lo lee la función de aquí—, y con dos literales sueltos
+ *  renombrar uno dejaría al jugador con el motivo genérico («el motor no pudo
+ *  construirlo») sobre un tile que el motor construyó perfectamente. El mismo
+ *  handler lo usa además para la rama que NO pasa por una excepción (el lugar
+ *  ya realizado), y así la frase que se lee es una sola en los dos canales. */
+export const FALLO_SIN_SITIO_DONDE_APARECER = "sin sitio donde aparecer";
+
 /** Traduce un fallo de GENERACIÓN a algo que quien juega pueda leer.
  *
  *  Lo llama el bridge al difundir el `narrative_status` de error (tile y
@@ -48,6 +58,14 @@ export function motivoParaElJugador(err: unknown): string {
   }
   if (/no es jugable/i.test(raw)) {
     return "El motor narrativo devolvió un terreno inservible; inténtalo de nuevo.";
+  }
+  // El lugar EXISTE y el tile está construido: lo que no hay es un punto libre
+  // donde dejar al jugador. Va antes que el de abajo y dice otra cosa a
+  // propósito — «no hay sitio libre en el mapa para colocarlo» habla del
+  // ANCLAJE del lugar en el plano, y darlo por respuesta aquí sería una frase
+  // falsa sobre el sistema en el único momento en que el jugador la lee.
+  if (raw.includes(FALLO_SIN_SITIO_DONDE_APARECER)) {
+    return "No hay un sitio libre donde aparecer allí.";
   }
   if (/no da punto de aparición|no hay sitio|anclaje/i.test(raw)) {
     return "No hay sitio libre en el mapa para colocarlo.";

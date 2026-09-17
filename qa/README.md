@@ -87,6 +87,7 @@ limpieza que el `finally`; QA de #454 los vio dejar fuentes mutados y la huella 
 | `contrato-candados-en-negativo.mjs` | 3,5 s | tsx + `python3 -m unittest`; exige SUS ficheros limpios |
 | `el-ledger-de-gasto-no-lo-escribe-la-suite.mjs` | 45 s | python3 con las deps de la suite de ai_server |
 | `los-dos-gates-rebotan-igual.mjs` | 0,2 s | tsx (el zod) y python3 con las deps de ai_server (el saneador) |
+| `el-viaje-no-mete-a-nadie-dentro.mjs` | 0,18 s | solo el `dist` del core; conduce el handler real del bridge sobre las fixtures del árbol, por los DOS caminos del spawn (#616) |
 
 | Fuera | Por qué |
 |---|---|
@@ -493,6 +494,7 @@ batería: la carga se pide guion a guion, nunca sobre los 129.
 | `142-los-sistemas-se-pueden-consultar` | **#360**, el panel de sistemas de la partida, medido en arranque y en resume REALES y con el evento entrando por el `onmessage` de producción. Ocho cosas, y cada una tapa un agujero distinto: se ve `economy` nada más arrancar; el panel abierto BLOQUEA caminar mientras el mundo sigue avanzando (30 frames); un `plugin_applied` de OTRA sesión no entra en el panel y el de la propia actualiza el valor en caliente; los valores anidados se pintan como TEXTO —el `<img onerror>` del ensayo no ejecuta y no hay `img` en el panel—; panel y botón de cierre caben y reciben el click en 500×600; `Escape` cierra y **`P`** vuelve a abrir; reanudar recupera los sistemas persistidos y NO hereda el valor de ensayo; y con el ratón capturado, `P` lo devuelve para poder consultar y «Cerrar» lo vuelve a tomar. **No consta prueba en negativo** |
 | `143-el-registro-marca-de-quien-es-cada-entrada` | La **transición de ENTRAR** del registro de errores y **todas las filas** de `nefan-core/src/session/pertenencia-del-registro.ts`, escrito por QA al validar la PR 2 de la tanda F. El 82 mide la salida y dos filas (`session` se va, `sprite` se queda); el 27 y el 92 miden una fila cada uno. Nadie medía el `enter` con una entrada de la PARTIDA delante —y ahí hay conducta: el título registra `paso(bootstrap(), "session", …)` y el «la pre-generación del mundo falló» de `ui/title-screen.ts` (`narrative`) antes de que exista ninguna partida—, ni las once filas que solo sujeta el compilador (obliga a poner una fila, no a que sea la correcta). Con el título delante registra una entrada por fuente por la puerta de producción (`errors.push`), pulsa «Comenzar» y afirma fila a fila, con el nombre de la fuente en el aserto, que las de la máquina siguen en el panel y las de la partida no; más un aserto de totalidad que compara la tabla de core con la lista escrita a mano aquí (añadir, quitar o mover una fila sin pasar por este guion sale rojo) y uno de que ninguna superviviente se duplica. **PROBADO EN NEGATIVO** (2026-09-16), tres sabotajes con restauración entre ellos: `olvidarLaPartida()` → `this.entries = []` → rojas las doce de la máquina; → no-op → rojas las tres de la partida; la faceta `errores` olvidando **solo al salir** (`({sessionId}) => { if (!sessionId) … }`) → rojas las tres de la partida **con el 27, el 82 y el 92 verdes los tres**, que es el defecto que este guion existe para ver. Cero créditos (`aisla: saves, fake-ai`, `renderMode: "vector"`) |
 
+| `144-el-viaje-de-vuelta-no-empareda-al-jugador` | Que el viaje por «Salidas» no deje al jugador DENTRO de un edificio, medido como lo nota quien juega: llega, y **anda**. Es #616 en el navegador, y lo escribió QA al validar la PR G2 de la tanda G porque nadie podía verlo aquí — por DOS cegueras, las dos medidas. **Geometría**: los dos `anchor.rect` del motor falso caen en hueco (el de la taberna es un volumen *cutaway*, centro (0, −4) `ocupado=false`; el del lugar anclado cae en campo abierto, centro (64, 7) `ocupado=false`), así que el 08 y el 09 recorren el viaje entero sin poder verlo — el `spawnAplicado` del 09 es el centro crudo, intacto. **Sonda**: el aserto del 09 «el punto de aparición no es sólido» es `probeCollide(pos, pos)`, o sea `collidesAt(p → p)`, y la regla de celdas exime las que ya se solapaban: vale `false` también en el centro macizo de un edificio (medido con la consulta de MOVIMIENTO de entonces —muerta con la PR G1 de esta tanda—, que para un paso de un punto a sí mismo daba `false` con los cuatro pasos de 0,5 m bloqueados). Este guion tapa las dos: pone el `anchor.rect` sobre un edificio MACIZO (`casa_lenador`, 10 × 7 m) por el canal REAL del motor (`POST /map/place` = `map_upsert_place`, que es lo que #465 quiere que el motor escriba), vuelve por el panel y juzga con el observable del jugador: `state().blocked` en los cuatro rumbos y metros ANDADOS con la tecla mantenida. **PROBADO EN NEGATIVO** tres veces: `QA_616_CRUDO=1` (teletransporte al centro crudo, donde dejaba el bridge hasta G2) → 4 rojos con `blocked` todo `true` y **0 m andados en los cuatro rumbos**; `QA_616_ANCLA_LIBRE=1` (el ancla hueca del banco) → el CONTROL en rojo con desplazamiento **0,00 m**, que es la medida de la primera ceguera escrita como negativo re-corrible; y revirtiendo de verdad el bridge (`difundirPlaceRealizado` al `resolvePlaceTarget` crudo) con `dist` recompilado → 4 rojos, jugador en (19,00, 12,50), preso. Cero créditos (`aisla: saves, fake-ai`) |
 **Nota**: los guiones `19`, `20`, `131`, `132` y `133` no tienen fila en esta tabla. Los dos primeros se sembraron sin ella; los tres últimos nacieron en la tanda D y nadie se la puso. La nota anterior decía «`18`–`21`» y llevaba caducada desde que esos dos SÍ la tuvieron: una nota sobre qué falta hay que volver a mirarla cada vez que se añade un guion.
 
 ## El tercer ejecutable: `qa/fixtures-sin-bridge.mjs`
@@ -645,6 +647,31 @@ dentro 290 s de 300». Unos 40 s, sin navegador y sin créditos:
 
 ```bash
 node qa/el-mundo-solido-tambien-para-el-npc.mjs   # sale 1 si un NPC atraviesa algo o se queda dentro
+```
+
+Y el cuarto, `qa/el-viaje-no-mete-a-nadie-dentro.mjs` (PR G2 de la tanda G, **#616**, mitad de
+ARRIBA): que el juego no vuelva a **teletransportar al jugador a una coordenada que nadie ha
+mirado**. `resolvePlaceTarget` devuelve el centro del `anchor.rect` del lugar sin una sola consulta
+de solidez, el bridge lo difunde como `ready.spawn` y el cliente lo obedece — y los edificios del
+plan son macizos, así que los **13 `building` de `robledo_tile` y `puerto_tile` estaban ocupados en
+su centro, 13 de 13**. Conduce el **handler real** (`handlePlayerEnteredPlace`) con el proveedor de
+colisión de producción y mira lo que sale por el wire, porque lo que no tenía candado no era la
+cuenta —`sitioParaAparecer` tiene su batería de unidad— sino el CABLE: que el bridge PREGUNTE.
+Cuatro bloques: el **control** (los 13 centros ocupados HOY: sin él, todo sale verde sobre un mundo
+de aire), **el viaje** (los 13 spawns libres, a ≤ 4 m del centro y alcanzados por UNA marcha: la
+puerta del lugar, no su cocina), **el que no puede, lo dice** (mundo sin salida → `narrative_status`
+de error con el NOMBRE del lugar, sin escena, sin `ready` y sin activar el place — nunca un spawn
+mudo) y **el OTRO camino del spawn**, el viaje que GENERA el tile con el motor afinando el
+`anchor.rect` sobre el edificio que acaba de declarar. El cuarto lo trajo **H2 de la QA de G2**, y
+su medida es la razón de que exista: con ese segundo sitio revertido, los tres primeros bloques
+salían VERDES y la batería entera también — media PR se podía revertir sin que ningún guion
+ejecutable dijera nada. **PROBADO EN NEGATIVO** de dos formas: `QA_SIN_SITIO=1` juzga el centro
+crudo —la regla de ayer, escrita en el guion y no en el árbol— → **16 rojos**; y revirtiendo de
+verdad el bridge con `dist` recompilado, un sitio cada vez → `:111` **22 rojos**, `:181` **1 rojo**
+(el del bloque 4), los dos **23**. 0,18 s, sin navegador y sin créditos:
+
+```bash
+node qa/el-viaje-no-mete-a-nadie-dentro.mjs   # sale 1 si el viaje vuelve a difundir un punto sin mirar
 ```
 
 Dos cosas que aprendió el arreglo y que conviene no volver a descubrir:

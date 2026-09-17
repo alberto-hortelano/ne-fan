@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 
 import {
   FALLO_HOJAS_BASE,
+  FALLO_SIN_SITIO_DONDE_APARECER,
   etiquetaDeFixture,
   motivoDeFixtureParaElJugador,
   falloDeReaccionParaElJugador,
@@ -35,6 +36,7 @@ describe("motivoParaElJugador: el cuerpo de un fallo de generación", () => {
     "socket hang up",
     "El tile (2, 0) no es jugable: el camino del borde oeste no continúa",
     "el anclaje de Robledo no da punto de aparición",
+    `${FALLO_SIN_SITIO_DONDE_APARECER}: La Forja`,
     "No se pudo generar el tile (1, 0). Revisa el motor narrativo.",
   ];
 
@@ -45,21 +47,39 @@ describe("motivoParaElJugador: el cuerpo de un fallo de generación", () => {
       const motivo = motivoParaElJugador(new Error(raw));
       assert.ok(!motivo.includes(raw), `«${raw}» llegó entero al jugador: ${motivo}`);
       assert.ok(!/fetch|ECONNREFUSED|socket|http:\/\//i.test(motivo), motivo);
-      assert.match(motivo, /^El motor narrativo|^No hay sitio/, motivo);
+      assert.match(motivo, /^El motor narrativo|^No hay/, motivo);
     }
   });
 
   it("el motor caído, el terreno inservible y el sitio ocupado se distinguen", () => {
-    // Tres causas, tres frases: colapsarlas en una sola dejaría al jugador sin
-    // saber si reintentar sirve de algo.
+    // Cuatro causas, cuatro frases: colapsarlas dejaría al jugador sin saber
+    // si reintentar sirve de algo. Las dos últimas se parecen y NO son la
+    // misma — el mapa sin hueco donde anclar el lugar, y el lugar anclado
+    // donde el jugador no cabe (#616).
     const caido = motivoParaElJugador(new Error("fetch failed"));
     const inservible = motivoParaElJugador(new Error("El tile (2, 0) no es jugable: …"));
-    const sinSitio = motivoParaElJugador(new Error("el anclaje de Robledo no da punto de aparición"));
+    const sinAnclaje = motivoParaElJugador(new Error("el anclaje de Robledo no da punto de aparición"));
+    const sinSitio = motivoParaElJugador(new Error(`${FALLO_SIN_SITIO_DONDE_APARECER}: La Forja`));
     const generico = motivoParaElJugador(new Error("algo raro"));
-    assert.equal(new Set([caido, inservible, sinSitio, generico]).size, 4);
+    assert.equal(new Set([caido, inservible, sinAnclaje, sinSitio, generico]).size, 5);
     assert.match(caido, /no responde/);
     assert.match(inservible, /terreno inservible/);
-    assert.match(sinSitio, /No hay sitio libre/);
+    assert.equal(sinAnclaje, "No hay sitio libre en el mapa para colocarlo.");
+    assert.equal(sinSitio, "No hay un sitio libre donde aparecer allí.");
+  });
+
+  it("el tile CONSTRUIDO sin sitio donde aparecer no se le cuelga al motor (#616)", () => {
+    // El caso es el del viaje que llega: el motor hizo su trabajo y el tile
+    // existe; lo que no hay es un punto libre donde dejar al jugador. Decirle
+    // «el motor narrativo no pudo construirlo» sería una frase FALSA sobre el
+    // sistema en el único momento en que el jugador la lee, y es lo que pasa
+    // si esta rama desaparece: el marcador cae en el genérico.
+    const motivo = motivoParaElJugador(
+      new Error(`${FALLO_SIN_SITIO_DONDE_APARECER}: La Forja`),
+    );
+    assert.equal(motivo, "No hay un sitio libre donde aparecer allí.");
+    assert.doesNotMatch(motivo, /motor narrativo/);
+    assert.doesNotMatch(motivo, /La Forja/, "el nombre lo pone quien difunde, no el motivo");
   });
 
   it("aguanta un rechazo que no es Error (el motor puede rechazar con un string)", () => {
