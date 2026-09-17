@@ -7,14 +7,18 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "format": "prettier --write src"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^24.0.0",
     "@types/three": "^0.170.0",
     "eslint": "^10.6.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.4",
+    "tsx": "^4.20.0",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.62.1",
     "vite": "^6.0.0"

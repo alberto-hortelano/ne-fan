@@ -6,6 +6,15 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    // SIN TIPOS AMBIENTES, y es la mitad DE TIPOS del invariante «el cliente no
+    // alcanza node» (#636). `@types/node` está en `devDependencies` desde que
+    // existe el banco (`test/`), y con el defecto de TypeScript —meter en el
+    // programa todo `@types/*` que haya en node_modules— eso bastaría para que
+    // `src/` empezara a typecheckear `process.env` o `Buffer` como si los
+    // tuviera. El candado `el-cliente-no-alcanza-node-ni-a-traves-del-core` caza
+    // el `import`, no el global ambiente. Los tipos de Node los devuelve
+    // `tsconfig.test.json`, que es quien comprueba `test/`.
+    "types": [],
     "resolveJsonModule": true,
     "outDir": "dist",
     "baseUrl": ".",

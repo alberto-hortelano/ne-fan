@@ -52,6 +52,13 @@
         ]
       },
       {
+        "//": "EL BANCO DEL CLIENTE (#636). Entra aquí y NO como regla nueva: lo que hay que vigilar no es que un test importe `src/` —eso es lo que un test hace— sino lo CONTRARIO, que un fichero de `src/` importe el banco y se arrastre `node:test` hasta el navegador. Con el root dentro, el `cierre` de `el-cliente-no-alcanza-node-ni-a-traves-del-core` ve esos ficheros al recorrer el grafo y denuncia el `node:*` con el camino entero. Las reglas de TEXTO que ya cubrían `nefan-core/test` se extienden aquí por el mismo motivo que allí.",
+        "dir": "nefan-html/test",
+        "ext": [
+          ".ts"
+        ]
+      },
+      {
         "dir": "nefan-core/data",
         "ext": [
           ".json",
@@ -565,6 +572,7 @@
         "nefan-core/data/**/*.json",
         "nefan-core/data/**/*.md",
         "nefan-html/src/**/*.ts",
+        "nefan-html/test/**/*.ts",
         "ai_server/**/*.py",
         "narrative-mcp/**/*.ts",
         "labs/**/*.ts",
@@ -632,6 +640,7 @@
         "nefan-core/data/**/*.json",
         "nefan-core/data/**/*.md",
         "nefan-html/src/**/*.ts",
+        "nefan-html/test/**/*.ts",
         "nefan-html/public/**/*.html",
         "ai_server/**/*.py",
         "narrative-mcp/**/*.ts",

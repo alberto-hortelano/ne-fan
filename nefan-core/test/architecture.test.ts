@@ -2478,6 +2478,55 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  // El root `nefan-html/test` entró el 2026-09-17 con el banco del cliente
+  // (#636) y, como el de `nefan-core/scripts`, nace MEDIDO A CERO: verde por
+  // definición. Sin este caso sería decorativo — ficheros escaneados que nadie
+  // mira. Y lo que hay que ver saltar NO es lo que uno esperaría: que un test
+  // importe `src/` es lo que un test hace, y el `cierre` no lo ve porque sus
+  // entradas son los ficheros de `src/` y el grafo se recorre HACIA FUERA. Lo
+  // que este root compra es la dirección CONTRARIA: un fichero de `src/` que
+  // importe el banco se arrastra `node:test` hasta el bundle del navegador, y
+  // el camino entero tiene que salir en el mensaje.
+  it("[error] nefan-html/test está escaneado, y un fichero de src/ que importe el banco arrastra node:test al cliente", () => {
+    assert.ok(
+      files.some((f) => f.path.startsWith("nefan-html/test/")),
+      "nefan-html/test se cayó de scan.roots — el cierre dejaría de ver el banco del cliente",
+    );
+    const deLaRegla = (fs: SourceFile[]) =>
+      checkArchitecture(config, fs).filter((v) => v.ruleId === "el-cliente-no-alcanza-node-ni-a-traves-del-core");
+
+    const banco: SourceFile = {
+      path: "nefan-html/test/y.test.ts",
+      text: "",
+      imports: [
+        { spec: "node:test", line: 1 },
+        { spec: "../src/x.js", line: 2, resolved: "nefan-html/src/x.ts" },
+      ],
+    };
+    // LA DIRECCIÓN SANA: el test importa `src/`, y eso NO viola nada — el
+    // cierre arranca de las entradas de `src/` y nunca llega al banco.
+    const xSano: SourceFile = { path: "nefan-html/src/x.ts", text: "", imports: [] };
+    assert.deepEqual(deLaRegla([xSano, banco]), [], "un test que importa src/ es lo normal, no una violación");
+
+    // LA DIRECCIÓN MALA, que es para lo que entró el root.
+    const xMalo: SourceFile = {
+      path: "nefan-html/src/x.ts",
+      text: "",
+      imports: [{ spec: "../../test/y.test.js", line: 1, resolved: "nefan-html/test/y.test.ts" }],
+    };
+    assert.deepEqual(
+      deLaRegla([xMalo, banco]).map(({ path, line, detail }) => ({ path, line, detail })),
+      [
+        {
+          path: "nefan-html/test/y.test.ts",
+          line: 1,
+          detail:
+            '"node:test" entra en el cliente por: nefan-html/src/x.ts → nefan-html/test/y.test.ts → node:test',
+        },
+      ],
+    );
+  });
+
   it("[error] la-logica-de-juego-no-vuelve-al-cliente: la frontera del jugador salta si vuelve al cliente; pintarla no", () => {
     const deLaRegla = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");

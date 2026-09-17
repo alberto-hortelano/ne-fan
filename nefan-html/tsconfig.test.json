@@ -1,0 +1,12 @@
+{
+  // EL BANCO DEL CLIENTE (#636). Extiende del proyecto de `src/` y le devuelve
+  // los tipos de Node que aquél apaga: `node:test` y `node:assert` existen AQUÍ
+  // y solo aquí. El `include` trae también `src/**/*.ts` porque los tests
+  // importan de ahí y este proyecto es quien los comprueba juntos.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["test/**/*.ts", "src/**/*.ts"]
+}
