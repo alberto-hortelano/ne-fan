@@ -26,8 +26,10 @@ const mod = (await import(join(repoRoot, "qa", "lib", "veredictos.mjs"))) as {
   SIN_MEDIR: string;
   ICONO: Record<string, string>;
   exitDeCorrida: (rojos: number, noMedidos: number) => number;
+  SIN_AFIRMAR: string;
+  veredictoDeGuion: (r: { fallos: string[]; afirmaciones: number }) => { estado: string; fallos: string[] };
 };
-const { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } = mod;
+const { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida, SIN_AFIRMAR, veredictoDeGuion } = mod;
 
 describe("veredictos: la escala única", () => {
   it("los tres estados son distintos y cada uno tiene su icono", () => {
@@ -59,5 +61,50 @@ describe("veredictos: el exit de la corrida", () => {
 
   it("el 2 gana al 1: con algo sin medir, ni los rojos son de fiar", () => {
     assert.equal(exitDeCorrida(5, 1), 2);
+  });
+});
+
+describe("veredictos: el verde de un guion exige haber AFIRMADO algo (#639)", () => {
+  it("limpio y sin un solo aserto NO es verde: es rojo, y dice por qué", () => {
+    const v = veredictoDeGuion({ fallos: [], afirmaciones: 0 });
+    assert.equal(v.estado, ROJO);
+    assert.deepEqual(v.fallos, [SIN_AFIRMAR]);
+  });
+
+  it("es ROJO y no SIN_MEDIR: el ⊘ se declara con su motivo, esto es un defecto del guion", () => {
+    assert.notEqual(veredictoDeGuion({ fallos: [], afirmaciones: 0 }).estado, SIN_MEDIR);
+  });
+
+  it("la frase dice la salida, no solo el reproche: nombra `ctx.sinMedir`", () => {
+    assert.match(SIN_AFIRMAR, /ctx\.sinMedir/);
+  });
+
+  it("limpio habiendo afirmado una vez sigue siendo verde (el caso de los 142)", () => {
+    assert.deepEqual(veredictoDeGuion({ fallos: [], afirmaciones: 1 }), { estado: VERDE, fallos: [] });
+  });
+
+  it("afirmar y fallar es afirmar: con fallos NO se le cuelga encima un segundo diagnóstico falso", () => {
+    // Un guion que revienta en la primera línea acumula el `ERROR: …` del
+    // runner y cero asertos. Su causa es esa, no «no afirmó nada».
+    const v = veredictoDeGuion({ fallos: ["ERROR: la página murió"], afirmaciones: 0 });
+    assert.equal(v.estado, ROJO);
+    assert.deepEqual(v.fallos, ["ERROR: la página murió"]);
+  });
+
+  it("no muta la lista de fallos que recibe: el runner la sigue usando", () => {
+    const fallos: string[] = [];
+    veredictoDeGuion({ fallos, afirmaciones: 0 });
+    assert.deepEqual(fallos, []);
+  });
+
+  it("fail-loud: sin la cuenta de asertos no se inventa un veredicto", () => {
+    for (const malo of [undefined, null, -1, 1.5, "3", NaN]) {
+      assert.throws(
+        () => veredictoDeGuion({ fallos: [], afirmaciones: malo as unknown as number }),
+        /entero/,
+        `afirmaciones = ${String(malo)} tendría que reventar`,
+      );
+    }
+    assert.throws(() => veredictoDeGuion({ fallos: undefined as unknown as string[], afirmaciones: 1 }), /fallos/);
   });
 });

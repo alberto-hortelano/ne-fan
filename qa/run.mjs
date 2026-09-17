@@ -70,7 +70,7 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // copias con relojes ya divergidos (500 ms / 800 ms), y la que elige el
 // bloque decide si dos corridas colisionan — el criterio 3 entero.
 import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
-import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida } from "./lib/veredictos.mjs";
+import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida, veredictoDeGuion } from "./lib/veredictos.mjs";
 import { ctxDeSonda, presupuestoConducido } from "./lib/sonda.mjs";
 // Cómo se compone la URL de la página: pura, y con su propio test en core
 // (`test/url-del-bench.test.ts`). Estaba aquí dentro como una concatenación de
@@ -850,6 +850,14 @@ function makeCtx(page, name) {
     ...ctxDeSonda(page),
     name,
     fallos: [],
+
+    /** Cuántas veces AFIRMÓ este guion (#639). Un verde exige que esto sea
+     *  > 0: «no falló» y «no miró» no son lo mismo, y hasta ahora el runner
+     *  no sabía distinguirlos — el guion cuyo único `ctx.expect` vive dentro
+     *  de un bucle que no se entra terminaba limpio y salía ✔. La decisión
+     *  vive en `lib/veredictos.mjs`, que es donde se puede medir sin
+     *  navegador. */
+    afirmaciones: 0,
     /** La MARCA de que este guion declaró `sinMedir`, puesta ANTES de lanzar
      *  la sentinela. Existe porque la sentinela es una excepción y un
      *  `try { ctx.sinMedir(…) } catch {}` del propio guion se la traga —
@@ -1073,6 +1081,11 @@ function makeCtx(page, name) {
     },
 
     expect(desc, cond, detalle = "") {
+      // Cuenta ANTES de juzgar, o sea en las dos ramas: afirmar y fallar es
+      // afirmar. Si solo contara el ✔, un guion cuyos asertos salen todos
+      // rojos «no habría afirmado nada» y se le colgaría encima un segundo
+      // diagnóstico falso.
+      ctx.afirmaciones++;
       if (cond) console.log(`    ✔ ${desc}`);
       else {
         console.log(`    ✘ ${desc}${detalle ? ` — ${detalle}` : ""}`);
@@ -1492,10 +1505,18 @@ async function main() {
       continue;
     }
 
+    // El veredicto NO es `fallos.length === 0`: un verde exige haber afirmado
+    // algo (#639). Vive en `lib/veredictos.mjs` —con los dos ⊘ de arriba ya
+    // resueltos, que un ⊘ declarado sigue siendo ⊘— porque ahí lo mide un test
+    // de `nefan-core` sin levantar ni un navegador.
+    const veredicto = veredictoDeGuion({ fallos: ctx.fallos, afirmaciones: ctx.afirmaciones });
+    if (veredicto.fallos.length > ctx.fallos.length) {
+      console.log(`    ✘ ${veredicto.fallos[veredicto.fallos.length - 1]}`);
+    }
     resultados.push({
       nombre,
-      estado: ctx.fallos.length === 0 ? VERDE : ROJO,
-      fallos: ctx.fallos,
+      estado: veredicto.estado,
+      fallos: veredicto.fallos,
       motivo: null,
       censo,
       carga: cargaDelGuion,
