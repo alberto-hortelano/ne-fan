@@ -146,15 +146,35 @@ export interface BridgeContext {
  *  —reemplazar— y no estaba escrita en ningún sitio, así que el bootstrap vivo
  *  de una partida con el mundo pre-generado en disco lo reescribía con UNA
  *  escena y se llevaba por delante el anillo entero. Un defecto aquí es el
- *  mecanismo por el que el tercer llamante hereda en silencio la decisión
- *  equivocada; sin él, tiene que elegir. */
+ *  mecanismo por el que un llamante nuevo hereda en silencio la decisión
+ *  equivocada; sin él, tiene que elegir.
+ *
+ *  YA HAY TRES LLAMANTES, y el tercero es el que la hipótesis anterior temía:
+ *  la CURA del mundo pre-generado (#577, `handlers/game-repair.ts`) elige
+ *  `conserva-el-mundo-en-disco`, y no es una preferencia. Con `reemplaza`, una
+ *  escena cribada que la cura NO consigue arreglar desaparecería del fichero:
+ *  el chip del título pasaría de «8 de 9 escenas» a «✓ generado» 8/8 y el
+ *  jugador perdería el único aviso que tiene de que su mundo va a costar
+ *  llamadas al motor. Con `conserva` vuelve rota y el chip sigue avisando. */
 export type PoliticaDeSnapshot = "conserva-el-mundo-en-disco" | "reemplaza-el-mundo";
+
+/** El desenlace de un write de snapshot, DICHO (#577).
+ *
+ *  Hasta hoy esta función devolvía `void` y un fallo de disco salía por un
+ *  `console.warn`: para el bootstrap vivo y para `generate_game` eso es
+ *  best-effort defendible —la partida arranca igual, el snapshot es un
+ *  acelerador—, pero para la CURA del mundo la escritura ES el entregable, y
+ *  sin saberlo el job contestaría `ready` sin fichero. Los dos llamantes
+ *  viejos siguen pudiendo ignorarlo; el nuevo no puede. */
+export type EscrituraDeSnapshot =
+  | { escrito: true; escenas: number }
+  | { escrito: false; motivo: string };
 
 /** Escribe el snapshot de mundo de la sesión actual como artefacto del juego
  *  (`data/games/{id}/world/{branch}.json`): TODAS las escenas registradas —
  *  en el bootstrap vivo, solo la de entrada; en generate_game, el anillo 3×3
  *  y los places realizados. Best-effort REPORTADO: un fallo de escritura no
- *  tumba el arranque de la sesión, se loguea como warning.
+ *  tumba el arranque de la sesión, se loguea como warning Y SE DEVUELVE.
  *
  *  Con `conserva-el-mundo-en-disco` las escenas VIVAS se funden ENCIMA de las
  *  que sobrevivan del fichero (mismo world.md, mismo schema): las vivas ganan
@@ -167,8 +187,9 @@ export function writeSessionSnapshot(
   gameId: string,
   entrySceneId: string,
   politica: PoliticaDeSnapshot,
-): void {
-  if (!ctx.persistWorldSnapshots) return;
+): EscrituraDeSnapshot {
+  if (!ctx.persistWorldSnapshots)
+    return { escrito: false, motivo: "este bridge no persiste snapshots de mundo" };
   try {
     const worldDoc = loadWorldDoc(ctx.gamesDir, gameId);
     const worldDocHash = createHash("sha256").update(worldDoc, "utf-8").digest("hex");
@@ -219,8 +240,10 @@ export function writeSessionSnapshot(
           `hasta que el motor las regenere: ${colgando.map((c) => c.sceneId).join(", ")}`,
       );
     }
+    return { escrito: true, escenas: Object.keys(scenes).length };
   } catch (err) {
     console.warn(`Bridge: world snapshot no se pudo escribir para "${gameId}":`, err);
+    return { escrito: false, motivo: (err as Error).message ?? String(err) };
   }
 }
 

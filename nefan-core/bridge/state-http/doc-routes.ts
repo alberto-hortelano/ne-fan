@@ -1,6 +1,13 @@
 /** Lo que el motor narrativo lee y sella de la sesión bajo demanda: el
  *  documento del mundo, la guía de UI, la crónica, el vocabulario canónico y
- *  la agenda del director. Todas exigen sesión activa. */
+ *  la agenda del director. Todas exigen sesión activa, y eso YA NO SE ESCRIBE
+ *  AQUÍ: las tres lecturas lo declaran en el contrato (`requiere_sesion` en
+ *  `contracts/world-state.ts`) y el despacho las rebota con 404 antes de
+ *  llegar al handler (#463). Sus tres `if (!narrative.session_id)` escritos a
+ *  mano se fueron con ese cambio — eran la prueba de que una regla repartida
+ *  por handler se le olvida a alguien: la cuarta ruta de la misma familia,
+ *  `GET /entity/player`, nunca lo tuvo y contestaba 200 con un jugador
+ *  inventado. */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -30,9 +37,6 @@ const UI_SYSTEMS_DOC = fileURLToPath(
 export const docRoutes = {
   getWorldDoc: (ctx) => {
     const { narrative } = ctx;
-    if (!narrative.session_id || !narrative.game_id) {
-      return notFound("no active session — world_doc belongs to a game session");
-    }
     try {
       return ok({
         game_id: narrative.game_id,
@@ -49,9 +53,6 @@ export const docRoutes = {
    *  nunca lo cambia. */
   getUiDoc: (ctx) => {
     const { narrative } = ctx;
-    if (!narrative.session_id) {
-      return notFound("no active session — ui_doc describes a running session's UI");
-    }
     try {
       return ok({
         ui_state: {
@@ -86,9 +87,6 @@ export const docRoutes = {
    *  inline la cola reciente cuando story_so_far supera su cota. */
   getStory: (ctx) => {
     const { narrative } = ctx;
-    if (!narrative.session_id) {
-      return notFound("no active session — the story belongs to a game session");
-    }
     return ok({
       session_id: narrative.session_id,
       story_so_far: narrative.story_so_far,

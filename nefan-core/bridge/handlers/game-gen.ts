@@ -10,25 +10,15 @@
  *  posterior abandona a su vez el gamegen (sus guardias de sesión descartan
  *  resultados tardíos). El progreso viaja por narrative_status kind
  *  "game_gen"; el save efímero se borra SIEMPRE al terminar. */
-import { combatRegistry } from "../../src/combat/registry.js";
-import {
-  loadGameMeta,
-  loadStyleManifest,
-  loadWorldDoc,
-} from "../../src/games/loader.js";
+import { loadGameMeta } from "../../src/games/loader.js";
 import {
   deleteStyleApplication,
   listStyleApplications,
   styleApplicationPinRef,
 } from "../../src/games/style-application.js";
 import { resolveServiceUrl } from "../../src/contracts/common.js";
-import { loadGamePluginManifests, pluginsHermanosDe } from "../../src/plugins/loader.js";
-import {
-  activarPluginsDeSesionNueva,
-  vaciarPluginsActivos,
-} from "../plugins-activos.js";
-import { createHash } from "node:crypto";
 
+import { conSesionEfimeraDeJuego } from "../sesion-efimera.js";
 import {
   generationBusyKey,
   writeSessionSnapshot,
@@ -156,83 +146,52 @@ export async function runGameGeneration(
       message,
       elapsedMs: Date.now() - start,
     });
-  let ephemeralSession = "";
   try {
-    const meta = loadGameMeta(ctx.gamesDir, gameId);
-    const style = loadStyleManifest(ctx.stylesDir, meta.style_id);
-    status("generating", `Generando el mundo de ${meta.title}: mapa y escena inicial...`);
+    // Sesión EFÍMERA (`sesion-efimera.ts`): las map tools del motor (State API)
+    // escriben en ctx.narrative, que es un singleton — no hay otra forma de
+    // recoger el world map que siembra el bootstrap. La sesión se descarta
+    // SIEMPRE al salir; el snapshot queda como único artefacto.
+    return await conSesionEfimeraDeJuego(ctx, gameId, async ({ meta }) => {
+      status("generating", `Generando el mundo de ${meta.title}: mapa y escena inicial...`);
+      const { sceneId: entrySceneId } = await generateBootstrapTileScene(ctx, gameId, {
+        generateVocabulary: true,
+      });
 
-    // Sesión EFÍMERA: las map tools del motor (State API) escriben en
-    // ctx.narrative, que es un singleton — no hay otra forma de recoger el
-    // world map que siembra el bootstrap. El save se borra en el finally; el
-    // snapshot queda como único artefacto.
-    vaciarPluginsActivos(ctx);
-    ephemeralSession = ctx.narrative.startNewSession(gameId);
-    const worldDoc = loadWorldDoc(ctx.gamesDir, gameId);
-    ctx.narrative.setWorldInfo({
-      name: meta.title,
-      description: meta.world_brief,
-      style_id: style.style_id,
-      style_token: style.style_token,
-      world_doc_hash: createHash("sha256").update(worldDoc, "utf-8").digest("hex"),
-      render_mode: "vector",
-      character_mode: "vector",
-      combat_system: meta.systems?.combat ?? combatRegistry.defaultId,
-    });
-    // Plugins activos como en un start_session real: el motor genera con el
-    // mismo contexto que verá en partida (sus slices mueren con el save).
-    const manifests = loadGamePluginManifests(ctx.gamesDir, gameId, pluginsHermanosDe(ctx.gamesDir));
-    activarPluginsDeSesionNueva(ctx, manifests);
-    await ctx.aiClient.notifySessionStart(ephemeralSession, gameId, false);
-
-    const { sceneId: entrySceneId } = await generateBootstrapTileScene(ctx, gameId, {
-      generateVocabulary: true,
-    });
-
-    // La pre-generación es el anillo 3×3 y nada más. Los places se realizan al
-    // VIAJAR a ellos, anclándolos a un tile; pre-realizarlos producía escenas
-    // sueltas, que ya no existen.
-    const failures: string[] = [];
-    for (let i = 0; i < RING.length; i++) {
-      const [tx, ty] = RING[i];
-      status("progress", `Generando el anillo de tiles (${i + 1}/${RING.length})...`);
-      try {
-        await generateTileScene(ctx, tx, ty);
-      } catch (err) {
-        const msg = (err as Error).message ?? String(err);
-        // Un takeover de sesión aborta el job entero, no solo el tile.
-        if (msg.includes("la sesión activa cambió")) throw err;
-        console.warn(`Bridge: gamegen tile (${tx},${ty}) falló:`, err);
-        failures.push(`tile (${tx},${ty}): ${msg}`);
+      // La pre-generación es el anillo 3×3 y nada más. Los places se realizan
+      // al VIAJAR a ellos, anclándolos a un tile; pre-realizarlos producía
+      // escenas sueltas, que ya no existen.
+      const failures: string[] = [];
+      for (let i = 0; i < RING.length; i++) {
+        const [tx, ty] = RING[i];
+        status("progress", `Generando el anillo de tiles (${i + 1}/${RING.length})...`);
+        try {
+          await generateTileScene(ctx, tx, ty);
+        } catch (err) {
+          const msg = (err as Error).message ?? String(err);
+          // Un takeover de sesión aborta el job entero, no solo el tile.
+          if (msg.includes("la sesión activa cambió")) throw err;
+          console.warn(`Bridge: gamegen tile (${tx},${ty}) falló:`, err);
+          failures.push(`tile (${tx},${ty}): ${msg}`);
+        }
       }
-    }
 
-    // REEMPLAZA: «Regenerar mundo» es exactamente eso, y conservar aquí
-    // resucitaría tiles de la génesis anterior dentro del mundo nuevo (#451).
-    writeSessionSnapshot(ctx, gameId, entrySceneId, "reemplaza-el-mundo");
-    await invalidateStyleApplications(ctx, gameId);
-    const sceneCount = Object.keys(ctx.narrative.scenes_loaded).length;
-    const parts = [`Mundo de ${meta.title} generado: ${sceneCount} escenas.`];
-    if (failures.length) {
-      parts.push(`Fallos parciales (se generarán en partida): ${failures.join(" · ")}`);
-    }
-    status("ready", parts.join(" "));
-    return { delivered: true };
+      // REEMPLAZA: «Regenerar mundo» es exactamente eso, y conservar aquí
+      // resucitaría tiles de la génesis anterior dentro del mundo nuevo
+      // (#451). La CURA del mundo cribado es el otro llamante y elige lo
+      // contrario, por su cuenta (`handlers/game-repair.ts`, #577).
+      writeSessionSnapshot(ctx, gameId, entrySceneId, "reemplaza-el-mundo");
+      await invalidateStyleApplications(ctx, gameId);
+      const sceneCount = Object.keys(ctx.narrative.scenes_loaded).length;
+      const parts = [`Mundo de ${meta.title} generado: ${sceneCount} escenas.`];
+      if (failures.length) {
+        parts.push(`Fallos parciales (se generarán en partida): ${failures.join(" · ")}`);
+      }
+      status("ready", parts.join(" "));
+      return { delivered: true };
+    });
   } catch (err) {
     console.warn(`Bridge: generate_game "${gameId}" falló:`, err);
     status("error", `La generación del mundo falló: ${(err as Error).message ?? err}`);
     return { delivered: true };
-  } finally {
-    // La sesión efímera no llegó a existir en disco (#279: nace provisional y
-    // solo el ack del jugador la establece), así que no hay save que borrar —
-    // el artefacto es el snapshot del mundo. Lo que sí hay que soltar es la
-    // IDENTIDAD: `ctx.narrative.session_id` es lo que leen «¿hay partida?»
-    // (`handleLoadRoom`, que sin esto no volvería a poner el catálogo de
-    // combate estándar al cargar una fixture), el 409 del State API y las
-    // rutas de documento. Un takeover ya la sustituyó y entonces la de aquí
-    // no es la vigente: se descarta solo si sigue siéndolo.
-    if (ephemeralSession && ctx.narrative.session_id === ephemeralSession) {
-      ctx.narrative.descartarProvisional();
-    }
   }
 }

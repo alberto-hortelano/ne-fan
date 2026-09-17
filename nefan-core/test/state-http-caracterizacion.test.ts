@@ -578,11 +578,15 @@ describe("State API · CAMBIO DECLARADO 4 (#453): sin partida, una mutadora es 4
       assert.equal(bueno.status, 409);
       assert.match(String(bueno.body.error), /^no_session/);
       assert.equal(sin.mutaciones(), 0, "un rechazo no llega a onMutation");
-      // Y una LECTURA sin sesión conserva su 404 de dominio: la guardia nueva
-      // no se come a las rutas de documento.
+      // Y una LECTURA sin sesión sigue siendo 404: la guardia de #453 no se
+      // come a las rutas de documento. El MOTIVO lo escribe hoy otra guardia
+      // —la de #463, `requiere_sesion` en el contrato— porque los tres `if`
+      // que los handlers tenían a mano se retiraron con ella; el status y el
+      // contrato de esta ruta no cambian, solo quién lo decide y con qué
+      // texto.
       const cronica = await pedir(sin.baseUrl, "GET", "/story");
       assert.equal(cronica.status, 404);
-      assert.match(String(cronica.body.error), /no active session/);
+      assert.match(String(cronica.body.error), /^no_session: GET \/story describe una partida/);
     } finally {
       sin.cerrar();
     }

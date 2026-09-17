@@ -36,6 +36,7 @@ import {
   handleStartSession,
 } from "./handlers/session.js";
 import { handleGenerateGame } from "./handlers/game-gen.js";
+import { handleRepairGameWorld } from "./handlers/game-repair.js";
 import {
   handleGetWorldSnapshot,
   handleRecordStyleApplication,
@@ -90,6 +91,9 @@ async function despachar(
       break;
     case "generate_game":
       await handleGenerateGame(msg, ws, ctx);
+      break;
+    case "repair_game_world":
+      await handleRepairGameWorld(msg, ws, ctx);
       break;
     case "get_world_snapshot":
       handleGetWorldSnapshot(msg, ws, ctx);
@@ -189,6 +193,13 @@ export function respuestaAlFalloDeHandler(msg: ClientMessage, err: unknown): Res
         requestId: msg.requestId,
         ok: false,
         error: `generate_game_failed: ${raw}`,
+      });
+    case "repair_game_world":
+      return peticion({
+        type: "game_world_repaired",
+        requestId: msg.requestId,
+        ok: false,
+        error: `repair_game_world_failed: ${raw}`,
       });
     case "get_world_snapshot":
       return peticion({

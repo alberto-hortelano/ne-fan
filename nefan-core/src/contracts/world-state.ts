@@ -266,6 +266,12 @@ export interface AssetRefsResponse {
  *  el flag del handler no se separen. */
 const MUTA = { mutates: true } as const;
 
+/** Las lecturas que sin partida activa no tienen nada honesto que contestar
+ *  (#463): 404 desde el DESPACHO, no desde tres `if` repartidos por los
+ *  handlers. Cuatro hoy, y solo una cambia de conducta al declararlo —
+ *  `GET /entity/player`, que inventaba un jugador. */
+const EXIGE_PARTIDA = { requiere_sesion: true } as const;
+
 export const WorldStateApi = {
   health: endpoint<void, WorldStateHealthResponse>("GET", "/health"),
 
@@ -283,7 +289,11 @@ export const WorldStateApi = {
 
   // Entities / inventario
   listEntities: endpoint<void, EntityListResponse>("GET", "/entities"),
-  getEntity: endpoint<void, EntityRecord | PlayerEntityResponse, "id">("GET", "/entity/{id}"),
+  getEntity: endpoint<void, EntityRecord | PlayerEntityResponse, "id">(
+    "GET",
+    "/entity/{id}",
+    EXIGE_PARTIDA,
+  ),
   getInventory: endpoint<void, InventoryGetResponse, "id">("GET", "/entity/{id}/inventory"),
   addInventoryItem: endpoint<InventoryAddRequest, InventoryMutationResponse, "id">(
     "POST",
@@ -300,9 +310,9 @@ export const WorldStateApi = {
   setVocabulary: endpoint<VocabularySetRequest, VocabularySetResponse>("POST", "/vocabulary", MUTA),
 
   // Documentos para el motor narrativo
-  getWorldDoc: endpoint<void, WorldDocResponse>("GET", "/world_doc"),
-  getUiDoc: endpoint<void, UiDocResponse>("GET", "/ui_doc"),
-  getStory: endpoint<void, StoryResponse>("GET", "/story"),
+  getWorldDoc: endpoint<void, WorldDocResponse>("GET", "/world_doc", EXIGE_PARTIDA),
+  getUiDoc: endpoint<void, UiDocResponse>("GET", "/ui_doc", EXIGE_PARTIDA),
+  getStory: endpoint<void, StoryResponse>("GET", "/story", EXIGE_PARTIDA),
   resolveScheduledEvent: endpoint<void, ScheduledEventResolveResponse, "id">(
     "POST",
     "/scheduled_event/{id}/resolve",

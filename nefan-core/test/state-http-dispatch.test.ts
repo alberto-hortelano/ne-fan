@@ -345,14 +345,6 @@ describe("handlers invocados a pelo, uno por concepto", () => {
     assert.match(String((otro.body as { error: string }).error), /pending ids/);
   });
 
-  it("doc: sin sesión activa, la crónica no existe", () => {
-    const { ctx } = makeCtx();
-    ctx.narrative.session_id = "";
-    const res = docRoutes.getStory(ctx);
-    assert.equal(res.status, 404);
-    assert.match(String((res.body as { error: string }).error), /no active session/);
-  });
-
   it("plugin: inspeccionar lo que no existe es 400 con el motivo, no una lista vacía", () => {
     const { ctx } = makeCtx();
     const res = pluginRoutes.inspectPlugin(ctx, req({ params: { id: "deadbeef" } }));
@@ -638,9 +630,14 @@ describe("dispatchStateRequest · sin partida no se muta (#453)", () => {
   it("la regla es «mutadora», no «POST»: leer y validar sin sesión siguen contestando", async () => {
     const { ctx } = makeCtx();
     ctx.narrative.session_id = "";
+    // El ejemplo ERA `GET /entity/player`, y #463 se lo llevó: esa lectura
+    // INVENTABA un jugador sin partida y hoy es 404 por contrato. Lo que
+    // sigue midiendo esta línea —que la regla de la guardia de #453 es
+    // «mutadora» y no «POST»— se mide con una lectura que sí contesta un
+    // vacío HONESTO, que es la frontera exacta del recorte de #463.
     const lectura = await dispatchStateRequest(ctx, {
       method: "GET",
-      url: "/entity/player",
+      url: "/entity/player/inventory",
       readBody: NO_LEER,
     });
     assert.equal(lectura.status, 200);
@@ -715,3 +712,141 @@ describe("dispatchStateRequest · sin partida no se muta (#453)", () => {
  *  llegue a correr. Es la garantía puesta en el tipo, no en un aserto. */
 const _exhaustiva: Record<RouteKey, unknown> = ROUTES;
 void _exhaustiva;
+
+/** #463 · «sin partida» se lee IGUAL en todas las lecturas.
+ *
+ *  Antes de esto, el mismo bridge en el mismo estado contestaba dos cosas
+ *  distintas a la misma pregunta: `GET /story` daba 404 «no hay partida» y
+ *  `GET /entity/player` daba 200 con un aventurero INVENTADO (nivel 1, pícaro,
+ *  100 de vida). Tres handlers lo decidían a mano y el cuarto se lo había
+ *  saltado.
+ *
+ *  Se mide EN LAS DOS DIRECCIONES a propósito. Solo con la primera, declarar
+ *  `requiere_sesion` en las 29 rutas de la tabla saldría verde y habría
+ *  cerrado el State API entero sin partida — incluido el `GET
+ *  /entity/{id}/inventory` que el banco usa para probar que las mutadoras
+ *  rebotadas no aplicaron nada. Y el aserto compara el TEXTO del error, no el
+ *  status: media tabla contesta 404 por motivos suyos («no route for», «entity
+ *  not found») y un 404 ajeno colado aquí pasaría por verde. */
+describe("State API · #463: sin partida, las lecturas que describen una partida son 404", () => {
+  /** Un valor para cada `{param}` de la tabla. No hace falta que exista: lo
+   *  que se mide es quién REBOTA antes de mirar el dominio. */
+  const PARAMS: Record<string, string> = { id: "player" };
+  const rutasGet = (): Array<{ key: string; url: string; exige: boolean }> =>
+    Object.entries(WorldStateApi)
+      .filter(([, ep]) => ep.method === "GET")
+      .map(([key, ep]) => ({
+        key,
+        url: fillPath(ep.path, PARAMS),
+        exige: ep.requiere_sesion === true,
+      }));
+  /** El texto EXACTO que pone la guardia nueva, y nada más. */
+  const ESE_404 = /^no_session: GET \S+ describe una partida/;
+
+  it("las declaradas son exactamente CUATRO, y son éstas", () => {
+    // Con N=1 un aserto no distingue una regla de su contraria; y si la lista
+    // creciera sola, el test de abajo seguiría verde midiendo otra cosa.
+    assert.deepEqual(
+      rutasGet().filter((r) => r.exige).map((r) => r.key).sort(),
+      ["getEntity", "getStory", "getUiDoc", "getWorldDoc"],
+    );
+  });
+
+  it("declarada ⇒ 404 con el motivo, las cuatro, y sin llegar al handler", async () => {
+    const { ctx } = makeCtx();
+    ctx.narrative.session_id = "";
+    for (const { key, url } of rutasGet().filter((r) => r.exige)) {
+      const res = await dispatchStateRequest(ctx, { method: "GET", url, readBody: NO_LEER });
+      assert.equal(res.status, 404, `${key} ${url}`);
+      const body = res.body as { ok: boolean; error: string };
+      assert.equal(body.ok, false, `${key}: un 404 no puede ir marcado como ok`);
+      assert.match(body.error, ESE_404, `${key} ${url}`);
+      assert.match(body.error, /abre o reanuda una partida/, key);
+    }
+  });
+
+  it("el síntoma de #463, con su nombre: sin partida no sale un jugador INVENTADO", async () => {
+    // El aserto de la tabla es un censo y se pone rojo si alguien quita la
+    // declaración; éste dice QUÉ se estropea si eso pasa, que es lo que el
+    // issue describe: el motor narrando «tienes 100 de vida y 0 de oro» de un
+    // personaje que no existe.
+    const { ctx } = makeCtx();
+    ctx.narrative.session_id = "";
+    const res = await dispatchStateRequest(ctx, {
+      method: "GET",
+      url: "/entity/player",
+      readBody: NO_LEER,
+    });
+    assert.equal(res.status, 404);
+    assert.equal((res.body as { player?: unknown }).player, undefined);
+    assert.doesNotMatch(JSON.stringify(res.body), /"health"|"level"|"class"/);
+    // Y el contraste que lo convierte en una SEMÁNTICA y no en un caso
+    // suelto: otra entidad cualquiera en el mismo estado contesta lo mismo.
+    const otra = await dispatchStateRequest(ctx, {
+      method: "GET",
+      url: "/entity/un_npc_cualquiera",
+      readBody: NO_LEER,
+    });
+    assert.equal(otra.status, 404);
+    assert.equal(
+      (otra.body as { error: string }).error.replace("un_npc_cualquiera", "player"),
+      (res.body as { error: string }).error,
+      "dos formas de decir «sin partida» en la MISMA ruta es el defecto de #463",
+    );
+  });
+
+  it("no declarada ⇒ NUNCA ese 404: el recorte se respeta, ni una ruta de más", async () => {
+    const { ctx } = makeCtx();
+    ctx.narrative.session_id = "";
+    const sobras: string[] = [];
+    for (const { key, url, exige } of rutasGet()) {
+      if (exige) continue;
+      const res = await dispatchStateRequest(ctx, { method: "GET", url, readBody: NO_LEER });
+      if (ESE_404.test(String((res.body as { error?: string }).error ?? ""))) sobras.push(key);
+    }
+    assert.deepEqual(sobras, [], `rutas cerradas sin declararlo: ${sobras.join(", ")}`);
+  });
+
+  it("…y `GET /entity/{id}/inventory` sigue dando 200 con `[]`: un vacío honesto no es una invención", async () => {
+    // Es el recorte de #463 hecho aserto, y no un detalle: ese 200 es la única
+    // prueba que tiene `qa/el-state-api-no-muta-sin-partida.mjs` de que las 12
+    // mutadoras rebotadas NO aplicaron nada. Cerrarlo «por coherencia» le
+    // quitaría al banco su forma de medirlo.
+    const { ctx } = makeCtx();
+    ctx.narrative.session_id = "";
+    const res = await dispatchStateRequest(ctx, {
+      method: "GET",
+      url: "/entity/player/inventory",
+      readBody: NO_LEER,
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual((res.body as { inventory: unknown[] }).inventory, []);
+  });
+
+  it("con partida, la guardia no dispara en ninguna de las cuatro (el control negativo)", async () => {
+    // Sin esto, una guardia que rebotara SIEMPRE saldría verde en los tres
+    // asertos de arriba. Se afirma que NO sale ese 404 y no que salga 200,
+    // porque `/world_doc` de este contexto falla por lo suyo (el juego de
+    // prueba no tiene world.md) y confundir los dos motivos es justo lo que
+    // este bloque existe para no hacer.
+    const { ctx } = makeCtx();
+    assert.notEqual(ctx.narrative.session_id, "");
+    for (const { key, url } of rutasGet().filter((r) => r.exige)) {
+      const res = await dispatchStateRequest(ctx, { method: "GET", url, readBody: NO_LEER });
+      assert.doesNotMatch(
+        String((res.body as { error?: string }).error ?? ""),
+        ESE_404,
+        `${key} ${url} rebotó por sesión TENIENDO sesión`,
+      );
+    }
+    // Y la que cambió de conducta vuelve a dar su 200 con el jugador de
+    // VERDAD, que es lo contrario de inventarlo.
+    const jugador = await dispatchStateRequest(ctx, {
+      method: "GET",
+      url: "/entity/player",
+      readBody: NO_LEER,
+    });
+    assert.equal(jugador.status, 200);
+    assert.equal((jugador.body as { id: string }).id, "player");
+  });
+});

@@ -132,14 +132,21 @@ function leerSnapshotDeDisco(path: string): SnapshotEnDisco {
  *  cribado no existe para la sesión, así que `request_tile` lo vuelve a pedir
  *  al motor cuando el jugador llegue — «solo se vuelve a pedir el malo».
  *
- *  Y se lo vuelve a pedir en CADA PARTIDA NUEVA, porque la carga no reescribe
- *  el fichero y nadie más lo hace: los dos llamantes de `writeSessionSnapshot`
- *  son el bootstrap vivo y `generate_game`, y ninguno corre cuando el snapshot
- *  se sirve bien. Medido (QA de #451, H-3): `[1,1,1]` llamadas en tres
- *  partidas seguidas; REANUDAR sí es gratis, porque el tile regenerado vive en
- *  el save. Curarlo exige un TERCER escritor del snapshot y contestar antes si
- *  este fichero es la foto de la GÉNESIS o el mundo CONOCIDO — decisión de
- *  producto, no arreglo: **issue #577**. */
+ *  Y se lo vuelve a pedir en CADA PARTIDA NUEVA mientras nadie lo cure: la
+ *  carga no reescribe el fichero (una lectura que escribe sería un segundo
+ *  escritor del snapshot). Medido (QA de #451, H-3): `[1,1,1]` llamadas en
+ *  tres partidas seguidas; REANUDAR sí es gratis, porque el tile regenerado
+ *  vive en el save.
+ *
+ *  CURARLO SE PIDE DESDE EL TÍTULO (#577, `bridge/handlers/game-repair.ts`):
+ *  el botón «Completar el mundo» aparece justo cuando este recuento dice que
+ *  faltan escenas, y encarga al motor SOLO las cribadas en una sesión efímera
+ *  y sin historia. No se cura al CARGAR, y la razón es de este fichero: aquí
+ *  no existe todavía ningún tile bueno con el que curar —el único que hay es
+ *  el roto—, así que escribir en esta puerta solo podría BORRAR la escena
+ *  cribada: cero llamadas ahorradas y el chip del título pasando de «8 de 9
+ *  escenas» a «✓ generado» 8/8, perdiendo el único aviso que tiene el
+ *  jugador. */
 export function loadWorldSnapshot(
   gamesDir: string,
   gameId: string,
@@ -262,9 +269,15 @@ export function cargarConDetalle(
  *  La consecuencia, que estaba sin declarar (QA de #451, H-5): cuando la cura
  *  de la ENTRADA reescribe el fichero, un tile del anillo que no pasa el
  *  validador vuelve al disco IDÉNTICO, roto. O sea que el fichero no se limpia
- *  nunca por sí solo, el aviso de criba es permanente y la factura de #577 se
- *  hereda. Es el precio de no tirar dato del jugador desde el escritor; lo
- *  fija el aserto E3 del guion 127. */
+ *  nunca POR SÍ SOLO y el aviso de criba es permanente hasta que alguien lo
+ *  encargue. Es el precio de no tirar dato del jugador desde el escritor; lo
+ *  fija el aserto E3 del guion 127.
+ *
+ *  Y es también lo que hace que la CURA de #577 pueda escribir con
+ *  `conserva-el-mundo-en-disco` sin miedo: la escena que la cura no consiga
+ *  arreglar vuelve por aquí tal cual, rota, y el recuento del título sigue
+ *  avisando. Con `reemplaza` habría desaparecido del fichero y el aviso con
+ *  ella. */
 export function escenasQueSobreviven(
   gamesDir: string,
   gameId: string,

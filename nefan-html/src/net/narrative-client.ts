@@ -226,6 +226,18 @@ export class NarrativeClient {
     return { queued: res.queued ?? "queued" };
   }
 
+  /** Encola la CURA del mundo pre-generado: el bridge le pide al motor solo
+   *  las escenas que la puerta de carga criba y reescribe el fichero del
+   *  mundo. Resuelve al encolar; el progreso llega por `onProgresoDeMundo`,
+   *  el mismo canal que la pre-generación. */
+  async repairGameWorld(gameId: string): Promise<{ queued: string }> {
+    const res = await this.bridge.repairGameWorld(gameId);
+    if (!res.ok) {
+      throw new Error(res.error ?? "repair_game_world failed");
+    }
+    return { queued: res.queued ?? "queued" };
+  }
+
   /** Snapshot de mundo pre-generado + vocabulario (batch de aplicar estilo). */
   getWorldSnapshot(gameId: string) {
     return this.bridge.getWorldSnapshot(gameId);
