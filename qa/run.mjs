@@ -846,6 +846,9 @@ class SinMedirDeclarado extends Error {
  *  en vez de la tercera copia de la espera que cada uno llevaba (#332). */
 function makeCtx(page, name) {
   let step = 0;
+  /** Cuántas veces AFIRMÓ este guion (#639). Vive en el CIERRE y no en el
+   *  `ctx` a propósito — ver el getter de abajo. */
+  let afirmaciones = 0;
   const ctx = {
     ...ctxDeSonda(page),
     name,
@@ -856,8 +859,21 @@ function makeCtx(page, name) {
      *  no sabía distinguirlos — el guion cuyo único `ctx.expect` vive dentro
      *  de un bucle que no se entra terminaba limpio y salía ✔. La decisión
      *  vive en `lib/veredictos.mjs`, que es donde se puede medir sin
-     *  navegador. */
-    afirmaciones: 0,
+     *  navegador.
+     *
+     *  SOLO LECTURA, y la asimetría es la razón (hallazgo H-3 de QA): escribir
+     *  `ctx.fallos` solo puede poner a un guion en ROJO, pero escribir el
+     *  contador FABRICA UN VERDE — `ctx.afirmaciones = 7` en un guion mudo
+     *  compraba el ✔ sin haber mirado nada. Un candado que se puede cumplir
+     *  «en verde» sin que ocurra lo que importa no es un candado, así que el
+     *  estado malo se hace INEXPRESABLE: el contador vive en el cierre de
+     *  `makeCtx`, aquí solo asoma un getter sin setter (en un módulo ESM, que
+     *  es estricto, asignarle LANZA) y la propiedad se cierra a
+     *  `configurable: false` para que tampoco valga redefinirla. La única
+     *  manera de subirlo es afirmar. */
+    get afirmaciones() {
+      return afirmaciones;
+    },
     /** La MARCA de que este guion declaró `sinMedir`, puesta ANTES de lanzar
      *  la sentinela. Existe porque la sentinela es una excepción y un
      *  `try { ctx.sinMedir(…) } catch {}` del propio guion se la traga —
@@ -1085,7 +1101,7 @@ function makeCtx(page, name) {
       // afirmar. Si solo contara el ✔, un guion cuyos asertos salen todos
       // rojos «no habría afirmado nada» y se le colgaría encima un segundo
       // diagnóstico falso.
-      ctx.afirmaciones++;
+      afirmaciones++;
       if (cond) console.log(`    ✔ ${desc}`);
       else {
         console.log(`    ✘ ${desc}${detalle ? ` — ${detalle}` : ""}`);
@@ -1099,6 +1115,9 @@ function makeCtx(page, name) {
       return file;
     },
   };
+  // El getter no basta por sí solo: un `Object.defineProperty` lo redefiniría.
+  // Con esto, la única vía para que el contador suba es `expect`.
+  Object.defineProperty(ctx, "afirmaciones", { configurable: false });
   return ctx;
 }
 

@@ -21,18 +21,46 @@
  *   · `comenzar()`  — pulsa «Comenzar»: el bridge pide el tile de bootstrap al
  *     motor, que es la llamada cara del arranque.
  *   · `regenerarMundo()` — la pre-generación entera del mundo.
- *   · pulsar a mano el botón que arranca la partida — un `click` de Playwright
- *     sobre `#ts-start`, el «Comenzar» del editor de personaje
- *     (`editor-de-personaje.ts:151`), que emite `elegir({kind:"new_game"})`:
- *     el mismo acto sin el helper, que es como se esquivaría una regla que solo
- *     mirase los imports. Con una excepción declarada, y no por nombre: el
- *     guion que se trae SU PROPIO motor (`NEFAN_AI_SERVER` suyo + `?bridge=`)
- *     no puede gastar en el motor compartido — es el 20, que apunta a un puerto
- *     muerto a propósito.
+ *   · pulsar a mano CUALQUIERA de los cinco botones del título que llegan a una
+ *     puerta de gasto — el mismo acto sin el helper, que es como se esquivaría
+ *     una regla que solo mirase los imports. Los cinco, medidos uno a uno
+ *     siguiendo su handler hasta quien cobra (2026-09-17, hallazgo H-2 de QA):
+ *       · `#ts-start` — «Comenzar» del editor (`editor-de-personaje.ts:151`) →
+ *         `elegir({kind:"new_game"})`, el tile de bootstrap.
+ *       · `#ts-gen-world` — `panel-de-generacion.ts:173` → `generarElMundo()` →
+ *         `narrative.generateGame`, la pre-generación entera. Es el botón que
+ *         pulsa el helper `regenerarMundo` (`qa/lib/sesion.mjs:478`), o sea que
+ *         sin esto la fila de arriba tapaba el import y dejaba abierto el click.
+ *       · `#ts-create` — «Crear mundo» (`crear-mundo.ts:65`) →
+ *         `narrative.createGame` (el motor desarrolla el mundo) y ADEMÁS
+ *         `generateGame` encadenado, porque `#ts-pregen` nace `checked`
+ *         (`crear-mundo.ts:58,111`).
+ *       · `#ts-style-run` — «Aplicar estilo ($…)» del panel de coste
+ *         (`plan-de-estilo.ts:131,221`) → `aplicarElEstilo()`, que lleva dentro
+ *         el comentario «A PARTIR DE AQUÍ YA SE PAGÓ».
+ *       · `#ts-complete` — «Generar imágenes» de subir-estilo
+ *         (`subir-estilo.ts:145,275`) → `POST /styles/{id}/complete` con
+ *         `confirm: true`.
+ *     Con una excepción declarada, y no por nombre: el guion que se trae SU
+ *     PROPIO motor (`NEFAN_AI_SERVER` suyo + `?bridge=`) no puede gastar en el
+ *     motor compartido — es el 20, que apunta a un puerto muerto a propósito.
  *
- *  Y lo que NO entra, porque la frontera es el GASTO y no el parecido:
+ *  Y lo que NO entra, porque la frontera es el GASTO y no el parecido. Los tres
+ *  se parecen mucho a los de arriba y por eso están medidos, no supuestos:
  *   · `nuevaPartida()`: abre el selector y elige mundo y estilo, y ahí todavía
  *     no se ha generado nada.
+ *   · **`#ts-apply-style`** — «Aplicar estilo (ver coste)»
+ *     (`panel-de-generacion.ts:176`). QA lo dio por comprador y NO lo es: su
+ *     handler llama a `mostrarPlanDeEstilo`, que solo PINTA el plan de coste
+ *     dentro de `#ts-style-plan`. Quien cobra es el `#ts-style-run` de ese
+ *     panel, y por eso el de la lista es ése. Prohibir aquí el que enseña el
+ *     precio sería exactamente el defecto que se acaba de arreglar, una talla
+ *     más pequeño — y dejaría fuera de juego al 97, que existe para leer ese
+ *     plan.
+ *   · `#ts-create-world` y `#ts-create-status`: se parecen a `#ts-create` hasta
+ *     en el prefijo y no gastan (el primero abre la pantalla, el segundo es un
+ *     hueco de texto). Por eso la regla exige la COMILLA de cierre: sin ella,
+ *     `#ts-create` se comía a los dos.
  *   · `#ts-continue` — «Continuar →» del selector (`selector-de-mundo.ts:167`),
  *     cuyo handler hace UNA cosa: `deps.ir({a:"editor"})` (`:344-365`). El
  *     editor de personaje solo pide el censo local de hojas al dev server
@@ -84,11 +112,19 @@ const DIR = dirname(fileURLToPath(import.meta.url));
 
 /** Los helpers de `qa/lib/sesion.mjs` que HACEN GENERAR al motor. */
 const HELPERS_CAROS = ["comenzar", "regenerarMundo"];
-/** El mismo acto sin helper: PULSAR el botón que arranca partida. Se busca el
+/** El mismo acto sin helper: PULSAR uno de los botones que gastan. Se busca el
  *  click y no la cadena, para no cazar la mención en un comentario ni en esta
- *  misma línea. Solo `#ts-start`: es el único de los dos del título cuyo
- *  handler llega al motor (ver el docblock). */
-const CLICK_CARO = /\.click\(\s*["']#ts-start/;
+ *  misma línea.
+ *
+ *  Cinco de los 42 ids `#ts-*` del cliente, no «los dos del título»: esa cuenta
+ *  era de un marco demasiado estrecho —el del editor de personaje— y es el
+ *  mismo error que #633 una talla más pequeño. Cuáles y por qué, en el docblock;
+ *  cada uno está seguido hasta quien cobra.
+ *
+ *  La COMILLA DE CIERRE no es adorno: `#ts-create` sin ella caza también a
+ *  `#ts-create-world` y `#ts-create-status`, que no gastan. La regla tiene que
+ *  ser exactamente tan ancha como la medida. */
+const CLICK_CARO = /\.click\(\s*["'`]#ts-(start|gen-world|create|style-run|complete)["'`]/;
 
 /** El valor de `export const sinMotor`, tal cual está escrito (sin importar el
  *  módulo: importar un guion tiene efectos —el 20 pide puertos al kernel en su
@@ -151,7 +187,7 @@ export default async function (ctx) {
   const aMano = exentos.filter((g) => CLICK_CARO.test(g.src));
   const sinMotorPropio = aMano.filter((g) => !/NEFAN_AI_SERVER/.test(g.src));
   ctx.expect(
-    "…y el exento que pulsa «Comenzar» (#ts-start) se trae SU propio motor",
+    "…y el exento que pulsa uno de los cinco botones que gastan se trae SU propio motor",
     sinMotorPropio.length === 0,
     sinMotorPropio.map((g) => g.nombre).join(" · "),
   );
