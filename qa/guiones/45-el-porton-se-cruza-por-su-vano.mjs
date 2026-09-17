@@ -109,9 +109,10 @@ export default async function (ctx) {
   ctx.log(`portón en mundo: (${geo.x.toFixed(2)}, ${geo.z.toFixed(2)}) · mpc ${geo.mpc}`);
 
   // El jugador se aparta ANTES de sondear: `probeCollide` pregunta por un
-  // MOVIMIENTO desde donde está (`blocksMove`, «salir sí, entrar no»), así que
-  // las celdas que ya solapa saldrían libres y una jamba con el jugador dentro
-  // se mediría como hueco.
+  // MOVIMIENTO desde donde está («salir sí, entrar no»), así que una jamba con
+  // el jugador ya metido dentro se mediría como hueco — desde #616 porque el
+  // paso que REDUCE su penetración no se frena, y antes porque las celdas que
+  // ya solapaba quedaban eximidas. Cambia el motivo, no la precaución.
   const zLejos = geo.z - 12;
   await ctx.nefan("setPlayerPos", geo.x, zLejos);
   await esperarFrames(ctx);

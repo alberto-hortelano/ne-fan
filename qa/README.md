@@ -558,14 +558,37 @@ lo que corre en CI). Y dos: que la retirada **no movió a nadie**, y eso no se a
 las TRES fixtures, con las tres fuentes de solidez del cliente montadas como las monta
 `world/collision.ts` y las dos políticas de `planAplicadoEn`, la pregunta del escalón retirado
 (`collidesAt(pos)` con el jugador EN `pos`) vale `false` en **99.932 puntos de 99.932**, con su
-control (12.763 de esos puntos SÍ dan sólido preguntados desde otro sitio del tile). Imprime también,
-medido y sin afirmarlo, el ÚNICO origen = destino que sí bloquea: la tangencia exacta del cuerpo con
-el borde de una celda sólida, que el juego no alcanza pero que deja corto el absoluto «vale `false`
-siempre». Probado en negativo por sus dos puertas (`QA_PUERTA_ABIERTA=1` → bloque 1 rojo con la
+control (12.763 de esos puntos SÍ dan sólido preguntados desde otro sitio del tile). Mide también la TANGENCIA EXACTA
+—el cuerpo tocando el borde de una celda sólida sin solaparla—, que era el ÚNICO origen = destino que
+bloqueaba y que **#616 hizo desaparecer**: con la regla de paso en el núcleo, `pen(p) > pen(p)` es
+falso sin excepción, así que ese bloque pasó de registrar un caso a AFIRMAR dos cosas (que el caso ya
+no existe, y que las dos convenciones de solape —la abierta y la cerrada de `blocksCircle`— siguen
+distinguiéndose; si colapsaran, saldría verde midiendo una sola). Y con ese arreglo su bloque 2 mide
+MENOS que antes, porque el `false` pasó a ser por construcción: quien demuestra que hay mundo debajo
+es el control. Probado en negativo por sus dos puertas (`QA_PUERTA_ABIERTA=1` → bloque 1 rojo con la
 aridad aún en 1; `QA_SIN_SOLIDOS=1` → el control rojo). Segundos, sin navegador y sin créditos:
 
 ```bash
 node qa/la-puerta-de-la-reaparicion.mjs   # sale 1 si la consulta vuelve o si la retirada mueve a alguien
+```
+
+Y el cuarto de la familia, `qa/nadie-se-queda-encerrado.mjs` (tanda G, **#616**): que de **todo punto
+sólido del mundo se SALE ANDANDO**. Es el candado del issue que la QA de la tanda E abrió midiendo:
+la regla de paso del terreno eximía «las celdas que ya se solapaban», lo que devuelve a quien penetra
+un muro fino y **no saca de un macizo** — y los edificios del plan lo son. Recorre las tres fixtures
+con una malla de 0,5 m, y de cada punto en el que el cuerpo del jugador solapa algo sólido prueba
+**36 rumbos** conducidos por `pasoDelJugador`, con el cableado de `world/collision.ts`: origen vivo y
+las dos fuentes del tile unidas en UNA consulta de punto. Afirma tres cosas: que no queda ni un punto
+sin salida (**0 de 3.941**), que se sale **por lo más corto** —el rumbo más rápido no tarda más que
+`penetración / velocidad`, que es un límite DERIVADO y no un número elegido: cambiar la salida por «el
+primer eje libre» lo pondría rojo sin que el primer bloque se enterara— y el **control** de que hay
+mundo sólido que medir. Imprime, sin afirmarla, la penetración máxima de cada fixture (2,40 · 5,90 ·
+3,90 m), que es cómo se ve venir el tope de marcha de 40 m. **Probado en negativo**: `QA_SIN_ESCAPE=1`
+cablea la regla de AYER —escrita en el guion, no en el árbol— y da **2.307 de 3.941 puntos sin
+salida**, exit 1. 27 s, sin navegador y sin créditos:
+
+```bash
+node qa/nadie-se-queda-encerrado.mjs   # sale 1 si hay un solo punto del que no se salga andando
 ```
 
 Y el tercero de la familia, `qa/el-mundo-solido-tambien-para-el-npc.mjs` (QA de la PR 2 de la tanda

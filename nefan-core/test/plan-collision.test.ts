@@ -14,6 +14,7 @@ import { createTerrainCollider, type TerrainGridData } from "../src/scene/terrai
 import { DEFAULT_SOLID_CHARS, formatDToWorld } from "../src/scene/scene-normalize.js";
 import { GROUND_WATER_CHAR } from "../src/scene/blueprint/ground-collision.js";
 import { tileWorldRect } from "../src/scene/tile.js";
+import { solidoBloquea } from "../src/simulation/salida-del-solido.js";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { expandScenePrimitives } from "../src/scene/scene-expand.js";
@@ -188,14 +189,42 @@ describe("consistencia de colisión del plan bridge↔cliente", () => {
     }
   });
 
-  it("blocksMove coincide al entrar al edificio desde fuera", () => {
+  it("el PASO coincide entrando al edificio desde fuera Y saliendo desde dentro (#616)", () => {
+    // Rehecho sobre `solidoBloquea` con la tanda G. Lo que este caso vigila es
+    // la consistencia bridge↔cliente, así que tiene que preguntar a los dos por
+    // el MISMO camino: el bridge por su proveedor, el cliente montando el suelo
+    // igual que `world/collision.ts` — su collider del plan, consulta de punto.
+    //
+    // Y ahora mide las DOS direcciones. Entrar era lo único que se comparaba, y
+    // entrar salía igual incluso con el defecto de #616 puesto: es SALIR lo que
+    // cambia de veredicto, y quien no lo pregunte no se entera de que el bridge
+    // y el cliente han dejado de colisionar igual por dentro de un edificio.
     const provider = serverProvider();
     const client = clientCollider();
-    const from = cell(70, 82);
-    const to = cell(83, 82);
+    const suelo = { ocupado: (x: number, z: number, r: number) => client!.solapaSolido(x, z, r) };
+
+    const fuera = cell(70, 82);
+    const dentro = cell(83, 82);
     assert.equal(
-      provider.blocksMove(from.x, from.z, to.x, to.z, 0.4),
-      client!.blocksMove(from.x, from.z, to.x, to.z, 0.4),
+      provider.algoImpideElPaso(fuera.x, fuera.z, dentro.x, dentro.z, 0.4),
+      solidoBloquea(fuera, dentro, 0.4, suelo),
+      "entrar al edificio",
+    );
+    assert.ok(provider.blocksCircle(dentro.x, dentro.z, 0.4), "control: (83,82) está dentro de la casa");
+
+    // Salir: la casa ocupa [80..87] × [80..85] en celdas, así que desde (83,82)
+    // la cara más cercana en Z está a 3 celdas y en X a 4 — el paso hacia −z
+    // saca, y ninguno de los dos lados puede frenarlo.
+    const saliendo = cell(83, 79);
+    assert.equal(
+      provider.algoImpideElPaso(dentro.x, dentro.z, saliendo.x, saliendo.z, 0.4),
+      solidoBloquea(dentro, saliendo, 0.4, suelo),
+      "salir del edificio",
+    );
+    assert.equal(
+      provider.algoImpideElPaso(dentro.x, dentro.z, saliendo.x, saliendo.z, 0.4),
+      false,
+      "y de dentro se SALE: el paso que reduce la penetración no lo frena nadie (#616)",
     );
   });
 });

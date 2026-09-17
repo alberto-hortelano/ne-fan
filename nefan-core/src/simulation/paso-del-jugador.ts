@@ -76,10 +76,12 @@ export function intencionDeTeclas(teclas: {
  *  sondeo, `solido(desde, desde)`) era rama MUERTA —ninguna de las tres fuentes
  *  cableadas puede contestar `true` cuando el destino es el propio origen— y se
  *  retiró con #601. Quitar código muerto no es dar una garantía: quién saca al
- *  que empieza dentro, y hasta dónde, lo decide CADA fuente por su cuenta y no
- *  todas lo mismo. Está escrito y medido en la cabecera de
- *  `obstaculos-del-jugador.ts`; el resumen es que la caja sí saca siempre y el
- *  terreno solo al que penetra menos de una celda.
+ *  que empieza dentro, y hasta dónde, lo decide CADA fuente por su cuenta.
+ *  Está escrito y medido en la cabecera de `obstaculos-del-jugador.ts`; el
+ *  resumen es que desde #616 las TRES sacan —la caja y el terreno por la misma
+ *  regla de penetración no creciente— y que el jugador sale porque EMPUJA:
+ *  bastan los rumbos cuya componente en el eje de menor penetración apunte
+ *  hacia fuera, que con la resolución por ejes de aquí son la mitad de la rosa.
  *
  *  El `forward` se toma HORIZONTAL (solo x,z): mirar al suelo no puede hacerte
  *  caminar hacia el suelo. Uno de longitud cero no es «no se mueve», es una

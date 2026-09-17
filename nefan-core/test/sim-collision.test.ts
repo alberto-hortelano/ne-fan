@@ -39,10 +39,10 @@ describe("createSimCollisionProvider", () => {
     assert.ok(provider.blocksCircle(wall.x, wall.z, 0.5), "celda w debe bloquear");
     const open = cellCenter(64, 64);
     assert.ok(!provider.blocksCircle(open.x, open.z, 0.5), "campo abierto no bloquea");
-    // blocksMove: entrar al agua desde fuera bloquea; moverse en abierto no.
+    // El paso: entrar al agua desde fuera bloquea; moverse en abierto no.
     const before = cellCenter(15, 6);
-    assert.ok(provider.blocksMove(before.x, before.z, wall.x, wall.z, 0.5));
-    assert.ok(!provider.blocksMove(open.x, open.z, open.x + 1, open.z, 0.5));
+    assert.ok(provider.algoImpideElPaso(before.x, before.z, wall.x, wall.z, 0.5));
+    assert.ok(!provider.algoImpideElPaso(open.x, open.z, open.x + 1, open.z, 0.5));
   });
 
   it("bloquea sobre las huellas de los volumes del plan", () => {
@@ -132,12 +132,12 @@ describe("createSimCollisionProvider · las cajas de los spawns de RUNTIME (#583
     return s;
   }
 
-  it("un `building` spawneado en runtime frena al NPC: blocksCircle y blocksMove", () => {
+  it("un `building` spawneado en runtime frena al NPC: el punto y el paso", () => {
     const provider = createSimCollisionProvider(conLaForja());
     assert.ok(provider.blocksCircle(0, 0, 0.5), "el centro de la forja debe bloquear");
-    assert.ok(provider.blocksMove(5, 0, 1.9, 0, 0.5), "entrar en la forja debe bloquear");
+    assert.ok(provider.algoImpideElPaso(5, 0, 1.9, 0, 0.5), "entrar en la forja debe bloquear");
     assert.ok(!provider.blocksCircle(10, 10, 0.5), "…y la calle de al lado se puede pisar");
-    assert.ok(!provider.blocksMove(10, 10, 11, 10, 0.5));
+    assert.ok(!provider.algoImpideElPaso(10, 10, 11, 10, 0.5));
   });
 
   it("dice QUÉ impide el paso, y la caja va con su id", () => {
@@ -179,18 +179,22 @@ describe("createSimCollisionProvider · las cajas de los spawns de RUNTIME (#583
     // esto en verde (#583, QA H-2). El nombre prometía el sistema y el aserto
     // cubría la consulta.
     const provider = createSimCollisionProvider(conLaForja());
-    assert.ok(!provider.blocksMove(0, 0, 0.5, 0, 0.5), "alejarse del centro no bloquea");
-    assert.ok(provider.blocksMove(1, 0, 0.5, 0, 0.5), "…y meterse más adentro sí");
+    assert.ok(!provider.algoImpideElPaso(0, 0, 0.5, 0, 0.5), "alejarse del centro no bloquea");
+    assert.ok(provider.algoImpideElPaso(1, 0, 0.5, 0, 0.5), "…y meterse más adentro sí");
   });
 
   it("dice POR DÓNDE SALIR de la caja que te tiene dentro, con su id", () => {
     const provider = createSimCollisionProvider(conLaForja());
     // La forja es 4×4 en (0,0): con el cuerpo, su cara queda a 2,5 m.
-    assert.deepEqual(provider.porDondeSalirDeAqui(-1, 0, 0.5), { caja: "forja", dir: { x: -1, z: 0 } });
+    assert.deepEqual(provider.porDondeSalirDeAqui(-1, 0, 0.5), { de: "caja", id: "forja", dir: { x: -1, z: 0 } });
     assert.equal(provider.porDondeSalirDeAqui(10, 10, 0.5), null, "fuera no hay de dónde salir");
   });
 
-  it("de la geometría del TILE no saca a nadie: eso tiene número propio (#616)", () => {
+  it("de la geometría del TILE TAMBIÉN saca, y dice que es del tile (#616)", () => {
+    // INVERTIDO por la tanda G. Hasta el 2026-09-17 este mismo caso afirmaba
+    // que de la geometría del tile no salía nadie y citaba #616 como «eso tiene
+    // número propio»: era un candado sobre el DEFECTO, puesto a propósito para
+    // que el arreglo tuviera que venir aquí a quitarlo.
     const s = makeState({
       entities: [
         { id: "granero", kind: "building", name: "granero", cell: [40, 40], footprint: [12, 10] },
@@ -199,11 +203,22 @@ describe("createSimCollisionProvider · las cajas de los spawns de RUNTIME (#583
     const provider = createSimCollisionProvider(s);
     const dentro = cellCenter(45, 45);
     assert.ok(provider.blocksCircle(dentro.x, dentro.z, 0.1), "está dentro del granero del tile");
+    const salida = provider.porDondeSalirDeAqui(dentro.x, dentro.z, 0.1);
+    assert.equal(salida?.de, "tile", "el dueño de la salida es la geometría dura, no una caja");
+    // El rumbo es unitario y paralelo a un eje, y APUNTA A LA CARA MÁS CERCANA:
+    // el granero ocupa las celdas [40..51] × [40..49] y el cuerpo está en la
+    // (45,45), así que la salida más corta es hacia el norte (−z, 5,5 celdas)
+    // y no hacia el oeste (5,5 celdas también en X, pero X gana los empates).
+    assert.equal(Math.abs(salida!.dir.x) + Math.abs(salida!.dir.z), 1);
+    // Y andando por ese rumbo se sale: el paso que reduce la penetración no
+    // lo frena nadie.
+    const paso = { x: dentro.x + salida!.dir.x * 0.25, z: dentro.z + salida!.dir.z * 0.25 };
     assert.equal(
-      provider.porDondeSalirDeAqui(dentro.x, dentro.z, 0.1),
+      provider.queImpideElPaso(dentro.x, dentro.z, paso.x, paso.z, 0.1),
       null,
-      "esta puerta es solo para las cajas de runtime",
+      "el paso que SACA del granero no puede estar frenado",
     );
+    assert.equal(provider.porDondeSalirDeAqui(10, 10, 0.1), null, "en la calle no hay de dónde salir");
   });
 
   it("un `item` de runtime NO frena a nadie: se pisa (#532)", () => {
@@ -241,7 +256,7 @@ describe("createSimCollisionProvider · las cajas de los spawns de RUNTIME (#583
     const s = makeState();
     const provider = createSimCollisionProvider(s);
     assert.ok(!provider.blocksCircle(0, 0, 0.5), "antes del spawn ahí no hay nada");
-    assert.ok(!provider.blocksMove(5, 0, 1.9, 0, 0.5));
+    assert.ok(!provider.algoImpideElPaso(5, 0, 1.9, 0, 0.5));
 
     s.recordEntitySpawned(
       "forja", "building", "tile_0_0", { x: 0, y: 0, z: 0 },

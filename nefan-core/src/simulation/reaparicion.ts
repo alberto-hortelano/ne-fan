@@ -11,25 +11,31 @@
  *  scene, y un punto con otra cosa entierra al jugador o le deja flotando.
  *
  *  POR QUÉ NO MIRA EL MUNDO, dicho aquí porque el nombre invita a suponerlo:
- *  este repositorio no tiene una pregunta «¿es sólido este PUNTO?» para las
- *  cajas, solo «¿puedo MOVERME de donde estoy hasta ahí?»
- *  (`CollisionSystem.collidesAt`, que parte siempre de la posición del
- *  jugador). Preguntada por el punto del propio cadáver contesta «libre» en
- *  todo lo que el juego produce —medido sobre las tres fixtures: 99.932 puntos
- *  y ni uno sólido, `qa/la-puerta-de-la-reaparicion.mjs`—, así que cualquier
- *  rama que cuelgue de ella aquí nace muerta. #538 (2026-09-16) borró la que
- *  había, en vez de dejarla documentada como conducta. (El único origen =
- *  destino que sí bloquea es la TANGENCIA exacta del cuerpo con el borde de
- *  una celda sólida, que pide una coordenada que el juego no genera; el mismo
- *  guion la imprime en cada corrida para que el absoluto no se escriba solo.)
- *  Si el jugador reaparece dentro de algo, sale andando por la regla «salir
- *  sí, entrar no» de `pasoDelJugador`, que es su hermano y el motivo de que no
- *  se quede atrapado.
+ *  lo que el cliente le podía pasar era `CollisionSystem.collidesAt`, que no
+ *  es «¿es sólido este PUNTO?» sino «¿puedo MOVERME de donde estoy hasta
+ *  ahí?», y parte siempre de la posición del jugador. Preguntada por el punto
+ *  del propio cadáver vale `false` SIEMPRE —hoy por construcción: con origen =
+ *  destino la regla de penetración no creciente compara un número consigo
+ *  mismo—, así que cualquier rama que cuelgue de ella aquí nace muerta. #538
+ *  (2026-09-16) borró la que había, en vez de dejarla documentada como
+ *  conducta.
  *
- *  La función sobrevive a la poda a propósito: es la costura donde aterrizará
- *  la regla de reaparición el día que se decida (H10 de #538, en la sesión de
- *  diseño de combate junto a #377 y #325), y hace falta la consulta que falta
- *  ANTES de volver a colgar nada de aquí.
+ *  Y SI EL JUGADOR REAPARECE DENTRO DE ALGO, SALE ANDANDO. Aquí ponía que el
+ *  motivo era la regla «salir sí, entrar no» de `pasoDelJugador`, y era FALSO
+ *  del terreno: esa regla eximía las CELDAS que ya se solapaban, lo que no
+ *  saca de un macizo — de un edificio del pueblo no salía nadie, 0 de 36
+ *  rumbos. Es la frase exacta que desmentía **#616**, y lo que la hace cierta
+ *  hoy es el arreglo de ese issue (`simulation/salida-del-solido.ts`, tanda G,
+ *  2026-09-17): el terreno tiene por fin la consulta de PUNTO, la penetración
+ *  baja monótona y el paso que saca no se frena.
+ *
+ *  Que se salga andando NO decide dónde hay que reaparecer, y esta función
+ *  sobrevive a la poda por eso: es la costura donde aterrizará la regla de
+ *  reaparición el día que se decida (H10 de #538, en la sesión de diseño de
+ *  combate junto a #377 y #325). Lo que #616 cambia es que ya no hay urgencia
+ *  —reaparecer donde caíste dejó de ser un estado sin salida— y que la
+ *  consulta que faltaba ya existe: quien vuelva aquí tiene
+ *  `SimCollisionProvider.ocupado` y `sitioParaAparecer` para colgar de ellos.
  */
 
 import type { Vec3 } from "../types.js";

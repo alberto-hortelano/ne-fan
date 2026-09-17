@@ -123,15 +123,27 @@ describe("createTerrainCollider", () => {
     assert.ok(col.blocksCircle(0, 0, 0.4)); // celda central del grid 3×3
   });
 
-  it("blocksMove: allows walking OUT of a wall you already overlap, never deeper in", () => {
+  it("solapaSolido: el solape ABIERTO, gemelo de blocksCircle salvo en la tangencia", () => {
+    // Sustituye al caso de «salir del muro que ya solapas», que se fue con la
+    // regla de paso del collider (#616, tanda G): la regla vive ahora en
+    // `simulation/salida-del-solido.ts` y su cobertura está en
+    // `test/salida-del-solido.test.ts`, que la compara contra la de la caja.
+    // Lo que queda aquí por medir es lo que este módulo sí decide: la
+    // CONVENCIÓN de solape de cada una de las dos consultas de punto.
     const col = createTerrainCollider(makeGrid())!;
-    // Origen penetrando el muro oeste (x=-1.6 solapa la celda col 0, x∈[-2,-1.5]).
-    // Salir hacia el este (alejándose del muro) NO bloquea…
-    assert.ok(!col.blocksMove(-1.6, 0, -1.3, 0, 0.4));
-    // …y desde fuera, entrar al muro bloquea.
-    assert.ok(col.blocksMove(-1.0, 0, -1.3, 0, 0.4));
-    // blocksCircle (posición absoluta) sigue viendo la penetración.
+    // Penetrando el muro oeste (x = −1.6 solapa la celda col 0, x ∈ [−2, −1.5]):
+    // las dos lo ven.
     assert.ok(col.blocksCircle(-1.6, 0, 0.4));
+    assert.ok(col.solapaSolido(-1.6, 0, 0.4));
+    // Y justo TOCANDO el muro ESTE por fuera (x + 0.4 = 1.5, el borde exacto
+    // de la celda col 7): la cerrada dice sólido —su bucle recorre el AABB con
+    // `floor()` INCLUSIVE— y la abierta no. Es la única diferencia entre las
+    // dos, y es la que hace que la penetración pueda valer 0.
+    assert.ok(col.blocksCircle(1.1, 0, 0.4));
+    assert.ok(!col.solapaSolido(1.1, 0, 0.4));
+    // Y en campo abierto las dos dicen lo mismo.
+    assert.ok(!col.blocksCircle(0, 0, 0.4));
+    assert.ok(!col.solapaSolido(0, 0, 0.4));
   });
 
   it("integrates with formatDToWorld: el agua `w` es el único char sólido", () => {
@@ -222,9 +234,9 @@ describe("el cuerpo mayor que transita el mundo", () => {
     //
     // Quien decide ese ancho es `blocksCircle`, que pese al nombre estampa un
     // AABB (su bucle `floor()` inclusive), no un disco. Esta sonda lo vigila:
-    // convertida en una prueba de distancia de verdad, se pone roja. Lo que NO
-    // gobierna el cuerpo es `circleOverlapsCell` —un solo llamante, la exención
-    // de `blocksMove`—, y por eso tocarla no rompe nada aquí.
+    // convertida en una prueba de distancia de verdad, se pone roja. Su gemela
+    // de solape abierto (`solapaSolido`) NO gobierna el cuerpo: difieren en la
+    // tangencia, que no cambia cuántas celdas de ancho cubre.
     const pasillo = (n: number): TerrainGridData => ({
       grid: ["S".repeat(4) + ".".repeat(n) + "S".repeat(4)],
       cols: 8 + n,

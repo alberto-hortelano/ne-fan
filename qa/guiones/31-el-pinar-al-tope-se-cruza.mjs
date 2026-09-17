@@ -144,11 +144,11 @@ export default async function (ctx) {
   // > 0 es hueco por el que el cuerpo cabe.
   //
   // OJO AL ORDEN, que no es decorativo: `probeCollide` pregunta por un
-  // MOVIMIENTO desde donde está el jugador (`blocksMove`), y esa función tiene
-  // semántica «salir sí, entrar no» — las celdas que el jugador ya solapa
-  // salen como libres. Este sondeo va ANTES de cruzar el hueco a propósito:
-  // con el jugador ya metido entre los dos troncos, las suyas dejarían de
-  // contar y el hueco saldría más ancho de lo que es.
+  // MOVIMIENTO desde donde está el jugador, y esa consulta tiene semántica
+  // «salir sí, entrar no» — desde donde el jugador ya está metido, los pasos
+  // que le sacan salen libres. Este sondeo va ANTES de cruzar el hueco a
+  // propósito: con el jugador ya entre los dos troncos, el hueco saldría más
+  // ancho de lo que es.
   ctx.expect(
     "entre los dos troncos más juntos cabe el cuerpo del jugador",
     par.huecoContinuo > 0,

@@ -286,3 +286,11 @@ jobs:
       # cable de `bridge/context.ts` dejaba la suite entera en verde (2891/2891)
       # con #583 revertido del todo.
       - run: node qa/el-mundo-solido-tambien-para-el-npc.mjs
+      # (27 s) #616: de TODO punto sólido de las tres fixtures se sale andando,
+      # con `pasoDelJugador` y las fuentes de solidez del cliente. Entra AQUÍ el
+      # día que nace, que es la regla que la tanda E tuvo que aprender mirando
+      # esta lista. Es el más lento de los headless y se sabe por qué: 3.941
+      # puntos × 36 rumbos a 60 fps. El horizonte de cada rumbo se deriva de su
+      # penetración en vez de ser fijo —acortarlo solo puede producir MÁS
+      # puntos sin salida, nunca menos—, y eso es lo que lo baja de 100 s a 27.
+      - run: node qa/nadie-se-queda-encerrado.mjs

@@ -24,7 +24,7 @@ import { SeededRng } from "../rng.js";
 // cuerpo MAYOR del juego y quien decide cuánto hueco dejar tiene que poder
 // leerlo (issue #289).
 import { NPC_RADIUS_M } from "../scene/terrain-collision.js";
-import type { Impedimento, SalidaDeSolido } from "./cajas-de-runtime.js";
+import type { Impedimento, PorDondeSalir } from "./cajas-de-runtime.js";
 import { resolveRoleParams, type NpcRoleParams } from "./npc-roles.js";
 
 export type NpcMode = "idle" | "wander" | "goto" | "visit" | "flee" | "intervene" | "react";
@@ -39,10 +39,10 @@ export type NpcDirectiveType = (typeof NPC_DIRECTIVE_TYPES)[number];
 /** Lo que el sistema necesita del mundo — el bridge inyecta el real
  *  (colisión server-side + world map + entities); los tests, un fake. */
 export interface NpcWorldAdapter {
-  /** QUÉ impide el paso, y no solo si algo lo impide. Sustituye al
-   *  `blocksMove` booleano con #583 y NO es opcional: el escape del encajonado
-   *  solo se abre sobre una caja de runtime, así que un adapter que no sepa
-   *  distinguirlas tiene que romper `tsc` y no salir verde atravesando muros. */
+  /** QUÉ impide el paso, y no solo si algo lo impide. Sustituye al booleano de
+   *  siempre con #583 y NO es opcional: el escape del encajonado solo se abre
+   *  sobre una caja de runtime, así que un adapter que no sepa distinguirlas
+   *  tiene que romper `tsc` y no salir verde atravesando muros. */
   queImpideElPaso(
     fromX: number,
     fromZ: number,
@@ -54,8 +54,9 @@ export interface NpcWorldAdapter {
    *  y por el mismo motivo: sin ella el que tiene una caja encima se queda
    *  dentro andando para siempre, y eso salió VERDE en toda la batería (#583,
    *  QA H-2) porque la consulta de movimiento no le frena — solo es que nadie
-   *  le empuja hacia fuera. */
-  porDondeSalirDeAqui(x: number, z: number, radius: number): SalidaDeSolido | null;
+   *  le empuja hacia fuera. Desde #616 contesta también por la geometría del
+   *  TILE, así que el dueño de la respuesta puede ser `"tile"`. */
+  porDondeSalirDeAqui(x: number, z: number, radius: number): PorDondeSalir | null;
   blocksCircle(x: number, z: number, radius: number): boolean;
   resolvePlaceTarget(placeId: string): { x: number; z: number } | null;
   getEntityPosition(entityId: string): Vec3 | null;
@@ -660,18 +661,26 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       }
     }
 
-    // PRIMERO SALIR, LUEGO IR: si una caja le cayó encima, el rumbo lo manda
-    // ella y no la meta. El steering solo sondea el abanico de ±135° alrededor
+    // PRIMERO SALIR, LUEGO IR: si está metido en algo, el rumbo lo manda ese
+    // algo y no la meta. El steering solo sondea el abanico de ±135° alrededor
     // de la dirección que se le dé, así que con la meta al otro lado ninguno de
     // los siete rumbos reducía la penetración y el NPC se quedaba dentro
     // andando para siempre (#583, QA H-2: 290 s de 300 dentro de un carro). Con
     // el rumbo puesto hacia la cara más cercana, cada paso le acerca a la salida
-    // y `cajaBloquea` no frena ninguno, porque ninguno le mete más adentro.
+    // y nada lo frena, porque ninguno le mete más adentro.
+    //
+    // DOS DUEÑOS DESDE #616, y el segundo es conducta NUEVA que no pidió ningún
+    // issue: hasta esa tanda el terreno no sabía contestar «por dónde salgo»,
+    // así que un NPC metido en la geometría de un tile —el muro del pueblo, no
+    // un carro que le cayó encima— se quedaba dentro. Ahora sale solo. Es
+    // mejora, y NO es #618: aquel es el NPC que no está dentro de nada y no
+    // sabe rodear.
     const salida = this.world.porDondeSalirDeAqui(px, pz, NPC_RADIUS_M);
     if (salida) {
+      const dentroDe = salida.de === "caja" ? `"${salida.id}" (se la pusieron encima)` : "la geometría del tile";
       this.warnOnce(
-        `${rt.record.id}:sale:${salida.caja}`,
-        `"${rt.record.id}" quedó DENTRO de "${salida.caja}" (se la pusieron encima) ` +
+        `${rt.record.id}:sale:${salida.de === "caja" ? salida.id : "tile"}`,
+        `"${rt.record.id}" quedó DENTRO de ${dentroDe} ` +
           `y sale andando por su cara más cercana antes de seguir a lo suyo`,
       );
     }
