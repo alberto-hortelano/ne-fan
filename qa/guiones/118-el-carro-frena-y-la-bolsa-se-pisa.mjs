@@ -28,6 +28,19 @@
  *  hace sobre lo que CAMBIÓ. Lo que caiga sobre un muro que ya estaba se
  *  declara SIN MEDIR, que es lo honesto.
  *
+ *  POR QUÉ SIGUE HABIENDO DELTA DESPUÉS DE #651, que cambió la pregunta. Hasta
+ *  esta tanda las sondas eran `probeCollide` —«¿puedo MOVERME de donde estoy a
+ *  ahí?»— y este guion daba DOS motivos para el delta: el de aquí arriba (que el
+ *  suelo ya estuviera ocupado por el plan del tile) y el que estaba escrito en
+ *  `cabeElSpawn` y en el `fotoDelSuelo` del 128 (que la consulta no era un mapa
+ *  del suelo). El segundo CADUCA aquí: hoy se pregunta con `probePoint`
+ *  (`ocupadoEn`, la misma colisión SIN ORIGEN), y una foto tomada desde un
+ *  sitio vale desde cualquier otro. El primero no caduca y es el que sostiene
+ *  el delta: el spawn cae entre los volúmenes del plan, así que sin la foto de
+ *  ANTES un muro de la taberna se le cargaría a la caja del `item`. O sea,
+ *  menos motivos y el mismo método: el delta ya no protege de la pregunta, solo
+ *  del sitio.
+ *
  *  Y SE PIDEN POR SEPARADO, una entidad por marca, porque el reparto de un
  *  turno separa 1,8 m fijos sin mirar el tamaño (#524, la PR 3 de esta tanda) y
  *  la caja del carro de 3 m se come esa separación entera: puestos a la vez, el
@@ -38,10 +51,15 @@
  *  motor declaró.
  *
  *  Dos formas de preguntar, y las dos hacen falta:
- *   · **con sondas** (`probeCollide`, la misma función que gobierna el paso del
- *     jugador), que es determinista y no depende de que se pueda llegar: el
- *     punto sigue libre con la bolsa encima, y con el carro bloquea hasta donde
- *     dice su huella declarada (media huella + radio).
+ *   · **con sondas** (`probePoint` = `ocupadoEn`, la colisión del jugador
+ *     preguntada SIN ORIGEN, #644/#651), que es determinista y da lo mismo esté
+ *     el jugador donde esté: el punto sigue libre con la bolsa encima, y con el
+ *     carro bloquea hasta donde dice su huella declarada (media huella +
+ *     radio). Lo que se sondeaba antes era `probeCollide` = `collidesAt`, y era
+ *     el defecto de #644 otra vez: las tres fuentes de solidez son «salir sí,
+ *     entrar no», así que desde DENTRO de una caja contestan que no — la
+ *     `paredMedida` de abajo, que anda desde el CENTRO del objeto, daba 0 en
+ *     los cuatro ejes con el jugador dentro.
  *   · **andando**, que es como se juega: el jugador se planta ENCIMA de la
  *     bolsa, y luego empuja contra el carro y se para PEGADO a su cara.
  *
@@ -163,12 +181,15 @@ const panelPintado = (ctx) =>
     60_000,
   );
 
-/** El suelo ANTES de que el motor ponga nada, punto a punto (ver la cabecera). */
+/** El suelo ANTES de que el motor ponga nada, punto a punto: una rejilla de
+ *  `probePoint`, que es la consulta SIN ORIGEN (#651). Con `probeCollide` esto
+ *  no era un mapa del suelo sino el mapa de «a dónde puedo ir desde aquí», y
+ *  por eso había que tomarlo y juzgarlo desde el mismo sitio. */
 async function fotoDelSuelo(ctx) {
   const origen = await posicion(ctx);
   const celdas = await ctx.page.evaluate(
     ({ o, paso, ax, az }) => {
-      const pc = window.__nefan.probeCollide;
+      const pc = window.__nefan.probePoint;
       const filas = [];
       for (let z = 0; z >= -az; z -= paso) {
         const fila = [];
@@ -206,15 +227,20 @@ function caminoLibreAntes(foto, a, b) {
   return true;
 }
 
-/** ¿Bloquea AHORA ese punto, y qué hay encima? */
+/** ¿Está OCUPADO ahora ese punto? Por `probePoint`, la misma pregunta que la
+ *  foto de antes: comparar dos consultas distintas no sería un delta. */
 const sondear = (ctx, punto) =>
-  ctx.page.evaluate((p) => ({ bloquea: window.__nefan.probeCollide(p.x, p.z) }), punto);
+  ctx.page.evaluate((p) => ({ bloquea: window.__nefan.probePoint(p.x, p.z) }), punto);
 
 /** Dónde acaba la caja de `obj`: desde su centro hacia los cuatro ejes, a qué
- *  distancia deja de bloquear. */
+ *  distancia deja de estar ocupado. Por `probePoint` y no por `probeCollide`
+ *  (#651): esto anda DESDE EL CENTRO del objeto, y la consulta de movimiento es
+ *  «salir sí, entrar no» — con el jugador dentro de esa caja contestaba libre
+ *  en el primer paso y la pared medía 0 en los cuatro ejes. Es la MISMA sonda
+ *  del 91, que la arregló primero (#644). */
 async function paredMedida(ctx, obj) {
   return ctx.page.evaluate((e) => {
-    const pc = window.__nefan.probeCollide;
+    const pc = window.__nefan.probePoint;
     const paso = 0.05;
     return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => {
       let d = 0;
@@ -417,18 +443,25 @@ async function cerrarLaConversacion(ctx) {
 }
 
 /** ¿Cabe el spawn si se pide DESDE AQUÍ? Se contesta con la foto que va a
- *  juzgar después, y no con otra: `probeCollide` pregunta «¿puedo MOVERME de
- *  donde estoy a ahí?» (`collidesAt` rasteriza el segmento desde
- *  `getPlayerPos()`), así que una foto tomada antes de abrir la conversación y
- *  un aserto hecho con otra posterior no hablan del mismo camino — medido: la
- *  búsqueda decía «libre» y el carro caía en el muro. */
+ *  juzgar después, y no con otra. El motivo de que fueran la MISMA foto ya no
+ *  es la pregunta —`probePoint` no tiene origen, así que dos fotos del mismo
+ *  mundo coinciden— sino el MUNDO: entre una y otra el motor ha puesto cosas, y
+ *  juzgar el delta contra una foto anterior a lo que ya estaba puesto sería
+ *  atribuirle al spawn de ahora lo que dejó el de antes. Con `probeCollide`
+ *  además cambiaba el camino (rasterizaba el segmento desde `getPlayerPos()`) y
+ *  se midió: la búsqueda decía «libre» y el carro caía en el muro. */
 function cabeElSpawn(foto) {
   const centro = { x: foto.origen.x, z: foto.origen.z - HUECO_DEL_SPAWN_M };
-  // Solo el CENTRO, y no un margen alrededor: `probeCollide` no es un mapa del
-  // suelo sino «¿puedo moverme de donde estoy a ahí?», así que preguntar por
-  // los lados pregunta por caminos DIAGONALES que rozan la esquina del
-  // edificio — con un margen de ±1,5 m no pasaba ningún sitio del bench, y lo
-  // que se descartaba era el camino, no el hueco.
+  // Solo el CENTRO, y no un margen alrededor. El motivo de antes CADUCÓ con
+  // #651 y se dice en vez de dejarlo: con `probeCollide` un margen preguntaba
+  // por caminos DIAGONALES que rozaban la esquina del edificio, así que con
+  // ±1,5 m no pasaba ningún sitio del bench y lo que se descartaba era el
+  // camino, no el hueco. Con `probePoint` un margen sí preguntaría por el
+  // hueco, pero se deja el centro a propósito: ensancharlo cambia QUÉ sitios
+  // acepta el bench —o sea, dónde acaba cayendo cada spawn— y eso no es el
+  // arreglo de esta tanda. Lo que este guion AFIRMA no depende de ello: cada
+  // aserto se hace punto a punto contra la foto, y lo que caiga sobre algo que
+  // ya estaba se declara sin medir.
   return eraLibre(foto, centro.x, centro.z) === true ? centro : null;
 }
 

@@ -43,6 +43,25 @@
  *  el nuevo dan lo mismo para el primero), así que el motor falso pone CUATRO
  *  de tamaños distintos y con el edificio de por medio.
  *
+ *  SUS SONDAS PREGUNTAN POR `probePoint` (#644, #651). Tanto la foto como el
+ *  sondeo de después son `ocupadoEn`, la colisión SIN ORIGEN. Hasta esta tanda
+ *  eran `probeCollide` («¿puedo MOVERME de donde estoy a ahí?»), y con eso la
+ *  foto no era un mapa del suelo sino el de los caminos desde donde estuviera
+ *  el jugador: dos puntos igual de libres salían distintos según si había un
+ *  muro EN MEDIO, que es justo lo que pasa aquí —el turno cae al otro lado de
+ *  la taberna—. El DELTA se queda, pero con un motivo menos: el que estaba
+ *  escrito en `fotoDelSuelo` —«`probeCollide` no es un mapa del suelo»— CADUCA
+ *  aquí, y el que lo sostiene de verdad no: separar «esto lo cierran las cajas
+ *  del turno» de «esto ya era el plan del tile» hace falta con cualquier
+ *  pregunta. Lo que sí se fue es el ⊘ de los pasos 2 y 3: con la consulta de
+ *  movimiento, el punto medio del pasillo salía «ya sólido» —el muro de la
+ *  taberna se cruzaba en el CAMINO, no estaba en el punto— y el bloque se
+ *  declaraba SIN MEDIR con ese motivo escrito. Así salía en la batería completa
+ *  del 2026-09-17, donde era uno de sus dos ⊘; con la consulta de punto se
+ *  mide. No confundirlo con el ⊘ que cita el paso 3 de arriba: aquél es
+ *  HISTÓRICO y salía cuando este guion ANDABA hasta el sitio, que es por lo que
+ *  hoy sondea.
+ *
  *  Cero créditos: preset `e2e-sin-creditos`, motor falso, `renderMode: vector`.
  *  Los cuatro los pone la marca del texto libre; `aisla` deja saves y motor
  *  vírgenes.
@@ -129,14 +148,18 @@ async function revivirSiHaceFalta(ctx) {
   ctx.log(vivo ? `el bench mató al jugador: reaparecido con ${vivo.hp} de vida` : "la R no lo levantó");
 }
 
-/** El suelo ANTES de que el motor ponga nada (la técnica del 118: `probeCollide`
- *  no es un mapa del suelo sino «¿puedo moverme de donde estoy a ahí?», así que
- *  lo que se compara es el DELTA). */
+/** El suelo ANTES de que el motor ponga nada (la técnica del 118), preguntado
+ *  con `probePoint`: la consulta SIN ORIGEN (#651). Con `probeCollide` esto no
+ *  era un mapa del suelo sino el de «a dónde puedo ir desde aquí», así que la
+ *  foto solo valía desde el sitio en el que se tomó; hoy vale desde cualquiera.
+ *  Lo que se compara sigue siendo el DELTA, por el otro motivo —el de siempre—:
+ *  el turno cae entre los volúmenes del plan del tile, y sin la foto de ANTES
+ *  un muro de la taberna se le cargaría a las cajas nuevas. */
 async function fotoDelSuelo(ctx) {
   const origen = await posicion(ctx);
   const celdas = await ctx.page.evaluate(
     ({ o, paso, ax, az }) => {
-      const pc = window.__nefan.probeCollide;
+      const pc = window.__nefan.probePoint;
       const filas = [];
       for (let z = 0; z >= -az; z -= paso) {
         const fila = [];
@@ -168,8 +191,10 @@ function caminoLibreAntes(foto, a, b) {
   return true;
 }
 
+/** ¿Está OCUPADO ese punto AHORA? La misma pregunta que la foto, que si no el
+ *  delta compararía dos consultas distintas. */
 const sondear = (ctx, p) =>
-  ctx.page.evaluate((q) => window.__nefan.probeCollide(q.x, q.z), p);
+  ctx.page.evaluate((q) => window.__nefan.probePoint(q.x, q.z), p);
 
 /** Habla con el tabernero y pide el turno con la marca. Antes toma el mando del
  *  motor falso (la marca a secas), que si no sus spawns por turno caen encima
@@ -324,7 +349,7 @@ export default async function (ctx) {
       puntos.push({ x: medio.x + perp.x * d, z: medio.z + perp.z * d, d });
     }
     // Los dos nombres dicen lo que valen, y no es lo mismo: `libreAntes` viene
-    // de la foto (true = se podía pasar) y `bloqueaAhora` de `probeCollide`
+    // de la foto (true = estaba libre) y `bloqueaAhora` de `probePoint`
     // (true = NO se puede). Colapsarlos en un «antes/ahora» ya costó una
     // corrida en rojo con los trece puntos libres.
     const travesia = [];

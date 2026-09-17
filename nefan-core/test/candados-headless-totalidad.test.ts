@@ -203,6 +203,62 @@ export function pasosDelJob(yml: string, job = "candados-headless"): string[] {
   return [...bloqueDelJob(yml, job).matchAll(/^\s*- run: node (qa\/[\w.-]+\.mjs)/gm)].map((m) => m[1]);
 }
 
+/** Los pasos con SUS argumentos. `pasosDelJob` da el fichero, que es lo que
+ *  necesitan la totalidad y las exenciones; esto da la INVOCACIÓN, que es lo
+ *  único con lo que se puede distinguir `node qa/run.mjs` de
+ *  `node qa/run.mjs --sin-navegador` (#655). */
+export function invocacionesDelJob(yml: string, job = "candados-headless"): { fichero: string; args: string }[] {
+  return [...bloqueDelJob(yml, job).matchAll(/^\s*- run: node (qa\/[\w.-]+\.mjs)([^\n]*)/gm)].map((m) => ({
+    fichero: m[1],
+    args: m[2].trim(),
+  }));
+}
+
+/** ¿`run.mjs` condiciona DE VERDAD su único `abrirNavegador` a `--sin-navegador`?
+ *
+ *  Nace del bloqueo que midió la tanda J (#655): el aserto «ningún paso del job
+ *  abre navegador» decidía por el FICHERO, y `qa/run.mjs` alcanza
+ *  `playwright-core` porque ES el runner del navegador — así que meter
+ *  `node qa/run.mjs --sin-navegador` ponía `npm test` rojo aunque esa corrida no
+ *  abra ningún Chromium. Un candado **cubriendo más de lo que su nombre
+ *  promete**, que es la cara opuesta de la enfermedad de la casa y la segunda vez
+ *  que aparece (la primera fue #633, el guion 39 prohibiendo un click que no
+ *  gasta).
+ *
+ *  La salida NO es una excepción escrita a mano —una lista que nadie vuelve a
+ *  mirar y que sigue diciendo «este paso es inocuo» el día que deje de serlo—,
+ *  sino LEER EL ÁRBOL del runner y afirmar el hecho del que depende la excepción:
+ *  que la llamada a `abrirNavegador` viva gobernada por la bandera. Si alguien
+ *  saca esa llamada del condicional, este test se pone rojo y el paso del job
+ *  deja de estar permitido, en el mismo commit.
+ *
+ *  Mira el ÁRBOL y no el texto, por lo de siempre: un `grep` sabe que
+ *  `SIN_NAVEGADOR` aparece cerca, no que GOBIERNE la llamada. */
+export function elRunnerHonraLaBandera(fuente: string, bandera = "SIN_NAVEGADOR"): boolean {
+  const arbol = ts.createSourceFile("run.mjs", fuente, ts.ScriptTarget.Latest, true);
+  const llamadas: ts.Node[] = [];
+  const recorre = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "abrirNavegador") {
+      llamadas.push(n);
+    }
+    ts.forEachChild(n, recorre);
+  };
+  recorre(arbol);
+  if (llamadas.length === 0) return false; // sin sujeto vivo: no se aprueba nada
+  const gobernadaPorLaBandera = (n: ts.Node): boolean => {
+    for (let p: ts.Node | undefined = n.parent; p; p = p.parent) {
+      const condicion = ts.isConditionalExpression(p)
+        ? p.condition
+        : ts.isIfStatement(p)
+          ? p.expression
+          : null;
+      if (condicion && condicion.getText().includes(bandera)) return true;
+    }
+    return false;
+  };
+  return llamadas.every(gobernadaPorLaBandera);
+}
+
 /** LO QUE HACE QUE UN PASO NO CORRA, aunque esté escrito. Es la mitad que la
  *  primera versión de este test no cubría y que cazó su QA (H-1): sujetaba que
  *  el ejecutable estuviera NOMBRADO, no que se EJERZA, y salía verde con
@@ -268,6 +324,7 @@ const navegador = new Set(ejecutables.filter((f) => alcanzanNavegador.has(f)));
 const spawnean = new Set(ejecutables.filter((f) => spawneaElRunner(textos.get(f) ?? "")));
 const derivados = new Set([...navegador, ...spawnean]);
 const enJob = new Set(pasosDelJob(yml).map((f) => f.slice("qa/".length)));
+const invocaciones = invocacionesDelJob(yml);
 const exentos = new Set(contrato.exentos.map((e) => e.fichero.slice("qa/".length)));
 
 describe("candados-headless: la totalidad del job (#645)", () => {
@@ -334,11 +391,40 @@ describe("candados-headless: la totalidad del job (#645)", () => {
   });
 
   it("ningún paso del job abre navegador: el job se llama headless porque lo es", () => {
-    const conNavegador = [...enJob].filter((f) => navegador.has(f));
+    // La invocación, no el fichero. `qa/run.mjs` alcanza `playwright-core`
+    // porque ES el runner del navegador, pero `--sin-navegador` no abre
+    // ninguno: decidir por el fichero ponía rojo un paso inocuo (#655), que es
+    // este candado cubriendo MÁS de lo que su nombre promete.
+    const conNavegador = invocaciones
+      .filter(({ fichero, args }) => {
+        const f = fichero.slice("qa/".length);
+        if (!navegador.has(f)) return false;
+        return !args.includes("--sin-navegador");
+      })
+      .map((i) => i.fichero.slice("qa/".length));
     assert.deepEqual(
       conNavegador,
       [],
       `${conNavegador.join(", ")} alcanza playwright-core y está en el job: en el runner no hay Chromium del bench`,
+    );
+  });
+
+  it("y la excepción de `--sin-navegador` se apoya en el ÁRBOL del runner, no en su nombre", () => {
+    // El aserto de arriba deja pasar `node qa/run.mjs --sin-navegador` porque
+    // esa corrida no abre Chromium. Eso es un HECHO del código, no una promesa
+    // del flag, y aquí se comprueba: el único `abrirNavegador` de `run.mjs`
+    // tiene que vivir gobernado por la bandera. Sáquenlo del condicional y este
+    // test cae en el MISMO commit que lo saque, antes de que el job arranque un
+    // navegador creyéndose headless.
+    //
+    // Si ningún paso usa el flag, esto no tiene sujeto vivo y no se afirma: un
+    // candado sin sujeto se revierte en verde, que es lo que le pasó a #639.
+    const usanLaBandera = invocaciones.filter((i) => i.args.includes("--sin-navegador"));
+    if (usanLaBandera.length === 0) return;
+    assert.ok(
+      elRunnerHonraLaBandera(readFileSync(join(QA, "run.mjs"), "utf8")),
+      "el job corre `qa/run.mjs --sin-navegador`, pero su `abrirNavegador` ya no está gobernado por " +
+        "`SIN_NAVEGADOR`: esa corrida abriría Chromium en un job que se llama headless",
     );
   });
 

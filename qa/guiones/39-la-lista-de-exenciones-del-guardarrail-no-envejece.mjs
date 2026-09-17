@@ -107,6 +107,14 @@ import { fileURLToPath } from "node:url";
 /** La EXCEPCIÓN del guardarraíl (#295): este guion no abre el juego siquiera
  *  — solo lee los ficheros de sus vecinos. */
 export const sinMotor = "solo lee los ficheros de qa/guiones/; no arranca partida ni habla con el motor";
+/** Y tampoco necesita PÁGINA (#655): su sujeto son los ficheros de sus
+ *  vecinos, no el cliente. Con esto entra en la corrida `--sin-navegador`, que
+ *  es la que puede correr un job de CI en segundos — y hacía falta: este guion
+ *  estuvo ROJO desde que nació (2026-08-29) hasta que lo arregló #633, porque
+ *  lo único que lo corría era una batería de navegador que no está en ningún
+ *  job. La declaración se EJERCE: el runner le entrega un `ctx` con los verbos
+ *  de página envenenados, así que si algún día toca uno, sale rojo. */
+export const sinNavegador = "lee los ficheros de qa/guiones/ y afirma sobre su texto; no hay cliente que conducir";
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 
