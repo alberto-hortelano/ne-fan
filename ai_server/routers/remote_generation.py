@@ -187,10 +187,13 @@ async def generate_surface_atlas_endpoint(body: SurfaceAtlasRequest):
         resolved[cell.key] = {"hash": key, "url": f"/cache/surface/{key}", "cached": False}
 
     # Páginas del atlas a disco para debug (sin manifest: no son assets del
-    # LLM — mismo criterio que el blueprint del repintado de escena).
+    # LLM — mismo criterio que el blueprint del repintado de escena). Van FUERA
+    # de la raíz indexada: escribirlas dentro con `get_path()` las hacía
+    # irreclamables para siempre, porque el nombre con prefijo nunca casa con un
+    # hash y el prune solo borra rutas de filas del manifest (#413).
     if body.layout_key:
         for i, page_png in enumerate(result["pages"]):
-            page_path = deps.surface_cache.get_path(f"atlas_{body.layout_key[:16]}", f"page{i}")
+            page_path = deps.surface_cache.debug_path(f"atlas_{body.layout_key[:16]}", f"page{i}.png")
             page_path.parent.mkdir(parents=True, exist_ok=True)
             page_path.write_bytes(page_png)
 
