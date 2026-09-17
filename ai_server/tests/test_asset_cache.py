@@ -13,8 +13,6 @@ Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_se
 import sys
 import tempfile
 import ast
-import pathlib
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -156,7 +154,7 @@ class NadaEscribeEnLaRaizIndexada(unittest.TestCase):
     escribir ahí es justo cuando se quiere volcar algo "solo para mirarlo".
     """
 
-    RAIZ = pathlib.Path(__file__).resolve().parents[1]
+    RAIZ = Path(__file__).resolve().parents[1]
     DUENO = "asset_cache.py"
 
     def _modulos(self):
@@ -210,7 +208,7 @@ class NadaEscribeEnLaRaizIndexada(unittest.TestCase):
         # devolviera algo DENTRO de `cache_dir`, mandar ahí las páginas del
         # atlas no habría arreglado nada y los dos tests seguirían verdes.
         with tempfile.TemporaryDirectory() as tmp:
-            cache = AssetCache(cache_dir=str(pathlib.Path(tmp) / "surfaces"), asset_type="surface")
+            cache = AssetCache(cache_dir=str(Path(tmp) / "surfaces"), asset_type="surface")
             destino = cache.debug_path("atlas_deadbeefdeadbeef", "page0.png")
             self.assertNotIn(
                 cache.cache_dir.resolve(),
