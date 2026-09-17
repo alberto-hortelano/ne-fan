@@ -15,6 +15,7 @@ import {
   cabeceraDe,
   enColaDeCrap,
   itemsDeMutacion,
+  rotuloSinEjercer,
   unaLinea,
   type InformeModulo,
 } from "../scripts/deuda.js";
@@ -151,6 +152,32 @@ describe("cola de deuda · mutación repartida en varios informes", () => {
     ]);
     assert.equal(items[0].peso, 1);
     assert.match(items[0].que, /score 50%/);
+  });
+
+  it("y CONTARLO como vivo no es decir que es la misma deuda (#604)", () => {
+    // `esVivo` los colapsa a propósito —el score de Stryker es uno solo— pero la
+    // COLA DE TRABAJO tiene que separarlos: «un test pasa por la línea y no se
+    // entera» se arregla con un aserto y «no pasa nadie» con un test. Las tres
+    // formas, porque con una sola no se distingue una regla de su contraria.
+    const deA = (mutantes: ReturnType<typeof mutante>[]) =>
+      itemsDeMutacion([{ id: "a", ficheros: ["src/a.ts"], report: { files: { "src/a.ts": { mutants: mutantes } } } }])[0]
+        .que;
+    // Ninguno sin ejercer: la cola no dice nada de más.
+    assert.doesNotMatch(deA([mutante("Survived"), mutante("Killed")]), /SIN EJERCER|NINGÚN TEST/);
+    // Mezcla: se dice cuántos, y que ahí lo que falta es un test.
+    assert.match(deA([mutante("Survived"), mutante("NoCoverage"), mutante("Killed")]), /1 de ellos SIN EJERCER/);
+    // TODOS sin ejercer: eso no es deuda de test, es #598 — el fichero no lo
+    // mide nadie.
+    assert.match(deA([mutante("NoCoverage"), mutante("NoCoverage"), mutante("Killed")]), /medida que no existe/);
+  });
+
+  it("de la HUELLA sale el mismo rótulo, y su ausencia no se lee como cero", () => {
+    // Una fila escrita antes de #604 no dice «ninguno»: dice que no se guardó.
+    // Inventarle un cero afirmaría que esos supervivientes SÍ se ejercen.
+    assert.equal(rotuloSinEjercer(undefined, 12), "", "sin dato no se afirma nada");
+    assert.equal(rotuloSinEjercer(0, 12), "");
+    assert.match(rotuloSinEjercer(5, 12), /5 de ellos SIN EJERCER/);
+    assert.match(rotuloSinEjercer(12, 12), /medida que no existe/);
   });
 
   it("avisa de CADA módulo sin medir y dice el comando que lo arregla", () => {

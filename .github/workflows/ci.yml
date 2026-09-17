@@ -68,6 +68,19 @@ jobs:
       # saber de cobertura. El duplicado se corta una vez a cada lado.
       - run: npm run coverage
       - run: npm run crap -- --check
+      # (~30 s) #598a: cada batería del plan de mutación EJERCE lo que su módulo
+      # muta, medido corriendo las 61 baterías con `NODE_V8_COVERAGE` y contando
+      # invocaciones. No entra en `npm test` a propósito: son 8,6 s de reloj con
+      # ocho a la vez en una máquina de 16 núcleos (~60 s en serie) sobre una
+      # suite que entera tarda 44, y el bucle interno de `verify` es lo que el
+      # usuario decidió no encarecer el 2026-08-27 — el mismo trato que `crap`.
+      #
+      # Lo que caza y `npm test` no puede: `test/mutation-config.test.ts` exige
+      # que la batería pueda CARGAR lo que muta, y cargar no es ejercer.
+      # `src/world-map/place-target.ts` estaba en el módulo `world-map`, tres de
+      # sus ocho tests lo IMPORTABAN y ninguno lo llamaba: 35 mutantes, 35
+      # vivos, tres corridas commiteadas y nada en rojo.
+      - run: npm run ejercicio
 
   narrative-mcp:
     runs-on: ubuntu-latest

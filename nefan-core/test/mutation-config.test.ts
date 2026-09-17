@@ -349,11 +349,86 @@ describe("plan de mutación · el reparto es TOTAL sobre el perímetro", () => {
   });
 });
 
+describe("plan de mutación · lo medido tiene que ser una medida", () => {
+  /** EL OTRO CANDADO DE #598a, Y EL QUE CUESTA CERO.
+   *
+   *  `npm run ejercicio` (scripts/ejercicio-de-bateria.ts) caza al fichero que
+   *  nace huérfano: corre cada batería contando invocaciones y exige que alguna
+   *  función del fichero mutado se llame. Eso cuesta 8,6 s y vive en CI.
+   *
+   *  Éste caza al que YA ESTÁ DENTRO, y por otro camino: la huella commiteada.
+   *  Un fichero cuyos mutantes murieron CERO no es un fichero con deuda, es un
+   *  fichero del que no hay medida — y ese estado se puede leer sin correr
+   *  nada, porque el número está en el repositorio. Llevaba TRES corridas
+   *  commiteado: `src/world-map/place-target.ts`, 35 de 35, el único de 94
+   *  ficheros al 100 % con más de un mutante, y nada se ponía rojo.
+   *
+   *  Los dos hacen falta y no se solapan: el primero no puede opinar de una
+   *  medida vieja (mide lo que pasa hoy) y el segundo no puede opinar de un
+   *  fichero que nadie ha medido todavía (no tiene fila). */
+  it("ningún fichero de la huella está al 100 % de supervivientes sin motivo escrito", () => {
+    const huella = leer("data/contract/mutacion-huella.json") as {
+      ficheros: Record<string, { total: number; vivos: string[] }>;
+    };
+    const filas = Object.entries(huella.ficheros);
+    // SUJETO VIVO: con una huella vacía este candado aprobaría sin mirar nada,
+    // que es la forma exacta del verde que no comprueba.
+    assert.ok(filas.length > 50, `la huella trae ${filas.length} filas: no hay nada que juzgar`);
+    const declarados = new Set(plan.todos_vivos.map((e) => e.fichero));
+    const alCien = filas
+      .filter(([, m]) => m.total > 0 && m.vivos.length === m.total)
+      .map(([f]) => f)
+      .sort();
+    assert.deepEqual(
+      alCien.filter((f) => !declarados.has(f)),
+      [],
+      `estos ficheros traen el 100 % de sus mutantes VIVOS y nadie ha dicho por qué: ` +
+        `${alCien.filter((f) => !declarados.has(f)).join(", ")}. Ni un mutante muerto no es deuda de test, ` +
+        `es que ese fichero no lo mide nadie — comprueba con \`npm run ejercicio\` si su batería lo llama, ` +
+        `y si el caso es legítimo decláralo en "todos_vivos" CON MOTIVO`,
+    );
+  });
+
+  it("una entrada de `todos_vivos` caduca en cuanto su fichero deja de estarlo", () => {
+    // Sin esta dirección la lista es un vertedero: una excepción cuyo fichero ya
+    // tiene muertes se queda para siempre tapando el siguiente caso que caiga
+    // ahí. Es el mismo par que `sin_mutar` ya tiene (declarar + caducar).
+    const huella = leer("data/contract/mutacion-huella.json") as {
+      ficheros: Record<string, { total: number; vivos: string[] }>;
+    };
+    for (const e of plan.todos_vivos) {
+      const medida = huella.ficheros[e.fichero];
+      assert.ok(
+        medida !== undefined,
+        `todos_vivos nombra "${e.fichero}", que no está en la huella: o se renombró o nunca se midió — retírala`,
+      );
+      assert.equal(
+        medida.vivos.length,
+        medida.total,
+        `todos_vivos nombra "${e.fichero}", que ya mata ${medida.total - medida.vivos.length} de sus ` +
+          `${medida.total} mutantes: la excepción sobra, bórrala`,
+      );
+      assert.ok(
+        e.porque.split(/\s+/).length >= 8,
+        `todos_vivos["${e.fichero}"]: "${e.porque}" no explica nada — di por qué se tolera que no muera ni uno`,
+      );
+    }
+  });
+});
+
 describe("plan de mutación · el reparto es alcanzable", () => {
+  /** CARGAR NO ES EJERCER, y la otra mitad NO vive aquí. Este bloque comprueba
+   *  que la batería puede IMPORTAR lo que muta; que además LO LLAME lo mide
+   *  `npm run ejercicio` contando invocaciones con `NODE_V8_COVERAGE`, porque
+   *  eso exige ejecutar las 61 baterías y `verify` no lo paga. Los dos son el
+   *  mismo issue (#598a) partido por lo que cuesta cada mitad. */
   it("la batería de cada módulo puede CARGAR todo lo que ese módulo muta", () => {
     // Si un fichero mutado no está en el cierre de imports de su batería,
     // ningún test de esa corrida lo ejecuta: sus mutantes salen vivos por
-    // construcción y ensucian la cola con deuda que no existe.
+    // construcción y ensucian la cola con deuda que no existe. Y si está en el
+    // cierre y nadie lo LLAMA, pasa lo mismo sin que esto se entere: son tres
+    // de los ocho tests de `world-map` importando `place-target.ts` y ninguno
+    // llamándolo (#598).
     for (const m of plan.modulos) {
       const alcanzable = new Set<string>();
       for (const t of m.tests) for (const f of cierreDe(t)) alcanzable.add(f);

@@ -56,7 +56,7 @@ import { dirname, join, relative } from "node:path";
 
 import { contextoDe, ficherosCambiados, seleccionar } from "./afectado.js";
 import { costeDe, estimaCoste, leerHuella } from "./mutacion.js";
-import { muroDeMutacion, permisoLocal } from "./mutacion-huella.js";
+import { moduloAprobado, muroDeMutacion, permisoLocal } from "./mutacion-huella.js";
 import {
   concurrenciaDe,
   configDe,
@@ -132,7 +132,14 @@ function corre(plan: PlanMutacion, modulo: ModuloMutacion, concurrencia: number)
     const r = spawnSync(STRYKER, ["run", relative(coreRoot, cfg)], { cwd: coreRoot, stdio: "inherit" });
     const segundos = (Date.now() - t0) / 1000;
     const { total, vivos, score } = resumenDelInforme(modulo.id);
-    return { id: modulo.id, ok: r.status === 0, segundos, total, vivos, score };
+    // `total > 0` NO ES DECORACIÓN, y es #596. Con cero mutantes medidos
+    // Stryker calcula `NaN` de score, `NaN >= break` es `false`, no hay
+    // `thresholds.break` que disparar y el proceso SALE CON 0: un módulo que no
+    // midió nada es indistinguible de uno que aprobó. Y el estado no es
+    // hipotético — la tabla de abajo ya sabía decir «SIN INFORME» desde el
+    // estreno del reparto, o sea que se ha visto; lo que no había es un rojo
+    // detrás. Aquí el «sin medida» deja de ser un `ok`.
+    return { id: modulo.id, ok: moduloAprobado(r.status, total), segundos, total, vivos, score };
   } finally {
     // EL CONFIG NO SOBREVIVE A SU CORRIDA. Un config generado es un `stryker
     // run` completo que no pasa ni por el muro ni por el tope: lleva sus
@@ -313,7 +320,15 @@ function main(): void {
 
   const fallados = resultados.filter((r) => !r.ok);
   if (fallados.length > 0) {
+    const sinMedida = fallados.filter((r) => r.total === 0).map((r) => r.id);
     console.error(`Módulos por debajo de su break (o caídos): ${fallados.map((r) => r.id).join(", ")}`);
+    if (sinMedida.length > 0) {
+      console.error(
+        `  De ésos, ${sinMedida.length} NO MIDIERON NI UN MUTANTE: ${sinMedida.join(", ")}. ` +
+          `Con cero mutantes el score es NaN, ningún suelo puede dispararse y Stryker sale con 0 — ` +
+          `sin este rojo, «no se midió» se leería como «aprobó» (#596).`,
+      );
+    }
     process.exitCode = 1;
   }
 }

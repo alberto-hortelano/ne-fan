@@ -247,6 +247,25 @@ export interface InformeModulo {
   base?: Readonly<Record<string, MedidaDeFichero>>;
 }
 
+/** Cuántos de los supervivientes de un fichero NO LOS EJERCE NINGÚN TEST, dicho
+ *  aparte porque no es la misma deuda (#604, la mitad consumidora).
+ *
+ *  `esVivo` colapsa `Survived` y `NoCoverage`, así que la cola decía «12
+ *  mutantes vivos» de dos cosas incompatibles: «un test pasa por la línea y no
+ *  se entera» —que se arregla con un aserto— y «no pasa nadie» —que se arregla
+ *  con un test, o moviendo el fichero al módulo cuyo test sí lo llama—. Mandan a
+ *  sitios distintos y el trabajo es distinto.
+ *
+ *  AUSENTE ≠ 0: una fila de la huella escrita antes de #604 no dice «ninguno»,
+ *  dice que no se guardó, y entonces aquí no se afirma nada. Y TODOS los vivos
+ *  sin ejercer es el caso de #598: ese fichero no tiene deuda de test, no tiene
+ *  medida. */
+export function rotuloSinEjercer(sinEjercer: number | undefined, vivos: number): string {
+  if (sinEjercer === undefined || sinEjercer === 0) return "";
+  if (sinEjercer >= vivos) return `, y NO LOS EJERCE NINGÚN TEST: no es deuda de test, es medida que no existe`;
+  return `, ${sinEjercer} de ellos SIN EJERCER (NoCoverage: ahí no falta un aserto, falta un test)`;
+}
+
 /** Fusión de los informes por módulo. Determinista: los módulos van en el
  *  orden del plan y los items se ordenan por supervivientes y, a igualdad, por
  *  ruta — nunca por el orden de las claves de un JSON. */
@@ -266,10 +285,11 @@ export function itemsDeMutacion(informes: readonly InformeModulo[]): Item[] {
         huellas.push(huellaDeMutante(file, m));
       }
       const top = [...porTipo.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+      const sinEjercer = info.mutants.filter((m) => m.status === "NoCoverage").length;
       items.push({
         donde: file,
         que:
-          `${vivos} mutantes vivos de ${total} (score ${score.toFixed(0)}%) — ` +
+          `${vivos} mutantes vivos de ${total} (score ${score.toFixed(0)}%)${rotuloSinEjercer(sinEjercer, vivos)} — ` +
           `${top.map(([k, n]) => `${k}×${n}`).join(", ")} · ${anotacionDeFichero(huellas, base[file])}`,
         peso: vivos,
       });
@@ -283,7 +303,8 @@ export function itemsDeMutacion(informes: readonly InformeModulo[]): Item[] {
       items.push({
         donde: file,
         que:
-          `${medida.vivos.length} mutantes vivos de ${medida.total} (score ${score.toFixed(0)}%) — ` +
+          `${medida.vivos.length} mutantes vivos de ${medida.total} (score ${score.toFixed(0)}%)` +
+          `${rotuloSinEjercer(medida.sin_ejercer, medida.vivos.length)} — ` +
           // El sha se recorta solo si LO ES: la huella de arranque lleva un
           // marcador legible en su lugar, y cortarlo a siete daría un trozo de
           // palabra que se lee como un sha de verdad.

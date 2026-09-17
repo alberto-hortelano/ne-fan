@@ -237,6 +237,31 @@ export interface MedidaDeFichero {
    *  la que `permisoLocal` rechaza el coste desconocido. Un cero lo metería en
    *  cualquier hueco. */
   segundos?: number;
+  /** Cuántos de los `vivos` de esta medida NO LOS EJERCE NINGÚN TEST
+   *  (`NoCoverage`), y cuántos de los detectados los clasificó EL RELOJ
+   *  (`Timeout`). Entran con #604.
+   *
+   *  POR QUÉ HACÍAN FALTA. `esVivo` colapsa `Survived` y `NoCoverage`
+   *  (`mutation-plan.ts`) y `vivosDeFichero` cuenta el `Timeout` como detectado,
+   *  así que en la huella un mutante que nadie ejerce es indistinguible de uno
+   *  que un test mira sin enterarse, y uno que mató el reloj de uno que mató un
+   *  aserto. Los dos hechos existían y solo vivían en `reports/`, que `traer`
+   *  VACÍA antes de bajar: comparar dos instrumentos dependía de acordarse de
+   *  apartar un directorio a mano.
+   *
+   *  CUENTAS Y NO HUELLAS, y es una decisión con número: guardar los hashes
+   *  multiplicaría por ~12 una huella que va commiteada justo para que el delta
+   *  se LEA en el diff (1.122 hashes en 43 ficheros frente a 94 cuentas), y el
+   *  consumidor que hoy necesita el dato —`npm run deuda`, que separa la deuda
+   *  de test de la medida ausente— solo necesita contar. Lo que NO cierra, y va
+   *  dicho para que nadie lo suponga: `comparar` sigue necesitando
+   *  `--timeouts <dir>` para decir QUÉ mutante se movió, porque eso exige las
+   *  huellas y no el recuento.
+   *
+   *  AUSENTE ≠ 0, como en `segundos`: una fila escrita antes de #604 no dice
+   *  «ninguno», dice «no se guardó». */
+  sin_ejercer?: number;
+  timeouts?: number;
 }
 
 /** De quién es lo que una medida encontró — el veredicto de `atribuir`, tal y
@@ -290,6 +315,31 @@ export const HUELLA_VACIA: Huella = { ficheros: {} };
 
 // ── el delta, con TRES estados ───────────────────────────────────────────────
 
+/** Las CUATRO formas de que dos medidas no se puedan comparar, separadas porque
+ *  mandan a sitios distintos:
+ *
+ *  · `sin blob` — la medida anterior es de antes de que se guardara el
+ *    contenido: no se sabe de qué código era.
+ *  · `código cambiado` — el fuente se movió. Es el caso NORMAL de cualquier PR
+ *    y no es un hallazgo de nadie.
+ *  · `denominador encogido` — MISMO código y MENOS mutantes con veredicto. Solo
+ *    puede ser el instrumento midiendo menos, y es exactamente lo que #596
+ *    describe: un `Killed` que pasa a `RuntimeError` sale del numerador y del
+ *    denominador a la vez, así que `(K−k)/(T−k)` no se mueve y el suelo del
+ *    módulo no lo caza. Medido sobre la huella commiteada: 55 de 61 módulos
+ *    toleran perder ≥ 1 muerte sin que su break se entere, y 22 (878 mutantes)
+ *    tienen CERO supervivientes, donde `K/K = 100 %` para cualquier pérdida,
+ *    incluida la total. Pasó de verdad con #597: 26 muertes fuera del
+ *    denominador y el módulo en 51/58 = 87,9 % contra un suelo de 87.
+ *  · `denominador crecido` — mismo código y MÁS mutantes. También es el
+ *    instrumento, pero midiendo MÁS: es la dirección en la que se arregló #597,
+ *    y no esconde nada. Se dice y no bloquea. */
+export type CausaIncomparable =
+  | "sin blob"
+  | "código cambiado"
+  | "denominador encogido"
+  | "denominador crecido";
+
 export interface DeltaDeFichero {
   fichero: string;
   /** `sin base` no es "todo nuevo" ni "todo viejo": es que no hay contra qué
@@ -305,6 +355,19 @@ export interface DeltaDeFichero {
   base: "con base" | "sin base" | "incomparable";
   /** Por qué no se puede comparar. Solo con `incomparable`. */
   porque?: string;
+  /** La misma razón, EN EL TIPO y no solo en la prosa.
+   *
+   *  Existía únicamente como frase, y por eso el caso grave de #596 no lo podía
+   *  mirar nadie: «el fichero cambió» es ruido legítimo de cualquier PR y
+   *  «mismo código y MENOS mutantes» es el instrumento midiendo menos, o sea
+   *  muertes que se van del numerador Y del denominador sin que el suelo se
+   *  entere (`(K−k)/(T−k)`). Con la razón en prosa, distinguirlos habría sido
+   *  un `includes()` sobre un mensaje. */
+  incomparable?: CausaIncomparable;
+  /** Cuántos mutantes medía la BASE. Solo con `incomparable` por denominador:
+   *  es la mitad del hecho, y sin ella el fail-loud no puede decir cuánto se
+   *  perdió. */
+  totalBase?: number;
   /** TODOS los supervivientes de esta corrida — el hecho crudo, que existe se
    *  pueda clasificar o no. `nuevos`/`yaEstaban` son la CLASIFICACIÓN, y se
    *  quedan vacías cuando no hay contra qué comparar: sin este campo, «no sé de
@@ -326,10 +389,17 @@ export function deltaDeFichero(
   ahora: { vivos: readonly string[]; total: number; blob: string },
   base: MedidaDeFichero | undefined,
 ): DeltaDeFichero {
-  const sinComparar = (base: "sin base" | "incomparable", porque?: string): DeltaDeFichero => ({
+  const sinComparar = (
+    base: "sin base" | "incomparable",
+    porque?: string,
+    causa?: CausaIncomparable,
+    totalBase?: number,
+  ): DeltaDeFichero => ({
     fichero,
     base,
     ...(porque === undefined ? {} : { porque }),
+    ...(causa === undefined ? {} : { incomparable: causa }),
+    ...(totalBase === undefined ? {} : { totalBase }),
     vivos: [...ahora.vivos],
     nuevos: [],
     yaEstaban: [],
@@ -341,23 +411,30 @@ export function deltaDeFichero(
   // puede saber sobre qué código se hizo. Se dice, no se adivina (pre-producción:
   // la primera corrida con blob repuebla la huella entera).
   if (!base.blob) {
-    return sinComparar("incomparable", "la medida anterior no guardó de qué código era");
+    return sinComparar("incomparable", "la medida anterior no guardó de qué código era", "sin blob");
   }
   if (base.blob !== ahora.blob) {
     return sinComparar(
       "incomparable",
       "el fichero cambió desde la medida anterior: sus huellas llevan línea y columna, " +
         "así que no hablan de estos mutantes",
+      "código cambiado",
     );
   }
   // Mismo contenido y distinto número de mutantes solo puede significar que
   // cambió el INSTRUMENTO (mutadores, config, versión). Comparar entonces
   // atribuiría a una PR lo que hizo un cambio de herramienta.
+  //
+  // Y LAS DOS DIRECCIONES NO SON LA MISMA COSA (#596): crecer es el instrumento
+  // midiendo MÁS —la dirección en la que se arregló #597— y encoger es medida
+  // que se pierde por los dos lados del cociente sin que el suelo se entere.
   if (base.total !== ahora.total) {
     return sinComparar(
       "incomparable",
       `mismo código y distinto número de mutantes (${base.total} → ${ahora.total}): ` +
         "lo que cambió es el instrumento de medida, no el código",
+      ahora.total < base.total ? "denominador encogido" : "denominador crecido",
+      base.total,
     );
   }
   const antes = new Set(base.vivos);
@@ -402,6 +479,28 @@ export function deltaDeCorrida(
   return Object.keys(medidos)
     .sort()
     .map((f) => deltaDeFichero(f, medidos[f], base.ficheros[f]));
+}
+
+/** Los ficheros cuyo DENOMINADOR encogió sin que el fuente cambiara: medida que
+ *  se ha perdido.
+ *
+ *  Es la mitad de #596 que hasta hoy solo se imprimía. `deltaDeFichero` ya sabía
+ *  detectarlo —lo marcaba `incomparable` con su frase— y `repartir` escribía la
+ *  huella igual, con el total ya encogido, que es LA BASE DE LA COMPARACIÓN
+ *  SIGUIENTE: la pérdida se consolidaba y la corrida de después no tenía contra
+ *  qué notarla. El suelo tampoco la caza, porque el mutante sale del numerador y
+ *  del denominador a la vez.
+ *
+ *  Solo mira la dirección que esconde. Un denominador que CRECE es el
+ *  instrumento midiendo más y se deja pasar: bloquearlo habría bloqueado el
+ *  arreglo de #597, que devolvió 26 muertes al denominador. */
+export function medidaPerdida(
+  deltas: readonly DeltaDeFichero[],
+): { fichero: string; antes: number; ahora: number }[] {
+  return deltas
+    .filter((d) => d.incomparable === "denominador encogido")
+    .map((d) => ({ fichero: d.fichero, antes: d.totalBase ?? 0, ahora: d.total }))
+    .sort((a, b) => a.fichero.localeCompare(b.fichero));
 }
 
 // ── el criterio de ADOPCIÓN: cambiar de instrumento sin perder medida ────────
@@ -1237,7 +1336,39 @@ export interface VeredictoCorrida {
   porque: string;
 }
 
-export function veredictoDeCorrida(c: Corrida): VeredictoCorrida {
+/** Cuántos mutantes MIDIÓ cada módulo: el denominador real, vivos + detectados.
+ *
+ *  Sale de los INFORMES en disco y no del manifiesto, y esa es toda la
+ *  diferencia: el manifiesto es lo que la corrida DECLARA y esto es lo que
+ *  dejó. Quien llama ya los tiene abiertos (`repartir` y `comparar` recorren
+ *  cada informe; `manifiesto` y `fusionar` los sellan uno a uno), así que no se
+ *  paga una lectura de más por preguntarlo.
+ *
+ *  Un módulo AUSENTE de este mapa no es un cero: es «no se abrió su informe», y
+ *  por eso el veredicto lo dice aparte. Colapsarlo con «midió cero» convertiría
+ *  una no-lectura en un hallazgo, que es el fallo que esta casa lleva tres
+ *  tandas sacando de todas partes. */
+export type MedidaPorModulo = Readonly<Record<string, number>>;
+
+/** ¿ESTE módulo, en ESTA corrida, aprobó?
+ *
+ *  Dos preguntas y las dos tienen que salir bien: que Stryker terminara con 0 —o
+ *  sea sin caerse y sin bajar del `break`— y que haya MEDIDO algo. La segunda no
+ *  estaba, y es #596: con cero mutantes Stryker calcula `NaN` de score,
+ *  `NaN >= break` es `false`, no hay umbral que disparar y el proceso sale con
+ *  0. «No midió nada» era indistinguible de «aprobó», y el runner ya sabía el
+ *  dato: la tabla imprime «SIN INFORME — la corrida no dejó medida» desde que se
+ *  partió la corrida por módulos, o sea que el caso se ha visto. Lo que no había
+ *  era un rojo detrás.
+ *
+ *  Vive aquí —puro y con batería— y no dentro de `mutate.ts`, porque `mutate.ts`
+ *  no lo importa ningún test: una decisión escrita ahí se puede deshacer sin que
+ *  nada se ponga rojo, que es de lo que va esta tanda. */
+export function moduloAprobado(salidaDeStryker: number | null, mutantesMedidos: number): boolean {
+  return salidaDeStryker === 0 && mutantesMedidos > 0;
+}
+
+export function veredictoDeCorrida(c: Corrida, medida: MedidaPorModulo): VeredictoCorrida {
   const conInforme = modulosConInforme(c);
   const faltan = c.modulos_pedidos.filter((id) => !conInforme.includes(id));
   if (faltan.length > 0) {
@@ -1245,6 +1376,31 @@ export function veredictoDeCorrida(c: Corrida): VeredictoCorrida {
       completa: false,
       mueveTag: false,
       porque: `la corrida pidió ${c.modulos_pedidos.length} módulos y ${faltan.length} no dejaron informe (${faltan.join(", ")})`,
+    };
+  }
+  // #596: DEJAR INFORME NO ES MEDIR. Un módulo cuyo informe trae cero mutantes
+  // con veredicto sale con score `NaN`, `NaN >= break` es falso, no hay suelo
+  // que disparar y Stryker termina con 0 — así que hasta hoy ese módulo contaba
+  // como medido, la corrida salía COMPLETA y el tag se adelantaba declarando
+  // medido lo que nadie midió. `mutate.ts` ya no lo deja pasar en el runner;
+  // esto es la misma puerta en el reparto, que es donde se escribe la huella.
+  const vacios = conInforme.filter((id) => medida[id] === 0).sort();
+  const sinAbrir = conInforme.filter((id) => medida[id] === undefined).sort();
+  if (vacios.length > 0 || sinAbrir.length > 0) {
+    const partes = [
+      vacios.length > 0
+        ? `${vacios.length} dejaron informe SIN UN SOLO MUTANTE MEDIDO (${vacios.join(", ")})`
+        : undefined,
+      sinAbrir.length > 0
+        ? `de ${sinAbrir.length} no se pudo leer cuánto midieron (${sinAbrir.join(", ")})`
+        : undefined,
+    ].filter((x): x is string => x !== undefined);
+    return {
+      completa: false,
+      mueveTag: false,
+      porque:
+        `${partes.join("; y ")}: un informe vacío no es una medida — con cero mutantes el score es NaN, ` +
+        `ningún suelo se dispara y la corrida saldría COMPLETA sin haber medido nada`,
     };
   }
   if (c.origen === "explicito") {
@@ -1385,8 +1541,13 @@ export function filaDeHuella(args: {
   blob: string;
   duenos: DuenosDeLaMedida;
   segundos: number | undefined;
+  /** Los dos censos de #604, ya contados por quien abrió el informe. Se pasan
+   *  aparte del delta porque el delta habla de SUPERVIVIENTES y estos dos son
+   *  poblaciones que la huella no sabía expresar. */
+  sinEjercer: number;
+  timeouts: number;
 }): MedidaDeFichero {
-  const { corrida, delta, blob, duenos, segundos } = args;
+  const { corrida, delta, blob, duenos, segundos, sinEjercer, timeouts } = args;
   return {
     sha: corrida.sha,
     run: corrida.run_id,
@@ -1399,6 +1560,8 @@ export function filaDeHuella(args: {
     base: delta.base,
     duenos,
     ...(segundos === undefined ? {} : { segundos }),
+    sin_ejercer: sinEjercer,
+    timeouts,
   };
 }
 

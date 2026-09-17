@@ -43,6 +43,7 @@
     "precoverage": "tsx scripts/dump-config.ts && mkdir -p coverage",
     "coverage": "node --enable-source-maps --import tsx --test --test-concurrency=${NEFAN_TEST_CONCURRENCY:-4} --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info test/*.test.ts",
     "crap": "tsx scripts/crap-score.ts",
+    "ejercicio": "tsx scripts/ejercicio-de-bateria.ts",
     "deuda": "tsx scripts/deuda.ts",
     "mutate": "tsx scripts/mutate.ts",
     "mutacion": "tsx scripts/mutacion.ts",

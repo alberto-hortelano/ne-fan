@@ -142,22 +142,42 @@ function soloInforme(marca = "x", estado = "Survived", cobertura = "perTest", ru
  *  directorio de base. `fichero` se puede cambiar para sembrar una base que
  *  EXISTE y no contiene el fichero que se compara (probe de H-3). */
 function informeDe(marca = "x", estado = "Survived", cobertura = "perTest", fichero = E.fichero, runner = "tap") {
+  const mutante = (id, status, columna, replacement) => ({
+    id: String(id),
+    mutatorName: "BooleanLiteral",
+    replacement,
+    status,
+    location: { start: { line: 1, column: columna }, end: { line: 1, column: columna + 1 } },
+  });
+  // EL DENOMINADOR TIENE QUE SER EL DE LA HUELLA, y no es cosmética (#596).
+  // Desde que `repartir` FALLA FUERTE ante un fichero que, con el mismo blob,
+  // trae menos mutantes con veredicto que su última medida, un informe de
+  // ensayo con un solo mutante contra una huella de nueve es exactamente ese
+  // caso: el guion moría en el primer invariante con el guardia nuevo, que es
+  // el guardia haciendo su trabajo sobre un informe sintético. Se rellena con
+  // `Killed` en columnas distintas —la huella de un mutante lleva línea y
+  // columna, así que dos en la misma serían el mismo— hasta el total medido.
+  const total = relleno(fichero);
   return JSON.stringify({
     files: {
       [fichero]: {
         mutants: [
-          {
-            id: "1",
-            mutatorName: "BooleanLiteral",
-            replacement: marca,
-            status: estado,
-            location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
-          },
+          mutante(1, estado, 1, marca),
+          ...Array.from({ length: Math.max(0, total - 1) }, (_, i) => mutante(i + 2, "Killed", i + 3, `k${i}`)),
         ],
       },
     },
     config: { coverageAnalysis: cobertura, testRunner: runner },
   });
+}
+
+/** Cuántos mutantes MEDIDOS tiene ese fichero en la huella commiteada, que es
+ *  la base contra la que compara `repartir`. Un fichero que la huella no
+ *  conoce se queda con uno: ahí el delta sale «sin base» y no hay denominador
+ *  con el que chocar. */
+function relleno(fichero) {
+  const fila = JSON.parse(readFileSync(HUELLA, "utf8")).ficheros[fichero];
+  return typeof fila?.total === "number" && fila.total > 0 ? fila.total : 1;
 }
 
 /** La foto de lo que un verbo EN SECO no puede tocar: la huella commiteada, el
@@ -339,6 +359,69 @@ const INVARIANTES = [
   // escribe la huella por diseño. Ésa es exactamente la costura por la que QA
   // coló un fichero, así que hay un probe por costura.
   {
+    nombre: "repartir · un DENOMINADOR que encoge sin que el código cambie PARA el reparto (#596)",
+    // Lo que esto sujeta, y por qué no lo puede sujetar la batería: la decisión
+    // (`medidaPerdida`) sí tiene tests, pero que `repartir` la CONSULTE ANTES
+    // DE ESCRIBIR la huella no lo mira nadie — y el orden es el invariante
+    // entero. Escribir primero consolidaría el total encogido como base de la
+    // comparación siguiente, que es lo que hace la pérdida invisible para
+    // siempre: las muertes que se van salen del numerador Y del denominador,
+    // así que `(K−k)/(T−k)` no baja y el `break` del módulo no se entera. Sobre
+    // la huella commiteada: 55 de 61 módulos toleran perder ≥ 1 muerte y los 22
+    // con cero supervivientes las toleran TODAS.
+    //
+    // El escenario es el del guion, con UN mutante menos de los que la huella
+    // midió para ese mismo blob. La otra mitad —que la huella NO se escriba— va
+    // en el observable, porque un fail-loud que lanza después de escribir no
+    // arregla nada.
+    mira: () => {
+      siembraInforme();
+      const informe = JSON.parse(readFileSync(join(INFORMES, `${E.id}.json`), "utf8"));
+      informe.files[E.fichero].mutants.pop();
+      writeFileSync(join(INFORMES, `${E.id}.json`), JSON.stringify(informe));
+      manifiesta({ run: "999920" });
+      const antes = createHash("sha256").update(readFileSync(HUELLA)).digest("hex");
+      const r = mutacion(["repartir"]);
+      const despues = createHash("sha256").update(readFileSync(HUELLA)).digest("hex");
+      return `paro:${!r.ok && /MENOS mutantes con veredicto/.test(r.salida)} huella:${antes === despues ? "intacta" : "ESCRITA"}`;
+    },
+    bien: (s) => s === "paro:true huella:intacta",
+    porque:
+      "un fichero con el mismo blob y menos mutantes medidos es el instrumento midiendo MENOS, y ningún `break` " +
+      "puede cazarlo porque la muerte perdida sale de los dos lados del cociente (#596, y el caso real fueron " +
+      "las 26 de #597 con el módulo en 51/58 = 87,9 % contra un suelo de 87)",
+    rompe: [
+      MUT,
+      `  if (perdida.length > 0 && !argv.includes("--instrumento-nuevo")) {`,
+      `  if (false && perdida.length > 0 && !argv.includes("--instrumento-nuevo")) {`,
+    ],
+  },
+  {
+    nombre: "repartir · y el guardia se puede LEVANTAR a mano, con bandera explícita",
+    // La otra dirección, y hace falta: un guardia sin salida bloquearía para
+    // siempre un cambio de instrumento legítimo, y entonces la salida sería
+    // quitarlo. Con la bandera, aceptar la pérdida es un acto explícito que
+    // queda escrito en la línea de órdenes de quien reparte.
+    mira: () => {
+      siembraInforme();
+      const informe = JSON.parse(readFileSync(join(INFORMES, `${E.id}.json`), "utf8"));
+      informe.files[E.fichero].mutants.pop();
+      writeFileSync(join(INFORMES, `${E.id}.json`), JSON.stringify(informe));
+      manifiesta({ run: "999921" });
+      const r = mutacion(["repartir", "--instrumento-nuevo"]);
+      return `pasa:${r.ok} huella:${/Huella actualizada/.test(r.salida)}`;
+    },
+    bien: (s) => s === "pasa:true huella:true",
+    porque:
+      "sin salida declarada, el primer cambio de instrumento legítimo obligaría a borrar el guardia entero — " +
+      "y el guardia borrado no se vuelve a poner",
+    rompe: [
+      MUT,
+      `  if (perdida.length > 0 && !argv.includes("--instrumento-nuevo")) {`,
+      `  if (perdida.length > 0) {`,
+    ],
+  },
+  {
     nombre: "comparar · el verbo EN SECO no escribe: ni la huella, ni el tag, ni el árbol",
     mira: () => {
       siembraInforme();
@@ -355,8 +438,8 @@ const INVARIANTES = [
       "—«si un solo score se mueve fichero a fichero, no se adopta»— sería inaplicable por construcción",
     rompe: [
       MUT,
-      `  const veredicto = veredictoDeCorrida(ctx.corrida);`,
-      `  escribeHuella(HUELLA_VACIA);\n  const veredicto = veredictoDeCorrida(ctx.corrida);`,
+      `  const veredicto = veredictoDeCorrida(ctx.corrida, ctx.medida);`,
+      `  escribeHuella(HUELLA_VACIA);\n  const veredicto = veredictoDeCorrida(ctx.corrida, ctx.medida);`,
     ],
   },
   {
