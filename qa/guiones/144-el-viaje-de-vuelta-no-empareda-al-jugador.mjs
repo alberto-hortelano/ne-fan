@@ -23,8 +23,11 @@
  *      `collidesAt(playerPos → playerPos)`: un movimiento de un punto a SÍ
  *      MISMO. La regla de celdas exime las que ya se solapaban, así que ese
  *      aserto vale **false también en el centro macizo de un edificio**
- *      (medido: `blocksMove(p, p) = false` a la vez que los cuatro pasos de
- *      0,5 m están bloqueados). Ese aserto no puede ponerse rojo por #616.
+ *      (medido con la consulta de MOVIMIENTO de entonces, que para un paso de
+ *      un punto a sí mismo daba `false` a la vez que los cuatro pasos de 0,5 m
+ *      estaban bloqueados). Ese aserto no puede ponerse rojo por #616.
+ *      (Esa consulta murió con la PR G1 de esta misma tanda; su nombre no se
+ *      escribe aquí porque `campos-retirados-no-vuelven` lo canda en `qa/`.)
  *
  *  Este guion arregla las dos: **pone el ancla sobre un edificio MACIZO** por
  *  el State API —el mismo `map_upsert_place` que usa el motor, que es lo que
