@@ -46,9 +46,13 @@
  *    QA-6 (H1): un número escrito para justificar una decisión que nadie vuelve
  *    a medir es la tercera vez que este programa lo caza.
  *
- *    Esas seis parejas son ADEMÁS la frontera que ningún candado ve: si el
- *    selector renombra `#ts-columns`, la distribución móvil deja de aplicarse y
- *    todo sigue verde. Tiene issue (#555), y no se tapa aquí con prosa.
+ *    Esas seis parejas eran ADEMÁS la frontera que ningún candado veía: si el
+ *    selector renombraba `#ts-columns`, la distribución móvil dejaba de
+ *    aplicarse y todo seguía verde. Desde el 2026-09-17 (#555) las mira
+ *    `nefan-html/test/los-ids-del-titulo-se-leen-donde-se-escriben.test.ts`,
+ *    que compara los ids que SALEN de `CSS_ESTRECHO_DEL_TITULO` con los que
+ *    SALEN de `esqueletoDelSelector()`. Por eso el CSS es una constante
+ *    exportada y no un literal dentro de `montarChasis`.
  *
  *  QUÉ NO DECIDE: nada de juego, y nada de qué se pinta. El chasis no sabe qué
  *  pantalla hay dentro de la columna —lo DERIVA de lo pintado, que es por lo
@@ -57,6 +61,43 @@
  */
 import { errors } from "../error-log.js";
 import { marcadorHtml } from "./atomos.js";
+
+/** LA DISTRIBUCIÓN MÓVIL del título: los overrides responsive que el chasis
+ *  instala una vez por sesión en `document.head`.
+ *
+ *  Sale del cuerpo de `montarChasis` sin tocar un carácter, y sale para que se
+ *  pueda LEER fuera del navegador: SEIS de sus ocho bloques apuntan a ids que
+ *  pinta otra hoja (el selector de mundo), y esa costura la comprueba
+ *  `nefan-html/test/los-ids-del-titulo-se-leen-donde-se-escriben.test.ts`
+ *  comparando los ids que SALEN de aquí con los que SALEN de
+ *  `esqueletoDelSelector()` — la salida y no el fuente, porque el chasis
+ *  también escribe ids con `el.id = …` y una regex no los vería.
+ *
+ *  Los estilos van inline (no hay hoja del título), así que los overrides
+ *  responsive necesitan `!important`. Solo distribución: en pantallas estrechas
+ *  la rejilla colapsa a una columna, las filas de opciones envuelven y los
+ *  paddings de escritorio se reducen. */
+export const CSS_ESTRECHO_DEL_TITULO = `
+        @media (max-width: 900px) {
+          /* Solo laterales/inferior: el padding-top lo reserva la expresión
+             de base.css, derivada de --dev-status-alto (#250). */
+          #title-screen {
+            padding-left: 12px !important;
+            padding-right: 12px !important;
+            padding-bottom: 16px !important;
+          }
+          #title-screen #ts-columns { grid-template-columns: 1fr !important; gap: 14px !important; }
+          #title-screen #ts-worlds { max-height: 38vh !important; }
+          #title-screen #ts-rendermode, #title-screen #ts-charmode {
+            flex-wrap: wrap !important;
+          }
+          #title-screen #ts-rendermode button,
+          #title-screen #ts-charmode button { min-width: 46% !important; }
+          #title-screen #ts-actions { flex-wrap: wrap !important; gap: 8px !important; }
+          #title-screen #ts-actions #ts-create-world { margin-left: 0 !important; }
+          #title-screen h1 { font-size: 22px !important; }
+        }
+      `;
 
 /** El único colaborador del chasis. */
 export interface DepsDeChasis {
@@ -92,35 +133,12 @@ export interface Chasis {
 /** Monta el overlay del título y lo cuelga del `<body>`. Una sola vez por
  *  partida: lo llama el constructor de `TitleScreen`. */
 export function montarChasis(deps: DepsDeChasis): Chasis {
-  // Distribución MÓVIL del selector de mundo: los estilos van inline (no
-  // hay hoja del título), así que los overrides responsive viven en este
-  // <style> con !important. Solo distribución: en pantallas estrechas la
-  // rejilla colapsa a una columna, las filas de opciones envuelven y los
-  // paddings de escritorio se reducen. Idempotente por id.
+  // La distribución móvil (qué dice, arriba, con la constante): se instala una
+  // vez para toda la sesión, idempotente por id.
   if (!document.getElementById("title-screen-responsive")) {
     const css = document.createElement("style");
     css.id = "title-screen-responsive";
-    css.textContent = `
-        @media (max-width: 900px) {
-          /* Solo laterales/inferior: el padding-top lo reserva la expresión
-             de base.css, derivada de --dev-status-alto (#250). */
-          #title-screen {
-            padding-left: 12px !important;
-            padding-right: 12px !important;
-            padding-bottom: 16px !important;
-          }
-          #title-screen #ts-columns { grid-template-columns: 1fr !important; gap: 14px !important; }
-          #title-screen #ts-worlds { max-height: 38vh !important; }
-          #title-screen #ts-rendermode, #title-screen #ts-charmode {
-            flex-wrap: wrap !important;
-          }
-          #title-screen #ts-rendermode button,
-          #title-screen #ts-charmode button { min-width: 46% !important; }
-          #title-screen #ts-actions { flex-wrap: wrap !important; gap: 8px !important; }
-          #title-screen #ts-actions #ts-create-world { margin-left: 0 !important; }
-          #title-screen h1 { font-size: 22px !important; }
-        }
-      `;
+    css.textContent = CSS_ESTRECHO_DEL_TITULO;
     document.head.appendChild(css);
   }
   // El padding superior sigue al panel de dev también al rotar/redimensionar

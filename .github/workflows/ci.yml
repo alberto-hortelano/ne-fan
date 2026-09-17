@@ -102,7 +102,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # 24 y no 22 desde el banco (#636): `npm test` ejecuta fuente de
+          # `nefan-core` por el alias, y el core declara `engines: >=24`. Correr
+          # el banco bajo otro mayor que el que usa todo el mundo en local es
+          # exactamente la divergencia que este job existe para no tener.
+          node-version: 24
           cache: npm
           cache-dependency-path: nefan-html/package-lock.json
       # nefan-html importa tipos de nefan-core por ruta relativa — hace falta
@@ -111,6 +115,15 @@ jobs:
       - run: npm ci --prefix ../nefan-core
       - run: npx tsc --noEmit
       - run: npm run lint
+      # EL BANCO DEL CLIENTE (#636). Son DOS pasos y hacen falta los dos: el
+      # `npx tsc --noEmit` de arriba comprueba `src/` SIN los tipos de Node
+      # (`types: []`), que es la mitad de tipos del invariante «el cliente no
+      # alcanza node»; éste comprueba `test/` CON ellos. El de abajo no
+      # sustituye al de arriba —su `include` trae `src/**` con `types:["node"]`,
+      # así que un `process.env` colado en `src/` le pasaría—, y el de arriba no
+      # ve `test/` en absoluto.
+      - run: npm run typecheck:tests
+      - run: npm test
       - run: npm run build
 
   ai-server:

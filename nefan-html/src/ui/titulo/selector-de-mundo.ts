@@ -93,34 +93,21 @@ export interface DepsDeSelectorDeMundo {
  *  `MODO_AL_EMPEZAR` y `eleccionDeEstilo`. */
 export type LoElegidoEnElSelector = Extract<DestinoDelTitulo, { a: "selector" }>;
 
-/** Paso de selección de mundo: una tarjeta por juego (cover + descripción)
- *  y selector de estilo con el del juego preseleccionado. */
-export async function pintarSelectorDeMundo(
-  deps: DepsDeSelectorDeMundo,
-  loElegido: LoElegidoEnElSelector = { a: "selector" },
-): Promise<void> {
-  // listGames must succeed — there's no scripted fallback any more. If it
-  // throws, the title-screen surfaces the error and stops here.
-  const { games, styles } = await deps.narrative.listGames();
-  if (games.length === 0) {
-    throw new Error("no games available in bridge — check nefan-core/data/games/");
-  }
-  const styleById = new Map(styles.map((st) => [st.style_id, st]));
-  let selectedGame = games.find((g) => g.game_id === loElegido.preselect) ?? games[0];
-
-  // Pantalla ancha a dos columnas (mundos | opciones): sin scroll de página
-  // — la lista de mundos scrollea DENTRO de su columna si hace falta. Las
-  // demás pantallas restauran el ancho de una columna.
-  deps.content.style.maxWidth = "1100px";
-  // EL TOPE DE LA LISTA DE MUNDOS sale de `base.css` y no de un número aquí
-  // (#553): era `calc(100vh - 220px)`, y esos 220 px se quedaban 65 cortos —a
-  // 1440×900 la columna pedía 725 de los 708 que hay y «Continuar →» quedaba
-  // cortado 17 px de sus 39—. La variable `--ts-fuera-de-la-lista` es la suma
-  // de lo que NO es la lista, derivada del mismo sitio donde vive el padding
-  // del overlay, así que retocar la barra de dev no vuelve a descuadrarla.
+/** EL ESQUELETO del selector: el HTML que esta pantalla escribe en el hueco,
+ *  con sus huecos vacíos y antes de que nadie lo rellene.
+ *
+ *  Sale del cuerpo de `pintarSelectorDeMundo` sin tocar un carácter, y sale
+ *  para que se pueda LEER fuera del navegador: es una función pura que no toca
+ *  el DOM ni `deps` y solo interpola constantes de módulo. Lo que pasa a poder
+ *  comprobarse es la costura de #555 —que los ids que el chasis estiliza sean
+ *  los que esta pantalla pinta—, y se comprueba sobre lo que SALE, no sobre el
+ *  fuente: `nefan-html/test/los-ids-del-titulo-se-leen-donde-se-escriben.test.ts`.
+ *
+ *  No lo llama nadie más: el único consumidor es el `innerHTML` de abajo. */
+export function esqueletoDelSelector(): string {
   // Botón de opción compacto (misma estética, menos padding vertical).
   const OPT = `${BTN_SECONDARY_CSS};flex:1;text-align:left;padding:7px 10px`;
-  deps.content.innerHTML = `
+  return `
     <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-bottom:10px">
       <h1 style="font-size:26px;color:#da6">Elige un mundo</h1>
       <p style="color:#888;font-size:12px">La historia la improvisa el motor narrativo dentro del mundo que elijas.</p>
@@ -169,6 +156,34 @@ export async function pintarSelectorDeMundo(
       <button id="ts-upload-style" style="${BTN_SECONDARY_CSS}">🎨 Subir estilo</button>
     </div>
   `;
+}
+
+/** Paso de selección de mundo: una tarjeta por juego (cover + descripción)
+ *  y selector de estilo con el del juego preseleccionado. */
+export async function pintarSelectorDeMundo(
+  deps: DepsDeSelectorDeMundo,
+  loElegido: LoElegidoEnElSelector = { a: "selector" },
+): Promise<void> {
+  // listGames must succeed — there's no scripted fallback any more. If it
+  // throws, the title-screen surfaces the error and stops here.
+  const { games, styles } = await deps.narrative.listGames();
+  if (games.length === 0) {
+    throw new Error("no games available in bridge — check nefan-core/data/games/");
+  }
+  const styleById = new Map(styles.map((st) => [st.style_id, st]));
+  let selectedGame = games.find((g) => g.game_id === loElegido.preselect) ?? games[0];
+
+  // Pantalla ancha a dos columnas (mundos | opciones): sin scroll de página
+  // — la lista de mundos scrollea DENTRO de su columna si hace falta. Las
+  // demás pantallas restauran el ancho de una columna.
+  deps.content.style.maxWidth = "1100px";
+  // EL TOPE DE LA LISTA DE MUNDOS sale de `base.css` y no de un número aquí
+  // (#553): era `calc(100vh - 220px)`, y esos 220 px se quedaban 65 cortos —a
+  // 1440×900 la columna pedía 725 de los 708 que hay y «Continuar →» quedaba
+  // cortado 17 px de sus 39—. La variable `--ts-fuera-de-la-lista` es la suma
+  // de lo que NO es la lista, derivada del mismo sitio donde vive el padding
+  // del overlay, así que retocar la barra de dev no vuelve a descuadrarla.
+  deps.content.innerHTML = esqueletoDelSelector();
   const worldsEl = deps.content.querySelector("#ts-worlds") as HTMLElement;
   const styleSel = deps.content.querySelector("#ts-style") as HTMLSelectElement;
   const styleDesc = deps.content.querySelector("#ts-style-desc") as HTMLElement;
