@@ -69,8 +69,9 @@ regla del 39 se estrecha a `#ts-start`. Las otras dos salidas que yo ofrecía so
 el gate de gasto por un recorrido que no toca al motor.
 
 Censo offline del 39 (cero créditos): **143 guiones, 35 exentos**; solo dos exentos pulsan alguno de
-los dos botones —el **20**, con su motor, y el **116**—, y **cinco guiones NO exentos** pulsan solo
-`#ts-continue` sin motor propio (47, 94, 96, 107, 116).
+los dos botones —el **20**, con su motor, y el **116**—, y **cuatro guiones NO exentos** pulsan
+solo `#ts-continue` sin motor propio (47, 94, 96, 107), más el propio 116, **que sí es exento**
+(corregido por el arquitecto).
 
 **Negativo obligatorio**: un guion de pega exento que pulse `#ts-start` sin `NEFAN_AI_SERVER` sale
 rojo; otro que pulse solo `#ts-continue`, verde.
@@ -88,18 +89,28 @@ mutación — así que «restaurar la posición entre muestras» sería un **no-
 controla es el **ORIGEN** de su consulta: `collidesAt` es una consulta de MOVIMIENTO y contesta
 siempre «no» por donde uno ya está (#538), así que el resultado depende de dónde quedó el jugador.
 
-**El censo del issue falla en las dos direcciones.** Medido: **27 ficheros consultan
-`probeCollide`, 13 no aparcan al jugador, y de esos 6 BARREN: 91, 118, 128, 14, 32, 73.** De los
-que el issue nombraba, **el 134 y el 144 sí aparcan** y **el 81 no barre**. La tanda F tuvo tres
-guiones compartiendo un punto ciego; aquí son **seis**, y cinco no tienen issue.
+**El censo del issue falla en las dos direcciones, y el mío también.** Medido por la crítica y
+**recontado por el arquitecto**: 27 ficheros consultan `probeCollide`, 13 no aparcan al jugador y
+**SIETE barren** — el **119** es el séptimo, que nadie había contado. De los que el issue nombraba,
+**el 81 no barre** y **el 144 tampoco aparca**: su defensa es otra, degrada la sonda a `ctx.log`
+(144:273-276), porque su único `setPlayerPos` vive dentro de la rama de sabotaje.
 
-El **mirador del 134** (aparcar al jugador donde la consulta conteste como una de punto) es la
-respuesta **general**, no un parche local: su cabecera (134:43-52) ya lo razona. La alternativa es
-una consulta de PUNTO de verdad, que **hoy no existe en el hook** (`:125` y `:257` son el mismo
-`collidesAt`) pero **no obliga a tocar `nefan-core/src/**`**: sus dos mitades ya están exportadas
-—`penetracionEnSolido` (`salida-del-solido.ts:183`) y `penetracionEnCaja`
-(`obstaculos-del-jugador.ts:135`)—, y las dos son consultas de punto sin origen. **Cuál de las dos
-lo elige el arquitecto y lo escribe.**
+**Y los siete no son una familia homogénea.** El **14** y el **73** preguntan a propósito «¿hay un
+rumbo con 26 m despejados **para andar el jugador**?» partiendo de `state().pos`: la semántica de
+movimiento desde el jugador **es** su pregunta, así que migrarlos destruiría lo que miden. La
+familia real del defecto son **CINCO: 91, 118, 128, 32 y 119**, y cuatro de los cinco no tienen
+issue. La tanda F tuvo tres guiones compartiendo un punto ciego; aquí son cinco.
+
+**El mirador del 134 queda descartado como respuesta general, y por medida**: lo pone una sola vez
+(134:147), y las sondas del 2.º y 3.º edificio (`:164-165`) y la del control (`:213`) corren **desde
+donde dejó el empujón anterior** — el ejemplar está a medias y él mismo mide desde un origen a la
+deriva. Y en el **118 no cabe por construcción**: su `fotoDelSuelo` centra la rejilla en el jugador
+y su aserto exige foto y comprobación desde el mismo sitio.
+
+La respuesta es una **consulta de PUNTO de verdad**, que hoy no existe en el hook (`:125` y `:257`
+son el mismo `collidesAt`). Sus dos mitades ya están exportadas en core —`penetracionEnSolido`
+(`salida-del-solido.ts:183`) y `penetracionEnCaja` (`obstaculos-del-jugador.ts:135`)—, las dos sin
+origen.
 
 ### #645 — la totalidad de `candados-headless` es prosa
 
@@ -124,14 +135,23 @@ job, 21 fuera.** Los 21, clasificados:
 **De «los que nadie añadió» quedan cero**: los 9 tienen motivo real, pero **solo 4 lo tienen
 escrito**. Ahí está el valor del issue, y por eso el candado nace pudiendo cumplir lo que promete.
 
-**Y la prosa del yml no está solo incompleta: ya es FALSA.** Dice «los **tres** que levantan
-asset-store o sprite-forge» y son **cuatro** — `qa/sprites-sin-servicio.mjs:300` arranca
-`bin/sprite-forge.mjs serve` y no figura en ninguna excepción. Nadie lo vio: el issue se demuestra a
-sí mismo.
+**Y la prosa no está solo incompleta: ya es FALSA, y en tres sitios.** El yml dice «los **tres** que
+levantan asset-store o sprite-forge» y son **cuatro** — `qa/sprites-sin-servicio.mjs:300` arranca
+`bin/sprite-forge.mjs serve` y no figura en ninguna excepción. Y `qa/README.md` tiene **dos** tablas
+y **las dos mienten** (el arquitecto): «Dentro» enumera **13 filas para 18 pasos**, «Fuera» **20 de
+21** (le falta `fixtures-las-tres-se-caminan`), y el texto habla de «los 116 guiones» cuando son
+**143**. Nadie lo vio: el issue se demuestra a sí mismo tres veces.
+
+La buena noticia: **los nueve motivos de exención ya están escritos** en `qa/README.md`. Se mueven
+al candado, no se inventan.
 
 El molde existe dos veces en la casa: `banco-medido.json` y `mutation-targets.json`. Lo que falta es
-la totalidad, con exención escrita y con motivo. **Peaje conocido**: dos guiones salen `⊘ SIN MEDIR`
-en un árbol sin el `.venv` de Python, y el candado no debe confundir eso con un rojo.
+la totalidad, con exención escrita y con motivo. **El peaje que yo anuncié no se reproduce** (lo
+midió el arquitecto): ningún guion declara `sinMedir` por Python — los dos que salen 2 sin el
+`.venv` son **ejecutables** (`el-ledger-…` y `el-npc-cruza-…`). Como el candado es **estático** y no
+ejecuta nada, no puede confundir un `⊘` con un rojo. El riesgo real es futuro y se escribe: un paso
+del job que salga 2 pone el job rojo, y la respuesta es **instalar la dependencia**, nunca bajar
+nada.
 
 ### #639 — el guion 141 no puede correr en un clon limpio
 
@@ -149,6 +169,11 @@ existe pero está **VACÍO**, el `for` de `141:14` no entra y el guion sale **VE
 asertos** — `run.mjs` no comprueba en ningún sitio que un guion haya afirmado algo. El arreglo tiene
 que cubrir *ausente* **y** *vacío*, o cambia un `ENOENT` honesto por un verde mudo. (Hoy hay **8**
 grabaciones en el checkout principal, no cinco.)
+
+**Y el candado general sale gratis, medido por el arquitecto**: de los 143 guiones, **142 afirman
+siempre, 1 puede no afirmar (el 141) y 0 no afirman nunca**. Exigir `afirmaciones > 0` para el verde
+nace verde y no pone en rojo a nadie más, así que cuesta lo mismo hacerlo general que hacerlo en el
+141.
 
 ## Lo que NO entra, y por qué (decidido con la crítica)
 
@@ -179,8 +204,12 @@ cerrarlo sin inflar la tanda, que lo diga; si no, sale como issue con su medida.
 
 - **Cero créditos.** Todo con `html-fixtures`, `e2e-sin-creditos` o el motor falso. El #633 es
   literalmente el candado del gasto: no se arregla gastando.
-- **No se toca `nefan-core/src/**`** mientras la corrida esté en vuelo, salvo que la crítica
-  demuestre que hace falta y diga qué módulo se sacrifica.
+- ~~**No se toca `nefan-core/src/**`** mientras la corrida esté en vuelo.~~ **CADUCADA a mitad de
+  la planificación**: la corrida `35217880491` terminó, se repartió y está fusionada en `main`
+  (`ad63e29a`). `salida-del-solido` recibió su suelo —81, **17 vivos de 90**, y 7 de ellos en
+  `sitioParaAparecer`, lo que abrió **#648**— y **#643 queda desbloqueado**. La tanda H no lo
+  aprovecha (su diseño no lo necesita), pero la razón por la que #643 quedó fuera ya no existe, y
+  eso se dice aquí en vez de dejarlo escrito como si siguiera valiendo.
 - **No se baja ningún umbral**, ni se sube uno para acomodar lo que acaba de crecer.
 - **No se matan servidores ajenos**: hay otros agentes en la máquina. Arrancar solo con
   `NEFAN_PORT_OFFSET=<n> ./start.sh --preset <slug>` desde el worktree propio, parar solo con
