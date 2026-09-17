@@ -70,6 +70,7 @@ import {
   ficherosMutados,
   leerPlan,
   moduloPorId,
+  resumenDeMutantes,
   rutaInforme,
   RUTA_HUELLA,
   type PlanMutacion,
@@ -100,6 +101,7 @@ import {
   idsDeLotes,
   instrumentoLegible,
   matrizDeLotes,
+  medidaPerdida,
   permisoLocal,
   prDelAsunto,
   medidosDeFichero,
@@ -116,6 +118,7 @@ import {
   type DeltaDeFichero,
   type DuenosDeLaMedida,
   type JobDeCI,
+  type MedidaPorModulo,
   type OrigenCorrida,
   type PlanDeCorrida,
   type RangoDeCommits,
@@ -389,6 +392,30 @@ function informesDelDirectorio(dir: string): InformeSellado[] {
     .map((f) => ({ modulo: f.slice(0, -".json".length), sha256: selloDeInforme(join(dir, f)) }));
 }
 
+/** Cuántos mutantes MIDIÓ cada informe de un directorio: el denominador de
+ *  verdad, leído del informe y no del manifiesto.
+ *
+ *  Va por el hecho y no por la declaración A PROPÓSITO (#596). Podría viajar en
+ *  `InformeSellado` —lo escribe `manifiesto`, que ya abre el directorio— y
+ *  entonces un artefacto anterior a este cambio se quedaría sin el dato y el
+ *  veredicto tendría que suponerle algo. Contándolo aquí, cualquier descarga
+ *  contesta: el sello ya garantiza que el fichero en disco ES el que midió la
+ *  corrida, así que leerlo no es fiarse de nadie. */
+function medidaDelDirectorio(dir: string): MedidaPorModulo {
+  const out: Record<string, number> = {};
+  for (const i of informesDelDirectorio(dir)) {
+    const crudo = JSON.parse(readFileSync(join(dir, `${i.modulo}.json`), "utf8")) as Partial<InformeCrudo>;
+    // Un `.json` de ese directorio que no traiga `files` no es un informe de
+    // Stryker, y midió cero mutantes — que es LITERALMENTE cierto y además el
+    // veredicto que hace falta: `veredictoDeCorrida` lo nombra como «dejó
+    // informe SIN UN SOLO MUTANTE MEDIDO» en vez de reventar con un TypeError
+    // crudo a medio manifiesto. Es lo que pasa si alguien afloja el filtro de
+    // `informesDelDirectorio` y `corrida.json` entra como si fuera un módulo.
+    out[i.modulo] = resumenDeMutantes(Object.values(crudo.files ?? {}).flatMap((f) => f.mutants)).total;
+  }
+  return out;
+}
+
 /** Los informes que hay en `reports/mutation/`, que es donde los deja `mutate`
  *  y donde los baja `traer`. */
 function informesEnDisco(): InformeSellado[] {
@@ -624,7 +651,7 @@ function traer(argv: readonly string[]): void {
 
   const corrida = leerCorrida();
   exigeDescargaLimpia(corrida);
-  const veredicto = veredictoDeCorrida(corrida);
+  const veredicto = veredictoDeCorrida(corrida, medidaDelDirectorio(DIR_INFORMES));
   const conInforme = modulosConInforme(corrida);
   console.log(
     `\nCorrida ${corrida.run_id} sobre ${corrida.sha.slice(0, 7)} (${corrida.origen}), ${corrida.fecha}\n` +
@@ -678,12 +705,19 @@ interface ContextoDeCorrida {
    *  lee un `incomparable` tiene que poder saber contra qué se comparó. */
   revBase: string;
   rango: RangoDeCommits;
+  /** Cuántos mutantes midió cada informe de ESTA descarga. Se lee una vez y
+   *  viaja con el contexto porque los dos verbos que lo usan —`repartir` y
+   *  `comparar`— tienen que juzgar sobre la misma cuenta: dos lecturas del
+   *  mismo directorio es el mismo fallo que los dos ternarios de
+   *  `estadoLegible`, con la diferencia de que aquí una de ellas escribe. */
+  medida: MedidaPorModulo;
 }
 
 function contextoDeLaCorrida(rev = "HEAD"): ContextoDeCorrida {
   const plan = leerPlan();
   const corrida = leerCorrida();
   exigeDescargaLimpia(corrida);
+  const medida = medidaDelDirectorio(DIR_INFORMES);
   const base = huellaEnRevision(rev);
   const revBase = `${rev}${rev === "HEAD" ? ` (${git(["rev-parse", "--short", "HEAD"])})` : ""}`;
   // EL ANCLA LA TRAE LA CORRIDA, no el tag (#381). `shaDelTag()` aquí leería un
@@ -703,7 +737,7 @@ function contextoDeLaCorrida(rev = "HEAD"): ContextoDeCorrida {
         `falta la historia (git fetch --unshallow).`,
     );
   }
-  return { plan, corrida, base, revBase, rango };
+  return { plan, corrida, base, revBase, rango, medida };
 }
 
 /** El delta de la corrida, fichero a fichero, con quién pudo traerlo y lo que
@@ -777,6 +811,12 @@ function repartosDeLaCorrida(ctx: ContextoDeCorrida): {
         blob: ahora[d.fichero].blob,
         duenos,
         segundos,
+        // Los dos censos de #604. Salen del MISMO recorrido de informes que las
+        // poblaciones que ya se recogían para `comparar`: la huella deja de ser
+        // el único sitio donde un `NoCoverage` es indistinguible de un
+        // `Survived` y un `Timeout` de un `Killed`.
+        sinEjercer: poblaciones[d.fichero].sinEjercer.length,
+        timeouts: poblaciones[d.fichero].timeouts.length,
       });
     }
     repartos.push({
@@ -800,11 +840,37 @@ function repartir(argv: readonly string[]): void {
 
   const { repartos, medidos } = repartosDeLaCorrida(ctx);
 
+  // EL FAIL-LOUD DE #596, Y VA ANTES DE ESCRIBIR. Un fichero cuyo fuente no
+  // cambió y que trae MENOS mutantes con veredicto es el instrumento midiendo
+  // menos: las muertes perdidas salen del numerador y del denominador a la vez,
+  // así que `(K−k)/(T−k)` no baja y el `break` del módulo no las caza — 55 de
+  // los 61 módulos toleran perder ≥ 1, y los 22 con cero supervivientes toleran
+  // perderlas TODAS. Escribir la huella aquí consolidaba la pérdida como base
+  // de la comparación siguiente, que es lo que la hacía invisible para siempre.
+  //
+  // Solo esta dirección. Un denominador que CRECE también es el instrumento,
+  // pero midiendo MÁS (es la dirección en la que se arregló #597, devolviendo
+  // 26 muertes al denominador): se dice en la tabla y no bloquea.
+  const perdida = medidaPerdida(repartos.flatMap((r) => r.ficheros));
+  if (perdida.length > 0 && !argv.includes("--instrumento-nuevo")) {
+    throw new Error(
+      `${perdida.length} fichero(s) traen MENOS mutantes con veredicto que la medida anterior SIN que su ` +
+        `fuente haya cambiado:\n` +
+        perdida.map((f) => `  · ${f.fichero}: ${f.antes} → ${f.ahora} (${f.antes - f.ahora} menos)`).join("\n") +
+        `\n\nEso no lo puede hacer una PR: es el instrumento midiendo menos, y las muertes que se pierden ` +
+        `salen del numerador Y del denominador, así que ningún \`break\` se entera (#596). Repartir ` +
+        `escribiría esos totales encogidos en la huella y la comparación siguiente ya no podría verlo.\n` +
+        `  Míralo primero EN SECO:   npm run mutacion -- comparar\n` +
+        `  Si el instrumento cambió A PROPÓSITO y la pérdida está aceptada:\n` +
+        `    npm run mutacion -- repartir --instrumento-nuevo`,
+    );
+  }
+
   escribeHuella(fusiona(base, medidos));
   console.log(`\nHuella actualizada: ${RUTA_HUELLA} — commítala con la tanda, el delta se ve en el diff.\n`);
 
   imprimeReparto(repartos, corrida);
-  if (!veredictoDeCorrida(corrida).completa) process.exitCode = 1;
+  if (!veredictoDeCorrida(corrida, ctx.medida).completa) process.exitCode = 1;
 
   const comentar = argv.includes("--comentar");
   const porPr = agrupaPorPr(repartos);
@@ -1089,7 +1155,7 @@ function ficherosEsperados(plan: PlanMutacion, base: Huella): string[] {
 function comparar(argv: readonly string[]): void {
   const ctx = contextoDeLaCorrida(valorDe(argv, "--base") ?? "HEAD");
   const { repartos, ahora, blobs, instrumentos } = repartosDeLaCorrida(ctx);
-  const veredicto = veredictoDeCorrida(ctx.corrida);
+  const veredicto = veredictoDeCorrida(ctx.corrida, ctx.medida);
   const base: Record<string, BaseDeFichero> = {};
   const codigoCambiado: string[] = [];
   for (const fichero of Object.keys(blobs)) {
@@ -1450,7 +1516,7 @@ function fusionar(argv: readonly string[]): void {
   for (const f of ficheros) copyFileSync(f.origen, join(DIR_INFORMES, `${f.modulo}.json`));
   writeFileSync(RUTA_CORRIDA, `${JSON.stringify(corrida, null, 2)}\n`);
 
-  const veredicto = veredictoDeCorrida(corrida);
+  const veredicto = veredictoDeCorrida(corrida, medidaDelDirectorio(DIR_INFORMES));
   const caidos = lotesSinNoticias(plan, parciales);
   console.log(
     `\nCorrida ${corrida.run_id} sobre ${corrida.sha.slice(0, 7)} (${corrida.origen}), ` +
@@ -1634,7 +1700,7 @@ function manifiesto(argv: readonly string[]): void {
   };
   mkdirSync(DIR_INFORMES, { recursive: true });
   writeFileSync(RUTA_CORRIDA, `${JSON.stringify(corrida, null, 2)}\n`);
-  const veredicto = veredictoDeCorrida(corrida);
+  const veredicto = veredictoDeCorrida(corrida, medidaDelDirectorio(DIR_INFORMES));
   console.log(`${veredicto.completa ? "COMPLETA" : "INCOMPLETA"} — ${veredicto.porque}`);
   console.log(`  ancla:    ${corrida.desde}`);
   console.log(`  pedidos:  ${corrida.modulos_pedidos.join(" ")}`);
@@ -1672,7 +1738,9 @@ function main(): void {
       `uso: npm run mutacion -- <${Object.keys(VERBOS).join(" | ")}>\n` +
         `  pendiente [--ids]   qué hay sin medir desde ${TAG}, y cuánto cuesta\n` +
         `  traer [run-id]      vacía reports/mutation/ y baja el artefacto de CI\n` +
-        `  repartir [--comentar]  delta contra la corrida anterior y atribución\n` +
+        `  repartir [--comentar] [--instrumento-nuevo]  delta contra la corrida anterior y atribución.\n` +
+        `                      Se PARA si un fichero trae menos mutantes medidos con el mismo código (#596);\n` +
+        `                      --instrumento-nuevo declara que esa pérdida está aceptada\n` +
         `  comparar [--timeouts <dir>] [--base <rev>]  el MISMO delta sin escribir nada, con el veredicto\n` +
         `                      de adopción (las SIETE condiciones). --base elige contra qué huella\n` +
         `  local <id>          mide UN módulo barato en esta máquina\n` +

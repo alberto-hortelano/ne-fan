@@ -181,6 +181,21 @@ const PlanSchema = z.object({
    *  batería de algún módulo, `scripts/afectado.ts` sigue seleccionando ese
    *  módulo cuando cambia. Lo que declara es que NADIE lo muta, y por qué. */
   sin_mutar: z.array(ExentoSchema).default([]),
+  /** Los ficheros que la huella COMMITEADA trae con el 100 % de sus mutantes
+   *  vivos, con su motivo escrito. Es la otra mitad de #598a.
+   *
+   *  El candado de `npm run ejercicio` caza al fichero que NACE huérfano —su
+   *  batería lo importa y no llama a nada suyo—, pero solo puede opinar de lo
+   *  que pasa HOY. Éste caza al que ya está dentro: un fichero cuya medida dice
+   *  que ni un solo mutante murió no es un fichero con deuda, es un fichero que
+   *  NADIE MIDIÓ, y llevaba tres corridas commiteado sin que nada se pusiera
+   *  rojo (`src/world-map/place-target.ts`, 35 de 35).
+   *
+   *  Cuesta cero —lee el JSON que ya está en el repo— y por eso vive en
+   *  `npm test`. Como `sin_mutar`, una entrada CADUCA: en cuanto la corrida
+   *  siguiente deje ese fichero por debajo del 100 %, el candado exige que se
+   *  borre. */
+  todos_vivos: z.array(ExentoSchema).default([]),
   modulos: z.array(ModuloSchema).nonempty(),
   // Ver `ModuloSchema`: una clave global desconocida tampoco puede entrar sin
   // que alguien decida si selecciona o no.
@@ -375,6 +390,7 @@ export const NO_SELECCIONAN: Record<string, string> = {
   techo_job: "cuántos segundos vive el job que mide un lote: es el techo contra el que se contrasta el reparto, y como `tope_lote` no toca a un mutante",
   directorios_completos: "ensancha el PERÍMETRO, que `mutate.ts` no mira: sale en `npm test`, en `npm run deuda` y en la pregunta que este selector hace por un huérfano, no en el score de un módulo",
   sin_mutar: "declara quién NO se muta y por qué; como `directorios_completos`, vive en el perímetro y no en la medida",
+  todos_vivos: "declara qué ficheros de la HUELLA YA MEDIDA están al 100 % de supervivientes y por qué se tolera: habla de una medida que ya existe, así que no puede cambiar la suerte de un mutante que todavía no se ha medido",
   modulos: "es el contenedor del reparto: lo que decide va clave a clave dentro de cada módulo",
   id: "es la clave con la que se emparejan las dos revisiones, no un campo que comparar",
 };

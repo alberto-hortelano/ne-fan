@@ -293,7 +293,7 @@ describe("la cadena del reloj · `repartir` lo lleva a la huella (#436)", () => 
     // corrida en matriz y #571 lo dejó en 60 min por lote (`mutation.yml:162`),
     // así que citarlo como si siguiera vivo era un rastro de la versión
     // anterior — y los rastros confunden.
-    const f = filaDeHuella({ corrida, delta, blob: "b1", duenos, segundos: 1647 });
+    const f = filaDeHuella({ corrida, delta, blob: "b1", duenos, segundos: 1647, sinEjercer: 0, timeouts: 0 });
     assert.equal(f.segundos, 1647);
     assert.equal(f.total, 33);
     assert.equal(f.sha, "deadbee");
@@ -302,14 +302,14 @@ describe("la cadena del reloj · `repartir` lo lleva a la huella (#436)", () => 
   });
 
   it("sin reloj el campo NO se escribe", () => {
-    const f = filaDeHuella({ corrida, delta, blob: "b1", duenos, segundos: undefined });
+    const f = filaDeHuella({ corrida, delta, blob: "b1", duenos, segundos: undefined, sinEjercer: 0, timeouts: 0 });
     assert.ok(!("segundos" in f), "un `segundos: undefined` en el JSON se lee distinto que su ausencia");
   });
 
   it("las huellas se escriben ORDENADAS, para que el delta se vea en el diff", () => {
     // La huella va commiteada a propósito: si el orden bailara, cada corrida
     // dejaría un diff de ruido y el delta de verdad se perdería dentro.
-    const f = filaDeHuella({ corrida, delta, blob: "b1", duenos, segundos: 1 });
+    const f = filaDeHuella({ corrida, delta, blob: "b1", duenos, segundos: 1, sinEjercer: 0, timeouts: 0 });
     assert.deepEqual(f.vivos, ["h1", "h2"]);
     assert.deepEqual(f.nuevos, ["h2"]);
     assert.equal(f.resueltos, 2, "los resueltos se cuentan, no se listan");

@@ -41,6 +41,7 @@ import {
   capacidadDeLaBase,
   instrumentoLegible,
   deltaDeFichero,
+  filaDeHuella,
   fusiona,
   hash64,
   huellaDeMutante,
@@ -58,6 +59,8 @@ import {
   titularDeSinEjercer,
   totalSinEjercer,
   veredictoDeAdopcion,
+  medidaPerdida,
+  moduloAprobado,
   veredictoDeCorrida,
   verificaDescarga,
   vivosDeFichero,
@@ -68,6 +71,7 @@ import {
   type CommitDelRango,
   type Huella,
   type InformeSellado,
+  type MedidaPorModulo,
   type JobDeCI,
   type MedidaDeFichero,
   type Lote,
@@ -523,6 +527,12 @@ describe("atribución · de qué PR es un asunto de commit", () => {
  *  el test lo diga a propósito. */
 const sello = (modulo: string, sha256 = `sello-de-${modulo}`): InformeSellado => ({ modulo, sha256 });
 
+/** Lo que midió cada informe de una corrida, leído de los informes en disco por
+ *  quien llama al veredicto. Por defecto, todos midieron algo: el caso normal.
+ *  Los tests que hablan de #596 lo dicen a mano. */
+const midieron = (c: Corrida, cuantos = 7): MedidaPorModulo =>
+  Object.fromEntries(modulosConInforme(c).map((id) => [id, cuantos]));
+
 describe("manifiesto · quién puede mover el tag", () => {
   const corrida = (over: Partial<Corrida> = {}): Corrida => ({
     sha: "abc",
@@ -536,7 +546,7 @@ describe("manifiesto · quién puede mover el tag", () => {
   });
 
   it("una corrida del rango, completa, mueve el tag", () => {
-    const v = veredictoDeCorrida(corrida());
+    const v = veredictoDeCorrida(corrida(), midieron(corrida()));
     assert.equal(v.completa, true);
     assert.equal(v.mueveTag, true);
   });
@@ -545,7 +555,8 @@ describe("manifiesto · quién puede mover el tag", () => {
     // El artefacto sube con `if: always()`, así que una corrida que se coma el
     // timeout deja informes de verdad. Mover el tag ahí declararía medido lo
     // que nadie midió, y el agujero sería invisible desde ese momento.
-    const v = veredictoDeCorrida(corrida({ informes: [sello("a")] }));
+    const truncada = corrida({ informes: [sello("a")] });
+    const v = veredictoDeCorrida(truncada, midieron(truncada));
     assert.equal(v.completa, false);
     assert.equal(v.mueveTag, false);
     assert.match(v.porque, /\bb\b/);
@@ -558,13 +569,136 @@ describe("manifiesto · quién puede mover el tag", () => {
   });
 
   it("una lista EXPLÍCITA de módulos NO mueve el tag aunque esté completa", () => {
-    const v = veredictoDeCorrida(corrida({ origen: "explicito" }));
+    const v = veredictoDeCorrida(corrida({ origen: "explicito" }), midieron(corrida({ origen: "explicito" })));
     assert.equal(v.completa, true, "la medida vale");
     assert.equal(v.mueveTag, false, "pero no puede declarar medido el rango entero");
   });
 
   it("la corrida completa sí lo mueve", () => {
-    assert.equal(veredictoDeCorrida(corrida({ origen: "todos" })).mueveTag, true);
+    assert.equal(veredictoDeCorrida(corrida({ origen: "todos" }), midieron(corrida({ origen: "todos" }))).mueveTag, true);
+  });
+
+  it("DEJAR INFORME NO ES MEDIR: un informe de cero mutantes no completa nada (#596)", () => {
+    // El agujero exacto: con cero mutantes Stryker calcula `NaN` de score,
+    // `NaN >= break` es falso, no hay suelo que disparar y el proceso sale con
+    // 0. Hasta hoy ese módulo «dejó informe», la corrida salía COMPLETA y el
+    // tag se adelantaba declarando medido lo que nadie midió. Y el módulo
+    // hermano SÍ midió, así que la corrida no es «vacía»: es la mezcla, que es
+    // el caso que se cuela.
+    const c = corrida();
+    const v = veredictoDeCorrida(c, { a: 0, b: 41 });
+    assert.equal(v.completa, false);
+    assert.equal(v.mueveTag, false, "un tag que se mueve aquí declara medido lo que nadie midió");
+    assert.match(v.porque, /\ba\b/, "y dice CUÁL no midió");
+    assert.doesNotMatch(v.porque, /\bb\b/, "sin arrastrar al que sí midió");
+    // La dirección contraria, que es lo que distingue una regla de su
+    // contraria: con los dos midiendo, la misma corrida es COMPLETA.
+    assert.equal(veredictoDeCorrida(c, { a: 1, b: 41 }).completa, true);
+  });
+
+  it("un módulo que no midió NI UN MUTANTE no aprueba, aunque Stryker salga con 0 (#596)", () => {
+    // La misma puerta en el RUNNER. Stryker sale con 0 porque `NaN >= break` es
+    // falso: sin esta segunda pregunta, `npm run mutate` daba `ok` a un módulo
+    // que no midió nada — y en CI eso es un job verde sobre el vacío.
+    assert.equal(moduloAprobado(0, 41), true, "midió y aprobó");
+    assert.equal(moduloAprobado(0, 0), false, "salió con 0 y no midió nada: eso no es aprobar");
+    assert.equal(moduloAprobado(1, 41), false, "midió y bajó del suelo");
+    assert.equal(moduloAprobado(null, 41), false, "ni siquiera arrancó (SIGKILL: `status` es null)");
+  });
+
+  it("«no se pudo leer cuánto midió» no es «midió cero»", () => {
+    // Un módulo AUSENTE del mapa es una no-lectura, y colapsarla con un cero
+    // convertiría un fallo de lectura en un hallazgo sobre el código. Los dos
+    // niegan, pero mandan a sitios distintos y el motivo lo dice.
+    const c = corrida();
+    const v = veredictoDeCorrida(c, { a: 41 });
+    assert.equal(v.completa, false);
+    assert.match(v.porque, /no se pudo leer/);
+    assert.doesNotMatch(v.porque, /SIN UN SOLO MUTANTE MEDIDO/);
+  });
+});
+
+describe("delta · el denominador que encoge sin que el código cambie (#596)", () => {
+  const medida = (over: Partial<MedidaDeFichero> = {}): MedidaDeFichero => ({
+    sha: "abc",
+    run: "1",
+    fecha: "2026-09-17T00:00:00.000Z",
+    blob: "blob-de-siempre",
+    total: 58,
+    vivos: ["h1"],
+    nuevos: [],
+    resueltos: 0,
+    base: "con base",
+    duenos: { veredicto: "sin dueño" },
+    ...over,
+  });
+
+  it("la causa va EN EL TIPO, y separa las cuatro formas de no poder comparar", () => {
+    const delta = (ahora: { vivos: string[]; total: number; blob: string }, base?: MedidaDeFichero) =>
+      deltaDeFichero("src/x.ts", ahora, base);
+    assert.equal(delta({ vivos: [], total: 1, blob: "b" }, undefined).incomparable, undefined, "sin base no es incomparable");
+    assert.equal(delta({ vivos: [], total: 58, blob: "b" }, medida({ blob: "" })).incomparable, "sin blob");
+    assert.equal(delta({ vivos: [], total: 58, blob: "otro" }, medida()).incomparable, "código cambiado");
+    assert.equal(
+      delta({ vivos: [], total: 32, blob: "blob-de-siempre" }, medida()).incomparable,
+      "denominador encogido",
+    );
+    assert.equal(
+      delta({ vivos: [], total: 84, blob: "blob-de-siempre" }, medida()).incomparable,
+      "denominador crecido",
+    );
+    // Y con todo igual no hay causa ninguna: sin esta dirección, una función que
+    // devolviera siempre "denominador encogido" pasaría los asertos de arriba
+    // menos uno.
+    assert.equal(delta({ vivos: ["h1"], total: 58, blob: "blob-de-siempre" }, medida()).base, "con base");
+  });
+
+  it("`medidaPerdida` solo mira la dirección que ESCONDE, y dice cuánto", () => {
+    // Encoger es medida que se pierde por los dos lados del cociente
+    // —`(K−k)/(T−k)` no baja y el `break` no se entera—; crecer es el
+    // instrumento midiendo MÁS, que es la dirección en la que se arregló #597
+    // devolviendo 26 muertes al denominador. Bloquear las dos habría bloqueado
+    // aquel arreglo.
+    const deltas = [
+      deltaDeFichero("src/z.ts", { vivos: [], total: 32, blob: "blob-de-siempre" }, medida()),
+      deltaDeFichero("src/a.ts", { vivos: [], total: 50, blob: "blob-de-siempre" }, medida()),
+      deltaDeFichero("src/crece.ts", { vivos: [], total: 84, blob: "blob-de-siempre" }, medida()),
+      deltaDeFichero("src/cambio.ts", { vivos: [], total: 2, blob: "otro" }, medida()),
+      deltaDeFichero("src/nuevo.ts", { vivos: [], total: 9, blob: "b" }, undefined),
+    ];
+    assert.deepEqual(medidaPerdida(deltas), [
+      { fichero: "src/a.ts", antes: 58, ahora: 50 },
+      { fichero: "src/z.ts", antes: 58, ahora: 32 },
+    ]);
+    assert.deepEqual(medidaPerdida([]), [], "sin deltas no se inventa una pérdida");
+  });
+
+  it("la huella guarda los dos censos que `esVivo` colapsaba (#604)", () => {
+    const d = deltaDeFichero("src/x.ts", { vivos: ["h1"], total: 58, blob: "blob-de-siempre" }, medida());
+    const fila = filaDeHuella({
+      corrida: { sha: "s", run_id: "r", fecha: "f" },
+      delta: d,
+      blob: "blob-de-siempre",
+      duenos: { veredicto: "sin dueño" },
+      segundos: 12,
+      sinEjercer: 4,
+      timeouts: 3,
+    });
+    assert.equal(fila.sin_ejercer, 4, "un NoCoverage y un Survived dejaban la misma huella");
+    assert.equal(fila.timeouts, 3, "y un Timeout era indistinguible de un Killed");
+    // Y el cero se ESCRIBE: es una medida («ninguno»), no una ausencia. Lo que
+    // no se escribe es lo que no se sabe, y eso es `segundos`.
+    const sinNada = filaDeHuella({
+      corrida: { sha: "s", run_id: "r", fecha: "f" },
+      delta: d,
+      blob: "blob-de-siempre",
+      duenos: { veredicto: "sin dueño" },
+      segundos: undefined,
+      sinEjercer: 0,
+      timeouts: 0,
+    });
+    assert.equal(sinNada.sin_ejercer, 0);
+    assert.ok(!("segundos" in sinNada));
   });
 });
 
@@ -604,7 +738,7 @@ describe("descarga · ni falta, ni sobra, ni es otro informe con el mismo nombre
       informes: [sello("store"), sello("world-map")],
     };
     assert.deepEqual(verificaDescarga(caida, [sello("store"), sello("world-map")]), []);
-    const v = veredictoDeCorrida(caida);
+    const v = veredictoDeCorrida(caida, midieron(caida));
     assert.equal(v.completa, false, "y sigue siendo INCOMPLETA: no se ha perdido el hecho");
     assert.equal(v.mueveTag, false);
     assert.match(v.porque, /contrato-escena/);
@@ -936,8 +1070,8 @@ describe("fusionar · `modulos_pedidos` sale del PLAN, nunca de los lotes que ll
     );
     assert.deepEqual(c.modulos_pedidos, ["a", "b", "c"]);
     assert.deepEqual(modulosConInforme(c), ["a", "b", "c"]);
-    assert.equal(veredictoDeCorrida(c).completa, true);
-    assert.equal(veredictoDeCorrida(c).mueveTag, true);
+    assert.equal(veredictoDeCorrida(c, midieron(c)).completa, true);
+    assert.equal(veredictoDeCorrida(c, midieron(c)).mueveTag, true);
   });
 
   it("UN LOTE MUERTO deja la corrida INCOMPLETA y el tag quieto", () => {
@@ -954,7 +1088,7 @@ describe("fusionar · `modulos_pedidos` sale del PLAN, nunca de los lotes que ll
     const c = fusionaCorrida(PLAN, [parcial()], "2026-09-04T11:00:00.000Z");
     assert.deepEqual(c.modulos_pedidos, ["a", "b", "c"], "lo pedido NO encoge con el lote que murió");
     assert.deepEqual(modulosConInforme(c), ["a", "b"]);
-    const v = veredictoDeCorrida(c);
+    const v = veredictoDeCorrida(c, midieron(c));
     assert.equal(v.completa, false);
     assert.equal(v.mueveTag, false, "un tag que se mueve aquí declara medido lo que nadie midió");
     assert.match(v.porque, /\bc\b/, "y dice cuál falta");
@@ -1053,7 +1187,7 @@ describe("fusionar · `modulos_pedidos` sale del PLAN, nunca de los lotes que ll
       const caidos = lotesSinNoticias(PLAN, parciales);
       if (caidos.length === 0) continue;
       assert.equal(
-        veredictoDeCorrida(c).completa,
+        veredictoDeCorrida(c, midieron(c)).completa,
         false,
         `con ${caidos.length} lote(s) sin noticias, COMPLETA es una contradicción`,
       );

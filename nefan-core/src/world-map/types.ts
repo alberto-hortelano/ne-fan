@@ -43,10 +43,6 @@ export type Edge = "north" | "south" | "east" | "west";
 
 export const EDGES = ["north", "south", "east", "west"] as const satisfies readonly Edge[];
 
-export function isEdge(v: unknown): v is Edge {
-  return typeof v === "string" && (EDGES as readonly string[]).includes(v);
-}
-
 export type TriggerWhen =
   | { type: "player_entered" }
   | { type: "player_left" }

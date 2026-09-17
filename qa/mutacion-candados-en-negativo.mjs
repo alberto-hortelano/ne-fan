@@ -215,6 +215,38 @@ const INVARIANTES = [
   ["repartir · 'a medio repartir' se colapsa a 'ya repartida' (la otra mitad sin dueño para siempre)", SRC,
     `  return { tipo: "a medio repartir", repartidos, total: ficheros.length };`,
     `  return { tipo: "ya repartida" };`],
+  // ── la tanda L: lo que «dejó informe» tapaba, y el denominador que encoge ──
+  //
+  // Las tres reversiones son OPUESTAS entre sí a propósito. La primera devuelve
+  // el defecto de #596 tal cual («dejar informe es medir»); la segunda instala
+  // el defecto CONTRARIO —negar siempre— que dejaría el veredicto sin poder
+  // decir COMPLETA nunca; y las dos últimas atacan la dirección del
+  // denominador, que es donde un aserto con N=1 no distinguiría la regla de su
+  // contraria: bloquear solo lo que encoge, no lo que crece.
+  ["veredicto · «dejó informe» vuelve a ser «midió» (vuelve #596)", SRC,
+    `  const vacios = conInforme.filter((id) => medida[id] === 0).sort();`,
+    `  const vacios: string[] = [];`],
+  ["veredicto · la medida se niega SIEMPRE: ninguna corrida podría ser COMPLETA", SRC,
+    `  const vacios = conInforme.filter((id) => medida[id] === 0).sort();`,
+    `  const vacios = [...conInforme].sort();`],
+  ["veredicto · «no se pudo leer» se colapsa con «midió cero»", SRC,
+    `  const sinAbrir = conInforme.filter((id) => medida[id] === undefined).sort();`,
+    `  const sinAbrir: string[] = [];`],
+  ["delta · el denominador que encoge deja de tener causa propia (#596)", SRC,
+    `      ahora.total < base.total ? "denominador encogido" : "denominador crecido",`,
+    `      "denominador crecido",`],
+  ["delta · TODO cambio de denominador se marca como pérdida (bloquearía el arreglo de #597)", SRC,
+    `      ahora.total < base.total ? "denominador encogido" : "denominador crecido",`,
+    `      "denominador encogido",`],
+  ["pérdida · `medidaPerdida` no encuentra nunca nada: el fail-loud de `repartir` queda desarmado", SRC,
+    `    .filter((d) => d.incomparable === "denominador encogido")`,
+    `    .filter(() => false)`],
+  ["huella · el censo de NO EJERCIDOS deja de escribirse (vuelve el colapso de #604)", SRC,
+    `    sin_ejercer: sinEjercer,\n    timeouts,`,
+    `    sin_ejercer: 0,\n    timeouts: 0,`],
+  ["runner · un módulo que no midió NI UN MUTANTE vuelve a aprobar (#596 en `mutate.ts`)", SRC,
+    `  return salidaDeStryker === 0 && mutantesMedidos > 0;`,
+    `  return salidaDeStryker === 0;`],
   // ── #599 · la séptima condición, en las DOS direcciones ──
   //
   // Un candado que no puede ponerse rojo en NINGUNA dirección es peor que el
