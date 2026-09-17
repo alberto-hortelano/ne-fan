@@ -68,6 +68,7 @@
 
 import { elJugadorSePara, limpiaLaParada, paradaEnSim } from "../lib/parada.mjs";
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -101,19 +102,12 @@ const laPregunta = (ctx) =>
   ctx.page.evaluate(() => window.__nefan.ui.actions().confirm.map((a) => a.label));
 
 /** Avanza `n` fotogramas del bucle: la unidad de espera de este guion, porque
- *  la frontera se recalcula UNA vez por `tick` y no por reloj de pared. */
-async function frames(ctx, n) {
-  const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
-  return ctx.waitFor(
-    `el bucle avanza ${n} fotograma(s)`,
-    (m) => {
-      const f = window.__nefan.fps()?.frames ?? 0;
-      return f >= m.desde + m.n ? { f } : null;
-    },
-    20_000,
-    { desde, n },
-  );
-}
+ *  la frontera se recalcula UNA vez por `tick` y no por reloj de pared.
+ *
+ *  Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "mundo" porque el
+ *  guion empuja al jugador contra el muro de la frontera: el mundo avanza.
+ */
+const frames = esperaDeFotogramas("mundo");
 
 /** Mantiene una tecla `n` fotogramas y la suelta pase lo que pase. */
 async function mantener(ctx, tecla, nFrames = 4) {

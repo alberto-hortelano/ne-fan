@@ -63,6 +63,15 @@ export interface DepsDelHook {
   travelLedger: TravelLedger;
   tileLedger: TileLedger;
   characterSprites: CharacterSpriteManager;
+  /** El aspecto del jugador, en la interfaz ESTRECHA que el hook necesita: lo
+   *  que LLEVA PUESTO, nunca lo que se le puede poner. `vestir` y `desvestir`
+   *  se quedan fuera a propósito — el hook es un observable, y el día que
+   *  pudiera vestir al jugador un guion podría fabricar el estado que dice
+   *  medir (`renderer/aspecto-del-jugador.ts`). */
+  aspectoDelJugador: {
+    modelo(): string | null;
+    skinPrompt(): string;
+  };
   attackBar: ActionBar;
   promptBar: ActionBar;
   confirmBar: ActionBar;
@@ -131,6 +140,21 @@ export function instalarNefanHook(deps: DepsDelHook): void {
     get tileEpisodios() { return deps.tileLedger.debugState(); },
     /** Libro de skins: qué personajes ha pedido la PARTIDA (y con qué rol). */
     get skins() { return deps.characterSprites.debugState(); },
+    /** Lo que el jugador LLEVA PUESTO ahora mismo: su modelo y el prompt de su
+     *  skin. Hermano declarado de `skins`, y no la misma pregunta: `skins` dice
+     *  quién PIDIÓ arte, y esto dice con qué está vestido el jugador. Se separan
+     *  justo donde importa — al volver al título `resetWorld` desviste
+     *  (`aspecto.desvestir()`), y sin este observable «el jugador de la partida
+     *  nueva aparece con la armadura de la anterior» es alcanzable y no lo mide
+     *  nadie: el cable de POSTs que vigila el guion 82 solo se entera si el skin
+     *  anterior quedó FALLIDO, porque `requestSkin` es idempotente por prompt
+     *  (#637). Solo lectura. */
+    get aspecto() {
+      return {
+        modelo: deps.aspectoDelJugador.modelo(),
+        skinPrompt: deps.aspectoDelJugador.skinPrompt(),
+      };
+    },
     probeCollide(x: number, z: number) { return deps.collision.collidesAt(x, z); },
     /** ¿HAY ALGO EN ESTE PUNTO? La hermana de `probeCollide` que NO tiene
      *  origen (#644): `collidesAt` es una consulta de MOVIMIENTO y contesta

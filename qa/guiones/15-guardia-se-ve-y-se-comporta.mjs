@@ -56,6 +56,12 @@
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
 import { cargarFixture } from "../lib/fixtures.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
+
+/** La espera por fotogramas del banco, con dueño único desde #606
+ *  (`qa/lib/fotogramas.mjs`): "loop" porque lo que tiene que pasar es que el
+ *  renderer REPINTE con el giro puesto, no que el mundo simule nada. */
+const esperarFrames = esperaDeFotogramas("loop");
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
  *   · `mundo`   — el viaje del panel «Salidas» necesita un destino SIN
@@ -205,28 +211,21 @@ const naceEnUnSolido = (ctx, posicion) =>
  *  qué pasó, y una en la que el personaje ha quedado fuera de cuadro no enseña
  *  nada. No decide nada (los asertos van contra el estado), solo apunta.
  *
- *  Y espera a que el mundo se haya DIBUJADO ya girado, contando los frames que
- *  publica el renderer (`fps().frames`). `setYaw` es síncrono sobre el estado,
- *  pero la imagen sale por rAF —aquí pumpeado por Web Worker (`?raf=timer`)— y
- *  la captura se llevaba el fotograma anterior: con el tabernero fuera de la
- *  línea de la puerta, `el-mercader-huye.png` enseñaba la fachada de la taberna
- *  y ningún mercader. No es un sleep: la condición de parada es el contador. */
+ *  Y espera a que el mundo se haya DIBUJADO ya girado, contando fotogramas del
+ *  bucle. `setYaw` es síncrono sobre el estado, pero la imagen sale por rAF
+ *  —aquí pumpeado por Web Worker (`?raf=timer`)— y la captura se llevaba el
+ *  fotograma anterior: con el tabernero fuera de la línea de la puerta,
+ *  `el-mercader-huye.png` enseñaba la fachada de la taberna y ningún mercader.
+ *  No es un sleep: la condición de parada es el contador. */
 async function encarar(ctx, id) {
   const m = await medir(ctx, id);
   if (!m) return m;
-  const antes = (await ctx.nefan("fps"))?.frames ?? 0;
   await ctx.nefan("setYaw", Math.atan2(m.npc.x - m.jugador.x, m.npc.z - m.jugador.z));
   await ctx.absorbe(
     `esta espera solo sirve para que la CAPTURA salga ya girada: los asertos de este guion van ` +
       `contra el estado (\`__nefan\`), nunca contra píxeles, así que sin frame se pierde una foto ` +
       `atrasada y ninguna medida`,
-    () =>
-      ctx.waitFor(
-        `el mundo se redibuja ya encarando a ${id}`,
-        (f) => ((window.__nefan.fps()?.frames ?? 0) > f + 1 ? true : null),
-        5_000,
-        antes,
-      ),
+    () => esperarFrames(ctx, 2),
   );
   return m;
 }

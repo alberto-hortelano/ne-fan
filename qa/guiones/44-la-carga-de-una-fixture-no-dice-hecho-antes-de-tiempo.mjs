@@ -33,6 +33,7 @@
  */
 
 import { retenerFixture } from "../lib/fixtures.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 /** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA al
  *  motor. Solo conduce el selector de fixtures del panel de dev. */
@@ -50,15 +51,11 @@ const SEGUNDA = "puerto_tile";
  *  esperar de más solo hace más fuerte el negativo. */
 const FRAMES = 5;
 
-async function esperarFrames(ctx, n = FRAMES) {
-  const antes = (await ctx.nefan("fps")).frames;
-  await ctx.waitFor(
-    `${n} frames nuevos`,
-    ({ f0, k }) => (window.__nefan.fps().frames >= f0 + k ? true : null),
-    10_000,
-    { f0: antes, k: n },
-  );
-}
+/** Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "loop" porque el
+ *  sujeto es que la promesa de carga NO se resuelva todavía: lo que tiene que
+ *  correr es el LOOP, y este guion no arranca partida.
+ */
+const esperarFrames = esperaDeFotogramas("loop");
 
 export default async function (ctx) {
   await ctx.waitFor("el título aparece al arrancar", () => (document.getElementById("ts-close") ? true : null));
@@ -114,7 +111,7 @@ export default async function (ctx) {
     `typeof (loadFixture("${SEGUNDA}")).then === "function": ${esPromesa}`,
   );
 
-  await esperarFrames(ctx);
+  await esperarFrames(ctx, FRAMES);
   const durante = await ctx.page.evaluate(() => ({
     asentada: window.__qa308.asentada,
     error: window.__qa308.error,

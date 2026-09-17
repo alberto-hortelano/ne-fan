@@ -33,21 +33,18 @@
 export const sinMotor = "cierra el título y carga una fixture del selector; nunca arranca partida";
 
 import { cargarFixture } from "../lib/fixtures.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 /** Espera a que el renderer EMITA frames nuevos: una captura pedida justo
  *  después de mover al jugador fotografía el frame ANTERIOR (la cámara se
  *  actualiza en el bucle, no en el setter) — así salían dos fotos idénticas
  *  desde posiciones distintas. Se espera por el contador de frames, nunca por
- *  reloj. */
-async function esperarFrames(ctx, n = 3) {
-  const antes = (await ctx.nefan("fps")).frames;
-  await ctx.waitFor(
-    `${n} frames nuevos`,
-    ({ f0, n }) => (window.__nefan.fps().frames >= f0 + n ? true : null),
-    10_000,
-    { f0: antes, n },
-  );
-}
+ *  reloj.
+ *
+ *  Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "loop" porque las
+ *  dos esperas existen para que la PÁGINA repinte antes de la captura.
+ */
+const esperarFrames = esperaDeFotogramas("loop");
 
 export default async function (ctx) {
   await ctx.waitFor("el título aparece al arrancar", () => (document.getElementById("ts-close") ? { hay: true } : null));

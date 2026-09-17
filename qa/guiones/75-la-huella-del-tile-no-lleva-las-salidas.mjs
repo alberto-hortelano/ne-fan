@@ -38,9 +38,24 @@
  *  issue, por ejemplo la posición VIVA de un NPC, que el bridge sobrepone al
  *  servir).
  *
+ *  Y esa «otra cosa» era la que hacía que el guion tirara una moneda (#634):
+ *  la huella lleva la posición VIVA de cada NPC, y el tabernero del bench es
+ *  AMBIENTAL —deambula alrededor de su celda de spawn—, así que con la batería
+ *  entera detrás le sobraba tiempo para dar un paso entre la primera difusión y
+ *  la vuelta. El paso 3 salía rojo por el tabernero y no por las salidas, que
+ *  es lo que mide. Desde el 2026-09-17 el guion CONGELA a los habitantes del
+ *  tile antes de leer la huella de referencia (`hold`, la misma directiva que
+ *  fija el motor por el State API) y, si aun así alguno se movió, lo DICE y no
+ *  ejerce el aserto: ver `congelarHabitantes` y `npcsQueSeMovieron`. Lo que
+ *  esto NO arregla, y hay que decirlo: la posición viva sigue dentro de la
+ *  huella (#467, cerrado `not_planned` a conciencia). El guion lo rodea; no lo
+ *  cura.
+ *
  *  Probado en negativo el 2026-09-05: con la huella hecha sobre
  *  `{...escena, exits: salidas}` en `tile-store.ts`, el paso 3 sale rojo
  *  (2 derivaciones del tile de entrada) y el diagnóstico nombra `exits`.
+ *  Re-probado el 2026-09-17 CON el `hold` puesto: el sabotaje sigue rojo, o
+ *  sea que congelar no ha convertido el paso 3 en un verde tonto.
  *
  *  Cero créditos: preset `e2e-sin-creditos`, Maqueta 3D.
  */
@@ -116,6 +131,60 @@ const escenaSinSalidas = (ctx) =>
     return JSON.stringify(escena);
   });
 
+/** Congela a TODOS los habitantes del tile activo con la directiva `hold`, por
+ *  el mismo canal que la fija el motor narrativo (`npc_set_directive` →
+ *  `POST /npc/{id}/directive`, precedente en el guion 17). `hold` pone
+ *  `pauseTimer = Infinity` y el sistema ambiental deja de mover al NPC
+ *  (`nefan-core/src/.../npc-behavior.ts`).
+ *
+ *  La lista sale de `window.__nefan.scene.npcs`, que es EXACTAMENTE la
+ *  población que entra en la huella (la escena servida, con el overlay de
+ *  posiciones vivas del bridge encima). No se escribe a mano: el tile 0 del
+ *  bench tiene DOS —`barkeep` (`role:"merchant"`, ambiental) y `bandido_1`
+ *  (`role:"hostile"`, que el sistema ambiental NO mueve: lo mueve la IA de
+ *  combate)—, y una lista literal envejecería con `labs/narrative/fake-scenes.ts`
+ *  sin ponerse roja el día que el bench traiga un tercero.
+ *
+ *  Que `hold` no alcance al hostil no se supone: si alguno se mueve igual, lo
+ *  caza `npcsQueSeMovieron` y el guion lo declara con su nombre.
+ */
+async function congelarHabitantes(ctx) {
+  const ids = await ctx.page.evaluate(() => (window.__nefan.scene?.npcs ?? []).map((n) => n.id));
+  const puestas = [];
+  for (const id of ids) {
+    const r = await api("POST", `/npc/${id}/directive`, { directive: { type: "hold" } });
+    puestas.push({ id, status: r.status });
+  }
+  ctx.expect(
+    `los ${ids.length} habitantes del tile de entrada aceptan \`hold\` (el canal del motor)`,
+    ids.length >= 2 && puestas.every((p) => p.status === 200),
+    JSON.stringify(puestas),
+  );
+  return puestas;
+}
+
+/** Qué NPC cambió de POSICIÓN entre la huella de referencia y la escena servida
+ *  de ahora. Mira `position` y nada más: cualquier otra diferencia es sujeto
+ *  del aserto de #410, no de la guardia, y una guardia que mirase la escena
+ *  entera se comería el rojo que el guion existe para dar.
+ *
+ *  La ventana que esto cubre es la que `hold` no puede cerrar: la huella de
+ *  referencia se graba en el `scene_init` de arranque, ANTES de que el guion
+ *  pueda POSTear nada. */
+function npcsQueSeMovieron(huella, escenaAhora) {
+  const posiciones = (s) =>
+    new Map((JSON.parse(s).npcs ?? []).map((n) => [n.id, JSON.stringify(n.position)]));
+  const antes = posiciones(huella);
+  const ahora = posiciones(escenaAhora);
+  const movidos = [];
+  for (const id of new Set([...antes.keys(), ...ahora.keys()])) {
+    if (antes.get(id) !== ahora.get(id)) {
+      movidos.push(`${id}: ${antes.get(id) ?? "(no estaba)"} → ${ahora.get(id) ?? "(ya no está)"}`);
+    }
+  }
+  return movidos;
+}
+
 /** Qué difiere entre dos escenas serializadas: claves de primer nivel y, dentro
  *  de `npcs`, qué campos de qué npc. Es diagnóstico, no aserto. */
 function diferencias(a, b) {
@@ -178,6 +247,9 @@ export default async function (ctx) {
   await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "vector" });
   await comenzar(ctx);
   const tile0 = await ctx.page.evaluate(() => window.__nefan.currentTile);
+  // ANTES de leer la huella de referencia: cuanto más tarde llegue el `hold`,
+  // más ancha es la ventana en la que un ambiental puede dar un paso (#634).
+  await congelarHabitantes(ctx);
   // Por ESTADO: la derivación es síncrona al añadir el tile, pero el hook se
   // consulta desde fuera, así que se espera a que la cuente.
   await ctx
@@ -257,16 +329,28 @@ export default async function (ctx) {
   ctx.log(
     `${tile0} tras la vuelta: ${d3} derivación(es) · ${c3.restauraciones} restauración(es) · huella ${c3.huella === c0.huella ? "igual" : "DISTINTA"} · escena servida ${diff ? `DISTINTA (claves: ${diff.claves.join(",")}${diff.npcs.length ? ` · npcs: ${diff.npcs.join(" | ")}` : ""})` : "idéntica sin las salidas"}`,
   );
-  ctx.expect(
-    "3 · #410 · el tile que vuelve con otras salidas NO re-deriva su colisión (misma huella)",
-    d3 === d0,
-    `${d3} derivaciones (había ${d0})${diff ? ` — la escena servida cambió en: ${diff.claves.join(",")}${diff.npcs.length ? ` (${diff.npcs.join(" | ")})` : ""}` : " — la escena servida es idéntica sin las salidas: la huella lleva las salidas"}`,
-  );
-  ctx.expect(
-    "3 · …porque la colisión se RESTAURÓ (el store lo cuenta) y la huella es la misma",
-    c3.restauraciones >= 1 && c3.huella === c0.huella,
-    `${c3.restauraciones} restauraciones · huella ${c3.huella === c0.huella ? "igual" : "DISTINTA"}`,
-  );
+  // La guardia DECLARA antes de fallar: si un NPC se movió pese al `hold`, el
+  // paso 3 mediría la posición viva dentro de la huella (#467) y no #410. Un ⊘
+  // aquí no es el desenlace normal —exit 2 degrada MÁS que el rojo—: significa
+  // que el `hold` llegó tarde, y la respuesta es POSTEAR ANTES, nunca ensanchar
+  // esta guardia.
+  const movidos = npcsQueSeMovieron(c0.huella, escenaVuelta);
+  if (movidos.length) {
+    ctx.sinMedirBloque(
+      `un NPC cambió de posición entre el \`scene_init\` que grabó la huella de referencia y el \`hold\` del guion — ${movidos.join(" | ")} —, y la posición viva está DENTRO de la huella (#467): el paso 3 mediría eso y no las salidas`,
+    );
+  } else {
+    ctx.expect(
+      "3 · #410 · el tile que vuelve con otras salidas NO re-deriva su colisión (misma huella)",
+      d3 === d0,
+      `${d3} derivaciones (había ${d0})${diff ? ` — la escena servida cambió en: ${diff.claves.join(",")}${diff.npcs.length ? ` (${diff.npcs.join(" | ")})` : ""}` : " — la escena servida es idéntica sin las salidas: la huella lleva las salidas"}`,
+    );
+    ctx.expect(
+      "3 · …porque la colisión se RESTAURÓ (el store lo cuenta) y la huella es la misma",
+      c3.restauraciones >= 1 && c3.huella === c0.huella,
+      `${c3.restauraciones} restauraciones · huella ${c3.huella === c0.huella ? "igual" : "DISTINTA"}`,
+    );
+  }
   const alVolver = await salidas(ctx);
   ctx.expect(
     "4 · el tile vuelto trae las salidas AL DÍA (molino y ermita): separar no es perder",

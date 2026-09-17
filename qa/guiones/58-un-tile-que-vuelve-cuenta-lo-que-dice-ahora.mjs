@@ -67,6 +67,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida } from "../lib/sesion.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 /** El motor falso es determinista por turno de diálogo, y el bloque 1 arranca
  *  partida: saves vírgenes y contador a cero. */
@@ -91,19 +92,13 @@ const PERSONAJE = "boris_herrero";
 const SALTO_EN_CELDAS = 20;
 
 /** Los fotogramas del bucle: la única condición de parada honesta para «esto
- *  no ha pasado todavía» (el movimiento va por delta de rAF). */
-async function frames(ctx, n) {
-  const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
-  return ctx.waitFor(
-    `el bucle avanza ${n} fotograma(s)`,
-    (m) => {
-      const f = window.__nefan.fps()?.frames ?? 0;
-      return f >= m.desde + m.n ? { f } : null;
-    },
-    20_000,
-    { desde, n },
-  );
-}
+ *  no ha pasado todavía» (el movimiento va por delta de rAF).
+ *
+ *  Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "mundo" porque el
+ *  guion conduce al jugador hasta la frontera y responde a la propuesta: el
+ *  mundo avanza.
+ */
+const frames = esperaDeFotogramas("mundo");
 
 /** Mantiene una tecla del TECLADO REAL unos fotogramas. Un `press()` hace
  *  keydown+keyup antes del siguiente rAF y la intención se pierde entera. */

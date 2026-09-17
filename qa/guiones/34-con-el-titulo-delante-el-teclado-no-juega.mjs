@@ -51,6 +51,7 @@ import {
   esperarTituloListo,
   nuevaPartida,
 } from "../lib/sesion.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -111,25 +112,13 @@ function foto() {
   };
 }
 
-/** Espera a que el bucle de juego avance `n` fotogramas. Es la forma honesta
- *  de «ya ha dado tiempo»: esperar por reloj no es determinista —y lo prohíbe
- *  `qa-guiones-sin-espera-por-reloj`—, y un efecto de input se consume EN un
- *  frame, así que sin frames por medio el «no pasó nada» solo diría que se
- *  miró pronto. */
-async function esperarUnosFrames(ctx, n) {
-  const desde = await ctx.page.evaluate(() => window.__nefan.fps()?.frames ?? 0);
-  // Los dos valores viajan EN el `arg`: el probe se serializa a texto, así que
-  // una variable del cierre (`n`) no existe dentro de la página.
-  return ctx.waitFor(
-    `el bucle de juego avanza ${n} fotograma(s)`,
-    (meta) => {
-      const f = window.__nefan.fps()?.frames ?? 0;
-      return f >= meta.desde + meta.n ? { f } : null;
-    },
-    20_000,
-    { desde, n },
-  );
-}
+/** Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "loop" y no "mundo"
+ *  porque `lasNueveEntradas` corre TAMBIÉN con el título delante, y ahí
+ *  `reloj().frames` no sube — `avanza()` solo se llama cuando el título no
+ *  está visible (`main.ts`). Es el bucle lo que tiene que avanzar para que un
+ *  efecto de input se consuma, que es exactamente lo que este guion mide.
+ */
+const esperarUnosFrames = esperaDeFotogramas("loop");
 
 /** La posición del jugador en metros y SIN redondear. `foto().pos` la trae con
  *  `toFixed(2)`, que no sabe distinguir 0,004 m de cero: para decidir si una

@@ -54,6 +54,7 @@
  *  «¿se pasa JUGANDO?», no «¿lo dice el sondeo?».
  */
 import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 /** Necesita mundo y saves vírgenes: la partida se arranca desde cero y el
  *  tile de bootstrap tiene que venir del motor falso, no de una caché. */
@@ -66,16 +67,13 @@ export const aisla = ["mundo", "saves"];
 const TECHO_DEL_DIAL = 0.08;
 
 /** Espera a que el renderer EMITA frames nuevos: una captura pedida justo
- *  después de mover al jugador fotografía el frame ANTERIOR. */
-async function esperarFrames(ctx, n = 3) {
-  const antes = (await ctx.nefan("fps")).frames;
-  await ctx.waitFor(
-    `${n} frames nuevos`,
-    ({ f0, n }) => (window.__nefan.fps().frames >= f0 + n ? true : null),
-    10_000,
-    { f0: antes, n },
-  );
-}
+ *  después de mover al jugador fotografía el frame ANTERIOR.
+ *
+ *  Con dueño único desde #606 (`qa/lib/fotogramas.mjs`): "mundo" porque el
+ *  mundo tiene que asentar la posición y el rumbo desde los que el jugador
+ *  cruza el hueco.
+ */
+const esperarFrames = esperaDeFotogramas("mundo");
 
 export default async function (ctx) {
   await nuevaPartida(ctx, { gameId: "alta_fantasia", charMode: "vector", renderMode: "image" });
