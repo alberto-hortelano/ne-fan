@@ -351,3 +351,20 @@ jobs:
       # niega con EXIT 2 si no encuentra el entry, y eso no es lo mismo que un
       # rojo; el candado de totalidad es estático y no puede verlo.
       - run: node qa/el-indice-del-store-se-prueba-sin-el-del-checkout.mjs
+      # (0,98 s) #655: los guiones de `qa/guiones/` que NO tocan el navegador.
+      # Se declaran ellos (`export const sinNavegador = "<motivo>"`) y el runner
+      # corre la CLASE ENTERA con `--sin-navegador`: sin preset, sin puertos, sin
+      # Chromium y sin `npm ci` en `qa/` (desde esta tanda `playwright-core` se
+      # carga perezosamente). Hoy son el 39, el 40 y el 146 — 0,37 · 0,79 · 0,54 s.
+      #
+      # Entran porque el 39 es la prueba de lo que cuesta no correrlos: nació
+      # ROJO el 2026-08-29 y siguió así hasta #633, porque lo único que lo
+      # ejercía era una batería de navegador que no está en ningún job.
+      #
+      # OJO a por qué este paso no viola el aserto «ningún paso del job abre
+      # navegador»: `qa/run.mjs` SÍ alcanza `playwright-core` —es el runner del
+      # bench—, pero esta invocación no abre ninguno. El test no lo aprueba por
+      # el flag sino leyendo el ÁRBOL del runner y comprobando que su único
+      # `abrirNavegador` vive gobernado por la bandera; el día que alguien lo
+      # saque del condicional, `npm test` cae en ese mismo commit.
+      - run: node qa/run.mjs --sin-navegador
