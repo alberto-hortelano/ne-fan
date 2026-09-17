@@ -668,6 +668,40 @@ mundo baja a 3.941 puntos; `QA_REGLA_DE_AYER=1` → bloque 3 rojo, 3.117 de 6.00
 node qa/los-candados-miden-el-mundo-del-cliente.mjs   # sale 1 si el suelo o el cableado no son los del cliente
 ```
 
+Y de la tanda I, `qa/el-rumbo-de-salida-no-lo-frena-la-otra-fuente.mjs` (**#643**), que es el raro de
+la familia: **canda un defecto VIVO y congela su TAMAÑO en vez de exigir 0**. La decisión del
+usuario (2026-09-17) fue «candado, sin tocar geometría», así que #643 sigue abierto. El defecto es que
+el proveedor del bridge mide la penetración con dos cuentas que no se hablan —el TILE y las CAJAS de
+runtime—, así que a un cuerpo metido en las dos **el rumbo que le da una se lo frena la otra**: hoy,
+**212 rumbos de 724 puntos** sobre robledo y puerto, todos `salida:tile → frena:caja`.
+
+Lo que **no** afirma, y es la mitad del valor: *que nadie se quede encerrado*. Eso **nace verde** —la
+crítica de la tanda I lo midió: 357 de 357 arranques de NPC salen del tile, el peor en 6,27 s y
+ninguno usando el escape de #583— y habría sido el **cuarto candado sin sujeto vivo en tres tandas**.
+El paso que juzga es el de producción, no uno inventado: `npc-behavior.ts` pide
+`porDondeSalirDeAqui`, usa su `dir` tal cual y prueba la deflexión 0 la primera con
+`queImpideElPaso` (`walk_speed` 1,2 m/s a 60 Hz = 0,02 m).
+
+Los controles van sobre el **mismo** mundo y el **mismo** proveedor compuesto, clasificando los puntos
+en tres poblaciones: dentro de una sola de las dos geometrías no se frena **ni un rumbo** (0 de 5.744 en solo el tile y 0 de 420 en solo una caja),
+dentro de las dos se frenan 212, y la clasificación tiene que ser **exactamente** lo que compone
+`ocupado` —si sobra un punto ocupado sin clasificar, hay población sin mirar—. Ese último aserto es el
+que cazó el primer intento, que clasificaba «dentro de una caja» con un tile sintético al que se le
+vaciaban `entities`, `volumes` y `ground`: **ese tile no estaba vacío**, porque `vegetation_zones`
+sigue derivando volúmenes del plan compuesto, y 294 puntos de bosque entraban en el control. Es el
+defecto de la tanda G otra vez y en pequeño.
+
+**Probado en negativo**: `QA_643_SIN_CAJAS=1` no pone las cajas y el número cae a **0 ≠ 212** con el
+control 2 en rojo (prueba que el número lo causa la composición); `QA_643_CAJA_MAYOR=1` engorda cada
+caja dos celdas y sube a **232** (prueba que se entera de que empeore). Son dos celdas y no una porque
+con una la caja crece 0,25 m por lado y, yendo la malla por centros de celda, **ningún punto cambia de
+bando**: el número se quedaba en 212 y el sabotaje no probaba lo que dice probar. 0,6 s, sin navegador
+y sin créditos:
+
+```bash
+node qa/el-rumbo-de-salida-no-lo-frena-la-otra-fuente.mjs   # sale 1 si el defecto de #643 crece o mengua
+```
+
 Y el tercero de la familia, `qa/el-mundo-solido-tambien-para-el-npc.mjs` (QA de la PR 2 de la tanda
 E, **#583**): el primer guion del banco que afirma que **un NPC no atraviesa nada**. Hasta él, el
 `grep` de asertos sobre conducta de NPC contra geometría era **cero** — lo que sujetaba el arreglo
