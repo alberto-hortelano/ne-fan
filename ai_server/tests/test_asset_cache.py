@@ -12,6 +12,7 @@ Ejecutar con: NEFAN_SPEND_DIR=$(mktemp -d) python3 -m unittest discover -s ai_se
 
 import sys
 import tempfile
+import ast
 import unittest
 from pathlib import Path
 
@@ -125,6 +126,95 @@ class AssetCachePutTest(unittest.TestCase):
         cache = AssetCache(cache_dir=str(self.root / "solo"), asset_type="surface")
         key = cache.put("standalone", "surface", b"X")
         self.assertTrue((self.root / "solo" / key / "surface.png").exists())
+
+
+class NadaEscribeEnLaRaizIndexada(unittest.TestCase):
+    """#413: la raíz indexada es de `AssetCache.put()` y de nadie más.
+
+    Lo que se escriba ahí por otra vía no tiene fila de manifest, así que el
+    prune —que solo borra `join(surfaceDir, g.hash)` de filas existentes— no lo
+    ve, y `db.totalBytes()` tampoco: el techo de `cache_max_bytes` se compara
+    contra un censo que ve una fracción del disco. Medido al abrir el issue
+    (2026-09-03) y sin cambio al cerrarlo (09-17): **19 directorios `atlas_*`,
+    81,7 MB, el 69 % de los bytes de `cache/surfaces/`**, irreclamables por
+    construcción porque `atlas_<16hex>` son 22 caracteres y nunca casan con un
+    hash de 16.
+
+    Mira el ÁRBOL y no el texto, que es la lección que la casa aprendió con el
+    candado del reloj de sim: un `grep` sabe que un nombre aparece, no que sea
+    QUIEN decide.
+
+    LO QUE NO CUBRE, y hay que leerlo antes de citarlo como garantía:
+      · el propio `asset_cache.py`, exento por ser el dueño;
+      · una escritura que componga la ruta a mano sin nombrar `get_path` ni
+        `cache_dir` (p. ej. desde una cadena de configuración);
+      · Python fuera de `ai_server/`, y todo el TypeScript.
+    Entra con CERO ocupantes: es una vacuna, igual que #614. Su valor no es
+    limpiar sino que el patrón no vuelva, porque el momento en que más tienta
+    escribir ahí es justo cuando se quiere volcar algo "solo para mirarlo".
+    """
+
+    RAIZ = Path(__file__).resolve().parents[1]
+    DUENO = "asset_cache.py"
+
+    def _modulos(self):
+        for f in sorted(self.RAIZ.rglob("*.py")):
+            rel = f.relative_to(self.RAIZ)
+            if f.name == self.DUENO or ".venv" in rel.parts or "__pycache__" in rel.parts:
+                continue
+            if rel.parts[0] == "tests":
+                continue
+            yield rel, ast.parse(f.read_text(), filename=str(rel))
+
+    def test_nadie_llama_a_get_path_fuera_de_su_dueno(self):
+        # Para LEER ya están `has()` y `get_by_hash()`; fuera del dueño,
+        # `get_path` solo puede servir para escribir donde no se debe.
+        culpables = [
+            f"{rel}:{n.lineno}"
+            for rel, arbol in self._modulos()
+            for n in ast.walk(arbol)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr == "get_path"
+        ]
+        self.assertEqual(
+            culpables,
+            [],
+            "get_path() fuera de AssetCache escribe en la raíz indexada sin fila de manifest. "
+            "Para material de depuración está debug_path(); para un asset, put(). Sitios: "
+            + ", ".join(culpables),
+        )
+
+    def test_nadie_compone_rutas_desde_cache_dir(self):
+        # La otra puerta: `cache.cache_dir / "loquesea"` esquiva `get_path` y
+        # llega al mismo sitio. Construir el AssetCache con `cache_dir=` como
+        # argumento es legítimo y no cuenta (es nombrar el parámetro, no leer
+        # el atributo).
+        culpables = [
+            f"{rel}:{n.lineno}"
+            for rel, arbol in self._modulos()
+            for n in ast.walk(arbol)
+            if isinstance(n, ast.Attribute) and n.attr == "cache_dir"
+        ]
+        self.assertEqual(
+            culpables,
+            [],
+            "leer .cache_dir fuera de AssetCache permite componer una ruta dentro de la raíz "
+            "indexada sin pasar por put(). Sitios: " + ", ".join(culpables),
+        )
+
+    def test_debug_path_cae_fuera_de_la_raiz_indexada(self):
+        # El aserto que hace falsable a los dos de arriba: si `debug_path`
+        # devolviera algo DENTRO de `cache_dir`, mandar ahí las páginas del
+        # atlas no habría arreglado nada y los dos tests seguirían verdes.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = AssetCache(cache_dir=str(Path(tmp) / "surfaces"), asset_type="surface")
+            destino = cache.debug_path("atlas_deadbeefdeadbeef", "page0.png")
+            self.assertNotIn(
+                cache.cache_dir.resolve(),
+                destino.resolve().parents,
+                f"debug_path ({destino}) cae DENTRO de la raiz indexada ({cache.cache_dir})",
+            )
 
 
 if __name__ == "__main__":

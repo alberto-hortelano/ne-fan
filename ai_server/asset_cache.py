@@ -65,7 +65,31 @@ class AssetCache:
         return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
 
     def get_path(self, key: str, map_type: str) -> Path:
+        """La ruta INDEXADA de un blob: `cache_dir/{hash}/{map_type}.png`.
+
+        `key` es SIEMPRE un hash de `hash_key()`. Lo que se escriba aquí sin
+        pasar por `put()` no tiene fila de manifest, y por tanto ni el prune lo
+        borra ni `db.totalBytes()` lo cuenta — el techo de `cache_max_bytes` se
+        compararía contra un censo que ve una fracción del disco. Para lo que
+        NO es un asset (páginas de debug, volcados), está `debug_path()`, que
+        escribe FUERA de la raíz indexada. Lo canda `test_asset_cache.py`
+        (#413)."""
         return self.cache_dir / key / f"{map_type}.png"
+
+    def debug_path(self, nombre: str, fichero: str) -> Path:
+        """Ruta para material de DEPURACIÓN, hermana de la raíz indexada y
+        fuera de ella.
+
+        Nace de #413: las páginas del atlas se escribían con `get_path()` bajo
+        un nombre con prefijo (`atlas_<16hex>`, 22 caracteres) que **nunca**
+        casaría con un hash de 16 hex, así que esos directorios no podían tener
+        fila de manifest ni hoy ni nunca. Medido el 2026-09-03 y otra vez el
+        09-17, sin cambio: 19 directorios `atlas_*`, **81,7 MB**, el 69 % de los
+        bytes de `cache/surfaces/` — irreclamables por construcción.
+
+        Aquí nada se indexa y nada se promete: es material que se puede borrar
+        entero sin consecuencias, y por eso vive aparte."""
+        return self.cache_dir.parent / "debug" / nombre / fichero
 
     def has(self, prompt: str, map_type: str, context: dict | None = None) -> bool:
         key = self.hash_key(prompt, context)
