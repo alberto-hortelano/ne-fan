@@ -26,6 +26,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import ts from "typescript";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,7 +45,14 @@ type Medida = {
 };
 type Juicio = { medido: boolean; real: boolean; razon: number | null; por?: string | null; motivo: string };
 type Control = { vale: boolean; aviso: string | null; motivo: string | null };
-type Fila = { nombre: string; estado: string; fallos?: string[] };
+type Magnitud = { texto: string; medido: number; esperado: number };
+type Fila = {
+  nombre: string;
+  estado: string;
+  fallos?: string[];
+  carga?: Medida | null;
+  magnitudes?: Magnitud[];
+};
 type Comparada = {
   nombre: string;
   quieto: string | null;
@@ -54,8 +62,11 @@ type Comparada = {
   corridas: number;
   cambio: string;
   firma: string | null;
+  magnitudCaida: Magnitud | null;
+  razonesRojas: number[];
   fallosQuieto: string[];
   fallosCargado: string[];
+  magnitudesCargado: Magnitud[];
 };
 
 const mod = (await import(join(repoRoot, "qa", "lib", "carga.mjs"))) as {
@@ -71,11 +82,16 @@ const mod = (await import(join(repoRoot, "qa", "lib", "carga.mjs"))) as {
     o: { min: number; max: number; entero?: boolean; porDefecto?: number },
   ) => number;
   firmaDePresupuesto: (fallos: string[]) => boolean;
+  magnitudQueCae: (magnitudes: Magnitud[] | undefined) => Magnitud | null;
   juzgaElControl: (o: { medida: Medida | null; umbral?: number }) => Control;
   factorDelEntorno: (env: Record<string, string | undefined>) => number | null;
   razonDeLaMedida: (m: Medida | null) => number | null;
   juzgaLaCarga: (o: { factor: number; medida: Medida | null; umbral?: number }) => Juicio;
-  comparaCorridas: (a: Fila[] | undefined, b: (Fila[] | undefined)[]) => Comparada[];
+  comparaCorridas: (
+    a: Fila[] | undefined,
+    b: (Fila[] | undefined)[],
+    o?: { umbral?: number },
+  ) => Comparada[];
   veredictoDelReproductor: (o: { juicios: Juicio[]; comparacion: Comparada[]; control?: Control }) => {
     exit: number;
     titulo: string;
@@ -91,6 +107,7 @@ const {
   lineaDeMedida,
   opcionNumerica,
   firmaDePresupuesto,
+  magnitudQueCae,
   juzgaElControl,
   factorDelEntorno,
   razonDeLaMedida,
@@ -431,9 +448,279 @@ describe("el color antes y después: CINCO desenlaces y una frecuencia", () => {
     assert.equal(por(rs, "a").firma, null, "un guion que no se rompió no lleva firma");
     // El 75: rojo en las dos, así que ni siquiera llega a clasificarse — y si
     // hubiera sido verde quieto, su firma sería `sin-firma`.
-    const rs75 = comparaCorridas([{ nombre: "e", estado: "verde" }], [[{ nombre: "e", estado: "rojo", fallos: ["2 derivaciones (había 1)"] }]]);
+    //
+    // Y se le pone delante LO QUE HOY PODRÍA TUMBARLO (#609): la misma razón
+    // sim/pared hundida que trae el 93 —medido, a ×20 la razón se hunde también
+    // para el 75—, o sea las dos primeras patas cumplidas. Sigue saliendo
+    // `sin-firma` porque no declara NINGUNA magnitud, que es el criterio de
+    // no-regresión de #609: la defensa que nació de #496/#497 no se afloja, y
+    // el 75 queda fuera POR CONSTRUCCIÓN y no por cómo esté redactado su aserto.
+    const rs75 = comparaCorridas(
+      [{ nombre: "e", estado: "verde" }],
+      [
+        [
+          {
+            nombre: "e",
+            estado: "rojo",
+            fallos: ["2 derivaciones (había 1) — la escena servida cambió en: npcs (barkeep: position)"],
+            carga: medida({ sim: 2.62, paredMs: 10_000 }),
+            magnitudes: [],
+          },
+        ],
+      ],
+    );
     assert.equal(rs75[0].cambio, "se-rompio");
-    assert.equal(rs75[0].firma, "sin-firma");
+    assert.equal(rs75[0].razonesRojas.length, 1, "la razón de la corrida roja del 75 SÍ se lee");
+    assert.ok(rs75[0].razonesRojas[0] < UMBRAL_DE_CARGA_REAL, "y está hundida: las dos primeras patas se cumplen");
+    assert.equal(rs75[0].firma, "sin-firma", "y aun así NO es atribuible: no declaró ninguna magnitud");
+    assert.equal(rs75[0].magnitudCaida, null);
+  });
+});
+
+describe("la TERCERA categoría: compatible con #545 POR COMPORTAMIENTO (#609)", () => {
+  /** La razón que midió el caso real: el 93 a ×40 dio 0,262 sim/pared. */
+  const CARGA_HUNDIDA = medida({ sim: 2.62, paredMs: 10_000 });
+  /** Una corrida que NO estuvo frenada: razón 1,0. */
+  const CARGA_SANA = medida({ sim: 10, paredMs: 10_000 });
+  /** Las cuatro velocidades del 93 cayeron a 0,38-0,63 de lo esperado. */
+  const VELOCIDAD_CAIDA: Magnitud = {
+    texto: "andando, el jugador va a walk_speed × speed_scale = 4.18 m/s — medido 1.6000 m/s",
+    medido: 1.6,
+    esperado: 4.18,
+  };
+
+  const unGuion = (fila: Partial<Fila>) =>
+    comparaCorridas(
+      [{ nombre: "93", estado: "verde" }],
+      [[{ nombre: "93", estado: "rojo", fallos: ["una velocidad que no casa"], ...fila } as Fila]],
+    )[0];
+
+  describe("`magnitudQueCae`: la DIRECCIÓN, y nada más que la dirección", () => {
+    it("una magnitud que CAE se devuelve con su texto y sus dos números", () => {
+      const m = magnitudQueCae([VELOCIDAD_CAIDA]);
+      assert.equal(m?.medido, 1.6);
+      assert.equal(m?.esperado, 4.18);
+      assert.match(m!.texto, /walk_speed/);
+    });
+
+    it("una magnitud que SUBE no cuenta: un reloj lento no hace que un contador salga ALTO", () => {
+      // El negativo que separa esta pata de «una magnitud declarada FALLÓ»: si
+      // bastara con fallar, un contador contaminado por la vida ambiental
+      // —2 derivaciones donde había 1, que es el rojo del 75— entraría en la
+      // categoría con solo declararse. Aquí la dirección es la regla.
+      assert.equal(magnitudQueCae([{ texto: "2 derivaciones (había 1)", medido: 2, esperado: 1 }]), null);
+    });
+
+    it("una magnitud clavada tampoco cae (la igualdad no es una caída)", () => {
+      assert.equal(magnitudQueCae([{ texto: "x", medido: 4.18, esperado: 4.18 }]), null);
+    });
+
+    it("sin magnitudes no hay caída — y eso es lo que deja al 75 fuera por construcción", () => {
+      assert.equal(magnitudQueCae([]), null);
+      assert.equal(magnitudQueCae(undefined), null);
+    });
+
+    it("una magnitud con números que no son números se IGNORA, no vota", () => {
+      assert.equal(magnitudQueCae([{ texto: "x", medido: NaN, esperado: 4 } as Magnitud]), null);
+      assert.equal(magnitudQueCae([{ texto: "x", medido: 1, esperado: undefined } as unknown as Magnitud]), null);
+      // …y no ciega a las demás: una mala delante no se lleva por delante la buena.
+      const m = magnitudQueCae([{ texto: "mala", medido: NaN, esperado: 4 } as Magnitud, VELOCIDAD_CAIDA]);
+      assert.equal(m?.medido, 1.6);
+    });
+  });
+
+  describe("la clasificación, con las TRES patas", () => {
+    it("el caso medido del 93: rojo nuevo + razón hundida + magnitud que cae = `comportamiento`", () => {
+      const r = unGuion({ carga: CARGA_HUNDIDA, magnitudes: [VELOCIDAD_CAIDA] });
+      assert.equal(r.cambio, "se-rompio");
+      assert.equal(r.firma, "comportamiento");
+      assert.equal(r.magnitudCaida?.medido, 1.6, "la fila NOMBRA la magnitud que sostuvo la clasificación");
+    });
+
+    it("con magnitud que cae pero SIN carga hundida, NO se clasifica", () => {
+      // La pata de la razón no es adorno: sin ella, un guion que se rompiera
+      // bajo carga por cualquier otra cosa —y que declarase magnitudes— se
+      // presentaría como compatible con #545 sin que el reloj hubiera fallado.
+      const r = unGuion({ carga: CARGA_SANA, magnitudes: [VELOCIDAD_CAIDA] });
+      assert.equal(r.firma, "sin-firma");
+      assert.equal(r.magnitudCaida, null);
+    });
+
+    it("con carga hundida pero SIN magnitud que caiga, tampoco: es el caso del 75", () => {
+      const r = unGuion({
+        carga: CARGA_HUNDIDA,
+        fallos: ["2 derivaciones (había 1) — la escena servida cambió en: npcs (barkeep: position)"],
+        magnitudes: [],
+      });
+      assert.equal(r.firma, "sin-firma");
+    });
+
+    it("la firma de PRESUPUESTO gana: se lee sin que el guion coopere", () => {
+      const r = unGuion({
+        carga: CARGA_HUNDIDA,
+        fallos: ["ocurre: el tile llega — no ocurrió en 4000 ms"],
+        magnitudes: [VELOCIDAD_CAIDA],
+      });
+      assert.equal(r.firma, "presupuesto");
+      assert.equal(r.magnitudCaida, null, "una fila no nombra una magnitud que no votó");
+    });
+
+    it("la razón de una corrida VERDE no sostiene nada: solo votan las ROJAS", () => {
+      // Sin esto, con `--repeticiones` bastaría una frenada cualquiera hundida
+      // para firmar el rojo de otra que corrió tranquila.
+      const r = comparaCorridas(
+        [{ nombre: "93", estado: "verde" }],
+        [
+          [{ nombre: "93", estado: "verde", carga: CARGA_HUNDIDA }],
+          [{ nombre: "93", estado: "rojo", fallos: ["x"], carga: CARGA_SANA, magnitudes: [VELOCIDAD_CAIDA] }],
+        ],
+      )[0];
+      assert.equal(r.rojas, 1);
+      assert.deepEqual(r.razonesRojas.map((x) => Number(x.toFixed(3))), [1]);
+      assert.equal(r.firma, "sin-firma");
+    });
+
+    it("una VENTANA CORTA no es una razón, así que no puede sostener la categoría", () => {
+      // Misma puerta que `juzgaLaCarga`: medido, el control del guion 80 dio
+      // 0,798 sobre 1,9 s y eso no es carga, es un guion que dura dos segundos.
+      const r = unGuion({
+        carga: medida({ sim: 1.5, paredMs: PARED_MINIMA_MS - 1 }),
+        magnitudes: [VELOCIDAD_CAIDA],
+      });
+      assert.deepEqual(r.razonesRojas, []);
+      assert.equal(r.firma, "sin-firma");
+    });
+
+    it("con la pestaña OCULTA tampoco: la sonda y el juego dejan de ver los mismos frames", () => {
+      const r = unGuion({ carga: medida({ sim: 2.62, paredMs: 10_000, oculta: true }), magnitudes: [VELOCIDAD_CAIDA] });
+      assert.equal(r.firma, "sin-firma");
+    });
+
+    it("sin medida de carga no se inventa una razón", () => {
+      const r = unGuion({ carga: null, magnitudes: [VELOCIDAD_CAIDA] });
+      assert.equal(r.firma, "sin-firma");
+    });
+
+    it("el `--umbral` que se le pasa es el que manda, no uno propio", () => {
+      const filas = { carga: CARGA_HUNDIDA, magnitudes: [VELOCIDAD_CAIDA] };
+      const con = (umbral: number) =>
+        comparaCorridas(
+          [{ nombre: "93", estado: "verde" }],
+          [[{ nombre: "93", estado: "rojo", fallos: ["x"], ...filas }]],
+          { umbral },
+        )[0].firma;
+      assert.equal(con(0.3), "comportamiento", "0,262 ≤ 0,30: hundida");
+      assert.equal(con(0.2), "sin-firma", "0,262 > 0,20: con ese listón no está hundida");
+    });
+
+    it("un guion que NO se rompió no lleva firma aunque declare magnitudes caídas", () => {
+      const r = comparaCorridas(
+        [{ nombre: "93", estado: "rojo", fallos: ["x"] }],
+        [[{ nombre: "93", estado: "rojo", fallos: ["x"], carga: CARGA_HUNDIDA, magnitudes: [VELOCIDAD_CAIDA] }]],
+      )[0];
+      assert.equal(r.cambio, "igual-rojo");
+      assert.equal(r.firma, null);
+    });
+  });
+
+  describe("lo que el veredicto DICE de esa categoría", () => {
+    const real: Juicio = { medido: true, real: true, razon: 0.262, por: "media", motivo: "bajó" };
+    const fila = (extra: Partial<Comparada>): Comparada => ({
+      nombre: "93",
+      quieto: "verde",
+      cargado: "rojo",
+      cargados: ["rojo"],
+      rojas: 1,
+      corridas: 1,
+      cambio: "se-rompio",
+      firma: "comportamiento",
+      magnitudCaida: VELOCIDAD_CAIDA,
+      razonesRojas: [0.262],
+      fallosQuieto: [],
+      fallosCargado: [],
+      magnitudesCargado: [VELOCIDAD_CAIDA],
+      ...extra,
+    });
+
+    it("dice el nombre nuevo, dice INDICIO y nombra la magnitud que cayó", () => {
+      const v = veredictoDelReproductor({ juicios: [real], comparacion: [fila({})] });
+      const d = v.detalle.join("\n");
+      assert.match(d, /compatible con #545 POR COMPORTAMIENTO, sin firma de presupuesto/);
+      assert.match(d, /INDICIO y no una prueba/);
+      assert.match(d, /walk_speed/, "sin nombrar la magnitud, quien lee no puede comprobarlo");
+      assert.match(d, /0\.38 de lo esperado/);
+    });
+
+    it("…y NO dice «no es atribuible a #545», que es la otra categoría", () => {
+      const v = veredictoDelReproductor({ juicios: [real], comparacion: [fila({})] });
+      assert.ok(!v.detalle.some((x) => /no es atribuible a #545/.test(x)));
+    });
+
+    it("sigue sin atribuir: nunca «el rojo de #545» (H-4)", () => {
+      const v = veredictoDelReproductor({ juicios: [real], comparacion: [fila({})] });
+      assert.ok(!v.detalle.some((x) => /rojo de #545|entregable de #545/.test(x)));
+    });
+
+    it("y escribe la DIRECCIÓN, que es lo único que se sostiene", () => {
+      // La proporcionalidad que pedía el issue está rechazada CON MEDIDA: razón
+      // 0,262 contra velocidades a 0,38-0,63. Lo que se afirma es que una tasa
+      // medida contra la pared solo puede salir BAJA.
+      const v = veredictoDelReproductor({ juicios: [real], comparacion: [fila({})] });
+      assert.match(v.detalle.join("\n"), /salga BAJA, nunca que un contador salga ALTO/);
+    });
+
+    it("una fila `comportamiento` sin magnitud no revienta el veredicto", () => {
+      // No debería ocurrir —`comparaCorridas` las pone juntas— pero el veredicto
+      // se lee en informes y un `undefined.texto` aquí mataría la corrida entera.
+      const v = veredictoDelReproductor({ juicios: [real], comparacion: [fila({ magnitudCaida: null })] });
+      assert.equal(v.exit, 0);
+      assert.match(v.detalle.join("\n"), /POR COMPORTAMIENTO/);
+    });
+  });
+
+  describe("la lista de magnitudes del `ctx` no se puede escribir (garantía en el TIPO)", () => {
+    // Misma asimetría que el contador de #639: `ctx.fallos` escribible solo puede
+    // poner a un guion en ROJO, pero una lista de magnitudes escribible FABRICA
+    // una clasificación «compatible con #545» sin haber medido nada — y el error
+    // caro de este instrumento es exactamente atribuirse un rojo ajeno
+    // (#496/#497). Así que el estado malo se hace inexpresable, y se comprueba
+    // leyendo el árbol de `qa/run.mjs`.
+    const fuente = readFileSync(join(repoRoot, "qa", "run.mjs"), "utf8");
+    const arbol = ts.createSourceFile("run.mjs", fuente, ts.ScriptTarget.Latest, true);
+    const nodos: ts.Node[] = [];
+    (function anda(n: ts.Node) {
+      nodos.push(n);
+      n.forEachChild(anda);
+    })(arbol);
+    const esMagnitudes = (n: ts.Node): n is ts.Node & { name: ts.Identifier } =>
+      "name" in n && ts.isIdentifier((n as { name: ts.Node }).name as ts.Node) &&
+      ((n as unknown as { name: ts.Identifier }).name.text === "magnitudes");
+
+    it("asoma como GETTER y no como propiedad de datos ni con setter", () => {
+      const getter = nodos.find((n) => ts.isGetAccessorDeclaration(n) && esMagnitudes(n)) as
+        | ts.GetAccessorDeclaration
+        | undefined;
+      assert.ok(getter, "`magnitudes` tiene que asomar al guion como getter, o se le puede escribir una lista entera");
+      assert.ok(
+        !nodos.some((n) => ts.isSetAccessorDeclaration(n) && esMagnitudes(n)),
+        "un setter devuelve el agujero",
+      );
+    });
+
+    it("y devuelve COPIAS: sin eso, `ctx.magnitudes.push(...)` escribe el original", () => {
+      const getter = nodos.find((n) => ts.isGetAccessorDeclaration(n) && esMagnitudes(n)) as ts.GetAccessorDeclaration;
+      const ret = getter.body?.statements.find((st) => ts.isReturnStatement(st)) as ts.ReturnStatement | undefined;
+      assert.ok(ret?.expression, "el getter tiene que devolver algo");
+      assert.ok(
+        !ts.isIdentifier(ret!.expression!),
+        "devolver la lista del cierre a pelo la deja escribible A TRAVÉS del getter: un `push` sobre lo " +
+          "que devuelve iría al original y le fabricaría al reproductor una magnitud caída que nadie midió",
+      );
+    });
+
+    it("la propiedad se cierra a `configurable: false`, como el contador de #639", () => {
+      assert.match(fuente, /Object\.defineProperty\(ctx, "magnitudes", \{ configurable: false \}\)/);
+    });
   });
 });
 
@@ -479,8 +766,11 @@ describe("el veredicto del REPRODUCTOR no es el veredicto de los guiones", () =>
     corridas: 1,
     cambio,
     firma: cambio === "se-rompio" ? "presupuesto" : null,
+    magnitudCaida: null,
+    razonesRojas: [],
     fallosQuieto: [],
     fallosCargado: [],
+    magnitudesCargado: [],
     ...extra,
   });
 

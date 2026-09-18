@@ -480,10 +480,55 @@ export function lineaDeMedida(m, factor) {
  *  direcciones.** Que haya firma no demuestra que el rojo sea de #545 (una
  *  espera puede expirar por veinte motivos); que no la haya no demuestra que sea
  *  de #496. Lo que sí hace es impedir el error caro: **sin firma, el veredicto
- *  no puede llamarlo el rojo de #545**. */
+ *  no puede llamarlo el rojo de #545**.
+ *
+ *  **Y ya no es lo único que se mira** (#609). Esta función sigue siendo la
+ *  pata del TEXTO, con su alcance intacto; la segunda pata es
+ *  `magnitudQueCae`, que no lee texto ninguno porque el guion DECLARA su
+ *  magnitud. El caso que lo pedía es el 93: rojo solo bajo carga, causado por
+ *  el reloj, y sin un «ms» en ninguno de sus asertos. */
 export function firmaDePresupuesto(fallos) {
   const FIRMAS = [/no ocurrió en \d+\s*ms/i, /timeout esperando/i, /expiró a los \d+\s*ms/i];
   return (fallos ?? []).some((f) => FIRMAS.some((re) => re.test(String(f))));
+}
+
+/** ¿Se cayó alguna magnitud DECLARADA, y en la dirección que un reloj lento
+ *  puede causar? (#609)
+ *
+ *  La tercera pata de la clasificación, y la que existe para no clasificar por
+ *  el TEXTO del aserto. Las dos primeras —`cambio === "se-rompio"` y la razón
+ *  sim/pared hundida— **no distinguen el 93 del 75**: medido, bajo `--factor 20`
+ *  la razón se hunde para los dos, así que un criterio de dos patas cambiaría
+ *  una mentira por la contraria y volvería a atribuirle a #545 el rojo del 75,
+ *  que es familia #496/#497. Eso es lo que costó el hallazgo H-4 de QA.
+ *
+ *  Lo que se exige es la **dirección**, y es una frase del mecanismo, no de la
+ *  curva: *un reloj que va lento solo puede hacer que una tasa medida contra la
+ *  pared salga BAJA; no puede hacer que un contador salga ALTO*. Por eso solo
+ *  cuenta `medido < esperado`.
+ *
+ *  **La proporcionalidad está RECHAZADA CON MEDIDA**, y queda escrito para que
+ *  nadie la reintente: en el caso real del 93 a ×40 la razón sim/pared fue
+ *  **0,262** y las cuatro velocidades cayeron a **0,38 / 0,63 / 0,42 / 0,46** de
+ *  lo esperado. Exigir «cae en proporción a la razón» tumbaría el único caso
+ *  real que tenemos.
+ *
+ *  Y la magnitud viene **declarada** (`ctx.expectMagnitud`, `qa/run.mjs`), no
+ *  parseada de la frase del fallo. Eso no es un detalle de implementación: es lo
+ *  que hace que el guion 75 —que no declara ninguna— quede fuera de esta
+ *  categoría **por construcción** y no por cómo esté redactado su aserto.
+ *
+ *  Una magnitud con números que no son números se ignora en vez de votar: sin
+ *  esto, un `NaN` colado en la fila entraría por la comparación `NaN < x`
+ *  (false) o, peor, sostendría una clasificación sin medir nada. */
+export function magnitudQueCae(magnitudes) {
+  for (const m of magnitudes ?? []) {
+    const medido = Number(m?.medido);
+    const esperado = Number(m?.esperado);
+    if (!Number.isFinite(medido) || !Number.isFinite(esperado)) continue;
+    if (medido < esperado) return { texto: String(m?.texto ?? ""), medido, esperado };
+  }
+  return null;
 }
 
 /** Qué le pasó a cada guion entre la corrida quieta y las corridas bajo carga.
@@ -502,11 +547,20 @@ export function firmaDePresupuesto(fallos) {
  *   · `se-rompio` — verde quieto y rojo en al menos una frenada: **el rojo
  *     reproducido BAJO CARGA**. Y nada más: a quién pertenece ese rojo lo dice
  *     `firma`, no esta etiqueta (H-4).
+ *     Hay que dárselo: `firma` tiene TRES valores, no dos (#609). `presupuesto`
+ *     —el texto del fallo lleva una espera expirada—, `comportamiento` —no lo
+ *     lleva, pero una magnitud DECLARADA cayó con la razón sim/pared hundida en
+ *     las corridas rojas— y `sin-firma`, que sigue significando **no
+ *     atribuible** y sigue siendo la defensa que nació de #496/#497.
  *   · `se-arreglo` — rojo quieto y verde en al menos una frenada. No es un
  *     éxito: es un aviso de que ese rojo no era carga.
  *   · `no-comparable` — falta en alguna, o alguna no llegó a medir (⊘). Un guion
- *     que no midió no puede votar, y colapsarlo con «igual» fabricaría un verde. */
-export function comparaCorridas(quieta, cargadas) {
+ *     que no midió no puede votar, y colapsarlo con «igual» fabricaría un verde.
+ *
+ *  `umbral` es el MISMO de `juzgaLaCarga`, y se le pasa desde `--umbral` para
+ *  que las dos mitades del instrumento no puedan juzgar con dos listones
+ *  distintos en la misma corrida. */
+export function comparaCorridas(quieta, cargadas, { umbral = UMBRAL_DE_CARGA_REAL } = {}) {
   // `cargadas` es SIEMPRE una lista de corridas (cada una, su lista de guiones).
   // Una corrida que no dejó medida entra como `undefined` y se queda: su guion
   // sale `no-comparable`, que es lo que es. Descartarla encogería la N y haría
@@ -520,12 +574,44 @@ export function comparaCorridas(quieta, cargadas) {
     const bs = cs.map((m) => m.get(nombre));
     const medido = (r) => Boolean(r && r.estado !== "sin-medir");
     const comparable = medido(a) && bs.length > 0 && bs.every(medido);
-    const rojas = bs.filter((b) => b?.estado === "rojo").length;
+    const filasRojas = bs.filter((b) => b?.estado === "rojo");
+    const rojas = filasRojas.length;
     const fallosCargado = bs.flatMap((b) => b?.fallos ?? []);
+    const magnitudesCargado = bs.flatMap((b) => b?.magnitudes ?? []);
     let cambio = "no-comparable";
     if (comparable) {
       if (a.estado === "verde") cambio = rojas > 0 ? "se-rompio" : "igual-verde";
       else cambio = rojas < bs.length ? "se-arreglo" : "igual-rojo";
+    }
+    // La razón de las corridas que SALIERON ROJAS, no la de todas: una frenada
+    // que salió verde no dice nada de por qué cayó otra. Se exige que TODAS las
+    // que se pueden leer estén hundidas y que haya al menos una — con la misma
+    // puerta de ventana mínima que `juzgaLaCarga`, porque una razón sobre 1,9 s
+    // no es una razón, y con la pestaña oculta la sonda y el juego dejan de ver
+    // la misma secuencia de frames.
+    const razonUtil = (m) =>
+      m && !m.oculta && m.paredMs >= PARED_MINIMA_MS ? razonDeLaMedida(m) : null;
+    const razones = filasRojas.map((b) => razonUtil(b?.carga)).filter((r) => r !== null);
+    const razonHundida = razones.length > 0 && razones.every((r) => r <= umbral);
+    // Tercera rama (#609). El orden importa: la firma de presupuesto gana,
+    // porque es la que se puede leer sin que el guion coopere. La de
+    // comportamiento pide LAS DOS cosas —magnitud declarada que cae Y razón
+    // hundida—, que es lo que separa el 93 (una tasa que baja) del 75 (un
+    // contador que sube y que no declara magnitud ninguna).
+    let firma = null;
+    let magnitudCaida = null;
+    if (cambio === "se-rompio") {
+      if (firmaDePresupuesto(fallosCargado)) {
+        firma = "presupuesto";
+      } else {
+        const cae = magnitudQueCae(magnitudesCargado);
+        if (cae && razonHundida) {
+          firma = "comportamiento";
+          magnitudCaida = cae;
+        } else {
+          firma = "sin-firma";
+        }
+      }
     }
     return {
       nombre,
@@ -535,11 +621,55 @@ export function comparaCorridas(quieta, cargadas) {
       rojas,
       corridas: bs.length,
       cambio,
-      firma: cambio === "se-rompio" ? (firmaDePresupuesto(fallosCargado) ? "presupuesto" : "sin-firma") : null,
+      firma,
+      // La magnitud que SOSTIENE la clasificación, y solo esa: si no fue ella
+      // quien la sostuvo, la fila no la nombra. Un veredicto que nombra una
+      // magnitud que no votó se lee como si hubiera votado.
+      magnitudCaida,
+      razonesRojas: razones,
       fallosQuieto: a?.fallos ?? [],
       fallosCargado,
+      magnitudesCargado,
     };
   });
+}
+
+/** Qué dice el veredicto de un rojo bajo carga, según su firma (#609).
+ *
+ *  Tres frases para tres cosas distintas, y ninguna dice «el rojo de #545»: el
+ *  reproductor no puede atribuir (H-4).
+ *
+ *  La de en medio es la nueva, y es la que hay que leer con cuidado: dice
+ *  **indicio**, no prueba, y nombra la magnitud que cayó para que quien lee
+ *  pueda comprobarlo. Nace de un caso medido —el 93 a ×40, razón 0,262, cuatro
+ *  velocidades caídas— que el instrumento archivaba como «NO ATRIBUIBLE»
+ *  teniendo delante todo lo necesario para reconocerlo. */
+function frasePorFirma(r) {
+  if (r.firma === "presupuesto") {
+    return (
+      "— el fallo lleva FIRMA de presupuesto de reloj (una espera expirada), que es COMPATIBLE con " +
+      "#545 pero no lo prueba: mira el texto del aserto"
+    );
+  }
+  if (r.firma === "comportamiento") {
+    const m = r.magnitudCaida;
+    const cuanto =
+      m && m.esperado ? ` (${(m.medido / m.esperado).toFixed(2)} de lo esperado)` : "";
+    return (
+      "— el fallo NO lleva firma de presupuesto de reloj, pero una magnitud DECLARADA CAYÓ" +
+      `${cuanto} con la razón sim/pared hundida en las corridas rojas` +
+      (m?.texto ? `: «${m.texto}»` : "") +
+      ". Eso lo hace **compatible con #545 POR COMPORTAMIENTO, sin firma de presupuesto**, que es un " +
+      "INDICIO y no una prueba: lo único que se sostiene es la DIRECCIÓN — un reloj que va lento solo " +
+      "puede hacer que una tasa medida contra la pared salga BAJA, nunca que un contador salga ALTO. " +
+      "Mira la magnitud antes de tocar una espera"
+    );
+  }
+  return (
+    "— el fallo NO lleva firma de presupuesto de reloj ni una magnitud declarada que caiga, así que " +
+    "**no es atribuible a #545**: puede ser un contador sobre un canal compartido (#496/#497, como el " +
+    "guion 75) o el escenario dejando de ser determinista. Mira el texto del aserto antes de tocar una espera"
+  );
 }
 
 /** El veredicto del REPRODUCTOR, que no es el veredicto de los guiones.
@@ -593,13 +723,7 @@ export function veredictoDelReproductor({ juicios, comparacion, control }) {
     // FRECUENCIA, que es el dato que #545 necesita para juzgar un arreglo, y
     // dice si el fallo lleva firma de presupuesto de reloj o no.
     detalle.push(
-      `ROJO BAJO CARGA en ${r.nombre}: ${r.rojas} de ${r.corridas} corrida(s) frenada(s) ` +
-        (r.firma === "presupuesto"
-          ? "— el fallo lleva FIRMA de presupuesto de reloj (una espera expirada), que es COMPATIBLE con " +
-            "#545 pero no lo prueba: mira el texto del aserto"
-          : "— el fallo NO lleva firma de presupuesto de reloj, así que **no es atribuible a #545**: " +
-            "puede ser un contador sobre un canal compartido (#496/#497, como el guion 75) o el " +
-            "escenario dejando de ser determinista. Mira el texto del aserto antes de tocar una espera"),
+      `ROJO BAJO CARGA en ${r.nombre}: ${r.rojas} de ${r.corridas} corrida(s) frenada(s) ` + frasePorFirma(r),
     );
   }
   if (yaRojos.length) {

@@ -379,11 +379,17 @@ niega a decir «aguanta»**: dice cuántas muestras son.
 **Lo que este instrumento NO puede decir: de QUIÉN es el rojo.** Un rojo bajo carga **no es, por sí
 solo, un rojo de #545**. Medido: `node qa/bajo-carga.mjs 75 --factor 20` pone el **75 rojo** (razón
 0,266), y el aserto que cae es un CONTADOR contaminado por la vida ambiental (`2 derivaciones (había
-1) — la escena servida cambió en: npcs (barkeep: position)`), o sea familia **#496/#497**. Lo único
-que este banco puede mirar sin inventar nada es el **texto del fallo**, así que clasifica en dos y lo
-dice: **con firma** de presupuesto de reloj (`no ocurrió en N ms`, `timeout esperando`, `expiró a los
-N ms`) → *compatible* con #545 y **no probado**; **sin firma** → **no atribuible**, mira el aserto
-antes de tocar una espera. Ojo desde el paso a sim: una espera con presupuesto de simulación que se
+1) — la escena servida cambió en: npcs (barkeep: position)`), o sea familia **#496/#497**. Clasifica
+en **tres** y lo dice: **presupuesto** — el texto del fallo lleva una espera expirada (`no ocurrió en
+N ms`, `timeout esperando`, `expiró a los N ms`) → *compatible* con #545 y **no probado**;
+**comportamiento** (#609) — no lleva esa firma, pero el guion DECLARÓ una magnitud con
+`ctx.expectMagnitud` y esa magnitud **cayó**, con la razón sim/pared hundida en las corridas rojas →
+*compatible con #545 por comportamiento, sin firma de presupuesto*, **indicio y no prueba**;
+**sin-firma** — ninguna de las dos → **no atribuible**, mira el aserto antes de tocar una espera.
+La magnitud va **declarada, no parseada del texto**: por eso el 75 —que no declara ninguna— sigue
+saliendo `sin-firma` **por construcción** y no por cómo esté redactado su aserto. Y las dos primeras
+patas solas no bastan, medido: bajo `--factor 20` la razón se hunde también para el 75.
+Ojo desde el paso a sim: una espera con presupuesto de simulación que se
 agota dice «no ocurrió en N s de sim», que **no casa** con esa firma — y está bien que no case,
 porque ahí el mundo SÍ corrió sus segundos y el hecho es del juego, no de la carga. Lo que declara la
 inanición es el ⊘, que no es un color. La decisión sigue siendo de quien lee. Corolario para quien vaya a arreglar
