@@ -248,10 +248,14 @@ export class BridgeGameClient implements GameClient {
    *  state_update en vuelo sigue siendo estado real) y si no repite el último
    *  conocido sin eventos.
    *
-   *  QUÉ REPITE, que es donde estaba la otra mitad de #659: el último frame que
-   *  este cliente ACEPTÓ. Con el título delante es lo único que corre, así que
-   *  mientras el recuerdo no se olvidara, volver al título seguía pintando el
-   *  HP y los NPCs de la partida soltada contra un mundo ya vaciado. */
+   *  QUÉ REPITE: el último frame que este cliente ACEPTÓ. Con el título delante
+   *  es lo único que corre, así que sin olvidarlo la página repetiría el HP y
+   *  los NPCs de la partida soltada contra un mundo ya vaciado. Lo olvida el
+   *  sink `estadoDelSim` (#659), que es DEFENSA EN PROFUNDIDAD y no el arreglo
+   *  de un síntoma visto: QA midió que ningún camino del jugador llega ahí —la
+   *  vuelta al título exige `mundoVacio` y una partida sin mundo tiene el sim
+   *  recién sembrado, o sea el neutro—. El porqué entero, con su medida, en
+   *  `FacetSinks.estadoDelSim` (core). */
   idle(): FrameResult {
     if (this.pendingFrame) {
       const frame = this.pendingFrame;

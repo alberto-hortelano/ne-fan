@@ -804,8 +804,8 @@ export type ServerMessage =
  *  discriminada, un campo más corta.
  *
  *  Por qué el sello no lo escribe cada emisor: son muchas llamadas repartidas
- *  por muchos ficheros —31 en 11 el 2026-09-18, medido y NO escrito aquí
- *  arriba— y basta olvidarse de UNA para que el cliente tire un tile bueno.
+ *  por muchos ficheros —sin número aquí a propósito— y basta olvidarse de UNA
+ *  para que el cliente tire un tile bueno.
  *  Aquí el tipo obliga: quien difunda no puede poner el sello (excess property)
  *  y `broadcastNarrative` no puede no ponerlo (el campo es requerido en
  *  `ServerMessage`).

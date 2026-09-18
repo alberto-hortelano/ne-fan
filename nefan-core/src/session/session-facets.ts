@@ -116,18 +116,30 @@ export interface FacetSinks {
    *
    *  `BridgeGameClient` guarda el último `state_update` bueno y lo REPITE
    *  mientras no llega otro: es lo que hace `idle()`, que es justo lo que corre
-   *  con el título delante. Hasta hoy ese recuerdo solo se limpiaba en
-   *  `loadRoom()` —nunca al volver al título—, así que tras `leave()` el mundo
-   *  ya estaba vacío (`resetWorld`), el dedupe olvidado (`mundo.vaciar()`) y el
-   *  cliente seguía pintando la vida y los NPCs de la partida muerta: volvía
-   *  «el bridge mueve al NPC X y el cliente no lo tiene en escena» y el HUD se
-   *  quedaba con el HP anterior.
+   *  con el título delante. Ese recuerdo solo se limpiaba en `loadRoom()`,
+   *  nunca al volver al título, así que tras `leave()` el mundo ya está vacío
+   *  (`resetWorld`) y el dedupe olvidado (`mundo.vaciar()`) mientras el cliente
+   *  sigue con el frame de la partida anterior en la mano.
    *
-   *  Es la OTRA MITAD del sello del wire, y no la cubre: esos frames fueron
-   *  míos de verdad cuando llegaron. Lo que caduca no es su procedencia, es la
-   *  partida. Va junto al mundo y a la frontera porque es lo mismo que ellos —
-   *  lo que el cliente creía saber del mundo anterior— y se cablea con
-   *  `porValor` por lo mismo: olvidar es destructivo. */
+   *  ES DEFENSA EN PROFUNDIDAD, NO UN SÍNTOMA OBSERVADO, y conviene decirlo con
+   *  la medida delante porque la primera redacción de este docblock afirmaba lo
+   *  segundo. QA de la tanda O lo persiguió eslabón a eslabón y el camino NO SE
+   *  ALCANZA jugando: la única vuelta al título desde una partida viva es el
+   *  botón del overlay de fallo, y ese botón solo aparece con `mundoVacio`
+   *  (`protocol/status-rotulo.ts`, `salida: "volver-al-titulo"`); una partida
+   *  sin mundo pintado tiene el sim recién sembrado (`reseedSimForSession`), o
+   *  sea que el frame que se repetiría es campo a campo el neutro y no se nota.
+   *  Construyendo a mano la única vía que quedaba —un save herido con
+   *  `scenes_loaded` vacío— el HUD SÍ conservaba los 37 PV y el registro SÍ
+   *  ganaba la entrada del NPC heredado, pero el muro con «Volver al título» no
+   *  llegó nunca: desde #279 no nacen saves de cero escenas.
+   *
+   *  Se queda porque es barato y porque la garantía no puede ser que nadie
+   *  encuentre el camino —el mismo argumento que el docblock de `dialogo` dice
+   *  de sí mismo—, y porque lo que caduca no es la procedencia de esos frames
+   *  (fueron míos de verdad) sino la partida, que es justo lo que el sello del
+   *  wire no puede mirar. Va junto al mundo y a la frontera porque es lo mismo
+   *  que ellos, y con `porValor` por lo mismo: olvidar es destructivo. */
   estadoDelSim(f: Pick<SessionFacets, "sessionId">): void;
   /** Registro técnico. Por cambio de id retira lo que era de la partida que se
    *  va y CONSERVA lo de la máquina, que sigue siendo cierto sin ella (el clon

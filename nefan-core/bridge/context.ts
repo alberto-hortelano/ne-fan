@@ -115,9 +115,12 @@ export interface BridgeContext {
   /** Difunde a todos los suscriptores SELLANDO la sesión vigente. El mensaje
    *  llega sin `sessionId` y sale con él: ningún emisor puede olvidarse de
    *  ponerlo ni ponerlo mal (#282). Aquí decía «los 23 emisores» y era un censo
-   *  en prosa como los otros dos que #659 retiró; el número de hoy —MEDIDO el
-   *  2026-09-18, 31 llamadas en 11 ficheros— se queda fuera del comentario a
-   *  propósito, porque envejece en la primera PR que añada una.
+   *  en prosa como los otros dos que #659 retiró; queda SIN NÚMERO, y esta vez
+   *  de verdad — la primera corrección puso el recuento nuevo dentro del mismo
+   *  comentario del que decía sacarlo, y encima no se reproducía: según qué se
+   *  cuente salen 29 en 10 ficheros, 34 en 11 o 36 en 12, o sea que ni la
+   *  pregunta estaba bien planteada. Si alguna vez hace falta el número, se
+   *  deriva en un test, que es lo único que no se queda desfasado.
    *
    *  Solo acepta lo que SE DIRECCIONA POR SESIÓN (`ConSelloDeSesion`). Lo que
    *  se direcciona por juego va por `difundirDeJuego` y no pasa por aquí. */
