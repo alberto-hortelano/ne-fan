@@ -1221,6 +1221,109 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     );
   });
 
+  /** EL CANDADO DE #659, y el que importa de esta PR: el sim de una partida
+   *  muerta sigue diciendo que es suyo.
+   *
+   *  El mecanismo del 79→80 del banco, medido y reproducido aquí sin navegador:
+   *  se cierra el socket de la página que jugaba → `release()` deja `owner` a
+   *  `null` → `canDrive()` pasa a valer true PARA CUALQUIERA (es lo que hace
+   *  que el modo fixtures tras un F5 siga siendo jugable, y no se toca) → el
+   *  socket siguiente manda un `input` y `handleInput` le contesta con el
+   *  jugador y los NPCs que quedaron dentro del sim.
+   *
+   *  Lo que se afirma es que ese frame VIENE FIRMADO por la partida muerta, con
+   *  su id, que es lo único que le permite al cliente tirarlo. Sabotaje con el
+   *  que se pone rojo: poner `delSim = { de: "nadie" }` en `release` — sin este
+   *  `it`, ese sabotaje deja TODO lo demás en verde y el fallo vuelve entero. */
+  it("un state_update de una partida muerta sigue diciendo de quién es (#659)", async () => {
+    const { ctx, sim, narrative } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    // Vida ambiental dentro del sim: es lo que el 80 heredaba y materializaba.
+    narrative.recordSceneLoaded("tile_0_0", escenaExpandidaDePrueba("tile_0_0", {
+      entities: [{ kind: "npc", id: "vecino_del_79", name: "Vecino", cell: [60, 60], footprint: [1, 1] }],
+    }));
+    assert.deepEqual(
+      ctx.world.delSim,
+      { de: "partida", sessionId },
+      "mientras juega, el sim es de su partida",
+    );
+
+    // La página se va (cierre del socket). El mundo se queda sin dueño…
+    ctx.world.release(socket);
+    assert.equal(ctx.world.owner, null, "…y eso es lo que deja conducir al siguiente");
+    assert.ok(sim.getCombatant("player"), "pero el contenido del sim NO se vacía");
+
+    // …y llega la página del guion siguiente: sin sesión, sin fixture, manda
+    // un `input` porque el título ya se cerró.
+    const { socket: recienLlegada, sent: sentNueva } = makeSocket();
+    await porElBorde(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: 1, y: 0, z: 1 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: true,
+        },
+      },
+      recienLlegada,
+      ctx,
+    );
+    const estados = sentNueva.filter((m): m is StateUpdateMessage => m.type === "state_update");
+    assert.equal(estados.length, 1, "se le contesta: el candado NO es que no le llegue nada");
+    assert.deepEqual(
+      estados[0].delSim,
+      { de: "partida", sessionId },
+      "y el frame sigue firmado por la partida muerta — es lo que el cliente tira",
+    );
+  });
+
+  /** La otra mitad del mismo sello: en el selector «Room» NADIE descarta su
+   *  propia respuesta. Es el fallo en el que caía el sello ingenuo por
+   *  `ctx.narrative.session_id` —en fixtures ese id es el de la partida
+   *  anterior, rancio (`handleLoadRoom` ya vive de él)—, así que se afirma
+   *  aquí con una sesión viva delante para que el verde no sea de un bridge
+   *  recién arrancado. */
+  it("las respuestas del selector «Room» vienen firmadas como PRUEBA, no como la sesión rancia (#659)", async () => {
+    const { ctx } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    ctx.world.release(socket);
+    assert.notEqual(ctx.narrative.session_id, "", "la sesión del bridge sigue cargada: el id es RANCIO");
+
+    const { socket: fixtura, sent: sentFixtura } = makeSocket();
+    const deEstado = (): StateUpdateMessage[] =>
+      sentFixtura.filter((m): m is StateUpdateMessage => m.type === "state_update");
+    await porElBorde({ type: "load_room", roomId: "robledo_tile", enemies: [] }, fixtura, ctx);
+    await porElBorde(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: {
+          playerPosition: { x: -10.25, y: 0, z: -1.68 },
+          playerForward: { x: 0, y: 0, z: -1 },
+          playerMoving: true,
+        },
+      },
+      fixtura,
+      ctx,
+    );
+    await porElBorde({ type: "respawn", pos: { x: 0, y: 0, z: 0 } }, fixtura, ctx);
+    await porElBorde({ type: "add_combatants", enemies: [] }, fixtura, ctx);
+    const estados = deEstado();
+    assert.equal(estados.length, 4, "los CUATRO emisores contestan por este camino");
+    assert.deepEqual(
+      [...new Set(estados.map((m) => JSON.stringify(m.delSim)))],
+      ['{"de":"prueba"}'],
+      "y los cuatro firman «prueba»: ninguno cuela el id rancio de la sesión",
+    );
+  });
+
   /** Variante SIN F5: el jugador vuelve al título con la misma pestaña (el
    *  botón «Volver al título» del muro) y de ahí se va a las fixtures. Ahí el
    *  mundo lo sigue teniendo SU socket, así que la toma no la refresca nadie —

@@ -169,6 +169,7 @@ const session = createClientSession({
   // La frontera olvida con el mundo lo pedido en la partida anterior (#517).
   // El registro retira lo de la partida y conserva lo de la máquina (#497).
   frontera: porValor(() => frontier.olvidarLaPartida()),
+  estadoDelSim: porValor(() => gameClient.olvidarElUltimoFrame()),
   errores: porValor(() => errors.olvidarLaPartida()),
   style: ({ styleId }) => applySessionStyle(styleId),
   theme: ({ uiTheme }) => applyUiTheme(uiTheme),
@@ -907,6 +908,7 @@ instalarNefanHook({
   fpsAtlas: fpsAtlasController,
   titleScreen,
   narrativeClient,
+  estadosTirados: () => gameClient.estadosTirados(),
   session,
   collision,
   dialogoAbierto,
@@ -1155,7 +1157,7 @@ async function bootstrap(): Promise<void> {
  *  entrar; el porqué, y qué pasa con la fixture que se estuviera mirando, en
  *  `ui/la-partida-llego-tarde.ts`. */
 async function entrarPorElTitulo(): Promise<void> {
-  const client = await createGameClient(sharedBridge);
+  const client = await createGameClient(sharedBridge, { idDeLaPartida: () => session.id, log });
   gameClient = client;
   chip(client.isConnected);
   client.on("connected", () => chip(true));

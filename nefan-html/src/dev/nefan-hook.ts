@@ -81,6 +81,9 @@ export interface DepsDelHook {
   fpsAtlas: FpsAtlasController;
   titleScreen: TitleScreen;
   narrativeClient: NarrativeClient;
+  /** Ver el hook `estadosTirados`. Es un thunk y no el cliente porque
+   *  `gameClient` se reemplaza cuando el bridge llega tarde (#478). */
+  estadosTirados: () => number;
   session: { readonly facets: unknown };
   /** Las DOS consultas del sistema de colisión, y llegan juntas a propósito
    *  (#644): `collidesAt` es «¿me frena ir ahí?» —de MOVIMIENTO, y por eso
@@ -188,6 +191,12 @@ export function instalarNefanHook(deps: DepsDelHook): void {
      *  mismo verde, y el segundo no mide nada. Van por separado y no sumados
      *  porque los guiones 29 y 35 afirman cosas distintas con cada uno. */
     descartados: () => deps.narrativeClient.descartados(),
+    /** Lo mismo para el CANAL DE ESTADO (#659): cuántos `state_update` de otro
+     *  sim ha tirado esta página. En un flujo normal es CERO en los dos
+     *  regímenes —partida y selector «Room»—, y que suba ahí significa que la
+     *  página está descartando su propia respuesta, que es la trampa en la que
+     *  caía el sello ingenuo por `ctx.narrative.session_id`. */
+    estadosTirados: () => deps.estadosTirados(),
     /** A qué URL resuelve AHORA MISMO cada servicio, ya aplicados los overrides
      *  de la query (`?ai=`, `?bridge=`). No es un adorno de diagnóstico: es lo
      *  que permite al banco de pruebas preguntarle al BACKEND si cobra, en vez

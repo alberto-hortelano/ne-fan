@@ -1,4 +1,5 @@
 /** Protocol messages between the frontend and nefan-core logic. */
+import type { DuenoDelSim } from "./dueno-del-sim.js";
 import type { UiTheme } from "../games/ui-theme.js";
 
 import type { Vec3, CombatEvent, EnemyPersonality } from "../types.js";
@@ -319,6 +320,14 @@ export type ClientMessage =
 
 export interface StateUpdateMessage {
   type: "state_update";
+  /** DE QUIÉN ES EL SIM que describe este frame (#659). Requerido y sin
+   *  default: el sim del bridge es uno solo y `release()` no lo vacía, así que
+   *  sin este campo la página que llega después de una partida muerta aplica
+   *  su jugador y sus NPCs como si fueran suyos. Lo escribe el transporte
+   *  (`ctx.enviarEstado`, único sellador) desde `bridge/world-claim.ts`, único
+   *  que sabe la respuesta; el emisor no puede escribirlo (`SinDuenoDelSim`) y
+   *  tampoco puede no ponerlo (el campo es requerido). */
+  delSim: DuenoDelSim;
   events: CombatEvent[];
   playerHp: number;
   /** Y sobre cuánta. El máximo lo sabe el store del bridge (`player.max_hp`),
@@ -790,13 +799,30 @@ export type ServerMessage =
  *
  *  Es DISTRIBUTIVA a propósito (`T extends unknown ? … : never`): un `Omit`
  *  liso sobre la unión la colapsa en un objeto con los campos comunes y el
- *  discriminante deja de estrechar, así que los 23 literales de los emisores
- *  dejarían de comprobarse. Así siguen siendo la misma unión discriminada, un
- *  campo más corta.
+ *  discriminante deja de estrechar, así que los literales de tipo de los
+ *  emisores dejarían de comprobarse. Así siguen siendo la misma unión
+ *  discriminada, un campo más corta.
  *
- *  Por qué el sello no lo escribe cada emisor: son 23 llamadas repartidas por
- *  ocho ficheros y basta olvidarse de UNA para que el cliente tire un tile
- *  bueno. Aquí el tipo obliga: quien difunda no puede poner el sello (excess
- *  property) y `broadcastNarrative` no puede no ponerlo (el campo es
- *  requerido en `ServerMessage`). */
+ *  Por qué el sello no lo escribe cada emisor: son muchas llamadas repartidas
+ *  por muchos ficheros —sin número aquí a propósito— y basta olvidarse de UNA
+ *  para que el cliente tire un tile bueno.
+ *  Aquí el tipo obliga: quien difunda no puede poner el sello (excess property)
+ *  y `broadcastNarrative` no puede no ponerlo (el campo es requerido en
+ *  `ServerMessage`).
+ *
+ *  Aquí había un censo en prosa —«los 23 literales», «23 llamadas»— y se
+ *  retira en vez de corregirse (#659): un número escrito a mano en un
+ *  comentario envejece en la primera PR que añade un emisor y nadie se entera,
+ *  que es la misma clase de mentira que ya tenía `replay-server.mjs` diciendo
+ *  «los frames sellados del wire son tres» cuando eran cuatro. Si el conteo
+ *  hace falta, se deriva en un test. */
 export type SinSelloDeSesion<T> = T extends unknown ? Omit<T, "sessionId"> : never;
+
+/** El MISMO molde para el sello de #659: un `state_update` TAL COMO LO ESCRIBE
+ *  su emisor, sin decir de quién es el sim — eso lo pone `ctx.enviarEstado`,
+ *  que es el único que lo sabe (`bridge/world-claim.ts`).
+ *
+ *  Distributiva por la misma razón que la de arriba y no por simetría: sin el
+ *  `T extends unknown`, la unión colapsa y el emisor podría escribir un
+ *  `state_update` con los campos de otro mensaje. */
+export type SinDuenoDelSim<T> = T extends unknown ? Omit<T, "delSim"> : never;

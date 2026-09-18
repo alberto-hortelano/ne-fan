@@ -112,6 +112,35 @@ export interface FacetSinks {
    *  Recibe el id por valor y el cliente lo cablea con `porValor`, como
    *  `mundo` y `dialogo`: olvidar es destructivo. */
   frontera(f: Pick<SessionFacets, "sessionId">): void;
+  /** EL ÚLTIMO FRAME DEL SIM que el cliente tiene en la mano (#659).
+   *
+   *  `BridgeGameClient` guarda el último `state_update` bueno y lo REPITE
+   *  mientras no llega otro: es lo que hace `idle()`, que es justo lo que corre
+   *  con el título delante. Ese recuerdo solo se limpiaba en `loadRoom()`,
+   *  nunca al volver al título, así que tras `leave()` el mundo ya está vacío
+   *  (`resetWorld`) y el dedupe olvidado (`mundo.vaciar()`) mientras el cliente
+   *  sigue con el frame de la partida anterior en la mano.
+   *
+   *  ES DEFENSA EN PROFUNDIDAD, NO UN SÍNTOMA OBSERVADO, y conviene decirlo con
+   *  la medida delante porque la primera redacción de este docblock afirmaba lo
+   *  segundo. QA de la tanda O lo persiguió eslabón a eslabón y el camino NO SE
+   *  ALCANZA jugando: la única vuelta al título desde una partida viva es el
+   *  botón del overlay de fallo, y ese botón solo aparece con `mundoVacio`
+   *  (`protocol/status-rotulo.ts`, `salida: "volver-al-titulo"`); una partida
+   *  sin mundo pintado tiene el sim recién sembrado (`reseedSimForSession`), o
+   *  sea que el frame que se repetiría es campo a campo el neutro y no se nota.
+   *  Construyendo a mano la única vía que quedaba —un save herido con
+   *  `scenes_loaded` vacío— el HUD SÍ conservaba los 37 PV y el registro SÍ
+   *  ganaba la entrada del NPC heredado, pero el muro con «Volver al título» no
+   *  llegó nunca: desde #279 no nacen saves de cero escenas.
+   *
+   *  Se queda porque es barato y porque la garantía no puede ser que nadie
+   *  encuentre el camino —el mismo argumento que el docblock de `dialogo` dice
+   *  de sí mismo—, y porque lo que caduca no es la procedencia de esos frames
+   *  (fueron míos de verdad) sino la partida, que es justo lo que el sello del
+   *  wire no puede mirar. Va junto al mundo y a la frontera porque es lo mismo
+   *  que ellos, y con `porValor` por lo mismo: olvidar es destructivo. */
+  estadoDelSim(f: Pick<SessionFacets, "sessionId">): void;
   /** Registro técnico. Por cambio de id retira lo que era de la partida que se
    *  va y CONSERVA lo de la máquina, que sigue siendo cierto sin ella (el clon
    *  sin hojas de personaje, el pack de estilo que no casa): de quién es cada
@@ -213,6 +242,9 @@ const APLICADORES: {
   // Detrás del mundo, porque es lo mismo que el mundo: los tiles se van y con
   // ellos lo que la frontera creía saber de sus vecinos.
   frontera: (s, f) => s.frontera(f),
+  // Y detrás de la frontera, por la misma razón que los dos de arriba: el
+  // último frame del sim describe el mundo que se acaba de ir.
+  estadoDelSim: (s, f) => s.estadoDelSim(f),
   errores: (s, f) => s.errores(f),
   style: (s, f) => s.style(f),
   theme: (s, f) => s.theme(f),

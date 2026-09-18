@@ -39,6 +39,8 @@ s **sin esperar la lista de saves** (45 s, `sesion.mjs:183`), tras pre-generar 9
   último frame de la partida muerta, `resetWorld()` ya vació el mundo y `mundo.vaciar()` limpió el dedupe (`mundo-del-cliente.ts:97`) →
   vuelve «el bridge mueve al NPC X y el cliente no lo tiene en escena» y el HUD sigue con el HP anterior. **Filtrar el wire no toca
   nada de esto**: con el criterio actual, #659 cierra con la mitad visible del síntoma viva.
+
+  > **CORRECCIÓN MEDIDA (QA de la tanda O, 2026-09-18)**: este párrafo afirma el síntoma como OBSERVABLE y no lo es por ningún camino del jugador. La única vuelta al título desde una partida viva es el botón del overlay de fallo, que solo aparece con `mundoVacio` (`protocol/status-rotulo.ts`, `salida: "volver-al-titulo"`), y una partida sin mundo pintado tiene el sim recién sembrado (`reseedSimForSession`): el frame repetido es campo a campo el neutro. Construida a mano la única vía que quedaba —save herido a 37 PV con `scenes_loaded` vacío— el HUD SÍ marcó 37 y el registro SÍ ganó la entrada del NPC, pero el muro con «Volver al título» no llegó en 120 s: el reintento del bootstrap se retiró y desde #279 no nacen saves de cero escenas. El sink `estadoDelSim` SE QUEDA —es defensa en profundidad barata y correcta, y la garantía no puede ser que nadie encuentre el camino—, pero no se cuenta como síntoma arreglado.
 - **Qué se vuelve más difícil**: `sessionId` requerido saca al mensaje de `SinSello` (`context.ts:337`) y los cuatro `ctx.send` **dejan
   de compilar** — el tipo haciendo su trabajo. Arrastra el doble de tests: `test/helpers.ts:246-248` implementa `send` **sin sellar**
   (`:249-252` dice qué pasa si diverge).
@@ -88,6 +90,10 @@ cuesta CPU y cero créditos, es la tasa base del 15 sin tocar.
    > El wire es una de dos vías. La otra es `BridgeGameClient.lastState`, que solo se limpia en `loadRoom()`
    > (`game-client.ts:189-190`) y que `idle()` (`:184`) reproduce contra un mundo ya vaciado tras `session.leave()`. **Cerrar #659 sin
    > esto deja viva la mitad que el jugador ve.**
+   >
+   > **CORRECCIÓN MEDIDA (QA de la tanda O, 2026-09-18)**: «la mitad que el jugador ve» no la ve el jugador. Ver
+   > la nota de «El día después»: el camino exige `mundoVacio` y con mundo vacío el frame repetido es el neutro.
+   > El sink entra igual, como defensa en profundidad.
 4. A «Restricciones», dos cosas que **no** se hacen:
    > · **No sellar con `ctx.narrative.session_id` a secas**: en fixtures el bridge conserva la sesión anterior (`handleLoadRoom:183`) y
    > la página descartaría su propia respuesta de `load_room`, `respawn` y `add_combatants`; #313 es el precedente. · **La decisión de

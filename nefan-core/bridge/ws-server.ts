@@ -30,7 +30,12 @@ import { pluginRegisterBody } from "./state-http/context.js";
 import { routeMessage } from "./router.js";
 import { SceneGenQueue } from "./scene-gen-queue.js";
 import { intakeClientMessage } from "./message-intake.js";
-import { sellarSesion, type BridgeContext, type ClientSocket } from "./context.js";
+import {
+  sellarSesion,
+  sellarDuenoDelSim,
+  type BridgeContext,
+  type ClientSocket,
+} from "./context.js";
 import { difundirSalidasDeLosTilesCargados } from "./salidas.js";
 import type { CombatConfig } from "../src/types.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
@@ -72,9 +77,16 @@ const simCollision = createSimCollisionProvider(narrative);
 const narrativeSubscribers = new Set<WebSocket>();
 
 /** El ÚNICO sitio que escribe en el socket. `send` no admite mensajes con
- *  sello (el tipo `SinSello` los deja fuera) y los tres que sí lo llevan pasan
- *  por `sellarSesion`: por eso el sellado no puede saltarse escribiendo a
- *  mano, y por eso este escritor es crudo (#282). */
+ *  sello (el tipo `SinSello` los deja fuera): los que llevan el de SESIÓN
+ *  pasan por `sellarSesion` (#282) y el que lleva el de DUEÑO DEL SIM pasa por
+ *  `sellarDuenoDelSim` (#659). Por eso el sellado no puede saltarse
+ *  escribiendo a mano, y por eso este escritor es crudo.
+ *
+ *  Aquí decía «los tres que sí lo llevan» y ya eran cuatro antes de #659: el
+ *  número se retira en vez de corregirse, porque un censo en un comentario
+ *  envejece en la PR siguiente. Quién lleva sello lo dicen los tipos
+ *  derivados de `context.ts` (`ConSelloDeSesion`, `ConDuenoDelSim`), que no se
+ *  pueden quedar desfasados. */
 function escribir(ws: ClientSocket, msg: ServerMessage): void {
   if (ws.readyState === ws.OPEN) {
     ws.send(JSON.stringify(msg));
@@ -143,6 +155,15 @@ const ctx: BridgeContext = {
   // `repartirStatus` solo se habría mudado de sitio.
   difundirDeJuego(msg) {
     for (const ws of narrativeSubscribers) escribir(ws, msg);
+  },
+  // EL CUARTO VERBO, y tampoco es una bandera (#659). Lo que viaja por aquí se
+  // direcciona por DE QUIÉN ES EL SIM: no es la sesión vigente del bridge —que
+  // en el selector «Room» es la de la partida anterior, rancia— sino quién
+  // reclamó el contenido del sim, que es lo único que describe este mensaje.
+  // El sello sale de `ctx.world`, única fuente, y se estampa aquí y no en los
+  // cuatro emisores por lo mismo de siempre: basta olvidarse en uno.
+  enviarEstado(ws, msg) {
+    escribir(ws, sellarDuenoDelSim(msg, ctx.world.delSim));
   },
 };
 

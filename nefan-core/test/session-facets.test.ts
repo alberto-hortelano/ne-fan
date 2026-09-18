@@ -46,6 +46,7 @@ function espia(): { sinks: FacetSinks; llamadas: Array<[string, unknown]> } {
   const sinks: FacetSinks = {
     mundo: ({ sessionId }) => llamadas.push(["mundo", sessionId]),
     frontera: ({ sessionId }) => llamadas.push(["frontera", sessionId]),
+    estadoDelSim: ({ sessionId }) => llamadas.push(["estadoDelSim", sessionId]),
     errores: ({ sessionId }) => llamadas.push(["errores", sessionId]),
     style: ({ styleId }) => llamadas.push(["style", styleId]),
     theme: ({ uiTheme }) => llamadas.push(["theme", uiTheme]),
@@ -79,6 +80,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     assert.deepEqual(llamadas, [
       ["mundo", "1787-abc"],
       ["frontera", "1787-abc"],
+      ["estadoDelSim", "1787-abc"],
       ["errores", "1787-abc"],
       ["style", "acuarela"],
       ["theme", TEMA],
@@ -113,6 +115,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     assert.deepEqual(llamadas, [
       ["mundo", ""],
       ["frontera", ""],
+      ["estadoDelSim", ""],
       ["errores", ""],
       ["style", ""],
       ["theme", BASE_UI_THEME],
@@ -157,6 +160,7 @@ describe("sesión del cliente: entrar y salir por el mismo camino", () => {
     assert.deepEqual(llamadas, [
       ["mundo", "segunda"],
       ["frontera", "segunda"],
+      ["estadoDelSim", "segunda"],
       ["errores", "segunda"],
       ["style", ""],
       ["theme", BASE_UI_THEME],

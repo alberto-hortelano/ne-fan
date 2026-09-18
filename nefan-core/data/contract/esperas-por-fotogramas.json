@@ -23,13 +23,7 @@
       "fichero": "qa/guiones/15-guardia-se-ve-y-se-comporta.mjs",
       "linea_orientativa": 224,
       "desc": "el mundo se redibuja ya encarando a ${id}",
-      "porque": "ES el molde y SE MIGRÓ, y hubo que DESHACERLO con la medida delante (tanda N, 2026-09-17): con la espera sacada al helper el guion sale rojo 4 veces de 21, y en su versión de siempre 0 de 11 — mismo commit, corridas alternadas, aislado y en lotes de 6 y de 17. El rojo cae SIEMPRE en el mismo sitio y no tiene vía causal hacia esta espera: `page.click('#ts-new')` expira en el TÍTULO, justo tras la pre-generación de las 9 escenas y mucho antes de que `encarar()` corra. Se queda fuera porque meter una intermitencia en la batería es justo lo que esta tanda vino a quitar (#634): un rojo que aparece y desaparece enseña al equipo a ignorar la batería. Tiene issue propio; cuando se sepa por qué, esta exención se borra y la espera vuelve al helper."
-    },
-    {
-      "fichero": "qa/guiones/80-el-desplegable-room-dice-lo-que-se-ve.mjs",
-      "linea_orientativa": 127,
-      "desc": "un frame más tras elegir «-- Room --»",
-      "porque": "El 80 tiene una intermitencia con issue propio y vivo (#659) y está fuera del alcance de la tanda N por decisión escrita en su plan: tocarlo mezclaría su causa con la del 75. Es UN fotograma con cortafuegos de 5 s; cuando #659 se cierre, esta espera es la primera candidata a salir del censo."
+      "porque": "ES el molde y SE MIGRÓ, y hubo que DESHACERLO con la medida delante (tanda N, 2026-09-17): con la espera sacada al helper el guion sale rojo 4 veces de 21, y en su versión de siempre 0 de 11 — mismo commit, corridas alternadas, aislado y en lotes de 6 y de 17. El rojo cae SIEMPRE en el mismo sitio y no tiene vía causal hacia esta espera: `page.click('#ts-new')` expira en el TÍTULO, justo tras la pre-generación de las 9 escenas y mucho antes de que `encarar()` corra. Se queda fuera porque meter una intermitencia en la batería es justo lo que esta tanda vino a quitar (#634): un rojo que aparece y desaparece enseña al equipo a ignorar la batería. Su issue es **#673** —escrito aquí el 2026-09-18 porque no estaba: el `porque` decía «tiene issue propio» sin citarlo y `grep 673` sobre este contrato daba 0, contra lo que el propio issue afirma—; cuando se sepa por qué, esta exención se borra y la espera vuelve al helper. Lo que #673 YA NO es es una hipótesis sobre #659: en el instante del rojo no hay sesión, el título está delante y el cliente no manda `input` (`main.ts:662`), así que ningún `state_update` puede llegar, y la página es nueva (`run.mjs:1414`) → el último frame está vacío. Las dos vías de #659 están cerradas, medido y comentado en el issue."
     },
     {
       "fichero": "qa/guiones/140-la-reconexion-retira-su-aviso-en-partida.mjs",
