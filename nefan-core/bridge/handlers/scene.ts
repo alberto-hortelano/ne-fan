@@ -116,10 +116,17 @@ export async function handlePlayerEnteredPlace(
  *                   realizado): viaje narrative-paced, nadie se mueve. Es el
  *                   `undefined` de siempre y NO es un fallo.
  *   · `sin sitio` — hay punto pero no hay dónde ponerse: la marcha saturó el
- *                   tope cuatro veces (160 m de sólido continuo) o dejó de
- *                   haber progreso numérico. Es FAIL-LOUD y hay que decirlo:
- *                   el candidato crudo NO vale como respaldo, porque es
- *                   justamente el punto del que no se sale. */
+ *                   tope cuatro veces (160 m de sólido continuo). Es FAIL-LOUD
+ *                   y hay que decirlo: el candidato crudo NO vale como
+ *                   respaldo, porque es justamente el punto del que no se
+ *                   sale.
+ *
+ *  Y un desenlace más que NO pasa por aquí: una coordenada fuera del rango en
+ *  el que la marcha avanza (`anchor` absurdo, save editado) hace que
+ *  `sitioParaAparecer` LANCE `RangeError`. Sube por el `throw`, no por el
+ *  `null`: lo recoge el `catch` de `runPlaceTravel` —o, en el camino del place
+ *  ya realizado, `routeMessage`— y en los dos sale como `narrative_status:
+ *  error` con el nombre del destino. No hay que cablear nada aquí. */
 type DondeAparecer = SitioDeAparicion | { de: "sin sitio" };
 
 function dondeAparecer(ctx: BridgeContext, placeId: string): DondeAparecer {

@@ -111,6 +111,16 @@ export function casosDeValidacion(): CasoValidacion[] {
       cubre: "gate de variante: tile.tx/ty enteros",
       scene: () => ({ tile: { tx: 1.5, ty: 0 }, scene_id: "tile_raro", entities: [] }),
     },
+    {
+      // El plano tiene borde (#658). El entero solo no basta: 7,1e13 es entero
+      // y a partir de |coordenada| ≥ 2^52 − 40 m la marcha de
+      // `salida-del-solido.ts` deja de avanzar y el tick del bridge se cuelga.
+      // Es el MISMO predicado que el del caso de arriba (`esCoordDeTile`), así
+      // que el motor lee un solo texto.
+      name: "tile-fuera-del-plano",
+      cubre: "gate de variante: tile.tx/ty dentro de COTA_TILE",
+      scene: () => ({ tile: { tx: 71000000000000, ty: 0 }, scene_id: "tile_lejisimos", entities: [] }),
+    },
 
     // ── Expansión de primitivas ───────────────────────────────────────────
     {

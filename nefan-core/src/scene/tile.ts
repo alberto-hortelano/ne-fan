@@ -16,6 +16,43 @@ export const TILE_SIZE_M = 64;
 export const TILE_MPC = 0.5;
 export const TILE_CELLS = TILE_SIZE_M / TILE_MPC; // 128
 
+/** HASTA DÓNDE LLEGA EL PLANO, en tiles por eje. ±1.000.000 tiles = ±64.000 km.
+ *
+ *  ES DECLARACIÓN DE DOMINIO, NO UNA MEDIDA, y se escribe así para que nadie
+ *  la cite como si alguien la hubiera cronometrado. Lo que sí está medido son
+ *  los dos números ENTRE los que se sitúa, con ocho órdenes de margen a cada
+ *  lado:
+ *
+ *   · por abajo, el mundo crece por VECINOS (`pickTravelAnchor` tira un rayo
+ *     desde el tile del jugador hacia el borde por el que sale el link), así
+ *     que las coordenadas que produce el juego no pasan de unidades;
+ *   · por arriba, el acantilado de la coma flotante está en |tx| ≈ 7,04e13:
+ *     a partir de ahí el paso de 0,5 m de `marchaPorEje` deja de mover la
+ *     coordenada y la marcha no termina (`simulation/salida-del-solido.ts`).
+ *
+ *  Sin cota, `tile: {tx, ty}` admitía 7e13 sin pestañear —el zod solo pedía
+ *  `int()`— y ese valor entra por el motor narrativo o por un save editado,
+ *  nunca por el juego. */
+export const COTA_TILE = 1_000_000;
+
+/** ¿Es esto una coordenada de tile? Entero y dentro del plano. Es el predicado
+ *  ÚNICO: lo comparten el lector del crudo (`tileCoordDe`), `validateScene` y
+ *  el zod del contrato, para que el mismo tile no tenga dos veredictos según
+ *  por dónde entre. */
+export function esCoordDeTile(v: unknown): v is number {
+  return Number.isInteger(v) && Math.abs(v as number) <= COTA_TILE;
+}
+
+/** El texto que lee el MODELO cuando `tile` no vale — uno solo para los tres
+ *  lectores de este lado y LITERALMENTE el mismo que da su espejo Python
+ *  (`ai_server/narrative_schemas.py`), que lo compone con la cota que lee del
+ *  tool. Por eso no lleva los kilómetros: ese lado no conoce `TILE_SIZE_M`, y
+ *  un mensaje que solo casa «casi» es el mismo tile con dos veredictos según
+ *  por dónde entre. La equivalencia en metros está en `COTA_TILE`, que es
+ *  donde la lee una persona. */
+export const MOTIVO_COORDS_DE_TILE =
+  `tile.tx/ty deben ser enteros dentro del plano (|valor| ≤ ${COTA_TILE} tiles)`;
+
 export interface TileCoord {
   tx: number;
   ty: number;
@@ -43,8 +80,8 @@ export function tileCoordDe(raw: Record<string, unknown>): TileCoord {
       "una escena necesita `tile` {tx,ty}: es la única variante de Format D (mundo continuo, pídela con generate_tile)",
     );
   }
-  if (!Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
-    throw new Error(`tile.tx/ty deben ser enteros, got ${JSON.stringify(raw.tile)}`);
+  if (!esCoordDeTile(t.tx) || !esCoordDeTile(t.ty)) {
+    throw new Error(`${MOTIVO_COORDS_DE_TILE}, got ${JSON.stringify(raw.tile)}`);
   }
   return { tx: t.tx as number, ty: t.ty as number };
 }

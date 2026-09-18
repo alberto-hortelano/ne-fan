@@ -58,6 +58,33 @@
  *  imprime la penetración máxima de cada fixture en cada corrida para verlo
  *  venir.
  *
+ *  ## DÓNDE VALE ESTA ARITMÉTICA (el rango, medido)
+ *
+ *  La cabecera documenta la geometría con detalle y CALLABA el rango en el que
+ *  sus cuentas son exactas, que es donde vive el único fallo que no se ve
+ *  jugando. La marcha avanza con `f += signo · TILE_MPC`, o sea sumando 0,5 m
+ *  a una coordenada de mundo; a partir de |v| ≥ **4.503.599.627.370.456 m**
+ *  (= 2^52 − 40, tx ≈ 7,0369e13) el ulp del flotante se come el sumando y `f`
+ *  deja de moverse: el `for(;;)` no vuelve NUNCA. Medido por bisección sobre
+ *  esta misma función, simétrico por signo; en 2^52 − 41 todavía sale por tope
+ *  en 80 iteraciones.
+ *
+ *  Así que el paso lleva su propio fail-loud (`RangeError` en `marchaPorEje`),
+ *  y la puerta por la que entraba ese valor la cierra `COTA_TILE` en
+ *  `scene/tile.ts` — cota del contrato, ANTES de pagar la generación del tile.
+ *  Las dos mitades hacen falta: la cota no cubre el `anchor` de un place ni un
+ *  save editado a mano, y el guardia no evita pagar el tile.
+ *
+ *  Lo que NO alcanza esto, y conviene saberlo antes de escribirle un candado:
+ *  el suelo de GRID se rinde un ulp antes. Medido, un grid 128×128 TODO sólido
+ *  con su `origin` en el rect del tile tx = 7,1e13 contesta `solapaSolido =
+ *  false` (`terrain-collision.ts` calcula `x ± radio` ANTES de restar el
+ *  origen, y el ulp que come el `± 0,4` es el mismo que congela el `+ 0,5`),
+ *  así que `salidaMedida` devuelve `null` sin marchar. El único suelo que
+ *  llega hasta aquí es el de CAJAS —`penetracionEnCaja` es analítica y no
+ *  pierde magnitud—, y su único consumidor es `sitioParaAparecer` sobre el
+ *  proveedor del bridge.
+ *
  *  ## Efecto colateral QUERIDO (y que no pide ningún issue)
  *
  *  `npc-behavior.ts` consume `porDondeSalirDeAqui` en cada tick, así que desde
@@ -65,7 +92,7 @@
  *  sale solo. Es conducta nueva y es mejora; no la confunda nadie con #618,
  *  que es otra cosa (el NPC que NO está dentro de nada y no sabe rodear). */
 
-import { TILE_MPC } from "../scene/tile.js";
+import { COTA_TILE, TILE_MPC } from "../scene/tile.js";
 
 /** Hasta dónde marcha la búsqueda de salida, en METROS. Un sólido más ancho
  *  que esto satura (ver cabecera). 40 m es más de medio tile (64 m) y ocho
@@ -150,7 +177,21 @@ function marchaPorEje(
     const px = ejeX ? nuevo : x;
     const pz = ejeX ? z : nuevo;
     if (!suelo.ocupado(px, pz, radio)) return { dir, pen, punto: { x: px, z: pz } };
+    const antes = f;
     f += signo * TILE_MPC;
+    // EL PASO QUE NO ANDA (ver cabecera, «dónde vale esta aritmética»). El
+    // límite es la IDENTIDAD de `f` tras sumar y nada más: un contador, o
+    // cualquier cota derivada de `TOPE_MARCHA_M` o de `pen`, se calcularía con
+    // la MISMA aritmética que acaba de fallar y se inflaría con ella. Aquí no
+    // hay nada que inflar — o la suma mueve la frontera o no la mueve.
+    if (f === antes) {
+      throw new RangeError(
+        `marchaPorEje: el paso de ${TILE_MPC} m no mueve la frontera ${antes} del eje ` +
+          `${ejeX ? "x" : "z"} (cuerpo en x=${x}, z=${z}, radio ${radio}): la coordenada está ` +
+          `fuera del rango donde esta aritmética es exacta. Viene de un tile absurdo (el plano ` +
+          `llega a |tx|,|ty| ≤ ${COTA_TILE}), no de un estado de juego.`,
+      );
+    }
   }
 }
 
@@ -243,9 +284,14 @@ export function solidoBloquea(
  *  13**, y los 13 puntos que devuelve quedan libres.
  *
  *  `null` es fail-loud y hay que tratarlo: significa que la marcha saturó el
- *  tope `maxPasos` veces seguidas (hasta 160 m de sólido continuo) o que dejó
- *  de haber progreso numérico. Quien llama NO debe usar el candidato crudo —
- *  es justamente el punto del que no se sale. */
+ *  tope `maxPasos` veces seguidas (hasta 160 m de sólido continuo). Quien
+ *  llama NO debe usar el candidato crudo — es justamente el punto del que no
+ *  se sale.
+ *
+ *  Y hay un segundo desenlace, que NO es este: si la coordenada está fuera del
+ *  rango donde la marcha avanza (cabecera), `marchaPorEje` lanza `RangeError`
+ *  y esto no devuelve nada. No es un sitio sin salida sino una precondición
+ *  rota, y quien llama la trata como fallo, no como estado de juego. */
 export function sitioParaAparecer(
   candidato: { x: number; z: number },
   radio: number,

@@ -366,6 +366,17 @@ jobs:
       # esta misma lista. Solo necesita el `dist` del core, que este job ya
       # construye.
       - run: node qa/el-viaje-no-mete-a-nadie-dentro.mjs
+      # (0,12 s) #658: una coordenada de tile absurda no cuelga el tick del
+      # bridge, vuelve como `narrative_status: error`. Conduce `routeMessage`
+      # REAL en un proceso HIJO con muerte dura, que es el único instrumento
+      # que sirve aquí: con el defecto puesto el `for(;;)` de `marchaPorEje` es
+      # SÍNCRONO, así que ni el `timeout-minutes` del job ni un timeout de
+      # runner lo interrumpen — se comerían el runner en vez de dar un rojo con
+      # nombre. El suelo es de CAJAS y no de grid a propósito, y sus cinco
+      # controles lo miden en cada corrida: sobre grid el guion nacería VERDE
+      # con el defecto puesto (medido: `solapaSolido = false` a tx 7,1e13).
+      # Entra aquí el día que nace. Solo necesita el `dist` del core.
+      - run: node qa/una-coordenada-absurda-no-cuelga-el-bridge.mjs
       # (0,2 s) #644: la consulta de PUNTO no tiene origen. Comprueba el CABLE
       # (`probePoint` → `ocupadoEn` → `suelo.ocupado` ∪ `aabbOcupa`, y que no
       # vuelva a apoyarse en `collidesAt`), la equivalencia con la consulta de

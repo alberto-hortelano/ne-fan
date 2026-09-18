@@ -24,7 +24,7 @@ import {
   PLAYER_RADIUS_M,
   type TerrainGridData,
 } from "../src/scene/terrain-collision.js";
-import { salidaDeCaja, type CajaXZ } from "../src/simulation/obstaculos-del-jugador.js";
+import { penetracionEnCaja, salidaDeCaja, type CajaXZ } from "../src/simulation/obstaculos-del-jugador.js";
 import {
   penetracionEnSolido,
   salidaDelSolido,
@@ -33,7 +33,7 @@ import {
   TOPE_MARCHA_M,
   type SueloSolido,
 } from "../src/simulation/salida-del-solido.js";
-import { TILE_MPC } from "../src/scene/tile.js";
+import { COTA_TILE, TILE_CELLS, TILE_MPC, tileWorldRect } from "../src/scene/tile.js";
 
 /** Tolerancia de comparación entre las dos cuentas. El nanómetro es el mismo
  *  umbral de empate que usa el módulo; el ruido real medido es 5,7e-15 m. */
@@ -409,5 +409,190 @@ describe("salidaDelSolido — la misma geometría que la caja, medida por celdas
     assert.equal(salidaDelSolido(3, 4, PLAYER_RADIUS_M, vacio), null);
     assert.equal(solidoBloquea({ x: 0, z: 0 }, { x: 9, z: 9 }, PLAYER_RADIUS_M, vacio), false);
     assert.deepEqual(sitioParaAparecer({ x: 3, z: 4 }, PLAYER_RADIUS_M, vacio), { x: 3, z: 4 });
+  });
+});
+
+/** EL PASO QUE NO ANDA (#658) — y por qué este candado NO puede escribirse
+ *  sobre suelo de grid.
+ *
+ *  `marchaPorEje` avanza sumando 0,5 m a una coordenada de mundo. Por encima
+ *  de |v| ≥ 2^52 − 40 el ulp del flotante se come el sumando, `f` deja de
+ *  moverse y el `for(;;)` no vuelve nunca. Eso corre en el TICK DEL BRIDGE.
+ *
+ *  DOS TRAMPAS, las dos medidas, y las dos son la razón de que este bloque
+ *  esté escrito como está:
+ *
+ *   1. **El suelo de GRID no lo alcanza.** Un grid 128×128 TODO sólido con su
+ *      `origin` en el rect del tile 7,1e13 contesta `solapaSolido = false`
+ *      (medido abajo, y es un aserto de control, no un comentario): el mismo
+ *      ulp que congela el `+ 0,5` deja el cuerpo de ancho CERO y el solape
+ *      ABIERTO de un cuerpo sin ancho es vacío. `salidaMedida` devuelve `null`
+ *      antes de marchar, así que un candado sobre grid NACE VERDE CON EL
+ *      DEFECTO PUESTO. El único suelo que llega hasta la marcha es el de
+ *      CAJAS — `penetracionEnCaja` es analítica y no pierde magnitud—, que es
+ *      el predicado literal de `cajaQueContiene`, o sea el que pone el
+ *      proveedor del bridge.
+ *   2. **`assert.throws` a secas no basta.** Con el guardia quitado el bucle
+ *      es SÍNCRONO, así que un `{ timeout }` de `node:test` no lo interrumpe:
+ *      el sabotaje COLGARÍA el runner en vez de ponerlo rojo. Por eso el suelo
+ *      de estos casos lleva presupuesto de consultas propio y lanza un
+ *      centinela —un `Error`, nunca un `RangeError`— al agotarlo. */
+describe("salida-del-solido — la marcha siempre termina (#658)", () => {
+  /** El presupuesto del centinela, MEDIDO sobre el peor caso legítimo de este
+   *  fichero y con margen: `sitioParaAparecer` sobre el macizo de 400 × 400 m
+   *  (el `it` de «cuatro marchas de 40 m») paga **1.285** consultas — 4 pasos
+   *  × (1 + 4 marchas × 80 fronteras) + la final. 20.000 son 15,6 veces eso.
+   *
+   *  No se deriva de `TOPE_MARCHA_M` ni de nada que calcule la función bajo
+   *  prueba (trampa de la tanda G): es un entero del test. Y el margen no se
+   *  cree de palabra — el tercer `it` vuelve a medir las 1.285 con este mismo
+   *  presupuesto armado, así que si el peor caso legítimo creciera hasta
+   *  rozarlo, salta ahí y no en el caso que sí tiene que lanzar. */
+  const PRESUPUESTO_DE_CONSULTAS = 20_000;
+
+  /** Un suelo de CAJA con presupuesto: cuenta lo que se le pregunta y se
+   *  planta. El centinela es un `Error` pelado A PROPÓSITO: si el guardia
+   *  desaparece, `assert.throws(…, RangeError)` no lo acepta y el caso sale
+   *  ROJO en vez de colgarse. */
+  function sueloDeCaja(caja: CajaXZ): SueloSolido & { consultas: () => number } {
+    let n = 0;
+    return {
+      consultas: () => n,
+      ocupado(x, z, radio) {
+        if (++n > PRESUPUESTO_DE_CONSULTAS) {
+          throw new Error(
+            `centinela del test: ${n} consultas sobre el suelo (presupuesto ${PRESUPUESTO_DE_CONSULTAS}). ` +
+              "La marcha no termina: el guardia de progreso de `marchaPorEje` no está o no se dispara.",
+          );
+        }
+        return penetracionEnCaja({ x, z }, caja, radio) > 0;
+      },
+    };
+  }
+
+  /** El centro del tile `tx`, en coordenadas de mundo. Se pide por el tile y
+   *  no con un número a pelo porque lo que está fuera de rango es un TILE, que
+   *  es la puerta que `COTA_TILE` cierra en el contrato. */
+  const centroDelTile = (tx: number) => {
+    const rect = tileWorldRect(tx, 0);
+    return { x: (rect.minX + rect.maxX) / 2, z: 0 };
+  };
+
+  it("sobre suelo de CAJAS, una coordenada fuera de rango es RangeError y no un cuelgue", () => {
+    // Ocho órdenes por encima de la cota del plano (1e6) y por encima del
+    // acantilado medido (tx ≈ 7,0369e13): es lo que produce un `anchor`
+    // absurdo o un save editado, nunca el juego.
+    const tx = 7.1e13;
+    assert.ok(tx > COTA_TILE, "control: el tile de este caso está FUERA del plano que admite el contrato");
+    const p = centroDelTile(tx);
+    const caja: CajaXZ = { pos: { x: p.x, z: p.z }, sizeXZ: { x: 8, z: 8 } };
+
+    // CONTROL 1 · la caja SÍ contesta a esta magnitud: 4,4 m de penetración.
+    // Sin esto, lo de abajo podría estar lanzando sobre un mundo de aire.
+    assert.ok(
+      penetracionEnCaja(p, caja, PLAYER_RADIUS_M) > 0,
+      "la caja tiene que contener al cuerpo: si no, no hay marcha que medir",
+    );
+
+    // CONTROL 2 · y el GRID no. Es la trampa 1 de la cabecera, y va como
+    // aserto para que nadie reescriba este caso sobre un grid creyendo que
+    // mide lo mismo: mediría un `null` y nacería verde con el defecto puesto.
+    const grid = Array.from({ length: TILE_CELLS }, () => "S".repeat(TILE_CELLS));
+    const rect = tileWorldRect(tx, 0);
+    const colGrid = createTerrainCollider({
+      grid, cols: TILE_CELLS, rows: TILE_CELLS,
+      meters_per_cell: TILE_MPC, origin: [rect.minX, rect.minZ], solid_chars: ["S"],
+    })!;
+    assert.equal(
+      colGrid.solapaSolido(p.x, p.z, PLAYER_RADIUS_M),
+      false,
+      "el grid se rinde un ulp ANTES que la marcha: este candado va sobre CAJAS o no mide nada",
+    );
+
+    const suelo = sueloDeCaja(caja);
+    assert.throws(
+      () => penetracionEnSolido(p.x, p.z, PLAYER_RADIUS_M, suelo),
+      RangeError,
+      "el paso que no mueve la frontera tiene que ser fail-loud",
+    );
+    // Y barato: el guardia corta en la SEGUNDA consulta, no tras agotar nada.
+    assert.ok(
+      suelo.consultas() <= 4,
+      `el guardia corta en las primeras consultas: fueron ${suelo.consultas()}`,
+    );
+
+    // El camino que de verdad corre en el bridge (`dondeAparecer` →
+    // `sitioParaAparecer` sobre `ctx.simCollision`, que es grid ∪ cajas).
+    const suelo2 = sueloDeCaja(caja);
+    assert.throws(
+      () => sitioParaAparecer(p, PLAYER_RADIUS_M, suelo2),
+      RangeError,
+      "el llamante alcanzable desde el bridge tampoco se cuelga",
+    );
+
+    // Y el mensaje sirve para algo: lleva el eje y la coordenada, que es lo
+    // único que permite encontrar el 7e13 en el log del bridge.
+    try {
+      sitioParaAparecer(p, PLAYER_RADIUS_M, sueloDeCaja(caja));
+      assert.fail("tenía que haber lanzado");
+    } catch (err) {
+      const msg = (err as Error).message;
+      assert.match(msg, /marchaPorEje/, msg);
+      assert.match(msg, new RegExp(String(p.x)), msg);
+    }
+  });
+
+  it("y NO se dispara antes de tiempo: en 2^52 − 41 la marcha satura como siempre", () => {
+    // Un aserto con N=1 no distingue una regla de su contraria: el caso de
+    // arriba solo dice que a veces lanza. Este dice dónde NO.
+    //
+    // Los DOS límites son distintos y están medidos, y la diferencia son
+    // exactamente los 160 m que anda `sitioParaAparecer` (4 × TOPE_MARCHA_M):
+    //   · UNA marcha aguanta hasta 2^52 − 41 (en 2^52 − 40 ya lanza);
+    //   · CUATRO aguantan hasta 2^52 − 161 (en 2^52 − 160 ya lanza, porque el
+    //     cuarto paso arranca desde 2^52 − 1).
+    const caja: CajaXZ = { pos: { x: 2 ** 52 - 41, z: 0 }, sizeXZ: { x: 1e6, z: 1e6 } };
+
+    const suelo = sueloDeCaja(caja);
+    assert.equal(
+      penetracionEnSolido(2 ** 52 - 41, 0, PLAYER_RADIUS_M, suelo),
+      TOPE_MARCHA_M,
+      "justo por debajo del acantilado la marcha SATURA, que es su conducta normal",
+    );
+    assert.equal(suelo.consultas(), 321, "y paga las 4 marchas × 80 fronteras + la consulta de origen");
+
+    // Cuatro marchas: 160 m más abajo, y devuelve el `null` de siempre.
+    const abajo = 2 ** 52 - 161;
+    const caja4: CajaXZ = { pos: { x: abajo, z: 0 }, sizeXZ: { x: 1e6, z: 1e6 } };
+    const suelo4 = sueloDeCaja(caja4);
+    assert.equal(
+      sitioParaAparecer({ x: abajo, z: 0 }, PLAYER_RADIUS_M, suelo4),
+      null,
+      "cuatro saturaciones seguidas siguen siendo `null` (fail-loud por tope), no un RangeError",
+    );
+    assert.equal(suelo4.consultas(), 1285, "y es el peor caso legítimo del módulo, en consultas");
+  });
+
+  it("el presupuesto del centinela está POR ENCIMA del peor caso legítimo del fichero", () => {
+    // El número del presupuesto no vale de palabra: aquí se vuelve a medir el
+    // peor caso que este fichero ejerce —el macizo de 400 × 400 m, cuatro
+    // marchas al tope y sigue dentro— con el centinela ARMADO. Si alguien
+    // sube `TOPE_MARCHA_M` o `maxPasos`, salta este caso (que es de mentira)
+    // y no el de arriba (que es de verdad).
+    const cols = Math.ceil(400 / TILE_MPC);
+    const { suelo: gridMacizo } = macizo([0, 0], { cols, rows: cols, c0: 0, c1: cols - 1, r0: 0, r1: cols - 1 });
+    let n = 0;
+    const contando: SueloSolido = {
+      ocupado(x, z, radio) {
+        if (++n > PRESUPUESTO_DE_CONSULTAS) throw new Error(`el peor caso legítimo se pasó del presupuesto: ${n}`);
+        return gridMacizo.ocupado(x, z, radio);
+      },
+    };
+    assert.equal(sitioParaAparecer({ x: 200, z: 200 }, PLAYER_RADIUS_M, contando), null);
+    assert.equal(n, 1285, "el peor caso legítimo medido hoy");
+    assert.ok(
+      n * 4 < PRESUPUESTO_DE_CONSULTAS,
+      `el presupuesto (${PRESUPUESTO_DE_CONSULTAS}) tiene que guardar margen sobre las ${n} del peor caso`,
+    );
   });
 });

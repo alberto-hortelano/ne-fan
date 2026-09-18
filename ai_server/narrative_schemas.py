@@ -120,6 +120,37 @@ def _campos_de_la_raiz_del_tool() -> list:
 
 CAMPOS_DE_LA_RAIZ_DEL_TOOL = _campos_de_la_raiz_del_tool()
 
+
+def _cota_de_tile_del_contrato() -> int:
+    """Hasta dónde llega el plano, en tiles por eje, LEÍDA del tool compartido.
+
+    Mismo criterio que `_npc_roles_del_contrato`: no se escribe a mano una
+    tercera copia del número. La fuente es `COTA_TILE`
+    (nefan-core/src/scene/tile.ts); de ahí sale el `min`/`max` del zod, y el
+    `minimum`/`maximum` de este JSON se escribe a mano —es el único tool fuera
+    del codegen— con un test de deriva que compara los dos
+    (`test/contract-prompts.test.ts`).
+
+    POR QUÉ EXISTE LA COTA: sin ella `tile.tx` admitía 7e13, y a partir de
+    |coordenada| ≥ 2^52 − 40 m el paso de 0,5 m de `marchaPorEje`
+    (nefan-core/src/simulation/salida-del-solido.ts) deja de mover la
+    coordenada y la marcha no termina. Rechazar aquí es rechazar ANTES de
+    pagar la generación del tile. Fail-loud al importar si el tool se queda
+    sin la cota: un saneador que la lea como `None` aceptaría cualquier cosa.
+    """
+    props = GENERATE_SCENE_TOOL["input_schema"]["properties"]["tile"]["properties"]
+    cotas = {eje: props.get(eje, {}).get("maximum") for eje in ("tx", "ty")}
+    if not all(isinstance(v, int) for v in cotas.values()) or len(set(cotas.values())) != 1:
+        raise ValueError(
+            "generate_scene.json: `tile.tx/ty` sin `maximum` común — la cota del plano es "
+            "obligatoria (espejo de COTA_TILE en nefan-core). Sin ella el saneador acepta "
+            "una coordenada que cuelga la marcha del bridge"
+        )
+    return cotas["tx"]
+
+
+COTA_TILE = _cota_de_tile_del_contrato()
+
 # La allow-list del rechazo de clave de raíz desconocida (#400, espejo del
 # `.strict()` de EmittedSceneSchema): EXACTAMENTE los campos del tool, sin
 # brecha. Que siga sin haberla lo canda `contract-prompts.test.ts` del lado TS:
@@ -669,10 +700,16 @@ def validate_scene_response(data: dict) -> dict:
     # lo sintetiza nefan-core). Aquí solo saneado superficial; el bridge fija
     # las coords y valida jugabilidad/costuras server-side.
     raw_tile = data.get("tile")
+
+    def _es_coord_de_tile(v) -> bool:
+        # `bool` es subclase de `int` en Python y `True` no es una coordenada.
+        # Espejo de `esCoordDeTile` (nefan-core/src/scene/tile.ts).
+        return isinstance(v, int) and not isinstance(v, bool) and abs(v) <= COTA_TILE
+
     is_tile = (
         isinstance(raw_tile, dict)
-        and isinstance(raw_tile.get("tx"), int)
-        and isinstance(raw_tile.get("ty"), int)
+        and _es_coord_de_tile(raw_tile.get("tx"))
+        and _es_coord_de_tile(raw_tile.get("ty"))
     )
     if is_tile:
         tx, ty = raw_tile["tx"], raw_tile["ty"]
@@ -709,6 +746,16 @@ def validate_scene_response(data: dict) -> dict:
     # el issue #172 y el `stage` proscenio con la vista que lo pintaba. El
     # mensaje nombra la alternativa para que el modelo pueda re-responder.
     if not is_tile:
+        # Dos motivos distintos por la misma puerta, y el modelo re-responde
+        # con el que le toca: si TRAE tile pero fuera del plano, decirle «te
+        # falta el tile» le haría añadir el campo que ya tiene.
+        if isinstance(raw_tile, dict):
+            # LITERAL el de `MOTIVO_COORDS_DE_TILE` (nefan-core/src/scene/tile.ts),
+            # con la cota leída del mismo tool del que sale la del zod.
+            raise ValueError(
+                f"tile.tx/ty deben ser enteros dentro del plano (|valor| ≤ {COTA_TILE} tiles), "
+                f"got {json.dumps(raw_tile, separators=(',', ':'), ensure_ascii=False)}"
+            )
         raise ValueError(
             "una escena necesita `tile` {tx,ty}: es la única variante de Format D "
             "(mundo continuo, pídela con generate_tile)"

@@ -37,6 +37,7 @@ import { VegetationZonesSchema } from "../../scene/blueprint/vegetation.js";
 import { VolumesSchema } from "../../scene/blueprint/volumes.js";
 import { parseScatter } from "../../scene/blueprint/scatter.js";
 import { celdaFueraDelAlfabeto, motivoDeCharFueraDelAlfabeto } from "../../scene/scene-expand.js";
+import { COTA_TILE, MOTIVO_COORDS_DE_TILE } from "../../scene/tile.js";
 import { NPC_ROLES } from "../../simulation/npc-roles.js";
 import { VocabularioDeEntity } from "./entity-vocabulary.js";
 import { enMetros, topeDeFootprint } from "./physics.js";
@@ -177,12 +178,28 @@ export const SceneSizeSchema = z.object({
   meters_per_cell: z.number().positive(),
 });
 
+/** Una coordenada de tile: entera y DENTRO DEL PLANO (`COTA_TILE`). La cota no
+ *  es decoración del schema: es lo que hace que el pre-flight rebote el tile
+ *  absurdo ANTES de pagar la generación, y el `message` es el mismo texto que
+ *  lanzan `tileCoordDe` y `validateScene` — un tile no puede tener dos
+ *  veredictos según por dónde entre.
+ *
+ *  OJO: `generate_scene.json` NO se regenera de aquí — es el único tool
+ *  escrito a mano y fuera de `CONTRACTS`, así que su `minimum`/`maximum` se
+ *  edita a mano y lo canda `test/contract-prompts.test.ts`. Esa copia no es
+ *  cosmética: el saneador de ai_server LEE la cota de ese JSON. */
+const coordDeTile = () =>
+  z.number().int(MOTIVO_COORDS_DE_TILE).min(-COTA_TILE, MOTIVO_COORDS_DE_TILE).max(COTA_TILE, MOTIVO_COORDS_DE_TILE);
+
 /** Las coords del tile, OBLIGATORIAS en las dos poblaciones (#405): Format D
  *  tiene una sola variante y una escena sin sitio en el plano no es una
  *  escena — ni emitida ni cargada. El `required_error` es lo que lee el
  *  modelo en el pre-flight. */
 const TileCoordSchema = z.object(
-  { tx: z.number().int(), ty: z.number().int() },
+  {
+    tx: coordDeTile(),
+    ty: coordDeTile(),
+  },
   {
     required_error:
       "una escena necesita `tile` {tx,ty}: es la única variante de Format D (mundo continuo, pídela con generate_tile)",
