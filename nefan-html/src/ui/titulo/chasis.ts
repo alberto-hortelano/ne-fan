@@ -317,6 +317,36 @@ function vigilarPortadas(root: HTMLDivElement): void {
  *  cuenta la banda fuera del home — ver `actualizarAvisoDeCorte`. */
 const CONTROLES = "button, a[href], input, select, textarea";
 
+/** La FILA de una partida guardada, que es lo que la banda cuenta en el home.
+ *  La pinta `ui/tarjeta-de-partida.ts` y nada obligaba a las dos puntas a decir
+ *  lo mismo: renombrada la clase allí, aquí `fuera` vale 0 y la banda no sale
+ *  NUNCA, en silencio y con toda la batería verde. */
+const FILA_DE_PARTIDA = ".ts-save";
+
+/** CÓMO SE SABE QUE LA COLUMNA TIENE EL HOME DENTRO: el id que aquella pantalla
+ *  pinta para la lista de partidas (`esqueletoDelHome` en `ui/titulo/home.ts`).
+ *
+ *  Sale del cuerpo de `actualizarAvisoDeCorte` por lo mismo que
+ *  `CSS_ESTRECHO_DEL_TITULO` salió del de `montarChasis`: para poder LEERSE
+ *  fuera del navegador. Un literal dentro de una función no tiene salida que
+ *  comparar, y la costura con el home es exactamente la que el banco mira desde
+ *  #663 (`test/los-ids-del-titulo-se-leen-donde-se-escriben.test.ts`). */
+export const MARCA_DEL_HOME = "#ts-sessions";
+
+/** QUÉ CUENTA LA BANDA, según la pantalla que haya dentro de la columna: en el
+ *  HOME las partidas, porque las hay y es el dato que su jugador necesita; en
+ *  cualquier otra los CONTROLES, que es lo que se puede perder de vista sin
+ *  enterarse (#553).
+ *
+ *  Es un DATO —un selector CSS— y no una decisión de juego: quién lo aplica al
+ *  DOM sigue siendo la privada de abajo. Se exporta para que el banco pueda
+ *  preguntarle qué cuenta sin montar un navegador, y con eso caza el colapso
+ *  que #553 arregló: devolver siempre la fila del home dejaba al selector de
+ *  mundos sin banda, con todo en verde. */
+export function loQueCuentaLaBanda(enElHome: boolean): string {
+  return enElHome ? FILA_DE_PARTIDA : CONTROLES;
+}
+
 /** «Hay más abajo», cuando la columna no cabe (#251, #553).
  *
  *  El scroller NO es la lista: `#ts-sessions` solo lleva margen, y quien
@@ -367,8 +397,8 @@ function actualizarAvisoDeCorte(content: HTMLDivElement, aviso: HTMLDivElement):
   // El `getBoundingClientRect` va después de esa guarda: leerlo en cada
   // scroll de una columna que cabe era un reflow para nada.
   const caja = content.getBoundingClientRect();
-  const enElHome = content.querySelector("#ts-sessions") !== null;
-  const fuera = [...content.querySelectorAll<HTMLElement>(enElHome ? ".ts-save" : CONTROLES)]
+  const enElHome = content.querySelector(MARCA_DEL_HOME) !== null;
+  const fuera = [...content.querySelectorAll<HTMLElement>(loQueCuentaLaBanda(enElHome))]
     .filter((el) => el.getBoundingClientRect().bottom > caja.bottom + 1)
     // Lo que se esconde DENTRO de otro scroller no lo esconde esta columna, y
     // desplazarla no lo traería: la lista de mundos del selector tiene su

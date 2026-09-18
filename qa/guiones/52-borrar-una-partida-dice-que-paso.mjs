@@ -79,7 +79,7 @@ async function pulsarBorrar(ctx, id, desc) {
       // real sobrevive a los tres borrados), así que vacía = todavía no.
       if ((aviso === previo && tarjetas.includes(sid)) || tarjetas.length === 0) return null;
       // El borde de ESTA tarjeta y el de otra cualquiera. Se comparan porque
-      // `sessionRowHtml` ya pinta un borde inline a todas: mirar solo «tiene
+      // `tarjetaDePartidaHtml` ya pinta un borde inline a todas: mirar solo «tiene
       // borderColor» era un verde que no podía ponerse rojo (probado: con la
       // marca quitada seguía pasando). Lo que hay que afirmar es la
       // DIFERENCIA con sus vecinas.

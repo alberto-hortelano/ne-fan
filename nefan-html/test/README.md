@@ -41,4 +41,11 @@ devDeps— y por eso va escrita antes que el primer test:
 2. **Si un unitario deja redundante a un guion de navegador, el guion MUERE y se
    dice cuál.** Un banco que solo suma acaba pagando dos veces por la misma
    afirmación. Al nacer éste no murió ninguno: el guion 33 mide el HOME, no el
-   selector, y ninguno de los que nombran estos seis ids afirma la costura.
+   selector, y ninguno de los que nombran estos seis ids afirma la costura. Con
+   la SÉPTIMA pareja (#663, `#ts-sessions` y `.ts-save` entre el chasis y el
+   home) tampoco murió ninguno, y el motivo es el mismo dicho al revés: los
+   cinco que tocan esos dos tokens —33, 52, 98, 101 y 122— miden GEOMETRÍA de
+   navegador (si la banda sale, dónde, y con qué número), y ninguno afirma que
+   las dos puntas hablen del mismo elemento, que es lo único que cubre el
+   unitario. Una regla que nunca mata nada estaría de adorno: se re-comprueba
+   cada vez, y se dice qué se miró.
