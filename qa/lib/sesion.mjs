@@ -11,6 +11,8 @@
  */
 import { esperarPartidaEnDisco } from "./saves.mjs";
 import { URLS } from "./stack.mjs";
+import { mensajeDeRegistroQueNuncaLlego } from "./esperas.mjs";
+import { fraseDeTile, veredictoDeTile, LLEGADO } from "./tile-episodio.mjs";
 
 /** ¿Puede este stack disparar generación SIN gastar un céntimo?
  *
@@ -509,9 +511,9 @@ export async function regenerarMundo(ctx, gameId = "alta_fantasia") {
  *  Vive aquí y no dentro del guion por lo mismo que `regenerarMundo`: la
  *  espera es por la FASE que publica el título (`data-gen-phase`) y no por un
  *  regex sobre el texto, que es lo que dejó de reconocer el final cuando se
- *  añadió un mensaje nuevo. Y NO se copia el `pedirYEsperar` del guion 127
- *  para nada que llame al motor: aquel mide 90 s de reloj de PARED y por eso
- *  es intermitente (#656).
+ *  añadió un mensaje nuevo. Lo que se espera de un tile pedido por el cable es
+ *  otra cosa y vive en `pedirYEsperarTile` (abajo), que sí sabe distinguir
+ *  «va lento» de «murió» (#656).
  *
  *  Devuelve `{ fase, texto }` del estado terminal, o `null` si el botón no
  *  estaba (queda AFIRMADO con `ctx.expect`: el llamante decide si sigue). */
@@ -588,10 +590,135 @@ export async function esperarRegistro(ctx, desc, libro, probe, maxMs = 60_000, a
     // error, y sin `cause` la `EsperaExpirada` original —con su id en el libro
     // de esperas— se perdía aquí, así que una expiración perfectamente
     // observada por el runner salía luego como «pendiente».
-    throw new Error(`${desc}: el juego nunca lo registró · ${libro}=${JSON.stringify(v)}`, {
+    // El PREFIJO no es decorativo: sin `timeout esperando:` este texto pierde
+    // la firma de presupuesto que `qa/lib/carga.mjs` busca, y el reproductor
+    // bajo carga declara «no atribuible a #545» una expiración que lo era. El
+    // texto lo arma `mensajeDeRegistroQueNuncaLlego` (`qa/lib/esperas.mjs`),
+    // que es donde se puede probar el cable contra `firmaDePresupuesto`.
+    throw new Error(mensajeDeRegistroQueNuncaLlego(desc, libro, v), {
       cause: err,
     });
   }
+}
+
+/** El cortafuegos de la espera de un tile pedido por el cable.
+ *
+ *  **Noventa segundos, y se quedan.** La aritmética, que es lo que decide y no
+ *  la costumbre: las dos vueltas rojas de #656 duraron ~1,7 min, **de los
+ *  cuales 90 s fue esta misma espera expirando**; quedan ~12 s para el arranque
+ *  del stack y seis partidas, que es lo que cuesta HOY la corrida ENTERA del
+ *  127 (17-18 s). O sea que la máquina iba a velocidad normal hasta aquí: no se
+ *  quedó sin presupuesto, se quedó sin respuesta, y subir el número no habría
+ *  puesto verde ninguna de las dos. Con el predicado de tres desenlaces de
+ *  `pedirYEsperarTile` esto deja de ser la condición de parada del único modo
+ *  de fallo que sabemos nombrar y vuelve a ser lo que debe: un cortafuegos de
+ *  deadlock — y uno de 90 s cuesta 150 s menos que uno de 240 cada vez que algo
+ *  se cuelga de verdad.
+ *
+ *  Los otros nueve sitios que esperan un tile del bridge presupuestan 240 s.
+ *  Esa divergencia es real y NO se tapa aquí subiendo el número: unificarla
+ *  exige medir cuánto tarda de verdad un tile, y eso es otro trabajo (issue). */
+export const MS_DEL_TILE = 90_000;
+
+/** Pide el tile (tx,ty) por el cable del juego —desde un segundo socket de la
+ *  página, la petición que hace el jugador al llegar al borde sin tener que
+ *  caminar hasta él— y AFIRMA qué le pasó.
+ *
+ *  Sustituye al `pedirYEsperar` que el 120 y el 127 tenían copiado (#656). La
+ *  diferencia no es el reloj: es que aquel esperaba con un predicado de UN
+ *  desenlace y al expirar no decía nada. Aquí hay TRES bocas por las que puede
+ *  morir un `request_tile` y las tres tienen texto — ver la cabecera de
+ *  `qa/lib/tile-episodio.mjs`, donde vive el juicio, puro y medido.
+ *
+ *  **El socket se queda ABIERTO durante la espera**, y ése es el arreglo de la
+ *  segunda boca: un frame que no pasa el contrato lo contesta el bridge por
+ *  UNICAST al socket que lo mandó (`bridge/ws-server.ts`), y el helper viejo lo
+ *  cerraba en el mismo tick del `send`, así que ese rechazo no lo veía nadie.
+ *  Se cierra al resolverse la espera, no antes.
+ *
+ *  La espera por condición vive aquí y no en el guion, que es lo que manda
+ *  `qa-guiones-sin-espera-por-reloj`. Devuelve el veredicto entero por si el
+ *  llamante quiere mirarlo; el ✔/✘ ya está puesto. */
+export async function pedirYEsperarTile(ctx, key, tx, ty, { ms = MS_DEL_TILE } = {}) {
+  await ctx.page.evaluate(
+    ([x, y]) =>
+      new Promise((res, rej) => {
+        const url = window.__nefan.servicios()["game-gateway"];
+        // Un socket por petición: el de la anterior ya cumplió y dejarlo
+        // abierto acumularía clientes WS en el bridge durante todo el guion.
+        if (window.__qaTileSocket) window.__qaTileSocket.close();
+        window.__qaTileRechazos = [];
+        const ws = new WebSocket(url);
+        window.__qaTileSocket = ws;
+        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
+        // Lo que el bridge conteste A ESTE SOCKET. Solo puede ser unicast: este
+        // socket no manda `subscribe`, así que no está en `narrativeSubscribers`
+        // y no recibe difusiones.
+        ws.onmessage = (ev) => {
+          try {
+            const m = JSON.parse(ev.data);
+            if (m && m.type === "narrative_status" && m.phase === "error") {
+              window.__qaTileRechazos.push({ kind: m.kind ?? null, message: m.message ?? "sin mensaje" });
+            }
+          } catch (e) {
+            // Fail-loud: lo ilegible se APUNTA como rechazo, no se descarta —
+            // un frame que no se puede leer es exactamente el dato que hace
+            // falta cuando el tile no llega.
+            window.__qaTileRechazos.push({
+              kind: "ilegible",
+              message: `${String(e)} — ${String(ev.data).slice(0, 200)}`,
+            });
+          }
+        };
+        ws.onopen = () => {
+          ws.send(JSON.stringify({ type: "request_tile", tx: x, ty: y, reason: "blocking" }));
+          res(true);
+        };
+      }),
+    [tx, ty],
+  );
+
+  const desc = `el tile ${key} llega al mundo del cliente`;
+  // La espera para en CUALQUIERA de los tres desenlaces, no solo en el bueno:
+  // con el motor falso en `mode:"error"` el rojo sale en menos de 2 s en vez de
+  // quemar los 90.
+  await ctx.absorbe(
+    "la medida vive en el `ctx.expect` de pedirYEsperarTile que va justo debajo: juzga el veredicto " +
+      "del tile (llegado/fallo/rechazado/callado) leyendo el libro de episodios del cliente, y exige " +
+      "`llegado`, que es el MISMO predicado que esta espera",
+    () =>
+      ctx.waitFor(
+        desc,
+        (k) => {
+          const hook = window.__nefan;
+          const tiles = hook.tiles ?? [];
+          if (tiles.includes(k)) return { estado: "llegado" };
+          const ep = (hook.tileEpisodios ?? []).find((e) => e && e.key === k);
+          if (ep && ep.error) return { estado: "fallo", error: ep.error };
+          const rech = window.__qaTileRechazos ?? [];
+          if (rech.length > 0) return { estado: "rechazado", rechazo: rech[0] };
+          return null;
+        },
+        ms,
+        key,
+      ),
+  );
+
+  const leido = await ctx.page.evaluate((k) => {
+    const hook = window.__nefan;
+    const ws = window.__qaTileSocket;
+    if (ws) ws.close();
+    return {
+      key: k,
+      tiles: hook.tiles ?? null,
+      episodios: hook.tileEpisodios ?? [],
+      rechazos: window.__qaTileRechazos ?? [],
+    };
+  }, key);
+
+  const v = veredictoDeTile(leido);
+  ctx.expect(desc, v.estado === LLEGADO, fraseDeTile(v));
+  return v;
 }
 
 /** Lee uno de los libros del juego (`viaje`, `tileEpisodios`, `skins`,

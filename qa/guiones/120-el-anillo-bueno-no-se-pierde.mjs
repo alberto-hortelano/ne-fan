@@ -62,6 +62,25 @@
  *  Ninguna espera es de reloj: el snapshot pasivo se escribe ANTES de difundir
  *  la escena (`bootstrap-tile.ts`), así que cuando `comenzar` vuelve el fichero
  *  ya está.
+ *
+ *  LOS TILES SE PIDEN CON `pedirYEsperarTile` (`lib/sesion.mjs`), y eso no es
+ *  una refactorización de estilo (#656): la espera que este guion tenía copiada
+ *  —y el 127 con él— era MUDA. Su predicado tenía un desenlace (`tiles.includes`)
+ *  y un tope de 90 s, así que cuando el tile no llegaba nadie podía saber si el
+ *  bridge había fallado, había rechazado el frame o nunca supo de la petición:
+ *  noventa segundos para producir cero información. Hoy hay TRES desenlaces con
+ *  texto y el libro de episodios entero en el ✘.
+ *  **PROBADO EN NEGATIVO** el 2026-09-18, un sabotaje por vez y restaurado con
+ *  `md5sum`, los tres sobre ESTE guion:
+ *   · motor falso en `mode:"error"` (`POST /dev/tiles`) antes de pedir el tile
+ *     cribado → ✘ **en 179 ms**, no en 90 s: «el BRIDGE dijo que este tile
+ *     FALLÓ: “El motor narrativo no pudo construirlo; inténtalo de nuevo.”».
+ *   · `reason: "nope"` en el `request_tile` del helper → el frame no pasa el
+ *     contrato y el bridge contesta por UNICAST al socket, que ahora sigue
+ *     abierto → ✘ «el BRIDGE RECHAZÓ el frame por unicast … [protocolo] El
+ *     juego mandó un mensaje que el servidor no reconoce».
+ *   · `handleRequestTile` ignorando el mensaje → ✘ a los 90 s (dos esperas,
+ *     181 s medidos) con el libro entero y «el cliente nunca supo de este tile».
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -71,6 +90,7 @@ import {
   abrirSelectorDeMundos,
   comenzar,
   nuevaPartida,
+  pedirYEsperarTile,
   recargarAlTitulo,
   regenerarMundo,
 } from "../lib/sesion.mjs";
@@ -143,34 +163,6 @@ function romperElAnillo(escena, celda) {
   npc.cell = [col, row];
   escena.entities.push(npc);
   return npc.id;
-}
-
-/** Pide el tile (tx,ty) por el cable del juego desde un segundo socket de la
- *  página, como el guion 63: es la petición que hace el jugador al llegar al
- *  borde, sin tener que caminar hasta él. */
-const pedirTile = (ctx, tx, ty) =>
-  ctx.page.evaluate(
-    ([x, y]) =>
-      new Promise((res, rej) => {
-        const url = window.__nefan.servicios()["game-gateway"];
-        const ws = new WebSocket(url);
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        ws.onopen = () => {
-          ws.send(JSON.stringify({ type: "request_tile", tx: x, ty: y, reason: "blocking" }));
-          setTimeout(() => {
-            ws.close();
-            res(true);
-          }, 0);
-        };
-      }),
-    [tx, ty],
-  );
-
-/** Pide el tile y espera a que el cliente lo TENGA: el contador del fake solo
- *  significa algo cuando la petición terminó. */
-async function pedirYEsperar(ctx, key, tx, ty) {
-  await pedirTile(ctx, tx, ty);
-  await ctx.waitFor(`el tile ${key} llega al mundo del cliente`, (k) => window.__nefan.tiles.includes(k), 90_000, key);
 }
 
 export default async function (ctx) {
@@ -266,14 +258,14 @@ export default async function (ctx) {
 
   // …y solo se vuelve a pedir el malo: el bueno viene de la sesión (0
   // llamadas), el cribado cuesta exactamente una.
-  await pedirYEsperar(ctx, BUENO, 0, 1);
+  await pedirYEsperarTile(ctx, BUENO, 0, 1);
   const trasBueno = await generacionesServidas();
   ctx.expect(
     "3. pedir un vecino BUENO no llama al motor: estaba servido",
     trasBueno === trasA,
     `/generate_scene ${trasA} → ${trasBueno}`,
   );
-  await pedirYEsperar(ctx, MALO, 1, 0);
+  await pedirYEsperarTile(ctx, MALO, 1, 0);
   const trasMalo = await generacionesServidas();
   ctx.expect(
     "3. …y el cribado se vuelve a pedir: exactamente una llamada, la suya",

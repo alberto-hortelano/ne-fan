@@ -31,6 +31,20 @@
  *        que ese mapa no nombra, y si alguien lo DICE.
  *
  *  Escrito por QA sobre `c4/el-anillo-bueno-no-se-pierde` (2026-09-14).
+ *
+ *  LOS TILES SE PIDEN CON `pedirYEsperarTile` (`lib/sesion.mjs`) desde #656.
+ *  Este guion tenía copiada del 120 la misma espera MUDA: un predicado de un
+ *  solo desenlace (`tiles.includes`) con un tope de 90 s, de modo que al no
+ *  llegar el tile no se sabía si el bridge había fallado, había rechazado el
+ *  frame o nunca supo de la petición — y ésa fue la vuelta roja que abrió el
+ *  issue, con noventa segundos gastados para no decir nada. El diagnóstico del
+ *  título de #656 («mide contra el reloj de PARED») quedó desmentido: el sujeto
+ *  de esta espera es el BRIDGE y `data/contract/esperas-que-conducen.json`
+ *  bendice la pared para él; lo que fallaba era el mudo. Los 90 s se quedan, con
+ *  su aritmética escrita junto a `MS_DEL_TILE`.
+ *  **PROBADO EN NEGATIVO** el 2026-09-18 — los tres sabotajes se ejercieron
+ *  sobre el 120, que comparte el helper línea por línea; su cabecera los lista
+ *  con la salida medida.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -40,6 +54,7 @@ import {
   abrirSelectorDeMundos,
   comenzar,
   nuevaPartida,
+  pedirYEsperarTile,
   reanudar,
   recargarAlTitulo,
   regenerarMundo,
@@ -110,35 +125,6 @@ function romperLaEntrada(snap) {
   if (!npc || !solido) return null;
   npc.cell = solido.celda;
   return { npc: npc.id, celda: solido.celda };
-}
-
-/** Pide el tile (tx,ty) por el cable, como el 120 y el 63. */
-const pedirTile = (ctx, tx, ty) =>
-  ctx.page.evaluate(
-    ([x, y]) =>
-      new Promise((res, rej) => {
-        const url = window.__nefan.servicios()["game-gateway"];
-        const ws = new WebSocket(url);
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        ws.onopen = () => {
-          ws.send(JSON.stringify({ type: "request_tile", tx: x, ty: y, reason: "blocking" }));
-          setTimeout(() => {
-            ws.close();
-            res(true);
-          }, 0);
-        };
-      }),
-    [tx, ty],
-  );
-
-async function pedirYEsperar(ctx, key, tx, ty) {
-  await pedirTile(ctx, tx, ty);
-  await ctx.waitFor(
-    `el tile ${key} llega al mundo del cliente`,
-    (k) => window.__nefan.tiles.includes(k),
-    90_000,
-    key,
-  );
 }
 
 const coordDe = (id) => id.replace("tile_", "").split("_").map(Number);
@@ -233,7 +219,7 @@ export default async function (ctx) {
     let acumulado = tras;
     for (const id of MALOS_2) {
       const [tx, ty] = coordDe(id);
-      await pedirYEsperar(ctx, id, tx, ty);
+      await pedirYEsperarTile(ctx, id, tx, ty);
       const ahora = await generaciones();
       ctx.expect(`E1 · pedir ${id} cuesta exactamente una llamada`, ahora === acumulado + 1, `/generate_scene ${acumulado} → ${ahora}`);
       acumulado = ahora;
@@ -241,7 +227,7 @@ export default async function (ctx) {
     // Un vecino BUENO sigue sin costar nada.
     const bueno = anillo.find((id) => !MALOS_2.includes(id));
     const [btx, bty] = coordDe(bueno);
-    await pedirYEsperar(ctx, bueno, btx, bty);
+    await pedirYEsperarTile(ctx, bueno, btx, bty);
     const trasBueno = await generaciones();
     ctx.expect(`E1 · pedir el vecino sano ${bueno} sigue sin llamar al motor`, trasBueno === acumulado, `/generate_scene ${acumulado} → ${trasBueno}`);
   }
@@ -344,7 +330,7 @@ export default async function (ctx) {
       const arrancada = await comenzar(ctx);
       if (vuelta === 1) sesion = arrancada.sessionId;
       const antes = await generaciones();
-      await pedirYEsperar(ctx, MIXTO_MALO, tx, ty);
+      await pedirYEsperarTile(ctx, MIXTO_MALO, tx, ty);
       coste.push((await generaciones()) - antes);
     }
     ctx.log(`E4 · llegar a ${MIXTO_MALO} cuesta, partida tras partida: ${JSON.stringify(coste)} llamadas`);
@@ -364,7 +350,7 @@ export default async function (ctx) {
       const antes = await generaciones();
       const vuelto = await reanudar(ctx, sesion);
       if (vuelto) {
-        await pedirYEsperar(ctx, MIXTO_MALO, tx, ty);
+        await pedirYEsperarTile(ctx, MIXTO_MALO, tx, ty);
         const tras = await generaciones();
         ctx.expect(
           "E4 · REANUDAR una partida que ya lo generó no vuelve a pagarlo (el save sí lo guarda)",
