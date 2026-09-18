@@ -25,6 +25,15 @@
  */
 
 import { cargarFixture } from "../lib/fixtures.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
+
+/** Reloj "loop" y no "mundo": lo que esta espera quiere es que la PÁGINA haya
+ *  dado otra vuelta tras tocar el desplegable, que es lo que estaba escrito en
+ *  línea leyendo `fps().frames` (el mismo contador que `reloj().loop`). Sale
+ *  del censo de exenciones de `esperas-por-fotogramas.json` con #659 cerrado:
+ *  su motivo era la intermitencia de este guion, y la migración se midió con el
+ *  par 79→80 y con el 80 aislado, tres corridas de cada. */
+const esperarFrames = esperaDeFotogramas("loop");
 
 /** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion solo conduce el
  *  selector de fixtures del panel de dev; nunca arranca partida. */
@@ -88,6 +97,13 @@ export default async function (ctx) {
   );
   await pintada(ctx, SEGUNDA);
   const f1 = await foto(ctx);
+  // #659 · LA BASE DEL CONTADOR, tomada aquí y no al empezar el guion, y el
+  // porqué es la mitad de lo que mide el bloque 5: hasta el primer `load_room`
+  // esta página es `{de:"nadie"}` y el sim del bridge puede ser todavía de la
+  // partida del guion ANTERIOR (el runner comparte bridge y `release()` no
+  // vacía el sim, que es literalmente #659). Tirar ESOS frames es el arreglo
+  // funcionando, así que no se cuentan contra nadie — pero se dicen.
+  const tiradosBase = await ctx.page.evaluate(() => window.__nefan.estadosTirados());
   ctx.log(`encadenadas ${PRIMERA}→${SEGUNDA}: ${JSON.stringify(encadenadas)} · mundo «${f1.scene}» · tiles ${JSON.stringify(f1.tiles)} · desplegable «${f1.etiqueta}»`);
   ctx.expect("las dos cargas encadenadas resuelven sin error", encadenadas.a === "ok" && encadenadas.b === "ok", JSON.stringify(encadenadas));
   ctx.expect(`gana la ÚLTIMA: el mundo es «${SEGUNDA}»`, f1.scene === SEGUNDA, `«${f1.scene}»`);
@@ -124,7 +140,7 @@ export default async function (ctx) {
   // ── 3 · La opción vacía ──────────────────────────────────────────────────
   const antes3 = await foto(ctx);
   await ctx.page.selectOption("#room-selector", "");
-  await ctx.waitFor("un frame más tras elegir «-- Room --»", (f0) => (window.__nefan.fps().frames > f0 ? true : null), 5_000, await ctx.page.evaluate(() => window.__nefan.fps().frames));
+  await esperarFrames(ctx, 1);
   const f3 = await foto(ctx);
   ctx.log(`«-- Room --»: mundo «${antes3.scene}» → «${f3.scene}» · errores ${antes3.errores} → ${f3.errores} · desplegable «${f3.etiqueta}»`);
   ctx.expect("elegir la opción vacía no cambia el mundo", f3.scene === antes3.scene && f3.tiles.length === 1, `«${f3.scene}» ${JSON.stringify(f3.tiles)}`);
@@ -169,5 +185,34 @@ export default async function (ctx) {
   ctx.expect(`el desplegable vuelve a «${SEGUNDA}»`, f4.etiqueta === SEGUNDA, `«${f4.etiqueta}»`);
   const sigue = f4.scene === SEGUNDA && f4.tiles.length === 1;
   ctx.expect("una fixture inválida conserva el mundo anterior (#487)", sigue, JSON.stringify(f4));
+
+  // ── 5 · #659: nadie descarta su propia respuesta ─────────────────────────
+  // El `state_update` dice desde #659 DE QUIÉN ES EL SIM, y el cliente tira el
+  // que no es suyo. El selector «Room» es el régimen que el sello ingenuo
+  // rompía: en fixtures el bridge conserva la sesión ANTERIOR (`handleLoadRoom`
+  // vive de ese id rancio), así que sellar con ella habría hecho que esta misma
+  // página descartara sus cuatro respuestas —`load_room`, `input`, `respawn`,
+  // `add_combatants`— y el mundo se quedaría sin enemigos y sin nada que se
+  // mueva, con TODO lo de arriba en verde. El contador es lo que separa «no se
+  // aplicó» de «no ha llegado».
+  const estado = await ctx.page.evaluate(() => ({
+    tirados: window.__nefan.estadosTirados(),
+    latidos: window.__nefan.fps().frames,
+  }));
+  ctx.log(
+    `#659 · state_update tirados: ${tiradosBase} ANTES de entrar en el régimen de prueba ` +
+      `(heredados del guion anterior por el bridge compartido; 0 en corrida aislada) → ` +
+      `${estado.tirados} al final · fotogramas ${estado.latidos}`,
+  );
+  ctx.expect(
+    "ocurre: la página ha pintado, o «no se tiró nada» no distingue nada",
+    estado.latidos > 0,
+    String(estado.latidos),
+  );
+  ctx.expect(
+    "nadie descarta su propia respuesta: el contador NO crece en los cuatro caminos del selector (#659)",
+    estado.tirados === tiradosBase,
+    `${tiradosBase} → ${estado.tirados}`,
+  );
   await ctx.shot("fixture-rota-y-lo-que-queda");
 }

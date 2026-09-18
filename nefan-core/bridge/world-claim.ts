@@ -31,6 +31,7 @@
  *     siendo jugable, que es lo que este modelo no puede romper).
  */
 
+import type { DuenoDelSim } from "../src/protocol/dueno-del-sim.js";
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { GameSimulation } from "../src/simulation/game-loop.js";
 import type { ClientSocket } from "./context.js";
@@ -43,26 +44,52 @@ export interface WorldClaim {
   readonly owner: ClientSocket | null;
   /** A qué título lo tiene, o `null` si no lo tiene nadie. */
   readonly kind: ClaimKind | null;
+  /** DE QUIÉN ES LO QUE HAY DENTRO DEL SIM (#659), que NO es lo mismo que
+   *  quién lo conduce. Viaja en cada `state_update` para que la página que lo
+   *  recibe pueda tirarlo si no es suyo.
+   *
+   *  La diferencia con `owner`/`kind` es todo el arreglo: `release()` los pone
+   *  a `null` —el mundo se queda sin dueño y cualquiera puede conducir— pero
+   *  NO toca esto, porque soltar el mundo no vacía el sim. El jugador y los
+   *  NPCs de la partida que se fue siguen ahí, así que lo que el sim describe
+   *  sigue siendo de ella hasta que alguien lo reclame de nuevo. */
+  readonly delSim: DuenoDelSim;
   /** ¿Puede este socket escribir en el sim? El dueño, sí; si no hay dueño,
    *  cualquiera (no hay partida a la que hacerle daño); otro socket, no. */
   canDrive(ws: ClientSocket): boolean;
   /** La partida del jugador toma el mundo: conduce `ws` y el save pasa a
    *  llevar la posición y la vida VIVAS de los combatientes — la del jugador
    *  y la de cada enemigo, que desde #326 es lo que impide que reanudar
-   *  resucite a los muertos. */
-  claimForSession(ws: ClientSocket): void;
+   *  resucite a los muertos.
+   *
+   *  El id entra POR ARGUMENTO y no se lee del ambiente (#659): el único
+   *  llamante lo tiene en la mano, y leerlo de `narrative.session_id` sería
+   *  sellar con «lo que el bridge tuviera cargado al reclamar», que es la
+   *  mentira que #313 quitó de la pre-generación. Con el argumento, un sello
+   *  vacío solo puede venir de un llamante que no tenga sesión. */
+  claimForSession(ws: ClientSocket, sessionId: string): void;
   /** Una escena de prueba toma el mundo: conduce `ws` y el save deja de
    *  escuchar. Devuelve `false` —y no toca nada— si el mundo lo tiene OTRO
    *  socket: una pestaña ajena no le congela la partida a quien está jugando. */
   claimForFixture(ws: ClientSocket): boolean;
   /** Suelta el mundo si lo tenía `ws` (su socket se cerró). Deja de escuchar:
-   *  lo que le pase al sim a partir de aquí no es de esta partida. */
+   *  lo que le pase al sim a partir de aquí no es de esta partida.
+   *
+   *  NO toca `delSim` A PROPÓSITO, y es el corazón de #659: el contenido del
+   *  sim —el jugador donde lo dejó, sus NPCs andando— sigue siendo de quien lo
+   *  puso. Ponerlo a `{de:"nadie"}` aquí devolvería el fallo entero con todo
+   *  en verde, porque la página siguiente reconocería como suyo un frame que
+   *  describe una partida muerta. */
   release(ws: ClientSocket): void;
 }
 
 export function createWorldClaim(narrative: NarrativeState, sim: GameSimulation): WorldClaim {
   let owner: ClientSocket | null = null;
   let kind: ClaimKind | null = null;
+  // Arranca sin dueño del CONTENIDO: un sim recién arrancado no tiene dentro
+  // el jugador de nadie. No es lo mismo que `{de:"prueba"}` —eso es una
+  // fixture cargada— ni que una partida con id vacío.
+  let delSim: DuenoDelSim = { de: "nadie" };
 
   /** La ÚNICA fuente de runtime que se ata nunca: los combatientes del sim.
    *
@@ -109,12 +136,16 @@ export function createWorldClaim(narrative: NarrativeState, sim: GameSimulation)
     get kind() {
       return kind;
     },
+    get delSim() {
+      return delSim;
+    },
     canDrive(ws) {
       return owner === null || owner === ws;
     },
-    claimForSession(ws) {
+    claimForSession(ws, sessionId) {
       owner = ws;
       kind = "session";
+      delSim = { de: "partida", sessionId };
       escucharAlSim();
     },
     claimForFixture(ws) {
@@ -127,6 +158,7 @@ export function createWorldClaim(narrative: NarrativeState, sim: GameSimulation)
       }
       owner = ws;
       kind = "fixture";
+      delSim = { de: "prueba" };
       dejarDeEscuchar();
       // Se dice en voz alta porque es el momento en el que la partida deja de
       // escuchar al sim: si alguna vez vuelve a aparecer una posición de nadie

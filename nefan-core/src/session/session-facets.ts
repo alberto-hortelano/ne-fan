@@ -112,6 +112,23 @@ export interface FacetSinks {
    *  Recibe el id por valor y el cliente lo cablea con `porValor`, como
    *  `mundo` y `dialogo`: olvidar es destructivo. */
   frontera(f: Pick<SessionFacets, "sessionId">): void;
+  /** EL ÚLTIMO FRAME DEL SIM que el cliente tiene en la mano (#659).
+   *
+   *  `BridgeGameClient` guarda el último `state_update` bueno y lo REPITE
+   *  mientras no llega otro: es lo que hace `idle()`, que es justo lo que corre
+   *  con el título delante. Hasta hoy ese recuerdo solo se limpiaba en
+   *  `loadRoom()` —nunca al volver al título—, así que tras `leave()` el mundo
+   *  ya estaba vacío (`resetWorld`), el dedupe olvidado (`mundo.vaciar()`) y el
+   *  cliente seguía pintando la vida y los NPCs de la partida muerta: volvía
+   *  «el bridge mueve al NPC X y el cliente no lo tiene en escena» y el HUD se
+   *  quedaba con el HP anterior.
+   *
+   *  Es la OTRA MITAD del sello del wire, y no la cubre: esos frames fueron
+   *  míos de verdad cuando llegaron. Lo que caduca no es su procedencia, es la
+   *  partida. Va junto al mundo y a la frontera porque es lo mismo que ellos —
+   *  lo que el cliente creía saber del mundo anterior— y se cablea con
+   *  `porValor` por lo mismo: olvidar es destructivo. */
+  estadoDelSim(f: Pick<SessionFacets, "sessionId">): void;
   /** Registro técnico. Por cambio de id retira lo que era de la partida que se
    *  va y CONSERVA lo de la máquina, que sigue siendo cierto sin ella (el clon
    *  sin hojas de personaje, el pack de estilo que no casa): de quién es cada
@@ -213,6 +230,9 @@ const APLICADORES: {
   // Detrás del mundo, porque es lo mismo que el mundo: los tiles se van y con
   // ellos lo que la frontera creía saber de sus vecinos.
   frontera: (s, f) => s.frontera(f),
+  // Y detrás de la frontera, por la misma razón que los dos de arriba: el
+  // último frame del sim describe el mundo que se acaba de ir.
+  estadoDelSim: (s, f) => s.estadoDelSim(f),
   errores: (s, f) => s.errores(f),
   style: (s, f) => s.style(f),
   theme: (s, f) => s.theme(f),

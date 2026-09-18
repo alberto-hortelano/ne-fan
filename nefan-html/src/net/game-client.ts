@@ -10,6 +10,10 @@
 import { GameStore } from "@nefan-core/src/store/game-store.js";
 import type { CombatEvent, Vec3, EnemyPersonality } from "@nefan-core/src/types.js";
 import type { StateUpdateMessage } from "@nefan-core/src/protocol/messages.js";
+import {
+  identidadDelCliente,
+  repartirEstado,
+} from "@nefan-core/src/protocol/dueno-del-sim.js";
 import type { WorldScene } from "@nefan-core/src/scene/scene-normalize.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { AVISO_PARTIDA, DETALLE_SIN_PARTIDA, errors } from "../ui/error-log.js";
@@ -67,6 +71,22 @@ const jugadorDeArranque = (store: GameStore) => ({
   playerWeaponId: store.state.player.weapon_id,
 });
 
+/** DE QUIÉN ES EL SIM que este cliente espera ver, y a quién decírselo (#659).
+ *
+ *  Argumento del constructor y no opción con defecto, como el `DeQuienEs` del
+ *  embudo narrativo: un defecto «acepta todo» sería el bug de vuelta y en
+ *  silencio. Da el ID y no un predicado porque aquí no se COMPARA nada — la
+ *  identidad la construye `identidadDelCliente` y la decisión la toma
+ *  `repartirEstado`, las dos en core (`protocol/dueno-del-sim.ts`). */
+export interface DeQuienEsElSim {
+  /** El id de la partida aplicada en esta página; "" en el título. Lo contesta
+   *  `session-facets.ts` (core), dueño de «cuál es la mía». */
+  idDeLaPartida(): string;
+  /** La línea del juego. Un frame descartado NO se calla: es el síntoma de que
+   *  una partida muerta sigue viva en el sim del bridge. */
+  log(msg: string): void;
+}
+
 export type GameClientEvent = "connected" | "disconnected";
 type EventHandler = (...args: unknown[]) => void;
 
@@ -91,6 +111,17 @@ export interface GameClient {
    *  encuentre y se la crea. El máximo y el arma de un enemigo los tiene el
    *  sim; el día que el cliente los necesite, viajan en el `state_update`. */
   jugadorEnCombate(): { health: number; maxHealth: number; weaponId: string };
+  /** Olvida lo que el cliente creía saber del sim: el frame pendiente, el
+   *  último bueno y el modo fixtures. Lo llama el sink `estadoDelSim` de
+   *  `session-facets.ts` al cambiar de partida — volver al título incluido
+   *  (#659); sin esto `idle()` repite el frame de la partida muerta. */
+  olvidarElUltimoFrame(): void;
+  /** Cuántos `state_update` de OTRO sim se han tirado aquí. Lo lee el banco por
+   *  `__nefan.estadosTirados()`, y existe por lo mismo que `descartados()` del
+   *  embudo narrativo: sin contador, «no llegó» y «llegó y se descartó» son el
+   *  mismo verde. En un flujo normal vale CERO; si sube, la página está
+   *  tirando lo suyo. */
+  estadosTirados(): number;
   isConnected: boolean;
   isBridge: boolean;
   on(event: GameClientEvent, handler: EventHandler): void;
@@ -104,17 +135,58 @@ export class BridgeGameClient implements GameClient {
   store: GameStore;
   private lastState: FrameResult;
   private pendingFrame: FrameResult | null = null;
+  /** ¿Esta página mira una fixture del selector «Room»? Lo pone `loadRoom()`,
+   *  su único llamante (`world/carga-de-tile.ts`, con `tomaElMundo`), y es la
+   *  mitad que distingue los dos regímenes de direccionamiento de este canal.
+   *  Se olvida con el resto (`olvidarElUltimoFrame`). */
+  private enPrueba = false;
+  /** Frames de OTRO sim tirados aquí; lo lee el banco por `__nefan`. */
+  private tirados = 0;
   isConnected = false;
   isBridge = true;
   private handlers: Map<GameClientEvent, EventHandler[]> = new Map();
 
-  constructor(bridge: BridgeClient, store: GameStore) {
+  constructor(
+    bridge: BridgeClient,
+    store: GameStore,
+    private deQuienEs: DeQuienEsElSim,
+  ) {
     this.bridge = bridge;
     this.store = store;
     this.lastState = { events: [], playerHp: 100, enemies: [], ...jugadorDeArranque(store) };
 
     bridge.on("state_update", (msg) => {
       if (!msg) return;
+      // EL EMBUDO ÚNICO DEL ESTADO (#659). El sim del bridge es UNO y
+      // `release()` no lo vacía: al cerrarse el socket de una partida, el
+      // siguiente que mande un `input` recibe de vuelta su jugador y sus NPCs
+      // (`world-claim.ts`, `canDrive` sin dueño). Ese frame no es de esta
+      // página. La decisión vive en core (`protocol/dueno-del-sim.ts`) y aquí
+      // solo se entrega, por el precedente de `repartirStatus`: un `if` a mano
+      // aquí nace sin nada que lo mida y lo muerde la regla
+      // `la-logica-de-juego-no-vuelve-al-cliente`.
+      //
+      // El sello se comprueba ANTES de usarlo, por lo mismo que la guarda de
+      // abajo: el canal solo está TIPADO y por el socket entra lo que entre (el
+      // guion 69 le mete basura a propósito), así que un frame sin `delSim`
+      // reventaría el manejador con un `TypeError` en vez de dejar una línea.
+      if (typeof msg.delSim !== "object" || msg.delSim === null || !("de" in msg.delSim)) {
+        errors.push(
+          "bridge",
+          `state_update sin delSim (${JSON.stringify(msg.delSim)}): el bridge no es de esta versión ` +
+            `y este frame no dice de qué partida es`,
+        );
+        return;
+      }
+      const reparto = repartirEstado(
+        msg.delSim,
+        identidadDelCliente(this.deQuienEs.idDeLaPartida(), this.enPrueba),
+      );
+      if (reparto.destino === "descartado") {
+        this.tirados++;
+        this.deQuienEs.log(`↩ estado de ${reparto.deQuien} descartado`);
+        return;
+      }
       // Fail-loud (QA de la PR 4 de #241, H1): el canal servidor→cliente solo
       // está TIPADO, ningún zod lo valida, y el HUD depende de estos dos campos.
       // Sin la guarda, un `state_update` que no los traiga deja la barra de vida
@@ -174,7 +246,12 @@ export class BridgeGameClient implements GameClient {
 
   /** Lo mismo SIN mandar input: consume el frame pendiente si lo hay (un
    *  state_update en vuelo sigue siendo estado real) y si no repite el último
-   *  conocido sin eventos. */
+   *  conocido sin eventos.
+   *
+   *  QUÉ REPITE, que es donde estaba la otra mitad de #659: el último frame que
+   *  este cliente ACEPTÓ. Con el título delante es lo único que corre, así que
+   *  mientras el recuerdo no se olvidara, volver al título seguía pintando el
+   *  HP y los NPCs de la partida soltada contra un mundo ya vaciado. */
   idle(): FrameResult {
     if (this.pendingFrame) {
       const frame = this.pendingFrame;
@@ -185,6 +262,11 @@ export class BridgeGameClient implements GameClient {
   }
 
   loadRoom(roomData: Pick<WorldScene, "dimensions">, roomId: string, enemies: RoomEnemy[]): void {
+    // Cargar una fixture es pasar al OTRO régimen: el sim del bridge es una
+    // escena de prueba (`claimForFixture`) y esta página tiene que reconocer
+    // como suyo lo que describa —incluida la respuesta a este `load_room`—. Se
+    // pone ANTES de mandarlo: la respuesta llega en el microtask siguiente.
+    this.enPrueba = true;
     // El mundo anterior ya se retiró: su último frame no describe esta fixture.
     this.pendingFrame = null;
     this.lastState = { ...this.lastState, events: [], enemies: [], npcs: [] };
@@ -197,6 +279,25 @@ export class BridgeGameClient implements GameClient {
       })),
       { width, depth },
     );
+  }
+
+  estadosTirados(): number {
+    return this.tirados;
+  }
+
+  /** Ver `GameClient.olvidarElUltimoFrame`. Vuelve al neutro EXACTO del
+   *  constructor —el jugador de arranque del store, sin enemigos ni NPCs— y
+   *  sale del modo fixtures: quien vuelve al título no está mirando ninguna. */
+  olvidarElUltimoFrame(): void {
+    this.pendingFrame = null;
+    this.lastState = {
+      events: [],
+      playerHp: 100,
+      enemies: [],
+      npcs: [],
+      ...jugadorDeArranque(this.store),
+    };
+    this.enPrueba = false;
   }
 
   addEnemies(enemies: RoomEnemy[]): void {
@@ -264,6 +365,14 @@ export class ViewerGameClient implements GameClient {
   addEnemies(): void {}
   respawn(): void {}
 
+  /** No hay nada que olvidar: su frame es constante y no viene de ningún sim. */
+  olvidarElUltimoFrame(): void {}
+
+  /** Sin socket no llega nada que tirar. */
+  estadosTirados(): number {
+    return 0;
+  }
+
   jugadorEnCombate() {
     const f = this.frame;
     return { health: f.playerHp, maxHealth: f.playerMaxHp, weaponId: f.playerWeaponId };
@@ -283,6 +392,7 @@ export function createViewerClient(): GameClient {
  *  rejects — there is no local-simulation fallback. */
 export function createGameClient(
   bridge: BridgeClient,
+  deQuienEs: DeQuienEsElSim,
   timeoutMs = 5000,
 ): Promise<GameClient> {
   if (!CONFIG.session.require_bridge) {
@@ -299,7 +409,7 @@ export function createGameClient(
   }
   const store = new GameStore();
   if (bridge.isConnected) {
-    return Promise.resolve(new BridgeGameClient(bridge, store));
+    return Promise.resolve(new BridgeGameClient(bridge, store, deQuienEs));
   }
   return new Promise<GameClient>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -328,7 +438,7 @@ export function createGameClient(
     }, timeoutMs);
     function alConectar(): void {
       clearTimeout(timer);
-      resolve(new BridgeGameClient(bridge, store));
+      resolve(new BridgeGameClient(bridge, store, deQuienEs));
     }
     bridge.on("connected", alConectar);
   });

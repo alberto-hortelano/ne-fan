@@ -12,7 +12,10 @@
  *  La decimoséptima estaba dentro del guion 15, escrita en línea, y es la única
  *  que NO se migró: con la espera sacada aquí el guion salía rojo 4 de 21 (y 0
  *  de 11 sin tocar), siempre en el título y sin vía causal hacia esta espera.
- *  Está apuntada en `data/contract/esperas-por-fotogramas.json` con el número.
+ *  Está apuntada en `data/contract/esperas-por-fotogramas.json` con el número y,
+ *  desde #659, con su issue escrito (#673). La DECIMOCTAVA era la del guion 80,
+ *  que se quedó fuera por su propia intermitencia; entra aquí con #659 cerrado,
+ *  medida con el par 79→80 y con el 80 aislado, tres corridas de cada.
  *
  *  ## Las DOS cosas que esto arregla, y la segunda es la que dolía
  *

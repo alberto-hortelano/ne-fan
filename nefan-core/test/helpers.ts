@@ -26,6 +26,7 @@ import { routeMessage } from "../bridge/router.js";
 import { intakeClientMessage } from "../bridge/message-intake.js";
 import {
   sellarSesion,
+  sellarDuenoDelSim,
   type BridgeContext,
   type ClientSocket,
   type NarrativeAiClient,
@@ -265,6 +266,14 @@ export function makeCtx(
     difundirDeJuego(msg) {
       broadcasts.push(msg);
       for (const ws of subscribers) escribir(ws, msg);
+    },
+    // El doble del CUARTO verbo (#659), por la MISMA función que `ws-server.ts`
+    // y por el mismo motivo que los tres de arriba: si el doble sellara
+    // distinto —o no sellara— los tests de bridge medirían un cable que no
+    // existe, y el candado del 79→80 saldría verde sin sujetar nada. No entra
+    // en `broadcasts`: es unicast, como `send`.
+    enviarEstado(ws, msg) {
+      escribir(ws, sellarDuenoDelSim(msg, ctx.world.delSim));
     },
   };
   return { ctx, broadcasts, storage, narrative, store, sim, aiCalls, subscribers };

@@ -2583,6 +2583,67 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  it("[error] la-logica-de-juego-no-vuelve-al-cliente: decidir de quién es el sim en el cliente salta; entregarlo no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");
+
+    // #659: el `if` de «esto no es mío» escrito a mano en el embudo del
+    // cliente, en sus dos formas — por el discriminante y por el id que lleva
+    // dentro. Es EXACTAMENTE el sabotaje 3 del plan, y la misma invención en el
+    // bridge salta igual.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/net/game-client.ts",
+          text: 'if (msg.delSim.de === "partida" && msg.delSim.sessionId !== miId) return;\n',
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/world/lo-que-manda-el-bridge.ts",
+          text: 'const mio = frame.delSim.de !== "prueba";\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/handlers/simulation.ts",
+          text: 'if (ctx.world.delSim.de === "nadie") return;\n',
+          imports: [],
+        },
+      ]).map((v) => `${v.path}:${v.line}`),
+      [
+        "nefan-core/bridge/handlers/simulation.ts:1",
+        "nefan-html/src/net/game-client.ts:1",
+        "nefan-html/src/net/game-client.ts:1",
+        "nefan-html/src/world/lo-que-manda-el-bridge.ts:1",
+      ],
+    );
+
+    // Lo que sigue siendo legítimo y TIENE que compilar: el cliente llamando a
+    // core sin comparar nada, el bridge ESCRIBIENDO el valor (que es su única
+    // fuente) y el transporte copiándolo sin mirarlo.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/net/game-client.ts",
+          text:
+            "const reparto = repartirEstado(msg.delSim, identidadDelCliente(this.deQuienEs.idDeLaPartida(), this.enPrueba));\n" +
+            'if (reparto.destino === "descartado") { this.tirados++; return; }\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/world-claim.ts",
+          text: 'delSim = { de: "partida", sessionId };\nlet delSim: DuenoDelSim = { de: "nadie" };\n',
+          imports: [],
+        },
+        {
+          path: "nefan-core/bridge/ws-server.ts",
+          text: "escribir(ws, sellarDuenoDelSim(msg, ctx.world.delSim));\n",
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
   it("[error] la-logica-de-juego-no-vuelve-al-cliente: el arma y el máximo inventados saltan; leerlos del wire no", () => {
     const deLaRegla = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "la-logica-de-juego-no-vuelve-al-cliente");

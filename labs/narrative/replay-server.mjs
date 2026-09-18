@@ -83,7 +83,10 @@ const RESPONSE_TYPES = new Set([
 const responseQueues = {};
 for (const t of RESPONSE_TYPES) responseQueues[t] = [];
 
-// Broadcasts que componen la "película", en orden grabado.
+// Broadcasts que componen la "película", en orden grabado. `state_update` está
+// aquí porque es el que MUEVE lo que se ve, y desde #659 además el que trae
+// `delSim`: todo lo de esta lista pasa por `sellarComoDeEstaReproduccion`, que
+// es donde se le repone.
 const BROADCAST_TYPES = new Set([
   "narrative_status",
   "narrative_event",
@@ -140,9 +143,12 @@ console.error(`[replay] arranca el cliente (cd nefan-html && npm run dev) y puls
  *
  *  Aquí hubo una lista escrita a mano —«el ÚNICO tipo que el cliente filtra»—
  *  y era un espejo de la política del cliente que nació ya incompleta: decía
- *  `narrative_event` cuando los frames sellados del wire son tres
- *  (`narrative_event`, `narrative_status`, `render_mode_changed`). Es
- *  exactamente lo que su propio comentario decía querer evitar.
+ *  `narrative_event` cuando los sellados eran más. El censo que vino a
+ *  sustituirla («los frames sellados del wire son tres») envejeció igual y ya
+ *  mentía antes de #659: se dejaba `exits_changed`. Se retira el número — los
+ *  tipos derivados de `bridge/context.ts` (`ConSelloDeSesion`,
+ *  `ConDuenoDelSim`) son los que no pueden quedarse desfasados. Es exactamente
+ *  lo que el comentario original decía querer evitar, dos veces.
  *
  *  Tampoco vale derivar de la PROPIEDAD (`"sessionId" in msg`), que es lo
  *  primero que parece: **falla justo en el caso para el que existe esto**. Los
@@ -150,6 +156,14 @@ console.error(`[replay] arranca el cliente (cd nefan-html && npm run dev) y puls
  *  — medido sobre `runs/2026-08-17_17-34-28`: 51 broadcasts sellables, 0 con
  *  `sessionId`. Con esa condición no se reestamparía ninguno y `replay-web`
  *  quedaría igual de roto que sin el arreglo.
+ *
+ *  DOS SELLOS DESDE #659, y el segundo no es opcional: `state_update` no lleva
+ *  `sessionId` sino `delSim` («de quién es el sim que describe este frame»), y
+ *  el cliente TIRA el que no case con su identidad. Sin reestamparlo, la
+ *  película llega con `delSim` ausente, `repartirEstado` la descarta entera y
+ *  `replay-web` se queda sin estado: el mundo pintado y nada que se mueva. Se
+ *  estampa `{de:"partida", sessionId}` porque eso es lo que la reproducción
+ *  suplanta — la partida grabada, con el id que se le sirvió al cliente.
  *
  *  Así que se sella TODO lo que va en la película. `timeline` son solo
  *  broadcasts (las respuestas correlacionadas van por `queues`, así que
@@ -162,7 +176,11 @@ console.error(`[replay] arranca el cliente (cd nefan-html && npm run dev) y puls
  *  suya solo se queda los `phase:"error"`—. Sin sellar, el `ready` que retira
  *  el overlay de carga y el `generating` que narra el progreso se tiran los
  *  dos: el mundo se pinta y el «Generando mundo inicial…» no se va nunca. */
-const sellarComoDeEstaReproduccion = (msg, sessionId) => ({ ...msg, sessionId });
+const sellarComoDeEstaReproduccion = (msg, sessionId) => ({
+  ...msg,
+  sessionId,
+  delSim: { de: "partida", sessionId },
+});
 
 wss.on("connection", (ws) => {
   console.error("[replay] cliente conectado");

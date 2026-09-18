@@ -21,6 +21,7 @@ import {
   escenasSinLugarEnElMapa,
   writeWorldSnapshot,
 } from "../src/games/world-snapshot.js";
+import type { DuenoDelSim } from "../src/protocol/dueno-del-sim.js";
 import { loadWorldVocabulary } from "../src/games/vocabulary.js";
 import type { PluginManifest } from "../src/plugins/types.js";
 import type { SceneRecord } from "../src/narrative/types.js";
@@ -44,6 +45,7 @@ import type {
   NarrativeStatusDeJuego,
   ServerMessage,
   SinSelloDeSesion,
+  SinDuenoDelSim,
   StateUpdateMessage,
 } from "../src/protocol/messages.js";
 import type { WorldClaim } from "./world-claim.js";
@@ -111,8 +113,11 @@ export interface BridgeContext {
    *  es inexpresablemente falso en vez de cierto por costumbre. */
   send(ws: ClientSocket, msg: SinSello): void;
   /** Difunde a todos los suscriptores SELLANDO la sesión vigente. El mensaje
-   *  llega sin `sessionId` y sale con él: ninguno de los 23 emisores puede
-   *  olvidarse de ponerlo ni ponerlo mal (#282).
+   *  llega sin `sessionId` y sale con él: ningún emisor puede olvidarse de
+   *  ponerlo ni ponerlo mal (#282). Aquí decía «los 23 emisores» y era un censo
+   *  en prosa como los otros dos que #659 retiró; el número de hoy —MEDIDO el
+   *  2026-09-18, 31 llamadas en 11 ficheros— se queda fuera del comentario a
+   *  propósito, porque envejece en la primera PR que añada una.
    *
    *  Solo acepta lo que SE DIRECCIONA POR SESIÓN (`ConSelloDeSesion`). Lo que
    *  se direcciona por juego va por `difundirDeJuego` y no pasa por aquí. */
@@ -138,6 +143,17 @@ export interface BridgeContext {
    *  ya no es expresable es un mensaje con el campo de direccionamiento del
    *  otro esquema. */
   difundirDeJuego(msg: NarrativeStatusDeJuego): void;
+  /** EL CUARTO VERBO (#659): la respuesta de estado a UN socket, SELLADA con
+   *  de quién es el sim que describe.
+   *
+   *  Es un verbo y no un argumento de `send` por lo mismo que `difundirDeJuego`
+   *  es un verbo y no una bandera de `broadcastNarrative` (#313): lo que cambia
+   *  no es una opción del envío, es QUÉ IDENTIFICADOR lleva el mensaje. Y es un
+   *  verbo y no cuatro `sellarDuenoDelSim` escritos en los emisores porque el
+   *  quinto emisor se olvidaría — aquí no hay nada que recordar: el sello no
+   *  se puede escribir (`SinDuenoDelSim`) y no se puede omitir (el campo es
+   *  requerido en `ServerMessage`). */
+  enviarEstado(ws: ClientSocket, msg: SinDuenoDelSim<ConDuenoDelSim>): void;
 }
 
 /** Qué hace un write con el mundo que YA estaba en `world/tile.json` (#451).
@@ -323,6 +339,19 @@ export function addNeighborhoodSceneIds(
  *  inventado, con el criterio de #313 cumplido solo por casualidad. */
 export type ConSelloDeSesion = Extract<ServerMessage, { sessionId: string }>;
 
+/** Los mensajes que llevan el sello de #659 —DE QUIÉN ES EL SIM que
+ *  describen—, derivados igual que los de arriba y por el mismo motivo: un
+ *  mensaje nuevo con `delSim` requerido entra solo y sale solo de `SinSello`.
+ *
+ *  Hoy es uno (`state_update`) y el tipo no lo nombra, que es la diferencia
+ *  entre esto y la lista escrita a mano que `replay-server.mjs` tuvo que
+ *  corregir dos veces. El campo se llama `delSim` y no `sessionId`
+ *  precisamente para que los dos sellos no se pisen: un `state_update` NO es
+ *  `ConSelloDeSesion`, así que `broadcastNarrative` y `enviarNarrativo` no
+ *  pueden tocarlo, y lo que sella la SESIÓN VIGENTE no puede estampar una
+ *  identidad que solo conoce `world-claim.ts`. */
+export type ConDuenoDelSim = Extract<ServerMessage, { delSim: DuenoDelSim }>;
+
 /** Los mensajes de servidor que NO llevan sello de sesión: lo que `send`
  *  puede mandar sin pasar por el sellador. Se deriva del propio tipo, así que
  *  un mensaje nuevo con `sessionId` requerido queda fuera solo.
@@ -333,8 +362,17 @@ export type ConSelloDeSesion = Extract<ServerMessage, { sessionId: string }>;
  *  `narrative_status` a un socket suelto — o sea, un segundo camino de salida
  *  para el mensaje que acaba de ganar el suyo (`difundirDeJuego`). El
  *  invariante que declara `send` («no admito los mensajes que llevan sello»)
- *  se habría ensanchado en silencio a «no admito los que llevan ESE sello». */
-export type SinSello = Exclude<ServerMessage, ConSelloDeSesion | NarrativeStatusDeJuego>;
+ *  se habría ensanchado en silencio a «no admito los que llevan ESE sello».
+ *
+ *  Excluye ADEMÁS lo que lleva el sello de #659 (`ConDuenoDelSim`): el día que
+ *  `state_update` ganó su campo requerido, los cuatro `ctx.send(ws, …)` de
+ *  `handlers/simulation.ts` DEJARON DE COMPILAR, que es el tipo haciendo su
+ *  trabajo — el quinto emisor que aparezca tampoco podrá olvidarse del sello,
+ *  porque no tiene por dónde salir sin él. */
+export type SinSello = Exclude<
+  ServerMessage,
+  ConSelloDeSesion | ConDuenoDelSim | NarrativeStatusDeJuego
+>;
 
 /** Estampa el sello de sesión en un mensaje que sale hacia un cliente (#282).
  *
@@ -355,6 +393,18 @@ export function sellarSesion<T extends { type: string }>(
   sessionId: string,
 ): T & { sessionId: string } {
   return { ...msg, sessionId };
+}
+
+/** Lo mismo para el sello de #659, y existe por la MISMA razón que el de
+ *  arriba: hay DOS sitios que lo estampan —`ws-server.ts` y el doble de
+ *  `test/helpers.ts`— y tienen que hacerlo exactamente igual. Si el doble
+ *  sellara distinto, los tests de bridge medirían un cable que no existe y el
+ *  sello se podría romper en producción con todo en verde. */
+export function sellarDuenoDelSim<T extends { type: string }>(
+  msg: T,
+  delSim: DuenoDelSim,
+): T & { delSim: DuenoDelSim } {
+  return { ...msg, delSim };
 }
 
 /** UN SITIO YA MIRADO donde pedirle al cliente que aparezca — y el tipo es el

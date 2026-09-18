@@ -25,11 +25,17 @@
  *  Toda espera cuyo PREDICADO lea un contador de fotogramas sale del helper o
  *  está en `data/contract/esperas-por-fotogramas.json` con su motivo. Existe
  *  porque el nivel duro, solo, deja escribible la copia INLINE — y eso es
- *  exactamente cómo se escribió la copia que el censo no vio. Las seis
- *  exenciones de hoy no son deuda: tres tienen el contador como SUJETO (afirmar
- *  que el renderer sigue pintando), una necesita un cortafuegos mayor que el
- *  unificado, una es una espera CONDUCIDA en segundos de mundo con otro dueño, y
- *  una está fuera de alcance con issue vivo (#659).
+ *  exactamente cómo se escribió la copia que el censo no vio. Las exenciones de
+ *  hoy no son deuda, y van por CLASES y sin número —aquí decía «las seis» con
+ *  siete en el contrato, que es la forma exacta de mentir que este módulo vino
+ *  a retirar (#659, 2026-09-18); cuántas hay lo dice el contrato, que es quien
+ *  no puede quedarse desfasado—: unas tienen el contador como SUJETO (afirmar
+ *  que el renderer sigue pintando), otra necesita un cortafuegos mayor que el
+ *  unificado, otra es una espera CONDUCIDA en segundos de mundo con otro dueño,
+ *  y otra está fuera de alcance con issue vivo (#673, el guion 15). La del
+ *  guion 80 SALE del censo con #659 cerrado: su motivo era la intermitencia que
+ *  ese issue explicaba, y la migración se midió con el par 79→80 y con el 80
+ *  aislado, tres corridas de cada, todas en verde.
  *
  *  ── LO QUE NO CUBRE, dicho aquí y no en prosa suelta ──────────────────────
  *  Las LECTURAS de `fps().frames` que no son el predicado de una espera

@@ -23,6 +23,7 @@ import type {
   LoadRoomMessage,
   RespawnMessage,
   StateUpdateMessage,
+  SinDuenoDelSim,
 } from "../../src/protocol/messages.js";
 
 /** El arma y el máximo de vida del jugador, que son del STORE: el bridge se
@@ -128,7 +129,7 @@ export async function handleInput(
     );
   }
 
-  ctx.send(ws, {
+  ctx.enviarEstado(ws, {
     type: "state_update",
     events: result.events,
     playerHp: ctx.sim.getCombatant("player")?.health ?? 0,
@@ -252,7 +253,7 @@ export function handleLoadRoom(
   // player_respawned event would make the client run its respawn side-effects
   // (teleport to the spawn point and refill HP, clobbering a resume's restored
   // position). Legacy no-session loads keep the event.
-  const roomResponse: StateUpdateMessage = {
+  const roomResponse: SinDuenoDelSim<StateUpdateMessage> = {
     type: "state_update",
     events: inSession ? [] : [{ type: "player_respawned", hp: playerHp }],
     playerHp: playerHp,
@@ -260,7 +261,7 @@ export function handleLoadRoom(
     playerWeaponId,
     enemies: getEnemyStates(ctx),
   };
-  ctx.send(ws, roomResponse);
+  ctx.enviarEstado(ws, roomResponse);
 }
 
 export function handleRespawn(msg: RespawnMessage, ws: ClientSocket, ctx: BridgeContext): void {
@@ -268,14 +269,14 @@ export function handleRespawn(msg: RespawnMessage, ws: ClientSocket, ctx: Bridge
   // el `state.json`: mismo dueño que el input.
   if (!ctx.world.canDrive(ws)) return;
   const events = ctx.sim.respawn(msg.pos);
-  const response: StateUpdateMessage = {
+  const response: SinDuenoDelSim<StateUpdateMessage> = {
     type: "state_update",
     events,
     playerHp: ctx.sim.getCombatant("player")?.health ?? 100,
     ...estadoDelJugador(ctx),
     enemies: getEnemyStates(ctx),
   };
-  ctx.send(ws, response);
+  ctx.enviarEstado(ws, response);
   console.log("Bridge: player respawned");
 }
 
@@ -329,12 +330,12 @@ export function handleAddCombatants(
     console.log(`Bridge: ${added} combatiente(s) añadidos (aditivo)`);
   }
   avisarDeLosDescartados(criba, ws, ctx);
-  const response: StateUpdateMessage = {
+  const response: SinDuenoDelSim<StateUpdateMessage> = {
     type: "state_update",
     events: [],
     playerHp: ctx.sim.getCombatant("player")?.health ?? 100,
     ...estadoDelJugador(ctx),
     enemies: getEnemyStates(ctx),
   };
-  ctx.send(ws, response);
+  ctx.enviarEstado(ws, response);
 }

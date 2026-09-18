@@ -371,7 +371,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     });
 
     const { socket } = makeSocket();
-    ctx.world.claimForSession(socket);
+    ctx.world.claimForSession(socket, narrative.session_id);
     await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
     await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "ready"));
     assert.ok(!narrative.story_so_far.includes("Suena el yunque."), "aún no ha llegado");
@@ -775,7 +775,7 @@ describe("bridge activación por posición (tiles + anchors)", () => {
     });
 
     const { socket } = makeSocket();
-    ctx.world.claimForSession(socket);
+    ctx.world.claimForSession(socket, narrative.session_id);
     const input = (x: number, z: number) => porElBorde(
       { type: "input", delta: 0.016, inputs: { playerPosition: { x, y: 0, z }, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: true } },
       socket, ctx,
@@ -834,7 +834,7 @@ describe("bridge cambiar de tile guarda la partida (#395)", () => {
     h.narrative.startNewSession("plugtest");
     dosTiles(h.narrative);
     const { socket } = makeSocket();
-    h.ctx.world.claimForSession(socket);
+    h.ctx.world.claimForSession(socket, h.narrative.session_id);
     await entrarEnLaPartida(h.ctx, socket, h.narrative.session_id);
     const escrituras: string[] = [];
     const write = h.storage.write.bind(h.storage);

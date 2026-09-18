@@ -295,7 +295,7 @@ function reseedSimForSession(
   // conduce este socket y CUALQUIER save() del bridge lleva la posición y la
   // vida vivas del combatiente. Sin esto el save solo sabía dónde empezó la
   // partida (reanudar te devolvía al origen y te curaba a 100).
-  ctx.world.claimForSession(ws);
+  ctx.world.claimForSession(ws, ctx.narrative.session_id);
 }
 
 /** Le dice al JUGADOR qué combatientes se ha dejado fuera su partida porque
