@@ -178,12 +178,12 @@ export default async function (ctx) {
   // ── 1 · #489: lo spawneado ES SÓLIDO, y mide lo que dice medir ──────────
   const huella = await ctx.page.evaluate(
     ({ ids, semiForja, semiCofre }) => {
-      const pc = window.__nefan.probeCollide;
+      const punto = window.__nefan.probePoint;
       const o = window.__nefan.objects();
       // Las cuatro direcciones cardinales, a `d` metros del centro.
       const cruz = (e, d) => [
-        pc(e.pos.x + d, e.pos.z), pc(e.pos.x - d, e.pos.z),
-        pc(e.pos.x, e.pos.z + d), pc(e.pos.x, e.pos.z - d),
+        punto(e.pos.x + d, e.pos.z), punto(e.pos.x - d, e.pos.z),
+        punto(e.pos.x, e.pos.z + d), punto(e.pos.x, e.pos.z - d),
       ];
       /** ¿Qué OTRO objeto del mundo tiene ese punto dentro de su caja inflada?
        *  Es lo que explica que un punto más allá del borde siga bloqueado, y
@@ -200,7 +200,7 @@ export default async function (ctx) {
         return {
           sizeXZ: e.sizeXZ,
           dueno: e.dueno,
-          centro: pc(e.pos.x, e.pos.z),
+          centro: punto(e.pos.x, e.pos.z),
           // Justo DENTRO del borde de la caja + el radio del jugador: bloquea
           // por los cuatro lados.
           borde: cruz(e, s - 0.1),
@@ -224,7 +224,7 @@ export default async function (ctx) {
         forja: medir(ids.forja, semiForja),
         cofre: medir(ids.cofre, semiCofre),
         edificioDelTile: tile
-          ? { id: tile.id, dueno: tile.dueno, centro: pc(tile.pos.x, tile.pos.z) }
+          ? { id: tile.id, dueno: tile.dueno, centro: punto(tile.pos.x, tile.pos.z) }
           : null,
       };
     },
@@ -248,7 +248,7 @@ export default async function (ctx) {
     // vez de la suposición (QA H5): se dice quién tapa cada dirección que sigue
     // bloqueada a un palmo del borde. `null` con el punto bloqueado NO es
     // necesariamente esta caja creciendo — puede ser el GRID del plan del tile,
-    // y `probeCollide` es la unión de las tres fuentes sin desglose, así que
+    // y `probePoint` es la unión de sus dos fuentes sin desglose, así que
     // desde aquí no se pueden separar. Medido el 2026-09-07: el cofre tiene el
     // +z tapado por el plan y ninguna caja al lado, o sea que el aserto exacto
     // saldría rojo sin que nada esté mal. Quien sujeta el TAMAÑO de la caja es

@@ -197,9 +197,18 @@ export default async function (ctx) {
   );
   await ctx.shot("de-vuelta");
   ctx.expect("la vuelta acaba en el tile de partida", regreso.tile === partida.tile, regreso.tile);
+  // El jugador está EN el punto que se sonda justo debajo, y por eso la sonda es
+  // `probePoint` y no `probeCollide` (#662): la consulta de MOVIMIENTO contesta
+  // «libre» por donde uno ya está, así que este aserto no podía ponerse rojo. La
+  // distancia se imprime para que se vea, en vez de tener que creérselo.
+  const dAlPunto = await ctx.page.evaluate((q) => {
+    const p = window.__nefan.state().pos;
+    return Math.hypot(p.x - q.x, p.z - q.z);
+  }, { x: regreso.pos.x, z: regreso.pos.z });
+  ctx.log(`donde deja la vuelta: el jugador está a ${dAlPunto.toFixed(4)} m del punto que se sonda`);
   ctx.expect(
     "el punto de aparición de la vuelta no es sólido (no aparece incrustado)",
-    (await ctx.nefan("probeCollide", regreso.pos.x, regreso.pos.z)) === false,
+    (await ctx.nefan("probePoint", regreso.pos.x, regreso.pos.z)) === false,
     JSON.stringify(regreso.pos),
   );
 

@@ -43,8 +43,9 @@
  *  los cuatro ejes desde dentro. La excepción es `caminoALaBolsa`, que sigue
  *  siendo `probeCollide` A PROPÓSITO porque lo que pregunta es si el jugador
  *  puede IR —ahí el origen vivo es el sujeto— y tiene su motivo escrito en el
- *  sitio. El 145 lo canda: declara que este fichero tiene UNA consulta de
- *  movimiento, ni más ni menos.
+ *  sitio. Lo canda `data/contract/sondas-de-movimiento.json` (#662), que declara
+ *  que este fichero tiene UNA consulta de movimiento, ni más ni menos, y lo
+ *  verifica un test de `npm test` leyendo el árbol de sintaxis.
  *
  *  Cero créditos: preset `e2e-sin-creditos`; los spawns del turno 3 los pone el
  *  motor falso y los declarados salen de sus dos marcas. `aisla` deja saves y
@@ -128,12 +129,12 @@ const panelPintado = (ctx) =>
  *  «salir sí, entrar no». */
 const paredMedida = (ctx, obj) =>
   ctx.page.evaluate((e) => {
-    const pc = window.__nefan.probePoint;
+    const punto = window.__nefan.probePoint;
     const paso = 0.05;
     return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => {
       let d = 0;
       for (; d <= 8; d = Number((d + paso).toFixed(2))) {
-        if (!pc(e.pos.x + dx * d, e.pos.z + dz * d)) break;
+        if (!punto(e.pos.x + dx * d, e.pos.z + dz * d)) break;
       }
       return d;
     });
@@ -295,15 +296,15 @@ export default async function (ctx) {
   // justo donde él está.
   const solidez = await ctx.page.evaluate(
     (ids) => {
-      const pc = window.__nefan.probePoint;
+      const punto = window.__nefan.probePoint;
       const o = window.__nefan.objects();
       const box = (id) => {
         const e = o.find((x) => x.id === id);
         const d = e.sizeXZ.x / 2 + 0.4 - 0.1;
         return {
           categoria: e.category,
-          centro: pc(e.pos.x, e.pos.z),
-          bordes: [pc(e.pos.x + d, e.pos.z), pc(e.pos.x - d, e.pos.z), pc(e.pos.x, e.pos.z + d), pc(e.pos.x, e.pos.z - d)],
+          centro: punto(e.pos.x, e.pos.z),
+          bordes: [punto(e.pos.x + d, e.pos.z), punto(e.pos.x - d, e.pos.z), punto(e.pos.x, e.pos.z + d), punto(e.pos.x, e.pos.z - d)],
         };
       };
       return { cofre: box(ids.c), forja: box(ids.f) };
@@ -370,8 +371,11 @@ export default async function (ctx) {
   // `probePoint` la pregunta cambiaría de sentido: diría si hay algo en cada
   // punto de la recta, sin saber si desde el jugador se llega. Es el mismo caso
   // que el `state().blocked` del hook (`nefan-hook.ts:213`), correcto por
-  // diseño. Si algún día esto sale de aquí, el 145 se pone rojo: declara que
-  // este fichero tiene UNA consulta de movimiento, ni más ni menos.
+  // diseño. Si algún día esto sale de aquí se pone rojo
+  // `nefan-core/test/la-consulta-de-movimiento-tiene-dueno.test.ts` (#662), que
+  // declara que este fichero tiene UNA consulta de movimiento, ni más ni menos,
+  // y corre en cada PR. Antes lo decía el bloque 1 del guion 145, que vivía en
+  // la batería de navegador y solo miraba cinco ficheros.
   const caminoALaBolsa = await ctx.page.evaluate((b) => {
     const pc = window.__nefan.probeCollide;
     const p = window.__nefan.state().pos;

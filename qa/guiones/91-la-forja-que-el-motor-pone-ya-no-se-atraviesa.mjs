@@ -2,7 +2,7 @@
  *  motor pone a mitad de partida frena al jugador, con la huella que deriva
  *  core, y sigue frenándolo después de reanudar.
  *
- *  QUÉ MIDE ESTE Y NO LOS DEMÁS. El 81 sondea con `probeCollide` que el centro
+ *  QUÉ MIDE ESTE Y NO LOS DEMÁS. El 81 sondea con `probePoint` que el centro
  *  y los cuatro bordes de la forja y del cofre bloquean; el 02, el 45 y el 06
  *  miden la solidez del PLAN (grid, vanos, puente) sobre fixtures. Ninguno
  *  comprueba DÓNDE ACABA la caja ni camina contra un spawn del MOTOR: una caja
@@ -282,12 +282,12 @@ async function chocaConLaCajaQueDice(ctx, obj, etiqueta, cuando) {
  *  ninguno puede acabar ANTES de lo que dice core ni los cuatro pueden pasarse. */
 async function paredMedida(ctx, obj) {
   return ctx.page.evaluate((e) => {
-    const pc = window.__nefan.probePoint;
+    const punto = window.__nefan.probePoint;
     const paso = 0.05;
     return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => {
       let d = 0;
       for (; d <= 8; d = Number((d + paso).toFixed(2))) {
-        if (!pc(e.pos.x + dx * d, e.pos.z + dz * d)) break;
+        if (!punto(e.pos.x + dx * d, e.pos.z + dz * d)) break;
       }
       return d;
     });
@@ -319,12 +319,12 @@ async function afirmaLaCaja(ctx, obj, etiqueta, cuando) {
  *  depende de que el jugador pueda llegar, y es el dato de §9.1 de la PR 5. */
 async function huecoEntre(ctx, a, b) {
   return ctx.page.evaluate(({ a, b }) => {
-    const pc = window.__nefan.probePoint;
+    const punto = window.__nefan.probePoint;
     const n = 120;
     let libres = 0;
     for (let i = 0; i <= n; i++) {
       const t = i / n;
-      if (!pc(a.pos.x + (b.pos.x - a.pos.x) * t, a.pos.z + (b.pos.z - a.pos.z) * t)) libres++;
+      if (!punto(a.pos.x + (b.pos.x - a.pos.x) * t, a.pos.z + (b.pos.z - a.pos.z) * t)) libres++;
     }
     const dist = Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z);
     return { libres, sondas: n + 1, separacion: dist, hueco: dist - a.sizeXZ.x / 2 - b.sizeXZ.x / 2 };
@@ -336,11 +336,11 @@ async function huecoEntre(ctx, a, b) {
  *  dentro) bloquean. */
 async function sondaDeCaja(ctx, obj) {
   return ctx.page.evaluate((e) => {
-    const pc = window.__nefan.probePoint;
+    const punto = window.__nefan.probePoint;
     const d = e.sizeXZ.x / 2 + 0.4 - 0.1;
     return {
-      centro: pc(e.pos.x, e.pos.z),
-      borde: [pc(e.pos.x + d, e.pos.z), pc(e.pos.x - d, e.pos.z), pc(e.pos.x, e.pos.z + d), pc(e.pos.x, e.pos.z - d)],
+      centro: punto(e.pos.x, e.pos.z),
+      borde: [punto(e.pos.x + d, e.pos.z), punto(e.pos.x - d, e.pos.z), punto(e.pos.x, e.pos.z + d), punto(e.pos.x, e.pos.z - d)],
     };
   }, obj);
 }

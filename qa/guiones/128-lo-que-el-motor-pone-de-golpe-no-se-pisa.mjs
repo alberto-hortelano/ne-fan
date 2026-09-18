@@ -159,11 +159,11 @@ async function fotoDelSuelo(ctx) {
   const origen = await posicion(ctx);
   const celdas = await ctx.page.evaluate(
     ({ o, paso, ax, az }) => {
-      const pc = window.__nefan.probePoint;
+      const punto = window.__nefan.probePoint;
       const filas = [];
       for (let z = 0; z >= -az; z -= paso) {
         const fila = [];
-        for (let x = -ax; x <= ax; x += paso) fila.push(pc(o.x + x, o.z + z) ? 1 : 0);
+        for (let x = -ax; x <= ax; x += paso) fila.push(punto(o.x + x, o.z + z) ? 1 : 0);
         filas.push(fila);
       }
       return filas;

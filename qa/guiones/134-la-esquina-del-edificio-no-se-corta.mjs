@@ -7,9 +7,9 @@
  *  candado también: `test/paso-del-jugador.test.ts`. En el BANCO no había
  *  ninguno. Los que tocan solidez la miden de otra manera y por eso NO ven esto:
  *
- *   · el **81** y el **91** sondean con `probeCollide` el centro y los cuatro
- *     bordes de un spawn, y el 91 además ANDA — pero **de frente contra una
- *     cara**, que es justo el rumbo que nunca falló;
+ *   · el **81** y el **91** sondean el centro y los cuatro bordes de un spawn,
+ *     y el 91 además ANDA — pero **de frente contra una cara**, que es justo el
+ *     rumbo que nunca falló;
  *   · el **02**, el **45** y el **06** empujan contra el muro del plan, también
  *     de frente (`setYaw(Math.PI)`, o sea un eje puro);
  *   · el **128** y el **118** miden qué frena y qué se pisa, no por dónde se
@@ -38,17 +38,22 @@
  *     pegado a la pared. Sin él, un día en que nada frenase, los dos asertos de
  *     arriba saldrían igual de verdes midiendo campo abierto.
  *
- *  ## Por qué el rectángulo se sondea desde LEJOS
+ *  ## El rectángulo se sondea por PUNTO, y por eso ya no hay mirador (#662)
  *
- *  `probeCollide` es `collidesAt`, o sea una consulta de MOVIMIENTO desde donde
- *  está el jugador: preguntarle por el punto en el que uno ya está contesta
- *  SIEMPRE que no (la exención «salir sí, entrar no», y es el H2 de #538). Así
- *  que «¿estoy dentro?» no se le puede preguntar a él —saldría que no aunque el
- *  jugador esté en mitad del edificio— y este guion no lo hace: aparca al
- *  jugador a 28 m, dibuja ahí el rectángulo sólido (que ya viene inflado por el
- *  radio, porque `collidesAt` infla) y después compara POSICIONES contra él.
- *  Es el mismo truco del 02, dicho aquí porque sin él este guion no podría
- *  medir lo que mide.
+ *  Hasta la tanda P este guion aparcaba al jugador a 28 m (`const MIRADOR`)
+ *  antes de sondear, porque preguntaba con `probeCollide` = `collidesAt`, una
+ *  consulta de MOVIMIENTO que contesta SIEMPRE que no por el punto en el que
+ *  uno ya está (la exención «salir sí, entrar no», el H2 de #538). El protocolo
+ *  funcionaba y tenía un agujero que lo decía todo: su propia comprobación de
+ *  cordura —«el mirador está en campo abierto»— se preguntaba CON el jugador
+ *  encima del mirador, así que era la única pregunta que el mirador no podía
+ *  contestar; medido en la corrida del 2026-09-18, distancia jugador↔punto =
+ *  0,0000 m. Hoy se pregunta por `probePoint` = `ocupadoEn`, que no tiene
+ *  origen que aparcar: el rectángulo sale igual de inflado por el radio del
+ *  jugador (`ocupadoEn` usa `PLAYER_RADIUS` por defecto) y no hay protocolo que
+ *  recordar en cada sitio. Lo que sigue en pie es la segunda mitad: «¿estoy
+ *  dentro?» se decide comparando POSICIONES contra ese rectángulo, no
+ *  preguntándoselo a la colisión.
  *
  *  ## Probado en negativo (2026-09-16)
  *
@@ -67,9 +72,6 @@ export const sinMotor = "cierra el título y carga una fixture del selector; nun
 
 import { cargarFixture } from "../lib/fixtures.mjs";
 
-/** Dónde se aparca al jugador para que `probeCollide` conteste como consulta de
- *  PUNTO: lejos de todo y fuera del pueblo. */
-const MIRADOR = { x: 28, z: 28 };
 /** Cuánto se retira el jugador por la diagonal antes de empujar. Con el paso de
  *  0,07 m de un frame a 60 fps son ~60 frames de carrerilla. */
 const CARRERILLA_M = 4;
@@ -80,13 +82,14 @@ const DENTRO_M = 0.02;
 /** Paso del barrido que descubre el rectángulo. */
 const SONDA_M = 0.05;
 
-/** El rectángulo SÓLIDO que rodea a (cx, cz), sondeado desde el mirador hacia
- *  los cuatro ejes. Viene ya inflado por el radio del jugador, porque quien
- *  contesta es `collidesAt`. */
+/** El rectángulo SÓLIDO que rodea a (cx, cz), sondeado por PUNTO hacia los
+ *  cuatro ejes. Viene ya inflado por el radio del jugador, porque `ocupadoEn`
+ *  sondea con `PLAYER_RADIUS` igual que `collidesAt`; lo que NO arrastra es el
+ *  origen, así que da lo mismo dónde esté el jugador cuando se llama. */
 async function rectangulo(ctx, centro) {
   return ctx.page.evaluate(
     ({ c, paso }) => {
-      const solido = (x, z) => window.__nefan.probeCollide(x, z);
+      const solido = (x, z) => window.__nefan.probePoint(x, z);
       if (!solido(c.x, c.z)) return null;
       const buscar = (dx, dz) => {
         let d = 0;
@@ -142,14 +145,7 @@ export default async function (ctx) {
   await ctx.nefan("closeTitle");
   await cargarFixture(ctx, "robledo_tile");
 
-  // El mirador primero: todo lo que se sondee después es una consulta de PUNTO
-  // honesta, y no la exención de quien ya está dentro.
-  await ctx.nefan("setPlayerPos", MIRADOR.x, MIRADOR.z);
-  ctx.expect(
-    "el mirador está en campo abierto (si no, el rectángulo que se dibuje desde él no sería el del edificio)",
-    (await ctx.nefan("probeCollide", MIRADOR.x, MIRADOR.z)) === false,
-  );
-
+  // Aquí se aparcaba al jugador antes de sondear; se fue con #662 (cabecera).
   const edificios = await ctx.page.evaluate(() =>
     (window.__nefan.scene?.objects ?? [])
       .filter((o) => o.category === "building")
@@ -176,7 +172,7 @@ export default async function (ctx) {
       const salida = { x: esquina.x + sx * d, z: esquina.z + sz * d };
       // La salida tiene que estar libre y FUERA: si no, no se estaría midiendo
       // la entrada por la esquina sino otra cosa. Se dice y se sigue.
-      const libre = (await ctx.nefan("probeCollide", salida.x, salida.z)) === false;
+      const libre = (await ctx.nefan("probePoint", salida.x, salida.z)) === false;
       if (!libre || dentro(salida, r)) {
         saltadas++;
         ctx.log(`${e.id} · esquina ${nombre}: la salida (${salida.x.toFixed(1)}, ${salida.z.toFixed(1)}) no está libre; no se mide`);

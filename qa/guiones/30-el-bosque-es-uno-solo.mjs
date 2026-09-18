@@ -104,7 +104,7 @@ export default async function (ctx) {
     const g = window.__nefan.scene.terrain_grid;
     const [ox, oz] = g.origin;
     const mpc = g.meters_per_cell;
-    return arboles.filter((a) => !window.__nefan.probeCollide(ox + a.at[0] * mpc, oz + a.at[1] * mpc));
+    return arboles.filter((a) => !window.__nefan.probePoint(ox + a.at[0] * mpc, oz + a.at[1] * mpc));
   }, inventario.arboles);
   ctx.expect(
     "todos los árboles del tile frenan (ninguno es decorado)",
@@ -123,7 +123,7 @@ export default async function (ctx) {
       const z = oz + a.at[1] * mpc;
       // Corredor libre 4 m al sur del tronco: sitio para tomar carrerilla.
       let libre = true;
-      for (let d = 1.2; d <= 4; d += 0.4) libre = libre && !window.__nefan.probeCollide(x, z + d);
+      for (let d = 1.2; d <= 4; d += 0.4) libre = libre && !window.__nefan.probePoint(x, z + d);
       if (libre) return { id: a.id, x, z };
     }
     return null;
@@ -135,7 +135,7 @@ export default async function (ctx) {
   const salida = { x: objetivo.x, z: objetivo.z + 4 };
   await ctx.nefan("setPlayerPos", salida.x, salida.z);
   await ctx.nefan("setYaw", Math.PI); // norte, contra el tronco
-  ctx.expect("el punto de partida está libre", (await ctx.nefan("probeCollide", salida.x, salida.z)) === false);
+  ctx.expect("el punto de partida está libre", (await ctx.nefan("probePoint", salida.x, salida.z)) === false);
 
   // Se espera por el FALLO: si el jugador ATRAVIESA el tronco, la condición se
   // cumple y el guion se pone rojo. El timeout ES el éxito, y se AFIRMA

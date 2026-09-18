@@ -51,10 +51,16 @@
  *  tanda este guion lo medía y lo REGISTRABA sin ponerlo rojo, y un bloque que
  *  solo loguea no es un candado; hoy se afirma la asimetría
  *  (`desdeLejos === true && desdeSiMismo === false`) y se pone rojo también si
- *  en la partida no hay ningún objeto sólido con el que medirla. Si algún día
- *  se pone rojo porque la asimetría desapareció, la noticia es buena —el
- *  cliente tendría por fin una pregunta de PUNTO— y lo que toca entonces es
- *  volver a decidir la reaparición, no tocar este aserto.
+ *  en la partida no hay ningún objeto sólido con el que medirla. Esas DOS
+ *  sondas son las únicas del bloque que siguen siendo de MOVIMIENTO a
+ *  propósito, y están declaradas en `data/contract/sondas-de-movimiento.json`:
+ *  su SUJETO es la asimetría, así que migrar cualquiera de las dos volvería el
+ *  aserto tautológico. Lo que sí se migró (#662) es el aserto hermano —«el
+ *  punto en el que reaparece se puede PISAR»—, que preguntaba lo mismo con un
+ *  mirador a mano (teletransportar 6 m, sondear, devolver) y hoy pregunta por
+ *  `probePoint`, que no tiene origen que aparcar. Si algún día la asimetría
+ *  desaparece, lo que toca es volver a decidir la reaparición, no tocar este
+ *  aserto.
  *
  *  PROBADO EN NEGATIVO (2026-09-07) por QA, un sabotaje por vez y restaurado
  *  byte a byte después (`diff -q`):
@@ -404,20 +410,16 @@ export default async function (ctx) {
     dist < 0.01,
     `cayó en (${r.cayoEn.x.toFixed(3)}, ${r.cayoEn.z.toFixed(3)}) · volvió a (${r.pos.x.toFixed(3)}, ${r.pos.z.toFixed(3)}) · ${dist.toFixed(3)} m`,
   );
-  // La solidez del punto se pregunta con el jugador EN OTRO SITIO: `collidesAt`
-  // es una consulta de MOVIMIENTO desde donde está el jugador, así que
-  // preguntarla con él encima siempre diría «libre» y el aserto no valdría nada.
-  const solidoDesdeFuera = await ctx.page.evaluate((p) => {
-    const antes = { ...window.__nefan.state().pos };
-    window.__nefan.setPlayerPos(p.x + 6, p.z + 6);
-    const s = window.__nefan.probeCollide(p.x, p.z);
-    window.__nefan.setPlayerPos(antes.x, antes.z);
-    return s;
-  }, r.pos);
+  // La solidez del punto se pregunta por PUNTO (#662). Aquí había un mirador a
+  // mano —teletransportar al jugador 6 m en diagonal, sondear con
+  // `probeCollide` y devolverlo— porque una consulta de MOVIMIENTO con el
+  // jugador encima siempre diría «libre» y el aserto no valdría nada.
+  // `probePoint` no tiene origen: el protocolo sobra y el aserto mide lo mismo.
+  const solido = await ctx.nefan("probePoint", r.pos.x, r.pos.z);
   ctx.expect(
-    "el punto en el que reaparece se puede PISAR (visto desde fuera, no desde encima)",
-    solidoDesdeFuera === false,
-    `probeCollide(${r.pos.x.toFixed(2)}, ${r.pos.z.toFixed(2)}) desde 8,5 m = ${solidoDesdeFuera}`,
+    "el punto en el que reaparece se puede PISAR (por PUNTO, no desde encima)",
+    solido === false,
+    `probePoint(${r.pos.x.toFixed(2)}, ${r.pos.z.toFixed(2)}) = ${solido}`,
   );
   await ctx.shot("reaparecido");
 

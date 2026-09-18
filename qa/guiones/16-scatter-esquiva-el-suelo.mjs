@@ -89,7 +89,7 @@ export default async function (ctx) {
       let total = 0;
       for (let c = 2; c <= 126; c += 0.5) {
         total++;
-        if (window.__nefan.probeCollide(ox + c * mpc, oz + y * mpc)) bloqueadas.push(c);
+        if (window.__nefan.probePoint(ox + c * mpc, oz + y * mpc)) bloqueadas.push(c);
       }
       return { total, bloqueadas, y };
     },
@@ -111,7 +111,7 @@ export default async function (ctx) {
   const META_M = 16;
   await ctx.nefan("setPlayerPos", xSalida, zCamino);
   await ctx.nefan("setYaw", Math.PI / 2); // este
-  ctx.expect("el punto de partida del camino está libre", (await ctx.nefan("probeCollide", xSalida, zCamino)) === false);
+  ctx.expect("el punto de partida del camino está libre", (await ctx.nefan("probePoint", xSalida, zCamino)) === false);
 
   const avance = await ctx
     .holdUntil(
@@ -154,7 +154,7 @@ export default async function (ctx) {
         id: v.id,
         at: v.at,
         distanciaAlEje: Math.abs(v.at[1] - y),
-        choca: window.__nefan.probeCollide(ox + v.at[0] * mpc, oz + v.at[1] * mpc),
+        choca: window.__nefan.probePoint(ox + v.at[0] * mpc, oz + v.at[1] * mpc),
       }));
     },
     { ox, oz, mpc: plano.mpc, y: eje.y },
@@ -221,7 +221,7 @@ export default async function (ctx) {
         hay: Boolean(obj),
         pos: obj ? [obj.position[0], obj.position[2]] : null,
         sobre,
-        choca: obj ? window.__nefan.probeCollide(obj.position[0], obj.position[2]) : false,
+        choca: obj ? window.__nefan.probePoint(obj.position[0], obj.position[2]) : false,
       };
     },
     { mpc: plano.mpc },
