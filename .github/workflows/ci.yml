@@ -211,10 +211,27 @@ jobs:
           cache-dependency-path: |
             nefan-core/package-lock.json
             narrative-mcp/package-lock.json
+            nefan-html/package-lock.json
       - run: npm ci
         working-directory: nefan-core
       - run: npm ci
         working-directory: narrative-mcp
+      # (1,4 s en local con la caché de npm caliente) EL CLIENTE, y es NUEVO —
+      # este job vivió sin él hasta el 2026-09-18. Lo trae el guion 148, que es
+      # **el primer guion del paso headless que depende de OTRO paquete**: corre
+      # `npm test` de `nefan-html` en un subproceso, y ese `npm test` es
+      # `node --import tsx`, con `tsx` en las `devDependencies` del cliente.
+      #
+      # QUE QUEDE DICHO PARA EL SIGUIENTE, porque el modo de fallo es de los que
+      # se diagnostican mal: sin este paso, `npm test` del cliente sale rojo por
+      # una dep ausente y el 148 lo lee —correctamente— como «el banco viene ya
+      # rojo». O sea que el síntoma señala al banco del cliente y la causa está
+      # aquí, en el job. Lo midió el CI de la PR #681 y se reprodujo en local
+      # apartando `nefan-html/node_modules`: 3 en verde · 1 en rojo, el mismo
+      # mensaje exacto. Un guion headless que spawnee otro paquete necesita su
+      # `npm ci` AQUÍ; el runner no tiene los `node_modules` de nadie.
+      - run: npm ci
+        working-directory: nefan-html
       # El dist del core: los candados que cargan tests con `@nefan/core` lo
       # necesitan compilado, igual que el job `nefan-core`.
       - run: npm run build
@@ -389,11 +406,30 @@ jobs:
       # clasificaba con un tile «vacío» que no lo estaba (`vegetation_zones`
       # sigue dando volúmenes) y metía 294 puntos de bosque en el control.
       - run: node qa/el-rumbo-de-salida-no-lo-frena-la-otra-fuente.mjs
-      # (0,98 s) #655: los guiones de `qa/guiones/` que NO tocan el navegador.
+      # (3,2 s) #655: los guiones de `qa/guiones/` que NO tocan el navegador.
       # Se declaran ellos (`export const sinNavegador = "<motivo>"`) y el runner
       # corre la CLASE ENTERA con `--sin-navegador`: sin preset, sin puertos, sin
       # Chromium y sin `npm ci` en `qa/` (desde esta tanda `playwright-core` se
-      # carga perezosamente). Hoy son el 39, el 40 y el 146 — 0,37 · 0,79 · 0,54 s.
+      # carga perezosamente). Hoy son CUATRO: el 39, el 40, el 146 y el 148, que
+      # entra con la QA de #663. RE-MEDIDOS los cuatro en esta máquina el
+      # 2026-09-18, cada uno aislado y con el arranque de node dentro —
+      # 0,04 · 0,46 · 0,22 · 2,30 s—, y la clase entera en 3,2 s (era 0,98 con
+      # tres). Las cifras anteriores de los tres primeros decían
+      # 0,37 · 0,79 · 0,54 y no se corrigen por estar mal sino porque nadie
+      # sabe ya de qué máquina eran: se vuelven a medir con el paso entero.
+      #
+      # NADIE PERSIGA EL TERCER DÍGITO: la misma máquina, el mismo día y el
+      # mismo commit dieron 0,06 · 0,60 · 0,25 · 2,80 con menos carga y
+      # 0,04 · 0,46 · 0,22 · 2,30 con load average 9. La dispersión es el
+      # cacharro, no el código; lo que esta cifra sirve para ver es si algún día
+      # el paso pasa de segundos a minutos.
+      #
+      # EL 148 SE LLEVA EL 82 % DEL PASO Y ESO ES LO ESPERADO: es el único que
+      # SPAWNEA — rompe el fuente del cliente y corre `npm test` de `nefan-html`
+      # siete veces (la base y seis sabotajes), más tres comprobaciones de
+      # agujero conocido. Sigue costando menos de 3 s, así que el paso completo
+      # cabe de sobra en el timeout de 20 min del job; el día que deje de
+      # caber, lo que se parte es ese guion y no el paso.
       #
       # Entran porque el 39 es la prueba de lo que cuesta no correrlos: nació
       # ROJO el 2026-08-29 y siguió así hasta #633, porque lo único que lo

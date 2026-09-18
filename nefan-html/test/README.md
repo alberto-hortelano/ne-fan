@@ -42,3 +42,28 @@ devDeps— y por eso va escrita antes que el primer test:
    dice cuál.** Un banco que solo suma acaba pagando dos veces por la misma
    afirmación. Al nacer éste no murió ninguno: el guion 33 mide el HOME, no el
    selector, y ninguno de los que nombran estos seis ids afirma la costura.
+
+   Con la SÉPTIMA pareja (#663, `#ts-sessions` y `.ts-save` entre el chasis y
+   el home) tampoco murió ninguno, pero **el motivo NO es el mismo, y el que se
+   escribió primero era falso**. Decía que los seis guiones que tocan esos dos
+   tokens —33, 34, 52, 98, 101 y 122— no se enteran de la costura. Lo midió QA
+   y es al revés: renombrando UN solo lado —el caso exacto que el unitario
+   existe para cazar— **cinco de los seis se ponen rojos**, porque hardcodean
+   `.ts-save` y `#ts-sessions` ellos mismos. Los dos motivos que SÍ se sostienen
+   y por los que el unitario paga su sitio:
+
+   - **Precisión.** Los guiones son detectores de RENOMBRADO, no verificadores
+     de costura: se ponen rojos igual ante un renombrado CORRECTO de las dos
+     puntas, que es un cambio legítimo y donde el unitario acierta al quedarse
+     verde. Un rojo que no distingue el arreglo de la avería cuesta el tiempo de
+     quien lo investiga, y dos veces de cada tres no había nada que arreglar.
+   - **Quién lo corre.** El CI **no corre la batería de navegador**; `npm test`
+     de `nefan-html` sí. Un candado que solo existe en la máquina de quien se
+     acuerde de correrlo lleva un día rojo en `main` sin que nadie lo sepa, que
+     es literalmente lo que pasó el 05-09 y por lo que nació
+     `candados-headless`.
+
+   O sea: el test entra por CI y por precisión, **no por cobertura**, y eso es
+   suficiente para no matar a nadie. Una regla que nunca mata nada estaría de
+   adorno: se re-comprueba cada vez, se MIDE en vez de suponerse, y se dice qué
+   se miró.

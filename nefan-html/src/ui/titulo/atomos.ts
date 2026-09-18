@@ -1,9 +1,10 @@
 /** Los ÁTOMOS del título: el vocabulario que comparten sus pantallas.
  *
  *  Primer corte de #346. Aquí vive lo que tiene DOS O MÁS dueños entre las
- *  siete pantallas —las constantes de CSS, los escapes, las URLs de los dos
- *  servicios y la portada— y nada más: lo que solo usa una pantalla viaja con
- *  ella, a su módulo, en su PR. El criterio no es de gusto sino medido (quién
+ *  siete pantallas —las constantes de CSS, las URLs de los dos servicios y la
+ *  portada, más los escapes, que se re-exportan desde `ui/atomos-de-html.ts`—
+ *  y nada más: lo que solo usa una pantalla viaja con ella, a su módulo, en su
+ *  PR. El criterio no es de gusto sino medido (quién
  *  llama a qué), porque el fallo que este troceo tiene que evitar es el
  *  god-file repartido: un módulo «común» que acaba tocando cualquier retoque
  *  de UI y que todos importan.
@@ -42,19 +43,43 @@
  *       común, que es el god-file repartido empezando otra vez); o
  *    2. el censo de exports con DOS O MÁS dueños baja de la mitad.
  *
- *  Hoy son **9 de 17**, y «dueño» es una HOJA de `ui/titulo/` que lo importa:
- *  ni el enrutador ni este fichero cuentan. Los OCHO que no llegan a dos son
- *  exactamente las dos excepciones de arriba —los cinco de la tarjeta de mundo
- *  (`worldCardHtml`, `generationChipsHtml`, `COVER_BOX`, `COVER_MARK_CSS`,
- *  `marcadorHtml`) y `BADGE_CSS`— más las dos URL de servicio: o sea que hoy
- *  el censo no tiene ni un hueco sin motivo escrito, y esa es la condición que
- *  el punto 1 vigila. El número se RECUENTA, no se cree:
+ *  Hoy son **8 de 15 por LÍNEA** (53 %) y **9 de 16 por SÍMBOLO** (56 %),
+ *  RECONTADO con los dos `grep` de abajo el 2026-09-18 y no copiado de ningún
+ *  sitio: eran 9 de 17 y en #663 se fueron DOS líneas, las dos del grupo que
+ *  toca. `BADGE_CSS` bajó a `ui/atomos-de-html.ts` —un nivel por debajo de esta
+ *  carpeta— porque su segundo dueño dejó de ser una hoja del título
+ *  (`ui/tarjeta-de-partida.ts`), y era uno de los que NO llegaban a dos. Y los
+ *  escapes, que viven allí desde el mismo corte, vuelven aquí en UNA línea de
+ *  re-export en vez de dos declaraciones, así que dos líneas del grupo de
+ *  arriba se hicieron una: por eso el numerador baja aunque no haya perdido ni
+ *  un dueño (`escapeHtml` sigue teniendo ocho y `escapeAttr` dos). Las dos
+ *  formas de contar están escritas porque dan números distintos y ninguna es
+ *  «la buena»; la que produce el `grep` de abajo es la de LÍNEA, y es la que
+ *  manda para la señal 2 — que NO se dispara: 8 de 15 sigue por encima de la
+ *  mitad, y por poco, así que el siguiente export con un solo dueño la cruza.
+ *  «Dueño» es una HOJA de `ui/titulo/` que lo importa: ni el enrutador ni este
+ *  fichero cuentan. Los SIETE que no llegan a dos son exactamente las dos
+ *  excepciones de arriba —los cinco de la tarjeta de mundo (`worldCardHtml`,
+ *  `generationChipsHtml`, `COVER_BOX`, `COVER_MARK_CSS`, `marcadorHtml`)— más
+ *  las dos URL de servicio: o sea que hoy el censo no tiene ni un hueco sin
+ *  motivo escrito, y esa es la condición que el punto 1 vigila. El número se
+ *  RECUENTA, no se cree:
  *
  *      grep -c "^export " nefan-html/src/ui/titulo/atomos.ts
  *      grep -lw <export> nefan-html/src/ui/titulo/*.ts | grep -v atomos.ts | wc -l
  */
 import type { GameInfo, StyleInfo } from "../../net/narrative-client.js";
 import { serviceUrl } from "../../net/service-urls.js";
+import { BADGE_CSS, escapeAttr, escapeHtml } from "../atomos-de-html.js";
+
+/** LOS ESCAPES SIGUEN ENTRANDO POR AQUÍ para las siete hojas que ya los
+ *  importaban, pero VIVEN un nivel más abajo desde #663: en `ui/atomos-de-html.ts`,
+ *  fuera de `ui/titulo/`, para que también los alcance quien pinta HTML sin ser
+ *  una hoja del título (`ui/tarjeta-de-partida.ts`). Aquí se re-exportan y no se
+ *  copian — una copia es una divergencia que nadie ve. Que queden DOS puertas
+ *  al mismo símbolo es deuda aceptada de esta tanda, y tiene issue: unificar de
+ *  paso las otras tres copias de `escapeHtml` del cliente. */
+export { escapeAttr, escapeHtml };
 
 export type TitleAction =
   | { kind: "resume"; sessionId: string }
@@ -147,14 +172,6 @@ export function remoteGenUrl(): string {
   return serviceUrl("remote-gen");
 }
 
-export function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
-}
-
-export function escapeAttr(s: string): string {
-  return escapeHtml(s);
-}
-
 export const BTN_PRIMARY_CSS = [
   "background:#da6","color:#111","border:none","padding:10px 22px",
   "font-family:inherit","font-size:14px","cursor:pointer","border-radius:3px",
@@ -164,25 +181,15 @@ export const BTN_SECONDARY_CSS = [
   "font-family:inherit","font-size:14px","cursor:pointer","border-radius:3px",
 ].join(";");
 // Los dos botones pequeños de la fila de save (`BTN_SMALL_PRIMARY_CSS` y
-// `BTN_SMALL_DANGER_CSS`) vivían aquí y se fueron a `home.ts` al cerrarse #346:
-// el censo por importador dio UN dueño, el home, así que dejaron de ser
-// vocabulario en cuanto la PR 4 sacó esa pantalla. Ver la cabecera.
+// `BTN_SMALL_DANGER_CSS`) vivían aquí y se fueron al cerrarse #346: el censo
+// por importador dio UN dueño, el home, así que dejaron de ser vocabulario en
+// cuanto la PR 4 sacó esa pantalla. Hoy viven en `ui/tarjeta-de-partida.ts`,
+// que es donde acabó ese dueño (#663). Ver la cabecera.
 export const SELECT_CSS = [
   "width:100%","padding:8px 10px","background:#1a1a22","color:#ddd",
   "border:1px solid #444","font-family:inherit","font-size:13px",
 ].join(";");
 export const INPUT_CSS = SELECT_CSS;
-
-/** El badge base. Su ÚNICO importador de fuera es `home.ts` (el badge de modo
- *  del save), así que por el censo de importadores tocaba irse con él al cerrar
- *  #346 — como se fueron los dos botones pequeños de arriba. **Se queda, y el
- *  motivo es el candado**: `generationChipsHtml`, aquí abajo, lo usa para los
- *  chips de la tarjeta de mundo. Si la constante se mudara a `home.ts`, este
- *  fichero tendría que importarla de vuelta, y `las-hojas-del-titulo-no-se-atan-entre-si`
- *  prohíbe exactamente eso. El censo por IMPORTADOR no ve el uso que un módulo
- *  hace de lo suyo: con ese uso dentro, BADGE_CSS tiene dos dueños y es
- *  vocabulario. */
-export const BADGE_CSS = "display:inline-block;padding:1px 7px;border-radius:8px;font-size:10px;background:#23222c;border:1px solid #3a3846;color:#a99";
 
 /** Chips de estado de generación de la tarjeta: si el mundo está generado y
  *  qué estilos aplicados — "los generados" visibles de un vistazo. */

@@ -1,8 +1,11 @@
 /** El HOME del título: la primera pantalla que ve quien abre el juego.
  *
  *  Pinta el titular, «Nueva partida» y la lista de partidas guardadas que trae
- *  el bridge, con sus tres acciones por fila (reanudar, borrar y los badges que
- *  cambian el modo del save ANTES de cargarlo).
+ *  el bridge, y engancha las tres acciones de cada fila (reanudar, borrar y los
+ *  badges que cambian el modo del save ANTES de cargarlo). La FILA en sí —su
+ *  HTML, sus botones y sus badges— la devuelve `ui/tarjeta-de-partida.ts` desde
+ *  #663: es pura y el home es quien tiene el elemento, así que aquí se queda lo
+ *  que toca el DOM y allí lo que devuelve string.
  *
  *  QUÉ NO DECIDE: nada de juego. El modo efectivo de una faceta lo dice core
  *  (`modoEfectivoDePersonajes`), el motivo legible de un fallo de sesión lo dice
@@ -11,52 +14,21 @@
  *  (candado `las-hojas-del-titulo-no-se-atan-entre-si`).
  *
  *  Sale de `title-screen.ts` en la PR 4 de #346 (movimiento puro); lo que ha
- *  cambiado desde entonces son los DOS defectos de #427 y la espera de #425,
- *  cada uno anotado donde vive.
+ *  cambiado desde entonces son los DOS defectos de #427, la espera de #425 y el
+ *  corte de #663, cada uno anotado donde vive.
  */
 import type { SessionMetadata } from "@nefan-core/src/narrative/types.js";
-import { CONFIG } from "@nefan-core/src/config.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
-import {
-  modoEfectivoDePersonajes,
-  normalizarModo,
-  type Modo,
-} from "@nefan-core/src/session/gates-de-imagen.js";
 import type { NarrativeClient } from "../../net/narrative-client.js";
 import { contarLaEspera, paso } from "../async-ui.js";
 import { errors } from "../error-log.js";
+import { modoDelSave, tarjetaDePartidaHtml } from "../tarjeta-de-partida.js";
 import {
-  CHAR_MODE_LABELS,
-  MODE_COST_LABELS,
-  RENDER_MODE_ICONS,
-  RENDER_MODE_LABELS,
-} from "../mode-labels.js";
-import {
-  BADGE_CSS,
   BTN_PRIMARY_CSS,
   type DestinoDelTitulo,
-  escapeAttr,
   escapeHtml,
   type TitleAction,
 } from "./atomos.js";
-
-/** Los dos botones de la fila de una partida guardada. Vivían en `atomos.ts`
- *  hasta el cierre de #346: el censo por importador dio UN dueño —esta
- *  pantalla— en cuanto la PR 4 la sacó, y lo que tiene un dueño viaja con él.
- *  Es el criterio del programa aplicado a sí mismo, para que el módulo común no
- *  se convierta en el cajón que toca cualquier retoque de UI.
- *
- *  `BADGE_CSS` sí se queda allí, y no por inercia: `generationChipsHtml` lo usa
- *  DENTRO de `atomos.ts`, así que traerlo aquí obligaría a aquel fichero a
- *  importar de éste — lo que prohíbe `las-hojas-del-titulo-no-se-atan-entre-si`. */
-const BTN_SMALL_PRIMARY_CSS = [
-  "background:#3a6","color:#fff","border:none","padding:5px 12px",
-  "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
-].join(";");
-const BTN_SMALL_DANGER_CSS = [
-  "background:transparent","color:#a55","border:1px solid #533","padding:5px 12px",
-  "font-family:inherit","font-size:12px","cursor:pointer","border-radius:3px",
-].join(";");
 
 /** La caja de avisos del título (`ui/titulo/avisos.ts`), vista DESDE EL HOME:
  *  las tres puertas que el home empuja, de las cinco que tiene. Las otras dos
@@ -103,24 +75,28 @@ export interface DepsDeHome {
  *  mismo TTL que el chip de gráficos y el menú dev. */
 const ARM_TTL_MS = 5000;
 
-export async function pintarHome(
-  deps: DepsDeHome,
-  aviso?: string,
-  tono?: "error" | "aviso",
-): Promise<void> {
-  modeArmed.clear();
-  deps.content.style.maxWidth = "720px";
-  // ORDEN A PROPÓSITO: todo lo que puede cambiar DESPUÉS del primer pintado
-  // (el estado del bridge, la lista de saves) va POR DEBAJO del botón. Con
-  // el orden anterior, `#ts-sessions` se repintaba al volver `listSessions`
-  // y empujaba «Nueva partida» hacia abajo tantos píxeles como partidas
-  // hubiera: el botón ya escuchaba, pero se movía bajo el cursor.
-  // …y `#ts-error` va POR DEBAJO del botón por esa misma regla, que es la
-  // que esta tanda se saltó: desde #306 ese hueco se rellena TARDE (un
-  // chunk lento, un socket que se cae con el título ya delante) y encima
-  // del botón lo movía 33 px bajo el cursor — más que los +24 px que
-  // abrieron #250 (QA de T9, H-2).
-  deps.content.innerHTML = `
+/** EL ESQUELETO DEL HOME: los cinco huecos que esta pantalla pinta, y el ORDEN
+ *  en que van, que es contrato y no gusto.
+ *
+ *  ORDEN A PROPÓSITO: todo lo que puede cambiar DESPUÉS del primer pintado
+ *  (el estado del bridge, la lista de saves) va POR DEBAJO del botón. Con
+ *  el orden anterior, `#ts-sessions` se repintaba al volver `listSessions`
+ *  y empujaba «Nueva partida» hacia abajo tantos píxeles como partidas
+ *  hubiera: el botón ya escuchaba, pero se movía bajo el cursor.
+ *  …y `#ts-error` va POR DEBAJO del botón por esa misma regla, que es la
+ *  que esta tanda se saltó: desde #306 ese hueco se rellena TARDE (un
+ *  chunk lento, un socket que se cae con el título ya delante) y encima
+ *  del botón lo movía 33 px bajo el cursor — más que los +24 px que
+ *  abrieron #250 (QA de T9, H-2).
+ *
+ *  SALE DEL CUERPO DE `pintarHome` PARA PODER LEERSE FUERA DEL NAVEGADOR,
+ *  igual que `CSS_ESTRECHO_DEL_TITULO` salió del de `montarChasis` y por el
+ *  mismo motivo: `#ts-sessions` es lo que el chasis mira para saber que está en
+ *  el home (`MARCA_DEL_HOME`), y esa costura la comprueba
+ *  `nefan-html/test/los-ids-del-titulo-se-leen-donde-se-escriben.test.ts`
+ *  comparando la salida de las dos puntas (#663). */
+export function esqueletoDelHome(): string {
+  return `
     <h1 style="font-size:32px;color:#da6;margin-bottom:24px">Never Ending Fantasy</h1>
     <p style="margin-bottom:18px;color:#999">Selecciona una partida o empieza una nueva.</p>
     <button id="ts-new" style="${BTN_PRIMARY_CSS}">Nueva partida</button>
@@ -129,6 +105,16 @@ export async function pintarHome(
     <div id="ts-status" style="margin-bottom:12px;font-size:12px;color:#666"></div>
     <div id="ts-sessions" style="margin-bottom:24px"></div>
   `;
+}
+
+export async function pintarHome(
+  deps: DepsDeHome,
+  aviso?: string,
+  tono?: "error" | "aviso",
+): Promise<void> {
+  modeArmed.clear();
+  deps.content.style.maxWidth = "720px";
+  deps.content.innerHTML = esqueletoDelHome();
 
   const statusEl = deps.content.querySelector("#ts-status") as HTMLElement;
   const sessionsEl = deps.content.querySelector("#ts-sessions") as HTMLElement;
@@ -224,7 +210,7 @@ export async function pintarHome(
   } else {
     const lista = sessions;
     sessionsEl.innerHTML = lista
-      .map((s) => sessionRowHtml(s))
+      .map((s) => tarjetaDePartidaHtml(s))
       .join("");
     for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-action=resume]")) {
       btn.addEventListener("click", () => {
@@ -375,33 +361,6 @@ async function onModeBadge(
   await pintarHome(deps);
 }
 
-/** Modo de una faceta del save; la regla (personajes sin campo sigue a escenarios) es de core. */
-function modoDelSave(s: SessionMetadata, facet: "scenes" | "characters"): Modo {
-  const renderMode = normalizarModo(s.render_mode);
-  return facet === "scenes" ? renderMode : modoEfectivoDePersonajes({ renderMode, characterMode: normalizarModo(s.character_mode) });
-}
-/** Badge de modo CLICABLE (selector antes de cargar): misma silueta que el
- *  badge informativo, con cursor y hover del lado de button. */
-const MODE_BADGE_CSS = `${BADGE_CSS};cursor:pointer;font-family:inherit`;
-
-/** Badge-selector del modo de una faceta del save. Click = alternar
- *  image⇄vector ANTES de cargar (onModeBadge). Saves legacy sin el campo: sin
- *  badge (no adivinar). */
-function modeBadgeHtml(s: SessionMetadata, facet: "scenes" | "characters"): string {
-  const mode = modoDelSave(s, facet);
-  if (mode !== "image" && mode !== "vector") return "";
-  const labels = facet === "scenes" ? RENDER_MODE_LABELS : CHAR_MODE_LABELS;
-  const target = mode === "image" ? "vector" : "image";
-  const facetEs = facet === "scenes" ? "Escenarios" : "Personajes";
-  // Encender skins con el backend apagado por config: badge muerto con motivo
-  // (mismo criterio que el chip de gráficos).
-  const blocked = facet === "characters" && target === "image" && !CONFIG.graphics.ai_skin;
-  const title = blocked
-    ? "Backend de skins apagado por config: activa graphics.ai_skin en nefan-core/src/config.ts"
-    : `${facetEs}: click para cambiar a ${labels[target]} antes de cargar (${MODE_COST_LABELS[target]})`;
-  return `<button data-mode-facet="${facet}" data-session-id="${escapeAttr(s.session_id)}"${blocked ? " disabled" : ""} title="${escapeAttr(title)}" style="${MODE_BADGE_CSS}${blocked ? ";opacity:.45;cursor:default" : ""}">${RENDER_MODE_ICONS[mode]} ${escapeHtml(labels[mode])}</button>`;
-}
-
 /** Resalta la tarjeta de una partida que no se pudo borrar.
  *
  *  El aviso y la tarjeta viven a media pantalla de distancia y su único
@@ -414,37 +373,4 @@ function marcarTarjetaFallida(btn: HTMLElement): void {
   if (!fila) return;
   fila.style.borderColor = "#a44";
   fila.style.background = "#241a1a";
-}
-
-function sessionRowHtml(s: SessionMetadata): string {
-  const summary = s.summary || "(sin narrativa todavía)";
-  const updated = s.updated_at ? formatDate(s.updated_at) : "?";
-  const badges = [
-    modeBadgeHtml(s, "scenes"),
-    modeBadgeHtml(s, "characters"),
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return `
-    <div class="ts-save" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;margin-bottom:8px;background:#181820;border:1px solid #2a2a30">
-      <div style="flex:1;min-width:0">
-        <div style="color:#bdf;font-size:13px">${escapeHtml(s.game_id)} <span style="color:#666;font-size:11px">· ${escapeHtml(s.session_id)}</span>${badges ? " " + badges : ""}</div>
-        <div style="color:#999;font-size:12px;margin-top:3px">${escapeHtml(summary)}</div>
-        <div style="color:#666;font-size:11px;margin-top:3px">${updated} · ${s.scene_count} escenas · ${s.entity_count} entidades</div>
-      </div>
-      <div style="display:flex;gap:6px;margin-left:14px">
-        <button data-action="resume" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_PRIMARY_CSS}">Reanudar</button>
-        <button data-action="delete" data-session-id="${escapeAttr(s.session_id)}" style="${BTN_SMALL_DANGER_CSS}">Borrar</button>
-      </div>
-    </div>
-  `;
-}
-
-function formatDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString();
-  } catch {
-    return iso;
-  }
 }
