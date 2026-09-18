@@ -303,6 +303,28 @@ export function libroDeEsperas() {
   return libro;
 }
 
+/** El texto con el que `esperarRegistro` (`qa/lib/sesion.mjs`) relanza una
+ *  expiración, contando además QUÉ había en el libro del juego.
+ *
+ *  Vive aquí, puro, por UNA razón que no es la estética: `qa/lib/carga.mjs`
+ *  clasifica los rojos que aparecen bajo carga mirando si el texto del fallo
+ *  lleva **firma de presupuesto** (`firmaDePresupuesto`, tres regex: `no
+ *  ocurrió en N ms`, `timeout esperando`, `expiró a los N ms`). El mensaje que
+ *  se escribía aquí antes —`${desc}: el juego nunca lo registró · …`— **no
+ *  casaba con ninguna**, así que una expiración de presupuesto de los guiones
+ *  05, 08 o 09 salía del reproductor como «no atribuible a #545» siendo
+ *  exactamente eso. Las dos mitades estaban candadas cada una por su lado y el
+ *  CABLE entre ellas no lo sujetaba nadie; el prefijo `timeout esperando:` lo
+ *  cierra, y `nefan-core/test/esperas-de-qa.test.ts` afirma el cable importando
+ *  las dos.
+ *
+ *  La descripción va DESPUÉS del prefijo y el libro al final: quien lee el
+ *  rojo quiere primero saber que expiró, luego qué esperaba y luego con qué
+ *  datos. */
+export function mensajeDeRegistroQueNuncaLlego(desc, libro, valor) {
+  return `timeout esperando: ${desc} — el juego nunca lo registró · ${libro}=${JSON.stringify(valor)}`;
+}
+
 /** Los fallos que el runner tiene que empujar: uno por expiración que nadie
  *  observó. El texto nombra el sitio y las TRES bocas, porque quien lo lee
  *  está viendo este candado por primera vez y tiene que poder arreglarlo sin

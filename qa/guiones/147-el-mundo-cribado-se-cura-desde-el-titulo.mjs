@@ -22,11 +22,15 @@
  *        «se CRIBA» en el log del bridge — el final del recorrido de #577.
  *   C5 · y curado ya no hay nada que curar: el botón vuelve a desaparecer.
  *
- *  POR QUÉ NO SE USA `pedirYEsperar` DEL 127: aquel espera 90 s de reloj de
- *  PARED a que un tile llegue al cliente, y por eso es intermitente (#656,
- *  medido: 2 de 3 en rojo con el disco lleno). Aquí todo lo que se espera es
- *  la FASE que publica el título (`data-gen-phase`, cortafuegos de 240 s) y el
- *  arranque de la partida, que ya tienen su espera por estado en `lib/sesion`.
+ *  POR QUÉ NO SE PIDE AQUÍ NINGÚN TILE POR EL CABLE: lo que el 120 y el 127
+ *  hacen con `pedirYEsperarTile` (`lib/sesion.mjs`) es provocar la generación
+ *  de un vecino y juzgar qué le pasó; aquí no hace falta, porque todo lo que se
+ *  espera es la FASE que publica el título (`data-gen-phase`, cortafuegos de
+ *  240 s) y el arranque de la partida, que ya tienen su espera por estado en
+ *  `lib/sesion`. (Este párrafo decía antes que aquella espera «mide 90 s de
+ *  reloj de PARED y por eso es intermitente»: ese diagnóstico de #656 quedó
+ *  desmentido —la pared es legítima para el bridge, lo que fallaba es que al
+ *  expirar no decía nada— y el helper de hoy tiene tres desenlaces.)
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

@@ -49,6 +49,15 @@ const mod = (await import(join(repoRoot, "qa", "lib", "esperas.mjs"))) as {
   libroDeEsperas: () => Libro;
   fallosDeEsperasPendientes: (libro: Libro) => string[];
   fallosDeEsperasEnVuelo: (libro: Libro) => string[];
+  mensajeDeRegistroQueNuncaLlego: (desc: string, libro: string, valor: unknown) => string;
+};
+
+/** La OTRA mitad del cable: quien clasifica los rojos que aparecen bajo carga
+ *  mirando si el texto del fallo lleva firma de presupuesto. Se importa aquí
+ *  para poder afirmar que las dos mitades encajan — que es lo que no sujetaba
+ *  nadie. */
+const carga = (await import(join(repoRoot, "qa", "lib", "carga.mjs"))) as {
+  firmaDePresupuesto: (fallos: unknown[]) => boolean;
 };
 const {
   EsperaExpirada,
@@ -59,6 +68,7 @@ const {
   libroDeEsperas,
   fallosDeEsperasPendientes,
   fallosDeEsperasEnVuelo,
+  mensajeDeRegistroQueNuncaLlego,
 } = mod;
 
 describe("libro de esperas: anotar y quedar pendiente", () => {
@@ -174,7 +184,7 @@ describe("la EsperaExpirada y su cadena de causas", () => {
 
   it("se encuentra a través del `cause` — `esperarRegistro` relanza un error propio", () => {
     const raiz = new EsperaExpirada("timeout esperando: el viaje", 3, null);
-    const envuelto = new Error("el juego nunca lo registró · viaje={}", { cause: raiz });
+    const envuelto = new Error(mensajeDeRegistroQueNuncaLlego("el viaje", "viaje", {}), { cause: raiz });
     assert.equal(esperaExpiradaEn(envuelto), raiz);
   });
 
@@ -379,5 +389,39 @@ describe("sitioDeLlamada: los marcos sin fichero no roban el sitio (hallazgo 7 d
     const solo = sitioDeLlamada("Error\n    at async Promise.all (index 1)");
     assert.equal(solo, "sitio desconocido");
     assert.doesNotMatch(solo, /Promise\.all/, "devolver el marco crudo es fingir que hay un sitio");
+  });
+});
+
+describe("EL CABLE: `esperarRegistro` → `firmaDePresupuesto` (#656, defecto cruzado con #609)", () => {
+  // Las dos mitades estaban candadas cada una por su lado y el cable entre
+  // ellas no lo sujetaba nadie: `esperarRegistro` relanzaba con un texto propio
+  // («…: el juego nunca lo registró · libro=…») que NO casa con ninguna de las
+  // tres firmas de `firmaDePresupuesto`, así que una expiración de presupuesto
+  // de los guiones 05, 08 o 09 salía del reproductor bajo carga como «no
+  // atribuible a #545» SIENDO exactamente eso. Este test es el cable.
+  it("el texto que relanza `esperarRegistro` lleva firma de presupuesto", () => {
+    const msg = mensajeDeRegistroQueNuncaLlego(
+      "el viaje a la posada se registra",
+      "viaje",
+      { destino: null },
+    );
+    assert.equal(
+      carga.firmaDePresupuesto([msg]),
+      true,
+      `el reproductor bajo carga no reconoce esta expiración como de presupuesto: ${msg}`,
+    );
+  });
+
+  it("y sigue diciendo QUÉ esperaba y QUÉ había en el libro: la firma no se come el diagnóstico", () => {
+    const msg = mensajeDeRegistroQueNuncaLlego("las skins llegan", "skins", { paladin: "pendiente" });
+    assert.match(msg, /las skins llegan/);
+    assert.match(msg, /skins=\{"paladin":"pendiente"\}/);
+  });
+
+  it("control negativo del cable: el texto ANTERIOR no la lleva", () => {
+    // Sin esto, el aserto de arriba no distinguiría «lo arreglamos» de
+    // «firmaDePresupuesto casa con cualquier cosa».
+    const viejo = "el viaje a la posada se registra: el juego nunca lo registró · viaje={}";
+    assert.equal(carga.firmaDePresupuesto([viejo]), false);
   });
 });
