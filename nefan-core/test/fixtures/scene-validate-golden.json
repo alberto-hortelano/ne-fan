@@ -31,7 +31,34 @@
     "tile-con-coords-no-enteras": {
       "ok": false,
       "errors": [
-        "tile.tx/ty deben ser enteros, got {\"tx\":1.5,\"ty\":0}"
+        "tile.tx/ty deben ser enteros dentro del plano (|valor| ≤ 1000000 tiles), got {\"tx\":1.5,\"ty\":0}"
+      ],
+      "warnings": [],
+      "stats": {
+        "cols": 0,
+        "rows": 0,
+        "walkable_cells": 0,
+        "reachable_cells": 0,
+        "border_reachable": false,
+        "doors_total": 0,
+        "doors_reachable": 0,
+        "npcs_total": 0,
+        "npcs_reachable": 0,
+        "volumes_declared": 0,
+        "volumes_cap": 160,
+        "volumes_total": 0,
+        "volumes_total_cap": 200,
+        "ground_features": 0,
+        "ground_cap": 64,
+        "scatter_zones": 0,
+        "vegetation_zones": 0,
+        "distinct_building_heights": 0
+      }
+    },
+    "tile-fuera-del-plano": {
+      "ok": false,
+      "errors": [
+        "tile.tx/ty deben ser enteros dentro del plano (|valor| ≤ 1000000 tiles), got {\"tx\":71000000000000,\"ty\":0}"
       ],
       "warnings": [],
       "stats": {

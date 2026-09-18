@@ -43,7 +43,7 @@ import { DEFAULT_SOLID_CHARS } from "./scene-normalize.js";
 import { BODY_RADIUS_M, celdasLibresParaRadio } from "./terrain-collision.js";
 import { composeTilePlan, MAX_TILE_VOLUMES } from "./tile-plan.js";
 import { COMPATIBLE, computeTileEdges, matchCrossings, type EdgeCrossing, type TileEdges } from "./tile-edges.js";
-import { resolveBiome, TILE_CELLS, TILE_MPC, tileWorldRect } from "./tile.js";
+import { esCoordDeTile, MOTIVO_COORDS_DE_TILE, resolveBiome, TILE_CELLS, TILE_MPC, tileWorldRect } from "./tile.js";
 import type { Edge } from "../world-map/types.js";
 
 export interface SceneValidationResult {
@@ -291,12 +291,12 @@ export function openTile(rawScene: Record<string, unknown>): OpenTileResult {
   // aquí solo las coords. size/terrain completos los rechaza el propio
   // expander con mensaje accionable.
   const t = rawScene.tile as { tx?: unknown; ty?: unknown };
-  if (!t || !Number.isInteger(t.tx) || !Number.isInteger(t.ty)) {
+  if (!t || !esCoordDeTile(t.tx) || !esCoordDeTile(t.ty)) {
     return {
       ok: false,
       rejected: {
         ok: false,
-        errors: [`tile.tx/ty deben ser enteros, got ${JSON.stringify(rawScene.tile)}`],
+        errors: [`${MOTIVO_COORDS_DE_TILE}, got ${JSON.stringify(rawScene.tile)}`],
         warnings: [],
         stats: emptyStats(),
       },

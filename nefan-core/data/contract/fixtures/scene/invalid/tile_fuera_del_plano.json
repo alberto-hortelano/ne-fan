@@ -1,0 +1,28 @@
+{
+  "description": "el plano tiene borde (#658): `tile.tx/ty` acepta enteros hasta ±1.000.000 tiles y este pide 7,1e13. Ese valor NO lo produce el juego —el mundo crece por vecinos— sino el motor o un save editado, y a partir de |coordenada| ≥ 2^52 − 40 m el paso de 0,5 m de `marchaPorEje` deja de mover la coordenada y el tick del bridge se cuelga. Se rechaza aquí, ANTES de pagar la generación del tile. Idéntica a `valid/entity_muy_alta.json` salvo el tile, para que el rechazo no se pueda atribuir a otra cosa.",
+  "expect": "reject",
+  "payload": {
+    "scene_id": "tile_71000000000000_0",
+    "scene_description": "Una plaza de tierra batida a media galaxia de distancia.",
+    "tile": {
+      "tx": 71000000000000,
+      "ty": 0
+    },
+    "biome": "dirt",
+    "entities": [
+      {
+        "id": "player",
+        "kind": "player",
+        "name": "Tú",
+        "cell": [
+          64,
+          64
+        ],
+        "footprint": [
+          1,
+          1
+        ]
+      }
+    ]
+  }
+}

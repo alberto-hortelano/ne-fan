@@ -97,7 +97,23 @@ describe("openTile — gate de variante", () => {
     const r = openTile({ tile: { tx: 1.5, ty: 0 } });
     assert.equal(r.ok, false);
     if (r.ok) return;
-    assert.equal(r.rejected.errors[0], 'tile.tx/ty deben ser enteros, got {"tx":1.5,"ty":0}');
+    assert.equal(
+      r.rejected.errors[0],
+      'tile.tx/ty deben ser enteros dentro del plano (|valor| ≤ 1000000 tiles), got {"tx":1.5,"ty":0}',
+    );
+  });
+
+  it("y las coords ENTERAS fuera del plano también, por el mismo predicado (#658)", () => {
+    // El entero solo no basta: 7,1e13 es entero, y a partir de |coordenada| ≥
+    // 2^52 − 40 m la marcha de `salida-del-solido.ts` deja de avanzar y el
+    // tick del bridge no vuelve. Rechazar aquí es rechazar ANTES de pagar la
+    // generación del tile.
+    const r = openTile({ tile: { tx: 71000000000000, ty: 0 } });
+    assert.equal(r.ok, false);
+    if (r.ok) return;
+    assert.match(r.rejected.errors[0], /dentro del plano/);
+    assert.match(r.rejected.errors[0], /71000000000000/, "cita lo recibido, como su hermano");
+    assert.equal(r.rejected.stats.cols, 0, "y no toca el expander");
   });
 
   it("un grid que no es 128×128 con la marca `__expanded` se rechaza nombrando la fila", () => {

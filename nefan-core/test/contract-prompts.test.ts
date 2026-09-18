@@ -13,9 +13,9 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 import { NPC_ROLES } from "../src/simulation/npc-roles.js";
-import { ENTITY_FIELDS, SCENE_FIELDS, EMITTED_SCENE_FIELDS, RADIO_SIMULADO_POR_KIND } from "../src/contract/model-io/scene-schema.js";
+import { ENTITY_FIELDS, SCENE_FIELDS, EMITTED_SCENE_FIELDS, EmittedSceneSchema, RADIO_SIMULADO_POR_KIND } from "../src/contract/model-io/scene-schema.js";
 import { celdasQueCubreRadio } from "../src/scene/terrain-collision.js";
-import { TILE_MPC } from "../src/scene/tile.js";
+import { COTA_TILE, TILE_MPC } from "../src/scene/tile.js";
 
 const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.meta.url));
 
@@ -240,6 +240,57 @@ describe("contrato narrativo — el tool a mano no ofrece campos que el zod no c
       [],
       "campos que el zod acepta y el tool NO ofrece: el modelo lee el tool, así que nunca los emitirá",
     );
+  });
+});
+
+/** LA COTA DEL PLANO, en los TRES sitios que la usan (#658).
+ *
+ *  `COTA_TILE` (`src/scene/tile.ts`) es la fuente. De ella salen el
+ *  `min`/`max` del zod y el `minimum`/`maximum` de `generate_scene.json`... y
+ *  ese JSON está ESCRITO A MANO —no sale de `npm run gen:contract`, que solo
+ *  cubre los tres kinds de `CONTRACTS`—, así que nada impedía que se
+ *  separasen. El saneador de ai_server LEE la cota de ese JSON
+ *  (`_cota_de_tile_del_contrato`), igual que lee el enum de `role` y los
+ *  campos de la raíz, de modo que una deriva aquí no es cosmética: el zod
+ *  rechazaría un tile que Python acepta, y por la vía de API directa no hay
+ *  re-respuesta que lo salve.
+ *
+ *  Por qué importa el número y no solo que exista: sin cota, `tile.tx` admitía
+ *  7e13, y a partir de |coordenada| ≥ 2^52 − 40 m el paso de 0,5 m de
+ *  `marchaPorEje` deja de mover la coordenada y el tick del bridge no vuelve. */
+describe("contrato narrativo — la cota del plano no se separa entre el zod y el tool (#658)", () => {
+  const tool = JSON.parse(readFileSync(resolve(TOOLS_DIR, "generate_scene.json"), "utf-8")) as {
+    input_schema: { properties: { tile: { properties: Record<string, { minimum?: number; maximum?: number }> } } };
+  };
+
+  it("`tile.tx/ty` del tool declaran EXACTAMENTE ±COTA_TILE", () => {
+    for (const eje of ["tx", "ty"] as const) {
+      const prop = tool.input_schema.properties.tile.properties[eje];
+      assert.equal(prop?.minimum, -COTA_TILE, `generate_scene.json: tile.${eje}.minimum`);
+      assert.equal(prop?.maximum, COTA_TILE, `generate_scene.json: tile.${eje}.maximum`);
+    }
+  });
+
+  it("y el zod rechaza justo al otro lado del borde, no «por ahí cerca»", () => {
+    const escena = (tx: number) => ({
+      scene_id: `tile_${tx}_0`,
+      scene_description: "Un claro en el borde del plano.",
+      tile: { tx, ty: 0 },
+      biome: "grass",
+      entities: [],
+    });
+    // Los DOS lados: con solo el rechazo, un zod que rechazara TODO pasaría.
+    assert.equal(EmittedSceneSchema.safeParse(escena(COTA_TILE)).success, true, "la cota es inclusiva");
+    assert.equal(EmittedSceneSchema.safeParse(escena(-COTA_TILE)).success, true, "y simétrica");
+    assert.equal(EmittedSceneSchema.safeParse(escena(COTA_TILE + 1)).success, false);
+    assert.equal(EmittedSceneSchema.safeParse(escena(-COTA_TILE - 1)).success, false);
+
+    // Y el motor tiene que poder RE-RESPONDER: el error nombra la regla.
+    const res = EmittedSceneSchema.safeParse(escena(71000000000000));
+    assert.equal(res.success, false);
+    const msg = res.success ? "" : JSON.stringify(res.error.issues);
+    assert.match(msg, /dentro del plano/, msg);
+    assert.match(msg, new RegExp(String(COTA_TILE)), msg);
   });
 });
 

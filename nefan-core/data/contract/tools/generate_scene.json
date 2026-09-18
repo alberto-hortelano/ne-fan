@@ -9,10 +9,14 @@
         "description": "Continuous-plane tile coords (tile responses only).",
         "properties": {
           "tx": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "ty": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": -1000000,
+            "maximum": 1000000
           }
         },
         "required": [
