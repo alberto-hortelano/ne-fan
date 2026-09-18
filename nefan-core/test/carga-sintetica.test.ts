@@ -26,6 +26,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import ts from "typescript";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,7 +45,14 @@ type Medida = {
 };
 type Juicio = { medido: boolean; real: boolean; razon: number | null; por?: string | null; motivo: string };
 type Control = { vale: boolean; aviso: string | null; motivo: string | null };
-type Fila = { nombre: string; estado: string; fallos?: string[] };
+type Tasa = { texto: string; medido: number; esperado: number };
+type Fila = {
+  nombre: string;
+  estado: string;
+  fallos?: string[];
+  carga?: Medida | null;
+  tasas?: Tasa[];
+};
 type Comparada = {
   nombre: string;
   quieto: string | null;
@@ -54,8 +62,11 @@ type Comparada = {
   corridas: number;
   cambio: string;
   firma: string | null;
+  tasaCaida: Tasa | null;
+  razonesRojas: number[];
   fallosQuieto: string[];
   fallosCargado: string[];
+  tasasCargado: Tasa[];
 };
 
 const mod = (await import(join(repoRoot, "qa", "lib", "carga.mjs"))) as {
@@ -71,11 +82,16 @@ const mod = (await import(join(repoRoot, "qa", "lib", "carga.mjs"))) as {
     o: { min: number; max: number; entero?: boolean; porDefecto?: number },
   ) => number;
   firmaDePresupuesto: (fallos: string[]) => boolean;
+  tasaQueCae: (tasas: Tasa[] | undefined) => Tasa | null;
   juzgaElControl: (o: { medida: Medida | null; umbral?: number }) => Control;
   factorDelEntorno: (env: Record<string, string | undefined>) => number | null;
   razonDeLaMedida: (m: Medida | null) => number | null;
   juzgaLaCarga: (o: { factor: number; medida: Medida | null; umbral?: number }) => Juicio;
-  comparaCorridas: (a: Fila[] | undefined, b: (Fila[] | undefined)[]) => Comparada[];
+  comparaCorridas: (
+    a: Fila[] | undefined,
+    b: (Fila[] | undefined)[],
+    o?: { umbral?: number },
+  ) => Comparada[];
   veredictoDelReproductor: (o: { juicios: Juicio[]; comparacion: Comparada[]; control?: Control }) => {
     exit: number;
     titulo: string;
@@ -91,6 +107,7 @@ const {
   lineaDeMedida,
   opcionNumerica,
   firmaDePresupuesto,
+  tasaQueCae,
   juzgaElControl,
   factorDelEntorno,
   razonDeLaMedida,
@@ -98,6 +115,24 @@ const {
   comparaCorridas,
   veredictoDelReproductor,
 } = mod;
+
+/** El fuente de `qa/run.mjs` y su árbol de sintaxis.
+ *
+ *  `qa/run.mjs` no se puede IMPORTAR desde aquí —arrastra playwright y levanta
+ *  un stack—, pero su código sí se puede leer y, para las piezas puras, EJECUTAR
+ *  sacándolas del árbol. Es lo que permite probar la CONDUCTA de `expectTasa` y
+ *  del getter de `ctx.tasas` sin navegador, en vez de conformarse con mirarles
+ *  la forma (H-3 de la vuelta de QA de #609). */
+const fuenteRun = readFileSync(join(repoRoot, "qa", "run.mjs"), "utf8");
+const nodosRun: ts.Node[] = (() => {
+  const arbol = ts.createSourceFile("run.mjs", fuenteRun, ts.ScriptTarget.Latest, true);
+  const out: ts.Node[] = [];
+  (function anda(n: ts.Node) {
+    out.push(n);
+    n.forEachChild(anda);
+  })(arbol);
+  return out;
+})();
 
 /** Una medida de sonda con los valores por defecto de una corrida sana. */
 const medida = (p: Partial<Medida> = {}): Medida => ({
@@ -431,9 +466,458 @@ describe("el color antes y después: CINCO desenlaces y una frecuencia", () => {
     assert.equal(por(rs, "a").firma, null, "un guion que no se rompió no lleva firma");
     // El 75: rojo en las dos, así que ni siquiera llega a clasificarse — y si
     // hubiera sido verde quieto, su firma sería `sin-firma`.
-    const rs75 = comparaCorridas([{ nombre: "e", estado: "verde" }], [[{ nombre: "e", estado: "rojo", fallos: ["2 derivaciones (había 1)"] }]]);
+    //
+    // Y se le pone delante LO QUE HOY PODRÍA TUMBARLO (#609): la misma razón
+    // sim/pared hundida que trae el 93 —medido, a ×20 la razón se hunde también
+    // para el 75—, o sea las dos primeras patas cumplidas. Sigue saliendo
+    // `sin-firma` porque no declara NINGUNA tasa, que es el criterio de
+    // no-regresión de #609: la defensa que nació de #496/#497 no se afloja, y
+    // el 75 queda fuera POR CONSTRUCCIÓN y no por cómo esté redactado su aserto.
+    const rs75 = comparaCorridas(
+      [{ nombre: "e", estado: "verde" }],
+      [
+        [
+          {
+            nombre: "e",
+            estado: "rojo",
+            fallos: ["2 derivaciones (había 1) — la escena servida cambió en: npcs (barkeep: position)"],
+            carga: medida({ sim: 2.62, paredMs: 10_000 }),
+            tasas: [],
+          },
+        ],
+      ],
+    );
     assert.equal(rs75[0].cambio, "se-rompio");
-    assert.equal(rs75[0].firma, "sin-firma");
+    assert.equal(rs75[0].razonesRojas.length, 1, "la razón de la corrida roja del 75 SÍ se lee");
+    assert.ok(rs75[0].razonesRojas[0] < UMBRAL_DE_CARGA_REAL, "y está hundida: las dos primeras patas se cumplen");
+    assert.equal(rs75[0].firma, "sin-firma", "y aun así NO es atribuible: no declaró ninguna tasa");
+    assert.equal(rs75[0].tasaCaida, null);
+  });
+});
+
+describe("la TERCERA categoría: compatible con #545 POR COMPORTAMIENTO (#609)", () => {
+  /** La razón que midió el caso real: el 93 a ×40 dio 0,262 sim/pared. */
+  const CARGA_HUNDIDA = medida({ sim: 2.62, paredMs: 10_000 });
+  /** Una corrida que NO estuvo frenada: razón 1,0. */
+  const CARGA_SANA = medida({ sim: 10, paredMs: 10_000 });
+  /** Las cuatro velocidades del 93 cayeron a 0,38-0,63 de lo esperado. */
+  const VELOCIDAD_CAIDA: Tasa = {
+    texto: "andando, el jugador va a walk_speed × speed_scale = 4.18 m/s — medido 1.6000 m/s",
+    medido: 1.6,
+    esperado: 4.18,
+  };
+
+  const unGuion = (fila: Partial<Fila>) =>
+    comparaCorridas(
+      [{ nombre: "93", estado: "verde" }],
+      [[{ nombre: "93", estado: "rojo", fallos: ["una velocidad que no casa"], ...fila } as Fila]],
+    )[0];
+
+  describe("`tasaQueCae`: la DIRECCIÓN, y nada más que la dirección", () => {
+    it("una tasa que CAE se devuelve con su texto y sus dos números", () => {
+      const m = tasaQueCae([VELOCIDAD_CAIDA]);
+      assert.equal(m?.medido, 1.6);
+      assert.equal(m?.esperado, 4.18);
+      assert.match(m!.texto, /walk_speed/);
+    });
+
+    it("una tasa que SUBE no cuenta: un reloj lento no hace que un contador salga ALTO", () => {
+      // El negativo que separa esta pata de «una tasa declarada FALLÓ»: si
+      // bastara con fallar, un contador contaminado por la vida ambiental
+      // —2 derivaciones donde había 1, que es el rojo del 75— entraría en la
+      // categoría con solo declararse. Aquí la dirección es la regla.
+      assert.equal(tasaQueCae([{ texto: "2 derivaciones (había 1)", medido: 2, esperado: 1 }]), null);
+    });
+
+    it("una tasa clavada tampoco cae (la igualdad no es una caída)", () => {
+      assert.equal(tasaQueCae([{ texto: "x", medido: 4.18, esperado: 4.18 }]), null);
+    });
+
+    it("sin tasas no hay caída — y eso es lo que deja al 75 fuera por construcción", () => {
+      assert.equal(tasaQueCae([]), null);
+      assert.equal(tasaQueCae(undefined), null);
+    });
+
+    it("una tasa con números que no son números se IGNORA, no vota", () => {
+      assert.equal(tasaQueCae([{ texto: "x", medido: NaN, esperado: 4 } as Tasa]), null);
+      assert.equal(tasaQueCae([{ texto: "x", medido: 1, esperado: undefined } as unknown as Tasa]), null);
+      // …y no ciega a las demás: una mala delante no se lleva por delante la buena.
+      const m = tasaQueCae([{ texto: "mala", medido: NaN, esperado: 4 } as Tasa, VELOCIDAD_CAIDA]);
+      assert.equal(m?.medido, 1.6);
+    });
+  });
+
+  describe("la clasificación, con las TRES patas", () => {
+    it("el caso medido del 93: rojo nuevo + razón hundida + tasa que cae = `comportamiento`", () => {
+      const r = unGuion({ carga: CARGA_HUNDIDA, tasas: [VELOCIDAD_CAIDA] });
+      assert.equal(r.cambio, "se-rompio");
+      assert.equal(r.firma, "comportamiento");
+      assert.equal(r.tasaCaida?.medido, 1.6, "la fila NOMBRA la tasa que sostuvo la clasificación");
+    });
+
+    it("con tasa que cae pero SIN carga hundida, NO se clasifica", () => {
+      // La pata de la razón no es adorno: sin ella, un guion que se rompiera
+      // bajo carga por cualquier otra cosa —y que declarase tasas— se
+      // presentaría como compatible con #545 sin que el reloj hubiera fallado.
+      const r = unGuion({ carga: CARGA_SANA, tasas: [VELOCIDAD_CAIDA] });
+      assert.equal(r.firma, "sin-firma");
+      assert.equal(r.tasaCaida, null);
+    });
+
+    it("con carga hundida pero SIN tasa que caiga, tampoco: es el caso del 75", () => {
+      const r = unGuion({
+        carga: CARGA_HUNDIDA,
+        fallos: ["2 derivaciones (había 1) — la escena servida cambió en: npcs (barkeep: position)"],
+        tasas: [],
+      });
+      assert.equal(r.firma, "sin-firma");
+    });
+
+    it("la firma de PRESUPUESTO gana: se lee sin que el guion coopere", () => {
+      const r = unGuion({
+        carga: CARGA_HUNDIDA,
+        fallos: ["ocurre: el tile llega — no ocurrió en 4000 ms"],
+        tasas: [VELOCIDAD_CAIDA],
+      });
+      assert.equal(r.firma, "presupuesto");
+      assert.equal(r.tasaCaida, null, "una fila no nombra una tasa que no votó");
+    });
+
+    it("con DOS frenadas ROJAS, basta que una tuviera el reloj sano para NO clasificar", () => {
+      // H-1 de la vuelta de QA: el aserto que defendía esta regla construía UNA
+      // sola corrida roja, así que cambiar `every` por `some` salía 81 · 0 — un
+      // aserto con N=1 no distingue una regla de su contraria. Aquí hay dos
+      // rojas: una con el reloj hundido y otra con el reloj sano. Si el guion se
+      // rompió también en una corrida donde el reloj iba bien, ese rojo no lo
+      // explica el reloj, y la clasificación conservadora es no firmarlo.
+      const r = comparaCorridas(
+        [{ nombre: "93", estado: "verde" }],
+        [
+          [{ nombre: "93", estado: "rojo", fallos: ["x"], carga: CARGA_HUNDIDA, tasas: [VELOCIDAD_CAIDA] }],
+          [{ nombre: "93", estado: "rojo", fallos: ["x"], carga: CARGA_SANA, tasas: [VELOCIDAD_CAIDA] }],
+        ],
+      )[0];
+      assert.equal(r.rojas, 2);
+      assert.deepEqual(
+        r.razonesRojas.map((x) => Number(x.toFixed(3))),
+        [0.262, 1],
+        "las DOS razones rojas se leen: si solo entrara una, el aserto no distinguiría `every` de `some`",
+      );
+      assert.equal(r.firma, "sin-firma");
+      assert.equal(r.tasaCaida, null);
+    });
+
+    it("la razón de una corrida VERDE no sostiene nada: solo votan las ROJAS", () => {
+      // Sin esto, con `--repeticiones` bastaría una frenada cualquiera hundida
+      // para firmar el rojo de otra que corrió tranquila.
+      const r = comparaCorridas(
+        [{ nombre: "93", estado: "verde" }],
+        [
+          [{ nombre: "93", estado: "verde", carga: CARGA_HUNDIDA }],
+          [{ nombre: "93", estado: "rojo", fallos: ["x"], carga: CARGA_SANA, tasas: [VELOCIDAD_CAIDA] }],
+        ],
+      )[0];
+      assert.equal(r.rojas, 1);
+      assert.deepEqual(r.razonesRojas.map((x) => Number(x.toFixed(3))), [1]);
+      assert.equal(r.firma, "sin-firma");
+    });
+
+    it("una VENTANA CORTA no es una razón, así que no puede sostener la categoría", () => {
+      // Misma puerta que `juzgaLaCarga`: medido, el control del guion 80 dio
+      // 0,798 sobre 1,9 s y eso no es carga, es un guion que dura dos segundos.
+      const r = unGuion({
+        carga: medida({ sim: 1.5, paredMs: PARED_MINIMA_MS - 1 }),
+        tasas: [VELOCIDAD_CAIDA],
+      });
+      assert.deepEqual(r.razonesRojas, []);
+      assert.equal(r.firma, "sin-firma");
+    });
+
+    it("con la pestaña OCULTA tampoco: la sonda y el juego dejan de ver los mismos frames", () => {
+      const r = unGuion({ carga: medida({ sim: 2.62, paredMs: 10_000, oculta: true }), tasas: [VELOCIDAD_CAIDA] });
+      assert.equal(r.firma, "sin-firma");
+    });
+
+    it("sin medida de carga no se inventa una razón", () => {
+      const r = unGuion({ carga: null, tasas: [VELOCIDAD_CAIDA] });
+      assert.equal(r.firma, "sin-firma");
+    });
+
+    it("el `--umbral` que se le pasa es el que manda, no uno propio", () => {
+      const filas = { carga: CARGA_HUNDIDA, tasas: [VELOCIDAD_CAIDA] };
+      const con = (umbral: number) =>
+        comparaCorridas(
+          [{ nombre: "93", estado: "verde" }],
+          [[{ nombre: "93", estado: "rojo", fallos: ["x"], ...filas }]],
+          { umbral },
+        )[0].firma;
+      assert.equal(con(0.3), "comportamiento", "0,262 ≤ 0,30: hundida");
+      assert.equal(con(0.2), "sin-firma", "0,262 > 0,20: con ese listón no está hundida");
+    });
+
+    it("un guion que NO se rompió no lleva firma aunque declare tasas caídas", () => {
+      const r = comparaCorridas(
+        [{ nombre: "93", estado: "rojo", fallos: ["x"] }],
+        [[{ nombre: "93", estado: "rojo", fallos: ["x"], carga: CARGA_HUNDIDA, tasas: [VELOCIDAD_CAIDA] }]],
+      )[0];
+      assert.equal(r.cambio, "igual-rojo");
+      assert.equal(r.firma, null);
+    });
+  });
+
+  describe("lo que el veredicto DICE de esa categoría", () => {
+    const real: Juicio = { medido: true, real: true, razon: 0.262, por: "media", motivo: "bajó" };
+    const fila = (extra: Partial<Comparada>): Comparada => ({
+      nombre: "93",
+      quieto: "verde",
+      cargado: "rojo",
+      cargados: ["rojo"],
+      rojas: 1,
+      corridas: 1,
+      cambio: "se-rompio",
+      firma: "comportamiento",
+      tasaCaida: VELOCIDAD_CAIDA,
+      razonesRojas: [0.262],
+      fallosQuieto: [],
+      fallosCargado: [],
+      tasasCargado: [VELOCIDAD_CAIDA],
+      ...extra,
+    });
+
+    it("dice el nombre nuevo, dice INDICIO y nombra la tasa que cayó", () => {
+      const v = veredictoDelReproductor({ juicios: [real], comparacion: [fila({})] });
+      const d = v.detalle.join("\n");
+      assert.match(d, /compatible con #545 POR COMPORTAMIENTO, sin firma de presupuesto/);
+      assert.match(d, /INDICIO y no una prueba/);
+      assert.match(d, /walk_speed/, "sin nombrar la tasa, quien lee no puede comprobarlo");
+      assert.match(d, /0\.38 de lo esperado/);
+    });
+
+    it("…y NO dice «no es atribuible a #545», que es la otra categoría", () => {
+      const v = veredictoDelReproductor({ juicios: [real], comparacion: [fila({})] });
+      assert.ok(!v.detalle.some((x) => /no es atribuible a #545/.test(x)));
+    });
+
+    it("sigue sin atribuir: nunca «el rojo de #545» (H-4)", () => {
+      const v = veredictoDelReproductor({ juicios: [real], comparacion: [fila({})] });
+      assert.ok(!v.detalle.some((x) => /rojo de #545|entregable de #545/.test(x)));
+    });
+
+    it("y escribe la DIRECCIÓN, que es lo único que se sostiene", () => {
+      // La proporcionalidad que pedía el issue está rechazada CON MEDIDA: razón
+      // 0,262 contra velocidades a 0,38-0,63. Lo que se afirma es que una tasa
+      // medida contra la pared solo puede salir BAJA.
+      const v = veredictoDelReproductor({ juicios: [real], comparacion: [fila({})] });
+      assert.match(v.detalle.join("\n"), /salga BAJA, nunca que un contador salga ALTO/);
+    });
+
+    it("una fila `comportamiento` sin tasa no revienta el veredicto", () => {
+      // No debería ocurrir —`comparaCorridas` las pone juntas— pero el veredicto
+      // se lee en informes y un `undefined.texto` aquí mataría la corrida entera.
+      const v = veredictoDelReproductor({ juicios: [real], comparacion: [fila({ tasaCaida: null })] });
+      assert.equal(v.exit, 0);
+      assert.match(v.detalle.join("\n"), /POR COMPORTAMIENTO/);
+    });
+  });
+
+  describe("el VERBO: un CONTADOR no se puede declarar (H-4, garantía en el TIPO)", () => {
+    // Hallazgo H-4 de la vuelta de QA sobre #609. La primera versión de
+    // `expectTasa` se llamaba `expectMagnitud` y aceptaba `{medido, esperado,
+    // tolRel}`, o sea CUALQUIER número que hubiera bajado, con la restricción
+    // «esto solo vale para tasas» escrita en un COMENTARIO. QA la tumbó:
+    // instrumentando con ese verbo el contador del guion 75 —«2 derivaciones
+    // (había 1)», familia #496/#497— el 75 entraba en `comportamiento`, que es
+    // exactamente la defensa que este issue no puede aflojar.
+    //
+    // La razón por la que una tasa caída vale como indicio es estrecha y
+    // mecánica: un reloj lento solo puede hacer que una cantidad partida por
+    // segundos de PARED salga baja. Así que el verbo no recibe el número ya
+    // dividido, recibe sus dos mitades, y una es `segundosDePared`.
+    //
+    // Y esto prueba la CONDUCTA, no la forma: se saca el CUERPO REAL del método
+    // del árbol de `qa/run.mjs` y se ejecuta con un `ctx` de pega. `qa/run.mjs`
+    // no se puede importar aquí (arrastra playwright y levanta un stack), pero
+    // su código sí se puede correr.
+    const verbo = (() => {
+      const m = nodosRun.find(
+        (n) => ts.isMethodDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === "expectTasa",
+      ) as ts.MethodDeclaration | undefined;
+      assert.ok(m?.body, "no está `expectTasa` en qa/run.mjs: el candado no tiene sujeto");
+      const cuerpo = m!.body!.getText();
+      return new Function("desc", "tasa", "detalle", "ctx", "tasas", cuerpo.slice(1, -1)) as (
+        desc: string,
+        tasa: unknown,
+        detalle: string,
+        ctx: { expect: (d: string, ok: boolean, det?: string) => void },
+        tasas: Tasa[],
+      ) => boolean;
+    })();
+    const banco = () => {
+      const tasas: Tasa[] = [];
+      const dichos: { desc: string; ok: boolean }[] = [];
+      const ctx = { expect: (desc: string, ok: boolean) => void dichos.push({ desc, ok }) };
+      return { tasas, dichos, llama: (t: unknown) => verbo("d", t, "", ctx, tasas) };
+    };
+
+    it("el CONTADOR del 75, con la forma vieja del verbo, ya no se puede declarar: LANZA", () => {
+      const b = banco();
+      assert.throws(
+        () => b.llama({ medido: 2, esperado: 1, tolRel: 0.01 }),
+        /segundosDePared/,
+        "un contador que SUBE entraba en `comportamiento` con la forma vieja",
+      );
+      assert.equal(b.tasas.length, 0);
+      assert.equal(b.dichos.length, 0, "y no llega a afirmar nada: se para antes");
+    });
+
+    it("una cantidad SIN denominador de pared tampoco: eso no es una tasa", () => {
+      assert.throws(() => banco().llama({ cantidad: 2, esperado: 1, tolRel: 0.01 }), /segundosDePared/);
+    });
+
+    it("ni con el reloj parado (`segundosDePared: 0`): no se divide por cero en silencio", () => {
+      assert.throws(() => banco().llama({ cantidad: 2, segundosDePared: 0, esperado: 1, tolRel: 0.01 }), /segundosDePared/);
+    });
+
+    it("un `esperado` que no es positivo deja sin sentido la tolerancia Y la dirección: LANZA", () => {
+      assert.throws(() => banco().llama({ cantidad: 2, segundosDePared: 1, esperado: 0, tolRel: 0.01 }), /esperado/);
+    });
+
+    it("una TASA que cae entra, con `medido` DIVIDIDO por el verbo y no traído por el guion", () => {
+      const b = banco();
+      // El caso real del 93 bajo ×40: 12,12 m en 9,22 s de pared contra 4,18 m/s.
+      assert.equal(b.llama({ cantidad: 12.12, segundosDePared: 9.22, esperado: 4.18, tolRel: 0.03 }), false);
+      assert.equal(b.tasas.length, 1);
+      assert.ok(Math.abs(b.tasas[0].medido - 12.12 / 9.22) < 1e-9);
+      assert.equal(b.tasas[0].esperado, 4.18);
+      assert.equal(b.dichos[0].ok, false, "y el aserto del guion sale rojo igual que antes");
+    });
+
+    it("una tasa que PASA no entra en la lista: solo se declara lo que cae", () => {
+      const b = banco();
+      assert.equal(b.llama({ cantidad: 4.18, segundosDePared: 1, esperado: 4.18, tolRel: 0.03 }), true);
+      assert.deepEqual(b.tasas, []);
+      assert.equal(b.dichos[0].ok, true);
+    });
+  });
+
+  describe("la lista del `ctx` no se puede escribir (H-3: la CONDUCTA, no la forma)", () => {
+    // Misma asimetría que el contador de #639: `ctx.fallos` escribible solo puede
+    // poner a un guion en ROJO, pero una lista de tasas escribible FABRICA una
+    // clasificación «compatible con #545» sin haber medido nada — y el error caro
+    // de este instrumento es exactamente atribuirse un rojo ajeno (#496/#497).
+    //
+    // La primera versión de este candado miraba la FORMA («el getter no devuelve
+    // el identificador a pelo») y QA la tumbó: `return tasas ?? []` devuelve la
+    // lista VIVA y pasaba en verde. Así que se ejecuta el cuerpo real del getter
+    // y se comprueba lo único que importa: que escribir en lo que devuelve NO
+    // toque el original.
+    const getter = (() => {
+      const g = nodosRun.find(
+        (n) => ts.isGetAccessorDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === "tasas",
+      ) as ts.GetAccessorDeclaration | undefined;
+      assert.ok(g?.body, "`tasas` tiene que asomar al guion como getter, o se le puede escribir una lista entera");
+      return new Function("tasas", g!.body!.getText().slice(1, -1)) as (t: Tasa[]) => Tasa[];
+    })();
+
+    it("un `push` sobre lo que devuelve el getter NO entra en la lista del cierre", () => {
+      const dentro: Tasa[] = [];
+      const fuera = getter(dentro);
+      fuera.push({ texto: "inventada", medido: 1, esperado: 99 });
+      assert.deepEqual(dentro, [], "con la lista viva, esto le fabrica al reproductor una tasa que nadie midió");
+    });
+
+    it("y tocar un elemento devuelto tampoco toca el de dentro", () => {
+      const dentro: Tasa[] = [{ texto: "real", medido: 4, esperado: 5 }];
+      const fuera = getter(dentro);
+      fuera[0].medido = 999;
+      assert.equal(dentro[0].medido, 4);
+    });
+
+    it("no hay setter, y la propiedad se cierra a `configurable: false` como el contador de #639", () => {
+      assert.ok(
+        !nodosRun.some((n) => ts.isSetAccessorDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === "tasas"),
+        "un setter devuelve el agujero entero",
+      );
+      assert.match(fuenteRun, /Object\.defineProperty\(ctx, "tasas", \{ configurable: false \}\)/);
+    });
+  });
+
+  describe("el CABLE entre el guion y el clasificador (H-2)", () => {
+    // El hallazgo GRANDE de la vuelta de QA, y la lección de la tanda E: las dos
+    // mitades estaban candadas y el cable entre ellas no. Medido por QA: poner
+    // `tasas: []` en la fila del guion, o en el volcado `CARGA_JSON`, deja la
+    // feature ENTERA en no-op —el 93 vuelve a «NO ATRIBUIBLE»— y la suite salía
+    // 81 · 0 las dos veces. El plan candaba el cable de PR-1 y dejaba éste fuera.
+    //
+    // Son DOS tramos y los dos se miran, porque romper cualquiera basta.
+
+    it("tramo 1 · toda fila que lleva la medida de carga lleva TAMBIÉN `tasas: ctx.tasas`", () => {
+      const filas = nodosRun
+        .filter(
+          (n): n is ts.CallExpression =>
+            ts.isCallExpression(n) &&
+            ts.isPropertyAccessExpression(n.expression) &&
+            n.expression.name.text === "push" &&
+            ts.isIdentifier(n.expression.expression) &&
+            n.expression.expression.text === "resultados",
+        )
+        .map((c) => c.arguments[0])
+        .filter((a): a is ts.ObjectLiteralExpression => Boolean(a) && ts.isObjectLiteralExpression(a))
+        .map((o) => {
+          const props = new Map<string, ts.Expression | null>();
+          for (const pr of o.properties) {
+            if (ts.isPropertyAssignment(pr) && ts.isIdentifier(pr.name)) props.set(pr.name.text, pr.initializer);
+            else if (ts.isShorthandPropertyAssignment(pr)) props.set(pr.name.text, null);
+          }
+          return props;
+        });
+      const conCarga = filas.filter((f) => f.has("carga"));
+      assert.ok(conCarga.length >= 3, `el detector no ve las filas del runner: ${conCarga.length}`);
+      for (const f of conCarga) {
+        const init = f.get("tasas");
+        assert.ok(init, "una fila con medida de carga y SIN tasas deja la tercera pata muda");
+        assert.equal(
+          init!.getText(),
+          "ctx.tasas",
+          "la fila tiene que traer las tasas del guion, no una lista fabricada aquí",
+        );
+      }
+    });
+
+    it("tramo 2 · el volcado que lee el reproductor las copia de la fila, no las inventa", () => {
+      const guiones = nodosRun.find(
+        (n): n is ts.PropertyAssignment =>
+          ts.isPropertyAssignment(n) && ts.isIdentifier(n.name) && n.name.text === "guiones",
+      );
+      assert.ok(guiones, "no está el volcado `guiones:` de CARGA_JSON");
+      const flecha = guiones!.initializer
+        .getChildren()
+        .flatMap(function apila(n: ts.Node): ts.Node[] {
+          return [n, ...n.getChildren().flatMap(apila)];
+        })
+        .find((n) => ts.isArrowFunction(n)) as ts.ArrowFunction | undefined;
+      assert.ok(flecha, "el volcado ya no mapea las filas: el detector se quedó sin sujeto");
+      const patron = flecha!.parameters[0]?.name;
+      assert.ok(patron && ts.isObjectBindingPattern(patron), "el volcado no desestructura la fila");
+      const desestructurados = (patron as ts.ObjectBindingPattern).elements.map((e) => e.name.getText());
+      assert.ok(
+        desestructurados.includes("tasas"),
+        `el volcado no saca \`tasas\` de la fila: ${desestructurados.join(", ")}`,
+      );
+      const cuerpo = flecha!.body.getText();
+      assert.match(
+        cuerpo,
+        /tasas:\s*tasas\b/,
+        "el volcado tiene que copiar las tasas de la fila — `tasas: []` aquí deja la feature en no-op EN VERDE",
+      );
+    });
+
+    it("y el clasificador las lee de ese mismo nombre (las dos puntas dicen `tasas`)", () => {
+      // Sin esto, renombrar el campo en un lado deja el otro leyendo undefined y
+      // `?? []` lo convierte en silencio.
+      const carga = readFileSync(join(repoRoot, "qa", "lib", "carga.mjs"), "utf8");
+      assert.match(carga, /bs\.flatMap\(\(b\) => b\?\.tasas \?\? \[\]\)/);
+    });
   });
 });
 
@@ -479,8 +963,11 @@ describe("el veredicto del REPRODUCTOR no es el veredicto de los guiones", () =>
     corridas: 1,
     cambio,
     firma: cambio === "se-rompio" ? "presupuesto" : null,
+    tasaCaida: null,
+    razonesRojas: [],
     fallosQuieto: [],
     fallosCargado: [],
+    tasasCargado: [],
     ...extra,
   });
 

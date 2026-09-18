@@ -167,6 +167,7 @@ Un fichero en `guiones/` que exporta `async (ctx) => {}`. El contexto ofrece:
 | `ctx.holdUntil(key, desc, fn, {sim} \| {ms}, arg)` | mantiene una tecla hasta que se cumple `fn`, y la suelta siempre. El presupuesto es un OBJETO y nunca un número: conduce al jugador, así que va en `{sim: N}` — `{ms: N}` es pared declarada y hay que apuntarla (regla 1) |
 | `ctx.expect(desc, cond, detalle)` | apunta un criterio. Los fallos deciden el ROJO, **y haber afirmado decide el VERDE**: un guion que termina limpio sin un solo `expect` sale rojo (regla 7). Cuenta en las dos ramas — afirmar y fallar es afirmar |
 | `ctx.expectEspera(desc, debeOcurrir, fn, {ms, sim, arg, tecla, aserto})` | espera y AFIRMA si ocurrió o no: un umbral, escrito una vez. `debeOcurrir:false` es «el timeout ES el éxito». Con `sim`, el `ms` pasa a ser el cortafuegos de pared y no el presupuesto |
+| `ctx.expectTasa(desc, {cantidad, segundosDePared, esperado, tolRel}, detalle)` | afirma una TASA medida contra el reloj de PARED, y la DECLARA para el reproductor bajo carga (#609). La cantidad y sus segundos van **por separado** a propósito: es lo que distingue una tasa de un contador, y solo de una tasa se puede decir que un reloj lento la hace salir BAJA. Un contador no tiene denominador de pared que darle, así que aquí no cabe — y esa es la garantía, no un comentario. Fail-loud si falta el denominador, si es ≤ 0, o si `esperado`/`tolRel` no son positivos |
 | `ctx.absorbe(motivo, fn)` | consume la expiración de una espera DICIENDO dónde vive la medida de verdad (cortafuegos de un bucle que remide, esperas que solo sirven para una foto) |
 | `ctx.sinMedir(motivo)` | declara «no pude medir» y ABORTA el guion: sale `⊘` con su motivo, aparte de verdes y rojos (y degrada la corrida a exit 2) |
 | `ctx.sinMedirBloque(motivo)` | lo mismo para UN bloque, sin abortar: el guion sigue midiendo los demás |
@@ -379,11 +380,22 @@ niega a decir «aguanta»**: dice cuántas muestras son.
 **Lo que este instrumento NO puede decir: de QUIÉN es el rojo.** Un rojo bajo carga **no es, por sí
 solo, un rojo de #545**. Medido: `node qa/bajo-carga.mjs 75 --factor 20` pone el **75 rojo** (razón
 0,266), y el aserto que cae es un CONTADOR contaminado por la vida ambiental (`2 derivaciones (había
-1) — la escena servida cambió en: npcs (barkeep: position)`), o sea familia **#496/#497**. Lo único
-que este banco puede mirar sin inventar nada es el **texto del fallo**, así que clasifica en dos y lo
-dice: **con firma** de presupuesto de reloj (`no ocurrió en N ms`, `timeout esperando`, `expiró a los
-N ms`) → *compatible* con #545 y **no probado**; **sin firma** → **no atribuible**, mira el aserto
-antes de tocar una espera. Ojo desde el paso a sim: una espera con presupuesto de simulación que se
+1) — la escena servida cambió en: npcs (barkeep: position)`), o sea familia **#496/#497**. Clasifica
+en **tres** y lo dice: **presupuesto** — el texto del fallo lleva una espera expirada (`no ocurrió en
+N ms`, `timeout esperando`, `expiró a los N ms`) → *compatible* con #545 y **no probado**;
+**comportamiento** (#609) — no lleva esa firma, pero el guion DECLARÓ una **tasa** con
+`ctx.expectTasa` y esa tasa **cayó**, con la razón sim/pared hundida en las corridas rojas →
+*compatible con #545 por comportamiento, sin firma de presupuesto*, **indicio y no prueba**;
+**sin-firma** — ninguna de las dos → **no atribuible**, mira el aserto antes de tocar una espera.
+La tasa va **declarada, no parseada del texto**, y lo que se declara tiene que ser una tasa de
+verdad: `ctx.expectTasa` recibe la cantidad y sus **segundos de PARED por separado**, nunca el número
+ya dividido. Eso es la garantía, y está en el tipo — un CONTADOR (el rojo del 75: «2 derivaciones
+(había 1)», que SUBE) no tiene denominador de pared que darle, así que no se puede declarar; y con la
+lista de tasas vacía la rama de `comportamiento` es **inalcanzable**. Ésa es toda la fuerza de «por
+construcción»: es una afirmación sobre lo que el clasificador puede hacer con una lista vacía, no una
+promesa sobre ningún guion en particular. Y las dos primeras patas solas no bastan, medido: bajo
+`--factor 20` la razón se hunde también para el 75.
+Ojo desde el paso a sim: una espera con presupuesto de simulación que se
 agota dice «no ocurrió en N s de sim», que **no casa** con esa firma — y está bien que no case,
 porque ahí el mundo SÍ corrió sus segundos y el hecho es del juego, no de la carga. Lo que declara la
 inanición es el ⊘, que no es un color. La decisión sigue siendo de quien lee. Corolario para quien vaya a arreglar

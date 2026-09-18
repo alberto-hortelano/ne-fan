@@ -174,8 +174,26 @@ async function rumboLibre(ctx, metros = 30) {
 /** METROS POR SEGUNDO medidos en el juego: se encara un rumbo libre, se
  *  mantiene la tecla 50 fotogramas (≈ 0,8 s: 6,6 m esprintando, sobra sitio),
  *  se recortan cinco muestras por extremo y la velocidad es el camino interior
- *  partido por su tiempo. Nada de relojes de pared: el muestreador vive en el
- *  `rAF` de la página. */
+ *  partido por su tiempo.
+ *
+ *  **ESTO MIDE CONTRA EL RELOJ DE PARED, y es un sitio VIVO de #545.** El
+ *  docblock decía aquí «Nada de relojes de pared: el muestreador vive en el
+ *  `rAF` de la página» — y era falso, porque el `t` que entrega `rAF` ES un
+ *  timestamp de pared. El denominador `seg` son segundos de pared, mientras que
+ *  el `gameLoop` del cliente avanza el mundo con `delta = min(Δpared, 0,1 s)`
+ *  (`nefan-html/src/main.ts`): en cuanto un frame pasa de 100 ms, el numerador
+ *  (el camino recorrido, que es de SIMULACIÓN) y el denominador dejan de estar
+ *  en la misma escala y la velocidad medida sale BAJA sin que el juego haya
+ *  cambiado. Medido: `node qa/bajo-carga.mjs 93 --factor 40` → razón sim/pared
+ *  0,262 y las cuatro velocidades a 0,38 / 0,63 / 0,42 / 0,46 de lo esperado.
+ *
+ *  **#609 NO cura esto**: lo que hace es que el reproductor bajo carga lo
+ *  RECONOZCA, porque los cuatro asertos que cuelgan de aquí declaran su tasa
+ *  con `ctx.expectTasa` — y le entregan el `camino` y los `seg` POR SEPARADO,
+ *  que es la forma de decirle al banco «esto es una cantidad partida por
+ *  segundos de PARED». Arreglar la medida —contar el tiempo que el mundo simuló
+ *  de verdad en vez del que marcó el reloj— es otro trabajo, y hasta que se haga
+ *  este sitio sigue siendo deuda de #545. Que nadie lo lea como curado. */
 async function medirVelocidad(ctx, { sprint, frames = 40 }) {
   const r = await rumboLibre(ctx);
   await ctx.nefan("setYaw", r.yaw);
@@ -308,14 +326,23 @@ export default async function (ctx) {
   };
   const teoricoAndar = delArbol.walk_speed * delArbol.speed_scale;
   const teoricoSprint = delArbol.sprint_speed * delArbol.speed_scale;
-  ctx.expect(
+  // Los CUATRO asertos de velocidad de este guion declaran su TASA (#609).
+  // No cambia lo que juzgan —`|medido − esperado| < esperado × TOL_REL`, la misma
+  // cuenta, con el mismo `medido = camino / seg`— ni el texto del ✔/✘: lo que
+  // añaden es la tasa en la fila de la corrida, para que `qa/bajo-carga.mjs`
+  // pueda reconocer el rojo de este guion bajo carga sin leerle el texto al
+  // aserto. La cantidad y sus SEGUNDOS DE PARED van por separado a propósito:
+  // es lo que distingue una tasa de un contador, y un contador no se puede
+  // declarar aquí. Se declaran las velocidades y NO los asertos de «el trayecto
+  // cupo en el campo libre» ni los del alcance de la `E`: no son tasas.
+  ctx.expectTasa(
     `andando, el jugador va a walk_speed × speed_scale = ${teoricoAndar.toFixed(2)} m/s`,
-    Math.abs(base.andar.vel - teoricoAndar) < teoricoAndar * TOL_REL,
+    { cantidad: base.andar.camino, segundosDePared: base.andar.seg, esperado: teoricoAndar, tolRel: TOL_REL },
     `medido ${base.andar.vel.toFixed(4)} m/s (${base.andar.camino.toFixed(2)} m / ${base.andar.seg.toFixed(2)} s, ${base.andar.libre} m libres)`,
   );
-  ctx.expect(
+  ctx.expectTasa(
     `esprintando, sprint_speed × speed_scale = ${teoricoSprint.toFixed(2)} m/s`,
-    Math.abs(base.sprint.vel - teoricoSprint) < teoricoSprint * TOL_REL,
+    { cantidad: base.sprint.camino, segundosDePared: base.sprint.seg, esperado: teoricoSprint, tolRel: TOL_REL },
     `medido ${base.sprint.vel.toFixed(4)} m/s (${base.sprint.camino.toFixed(2)} m / ${base.sprint.seg.toFixed(2)} s, ${base.sprint.libre} m libres)`,
   );
 
@@ -343,9 +370,9 @@ export default async function (ctx) {
       m.camino < m.libre,
       `recorrió ${m.camino.toFixed(2)} m con ${m.libre} m libres por delante`,
     );
-    ctx.expect(
+    ctx.expectTasa(
       `con speed_scale × ${FACTOR} en el config, ${que} son ${teorico.toFixed(2)} m/s — la velocidad NO está escrita en el cliente`,
-      Math.abs(m.vel - teorico) < teorico * TOL_REL,
+      { cantidad: m.camino, segundosDePared: m.seg, esperado: teorico, tolRel: TOL_REL },
       `medido ${m.vel.toFixed(4)} m/s (${m.camino.toFixed(2)} m / ${m.seg.toFixed(2)} s, ${m.libre} m libres)`,
     );
   }
