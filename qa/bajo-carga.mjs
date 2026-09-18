@@ -68,14 +68,17 @@
  *   · **presupuesto** — el texto del fallo lleva una espera expirada.
  *     Compatible con #545, **no probado**.
  *   · **comportamiento** (#609) — no lleva esa firma, pero el guion DECLARÓ una
- *     magnitud (`ctx.expectMagnitud`) que CAYÓ, con la razón sim/pared hundida
- *     en las corridas rojas: *compatible con #545 por comportamiento, sin firma
- *     de presupuesto*. Es lo que le faltaba al caso medido del 93 —razón 0,262,
+ *     TASA (`ctx.expectTasa`) que CAYÓ, con la razón sim/pared hundida en las
+ *     corridas rojas: *compatible con #545 por comportamiento, sin firma de
+ *     presupuesto*. Es lo que le faltaba al caso medido del 93 —razón 0,262,
  *     cuatro velocidades a 0,38-0,63 de lo esperado y ni un «ms» en sus
  *     asertos—, que salía «no atribuible» teniendo todo delante.
  *   · **sin-firma** — ninguna de las dos: **no atribuible**, que es la defensa
- *     que nació de #496/#497 y no se afloja. El 75 sigue cayendo aquí, y por
- *     construcción: no declara magnitud ninguna.
+ *     que nació de #496/#497 y no se afloja. El rojo del 75 —un CONTADOR que
+ *     sube— cae aquí, y no por cómo esté redactado: `ctx.expectTasa` pide la
+ *     cantidad y sus SEGUNDOS DE PARED por separado, y un contador no tiene
+ *     denominador de pared que darle. Con la lista de tasas vacía, la rama de
+ *     `comportamiento` es inalcanzable.
  *
  *  Las dos primeras patas solas NO bastan y está medido: bajo `--factor 20` la
  *  razón se hunde también para el 75, así que «rojo nuevo + razón hundida»

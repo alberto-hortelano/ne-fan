@@ -483,17 +483,17 @@ export function lineaDeMedida(m, factor) {
  *  no puede llamarlo el rojo de #545**.
  *
  *  **Y ya no es lo único que se mira** (#609). Esta función sigue siendo la
- *  pata del TEXTO, con su alcance intacto; la segunda pata es
- *  `magnitudQueCae`, que no lee texto ninguno porque el guion DECLARA su
- *  magnitud. El caso que lo pedía es el 93: rojo solo bajo carga, causado por
- *  el reloj, y sin un «ms» en ninguno de sus asertos. */
+ *  pata del TEXTO, con su alcance intacto; la segunda pata es `tasaQueCae`,
+ *  que no lee texto ninguno porque el guion DECLARA su tasa. El caso que lo
+ *  pedía es el 93: rojo solo bajo carga, causado por el reloj, y sin un «ms» en
+ *  ninguno de sus asertos. */
 export function firmaDePresupuesto(fallos) {
   const FIRMAS = [/no ocurrió en \d+\s*ms/i, /timeout esperando/i, /expiró a los \d+\s*ms/i];
   return (fallos ?? []).some((f) => FIRMAS.some((re) => re.test(String(f))));
 }
 
-/** ¿Se cayó alguna magnitud DECLARADA, y en la dirección que un reloj lento
- *  puede causar? (#609)
+/** ¿Se cayó alguna TASA declarada, y en la dirección que un reloj lento puede
+ *  causar? (#609)
  *
  *  La tercera pata de la clasificación, y la que existe para no clasificar por
  *  el TEXTO del aserto. Las dos primeras —`cambio === "se-rompio"` y la razón
@@ -507,26 +507,40 @@ export function firmaDePresupuesto(fallos) {
  *  pared salga BAJA; no puede hacer que un contador salga ALTO*. Por eso solo
  *  cuenta `medido < esperado`.
  *
+ *  **Y por eso lo que entra aquí son TASAS y no «magnitudes».** La frase de
+ *  arriba es cierta de una cantidad partida por segundos de PARED y falsa de un
+ *  contador, así que el filtro no puede vivir en esta función: vive en el verbo
+ *  que las declara. `ctx.expectTasa` (`qa/run.mjs`) no recibe el número ya
+ *  dividido sino sus dos mitades, una de ellas `segundosDePared`, y un contador
+ *  no tiene denominador de pared que darle. Antes el verbo aceptaba cualquier
+ *  número que hubiera bajado y la restricción era un COMENTARIO; QA lo tumbó
+ *  instrumentando el contador del 75, que entraba en `comportamiento` tan
+ *  campante.
+ *
  *  **La proporcionalidad está RECHAZADA CON MEDIDA**, y queda escrito para que
  *  nadie la reintente: en el caso real del 93 a ×40 la razón sim/pared fue
  *  **0,262** y las cuatro velocidades cayeron a **0,38 / 0,63 / 0,42 / 0,46** de
  *  lo esperado. Exigir «cae en proporción a la razón» tumbaría el único caso
  *  real que tenemos.
  *
- *  Y la magnitud viene **declarada** (`ctx.expectMagnitud`, `qa/run.mjs`), no
- *  parseada de la frase del fallo. Eso no es un detalle de implementación: es lo
- *  que hace que el guion 75 —que no declara ninguna— quede fuera de esta
- *  categoría **por construcción** y no por cómo esté redactado su aserto.
+ *  Y la tasa viene **declarada**, no parseada de la frase del fallo. El efecto
+ *  mecánico, dicho sin adornarlo: **un guion que no declara ninguna llega aquí
+ *  con la lista vacía, y con la lista vacía esta rama es inalcanzable**. Eso es
+ *  todo lo que «por construcción» significa — no es una promesa sobre ningún
+ *  guion en particular, que mañana puede instrumentarse, sino sobre lo que el
+ *  clasificador puede hacer con una lista vacía. (La primera versión de este
+ *  docblock lo justificaba diciendo que el guion 75 no se toca; era una
+ *  justificación escrita después y sin medir, y se retira.)
  *
- *  Una magnitud con números que no son números se ignora en vez de votar: sin
- *  esto, un `NaN` colado en la fila entraría por la comparación `NaN < x`
- *  (false) o, peor, sostendría una clasificación sin medir nada. */
-export function magnitudQueCae(magnitudes) {
-  for (const m of magnitudes ?? []) {
-    const medido = Number(m?.medido);
-    const esperado = Number(m?.esperado);
+ *  Una tasa con números que no son números se ignora en vez de votar: sin esto,
+ *  un `NaN` colado en la fila entraría por la comparación `NaN < x` (false) o,
+ *  peor, sostendría una clasificación sin medir nada. */
+export function tasaQueCae(tasas) {
+  for (const t of tasas ?? []) {
+    const medido = Number(t?.medido);
+    const esperado = Number(t?.esperado);
     if (!Number.isFinite(medido) || !Number.isFinite(esperado)) continue;
-    if (medido < esperado) return { texto: String(m?.texto ?? ""), medido, esperado };
+    if (medido < esperado) return { texto: String(t?.texto ?? ""), medido, esperado };
   }
   return null;
 }
@@ -549,9 +563,9 @@ export function magnitudQueCae(magnitudes) {
  *     `firma`, no esta etiqueta (H-4).
  *     Hay que dárselo: `firma` tiene TRES valores, no dos (#609). `presupuesto`
  *     —el texto del fallo lleva una espera expirada—, `comportamiento` —no lo
- *     lleva, pero una magnitud DECLARADA cayó con la razón sim/pared hundida en
- *     las corridas rojas— y `sin-firma`, que sigue significando **no
- *     atribuible** y sigue siendo la defensa que nació de #496/#497.
+ *     lleva, pero una TASA declarada cayó con la razón sim/pared hundida en las
+ *     corridas rojas— y `sin-firma`, que sigue significando **no atribuible** y
+ *     sigue siendo la defensa que nació de #496/#497.
  *   · `se-arreglo` — rojo quieto y verde en al menos una frenada. No es un
  *     éxito: es un aviso de que ese rojo no era carga.
  *   · `no-comparable` — falta en alguna, o alguna no llegó a medir (⊘). Un guion
@@ -577,7 +591,7 @@ export function comparaCorridas(quieta, cargadas, { umbral = UMBRAL_DE_CARGA_REA
     const filasRojas = bs.filter((b) => b?.estado === "rojo");
     const rojas = filasRojas.length;
     const fallosCargado = bs.flatMap((b) => b?.fallos ?? []);
-    const magnitudesCargado = bs.flatMap((b) => b?.magnitudes ?? []);
+    const tasasCargado = bs.flatMap((b) => b?.tasas ?? []);
     let cambio = "no-comparable";
     if (comparable) {
       if (a.estado === "verde") cambio = rojas > 0 ? "se-rompio" : "igual-verde";
@@ -595,19 +609,19 @@ export function comparaCorridas(quieta, cargadas, { umbral = UMBRAL_DE_CARGA_REA
     const razonHundida = razones.length > 0 && razones.every((r) => r <= umbral);
     // Tercera rama (#609). El orden importa: la firma de presupuesto gana,
     // porque es la que se puede leer sin que el guion coopere. La de
-    // comportamiento pide LAS DOS cosas —magnitud declarada que cae Y razón
+    // comportamiento pide LAS DOS cosas —tasa declarada que cae Y razón
     // hundida—, que es lo que separa el 93 (una tasa que baja) del 75 (un
-    // contador que sube y que no declara magnitud ninguna).
+    // contador que sube, que ni siquiera se puede declarar como tasa).
     let firma = null;
-    let magnitudCaida = null;
+    let tasaCaida = null;
     if (cambio === "se-rompio") {
       if (firmaDePresupuesto(fallosCargado)) {
         firma = "presupuesto";
       } else {
-        const cae = magnitudQueCae(magnitudesCargado);
+        const cae = tasaQueCae(tasasCargado);
         if (cae && razonHundida) {
           firma = "comportamiento";
-          magnitudCaida = cae;
+          tasaCaida = cae;
         } else {
           firma = "sin-firma";
         }
@@ -622,14 +636,14 @@ export function comparaCorridas(quieta, cargadas, { umbral = UMBRAL_DE_CARGA_REA
       corridas: bs.length,
       cambio,
       firma,
-      // La magnitud que SOSTIENE la clasificación, y solo esa: si no fue ella
-      // quien la sostuvo, la fila no la nombra. Un veredicto que nombra una
-      // magnitud que no votó se lee como si hubiera votado.
-      magnitudCaida,
+      // La tasa que SOSTIENE la clasificación, y solo esa: si no fue ella quien
+      // la sostuvo, la fila no la nombra. Un veredicto que nombra una tasa que
+      // no votó se lee como si hubiera votado.
+      tasaCaida,
       razonesRojas: razones,
       fallosQuieto: a?.fallos ?? [],
       fallosCargado,
-      magnitudesCargado,
+      tasasCargado,
     };
   });
 }
@@ -640,8 +654,8 @@ export function comparaCorridas(quieta, cargadas, { umbral = UMBRAL_DE_CARGA_REA
  *  reproductor no puede atribuir (H-4).
  *
  *  La de en medio es la nueva, y es la que hay que leer con cuidado: dice
- *  **indicio**, no prueba, y nombra la magnitud que cayó para que quien lee
- *  pueda comprobarlo. Nace de un caso medido —el 93 a ×40, razón 0,262, cuatro
+ *  **indicio**, no prueba, y nombra la tasa que cayó para que quien lee pueda
+ *  comprobarlo. Nace de un caso medido —el 93 a ×40, razón 0,262, cuatro
  *  velocidades caídas— que el instrumento archivaba como «NO ATRIBUIBLE»
  *  teniendo delante todo lo necesario para reconocerlo. */
 function frasePorFirma(r) {
@@ -652,21 +666,21 @@ function frasePorFirma(r) {
     );
   }
   if (r.firma === "comportamiento") {
-    const m = r.magnitudCaida;
+    const m = r.tasaCaida;
     const cuanto =
       m && m.esperado ? ` (${(m.medido / m.esperado).toFixed(2)} de lo esperado)` : "";
     return (
-      "— el fallo NO lleva firma de presupuesto de reloj, pero una magnitud DECLARADA CAYÓ" +
+      "— el fallo NO lleva firma de presupuesto de reloj, pero una TASA DECLARADA CAYÓ" +
       `${cuanto} con la razón sim/pared hundida en las corridas rojas` +
       (m?.texto ? `: «${m.texto}»` : "") +
       ". Eso lo hace **compatible con #545 POR COMPORTAMIENTO, sin firma de presupuesto**, que es un " +
       "INDICIO y no una prueba: lo único que se sostiene es la DIRECCIÓN — un reloj que va lento solo " +
       "puede hacer que una tasa medida contra la pared salga BAJA, nunca que un contador salga ALTO. " +
-      "Mira la magnitud antes de tocar una espera"
+      "Mira la tasa antes de tocar una espera"
     );
   }
   return (
-    "— el fallo NO lleva firma de presupuesto de reloj ni una magnitud declarada que caiga, así que " +
+    "— el fallo NO lleva firma de presupuesto de reloj ni una tasa declarada que caiga, así que " +
     "**no es atribuible a #545**: puede ser un contador sobre un canal compartido (#496/#497, como el " +
     "guion 75) o el escenario dejando de ser determinista. Mira el texto del aserto antes de tocar una espera"
   );

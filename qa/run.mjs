@@ -926,9 +926,9 @@ function makeCtx(page, name) {
   /** Cuántas veces AFIRMÓ este guion (#639). Vive en el CIERRE y no en el
    *  `ctx` a propósito — ver el getter de abajo. */
   let afirmaciones = 0;
-  /** Las magnitudes DECLARADAS que se cayeron (#609). Mismo cierre y misma
-   *  razón que el contador: ver el getter. */
-  const magnitudes = [];
+  /** Las TASAS declaradas que se cayeron (#609). Mismo cierre y misma razón que
+   *  el contador: ver el getter. */
+  const tasas = [];
   const ctx = {
     ...ctxDeSonda(page),
     name,
@@ -1191,61 +1191,99 @@ function makeCtx(page, name) {
       }
     },
 
-    /** Las magnitudes DECLARADAS que este guion vio caerse (#609). SOLO
-     *  LECTURA y por COPIA, por la misma asimetría que `afirmaciones` (H-3 de
-     *  QA): quien pueda escribir esta lista puede fabricarle al reproductor una
+    /** Las TASAS declaradas que este guion vio caerse (#609). SOLO LECTURA y
+     *  por COPIA, por la misma asimetría que `afirmaciones` (H-3 de QA):
+     *  quien pueda escribir esta lista puede fabricarle al reproductor una
      *  clasificación «compatible con #545» sin haber medido nada, y el error
      *  caro de esa herramienta es exactamente atribuirse un rojo ajeno
      *  (#496/#497). La lista vive en el cierre de `makeCtx`, aquí solo asoma un
      *  getter sin setter —en un módulo ESM, que es estricto, asignarle LANZA—,
      *  la propiedad se cierra a `configurable: false` para que tampoco valga
-     *  redefinirla, y lo que sale son COPIAS: sin eso, un `ctx.magnitudes.push`
-     *  seguiría escribiendo el original a través del getter. La única manera de
-     *  meter una magnitud aquí es que `expectMagnitud` la juzgue y caiga. */
-    get magnitudes() {
-      return magnitudes.map((m) => ({ ...m }));
+     *  redefinirla, y lo que sale son COPIAS.
+     *
+     *  Las copias NO son cosmética: sin ellas un `ctx.tasas.push(...)`
+     *  escribiría el original A TRAVÉS del getter. Y el candado que lo sujeta
+     *  prueba la CONDUCTA y no la forma (H-3 de la vuelta de QA de #609): un
+     *  `return tasas ?? []` —refactor plausible— devuelve la lista viva y
+     *  pasaba cualquier comprobación sintáctica. La única manera de meter una
+     *  tasa aquí es que `expectTasa` la juzgue y caiga. */
+    get tasas() {
+      return tasas.map((t) => ({ ...t }));
     },
 
-    /** Un aserto numérico que además DECLARA su magnitud (#609).
+    /** Un aserto sobre una TASA medida contra el RELOJ DE PARED (#609).
      *
      *  Nace de un rojo REAL que el reproductor bajo carga no sabía reconocer:
      *  `node qa/bajo-carga.mjs 93 --factor 40` pone el 93 rojo con las cuatro
      *  velocidades caídas a 0,38 / 0,63 / 0,42 / 0,46 de lo esperado y razón
-     *  sim/pared 0,262 — o sea el defecto de #545 en estado puro—, y salía
+     *  sim/pared 0,262 —o sea el defecto de #545 en estado puro— y salía
      *  «sin-firma → NO ATRIBUIBLE» porque ninguno de sus asertos lleva «ms» en
      *  el texto. La clasificación miraba el TEXTO del fallo, que es justo el
      *  pecado que #609 denuncia.
      *
-     *  La magnitud va **declarada y no parseada del texto**, y eso es la mitad
-     *  del diseño: un guion que no la declara —el 75, por ejemplo— queda fuera
-     *  de la tercera categoría POR CONSTRUCCIÓN y no por cómo esté redactado su
-     *  aserto. Lo que se guarda es solo lo que CAE, con su número medido y su
-     *  número esperado, para que `magnitudQueCae` (`qa/lib/carga.mjs`) pueda
-     *  aplicar la única dirección que se sostiene: un reloj que va lento solo
-     *  puede hacer que una tasa medida contra la pared salga BAJA; no puede
-     *  hacer que un contador salga ALTO.
+     *  ## Por qué el denominador de pared es un PARÁMETRO, y no una cuenta que
+     *  ## haga el guion antes de llamar
+     *
+     *  Ésta es la garantía de #609, y está EN EL TIPO. La razón por la que una
+     *  tasa caída vale como indicio de #545 es mecánica y muy estrecha: *un
+     *  reloj que va lento solo puede hacer que una tasa medida contra la pared
+     *  salga BAJA*. De un CONTADOR no se puede decir eso — el rojo del guion 75
+     *  es «2 derivaciones (había 1)», un contador que SUBE contaminado por la
+     *  vida ambiental, familia #496/#497, y es el rojo que costó el hallazgo
+     *  H-4 de QA.
+     *
+     *  La primera versión de este verbo aceptaba `{medido, esperado, tolRel}`,
+     *  o sea **cualquier número que hubiera bajado**, y dejaba la restricción
+     *  escrita en un comentario. QA lo tumbó: instrumentar el contador del 75
+     *  con ese verbo lo metía en `comportamiento`, que es exactamente la
+     *  defensa de #496/#497 aflojada. La prosa no es un candado.
+     *
+     *  Así que el estado malo se hace INEXPRESABLE: no se recibe la tasa ya
+     *  dividida, se reciben **sus dos mitades**, y una de ellas tiene que ser
+     *  SEGUNDOS DE RELOJ DE PARED. Un contador no tiene denominador de pared:
+     *  para colarlo por aquí habría que inventarle uno, y entonces lo que se
+     *  afirma ya no es el contador. La única vía para meter algo en esta lista
+     *  es afirmar una cantidad por segundo de pared.
      *
      *  **NO exige proporcionalidad con la razón sim/pared**, y está medido: la
      *  razón fue 0,262 y las velocidades cayeron a 0,38-0,63. Exigir «cae en
      *  proporción» tumbaría el único caso real que hay.
      *
-     *  Fail-loud con números que no son números: un `NaN` en `medido` haría
-     *  `Math.abs(NaN - x) < y` siempre falso —o sea un rojo— y luego se
-     *  clasificaría como magnitud que no cae, que es la mentira silenciosa.
+     *  Fail-loud con lo que no se puede dividir o no se puede comparar: un
+     *  `NaN` en la cantidad haría `Math.abs(NaN - x) < y` siempre falso —o sea
+     *  un rojo— y luego se clasificaría como tasa que no cae, que es la mentira
+     *  silenciosa; y un `esperado` que no sea positivo deja sin sentido tanto la
+     *  tolerancia relativa como la dirección.
      *
      *  Devuelve si el aserto pasó, para quien quiera encadenar. */
-    expectMagnitud(desc, magnitud, detalle = "") {
-      const { medido, esperado, tolRel } = magnitud ?? {};
-      if (![medido, esperado, tolRel].every((n) => Number.isFinite(n))) {
+    expectTasa(desc, tasa, detalle = "") {
+      const { cantidad, segundosDePared, esperado, tolRel } = tasa ?? {};
+      const mal =
+        ![cantidad, segundosDePared, esperado, tolRel].every((n) => Number.isFinite(n)) ||
+        !(segundosDePared > 0) ||
+        !(esperado > 0) ||
+        !(tolRel > 0);
+      if (mal) {
         throw new Error(
-          `expectMagnitud(«${desc}») necesita {medido, esperado, tolRel} finitos y recibió ` +
-            `${JSON.stringify(magnitud)}. Se para aquí en vez de seguir con un NaN: el aserto saldría ` +
-            `rojo y la magnitud se clasificaría como «no cayó», que es peor que no declararla.`,
+          `expectTasa(«${desc}») necesita {cantidad, segundosDePared, esperado, tolRel} finitos, con ` +
+            `segundosDePared > 0, esperado > 0 y tolRel > 0, y recibió ${JSON.stringify(tasa)}. Se para ` +
+            `aquí en vez de seguir: con un NaN el aserto saldría rojo y la tasa se clasificaría como ` +
+            `«no cayó», y sin un denominador de PARED esto no sería una tasa sino un contador — que es ` +
+            `justo lo que este verbo no sabe expresar.`,
         );
       }
-      const ok = Math.abs(medido - esperado) < Math.abs(esperado) * tolRel;
+      const medido = cantidad / segundosDePared;
+      const ok = Math.abs(medido - esperado) < esperado * tolRel;
       ctx.expect(desc, ok, detalle);
-      if (!ok) magnitudes.push({ texto: `${desc}${detalle ? ` — ${detalle}` : ""}`, medido, esperado });
+      if (!ok) {
+        tasas.push({
+          texto: `${desc}${detalle ? ` — ${detalle}` : ""}`,
+          medido,
+          esperado,
+          cantidad,
+          segundosDePared,
+        });
+      }
       return ok;
     },
 
@@ -1258,7 +1296,7 @@ function makeCtx(page, name) {
   // El getter no basta por sí solo: un `Object.defineProperty` lo redefiniría.
   // Con esto, la única vía para que el contador suba es `expect`.
   Object.defineProperty(ctx, "afirmaciones", { configurable: false });
-  Object.defineProperty(ctx, "magnitudes", { configurable: false });
+  Object.defineProperty(ctx, "tasas", { configurable: false });
   // Sin página, los verbos que la conducen se ENVENENAN en vez de fallar con
   // un «Cannot read properties of null» a cien líneas de aquí (#655). Es lo que
   // convierte `sinNavegador` en una declaración EJERCIDA: el guion que la lleva
@@ -1741,7 +1779,7 @@ async function main() {
       const motivo = `el stack se cayó durante «${nombre}» (${caidos.join(", ")} dejó de contestar)`;
       stackCaido = { nombre, motivo, caidos };
       console.log(`    ⊘ ${motivo}`);
-      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo, carga: cargaDelGuion, magnitudes: ctx.magnitudes });
+      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo, carga: cargaDelGuion, tasas: ctx.tasas });
       continue;
     }
 
@@ -1766,7 +1804,7 @@ async function main() {
     }
     if (sinMedir) {
       console.log(`    ⊘ ${sinMedir}`);
-      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo: sinMedir, censo, carga: cargaDelGuion, magnitudes: ctx.magnitudes });
+      resultados.push({ nombre, estado: SIN_MEDIR, fallos: ctx.fallos, motivo: sinMedir, censo, carga: cargaDelGuion, tasas: ctx.tasas });
       continue;
     }
 
@@ -1785,11 +1823,14 @@ async function main() {
       motivo: null,
       censo,
       carga: cargaDelGuion,
-      // Las magnitudes DECLARADAS que se cayeron viajan con la fila, junto a la
+      // Las TASAS declaradas que se cayeron viajan con la fila, junto a la
       // medida de carga (#609): es lo que le permite al reproductor distinguir
       // «una tasa que cae» de «un contador que sube» sin leerle el texto al
-      // aserto. Van por COPIA (el getter de `makeCtx`), no por referencia.
-      magnitudes: ctx.magnitudes,
+      // aserto. Van por COPIA (el getter de `makeCtx`), no por referencia. Y
+      // este cable tiene candado propio: ponerle `[]` deja la feature entera en
+      // no-op sin que nada se ponga rojo (H-2 de la vuelta de QA de #609), así
+      // que `test/carga-sintetica.test.ts` lo lee del árbol de este fichero.
+      tasas: ctx.tasas,
     });
   }
 
@@ -1867,18 +1908,20 @@ async function main() {
         {
           factor: FACTOR_CPU,
           clamp: CLAMP_DEL_LOOP,
-          guiones: resultados.map(({ nombre, estado, fallos, motivo, carga, magnitudes }) => ({
+          guiones: resultados.map(({ nombre, estado, fallos, motivo, carga, tasas }) => ({
             nombre,
             estado,
             fallos,
             motivo: motivo ?? null,
             carga: carga ?? null,
-            // Las magnitudes caídas van enteras, y son la TERCERA pata de la
+            // Las tasas caídas van enteras, y son la TERCERA pata de la
             // clasificación (#609): los `fallos` dicen si el rojo lleva firma de
             // presupuesto de reloj, la `carga` dice si el mundo iba lento, y
-            // esto dice si lo que se cayó fue una TASA (solo puede bajar si el
-            // reloj va lento) o cualquier otra cosa.
-            magnitudes: magnitudes ?? [],
+            // esto dice si lo que se cayó fue una TASA medida contra la pared
+            // (solo puede bajar si el reloj va lento). Segundo tramo del mismo
+            // cable, y con el mismo candado: `tasas: []` aquí también deja la
+            // feature en no-op en verde.
+            tasas: tasas ?? [],
           })),
         },
         null,
