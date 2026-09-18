@@ -40,13 +40,15 @@
  *  `qa/lib/x.ts` importado desde un guion `.mjs` correría de verdad y sería
  *  INVISIBLE para los diecinueve. En vez de enseñar la extensión a cada uno
  *  —y dejar abiertos `.js`, `.cjs`, `.mts`, `.cts`—, se hace inexpresable el
- *  estado malo: bajo `qa/` (fuera de `node_modules` y de los directorios con
- *  punto) solo caben las extensiones de la lista blanca de abajo, y
+ *  estado malo: bajo `qa/` (fuera de `node_modules` y de `.tmp`, que se
+ *  nombran: «cualquier dot-dir» dejaría pasar un `qa/.oculto/x.ts`) solo
+ *  caben las extensiones de la lista blanca de abajo, y
  *  cualquier otra es rojo aquí. Es «la garantía va en el tipo» aplicada al
  *  banco: los diecinueve quedan correctos por construcción. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
@@ -136,14 +138,21 @@ export function extensionesForaneas(rutas: readonly string[]): string[] {
   });
 }
 
+/** Los dos directorios que NO son el banco: las dependencias y el disco
+ *  efímero de una corrida (`qa/.tmp/<run>/`, con su `.bloques/` dentro). Es
+ *  el ÚNICO directorio con punto que hay bajo `qa/` (medido con `find -type d
+ *  -name '.*'` el 2026-09-18), y se nombra en vez de saltar «todo lo que
+ *  empiece por punto»: con esa regla un `qa/.oculto/x.ts` no se vería. */
+const DIRECTORIOS_QUE_NO_SON_BANCO: ReadonlySet<string> = new Set(["node_modules", ".tmp"]);
+
 /** TODOS los ficheros bajo `dir` (ruta relativa a `raiz`, con `/`), saltando
- *  solo `node_modules` y los directorios con punto (`qa/.tmp/`). A diferencia
- *  de `fuentesDelBanco` del test del padrón, NO filtra por extensión ni salta
- *  `capturas/`: es el barrido que decide qué extensiones EXISTEN. */
+ *  solo `node_modules` y `.tmp`. A diferencia de `fuentesDelBanco` del test
+ *  del padrón, NO filtra por extensión, NO salta `capturas/` ni los
+ *  directorios con punto: es el barrido que decide qué extensiones EXISTEN. */
 export function ficherosBajo(dir: string, raiz: string = dir, out: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (e.isDirectory()) {
-      if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+      if (DIRECTORIOS_QUE_NO_SON_BANCO.has(e.name)) continue;
       ficherosBajo(join(dir, e.name), raiz, out);
     } else {
       out.push(relative(raiz, join(dir, e.name)).split(sep).join("/"));
@@ -281,7 +290,25 @@ describe("el banco es .mjs y solo .mjs (#686)", () => {
     assert.ok(todos.some((f) => f.startsWith("guiones/") && f.endsWith(".mjs")), "no ve los guiones");
     assert.ok(todos.some((f) => f.startsWith("lib/") && f.endsWith(".mjs")), "no ve qa/lib");
     assert.ok(todos.some((f) => !f.includes("/")), "no ve la raíz de qa/");
-    assert.deepEqual(todos.filter((f) => f.startsWith(".") || f.includes("node_modules/")), []);
+    assert.deepEqual(todos.filter((f) => f.startsWith(".tmp/") || f.includes("node_modules/")), []);
+  });
+
+  it("SABE PONERSE ROJO (el barrido): un dot-dir que no sea .tmp SE VE, y .tmp y node_modules no", () => {
+    // Sobre un árbol sintético en disco, porque lo que se prueba es el
+    // `readdirSync`, no la lista: `qa/.oculto/x.ts` tiene que salir. Es lo
+    // que `mkdir qa/.oculto && touch qa/.oculto/x.ts` hace en el árbol real
+    // (probado a mano al nacer).
+    const raiz = mkdtempSync(join(tmpdir(), "nefan-banco-"));
+    try {
+      for (const d of [".oculto", ".tmp/run-1", "node_modules/x", "lib"]) mkdirSync(join(raiz, d), { recursive: true });
+      for (const f of [".oculto/x.ts", ".tmp/run-1/y.ts", "node_modules/x/z.js", "lib/a.mjs", "b.mjs", ".dotfile.ts"]) {
+        writeFileSync(join(raiz, f), "");
+      }
+      assert.deepEqual(ficherosBajo(raiz), [".dotfile.ts", ".oculto/x.ts", "b.mjs", "lib/a.mjs"]);
+      assert.deepEqual(extensionesForaneas(ficherosBajo(raiz)), [".dotfile.ts", ".oculto/x.ts"]);
+    } finally {
+      rmSync(raiz, { recursive: true, force: true });
+    }
   });
 
   it("bajo qa/ no hay ninguna extensión fuera de la lista blanca", () => {

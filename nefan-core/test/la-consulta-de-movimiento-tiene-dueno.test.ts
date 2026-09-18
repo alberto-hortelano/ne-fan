@@ -49,7 +49,8 @@
  *  fichero y con el mismo `createSourceFile`, sin type-checker ni flujo:
  *  primero se recogen los alias por punto fijo —`const x = ….probeCollide`,
  *  `const x = …["probeCollide"]`, `const x = "probeCollide"` (el string que
- *  luego viaja a `ctx.nefan(x, …)`), `const x = <otro alias>`, y las
+ *  luego viaja a `ctx.nefan(x, …)`), `const x = <otro alias>`, el parámetro
+ *  con valor por defecto `function f(x = ….probeCollide)`, y las
  *  desestructuraciones `{probeCollide}` / `{probeCollide: x}`— y después cuenta
  *  1 cada `Identifier`/`StringLiteralLike` con el texto exacto y cada
  *  `Identifier` que es un alias; la DECLARACIÓN del alias cuenta 0, porque
@@ -70,8 +71,10 @@
  *
  *  Y los límites del detector de sitios de uso, cada uno con su `it` que MIDE
  *  la cifra (rojo si alguien lo cierra sin quitar el párrafo): el alias pasado
- *  como VALOR (`rumbos.map(pc)`) cuenta 1 referencia y no las llamadas que
- *  `map` haga por dentro —es el límite honesto de «sitio de uso»—; el CRUCE DE
+ *  como VALOR (`rumbos.map(pc)`, o `f(pc)` con `(q) => q(a, b)` dentro: un
+ *  parámetro SIN inicializador no liga nada) cuenta 1 referencia y no las
+ *  llamadas que `map` o `f` hagan por dentro —es el límite honesto de «sitio
+ *  de uso»—; el CRUCE DE
  *  FICHERO (`export const S = "probeCollide"` en `qa/lib/` e `import {S}` en un
  *  guion) cuenta 0 en el guion, porque resolver imports es otro detector y hoy
  *  no tiene sujeto (`grep probeCollide qa/lib/` = 0 fuera del `hook[p]`); y el
@@ -156,9 +159,10 @@ const esJSDoc = (n: ts.Node): boolean =>
 /** Cuántos SITIOS DE USO alcanzan al identificador `nombre` en este fuente,
  *  resueltos sintácticamente dentro del fichero (#686).
  *
- *  (i) Se recogen los ALIAS por punto fijo: un `const x = <expr>` cuyo
- *  inicializador es `….nombre`, `[…"nombre"]`, el string `"nombre"` u OTRO
- *  alias; y los `BindingElement` `{nombre}` / `{nombre: x}`. (ii) Cuenta 1
+ *  (i) Se recogen los ALIAS por punto fijo: un `const x = <expr>` o un
+ *  parámetro con valor por defecto `f(x = <expr>)` cuyo inicializador es
+ *  `….nombre`, `[…"nombre"]`, el string `"nombre"` u OTRO alias; y los
+ *  `BindingElement` `{nombre}` / `{nombre: x}`. (ii) Cuenta 1
  *  cada `Identifier`/`StringLiteralLike` con el texto EXACTO —la propiedad de
  *  `window.__nefan.x`, el `ctx.nefan("x", …)` que `qa/lib/sonda.mjs` despacha
  *  y su template sin sustitución— y cada `Identifier` que es un alias; cuenta 0
@@ -185,14 +189,19 @@ export function consultas(fuente: string, nombre: string): number {
     (ts.isIdentifier(init) && alias.has(init.text));
 
   // (i) Punto fijo: un re-alias (`const q = pc`) solo se reconoce después de
-  // que `pc` lo sea, y `pc` puede declararse más abajo en el fichero.
+  // que `pc` lo sea, y `pc` puede declararse más abajo en el fichero. Un
+  // parámetro SIN inicializador (`(q) => q(a, b)`, con `f(pc)` en el llamador)
+  // no liga nada aquí: es el alias pasado como valor, y se mide como límite.
   let cambio = true;
   while (cambio) {
     cambio = false;
     const busca = (n: ts.Node): void => {
       if (esJSDoc(n)) return;
       if (!declaraciones.has(n)) {
-        if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && ligaUnAlias(n.initializer)) {
+        // `const x = …` y `function f(x = …)` ligan igual: el valor por defecto de
+        // un parámetro es un inicializador más (agujero que declaró el propio
+        // ingeniero al cerrar la tanda X, cerrado antes de QA).
+        if ((ts.isVariableDeclaration(n) || ts.isParameter(n)) && ts.isIdentifier(n.name) && n.initializer && ligaUnAlias(n.initializer)) {
           alias.add(n.name.text);
           declaraciones.add(n);
           cambio = true;
@@ -365,6 +374,22 @@ describe("el detector de sondas de movimiento cuenta SITIOS DE USO (#686)", () =
     assert.equal(consultas(texto, SONDA), 2);
   });
 
+  it("el parámetro con VALOR POR DEFECTO es un alias más: sus usos cuentan, la firma no", () => {
+    // `function f(pc = window.__nefan.probeCollide)` liga igual que un `const`
+    // y con el detector de nodos era 1 para N llamadas; con el punto fijo sin
+    // `Parameter` seguía siéndolo (agujero declarado por el ingeniero al
+    // cerrar la tanda X y cerrado aquí, antes de QA). Cuenta también en una
+    // arrow y con un re-alias como valor por defecto.
+    const funcion = ["function f(pc = window.__nefan.probeCollide) { return [pc(1, 2), pc(3, 4)]; }"].join("\n");
+    assert.equal(consultas(funcion, SONDA), 2);
+    const arrow = ["const g = (pc = window.__nefan.probeCollide) => pc(1, 2);"].join("\n");
+    assert.equal(consultas(arrow, SONDA), 1);
+    const sinUso = "function h(pc = window.__nefan.probeCollide) { return 0; }";
+    assert.equal(consultas(sinUso, SONDA), 0, "la firma declara, no consulta");
+    const reAlias = ["const pc = window.__nefan.probeCollide;", "function k(q = pc) { return q(1, 2); }"].join("\n");
+    assert.equal(consultas(reAlias, SONDA), 1, "`q = pc` en la firma es un re-alias: la firma 0, la llamada 1");
+  });
+
   it("el string guardado en una const cuenta cada vez que viaja a ctx.nefan", () => {
     // La otra rama barata: `sonda.mjs` despacha por `hook[p]`, así que
     // `ctx.nefan(S, …)` con `S = "probeCollide"` es una consulta por sitio.
@@ -457,6 +482,16 @@ describe("el detector de sondas de movimiento cuenta SITIOS DE USO (#686)", () =
     // padrón; si esto pasa a contar más, hay que quitarlo de allí.
     const texto = ["const pc = window.__nefan.probeCollide;", "const libres = rumbos.map(pc);"].join("\n");
     assert.equal(consultas(texto, SONDA), 1, "el detector cuenta las llamadas de dentro de `map`: retira el punto (3)");
+    // La misma forma con una función propia: `f(pc)` es la referencia que se
+    // cuenta, y el parámetro `q` de `f`, SIN inicializador, no liga nada. Es
+    // el caso que el coordinador pidió cerrar o declarar: se declara aquí y
+    // en el punto (3) del padrón, con su cifra.
+    const porParametro = [
+      "const pc = window.__nefan.probeCollide;",
+      "const f = (q) => [q(1, 2), q(3, 4), q(5, 6)];",
+      "f(pc);",
+    ].join("\n");
+    assert.equal(consultas(porParametro, SONDA), 1, "el detector sigue el alias al parámetro de `f`: retira el punto (3)");
   });
 
   it("LÍMITE MEDIDO: el cruce de fichero cuenta 0 en el guion, porque no se resuelven imports", () => {
