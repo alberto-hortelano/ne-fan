@@ -27,7 +27,8 @@
  *
  *  Hoy lo sujeta `test/la-consulta-de-movimiento-tiene-dueno.test.ts` con
  *  `data/contract/sondas-de-movimiento.json`: parsea TODO `qa/**` con el árbol
- *  de sintaxis, cuenta NODOS (no texto), exige que cada aparición esté declarada
+ *  de sintaxis, cuenta SITIOS DE USO (las llamadas que cuelgan de un alias,
+ *  no el nombre escrito; #686), exige que cada consulta esté declarada
  *  con su cuenta EXACTA —o sea, las dos direcciones que estrenó el bloque 1— y
  *  corre en cada PR.
  *

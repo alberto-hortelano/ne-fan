@@ -26,12 +26,29 @@
  *  literal o un `join`/`resolve` con `"qa", "lib", "x.mjs"` como segmentos.
  *  Un string que contenga esas mismas letras es un string. El negativo que QA
  *  hizo a mano (sin `veredictos.test.ts`, `veredictos.mjs` queda huérfano) vive
- *  abajo como test permanente. */
+ *  abajo como test permanente.
+ *
+ *  Y EL BANCO ES `.mjs` Y SOLO `.mjs` (#686). Todo lo que decide «qué es el
+ *  banco» filtra por esa extensión: este test (`modulos`), el padrón de sondas
+ *  (`la-consulta-de-movimiento-tiene-dueno.test.ts`), otros seis tests de
+ *  `test/` que barren `qa/` (`esperas-de-qa`, `candados-headless-totalidad`,
+ *  `las-anclas-de-los-candados`, `esperas-que-conducen`,
+ *  `espera-de-fotogramas-con-dueno`, `el-banco-declara-el-modo-de-gasto`), las
+ *  siete reglas de `arch-rules.json` con glob `qa/**\/*.mjs` y su
+ *  `scan.roots`, el descubridor de guiones de `qa/run.mjs` y el job
+ *  `candados-headless`. Node 24 ejecuta un `.ts` sin tsx, así que un
+ *  `qa/lib/x.ts` importado desde un guion `.mjs` correría de verdad y sería
+ *  INVISIBLE para los diecinueve. En vez de enseñar la extensión a cada uno
+ *  —y dejar abiertos `.js`, `.cjs`, `.mts`, `.cts`—, se hace inexpresable el
+ *  estado malo: bajo `qa/` (fuera de `node_modules` y de los directorios con
+ *  punto) solo caben las extensiones de la lista blanca de abajo, y
+ *  cualquier otra es rojo aquí. Es «la garantía va en el tipo» aplicada al
+ *  banco: los diecinueve quedan correctos por construcción. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
 
@@ -100,6 +117,39 @@ export function importsDeQaLib(textoDelTest: string): Set<string> {
   };
   visita(ts.createSourceFile("test.ts", textoDelTest, ts.ScriptTarget.Latest, true));
   return vistos;
+}
+
+/** Las extensiones que pueden vivir bajo `qa/`. Un `.mjs` es el banco; lo
+ *  demás son datos (`.json`), prosa (`.md`) y las capturas de una corrida
+ *  (`.png`, `.jpg`). Si hace falta ampliarla, que sea con algo que Node NO
+ *  ejecute: una extensión ejecutable aquí reabre el agujero de #686 para los
+ *  diecinueve sitios que filtran por `.mjs`. */
+export const EXTENSIONES_DEL_BANCO: ReadonlySet<string> = new Set(["mjs", "md", "json", "png", "jpg"]);
+
+/** De estas rutas, las que llevan una extensión fuera de la lista blanca (o
+ *  ninguna). Puro sobre la lista, para poder probarlo con rutas sintéticas. */
+export function extensionesForaneas(rutas: readonly string[]): string[] {
+  return rutas.filter((r) => {
+    const nombre = r.slice(r.lastIndexOf("/") + 1);
+    const punto = nombre.lastIndexOf(".");
+    return punto <= 0 || !EXTENSIONES_DEL_BANCO.has(nombre.slice(punto + 1));
+  });
+}
+
+/** TODOS los ficheros bajo `dir` (ruta relativa a `raiz`, con `/`), saltando
+ *  solo `node_modules` y los directorios con punto (`qa/.tmp/`). A diferencia
+ *  de `fuentesDelBanco` del test del padrón, NO filtra por extensión ni salta
+ *  `capturas/`: es el barrido que decide qué extensiones EXISTEN. */
+export function ficherosBajo(dir: string, raiz: string = dir, out: string[] = []): string[] {
+  for (const e of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (e.isDirectory()) {
+      if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+      ficherosBajo(join(dir, e.name), raiz, out);
+    } else {
+      out.push(relative(raiz, join(dir, e.name)).split(sep).join("/"));
+    }
+  }
+  return out;
 }
 
 /** módulo → tests (nombres de fichero) que lo importan, sobre los tests dados. */
@@ -215,6 +265,55 @@ describe("qa/lib tiene quien lo mire (#357)", () => {
       plan.sin_mutar.map((e) => e.fichero).filter((f) => /(^|\/)qa\//.test(f)),
       [],
       "qa/ no necesita exención en sin_mutar: nunca estuvo en el perímetro",
+    );
+  });
+});
+
+describe("el banco es .mjs y solo .mjs (#686)", () => {
+  const QA = join(repoRoot, "qa");
+  const todos = ficherosBajo(QA);
+
+  it("el árbol tiene sujeto: el barrido ve los guiones, la raíz y lib", () => {
+    // Sin esto, un barrido sobre el directorio equivocado aprobaría la lista
+    // blanca sobre cero ficheros. Hoy son 213 sin capturas (209 .mjs + 3 .json
+    // + 1 .md) y ~15.000 con ellas.
+    assert.ok(todos.length > 100, `solo ${todos.length} ficheros bajo ${QA} — ¿se movió el banco?`);
+    assert.ok(todos.some((f) => f.startsWith("guiones/") && f.endsWith(".mjs")), "no ve los guiones");
+    assert.ok(todos.some((f) => f.startsWith("lib/") && f.endsWith(".mjs")), "no ve qa/lib");
+    assert.ok(todos.some((f) => !f.includes("/")), "no ve la raíz de qa/");
+    assert.deepEqual(todos.filter((f) => f.startsWith(".") || f.includes("node_modules/")), []);
+  });
+
+  it("bajo qa/ no hay ninguna extensión fuera de la lista blanca", () => {
+    const foraneas = extensionesForaneas(todos.map((f) => `qa/${f}`));
+    assert.deepEqual(
+      foraneas,
+      [],
+      `${foraneas.length} fichero(s) bajo qa/ con extensión fuera de {${[...EXTENSIONES_DEL_BANCO].join(", ")}}: ` +
+        `${foraneas.slice(0, 5).join(", ")}${foraneas.length > 5 ? ", …" : ""}. El banco es .mjs y solo .mjs: ` +
+        `los diecinueve sitios que deciden «qué es el banco» filtran por esa extensión y un .ts/.js/.cjs ` +
+        `correría de verdad sin que ninguno lo viera (#686). Si el fichero NO es ejecutable, amplía ` +
+        `EXTENSIONES_DEL_BANCO en este test; si lo es, escríbelo en .mjs.`,
+    );
+  });
+
+  it("SABE PONERSE ROJO: un .ts en lib, un .js suelto y un .cjs salen señalados; el .mjs y los datos no", () => {
+    // El negativo sintético del criterio 4 de #686: exactamente lo que
+    // `touch qa/lib/x.ts` haría en el árbol real (probado a mano al nacer).
+    assert.deepEqual(
+      extensionesForaneas([
+        "qa/lib/x.ts",
+        "qa/a.js",
+        "qa/lib/b.cjs",
+        "qa/guiones/1.mjs",
+        "qa/portadas.json",
+        "qa/README.md",
+        "qa/capturas/2026-09-18T00-00-00-000Z-1/01.png",
+        "qa/lib/c.mts",
+        "qa/SIN-EXTENSION",
+        "qa/lib/.oculto.ts",
+      ]),
+      ["qa/lib/x.ts", "qa/a.js", "qa/lib/b.cjs", "qa/lib/c.mts", "qa/SIN-EXTENSION", "qa/lib/.oculto.ts"],
     );
   });
 });
