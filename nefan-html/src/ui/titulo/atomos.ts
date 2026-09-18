@@ -43,17 +43,27 @@
  *       común, que es el god-file repartido empezando otra vez); o
  *    2. el censo de exports con DOS O MÁS dueños baja de la mitad.
  *
- *  Hoy son **9 de 16**, RECONTADO con los dos `grep` de abajo el 2026-09-18:
- *  eran 9 de 17 y `BADGE_CSS` se fue en #663 a `ui/atomos-de-html.ts`, un nivel
- *  por debajo de esta carpeta, porque su segundo dueño dejó de ser una hoja del
- *  título (`ui/tarjeta-de-partida.ts`). Los escapes cuentan como UN export
- *  —la línea de re-export—, y siguen teniendo siete dueños. «Dueño» es una HOJA
- *  de `ui/titulo/` que lo importa: ni el enrutador ni este fichero cuentan. Los
- *  SIETE que no llegan a dos son exactamente las dos excepciones de arriba —los
- *  cinco de la tarjeta de mundo (`worldCardHtml`, `generationChipsHtml`,
- *  `COVER_BOX`, `COVER_MARK_CSS`, `marcadorHtml`)— más las dos URL de servicio:
- *  o sea que hoy el censo no tiene ni un hueco sin motivo escrito, y esa es la
- *  condición que el punto 1 vigila. El número se RECUENTA, no se cree:
+ *  Hoy son **8 de 15 por LÍNEA** (53 %) y **9 de 16 por SÍMBOLO** (56 %),
+ *  RECONTADO con los dos `grep` de abajo el 2026-09-18 y no copiado de ningún
+ *  sitio: eran 9 de 17 y en #663 se fueron DOS líneas, las dos del grupo que
+ *  toca. `BADGE_CSS` bajó a `ui/atomos-de-html.ts` —un nivel por debajo de esta
+ *  carpeta— porque su segundo dueño dejó de ser una hoja del título
+ *  (`ui/tarjeta-de-partida.ts`), y era uno de los que NO llegaban a dos. Y los
+ *  escapes, que viven allí desde el mismo corte, vuelven aquí en UNA línea de
+ *  re-export en vez de dos declaraciones, así que dos líneas del grupo de
+ *  arriba se hicieron una: por eso el numerador baja aunque no haya perdido ni
+ *  un dueño (`escapeHtml` sigue teniendo ocho y `escapeAttr` dos). Las dos
+ *  formas de contar están escritas porque dan números distintos y ninguna es
+ *  «la buena»; la que produce el `grep` de abajo es la de LÍNEA, y es la que
+ *  manda para la señal 2 — que NO se dispara: 8 de 15 sigue por encima de la
+ *  mitad, y por poco, así que el siguiente export con un solo dueño la cruza.
+ *  «Dueño» es una HOJA de `ui/titulo/` que lo importa: ni el enrutador ni este
+ *  fichero cuentan. Los SIETE que no llegan a dos son exactamente las dos
+ *  excepciones de arriba —los cinco de la tarjeta de mundo (`worldCardHtml`,
+ *  `generationChipsHtml`, `COVER_BOX`, `COVER_MARK_CSS`, `marcadorHtml`)— más
+ *  las dos URL de servicio: o sea que hoy el censo no tiene ni un hueco sin
+ *  motivo escrito, y esa es la condición que el punto 1 vigila. El número se
+ *  RECUENTA, no se cree:
  *
  *      grep -c "^export " nefan-html/src/ui/titulo/atomos.ts
  *      grep -lw <export> nefan-html/src/ui/titulo/*.ts | grep -v atomos.ts | wc -l
