@@ -80,7 +80,18 @@
  *     abierto → ✘ «el BRIDGE RECHAZÓ el frame por unicast … [protocolo] El
  *     juego mandó un mensaje que el servidor no reconoce».
  *   · `handleRequestTile` ignorando el mensaje → ✘ a los 90 s (dos esperas,
- *     181 s medidos) con el libro entero y «el cliente nunca supo de este tile».
+ *     181 s medidos) con el libro entero y «no hay constancia de este tile».
+ *  Y TRES MÁS del repaso de QA, que son los estados en los que el veredicto
+ *  AFIRMABA de más («y el bridge no dijo nada de él»):
+ *   · `delay_ms: 120000` — el tile va LENTO, no muere. El bridge difunde
+ *     `generating` y el `TileLedger` no lo apunta, así que desde aquí es
+ *     indistinguible de muerto: el ✘ lo DICE en vez de acusar al bridge.
+ *   · `tx + 0.5` — coords no enteras. El frame PASA el intake (`tx` es
+ *     `z.number()` sin `.int()`), el bridge difunde el error sin campo `tile` y
+ *     el cliente no deja episodio: `rechazos=[]` lo prueba.
+ *   · `broadcastNarrative` sellando con otra sesión solo lo de `tile_1_0` → el
+ *     ✘ dice «el bridge SÍ habló y el CLIENTE lo TIRÓ (1 evento, 1 status)»,
+ *     que es la familia #673/#659 y antes salía como silencio del bridge.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

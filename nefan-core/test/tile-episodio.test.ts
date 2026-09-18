@@ -37,17 +37,27 @@ type Veredicto = {
   libro: Episodio[];
   rechazos: unknown[];
   tiles: string[];
+  descartados: { n: number; status: number; total: number; medido: boolean };
+  expiro: boolean;
+  ms: number | null;
 };
 
 const mod = (await import(join(repoRoot, "qa", "lib", "tile-episodio.mjs"))) as {
   LLEGADO: string;
   FALLO: string;
   RECHAZADO: string;
+  DESCARTADO: string;
   CALLADO: string;
   veredictoDeTile: (entrada?: unknown) => Veredicto;
   fraseDeTile: (v: unknown) => string;
 };
-const { LLEGADO, FALLO, RECHAZADO, CALLADO, veredictoDeTile, fraseDeTile } = mod;
+const { LLEGADO, FALLO, RECHAZADO, DESCARTADO, CALLADO, veredictoDeTile, fraseDeTile } = mod;
+
+/** La OTRA mitad del cable de #609: quien decide si un rojo bajo carga se puede
+ *  llamar una expiración de presupuesto. Se importa para afirmar que encajan. */
+const carga = (await import(join(repoRoot, "qa", "lib", "carga.mjs"))) as {
+  firmaDePresupuesto: (fallos: unknown[]) => boolean;
+};
 
 const ep = (key: string, extra: Partial<Episodio> = {}): Episodio => ({
   key,
@@ -143,7 +153,7 @@ describe("veredictoDeTile · los cuatro desenlaces de un request_tile", () => {
     assert.equal(v.motivo, '"basura cruda"');
   });
 
-  it("CALLADO con episodio: el cliente lo tiene apuntado y el bridge no dijo nada", () => {
+  it("CALLADO con episodio: el cliente lo tiene apuntado y no hay constancia de más", () => {
     const v = veredictoDeTile({
       key: "tile_1_0",
       tiles: ["tile_0_0"],
@@ -151,7 +161,7 @@ describe("veredictoDeTile · los cuatro desenlaces de un request_tile", () => {
       rechazos: [],
     });
     assert.equal(v.estado, CALLADO);
-    assert.match(fraseDeTile(v), /el bridge NO DIJO NADA de este tile/);
+    assert.match(fraseDeTile(v), /lo tiene apuntado como pedido y sigue sin llegada y sin error/);
   });
 
   it("CALLADO sin episodio: el cliente nunca supo de este tile, y eso tiene su propio texto", () => {
@@ -161,8 +171,8 @@ describe("veredictoDeTile · los cuatro desenlaces de un request_tile", () => {
     const v = veredictoDeTile({ key: "tile_-1_-1", tiles: ["tile_0_0"], episodios: [], rechazos: [] });
     assert.equal(v.estado, CALLADO);
     assert.equal(v.episodio, null);
-    assert.match(fraseDeTile(v), /el cliente nunca supo de este tile/);
-    assert.match(fraseDeTile(v), /la petición va por un socket del\s+guion/);
+    assert.match(fraseDeTile(v), /el cliente nunca supo de él/);
+    assert.match(fraseDeTile(v), /la petición va por un socket del guion/);
   });
 });
 
@@ -224,8 +234,147 @@ describe("veredictoDeTile · fail-loud de la lectura", () => {
 
   it("fraseDeTile con un estado que no existe LANZA, en vez de devolver texto vacío", () => {
     assert.throws(
-      () => fraseDeTile({ estado: "inventado", tiles: [], libro: [], rechazos: [] }),
+      () =>
+        fraseDeTile({
+          estado: "inventado",
+          tiles: [],
+          libro: [],
+          rechazos: [],
+          descartados: { n: 0, status: 0, total: 0, medido: true },
+          expiro: false,
+          ms: null,
+        }),
       /estado desconocido/,
     );
+  });
+});
+
+describe("veredictoDeTile · el cliente que TIRA lo que el bridge dijo (#312, QA H-1b)", () => {
+  // Sin esta rama, un status con sello de otra partida —la familia #673/#659—
+  // salía como «callado» y el ✘ acusaba al bridge de no haber hablado cuando
+  // quien no escuchaba era el cliente.
+  it("un descarte en la ventana es DESCARTADO, no callado", () => {
+    const v = veredictoDeTile({
+      key: "tile_1_0",
+      tiles: ["tile_0_0"],
+      episodios: [],
+      rechazos: [],
+      descartados: { n: 0, status: 3 },
+    });
+    assert.equal(v.estado, DESCARTADO);
+    assert.match(fraseDeTile(v), /el bridge SÍ habló y el CLIENTE lo TIRÓ/);
+    // Y dice hasta dónde llega lo medido: son contadores de sesión, no un libro
+    // por key. Sin esta frase el veredicto afirmaría más de lo que sabe.
+    assert.match(fraseDeTile(v), /CONTADORES de sesión, no un libro por key/);
+  });
+
+  it("FALLO gana a DESCARTADO: el episodio es de ESTA key y el contador solo de la ventana", () => {
+    const v = veredictoDeTile({
+      key: "tile_1_0",
+      tiles: [],
+      episodios: [ep("tile_1_0", { error: "el motor lo rechazó" })],
+      rechazos: [],
+      descartados: { n: 1, status: 1 },
+    });
+    assert.equal(v.estado, FALLO);
+  });
+
+  it("un delta de 0 no es evidencia de nada, y uno negativo tampoco", () => {
+    const cero = veredictoDeTile({ key: "t", tiles: [], descartados: { n: 0, status: 0 } });
+    assert.equal(cero.estado, CALLADO);
+    // Negativo = alguien reseteó el cliente a mitad. Se lee como cero, NUNCA
+    // como evidencia al revés.
+    const neg = veredictoDeTile({ key: "t", tiles: [], descartados: { n: -4, status: -1 } });
+    assert.equal(neg.estado, CALLADO);
+    assert.equal(neg.descartados.total, 0);
+  });
+
+  it("sin medir los descartes se DICE, y no se colapsa con «hubo cero»", () => {
+    const sin = veredictoDeTile({ key: "t", tiles: [] });
+    assert.equal(sin.descartados.medido, false);
+    assert.match(fraseDeTile(sin), /descartes en la ventana=sin medir/);
+    const con = veredictoDeTile({ key: "t", tiles: [], descartados: { n: 0, status: 0 } });
+    assert.equal(con.descartados.medido, true);
+    assert.match(fraseDeTile(con), /descartes en la ventana=0\+0/);
+  });
+});
+
+describe("fraseDeTile · lo que el ✘ puede AFIRMAR (QA H-1)", () => {
+  // El hallazgo entero: «y el bridge no dijo nada de él» era FALSO en tres
+  // estados vivos, y el primero es el más probable de #656 — el tile que va
+  // LENTO, porque el `TileLedger` solo apunta `ready` y `error` y el
+  // `generating` que el bridge difunde no deja rastro que este juicio pueda ver.
+  it("NO afirma que el bridge callara", () => {
+    const frase = fraseDeTile(veredictoDeTile({ key: "tile_1_0", tiles: [], descartados: { n: 0, status: 0 } }));
+    assert.doesNotMatch(frase, /el bridge no dijo nada/);
+    assert.match(frase, /NO HAY CONSTANCIA/);
+    assert.match(frase, /no es lo mismo que «el bridge calló»/);
+  });
+
+  it("y nombra los dos puntos ciegos que lo harían falso", () => {
+    const frase = fraseDeTile(veredictoDeTile({ key: "tile_1_0", tiles: [], descartados: { n: 0, status: 0 } }));
+    assert.match(frase, /va LENTO/, "el generating no lo apunta el TileLedger");
+    assert.match(frase, /SIN campo `tile`/, "coords no enteras: el error se difunde sin tile");
+  });
+});
+
+describe("EL CABLE de vuelta: `fraseDeTile` → `firmaDePresupuesto` (QA H-2)", () => {
+  // `ctx.absorbe` consume la expiración, así que el texto del rojo ya no es el
+  // `timeout esperando:` que escribía el runner sino éste. Sin firma, el
+  // reproductor bajo carga declaraba «no atribuible a #545» una espera que se
+  // había comido 90 s de presupuesto — el mismo defecto que esta PR arregló en
+  // `esperarRegistro`, reintroducido por la otra punta.
+  const expirado = () =>
+    veredictoDeTile({
+      key: "tile_-1_-1",
+      tiles: ["tile_0_0"],
+      episodios: [],
+      rechazos: [],
+      descartados: { n: 0, status: 0 },
+      expiro: true,
+      ms: 90_000,
+    });
+
+  it("un ✘ que EXPIRÓ lleva firma de presupuesto", () => {
+    const frase = fraseDeTile(expirado());
+    assert.match(frase, /la espera expiró a los 90000 ms/);
+    assert.equal(
+      carga.firmaDePresupuesto([frase]),
+      true,
+      `el reproductor bajo carga no reconoce esta expiración de 90 s: ${frase}`,
+    );
+  });
+
+  it("y un ✘ que NO expiró NO la lleva: un defecto real no se disfraza de #545", () => {
+    // La mentira simétrica, y es la cara que importa: el ✘ de 179 ms con el
+    // motor falso en `mode:"error"` es un fallo del juego, no un presupuesto
+    // agotado. Estamparle la firma lo atribuiría a #545.
+    const frase = fraseDeTile(
+      veredictoDeTile({
+        key: "tile_1_0",
+        tiles: [],
+        episodios: [ep("tile_1_0", { error: "El motor narrativo no pudo construirlo" })],
+        rechazos: [],
+        descartados: { n: 0, status: 0 },
+        expiro: false,
+        ms: 90_000,
+      }),
+    );
+    assert.match(frase, /la espera paró sola \(no expiró/);
+    assert.equal(carga.firmaDePresupuesto([frase]), false);
+  });
+
+  it("control negativo del cable: el texto SIN el reloj no la lleva", () => {
+    // Sin esto, el primer aserto no distinguiría «lo arreglamos» de
+    // «firmaDePresupuesto casa con cualquier cosa».
+    const sinReloj = "NO HAY CONSTANCIA de este tile · tiles en el mundo=[] · episodios=(vacío)";
+    assert.equal(carga.firmaDePresupuesto([sinReloj]), false);
+  });
+
+  it("el presupuesto se ESCRIBE en el ✘: leyendo el rojo se sabe cuánto se esperó", () => {
+    assert.match(fraseDeTile(expirado()), /90000 ms/);
+    // Y sin presupuesto declarado se dice, en vez de inventar un número.
+    const sinMs = veredictoDeTile({ key: "t", tiles: [], expiro: true });
+    assert.match(fraseDeTile(sinMs), /EXPIRÓ \(sin presupuesto declarado\)/);
   });
 });

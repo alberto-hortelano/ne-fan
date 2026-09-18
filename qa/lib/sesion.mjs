@@ -626,9 +626,12 @@ export const MS_DEL_TILE = 90_000;
  *
  *  Sustituye al `pedirYEsperar` que el 120 y el 127 tenían copiado (#656). La
  *  diferencia no es el reloj: es que aquel esperaba con un predicado de UN
- *  desenlace y al expirar no decía nada. Aquí hay TRES bocas por las que puede
- *  morir un `request_tile` y las tres tienen texto — ver la cabecera de
- *  `qa/lib/tile-episodio.mjs`, donde vive el juicio, puro y medido.
+ *  desenlace y al expirar no decía nada. Aquí hay CUATRO bocas por las que
+ *  puede morir un `request_tile` y las cuatro tienen texto — ver la cabecera de
+ *  `qa/lib/tile-episodio.mjs`, donde vive el juicio, puro y medido. La cuarta
+ *  («no hay constancia») se dice con cuidado a propósito: no afirma que el
+ *  bridge callara, porque desde aquí no se puede saber (el `TileLedger` no
+ *  apunta el `generating`).
  *
  *  **El socket se queda ABIERTO durante la espera**, y ése es el arreglo de la
  *  segunda boca: un frame que no pasa el contrato lo contesta el bridge por
@@ -678,11 +681,24 @@ export async function pedirYEsperarTile(ctx, key, tx, ty, { ms = MS_DEL_TILE } =
     [tx, ty],
   );
 
+  // MARCA DE AGUA de los descartes (#312), no el total: el contador es de la
+  // SESIÓN entera y lo mueven los demás guiones, así que lo único atribuible a
+  // esta petición es el DELTA de su ventana. Mismo criterio que la marca del
+  // log del bridge en el 120 y el 127.
+  const descartesAntes = await ctx.page.evaluate(() => window.__nefan.descartados());
+
   const desc = `el tile ${key} llega al mundo del cliente`;
-  // La espera para en CUALQUIERA de los tres desenlaces, no solo en el bueno:
-  // con el motor falso en `mode:"error"` el rojo sale en menos de 2 s en vez de
-  // quemar los 90.
-  await ctx.absorbe(
+  // La espera para en CUALQUIERA de los desenlaces que sabemos ver, no solo en
+  // el bueno: con el motor falso en `mode:"error"` el rojo sale en menos de 2 s
+  // en vez de quemar los 90.
+  //
+  // `absorbe` devuelve `null` EXACTAMENTE cuando expiró, y ese dato viaja al
+  // veredicto: es lo que hace que el ✘ lleve la firma de presupuesto cuando le
+  // corresponde — y solo entonces. Con la expiración consumida aquí, el texto
+  // del rojo es el de `fraseDeTile` y ya no el `timeout esperando:` que
+  // escribía el runner, así que sin esto el reproductor bajo carga volvía a
+  // decir «no atribuible a #545» de una espera de 90 s (QA, H-2).
+  const parada = await ctx.absorbe(
     "la medida vive en el `ctx.expect` de pedirYEsperarTile que va justo debajo: juzga el veredicto " +
       "del tile (llegado/fallo/rechazado/callado) leyendo el libro de episodios del cliente, y exige " +
       "`llegado`, que es el MISMO predicado que esta espera",
@@ -704,19 +720,24 @@ export async function pedirYEsperarTile(ctx, key, tx, ty, { ms = MS_DEL_TILE } =
       ),
   );
 
-  const leido = await ctx.page.evaluate((k) => {
-    const hook = window.__nefan;
-    const ws = window.__qaTileSocket;
-    if (ws) ws.close();
-    return {
-      key: k,
-      tiles: hook.tiles ?? null,
-      episodios: hook.tileEpisodios ?? [],
-      rechazos: window.__qaTileRechazos ?? [],
-    };
-  }, key);
+  const leido = await ctx.page.evaluate(
+    ([k, antes]) => {
+      const hook = window.__nefan;
+      const ws = window.__qaTileSocket;
+      if (ws) ws.close();
+      const ahora = hook.descartados();
+      return {
+        key: k,
+        tiles: hook.tiles ?? null,
+        episodios: hook.tileEpisodios ?? [],
+        rechazos: window.__qaTileRechazos ?? [],
+        descartados: { n: ahora.n - antes.n, status: ahora.status - antes.status },
+      };
+    },
+    [key, descartesAntes],
+  );
 
-  const v = veredictoDeTile(leido);
+  const v = veredictoDeTile({ ...leido, expiro: parada === null, ms });
   ctx.expect(desc, v.estado === LLEGADO, fraseDeTile(v));
   return v;
 }
