@@ -18,16 +18,20 @@
  *      anclado (`ANCHORED_PLACE_RECT`) cae en campo abierto al sur de su casa
  *      —centro (64, 7), `ocupado = false`—. Los guiones 08 y 09 recorren el
  *      viaje entero sin poder verlo.
- *   2. **La sonda.** El 09 afirma *«el punto de aparición de la vuelta no es
+ *   2. **La sonda.** El 09 afirmaba *«el punto de aparición de la vuelta no es
  *      sólido»* con `probeCollide(pos.x, pos.z)`, y eso es
  *      `collidesAt(playerPos → playerPos)`: un movimiento de un punto a SÍ
  *      MISMO. La regla de celdas exime las que ya se solapaban, así que ese
- *      aserto vale **false también en el centro macizo de un edificio**
+ *      aserto valía **false también en el centro macizo de un edificio**
  *      (medido con la consulta de MOVIMIENTO de entonces, que para un paso de
  *      un punto a sí mismo daba `false` a la vez que los cuatro pasos de 0,5 m
- *      estaban bloqueados). Ese aserto no puede ponerse rojo por #616.
+ *      estaban bloqueados). Ese aserto no podía ponerse rojo por #616.
  *      (Esa consulta murió con la PR G1 de esta misma tanda; su nombre no se
  *      escribe aquí porque `campos-retirados-no-vuelven` lo canda en `qa/`.)
+ *      **El 08 y el 09 preguntan por `probePoint` desde #662**, así que su
+ *      aserto ya puede ponerse rojo; este guion sigue haciendo falta porque
+ *      mide lo otro —el observable del jugador, `blocked` y metros andados— y
+ *      porque la ceguera 1, la geométrica, no la arregla ninguna sonda.
  *
  *  Este guion arregla las dos: **pone el ancla sobre un edificio MACIZO** por
  *  el State API —el mismo `map_upsert_place` que usa el motor, que es lo que

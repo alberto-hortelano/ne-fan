@@ -189,11 +189,11 @@ async function fotoDelSuelo(ctx) {
   const origen = await posicion(ctx);
   const celdas = await ctx.page.evaluate(
     ({ o, paso, ax, az }) => {
-      const pc = window.__nefan.probePoint;
+      const punto = window.__nefan.probePoint;
       const filas = [];
       for (let z = 0; z >= -az; z -= paso) {
         const fila = [];
-        for (let x = -ax; x <= ax; x += paso) fila.push(pc(o.x + x, o.z + z) ? 1 : 0);
+        for (let x = -ax; x <= ax; x += paso) fila.push(punto(o.x + x, o.z + z) ? 1 : 0);
         filas.push(fila);
       }
       return filas;
@@ -240,12 +240,12 @@ const sondear = (ctx, punto) =>
  *  del 91, que la arregló primero (#644). */
 async function paredMedida(ctx, obj) {
   return ctx.page.evaluate((e) => {
-    const pc = window.__nefan.probePoint;
+    const punto = window.__nefan.probePoint;
     const paso = 0.05;
     return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => {
       let d = 0;
       for (; d <= 8; d = Number((d + paso).toFixed(2))) {
-        if (!pc(e.pos.x + dx * d, e.pos.z + dz * d)) break;
+        if (!punto(e.pos.x + dx * d, e.pos.z + dz * d)) break;
       }
       return d;
     });

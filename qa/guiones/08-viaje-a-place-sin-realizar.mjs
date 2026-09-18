@@ -159,9 +159,18 @@ export default async function (ctx) {
       llegada.pos.z >= antes.rect.minZ && llegada.pos.z < antes.rect.maxZ),
     `${JSON.stringify(llegada.pos)} vs ${JSON.stringify(antes.rect)}`,
   );
+  // El jugador está EN el punto que se sonda justo debajo, y por eso la sonda es
+  // `probePoint` y no `probeCollide` (#662): la consulta de MOVIMIENTO contesta
+  // «libre» por donde uno ya está, así que este aserto no podía ponerse rojo. La
+  // distancia se imprime para que se vea, en vez de tener que creérselo.
+  const dAlPunto = await ctx.page.evaluate((q) => {
+    const p = window.__nefan.state().pos;
+    return Math.hypot(p.x - q.x, p.z - q.z);
+  }, { x: llegada.pos.x, z: llegada.pos.z });
+  ctx.log(`donde deja el viaje: el jugador está a ${dAlPunto.toFixed(4)} m del punto que se sonda`);
   ctx.expect(
     "el punto de aparición no es sólido (no aparece incrustado)",
-    (await ctx.nefan("probeCollide", llegada.pos.x, llegada.pos.z)) === false,
+    (await ctx.nefan("probePoint", llegada.pos.x, llegada.pos.z)) === false,
     JSON.stringify(llegada.pos),
   );
 

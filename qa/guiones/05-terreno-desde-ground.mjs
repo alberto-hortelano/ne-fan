@@ -124,7 +124,7 @@ export default async function (ctx) {
         const ch = g.grid[r][c];
         acc[ch] ??= { total: 0, bloquea: 0 };
         acc[ch].total++;
-        if (window.__nefan.probeCollide(ox + (c + 0.5) * m, oz + (r + 0.5) * m)) acc[ch].bloquea++;
+        if (window.__nefan.probePoint(ox + (c + 0.5) * m, oz + (r + 0.5) * m)) acc[ch].bloquea++;
       }
     }
     return acc;
@@ -157,7 +157,7 @@ export default async function (ctx) {
       if (rAgua < 0) return null;
       let libres = [];
       for (let r = rAgua + 1; r < g.grid.length; r++) {
-        if (!window.__nefan.probeCollide(x, zDe(r))) libres.push(r);
+        if (!window.__nefan.probePoint(x, zDe(r))) libres.push(r);
         else if (libres.length >= 4) break;
         else libres = [];
       }
@@ -171,7 +171,7 @@ export default async function (ctx) {
 
   await ctx.nefan("setPlayerPos", salida.x, salida.zSalida);
   await ctx.nefan("setYaw", Math.PI); // forward = −Z = hacia el norte, contra el agua
-  ctx.expect("el punto de partida está libre", (await ctx.nefan("probeCollide", salida.x, salida.zSalida)) === false);
+  ctx.expect("el punto de partida está libre", (await ctx.nefan("probePoint", salida.x, salida.zSalida)) === false);
 
   // Carrera de DOS condiciones de estado, sin reloj: o el jugador se mete en el
   // agua (el fallo) o avanza medio metro hacia ella (la prueba de que empujaba

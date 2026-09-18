@@ -63,7 +63,7 @@ async function cruzarPorLaFila(ctx, r, debeCruzar, aserto, sim = 7) {
 
   await ctx.nefan("setPlayerPos", punto.xSalida, punto.z);
   await ctx.nefan("setYaw", Math.PI / 2); // forward = +X = este
-  const libre = (await ctx.nefan("probeCollide", punto.xSalida, punto.z)) === false;
+  const libre = (await ctx.nefan("probePoint", punto.xSalida, punto.z)) === false;
   const { ocurrio: cruzo } = await ctx.expectEspera(
     `el jugador llega al otro lado por la fila ${r}`,
     debeCruzar,

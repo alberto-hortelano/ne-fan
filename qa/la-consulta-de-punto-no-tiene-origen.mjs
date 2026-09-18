@@ -16,11 +16,14 @@
  *  jugador, que es un dato vivo.
  *
  *  La respuesta no es aparcar al jugador entre sondas: eso es un protocolo que
- *  hay que recordar en cada sitio, y el único ejemplar que lo hacía (el guion
- *  134) lo cumple a medias — pone el mirador UNA vez y tres de sus sondas
- *  corren desde donde dejó el empujón anterior. La respuesta es una pregunta
- *  que no tiene origen que olvidar: `CollisionSystem.ocupadoEn`, expuesta al
- *  banco como `window.__nefan.probePoint`.
+ *  hay que recordar en cada sitio, y los tres ejemplares que lo hacían lo
+ *  cumplían a medias — el guion 134 ponía su mirador UNA vez y tres de sus
+ *  sondas corrían desde donde dejó el empujón anterior; el 93 y el 45 lo
+ *  montaban a mano cada uno a su manera. **Los tres se retiraron en #662**
+ *  (tanda P) junto con sus sondas, así que hoy no queda ninguno: se habla de
+ *  ellos en pasado. La respuesta es una pregunta que no tiene origen que
+ *  olvidar: `CollisionSystem.ocupadoEn`, expuesta al banco como
+ *  `window.__nefan.probePoint`.
  *
  *  ## Qué afirma, y sobre qué
  *

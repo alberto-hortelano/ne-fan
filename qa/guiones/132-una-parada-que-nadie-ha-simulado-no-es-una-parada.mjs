@@ -98,7 +98,7 @@ export default async function (ctx) {
   ctx.expect("la fixture trae un edificio con huella contra el que empujar", Boolean(edificio), JSON.stringify(edificio));
   if (!edificio) return;
   const zBorde = await ctx.page.evaluate((o) => {
-    for (let z = o.z + 20; z > o.z; z -= 0.25) if (window.__nefan.probeCollide(o.x, z)) return z;
+    for (let z = o.z + 20; z > o.z; z -= 0.25) if (window.__nefan.probePoint(o.x, z)) return z;
     return null;
   }, edificio);
   ctx.expect("se encuentra su borde sur sondeando", zBorde !== null, String(zBorde));

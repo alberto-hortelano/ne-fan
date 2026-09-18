@@ -2,7 +2,7 @@
  *
  *  Es uno de los invariantes más repetidos del proyecto y hasta ahora solo se
  *  comprobaba a ojo. El guion no usa coordenadas mágicas: descubre el borde
- *  del edificio sondeando con probeCollide, así sigue valiendo si la fixture
+ *  del edificio sondeando con probePoint, así sigue valiendo si la fixture
  *  se reordena.
  *
  *  QUÉ FUENTE lo hace sólido, dicho aquí porque es lo que este guion no
@@ -10,7 +10,12 @@
  *  sale del GRID del plan (`planCollisionGrid`) y no de su caja — su caja no se
  *  aplica, y por eso los vanos y las puertas se cruzan (guion 45). La caja solo
  *  gobierna lo que el plan no pinta, o sea lo que el motor spawnea en runtime
- *  (guion 81, #489). Los dos caminos entran por el mismo `probeCollide`. */
+ *  (guion 81, #489). Los dos caminos entran por el mismo `probePoint`.
+ *
+ *  SONDEA POR PUNTO Y NO POR MOVIMIENTO (#662): «el punto de salida está libre»
+ *  se preguntaba con `probeCollide` justo después de aparcar ahí al jugador
+ *  —medido, distancia 0,0000 m—, y esa consulta contesta `false` por donde uno
+ *  ya está, así que el aserto no podía ponerse rojo. */
 
 /** La EXCEPCIÓN del guardarraíl de gasto (#295): este guion no le pide NADA
  *  al motor, así que el runner no lo gatea. El motivo va en el valor y no en
@@ -35,12 +40,12 @@ export default async function (ctx) {
   if (!objetivo) return;
   ctx.log(`objetivo: ${objetivo.id} en (${objetivo.x.toFixed(1)}, ${objetivo.z.toFixed(1)})`);
 
-  ctx.expect("el centro del edificio colisiona", (await ctx.nefan("probeCollide", objetivo.x, objetivo.z)) === true);
+  ctx.expect("el centro del edificio colisiona", (await ctx.nefan("probePoint", objetivo.x, objetivo.z)) === true);
 
   // Borde sur real, sondeado: desde 20 m al sur hacia el centro.
   const zBorde = await ctx.page.evaluate((o) => {
     for (let z = o.z + 20; z > o.z; z -= 0.25) {
-      if (window.__nefan.probeCollide(o.x, z)) return z;
+      if (window.__nefan.probePoint(o.x, z)) return z;
     }
     return null;
   }, objetivo);
@@ -50,7 +55,7 @@ export default async function (ctx) {
   const zSalida = zBorde + 4;
   await ctx.nefan("setPlayerPos", objetivo.x, zSalida);
   await ctx.nefan("setYaw", Math.PI); // forward = -Z = hacia el norte, contra el muro
-  ctx.expect("el punto de salida está libre", (await ctx.nefan("probeCollide", objetivo.x, zSalida)) === false);
+  ctx.expect("el punto de salida está libre", (await ctx.nefan("probePoint", objetivo.x, zSalida)) === false);
   await ctx.shot("antes-de-empujar");
 
   // Se espera por el FALLO: si el jugador logra meterse dentro de la huella,

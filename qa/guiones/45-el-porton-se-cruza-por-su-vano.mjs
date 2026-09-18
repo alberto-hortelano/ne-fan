@@ -106,32 +106,30 @@ export default async function (ctx) {
   }, porton.at);
   ctx.log(`portón en mundo: (${geo.x.toFixed(2)}, ${geo.z.toFixed(2)}) · mpc ${geo.mpc}`);
 
-  // El jugador se aparta ANTES de sondear: `probeCollide` pregunta por un
-  // MOVIMIENTO desde donde está («salir sí, entrar no»), así que una jamba con
-  // el jugador ya metido dentro se mediría como hueco — desde #616 porque el
-  // paso que REDUCE su penetración no se frena, y antes porque las celdas que
-  // ya solapaba quedaban eximidas. Cambia el motivo, no la precaución.
-  const zLejos = geo.z - 12;
-  await ctx.nefan("setPlayerPos", geo.x, zLejos);
-  await esperarFrames(ctx);
+  // Aquí se apartaba al jugador 12 m al norte (`zLejos`) antes de sondear,
+  // porque se preguntaba con `probeCollide`: un MOVIMIENTO desde donde está
+  // («salir sí, entrar no»), con el que una jamba con el jugador metido dentro
+  // se mediría como hueco. El protocolo se fue con la migración a `probePoint`
+  // (#662), que no tiene origen: se sondea desde donde el jugador esté y el
+  // vano mide lo mismo.
 
   // ── 3. El ancho REAL del vano, medido en el collider ─────────────────────
   const vano = await ctx.page.evaluate((g) => {
     const paso = 0.1;
     const borde = (signo) => {
       for (let d = 0; d <= 20; d += paso) {
-        if (window.__nefan.probeCollide(g.x + signo * d, g.z)) return d;
+        if (window.__nefan.probePoint(g.x + signo * d, g.z)) return d;
       }
       return null;
     };
-    return { oeste: borde(-1), este: borde(+1), centroLibre: !window.__nefan.probeCollide(g.x, g.z) };
+    return { oeste: borde(-1), este: borde(+1), centroLibre: !window.__nefan.probePoint(g.x, g.z) };
   }, geo);
   ctx.log(`vano sondeado: libre hasta ${vano.oeste} m al oeste y ${vano.este} m al este del eje`);
 
   ctx.expect(
     "el eje del portón está LIBRE: la muralla tiene un hueco donde declara su puerta",
     vano.centroLibre === true,
-    `probeCollide(${geo.x.toFixed(2)}, ${geo.z.toFixed(2)}) = ${!vano.centroLibre}`,
+    `probePoint(${geo.x.toFixed(2)}, ${geo.z.toFixed(2)}) = ${!vano.centroLibre}`,
   );
   ctx.expect(
     "el vano se cierra a los dos lados: hay JAMBA, no un boquete de lado a lado",
@@ -140,8 +138,9 @@ export default async function (ctx) {
   );
   if (vano.oeste === null || vano.este === null || !vano.centroLibre) return;
 
-  // El cuerpo del jugador ya va puesto en el sondeo (`probeCollide` infla el
-  // punto con PLAYER_RADIUS), así que cualquier hueco > 0 admite el cuerpo.
+  // El cuerpo del jugador ya va puesto en el sondeo (`probePoint` = `ocupadoEn`
+  // infla con PLAYER_RADIUS igual que `collidesAt`), así que cualquier hueco > 0
+  // admite el cuerpo.
   ctx.expect(
     "por el vano cabe el cuerpo del jugador",
     vano.oeste > 0 && vano.este > 0,
@@ -215,13 +214,13 @@ export default async function (ctx) {
   // hay muralla que cruzar.
   const xMuralla = geo.x + (porton.w / 2 + 5) * geo.mpc;
   const enMuro = await ctx.page.evaluate(
-    (p) => window.__nefan.probeCollide(p.x, p.z),
+    (p) => window.__nefan.probePoint(p.x, p.z),
     { x: xMuralla, z: geo.z },
   );
   ctx.expect(
     "la muralla, FUERA de la huella del portón, es MASA: el collider la ve sólida",
     enMuro === true,
-    `probeCollide(${xMuralla.toFixed(2)}, ${geo.z.toFixed(2)}) = ${enMuro}`,
+    `probePoint(${xMuralla.toFixed(2)}, ${geo.z.toFixed(2)}) = ${enMuro}`,
   );
 
   const porElMuro = await intentarCruzar(

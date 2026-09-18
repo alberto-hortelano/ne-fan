@@ -370,7 +370,7 @@ export default async function (ctx) {
 
   // ── 4. El muro de niebla de la frontera ─────────────────────────────────
   // Sin coordenadas mágicas: se busca un borde SIN vecino y un carril libre
-  // por el que caminar hasta él (probeCollide, igual que el guion 02).
+  // por el que caminar hasta él (probePoint, igual que el guion 02).
   const ruta = await ctx.page.evaluate(() => {
     const s = window.__nefan.scene;
     const m = /^tile_(-?\d+)_(-?\d+)$/.exec(s.scene_id ?? "");
@@ -399,7 +399,7 @@ export default async function (ctx) {
             const p = limite - signo * d;
             const x = horizontal ? p : lateral;
             const z = horizontal ? lateral : p;
-            if (window.__nefan.probeCollide(x, z)) { libre = false; break; }
+            if (window.__nefan.probePoint(x, z)) { libre = false; break; }
           }
           if (!libre) continue;
           const p0 = limite - signo * 11;

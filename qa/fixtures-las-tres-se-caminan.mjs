@@ -27,10 +27,12 @@
  *  Uso:  NEFAN_PORT_OFFSET=<n> node qa/fixtures-las-tres-se-caminan.mjs [--headed] [--keep]
  *  Cero créditos: sin ai_server, sin asset-store, sin generadores.
  *
- *  Probado en negativo (2026-09-05): con `probeCollide` devolviendo siempre
- *  `false` desde la página (monkeypatch de `window.__nefan.probeCollide` antes
- *  de medir), el paso 4 se pone rojo en las tres fixtures; con la tecla no
- *  pulsada (`press` omitido), el paso 3.
+ *  Probado en negativo (2026-09-05): con la sonda de colisión devolviendo
+ *  siempre `false` desde la página (monkeypatch del hook antes de medir), el
+ *  paso 4 se pone rojo en las tres fixtures; con la tecla no pulsada (`press`
+ *  omitido), el paso 3. Las dos sondas del paso 4 preguntan por `probePoint`
+ *  desde #662: eran `probeCollide`, y con el jugador puesto en `__player_start`
+ *  —medido, distancia 0,0000 m— «el spawn no colisiona» era tautológico.
  */
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
@@ -111,12 +113,12 @@ async function medirFixture(page, ctx, fixture, fallos) {
   // sondear: se DECLARA, no se pinta de rojo (regla 6 de qa/README.md).
   if (!objetivo) console.log(`· ${fixture}: ⊘ sin objetos con huella — la colisión contra edificio no se mide en esta fixture`);
   else {
-    const dentro = await ctx.nefan("probeCollide", objetivo.x, objetivo.z);
+    const dentro = await ctx.nefan("probePoint", objetivo.x, objetivo.z);
     if (dentro !== true) f(`el centro de ${objetivo.id} (${objetivo.cat}) NO colisiona`);
   }
   const spawn = escena.spawn;
   if (spawn) {
-    const libre = await ctx.nefan("probeCollide", spawn.x, spawn.z);
+    const libre = await ctx.nefan("probePoint", spawn.x, spawn.z);
     if (libre !== false) f(`el spawn del jugador (${spawn.x}, ${spawn.z}) colisiona`);
   }
 

@@ -240,10 +240,10 @@ async function pelearContra(
   // de abajo diría "no se puede pelear" cuando lo que pasa es que el bench
   // colocó mal al enemigo.
   const cuna = await ctx.page.evaluate(
-    ([x, z]) => window.__nefan.probeCollide(x, z),
+    ([x, z]) => window.__nefan.probePoint(x, z),
     [enemigo.pos.x, enemigo.pos.z],
   );
-  const dondeNace = `probeCollide(${enemigo.pos.x.toFixed(2)}, ${enemigo.pos.z.toFixed(2)}) = ${cuna}`;
+  const dondeNace = `probePoint(${enemigo.pos.x.toFixed(2)}, ${enemigo.pos.z.toFixed(2)}) = ${cuna}`;
   if (cunaEsPrecondicion) {
     ctx.expect(
       `${etiqueta}: el enemigo nace en suelo libre (empotrado no podría pelear, y el rojo mentiría)`,

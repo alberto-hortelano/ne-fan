@@ -267,7 +267,7 @@ export default async function (ctx) {
   ctx.expect("la fixture trae un edificio contra el que empujar", Boolean(edificio), JSON.stringify(edificio));
   if (!edificio) return;
   const zBorde = await ctx.page.evaluate((o) => {
-    for (let z = o.z + 20; z > o.z; z -= 0.25) if (window.__nefan.probeCollide(o.x, z)) return z;
+    for (let z = o.z + 20; z > o.z; z -= 0.25) if (window.__nefan.probePoint(o.x, z)) return z;
     return null;
   }, edificio);
   await ctx.nefan("setPlayerPos", edificio.x, zBorde + 3);

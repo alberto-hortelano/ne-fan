@@ -17,10 +17,13 @@
  *   3. ninguna fila del grid trae el char de muro retirado (`W`): el engine
  *      no lo produce, y una fixture que lo trajera lo pintaría como suelo
  *      transitable sin que nadie avisara;
- *   4. el centro de una celda de agua BLOQUEA (`probeCollide` = unión de las
- *      dos fuentes del cliente); si la fixture no tiene agua, se dice y no se
- *      mide;
- *   5. el arranque del jugador (`__player_start`) NO bloquea;
+ *   4. el centro de una celda de agua BLOQUEA (`probePoint` = unión de las dos
+ *      fuentes del cliente); si la fixture no tiene agua, se dice y no se mide;
+ *   5. el arranque del jugador (`__player_start`) NO bloquea. Este es el que
+ *      obligó a migrar los tres a `probePoint` (#662): `cargarFixture` deja al
+ *      jugador EN `__player_start` —medido en las tres fixtures, distancia
+ *      0,0000 m—, así que preguntándolo con la consulta de MOVIMIENTO el aserto
+ *      no podía ponerse rojo;
  *   6. el centro de un volumen del plan (un edificio) BLOQUEA: los muros son
  *      plan, no chars — y siguen chocando después de retirar `W`.
  *
@@ -219,7 +222,7 @@ async function main() {
 
       // 4 · el agua bloquea.
       if (foto.agua) {
-        const choca = await ctx.nefan("probeCollide", foto.agua.x, foto.agua.z);
+        const choca = await ctx.nefan("probePoint", foto.agua.x, foto.agua.z);
         afirma(fixture, "el centro de una celda de agua BLOQUEA", choca === true, `celda [${foto.agua.c}, ${foto.agua.r}]`);
       } else {
         ctx.log("sin agua maciza en esta fixture: el aserto 4 no aplica (se dice, no se aprueba)");
@@ -228,13 +231,13 @@ async function main() {
       // 5 · el arranque del jugador es transitable.
       afirma(fixture, "hay `__player_start`", Boolean(foto.arranque), JSON.stringify(foto.arranque));
       if (foto.arranque) {
-        const choca = await ctx.nefan("probeCollide", foto.arranque.x, foto.arranque.z);
+        const choca = await ctx.nefan("probePoint", foto.arranque.x, foto.arranque.z);
         afirma(fixture, "el arranque del jugador NO bloquea", choca === false, `(${foto.arranque.x}, ${foto.arranque.z})`);
       }
 
       // 6 · un volumen del plan bloquea (los muros son plan, no chars).
       if (foto.edificio) {
-        const choca = await ctx.nefan("probeCollide", foto.edificio.x, foto.edificio.z);
+        const choca = await ctx.nefan("probePoint", foto.edificio.x, foto.edificio.z);
         afirma(fixture, "el centro de un edificio del plan BLOQUEA", choca === true, `${foto.edificio.id} (${foto.edificio.x}, ${foto.edificio.z})`);
       } else {
         ctx.log("sin edificios en esta fixture: el aserto 6 no aplica (se dice, no se aprueba)");

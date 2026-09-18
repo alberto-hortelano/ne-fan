@@ -120,7 +120,7 @@ export default async function (ctx) {
     for (let t = 0; t <= mejor.d; t += 0.01) {
       const x = mejor.A.x + ux * t;
       const z = mejor.A.z + uz * t;
-      if (window.__nefan.probeCollide(x, z)) {
+      if (window.__nefan.probePoint(x, z)) {
         corrido = 0;
       } else {
         corrido += 0.01;
@@ -136,17 +136,16 @@ export default async function (ctx) {
     `${par.arboles} árboles · los dos más juntos (${par.a} ↔ ${par.b}) a ${par.d.toFixed(2)} m · ` +
       `hueco continuo para el CUERPO del jugador entre ellos: ${par.huecoContinuo.toFixed(2)} m`,
   );
-  // El sondeo ya lleva el CUERPO puesto: `probeCollide` infla el punto con el
-  // radio del jugador (`PLAYER_RADIUS_M`, en `src/scene/terrain-collision.ts`,
-  // que es donde vive y de donde nadie debe copiarlo), así que cualquier hueco
-  // > 0 es hueco por el que el cuerpo cabe.
+  // El sondeo ya lleva el CUERPO puesto: `probePoint` = `ocupadoEn` infla el
+  // punto con el radio del jugador (`PLAYER_RADIUS_M`, en
+  // `src/scene/terrain-collision.ts`, que es donde vive y de donde nadie debe
+  // copiarlo), así que cualquier hueco > 0 es hueco por el que el cuerpo cabe.
   //
-  // OJO AL ORDEN, que no es decorativo: `probeCollide` pregunta por un
-  // MOVIMIENTO desde donde está el jugador, y esa consulta tiene semántica
-  // «salir sí, entrar no» — desde donde el jugador ya está metido, los pasos
-  // que le sacan salen libres. Este sondeo va ANTES de cruzar el hueco a
-  // propósito: con el jugador ya entre los dos troncos, el hueco saldría más
-  // ancho de lo que es.
+  // Y EL ORDEN YA NO IMPORTA (#662): mientras se sondeaba con `probeCollide`
+  // —un MOVIMIENTO desde donde está el jugador, con semántica «salir sí, entrar
+  // no»— este bloque tenía que ir ANTES de cruzar el hueco, porque con el
+  // jugador ya entre los dos troncos el hueco salía más ancho de lo que es. La
+  // consulta de PUNTO no tiene origen, así que mide lo mismo antes y después.
   ctx.expect(
     "entre los dos troncos más juntos cabe el cuerpo del jugador",
     par.huecoContinuo > 0,
@@ -167,7 +166,7 @@ export default async function (ctx) {
     for (const [px, pz] of [[-uz, ux], [uz, -ux]]) {
       let libre = true;
       for (let t = -3; t <= 2.5; t += 0.1) {
-        if (window.__nefan.probeCollide(mx + px * t, mz + pz * t)) { libre = false; break; }
+        if (window.__nefan.probePoint(mx + px * t, mz + pz * t)) { libre = false; break; }
       }
       if (libre) return { mx, mz, px, pz, salidaX: mx + px * -3, salidaZ: mz + pz * -3 };
     }
@@ -180,7 +179,7 @@ export default async function (ctx) {
   await ctx.nefan("setYaw", Math.atan2(paso.px, paso.pz));
   ctx.expect(
     "el punto de partida, 3 m antes del hueco, está libre",
-    (await ctx.nefan("probeCollide", paso.salidaX, paso.salidaZ)) === false,
+    (await ctx.nefan("probePoint", paso.salidaX, paso.salidaZ)) === false,
   );
   await esperarFrames(ctx);
   await ctx.shot("antes-de-cruzar-el-hueco");
@@ -255,7 +254,7 @@ export default async function (ctx) {
     const g = window.__nefan.scene.terrain_grid;
     const [ox, oz] = g.origin;
     const mpc = g.meters_per_cell;
-    return arboles.filter((a) => !window.__nefan.probeCollide(ox + a.at[0] * mpc, oz + a.at[1] * mpc)).map((a) => a.id);
+    return arboles.filter((a) => !window.__nefan.probePoint(ox + a.at[0] * mpc, oz + a.at[1] * mpc)).map((a) => a.id);
   }, inventario.arboles);
   ctx.expect(
     "en partida real todos los troncos del plan frenan",
