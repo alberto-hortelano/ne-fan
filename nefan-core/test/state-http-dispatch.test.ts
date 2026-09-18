@@ -77,6 +77,14 @@ function req(over: Partial<RouteRequest> = {}): RouteRequest {
 /** Un body que nadie pide: si el despacho lo leyera en un GET, saltaría. */
 const NO_LEER = () => Promise.reject(new Error("readBody no debería llamarse"));
 
+/** La regla de todo `no_session`, sea 409 (mutadora) o 404 (lectura declarada):
+ *  el cuerpo nombra las DOS causas posibles —ni start ni resume han corrido, o
+ *  el save se borró— para que quien lo lea sepa qué mirar. Medido el
+ *  2026-09-18 (#676): la ruta y la salida ya se afirmaban y este fragmento se
+ *  podía vaciar entero en verde; el del 409 solo moría porque «No se ha
+ *  aplicado nada» cruzaba un salto de línea entre dos literales. */
+const CAUSAS_NO_SESSION = /\(ni start_session ni resume_session han corrido, o el save se borró\)\. /;
+
 describe("matchRoute · la inversa exacta de fillPath", () => {
   it("cada endpoint del contrato se reconoce desde el path que fillPath produce", () => {
     for (const [nombre, ep] of Object.entries(WorldStateApi)) {
@@ -623,6 +631,7 @@ describe("dispatchStateRequest · sin partida no se muta (#453)", () => {
     assert.equal((res.body as { ok: boolean }).ok, false, "un 409 con ok:true sería un éxito para quien no mire el status");
     const error = String((res.body as { error: string }).error);
     assert.match(error, /^no_session: POST \/entity\/player\/inventory muta la partida/);
+    assert.match(error, CAUSAS_NO_SESSION);
     assert.match(error, /No se ha aplicado nada/);
     assert.deepEqual(ctx.narrative.player.inventory, []);
   });
@@ -697,6 +706,9 @@ describe("dispatchStateRequest · sin partida no se muta (#453)", () => {
         readBody: () => Promise.resolve({}),
       });
       (res.status === 409 ? rebotadas : entradas).push(name);
+      if (res.status === 409) {
+        assert.match(String((res.body as { error: string }).error), CAUSAS_NO_SESSION, `${name} ${path}`);
+      }
     }
     const declaradas = Object.entries(WorldStateApi)
       .filter(([, ep]) => ep.mutates)
@@ -761,7 +773,24 @@ describe("State API · #463: sin partida, las lecturas que describen una partida
       const body = res.body as { ok: boolean; error: string };
       assert.equal(body.ok, false, `${key}: un 404 no puede ir marcado como ok`);
       assert.match(body.error, ESE_404, `${key} ${url}`);
+      assert.match(body.error, CAUSAS_NO_SESSION, key);
       assert.match(body.error, /abre o reanuda una partida/, key);
+    }
+  });
+
+  it("todo `no_session`, sea 404 o 409, nombra las dos causas: start/resume no corrido, o save borrado", async () => {
+    // Una regla, dos códigos: el 409 de la mutadora y el 404 de la lectura
+    // declarada salen de dos funciones distintas y comparten el paréntesis de
+    // causas. Afirmarlo aquí, sobre un par concreto, es lo que hace que un
+    // reflow de cualquiera de las dos cadenas se note.
+    const { ctx } = makeCtx();
+    ctx.narrative.session_id = "";
+    const lectura = await dispatchStateRequest(ctx, { method: "GET", url: fillPath(WorldStateApi.getEntity.path, PARAMS), readBody: NO_LEER });
+    const mutacion = await dispatchStateRequest(ctx, { method: "POST", url: "/entity/player/inventory", readBody: NO_LEER });
+    assert.equal(lectura.status, 404);
+    assert.equal(mutacion.status, 409);
+    for (const res of [lectura, mutacion]) {
+      assert.match(String((res.body as { error: string }).error), CAUSAS_NO_SESSION, `status ${res.status}`);
     }
   });
 
