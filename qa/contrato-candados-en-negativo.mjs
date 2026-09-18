@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-/** ¿Se pueden poner ROJOS los candados del contrato de escena y sus espejos?
+/** ¿Se pueden poner ROJOS los candados de `data/contract/` y sus espejos?
+ *
+ *  Son dos familias: el CONTRATO DE ESCENA con su espejo Python (#203/#237/#259
+ *  y siguientes) y, desde #662, el PADRÓN DE SONDAS DE MOVIMIENTO de `qa/`
+ *  (`sondas-de-movimiento.json`), cuyo espejo son los guiones del banco.
  *
  *  Hermano de `qa/mutacion-candados-en-negativo.mjs`, y vive fuera de
  *  `qa/guiones/` por la misma razón: `qa/run.mjs` carga TODO `.mjs` de esa
@@ -55,6 +59,18 @@ const PY = join(raiz, "ai_server/narrative_schemas.py");
 // el rojo, restaurar— y entran en la comprobación byte a byte del final.
 const TOOL = join(CORE, "data/contract/tools/narrative_react.json");
 const FIXTURE_CARRO = join(CORE, "data/contract/fixtures/reaction/valid/spawn_object_footprint.json");
+// Los cinco del padrón de SONDAS DE MOVIMIENTO (#662). El contrato es
+// `data/contract/sondas-de-movimiento.json` y su espejo son los guiones del
+// banco, así que el sabotaje se hace donde vive cada mitad: cuatro guiones y el
+// propio padrón. Añadidos por QA al validar la PR-2 de la tanda P — el
+// ingeniero probó las cinco negativas a mano en un script de scratchpad que se
+// fue con la sesión, y un candado probado una vez es una afirmación, no una
+// prueba (es la frase de la cabecera de este guion).
+const PADRON_SONDAS = join(CORE, "data/contract/sondas-de-movimiento.json");
+const G91 = join(raiz, "qa/guiones/91-la-forja-que-el-motor-pone-ya-no-se-atraviesa.mjs");
+const G118 = join(raiz, "qa/guiones/118-el-carro-frena-y-la-bolsa-se-pisa.mjs");
+const G128 = join(raiz, "qa/guiones/128-lo-que-el-motor-pone-de-golpe-no-se-pisa.mjs");
+const G133 = join(raiz, "qa/guiones/133-la-parada-falsa-bajo-carga-de-verdad.mjs");
 
 /** [nombre, fichero, batería, [ [buscar, poner], … ] ]
  *
@@ -228,6 +244,42 @@ const INVARIANTES = [
       '                "tono": {\n                  "type": "string"\n                },\n                "choices": {\n                  "type": "array",',
     ]],
   ],
+  // ── #662 · el padrón de sondas de movimiento, UNA NEGATIVA POR GRAFÍA ────
+  // El issue existe porque el censo anterior (el bloque 1 del guion 145) era un
+  // `match(/__nefan\.probeCollide/g)` y por eso nació CIEGO a dos de las tres
+  // grafías que llegan a la misma función. El candado nuevo lee el ÁRBOL, y eso
+  // hay que demostrarlo GRAFÍA A GRAFÍA: una sola negativa con la forma directa
+  // dejaría verde exactamente el mismo agujero con otro nombre.
+  [
+    "sondas · GRAFÍA ALIAS: un migrado rebindea `const punto = …probeCollide` y no lo declara",
+    G91, "ts:test/la-consulta-de-movimiento-tiene-dueno.test.ts",
+    [["const punto = window.__nefan.probePoint;\n    const paso = 0.05;", "const punto = window.__nefan.probeCollide;\n    const paso = 0.05;"]],
+  ],
+  [
+    "sondas · GRAFÍA DIRECTA: un migrado vuelve a `window.__nefan.probeCollide(x, z)`",
+    G118, "ts:test/la-consulta-de-movimiento-tiene-dueno.test.ts",
+    [["  ctx.page.evaluate((p) => ({ bloquea: window.__nefan.probePoint(p.x, p.z) }), punto);",
+      "  ctx.page.evaluate((p) => ({ bloquea: window.__nefan.probeCollide(p.x, p.z) }), punto);"]],
+  ],
+  [
+    "sondas · GRAFÍA STRING: un migrado pasa por `ctx.nefan(\"probeCollide\", …)`, la que nadie veía",
+    G128, "ts:test/la-consulta-de-movimiento-tiene-dueno.test.ts",
+    [["  ctx.page.evaluate((q) => window.__nefan.probePoint(q.x, q.z), p);",
+      '  ctx.nefan("probeCollide", p.x, p.z);']],
+  ],
+  [
+    "sondas · LA OTRA DIRECCIÓN: alguien «arregla» una sonda de movimiento declarada y el padrón sobra",
+    G133, "ts:test/la-consulta-de-movimiento-tiene-dueno.test.ts",
+    [["    const pc = window.__nefan.probeCollide;", "    const pc = window.__nefan.probePoint;"]],
+  ],
+  [
+    "sondas · EL MOTIVO: un `porque` vaciado a un encogimiento de hombros pasa por declaración",
+    PADRON_SONDAS, "ts:test/la-consulta-de-movimiento-tiene-dueno.test.ts",
+    [[
+      '"porque": "Es la DEMOSTRACIÓN del defecto y ya está escrita como `ctx.log` y no como aserto: imprime que la sonda con la que el guion 09 decía medir #616 vale `false` también emparedado, porque es un movimiento de un punto a sí mismo. Migrarla borraría justo la línea que enseña por qué existe este padrón."',
+      '"porque": "es movimiento, se queda"',
+    ]],
+  ],
 ];
 
 function corre(bateria) {
@@ -254,7 +306,7 @@ function corre(bateria) {
 const filtro = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const casa = (n) => filtro.length === 0 || filtro.some((f) => n.toLowerCase().includes(f.toLowerCase()));
 
-const FICHEROS = [SCHEMA, PROMPT, SNAP, PY, TOOL, FIXTURE_CARRO];
+const FICHEROS = [SCHEMA, PROMPT, SNAP, PY, TOOL, FIXTURE_CARRO, PADRON_SONDAS, G91, G118, G128, G133];
 
 // Se niega a arrancar sobre un árbol sucio: si el fichero ya trae cambios, la
 // restauración de este guion los borraría. Es la única forma de que escribir

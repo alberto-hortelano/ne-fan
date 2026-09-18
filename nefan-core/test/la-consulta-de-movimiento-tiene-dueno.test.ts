@@ -30,16 +30,33 @@
  *     `hook[p](...)` — el STRING, que no ve ni el censo ni el 145.
  *
  *  Y la cuarta, `const { probeCollide } = window.__nefan`, nacería verde con
- *  cualquier detector por grafía. La clave no es enumerar formas: **no hay
- *  forma de llamar a esa función sin escribir su nombre**, porque el seam
- *  publica por nombre y `sonda.mjs` despacha por string. Así que se cuentan los
- *  NODOS cuyo texto es exactamente `probeCollide` —`Identifier` (propiedad,
- *  alias, desestructuración) y `StringLiteralLike` (el string de `sonda.mjs` y
- *  el template sin sustitución)—, sobre TODO `qa/**` y no sobre una lista. Los
+ *  cualquier detector por grafía. La clave no es enumerar formas: en la práctica
+ *  no se llama a esa función sin escribir su nombre, porque el seam publica por
+ *  nombre y `sonda.mjs` despacha por string. Así que se cuentan los NODOS cuyo
+ *  texto es exactamente `probeCollide` —`Identifier` (propiedad, alias,
+ *  desestructuración) y `StringLiteralLike` (el string de `sonda.mjs` y el
+ *  template sin sustitución)—, sobre TODO `qa/**` y no sobre una lista. Los
  *  comentarios no son nodos, así que la prosa se excluye sola: no hace falta la
  *  heurística del acento grave que usaba el 145, y una expresión regular que
  *  NOMBRE la sonda (`qa/la-consulta-de-punto-no-tiene-origen.mjs` tiene una) no
  *  cuenta, porque un `RegularExpressionLiteral` tampoco la llama.
+ *
+ *  ## QUÉ NO SUJETA, dicho aquí y no descubierto por el siguiente
+ *
+ *  «En la práctica» no es «nunca», y la versión anterior de este párrafo decía
+ *  que **no hay forma** de llamarla sin escribir su nombre. Lo tumbó la QA de
+ *  esta PR con dos contraejemplos que pasan en VERDE:
+ *  `window.__nefan["probe" + "Collide"](x, z)` y un template CON sustitución.
+ *  No se cierran a propósito —nadie escribe eso sin querer, y evaluar
+ *  expresiones convertiría el detector en medio intérprete—, pero se escriben.
+ *
+ *  Y hay una SEGUNDA PUERTA a la misma `collidesAt` que no pasa por este nombre
+ *  en absoluto: `state().blocked` del hook, que son cuatro `collidesAt` a 0,5 m
+ *  del jugador. Hoy la lee un solo guion, el 144, y la lee BIEN (pregunta por
+ *  los rumbos vivos del jugador, que es movimiento de verdad). El día que
+ *  alguien la use para describir el mundo, este candado no se entera.
+ *
+ *  Lo mismo, con su medida, en `_lo_que_esto_NO_sujeta` del padrón.
  *
  *  Mismo patrón de totalidad que `banco-medido.json`, `mutation-targets.json` y
  *  `candados-headless.json`, y mismo precedente de detector que
@@ -75,6 +92,12 @@ const SONDA_DE_PUNTO = "probePoint";
 const PadronSchema = z
   .object({
     _comment: z.string().min(1),
+    /** Qué NO sujeta este candado. Obligatorio, y no es decorado: la primera
+     *  versión de `_comment` afirmaba «ninguna grafía nueva puede nacer verde»
+     *  y era falso (QA de #662). Un absoluto en la cabecera de un contrato es
+     *  lo que hace que el siguiente no mire, así que los agujeros conocidos se
+     *  escriben AL LADO de lo que sí se sujeta. */
+    _lo_que_esto_NO_sujeta: z.string().min(1),
     declaradas: z
       .array(
         z
@@ -273,6 +296,28 @@ describe("el detector de sondas de movimiento", () => {
     ].join("\n");
     assert.equal(apariciones(texto, SONDA), 1);
     assert.equal(apariciones(texto, SONDA_DE_PUNTO), 2);
+  });
+
+  it("NO ve el nombre PARTIDO, y eso está escrito en el contrato en vez de descubrirse", () => {
+    // El agujero que la QA de #662 encontró en una afirmación absoluta («no hay
+    // forma de llamarla sin escribir su nombre»). Las dos formas de abajo
+    // llegan a `collidesAt` y este detector las cuenta como cero. NO se cierran
+    // —nadie las escribe sin querer, y evaluar expresiones convertiría esto en
+    // medio intérprete—, pero se MIDEN: si algún día este aserto se pone rojo
+    // es que alguien cerró el agujero, y entonces hay que quitar el párrafo
+    // «QUÉ NO SUJETA» de arriba y `_lo_que_esto_NO_sujeta` del padrón. Un
+    // límite documentado y no medido vuelve a ser prosa que envejece sola.
+    const texto = [
+      'const a = window.__nefan["probe" + "Collide"](x, z);',
+      'const b = await ctx.nefan(`probe${""}Collide`, x, z);',
+      'const c = window.__nefan[["probe", "Collide"].join("")](x, z);',
+    ].join("\n");
+    assert.equal(
+      apariciones(texto, SONDA),
+      0,
+      "el detector ha aprendido a ver el nombre partido: quita el párrafo «QUÉ NO SUJETA» y la clave " +
+        "`_lo_que_esto_NO_sujeta` del padrón, porque han dejado de ser ciertos",
+    );
   });
 
   it("el barrido de fuentes ve los subdirectorios y se salta lo efímero", () => {

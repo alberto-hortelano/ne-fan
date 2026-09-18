@@ -29,8 +29,23 @@
  *  `data/contract/sondas-de-movimiento.json`: parsea TODO `qa/**` con el árbol
  *  de sintaxis, cuenta NODOS (no texto), exige que cada aparición esté declarada
  *  con su cuenta EXACTA —o sea, las dos direcciones que estrenó el bloque 1— y
- *  corre en cada PR. Lo que el bloque 1 hacía queda cubierto con creces; lo que
- *  hacía y nadie más hacía era el bloque 2, y por eso el guion sigue existiendo.
+ *  corre en cada PR.
+ *
+ *  **QUÉ SE PERDIÓ EN EL CAMBIO, porque no fue gratis** (lo midió la QA de la
+ *  PR-2 y el ingeniero había escrito «queda cubierto con creces», que era
+ *  falso): el bloque 1 anclaba **por FICHERO** que cada migrado pregunta por
+ *  `probePoint` —`punto > 0`, uno a uno—. El candado nuevo solo lo afirma en
+ *  AGREGADO: exige que haya al menos diez ficheros sondeando por punto, no que
+ *  los haya ESTOS. Consecuencia medida: renombrar `probePoint` a `probePunto`
+ *  en el 91 (o en el 32) sale VERDE hoy y salía ROJO antes, porque un fichero
+ *  que deja de sondear del todo tiene cero de las dos y la totalidad se cumple
+ *  sola (0 = 0). Lo que el candado nuevo sí ve, y el viejo no veía, es
+ *  cualquier `probeCollide` sin declarar en CUALQUIERA de los 205 ficheros del
+ *  banco y en las tres grafías. Son coberturas distintas, no una que contenga a
+ *  la otra.
+ *
+ *  Lo que hacía el bloque 2, y no hace nadie más, es ejercer el seam contra el
+ *  cliente vivo. Por eso el guion sigue existiendo.
  *
  *  ## Qué afirma
  *
