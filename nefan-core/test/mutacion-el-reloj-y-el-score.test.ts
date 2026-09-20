@@ -2,7 +2,7 @@
  *
  *  QUÉ SE PRUEBA AQUÍ Y NO EN `mutacion-huella.test.ts`: las funciones que
  *  deciden **cuánto cuesta** un módulo y **si está bien medido** viven repartidas
- *  entre `scripts/mutacion.ts` (que llama a git y a `gh`) y
+ *  entre `scripts/mutacion-repo.ts` (que llama a git) y
  *  `scripts/mutation-plan.ts` (que lee del disco), así que no cabían en la
  *  batería del fichero puro. El resultado, medido el 2026-09-04, era que
  *  `resumenDeMutantes`, `esVivo`, `costeDe` y `segundosDe` no las nombraba NI UN
@@ -10,9 +10,11 @@
  *  producía código que nada comprobaba y nada mide, porque `scripts/` está
  *  además fuera del perímetro de mutación (#432).
  *
- *  Importarlas desde aquí sí se puede: `scripts/mutacion.ts` termina con
- *  `if (process.argv[1]?.endsWith("mutacion.ts")) main()`, o sea que importado
- *  no ejecuta nada, y `mutation-plan.ts` solo lee cuando se le pide. El
+ *  Importarlas desde aquí sí se puede: `scripts/mutacion-repo.ts` es el trozo
+ *  de la familia que no tiene `main` —desde #605 el enrutado vive en
+ *  `scripts/mutacion.ts` y nadie lo importa—, así que importarlo no ejecuta
+ *  nada y solo toca git cuando se le llama; `mutation-plan.ts` solo lee cuando
+ *  se le pide. El
  *  precedente es `test/afectado.test.ts`, `test/deuda.test.ts` y
  *  `test/crap-score.test.ts`, que ya hacen esto con otros `scripts/`.
  *
@@ -30,7 +32,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { costeDe, segundosDe } from "../scripts/mutacion.js";
+import { costeDe, segundosDe } from "../scripts/mutacion-repo.js";
 import {
   conCronometro,
   filaDeHuella,

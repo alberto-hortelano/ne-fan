@@ -1083,8 +1083,9 @@ node qa/mutacion-cableado-en-negativo.mjs ancla    # filtro por nombre
 ```
 
 Los tres de arriba conducen una **batería**: rompen el fuente y miran si los tests se enteran.
-Éste conduce **la herramienta**: `scripts/mutacion.ts` y `.github/workflows/mutation.yml` no los
-importa ningún test —no pueden, llaman a git y a `gh`—, así que ahí «romper y mirar el test» no
+Éste conduce **la herramienta**: la familia `scripts/mutacion-*.ts` (troceada por cierre de
+llamadas en #605) y `.github/workflows/mutation.yml` no los importa ningún test —no pueden, llaman
+a git y a `gh`—, así que ahí «romper y mirar el test» no
 es una opción y la única prueba posible es ejercer el verbo de verdad sobre un
 `reports/mutation/` de ensayo y exigir que el OBSERVABLE cambie al deshacer el cambio.
 

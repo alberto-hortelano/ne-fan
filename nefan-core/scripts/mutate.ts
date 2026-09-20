@@ -55,7 +55,7 @@ import { availableParallelism } from "node:os";
 import { dirname, join, relative } from "node:path";
 
 import { contextoDe, ficherosCambiados, seleccionar } from "./afectado.js";
-import { costeDe, estimaCoste, leerHuella } from "./mutacion.js";
+import { costeDe, estimaCoste, leerHuella } from "./mutacion-repo.js";
 import { moduloAprobado, muroDeMutacion, permisoLocal } from "./mutacion-huella.js";
 import {
   concurrenciaDe,
