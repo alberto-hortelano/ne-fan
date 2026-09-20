@@ -225,10 +225,26 @@ describe("plan de mutación · el reparto es TOTAL sobre el perímetro", () => {
     // `serialize-llm` a módulo propio, reintroducir su `!ruta` con el módulo
     // nuevo puesto salía VERDE — `dueñoDe` clasifica por `ficherosDeclarados`,
     // que cuenta los negados, así que el fichero tenía dueño dos veces y nadie
-    // se enteraba. LO QUE NO SUJETA: un carve-out cuyo motivo escrito haya
-    // caducado (que el fichero se mida fuera es justo lo que espera), ni un
-    // `!ruta` que no nombre a nadie (eso es el candado de "lo que nombra
-    // existe").
+    // se enteraba.
+    //
+    // LO QUE NO SUJETA, medido por QA de la tanda Z construyendo cada estado y
+    // corriendo `npm test` con él puesto:
+    //  · Una declarativa cuyo MOTIVO haya caducado y que no mida nadie más
+    //    —exactamente el estado del que viene #431: `!npc-records.ts` con el
+    //    motivo «`testsQueImportan` da 0», que el propio instrumento del plan
+    //    desmiente en una llamada (da 1)—. Sale verde y seguirá saliendo: aquí
+    //    no se verifica el TEXTO de un motivo contra el árbol (es #611, en otro
+    //    contrato). Lo que esta tanda pudo hacer con él fue quitarlo.
+    //  · La misma declarativa repetida en DOS módulos con dos motivos
+    //    distintos: verde, porque `dueñoDe` devuelve el primero y ninguno de
+    //    los dos miente por separado.
+    //  · Un carve-out cuyo motivo escrito haya caducado: que el fichero se mida
+    //    fuera es justo lo que ese motivo espera. Lo que sí se canda es que ese
+    //    «fuera» EXISTA, y va en el candado hermano de más abajo («un fichero
+    //    que YA TUVO medida…»), porque la señal que los separa no es el patrón
+    //    sino la huella.
+    //  · Un `!ruta` que no nombre a nadie: eso es el candado de "lo que nombra
+    //    existe".
     let declarativas = 0;
     for (const m of plan.modulos) {
       const positivos = new Set(
@@ -442,6 +458,54 @@ describe("plan de mutación · lo medido tiene que ser una medida", () => {
         `es que ese fichero no lo mide nadie — comprueba con \`npm run ejercicio\` si su batería lo llama, ` +
         `y si el caso es legítimo decláralo en "todos_vivos" CON MOTIVO`,
     );
+  });
+
+  it("un fichero que YA TUVO medida no puede quedarse sin módulo que lo mute", () => {
+    // EL HERMANO del candado de exclusiones `!ruta`, y lo pidió QA de la tanda
+    // Z (#431) después de construir el estado y verlo VERDE: borra el módulo
+    // `npc-director` dejando en pie el carve-out `!src/world-map/npc-director.ts`
+    // de `world-map` y `npm test` sale verde 464/464. `dueñoDe` clasifica por
+    // `ficherosDeclarados`, que CUENTA los patrones negados, así que el fichero
+    // conserva «dueño» mientras no lo muta nadie: dos ficheros con 150 mutantes
+    // medidos se caían del reparto sin un solo rojo, y el candado de huérfanos
+    // —que existe justo para eso— no los ve.
+    //
+    // POR QUÉ NO SE CANDA «todo carve-out lo mide otro módulo», que es la forma
+    // en que se enuncia solo: porque sería FALSO. `!src/world-map/index.ts` es
+    // el mismo patrón y ahí no mutarlo es lo correcto (un barril que ningún test
+    // carga: sus mutantes serían NoCoverage sin significar nada). Por la forma
+    // del patrón los dos casos son idénticos; lo que los separa está en el
+    // repositorio, y es que uno TUVO medida y el otro no. Esa es la señal que se
+    // lee aquí, y por eso este candado vive con los de la huella y no con los
+    // del reparto.
+    const huella = leer("data/contract/mutacion-huella.json") as {
+      ficheros: Record<string, { total: number; vivos: string[] }>;
+    };
+    // Un fichero que se RETIRA del árbol se lleva su medida con él, y su fila
+    // sobrevive hasta que una corrida la limpia: eso es un borrado, no una
+    // pérdida de medida. Solo se juzga lo que sigue existiendo (hoy hay uno
+    // así: `src/protocol/status-labels.ts`).
+    const conMedida = Object.keys(huella.ficheros).filter((f) => existsSync(resolve(raiz, f)));
+    // SUJETO VIVO: con una huella vacía —o con todas sus filas apuntando a
+    // ficheros borrados— esto aprobaría sin mirar nada.
+    assert.ok(
+      conMedida.length > 50,
+      `la huella solo trae ${conMedida.length} fichero(s) que sigan existiendo: no hay nada que juzgar`,
+    );
+    const mutados = new Set(plan.modulos.flatMap((m) => ficherosMutados(m)));
+    const huerfanos = conMedida.filter((f) => !mutados.has(f)).sort();
+    assert.deepEqual(
+      huerfanos,
+      [],
+      `estos ficheros tienen medida COMMITEADA y hoy no los muta ningún módulo: ${huerfanos.join(", ")}. ` +
+        `Un fichero no pierde su medida por accidente: o vuelve a un módulo, o su fila sale de la huella ` +
+        `con el cambio que lo retira. Si lo que lo saca es un \`!ruta\`, mira si el módulo que lo medía ` +
+        `sigue existiendo — un carve-out cuyo destino se borró deja el fichero con dueño y sin medida`,
+    );
+    // LO QUE NO SUJETA: el fichero que NUNCA se midió (no tiene fila, y de ése
+    // opinan `npm run ejercicio` y el candado de totalidad), ni el cambio que
+    // borra el módulo Y la fila de la huella a la vez — eso ya no es un
+    // descuido, y lo que queda enfrente es el guardia de `repartir`.
   });
 
   it("una entrada de `todos_vivos` caduca en cuanto su fichero deja de estarlo", () => {
