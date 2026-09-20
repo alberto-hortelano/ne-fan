@@ -87,6 +87,9 @@
  *        NEFAN_PORT_OFFSET=<n ≥ 1000> node qa/parar-clasifica-los-nueve-puertos.mjs   # bloque vigente alto (#684)
  *
  *  Salida: 0 todo verde · 1 alguna comprobación en rojo · 2 no llegó a medir.
+ *          El 2 no es solo del preflight: CUALQUIER ⚠ de los tres bloques que
+ *          pueden quedarse sin entorno (el 8, el 9 y el 10) lo produce. Verde
+ *          significa «se midió todo y todo pasó», y nada más.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -109,7 +112,21 @@ const mal = (t, d) => {
   console.log(`  ✘ ${t}${d ? ` — ${d}` : ""}`);
   fallos.push(t);
 };
-const nota = (t, d) => console.log(`  ⚠ ${t}${d ? ` — ${d}` : ""}`);
+/** El entorno no dejó MEDIR algo. No es verde ni rojo, y la diferencia importa:
+ *  un ⊘ es una declaración, no una amnistía (`qa/README.md`), y degrada la
+ *  corrida MÁS que un rojo porque un rojo al menos se sabe leer.
+ *
+ *  La bandera se enciende AQUÍ, dentro de `nota`, y no en cada sitio que se
+ *  abstiene: hasta la QA de #684 los tres bloques que no podían medir (el 8 de
+ *  #424, el 9 del intruso y el 10 de #684) imprimían su ⚠ y el guion salía 0
+ *  con «✔ `--parar` clasifica bien…» debajo. El candado de un bug que solo se
+ *  ve con la máquina medio vacía no puede depender de que el siguiente que
+ *  añada una abstención se acuerde de encender nada. */
+let sinVeredicto = false;
+const nota = (t, d) => {
+  sinVeredicto = true;
+  console.log(`  ⚠ ${t}${d ? ` — ${d}` : ""}`);
+};
 
 /** Un servidor TCP mudo escuchando en `puertos`, con el `cwd` y los argumentos
  *  que se le pidan. Los dos son EL experimento: `worktree_de_pids` mira
@@ -452,6 +469,9 @@ if (code !== 2) {
   console.log(
     `\n${fallos.length === 0 ? "✔ `--parar` clasifica bien los nueve puertos, agrupa por proceso y no toca lo ajeno" : `✘ ${fallos.length} fallo(s)`}`,
   );
-  code = fallos.length === 0 ? 0 : 1;
+  // Un rojo manda sobre una abstención (hay defecto demostrado y eso es lo que
+  // hay que arreglar); sin rojos, una abstención NO es un verde.
+  code = fallos.length > 0 ? 1 : sinVeredicto ? 2 : 0;
+  if (code === 2) console.log("⚠ pero el entorno no dejó comprobarlo todo: sale con 2, no con 0.");
 }
 process.exit(code);

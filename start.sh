@@ -1444,9 +1444,29 @@ cmd_stop() {
         # que mira la parada es, por construcción, el que la subida puede haber
         # ocupado: hasta #684 se recorría un bucle fijo `0 100 … 900` y con offset
         # ≥ 1000 el stack propio ni se enumeraba — «nada que parar» en falso.
-        # El sujeto sigue siendo el CATÁLOGO: un puerto de este árbol que no
-        # sea de un servicio del catálogo (game-emulator, un vite suelto) no
-        # entra, igual que antes.
+        # LO QUE ESTO PARA, DICHO SIN ADORNOS (QA de #684). El conjunto de
+        # candidatos no son nueve puertos: es la RETÍCULA de las nueve bases
+        # por todos los offsets admisibles — 3.308 puertos distintos entre
+        # 3000 y 58765 (9 × 401 menos el solape fake_ai = ai_server + 10000).
+        # O sea que lo que se para es «un proceso de ESTE árbol EN LA RETÍCULA
+        # del catálogo», y no «un servicio del catálogo de este árbol»: un vite
+        # suelto de este worktree en :3100, un `http.server` en :8000
+        # (= html + 5000) o cualquier cosa propia en :24678 (= state_api +
+        # 14800) SÍ entran y SÍ se paran.
+        #
+        # Se acepta a propósito, porque desde fuera son indistinguibles: :3100
+        # es exactamente donde estaría el cliente de este árbol con el bloque
+        # +100, y preguntar «¿de quién es?» es justo lo que hace la pasada 1.
+        # Lo ajeno sigue sin tocarse, sea cual sea el puerto.
+        #
+        # La excepción que HOY queda fuera es el game-emulator (el puerto que
+        # `CONFIG.ports` llama `game_emulator`; su número vive ahí y solo ahí,
+        # que por eso `nadie-inventa-un-puerto` no deja escribirlo aquí — cazó
+        # este mismo comentario). Ninguna de sus nueve diferencias con las
+        # bases es múltiplo de 100, y eso no es suerte que se pueda dar por
+        # hecha: va candado en `test/service-registry.test.ts` («el emulador de
+        # juego queda fuera de la retícula»), que se pone rojo si alguien lo
+        # mueve a un puerto que sí caiga dentro.
         local p base
         puertos=()
         for p in "${!ESCUCHANDO[@]}"; do
@@ -1489,8 +1509,16 @@ cmd_stop() {
     # lo resuelto. Matar por puerto aquí abría una ventana del tamaño de esta
     # pasada en la que un ajeno recién llegado se comía el tiro con la
     # clasificación del ocupante anterior.
+    #
+    # Lo AJENO se BUFEA y se imprime al final, detrás de lo propio (QA de #684,
+    # H3). Desde que los candidatos salen de la foto, cada teardown enumera
+    # todo lo ajeno de la retícula que haya en la máquina: con seis tandas a la
+    # vez salieron CATORCE líneas `⏭`, y la única línea que el que teclea `k`
+    # necesita leer —la suya, o «nada que parar aquí»— quedaba enterrada en
+    # medio. No se agrupa por bloque a propósito: cada línea lleva el cmdline
+    # de SU ocupante, que es lo que hace accionable el «habla con su dueño».
     local i j etiquetas alguno=0 saltados_vigente=0 saltados_otro=0
-    local -a hecho=()
+    local -a hecho=() ajenas=()
     for i in "${!f_port[@]}"; do
         [[ "${hecho[$i]:-0}" == 1 ]] && continue
         hecho[$i]=1
@@ -1504,7 +1532,7 @@ cmd_stop() {
             done
         fi
         if [[ "${f_mio[$i]}" == 0 ]]; then
-            echo "    ⏭  $etiquetas  ${f_who[$i]:-(desconocido)}  — AJENO, no se toca"
+            ajenas+=("    ⏭  $etiquetas  ${f_who[$i]:-(desconocido)}  — AJENO, no se toca")
             # ¿Lo alcanzaría `--parar-todo`? Solo si alguno de SUS puertos está
             # en el bloque vigente, que es el único que esa rama barre (#424).
             if grupo_en_bloque_vigente "$etiquetas"; then saltados_vigente=1; else saltados_otro=1; fi
@@ -1521,6 +1549,10 @@ cmd_stop() {
         alguno=1
     done
     (( alguno == 0 )) && echo "    (nada que parar aquí)"
+    if (( ${#ajenas[@]} > 0 )); then
+        echo "   ── ${#ajenas[@]} proceso(s) de la retícula que NO son de este árbol ──"
+        printf '%s\n' "${ajenas[@]}"
+    fi
     # EL AVISO DICE LO QUE `--parar-todo` ALCANZA, Y NADA MÁS (#424).
     #
     # Antes salía con CUALQUIER ajeno de CUALQUIER bloque —la rama segura los

@@ -83,4 +83,61 @@ describe("NEFAN_PORT_OFFSET — un bloque de puertos por stack", () => {
       );
     }
   });
+
+  /** El sujeto de `./start.sh --parar` (rama segura) NO son nueve puertos: es
+   *  la RETÍCULA `base + offset admisible` de las nueve bases del catálogo,
+   *  3.308 puertos entre 3000 y 58765. Un proceso de ESTE árbol que escuche en
+   *  uno de ellos se para, sea o no un servicio del catálogo — se acepta,
+   *  porque desde fuera es indistinguible del mismo servicio en un bloque
+   *  legítimo (#684, hallazgo H2 de su QA).
+   *
+   *  El `game_emulator` es el único puerto del stack que hoy queda FUERA de esa
+   *  retícula, y ese es justo el ejemplo que se usa para explicar que el sujeto
+   *  sigue siendo el catálogo. Que siga siendo verdad no es una propiedad que
+   *  se pueda dar por hecha: basta mover el emulador 100 puertos para que
+   *  `--parar` empiece a llevárselo, en silencio y sin que falle nada.
+   *
+   *  No se copia el predicado: se le PREGUNTA a `portOffset`, que es el mismo
+   *  que decide en la subida y —por paridad candada— en el filtro de bash. Si
+   *  alguien afloja el predicado (quitar el `% 100`, por ejemplo), este test se
+   *  pone rojo sin tocarlo, que es lo que se quiere. */
+  describe("el emulador de juego queda fuera de la retícula que barre `--parar`", () => {
+    /** ¿`d` es un desplazamiento que la subida ACEPTARÍA? Negativo o no
+     *  múltiplo de 100 ⇒ no, y `portOffset` lo dice lanzando. */
+    const offsetAdmisible = (d: number): boolean => {
+      try {
+        portOffset({ NEFAN_PORT_OFFSET: String(d) });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    // Las nueve bases son TODO `CONFIG.ports` menos el emulador: es
+    // exactamente la lista que `read_ports` pasa a `ALL_PORTS` en `start.sh`.
+    const { game_emulator: emulador, ...bases } = CONFIG.ports;
+
+    it("las nueve bases del catálogo son las de `ALL_PORTS`, y el emulador no es una de ellas", () => {
+      // Si mañana entra un puerto nuevo en CONFIG.ports hay que DECIDIR si
+      // `start.sh` lo barre; este aserto obliga a mirarlo en vez de heredar
+      // una lista que ya no describe nada.
+      assert.deepEqual(
+        Object.keys(bases).sort(),
+        ["ai_server", "asset_store", "bridge", "fake_ai", "html", "narrative_ws", "remote_gen", "sprite_forge", "state_api"],
+        "cambió el catálogo de puertos: decide si `--parar` lo barre y actualiza `ALL_PORTS` en start.sh",
+      );
+    });
+
+    for (const [nombre, base] of Object.entries(bases)) {
+      it(`:${emulador} no es \`${nombre}\` (:${base}) en ningún bloque admisible`, () => {
+        assert.equal(
+          offsetAdmisible(emulador - base),
+          false,
+          `${emulador} - ${base} = ${emulador - base} es un offset admisible: el emulador cayó DENTRO de la retícula ` +
+            `y \`--parar\` se lo llevaría. Muévelo a un puerto cuya distancia a las nueve bases no sea múltiplo de 100, ` +
+            `o mételo en ALL_PORTS a propósito y di que ahora es parte del catálogo.`,
+        );
+      });
+    }
+  });
 });
