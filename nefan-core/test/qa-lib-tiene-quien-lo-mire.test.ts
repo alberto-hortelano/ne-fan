@@ -34,25 +34,27 @@
  *  `test/` que barren `qa/` (`esperas-de-qa`, `candados-headless-totalidad`,
  *  `las-anclas-de-los-candados`, `esperas-que-conducen`,
  *  `espera-de-fotogramas-con-dueno`, `el-banco-declara-el-modo-de-gasto`), las
- *  siete reglas de `arch-rules.json` con glob `qa/**\/*.mjs` y su
- *  `scan.roots`, el descubridor de guiones de `qa/run.mjs` y el job
- *  `candados-headless`. Node 24 ejecuta un `.ts` sin tsx, así que un
- *  `qa/lib/x.ts` importado desde un guion `.mjs` correría de verdad y sería
- *  INVISIBLE para los diecinueve. En vez de enseñar la extensión a cada uno
- *  —y dejar abiertos `.js`, `.cjs`, `.mts`, `.cts`—, se hace inexpresable el
- *  estado malo: bajo `qa/` (fuera de `node_modules` y de `.tmp`, que se
- *  nombran: «cualquier dot-dir» dejaría pasar un `qa/.oculto/x.ts`) solo
- *  caben las extensiones de la lista blanca de abajo, y
- *  cualquier otra es rojo aquí. Es «la garantía va en el tipo» aplicada al
- *  banco: los diecinueve quedan correctos por construcción. */
+ *  reglas de `arch-rules.json` con glob `qa/**\/*.mjs` y su `scan.roots`, el
+ *  descubridor de guiones de `qa/run.mjs` y el job `candados-headless`. Node
+ *  24 ejecuta un `.ts` sin tsx, así que un `qa/lib/x.ts` importado desde un
+ *  guion `.mjs` correría de verdad y sería INVISIBLE para todos ellos. En vez
+ *  de enseñar la extensión a cada uno —y dejar abiertos `.js`, `.cjs`, `.mts`,
+ *  `.cts`—, se hace inexpresable el estado malo: bajo `qa/` solo caben las
+ *  extensiones de la lista blanca de abajo, y cualquier otra es rojo aquí. El
+ *  barrido es EL del banco (`test/banco-ficheros.ts`, compartido con el padrón
+ *  de sondas): salta `node_modules/`, `.tmp/` y `capturas/` con su motivo
+ *  escrito allí, sigue los symlinks, y nada más. Es «la garantía va en el
+ *  tipo» aplicada al banco: quien filtra por `.mjs` queda correcto por
+ *  construcción — mientras este test esté verde y alguien lo mire. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
+import { SALTOS_DEL_BANCO, ficherosDelBanco } from "./banco-ficheros.js";
 
 const core = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(core, "..");
@@ -124,8 +126,8 @@ export function importsDeQaLib(textoDelTest: string): Set<string> {
 /** Las extensiones que pueden vivir bajo `qa/`. Un `.mjs` es el banco; lo
  *  demás son datos (`.json`), prosa (`.md`) y las capturas de una corrida
  *  (`.png`, `.jpg`). Si hace falta ampliarla, que sea con algo que Node NO
- *  ejecute: una extensión ejecutable aquí reabre el agujero de #686 para los
- *  diecinueve sitios que filtran por `.mjs`. */
+ *  ejecute: una extensión ejecutable aquí reabre el agujero de #686 para todo
+ *  lo que filtra por `.mjs`. */
 export const EXTENSIONES_DEL_BANCO: ReadonlySet<string> = new Set(["mjs", "md", "json", "png", "jpg"]);
 
 /** De estas rutas, las que llevan una extensión fuera de la lista blanca (o
@@ -136,29 +138,6 @@ export function extensionesForaneas(rutas: readonly string[]): string[] {
     const punto = nombre.lastIndexOf(".");
     return punto <= 0 || !EXTENSIONES_DEL_BANCO.has(nombre.slice(punto + 1));
   });
-}
-
-/** Los dos directorios que NO son el banco: las dependencias y el disco
- *  efímero de una corrida (`qa/.tmp/<run>/`, con su `.bloques/` dentro). Es
- *  el ÚNICO directorio con punto que hay bajo `qa/` (medido con `find -type d
- *  -name '.*'` el 2026-09-18), y se nombra en vez de saltar «todo lo que
- *  empiece por punto»: con esa regla un `qa/.oculto/x.ts` no se vería. */
-const DIRECTORIOS_QUE_NO_SON_BANCO: ReadonlySet<string> = new Set(["node_modules", ".tmp"]);
-
-/** TODOS los ficheros bajo `dir` (ruta relativa a `raiz`, con `/`), saltando
- *  solo `node_modules` y `.tmp`. A diferencia de `fuentesDelBanco` del test
- *  del padrón, NO filtra por extensión, NO salta `capturas/` ni los
- *  directorios con punto: es el barrido que decide qué extensiones EXISTEN. */
-export function ficherosBajo(dir: string, raiz: string = dir, out: string[] = []): string[] {
-  for (const e of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (e.isDirectory()) {
-      if (DIRECTORIOS_QUE_NO_SON_BANCO.has(e.name)) continue;
-      ficherosBajo(join(dir, e.name), raiz, out);
-    } else {
-      out.push(relative(raiz, join(dir, e.name)).split(sep).join("/"));
-    }
-  }
-  return out;
 }
 
 /** módulo → tests (nombres de fichero) que lo importan, sobre los tests dados. */
@@ -280,32 +259,57 @@ describe("qa/lib tiene quien lo mire (#357)", () => {
 
 describe("el banco es .mjs y solo .mjs (#686)", () => {
   const QA = join(repoRoot, "qa");
-  const todos = ficherosBajo(QA);
+  const todos = ficherosDelBanco(QA);
 
   it("el árbol tiene sujeto: el barrido ve los guiones, la raíz y lib", () => {
     // Sin esto, un barrido sobre el directorio equivocado aprobaría la lista
-    // blanca sobre cero ficheros. Hoy son 213 sin capturas (209 .mjs + 3 .json
-    // + 1 .md) y ~15.000 con ellas.
+    // blanca sobre cero ficheros. Hoy son 213 (209 .mjs + 3 .json + 1 .md);
+    // `capturas/` no entra (ver `banco-ficheros.ts`).
     assert.ok(todos.length > 100, `solo ${todos.length} ficheros bajo ${QA} — ¿se movió el banco?`);
     assert.ok(todos.some((f) => f.startsWith("guiones/") && f.endsWith(".mjs")), "no ve los guiones");
     assert.ok(todos.some((f) => f.startsWith("lib/") && f.endsWith(".mjs")), "no ve qa/lib");
     assert.ok(todos.some((f) => !f.includes("/")), "no ve la raíz de qa/");
-    assert.deepEqual(todos.filter((f) => f.startsWith(".tmp/") || f.includes("node_modules/")), []);
+    assert.deepEqual(todos.filter((f) => f.split("/").some((d) => SALTOS_DEL_BANCO.has(d))), []);
   });
 
-  it("SABE PONERSE ROJO (el barrido): un dot-dir que no sea .tmp SE VE, y .tmp y node_modules no", () => {
+  it("SABE PONERSE ROJO (el barrido): dot-dir y symlinks se ven; .tmp, node_modules y capturas no", () => {
     // Sobre un árbol sintético en disco, porque lo que se prueba es el
-    // `readdirSync`, no la lista: `qa/.oculto/x.ts` tiene que salir. Es lo
-    // que `mkdir qa/.oculto && touch qa/.oculto/x.ts` hace en el árbol real
-    // (probado a mano al nacer).
+    // `readdirSync`+`statSync`, no la lista. Lo que tiene que salir:
+    // `.oculto/x.ts` (dot-dir que no es .tmp), un symlink a DIRECTORIO
+    // recorrido por su nombre de enlace (B-1 de la QA: `qa/capturas/ultima ->
+    // <run>` salía como fichero sin extensión), un symlink a FICHERO con
+    // el nombre del enlace (`x.ts -> a.mjs` es lo que un import escribe), y un
+    // enlace ROTO como fichero, no callado. Lo que no: `.tmp/`, `node_modules/`
+    // y `capturas/` (incluido un `.mjs` ahí: punto (7) del padrón). Y un
+    // symlink cíclico (`lib/loop -> ..`) se corta.
     const raiz = mkdtempSync(join(tmpdir(), "nefan-banco-"));
     try {
-      for (const d of [".oculto", ".tmp/run-1", "node_modules/x", "lib"]) mkdirSync(join(raiz, d), { recursive: true });
-      for (const f of [".oculto/x.ts", ".tmp/run-1/y.ts", "node_modules/x/z.js", "lib/a.mjs", "b.mjs", ".dotfile.ts"]) {
+      for (const d of [".oculto", ".tmp/run-1", "node_modules/x", "lib", "capturas/run-1"]) mkdirSync(join(raiz, d), { recursive: true });
+      for (const f of [".oculto/x.ts", ".tmp/run-1/y.ts", "node_modules/x/z.js", "lib/a.mjs", "b.mjs", ".dotfile.ts", "capturas/run-1/01.png", "capturas/x.mjs"]) {
         writeFileSync(join(raiz, f), "");
       }
-      assert.deepEqual(ficherosBajo(raiz), [".dotfile.ts", ".oculto/x.ts", "b.mjs", "lib/a.mjs"]);
-      assert.deepEqual(extensionesForaneas(ficherosBajo(raiz)), [".dotfile.ts", ".oculto/x.ts"]);
+      symlinkSync("lib", join(raiz, "enlace-dir"));
+      symlinkSync("run-1", join(raiz, "capturas", "ultima"));
+      symlinkSync("b.mjs", join(raiz, "lib", "x.ts"));
+      symlinkSync("no-existe", join(raiz, "roto"));
+      symlinkSync("..", join(raiz, "lib", "loop"));
+      const vistos = ficherosDelBanco(raiz);
+      assert.deepEqual(vistos, [
+        ".dotfile.ts",
+        ".oculto/x.ts",
+        "b.mjs",
+        "enlace-dir/a.mjs",
+        "enlace-dir/x.ts",
+        "lib/a.mjs",
+        "lib/x.ts",
+        "roto",
+      ]);
+      assert.deepEqual(extensionesForaneas(vistos), [".dotfile.ts", ".oculto/x.ts", "enlace-dir/x.ts", "lib/x.ts", "roto"]);
+      // Y sin saltar `capturas/`, el symlink a directorio se RECORRE y no sale
+      // como fichero: es exactamente el `ultima` real.
+      const sinSaltarCapturas = ficherosDelBanco(raiz, new Set(["node_modules", ".tmp"]));
+      assert.ok(sinSaltarCapturas.includes("capturas/ultima/01.png"), "el symlink a directorio se recorre por su nombre de enlace");
+      assert.ok(!sinSaltarCapturas.includes("capturas/ultima"), "el symlink a directorio NO sale como fichero");
     } finally {
       rmSync(raiz, { recursive: true, force: true });
     }
@@ -318,9 +322,9 @@ describe("el banco es .mjs y solo .mjs (#686)", () => {
       [],
       `${foraneas.length} fichero(s) bajo qa/ con extensión fuera de {${[...EXTENSIONES_DEL_BANCO].join(", ")}}: ` +
         `${foraneas.slice(0, 5).join(", ")}${foraneas.length > 5 ? ", …" : ""}. El banco es .mjs y solo .mjs: ` +
-        `los diecinueve sitios que deciden «qué es el banco» filtran por esa extensión y un .ts/.js/.cjs ` +
-        `correría de verdad sin que ninguno lo viera (#686). Si el fichero NO es ejecutable, amplía ` +
-        `EXTENSIONES_DEL_BANCO en este test; si lo es, escríbelo en .mjs.`,
+        `todo lo que decide «qué es el banco» filtra por esa extensión y un .ts/.js/.cjs correría de verdad ` +
+        `sin que nadie lo viera (#686). Si el fichero NO es ejecutable, amplía EXTENSIONES_DEL_BANCO en este ` +
+        `test; si lo es, escríbelo en .mjs; si es un enlace simbólico ROTO (apunta a algo borrado), bórralo.`,
     );
   });
 

@@ -50,8 +50,11 @@
  *  primero se recogen los alias por punto fijo —`const x = ….probeCollide`,
  *  `const x = …["probeCollide"]`, `const x = "probeCollide"` (el string que
  *  luego viaja a `ctx.nefan(x, …)`), `const x = <otro alias>`, el parámetro
- *  con valor por defecto `function f(x = ….probeCollide)`, y las
- *  desestructuraciones `{probeCollide}` / `{probeCollide: x}`— y después cuenta
+ *  con valor por defecto `function f(x = ….probeCollide)`, la ASIGNACIÓN
+ *  `x = ….probeCollide` (también sobre un `let` ya declarado y la
+ *  desestructuración en asignación), las desestructuraciones `{probeCollide}`
+ *  / `{probeCollide: x}`, y todo eso ENVUELTO en paréntesis, coma, ternario,
+ *  `??`/`||` o `.bind(…)`— y después cuenta
  *  1 cada `Identifier`/`StringLiteralLike` con el texto exacto y cada
  *  `Identifier` que es un alias; la DECLARACIÓN del alias cuenta 0, porque
  *  declarar no consulta nada (un alias sin uso vale 0). Los nueve ficheros del
@@ -70,11 +73,19 @@
  *  expresiones convertiría el detector en medio intérprete—, pero se escriben.
  *
  *  Y los límites del detector de sitios de uso, cada uno con su `it` que MIDE
- *  la cifra (rojo si alguien lo cierra sin quitar el párrafo): el alias pasado
+ *  la cifra (rojo si alguien lo cierra sin quitar el párrafo). La lista NO se
+ *  presume completa: la QA de #686 encontró tres familias más después de que
+ *  la primera versión dijera «cinco»; dos se cerraron (asignación, expresión
+ *  envolvente) y una se declara. El alias pasado
  *  como VALOR (`rumbos.map(pc)`, o `f(pc)` con `(q) => q(a, b)` dentro: un
  *  parámetro SIN inicializador no liga nada) cuenta 1 referencia y no las
  *  llamadas que `map` o `f` hagan por dentro —es el límite honesto de «sitio
- *  de uso»—; el CRUCE DE
+ *  de uso»—, y su variante REALISTA en un guion de Playwright es con STRING:
+ *  `page.evaluate((nombre) => window.__nefan[nombre](…) ×N, "probeCollide")`
+ *  cuenta 1; el CONTENEDOR (`{pc: ….probeCollide}` + `s.pc(…)`, `{mov:
+ *  "probeCollide"}` + `ctx.nefan(N.mov, …)`, `const [pc] = […]`, `for (const
+ *  pc of […])`) cuenta 1 para N, porque no se siguen propiedades ni
+ *  elementos; el CRUCE DE
  *  FICHERO (`export const S = "probeCollide"` en `qa/lib/` e `import {S}` en un
  *  guion) cuenta 0 en el guion, porque resolver imports es otro detector y hoy
  *  no tiene sujeto (`grep probeCollide qa/lib/` = 0 fuera del `hook[p]`); y el
@@ -93,8 +104,10 @@
  *  Mismo patrón de totalidad que `banco-medido.json`, `mutation-targets.json` y
  *  `candados-headless.json`, y mismo precedente de detector que
  *  `qa-lib-tiene-quien-lo-mire.test.ts` (#454): el verde falso se tapa parseando.
- *  Que el banco sea `.mjs` y solo `.mjs` —y por tanto que barrer `qa/**\/*.mjs`
- *  sea barrer TODO lo ejecutable— lo canda ese mismo test (#686).
+ *  Que bajo `qa/` no haya más extensión ejecutable que `.mjs` lo canda ese
+ *  mismo test (#686), sobre EL MISMO barrido (`test/banco-ficheros.ts`), que
+ *  salta `node_modules/`, `.tmp/` y `capturas/` y nada más: un `.mjs` ahí no
+ *  lo ve ninguno de los dos, y está escrito en el punto (7) del padrón.
  *
  *  ## Las dos direcciones
  *
@@ -107,11 +120,12 @@
  *  batería de navegador, que el CI no corre. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
+import { SALTOS_DEL_BANCO, fuentesDelBanco } from "./banco-ficheros.js";
 
 const core = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(core, "..");
@@ -182,11 +196,33 @@ export function consultas(fuente: string, nombre: string): number {
   const declaraciones = new Set<ts.Node>();
   const nombraLaSonda = (n: ts.Node): boolean =>
     (ts.isIdentifier(n) || ts.isStringLiteralLike(n)) && n.text === nombre;
-  const ligaUnAlias = (init: ts.Expression): boolean =>
-    (ts.isPropertyAccessExpression(init) && init.name.text === nombre) ||
-    (ts.isElementAccessExpression(init) && nombraLaSonda(init.argumentExpression)) ||
-    (ts.isStringLiteralLike(init) && init.text === nombre) ||
-    (ts.isIdentifier(init) && alias.has(init.text));
+  /** ¿Esta expresión ENTREGA la sonda? Se desenvuelve lo que no cambia el
+   *  valor —paréntesis, coma, ternario, `??`/`||`/`&&`, `.bind(…)`— hasta la
+   *  base: `….nombre`, `[…"nombre"]`, el string `"nombre"`, u otro alias
+   *  (QA de #686, I-1b: cada envoltura valía 1 para N llamadas). */
+  const ligaUnAlias = (e: ts.Expression): boolean => {
+    if (ts.isParenthesizedExpression(e)) return ligaUnAlias(e.expression);
+    if (ts.isConditionalExpression(e)) return ligaUnAlias(e.whenTrue) || ligaUnAlias(e.whenFalse);
+    if (ts.isBinaryExpression(e)) {
+      const k = e.operatorToken.kind;
+      if (k === ts.SyntaxKind.CommaToken) return ligaUnAlias(e.right);
+      if (k === ts.SyntaxKind.QuestionQuestionToken || k === ts.SyntaxKind.BarBarToken || k === ts.SyntaxKind.AmpersandAmpersandToken) {
+        return ligaUnAlias(e.left) || ligaUnAlias(e.right);
+      }
+      return false;
+    }
+    if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression) && e.expression.name.text === "bind") {
+      return ligaUnAlias(e.expression.expression);
+    }
+    return (
+      (ts.isPropertyAccessExpression(e) && e.name.text === nombre) ||
+      (ts.isElementAccessExpression(e) && nombraLaSonda(e.argumentExpression)) ||
+      (ts.isStringLiteralLike(e) && e.text === nombre) ||
+      (ts.isIdentifier(e) && alias.has(e.text))
+    );
+  };
+  const esNombreDePropiedad = (p: ts.PropertyName): boolean =>
+    (ts.isIdentifier(p) || ts.isStringLiteral(p)) && p.text === nombre;
 
   // (i) Punto fijo: un re-alias (`const q = pc`) solo se reconoce después de
   // que `pc` lo sea, y `pc` puede declararse más abajo en el fichero. Un
@@ -206,11 +242,33 @@ export function consultas(fuente: string, nombre: string): number {
           declaraciones.add(n);
           cambio = true;
         } else if (ts.isBindingElement(n) && ts.isIdentifier(n.name)) {
-          const propiedad = n.propertyName ?? n.name;
-          if ((ts.isIdentifier(propiedad) || ts.isStringLiteral(propiedad)) && propiedad.text === nombre) {
+          if (esNombreDePropiedad(n.propertyName ?? n.name)) {
             alias.add(n.name.text);
             declaraciones.add(n);
             cambio = true;
+          }
+        } else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+          // La ASIGNACIÓN, no solo la declaración (QA de #686, I-1a): `let pc;
+          // pc = ….probeCollide`, la reasignación, y la desestructuración en
+          // asignación `({ probeCollide: pc } = window.__nefan)`, que el
+          // parser da como ObjectLiteralExpression y no como BindingPattern.
+          if (ts.isIdentifier(n.left) && ligaUnAlias(n.right)) {
+            alias.add(n.left.text);
+            declaraciones.add(n);
+            cambio = true;
+          } else if (ts.isObjectLiteralExpression(n.left)) {
+            for (const prop of n.left.properties) {
+              if (declaraciones.has(prop)) continue;
+              if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.initializer) && esNombreDePropiedad(prop.name)) {
+                alias.add(prop.initializer.text);
+                declaraciones.add(prop);
+                cambio = true;
+              } else if (ts.isShorthandPropertyAssignment(prop) && prop.name.text === nombre) {
+                alias.add(nombre);
+                declaraciones.add(prop);
+                cambio = true;
+              }
+            }
           }
         }
       }
@@ -223,25 +281,18 @@ export function consultas(fuente: string, nombre: string): number {
   let n = 0;
   const cuenta = (nodo: ts.Node): void => {
     if (esJSDoc(nodo) || declaraciones.has(nodo)) return;
+    // `let pc;` sin inicializador, que luego se asigna: declara, no consulta.
+    if (ts.isVariableDeclaration(nodo) && !nodo.initializer && ts.isIdentifier(nodo.name) && alias.has(nodo.name.text)) return;
+    // Asignar AL alias (`pc = otra`) tampoco: se cuenta solo el lado derecho.
+    if (ts.isBinaryExpression(nodo) && nodo.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(nodo.left) && alias.has(nodo.left.text)) {
+      cuenta(nodo.right);
+      return;
+    }
     if (nombraLaSonda(nodo) || (ts.isIdentifier(nodo) && alias.has(nodo.text))) n++;
     ts.forEachChild(nodo, cuenta);
   };
   cuenta(sf);
   return n;
-}
-
-/** Todos los `.mjs` del banco, en ruta relativa a la raíz del repo. Se salta
- *  `node_modules`, las capturas y los directorios efímeros de una corrida
- *  (`qa/.tmp/<run>/`), que no son fuente del banco. Que `.mjs` sea TODO lo
- *  ejecutable bajo `qa/` lo canda `qa-lib-tiene-quien-lo-mire.test.ts`. */
-export function fuentesDelBanco(dir: string, raiz: string = dir, out: string[] = []): string[] {
-  for (const e of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (e.name === "node_modules" || e.name === "capturas" || e.name.startsWith(".")) continue;
-    const p = join(dir, e.name);
-    if (e.isDirectory()) fuentesDelBanco(p, raiz, out);
-    else if (e.name.endsWith(".mjs")) out.push(relative(raiz, p).split(sep).join("/"));
-  }
-  return out;
 }
 
 const padron: Padron = PadronSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
@@ -390,6 +441,42 @@ describe("el detector de sondas de movimiento cuenta SITIOS DE USO (#686)", () =
     assert.equal(consultas(reAlias, SONDA), 1, "`q = pc` en la firma es un re-alias: la firma 0, la llamada 1");
   });
 
+  it("la ASIGNACIÓN liga igual que la declaración: let + `pc = …`, la reasignación y `({probeCollide: pc} = …)`", () => {
+    // I-1a de la QA de #686: las tres valían 1 para N llamadas.
+    const letYAsigna = ["let pc;", "pc = window.__nefan.probeCollide;", "pc(1, 2); pc(3, 4); pc(5, 6);"].join("\n");
+    assert.equal(consultas(letYAsigna, SONDA), 3, "`let pc;` declara (0), la asignación liga (0), las tres llamadas cuentan");
+    const condicional = ["let pc;", "if (x) pc = window.__nefan.probeCollide; else pc = otra;", "pc(1, 2); pc(3, 4);"].join("\n");
+    assert.equal(consultas(condicional, SONDA), 2, "asignar OTRA cosa al alias no es una consulta");
+    const desestructurada = ["let pc;", "({ probeCollide: pc } = window.__nefan);", "pc(1, 2); pc(3, 4);"].join("\n");
+    assert.equal(consultas(desestructurada, SONDA), 2);
+    const abreviada = ["let probeCollide;", "({ probeCollide } = window.__nefan);", "probeCollide(1, 2);"].join("\n");
+    assert.equal(consultas(abreviada, SONDA), 1);
+    // Reasignar un `let` que ANTES era la sonda de punto SOBRECUENTA (4 por 3):
+    // el nombre de la declaración vieja es un identificador alias. Dirección
+    // segura, punto (5) del padrón.
+    const reasignada = ["let pc = window.__nefan.probePoint;", "pc = window.__nefan.probeCollide;", "pc(1, 2); pc(3, 4); pc(5, 6);"].join("\n");
+    assert.equal(consultas(reasignada, SONDA), 4);
+  });
+
+  it("la EXPRESIÓN ENVOLVENTE se desenvuelve: paréntesis, coma, ternario, `??`, `.bind`", () => {
+    // I-1b de la QA de #686: cada envoltura valía 1 para 3 llamadas.
+    const tres = "pc(1, 2); pc(3, 4); pc(5, 6);";
+    for (const alias of [
+      "const pc = (window.__nefan.probeCollide);",
+      "const pc = (0, window.__nefan.probeCollide);",
+      "const pc = c ? window.__nefan.probeCollide : otra;",
+      "const pc = c ? otra : window.__nefan.probeCollide;",
+      "const pc = window.__nefan.probeCollide ?? noop;",
+      "const pc = noop || window.__nefan.probeCollide;",
+      "const pc = window.__nefan.probeCollide.bind(window.__nefan);",
+      "const pc = window.__nefan?.probeCollide;",
+    ]) {
+      assert.equal(consultas(`${alias}\n${tres}`, SONDA), 3, alias);
+    }
+    const bindSobreAlias = ["const pc = window.__nefan.probeCollide;", "const bound = pc.bind(null);", "bound(1, 2); bound(3, 4); bound(5, 6);"].join("\n");
+    assert.equal(consultas(bindSobreAlias, SONDA), 3);
+  });
+
   it("el string guardado en una const cuenta cada vez que viaja a ctx.nefan", () => {
     // La otra rama barata: `sonda.mjs` despacha por `hook[p]`, así que
     // `ctx.nefan(S, …)` con `S = "probeCollide"` es una consulta por sitio.
@@ -492,6 +579,34 @@ describe("el detector de sondas de movimiento cuenta SITIOS DE USO (#686)", () =
       "f(pc);",
     ].join("\n");
     assert.equal(consultas(porParametro, SONDA), 1, "el detector sigue el alias al parámetro de `f`: retira el punto (3)");
+    // Y la variante REALISTA en un guion de Playwright, que es con STRING (el
+    // alias por identificador no es serializable a `page.evaluate`; QA contó
+    // 75 `evaluate` con parámetro en el banco): 1 por sitio donde se ESCRIBE
+    // el nombre, 0 por las N llamadas de dentro. Sigue en el punto (3).
+    const porString = [
+      "await page.evaluate((nombre) => {",
+      "  window.__nefan[nombre](1, 2); window.__nefan[nombre](3, 4); window.__nefan[nombre](5, 6);",
+      '}, "probeCollide");',
+    ].join("\n");
+    assert.equal(consultas(porString, SONDA), 1, "el detector sigue el string al parámetro del evaluate: retira esa frase del punto (3)");
+    const envoltorio = [
+      "const sonda = (nombre, x, z) => ctx.nefan(nombre, x, z);",
+      'await sonda("probeCollide", 1, 2); await sonda("probeCollide", 3, 4);',
+    ].join("\n");
+    assert.equal(consultas(envoltorio, SONDA), 2, "cada sitio donde se escribe el string cuenta; lo que `sonda` haga por dentro, no");
+  });
+
+  it("LÍMITE MEDIDO: el CONTENEDOR cuenta 1 para N, porque no se siguen propiedades ni elementos", () => {
+    // I-1c de la QA de #686, declarado en el punto (6) del padrón. Cerrarlo
+    // exige seguir `s.pc` hasta `{pc: …}` y `[pc]` hasta su elemento: otro
+    // detector. Si esto pasa a contar las llamadas, retira el punto (6).
+    const casos: [string, number][] = [
+      [["const s = { pc: window.__nefan.probeCollide };", "s.pc(1, 2); s.pc(3, 4); s.pc(5, 6);"].join("\n"), 1],
+      [['const N = { mov: "probeCollide" };', "await ctx.nefan(N.mov, 1, 2); await ctx.nefan(N.mov, 3, 4);"].join("\n"), 1],
+      [["const [pc] = [window.__nefan.probeCollide];", "pc(1, 2); pc(3, 4);"].join("\n"), 1],
+      [["for (const pc of [window.__nefan.probeCollide]) { pc(1, 2); pc(3, 4); }"].join("\n"), 1],
+    ];
+    for (const [texto, esperado] of casos) assert.equal(consultas(texto, SONDA), esperado, texto);
   });
 
   it("LÍMITE MEDIDO: el cruce de fichero cuenta 0 en el guion, porque no se resuelven imports", () => {
@@ -516,17 +631,17 @@ describe("el detector de sondas de movimiento cuenta SITIOS DE USO (#686)", () =
     assert.equal(consultas(texto, SONDA), 3, "el detector distingue ámbitos: retira el punto (5) del padrón");
   });
 
-  it("el barrido de fuentes ve los subdirectorios y se salta lo efímero", () => {
-    // `qa/guiones/` cuelga de `qa/`, y las corridas dejan `.tmp/<run>/`: un
-    // barrido plano perdería los guiones y uno sin filtro mediría basura.
+  it("el barrido de fuentes es EL del banco: ve los subdirectorios y salta solo lo declarado", () => {
+    // `qa/guiones/` cuelga de `qa/`, y las corridas dejan `.tmp/<run>/` y
+    // `capturas/<run>/`: un barrido plano perdería los guiones y uno sin filtro
+    // mediría basura. Es `test/banco-ficheros.ts`, el mismo que usa la lista
+    // blanca (M-1 de la QA de #686): dos barridos eran dos definiciones de banco.
     const f = fuentesDelBanco(QA);
     assert.ok(
       f.some((x) => x.startsWith("guiones/")) && f.some((x) => !x.includes("/")),
       `el barrido tiene que ver los guiones y la raíz de qa/: ${f.length} ficheros`,
     );
-    assert.deepEqual(
-      f.filter((x) => x.startsWith(".") || x.includes("node_modules") || x.startsWith("capturas/")),
-      [],
-    );
+    assert.deepEqual(f.filter((x) => x.split("/").some((d) => SALTOS_DEL_BANCO.has(d))), []);
+    assert.deepEqual([...SALTOS_DEL_BANCO].sort(), [".tmp", "capturas", "node_modules"], "lo que se salta está en el punto (7) del padrón");
   });
 });
