@@ -131,14 +131,12 @@ mano y son un `sed` cada uno. Igual que H-1 cuando se cierre.
 
 - Derivación, hermano, totalidad: `cd nefan-core && node --import tsx --test test/esperas-que-conducen.test.ts test/espera-de-fotogramas-con-dueno.test.ts test/candados-headless-totalidad.test.ts`
 - Headless: `node qa/la-exencion-por-issue-tiene-issue-vivo.mjs` (y sus cuatro rojos: `sed 's/"issue": 673/"issue": 545/'` en el hermano; `PATH=$(dirname $(command -v node))`; un `gh` falso que salga 4; uno que imprima `open`).
-- Banco adversarial de esta QA (H-1 no, ése es sobre el árbol; H-2/H-3/H-4 sí):
-  `cd nefan-core && node --import tsx ../docs/agents/2026-09-18-tanda-ae-la-exencion-se-deriva-o-caduca/qa-adversarial.ts`
-  → hoy imprime «agujeros (mentira deriva): 8 · fricciones (honesta roja): 5». Cuando el ingeniero
-  cierre o declare cada uno, las líneas cambian de rótulo; la línea de resumen es el número a mirar.
+- Banco adversarial de esta QA: vivió como `qa-adversarial.ts` junto a este informe en la primera
+  vuelta y en la segunda pasó a tres `it` de `esperas-que-conducen.test.ts` (ver abajo).
 - H-1: los dos inserts del hallazgo y el test correspondiente (verde = agujero abierto).
 - El 80 aislado: `node qa/run.mjs 80` ×3.
 
-## Veredicto
+## Veredicto de la PRIMERA vuelta (2026-09-20, sobre `ecc40ae0`)
 
 **No apto**, por el criterio 5: la derivación cumple lo que promete sobre las cinco honestas y sobre
 la mentira medida del issue (N17b roja, verificado), pero deja pasar en verde dos mentiras nuevas
@@ -146,3 +144,71 @@ la mentira medida del issue (N17b roja, verificado), pero deja pasar en verde do
 predicado por referencia— que **no están en `_lo_que_esto_NO_sujeta` ni medidas**, y la primera
 contradice una frase del contrato. Las dos se cierran o se declaran con su caso en una vuelta al
 mismo ingeniero; el resto (criterios 1–4, 6–8, 10) está verificado y en verde.
+
+---
+
+# Segunda vuelta · 2026-09-20 · commit `aafb4ea5` (rama rebasada sobre `main` = `e635159d`)
+
+Re-verificados SOLO los criterios que tocaba la corrección (5, 9, banco adversarial) más una pasada
+adversarial nueva. Árbol limpio antes y después de cada sabotaje; nada ajeno tocado; sin stack.
+
+| # | Qué | Veredicto | Evidencia |
+|---|---|---|---|
+| H-1 conducen | Mi insert exacto en el 05 (espera de PARED con el `desc` de la exención honesta y el predicado de N17b) | ✅ rojo por los DOS mecanismos | 15 ✔ · **2 ✖**: «05 :: "el jugador entra en el tile recién generado" → 2 esperas, líneas 181, 233» (test H-1) y «05:181 declara «bridge» (exige leer scene) y su predicado lee frontier» (derivación de TODAS, no de la última). Antes: 12·0 |
+| H-1 hermano | Copia del molde en `las-fixtures-solo-chocan-con-el-agua.mjs` con el `desc` de la honesta | ✅ rojo | 11 ✔ · **1 ✖**: «… :: "el renderer emite más frames" → 2 esperas, líneas 199, 200». Antes: 10·0 |
+| H-2 sombra | `const TRAZA = () => window.__nefan.scene ?? null` añadido al final del 133 | ✅ rojo nombrándola | «133:331 declara «game loop» (exige leer reloj o fps) y su predicado llega por la referencia AMBIGUA `TRAZA` (declarada más de una vez en el fichero, o reasignada): no se deriva por adivinanza» |
+| H-2 reasignación | `let TRAZA = …` + `TRAZA = () => scene` al final del 133 | ✅ rojo, mismo texto | ídem, `refAmbigua = "TRAZA"` |
+| H-2 hermano | Referencia con dos dueños se mira ENTERA (detectar de más), con control del control (un dueño que no lee contador → 0 censadas) | ✅ | Caso «la referencia con VARIOS dueños se resuelve detectando de MÁS» en el test del hermano, y párrafo (5) de su `_lo_que_esto_NO_sujeta` |
+| Banco adversarial | Los 16 casos A…P en el test, con su cifra; `qa-adversarial.ts` borrado | ✅ | A y B en «(1) la lectura que NO DECIDE»; C, D, M, N, J en «lo que la derivación CAZA»; E, F, O, P en «los AGUJEROS que sigue dejando pasar» (`deepEqual` contra los cuatro); G, H, I, K, L en «las FRICCIONES». `ls docs/agents/…/` sin el `.ts`; `un-numero-un-guion.test.ts` 4 ✔ en la corrida conjunta (51 ✔ · 0 ✖ los cuatro tests de la zona) |
+| Marcador 8 → 6 | ¿Es verdad? | ✅ | Agujeros vivos = A, B, E, F, O, P (6); cerrados C y D (los dos H-2). Fricciones 5, declaradas y medidas |
+| H-3 | El caso medido de (1) es el VIVO (`reloj().frames > 0 && frontier.proposal` bajo `game loop`) y la muerta es la segunda mitad; el párrafo dice «la lectura que NO DECIDE» | ✅ | Diff del test y del contrato |
+| H-4 | Las cuatro fricciones en `_lo_que_esto_NO_sujeta` (2) con su caso | ✅ | Párrafo (2) del contrato; `it` «las FRICCIONES» |
+| H-5 | El mapa `clases` es política: `it` que lo MIDE con `playerPos` añadido a `bridge`, y control con el mapa real | ✅ | `it` «lo que el mapa `clases` NO sujeta»; párrafo (4) |
+| H-6 | `contrato-candados-en-negativo.mjs` 4 → 8 entradas de esperas, con las dos baratas y H-1/H-2 EN EL BANCO; cabecera «siempre en el contrato» corregida | ✅ | Diff del guion; las ocho salen 🔴 en la corrida de abajo |
+| Criterio 9 (⚠️ de la primera vuelta) | El guion de negativos DE UNA PIEZA, con el turno libre | ✅ | `node qa/contrato-candados-en-negativo.mjs` 13:20:08 → 13:20:30: **30 probados · 30 nacen rojos · 0 no se enteran · 0 obsoletos**, salida 0, árbol limpio después |
+| `_comment` falso de la primera vuelta | «apunta a UNA y no ciega el fichero entero» | ✅ corregido | Ahora dice que lo SUJETA UN TEST, y cuenta que antes era falso con el número (12·0 / 10·0) |
+| Suite entera | `npm test` sobre el árbol limpio rebasado | ✅ | **3145 tests · 3145 pass · 0 fail**, salida 0 |
+
+## Adversarial nueva (segunda vuelta)
+
+| Caso | Qué esperaba | Resultado |
+|---|---|---|
+| **A1** · el `desc` de la espera honesta del 05 cambia UNA letra en el guion («generadO») | la exención se queda sin sujeto (rojo) y la espera queda sin eximir (rojo) | ✅ 15 ✔ · **2 ✖**: «exención(es) sin sujeto (bórralas): 05 :: "…generado"» + «05:232 · holdUntil(…, { ms: 180_000 })» |
+| **A2** · se AÑADE una espera con `desc` a una letra de la honesta (la honesta se queda) | solo la nueva en rojo; la exención conserva su sujeto y H-1 no salta | ✅ 16 ✔ · **1 ✖**: «05:181 · holdUntil(…, { ms: 120_000 })»; el test H-1 verde (claves distintas) |
+| **B** · la exención honesta del 05 con su predicado sustituido por `tileNuevo` importado de `../lib/tiles.mjs` (fricción K, declarada) | rojo, y que el mensaje diga qué hacer | ✅ rojo: «05:233 declara «bridge» (exige leer scene) y su predicado lee **NADA del hook**». El mensaje del aserto ofrece tres salidas (leer algo del proceso / `{sim}` / `issue`), **pero no la cuarta que es la de este caso** —traer el predicado al fichero o leer el hook dentro de él— y no remite al párrafo (2) del contrato. Ver H-8 |
+| **Q** · SOMBRA POR PARÁMETRO: `const pred = () => scene` top-level; `async function espera(ctx, pred) { holdUntil(…, pred, …) }` llamado con un lector de `frontier` | que fuese AMBIGUA | ❌ `{ambigua: false, lecturas: ["scene"]}` → derivaría «bridge». Ver H-7 |
+| **R** · SOMBRA POR DESTRUCTURING: `const { pred } = ctx.sondas` dentro + `const pred = () => scene` top-level | ídem | ❌ `{ambigua: false, lecturas: ["scene"]}`. Ver H-7 |
+| **S** · `let pred; if (x) pred = leeFrontier` + `const pred = () => scene` top-level | ambigua | ✅ `ambigua: true` (la reasignación se ve) |
+| **T** · control: única declaración honesta por referencia | deriva | ✅ `["scene"]` |
+
+## Hallazgos de la segunda vuelta
+
+### H-7 · MENOR (no reabre el criterio 5 si se DECLARA) — la «referencia ambigua» solo cuenta vínculos con valor función
+
+`funcionesDelFichero` apunta en `porNombre` las `FunctionDeclaration` y las `VariableDeclaration`
+cuyo inicializador es una función, y en `reasignados` los `=`; un PARÁMETRO con el mismo nombre (Q)
+o un patrón de destructuring (R) no son ninguna de las dos cosas, así que un único `const pred`
+top-level lector de `scene` decide la derivación mientras el que corre llega por el parámetro del
+helper. Es la misma familia que C/D, requiere el mismo grado de elaboración, y la frase nueva del
+contrato («una referencia que no decide una sola función ya no deriva nada») es cierta para las
+declaraciones y falsa para los vínculos. Salida barata: contar como candidato CUALQUIER vínculo del
+nombre (parámetros, `BindingElement`, `let` sin inicializador) y marcar ambigua si hay más de uno;
+o añadirlo a `_lo_que_esto_NO_sujeta` con Q y R como caso medido junto a E/F/O/P (el helper ya lo
+insinúa: «NO resuelve ÁMBITOS»). Reproducible con el scratch `adv2/q.ts` (importa el helper del repo).
+
+### H-8 · MENOR — el rojo de la fricción K no dice la salida que le toca
+
+Con el predicado importado, el rojo es exacto («lee NADA del hook») pero el mensaje del aserto
+enumera tres salidas que no son la de este caso. Quien lo sufra tiene que ir al párrafo (2) del
+contrato para enterarse de que la salida es declarar el predicado en el fichero o leer el hook
+dentro. Una frase más en el mensaje cuando `lecturas` está vacío y el predicado llegó por
+referencia no resuelta («¿viene importado? tráelo al fichero») lo cierra.
+
+## Veredicto FINAL
+
+**Apto con reservas.** Los dos agujeros por los que la primera vuelta tumbó el criterio 5 están
+CERRADOS y medidos en rojo sobre el árbol por los dos mecanismos pedidos; las cinco honestas siguen
+en verde; los 16 casos del banco adversarial viven como asertos con el marcador 8 → 6 verdadero; el
+guion de negativos sale 30/30 de una pieza; y la suite entera está en verde. Las reservas son H-7
+(una variante de H-2 por vínculos que no son declaraciones: cerrar o declarar con su caso) y H-8
+(un mensaje), ninguna de las dos deja pasar la mentira medida del issue ni contradice hoy un test.

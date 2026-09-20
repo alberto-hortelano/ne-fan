@@ -450,6 +450,22 @@ describe("la espera por fotogramas del banco tiene UN dueño (#606)", () => {
       const pred = (n) => window.__nefan.state().pos.x > n;
       await ctx.waitFor("avanza", pred, 10_000, 0);`;
     assert.deepEqual(esperasPorFotogramas(unDueno, "qa/de-mentira.mjs"), []);
+    // Y LA OTRA DIRECCIÓN, que es el flanco que aquí queda abierto (H-7 de la
+    // re-QA, medido en vez de prometido): si el predicado que corre llega por un
+    // PARÁMETRO de helper, no hay candidato legible que mirar y la espera se
+    // queda FUERA del censo — o sea que una copia del molde escrita así entra
+    // sin pasar por aquí. En el contrato gemelo ese mismo caso se cierra
+    // poniéndose ROJO; aquí el rojo no es la salida, porque lo que se censa es
+    // lo que se encuentra. Si esto deja de estar vacío, cerraste el flanco:
+    // borra el caso y el final del párrafo (5) de `_lo_que_esto_NO_sujeta`.
+    const porParametro = `
+      async function espera(ctx, pred) {
+        await ctx.waitFor("avanza", pred, 10_000, 0);
+      }
+      export default async function (ctx) {
+        await espera(ctx, (n) => window.__nefan.fps().frames > n + 5);
+      }`;
+    assert.deepEqual(esperasPorFotogramas(porParametro, "qa/de-mentira.mjs"), []);
   });
 
   it("el detector lee el presupuesto y la descripción DEL VERBO que toca (el `desc` del 142 era la tecla)", () => {

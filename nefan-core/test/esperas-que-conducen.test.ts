@@ -120,6 +120,10 @@ export type EsperaDePared = {
    *  el mapa dejó arriba es adivinar, y adivinando salía verde una mentira
    *  (H-2 de la QA). */
   refAmbigua: string | null;
+  /** El nombre de la referencia cuando NO se declara en este fichero: viene
+   *  importada (de `qa/lib`, por ejemplo). No es ambigua, es que no está — y el
+   *  rojo tiene que decir esa salida y no las otras tres (H-8 de la re-QA). */
+  refSinResolver: string | null;
 };
 
 /** Los sitios de `texto` en los que una espera que CONDUCE se presupuesta en
@@ -173,14 +177,15 @@ export function esperasDeParedQueConducen(texto: string, fichero: string): Esper
   /** Lo que lee el predicado de esta espera y si su referencia era ambigua.
    *  `[]` si no hay predicado, si la referencia no se resuelve en el fichero, o
    *  si el nombre no decide una función sola. */
-  const delPredicado = (n: ts.CallExpression): { lecturas: string[]; refAmbigua: string | null } => {
+  const delPredicado = (n: ts.CallExpression): { lecturas: string[]; refAmbigua: string | null; refSinResolver: string | null } => {
     const v = verboDe(n);
-    if (v === null) return { lecturas: [], refAmbigua: null };
+    if (v === null) return { lecturas: [], refAmbigua: null, refSinResolver: null };
     const pred = predicadoDe(n, v, funciones);
-    if (pred.ambigua) return { lecturas: [], refAmbigua: pred.referencia };
+    if (pred.ambigua) return { lecturas: [], refAmbigua: pred.referencia, refSinResolver: null };
     const vistas: string[] = [];
     for (const nodo of pred.nodos) for (const l of lecturasDelHook(nodo)) if (!vistas.includes(l)) vistas.push(l);
-    return { lecturas: vistas, refAmbigua: null };
+    const sinResolver = pred.referencia !== null && pred.nodos.length === 0 ? pred.referencia : null;
+    return { lecturas: vistas, refAmbigua: null, refSinResolver: sinResolver };
   };
   /** Texto de la llamada, para reconocer los verbos del teclado escritos de las
    *  dos maneras: `ctx.nefan("inputDriver.press", "up")` y
@@ -327,6 +332,34 @@ const encontradas = ficherosDelBanco().flatMap((f) =>
   esperasDeParedQueConducen(readFileSync(join(repoRoot, f), "utf8"), f),
 );
 
+/** POR QUÉ no deriva esta espera, dicho con LA SALIDA DE ESTE CASO y no con una
+ *  lista de las que existen. Vive fuera del `it` porque el mensaje es parte de
+ *  lo que el candado promete y por tanto hay que poder MEDIRLO: la re-QA (H-8)
+ *  midió el rojo de la fricción K —predicado importado de `qa/lib`— y era
+ *  exacto («lee NADA del hook») y a la vez inútil, porque ninguna de las tres
+ *  salidas que enumeraba el aserto era la suya. */
+export function porQueNoDeriva(espera: EsperaDePared): string {
+  if (espera.refAmbigua !== null) {
+    return (
+      `llega por la referencia AMBIGUA \`${espera.refAmbigua}\` —ese nombre tiene más de un vínculo en el fichero ` +
+      `(otra declaración, un parámetro, un destructuring) o se reasigna—, y por ahí no se deriva por adivinanza: ` +
+      `dale un nombre que solo sea suyo`
+    );
+  }
+  if (espera.refSinResolver !== null) {
+    return (
+      `llega por la referencia \`${espera.refSinResolver}\`, que NO se declara en este fichero: ¿viene importada de ` +
+      `\`qa/lib\`? Tráela al guion, o lee el hook dentro del predicado — es la fricción del párrafo (2) de ` +
+      `\`_lo_que_esto_NO_sujeta\``
+    );
+  }
+  if (espera.lecturas.length) return `lee ${espera.lecturas.join(", ")}`;
+  return (
+    `lee NADA del hook: si lo alcanza por un ALIAS, por destructuring o por corchetes, léelo dentro del predicado ` +
+    `(\`window.__nefan.X\`) — son las fricciones del párrafo (2) de \`_lo_que_esto_NO_sujeta\``
+  );
+}
+
 /** Material escrito a mano → lo que la derivación leería de cada espera suya.
  *  Es el instrumento con el que se MIDEN los agujeros y las fricciones de
  *  `_lo_que_esto_NO_sujeta`, y con el que se comprobó el banco adversarial que
@@ -413,18 +446,17 @@ describe("las esperas que conducen al jugador presupuestan en sim (#545)", () =>
       for (const espera of porClave.get(clave(e)) ?? []) {
         if (espera.lecturas.some((l) => exige.includes(l))) continue;
         sinPrueba.push(
-          `${e.fichero}:${espera.linea} declara «${e.clase}» (exige leer ${exige.join(" o ")}) y su predicado ` +
-            (espera.refAmbigua !== null
-              ? `llega por la referencia AMBIGUA \`${espera.refAmbigua}\` (declarada más de una vez en el fichero, o reasignada): no se deriva por adivinanza`
-              : `lee ${espera.lecturas.length ? espera.lecturas.join(", ") : "NADA del hook"}`),
+          `${e.fichero}:${espera.linea} declara «${e.clase}» (exige leer ${exige.join(" o ")}) y su predicado ${porQueNoDeriva(espera)}`,
         );
       }
     }
     assert.deepEqual(
       sinPrueba,
       [],
-      `La clase de una exención la demuestra su PREDICADO, no su prosa. O el predicado lee algo del ` +
-        `proceso al que dice esperar, o la espera va a \`{sim}\`, o la clase es \`issue\` con su número.`,
+      `La clase de una exención la demuestra su PREDICADO, no su prosa. Cuatro salidas, y cada rojo de ` +
+        `arriba dice CUÁL es la suya: que el predicado lea algo del proceso al que dice esperar; que lo lea ` +
+        `AQUÍ (si el predicado viene importado o alcanza el hook por un alias, la lectura no se ve y hay que ` +
+        `traerla dentro); que la espera pase a \`{sim}\`; o que la clase sea \`issue\` con su número.`,
     );
   });
 
@@ -575,6 +607,86 @@ describe("las esperas que conducen al jugador presupuestan en sim (#545)", () =>
     const conGlobalThis = `await ctx.holdUntil("up", "anda", () => globalThis.__nefan.scene ? true : null, 8_000, null);`;
     assert.deepEqual(lecturasDe(conGlobalThis), [["scene"]]);
     assert.ok(derivaria(lecturasDe(conGlobalThis)[0], "bridge"));
+  });
+
+  it("banco adversarial · Q y R: la sombra por PARÁMETRO y por DESTRUCTURING también son ambiguas", () => {
+    // La re-QA (H-7) midió que la primera versión de la ambigüedad contaba
+    // DECLARACIONES CON VALOR FUNCIÓN, no vínculos: un parámetro con el mismo
+    // nombre, o un `const { pred } = …`, no aportaban candidato, así que el
+    // único `const pred` de arriba —lector de `scene`— decidía la derivación
+    // mientras el que CORRE llegaba por el parámetro. Los dos salían
+    // `{ambigua: false, lecturas: ["scene"]}` y derivaban «bridge».
+    // Q · el predicado que corre llega por el PARÁMETRO del helper.
+    const porParametro = `
+      const pred = () => window.__nefan.scene ? true : null;
+      async function espera(ctx, pred) {
+        await ctx.holdUntil("up", "anda", pred, 8_000, null);
+      }
+      export default async function (ctx) {
+        await espera(ctx, () => window.__nefan.frontier.proposal ?? null);
+      }`;
+    const [q] = esperasDeParedQueConducen(porParametro, "qa/guiones/de-mentira.mjs");
+    assert.deepEqual(q.lecturas, [], "Q: si vuelve a leer `scene`, H-7 está reabierto");
+    assert.equal(q.refAmbigua, "pred");
+    assert.ok(!derivaria(q.lecturas, "bridge"));
+    // R · el predicado que corre llega por DESTRUCTURING.
+    const porDestructuring = `
+      const pred = () => window.__nefan.scene ? true : null;
+      export default async function (ctx) {
+        const { pred } = ctx.sondas;
+        await ctx.holdUntil("up", "anda", pred, 8_000, null);
+      }`;
+    const [r] = esperasDeParedQueConducen(porDestructuring, "qa/guiones/de-mentira.mjs");
+    assert.deepEqual(r.lecturas, [], "R: si vuelve a leer `scene`, H-7 está reabierto");
+    assert.equal(r.refAmbigua, "pred");
+    // …Y EL CONTROL, que es lo que impide que esto se haya arreglado marcando
+    // ambigua a TODA referencia: la `TRAZA` del 133 tiene UN vínculo y sigue
+    // derivando «game loop». Sin este aserto, `ambigua = true` a secas dejaría
+    // los tres de arriba verdes y rompería la exención honesta del contrato.
+    const traza = `
+      const TRAZA = (n) => {
+        const p = window.__nefan.state().pos;
+        const c = window.__nefan.reloj();
+        return p && c ? [p, c] : null;
+      };
+      export default async function (ctx) {
+        await ctx.nefan("inputDriver.press", "up");
+        await ctx.waitFor("6 sondeos de traza con el loop pausado", TRAZA, 6_000, 6);
+      }`;
+    const [honesta] = esperasDeParedQueConducen(traza, "qa/guiones/de-mentira.mjs");
+    assert.equal(honesta.refAmbigua, null);
+    assert.ok(derivaria(honesta.lecturas, "game loop"));
+  });
+
+  it("el rojo dice LA SALIDA DE ESE CASO, no la lista de las que existen (H-8)", () => {
+    // El mensaje es parte de lo que el candado promete, así que se mide. La
+    // re-QA lo cazó con la fricción K: el rojo era exacto y a la vez inútil.
+    const importado = `
+      import { tileLlego } from "../lib/tiles.mjs";
+      await ctx.holdUntil("up", "anda", tileLlego, 8_000, null);`;
+    const [k] = esperasDeParedQueConducen(importado, "qa/guiones/de-mentira.mjs");
+    assert.equal(k.refSinResolver, "tileLlego", "la referencia no se declara aquí: no es ambigua, es que no está");
+    assert.equal(k.refAmbigua, null);
+    assert.match(porQueNoDeriva(k), /NO se declara en este fichero/);
+    assert.match(porQueNoDeriva(k), /Tráela al guion, o lee el hook dentro del predicado/);
+    assert.match(porQueNoDeriva(k), /párrafo \(2\)/);
+    // Y las otras tres ramas, cada una con SU salida y ninguna con la ajena.
+    const [amb] = esperasDeParedQueConducen(
+      `const pred = () => window.__nefan.scene ? true : null;\nasync function f(ctx, pred) { await ctx.holdUntil("up", "anda", pred, 8_000, null); }`,
+      "qa/guiones/de-mentira.mjs",
+    );
+    assert.match(porQueNoDeriva(amb), /referencia AMBIGUA `pred`/);
+    assert.match(porQueNoDeriva(amb), /dale un nombre que solo sea suyo/);
+    const [alias] = esperasDeParedQueConducen(
+      `export default async function (ctx) {\n const s = window.__nefan.scene;\n await ctx.holdUntil("up", "anda", () => (s.scene_id ? true : null), 8_000, null);\n}`,
+      "qa/guiones/de-mentira.mjs",
+    );
+    assert.match(porQueNoDeriva(alias), /lee NADA del hook: si lo alcanza por un ALIAS/);
+    const [lee] = esperasDeParedQueConducen(
+      `await ctx.holdUntil("up", "anda", () => window.__nefan.frontier.proposal ?? null, 8_000, null);`,
+      "qa/guiones/de-mentira.mjs",
+    );
+    assert.equal(porQueNoDeriva(lee), "lee frontier");
   });
 
   it("banco adversarial · los AGUJEROS que sigue dejando pasar, medidos (bórralos al cerrarlos)", () => {

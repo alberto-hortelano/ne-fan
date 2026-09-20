@@ -32,6 +32,16 @@ export interface FuncionesDelFichero {
    *  arranque y otro `const pred` al final del fichero resolvían al de abajo, o
    *  sea que la derivación leía una función DISTINTA de la que corre. */
   porNombre: Map<string, ts.Node[]>;
+  /** Cuántos VÍNCULOS tiene cada nombre en el fichero, sea cual sea su valor:
+   *  declaraciones de función, `const`/`let` (con inicializador o sin él),
+   *  PARÁMETROS y elementos de DESTRUCTURING. No es lo mismo que `porNombre`, y
+   *  la diferencia es el agujero H-7 de la re-QA: `porNombre` solo apunta lo
+   *  que TIENE VALOR FUNCIÓN LEGIBLE, así que un `const pred = () => scene`
+   *  arriba y un `function espera(ctx, pred)` que recibe el de verdad por
+   *  PARÁMETRO daban un solo candidato —«no ambigua»— y la derivación leía la
+   *  función que no corre. Un parámetro no es una declaración de función, pero
+   *  sí es un nombre que ya no decide una sola cosa. */
+  vinculos: Map<string, number>;
   /** Los nombres que se REASIGNAN en algún punto (`pred = () => …`). Una
    *  reasignación no es una `VariableDeclaration` y no entraba en el mapa:
    *  `let pred = leeScene; pred = leeFrontier` derivaba por la PRIMERA. */
@@ -51,19 +61,31 @@ export interface FuncionesDelFichero {
  *  reasignan, para que quien consulte pueda negarse a adivinar. */
 export function funcionesDelFichero(sf: ts.SourceFile): FuncionesDelFichero {
   const porNombre = new Map<string, ts.Node[]>();
+  const vinculos = new Map<string, number>();
   const reasignados = new Set<string>();
   const apunta = (nombre: string, nodo: ts.Node): void => {
     const ya = porNombre.get(nombre);
     if (ya) ya.push(nodo);
     else porNombre.set(nombre, [nodo]);
   };
+  const vincula = (nombre: string): void => {
+    vinculos.set(nombre, (vinculos.get(nombre) ?? 0) + 1);
+  };
   const visita = (n: ts.Node): void => {
-    if (ts.isFunctionDeclaration(n) && n.name) apunta(n.name.text, n);
-    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
-      if (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer)) {
+    if (ts.isFunctionDeclaration(n) && n.name) {
+      apunta(n.name.text, n);
+      vincula(n.name.text);
+    }
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)) {
+      vincula(n.name.text);
+      if (n.initializer && (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))) {
         apunta(n.name.text, n.initializer);
       }
     }
+    // Los DOS vínculos que no son declaraciones y por los que se colaba Q y R:
+    // el parámetro de un helper y el elemento de un destructuring.
+    if (ts.isParameter(n) && ts.isIdentifier(n.name)) vincula(n.name.text);
+    if (ts.isBindingElement(n) && ts.isIdentifier(n.name)) vincula(n.name.text);
     // `pred = …` (y `pred ??= …`, `pred ||= …`): el nombre deja de decidir una
     // función, mire donde mire este detector.
     if (ts.isBinaryExpression(n) && ts.isIdentifier(n.left)) {
@@ -75,7 +97,7 @@ export function funcionesDelFichero(sf: ts.SourceFile): FuncionesDelFichero {
     ts.forEachChild(n, visita);
   };
   visita(sf);
-  return { porNombre, reasignados };
+  return { porNombre, vinculos, reasignados };
 }
 
 /** Los tres verbos de espera del banco y DÓNDE lleva cada uno su descripción,
@@ -113,9 +135,11 @@ export interface PredicadoDeEspera {
   nodos: ts.Node[];
   /** El nombre, si el predicado llega por referencia. */
   referencia: string | null;
-  /** …y ese nombre NO decide una sola función: se declara más de una vez en el
-   *  fichero, o se reasigna. Resolver por nombre sería adivinar, así que quien
-   *  consulte se niega a derivar nada (H-2 de la QA de #611). */
+  /** …y ese nombre NO decide una sola cosa: tiene más de un VÍNCULO en el
+   *  fichero (declaración, `const`/`let`, PARÁMETRO o destructuring) o se
+   *  reasigna. Resolver por nombre sería adivinar, así que quien consulte se
+   *  niega a derivar nada (H-2, y H-7 para los vínculos que no son
+   *  declaraciones). */
   ambigua: boolean;
 }
 
@@ -133,7 +157,10 @@ export function predicadoDe(
   return {
     nodos: candidatos,
     referencia: a.text,
-    ambigua: candidatos.length > 1 || funciones.reasignados.has(a.text),
+    // Se cuenta por VÍNCULOS, no por candidatos legibles (H-7): un parámetro o
+    // un destructuring con el mismo nombre no aporta candidato pero sí quita la
+    // certeza de que el `const` de arriba sea el que corre.
+    ambigua: (funciones.vinculos.get(a.text) ?? 0) > 1 || candidatos.length > 1 || funciones.reasignados.has(a.text),
   };
 }
 
