@@ -80,14 +80,14 @@ export const aisla = ["saves", "fake-ai"];
  *  guion necesita ver vivos. */
 const VICTIMAS = 1;
 
-/** EL MODELO DE REFERENCIA, instalado en la página como `window.__qa152`.
+/** EL MODELO DE REFERENCIA, instalado en la página como `window.__qa155`.
  *
  *  Va ahí dentro y no en Node por una razón y no por comodidad: el modelo y lo
  *  PINTADO tienen que leerse en el mismo tick (ver la cabecera). Se instala una
  *  vez con `addInitScript` —así sobrevive a los `reload`— y no toca nada del
  *  juego: solo lee el hook y el DOM. */
 function instalarElModelo() {
-  window.__qa152 = () => {
+  window.__qa155 = () => {
     const n = window.__nefan;
     const estadoFps = n.fps();
     const texturados = new Set(estadoFps.ready ? estadoFps.textured : []);
@@ -147,7 +147,7 @@ async function abrirElMenu(ctx) {
   await ctx.page.waitForSelector("#dev-menu-items", { state: "visible", timeout: 10_000 });
 }
 
-const foto = (ctx) => ctx.page.evaluate(() => window.__qa152());
+const foto = (ctx) => ctx.page.evaluate(() => window.__qa155());
 
 /** Espera a que lo pintado sea EXACTAMENTE el modelo, y lo afirma. El rojo no
  *  puede ser un «no ocurrió» a secas: se vuelve a fotografiar y se dejan las dos
@@ -156,7 +156,7 @@ async function cuadraLaLista(ctx, desc, ms = 30_000) {
   const { ocurrio } = await ctx.expectEspera(
     desc,
     true,
-    () => (window.__qa152().cuadran ? true : null),
+    () => (window.__qa155().cuadran ? true : null),
     { ms },
   );
   if (!ocurrio) {
@@ -229,7 +229,7 @@ export default async function (ctx) {
   const maqueta = await foto(ctx);
   ctx.log(`maqueta · modelo: ${JSON.stringify(maqueta.esperado)}`);
   ctx.log(`maqueta · pintado: ${JSON.stringify(maqueta.pintado)}`);
-  await ctx.shot("152-maqueta-el-menu-dev");
+  await ctx.shot("155-maqueta-el-menu-dev");
 
   // ANTI-TAUTOLOGÍA: dos listas vacías casan sin comprobar nada, y con UN solo
   // skin no se distingue «los cuenta a todos» de «cuenta el primero».
@@ -285,7 +285,7 @@ export default async function (ctx) {
     () => {
       const fps = window.__nefan.fps();
       if (!fps.ready || fps.textured.length === 0) return null;
-      const pintadas = window.__qa152().pintado;
+      const pintadas = window.__qa155().pintado;
       return fps.textured.every((k) => !pintadas.some((l) => l.startsWith(`Atlas fps ${k} `)))
         ? { textured: fps.textured }
         : null;
@@ -321,7 +321,7 @@ export default async function (ctx) {
   ctx.log(`imagen · modelo: ${JSON.stringify(imagen.esperado)}`);
   ctx.log(`imagen · pintado: ${JSON.stringify(imagen.pintado)}`);
   ctx.log(`500 servidos: ${plan.caidas} · hojas servidas de verdad: ${plan.servidas}`);
-  await ctx.shot("152-imagen-con-un-skin-fallido");
+  await ctx.shot("155-imagen-con-un-skin-fallido");
 
   if (!cayo) {
     return ctx.sinMedirBloque(
@@ -388,9 +388,9 @@ export default async function (ctx) {
     await ctx.expectEspera(
       "…y con su arte puesto la fila se va del menú, que es lo que cierra el ciclo",
       true,
-      (etiqueta) => (window.__qa152().pintado.every((l) => !l.startsWith(etiqueta)) ? true : null),
+      (etiqueta) => (window.__qa155().pintado.every((l) => !l.startsWith(etiqueta)) ? true : null),
       { ms: 20_000, arg: etiquetaVictima },
     );
   }
-  await ctx.shot("152-tras-revivir-el-skin-caido");
+  await ctx.shot("155-tras-revivir-el-skin-caido");
 }

@@ -18,19 +18,19 @@
  *  son derivación pura de datos a estructura — ni DOM, ni WebGL, ni red, ni
  *  reloj. Lo que sí necesita navegador —que el menú PINTE esa lista, que el
  *  doble click gaste y que la lista sea idéntica con el juego arrancado en
- *  maqueta, en imagen y con un skin fallido— es el guion 152, y no se solapa
+ *  maqueta, en imagen y con un skin fallido— es el guion 155, y no se solapa
  *  con esto: aquí no se monta ni un nodo.
  *
  *  NO MURIÓ NINGÚN GUION al nacer estos asertos (regla 2 del README): ninguno
- *  conducía `#dev-menu` — el grep en `qa/` daba 0 antes del 152.
+ *  conducía `#dev-menu` — el grep en `qa/` daba 0 antes del 155.
  *
  *  LO QUE NO MIDE, dicho para que nadie lo cuente de más:
  *
  *  - Que la RAÍZ siga llamando a los dos `pendientes()` con los prompts vivos
  *    del jugador y del mundo. El thunk de `main.ts` no se toca desde aquí; eso
- *    lo mide el bloque 1 del guion 152, que es el que ve la lista de verdad.
+ *    lo mide el bloque 1 del guion 155, que es el que ve la lista de verdad.
  *  - Que `tilesSinAtlas()` reste bien lo texturado. Aquí entra como stub porque
- *    la respuesta la tiene el GL; el bloque 2 del guion 152 lo comprueba con
+ *    la respuesta la tiene el GL; el bloque 2 del guion 155 lo comprueba con
  *    el atlas puesto.
  *  - El orden ENTRE los dos kinds (atlas antes que skins). Es del thunk de la
  *    raíz, no de ningún dueño.
@@ -96,14 +96,20 @@ describe("el atlas cuenta sus tiles en clay (#492)", () => {
       ["tile0_0", "tile1_0", "tile0_1"],
       "el orden es el que da el renderer: es el que tenía la lista cuando la hacía main.ts",
     );
-    assert.deepEqual(items.map((i) => i.kind), ["fps_atlas", "fps_atlas", "fps_atlas"]);
+    assert.deepEqual(
+      items.map((i) => i.kind),
+      ["fps_atlas", "fps_atlas", "fps_atlas"],
+    );
     assert.equal(items[0]?.label, "Atlas fps tile0_0 (clay — celdas ya en la librería salen gratis)");
     assert.deepEqual(
       items.map((i) => i.thumb),
       [null, null, null],
       "sin miniatura: una del canvas WebGL es otro trabajo, y así era antes",
     );
-    assert.deepEqual(items.map((i) => i.disabledReason), [undefined, undefined, undefined]);
+    assert.deepEqual(
+      items.map((i) => i.disabledReason),
+      [undefined, undefined, undefined],
+    );
   });
 
   it("y sin tiles en clay no cuenta ninguno (anti-tautología)", () => {
@@ -157,7 +163,8 @@ function gestorDeSkins(cached: { frames: CanvasImageSource[][] } | null = null) 
     loadSkinnedAnimation: (model: string, anim: string, _angle: string, prompt: string) => {
       pedidas.push(`${prompt}/${anim}`);
       if (estado.modo === "falla") return Promise.reject(new Error("meshy caído (de mentira)"));
-      if (estado.modo === "llega") return Promise.resolve({ frames: [[{ decode: () => Promise.resolve() }]] });
+      if (estado.modo === "llega")
+        return Promise.resolve({ frames: [[{ decode: () => Promise.resolve() }]] });
       return new Promise(() => {});
     },
   } as unknown as SpriteRenderer;
@@ -168,16 +175,28 @@ describe("el gestor de skins cuenta los que van sobre la base y_bot (#492)", () 
   it("dedup, vacíos fuera, orden de entrada y el rótulo de quien no se ha pedido", () => {
     const { csm } = gestorDeSkins();
 
-    const items = csm.pendientes(["", "herrero de delantal quemado", "monja de hábito pardo", "herrero de delantal quemado", ""]);
+    const items = csm.pendientes([
+      "",
+      "herrero de delantal quemado",
+      "monja de hábito pardo",
+      "herrero de delantal quemado",
+      "",
+    ]);
 
     assert.deepEqual(
       items.map((i) => i.id),
       ["herrero de delantal quemado", "monja de hábito pardo"],
       "el prompt vacío del jugador sin vestir no es una fila, y un prompt repetido es UNA",
     );
-    assert.deepEqual(items.map((i) => i.kind), ["skin", "skin"]);
+    assert.deepEqual(
+      items.map((i) => i.kind),
+      ["skin", "skin"],
+    );
     assert.equal(items[0]?.label, "Skin: herrero de delantal quemado (base y_bot)");
-    assert.deepEqual(items.map((i) => i.inFlight), [false, false]);
+    assert.deepEqual(
+      items.map((i) => i.inFlight),
+      [false, false],
+    );
   });
 
   it("y sin prompts vivos no cuenta ninguno (anti-tautología)", () => {
@@ -197,7 +216,10 @@ describe("el gestor de skins cuenta los que van sobre la base y_bot (#492)", () 
 
     const items = csm.pendientes(["herrero", "monja"]);
 
-    assert.deepEqual(items.map((i) => i.thumb), [marco, marco]);
+    assert.deepEqual(
+      items.map((i) => i.thumb),
+      [marco, marco],
+    );
     assert.deepEqual(
       consultas,
       [`${BASE_MODEL}/idle/front`],

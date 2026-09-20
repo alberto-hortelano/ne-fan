@@ -16,6 +16,13 @@ import { FALLO_HOJAS_BASE } from "@nefan-core/src/protocol/status-motivo.js";
 import { FusibleDeSkins } from "@nefan-core/src/session/fusible-de-skins.js";
 import { errors } from "../ui/error-log.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
+import { artePendienteDeSkins } from "./arte-pendiente-de-skins.js";
+import {
+  avanzarAnimacion,
+  BASE_ANIM_SET,
+  type AnimInputs,
+  type CharacterAnimState,
+} from "./maquina-de-animacion.js";
 import type { ArtePendiente } from "./types.js";
 
 /** Modelo base con el set completo de sheets pre-rendereados. */
@@ -27,50 +34,11 @@ export const BASE_MODEL = "y_bot";
  *  validar hojas que este cliente no pide. */
 export const BASE_ANIMS = HOJAS_BASE_ANIMS;
 
-const BASE_ANIM_SET: ReadonlySet<string> = new Set(BASE_ANIMS);
-
-/** One-shots: se reproducen hasta el final y no se interrumpen por
- *  locomoción (sí por muerte o por otro one-shot nuevo). */
-const ONE_SHOT: ReadonlySet<string> = new Set([
-  "quick",
-  "heavy",
-  "medium",
-  "defensive",
-  "precise",
-  "hit_react",
-  "death",
-]);
-
 /** Anims que se generan automáticamente al spawnear un personaje (lo que se
  *  ve siempre). El resto se genera LAZY la primera vez que la entidad entra
  *  en esa anim (modelFor la encola) — cada llamada Meshy cuesta dinero real
  *  y muchas anims de combate no llegan a verse nunca en un NPC pacífico. */
 const AUTO_SKIN_ANIMS = ["idle", "walk", "run"] as const;
-
-export interface CharacterAnimState {
-  anim: string;
-  animStartedAt: number;
-}
-
-export function newAnimState(now: number = performance.now()): CharacterAnimState {
-  return { anim: "idle", animStartedAt: now };
-}
-
-export interface AnimInputs {
-  alive: boolean;
-  moving: boolean;
-  sprinting?: boolean;
-  /** Trigger por nivel (enemigos): state winding_up|attacking del sim. */
-  attacking?: boolean;
-  attackType?: string;
-  /** Trigger por evento (player): anim one-shot que arranca ESTE frame
-   *  (ataque de attack_started, hit_react de attack_landed). Reinicia aunque
-   *  ya fuera la anim actual — dos quick seguidos se ven como dos golpes. */
-  oneShot?: string;
-  /** Anim pedida por el NpcDirector (NpcUpdate.animation). Sin sheet en el
-   *  set base cae a idle — las ambient están mapeadas pero sin renderear. */
-  requestedAnim?: string;
-}
 
 interface SkinState {
   prompt: string;
@@ -211,28 +179,25 @@ export class CharacterSpriteManager {
   }
 
   /** Los skins que aún van sobre la base y_bot, para el menú dev. Recibe los
-   *  prompts VIVOS porque este gestor solo conoce los que pasaron por `requestSkin`
-   *  —en maqueta, ninguno—: dedup, vacíos fuera, orden de entrada. `generar` pide con `force` (#492). */
+   *  prompts VIVOS porque este gestor solo conoce los que pasaron por
+   *  `requestSkin` —en maqueta, ninguno—, y aquí solo se contesta lo que solo él
+   *  sabe: la lista la arma `arte-pendiente-de-skins.ts` (#492).
+   *
+   *  `readySkins` se mira ANTES que el registro, y no es un atajo: rearmar el
+   *  cortacircuitos borra la entrada del que falló y CONSERVA su arte, así que
+   *  hay prompts con la `idle` puesta y sin registro. Preguntando solo al
+   *  registro volverían a la lista a ofrecer que se pague lo ya pagado. */
   pendientes(prompts: Iterable<string>): ArtePendiente[] {
-    const thumb = this.sprites.getCached(BASE_MODEL, "idle", this.angle)?.frames[0]?.[0] ?? null;
-    const disabledReason = CONFIG.graphics.ai_skin
-      ? undefined
-      : "Backend de skins apagado por config: activa graphics.ai_skin en nefan-core/src/config.ts";
-    const items: ArtePendiente[] = [];
-    for (const prompt of new Set(prompts)) {
-      if (!prompt) continue;
-      const skinned = this.sprites.skinKey(BASE_MODEL, prompt);
-      if (this.readySkins.has(`${skinned}/idle`)) continue;
-      const state = this.skins.get(skinned);
-      const estado = !state ? "base y_bot" : state.failed ? "falló" : "generándose";
-      const corto = prompt.length > 70 ? `${prompt.slice(0, 70)}…` : prompt;
-      items.push({
-        kind: "skin", id: prompt, label: `Skin: ${corto} (${estado})`, thumb, disabledReason,
-        inFlight: estado === "generándose",
-        generar: () => { this.requestSkin(prompt, { force: true }); return Promise.resolve(); },
-      });
-    }
-    return items;
+    return artePendienteDeSkins(prompts, {
+      miniatura: this.sprites.getCached(BASE_MODEL, "idle", this.angle)?.frames[0]?.[0] ?? null,
+      pedir: (prompt) => this.requestSkin(prompt, { force: true }),
+      estado: (prompt) => {
+        const skinned = this.sprites.skinKey(BASE_MODEL, prompt);
+        if (this.readySkins.has(`${skinned}/idle`)) return "listo";
+        const state = this.skins.get(skinned);
+        return !state ? "sin pedir" : state.failed ? "falló" : "generándose";
+      },
+    });
   }
 
   /** Encola la generación del skin IA para una descripción narrativa: las
@@ -262,7 +227,12 @@ export class CharacterSpriteManager {
         // incluido— y luego se vuelve a sembrar su estado con su `role`, que es
         // lo que elige la ref de personaje del pack y no se puede perder.
         this.rearmarCortacircuitos();
-        const state: SkinState = { prompt, role: opts.role ?? existing.role, failed: false, queued: new Set() };
+        const state: SkinState = {
+          prompt,
+          role: opts.role ?? existing.role,
+          failed: false,
+          queued: new Set(),
+        };
         this.skins.set(skinnedModel, state);
         for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, state, anim);
         return;
@@ -320,7 +290,11 @@ export class CharacterSpriteManager {
       }
       try {
         const sheet = await this.sprites.loadSkinnedAnimation(
-          BASE_MODEL, anim, this.angle, state.prompt, state.role,
+          BASE_MODEL,
+          anim,
+          this.angle,
+          state.prompt,
+          state.role,
         );
         // Espera a que los PNG decodifiquen antes de marcar la anim lista:
         // la sustitución debe ser atómica, sin frames SPRITE_PENDING.
@@ -382,8 +356,11 @@ export class CharacterSpriteManager {
     // por personaje y por FOTOGRAMA. Lo que ya está pagado se sigue dibujando:
     // la guarda es de la generación LAZY, no de `readySkins`.
     if (
-      state && !state.failed && !this.fusible.apagado &&
-      !state.queued.has(anim) && BASE_ANIM_SET.has(anim)
+      state &&
+      !state.failed &&
+      !this.fusible.apagado &&
+      !state.queued.has(anim) &&
+      BASE_ANIM_SET.has(anim)
     ) {
       this.enqueueAnim(skinned, state, anim);
     }
@@ -397,53 +374,10 @@ export class CharacterSpriteManager {
     return sheet ? sheet.duration * 1000 : 1000;
   }
 
-  /** Avanza la máquina de estados de animación de una entidad. Muta `state`
-   *  y resetea `animStartedAt` solo cuando la anim cambia (o un one-shot por
-   *  evento se re-dispara). Prioridad: muerte > one-shot por evento > ataque
-   *  por nivel > one-shot en curso > locomoción > anim pedida > idle. */
+  /** Avanza la máquina de animación de una entidad. La máquina vive en
+   *  `maquina-de-animacion.ts` y aquí solo se le presta la duración de cada
+   *  anim, que es lo único suyo que está en la caché de hojas (#492/H-1). */
   updateAnim(state: CharacterAnimState, inputs: AnimInputs, now: number = performance.now()): void {
-    const set = (anim: string): void => {
-      if (state.anim !== anim) {
-        state.anim = anim;
-        state.animStartedAt = now;
-      }
-    };
-
-    if (!inputs.alive) {
-      // death arranca en la transición viva→muerta y clampa en el último
-      // frame (pickFrame de one-shot): el cadáver se queda en pantalla.
-      set("death");
-      return;
-    }
-    if (state.anim === "death") set("idle"); // respawn/revive
-
-    if (inputs.oneShot && BASE_ANIM_SET.has(inputs.oneShot)) {
-      state.anim = inputs.oneShot;
-      state.animStartedAt = now;
-      return;
-    }
-
-    if (inputs.attacking) {
-      const attackAnim =
-        inputs.attackType && BASE_ANIM_SET.has(inputs.attackType) ? inputs.attackType : "medium";
-      // Nivel, no evento: arranca al entrar en winding_up|attacking y clampa
-      // en el último frame si el estado del sim dura más que la anim.
-      set(attackAnim);
-      return;
-    }
-
-    const oneShotActive =
-      ONE_SHOT.has(state.anim) && now - state.animStartedAt < this.durationMs(state.anim);
-    if (oneShotActive) return;
-
-    if (inputs.moving) {
-      set(inputs.sprinting ? "run" : "walk");
-      return;
-    }
-    if (inputs.requestedAnim) {
-      set(BASE_ANIM_SET.has(inputs.requestedAnim) ? inputs.requestedAnim : "idle");
-      return;
-    }
-    set("idle");
+    avanzarAnimacion(state, inputs, now, (anim) => this.durationMs(anim));
   }
 }
