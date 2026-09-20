@@ -26,7 +26,9 @@
  *       Reanudar → el panel del jugador NOMBRA al tabernero y la coordenada,
  *       y la escena carga (no bloquea).
  *   2 · NEGATIVO: antes de romper nada se pide el tile (1,0) por el cable
- *       (`request_tile`, patrón del 60) para que el save tenga DOS tiles; la
+ *       (`request_tile` por `qa/lib/cable.mjs`, que deja el socket abierto
+ *       para que un rechazo del bridge tenga a quién llegar, #678) para que
+ *       el save tenga DOS tiles; la
  *       posición viva del tabernero se mueve a `(66, 0, 7)`, DENTRO del rect
  *       de `tile_1_0` → Reanudar → ninguna línea de «donde no hay mundo».
  *
@@ -48,6 +50,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { nuevaPartida, comenzar, reanudar } from "../lib/sesion.mjs";
 import { esperarEnElSave, rutaDelSave } from "../lib/saves.mjs";
+import { fraseDeRechazos, porElCable, porRondasHastaRechazo } from "../lib/cable.mjs";
 
 /** El motor falso es determinista POR TURNO de diálogo: saves vírgenes. */
 export const aisla = ["saves", "fake-ai"];
@@ -84,26 +87,6 @@ function moverEnElLedger(ruta, posicion) {
   return { nombre, antes, tiles: Object.keys(save.scenes_loaded ?? {}) };
 }
 
-/** Pide el tile (tx,ty) por el cable del juego desde un segundo socket de la
- *  página (la URL la da el propio juego, como en `saves.mjs`). */
-const pedirTile = (ctx, tx, ty) =>
-  ctx.page.evaluate(
-    ([x, y]) =>
-      new Promise((res, rej) => {
-        const url = window.__nefan.servicios()["game-gateway"];
-        const ws = new WebSocket(url);
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        ws.onopen = () => {
-          ws.send(JSON.stringify({ type: "request_tile", tx: x, ty: y, reason: "prefetch" }));
-          setTimeout(() => {
-            ws.close();
-            res(true);
-          }, 0);
-        };
-      }),
-    [tx, ty],
-  );
-
 export default async function (ctx) {
   await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   const partida = await comenzar(ctx);
@@ -127,13 +110,37 @@ export default async function (ctx) {
 
   // Dos tiles en el save ANTES de tocar nada: el negativo necesita un tile
   // vecino donde HAYA mundo, y la unión de rects sale del save.
-  await pedirTile(ctx, 1, 0);
-  const conDosTiles = await esperarEnElSave(
-    partida.sessionId,
-    (s) => (s.scenes_loaded?.tile_1_0 ? Object.keys(s.scenes_loaded) : null),
-    60_000,
+  //
+  // El tile se pide por el cable del juego desde un segundo socket de la
+  // página (`qa/lib/cable.mjs`, #678). Este guion NO espera el tile en el
+  // ledger del cliente —lo espera en el SAVE, que es lo que mide—, así que no
+  // pasa por `pedirYEsperarTile`; pero el socket queda ABIERTO durante la
+  // espera para oír el unicast del intake: un `request_tile` que no pase el
+  // contrato lo contesta el bridge solo a quien lo mandó, y el helper viejo lo
+  // cerraba en el mismo tick del `send`, así que el ⊘ de abajo decía «no llegó
+  // al save» sin poder decir por qué.
+  //
+  // La espera va POR RONDAS y no de un tirón porque la consecuencia se mira en
+  // DISCO, fuera de la página: sin eso, un frame rechazado a los pocos
+  // milisegundos se pagaba con el presupuesto entero (medido: 71 s para decir
+  // al final algo que ya se sabía). Cada ronda mira el save; entre rondas, si
+  // el bridge ya contestó que no, se corta.
+  const RONDA_MS = 2_000;
+  const TECHO_MS = 60_000;
+  const { resultado, rechazos } = await porElCable(ctx, { type: "request_tile", tx: 1, ty: 0, reason: "prefetch" }, (id) =>
+    porRondasHastaRechazo(
+      ctx,
+      id,
+      () => esperarEnElSave(partida.sessionId, (s) => (s.scenes_loaded?.tile_1_0 ? Object.keys(s.scenes_loaded) : null), RONDA_MS),
+      TECHO_MS,
+    ),
   );
-  if (!conDosTiles) ctx.sinMedir("el tile (1,0) pedido por el cable no llegó al save: sin dos tiles no hay negativo que medir");
+  const conDosTiles = resultado.valor ?? null;
+  if (!conDosTiles) {
+    ctx.sinMedir(
+      `el tile (1,0) pedido por el cable no llegó al save — ${fraseDeRechazos(rechazos)}: sin dos tiles no hay negativo que medir`,
+    );
+  }
   ctx.log(`tiles en el save: ${JSON.stringify(conDosTiles)}`);
 
   const ruta = rutaDelSave(partida.sessionId);
