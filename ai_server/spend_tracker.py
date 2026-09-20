@@ -119,6 +119,14 @@ def procedencia_segun_api(api: object) -> Procedencia:
     `None`, no-string o vacío LANZA: una respuesta que no dice de qué proveedor
     salió no se apunta como gasto de nada — ni real (inflaría el número que se
     mira para seguir gastando) ni fixture (escondería dinero).
+
+    DISTINGUE MAYÚSCULAS a propósito, y se dice para que nadie lo dé por
+    cubierto (H4 de la QA de esta tanda): recorta espacios (`" fake "` →
+    fixture) pero `"FIXTURE"` cuenta como `real`. La dirección es la segura —un
+    nombre que no reconocemos se apunta como dinero, nunca desaparece— y
+    sprite-forge emite en minúscula (`api.name`). Bajarlo a minúsculas haría
+    que un proveedor llamado `Fixture` dejara de facturar en silencio, que es
+    el error caro de los dos.
     """
     if not isinstance(api, str) or not api.strip():
         raise ValueError(
@@ -136,9 +144,19 @@ class LedgerIlegible(RuntimeError):
 def _remedio_para_ledger_viejo(ruta: Path) -> str:
     """Qué hacer con un ledger anterior a #426 (eventos sin `procedencia`):
     ARCHIVARLO como en T9, nunca migrarlo por script ni marcarlo `desconocida`.
-    Pre-producción: cero compatibilidad hacia atrás."""
+    Pre-producción: cero compatibilidad hacia atrás.
+
+    El destino sale de la FORMA de la ruta, no de subir tres niveles a ciegas
+    (H3 de la QA de esta tanda): un ledger en `<checkout>/cache/spend/` se
+    archiva en el `archivo/` de SU checkout, y cualquier otro —`NEFAN_SPEND_DIR`
+    apuntando a un temporal— en el de ESTE repo, que es donde vive el archivo
+    de verdad. Antes, un ledger viejo en `/tmp/x/` proponía `mv` a
+    `/tmp/archivo/cache/spend/`: un comando que se puede copiar y pegar tiene
+    que llevar a un sitio que exista por algo."""
     fecha = time.strftime("%Y-%m-%d")
-    destino = ruta.parent.parent.parent / "archivo" / "cache" / "spend"
+    raiz = ruta.parent
+    base = raiz.parent.parent if parece_ledger_de_verdad(raiz) else RAIZ_REPO
+    destino = base / "archivo" / "cache" / "spend"
     return (
         f"mkdir -p {destino} && mv {ruta} {destino / f'events-sin-procedencia-{fecha}.jsonl'}"
     )
@@ -185,6 +203,17 @@ class SpendTracker:
                 f"procedencia {procedencia!r} no es ninguna de {PROCEDENCIAS}: "
                 f"el enum es cerrado y solo admite valores con escritor"
             )
+        # El escritor acepta EXACTAMENTE lo que el lector admite: si `add`
+        # pudiera escribir un `usd` negativo o NaN, dejaría un ledger que
+        # `_events()` se niega a leer — o sea, el propio tracker fabricando el
+        # fichero que luego declara ilegible. (`float()` ya rechaza lo que no
+        # es número, y `nan >= 0` es False, así que el NaN también cae aquí.)
+        importe = float(usd)
+        if not importe >= 0:
+            raise ValueError(
+                f"usd {usd!r} no es una cantidad pagable: el ledger es append-only "
+                f"de lo que se PAGÓ, no una cuenta con abonos"
+            )
         self.root.mkdir(parents=True, exist_ok=True)
         line = json.dumps(
             {
@@ -213,6 +242,13 @@ class SpendTracker:
         # una línea corrupta es un bug, no ruido a tragar. Y una línea SIN
         # `procedencia` es un ledger anterior a #426: no se suma ni como real
         # ni como fixture, se archiva entero (el mensaje trae el comando).
+        #
+        # Se valida TODO lo que se va a leer después, no solo `procedencia`
+        # (H2 de la QA de esta tanda): esto es dinero, y una línea con el campo
+        # nuevo pero sin `usd` —o con `usd` en texto, o negativo— salía como
+        # `KeyError`/`TypeError` anónimo desde `_suma`, o se sumaba en silencio.
+        # Es el mismo agujero que #426 vino a tapar, una capa más abajo: el
+        # campo que nadie comprueba.
         eventos = []
         for n, line in enumerate(self._events_path.read_text(encoding="utf-8").splitlines(), 1):
             if not line.strip():
@@ -221,13 +257,30 @@ class SpendTracker:
                 e = json.loads(line)
             except json.JSONDecodeError as err:
                 raise LedgerIlegible(f"{self._events_path}:{n} no es JSON: {err}") from err
-            proc = e.get("procedencia") if isinstance(e, dict) else None
+            if not isinstance(e, dict):
+                raise LedgerIlegible(
+                    f"{self._events_path}:{n} no es un objeto JSON, es {type(e).__name__}: "
+                    f"un evento del ledger son cinco claves, no un {type(e).__name__}"
+                )
+            proc = e.get("procedencia")
             if proc not in PROCEDENCIAS:
                 que = "sin `procedencia`" if proc is None else f"con procedencia {proc!r} fuera de {PROCEDENCIAS}"
                 raise LedgerIlegible(
                     f"{self._events_path}:{n} es un evento {que}: un ledger anterior a #426 "
                     f"no se migra ni se marca, se ARCHIVA como en T9 → "
                     f"{_remedio_para_ledger_viejo(self._events_path)}"
+                )
+            usd = e.get("usd")
+            # `bool` es `int` en Python, y `True` no es una cantidad de dinero.
+            if isinstance(usd, bool) or not isinstance(usd, (int, float)):
+                raise LedgerIlegible(
+                    f"{self._events_path}:{n} tiene `usd` = {usd!r}, que no es un número: "
+                    f"el gasto no se suma a medias ni se adivina"
+                )
+            if usd < 0:
+                raise LedgerIlegible(
+                    f"{self._events_path}:{n} tiene `usd` = {usd!r}, negativo: el ledger es "
+                    f"append-only de lo que se PAGÓ, no una cuenta con abonos"
                 )
             eventos.append(e)
         return eventos

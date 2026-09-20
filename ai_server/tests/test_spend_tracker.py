@@ -22,6 +22,7 @@ from spend_tracker import (  # noqa: E402
     RUTA_REAL,
     LedgerIlegible,
     SpendTracker,
+    _remedio_para_ledger_viejo,
     parece_ledger_de_verdad,
     procedencia_segun_api,
     raiz_del_ledger,
@@ -170,6 +171,71 @@ class ProcedenciaTest(unittest.TestCase):
             self.spend.total_usd()
         self.assertIn(":2 no es JSON", str(ctx.exception))
 
+    # ── H2 de la QA: `_events()` valida TODO lo que se va a leer, no solo
+    #    `procedencia`. Antes, una línea con el campo nuevo pero con el importe
+    #    roto salía como KeyError/TypeError anónimo desde `_suma` —o se sumaba
+    #    sin más—, y en `/dev/status` eso es el 500 mudo que el plan cerró.
+    def _escribir(self, evento):
+        self.fichero.write_text(json.dumps(evento) + "\n")
+
+    def test_un_evento_sin_usd_o_con_usd_que_no_es_numero_es_ilegible(self):
+        for roto in (None, "0.5", [], {}, True):
+            with self.subTest(usd=roto):
+                e = {"t": 1.0, "what": "x", "service": "remote-gen", "procedencia": "real"}
+                if roto is not None:
+                    e["usd"] = roto
+                self._escribir(e)
+                with self.assertRaises(LedgerIlegible) as ctx:
+                    self.spend.total_usd()
+                msg = str(ctx.exception)
+                self.assertIn(":1 tiene `usd`", msg)
+                self.assertIn("no es un número", msg)
+
+    def test_un_usd_negativo_es_ilegible_y_no_se_resta_del_total(self):
+        # Antes se SUMABA: un −3 escondía tres dólares de gasto real.
+        self._escribir({"t": 1.0, "usd": -3, "what": "x", "service": "remote-gen",
+                        "procedencia": "real"})
+        with self.assertRaises(LedgerIlegible) as ctx:
+            self.spend.total_usd()
+        self.assertIn("negativo", str(ctx.exception))
+
+    def test_una_linea_que_es_JSON_pero_no_un_objeto_lo_dice_por_su_nombre(self):
+        # Antes decía «es un evento sin `procedencia`», que no es lo que pasa:
+        # un mensaje que describe mal la avería manda a arreglar otra cosa.
+        for roto, nombre in (([1, 2], "list"), ("hola", "str"), (7, "int")):
+            with self.subTest(linea=roto):
+                self.fichero.write_text(json.dumps(roto) + "\n")
+                with self.assertRaises(LedgerIlegible) as ctx:
+                    self.spend.total_usd()
+                msg = str(ctx.exception)
+                self.assertIn(f":1 no es un objeto JSON, es {nombre}", msg)
+                self.assertNotIn("procedencia`", msg)
+
+    def test_add_no_puede_escribir_un_importe_que_luego_no_se_deja_leer(self):
+        # La otra mitad de H2: escritor y lector admiten lo MISMO, o el propio
+        # tracker fabrica el fichero que después declara ilegible.
+        for malo in (-0.01, float("nan")):
+            with self.subTest(usd=malo):
+                with self.assertRaises(ValueError) as ctx:
+                    self.spend.add(malo, "x", "remote-gen", procedencia="real")
+                self.assertIn("no es una cantidad pagable", str(ctx.exception))
+        self.assertFalse(self.fichero.exists())
+        # Y el cero sí se escribe: una llamada gratis es un hecho del ledger.
+        self.spend.add(0, "gratis", "remote-gen", procedencia="fixture")
+        self.assertEqual(len(self.spend.status()["calls"]), 1)
+
+    # ── H3 de la QA: el remedio del 500 no supone la forma `<raíz>/cache/spend`
+    def test_el_remedio_archiva_en_el_checkout_del_ledger_si_tiene_su_forma(self):
+        ruta = Path("/un/checkout/cache/spend/events.jsonl")
+        self.assertIn("mkdir -p /un/checkout/archivo/cache/spend ", _remedio_para_ledger_viejo(ruta))
+
+    def test_el_remedio_de_un_ledger_fuera_de_cache_spend_apunta_al_repo(self):
+        # Antes subía tres niveles a ciegas: `/tmp/x/events.jsonl` proponía
+        # `mv` a `/tmp/archivo/cache/spend/`, un sitio que no existe por nada.
+        remedio = _remedio_para_ledger_viejo(Path("/tmp/x/events.jsonl"))
+        self.assertIn(f"mkdir -p {RAIZ_REPO / 'archivo' / 'cache' / 'spend'} ", remedio)
+        self.assertNotIn("/tmp/archivo", remedio)
+
     def test_procedencia_segun_api(self):
         # Lo que dice sprite-forge → lo que se apunta. `fixture` y `fake` no
         # facturan; cualquier OTRO nombre es un proveedor y cuenta como dinero
@@ -186,6 +252,14 @@ class ProcedenciaTest(unittest.TestCase):
                 with self.assertRaises(ValueError) as ctx:
                     procedencia_segun_api(ausente)
                 self.assertIn("`api` ausente", str(ctx.exception))
+
+    def test_procedencia_segun_api_recorta_espacios_pero_NO_baja_mayusculas(self):
+        # H4 de la QA, escrito como aserto para que sea una DECISIÓN y no un
+        # descuido que alguien «arregle» con un `.lower()`. La dirección es la
+        # segura: lo que no reconocemos cuenta como dinero y nunca desaparece.
+        self.assertEqual(procedencia_segun_api(" fake "), "fixture")
+        self.assertEqual(procedencia_segun_api("FIXTURE"), "real")
+        self.assertEqual(procedencia_segun_api("Fake"), "real")
 
 
 class LedgerRealFueraDeTestTest(unittest.TestCase):
