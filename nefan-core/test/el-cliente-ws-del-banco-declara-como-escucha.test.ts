@@ -19,11 +19,16 @@
  *     `new window.WebSocket(u)`);
  *   · sus oyentes = los que se cuelgan DE ESE SOCKET (por el nombre al que se
  *     liga) dentro de la función que lo envuelve: `ws.onmessage = <algo>` y
- *     `ws.addEventListener`/`on`/`once("message", <algo>)`, con `<algo>` que no
- *     sea `null` ni `undefined`. Atarlo al socket no es un detalle: mientras
- *     contaba el IDENTIFICADOR `onmessage` del ámbito, un `ws.onmessage = null`
- *     delante de la forma vieja saltaba el candado ENTERO y pasaba 16/16 (lo
- *     cazó la QA de la tanda, no su ingeniero);
+ *     `ws.addEventListener`/`on`/`once("message", <algo>)`, con `<algo>` que
+ *     PUEDA escuchar —una flecha, una función o un nombre—. Las dos mitades de
+ *     esa frase costaron una vuelta de QA cada una, y ninguna la vio su
+ *     ingeniero. ATARLO AL SOCKET: mientras contaba el IDENTIFICADOR
+ *     `onmessage` del ámbito, un `ws.onmessage = null` delante de la forma
+ *     vieja saltaba el candado ENTERO y pasaba 16/16. Y QUE PUEDA ESCUCHAR,
+ *     dicho en POSITIVO: al tapar `null` y `undefined` seguían pasando `= 0`,
+ *     `= ''` y `ws.onmessage = ws.onmessage`, porque lo que se medía era «hay
+ *     una asignación» y no «se cuelga algo que escucha». Tapar literales de uno
+ *     en uno es la forma lenta de no cerrar nunca la familia;
  *   · su modo declarado = `una-respuesta` | `todo` | `nada`, y la coherencia se
  *     MIDE: `nada` ⇔ cero oyentes. Declarar «espera» sobre un socket mudo es
  *     rojo, y declarar `nada` sobre uno que escucha también.
@@ -144,24 +149,37 @@ function esEse(e: ts.Node, nombre: string): boolean {
   return ts.isIdentifier(d) && d.text === nombre;
 }
 
-/** `null` y `undefined` no escuchan nada. Es el agujero que encontró la QA:
- *  `ws.onmessage = null;` delante de la forma vieja pasaba por oyente y el
- *  candado entero se saltaba con esa línea. */
-function esVacio(e: ts.Node): boolean {
-  return e.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(e) && e.text === "undefined");
+/** ¿Lo que se cuelga puede ESCUCHAR? Una flecha, una función o un nombre que
+ *  las lleve. Nada más.
+ *
+ *  Se escribió dos veces, y la segunda es la buena. La primera solo descartaba
+ *  `null` y `undefined` —el agujero con el que la QA saltó el candado entero,
+ *  `ws.onmessage = null;` delante de la forma vieja— y la re-QA enseñó que eso
+ *  no era medir «se cuelga algo que escucha» sino «hay una asignación»:
+ *  `= 0`, `= ''` y `addEventListener("message", 0)` seguían pasando. Se mide en
+ *  positivo, que es lo que cierra la familia entera en vez de ir tapando
+ *  literales de uno en uno.
+ *
+ *  Un `X.onmessage` a la derecha NO entra, y con él se va `ws.onmessage =
+ *  ws.onmessage`, que es la forma de parecer que se cuelga algo sin colgar
+ *  nada. Si algún día hace falta `ws.onmessage = manejadores.mensaje`, se
+ *  ensancha aquí y se mide, no se afloja. */
+function puedeEscuchar(e: ts.Node): boolean {
+  if (ts.isArrowFunction(e) || ts.isFunctionExpression(e)) return true;
+  return ts.isIdentifier(e) && e.text !== "undefined";
 }
 
 /** ¿Este nodo cuelga un oyente de `message` DEL socket `nombre`?
  *
  *  Atado al socket, no al ámbito: cuenta `nombre.onmessage = <algo>` y
  *  `nombre.addEventListener/on/once("message", <algo>)`, y solo si lo que se
- *  cuelga no es `null`/`undefined`. Un `onmessage` de otro objeto —un `Worker`,
+ *  cuelga puede escuchar. Un `onmessage` de otro objeto —un `Worker`,
  *  un `process.on("message")`— ya no cuenta. */
 function esOyenteDe(n: ts.Node, nombre: string): boolean {
   if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
     const izq = n.left;
     return (
-      ts.isPropertyAccessExpression(izq) && izq.name.text === "onmessage" && esEse(izq.expression, nombre) && !esVacio(n.right)
+      ts.isPropertyAccessExpression(izq) && izq.name.text === "onmessage" && esEse(izq.expression, nombre) && puedeEscuchar(n.right)
     );
   }
   if (
@@ -173,7 +191,7 @@ function esOyenteDe(n: ts.Node, nombre: string): boolean {
     const evento = n.arguments[0];
     const manejador = n.arguments[1];
     return Boolean(
-      evento && ts.isStringLiteralLike(evento) && evento.text === "message" && manejador && !esVacio(manejador),
+      evento && ts.isStringLiteralLike(evento) && evento.text === "message" && manejador && puedeEscuchar(manejador),
     );
   }
   return false;
@@ -350,6 +368,37 @@ describe("el detector de clientes WS del banco", () => {
     assert.deepEqual(socketsDe('const ws = new WebSocket(u); ws.addEventListener("message", null);').map((s) => s.oyentes), [0]);
     // Y el control: con algo colgado sí cuenta.
     assert.deepEqual(socketsDe("const ws = new WebSocket(u); ws.onmessage = (ev) => f(ev);").map((s) => s.oyentes), [1]);
+  });
+
+  it("ni a un literal cualquiera: lo colgado tiene que PODER escuchar, no solo no ser `null`", () => {
+    // Residuo de lo anterior, y lo cazó la re-QA (S6b–e): tapar `null` y
+    // `undefined` era tapar dos literales, no medir. La regla se escribió en
+    // POSITIVO —flecha, función o nombre— y con eso se va la familia entera.
+    const mudos = [
+      "const ws = new WebSocket(u); ws.onmessage = 0;",
+      "const ws = new WebSocket(u); ws.onmessage = '';",
+      "const ws = new WebSocket(u); ws.onmessage = false;",
+      "const ws = new WebSocket(u); ws.onmessage = {};",
+      'const ws = new WebSocket(u); ws.addEventListener("message", 0);',
+      'const ws = new WebSocket(u); ws.addEventListener("message", "");',
+      // Parece que cuelga algo y no cuelga nada: el mismo miembro.
+      "const ws = new WebSocket(u); ws.onmessage = ws.onmessage;",
+    ];
+    for (const texto of mudos) {
+      assert.deepEqual(socketsDe(texto).map((s) => s.oyentes), [0], `lo contó como oyente: ${texto}`);
+    }
+    // Los controles, que son las tres formas que sí escuchan (y las que usa el
+    // banco: los veinte oyentes reales de hoy son flechas).
+    const oyen = [
+      "const ws = new WebSocket(u); ws.onmessage = (ev) => f(ev);",
+      "const ws = new WebSocket(u); ws.onmessage = function (ev) { f(ev); };",
+      "const ws = new WebSocket(u); ws.onmessage = manejador;",
+      'const ws = new WebSocket(u); ws.addEventListener("message", manejador);',
+      'const ws = new WebSocket(u); ws.addEventListener("message", function (ev) { f(ev); });',
+    ];
+    for (const texto of oyen) {
+      assert.deepEqual(socketsDe(texto).map((s) => s.oyentes), [1], `no lo contó como oyente: ${texto}`);
+    }
   });
 
   it("el oyente se ata AL SOCKET, no al ámbito: el `onmessage` de otro objeto no cuenta", () => {

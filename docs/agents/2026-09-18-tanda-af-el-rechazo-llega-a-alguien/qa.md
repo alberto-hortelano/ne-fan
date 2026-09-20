@@ -175,7 +175,7 @@ Bloque +100 (el que usaron mis nueve corridas y la sonda): `:3100`, `:9977`, `:9
 libres; ningún proceso con `cwd` en este árbol. Lo que sigue arriba (`:3000/:9877`, `0.lock`) es de
 `ne-fan-tanda-v-el-presupuesto-del-tile` y no se ha tocado.
 
-## Veredicto
+## Veredicto de la primera vuelta (sobre `c9f7993b`)
 
 **Apto con reservas.** Lo que #678 pedía, reencuadrado, está: los dos sitios que cerraban sin
 esperar oyen el rechazo y lo NOMBRAN (medido en negativo en los dos), el censo es por árbol y casa
@@ -185,3 +185,60 @@ las tres son baratas y las tres son de la familia «el candado dice más de lo q
 helper reproduce #678 si se usa mal y nadie lo ve: 3 de 5), **H2** (la coherencia se salta con
 `ws.onmessage = null`) y **H3** (dos ✔ vacíos y un log falso en el 60 que nacen con este diff, y un
 informe que dice que ya estaban). H4–H6 son prosa y fricción; H7 es del coordinador.
+
+
+---
+
+# Segunda vuelta — sobre `87ce8336` (rama rebasada sobre `main` = `e635159d`), 2026-09-20
+
+Re-verificado SOLO lo afectado por H1–H6 y por la edición del guion 152. Mismo worktree; sabotajes
+restaurados con `md5sum -c` OK (padrón, 60, 63); stack parado (bloque +100 libre al terminar).
+
+| Hallazgo | Veredicto | Evidencia |
+|---|---|---|
+| **H1** cable mal usado | ✅ cerrado en el tipo, residuo declarado | `Object.keys(import("qa/lib/cable.mjs"))` = `fraseDeRechazos, porElCable, porRondasHastaRechazo, rechazosDelCable`. Escribir el mal uso: `import { mandarPorElCable, cerrarElCable }` → `SyntaxError: does not provide an export named 'cerrarElCable'`. `porElCable` sin `espera` lanza por tipo; aserto «no exporta nada con lo que cerrar el cable a mano» en `cable-de-qa.test.ts:48`. El residuo (`async () => {}`) está en el padrón como agujero **(5)** y lo mide el 152 (agujero 2, verde = sigue abierto) |
+| **H2** oyente atado al socket | ✅ cerrado, con un residuo menor (H8) | S6 repetido sobre el árbol real (temporal en `qa/lib/`, `ws.onmessage = null`, declarado `una-respuesta`) → **fail 2**: `…:4 declara \`una-respuesta\` y a \`ws\` no se le cuelga ningún oyente de "message" EN SU MISMA FUNCIÓN…` + complemento. Fixtures H/I/J (`process.on`, `= null`, `otro.onmessage`) → `oyentes: 0`. Los 19 sockets reales siguen: censo `19 socket(s) en 18 fichero(s)`, detector 21/21, cable 22/22 (43 en total) |
+| **H3** ✔ vacíos del 60 | ✅ cerrado | `neg-60` (`reason:"nope"`): `✘ A3 · … pasó el contrato … — el bridge RECHAZÓ el frame (protocolo)` **más** `⊘ bloque no medido: A3 · ni el POST que no se repite ni el texturado se midieron…`. Conteo de los dos asertos antes vacíos (`✔ A3 · la misma clave…`, `✔ A3 · y el tile activo…`): **0** en el sabotaje, **2** en la corrida verde; el `log` «re-añadido con su POST retenido»: 0 y 1 |
+| **H4** oyente en otra función | ✅ atendido como declarado | Sigue rojo (fixture C → `oyentes: 0`), pero el mensaje ya dice «EN SU MISMA FUNCIÓN» y a dónde ir; agujero (4) del padrón; y el socket sin nombre (`sockets.push(new WebSocket(u))`) tiene su propio mensaje (`ligado: null`) |
+| **H5** agujero (1) estrecho | ✅ atendido | E `new (window.WebSocket)(u)` y F `new window["WebSocket"](u)` → **vistos** (`oyentes: 1` cada uno). G import renombrado y M código en string → `[]`, ahora DECLARADOS en (1) con aserto («NO ve el constructor RENOMBRADO», «NO ve el código dentro de un STRING») |
+| **H6** el 63 quemaba 60 s | ✅ atendido | `neg-63` → mismo ⊘ nombrando el rechazo en **8 s** (antes 71); `porRondasHastaRechazo` con rondas de 2 s |
+| **152** editado por el ingeniero | ✅ sigue en verde y dice la verdad, salvo una cifra del README (H9) | Headless: `1 en verde · 0 en rojo de 1`; **seis** sabotajes ✔ (el sexto es el `onmessage = null`, ahora rojo donde antes pasaba 16/16) y **tres** agujeros ✔ con su «↳ hoy …». La tabla del guion casa con lo que hay: alias/import renombrado → `[]` (declarado 1); espera que no espera → verde (declarado 5); oyente en otra función → rojo con mensaje veraz (declarado 4). Su cabecera dice «los tres de hoy» y explica el que se cerró |
+| 60 y 63 aislados ×1 | ✅ | 63: `1 en verde · 0 en rojo de 1`, 11 ✔ (14 s). 60: `1 en verde`, 28 ✔ (16 s). Cero créditos, `fake:true` |
+| `npm run verify` | ✅ | `3171 pass · 0 fail`, rc=0 (los 25 de más son los tests que trajo el rebase) |
+| Retirada completa de la API vieja | ✅ | `grep -rn "mandarPorElCable\|cerrarElCable"` fuera de `docs/agents`: solo prosa histórica que cuenta por qué murió (cabecera de `cable.mjs`, `cable-de-qa.test.ts:16,50`, 152:32,174). Ningún uso vivo |
+
+### Hallazgos nuevos de la segunda vuelta
+
+**H8 · MENOR — `esVacio` mide solo `null`/`undefined`: la misma línea con otro literal sigue pasando.**
+Sobre el árbol real, la forma vieja + `ws.onmessage = 0;` declarada `una-respuesta` → **21/21 verde**
+(también `= ''`, `addEventListener("message", 0)` y `ws.onmessage = ws.onmessage`, fixtures S6b–e).
+Es el residuo de H2: la cabecera del test y el padrón dicen «con `<algo>` que no sea `null` ni
+`undefined`», así que la afirmación es exacta, pero la medida sigue siendo «hay una asignación» y no
+«se cuelga algo que escucha». Nadie escribe `= 0` sin querer, igual que nadie escribía `= null`; la
+salida barata es exigir que lo colgado sea función, flecha o identificador, o declararlo en (3).
+
+**H9 · MENOR — la fila del 152 en `qa/README.md` (l. 603) dice «CINCO sabotajes» y el guion tiene
+SEIS**, y «el agujero 4 salen ✘» cuando la tabla de agujeros ya tiene tres y el «otra función» es el
+tercero. Es la cifra que cambió con la edición del ingeniero y no se recontó: la misma lección de
+«la medida de hoy hay que medirla hoy» que esta tanda ya pagó una vez con «dieciséis».
+
+**Notas, no hallazgos.** (a) `rechazosDelCable` está exportada y una `espera` puede cerrar el socket
+desde la página por `window.__qaCables` o pasar `techoMs: 0` a `porRondasHastaRechazo`: todo eso es
+la familia del agujero (5) («una espera que no espera») y se lee en la llamada; no lo cuento aparte.
+(b) Los oyentes «legítimos» que el detector NO ve (`ws["onmessage"] = f`, `let ws; ws = new…`,
+`this.ws = new…`, `Object.assign(ws, {onmessage})`, `??=`) salen ROJOS con el mensaje de (4) —falso
+positivo honesto, ninguno en el banco hoy—; no es agujero en la dirección del verde.
+
+### No probado en esta vuelta
+- El emparejado `client connected/closed` en el log del bridge (tampoco lo miró el ingeniero).
+- La corrida en CI (`candados-headless` con el 152 y el job `nefan-core` con los dos tests): local.
+- El par 60+63: en la primera vuelta ×1 y el ingeniero ×3; esta vez solo aislados, como se pidió.
+
+## Veredicto final
+
+**Apto.** Las tres reservas importantes de la primera vuelta están cerradas y medidas: H1 en el tipo
+(no se puede escribir el mal uso; el residuo está declarado y candado por el 152), H2 con el oyente
+atado al socket (mi sabotaje sale rojo, los 19 reales pasan), H3 con `⊘ bloque no medido` y 0
+asertos vacíos en el sabotaje. H4–H6 atendidos. Quedan dos menores nuevos (H8, un literal distinto
+de `null` sigue pasando por oyente; H9, una cifra del README desfasada) que no bloquean la fusión:
+pueden ir en el mismo commit de rebase o en el issue del coordinador de los quince `una-respuesta`.
