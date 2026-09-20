@@ -143,11 +143,12 @@ export class DevStatusPanel {
       `gasto sesión ${eurFmt.format(sessionUsd * rate)} · total ${eurFmt.format(st.spend.total_usd * rate)}`;
     const lastCalls = st.spend.calls
       .slice(-5)
-      .map((c) => `  $${c.usd.toFixed(2)} ${c.service}: ${c.what}`)
+      .map((c) => `  $${c.usd.toFixed(2)} ${c.service}: ${c.what}${c.procedencia === "real" ? "" : ` (${c.procedencia})`}`)
       .join("\n");
     this.spendEl.title =
       `Coste ESTIMADO (tablas Meshy/fal, no facturación real).\n` +
-      `Total: $${st.spend.total_usd.toFixed(2)} en ${st.spend.call_count} llamadas · ` +
+      `Total REAL: $${st.spend.total_usd.toFixed(2)} en ${st.spend.call_count} llamadas ` +
+      `(fixture: $${st.spend.por_procedencia.fixture.usd.toFixed(2)} en ${st.spend.por_procedencia.fixture.call_count}) · ` +
       `tasa ${rate} €/$ (config.ts usd_eur_rate)` +
       (lastCalls ? `\nÚltimas llamadas:\n${lastCalls}` : "");
   }

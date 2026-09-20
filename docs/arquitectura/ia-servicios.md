@@ -58,26 +58,30 @@ las dos: qué índice rechaza y qué almacén archivar.
 `ai_server/spend_tracker.py`: por defecto `cache/spend/` del checkout, y con la variable el
 directorio que se le diga (absoluta tal cual, relativa contra la raíz del repo; **puesta pero en
 blanco es fail-loud**). Existe porque los tests del adaptador de sprite-forge hacen POST a
-`/skin_sprite_sheet` contra un forge de mentira, y ese camino llama a `SPEND.add` con el `cost_usd`
+`/skin_sprite_sheet` contra un forge de mentira, y ese camino llamaba a `SPEND.add` con el `cost_usd`
 de la fixture: **43 eventos y $10,32 de gasto INVENTADO por corrida**, en el mismo fichero que se
-mira para decidir si se sigue gastando.
+mira para decidir si se sigue gastando. Desde #426 ese test monta su PROPIO tracker y la suite entera
+deja **6 eventos ($1,07)** en el temporal, pero eso NO jubila la variable: el singleton se construye
+al importar el módulo, así que sin ella la suite ni arranca.
 
 Cuando se descubrió, el ledger llevaba **desde el 2026-08-24 siendo 95 % ruido**: de sus 1616
-eventos y $768,58, **1429 eventos y $731,04 eran de la suite** — 240 ($57,60) de la fixture viva y
-1189 ($673,44) de la fixture anterior (commit `a31a6f4`, que pedía `prompt="un herrero"` a
-`/skin_sprite_sheet` desde el propio test). El gasto REAL era **$37,54** — con una salvedad que se
-escribe aquí para que el número no se congele sin ella: dentro de esos 187 eventos quedan **4 con el
-prompt literal `x` ($0,96)** que huelen a sondeo manual y NO se retiraron, porque no estaban
-autorizados y porque la herramienta se niega a usar un criterio de menos de 8 caracteres. O sea que
-$37,54 es el techo del gasto real, no su valor exacto.
+eventos y $768,58, **1429 eventos y $731,04 eran de la suite**. Esos dos lotes se retiraron a
+`archivo/cache/spend/` por arqueología sobre el texto del prompt (igualdad contra `hero: <prompt>` /
+`skin <anim>: <prompt>` de la fixture), y QA demostró que un prompt plausible entraba en el barrido.
 
-Los dos lotes se retiraron a `archivo/cache/spend/`, cada uno a su fichero, con
-`ai_server/tools/archivar_gasto_de_test.py` (dry-run por defecto, nunca borra, se niega a duplicar en
-el archivo). **Los dos criterios seleccionan por IGUALDAD** contra las formas que compone
-`remote_generation.py` (`hero: <prompt>`, `skin <anim>: <prompt>`), nunca por `contains`: con
-`contains` se barría arte real, como `hero: un herrero de pelo cano y delantal de cuero quemado`. Lo
-que cambia entre los dos es de dónde sale el prompt — derivado de la fixture viva, o declarado con
-procedencia y ventana de fechas comprobada para las retiradas.
+**Desde #426 cada evento dice de dónde salió el dólar**: `procedencia` es obligatoria (keyword-only
+sin defecto en `SpendTracker.add`: un `add` sin ella es `TypeError` antes de tocar el disco), con un
+enum CERRADO de dos valores que tienen escritor — `real` (fal, Meshy, y el proveedor que nombre
+sprite-forge) y `fixture` (sprite-forge contestando sus fixtures canónicas o su proveedor `fake`).
+Ni `banco` ni `fake-ai-server`: no escriben el ledger. En el adaptador de sprite-forge la procedencia
+sale de `api` de la RESPUESTA (`procedencia_segun_api`), nunca de un literal: el proceso no puede
+saber si el forge de enfrente es real, la respuesta sí; una respuesta sin `api` es 502 antes de que
+el arte toque disco. `total_usd()`, `/dev/status.total_usd` y `call_count` suman SOLO `real`;
+`por_procedencia` desglosa las dos claves siempre. Un ledger con eventos sin el campo (los 187 de
+antes, $37,54) **no se migra ni se marca `desconocida`**: `_events()` lanza `LedgerIlegible` con el
+`mv` a `archivo/cache/spend/events-sin-procedencia-<fecha>.jsonl`, que es el tercer lote del archivo
+junto a los dos de la suite. La herramienta que retiraba por texto se jubiló con ese cambio (se
+borró con su test): limpiar es `jq 'select(.procedencia != "real")'`, no adivinar por el prompt.
 
 ```bash
 NEFAN_SPEND_DIR=$(mktemp -d) python -m unittest discover -s ai_server/tests

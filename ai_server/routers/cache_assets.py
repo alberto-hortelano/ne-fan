@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from deps import deps
 from dev_api_cache import DEV_API_CACHE
-from spend_tracker import SPEND
+from spend_tracker import SPEND, LedgerIlegible
 
 router = APIRouter()
 
@@ -60,9 +60,15 @@ async def dev_status():
                 "`cd nefan-core && npx tsx scripts/dump-config.ts` y reiniciar"
             ),
         )
+    try:
+        spend = SPEND.status()
+    except LedgerIlegible as e:
+        # Un ledger anterior a #426 (eventos sin `procedencia`) no se suma a
+        # medias: 500 con el comando de archivo, no un total que miente.
+        raise HTTPException(status_code=500, detail=str(e)) from e
     return {
         "api_cache": DEV_API_CACHE.status(),
-        "spend": SPEND.status(),
+        "spend": spend,
         "config": {
             "surface_model": cfg["surface_model"],
             "sprite_skin_model": cfg["sprite_skin_model"],

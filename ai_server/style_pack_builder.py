@@ -291,7 +291,9 @@ async def generate_missing(
         # como el presupuesto se separó de la factura.
         per_image = precio_de_ref(folder, ai_model)
         cost += per_image
-        SPEND.add(per_image, f"style {style_id}/{ref_id}", "remote-gen")
+        # `real` a mano porque fal/Meshy no tienen doble en el árbol: aquí solo
+        # se llega hablando con el proveedor de verdad (el cache-hit no pasa).
+        SPEND.add(per_image, f"style {style_id}/{ref_id}", "remote-gen", procedencia="real")
         out_path = dest_dir / str(entry["file"])
         out_path.parent.mkdir(parents=True, exist_ok=True)
         img = Image.open(io.BytesIO(png)).convert("RGB")

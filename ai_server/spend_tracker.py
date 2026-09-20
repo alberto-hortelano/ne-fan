@@ -3,18 +3,32 @@
 Cada llamada REAL a una API de pago (nunca los cache-hits del SceneImageCache
 ni del DevApiCache) registra su coste ESTIMADO — tablas estáticas de
 `meshy_client.py`, no facturación real — como una línea JSON en
-`cache/spend/events.jsonl`. Los 3 procesos del stack (narrative-llm,
-gpu-worker, remote-gen) escriben al mismo fichero: un append de una línea
-corta es atómico en POSIX (O_APPEND), así que no hace falta lock ni IPC —
-mismo patrón de estado compartido por disco que `dev_api_cache.py`. El total
-lo sirve remote-gen en GET /dev/status y el cliente lo muestra en euros.
+`cache/spend/events.jsonl`. Hoy escribe un solo proceso (remote-gen), pero el
+fichero sigue siendo append-only: un append de una línea corta es atómico en
+POSIX (O_APPEND), así que no hace falta lock ni IPC — mismo patrón de estado
+compartido por disco que `dev_api_cache.py`. El total lo sirve remote-gen en
+GET /dev/status y el cliente lo muestra en euros.
+
+**Cada evento dice de dónde salió el dólar** (#426): `procedencia` es `real`
+(un proveedor que factura: fal, Meshy, el `api` que nombre sprite-forge) o
+`fixture` (sprite-forge contestando sus fixtures canónicas, o su proveedor
+`fake`: arte con `cost_usd` en el cuerpo y cero en la factura). Sin el campo,
+limpiar el ledger era arqueología sobre el texto del prompt, y QA demostró que
+un prompt plausible entraba en el barrido. `total_usd()` suma SOLO `real`; el
+enum es cerrado y solo tiene valores que tengan escritor — ni `banco` ni
+`fake-ai-server`, que no escriben aquí. La procedencia la dice el PROVEEDOR
+(`api` en la respuesta de sprite-forge), nunca un literal del llamante salvo
+donde el proveedor no tiene doble en el árbol (fal y Meshy).
 
 **El ledger real no se abre desde un proceso de test** (#392). Los tests del
 adaptador de sprite-forge hacen POST a `/skin_sprite_sheet` contra un forge de
-mentira, y ese camino llama a `SPEND.add` con el `cost_usd` de la fixture: 43
+mentira, y ese camino llamaba a `SPEND.add` con el `cost_usd` de la fixture: 43
 eventos y $10,32 de gasto INVENTADO por corrida, en el mismo fichero que se
 mira para decidir si se sigue gastando. Cuando se descubrió, el ledger ya
-arrastraba 240 eventos de test ($57,60). Aquí hay dos candados, y hacen falta
+arrastraba 240 eventos de test ($57,60). Desde #426 ese test monta su PROPIO
+tracker y la suite entera deja 6 eventos ($1,07) en el temporal, pero eso no
+jubila nada: el singleton se construye al IMPORTAR este módulo, así que sin la
+variable la suite ni arranca. Aquí hay dos candados, y hacen falta
 los dos: `NEFAN_SPEND_DIR` para desplazar el ledger a un temporal, y la
 NEGATIVA de `SpendTracker.__init__` a construirse sobre la ruta real desde un
 proceso que ya importó `unittest`. Solo la variable no bastaba: olvidarla sería
@@ -29,6 +43,7 @@ import sys
 import time
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 
 RAIZ_REPO = Path(__file__).resolve().parent.parent
 
@@ -83,6 +98,52 @@ def parece_ledger_de_verdad(root: Path) -> bool:
     return root.name == "spend" and root.parent.name == "cache"
 
 
+#: De dónde salió el dólar. CERRADO, y solo con valores que tienen escritor:
+#: `real` lo escriben fal/Meshy y un sprite-forge con proveedor de verdad;
+#: `fixture` lo escribe sprite-forge cuando contesta fixtures o su `fake`.
+PROCEDENCIAS: tuple[str, ...] = ("real", "fixture")
+Procedencia = Literal["real", "fixture"]
+
+#: Los nombres de `api` con los que sprite-forge dice que NO ha facturado:
+#: `fixture` (las respuestas canónicas de `nefan-core/data/contract/fixtures/
+#: sprite-forge/`) y `fake` (`image_client.py` del forge, cost 0). Cualquier
+#: OTRO nombre es un proveedor y cuenta como dinero: un proveedor nuevo que no
+#: esté aquí sale como gasto real, que es el error que se ve, y no como gasto
+#: que desaparece.
+APIS_QUE_NO_FACTURAN = frozenset({"fixture", "fake"})
+
+
+def procedencia_segun_api(api: object) -> Procedencia:
+    """La procedencia de un evento a partir del `api` que declara sprite-forge.
+
+    `None`, no-string o vacío LANZA: una respuesta que no dice de qué proveedor
+    salió no se apunta como gasto de nada — ni real (inflaría el número que se
+    mira para seguir gastando) ni fixture (escondería dinero).
+    """
+    if not isinstance(api, str) or not api.strip():
+        raise ValueError(
+            "sprite-forge no dice de qué proveedor salió (`api` ausente): "
+            "no se apunta gasto sin procedencia"
+        )
+    return "fixture" if api.strip() in APIS_QUE_NO_FACTURAN else "real"
+
+
+class LedgerIlegible(RuntimeError):
+    """El ledger tiene una línea que no se puede leer: sin `procedencia`, con
+    una fuera del enum, o que no es JSON. Es dinero: no se suma a medias."""
+
+
+def _remedio_para_ledger_viejo(ruta: Path) -> str:
+    """Qué hacer con un ledger anterior a #426 (eventos sin `procedencia`):
+    ARCHIVARLO como en T9, nunca migrarlo por script ni marcarlo `desconocida`.
+    Pre-producción: cero compatibilidad hacia atrás."""
+    fecha = time.strftime("%Y-%m-%d")
+    destino = ruta.parent.parent.parent / "archivo" / "cache" / "spend"
+    return (
+        f"mkdir -p {destino} && mv {ruta} {destino / f'events-sin-procedencia-{fecha}.jsonl'}"
+    )
+
+
 class SpendTracker:
     def __init__(self, root: Path):
         root = Path(root)
@@ -109,12 +170,30 @@ class SpendTracker:
         self.root = root
         self._events_path = root / "events.jsonl"
 
-    def add(self, usd: float, what: str, service: str) -> None:
-        """Registra una llamada de pago real. `what` = qué se generó (prompt
-        recortado, categoría…), `service` = proceso que la lanzó."""
+    def add(self, usd: float, what: str, service: str, *, procedencia: Procedencia) -> None:
+        """Registra una llamada a una API de pago. `what` = qué se generó
+        (prompt recortado, categoría…), `service` = proceso que la lanzó,
+        `procedencia` = si el dólar se facturó (`real`) o lo dijo una fixture.
+
+        `procedencia` es keyword-only y SIN defecto: un `add` que no la
+        declare es `TypeError` antes de tocar el disco. Un defecto `real`
+        sería la mentira cómoda —todo lo que no se piensa cuenta como dinero—
+        y un defecto `fixture` la contraria.
+        """
+        if procedencia not in PROCEDENCIAS:
+            raise ValueError(
+                f"procedencia {procedencia!r} no es ninguna de {PROCEDENCIAS}: "
+                f"el enum es cerrado y solo admite valores con escritor"
+            )
         self.root.mkdir(parents=True, exist_ok=True)
         line = json.dumps(
-            {"t": time.time(), "usd": round(float(usd), 4), "what": what[:120], "service": service},
+            {
+                "t": time.time(),
+                "usd": round(float(usd), 4),
+                "what": what[:120],
+                "service": service,
+                "procedencia": procedencia,
+            },
             ensure_ascii=False,
         )
         # Un solo write en modo append: atómico entre procesos para líneas
@@ -122,7 +201,8 @@ class SpendTracker:
         with open(self._events_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
         print(
-            f"Spend: +${usd:.2f} ({service}: {what[:60]}) — acumulado ${self.total_usd():.2f}",
+            f"Spend: +${usd:.2f} [{procedencia}] ({service}: {what[:60]}) — "
+            f"acumulado REAL ${self.total_usd():.2f}",
             flush=True,
         )
 
@@ -130,22 +210,54 @@ class SpendTracker:
         if not self._events_path.exists():
             return []
         # Parse estricto (fail-loud): las líneas se escriben de un solo append,
-        # una línea corrupta es un bug, no ruido a tragar.
-        return [
-            json.loads(line)
-            for line in self._events_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        # una línea corrupta es un bug, no ruido a tragar. Y una línea SIN
+        # `procedencia` es un ledger anterior a #426: no se suma ni como real
+        # ni como fixture, se archiva entero (el mensaje trae el comando).
+        eventos = []
+        for n, line in enumerate(self._events_path.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError as err:
+                raise LedgerIlegible(f"{self._events_path}:{n} no es JSON: {err}") from err
+            proc = e.get("procedencia") if isinstance(e, dict) else None
+            if proc not in PROCEDENCIAS:
+                que = "sin `procedencia`" if proc is None else f"con procedencia {proc!r} fuera de {PROCEDENCIAS}"
+                raise LedgerIlegible(
+                    f"{self._events_path}:{n} es un evento {que}: un ledger anterior a #426 "
+                    f"no se migra ni se marca, se ARCHIVA como en T9 → "
+                    f"{_remedio_para_ledger_viejo(self._events_path)}"
+                )
+            eventos.append(e)
+        return eventos
+
+    @staticmethod
+    def _suma(events: list[dict], procedencia: str) -> float:
+        return round(sum(e["usd"] for e in events if e["procedencia"] == procedencia), 4)
 
     def total_usd(self) -> float:
-        return round(sum(e["usd"] for e in self._events()), 4)
+        """El gasto REAL: solo los eventos que facturó un proveedor."""
+        return self._suma(self._events(), "real")
 
     def status(self, limit: int = 15) -> dict:
+        """Lo que sirve GET /dev/status. `total_usd` y `call_count` son SOLO
+        `real`; `calls` trae las últimas N de cualquier procedencia (cada una
+        con su campo); `por_procedencia` desglosa las dos claves SIEMPRE, con
+        ceros si toca — enum cerrado, dict cerrado."""
         events = self._events()
+        reales = [e for e in events if e["procedencia"] == "real"]
         return {
-            "total_usd": round(sum(e["usd"] for e in events), 4),
-            "call_count": len(events),
+            "total_usd": self._suma(events, "real"),
+            "call_count": len(reales),
             "calls": events[-limit:],
+            "por_procedencia": {
+                p: {
+                    "usd": self._suma(events, p),
+                    "call_count": sum(1 for e in events if e["procedencia"] == p),
+                }
+                for p in PROCEDENCIAS
+            },
         }
 
 

@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from asset_paths import SKINNED_SHEETS_DIR
 from deps import deps
 from dev_api_cache import DEV_API_CACHE
-from spend_tracker import SPEND
+from spend_tracker import SPEND, procedencia_segun_api
 
 logger = logging.getLogger("ai_server")
 
@@ -263,6 +263,20 @@ async def _forge_http(
             status = 503
         raise HTTPException(status_code=status, detail=f"sprite-forge {path}: {detail}")
     return res.json()
+
+
+def _procedencia_o_502(path: str, api: object) -> str:
+    """De qué proveedor salió la respuesta de sprite-forge, o 502 que lo dice.
+
+    `api` es el campo con el que el servicio nombra a quien facturó (`fixture`
+    y `fake` no facturan; cualquier otro nombre sí). Es la ÚNICA fuente de la
+    procedencia del evento de gasto: el proceso no puede saber si el forge de
+    enfrente es real, la respuesta sí.
+    """
+    try:
+        return procedencia_segun_api(api)
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=f"sprite-forge {path}: {e}") from e
 
 
 # Lo último que se sabe de cada `{model}/{anim}/{angle}`: su `base_key` y su
@@ -754,10 +768,16 @@ async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
                 {"model": model, "anim": anim, "angle": angle, "prompt": prompt,
                  "references": references, "style_note": style_note, "ai_model": ai_model},
             )
+            # La procedencia del dólar la dice sprite-forge en `api` (#426), y
+            # se resuelve ANTES de que el arte toque disco: una respuesta que
+            # no dice de qué proveedor salió es 502, no un hero guardado con
+            # gasto sin apuntar.
+            procedencia_hero = _procedencia_o_502("/identity", ident.get("api"))
             hero_path.parent.mkdir(parents=True, exist_ok=True)
             hero_path.write_bytes(base64.b64decode(ident["image"]))
             if ident.get("cost_usd"):
-                SPEND.add(float(ident["cost_usd"]), f"hero: {prompt[:50]}", "remote-gen")
+                SPEND.add(float(ident["cost_usd"]), f"hero: {prompt[:50]}", "remote-gen",
+                          procedencia=procedencia_hero)
 
         # 2. La anim vestida. Todo-o-nada: si falla, no se escribe meta.json.
         skinned = await _forge(
@@ -768,6 +788,8 @@ async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
              "references": references, "style_note": style_note, "ai_model": ai_model},
         )
         meta = skinned["meta"]
+        # Igual que en el hero: la procedencia antes de escribir un frame.
+        procedencia_skin = _procedencia_o_502("/skins", (meta.get("skin") or {}).get("api"))
         meta.setdefault("skin", {})["base_key"] = base_key
         out_dir.mkdir(parents=True, exist_ok=True)
         for d, fila in enumerate(skinned["frames"]):
@@ -775,7 +797,8 @@ async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
                 (out_dir / f"dir_{d}_frame_{f:03d}.png").write_bytes(base64.b64decode(b64))
         out_meta_path.write_text(json.dumps(meta, indent=2))
         if skinned.get("cost_usd"):
-            SPEND.add(float(skinned["cost_usd"]), f"skin {anim}: {prompt[:44]}", "remote-gen")
+            SPEND.add(float(skinned["cost_usd"]), f"skin {anim}: {prompt[:44]}", "remote-gen",
+                      procedencia=procedencia_skin)
         logger.info(
             f"SpriteSkin: {model}/{anim} ← \"{prompt[:40]}\" "
             f"({meta['directions']} dirs × {meta['frame_count']} kf, "

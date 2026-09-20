@@ -7,6 +7,7 @@ La variable no es adorno: sin ella este módulo no llega ni a importarse (#392).
 El ledger es dinero, y hasta hoy la suite le añadía 43 eventos de gasto
 inventado por corrida."""
 
+import json
 import sys
 import tempfile
 import unittest
@@ -16,12 +17,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from spend_tracker import (  # noqa: E402
     ENV_SPEND_DIR,
+    PROCEDENCIAS,
     RAIZ_REPO,
     RUTA_REAL,
+    LedgerIlegible,
     SpendTracker,
     parece_ledger_de_verdad,
+    procedencia_segun_api,
     raiz_del_ledger,
 )
+
+CEROS = {"usd": 0.0, "call_count": 0}
 
 
 class SpendTrackerTest(unittest.TestCase):
@@ -34,36 +40,152 @@ class SpendTrackerTest(unittest.TestCase):
 
     def test_empty_status(self):
         st = self.spend.status()
-        self.assertEqual(st, {"total_usd": 0.0, "call_count": 0, "calls": []})
+        self.assertEqual(
+            st,
+            {"total_usd": 0.0, "call_count": 0, "calls": [],
+             "por_procedencia": {"real": CEROS, "fixture": CEROS}},
+        )
         self.assertEqual(self.spend.total_usd(), 0.0)
 
     def test_add_accumulates(self):
-        self.spend.add(0.17, "plató posada", "remote-gen")
-        self.spend.add(0.18, "tile 0,1", "remote-gen")
-        self.spend.add(0.03, "peel: mesa", "gpu-worker")
+        self.spend.add(0.17, "plató posada", "remote-gen", procedencia="real")
+        self.spend.add(0.18, "tile 0,1", "remote-gen", procedencia="real")
+        self.spend.add(0.03, "peel: mesa", "remote-gen", procedencia="real")
         st = self.spend.status()
         self.assertEqual(st["call_count"], 3)
         self.assertAlmostEqual(st["total_usd"], 0.38, places=4)
         self.assertEqual(st["calls"][0]["what"], "plató posada")
-        self.assertEqual(st["calls"][2]["service"], "gpu-worker")
+        self.assertEqual(st["calls"][2]["service"], "remote-gen")
+        self.assertEqual(st["calls"][2]["procedencia"], "real")
         self.assertIn("t", st["calls"][0])
 
     def test_status_limit_keeps_latest(self):
         for i in range(20):
-            self.spend.add(0.01, f"call-{i}", "remote-gen")
+            self.spend.add(0.01, f"call-{i}", "remote-gen", procedencia="real")
         st = self.spend.status(limit=5)
         self.assertEqual(st["call_count"], 20)
         self.assertEqual(len(st["calls"]), 5)
         self.assertEqual(st["calls"][-1]["what"], "call-19")
 
     def test_multi_instance_shares_file(self):
-        """Los 3 procesos comparten cache/spend/ por disco (append-only):
-        una instancia ve lo que otra escribió, sin IPC."""
+        """Dos instancias sobre el mismo directorio comparten el ledger por
+        disco (append-only): una ve lo que otra escribió, sin IPC."""
         other = SpendTracker(Path(self._tmp.name))
-        self.spend.add(0.17, "a", "remote-gen")
-        other.add(0.03, "b", "gpu-worker")
+        self.spend.add(0.17, "a", "remote-gen", procedencia="real")
+        other.add(0.03, "b", "remote-gen", procedencia="real")
         self.assertAlmostEqual(self.spend.total_usd(), 0.20, places=4)
         self.assertEqual(other.status()["call_count"], 2)
+
+
+class ProcedenciaTest(unittest.TestCase):
+    """Cada evento dice de dónde salió el dólar (#426), y el que no lo dice no
+    se escribe. Es lo que convierte la limpieza del ledger de arqueología sobre
+    el texto del prompt en un filtro por campo."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.spend = SpendTracker(Path(self._tmp.name))
+        self.fichero = Path(self._tmp.name) / "events.jsonl"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_add_sin_procedencia_es_TypeError_y_no_escribe(self):
+        # La garantía va en la FIRMA (keyword-only sin defecto), no en una
+        # comprobación dentro: un `add` viejo revienta antes de tocar el disco.
+        with self.assertRaises(TypeError):
+            self.spend.add(0.24, "hero: x", "remote-gen")  # type: ignore[call-arg]
+        self.assertFalse(self.fichero.exists())
+
+    def test_una_procedencia_fuera_del_enum_es_ValueError_y_no_escribe(self):
+        # `banco` y `fake-ai-server` NO escriben el ledger: no son valores.
+        for mala in ("banco", "fake-ai-server", "desconocida", "", None):
+            with self.subTest(procedencia=mala):
+                with self.assertRaises(ValueError) as ctx:
+                    self.spend.add(0.24, "hero: x", "remote-gen", procedencia=mala)  # type: ignore[arg-type]
+                self.assertIn("cerrado", str(ctx.exception))
+        self.assertFalse(self.fichero.exists())
+
+    def test_el_enum_es_exactamente_real_y_fixture(self):
+        # Solo valores con escritor. Añadir uno aquí exige un escritor nuevo.
+        self.assertEqual(PROCEDENCIAS, ("real", "fixture"))
+
+    def test_el_evento_en_disco_lleva_el_campo(self):
+        self.spend.add(0.24, "hero: x", "remote-gen", procedencia="fixture")
+        linea = json.loads(self.fichero.read_text().strip())
+        self.assertEqual(sorted(linea), ["procedencia", "service", "t", "usd", "what"])
+        self.assertEqual(linea["procedencia"], "fixture")
+
+    def test_total_usd_ignora_las_fixtures(self):
+        self.spend.add(0.24, "hero: x", "remote-gen", procedencia="fixture")
+        self.spend.add(0.10, "style s/r", "remote-gen", procedencia="real")
+        self.spend.add(0.24, "skin walk: x", "remote-gen", procedencia="fixture")
+        self.assertAlmostEqual(self.spend.total_usd(), 0.10, places=4)
+        st = self.spend.status()
+        self.assertAlmostEqual(st["total_usd"], 0.10, places=4)
+        self.assertEqual(st["call_count"], 1)
+        # `calls` sí trae las tres, cada una con su campo: es lo que se pinta.
+        self.assertEqual([c["procedencia"] for c in st["calls"]], ["fixture", "real", "fixture"])
+        self.assertEqual(st["por_procedencia"]["real"], {"usd": 0.10, "call_count": 1})
+        self.assertEqual(st["por_procedencia"]["fixture"], {"usd": 0.48, "call_count": 2})
+
+    def test_por_procedencia_trae_las_dos_claves_aunque_una_este_a_cero(self):
+        self.spend.add(0.24, "hero: x", "remote-gen", procedencia="fixture")
+        self.assertEqual(
+            self.spend.status()["por_procedencia"],
+            {"real": CEROS, "fixture": {"usd": 0.24, "call_count": 1}},
+        )
+
+    def test_un_ledger_anterior_a_426_no_se_suma_y_dice_como_archivarlo(self):
+        # La forma de los 187 eventos vivos hasta hoy: cuatro claves, sin
+        # `procedencia`. Ni se migra ni se marca `desconocida`: se archiva como
+        # en T9, y el mensaje trae el comando.
+        self.fichero.write_text(
+            json.dumps({"t": 1.0, "usd": 0.24, "what": "hero: x", "service": "remote-gen"}) + "\n"
+        )
+        for lectura in (self.spend.total_usd, self.spend.status):
+            with self.subTest(lectura=lectura.__name__):
+                with self.assertRaises(LedgerIlegible) as ctx:
+                    lectura()
+                msg = str(ctx.exception)
+                self.assertIn("sin `procedencia`", msg)
+                self.assertIn("archivo/cache/spend", msg)
+                self.assertIn("events-sin-procedencia-", msg)
+                self.assertIn("mv ", msg)
+
+    def test_una_procedencia_desconocida_en_disco_tambien_es_ilegible(self):
+        self.fichero.write_text(
+            json.dumps({"t": 1.0, "usd": 0.24, "what": "x", "service": "remote-gen",
+                        "procedencia": "banco"}) + "\n"
+        )
+        with self.assertRaises(LedgerIlegible) as ctx:
+            self.spend.total_usd()
+        self.assertIn("'banco'", str(ctx.exception))
+
+    def test_una_linea_que_no_es_json_es_ilegible_con_su_numero_de_linea(self):
+        self.spend.add(0.10, "a", "remote-gen", procedencia="real")
+        with open(self.fichero, "a") as f:
+            f.write("{esto no es json\n")
+        with self.assertRaises(LedgerIlegible) as ctx:
+            self.spend.total_usd()
+        self.assertIn(":2 no es JSON", str(ctx.exception))
+
+    def test_procedencia_segun_api(self):
+        # Lo que dice sprite-forge → lo que se apunta. `fixture` y `fake` no
+        # facturan; cualquier OTRO nombre es un proveedor y cuenta como dinero
+        # (un proveedor nuevo sale como gasto real, nunca desaparece).
+        self.assertEqual(procedencia_segun_api("fixture"), "fixture")
+        self.assertEqual(procedencia_segun_api("fake"), "fixture")
+        self.assertEqual(procedencia_segun_api("meshy"), "real")
+        self.assertEqual(procedencia_segun_api("openai"), "real")
+        self.assertEqual(procedencia_segun_api("loquesea"), "real")
+
+    def test_procedencia_segun_api_sin_api_lanza(self):
+        for ausente in (None, "", "   ", 3, {"api": "fixture"}):
+            with self.subTest(api=ausente):
+                with self.assertRaises(ValueError) as ctx:
+                    procedencia_segun_api(ausente)
+                self.assertIn("`api` ausente", str(ctx.exception))
 
 
 class LedgerRealFueraDeTestTest(unittest.TestCase):
@@ -122,7 +244,7 @@ class LedgerRealFueraDeTestTest(unittest.TestCase):
     def test_un_temporal_se_construye_sin_quejarse(self):
         with tempfile.TemporaryDirectory() as tmp:
             spend = SpendTracker(Path(tmp))
-            spend.add(0.24, "un herrero de pelo cano", "remote-gen")
+            spend.add(0.24, "un herrero de pelo cano", "remote-gen", procedencia="real")
             self.assertAlmostEqual(spend.total_usd(), 0.24, places=4)
 
     def test_raiz_del_ledger_lee_la_variable(self):
@@ -206,6 +328,14 @@ class DevStatusEndpointTest(unittest.TestCase):
         try:
             body = TestClient(app).get("/dev/status").json()
             self.assertEqual(sorted(body), ["api_cache", "config", "keys", "spend"])
+            # `spend` clave a clave (#426): `por_procedencia` con las DOS
+            # procedencias siempre, que es lo que el `satisfies` del fake exige.
+            self.assertEqual(
+                sorted(body["spend"]), ["call_count", "calls", "por_procedencia", "total_usd"]
+            )
+            self.assertEqual(sorted(body["spend"]["por_procedencia"]), ["fixture", "real"])
+            for p in ("real", "fixture"):
+                self.assertEqual(sorted(body["spend"]["por_procedencia"][p]), ["call_count", "usd"])
             self.assertEqual(
                 sorted(body["config"]),
                 ["sprite_skin_model", "surface_model", "usd_eur_rate"],
@@ -213,6 +343,38 @@ class DevStatusEndpointTest(unittest.TestCase):
             self.assertEqual(body["config"]["surface_model"], "nano-banana-pro")
             self.assertEqual(body["config"]["sprite_skin_model"], "gpt-image-2")
             self.assertEqual(sorted(body["keys"]), ["fal", "meshy"])
+        finally:
+            deps.config = old_config
+
+    def test_dev_status_sobre_un_ledger_anterior_a_426_es_500_con_el_remedio(self):
+        """Un evento sin `procedencia` no se suma a medias ni se trata como
+        real: /dev/status contesta 500 con el `mv` de archivo, no un total."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from unittest import mock
+
+        from deps import deps
+        from routers import cache_assets
+
+        app = FastAPI()
+        app.include_router(cache_assets.router)
+        old_config = deps.config
+        deps.config = {
+            "surface_model": "nano-banana-pro",
+            "sprite_skin_model": "gpt-image-2",
+            "usd_eur_rate": 0.86,
+        }
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                viejo = SpendTracker(Path(tmp))
+                (Path(tmp) / "events.jsonl").write_text(
+                    json.dumps({"t": 1.0, "usd": 0.24, "what": "hero: x", "service": "remote-gen"}) + "\n"
+                )
+                with mock.patch.object(cache_assets, "SPEND", viejo):
+                    res = TestClient(app).get("/dev/status")
+                self.assertEqual(res.status_code, 500, res.text)
+                self.assertIn("archivo/cache/spend", res.json()["detail"])
+                self.assertIn("mv ", res.json()["detail"])
         finally:
             deps.config = old_config
 

@@ -428,7 +428,9 @@ class SurfaceAtlasGenerator:
 
         blobs, cached = DEV_API_CACHE.through_sync("fal_i2i_atlas", _call, note=prompt)
         if not cached:
-            SPEND.add(FalImageToImage.cost_usd(ai_model), prompt[:60], "remote-gen")
+            # `real` a mano: fal no tiene doble en el árbol y el cache-hit ya
+            # no llega aquí. Solo sprite-forge puede contestar fixtures.
+            SPEND.add(FalImageToImage.cost_usd(ai_model), prompt[:60], "remote-gen", procedencia="real")
         return blobs[0]
 
     def generate(

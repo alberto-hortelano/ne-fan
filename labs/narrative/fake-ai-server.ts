@@ -549,7 +549,12 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && ruta === "/dev/status") {
     return send(200, {
       api_cache: { enabled: fakeDevCacheEnabled, channels: {} },
-      spend: { total_usd: 0, call_count: 0, calls: [] },
+      spend: {
+        total_usd: 0,
+        call_count: 0,
+        calls: [],
+        por_procedencia: { real: { usd: 0, call_count: 0 }, fixture: { usd: 0, call_count: 0 } },
+      },
       config: {
         // `surface_model`, no `scene_model`. El contrato lo renombró el
         // 2026-08-22 (192037b, que tocó los tres ficheros a la vez) y este
