@@ -40,8 +40,25 @@
  *  issue, con noventa segundos gastados para no decir nada. El diagnóstico del
  *  título de #656 («mide contra el reloj de PARED») quedó desmentido: el sujeto
  *  de esta espera es el BRIDGE y `data/contract/esperas-que-conducen.json`
- *  bendice la pared para él; lo que fallaba era el mudo. Los 90 s se quedan, con
- *  su aritmética escrita junto a `MS_DEL_TILE`.
+ *  bendice la pared para él; lo que fallaba era el mudo. Los 90 s se quedan, y
+ *  desde #677 son `MS_DEL_TILE` (`lib/tile-episodio.mjs`): el ÚNICO cortafuegos
+ *  de las once esperas de tile del banco, con la aritmética del CUELGUE a su
+ *  lado. Aquí se hereda por el default de `pedirYEsperarTile`, y que ninguna
+ *  llamada traiga el suyo lo canda `data/contract/esperas-de-tile.json`.
+ *
+ *  **Y LA EXPIRACIÓN ABORTA** (H-4 de #687). Este guion tiene SIETE esperas de
+ *  tile, o sea que era el caso peor: bajo un silencio real las pagaba todas
+ *  para repetir siete veces la misma frase. MEDIDO el 2026-09-20 con
+ *  `handleRequestTile` ignorando el frame, la misma corrida con y sin la
+ *  decisión: **650 s con siete ✘ (10 asertos rojos) → 99 s con UNO** más un
+ *  `ERROR:` que dice por qué se para. Los tres rojos de más del «antes» eran
+ *  los asertos de COSTE (`generaciones()`), que después del primer cuelgue ya
+ *  no miden nada. Corolario que hay que leer sin confundirlo con una
+ *  regresión: bajo silencio real este guion ya NO enseña sus bloques de
+ *  después — es la decisión, no un fallo. Los desenlaces HABLADOS (el motor en
+ *  `mode:"error"`, el rechazo por unicast) no abortan: salen en menos de 2 s y
+ *  el guion sigue, que es lo que permite medir «se criban LAS DOS» en el E1.
+ *
  *  **PROBADO EN NEGATIVO** el 2026-09-18 — los tres sabotajes se ejercieron
  *  sobre el 120, que comparte el helper línea por línea; su cabecera los lista
  *  con la salida medida.

@@ -70,6 +70,7 @@ import {
   esperarListaDeSaves,
   esperarTituloListo,
 } from "../lib/sesion.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 import { acercarse, herirHasta } from "../lib/combate.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes del guion), la misma
@@ -207,7 +208,7 @@ export default async function (ctx) {
         const s = window.__nefan.scene;
         return s && !previos.includes(s.scene_id) ? s.scene_id : null;
       },
-      { ms: 180_000 },
+      { ms: MS_DEL_TILE },
       antesTiles.map((k) => k),
     )
     .catch(() => null);

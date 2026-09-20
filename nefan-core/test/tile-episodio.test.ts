@@ -48,10 +48,26 @@ const mod = (await import(join(repoRoot, "qa", "lib", "tile-episodio.mjs"))) as 
   RECHAZADO: string;
   DESCARTADO: string;
   CALLADO: string;
+  MS_DEL_TILE: number;
   veredictoDeTile: (entrada?: unknown) => Veredicto;
   fraseDeTile: (v: unknown) => string;
+  sondaDeTile: (k: string) => unknown;
+  exigeLecturaDeTile: (lectura?: unknown) => void;
+  laExpiracionAborta: (v: unknown) => boolean;
 };
-const { LLEGADO, FALLO, RECHAZADO, DESCARTADO, CALLADO, veredictoDeTile, fraseDeTile } = mod;
+const {
+  LLEGADO,
+  FALLO,
+  RECHAZADO,
+  DESCARTADO,
+  CALLADO,
+  MS_DEL_TILE,
+  veredictoDeTile,
+  fraseDeTile,
+  sondaDeTile,
+  exigeLecturaDeTile,
+  laExpiracionAborta,
+} = mod;
 
 /** La OTRA mitad del cable de #609: quien decide si un rojo bajo carga se puede
  *  llamar una expiración de presupuesto. Se importa para afirmar que encajan. */
@@ -376,5 +392,117 @@ describe("EL CABLE de vuelta: `fraseDeTile` → `firmaDePresupuesto` (QA H-2)", 
     // Y sin presupuesto declarado se dice, en vez de inventar un número.
     const sinMs = veredictoDeTile({ key: "t", tiles: [], expiro: true });
     assert.match(fraseDeTile(sinMs), /EXPIRÓ \(sin presupuesto declarado\)/);
+  });
+});
+
+/** LA SONDA SE EJECUTA COMO LA EJECUTA PLAYWRIGHT: serializada con `String(fn)`
+ *  y evaluada en otro ámbito, donde `window` es lo único que existe. Si
+ *  `sondaDeTile` arrastrara una referencia a este módulo —`LLEGADO`, un
+ *  helper— aquí sería `ReferenceError`, que es exactamente lo que sería en la
+ *  página: `rotos === muestras` y una expiración de 90 s disfrazada de
+ *  «callado». */
+const sondaSerializada = new Function("window", "k", `return (${String(sondaDeTile)})(k);`) as (
+  window: unknown,
+  k: string,
+) => unknown;
+const ventana = (l: { tiles?: unknown; episodios?: unknown; rechazos?: unknown }): unknown => ({
+  __nefan: { tiles: l.tiles, tileEpisodios: l.episodios },
+  __qaTileRechazos: l.rechazos,
+});
+
+describe("sondaDeTile · la mitad que PARA dice lo mismo que la que JUZGA (H-3 de #687)", () => {
+  // Las cinco lecturas del veredicto. La regla: la sonda para (≠ null) EXACTAMENTE
+  // cuando el veredicto no es «callado» ni «descartado» — los dos estados que
+  // desde dentro de la página no se pueden ver (el descarte es un delta que se
+  // mide desde node). Antes había dos precedencias escritas, y estaban
+  // invertidas; ahora la sonda no tiene ninguna y esto es lo que lo sujeta.
+  const lecturas: { nombre: string; l: { tiles: string[]; episodios: Episodio[]; rechazos: unknown[]; descartados?: { n: number; status: number } } }[] = [
+    { nombre: "llegado", l: { tiles: ["tile_0_1"], episodios: [ep("tile_0_1", { arrived: 1, source: "engine" })], rechazos: [] } },
+    { nombre: "fallo", l: { tiles: [], episodios: [ep("tile_0_1", { error: "el motor lo rechazó" })], rechazos: [] } },
+    { nombre: "rechazado", l: { tiles: [], episodios: [], rechazos: [{ kind: "protocolo", message: "no" }] } },
+    { nombre: "rechazado gana a fallo (misma señal para la sonda)", l: { tiles: [], episodios: [ep("tile_0_1", { error: "antes" })], rechazos: ["x"] } },
+    { nombre: "descartado", l: { tiles: [], episodios: [], rechazos: [], descartados: { n: 0, status: 2 } } },
+    { nombre: "callado con episodio", l: { tiles: [], episodios: [ep("tile_0_1")], rechazos: [] } },
+    { nombre: "callado sin episodio", l: { tiles: ["tile_0_0"], episodios: [], rechazos: [] } },
+    { nombre: "el error de OTRA key no para", l: { tiles: [], episodios: [ep("tile_9_9", { error: "ajeno" })], rechazos: [] } },
+  ];
+
+  for (const { nombre, l } of lecturas) {
+    it(`${nombre}: sonda ≠ null ⇔ veredicto ∉ {callado, descartado}`, () => {
+      const v = veredictoDeTile({ key: "tile_0_1", ...l });
+      const parada = sondaSerializada(ventana(l), "tile_0_1");
+      const debeParar = v.estado !== CALLADO && v.estado !== DESCARTADO;
+      assert.equal(parada !== null, debeParar, `veredicto=${v.estado} sonda=${JSON.stringify(parada)}`);
+    });
+  }
+
+  it("cuando para, devuelve la LECTURA cruda y no un veredicto: la precedencia vive en un solo sitio", () => {
+    const l = { tiles: ["tile_0_1"], episodios: [ep("tile_0_1", { error: "también" })], rechazos: ["y"] };
+    const parada = sondaSerializada(ventana(l), "tile_0_1") as Record<string, unknown>;
+    assert.deepEqual(Object.keys(parada).sort(), ["episodio", "rechazos", "tiles"]);
+    assert.equal("estado" in parada, false, "la sonda no decide: eso es de veredictoDeTile");
+  });
+
+  it("sin `tiles` LANZA en vez de devolver null: un hook roto no se disfraza de «callado» (H-5, a mitad de espera)", () => {
+    // En la página esto es un sondeo ROTO que `waitFor` cuenta en `rotos`; lo
+    // que no puede ser es `null`, que significaría «sigo esperando» sobre un
+    // registro que no existe. Y ANTES de la espera lo dice `exigeLecturaDeTile`.
+    assert.throws(() => sondaSerializada(ventana({ tiles: undefined, episodios: [], rechazos: [] }), "tile_0_1"), TypeError);
+  });
+
+  it("no arrastra ninguna referencia al módulo (si no, Playwright la rompería igual)", () => {
+    const fuente = String(sondaDeTile);
+    for (const nombre of ["veredictoDeTile", "LLEGADO", "FALLO", "RECHAZADO", "exigeLecturaDeTile", "MS_DEL_TILE", "textoDelRechazo"]) {
+      assert.doesNotMatch(fuente, new RegExp(`\\b${nombre}\\b`), `sondaDeTile menciona ${nombre}`);
+    }
+  });
+});
+
+describe("exigeLecturaDeTile · el fail-loud de la lectura, aplicable ANTES de la espera (H-5 de #687)", () => {
+  it("sin `tiles` array LANZA nombrando el registro, y es TypeError (absorbe no lo traga)", () => {
+    assert.throws(() => exigeLecturaDeTile({ key: "tile_0_1", tiles: undefined, rechazos: [] }), (e: unknown) => {
+      assert.ok(e instanceof TypeError);
+      assert.match(String((e as Error).message), /__nefan\.tiles/);
+      return true;
+    });
+  });
+  it("sin key, y con rechazos que no son array, LANZA", () => {
+    assert.throws(() => exigeLecturaDeTile({ key: "", tiles: [], rechazos: [] }), /la key del tile/);
+    assert.throws(() => exigeLecturaDeTile({ key: "t", tiles: [], rechazos: undefined }), /rechazos.*array/s);
+    assert.throws(() => exigeLecturaDeTile(), /la key del tile/);
+  });
+  it("con una lectura bien formada no lanza, aunque esté vacía", () => {
+    assert.doesNotThrow(() => exigeLecturaDeTile({ key: "tile_0_1", tiles: [], rechazos: [] }));
+  });
+  it("y es el MISMO validador que usa el veredicto: lo que pasa el preflight no revienta después", () => {
+    const l = { key: "tile_0_1", tiles: ["a"], rechazos: [] };
+    exigeLecturaDeTile(l);
+    assert.doesNotThrow(() => veredictoDeTile(l));
+  });
+});
+
+describe("laExpiracionAborta · la decisión de H-4 (#687), con test", () => {
+  it("verdadera SOLO cuando la espera expiró", () => {
+    assert.equal(laExpiracionAborta(veredictoDeTile({ key: "t", tiles: [], expiro: true, ms: MS_DEL_TILE })), true);
+  });
+  it("falsa para los desenlaces hablados: fallo, rechazo y descarte dejan el ✘ y el guion sigue", () => {
+    assert.equal(laExpiracionAborta(veredictoDeTile({ key: "t", tiles: [], episodios: [ep("t", { error: "x" })] })), false);
+    assert.equal(laExpiracionAborta(veredictoDeTile({ key: "t", tiles: [], rechazos: ["r"] })), false);
+    assert.equal(laExpiracionAborta(veredictoDeTile({ key: "t", tiles: [], descartados: { n: 1, status: 0 } })), false);
+    assert.equal(laExpiracionAborta(veredictoDeTile({ key: "t", tiles: ["t"] })), false);
+  });
+  it("y no se deja convencer por un `expiro` que no sea el booleano", () => {
+    assert.equal(laExpiracionAborta({ expiro: "sí" }), false);
+    assert.equal(laExpiracionAborta({ expiro: 1 }), false);
+    assert.equal(laExpiracionAborta({}), false);
+  });
+});
+
+describe("MS_DEL_TILE vive aquí, y el ✘ que expira con él lleva firma de presupuesto", () => {
+  it("es un entero positivo de milisegundos y la frase que lo agota la reconoce el reproductor bajo carga", () => {
+    assert.ok(Number.isInteger(MS_DEL_TILE) && MS_DEL_TILE > 0);
+    const frase = fraseDeTile(veredictoDeTile({ key: "t", tiles: [], expiro: true, ms: MS_DEL_TILE }));
+    assert.match(frase, new RegExp(`la espera expiró a los ${MS_DEL_TILE} ms`));
+    assert.equal(carga.firmaDePresupuesto([frase]), true);
   });
 });

@@ -18,7 +18,7 @@
       "fichero": "qa/guiones/05-terreno-desde-ground.mjs",
       "desc": "\"el jugador entra en el tile recién generado\"",
       "clase": "bridge",
-      "porque": "La tecla solo mantiene al jugador caminando mientras tanto; lo que se espera lo decide el BRIDGE, no el mundo. Un presupuesto de sim aquí mediría el reloj equivocado en la otra dirección —el mundo puede correr sus segundos con el tile sin llegar— y su cortafuegos de pared saldría ×10, así que un tile que no llega pasaría de rojo en 3 min a ⊘ en 30. Las otras dos esperas que conducen de este mismo guion SÍ están en sim: esta exención nombra UNA."
+      "porque": "La tecla solo mantiene al jugador caminando mientras tanto; lo que se espera lo decide el BRIDGE, no el mundo. Un presupuesto de sim aquí mediría el reloj equivocado en la otra dirección —el mundo puede correr sus segundos con el tile sin llegar— y su cortafuegos de pared saldría ×10, así que un tile que no llega pasaría de rojo en 1,5 min a ⊘ en 15 (`MS_DEL_TILE`, 90 s, desde #677: hasta entonces este sitio presupuestaba 180 s y la cuenta era 3 min → 30). Las otras dos esperas que conducen de este mismo guion SÍ están en sim: esta exención nombra UNA."
     },
     {
       "fichero": "qa/guiones/42-al-enemigo-no-se-le-borra-la-herida.mjs",

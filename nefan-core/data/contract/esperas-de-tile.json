@@ -1,0 +1,80 @@
+{
+  "_comment": "EL CORTAFUEGOS DE UN TILE DEL BRIDGE ES UNO Y TIENE DUEÑO (#677, #687). Once esperas del banco tienen el mismo sujeto —el bridge generando y difundiendo un tile por `runTileGeneration`, llegue por `request_tile`, por un viaje del panel «Salidas» o por la frontera— y hasta #677 presupuestaban con CUATRO números (60, 90, 180 y 240 s) sin que nadie hubiera escrito por qué. Desde entonces presupuestan con UN identificador, `MS_DEL_TILE`, declarado en `qa/lib/tile-episodio.mjs` con la aritmética del CUELGUE a su lado (esperas por guion × cortafuegos = minutos perdidos cuando el bridge calla), y este fichero dice QUIÉN lo usa. Lo verifica `test/el-cortafuegos-del-tile-tiene-dueno.test.ts` leyendo el ÁRBOL de sintaxis de todo `qa/**.mjs`, en las dos direcciones: (a) cada entrada de `esperas` resuelve a EXACTAMENTE una llamada de `llamada` en `fichero` —por `desc` cuando lo hay; `desc` es el TEXTO del argumento tal como está escrito, que en los helpers `esperarLlegada` es el identificador `desc` y en `esperarEnElSave`, que no describe, es `null`— cuyo presupuesto (`waitFor` arg 2, `holdUntil` arg 3 `.ms`, `esperarEnElSave` arg 2) es el identificador `MS_DEL_TILE`; y (b) TODO nodo `MS_DEL_TILE` de `qa/**` es su única declaración (en `constante.fichero`, con `valor_ms`), un import en un fichero que lo usa, el default de `pedirYEsperarTile`, el presupuesto de una espera de esta lista, o una lectura —una comparación o una interpolación `${MS_DEL_TILE}` en un template— en un `lector` declarado; cualquier otro —una copia local con otro valor, un re-export, un alias (`const t = MS_DEL_TILE`), un uso suelto— es rojo. El presupuesto se reconoce por RANGO y no por el padre inmediato, así que un `waitFor(d, f, MS_DEL_TILE * 2)` cuenta como presupuesto DERIVADO —hay que apuntarlo, y no casará con (a), que exige el identificador a pelo— en vez de colarse como lectura. Además (c) NINGÚN `pedirYEsperarTile(…)` del banco trae su propio `ms`: el 120 y el 127 no están en la lista porque heredan el default, y eso es lo que (c) canda. El valor está aquí y no solo en el fuente porque cambiarlo tiene que verse en el diff de un contrato: subirlo «un poco» porque una máquina cargada lo rozó es exactamente lo que la aritmética escrita viene a impedir. Fuera del sujeto y a propósito: `qa/guiones/115:175` (el PAGO del batch de estilo) y `regenerarMundo`/`curarMundo` en `qa/lib/sesion.mjs` (la pre-generación de NUEVE escenas, un lote a 240 s).",
+  "_lo_que_esto_NO_sujeta": [
+    "Que una espera NUEVA de un tile se escriba con un literal (`ctx.waitFor(\"el tile vecino llega\", fn, 240_000)`): esta lista enumera SITIOS, no detecta el SUJETO «tile». Un sitio nuevo con literal no toca `MS_DEL_TILE` y sale verde. Lo mide el caso «el agujero declarado» del test; lo que lo caza es la revisión del diff y, solo para la forma `holdUntil`/tecla mantenida, `esperas-que-conducen.json`.",
+    "Que el número sea el CORRECTO: se canda que sea uno, que esté declarado donde se dice y que valga `valor_ms`; el porqué de 90 s es prosa junto a la constante, y el guion 152 solo acota por abajo (p95 × 10 ≤ MS_DEL_TILE). Un `valor_ms` de 900 000 con su declaración a juego pasaría este test.",
+    "Que las esperas de la lista PAREN antes por estado cuando el bridge habla: el 09, el 75 y el 144 miran `viaje.error` y el 08, el 15 y el 74 no. Eso es el MUDO de #656 en el camino del viaje (issue aparte, del coordinador) y este contrato solo sujeta el cortafuegos, no la condición de parada.",
+    "Que `sondaDeTile` y `veredictoDeTile` sigan siendo equivalentes: eso vive en `test/tile-episodio.test.ts`, no aquí."
+  ],
+  "constante": {
+    "nombre": "MS_DEL_TILE",
+    "fichero": "qa/lib/tile-episodio.mjs",
+    "valor_ms": 90000
+  },
+  "default_de": {
+    "fichero": "qa/lib/sesion.mjs",
+    "funcion": "pedirYEsperarTile"
+  },
+  "esperas": [
+    {
+      "fichero": "qa/guiones/05-terreno-desde-ground.mjs",
+      "llamada": "holdUntil",
+      "desc": "\"el jugador entra en el tile recién generado\"",
+      "porque": "El jugador camina hacia la frontera y lo que se espera es que el BRIDGE genere y difunda el tile vecino; la tecla solo lo mantiene andando mientras tanto (exenta de sim en `esperas-que-conducen.json` por ese sujeto). Presupuestaba 180 s."
+    },
+    {
+      "fichero": "qa/guiones/42-al-enemigo-no-se-le-borra-la-herida.mjs",
+      "llamada": "holdUntil",
+      "desc": "\"el jugador entra en el tile recién generado\"",
+      "porque": "La misma espera que en el 05 y el mismo sujeto: el tile que el BRIDGE genera al cruzar la frontera, no los metros que anda el jugador. Presupuestaba 180 s."
+    },
+    {
+      "fichero": "qa/guiones/63-una-posicion-viva-fuera-del-mundo-se-dice.mjs",
+      "llamada": "esperarEnElSave",
+      "desc": null,
+      "porque": "El tile (1,0) se pide por el cable y se espera a que el BRIDGE lo genere y lo escriba en el SAVE (`scenes_loaded`): mismo generador, otro observable. Presupuestaba 60 s, el único de los once que SUBE; si expira el guion sale `sinMedir`."
+    },
+    {
+      "fichero": "qa/guiones/08-viaje-a-place-sin-realizar.mjs",
+      "llamada": "waitFor",
+      "desc": "\"el destino llega y el jugador aparece en él\"",
+      "porque": "Un viaje por «Salidas» a un lugar sin realizar: el BRIDGE genera el tile del destino y difunde la escena con el spawn. No mira `viaje.error`, así que un viaje roto paga el cortafuegos entero. Presupuestaba 240 s."
+    },
+    {
+      "fichero": "qa/guiones/09-viaje-de-vuelta.mjs",
+      "llamada": "waitFor",
+      "desc": "desc",
+      "porque": "`esperarLlegada`: el viaje termina cuando el JUGADOR está en otro tile, y quien lo mueve es el BRIDGE generando el destino y pidiendo el spawn. Para antes si el bridge declara `viaje.error`. Presupuestaba 240 s; se recorre hasta tres veces por guion."
+    },
+    {
+      "fichero": "qa/guiones/15-guardia-se-ve-y-se-comporta.mjs",
+      "llamada": "waitFor",
+      "desc": "\"el destino llega y trae un NPC declarado GUARDIA\"",
+      "porque": "Viaje por «Salidas» hasta el lugar del guardia: el BRIDGE genera el tile del destino. No mira `viaje.error`. Presupuestaba 240 s."
+    },
+    {
+      "fichero": "qa/guiones/74-el-jugador-aparece-dentro-del-lugar.mjs",
+      "llamada": "waitFor",
+      "desc": "desc",
+      "porque": "`esperarLlegada`: el BRIDGE genera el destino del viaje y aplica el spawn dentro del lugar. Solo mira `spawnAplicado`, no `viaje.error`. Presupuestaba 240 s."
+    },
+    {
+      "fichero": "qa/guiones/75-la-huella-del-tile-no-lleva-las-salidas.mjs",
+      "llamada": "waitFor",
+      "desc": "desc",
+      "porque": "`esperarLlegada`: el tile del destino lo genera el BRIDGE y el jugador aparece dentro de su rect. Para antes en `viaje.error`. Presupuestaba 240 s."
+    },
+    {
+      "fichero": "qa/guiones/144-el-viaje-de-vuelta-no-empareda-al-jugador.mjs",
+      "llamada": "waitFor",
+      "desc": "desc",
+      "porque": "`esperarLlegada`: ida y vuelta por «Salidas», el BRIDGE genera cada destino y pide el spawn. Para antes en `viaje.error`. Presupuestaba 240 s; se recorre hasta tres veces por guion."
+    }
+  ],
+  "lectores": [
+    {
+      "fichero": "qa/guiones/152-el-tile-del-falso-llega-en-segundos.mjs",
+      "porque": "El guion de MEDIDA (#677): pide 32 tiles al bridge con el motor falso, saca p50/p95/máx y exige que el cortafuegos esté al menos a 10× del p95. Lee `MS_DEL_TILE` para compararlo, nunca para presupuestar: sus esperas son las de `pedirYEsperarTile` con el default."
+    }
+  ]
+}

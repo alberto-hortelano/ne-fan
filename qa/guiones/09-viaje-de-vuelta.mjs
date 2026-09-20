@@ -26,6 +26,7 @@
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
 import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 
 const GAME_ID = "alta_fantasia";
 
@@ -69,8 +70,9 @@ function pasoMuerto(l, tileAnterior) {
 /** El viaje ha terminado cuando el JUGADOR está en otro tile — no cuando
  *  llega la escena (el scene_init se adelanta al `ready` que trae el spawn).
  *  Se espera por ESTADO contra el ledger: un fallo declarado corta al
- *  instante, y el tope de 240 s queda como cortafuegos de deadlock, no como
- *  condición de parada. Al saltar, el fallo NOMBRA el paso muerto. */
+ *  instante, y `MS_DEL_TILE` (el cortafuegos de TODO tile del bridge, con su
+ *  aritmética en `qa/lib/tile-episodio.mjs`) queda como cortafuegos de
+ *  deadlock, no como condición de parada. Al saltar, el fallo NOMBRA el paso muerto. */
 async function esperarLlegada(ctx, tileAnterior, desc) {
   const roto = (l) => new Error(`${desc}: ${pasoMuerto(l, tileAnterior)} · ledger=${JSON.stringify(l)}`);
   const r = await ctx
@@ -89,7 +91,7 @@ async function esperarLlegada(ctx, tileAnterior, desc) {
           exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
         };
       },
-      240_000,
+      MS_DEL_TILE,
       tileAnterior,
     )
     .catch(async () => {

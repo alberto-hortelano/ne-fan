@@ -44,7 +44,151 @@
  *  Es exactamente lo que `data/contract/banco-medido.json` exige a cambio de
  *  la exención de `sesion.mjs`: «la parte pura que tenga se extrae a un módulo
  *  propio y se mide».
+ *
+ *  ── LO QUE ENTRÓ CON #677 Y #687 (tanda V) ──────────────────────────────
+ *  Aquí viven también, desde entonces, las OTRAS tres decisiones de la espera
+ *  que hasta ese día estaban repartidas entre `sesion.mjs` y este fichero:
+ *   · el CORTAFUEGOS (`MS_DEL_TILE`), uno para las once esperas del banco,
+ *     con la aritmética del cuelgue escrita a su lado;
+ *   · la SONDA que corre dentro de la página (`sondaDeTile`), que ya no tiene
+ *     precedencia propia: devuelve la lectura cruda en cuanto hay señal, y la
+ *     única precedencia es la de `veredictoDeTile` (H-3 de #687: había dos y
+ *     estaban invertidas);
+ *   · la DECISIÓN de qué pasa tras una expiración (`laExpiracionAborta`): el
+ *     guion aborta en la primera, porque la segunda mediría el mismo cuelgue
+ *     (H-4 de #687).
+ *  Y el validador de la lectura (`exigeLecturaDeTile`) sale de dentro del
+ *  veredicto para poder aplicarse ANTES de abrir la espera (H-5: el
+ *  `hook.tiles ?? []` degradaba en silencio lo que esto fail-loudeaba 90 s
+ *  después).
  */
+
+/** EL CORTAFUEGOS DE UN TILE DEL BRIDGE: UNO para las once esperas del banco
+ *  que tienen ese sujeto (#677), decidido por el coste del CUELGUE y no por lo
+ *  que tarda el tile.
+ *
+ *  **Lo que tarda el tile no puede decidir el número.** Con el motor falso
+ *  (retraso 0, `labs/narrative/fake-ai-server.ts`) un tile llega en torno a un
+ *  segundo: el guion 152 lo mide en cada corrida —32 tiles, p50/p95/máx— y
+ *  exige que este cortafuegos esté al menos a 10× de su p95. Con ese suelo,
+ *  cualquier número entre 10 s y 240 s es defendible, así que la medida es el
+ *  RECIBO de que el suelo está lejos, no la fuente del número. Y el motor real
+ *  no vale como fuente tampoco: gasta créditos y es otro contrato.
+ *
+ *  **Lo que sí lo decide es cuánto cuesta cada cuelgue.** El único reloj que
+ *  corta un `request_tile` al que el bridge no contesta es éste: el del
+ *  bridge (`generateScene`, `llm_timeout_s·1000 + 60_000` en
+ *  `src/narrative/ai-client.ts`) está a 31 minutos. Y con el falso toda boca
+ *  de fallo HABLA en menos de 2 s (`mode:"error"`, rechazo por unicast,
+ *  `viaje.error`), así que un silencio es un cuelgue, y lo que se paga por él
+ *  es esperas × cortafuegos. Hasta #677 había CUATRO números —60, 90, 180 y
+ *  240 s— por tres caminos que acaban en el mismo `runTileGeneration`, y
+ *  nadie había escrito por qué. La cuenta por guion, antes → ahora:
+ *   · 127 — siete `pedirYEsperarTile`: 7 × 90 s = 10,5 min → 1 × 90 s, porque
+ *     la expiración ABORTA (`laExpiracionAborta`).
+ *   · 120 — dos: 3 min → 1,5 min, por lo mismo.
+ *   · 09, 75, 144 — hasta tres viajes a 240 s: 12 min → 4,5 min. Paran antes
+ *     si el bridge declara `viaje.error`.
+ *   · 74 — lo mismo, pero su predicado solo mira `spawnAplicado`: un viaje
+ *     roto paga el cortafuegos entero.
+ *   · 08, 15 — un viaje a 240 s SIN mirar `viaje.error`: 4 min → 1,5 min.
+ *   · 05, 42 — `holdUntil` a 180 s hasta entrar en el tile: 3 min → 1,5 min.
+ *   · 63 — el tile en el SAVE a 60 s: SUBE a 90 y sale `sinMedir`.
+ *  Que el 08, el 15 y el 74 no miren `viaje.error` es el MUDO de #656 en el
+ *  camino del viaje: no se arregla aquí (issue del coordinador), pero es la
+ *  razón medible por la que 240 costaba más que 90: 150 s más por cada
+ *  cuelgue, sin que ninguno de los dos pusiera verde nada.
+ *
+ *  **Por qué 90 y no 60.** Es el único de los cuatro con aritmética escrita
+ *  (#656) y con salida negativa MEDIDA (`handleRequestTile` ignorando el
+ *  frame → ✘ a los 90 s, cabecera del guion 120). Un 60 ahorraría 30 s por
+ *  cuelgue y obligaría a reescribir tres cabeceras y una fila del README que
+ *  ya dicen 90, sin comprar nada medible.
+ *
+ *  Fuera del sujeto, y se dejan como están: `115:175` (el PAGO del batch de
+ *  estilo) y `regenerarMundo`/`curarMundo` en `sesion.mjs` (la pre-generación
+ *  de NUEVE escenas, un lote, a 240 s).
+ *
+ *  Quién lo usa lo canda `data/contract/esperas-de-tile.json` por el ÁRBOL
+ *  (`test/el-cortafuegos-del-tile-tiene-dueno.test.ts`): las once esperas
+ *  presupuestan con este identificador, ninguna copia local con otro valor, y
+ *  ningún `pedirYEsperarTile` trae su propio `ms`. */
+export const MS_DEL_TILE = 90_000;
+
+/** LA SONDA DE LA ESPERA. Corre DENTRO de la página (Playwright la serializa
+ *  con `String(fn)`), así que aquí no puede haber ni una referencia a nada de
+ *  este módulo: solo `window.__nefan` y `window.__qaTileRechazos`. El test la
+ *  ejecuta serializada contra un `window` de mentira por eso mismo.
+ *
+ *  **No tiene precedencia, a propósito** (H-3 de #687). La que había —llegado
+ *  > fallo > rechazado— estaba INVERTIDA respecto a la de `veredictoDeTile`
+ *  (llegado > rechazado > fallo), y aunque hoy `parada` solo se compara con
+ *  `null`, dos precedencias escritas son una que se acaba leyendo. Esto
+ *  devuelve la LECTURA cruda en cuanto hay cualquier señal que sepamos ver
+ *  —el tile en el mundo, un episodio con error, un rechazo por unicast— y
+ *  quien decide cuál gana es el veredicto, en un solo sitio. Lo que garantiza
+ *  el test: `sonda ≠ null ⇔ veredicto ∉ {callado, descartado}`.
+ *
+ *  `hook.tiles` va A PELO, sin `?? []` (H-5): si el cliente deja de publicar
+ *  `tiles`, esto LANZA en cada sondeo, `waitFor` lo cuenta en `rotos` y el
+ *  veredicto lanza al expirar con el nombre del registro. Y antes de llegar
+ *  aquí, `exigeLecturaDeTile` ya lo habrá dicho en el preflight. */
+export function sondaDeTile(k) {
+  const hook = window.__nefan;
+  const tiles = hook.tiles;
+  const episodio = (hook.tileEpisodios ?? []).find((e) => e && e.key === k) ?? null;
+  const rechazos = window.__qaTileRechazos;
+  if (tiles.includes(k) || (episodio !== null && Boolean(episodio.error)) || rechazos.length > 0) {
+    return { tiles, episodio, rechazos };
+  }
+  return null;
+}
+
+/** Fail-loud de la LECTURA del cliente: `tiles` y `rechazos` tienen que ser
+ *  arrays y `key` una cadena no vacía. Un `__nefan.tiles` que desaparezca en
+ *  un refactor del cliente tiene que poner ROJO al guion con su nombre, no
+ *  colarse como «callado» —que es un veredicto sobre el bridge— ni como
+ *  «llegado».
+ *
+ *  Es una función aparte, y no el arranque de `veredictoDeTile`, para poder
+ *  aplicarla ANTES de abrir la espera (H-5 de #687): `pedirYEsperarTile` lee
+ *  `tiles` y `rechazos` en el mismo `evaluate` de la marca de agua y los pasa
+ *  por aquí, así que un hook sin `tiles` revienta en ese instante y no 90 s
+ *  después. Lanza `TypeError`, que `ctx.absorbe` no traga. */
+export function exigeLecturaDeTile({ key, tiles, rechazos } = {}) {
+  if (typeof key !== "string" || key === "") {
+    throw new TypeError(`lectura del tile: la key del tile tiene que ser una cadena, llegó ${JSON.stringify(key)}`);
+  }
+  if (!Array.isArray(tiles)) {
+    throw new TypeError(
+      `lectura del tile: \`__nefan.tiles\` tiene que ser un array y llegó ${JSON.stringify(tiles)} — ` +
+        `sin él no se puede decir si el tile ${key} está en el mundo del cliente, y un veredicto ` +
+        `sobre el bridge sería una invención.`,
+    );
+  }
+  if (!Array.isArray(rechazos)) {
+    throw new TypeError(
+      `lectura del tile: los rechazos del socket tienen que ser un array y llegó ${JSON.stringify(rechazos)}`,
+    );
+  }
+}
+
+/** LA DECISIÓN DE H-4 (#687), con nombre, sitio y test: **tras una expiración,
+ *  el guion ABORTA.** Trivial a propósito.
+ *
+ *  Las dos opciones eran «aborta en la primera» y «acaba diciendo la verdad».
+ *  La segunda es lo que hacía el 127: siete `pedirYEsperarTile` bajo silencio
+ *  real son 7 × 90 s = 10,5 minutos para repetir siete veces la misma frase,
+ *  y sus asertos de coste (`generaciones()`) ya no significan nada después de
+ *  la primera. Tras un silencio de 90 s, el siguiente tile cuesta otros 90 s
+ *  midiendo el MISMO cuelgue. Así que la expiración aborta, y SOLO ella: los
+ *  desenlaces hablados —fallo, rechazo— salen en menos de 2 s con el falso y
+ *  el guion sigue, que es lo que permite medir «se criban LAS DOS» en el E1
+ *  del 127. Quien la aplica es `pedirYEsperarTile`, justo después del
+ *  `ctx.expect` que ya dejó el ✘ con la frase del veredicto. */
+export function laExpiracionAborta(v) {
+  return v.expiro === true;
+}
 
 /** Los CINCO desenlaces. Si la lectura del cliente no tiene la forma que este
  *  juicio necesita, se LANZA (abajo), porque un veredicto inventado sobre un
@@ -100,10 +244,8 @@ function textoDelRechazo(r) {
  *  Y `llegado` gana a todo: si el tile acabó en el mundo, llegó, por muchos
  *  errores que hubiera por el camino.
  *
- *  Fail-loud en la entrada: `tiles` y `rechazos` tienen que ser arrays y `key`
- *  una cadena no vacía. Un `__nefan.tiles` que desaparezca en un refactor del
- *  cliente tiene que poner ROJO al guion con su nombre, no colarse como
- *  «callado» —que es un veredicto sobre el bridge— ni como «llegado». */
+ *  Fail-loud en la entrada: `exigeLecturaDeTile`, que es el mismo validador
+ *  que `pedirYEsperarTile` aplica ANTES de abrir la espera. */
 export function veredictoDeTile({
   key,
   tiles,
@@ -113,21 +255,7 @@ export function veredictoDeTile({
   expiro = false,
   ms = null,
 } = {}) {
-  if (typeof key !== "string" || key === "") {
-    throw new TypeError(`veredictoDeTile: la key del tile tiene que ser una cadena, llegó ${JSON.stringify(key)}`);
-  }
-  if (!Array.isArray(tiles)) {
-    throw new TypeError(
-      `veredictoDeTile: \`__nefan.tiles\` tiene que ser un array y llegó ${JSON.stringify(tiles)} — ` +
-        `sin él no se puede decir si el tile ${key} está en el mundo del cliente, y un veredicto ` +
-        `sobre el bridge sería una invención.`,
-    );
-  }
-  if (!Array.isArray(rechazos)) {
-    throw new TypeError(
-      `veredictoDeTile: los rechazos del socket tienen que ser un array y llegó ${JSON.stringify(rechazos)}`,
-    );
-  }
+  exigeLecturaDeTile({ key, tiles, rechazos });
   const libro = Array.isArray(episodios) ? episodios : [];
   const episodio = libro.find((e) => e && e.key === key) ?? null;
   const tirados = cuentaDeDescartes(descartados);

@@ -15,6 +15,7 @@
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
 import { nuevaPartida, comenzar, celdaAMundo, esperarRegistro } from "../lib/sesion.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
  *   · `mundo` — el §6 exige un tile RASTERIZADO EN VIVO, y un mundo
@@ -252,7 +253,7 @@ export default async function (ctx) {
           });
         return { scene_id: s.scene_id, rasgos: (s.ground ?? []).length, cuenta, caminos };
       },
-      { ms: 180_000 },
+      { ms: MS_DEL_TILE },
       antesTiles.map((k) => k),
     )
     .catch((err) => {

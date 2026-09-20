@@ -42,6 +42,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro, esperarEnElMapa } from "../lib/sesion.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 import { URLS } from "../lib/stack.mjs";
 
 const GAME_ID = "alta_fantasia";
@@ -136,7 +137,7 @@ async function esperarLlegada(ctx, desc, sceneAnterior, retirados) {
         exits: (s.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
       };
     },
-    240_000,
+    MS_DEL_TILE,
     { previo: sceneAnterior, retirados },
   );
 }

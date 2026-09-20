@@ -60,6 +60,7 @@
  *  Cero créditos: preset `e2e-sin-creditos`, Maqueta 3D.
  */
 import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 import { URLS } from "../lib/stack.mjs";
 
 /** El motor falso es determinista POR TURNO: saves y mapa vírgenes. */
@@ -232,7 +233,7 @@ async function esperarLlegada(ctx, tileAnterior, desc) {
       if (!r || p.x < r.minX || p.x >= r.maxX || p.z < r.minZ || p.z >= r.maxZ) return null;
       return { tile: t };
     },
-    240_000,
+    MS_DEL_TILE,
     tileAnterior,
   );
 }

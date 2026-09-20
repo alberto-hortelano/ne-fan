@@ -54,6 +54,7 @@
  *     primera razón, que no es del banco sino del reparto.
  */
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 import { URLS } from "../lib/stack.mjs";
 import { cargarFixture } from "../lib/fixtures.mjs";
 
@@ -390,7 +391,7 @@ export default async function (ctx) {
         if (!r || p.x < r.minX || p.x >= r.maxX || p.z < r.minZ || p.z >= r.maxZ) return null;
         return { ...g, scene_id: s.scene_id };
       },
-      240_000,
+      MS_DEL_TILE,
       antesDelViaje,
     )
     .catch((e) => {

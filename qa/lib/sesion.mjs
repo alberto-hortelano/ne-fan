@@ -12,7 +12,15 @@
 import { esperarPartidaEnDisco } from "./saves.mjs";
 import { URLS } from "./stack.mjs";
 import { mensajeDeRegistroQueNuncaLlego } from "./esperas.mjs";
-import { fraseDeTile, veredictoDeTile, LLEGADO } from "./tile-episodio.mjs";
+import {
+  MS_DEL_TILE,
+  LLEGADO,
+  exigeLecturaDeTile,
+  fraseDeTile,
+  laExpiracionAborta,
+  sondaDeTile,
+  veredictoDeTile,
+} from "./tile-episodio.mjs";
 
 /** ¿Puede este stack disparar generación SIN gastar un céntimo?
  *
@@ -601,25 +609,6 @@ export async function esperarRegistro(ctx, desc, libro, probe, maxMs = 60_000, a
   }
 }
 
-/** El cortafuegos de la espera de un tile pedido por el cable.
- *
- *  **Noventa segundos, y se quedan.** La aritmética, que es lo que decide y no
- *  la costumbre: las dos vueltas rojas de #656 duraron ~1,7 min, **de los
- *  cuales 90 s fue esta misma espera expirando**; quedan ~12 s para el arranque
- *  del stack y seis partidas, que es lo que cuesta HOY la corrida ENTERA del
- *  127 (17-18 s). O sea que la máquina iba a velocidad normal hasta aquí: no se
- *  quedó sin presupuesto, se quedó sin respuesta, y subir el número no habría
- *  puesto verde ninguna de las dos. Con el predicado de tres desenlaces de
- *  `pedirYEsperarTile` esto deja de ser la condición de parada del único modo
- *  de fallo que sabemos nombrar y vuelve a ser lo que debe: un cortafuegos de
- *  deadlock — y uno de 90 s cuesta 150 s menos que uno de 240 cada vez que algo
- *  se cuelga de verdad.
- *
- *  Los otros nueve sitios que esperan un tile del bridge presupuestan 240 s.
- *  Esa divergencia es real y NO se tapa aquí subiendo el número: unificarla
- *  exige medir cuánto tarda de verdad un tile, y eso es otro trabajo (issue). */
-export const MS_DEL_TILE = 90_000;
-
 /** Pide el tile (tx,ty) por el cable del juego —desde un segundo socket de la
  *  página, la petición que hace el jugador al llegar al borde sin tener que
  *  caminar hasta él— y AFIRMA qué le pasó.
@@ -641,7 +630,14 @@ export const MS_DEL_TILE = 90_000;
  *
  *  La espera por condición vive aquí y no en el guion, que es lo que manda
  *  `qa-guiones-sin-espera-por-reloj`. Devuelve el veredicto entero por si el
- *  llamante quiere mirarlo; el ✔/✘ ya está puesto. */
+ *  llamante quiere mirarlo; el ✔/✘ ya está puesto.
+ *
+ *  El presupuesto es `MS_DEL_TILE` (`qa/lib/tile-episodio.mjs`, con su
+ *  aritmética), el mismo de las otras nueve esperas de tile del banco, y
+ *  ningún llamante trae el suyo: lo canda `esperas-de-tile.json`. **Si la
+ *  espera EXPIRA, esto LANZA después de dejar el ✘** (`laExpiracionAborta`,
+ *  H-4 de #687): el resto del guion mediría el mismo cuelgue otra vez. Los
+ *  desenlaces hablados —fallo, rechazo, descarte— dejan el ✘ y devuelven. */
 export async function pedirYEsperarTile(ctx, key, tx, ty, { ms = MS_DEL_TILE } = {}) {
   await ctx.page.evaluate(
     ([x, y]) =>
@@ -685,53 +681,60 @@ export async function pedirYEsperarTile(ctx, key, tx, ty, { ms = MS_DEL_TILE } =
   // SESIÓN entera y lo mueven los demás guiones, así que lo único atribuible a
   // esta petición es el DELTA de su ventana. Mismo criterio que la marca del
   // log del bridge en el 120 y el 127.
-  const descartesAntes = await ctx.page.evaluate(() => window.__nefan.descartados());
+  //
+  // Y en el MISMO `evaluate`, la lectura que la sonda va a necesitar: `tiles` y
+  // `rechazos` pasan por `exigeLecturaDeTile` ANTES de abrir la espera (H-5 de
+  // #687). Un hook que haya perdido `tiles` lanza `TypeError` aquí, ahora —no
+  // se cuenta 90 s de sondeos rotos para que lo diga el veredicto al expirar—,
+  // y `absorbe` no lo traga porque no es una `EsperaExpirada`. Lo que esto NO
+  // cubre: que el hook pierda `tiles` A MITAD de la espera; ahí `waitFor` lo
+  // cuenta en `rotos` y el `TypeError` sale del veredicto al expirar.
+  const antes = await ctx.page.evaluate(
+    (k) => ({
+      key: k,
+      descartados: window.__nefan.descartados(),
+      tiles: window.__nefan.tiles,
+      rechazos: window.__qaTileRechazos,
+    }),
+    key,
+  );
+  exigeLecturaDeTile(antes);
+  const descartesAntes = antes.descartados;
 
   const desc = `el tile ${key} llega al mundo del cliente`;
   // La espera para en CUALQUIERA de los desenlaces que sabemos ver, no solo en
   // el bueno: con el motor falso en `mode:"error"` el rojo sale en menos de 2 s
-  // en vez de quemar los 90.
+  // en vez de quemar los 90. La sonda es `sondaDeTile`, del módulo puro, y NO
+  // decide cuál gana: devuelve la lectura y la precedencia está en UN sitio,
+  // `veredictoDeTile` (H-3 de #687).
   //
   // `absorbe` devuelve `null` EXACTAMENTE cuando expiró, y ese dato viaja al
   // veredicto: es lo que hace que el ✘ lleve la firma de presupuesto cuando le
   // corresponde — y solo entonces. Con la expiración consumida aquí, el texto
   // del rojo es el de `fraseDeTile` y ya no el `timeout esperando:` que
   // escribía el runner, así que sin esto el reproductor bajo carga volvía a
-  // decir «no atribuible a #545» de una espera de 90 s (QA, H-2).
+  // decir «no atribuible a #545» de una espera de 90 s (QA, H-2). Y consumida
+  // NO es tragada: justo debajo, tras el ✘, `laExpiracionAborta` LANZA.
   const parada = await ctx.absorbe(
     "la medida vive en el `ctx.expect` de pedirYEsperarTile que va justo debajo: juzga el veredicto " +
-      "del tile (llegado/fallo/rechazado/callado) leyendo el libro de episodios del cliente, y exige " +
-      "`llegado`, que es el MISMO predicado que esta espera",
-    () =>
-      ctx.waitFor(
-        desc,
-        (k) => {
-          const hook = window.__nefan;
-          const tiles = hook.tiles ?? [];
-          if (tiles.includes(k)) return { estado: "llegado" };
-          const ep = (hook.tileEpisodios ?? []).find((e) => e && e.key === k);
-          if (ep && ep.error) return { estado: "fallo", error: ep.error };
-          const rech = window.__qaTileRechazos ?? [];
-          if (rech.length > 0) return { estado: "rechazado", rechazo: rech[0] };
-          return null;
-        },
-        ms,
-        key,
-      ),
+      "del tile (llegado/fallo/rechazado/callado) leyendo el libro de episodios del cliente, exige " +
+      "`llegado`, que es el MISMO predicado que esta espera, y si expiró ABORTA el guion " +
+      "(laExpiracionAborta, H-4 de #687) para no medir el mismo cuelgue dos veces",
+    () => ctx.waitFor(desc, sondaDeTile, ms, key),
   );
 
   const leido = await ctx.page.evaluate(
-    ([k, antes]) => {
+    ([k, marca]) => {
       const hook = window.__nefan;
       const ws = window.__qaTileSocket;
       if (ws) ws.close();
       const ahora = hook.descartados();
       return {
         key: k,
-        tiles: hook.tiles ?? null,
+        tiles: hook.tiles,
         episodios: hook.tileEpisodios ?? [],
-        rechazos: window.__qaTileRechazos ?? [],
-        descartados: { n: ahora.n - antes.n, status: ahora.status - antes.status },
+        rechazos: window.__qaTileRechazos,
+        descartados: { n: ahora.n - marca.n, status: ahora.status - marca.status },
       };
     },
     [key, descartesAntes],
@@ -739,6 +742,16 @@ export async function pedirYEsperarTile(ctx, key, tx, ty, { ms = MS_DEL_TILE } =
 
   const v = veredictoDeTile({ ...leido, expiro: parada === null, ms });
   ctx.expect(desc, v.estado === LLEGADO, fraseDeTile(v));
+  // LA DECISIÓN DE H-4: la expiración aborta. El ✘ ya está puesto con la frase
+  // entera del veredicto; lo que se corta es el resto del guion, que mediría
+  // el mismo cuelgue otra vez (7 × 90 s en el 127). El socket ya se cerró en
+  // la lectura de arriba. Los desenlaces hablados no pasan por aquí.
+  if (laExpiracionAborta(v)) {
+    throw new Error(
+      `el tile ${key} agotó MS_DEL_TILE (${ms} ms) y el guion ABORTA: lo que quedara por medir ` +
+        `mediría el mismo cuelgue otra vez (H-4 de #687). ${fraseDeTile(v)}`,
+    );
+  }
   return v;
 }
 
