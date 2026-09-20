@@ -46,7 +46,9 @@
  *     12, el 112 y del 120 al 129): fuera de alcance por requisitos.
  *   - Un ejecutable en `docs/agents/` con una extensión que no esté en la lista
  *     (o sin extensión): el censo es por extensión, no por bit de ejecución ni
- *     por shebang. */
+ *     por shebang.
+ *   - Un ENLACE SIMBÓLICO `.mjs` en `docs/agents/`: `isFile()` lo deja fuera
+ *     (hallazgo H-2 de la QA; hoy no hay ninguno). */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
