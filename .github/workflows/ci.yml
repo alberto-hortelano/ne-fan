@@ -449,3 +449,26 @@ jobs:
       # `abrirNavegador` vive gobernado por la bandera; el día que alguien lo
       # saque del condicional, `npm test` cae en ese mismo commit.
       - run: node qa/run.mjs --sin-navegador
+      # (0,95 s · dos llamadas a `gh api`) #611: la exención «POR ISSUE» de los
+      # dos contratos de esperas del banco caduca CON EL ISSUE, no con una
+      # fecha. La clase de las demás la deriva `npm test` del árbol de sintaxis
+      # (`nefan-core/test/lecturas-del-predicado.ts`); el estado de un issue no
+      # se puede preguntar sin red, así que se pregunta aquí. Entra el día que
+      # nace, que es la regla que #645 dejó candada.
+      #
+      # Por qué el issue y no una fecha: una fecha pone `npm test` rojo SIN DIFF
+      # en un día que no es de nadie, y renovarla es un `sed`. El cadáver que lo
+      # motivó: la exención del guion 80 se sostenía «hasta que #496/#497 se
+      # cierren», los dos se cerraron el 2026-09-16 y la exención siguió viva
+      # dos días sin que ninguna forma del texto lo viera.
+      #
+      # SIN `gh`, SIN TOKEN O SIN RED SALE ROJO, nunca ⊘ ni verde: una exención
+      # que no se puede comprobar no está comprobada. De ahí el `GH_TOKEN` —la
+      # API anónima da 60 peticiones/hora y la ráfaga acaba en 403— y de ahí el
+      # control positivo que el guion lleva dentro: pregunta también por #545,
+      # que se sabe CERRADO, y exige leer `closed`, así que un `gh` que
+      # contestara «open» a todo no lo dejaría verde ni el día que no quede
+      # ninguna exención por issue.
+      - run: node qa/la-exencion-por-issue-tiene-issue-vivo.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}

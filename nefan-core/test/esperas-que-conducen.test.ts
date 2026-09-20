@@ -30,14 +30,37 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
+import { descDe, funcionesDelFichero, lecturasDelHook, nombresDelHook, predicadoDe, verboDe } from "./lecturas-del-predicado.js";
 
 const core = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(core, "..");
 const CONTRATO = join(core, "data", "contract", "esperas-que-conducen.json");
+/** De donde salen los nombres que el mapa `clases` puede citar. Se LEE; no se
+ *  toca: el cliente no cambia una línea por este candado. */
+const HOOK = join(repoRoot, "nefan-html", "src", "dev", "nefan-hook.ts");
 
-const EsperasQueConducenSchema = z
+/** La clase que no deriva ninguna lectura: la espera queda fuera por un issue
+ *  ABIERTO, y quien lo comprueba es `qa/la-exencion-por-issue-tiene-issue-vivo.mjs`
+ *  (job `candados-headless`), porque `npm test` no tiene red. */
+const CLASE_ISSUE = "issue";
+
+/** UNA EXENCIÓN NO SE CREE: SE DERIVA (#611). El campo que decide es `clase`, y
+ *  `clases` dice qué lectura del hook demuestra cada una. Sobre el `porque`
+ *  queda solo el mínimo de longitud: las tres capas de forma que había encima
+ *  —la regex del proceso, las veinte palabras distintas, la tirada de ocho—
+ *  cerraban la exención perezosa y NO la mentira elaborada (medido: 7 pass ·
+ *  0 fail con el 58 pasado a `{ms}` y una excusa «bridge» en prosa plausible).
+ *  Se retiran en vez de acumularse: la derivación sujeta el sujeto, y una capa
+ *  que ya no decide nada es otro sitio donde mentir. */
+export const EsperasQueConducenSchema = z
   .object({
     _comment: z.string().min(1),
+    /** Obligatoria (patrón de `sondas-de-movimiento.json`): lo que sigue
+     *  abierto, dicho aquí y medido abajo, no en prosa suelta. */
+    _lo_que_esto_NO_sujeta: z.string().min(1),
+    /** clase → claves del hook que la DEMUESTRAN. Cada nombre tiene que existir
+     *  en `nefan-hook.ts` (hay test); `issue` no puede ser una clase del mapa. */
+    clases: z.record(z.string().min(1), z.array(z.string().min(1)).min(1)),
     exentos: z
       .array(
         z
@@ -47,56 +70,51 @@ const EsperasQueConducenSchema = z
              *  escrito en el fuente (con sus comillas o sus backticks). Apunta a
              *  una y no ciega el fichero entero, que es donde viven las otras. */
             desc: z.string().min(3),
-            /** A QUIÉN se espera de verdad. Va aparte del `porque` porque es el
-             *  CRITERIO —«el sujeto no es el mundo»— y no la excusa: separarlos
-             *  obliga a escribir la respuesta a la pregunta que decide, en vez
-             *  de dejarla diluida en un párrafo (QA, H-6). */
-            sujeto: z.string().min(25, "`sujeto` dice a QUIÉN se espera: «el bridge generando el tile», no «otro»"),
-            /** Obligatorio: una exención sin motivo es una puerta abierta.
-             *
-             *  El mínimo de longitud no distingue una frase honesta de 130
-             *  caracteres de relleno —QA lo demostró rellenando con basura y
-             *  viendo el test verde—, así que además se exige que el motivo
-             *  NOMBRE algo comprobable: el proceso al que se espera, o el número
-             *  del issue por el que la espera queda fuera. Sigue sin distinguir
-             *  una mentira elaborada: eso lo hace la revisión del diff, que es
-             *  el mismo límite declarado de `quejaDelMotivo`. */
-            porque: z
-              .string()
-              .min(120, "el motivo es una FRASE que dice por qué no cabía, no una etiqueta")
-              .regex(
-                /#\d+|bridge|motor|disco|State API|servidor|loop|game loop/i,
-                "el motivo tiene que NOMBRAR el proceso al que se espera, o el issue por el que queda fuera",
-              )
-              // Y UNA FRASE TIENE PALABRAS **DISTINTAS**, que es la corrección
-              // de la corrección. QA midió el listón dos veces: con solo la
-              // longitud y la palabra clave, «40 equis más la palabra bridge»
-              // silenciaba un sitio real (6 pass · 0 fail); y con «veinte
-              // palabras» puesto, **la palabra `bridge` repetida veinte veces**
-              // —139 caracteres, 20 palabras, UNA distinta— silenciaba el mismo
-              // sitio, otra vez 7 pass · 0 fail. O sea que lo que yo había
-              // escrito aquí («lo que no cumple ninguna forma de relleno es
-              // TENER PALABRAS») era falso: un relleno tiene palabras si
-              // repites una. Lo que no tiene es VOCABULARIO. Las seis exenciones
-              // vivas van de 44 a 105 distintas, así que veinte deja 2,2× de
-              // margen a la más apretada.
-              .refine(
-                (f) => new Set(f.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).size >= 20,
-                "el motivo es una FRASE (veinte palabras DISTINTAS o más), no una palabra repetida hasta llenar el mínimo",
-              )
-              .refine(
-                (f) => !/(.)\1{7,}/.test(f),
-                "ocho caracteres iguales seguidos no son prosa: esto es relleno, no un motivo",
-              ),
+            /** A QUIÉN se espera, como CLASE derivable: una clave de `clases`, o
+             *  `issue`. */
+            clase: z.string().min(1),
+            /** Solo con `clase: "issue"`, y entonces obligatorio: el número del
+             *  issue ABIERTO que sostiene la exención. */
+            issue: z.number().int().positive().optional(),
+            /** Una FRASE que diga por qué no cabía en sim. No verifica verdad:
+             *  eso lo hace la derivación de `clase`. */
+            porque: z.string().min(120, "el motivo es una FRASE que dice por qué no cabía, no una etiqueta"),
           })
           .strict(),
       )
       .min(1),
   })
-  .strict();
+  .strict()
+  .superRefine((c, ctx) => {
+    if (CLASE_ISSUE in c.clases) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["clases", CLASE_ISSUE], message: "`issue` no es una clase derivable: se sujeta con el estado del issue, no con una lectura" });
+    }
+    c.exentos.forEach((e, i) => {
+      const ruta = ["exentos", i];
+      if (e.clase !== CLASE_ISSUE && !(e.clase in c.clases)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...ruta, "clase"], message: `clase desconocida «${e.clase}»: las derivables son ${Object.keys(c.clases).join(", ")}, o \`issue\`` });
+      }
+      if (e.clase === CLASE_ISSUE && e.issue === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...ruta, "issue"], message: "una exención por issue lleva su NÚMERO: sin él no hay nada que pueda caducar" });
+      }
+      if (e.clase !== CLASE_ISSUE && e.issue !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...ruta, "issue"], message: `\`issue\` solo acompaña a la clase \`issue\`; ésta es «${e.clase}» y la deriva el predicado` });
+      }
+    });
+  });
 
 /** Un sitio de llamada que conduce al jugador y NO presupuesta en sim. */
-export type EsperaDePared = { fichero: string; linea: number; verbo: string; desc: string; presupuesto: string };
+export type EsperaDePared = {
+  fichero: string;
+  linea: number;
+  verbo: string;
+  desc: string;
+  presupuesto: string;
+  /** Las claves del hook que lee su PREDICADO (`window.__nefan.X`), inline o
+   *  por referencia a una función del fichero. Es lo que deriva la `clase` de
+   *  una exención (#611). */
+  lecturas: string[];
+};
 
 /** Los sitios de `texto` en los que una espera que CONDUCE se presupuesta en
  *  pared. Lee el AST, en las **tres** formas que tiene el defecto:
@@ -145,6 +163,14 @@ export function esperasDeParedQueConducen(texto: string, fichero: string): Esper
   const sf = ts.createSourceFile(fichero, texto, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const fuera: EsperaDePared[] = [];
   const linea = (n: ts.Node): number => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+  const funciones = funcionesDelFichero(sf);
+  /** Lo que lee el predicado de esta espera; `[]` si no hay predicado o su
+   *  referencia no se resuelve en el fichero. */
+  const lecturas = (n: ts.CallExpression): string[] => {
+    const v = verboDe(n);
+    const pred = v === null ? null : predicadoDe(n, v, funciones);
+    return pred === null ? [] : lecturasDelHook(pred);
+  };
   /** Texto de la llamada, para reconocer los verbos del teclado escritos de las
    *  dos maneras: `ctx.nefan("inputDriver.press", "up")` y
    *  `ctx.page.keyboard.down("w")`. */
@@ -216,8 +242,9 @@ export function esperasDeParedQueConducen(texto: string, fichero: string): Esper
             fichero,
             linea: linea(n),
             verbo,
-            desc: n.arguments[1]?.getText(sf) ?? "",
+            desc: descDe(n, "holdUntil", sf),
             presupuesto: p ? p.getText(sf) : "(sin presupuesto)",
+            lecturas: lecturas(n),
           });
         }
       }
@@ -232,8 +259,9 @@ export function esperasDeParedQueConducen(texto: string, fichero: string): Esper
             fichero,
             linea: linea(n),
             verbo,
-            desc: n.arguments[0]?.getText(sf) ?? "",
+            desc: descDe(n, "expectEspera", sf),
             presupuesto: o ? `{${k.join(", ")}}` : "(sin opciones)",
+            lecturas: lecturas(n),
           });
         }
       }
@@ -247,8 +275,9 @@ export function esperasDeParedQueConducen(texto: string, fichero: string): Esper
             fichero,
             linea: linea(n),
             verbo,
-            desc: n.arguments[0]?.getText(sf) ?? "",
+            desc: descDe(n, "waitFor", sf),
             presupuesto: p ? p.getText(sf) : "(sin presupuesto)",
+            lecturas: lecturas(n),
           });
         }
       }
@@ -273,13 +302,21 @@ const ficherosDelBanco = (dir = join(repoRoot, "qa")): string[] =>
     return e.name.endsWith(".mjs") ? [join(dir, e.name).slice(repoRoot.length + 1)] : [];
   });
 
+/** EL PARSE VA FUERA DEL `describe`, Y NO ES ESTILO (#611, medido al probar el
+ *  candado en negativo). Con `node --test` v24.11.1, un `describe` cuyo cuerpo
+ *  LANZA se anota `✖` en el listado y sale con **`ℹ fail 0` y código de salida
+ *  0**: la suite entera desaparece (`tests 0`) y `npm test` queda VERDE. O sea
+ *  que el zod de este contrato no podía poner rojo el build desde dentro del
+ *  `describe`. Fuera, el throw es de MÓDULO y da `fail 1` con salida 1.
+ *  Reproducido en un fichero de tres líneas sin nada del repo. */
+const contrato = EsperasQueConducenSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
+const clave = (e: { fichero: string; desc: string }): string => `${e.fichero} :: ${e.desc}`;
+const exentos = new Set(contrato.exentos.map(clave));
+const encontradas = ficherosDelBanco().flatMap((f) =>
+  esperasDeParedQueConducen(readFileSync(join(repoRoot, f), "utf8"), f),
+);
+
 describe("las esperas que conducen al jugador presupuestan en sim (#545)", () => {
-  const contrato = EsperasQueConducenSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
-  const clave = (e: { fichero: string; desc: string }): string => `${e.fichero} :: ${e.desc}`;
-  const exentos = new Set(contrato.exentos.map(clave));
-  const encontradas = ficherosDelBanco().flatMap((f) =>
-    esperasDeParedQueConducen(readFileSync(join(repoRoot, f), "utf8"), f),
-  );
 
   it("ningún guion conduce al jugador con un presupuesto de PARED", () => {
     const sinExcusa = encontradas.filter((e) => !exentos.has(clave(e)));
@@ -288,8 +325,8 @@ describe("las esperas que conducen al jugador presupuestan en sim (#545)", () =>
       [],
       `El jugador avanza por el delta del game loop, no por el reloj de la máquina: el presupuesto ` +
         `son SEGUNDOS DE MUNDO (\`{sim: N}\`). Si el SUJETO de la espera es otro proceso (el bridge, el ` +
-        `disco), la salida es apuntarla en data/contract/esperas-que-conducen.json con su descripción y ` +
-        `su motivo escrito — nunca quitar este test.`,
+        `disco), la salida es apuntarla en data/contract/esperas-que-conducen.json con su descripción, su ` +
+        `CLASE (que el predicado tiene que derivar) y su motivo escrito — nunca quitar este test.`,
     );
   });
 
@@ -299,6 +336,145 @@ describe("las esperas que conducen al jugador presupuestan en sim (#545)", () =>
     const conSujeto = new Set(encontradas.map(clave));
     const caducadas = [...exentos].filter((k) => !conSujeto.has(k));
     assert.deepEqual(caducadas, [], `exención(es) sin sujeto (bórralas): ${caducadas.join(" | ")}`);
+  });
+
+  // ── LA DERIVACIÓN (#611): una exención no se cree, se deriva ─────────────
+  const porClave = new Map(encontradas.map((e) => [clave(e), e]));
+
+  it("cada exención de clase derivable la DERIVA el predicado: lee algo del proceso que nombra", () => {
+    // Éste es el candado que faltaba. Las tres capas de forma sobre el `porque`
+    // cerraban la exención perezosa; la mentira ELABORADA —el 58 pasado a
+    // `{ms}` con una excusa «bridge» en prosa plausible— pasaba 7 · 0. Aquí se
+    // cruza lo que la exención AFIRMA (la clase) con lo que el predicado LEE
+    // del hook, y una exención cuyo predicado no toca nada del proceso que
+    // nombra sale roja con las lecturas que sí tiene delante.
+    const sinPrueba: string[] = [];
+    for (const e of contrato.exentos) {
+      if (e.clase === CLASE_ISSUE) continue;
+      const espera = porClave.get(clave(e));
+      if (!espera) continue; // ya la marcó «caduca»
+      const exige = contrato.clases[e.clase];
+      if (!espera.lecturas.some((l) => exige.includes(l))) {
+        sinPrueba.push(
+          `${e.fichero}:${espera.linea} declara «${e.clase}» (exige leer ${exige.join(" o ")}) ` +
+            `y su predicado lee ${espera.lecturas.length ? espera.lecturas.join(", ") : "NADA del hook"}`,
+        );
+      }
+    }
+    assert.deepEqual(
+      sinPrueba,
+      [],
+      `La clase de una exención la demuestra su PREDICADO, no su prosa. O el predicado lee algo del ` +
+        `proceso al que dice esperar, o la espera va a \`{sim}\`, o la clase es \`issue\` con su número.`,
+    );
+  });
+
+  it("cada lectura del mapa `clases` EXISTE en el hook (si no, el mapa no puede derivar nada)", () => {
+    const hook = nombresDelHook(readFileSync(HOOK, "utf8"));
+    // Control del control: si el lector del hook devolviera vacío, el aserto de
+    // abajo saldría rojo en vez de verde-vacío.
+    assert.ok(hook.has("scene") && hook.has("state") && hook.has("reloj"), `leo ${hook.size} clave(s) del hook: ¿cambió la forma de nefan-hook.ts?`);
+    const fantasma = Object.entries(contrato.clases).flatMap(([c, ls]) => ls.filter((l) => !hook.has(l)).map((l) => `${c} → ${l}`));
+    assert.deepEqual(fantasma, [], `clave(s) del mapa que nefan-hook.ts no tiene: ${fantasma.join(", ")}`);
+  });
+
+  it("LA MENTIRA ELABORADA (N17b) sale roja: el 58 en `{ms}` con excusa «bridge» lee `frontier`, no `scene`", () => {
+    // El material literal del 58 (`58:181-186`) tal y como QA lo saboteó: la
+    // tecla mantenida con `keyboard.down`, el presupuesto pasado a pared y una
+    // exención «bridge» en prosa. `frontier` la escribe el CLIENTE en
+    // `Frontera.tick` (`nefan-core/src/scene/frontera.ts`), no el bridge, así
+    // que la derivación no encuentra `scene` y la exención no se sostiene.
+    const el58 = `
+      await ctx.page.keyboard.down("w");
+      try {
+        propuesta = await ctx.expectEspera(
+          "caminar al este PROPONE explorar la zona vecina",
+          true,
+          () => window.__nefan.frontier.proposal ?? null,
+          { ms: 120_000 },
+        );
+      } finally {
+        await ctx.page.keyboard.up("w");
+      }`;
+    const [vista, ...mas] = esperasDeParedQueConducen(el58, "qa/guiones/de-mentira.mjs");
+    assert.deepEqual(mas, []);
+    assert.deepEqual(vista.lecturas, ["frontier"]);
+    assert.ok(!vista.lecturas.some((l) => contrato.clases.bridge.includes(l)), "si `frontier` derivara «bridge», el mapa estaría mintiendo");
+    // Y el control positivo del control: la honesta del 05, con la misma
+    // forma, SÍ deriva «bridge» — y la TRAZA del 133, POR REFERENCIA, deriva
+    // «game loop» aunque además lea `state().pos` (regla positiva).
+    const el05 = `
+      await ctx.holdUntil("up", "el jugador entra en el tile recién generado", (previos) => {
+        const s = window.__nefan.scene;
+        return s && !previos.includes(s.scene_id) ? s.scene_id : null;
+      }, { ms: 180_000 }, []);`;
+    assert.deepEqual(esperasDeParedQueConducen(el05, "qa/guiones/de-mentira.mjs").map((v) => v.lecturas), [["scene"]]);
+    const el133 = `
+      const TRAZA = (n) => {
+        const p = window.__nefan.state().pos;
+        const c = window.__nefan.reloj();
+        return p && c ? [p, c] : null;
+      };
+      export default async function (ctx) {
+        await ctx.nefan("inputDriver.press", "up");
+        await ctx.waitFor("6 sondeos de traza con el loop pausado", TRAZA, 6_000, 6);
+      }`;
+    assert.deepEqual(esperasDeParedQueConducen(el133, "qa/guiones/de-mentira.mjs").map((v) => v.lecturas), [["state", "reloj"]]);
+  });
+
+  it("lo que esto NO sujeta, medido: (1) la lectura muerta deriva; (2)(3) el alias sale sin lecturas", () => {
+    // Cada caso es un agujero de `_lo_que_esto_NO_sujeta`, escrito como aserto
+    // para que se ponga ROJO el día que alguien lo cierre — y entonces se borra
+    // el caso y su párrafo del contrato, que es como caduca un agujero.
+    const lecturasDe = (texto: string): string[][] =>
+      esperasDeParedQueConducen(texto, "qa/guiones/de-mentira.mjs").map((v) => v.lecturas);
+    // (1) `reloj()` leído y no usado: la derivación no mira el flujo de datos.
+    const muerta = `
+      await ctx.holdUntil("up", "anda", () => {
+        const c = window.__nefan.reloj();
+        return window.__nefan.state().pos.x > 3 ? true : null;
+      }, 8_000, null);`;
+    assert.ok(
+      lecturasDe(muerta)[0].some((l) => contrato.clases["game loop"].includes(l)),
+      "si la lectura muerta ya NO deriva «game loop», cerraste el agujero (1): borra este caso y su párrafo",
+    );
+    // (2) el alias FUERA del predicado (#686): cero lecturas → una exención
+    // honesta escrita así sale roja (fricción, no agujero).
+    const aliasFuera = `
+      export default async function (ctx) {
+        const s = window.__nefan.scene;
+        await ctx.holdUntil("up", "anda", () => (s.scene_id !== "x" ? true : null), 8_000, null);
+      }`;
+    assert.deepEqual(lecturasDe(aliasFuera), [[]], "si el alias de fuera ya se sigue, cerraste (2): borra este caso y su párrafo");
+    // (3) el alias DENTRO: `n.scene` no es `window.__nefan.scene` para el árbol.
+    const aliasDentro = `
+      await ctx.holdUntil("up", "anda", () => {
+        const n = window.__nefan;
+        return n.scene ? true : null;
+      }, 8_000, null);`;
+    assert.deepEqual(lecturasDe(aliasDentro), [[]], "si el alias de dentro ya se sigue, cerraste (3): borra este caso y su párrafo");
+    // (4) la clave computada tampoco; la literal entre corchetes sí.
+    const computada = `await ctx.holdUntil("up", "anda", (k) => (window.__nefan[k] ? true : null), 8_000, "scene");`;
+    assert.deepEqual(lecturasDe(computada), [[]]);
+    const literal = `await ctx.holdUntil("up", "anda", () => (window.__nefan["scene"] ? true : null), 8_000, null);`;
+    assert.deepEqual(lecturasDe(literal), [["scene"]]);
+  });
+
+  it("el zod cierra la vía «issue» por su número, y no deja `issue` en una clase derivable", () => {
+    const base = JSON.parse(readFileSync(CONTRATO, "utf8"));
+    const con = (cambio: (c: typeof base) => void): z.SafeParseReturnType<unknown, unknown> => {
+      const c = structuredClone(base);
+      cambio(c);
+      return EsperasQueConducenSchema.safeParse(c);
+    };
+    assert.ok(con(() => {}).success, "el contrato real parsea");
+    assert.ok(!con((c) => { c.exentos[0].clase = "issue"; }).success, "«issue» sin número");
+    assert.ok(con((c) => { c.exentos[0].clase = "issue"; c.exentos[0].issue = 673; }).success, "«issue» con número");
+    assert.ok(!con((c) => { c.exentos[0].issue = 673; }).success, "número con clase derivable");
+    assert.ok(!con((c) => { c.exentos[0].clase = "asset-store"; }).success, "clase fuera del mapa");
+    assert.ok(!con((c) => { c.clases.issue = ["scene"]; }).success, "`issue` como clase del mapa");
+    assert.ok(!con((c) => { delete c._lo_que_esto_NO_sujeta; }).success, "sin `_lo_que_esto_NO_sujeta`");
+    assert.ok(!con((c) => { c.exentos[0].sujeto = "el bridge"; }).success, "el campo de prosa retirado no vuelve");
   });
 
   it("el detector encuentra lo que dice encontrar (control positivo, en las dos formas)", () => {

@@ -1,40 +1,47 @@
 {
-  "_comment": "Toda espera del banco que CONDUCE AL JUGADOR presupuesta en SEGUNDOS DE SIMULACIÓN (`{sim: N}`), no en milisegundos de pared (#545). CONDUCIR es cualquiera de las tres formas en las que el defecto está escrito: `ctx.holdUntil(...)`, `ctx.expectEspera(..., {tecla})` y —la forma en la que #545 se encontró, y la que la primera versión de este candado no veía— **una tecla mantenida aparte (`inputDriver.press` o `keyboard.down`) y un `ctx.waitFor` con presupuesto de pared**. Lo verifica `test/esperas-que-conducen.test.ts` leyendo el ÁRBOL DE SINTAXIS de TODO `qa/**.mjs` (menos `qa/run.mjs`, que DEFINE los verbos). El motivo es el del issue: el jugador avanza por el `delta` del game loop, topado en 0,1 s por frame, así que bajo carga «0,5 m en 8 s» deja de significar lo que dice — no es que el jugador se pare, es que no ha habido frame. EL CRITERIO PARA EXIMIR NO ES «me viene mal» SINO «el SUJETO de esta espera no es el mundo»: el reloj del mundo no dice nada de un bridge que genera un tile, de un motor que contesta un diálogo ni de un loop que está pausado a propósito (`qa/README.md`, regla 1). Por eso `sujeto` es un campo APARTE y obligatorio: a quién se espera de verdad. Cada exención nombra el fichero y el TEXTO LITERAL de la descripción de esa espera, así que apunta a UNA y no ciega el fichero entero; y CADUCA sola: si esa espera desaparece o pasa a sim, la entrada se queda sin sujeto y el test se pone rojo. El `porque` es una FRASE y se exige como tal —120 caracteres, el proceso nombrado y veinte palabras DISTINTAS, sin tiradas de ocho caracteres iguales—, porque QA midió dos rellenos que silenciaban un sitio real: «cuarenta equis más la palabra bridge», y luego la palabra «bridge» repetida veinte veces (139 caracteres, 20 palabras, UNA distinta). Un relleno tiene palabras si repites una; lo que no tiene es vocabulario. Lo que esto NO puede hacer, y es el límite declarado con su medida en el issue #611, es distinguir un motivo honesto de uno ELABORADO: un `sujeto` falso escrito en prosa plausible pasa —y un lorem ipsum también—, y eso lo caza la revisión del diff, igual que en `quejaDelMotivo`.",
+  "_comment": "Toda espera del banco que CONDUCE AL JUGADOR presupuesta en SEGUNDOS DE SIMULACIÓN (`{sim: N}`), no en milisegundos de pared (#545). CONDUCIR es cualquiera de las tres formas en las que el defecto está escrito: `ctx.holdUntil(...)`, `ctx.expectEspera(..., {tecla})` y —la forma en la que #545 se encontró, y la que la primera versión de este candado no veía— **una tecla mantenida aparte (`inputDriver.press` o `keyboard.down`) y un `ctx.waitFor` con presupuesto de pared**. Lo verifica `test/esperas-que-conducen.test.ts` leyendo el ÁRBOL DE SINTAXIS de TODO `qa/**.mjs` (menos `qa/run.mjs`, que DEFINE los verbos). El motivo es el del issue: el jugador avanza por el `delta` del game loop, topado en 0,1 s por frame, así que bajo carga «0,5 m en 8 s» deja de significar lo que dice — no es que el jugador se pare, es que no ha habido frame. EL CRITERIO PARA EXIMIR NO ES «me viene mal» SINO «el SUJETO de esta espera no es el mundo»: el reloj del mundo no dice nada de un bridge que genera un tile, de un motor que contesta un diálogo ni de un loop que está pausado a propósito (`qa/README.md`, regla 1). Y DESDE #611 ESE SUJETO NO SE CREE: SE DERIVA. Cada exención declara su `clase`, y `clases` dice qué lectura del hook (`window.__nefan.X`, `nefan-html/src/dev/nefan-hook.ts`) demuestra cada una: el PREDICADO de la espera tiene que leer al menos una de esas claves —inline o por referencia a una función del fichero— o el test se pone rojo diciendo lo que el predicado lee de verdad. La regla es POSITIVA («toca algo del proceso nombrado»), nunca «no toca el mundo»: la `TRAZA` del 133 lee `state().pos` y `reloj()`, y es honesta. La única clase que ninguna lectura demuestra es `issue`: la espera queda fuera por un issue ABIERTO, con su número, y caduca con el issue —lo pregunta a GitHub `qa/la-exencion-por-issue-tiene-issue-vivo.mjs` en el job `candados-headless`—, no con una fecha. Cada exención nombra el fichero y el TEXTO LITERAL de la descripción de esa espera, así que apunta a UNA y no ciega el fichero entero; y CADUCA sola: si esa espera desaparece o pasa a sim, la entrada se queda sin sujeto y el test se pone rojo. Con la derivación se RETIRAN las tres capas de forma que había sobre el `porque` (la regex del proceso, las veinte palabras distintas y la tirada de ocho) y el campo de prosa que decía a quién se esperaba: `clase` ES el criterio, y un campo que ya no decide nada es otro sitio donde mentir. Queda el mínimo de 120 caracteres, que no verifica verdad: solo que hay una frase. La exención del guion 80 que vivía aquí se BORRÓ con esta tanda: se sostenía en #496/#497/#545, los tres cerrados el 2026-09-16, y el 80 pasó a `{sim: 8}`.",
+  "_lo_que_esto_NO_sujeta": "Escrito con su caso MEDIDO en `test/esperas-que-conducen.test.ts` («lo que esto NO sujeta»), para que cada agujero se ponga rojo el día que alguien lo cierre y se borre de aquí. (1) LA LECTURA MUERTA: un predicado que lee `window.__nefan.reloj()` y no usa el resultado deriva `game loop` igual que uno que lo usa. La derivación mira QUÉ se lee, no qué decide; distinguirlo es análisis de flujo de datos y no se hace hoy. (2) EL ALIAS FUERA DEL PREDICADO (#686): `const s = window.__nefan.scene` arriba y `s.scene_id` dentro del predicado sale con CERO lecturas — o sea que una exención honesta escrita así saldría ROJA, que es fricción y no agujero (la salida es leer el hook dentro del predicado); y (3) EL ALIAS DENTRO, `const n = window.__nefan; n.scene`, también cero. (4) LA CLAVE COMPUTADA, `window.__nefan[k]`, no se ve: solo la literal. (5) LA CLASE MAL ELEGIDA PERO DERIVABLE: un predicado que lee `scene` Y `dialogue` puede declararse `bridge` o `motor` y las dos derivan; el mapa no dice cuál es la principal. (6) El estado del issue lo comprueba el headless, no `npm test`: en local sin red la clase `issue` solo tiene el zod (número obligatorio).",
+  "clases": {
+    "bridge": [
+      "scene"
+    ],
+    "motor": [
+      "dialogue"
+    ],
+    "game loop": [
+      "reloj",
+      "fps"
+    ]
+  },
   "exentos": [
-    {
-      "fichero": "qa/guiones/80-el-desplegable-room-dice-lo-que-se-ve.mjs",
-      "desc": "`el jugador anda ${PASO_M} m (si no, «volvió al spawn» no distingue nada)`",
-      "sujeto": "el mundo — LA ÚNICA que no se exime por su sujeto, y por eso lleva fecha e issue",
-      "porque": "El 80 y el 75 quedaron FUERA de la tanda de #545 por escrito (plan-2.md §4.3, 2026-09-15), y no por descuido: sus rojos son contadores sobre un canal compartido (#496/#497) y hay ocho parejas medidas en tres árboles que lo dicen. Se corren antes y después y se apunta su color, y para que ese color signifique algo el fichero tiene que quedar byte a byte igual: tocarle el presupuesto le cambia el reloj a la corrida entera y destruye la atribución que esas parejas sostienen. Su `{ms: 15_000, tecla: \"up\"}` SÍ es un presupuesto de pared de los de #545, está identificado desde PR-4a (implementacion-5.md §5) y va con su línea a la cola de #545 en cuanto #496/#497 se cierren. Que esta exención sea EJECUTABLE y no solo declarativa costó el hallazgo H-1 de QA: hasta que `expectEspera` armó su presupuesto con la unidad puesta, el contrato bendecía un sitio que el runner se negaba a ejecutar."
-    },
     {
       "fichero": "qa/guiones/05-terreno-desde-ground.mjs",
       "desc": "\"el jugador entra en el tile recién generado\"",
-      "sujeto": "el BRIDGE generando y difundiendo un tile nuevo (`scene.scene_id` cambia cuando llega la escena)",
+      "clase": "bridge",
       "porque": "La tecla solo mantiene al jugador caminando mientras tanto; lo que se espera lo decide el BRIDGE, no el mundo. Un presupuesto de sim aquí mediría el reloj equivocado en la otra dirección —el mundo puede correr sus segundos con el tile sin llegar— y su cortafuegos de pared saldría ×10, así que un tile que no llega pasaría de rojo en 3 min a ⊘ en 30. Las otras dos esperas que conducen de este mismo guion SÍ están en sim: esta exención nombra UNA."
     },
     {
       "fichero": "qa/guiones/42-al-enemigo-no-se-le-borra-la-herida.mjs",
       "desc": "\"el jugador entra en el tile recién generado\"",
-      "sujeto": "el BRIDGE generando y difundiendo un tile nuevo, igual que en el guion 05",
+      "clase": "bridge",
       "porque": "El mismo caso que en el guion 05, y la misma espera: lo que tiene que llegar es el tile que genera el BRIDGE, no los metros que anda el jugador. La otra espera que conduce de este guion («pisar la frontera propone explorar») sí está en sim, porque la propuesta la decide el cliente en su `tick` y ésa sí corre con el mundo."
     },
     {
       "fichero": "qa/guiones/43-hablando-el-teclado-de-juego-no-responde.mjs",
       "desc": "\"el NPC contesta y el panel de diálogo se abre\"",
-      "sujeto": "el MOTOR contestando el diálogo, a través del bridge",
+      "clase": "motor",
       "porque": "La tecla que se mantiene es la `e` de interactuar, no una de movimiento: no conduce al jugador por el mundo, insiste en abrir la conversación. Y el predicado se re-planta al lado del NPC con `setPlayerPos` en cada sondeo, así que ni siquiera depende de andar. Lo que se espera es que conteste el MOTOR a través del bridge, y el reloj del mundo no dice nada de otro proceso. Detectada al ampliar el candado a la tercera forma (QA, H-2)."
     },
     {
       "fichero": "qa/guiones/133-la-parada-falsa-bajo-carga-de-verdad.mjs",
       "desc": "\"el loop queda pausado del todo (dos lecturas seguidas con el mismo reloj)\"",
-      "sujeto": "el GAME LOOP quedándose quieto — un estado en el que el mundo, por definición, no corre",
+      "clase": "game loop",
       "porque": "Es el guion de QA que mide si el dial de carga puede descolgar el muestreo, y su propio código escribe el motivo: «aquí el mundo NO corre, así que un presupuesto de sim no se gastaría nunca y saldría ⊘ en vez de dejar sondear». Un presupuesto de sim sobre un loop que se ha pausado a propósito no es un cortafuegos, es un ⊘ garantizado. El guion no se toca (es el registro de QA)."
     },
     {
       "fichero": "qa/guiones/133-la-parada-falsa-bajo-carga-de-verdad.mjs",
       "desc": "\"6 sondeos de traza con el loop pausado\"",
-      "sujeto": "el GAME LOOP pausado: es el CONTROL de la medida, y cuenta sondeos de pared a propósito",
+      "clase": "game loop",
       "porque": "La misma cuenta de rachas que el guion hace bajo carga, aplicada al estado en el que el desacoplo SÍ existe: con el GAME LOOP pausado, si esta cuenta no viera tres sondeos seguidos sin mundo, sería la cuenta la que está rota y no el dial el que no descuelga. Medir eso exige sondear mientras el loop está parado, o sea exactamente lo contrario de un presupuesto de sim. El guion no se toca (es el registro de QA)."
     }
   ]

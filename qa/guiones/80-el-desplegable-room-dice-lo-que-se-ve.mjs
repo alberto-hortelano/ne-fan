@@ -119,7 +119,7 @@ export default async function (ctx) {
       const p = window.__nefan.playerPos;
       return Math.hypot(p.x - a.x, p.z - a.z) >= a.minima ? p : null;
     },
-    { ms: 15_000, arg: { x: antes2.pos.x, z: antes2.pos.z, minima: PASO_M }, tecla: "up" },
+    { sim: 8, arg: { x: antes2.pos.x, z: antes2.pos.z, minima: PASO_M }, tecla: "up" },
   );
   const otraVez = await ctx.page.evaluate(
     (f) => window.__nefan.loadFixture(f).then(() => "ok", (e) => `rechazo: ${e.message}`),

@@ -1,9 +1,14 @@
 #!/usr/bin/env node
 /** ¿Se pueden poner ROJOS los candados de `data/contract/` y sus espejos?
  *
- *  Son dos familias: el CONTRATO DE ESCENA con su espejo Python (#203/#237/#259
- *  y siguientes) y, desde #662, el PADRÓN DE SONDAS DE MOVIMIENTO de `qa/`
- *  (`sondas-de-movimiento.json`), cuyo espejo son los guiones del banco.
+ *  Son tres familias: el CONTRATO DE ESCENA con su espejo Python (#203/#237/#259
+ *  y siguientes); desde #662, el PADRÓN DE SONDAS DE MOVIMIENTO de `qa/`
+ *  (`sondas-de-movimiento.json`), cuyo espejo son los guiones del banco; y desde
+ *  #611 los DOS CONTRATOS DE ESPERAS del banco (`esperas-que-conducen.json` y
+ *  `esperas-por-fotogramas.json`), donde lo que hay que poder poner rojo es la
+ *  DERIVACIÓN de la clase de una exención — que es el candado que sustituyó a
+ *  tres capas de forma sobre la prosa del `porque`, y el que tiene que ser capaz
+ *  de cazar lo que aquellas no cazaban.
  *
  *  Hermano de `qa/mutacion-candados-en-negativo.mjs`, y vive fuera de
  *  `qa/guiones/` por la misma razón: `qa/run.mjs` carga TODO `.mjs` de esa
@@ -71,6 +76,13 @@ const G91 = join(raiz, "qa/guiones/91-la-forja-que-el-motor-pone-ya-no-se-atravi
 const G118 = join(raiz, "qa/guiones/118-el-carro-frena-y-la-bolsa-se-pisa.mjs");
 const G128 = join(raiz, "qa/guiones/128-lo-que-el-motor-pone-de-golpe-no-se-pisa.mjs");
 const G133 = join(raiz, "qa/guiones/133-la-parada-falsa-bajo-carga-de-verdad.mjs");
+// Los cuatro de los DOS CONTRATOS DE ESPERAS (#611). Aquí el sabotaje se hace
+// SIEMPRE en el contrato y no en el guion, y es a propósito: lo que se prueba
+// es que una exención que AFIRMA un sujeto que su predicado no toca se pone
+// roja — que es exactamente la mentira elaborada que la forma del texto dejaba
+// pasar 7 pass · 0 fail.
+const CONDUCEN = join(CORE, "data/contract/esperas-que-conducen.json");
+const FOTOGRAMAS = join(CORE, "data/contract/esperas-por-fotogramas.json");
 
 /** [nombre, fichero, batería, [ [buscar, poner], … ] ]
  *
@@ -280,6 +292,44 @@ const INVARIANTES = [
       '"porque": "es movimiento, se queda"',
     ]],
   ],
+  // ── #611 · la exención no se cree, se DERIVA ────────────────────────────
+  // El invariante que sustituyó a la regex de proceso, a las veinte palabras
+  // distintas y a la tirada de ocho: la `clase` de una exención la demuestra su
+  // PREDICADO, leyendo del hook algo del proceso que nombra. Las tres capas de
+  // forma cerraban la exención perezosa y NO la elaborada —QA lo midió con el
+  // 58 pasado a `{ms}` y una excusa «bridge» en prosa plausible: 7 pass · 0
+  // fail—, así que lo que hay que demostrar aquí es justo esa dirección.
+  [
+    "esperas · la exención del 43 dice esperar al BRIDGE y su predicado lee `dialogue`, no `scene`",
+    CONDUCEN, "ts:test/esperas-que-conducen.test.ts",
+    [['      "clase": "motor",', '      "clase": "bridge",']],
+  ],
+  // La otra mitad, y sin ella la de arriba se podría «arreglar» inventando la
+  // lectura en el mapa: un nombre que el hook no tiene no deriva nada, y hasta
+  // #611 nadie cruzaba el mapa con `nefan-hook.ts`.
+  [
+    "esperas · el mapa de clases nombra una lectura que el hook NO tiene (`escena` por `scene`)",
+    CONDUCEN, "ts:test/esperas-que-conducen.test.ts",
+    [['    "bridge": [\n      "scene"\n    ],', '    "bridge": [\n      "escena"\n    ],']],
+  ],
+  // El contrato HERMANO, que subió al mismo listón en la misma tanda: allí la
+  // clase se deriva del SITIO (pared > cortafuegos del dueño, o `{sim}`
+  // presente) en vez de del hook.
+  [
+    "esperas · la del 69 se reetiqueta «conducida en sim» y el sitio no lleva `{sim}` por ningún lado",
+    FOTOGRAMAS, "ts:test/espera-de-fotogramas-con-dueno.test.ts",
+    [['      "clase": "cortafuegos mayor",', '      "clase": "conducida en sim",']],
+  ],
+  // Y la vía `issue`, que es la única que ninguna lectura demuestra: su número
+  // es obligatorio porque sin él no hay nada que pueda caducar. Que el issue
+  // esté ABIERTO lo pregunta a GitHub el headless
+  // `qa/la-exencion-por-issue-tiene-issue-vivo.mjs`, que no puede correr aquí:
+  // esto es la mitad que sí vive en `npm test`.
+  [
+    "esperas · una exención por issue se queda sin NÚMERO (y entonces no hay nada que caduque)",
+    FOTOGRAMAS, "ts:test/espera-de-fotogramas-con-dueno.test.ts",
+    [['      "issue": 673,\n', ""]],
+  ],
 ];
 
 function corre(bateria) {
@@ -306,7 +356,7 @@ function corre(bateria) {
 const filtro = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const casa = (n) => filtro.length === 0 || filtro.some((f) => n.toLowerCase().includes(f.toLowerCase()));
 
-const FICHEROS = [SCHEMA, PROMPT, SNAP, PY, TOOL, FIXTURE_CARRO, PADRON_SONDAS, G91, G118, G128, G133];
+const FICHEROS = [SCHEMA, PROMPT, SNAP, PY, TOOL, FIXTURE_CARRO, PADRON_SONDAS, G91, G118, G128, G133, CONDUCEN, FOTOGRAMAS];
 
 // Se niega a arrancar sobre un árbol sucio: si el fichero ya trae cambios, la
 // restauración de este guion los borraría. Es la única forma de que escribir
