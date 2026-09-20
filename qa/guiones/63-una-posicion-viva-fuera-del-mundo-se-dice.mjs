@@ -50,7 +50,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { nuevaPartida, comenzar, reanudar } from "../lib/sesion.mjs";
 import { esperarEnElSave, rutaDelSave } from "../lib/saves.mjs";
-import { cerrarElCable, fraseDeRechazos, mandarPorElCable } from "../lib/cable.mjs";
+import { fraseDeRechazos, porElCable, porRondasHastaRechazo } from "../lib/cable.mjs";
 
 /** El motor falso es determinista POR TURNO de diálogo: saves vírgenes. */
 export const aisla = ["saves", "fake-ai"];
@@ -119,18 +119,23 @@ export default async function (ctx) {
   // contrato lo contesta el bridge solo a quien lo mandó, y el helper viejo lo
   // cerraba en el mismo tick del `send`, así que el ⊘ de abajo decía «no llegó
   // al save» sin poder decir por qué.
-  const cable = await mandarPorElCable(ctx, { type: "request_tile", tx: 1, ty: 0, reason: "prefetch" });
-  let conDosTiles = null;
-  let rechazos = [];
-  try {
-    conDosTiles = await esperarEnElSave(
-      partida.sessionId,
-      (s) => (s.scenes_loaded?.tile_1_0 ? Object.keys(s.scenes_loaded) : null),
-      60_000,
-    );
-  } finally {
-    rechazos = await cerrarElCable(ctx, cable);
-  }
+  //
+  // La espera va POR RONDAS y no de un tirón porque la consecuencia se mira en
+  // DISCO, fuera de la página: sin eso, un frame rechazado a los pocos
+  // milisegundos se pagaba con el presupuesto entero (medido: 71 s para decir
+  // al final algo que ya se sabía). Cada ronda mira el save; entre rondas, si
+  // el bridge ya contestó que no, se corta.
+  const RONDA_MS = 2_000;
+  const TECHO_MS = 60_000;
+  const { resultado, rechazos } = await porElCable(ctx, { type: "request_tile", tx: 1, ty: 0, reason: "prefetch" }, (id) =>
+    porRondasHastaRechazo(
+      ctx,
+      id,
+      () => esperarEnElSave(partida.sessionId, (s) => (s.scenes_loaded?.tile_1_0 ? Object.keys(s.scenes_loaded) : null), RONDA_MS),
+      TECHO_MS,
+    ),
+  );
+  const conDosTiles = resultado.valor ?? null;
   if (!conDosTiles) {
     ctx.sinMedir(
       `el tile (1,0) pedido por el cable no llegó al save — ${fraseDeRechazos(rechazos)}: sin dos tiles no hay negativo que medir`,

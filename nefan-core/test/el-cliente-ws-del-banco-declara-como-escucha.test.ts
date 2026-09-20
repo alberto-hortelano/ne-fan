@@ -17,9 +17,13 @@
  *   · un socket = un `NewExpression` cuyo constructor se llama `WebSocket`
  *     (`Identifier` o `PropertyAccessExpression`: `new WebSocket(u)` y
  *     `new window.WebSocket(u)`);
- *   · sus oyentes = dentro de la función que lo envuelve, los `Identifier`
- *     `onmessage` y las llamadas `addEventListener`/`on`/`once` cuyo primer
- *     argumento es el literal `"message"`;
+ *   · sus oyentes = los que se cuelgan DE ESE SOCKET (por el nombre al que se
+ *     liga) dentro de la función que lo envuelve: `ws.onmessage = <algo>` y
+ *     `ws.addEventListener`/`on`/`once("message", <algo>)`, con `<algo>` que no
+ *     sea `null` ni `undefined`. Atarlo al socket no es un detalle: mientras
+ *     contaba el IDENTIFICADOR `onmessage` del ámbito, un `ws.onmessage = null`
+ *     delante de la forma vieja saltaba el candado ENTERO y pasaba 16/16 (lo
+ *     cazó la QA de la tanda, no su ingeniero);
  *   · su modo declarado = `una-respuesta` | `todo` | `nada`, y la coherencia se
  *     MIDE: `nada` ⇔ cero oyentes. Declarar «espera» sobre un socket mudo es
  *     rojo, y declarar `nada` sobre uno que escucha también.
@@ -33,10 +37,13 @@
  *  ## Qué NO sujeta, dicho aquí y medido abajo
  *
  *  Está en `_lo_que_esto_NO_sujeta` del padrón y cada agujero tiene su aserto
- *  en «el detector»: el constructor con alias (`const W = WebSocket`) sale
- *  cero; `una-respuesta` contra `todo` no se distingue por el árbol; un oyente
- *  colgado a un socket que se cierra en el mismo tick cuenta como oyente; dos
- *  sockets en la MISMA función comparten cuenta; y los espías de
+ *  en «el detector»: el constructor RENOMBRADO (alias, `Reflect.construct`,
+ *  `import { WebSocket as WS }`) y el código dentro de un string salen cero;
+ *  `una-respuesta` contra `todo` no se distingue por el árbol; un oyente
+ *  colgado a un socket que se cierra en el mismo tick cuenta como oyente; un
+ *  cliente correcto cuyo oyente cuelga OTRA función sale rojo (y el mensaje lo
+ *  dice así, en vez de afirmar que no escucha); una espera que no espera vuelve
+ *  a perder el unicast a través de `cable.mjs`; y los espías de
  *  `window.WebSocket` y los `routeWebSocket` de Playwright no son clientes y no
  *  entran, a propósito.
  *
@@ -97,25 +104,77 @@ type Padron = z.infer<typeof PadronSchema>;
 export interface SocketVisto {
   /** 1-based, para que el mensaje del rojo lleve a la línea. */
   linea: number;
-  /** Oyentes de `message` dentro de la función que envuelve al `new`. */
+  /** Oyentes de `message` colgados DE ESTE socket dentro de la función que lo
+   *  envuelve. No «los del ámbito»: ver `esOyenteDe`. */
   oyentes: number;
+  /** El identificador al que se liga el socket (`const ws = new WebSocket(…)`),
+   *  o `null` si no se liga a un nombre simple. Sin nombre no se le pueden
+   *  atribuir oyentes, y el rojo tiene que poder decirlo. */
+  ligado: string | null;
+}
+
+/** Quita los paréntesis: `new (window.WebSocket)(u)` es el mismo constructor. */
+function desenvuelve(n: ts.Node): ts.Node {
+  return ts.isParenthesizedExpression(n) ? desenvuelve(n.expression) : n;
 }
 
 function esSocket(n: ts.Node): n is ts.NewExpression {
   if (!ts.isNewExpression(n)) return false;
-  const e = n.expression;
-  return (ts.isIdentifier(e) && e.text === "WebSocket") || (ts.isPropertyAccessExpression(e) && e.name.text === "WebSocket");
+  const e = desenvuelve(n.expression);
+  if (ts.isIdentifier(e)) return e.text === "WebSocket";
+  if (ts.isPropertyAccessExpression(e)) return e.name.text === "WebSocket";
+  // `new window["WebSocket"](u)`: el acceso por índice con literal es la misma
+  // cosa escrita de otra manera.
+  if (ts.isElementAccessExpression(e)) {
+    const a = e.argumentExpression;
+    return Boolean(a && ts.isStringLiteralLike(a) && a.text === "WebSocket");
+  }
+  return false;
 }
 
-function esOyente(n: ts.Node): boolean {
-  if (ts.isIdentifier(n) && n.text === "onmessage") return true;
+/** El nombre al que se liga el `new`, si es `const/let ws = new WebSocket(…)`. */
+function nombreLigado(n: ts.NewExpression): string | null {
+  const p = n.parent;
+  return p && ts.isVariableDeclaration(p) && ts.isIdentifier(p.name) ? p.name.text : null;
+}
+
+/** ¿Es `e` exactamente el identificador `nombre`? */
+function esEse(e: ts.Node, nombre: string): boolean {
+  const d = desenvuelve(e);
+  return ts.isIdentifier(d) && d.text === nombre;
+}
+
+/** `null` y `undefined` no escuchan nada. Es el agujero que encontró la QA:
+ *  `ws.onmessage = null;` delante de la forma vieja pasaba por oyente y el
+ *  candado entero se saltaba con esa línea. */
+function esVacio(e: ts.Node): boolean {
+  return e.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(e) && e.text === "undefined");
+}
+
+/** ¿Este nodo cuelga un oyente de `message` DEL socket `nombre`?
+ *
+ *  Atado al socket, no al ámbito: cuenta `nombre.onmessage = <algo>` y
+ *  `nombre.addEventListener/on/once("message", <algo>)`, y solo si lo que se
+ *  cuelga no es `null`/`undefined`. Un `onmessage` de otro objeto —un `Worker`,
+ *  un `process.on("message")`— ya no cuenta. */
+function esOyenteDe(n: ts.Node, nombre: string): boolean {
+  if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+    const izq = n.left;
+    return (
+      ts.isPropertyAccessExpression(izq) && izq.name.text === "onmessage" && esEse(izq.expression, nombre) && !esVacio(n.right)
+    );
+  }
   if (
     ts.isCallExpression(n) &&
     ts.isPropertyAccessExpression(n.expression) &&
-    ["addEventListener", "on", "once"].includes(n.expression.name.text)
+    ["addEventListener", "on", "once"].includes(n.expression.name.text) &&
+    esEse(n.expression.expression, nombre)
   ) {
-    const a = n.arguments[0];
-    return Boolean(a && ts.isStringLiteralLike(a) && a.text === "message");
+    const evento = n.arguments[0];
+    const manejador = n.arguments[1];
+    return Boolean(
+      evento && ts.isStringLiteralLike(evento) && evento.text === "message" && manejador && !esVacio(manejador),
+    );
   }
   return false;
 }
@@ -130,17 +189,20 @@ function ambitoDe(n: ts.Node): ts.Node {
 /** Los sockets que ABRE este fuente, en orden, con sus oyentes. Cuenta NODOS:
  *  un `new WebSocket(` en un comentario o dentro de un string no es un socket,
  *  y un `"message"` suelto no es un oyente — solo lo es como primer argumento
- *  de `addEventListener`/`on`/`once`, o el identificador `onmessage`. */
+ *  de `addEventListener`/`on`/`once` SOBRE ESE SOCKET, o su `onmessage`. */
 export function socketsDe(fuente: string): SocketVisto[] {
   const sf = arbolDelBanco(fuente);
   const out: SocketVisto[] = [];
   recorre(sf, (n) => {
     if (!esSocket(n)) return;
+    const ligado = nombreLigado(n);
     let oyentes = 0;
-    recorre(ambitoDe(n), (m) => {
-      if (esOyente(m)) oyentes++;
-    });
-    out.push({ linea: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1, oyentes });
+    if (ligado !== null) {
+      recorre(ambitoDe(n), (m) => {
+        if (esOyenteDe(m, ligado)) oyentes++;
+      });
+    }
+    out.push({ linea: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1, oyentes, ligado });
   });
   return out;
 }
@@ -190,7 +252,17 @@ describe("el cliente WS del banco declara cómo escucha (#678): new WebSocket en
         if (!v) return; // lo dice el aserto de la cuenta
         const mudo = v.oyentes === 0;
         if (s.escucha === "nada" && !mudo) mal.push(`${c.fichero}:${v.linea} declara \`nada\` y tiene ${v.oyentes} oyente(s)`);
-        if (s.escucha !== "nada" && mudo) mal.push(`${c.fichero}:${v.linea} declara \`${s.escucha}\` y no tiene ningún oyente de "message"`);
+        if (s.escucha !== "nada" && mudo) {
+          // El porqué, y no solo el hecho: «no tiene oyente» sobre un socket
+          // que sí lo tiene —colgado por un helper de al lado— es un mensaje
+          // FALSO, y manda al siguiente a declarar `nada` (mentir) o a aflojar
+          // el detector. Dicho así, manda a cerrar el oyente donde se abre.
+          mal.push(
+            v.ligado === null
+              ? `${c.fichero}:${v.linea} declara \`${s.escucha}\` y el socket no se liga a ningún nombre (\`const ws = new WebSocket(…)\`), así que este detector no puede atribuirle oyentes`
+              : `${c.fichero}:${v.linea} declara \`${s.escucha}\` y a \`${v.ligado}\` no se le cuelga ningún oyente de "message" EN SU MISMA FUNCIÓN (si lo cuelga un helper, tráelo aquí o pasa por \`qa/lib/cable.mjs\`)`,
+          );
+        }
       });
     }
     assert.deepEqual(
@@ -266,7 +338,28 @@ describe("el detector de clientes WS del banco", () => {
       "ws.onerror = () => rej(new Error('x'));",
       "ws.onopen = () => { ws.send(JSON.stringify(m)); setTimeout(() => { ws.close(); res(true); }, 0); };",
     ].join("\n");
-    assert.deepEqual(socketsDe(texto), [{ linea: 1, oyentes: 0 }]);
+    assert.deepEqual(socketsDe(texto), [{ linea: 1, oyentes: 0, ligado: "ws" }]);
+  });
+
+  it("un `onmessage` puesto a `null` NO es un oyente: era la línea con la que se saltaba el candado", () => {
+    // Lo encontró la QA de la tanda (S6): la forma vieja con `ws.onmessage =
+    // null` delante, declarada `una-respuesta`, pasaba 16/16. El detector
+    // contaba el IDENTIFICADOR `onmessage`, no lo que se le colgaba.
+    assert.deepEqual(socketsDe("const ws = new WebSocket(u); ws.onmessage = null;").map((s) => s.oyentes), [0]);
+    assert.deepEqual(socketsDe("const ws = new WebSocket(u); ws.onmessage = undefined;").map((s) => s.oyentes), [0]);
+    assert.deepEqual(socketsDe('const ws = new WebSocket(u); ws.addEventListener("message", null);').map((s) => s.oyentes), [0]);
+    // Y el control: con algo colgado sí cuenta.
+    assert.deepEqual(socketsDe("const ws = new WebSocket(u); ws.onmessage = (ev) => f(ev);").map((s) => s.oyentes), [1]);
+  });
+
+  it("el oyente se ata AL SOCKET, no al ámbito: el `onmessage` de otro objeto no cuenta", () => {
+    // Las tres formas que la QA midió como FALSO OYENTE (fixtures H, I y J).
+    const worker = "function f() { const ws = new WebSocket(u); worker.onmessage = (e) => g(e); }";
+    const proceso = 'function f() { const ws = new WebSocket(u); process.on("message", h); }';
+    const otro = "function f() { const ws = new WebSocket(u); otro.onmessage = h; }";
+    for (const texto of [worker, proceso, otro]) {
+      assert.deepEqual(socketsDe(texto).map((s) => s.oyentes), [0], `contó un oyente ajeno en: ${texto}`);
+    }
   });
 
   it("cuenta los TRES oyentes: `onmessage`, `addEventListener(\"message\")` y `on(\"message\")`", () => {
@@ -287,7 +380,7 @@ describe("el detector de clientes WS del banco", () => {
       '  ws.addEventListener("error", () => rej(new Error("message")));',
       "}",
     ].join("\n");
-    assert.deepEqual(socketsDe(texto), [{ linea: 2, oyentes: 0 }]);
+    assert.deepEqual(socketsDe(texto), [{ linea: 2, oyentes: 0, ligado: "ws" }]);
   });
 
   it("atribuye los oyentes AL SOCKET DE SU FUNCIÓN: dos sockets en funciones distintas no se prestan oyentes", () => {
@@ -326,32 +419,50 @@ describe("el detector de clientes WS del banco", () => {
     assert.deepEqual(socketsDe(texto), []);
   });
 
-  it("NO ve el constructor con alias, y eso está escrito en el contrato en vez de descubrirse", () => {
-    // Agujero (1) de `_lo_que_esto_NO_sujeta`. Si algún día esto se pone rojo
-    // es que alguien lo cerró: entonces se quita el párrafo del padrón y de la
-    // cabecera, porque habrán dejado de ser ciertos.
-    const texto = [
-      "const W = WebSocket;",
-      "const ws = new W(u);",
-      "const ws2 = Reflect.construct(WebSocket, [u]);",
-    ].join("\n");
-    assert.deepEqual(
-      socketsDe(texto),
-      [],
-      "el detector ha aprendido a ver el alias: quita el agujero (1) de `_lo_que_esto_NO_sujeta` y de la cabecera",
-    );
+  it("NO ve el constructor RENOMBRADO, y eso está escrito en el contrato en vez de descubrirse", () => {
+    // Agujero (1) de `_lo_que_esto_NO_sujeta`, en su redacción ancha: lo que
+    // no se ve no es «el alias», es CUALQUIER `new` cuyo constructor no se
+    // llame `WebSocket` en el nodo. La QA añadió el import renombrado, que es
+    // la forma natural de un cliente Node nuevo (`el-npc-cruza`,
+    // `el-state-api`), y por eso es el que más probable es.
+    const alias = "const W = WebSocket;\nconst ws = new W(u);\nws.onmessage = f;";
+    const reflect = "const ws = Reflect.construct(WebSocket, [u]);";
+    const importado = 'import { WebSocket as WS } from "ws";\nconst ws = new WS(u);\nws.onmessage = f;';
+    for (const texto of [alias, reflect, importado]) {
+      assert.deepEqual(
+        socketsDe(texto),
+        [],
+        `el detector ha aprendido a ver esta forma: súbela a lo que SÍ ve y quítala del agujero (1)\n${texto}`,
+      );
+    }
   });
 
-  it("dos sockets en la MISMA función comparten la cuenta de oyentes, y eso también está escrito", () => {
-    // Agujero (3), segunda mitad. Hoy no pasa en el banco; si algún día pasa,
-    // el padrón lo declara y este aserto es lo que dice que el detector no lo
-    // separa.
+  it("NO ve el código dentro de un STRING que la página acaba evaluando", () => {
+    // El test llama «prosa» a lo que no es nodo, y un `addScriptTag` con el
+    // socket dentro de un literal abre un socket de verdad. Sigue siendo
+    // agujero (1); está escrito para que nadie lo descubra de golpe.
+    const texto = 'await page.addScriptTag({ content: "const ws = new WebSocket(u); ws.onmessage = f;" });';
+    assert.deepEqual(socketsDe(texto), []);
+  });
+
+  it("dos sockets en la MISMA función ya NO comparten oyentes: cada uno cuenta los suyos", () => {
+    // Era la segunda mitad del agujero (3) y la cerró el atar el oyente al
+    // socket: `a` escucha y `b` es mudo, que es la verdad.
     const texto = "function f() { const a = new WebSocket(u); const b = new WebSocket(u); a.onmessage = g; }";
-    assert.deepEqual(
-      socketsDe(texto).map((s) => s.oyentes),
-      [1, 1],
-      "el detector ha aprendido a separar sockets del mismo ámbito: quita esa parte del agujero (3)",
-    );
+    assert.deepEqual(socketsDe(texto).map((s) => s.oyentes), [1, 0]);
+  });
+
+  it("ve el constructor entre paréntesis y por índice: `new (window.WebSocket)` y `new window[\"WebSocket\"]`", () => {
+    // Dos de las formas que la QA listó bajo el agujero del alias (E y F). No
+    // se declaran: se ven, que sale más barato que escribirlas en el contrato.
+    assert.deepEqual(socketsDe("const ws = new (window.WebSocket)(u); ws.onmessage = f;").map((s) => s.oyentes), [1]);
+    assert.deepEqual(socketsDe('const ws = new window["WebSocket"](u); ws.onmessage = f;').map((s) => s.oyentes), [1]);
+  });
+
+  it("un socket que no se liga a un nombre se ve, y se dice que no se le pueden atribuir oyentes", () => {
+    // No es mudo «porque no escuche»: es que el detector no puede saberlo. El
+    // rojo lo dice con esas palabras (ver el aserto de coherencia).
+    assert.deepEqual(socketsDe("sockets.push(new WebSocket(u));"), [{ linea: 1, oyentes: 0, ligado: null }]);
   });
 
   it("el barrido de fuentes ve los subdirectorios y se salta lo efímero", () => {

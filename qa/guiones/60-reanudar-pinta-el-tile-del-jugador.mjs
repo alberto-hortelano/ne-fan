@@ -133,7 +133,7 @@ import {
 } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
 import { esperarEnElSave } from "../lib/saves.mjs";
-import { cerrarElCable, fraseDeRechazos, mandarPorElCable } from "../lib/cable.mjs";
+import { fraseDeRechazos, porElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -508,6 +508,9 @@ export default async function (ctx) {
   await olvidarMappingLocal(ctx);
   const postsAntesA3 = atlasPosts.length;
   let claveA3 = null;
+  /** La frase del rechazo si el bridge tumbó el `request_tile` de la
+   *  re-difusión; `null` si lo aceptó. Decide si lo de abajo tiene sujeto. */
+  let rechazoA3 = null;
   const r3 = await reanudarYMedirElRenderer(ctx, p2.partida.sessionId, {
     antesDeEsperar: async () => {
       await ctx.waitFor("el POST del atlas del resume está en vuelo (retenido)", () => window.__qaRetenidas >= 1 || null, 60_000);
@@ -528,43 +531,51 @@ export default async function (ctx) {
       // «timeout esperando tile listo» sin poder decir por qué. El predicado
       // tiene DOS salidas: el HUD, o el rechazo — para no quemar 60 s esperando
       // una consecuencia que el bridge ya dijo que no iba a llegar.
-      const cable = await mandarPorElCable(ctx, {
-        type: "request_tile",
-        tx: Number(tx),
-        ty: Number(ty),
-        reason: "prefetch",
-      });
-      try {
-        await ctx.waitFor(
-          "el tile activo vuelve a llegar y se re-añade (segundo «tile listo» de la misma clave), o el bridge rechaza el frame",
-          ([n, id]) => {
-            if (window.__qaCables.abiertos[id].rechazos.length) return "rechazado";
-            const f = window.__nefan.fps();
-            return (window.__qaHud60 ?? []).filter((l) => l.includes(`tile listo: ${f.activeTile}`)).length > n || null;
-          },
-          60_000,
-          [antes.listos, cable],
-        );
-      } finally {
-        // Se cierra pase lo que pase: un socket abierto con el POST del atlas
-        // retenido acumula clientes en el bridge durante toda la corrida. Y el
-        // aserto va aquí, en el `finally`, para que un timeout SIN rechazo
-        // salga con su ✔ «pasó el contrato» delante: entonces el ✘ de la
-        // espera es del tile que no volvió (#677), no del frame.
-        const rechazos = await cerrarElCable(ctx, cable);
-        ctx.expect(
-          "A3 · el request_tile de la re-difusión pasó el contrato del bridge (nadie lo rechazó por unicast)",
-          rechazos.length === 0,
-          fraseDeRechazos(rechazos),
-        );
-      }
-      ctx.log(`A3 · ${claveA3} re-añadido con su POST retenido (${retenidas.length} retenido(s)); se suelta`);
+      //
+      // `porElCable` cierra el socket él: un socket que se quedara abierto con
+      // el POST del atlas retenido acumula clientes en el bridge durante toda
+      // la corrida, y si la espera LANZA (timeout) el fallo sale con la frase
+      // del cable pegada, así que un ✘ por «no volvió el tile» dice también si
+      // el frame había pasado el contrato o no — que es el reparto entre esto
+      // y #677.
+      const { rechazos } = await porElCable(
+        ctx,
+        { type: "request_tile", tx: Number(tx), ty: Number(ty), reason: "prefetch" },
+        (id) =>
+          ctx.waitFor(
+            "el tile activo vuelve a llegar y se re-añade (segundo «tile listo» de la misma clave), o el bridge rechaza el frame",
+            ([n, cableId]) => {
+              if (window.__qaCables.abiertos[cableId].rechazos.length) return "rechazado";
+              const f = window.__nefan.fps();
+              return (window.__qaHud60 ?? []).filter((l) => l.includes(`tile listo: ${f.activeTile}`)).length > n || null;
+            },
+            60_000,
+            [antes.listos, id],
+          ),
+      );
+      ctx.expect(
+        "A3 · el request_tile de la re-difusión pasó el contrato del bridge (nadie lo rechazó por unicast)",
+        rechazos.length === 0,
+        fraseDeRechazos(rechazos),
+      );
+      // Si lo rechazó, NO hubo re-difusión: lo que viene después —el POST que
+      // no se repite y el tile que acaba texturado— no tiene sujeto, y
+      // afirmarlo sería un ✔ sobre algo que no ocurrió. Se declara el bloque
+      // sin medir (⊘) en vez de dejar que salgan verdes; el ✘ de arriba
+      // conserva el color y la causa.
+      rechazoA3 = rechazos.length ? fraseDeRechazos(rechazos) : null;
+      if (!rechazoA3) ctx.log(`A3 · ${claveA3} re-añadido con su POST retenido (${retenidas.length} retenido(s)); se suelta`);
       soltar = true;
       for (const route of retenidas) await route.continue();
     },
   });
   await ctx.page.unroute("**/generate_surface_atlas");
-  if (r3 && !r3.sinTiles) {
+  if (rechazoA3) {
+    ctx.sinMedirBloque(
+      `A3 · ni el POST que no se repite ni el texturado se midieron: el bridge RECHAZÓ el request_tile de la ` +
+        `re-difusión, así que no hubo segunda llegada del tile que contar — ${rechazoA3}`,
+    );
+  } else if (r3 && !r3.sinTiles) {
     const postsA3 = atlasPosts.slice(postsAntesA3).filter((b) => b?.layout_key === layoutKeyDe[claveA3]);
     const celdas = postsA3.flatMap((b) => (b?.cells ?? []).map((c) => c.key));
     const repetidas = [...new Set(celdas.filter((k, i) => celdas.indexOf(k) !== i))];
