@@ -1,40 +1,47 @@
 {
-  "_comment": "Totalidad de las esperas por un CONTADOR DE FOTOGRAMAS del banco (#606, tanda N, 2026-09-17). Lo verifica `test/espera-de-fotogramas-con-dueno.test.ts`, en DOS niveles. NIVEL DURO, sin exenciones posibles: ningún fichero salvo `qa/lib/fotogramas.mjs` puede DEFINIR un helper de espera por fotogramas — el molde que estaba copiado dieciséis veces. NIVEL CENSO, el de este fichero: toda espera cuyo PREDICADO lea `fps().frames`, `reloj().frames` o `reloj().loop` sale del helper o está apuntada aquí con su motivo. La lista existe porque hay tres clases de espera que NO son el molde: (1) aquella cuyo SUJETO es el contador mismo —afirmar que el renderer sigue pintando—, donde el helper mediría el instrumento con el instrumento; (2) la que necesita un cortafuegos MAYOR que el unificado, y bajárselo es justo lo que el plan de #606 prohíbe; (3) la espera CONDUCIDA, que se presupuesta en segundos de mundo (`{sim: N}`) y cuyo dueño es `qa/lib/esperas.mjs`, no éste. Una exención cuya espera ya no existe CADUCA y pone el test rojo: se borra de aquí.",
+  "_comment": "Totalidad de las esperas por un CONTADOR DE FOTOGRAMAS del banco (#606, tanda N, 2026-09-17). Lo verifica `test/espera-de-fotogramas-con-dueno.test.ts`, en DOS niveles. NIVEL DURO, sin exenciones posibles: ningún fichero salvo `qa/lib/fotogramas.mjs` puede DEFINIR un helper de espera por fotogramas — el molde que estaba copiado dieciséis veces. NIVEL CENSO, el de este fichero: toda espera cuyo PREDICADO lea `fps().frames`, `reloj().frames` o `reloj().loop` sale del helper o está apuntada aquí con su motivo. Cada exención nombra el fichero y el TEXTO LITERAL de la descripción de esa espera (con sus comillas o sus backticks), igual que `esperas-que-conducen.json` —hasta #611 la clave era solo el fichero, y una exención bendecía cualquier espera por fotogramas que se escribiera en él—. Y que apunte a UNA lo SUJETA UN TEST: dos esperas del mismo fichero bajo el mismo texto ponen la exención ROJA, y las clases derivadas se cruzan con TODAS, no con la última. Esa segunda mitad la pidió la QA de la tanda AE, que midió el agujero: una COPIA DEL MOLDE metida en `las-fixtures-solo-chocan-con-el-agua.mjs` con el mismo texto que la exención honesta entraba en el banco con 10 pass · 0 fail, o sea justo lo que #606 vino a prohibir, colada por una exención que no la nombra. Y DESDE #611 LA CLASE DE CADA EXENCIÓN SE DERIVA DONDE SE PUEDE: `clases` dice cuáles son `derivada` (el test las comprueba contra el árbol) y cuál es `declarada` (no hay forma de derivarla, y se dice). «cortafuegos mayor» ⇔ el presupuesto de pared del sitio es MAYOR que `CORTAFUEGOS_MS` de `qa/lib/fotogramas.mjs`, porque bajárselo es justo lo que #606 prohíbe; «conducida en sim» ⇔ el sitio lleva `{sim}`, y entonces su dueño es `qa/lib/esperas.mjs` y su candado `esperas-que-conducen.json`; «contador es el sujeto» —afirmar que el renderer sigue pintando, donde el helper mediría el instrumento con el instrumento— NO es derivable: su forma es IDÉNTICA a la del molde que se prohíbe (está medido en el test), así que ahí solo queda el motivo escrito. La clase `issue` lleva el número de un issue ABIERTO y caduca con él —lo pregunta a GitHub `qa/la-exencion-por-issue-tiene-issue-vivo.mjs` en el job `candados-headless`—, no con una fecha. Una exención cuya espera ya no existe CADUCA y pone el test rojo: se borra de aquí.",
+  "_lo_que_esto_NO_sujeta": "Escrito con su caso MEDIDO en `test/espera-de-fotogramas-con-dueno.test.ts`. (1) LA CLASE DECLARADA: «contador es el sujeto» no se deriva de nada —el predicado de `fixtures-las-tres:70` y el de una copia prohibida del molde son el mismo árbol para `lecturasDelHook` ([\"fps\"]) y para el detector—, así que una copia del molde que se apunte aquí con esa clase pasa. Es la exención que sigue sosteniéndose solo en su `porque`, y se dice en vez de disfrazarla de derivada. (2) EL PRESUPUESTO NO LITERAL: `cortafuegos mayor` compara un literal numérico o un `{ms: N}` literal; una pared escrita como constante (`maxMs`) no se deriva y la exención sale roja aunque sea cierta (fricción, no agujero). (3) El estado del issue lo comprueba el headless, no `npm test`: en local sin red la clase `issue` solo tiene el zod. (4) Las LECTURAS del contador que no son el predicado de una espera (`fixtures-sin-bridge`, `presupuesto-de-volumenes`, `captura-de-fixture`, los guiones 34 y 79) siguen fuera del censo, como desde #606. (5) LA REFERENCIA CON VARIOS DUEÑOS: cuando el predicado llega por un nombre declarado más de una vez en el fichero, este detector mira TODAS las declaraciones y se queda con la primera que lea un contador. Aquí la dirección segura es detectar de MÁS —una espera que el detector NO ve es una copia del molde que entra sin pasar por el censo—, al revés que en el contrato hermano, donde una referencia ambigua se niega a derivar. El precio está dicho: un fichero con dos funciones del mismo nombre puede hacer que se CENSE una espera que no lee el contador, y entonces hay que darle su exención o cambiarle el nombre a la función. Y AL REVÉS, que es el flanco que aquí queda abierto: si el predicado que corre llega por un PARÁMETRO de helper o por un destructuring (`const { pred } = …`), no hay candidato legible que mirar y la espera se queda FUERA del censo — o sea que una copia del molde escrita así entra sin pasar por aquí. En el contrato gemelo ese mismo caso se cierra poniéndose ROJO (H-7 de la re-QA); aquí el rojo no es la salida, porque lo que se censa es lo que se encuentra. Las dos direcciones, medidas.",
+  "clases": {
+    "contador es el sujeto": "declarada",
+    "cortafuegos mayor": "derivada",
+    "conducida en sim": "derivada"
+  },
   "exentos": [
     {
       "fichero": "qa/fixtures-las-tres-se-caminan.mjs",
-      "linea_orientativa": 69,
-      "desc": "${fixture} · el renderer emite frames",
+      "desc": "`${fixture} · el renderer emite frames`",
+      "clase": "contador es el sujeto",
       "porque": "El SUJETO de esta espera es el contador: afirma que el renderer SIGUE PINTANDO con la fixture cargada. Sacarla al helper sería medir el instrumento con el instrumento — el helper existe para esperar A QUE PASE algo, y aquí lo que se afirma es que el contador se mueve."
     },
     {
       "fichero": "qa/las-fixtures-solo-chocan-con-el-agua.mjs",
-      "linea_orientativa": 196,
-      "desc": "el renderer emite más frames",
+      "desc": "\"el renderer emite más frames\"",
+      "clase": "contador es el sujeto",
       "porque": "Misma clase que `fixtures-las-tres-se-caminan.mjs`: el contador es la MEDIDA («las tres fixtures siguen pintando»), no el instrumento de otra medida."
     },
     {
       "fichero": "qa/guiones/69-el-arranque-no-se-calla.mjs",
-      "linea_orientativa": 302,
-      "desc": "el bucle de juego avanza 60 fotogramas con el socket escupiendo basura",
+      "desc": "\"el bucle de juego avanza 60 fotogramas con el socket escupiendo basura\"",
+      "clase": "cortafuegos mayor",
       "porque": "Pide 60 fotogramas con un cortafuegos de 30 s, mayor que los 20 s del helper unificado, y bajarlo es exactamente lo que #606 prohíbe: la unificación va HACIA ARRIBA porque bajar un cortafuegos puede convertir una espera legítima en una expiración. Sesenta fotogramas bajo un socket que inunda no caben en el tope común."
     },
     {
       "fichero": "qa/guiones/15-guardia-se-ve-y-se-comporta.mjs",
-      "linea_orientativa": 224,
-      "desc": "el mundo se redibuja ya encarando a ${id}",
+      "desc": "`el mundo se redibuja ya encarando a ${id}`",
+      "clase": "issue",
+      "issue": 673,
       "porque": "ES el molde y SE MIGRÓ, y hubo que DESHACERLO con la medida delante (tanda N, 2026-09-17): con la espera sacada al helper el guion sale rojo 4 veces de 21, y en su versión de siempre 0 de 11 — mismo commit, corridas alternadas, aislado y en lotes de 6 y de 17. El rojo cae SIEMPRE en el mismo sitio y no tiene vía causal hacia esta espera: `page.click('#ts-new')` expira en el TÍTULO, justo tras la pre-generación de las 9 escenas y mucho antes de que `encarar()` corra. Se queda fuera porque meter una intermitencia en la batería es justo lo que esta tanda vino a quitar (#634): un rojo que aparece y desaparece enseña al equipo a ignorar la batería. Su issue es **#673** —escrito aquí el 2026-09-18 porque no estaba: el `porque` decía «tiene issue propio» sin citarlo y `grep 673` sobre este contrato daba 0, contra lo que el propio issue afirma—; cuando se sepa por qué, esta exención se borra y la espera vuelve al helper. Lo que #673 YA NO es es una hipótesis sobre #659: en el instante del rojo no hay sesión, el título está delante y el cliente no manda `input` (`main.ts:662`), así que ningún `state_update` puede llegar, y la página es nueva (`run.mjs:1414`) → el último frame está vacío. Las dos vías de #659 están cerradas, medido y comentado en el issue."
     },
     {
       "fichero": "qa/guiones/140-la-reconexion-retira-su-aviso-en-partida.mjs",
-      "linea_orientativa": 60,
-      "desc": "la página sigue avanzando tras reconectar",
+      "desc": "\"la página sigue avanzando tras reconectar\"",
+      "clase": "contador es el sujeto",
       "porque": "El SUJETO es el reloj: lo que se afirma es que la página NO se ha quedado colgada tras reconectar el bridge (120 fotogramas de mundo). Como en las dos de fixtures, el contador es la medida y no el instrumento."
     },
     {
       "fichero": "qa/guiones/142-los-sistemas-se-pueden-consultar.mjs",
-      "linea_orientativa": 19,
-      "desc": "el mundo avanza mientras se consulta",
+      "desc": "\"el mundo avanza mientras se consulta\"",
+      "clase": "conducida en sim",
       "porque": "No es una espera por fotogramas del molde: es una espera CONDUCIDA (`ctx.holdUntil` con la tecla `up` mantenida) presupuestada en SEGUNDOS DE MUNDO (`{sim: 5}`), cuyo dueño es `qa/lib/esperas.mjs` y cuyo candado es `test/esperas-que-conducen.test.ts` (#545). Los fotogramas son su condición de parada, no su reloj."
     }
   ]

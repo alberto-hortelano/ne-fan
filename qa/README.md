@@ -265,10 +265,29 @@ Reglas que hacen que un guion valga algo:
    tres formas que tiene el defecto: `holdUntil` sin `{sim}`, `expectEspera(…, {tecla})` sin `sim`, y
    **una tecla mantenida aparte + un `ctx.waitFor` de pared**, que es como #545 estaba escrito. Su
    frontera, declarada y con un caso que la mide: el estado del teclado se sigue por anidamiento
-   LÉXICO, así que una tecla pulsada en el llamante con la espera dentro de un helper no se ve. Las esperas que hoy siguen en pared están
-   **apuntadas con su motivo** en `nefan-core/data/contract/esperas-que-conducen.json`, y la
-   exención caduca sola: si la espera pasa a sim, la entrada se queda sin sujeto y el test se pone
-   rojo.
+   LÉXICO, así que una tecla pulsada en el llamante con la espera dentro de un helper no se ve. Las
+   esperas que hoy siguen en pared están apuntadas en
+   `nefan-core/data/contract/esperas-que-conducen.json` **con su CLASE, y la clase no se cree: la
+   deriva el PREDICADO** (#611). El contrato declara qué lectura del hook demuestra cada proceso
+   —`bridge` → `window.__nefan.scene`, `motor` → `dialogue()`, `game loop` → `reloj()`/`fps()`—, y
+   si el predicado de la espera no lee ninguna de ellas el test se pone rojo diciendo lo que lee de
+   verdad. Es una regla POSITIVA («toca algo del proceso que nombras»), no «no toques el mundo»: la
+   `TRAZA` del 133 lee `state().pos` y es honesta. Antes de eso el sujeto era prosa con tres capas
+   de forma encima (un proceso nombrado por regex, veinte palabras distintas, sin tiradas): cerraba
+   la exención perezosa y **no** la mentira elaborada, medido en 7 pass · 0 fail, así que las tres
+   capas se retiraron con la derivación en vez de acumularse. La única clase que ninguna lectura
+   demuestra es `issue`: lleva el número de un issue ABIERTO y **caduca con el issue, no con una
+   fecha** — lo pregunta a GitHub `qa/la-exencion-por-issue-tiene-issue-vivo.mjs` en el job
+   `candados-headless`, y sin `gh`, sin token o sin red sale ROJO, nunca ⊘. Y la entrada caduca
+   además sola: si la espera pasa a sim o desaparece, se queda sin sujeto y el test se pone rojo.
+   Una exención apunta a UNA espera **y eso también es candado, no promesa**: dos esperas del mismo
+   fichero bajo el mismo texto la ponen roja, porque un motivo escrito vale para una y bendeciría a
+   la otra sin mirarla (lo midió la QA de la tanda AE metiendo la mentira debajo de una exención
+   honesta: 12 pass · 0 fail). Y un predicado que llega por un nombre declarado dos veces, o
+   reasignado, no deriva nada: resolverlo por el último sería adivinar.
+   El contrato hermano `esperas-por-fotogramas.json` (#606) va al mismo listón, con lo que allí
+   **no** se puede derivar —«el contador es el sujeto», que tiene el mismo árbol que una copia
+   prohibida del molde— marcado `declarada` y medido en su propio caso.
 
    **La PARADA («el jugador empuja contra algo y deja de avanzar») tiene molde:
    `qa/lib/parada.mjs`.** No se escribe a mano, y el motivo es que escrita a mano leía paradas que

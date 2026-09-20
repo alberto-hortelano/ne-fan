@@ -32,10 +32,20 @@
  *  no puede quedarse desfasado—: unas tienen el contador como SUJETO (afirmar
  *  que el renderer sigue pintando), otra necesita un cortafuegos mayor que el
  *  unificado, otra es una espera CONDUCIDA en segundos de mundo con otro dueño,
- *  y otra está fuera de alcance con issue vivo (#673, el guion 15). La del
- *  guion 80 SALE del censo con #659 cerrado: su motivo era la intermitencia que
- *  ese issue explicaba, y la migración se midió con el par 79→80 y con el 80
- *  aislado, tres corridas de cada, todas en verde.
+ *  y otra está fuera de alcance con issue vivo (#673, el guion 15).
+ *
+ *  Y DESDE #611 LA CLASE SE DERIVA DONDE SE PUEDE, en vez de creerse: el
+ *  contrato marca cada clase como `derivada` o `declarada`, y las derivadas se
+ *  cruzan con el árbol —«cortafuegos mayor» ⇔ la pared del sitio es mayor que
+ *  `CORTAFUEGOS_MS` del dueño; «conducida en sim» ⇔ el sitio lleva `{sim}`—.
+ *  «Contador es el sujeto» NO se puede derivar y hay un caso que lo MIDE: el
+ *  predicado de `fixtures-las-tres` y el de una copia prohibida del molde son
+ *  el mismo árbol. La vía `issue` lleva número y la comprueba contra GitHub el
+ *  headless `qa/la-exencion-por-issue-tiene-issue-vivo.mjs`. La clave del censo
+ *  pasó a ser `fichero :: desc` (antes solo el fichero, y una exención
+ *  bendecía cualquier espera por fotogramas del fichero entero); con ella
+ *  salió a la luz que el `desc` apuntado del 142 no era el suyo: este detector
+ *  leía `arguments[0]` para los tres verbos, y en `holdUntil` eso es la tecla.
  *
  *  ── LO QUE NO CUBRE, dicho aquí y no en prosa suelta ──────────────────────
  *  Las LECTURAS de `fps().frames` que no son el predicado de una espera
@@ -55,51 +65,65 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { z } from "zod";
+import { descDe, funcionesDelFichero, lecturasDelHook, presupuestoDe, verboDe } from "./lecturas-del-predicado.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CONTRATO = join(repoRoot, "nefan-core", "data", "contract", "esperas-por-fotogramas.json");
 /** El ÚNICO fichero al que le está permitido definir esta espera. */
 const DUENO = "qa/lib/fotogramas.mjs";
+/** El cortafuegos del dueño, leído del dueño (dirección test → banco, como
+ *  `parada-de-qa.test.ts`): «cortafuegos mayor» se deriva contra ESTE número. */
+const { CORTAFUEGOS_MS } = (await import(join(repoRoot, "qa", "lib", "fotogramas.mjs"))) as { CORTAFUEGOS_MS: number };
 
-const ContratoSchema = z.object({
-  _comment: z.string(),
-  exentos: z
-    .array(
-      z.object({
-        fichero: z.string(),
-        linea_orientativa: z.number(),
-        desc: z.string(),
-        porque: z.string().min(80),
-      }),
-    )
-    .min(1),
-});
+const CLASE_ISSUE = "issue";
+
+/** El mismo listón que `esperas-que-conducen.json` (#611): `.strict()`, clase
+ *  obligatoria, `issue` con número, `_lo_que_esto_NO_sujeta` obligatorio, y el
+ *  `desc` LITERAL como clave. `linea_orientativa` se fue: un número que
+ *  caduca sin avisar. */
+export const ContratoSchema = z
+  .object({
+    _comment: z.string().min(1),
+    _lo_que_esto_NO_sujeta: z.string().min(1),
+    /** clase → si el test la DERIVA del árbol o solo queda declarada. */
+    clases: z.record(z.string().min(1), z.enum(["derivada", "declarada"])),
+    exentos: z
+      .array(
+        z
+          .object({
+            fichero: z.string().regex(/^qa\/[\w./-]+\.mjs$/),
+            desc: z.string().min(3),
+            clase: z.string().min(1),
+            issue: z.number().int().positive().optional(),
+            porque: z.string().min(120, "el motivo es una FRASE que dice por qué no es el molde, no una etiqueta"),
+          })
+          .strict(),
+      )
+      .min(1),
+  })
+  .strict()
+  .superRefine((c, ctx) => {
+    if (CLASE_ISSUE in c.clases) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["clases", CLASE_ISSUE], message: "`issue` no es una clase del mapa: se sujeta con el estado del issue" });
+    }
+    c.exentos.forEach((e, i) => {
+      const ruta = ["exentos", i];
+      if (e.clase !== CLASE_ISSUE && !(e.clase in c.clases)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...ruta, "clase"], message: `clase desconocida «${e.clase}»: ${Object.keys(c.clases).join(", ")}, o \`issue\`` });
+      }
+      if (e.clase === CLASE_ISSUE && e.issue === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...ruta, "issue"], message: "una exención por issue lleva su NÚMERO: sin él no hay nada que pueda caducar" });
+      }
+      if (e.clase !== CLASE_ISSUE && e.issue !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...ruta, "issue"], message: `\`issue\` solo acompaña a la clase \`issue\`; ésta es «${e.clase}»` });
+      }
+    });
+  });
 
 /** Los verbos de espera del banco. Los tres, no solo `waitFor`: `holdUntil` y
  *  `expectEspera` también llevan predicado, y un candado que mirase uno solo
  *  dejaría los otros dos abiertos. */
 const VERBOS = /(^|\.)(waitFor|expectEspera|holdUntil)$/;
-
-/** Las funciones declaradas en el fichero, por nombre. Existe porque el
- *  predicado de una espera puede llegar POR REFERENCIA
- *  (`ctx.waitFor(desc, pasaronLosFotogramas, …)`) en vez de escrito en línea, y
- *  un detector que solo mirase el argumento no vería el contador — lo midió el
- *  propio dueño de esta espera, que es justo quien escribe su predicado aparte.
- *  Un candado que no ve esa forma cubre menos de lo que su nombre promete. */
-function funcionesDelFichero(sf: ts.SourceFile): Map<string, ts.Node> {
-  const mapa = new Map<string, ts.Node>();
-  const visita = (n: ts.Node): void => {
-    if (ts.isFunctionDeclaration(n) && n.name) mapa.set(n.name.text, n);
-    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
-      if (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer)) {
-        mapa.set(n.name.text, n.initializer);
-      }
-    }
-    ts.forEachChild(n, visita);
-  };
-  visita(sf);
-  return mapa;
-}
 
 /** ¿Lee este subárbol un CONTADOR DE FOTOGRAMAS? Son los tres que existen:
  *  `fps().frames` (el del renderer, que sube en toda vuelta del loop),
@@ -131,6 +155,13 @@ export interface EsperaDeFotogramas {
   /** El nombre de la función-helper que la envuelve, si la función existe SOLO
    *  para esperar fotogramas. `null` = espera inline dentro de otra cosa. */
   helper: string | null;
+  /** Presupuesto de PARED del sitio en ms (literal o `{ms: N}`; `null` si es
+   *  una expresión) y si lleva `{sim}`: de aquí se derivan «cortafuegos mayor»
+   *  y «conducida en sim» (#611). */
+  pared: number | null;
+  conSim: boolean;
+  /** Las claves del hook que lee el predicado, para medir lo que NO se deriva. */
+  lecturas: string[];
 }
 
 /** El nombre bajo el que se declara una función, sea `function f(){}`,
@@ -188,15 +219,28 @@ export function esperasPorFotogramas(texto: string, fichero: string): EsperaDeFo
   const fuera: EsperaDeFotogramas[] = [];
   const funciones = funcionesDelFichero(sf);
   /** El contador que lee este argumento, siguiéndolo si es una REFERENCIA a una
-   *  función del fichero. */
+   *  función del fichero. Mira TODAS las declaraciones que haya bajo ese nombre
+   *  y no solo la última (H-2 de la QA de #611): aquí la dirección segura es
+   *  detectar de MÁS, porque una espera que este detector no ve es una copia
+   *  del molde que entra sin pasar por el censo. */
   const contadorDelArgumento = (a: ts.Node): string | null => {
     const directo = contadorDeFotogramas(a, sf);
     if (directo) return directo;
     if (ts.isIdentifier(a)) {
-      const fn = funciones.get(a.text);
-      if (fn) return contadorDeFotogramas(fn, sf);
+      for (const fn of funciones.porNombre.get(a.text) ?? []) {
+        const c = contadorDeFotogramas(fn, sf);
+        if (c) return c;
+      }
     }
     return null;
+  };
+  /** Lo que lee del hook un argumento, siguiendo la referencia igual que arriba.
+   *  Solo lo usa el caso que MIDE la clase indistinguible. */
+  const lecturasDelArgumento = (a: ts.Node): string[] => {
+    const nodos = ts.isIdentifier(a) ? (funciones.porNombre.get(a.text) ?? []) : [a];
+    const vistas: string[] = [];
+    for (const n of nodos) for (const l of lecturasDelHook(n)) if (!vistas.includes(l)) vistas.push(l);
+    return vistas;
   };
   /** La función que ENVUELVE a `n`, la más interior. */
   const envoltura = (n: ts.Node): ts.SignatureDeclaration | null => {
@@ -213,19 +257,24 @@ export function esperasPorFotogramas(texto: string, fichero: string): EsperaDeFo
     return null;
   };
   const visita = (n: ts.Node): void => {
-    if (ts.isCallExpression(n) && VERBOS.test(n.expression.getText(sf))) {
+    const verbo = ts.isCallExpression(n) && VERBOS.test(n.expression.getText(sf)) ? verboDe(n) : null;
+    if (ts.isCallExpression(n) && verbo !== null) {
       for (const a of n.arguments) {
         const contador = contadorDelArgumento(a);
         if (!contador) continue;
         const fn = envoltura(n);
         const helper = fn && esHelperDeEspera(fn, sf, n) ? nombreDeLaFuncion(fn, sf) : null;
+        const { pared, conSim } = presupuestoDe(n, verbo);
         fuera.push({
           fichero,
           linea: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1,
           verbo: n.expression.getText(sf),
-          desc: n.arguments[0]?.getText(sf).slice(0, 90) ?? "",
+          desc: descDe(n, verbo, sf),
           contador,
           helper,
+          pared,
+          conSim,
+          lecturas: lecturasDelArgumento(a),
         });
         break;
       }
@@ -246,11 +295,20 @@ const ficherosDelBanco = (dir = join(repoRoot, "qa")): string[] =>
     return e.name.endsWith(".mjs") ? [join(dir, e.name).slice(repoRoot.length + 1)] : [];
   });
 
+/** EL PARSE VA FUERA DEL `describe`, Y NO ES ESTILO (#611, medido al probar el
+ *  candado en negativo). Con `node --test` v24.11.1, un `describe` cuyo cuerpo
+ *  LANZA se anota `✖` en el listado y sale con **`ℹ fail 0` y código de salida
+ *  0**: la suite entera desaparece (`tests 0`) y `npm test` queda VERDE. O sea
+ *  que el zod de este contrato —que es quien exige el número del issue y
+ *  rechaza lo retirado— no podía poner rojo el build desde dentro del
+ *  `describe`. Fuera, el throw es de MÓDULO y da `fail 1` con salida 1.
+ *  Reproducido en un fichero de tres líneas sin nada del repo. */
+const contrato = ContratoSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
+const encontradas = ficherosDelBanco().flatMap((f) =>
+  esperasPorFotogramas(readFileSync(join(repoRoot, f), "utf8"), f),
+);
+
 describe("la espera por fotogramas del banco tiene UN dueño (#606)", () => {
-  const contrato = ContratoSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
-  const encontradas = ficherosDelBanco().flatMap((f) =>
-    esperasPorFotogramas(readFileSync(join(repoRoot, f), "utf8"), f),
-  );
 
   it("NIVEL DURO · solo `qa/lib/fotogramas.mjs` DEFINE un helper de espera por fotogramas", () => {
     const copias = encontradas.filter((e) => e.helper !== null && e.fichero !== DUENO);
@@ -265,9 +323,23 @@ describe("la espera por fotogramas del banco tiene UN dueño (#606)", () => {
     );
   });
 
+  /** `fichero :: desc`, como en `esperas-que-conducen.json`: una exención
+   *  apunta a UNA espera, no al fichero entero. */
+  const clave = (e: { fichero: string; desc: string }): string => `${e.fichero} :: ${e.desc}`;
+  const exentos = new Set(contrato.exentos.map(clave));
+  /** TODAS las esperas de cada clave. Un `Map` de uno en uno se quedaba con la
+   *  última, y QA midió el agujero (H-1): una copia del molde metida en
+   *  `las-fixtures-solo-chocan-con-el-agua.mjs` con el MISMO `desc` que la
+   *  exención honesta entraba en el banco en verde (10 ✔ · 0 ✖), tapada por una
+   *  exención que no la nombra. */
+  const porClave = new Map<string, EsperaDeFotogramas[]>();
+  for (const e of encontradas) {
+    const ya = porClave.get(clave(e));
+    if (ya) ya.push(e);
+    else porClave.set(clave(e), [e]);
+  }
+
   it("NIVEL CENSO · toda espera por fotogramas sale del dueño o está apuntada con su motivo", () => {
-    const clave = (e: { fichero: string; desc: string }): string => e.fichero;
-    const exentos = new Set(contrato.exentos.map(clave));
     const sinExcusa = encontradas.filter((e) => e.fichero !== DUENO && !exentos.has(clave(e)));
     assert.deepEqual(
       sinExcusa.map((e) => `${e.fichero}:${e.linea} · ${e.verbo}(${e.desc}) · ${e.contador}`),
@@ -275,16 +347,158 @@ describe("la espera por fotogramas del banco tiene UN dueño (#606)", () => {
       `Una espera por fotogramas escrita a mano es la forma en que este molde se copió dieciséis ` +
         `veces. Si de verdad no es el molde —porque el CONTADOR es su sujeto, porque necesita un ` +
         `cortafuegos mayor, o porque es una espera conducida en segundos de mundo—, apúntala en ` +
-        `data/contract/esperas-por-fotogramas.json con su motivo escrito.`,
+        `data/contract/esperas-por-fotogramas.json con su DESCRIPCIÓN literal, su CLASE y su motivo escrito.`,
     );
   });
 
   it("y cada exención sigue teniendo sujeto vivo: la que sobra CADUCA y se borra", () => {
     // Una exención cuya espera ya no existe miente, y una exención que miente es
     // peor que no tenerla: nadie vuelve a mirarla.
-    const conSujeto = new Set(encontradas.map((e) => e.fichero));
-    const caducadas = contrato.exentos.map((e) => e.fichero).filter((f) => !conSujeto.has(f));
-    assert.deepEqual(caducadas, [], "exención sin espera que eximir: bórrala del contrato");
+    const conSujeto = new Set(encontradas.map(clave));
+    const caducadas = [...exentos].filter((k) => !conSujeto.has(k));
+    assert.deepEqual(caducadas, [], `exención sin espera que eximir (bórrala del contrato): ${caducadas.join(" | ")}`);
+  });
+
+  // ── LA DERIVACIÓN (#611): la clase se cruza con el árbol donde se puede ──
+  /** Qué demuestra cada clase `derivada`, sobre lo que el detector leyó del
+   *  sitio. Las claves de este mapa tienen que ser EXACTAMENTE las clases
+   *  marcadas `derivada` en el contrato (hay aserto): una clase nueva marcada
+   *  derivada sin código aquí no sería derivada, sería creída. */
+  const derivaciones: Record<string, (e: EsperaDeFotogramas) => string | null> = {
+    "cortafuegos mayor": (e) =>
+      e.pared !== null && e.pared > CORTAFUEGOS_MS ? null : `pared ${e.pared ?? "(no literal)"} no es mayor que CORTAFUEGOS_MS=${CORTAFUEGOS_MS}`,
+    "conducida en sim": (e) => (e.conSim ? null : "el sitio no lleva `{sim}`"),
+  };
+
+  it("las clases marcadas `derivada` son exactamente las que este test sabe derivar", () => {
+    const derivadas = Object.entries(contrato.clases).filter(([, v]) => v === "derivada").map(([k]) => k).sort();
+    assert.deepEqual(derivadas, Object.keys(derivaciones).sort());
+    assert.ok(derivadas.length > 0, "sin ninguna clase derivada este bloque no sujeta nada");
+  });
+
+  it("una exención apunta a UNA espera: dos con la misma clave la dejan sin decidir (H-1)", () => {
+    // Aquí el agujero era peor que en el gemelo: lo que se cuela bajo una clave
+    // compartida es una COPIA DEL MOLDE, o sea justo lo que #606 vino a
+    // prohibir, y entra sin que nadie escriba una línea de contrato.
+    const dobles = contrato.exentos
+      .map((e) => ({ e, sitios: porClave.get(clave(e)) ?? [] }))
+      .filter(({ sitios }) => sitios.length > 1)
+      .map(({ e, sitios }) => `${clave(e)} → ${sitios.length} esperas, líneas ${sitios.map((s) => s.linea).join(", ")}`);
+    assert.deepEqual(
+      dobles,
+      [],
+      `Una exención tiene UN motivo y apunta a UNA espera. Con dos bajo la misma clave, el motivo ` +
+        `escrito vale para una y bendice a la otra sin mirarla. Haz distintas las descripciones.`,
+    );
+  });
+
+  it("cada exención de clase derivada la DERIVA el sitio: pared > cortafuegos, o `{sim}` presente", () => {
+    const sinPrueba: string[] = [];
+    for (const e of contrato.exentos) {
+      const deriva = derivaciones[e.clase];
+      if (!deriva) continue; // declarada o issue
+      // TODAS las de esa clave, no la última.
+      for (const espera of porClave.get(clave(e)) ?? []) {
+        const pega = deriva(espera);
+        if (pega !== null) sinPrueba.push(`${e.fichero}:${espera.linea} declara «${e.clase}» y ${pega}`);
+      }
+    }
+    assert.deepEqual(sinPrueba, [], "la clase de una exención la demuestra el SITIO, no su prosa");
+  });
+
+  it("lo que esto NO sujeta, medido: la clase declarada es INDISTINGUIBLE de una copia del molde", () => {
+    // «Contador es el sujeto» no se deriva de nada, y aquí está por qué: el
+    // predicado honesto de `fixtures-las-tres` («el renderer emite frames») y
+    // una copia prohibida del molde son EL MISMO ÁRBOL para el detector y para
+    // `lecturasDelHook`. Si algún día se distinguen, este caso se pone rojo:
+    // entonces la clase pasa a `derivada`, se le escribe su derivación arriba
+    // y se borra el párrafo (1) de `_lo_que_esto_NO_sujeta`.
+    const honesta = `await ctx.waitFor(\`\${fixture} · el renderer emite frames\`, (n) => window.__nefan.fps().frames > n + 5, 10_000, f0);`;
+    const copiaDelMolde = `await ctx.waitFor("pasan cinco fotogramas", (n) => window.__nefan.fps().frames > n + 5, 10_000, f0);`;
+    const [a] = esperasPorFotogramas(honesta, "qa/de-mentira.mjs");
+    const [b] = esperasPorFotogramas(copiaDelMolde, "qa/de-mentira.mjs");
+    assert.deepEqual(
+      [a.contador, a.pared, a.conSim, a.lecturas, a.helper],
+      [b.contador, b.pared, b.conSim, b.lecturas, b.helper],
+      "si ya se distinguen, cerraste el agujero (1): pasa la clase a derivada y borra este caso",
+    );
+    assert.deepEqual(a.lecturas, ["fps"]);
+    // Y el (2): una pared escrita como constante no se deriva (sale `null`).
+    const constante = `await ctx.waitFor("avanza", (n) => window.__nefan.fps().frames > n + 60, maxMs, f0);`;
+    assert.equal(esperasPorFotogramas(constante, "qa/de-mentira.mjs")[0].pared, null);
+  });
+
+  it("lo que esto NO sujeta, medido: la referencia con VARIOS dueños se resuelve detectando de MÁS", () => {
+    // El agujero H-2 de la QA es el mismo en los dos contratos —un nombre que
+    // no decide una función—, pero la dirección segura es la CONTRARIA aquí:
+    // en el gemelo, una referencia ambigua no deriva nada (rojo); aquí, una
+    // espera que el detector NO ve es una copia del molde que entra sin censo,
+    // así que se miran TODAS las declaraciones y basta con que una lea el
+    // contador. El precio: se censa también la que no lo lee.
+    const dosDuenos = `
+      const pred = (n) => window.__nefan.state().pos.x > n;
+      await ctx.waitFor("avanza", pred, 10_000, 0);
+      const pred = (n) => window.__nefan.fps().frames > n + 5;`;
+    const vistas = esperasPorFotogramas(dosDuenos, "qa/de-mentira.mjs");
+    assert.equal(vistas.length, 1, "si ya no se censa, este detector dejó de mirar todas las declaraciones");
+    assert.equal(vistas[0].contador, "window.__nefan.fps().frames");
+    assert.deepEqual(vistas[0].lecturas, ["state", "fps"], "las lecturas también salen de TODOS los candidatos");
+    // El control del control: con UN solo dueño que no lee contador, no se
+    // censa nada. Sin esto, un detector que censara cualquier `waitFor` dejaría
+    // el aserto de arriba verde diciendo lo que no es.
+    const unDueno = `
+      const pred = (n) => window.__nefan.state().pos.x > n;
+      await ctx.waitFor("avanza", pred, 10_000, 0);`;
+    assert.deepEqual(esperasPorFotogramas(unDueno, "qa/de-mentira.mjs"), []);
+    // Y LA OTRA DIRECCIÓN, que es el flanco que aquí queda abierto (H-7 de la
+    // re-QA, medido en vez de prometido): si el predicado que corre llega por un
+    // PARÁMETRO de helper, no hay candidato legible que mirar y la espera se
+    // queda FUERA del censo — o sea que una copia del molde escrita así entra
+    // sin pasar por aquí. En el contrato gemelo ese mismo caso se cierra
+    // poniéndose ROJO; aquí el rojo no es la salida, porque lo que se censa es
+    // lo que se encuentra. Si esto deja de estar vacío, cerraste el flanco:
+    // borra el caso y el final del párrafo (5) de `_lo_que_esto_NO_sujeta`.
+    const porParametro = `
+      async function espera(ctx, pred) {
+        await ctx.waitFor("avanza", pred, 10_000, 0);
+      }
+      export default async function (ctx) {
+        await espera(ctx, (n) => window.__nefan.fps().frames > n + 5);
+      }`;
+    assert.deepEqual(esperasPorFotogramas(porParametro, "qa/de-mentira.mjs"), []);
+  });
+
+  it("el detector lee el presupuesto y la descripción DEL VERBO que toca (el `desc` del 142 era la tecla)", () => {
+    const material = `
+      await ctx.holdUntil("up", "el mundo avanza mientras se consulta", t => window.__nefan.reloj().frames >= t + 30, { sim: 5 }, r);
+      await ctx.waitFor("el bucle avanza 60 fotogramas", (d) => ((window.__nefan.fps()?.frames ?? 0) >= d + 60 ? { ok: true } : null), 30_000, desde);
+      await ctx.expectEspera("pinta", true, (f) => window.__nefan.reloj().loop > f, { ms: 4_000 });`;
+    assert.deepEqual(
+      esperasPorFotogramas(material, "qa/de-mentira.mjs").map((e) => [e.desc, e.pared, e.conSim]),
+      [
+        ['"el mundo avanza mientras se consulta"', null, true],
+        ['"el bucle avanza 60 fotogramas"', 30_000, false],
+        ['"pinta"', 4_000, false],
+      ],
+    );
+  });
+
+  it("el zod cierra la vía «issue» por su número y no admite lo retirado", () => {
+    const base = JSON.parse(readFileSync(CONTRATO, "utf8"));
+    const con = (cambio: (c: typeof base) => void): boolean => {
+      const c = structuredClone(base);
+      cambio(c);
+      return ContratoSchema.safeParse(c).success;
+    };
+    assert.ok(con(() => {}));
+    const la15 = base.exentos.findIndex((e: { clase: string }) => e.clase === "issue");
+    assert.ok(la15 >= 0, "el contrato real tiene una exención por issue (la del 15, #673)");
+    assert.ok(!con((c) => { delete c.exentos[la15].issue; }), "«issue» sin número");
+    assert.ok(!con((c) => { c.exentos[0].issue = 673; }), "número con clase declarada");
+    assert.ok(!con((c) => { c.exentos[0].clase = "otra"; }), "clase fuera del mapa");
+    assert.ok(!con((c) => { c.clases["otra"] = "derivable"; }), "marca que no es derivada|declarada");
+    assert.ok(!con((c) => { c.exentos[0].linea_orientativa = 69; }), "`linea_orientativa` no vuelve");
+    assert.ok(!con((c) => { delete c._lo_que_esto_NO_sujeta; }), "sin `_lo_que_esto_NO_sujeta`");
   });
 
   it("el dueño existe, define la espera, y lee la base sin degradarla", () => {
