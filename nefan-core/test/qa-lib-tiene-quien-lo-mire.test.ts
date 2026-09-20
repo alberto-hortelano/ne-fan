@@ -26,14 +26,35 @@
  *  literal o un `join`/`resolve` con `"qa", "lib", "x.mjs"` como segmentos.
  *  Un string que contenga esas mismas letras es un string. El negativo que QA
  *  hizo a mano (sin `veredictos.test.ts`, `veredictos.mjs` queda huérfano) vive
- *  abajo como test permanente. */
+ *  abajo como test permanente.
+ *
+ *  Y EL BANCO ES `.mjs` Y SOLO `.mjs` (#686). Todo lo que decide «qué es el
+ *  banco» filtra por esa extensión: este test (`modulos`), el padrón de sondas
+ *  (`la-consulta-de-movimiento-tiene-dueno.test.ts`), otros seis tests de
+ *  `test/` que barren `qa/` (`esperas-de-qa`, `candados-headless-totalidad`,
+ *  `las-anclas-de-los-candados`, `esperas-que-conducen`,
+ *  `espera-de-fotogramas-con-dueno`, `el-banco-declara-el-modo-de-gasto`), las
+ *  reglas de `arch-rules.json` con glob `qa/**\/*.mjs` y su `scan.roots`, el
+ *  descubridor de guiones de `qa/run.mjs` y el job `candados-headless`. Node
+ *  24 ejecuta un `.ts` sin tsx, así que un `qa/lib/x.ts` importado desde un
+ *  guion `.mjs` correría de verdad y sería INVISIBLE para todos ellos. En vez
+ *  de enseñar la extensión a cada uno —y dejar abiertos `.js`, `.cjs`, `.mts`,
+ *  `.cts`—, se hace inexpresable el estado malo: bajo `qa/` solo caben las
+ *  extensiones de la lista blanca de abajo, y cualquier otra es rojo aquí. El
+ *  barrido es EL del banco (`test/banco-ficheros.ts`, compartido con el padrón
+ *  de sondas): salta `node_modules/`, `.tmp/` y `capturas/` con su motivo
+ *  escrito allí, sigue los symlinks, y nada más. Es «la garantía va en el
+ *  tipo» aplicada al banco: quien filtra por `.mjs` queda correcto por
+ *  construcción — mientras este test esté verde y alguien lo mire. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
+import { SALTOS_DEL_BANCO, ficherosDelBanco, type FicheroDelBanco } from "./banco-ficheros.js";
 
 const core = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(core, "..");
@@ -100,6 +121,35 @@ export function importsDeQaLib(textoDelTest: string): Set<string> {
   };
   visita(ts.createSourceFile("test.ts", textoDelTest, ts.ScriptTarget.Latest, true));
   return vistos;
+}
+
+/** Las extensiones que pueden vivir bajo `qa/`. Un `.mjs` es el banco; lo
+ *  demás son datos (`.json`), prosa (`.md`) y las capturas de una corrida
+ *  (`.png`, `.jpg`). Si hace falta ampliarla, que sea con algo que Node NO
+ *  ejecute: una extensión ejecutable aquí reabre el agujero de #686 para todo
+ *  lo que filtra por `.mjs`. */
+export const EXTENSIONES_DEL_BANCO: ReadonlySet<string> = new Set(["mjs", "md", "json", "png", "jpg"]);
+
+const extensionForanea = (r: string): boolean => {
+  const nombre = r.slice(r.lastIndexOf("/") + 1);
+  const punto = nombre.lastIndexOf(".");
+  return punto <= 0 || !EXTENSIONES_DEL_BANCO.has(nombre.slice(punto + 1));
+};
+
+/** De estas entradas, las que llevan una extensión fuera de la lista blanca
+ *  (o ninguna), como texto para el mensaje. Un enlace a fichero se juzga por
+ *  las DOS extensiones —la del enlace, que es lo que escribe un `import`, y la
+ *  de su ruta real, que es la que Node ejecuta (`x.mjs -> y.ts` corre como
+ *  TypeScript; re-QA de #686)— y sale como `ruta -> real` cuando la que falla
+ *  es la real. Puro sobre la lista, para poder probarlo con entradas sintéticas. */
+export function extensionesForaneas(entradas: readonly (string | FicheroDelBanco)[]): string[] {
+  const out: string[] = [];
+  for (const e of entradas) {
+    const { ruta, real } = typeof e === "string" ? { ruta: e, real: null } : e;
+    if (extensionForanea(ruta)) out.push(ruta);
+    else if (real !== null && extensionForanea(real)) out.push(`${ruta} -> ${real}`);
+  }
+  return out;
 }
 
 /** módulo → tests (nombres de fichero) que lo importan, sobre los tests dados. */
@@ -215,6 +265,133 @@ describe("qa/lib tiene quien lo mire (#357)", () => {
       plan.sin_mutar.map((e) => e.fichero).filter((f) => /(^|\/)qa\//.test(f)),
       [],
       "qa/ no necesita exención en sin_mutar: nunca estuvo en el perímetro",
+    );
+  });
+});
+
+describe("el banco es .mjs y solo .mjs (#686)", () => {
+  const QA = join(repoRoot, "qa");
+  const todos = ficherosDelBanco(QA).map((f) => ({ ...f, ruta: `qa/${f.ruta}` }));
+
+  it("el árbol tiene sujeto: el barrido ve los guiones, la raíz y lib", () => {
+    // Sin esto, un barrido sobre el directorio equivocado aprobaría la lista
+    // blanca sobre cero ficheros. Hoy son 213 (209 .mjs + 3 .json + 1 .md);
+    // `capturas/` no entra (ver `banco-ficheros.ts`).
+    assert.ok(todos.length > 100, `solo ${todos.length} ficheros bajo ${QA} — ¿se movió el banco?`);
+    const rutas = todos.map((f) => f.ruta);
+    assert.ok(rutas.some((f) => f.startsWith("qa/guiones/") && f.endsWith(".mjs")), "no ve los guiones");
+    assert.ok(rutas.some((f) => f.startsWith("qa/lib/") && f.endsWith(".mjs")), "no ve qa/lib");
+    assert.ok(rutas.some((f) => f.split("/").length === 2), "no ve la raíz de qa/");
+    assert.deepEqual(rutas.filter((f) => f.split("/").some((d) => SALTOS_DEL_BANCO.has(d))), []);
+  });
+
+  it("SABE PONERSE ROJO (el barrido): dot-dir y symlinks se ven; .tmp, node_modules, capturas y lo que sale de la raíz no", () => {
+    // Sobre un árbol sintético en disco, porque lo que se prueba es el
+    // `readdirSync`+`statSync`, no la lista. Lo que tiene que salir:
+    // `.oculto/x.ts` (dot-dir que no es .tmp), un symlink a DIRECTORIO
+    // recorrido por su nombre de enlace (B-1 de la QA: `qa/capturas/ultima ->
+    // <run>` salía como fichero sin extensión), un symlink a FICHERO juzgado
+    // por las DOS extensiones (`x.ts -> a.mjs` por el nombre del enlace, que
+    // es lo que un import escribe; `y.mjs -> z.ts` por la REAL, que es la que
+    // Node ejecuta), un enlace ROTO y uno CÍCLICO sobre sí mismo (`ELOOP`)
+    // como ficheros, no callados ni reventando el proceso. Lo que no:
+    // `.tmp/`, `node_modules/`, `capturas/` (incluido un `.mjs` ahí: punto (7)
+    // del padrón) y el enlace a directorio que SALE de la raíz. Y un symlink
+    // cíclico por directorio (`lib/loop -> ..`) se corta.
+    const raiz = mkdtempSync(join(tmpdir(), "nefan-banco-"));
+    const fuera = mkdtempSync(join(tmpdir(), "nefan-fuera-"));
+    try {
+      for (const d of [".oculto", ".tmp/run-1", "node_modules/x", "lib", "capturas/run-1"]) mkdirSync(join(raiz, d), { recursive: true });
+      for (const f of [".oculto/x.ts", ".tmp/run-1/y.ts", "node_modules/x/z.js", "lib/a.mjs", "b.mjs", ".dotfile.ts", "capturas/run-1/01.png", "capturas/x.mjs", "lib/z.ts"]) {
+        writeFileSync(join(raiz, f), "");
+      }
+      writeFileSync(join(fuera, "ajeno.ts"), "");
+      symlinkSync("lib", join(raiz, "enlace-dir"));
+      symlinkSync("run-1", join(raiz, "capturas", "ultima"));
+      symlinkSync("a.mjs", join(raiz, "lib", "x.ts"));
+      symlinkSync("z.ts", join(raiz, "lib", "y.mjs"));
+      symlinkSync("no-existe", join(raiz, "roto"));
+      symlinkSync("self", join(raiz, "self"));
+      symlinkSync("..", join(raiz, "lib", "loop"));
+      symlinkSync(fuera, join(raiz, "fuera"));
+      const vistos = ficherosDelBanco(raiz);
+      assert.deepEqual(
+        vistos.map((f) => f.ruta),
+        [".dotfile.ts", ".oculto/x.ts", "b.mjs", "enlace-dir/a.mjs", "enlace-dir/x.ts", "enlace-dir/y.mjs", "enlace-dir/z.ts", "lib/a.mjs", "lib/x.ts", "lib/y.mjs", "lib/z.ts", "roto", "self"],
+      );
+      const real = new Map(vistos.map((f) => [f.ruta, f.real]));
+      assert.equal(real.get("lib/x.ts"), realpathSync(join(raiz, "lib", "a.mjs")), "el enlace a fichero trae su ruta real");
+      assert.equal(real.get("lib/y.mjs"), realpathSync(join(raiz, "lib", "z.ts")));
+      assert.equal(real.get("lib/a.mjs"), null, "un fichero normal no trae ruta real");
+      assert.equal(real.get("roto"), null);
+      assert.equal(real.get("self"), null, "ELOOP se trata como roto, no revienta");
+      assert.deepEqual(extensionesForaneas(vistos), [
+        ".dotfile.ts",
+        ".oculto/x.ts",
+        "enlace-dir/x.ts",
+        `enlace-dir/y.mjs -> ${realpathSync(join(raiz, "lib", "z.ts"))}`,
+        "enlace-dir/z.ts",
+        "lib/x.ts",
+        `lib/y.mjs -> ${realpathSync(join(raiz, "lib", "z.ts"))}`,
+        "lib/z.ts",
+        "roto",
+        "self",
+      ]);
+      // Y sin saltar `capturas/`, el symlink a directorio se RECORRE y no sale
+      // como fichero: es exactamente el `ultima` real.
+      const sinSaltarCapturas = ficherosDelBanco(raiz, new Set(["node_modules", ".tmp"])).map((f) => f.ruta);
+      assert.ok(sinSaltarCapturas.includes("capturas/ultima/01.png"), "el symlink a directorio se recorre por su nombre de enlace");
+      assert.ok(!sinSaltarCapturas.includes("capturas/ultima"), "el symlink a directorio NO sale como fichero");
+    } finally {
+      rmSync(raiz, { recursive: true, force: true });
+      rmSync(fuera, { recursive: true, force: true });
+    }
+  });
+
+  it("bajo qa/ no hay ninguna extensión fuera de la lista blanca", () => {
+    const foraneas = extensionesForaneas(todos);
+    assert.deepEqual(
+      foraneas,
+      [],
+      `${foraneas.length} fichero(s) bajo qa/ con extensión fuera de {${[...EXTENSIONES_DEL_BANCO].join(", ")}}: ` +
+        `${foraneas.slice(0, 5).join(", ")}${foraneas.length > 5 ? ", …" : ""}. El banco es .mjs y solo .mjs: ` +
+        `todo lo que decide «qué es el banco» filtra por esa extensión y un .ts/.js/.cjs correría de verdad ` +
+        `sin que nadie lo viera (#686). Si el fichero NO es ejecutable, amplía EXTENSIONES_DEL_BANCO en este ` +
+        `test; si lo es, escríbelo en .mjs; si es un enlace simbólico ROTO o cíclico (apunta a algo borrado o a sí ` +
+        `mismo), bórralo; si es un enlace \`x.mjs -> y.ts\`, Node lo ejecuta como TypeScript: escribe el destino en .mjs.`,
+    );
+  });
+
+  it("SABE PONERSE ROJO (la lista): un .ts en lib, un .js suelto, un .cjs y un enlace .mjs -> .ts salen señalados; el .mjs y los datos no", () => {
+    // El negativo sintético del criterio 4 de #686: exactamente lo que
+    // `touch qa/lib/x.ts` haría en el árbol real (probado a mano al nacer), y
+    // el enlace `x.mjs -> y.ts` juzgado por su ruta real (re-QA).
+    assert.deepEqual(
+      extensionesForaneas([
+        "qa/lib/x.ts",
+        "qa/a.js",
+        "qa/lib/b.cjs",
+        "qa/guiones/1.mjs",
+        "qa/portadas.json",
+        "qa/README.md",
+        "qa/capturas/2026-09-18T00-00-00-000Z-1/01.png",
+        "qa/lib/c.mts",
+        "qa/SIN-EXTENSION",
+        "qa/lib/.oculto.ts",
+        { ruta: "qa/lib/enlace.mjs", real: "/otro/sitio/y.ts" },
+        { ruta: "qa/lib/enlace-bueno.mjs", real: "/otro/sitio/z.mjs" },
+        { ruta: "qa/lib/enlace-doble.ts", real: "/otro/sitio/w.ts" },
+      ]),
+      [
+        "qa/lib/x.ts",
+        "qa/a.js",
+        "qa/lib/b.cjs",
+        "qa/lib/c.mts",
+        "qa/SIN-EXTENSION",
+        "qa/lib/.oculto.ts",
+        "qa/lib/enlace.mjs -> /otro/sitio/y.ts",
+        "qa/lib/enlace-doble.ts",
+      ],
     );
   });
 });
