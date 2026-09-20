@@ -35,7 +35,10 @@ export function git(args: string[]): string {
   return execFileSync("git", args, { cwd: raizRepo, encoding: "utf8" }).trim();
 }
 
-export function gitLineas(args: string[]): string[] {
+/** SIN `export` a propósito: de las 32 declaraciones que ganaron uno al partir el
+ *  monolito (#605), ésta es la única que nadie usa desde fuera, y un export sin
+ *  importador es superficie que ni lint ni `tsc` ven crecer (QA de la tanda AC). */
+function gitLineas(args: string[]): string[] {
   return git(args)
     .split("\n")
     .map((s) => s.trim())

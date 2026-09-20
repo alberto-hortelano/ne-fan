@@ -288,7 +288,9 @@ jobs:
       # (36 s) rompe `mutacion-huella.ts` y la huella y exige que su batería se
       # entere; restaura byte a byte.
       - run: node qa/mutacion-candados-en-negativo.mjs
-      # (26 s) rompe `mutacion.ts`, `mutate.ts` y `mutation.yml` y ejerce el
+      # (26 s) rompe los trozos de `mutacion-*.ts` donde vive cada línea (#605
+      # los partió por cierre: informes, lotes, reparto), `mutate.ts`,
+      # `mutacion-comparar.ts`, `mutacion-huella.ts` y `mutation.yml`, y ejerce el
       # VERBO real sobre un `reports/mutation/` de ensayo. Lee el tag
       # `mutacion-ultima` y su historia: de ahí el `fetch-depth: 0`.
       - run: node qa/mutacion-cableado-en-negativo.mjs
