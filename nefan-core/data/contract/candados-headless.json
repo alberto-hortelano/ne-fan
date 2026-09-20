@@ -27,7 +27,7 @@
     },
     {
       "fichero": "qa/parar-clasifica-los-nueve-puertos.mjs",
-      "porque": "Igual que su hermano, pero con los NUEVE puertos del catálogo ocupados a la vez por cuatro procesos propios y uno ajeno: el sujeto es el barrido de `--parar` sobre los puertos reales de la máquina y las tres vías por las que un proceso se demuestra de este árbol (`/proc/<pid>/cwd` y los argumentos). Nada de eso existe en un runner limpio."
+      "porque": "Igual que su hermano, pero con los NUEVE puertos del catálogo ocupados a la vez por cuatro procesos propios y uno ajeno, y desde #684 con un señuelo propio en un bloque ≥ 1000 (el que `--parar` no veía): el sujeto es el barrido de `--parar` sobre los puertos reales de la máquina y las tres vías por las que un proceso se demuestra de este árbol (`/proc/<pid>/cwd` y los argumentos). Nada de eso existe en un runner limpio."
     }
   ]
 }
