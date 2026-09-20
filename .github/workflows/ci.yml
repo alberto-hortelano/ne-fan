@@ -421,19 +421,15 @@ jobs:
       # Se declaran ellos (`export const sinNavegador = "<motivo>"`) y el runner
       # corre la CLASE ENTERA con `--sin-navegador`: sin preset, sin puertos, sin
       # Chromium y sin `npm ci` en `qa/` (desde esta tanda `playwright-core` se
-      # carga perezosamente). Hoy son CUATRO: el 39, el 40, el 146 y el 148, que
-      # entra con la QA de #663. RE-MEDIDOS los cuatro en esta máquina el
-      # 2026-09-18, cada uno aislado y con el arranque de node dentro —
-      # 0,04 · 0,46 · 0,22 · 2,30 s—, y la clase entera en 3,2 s (era 0,98 con
-      # tres). Las cifras anteriores de los tres primeros decían
-      # 0,37 · 0,79 · 0,54 y no se corrigen por estar mal sino porque nadie
-      # sabe ya de qué máquina eran: se vuelven a medir con el paso entero.
+      # carga perezosamente). Cuáles son lo dice `node qa/run.mjs --sin-navegador`,
+      # no este comentario: la cuenta escrita aquí mintió dos veces en dos días
+      # (#680/#683), así que se retira en vez de corregirse.
       #
-      # NADIE PERSIGA EL TERCER DÍGITO: la misma máquina, el mismo día y el
-      # mismo commit dieron 0,06 · 0,60 · 0,25 · 2,80 con menos carga y
-      # 0,04 · 0,46 · 0,22 · 2,30 con load average 9. La dispersión es el
-      # cacharro, no el código; lo que esta cifra sirve para ver es si algún día
-      # el paso pasa de segundos a minutos.
+      # NADIE PERSIGA EL TERCER DÍGITO del tiempo del paso: la misma máquina, el
+      # mismo día y el mismo commit dieron 3,2 s con menos carga y 14,9 s con
+      # load average 21 (2026-09-20). La dispersión es el cacharro, no el código;
+      # lo que esta cifra sirve para ver es si algún día el paso pasa de
+      # segundos a minutos.
       #
       # EL 148 SE LLEVA EL 82 % DEL PASO Y ESO ES LO ESPERADO: es el único que
       # SPAWNEA — rompe el fuente del cliente y corre `npm test` de `nefan-html`

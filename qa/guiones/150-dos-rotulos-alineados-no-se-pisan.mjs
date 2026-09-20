@@ -130,14 +130,14 @@ export default async function (ctx) {
   const robledo = JSON.parse(readFileSync(ROBLEDO, "utf8"));
   await ctx.nefan("loadSceneRaw", {
     ...robledo,
-    scene_id: "qa126",
+    scene_id: "qa150",
     entities: [
       { id: "player", kind: "player", name: "Tú", cell: JUGADOR.cell, footprint: [1, 1] },
       { id: CERCA.id, kind: "npc", name: CERCA.nombre, cell: CERCA.cell, footprint: [1, 1], description: "aldeana de saya parda" },
       { id: LEJOS.id, kind: "npc", name: LEJOS.nombre, cell: LEJOS.cell, footprint: [1, 1], description: "leñador de hacha al hombro" },
     ],
   });
-  await ctx.waitFor("el tile del guion está pintado", () => (window.__nefan.scene?.scene_id === "qa126" ? true : null), 30_000);
+  await ctx.waitFor("el tile del guion está pintado", () => (window.__nefan.scene?.scene_id === "qa150" ? true : null), 30_000);
   const cuerpos = await ctx.waitFor(
     "los dos personajes están en el cliente",
     (a) => {

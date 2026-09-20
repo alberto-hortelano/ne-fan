@@ -25,7 +25,13 @@ Que sea el `.gitignore` y no esta frase quien lo impida es deliberado: un `git a
 no puede saltarse un candado, pero se salta un párrafo sin enterarse.
 
 Para lo mecánico, el rastro de verdad no es prosa: es el guion en `qa/guiones/` que cualquiera
-puede volver a correr.
+puede volver a correr. **Y es el único sitio** (#683): en `docs/agents/` no vive nada ejecutable —ni
+un sondeo «para luego», ni un `.mjs` de apoyo—, porque nadie lo corre y muere con el worktree (el
+sondeo de #609 se dejó aquí y nunca llegó a commitearse). Si no conduce navegador, el guion declara
+`export const sinNavegador` y entra en CI sin tocar nada más; el molde es el 148 (sabotajes rojos +
+agujeros conocidos con su issue). Lo canda `nefan-core/test/un-numero-un-guion.test.ts`, que mira el
+árbol de trabajo. La numeración del guion la asigna quien fusiona, mirando `main`: está en
+`qa/README.md`, §«Cómo se escribe un guion».
 
 ## Montar un worktree para un ingeniero o una QA
 
