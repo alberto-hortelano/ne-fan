@@ -32,44 +32,79 @@
  *  ## Symlinks: valen por lo que apuntan
  *
  *  `readdirSync(…, {withFileTypes: true})` da `isDirectory() === false` para
- *  un enlace, sea a lo que sea. Aquí se resuelve con `statSync`: un enlace a
- *  directorio SE RECORRE (con su nombre de enlace como prefijo), un enlace a
- *  fichero es un fichero con EL NOMBRE DEL ENLACE —que es lo que escribe un
- *  `import`—, y un enlace ROTO se devuelve como fichero para que quien juzgue
- *  lo vea: callárselo sería el `return []` que oculta un fallo. Los ciclos se
- *  cortan por `realpathSync` sobre la cadena de ANCESTROS de la recursión, no
- *  sobre todo lo visitado: un guardia de «ya visto» global escondía el
- *  directorio real cuando su enlace ordenaba antes que él. */
+ *  un enlace, sea a lo que sea. Aquí se resuelve con `statSync`:
+ *
+ *   · Un enlace a DIRECTORIO se recorre, con su nombre de enlace como prefijo,
+ *     **solo si su ruta real sigue bajo la raíz del barrido**: un
+ *     `qa/fuera -> ../nefan-core/src` convertiría `npm test` en un rastreo de
+ *     disco (la re-QA lo midió: 154 foráneos de golpe). El que sale de `qa/`
+ *     se SALTA y aquí queda dicho: es el único enlace que el barrido no
+ *     recorre, y nada lo señala.
+ *   · Un enlace a FICHERO es un fichero con EL NOMBRE DEL ENLACE —que es lo
+ *     que escribe un `import`— y ADEMÁS con su ruta real (`real`), porque Node
+ *     resuelve el import por `realpath` y aplica la extensión REAL: un
+ *     `x.mjs -> y.ts` se ejecuta como TypeScript (medido por la re-QA:
+ *     `NODE-EJECUTA-TS`). La lista blanca juzga las dos extensiones. El enlace
+ *     a fichero que sale de `qa/` NO se salta: se lista con su `real` y se
+ *     juzga igual, que es lo que Node haría con él.
+ *   · Un enlace ROTO (`ENOENT`) o CÍCLICO sobre sí mismo (`ELOOP`) se devuelve
+ *     como fichero sin `real`, para que quien juzgue lo vea y diga qué hacer:
+ *     callárselo sería el `return []` que oculta un fallo, y dejar que `ELOOP`
+ *     reviente el proceso era un rojo que no decía nada (re-QA).
+ *   · Los ciclos por directorio (`lib/loop -> ..`) se cortan por `realpathSync`
+ *     sobre la cadena de ANCESTROS de la recursión, no sobre todo lo visitado:
+ *     un guardia de «ya visto» global escondía el directorio real cuando su
+ *     enlace ordenaba antes que él. Consecuencia declarada: un enlace a un
+ *     HERMANO ya recorrido (`qa/guiones2 -> guiones`) se recorre otra vez y
+ *     sale por duplicado —para el padrón, diez `qa/guiones2/…: N contra 0`—.
+ *     Dirección ROJO y ruidosa el mismo día; no es un verde que tapa. */
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 /** Los directorios que NO son banco, por nombre. Ver la cabecera. */
 export const SALTOS_DEL_BANCO: ReadonlySet<string> = new Set(["node_modules", ".tmp", "capturas"]);
 
-/** TODOS los ficheros bajo `dir` (ruta relativa a `dir`, con `/`, ordenados),
- *  sin filtrar por extensión y saltando solo `saltar`. */
-export function ficherosDelBanco(dir: string, saltar: ReadonlySet<string> = SALTOS_DEL_BANCO): string[] {
-  const out: string[] = [];
-  const ancestros = new Set<string>([realpathSync(dir)]);
+export interface FicheroDelBanco {
+  /** Relativa a la raíz del barrido, con `/`. Para un enlace, el nombre del enlace. */
+  ruta: string;
+  /** Solo para un enlace a fichero: su ruta REAL absoluta, con la extensión que Node ejecuta. */
+  real: string | null;
+}
+
+const posix = (p: string): string => p.split(sep).join("/");
+
+/** TODOS los ficheros bajo `dir`, ordenados, sin filtrar por extensión y
+ *  saltando solo `saltar` (y el enlace a directorio que sale de `dir`). */
+export function ficherosDelBanco(dir: string, saltar: ReadonlySet<string> = SALTOS_DEL_BANCO): FicheroDelBanco[] {
+  const out: FicheroDelBanco[] = [];
+  const raizReal = realpathSync(dir);
+  const ancestros = new Set<string>([raizReal]);
   const baja = (d: string): void => {
     for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const p = join(d, e.name);
-      let esDirectorio = e.isDirectory();
-      if (e.isSymbolicLink()) {
-        try {
-          esDirectorio = statSync(p).isDirectory();
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-          esDirectorio = false; // enlace roto: sale como fichero, con su nombre
-        }
+      const ruta = posix(relative(dir, p));
+      if (!e.isSymbolicLink()) {
+        if (!e.isDirectory()) out.push({ ruta, real: null });
+        else if (!saltar.has(e.name)) baja(p);
+        continue;
       }
+      let esDirectorio: boolean;
+      try {
+        esDirectorio = statSync(p).isDirectory();
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "ELOOP") throw err;
+        out.push({ ruta, real: null }); // roto o cíclico sobre sí mismo: sale con su nombre
+        continue;
+      }
+      const real = realpathSync(p);
       if (!esDirectorio) {
-        out.push(relative(dir, p).split(sep).join("/"));
+        out.push({ ruta, real });
         continue;
       }
       if (saltar.has(e.name)) continue;
-      const real = realpathSync(p);
-      if (ancestros.has(real)) continue; // ciclo por symlink: `lib/loop -> ..`
+      if (real !== raizReal && !real.startsWith(raizReal + sep)) continue; // sale de la raíz: no se rastrea el disco
+      if (ancestros.has(real)) continue; // ciclo por directorio: `lib/loop -> ..`
       ancestros.add(real);
       baja(p);
       ancestros.delete(real);
@@ -79,8 +114,11 @@ export function ficherosDelBanco(dir: string, saltar: ReadonlySet<string> = SALT
   return out;
 }
 
-/** Los `.mjs` del barrido: lo que el banco EJECUTA. Que no haya otra
- *  extensión ejecutable bajo `qa/` lo canda la lista blanca. */
+/** Los `.mjs` del barrido, por su ruta: lo que el banco EJECUTA. Que no haya
+ *  otra extensión ejecutable bajo `qa/` —tampoco detrás de un enlace— lo
+ *  canda la lista blanca. */
 export function fuentesDelBanco(dir: string): string[] {
-  return ficherosDelBanco(dir).filter((f) => f.endsWith(".mjs"));
+  return ficherosDelBanco(dir)
+    .map((f) => f.ruta)
+    .filter((f) => f.endsWith(".mjs"));
 }

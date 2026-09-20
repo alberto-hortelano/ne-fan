@@ -51,8 +51,8 @@
  *  `const x = …["probeCollide"]`, `const x = "probeCollide"` (el string que
  *  luego viaja a `ctx.nefan(x, …)`), `const x = <otro alias>`, el parámetro
  *  con valor por defecto `function f(x = ….probeCollide)`, la ASIGNACIÓN
- *  `x = ….probeCollide` (también sobre un `let` ya declarado y la
- *  desestructuración en asignación), las desestructuraciones `{probeCollide}`
+ *  `x = ….probeCollide` (también `??=`/`||=`, la encadenada `a = b = …`, y la
+ *  desestructuración en asignación con o sin default), las desestructuraciones `{probeCollide}`
  *  / `{probeCollide: x}`, y todo eso ENVUELTO en paréntesis, coma, ternario,
  *  `??`/`||` o `.bind(…)`— y después cuenta
  *  1 cada `Identifier`/`StringLiteralLike` con el texto exacto y cada
@@ -189,6 +189,14 @@ const esJSDoc = (n: ts.Node): boolean =>
  *  expresión regular, ni un identificador que solo EMPIECE por ese nombre
  *  (`probeCollides` es otra cosa), ni una mención dentro de un string más
  *  largo, ni el nombre PARTIDO (`"probe" + "Collide"`). */
+/** Los operadores que LIGAN: `=`, `??=`, `||=`, `&&=` (re-QA de #686). */
+const ASIGNA: ReadonlySet<ts.SyntaxKind> = new Set([
+  ts.SyntaxKind.EqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+]);
+
 export function consultas(fuente: string, nombre: string): number {
   const sf = ts.createSourceFile("x.mjs", fuente, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const alias = new Set<string>();
@@ -209,6 +217,8 @@ export function consultas(fuente: string, nombre: string): number {
       if (k === ts.SyntaxKind.QuestionQuestionToken || k === ts.SyntaxKind.BarBarToken || k === ts.SyntaxKind.AmpersandAmpersandToken) {
         return ligaUnAlias(e.left) || ligaUnAlias(e.right);
       }
+      // `a = b = …probeCollide`: el valor de la asignación interior es la sonda.
+      if (ASIGNA.has(k)) return ligaUnAlias(e.right);
       return false;
     }
     if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression) && e.expression.name.text === "bind") {
@@ -223,6 +233,10 @@ export function consultas(fuente: string, nombre: string): number {
   };
   const esNombreDePropiedad = (p: ts.PropertyName): boolean =>
     (ts.isIdentifier(p) || ts.isStringLiteral(p)) && p.text === nombre;
+  /** El identificador que RECIBE en una asignación: `pc`, o el `pc` de
+   *  `pc = noop` (destructurante con default: `({probeCollide: pc = noop} = …)`). */
+  const receptor = (e: ts.Expression): ts.Identifier | null =>
+    ts.isIdentifier(e) ? e : ts.isBinaryExpression(e) && ASIGNA.has(e.operatorToken.kind) && ts.isIdentifier(e.left) ? e.left : null;
 
   // (i) Punto fijo: un re-alias (`const q = pc`) solo se reconoce después de
   // que `pc` lo sea, y `pc` puede declararse más abajo en el fichero. Un
@@ -247,11 +261,13 @@ export function consultas(fuente: string, nombre: string): number {
             declaraciones.add(n);
             cambio = true;
           }
-        } else if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        } else if (ts.isBinaryExpression(n) && ASIGNA.has(n.operatorToken.kind)) {
           // La ASIGNACIÓN, no solo la declaración (QA de #686, I-1a): `let pc;
-          // pc = ….probeCollide`, la reasignación, y la desestructuración en
-          // asignación `({ probeCollide: pc } = window.__nefan)`, que el
-          // parser da como ObjectLiteralExpression y no como BindingPattern.
+          // pc = ….probeCollide`, `pc ??= …`, la reasignación, la encadenada
+          // `a = b = …` (la interior se visita aparte y liga `b`), y la
+          // desestructuración en asignación `({ probeCollide: pc } = …)`, que
+          // el parser da como ObjectLiteralExpression y no como BindingPattern,
+          // también con default (`{ probeCollide: pc = noop }`).
           if (ts.isIdentifier(n.left) && ligaUnAlias(n.right)) {
             alias.add(n.left.text);
             declaraciones.add(n);
@@ -259,8 +275,9 @@ export function consultas(fuente: string, nombre: string): number {
           } else if (ts.isObjectLiteralExpression(n.left)) {
             for (const prop of n.left.properties) {
               if (declaraciones.has(prop)) continue;
-              if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.initializer) && esNombreDePropiedad(prop.name)) {
-                alias.add(prop.initializer.text);
+              const recibe = ts.isPropertyAssignment(prop) && esNombreDePropiedad(prop.name) ? receptor(prop.initializer) : null;
+              if (recibe) {
+                alias.add(recibe.text);
                 declaraciones.add(prop);
                 cambio = true;
               } else if (ts.isShorthandPropertyAssignment(prop) && prop.name.text === nombre) {
@@ -284,7 +301,7 @@ export function consultas(fuente: string, nombre: string): number {
     // `let pc;` sin inicializador, que luego se asigna: declara, no consulta.
     if (ts.isVariableDeclaration(nodo) && !nodo.initializer && ts.isIdentifier(nodo.name) && alias.has(nodo.name.text)) return;
     // Asignar AL alias (`pc = otra`) tampoco: se cuenta solo el lado derecho.
-    if (ts.isBinaryExpression(nodo) && nodo.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(nodo.left) && alias.has(nodo.left.text)) {
+    if (ts.isBinaryExpression(nodo) && ASIGNA.has(nodo.operatorToken.kind) && ts.isIdentifier(nodo.left) && alias.has(nodo.left.text)) {
       cuenta(nodo.right);
       return;
     }
@@ -458,6 +475,18 @@ describe("el detector de sondas de movimiento cuenta SITIOS DE USO (#686)", () =
     assert.equal(consultas(reasignada, SONDA), 4);
   });
 
+  it("también ligan `??=`/`||=`, la destructurante con default y la asignación encadenada (re-QA)", () => {
+    // Las tres que la re-QA de #686 midió a 1 y cuestan una rama más del
+    // mismo punto fijo.
+    for (const op of ["??=", "||=", "&&="]) {
+      assert.equal(consultas(`let pc;\npc ${op} window.__nefan.probeCollide;\npc(1, 2); pc(3, 4); pc(5, 6);`, SONDA), 3, op);
+    }
+    const conDefault = ["let pc;", "({ probeCollide: pc = noop } = window.__nefan);", "pc(1, 2); pc(3, 4);"].join("\n");
+    assert.equal(consultas(conDefault, SONDA), 2);
+    const encadenada = ["let a, b;", "a = b = window.__nefan.probeCollide;", "a(1, 2); a(3, 4); b(5, 6);"].join("\n");
+    assert.equal(consultas(encadenada, SONDA), 3, "`a` y `b` reciben la sonda: tres llamadas, la doble asignación 0");
+  });
+
   it("la EXPRESIÓN ENVOLVENTE se desenvuelve: paréntesis, coma, ternario, `??`, `.bind`", () => {
     // I-1b de la QA de #686: cada envoltura valía 1 para 3 llamadas.
     const tres = "pc(1, 2); pc(3, 4); pc(5, 6);";
@@ -596,6 +625,24 @@ describe("el detector de sondas de movimiento cuenta SITIOS DE USO (#686)", () =
     assert.equal(consultas(envoltorio, SONDA), 2, "cada sitio donde se escribe el string cuenta; lo que `sonda` haga por dentro, no");
   });
 
+  it("LÍMITE MEDIDO: otras ligaduras que HOY no se resuelven, con su cifra (re-QA)", () => {
+    // Las tres familias que la re-QA dejó medidas y que no caben sin seguir
+    // propiedades o flujo de datos: la asignación a PROPIEDAD (punto (6): es el
+    // contenedor por asignación), el valor que llega por el RETORNO de una
+    // llamada (IIFE, `await`), y la asignación INVOCADA en sitio
+    // (`(pc = …)(1, 2)`: la asignación entera va a `declaraciones` y su llamada
+    // envolvente se salta; las dos de después sí). Si alguna pasa a contar las
+    // llamadas, retira su frase del padrón.
+    const casos: [string, number][] = [
+      [["const s = {};", "s.pc = window.__nefan.probeCollide;", "s.pc(1, 2); s.pc(3, 4); s.pc(5, 6);"].join("\n"), 1],
+      [["window.pc = window.__nefan.probeCollide;", "window.pc(1, 2); window.pc(3, 4);"].join("\n"), 1],
+      [["const pc = (() => window.__nefan.probeCollide)();", "pc(1, 2); pc(3, 4); pc(5, 6);"].join("\n"), 1],
+      [["const pc = await Promise.resolve(window.__nefan.probeCollide);", "pc(1, 2); pc(3, 4);"].join("\n"), 1],
+      [["let pc;", "(pc = window.__nefan.probeCollide)(1, 2);", "pc(3, 4); pc(5, 6);"].join("\n"), 2],
+    ];
+    for (const [texto, esperado] of casos) assert.equal(consultas(texto, SONDA), esperado, texto);
+  });
+
   it("LÍMITE MEDIDO: el CONTENEDOR cuenta 1 para N, porque no se siguen propiedades ni elementos", () => {
     // I-1c de la QA de #686, declarado en el punto (6) del padrón. Cerrarlo
     // exige seguir `s.pc` hasta `{pc: …}` y `[pc]` hasta su elemento: otro
@@ -605,6 +652,7 @@ describe("el detector de sondas de movimiento cuenta SITIOS DE USO (#686)", () =
       [['const N = { mov: "probeCollide" };', "await ctx.nefan(N.mov, 1, 2); await ctx.nefan(N.mov, 3, 4);"].join("\n"), 1],
       [["const [pc] = [window.__nefan.probeCollide];", "pc(1, 2); pc(3, 4);"].join("\n"), 1],
       [["for (const pc of [window.__nefan.probeCollide]) { pc(1, 2); pc(3, 4); }"].join("\n"), 1],
+      [["const sondas = [window.__nefan.probeCollide, otra];", "sondas[0](1, 2); sondas[0](3, 4); sondas[0](5, 6);"].join("\n"), 1],
     ];
     for (const [texto, esperado] of casos) assert.equal(consultas(texto, SONDA), esperado, texto);
   });

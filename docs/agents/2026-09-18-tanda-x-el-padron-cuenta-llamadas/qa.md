@@ -1,5 +1,12 @@
 # QA — tanda X (#686): el padrón cuenta SITIOS DE USO
 
+> **Veredicto FINAL (segunda pasada, sobre `5c148b68`): APTO CON RESERVAS.** La re-verificación está al
+> final del documento (sección «Re-verificación tras la corrección»). Lo que sigue inmediatamente es la
+> primera pasada, sobre `9f96a1ab`, que dio NO APTO; se conserva porque es la evidencia de por qué se
+> corrigió lo que se corrigió.
+
+## Primera pasada (sobre `d769ca8f` + `9f96a1ab`) — NO APTO, superado
+
 Validado sobre la rama `feature/tanda-x-el-padron-cuenta-llamadas` (`d769ca8f` + `9f96a1ab`), en el
 worktree `/home/al/code/ne-fan-tanda-x-el-padron-cuenta-llamadas`. Sin stack ni batería de navegador: el
 cambio son dos tests de `nefan-core/test/` y dos JSON de contrato. El árbol principal
@@ -171,3 +178,106 @@ banco, por un symlink que el propio banco crea en cada corrida y que la medida d
 ver. El detector de sitios de uso, en cambio, hace lo que el crítico acotó y su negativo permanente es
 real; lo que le falta (I-1, M-1) es declarar o cerrar lo que la pasada adversarial ha medido, que es el
 criterio 5 tal y como está escrito.
+
+---
+
+# Re-verificación tras la corrección (commit `5c148b68`)
+
+Mismo worktree, mismo método: detector y barrido NUEVOS importados de los tests reales; negativos sobre
+ficheros reales, revertidos (`git status --short qa/` vacío al final, 0 restos de `capturas`, `roto`,
+`lib/x.mjs`, `guiones2`, `fuera`, `self`). Árbol principal solo en lectura. Solo los criterios afectados
+(B-1, I-1, M-1, M-2) más una pasada adversarial nueva. Tests aislados: padrón `24/24`, qa-lib `14/14`.
+`npm run verify` reproducido: `rc=0`, `tests 3134 · pass 3134 · fail 0`.
+
+## Hallazgos anteriores
+
+| Hallazgo | Estado | Evidencia |
+|---|---|---|
+| **B-1** symlink `capturas/ultima` ponía roja la lista blanca | ✅ cerrado | Barrido único `test/banco-ficheros.ts`: symlinks por `statSync`, roto = fichero, ciclos por ancestros, `capturas/` saltado por decisión escrita (cabecera del módulo + punto (7) del padrón; `arch-rules.json` ya lo declaraba regenerable). **Contra `/home/al/code/ne-fan/qa`** (solo lectura), con el barrido nuevo: saltando `SALTOS_DEL_BANCO` → 214 rutas, foráneos `[]`; **sin saltar `capturas/`** → 15.178 rutas, foráneos `[]`, `capturas/ultima` como fichero = 0, ficheros bajo `capturas/ultima/` = 317 (el enlace se sigue como directorio). **En sitio** (worktree): `capturas/<run>/01.png` + `capturas/ultima -> <run>` → qa-lib `14/14`, padrón `24/24`; `qa/roto -> no-existe` → `13 · fail 1` y el mensaje añade la tercera salida («si es un enlace simbólico ROTO (apunta a algo borrado), bórralo», `:327`). El `it` «SABE PONERSE ROJO (el barrido)» tiene ahora enlace a directorio, enlace a fichero, enlace roto, ciclo, `capturas/ultima` y `capturas/x.mjs` en su árbol sintético |
+| **I-1** tres familias de alias subcontaban sin declarar | ✅ cerrado como se anunció | Mi tabla reproducida contra el detector nuevo: **asignación** (`let pc; pc = …` ×3 → 3; condicional → 2; `({probeCollide: pc} = …)` → 2) y **envolvente** (paréntesis, coma, ternario, `??`, `.bind(w)`, `bound = pc.bind(null)` → 3 cada una) a cifra EXACTA. `let` de `probePoint` reasignado a la sonda → 4 por 3, sobrecuenta declarada en (5). **Contenedor** (`{pc: …}`, `{mov: "probeCollide"}`, `const [pc] = […]`, `for…of`) → 1, declarado en (6) con `it`. **String por argumento de `page.evaluate`** → 1, en (3) con `it` y con la cifra de los 75 `evaluate`. Absolutos retirados: `_comment` dice «totalidad SOBRE LAS FORMAS QUE EL DETECTOR RESUELVE … esa lista no se presume completa»; `_lo_que_esto_NO_sujeta` dice «La lista NO es cerrada». `grep 'La totalidad es la regla'` = 0 |
+| **M-1** dos barridos, dos definiciones de banco | ✅ cerrado | `SALTOS_DEL_BANCO = {node_modules, .tmp, capturas}` compartido; el padrón afirma el conjunto exacto (`:645`) y punto (7) nuevo. Reproducido por el ingeniero y verificado el mecanismo: `fuentesDelBanco` = `ficherosDelBanco().filter(.mjs)`, importado por los dos tests (`:57`, `:128`). `banco-ficheros.ts` entra en `typecheck:tests` (`test/**/*.ts`) y no en el glob de `npm test` (`test/*.test.ts`) |
+| **M-2** «diecinueve» | ✅ cerrado | `grep diecinueve` en `CLAUDE.md`, `test/`, contratos, `qa/README.md` → solo `mutation-targets.json:990`, con otro sentido |
+
+## Las dos que el ingeniero deja dichas y no declaradas (pregunta del coordinador)
+
+**(a) `x.mjs -> y.ts`: se juzga por el nombre del enlace.** Medido en el worktree con `y.ts` que lleva
+anotaciones de tipo y la sonda dentro:
+
+- **Node lo ejecuta como TS**: `import("…/qa/lib/x.mjs")` → `NODE-EJECUTA-TS g(1)= 2` (el loader resuelve
+  por `realpath` y aplica type-stripping). La premisa del ingeniero es cierta.
+- **En `qa/lib/`** la lista blanca queda verde pero el fichero cae por OTRO candado: «cada módulo de qa/lib
+  está importado por algún test, o eximido» → `12 · fail 2` (huérfano). Rojo, pero por la totalidad de
+  `qa/lib`, no por la extensión.
+- **En `qa/guiones/`** (o la raíz), donde no rige esa totalidad: qa-lib **`14/14` verde**. El padrón sí lo
+  lee a través del enlace y se pone rojo por la sonda (`qa/guiones/x.mjs: 1 en el árbol contra 0`), pero
+  eso es porque puse una sonda dentro; un `.ts` sin sonda correría en el banco sin que la lista blanca lo
+  viera — exactamente lo que la lista blanca existe para impedir.
+- **Alcanzable hoy**: solo a propósito (`git` commitea symlinks; `qa/run.mjs` crea uno pero a directorio y
+  dentro de `capturas/`). Nadie lo hace sin querer.
+
+Veredicto: **no va a `_lo_que_esto_NO_sujeta`** —esa sección es del padrón, y el padrón no lo pierde—, va
+al candado de la lista blanca, que es cuya promesa se salta. Y ahí **es más barato cerrarlo que
+declararlo**: cuando `isSymbolicLink()`, juzgar TAMBIÉN la extensión del `realpathSync(p)` (dos líneas en
+`ficherosDelBanco` o en `extensionesForaneas` con la ruta real al lado). Si se decide declarar en vez de
+cerrar, que sea en la cabecera de `banco-ficheros.ts` con un aserto en el `it` sintético (`lib/x.ts ->
+b.mjs` ya está; falta el inverso `x.mjs -> y.ts` afirmando que HOY pasa).
+
+**(b) symlink a un hermano ya recorrido DUPLICA rutas.** Medido: `qa/guiones2 -> guiones` → lista blanca
+`14/14` (todo `.mjs`), padrón `22 · fail 2` con **10** líneas `qa/guiones2/<declarado>: N en el árbol
+contra 0 declaradas`. Dirección **rojo y ruidoso**: el mismo día que alguien lo cree, `npm test` lo dice
+con las diez rutas. Veredicto: **no es un ítem de `_lo_que_esto_NO_sujeta`** (esa lista es de verdes que
+tapan, no de rojos); basta la frase que ya está en la cabecera del módulo («ciclos por ancestros, no por
+todo lo visitado») ampliada con «un enlace a un hermano se recorre dos veces y sale por duplicado: rojo».
+
+## Pasada adversarial nueva
+
+**Barrido** (formas no listadas por nadie, medidas en sitio):
+
+- `qa/fuera -> ../nefan-core/src` (enlace que SALE de `qa/`): se recorre; lista blanca `13 · fail 1` con
+  «154 fichero(s) … qa/fuera/combat/attack-area.ts, …». Rojo y ruidoso. Observación: no hay guardia de
+  «la ruta real sigue bajo `qa/`»; un enlace a un árbol enorme convertiría `npm test` en un rastreo de
+  disco. Solo a propósito; dirección segura.
+- `qa/self -> self` (ELOOP): `statSync` lanza `ELOOP`, que no es `ENOENT`, así que el barrido entero
+  lanza → `Error: ELOOP: too many symbolic links encountered` y el fichero de test muere (`pass 10`, sin
+  llegar a los `it` del banco). Rojo por caída, no por aserto: ruidoso, pero el mensaje no dice qué hacer.
+  Solo a propósito.
+
+**Detector** (40 formas; las de mis tablas ya están arriba). Cifras del detector contra llamadas reales:
+
+| Forma | Reales | Detector | Juicio |
+|---|---|---|---|
+| `let pc; pc ??= …probeCollide; pc×3` (y `\|\|=`) | 3 | 1 | subcuenta; misma rama que la asignación, un `SyntaxKind` más |
+| `let a, b; a = b = …probeCollide; a×2; b×1` | 3 | 1 | subcuenta (`b` sí, `a` no: la derecha de `a =` es una asignación) |
+| `s.pc = …probeCollide; s.pc×3` · `window.pc = …` | 3 | 1 | subcuenta; es el CONTENEDOR por asignación a propiedad — el motivo de (6) («no se siguen propiedades») lo cubre, su texto no lo nombra |
+| `const pc = (() => …probeCollide)(); pc×3` · `const pc = await Promise.resolve(…probeCollide); pc×2` | 3 / 2 | 1 / 1 | subcuenta; el valor pasa por el RETORNO de una llamada: no es envolvente ni contenedor; sin flujo no se cierra |
+| `let pc; (pc = …probeCollide)(1,2); pc×2` | 3 | 2 | subcuenta exactamente en la invocación en sitio: la asignación entera va a `declaraciones` y su llamada envolvente se salta |
+| `let pc; ({ probeCollide: pc = noop } = …); pc×2` | 2 | 1 | subcuenta; el `initializer` de la propiedad es `pc = noop`, no un `Identifier` |
+| `const sondas = […probeCollide, …]; sondas[0]×3` · `const pc = […][0]` | 3 | 1 | (6), «elementos» |
+| `.bind(a).bind(b)`, `&&`, `\|\|`, ternario anidado, parámetro con default envuelto, `pc?.()`, `pc(...a)`, string por asignación `nombre = "probeCollide"` | — | exacto | ✅ |
+| `const q = { pc }; q.pc×3` | 3 | 4 | sobrecuenta: `q.pc` cuenta porque el NOMBRE de propiedad coincide con el alias (sin ámbitos ni distinción propiedad/variable); mismo motivo que (5) |
+| `let pc = noop; pc = …probeCollide; pc×2` | 2 | 3 | sobrecuenta: la declaración con inicializador no-sonda cuenta su nombre; (5) lo cubre en espíritu |
+
+Ninguna de las seis subcuentas tiene sujeto en el banco (grep de `??=`, `\|\|=`, asignación encadenada a
+una sonda, IIFE sobre `__nefan`: 0) y todas son formas que nadie escribe sin querer. El padrón ya declara
+la lista como abierta. Aun así, criterio 5 dice «lo que queda se mide»: un solo `it` «otras ligaduras que
+HOY no se resuelven» con estas seis y su cifra las convierte de hallazgo de QA en límite medido; y tres de
+ellas (`??=`/`||=`, `({p: pc = d} = …)`, la encadenada) se cierran en la misma rama del punto fijo por
+menos de lo que cuesta declararlas. Es la reserva del veredicto, no un motivo de rechazo.
+
+## No probado
+
+- CI de la rama: no observado. `qa/capturas/` está en `.gitignore`, así que el runner no ejercita el
+  camino de B-1; la evidencia de B-1 es la medida local sobre el árbol principal (0 foráneos) y el `it`
+  sintético con `capturas/ultima`.
+- Batería de navegador y mutación: como en la primera pasada, fuera del cambio.
+
+## Veredicto final
+
+**Apto con reservas.** Los cuatro hallazgos están cerrados con medida, no con prosa: la lista blanca da 0
+foráneos sobre el árbol principal con y sin `capturas/`, el `ultima` real queda verde en sitio, las dos
+familias de alias que subcontaban dan la cifra exacta en las diez formas, las otras dos están declaradas
+con `it`, los absolutos se han retirado y el barrido es uno. Reservas, ninguna bloqueante: (1) las seis
+ligaduras exóticas de la tabla, a medir en un `it` o cerrar las tres baratas; (2) el enlace `x.mjs -> y.ts`
+se salta la promesa de la lista blanca —Node lo ejecuta como TS— y conviene cerrarlo por `realpath` en vez
+de dejarlo dicho; (3) el enlace a hermano y el que sale de `qa/` van en rojo y no necesitan más que una
+frase en la cabecera del módulo; `ELOOP` mata el test sin decir qué hacer.
