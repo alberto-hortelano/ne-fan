@@ -1,9 +1,9 @@
-/** Registro de los NPC declarados por una escena en NarrativeState.entities.
+/** Registro de los NPC declarados por una escena Format D (entities[] con
+ *  kind "npc" y cell [col,row]) en NarrativeState.entities.
  *
- *  Extraído de la clase: aquí vive el parsing dual de NPCs — Format D
- *  (entities[] con kind "npc" y cell [col,row]) y escenas legacy (npcs[] con
- *  position [x,y,z]) — y la política de preservación de records vivos al
- *  re-entrar a una escena cacheada. recordSceneLoaded delega aquí. */
+ *  Extraído de la clase: aquí viven el parseo de esas entities y la política
+ *  de preservación de records vivos al re-entrar a una escena cacheada.
+ *  recordSceneLoaded delega aquí. */
 import { TILE_MPC, tileCoordDe, tileWorldRect } from "../scene/tile.js";
 import type { NarrativeState } from "./narrative-state.js";
 
@@ -73,34 +73,6 @@ export function registerSceneNpcs(
     }
   }
 
-  // Legacy scenes: npcs[] with {id, name, position}.
-  const legacyNpcs = sceneData.npcs;
-  if (Array.isArray(legacyNpcs)) {
-    for (let i = 0; i < legacyNpcs.length; i++) {
-      const ent = legacyNpcs[i];
-      if (!ent || typeof ent !== "object") continue;
-      const e = ent as Record<string, unknown>;
-      if (typeof e.id !== "string" || !e.id) {
-        throw new Error(`scene ${sceneId}.npcs[${i}] missing string id`);
-      }
-      if (typeof e.name !== "string" || !e.name) {
-        throw new Error(`scene ${sceneId}.npcs[${i}] (${e.id}) missing string name`);
-      }
-      if (!Array.isArray(e.position) || e.position.length < 3) {
-        throw new Error(`scene ${sceneId}.npcs[${i}] (${e.id}) missing position [x,y,z]`);
-      }
-      const [x, y, z] = e.position;
-      if (typeof x !== "number" || !Number.isFinite(x) ||
-          typeof y !== "number" || !Number.isFinite(y) ||
-          typeof z !== "number" || !Number.isFinite(z)) {
-        throw new Error(
-          `scene ${sceneId}.npcs[${i}] (${e.id}) position must be finite numbers, got [${x},${y},${z}]`,
-        );
-      }
-      npcs.push({ id: e.id, name: e.name, pos: [x, y, z], extra: npcBehaviorExtras(e) });
-    }
-  }
-
   // Re-entrar a una escena cacheada no debe duplicar sus NPCs, pero tampoco
   // RESETEARLOS: un record existente conserva posición (el behavior system
   // los mueve), role, directive y current_place_id. Solo se retiran los
@@ -149,9 +121,9 @@ export function registerSceneNpcs(
   }
 }
 
-/** Campos de un NPC de escena (Format D o legacy) que deben fluir a
- *  EntityRecord.data: `role` (peasant/guard/…) y `behavior` (overrides) para
- *  el NpcBehaviorSystem, más `description` y `style_ref` — la identidad
+/** Campos de un NPC de escena que deben fluir a EntityRecord.data: `role`
+ *  (peasant/guard/…) y `behavior` (overrides) para el NpcBehaviorSystem,
+ *  más `description` y `style_ref` — la identidad
  *  visual con la que se generan su sprite y su retrato. Sin ellos, un
  *  hablante fuera de pantalla no tendría cara. */
 function npcBehaviorExtras(e: Record<string, unknown>): Record<string, unknown> {

@@ -205,6 +205,61 @@ describe("plan de mutación · el reparto es TOTAL sobre el perímetro", () => {
     }
   });
 
+  it("una exclusión `!ruta` DECLARATIVA no tapa lo que otro módulo ya mide", () => {
+    // El hermano del candado anterior para la OTRA forma de exención, y hay
+    // que distinguir DOS `!ruta` que se escriben igual:
+    //
+    //  - CARVE-OUT: el módulo muta un glob (`src/world-map/*.ts`) y el `!`
+    //    saca de ahí un fichero que tiene batería propia. Ahí que OTRO módulo
+    //    lo mida no es el fallo: es el motivo de la exclusión, y está escrito.
+    //  - DECLARATIVA: los patrones positivos del módulo NO alcanzan el
+    //    fichero; el `!` está solo para darle dueño ante el candado de
+    //    huérfanos de un `directorios_completos`, con su motivo al lado. Esa
+    //    dice «este fichero no se mide, y aquí está el porqué», y si otro
+    //    módulo lo muta el motivo es prosa muerta: quien lea el reparto verá
+    //    un fichero excluido que en realidad tiene medida y dueño.
+    //
+    // Solo la segunda es un estado malo, y la diferencia es estructural (si el
+    // fichero sale de los patrones positivos del propio módulo), no de
+    // intención. Lo cazó la tanda Z (#431): al sacar `npc-records.ts` de
+    // `serialize-llm` a módulo propio, reintroducir su `!ruta` con el módulo
+    // nuevo puesto salía VERDE — `dueñoDe` clasifica por `ficherosDeclarados`,
+    // que cuenta los negados, así que el fichero tenía dueño dos veces y nadie
+    // se enteraba. LO QUE NO SUJETA: un carve-out cuyo motivo escrito haya
+    // caducado (que el fichero se mida fuera es justo lo que espera), ni un
+    // `!ruta` que no nombre a nadie (eso es el candado de "lo que nombra
+    // existe").
+    let declarativas = 0;
+    for (const m of plan.modulos) {
+      const positivos = new Set(
+        m.mutate
+          .filter((p) => !p.startsWith("!"))
+          .flatMap((p) => ficherosMutados({ ...m, mutate: [p] })),
+      );
+      for (const patron of m.mutate) {
+        if (!patron.startsWith("!")) continue;
+        for (const f of ficherosDeclarados({ ...m, mutate: [patron.slice(1)] })) {
+          if (positivos.has(f)) continue; // carve-out: el `!` le quita al glob del propio módulo
+          declarativas++;
+          const otro = plan.modulos.find((x) => x.id !== m.id && ficherosMutados(x).includes(f));
+          assert.equal(
+            otro,
+            undefined,
+            `${nombre(m)}: excluye "${f}" con \`${patron}\` sin que ningún patrón suyo lo alcance ` +
+              `—o sea, la exclusión es solo la declaración de su motivo— y además lo muta el módulo ` +
+              `"${otro?.id}": decide una cosa — o sale de la exclusión (y su motivo con él) o sale del módulo`,
+          );
+        }
+      }
+    }
+    // Sin esto el candado se queda verde el día que alguien convierta la
+    // última exclusión declarativa en carve-out: aprobaría sin mirar nada.
+    assert.ok(
+      declarativas > 0,
+      "ninguna exclusión declarativa examinada: el candado no tiene sujeto vivo y aprueba el vacío",
+    );
+  });
+
   it("una exención no puede ser un encogimiento de hombros", () => {
     // El motivo es obligatorio por schema (min 10), pero eso no impide un "TODO".
     // Lo que se persigue aquí es la frase vacía: si `sin_mutar` se llena de
