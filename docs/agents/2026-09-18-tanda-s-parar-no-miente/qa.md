@@ -110,3 +110,29 @@ y el candado se pone rojo con el código viejo (3 rojos exactos). Las reservas s
 3.308 puertos sí lo alcanza en `:3100`/`:8000`, y la explicación verdadera solo vive en un fichero que no se
 commitea. Las dos vuelven al mismo ingeniero; no hace falta re-verificar el flujo real después, sí correr el
 sabotaje de H1 y ver el 2.
+
+---
+
+# Ronda 2 — re-verificación de H1–H3 (2026-09-20, HEAD `39cab23e` sobre `main` = `243fcf9f`, PR #701)
+
+Solo lo afectado por el commit de corrección. Mismo método: bloque **+1300** para el flujo real, +900/+1000
+para el guion, árbol limpio al cerrar (`git status` vacío, 0 puertos de este árbol). Los negativos con el
+`start.sh` viejo se hicieron con `git show a25d8c2f:start.sh > start.sh` y `git checkout -- start.sh` (no
+`stash`: con el trabajo commiteado, `stash` devuelve la versión de HEAD, que es la buena — el gotcha que
+describe el ingeniero, y es real).
+
+| Hallazgo | Veredicto | Evidencia |
+|---|---|---|
+| H1 · la abstención del candado sale ⊘ (2), no verde | ✅ cerrado | `sinVeredicto` se enciende dentro de `nota()` (las tres abstenciones del fichero la heredan) y `code = fallos.length > 0 ? 1 : sinVeredicto ? 2 : 0`. **Medido en tres direcciones**: (a) copia con el bucle del bloque 10 en `off <= 999` y el `start.sh` de la rama → `⚠ … ningún bloque libre entre +1000 y +40000`, `⚠ pero el entorno no dejó comprobarlo todo: sale con 2, no con 0.`, **EXIT=2**, sin rojos; (b) misma copia con el `start.sh` de `a25d8c2f` → **EXIT=2** (la abstención tapa el bug como ⊘, no como verde: correcto); (c) bloque 8 abstenido (`off <= -1`) + `start.sh` de `a25d8c2f` → ⚠ del bloque 8 **y** los 3 rojos del bloque 10, **EXIT=1** (el rojo manda). Guion sin sabotear con offset 1300: **EXIT=0, 21 verdes, ni ✘ ni ⚠** |
+| H2 (a) · la retícula dicha donde se decide | ✅ cerrado | El comentario de `cmd_stop` en `start.sh` dice ahora «3.308 puertos distintos entre 3000 y 58765», que lo que se para es «un proceso de ESTE árbol EN LA RETÍCULA», con los ejemplos `:3100`, `:8000`, `:24678` y el porqué; la frase falsa «un vite suelto no entra» ya no existe. El número del emulador no se escribe (lo caza `nadie-inventa-un-puerto`) y remite al test |
+| H2 (b) · candado de que el emulador queda fuera de la retícula | ✅ cerrado | `test/service-registry.test.ts`, describe «el emulador de juego queda fuera de la retícula que barre `--parar`»: 1 aserto de las nueve claves + 9 por base, preguntando a `portOffset` (no copia el predicado). En verde: 17/17. **Negativo A** (emulador a `:9900` en `src/config.ts`): rojo **solo** `✖ :9900 no es html (:3000)` (16/17). **Negativo B** (quitar `|| n % 100 !== 0` de `portOffset`): **9 fallos** = las 8 bases con distancia positiva (bridge, state_api, narrative_ws, ai_server, html, asset_store, remote_gen, sprite_forge) + el aserto «LANZA» de `150`/`1`; `fake_ai` (:18765) no cae porque su distancia es negativa. El ingeniero dice «los nueve rojos»: son nueve fallos, ocho de ellos por base — precisión, no defecto. Ambos sabotajes restaurados con `git checkout`, `git status` vacío |
+| H3 · lo propio primero en el informe | ✅ cerrado | Flujo real: `NEFAN_PORT_OFFSET=1300 ./start.sh --preset html-fixtures` → vite :4300 (pid 454996, cwd de este árbol); `--parar` 1300 imprime **primero** `· :4300 …`, luego `── 9 proceso(s) de la retícula que NO son de este árbol ──` y las nueve `⏭`, y al final el aviso; :4300 LIBRE y pid muerto después, rc=0. Sin nada propio: línea 2 `(nada que parar aquí)`, línea 3 el rótulo de ajenos. Lo ajeno (tandas W/V/AB en +0/+100/+200) intacto |
+
+Sin hallazgos nuevos. H4 y H5 (menores, no de esta tanda) quedan como estaban.
+
+## Veredicto final
+
+**Apto.** Las dos reservas de la ronda 1 están cerradas con negativo medido por mí en cada una; el arreglo de #684
+no cambió y sigue demostrado desde el arranque real en un bloque ≥ 1000. Lo no probado de la ronda 1 sigue
+siendo no probado (`--parar-todo`, `kill_pids` sin comprobar la muerte, offsets ≥ 1400 en flujo real, el `% 100`
+sin mutación, los guiones fuera de CI), y está declarado.
