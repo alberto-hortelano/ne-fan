@@ -20,6 +20,7 @@ import {
 import { PoliticaDeAtlas } from "@nefan-core/src/scene/politica-de-atlas.js";
 import { errors } from "../ui/error-log.js";
 import type { AtlasImage } from "../renderer/fps-gl.js";
+import type { ArtePendiente } from "../renderer/types.js";
 
 /** Versión CLIENTE del pipeline: bump ⇒ invalida instalaciones previas.
  *  v2: celdas hero por cara/rol (SURFACE_LAYOUT_VERSION 2). */
@@ -43,6 +44,8 @@ export interface FpsAtlasDeps {
   } | null;
   apply(key: string, images: Map<string, AtlasImage>): void;
   clear(key: string): void;
+  /** Tiles instalados sin textura (FpsRenderer.tilesSinAtlas), en su orden. */
+  tilesSinAtlas(): string[];
   /** render_mode de escenas = imagen (gasto auto permitido). */
   generationOn(): boolean;
   log(msg: string): void;
@@ -73,6 +76,24 @@ export class FpsAtlasController {
 
   get running(): boolean {
     return this.politica.enVuelo;
+  }
+
+  /** Los tiles que aún van en clay, como arte pendiente del menú dev. Los
+   *  cuenta el renderer (`tilesSinAtlas`) y los pide este controller: el que
+   *  cuenta es el que genera (#492). `inFlight` lee `running` —también durante
+   *  una corrida `resolve_only`, que no pinta—, porque es lo que el menú decía
+   *  antes de salir de la raíz y esta tanda no cambia la lista; pasarlo a
+   *  `pintando` es otra decisión y tiene su issue. */
+  pendientes(): ArtePendiente[] {
+    return this.deps.tilesSinAtlas().map((key) => ({
+      kind: "fps_atlas",
+      id: key,
+      label: `Atlas fps ${key} (clay — celdas ya en la librería salen gratis)`,
+      // Sin miniatura: una del canvas WebGL es otro trabajo.
+      thumb: null,
+      inFlight: this.running,
+      generar: () => this.runFor(key),
+    }));
   }
 
   /** ¿La corrida en vuelo puede PINTAR, o solo restaura lo ya pagado?

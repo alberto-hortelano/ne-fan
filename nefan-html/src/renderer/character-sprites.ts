@@ -16,6 +16,7 @@ import { FALLO_HOJAS_BASE } from "@nefan-core/src/protocol/status-motivo.js";
 import { FusibleDeSkins } from "@nefan-core/src/session/fusible-de-skins.js";
 import { errors } from "../ui/error-log.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
+import type { ArtePendiente } from "./types.js";
 
 /** Modelo base con el set completo de sheets pre-rendereados. */
 export const BASE_MODEL = "y_bot";
@@ -131,10 +132,6 @@ export class CharacterSpriteManager {
     }
   }
 
-  get activeAngle(): string {
-    return this.angle;
-  }
-
   /** Cortacircuitos de sesión (#236): cuántos personajes DISTINTOS con error
    *  de backend (red o 5xx) apagan los skins de la sesión, y por qué se cuentan
    *  personajes y no fallos, lo decide core (`FusibleDeSkins`). Aquí solo se le
@@ -213,14 +210,29 @@ export class CharacterSpriteManager {
     }
   }
 
-  /** Estado de un skin por prompt, para el menú dev. "ready" = la anim idle
-   *  ya sustituye a la base; "pending" = pedido y en cola/generándose. */
-  skinStatus(prompt: string): "ready" | "pending" | "failed" | "unrequested" {
-    const skinned = this.sprites.skinKey(BASE_MODEL, prompt);
-    if (this.readySkins.has(`${skinned}/idle`)) return "ready";
-    const state = this.skins.get(skinned);
-    if (!state) return "unrequested";
-    return state.failed ? "failed" : "pending";
+  /** Los skins que aún van sobre la base y_bot, para el menú dev. Recibe los
+   *  prompts VIVOS porque este gestor solo conoce los que pasaron por `requestSkin`
+   *  —en maqueta, ninguno—: dedup, vacíos fuera, orden de entrada. `generar` pide con `force` (#492). */
+  pendientes(prompts: Iterable<string>): ArtePendiente[] {
+    const thumb = this.sprites.getCached(BASE_MODEL, "idle", this.angle)?.frames[0]?.[0] ?? null;
+    const disabledReason = CONFIG.graphics.ai_skin
+      ? undefined
+      : "Backend de skins apagado por config: activa graphics.ai_skin en nefan-core/src/config.ts";
+    const items: ArtePendiente[] = [];
+    for (const prompt of new Set(prompts)) {
+      if (!prompt) continue;
+      const skinned = this.sprites.skinKey(BASE_MODEL, prompt);
+      if (this.readySkins.has(`${skinned}/idle`)) continue;
+      const state = this.skins.get(skinned);
+      const estado = !state ? "base y_bot" : state.failed ? "falló" : "generándose";
+      const corto = prompt.length > 70 ? `${prompt.slice(0, 70)}…` : prompt;
+      items.push({
+        kind: "skin", id: prompt, label: `Skin: ${corto} (${estado})`, thumb, disabledReason,
+        inFlight: estado === "generándose",
+        generar: () => { this.requestSkin(prompt, { force: true }); return Promise.resolve(); },
+      });
+    }
+    return items;
   }
 
   /** Encola la generación del skin IA para una descripción narrativa: las

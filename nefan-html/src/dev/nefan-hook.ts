@@ -292,7 +292,14 @@ export function instalarNefanHook(deps: DepsDelHook): void {
        *  MUEVE (persigue), así que su posición del scene data está vieja en
        *  cuanto empieza la pelea. La AFIRMACIÓN de que pierde vida sigue yendo
        *  contra el HUD (`#hp-text-<id>`), que es lo que ve quien juega; esto es
-       *  para saber hacia dónde andar. Solo lectura. */
+       *  para saber hacia dónde andar. Solo lectura.
+       *
+       *  `skinPrompt` por el mismo motivo que en `npcs()`, y lo cobró el guion
+       *  152 (#492): quien pide arte de personaje es `mundo.personajes`, que es
+       *  npcs Y ENEMIGOS, así que un banco que solo viera el prompt de los npcs
+       *  no puede derivar la lista del menú dev — y el bandido del motor falso
+       *  está en escena desde el primer turno. Publicarlo aquí es lo que
+       *  convierte «la lista trae uno de más» en un aserto en vez de un ⊘. */
       enemies: () =>
         deps.mundo.enemigos.map((e) => ({
           id: e.id,
@@ -301,6 +308,7 @@ export function instalarNefanHook(deps: DepsDelHook): void {
           hp: e.hp,
           maxHp: e.maxHp,
           alive: e.alive,
+          skinPrompt: e.skinPrompt,
         })),
       // Panel de dev (#dev-status): los benches E2E pueden leer/conducir su
       // estado (setPainting/recordGeneration) sin tocar píxeles.

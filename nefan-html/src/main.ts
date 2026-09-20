@@ -43,7 +43,7 @@ import { TravelPanel } from "./ui/travel-panel.js";
 import { TravelLedger } from "./ui/travel-ledger.js";
 import { TileLedger } from "./ui/tile-ledger.js";
 import { DevStatusPanel } from "./ui/dev-status-panel.js";
-import { DevMenu, type FakeItem } from "./ui/dev-menu.js";
+import { DevMenu } from "./ui/dev-menu.js";
 import { crearModosDeGraficos } from "./ui/modos-de-graficos.js";
 import { errors } from "./ui/error-log.js";
 import { crearMuroDeCarga } from "./ui/muro-de-carga.js";
@@ -207,6 +207,7 @@ const fpsAtlasController = new FpsAtlasController(
     },
     apply: (key, images) => fpsRenderer.applyAtlas(key, images),
     clear: (key) => fpsRenderer.clearAtlas(key),
+    tilesSinAtlas: () => fpsRenderer.tilesSinAtlas(),
     // Gate por sesión: entre el broadcast de la escena y la respuesta de
     // start/resume, el modo de escenarios aún es el default del cliente
     // ("image") — sin el gate, reanudar una partida VECTOR pintaba atlas de
@@ -792,70 +793,15 @@ sharedBridge.on("render_mode_changed", (msg) => {
   if (session.esMio(msg.sessionId)) graficos.aplicarFaceta(msg.facet, msg.renderMode);
 });
 
-/** Imágenes actualmente FAKE: tiles del grid sin atlas de superficies y skins
- *  de personaje aún sobre la base y_bot. La identidad del item es la clave del
- *  tile o el prompt. */
-function listFakeItems(): FakeItem[] {
-  const items: FakeItem[] = [];
-  // Sin módulo GL cargado no hay tile texturado que descontar: la unión
-  // discriminada lo dice en el tipo, así que ya no hace falta el cast que
-  // fingía que el campo podía estar ahí.
-  const st = fpsRenderer.debugState();
-  const textured = new Set(st.ready ? st.textured : []);
-  for (const t of tileStore.entries.values()) {
-    if (textured.has(t.key) || !fpsRenderer.getTileSurfaces(t.key)) continue;
-    items.push({
-      kind: "fps_atlas",
-      id: t.key,
-      label: `Atlas fps ${t.key} (clay — celdas ya en la librería salen gratis)`,
-      // Sin miniatura: una del canvas WebGL es otro trabajo.
-      thumb: null,
-      inFlight: fpsAtlasController.running,
-    });
-  }
-  const prompts = new Set<string>();
-  const propio = aspecto.skinPrompt();
-  if (propio) prompts.add(propio);
-  for (const e of mundo.personajes) {
-    if (e.skinPrompt) prompts.add(e.skinPrompt);
-  }
-  const yBotSheet = spriteRenderer.getCached(BASE_MODEL, "idle", characterSprites.activeAngle);
-  const yBotThumb = yBotSheet?.frames[0]?.[0] ?? null;
-  for (const prompt of prompts) {
-    const status = characterSprites.skinStatus(prompt);
-    if (status === "ready") continue;
-    const statusEs =
-      status === "pending" ? "generándose" : status === "failed" ? "falló" : "base y_bot";
-    items.push({
-      kind: "skin",
-      id: prompt,
-      label: `Skin: ${prompt.length > 70 ? `${prompt.slice(0, 70)}…` : prompt} (${statusEs})`,
-      thumb: yBotThumb,
-      inFlight: status === "pending",
-      disabledReason: CONFIG.graphics.ai_skin
-        ? undefined
-        : "Backend de skins apagado por config: activa graphics.ai_skin en nefan-core/src/config.ts",
-    });
-  }
-  return items;
-}
-
-/** Generación selectiva de UN item fake (siempre permitida, con el toggle
- *  global en OFF incluido — es la vía de gasto controlado del menú dev). */
-async function generateFakeItem(item: FakeItem): Promise<void> {
-  if (item.kind === "fps_atlas") {
-    await fpsAtlasController.runFor(item.id);
-    return;
-  }
-  characterSprites.requestSkin(item.id, { force: true });
-}
-
-/** Menú dev de imágenes (lista de fakes con generación por item). Es un
- *  inventario sobre todo el cliente —renderer, tiles, atlas, mundo, skins—,
- *  así que vive en la raíz, que es la única que lo ve todo. */
+/** Menú dev de imágenes: cada dueño cuenta su arte pendiente —el atlas por
+ *  tile, los skins por prompt— y aquí solo se concatena. Los prompts vivos
+ *  los sabe la raíz (el jugador y los personajes del mundo), porque el gestor
+ *  de skins solo conoce los que ya pidió y en maqueta no pide ninguno (#492). */
 const devMenu = new DevMenu({
-  listFakeItems,
-  generate: generateFakeItem,
+  pendientes: () => [
+    ...fpsAtlasController.pendientes(),
+    ...characterSprites.pendientes([aspecto.skinPrompt(), ...mundo.personajes.map((e) => e.skinPrompt ?? "")]),
+  ],
   log: (msg) => log(msg),
 });
 
