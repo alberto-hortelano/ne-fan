@@ -25,8 +25,8 @@
  *       menos una línea AJENO**. Un `saltados` encendido por un fantasma —el
  *       bug de #393— rompe esa equivalencia en cuanto la línea que lo encendió
  *       no exista, y un aviso que salga sin ajenos también.
- *   4 · **El AJENO de OTRO BLOQUE de puertos** (#424). La rama segura mira los
- *       diez bloques, pero `--parar-todo` solo barre el vigente: el aviso «para
+ *   4 · **El AJENO de OTRO BLOQUE de puertos** (#424). La rama segura mira
+ *       todos los bloques, pero `--parar-todo` solo barre el vigente: el aviso «para
  *       llevarte también lo ajeno» salía igual y prometía un barrido que sobre
  *       ese proceso no puede nada. Se planta un señuelo en un bloque libre que
  *       no sea el vigente y se exige que el informe lo enumere, lo deje vivo y
@@ -35,6 +35,15 @@
  *       puntuaba (hallazgo H5 de `qa-2.md`, cuando se mataba por PUERTO con la
  *       clasificación de la foto); desde que #393 mata por PID es la garantía
  *       al revés y se afirma: el que llega después ni se entera.
+ *   6 · **Un PROPIO en un bloque ALTO (≥ 1000) se ve y se para** (#684). La
+ *       rama segura recomponía sus candidatos con un bucle fijo `0 100 … 900`
+ *       sobre `base - PORT_OFFSET + off`, o sea que fuera cual fuera el
+ *       offset miraba los bloques 0..900: un stack arrancado con
+ *       `NEFAN_PORT_OFFSET` en 1000 —que la subida acepta— ni se enumeraba, y el
+ *       informe decía «(nada que parar aquí)» y «✅ stack cleaned» con el
+ *       stack en pie. Hoy los candidatos salen de la foto de `ss` filtrada por
+ *       «catálogo × offset admisible». Se mide SIEMPRE, sea cual sea el offset
+ *       con que se invoque este guion (aserto 10).
  *
  *  Todos los señuelos son NUESTROS: los arranca este guion y los retira por SU
  *  pid. **Nunca se mata por puerto ni por nombre**, y el único `--parar` que se
@@ -45,6 +54,27 @@
  *  AJENO» (los segundos puertos de los tres pares salen de otro), «los puertos
  *  del mismo proceso salen en una línea» y «el informe no se parte».
  *
+ *  EN NEGATIVO para #684, medido el 2026-09-20 con el `start.sh` de `a25d8c2f`
+ *  (el commit anterior al arreglo) en este mismo árbol, de dos maneras:
+ *
+ *    · Con el bloque vigente BAJO (`NEFAN_PORT_OFFSET=900`) el rojo queda
+ *      AISLADO en el aserto 10, que es lo que hay que ver: los otros 18 salen
+ *      verdes y caen exactamente los tres suyos — «el propio del bloque +1000
+ *      sale citado entre los que se paran — líneas «·» que lo citan: 0», «el
+ *      propio del bloque alto se para de verdad — muerto=false
+ *      puertos_libres=false» y «el informe no dice «nada que parar aquí»
+ *      habiendo un propio arriba — lo dijo». Esa última es la frase del issue.
+ *    · Con el bloque vigente ALTO (el offset de invocación en 1000), que es el caso
+ *      que reportó #684, se cae el guion entero: 13 asertos rojos —los siete
+ *      puertos propios sin citar, los cuatro «reconocido como propio … solo 0
+ *      de N», el ajeno sin enumerar, los pares sueltos y el aviso de barrido
+ *      total— y el bloque 9 revienta («el señuelo PROPIO (para alargar el
+ *      barrido) no llegó a escuchar en :10877 :10878») porque los propios
+ *      seguían vivos en sus puertos, que es el bug con todas sus letras.
+ *
+ *  Por eso el aserto 10 se mide SIEMPRE, sea cual sea el offset de invocación:
+ *  planta su propio en un bloque libre ≥ 1000 aunque el vigente sea bajo.
+ *
  *  CERO CRÉDITOS: no arranca ningún servicio del stack; los señuelos son
  *  servidores TCP mudos.
  *
@@ -54,13 +84,14 @@
  *
  *  Uso:  node qa/parar-clasifica-los-nueve-puertos.mjs
  *        NEFAN_PORT_OFFSET=300 node qa/parar-clasifica-los-nueve-puertos.mjs
+ *        NEFAN_PORT_OFFSET=<n ≥ 1000> node qa/parar-clasifica-los-nueve-puertos.mjs   # bloque vigente alto (#684)
  *
  *  Salida: 0 todo verde · 1 alguna comprobación en rojo · 2 no llegó a medir.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PUERTOS_BASE, PUERTOS_TODOS, offsetActual } from "./lib/stack.mjs";
+import { PUERTOS_BASE, PUERTOS_TODOS, offsetActual, BLOQUE, OFFSET_MAX } from "./lib/stack.mjs";
 import { puertoOcupado, esperarPuertoLibre } from "./lib/puertos.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -137,9 +168,10 @@ async function main() {
   // ── Preflight ────────────────────────────────────────────────────────────
   // Se ejecuta `--parar`, que se lleva lo de este worktree: con un stack arriba
   // no se puede saber si es tuyo. Se mira el bloque VIGENTE (base + offset),
-  // que es donde van casi todos los señuelos. De los otros nueve bloques este
-  // guion solo usa uno, y solo si lo encuentra LIBRE (el aserto 8): plantar un
-  // señuelo encima del stack de otro agente sería el pecado que viene a medir.
+  // que es donde van casi todos los señuelos. Fuera de él este guion usa DOS
+  // bloques más —uno bajo para el ajeno del aserto 8, uno ≥ 1000 para el propio
+  // del aserto 10—, y solo si los encuentra LIBRES: plantar un señuelo encima
+  // del stack de otro agente sería el pecado que viene a medir.
   const sucios = [];
   for (const clave of Object.keys(PUERTOS_BASE)) {
     if (await puertoOcupado(PUERTOS_TODOS[clave])) sucios.push(`${clave} (:${PUERTOS_TODOS[clave]})`);
@@ -238,7 +270,7 @@ async function main() {
   //     abstiene.
   //
   //     «del bloque vigente» es la corrección de #424 y no un matiz: la rama
-  //     segura de `cmd_stop` mira los DIEZ bloques, pero `--parar-todo` solo
+  //     segura de `cmd_stop` mira TODOS los bloques admisibles, pero `--parar-todo` solo
   //     barre `ALL_PORTS`, o sea el vigente. Con el aviso saliendo ante
   //     cualquier ajeno de cualquier bloque, el consejo mandaba a ejecutar el
   //     arma más peligrosa del launcher para que no pasara nada. El señuelo del
@@ -254,16 +286,16 @@ async function main() {
 
   // 8 · EL CASO QUE MENTÍA (#424): un AJENO en OTRO bloque de puertos.
   //
-  //     `--parar` lo VE —mira los diez bloques— y hasta ahora, al verlo,
+  //     `--parar` lo VE —mira todos los bloques admisibles— y hasta ahora, al verlo,
   //     imprimía «para llevarte también lo ajeno: --parar-todo», que sobre ese
   //     proceso no puede nada. Lo que se afirma es que el informe (a) lo
   //     enumera como ajeno, (b) NO lo mata, y (c) dice la verdad sobre lo que
   //     `--parar-todo` alcanza.
   //
-  //     El bloque se ELIGE libre: los otros nueve son de quien sean y plantar
-  //     un señuelo encima del stack de otro agente sería el pecado que este
-  //     guion mide. Si no hay ninguno libre, este aserto se declara no medido
-  //     en vez de inventarse un veredicto.
+  //     El bloque se ELIGE libre: los demás son de quien sean y plantar un
+  //     señuelo encima del stack de otro agente sería el pecado que este guion
+  //     mide. Si no hay ninguno libre, este aserto se declara no medido en vez
+  //     de inventarse un veredicto.
   await retirar(ajeno);
   const vigente = offsetActual();
   let otroBloque = null;
@@ -277,7 +309,7 @@ async function main() {
     }
   }
   if (!otroBloque) {
-    nota("no se pudo medir el aviso con un ajeno de OTRO bloque", "los otros nueve bloques están ocupados");
+    nota("no se pudo medir el aviso con un ajeno de OTRO bloque", "ningún bloque libre entre +0 y +900");
   } else {
     const forastero = await señuelo(otroBloque.puertos, {
       cwd: "/tmp",
@@ -292,7 +324,7 @@ async function main() {
     else mal(`el ajeno del bloque +${otroBloque.off} sale enumerado`, `líneas que lo citan: ${suLinea.length}`);
 
     const sigueVivo = !(await esperarMuerte(forastero, 1_000)) && (await puertoOcupado(otroBloque.puertos[0]));
-    if (sigueVivo) ok("…y sigue vivo: `--parar` mira los diez bloques pero solo mata lo suyo");
+    if (sigueVivo) ok("…y sigue vivo: `--parar` mira todos los bloques pero solo mata lo suyo");
     else mal("el ajeno de otro bloque sigue vivo", "lo mató: es «no le cerreis sus servers» incumplido");
 
     // La equivalencia que arregla #424: con el ÚNICO ajeno fuera del bloque
@@ -308,6 +340,58 @@ async function main() {
         `aviso de barrido total=${aconseja2} · dice que no lo alcanza=${dice}`,
       );
     }
+  }
+
+  // ── 10 · UN PROPIO EN UN BLOQUE ALTO (≥ 1000) SE VE Y SE PARA (#684) ────
+  //
+  //     Hasta #684 la rama segura recomponía sus candidatos con un bucle fijo
+  //     `0 100 … 900` sobre `base - PORT_OFFSET + off`: fuera cual fuera el
+  //     offset miraba los bloques 0..900, y un stack arrancado con
+  //     NEFAN_PORT_OFFSET en 1000 —que la subida acepta— ni se enumeraba: «(nada
+  //     que parar aquí)» y «✅ stack cleaned» con el stack en pie. Se mide
+  //     SIEMPRE, sea cual sea el offset con que se invoque este guion: el
+  //     bloque vigente suele ser bajo y el defecto vivía en los altos.
+  //
+  //     El bloque se ELIGE libre por encima del 1000 —mismo criterio que el 8:
+  //     plantar encima de otro sería el pecado que se mide— y se recorre hasta
+  //     el tope que exporta `stack.mjs`, no una copia. Sin bloque libre no hay
+  //     experimento, y se dice. Va aquí, pegado al 8, porque los dos son el
+  //     mismo sujeto —qué bloques MIRA la rama segura— y el 9 tiene que seguir
+  //     siendo el último: deja un `--parar` en vuelo y señuelos a medio morir.
+  let bloqueAlto = null;
+  for (let off = 1000; off <= OFFSET_MAX; off += BLOQUE) {
+    if (off === vigente) continue;
+    const p1 = PUERTOS_BASE.html + off;
+    const p2 = PUERTOS_BASE.fake_ai + off;
+    if (!(await puertoOcupado(p1)) && !(await puertoOcupado(p2))) {
+      bloqueAlto = { off, puertos: [p1, p2] };
+      break;
+    }
+  }
+  if (!bloqueAlto) {
+    nota("no se pudo medir el propio de un bloque ALTO (#684)", `ningún bloque libre entre +1000 y +${OFFSET_MAX}`);
+  } else {
+    const alto = await señuelo(bloqueAlto.puertos, { cwd: repoRoot, etiqueta: `PROPIO en el bloque +${bloqueAlto.off}` });
+    arrancados.push(alto);
+    const informe3 = parar();
+    const lineas3 = informe3.split("\n");
+    const suLinea3 = lineas3.filter((l) => /^\s*·/.test(l) && puertosDe(l).includes(bloqueAlto.puertos[0]));
+    if (suLinea3.length === 1 && puertosDe(suLinea3[0]).includes(bloqueAlto.puertos[1])) {
+      ok(`el propio del bloque +${bloqueAlto.off} sale citado entre los que se paran, con sus dos puertos en UNA línea`);
+    } else {
+      mal(`el propio del bloque +${bloqueAlto.off} sale citado entre los que se paran`, `líneas «·» que lo citan: ${suLinea3.length}`);
+    }
+    const comoAjeno = lineas3.filter((l) => /AJENO, no se toca/.test(l) && puertosDe(l).some((p) => bloqueAlto.puertos.includes(p)));
+    if (comoAjeno.length === 0) ok("…y no sale como AJENO");
+    else mal("el propio del bloque alto no sale como AJENO", comoAjeno[0].trim());
+    const murioAlto = await esperarMuerte(alto);
+    let sueltos = true;
+    for (const p of bloqueAlto.puertos) sueltos = (await esperarPuertoLibre(p, { maxMs: 10_000 })) && sueltos;
+    if (murioAlto && sueltos) ok(`…y muere y suelta :${bloqueAlto.puertos.join(" :")}`);
+    else mal("el propio del bloque alto se para de verdad", `muerto=${murioAlto} puertos_libres=${sueltos}`);
+    // La frase del issue, literal: no se puede decir «nada» habiendo algo.
+    if (/\(nada que parar aquí\)/.test(informe3)) mal("el informe no dice «nada que parar aquí» habiendo un propio arriba", "lo dijo");
+    else ok("el informe no dice «nada que parar aquí» habiendo un propio arriba");
   }
 
   // ── 9 · El intruso que llega A MITAD del barrido NO se come el tiro ──────

@@ -120,7 +120,9 @@ Cosas a tener en cuenta:
   llevaba por delante el stack de otro agente de la máquina.
 - Ctrl+C para **solo lo que arrancó este launcher** (`trap EXIT` → el proceso y su
   descendencia). La tecla `k` (= `./start.sh --parar`) para lo de **este worktree**: los
-  puertos del catálogo (los diez bloques) cuyo proceso se puede **demostrar** de este árbol
+  puertos del catálogo en CUALQUIER bloque que la subida acepte —salen de la foto de `ss`
+  y no de un bucle de bloques, que es lo que hacía decir «nada que parar aquí» con el stack
+  en pie a partir del offset 1000 (#684)— cuyo proceso se puede **demostrar** de este árbol
   por su `cwd` **o por sus argumentos** (`/proc/<pid>/`; ilegible = ajeno, nunca al revés).
   Resuelve el dueño de todos ANTES de matar a ninguno —si no, el segundo puerto de un
   proceso de dos (bridge + State API) sale «ajeno» porque ya está muerto—, agrupa en una
@@ -130,10 +132,12 @@ Cosas a tener en cuenta:
   catálogo entero sigue existiendo pero hay que pedirlo: tecla `K` o `--parar-todo`.
 - **`NEFAN_PORT_OFFSET`** desplaza el bloque de puertos entero para que quepan varios
   stacks en la máquina (varios agentes, dos corridas del banco). 0 —el defecto— son
-  EXACTAMENTE los puertos de siempre. Es explícito, nunca derivado del nombre del
-  worktree. No lo honran ai_server, remote-gen, narrative-mcp ni sprite-forge (leen el
-  snapshot, que es uno por checkout, o viven en otro repo): con offset ≠ 0 el launcher se
-  NIEGA a arrancarlos en vez de ponerlos donde nadie los busca. `qa/run.mjs` sí elige
+  EXACTAMENTE los puertos de siempre. Es **múltiplo de 100** (el bloque son 100 puertos;
+  un predicado, `offset_admisible`, con paridad candada en TS, banco y bash), explícito,
+  nunca derivado del nombre del worktree. No lo honran ai_server, remote-gen, narrative-mcp
+  ni sprite-forge (leen el snapshot, que es uno por checkout, o viven en otro repo): con
+  offset ≠ 0 el launcher se NIEGA a arrancarlos en vez de ponerlos donde nadie los busca.
+  `qa/run.mjs` (que sigue eligiendo entre +0 y +900, su propio rango) sí elige
   bloque libre solo (con lock atómico en `$TMPDIR/nefan-qa-bloques-<uid>/`, fuera del árbol
   desde #501: estaba en `qa/.tmp/` y dos worktrees cogían el mismo bloque), y el cliente lo recibe por
   `?offset=N`.

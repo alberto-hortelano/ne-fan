@@ -32,10 +32,27 @@ SAVES_DIR_NEW="${NEFAN_SAVES_DIR:-$PROJECT_DIR/saves}"
 # nombre parecido colisionarían sin que nadie lo notara.
 RUNTIME_CONFIG="$PROJECT_DIR/nefan-core/data/runtime_config.json"
 PORT_OFFSET="${NEFAN_PORT_OFFSET:-0}"
-if ! [[ "$PORT_OFFSET" =~ ^[0-9]+$ ]] || (( PORT_OFFSET > 40000 )); then
-    echo "❌ NEFAN_PORT_OFFSET inválido: '$PORT_OFFSET' (entero de 0 a 40000)" >&2
+# ¿Es $1 un desplazamiento que este launcher acepta ARRANCAR? Es UNA función y
+# la usan dos sitios: la validación de aquí abajo y el filtro de candidatos de
+# `cmd_stop`. Hasta #684 eran dos reglas distintas —la subida aceptaba 0..40000
+# y la parada recorría un bucle fijo de bloques— y con offset ≥ 1000 `--parar` decía
+# «nada que parar» con el stack en pie. Un solo predicado no puede divergir.
+#
+# El bloque son 100 puertos, así que el offset es múltiplo de 100: con uno
+# suelto (1, 150…) el bridge de un stack cae encima de la State API del vecino,
+# y «catálogo en algún bloque» pasaría a ser casi cualquier puerto de la
+# máquina. La misma regla, con candado de paridad, en `portOffset` (TS) y en
+# `offsetActual` (qa/lib/stack.mjs). El `10#` fuerza decimal: sin él, bash lee
+# «0100» como octal (64) y el resto de capas como 100.
+OFFSET_MAX=40000
+offset_admisible() {
+    [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 <= OFFSET_MAX && 10#$1 % 100 == 0 ))
+}
+if ! offset_admisible "$PORT_OFFSET"; then
+    echo "❌ NEFAN_PORT_OFFSET inválido: '$PORT_OFFSET' (múltiplo de 100 entre 0 y $OFFSET_MAX)" >&2
     exit 1
 fi
+PORT_OFFSET=$(( 10#$PORT_OFFSET ))
 # Se exporta para que TODO lo que arranque debajo resuelva a sus VECINOS con el
 # mismo bloque: `resolveServiceUrl` (TS, navegador incluido) y qa/lib/stack.mjs
 # suman este mismo número. Cada servicio recibe además su propio puerto en su
@@ -161,10 +178,16 @@ kill_pids() {
 #
 # `fuser` lanza un proceso por puerto y recorre /proc entero buscando quién lo
 # tiene: ~8 ms cada uno, y la mayor parte en tiempo de SISTEMA. Con nueve
-# puertos no se nota; el día que hubo que mirar diez bloques (90 puertos) para
-# que `k` encontrara un stack desplazado, sí: 0,77 s de reloj y 0,70 s de
-# sistema en el camino que un agente pisa en CADA teardown. Eso es justo lo que
-# esta tanda venía a mejorar, así que no puede pagarse así.
+# puertos no se nota; el día que hubo que mirar varios bloques (nueve puertos
+# por bloque, y desde #684 son TODOS los admisibles) para que `k` encontrara un
+# stack desplazado, sí: 0,77 s de reloj y 0,70 s de sistema en el camino que un
+# agente pisa en CADA teardown. Eso es justo lo que aquella tanda vino a
+# mejorar, así que no puede pagarse así. Lo que queda de coste es el `fuser`
+# por candidato OCUPADO, y son los MISMOS candidatos ocupados se miren unos
+# bloques o todos: medido el 2026-09-20 con siete ajenos del catálogo arriba en
+# tres bloques, tres corridas de cada, 1,47-1,53 s con el filtro sobre la foto
+# y 1,40-1,51 s con el bucle fijo que había antes. El filtro no añade coste; lo
+# que cuesta es `fuser`, y eso sigue en el backlog (`ss -ltnp`).
 #
 # `ss -H -ltn` saca la tabla ENTERA de sockets a la escucha de una vez en
 # ~0,03 s — 25× más barato que una sola pasada de nueve `fuser`— y de propina
@@ -263,9 +286,10 @@ port_de_este_worktree() { worktree_de_pids "$(pids_del_puerto "$1")"; }
 #   FOTO_MIO    1 solo si se puede DEMOSTRAR de este worktree (su cwd o sus
 #               argumentos). Ilegible cuenta como AJENO, nunca al revés.
 #
-# Quién está OCUPADO no lo decide esto y es a propósito: `cmd_stop` mira 90
-# puertos y lo saca de una sola foto de `ss`; los otros dos miran uno y pueden
-# preguntar. Meter esa decisión aquí obligaría a todos a pagar la foto entera.
+# Quién está OCUPADO no lo decide esto y es a propósito: `cmd_stop` mira el
+# catálogo en TODOS los bloques admisibles y lo saca de una sola foto de `ss`;
+# los otros dos miran un puerto y pueden preguntar. Meter esa decisión aquí
+# obligaría a todos a pagar la foto entera.
 FOTO_PIDS=""
 FOTO_QUIEN=""
 FOTO_MIO=0
@@ -1344,6 +1368,12 @@ cmd_status() {
 # Todos los puertos que el launcher puede haber ocupado — compartido por
 # cmd_stop y el fallback de cleanup para que ningún servicio quede colgado.
 ALL_PORTS=("$PORT_BRIDGE" "$PORT_STATE" "$PORT_NARR" "$PORT_AI" "$PORT_HTML" "$PORT_ASSETS" "$PORT_RGEN" "$PORT_FORGE" "$PORT_FAKE")
+# El mismo catálogo SIN desplazar: `ALL_PORTS` ya trae sumado `PORT_OFFSET`, y
+# la rama segura de `cmd_stop` necesita restar la BASE a cada puerto de la foto
+# para saber si está en algún bloque admisible.
+BASES=()
+for _p in "${ALL_PORTS[@]}"; do BASES+=("$(( _p - PORT_OFFSET ))"); done
+unset _p
 
 # ¿Alguno de los puertos de esta línea del informe («:<uno> :<otro>», ya agrupada
 # por proceso) está en el bloque VIGENTE? Es la pregunta «¿lo alcanzaría
@@ -1388,29 +1418,50 @@ grupo_en_bloque_vigente() {
 # `./start.sh --parar-todo` o la tecla `K` (mayúscula) en el menú.
 cmd_stop() {
     local todo=${1:-no}
+    # UNA foto de toda la tabla de sockets, y a partir de ahí solo se lanza un
+    # proceso por puerto que de verdad esté ocupado. Antes eran 90 `fuser` en
+    # serie (0,77 s) más otros dos por cada ocupado. Va ANTES de la rama porque
+    # la segura saca sus candidatos de la propia foto.
+    snapshot_escuchando
     local -a puertos=("${ALL_PORTS[@]}")
     if [[ "$todo" == "todo" ]]; then
         echo "🛑 BARRIDO COMPLETO: se mata lo que ocupe los puertos del catálogo,"
         echo "   sea de quien sea (otro agente de esta máquina, el narrative-mcp"
         echo "   que posea el terminal del motor en :$PORT_NARR…)."
-        echo "   Solo el bloque VIGENTE (+$PORT_OFFSET): matar a ciegas los diez"
+        echo "   Solo el bloque VIGENTE (+$PORT_OFFSET): matar a ciegas todos los"
         echo "   bloques se llevaría por delante servicios que no son de nadie aquí."
     else
         echo "🛑 parando el stack de ESTE worktree ($PROJECT_DIR):"
-        # La versión SEGURA puede permitirse mirar los diez bloques, porque no
+        # La versión SEGURA puede permitirse mirar TODOS los bloques, porque no
         # mata nada que no pueda demostrar que es suyo. Y hace falta: quien
         # arrancó con NEFAN_PORT_OFFSET no debería tener que acordarse del
         # número para poder parar.
-        local base off
+        #
+        # Los candidatos NO se adivinan recorriendo bloques: salen de la foto.
+        # Un puerto a la escucha es candidato si dista de alguna BASE del
+        # catálogo un offset que la subida ACEPTARÍA (`offset_admisible`, el
+        # mismo predicado que valida NEFAN_PORT_OFFSET arriba). Así el conjunto
+        # que mira la parada es, por construcción, el que la subida puede haber
+        # ocupado: hasta #684 se recorría un bucle fijo `0 100 … 900` y con offset
+        # ≥ 1000 el stack propio ni se enumeraba — «nada que parar» en falso.
+        # El sujeto sigue siendo el CATÁLOGO: un puerto de este árbol que no
+        # sea de un servicio del catálogo (game-emulator, un vite suelto) no
+        # entra, igual que antes.
+        local p base
         puertos=()
-        for off in 0 100 200 300 400 500 600 700 800 900; do
-            for base in "${ALL_PORTS[@]}"; do puertos+=("$(( base - PORT_OFFSET + off ))"); done
+        for p in "${!ESCUCHANDO[@]}"; do
+            # Guardia contra una clave que no sea un puerto (`*`, un `[::]` mal
+            # cortado): la aritmética de abajo reventaría con ella.
+            [[ "$p" =~ ^[0-9]+$ ]] || continue
+            for base in "${BASES[@]}"; do
+                if offset_admisible "$(( p - base ))"; then puertos+=("$p"); break; fi
+            done
         done
+        # Orden determinista: la foto es una tabla asociativa y sale como sale.
+        if (( ${#puertos[@]} > 0 )); then
+            mapfile -t puertos < <(printf '%s\n' "${puertos[@]}" | sort -n)
+        fi
     fi
-    # UNA foto de toda la tabla de sockets, y a partir de ahí solo se lanza un
-    # proceso por puerto que de verdad esté ocupado. Antes eran 90 `fuser` en
-    # serie (0,77 s) más otros dos por cada ocupado.
-    snapshot_escuchando
 
     # ── Pasada 1 · la foto de dueños. No se mata NADA todavía. ──────────────
     local port
@@ -1472,15 +1523,15 @@ cmd_stop() {
     (( alguno == 0 )) && echo "    (nada que parar aquí)"
     # EL AVISO DICE LO QUE `--parar-todo` ALCANZA, Y NADA MÁS (#424).
     #
-    # Antes salía con CUALQUIER ajeno de CUALQUIERA de los diez bloques —la rama
-    # segura los mira todos— y prometía un barrido que la rama `todo` no hace:
-    # esa solo toca `ALL_PORTS`, o sea el bloque vigente, y lo dice ella misma.
-    # O sea que el consejo mandaba a ejecutar el arma más peligrosa del launcher
-    # para que no pasara nada, con el ajeno de otro bloque intacto detrás.
+    # Antes salía con CUALQUIER ajeno de CUALQUIER bloque —la rama segura los
+    # mira todos— y prometía un barrido que la rama `todo` no hace: esa solo
+    # toca `ALL_PORTS`, o sea el bloque vigente, y lo dice ella misma. O sea
+    # que el consejo mandaba a ejecutar el arma más peligrosa del launcher para
+    # que no pasara nada, con el ajeno de otro bloque intacto detrás.
     #
-    # Y no se arregla ampliando `--parar-todo` a los diez bloques: matar a
-    # ciegas 90 puertos es justo lo que prohíbe «arrancar no mata a nadie».
-    # Se arregla diciendo la verdad.
+    # Y no se arregla ampliando `--parar-todo` a todos los bloques: matar a
+    # ciegas el catálogo entero de la máquina es justo lo que prohíbe «arrancar
+    # no mata a nadie». Se arregla diciendo la verdad.
     if [[ "$todo" != "todo" ]]; then
         if (( saltados_vigente == 1 )); then
             echo "   Para llevarte también lo ajeno DEL BLOQUE VIGENTE (+$PORT_OFFSET): ./start.sh --parar-todo (o la tecla K)."

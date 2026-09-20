@@ -68,6 +68,7 @@ Y al recoger: copia `plan.md`/`implementacion*.md` al checkout principal ANTES d
 porque el `.gitignore` los deja fuera y `remove --force` se los lleva.
 
 **`--parar` es por árbol, no por bloque de puertos.** `NEFAN_PORT_OFFSET=100 ./start.sh --parar`
-para todo lo que demuestre ser de ESTE worktree en los diez bloques, y la batería de `qa/run.mjs`
-que arrancaste desde el mismo árbol también lo es: una pasada de ojos y una batería en el mismo
-worktree no se pueden parar por separado.
+para todo lo que demuestre ser de ESTE worktree en cualquier bloque que la subida acepte, los
+≥ 1000 incluidos (hasta #684 solo miraba +0…+900 y decía «nada que parar aquí» con el stack en
+pie), y la batería de `qa/run.mjs` que arrancaste desde el mismo árbol también lo es: una pasada
+de ojos y una batería en el mismo worktree no se pueden parar por separado.

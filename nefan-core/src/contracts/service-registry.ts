@@ -91,9 +91,15 @@ export function portOffset(env: Record<string, string | undefined> = {}): number
   // Dígitos decimales y nada más. `Number()` a secas acepta " " como 0 y
   // "0x10" como 16: dos formas de pedir un bloque y llevarse otro.
   const n = /^\d+$/.test(raw) ? Number(raw) : NaN;
-  if (!Number.isInteger(n) || n < 0 || n > 40000) {
+  // El bloque son 100 puertos, así que el offset es múltiplo de 100: con uno
+  // suelto el bridge de un stack cae encima de la State API del vecino, y el
+  // filtro de `--parar` («catálogo en algún bloque admisible») pasaría a
+  // alcanzar casi cualquier puerto de la máquina (#684). La misma regla, con
+  // candado de paridad, en `start.sh` (`offset_admisible`) y en
+  // `qa/lib/stack.mjs` (`offsetActual`).
+  if (!Number.isInteger(n) || n < 0 || n > 40000 || n % 100 !== 0) {
     throw new Error(
-      `NEFAN_PORT_OFFSET inválido: ${JSON.stringify(raw)}. Debe ser un entero entre 0 y 40000 ` +
+      `NEFAN_PORT_OFFSET inválido: ${JSON.stringify(raw)}. Debe ser un múltiplo de 100 entre 0 y 40000 ` +
         `(el desplazamiento del bloque de puertos; 0 = los puertos de siempre).`,
     );
   }

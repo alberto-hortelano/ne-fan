@@ -51,16 +51,24 @@ const snapshot = leerSnapshot();
  *  que hace falta para buscar un bloque libre (sondear base+0, base+100…). */
 export const PUERTOS_BASE = Object.freeze({ ...(snapshot.ports ?? {}) });
 
+/** El bloque son 100 puertos: un offset válido es múltiplo de `BLOQUE`, y el
+ *  mayor que la subida acepta es `OFFSET_MAX`. Se exportan para que un guion
+ *  que recorra bloques (buscar uno libre por encima del 1000, #684) no copie
+ *  el tope a mano. */
+export const BLOQUE = 100;
+export const OFFSET_MAX = 40000;
+
 /** Desplazamiento vigente de ESTE proceso. Misma regla que `portOffset` en
- *  `nefan-core/src/contracts/service-registry.ts`: dígitos decimales, 0..40000,
- *  y LANZA si no. Colapsar un valor raro a 0 sería arrancar encima del stack
- *  del vecino justo cuando alguien creía haberlo separado. */
+ *  `nefan-core/src/contracts/service-registry.ts` y que `offset_admisible` en
+ *  `start.sh`: dígitos decimales, múltiplo de 100 en 0..40000, y LANZA si no.
+ *  Colapsar un valor raro a 0 sería arrancar encima del stack del vecino justo
+ *  cuando alguien creía haberlo separado. */
 export function offsetActual(env = process.env) {
   const raw = env.NEFAN_PORT_OFFSET;
   if (raw === undefined || raw === "") return 0;
   const n = /^\d+$/.test(raw) ? Number(raw) : NaN;
-  if (!Number.isInteger(n) || n > 40000) {
-    throw new Error(`NEFAN_PORT_OFFSET inválido: ${JSON.stringify(raw)} (entero de 0 a 40000)`);
+  if (!Number.isInteger(n) || n > OFFSET_MAX || n % BLOQUE !== 0) {
+    throw new Error(`NEFAN_PORT_OFFSET inválido: ${JSON.stringify(raw)} (múltiplo de ${BLOQUE} entre 0 y ${OFFSET_MAX})`);
   }
   return n;
 }

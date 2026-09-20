@@ -132,8 +132,8 @@ function esperarMuerte(s, maxMs = 5_000) {
 }
 
 const arrancados = [];
-/** El entorno no permitió afirmar algo (hay procesos de otro worktree en los
- *  diez bloques que `--parar` mira). Sale con 2: ni verde ni rojo. */
+/** El entorno no permitió afirmar algo (hay procesos de otro worktree en algún
+ *  bloque admisible, que `--parar` mira todos). Sale con 2: ni verde ni rojo. */
 let sinVeredicto = false;
 
 async function main() {
@@ -262,7 +262,7 @@ async function main() {
   // puede serlo.
   //
   // «DEL BLOQUE VIGENTE» es #424, y no es un matiz de redacción: la rama segura
-  // mira los DIEZ bloques y `--parar-todo` solo barre el vigente, así que un
+  // mira TODOS los bloques admisibles y `--parar-todo` solo barre el vigente, así que un
   // aviso encendido por el stack de otro worktree recomendaba un barrido que
   // sobre ese proceso no puede nada. Aquí se afirman las DOS mitades, y en esta
   // máquina las dos se evalúan de verdad: el señuelo ajeno de este guion ya se
