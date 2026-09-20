@@ -252,6 +252,11 @@ Reglas que hacen que un guion valga algo:
    fecha** — lo pregunta a GitHub `qa/la-exencion-por-issue-tiene-issue-vivo.mjs` en el job
    `candados-headless`, y sin `gh`, sin token o sin red sale ROJO, nunca ⊘. Y la entrada caduca
    además sola: si la espera pasa a sim o desaparece, se queda sin sujeto y el test se pone rojo.
+   Una exención apunta a UNA espera **y eso también es candado, no promesa**: dos esperas del mismo
+   fichero bajo el mismo texto la ponen roja, porque un motivo escrito vale para una y bendeciría a
+   la otra sin mirarla (lo midió la QA de la tanda AE metiendo la mentira debajo de una exención
+   honesta: 12 pass · 0 fail). Y un predicado que llega por un nombre declarado dos veces, o
+   reasignado, no deriva nada: resolverlo por el último sería adivinar.
    El contrato hermano `esperas-por-fotogramas.json` (#606) va al mismo listón, con lo que allí
    **no** se puede derivar —«el contador es el sujeto», que tiene el mismo árbol que una copia
    prohibida del molde— marcado `declarada` y medido en su propio caso.

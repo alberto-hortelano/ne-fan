@@ -23,26 +23,59 @@
  *  la misma lectura escrita de dos maneras. */
 import ts from "typescript";
 
+/** Lo que el fichero declara bajo cada nombre, y qué nombres NO deciden una
+ *  sola función. */
+export interface FuncionesDelFichero {
+  /** nombre → TODAS las funciones declaradas con ese nombre, en orden de
+   *  fuente. Antes era una sola y **la última pisaba a las anteriores**, que es
+   *  el agujero H-2 de la QA de #611: un `const pred` dentro de la función de
+   *  arranque y otro `const pred` al final del fichero resolvían al de abajo, o
+   *  sea que la derivación leía una función DISTINTA de la que corre. */
+  porNombre: Map<string, ts.Node[]>;
+  /** Los nombres que se REASIGNAN en algún punto (`pred = () => …`). Una
+   *  reasignación no es una `VariableDeclaration` y no entraba en el mapa:
+   *  `let pred = leeScene; pred = leeFrontier` derivaba por la PRIMERA. */
+  reasignados: Set<string>;
+}
+
 /** Las funciones declaradas en el fichero, por nombre. Existe porque el
  *  predicado de una espera puede llegar POR REFERENCIA
  *  (`ctx.waitFor(desc, pasaronLosFotogramas, …)`, la `TRAZA` del 133) en vez de
  *  escrito en línea, y un detector que solo mirase el argumento no vería lo que
  *  lee — lo midió el propio dueño de la espera por fotogramas, que es justo
  *  quien escribe su predicado aparte. Movida aquí desde
- *  `espera-de-fotogramas-con-dueno.test.ts`, no copiada. */
-export function funcionesDelFichero(sf: ts.SourceFile): Map<string, ts.Node> {
-  const mapa = new Map<string, ts.Node>();
+ *  `espera-de-fotogramas-con-dueno.test.ts`, no copiada.
+ *
+ *  NO resuelve ÁMBITOS: junta todo el fichero en un mapa plano. Lo que hace en
+ *  vez de fingir que los resuelve es CONTARLAS todas y decir cuáles se
+ *  reasignan, para que quien consulte pueda negarse a adivinar. */
+export function funcionesDelFichero(sf: ts.SourceFile): FuncionesDelFichero {
+  const porNombre = new Map<string, ts.Node[]>();
+  const reasignados = new Set<string>();
+  const apunta = (nombre: string, nodo: ts.Node): void => {
+    const ya = porNombre.get(nombre);
+    if (ya) ya.push(nodo);
+    else porNombre.set(nombre, [nodo]);
+  };
   const visita = (n: ts.Node): void => {
-    if (ts.isFunctionDeclaration(n) && n.name) mapa.set(n.name.text, n);
+    if (ts.isFunctionDeclaration(n) && n.name) apunta(n.name.text, n);
     if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
       if (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer)) {
-        mapa.set(n.name.text, n.initializer);
+        apunta(n.name.text, n.initializer);
+      }
+    }
+    // `pred = …` (y `pred ??= …`, `pred ||= …`): el nombre deja de decidir una
+    // función, mire donde mire este detector.
+    if (ts.isBinaryExpression(n) && ts.isIdentifier(n.left)) {
+      const op = n.operatorToken.kind;
+      if (op === ts.SyntaxKind.EqualsToken || op === ts.SyntaxKind.QuestionQuestionEqualsToken || op === ts.SyntaxKind.BarBarEqualsToken) {
+        reasignados.add(n.left.text);
       }
     }
     ts.forEachChild(n, visita);
   };
   visita(sf);
-  return mapa;
+  return { porNombre, reasignados };
 }
 
 /** Los tres verbos de espera del banco y DÓNDE lleva cada uno su descripción,
@@ -72,18 +105,36 @@ export function descDe(call: ts.CallExpression, verbo: VerboDeEspera, sf: ts.Sou
   return call.arguments[POSICIONES[verbo].desc]?.getText(sf) ?? "";
 }
 
-/** El nodo del PREDICADO de la espera: el argumento en línea, o —si es un
- *  identificador— la función del fichero a la que apunta. `null` si no hay
- *  argumento o la referencia no se resuelve dentro del fichero. */
+/** Lo que se sabe del PREDICADO de una espera. */
+export interface PredicadoDeEspera {
+  /** Los nodos que hay que mirar: el argumento, si está escrito en línea; las
+   *  funciones candidatas, si llega por referencia. Vacío si no hay argumento o
+   *  la referencia no se declara en este fichero (un `import` de `qa/lib`). */
+  nodos: ts.Node[];
+  /** El nombre, si el predicado llega por referencia. */
+  referencia: string | null;
+  /** …y ese nombre NO decide una sola función: se declara más de una vez en el
+   *  fichero, o se reasigna. Resolver por nombre sería adivinar, así que quien
+   *  consulte se niega a derivar nada (H-2 de la QA de #611). */
+  ambigua: boolean;
+}
+
+/** El PREDICADO de la espera: el argumento en línea, o —si es un
+ *  identificador— la(s) función(es) del fichero a las que apunta. */
 export function predicadoDe(
   call: ts.CallExpression,
   verbo: VerboDeEspera,
-  funciones: ReadonlyMap<string, ts.Node>,
-): ts.Node | null {
+  funciones: FuncionesDelFichero,
+): PredicadoDeEspera {
   const a = call.arguments[POSICIONES[verbo].predicado];
-  if (a === undefined) return null;
-  if (ts.isIdentifier(a)) return funciones.get(a.text) ?? null;
-  return a;
+  if (a === undefined) return { nodos: [], referencia: null, ambigua: false };
+  if (!ts.isIdentifier(a)) return { nodos: [a], referencia: null, ambigua: false };
+  const candidatos = funciones.porNombre.get(a.text) ?? [];
+  return {
+    nodos: candidatos,
+    referencia: a.text,
+    ambigua: candidatos.length > 1 || funciones.reasignados.has(a.text),
+  };
 }
 
 /** Sin el `!` y sin los paréntesis: `(window.__nefan!)` es `window.__nefan`. */
@@ -109,10 +160,22 @@ const esElHook = (n: ts.Node): boolean => {
  *  igual que `scene`—; quien decide qué lecturas valen para qué clase es el
  *  contrato.
  *
+ *  Y ESCANEA EL SUBÁRBOL ENTERO del nodo que se le dé, sin mirar si la lectura
+ *  decide algo: un `reloj()` en la primera mitad de un `&&` cuya segunda mitad
+ *  es la que manda cuenta igual, y también cuentan un parámetro por defecto, el
+ *  código tras un `return` y los argumentos de un envoltorio. Es la frase «mira
+ *  QUÉ se lee, no qué decide», y su lista completa vive en
+ *  `_lo_que_esto_NO_sujeta` de los dos contratos, con un caso medido cada una.
+ *
  *  Lo que NO ve, y está medido en los tests que lo usan: la lectura a través de
  *  un ALIAS (`const s = window.__nefan.scene` fuera del predicado y `s.scene_id`
  *  dentro; o `const n = window.__nefan; n.scene`), que es el mismo agujero de
- *  #686 en el padrón de sondas; y la clave COMPUTADA (`window.__nefan[k]`). */
+ *  #686 en el padrón de sondas; el DESTRUCTURING (`const { scene } = window.__nefan`);
+ *  el hook alcanzado por corchetes (`window["__nefan"].scene`); y la clave
+ *  COMPUTADA (`window.__nefan[k]`, `window.__nefan["sc"+"ene"]`). Las cuatro van
+ *  en la dirección segura —dejan una honesta sin lecturas, o sea ROJA— y por eso
+ *  son fricción y no agujero; pero se dicen, porque quien las sufra tiene que
+ *  poder saber por qué. */
 export function lecturasDelHook(nodo: ts.Node): string[] {
   const vistas: string[] = [];
   const apunta = (nombre: string): void => {
