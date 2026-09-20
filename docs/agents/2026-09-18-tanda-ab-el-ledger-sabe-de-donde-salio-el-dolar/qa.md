@@ -134,7 +134,7 @@ su cabecera: con el fake a ceros no distingue «solo real» de «todo» (eso viv
 - **`npm run verify` completo**: lo dio el ingeniero (3117/3117); yo corrí `npm test` (3117/3117) y
   `typecheck:labs` por separado, no el `build`+`lint`.
 
-## Veredicto
+## Veredicto de la primera pasada (sobre `9805e5bf`) — SUPERADO por la re-verificación de abajo
 
 **Apto con reservas.**
 
@@ -144,3 +144,78 @@ su cabecera: con el fake a ceros no distingue «solo real» de «todo» (eso viv
 2. H1 se abre como issue antes de cerrar #426 (o lo corrige el mismo ingeniero en la rama, si el
    coordinador prefiere no fusionar una degradación muda aunque sea heredada). H2–H4 van en el mismo
    issue o en el backlog de `ai_server/` sin deuda medida que el plan ya pide.
+
+---
+
+# Re-verificación tras la corrección de H1–H4 (HEAD `51a9433d`, rama rebasada sobre `243fcf9f`, PR #702)
+
+El ingeniero atendió H1–H4 en el commit `51a9433d` (`spend_tracker.py`, `test_spend_tracker.py`,
+`dev-status-panel.ts`, guion **153** —el 150 de la primera pasada renumerado al fusionar, #680—,
+una línea en `qa/README.md`). Re-verifiqué SOLO lo afectado, con el mismo método: flujo real contra
+una copia fresca del ledger viejo (md5 `8ba5d5a9…`, 187 líneas), sondas propias, y cada candado nuevo
+en negativo. Servicios con `NEFAN_PORT_OFFSET=200` (remote-gen a mano en 8968; la batería eligió sola
+el bloque +300), todos parados al terminar; el ledger vivo del principal sigue sin tocarse.
+
+## Hallazgo → veredicto → evidencia
+
+| # | Lo que se pidió comprobar | Veredicto | Evidencia |
+|---|---|---|---|
+| H1 | Con remote-gen EN PIE contra el ledger viejo, el panel dice «ai_server rechaza /dev/status (HTTP 500)», el `mv` en el tooltip, entrada en el registro (fuente `config`), y se recupera solo al volver el 200 | ✅ corregido (con la salvedad H6) | Flujo real (`./start.sh --preset html-fixtures` con offset 200 + remote-gen 8968 con `NEFAN_SPEND_DIR=<copia>/cache/spend`, página `?offset=200`): `#ds-config` = **«ai_server rechaza /dev/status (HTTP 500)»**, `#ds-spend` = «gasto no disponible», tooltips de los dos con el `detail` (`…events.jsonl:1 es un evento sin \`procedencia\` … → mkdir -p …`), toggle deshabilitado con «ai_server rechaza /dev/status (HTTP 500) — dev-cache no disponible». Registro de errores: **una** entrada `config` · «ai_server rechaza GET /dev/status (HTTP 500)» · detalle con el comando — y sigue siendo UNA tras varios sondeos de 5 s (firma por causa). Captura `qa/capturas/tanda-ab-panel-dev-rechazo-500-real.png`. Ejecuté el `mv` que dicta el `detail` sobre la copia → `/dev/status` 200 → el panel volvió solo a «superficies nano-banana-pro · …» y «gasto sesión 0,00 € · total 0,00 €», toggle habilitado, sin recargar. Guion **143** (totalidad de fuentes del registro) **verde**: `config` sigue clasificada «de la MÁQUINA» y ninguna fila se movió |
+| H2 | Líneas a mano (sin `usd`, `usd` string/bool/negativo, JSON lista) → `LedgerIlegible` con su línea; `add()` rechaza lo mismo antes de escribir | ✅ corregido en lo pedido (bordes nuevos en H7) | Sondas: sin `usd` → `…:2 tiene \`usd\` = None, que no es un número`; `"0.5"`, `True`, `False`, `None` → ídem con su valor; `-3` → `…negativo: el ledger es append-only…`; `[1,2]`/`"hola"`/`null` → `no es un objeto JSON, es list/str/NoneType`; `usd: 0` se lee (1 llamada, $0). Escritor: `add(-0.01)` y `add(nan)` → `ValueError: … no es una cantidad pagable` y **el fichero no existe**. Negativos: quitar la validación de `usd` en `_events()` → 6 rojos; quitar el guardia de `add` → 3 rojos; restaurado con `md5sum -c` OK |
+| H3 | Remedio con `NEFAN_SPEND_DIR=/tmp/x` | ✅ corregido | `_remedio_para_ledger_viejo(/tmp/x/events.jsonl)` → `mkdir -p <RAIZ_REPO>/archivo/cache/spend && mv /tmp/x/events.jsonl <RAIZ_REPO>/archivo/cache/spend/events-sin-procedencia-<fecha>.jsonl`; con forma `<checkout>/cache/spend/` → el `archivo/` de ESE checkout (principal y `/otro/worktree` probados). Negativo (volver a subir tres niveles a ciegas) → `test_el_remedio_de_un_ledger_fuera_de_cache_spend_apunta_al_repo` FAIL |
+| H4 | Mayúsculas | ✅ declarado y candado | `test_procedencia_segun_api_recorta_espacios_pero_NO_baja_mayusculas` (`"FIXTURE"`/`"Fake"` → real, `" fake "` → fixture) + docstring con la razón (la dirección segura) |
+| 153 | Guion 153 ×1 y su negativo del bloque 5 | ✅ | `node qa/run.mjs 153-el-panel` → **9 ✔ / 0 ✘, EXIT=0** (bloque +300). Negativo: `!res.ok → marcarCaido()` (el `catch` de antes) → «timeout esperando: el panel dice que ai_server RECHAZA /dev/status», **0 en verde · 1 en rojo, EXIT=1**; panel restaurado, `md5sum -c` OK. Coincide con lo que la cabecera del guion dice haber medido |
+| Suite | Tests Python | ✅ | `NEFAN_SPEND_DIR=$(mktemp -d) python -m unittest discover -s ai_server/tests` → **Ran 273 tests · OK** (266 + 7). Cliente: `tsc --noEmit` EXIT=0 y `npm test` 5/5 en `nefan-html` |
+
+## Hallazgos nuevos
+
+### H6 · IMPORTANTE (menor en coste) — el remedio llega a la pantalla CORTADO: `detalleDelRechazo` recorta a 300 caracteres y el `mv` del checkout principal pierde el nombre del fichero destino
+
+`dev-status-panel.ts:49`: `.slice(0, 300)`. El `detail` que emite remote-gen para el checkout
+principal mide **337** caracteres (medido sustituyendo la ruta de la copia por
+`/home/al/code/ne-fan`); en el HUD, el tooltip y el registro se queda en
+`… && mv /home/al/code/ne-fan/cache/spend/events.jsonl /home/al/code/ne-fan/archivo/cache/spend/ev`
+y se pierde `ents-sin-procedencia-2026-09-20.jsonl`. Quien copie eso tal cual archiva el ledger con
+nombre `ev`, que no es lo que T9 fijó. Con la copia en el scratchpad (661 chars) el corte cae antes
+del `&& mv`. Es justo el texto que H1 pedía hacer llegar, y llega a medias; el ingeniero lo escribió
+con la intención contraria («un comando que se puede copiar y pegar tiene que llevar a un sitio que
+exista por algo», docstring de `_remedio_para_ledger_viejo`). **El guion 153 no lo ve**: su `detail`
+de atrezo mide 400+ chars y los asertos del bloque 5 solo piden `includes(MARCA)` y
+`/mkdir -p .*archivo\/cache\/spend/`, que caben en los primeros 300. Remedio: recortar solo la LÍNEA
+visible (`#ds-config`) y dejar el `detail` entero en tooltip y registro (que son «lo rico» por
+diseño), y que el 153 afirme que el detalle pintado **termina** en el nombre completo del destino.
+`detalleDelRechazo` no tiene test unitario (`nefan-html/test/` no lo importa).
+
+### H7 · menor — el escritor y el lector siguen sin admitir «exactamente lo mismo» en tres bordes
+
+Sondas: `add(float("inf"))` **escribe** `usd: Infinity` (JSON no estándar, `json.dumps` con
+`allow_nan` por defecto) y el lector lo acepta (`isinstance float`, `inf < 0` es False) →
+`total_usd = inf`; `NaN`/`Infinity` escritos a mano en disco también pasan (`total nan`/`inf`). En el
+wire, `/dev/status` mandaría `Infinity`/`NaN`, que `JSON.parse` del navegador rechaza: gracias a la
+corrección de H1 eso saldría como «rechaza /dev/status (respuesta ilegible)», no mudo. `add(True)`
+escribe `1.0` (el lector rechaza `True`, el escritor lo convierte). `add("0.5")` **escribe la línea y
+DESPUÉS lanza** (`f"{usd:.2f}"` sobre `str` en el `print`): el llamante ve un error con el evento ya
+apuntado. Ningún llamante de hoy pasa string, bool ni infinito; se deja dicho porque el comentario del
+código promete la simetría entera. Remedio: `math.isfinite(importe)` en `add`, y en `_events()`
+rechazar no-finito.
+
+## Workarounds de la re-verificación
+
+Los mismos de la primera pasada (remote-gen a mano por la negativa del launcher con offset; cliente sin
+bridge; ledger en copia con forma `cache/spend`). Ninguno oculta nada al usuario.
+
+## No probado
+
+Sin cambios: gasto real con proveedores de pago; el `mv` sobre el principal (probado en copia
+byte-idéntica, incluida la recuperación del panel). El CI de la PR #702 lo mira el coordinador.
+
+## Veredicto final
+
+**Apto con reservas.** H1–H4 están corregidos y medidos, cada uno con su candado y su negativo. Las
+reservas:
+
+1. El `mv` del checkout principal sigue siendo **condición de la fusión** (`implementacion.md §3`).
+2. **H6** se corrige en esta rama o se abre como issue antes de cerrar #426: es una línea (el tope de
+   300 fuera del tooltip y del registro) más un aserto en el 153; sin ello el remedio que H1 trajo a
+   la pantalla llega truncado para el único checkout donde importa. H7 va al backlog de `ai_server/`
+   sin deuda medida que el plan ya pide.
