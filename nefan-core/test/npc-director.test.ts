@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { NarrativeState } from "../src/narrative/narrative-state.js";
 import { MemorySessionStorage } from "../src/narrative/session-storage.js";
 import { NpcDirector } from "../src/world-map/npc-director.js";
+import { resolvePlaceTarget } from "../src/world-map/place-target.js";
 
 function makeSetup() {
   const s = new NarrativeState(new MemorySessionStorage());
@@ -136,5 +137,55 @@ describe("NpcDirector.arriveNpc — teleport narrative-paced", () => {
     director.moveNpcToPlace("cleo", "lejos");
     director.arriveNpc("cleo");
     assert.deepEqual(s.getEntity("cleo")!.position, [7, 0, 7]);
+  });
+});
+
+describe("resolvePlaceTarget — las tres vías del docblock y los dos null", () => {
+  // Tile (2,-3), y NO (0,0): tileWorldRect da minX 96 · maxX 160 · minZ -224 ·
+  // maxZ -160, centro (128, -192). Con tx o ty en {0,-1} el centro cae en 0 y
+  // `(min+max)*2` o `min-max` dan lo mismo que el original: los mutantes
+  // aritméticos del centro sobreviven por simetría y este test no los ve.
+  // Medido el 2026-09-18: 14 de los 18 supervivientes eran `NoCoverage` porque
+  // ninguna batería entraba en las vías (b) y (c) del docblock (#675).
+  const TILE = { tx: 2, ty: -3 };
+  const CENTRO = { x: 128, z: -192 };
+
+  function conPlaces(places: Array<Parameters<NarrativeState["worldMap"]["upsertPlace"]>[0]>) {
+    const s = new NarrativeState(new MemorySessionStorage());
+    s.startNewSession("g");
+    for (const p of places) s.worldMap.upsertPlace(p);
+    return s;
+  }
+
+  it("(a) anchor con rect: el centro del rect en metros, dentro de su tile", () => {
+    // rect [10,20,4,2] en celdas de 0,5 m → x = 96 + 12·0,5, z = -224 + 21·0,5.
+    const s = conPlaces([{ id: "forja", kind: "site", parent_id: "world", name: "Forja", anchor: { ...TILE, rect: [10, 20, 4, 2] } }]);
+    assert.deepEqual(resolvePlaceTarget(s, "forja"), { x: 102, z: -213.5 });
+  });
+
+  it("(b) anchor sin rect: el centro del tile", () => {
+    const s = conPlaces([{ id: "aldea", kind: "settlement", parent_id: "world", name: "Aldea", anchor: { ...TILE } }]);
+    assert.deepEqual(resolvePlaceTarget(s, "aldea"), CENTRO);
+  });
+
+  it("(c) sin anchor pero con escena realizada que es un tile: el centro de ese tile", () => {
+    const s = conPlaces([{ id: "bosque", kind: "region", parent_id: "world", name: "Bosque", realized_scene_id: "tile_2_-3" }]);
+    assert.deepEqual(resolvePlaceTarget(s, "bosque"), CENTRO);
+  });
+
+  it("null: la escena realizada no es un tile", () => {
+    const s = conPlaces([{ id: "cripta", kind: "site", parent_id: "world", name: "Cripta", realized_scene_id: "escena_x" }]);
+    assert.equal(resolvePlaceTarget(s, "cripta"), null);
+  });
+
+  it("null: el place no existe", () => {
+    const s = conPlaces([]);
+    assert.equal(resolvePlaceTarget(s, "atlantis"), null);
+  });
+
+  it("precedencia: con anchor y escena realizada, manda el anchor", () => {
+    // El docblock dice «anchor O escena»; esto fija cuál gana cuando hay los dos.
+    const s = conPlaces([{ id: "doble", kind: "site", parent_id: "world", name: "Doble", anchor: { ...TILE }, realized_scene_id: "tile_9_9" }]);
+    assert.deepEqual(resolvePlaceTarget(s, "doble"), CENTRO);
   });
 });
