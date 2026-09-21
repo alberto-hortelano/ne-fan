@@ -482,67 +482,15 @@ export function lineaDeMedida(m, factor) {
  *  de #496. Lo que sí hace es impedir el error caro: **sin firma, el veredicto
  *  no puede llamarlo el rojo de #545**.
  *
- *  **Y ya no es lo único que se mira** (#609). Esta función sigue siendo la
- *  pata del TEXTO, con su alcance intacto; la segunda pata es `tasaQueCae`,
- *  que no lee texto ninguno porque el guion DECLARA su tasa. El caso que lo
- *  pedía es el 93: rojo solo bajo carga, causado por el reloj, y sin un «ms» en
- *  ninguno de sus asertos. */
+ *  **Y es lo ÚNICO que se mira**, otra vez, desde la tanda W. Durante una mañana
+ *  hubo una segunda pata (#609) que no leía texto ninguno porque el guion
+ *  DECLARABA su tasa; el caso que la pedía era el 93 —rojo solo bajo carga,
+ *  causado por el reloj, y sin un «ms» en ninguno de sus asertos—, y esa misma
+ *  tarde el 93 pasó a medir contra el reloj de sim (#679) y dejó de caer. Sin
+ *  sujeto, la pata se retiró entera: ver el docblock de `comparaCorridas`. */
 export function firmaDePresupuesto(fallos) {
   const FIRMAS = [/no ocurrió en \d+\s*ms/i, /timeout esperando/i, /expiró a los \d+\s*ms/i];
   return (fallos ?? []).some((f) => FIRMAS.some((re) => re.test(String(f))));
-}
-
-/** ¿Se cayó alguna TASA declarada, y en la dirección que un reloj lento puede
- *  causar? (#609)
- *
- *  La tercera pata de la clasificación, y la que existe para no clasificar por
- *  el TEXTO del aserto. Las dos primeras —`cambio === "se-rompio"` y la razón
- *  sim/pared hundida— **no distinguen el 93 del 75**: medido, bajo `--factor 20`
- *  la razón se hunde para los dos, así que un criterio de dos patas cambiaría
- *  una mentira por la contraria y volvería a atribuirle a #545 el rojo del 75,
- *  que es familia #496/#497. Eso es lo que costó el hallazgo H-4 de QA.
- *
- *  Lo que se exige es la **dirección**, y es una frase del mecanismo, no de la
- *  curva: *un reloj que va lento solo puede hacer que una tasa medida contra la
- *  pared salga BAJA; no puede hacer que un contador salga ALTO*. Por eso solo
- *  cuenta `medido < esperado`.
- *
- *  **Y por eso lo que entra aquí son TASAS y no «magnitudes».** La frase de
- *  arriba es cierta de una cantidad partida por segundos de PARED y falsa de un
- *  contador, así que el filtro no puede vivir en esta función: vive en el verbo
- *  que las declara. `ctx.expectTasa` (`qa/run.mjs`) no recibe el número ya
- *  dividido sino sus dos mitades, una de ellas `segundosDePared`, y un contador
- *  no tiene denominador de pared que darle. Antes el verbo aceptaba cualquier
- *  número que hubiera bajado y la restricción era un COMENTARIO; QA lo tumbó
- *  instrumentando el contador del 75, que entraba en `comportamiento` tan
- *  campante.
- *
- *  **La proporcionalidad está RECHAZADA CON MEDIDA**, y queda escrito para que
- *  nadie la reintente: en el caso real del 93 a ×40 la razón sim/pared fue
- *  **0,262** y las cuatro velocidades cayeron a **0,38 / 0,63 / 0,42 / 0,46** de
- *  lo esperado. Exigir «cae en proporción a la razón» tumbaría el único caso
- *  real que tenemos.
- *
- *  Y la tasa viene **declarada**, no parseada de la frase del fallo. El efecto
- *  mecánico, dicho sin adornarlo: **un guion que no declara ninguna llega aquí
- *  con la lista vacía, y con la lista vacía esta rama es inalcanzable**. Eso es
- *  todo lo que «por construcción» significa — no es una promesa sobre ningún
- *  guion en particular, que mañana puede instrumentarse, sino sobre lo que el
- *  clasificador puede hacer con una lista vacía. (La primera versión de este
- *  docblock lo justificaba diciendo que el guion 75 no se toca; era una
- *  justificación escrita después y sin medir, y se retira.)
- *
- *  Una tasa con números que no son números se ignora en vez de votar: sin esto,
- *  un `NaN` colado en la fila entraría por la comparación `NaN < x` (false) o,
- *  peor, sostendría una clasificación sin medir nada. */
-export function tasaQueCae(tasas) {
-  for (const t of tasas ?? []) {
-    const medido = Number(t?.medido);
-    const esperado = Number(t?.esperado);
-    if (!Number.isFinite(medido) || !Number.isFinite(esperado)) continue;
-    if (medido < esperado) return { texto: String(t?.texto ?? ""), medido, esperado };
-  }
-  return null;
 }
 
 /** Qué le pasó a cada guion entre la corrida quieta y las corridas bajo carga.
@@ -561,20 +509,30 @@ export function tasaQueCae(tasas) {
  *   · `se-rompio` — verde quieto y rojo en al menos una frenada: **el rojo
  *     reproducido BAJO CARGA**. Y nada más: a quién pertenece ese rojo lo dice
  *     `firma`, no esta etiqueta (H-4).
- *     Hay que dárselo: `firma` tiene TRES valores, no dos (#609). `presupuesto`
- *     —el texto del fallo lleva una espera expirada—, `comportamiento` —no lo
- *     lleva, pero una TASA declarada cayó con la razón sim/pared hundida en las
- *     corridas rojas— y `sin-firma`, que sigue significando **no atribuible** y
- *     sigue siendo la defensa que nació de #496/#497.
+ *     `firma` tiene DOS valores: `presupuesto` —el texto del fallo lleva una
+ *     espera expirada— y `sin-firma`, que significa **no atribuible** y sigue
+ *     siendo la defensa que nació de #496/#497.
  *   · `se-arreglo` — rojo quieto y verde en al menos una frenada. No es un
  *     éxito: es un aviso de que ese rojo no era carga.
  *   · `no-comparable` — falta en alguna, o alguna no llegó a medir (⊘). Un guion
  *     que no midió no puede votar, y colapsarlo con «igual» fabricaría un verde.
  *
- *  `umbral` es el MISMO de `juzgaLaCarga`, y se le pasa desde `--umbral` para
- *  que las dos mitades del instrumento no puedan juzgar con dos listones
- *  distintos en la misma corrida. */
-export function comparaCorridas(quieta, cargadas, { umbral = UMBRAL_DE_CARGA_REAL } = {}) {
+ *  **Y son DOS y no tres a propósito.** Hubo una tercera firma (#609, la mañana
+ *  del 2026-09-18): el guion DECLARABA una TASA con su denominador de PARED, y
+ *  la rama pedía que esa tasa cayera Y que la razón sim/pared estuviera hundida
+ *  en las corridas rojas. Su ÚNICO sujeto en toda la batería era el guion 93,
+ *  que medía `camino / Δpared` y por eso salía rojo bajo carga con el juego
+ *  perfectamente correcto; esa misma tarde la tanda W (#679) lo pasó a
+ *  `camino / Δsim` y la rama se quedó sin nada que reconocer —con la lista de
+ *  tasas vacía era, literalmente, inalcanzable—. Se retiró ENTERA el mismo día
+ *  en vez de buscarle inquilino, porque un reconocedor cuyo único sujeto es una
+ *  medida sabida falsa es un candado que existe para sostener a otro candado, y
+ *  porque cualquier otra tasa contra la PARED en esta batería es un sitio de
+ *  #545: se CURA, no se declara. Sus nombres no se escriben aquí a propósito —
+ *  están candados en `campos-retirados-no-vuelven` para que no vuelvan por
+ *  copy-paste—; la historia entera, con ellos, está en
+ *  `docs/agents/2026-09-18-tanda-w-la-magnitud-con-el-reloj-que-es/critica.md`. */
+export function comparaCorridas(quieta, cargadas) {
   // `cargadas` es SIEMPRE una lista de corridas (cada una, su lista de guiones).
   // Una corrida que no dejó medida entra como `undefined` y se queda: su guion
   // sale `no-comparable`, que es lo que es. Descartarla encogería la N y haría
@@ -588,45 +546,18 @@ export function comparaCorridas(quieta, cargadas, { umbral = UMBRAL_DE_CARGA_REA
     const bs = cs.map((m) => m.get(nombre));
     const medido = (r) => Boolean(r && r.estado !== "sin-medir");
     const comparable = medido(a) && bs.length > 0 && bs.every(medido);
-    const filasRojas = bs.filter((b) => b?.estado === "rojo");
-    const rojas = filasRojas.length;
+    const rojas = bs.filter((b) => b?.estado === "rojo").length;
     const fallosCargado = bs.flatMap((b) => b?.fallos ?? []);
-    const tasasCargado = bs.flatMap((b) => b?.tasas ?? []);
     let cambio = "no-comparable";
     if (comparable) {
       if (a.estado === "verde") cambio = rojas > 0 ? "se-rompio" : "igual-verde";
       else cambio = rojas < bs.length ? "se-arreglo" : "igual-rojo";
     }
-    // La razón de las corridas que SALIERON ROJAS, no la de todas: una frenada
-    // que salió verde no dice nada de por qué cayó otra. Se exige que TODAS las
-    // que se pueden leer estén hundidas y que haya al menos una — con la misma
-    // puerta de ventana mínima que `juzgaLaCarga`, porque una razón sobre 1,9 s
-    // no es una razón, y con la pestaña oculta la sonda y el juego dejan de ver
-    // la misma secuencia de frames.
-    const razonUtil = (m) =>
-      m && !m.oculta && m.paredMs >= PARED_MINIMA_MS ? razonDeLaMedida(m) : null;
-    const razones = filasRojas.map((b) => razonUtil(b?.carga)).filter((r) => r !== null);
-    const razonHundida = razones.length > 0 && razones.every((r) => r <= umbral);
-    // Tercera rama (#609). El orden importa: la firma de presupuesto gana,
-    // porque es la que se puede leer sin que el guion coopere. La de
-    // comportamiento pide LAS DOS cosas —tasa declarada que cae Y razón
-    // hundida—, que es lo que separa el 93 (una tasa que baja) del 75 (un
-    // contador que sube, que ni siquiera se puede declarar como tasa).
-    let firma = null;
-    let tasaCaida = null;
-    if (cambio === "se-rompio") {
-      if (firmaDePresupuesto(fallosCargado)) {
-        firma = "presupuesto";
-      } else {
-        const cae = tasaQueCae(tasasCargado);
-        if (cae && razonHundida) {
-          firma = "comportamiento";
-          tasaCaida = cae;
-        } else {
-          firma = "sin-firma";
-        }
-      }
-    }
+    // Un solo criterio, y es el TEXTO del fallo: lo único que este banco puede
+    // mirar sin inventar nada. Que la razón sim/pared esté hundida NO entra aquí
+    // y está medido por qué: bajo `--factor 20` se hunde también para el 75,
+    // cuyo rojo es un contador de la vida ambiental (#496/#497).
+    const firma = cambio === "se-rompio" ? (firmaDePresupuesto(fallosCargado) ? "presupuesto" : "sin-firma") : null;
     return {
       nombre,
       quieto: a?.estado ?? null,
@@ -636,28 +567,17 @@ export function comparaCorridas(quieta, cargadas, { umbral = UMBRAL_DE_CARGA_REA
       corridas: bs.length,
       cambio,
       firma,
-      // La tasa que SOSTIENE la clasificación, y solo esa: si no fue ella quien
-      // la sostuvo, la fila no la nombra. Un veredicto que nombra una tasa que
-      // no votó se lee como si hubiera votado.
-      tasaCaida,
-      razonesRojas: razones,
       fallosQuieto: a?.fallos ?? [],
       fallosCargado,
-      tasasCargado,
     };
   });
 }
 
-/** Qué dice el veredicto de un rojo bajo carga, según su firma (#609).
+/** Qué dice el veredicto de un rojo bajo carga, según su firma.
  *
- *  Tres frases para tres cosas distintas, y ninguna dice «el rojo de #545»: el
- *  reproductor no puede atribuir (H-4).
- *
- *  La de en medio es la nueva, y es la que hay que leer con cuidado: dice
- *  **indicio**, no prueba, y nombra la tasa que cayó para que quien lee pueda
- *  comprobarlo. Nace de un caso medido —el 93 a ×40, razón 0,262, cuatro
- *  velocidades caídas— que el instrumento archivaba como «NO ATRIBUIBLE»
- *  teniendo delante todo lo necesario para reconocerlo. */
+ *  Dos frases para dos cosas distintas, y ninguna dice «el rojo de #545»: el
+ *  reproductor no puede atribuir (H-4). Hubo una tercera durante una mañana
+ *  (#609); se retiró con su único sujeto — ver `comparaCorridas`. */
 function frasePorFirma(r) {
   if (r.firma === "presupuesto") {
     return (
@@ -665,24 +585,10 @@ function frasePorFirma(r) {
       "#545 pero no lo prueba: mira el texto del aserto"
     );
   }
-  if (r.firma === "comportamiento") {
-    const m = r.tasaCaida;
-    const cuanto =
-      m && m.esperado ? ` (${(m.medido / m.esperado).toFixed(2)} de lo esperado)` : "";
-    return (
-      "— el fallo NO lleva firma de presupuesto de reloj, pero una TASA DECLARADA CAYÓ" +
-      `${cuanto} con la razón sim/pared hundida en las corridas rojas` +
-      (m?.texto ? `: «${m.texto}»` : "") +
-      ". Eso lo hace **compatible con #545 POR COMPORTAMIENTO, sin firma de presupuesto**, que es un " +
-      "INDICIO y no una prueba: lo único que se sostiene es la DIRECCIÓN — un reloj que va lento solo " +
-      "puede hacer que una tasa medida contra la pared salga BAJA, nunca que un contador salga ALTO. " +
-      "Mira la tasa antes de tocar una espera"
-    );
-  }
   return (
-    "— el fallo NO lleva firma de presupuesto de reloj ni una tasa declarada que caiga, así que " +
-    "**no es atribuible a #545**: puede ser un contador sobre un canal compartido (#496/#497, como el " +
-    "guion 75) o el escenario dejando de ser determinista. Mira el texto del aserto antes de tocar una espera"
+    "— el fallo NO lleva firma de presupuesto de reloj, así que **no es atribuible a #545**: puede ser " +
+    "un contador sobre un canal compartido (#496/#497, como el guion 75) o el escenario dejando de ser " +
+    "determinista. Mira el texto del aserto antes de tocar una espera"
   );
 }
 
