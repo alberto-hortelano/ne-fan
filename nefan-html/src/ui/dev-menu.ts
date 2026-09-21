@@ -6,22 +6,14 @@
  *  (graphics-mode.ts), UI de cliente. Todo por ratón: cero atajos de teclado.
  *  Las acciones que gastan créditos piden confirmación en dos clicks (patrón
  *  armed del title-screen). */
+import type { ArtePendiente } from "../renderer/types.js";
 import { errors } from "./error-log.js";
 
-export interface FakeItem {
-  kind: "skin" | "fps_atlas";
-  /** Clave del tile o prompt del skin — identidad estable del item. */
-  id: string;
-  label: string;
-  thumb: CanvasImageSource | null;
-  inFlight: boolean;
-  /** Si está presente, el botón Generar va deshabilitado con este motivo. */
-  disabledReason?: string;
-}
-
 export interface DevMenuDeps {
-  listFakeItems(): FakeItem[];
-  generate(item: FakeItem): Promise<void>;
+  /** Lo que hoy va en maqueta, contado por sus dueños (atlas y skins) y ya
+   *  concatenado por la raíz. Cada item trae su `generar()`: el menú no sabe
+   *  de tiles ni de prompts, solo pinta y pide (#492). */
+  pendientes(): ArtePendiente[];
   log(msg: string): void;
 }
 
@@ -76,7 +68,7 @@ export class DevMenu {
   }
 
   private renderItems(): void {
-    const items = this.deps.listFakeItems();
+    const items = this.deps.pendientes();
     this.itemsEl.replaceChildren();
     if (items.length === 0) {
       const empty = document.createElement("div");
@@ -90,7 +82,7 @@ export class DevMenu {
     }
   }
 
-  private renderItem(item: FakeItem): HTMLElement {
+  private renderItem(item: ArtePendiente): HTMLElement {
     const row = document.createElement("div");
     row.className = "dm-item";
     row.append(this.renderThumb(item.thumb));
@@ -126,13 +118,13 @@ export class DevMenu {
     return row;
   }
 
-  private async runGenerate(key: string, item: FakeItem): Promise<void> {
+  private async runGenerate(key: string, item: ArtePendiente): Promise<void> {
     this.armed.delete(key);
     this.inFlight.add(key);
     this.deps.log(`Generando ${item.label}…`);
     this.refresh();
     try {
-      await this.deps.generate(item);
+      await item.generar();
     } catch (err) {
       // Los controllers ya loguean el detalle; esto evita unhandled rejection
       // y deja rastro de QUÉ item pidió el usuario.

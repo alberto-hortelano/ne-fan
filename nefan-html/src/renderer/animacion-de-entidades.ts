@@ -16,7 +16,8 @@
  */
 
 import type { Vec3 } from "@nefan-core/src/types.js";
-import { newAnimState, type CharacterAnimState, type CharacterSpriteManager } from "./character-sprites.js";
+import { type CharacterSpriteManager } from "./character-sprites.js";
+import { newAnimState, type CharacterAnimState } from "./maquina-de-animacion.js";
 import type { Entity } from "./types.js";
 
 interface CharTrack {

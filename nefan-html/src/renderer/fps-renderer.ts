@@ -198,6 +198,16 @@ export class FpsRenderer {
     return this.surfaces.get(key) ?? null;
   }
 
+  /** Los tiles instalados que siguen en CLAY: las claves de `surfaces`, en su
+   *  orden, menos las que el GL ya tiene texturadas (sin módulo GL no hay tile
+   *  texturado que descontar). Las dos mitades de la pregunta —qué tiles hay y
+   *  cuál lleva textura— son de este fichero, así que se contesta aquí y no en
+   *  la raíz (#492); quien la pide es el controller del atlas. */
+  tilesSinAtlas(): string[] {
+    const textured = new Set(this.gl?.debugState().textured ?? []);
+    return [...this.surfaces.keys()].filter((key) => !textured.has(key));
+  }
+
   setActiveTile(key: string | null): void {
     this.activeKey = key;
     this.withGl((gl) => gl.setActive(key));

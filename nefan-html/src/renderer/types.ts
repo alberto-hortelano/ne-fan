@@ -91,6 +91,25 @@ export interface PlayerView {
   sprite?: Entity["sprite"];
 }
 
+/** Una pieza de arte que hoy va en MAQUETA y que su dueño sabe pedir: un tile
+ *  sin atlas de superficies o un skin de personaje aún sobre la base y_bot. La
+ *  cuenta quien la tiene —`FpsAtlasController`, `CharacterSpriteManager`— y el
+ *  menú dev solo la pinta y llama a `generar()`: el que cuenta es el que pide,
+ *  así que la raíz no decide nada por `kind` (#492). */
+export interface ArtePendiente {
+  kind: "skin" | "fps_atlas";
+  /** Clave del tile o prompt del skin — identidad estable del item. */
+  id: string;
+  label: string;
+  thumb: CanvasImageSource | null;
+  inFlight: boolean;
+  /** Si está presente, el botón Generar va deshabilitado con este motivo. */
+  disabledReason?: string;
+  /** Pide ESTA pieza aunque el modo global sea maqueta: la vía de gasto
+   *  controlado del menú dev. */
+  generar(): Promise<void>;
+}
+
 export interface AttackAreaParams {
   optimal_distance: number;
   distance_tolerance: number;
