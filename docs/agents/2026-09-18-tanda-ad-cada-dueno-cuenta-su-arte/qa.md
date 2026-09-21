@@ -1,5 +1,9 @@
 # QA — tanda AD · «Cada dueño cuenta su propio arte pendiente» (#492)
 
+Dos pasadas: la del 2026-09-20 sobre `feeea08f` (apto con reservas, H-1/H-2) y la **re-verificación del
+2026-09-21 sobre `e5cf1d85`** (rama rebasada sobre `main` `b22790fb`, PR #706), que está al final y cierra
+las dos reservas. Los números de guion cambiaron al rebasar (#680): el 152 es hoy el **155** y el 153 el **156**.
+
 > **Renumerados al cerrar (decisión del coordinador, #680):** el guion de esta tanda es el
 > **155** y el de esta QA el **156**. Este informe se renumeró ENTERO —etiquetas de captura
 > incluidas, que es lo que producen los guiones a partir de ahora—; las corridas que
@@ -20,7 +24,7 @@ los siete ficheros que toca la tanda son IDÉNTICOS en `main` `e635159d` y en `a
 | 1 | `listFakeItems` fuera de `main.ts`; cada dueño expone su conteo; la raíz solo compone | ✅ cumple | `grep -rn "FakeItem\|listFakeItems\|generateFakeItem\|skinStatus\|activeAngle" nefan-html/src nefan-core/src qa docs/arquitectura` → 0 en código (solo prosa de docblocks que nombran lo retirado). `FpsRenderer.tilesSinAtlas()`, `FpsAtlasController.pendientes()`, `CharacterSpriteManager.pendientes(prompts)`; `main.ts` es un thunk de tres líneas que concatena dos arrays. Matiz: la raíz sigue SABIENDO cuáles son las fuentes de prompts vivos (`aspecto` + `mundo.personajes`), como decidió el coordinador (opción B) |
 | 1b | La lista es IDÉNTICA a la de hoy en maqueta, en imagen y con un skin fallido | ✅ cumple | Guion 155 ×3 sobre la rama (`EXIT=0` las tres) y ×1 sobre la base con `listFakeItems` vivo: las cadenas `maqueta · modelo/pintado` e `imagen · modelo` son byte a byte las mismas en los dos árboles (ver «A/B» abajo). Además guion 156 (mío): ocho pares modelo/pintado idénticos entre rama y base |
 | 2 | El menú se comporta igual: mismos items, misma generación con el fake-ai-server, desde el arranque | ✅ cumple | Desde `./start.sh --preset e2e-sin-creditos` (lo levanta `qa/run.mjs`), título → mundo → editor → «Comenzar» → botón `Imágenes…`. Generación desde el menú medida en MAQUETA (guion 156: una superficie —POST `/generate_surface_atlas` sin `resolve_only`, botón «Generando…» en vuelo, fila fuera al texturarse— y un skin —POST `/skin_sprite_sheet` con el prompt del jugador, fila fuera al llegar el `idle`—) y en IMAGEN (guion 155: revivir un skin caído, su arte llega). Censo del runner: `puertas pintar-superficies×1` en los dos guiones |
-| 2b | Guion nuevo que conduzca `#dev-menu` sobre `e2e-sin-creditos` | ✅ cumple | `qa/guiones/155-el-menu-dev-cuenta-lo-que-cuentan-sus-duenos.mjs` (11 asertos, 3 estados) + el mío `156-el-menu-dev-con-el-jugador-vestido-y-la-partida-reanudada.mjs` (22 asertos, 4 estados más). Los tres sabotajes del ingeniero repetidos por mí sobre el 156: rojo los tres (abajo) |
+| 2b | Guion nuevo que conduzca `#dev-menu` sobre `e2e-sin-creditos` | ✅ cumple | `qa/guiones/155-el-menu-dev-cuenta-lo-que-cuentan-sus-duenos.mjs` (11 asertos, 3 estados; nació como 152) + el mío `156-el-menu-dev-con-el-jugador-vestido-y-la-partida-reanudada.mjs` (22 asertos, 4 estados más). Los tres sabotajes del ingeniero repetidos por mí sobre el 156: rojo los tres (abajo) |
 | 3 | `main.ts` baja y `client-file-size.json` baja a la cifra EXACTA en el mismo commit; el `porque` deja de nombrar el inventario de 8 colaboradores; fuera el docblock «única que lo ve todo» | ✅ cumple | `wc -l main.ts` = **1327** = `client-file-size.json:7` (1381 → 1327, −54). `node --test test/client-file-size.test.ts` → 7/7. `grep "lo ve todo" main.ts` → 0. El `porque` reescrito con el motivo y el número |
 | 3b | `character-sprites.ts` ≤ 450 sin subir el tope | ✅ cumple, **con reserva** | `wc -l` = 449 (437 → 449), tope 450 intacto, `eslint` verde. Reserva: el tope se respetó comprimiendo el formato, no el diseño — ver H-1 |
 | 4 | `la-logica-de-juego-no-vuelve-al-cliente` y arquitectura verdes; cero conversión celdas→metros nueva | ✅ cumple | `node --test test/architecture.test.ts` → 106/106. `git diff a25d8c2f HEAD -- nefan-html/src \| grep "^+" \| grep -c "TILE_SIZE_M\|cellToWorld"` → 0. Y lo que el crítico ya dijo: ese candado es un censo de identificadores y NO sujeta esto; lo que sostiene la frontera es que es inventario de estado de render |
@@ -134,7 +138,7 @@ tiene candado (2 rojos con el thunk sin el jugador). Se acepta como declaración
 - La fila del 156 en `qa/README.md`, debajo de la del 155.
 - Capturas en `qa/capturas/2026-09-20T11-*` (rama, base, sabotajes); `qa/capturas/ultima` apunta a la última.
 
-## Veredicto
+## Veredicto del 2026-09-20 (sobre `feeea08f`)
 
 **Apto con reservas.** Los cuatro criterios se cumplen y están medidos desde el arranque, la lista es
 idéntica a la de `main` en siete estados (los tres del crítico y cuatro más), la generación desde el menú
@@ -143,3 +147,48 @@ funciona en maqueta y en imagen con el motor falso, y el menú se ve píxel a p�
 «una de holgura»: el corte que el JSON anuncia queda pendiente y debería ir a issue con el número 467), H-2
 (una justificación falsa en el informe, no en el código) y H-3 (renumerar al fusionar). Ninguna exige
 volver al ingeniero antes de fusionar si el coordinador acepta abrir el issue de H-1.
+
+---
+
+# Re-verificación del 2026-09-21 sobre `e5cf1d85` (PR #706)
+
+Solo lo afectado por la vuelta del ingeniero (H-1 y H-2). Bloque 600 comprobado libre antes (`ss -ltnp`:
+solo 22/53/80/631/3636 escuchando en la máquina tras el reinicio) y después. Árbol limpio antes y después
+de cada sabotaje (`md5sum -c` OK).
+
+| Qué | Veredicto | Evidencia |
+|---|---|---|
+| **H-1** `character-sprites.ts` bajo el tope EN CANON | ✅ cerrado | `wc -l` = **383** (era 449; base 437). Dos cortes reales, no movimiento de compresión: `renderer/arte-pendiente-de-skins.ts` (77, función pura `artePendienteDeSkins(prompts, dueno)` con un puerto de tres miembros) y `renderer/maquina-de-animacion.ts` (123, `avanzarAnimacion` con la duración INYECTADA); `animacion-de-entidades.ts` apunta al módulo nuevo. `npx prettier --check` **limpio** en los cinco ficheros de la tanda que importan (`character-sprites.ts`, los dos cortes, `animacion-de-entidades.ts`, `dev-menu.ts`) y en `types.ts` y los dos tests |
+| …y los tres ficheros que `prettier --check` marca en rojo (`fps-atlas.ts`, `fps-renderer.ts`, `nefan-hook.ts`) | ✅ no son de la tanda | Sus versiones en la base `b22790fb` tampoco están en canon. Intersección «líneas que prettier cambiaría» ∩ «líneas añadidas por la tanda» (por `git blame b22790fb..HEAD`): **0 / 0 / 0** (6, 2 y 190 líneas fuera de canon; 21, 10 y 9 añadidas). Deuda preexistente de `main`, fuera de alcance |
+| La lista del menú sigue idéntica tras el corte | ✅ | Guiones **155** y **156** ×1 sobre la rama, `EXIT=0` los dos, 34 asertos verdes, y las cadenas `modelo/pintado` son byte a byte las del 20 (las cuatro filas de maqueta con la escudera, las tres de la reanudada, las tres «generándose» tras reanudar en imagen); censo `puertas pintar-superficies×1` en los dos |
+| Test nuevo de la máquina de animación | ✅ | `test/la-maquina-de-animacion-elige-el-clip.test.ts` → **21/21**; `npm test` del cliente **38/38**; `tsc`, `typecheck:tests`, `lint` a 0 |
+| …y uno de sus tres sabotajes | ✅ rojo preciso | `set("death")` sin su `return` → **2 rojos, exactamente los dos de la muerte** («MUERTO gana a todo» y «el cadáver se queda quieto»), 19 verdes. Coincide con lo declarado. Restaurado, `md5sum` OK |
+| **H-2** el gate DEV existe | ✅ cerrado | `nefan-hook.ts:225`: `if ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) {` … `}` en `:402`. Mi grep del 20 buscaba la grafía `import.meta.env.DEV` y el cast la rompe: **censo textual ciego a la escritura**, mi error, no del ingeniero. `enemies()` (`:303-312`, con `skinPrompt: e.skinPrompt` en `:311`) está DENTRO del gate; `setPlayerPos` `:334`, `closeTitle` `:372`, también |
+| …y sale a 0 en el bundle | ✅ | `npx vite build --outDir <scratchpad>` (rc 0, `dist/` del repo sin tocar): `closeTitle` 0 · `setPlayerPos` 0 · `setYaw` 0 · `inputDriver` 0 · `loadFixture` 0 — y las claves de producción del hook siguen ahí (`estadosTirados` 6, `styleRunState` 2), o sea que el 0 no es que el hook entero se cayera. Control: `vite build --mode development` también da 0 en las dos (Vite las elimina por `import.meta.env.DEV` en ambos modos de `build`; solo el `dev server` las conserva), así que el aserto «a 0 en `vite build`» es cierto pero el control no distingue el gate de un `false` fijo. La distinción la da que los guiones 155/156 las USAN bajo `vite dev` en la misma corrida |
+| Candados de `main` ya rebasados | ✅ | `un-numero-un-guion` 11/11 (155 y 156 únicos), `client-file-size` verde (1327 exacta) |
+
+## Hallazgo nuevo de la re-verificación
+
+**H-6 · Menor — el `$comment` de `client-file-size.json` quedó caducado por la propia vuelta.** El primer
+commit (`c2acaf76`) re-midió esa prosa y escribió «`character-sprites.ts` sube de 437 a 449 con #492 y eso
+es UNA línea de holgura bajo el tope» y «los peores no eximidos son `net/game-client.ts` y
+`renderer/character-sprites.ts`, los DOS con 449». La vuelta de H-1 (`1e1e00f3`, `116245d6`) dejó el fichero
+en **383** y no volvió a tocar el JSON (`git log` del contrato: último commit `c2acaf76`). Hoy el peor no
+eximido es `net/game-client.ts` con 449 a solas, y detrás `bridge-client.ts` 431 y `chasis.ts` 430;
+`character-sprites.ts` ya no está entre los cuatro primeros. Es exactamente lo que ese párrafo dice de sí
+mismo («las cifras caducan siempre»), y es el patrón de la memoria «la medida de hoy hay que medirla hoy»:
+la misma tanda que corrigió la frase de otro la dejó falsa con su segundo commit. No es código ni candado
+(la cifra exacta de `main.ts` sigue siendo correcta y el test verde); un párrafo, a re-medir al fusionar.
+
+## No probado en esta pasada
+- La batería completa de navegador (solo 155 y 156).
+- `arte-pendiente-de-skins.ts` no tiene test directo (declarado por el ingeniero): se ejerce por
+  `CharacterSpriteManager.pendientes`, y el sabotaje del `Set` que él reporta lo alcanza por esa vía. No lo
+  repetí: no es lo que cambió entre el 20 y hoy.
+
+## Veredicto final
+
+**Apto.** H-1 pagado con dos cortes reales y el fichero en canon; H-2 era un falso hallazgo mío (grep ciego
+al cast) y el gate está donde se dijo, con `enemies()` dentro y las claves DEV a 0 en el bundle; H-3
+resuelto por el rebase (155/156 únicos); la lista del menú sigue idéntica. Queda H-6 (prosa del contrato
+caducada) como menor, sin bloquear.
