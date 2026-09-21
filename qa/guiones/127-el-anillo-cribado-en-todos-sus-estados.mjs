@@ -42,7 +42,7 @@
  *  de esta espera es el BRIDGE y `data/contract/esperas-que-conducen.json`
  *  bendice la pared para él; lo que fallaba era el mudo. Los 90 s se quedan, y
  *  desde #677 son `MS_DEL_TILE` (`lib/tile-episodio.mjs`): el ÚNICO cortafuegos
- *  de las once esperas de tile del banco, con la aritmética del CUELGUE a su
+ *  de las quince esperas de tile del banco, con la aritmética del CUELGUE a su
  *  lado. Aquí se hereda por el default de `pedirYEsperarTile`, y que ninguna
  *  llamada traiga el suyo lo canda `data/contract/esperas-de-tile.json`.
  *
@@ -51,7 +51,9 @@
  *  para repetir siete veces la misma frase. MEDIDO el 2026-09-20 con
  *  `handleRequestTile` ignorando el frame, la misma corrida con y sin la
  *  decisión: **650 s con siete ✘ (10 asertos rojos) → 99 s con UNO** más un
- *  `ERROR:` que dice por qué se para. Los tres rojos de más del «antes» eran
+ *  `ERROR:` que dice por qué se para (QA lo remidió al validar la tanda: 98 s,
+ *  un ✘ y un `ERROR:`; el 120, que tiene DOS esperas y no siete, da el mismo
+ *  número por otra razón — ahí lo que se ahorra es una espera, aquí seis). Los tres rojos de más del «antes» eran
  *  los asertos de COSTE (`generaciones()`), que después del primer cuelgue ya
  *  no miden nada. Corolario que hay que leer sin confundirlo con una
  *  regresión: bajo silencio real este guion ya NO enseña sus bloques de

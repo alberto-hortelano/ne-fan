@@ -428,11 +428,26 @@ describe("sondaDeTile · la mitad que PARA dice lo mismo que la que JUZGA (H-3 d
   ];
 
   for (const { nombre, l } of lecturas) {
-    it(`${nombre}: sonda ≠ null ⇔ veredicto ∉ {callado, descartado}`, () => {
+    it(`${nombre}: sonda ≠ null ⇔ veredicto ∉ {callado, descartado}, y devuelve la lectura ENTERA`, () => {
       const v = veredictoDeTile({ key: "tile_0_1", ...l });
       const parada = sondaSerializada(ventana(l), "tile_0_1");
       const debeParar = v.estado !== CALLADO && v.estado !== DESCARTADO;
       assert.equal(parada !== null, debeParar, `veredicto=${v.estado} sonda=${JSON.stringify(parada)}`);
+      // LA MITAD QUE FALTABA (QA H-1). La bicondicional de arriba la cumple
+      // CUALQUIER precedencia —solo mira SI para, no CON QUÉ—, y una sonda
+      // reescrita con la precedencia vieja (llegado > fallo > rechazado,
+      // devolviendo en cada rama solo la señal ganadora) la pasaba entera:
+      // 45/45 verde con DOS precedencias en el árbol, que es justo lo que el
+      // criterio 3 prohíbe. Esto es lo que una sonda con precedencia no puede
+      // falsear: lo devuelto es la lectura COMPLETA, con las otras dos señales
+      // intactas, no la que ella haya elegido.
+      if (parada !== null) {
+        assert.deepEqual(
+          parada,
+          { tiles: l.tiles, episodio: l.episodios.find((e) => e && e.key === "tile_0_1") ?? null, rechazos: l.rechazos },
+          "la sonda devuelve las TRES señales tal como están en la página; si alguna viene vacía o a null cuando la había, está eligiendo, y eso es una segunda precedencia",
+        );
+      }
     });
   }
 

@@ -134,6 +134,7 @@ import {
 import { URLS } from "../lib/stack.mjs";
 import { esperarEnElSave } from "../lib/saves.mjs";
 import { fraseDeRechazos, porElCable } from "../lib/cable.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -213,7 +214,7 @@ async function irAlVecino(ctx) {
       ctx.waitFor(
         "el jugador llega al destino (otro tile)",
         (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
-        180_000,
+        MS_DEL_TILE,
         desde.tile,
       ),
   );

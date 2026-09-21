@@ -70,7 +70,7 @@
  *  bridge había fallado, había rechazado el frame o nunca supo de la petición:
  *  noventa segundos para producir cero información. Hoy hay TRES desenlaces con
  *  texto y el libro de episodios entero en el ✘. El tope ya no es de este
- *  guion: es `MS_DEL_TILE` (`lib/tile-episodio.mjs`), el mismo de las once
+ *  guion: es `MS_DEL_TILE` (`lib/tile-episodio.mjs`), el mismo de las quince
  *  esperas de tile del banco desde #677, con la aritmética del CUELGUE a su
  *  lado; aquí se hereda por el default de `pedirYEsperarTile` y eso lo canda
  *  `data/contract/esperas-de-tile.json`.
@@ -85,8 +85,10 @@
  *     juego mandó un mensaje que el servidor no reconoce».
  *   · `handleRequestTile` ignorando el mensaje → ✘ a los 90 s con el libro
  *     entero y «no hay constancia de este tile», **y el guion ABORTA ahí**
- *     (H-4 de #687): UNA espera y no dos, o sea 98 s de corrida entera
- *     medidos el 2026-09-20 contra los 181 s de #656. Tras el ✘ sale un
+ *     (H-4 de #687). ESTE guion tiene DOS esperas de tile, así que bajo
+ *     silencio paga UNA y no dos: 98 s de corrida entera medidos el
+ *     2026-09-20 contra los 181 s de #656. (El 127, que tiene siete, pasa de
+ *     650 s a 99 s; su cabecera lo cuenta.) Tras el ✘ sale un
  *     `ERROR:` que dice por qué se para —«lo que quedara por medir mediría el
  *     mismo cuelgue otra vez»—, así que bajo silencio real este guion ya no
  *     enseña sus asertos de después: no es una regresión, es la decisión.

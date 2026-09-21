@@ -48,7 +48,7 @@
  *  ── LO QUE ENTRÓ CON #677 Y #687 (tanda V) ──────────────────────────────
  *  Aquí viven también, desde entonces, las OTRAS tres decisiones de la espera
  *  que hasta ese día estaban repartidas entre `sesion.mjs` y este fichero:
- *   · el CORTAFUEGOS (`MS_DEL_TILE`), uno para las once esperas del banco,
+ *   · el CORTAFUEGOS (`MS_DEL_TILE`), uno para las quince esperas del banco,
  *     con la aritmética del cuelgue escrita a su lado;
  *   · la SONDA que corre dentro de la página (`sondaDeTile`), que ya no tiene
  *     precedencia propia: devuelve la lectura cruda en cuanto hay señal, y la
@@ -63,13 +63,20 @@
  *  después).
  */
 
-/** EL CORTAFUEGOS DE UN TILE DEL BRIDGE: UNO para las once esperas del banco
+/** EL CORTAFUEGOS DE UN TILE DEL BRIDGE: UNO para las QUINCE esperas del banco
  *  que tienen ese sujeto (#677), decidido por el coste del CUELGUE y no por lo
  *  que tarda el tile.
  *
+ *  (Nacieron siendo ONCE. El censo del issue y el del plan filtraban por el
+ *  LITERAL —`240_000|180_000`— sobre los guiones que el issue nombraba, y la
+ *  QA de la tanda barrió `qa/**` por el árbol: faltaba un quinto camino al
+ *  mismo `runTileGeneration`, el viaje por «Salidas» de los guiones 49 ×2, 60
+ *  y 65. Un censo por grafía nace ciego, también cuando la grafía es un
+ *  número.)
+ *
  *  **Lo que tarda el tile no puede decidir el número.** Con el motor falso
  *  (retraso 0, `labs/narrative/fake-ai-server.ts`) un tile llega en torno a un
- *  segundo: el guion 152 lo mide en cada corrida —32 tiles, p50/p95/máx— y
+ *  segundo: el guion 157 lo mide en cada corrida —32 tiles, p50/p95/máx— y
  *  exige que este cortafuegos esté al menos a 10× de su p95. Con ese suelo,
  *  cualquier número entre 10 s y 240 s es defendible, así que la medida es el
  *  RECIBO de que el suelo está lejos, no la fuente del número. Y el motor real
@@ -94,6 +101,12 @@
  *   · 08, 15 — un viaje a 240 s SIN mirar `viaje.error`: 4 min → 1,5 min.
  *   · 05, 42 — `holdUntil` a 180 s hasta entrar en el tile: 3 min → 1,5 min.
  *   · 63 — el tile en el SAVE a 60 s: SUBE a 90 y sale `sinMedir`.
+ *   · 49 (×2), 60, 65 — el viaje por «Salidas» a 180 s, el mismo predicado
+ *     (`currentTile !== t`) y el mismo generador: 3 min → 1,5 min en el 49 y
+ *     1,5 min → 45 s en los otros dos. Tres de las cuatro van dentro de
+ *     `ctx.absorbe`, así que al expirar el llamante declara `sinMedir` y
+ *     ningún verde depende de ellas: eso cambia quién paga el rojo, no a quién
+ *     se espera ni lo que cuesta el cuelgue.
  *  Que el 08, el 15 y el 74 no miren `viaje.error` es el MUDO de #656 en el
  *  camino del viaje: no se arregla aquí (issue del coordinador), pero es la
  *  razón medible por la que 240 costaba más que 90: 150 s más por cada
@@ -110,9 +123,10 @@
  *  de NUEVE escenas, un lote, a 240 s).
  *
  *  Quién lo usa lo canda `data/contract/esperas-de-tile.json` por el ÁRBOL
- *  (`test/el-cortafuegos-del-tile-tiene-dueno.test.ts`): las once esperas
- *  presupuestan con este identificador, ninguna copia local con otro valor, y
- *  ningún `pedirYEsperarTile` trae su propio `ms`. */
+ *  (`test/el-cortafuegos-del-tile-tiene-dueno.test.ts`): las trece esperas
+ *  del padrón presupuestan con este identificador —las otras dos, en el 120 y
+ *  el 127, lo heredan del default de `pedirYEsperarTile`—, ninguna copia local
+ *  ni alias con otro nombre, y ningún `pedirYEsperarTile` trae su propio `ms`. */
 export const MS_DEL_TILE = 90_000;
 
 /** LA SONDA DE LA ESPERA. Corre DENTRO de la página (Playwright la serializa

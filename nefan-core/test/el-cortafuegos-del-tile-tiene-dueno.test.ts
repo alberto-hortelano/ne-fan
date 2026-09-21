@@ -1,9 +1,11 @@
 /** EL CORTAFUEGOS DE UN TILE DEL BRIDGE ES UNO Y TIENE DUEÑO (#677, #687).
  *
- *  Once esperas del banco tienen el mismo sujeto —el bridge generando y
+ *  QUINCE esperas del banco tienen el mismo sujeto —el bridge generando y
  *  difundiendo un tile, sea por `request_tile`, por un viaje del panel
  *  «Salidas» o por la frontera— y hasta #677 presupuestaban con CUATRO números
- *  (60, 90, 180 y 240 s). El número lo decide el coste del CUELGUE (la
+ *  (60, 90, 180 y 240 s). Nacieron siendo once: el censo del issue filtraba
+ *  por el LITERAL sobre los guiones que él mismo nombraba, y QA barrió el
+ *  árbol entero — faltaban cuatro viajes por «Salidas» (49 ×2, 60, 65). El número lo decide el coste del CUELGUE (la
  *  aritmética está junto a `MS_DEL_TILE` en `qa/lib/tile-episodio.mjs`), y
  *  esto sujeta que sea UNO: `data/contract/esperas-de-tile.json` dice quién lo
  *  usa, y aquí se comprueba en CI —la batería de navegador no corre en ningún
@@ -155,7 +157,7 @@ export function esperasDeTile(texto: string, fichero: string): Espera[] {
 export type Uso = {
   fichero: string;
   linea: number;
-  clase: "declaracion" | "import" | "export" | "default" | "presupuesto" | "comparacion" | "interpolacion" | "otro";
+  clase: "declaracion" | "import" | "export" | "default" | "presupuesto" | "alias" | "comparacion" | "interpolacion" | "otro";
   /** El valor declarado, la función del default, el verbo de la espera, la
    *  expresión que lo lee o el template en el que se imprime. */
   detalle: string;
@@ -197,6 +199,19 @@ export function usosDeLaConstante(texto: string, fichero: string): Uso[] {
     }
     return null;
   };
+  /** La `const X = …MS_DEL_TILE…` que BAUTIZA el número con otro nombre, si
+   *  `n` está dentro de su inicializador. Se sube por expresiones —binarias,
+   *  paréntesis, condicionales, template— y se para en cuanto aparece algo que
+   *  no es una expresión: así `const doble = MS_DEL_TILE * 2` es un alias y
+   *  `ctx.log(\`…\${MS_DEL_TILE}…\`)` no lo es. */
+  const declaracionQueBautiza = (n: ts.Node): string | null => {
+    let cur: ts.Node = n;
+    for (let a: ts.Node | undefined = n.parent; a; cur = a, a = a.parent) {
+      if (ts.isVariableDeclaration(a)) return a.initializer === cur ? a.getText(sf).slice(0, 80) : null;
+      if (!ts.isExpression(a) && !ts.isTemplateSpan(a)) return null;
+    }
+    return null;
+  };
   const usos: Uso[] = [];
   const visita = (n: ts.Node): void => {
     if (ts.isIdentifier(n) && n.text === NOMBRE) {
@@ -215,7 +230,14 @@ export function usosDeLaConstante(texto: string, fichero: string): Uso[] {
         // argumento de un verbo es un presupuesto derivado, no una lectura, y
         // preguntando antes por `isBinaryExpression` se colaría como tal.
         const e = llamadaQuePresupuesta(n);
+        const alias = declaracionQueBautiza(n);
         if (e) usos.push({ ...base, clase: "presupuesto", detalle: e.verbo, llamadaLinea: linea(e.call) });
+        // Un ALIAS es rojo EN TODAS PARTES, lectores incluidos (QA H-4): dentro
+        // de un lector, `const doble = MS_DEL_TILE * 2` caía en `comparacion`
+        // —legítima ahí— y luego presupuestaba con `doble`, que (a) no ve
+        // porque no está en el padrón. Un segundo nombre para el número es la
+        // copia por otro camino, y da igual quién la escriba.
+        else if (alias !== null) usos.push({ ...base, clase: "alias", detalle: alias });
         else if (ts.isBinaryExpression(p)) usos.push({ ...base, clase: "comparacion", detalle: p.getText(sf) });
         else if (ts.isTemplateSpan(p)) {
           // `${MS_DEL_TILE}` dentro de un template: produce TEXTO y nada más,
@@ -279,9 +301,16 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
   it("la constante se declara UNA vez, donde dice el padrón, y vale lo que dice", () => {
     const declaraciones = usos.filter((u) => u.clase === "declaracion");
     assert.deepEqual(
-      declaraciones.map((d) => `${d.fichero}:${d.linea} = ${d.detalle}`),
-      [`${contrato.constante.fichero}:${declaraciones[0]?.linea ?? "?"} = ${contrato.constante.valor_ms.toLocaleString("en-US").replace(/,/g, "_")}`],
-      `Una sola declaración de ${NOMBRE}, en ${contrato.constante.fichero}, con el valor del contrato. Una copia local en un guion —con el valor que sea— nace verde para cualquier candado por nombre; aquí es rojo.`,
+      declaraciones.map((d) => d.fichero),
+      [contrato.constante.fichero],
+      `Una sola declaración de ${NOMBRE}, en ${contrato.constante.fichero}. Una copia local en un guion —con el valor que sea— nace verde para cualquier candado por nombre; aquí es rojo.`,
+    );
+    // El VALOR, no su grafía (QA H-5): `90_000` y `90000` son el mismo número,
+    // y comparar el texto se cobraba un rojo cosmético por un guion bajo.
+    assert.equal(
+      Number(declaraciones[0].detalle.replace(/_/g, "")),
+      contrato.constante.valor_ms,
+      `${declaraciones[0].fichero}:${declaraciones[0].linea} declara \`${declaraciones[0].detalle}\` y el contrato dice ${contrato.constante.valor_ms}. Cambiar el número tiene que verse en el diff de los DOS.`,
     );
   });
 
@@ -340,6 +369,12 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
         case "interpolacion":
           if (!lectores.has(u.fichero)) quejas.push(`${donde}: lo imprime (\`${u.detalle}\`) sin estar en \`lectores\``);
           break;
+        case "alias":
+          quejas.push(
+            `${donde}: lo BAUTIZA con otro nombre (\`${u.detalle}\`) — un alias presupuesta sin que (a) ni (c) lo vean; ` +
+              `usa ${NOMBRE} donde presupuestes, o compáralo en el sitio`,
+          );
+          break;
         default:
           quejas.push(`${donde}: uso que este contrato no sabe explicar: \`${u.detalle}\``);
       }
@@ -367,12 +402,16 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
     assert.deepEqual(sinLectura, [], `lector(es) sin ninguna comparación con ${NOMBRE}: ${sinLectura.join(" | ")}`);
   });
 
-  it("el padrón cubre los once sitios del censo de #677 (no nueve, no doce)", () => {
-    // Nueve en el padrón + los dos que heredan el default (120, 127) = once.
-    // Si mañana una espera de tile se muda a `pedirYEsperarTile`, sale de aquí
-    // y entra en (c); si nace una nueva con literal, no la ve nadie (agujero
-    // declarado abajo). El número se fija para que ese movimiento se VEA.
-    assert.equal(contrato.esperas.length, 9, JSON.stringify(contrato.esperas.map(claveDeEntrada), null, 1));
+  it("el padrón cubre los QUINCE sitios del censo por árbol (no nueve, no once)", () => {
+    // Trece en el padrón + los dos que heredan el default (120, 127) = quince.
+    // Nació diciendo ONCE porque el censo se hizo filtrando `240_000|180_000`
+    // sobre los guiones que nombraba el issue; QA barrió `qa/**` entero y
+    // apareció un quinto camino al mismo `runTileGeneration`: el viaje por
+    // «Salidas» de los guiones 49 (×2), 60 y 65. El número se fija para que
+    // cualquier movimiento se VEA: si una espera se muda a `pedirYEsperarTile`
+    // sale de aquí y entra en (c); si nace una nueva con literal, no la ve
+    // nadie (agujero declarado abajo, con su caso ejecutable).
+    assert.equal(contrato.esperas.length, 13, JSON.stringify(contrato.esperas.map(claveDeEntrada), null, 1));
   });
 
   it("el detector encuentra lo que dice encontrar (control positivo, las tres formas y las cinco clases)", () => {
@@ -434,9 +473,41 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
     `;
     assert.deepEqual(
       usosDeLaConstante(material, "qa/guiones/de-mentira.mjs").map((u) => `${u.clase}:${u.detalle}`),
-      ["declaracion:240_000", "export:MS_DEL_TILE", "default:otra", "otro:x = MS_DEL_TILE"],
-      "el alias (`const x = MS_DEL_TILE`) es `otro`, o sea ROJO: un segundo nombre presupuesta sin que (a) ni (c) lo vean",
+      ["declaracion:240_000", "export:MS_DEL_TILE", "default:otra", "alias:x = MS_DEL_TILE"],
+      "el alias (`const x = MS_DEL_TILE`) tiene clase propia, y es ROJO en todas partes: un segundo nombre presupuesta sin que (a) ni (c) lo vean",
     );
+  });
+
+  it("un LECTOR no puede presupuestar por alias, que es el agujero que QA midió (H-4)", () => {
+    // El caso exacto del informe de QA: un fichero registrado en `lectores`
+    // —donde una `comparacion` es legítima— con `const doble = MS_DEL_TILE * 2`
+    // y `waitFor(…, doble)`. Antes: `comparacion` (legítima ahí) + una espera
+    // que (a) no mira porque no está en el padrón = VERDE. Ahora el bautizo
+    // tiene clase propia y (b) lo rechaza aunque el fichero sea lector.
+    const material = `
+      import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+      const doble = MS_DEL_TILE * 2;
+      const margen = (MS_DEL_TILE);
+      await ctx.waitFor("el tile vecino llega", fn, doble, k);
+      ctx.expect("suelo", p95 * 10 <= MS_DEL_TILE, "ok");
+      ctx.log(\`cortafuegos \${MS_DEL_TILE} ms\`);
+    `;
+    assert.deepEqual(
+      usosDeLaConstante(material, "qa/guiones/de-mentira.mjs").map((u) => `${u.clase}:${u.detalle}`),
+      [
+        "import:MS_DEL_TILE",
+        "alias:doble = MS_DEL_TILE * 2",
+        "alias:margen = (MS_DEL_TILE)",
+        "comparacion:p95 * 10 <= MS_DEL_TILE",
+        "interpolacion:`cortafuegos ${MS_DEL_TILE} ms`",
+      ],
+      "el bautizo es `alias` aunque venga por una expresión o por un paréntesis; comparar e imprimir en el sitio no lo son",
+    );
+    // Y la espera que presupuesta con el alias no casa con la constante, así
+    // que si alguien la apuntara en el padrón tampoco pasaría (a).
+    const espera = esperasDeTile(material, "qa/guiones/de-mentira.mjs")[0];
+    assert.equal(espera.presupuesto, "doble");
+    assert.equal(espera.presupuestoEsLaConstante, false);
   });
 
   it("**el agujero DECLARADO, y medido**: una espera de tile NUEVA con literal no toca la constante y nadie la ve", () => {

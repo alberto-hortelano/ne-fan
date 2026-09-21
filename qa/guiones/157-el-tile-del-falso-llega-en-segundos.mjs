@@ -1,9 +1,9 @@
 /** CUÁNTO TARDA UN TILE DEL BRIDGE EN LLEGAR AL CLIENTE, con el motor falso y
  *  en esta máquina — la DISTRIBUCIÓN, no un caso (#677).
  *
- *  Once esperas del banco tienen por sujeto «un tile del bridge» y hasta #677
- *  presupuestaban con cuatro números (60, 90, 180 y 240 s) que nadie había
- *  medido contra nada. Esto es la medida, con recibo: 32 tiles de los anillos
+ *  Quince esperas del banco tienen por sujeto «un tile del bridge» y hasta
+ *  #677 presupuestaban con cuatro números (60, 90, 180 y 240 s) que nadie
+ *  había medido contra nada. Esto es la medida, con recibo: 32 tiles de los anillos
  *  2 y 3 pedidos por el cable en UNA partida (`handleRequestTile` no exige
  *  adyacencia y `makeTile` del falso fabrica cualquier `(tx,ty)`), cada uno
  *  cronometrado DESDE NODE alrededor de `pedirYEsperarTile` —o sea lo que paga
