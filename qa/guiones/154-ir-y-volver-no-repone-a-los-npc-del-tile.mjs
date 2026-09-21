@@ -61,6 +61,7 @@ import { readFileSync } from "node:fs";
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
 import { rutaDelSave, esperarEnElSave } from "../lib/saves.mjs";
 import { acercarse } from "../lib/combate.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 
 /** Saves vírgenes y el motor falso a cero: el ledger que se lee es el de ESTA
  *  partida y los spawns por turno no se cuelan. */
@@ -123,7 +124,12 @@ async function pulsarSalida(ctx, nombre) {
 
 /** El viaje ha terminado cuando el JUGADOR está en otro tile (misma espera que
  *  el guion 09: por estado contra el ledger `__nefan.viaje`, con el tope como
- *  cortafuegos de deadlock). */
+ *  cortafuegos de deadlock). Ese tope es `MS_DEL_TILE` —el de TODA espera de un
+ *  tile del bridge desde #677, con su aritmética en `qa/lib/tile-episodio.mjs`—
+ *  y no el `240_000` con el que nació: este guion entró en `main` con #699,
+ *  después del censo de la tanda V, calcando la espera del 09 con su literal.
+ *  Está en `data/contract/esperas-de-tile.json`, que es lo que hace que la
+ *  próxima copia se vea. */
 async function esperarLlegada(ctx, tileAnterior, desc) {
   const r = await ctx.waitFor(
     desc,
@@ -134,7 +140,7 @@ async function esperarLlegada(ctx, tileAnterior, desc) {
       if (!t || t === anterior) return null;
       return { tile: t, scene: window.__nefan.scene?.scene_id ?? null };
     },
-    240_000,
+    MS_DEL_TILE,
     tileAnterior,
   );
   if (r.__roto) throw new Error(`${desc}: el bridge abortó el viaje: ${JSON.stringify(r.__roto)}`);

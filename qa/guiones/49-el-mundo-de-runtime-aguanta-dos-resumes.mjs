@@ -56,6 +56,7 @@ import {
   esperarTituloListo,
 } from "../lib/sesion.mjs";
 import { acercarse, herirHasta } from "../lib/combate.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 
 /** El motor falso es determinista POR TURNO de diálogo, así que hace falta
  *  empezar de cero: saves vírgenes y el contador a 0. */
@@ -144,7 +145,7 @@ async function idaYVuelta(ctx, etiqueta) {
       ctx.waitFor(
         `el jugador llega al destino (otro tile, ${etiqueta})`,
         (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
-        180_000,
+        MS_DEL_TILE,
         partida.tile,
       ),
   );
@@ -161,7 +162,7 @@ async function idaYVuelta(ctx, etiqueta) {
       ctx.waitFor(
         `el jugador vuelve al tile de partida (${etiqueta})`,
         (t) => (window.__nefan.currentTile === t ? t : null),
-        180_000,
+        MS_DEL_TILE,
         partida.tile,
       ),
   );

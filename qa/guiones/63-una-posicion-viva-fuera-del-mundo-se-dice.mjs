@@ -51,6 +51,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { nuevaPartida, comenzar, reanudar } from "../lib/sesion.mjs";
 import { esperarEnElSave, rutaDelSave } from "../lib/saves.mjs";
 import { fraseDeRechazos, porElCable, porRondasHastaRechazo } from "../lib/cable.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 
 /** El motor falso es determinista POR TURNO de diálogo: saves vírgenes. */
 export const aisla = ["saves", "fake-ai"];
@@ -125,14 +126,18 @@ export default async function (ctx) {
   // milisegundos se pagaba con el presupuesto entero (medido: 71 s para decir
   // al final algo que ya se sabía). Cada ronda mira el save; entre rondas, si
   // el bridge ya contestó que no, se corta.
+  //
+  // El TECHO de esa espera es el cortafuegos del tile del bridge y por eso es
+  // `MS_DEL_TILE` (#677): lo que hay detrás es el mismo `runTileGeneration`,
+  // solo que observado en el SAVE. `RONDA_MS` no es un presupuesto, es la
+  // cadencia con la que se vuelve a mirar el disco entre ronda y ronda.
   const RONDA_MS = 2_000;
-  const TECHO_MS = 60_000;
   const { resultado, rechazos } = await porElCable(ctx, { type: "request_tile", tx: 1, ty: 0, reason: "prefetch" }, (id) =>
     porRondasHastaRechazo(
       ctx,
       id,
       () => esperarEnElSave(partida.sessionId, (s) => (s.scenes_loaded?.tile_1_0 ? Object.keys(s.scenes_loaded) : null), RONDA_MS),
-      TECHO_MS,
+      MS_DEL_TILE,
     ),
   );
   const conDosTiles = resultado.valor ?? null;

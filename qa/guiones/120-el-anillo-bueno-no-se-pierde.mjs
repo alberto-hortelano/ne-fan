@@ -69,7 +69,11 @@
  *  y un tope de 90 s, así que cuando el tile no llegaba nadie podía saber si el
  *  bridge había fallado, había rechazado el frame o nunca supo de la petición:
  *  noventa segundos para producir cero información. Hoy hay TRES desenlaces con
- *  texto y el libro de episodios entero en el ✘.
+ *  texto y el libro de episodios entero en el ✘. El tope ya no es de este
+ *  guion: es `MS_DEL_TILE` (`lib/tile-episodio.mjs`), el mismo de las quince
+ *  esperas de tile del banco desde #677, con la aritmética del CUELGUE a su
+ *  lado; aquí se hereda por el default de `pedirYEsperarTile` y eso lo canda
+ *  `data/contract/esperas-de-tile.json`.
  *  **PROBADO EN NEGATIVO** el 2026-09-18, un sabotaje por vez y restaurado con
  *  `md5sum`, los tres sobre ESTE guion:
  *   · motor falso en `mode:"error"` (`POST /dev/tiles`) antes de pedir el tile
@@ -79,8 +83,15 @@
  *     contrato y el bridge contesta por UNICAST al socket, que ahora sigue
  *     abierto → ✘ «el BRIDGE RECHAZÓ el frame por unicast … [protocolo] El
  *     juego mandó un mensaje que el servidor no reconoce».
- *   · `handleRequestTile` ignorando el mensaje → ✘ a los 90 s (dos esperas,
- *     181 s medidos) con el libro entero y «no hay constancia de este tile».
+ *   · `handleRequestTile` ignorando el mensaje → ✘ a los 90 s con el libro
+ *     entero y «no hay constancia de este tile», **y el guion ABORTA ahí**
+ *     (H-4 de #687). ESTE guion tiene DOS esperas de tile, así que bajo
+ *     silencio paga UNA y no dos: 98 s de corrida entera medidos el
+ *     2026-09-20 contra los 181 s de #656. (El 127, que tiene siete, pasa de
+ *     650 s a 99 s; su cabecera lo cuenta.) Tras el ✘ sale un
+ *     `ERROR:` que dice por qué se para —«lo que quedara por medir mediría el
+ *     mismo cuelgue otra vez»—, así que bajo silencio real este guion ya no
+ *     enseña sus asertos de después: no es una regresión, es la decisión.
  *  Y TRES MÁS del repaso de QA, que son los estados en los que el veredicto
  *  AFIRMABA de más («y el bridge no dijo nada de él»):
  *   · `delay_ms: 120000` — el tile va LENTO, no muere. El bridge difunde

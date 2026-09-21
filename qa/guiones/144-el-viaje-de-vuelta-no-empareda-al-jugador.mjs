@@ -73,6 +73,7 @@
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 import { URLS } from "../lib/stack.mjs";
 
 /** El mapa se MUTA (el ancla del lugar de origen), así que la partida nace
@@ -161,7 +162,7 @@ async function esperarLlegada(ctx, tileAnterior, desc) {
         exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
       };
     },
-    240_000,
+    MS_DEL_TILE,
     tileAnterior,
   );
 }

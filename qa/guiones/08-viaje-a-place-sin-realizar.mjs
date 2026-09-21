@@ -32,6 +32,7 @@
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
 import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 
 const GAME_ID = "alta_fantasia";
 
@@ -103,7 +104,7 @@ export default async function (ctx) {
           exits: (s.exits ?? []).map((e) => e.place_id),
         };
       },
-      240_000,
+      MS_DEL_TILE,
       antes.scene_id,
     )
     .catch((err) => {

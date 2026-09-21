@@ -51,6 +51,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida, recargarAlTitulo, reanudar } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
 import { esperarEnElSave, rutaDelSave } from "../lib/saves.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -112,7 +113,7 @@ async function viajar(ctx, nombre) {
   return ctx.waitFor(
     `el jugador llega a «${nombre}» (otro tile que ${desde})`,
     (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
-    180_000,
+    MS_DEL_TILE,
     desde,
   );
 }
