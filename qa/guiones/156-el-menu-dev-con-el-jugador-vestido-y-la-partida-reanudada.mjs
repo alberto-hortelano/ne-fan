@@ -28,10 +28,32 @@
  *     `fpsRenderer.clearTiles` y los tiles del save otra vez): es el estado en
  *     el que `surfaces` y `entries` podrían dejar de ir en el mismo orden, y
  *     la lista nueva itera `surfaces` donde la vieja iteraba `entries`.
- *  4. **Todo el arte puesto** (imagen, skins llegados, tile texturado): el
- *     menú tiene que decir «Sin imágenes fake» y el modelo tiene que estar
- *     vacío EN EL MISMO TICK — y para que dos vacíos no se comparen entre sí,
- *     se exige que el libro tenga a los personajes con su `idle` listo.
+ *  4. **Todo el arte puesto** (imagen, skins llegados, tile texturado): en la
+ *     partida NUEVA el menú tiene que decir «Sin imágenes fake» y el modelo
+ *     tiene que estar vacío EN EL MISMO TICK — y para que dos vacíos no se
+ *     comparen entre sí, se exige que el libro tenga a los personajes con su
+ *     `idle` listo.
+ *  5. **El arte que VUELVE al reanudar**, que NO es «la lista se queda
+ *     vacía». Esa exigencia fue el rojo de #712: `resume` reinstala TODOS los
+ *     tiles del save (`main.ts`: «TODOS los tiles del save se re-añaden») y
+ *     solo el tile ACTIVO pide atlas (`FpsAtlasController.onActiveTile`), así
+ *     que un save nacido sobre el anillo 3×3 pre-generado deja 8 vecinos en
+ *     clay para siempre: eso es arte PENDIENTE de verdad, no arte sin
+ *     restaurar, y el menú acierta al ofrecerlo. Pedir «vacía» era pedir que
+ *     el mundo tuviera UN tile, cosa que este guion ni declara ni controla —
+ *     no pide `aisla: ["mundo"]`—, así que salía verde corriendo solo y rojo
+ *     detrás de cualquiera de los guiones que pre-generan el mundo (115, 15,
+ *     154 dejan «Mundo de Miravanda generado: 9 escenas» en el disco efímero
+ *     de la corrida, que es compartido). Lo que se exige aquí es lo que el
+ *     resume DEBE hacer, y se cumple con uno o con nueve tiles: los tres
+ *     skins re-pedidos hasta tener `idle`, el tile que PISA el jugador
+ *     texturado otra vez, y ni una petición de atlas que pinte (lo ya pagado
+ *     vuelve gratis). Todo eso se afirma sobre la foto del MISMO tick que
+ *     cumplió la espera —la que ella devuelve—, porque el estado no se queda
+ *     quieto: al reanudar, los skins que acaban de llegar se RE-ARMAN un
+ *     momento después y el libro vuelve a enseñarlos «generándose». No se le pone `aisla: ["mundo"]` a propósito: el estado
+ *     de varios tiles es el más interesante de los dos y así se sigue
+ *     midiendo cuando toca correr la batería entera.
  *
  *  EL MODELO DE REFERENCIA es una segunda escritura del algoritmo de
  *  `a25d8c2f:nefan-html/src/main.ts:798-840` (independiente de la del 152,
@@ -44,7 +66,9 @@
  *  `ui/dev-menu.ts` lo dice: «todo por ratón»), así que no hay otra puerta
  *  que medir.
  *
- *  LO QUE NO CUBRE: el orden entre VARIOS tiles (el motor falso sirve uno);
+ *  LO QUE NO CUBRE: el orden entre VARIOS tiles GARANTIZADO — corriendo solo,
+ *  el motor falso sirve uno y ese trozo queda sin ejercer (solo lo ejerce la
+ *  corrida que lleve delante un guion que pre-genere el mundo);
  *  `CONFIG.graphics.ai_skin=false`; la miniatura (regla 2); y un skin con
  *  `idle` listo pero SIN entrada en el libro (el rearme borra la entrada y
  *  conserva el arte; `__nefan.skins` no lo publica).
@@ -101,6 +125,10 @@ function instalarElModelo() {
       filas,
       vacioPintado,
       jugador: n.aspecto.skinPrompt,
+      // El tile que PISA el jugador: es el único que pide atlas, así que es el
+      // único del que se puede exigir que vuelva texturado (#712).
+      activo: fps.ready ? fps.activeTile : null,
+      tiles: n.tiles,
       libro: libro.map((e) => ({ prompt: e.prompt, ready: e.ready, failed: e.failed })),
       cuadran: JSON.stringify(pintado) === JSON.stringify(esperado),
     };
@@ -149,6 +177,7 @@ async function cuadraLaLista(ctx, desc, ms = 30_000) {
   const f = await foto(ctx);
   ctx.log(`   pintado: ${JSON.stringify(f.pintado)}${f.vacioPintado ? ` · vacío: «${f.vacioPintado}»` : ""}`);
   ctx.log(`   modelo:  ${JSON.stringify(f.esperado)}`);
+  ctx.log(`   tiles instalados: ${JSON.stringify(f.tiles)} · activo ${f.activo}`);
   return { ocurrio, f };
 }
 
@@ -347,21 +376,71 @@ export default async function (ctx) {
   }
   await ctx.shot("156-imagen-todo-generado");
 
+  const antesDeVolver = { ...red };
   const vueltaB = await reanudar(ctx, partidaB.sessionId);
   if (!vueltaB) return ctx.sinMedir("no se pudo reanudar la partida de imagen");
   await ctx.page.evaluate(instalarElModelo);
   await abrirElMenu(ctx);
   await cuadraLaLista(ctx, "REANUDADA en imagen: la lista del menú es la del algoritmo de antes, item a item");
-  await ctx.expectEspera(
-    "…y vuelve a quedarse vacía cuando el arte se restaura (atlas de la librería, skins re-pedidos)",
+  const { ocurrio: restaurado, ultimo: instante } = await ctx.expectEspera(
+    "…y el arte YA PAGADO vuelve solo: los tres skins se re-piden hasta tener su `idle` y el tile que PISA " +
+      "el jugador se textura otra vez, así que no queda ni una fila de ellos",
     true,
     () => {
       const f = window.__qa156();
       const listos = f.libro.filter((e) => e.ready.includes("idle")).length;
-      return listos >= 3 && f.esperado.length === 0 && f.pintado.length === 0 && f.vacioPintado ? { listos } : null;
+      if (listos < 3) return null; // jugador + dos personajes
+      // …y el menú YA se ha enterado. El DOM va hasta un re-pintado por detrás
+      // del modelo (el menú se re-pinta cada segundo), así que sin esto la foto
+      // que devuelve esta sonda puede traer la lista del segundo anterior y el
+      // aserto de abajo sale rojo leyendo un estado que ya no existe — medido:
+      // en la corrida NEG-C `pintado` traía la fila de un tile ya texturado y
+      // tres skins que ya tenían su `idle`.
+      if (!f.cuadran) return null;
+      if (f.skins.length > 0) return null; // alguno sigue sin su `idle`
+      if (!f.activo) return null; // sin tile activo no hay nada que exigir
+      // El único tile del que se puede exigir atlas es el que pisa: los demás
+      // del save nunca lo piden (#712).
+      if (f.atlas.some((l) => l.startsWith(`Atlas fps ${f.activo} `))) return null;
+      // Se devuelve la foto de ESE tick, no un número: lo que quede por
+      // afirmar se afirma sobre el instante que cumplió, y no sobre otro
+      // posterior. Una segunda `foto()` después de la espera NO vale, y no es
+      // teoría: el resume RE-ARMA los skins un momento después de que lleguen
+      // (el libro pierde la entrada y se vuelve a pedir), así que la foto de
+      // dos segundos más tarde los enseña otra vez como «generándose» y el
+      // aserto salía rojo con el juego haciendo lo correcto.
+      return { listos, activo: f.activo, pintado: f.pintado, vacio: f.vacioPintado, tiles: f.tiles.length };
     },
     { ms: 120_000 },
   );
+  if (restaurado) {
+    ctx.log(`   el save trajo ${instante.tiles} tile(s) · el jugador pisa ${instante.activo}`);
+    if (instante.pintado.length === 0) {
+      ctx.expect(
+        "…y como el save traía UN SOLO tile, el menú se queda vacío y lo dice",
+        instante.vacio === "Sin imágenes fake: todo lo visible está generado.",
+        JSON.stringify(instante.vacio),
+      );
+    } else {
+      ctx.expect(
+        `…y las ${instante.pintado.length} filas que quedan son SOLO atlas de tiles que el jugador no pisa ` +
+          "(los vecinos que el save reinstala en clay): arte pendiente de verdad, no arte sin restaurar",
+        instante.pintado.every((l) => l.startsWith("Atlas fps ") && !l.startsWith(`Atlas fps ${instante.activo} `)),
+        JSON.stringify(instante.pintado),
+      );
+    }
+    ctx.expect(
+      "…y los skins se re-pidieron POR EL CABLE al reanudar: no es contabilidad interna del cliente",
+      red.skins > antesDeVolver.skins,
+      `skins antes ${antesDeVolver.skins} → ${red.skins}`,
+    );
+    ctx.expect(
+      "…y restaurar NO volvió a pintar: ni una petición de atlas sin `resolve_only`, que es lo que hace que " +
+        "reanudar sea gratis",
+      red.atlasPintando === antesDeVolver.atlasPintando,
+      `atlas pintando antes ${antesDeVolver.atlasPintando} → ${red.atlasPintando}`,
+    );
+  }
   ctx.log(`   red: ${JSON.stringify(red)}`);
   await ctx.shot("156-reanudada-en-imagen");
 }
