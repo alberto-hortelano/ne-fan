@@ -52,7 +52,7 @@ const core = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(core, "..");
 const CONTRATO = join(core, "data", "contract", "esperas-de-tile.json");
 const NOMBRE = "MS_DEL_TILE";
-const VERBOS = ["waitFor", "holdUntil", "esperarEnElSave"] as const;
+const VERBOS = ["waitFor", "holdUntil", "esperarEnElSave", "porRondasHastaRechazo"] as const;
 type Verbo = (typeof VERBOS)[number];
 
 const RutaDelBanco = z.string().regex(/^qa\/(guiones|lib)\/[\w.-]+\.mjs$/, "una entrada nombra un `.mjs` del banco");
@@ -110,8 +110,14 @@ const nombreDelCallee = (n: ts.CallExpression, sf: ts.SourceFile): string | null
 };
 
 /** El nodo que hace de PRESUPUESTO en una llamada, por verbo: `waitFor` arg 2,
- *  `holdUntil` arg 3 (`.ms` si es un objeto), `esperarEnElSave` arg 2. */
+ *  `holdUntil` arg 3 (`.ms` si es un objeto), `esperarEnElSave` arg 2 y
+ *  `porRondasHastaRechazo` arg 3 — su TECHO (`qa/lib/cable.mjs`, #678), que no
+ *  es lo mismo que la cadencia con la que vuelve a mirar entre ronda y ronda.
+ *  Ese verbo entró aquí porque la tanda AF reescribió la espera del 63: el
+ *  cortafuegos siguió siendo el del tile, pero cambió de sitio, y un padrón que
+ *  solo sepa leer tres formas se queda ciego en cuanto alguien usa la cuarta. */
 const nodoDePresupuesto = (n: ts.CallExpression, verbo: Verbo): ts.Node | undefined => {
+  if (verbo === "porRondasHastaRechazo") return n.arguments[3];
   if (verbo === "holdUntil") {
     const o = n.arguments[3];
     if (o !== undefined && ts.isObjectLiteralExpression(o)) {
@@ -136,6 +142,8 @@ export function esperasDeTile(texto: string, fichero: string): Espera[] {
       if (nombre !== null && (VERBOS as readonly string[]).includes(nombre)) {
         const verbo = nombre as Verbo;
         const descNodo = verbo === "waitFor" ? n.arguments[0] : verbo === "holdUntil" ? n.arguments[1] : undefined;
+        // `esperarEnElSave` y `porRondasHastaRechazo` no describen: su entrada
+        // del padrón lleva `desc: null` y casa por fichero + verbo.
         const p = nodoDePresupuesto(n, verbo);
         vistas.push({
           fichero,
