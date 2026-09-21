@@ -62,27 +62,28 @@
  *
  *  Un rojo bajo carga **no es, por sí solo, un rojo de #545**. Medido: el guion
  *  75 se pone rojo a ×20 y el aserto que cae es un CONTADOR contaminado por la
- *  vida ambiental — familia **#496/#497**. Así que clasifica en TRES y lo dice,
+ *  vida ambiental — familia **#496/#497**. Así que clasifica en DOS y lo dice,
  *  sin atribuir nunca:
  *
  *   · **presupuesto** — el texto del fallo lleva una espera expirada.
  *     Compatible con #545, **no probado**.
- *   · **comportamiento** (#609) — no lleva esa firma, pero el guion DECLARÓ una
- *     TASA (`ctx.expectTasa`) que CAYÓ, con la razón sim/pared hundida en las
- *     corridas rojas: *compatible con #545 por comportamiento, sin firma de
- *     presupuesto*. Es lo que le faltaba al caso medido del 93 —razón 0,262,
- *     cuatro velocidades a 0,38-0,63 de lo esperado y ni un «ms» en sus
- *     asertos—, que salía «no atribuible» teniendo todo delante.
- *   · **sin-firma** — ninguna de las dos: **no atribuible**, que es la defensa
- *     que nació de #496/#497 y no se afloja. El rojo del 75 —un CONTADOR que
- *     sube— cae aquí, y no por cómo esté redactado: `ctx.expectTasa` pide la
- *     cantidad y sus SEGUNDOS DE PARED por separado, y un contador no tiene
- *     denominador de pared que darle. Con la lista de tasas vacía, la rama de
- *     `comportamiento` es inalcanzable.
+ *   · **sin-firma** — no la lleva: **no atribuible**, que es la defensa que
+ *     nació de #496/#497 y no se afloja. El rojo del 75 —un CONTADOR que sube—
+ *     cae aquí.
  *
- *  Las dos primeras patas solas NO bastan y está medido: bajo `--factor 20` la
- *  razón se hunde también para el 75, así que «rojo nuevo + razón hundida»
+ *  «Rojo nuevo + razón sim/pared hundida» NO basta para atribuir, y está medido:
+ *  bajo `--factor 20` la razón se hunde también para el 75, así que ese criterio
  *  cambiaría una mentira por la contraria. La decisión sigue siendo de quien lee.
+ *
+ *  Hubo una TERCERA categoría (#609, la mañana del 2026-09-18): el guion
+ *  DECLARABA una TASA con su denominador de PARED y esa tasa caía con la razón
+ *  hundida. Su único sujeto en toda la batería era el 93, que medía
+ *  `camino / Δpared` y por eso salía rojo bajo carga con el juego correcto; la
+ *  tanda W (#679) lo pasó a `camino / Δsim` esa misma tarde y la categoría se
+ *  retiró ENTERA con él. Queda escrito para que no se «recupere» leyendo #609:
+ *  un reconocedor cuyo único sujeto es una medida sabida falsa no reconoce nada,
+ *  y cualquier otra tasa contra la pared en esta batería es un sitio de #545 que
+ *  se CURA, no que se declara.
  *
  *  ## Uso
  *
@@ -97,9 +98,7 @@
  *                      compartida (medido: ×40 son 134-224 s por corrida)
  *    --repeticiones N  N corridas frenadas EN SERIE, para que la frecuencia sea
  *                      una medida y no una impresión
- *    --umbral R        razón sim/pared por debajo de la cual la carga es real.
- *                      El MISMO listón juzga la carga y sostiene la tercera
- *                      categoría de la clasificación (#609): un solo número
+ *    --umbral R        razón sim/pared por debajo de la cual la carga es real
  *    --sin-quieto      salta la corrida de control (hay que tenerla ya medida)
  *    --concurrente K   K corridas frenadas A LA VEZ. **Bandera explícita**: es
  *                      el escenario real de la batería, pero ocupa la máquina y
@@ -308,12 +307,8 @@ for (const r of [...(quieta ? [quieta] : []), ...cargadas]) {
 // Se comparan TODAS las frenadas, no la primera: el color de un guion bajo carga
 // es una frecuencia y no un desenlace, y quedarse con una muestra es la forma
 // más rápida de hacer desaparecer una intermitencia.
-// El umbral se ENHEBRA (#609): la tercera rama de la clasificación mira la
-// razón sim/pared de las corridas rojas, y con el listón por defecto aquí y el
-// de `--umbral` en el juicio de la carga, la misma corrida se juzgaría con dos
-// listones distintos.
 const comparacion = quieta
-  ? comparaCorridas(quieta.medida?.guiones, cargadas.map((r) => r.medida?.guiones), { umbral: UMBRAL })
+  ? comparaCorridas(quieta.medida?.guiones, cargadas.map((r) => r.medida?.guiones))
   : [];
 if (comparacion.length) {
   console.log(`\n${"─".repeat(78)}\ncolor antes y después`);

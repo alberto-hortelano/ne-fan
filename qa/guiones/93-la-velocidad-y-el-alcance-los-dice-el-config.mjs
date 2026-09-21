@@ -24,6 +24,13 @@
  *     el config de verdad ofrece) deja de ofrecerse. El alcance no está escrito
  *     en el cliente: viene del config.
  *
+ *  **La velocidad se mide contra el RELOJ DE SIM** (`Δpos / Δsim`, tanda W,
+ *  #679), no contra el de pared. Hasta esa tarde el denominador era el `t` del
+ *  `rAF`, que es pared, y como el loop topa su delta en 0,1 s este guion salía
+ *  rojo bajo carga con el juego perfectamente correcto: medido a ×40, las doce
+ *  velocidades de tres corridas a 0,15-0,42 de lo esperado. El detalle, en
+ *  `medirVelocidad`.
+ *
  *  Y **bloque 5** (#539): servido un `speed_scale` IMPOSIBLE (−1: el jugador
  *  andaría hacia atrás), el cliente no arranca —no puede: sin esos números no
  *  hay partida— pero DICE POR QUÉ. Hasta esa tanda `loadConfig` solo miraba el
@@ -106,14 +113,61 @@ const FACTOR = 1.5;
 /** Alcance servido en el bloque 3: lejos del 2,5 real y dentro de lo que un
  *  jugador podría querer, para que el borde se vea moverse de verdad. */
 const ALCANCE_CORTO_M = 1.2;
-/** Tolerancia RELATIVA de la velocidad medida. El muestreo es por `rAF` y el
- *  primer frame arrastra el delta de uno que empezó antes, así que el error
- *  escala con la velocidad: medido, se queda por debajo del 2 % en las cuatro
- *  medidas. El 3 % deja margen y sigue separando de sobra lo que se mide — la
- *  señal del bloque 2 es un 50 %. */
+/** Tolerancia RELATIVA de la velocidad medida. Decía aquí que el error venía de
+ *  que «el primer frame arrastra el delta de uno que empezó antes»; ese
+ *  artefacto era del denominador de PARED y murió con él en la tanda W.
+ *
+ *  **Medido tras la cura: error 0,000 % en las DOCE velocidades de tres corridas
+ *  quietas** (y en las de la corrida de control a ×1 del reproductor). No es
+ *  suerte ni redondeo afortunado, y por eso se dice en vez de dejarlo en «es
+ *  pequeño»: el camino es `Σ velocidad × Δᵢ` sobre los mismos frames cuyos `Δᵢ`
+ *  suma el denominador, así que `camino / Δsim` devuelve la velocidad
+ *  configurada al flotante. El error no es que sea bajo: es que no hay de dónde
+ *  saque uno.
+ *
+ *  Así que el 3 % NO es un presupuesto de error, y conviene no leerlo así: es
+ *  SEPARACIÓN DE SEÑAL, y lo era ya antes. Lo que el bloque 2 mueve es un 50 %
+ *  (×1,5) y lo que movería el multiplicador de vuelta en el cliente, un 33 %; el
+ *  3 % está quince veces por debajo de esa señal y no roza ningún ruido medido.
+ *  Apretarlo no compraría nada —no hay defecto que quepa entre 0 % y 3 % y no
+ *  quepa entre 0 % y 0,1 %— y arriesgaría un rojo intermitente el día que el
+ *  camino deje de ser una recta. Queda donde está, con su número delante: el de
+ *  cada corrida sale en el `ctx.log` de la velocidad. */
 const TOL_REL = 0.03;
 /** Margen del borde de la `E`: se prueba medio decímetro a cada lado. */
 const MARGEN_M = 0.05;
+
+/** Cuánto MUNDO dura la ventana de medida, en segundos de simulación, y cuántas
+ *  muestras se tiran por cada extremo.
+ *
+ *  **La ventana se cuenta en SIM, no en frames, y esto no es simetría bonita:
+ *  es la segunda mitad de la cura de #679, y se pagó con un rojo.** Con la
+ *  ventana en 40 frames, lo que dura en MUNDO depende de la carga: quieta son
+ *  ~1,15 s (frames de ~38 ms) y a ×40 son **exactamente 2,900 s**, porque todos
+ *  los frames topan en `0,1 s` y 29 intervalos × 0,1 = 2,9. O sea que la
+ *  distancia recorrida se multiplica por 2,5 justo cuando la máquina va peor.
+ *  Medido: a ×40, `sprint × 1,5` pedía 12,54 m/s × 2,9 s = **36,37 m** de
+ *  corredor recto y `rumboLibre` solo sondea 30 — el jugador se quedaba sin
+ *  sitio a los 26,06 m y la velocidad salía a 0,72 de lo esperado, **rojo en 3
+ *  de 3 corridas y con los mismos 26,06 m clavados en las tres**: no es ruido,
+ *  es geometría. Las otras tres velocidades salían a 0,000 % de error en esas
+ *  mismas corridas, que es lo que dice que el denominador ya estaba bien y lo
+ *  que quedaba era la ventana.
+ *
+ *  Con 1,2 s de mundo la ventana dura lo mismo cargada que quieta y la peor
+ *  distancia es 12,54 × 1,2 = **15,05 m**, la mitad del corredor sondeado. El
+ *  aserto de «el trayecto cupo en el campo libre» sigue vigilándolo: no se
+ *  sustituye un candado por una cuenta.
+ *
+ *  1,2 s se elige para NO cambiar lo que se medía en una máquina tranquila
+ *  (~1,15 s), no por otra razón. El recorte de 5 por extremo es el de siempre. */
+const SIM_DE_MEDIDA_S = 1.2;
+const RECORTE = 5;
+/** Cortafuegos de la ventana: sin él, un mundo que no simula deja el `rAF`
+ *  girando para siempre. Con él, se sale y `medirVelocidad` decide — un Δsim de
+ *  cero LANZA. 600 frames son ~10 s de pared a 60 fps y no se rozan en ninguna
+ *  corrida medida (82 quieta, 22 a ×40). */
+const FRAMES_TOPE = 600;
 
 /** Los cuatro números del jugador, leídos del fichero de verdad. Si el config
  *  no los trae, `loadConfig` ya no deja arrancar el juego — aquí se leen crudos
@@ -177,54 +231,116 @@ async function rumboLibre(ctx, metros = 30) {
   }, metros);
 }
 
-/** METROS POR SEGUNDO medidos en el juego: se encara un rumbo libre, se
- *  mantiene la tecla 50 fotogramas (≈ 0,8 s: 6,6 m esprintando, sobra sitio),
- *  se recortan cinco muestras por extremo y la velocidad es el camino interior
- *  partido por su tiempo.
+/** METROS POR SEGUNDO medidos en el juego: se encara un rumbo libre, se mantiene
+ *  la tecla hasta que el MUNDO ha avanzado `SIM_DE_MEDIDA_S`, se recortan cinco
+ *  muestras por extremo y la velocidad es el camino interior partido por EL
+ *  TIEMPO QUE EL MUNDO SIMULÓ, no por el que marcó el reloj. Las dos mitades
+ *  —ventana y denominador— van en la misma escala a propósito; por qué la
+ *  ventana también, en el docblock de `SIM_DE_MEDIDA_S`.
  *
- *  **ESTO MIDE CONTRA EL RELOJ DE PARED, y es un sitio VIVO de #545.** El
- *  docblock decía aquí «Nada de relojes de pared: el muestreador vive en el
- *  `rAF` de la página» — y era falso, porque el `t` que entrega `rAF` ES un
- *  timestamp de pared. El denominador `seg` son segundos de pared, mientras que
- *  el `gameLoop` del cliente avanza el mundo con `delta = min(Δpared, 0,1 s)`
- *  (`nefan-html/src/main.ts`): en cuanto un frame pasa de 100 ms, el numerador
- *  (el camino recorrido, que es de SIMULACIÓN) y el denominador dejan de estar
- *  en la misma escala y la velocidad medida sale BAJA sin que el juego haya
- *  cambiado. Medido: `node qa/bajo-carga.mjs 93 --factor 40` → razón sim/pared
- *  0,262 y las cuatro velocidades a 0,38 / 0,63 / 0,42 / 0,46 de lo esperado.
+ *  **EL DENOMINADOR ES EL RELOJ DE SIM** (#679, tanda W), y hasta esa tarde no
+ *  lo era: este sitio era deuda VIVA de #545 y su propio docblock lo declaraba.
+ *  El muestreador vive en el `rAF` de la página y el `t` que `rAF` entrega ES un
+ *  timestamp de PARED, mientras que el numerador —el camino recorrido— es de
+ *  SIMULACIÓN. El `gameLoop` del cliente avanza el mundo con
+ *  `delta = min(Δpared, 0,1 s)` (`nefan-html/src/main.ts`), así que en cuanto un
+ *  frame pasa de 100 ms las dos mitades dejan de estar en la misma escala y la
+ *  velocidad medida sale BAJA sin que el juego haya cambiado nada.
  *
- *  **#609 NO cura esto**: lo que hace es que el reproductor bajo carga lo
- *  RECONOZCA, porque los cuatro asertos que cuelgan de aquí declaran su tasa
- *  con `ctx.expectTasa` — y le entregan el `camino` y los `seg` POR SEPARADO,
- *  que es la forma de decirle al banco «esto es una cantidad partida por
- *  segundos de PARED». Arreglar la medida —contar el tiempo que el mundo simuló
- *  de verdad en vez del que marcó el reloj— es otro trabajo, y hasta que se haga
- *  este sitio sigue siendo deuda de #545. Que nadie lo lea como curado. */
-async function medirVelocidad(ctx, { sprint, frames = 40 }) {
+ *  Medido el día de la cura, en esta misma máquina, con
+ *  `node qa/bajo-carga.mjs 93 --factor 40 --repeticiones 3`: **rojo en 3 de 3**
+ *  corridas frenadas, razón sim/pared 0,130 / 0,176 / 0,148 y las doce
+ *  velocidades a **0,15-0,42** de lo esperado. Y el numerador ni se inmutaba
+ *  —12,12 m andando en las tres corridas, clavado— que es la firma del defecto:
+ *  lo que se hinchaba era el denominador.
+ *
+ *  Ahora `sim` sale de `window.__nefan.reloj()` LEÍDO EN EL MISMO callback que
+ *  `pos`, y la medida es exacta, no aproximada: `pasoDelJugador` y
+ *  `gameClient.tick(relojDeSim.avanza(delta))` (`main.ts`) reciben el MISMO
+ *  `delta` en el mismo frame, y el `rAF` de este muestreador se registra después
+ *  del que encola el loop, así que cada muestra ve `pos` y `sim` post-tick del
+ *  mismo frame. El `rAF` sigue siendo el muestreador —es el latido de la página,
+ *  y es lo que reparte las muestras por frames distintos—; lo que se retiró es
+ *  su `t`, que ya no se lee en ningún sitio.
+ *
+ *  **Δsim = 0 LANZA** en vez de devolver `Infinity`. El reloj de sim solo cuenta
+ *  lo que el mundo SIMULA y está gateado por el título
+ *  (`nefan-html/src/world/reloj-de-sim.ts`), así que un cero aquí no es una
+ *  velocidad mala: es que no hubo mundo durante la medida —el título delante, o
+ *  el driver sin efecto— y eso hay que leerlo, no dividirlo. Un `Infinity` daría
+ *  rojo igual, pero rojo MUDO, que es la clase de rojo que el 131 vino a hacer
+ *  legible. */
+async function medirVelocidad(ctx, { sprint }) {
   const r = await rumboLibre(ctx);
   await ctx.nefan("setYaw", r.yaw);
   if (sprint) await ctx.nefan("inputDriver.press", "sprint");
   await ctx.nefan("inputDriver.press", "up");
   const muestras = await ctx.page.evaluate(
-    (n) =>
+    (a) =>
       new Promise((res) => {
         const out = [];
-        const tick = (t) => {
+        // Lo que tiene que durar `a.sim` es la ventana INTERIOR, la que se va a
+        // medir: presupuestar sobre el total y recortar después dejaría la
+        // medida más corta de lo pedido justo en las corridas lentas.
+        const interior = () =>
+          out.length > 2 * a.recorte ? out[out.length - 1 - a.recorte][0] - out[a.recorte][0] : 0;
+        // `sim` y `pos` en el MISMO callback. Leerlos en dos sitios distintos
+        // —o uno de ellos antes del bucle— volvería a mezclar dos relojes, que
+        // es exactamente el defecto que esto cura.
+        const tick = () => {
           const p = window.__nefan.state().pos;
-          out.push([t, p.x, p.z]);
-          if (out.length >= n) res(out);
+          const reloj = window.__nefan.reloj();
+          out.push([reloj.sim, p.x, p.z]);
+          if (interior() >= a.sim || out.length >= a.tope) res(out);
           else requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
       }),
-    frames,
+    { sim: SIM_DE_MEDIDA_S, recorte: RECORTE, tope: FRAMES_TOPE },
   );
   await ctx.nefan("inputDriver.releaseAll");
-  const m = muestras.slice(5, -5);
+  const m = muestras.slice(RECORTE, -RECORTE);
   let camino = 0;
   for (let i = 1; i < m.length; i++) camino += Math.hypot(m[i][1] - m[i - 1][1], m[i][2] - m[i - 1][2]);
-  const seg = (m[m.length - 1][0] - m[0][0]) / 1000;
-  return { vel: camino / seg, camino, seg, libre: r.libre };
+  const segSim = m.length > 1 ? m[m.length - 1][0] - m[0][0] : 0;
+  if (!(segSim > 0)) {
+    throw new Error(
+      `el mundo no simuló durante la medida (Δsim = ${segSim} s en ${m.length} muestras interiores de ` +
+        `${muestras.length}, con ${camino.toFixed(3)} m de camino): el reloj de sim solo cuenta lo que el ` +
+        `mundo simula, así que esto es el título delante o el driver sin efecto, no una velocidad lenta. ` +
+        `Se para aquí en vez de dividir por cero y afirmar sobre un Infinity.`,
+    );
+  }
+  return { vel: camino / segSim, camino, segSim, libre: r.libre };
+}
+
+/** El aserto de UNA velocidad medida, escrito una vez en vez de cuatro.
+ *
+ *  La cuenta es la de siempre —`|medido − esperado| < esperado × TOL_REL`— y el
+ *  texto del ✔/✘ también; lo que cambió en la tanda W es de dónde sale `medido`.
+ *  Estas cuatro llamadas pasaron una mañana (#609) por un verbo que DECLARABA la
+ *  tasa: pedía la cantidad y sus segundos de PARED por separado, para que el
+ *  reproductor bajo carga reconociera el rojo de este guion sin leerle el texto
+ *  al aserto. Con el denominador ya en segundos de SIM no hay tasa de pared que
+ *  declarar —entregarle `segSim` como si fuera pared sería mentir justo en el
+ *  tipo que #609 construyó para no mentir—, así que vuelven a `ctx.expect` y el
+ *  verbo se retiró con su rama del clasificador. Sus nombres están candados en
+ *  `campos-retirados-no-vuelven`; la historia, en la crítica de la tanda W.
+ *
+ *  El `ctx.log` no es adorno: el ✔ no imprime el `detalle`, y sin él el ERROR
+ *  RELATIVO medido —el número del que cuelga `TOL_REL`— no se podría leer en una
+ *  corrida verde, que es justo la corrida en la que hay que mirarlo. */
+function afirmaVelocidad(ctx, desc, m, teorico) {
+  const error = Math.abs(m.vel - teorico) / teorico;
+  ctx.log(
+    `velocidad: ${m.vel.toFixed(4)} m/s contra ${teorico.toFixed(4)} esperados — error ` +
+      `${(error * 100).toFixed(3)} % (${m.camino.toFixed(2)} m / ${m.segSim.toFixed(3)} s de SIM)`,
+  );
+  ctx.expect(
+    desc,
+    error < TOL_REL,
+    `medido ${m.vel.toFixed(4)} m/s (${m.camino.toFixed(2)} m / ${m.segSim.toFixed(2)} s de sim, ${m.libre} m libres)`,
+  );
 }
 
 /** ¿Ofrece el HUD hablar con el tabernero desde EXACTAMENTE `d` metros? El NPC
@@ -332,24 +448,17 @@ export default async function (ctx) {
   };
   const teoricoAndar = delArbol.walk_speed * delArbol.speed_scale;
   const teoricoSprint = delArbol.sprint_speed * delArbol.speed_scale;
-  // Los CUATRO asertos de velocidad de este guion declaran su TASA (#609).
-  // No cambia lo que juzgan —`|medido − esperado| < esperado × TOL_REL`, la misma
-  // cuenta, con el mismo `medido = camino / seg`— ni el texto del ✔/✘: lo que
-  // añaden es la tasa en la fila de la corrida, para que `qa/bajo-carga.mjs`
-  // pueda reconocer el rojo de este guion bajo carga sin leerle el texto al
-  // aserto. La cantidad y sus SEGUNDOS DE PARED van por separado a propósito:
-  // es lo que distingue una tasa de un contador, y un contador no se puede
-  // declarar aquí. Se declaran las velocidades y NO los asertos de «el trayecto
-  // cupo en el campo libre» ni los del alcance de la `E`: no son tasas.
-  ctx.expectTasa(
+  afirmaVelocidad(
+    ctx,
     `andando, el jugador va a walk_speed × speed_scale = ${teoricoAndar.toFixed(2)} m/s`,
-    { cantidad: base.andar.camino, segundosDePared: base.andar.seg, esperado: teoricoAndar, tolRel: TOL_REL },
-    `medido ${base.andar.vel.toFixed(4)} m/s (${base.andar.camino.toFixed(2)} m / ${base.andar.seg.toFixed(2)} s, ${base.andar.libre} m libres)`,
+    base.andar,
+    teoricoAndar,
   );
-  ctx.expectTasa(
+  afirmaVelocidad(
+    ctx,
     `esprintando, sprint_speed × speed_scale = ${teoricoSprint.toFixed(2)} m/s`,
-    { cantidad: base.sprint.camino, segundosDePared: base.sprint.seg, esperado: teoricoSprint, tolRel: TOL_REL },
-    `medido ${base.sprint.vel.toFixed(4)} m/s (${base.sprint.camino.toFixed(2)} m / ${base.sprint.seg.toFixed(2)} s, ${base.sprint.libre} m libres)`,
+    base.sprint,
+    teoricoSprint,
   );
 
   // ── 2 · Con OTRO speed_scale servido, el juego cambia en proporción ──────
@@ -376,10 +485,11 @@ export default async function (ctx) {
       m.camino < m.libre,
       `recorrió ${m.camino.toFixed(2)} m con ${m.libre} m libres por delante`,
     );
-    ctx.expectTasa(
+    afirmaVelocidad(
+      ctx,
       `con speed_scale × ${FACTOR} en el config, ${que} son ${teorico.toFixed(2)} m/s — la velocidad NO está escrita en el cliente`,
-      { cantidad: m.camino, segundosDePared: m.seg, esperado: teorico, tolRel: TOL_REL },
-      `medido ${m.vel.toFixed(4)} m/s (${m.camino.toFixed(2)} m / ${m.seg.toFixed(2)} s, ${m.libre} m libres)`,
+      m,
+      teorico,
     );
   }
 
