@@ -410,16 +410,22 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
     assert.deepEqual(sinLectura, [], `lector(es) sin ninguna comparación con ${NOMBRE}: ${sinLectura.join(" | ")}`);
   });
 
-  it("el padrón cubre los QUINCE sitios del censo por árbol (no nueve, no once)", () => {
-    // Trece en el padrón + los dos que heredan el default (120, 127) = quince.
-    // Nació diciendo ONCE porque el censo se hizo filtrando `240_000|180_000`
-    // sobre los guiones que nombraba el issue; QA barrió `qa/**` entero y
-    // apareció un quinto camino al mismo `runTileGeneration`: el viaje por
-    // «Salidas» de los guiones 49 (×2), 60 y 65. El número se fija para que
-    // cualquier movimiento se VEA: si una espera se muda a `pedirYEsperarTile`
-    // sale de aquí y entra en (c); si nace una nueva con literal, no la ve
-    // nadie (agujero declarado abajo, con su caso ejecutable).
-    assert.equal(contrato.esperas.length, 13, JSON.stringify(contrato.esperas.map(claveDeEntrada), null, 1));
+  it("el padrón cubre los DIECISÉIS sitios del censo por árbol (no once, no quince)", () => {
+    // Catorce en el padrón + los dos que heredan el default (120, 127) = 16.
+    // La cuenta ha subido DOS veces, y las dos por la misma razón, que es la
+    // que este `it` existe para hacer visible:
+    //  · ONCE → QUINCE: el censo del issue filtraba por el LITERAL
+    //    (`240_000|180_000`) sobre los guiones que él mismo nombraba, y al
+    //    barrer `qa/**` por el árbol apareció un quinto camino al mismo
+    //    `runTileGeneration` — el viaje por «Salidas» del 49 (×2), el 60 y el 65.
+    //  · QUINCE → DIECISÉIS: el guion 154 entró en `main` con #699 DESPUÉS de
+    //    ese censo, calcando la `esperarLlegada` del 09 con su `240_000`. O
+    //    sea el primer agujero declarado (`_lo_que_esto_NO_sujeta[0]`)
+    //    ocurriendo en vivo, a los dos días, y cazado leyendo el diff de un
+    //    rebase — no por este contrato, que no detecta el SUJETO.
+    // El número se fija para que cualquier movimiento se VEA: si una espera se
+    // muda a `pedirYEsperarTile` sale de aquí y entra en (c).
+    assert.equal(contrato.esperas.length, 14, JSON.stringify(contrato.esperas.map(claveDeEntrada), null, 1));
   });
 
   it("el detector encuentra lo que dice encontrar (control positivo, las tres formas y las cinco clases)", () => {
@@ -516,6 +522,47 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
     const espera = esperasDeTile(material, "qa/guiones/de-mentira.mjs")[0];
     assert.equal(espera.presupuesto, "doble");
     assert.equal(espera.presupuestoEsLaConstante, false);
+  });
+
+  it("el agujero de la PROPIEDAD: en un lector, la constante metida en un objeto sigue presupuestando", () => {
+    // `_lo_que_esto_NO_sujeta[4]`, MEDIDO en vez de prometido — y medido acotó
+    // el agujero a menos de lo que se había escrito de memoria, que es la
+    // razón de escribirlo como caso y no como frase:
+    //  · `const tabla = [MS_DEL_TILE]` → `alias` (el array es una expresión, y
+    //    se llega al inicializador de la `const`). ROJO en todas partes.
+    //  · `const techo = () => MS_DEL_TILE` → `alias`, por lo mismo. ROJO.
+    //  · `const cfg = { ms: MS_DEL_TILE }` → `otro`. ROJO.
+    //  · `const cfg = { ms: MS_DEL_TILE * 2 }` → **`comparacion`**, porque el
+    //    padre inmediato es la binaria y por encima hay un `PropertyAssignment`,
+    //    que no es una expresión y corta la subida. En un fichero declarado
+    //    `lector` una `comparacion` es legítima, así que eso —y solo eso— pasa
+    //    VERDE, y luego `waitFor(…, cfg.ms)` presupuesta sin que (a) lo vea.
+    // Si alguien lo cierra, este caso se pone ROJO y se borra con su línea del
+    // contrato.
+    const material = `
+      import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+      const cfg = { ms: MS_DEL_TILE * 2 };
+      const simple = { ms: MS_DEL_TILE };
+      const tabla = [MS_DEL_TILE];
+      const techo = () => MS_DEL_TILE;
+      await ctx.waitFor("el tile vecino llega", fn, cfg.ms, k);
+      await ctx.waitFor("y el otro", fn, tabla[0], k);
+      await ctx.waitFor("y el tercero", fn, techo(), k);
+    `;
+    const f = "qa/guiones/de-mentira.mjs";
+    assert.deepEqual(
+      usosDeLaConstante(material, f).map((u) => u.clase),
+      ["import", "comparacion", "otro", "alias", "alias"],
+      "la propiedad CON expresión es la única que cae en una clase que un lector puede tener legítimamente; las otras tres son rojas",
+    );
+    // Y el agujero de verdad: ninguna de las tres esperas presupuesta con la
+    // constante a ojos de (a), porque el valor llegó por una propiedad, un
+    // índice o una llamada y ahí no queda ningún nodo que delatarlo.
+    assert.deepEqual(
+      esperasDeTile(material, f).map((e) => `${e.presupuesto}:${e.presupuestoEsLaConstante}`),
+      ["cfg.ms:false", "tabla[0]:false", "techo():false"],
+      "el presupuesto por rango no alcanza a un valor que llegó por una propiedad, un índice o una llamada",
+    );
   });
 
   it("**el agujero DECLARADO, y medido**: una espera de tile NUEVA con literal no toca la constante y nadie la ve", () => {
