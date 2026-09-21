@@ -29,8 +29,8 @@
  *      está en `.gitignore`, así que una escritura ahí no la ve `git status`, y
  *      es donde vive `reports/mutation-base/` —la base cuya destrucción es el
  *      motivo entero de este verbo—. QA lo demostró colando un fichero desde
- *      `mutacion.ts`, que es el sitio que las capas 1 y 2 no pueden cubrir
- *      porque ese fichero escribe la huella por diseño.
+ *      `mutacion-reparto.ts`, que es el sitio que las capas 1 y 2 no pueden
+ *      cubrir porque ese fichero escribe la huella por diseño.
  *
  *  Lo que NO está cubierto, dicho entero: una escritura a una ruta de fuera del
  *  repo (`/tmp`, `$HOME`). No la ve ninguna de las tres, y no se vigila.

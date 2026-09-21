@@ -3002,7 +3002,7 @@ describe("fronteras arquitectónicas", () => {
         // `repartir` y el resto de la herramienta escriben por diseño: la regla
         // es de UN fichero, no de `scripts/`.
         {
-          path: "nefan-core/scripts/mutacion.ts",
+          path: "nefan-core/scripts/mutacion-repo.ts",
           text: 'writeFileSync(rutaHuella(), `${JSON.stringify(h, null, 2)}\\n`);\n',
           imports: [],
         },

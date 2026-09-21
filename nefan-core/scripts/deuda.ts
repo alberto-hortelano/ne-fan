@@ -37,7 +37,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkArchitecture, reportByRule } from "../src/contract/arch/check.js";
 import { archConfig, loadArchFiles } from "./arch-collect.js";
 import { crapRows, readThresholds, type CrapRow } from "./crap-score.js";
-import { costeDe, leerHuella, seleccionDesdeElTag, TAG } from "./mutacion.js";
+import { costeDe, leerHuella, seleccionDesdeElTag, TAG } from "./mutacion-repo.js";
 import {
   anotacionDeFichero,
   avisoDeAntiguedad,

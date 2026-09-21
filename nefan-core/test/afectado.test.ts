@@ -275,7 +275,8 @@ describe("selector · un dato lo pide QUIEN LO LEE, no el cajón donde vive", ()
 });
 
 /** `scripts/` dejó de ser instrumento por estar en `scripts/`. El instrumento
- *  se DERIVA (cierre de runtime de `mutate.ts` y `mutacion.ts`), así que
+ *  se DERIVA (cierre de runtime de `mutate.ts` y `mutacion.ts`, con sus seis
+ *  trozos dentro desde #605), así que
  *  trocear el instrumento en dos ficheros no deja al segundo fuera sin que
  *  nadie lo note, y un guion que además es sujeto de una batería selecciona su
  *  módulo en vez de los 41. */
@@ -356,7 +357,7 @@ describe("selector · un fuente borrado pregunta a `antes` quién lo cargaba", (
   it("un importador que se FUE con él no tiene que estar en la lista del diff", () => {
     // `test/status-labels.test.ts` → `test/status-motivo.test.ts` en #433: con
     // detección de renombrados, `git diff --name-only` calla la ruta de origen
-    // (y `mutacion.ts pendiente` construye la lista así). Un importador que ya
+    // (y el verbo `pendiente` construye la lista así). Un importador que ya
     // no está en el árbol cambió por definición y ya no puede cargar nada. El
     // contexto sintético dice que `test/borrado.test.ts` no existe; la lista
     // del diff no lo trae.
@@ -1289,18 +1290,25 @@ describe("borrado · quién lo cargaba en una revisión, leído de git", () => {
  *  `nefan-core` del CI clona superficial), y sin él el selector se queda
  *  VERDE: la regla de los idos tapa el síntoma en `pendiente` (rotura S de QA,
  *  94/94). Así que el candado es sobre el instrumento mismo: la bandera es una
- *  sola verdad y va con TODO `git diff --name-only` de los dos guiones que
+ *  sola verdad y va con TODO `git diff --name-only` de los ficheros que
  *  construyen listas para `seleccionar`. El guion `qa/el-borrado-pregunta-a-antes.mjs`
  *  (job `candados-headless`, con git real) es la mitad que sí ejercita el
- *  renombrado. */
+ *  renombrado.
+ *
+ *  LA LISTA SE DERIVA DEL INSTRUMENTO y no se escribe a mano (#605): al partir
+ *  `scripts/mutacion.ts` en seis, sus dos `--name-only` se mudaron a
+ *  `mutacion-repo.ts`, y una lista literal habría seguido censando el fichero del
+ *  nombre —donde ya no queda ninguno— sin ponerse roja. Todo lo que
+ *  `instrumentoDeMedida()` alcanza por el grafo entra solo, hoy y el día que
+ *  aparezca un trozo más. */
 describe("candado · ningún `git diff --name-only` del instrumento va sin `--no-renames`", () => {
-  const GUIONES = ["scripts/afectado.ts", "scripts/mutacion.ts"];
+  const GUIONES = [...instrumentoDeMedida()].filter((f) => f.startsWith("scripts/")).sort();
 
   it("la bandera es exactamente `--no-renames`", () => {
     assert.deepEqual([...SIN_RENOMBRAR], ["--no-renames"]);
   });
 
-  it("y la llevan todos los `--name-only` de afectado.ts y mutacion.ts, que son al menos cinco", () => {
+  it("y la llevan todos los `--name-only` del instrumento, que son al menos cinco", () => {
     let total = 0;
     for (const g of GUIONES) {
       const texto = readFileSync(join(coreRoot, g), "utf8");

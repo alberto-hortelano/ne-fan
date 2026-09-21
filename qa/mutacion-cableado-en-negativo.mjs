@@ -3,8 +3,9 @@
  *
  *  Vecino de `qa/mutacion-candados-en-negativo.mjs`, y complementario: aquél
  *  rompe `scripts/mutacion-huella.ts` —el fichero puro— y mira si la batería se
- *  entera. Éste rompe lo que la batería NO puede mirar: `scripts/mutacion.ts`,
- *  `scripts/mutate.ts` y `.github/workflows/mutation.yml`.
+ *  entera. Éste rompe lo que la batería NO puede mirar: la familia
+ *  `scripts/mutacion-*.ts` (los trozos del verbo, #605), `scripts/mutate.ts` y
+ *  `.github/workflows/mutation.yml`.
  *
  *  POR QUÉ EXISTE. PR-A (#381 + #420) declaró su propia carencia: «el invariante
  *  "`repartir` ancla en `corrida.desde` y NO en el tag" no lo defiende ningún
@@ -45,8 +46,9 @@
  *
  *  QUÉ TOCA Y CÓMO LO DEVUELVE. Escribe en el árbol de trabajo: aparta
  *  `nefan-core/reports/mutation/` (que es material descargado, no versionado),
- *  y modifica temporalmente `scripts/mutacion.ts`, `scripts/mutate.ts`,
- *  `scripts/mutacion-comparar.ts`, el workflow y
+ *  y modifica temporalmente `scripts/mutacion-informes.ts`,
+ *  `scripts/mutacion-lotes.ts`, `scripts/mutacion-reparto.ts`,
+ *  `scripts/mutate.ts`, `scripts/mutacion-comparar.ts`, el workflow y
  *  `data/contract/mutacion-huella.json` —que `repartir` reescribe por diseño—.
  *  Todo vuelve en el `finally` y se verifica byte a byte al terminar; si algo no
  *  volvió, sale con 2 y lo dice.
@@ -60,7 +62,14 @@ import { turnoDeCandados } from "./lib/turno-exclusivo.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE = join(raiz, "nefan-core");
-const MUT = join(CORE, "scripts", "mutacion.ts");
+/** Los TROZOS de `scripts/mutacion.ts`, que #605 partió por CIERRE DE LLAMADAS:
+ *  en el fichero del nombre solo quedaron la tabla `VERBOS` y `main`, y la línea
+ *  de cada invariante de aquí abajo se mudó al cierre que la usa. Los `rompe`
+ *  casan por TEXTO EXACTO, así que mover una de esas líneas de trozo sin
+ *  repuntar este guion sale como «patrón obsoleto», no como verde. */
+const INFORMES_TS = join(CORE, "scripts", "mutacion-informes.ts");
+const LOTES_TS = join(CORE, "scripts", "mutacion-lotes.ts");
+const REPARTO = join(CORE, "scripts", "mutacion-reparto.ts");
 /** `mutate.ts` entra con PR-E: es quien cronometra cada módulo, y ese número es
  *  lo único que hace posible repartir la corrida por el reloj. */
 const MUTATE = join(CORE, "scripts", "mutate.ts");
@@ -251,7 +260,13 @@ const INVARIANTES = [
     },
     bien: (s) => new RegExp(`${E.anterior.slice(0, 7)}\\.\\.${E.tag.slice(0, 7)}`).test(s) && !/no tiene ni un commit/.test(s),
     porque: "el reparto tiene que mirar el rango del MANIFIESTO; con el tag como ancla no hay rango que mirar",
-    rompe: [MUT, `commitsDelRango(plan, corrida.desde, corrida.sha)`, `commitsDelRango(plan, shaDelTag(), corrida.sha)`],
+    // El `poner` anclaba en `shaDelTag()`, que es literalmente el defecto de
+    // #381. `mutacion-reparto.ts` no importa `shaDelTag` y NO se le añade el
+    // import para que compile un probe —un símbolo que solo existe para esto es
+    // una mentira en el tipo, y además lint lo daría por no usado—: `corrida.sha`
+    // deja el MISMO observable, porque el tag que `shaDelTag()` leía ya venía
+    // adelantado a `corrida.sha` por el propio workflow. Rango vacío las dos veces.
+    rompe: [REPARTO, `commitsDelRango(plan, corrida.desde, corrida.sha)`, `commitsDelRango(plan, corrida.sha, corrida.sha)`],
   },
   {
     nombre: "ancla · un rango VACÍO con origen `rango` es una contradicción y lanza",
@@ -262,7 +277,7 @@ const INVARIANTES = [
     },
     bien: (s) => /no tiene ni un commit/.test(s),
     porque: "CI no puede haber seleccionado módulos de un diff vacío: callarlo deja pasar una no-medida con cara de resultado",
-    rompe: [MUT, `  if (corrida.origen === "rango" && rango.tipo === "vacío") {`, `  if (false && corrida.origen === "rango" && rango.tipo === "vacío") {`],
+    rompe: [REPARTO, `  if (corrida.origen === "rango" && rango.tipo === "vacío") {`, `  if (false && corrida.origen === "rango" && rango.tipo === "vacío") {`],
   },
   {
     nombre: "sello · el guardia mira el CONTENIDO del informe, no su nombre (#420)",
@@ -276,7 +291,7 @@ const INVARIANTES = [
     },
     bien: (s) => new RegExp(`NO son los que midió la corrida[\\s\\S]*${E.id}`).test(s),
     porque: "sin sello, una medida local entra en la huella COMMITEADA con el sha, la fecha y el run de CI encima",
-    rompe: [MUT, `  return createHash("sha256").update(readFileSync(ruta)).digest("hex");`, `  void ruta;\n  return "0".repeat(64);`],
+    rompe: [INFORMES_TS, `  return createHash("sha256").update(readFileSync(ruta)).digest("hex");`, `  void ruta;\n  return "0".repeat(64);`],
   },
   {
     nombre: "sello · `corrida.json` no es un informe: sellarlo inventaría un módulo fantasma",
@@ -288,7 +303,7 @@ const INVARIANTES = [
     },
     bien: (s) => s === E.id,
     porque: "el manifiesto declararía un informe `corrida` que ningún módulo del plan tiene, y `repartir` moriría buscándolo",
-    rompe: [MUT, `    .filter((f) => f.endsWith(".json") && f !== "corrida.json")`, `    .filter((f) => f.endsWith(".json"))`],
+    rompe: [INFORMES_TS, `    .filter((f) => f.endsWith(".json") && f !== "corrida.json")`, `    .filter((f) => f.endsWith(".json"))`],
   },
   {
     nombre: "formato · un `corrida.json` sin `desde` ni `informes` se rechaza DICIENDO qué falta",
@@ -305,7 +320,7 @@ const INVARIANTES = [
     bien: (s) => /no está bien: desde \(el ancla del rango\); informes/.test(s),
     porque: "pre-producción, cero compatibilidad: leerlo «como se pueda» son las dos degradaciones que salen verdes y mienten",
     rompe: [
-      MUT,
+      INFORMES_TS,
       `  if (!cadena(corrida.desde)) mal.push("desde (el ancla del rango)");`,
       `  if (false) mal.push("desde (el ancla del rango)");`,
     ],
@@ -319,7 +334,7 @@ const INVARIANTES = [
     },
     bien: (s) => s === E.anterior,
     porque: "si el manifiesto guardara el sha medido, el rango saldría vacío por construcción: el bug de #381 con otro disfraz",
-    rompe: [MUT, `    desde: valor("--desde"),`, `    desde: valor("--sha"),`],
+    rompe: [LOTES_TS, `    desde: valor("--desde"),`, `    desde: valor("--sha"),`],
   },
   {
     nombre: "manifiesto · `--pedidos` vacío significa TODOS, y los demás flags siguen siendo estrictos",
@@ -331,7 +346,7 @@ const INVARIANTES = [
     },
     bien: (s) => s === "pedidos-vacio:true sin-ancla:false",
     porque: "el input TODOS del workflow manda `--pedidos \"\"`: rechazarlo mata el manifiesto DESPUÉS de 131 min de runner",
-    rompe: [MUT, `    if (i < 0 || argv[i + 1] === undefined) throw new Error("manifiesto necesita --pedidos");`, `    if (i < 0 || !argv[i + 1]) throw new Error("manifiesto necesita --pedidos");`],
+    rompe: [LOTES_TS, `    if (i < 0 || argv[i + 1] === undefined) throw new Error("manifiesto necesita --pedidos");`, `    if (i < 0 || !argv[i + 1]) throw new Error("manifiesto necesita --pedidos");`],
   },
   {
     nombre: "workflow · el paso de selección LEE el ancla y el del manifiesto la PASA",
@@ -355,8 +370,8 @@ const INVARIANTES = [
   // batería por lo de siempre —ningún test importa `scripts/mutacion.ts`—, pero
   // sobre todo porque las reglas de `arch-rules.json` que sujetan a
   // `mutacion-comparar.ts` (`comparar-solo-lee` y `comparar-no-escribe`) NO
-  // pueden cubrir las líneas del verbo que viven en `mutacion.ts`: ese fichero
-  // escribe la huella por diseño. Ésa es exactamente la costura por la que QA
+  // pueden cubrir las líneas del verbo que viven en `mutacion-reparto.ts`: ese
+  // fichero escribe la huella por diseño. Ésa es exactamente la costura por la que QA
   // coló un fichero, así que hay un probe por costura.
   {
     nombre: "repartir · un DENOMINADOR que encoge sin que el código cambie PARA el reparto (#596)",
@@ -391,7 +406,7 @@ const INVARIANTES = [
       "puede cazarlo porque la muerte perdida sale de los dos lados del cociente (#596, y el caso real fueron " +
       "las 26 de #597 con el módulo en 51/58 = 87,9 % contra un suelo de 87)",
     rompe: [
-      MUT,
+      REPARTO,
       `  if (perdida.length > 0 && !argv.includes("--instrumento-nuevo")) {`,
       `  if (false && perdida.length > 0 && !argv.includes("--instrumento-nuevo")) {`,
     ],
@@ -416,7 +431,7 @@ const INVARIANTES = [
       "sin salida declarada, el primer cambio de instrumento legítimo obligaría a borrar el guardia entero — " +
       "y el guardia borrado no se vuelve a poner",
     rompe: [
-      MUT,
+      REPARTO,
       `  if (perdida.length > 0 && !argv.includes("--instrumento-nuevo")) {`,
       `  if (perdida.length > 0) {`,
     ],
@@ -436,10 +451,14 @@ const INVARIANTES = [
       "sin una comparación que no escriba, medir con el instrumento nuevo DESTRUYE la base contra la que había " +
       "que compararlo (`repartir` acaba en escribeHuella y CI le mueve el tag detrás): la regla dura de #443 " +
       "—«si un solo score se mueve fichero a fichero, no se adopta»— sería inaplicable por construcción",
+    // `HUELLA_VACIA` la importa `mutacion-repo.ts`, no `mutacion-reparto.ts`, y no
+    // se añade un import para que compile un probe: `ctx.base` es la huella de la
+    // revisión base y vaciarle `ficheros` da el mismo fichero escrito y la misma
+    // señal (la huella committeada deja de casar y `git status` la ve).
     rompe: [
-      MUT,
+      REPARTO,
       `  const veredicto = veredictoDeCorrida(ctx.corrida, ctx.medida);`,
-      `  escribeHuella(HUELLA_VACIA);\n  const veredicto = veredictoDeCorrida(ctx.corrida, ctx.medida);`,
+      `  escribeHuella({ ...ctx.base, ficheros: {} });\n  const veredicto = veredictoDeCorrida(ctx.corrida, ctx.medida);`,
     ],
   },
   {
@@ -462,11 +481,16 @@ const INVARIANTES = [
     porque:
       "una escritura a una ruta gitignorada no la ve `git status`, y `nefan-core/reports/` es justo donde está " +
       "la base de la comparación: sin el inventario, el candado daba VERDE sobre un verbo que escribía",
+    // La escritura se cuela con `git config --file`, y no con `writeFileSync`,
+    // porque `mutacion-reparto.ts` no importa nada de `node:fs` que escriba y un
+    // import puesto para que compile un probe sería un símbolo que no usa nadie.
+    // `git` sí lo importa —el contexto de la corrida llama a git— y deja un
+    // fichero en `nefan-core/reports/colado`, que es el observable: la ruta
+    // gitignorada donde vive la base de la comparación.
     rompe: [
-      MUT,
+      REPARTO,
       `  const base: Record<string, BaseDeFichero> = {};`,
-      `  mkdirSync(join(coreRoot, "reports", "colado"), { recursive: true });\n` +
-        `  writeFileSync(join(coreRoot, "reports", "colado", "rastro.txt"), "x");\n` +
+      `  git(["config", "--file", resolve(coreRoot, "reports", "colado"), "qa.colado", "1"]);\n` +
         `  const base: Record<string, BaseDeFichero> = {};`,
     ],
   },
@@ -630,7 +654,7 @@ const INVARIANTES = [
     bien: (s) => s.startsWith(["apuntado", E.id].sort().join(",")),
     porque: "de `modulos_pedidos` del plan sale el veredicto: un módulo que se caiga de ahí es una medida que nadie echa de menos",
     rompe: [
-      MUT,
+      LOTES_TS,
       `    modulos_pedidos: [...ids].sort(),`,
       `    modulos_pedidos: paquetes.filter((l) => l.medido).flatMap((l) => l.modulos).sort(),`,
     ],
@@ -646,7 +670,7 @@ const INVARIANTES = [
     bien: (s) => /no está el plan de la corrida/.test(s) && /COMPLETA y el tag se movería mintiendo/.test(s),
     porque: "reconstruir lo pedido desde los lotes que llegaron hace que un lote muerto salga COMPLETA: el tag mentiría",
     rompe: [
-      MUT,
+      LOTES_TS,
       `  if (!existsSync(rutaPlan)) {`,
       `  if (false as boolean) {`,
     ],
@@ -690,7 +714,7 @@ const INVARIANTES = [
     },
     bien: (s) => /NO son los que midió la corrida 999912/.test(s) && /no casa con su propio manifiesto/.test(s),
     porque: "sin ese guardia, un informe suplantado entra en el artefacto único y de ahí a la huella commiteada",
-    rompe: [MUT, `    const errores = verificaDescarga(parcial, presentes);`, `    const errores: string[] = [];`],
+    rompe: [LOTES_TS, `    const errores = verificaDescarga(parcial, presentes);`, `    const errores: string[] = [];`],
   },
   {
     nombre: "reloj · `mutate.ts` guarda los segundos de cada módulo, y no al final",
@@ -741,13 +765,15 @@ if (existsSync(APARTADO)) {
 // instancias a la vez se fotografían la mutación de la otra y la «restauran»
 // como si fuera el original. Pasó el 2026-09-10.
 turnoDeCandados();
-const fuentes = new Map([MUT, MUTATE, COMPARAR, HUELLA_TS, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
+const fuentes = new Map(
+  [INFORMES_TS, LOTES_TS, REPARTO, MUTATE, COMPARAR, HUELLA_TS, YML, HUELLA].map((f) => [f, readFileSync(f, "utf8")]),
+);
 const restauraFuentes = () => { for (const [f, t] of fuentes) writeFileSync(f, t); };
 const habiaInformes = existsSync(INFORMES);
 if (habiaInformes) renameSync(INFORMES, APARTADO);
 
 /** La limpieza, UNA para el `finally` y para SIGINT/SIGTERM, idempotente. Sin
- *  manejador, un Ctrl+C dejaba `scripts/mutacion.ts` MUTADO y `reports/` a
+ *  manejador, un Ctrl+C dejaba un trozo de `scripts/mutacion-*.ts` MUTADO y `reports/` a
  *  medias sin pasar por ningún `finally` (QA de #454). Se lleva también el
  *  ensayo de los probes (`reports/lotes-ensayo`, `reports/plan-corrida.json`),
  *  que antes quedaba como residuo tras una corrida limpia. */

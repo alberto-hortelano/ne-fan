@@ -45,8 +45,8 @@
  *    node qa/mutacion-reparto-en-lotes.mjs --solo-vigentes   # sin los probes
  *
  *  QUÉ TOCA Y CÓMO LO DEVUELVE. Aparta `nefan-core/reports/` entero (material
- *  descargado, no versionado) y modifica temporalmente `scripts/mutacion.ts`,
- *  `scripts/mutacion-huella.ts`, `scripts/mutate.ts`, el workflow y
+ *  descargado, no versionado) y modifica temporalmente `scripts/mutacion-lotes.ts`,
+ *  `scripts/mutacion-repo.ts`, `scripts/mutacion-huella.ts`, `scripts/mutate.ts`, el workflow y
  *  `data/contract/mutation-targets.json`. Todo vuelve en el `finally` y se
  *  verifica byte a byte; si algo no volvió, sale con 2 y lo dice.
  *
@@ -63,7 +63,12 @@ import { turnoDeCandados } from "./lib/turno-exclusivo.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE = join(raiz, "nefan-core");
-const MUT = join(CORE, "scripts", "mutacion.ts");
+/** Los dos TROZOS de `scripts/mutacion.ts` que este guion rompe: #605 lo partió
+ *  por cierre de llamadas y en el fichero del nombre solo quedaron `VERBOS` y
+ *  `main`. `fusionar` vive con `lotes` y `manifiesto` (lo que corre CI);
+ *  `segundosDe` vive con git y la huella. */
+const LOTES_TS = join(CORE, "scripts", "mutacion-lotes.ts");
+const REPO = join(CORE, "scripts", "mutacion-repo.ts");
 const PURO = join(CORE, "scripts", "mutacion-huella.ts");
 const MUTATE = join(CORE, "scripts", "mutate.ts");
 const YML = join(raiz, ".github", "workflows", "mutation.yml");
@@ -387,7 +392,7 @@ const ABIERTOS = [
       "el commit dice que el sello «es lo que hace segura la fusión»; el candado del sello ejerce " +
       "`repartir`, no `fusionar`, así que esa frase no la defiende nadie",
     checkers: ["bateria", "cableado"],
-    rompe: [MUT, `    const errores = verificaDescarga(parcial, presentes);`, `    const errores: string[] = [];`],
+    rompe: [LOTES_TS, `    const errores = verificaDescarga(parcial, presentes);`, `    const errores: string[] = [];`],
   },
   {
     // CERRADO EL 2026-09-10 (#436). El spread vivía dentro del verbo
@@ -421,7 +426,7 @@ const ABIERTOS = [
       "6.588) y el reparto entero cambia",
     checkers: ["bateria", "cableado"],
     rompe: [
-      MUT,
+      REPO,
       `  return medidos.length === 0 ? undefined : Math.max(...medidos);`,
       `  return medidos.length === 0 ? undefined : medidos.reduce((a, b) => a + b, 0);`,
     ],
@@ -554,7 +559,7 @@ if ((huellaSucia.stdout ?? "").trim()) {
   process.exit(2);
 }
 
-const fuentes = new Map([MUT, PURO, MUTATE, YML, PLAN, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
+const fuentes = new Map([LOTES_TS, REPO, PURO, MUTATE, YML, PLAN, HUELLA].map((f) => [f, readFileSync(f, "utf8")]));
 const restaura = () => { for (const [f, t] of fuentes) writeFileSync(f, t); };
 const habiaReports = existsSync(REPORTS);
 if (habiaReports) renameSync(REPORTS, APARTADO);

@@ -1,7 +1,7 @@
 /** La huella de una corrida de mutación: qué supervivientes había, cuáles son
  *  nuevos y de quién son. Todo lo que decide algo, sin tocar git ni el disco.
  *
- *  POR QUÉ ESTE FICHERO EXISTE APARTE de `scripts/mutacion.ts`. El delta y la
+ *  POR QUÉ ESTE FICHERO EXISTE APARTE de la familia `scripts/mutacion-*.ts`. El delta y la
  *  atribución son las dos cosas que pueden equivocarse EN VERDE: si el delta
  *  colapsa "no había medida" con "no ha cambiado nada", la cola se queda muda; y
  *  si la atribución inventa un dueño, el hallazgo va a parar a quien no lo trajo
@@ -455,7 +455,7 @@ export function deltaDeFichero(
 }
 
 /** Cómo se lee un delta, en una línea. Vive aquí —y no en la plantilla de
- *  `mutacion.ts`— porque las DOS salidas (la consola de quien reparte y el
+ *  `mutacion-reparto.ts`— porque las DOS salidas (la consola de quien reparte y el
  *  comentario que va a la PR) tienen que decir lo mismo: la primera versión
  *  tenía dos ternarios gemelos, y un tercer estado añadido a uno solo se lee
  *  como «0 nuevos» en el otro. Que es exactamente la mentira que se arregla. */
@@ -1165,7 +1165,7 @@ export function fusiona(base: Huella, medidos: Readonly<Record<string, MedidaDeF
 // ── atribución: por módulo × alcance, nunca por línea ────────────────────────
 
 /** Un commit del rango sin medir, con los módulos que su diff SELECCIONA.
- *  Quién calcula esos módulos (git + `seleccionar`) es asunto de `mutacion.ts`;
+ *  Quién calcula esos módulos (git + `seleccionar`) es asunto de `mutacion-repo.ts`;
  *  aquí llegan ya calculados para que la regla de reparto se pueda ejercer sin
  *  fabricar commits. */
 export interface CommitDelRango {
@@ -1283,7 +1283,7 @@ export interface InformeSellado {
   modulo: string;
   /** SHA-256 en hexadecimal del fichero tal y como lo escribió la corrida.
    *
-   *  Lo calcula `mutacion.ts` con `node:crypto`, y no este fichero: aquí no
+   *  Lo calcula `mutacion-informes.ts` con `node:crypto`, y no este fichero: aquí no
    *  entra nada del entorno (la cabecera explica por qué). El `hash64` de
    *  arriba tampoco vale para esto — existe para la identidad de un mutante, no
    *  para sellar 76 MB de informes contra una sustitución deliberada. */
@@ -2332,7 +2332,7 @@ export type EstadoDeReparto =
 
 /** ¿Está esta corrida ya repartida en esa huella?
  *
- *  Vive aquí, y no dentro de `mutacion.ts`, porque este verbo YA HA PERDIDO
+ *  Vive aquí, y no dentro de `mutacion-reparto.ts`, porque este verbo YA HA PERDIDO
  *  DATOS DOS VECES y las dos se arreglaron con un guardia que nadie ejercía:
  *
  *    1. Correr `repartir` dos veces antes de commitear calculaba el delta

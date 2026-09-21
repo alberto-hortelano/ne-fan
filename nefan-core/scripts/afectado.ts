@@ -122,11 +122,11 @@ const TOOLING = [
  *  Va derivado y no declarado: el instrumento es el cierre de RUNTIME de estas
  *  dos entradas (`instrumentoDeMedida`), así que trocear `mutate.ts` en dos
  *  ficheros no deja al segundo fuera del instrumento sin que nadie lo note —el
- *  modo de fallo de cualquier lista escrita a mano. Hoy salen cinco:
- *  `mutate.ts`, `mutacion.ts`, `mutacion-huella.ts`, `mutation-plan.ts` y el
- *  propio `afectado.ts`. `mutacion.ts` es hoy REDUNDANTE como entrada —
- *  `mutate.ts` la importa—, y está porque las dos son entradas del ciclo: el
- *  día que `mutate.ts` deje de importarla, sigue siendo instrumento.
+ *  modo de fallo de cualquier lista escrita a mano. Se cobró en #605, que partió
+ *  `mutacion.ts` en seis trozos: los catorce ficheros de hoy salen del grafo sin
+ *  tocar esta lista. Las dos entradas siguen siendo las dos, y desde #605
+ *  `mutacion.ts` ya no es redundante: `mutate.ts` importa de `mutacion-repo.ts`,
+ *  no del fichero del nombre, así que el verbo entra por su propia entrada.
  *
  *  Lo que ESTO deja fuera de `scripts/`, y por qué importa: los guiones que son
  *  sujeto de una batería. `scripts/manifest-kinds-con-productor.ts` está en el
@@ -993,10 +993,10 @@ export function comparaObjetivos(
  *  importador no forzaría nada— y el importador de un borrado que se renombró
  *  en el mismo diff (`test/status-labels.test.ts` → `test/status-motivo.test.ts`
  *  en #433) saldría «fuera del diff». Va con TODO `git diff --name-only` del
- *  instrumento: los tres de aquí y los dos de `mutacion.ts` (`ficherosDesdeElTag`,
+ *  instrumento: los tres de aquí y los dos de `mutacion-repo.ts` (`ficherosDesdeElTag`,
  *  `commitsDelRango`), que lo importan de aquí para que sea una sola verdad; el
- *  candado de `test/afectado.test.ts` recorre los dos ficheros y exige que ningún
- *  `--name-only` vaya sin él. */
+ *  candado de `test/afectado.test.ts` recorre el instrumento entero —derivado del
+ *  grafo, no escrito a mano— y exige que ningún `--name-only` vaya sin él. */
 export const SIN_RENOMBRAR: readonly string[] = ["--no-renames"];
 
 /** De dónde salen los ficheros cambiados. Fail-loud: si git no puede contestar
