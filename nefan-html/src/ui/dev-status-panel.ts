@@ -23,6 +23,38 @@ export interface SessionInfo {
 
 const eurFmt = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" });
 
+/** El texto accionable de una respuesta de error de ai_server: el `detail` de
+ *  FastAPI, o el cuerpo crudo cuando no viene en esa forma.
+ *
+ *  Devuelve TAMBIÉN cómo se leyó, y no por simetría: «el server mandó esto» y
+ *  «el server no mandó `detail`» no son la misma noticia, y quien lee el
+ *  registro necesita saber si le falta un campo o si eso ES el campo. Por eso
+ *  el cuerpo ilegible no se traga —su error entra en el texto que se enseña—:
+ *  un `detail` vacío sin explicación manda a buscar donde no hay nada.
+ *
+ *  **Devuelve el detalle ENTERO, sin recortar** (H6 de la re-QA). Nació
+ *  recortando a 300 caracteres «porque el destino es el HUD», y el `detail` que
+ *  emite remote-gen para el checkout principal mide 337: el `mv` llegaba a la
+ *  pantalla cortado en `…/archivo/cache/spend/ev`, y quien lo copiase archivaba
+ *  el ledger con ese nombre. O sea que el recorte se comía exactamente el texto
+ *  que este camino existe para entregar. Lo que se recorta, si acaso, es la
+ *  LÍNEA VISIBLE, que la compone quien pinta; el tooltip y el registro son «lo
+ *  rico» por diseño y se lo quedan entero. */
+export function detalleDelRechazo(cuerpo: string): { texto: string; forma: "detail" | "crudo" } {
+  let texto = cuerpo;
+  let forma: "detail" | "crudo" = "crudo";
+  try {
+    const json: unknown = JSON.parse(cuerpo);
+    if (json && typeof json === "object" && typeof (json as { detail?: unknown }).detail === "string") {
+      texto = (json as { detail: string }).detail;
+      forma = "detail";
+    }
+  } catch (err) {
+    texto = `${cuerpo} [cuerpo ilegible: ${err}]`;
+  }
+  return { texto: texto.trim(), forma };
+}
+
 export class DevStatusPanel {
   private readonly genEl: HTMLElement;
   private readonly cacheEl: HTMLElement;
@@ -41,6 +73,9 @@ export class DevStatusPanel {
   private usdEurRate: number | null = null;
   private offline = false;
   private firstPoll = true;
+  /** La firma del último RECHAZO con respuesta (`HTTP 500|<detalle>`), para
+   *  decirlo una vez por causa y no cada 5 s. `null` = ahora no hay ninguno. */
+  private ultimoRechazo: string | null = null;
 
   private readonly session: Required<SessionInfo> = { renderMode: "", styleId: "" };
 
@@ -106,27 +141,49 @@ export class DevStatusPanel {
   // ── Poll del server (spend + config + dev-cache) ──
 
   private async poll(): Promise<void> {
-    let st: DevStatus;
+    // CAÍDO y RECHAZADO son dos cosas distintas y se dicen distinto. Hasta
+    // #426 el `!res.ok` entraba por el mismo `catch` que el fetch fallido, así
+    // que un ai_server EN PIE contestando 500 se anunciaba como «offline» y su
+    // `detail` —el único texto accionable que produce a propósito: hoy el `mv`
+    // de un ledger anterior a #426— no llegaba a ninguna parte. Un HUD que
+    // dice que un servicio está caído cuando está en pie miente dos veces.
+    let res: Response;
     try {
-      const res = await fetch(`${this.remoteUrl}/dev/status`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      st = (await res.json()) as DevStatus;
+      res = await fetch(`${this.remoteUrl}/dev/status`);
     } catch {
       // Degradación esperable (preset 4 arranca sin ai_server): reflejar el
       // estado sin spamear — solo en la transición online→offline.
-      if (!this.offline) {
-        this.offline = true;
-        this.spendEl.textContent = "";
-        this.configEl.textContent = "ai_server offline (sin gasto/config)";
-        this.toggle.disabled = true;
-        this.toggle.parentElement!.title = "ai_server no responde — dev-cache no disponible";
-        if (!this.firstPoll) this.log("panel dev: ai_server dejó de responder");
-      }
-      this.firstPoll = false;
+      this.marcarCaido();
+      return;
+    }
+    // El cuerpo se lee UNA vez y se parsea aparte, para que los dos desenlaces
+    // de abajo puedan enseñarlo: `res.json()` se lo habría comido, y entonces
+    // el «respuesta ilegible» solo podría repetir el `SyntaxError` sin decir
+    // qué llegó — que es la mitad que le hace falta a quien lo lee.
+    let cuerpo: string;
+    try {
+      cuerpo = await res.text();
+    } catch (err) {
+      cuerpo = `(el cuerpo de la respuesta no se pudo leer: ${err})`;
+    }
+    if (!res.ok) {
+      this.marcarRechazo(`HTTP ${res.status}`, cuerpo);
+      return;
+    }
+    let st: DevStatus;
+    try {
+      st = JSON.parse(cuerpo) as DevStatus;
+    } catch {
+      // 200 con un cuerpo que no es el contrato: el server está VIVO, así que
+      // tampoco es «offline». Se dice como rechazo, y con el cuerpo delante —
+      // `detalleDelRechazo` le pega el motivo del parse al texto.
+      this.marcarRechazo("respuesta ilegible", cuerpo);
       return;
     }
     if (this.offline) this.log("panel dev: ai_server de vuelta");
+    if (this.ultimoRechazo !== null) this.log("panel dev: ai_server vuelve a servir /dev/status");
     this.offline = false;
+    this.ultimoRechazo = null;
     this.firstPoll = false;
     this.usdEurRate = st.config.usd_eur_rate;
     if (this.baselineUsd === null) this.baselineUsd = st.spend.total_usd;
@@ -136,6 +193,50 @@ export class DevStatusPanel {
     this.toggle.checked = st.api_cache.enabled;
   }
 
+  /** ai_server NO responde (el fetch ni llega). Es la degradación esperable, y
+   *  se anuncia una sola vez, en la transición. */
+  private marcarCaido(): void {
+    if (!this.offline) {
+      this.offline = true;
+      this.ultimoRechazo = null;
+      this.spendEl.textContent = "";
+      this.spendEl.title = "";
+      this.configEl.textContent = "ai_server offline (sin gasto/config)";
+      this.toggle.disabled = true;
+      this.toggle.parentElement!.title = "ai_server no responde — dev-cache no disponible";
+      if (!this.firstPoll) this.log("panel dev: ai_server dejó de responder");
+    }
+    this.firstPoll = false;
+  }
+
+  /** ai_server CONTESTÓ y se negó a dar el estado. No es una caída: hay alguien
+   *  al otro lado explicando por qué, así que su causa se PINTA (línea visible
+   *  corta, detalle entero en el tooltip, que es como este panel enseña lo
+   *  rico) y además entra en el registro de errores, que es el canal de la
+   *  casa. El aviso va UNA vez por causa porque el poll es cada 5 s. */
+  private marcarRechazo(que: string, cuerpo: string): void {
+    const { texto: detalle, forma } = detalleDelRechazo(cuerpo);
+    this.offline = false;
+    this.spendEl.textContent = "gasto no disponible";
+    this.spendEl.title = detalle || que;
+    this.configEl.textContent = `ai_server rechaza /dev/status (${que})`;
+    this.configEl.title = detalle;
+    this.toggle.disabled = true;
+    this.toggle.parentElement!.title = `ai_server rechaza /dev/status (${que}) — dev-cache no disponible`;
+    const firma = `${que}|${detalle}`;
+    if (this.ultimoRechazo !== firma) {
+      this.ultimoRechazo = firma;
+      errors.push(
+        "config",
+        // Si no vino `detail`, se dice: así nadie busca un campo que el server
+        // no mandó, y el texto de al lado se lee como lo que es (el cuerpo).
+        `ai_server rechaza GET /dev/status (${que})${forma === "crudo" ? " y no manda `detail`" : ""}`,
+        detalle || undefined,
+      );
+    }
+    this.firstPoll = false;
+  }
+
   private renderSpend(st: DevStatus): void {
     const rate = this.usdEurRate ?? 1;
     const sessionUsd = Math.max(0, st.spend.total_usd - (this.baselineUsd ?? 0));
@@ -143,11 +244,12 @@ export class DevStatusPanel {
       `gasto sesión ${eurFmt.format(sessionUsd * rate)} · total ${eurFmt.format(st.spend.total_usd * rate)}`;
     const lastCalls = st.spend.calls
       .slice(-5)
-      .map((c) => `  $${c.usd.toFixed(2)} ${c.service}: ${c.what}`)
+      .map((c) => `  $${c.usd.toFixed(2)} ${c.service}: ${c.what}${c.procedencia === "real" ? "" : ` (${c.procedencia})`}`)
       .join("\n");
     this.spendEl.title =
       `Coste ESTIMADO (tablas Meshy/fal, no facturación real).\n` +
-      `Total: $${st.spend.total_usd.toFixed(2)} en ${st.spend.call_count} llamadas · ` +
+      `Total REAL: $${st.spend.total_usd.toFixed(2)} en ${st.spend.call_count} llamadas ` +
+      `(fixture: $${st.spend.por_procedencia.fixture.usd.toFixed(2)} en ${st.spend.por_procedencia.fixture.call_count}) · ` +
       `tasa ${rate} €/$ (config.ts usd_eur_rate)` +
       (lastCalls ? `\nÚltimas llamadas:\n${lastCalls}` : "");
   }

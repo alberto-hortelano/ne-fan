@@ -387,6 +387,14 @@ class AdaptadorHttpTest(unittest.TestCase):
         self.store = StoreFalso()
         self._orig_store = deps.asset_manifest
         deps.asset_manifest = self.store
+        # El ledger de gasto, PROPIO de este test (#426): el singleton vive en
+        # `NEFAN_SPEND_DIR` y lo comparte la suite entera, así que para afirmar
+        # QUÉ eventos escribió esta petición hace falta uno vacío.
+        from spend_tracker import SpendTracker
+
+        self._orig_spend = rg.SPEND
+        self.spend = SpendTracker(raiz / "ledger")
+        rg.SPEND = self.spend
 
         self.forge.respuestas["/sheets"] = _fixture("sheets")
         self.forge.respuestas["/identity"] = _fixture("identity")
@@ -413,6 +421,7 @@ class AdaptadorHttpTest(unittest.TestCase):
         self.forge.parar()
         self.rg.SKINNED_SHEETS_DIR = self._orig_dir
         self.rg._BASE_KEYS_INDEX = self._orig_idx
+        self.rg.SPEND = self._orig_spend
         deps.config.clear()
         deps.config.update(self._orig_cfg)
         deps.style_packs = self._orig_packs
@@ -482,6 +491,70 @@ class AdaptadorHttpTest(unittest.TestCase):
             apunte["perfil"],
             {"keyframes": self.perfil_walk["keyframes"], "play_fps": self.perfil_walk["play_fps"]},
         )
+
+    # ── el ledger sabe de dónde salió cada dólar (#426) ────────────────────
+    def _eventos(self):
+        f = self.spend.root / "events.jsonl"
+        if not f.exists():
+            return []
+        return [json.loads(linea) for linea in f.read_text().splitlines() if linea.strip()]
+
+    def test_el_gasto_de_una_fixture_se_apunta_como_fixture_y_NO_suma_al_real(self):
+        # Las fixtures canónicas traen `api: "fixture"` (en la raíz de
+        # /identity, en `meta.skin.api` de /skins) y un `cost_usd` de 0,24 $ cada una.
+        # Hasta hoy esos 0,48 $ entraban al ledger como si fueran dinero: es
+        # exactamente cómo se llegó a 1.429 eventos falsos.
+        self._pedir()
+        ev = self._eventos()
+        self.assertEqual(len(ev), 2, ev)
+        self.assertEqual([e["procedencia"] for e in ev], ["fixture", "fixture"])
+        self.assertEqual([e["what"][:5] for e in ev], ["hero:", "skin "])
+        self.assertEqual(self.spend.total_usd(), 0.0)
+        st = self.spend.status()
+        self.assertEqual(st["call_count"], 0)
+        self.assertEqual(st["por_procedencia"]["fixture"], {"usd": 0.48, "call_count": 2})
+        self.assertEqual(st["por_procedencia"]["real"], {"usd": 0.0, "call_count": 0})
+
+    def test_la_procedencia_sale_del_api_de_la_RESPUESTA_no_de_un_literal(self):
+        # Mismo forge, misma petición: si el forge dice que facturó un
+        # proveedor, el evento es real. Es la prueba de que el adaptador no
+        # lleva `fixture` cableado por ser un test.
+        ident = json.loads(json.dumps(self.forge.respuestas["/identity"]))
+        ident["api"] = "openai"
+        self.forge.respuestas["/identity"] = ident
+        skins = json.loads(json.dumps(self.forge.respuestas["/skins"]))
+        skins["meta"]["skin"]["api"] = "openai"
+        self.forge.respuestas["/skins"] = skins
+        self.assertEqual(self._pedir().status_code, 200)
+        self.assertEqual([e["procedencia"] for e in self._eventos()], ["real", "real"])
+        self.assertAlmostEqual(self.spend.total_usd(), 0.48, places=4)
+
+    def test_una_identidad_sin_api_es_502_y_NO_deja_hero_ni_gasto(self):
+        # Una respuesta que no dice de qué proveedor salió no se apunta como
+        # nada, y el 502 llega ANTES de que el arte toque disco.
+        ident = json.loads(json.dumps(self.forge.respuestas["/identity"]))
+        del ident["api"]
+        self.forge.respuestas["/identity"] = ident
+        r = self._pedir()
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertIn("`api` ausente", r.json()["detail"])
+        self.assertIn("/identity", r.json()["detail"])
+        self.assertEqual(list((self.rg.SKINNED_SHEETS_DIR / "heroes").glob("*.png")) if (self.rg.SKINNED_SHEETS_DIR / "heroes").exists() else [], [])
+        self.assertEqual(self._eventos(), [])
+        self.assertNotIn("/skins", self.forge.rutas_pedidas("POST"))
+
+    def test_un_skin_sin_api_es_502_y_NO_deja_frames_ni_meta(self):
+        skins = json.loads(json.dumps(self.forge.respuestas["/skins"]))
+        del skins["meta"]["skin"]["api"]
+        self.forge.respuestas["/skins"] = skins
+        r = self._pedir()
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertIn("/skins", r.json()["detail"])
+        # El hero sí se escribió (su respuesta era buena) y su evento también;
+        # del skin, ni un frame ni un meta.json ni un evento.
+        self.assertEqual(len(self._eventos()), 1)
+        self.assertEqual(self._eventos()[0]["what"][:5], "hero:")
+        self.assertEqual([p for p in self.rg.SKINNED_SHEETS_DIR.iterdir() if p.name not in ("heroes", "ledger", "_base_keys.json")], [])
 
     # ── el arte de personaje tiene dueño (#376) ────────────────────────────
     def test_hero_y_sheet_van_en_UNA_peticion_con_el_ref_derivado(self):

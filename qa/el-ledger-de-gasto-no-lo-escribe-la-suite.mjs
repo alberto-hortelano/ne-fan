@@ -31,12 +31,19 @@
  *       es verde y sucio— y sigue sin tocar el ledger.
  *   5 · EL LEDGER DEL CHECKOUT, INTACTO: mismo tamaño, mismas líneas y mismo
  *       md5 al empezar y al terminar (o sigue sin existir, que también vale).
- *   6 · LA HERRAMIENTA DE RETIRADA por su CLI, sobre un ledger de MENTIRA: el
- *       dry-run no toca un byte; `--ejecutar` mueve solo lo de test y deja el
- *       arte real —incluido el vecino `hero: un herrero de la aldea del norte`,
- *       que CONTIENE entero el `what` retirado—; ninguna línea se pierde;
- *       repetirlo no mueve nada; y un evento del lote retirado FUERA de su
- *       ventana de fechas para el guion en vez de archivarlo.
+ *   6 · FUERA DE `unittest`, UN FORGE DE FIXTURES NO SUMA AL GASTO REAL (#426).
+ *       El guardia de proceso (1-4) no cubre este camino: remote-gen en
+ *       producción hablando con un sprite-forge que conteste `api: "fixture"`
+ *       (los dos guiones que apuntan el adaptador a un forge propio corren así,
+ *       sin `unittest` y sin la variable). Aquí se recorre ENTERO en un proceso
+ *       sin `unittest` (se mide: si entra, `⊘`): un `http.server` con las cuatro
+ *       fixtures canónicas, `skin_sprite_sheet_endpoint` llamado tal cual, y
+ *       el ledger dice `procedencia: fixture` en cada evento, `total_usd() == 0`
+ *       y el desglose `por_procedencia.fixture` con los 0,48 $ de las fixtures.
+ *       El límite honesto: el ledger es un `checkout-falso/cache/spend` en el
+ *       temporal —MISMA forma que el real—, porque fuera de `unittest` el
+ *       constructor no consulta la forma (mismo camino de código) y «sin la
+ *       variable» literal escribiría el dinero del checkout.
  *
  *  **La puerta del paso 3.** Este guion corre la suite, así que en un árbol SIN
  *  el arreglo la correría contra el ledger de verdad — sería el guion quien
@@ -48,10 +55,18 @@
  *  quitando el bloque `if root.resolve() == RUTA_REAL and "unittest" in
  *  sys.modules` de `spend_tracker.py`, el paso 1 cae entero y el guion sale con
  *  2 sin correr la suite —la puerta hace su trabajo—; con la negativa puesta y
- *  el `.resolve()` quitado, cae el disfraz relativo; devolviendo `RUTA_REAL`
- *  con la variable en blanco, cae el caso del blanco; y cambiando la igualdad
- *  exacta del lote retirado por `contains` en `archivar_gasto_de_test.py`, cae
- *  el vecino del paso 6.
+ *  el `.resolve()` quitado, cae el disfraz relativo; y devolviendo `RUTA_REAL`
+ *  con la variable en blanco, cae el caso del blanco. El paso 6 (tanda AB,
+ *  medido el 2026-09-20 con las DOS averías —contarlas es lo que demuestra
+ *  que las distingue—): con `procedencia_segun_api` devolviendo siempre
+ *  `"real"` caen CUATRO del paso 6 —«todos fixture», «total real 0», el
+ *  `/dev/status` y el desglose, porque el dinero de mentira desaparece del
+ *  reparto en vez de quedar apartado— más los dos del paso 3, que con ese
+ *  sabotaje tampoco pasa: 6 ✘ y EXIT=1. Con `total_usd()` sumando todo cae
+ *  UNO solo del paso 6, «total real 0», y el `/dev/status` y el desglose
+ *  siguen en pie: 3 ✘ y EXIT=1. La herramienta de retirada por texto que
+ *  ocupaba este paso se JUBILÓ con #426 (se borró con su test): con el campo
+ *  en el evento, la arqueología sobre el prompt no tiene sujeto.
  *
  *  CERO CRÉDITOS: no arranca ningún servicio, no abre un puerto y no llama a
  *  ninguna API. Todo lo que escribe vive en un `mkdtemp` que borra al salir.
@@ -75,7 +90,7 @@ import { interpretePython } from "./lib/python.mjs";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LEDGER = join(RAIZ, "cache", "spend", "events.jsonl");
-const HERRAMIENTA = join(RAIZ, "ai_server", "tools", "archivar_gasto_de_test.py");
+const FIXTURES_FORGE = join(RAIZ, "nefan-core", "data", "contract", "fixtures", "sprite-forge");
 const ENV_SPEND_DIR = "NEFAN_SPEND_DIR";
 
 /** El intérprete: `NEFAN_PYTHON`, el `.venv` del checkout o el `python3` del
@@ -88,10 +103,6 @@ const expect = (desc, cond, detalle = "") => {
   console.log(`  ${cond ? "✔" : "✘"} ${desc}${cond || !detalle ? "" : ` — ${detalle}`}`);
   if (!cond) fallos.push(desc);
 };
-/** Un dato que se mide y se DICE, pero no decide el veredicto: un hallazgo
- *  abierto que ya está reportado y que aquí solo se vigila. */
-const nota = (desc, detalle) => console.log(`  ⚠ ${desc}${detalle ? ` — ${detalle}` : ""}`);
-
 class SinMedir extends Error {}
 
 /** Corre python con un entorno controlado. `env` se MEZCLA sobre el del
@@ -174,7 +185,73 @@ const eventos = (dir) => {
     .map((l) => JSON.parse(l));
 };
 
-const epoch = (iso) => Date.parse(`${iso}T12:00:00`) / 1000;
+/** La sonda del paso 6. Argumentos: el directorio de fixtures de sprite-forge y
+ *  dónde escribir los sheets. Sale con un JSON en la última línea. NO importa
+ *  `unittest` ni `fastapi.testclient`; mide si algo lo trajo. */
+const SONDA_FORGE_DE_FIXTURES = String.raw`
+import asyncio, base64, json, os, sys, threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+sys.path.insert(0, "ai_server")
+fixtures, sheets_dir = Path(sys.argv[1]), Path(sys.argv[2])
+fx = {n: json.loads((fixtures / f"{n}.json").read_text()) for n in ("sheets", "catalog", "identity", "skins")}
+
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+    def _r(self, cuerpo):
+        datos = json.dumps(cuerpo).encode()
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(datos)))
+        self.end_headers()
+        self.wfile.write(datos)
+    def do_GET(self):
+        self._r(fx["catalog"] if self.path == "/catalog" else {})
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("content-length", 0)))
+        self._r(fx.get(self.path.strip("/"), {}))
+
+srv = HTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+from deps import deps
+from routers import remote_generation as rg
+import spend_tracker as st
+
+class Store:
+    def register_character(self, hero_key, hero=None, sheets=None):
+        return {"ok": True}
+
+deps.config.update({"sprite_forge_url": f"http://127.0.0.1:{srv.server_address[1]}", "sprite_skin_model": "gpt-image-2"})
+deps.style_packs = None
+deps.asset_manifest = Store()
+rg.SKINNED_SHEETS_DIR = sheets_dir
+rg._BASE_KEYS_INDEX = sheets_dir / "_base_keys.json"
+
+body = rg.SkinSpriteSheetRequest(model="heroe", anim="walk", angle="frontal_8", prompt="un herrero de pelo cano")
+status, detalle = 200, None
+try:
+    asyncio.run(rg.skin_sprite_sheet_endpoint(body))
+except Exception as e:  # noqa: BLE001 — la sonda reporta, no decide
+    status, detalle = getattr(e, "status_code", 500), str(e)[:300]
+srv.shutdown()
+
+f = st.SPEND.root / "events.jsonl"
+eventos = [json.loads(l) for l in f.read_text().splitlines() if l.strip()] if f.exists() else []
+estado = st.SPEND.status()
+print(json.dumps({
+    "unittest_cargado": "unittest" in sys.modules,
+    "ledger_con_forma_real": st.parece_ledger_de_verdad(st.SPEND.root.resolve()),
+    "root": str(st.SPEND.root),
+    "status": status, "detalle": detalle,
+    "eventos": eventos,
+    "total_usd": st.SPEND.total_usd(),
+    "status_total": estado["total_usd"], "status_calls": estado["call_count"],
+    "por_procedencia": estado["por_procedencia"],
+}))
+`;
 
 async function main() {
   console.log("▶ el ledger de gasto y la suite de tests\n");
@@ -277,84 +354,43 @@ async function main() {
       `antes=${JSON.stringify(antes)} después=${JSON.stringify(despues)}`,
     );
 
-    // ── 6 · la herramienta de retirada, por su CLI y sobre un ledger falso ──
-    const falso = join(tmp, "ledger-de-mentira.jsonl");
-    const archivo = join(tmp, "archivado.jsonl");
-    const lineas = [
-      // gasto de test de la fixture VIVA
-      { t: epoch("2026-09-01"), usd: 0.24, what: "hero: un herrero de pelo cano", service: "remote-gen" },
-      { t: epoch("2026-09-02"), usd: 0.24, what: "skin walk: un herrero de pelo cano", service: "remote-gen" },
-      // gasto de test de la fixture RETIRADA, DENTRO de su ventana declarada
-      { t: epoch("2026-08-26"), usd: 0.24, what: "hero: un herrero", service: "remote-gen" },
-      { t: epoch("2026-08-29"), usd: 0.96, what: "skin walk: un herrero", service: "remote-gen" },
-      // ARTE REAL que se parece: contiene entero el `what` retirado. Se queda.
-      { t: epoch("2026-08-27"), usd: 0.24, what: "hero: un herrero de la aldea del norte", service: "remote-gen" },
-      // ARTE REAL sin parecido
-      { t: epoch("2026-08-17"), usd: 0.24, what: "atlas d0: Blas, el tabernero", service: "remote-gen" },
-    ].map((e) => JSON.stringify(e));
-    writeFileSync(falso, `${lineas.join("\n")}\n`);
-    const md5Falso = createHash("md5").update(readFileSync(falso)).digest("hex");
-
-    const herramienta = (extra) =>
-      spawnSync(PY, [HERRAMIENTA, "--ledger", falso, "--destino", archivo, ...extra], {
-        cwd: RAIZ,
-        encoding: "utf8",
-        timeout: 120_000,
-      });
-
-    const seco = herramienta([]);
-    expect("6 · el dry-run no toca un byte del ledger", createHash("md5").update(readFileSync(falso)).digest("hex") === md5Falso);
-    expect("6 · …y no crea el fichero de archivo", !existsSync(archivo));
-    expect("6 · …y anuncia los 4 eventos de test antes de tocar nada", /A ARCHIVAR: 4 eventos/.test(seco.stdout ?? ""), (seco.stdout ?? "").trim().split("\n").slice(-4).join(" / "));
-
-    herramienta(["--ejecutar"]);
-    const quedan = readFileSync(falso, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
-    const movidos = readFileSync(archivo, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
-    expect("6 · `--ejecutar` mueve los 4 de test y deja los 2 reales", quedan.length === 2 && movidos.length === 4, `quedan=${quedan.length} movidos=${movidos.length}`);
-    expect(
-      "6 · el vecino `hero: un herrero de la aldea del norte` NO se lo lleva (igualdad exacta, no `contains`)",
-      quedan.some((e) => e.what === "hero: un herrero de la aldea del norte"),
-      `se quedaron: ${quedan.map((e) => e.what).join(" | ")}`,
-    );
-    expect(
-      "6 · ninguna línea se pierde: ledger ∪ archivo == el original",
-      JSON.stringify([...quedan, ...movidos].map((e) => e.what).sort()) ===
-        JSON.stringify(lineas.map((l) => JSON.parse(l).what).sort()),
-    );
-    const md5Tras = [falso, archivo].map((f) => createHash("md5").update(readFileSync(f)).digest("hex"));
-    herramienta(["--ejecutar"]);
-    expect(
-      "6 · correrla otra vez no mueve nada",
-      JSON.stringify([falso, archivo].map((f) => createHash("md5").update(readFileSync(f)).digest("hex"))) === JSON.stringify(md5Tras),
-    );
-
-    // La ventana de fechas es la mitad comprobable de la procedencia declarada.
-    const fuera = join(tmp, "fuera-de-ventana.jsonl");
-    writeFileSync(
-      fuera,
-      `${JSON.stringify({ t: epoch("2026-09-03"), usd: 0.24, what: "hero: un herrero", service: "remote-gen" })}\n`,
-    );
-    const rFuera = spawnSync(PY, [HERRAMIENTA, "--ledger", fuera, "--destino", join(tmp, "no.jsonl")], {
+    // ── 6 · fuera de unittest, un forge de fixtures NO suma al gasto real ──
+    // El mismo camino que producción: `skin_sprite_sheet_endpoint` de verdad,
+    // sin TestClient (starlette lo importa vía `unittest`), contra un
+    // `http.server` que contesta las cuatro fixtures canónicas de sprite-forge.
+    const checkoutFalso = join(tmp, "checkout-falso");
+    const ledgerFalso = join(checkoutFalso, "cache", "spend");
+    const sonda = join(tmp, "sonda-forge-de-fixtures.py");
+    writeFileSync(sonda, SONDA_FORGE_DE_FIXTURES);
+    const r6 = spawnSync(PY, [sonda, FIXTURES_FORGE, join(checkoutFalso, "sprite_sheets")], {
       cwd: RAIZ,
       encoding: "utf8",
+      env: { ...process.env, [ENV_SPEND_DIR]: ledgerFalso },
       timeout: 120_000,
     });
-    expect(
-      "6 · un evento del lote retirado FUERA de su ventana para el guion",
-      rFuera.status !== 0 && /ventana|declara/i.test(`${rFuera.stdout}${rFuera.stderr}`),
-      `salió con ${rFuera.status}`,
-    );
-
-    // ── nota · hallazgo abierto, vigilado y no puntuado ─────────────────────
-    // La negativa compara contra la RUTA_REAL de ESTE checkout. Apuntada al
-    // ledger real de OTRO checkout (el principal desde un worktree), se
-    // construye sin quejarse. Reportado en qa-2.md (H2); aquí solo se vigila.
-    const otro = "/home/al/code/ne-fan/cache/spend";
-    if (resolve(otro) !== resolve(rutaReal)) {
-      const r = leerJson(construirBajoTest(otro));
-      if (!r.lanzo) nota("H2 sigue abierto: apuntada al ledger real de OTRO checkout, se construye sin quejarse", r.root);
-      else nota("H2 parece cerrado: apuntar a otro checkout ya revienta", (r.msg ?? "").slice(0, 80));
+    const s6 = leerJson({ code: r6.status, out: `${r6.stdout ?? ""}`, err: `${r6.stderr ?? ""}` });
+    if (s6.unittest_cargado) {
+      throw new SinMedir(
+        `el proceso de la sonda cargó \`unittest\` (${s6.quien ?? "?"}): el paso 6 mediría bajo el guardia de proceso y no el camino de producción`,
+      );
     }
+    expect("6 · la sonda corrió SIN `unittest` en el proceso (medido, no supuesto)", s6.unittest_cargado === false);
+    expect("6 · …y el ledger que abrió tiene la FORMA del real (`…/cache/spend`)", s6.ledger_con_forma_real === true, s6.root);
+    expect("6 · el adaptador contestó 200 con arte de las fixtures", s6.status === 200, JSON.stringify(s6).slice(0, 200));
+    expect(`6 · escribió eventos en el ledger (${s6.eventos?.length ?? 0})`, (s6.eventos?.length ?? 0) >= 1);
+    expect(
+      "6 · TODOS los eventos dicen `procedencia: fixture` — la dice la RESPUESTA, no el proceso",
+      (s6.eventos ?? []).length > 0 && s6.eventos.every((e) => e.procedencia === "fixture"),
+      JSON.stringify((s6.eventos ?? []).map((e) => e.procedencia)),
+    );
+    expect("6 · el gasto REAL (`total_usd()`) sigue en 0", s6.total_usd === 0, `total_usd=${s6.total_usd}`);
+    expect("6 · `/dev/status`.total_usd y call_count también en 0", s6.status_total === 0 && s6.status_calls === 0, JSON.stringify(s6.por_procedencia));
+    expect(
+      "6 · …y el desglose `por_procedencia.fixture` trae el dinero de mentira (> 0), no lo esconde",
+      (s6.por_procedencia?.fixture?.usd ?? 0) > 0 && s6.por_procedencia?.real?.usd === 0,
+      JSON.stringify(s6.por_procedencia),
+    );
+    expect("6 · y el ledger del checkout sigue como al empezar", JSON.stringify(fotoDelLedger()) === JSON.stringify(antes));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -364,7 +400,7 @@ async function main() {
     console.log(`ROJO — ${fallos.length} comprobación(es) fallaron.`);
     return 1;
   }
-  console.log("VERDE — la suite no puede escribir en el ledger, y la retirada es reproducible.");
+  console.log("VERDE — la suite no puede escribir en el ledger, y un forge de fixtures no suma al gasto real.");
   return 0;
 }
 

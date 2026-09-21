@@ -224,7 +224,15 @@ export interface DevApiCacheToggleRequest {
 
 // ── Estado agregado del panel de dev del cliente ──
 
-/** Una llamada REAL a una API de pago (nunca cache-hits). Coste ESTIMADO por
+/** De dónde salió el dólar de un evento del ledger (#426). Enum CERRADO y
+ *  solo con valores que tienen escritor: `real` = un proveedor que factura
+ *  (fal, Meshy, el `api` que nombre sprite-forge); `fixture` = sprite-forge
+ *  contestando sus fixtures canónicas o su proveedor `fake`. Ni `banco` ni
+ *  `fake-ai-server`: no escriben el ledger. Espejo de `PROCEDENCIAS` en
+ *  ai_server/spend_tracker.py. */
+export type SpendProcedencia = "real" | "fixture";
+
+/** Una llamada a una API de pago (nunca cache-hits). Coste ESTIMADO por
  *  tabla estática (meshy_client.py), no facturación real. */
 export interface DevSpendCall {
   /** Epoch seconds. */
@@ -232,15 +240,22 @@ export interface DevSpendCall {
   usd: number;
   /** Qué se generó (prompt recortado, categoría de style pack…). */
   what: string;
-  /** Proceso que lanzó la llamada ("remote-gen", "narrative-llm"…). */
+  /** Proceso que lanzó la llamada (hoy siempre "remote-gen"). */
   service: string;
+  /** Si el dólar se facturó o lo dijo una fixture. */
+  procedencia: SpendProcedencia;
 }
 
 export interface DevSpendStatus {
+  /** Solo los eventos `real`: el número que se mira para seguir gastando. */
   total_usd: number;
+  /** Solo los eventos `real`. */
   call_count: number;
-  /** Últimas N llamadas (append-only en cache/spend/events.jsonl). */
+  /** Últimas N llamadas de CUALQUIER procedencia (append-only en
+   *  cache/spend/events.jsonl), cada una con su campo. */
   calls: DevSpendCall[];
+  /** Desglose por procedencia; las dos claves SIEMPRE presentes (con ceros). */
+  por_procedencia: Record<SpendProcedencia, { usd: number; call_count: number }>;
 }
 
 /** GET /dev/status — un solo poll para el panel de dev: dev-cache + gasto +
