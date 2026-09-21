@@ -214,7 +214,7 @@ class ProcedenciaTest(unittest.TestCase):
     def test_add_no_puede_escribir_un_importe_que_luego_no_se_deja_leer(self):
         # La otra mitad de H2: escritor y lector admiten lo MISMO, o el propio
         # tracker fabrica el fichero que después declara ilegible.
-        for malo in (-0.01, float("nan")):
+        for malo in (-0.01, float("nan"), float("inf"), float("-inf")):
             with self.subTest(usd=malo):
                 with self.assertRaises(ValueError) as ctx:
                     self.spend.add(malo, "x", "remote-gen", procedencia="real")
@@ -223,6 +223,34 @@ class ProcedenciaTest(unittest.TestCase):
         # Y el cero sí se escribe: una llamada gratis es un hecho del ledger.
         self.spend.add(0, "gratis", "remote-gen", procedencia="fixture")
         self.assertEqual(len(self.spend.status()["calls"]), 1)
+
+    def test_add_exige_un_numero_de_verdad_y_NO_escribe_antes_de_quejarse(self):
+        # H7 de la re-QA, los tres bordes medidos. `"0.5"` era el peor: `float()`
+        # lo aceptaba, la línea se escribía, y el `print` reventaba DESPUÉS — el
+        # llamante veía la excepción con el gasto ya apuntado. `True` es `int`
+        # en Python y se colaba como `1.0` aunque el LECTOR rechaza los bool.
+        for malo in ("0.5", True, False, None, [], {"usd": 1}):
+            with self.subTest(usd=malo):
+                with self.assertRaises(ValueError) as ctx:
+                    self.spend.add(malo, "x", "remote-gen", procedencia="real")
+                self.assertIn("no es un número", str(ctx.exception))
+        self.assertFalse(self.fichero.exists())
+
+    def test_un_importe_no_finito_en_disco_es_ilegible(self):
+        # `json.loads` admite `Infinity`/`NaN` (extensión de Python sobre JSON),
+        # así que sin esto una línea así ENTRABA y `total_usd()` daba `inf`.
+        # Se escriben con `json.dumps`, que es exactamente lo que los ponía ahí:
+        # hasta H7, `add(float("inf"))` dejaba literalmente `"usd": Infinity` en
+        # el fichero (`allow_nan` va activo por defecto).
+        for crudo in (float("inf"), float("-inf"), float("nan")):
+            with self.subTest(usd=crudo):
+                self.fichero.write_text(
+                    json.dumps({"t": 1.0, "usd": crudo, "what": "x",
+                                "service": "remote-gen", "procedencia": "real"}) + "\n"
+                )
+                with self.assertRaises(LedgerIlegible) as ctx:
+                    self.spend.total_usd()
+                self.assertIn("no es finito", str(ctx.exception))
 
     # ── H3 de la QA: el remedio del 500 no supone la forma `<raíz>/cache/spend`
     def test_el_remedio_archiva_en_el_checkout_del_ledger_si_tiene_su_forma(self):

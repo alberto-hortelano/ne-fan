@@ -495,7 +495,9 @@ class AdaptadorHttpTest(unittest.TestCase):
     # ── el ledger sabe de dónde salió cada dólar (#426) ────────────────────
     def _eventos(self):
         f = self.spend.root / "events.jsonl"
-        return [json.loads(l) for l in f.read_text().splitlines() if l.strip()] if f.exists() else []
+        if not f.exists():
+            return []
+        return [json.loads(linea) for linea in f.read_text().splitlines() if linea.strip()]
 
     def test_el_gasto_de_una_fixture_se_apunta_como_fixture_y_NO_suma_al_real(self):
         # Las fixtures canónicas traen `api: "fixture"` (en la raíz de

@@ -38,6 +38,7 @@ verde y sucio, que es exactamente como llegamos aquí.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import time
@@ -203,22 +204,29 @@ class SpendTracker:
                 f"procedencia {procedencia!r} no es ninguna de {PROCEDENCIAS}: "
                 f"el enum es cerrado y solo admite valores con escritor"
             )
-        # El escritor acepta EXACTAMENTE lo que el lector admite: si `add`
-        # pudiera escribir un `usd` negativo o NaN, dejaría un ledger que
-        # `_events()` se niega a leer — o sea, el propio tracker fabricando el
-        # fichero que luego declara ilegible. (`float()` ya rechaza lo que no
-        # es número, y `nan >= 0` es False, así que el NaN también cae aquí.)
+        # El escritor acepta EXACTAMENTE lo que el lector admite, y se comprueba
+        # ANTES de tocar el disco. `float(usd)` no bastaba, y los tres bordes los
+        # midió la re-QA (H7): `float("0.5")` colaba y la línea se escribía para
+        # reventar DESPUÉS en el `print` —el llamante veía el error con el gasto
+        # ya apuntado—; `True` se convertía en `1.0` aunque el lector rechaza los
+        # bool; y `inf` escribía `usd: Infinity`, que no es JSON estándar, que el
+        # lector admitía y que en el wire revienta el `JSON.parse` del navegador.
+        if isinstance(usd, bool) or not isinstance(usd, (int, float)):
+            raise ValueError(
+                f"usd {usd!r} no es un número ({type(usd).__name__}): el importe "
+                f"se apunta como lo manda quien cobra, no se convierte aquí"
+            )
         importe = float(usd)
-        if not importe >= 0:
+        if not math.isfinite(importe) or importe < 0:
             raise ValueError(
                 f"usd {usd!r} no es una cantidad pagable: el ledger es append-only "
-                f"de lo que se PAGÓ, no una cuenta con abonos"
+                f"de lo que se PAGÓ, no una cuenta con abonos ni con infinitos"
             )
         self.root.mkdir(parents=True, exist_ok=True)
         line = json.dumps(
             {
                 "t": time.time(),
-                "usd": round(float(usd), 4),
+                "usd": round(importe, 4),
                 "what": what[:120],
                 "service": service,
                 "procedencia": procedencia,
@@ -230,7 +238,7 @@ class SpendTracker:
         with open(self._events_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
         print(
-            f"Spend: +${usd:.2f} [{procedencia}] ({service}: {what[:60]}) — "
+            f"Spend: +${importe:.2f} [{procedencia}] ({service}: {what[:60]}) — "
             f"acumulado REAL ${self.total_usd():.2f}",
             flush=True,
         )
@@ -276,6 +284,15 @@ class SpendTracker:
                 raise LedgerIlegible(
                     f"{self._events_path}:{n} tiene `usd` = {usd!r}, que no es un número: "
                     f"el gasto no se suma a medias ni se adivina"
+                )
+            # `json.loads` admite `NaN` e `Infinity` (extensión de Python sobre
+            # JSON), así que una línea con un importe no finito ENTRA y se suma:
+            # `total_usd` salía `inf`. Y en el wire lo rechaza el `JSON.parse`
+            # del navegador, o sea que el panel se queda sin gasto por una línea.
+            if not math.isfinite(usd):
+                raise LedgerIlegible(
+                    f"{self._events_path}:{n} tiene `usd` = {usd!r}, que no es finito: "
+                    f"un importe así no es dinero y además no es JSON estándar"
                 )
             if usd < 0:
                 raise LedgerIlegible(

@@ -32,8 +32,14 @@ const eurFmt = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EU
  *  el cuerpo ilegible no se traga —su error entra en el texto que se enseña—:
  *  un `detail` vacío sin explicación manda a buscar donde no hay nada.
  *
- *  Se recorta a una línea porque el destino es el HUD y el registro, no un log
- *  de servidor; el `detail` entero sigue en la respuesta para quien use `curl`. */
+ *  **Devuelve el detalle ENTERO, sin recortar** (H6 de la re-QA). Nació
+ *  recortando a 300 caracteres «porque el destino es el HUD», y el `detail` que
+ *  emite remote-gen para el checkout principal mide 337: el `mv` llegaba a la
+ *  pantalla cortado en `…/archivo/cache/spend/ev`, y quien lo copiase archivaba
+ *  el ledger con ese nombre. O sea que el recorte se comía exactamente el texto
+ *  que este camino existe para entregar. Lo que se recorta, si acaso, es la
+ *  LÍNEA VISIBLE, que la compone quien pinta; el tooltip y el registro son «lo
+ *  rico» por diseño y se lo quedan entero. */
 export function detalleDelRechazo(cuerpo: string): { texto: string; forma: "detail" | "crudo" } {
   let texto = cuerpo;
   let forma: "detail" | "crudo" = "crudo";
@@ -46,7 +52,7 @@ export function detalleDelRechazo(cuerpo: string): { texto: string; forma: "deta
   } catch (err) {
     texto = `${cuerpo} [cuerpo ilegible: ${err}]`;
   }
-  return { texto: texto.trim().split("\n")[0]!.slice(0, 300), forma };
+  return { texto: texto.trim(), forma };
 }
 
 export class DevStatusPanel {

@@ -32,6 +32,13 @@
  *      offline, PINTA el detalle, y la entrada llega al registro de errores con
  *      su fuente. Y al retirar la intercepción se RECUPERA solo: el rechazo no
  *      se queda pegado.
+ *   6. Y el remedio llega **ENTERO**: tooltip y registro TERMINAN en el nombre
+ *      completo del fichero destino. Se afirma el final y no una subcadena
+ *      porque ése es justo el modo de fallo que este guion no vio (H6 de la
+ *      re-QA): el panel recortaba el detalle a 300 caracteres, el `detail` de
+ *      atrezo mide 349 con el destino empezando en el 266, y los asertos de
+ *      arriba pedían cosas que caben en los primeros 300. Quien copiara el
+ *      comando cortado archivaba el ledger con un nombre truncado.
  *
  *  LO QUE NO MIDE, dicho para que nadie lo cuente de más: el motor falso sirve
  *  el gasto A CEROS (`fake-ai-server.ts`, `/dev/status`), así que aquí real y
@@ -74,11 +81,16 @@ const TOOLTIP = /Total REAL: \$(\d+\.\d{2}) en (\d+) llamadas \(fixture: \$(\d+\
  *  un ledger anterior a #426 (`spend_tracker.LedgerIlegible`), con una marca
  *  que no puede salir de ningún otro sitio de la página. */
 const MARCA = "QA153-LEDGER-VIEJO";
+/** El final del remedio: el nombre COMPLETO del fichero destino. Es lo último
+ *  del `detail` y lo primero que se pierde si alguien vuelve a recortar el
+ *  texto por el camino — pasó, y el guion no lo vio (H6 de la re-QA), porque
+ *  sus asertos pedían subcadenas que caben en los primeros 300 caracteres. */
+const DESTINO_500 = `/tmp/${MARCA}/archivo/cache/spend/events-sin-procedencia-2026-09-20.jsonl`;
 const DETALLE_500 =
   `/tmp/${MARCA}/cache/spend/events.jsonl:1 es un evento sin \`procedencia\`: un ledger ` +
   `anterior a #426 no se migra ni se marca, se ARCHIVA como en T9 → ` +
   `mkdir -p /tmp/${MARCA}/archivo/cache/spend && mv /tmp/${MARCA}/cache/spend/events.jsonl ` +
-  `/tmp/${MARCA}/archivo/cache/spend/events-sin-procedencia-2026-09-20.jsonl`;
+  `${DESTINO_500}`;
 
 /** Lo que el panel enseña, tal cual lo lee quien mira el HUD. */
 const leerElPanel = () => {
@@ -186,13 +198,29 @@ export default async function (ctx) {
     rechazo.configTooltip.includes(MARCA) && /mkdir -p .*archivo\/cache\/spend/.test(rechazo.configTooltip),
     `tooltip=${JSON.stringify(rechazo.configTooltip.slice(0, 160))}`,
   );
+  // El remedio ENTERO, no sus primeros caracteres (H6). El `detail` de atrezo
+  // mide 349 y el nombre del destino empieza en el 266: un recorte a 300 —el
+  // que había— deja el comando en `…-sin-procedencia-2026` y quien lo copie
+  // archiva el ledger con ESE nombre. Por eso se afirma el FINAL y no una
+  // subcadena: las que pedían los otros asertos caben en los primeros 300.
+  ctx.expect(
+    "5 · …y el remedio llega ENTERO: el comando acaba en el nombre completo del destino",
+    rechazo.configTooltip.trim().endsWith(DESTINO_500),
+    `acaba en «…${rechazo.configTooltip.trim().slice(-48)}» y tenía que acabar en «…${DESTINO_500.slice(-48)}»`,
+  );
 
   const registro = await ctx.page.evaluate(leerElRegistro);
   const entrada = registro.find((e) => /rechaza GET \/dev\/status/.test(e.msg));
+  // En el registro se pide CONTIENE y no TERMINA EN, y el motivo se mide, no se
+  // supone: `ErrorLog.push` recibe el detalle como `unknown` y a lo que no es un
+  // `Error` le hace `JSON.stringify`, así que una cadena llega ENTRECOMILLADA y
+  // acaba en `"`. Contener el destino COMPLETO basta para cazar el recorte —si
+  // se corta, el nombre entero no aparece— y el `termina en` estricto vive en el
+  // aserto de arriba, que mira lo PINTADO, que es lo que el hallazgo nombraba.
   ctx.expect(
-    "5 · …y la entrada llega al REGISTRO DE ERRORES con su fuente y su detalle",
-    Boolean(entrada) && entrada.fuente === "config" && entrada.detalle.includes(MARCA),
-    JSON.stringify(entrada ?? registro.map((e) => e.msg)),
+    "5 · …y la entrada llega al REGISTRO DE ERRORES con su fuente y su detalle ENTERO",
+    Boolean(entrada) && entrada.fuente === "config" && entrada.detalle.includes(DESTINO_500),
+    JSON.stringify(entrada ? { fuente: entrada.fuente, final: entrada.detalle.trim().slice(-48) } : registro.map((e) => e.msg)),
   );
   await ctx.shot("panel-dev-rechazo-500");
 
