@@ -9,7 +9,9 @@
  *   A · con el motor falso en `mode:"error"` (el tile del destino revienta con
  *       HTTP 500 y el bridge difunde el `narrative_status` de error que termina
  *       el viaje), la espera lanza `ViajeRoto` en ≤ `TECHO_MS`, y el mensaje
- *       NOMBRA la causa: «el bridge abortó el viaje» + el texto del motor.
+ *       NOMBRA la causa: «el bridge abortó el viaje» + lo que el bridge dijo
+ *       (que nombra el destino; el texto crudo del motor NO llega al cliente:
+ *       el bridge lo traduce a una frase para el jugador).
  *   B · CONTROL: con el motor devuelto a su conducta, el MISMO viaje llega. Sin
  *       esto, A pasaría verde también si `viajarPorSalidas` lanzara siempre, o
  *       si el viaje no se pidiera nunca.
@@ -89,8 +91,8 @@ export default async function (ctx) {
     `${msRoto} ms`,
   );
   ctx.expect(
-    "A · el rojo NOMBRA la causa: el bridge abortó el viaje, con el texto del motor",
-    /el bridge abortó el viaje: .*TILE_MODE=error/.test(roto.err?.message ?? ""),
+    "A · el rojo NOMBRA la causa: el bridge abortó el viaje, con lo que dijo el bridge del destino",
+    (roto.err?.message ?? "").includes(`el bridge abortó el viaje: No se pudo llegar a ${destino.name}`),
     roto.err?.message ?? "(sin error)",
   );
   await ctx.shot("viaje-roto");
