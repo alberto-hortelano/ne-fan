@@ -167,14 +167,14 @@ export function baja(d: string, cb: (f: string) => void): void { for (const e of
     "la copia con flatMap DECLARADA en el padrón con `recorre: \"qa\"` (legalizar una copia del banco)",
     "flatmap.ts",
     FLATMAP_VIEJO,
-    (p) => p.recorridos.push({ fichero: `${PREFIJO}flatmap.ts`, sitios: 1, recorre: "qa", porque: "sabotaje del guion 163: una copia del banco con permiso" }),
+    (p) => p.recorridos.push({ fichero: `${PREFIJO}flatmap.ts`, sitios: 1, lecturas: 1, recorre: "qa", porque: "sabotaje del guion 163: una copia del banco con permiso" }),
     [A_LEGALIZA],
   ],
   [
     "una entrada de `recorridos` que ya no existe (caducada)",
     null,
     "",
-    (p) => p.recorridos.push({ fichero: "no-existe.test.ts", sitios: 1, recorre: "data/scenes", porque: "sabotaje del guion 163: entrada caducada" }),
+    (p) => p.recorridos.push({ fichero: "no-existe.test.ts", sitios: 1, lecturas: 1, recorre: "data/scenes", porque: "sabotaje del guion 163: entrada caducada" }),
     // Caduca por la totalidad Y porque el fichero no existe: los dos lo dicen.
     [A_TOTALIDAD, A_EXISTE],
   ],
@@ -209,7 +209,7 @@ export function baja(d: string, cb: (f: string) => void): void { for (const e of
     "un `recorre` que nombra el banco en MAYÚSCULAS (`QA/guiones`)",
     "flatmap.ts",
     FLATMAP_VIEJO,
-    (p) => p.recorridos.push({ fichero: `${PREFIJO}flatmap.ts`, sitios: 1, recorre: "QA/guiones", porque: "sabotaje del guion 163: la mentira más barata" }),
+    (p) => p.recorridos.push({ fichero: `${PREFIJO}flatmap.ts`, sitios: 1, lecturas: 1, recorre: "QA/guiones", porque: "sabotaje del guion 163: la mentira más barata" }),
     [A_LEGALIZA],
   ],
   [
