@@ -43,11 +43,17 @@
  *   3 · Hubo descargas `/cache/surface/` tras reanudar (sin ellas, «textured»
  *       no puede ser verdad).
  *   4 · En Imagen IA, **nada pintó al reanudar** (el contador de pago del
- *       motor falso no se mueve) y TODO POST posterior al resume lleva el
- *       `layout_key` del tile activo. El POST no lleva la clave del tile;
- *       `layout_key` = hash del layout + estilo, y lo identifica. En el falso
- *       el tile equivocado sale $0 porque sus celdas ya se pintaron en la
- *       partida; el `layout_key` es lo que delata su POST.
+ *       motor falso no se mueve) y todo POST posterior al resume que PUEDE
+ *       pintar (sin `resolve_only`) lleva el `layout_key` del tile activo; los
+ *       del otro tile llevan TODOS `resolve_only`. El POST no lleva la clave
+ *       del tile; `layout_key` = hash del layout + estilo, y lo identifica. En
+ *       el falso el tile equivocado sale $0 porque sus celdas ya se pintaron en
+ *       la partida; el `layout_key` y el `resolve_only` son lo que delata su
+ *       POST. Desde #714 el otro tile SÍ pregunta —restaura su arte ya pagado
+ *       por el carril de restauración de `PoliticaDeAtlas`, que nunca pinta—,
+ *       así que «ningún POST del otro tile» dejó de ser la frase: la de ahora
+ *       es «ninguno que pueda pintar», y en Imagen IA el otro tile acaba
+ *       texturado (textured ∋ otro).
  *   5 · **A3, la guarda que no puede regresar** (la deduplicación por clave de
  *       `PoliticaDeAtlas`, en core desde la PR 3 de #241; entonces el Set
  *       `pendingTiles` del controller: la MISMA clave disparada dos veces antes
@@ -68,7 +74,10 @@
  *       solo si PINTÓ, y una segunda petición idéntica sería cache-hit.
  *
  *  Bloque 2 repite el flujo literal de H2 en **Maqueta 3D** con la librería
- *  que dejó el bloque 1, y exige gasto cero en todo el bloque.
+ *  que dejó el bloque 1, y exige gasto cero en todo el bloque. En su resume
+ *  la restauración del tile de arranque se contesta VACÍA (`page.route`, como
+ *  si la librería no lo tuviera): A4 necesita ese tile en clay y fuera de la
+ *  caché del controller, y desde #714 el resume lo restauraría.
  *
  *  A4 (cruzar a pie a un tile con un run en vuelo) va por la MISMA rama del
  *  controller que el resume: reanudar ES «cambio de tile activo con un run en
@@ -365,18 +374,50 @@ export default async function (ctx) {
     return { partida, tile0, posTile0, vecino, aviso, postsArranque, gastoAntes, gastoArranque, fps };
   }
 
-  /** Recarga sin mapping local, reanuda y afirma lo que #390 promete. */
-  async function reanudarYAfirmar(p, etiqueta) {
+  /** Recarga sin mapping local, reanuda y afirma lo que #390 promete.
+   *  `otroSinArte`: la restauración del tile de arranque (el que NO es el
+   *  activo tras reanudar) se contesta vacía, para que siga en clay (A4). */
+  async function reanudarYAfirmar(p, etiqueta, { otroSinArte = false } = {}) {
     const olvidadas = await olvidarMappingLocal(ctx);
     ctx.log(`${etiqueta} · mapping local retirado: ${olvidadas} clave(s) fps_atlas:*`);
     const desde = peticiones.length;
     const postsAntes = atlasPosts.length;
     const gastoAntes = await gastoDelFake();
+    const vacia = async (route) => {
+      let b = null;
+      try {
+        b = JSON.parse(route.request().postData() ?? "null");
+      } catch {
+        b = null; // sin cuerpo legible no es la restauración que se vacía
+      }
+      if (!b || !b.resolve_only || b.layout_key !== layoutKeyDe[p.tile0]) return route.continue();
+      return route.fulfill({
+        json: { cells: {}, pages_painted: 0, cached: true, cost_usd: 0, missing: b.cells?.length ?? 0 },
+      });
+    };
+    if (otroSinArte) await ctx.page.route("**/generate_surface_atlas", vacia);
     const r = await reanudarYMedirElRenderer(ctx, p.partida.sessionId);
     if (!r) return;
     if (r.sinTiles) {
       ctx.sinMedir(`el save volvió con ${r.estado.tiles.length} tile(s): sin dos tiles no hay carrera que medir`);
     }
+    // El carril de restauración (#714) corre DESPUÉS del ciclo del activo: se
+    // espera a que se vacíe para que la red de abajo tenga todos sus POST.
+    const quieto = await ctx.absorbe(
+      "el aserto de los POST de abajo afirma sobre lo que haya salido; esto solo espera a que salga todo",
+      () =>
+        ctx.waitFor(
+          "el carril de restauración de los tiles no activos termina",
+          () => {
+            const f = window.__nefan.fps();
+            return window.__nefan.status().restaurando === 0
+              ? { activeTile: f.activeTile, textured: f.textured, tiles: f.tiles }
+              : null;
+          },
+          90_000,
+        ),
+    );
+    if (otroSinArte) await ctx.page.unroute("**/generate_surface_atlas", vacia);
     afirmarResume(ctx, {
       estado: r.estado,
       hud: await lineasDelHud(ctx),
@@ -387,8 +428,11 @@ export default async function (ctx) {
     const postsResume = atlasPosts.slice(postsAntes);
     const claveActivo = layoutKeyDe[r.estado.activeTile] ?? null;
     ctx.expect(
-      `${etiqueta} · todo POST del atlas tras reanudar es del tile ACTIVO (su layout_key; ninguno del otro tile)`,
-      claveActivo !== null && postsResume.every((b) => b?.layout_key === claveActivo),
+      `${etiqueta} · todo POST del atlas tras reanudar que puede PINTAR es del tile ACTIVO; los del otro tile, ` +
+        "todos resolve_only (#714: restaura, nunca pinta)",
+      claveActivo !== null &&
+        postsResume.every((b) => b?.layout_key === claveActivo || b?.resolve_only === true) &&
+        postsResume.some((b) => b?.layout_key === claveActivo),
       JSON.stringify({
         activo: r.estado.activeTile,
         claves: layoutKeyDe,
@@ -401,6 +445,7 @@ export default async function (ctx) {
       pagosDeAtlas(gastoDespues) === pagosDeAtlas(gastoAntes),
       JSON.stringify({ antes: gastoAntes.rutas, despues: gastoDespues.rutas }),
     );
+    return { r, quieto };
   }
 
   // ── 1 · Imagen IA: la partida pinta; reanudar no pinta y textura el ACTIVO ──
@@ -421,7 +466,15 @@ export default async function (ctx) {
     p1.fps.activeTile === p1.vecino && p1.fps.textured.includes(p1.vecino) && p1.fps.tiles.length >= 2,
     JSON.stringify(p1.fps),
   );
-  await reanudarYAfirmar(p1, "Imagen IA");
+  const v1 = await reanudarYAfirmar(p1, "Imagen IA");
+  // El otro tile tiene su arte en la librería (lo pintó la partida): desde
+  // #714 vuelve texturado también, sin pintar (lo afirma el aserto de red).
+  const finalV1 = v1?.quieto ?? (await estadoFps(ctx));
+  ctx.expect(
+    "Imagen IA · el OTRO tile del save también vuelve texturado: su arte ya pagado se restaura (#714)",
+    finalV1.tiles.length >= 2 && finalV1.tiles.every((k) => finalV1.textured.includes(k)),
+    JSON.stringify(finalV1),
+  );
   await ctx.shot("imagen-ia-reanudada");
 
   // ── 2 · Maqueta 3D: el flujo literal de H2, con la librería ya poblada ──
@@ -438,7 +491,7 @@ export default async function (ctx) {
     p2.fps.activeTile === p2.vecino && p2.fps.textured.includes(p2.vecino),
     JSON.stringify(p2.fps),
   );
-  await reanudarYAfirmar(p2, "Maqueta 3D");
+  await reanudarYAfirmar(p2, "Maqueta 3D", { otroSinArte: true });
   const gasto4 = await gastoDelFake();
   ctx.expect(
     "Maqueta 3D · en todo el bloque el motor falso no anotó ningún pago de atlas",
