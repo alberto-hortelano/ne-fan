@@ -61,7 +61,7 @@ import { readFileSync } from "node:fs";
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
 import { rutaDelSave, esperarEnElSave } from "../lib/saves.mjs";
 import { acercarse } from "../lib/combate.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { viajarPorSalidas } from "../lib/viaje.mjs";
 
 /** Saves vírgenes y el motor falso a cero: el ledger que se lee es el de ESTA
  *  partida y los spawns por turno no se cuelan. */
@@ -113,39 +113,11 @@ const mirar = () => ({
   exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
 });
 
-async function pulsarSalida(ctx, nombre) {
-  const botones = await ctx.page.$$eval("#travel-panel button.travel-exit", (bs) =>
-    bs.map((b) => b.textContent ?? ""),
-  );
-  const idx = botones.findIndex((t) => t.includes(nombre));
-  if (idx < 0) throw new Error(`el panel no ofrece "${nombre}"; ofrece: ${JSON.stringify(botones)}`);
-  await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
-}
-
-/** El viaje ha terminado cuando el JUGADOR está en otro tile (misma espera que
- *  el guion 09: por estado contra el ledger `__nefan.viaje`, con el tope como
- *  cortafuegos de deadlock). Ese tope es `MS_DEL_TILE` —el de TODA espera de un
- *  tile del bridge desde #677, con su aritmética en `qa/lib/tile-episodio.mjs`—
- *  y no el `240_000` con el que nació: este guion entró en `main` con #699,
- *  después del censo de la tanda V, calcando la espera del 09 con su literal.
- *  Está en `data/contract/esperas-de-tile.json`, que es lo que hace que la
- *  próxima copia se vea. */
-async function esperarLlegada(ctx, tileAnterior, desc) {
-  const r = await ctx.waitFor(
-    desc,
-    (anterior) => {
-      const t = window.__nefan.currentTile;
-      const v = window.__nefan.viaje;
-      if (v && v.error) return { __roto: v };
-      if (!t || t === anterior) return null;
-      return { tile: t, scene: window.__nefan.scene?.scene_id ?? null };
-    },
-    MS_DEL_TILE,
-    tileAnterior,
-  );
-  if (r.__roto) throw new Error(`${desc}: el bridge abortó el viaje: ${JSON.stringify(r.__roto)}`);
-  return r;
-}
+// El viaje —clic en «Salidas» y espera por ESTADO contra el ledger
+// `__nefan.viaje`— vive en `qa/lib/viaje.mjs` (#693), con `MS_DEL_TILE` como
+// cortafuegos de deadlock y un `viaje.error` que corta al instante. Este guion
+// nació en `main` con #699 calcando la espera del 09 con su `240_000`; ahora
+// no hay nada que calcar.
 
 export default async function (ctx) {
   await regenerarMundo(ctx, GAME_ID);
@@ -212,16 +184,15 @@ export default async function (ctx) {
   ctx.expect("el panel «Salidas» ofrece un destino", desde.exits.length > 0, JSON.stringify(desde.exits));
   if (!desde.exits.length) return;
   const destino = desde.exits[0];
-  await pulsarSalida(ctx, destino.name);
-  const enDestino = await esperarLlegada(ctx, desde.tile, "el jugador llega al tile del destino");
-  ctx.log(`en el destino: ${enDestino.tile} · escena ${enDestino.scene}`);
+  const enDestino = await viajarPorSalidas(ctx, destino.name, "el jugador llega al tile del destino");
+  ctx.log(`en el destino: ${enDestino.tile} · escena ${enDestino.scene_id}`);
   const vecino = await esperarEnElSave(
     partida.sessionId,
-    (s) => npcsDe(s).find((e) => e.scene_id === enDestino.scene && e.spawn_reason === "scene_init") ?? null,
+    (s) => npcsDe(s).find((e) => e.scene_id === enDestino.scene_id && e.spawn_reason === "scene_init") ?? null,
     30_000,
   );
   ctx.expect(
-    `el destino (${enDestino.scene}) registra su propio NPC de escena`,
+    `el destino (${enDestino.scene_id}) registra su propio NPC de escena`,
     vecino !== null,
     JSON.stringify(vecino && resumen(vecino)),
   );
@@ -235,9 +206,8 @@ export default async function (ctx) {
   const alli = await ctx.page.evaluate(mirar);
   const vuelta = alli.exits.find((e) => e.place_id !== destino.place_id) ?? alli.exits[0];
   if (!vuelta) return ctx.sinMedir("el destino no ofrece la vuelta: no hay re-entrada que medir");
-  await pulsarSalida(ctx, vuelta.name);
-  const regreso = await esperarLlegada(ctx, enDestino.tile, "el jugador vuelve al tile de partida");
-  ctx.expect("la vuelta acaba en el tile de partida", regreso.scene === ORIGEN, JSON.stringify(regreso));
+  const regreso = await viajarPorSalidas(ctx, vuelta.name, "el jugador vuelve al tile de partida");
+  ctx.expect("la vuelta acaba en el tile de partida", regreso.scene_id === ORIGEN, JSON.stringify(regreso));
   await ctx.shot("de-vuelta");
 
   // El save de la vuelta lo escribe el bridge justo tras re-registrar la
@@ -319,8 +289,8 @@ export default async function (ctx) {
   if (vecino) {
     const v = npcsDespues.find((e) => e.id === vecino.id);
     ctx.expect(
-      `el NPC del destino (${vecino.id}) sigue en el ledger con scene_id ${enDestino.scene}`,
-      Boolean(v && v.scene_id === enDestino.scene),
+      `el NPC del destino (${vecino.id}) sigue en el ledger con scene_id ${enDestino.scene_id}`,
+      Boolean(v && v.scene_id === enDestino.scene_id),
       JSON.stringify(v && resumen(v)),
     );
   }

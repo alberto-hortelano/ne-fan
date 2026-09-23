@@ -60,7 +60,7 @@
  *  Cero créditos: preset `e2e-sin-creditos`, Maqueta 3D.
  */
 import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { viajarPorSalidas } from "../lib/viaje.mjs";
 import { URLS } from "../lib/stack.mjs";
 
 /** El motor falso es determinista POR TURNO: saves y mapa vírgenes. */
@@ -211,32 +211,9 @@ function diferencias(a, b) {
   return { claves, npcs };
 }
 
-async function pulsarSalida(ctx, nombre) {
-  const botones = await ctx.page.$$eval("#travel-panel button.travel-exit", (bs) => bs.map((b) => b.textContent ?? ""));
-  const idx = botones.findIndex((t) => t.includes(nombre));
-  if (idx < 0) throw new Error(`el panel no ofrece "${nombre}"; ofrece: ${JSON.stringify(botones)}`);
-  await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
-}
-
-/** El viaje ha terminado cuando el JUGADOR está en otro tile (el scene_init
- *  se adelanta al `ready` que trae el spawn). */
-async function esperarLlegada(ctx, tileAnterior, desc) {
-  return ctx.waitFor(
-    desc,
-    (anterior) => {
-      const t = window.__nefan.currentTile;
-      const v = window.__nefan.viaje;
-      if (v && v.error) return { __roto: v.error };
-      if (!t || t === anterior) return null;
-      const p = window.__nefan.state().pos;
-      const r = window.__nefan.scene?.world_rect ?? null;
-      if (!r || p.x < r.minX || p.x >= r.maxX || p.z < r.minZ || p.z >= r.maxZ) return null;
-      return { tile: t };
-    },
-    MS_DEL_TILE,
-    tileAnterior,
-  );
-}
+// El viaje —clic en «Salidas» y espera por ESTADO: spawn aplicado, otro tile
+// y el jugador dentro de su rect— vive en `qa/lib/viaje.mjs` (#693). Un
+// `viaje.error` corta al instante y NOMBRA el paso muerto.
 
 export default async function (ctx) {
   const frames = [];
@@ -299,12 +276,11 @@ export default async function (ctx) {
   ctx.log(`salidas tras el link: ${JSON.stringify(tras.exits.map((e) => e.place_id))}`);
 
   // ── 3 · Ida al molino y vuelta: el tile de entrada vuelve desde caché ────
-  await pulsarSalida(ctx, MOLINO_NOMBRE);
-  const ida = await esperarLlegada(ctx, tile0, "el jugador llega al tile del molino");
-  if (ida.__roto) {
-    ctx.expect("la ida al molino se completa", false, ida.__roto);
-    return;
-  }
+  const ida = await viajarPorSalidas(ctx, MOLINO_NOMBRE, "el jugador llega al tile del molino").catch((err) => {
+    ctx.expect("la ida al molino se completa", false, err.message);
+    return null;
+  });
+  if (!ida) return;
   const tileM = ida.tile;
   const dM = await derivaciones(ctx, tileM);
   ctx.log(`ida: ${tileM} · ${dM} derivación(es) del molino`);
@@ -314,12 +290,11 @@ export default async function (ctx) {
   ctx.expect("desde el molino el panel ofrece la vuelta al origen", Boolean(vuelta), JSON.stringify(enMolino));
   if (!vuelta) return;
   const frameIda = frames.length;
-  await pulsarSalida(ctx, vuelta.name);
-  const regreso = await esperarLlegada(ctx, tileM, "el jugador vuelve al tile de entrada");
-  if (regreso.__roto) {
-    ctx.expect("la vuelta se completa", false, regreso.__roto);
-    return;
-  }
+  const regreso = await viajarPorSalidas(ctx, vuelta.name, "el jugador vuelve al tile de entrada").catch((err) => {
+    ctx.expect("la vuelta se completa", false, err.message);
+    return null;
+  });
+  if (!regreso) return;
   ctx.expect("la vuelta deja al jugador en el tile de entrada", regreso.tile === tile0, regreso.tile);
   const reservido = frames.slice(frameIda).filter((p) => p.includes('"eventId":"scene_init"') && p.includes(`"${tile0}"`));
   ctx.expect("la vuelta RE-DIFUNDE el tile de entrada (scene_init desde caché): el caso del issue", reservido.length >= 1, `${reservido.length} scene_init de ${tile0}`);

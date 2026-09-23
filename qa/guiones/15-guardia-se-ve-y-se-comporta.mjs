@@ -54,7 +54,7 @@
  *     primera razón, que no es del banco sino del reparto.
  */
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { viajarPorSalidas } from "../lib/viaje.mjs";
 import { URLS } from "../lib/stack.mjs";
 import { cargarFixture } from "../lib/fixtures.mjs";
 
@@ -376,28 +376,27 @@ export default async function (ctx) {
   const salidas = await ctx.nefan("exits");
   ctx.expect("el panel «Salidas» ofrece un destino", salidas.length > 0, JSON.stringify(salidas));
   if (!salidas.length) return;
-  const antesDelViaje = await ctx.page.evaluate(() => window.__nefan.scene.scene_id);
-  await ctx.page.click("#travel-panel button.travel-exit");
-  const guardia = await ctx
-    .waitFor(
-      "el destino llega y trae un NPC declarado GUARDIA",
-      (previo) => {
-        const s = window.__nefan.scene;
-        if (!s || s.scene_id === previo) return null;
-        const g = (s.npcs ?? []).find((n) => n.role === "guard");
-        if (!g) return null;
-        const p = window.__nefan.state().pos;
-        const r = s.world_rect;
-        if (!r || p.x < r.minX || p.x >= r.maxX || p.z < r.minZ || p.z >= r.maxZ) return null;
-        return { ...g, scene_id: s.scene_id };
-      },
-      MS_DEL_TILE,
-      antesDelViaje,
-    )
-    .catch((e) => {
-      ctx.expect("el destino del panel «Salidas» trae un guardia", false, e.message);
+  // El viaje entero vive en `qa/lib/viaje.mjs` (#693): para por ESTADO, así
+  // que un viaje roto es ✘ al instante con su causa, y no «no trae guardia»
+  // a los 90 s. Que el destino no traiga guardia es OTRO rojo, y se dice
+  // aparte: llegar y no encontrarlo no es no llegar.
+  const llegada = await viajarPorSalidas(ctx, salidas[0].name, "el jugador llega al destino del panel «Salidas»").catch(
+    (e) => {
+      ctx.expect("clicar la salida lleva al jugador al destino", false, e.message);
       return null;
-    });
+    },
+  );
+  if (!llegada) return;
+  const guardia = await ctx.page.evaluate(() => {
+    const s = window.__nefan.scene;
+    const g = (s.npcs ?? []).find((n) => n.role === "guard");
+    return g ? { ...g, scene_id: s.scene_id } : null;
+  });
+  ctx.expect(
+    "el destino del panel «Salidas» trae un NPC declarado GUARDIA",
+    Boolean(guardia),
+    `${llegada.scene_id}: ningún npc con role "guard"`,
+  );
   if (!guardia) return;
   ctx.log(`guardia: ${JSON.stringify(guardia)}`);
   ctx.expect(

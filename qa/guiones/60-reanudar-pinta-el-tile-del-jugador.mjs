@@ -143,7 +143,7 @@ import {
 import { URLS } from "../lib/stack.mjs";
 import { esperarEnElSave } from "../lib/saves.mjs";
 import { fraseDeRechazos, porElCable } from "../lib/cable.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { SalidaAusente, viajarPorSalidas } from "../lib/viaje.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -198,35 +198,23 @@ const esperarAtlasDe = (ctx, key) =>
     key,
   );
 
-/** Pulsa el botón del panel «Salidas» que nombra `nombre` (patrón del 49). */
-async function pulsarSalida(ctx, nombre) {
-  const botones = await ctx.page.$$eval("#travel-panel button.travel-exit", (bs) =>
-    bs.map((b) => b.textContent ?? ""),
-  );
-  const idx = botones.findIndex((t) => t.includes(nombre));
-  if (idx < 0) return false;
-  await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
-  return true;
-}
-
 /** Va al primer destino de «Salidas» y vuelve con el tile de llegada (o
- *  `null` si no se pudo: el llamante declara `sinMedir`). */
+ *  `null` si no se pudo: el llamante declara `sinMedir`). El viaje vive en
+ *  `qa/lib/viaje.mjs` (#693): un `viaje.error` es ✘ al instante con su causa
+ *  —`absorbe` no lo traga, solo traga la expiración—, y sin salida en el panel
+ *  no hay viaje que medir. */
 async function irAlVecino(ctx) {
-  const desde = await ctx.page.evaluate(() => ({
-    tile: window.__nefan.currentTile,
-    exits: (window.__nefan.exits ?? []).map((e) => e.name),
-  }));
-  if (desde.exits.length === 0 || !(await pulsarSalida(ctx, desde.exits[0]))) return null;
-  return ctx.absorbe(
+  const exits = await ctx.page.evaluate(() => (window.__nefan.exits ?? []).map((e) => e.name));
+  if (exits.length === 0) return null;
+  const llegada = await ctx.absorbe(
     "si el viaje no llega, el llamante declara sinMedir: ningún verde depende de esta espera",
     () =>
-      ctx.waitFor(
-        "el jugador llega al destino (otro tile)",
-        (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
-        MS_DEL_TILE,
-        desde.tile,
-      ),
+      viajarPorSalidas(ctx, exits[0], "el jugador llega al destino (otro tile)").catch((err) => {
+        if (err instanceof SalidaAusente) return null;
+        throw err;
+      }),
   );
+  return llegada ? llegada.tile : null;
 }
 
 /** Retira el mapping local del atlas (`fps_atlas:*`): el estado del jugador

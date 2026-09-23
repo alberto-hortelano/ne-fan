@@ -32,7 +32,7 @@
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
 import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { botonesDeSalida, viajarPorSalidas } from "../lib/viaje.mjs";
 
 const GAME_ID = "alta_fantasia";
 
@@ -48,9 +48,7 @@ export default async function (ctx) {
   if (!salidas.length) return;
   const destino = salidas[0];
 
-  const botones = await ctx.page.$$eval("#travel-panel button.travel-exit", (bs) =>
-    bs.map((b) => b.textContent ?? ""),
-  );
+  const botones = await botonesDeSalida(ctx);
   ctx.expect("el destino tiene su botón en el panel", botones.length > 0, JSON.stringify(botones));
   ctx.expect(
     `el botón nombra el destino (${destino.name})`,
@@ -68,53 +66,39 @@ export default async function (ctx) {
   await ctx.shot("antes-de-viajar");
 
   // ── 2. Clicar la salida trae un TILE nuevo ──────────────────────────────
-  await ctx.page.click("#travel-panel button.travel-exit");
-  // El destino NO estaba realizado ⇒ el viaje pasa por la COLA del bridge y el
-  // acuse lo dice. Por la rama cacheada no habría acuse ninguno.
-  const acuse = await esperarRegistro(
-    ctx,
-    "el bridge acusa el viaje (el lugar no estaba realizado: hay que generarlo)",
-    "viaje",
-    () => (window.__nefan.viaje?.encolado ? window.__nefan.viaje : null),
-    60_000,
-  ).catch(() => null);
-  ctx.expect(
-    "el destino NO estaba realizado: el viaje entra en la cola de generación",
-    acuse?.encolado === "queued" || acuse?.encolado === "promoted",
-    `encolado=${JSON.stringify(acuse?.encolado)} — sin acuse, el bridge está re-difundiendo una escena que ya tenía`,
-  );
-  const llegada = await ctx
-    .waitFor(
-      "el destino llega y el jugador aparece en él",
-      (previo) => {
-        const s = window.__nefan.scene;
-        if (!s || s.scene_id === previo) return null;
-        const p = window.__nefan.state().pos;
-        const r = s.world_rect;
-        // El scene_init llega ANTES que el ready con el spawn: no dar por
-        // buena la llegada hasta que el jugador esté DENTRO del rect nuevo.
-        if (!r || p.x < r.minX || p.x >= r.maxX || p.z < r.minZ || p.z >= r.maxZ) return null;
-        return {
-          scene_id: s.scene_id,
-          description: s.scene_description ?? "",
-          rect: r,
-          pos: p,
-          objetos: (s.objects ?? []).length,
-          npcs: (s.npcs ?? []).length,
-          exits: (s.exits ?? []).map((e) => e.place_id),
-        };
-      },
-      MS_DEL_TILE,
-      antes.scene_id,
-    )
-    .catch((err) => {
+  // El viaje entero vive en `qa/lib/viaje.mjs` (#693): para por ESTADO —un
+  // `viaje.error` corta al instante y nombra el paso muerto— y la llegada es
+  // spawn aplicado + otro tile + el jugador DENTRO del rect nuevo (el
+  // scene_init llega ANTES que el ready con el spawn).
+  const viaje = await viajarPorSalidas(ctx, destino.name, "el destino llega y el jugador aparece en él").catch(
+    (err) => {
       ctx.expect("clicar la salida lleva al jugador al destino", false, err.message);
       return null;
-    });
-  if (!llegada) {
+    },
+  );
+  if (!viaje) {
     await ctx.shot("viaje-fallido");
     return;
   }
+  // El destino NO estaba realizado ⇒ el viaje pasó por la COLA del bridge y el
+  // acuse lo dice. Por la rama cacheada no habría acuse ninguno. Se lee del
+  // ledger de ESTE viaje, que lo conserva al cerrarse: esperarlo antes de la
+  // llegada costaba 60 s mudos si el viaje se rompía sin acuse.
+  ctx.expect(
+    "el destino NO estaba realizado: el viaje entra en la cola de generación",
+    viaje.ledger.encolado === "queued" || viaje.ledger.encolado === "promoted",
+    `encolado=${JSON.stringify(viaje.ledger.encolado)} — sin acuse, el bridge está re-difundiendo una escena que ya tenía`,
+  );
+  const escena = await ctx.page.evaluate(() => {
+    const s = window.__nefan.scene;
+    return {
+      description: s.scene_description ?? "",
+      objetos: (s.objects ?? []).length,
+      npcs: (s.npcs ?? []).length,
+      exits: (s.exits ?? []).map((e) => e.place_id),
+    };
+  });
+  const llegada = { ...escena, scene_id: viaje.scene_id, rect: viaje.rect, pos: viaje.pos };
   ctx.log(`llegada: ${llegada.scene_id} · ${llegada.description}`);
 
   // ── 3. Es un tile del plano continuo, no una escena suelta ──────────────

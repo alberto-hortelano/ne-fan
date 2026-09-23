@@ -51,7 +51,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { comenzar, esperarListaDeSaves, esperarTituloListo, nuevaPartida, recargarAlTitulo, reanudar } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
 import { esperarEnElSave, rutaDelSave } from "../lib/saves.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { SalidaAusente, viajarPorSalidas } from "../lib/viaje.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -98,24 +98,17 @@ const panelDeErrores = (ctx) =>
     Array.from(document.querySelectorAll("#error-log > div")).map((n) => (n.textContent ?? "").replace(/\s+/g, " ").trim()),
   );
 
-async function pulsarSalida(ctx, nombre) {
-  const botones = await ctx.page.$$eval("#travel-panel button.travel-exit", (bs) => bs.map((b) => b.textContent ?? ""));
-  const idx = botones.findIndex((t) => t.includes(nombre));
-  if (idx < 0) return false;
-  await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
-  return true;
-}
-
-/** Viaja por «Salidas» a `nombre` y espera a estar en OTRO tile. */
+/** Viaja por «Salidas» a `nombre` y devuelve el tile de llegada. La espera
+ *  vive en `qa/lib/viaje.mjs` (#693) y para por ESTADO: un `viaje.error` es ✘
+ *  al instante con su causa. Sin la salida en el panel no hay viaje que medir:
+ *  eso es `⊘`, no rojo. */
 async function viajar(ctx, nombre) {
-  const desde = await ctx.page.evaluate(() => window.__nefan.currentTile);
-  if (!(await pulsarSalida(ctx, nombre))) ctx.sinMedir(`el panel no ofrece «${nombre}» para viajar`);
-  return ctx.waitFor(
-    `el jugador llega a «${nombre}» (otro tile que ${desde})`,
-    (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
-    MS_DEL_TILE,
-    desde,
-  );
+  try {
+    return (await viajarPorSalidas(ctx, nombre, `el jugador llega a «${nombre}» por el panel «Salidas»`)).tile;
+  } catch (err) {
+    if (err instanceof SalidaAusente) ctx.sinMedir(err.message);
+    throw err;
+  }
 }
 
 /** #395: el save recoge el cambio de tile por PREDICADO (active = `destino` ∧

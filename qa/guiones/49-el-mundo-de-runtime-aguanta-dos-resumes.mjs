@@ -56,7 +56,7 @@ import {
   esperarTituloListo,
 } from "../lib/sesion.mjs";
 import { acercarse, herirHasta } from "../lib/combate.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { SalidaAusente, viajarPorSalidas } from "../lib/viaje.mjs";
 
 /** El motor falso es determinista POR TURNO de diálogo, así que hace falta
  *  empezar de cero: saves vírgenes y el contador a 0. */
@@ -114,17 +114,18 @@ async function reanudar(ctx, sessionId, etiqueta) {
   return true;
 }
 
-/** Pulsa el botón del panel «Salidas» que nombra `nombre` (el camino del
- *  jugador: un click, no una llamada a la API). */
-async function pulsarSalida(ctx, nombre) {
-  const botones = await ctx.page.$$eval("#travel-panel button.travel-exit", (bs) =>
-    bs.map((b) => b.textContent ?? ""),
+/** Un viaje por «Salidas» (`qa/lib/viaje.mjs`, #693) dentro de `absorbe`: si
+ *  el cortafuegos expira, `null` y el llamante declara `⊘`; si el panel no
+ *  ofrece la salida, también `null`. Un viaje que el bridge declara ROTO no se
+ *  absorbe: es ✘ al instante nombrando la causa, que antes se quedaba en un ⊘
+ *  mudo pasado el cortafuegos entero. */
+const viajar = (ctx, nombre, desc, motivo) =>
+  ctx.absorbe(motivo, () =>
+    viajarPorSalidas(ctx, nombre, desc).catch((err) => {
+      if (err instanceof SalidaAusente) return null;
+      throw err;
+    }),
   );
-  const idx = botones.findIndex((t) => t.includes(nombre));
-  if (idx < 0) return false;
-  await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
-  return true;
-}
 
 /** Ida y vuelta por «Salidas», que es lo que hace RE-EMITIR el tile de
  *  partida — el estado en el que #350 se llevaba por delante los objetos de
@@ -135,38 +136,32 @@ async function pulsarSalida(ctx, nombre) {
  *  mundo que no se ha movido. Con éxito devuelve qué sobrevivió. */
 async function idaYVuelta(ctx, etiqueta) {
   const partida = await mundo(ctx);
-  if (partida.exits.length === 0 || !(await pulsarSalida(ctx, partida.exits[0].name))) {
-    return { motivo: `el panel «Salidas» no ofrecía destino (${etiqueta})` };
-  }
-  const fuera = await ctx.absorbe(
+  if (partida.exits.length === 0) return { motivo: `el panel «Salidas» no ofrecía destino (${etiqueta})` };
+  const fuera = await viajar(
+    ctx,
+    partida.exits[0].name,
+    `el jugador llega al destino (otro tile, ${etiqueta})`,
     "si el viaje no llega, el bloque se DECLARA sin medir en el llamante: ningún verde depende " +
       "de esta espera",
-    () =>
-      ctx.waitFor(
-        `el jugador llega al destino (otro tile, ${etiqueta})`,
-        (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
-        MS_DEL_TILE,
-        partida.tile,
-      ),
   );
-  if (!fuera) return { motivo: `el jugador no llegó al tile vecino en 180 s (${etiqueta})` };
-  const alli = await mundo(ctx);
-  const vuelta = alli.exits.find((e) => e.place_id !== partida.exits[0].place_id) ?? alli.exits[0];
-  if (!vuelta || !(await pulsarSalida(ctx, vuelta.name))) {
-    return { motivo: `el destino no ofrecía vuelta (${etiqueta})` };
+  if (!fuera) {
+    return { motivo: `el jugador no llegó al tile vecino dentro del cortafuegos del tile, o el panel no ofrecía «${partida.exits[0].name}» (${etiqueta})` };
   }
-  const volvio = await ctx.absorbe(
+  const vuelta = fuera.exits.find((e) => e.place_id !== partida.exits[0].place_id) ?? fuera.exits[0];
+  if (!vuelta) return { motivo: `el destino no ofrecía vuelta (${etiqueta})` };
+  const volvio = await viajar(
+    ctx,
+    vuelta.name,
+    `el jugador vuelve al tile de partida (${etiqueta})`,
     "si la vuelta no llega, el bloque se DECLARA sin medir en el llamante: mirar los objetos del " +
       "tile equivocado no es medir nada",
-    () =>
-      ctx.waitFor(
-        `el jugador vuelve al tile de partida (${etiqueta})`,
-        (t) => (window.__nefan.currentTile === t ? t : null),
-        MS_DEL_TILE,
-        partida.tile,
-      ),
   );
-  if (!volvio) return { motivo: `el jugador no volvió al tile de partida en 180 s (${etiqueta})` };
+  if (!volvio) {
+    return { motivo: `el jugador no volvió dentro del cortafuegos del tile, o el destino no ofrecía «${vuelta.name}» (${etiqueta})` };
+  }
+  if (volvio.tile !== partida.tile) {
+    return { motivo: `la vuelta llevó a ${volvio.tile} y no al tile de partida ${partida.tile} (${etiqueta})` };
+  }
   const regreso = await mundo(ctx);
   return {
     regreso,

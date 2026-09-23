@@ -41,8 +41,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro, esperarEnElMapa } from "../lib/sesion.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { nuevaPartida, comenzar, regenerarMundo, esperarEnElMapa } from "../lib/sesion.mjs";
+import { viajarPorSalidas } from "../lib/viaje.mjs";
 import { URLS } from "../lib/stack.mjs";
 
 const GAME_ID = "alta_fantasia";
@@ -107,39 +107,18 @@ const dentro = (p, r) => p.x >= r.minX && p.x < r.maxX && p.z >= r.minZ && p.z <
 const anclaBuena = (a, sceneId) =>
   Boolean(a) && Array.isArray(a.rect) && a.rect.length === 4 && `tile_${a.tx}_${a.ty}` === sceneId;
 
-async function pulsarSalida(ctx, nombre) {
-  const botones = await ctx.page.$$eval("#travel-panel button.travel-exit", (bs) =>
-    bs.map((b) => b.textContent ?? ""),
+/** El viaje entero —clic y espera por ESTADO— vive en `qa/lib/viaje.mjs`
+ *  (#693): llegado = spawn aplicado + otro tile + el jugador DENTRO de su rect,
+ *  y un `viaje.error` corta al instante nombrando el paso muerto (antes este
+ *  predicado solo miraba `spawnAplicado` y un viaje roto pagaba el cortafuegos
+ *  entero). Aquí solo se le añade lo que este guion mira de la escena. */
+async function viajar(ctx, nombre, desc, retirados) {
+  const r = await viajarPorSalidas(ctx, nombre, desc);
+  const retiradosEnLaEscena = await ctx.page.evaluate(
+    (ks) => ks.filter((k) => k in window.__nefan.scene),
+    retirados,
   );
-  const idx = botones.findIndex((t) => t.includes(nombre));
-  if (idx < 0) throw new Error(`el panel no ofrece "${nombre}"; ofrece: ${JSON.stringify(botones)}`);
-  await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
-}
-
-/** El viaje ha terminado cuando el jugador está en OTRO tile y DENTRO de su
- *  rect (el scene_init se adelanta al `ready` que trae el spawn). */
-async function esperarLlegada(ctx, desc, sceneAnterior, retirados) {
-  return ctx.waitFor(
-    desc,
-    ({ previo, retirados }) => {
-      const s = window.__nefan.scene;
-      if (!s || s.scene_id === previo) return null;
-      const p = window.__nefan.state().pos;
-      const r = s.world_rect;
-      if (!r || p.x < r.minX || p.x >= r.maxX || p.z < r.minZ || p.z >= r.maxZ) return null;
-      const v = window.__nefan.viaje;
-      if (!v || !v.spawnAplicado) return null;
-      return {
-        scene_id: s.scene_id,
-        rect: r,
-        pos: p,
-        retiradosEnLaEscena: retirados.filter((k) => k in s),
-        exits: (s.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
-      };
-    },
-    MS_DEL_TILE,
-    { previo: sceneAnterior, retirados },
-  );
+  return { ...r, retiradosEnLaEscena };
 }
 
 /** El bridge activa el lugar por POSICIÓN cuando el cliente reporta que el
@@ -185,15 +164,7 @@ export default async function (ctx) {
   await ctx.shot("antes-de-viajar");
 
   // ── 3. Ida: el motor acota el lugar con rect mientras genera ────────────
-  await pulsarSalida(ctx, destino.name);
-  await esperarRegistro(
-    ctx,
-    "el bridge acusa el viaje (destino sin realizar: entra en la cola)",
-    "viaje",
-    () => (window.__nefan.viaje?.encolado ? window.__nefan.viaje : null),
-    60_000,
-  ).catch(() => null);
-  const llegada = await esperarLlegada(ctx, "el jugador llega al destino y el spawn se aplica", partida.scene_id, retirados).catch(
+  const llegada = await viajar(ctx, destino.name, "el jugador llega al destino y el spawn se aplica", retirados).catch(
     (err) => {
       ctx.expect(`clicar «${destino.name}» lleva al jugador al destino`, false, err.message);
       return null;
@@ -241,8 +212,7 @@ export default async function (ctx) {
   const vuelta = llegada.exits.find((e) => e.place_id !== destino.place_id) ?? null;
   ctx.expect("el panel ofrece la vuelta", Boolean(vuelta), JSON.stringify(llegada.exits));
   if (!vuelta) return;
-  await pulsarSalida(ctx, vuelta.name);
-  const regreso = await esperarLlegada(ctx, "el jugador vuelve al tile de partida y el spawn se aplica", llegada.scene_id, retirados).catch(
+  const regreso = await viajar(ctx, vuelta.name, "el jugador vuelve al tile de partida y el spawn se aplica", retirados).catch(
     (err) => {
       ctx.expect(`clicar «${vuelta.name}» devuelve al jugador`, false, err.message);
       return null;

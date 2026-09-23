@@ -73,7 +73,7 @@
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { viajarPorSalidas } from "../lib/viaje.mjs";
 import { URLS } from "../lib/stack.mjs";
 
 /** El mapa se MUTA (el ancla del lugar de origen), así que la partida nace
@@ -134,38 +134,8 @@ const mirar = () => ({
   exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
 });
 
-/** Pulsa el botón del panel que nombra `nombre` (el camino del jugador). */
-async function pulsarSalida(ctx, nombre) {
-  const botones = await ctx.page.$$eval("#travel-panel button.travel-exit", (bs) =>
-    bs.map((b) => b.textContent ?? ""),
-  );
-  const idx = botones.findIndex((t) => t.includes(nombre));
-  if (idx < 0) throw new Error(`el panel no ofrece "${nombre}"; ofrece: ${JSON.stringify(botones)}`);
-  await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
-}
-
-/** Espera a que el jugador esté en otro tile. Igual que el 09: el viaje
- *  termina cuando el JUGADOR se ha movido, no cuando llega la escena. */
-async function esperarLlegada(ctx, tileAnterior, desc) {
-  return ctx.waitFor(
-    desc,
-    (anterior) => {
-      const t = window.__nefan.currentTile;
-      const v = window.__nefan.viaje;
-      if (v && v.error) return { __roto: v };
-      if (!t || t === anterior) return null;
-      return {
-        tile: t,
-        scene_id: window.__nefan.scene?.scene_id ?? null,
-        pos: window.__nefan.state().pos,
-        blocked: window.__nefan.state().blocked,
-        exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
-      };
-    },
-    MS_DEL_TILE,
-    tileAnterior,
-  );
-}
+// El viaje —clic en «Salidas» y espera por ESTADO— vive en `qa/lib/viaje.mjs`
+// (#693): un `viaje.error` corta al instante con el paso muerto nombrado.
 
 export default async function (ctx) {
   await regenerarMundo(ctx, GAME_ID);
@@ -205,16 +175,14 @@ export default async function (ctx) {
     return;
   }
   const destino = partida.exits[0];
-  await pulsarSalida(ctx, destino.name);
-  const enDestino = await esperarLlegada(ctx, partida.tile, "el jugador llega al tile del destino").catch(
+  const enDestino = await viajarPorSalidas(ctx, destino.name, "el jugador llega al tile del destino").catch(
     (err) => {
       ctx.expect(`clicar «${destino.name}» lleva al jugador al destino`, false, err.message);
       return null;
     },
   );
-  if (!enDestino || enDestino.__roto) {
+  if (!enDestino) {
     await ctx.shot("ida-fallida");
-    ctx.expect("la ida llega", false, JSON.stringify(enDestino));
     return;
   }
   ctx.log(`en el destino: ${enDestino.tile}`);
@@ -239,16 +207,14 @@ export default async function (ctx) {
   const vuelta = enDestino.exits.find((e) => e.place_id === ORIGEN) ?? enDestino.exits[0];
   ctx.expect("el panel ofrece la vuelta al lugar de origen", Boolean(vuelta), JSON.stringify(enDestino.exits));
   if (!vuelta) return;
-  await pulsarSalida(ctx, vuelta.name);
-  const regreso = await esperarLlegada(ctx, enDestino.tile, "el jugador vuelve al tile de origen").catch(
+  const regreso = await viajarPorSalidas(ctx, vuelta.name, "el jugador vuelve al tile de origen").catch(
     (err) => {
       ctx.expect(`clicar «${vuelta.name}» devuelve al jugador al origen`, false, err.message);
       return null;
     },
   );
-  if (!regreso || regreso.__roto) {
+  if (!regreso) {
     await ctx.shot("vuelta-fallida");
-    ctx.expect("la vuelta llega", false, JSON.stringify(regreso));
     return;
   }
 

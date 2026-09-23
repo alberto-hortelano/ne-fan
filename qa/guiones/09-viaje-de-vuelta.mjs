@@ -26,7 +26,7 @@
  *  Cero créditos: preset 5, el motor es el fake-ai-server.
  */
 import { nuevaPartida, comenzar, regenerarMundo, esperarRegistro } from "../lib/sesion.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { viajarPorSalidas } from "../lib/viaje.mjs";
 
 const GAME_ID = "alta_fantasia";
 
@@ -39,68 +39,10 @@ const mirar = () => ({
   exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
 });
 
-/** Pulsa el botón del panel que nombra `nombre` (el camino del jugador: un
- *  click en «Salidas», no una llamada a la API). */
-async function pulsarSalida(ctx, nombre) {
-  const botones = await ctx.page.$$eval("#travel-panel button.travel-exit", (bs) =>
-    bs.map((b) => b.textContent ?? ""),
-  );
-  const idx = botones.findIndex((t) => t.includes(nombre));
-  if (idx < 0) throw new Error(`el panel no ofrece "${nombre}"; ofrece: ${JSON.stringify(botones)}`);
-  await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
-}
-
-/** Qué paso del viaje está muerto, leído del ledger que el juego RECUERDA
- *  (`window.__nefan.viaje`). Sin esto, un viaje que no llega NUNCA y uno que
- *  tarda dan exactamente el mismo veredicto —«timeout esperando… (último
- *  valor: null)»—, que es lo que dejó el cuelgue del 12,5 % sin diagnosticar
- *  durante ocho corridas. */
-function pasoMuerto(l, tileAnterior) {
-  if (!l) return "el cliente no registró el viaje: no llegó ni a pedírselo al bridge";
-  if (l.error) return `el bridge abortó el viaje: ${l.error}`;
-  if (!l.encolado && !l.escenaRecibida)
-    return "el bridge no acusó recibo (ni «Viajando a…» ni escena): la petición murió antes de la cola";
-  if (!l.escenaRecibida)
-    return `el bridge encoló el viaje (${l.encolado}) pero nunca difundió la escena del destino: el job murió en la cola`;
-  if (!l.spawnAplicado)
-    return `la escena ${l.escenaRecibida} llegó, pero nadie pidió el spawn: el jugador se quedó donde estaba`;
-  return `el spawn se aplicó en ${JSON.stringify(l.spawnAplicado)} y aun así el jugador sigue en ${tileAnterior}`;
-}
-
-/** El viaje ha terminado cuando el JUGADOR está en otro tile — no cuando
- *  llega la escena (el scene_init se adelanta al `ready` que trae el spawn).
- *  Se espera por ESTADO contra el ledger: un fallo declarado corta al
- *  instante, y `MS_DEL_TILE` (el cortafuegos de TODO tile del bridge, con su
- *  aritmética en `qa/lib/tile-episodio.mjs`) queda como cortafuegos de
- *  deadlock, no como condición de parada. Al saltar, el fallo NOMBRA el paso muerto. */
-async function esperarLlegada(ctx, tileAnterior, desc) {
-  const roto = (l) => new Error(`${desc}: ${pasoMuerto(l, tileAnterior)} · ledger=${JSON.stringify(l)}`);
-  const r = await ctx
-    .waitFor(
-      desc,
-      (anterior) => {
-        const t = window.__nefan.currentTile;
-        const v = window.__nefan.viaje;
-        // Viaje declarado roto por el bridge: no hay nada más que esperar.
-        if (v && v.error) return { __roto: v };
-        if (!t || t === anterior) return null;
-        return {
-          tile: t,
-          pos: window.__nefan.state().pos,
-          rect: window.__nefan.scene?.world_rect ?? null,
-          exits: (window.__nefan.exits ?? []).map((e) => ({ place_id: e.place_id, name: e.name })),
-        };
-      },
-      MS_DEL_TILE,
-      tileAnterior,
-    )
-    .catch(async () => {
-      throw roto(await ctx.nefan("viaje"));
-    });
-  if (r.__roto) throw roto(r.__roto);
-  r.ledger = await ctx.nefan("viaje");
-  return r;
-}
+// El viaje entero —clic en «Salidas» y espera por ESTADO contra el ledger—
+// vive en `qa/lib/viaje.mjs` (#693): un fallo declarado corta al instante y
+// nombra el paso muerto, y `MS_DEL_TILE` queda como cortafuegos de deadlock.
+// La foto que devuelve trae el ledger de ESTE viaje (`llegada.ledger`).
 
 /** El viaje se hizo VIAJANDO: el bridge difundió la escena del destino y pidió
  *  el spawn. Sin esto, llegar al tile andando (o por un spawn de otra cosa)
@@ -128,8 +70,7 @@ export default async function (ctx) {
   const destino = partida.exits[0];
 
   // ── 1. Ida ──────────────────────────────────────────────────────────────
-  await pulsarSalida(ctx, destino.name);
-  const enDestino = await esperarLlegada(ctx, partida.tile, "el jugador llega al tile del destino").catch(
+  const enDestino = await viajarPorSalidas(ctx, destino.name, "el jugador llega al tile del destino").catch(
     (err) => {
       ctx.expect(`clicar «${destino.name}» lleva al jugador al destino`, false, err.message);
       return null;
@@ -160,8 +101,7 @@ export default async function (ctx) {
     partida.tile,
   );
   ctx.log(`episodio del origen antes de volver: ${JSON.stringify(origenAntes)}`);
-  await pulsarSalida(ctx, vuelta.name);
-  const regreso = await esperarLlegada(ctx, enDestino.tile, "el jugador vuelve al tile de partida").catch(
+  const regreso = await viajarPorSalidas(ctx, vuelta.name, "el jugador vuelve al tile de partida").catch(
     (err) => {
       ctx.expect(`clicar «${vuelta.name}» devuelve al jugador al punto de partida`, false, err.message);
       return null;

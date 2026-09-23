@@ -91,6 +91,18 @@ const EsperasDeTileSchema = z
       )
       .min(1),
     lectores: z.array(z.object({ fichero: RutaDelBanco, porque: Motivo }).strict()),
+    /** (d) El botón del panel «Salidas» tiene UN dueño (#693): el literal de
+     *  su selector solo vive en `dueno` o en un eximido, con las VECES exactas
+     *  que aparece en él. */
+    salidas_del_panel: z
+      .object({
+        literal: z.literal("travel-exit"),
+        dueno: z.literal("qa/lib/viaje.mjs"),
+        eximidos: z.array(
+          z.object({ fichero: RutaDelBanco, veces: z.number().int().positive(), porque: Motivo }).strict(),
+        ),
+      })
+      .strict(),
   })
   .strict();
 
@@ -283,6 +295,30 @@ export function pedirYEsperarTileConMsPropio(texto: string, fichero: string): { 
   return fuera;
 }
 
+/** Cuántos nodos de CADENA del árbol contienen `literal`: literales, plantillas
+ *  sin hueco y los trozos de una plantilla con hueco. Un comentario no es un
+ *  nodo, así que no cuenta; un selector ARMADO (`"travel-" + "exit"`) tampoco
+ *  lo ve, y eso es un agujero declarado y medido abajo. */
+export function literalesEnCadenas(texto: string, fichero: string, literal: string): number[] {
+  const sf = ts.createSourceFile(fichero, texto, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const lineas: number[] = [];
+  const visita = (n: ts.Node): void => {
+    if (
+      (ts.isStringLiteral(n) ||
+        ts.isNoSubstitutionTemplateLiteral(n) ||
+        ts.isTemplateHead(n) ||
+        ts.isTemplateMiddle(n) ||
+        ts.isTemplateTail(n)) &&
+      n.text.includes(literal)
+    ) {
+      lineas.push(sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1);
+    }
+    ts.forEachChild(n, visita);
+  };
+  visita(sf);
+  return lineas;
+}
+
 /** TODO `qa/**.mjs`, por EL barrido del banco (`banco-ficheros.ts`, #704).
  *  `qa/run.mjs` entra: no define ninguno de estos verbos con ese nombre como
  *  llamada y, si algún día presupuestara un tile, tiene que verse. */
@@ -407,9 +443,13 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
     assert.deepEqual(sinLectura, [], `lector(es) sin ninguna comparación con ${NOMBRE}: ${sinLectura.join(" | ")}`);
   });
 
-  it("el padrón cubre los DIECIOCHO sitios del censo por árbol (no once, no quince, no dieciséis)", () => {
-    // Dieciséis en el padrón + los dos que heredan el default (120, 127) = 18.
-    // La cuenta ha subido TRES veces, y las dos por la misma razón, que es la
+  it("el padrón cubre los OCHO sitios del censo por árbol: seis esperas + los dos defaults", () => {
+    // Seis en el padrón + los dos que heredan el default (120, 127) = 8.
+    //  · DIECIOCHO → OCHO (#693): las once esperas de viaje por «Salidas» son
+    //    UNA, `viajarPorSalidas` en `qa/lib/viaje.mjs`. Bajar no es perder
+    //    sitios: los once guiones siguen viajando, por la misma función, y (d)
+    //    impide que el duodécimo nazca con su clic y su espera propios.
+    // La cuenta ha subido TRES veces, y las tres por la misma razón, que es la
     // que este `it` existe para hacer visible:
     //  · ONCE → QUINCE: el censo del issue filtraba por el LITERAL
     //    (`240_000|180_000`) sobre los guiones que él mismo nombraba, y al
@@ -425,7 +465,55 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
     //    leyendo su guion, no este contrato — el mismo agujero, tercera vez.
     // El número se fija para que cualquier movimiento se VEA: si una espera se
     // muda a `pedirYEsperarTile` sale de aquí y entra en (c).
-    assert.equal(contrato.esperas.length, 16, JSON.stringify(contrato.esperas.map(claveDeEntrada), null, 1));
+    assert.equal(contrato.esperas.length, 6, JSON.stringify(contrato.esperas.map(claveDeEntrada), null, 1));
+  });
+
+  it("(d) el botón del panel «Salidas» tiene UN dueño: nadie más lo pulsa, y los eximidos lo nombran las veces exactas", () => {
+    const { literal, dueno, eximidos } = contrato.salidas_del_panel;
+    const veces = new Map(ficheros.map((f) => [f, literalesEnCadenas(fuente.get(f)!, f, literal)] as const));
+    const eximido = new Map(eximidos.map((e) => [e.fichero, e.veces]));
+    const quejas: string[] = [];
+    for (const [f, lineas] of veces) {
+      if (lineas.length === 0 || f === dueno) continue;
+      const tope = eximido.get(f);
+      if (tope === undefined) {
+        quejas.push(
+          `${f}:${lineas.join(",")}: nombra el botón del panel (\`${literal}\`) — el viaje por «Salidas» se hace con ` +
+            `\`viajarPorSalidas\` de ${dueno}, que para por ESTADO; si solo LEE el panel, exímelo con su motivo`,
+        );
+      } else if (lineas.length !== tope) {
+        quejas.push(`${f}: el padrón dice ${tope} vez/veces y hay ${lineas.length} (líneas ${lineas.join(",")})`);
+      }
+    }
+    for (const e of eximidos) {
+      if (!veces.has(e.fichero)) quejas.push(`${e.fichero}: eximido y no existe (la exención CADUCÓ)`);
+      else if (veces.get(e.fichero)!.length === 0) quejas.push(`${e.fichero}: eximido y ya no nombra el botón (CADUCÓ)`);
+    }
+    assert.deepEqual(quejas, [], "el botón del panel «Salidas» se pulsa desde qa/lib/viaje.mjs");
+    // El control del control: el dueño lo nombra de verdad. Sin esto, un
+    // `literal` mal escrito dejaría (d) verde sin haber casado nada.
+    assert.ok((veces.get(dueno) ?? []).length >= 1, `${dueno} no nombra \`${literal}\`: el padrón mira un literal que no existe`);
+  });
+
+  it("(d) en negativo: un guion que pulsa el panel por su cuenta se VE, y un comentario no", () => {
+    const material = `
+      // un comentario que dice travel-exit no es un nodo
+      await ctx.page.click("#travel-panel button.travel-exit");
+      const sel = \`#travel-panel button.travel-exit\`;
+      const arm = \`#\${panel} button.travel-exit\`;
+    `;
+    assert.deepEqual(literalesEnCadenas(material, "qa/guiones/de-mentira.mjs", "travel-exit"), [3, 4, 5]);
+  });
+
+  it("(d) **el agujero del selector armado, medido**: una concatenación no deja ningún nodo con el literal", () => {
+    // `_lo_que_esto_NO_sujeta` (d): si alguien lo cierra —juntando la
+    // concatenación en el detector, por ejemplo—, esto se pone ROJO y se borra
+    // con su línea del contrato.
+    const material = `
+      await ctx.page.click("#travel-panel button.travel-" + "exit");
+      await ctx.page.getByText("Molino").click();
+    `;
+    assert.deepEqual(literalesEnCadenas(material, "qa/guiones/de-mentira.mjs", "travel-exit"), []);
   });
 
   it("el detector encuentra lo que dice encontrar (control positivo, las tres formas y las cinco clases)", () => {
