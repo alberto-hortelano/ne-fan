@@ -59,6 +59,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { anclasSueltas, aplicarPares, explicarAnclaSuelta } from "./lib/anclas.mjs";
 import { turnoDeCandados } from "./lib/turno-exclusivo.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -597,6 +598,12 @@ let sinDeclarar = 0;
 let declaracionesFalsas = 0;
 /** Deuda declarada y confirmada: se lista con su issue y NO tiñe el veredicto. */
 const pendientes = [];
+/** Probes de `ABIERTOS` cuyo patrón no aparece EXACTAMENTE una vez (#700). Se
+ *  cuentan ANTES de los vigentes y también con `--solo-vigentes`, que es como
+ *  lo corre CI: el bucle de `ABIERTOS` solo va en la corrida local completa, y
+ *  un ancla que solo se mira cuando alguien paga los 16 minutos se pudre en la
+ *  PR que la mueve y se descubre semanas después. */
+let anclasRotas = 0;
 
 /** Cómo se clasifica un hallazgo, y por qué el guion no puede salir rojo por la
  *  deuda que ya tiene dueño.
@@ -635,6 +642,21 @@ function clasifica(a, cazado) {
 }
 
 try {
+  // Contra `fuentes` —lo leído del disco al arrancar—, y con la MISMA función
+  // con la que el bucle de abajo va a sustituir: lo que aquí sale limpio es lo
+  // que allí se rompe.
+  const rutaCorta = (f) => f.slice(raiz.length + 1);
+  const sueltas = anclasSueltas(
+    ABIERTOS.map((a) => ({ nombre: a.nombre, fichero: a.rompe[0], pares: [a.rompe.slice(1)] })),
+    (f) => fuentes.get(f) ?? null,
+  );
+  console.log(`\n══ ANCLAS · cada probe de ABIERTO apunta a UN solo sitio (${ABIERTOS.length} probes)\n`);
+  for (const s of sueltas) {
+    console.log(`✖ PROBE OBSOLETO  ${explicarAnclaSuelta({ ...s, fichero: rutaCorta(s.fichero) })}`);
+  }
+  if (sueltas.length === 0) console.log(`✔ los ${ABIERTOS.length} patrones aparecen una vez cada uno`);
+  anclasRotas = sueltas.length;
+
   console.log("\n══ VIGENTE · lo que hoy se cumple, y que ponerse rojo aquí significa una regresión\n");
   for (const inv of VIGENTES) {
     let ok = false;
@@ -653,18 +675,20 @@ try {
 
     for (const a of ABIERTOS) {
       const [fichero, busca, pone] = a.rompe;
-      const texto = fuentes.get(fichero);
-      if (!texto.includes(busca)) {
-        // El probe apunta a otro sitio, así que no prueba nada — y si además
-        // llevaba `deuda`, esa declaración lleva quién sabe cuánto mintiendo.
+      const parche = aplicarPares(fuentes.get(fichero), [[busca, pone]]);
+      if (!parche.ok) {
+        // El probe apunta a otro sitio —o a dos—, así que no prueba nada: con
+        // cero no rompe nada, y con dos rompería la primera copia, que puede
+        // no ser la que el probe cree (#700). Y si además llevaba `deuda`, esa
+        // declaración lleva quién sabe cuánto mintiendo. Ya salió en el
+        // pre-vuelo de ANCLAS y ya cuenta allí; aquí solo se salta.
         console.log(
-          `✖ PROBE OBSOLETO  ${a.nombre}\n     el patrón ya no está en ${fichero}: no se está ` +
-            `probando nada${a.deuda === undefined ? "" : `, y la deuda #${a.deuda} se declara sobre un sitio que no existe`}`,
+          `✖ PROBE OBSOLETO  ${a.nombre}\n     el patrón aparece ${parche.veces} veces en ${fichero}: no se ` +
+            `está probando nada${a.deuda === undefined ? "" : `, y la deuda #${a.deuda} se declara sobre un sitio que no existe`}`,
         );
-        declaracionesFalsas += 1;
         continue;
       }
-      writeFileSync(fichero, texto.replace(busca, pone));
+      writeFileSync(fichero, parche.texto);
       const cambios = a.checkers.filter((n) => CHECKERS[n]() !== base[n]);
       restaura();
       if (clasifica(a, cambios.length > 0)) console.log(`✔ ${a.nombre}\n     lo caza: ${cambios.join(", ")}`);
@@ -690,6 +714,7 @@ try {
 
 console.log("\n──────────────────────────────────────────────────────────────────────");
 console.log(`Invariantes vigentes rotos          : ${vigentesRotos} de ${VIGENTES.length}`);
+console.log(`Probes con el patrón obsoleto       : ${anclasRotas} de ${ABIERTOS.length}`);
 if (!soloVigentes) {
   console.log(`Hallazgos NUEVOS sin candado        : ${sinDeclarar}`);
   console.log(`Declaraciones de deuda que mienten  : ${declaracionesFalsas}`);
@@ -697,7 +722,7 @@ if (!soloVigentes) {
   for (const p of pendientes) console.log(`   ⏳ ${p}`);
 }
 
-const roto = vigentesRotos > 0 || sinDeclarar > 0 || declaracionesFalsas > 0;
+const roto = vigentesRotos > 0 || anclasRotas > 0 || sinDeclarar > 0 || declaracionesFalsas > 0;
 if (!roto) {
   console.log(
     pendientes.length === 0
@@ -708,6 +733,7 @@ if (!roto) {
 } else {
   const porque = [
     vigentesRotos > 0 ? "hay una regresión en lo que ya funcionaba" : "",
+    anclasRotas > 0 ? "hay probes cuyo patrón no aparece una sola vez: no prueban lo que dicen" : "",
     sinDeclarar > 0 ? "hay hallazgos NUEVOS sin candado y sin issue" : "",
     declaracionesFalsas > 0 ? "hay deuda declarada que ya no es cierta" : "",
   ].filter(Boolean);

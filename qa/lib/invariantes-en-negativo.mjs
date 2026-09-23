@@ -10,7 +10,9 @@
  *  de troceo en un mes), el ancla deja de apuntar a donde cree, y el candado
  *  que la usa deja de candar sin que nada chille. Separada, la mide
  *  `nefan-core/test/las-anclas-de-los-candados.test.ts` en cada `npm test` —o
- *  sea en cada PR y en cada bucle local— sin abrir un navegador.
+ *  sea en cada PR y en cada bucle local— sin abrir un navegador. La función que
+ *  cuenta ya no vive aquí sino en `qa/lib/anclas.mjs` (#700), que es la misma
+ *  con la que la batería y los demás guiones en negativo sustituyen.
  *
  *  El alcance es SOLO esta tabla, y conviene decir por qué: la otra mitad de
  *  #486 hablaba de `qa/esperas-candados-en-negativo.mjs`, que no parchea código
@@ -233,33 +235,3 @@ export const INVARIANTES = [
     /NO RESPONDEN: «a»/,
   ],
 ];
-
-/** Las anclas que ya NO apuntan a donde creen. Vacío = la tabla está viva.
- *
- *  Pura a propósito: `leer(ficheroRelativo)` devuelve el texto o `null` si el
- *  fichero no está, así que esto se puede medir con ficheros de mentira —que es
- *  como se prueba que sabe ponerse ROJO— sin tocar el árbol.
- *
- *  El recuento va sobre el fichero ORIGINAL, no sobre el que la batería lleva
- *  ya medio parcheado: los pares de un invariante apuntan a sitios distintos, y
- *  contar «cuántas veces está esta ancla en el fuente de hoy» es la pregunta
- *  que se quiere contestar. `veces: null` es «el fichero no existe», que no es
- *  lo mismo que «no aparece» y no se colapsa con ello. */
-export function anclasSueltas(invariantes, leer) {
-  const sueltas = [];
-  for (const [nombre, fichero, , pares] of invariantes) {
-    const texto = leer(fichero);
-    for (const [buscar] of pares) {
-      const veces = texto === null ? null : texto.split(buscar).length - 1;
-      if (veces !== 1) sueltas.push({ nombre, fichero, buscar, veces });
-    }
-  }
-  return sueltas;
-}
-
-/** Una línea legible por ancla suelta, para el rojo del test y el de la batería. */
-export function explicarAnclaSuelta({ nombre, fichero, buscar, veces }) {
-  const primeraLinea = buscar.split("\n")[0].trim();
-  const cuantas = veces === null ? "el fichero no existe" : `aparece ${veces} veces`;
-  return `${nombre}\n     ${fichero}: ${cuantas} → «${primeraLinea}»`;
-}

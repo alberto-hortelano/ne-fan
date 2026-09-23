@@ -19,6 +19,10 @@
  *  consume la batería: una copia aquí no probaría nada de ella. El import
  *  cruzado es la regla (#357): la dirección es test → banco
  *  (`el-banco-no-entra-en-produccion` en arch-rules.json).
+ *
+ *  Y la función que cuenta es `qa/lib/anclas.mjs` (#700): la MISMA con la que
+ *  sustituyen los seis guiones en negativo, así que lo que aquí sale limpio es
+ *  lo que allí se rompe. Sus casos van en el segundo `describe`.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -29,14 +33,23 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 type Invariante = [string, string, string, [string, string][], RegExp, number?];
+type Entrada = { nombre: string; fichero: string; pares: [string, string][] };
 type AnclaSuelta = { nombre: string; fichero: string; buscar: string; veces: number | null };
+type Parche = { ok: true; texto: string } | { ok: false; indice: number; buscar: string; veces: number };
 
-const mod = (await import(join(repoRoot, "qa", "lib", "invariantes-en-negativo.mjs"))) as {
+const { INVARIANTES } = (await import(join(repoRoot, "qa", "lib", "invariantes-en-negativo.mjs"))) as {
   INVARIANTES: Invariante[];
-  anclasSueltas: (inv: Invariante[], leer: (f: string) => string | null) => AnclaSuelta[];
+};
+const { aplicarPares, anclasSueltas, explicarAnclaSuelta } = (await import(
+  join(repoRoot, "qa", "lib", "anclas.mjs")
+)) as {
+  aplicarPares: (texto: string, pares: [string, string][]) => Parche;
+  anclasSueltas: (entradas: Entrada[], leer: (f: string) => string | null) => AnclaSuelta[];
   explicarAnclaSuelta: (s: AnclaSuelta) => string;
 };
-const { INVARIANTES, anclasSueltas, explicarAnclaSuelta } = mod;
+
+/** La tabla de la batería va en tuplas; la función común, en entradas con nombre. */
+const entradas = (inv: Invariante[]): Entrada[] => inv.map(([nombre, fichero, , pares]) => ({ nombre, fichero, pares }));
 
 /** El lector de verdad: el árbol de este checkout. */
 const enDisco = (fichero: string): string | null => {
@@ -54,7 +67,7 @@ describe("los candados en negativo apuntan a donde creen (#486)", () => {
   });
 
   it("cada ancla aparece EXACTAMENTE una vez en su fichero", () => {
-    const sueltas = anclasSueltas(INVARIANTES, enDisco);
+    const sueltas = anclasSueltas(entradas(INVARIANTES), enDisco);
     assert.deepEqual(
       sueltas.map(explicarAnclaSuelta),
       [],
@@ -81,9 +94,7 @@ describe("los candados en negativo apuntan a donde creen (#486)", () => {
 });
 
 describe("el detector de anclas sueltas", () => {
-  const inv = (pares: [string, string][]): Invariante[] => [
-    ["invariante de prueba", "x.ts", "01-arranque", pares, /da igual/],
-  ];
+  const inv = (pares: [string, string][]): Entrada[] => [{ nombre: "invariante de prueba", fichero: "x.ts", pares }];
 
   it("una vez es lo correcto: no dice nada", () => {
     assert.deepEqual(anclasSueltas(inv([["const a = 1;", "const a = 2;"]]), () => "const a = 1;\n"), []);
@@ -122,5 +133,67 @@ describe("el detector de anclas sueltas", () => {
       () => "viva",
     );
     assert.deepEqual(sueltas.map((s) => s.buscar), ["muerta"]);
+  });
+});
+
+describe("aplicarPares: la sustitución que usan los seis guiones en negativo (#700)", () => {
+  it("una vez: sustituye", () => {
+    assert.deepEqual(aplicarPares("a; const x = 1; b", [["const x = 1;", "const x = 2;"]]), {
+      ok: true,
+      texto: "a; const x = 2; b",
+    });
+  });
+
+  it("SABE PONERSE ROJO con el patrón AUSENTE: no toca nada y dice cero", () => {
+    assert.deepEqual(aplicarPares("const y = 1;", [["const x = 1;", "z"]]), {
+      ok: false,
+      indice: 0,
+      buscar: "const x = 1;",
+      veces: 0,
+    });
+  });
+
+  it("SABE PONERSE ROJO con el patrón DUPLICADO: no sustituye la primera copia y calla", () => {
+    // La forma de #700: con `includes` + `replace`, `reparto` rompía la
+    // primera copia —que puede no ser la que el probe cree— y daba un veredicto
+    // (verde, o un «SIN CANDADO» inventado) sobre algo que no había probado.
+    assert.deepEqual(aplicarPares("f(); f();", [["f();", "g();"]]), { ok: false, indice: 0, buscar: "f();", veces: 2 });
+  });
+
+  it("cuenta sobre el texto YA PARCHEADO: un par que crea una segunda copia del siguiente es un fallo", () => {
+    // Único en el ORIGINAL, doble tras el primer par: contar sobre el original
+    // daría luz verde y la sustitución caería en la copia equivocada.
+    const r = aplicarPares("uno; dos;", [
+      ["uno;", "dos;"],
+      ["dos;", "tres;"],
+    ]);
+    assert.deepEqual(r, { ok: false, indice: 1, buscar: "dos;", veces: 2 });
+  });
+
+  it("cuenta sobre el texto YA PARCHEADO: un par que se COME al siguiente es un fallo", () => {
+    const r = aplicarPares("uno dos", [
+      ["uno dos", "nada"],
+      ["dos", "tres"],
+    ]);
+    assert.deepEqual(r, { ok: false, indice: 1, buscar: "dos", veces: 0 });
+  });
+
+  it("aplica los pares EN ORDEN y todos", () => {
+    assert.deepEqual(
+      aplicarPares("a b c", [
+        ["a", "x"],
+        ["c", "z"],
+      ]),
+      { ok: true, texto: "x b z" },
+    );
+  });
+
+  it("el `poner` es LITERAL: `$&`, `$'` y `$1` no se interpretan como en `String.replace`", () => {
+    const r = aplicarPares("antes X después", [["X", "[$&|$'|$`|$1]"]]);
+    assert.deepEqual(r, { ok: true, texto: "antes [$&|$'|$`|$1] después" });
+  });
+
+  it("un `buscar` vacío es un error de la tabla, no un «aparece N veces»", () => {
+    assert.throws(() => aplicarPares("abc", [["", "x"]]), /texto no vacío/);
   });
 });

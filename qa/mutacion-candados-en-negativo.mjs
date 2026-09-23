@@ -40,6 +40,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { aplicarPares } from "./lib/anclas.mjs";
 import { turnoDeCandados } from "./lib/turno-exclusivo.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -368,15 +369,14 @@ try {
     let texto;
     if (buscar === null) texto = poner;
     else {
-      const previo = original.get(fichero);
-      const veces = previo.split(buscar).length - 1;
-      if (veces !== 1) {
+      const parche = aplicarPares(original.get(fichero), [[buscar, poner]]);
+      if (!parche.ok) {
         console.log(`⚠️  ${nombre}`);
-        console.log(`     el patrón aparece ${veces} veces: el código se ha movido y este candado ya no lo apunta\n`);
+        console.log(`     el patrón aparece ${parche.veces} veces: el código se ha movido y este candado ya no lo apunta\n`);
         fallidos.push(`${nombre} (patrón obsoleto)`);
         continue;
       }
-      texto = previo.replace(buscar, poner);
+      texto = parche.texto;
     }
     writeFileSync(fichero, texto);
     const r = corre();

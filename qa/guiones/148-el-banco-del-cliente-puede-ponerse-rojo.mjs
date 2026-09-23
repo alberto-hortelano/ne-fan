@@ -60,6 +60,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { aplicarPares } from "../lib/anclas.mjs";
 import { turnoDeCandados } from "../lib/turno-exclusivo.mjs";
 
 /** El guardarraíl de gasto: esto no abre partida — reescribe cuatro ficheros y
@@ -211,10 +212,9 @@ export default async function (ctx) {
   const aplica = (pares) => {
     const pendiente = new Map();
     for (const [f, buscar, poner] of pares) {
-      const texto = pendiente.get(f) ?? original.get(f);
-      const veces = texto.split(buscar).length - 1;
-      if (veces !== 1) return `«${buscar.slice(0, 48)}…» aparece ${veces} veces en ${relative(RAIZ, f)}`;
-      pendiente.set(f, texto.replace(buscar, poner));
+      const parche = aplicarPares(pendiente.get(f) ?? original.get(f), [[buscar, poner]]);
+      if (!parche.ok) return `«${buscar.slice(0, 48)}…» aparece ${parche.veces} veces en ${relative(RAIZ, f)}`;
+      pendiente.set(f, parche.texto);
     }
     for (const [f, txt] of pendiente) writeFileSync(f, txt);
     return null;

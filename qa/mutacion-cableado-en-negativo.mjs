@@ -58,6 +58,7 @@ import { createHash } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { aplicarPares } from "./lib/anclas.mjs";
 import { turnoDeCandados } from "./lib/turno-exclusivo.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -818,15 +819,14 @@ try {
     }
 
     const [fichero, buscar, poner] = inv.rompe;
-    const previo = fuentes.get(fichero);
-    const veces = previo.split(buscar).length - 1;
-    if (veces !== 1) {
+    const parche = aplicarPares(fuentes.get(fichero), [[buscar, poner]]);
+    if (!parche.ok) {
       console.log(`⚠️  ${inv.nombre}`);
-      console.log(`     el patrón aparece ${veces} veces: el código se movió y este candado ya no lo apunta\n`);
+      console.log(`     el patrón aparece ${parche.veces} veces: el código se movió y este candado ya no lo apunta\n`);
       fallidos.push(`${inv.nombre} (patrón obsoleto)`);
       continue;
     }
-    writeFileSync(fichero, previo.replace(buscar, poner));
+    writeFileSync(fichero, parche.texto);
     const roto = inv.mira();
     restauraFuentes();
 
