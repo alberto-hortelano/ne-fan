@@ -28,8 +28,12 @@
  *       #390 (guion 60, bloque 2), y los vecinos van por el mismo carril: los
  *       nueve texturados, todo `resolve_only`, cero pagos.
  *
- *  Además REGISTRA (sin afirmar, es juicio de QA) cuántas líneas de atlas
- *  escribe el resume en el HUD del jugador: una por vecino.
+ *  Y el HUD del jugador (H1 de la QA de #714): el resume escribía una línea
+ *  de atlas POR VECINO (ocho seguidas, tapando el registro de la partida).
+ *  Desde el arreglo, las de los vecinos son como mucho UNA —el balance del
+ *  carril al vaciarse— y dice la verdad: ocho restaurados, cero sin arte.
+ *  PROBADO EN NEGATIVO: devolviendo `this.deps.log` como canal de la
+ *  restauración en `fps-atlas.ts`, rojo con las ocho líneas por tile.
  *
  *  PROBADO EN NEGATIVO (2026-09-23, QA): con `carga-de-tile.ts` sin la rama
  *  `else if (planInfo) fpsAtlas.restaurar(key)`, salen rojos «los NUEVE
@@ -168,6 +172,17 @@ export default async function (ctx) {
   );
   const hud = await lineasDeAtlasDelHud(ctx);
   ctx.log(`Imagen IA · el resume escribió ${hud.length} línea(s) de atlas en el HUD: ${JSON.stringify(hud)}`);
+  const deVecinos = hud.filter((l) => !l.includes(`Atlas fps de ${tileDeEntrada} `));
+  ctx.expect(
+    "Imagen IA · las líneas de atlas de los VECINOS en el HUD son como mucho UNA: el balance del carril, no una por tile",
+    deVecinos.length <= 1,
+    JSON.stringify(deVecinos),
+  );
+  ctx.expect(
+    "Imagen IA · …y ese balance dice la verdad: los ocho vecinos restaurados de la librería, ninguno sin arte",
+    deVecinos.length === 1 && /\b8 vecino\(s\) restaurado\(s\)/.test(deVecinos[0]) && /\b0 sin arte/.test(deVecinos[0]),
+    JSON.stringify(deVecinos),
+  );
 
   // ══ 2 · Mirar al vecino ════════════════════════════════════════════════════
   // Al borde este del tile de entrada (a 4 m de la costura), mirando al este:

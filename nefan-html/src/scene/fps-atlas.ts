@@ -20,8 +20,10 @@ import {
 import {
   PoliticaDeAtlas,
   modoDeCorrida,
+  type Desenlace,
   type Restauracion,
 } from "@nefan-core/src/scene/politica-de-atlas.js";
+import { debugLogEnabled } from "../dev/debug-log.js";
 import { errors } from "../ui/error-log.js";
 import { cargarImagen, guardarMapping, leerMapping } from "./mapping-del-atlas.js";
 import type { AtlasImage } from "../renderer/fps-gl.js";
@@ -65,6 +67,13 @@ async function sha256Hex(text: string): Promise<string> {
 /** Para el ciclo del activo, que no se pregunta si sigue mandando al
  *  reinstalar de memoria o del mapping (su token nace después, en `runFor`). */
 const SIEMPRE = (): boolean => true;
+
+/** Las líneas POR TILE de una restauración van a la traza de desarrollo, no al
+ *  HUD: al reanudar eran ocho seguidas y tapaban el registro de la partida
+ *  (QA de #714, H1). Al HUD va UNA línea al vaciarse el carril. */
+const traza = (msg: string): void => {
+  if (debugLogEnabled()) console.log(`[fps-atlas] ${msg}`);
+};
 
 export class FpsAtlasController {
   private styleId = "";
@@ -158,7 +167,7 @@ export class FpsAtlasController {
         this.deps.log(`Atlas fps de ${key}: en espera del estilo de la sesión`);
         return;
       }
-      if (await this.reinstallFromStorage(key, SIEMPRE)) return;
+      if (await this.reinstallFromStorage(key, SIEMPRE, this.deps.log)) return;
       await this.runFor(key, modoDeCorrida({ activo: true, generacion: this.deps.generationOn() }));
     } finally {
       // El re-disparo es la ÚLTIMA oportunidad de ese tile: si se lo come un
@@ -200,11 +209,15 @@ export class FpsAtlasController {
     const r = this.politica.siguienteRestauracion();
     if (!r) return;
     void this.ejecutarRestauracion(r)
-      .catch((err: unknown) =>
-        errors.push("scene", `la restauración del atlas de ${r.key} falló — se queda en clay`, err),
-      )
-      .finally(() => {
-        this.politica.finDeRestauracion(r);
+      .catch((err: unknown): Desenlace => {
+        errors.push("scene", `la restauración del atlas de ${r.key} falló — se queda en clay`, err);
+        return "nada";
+      })
+      .then((d) => {
+        const b = this.politica.finDeRestauracion(r, d); // balance: UNA línea de HUD por tanda
+        if (b) {
+          this.deps.log(`Atlas fps: ${b.aplicados} vecino(s) restaurado(s) de la librería ($0), ${b.sinArte} sin arte (clay)`);
+        }
         this.bombearRestauraciones();
       });
   }
@@ -212,24 +225,20 @@ export class FpsAtlasController {
   /** La escalera de siempre —memoria → mapping persistido → librería— sin
    *  `nuevoRun`, sin `corridaQuePinta` y sin `onGeneration`: esto no es una
    *  corrida del jugador, es arte que ya estaba pagado volviendo a su tile. */
-  private async ejecutarRestauracion(r: Restauracion): Promise<void> {
+  private async ejecutarRestauracion(r: Restauracion): Promise<Desenlace> {
     const sigueMandando = () => this.politica.restauracionVigente(r);
-    if (await this.reinstallIfCached(r.key, sigueMandando)) return;
-    if (!sigueMandando()) return;
+    const aplicado = (): Desenlace => (sigueMandando() ? "aplicado" : "nada");
+    if (await this.reinstallIfCached(r.key, sigueMandando)) return aplicado();
+    if (!sigueMandando()) return "nada";
     if (!this.styleId) {
-      this.deps.log(`Atlas fps de ${r.key}: restauración sin estilo de sesión — clay`);
-      return;
+      traza(`${r.key}: restauración sin estilo de sesión — clay`);
+      return "nada";
     }
-    if (await this.reinstallFromStorage(r.key, sigueMandando)) return;
-    if (!sigueMandando()) return;
+    if (await this.reinstallFromStorage(r.key, sigueMandando, traza)) return aplicado();
     const tile = this.deps.getTile(r.key);
-    if (!tile) return;
-    await this.resolverYAplicar(
-      r.key,
-      tile,
-      modoDeCorrida({ activo: false, generacion: this.deps.generationOn() }).resolveOnly,
-      sigueMandando,
-    );
+    if (!tile || !sigueMandando()) return "nada";
+    const { resolveOnly } = modoDeCorrida({ activo: false, generacion: this.deps.generationOn() });
+    return this.resolverYAplicar(r.key, tile, resolveOnly, sigueMandando, traza);
   }
 
   /** `sigueMandando` = false tras el `await` ⇒ no aplica, y cuenta como
@@ -265,7 +274,7 @@ export class FpsAtlasController {
     }
     const token = this.politica.nuevoRun();
     try {
-      await this.resolverYAplicar(key, tile, resolveOnly, () => this.politica.vigente(token));
+      await this.resolverYAplicar(key, tile, resolveOnly, () => this.politica.vigente(token), this.deps.log);
     } catch (err) {
       errors.push("scene", `el atlas fps de ${key} falló — se queda en clay`, err);
     } finally {
@@ -282,11 +291,12 @@ export class FpsAtlasController {
     tile: { layout: SurfaceLayout; sceneDescription: string },
     resolveOnly: boolean,
     sigueMandando: () => boolean,
-  ): Promise<void> {
+    anunciar: (msg: string) => void,
+  ): Promise<Desenlace> {
     const layoutKey = await this.layoutKeyFor(tile.layout);
     const cells = this.flattenCells(tile.layout);
-    if (cells.length === 0) return;
-    if (!resolveOnly) this.deps.log(`Atlas fps del tile ${key}: ${cells.length} superficies…`);
+    if (cells.length === 0) return "nada";
+    if (!resolveOnly) anunciar(`Atlas fps del tile ${key}: ${cells.length} superficies…`);
     // El server capa cells a 64 por petición: trocear y fusionar (cada
     // celda se resuelve independiente contra la librería — mismo resultado).
     //
@@ -328,14 +338,14 @@ export class FpsAtlasController {
     // el prune no debe podarlo. Sin esto, «último gana» convertía arte
     // pagado en podable.
     void this.registerRefs(key, Object.values(data.cells).map((c) => c.hash));
-    if (!sigueMandando()) return; // el tile activo cambió en vuelo
+    if (!sigueMandando()) return "nada"; // el tile activo cambió en vuelo
 
     const resolvedKeys = Object.keys(data.cells);
     if (resolvedKeys.length === 0) {
       // Nada en la librería para este layout+estilo (tile aún sin pagar).
       if (resolveOnly) {
-        this.deps.log(`Atlas fps de ${key}: sin celdas en la librería (clay — G o Imágenes… para pintar)`);
-        return;
+        anunciar(`Atlas fps de ${key}: sin celdas en la librería (clay — G o Imágenes… para pintar)`);
+        return "sin-arte";
       }
       throw new Error("atlas sin celdas descargables");
     }
@@ -354,7 +364,7 @@ export class FpsAtlasController {
         }
       }),
     );
-    if (!sigueMandando()) return;
+    if (!sigueMandando()) return "nada";
     if (images.size === 0) throw new Error("atlas sin celdas descargables");
     if (failures.length) {
       errors.push("scene", `atlas fps de ${key}: ${failures.length} celdas sin textura (clay)`);
@@ -372,17 +382,22 @@ export class FpsAtlasController {
       }
       guardarMapping(layoutKey, data.cells, kindByKey);
     }
-    this.deps.log(
+    anunciar(
       data.missing > 0
         ? `Atlas fps de ${key}: ${images.size} superficies de la librería; faltan ${data.missing} por pintar (G o Imágenes…)`
         : `Atlas fps de ${key} instalado (${data.pages_painted} página(s) nuevas` +
           `${data.cached ? ", todo de la librería" : `, $${data.cost_usd}`})`,
     );
+    return "aplicado";
   }
 
   /** Mapping local (`mapping-del-atlas.ts`): el resume restaura el arte
    *  pagado con SOLO el asset-store arriba (sin remote-gen). */
-  private async reinstallFromStorage(key: string, sigueMandando: () => boolean): Promise<boolean> {
+  private async reinstallFromStorage(
+    key: string,
+    sigueMandando: () => boolean,
+    anunciar: (msg: string) => void,
+  ): Promise<boolean> {
     const tile = this.deps.getTile(key);
     if (!tile) return false;
     const layoutKey = await this.layoutKeyFor(tile.layout);
@@ -391,7 +406,7 @@ export class FpsAtlasController {
     if (!sigueMandando()) return true;
     this.deps.apply(key, images);
     this.cache.set(key, { layoutKey, images });
-    this.deps.log(`Atlas fps de ${key} restaurado (mapping local, $0)`);
+    anunciar(`Atlas fps de ${key} restaurado (mapping local, $0)`);
     return true;
   }
 

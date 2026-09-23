@@ -372,7 +372,16 @@ export default async function (ctx) {
     const posts1 = atlasPosts.length;
     const vecino = await irAlVecino(ctx);
     if (!vecino) ctx.sinMedir("el panel «Salidas» no llevó a otro tile: con un solo tile en el save no hay carrera que medir");
-    const avisoVecino = await esperarAtlasDe(ctx, vecino);
+    // El destino llega por `scene_loaded` ANTES de que el jugador lo pise, así
+    // que desde #714 lo restaura el carril de los no activos, cuyas líneas por
+    // tile ya no van al HUD (H1 de su QA): al pisarlo, el activo lo reinstala
+    // de memoria sin decir nada. El desenlace se lee del RENDERER.
+    const avisoVecino = await ctx.waitFor(
+      `el tile de llegada ${vecino} queda texturado`,
+      (k) => (window.__nefan.fps().textured.includes(k) ? window.__nefan.fps().textured : null),
+      90_000,
+      vecino,
+    );
     ctx.log(`${etiqueta} · en ${vecino}: ${JSON.stringify(avisoVecino)}`);
     aprenderLayoutKey(vecino, posts1);
     await esperarElSaveDelDestino(ctx, partida.sessionId, vecino);

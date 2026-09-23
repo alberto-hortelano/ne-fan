@@ -45,6 +45,17 @@ export interface Restauracion {
   readonly key: string;
 }
 
+/** Qué dejó una restauración en el renderer: arte aplicado (entero o
+ *  parcial), la librería sin nada para el tile, o nada (superada, sin estilo,
+ *  tile sin superficies). */
+export type Desenlace = "aplicado" | "sin-arte" | "nada";
+
+/** El balance de una tanda del carril, de vaciado a vaciado. */
+export interface BalanceDeRestauracion {
+  aplicados: number;
+  sinArte: number;
+}
+
 export class PoliticaDeAtlas {
   #token = 0;
   #enVuelo = false;
@@ -154,13 +165,26 @@ export class PoliticaDeAtlas {
     return this.#vigenteDe.get(r.key) === r;
   }
 
-  /** La restauración acabó, bien o mal. Deja paso a la siguiente, y suelta la
-   *  clave solo si seguía siendo suya (un re-encolado mientras corría es otra
-   *  restauración y sigue en la cola). */
-  finDeRestauracion(r: Restauracion): void {
+  /** La restauración acabó, bien o mal, con `desenlace`. Deja paso a la
+   *  siguiente, y suelta la clave solo si seguía siendo suya (un re-encolado
+   *  mientras corría es otra restauración y sigue en la cola).
+   *
+   *  Devuelve el BALANCE de la tanda cuando el carril se vacía y algo pasó, y
+   *  `null` en otro caso: es lo que el HUD dice en UNA línea. Hasta QA de
+   *  #714 (H1) cada restauración escribía la suya, y al reanudar eran ocho
+   *  seguidas tapando el registro de la partida. */
+  finDeRestauracion(r: Restauracion, desenlace: Desenlace): BalanceDeRestauracion | null {
     if (this.#enCurso === r) this.#enCurso = null;
     if (this.#vigenteDe.get(r.key) === r) this.#vigenteDe.delete(r.key);
+    if (desenlace === "aplicado") this.#balance.aplicados++;
+    if (desenlace === "sin-arte") this.#balance.sinArte++;
+    if (this.restaurando > 0) return null;
+    const b = this.#balance;
+    this.#balance = { aplicados: 0, sinArte: 0 };
+    return b.aplicados + b.sinArte > 0 ? b : null;
   }
+
+  #balance: BalanceDeRestauracion = { aplicados: 0, sinArte: 0 };
 
   /** Cambio de mundo: nada de lo encolado ni de lo que va en el aire es del
    *  mundo nuevo (la clave `tile_0_0` es la misma y la escena, otra). La que
