@@ -59,8 +59,10 @@ jobs:
       # coverage`, el mismo glob `test/*.test.ts`— y la segunda es la primera
       # instrumentada: 1526 tests y ~50 s de CPU repetidos literalmente en cada
       # PR. Se va `npm test`, no `coverage`, porque `crap -- --check` necesita
-      # el `coverage/lcov.info` que solo escribe el segundo; y el reporter
-      # `spec` de `coverage` deja el mismo detalle por test en el log.
+      # el `coverage/lcov.info` que solo escribe el segundo; y el reporter de
+      # `coverage` (el `spec` compuesto de `test/la-suite-que-falla-pone-rojo.ts`,
+      # que además pone rojo una suite que lanza, #697) deja el mismo detalle
+      # por test en el log.
       #
       # En LOCAL la decisión es la contraria y a propósito (usuario,
       # 2026-08-27): `verify` sigue con `npm test` para que el bucle interno
