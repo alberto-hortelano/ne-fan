@@ -17,7 +17,11 @@
  *  **El `ctx` y sus alias.** Un verbo es `ctx.v(…)`, `ctx["v"](…)` o la
  *  llamada a un alias: `const c = ctx` (y `c.v(…)`), `const { v } = ctx`,
  *  `const e = ctx.v` o `ctx.v.bind(ctx)` (QA de la tanda: con cualquiera de
- *  ellos el detector veía 0 saltos).
+ *  ellos el detector veía 0 saltos). Además es un `ctx`, por fichero y sin
+ *  ámbitos, el RECEPTOR de un verbo que afirma o declara (`c.expect(…)`,
+ *  también tras `let c; c = ctx`) y el PARÁMETRO que recibe un `ctx` en una
+ *  llamada a una función del fichero o a un IIFE (`(async (c) => …)(ctx)`,
+ *  #716).
  *
  *  **Aserto** (para DETECTAR un salto, en la dirección que da más saltos): un
  *  `expect`/`expectEspera`, la llamada a un ASERTADOR (una función del guion
@@ -33,9 +37,15 @@
  *  aserta sin reportar un fallo, y la otra —un `else` o su ausencia— no
  *  OBSERVA nada (ver «observador»). Es el mismo salto escrito sin `return`.
  *
- *  **Observador:** `throw`, `sinMedir`/`sinMedirBloque`, un
- *  `expect`/`expectEspera` que no es TAUTOLÓGICO (2.º argumento `true`, un
- *  literal verdadero, `x || true`, `x === x`), o la llamada a un asertador.
+ *  **Observador:** `throw`, `sinMedir`/`sinMedirBloque`, un `expect` que no
+ *  es TAUTOLÓGICO (2.º argumento `true`, un literal verdadero, `!!true`,
+ *  `x || true`, `x === x`), un `expectEspera` que no lo es (la sonda, 3.er
+ *  argumento, devuelve en línea una tautología con `debeOcurrir` `true`, o una
+ *  contradicción con `false`), o la llamada a un helper que AFIRMA SIEMPRE: en
+ *  el tronco de su cuerpo —sin ramas de `if` salvo que afirmen las dos, sin
+ *  bucles, `switch`, ternarios ni cortocircuitos— hay un observador antes del
+ *  primer `return`. Contener un aserto (asertador) basta para DETECTAR, no
+ *  para EXCUSAR (#716: el helper que afirma `true` o afirma bajo un `if`).
  *
  *  **Observado** si:
  *   1. cada rama o bloque que retorna (la del `if`, el `case`, el `catch`)
@@ -224,7 +234,8 @@ interface Modulo {
   imports: Map<string, { ruta: string; nombre: string }>;
   /** Todo lo que el fichero declara (variables, parámetros, patrones). */
   locales: Set<string>;
-  /** `ctx` y sus alias por declaración (`const c = ctx`). */
+  /** `ctx` y sus alias: por declaración (`const c = ctx`), por ser receptor
+   *  de un verbo y por ser el parámetro que recibe un `ctx` (`aliasDeCtx`). */
   ctxs: Set<string>;
   /** Verbos sueltos: `const { expect } = ctx`, `const e = ctx.expect`. */
   sueltos: Map<string, string>;
@@ -256,12 +267,11 @@ function verboDeAcceso(m: Modulo, e: ts.Expression): string | null {
 function receptorDeVerbo(x: ts.Node): string | null {
   if (!ts.isCallExpression(x)) return null;
   const c = x.expression;
-  const nombre = ts.isPropertyAccessExpression(c)
-    ? c.name.text
-    : ts.isElementAccessExpression(c) && ts.isStringLiteralLike(c.argumentExpression)
-      ? c.argumentExpression.text
-      : null;
-  if (nombre === null || !(AFIRMA.has(nombre) || DECLARA.has(nombre))) return null;
+  let nombre: string;
+  if (ts.isPropertyAccessExpression(c)) nombre = c.name.text;
+  else if (ts.isElementAccessExpression(c) && ts.isStringLiteralLike(c.argumentExpression)) nombre = c.argumentExpression.text;
+  else return null;
+  if (!(AFIRMA.has(nombre) || DECLARA.has(nombre))) return null;
   return ts.isIdentifier(c.expression) ? c.expression.text : null;
 }
 
