@@ -30,7 +30,7 @@
  *     `node --test` en el árbol (los `package.json` de los tres paquetes,
  *     `qa/**.mjs`, `nefan-core/scripts/*.ts`, el plan de mutación y `ci.yml`),
  *     clasificada: CON reporter (las tres del alcance), AGUJERO CONOCIDO (una
- *     invocación sin él: hoy siete, empezando por el `npm test` de
+ *     invocación sin él: hoy ocho, empezando por el `npm test` de
  *     `nefan-html`, que el job `nefan-html` de CI corre sobre suites con
  *     `describe`) y NO-INVOCACIÓN (un predicado que compara con la cadena). Es
  *     el molde del 151: la totalidad exige que cada hallazgo del censo esté
@@ -116,6 +116,10 @@ const PADRON = [
   ["qa/mutacion-reparto-en-lotes.mjs", '["--import", "tsx", "--test"', AGUJERO, "decide por status, sin reporter"],
   ["qa/guiones/151-el-candado-del-prefijo-puede-ponerse-rojo.mjs", 'spawnSync("node", ["--import", "tsx", "--test"', AGUJERO, "corre un candado en subproceso sin reporter"],
   ["qa/guiones/152-el-padron-de-clientes-ws-puede-ponerse-rojo.mjs", 'spawnSync("npx", ["tsx", "--test"', AGUJERO, "corre un candado en subproceso sin reporter"],
+  // Llegó con #728 (barrido único del banco) y lo cazó la totalidad de este
+  // padrón al rebasar la tanda AN: decide por los `✖` indentados y `ℹ tests`,
+  // sin reporter ni `status`.
+  ["qa/guiones/163-el-candado-del-barrido-unico-puede-ponerse-rojo.mjs", 'spawnSync("npx", ["tsx", "--test"', AGUJERO, "corre un candado en subproceso sin reporter; decide por los ✖ indentados y `ℹ tests`, no por status"],
   ["nefan-core/scripts/paso-c-ab.ts", "COMANDO_A", AGUJERO, "bench A/B de la mutación, sin reporter"],
   ["nefan-core/scripts/mutation-plan.ts", 'a === "--test"', PREDICADO, "compara node_args con la cadena; no lanza nada (dos veces)"],
 ];
