@@ -173,9 +173,18 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
     assert.deepEqual(r.map((s) => `${s.forma} ${s.condicion}`), ["return opciones.length<2"]);
   });
 
-  it("NEGATIVO sobre el 105 REAL: cambiar el sinMedirBloque del save B por un log deja la rama muda", () => {
-    const r = saboteado("105", "  if (!saveB) {\n    ctx.sinMedirBloque(", "  if (!saveB) {\n    ctx.log(");
-    assert.deepEqual(r.map((s) => `${s.forma} ${s.condicion}`), ["rama-muda !saveB"]);
+  it("NEGATIVO sobre el 105 REAL: quitar el expect del save B deja la rama muda", () => {
+    const r = saboteado("105", '  ctx.expect("el save de B está en el disco efímero de la corrida", Boolean(saveB), partidaB.sessionId);\n', "");
+    assert.deepEqual(r.map((s) => `${s.forma} ${s.condicion}`), ["rama-muda saveB"]);
+  });
+
+  it("NEGATIVO sobre el 68 REAL: lo que se salta es un HELPER que afirma (QA de la tanda, I1)", () => {
+    // El 68 se salta un bloque cuyos asertos viven en helpers, no en
+    // `ctx.expect` directos: antes de I1 eso eran 0 saltos. Hoy está
+    // observado porque `vuelta` sale de `reanudar`, que afirma; si el
+    // inicializador pasa a ser un `page.evaluate` mudo, sale rojo.
+    const r = saboteado("68", "const vuelta = await reanudar(", "const vuelta = await ctx.page.evaluate(() => 0) || (");
+    assert.deepEqual(r.map((s) => `${s.forma} ${s.condicion}`), ["return !vuelta"]);
   });
 
   it("NEGATIVO sobre qa/lib REAL: si `reanudar` deja de afirmar la tarjeta, sus usuarios se ponen rojos NOMBRÁNDOLA", () => {
@@ -195,6 +204,84 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
     assert.ok(r.length >= 5, `solo ${r.length} saltos dependen de reanudar (el 2026-09-23 eran 8): ¿ha dejado de resolver el import?`);
     const ajenos = r.filter((x) => !x.porque.includes("`reanudar (lib/sesion.mjs)` no es afirmante"));
     assert.deepEqual(ajenos.map((x) => `${x.fichero}:${x.linea} ${x.porque}`), [], "todo rojo nuevo nombra a `reanudar`");
+  });
+
+  // ── Reglas añadidas tras la QA de la tanda ────────────────────────────────
+
+  it("I1: un salto seguido SOLO de asertos en helpers (de qa/lib o del guion) es salto", () => {
+    const lib = { "afirma.mjs": 'export async function afirmarPose(ctx, x) { ctx.expect("pose", x > 0); return true; }' };
+    const antes = 'import { afirmarPose } from "../lib/afirma.mjs";\nasync function mide(ctx, p) { ctx.expect("m", p.a === 1); }';
+    const pre = 'ctx.expect("a", true);\nconst pre = await ctx.page.evaluate(() => 1);\n';
+    const casos: [string, string][] = [
+      [`${pre}if (!pre) { ctx.log("no"); return; }\nawait afirmarPose(ctx, pre);`, "return !pre"],
+      [`${pre}if (pre) { await afirmarPose(ctx, pre); }`, "rama-muda pre"],
+      [`${pre}if (pre) { await mide(ctx, pre); }`, "rama-muda pre"],
+      // Un helper que no se puede resolver y recibe el ctx también cuenta: la
+      // dirección que da más saltos.
+      [`${pre}if (!pre) { ctx.log("no"); return; }\nawait lib.afirmar(ctx, pre);`, "return !pre"],
+    ];
+    for (const [cuerpo, esperado] of casos) {
+      assert.deepEqual(rojos(analiza(cuerpo, { antes, lib })).map((x) => `${x.forma} ${x.condicion}`), [esperado], cuerpo);
+    }
+    // Y el helper que afirma, EN la rama, la observa.
+    assert.deepEqual(rojos(analiza(`${pre}if (!pre) { await afirmarPose(ctx, 0); return; }\n${DETRAS}`, { antes, lib })), []);
+    // Un helper resuelto que NO afirma (`comenzar`) no convierte en salto un return.
+    assert.deepEqual(analiza(`${pre}if (!pre) return;\nawait nada(ctx);`, { antes: "async function nada(ctx) { ctx.log(1); }" }), []);
+  });
+
+  it("I2: los alias de ctx (`const c = ctx`, `const {expect} = ctx`, `ctx.expect.bind`, `ctx[\"expect\"]`) se siguen", () => {
+    const casos = [
+      'const c = ctx;\nconst pre = await c.page.evaluate(() => 1);\nif (!pre) { c.log("no"); return; }\nc.expect("d", true);',
+      'const { expect, log } = ctx;\nconst pre = await algo();\nif (!pre) { log("no"); return; }\nexpect("d", true);',
+      'const { expect: e } = ctx;\nconst pre = await algo();\nif (!pre) return;\ne("d", true);',
+      'const e = ctx.expect.bind(ctx);\nconst pre = await algo();\nif (!pre) return;\ne("d", true);',
+      'const pre = await algo();\nif (!pre) return;\nctx["expect"]("d", true);',
+    ];
+    for (const c of casos) assert.deepEqual(rojos(analiza(c)).map((x) => x.condicion), ["!pre"], c);
+    // …y también para OBSERVAR: `expect` suelto afirmando la precondición.
+    assert.deepEqual(rojos(analiza('const { expect } = ctx;\nconst pre = await algo();\nexpect("pre", Boolean(pre));\nif (!pre) return;\nexpect("d", true);')), []);
+  });
+
+  it("I2: el `return` en un `case`, en un `catch` y el incondicional son saltos", () => {
+    const sw = analiza(`const pre = await algo();\nswitch (pre) { case 0: ctx.log("no"); return; default: }\n${DETRAS}`);
+    assert.deepEqual(rojos(sw).map((x) => x.condicion), ["case:pre=0"]);
+    const ca = analiza(`try { await algo(); } catch (e) { ctx.log("no"); return; }\n${DETRAS}`);
+    assert.deepEqual(rojos(ca).map((x) => x.condicion), ["catch"]);
+    const inc = analiza(`ctx.expect("a", true);\nreturn;\n${DETRAS}`);
+    assert.deepEqual(rojos(inc).map((x) => x.condicion), ["incondicional"]);
+    // Observados: el case y el catch que declaran.
+    assert.deepEqual(rojos(analiza(`try { await algo(); } catch (e) { ctx.sinMedirBloque("sin algo no hay bloque"); return; }\n${DETRAS}`)), []);
+    assert.deepEqual(rojos(analiza(`switch (await algo()) { case 0: ctx.expect("no 0", false); return; }\n${DETRAS}`)), []);
+    // Un return en un catch DENTRO de un if cuenta una vez, en el catch.
+    const anidado = analiza(`if (c) { try { await algo(); } catch { return; } }\n${DETRAS}`);
+    assert.deepEqual(anidado.map((x) => x.condicion), ["catch"]);
+  });
+
+  it("I2: un expect TAUTOLÓGICO no observa: ni en la rama, ni como precondición afirmada", () => {
+    const pre = "const pre = await algo();\n";
+    for (const c of [
+      `${pre}if (!pre) { ctx.expect("no se pudo medir, pero ok", true); return; }\n${DETRAS}`,
+      `${pre}ctx.expect("pre", Boolean(pre) || true);\nif (!pre) return;\n${DETRAS}`,
+      `${pre}ctx.expect("pre", pre === pre);\nif (!pre) return;\n${DETRAS}`,
+      `${pre}ctx.expect("pre", !false);\nif (!pre) return;\n${DETRAS}`,
+      `${pre}if (pre) { ctx.expect("medido", pre.a === 1); } else { ctx.expect("no se pudo medir", true); }`,
+    ])
+      assert.equal(rojos(analiza(c)).length, 1, c);
+    assert.equal(rojos(analiza(`${pre}ctx.expect("pre", Boolean(pre) && true);\nif (!pre) return;\n${DETRAS}`)).length, 0, "`x && true` sí depende de x");
+  });
+
+  it("I2: `return 0` y `return \"\"` son VACÍOS, no construidos: no hacen afirmante a un helper", () => {
+    for (const vacio of ["0", '""', "0.0"]) {
+      const f = `async function contar(ctx) { const v = await algo(); if (v) return 3; return ${vacio}; }`;
+      const s = analiza(`const n = await contar(ctx);\nif (!n) { ctx.log("no"); return; }\n${DETRAS}`, { antes: f });
+      assert.equal(rojos(s).length, 1, vacio);
+    }
+  });
+
+  it("llamar a un asertador en el INICIALIZADOR no observa el valor que devuelve", () => {
+    const f = 'async function chequea(ctx) { const v = await algo(); if (!v) { ctx.expect("z", true); return null; } return { v }; }';
+    const s = analiza(`const ok = await chequea(ctx);\nif (!ok) { ctx.log("no"); return; }\n${DETRAS}`, { antes: f });
+    assert.equal(rojos(s).length, 1, s[0]?.porque);
   });
 
   // ── Cada regla, en sintético ───────────────────────────────────────────────
@@ -318,15 +405,30 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
 
   // ── LÍMITES MEDIDOS: cada punto de `_lo_que_esto_NO_sujeta` ────────────────
 
-  it("LÍMITE MEDIDO (1): un helper con ctx que se salta sus asertos no se ve; en el banco real hay 3", () => {
-    const helper = 'async function bloque(ctx) { const x = await algo(); if (!x) return; ctx.expect("x", x.ok); }';
-    assert.deepEqual(analiza("await bloque(ctx);\nctx.expect(\"otra\", true);", { antes: helper }), [], "el detector mira los helpers: retira el punto (1)");
+  it("LÍMITE MEDIDO (1): un salto DENTRO de una función anidada no se ve; en el banco real hay 4", () => {
+    // Con parámetro `ctx`, como cierre que lo captura y como callback anónimo:
+    // las tres formas dan 0 saltos en el candado…
+    const conParametro = 'async function bloque(ctx) { const x = await algo(); if (!x) return; ctx.expect("x", x.ok); }';
+    assert.deepEqual(analiza("await bloque(ctx);\nctx.expect(\"otra\", true);", { antes: conParametro }), [], "el detector mira los helpers: retira el punto (1)");
+    const cierre = 'const medir = async () => { const x = await algo(); if (!x) { ctx.log("no"); return; } ctx.expect("x", x.ok); };\nawait medir();\nctx.expect("otra", true);';
+    assert.deepEqual(analiza(cierre), [], "el detector mira los cierres: retira el punto (1)");
+    const anonima = 'await algo().then((x) => { if (!x) { ctx.log("no"); return; } ctx.expect("x", x.ok); });\nctx.expect("otra", true);';
+    assert.deepEqual(analiza(anonima), [], "el detector mira los callbacks: retira el punto (1)");
+    // …y las tres las cuenta la MEDIDA (QA de la tanda, M1: antes el cierre no contaba).
+    for (const c of [cierre, anonima]) assert.equal(rojos(analiza(c, { helpers: true })).length, 1, c);
+    assert.equal(rojos(analiza("await bloque(ctx);\nctx.expect(\"otra\", true);", { antes: conParametro, helpers: true })).length, 1);
     const enHelpers = guiones.flatMap((g) =>
       saltosDelGuion(join(QA, g), leerDisco, { helpers: true })
         .filter((s) => s.funcion !== "default" && !s.observado)
-        .map((s) => `${g.slice(8, 10)} ${s.funcion}`),
+        .map((s) => `${g.slice(8, g.indexOf("-"))} ${s.funcion} ${s.condicion}`),
     );
-    assert.deepEqual(enHelpers, ["15 atacarYVer", "41 pelearContra", "94 afirmarAtomo"], "los saltos sin observar en helpers han cambiado: reescribe la cifra del punto (1)");
+    assert.deepEqual(
+      enHelpers,
+      ["15 atacarYVer !antes", "41 pelearContra cunaEsPrecondicion", "41 pelearContra acercarseAndando", "94 afirmarAtomo visto===null"],
+      "ha cambiado la lista de saltos sin observar DENTRO de funciones anidadas. Si hay uno nuevo, lo primero es " +
+        "ARREGLARLO como en el cuerpo principal (afirma la precondición o `ctx.sinMedirBloque`); solo si es honesto " +
+        "sin observar, se añade aquí y se cuenta en el punto (1) del padrón. Si ha desaparecido uno, quítalo de los dos",
+    );
   });
 
   it("LÍMITE MEDIDO (2): un bucle que no se entra no es un salto", () => {
@@ -341,17 +443,22 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
     );
   });
 
-  it("LÍMITE MEDIDO (4): `continue` y `break` no son salto", () => {
+  it("LÍMITE MEDIDO (4): `continue`, `break` y `break <etiqueta>` no son salto", () => {
     assert.deepEqual(analiza('for (const x of xs) {\n  if (!x) continue;\n  if (x.fin) break;\n  ctx.expect("x", x.ok);\n}'), [], "retira el punto (4)");
+    assert.deepEqual(analiza('const pre = await algo();\nbloque: { if (!pre) { ctx.log("no"); break bloque; } ctx.expect("dentro", true); }'), [], "retira el `break` etiquetado del punto (4)");
   });
 
-  it("LÍMITE MEDIDO (5): el catch que solo registra no es un `if`", () => {
+  it("LÍMITE MEDIDO (5): el catch que solo registra, SIN return, no es salto", () => {
+    // Con `return` sí lo es (regla de la guarda `catch`); sin él, el guion
+    // sigue y los asertos de detrás corren.
     assert.deepEqual(analiza('try {\n  ctx.expect("a", await algo());\n} catch (e) {\n  ctx.log(`no se pudo: ${e.message}`);\n}'), [], "retira el punto (5)");
   });
 
-  it("LÍMITE MEDIDO (6): la afirmación rancia pasa por observada", () => {
+  it("LÍMITE MEDIDO (6): la afirmación rancia y el SOMBREADO pasan por observados", () => {
     const s = analiza(`let x = await algo();\nctx.expect("x", Boolean(x));\nx = await otra();\nif (!x) return;\n${DETRAS}`);
     assert.deepEqual(rojos(s), [], "el detector sigue la reasignación: retira el punto (6)");
+    const sombra = analiza(`const x = 1;\nctx.expect("x", Boolean(x));\n{ const x = await algo();\n if (!x) { ctx.log("no"); return; } }\n${DETRAS}`);
+    assert.deepEqual(rojos(sombra), [], "el detector distingue ámbitos: retira el sombreado del punto (6)");
   });
 
   it("LÍMITE MEDIDO (7): el átomo va por su RAÍZ, no por la propiedad", () => {
@@ -367,11 +474,30 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
   it("LÍMITE MEDIDO (9): basta un observador EN la rama, no en el camino del return", () => {
     const s = analiza(`const x = await algo();\nif (!x) { if (y) ctx.sinMedirBloque("sin x, en un caso"); return; }\n${DETRAS}`);
     assert.deepEqual(rojos(s), [], "el detector mira el camino: retira el punto (9)");
+    const tragado = analiza(`const x = await algo();\nif (!x) { try { throw new Error("x"); } catch {} return; }\n${DETRAS}`);
+    assert.deepEqual(rojos(tragado), [], "el detector ve el `throw` que se traga su propio `catch`: retira esa frase del punto (9)");
   });
 
   it("LÍMITE MEDIDO (10): el ámbito es `qa/guiones/*.mjs`; hoy no hay guiones en subdirectorios", () => {
     const todos = fuentesDelBanco(QA);
     assert.deepEqual(todos.filter((f) => f.startsWith("guiones/") && !guiones.includes(f)), [], "hay .mjs en subdirectorios de guiones/: amplía el ámbito o reescribe el punto (10)");
     assert.ok(todos.some((f) => f.startsWith("lib/")) && !guiones.some((f) => f.startsWith("lib/")), "qa/lib no se analiza como guion");
+  });
+
+  it("LÍMITE MEDIDO (11): la tautología por VALOR (una constante con nombre, `typeof`) no se ve", () => {
+    const pre = "const pre = await algo();\n";
+    const casos = [
+      `${pre}const NO = false;\nif (!pre) { ctx.expect("x", NO === false); return; }\n${DETRAS}`,
+      `${pre}ctx.expect("pre", typeof pre === "object" || pre == null);\nif (!pre) return;\n${DETRAS}`,
+    ];
+    for (const c of casos) assert.deepEqual(rojos(analiza(c)), [], `el detector evalúa valores: retira el punto (11)\n${c}`);
+  });
+
+  it("LÍMITE MEDIDO (12): el ctx guardado en un objeto, reasignado sin declarar o con otro nombre de parámetro no se sigue", () => {
+    const casos = [
+      'const o = { ctx };\nconst pre = await algo();\nif (!pre) return;\no.ctx.expect("d", true);',
+      'let c;\nc = ctx;\nconst pre = await algo();\nif (!pre) return;\nc.expect("d", true);',
+    ];
+    for (const c of casos) assert.deepEqual(analiza(c), [], `el detector sigue ese alias: retira esa frase del punto (12)\n${c}`);
   });
 });

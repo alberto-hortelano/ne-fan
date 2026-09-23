@@ -382,11 +382,14 @@ Reglas que hacen que un guion valga algo:
    reconvertirse — un ⊘ es una declaración, no una amnistía. Si lo que se pierde es UN bloque y
    el guion puede seguir midiendo los demás, `ctx.sinMedirBloque(motivo)`, que no aborta: es la
    versión honesta del `if (…) { ctx.log("⚠ … no se midió"); return; }`, que salía VERDE.
-   Esto ya no es solo prosa (#356): `nefan-core/test/un-salto-del-guion-se-observa.test.ts` lee el
-   árbol de cada guion y se pone ROJO en `npm test` con todo salto —un `return` temprano o un `if`
-   cuya otra rama no afirma— que nadie observa: ni la rama declara, afirma o lanza, ni la condición
-   se afirmó antes (`ctx.expect("…", Boolean(x)); if (!x) return;` es el molde honesto). Lo que no
-   ve, medido, en `_lo_que_esto_NO_sujeta` de `nefan-core/data/contract/saltos-sin-observar.json`.
+   Parte de esto ya no es prosa (#356): `nefan-core/test/un-salto-del-guion-se-observa.test.ts` lee
+   el árbol del CUERPO PRINCIPAL de cada guion y se pone ROJO en `npm test` con un `return` (tras un
+   `if`, `case` o `catch`) o un `if` con una rama muda que se saltan asertos —propios o de helpers—
+   sin que nadie lo observe: ni la rama declara, afirma o lanza, ni la condición se afirmó antes
+   (`ctx.expect("…", Boolean(x)); if (!x) return;` es el molde honesto). No ve todas las formas: las
+   que no, cada una medida, están en `_lo_que_esto_NO_sujeta` de
+   `nefan-core/data/contract/saltos-sin-observar.json` (la primera: los saltos dentro de funciones
+   anidadas). Esas siguen dependiendo de esta regla.
 
 7. **Un verde exige haber AFIRMADO algo** (#639). «No falló» y «no miró» eran el mismo ✔ hasta que
    el 141 lo cobró: su único `ctx.expect` vivía dentro de un `for` sobre las grabaciones de
