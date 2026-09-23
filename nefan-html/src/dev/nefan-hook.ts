@@ -350,6 +350,10 @@ export function instalarNefanHook(deps: DepsDelHook): void {
         title: deps.titleScreen.isVisible,
         scene: deps.mundo.escenaActiva !== null,
         painting: deps.fpsAtlas.running,
+        /** Restauraciones de atlas de tiles NO activos sin terminar (#714).
+         *  Fuera de `ready` a propósito: esperarlas es cosa del guion que las
+         *  mire, no de todos. */
+        restaurando: deps.fpsAtlas.restaurando,
         npcs: deps.mundo.npcs.length,
       }),
       /** Estado del diálogo, o `{visible:false}`. */

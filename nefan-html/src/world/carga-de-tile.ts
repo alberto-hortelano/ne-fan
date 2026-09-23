@@ -278,6 +278,10 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     const tile = escena.tile;
     const key = tileKey(tile.tx, tile.ty);
     const firstTile = tileStore.entries.size === 0;
+    // Primer tile = mundo nuevo (partida, resume o fixture): lo que quede en el
+    // carril de restauración del atlas es del mundo anterior, y la clave
+    // `tile_0_0` se repite con otra escena (#714).
+    if (firstTile) fpsAtlas.olvidarRestauraciones();
 
     // Rect mundial del tile, de la geometría de core — la misma con la que el
     // bridge escribió el `world_rect` que viaja en la escena.
@@ -363,6 +367,11 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     // tile activo (resume / re-broadcast).
     if (firstTile || key === mundo.tileActivo) {
       activarTile(key);
+    } else if (planInfo) {
+      // Instalado y NO activo (los vecinos del resume, el que llega por
+      // prefetch): recupera su arte ya pagado (#714). Qué puede hacer —solo
+      // restaurar, nunca pintar— lo decide core (`modoDeCorrida`).
+      fpsAtlas.restaurar(key);
     }
 
     // Sim: los tiles de la PARTIDA añaden combatientes de forma ADITIVA (sin

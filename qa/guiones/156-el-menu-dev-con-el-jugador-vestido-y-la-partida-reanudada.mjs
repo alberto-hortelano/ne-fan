@@ -34,22 +34,24 @@
  *     comparen entre sí, se exige que el libro tenga a los personajes con su
  *     `idle` listo.
  *  5. **El arte que VUELVE al reanudar**, que NO es «la lista se queda
- *     vacía». Esa exigencia fue el rojo de #712: `resume` reinstala TODOS los
- *     tiles del save (`main.ts`: «TODOS los tiles del save se re-añaden») y
- *     solo el tile ACTIVO pide atlas (`FpsAtlasController.onActiveTile`), así
- *     que un save nacido sobre el anillo 3×3 pre-generado deja 8 vecinos en
- *     clay para siempre: eso es arte PENDIENTE de verdad, no arte sin
- *     restaurar, y el menú acierta al ofrecerlo. Pedir «vacía» era pedir que
- *     el mundo tuviera UN tile, cosa que este guion ni declara ni controla —
- *     no pide `aisla: ["mundo"]`—, así que salía verde corriendo solo y rojo
- *     detrás de cualquiera de los guiones que pre-generan el mundo (115, 15,
+ *     vacía» sin más. Esa exigencia fue el rojo de #712: `resume` reinstala
+ *     TODOS los tiles del save (`main.ts`: «TODOS los tiles del save se
+ *     re-añaden»), y con el anillo 3×3 pre-generado son nueve. Desde #714 los
+ *     que no son el activo RESTAURAN su arte ya pagado (carril de restauración
+ *     de `PoliticaDeAtlas`, siempre `resolve_only`), así que al terminar ese
+ *     carril las filas de atlas que quedan son las de los vecinos cuyo arte la
+ *     librería NO tiene: arte pendiente de verdad, y el menú acierta al
+ *     ofrecerlo. Cuántas son depende de la librería y del mundo, que este
+ *     guion ni declara ni controla —no pide `aisla: ["mundo"]`, y 115, 15 y
  *     154 dejan «Mundo de Miravanda generado: 9 escenas» en el disco efímero
- *     de la corrida, que es compartido). Lo que se exige aquí es lo que el
- *     resume DEBE hacer, y se cumple con uno o con nueve tiles: los tres
- *     skins re-pedidos hasta tener `idle`, el tile que PISA el jugador
- *     texturado otra vez, y ni una petición de atlas que pinte (lo ya pagado
- *     vuelve gratis). Todo eso se afirma sobre la foto del MISMO tick que
- *     cumplió la espera —la que ella devuelve—, porque el estado no se queda
+ *     de la corrida, que es compartido—, así que no se exige un número. Lo que
+ *     se exige es lo que el resume DEBE hacer, con uno o con nueve tiles: los
+ *     tres skins re-pedidos hasta tener `idle`, el tile que PISA el jugador
+ *     texturado otra vez, el carril de restauración vacío, ninguna fila del
+ *     tile activo y ni una petición de atlas que pinte (lo ya pagado vuelve
+ *     gratis). Que los vecinos con arte en la librería vuelvan texturados lo
+ *     mide el 160, que sí controla su mundo. Todo eso se afirma sobre la
+ *     foto del MISMO tick que cumplió la espera —la que ella devuelve—, porque el estado no se queda
  *     quieto: al reanudar, los skins que acaban de llegar se RE-ARMAN un
  *     momento después y el libro vuelve a enseñarlos «generándose». No se le pone `aisla: ["mundo"]` a propósito: el estado
  *     de varios tiles es el más interesante de los dos y así se sigue
@@ -125,8 +127,9 @@ function instalarElModelo() {
       filas,
       vacioPintado,
       jugador: n.aspecto.skinPrompt,
-      // El tile que PISA el jugador: es el único que pide atlas, así que es el
-      // único del que se puede exigir que vuelva texturado (#712).
+      // El tile que PISA el jugador: el único del que este guion puede exigir
+      // que vuelva texturado, porque es el único cuyo arte sabe que existe
+      // (#712); el de los vecinos depende de la librería (#714, guion 160).
       activo: fps.ready ? fps.activeTile : null,
       tiles: n.tiles,
       libro: libro.map((e) => ({ prompt: e.prompt, ready: e.ready, failed: e.failed })),
@@ -399,8 +402,12 @@ export default async function (ctx) {
       if (!f.cuadran) return null;
       if (f.skins.length > 0) return null; // alguno sigue sin su `idle`
       if (!f.activo) return null; // sin tile activo no hay nada que exigir
-      // El único tile del que se puede exigir atlas es el que pisa: los demás
-      // del save nunca lo piden (#712).
+      // Los vecinos restauran su arte ya pagado DETRÁS del activo (#714): hasta
+      // que ese carril se vacíe, una fila de vecino puede ser arte que aún está
+      // volviendo, no arte pendiente.
+      if (window.__nefan.status().restaurando > 0) return null;
+      // El único tile del que se puede EXIGIR atlas es el que pisa: el arte de
+      // los vecinos depende de lo que tenga la librería.
       if (f.atlas.some((l) => l.startsWith(`Atlas fps ${f.activo} `))) return null;
       // Se devuelve la foto de ESE tick, no un número: lo que quede por
       // afirmar se afirma sobre el instante que cumplió, y no sobre otro
@@ -417,14 +424,16 @@ export default async function (ctx) {
     ctx.log(`   el save trajo ${instante.tiles} tile(s) · el jugador pisa ${instante.activo}`);
     if (instante.pintado.length === 0) {
       ctx.expect(
-        "…y como el save traía UN SOLO tile, el menú se queda vacío y lo dice",
+        "…y como no queda arte pendiente (un solo tile, o los vecinos restaurados de la librería), el menú se " +
+          "queda vacío y lo dice",
         instante.vacio === "Sin imágenes fake: todo lo visible está generado.",
         JSON.stringify(instante.vacio),
       );
     } else {
       ctx.expect(
         `…y las ${instante.pintado.length} filas que quedan son SOLO atlas de tiles que el jugador no pisa ` +
-          "(los vecinos que el save reinstala en clay): arte pendiente de verdad, no arte sin restaurar",
+          "(vecinos cuyo arte la librería no tiene, con el carril de restauración ya vacío): arte pendiente de " +
+          "verdad, no arte sin restaurar",
         instante.pintado.every((l) => l.startsWith("Atlas fps ") && !l.startsWith(`Atlas fps ${instante.activo} `)),
         JSON.stringify(instante.pintado),
       );

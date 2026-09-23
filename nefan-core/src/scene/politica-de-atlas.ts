@@ -18,8 +18,43 @@
  *     tile antes. Superar es por TOKEN: el run viejo termina, registra su
  *     keep-list (su arte sigue siendo de la escena) y no aplica nada.
  *
+ *  Y un CARRIL DE RESTAURACIÓN aparte (#714), para los tiles instalados que no
+ *  son el activo: los vecinos que reinstala el resume y el que entra por
+ *  prefetch. Hasta #714 no pedía atlas nadie más que el activo, así que al
+ *  reanudar sobre un mundo pre-generado el jugador veía ocho vecinos en clay
+ *  con su arte YA PAGADO en la librería. El carril no comparte nada con el
+ *  token del activo —llamar a `nuevoRun` por vecino desecharía la corrida del
+ *  jugador, que es #390 por otra puerta— y NUNCA pinta (`modoDeCorrida`).
+ *
  *  Aquí no hay fetch, canvas ni renderer: eso lo conserva el controller del
  *  cliente, que pregunta a esta clase qué hacer y le cuenta qué pasó. */
+
+/** LA REGLA DE GASTO por rol del tile. Solo el tile ACTIVO puede pintar, y solo
+ *  con la generación encendida; un tile instalado que no es el activo
+ *  restaura lo ya pagado y nada más, TAMBIÉN con Imagen IA encendida (#714):
+ *  pintar un vecino es gasto que la partida no pidió. Pintar un tile concreto
+ *  a mano sigue siendo del menú dev / tecla G, que no pasa por aquí. */
+export function modoDeCorrida(t: { activo: boolean; generacion: boolean }): { resolveOnly: boolean } {
+  return { resolveOnly: !(t.activo && t.generacion) };
+}
+
+/** Una restauración que el controller puede ejecutar. Su IDENTIDAD es la
+ *  vigencia: se crea al encolar, y solo el objeto que sigue registrado para su
+ *  clave puede aplicar (sin contador que pueda repetirse ni desbordar). */
+export interface Restauracion {
+  readonly key: string;
+}
+
+/** Qué dejó una restauración en el renderer: arte aplicado (entero o
+ *  parcial), la librería sin nada para el tile, o nada (superada, sin estilo,
+ *  tile sin superficies). */
+export type Desenlace = "aplicado" | "sin-arte" | "nada";
+
+/** El balance de una tanda del carril, de vaciado a vaciado. */
+export interface BalanceDeRestauracion {
+  aplicados: number;
+  sinArte: number;
+}
 
 export class PoliticaDeAtlas {
   #token = 0;
@@ -37,6 +72,10 @@ export class PoliticaDeAtlas {
    *  "encolado" = ya hay un ciclo en curso para esa clave y el llamante no hace
    *  nada: cuando aquel acabe, `terminar` se lo devolverá como "re-disparar". */
   pedir(key: string): "arranca" | "encolado" {
+    // El tile que se activa deja de ser asunto del carril de restauración: su
+    // ciclo de activo ya restaura lo pagado (y quizá pinta), y la restauración
+    // encolada o en vuelo de esa clave no puede aplicar encima.
+    this.#olvidarRestauracion(key);
     if (this.#pendientes.has(key)) {
       this.#encoladas.add(key);
       return "encolado";
@@ -80,5 +119,90 @@ export class PoliticaDeAtlas {
    *  «pintando…» en el panel dev y publica en el hook de bench. */
   get enVuelo(): boolean {
     return this.#enVuelo;
+  }
+
+  // --- Carril de restauración (#714) ---------------------------------------
+
+  /** Restauraciones esperando turno, en orden de llegada (FIFO: el resume
+   *  añade el activo primero y el resto detrás, y ese orden es el que se ve). */
+  #cola: Restauracion[] = [];
+  /** La restauración VIGENTE de cada clave encolada o en vuelo. Una que ya no
+   *  está aquí —superada por un re-encolado, por `pedir` o por
+   *  `olvidarRestauraciones`— no aplica nada. */
+  #vigenteDe = new Map<string, Restauracion>();
+  /** La restauración que está corriendo, si hay una: van de una en una para
+   *  no competir con el activo por las conexiones HTTP del navegador. */
+  #enCurso: Restauracion | null = null;
+
+  /** Un tile instalado que no es el activo quiere su arte ya pagado. Con un
+   *  ciclo de activo en curso para esa MISMA clave no hace nada: ese ciclo ya
+   *  la restaura. Una clave ya encolada o en vuelo se SUPERA y va al final: el
+   *  re-añadido puede traer otra escena y lo que estaba en el aire es de la
+   *  anterior. */
+  encolarRestauracion(key: string): void {
+    if (this.#pendientes.has(key)) return;
+    this.#olvidarRestauracion(key);
+    const r: Restauracion = { key };
+    this.#vigenteDe.set(key, r);
+    this.#cola.push(r);
+  }
+
+  /** La siguiente restauración a ejecutar, o `null` si toca esperar: hay un
+   *  ciclo de activo en curso (el activo va antes, siempre), ya hay una
+   *  restauración en vuelo, o la cola está vacía. El llamante DEBE llamar a
+   *  `finDeRestauracion` con lo que recibió, pase lo que pase. */
+  siguienteRestauracion(): Restauracion | null {
+    if (this.#pendientes.size > 0 || this.#enCurso !== null) return null;
+    const r = this.#cola.shift();
+    if (r === undefined) return null;
+    this.#enCurso = r;
+    return r;
+  }
+
+  /** ¿Puede APLICAR al renderer esta restauración? Se pregunta antes de tocar
+   *  nada, como `vigente` para el activo. */
+  restauracionVigente(r: Restauracion): boolean {
+    return this.#vigenteDe.get(r.key) === r;
+  }
+
+  /** La restauración acabó, bien o mal, con `desenlace`. Deja paso a la
+   *  siguiente, y suelta la clave solo si seguía siendo suya (un re-encolado
+   *  mientras corría es otra restauración y sigue en la cola).
+   *
+   *  Devuelve el BALANCE de la tanda cuando el carril se vacía y algo pasó, y
+   *  `null` en otro caso: es lo que el HUD dice en UNA línea. Hasta QA de
+   *  #714 (H1) cada restauración escribía la suya, y al reanudar eran ocho
+   *  seguidas tapando el registro de la partida. */
+  finDeRestauracion(r: Restauracion, desenlace: Desenlace): BalanceDeRestauracion | null {
+    if (this.#enCurso === r) this.#enCurso = null;
+    if (this.#vigenteDe.get(r.key) === r) this.#vigenteDe.delete(r.key);
+    if (desenlace === "aplicado") this.#balance.aplicados++;
+    if (desenlace === "sin-arte") this.#balance.sinArte++;
+    if (this.restaurando > 0) return null;
+    const b = this.#balance;
+    this.#balance = { aplicados: 0, sinArte: 0 };
+    return b.aplicados + b.sinArte > 0 ? b : null;
+  }
+
+  #balance: BalanceDeRestauracion = { aplicados: 0, sinArte: 0 };
+
+  /** Cambio de mundo: nada de lo encolado ni de lo que va en el aire es del
+   *  mundo nuevo (la clave `tile_0_0` es la misma y la escena, otra). La que
+   *  está en vuelo sigue ocupando el turno hasta su `finDeRestauracion`, pero
+   *  ya no aplica. */
+  olvidarRestauraciones(): void {
+    this.#cola = [];
+    this.#vigenteDe.clear();
+  }
+
+  /** Restauraciones sin terminar (encoladas + la que está en vuelo). Es lo que
+   *  el hook de bench publica para que un guion pueda esperarlas. */
+  get restaurando(): number {
+    return this.#cola.length + (this.#enCurso === null ? 0 : 1);
+  }
+
+  #olvidarRestauracion(key: string): void {
+    this.#vigenteDe.delete(key);
+    this.#cola = this.#cola.filter((r) => r.key !== key);
   }
 }
