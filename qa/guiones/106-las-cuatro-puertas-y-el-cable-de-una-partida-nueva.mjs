@@ -49,6 +49,7 @@ import { readFileSync } from "node:fs";
 import { abrirSelectorDeMundos, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { esperarPartidaEnDisco, rutaDelSave } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
+import { preguntarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -122,35 +123,18 @@ async function partidaCon(ctx, clicks) {
 
 /** `start_session` por el gateway del juego, como otro cliente, con el cuerpo
  *  EXACTO que se le pase. Devuelve el `session_started`. */
-function startSessionCrudo(ctx, extra, etiqueta) {
-  return ctx.page.evaluate(
-    ([game, campos, tag]) => {
-      const url = window.__nefan.servicios()["game-gateway"];
-      return new Promise((res, rej) => {
-        const ws = new WebSocket(url);
-        let contestado = false;
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        ws.onclose = () => {
-          if (!contestado) rej(new Error(`${url} se cerró sin contestar al start_session ${tag}`));
-        };
-        ws.onopen = () =>
-          ws.send(JSON.stringify({ type: "start_session", requestId: tag, gameId: game, ...campos }));
-        ws.onmessage = (ev) => {
-          const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-          if (m.type !== "session_started" || m.requestId !== tag) return;
-          contestado = true;
-          ws.close();
-          res({
-            ok: m.ok,
-            error: m.error ?? null,
-            render: m.state?.world?.render_mode ?? null,
-            personajes: m.state?.world?.character_mode ?? null,
-          });
-        };
-      });
-    },
-    [GAME_ID, extra, etiqueta],
+async function startSessionCrudo(ctx, extra, etiqueta) {
+  const m = await preguntarPorElCable(
+    ctx,
+    { type: "start_session", requestId: etiqueta, gameId: GAME_ID, ...extra },
+    { respuesta: "session_started" },
   );
+  return {
+    ok: m.ok,
+    error: m.error ?? null,
+    render: m.state?.world?.render_mode ?? null,
+    personajes: m.state?.world?.character_mode ?? null,
+  };
 }
 
 export default async function (ctx) {

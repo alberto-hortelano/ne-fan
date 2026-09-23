@@ -68,6 +68,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 
 import { esperarTituloListo } from "../lib/sesion.mjs";
+import { preguntarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
 
@@ -333,26 +334,11 @@ export default async function (ctx) {
       `${enviados} create_game enviados`,
     );
 
-    // El BRIDGE, con los mismos 19 caracteres, por el socket del juego.
-    const delBridge = await ctx.page.evaluate(
-      () =>
-        new Promise((res, rej) => {
-          const ws = new WebSocket(window.__nefan.servicios()["game-gateway"]);
-          let contestado = false;
-          ws.onerror = () => rej(new Error("no se pudo abrir el socket del juego"));
-          ws.onclose = () => {
-            if (!contestado) rej(new Error("el bridge cerró sin contestar a create_game"));
-          };
-          ws.onopen = () =>
-            ws.send(JSON.stringify({ type: "create_game", requestId: "qa-92", draftText: "A".repeat(19) }));
-          ws.onmessage = (ev) => {
-            const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-            if (m.type !== "game_created") return;
-            contestado = true;
-            ws.close();
-            res(m);
-          };
-        }),
+    // El BRIDGE, con los mismos 19 caracteres, por un cable propio de la página.
+    const delBridge = await preguntarPorElCable(
+      ctx,
+      { type: "create_game", requestId: "qa-92", draftText: "A".repeat(19) },
+      { respuesta: "game_created" },
     );
     ctx.expect(
       "E · el bridge rechaza los mismos 19 caracteres",

@@ -63,6 +63,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 import { comenzar, esperarRegistro, nuevaPartida, reanudar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { esperarPartidaEnDisco, rutaDelSave } from "../lib/saves.mjs";
+import { preguntarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
 
@@ -117,31 +118,15 @@ const modosDelSave = (ruta) => {
   return { render_mode: w.render_mode, character_mode: w.character_mode };
 };
 
-/** Pide un cambio de modo al bridge como OTRO cliente de la partida (mismo
- *  molde que el guion 85): un socket propio contra el gateway que la página
- *  está usando. Devuelve el `render_mode_set` con que contesta el bridge. */
+/** Pide un cambio de modo al bridge como OTRO cliente de la partida (como el
+ *  guion 85, por `preguntarPorElCable`): un socket propio contra el gateway
+ *  que la página está usando. Devuelve el `render_mode_set` con que contesta
+ *  el bridge, o lanza nombrando el rechazo del intake. */
 async function pedirAlBridge(ctx, sessionId, facet, renderMode) {
-  return ctx.page.evaluate(
-    ([sid, f, m]) =>
-      new Promise((res, rej) => {
-        const url = window.__nefan.servicios()["game-gateway"];
-        const ws = new WebSocket(url);
-        let contestado = false;
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url} como segundo cliente`));
-        ws.onclose = () => {
-          if (!contestado) rej(new Error(`${url} se cerró sin contestar al set_render_mode`));
-        };
-        ws.onopen = () =>
-          ws.send(JSON.stringify({ type: "set_render_mode", requestId: "qa-87", sessionId: sid, facet: f, renderMode: m }));
-        ws.onmessage = (ev) => {
-          const m2 = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-          if (m2.type !== "render_mode_set" || m2.requestId !== "qa-87") return;
-          contestado = true;
-          ws.close();
-          res(m2);
-        };
-      }),
-    [sessionId, facet, renderMode],
+  return preguntarPorElCable(
+    ctx,
+    { type: "set_render_mode", requestId: "qa-87", sessionId, facet, renderMode },
+    { respuesta: "render_mode_set" },
   );
 }
 

@@ -860,7 +860,13 @@ function exentoDeNavegador(nombre, sinNavegador) {
 
 /** Cuánto tarda el título en tener su lista de partidas — el `list_sessions`
  *  del bridge, por su propio cable. Es lo que espera el jugador mirando el home
- *  y crece con cada save que se acumula. */
+ *  y crece con cada save que se acumula.
+ *
+ *  Es un socket de NODE (el `--diag` no tiene página), así que no pasa por
+ *  `qa/lib/cable.mjs`; pero lee el rechazo igual que él: un
+ *  `narrative_status/error` de `kind:"protocolo"` es el intake diciendo que no
+ *  entiende el frame, y se devuelve como `{ rechazo }` en vez de esperar diez
+ *  segundos para decir `null` (#694). */
 function medirListSessions() {
   return new Promise((resolve) => {
     const ws = new WebSocket(URLS.bridge_ws);
@@ -871,7 +877,12 @@ function medirListSessions() {
       const t0 = Date.now();
       ws.onmessage = (ev) => {
         const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-        if (m.type !== "sessions_listed") return;
+        if (m.type === "narrative_status" && m.phase === "error" && m.kind === "protocolo") {
+          clearTimeout(t);
+          fin({ ms: Date.now() - t0, rechazo: m.message ?? "sin mensaje" });
+          return;
+        }
+        if (m.type !== "sessions_listed" || m.requestId !== "diag") return;
         clearTimeout(t);
         fin({ ms: Date.now() - t0, n: m.sessions?.length ?? 0 });
       };

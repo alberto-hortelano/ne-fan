@@ -41,8 +41,13 @@ const mod = (await import(join(repoRoot, "qa", "lib", "cable.mjs"))) as {
     techoMs: number,
   ) => Promise<{ valor?: unknown; rechazos?: Rechazo[] }>;
   fraseDeRechazos: (rechazos: unknown) => string;
+  preguntarPorElCable: (
+    ctx: Ctx,
+    mensaje: unknown,
+    opciones?: { respuesta?: unknown; techoMs?: number; url?: string | null },
+  ) => Promise<Record<string, unknown>>;
 };
-const { porElCable, rechazosDelCable, porRondasHastaRechazo, fraseDeRechazos } = mod;
+const { porElCable, rechazosDelCable, porRondasHastaRechazo, fraseDeRechazos, preguntarPorElCable } = mod;
 
 describe("la puerta es UNA: lo que el módulo no deja escribir", () => {
   it("no exporta nada con lo que cerrar el cable a mano", () => {
@@ -50,7 +55,13 @@ describe("la puerta es UNA: lo que el módulo no deja escribir", () => {
     // vuelve a añadir sin querer: con `cerrarElCable` fuera, «mandar y cerrar
     // seguidos» —tres rechazos perdidos de cinco— deja de poder escribirse.
     const nombres = Object.keys(mod).sort();
-    assert.deepEqual(nombres, ["fraseDeRechazos", "porElCable", "porRondasHastaRechazo", "rechazosDelCable"]);
+    assert.deepEqual(nombres, [
+      "fraseDeRechazos",
+      "porElCable",
+      "porRondasHastaRechazo",
+      "preguntarPorElCable",
+      "rechazosDelCable",
+    ]);
   });
 });
 
@@ -98,12 +109,16 @@ describe("fraseDeRechazos: el texto que va dentro del ⊘ o del ✘", () => {
 class SocketFalso {
   static abiertos: SocketFalso[] = [];
   static abrir = true;
+  /** Lo que el bridge contesta EN EL MISMO TICK del `send`, antes de que nadie
+   *  haya empezado a esperar: es el camino «la respuesta ya estaba». */
+  static contesta: ((msg: Record<string, unknown>) => unknown[]) | null = null;
   readonly url: string;
   enviados: string[] = [];
   cerrado = false;
   onopen: (() => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
+  onclose: (() => void) | null = null;
   constructor(url: string) {
     this.url = url;
     SocketFalso.abiertos.push(this);
@@ -113,9 +128,14 @@ class SocketFalso {
   }
   send(data: string): void {
     this.enviados.push(data);
+    for (const f of SocketFalso.contesta?.(JSON.parse(data) as Record<string, unknown>) ?? []) this.dice(f);
   }
   close(): void {
     this.cerrado = true;
+  }
+  /** El bridge cierra ESTE socket sin que el cliente lo pida. */
+  cierraElBridge(): void {
+    this.onclose?.();
   }
   /** El bridge le dice algo A ESTE socket. */
   dice(frame: unknown): void {
@@ -142,6 +162,7 @@ describe("porElCable sobre una página que contesta", () => {
     guardado.WebSocket = g.WebSocket;
     SocketFalso.abiertos = [];
     SocketFalso.abrir = true;
+    SocketFalso.contesta = null;
     g.WebSocket = SocketFalso;
     g.window = { __nefan: { servicios: () => ({ "game-gateway": "ws://banco-falso/" }) } };
   });
@@ -272,6 +293,7 @@ describe("porRondasHastaRechazo: la segunda salida de quien espera FUERA de la p
     guardado.WebSocket = g.WebSocket;
     SocketFalso.abiertos = [];
     SocketFalso.abrir = true;
+    SocketFalso.contesta = null;
     g.WebSocket = SocketFalso;
     g.window = { __nefan: { servicios: () => ({ "game-gateway": "ws://banco-falso/" }) } };
   });
@@ -328,5 +350,159 @@ describe("porRondasHastaRechazo: la segunda salida de quien espera FUERA de la p
       ),
     );
     assert.equal(rondas, 1);
+  });
+});
+
+/** Cuando el helper YA está esperando (el cable tiene quien le avise), el
+ *  socket falso dice lo que se le pida. Así se ejerce el camino del aviso, no
+ *  solo el de «la respuesta ya estaba». */
+async function cuandoEspere(hacer: (ws: SocketFalso) => void): Promise<void> {
+  const cables = () => (g.window as { __qaCables?: { abiertos: Record<string, { avisa: unknown }> } }).__qaCables;
+  for (let i = 0; i < 200; i++) {
+    const abiertos = Object.values(cables()?.abiertos ?? {});
+    if (abiertos.length && abiertos.every((c) => c.avisa)) {
+      hacer(soloElSocket());
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 1));
+  }
+  throw new Error("el helper nunca se puso a esperar");
+}
+
+describe("preguntarPorElCable: mando un frame y espero SU respuesta, o el rechazo (#694)", () => {
+  beforeEach(() => {
+    guardado.window = g.window;
+    guardado.WebSocket = g.WebSocket;
+    SocketFalso.abiertos = [];
+    SocketFalso.abrir = true;
+    SocketFalso.contesta = null;
+    g.WebSocket = SocketFalso;
+    g.window = { __nefan: { servicios: () => ({ "game-gateway": "ws://banco-falso/" }) } };
+  });
+  afterEach(() => {
+    g.window = guardado.window;
+    g.WebSocket = guardado.WebSocket;
+  });
+
+  const LISTAR = { type: "list_sessions", requestId: "qa-t" };
+
+  it("devuelve el frame de respuesta ENTERO, manda el mensaje tal cual y cierra el cable", async () => {
+    const p = preguntarPorElCable(ctx, LISTAR, { respuesta: "sessions_listed" });
+    await cuandoEspere((ws) => ws.dice({ type: "sessions_listed", requestId: "qa-t", sessions: [{ session_id: "a" }] }));
+    assert.deepEqual(await p, { type: "sessions_listed", requestId: "qa-t", sessions: [{ session_id: "a" }] });
+    const ws = soloElSocket();
+    assert.deepEqual(ws.enviados.map((x) => JSON.parse(x)), [LISTAR]);
+    assert.equal(ws.url, "ws://banco-falso/");
+    assert.equal(ws.cerrado, true, "al tener la respuesta el cable tiene que cerrarse");
+  });
+
+  it("la respuesta que llega en el mismo tick del `send` también vale (no se pierde por llegar antes de esperar)", async () => {
+    SocketFalso.contesta = (m) => [{ type: "sessions_listed", requestId: m.requestId, sessions: [] }];
+    assert.deepEqual(await preguntarPorElCable(ctx, LISTAR, { respuesta: "sessions_listed" }), {
+      type: "sessions_listed",
+      requestId: "qa-t",
+      sessions: [],
+    });
+  });
+
+  it("casa por tipo Y por `requestId`: el mismo tipo con otro `requestId` y los demás frames no son la respuesta", async () => {
+    // El caso de un cable suscrito: un `session_started` difundido a otro.
+    const p = preguntarPorElCable(ctx, { type: "resume_session", sessionId: "s", requestId: "qa-mio" }, { respuesta: "session_started" });
+    await cuandoEspere((ws) => {
+      ws.dice({ type: "session_started", requestId: "qa-otro", ok: true });
+      ws.dice({ type: "narrative_status", phase: "ready", kind: "tile" });
+      ws.dice({ type: "state_update", tick: 3 });
+      ws.dice({ type: "session_started", requestId: "qa-mio", ok: false, error: "no vale" });
+    });
+    assert.deepEqual(await p, { type: "session_started", requestId: "qa-mio", ok: false, error: "no vale" });
+  });
+
+  it("el rechazo del intake (`protocolo`) LANZA en cuanto llega, nombrándolo, y no a los 60 s del techo", async () => {
+    const t0 = Date.now();
+    const p = preguntarPorElCable(ctx, { type: "request_tile", reason: "nope", requestId: "qa-n" }, { respuesta: "tile_ready", techoMs: 60_000 });
+    await cuandoEspere((ws) =>
+      ws.dice({ type: "narrative_status", phase: "error", kind: "protocolo", message: "El juego mandó un mensaje que el servidor no reconoce." }),
+    );
+    await assert.rejects(p, (e: Error) => {
+      assert.match(e.message, /`request_tile` \(qa-n\) esperando `tile_ready`/);
+      assert.match(e.message, /RECHAZÓ el frame \(protocolo\): El juego mandó un mensaje que el servidor no reconoce\./);
+      return true;
+    });
+    assert.ok(Date.now() - t0 < 1000, `tardó ${Date.now() - t0} ms: esperó al techo en vez de parar`);
+    assert.equal(soloElSocket().cerrado, true, "un rechazo no puede dejar el cable abierto");
+  });
+
+  it("un frame ILEGIBLE también para: podría ser la propia respuesta", async () => {
+    const p = preguntarPorElCable(ctx, LISTAR, { respuesta: "sessions_listed", techoMs: 60_000 });
+    await cuandoEspere((ws) => ws.dice("{ roto"));
+    await assert.rejects(p, /RECHAZÓ el frame \(ilegible\): .*\{ roto/);
+  });
+
+  it("un error de OTRO kind (difundido a un cable suscrito) NO para la espera, y la respuesta sigue valiendo", async () => {
+    const p = preguntarPorElCable(ctx, { type: "start_session", gameId: "g", requestId: "qa-s" }, { respuesta: "session_started", techoMs: 60_000 });
+    await cuandoEspere((ws) => {
+      ws.dice({ type: "narrative_status", phase: "error", kind: "tile", message: "no se pudo preparar el tile" });
+      ws.dice({ type: "session_started", requestId: "qa-s", ok: true });
+    });
+    assert.deepEqual(await p, { type: "session_started", requestId: "qa-s", ok: true });
+  });
+
+  it("con el techo agotado LANZA diciéndolo, y lista los errores de otros kind que sí llegaron", async () => {
+    const p = preguntarPorElCable(ctx, LISTAR, { respuesta: "sessions_listed", techoMs: 30 });
+    await cuandoEspere((ws) => ws.dice({ type: "narrative_status", phase: "error", kind: "scene", message: "otro lío" }));
+    await assert.rejects(p, (e: Error) => {
+      assert.match(e.message, /sin respuesta ni rechazo en 0\.03 s/);
+      assert.match(e.message, /otros errores: el bridge RECHAZÓ el frame \(scene\): otro lío/);
+      return true;
+    });
+  });
+
+  it("con el techo agotado y sin nada más, no inventa errores", async () => {
+    await assert.rejects(preguntarPorElCable(ctx, LISTAR, { respuesta: "sessions_listed", techoMs: 20 }), (e: Error) => {
+      assert.match(e.message, /sin respuesta ni rechazo en 0\.02 s$/);
+      return true;
+    });
+  });
+
+  it("si el bridge CIERRA el socket sin contestar, lanza diciéndolo (lo que antes hacía el `onclose → rej` de cada copia)", async () => {
+    const t0 = Date.now();
+    const p = preguntarPorElCable(ctx, LISTAR, { respuesta: "sessions_listed", techoMs: 60_000 });
+    await cuandoEspere((ws) => ws.cierraElBridge());
+    await assert.rejects(p, /`list_sessions` \(qa-t\) esperando `sessions_listed`: el bridge cerró el cable sin contestar$/);
+    assert.ok(Date.now() - t0 < 1000);
+  });
+
+  it("`url` sustituye a la del juego", async () => {
+    SocketFalso.contesta = (m) => [{ type: "sessions_listed", requestId: m.requestId, sessions: [] }];
+    await preguntarPorElCable(ctx, LISTAR, { respuesta: "sessions_listed", url: "ws://otro-bridge/" });
+    assert.equal(soloElSocket().url, "ws://otro-bridge/");
+  });
+
+  it("marca el socket como del banco (`__qaCable`), que es por donde un espía del juego lo reconoce", async () => {
+    SocketFalso.contesta = (m) => [{ type: "sessions_listed", requestId: m.requestId, sessions: [] }];
+    await preguntarPorElCable(ctx, LISTAR, { respuesta: "sessions_listed" });
+    assert.match(String((soloElSocket() as unknown as { __qaCable?: string }).__qaCable), /^cable-\d+$/);
+  });
+
+  it("una llamada mal hecha lanza ANTES de abrir nada: sin `respuesta`, o un mensaje sin `requestId`", async () => {
+    await assert.rejects(preguntarPorElCable(ctx, LISTAR), /`respuesta` es el TIPO del frame/);
+    await assert.rejects(preguntarPorElCable(ctx, LISTAR, { respuesta: "" }), /`respuesta` es el TIPO del frame/);
+    await assert.rejects(
+      preguntarPorElCable(ctx, { type: "list_sessions" }, { respuesta: "sessions_listed" }),
+      /necesita `requestId` para casar su `sessions_listed`/,
+    );
+    assert.deepEqual(SocketFalso.abiertos, [], "abrió un socket con una llamada que no podía casar nada");
+  });
+
+  it("`porElCable` NO cambia: sigue apuntando TODO error con su kind, y no guarda respuesta", async () => {
+    // El 60 y el 63 leen esto; el oyente es el mismo que el de arriba.
+    const { rechazos } = await porElCable(ctx, { type: "x" }, async () => {
+      soloElSocket().dice({ type: "narrative_status", phase: "error", kind: "tile", message: "t" });
+      soloElSocket().dice({ type: "narrative_status", phase: "error", kind: "protocolo", message: "p" });
+    });
+    assert.deepEqual(rechazos, [
+      { kind: "tile", message: "t" },
+      { kind: "protocolo", message: "p" },
+    ]);
   });
 });

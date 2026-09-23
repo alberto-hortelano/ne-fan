@@ -45,6 +45,18 @@
  *  que no se ataba al socket (`ws.onmessage = null` pasaba por oyente, y con él
  *  se saltaba el candado entero). Está arriba, en los sabotajes.
  *
+ *  ── #694 (tanda AQ, 2026-09-23) ────────────────────────────────────────────
+ *
+ *  El modo `una-respuesta` se RETIRÓ del zod (sus quince ocupantes pasan por
+ *  `preguntarPorElCable` de `qa/lib/cable.mjs`), así que los sabotajes que lo
+ *  declaraban declaran ahora `todo`, y hay uno nuevo: volver a declararlo pone
+ *  rojo el aserto del zod, y solo ése —el zod se afirma en su propio `it` para
+ *  que esto se pueda medir—. El otro candado de #694, «ningún guion abre su
+ *  propio socket», NO se sabotea aquí sobre el árbol: haría falta un `.mjs`
+ *  temporal en `guiones/`, y una batería que arrancase a la vez lo cogería por
+ *  guion. Lo mide el test con un censo inventado; aquí solo se exige que su
+ *  aserto siga llamándose así.
+ *
  *      node qa/run.mjs 152              # con el resto de la clase headless
  *      node qa/run.mjs --sin-navegador  # sin preset ni Chromium
  *
@@ -74,8 +86,10 @@ const TMP_REL = relative(RAIZ, TMP).split("\\").join("/");
 
 /** Los asertos del detector, por su nombre EXACTO: renombrado = «patrón
  *  obsoleto», no falso verde. */
+const A_ZOD = "el padrón pasa su zod: cada socket declara `todo` o `nada` con su motivo, y `una-respuesta` ya no existe";
+const A_VETO = "ningún guion abre su propio socket: la espera de una respuesta pasa por `qa/lib/cable.mjs`";
 const A_CUENTA = "cada socket del banco está declarado, con su cuenta EXACTA por fichero";
-const A_COHERENCIA = "la declaración es COHERENTE con el árbol: `nada` ⇔ cero oyentes, y los otros dos ⇒ al menos uno";
+const A_COHERENCIA = "la declaración es COHERENTE con el árbol: `nada` ⇔ cero oyentes, y `todo` ⇒ al menos uno";
 const A_COMPLEMENTO = "el complemento, DERIVADO: ningún socket del banco es hoy un dispara-y-olvida";
 
 /** La forma vieja del 60 y el 63: abre, manda y cierra en el mismo tick. */
@@ -108,10 +122,10 @@ const SABOTAJES = [
     [A_CUENTA, A_COMPLEMENTO],
   ],
   [
-    "el mismo, declarado `una-respuesta` (declarar «espera» sobre un socket mudo)",
+    "el mismo, declarado `todo` (declarar «escucha» sobre un socket mudo)",
     (p) => {
       writeFileSync(TMP, FORMA_VIEJA());
-      declara(p, TMP_REL, "una-respuesta", "un socket mudo declarado como si esperase una respuesta tipada");
+      declara(p, TMP_REL, "todo", "un socket mudo declarado como si recogiera todo lo que el bridge le contesta");
     },
     [A_COHERENCIA, A_COMPLEMENTO],
   ],
@@ -131,18 +145,26 @@ const SABOTAJES = [
     [A_CUENTA],
   ],
   [
-    "se declara un socket DE MÁS en `qa/lib/saves.mjs`",
+    "se declara un socket DE MÁS en `qa/lib/sesion.mjs`",
     (p) => {
-      const c = p.clientes.find((x) => x.fichero === "qa/lib/saves.mjs");
-      c.sockets.push({ escucha: "una-respuesta", porque: MOTIVO("una segunda declaración inventada para un socket que saves.mjs no abre") });
+      const c = p.clientes.find((x) => x.fichero === "qa/lib/sesion.mjs");
+      c.sockets.push({ escucha: "todo", porque: MOTIVO("una segunda declaración inventada para un socket que sesion.mjs ya no abre") });
     },
     [A_CUENTA],
   ],
   [
-    "la forma vieja + `ws.onmessage = null`, declarada `una-respuesta` (el oyente que no escucha)",
+    "`qa/lib/cable.mjs` vuelve a declararse `una-respuesta`, el modo que retiró #694",
+    (p) => {
+      const c = p.clientes.find((x) => x.fichero === "qa/lib/cable.mjs");
+      c.sockets[0].escucha = "una-respuesta";
+    },
+    [A_ZOD],
+  ],
+  [
+    "la forma vieja + `ws.onmessage = null`, declarada `todo` (el oyente que no escucha)",
     (p) => {
       writeFileSync(TMP, FORMA_VIEJA("ws.onmessage = null;"));
-      declara(p, TMP_REL, "una-respuesta", "la forma vieja con un onmessage puesto a null que no escucha nada y antes pasaba por oyente");
+      declara(p, TMP_REL, "todo", "la forma vieja con un onmessage puesto a null que no escucha nada y antes pasaba por oyente");
     },
     [A_COHERENCIA, A_COMPLEMENTO],
   ],
@@ -184,7 +206,7 @@ const AGUJEROS = [
           "",
         ].join("\n"),
       );
-      declara(p, TMP_REL, "una-respuesta", "un cliente correcto cuyo oyente lo cuelga un helper de al lado y que el detector toma por mudo");
+      declara(p, TMP_REL, "todo", "un cliente correcto cuyo oyente lo cuelga un helper de al lado y que el detector toma por mudo");
     },
     [A_COHERENCIA, A_COMPLEMENTO],
     "sale ROJO sobre un cliente que sí escucha; el mensaje ya no miente (dice «EN SU MISMA FUNCIÓN» y a dónde ir), pero el rojo sigue",
@@ -248,7 +270,7 @@ export default async function (ctx) {
     );
     if (base.rojos.length !== 0 || base.total <= 0) return;
 
-    const nombrados = [A_CUENTA, A_COHERENCIA, A_COMPLEMENTO];
+    const nombrados = [A_ZOD, A_VETO, A_CUENTA, A_COHERENCIA, A_COMPLEMENTO];
     const ausentes = nombrados.filter((n) => !base.salida.includes(n));
     ctx.expect(
       `los ${nombrados.length} asertos que este guion nombra siguen llamándose así`,

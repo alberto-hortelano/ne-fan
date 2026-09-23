@@ -11,6 +11,7 @@
  */
 import { esperarPartidaEnDisco } from "./saves.mjs";
 import { URLS } from "./stack.mjs";
+import { preguntarPorElCable } from "./cable.mjs";
 import { mensajeDeRegistroQueNuncaLlego } from "./esperas.mjs";
 import {
   MS_DEL_TILE,
@@ -314,33 +315,16 @@ export async function abrirSelectorDeMundos(ctx) {
  *  `delete_session` es su propia ruta (`bridge/router.ts`), la misma que usa
  *  la UI. */
 export async function borrarSaveComoOtroCliente(ctx, sessionId, wsUrl = null) {
-  const desenlace = await ctx.page.evaluate(
-    ([urlPedida, id]) =>
-      new Promise((res, rej) => {
-        // Sin URL explícita, la del juego: el gateway que la página está
-        // usando de verdad, con su `?bridge=` ya aplicado.
-        const url = urlPedida ?? window.__nefan.servicios()["game-gateway"];
-        const ws = new WebSocket(url);
-        let contestado = false;
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        // Un socket que se cierra sin contestar es un fallo, no una espera
-        // eterna: sin esto el guion se colgaría dentro del evaluate.
-        ws.onclose = () => {
-          if (!contestado) rej(new Error(`${url} se cerró sin contestar a delete_session`));
-        };
-        ws.onopen = () => ws.send(JSON.stringify({ type: "delete_session", sessionId: id, requestId: "qa-18" }));
-        ws.onmessage = (ev) => {
-          const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-          if (m.type !== "session_deleted") return;
-          contestado = true;
-          ws.close();
-          // El frame es una unión discriminada desde #365: `deleted`,
-          // `not_found` o `failed` CON motivo. Se devuelve entero para que el
-          // fallo llegue aquí con su causa en vez de como un `false` pelado.
-          res(m);
-        };
-      }),
-    [wsUrl, sessionId],
+  // Sin URL explícita, la del juego: el gateway que la página está usando de
+  // verdad, con su `?bridge=` ya aplicado. Un rechazo del intake o un socket
+  // que se cierra sin contestar lanzan nombrándolo (`preguntarPorElCable`,
+  // #694). El frame es una unión discriminada desde #365: `deleted`,
+  // `not_found` o `failed` CON motivo, y se lee entero para que el fallo
+  // llegue aquí con su causa en vez de como un `false` pelado.
+  const desenlace = await preguntarPorElCable(
+    ctx,
+    { type: "delete_session", sessionId, requestId: "qa-18" },
+    { respuesta: "session_deleted", url: wsUrl },
   );
   if (desenlace.outcome !== "deleted") {
     throw new Error(

@@ -45,6 +45,7 @@ import { join } from "node:path";
 import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { rutaDelSave } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
+import { preguntarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
 
@@ -124,28 +125,11 @@ const slice = async (id) => (await api("GET", `/plugins/${id}/inspect`)).body?.s
  *  la da el propio juego, con sus overrides de query — mismo patrón que el
  *  guion 46). Devuelve el `session_started`. */
 async function resumePorElCable(ctx, sessionId) {
-  return ctx.page.evaluate(
-    (sid) =>
-      new Promise((res, rej) => {
-        const url = window.__nefan.servicios()["game-gateway"];
-        const ws = new WebSocket(url);
-        let contestado = false;
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        ws.onclose = () => {
-          if (!contestado) rej(new Error(`${url} se cerró sin contestar a resume_session`));
-        };
-        ws.onopen = () =>
-          ws.send(JSON.stringify({ type: "resume_session", sessionId: sid, requestId: "qa-73" }));
-        ws.onmessage = (ev) => {
-          const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-          if (m.type !== "session_started" || m.requestId !== "qa-73") return;
-          contestado = true;
-          ws.close();
-          res({ ok: m.ok, error: m.error ?? "" });
-        };
-      }),
-    sessionId,
-  );
+  return preguntarPorElCable(
+    ctx,
+    { type: "resume_session", sessionId, requestId: "qa-73" },
+    { respuesta: "session_started" },
+  ).then((m) => ({ ok: m.ok, error: m.error ?? "" }));
 }
 
 /** Celda del tile en la que cae una posición de mundo. */

@@ -25,7 +25,8 @@
  *  el orden bueno no es una garantía: es una convención.
  *
  *  Por eso abrir y cerrar son PRIVADOS y solo se sale por `porElCable(ctx,
- *  mensaje, espera)`, que abre, manda, **espera lo que le digas** y cierra él.
+ *  mensaje, espera)`, que abre, manda, **espera lo que le digas** y cierra él,
+ *  o por `preguntarPorElCable`, que es lo mismo con la espera escrita dentro.
  *  No se puede cerrar antes de recoger porque no hay `cerrar` que llamar, y no
  *  se puede mandar sin esperar porque la espera es un argumento obligatorio.
  *  Lo que queda fuera —una `espera` que no espera nada— está declarado como
@@ -34,11 +35,37 @@
  *
  *  La forma: el socket se abre DESDE LA PÁGINA (la URL la da el propio juego,
  *  como en `saves.mjs`, así hereda su `?bridge=`), manda el frame y queda
- *  ABIERTO apuntando todo lo que el bridge le conteste a él mientras corre la
- *  espera. Ese socket no manda `subscribe`, así que no está en la lista de
- *  difusión del bridge y lo único que puede recibir es el unicast. Al acabar
- *  la espera —bien o mal— se cierra y se devuelven los rechazos, que
+ *  ABIERTO apuntando lo que el bridge le conteste mientras corre la espera. Al
+ *  acabar la espera —bien o mal— se cierra y se devuelven los rechazos, que
  *  `fraseDeRechazos` convierte en el texto que va dentro del ⊘ o del ✘.
+ *
+ *  QUÉ PUEDE LLEGARLE, y la primera versión de esta cabecera lo decía mal
+ *  («solo puede recibir unicast»). El socket no manda `subscribe`, pero el
+ *  bridge SUSCRIBE a quien le manda `start_session` o `resume_session`
+ *  (`bridge/handlers/session.ts`), así que un cable que lleve uno de esos dos
+ *  recibe también las difusiones de la partida, y entre ellas
+ *  `narrative_status/error` de otros `kind` (`tile`, `scene`…) que no son
+ *  suyos. Todos se APUNTAN con su `kind`; lo que distingue «el bridge rechazó
+ *  ESTE frame» es `kind:"protocolo"`, que solo sale del intake y solo por
+ *  unicast (`bridge/ws-server.ts`).
+ *
+ *  ── «MANDO UN FRAME Y ESPERO SU RESPUESTA» (#694) ──────────────────────────
+ *
+ *  Quince clientes del banco abrían su propio socket, mandaban un frame y
+ *  esperaban UN tipo de respuesta tirando lo demás por tipo. El rechazo del
+ *  intake les llegaba, no era el tipo que esperaban, el bridge no cerraba el
+ *  socket y el `evaluate` se colgaba hasta el presupuesto del guion: rojo sin
+ *  causa. `preguntarPorElCable(ctx, mensaje, { respuesta })` es esa espera
+ *  escrita UNA vez, sobre la misma puerta: DEVUELVE el frame `respuesta` con el
+ *  `requestId` del mensaje, y LANZA en cuanto el bridge rechaza el frame
+ *  (`protocolo`, o un frame ilegible), si el socket se cierra sin contestar, o
+ *  al agotar el techo — diciendo en cada caso cuál de las tres. La espera la
+ *  escribe el helper, así que el agujero de «una espera que no espera» no le
+ *  alcanza.
+ *
+ *  Los sockets de este módulo llevan `__qaCable` con su id: un guion que espía
+ *  `window.WebSocket` para contar lo que manda EL JUEGO (el 85) los reconoce
+ *  por ahí y no los mezcla con los del cliente.
  *
  *  Los slots son propios (`window.__qaCables`): no toca `__qaTileSocket` ni
  *  `__qaTileRechazos`, que son de `pedirYEsperarTile`.
@@ -52,26 +79,49 @@
  *  como `todo`. */
 
 /** Abre un socket de la página, manda `mensaje` y lo deja ABIERTO recogiendo lo
- *  que el bridge le conteste. PRIVADA: ver la cabecera. */
-async function abrirYMandar(ctx, mensaje) {
+ *  que el bridge le conteste. PRIVADA: ver la cabecera.
+ *
+ *  Con `respuesta` (`{ type, requestId }`) guarda además el PRIMER frame de ese
+ *  tipo con ese `requestId`, y avisa a quien espere (`avisa`) cada vez que pasa
+ *  algo que puede acabar la espera: un error, la respuesta o el cierre. Sin
+ *  ella es la puerta de siempre de `porElCable`. `url` sustituye a la del
+ *  juego (un guion que levanta su propio bridge). */
+async function abrirYMandar(ctx, mensaje, respuesta = null, url = null) {
   return ctx.page.evaluate(
-    (msg) =>
+    ([msg, esperada, urlPedida]) =>
       new Promise((res, rej) => {
-        const url = window.__nefan.servicios()["game-gateway"];
+        const url = urlPedida ?? window.__nefan.servicios()["game-gateway"];
         const cables = (window.__qaCables ??= { n: 0, abiertos: {} });
         const id = `cable-${++cables.n}`;
         const ws = new WebSocket(url);
+        // La marca con la que un espía de `window.WebSocket` sabe que este
+        // socket es del banco y no del juego (ver la cabecera).
+        ws.__qaCable = id;
         const rechazos = [];
-        cables.abiertos[id] = { ws, rechazos };
+        const cable = { ws, rechazos, respuesta: null, cerrado: false, avisa: null };
+        cables.abiertos[id] = cable;
         ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        // Lo que el bridge conteste A ESTE SOCKET. Solo puede ser unicast: este
-        // socket no manda `subscribe`, así que no está en `narrativeSubscribers`
-        // y no recibe difusiones.
+        ws.onclose = () => {
+          cable.cerrado = true;
+          cable.avisa?.();
+        };
+        // Lo que el bridge conteste A ESTE SOCKET: el unicast del intake y, si
+        // el frame suscribe (start/resume_session), también las difusiones.
         ws.onmessage = (ev) => {
           try {
             const m = JSON.parse(ev.data);
             if (m && m.type === "narrative_status" && m.phase === "error") {
               rechazos.push({ kind: m.kind ?? null, message: m.message ?? "sin mensaje" });
+            } else if (
+              esperada &&
+              cable.respuesta === null &&
+              m &&
+              m.type === esperada.type &&
+              m.requestId === esperada.requestId
+            ) {
+              cable.respuesta = m;
+            } else {
+              return;
             }
           } catch (e) {
             // Fail-loud: lo ilegible se APUNTA como rechazo, no se descarta —
@@ -79,13 +129,62 @@ async function abrirYMandar(ctx, mensaje) {
             // falta cuando la consecuencia no llega.
             rechazos.push({ kind: "ilegible", message: `${String(e)} — ${String(ev.data).slice(0, 200)}` });
           }
+          cable.avisa?.();
         };
         ws.onopen = () => {
           ws.send(JSON.stringify(msg));
           res(id);
         };
       }),
-    mensaje,
+    [mensaje, respuesta, url],
+  );
+}
+
+/** Los `kind` de rechazo que ACABAN la espera de `preguntarPorElCable`: el del
+ *  intake, que solo va por unicast al que mandó el frame, y lo ilegible, que
+ *  podría ser la propia respuesta. Los demás (`tile`, `scene`…) llegan por
+ *  difusión a un cable suscrito y no son de este frame: se apuntan y se dicen
+ *  si la espera expira, pero no la paran. */
+const RECHAZOS_QUE_PARAN = ["protocolo", "ilegible"];
+
+/** Espera, DENTRO de la página y sin sondear, a que el cable `id` tenga su
+ *  respuesta, un rechazo que para, se cierre, o pasen `techoMs`. Devuelve la
+ *  foto `{ motivo, respuesta, rechazos }`; decidir qué hacer con ella es de
+ *  `preguntarPorElCable`. PRIVADA. */
+async function esperarRespuesta(ctx, id, techoMs) {
+  return ctx.page.evaluate(
+    ([cableId, techo, paran]) =>
+      new Promise((res, rej) => {
+        const cable = window.__qaCables?.abiertos?.[cableId];
+        if (!cable) {
+          rej(new Error(`no hay ningún cable «${cableId}» abierto en esta página`));
+          return;
+        }
+        const foto = (motivo) => ({ motivo, respuesta: cable.respuesta, rechazos: cable.rechazos.slice() });
+        const mira = () => {
+          if (cable.rechazos.some((r) => paran.includes(r.kind))) return "rechazo";
+          if (cable.respuesta !== null) return "respuesta";
+          if (cable.cerrado) return "cerrado";
+          return null;
+        };
+        const ya = mira();
+        if (ya) {
+          res(foto(ya));
+          return;
+        }
+        const reloj = setTimeout(() => {
+          cable.avisa = null;
+          res(foto("techo"));
+        }, techo);
+        cable.avisa = () => {
+          const motivo = mira();
+          if (!motivo) return;
+          clearTimeout(reloj);
+          cable.avisa = null;
+          res(foto(motivo));
+        };
+      }),
+    [id, techoMs, RECHAZOS_QUE_PARAN],
   );
 }
 
@@ -120,13 +219,19 @@ async function cerrar(ctx, id) {
  *  añade: un `finally` que lanza encima de otra excepción la ENMASCARA, que es
  *  cómo se pierde el error que importaba. */
 export async function porElCable(ctx, mensaje, espera) {
+  return conElCable(ctx, mensaje, espera, null, null);
+}
+
+/** El cuerpo de `porElCable`, con la respuesta que guardar y la URL. PRIVADA:
+ *  lo que se exporta son las dos formas de usarlo. */
+async function conElCable(ctx, mensaje, espera, respuesta, url) {
   if (typeof espera !== "function") {
     throw new Error(
       "porElCable: la espera es OBLIGATORIA y es una función `(id) => …` — es lo que impide cerrar el " +
         `cable antes de que el rechazo del bridge tenga tiempo de llegar (#678), y llegó ${JSON.stringify(espera)}`,
     );
   }
-  const id = await abrirYMandar(ctx, mensaje);
+  const id = await abrirYMandar(ctx, mensaje, respuesta, url);
   let resultado;
   let fallo = null;
   try {
@@ -149,6 +254,53 @@ export async function porElCable(ctx, mensaje, espera) {
   }
   if (fallaElCierre) throw fallaElCierre;
   return { resultado, rechazos };
+}
+
+/** Manda `mensaje` y espera SU respuesta: el primer frame de tipo `respuesta`
+ *  con el mismo `requestId` que el mensaje. Lo DEVUELVE entero.
+ *
+ *  LANZA, y el mensaje dice cuál de las cuatro:
+ *   · el bridge RECHAZÓ el frame (`protocolo`, o un frame ilegible): en cuanto
+ *     llega, no al acabar el techo — es el ✘ inmediato de #694;
+ *   · el socket se cerró sin contestar (lo que antes hacía el `onclose → rej`
+ *     de cada copia);
+ *   · se agotó `techoMs` sin respuesta ni rechazo, con los errores de otros
+ *     `kind` que sí llegaron, que no paran la espera pero son pista;
+ *   · o la llamada está mal hecha: sin `respuesta`, o un mensaje sin
+ *     `requestId`. La correlación NO es opcional: un cable que manda
+ *     `start_session` recibe difusiones, y casar solo por tipo leería el
+ *     `session_started` de otro.
+ *
+ *  `url` sustituye a la del juego, para quien habla con un bridge propio. */
+export async function preguntarPorElCable(ctx, mensaje, { respuesta, techoMs = 30_000, url = null } = {}) {
+  if (typeof respuesta !== "string" || respuesta === "") {
+    throw new Error(
+      `preguntarPorElCable: \`respuesta\` es el TIPO del frame que se espera (\`"session_started"\`…) y llegó ${JSON.stringify(respuesta)}`,
+    );
+  }
+  const requestId = mensaje?.requestId;
+  if (typeof requestId !== "string" || requestId === "") {
+    throw new Error(
+      `preguntarPorElCable: el mensaje necesita \`requestId\` para casar su \`${respuesta}\` — sin él, un cable suscrito ` +
+        `leería la respuesta de otro. Llegó ${JSON.stringify(mensaje)?.slice(0, 200)}`,
+    );
+  }
+  const quien = `\`${mensaje.type}\` (${requestId}) esperando \`${respuesta}\``;
+  const { resultado: foto } = await conElCable(
+    ctx,
+    mensaje,
+    (id) => esperarRespuesta(ctx, id, techoMs),
+    { type: respuesta, requestId },
+    url,
+  );
+  if (foto.motivo === "respuesta") return foto.respuesta;
+  if (foto.motivo === "rechazo") {
+    const paran = foto.rechazos.filter((r) => RECHAZOS_QUE_PARAN.includes(r.kind));
+    throw new Error(`${quien}: ${fraseDeRechazos(paran)}`);
+  }
+  const vistos = foto.rechazos.length ? ` · de paso llegaron otros errores: ${fraseDeRechazos(foto.rechazos)}` : "";
+  if (foto.motivo === "cerrado") throw new Error(`${quien}: el bridge cerró el cable sin contestar${vistos}`);
+  throw new Error(`${quien}: sin respuesta ni rechazo en ${techoMs / 1000} s${vistos}`);
 }
 
 /** Los rechazos que lleva recogidos el cable `id`, SIN cerrarlo. Es la segunda

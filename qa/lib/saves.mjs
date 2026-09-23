@@ -26,6 +26,7 @@
  */
 import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { preguntarPorElCable } from "./cable.mjs";
 
 /** El `saves/` del disco efímero de ESTA corrida, o null si no hay ninguno
  *  observable (stack adoptado: su disco no lo conocemos).
@@ -74,28 +75,15 @@ export function rutaDelSave(sessionId) {
  *  socket DESDE LA PÁGINA, y la URL la da el propio juego
  *  (`__nefan.servicios()`): así hereda su `?bridge=` (el guion 20 levanta el
  *  suyo en otro puerto) sin que este fichero tenga que saberse ningún puerto,
- *  que era lo que hacía el `?? "ws://127.0.0.1:<bridge>"` de antes. */
+ *  que era lo que hacía el `?? "ws://127.0.0.1:<bridge>"` de antes. Va por
+ *  `preguntarPorElCable` (qa/lib/cable.mjs): un rechazo del intake lanza
+ *  nombrándolo en vez de colgar la espera (#694). */
 async function listarPorElBridge(ctx) {
-  return ctx.page.evaluate(
-    () =>
-      new Promise((res, rej) => {
-        const url = window.__nefan.servicios()["game-gateway"];
-        const ws = new WebSocket(url);
-        let contestado = false;
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        ws.onclose = () => {
-          if (!contestado) rej(new Error(`${url} se cerró sin contestar a list_sessions`));
-        };
-        ws.onopen = () => ws.send(JSON.stringify({ type: "list_sessions", requestId: "qa-saves" }));
-        ws.onmessage = (ev) => {
-          const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-          if (m.type !== "sessions_listed") return;
-          contestado = true;
-          ws.close();
-          res((m.sessions ?? []).map((s) => s.session_id));
-        };
-      }),
-  );
+  const m = await preguntarPorElCable(ctx, { type: "list_sessions", requestId: "qa-saves" }, { respuesta: "sessions_listed" });
+  // `error` presente = el bridge no pudo listar (storage ilegible) y manda la
+  // lista vacía: eso no es «no hay partidas», y se dice.
+  if (m.error) throw new Error(`el bridge no pudo listar las partidas: ${m.error}`);
+  return (m.sessions ?? []).map((s) => s.session_id);
 }
 
 /** Las partidas que existen AHORA MISMO: `{ fuente, ids }`. */

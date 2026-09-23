@@ -51,6 +51,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { nuevaPartida, comenzar, esperarTituloListo, esperarListaDeSaves, reanudar } from "../lib/sesion.mjs";
 import { acercarse } from "../lib/combate.mjs";
 import { esperarEnElSave, rutaDelSave } from "../lib/saves.mjs";
+import { preguntarPorElCable } from "../lib/cable.mjs";
 
 /** El motor falso es determinista POR TURNO de diálogo: saves vírgenes y el
  *  contador a cero. */
@@ -91,27 +92,11 @@ function nombreEnElLedger(ruta, id, name) {
 /** `resume_session` por el cable, tal cual lo manda el cliente; devuelve la
  *  respuesta `session_started` (calcado del guion 62). */
 function resumePorElCable(ctx, sessionId) {
-  return ctx.page.evaluate(
-    (sid) =>
-      new Promise((res, rej) => {
-        const url = window.__nefan.servicios()["game-gateway"];
-        const ws = new WebSocket(url);
-        let contestado = false;
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        ws.onclose = () => {
-          if (!contestado) rej(new Error(`${url} se cerró sin contestar a resume_session`));
-        };
-        ws.onopen = () => ws.send(JSON.stringify({ type: "resume_session", sessionId: sid, requestId: "qa-67" }));
-        ws.onmessage = (ev) => {
-          const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-          if (m.type !== "session_started" || m.requestId !== "qa-67") return;
-          contestado = true;
-          ws.close();
-          res({ ok: m.ok, error: m.error ?? "" });
-        };
-      }),
-    sessionId,
-  );
+  return preguntarPorElCable(
+    ctx,
+    { type: "resume_session", sessionId, requestId: "qa-67" },
+    { respuesta: "session_started" },
+  ).then((m) => ({ ok: m.ok, error: m.error ?? "" }));
 }
 
 /** Al título limpio (reload) y con la lista de saves puesta. */

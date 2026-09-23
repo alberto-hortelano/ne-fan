@@ -44,33 +44,19 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { comenzar, nuevaPartida, recargarAlTitulo } from "../lib/sesion.mjs";
 import { esperarPartidaEnDisco, rutaDelSave } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
+import { preguntarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
 
 /** Un `resume_session` crudo por el cable del bridge, DESDE la página (molde
  *  del guion 46). Devuelve el `session_started`. */
 async function resumePorElCable(ctx, sessionId, marca) {
-  return ctx.page.evaluate(
-    ([sid, req]) =>
-      new Promise((res, rej) => {
-        const url = window.__nefan.servicios()["game-gateway"];
-        const ws = new WebSocket(url);
-        let contestado = false;
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        ws.onclose = () => {
-          if (!contestado) rej(new Error(`${url} se cerró sin contestar a resume_session`));
-        };
-        ws.onopen = () => ws.send(JSON.stringify({ type: "resume_session", sessionId: sid, requestId: req }));
-        ws.onmessage = (ev) => {
-          const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-          if (m.type !== "session_started" || m.requestId !== req) return;
-          contestado = true;
-          ws.close();
-          res({ ok: m.ok, error: m.error ?? "" });
-        };
-      }),
-    [sessionId, marca],
+  const m = await preguntarPorElCable(
+    ctx,
+    { type: "resume_session", sessionId, requestId: marca },
+    { respuesta: "session_started" },
   );
+  return { ok: m.ok, error: m.error ?? "" };
 }
 
 /** Lo que el navegador guarda de los modos de gráficos. */
