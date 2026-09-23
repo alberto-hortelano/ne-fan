@@ -66,6 +66,7 @@ const PREFIJO = "zz-sabotaje-qa-704-";
  *  obsoleto», no falso verde. */
 const A_TOTALIDAD = "totalidad: cada recorrido recursivo fuera del dueño está en el padrón con su cifra exacta";
 const A_LEGALIZA = "el padrón no puede legalizar una copia del banco: ningún `recorre` nombra qa";
+const A_EXISTE = "un lector de otra carpeta no puede nombrar qa, y ninguna entrada apunta a un fichero que no existe";
 const A_LECTORES = "totalidad de lectores: cada lectura plana de un directorio está declarada, por su argumento";
 
 const FS = 'import { readdirSync } from "node:fs"; import { join } from "node:path";';
@@ -164,7 +165,8 @@ export function baja(d: string, cb: (f: string) => void): void { for (const e of
     null,
     "",
     (p) => p.recorridos.push({ fichero: "no-existe.test.ts", sitios: 1, recorre: "data/scenes", porque: "sabotaje del guion 163: entrada caducada" }),
-    [A_TOTALIDAD],
+    // Caduca por la totalidad Y porque el fichero no existe: los dos lo dicen.
+    [A_TOTALIDAD, A_EXISTE],
   ],
   [
     "la cifra de `sitios` de `afectado.test.ts` que no casa",
@@ -262,7 +264,7 @@ export default async function (ctx) {
     );
     if (base.rojos.length !== 0 || base.total <= 0) return;
 
-    const nombrados = [A_TOTALIDAD, A_LEGALIZA, A_LECTORES];
+    const nombrados = [A_TOTALIDAD, A_LEGALIZA, A_LECTORES, A_EXISTE];
     const ausentes = nombrados.filter((n) => !base.salida.includes(n));
     ctx.expect(
       `los ${nombrados.length} asertos que este guion nombra siguen llamándose así`,
