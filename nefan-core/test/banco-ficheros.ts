@@ -1,7 +1,12 @@
 /** EL barrido del banco: una sola respuesta a «qué ficheros hay bajo `qa/`»,
- *  compartida por el padrón de sondas de movimiento
- *  (`la-consulta-de-movimiento-tiene-dueno.test.ts`) y por la lista blanca de
- *  extensiones (`qa-lib-tiene-quien-lo-mire.test.ts`).
+ *  para TODO test que recorra `qa/` entero —el padrón de sondas de movimiento,
+ *  la lista blanca de extensiones, los padrones de esperas, del cortafuegos del
+ *  tile, de clientes WS y de saltos—. Desde #704 es el ÚNICO recorrido
+ *  recursivo de `qa/` bajo `test/`: `un-solo-barrido-del-banco.test.ts` pone
+ *  rojo cualquier otro que no esté declarado en
+ *  `data/contract/recorridos-de-test.json`, y ese padrón no admite uno que
+ *  recorra `qa/`. Quien lea UNA carpeta del banco sin bajar (lo que `qa/run.mjs`
+ *  ve en `guiones/`) no pasa por aquí: su sujeto es esa carpeta, no el banco.
  *
  *  Nació de la QA de #686 (M-1): cada test tenía su `readdirSync` con SALTOS
  *  DISTINTOS —el padrón saltaba `capturas/` y todo directorio con punto; la

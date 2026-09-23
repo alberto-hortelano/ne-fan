@@ -60,12 +60,13 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { z } from "zod";
 import { descDe, funcionesDelFichero, lecturasDelHook, presupuestoDe, verboDe } from "./lecturas-del-predicado.js";
+import { fuentesDelBanco } from "./banco-ficheros.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CONTRATO = join(repoRoot, "nefan-core", "data", "contract", "esperas-por-fotogramas.json");
@@ -285,15 +286,9 @@ export function esperasPorFotogramas(texto: string, fichero: string): EsperaDeFo
   return fuera;
 }
 
-/** TODO `qa/**.mjs`, la misma travesía que `esperas-que-conducen.test.ts`: un
+/** TODO `qa/**.mjs`, por EL barrido del banco (`banco-ficheros.ts`, #704): un
  *  candado que mira media carpeta cubre media casa. */
-const ficherosDelBanco = (dir = join(repoRoot, "qa")): string[] =>
-  readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    if (e.isDirectory()) {
-      return e.name === "node_modules" || e.name.startsWith(".") ? [] : ficherosDelBanco(join(dir, e.name));
-    }
-    return e.name.endsWith(".mjs") ? [join(dir, e.name).slice(repoRoot.length + 1)] : [];
-  });
+const ficherosDelBanco = (): string[] => fuentesDelBanco(join(repoRoot, "qa")).map((f) => `qa/${f}`);
 
 /** EL PARSE VA FUERA DEL `describe`, Y NO ES ESTILO (#611, medido al probar el
  *  candado en negativo). Con `node --test` v24.11.1, un `describe` cuyo cuerpo
