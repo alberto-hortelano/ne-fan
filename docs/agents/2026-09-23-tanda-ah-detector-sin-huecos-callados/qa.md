@@ -46,3 +46,23 @@ Busqué formas NUEVAS que escapen y, en la dirección insegura, ramas que el nue
 ## Veredicto
 
 **Apto con reservas.** Los cuatro criterios y el reencuadre se cumplen, cada negativo lo vi ponerse rojo, y el banco no cambia ni una línea. La reserva es H1: el patrón desestructurado en la firma es un residuo real en la dirección insegura que la prosa nueva de (12) acota a «OTRO módulo» y que un comentario del test da por seguido; o se cierra o se declara con su `it` antes de mergear, porque la tanda existe para que el padrón no prometa lo que no mide. H2-H6 son backlog.
+
+## Vuelta 2 (re-QA sobre `6977286f`)
+
+Re-verificados SOLO los hallazgos H1-H5 y una pasada adversarial nueva sobre lo que cambió (`evidenciaDeCtx`, `esContradiccion` espejo, `devuelveLaSonda` por todos sus `return`, la medida (1) por verbo suelto). Cifras de hoy, corridas por mí.
+
+| Hallazgo | Estado | Evidencia |
+|---|---|---|
+| H1 patrón `{ expect }` en la firma | ✅ cerrado | Arnés: mismo módulo, `qa/lib`, IIFE con patrón en la firma, patrón con rename `{ expect: e }` y anidado `{ ctx: { expect } }` → todos 1 rojo (antes 0). Negativo: `evidenciaDeCtx` devolviendo `null` para patrones → caen **(1) y (12)**. El comentario falso «en el MISMO módulo el parámetro se sigue aunque solo se desestructure» ya no existe; (12) acota el residuo a la clave calculada `c[v](…)` y su `it` lo mide (arnés: 0, como declara). |
+| H2 espejo de la contradicción | ✅ cerrado | `!(y && false)`, `!(y !== y)` en helper y en rama, y `ctx.expect("pre", !(x && false))` como precondición → 1 rojo cada uno. Negativo: `esContradiccion` sin la parte binaria → cae **N2**. |
+| H3 sonda de varias sentencias | ✅ cerrado | `() => { ctx.log("p"); return true; }` y `() => { if (x) return true; return !!true; }` → 1 rojo; `() => { if (x) return true; return x.ok; }` sigue observando. Negativo: sonda limitada a un único `return` → cae **N2**. |
+| H4 guarda honesta en helper | ✅ declarado y contado | En `_comment` (OBSERVADOR: «la guarda honesta DENTRO de un helper … no afirma siempre»), en la cabecera del detector y con aserto en `N1b` (1 rojo, mensaje que dice qué retirar si se cierra). Dirección segura. |
+| H5 siembra sin ámbitos excusa | ✅ declarado con cifra | (12) dice ahora que un objeto AJENO con `.expect` «no solo sobrecuenta saltos, también los EXCUSA» y el `it` (12) recorre TODO `fuentesDelBanco(QA)` con `evidenciaDeCtx` exigiendo `["ctx"]`: cualquier receptor o patrón con verbo que no sea `ctx` lo pone rojo. Mi censo independiente: **2010 receptores de `.expect/.expectEspera/.sinMedir/.sinMedirBloque` (llamados o leídos), todos `ctx`; 0 patrones con esos nombres** que no vengan de `ctx`. |
+
+**¿Reconocer el ctx por verbo excusa ramas que antes se detectaban?** En el banco, no: foto `main` → `6977286f` con y sin `{helpers:true}`: 219 (1 rojo) / 226 (5 rojos), cero líneas de diferencia. En sintético, sí, y solo por objetos o patrones AJENOS con nombre de verbo (`const { expect } = otro()`, `const e = t.expect`, un helper de lib con `const { expect } = harness()` llamado sin ctx: los tres excusan la rama). Los tres caen bajo la cifra del `it` (12), que hoy es 0. Un efecto de segundo orden de la misma raíz: un patrón ajeno con un verbo vuelca **todos** sus elementos en `sueltos`, y si uno de ellos se llama como una función local asertadora (`const { expect, comprobar } = cfg(); async function comprobar(c, y) {…}`), la llamada deja de resolverse y el salto que la deja detrás se pierde (arnés `V2-colision-fn-local` → 0; con `main`, 1). Mismo cortafuegos: la cifra de (12) lo pone rojo en cuanto exista un patrón así. Lo anoto para que la prosa no lo pierda; no bloquea.
+
+Además: `npm run verify` sobre `6977286f`: `tests 3267, pass 3267, fail 0`, exit 0; test del detector 42/42; negativo extra: la medida (1) sin la entrada por verbo suelto → cae **(1)**. Solo cambiaron los tres ficheros del plan; `git status` limpio tras los sabotajes.
+
+**Restos (triviales, sin ocupantes, backlog):** una sonda cuyo bloque no acaba en `return` (`() => { try { return true; } catch { return true; } }`) no se juzga (`devuelveLaSonda` → `null`) y cuenta como observador; y (12) mide patrones y receptores pero no dice en prosa el efecto de colisión de nombres de arriba.
+
+**Veredicto de la vuelta 2: APTO.** H1-H3 cerrados con negativo visto en rojo, H4-H5 declarados con cifra medida, el banco no cambia ni una línea, `verify` verde.
