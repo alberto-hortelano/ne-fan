@@ -1,0 +1,6 @@
+# Herramientas de desarrollo del ai_server: lo que `ai_server/lint.sh` exige.
+# Versión FIJADA a propósito (#709): la instala CI (job `ai-server`) y la del
+# `.venv` local tiene que ser la misma, o un verde local no dice nada del rojo
+# de CI. `lint.sh` compara la versión instalada con este pin y falla si no casa.
+# Subir el pin es subirlo aquí y en el `.venv` a la vez.
+ruff==0.15.20

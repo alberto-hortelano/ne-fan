@@ -456,7 +456,7 @@ preflight_tools() {
 preflight_services() {
     local missing=()
     if on ai_server || on remote-gen; then
-        [[ -d "$PROJECT_DIR/.venv" ]] || missing+=("Python venv missing — python -m venv .venv && source .venv/bin/activate && pip install -r ai_server/requirements.txt")
+        [[ -d "$PROJECT_DIR/.venv" ]] || missing+=("Python venv missing — python -m venv .venv && source .venv/bin/activate && pip install -r ai_server/requirements.txt -r ai_server/requirements-dev.txt")
     fi
     # replay-server también: importa `ws` desde nefan-core/node_modules.
     if on bridge || on asset-store || on replay-server; then
