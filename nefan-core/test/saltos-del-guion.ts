@@ -157,13 +157,13 @@ function esLiteralVerdadero(e: ts.Expression): boolean {
 }
 
 /** El 2.º argumento de un `expect` que no puede ponerse rojo, por su FORMA:
- *  un literal verdadero, `!<falso>`, `a || <tautología>`, `a && b` con los
- *  dos tautológicos, o `x === x`. Por su VALOR (una constante con nombre,
- *  `typeof`…) no se evalúa: punto (11) del padrón. */
+ *  un literal verdadero, `!<contradicción>` (`!false`, `!!true`), `a ||
+ *  <tautología>`, `a && b` con los dos tautológicos, o `x === x`. Por su VALOR
+ *  (una constante con nombre, `typeof`…) no se evalúa: punto (11) del padrón. */
 function esTautologia(arg: ts.Expression): boolean {
   const e = sinEnvoltorio(arg);
   if (esLiteralVerdadero(e)) return true;
-  if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.ExclamationToken) return esLiteralFalso(sinEnvoltorio(e.operand));
+  if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.ExclamationToken) return esContradiccion(e.operand);
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "Boolean" && e.arguments.length === 1)
     return esTautologia(e.arguments[0]);
   if (!ts.isBinaryExpression(e)) return false;
@@ -172,6 +172,36 @@ function esTautologia(arg: ts.Expression): boolean {
   if (op === ts.SyntaxKind.AmpersandAmpersandToken) return esTautologia(e.left) && esTautologia(e.right);
   const iguales = [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken];
   return iguales.includes(op) && condicionNormalizada(e.left) === condicionNormalizada(e.right);
+}
+
+/** Lo que siempre es falso por su forma: un literal falso o `!<tautología>`.
+ *  `!!x` no lo es (el guion 14 usa `!!c1`): solo `!!true` y sus parientes. */
+function esContradiccion(arg: ts.Expression): boolean {
+  const e = sinEnvoltorio(arg);
+  if (esLiteralFalso(e)) return true;
+  return ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.ExclamationToken && esTautologia(e.operand);
+}
+
+/** Lo que devuelve una sonda escrita en línea: el cuerpo de una flecha de
+ *  expresión, o el de un bloque con un único `return e`. Otra cosa → null. */
+function devuelveLaSonda(arg: ts.Expression): ts.Expression | null {
+  const f = sinEnvoltorio(arg);
+  if (!ts.isArrowFunction(f) && !ts.isFunctionExpression(f)) return null;
+  if (!ts.isBlock(f.body)) return f.body;
+  const [st] = f.body.statements;
+  return f.body.statements.length === 1 && ts.isReturnStatement(st) && st.expression ? st.expression : null;
+}
+
+/** `expectEspera(frase, debeOcurrir, sonda, …)` que no puede ponerse rojo: la
+ *  sonda (el TERCER argumento; el 2.º es la polaridad, qa/run.mjs) devuelve
+ *  una tautología y se espera que ocurra, o una contradicción y se espera que
+ *  no. Una polaridad que no es un literal no se evalúa: punto (11). */
+function esEsperaTautologica(n: ts.CallExpression): boolean {
+  const [, debe, sonda] = n.arguments;
+  const e = debe && sonda ? devuelveLaSonda(sonda) : null;
+  if (!e) return false;
+  if (debe.kind === ts.SyntaxKind.TrueKeyword) return esTautologia(e);
+  return debe.kind === ts.SyntaxKind.FalseKeyword && esContradiccion(e);
 }
 
 const lineaDe = (n: ts.Node): number => n.getSourceFile().getLineAndCharacterOfPosition(n.getStart()).line + 1;
@@ -211,6 +241,7 @@ const modulosPorLector = new WeakMap<Lector, Map<string, Modulo | Error>>();
 /** Afirmantes y asertadores ya juzgados. Por nodo: cada parseo da nodos nuevos. */
 const afirmantes = new WeakMap<ts.Node, Veredicto>();
 const asertadores = new WeakMap<ts.Node, boolean>();
+const afirmanSiempre = new WeakMap<ts.Node, boolean>();
 
 /** `ctx.v` / `ctx["v"]` / `c.v` sobre un alias → `v`. */
 function verboDeAcceso(m: Modulo, e: ts.Expression): string | null {
@@ -220,15 +251,54 @@ function verboDeAcceso(m: Modulo, e: ts.Expression): string | null {
   return null;
 }
 
-/** Los alias de `ctx` y los verbos sueltos, por punto fijo sobre las
- *  declaraciones del fichero. Sin ámbitos: un `c` ajeno SOBRECUENTA. */
+/** El receptor de `x.v(…)` / `x["v"](…)` con `v` un verbo que afirma o
+ *  declara: es un `ctx`, se llame como se llame (`let c; c = ctx`, `(c) => …`). */
+function receptorDeVerbo(x: ts.Node): string | null {
+  if (!ts.isCallExpression(x)) return null;
+  const c = x.expression;
+  const nombre = ts.isPropertyAccessExpression(c)
+    ? c.name.text
+    : ts.isElementAccessExpression(c) && ts.isStringLiteralLike(c.argumentExpression)
+      ? c.argumentExpression.text
+      : null;
+  if (nombre === null || !(AFIRMA.has(nombre) || DECLARA.has(nombre))) return null;
+  return ts.isIdentifier(c.expression) ? c.expression.text : null;
+}
+
+/** La función a la que se llama, si está a la vista: un IIFE
+ *  (`(async (c) => …)(ctx)`) o una función con nombre del propio fichero. */
+function llamadaLocal(m: Modulo, x: ts.CallExpression): ts.SignatureDeclaration | null {
+  const c = sinEnvoltorio(x.expression);
+  if (ts.isArrowFunction(c) || ts.isFunctionExpression(c)) return c;
+  return ts.isIdentifier(c) ? (m.fns.get(c.text) ?? null) : null;
+}
+
+/** Los alias de `ctx` y los verbos sueltos, por punto fijo: el receptor de un
+ *  verbo, las declaraciones del fichero y el PARÁMETRO que recibe un `ctx` en
+ *  una llamada a una función a la vista. Sin ámbitos: un `c` ajeno
+ *  SOBRECUENTA. */
 function aliasDeCtx(m: Modulo): void {
   const decls: ts.VariableDeclaration[] = [];
+  const llamadas: ts.CallExpression[] = [];
   recorre(m.sf, (x) => {
     if (ts.isVariableDeclaration(x) && x.initializer) decls.push(x);
+    if (ts.isCallExpression(x)) llamadas.push(x);
+    const r = receptorDeVerbo(x);
+    if (r) m.ctxs.add(r);
   });
   for (let cambio = true; cambio; ) {
     cambio = false;
+    for (const x of llamadas) {
+      const fn = llamadaLocal(m, x);
+      if (!fn) continue;
+      x.arguments.forEach((a, i) => {
+        const p = fn.parameters[i]?.name;
+        if (ts.isIdentifier(a) && m.ctxs.has(a.text) && p && ts.isIdentifier(p) && !m.ctxs.has(p.text)) {
+          m.ctxs.add(p.text);
+          cambio = true;
+        }
+      });
+    }
     for (const d of decls) {
       let ini = sinEnvoltorio(d.initializer!);
       // `ctx.expect.bind(ctx)` es `ctx.expect`.
@@ -355,18 +425,97 @@ function esAsertoLaxo(m: Modulo, n: ts.Node): boolean {
   return n.arguments.some((a) => ts.isIdentifier(a) && m.ctxs.has(a.text));
 }
 
-/** Para EXCUSAR un salto (la dirección que da menos): lo que de verdad
- *  observa. Un `expect` tautológico no (QA: `expect("no se pudo", true)`). */
-function esObservador(m: Modulo, n: ts.Node): boolean {
+/** Lo que observa POR SÍ MISMO, sin llamar a nadie: `throw`, un verbo que
+ *  declara, o un `expect`/`expectEspera` que no es tautológico (QA de AG:
+ *  `expect("no se pudo", true)`; #716: `!!true` y la sonda que devuelve lo
+ *  que se espera por su forma). */
+function observaPropio(m: Modulo, n: ts.Node): boolean {
   if (ts.isThrowStatement(n)) return true;
   const v = verbo(m, n);
   if (v && DECLARA.has(v)) return true;
-  if (v === "expectEspera") return true;
+  if (v === "expectEspera") return !esEsperaTautologica(n as ts.CallExpression);
   if (v === "expect") {
     const arg = (n as ts.CallExpression).arguments[1];
     return arg !== undefined && !esTautologia(arg);
   }
-  return llamaAsertador(m, n);
+  return false;
+}
+
+/** Para EXCUSAR un salto (la dirección que da menos): lo que de verdad
+ *  observa. La llamada a un helper cuenta solo si ese helper AFIRMA SIEMPRE;
+ *  que CONTENGA un aserto (`esAsertador`) es la vara del lado que detecta, y
+ *  para excusar deja pasar al que afirma `true` o afirma bajo un `if` (#716). */
+function esObservador(m: Modulo, n: ts.Node): boolean {
+  return observaPropio(m, n) || llamaAfirmaSiempre(m, n);
+}
+
+function llamaAfirmaSiempre(m: Modulo, n: ts.Node): boolean {
+  const f = llamadaResuelta(m, n);
+  return f !== null && !("error" in f) && afirmaSiempre(f.m, f.fn);
+}
+
+/** Un helper que, llamado, observa en TODO camino que no lance: en el tronco
+ *  de su cuerpo hay un observador antes del primer `return`. Un ciclo cuenta
+ *  como no. */
+function afirmaSiempre(m: Modulo, fn: ts.FunctionLikeDeclaration): boolean {
+  const hecho = afirmanSiempre.get(fn);
+  if (hecho !== undefined) return hecho;
+  afirmanSiempre.set(fn, false);
+  const cuerpo = fn.body;
+  const v = cuerpo === undefined ? false : ts.isBlock(cuerpo) ? secuenciaAfirma(m, cuerpo.statements) : enElTronco(m, cuerpo);
+  afirmanSiempre.set(fn, v);
+  return v;
+}
+
+/** Una lista de sentencias afirma si una afirma antes de la primera que
+ *  puede retornar. */
+function secuenciaAfirma(m: Modulo, sts: readonly ts.Statement[]): boolean {
+  for (const st of sts) {
+    if (sentenciaAfirma(m, st)) return true;
+    if (contiene(st, ts.isReturnStatement)) return false;
+  }
+  return false;
+}
+
+/** Un bloque recursa; un `if` afirma por su condición o si sus DOS ramas
+ *  afirman (el if/else honesto); un `try`, si su `finally` afirma o si lo
+ *  hacen el bloque y el `catch` que se traga lo que lance. Bucles, `switch` y
+ *  etiquetas no afirman: pueden no entrarse. */
+function sentenciaAfirma(m: Modulo, st: ts.Statement): boolean {
+  if (ts.isBlock(st)) return secuenciaAfirma(m, st.statements);
+  if (ts.isIfStatement(st))
+    return enElTronco(m, st.expression) || (st.elseStatement !== undefined && sentenciaAfirma(m, st.thenStatement) && sentenciaAfirma(m, st.elseStatement));
+  if (ts.isTryStatement(st)) {
+    if (st.finallyBlock && secuenciaAfirma(m, st.finallyBlock.statements)) return true;
+    return secuenciaAfirma(m, st.tryBlock.statements) && (!st.catchClause || secuenciaAfirma(m, st.catchClause.block.statements));
+  }
+  const simple = ts.isExpressionStatement(st) || ts.isVariableStatement(st) || ts.isReturnStatement(st) || ts.isThrowStatement(st);
+  return simple && enElTronco(m, st);
+}
+
+/** ¿Hay un observador en `raiz` que se evalúa siempre? Sin entrar en
+ *  funciones anidadas, ni en las ramas de un ternario, ni en el lado derecho
+ *  de `&&`/`||`/`??`, ni detrás de un `?.`. */
+function enElTronco(m: Modulo, raiz: ts.Node): boolean {
+  const CORTOCIRCUITO = new Set([
+    ts.SyntaxKind.AmpersandAmpersandToken,
+    ts.SyntaxKind.BarBarToken,
+    ts.SyntaxKind.QuestionQuestionToken,
+    ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+    ts.SyntaxKind.BarBarEqualsToken,
+    ts.SyntaxKind.QuestionQuestionEqualsToken,
+  ]);
+  let hay = false;
+  const baja = (n: ts.Node): void => {
+    if (hay || ts.isFunctionLike(n)) return;
+    if (esObservador(m, n)) hay = true;
+    else if (ts.isConditionalExpression(n)) baja(n.condition);
+    else if (ts.isBinaryExpression(n) && CORTOCIRCUITO.has(n.operatorToken.kind)) baja(n.left);
+    else if (ts.isOptionalChain(n)) baja(n.expression);
+    else ts.forEachChild(n, baja);
+  };
+  baja(raiz);
+  return hay;
 }
 
 const esExpectFalse = (m: Modulo, n: ts.Node): boolean =>
@@ -521,7 +670,7 @@ function observadosAntes(m: Modulo, si: ts.Node, fn: ts.FunctionLikeDeclaration)
       // Aquí solo el aserto PROPIO (el `.catch(e => ctx.expect(false…))`):
       // llamar a un asertador no dice nada del valor que devuelve, y para eso
       // está la regla del afirmante, justo debajo.
-      let v: Veredicto | null = contiene(d.initializer, (y) => esObservador(m, y) && !llamaAsertador(m, y), true)
+      let v: Veredicto | null = contiene(d.initializer, (y) => observaPropio(m, y), true)
         ? { ok: true, porque: `su inicializador afirma o declara (línea ${lineaDe(d)})` }
         : null;
       const ini = sinEnvoltorio(d.initializer);
