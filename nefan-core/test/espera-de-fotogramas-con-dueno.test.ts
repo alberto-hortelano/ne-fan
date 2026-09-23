@@ -288,7 +288,7 @@ export function esperasPorFotogramas(texto: string, fichero: string): EsperaDeFo
 
 /** TODO `qa/**.mjs`, por EL barrido del banco (`banco-ficheros.ts`, #704): un
  *  candado que mira media carpeta cubre media casa. */
-const ficherosDelBanco = (): string[] => fuentesDelBanco(join(repoRoot, "qa")).map((f) => `qa/${f}`);
+const mjsDelBanco = (): string[] => fuentesDelBanco(join(repoRoot, "qa")).map((f) => `qa/${f}`);
 
 /** EL PARSE VA FUERA DEL `describe`, Y NO ES ESTILO (#611, medido al probar el
  *  candado en negativo). Con `node --test` v24.11.1, un `describe` cuyo cuerpo
@@ -299,7 +299,7 @@ const ficherosDelBanco = (): string[] => fuentesDelBanco(join(repoRoot, "qa")).m
  *  `describe`. Fuera, el throw es de MÓDULO y da `fail 1` con salida 1.
  *  Reproducido en un fichero de tres líneas sin nada del repo. */
 const contrato = ContratoSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
-const encontradas = ficherosDelBanco().flatMap((f) =>
+const encontradas = mjsDelBanco().flatMap((f) =>
   esperasPorFotogramas(readFileSync(join(repoRoot, f), "utf8"), f),
 );
 

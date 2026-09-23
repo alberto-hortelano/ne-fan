@@ -286,11 +286,11 @@ export function pedirYEsperarTileConMsPropio(texto: string, fichero: string): { 
 /** TODO `qa/**.mjs`, por EL barrido del banco (`banco-ficheros.ts`, #704).
  *  `qa/run.mjs` entra: no define ninguno de estos verbos con ese nombre como
  *  llamada y, si algún día presupuestara un tile, tiene que verse. */
-const ficherosDelBanco = (): string[] => fuentesDelBanco(join(repoRoot, "qa")).map((f) => `qa/${f}`);
+const mjsDelBanco = (): string[] => fuentesDelBanco(join(repoRoot, "qa")).map((f) => `qa/${f}`);
 
 describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", () => {
   const contrato = EsperasDeTileSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
-  const ficheros = ficherosDelBanco();
+  const ficheros = mjsDelBanco();
   const fuente = new Map(ficheros.map((f) => [f, readFileSync(join(repoRoot, f), "utf8")]));
   const usos = ficheros.flatMap((f) => usosDeLaConstante(fuente.get(f)!, f));
   const claveDeEntrada = (e: { fichero: string; llamada: string; desc: string | null }): string =>

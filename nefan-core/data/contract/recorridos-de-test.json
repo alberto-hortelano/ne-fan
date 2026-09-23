@@ -1,0 +1,94 @@
+{
+  "_comment": "Padrón de los recorridos RECURSIVOS de directorios en nefan-core/test/ (#704). El único que puede recorrer qa/ entero es test/banco-ficheros.ts (EL barrido del banco: sigue enlaces, corta ciclos, salta node_modules/.tmp/capturas por nombre) y no se declara aquí. Todo otro recorrido recursivo de test/ va en `recorridos` con QUÉ recorre y por qué; ninguno puede decir `qa`, porque eso sería una segunda definición de «qué ficheros son el banco». `lectores_de_carpeta_de_qa` son los tests que leen UNA carpeta del banco SIN bajar: no se prohíben, porque su sujeto es lo que ve quien lee esa carpeta (qa/run.mjs, el job candados-headless, un import de qa/lib), no el banco entero. Lo sujeta test/un-solo-barrido-del-banco.test.ts.",
+  "_lo_que_esto_NO_sujeta": "Cada punto tiene un `it` «LÍMITE MEDIDO» con su cifra de hoy; si la cifra cambia, se retira o se reescribe el punto. (1) El lector sacado de un `import()` dinámico SIN destructurar (`const fs = await import(\"node:fs\"); fs.readdirSync(…)` o `(await import(\"node:fs\")).readdirSync(…)`): 0. El destructurado (`const { readdirSync } = await import(\"node:fs\")`, la forma de esperas-de-qa) sí se ve. (2) `recursive` pasado en una variable (`const o = { recursive: true }; readdirSync(d, o)`): 0. (3) La recursión MUTUA (a llama a b, b a a) y el recorrido con PILA o COLA (`while (pila.length)`): 0. (4) Los lectores de carpeta NO tienen totalidad: uno nuevo sin declarar pasa en verde; hoy hay 4 lectores planos sin declarar y ninguno lee qa/ (afectado, contract-fixtures, contract-terms, scene-schema). (5) El DESTINO no se resuelve: el detector no sabe a qué carpeta apunta un recorrido, así que una entrada con `recorre` mentiroso («data/scenes» apuntando a join(repoRoot, \"qa\")) pasa. Solo lo caza la revisión del padrón. (6) Solo se mira nefan-core/test/ (con sus subcarpetas): scripts/, labs/, src/ y qa/ quedan fuera.",
+  "recorridos": [
+    {
+      "fichero": "afectado.test.ts",
+      "sitios": 1,
+      "recorre": "nefan-core/data/scenes",
+      "porque": "toda fixture de escena tiene que seleccionar las baterías que la leen (#404); las fixtures pueden vivir en subcarpetas"
+    },
+    {
+      "fichero": "client-file-size.test.ts",
+      "sitios": 1,
+      "recorre": "nefan-html/src",
+      "porque": "el tope de tamaño se aplica a TODO .ts del cliente, a cualquier profundidad"
+    },
+    {
+      "fichero": "contract-terms.test.ts",
+      "sitios": 1,
+      "recorre": "nefan-core/src, nefan-core/bridge, nefan-core/data, narrative-mcp, ai_server y nefan-html/src",
+      "porque": "el corpus donde tiene que existir cada término snake_case de los prompts: todos los procesos, a cualquier profundidad"
+    },
+    {
+      "fichero": "scene-fixtures.test.ts",
+      "sitios": 1,
+      "recorre": "nefan-core/data/scenes",
+      "porque": "toda fixture del selector Room tiene que ser Format D válido, esté en la subcarpeta que esté"
+    },
+    {
+      "fichero": "sonda-de-qa.test.ts",
+      "sitios": 1,
+      "recorre": "nefan-html/src",
+      "porque": "afirma una AUSENCIA en todo el cliente: ningún módulo salvo main.ts alimenta el reloj de simulación"
+    },
+    {
+      "fichero": "un-numero-un-guion.test.ts",
+      "sitios": 1,
+      "recorre": "docs/agents",
+      "porque": "en docs/agents/** no vive nada ejecutable (#683), a cualquier profundidad"
+    },
+    {
+      "fichero": "un-solo-barrido-del-banco.test.ts",
+      "sitios": 1,
+      "recorre": "nefan-core/test",
+      "porque": "el propio candado: censa todo .ts de test/, fixtures incluidas, para buscar recorridos"
+    }
+  ],
+  "lectores_de_carpeta_de_qa": [
+    {
+      "fichero": "un-numero-un-guion.test.ts",
+      "carpetas": [
+        "qa/guiones"
+      ],
+      "porque": "un número, un guion: lo que qa/run.mjs ve con su readdirSync NO recursivo de guiones/ (#680); un guion en una subcarpeta no lo corre nadie"
+    },
+    {
+      "fichero": "las-anclas-de-los-candados.test.ts",
+      "carpetas": [
+        "qa/guiones"
+      ],
+      "porque": "las anclas apuntan a guiones por su nombre en guiones/, que es donde run.mjs los busca"
+    },
+    {
+      "fichero": "el-banco-declara-el-modo-de-gasto.test.ts",
+      "carpetas": [
+        "qa/guiones"
+      ],
+      "porque": "cada guion que run.mjs ejecuta declara su modo de gasto; lo que no corre run.mjs no gasta"
+    },
+    {
+      "fichero": "qa-lib-tiene-quien-lo-mire.test.ts",
+      "carpetas": [
+        "qa/lib"
+      ],
+      "porque": "todo módulo de qa/lib lo importa un test o está eximido: su sujeto son los módulos importables de esa carpeta"
+    },
+    {
+      "fichero": "candados-headless-totalidad.test.ts",
+      "carpetas": [
+        "qa",
+        "qa/lib"
+      ],
+      "porque": "los ejecutables de la raíz de qa/ y de qa/lib que el job candados-headless tiene que correr o eximir: lo que el job ve, no el banco entero"
+    },
+    {
+      "fichero": "esperas-de-qa.test.ts",
+      "carpetas": [
+        "qa/guiones",
+        "qa/lib"
+      ],
+      "porque": "los motivos escritos de ctx.absorbe/sinMedirBloque en guiones y lib pasan la criba; lee las dos carpetas por su nombre"
+    }
+  ]
+}

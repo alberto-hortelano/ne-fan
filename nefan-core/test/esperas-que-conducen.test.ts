@@ -311,7 +311,7 @@ export function esperasDeParedQueConducen(texto: string, fichero: string): Esper
  *  batería («0,5 m en 8.000 ms de pared»). Un candado que mira media carpeta
  *  cubre media casa. El barrido es EL del banco (`banco-ficheros.ts`, #704):
  *  aquí solo se filtra. */
-const ficherosDelBanco = (): string[] =>
+const mjsDelBanco = (): string[] =>
   fuentesDelBanco(join(repoRoot, "qa"))
     .map((f) => `qa/${f}`)
     // `qa/run.mjs` DEFINE `waitFor` y `holdUntil`: sus cuerpos no son sitios de
@@ -328,7 +328,7 @@ const ficherosDelBanco = (): string[] =>
 const contrato = EsperasQueConducenSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
 const clave = (e: { fichero: string; desc: string }): string => `${e.fichero} :: ${e.desc}`;
 const exentos = new Set(contrato.exentos.map(clave));
-const encontradas = ficherosDelBanco().flatMap((f) =>
+const encontradas = mjsDelBanco().flatMap((f) =>
   esperasDeParedQueConducen(readFileSync(join(repoRoot, f), "utf8"), f),
 );
 
