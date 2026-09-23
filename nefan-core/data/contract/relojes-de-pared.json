@@ -1,0 +1,36 @@
+{
+  "_comment": "Padrón de los RELOJES DE PARED que quedan vivos en los guiones del banco (#711, tanda AO, 2026-09-23). Un guion que mide el JUEGO —metros por segundo, cuánto mundo corre, cuánto dura algo dentro de la simulación— divide por el reloj de SIMULACIÓN (`window.__nefan.reloj().sim`), no por la pared: bajo carga la pared corre y el mundo no, y la medida se rompe sin que el juego haya cambiado. Es la cura del guion 93 (#679): su `medirVelocidad` mide Δpos/Δsim, y devolver el denominador al timestamp que `requestAnimationFrame` pasa a su callback solo lo vería el reproductor bajo carga (`qa/bajo-carga.mjs`, ~20 min a mano). Lo verifica `test/el-reloj-de-pared-tiene-padron.test.ts` con el detector de `test/relojes-de-pared.ts`: parsea cada `.mjs` bajo `qa/guiones/` (sacado del barrido único `test/banco-ficheros.ts`) con el árbol de TypeScript y cuenta las formas que leen la pared —`performance.now` y `Date.now` (toda referencia, con `window.`/`globalThis.`/`self.` delante o con corchetes), `new Date()` sin argumentos, `document.timeline.currentTime`, `process.hrtime`, y la LLAMADA a `requestAnimationFrame` (también `window.requestAnimationFrame`) cuyo callback declara un parámetro, escrito en línea o NOMBRADO por un identificador que se resuelve por ámbito léxico hasta su declaración (`const tick = (t) => …; requestAnimationFrame(tick)`, la regresión exacta del 93)—. Los comentarios y los strings no son nodos que lean un reloj (el 109 lo nombra en un comentario y cuenta 0), y los REEMPLAZOS de la función (`window.requestAnimationFrame = (cb) => …` en 133, `= () => 0` en 131/132) no son llamadas y cuentan 0. La cuenta por fichero es EXACTA: un reloj nuevo en un guion sin declarar es rojo, uno más en un guion declarado también, y uno retirado deja una entrada muerta que también es rojo. Declarar un reloj es contestar, al escribir el guion, «¿esto mide el juego contra la pared?».",
+  "_lo_que_esto_NO_sujeta": "Cada punto tiene un `it` «LÍMITE MEDIDO» en `el-reloj-de-pared-tiene-padron.test.ts` con su cifra de hoy; si la cifra cambia, se retira o se reescribe el punto. La lista no se presume cerrada. (1) SOLO se mira `qa/guiones/**`. `qa/lib/**` queda fuera: hoy 27 relojes en 6 ficheros (`cable`, `carga`, `puertos`, `saves`, `sesion`, `sonda`), y dos de ellos son `raf-param` de verdad en `carga.mjs` —las dos llamadas que arrancan y reprograman el `tic` con el que la carga sintética se cuelga del rAF como el game loop—. Si `medirVelocidad` se muda a un helper de `qa/lib`, este candado queda CIEGO para la regresión del 93. El resto de `qa/` (la raíz: `run.mjs`, `bajo-carga.mjs`, baterías y candados headless) tampoco se mira: hoy 59 relojes en 18 ficheros. (2) El ALIAS de la función: `const raf = requestAnimationFrame; raf((t) => …)` cuenta 0. Se ve `window.requestAnimationFrame(…)` (y `globalThis.`/`self.`); no se ve ningún otro nombre. (3) El callback que llega de FUERA del fichero o de la función: pasado por PARÁMETRO (`function medir(cb) { requestAnimationFrame(cb) }` con `medir((t) => …)`) o por import cuenta 0, porque el identificador no se resuelve a una declaración de este fichero; y el callback ASIGNADO después de declararse (`let tick; tick = (t) => …; requestAnimationFrame(tick)`) también, porque solo se resuelven `const/let/var x = <función>` y `function x(…)`. El callback NOMBRADO por declaración sí se ve: es la regresión del 93. (4) El alias del RELOJ: `const { now } = performance; now()` y `const p = performance; p.now()` cuentan 0. (5) Otros relojes de pared que no se nombran así: `event.timeStamp`, `performance.timeOrigin`, `Date()` llamada sin `new` (devuelve la fecha como texto) y un callback de rAF que lee `arguments[0]` sin declarar parámetro cuentan 0. (6) EL TRUEQUE dentro de un fichero declarado: la cuenta es por fichero, así que cambiar un reloj legítimo por uno que mide el juego contra la pared (quitar un `performance.now()` y meter un `requestAnimationFrame((t) => …)`) deja la cifra igual y sale VERDE. El candado ve un reloj más, no juzga para qué se usa cada uno: eso es el `porque`, que es prosa. (7) Lo que el barrido no recorre: `node_modules/`, `.tmp/` y `capturas/` (motivo en `test/banco-ficheros.ts`; medido en el punto (6) de `recorridos-de-test.json`). Un `.mjs` bajo `qa/guiones/capturas/` sería invisible.",
+  "declarados": [
+    {
+      "fichero": "qa/guiones/07-npc-clave-del-skin.mjs",
+      "relojes": 2,
+      "porque": "Sellan con `Date.now()` cada petición `/skin_sprite_sheet` que cruza el cable (con cuerpo y sin él), en el manejador `page.on(\"request\")` de Node. Ningún aserto lee ese `t`: el guion compara CLAVES de personaje entre el batch y la partida, y el reloj no mide nada del juego. Es un sello muerto, candidato a retirarse (anotado en la implementación de la tanda AO), no una medida contra la pared."
+    },
+    {
+      "fichero": "qa/guiones/10-fps-telegraph-etiquetas-y-niebla.mjs",
+      "relojes": 4,
+      "porque": "Los cuatro `performance.now()` del bucle de disipación de la niebla: el tope de 60 s de pared que corta la espera si el vecino no llega nunca, el instante de llegada y los milisegundos que se imprimen en el log. El criterio —que el velo pase por opacidades INTERMEDIAS— cuenta muestras y no cronometra, y el propio guion explica por qué: el fundido lo consume el delta del game loop, no la pared. La pared aquí es un presupuesto y un dato de log, no un denominador."
+    },
+    {
+      "fichero": "qa/guiones/131-el-reloj-de-sim-solo-cuenta-lo-que-el-mundo-simula.mjs",
+      "relojes": 2,
+      "porque": "El SUJETO del guion es la razón entre los dos relojes: `razonSimPared` abre una ventana de 6 s con `performance.now()` en la página (el mismo reloj con el que el `gameLoop` calcula su delta) y afirma cuánto sim corre en ella según el mundo se simule o no. Medir el reloj de sim contra la pared exige leer la pared; sustituirla por `reloj.sim` volvería el aserto tautológico."
+    },
+    {
+      "fichero": "qa/guiones/133-la-parada-falsa-bajo-carga-de-verdad.mjs",
+      "relojes": 3,
+      "porque": "Uno es el sello `t` de cada sondeo de la TRAZA, que solo sirve para imprimir cuántos milisegundos de pared duró (el aserto B cuenta sondeos sin mundo corrido, por `sim`). Los otros dos abren y cierran la ventana de `razonSimPared`, que mide cuánto mundo corre por segundo de MÁQUINA bajo carga: eso no se puede medir con el reloj del mundo, y es justo lo que el guion comprueba antes de confiar en su carga."
+    },
+    {
+      "fichero": "qa/guiones/157-el-tile-del-falso-llega-en-segundos.mjs",
+      "relojes": 2,
+      "porque": "Cronometran, en Node, cuánto tarda el motor FALSO en servir cada tile pedido (t0 y dt alrededor de `pedirYEsperarTile`) para sacar p50/p95/máximo. Lo medido es la latencia de un SERVICIO, que vive en tiempo de pared; el mundo no corre más ni menos por ello. Leerlo contra el reloj de sim mediría otra cosa."
+    },
+    {
+      "fichero": "qa/guiones/164-el-prevuelo-de-anclas-de-reparto-se-pone-rojo-con-solo-vigentes.mjs",
+      "relojes": 2,
+      "porque": "Miden en Node cuántos segundos tarda un SUBPROCESO (`reparto --solo-vigentes` por `spawnSync`) y solo lo imprimen en el log. El guion ni abre navegador ni mira el juego: no hay reloj de sim que leer, y la pared es la única medida posible del coste de una herramienta."
+    }
+  ]
+}

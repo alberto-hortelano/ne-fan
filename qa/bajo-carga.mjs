@@ -131,7 +131,6 @@ import {
   juzgaLaCarga,
   lineaDeMedida,
   opcionNumerica,
-  razonDeLaMedida,
   veredictoDelReproductor,
 } from "./lib/carga.mjs";
 
