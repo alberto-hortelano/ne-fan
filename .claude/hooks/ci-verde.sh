@@ -14,7 +14,8 @@
 # Una PR ABIERTA sin ningún check NO es «nada que esperar» (#709): GitHub no
 # lanza el workflow `pull_request` de una rama en conflicto
 # (`mergeable_state: dirty`), así que el CI no sale rojo, sale AUSENTE — y eso
-# se confundía con verde. Ahora bloquea. Negativo en
+# se confundía con verde. Ahora bloquea, y también bloquea una PR en conflicto
+# aunque sus checks (de un sha anterior) estén verdes. Negativo en
 # `nefan-core/test/hook-ci-verde.test.ts`.
 
 set -uo pipefail
@@ -46,10 +47,18 @@ pr=$(timeout 25 gh pr view --json state,mergeable,statusCheckRollup 2>/dev/null)
 checks=$(printf '%s' "$pr" | jq -c \
   '[(.statusCheckRollup // [])[] | {n: (.name // .context), s: (.status // "COMPLETED"), c: (.conclusion // .state // "")}]')
 
+# En conflicto bloquea AUNQUE los checks estén verdes: son de un sha anterior
+# al conflicto, y el workflow del merge con main no va a correr hasta rebasar.
+mergeable=$(printf '%s' "$pr" | jq -r '.mergeable // "?"')
+if [ "$mergeable" = "CONFLICTING" ]; then
+  echo "$sha $veces" >> "$estado"
+  motivo="La PR de \`$rama\` está EN CONFLICTO con main (mergeable: CONFLICTING). GitHub no lanza el workflow de una rama en conflicto, así que los checks que se vean son de antes y no valen. Haz rebase sobre main, resuelve, sube y espera al CI."
+  jq -cn --arg r "$motivo" '{decision:"block", reason:$r}'
+  exit 0
+fi
 if [ "$checks" = "[]" ]; then
   echo "$sha $veces" >> "$estado"
-  mergeable=$(printf '%s' "$pr" | jq -r '.mergeable // "?"')
-  motivo="La PR de \`$rama\` está abierta y NO tiene ningún check (mergeable: $mergeable). Ausente no es verde. Si mergeable es CONFLICTING, GitHub no lanza el workflow de una rama en conflicto: haz rebase sobre main, resuelve y sube. Si acabas de subir, espera a que aparezcan (\`gh pr checks\`)."
+  motivo="La PR de \`$rama\` está abierta y NO tiene ningún check (mergeable: $mergeable). Ausente no es verde. Si acabas de subir, espera a que aparezcan (\`gh pr checks\`); si no aparecen, mira si la rama está en conflicto con main."
   jq -cn --arg r "$motivo" '{decision:"block", reason:$r}'
   exit 0
 fi

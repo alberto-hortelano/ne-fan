@@ -245,7 +245,9 @@ jobs:
       # (`anthropic`) apuntado al stub `labs/narrative/fake-anthropic.ts` por
       # `ANTHROPIC_BASE_URL`: por eso este job instala lo que `ai-server` no
       # necesita. La clave de API es falsa; no hay proveedor al que llamar.
-      - run: pip install fastapi uvicorn anthropic httpx pillow numpy
+      # requirements-dev.txt: ruff con el pin, para el guion 162 (#709), que
+      # corre `ai_server/lint.sh` en negativo desde `qa/run.mjs --sin-navegador`.
+      - run: pip install -r ai_server/requirements-dev.txt fastapi uvicorn anthropic httpx pillow numpy
       # (2 s) #235: un NPC con `role` y `description` atraviesa ai_server por
       # HTTP y llega al wire del bridge con los dos campos; rojo si una de las
       # dos copias de `validate_scene_response` desaparece. Necesita python3 con

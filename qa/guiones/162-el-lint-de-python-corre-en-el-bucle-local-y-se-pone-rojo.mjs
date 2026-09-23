@@ -222,7 +222,10 @@ export default async function (ctx) {
 
     // ── 4 · Falla en voz alta, y nunca sale 0 sin haber corrido ruff ────────
     const limpia = copia(temporal, "limpia");
-    const ORDEN = /-m pip install -r ai_server\/requirements-dev\.txt/u;
+    // La orden va con la ruta ABSOLUTA del árbol que se lintó: relativa a la
+    // raíz daba «No such file» copiada desde nefan-core/ (hallazgo de QA).
+    const ordenExacta = `-m pip install -r "${join(limpia, "ai_server", "requirements-dev.txt")}"`;
+    const ORDEN = { test: (/** @type {string} */ out) => out.includes(ordenExacta) };
     const fallos = [
       {
         nombre: "sin ruff en el intérprete → rc≠0 con la orden exacta de instalación",

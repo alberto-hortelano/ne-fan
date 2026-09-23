@@ -136,6 +136,15 @@ describe("ci-verde.sh — el guardia del hook Stop", () => {
     assert.match(r.out, /sigue corriendo \(1 checks/);
   });
 
+  it("PR ABIERTA en CONFLICTO con los checks del sha viejo en verde → BLOQUEA (el verde es de antes del conflicto)", () => {
+    nuevoCommit();
+    const r = hook({ GH_FALSO_JSON: pr("OPEN", [OK, { ...OK, name: "ai-server" }], "CONFLICTING") });
+    assert.equal(r.code, 0);
+    assert.equal(decision(r.out), "block");
+    assert.match(r.out, /CONFLICTING/);
+    assert.match(r.out, /rebase/);
+  });
+
   it("PR ya mergeada o cerrada sin checks → nada que esperar", () => {
     nuevoCommit();
     assert.deepEqual(hook({ GH_FALSO_JSON: pr("MERGED", []) }), { code: 0, out: "" });
