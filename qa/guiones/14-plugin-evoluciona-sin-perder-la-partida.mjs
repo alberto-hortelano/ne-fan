@@ -189,6 +189,7 @@ export default async function (ctx) {
     `${altaArcas.status} ${JSON.stringify(altaArcas.body)}`,
   );
   const eco = { id: altaArcas.body?.id };
+  ctx.expect("el alta devuelve el id del sistema creado", Boolean(eco.id), JSON.stringify(altaArcas.body));
   if (!eco.id) return;
   // El manifest que el juego trae en disco: la v2 se construye SOBRE él, como
   // haría el motor (que lo tiene delante en `plugin_inspect`).

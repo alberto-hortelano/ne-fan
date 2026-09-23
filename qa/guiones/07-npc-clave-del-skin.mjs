@@ -113,6 +113,9 @@ export default async function (ctx) {
     `capturadas=${peticiones.length} emitidas=${corrida.issued.skins}`,
   );
   const batch = peticiones.map((p) => p.body);
+  // Ya se deduce de las dos de arriba y de `anunciados > 0`, pero la deducción
+  // no la ve nadie: el bloque 3 se salta con el batch vacío (#356).
+  ctx.expect("el batch pidió al menos un skin por el cable", batch.length > 0, `${batch.length} peticiones`);
   const corte = peticiones.length;
 
   // ── 2. Vía A: la partida ─────────────────────────────────────────────────

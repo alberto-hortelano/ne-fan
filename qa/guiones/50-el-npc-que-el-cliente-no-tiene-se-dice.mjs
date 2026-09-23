@@ -101,6 +101,7 @@ export default async function (ctx) {
   ctx.log(`saboteado ${nogala.id}: data.combat = {health:5} (sin max_health)`);
 
   const tarjeta = await ctx.page.$(`button[data-action="resume"][data-session-id="${partida.sessionId}"]`);
+  ctx.expect("el título ofrece REANUDAR la partida saboteada", Boolean(tarjeta), partida.sessionId);
   if (!tarjeta) return;
   await tarjeta.click();
   await ctx.waitFor("la escena vuelve", () => (window.__nefan.status().scene ? true : null), 120_000);

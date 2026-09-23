@@ -329,6 +329,7 @@ export default async function (ctx) {
     a.position = null; // JSON no sabe escribir NaN; esto es lo más parecido que un save corrupto puede traer
     return { a: nombreDe(a) };
   });
+  ctx.expect("precondición: el ledger sigue teniendo al tabernero y al bandido para vaciar una posición", Boolean(nulo), ruta);
   if (!nulo) return;
   // Aquí no vale `reanudar()` de la librería: un save que no vale no monta
   // escena nunca y el jugador se queda en el título con la salida real. Se

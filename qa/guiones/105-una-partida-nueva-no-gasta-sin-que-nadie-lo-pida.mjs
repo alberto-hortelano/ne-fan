@@ -51,10 +51,9 @@
  *  Cero créditos: preset `e2e-sin-creditos` del runner; el bloque B «paga» al
  *  motor falso.
  */
-import { readFileSync } from "node:fs";
 
 import { abrirSelectorDeMundos, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
-import { esperarPartidaEnDisco, rutaDelSave } from "../lib/saves.mjs";
+import { esperarEnElSave, esperarPartidaEnDisco } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
 
 export const aisla = ["saves", "fake-ai"];
@@ -96,13 +95,21 @@ function modoActivo(ctx, fila, atributo) {
   );
 }
 
-/** Los dos modos que el BRIDGE escribió en el save — lo que de verdad decide. */
-function modosDelSave(ctx, sessionId) {
-  const ruta = rutaDelSave(sessionId);
-  if (!ruta) return null;
-  const world = JSON.parse(readFileSync(ruta, "utf8")).world ?? {};
-  ctx.log(`save ${sessionId}: render_mode=${JSON.stringify(world.render_mode)} character_mode=${JSON.stringify(world.character_mode)}`);
-  return { render: world.render_mode, personajes: world.character_mode };
+/** Los dos modos que el BRIDGE escribió en el save — lo que de verdad decide.
+ *
+ *  Se ESPERA al fichero en vez de leerlo una vez: `esperarPartidaEnDisco`
+ *  vuelve en cuanto el bridge LISTA la partida, que puede ser antes de que el
+ *  `state.json` esté en el disco. El disco efímero lo garantiza el runner
+ *  (`aisla: ["saves"]`: sin él este guion ni se corre), así que un `null`
+ *  tras la espera no es el entorno sino un save que no se escribió — y eso se
+ *  AFIRMA, no se declara (QA de #356, M3: el `sinMedirBloque` de antes decía
+ *  «stack adoptado», que en el flujo real no puede pasar). */
+async function modosDelSave(ctx, sessionId) {
+  const world = await esperarEnElSave(sessionId, (save) => save.world ?? {});
+  if (world) {
+    ctx.log(`save ${sessionId}: render_mode=${JSON.stringify(world.render_mode)} character_mode=${JSON.stringify(world.character_mode)}`);
+  }
+  return world ? { render: world.render_mode, personajes: world.character_mode } : null;
 }
 
 export default async function (ctx) {
@@ -137,13 +144,9 @@ export default async function (ctx) {
   );
   ctx.expect("…ni pide un solo skin IA", dA.skins === 0, JSON.stringify(dA));
 
-  const saveA = modosDelSave(ctx, partidaA.sessionId);
-  if (!saveA) {
-    ctx.sinMedirBloque(
-      "sin disco efímero (stack adoptado con --url/--adoptar): no se puede leer el save, que es " +
-        "donde está escrito lo que decidió el bridge",
-    );
-  } else {
+  const saveA = await modosDelSave(ctx, partidaA.sessionId);
+  ctx.expect("el save de A está en el disco efímero de la corrida", Boolean(saveA), partidaA.sessionId);
+  if (saveA) {
     ctx.expect(
       "el SAVE lo confirma en las dos facetas: `vector` y `vector` (no solo la pantalla)",
       saveA.render === "vector" && saveA.personajes === "vector",
@@ -185,7 +188,8 @@ export default async function (ctx) {
     JSON.stringify(dB),
   );
 
-  const saveB = modosDelSave(ctx, partidaB.sessionId);
+  const saveB = await modosDelSave(ctx, partidaB.sessionId);
+  ctx.expect("el save de B está en el disco efímero de la corrida", Boolean(saveB), partidaB.sessionId);
   if (saveB) {
     ctx.expect(
       "y el save de B guarda `image` en las dos facetas",
