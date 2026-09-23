@@ -39,6 +39,14 @@
  *      node qa/contrato-candados-en-negativo.mjs
  *      node qa/contrato-candados-en-negativo.mjs python   # solo los que casen
  *
+ *  «Rojo» es el CÓDIGO DE SALIDA de la batería, no solo su contador de fallos
+ *  (#697): `node --test` v24 sale con 0 y `ℹ fail 0` cuando el cuerpo de un
+ *  `describe` lanza —un contrato roto leído ahí tumba la suite sin que nadie la
+ *  cuente—, así que las baterías TS corren con el reporter
+ *  `test/la-suite-que-falla-pone-rojo.ts` (el mismo de `npm test` y
+ *  `npm run coverage`) y el veredicto mira `status`. El invariante «suite que
+ *  lanza» lo canda: sin el reporter o sin mirar `status`, sale VERDE.
+ *
  *  Verde = todos los candados listados se ponen rojos al romperlos.
  *  Rojo   = hay un candado que no comprueba lo que dice comprobar; el nombre
  *           del invariante dice exactamente cuál.
@@ -65,6 +73,15 @@ const PY = join(raiz, "ai_server/narrative_schemas.py");
 // el rojo, restaurar— y entran en la comprobación byte a byte del final.
 const TOOL = join(CORE, "data/contract/tools/narrative_react.json");
 const FIXTURE_CARRO = join(CORE, "data/contract/fixtures/reaction/valid/spawn_object_footprint.json");
+// Los dos del MECANISMO de #697: un contrato leído en el cuerpo de un
+// `describe`. La fixture de `ground_plan` solo la lee `loadFixtures` en el
+// cuerpo del describe de `contract-fixtures.test.ts` —ningún `it` la toca—, así
+// que es la que DISCRIMINA: rota, sin el reporter, la batería sale `ℹ fail 0`
+// y EXIT 0 (medido el 2026-09-23: 87 tests pasan a 69 y nadie lo cuenta).
+// `generate_scene.json` lo leen además tres `it`: sale rojo con o sin el
+// arreglo, y está por ser el ejemplo del issue, no porque pruebe el mecanismo.
+const FIXTURE_SUELO = join(CORE, "data/contract/fixtures/ground_plan/valid/minimo.json");
+const TOOL_ESCENA = join(CORE, "data/contract/tools/generate_scene.json");
 // Los cinco del padrón de SONDAS DE MOVIMIENTO (#662). El contrato es
 // `data/contract/sondas-de-movimiento.json` y su espejo son los guiones del
 // banco, así que el sabotaje se hace donde vive cada mitad: cuatro guiones y el
@@ -265,6 +282,17 @@ const INVARIANTES = [
       '                "tono": {\n                  "type": "string"\n                },\n                "choices": {\n                  "type": "array",',
     ]],
   ],
+  // ── #697 · una suite que LANZA pone rojo (el mecanismo, no los sitios) ──
+  [
+    "suite que lanza · una fixture de contrato rota, leída solo por un helper en el cuerpo de un `describe`",
+    FIXTURE_SUELO, "ts:test/contract-fixtures.test.ts",
+    [['{\n  "description": "un camino mínimo', '{ roto\n  "description": "un camino mínimo']],
+  ],
+  [
+    "suite que lanza · `generate_scene.json` roto, leído en el cuerpo de un `describe` (el ejemplo del issue)",
+    TOOL_ESCENA, "ts:test/contract-prompts.test.ts",
+    [['{\n  "name": "generate_scene",', '{ roto\n  "name": "generate_scene",']],
+  ],
   // ── #662 · el padrón de sondas de movimiento, UNA NEGATIVA POR GRAFÍA ────
   // El issue existe porque el censo anterior (el bloque 1 del guion 145) era un
   // `match(/__nefan\.probeCollide/g)` y por eso nació CIEGO a dos de las tres
@@ -379,18 +407,24 @@ function corre(bateria) {
   const [modo, cual] = [bateria.slice(0, bateria.indexOf(":")), bateria.slice(bateria.indexOf(":") + 1)];
   const r =
     modo === "ts"
-      ? spawnSync("node", ["--import", "tsx", "--test", "--test-concurrency=1", cual],
+      ? spawnSync("node", ["--import", "tsx", "--test", "--test-concurrency=1",
+          "--test-reporter=./test/la-suite-que-falla-pone-rojo.ts", "--test-reporter-destination=stdout", cual],
           { cwd: CORE, encoding: "utf8", timeout: 300000 })
       : spawnSync("python3", ["-m", "unittest", cual],
           { cwd: raiz, encoding: "utf8", timeout: 300000 });
   const salida = `${r.stdout ?? ""}${r.stderr ?? ""}`;
   if (modo === "ts") {
     const m = /^ℹ fail (\d+)$/m.exec(salida);
-    return { fallos: m ? Number(m[1]) : -1, rotos: [...salida.matchAll(/✖ (.+?) \(/g)].map((x) => x[1]) };
+    return {
+      status: r.status,
+      fallos: m ? Number(m[1]) : -1,
+      rotos: [...salida.matchAll(/✖ (?:suite que falla: )?(.+?) \(/g)].map((x) => x[1]),
+    };
   }
   const m = /FAILED \(failures=(\d+)\)/.exec(salida);
   const ok = /\nOK\b/.test(salida);
   return {
+    status: r.status,
     fallos: m ? Number(m[1]) : ok ? 0 : -1,
     rotos: [...salida.matchAll(/FAIL: .*?fixture='([^']+)'/g)].map((x) => x[1]),
   };
@@ -399,7 +433,7 @@ function corre(bateria) {
 const filtro = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const casa = (n) => filtro.length === 0 || filtro.some((f) => n.toLowerCase().includes(f.toLowerCase()));
 
-const FICHEROS = [SCHEMA, PROMPT, SNAP, PY, TOOL, FIXTURE_CARRO, PADRON_SONDAS, G91, G118, G128, G133, CONDUCEN, FOTOGRAMAS, G05, G69];
+const FICHEROS = [SCHEMA, PROMPT, SNAP, PY, TOOL, FIXTURE_CARRO, FIXTURE_SUELO, TOOL_ESCENA, PADRON_SONDAS, G91, G118, G128, G133, CONDUCEN, FOTOGRAMAS, G05, G69];
 
 // Se niega a arrancar sobre un árbol sucio: si el fichero ya trae cambios, la
 // restauración de este guion los borraría. Es la única forma de que escribir
@@ -447,8 +481,11 @@ try {
   let baseMala = false;
   for (const b of baterias) {
     const r = corre(b);
-    console.log(`  ${r.fallos === 0 ? "verde ✔" : `${r.fallos} fallo(s) ✖`}  ${b}`);
-    if (r.fallos !== 0) baseMala = true;
+    // Sana solo si NO hay fallos Y sale con 0: una suite que lanza da
+    // `ℹ fail 0` con EXIT 1 (por el reporter), y esa base no es sana.
+    const sana = r.fallos === 0 && r.status === 0;
+    console.log(`  ${sana ? "verde ✔" : `${r.fallos} fallo(s), EXIT ${r.status} ✖`}  ${b}`);
+    if (!sana) baseMala = true;
   }
   if (baseMala) {
     console.error("\n✖ una batería ya está roja de partida — arregla eso antes de medir nada aquí");
@@ -469,7 +506,9 @@ try {
     }
     writeFileSync(fichero, parche.texto);
     const r = corre(bateria);
-    const rojo = r.fallos > 0;
+    // En TS manda también el código de salida (#697); en Python no cambia nada:
+    // allí un `errors=` sin `failures=` seguía sin contar como rojo, y así sigue.
+    const rojo = r.fallos > 0 || (bateria.startsWith("ts:") && r.status !== 0);
     if (!rojo) fallidos.push(nombre);
     console.log(`${rojo ? "🔴 rojo " : "🟢 VERDE"}  ${nombre}`);
     console.log(
