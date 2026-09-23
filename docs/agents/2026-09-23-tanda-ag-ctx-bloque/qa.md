@@ -130,3 +130,60 @@ CLAUDE.md promete «todo `return` temprano», y hay formas sencillas que escapan
 más importante es I1 (asertos de detrás en helpers), seguida de alias o destructuring de `ctx`,
 `switch`/`catch` con `return`, `expect(…, true)` y `return 0`. Antes de cerrar #356 hay que cerrarlas o
 declararlas con su medida.
+
+---
+
+# Vuelta 2 (commit `a3af3ee5`)
+
+Se re-verifica la corrección de I1, I2, M1 y M3. Reverti todos los sabotajes; `git status` quedó limpio antes de commitear este fichero.
+
+## Criterios → veredicto (vuelta 2)
+
+| Criterio | Veredicto | Evidencia |
+|---|---|---|
+| I1: asertos de detrás hechos en helpers | ✅ cerrado | Los casos X, X2 y X3 de `adv2.ts` salen ROJOS. En el banco real, 68:121 y 87:162 cuentan ahora como saltos, y los dos salen observados. Lo saboteé en disco en el 68 (`reanudar(…)` → `ctx.page.evaluate(() => 1)`): rojo con `68-…:121 [return] !vuelta — \`vuelta\` no se afirma antes…`, y después lo revertí |
+| I2: alias, `switch`, `catch`, `expect(true)`, `return 0` | ✅ cerrado o declarado | Salen ROJOS A, A2, B, F, F2, I, D, D2, D4, M y W. `const {expect: e} = ctx`, `expect(frase, 1)` y `expect(frase, "si")` también salen rojos |
+| Cierres que capturan `ctx` (M1) | ✅ | Inyecté en disco, en el 02, el cierre `const medirX = async () => { if (!pre) { ctx.log(); return; } ctx.expect(…) }`. Sale rojo por la medida del punto (1), y el mensaje ahora pide «lo primero es ARREGLARLO… solo si es honesto… se añade aquí». Revertido |
+| Trinquete `TECHO` | ✅ | Con 0 sale «solo encoge»; con 2 sale «baja TECHO a 1». Revertido |
+| La redacción de CLAUDE.md y `qa/README.md` frente al test | ✅ dicen lo que comprueba | La fila enumera las formas (`return` tras `if`/`case`/`catch` o sin guarda, y la rama muda, con asertos propios o de helpers) y dice «NO es “todo salto”», con remisión a los 12 puntos. El README dice «Parte de esto ya no es prosa… No ve todas las formas». Una sola imprecisión: la fila dice que no ve las funciones anidadas, pero en la práctica un salto nuevo en una de ellas SÍ se pone rojo por la medida del punto (1). Dice menos de lo que hace, que es la dirección buena |
+| `npm run verify` | ✅ | `EXIT 0` · `tests 3264 · pass 3264 · fail 0` (`scratchpad/verify-v2-ag-qa.log`) |
+| Navegador: 105 (con la «A» = el bloque `saveA`), 68 y 87 | ✅ | `node qa/run.mjs 105-una 68-la 87-el` → 3 ✔, EXIT 0. En el 105 se ejecutan los asertos nuevos: `✔ el save de A está en el disco efímero de la corrida`, `✔ el save de B está en el disco efímero…` y `✔ y el save de B guarda image…` (`scratchpad/bateria-v2-ag-qa.log`). M3 queda resuelto: el motivo falso («stack adoptado») desaparece y ahora es un `expect` tras esperar al `state.json` |
+
+## Arneses de la vuelta 1, uno por uno
+
+De 38 casos en `adv.ts` quedan 12 verdes, de 6 en `adv2.ts` queda 1, y de 7 en `adv3.ts` quedan 4. Coincide con lo que dice el ingeniero.
+
+| Verde restante | ¿Correcto o declarado Y medido? |
+|---|---|
+| C (el `throw` que se traga su `catch`), O (observador condicionado) | Declarados en (9), con su `it` |
+| D5 (`typeof`), S (`NO === false`) | Declarados en (11), la tautología por valor |
+| E (rancia), E2 (sombreado) | Declarados en (6) |
+| E3 | **Correcto**: es la misma `x` del módulo, y está afirmada |
+| G (callback de Promise) | Declarado en (1) |
+| J2 (afirmante que siempre devuelve `true`) | **Correcto**: esa rama no se puede tomar |
+| J4, W2 | Declarados en (7), el átomo por raíz |
+| K (`break <etiqueta>`) | Declarado en (4) |
+| R (`while` con `break`) | Declarado en (2) y (4) |
+| h1, h2, h6, h7 | **Correctos**: son moldes honestos |
+
+## Reglas nuevas: ¿abren falsos verdes o falsos rojos? (`scratchpad/adv4.ts`)
+
+**Falsos verdes nuevos, ninguno declarado.** Los cinco son menores: ninguno tiene ocupantes en el banco, y hay que escribirlos casi a propósito.
+- **N1.** Un **asertador tautológico o condicional** excusa la rama. `if (!pre) { await afirmaTrue(ctx); return; }`, con `afirmaTrue` que solo hace `ctx.expect("ok", true)`, sale observado. Lo mismo con un helper que afirma bajo `if (globalThis.DEBUG)`. `esTautologia` solo mira el `expect` directo, y el «cuerpo aserta» del asertador no aplica la tautología ni la condición. Es (9) y (11) un nivel más abajo, y ninguno de los dos lo dice.
+- **N2.** `ctx.expect("x", !!true)` y `ctx.expectEspera("x", () => true)` en la rama pasan por observadores. La forma `!!true` no la reconoce, y la tautología no se aplica al predicado de `expectEspera`. (11) dice «solo se reconoce por la forma», pero estas también son formas.
+- **N3.** Un IIFE con el parámetro renombrado, `await (async (c) => { … if (!pre) { c.log(); return; } c.expect(…) })(ctx)`, sale verde. Es una función anidada (1), pero la medida del punto (1) solo cuenta funciones que usan el identificador `ctx`, así que tampoco lo cuenta.
+
+**Falsos rojos.**
+- **N4.** Un guarda seguido solo de una llamada **no resuelta** que recibe `ctx` (por ejemplo `import * as lib`, luego `if (!hayMas) return; await lib.limpiar(ctx);`) se pone ROJO. Es la regla «llamada con ctx no resuelta cuenta como aserto». La dirección es la segura, y hoy hay **0** guiones con `import *`, así que no afecta al banco.
+- **Sin falso rojo:** un guarda seguido de un helper resuelto que no asierta, de `ctx.shot` o de un callback con `ctx` no cuenta como salto. Un `catch`/`case` con `sinMedir` o `expect(…, false)` sale observado. En el banco real siguen 217 saltos con 1 sin observar (el 73 del padrón).
+
+## Veredicto final
+
+**Apto.** La reserva de la vuelta 1 queda resuelta:
+- I1 e I2 están cerrados.
+- Lo que el detector no ve está declarado, en 12 puntos medidos.
+- CLAUDE.md y el README ya no prometen «todo salto».
+- M1 y M3 están corregidos, con el 105 afirmando en navegador.
+- `verify` sale verde y el trinquete aguanta.
+
+Lo que queda (N1 a N4) son formas que hay que escribir casi a propósito y que no tienen ocupantes en el banco. Se pueden resolver en una línea cada una, sin nueva vuelta: añadirlas a (9) y (11) de `_lo_que_esto_NO_sujeta` (asertador tautológico o condicional, `!!true`, `expectEspera(() => true)`), y a (1) el IIFE con `ctx` renombrado.
