@@ -5,7 +5,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { PoliticaDeAtlas } from "../src/scene/politica-de-atlas.js";
+import { PoliticaDeAtlas, modoDeCorrida } from "../src/scene/politica-de-atlas.js";
 
 describe("PoliticaDeAtlas · pedir/terminar: la misma clave no se paga dos veces", () => {
   it("la primera petición de una clave arranca; la segunda, con la primera en curso, se encola", () => {
@@ -95,5 +95,156 @@ describe("PoliticaDeAtlas · run y token: el tile nuevo supera al run en vuelo",
     assert.equal(p.enVuelo, true, "el run nuevo sigue en vuelo");
     p.finDeRun(nuevo);
     assert.equal(p.enVuelo, false);
+  });
+});
+
+describe("modoDeCorrida · solo el tile activo puede pintar (#714)", () => {
+  it("un tile que no es el activo solo restaura, TAMBIÉN con la generación encendida", () => {
+    // El mutante que importa: un vecino que pinta con Imagen IA encendida es
+    // gasto que la partida no pidió — ocho atlas por reanudar.
+    assert.deepEqual(modoDeCorrida({ activo: false, generacion: true }), { resolveOnly: true });
+    assert.deepEqual(modoDeCorrida({ activo: false, generacion: false }), { resolveOnly: true });
+  });
+
+  it("el activo pinta solo con la generación encendida", () => {
+    assert.deepEqual(modoDeCorrida({ activo: true, generacion: true }), { resolveOnly: false });
+    assert.deepEqual(modoDeCorrida({ activo: true, generacion: false }), { resolveOnly: true });
+  });
+});
+
+describe("PoliticaDeAtlas · carril de restauración: los vecinos recuperan su arte sin tocar al activo (#714)", () => {
+  it("una restauración encolada sale por siguienteRestauracion, vigente, y libera el turno al terminar", () => {
+    const p = new PoliticaDeAtlas();
+    assert.equal(p.siguienteRestauracion(), null, "sin nada encolado no hay nada que ejecutar");
+    p.encolarRestauracion("tile_1_0");
+    assert.equal(p.restaurando, 1);
+    const r = p.siguienteRestauracion();
+    assert.ok(r);
+    assert.equal(r.key, "tile_1_0");
+    assert.equal(p.restauracionVigente("tile_1_0", r.id), true);
+    assert.equal(p.restaurando, 1, "la que está en vuelo sigue contando");
+    p.finDeRestauracion(r);
+    assert.equal(p.restaurando, 0);
+    assert.equal(p.restauracionVigente("tile_1_0", r.id), false, "terminada, ya no manda");
+    assert.equal(p.siguienteRestauracion(), null);
+  });
+
+  it("van de una en una y en orden de llegada", () => {
+    const p = new PoliticaDeAtlas();
+    p.encolarRestauracion("a");
+    p.encolarRestauracion("b");
+    assert.equal(p.restaurando, 2);
+    const ra = p.siguienteRestauracion();
+    assert.equal(ra?.key, "a", "FIFO: el orden del resume es el que se ve");
+    assert.equal(p.siguienteRestauracion(), null, "con una en vuelo, la siguiente espera");
+    p.finDeRestauracion(ra!);
+    const rb = p.siguienteRestauracion();
+    assert.equal(rb?.key, "b");
+    assert.notEqual(rb?.id, ra?.id, "cada restauración lleva su propio id");
+  });
+
+  it("el activo va antes: con un ciclo de activo en curso no sale ninguna restauración", () => {
+    const p = new PoliticaDeAtlas();
+    p.encolarRestauracion("vecino");
+    p.pedir("activo");
+    assert.equal(p.siguienteRestauracion(), null, "el vecino no compite con el ciclo del jugador");
+    assert.equal(p.restaurando, 1, "espera, no se descarta");
+    p.terminar("activo");
+    assert.equal(p.siguienteRestauracion()?.key, "vecino", "el activo cedió el paso");
+  });
+
+  it("pedir la clave como activo invalida su restauración ENCOLADA", () => {
+    const p = new PoliticaDeAtlas();
+    p.encolarRestauracion("t");
+    p.pedir("t");
+    p.terminar("t");
+    assert.equal(p.restaurando, 0, "la restauración de un tile que ya es activo se va");
+    assert.equal(p.siguienteRestauracion(), null);
+  });
+
+  it("pedir la clave como activo invalida su restauración EN VUELO, que no aplica pero ocupa el turno hasta terminar", () => {
+    const p = new PoliticaDeAtlas();
+    p.encolarRestauracion("t");
+    p.encolarRestauracion("otro");
+    const r = p.siguienteRestauracion()!;
+    assert.equal(p.pedir("t"), "arranca", "el activo arranca YA: no espera a la restauración");
+    assert.equal(p.restauracionVigente("t", r.id), false, "la restauración vieja no aplica encima del activo");
+    p.terminar("t");
+    assert.equal(p.siguienteRestauracion(), null, "la invalidada sigue en el aire: una a la vez");
+    p.finDeRestauracion(r);
+    assert.equal(p.siguienteRestauracion()?.key, "otro");
+  });
+
+  it("encolar una clave con su ciclo de activo en curso no la encola", () => {
+    const p = new PoliticaDeAtlas();
+    p.pedir("t");
+    p.encolarRestauracion("t");
+    assert.equal(p.restaurando, 0, "el ciclo del activo ya la restaura");
+  });
+
+  it("re-encolar una clave la supera: id nuevo, al final de la cola, y la vieja deja de mandar", () => {
+    const p = new PoliticaDeAtlas();
+    p.encolarRestauracion("a");
+    p.encolarRestauracion("b");
+    const ra = p.siguienteRestauracion()!;
+    p.encolarRestauracion("a"); // el tile se re-añadió con la vieja en el aire
+    assert.equal(p.restauracionVigente("a", ra.id), false, "lo que estaba en el aire es de la escena anterior");
+    assert.equal(p.restaurando, 3, "b y la nueva de a esperan; la vieja sigue en vuelo");
+    p.finDeRestauracion(ra);
+    assert.equal(p.restaurando, 2, "el fin de la vieja no se lleva a la nueva");
+    const rb = p.siguienteRestauracion()!;
+    assert.equal(rb.key, "b", "la re-encolada va DETRÁS de b");
+    p.finDeRestauracion(rb);
+    const ra2 = p.siguienteRestauracion()!;
+    assert.equal(ra2.key, "a");
+    assert.notEqual(ra2.id, ra.id);
+    assert.equal(p.restauracionVigente("a", ra2.id), true);
+  });
+
+  it("re-encolar una clave que aún no salió la mueve al final sin duplicarla", () => {
+    const p = new PoliticaDeAtlas();
+    p.encolarRestauracion("a");
+    p.encolarRestauracion("b");
+    p.encolarRestauracion("a");
+    assert.equal(p.restaurando, 2, "a está una vez, no dos");
+    const r1 = p.siguienteRestauracion()!;
+    assert.equal(r1.key, "b");
+    p.finDeRestauracion(r1);
+    assert.equal(p.siguienteRestauracion()?.key, "a");
+  });
+
+  it("olvidarRestauraciones vacía la cola e invalida la que está en vuelo (cambio de partida)", () => {
+    const p = new PoliticaDeAtlas();
+    p.encolarRestauracion("tile_0_1");
+    p.encolarRestauracion("tile_1_1");
+    const r = p.siguienteRestauracion()!;
+    p.olvidarRestauraciones();
+    assert.equal(p.restauracionVigente("tile_0_1", r.id), false, "arte de la partida anterior: no aplica");
+    assert.equal(p.restaurando, 1, "solo queda la que va en el aire");
+    assert.equal(p.siguienteRestauracion(), null, "sigue ocupando el turno");
+    p.finDeRestauracion(r);
+    assert.equal(p.restaurando, 0);
+    assert.equal(p.siguienteRestauracion(), null, "la cola se vació");
+  });
+
+  it("restaurar no toca el token ni enVuelo del activo: su corrida sigue vigente", () => {
+    // #390 por otra puerta: si restaurar un vecino superase el run del activo,
+    // el tile del jugador se quedaría en clay al reanudar.
+    const p = new PoliticaDeAtlas();
+    const t = p.nuevoRun();
+    p.encolarRestauracion("vecino");
+    const r = p.siguienteRestauracion()!;
+    p.finDeRestauracion(r);
+    assert.equal(p.vigente(t), true);
+    assert.equal(p.enVuelo, true);
+  });
+
+  it("el fin de una restauración que no es la del turno no libera el turno", () => {
+    const p = new PoliticaDeAtlas();
+    p.encolarRestauracion("a");
+    const ra = p.siguienteRestauracion()!;
+    p.finDeRestauracion({ key: "a", id: ra.id + 100 });
+    assert.equal(p.restaurando, 1, "un id ajeno no apaga la que corre");
+    assert.equal(p.restauracionVigente("a", ra.id), true, "ni le quita la vigencia");
   });
 });
