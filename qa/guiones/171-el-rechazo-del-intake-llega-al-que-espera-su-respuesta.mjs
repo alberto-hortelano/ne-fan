@@ -34,9 +34,12 @@
  *
  *  EN NEGATIVO (medido al escribirlo, revertido — ver `implementacion.md` de la
  *  tanda AQ): quitando `"protocolo"` de `RECHAZOS_QUE_PARAN` en
- *  `qa/lib/cable.mjs`, B y C salen rojos por tiempo (≈10 s, «sin respuesta ni
- *  rechazo en 10 s · de paso llegaron otros errores: …(protocolo)…») y A sigue
- *  verde.
+ *  `qa/lib/cable.mjs`, B y C salen rojos en «lanza YA» (≈10 s, «sin respuesta
+ *  ni rechazo en 10 s») y en «nombrando el rechazo» —el `protocolo` sigue
+ *  saliendo, pero en la posdata «de paso llegaron otros errores», y eso es el
+ *  síntoma viejo con la causa al final; la primera versión de este aserto lo
+ *  daba por bueno y el negativo lo cazó—; «el helper LANZA» sigue verde (lanza,
+ *  por techo) y A también.
  *
  *  Cero créditos: `list_sessions` lee el disco del bridge y los otros dos
  *  frames mueren en el intake; nadie habla con el motor.
@@ -77,7 +80,10 @@ function afirmaRechazo(ctx, bloque, r, esperaba) {
   );
   ctx.expect(
     `${bloque} · nombrando el rechazo del intake (protocolo) y lo que se esperaba`,
-    r.error !== null && /RECHAZÓ el frame \(protocolo\)/.test(r.error) && r.error.includes(`esperando \`${esperaba}\``),
+    // El desenlace ES el rechazo, pegado a lo que se esperaba: no vale que
+    // «protocolo» salga en la lista de «de paso llegaron otros errores» de un
+    // techo agotado, que es el síntoma viejo con la causa en la posdata.
+    r.error !== null && r.error.includes(`esperando \`${esperaba}\`: el bridge RECHAZÓ el frame (protocolo)`),
     r.error ?? "",
   );
 }
