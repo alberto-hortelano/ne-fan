@@ -55,6 +55,9 @@ const PadronSchema = z
         .object({
           fichero: z.string().min(1),
           sitios: z.number().int().positive(),
+          /** Llamadas a un lector que viven en esos recorridos: una lectura
+           *  plana metida DENTRO de un recorrido declarado también se cuenta. */
+          lecturas: z.number().int().positive(),
           recorre: z.string().min(1),
           porque: z.string().min(10),
         })
@@ -113,7 +116,7 @@ interface Lectura {
 
 /** Los SITIOS donde este fuente recorre un directorio de forma recursiva, y
  *  las lecturas planas (las de un lector de carpeta). */
-function recorridos(texto: string, kind: ts.ScriptKind = ts.ScriptKind.TS): { recursivos: number[]; planas: Lectura[] } {
+function recorridos(texto: string, kind: ts.ScriptKind = ts.ScriptKind.TS): { recursivos: number[]; lecturas: number; planas: Lectura[] } {
   const sf = ts.createSourceFile("x.ts", texto, ts.ScriptTarget.Latest, true, kind);
   const linea = (n: ts.Node): number => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
   const todos: ts.Node[] = [];
@@ -214,6 +217,7 @@ function recorridos(texto: string, kind: ts.ScriptKind = ts.ScriptKind.TS): { re
 
   // ── Recursión: una función que lee y se nombra a sí misma ─────────────────
   const recursivos: number[] = [];
+  let lecturas = 0;
   const dentroDeRecursiva = new Set<ts.CallExpression>();
   const nombresDe = (f: ts.Node): string[] => {
     const out: string[] = [];
@@ -248,6 +252,7 @@ function recorridos(texto: string, kind: ts.ScriptKind = ts.ScriptKind.TS): { re
     v(f.body);
     if (lee.length > 0 && seNombra) {
       recursivos.push(linea(f));
+      lecturas += lee.length;
       for (const c of lee) dentroDeRecursiva.add(c);
     }
   }
@@ -256,10 +261,13 @@ function recorridos(texto: string, kind: ts.ScriptKind = ts.ScriptKind.TS): { re
   for (const c of llamadas) {
     const clase = claseDeLlamada(c);
     if (clase === null) continue;
-    if (clase === "glob" || c.arguments.slice(1).some((a) => pideRecursivo(a))) recursivos.push(linea(c));
+    if (clase === "glob" || c.arguments.slice(1).some((a) => pideRecursivo(a))) {
+      recursivos.push(linea(c));
+      if (!dentroDeRecursiva.has(c)) lecturas++;
+    }
     else if (!dentroDeRecursiva.has(c)) planas.push({ linea: linea(c), argumento: c.arguments[0]?.getText(sf) ?? "" });
   }
-  return { recursivos: recursivos.sort((a, b) => a - b), planas };
+  return { recursivos: recursivos.sort((a, b) => a - b), lecturas, planas };
 }
 
 const EXTENSIONES = new Map<string, ts.ScriptKind>([
@@ -295,15 +303,16 @@ describe("un solo barrido del banco (#704): nadie más recorre qa/ de forma recu
   });
 
   it("totalidad: cada recorrido recursivo fuera del dueño está en el padrón con su cifra exacta", () => {
-    const medidos = new Map(
-      [...censo].filter(([f, r]) => f !== DUENO && r.recursivos.length > 0).map(([f, r]) => [f, r.recursivos] as const),
-    );
-    const declarados = new Map(padron.recorridos.map((r) => [r.fichero, r.sitios]));
+    const medidos = new Map([...censo].filter(([f, r]) => f !== DUENO && r.recursivos.length > 0));
+    const declarados = new Map(padron.recorridos.map((r) => [r.fichero, r]));
     const fallos: string[] = [];
-    for (const [f, lineas] of medidos) {
+    for (const [f, { recursivos: lineas, lecturas }] of medidos) {
       const d = declarados.get(f);
       if (d === undefined) fallos.push(`${f}: recorre de forma recursiva (líneas ${lineas.join(", ")}) y no está en el padrón`);
-      else if (d !== lineas.length) fallos.push(`${f}: ${lineas.length} recorridos medidos (líneas ${lineas.join(", ")}) contra ${d} declarados`);
+      else if (d.sitios !== lineas.length) fallos.push(`${f}: ${lineas.length} recorridos medidos (líneas ${lineas.join(", ")}) contra ${d.sitios} declarados`);
+      else if (d.lecturas !== lecturas) {
+        fallos.push(`${f}: ${lecturas} llamadas a un lector dentro de sus recorridos (líneas ${lineas.join(", ")}) contra ${d.lecturas} declaradas`);
+      }
     }
     for (const [f] of declarados) if (!medidos.has(f)) fallos.push(`${f}: declarado y ya no recorre nada (o no existe): entrada caducada`);
     assert.deepEqual(
@@ -325,9 +334,15 @@ describe("un solo barrido del banco (#704): nadie más recorre qa/ de forma recu
     // otra carpeta, a `lectores_de_otras_carpetas`. Cada entrada nombra el
     // ARGUMENTO tal como está escrito: si el fichero deja de leer ESE argumento,
     // la entrada caduca aunque siga leyendo otra carpeta.
-    const declaradas = new Map<string, string>();
-    for (const l of padron.lectores_de_carpeta_de_qa) for (const a of l.argumentos) declaradas.set(`${l.fichero} :: ${a}`, "lectores_de_carpeta_de_qa");
-    for (const l of padron.lectores_de_otras_carpetas) for (const a of l.argumentos) declaradas.set(`${l.fichero} :: ${a}`, "lectores_de_otras_carpetas");
+    // Con CUENTA: un argumento declarado una vez es UNA lectura. Una lectura
+    // nueva con el mismo texto (`readdirSync(dir)` otra vez) no se cuela.
+    const declaradas = new Map<string, { lista: string; veces: number }>();
+    const declara = (fichero: string, a: string, lista: string): void => {
+      const k = `${fichero} :: ${a}`;
+      declaradas.set(k, { lista, veces: (declaradas.get(k)?.veces ?? 0) + 1 });
+    };
+    for (const l of padron.lectores_de_carpeta_de_qa) for (const a of l.argumentos) declara(l.fichero, a, "lectores_de_carpeta_de_qa");
+    for (const l of padron.lectores_de_otras_carpetas) for (const a of l.argumentos) declara(l.fichero, a, "lectores_de_otras_carpetas");
     const medidas = new Map<string, number[]>();
     for (const [f, r] of censo) {
       if (f === DUENO) continue;
@@ -335,9 +350,13 @@ describe("un solo barrido del banco (#704): nadie más recorre qa/ de forma recu
     }
     const fallos: string[] = [];
     for (const [clave, lineas] of medidas) {
-      if (!declaradas.has(clave)) fallos.push(`${clave} (líneas ${lineas.join(", ")}): lee un directorio y no está declarada`);
+      const d = declaradas.get(clave);
+      if (!d) fallos.push(`${clave} (líneas ${lineas.join(", ")}): lee un directorio y no está declarada`);
+      else if (d.veces !== lineas.length) {
+        fallos.push(`${clave}: ${lineas.length} lecturas (líneas ${lineas.join(", ")}) contra ${d.veces} declaradas en ${d.lista}: repite el argumento una vez por lectura`);
+      }
     }
-    for (const [clave, lista] of declaradas) if (!medidas.has(clave)) fallos.push(`${clave}: declarada en ${lista} y ya no se lee así: entrada caducada`);
+    for (const [clave, { lista }] of declaradas) if (!medidas.has(clave)) fallos.push(`${clave}: declarada en ${lista} y ya no se lee así: entrada caducada`);
     assert.deepEqual(
       fallos,
       [],
@@ -383,7 +402,15 @@ describe("un solo barrido del banco (#704): nadie más recorre qa/ de forma recu
     if (e.isDirectory()) return e.name.startsWith(".") ? [] : ficherosDelBanco(join(dir, e.name));
     return e.name.endsWith(".mjs") ? [join(dir, e.name)] : [];
   });`;
-    assert.deepEqual(recorridos(viejo), { recursivos: [2], planas: [] });
+    assert.deepEqual(recorridos(viejo), { recursivos: [2], lecturas: 1, planas: [] });
+  });
+
+  it("una lectura plana DENTRO de un recorrido suma a sus `lecturas` (V2-1 b)", () => {
+    const dos = `${FS}function escenasDe(d: string): string[] {
+  readdirSync(join(repoRoot, "qa"));
+  return readdirSync(d).flatMap((e) => escenasDe(e));
+}`;
+    assert.deepEqual(recorridos(dos), { recursivos: [2], lecturas: 2, planas: [] });
   });
 
   it("ve la función declarada que se llama a sí misma (la que tenía helpers-del-banco.ts)", () => {
@@ -458,10 +485,12 @@ export function baja(d: string): void { const dir = opendirSync(d); let e; while
   it("un lector de carpeta NO es un recorrido, lleva su argumento, y un readdirSync ajeno a node:fs no cuenta", () => {
     assert.deepEqual(recorridos(`${FS}const g = readdirSync(GUIONES).filter((f) => f.endsWith(".mjs"));`), {
       recursivos: [],
+      lecturas: 0,
       planas: [{ linea: 2, argumento: "GUIONES" }],
     });
     assert.deepEqual(recorridos(`import { readdirSync } from "./otro.js";\nreaddirSync(QA, { recursive: true });`), {
       recursivos: [],
+      lecturas: 0,
       planas: [],
     });
   });
@@ -473,15 +502,21 @@ export function baja(d: string): void { const dir = opendirSync(d); let e; while
 
   // ── LÍMITES MEDIDOS: cada punto de `_lo_que_esto_NO_sujeta` ────────────────
 
-  it("LÍMITE MEDIDO (1): lo que no es una llamada a un lector de fs no se ve (find por shell, corchetes, lector como valor)", () => {
+  it("LÍMITE MEDIDO (1): lo que no es una llamada RECONOCIBLE a un lector de fs no se ve (shell, corchetes, valor, y cinco formas de llegar a node:fs)", () => {
     const invisibles = [
       `import { execSync } from "node:child_process";\nexecSync("find qa -name '*.mjs'");`,
       `import * as fs from "node:fs";\nfs["readdirSync"](QA, { recursive: true });`,
       `${FS}const aplica = (f: typeof readdirSync) => f(QA, { recursive: true });\naplica(readdirSync);`,
+      // QA vuelta 2 (V2-2): formas de LLEGAR a node:fs que no se persiguen.
+      `import { readdirSync } from "./helper-que-reexporta.js";\nreaddirSync(QA, { recursive: true });`,
+      `import("node:fs").then((fs) => fs.readdirSync(QA, { recursive: true }));`,
+      "const fs = await import(`node:fs`);\nfs.readdirSync(QA, { recursive: true });",
+      `process.getBuiltinModule("node:fs").readdirSync(QA, { recursive: true });`,
+      `import fs = require("node:fs");\nfs.readdirSync(QA, { recursive: true });`,
     ];
     assert.deepEqual(
       invisibles.map((c) => recorridos(c)),
-      invisibles.map(() => ({ recursivos: [], planas: [] })),
+      invisibles.map(() => ({ recursivos: [], lecturas: 0, planas: [] })),
     );
   });
 
@@ -503,8 +538,8 @@ export function baja(d: string): void { const dir = opendirSync(d); let e; while
 function b(d) { a(d); }`;
     const pila = `${FS}const pila = [QA];
 while (pila.length) for (const e of readdirSync(pila.pop(), { withFileTypes: true })) if (e.isDirectory()) pila.push(e.name);`;
-    assert.deepEqual(recorridos(mutua), { recursivos: [], planas: [{ linea: 2, argumento: "d" }] });
-    assert.deepEqual(recorridos(pila), { recursivos: [], planas: [{ linea: 3, argumento: "pila.pop()" }] });
+    assert.deepEqual(recorridos(mutua), { recursivos: [], lecturas: 0, planas: [{ linea: 2, argumento: "d" }] });
+    assert.deepEqual(recorridos(pila), { recursivos: [], lecturas: 0, planas: [{ linea: 3, argumento: "pila.pop()" }] });
   });
 
   it("LÍMITE MEDIDO (4): el destino no se resuelve; un `recorre` mentiroso pasa, y un argumento se casa por su TEXTO", () => {

@@ -28,8 +28,12 @@
  *  Lo que queda son los puntos (1)-(3) de `_lo_que_esto_NO_sujeta`:
  *
  *   · **INVISIBLES DEL TODO** (cero rojos, punto 1): lo que no es una llamada
- *     a un lector de `node:fs` — un `find` por shell, `fs["readdirSync"]` y
- *     el lector pasado como valor a otra función.
+ *     RECONOCIBLE a un lector de `node:fs` — un `find` por shell,
+ *     `fs["readdirSync"]`, el lector pasado como valor a otra función, y cinco
+ *     formas de llegar a `node:fs` que la QA de la vuelta 2 decidió declarar
+ *     en vez de perseguir (re-export desde un helper, `import().then`,
+ *     especificador en plantilla, `process.getBuiltinModule`, `import x =
+ *     require`).
  *   · **ROJO POR LA TOTALIDAD DE LECTORES** (puntos 2 y 3): recorridos que el
  *     detector NO ve como tales —recursión mutua, pila, `recursive` que llega
  *     por parámetro, por import o por `let` reasignado— y salen como lectura
@@ -110,6 +114,12 @@ const INVISIBLES = [
   ["`execSync(\"find qa -name *.mjs\")`", "child-process.ts", 'import { execSync } from "node:child_process"; export const a = execSync("find qa -name *.mjs").toString().split("\\n");\n'],
   ["el lector con corchetes (`fs[\"readdirSync\"]`)", "corchetes.ts", 'import * as fs from "node:fs"; export const a = fs["readdirSync"]("qa", { recursive: true });\n'],
   ["el lector pasado como VALOR a otra función", "como-valor.ts", RECURSIVO('const aplica = (f: typeof readdirSync) => f("qa", { recursive: true }); export const a = aplica(readdirSync);')],
+  // QA vuelta 2 (V2-2): formas de LLEGAR a node:fs que no se persiguen.
+  ["el re-export desde un helper de test/", "reexport.ts", 'import { readdirSync } from "./zz-helper-que-reexporta.js"; export const a = readdirSync("qa", { recursive: true });\n'],
+  ["`import(\"node:fs\").then(…)`", "import-then.ts", 'export const a = import("node:fs").then((fs) => fs.readdirSync("qa", { recursive: true }));\n'],
+  ["el especificador en plantilla (`import(`node:fs`)`)", "plantilla.ts", "const fs = await import(`node:fs`); export const a = fs.readdirSync(\"qa\", { recursive: true });\n"],
+  ["`process.getBuiltinModule(\"node:fs\")`", "builtin.ts", 'export const a = process.getBuiltinModule("node:fs").readdirSync("qa", { recursive: true });\n'],
+  ["`import fs = require(\"node:fs\")`", "import-equals.ts", 'import fs = require("node:fs"); export const a = fs.readdirSync("qa", { recursive: true });\n'],
 ];
 
 /** [nombre, fichero, contenido]. Hoy rojos SOLO por `A_LECTORES`: puntos (2) y (3). */
@@ -201,6 +211,20 @@ export function baja(d: string, cb: (f: string) => void): void { for (const e of
     FLATMAP_VIEJO,
     (p) => p.recorridos.push({ fichero: `${PREFIJO}flatmap.ts`, sitios: 1, recorre: "QA/guiones", porque: "sabotaje del guion 163: la mentira más barata" }),
     [A_LEGALIZA],
+  ],
+  [
+    "V2-1 (a): una lectura NUEVA con el MISMO texto que una declarada (`readdirSync(dir)` dos veces, declarada una)",
+    "dos-lecturas.ts",
+    RECURSIVO('export const a = (dir: string) => readdirSync(dir);\nexport const b = (dir: string) => readdirSync(dir);'),
+    (p) => p.lectores_de_otras_carpetas.push({ fichero: `${PREFIJO}dos-lecturas.ts`, lee: "data/scenes", argumentos: ["dir"], porque: "sabotaje del guion 163: una lectura declarada, dos escritas" }),
+    [A_LECTORES],
+  ],
+  [
+    "V2-1 (b): una lectura plana de qa/ metida DENTRO de un recorrido declarado (`escenasDe` con un `readdirSync(join(…, \"qa\"))` de más)",
+    "lectura-dentro.ts",
+    RECURSIVO('export function escenasDe(d: string): string[] {\n  readdirSync(join(d, "qa"));\n  return readdirSync(d).flatMap((e) => escenasDe(join(d, e)));\n}'),
+    (p) => p.recorridos.push({ fichero: `${PREFIJO}lectura-dentro.ts`, sitios: 1, lecturas: 1, recorre: "data/scenes", porque: "sabotaje del guion 163: un recorrido declarado con una lectura de más" }),
+    [A_TOTALIDAD],
   ],
   ...CERRADOS.map(([nombre, fichero, contenido]) => [`cerrado en H-1/H-2 · ${nombre}`, fichero, contenido, null, [A_TOTALIDAD]]),
 ];
