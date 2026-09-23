@@ -1088,7 +1088,8 @@ fichero, o el candado deja de apuntar a donde cree y deja de candar sin que nada
 comprobaba solo dentro de la corrida cara (una batería de Chromium por invariante, bajo demanda),
 o sea casi nunca — y es justo lo que caduca solo: dos programas de troceo (#358, #346) movieron
 medio cliente en un mes. La tabla vive hoy en `qa/lib/invariantes-en-negativo.mjs` (UNA, la misma
-que consume la batería) y `nefan-core/test/las-anclas-de-los-candados.test.ts` la mide en cada
+que consume la batería), la función que cuenta y sustituye en `qa/lib/anclas.mjs` (UNA, la misma
+de los seis guiones en negativo, #700) y `nefan-core/test/las-anclas-de-los-candados.test.ts` la mide en cada
 `npm test`: en cada PR y en cada bucle local, sin abrir un navegador. Lo que sigue bajo demanda es
 lo que cuesta un Chromium: comprobar que el guion se pone rojo de verdad.
 
@@ -1155,7 +1156,11 @@ node qa/mutacion-reparto-en-lotes.mjs --solo-vigentes # ~7 s, solo los candados 
 `--solo-vigentes` deja fuera los ABIERTOS y las conductas abiertas, cuyos checkers son los propios
 candados que ya corren como pasos del job (~4 min duplicados). Lo que ESO no ve nunca en CI es una
 **declaración de deuda que mienta** (un `deuda: <issue>` cuyo issue se cerró sin quitar la declaración):
-solo lo ve quien corra la completa en local. Y el guion se niega a arrancar si `mutacion-huella.json`
+solo lo ve quien corra la completa en local. Lo que SÍ ve siempre, también con `--solo-vigentes`, son
+las **anclas** de los ABIERTOS (#700): antes de nada cuenta que el patrón de cada `rompe` aparezca
+EXACTAMENTE una vez en su fichero (`qa/lib/anclas.mjs`, la misma función de los demás guiones en
+negativo) y sale ≠ 0 con «PROBE OBSOLETO» si no. Con `includes` + `replace` un patrón duplicado
+rompía la primera copia y el guion daba un veredicto sobre algo que no había probado. Y el guion se niega a arrancar si `mutacion-huella.json`
 trae cambios sin commitear: o son tuyos, o te los dejó una corrida interrumpida.
 
 De la validación de PR-E (la corrida partida en lotes). Dos grupos, y la diferencia es el punto:
