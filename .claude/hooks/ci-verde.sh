@@ -8,8 +8,14 @@
 # en el runner). Verde en local no es verde: el runner tiene otro sistema de
 # ficheros, otras dependencias y ninguna caché.
 #
-# No estorba al trabajo normal: si la rama no tiene upstream o no tiene PR
-# abierta, no hay CI que esperar y sale en silencio.
+# No estorba al trabajo normal: si la rama no tiene upstream, no tiene PR o su
+# PR ya está mergeada o cerrada, no hay CI que esperar y sale en silencio.
+#
+# Una PR ABIERTA sin ningún check NO es «nada que esperar» (#709): GitHub no
+# lanza el workflow `pull_request` de una rama en conflicto
+# (`mergeable_state: dirty`), así que el CI no sale rojo, sale AUSENTE — y eso
+# se confundía con verde. Ahora bloquea. Negativo en
+# `nefan-core/test/hook-ci-verde.test.ts`.
 
 set -uo pipefail
 
@@ -32,10 +38,21 @@ fi
 
 # `gh` puede no estar instalado, no estar autenticado, o la red puede fallar.
 # Nada de eso es motivo para bloquear al usuario: fail-open explícito.
-checks=$(timeout 25 gh pr view --json statusCheckRollup --jq \
-  '[.statusCheckRollup[] | {n: (.name // .context), s: (.status // "COMPLETED"), c: (.conclusion // .state // "")}]' \
-  2>/dev/null) || exit 0
-case "$checks" in "" | null | "[]") exit 0 ;; esac
+# El filtrado va en `jq` local y no en `gh --jq`: así el hook se prueba con un
+# `gh` falso que solo imprime JSON.
+pr=$(timeout 25 gh pr view --json state,mergeable,statusCheckRollup 2>/dev/null) || exit 0
+[ -n "$pr" ] || exit 0
+[ "$(printf '%s' "$pr" | jq -r '.state // ""')" = "OPEN" ] || exit 0
+checks=$(printf '%s' "$pr" | jq -c \
+  '[(.statusCheckRollup // [])[] | {n: (.name // .context), s: (.status // "COMPLETED"), c: (.conclusion // .state // "")}]')
+
+if [ "$checks" = "[]" ]; then
+  echo "$sha $veces" >> "$estado"
+  mergeable=$(printf '%s' "$pr" | jq -r '.mergeable // "?"')
+  motivo="La PR de \`$rama\` está abierta y NO tiene ningún check (mergeable: $mergeable). Ausente no es verde. Si mergeable es CONFLICTING, GitHub no lanza el workflow de una rama en conflicto: haz rebase sobre main, resuelve y sube. Si acabas de subir, espera a que aparezcan (\`gh pr checks\`)."
+  jq -cn --arg r "$motivo" '{decision:"block", reason:$r}'
+  exit 0
+fi
 
 corriendo=$(printf '%s' "$checks" | jq -r '[.[] | select(.s != "COMPLETED")] | length')
 rojos=$(printf '%s' "$checks" | jq -r \
