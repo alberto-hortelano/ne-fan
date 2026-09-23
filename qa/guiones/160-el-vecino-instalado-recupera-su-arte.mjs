@@ -224,12 +224,12 @@ export default async function (ctx) {
   const posts1 = posts.length;
   const vuelta1 = await reanudar(ctx, partida.sessionId);
   if (!vuelta1) ctx.sinMedir("no se pudo reanudar la partida (E1)");
-  const { ocurrio: e1Todos, ultimo: e1 } = await esperarTodosTexturados(
+  const { ultimo: e1 } = await esperarTodosTexturados(
     ctx,
     "E1 · con el arte en la librería, reanudar deja texturados los NUEVE tiles (ningún vecino en clay)",
   );
   ctx.log(`E1 · tras reanudar: ${JSON.stringify(e1 ?? (await enClay(ctx)))}`);
-  await esperarQuieto(ctx, "E1 · el carril de restauración termina");
+  const quietoE1 = await esperarQuieto(ctx, "E1 · el carril de restauración termina");
   const otros1 = deOtrosTiles(posts1, claveActivo);
   ctx.expect(
     "E1 · los POST de los tiles que no son el activo llevan TODOS resolve_only, también en Imagen IA",
@@ -241,13 +241,11 @@ export default async function (ctx) {
     (await pagosDeAtlas()) === pagos1,
     `pagos antes ${pagos1} → ${await pagosDeAtlas()}`,
   );
-  if (e1Todos) {
-    ctx.expect(
-      "E1 · y el tile del jugador sigue texturado (la restauración no desechó su corrida)",
-      Boolean(e1.activeTile) && e1.textured.includes(e1.activeTile),
-      JSON.stringify(e1),
-    );
-  }
+  ctx.expect(
+    "E1 · y el tile del jugador sigue texturado (la restauración no desechó su corrida)",
+    quietoE1.textured.includes(quietoE1.activeTile),
+    JSON.stringify(quietoE1),
+  );
   await ctx.shot("e1-reanudada-con-los-nueve-tiles");
 
   // ══ E2 · partida viva: el vecino que llega por el cable se textura ════════

@@ -353,8 +353,15 @@ export default async function (ctx) {
   async function partidaConDosTiles(modo, etiqueta) {
     const gastoAntes = await gastoDelFake();
     const posts0 = atlasPosts.length;
-    const partida = await partidaEnModo(ctx, modo);
+    // El espía va ANTES de la partida: `#combat-log` es estático y el atlas
+    // del arranque puede resolverse antes de que `comenzar` vuelva. Pasa
+    // desde #714 en el bloque 2: el resume del bloque 1 restaura también el
+    // tile de arranque y deja su mapping local escrito, así que la partida
+    // nueva lo restaura del mapping en milisegundos — con el espía puesto
+    // después, esa línea se perdía y la espera expiraba con el tile ya
+    // texturado.
     await espiarHud(ctx);
+    const partida = await partidaEnModo(ctx, modo);
     const tile0 = await ctx.page.evaluate(() => window.__nefan.currentTile);
     const posTile0 = await ctx.page.evaluate(() => window.__nefan.state().pos);
     const aviso = await esperarAtlasDe(ctx, tile0);
