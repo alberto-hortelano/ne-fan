@@ -63,7 +63,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
-import { arbolDelBanco, fuentesDelBanco, recorre } from "./helpers-del-banco.js";
+import { SALTOS_DEL_BANCO, fuentesDelBanco } from "./banco-ficheros.js";
+import { arbolDelBanco, recorre } from "./helpers-del-banco.js";
 
 const core = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(core, "..");
@@ -520,6 +521,8 @@ describe("el detector de clientes WS del banco", () => {
       f.some((x) => x.startsWith("guiones/")) && f.some((x) => !x.includes("/")) && f.some((x) => x.startsWith("lib/")),
       `el barrido tiene que ver los guiones, qa/lib y la raíz de qa/: ${f.length} ficheros`,
     );
-    assert.deepEqual(f.filter((x) => x.startsWith(".") || x.includes("node_modules") || x.startsWith("capturas/")), []);
+    // Lo que se salta lo dice `SALTOS_DEL_BANCO`, por nombre y a cualquier
+    // profundidad; un directorio con punto que no esté ahí SÍ es banco (#704).
+    assert.deepEqual(f.filter((x) => x.split("/").some((seg) => SALTOS_DEL_BANCO.has(seg))), []);
   });
 });

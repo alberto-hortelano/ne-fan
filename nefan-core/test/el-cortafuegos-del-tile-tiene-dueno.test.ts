@@ -42,11 +42,12 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
+import { fuentesDelBanco } from "./banco-ficheros.js";
 
 const core = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(core, "..");
@@ -282,18 +283,14 @@ export function pedirYEsperarTileConMsPropio(texto: string, fichero: string): { 
   return fuera;
 }
 
-/** TODO `qa/**.mjs` menos `node_modules`. `qa/run.mjs` entra: no define
- *  ninguno de estos verbos con ese nombre como llamada y, si algún día
- *  presupuestara un tile, tiene que verse. */
-const ficherosDelBanco = (dir = join(repoRoot, "qa")): string[] =>
-  readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    if (e.isDirectory()) return e.name === "node_modules" || e.name.startsWith(".") ? [] : ficherosDelBanco(join(dir, e.name));
-    return e.name.endsWith(".mjs") ? [join(dir, e.name).slice(repoRoot.length + 1)] : [];
-  });
+/** TODO `qa/**.mjs`, por EL barrido del banco (`banco-ficheros.ts`, #704).
+ *  `qa/run.mjs` entra: no define ninguno de estos verbos con ese nombre como
+ *  llamada y, si algún día presupuestara un tile, tiene que verse. */
+const mjsDelBanco = (): string[] => fuentesDelBanco(join(repoRoot, "qa")).map((f) => `qa/${f}`);
 
 describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", () => {
   const contrato = EsperasDeTileSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
-  const ficheros = ficherosDelBanco();
+  const ficheros = mjsDelBanco();
   const fuente = new Map(ficheros.map((f) => [f, readFileSync(join(repoRoot, f), "utf8")]));
   const usos = ficheros.flatMap((f) => usosDeLaConstante(fuente.get(f)!, f));
   const claveDeEntrada = (e: { fichero: string; llamada: string; desc: string | null }): string =>

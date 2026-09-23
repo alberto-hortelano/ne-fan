@@ -25,12 +25,13 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
 import { descDe, funcionesDelFichero, lecturasDelHook, nombresDelHook, predicadoDe, verboDe } from "./lecturas-del-predicado.js";
+import { fuentesDelBanco } from "./banco-ficheros.js";
 
 const core = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(core, "..");
@@ -308,15 +309,14 @@ export function esperasDeParedQueConducen(texto: string, fichero: string): Esper
  *  dos carpetas y dejaba fuera 14 sitios en 5 ficheros (QA, H-2) — uno de ellos
  *  `qa/fixtures-las-tres-se-caminan.mjs`, con el presupuesto más apretado de la
  *  batería («0,5 m en 8.000 ms de pared»). Un candado que mira media carpeta
- *  cubre media casa. Se excluye `node_modules`. */
-const ficherosDelBanco = (dir = join(repoRoot, "qa")): string[] =>
-  readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    if (e.isDirectory()) return e.name === "node_modules" || e.name.startsWith(".") ? [] : ficherosDelBanco(join(dir, e.name));
+ *  cubre media casa. El barrido es EL del banco (`banco-ficheros.ts`, #704):
+ *  aquí solo se filtra. */
+const mjsDelBanco = (): string[] =>
+  fuentesDelBanco(join(repoRoot, "qa"))
+    .map((f) => `qa/${f}`)
     // `qa/run.mjs` DEFINE `waitFor` y `holdUntil`: sus cuerpos no son sitios de
     // llamada, son el verbo. Es el único fichero excluido y se dice cuál.
-    if (e.name === "run.mjs" && dir === join(repoRoot, "qa")) return [];
-    return e.name.endsWith(".mjs") ? [join(dir, e.name).slice(repoRoot.length + 1)] : [];
-  });
+    .filter((f) => f !== "qa/run.mjs");
 
 /** EL PARSE VA FUERA DEL `describe`, Y NO ES ESTILO (#611, medido al probar el
  *  candado en negativo). Con `node --test` v24.11.1, un `describe` cuyo cuerpo
@@ -328,7 +328,7 @@ const ficherosDelBanco = (dir = join(repoRoot, "qa")): string[] =>
 const contrato = EsperasQueConducenSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
 const clave = (e: { fichero: string; desc: string }): string => `${e.fichero} :: ${e.desc}`;
 const exentos = new Set(contrato.exentos.map(clave));
-const encontradas = ficherosDelBanco().flatMap((f) =>
+const encontradas = mjsDelBanco().flatMap((f) =>
   esperasDeParedQueConducen(readFileSync(join(repoRoot, f), "utf8"), f),
 );
 

@@ -1,32 +1,16 @@
-/** Lo que comparten los padrones que recorren el ÁRBOL del banco (`qa/**`).
+/** El visitante de AST que comparten los padrones que recorren el ÁRBOL del
+ *  banco (`qa/**`): parsear un fuente, saltar la prosa y bajar por sus nodos.
  *
- *  Nace con el segundo padrón por árbol (`clientes-ws-del-banco.json`, #678):
- *  el primero, `la-consulta-de-movimiento-tiene-dueno.test.ts`, lleva su copia
- *  de `fuentesDelBanco` y de la guardia de JSDoc, y un tercero (el padrón que
- *  cuenta llamadas, tanda X) se escribe a la vez que éste sobre ese mismo
- *  fichero. Importar un `.test.ts` desde otro re-registra sus `describe` en
+ *  Nace con el segundo padrón por árbol (`clientes-ws-del-banco.json`, #678).
+ *  Importar un `.test.ts` desde otro re-registra sus `describe` en
  *  `node:test`, así que lo compartido vive aquí, sin `describe`, y cada padrón
- *  lo importa. Unificar las copias que quedan es trabajo del coordinador tras
- *  la fusión, no de esta tanda.
+ *  lo importa. QUÉ ficheros son el banco no se decide aquí: lo decide UN solo
+ *  barrido, `banco-ficheros.ts` (#704), y lo canda
+ *  `un-solo-barrido-del-banco.test.ts`.
  *
  *  No es un `.test.ts` a propósito: `npm test` corre `test/*.test.ts` y esto
  *  no afirma nada por sí mismo. */
-import { readdirSync } from "node:fs";
-import { join, relative, sep } from "node:path";
 import ts from "typescript";
-
-/** Todos los `.mjs` del banco, en ruta relativa a `raiz` con `/`. Se salta
- *  `node_modules`, las capturas y los directorios efímeros de una corrida
- *  (`qa/.tmp/<run>/`), que no son fuente del banco. */
-export function fuentesDelBanco(dir: string, raiz: string = dir, out: string[] = []): string[] {
-  for (const e of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (e.name === "node_modules" || e.name === "capturas" || e.name.startsWith(".")) continue;
-    const p = join(dir, e.name);
-    if (e.isDirectory()) fuentesDelBanco(p, raiz, out);
-    else if (e.name.endsWith(".mjs")) out.push(relative(raiz, p).split(sep).join("/"));
-  }
-  return out;
-}
 
 /** El árbol de un fuente del banco, parseado como JavaScript. */
 export function arbolDelBanco(fuente: string): ts.SourceFile {
