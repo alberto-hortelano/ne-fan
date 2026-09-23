@@ -104,7 +104,11 @@ export default async function (ctx) {
   );
   ctx.log(`estilos ofrecidos para ${juego}: ${JSON.stringify(opciones.map((o) => o.value))}`);
   if (opciones.length < 2) {
-    ctx.log("(solo un estilo compatible: el segundo repintado no se puede ejercer aquí)");
+    // El entorno, no el juego: un mundo con un solo estilo compatible no tiene
+    // desplegable que cambiar. Se DECLARA (⊘) y no se calla (#356).
+    ctx.sinMedirBloque(
+      `solo un estilo compatible para ${juego}: el segundo repintado (cambiar el estilo del desplegable) no se puede ejercer aquí`,
+    );
     return;
   }
   const antes = (await ctx.page.evaluate(quejasDePortada)).length;

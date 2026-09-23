@@ -213,6 +213,7 @@ export default async function (ctx) {
     manifest: SISTEMA,
   });
   const pluginId = alta.body?.id;
+  ctx.expect("el alta del sistema de juego devuelve su id", Boolean(pluginId), JSON.stringify(alta.body));
 
   // Las once escrituras de arriba cubren DIEZ de las doce rutas del State API
   // que marcan `mutated`. Las dos que faltan, dichas:

@@ -186,7 +186,12 @@ export default async function (ctx) {
   );
 
   const saveB = modosDelSave(ctx, partidaB.sessionId);
-  if (saveB) {
+  if (!saveB) {
+    ctx.sinMedirBloque(
+      "sin disco efímero (stack adoptado con --url/--adoptar): no se puede leer el save de B, que es " +
+        "donde está escrito lo que decidió el bridge",
+    );
+  } else {
     ctx.expect(
       "y el save de B guarda `image` en las dos facetas",
       saveB.render === "image" && saveB.personajes === "image",

@@ -207,6 +207,7 @@ export default async function (ctx) {
   // entrar.
   const e0 = edificios[0];
   const r0 = await rectangulo(ctx, e0);
+  ctx.expect(`CONTROL: el centro de ${e0.id} es sólido y se le puede medir el rectángulo`, Boolean(r0), JSON.stringify(e0));
   if (!r0) return;
   const salidaSur = { x: (r0.oeste + r0.este) / 2, z: r0.sur + CARRERILLA_M };
   const res = await empujar(ctx, salidaSur, { x: (r0.oeste + r0.este) / 2, z: e0.z }, r0, `${e0.id} de FRENTE (control)`);

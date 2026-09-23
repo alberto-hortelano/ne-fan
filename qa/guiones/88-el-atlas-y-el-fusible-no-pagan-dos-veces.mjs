@@ -32,7 +32,7 @@
  *  LO QUE ESTE GUION NO PUEDE MEDIR, y por qué no se fuerza: que el fusible
  *  REARMADO vuelva a contar desde cero. Al estado «rearmado» solo se llega por
  *  el chip de gráficos, y con el aviso del apagón en pantalla el registro de
- *  errores lo tapa (bloque D, #483). Ocultarlo por CSS para pulsarlo sería
+ *  errores lo tapa (bloque D, #509). Ocultarlo por CSS para pulsarlo sería
  *  medir un juego que nadie tiene delante, así que el bloque D lo DECLARA con
  *  su medida en vez de saltárselo. Que `rearmar()` olvide la cuenta y no solo
  *  el flag lo mide `nefan-core/test/fusible-de-skins.test.ts` desde la PR 3.
@@ -248,13 +248,13 @@ export default async function (ctx) {
   // El aviso dice que los skins están apagados; el único mando que los vuelve a
   // encender —y que rearma el fusible— es el chip de gráficos. Se mide si el
   // click del jugador LLEGA. Va como `⚠ HALLAZGO` y no como `expect` porque es
-  // pre-existente (#483, capas del HUD) y no lo trajo esta pieza: ocultar el
+  // pre-existente (#509, el registro que tapa el chip) y no lo trajo esta pieza: ocultar el
   // registro para pulsarlo sería medir un juego que nadie tiene delante.
   const alcance = await alcanceDelChip(ctx);
   ctx.log(`alcance del chip con el apagón en pantalla: ${JSON.stringify(alcance)}`);
   if (alcance.golpea !== "BUTTON#gfx-chip") {
     ctx.log(
-      `⚠ HALLAZGO (#483, capas del HUD): el click del jugador NO llega al chip — cae en ` +
+      `⚠ HALLAZGO (#509, el registro que tapa el chip): el click del jugador NO llega al chip — cae en ` +
         `${alcance.golpea}; el registro de errores mide ${alcance.registroAlto}px con ` +
         `${alcance.entradas} entradas y el chip está en y=${alcance.chipY}. El único mando para ` +
         "volver a encender los skins queda tapado por el aviso que dice que están apagados, y " +
@@ -264,6 +264,6 @@ export default async function (ctx) {
     await ctx.shot("88-D-el-chip-tapado-por-el-aviso");
     return;
   }
-  ctx.log("el chip es alcanzable con el apagón en pantalla: el hallazgo #483 ya no reproduce aquí");
+  ctx.log("el chip es alcanzable con el apagón en pantalla: el hallazgo #509 ya no reproduce aquí");
   await ctx.shot("88-D-el-chip-alcanzable");
 }

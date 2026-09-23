@@ -254,7 +254,9 @@ export default async function (ctx) {
   }
   ctx.log(`regreso: ${regreso.scene_id} · pos ${JSON.stringify(regreso.pos)}`);
   ctx.expect("la vuelta acaba en el tile de partida", regreso.scene_id === partida.scene_id, regreso.scene_id);
-  if (anclaBuena(anclaPartida, regreso.scene_id)) {
+  // `partida.scene_id` y no `regreso.scene_id`: son el mismo tile (lo afirma
+  // la línea de arriba) y así la condición es la que ya se afirmó al arrancar.
+  if (anclaBuena(anclaPartida, partida.scene_id)) {
     const rectPartida = rectDelAnclaEnMetros(anclaPartida, regreso.rect);
     ctx.expect(
       `de vuelta, el jugador aparece DENTRO del rect de ${vuelta.place_id} (el anchor que el motor fijó al sembrar el mapa)`,

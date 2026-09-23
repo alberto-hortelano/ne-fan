@@ -50,3 +50,33 @@ export function recorre(raiz: ts.Node, visita: (nodo: ts.Node) => boolean | void
   };
   baja(raiz);
 }
+
+/** Una función con cuerpo de BLOQUE: la forma de un `export default` de guion. */
+export type FuncionConCuerpo = ts.FunctionLikeDeclaration & { body: ts.Block };
+
+/** El cuerpo del `export default` de un guion de `qa/guiones/`: la función que
+ *  `qa/run.mjs` llama con el `ctx`. Acepta `export default [async] function`
+ *  y `export default <función o flecha con bloque>`. Un guion sin ninguno de
+ *  los dos no es un guion que el runner sepa correr, y eso es un ERROR con su
+ *  nombre, nunca un `null` que el detector de turno se tragaría como «0
+ *  saltos» (#356; lo reutiliza el padrón de relojes de #711). */
+export function cuerpoPrincipal(sf: ts.SourceFile, nombre: string = sf.fileName): FuncionConCuerpo {
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword) && st.body) {
+      return st as FuncionConCuerpo;
+    }
+    if (ts.isExportAssignment(st) && !st.isExportEquals) {
+      let e: ts.Expression = st.expression;
+      while (ts.isParenthesizedExpression(e)) e = e.expression;
+      if ((ts.isFunctionExpression(e) || ts.isArrowFunction(e)) && ts.isBlock(e.body)) return e as FuncionConCuerpo;
+    }
+  }
+  throw new Error(`${nombre}: no tiene \`export default\` con cuerpo de función, que es lo que qa/run.mjs llama con el ctx`);
+}
+
+/** Como `recorre`, pero sin bajar a funciones ANIDADAS en `raiz` (callbacks,
+ *  `page.evaluate`, helpers declarados dentro): lo que se ejecuta en el mismo
+ *  marco que `raiz`. `raiz` misma sí se visita aunque sea una función. */
+export function recorreSinAnidadas(raiz: ts.Node, visita: (nodo: ts.Node) => boolean | void): void {
+  recorre(raiz, (nodo) => (nodo !== raiz && ts.isFunctionLike(nodo) ? false : visita(nodo)));
+}

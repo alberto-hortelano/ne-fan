@@ -352,6 +352,7 @@ export default async function (ctx) {
       await pedirYEsperarTile(ctx, MIXTO_MALO, tx, ty);
       coste.push((await generaciones()) - antes);
     }
+    ctx.expect("E4 · la primera vuelta dejó una partida que reanudar", Boolean(sesion), JSON.stringify(sesion));
     ctx.log(`E4 · llegar a ${MIXTO_MALO} cuesta, partida tras partida: ${JSON.stringify(coste)} llamadas`);
     ctx.expect(
       "E4 · el tile cribado NO se cura en disco: cuesta una llamada al motor en CADA partida nueva (declarado sin medir por el ingeniero)",
