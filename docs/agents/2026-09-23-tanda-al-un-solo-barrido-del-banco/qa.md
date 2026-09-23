@@ -108,3 +108,54 @@ Hoy no baja nada (0 `.mjs` bajo `capturas/` en los dos checkouts), y saltar `cap
 ## Veredicto
 
 **Apto con reservas.** Lo que se pidió está hecho y medido: un solo recorrido recursivo de `qa/`, censo idéntico en los cuatro consumidores (mismo conjunto y orden, en los dos checkouts), lectores de carpeta fuera y declarados, candado por el árbol con seis negativos del ingeniero y tres míos, `verify` verde, y ni AH ni AN chocan. Las reservas son H-1, H-2 y H-3: ninguna es un falso verde sobre el árbol de hoy, las tres son agujeros del candado o del cambio de semántica que **no están escritos donde la casa manda escribirlos** (`_lo_que_esto_NO_sujeta`), y una de ellas (H-2) es un candado cuya prosa dice lo contrario de su medida. Vuelven al mismo ingeniero; el guion 163 se pone rojo solo en cuanto cierre o declare cada uno.
+
+---
+
+# Vuelta 2 — re-QA sobre `6b43e2c1` (commits `47f94492` + `6b43e2c1`)
+
+Re-verifico SOLO lo que el ingeniero dice haber corregido (H-1..H-5 y el guion 163) más una pasada adversarial nueva sobre lo que cambió. Nada de la vuelta 1 que no se tocó (R1, R2, R3) se vuelve a medir.
+
+## Lo corregido, criterio a criterio
+
+| Hallazgo | Veredicto | Evidencia |
+|---|---|---|
+| H-1 · 9 formas invisibles | ✅ 8 de 9 cerradas y la novena declarada | Candado `node --import tsx --test test/un-solo-barrido-del-banco.test.ts` → **22/22**. `node qa/run.mjs --sin-navegador 163` → **1 en verde · 0 en rojo**: las 8 (alias por asignación, `globSync`, `promises.readdir`, `fs.promises.readdir`, `opendirSync`, `createRequire`, destructurado de espacio, helper `.mjs`) salen ahora como **sabotajes** que ponen roja EXACTAMENTE la totalidad y nombran el fichero. `execSync("find")` queda en la tabla de invisibles con `fs["readdirSync"]` y «lector como valor», los tres en el punto (1) con su `it`. Efecto colateral verificado: `mutation-config.test.ts` (2 `globSync` reales, `:69,:125`) declarado en `recorridos` con `recorre` que no nombra `qa` |
+| H-2 · 8 formas de rebote + LÍMITE (4) contradictorio | ✅ cerrado | Las 8 son sabotajes del 163 (rojo por totalidad, fichero nombrado). El LÍMITE (4) viejo desaparece; lo sustituye «totalidad de lectores: cada lectura plana de un directorio está declarada, por su argumento», con dos listas (`lectores_de_carpeta_de_qa` y `lectores_de_otras_carpetas`, 6 + 6 entradas) y zod que exige `argumentos` no vacío. Mutua, pila, `recursive` por parámetro y por `let` reasignado quedan como «rojo por la totalidad de lectores» en el 163 y en los puntos (2) y (3). Pero esa totalidad tiene un agujero propio: **V2-1**, abajo |
+| H-3 · bajada por `capturas/` | ✅ cerrado | Punto (6) nuevo con `it` sobre un árbol temporal (`fuentesDelBanco` salta `node_modules`/`.tmp`/`capturas` y barre `.oculto`; fija `SALTOS_DEL_BANCO` a esos tres) y con la cifra 221→220 escrita. Los cuatro padrones consumidores llevan «LO QUE EL BARRIDO SALTA … punto (6)» (`grep -c capturas` → 1 en los cuatro; el de clientes-ws dice, correctamente, que su copia vieja ya saltaba `capturas/`). La cabecera de `banco-ficheros.ts` ya no remite a un «punto (7)» ajeno |
+| H-4 · caducidad por «alguna lectura» | ✅ cerrado | La entrada caduca por `fichero :: argumento` (texto). Sabotaje del 163 «se DECLARA un argumento que el fichero no lee» → rojo por la totalidad de lectores (verde en la corrida base = el sabotaje funciona) |
+| H-5 · mayúsculas | ✅ cerrado | `nombraElBanco` con `/i`; `it` con `QA/guiones` y `Qa`; sabotaje del 163 «`recorre` en MAYÚSCULAS» → rojo «legalizar» |
+| Guion 163 | ✅ sin debilitar, y probado en negativo otra vez | 22 asertos base; 30 sabotajes; 2 tablas de agujeros (3 + 4). Negativos míos sobre el candado (restaurados con `git checkout`): **A** `pideRecursivo` siempre `false` → 163 rojo en «viene VERDE de partida — ya está rojo: totalidad…» (el propio árbol se delata: `afectado`, `mutation-config`… dejan de contarse); **B** las lecturas planas no se registran → rojo en «ya está rojo: totalidad de lectores…» (las 12 declaradas caducan). Los dos rojos llegan antes de sembrar nada, que es lo que se quiere de un guion que mide un candado |
+
+## Pasada adversarial v2 (sobre lo que cambió)
+
+**Bloque 1 · 15 formas nuevas sembradas bajo `test/`** (ficheros `zz-v2-*`, borrados después; `git status` limpio):
+
+- Rojo por **totalidad de recorridos** (el detector las ve): método **estático** con `W.baja(…)`, `fs.globSync` por espacio de nombres, `{ recursive: "yes" as unknown as boolean }` (conservador: todo lo que no sea `false` literal cuenta).
+- Rojo por **totalidad de lectores** (salen como plana, la red declarada): `const baja = memo((d) => readdirSync(d).flatMap(baja))` (la flecha cuelga de una llamada y `nombresDe` no le ve nombre), `readdirSync("qa", opciones())`, el lector en una función **hermana** de la recursiva (`lee(d)` / `baja`), y `readdirSync(...(["qa", {recursive:true}] as const))`.
+- **Invisibles del todo** (verde, 22/22), siete: (a) `export { readdirSync } from "node:fs"` en un helper de `test/` + `import { readdirSync } from "./helper.js"` en el consumidor (ninguno de los dos ficheros ve un lector: el re-export es `ExportDeclaration`, y el import no viene de `fs`); (b) `readdirSync.call(null, …)` y `Reflect.apply(readdirSync, …)`; (c) `import("node:fs").then((fs) => fs.readdirSync(…))`; (d) `` await import(`node:fs`) `` con **template literal** (`esModuloFs` solo acepta `StringLiteral`); (e) `process.getBuiltinModule("node:fs")` (Node ≥ 22); (f) `import fs = require("node:fs")` (`ImportEqualsDeclaration`); (g) `fs` pasado como **parámetro** (`(m: typeof fs) => m.readdirSync(…)`). De las siete, (b) y (g) caen en la letra del punto (1) («lector pasado como VALOR»); **(a), (c), (d), (e) y (f) no están en ningún punto**. Ninguna existe hoy en `test/`.
+
+**Bloque 2 · ¿la totalidad de lecturas planas se satisface sin declarar de verdad?** Sí, de dos maneras, las dos medidas sobre ficheros REALES (editados y restaurados con `git checkout`):
+
+- **2a** — la clave es `fichero :: texto del argumento`, sin contar sitios. `esperas-de-qa.test.ts` declara `argumentos: ["dir"]`; añadí al final del fichero `export const zzSonda = (dir = join(repoRoot, "qa")) => readdirSync(dir)` (y una segunda variante con `import { readdirSync as zzLeer }` estático arriba): **22/22 verde** las dos veces. Una lectura NUEVA de `qa/` entera pasa sin declarar si comparte texto de argumento con una ya declarada, y `dir`/`d` son los textos que más se repiten (`esperas-de-qa`, `contract-fixtures` los declaran hoy).
+- **2b** — `sitios` cuenta FUNCIONES recursivas, no lo que leen. En `scene-fixtures.test.ts` (declarada con `sitios: 1`) metí dentro de `escenasDe` un `readdirSync(join(…, "qa"), { withFileTypes: true })`: la llamada entra en `dentroDeRecursiva`, no es plana, `sitios` sigue en 1 → **22/22 verde**. Lo mismo vale para `corpusDe`, `anda`, `ficherosDelCliente`.
+
+## Hallazgos de la vuelta 2
+
+### V2-1 · importante — la totalidad de lecturas planas colapsa N lecturas en una clave, y `sitios` no ve un lector nuevo dentro de una función recursiva declarada
+
+Es la respuesta a la pregunta del coordinador: sí se puede satisfacer sin declarar. Reproducción exacta en 2a y 2b. Ninguna de las dos está en `_lo_que_esto_NO_sujeta` (el punto (4) habla de `argumentos` que casan por texto cuando la CONSTANTE cambia de destino; esto es otra cosa: una lectura MÁS con el mismo texto, o dentro de una función ya contada). Lo que esperaba: que la clave de lector lleve su cuenta de líneas como `recorridos` lleva `sitios` (una segunda `readdirSync(dir)` en el mismo fichero cambia la cifra y sale rojo), y que un recorrido declarado cuente sus LECTORES (no solo la función), o que ambos agujeros se midan con su `it` en (2)/(4). Hasta entonces, la «red» de mutua/pila/parámetro (puntos 2 y 3) es más fina de lo que el padrón dice: basta con que la lectura reutilice el texto `dir`.
+
+### V2-2 · menor — cinco formas nuevas invisibles sin declarar
+
+(a) re-export desde un módulo local de `test/`, (c) `import().then(fs => …)`, (d) especificador en template literal, (e) `process.getBuiltinModule`, (f) `import x = require(…)`. Las dos primeras son las que alguien podría escribir sin querer esquivar nada (un `test/fs.ts` que re-exporte, un `.then`); las otras tres son rarezas. Van al punto (1) con su `it`, o se cierran: (d) es una línea (`ts.isNoSubstitutionTemplateLiteral`), (a) exige seguir re-exports y es más caro.
+
+### Anotaciones
+
+- El 163 v2 tarda 30 s (30 sabotajes + 2 bloques = 33 subprocesos). Sube de 16 s; sigue por debajo de lo que el README tolera para la clase headless. La fila del README del 163 la actualizó el ingeniero; no la retoco.
+- El aserto de existencia nuevo («ninguna entrada apunta a un fichero que no existe») hace que la entrada caducada dé DOS rojos; el 163 exige los dos. Correcto.
+
+`npm test` sobre `6b43e2c1` con el árbol limpio (corrido por QA): **3286/3286, exit 0**.
+
+## Veredicto de la vuelta 2
+
+**Apto con una reserva** (V2-1). Todo lo que devolví en la vuelta 1 está cerrado y medido, y las 17 formas son ahora sabotajes que se ponen rojos con nombre. La reserva es nueva y sale de lo que se construyó para cerrar H-2: la totalidad de lecturas planas es la red declarada para lo que el detector no ve como recursivo, y esa red se atraviesa con dos formas medidas sobre ficheros reales sin que ningún punto del padrón lo diga. No es un falso verde sobre el árbol de hoy. Puede cerrarse (cuenta por clave + lectores por recorrido) o declararse con su `it`; en los dos casos el 163 debería ganar el sabotaje/agujero correspondiente. V2-2 es menor y se declara.
