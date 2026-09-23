@@ -213,7 +213,7 @@ export class FpsAtlasController {
    *  `nuevoRun`, sin `corridaQuePinta` y sin `onGeneration`: esto no es una
    *  corrida del jugador, es arte que ya estaba pagado volviendo a su tile. */
   private async ejecutarRestauracion(r: Restauracion): Promise<void> {
-    const sigueMandando = () => this.politica.restauracionVigente(r.key, r.id);
+    const sigueMandando = () => this.politica.restauracionVigente(r);
     if (await this.reinstallIfCached(r.key, sigueMandando)) return;
     if (!sigueMandando()) return;
     if (!this.styleId) {

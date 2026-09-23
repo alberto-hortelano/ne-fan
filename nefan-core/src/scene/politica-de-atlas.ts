@@ -38,11 +38,11 @@ export function modoDeCorrida(t: { activo: boolean; generacion: boolean }): { re
   return { resolveOnly: !(t.activo && t.generacion) };
 }
 
-/** Una restauración que el controller puede ejecutar: la clave y el id con el
- *  que preguntará si sigue mandando. */
+/** Una restauración que el controller puede ejecutar. Su IDENTIDAD es la
+ *  vigencia: se crea al encolar, y solo el objeto que sigue registrado para su
+ *  clave puede aplicar (sin contador que pueda repetirse ni desbordar). */
 export interface Restauracion {
-  key: string;
-  id: number;
+  readonly key: string;
 }
 
 export class PoliticaDeAtlas {
@@ -112,28 +112,28 @@ export class PoliticaDeAtlas {
 
   // --- Carril de restauración (#714) ---------------------------------------
 
-  /** Claves esperando turno, en orden de llegada (FIFO: el resume las añade
-   *  con el activo primero y el resto detrás, y ese orden es el que se ve). */
-  #cola: string[] = [];
-  /** El id VIGENTE de cada clave encolada o en vuelo. Un id que ya no está
-   *  aquí —superado por un re-encolado, por `pedir` o por
+  /** Restauraciones esperando turno, en orden de llegada (FIFO: el resume
+   *  añade el activo primero y el resto detrás, y ese orden es el que se ve). */
+  #cola: Restauracion[] = [];
+  /** La restauración VIGENTE de cada clave encolada o en vuelo. Una que ya no
+   *  está aquí —superada por un re-encolado, por `pedir` o por
    *  `olvidarRestauraciones`— no aplica nada. */
-  #idDe = new Map<string, number>();
-  #ultimoId = 0;
+  #vigenteDe = new Map<string, Restauracion>();
   /** La restauración que está corriendo, si hay una: van de una en una para
    *  no competir con el activo por las conexiones HTTP del navegador. */
   #enCurso: Restauracion | null = null;
 
   /** Un tile instalado que no es el activo quiere su arte ya pagado. Con un
    *  ciclo de activo en curso para esa MISMA clave no hace nada: ese ciclo ya
-   *  la restaura. Una clave ya encolada o en vuelo se supera con un id nuevo y
-   *  va al final: el re-añadido puede traer otra escena y lo que estaba en el
-   *  aire es de la anterior. */
+   *  la restaura. Una clave ya encolada o en vuelo se SUPERA y va al final: el
+   *  re-añadido puede traer otra escena y lo que estaba en el aire es de la
+   *  anterior. */
   encolarRestauracion(key: string): void {
     if (this.#pendientes.has(key)) return;
     this.#olvidarRestauracion(key);
-    this.#idDe.set(key, ++this.#ultimoId);
-    this.#cola.push(key);
+    const r: Restauracion = { key };
+    this.#vigenteDe.set(key, r);
+    this.#cola.push(r);
   }
 
   /** La siguiente restauración a ejecutar, o `null` si toca esperar: hay un
@@ -142,37 +142,33 @@ export class PoliticaDeAtlas {
    *  `finDeRestauracion` con lo que recibió, pase lo que pase. */
   siguienteRestauracion(): Restauracion | null {
     if (this.#pendientes.size > 0 || this.#enCurso !== null) return null;
-    const key = this.#cola.shift();
-    if (key === undefined) return null;
-    const id = this.#idDe.get(key);
-    // Una clave en la cola SIEMPRE tiene id: los tres caminos que borran el id
-    // la sacan también de la cola. Si no lo tuviera, lo seguro es no ejecutar.
-    if (id === undefined) return null;
-    this.#enCurso = { key, id };
-    return this.#enCurso;
+    const r = this.#cola.shift();
+    if (r === undefined) return null;
+    this.#enCurso = r;
+    return r;
   }
 
-  /** ¿Puede APLICAR al renderer la restauración `id` de `key`? Se pregunta
-   *  antes de tocar nada, como `vigente` para el activo. */
-  restauracionVigente(key: string, id: number): boolean {
-    return this.#idDe.get(key) === id;
+  /** ¿Puede APLICAR al renderer esta restauración? Se pregunta antes de tocar
+   *  nada, como `vigente` para el activo. */
+  restauracionVigente(r: Restauracion): boolean {
+    return this.#vigenteDe.get(r.key) === r;
   }
 
-  /** La restauración acabó, bien o mal. Deja paso a la siguiente, y suelta el
-   *  id de la clave solo si seguía siendo el suyo (un re-encolado mientras
-   *  corría tiene el suyo propio y sigue en la cola). */
+  /** La restauración acabó, bien o mal. Deja paso a la siguiente, y suelta la
+   *  clave solo si seguía siendo suya (un re-encolado mientras corría es otra
+   *  restauración y sigue en la cola). */
   finDeRestauracion(r: Restauracion): void {
-    if (this.#enCurso?.id === r.id) this.#enCurso = null;
-    if (this.#idDe.get(r.key) === r.id) this.#idDe.delete(r.key);
+    if (this.#enCurso === r) this.#enCurso = null;
+    if (this.#vigenteDe.get(r.key) === r) this.#vigenteDe.delete(r.key);
   }
 
-  /** Cambio de partida: nada de lo encolado ni de lo que va en el aire es de
-   *  la partida nueva (la clave `tile_0_0` es la misma y la escena, otra). La
-   *  que está en vuelo sigue ocupando el turno hasta su `finDeRestauracion`,
-   *  pero ya no aplica. */
+  /** Cambio de mundo: nada de lo encolado ni de lo que va en el aire es del
+   *  mundo nuevo (la clave `tile_0_0` es la misma y la escena, otra). La que
+   *  está en vuelo sigue ocupando el turno hasta su `finDeRestauracion`, pero
+   *  ya no aplica. */
   olvidarRestauraciones(): void {
     this.#cola = [];
-    this.#idDe.clear();
+    this.#vigenteDe.clear();
   }
 
   /** Restauraciones sin terminar (encoladas + la que está en vuelo). Es lo que
@@ -182,7 +178,7 @@ export class PoliticaDeAtlas {
   }
 
   #olvidarRestauracion(key: string): void {
-    if (!this.#idDe.delete(key)) return;
-    this.#cola = this.#cola.filter((k) => k !== key);
+    this.#vigenteDe.delete(key);
+    this.#cola = this.#cola.filter((r) => r.key !== key);
   }
 }

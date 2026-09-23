@@ -121,11 +121,11 @@ describe("PoliticaDeAtlas · carril de restauración: los vecinos recuperan su a
     const r = p.siguienteRestauracion();
     assert.ok(r);
     assert.equal(r.key, "tile_1_0");
-    assert.equal(p.restauracionVigente("tile_1_0", r.id), true);
+    assert.equal(p.restauracionVigente(r), true);
     assert.equal(p.restaurando, 1, "la que está en vuelo sigue contando");
     p.finDeRestauracion(r);
     assert.equal(p.restaurando, 0);
-    assert.equal(p.restauracionVigente("tile_1_0", r.id), false, "terminada, ya no manda");
+    assert.equal(p.restauracionVigente(r), false, "terminada, ya no manda");
     assert.equal(p.siguienteRestauracion(), null);
   });
 
@@ -140,7 +140,7 @@ describe("PoliticaDeAtlas · carril de restauración: los vecinos recuperan su a
     p.finDeRestauracion(ra!);
     const rb = p.siguienteRestauracion();
     assert.equal(rb?.key, "b");
-    assert.notEqual(rb?.id, ra?.id, "cada restauración lleva su propio id");
+    assert.notEqual(rb, ra, "cada restauración es la suya");
   });
 
   it("el activo va antes: con un ciclo de activo en curso no sale ninguna restauración", () => {
@@ -168,7 +168,7 @@ describe("PoliticaDeAtlas · carril de restauración: los vecinos recuperan su a
     p.encolarRestauracion("otro");
     const r = p.siguienteRestauracion()!;
     assert.equal(p.pedir("t"), "arranca", "el activo arranca YA: no espera a la restauración");
-    assert.equal(p.restauracionVigente("t", r.id), false, "la restauración vieja no aplica encima del activo");
+    assert.equal(p.restauracionVigente(r), false, "la restauración vieja no aplica encima del activo");
     p.terminar("t");
     assert.equal(p.siguienteRestauracion(), null, "la invalidada sigue en el aire: una a la vez");
     p.finDeRestauracion(r);
@@ -188,7 +188,7 @@ describe("PoliticaDeAtlas · carril de restauración: los vecinos recuperan su a
     p.encolarRestauracion("b");
     const ra = p.siguienteRestauracion()!;
     p.encolarRestauracion("a"); // el tile se re-añadió con la vieja en el aire
-    assert.equal(p.restauracionVigente("a", ra.id), false, "lo que estaba en el aire es de la escena anterior");
+    assert.equal(p.restauracionVigente(ra), false, "lo que estaba en el aire es de la escena anterior");
     assert.equal(p.restaurando, 3, "b y la nueva de a esperan; la vieja sigue en vuelo");
     p.finDeRestauracion(ra);
     assert.equal(p.restaurando, 2, "el fin de la vieja no se lleva a la nueva");
@@ -197,8 +197,8 @@ describe("PoliticaDeAtlas · carril de restauración: los vecinos recuperan su a
     p.finDeRestauracion(rb);
     const ra2 = p.siguienteRestauracion()!;
     assert.equal(ra2.key, "a");
-    assert.notEqual(ra2.id, ra.id);
-    assert.equal(p.restauracionVigente("a", ra2.id), true);
+    assert.notEqual(ra2, ra);
+    assert.equal(p.restauracionVigente(ra2), true);
   });
 
   it("re-encolar una clave que aún no salió la mueve al final sin duplicarla", () => {
@@ -219,7 +219,7 @@ describe("PoliticaDeAtlas · carril de restauración: los vecinos recuperan su a
     p.encolarRestauracion("tile_1_1");
     const r = p.siguienteRestauracion()!;
     p.olvidarRestauraciones();
-    assert.equal(p.restauracionVigente("tile_0_1", r.id), false, "arte de la partida anterior: no aplica");
+    assert.equal(p.restauracionVigente(r), false, "arte de la partida anterior: no aplica");
     assert.equal(p.restaurando, 1, "solo queda la que va en el aire");
     assert.equal(p.siguienteRestauracion(), null, "sigue ocupando el turno");
     p.finDeRestauracion(r);
@@ -243,8 +243,26 @@ describe("PoliticaDeAtlas · carril de restauración: los vecinos recuperan su a
     const p = new PoliticaDeAtlas();
     p.encolarRestauracion("a");
     const ra = p.siguienteRestauracion()!;
-    p.finDeRestauracion({ key: "a", id: ra.id + 100 });
-    assert.equal(p.restaurando, 1, "un id ajeno no apaga la que corre");
-    assert.equal(p.restauracionVigente("a", ra.id), true, "ni le quita la vigencia");
+    p.finDeRestauracion({ key: "a" }); // misma clave, OTRA restauración
+    assert.equal(p.restaurando, 1, "una restauración ajena no apaga la que corre");
+    assert.equal(p.restauracionVigente(ra), true, "ni le quita la vigencia");
+  });
+
+  it("terminar dos veces la misma restauración, o sin ninguna en curso, no rompe nada", () => {
+    const p = new PoliticaDeAtlas();
+    p.finDeRestauracion({ key: "nadie" });
+    p.encolarRestauracion("a");
+    const ra = p.siguienteRestauracion()!;
+    p.finDeRestauracion(ra);
+    p.finDeRestauracion(ra);
+    assert.equal(p.restaurando, 0);
+  });
+
+  it("pedir la siguiente con la cola vacía no ocupa el turno", () => {
+    const p = new PoliticaDeAtlas();
+    assert.equal(p.siguienteRestauracion(), null);
+    assert.equal(p.restaurando, 0, "un turno ocupado por nadie bloquearía la cola para siempre");
+    p.encolarRestauracion("a");
+    assert.equal(p.siguienteRestauracion()?.key, "a");
   });
 });
