@@ -162,12 +162,14 @@ jobs:
       #
       # La geometría del atlas de repintado ya NO se prueba aquí: se fue con el
       # módulo a sprite-forge, y allí corre en su propio CI.
-      - run: pip install ruff pillow httpx fastapi numpy
-      - run: ruff check ai_server
-      # labs/ no tiene tests ni lint (benches), pero compileall lo mantiene
-      # al menos sintácticamente válido — es código que se retoma cada pocos
-      # meses cuando avanza la tecnología de IA.
-      - run: python -m compileall -q ai_server labs
+      # ruff sale de requirements-dev.txt con la versión FIJADA: la misma que
+      # `ai_server/lint.sh` exige en el `.venv` local (#709).
+      - run: pip install -r ai_server/requirements-dev.txt pillow httpx fastapi numpy
+      # ruff sobre ai_server + compileall sobre ai_server y labs (labs/ no
+      # tiene lint, pero compileall lo mantiene sintácticamente válido). Es
+      # el MISMO script que corre `npm run verify` en local: una definición,
+      # no dos listas de rutas.
+      - run: bash ai_server/lint.sh
       # NEFAN_SPEND_DIR: el ledger de gasto (`cache/spend/events.jsonl`) es
       # dinero, y la suite le añadía 43 eventos de gasto INVENTADO por corrida
       # (#392). La variable lo desplaza a un temporal; olvidarla no es verde,

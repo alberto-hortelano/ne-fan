@@ -48,7 +48,8 @@
     "mutate": "tsx scripts/mutate.ts",
     "mutacion": "tsx scripts/mutacion.ts",
     "afectado": "tsx scripts/afectado.ts",
-    "verify": "npm run build && npm run typecheck:scripts && npm run typecheck:labs && npm run typecheck:tests && npm run lint && npm test"
+    "lint:py": "bash ../ai_server/lint.sh",
+    "verify": "npm run lint:py && npm run build && npm run typecheck:scripts && npm run typecheck:labs && npm run typecheck:tests && npm run lint && npm test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
