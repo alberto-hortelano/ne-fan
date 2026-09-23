@@ -11,27 +11,33 @@
  *  ## Qué pregunta el detector, y qué NO
  *
  *  Solo «¿esto recorre de forma RECURSIVA?», que es una pregunta del árbol:
- *  una llamada a `readdirSync`/`readdir` con `{recursive: true}` literal, o una
- *  función con nombre que llama a uno de los dos Y a sí misma. NO resuelve a
- *  qué carpeta apunta el recorrido: perseguir `join(repoRoot, "qa", …)`, las
- *  constantes y los bucles sobre `dirs` es el terreno donde un censo nace ciego
- *  a la escritura (#686). En su lugar, TODO recorrido recursivo de `test/`
- *  fuera de `banco-ficheros.ts` se declara en
- *  `data/contract/recorridos-de-test.json` con QUÉ recorre y por qué, y el
- *  padrón no admite uno que diga `qa`. Que el `recorre` diga la verdad lo lee
- *  el revisor: está en `_lo_que_esto_NO_sujeta`.
+ *  una llamada a un lector de `node:fs` (`readdir`, `opendir`, en sus formas
+ *  síncrona y de promesa) con `recursive` en sus opciones, un `glob`, o una
+ *  función que llama a un lector Y se nombra a sí misma en su cuerpo. NO
+ *  resuelve a qué carpeta apunta el recorrido: perseguir `join(repoRoot, "qa",
+ *  …)`, las constantes y los bucles sobre `dirs` es el terreno donde un censo
+ *  nace ciego a la escritura (#686). En su lugar hay DOS totalidades:
  *
- *  Los lectores de UNA carpeta del banco sin bajar (`qa/guiones`, lo que
- *  `qa/run.mjs` ve) NO se prohíben: su sujeto es esa carpeta, y un barrido
- *  recursivo que sigue enlaces les cambiaría el significado. Se declaran por
- *  nombre, con su motivo, y la entrada caduca si el fichero deja de leer. */
+ *   · todo recorrido recursivo de `test/` fuera de `banco-ficheros.ts` se
+ *     declara en `data/contract/recorridos-de-test.json` con QUÉ recorre y por
+ *     qué, y el padrón no admite uno que diga `qa`;
+ *   · toda lectura PLANA de un directorio (sin bajar) se declara también, por
+ *     el texto de su argumento: las de una carpeta de `qa/` con su carpeta, las
+ *     de otra carpeta con lo que leen. Es la red de lo que el detector no sabe
+ *     ver como recursivo (la recursión mutua, el recorrido con pila): sale como
+ *     lectura plana y alguien tiene que escribir qué lee.
+ *
+ *  Que `recorre`/`lee`/`carpetas` digan la verdad lo lee el revisor: está en
+ *  `_lo_que_esto_NO_sujeta`, y cada punto tiene aquí su «LÍMITE MEDIDO». */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
+import { SALTOS_DEL_BANCO, fuentesDelBanco } from "./banco-ficheros.js";
 
 const TEST = dirname(fileURLToPath(import.meta.url));
 const core = resolve(TEST, "..");
@@ -39,6 +45,7 @@ const CONTRATO = join(core, "data", "contract", "recorridos-de-test.json");
 /** El dueño: lo único que puede recorrer `qa/` entero. No va en el padrón. */
 const DUENO = "banco-ficheros.ts";
 
+const Argumentos = z.array(z.string().min(1)).min(1);
 const PadronSchema = z
   .object({
     _comment: z.string().min(1),
@@ -58,6 +65,17 @@ const PadronSchema = z
         .object({
           fichero: z.string().min(1),
           carpetas: z.array(z.string().regex(/^qa(\/|$)/)).min(1),
+          argumentos: Argumentos,
+          porque: z.string().min(10),
+        })
+        .strict(),
+    ),
+    lectores_de_otras_carpetas: z.array(
+      z
+        .object({
+          fichero: z.string().min(1),
+          lee: z.string().min(1),
+          argumentos: Argumentos,
           porque: z.string().min(10),
         })
         .strict(),
@@ -67,129 +85,213 @@ const PadronSchema = z
 type Padron = z.infer<typeof PadronSchema>;
 
 const MODULOS_FS = new Set(["node:fs", "fs", "node:fs/promises", "fs/promises"]);
-const LECTORES = new Set(["readdirSync", "readdir"]);
+/** Lo que lee UN directorio: recorre si le piden `recursive` o si quien lo
+ *  llama se llama a sí mismo. */
+const LECTORES = new Set(["readdirSync", "readdir", "opendirSync", "opendir"]);
+/** Lo que recorre por PATRÓN: cuenta siempre como recorrido, lleve `**` o no.
+ *  Es conservador en la dirección roja: uno legítimo se declara. */
+const GLOBS = new Set(["globSync", "glob"]);
+type Clase = "lector" | "glob";
 
-/** Los nombres locales de `readdirSync`/`readdir` en este fichero, alias
- *  incluido (`import { readdirSync as leer }`), y los espacios de nombres
- *  (`import * as fs`, `import fs`) por los que se llega a ellos como `fs.x`.
- *  También el destructurado de un `import("node:fs")` dinámico, con o sin
- *  `await`: es como `esperas-de-qa.test.ts` saca el suyo. */
-function nombresDelLector(sf: ts.SourceFile): { directos: Set<string>; espacios: Set<string> } {
-  const directos = new Set<string>();
-  const espacios = new Set<string>();
-  const esModuloFs = (e: ts.Expression): boolean => ts.isStringLiteral(e) && MODULOS_FS.has(e.text);
-  const destructura = (patron: ts.ObjectBindingPattern): void => {
-    for (const el of patron.elements) {
-      const importado = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : ts.isIdentifier(el.name) ? el.name.text : "";
-      if (LECTORES.has(importado) && ts.isIdentifier(el.name)) directos.add(el.name.text);
-    }
-  };
-  const visita = (n: ts.Node): void => {
-    if (ts.isImportDeclaration(n) && esModuloFs(n.moduleSpecifier) && n.importClause) {
-      const c = n.importClause;
-      if (c.name) espacios.add(c.name.text);
-      const b = c.namedBindings;
-      if (b && ts.isNamespaceImport(b)) espacios.add(b.name.text);
-      if (b && ts.isNamedImports(b)) {
-        for (const el of b.elements) if (LECTORES.has((el.propertyName ?? el.name).text)) directos.add(el.name.text);
-      }
-    }
-    if (ts.isVariableDeclaration(n) && n.initializer && ts.isObjectBindingPattern(n.name)) {
-      const ini = ts.isAwaitExpression(n.initializer) ? n.initializer.expression : n.initializer;
-      if (ts.isCallExpression(ini) && ini.expression.kind === ts.SyntaxKind.ImportKeyword && ini.arguments[0] && esModuloFs(ini.arguments[0])) {
-        destructura(n.name);
-      }
-    }
-    ts.forEachChild(n, visita);
-  };
-  visita(sf);
-  return { directos, espacios };
+/** Quita lo que envuelve a una expresión sin cambiar su valor. */
+function desnuda(e: ts.Expression): ts.Expression {
+  let x = e;
+  while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isSatisfiesExpression(x) || ts.isAwaitExpression(x) || ts.isNonNullExpression(x)) {
+    x = x.expression;
+  }
+  return x;
 }
 
-const conRecursivo = (llamada: ts.CallExpression): boolean =>
-  llamada.arguments.some(
-    (a) =>
-      ts.isObjectLiteralExpression(a) &&
-      a.properties.some(
-        (p) => ts.isPropertyAssignment(p) && p.name.getText() === "recursive" && p.initializer.kind === ts.SyntaxKind.TrueKeyword,
-      ),
-  );
+const nombreDePropiedad = (n: ts.PropertyName | ts.BindingName | undefined): string | null =>
+  n && (ts.isIdentifier(n) || ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null;
+
+interface Lectura {
+  linea: number;
+  /** El primer argumento TAL COMO ESTÁ ESCRITO: la clave con la que se declara. */
+  argumento: string;
+}
 
 /** Los SITIOS donde este fuente recorre un directorio de forma recursiva, y
- *  las lecturas que no lo son (las de un lector de carpeta). */
-function recorridos(texto: string): { recursivos: number[]; planas: number[] } {
-  const sf = ts.createSourceFile("x.ts", texto, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const { directos, espacios } = nombresDelLector(sf);
+ *  las lecturas planas (las de un lector de carpeta). */
+function recorridos(texto: string, kind: ts.ScriptKind = ts.ScriptKind.TS): { recursivos: number[]; planas: Lectura[] } {
+  const sf = ts.createSourceFile("x.ts", texto, ts.ScriptTarget.Latest, true, kind);
   const linea = (n: ts.Node): number => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
-  const esLector = (c: ts.CallExpression): boolean => {
-    const e = c.expression;
-    if (ts.isIdentifier(e)) return directos.has(e.text);
-    return ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression) && espacios.has(e.expression.text) && LECTORES.has(e.name.text);
+  const todos: ts.Node[] = [];
+  const junta = (n: ts.Node): void => {
+    todos.push(n);
+    ts.forEachChild(n, junta);
   };
-  const llamadas = (raiz: ts.Node, pred: (c: ts.CallExpression) => boolean): ts.CallExpression[] => {
-    const out: ts.CallExpression[] = [];
-    const v = (n: ts.Node): void => {
-      if (ts.isCallExpression(n) && pred(n)) out.push(n);
-      ts.forEachChild(n, v);
-    };
-    v(raiz);
-    return out;
+  junta(sf);
+
+  // ── Nombres: qué identificador es un lector, un glob o `fs` entero ────────
+  const directos = new Map<string, Clase>();
+  const espacios = new Set<string>();
+  /** Objetos literales ligados a un `const` del fichero: `{...OPCIONES}`. */
+  const objetos = new Map<string, ts.ObjectLiteralExpression>();
+  const esModuloFs = (e: ts.Expression | undefined): boolean => !!e && ts.isStringLiteral(e) && MODULOS_FS.has(e.text);
+  /** `import("node:fs")`, `require("node:fs")` (también el de `createRequire`). */
+  const cargaFs = (e: ts.Expression): boolean => {
+    const x = desnuda(e);
+    if (!ts.isCallExpression(x)) return false;
+    const llama = x.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(x.expression) && x.expression.text === "require");
+    return llama && esModuloFs(x.arguments[0]);
   };
-  const recursivos: number[] = [];
-  const dentroDeRecursiva = new Set<ts.CallExpression>();
-  const visita = (n: ts.Node): void => {
-    let nombre: string | null = null;
-    let cuerpo: ts.Node | undefined;
-    if (ts.isFunctionDeclaration(n) && n.name) {
-      nombre = n.name.text;
-      cuerpo = n.body;
-    } else if (
-      ts.isVariableDeclaration(n) &&
-      ts.isIdentifier(n.name) &&
-      n.initializer &&
-      (ts.isArrowFunction(n.initializer) || ts.isFunctionExpression(n.initializer))
-    ) {
-      nombre = n.name.text;
-      cuerpo = n.initializer.body;
+  const esEspacio = (e: ts.Expression): boolean => {
+    const x = desnuda(e);
+    if (ts.isIdentifier(x)) return espacios.has(x.text);
+    if (ts.isPropertyAccessExpression(x)) return x.name.text === "promises" && esEspacio(x.expression);
+    return cargaFs(x);
+  };
+  const claseDe = (e: ts.Expression): Clase | "espacio" | null => {
+    const x = desnuda(e);
+    if (ts.isIdentifier(x) && directos.has(x.text)) return directos.get(x.text)!;
+    if (esEspacio(x)) return "espacio";
+    if (ts.isPropertyAccessExpression(x) && esEspacio(x.expression)) {
+      if (LECTORES.has(x.name.text)) return "lector";
+      if (GLOBS.has(x.name.text)) return "glob";
     }
-    if (nombre && cuerpo) {
-      const lee = llamadas(cuerpo, esLector);
-      const n0 = nombre;
-      const seLlama = llamadas(cuerpo, (c) => ts.isIdentifier(c.expression) && c.expression.text === n0).length > 0;
-      if (lee.length > 0 && seLlama) {
-        recursivos.push(linea(n));
-        for (const c of lee) dentroDeRecursiva.add(c);
+    return null;
+  };
+  const liga = (nombre: string, importado: string): void => {
+    if (LECTORES.has(importado)) directos.set(nombre, "lector");
+    else if (GLOBS.has(importado)) directos.set(nombre, "glob");
+    else if (importado === "promises") espacios.add(nombre);
+  };
+  // Punto fijo: un alias puede colgar de otro alias.
+  for (let antes = -1; antes !== directos.size + espacios.size; ) {
+    antes = directos.size + espacios.size;
+    for (const n of todos) {
+      if (ts.isImportDeclaration(n) && esModuloFs(n.moduleSpecifier) && n.importClause) {
+        const c = n.importClause;
+        if (c.name) espacios.add(c.name.text);
+        const b = c.namedBindings;
+        if (b && ts.isNamespaceImport(b)) espacios.add(b.name.text);
+        if (b && ts.isNamedImports(b)) for (const el of b.elements) liga(el.name.text, (el.propertyName ?? el.name).text);
+      }
+      if (ts.isVariableDeclaration(n) && n.initializer) {
+        if (ts.isIdentifier(n.name) && ts.isObjectLiteralExpression(desnuda(n.initializer))) {
+          objetos.set(n.name.text, desnuda(n.initializer) as ts.ObjectLiteralExpression);
+        }
+        const clase = claseDe(n.initializer);
+        if (clase === null) continue;
+        if (ts.isIdentifier(n.name)) {
+          if (clase === "espacio") espacios.add(n.name.text);
+          else directos.set(n.name.text, clase);
+        } else if (ts.isObjectBindingPattern(n.name) && clase === "espacio") {
+          for (const el of n.name.elements) {
+            const importado = nombreDePropiedad(el.propertyName) ?? nombreDePropiedad(el.name);
+            if (importado && ts.isIdentifier(el.name)) liga(el.name.text, importado);
+          }
+        }
       }
     }
-    ts.forEachChild(n, visita);
+  }
+
+  // ── Opciones: ¿pide `recursive`? ──────────────────────────────────────────
+  const pideRecursivo = (e: ts.Expression, vistos = new Set<string>()): boolean => {
+    const x = desnuda(e);
+    if (ts.isIdentifier(x)) {
+      const o = objetos.get(x.text);
+      if (!o || vistos.has(x.text)) return false;
+      vistos.add(x.text);
+      return pideRecursivo(o, vistos);
+    }
+    if (!ts.isObjectLiteralExpression(x)) return false;
+    return x.properties.some((p) => {
+      if (ts.isShorthandPropertyAssignment(p)) return p.name.text === "recursive";
+      if (ts.isSpreadAssignment(p)) return pideRecursivo(p.expression, vistos);
+      if (!ts.isPropertyAssignment(p) || nombreDePropiedad(p.name) !== "recursive") return false;
+      // Cualquier valor que no sea `false` literal: conservador hacia el rojo.
+      return desnuda(p.initializer).kind !== ts.SyntaxKind.FalseKeyword;
+    });
   };
-  visita(sf);
-  const planas: number[] = [];
-  for (const c of llamadas(sf, esLector)) {
-    if (conRecursivo(c)) recursivos.push(linea(c));
-    else if (!dentroDeRecursiva.has(c)) planas.push(linea(c));
+
+  const llamadas = todos.filter(ts.isCallExpression);
+  const claseDeLlamada = (c: ts.CallExpression): Clase | null => {
+    const k = claseDe(c.expression);
+    return k === "espacio" ? null : k;
+  };
+
+  // ── Recursión: una función que lee y se nombra a sí misma ─────────────────
+  const recursivos: number[] = [];
+  const dentroDeRecursiva = new Set<ts.CallExpression>();
+  const nombresDe = (f: ts.Node): string[] => {
+    const out: string[] = [];
+    const propio = (f as ts.FunctionLikeDeclarationBase).name;
+    const n = nombreDePropiedad(propio as ts.PropertyName | undefined);
+    if (n) out.push(n);
+    const p = f.parent;
+    if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name)) out.push(p.name.text);
+    if (ts.isPropertyAssignment(p)) {
+      const q = nombreDePropiedad(p.name);
+      if (q) out.push(q);
+    }
+    if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const l = desnuda(p.left);
+      if (ts.isIdentifier(l)) out.push(l.text);
+      if (ts.isPropertyAccessExpression(l)) out.push(l.name.text);
+    }
+    return out;
+  };
+  for (const f of todos) {
+    if (!(ts.isFunctionDeclaration(f) || ts.isFunctionExpression(f) || ts.isArrowFunction(f) || ts.isMethodDeclaration(f))) continue;
+    if (!f.body) continue;
+    const nombres = new Set(nombresDe(f));
+    if (nombres.size === 0) continue;
+    const lee: ts.CallExpression[] = [];
+    let seNombra = false;
+    const v = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && claseDeLlamada(n) === "lector") lee.push(n);
+      if (ts.isIdentifier(n) && nombres.has(n.text)) seNombra = true;
+      ts.forEachChild(n, v);
+    };
+    v(f.body);
+    if (lee.length > 0 && seNombra) {
+      recursivos.push(linea(f));
+      for (const c of lee) dentroDeRecursiva.add(c);
+    }
+  }
+
+  const planas: Lectura[] = [];
+  for (const c of llamadas) {
+    const clase = claseDeLlamada(c);
+    if (clase === null) continue;
+    if (clase === "glob" || c.arguments.slice(1).some((a) => pideRecursivo(a))) recursivos.push(linea(c));
+    else if (!dentroDeRecursiva.has(c)) planas.push({ linea: linea(c), argumento: c.arguments[0]?.getText(sf) ?? "" });
   }
   return { recursivos: recursivos.sort((a, b) => a - b), planas };
 }
 
-/** Todo `.ts` bajo `test/` (las fixtures también), relativo a `test/`. */
-const fuentesDeTest = (): string[] =>
-  (readdirSync(TEST, { recursive: true }) as string[]).filter((f) => f.endsWith(".ts")).sort();
+const EXTENSIONES = new Map<string, ts.ScriptKind>([
+  [".ts", ts.ScriptKind.TS],
+  [".mts", ts.ScriptKind.TS],
+  [".cts", ts.ScriptKind.TS],
+  [".js", ts.ScriptKind.JS],
+  [".mjs", ts.ScriptKind.JS],
+  [".cjs", ts.ScriptKind.JS],
+]);
 
-/** Un `recorre` que nombra `qa` es una copia del banco con otro nombre. */
-const nombraElBanco = (recorre: string): boolean => /(^|[^\w-])qa(\/|$|[^\w-])/.test(recorre);
+/** Todo fuente TS o JS bajo `test/` (las fixtures también), relativo a `test/`:
+ *  un helper `.mjs` importado por un test también es código de test. */
+const fuentesDeTest = (): string[] =>
+  (readdirSync(TEST, { recursive: true }) as string[]).filter((f) => EXTENSIONES.has(extname(f))).sort();
+
+/** Un `recorre`/`lee` que nombra `qa` es una copia del banco con otro nombre. */
+const nombraElBanco = (recorre: string): boolean => /(^|[^\w-])qa(\/|$|[^\w-])/i.test(recorre);
 
 /** EL PARSE VA FUERA DEL `describe` (#611): dentro, un zod que lanza deja la
  *  suite en `fail 0` y `npm test` verde. */
 const padron: Padron = PadronSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
-const censo = new Map(fuentesDeTest().map((f) => [f, recorridos(readFileSync(join(TEST, f), "utf8"))] as const));
+const censo = new Map(
+  fuentesDeTest().map((f) => [f, recorridos(readFileSync(join(TEST, f), "utf8"), EXTENSIONES.get(extname(f)))] as const),
+);
 
 describe("un solo barrido del banco (#704): nadie más recorre qa/ de forma recursiva", () => {
   it("el árbol tiene sujeto: hay recorridos en test/ y el dueño da exactamente uno", () => {
     const total = [...censo.values()].reduce((s, r) => s + r.recursivos.length, 0);
     assert.ok(total >= 5, `el detector ve ${total} recorridos recursivos en test/: ¿se ha roto?`);
     assert.equal(censo.get(DUENO)?.recursivos.length, 1, `${DUENO} tiene que dar UN recorrido: es el barrido`);
-    assert.ok(censo.size >= 150, `test/ tiene ${censo.size} fuentes .ts: ¿se ha roto el censo?`);
+    assert.ok(censo.size >= 150, `test/ tiene ${censo.size} fuentes: ¿se ha roto el censo?`);
   });
 
   it("totalidad: cada recorrido recursivo fuera del dueño está en el padrón con su cifra exacta", () => {
@@ -218,34 +320,65 @@ describe("un solo barrido del banco (#704): nadie más recorre qa/ de forma recu
     assert.ok(!padron.recorridos.some((r) => r.fichero === DUENO), `${DUENO} es el dueño: no se declara`);
   });
 
-  it("cada lector de carpeta declarado existe y sigue leyendo sin bajar", () => {
-    const fallos = padron.lectores_de_carpeta_de_qa
-      .filter((l) => !existsSync(join(TEST, l.fichero)) || (censo.get(l.fichero)?.planas.length ?? 0) === 0)
-      .map((l) => `${l.fichero} (${l.carpetas.join(", ")}): ya no lee ninguna carpeta: entrada caducada`);
-    assert.deepEqual(fallos, []);
+  it("totalidad de lectores: cada lectura plana de un directorio está declarada, por su argumento", () => {
+    // Una lectura de UNA carpeta de qa/ va a `lectores_de_carpeta_de_qa`; la de
+    // otra carpeta, a `lectores_de_otras_carpetas`. Cada entrada nombra el
+    // ARGUMENTO tal como está escrito: si el fichero deja de leer ESE argumento,
+    // la entrada caduca aunque siga leyendo otra carpeta.
+    const declaradas = new Map<string, string>();
+    for (const l of padron.lectores_de_carpeta_de_qa) for (const a of l.argumentos) declaradas.set(`${l.fichero} :: ${a}`, "lectores_de_carpeta_de_qa");
+    for (const l of padron.lectores_de_otras_carpetas) for (const a of l.argumentos) declaradas.set(`${l.fichero} :: ${a}`, "lectores_de_otras_carpetas");
+    const medidas = new Map<string, number[]>();
+    for (const [f, r] of censo) {
+      if (f === DUENO) continue;
+      for (const p of r.planas) medidas.set(`${f} :: ${p.argumento}`, [...(medidas.get(`${f} :: ${p.argumento}`) ?? []), p.linea]);
+    }
+    const fallos: string[] = [];
+    for (const [clave, lineas] of medidas) {
+      if (!declaradas.has(clave)) fallos.push(`${clave} (líneas ${lineas.join(", ")}): lee un directorio y no está declarada`);
+    }
+    for (const [clave, lista] of declaradas) if (!medidas.has(clave)) fallos.push(`${clave}: declarada en ${lista} y ya no se lee así: entrada caducada`);
+    assert.deepEqual(
+      fallos,
+      [],
+      `Una lectura plana se declara en recorridos-de-test.json: \`lectores_de_carpeta_de_qa\` si lee UNA carpeta de qa/, ` +
+        `\`lectores_de_otras_carpetas\` si no. Si en realidad RECORRE (recursión mutua, pila), no es una lectura: ` +
+        `pásala por ${DUENO} o declárala en \`recorridos\`.\n${fallos.join("\n")}`,
+    );
   });
 
-  it("ningún fichero sale dos veces en el padrón", () => {
-    for (const lista of [padron.recorridos, padron.lectores_de_carpeta_de_qa]) {
+  it("un lector de otra carpeta no puede nombrar qa, y ninguna entrada apunta a un fichero que no existe", () => {
+    const copias = padron.lectores_de_otras_carpetas.filter((l) => nombraElBanco(l.lee)).map((l) => `${l.fichero}: «${l.lee}»`);
+    assert.deepEqual(copias, [], "una lectura de qa/ va a `lectores_de_carpeta_de_qa`");
+    const todas = [...padron.recorridos, ...padron.lectores_de_carpeta_de_qa, ...padron.lectores_de_otras_carpetas];
+    assert.deepEqual(todas.filter((e) => !existsSync(join(TEST, e.fichero))).map((e) => e.fichero), []);
+  });
+
+  it("ningún fichero sale dos veces en la misma lista del padrón", () => {
+    for (const lista of [padron.recorridos, padron.lectores_de_carpeta_de_qa, padron.lectores_de_otras_carpetas]) {
       const vistos = lista.map((r) => r.fichero);
       assert.deepEqual(vistos.filter((f, i) => vistos.indexOf(f) !== i), []);
     }
   });
 
-  it("el zod exige `_lo_que_esto_NO_sujeta` y rechaza un lector que no es de qa/", () => {
-    const base = { _comment: "c", _lo_que_esto_NO_sujeta: "n", recorridos: [], lectores_de_carpeta_de_qa: [] };
+  it("el zod exige `_lo_que_esto_NO_sujeta`, argumentos, y rechaza un lector de qa/ que no es de qa/", () => {
+    const base = { _comment: "c", _lo_que_esto_NO_sujeta: "n", recorridos: [], lectores_de_carpeta_de_qa: [], lectores_de_otras_carpetas: [] };
     assert.equal(PadronSchema.safeParse(base).success, true);
     const { _lo_que_esto_NO_sujeta: _, ...sinLimites } = base;
     assert.equal(PadronSchema.safeParse(sinLimites).success, false, "sin `_lo_que_esto_NO_sujeta` no hay padrón");
-    const fuera = { ...base, lectores_de_carpeta_de_qa: [{ fichero: "x.ts", carpetas: ["data/scenes"], porque: "no es del banco" }] };
+    const fuera = { ...base, lectores_de_carpeta_de_qa: [{ fichero: "x.ts", carpetas: ["data/scenes"], argumentos: ["D"], porque: "no es del banco" }] };
     assert.equal(PadronSchema.safeParse(fuera).success, false);
+    const sinArg = { ...base, lectores_de_otras_carpetas: [{ fichero: "x.ts", lee: "data", argumentos: [], porque: "sin argumento no hay clave" }] };
+    assert.equal(PadronSchema.safeParse(sinArg).success, false);
   });
 
   // ── EN NEGATIVO: las formas que el detector SÍ ve, sobre código sintético ──
 
+  const FS = `import { readdirSync } from "node:fs";\n`;
+  const ve = (codigo: string, kind?: ts.ScriptKind): number => recorridos(codigo, kind).recursivos.length;
+
   it("ve la copia con flatMap que había en tres tests (la que #704 retiró)", () => {
-    const viejo = `import { readdirSync } from "node:fs";
-const ficherosDelBanco = (dir = join(repoRoot, "qa")): string[] =>
+    const viejo = `${FS}const ficherosDelBanco = (dir = join(repoRoot, "qa")): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     if (e.isDirectory()) return e.name.startsWith(".") ? [] : ficherosDelBanco(join(dir, e.name));
     return e.name.endsWith(".mjs") ? [join(dir, e.name)] : [];
@@ -254,29 +387,78 @@ const ficherosDelBanco = (dir = join(repoRoot, "qa")): string[] =>
   });
 
   it("ve la función declarada que se llama a sí misma (la que tenía helpers-del-banco.ts)", () => {
-    const viejo = `import { readdirSync } from "node:fs";
-export function fuentesDelBanco(dir: string, out: string[] = []): string[] {
+    const viejo = `${FS}export function fuentesDelBanco(dir: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) if (e.isDirectory()) fuentesDelBanco(join(dir, e.name), out);
   return out;
 }`;
     assert.deepEqual(recorridos(viejo).recursivos, [2]);
   });
 
-  it("ve `{recursive: true}`, con alias, con espacio de nombres y destructurado de un import dinámico", () => {
-    assert.deepEqual(recorridos(`import { readdirSync } from "node:fs";\nreaddirSync(QA, { recursive: true });`).recursivos, [2]);
-    assert.deepEqual(recorridos(`import { readdirSync as leer } from "node:fs";\nleer(QA, { recursive: true });`).recursivos, [2]);
-    assert.deepEqual(recorridos(`import * as fs from "node:fs";\nfs.readdirSync(QA, { recursive: true });`).recursivos, [2]);
-    assert.deepEqual(recorridos(`import { readdir } from "node:fs/promises";\nawait readdir(QA, { recursive: true });`).recursivos, [2]);
-    assert.deepEqual(
-      recorridos(`const { readdirSync: r } = await import("node:fs");\nr(QA, { recursive: true });`).recursivos,
-      [2],
+  it("ve `recursive` por cualquier camino de NOMBRE: alias de import, espacio, promesas, require, import() y asignación", () => {
+    const casos = [
+      `${FS}readdirSync(QA, { recursive: true });`,
+      `import { readdirSync as leer } from "node:fs";\nleer(QA, { recursive: true });`,
+      `import * as fs from "node:fs";\nfs.readdirSync(QA, { recursive: true });`,
+      `import fs from "node:fs";\nfs.readdirSync(QA, { recursive: true });`,
+      `import { readdir } from "node:fs/promises";\nawait readdir(QA, { recursive: true });`,
+      `import { promises } from "node:fs";\npromises.readdir(QA, { recursive: true });`,
+      `import fs from "node:fs";\nfs.promises.readdir(QA, { recursive: true });`,
+      `const { readdirSync: r } = await import("node:fs");\nr(QA, { recursive: true });`,
+      `const fs = await import("node:fs");\nfs.readdirSync(QA, { recursive: true });`,
+      `(await import("node:fs")).readdirSync(QA, { recursive: true });`,
+      `import { createRequire } from "node:module";\nconst require = createRequire(import.meta.url);\nconst { readdirSync } = require("node:fs");\nreaddirSync(QA, { recursive: true });`,
+      `import * as fs from "node:fs";\nconst { readdirSync } = fs;\nreaddirSync(QA, { recursive: true });`,
+      `${FS}const leer = readdirSync;\nconst otra = leer;\notra(QA, { recursive: true });`,
+      `${FS}readdirSync?.(QA, { recursive: true });`,
+    ];
+    assert.deepEqual(casos.filter((c) => ve(c) !== 1), []);
+  });
+
+  it("ve `recursive` por cualquier ESCRITURA de las opciones: comillas, `as const`, abreviada, spread y const", () => {
+    const casos = [
+      `${FS}readdirSync(QA, { "recursive": true });`,
+      `${FS}readdirSync(QA, { recursive: true as const });`,
+      `${FS}const recursive = true;\nreaddirSync(QA, { recursive });`,
+      `${FS}const OPCIONES = { recursive: true };\nreaddirSync(QA, { ...OPCIONES, withFileTypes: true });`,
+      `${FS}const OPCIONES = { recursive: true };\nreaddirSync(QA, OPCIONES);`,
+      `${FS}readdirSync(QA, { withFileTypes: true, recursive: true });`,
+    ];
+    assert.deepEqual(casos.filter((c) => ve(c) !== 1), []);
+    assert.equal(ve(`${FS}readdirSync(QA, { recursive: false });`), 0, "`recursive: false` no recorre");
+  });
+
+  it("ve un `glob` de node:fs como recorrido, y `opendir` como lector", () => {
+    assert.equal(ve(`import { globSync } from "node:fs";\nglobSync("qa/**/*.mjs");`), 1);
+    assert.equal(ve(`import { glob } from "node:fs/promises";\nfor await (const f of glob("qa/*.mjs")) void f;`), 1);
+    assert.equal(
+      ve(`import { opendirSync } from "node:fs";
+export function baja(d: string): void { const dir = opendirSync(d); let e; while ((e = dir.readSync())) if (e.isDirectory()) baja(e.name); }`),
+      1,
     );
   });
 
-  it("un lector de carpeta NO es un recorrido, y un readdirSync ajeno a node:fs no cuenta", () => {
-    assert.deepEqual(recorridos(`import { readdirSync } from "node:fs";\nconst g = readdirSync(GUIONES).filter((f) => f.endsWith(".mjs"));`), {
+  it("ve la recursión por cualquier forma de NOMBRARSE: this, objeto, let, expresión con nombre y referencia", () => {
+    const casos = [
+      `${FS}export class W { baja(d: string): string[] { return readdirSync(d).flatMap((e) => this.baja(e)); } }`,
+      `${FS}export const w = { baja(d: string): string[] { return readdirSync(d).flatMap((e) => w.baja(e)); } };`,
+      `${FS}export const w = { baja: (d: string): string[] => readdirSync(d).flatMap((e) => w.baja(e)) };`,
+      `${FS}let baja: (d: string) => string[];\nbaja = (d) => readdirSync(d).flatMap((e) => baja(e));`,
+      `${FS}export const w = function baja(d: string): string[] { return readdirSync(d).flatMap((e) => baja(e)); };`,
+      `${FS}export const baja = (d: string): string[] => readdirSync(d).flatMap(baja);`,
+    ];
+    assert.deepEqual(casos.filter((c) => ve(c) !== 1), []);
+  });
+
+  it("ve un helper `.mjs` bajo test/: el censo mira JS además de TS", () => {
+    assert.equal(ve(`import { readdirSync } from "node:fs";\nexport const b = (d) => readdirSync(d).flatMap((e) => b(e));`, ts.ScriptKind.JS), 1);
+    assert.ok(fuentesDeTest().some((f) => f === DUENO), "el censo ve los .ts");
+    assert.ok([".mjs", ".js", ".cjs", ".mts"].every((x) => EXTENSIONES.has(x)));
+  });
+
+  it("un lector de carpeta NO es un recorrido, lleva su argumento, y un readdirSync ajeno a node:fs no cuenta", () => {
+    assert.deepEqual(recorridos(`${FS}const g = readdirSync(GUIONES).filter((f) => f.endsWith(".mjs"));`), {
       recursivos: [],
-      planas: [2],
+      planas: [{ linea: 2, argumento: "GUIONES" }],
     });
     assert.deepEqual(recorridos(`import { readdirSync } from "./otro.js";\nreaddirSync(QA, { recursive: true });`), {
       recursivos: [],
@@ -284,59 +466,76 @@ export function fuentesDelBanco(dir: string, out: string[] = []): string[] {
     });
   });
 
-  it("un `recorre` que nombra qa lo rechaza el aserto; uno de otra carpeta, no", () => {
-    for (const r of ["qa", "qa/", "qa/guiones", "repo/qa/lib", "data/scenes y qa"]) assert.ok(nombraElBanco(r), r);
+  it("un `recorre` que nombra qa lo rechaza el aserto, con mayúsculas o sin ellas; uno de otra carpeta, no", () => {
+    for (const r of ["qa", "qa/", "QA/guiones", "qa/guiones", "repo/qa/lib", "data/scenes y qa", "Qa"]) assert.ok(nombraElBanco(r), r);
     for (const r of ["data/scenes", "nefan-html/src", "docs/agents", "test/ (sonda-de-qa)"]) assert.ok(!nombraElBanco(r), r);
   });
 
   // ── LÍMITES MEDIDOS: cada punto de `_lo_que_esto_NO_sujeta` ────────────────
 
-  it("LÍMITE MEDIDO (1): el lector sacado de un import dinámico SIN destructurar no se ve", () => {
+  it("LÍMITE MEDIDO (1): lo que no es una llamada a un lector de fs no se ve (find por shell, corchetes, lector como valor)", () => {
+    const invisibles = [
+      `import { execSync } from "node:child_process";\nexecSync("find qa -name '*.mjs'");`,
+      `import * as fs from "node:fs";\nfs["readdirSync"](QA, { recursive: true });`,
+      `${FS}const aplica = (f: typeof readdirSync) => f(QA, { recursive: true });\naplica(readdirSync);`,
+    ];
     assert.deepEqual(
-      recorridos(`const fs = await import("node:fs");\nfs.readdirSync(QA, { recursive: true });`).recursivos,
-      [],
-    );
-    assert.deepEqual(recorridos(`(await import("node:fs")).readdirSync(QA, { recursive: true });`).recursivos, []);
-  });
-
-  it("LÍMITE MEDIDO (2): `recursive` pasado en una variable no se ve", () => {
-    assert.deepEqual(
-      recorridos(`import { readdirSync } from "node:fs";\nconst o = { recursive: true };\nreaddirSync(QA, o);`).recursivos,
-      [],
+      invisibles.map((c) => recorridos(c)),
+      invisibles.map(() => ({ recursivos: [], planas: [] })),
     );
   });
 
-  it("LÍMITE MEDIDO (3): la recursión mutua y el recorrido con pila no se ven", () => {
-    const mutua = `import { readdirSync } from "node:fs";
-function a(d) { for (const e of readdirSync(d)) b(e); }
+  it("LÍMITE MEDIDO (2): las opciones que no se resuelven en el fichero salen como lectura PLANA, no como recorrido", () => {
+    const planas = [
+      `${FS}export const f = (o: { recursive: boolean }) => readdirSync(QA, o);`,
+      `${FS}import { OPCIONES } from "./otro.js";\nreaddirSync(QA, OPCIONES);`,
+      `${FS}let o = {};\no = { recursive: true };\nreaddirSync(QA, o);`,
+    ];
+    assert.deepEqual(
+      planas.map((c) => recorridos(c).recursivos.length + recorridos(c).planas.length * 10),
+      [10, 10, 10],
+      "cero recorridos y UNA lectura plana: la para la totalidad de lectores, y su `lee` es prosa",
+    );
+  });
+
+  it("LÍMITE MEDIDO (3): la recursión mutua y el recorrido con pila salen como lectura PLANA, no como recorrido", () => {
+    const mutua = `${FS}function a(d) { for (const e of readdirSync(d)) b(e); }
 function b(d) { a(d); }`;
-    const pila = `import { readdirSync } from "node:fs";
-const pila = [QA];
+    const pila = `${FS}const pila = [QA];
 while (pila.length) for (const e of readdirSync(pila.pop(), { withFileTypes: true })) if (e.isDirectory()) pila.push(e.name);`;
-    assert.deepEqual(recorridos(mutua).recursivos, []);
-    assert.deepEqual(recorridos(pila).recursivos, []);
+    assert.deepEqual(recorridos(mutua), { recursivos: [], planas: [{ linea: 2, argumento: "d" }] });
+    assert.deepEqual(recorridos(pila), { recursivos: [], planas: [{ linea: 3, argumento: "pila.pop()" }] });
   });
 
-  it("LÍMITE MEDIDO (4): los lectores de carpeta no tienen totalidad; hoy hay estos fuera del padrón", () => {
-    const declarados = new Set([...padron.lectores_de_carpeta_de_qa.map((l) => l.fichero), DUENO]);
-    const sinDeclarar = [...censo].filter(([f, r]) => r.planas.length > 0 && !declarados.has(f)).map(([f]) => f);
-    // Leen OTRAS carpetas (data/, fixtures, saves temporales); que uno nuevo de
-    // qa/ no se declare pasa en verde. Si la cifra cambia, se reescribe el punto.
-    assert.deepEqual(sinDeclarar, [
-      "afectado.test.ts",
-      "contract-fixtures.test.ts",
-      "contract-terms.test.ts",
-      "scene-schema.test.ts",
-    ]);
+  it("LÍMITE MEDIDO (4): el destino no se resuelve; un `recorre` mentiroso pasa, y un argumento se casa por su TEXTO", () => {
+    assert.equal(nombraElBanco("data/scenes"), false, "«data/scenes» apuntando a join(repoRoot, 'qa') pasa");
+    // `GUIONES` redefinido para apuntar a otra carpeta sigue casando con la entrada.
+    const a = recorridos(`${FS}const GUIONES = "qa/guiones";\nreaddirSync(GUIONES);`).planas[0]?.argumento;
+    const b = recorridos(`${FS}const GUIONES = "data/scenes";\nreaddirSync(GUIONES);`).planas[0]?.argumento;
+    assert.equal(a, b);
   });
 
-  it("LÍMITE MEDIDO (5): el destino no se resuelve; un `recorre` mentiroso pasa", () => {
-    const miente = { fichero: "x.ts", sitios: 1, recorre: "data/scenes", porque: "dice data/scenes y recorre join(repoRoot, 'qa')" };
-    assert.equal(nombraElBanco(miente.recorre), false);
-  });
-
-  it("LÍMITE MEDIDO (6): solo se mira test/; scripts/, labs/ y src/ quedan fuera", () => {
+  it("LÍMITE MEDIDO (5): solo se mira test/; scripts/, labs/, src/ y qa/ quedan fuera", () => {
     assert.ok(fuentesDeTest().every((f) => !f.startsWith("..")));
     assert.equal(fuentesDeTest().some((f) => f.includes("scripts/")), false);
+  });
+
+  it("LÍMITE MEDIDO (6): lo que el barrido SALTA no lo ve ningún padrón que lo consuma", () => {
+    // Medido en un árbol temporal, no en qa/: un `.mjs` en cada salto y otro en
+    // un directorio con punto que NO es salto.
+    const raiz = mkdtempSync(join(tmpdir(), "nefan-704-saltos-"));
+    try {
+      for (const d of [...SALTOS_DEL_BANCO, ".oculto", "guiones"]) {
+        mkdirSync(join(raiz, d), { recursive: true });
+        writeFileSync(join(raiz, d, "x.mjs"), "export {};\n");
+      }
+      assert.deepEqual(fuentesDelBanco(raiz), [".oculto/x.mjs", "guiones/x.mjs"]);
+      // Las tres copias `flatMap` que #704 retiró saltaban `node_modules` y
+      // todo directorio con punto, NO `capturas/`: un `.mjs` ahí BAJA el censo
+      // de esos tres padrones en uno (QA de la tanda AL, 221 → 220).
+      assert.deepEqual([...SALTOS_DEL_BANCO].sort(), [".tmp", "capturas", "node_modules"]);
+    } finally {
+      rmSync(raiz, { recursive: true, force: true });
+    }
   });
 });

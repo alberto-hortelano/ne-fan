@@ -1,6 +1,6 @@
 {
-  "_comment": "Padrón de los recorridos RECURSIVOS de directorios en nefan-core/test/ (#704). El único que puede recorrer qa/ entero es test/banco-ficheros.ts (EL barrido del banco: sigue enlaces, corta ciclos, salta node_modules/.tmp/capturas por nombre) y no se declara aquí. Todo otro recorrido recursivo de test/ va en `recorridos` con QUÉ recorre y por qué; ninguno puede decir `qa`, porque eso sería una segunda definición de «qué ficheros son el banco». `lectores_de_carpeta_de_qa` son los tests que leen UNA carpeta del banco SIN bajar: no se prohíben, porque su sujeto es lo que ve quien lee esa carpeta (qa/run.mjs, el job candados-headless, un import de qa/lib), no el banco entero. Lo sujeta test/un-solo-barrido-del-banco.test.ts.",
-  "_lo_que_esto_NO_sujeta": "Cada punto tiene un `it` «LÍMITE MEDIDO» con su cifra de hoy; si la cifra cambia, se retira o se reescribe el punto. (1) El lector sacado de un `import()` dinámico SIN destructurar (`const fs = await import(\"node:fs\"); fs.readdirSync(…)` o `(await import(\"node:fs\")).readdirSync(…)`): 0. El destructurado (`const { readdirSync } = await import(\"node:fs\")`, la forma de esperas-de-qa) sí se ve. (2) `recursive` pasado en una variable (`const o = { recursive: true }; readdirSync(d, o)`): 0. (3) La recursión MUTUA (a llama a b, b a a) y el recorrido con PILA o COLA (`while (pila.length)`): 0. (4) Los lectores de carpeta NO tienen totalidad: uno nuevo sin declarar pasa en verde; hoy hay 4 lectores planos sin declarar y ninguno lee qa/ (afectado, contract-fixtures, contract-terms, scene-schema). (5) El DESTINO no se resuelve: el detector no sabe a qué carpeta apunta un recorrido, así que una entrada con `recorre` mentiroso («data/scenes» apuntando a join(repoRoot, \"qa\")) pasa. Solo lo caza la revisión del padrón. (6) Solo se mira nefan-core/test/ (con sus subcarpetas): scripts/, labs/, src/ y qa/ quedan fuera.",
+  "_comment": "Padrón de cómo lee DIRECTORIOS nefan-core/test/ (#704). El único que puede recorrer qa/ entero es test/banco-ficheros.ts (EL barrido del banco: sigue enlaces, corta ciclos, salta node_modules/.tmp/capturas por nombre) y no se declara aquí. Tres listas, las tres con TOTALIDAD: `recorridos` = todo recorrido recursivo (readdir/opendir con `recursive`, un glob, o una función que lee y se nombra a sí misma) con QUÉ recorre y por qué, y ninguno puede decir `qa`; `lectores_de_carpeta_de_qa` = las lecturas PLANAS de UNA carpeta del banco, que no se prohíben porque su sujeto es lo que ve quien lee esa carpeta (qa/run.mjs, el job candados-headless, un import de qa/lib); `lectores_de_otras_carpetas` = el resto de lecturas planas. Cada lectura se declara por el TEXTO de su primer argumento (`argumentos`): si el fichero deja de leer así, la entrada caduca. Lo sujeta test/un-solo-barrido-del-banco.test.ts.",
+  "_lo_que_esto_NO_sujeta": "Cada punto tiene un `it` «LÍMITE MEDIDO» con su cifra de hoy; si la cifra cambia, se retira o se reescribe el punto. (1) Lo que NO es una llamada a un lector de node:fs: un `find` por shell (`execSync`, `spawn`), el lector alcanzado con corchetes (`fs[\"readdirSync\"]`) o pasado como VALOR a otra función que lo llama con otro nombre (`aplica(readdirSync)`): ni recorrido ni lectura, invisible del todo. (2) Las opciones que no se resuelven EN EL FICHERO: `recursive` que llega por un parámetro, por un import o por un `let` reasignado. No salen como recorrido sino como lectura PLANA, así que las para la totalidad de lectores, pero lo que diga su `lee` es prosa. (3) La recursión MUTUA (a llama a b, b a a) y el recorrido con PILA o COLA (`while (pila.length)`): igual que (2), salen como lectura plana y los para la totalidad de lectores, no la de recorridos; su entrada tendría que mentir para pasar. (4) El DESTINO no se resuelve: `recorre`, `lee` y `carpetas` son prosa, así que una entrada mentirosa («data/scenes» apuntando a join(repoRoot, \"qa\")) pasa, y `argumentos` casa por TEXTO: `GUIONES` redefinido para apuntar a otra carpeta sigue casando. Solo lo caza la revisión del padrón. (5) Solo se mira nefan-core/test/ (TS y JS, con sus subcarpetas): scripts/, labs/, src/ y qa/ quedan fuera. (6) LO QUE EL BARRIDO SALTA (`SALTOS_DEL_BANCO`: node_modules/, .tmp/ y capturas/, por nombre y a cualquier profundidad) no lo ve NINGÚN padrón que consuma el barrido: sondas de movimiento, lista blanca de extensiones, esperas que conducen, esperas por fotogramas, esperas de tile, clientes WS y saltos del guion. Un `.mjs` ahí es invisible para todos. Las tres copias `flatMap` que #704 retiró NO saltaban capturas/: un `.mjs` ahí BAJA en uno el censo de esperas-que-conducen, espera-de-fotogramas y el-cortafuegos-del-tile (medido en la QA de la tanda AL: 221 → 220). Hoy hay cero `.mjs` en esos tres directorios en los dos checkouts. Cualquier otro directorio, con punto o sin él, se barre.",
   "recorridos": [
     {
       "fichero": "afectado.test.ts",
@@ -19,6 +19,12 @@
       "sitios": 1,
       "recorre": "nefan-core/src, nefan-core/bridge, nefan-core/data, narrative-mcp, ai_server y nefan-html/src",
       "porque": "el corpus donde tiene que existir cada término snake_case de los prompts: todos los procesos, a cualquier profundidad"
+    },
+    {
+      "fichero": "mutation-config.test.ts",
+      "sitios": 2,
+      "recorre": "los patrones de mutation-targets.json y sus directorios_completos (src/, bridge/…), por globSync con cwd en nefan-core",
+      "porque": "un objetivo de mutación que no casa con ningún fichero mide el vacío en verde, y un directorio que se mide entero no puede tener ficheros sin dueño"
     },
     {
       "fichero": "scene-fixtures.test.ts",
@@ -51,12 +57,18 @@
       "carpetas": [
         "qa/guiones"
       ],
+      "argumentos": [
+        "GUIONES"
+      ],
       "porque": "un número, un guion: lo que qa/run.mjs ve con su readdirSync NO recursivo de guiones/ (#680); un guion en una subcarpeta no lo corre nadie"
     },
     {
       "fichero": "las-anclas-de-los-candados.test.ts",
       "carpetas": [
         "qa/guiones"
+      ],
+      "argumentos": [
+        "join(repoRoot, \"qa\", \"guiones\")"
       ],
       "porque": "las anclas apuntan a guiones por su nombre en guiones/, que es donde run.mjs los busca"
     },
@@ -65,12 +77,18 @@
       "carpetas": [
         "qa/guiones"
       ],
+      "argumentos": [
+        "GUIONES"
+      ],
       "porque": "cada guion que run.mjs ejecuta declara su modo de gasto; lo que no corre run.mjs no gasta"
     },
     {
       "fichero": "qa-lib-tiene-quien-lo-mire.test.ts",
       "carpetas": [
         "qa/lib"
+      ],
+      "argumentos": [
+        "QA_LIB"
       ],
       "porque": "todo módulo de qa/lib lo importa un test o está eximido: su sujeto son los módulos importables de esa carpeta"
     },
@@ -80,6 +98,10 @@
         "qa",
         "qa/lib"
       ],
+      "argumentos": [
+        "QA",
+        "QA_LIB"
+      ],
       "porque": "los ejecutables de la raíz de qa/ y de qa/lib que el job candados-headless tiene que correr o eximir: lo que el job ve, no el banco entero"
     },
     {
@@ -88,7 +110,62 @@
         "qa/guiones",
         "qa/lib"
       ],
+      "argumentos": [
+        "dir"
+      ],
       "porque": "los motivos escritos de ctx.absorbe/sinMedirBloque en guiones y lib pasan la criba; lee las dos carpetas por su nombre"
+    }
+  ],
+  "lectores_de_otras_carpetas": [
+    {
+      "fichero": "afectado.test.ts",
+      "lee": "nefan-core/data/plugins y los directorios que un test declara leer (directoriosLeidos)",
+      "argumentos": [
+        "join(coreRoot, dir)",
+        "join(coreRoot, \"data\", \"plugins\")"
+      ],
+      "porque": "cada dato de un directorio que un test lee tiene que seleccionar sus módulos de mutación"
+    },
+    {
+      "fichero": "contract-fixtures.test.ts",
+      "lee": "las carpetas de data/contract/fixtures",
+      "argumentos": [
+        "dir"
+      ],
+      "porque": "toda fixture de contrato se valida contra su zod"
+    },
+    {
+      "fichero": "contract-terms.test.ts",
+      "lee": "narrative-mcp/prompts (PROMPTS_DIR)",
+      "argumentos": [
+        "PROMPTS_DIR"
+      ],
+      "porque": "los términos snake_case de los prompts del motor tienen que existir en algún proceso"
+    },
+    {
+      "fichero": "qa-lib-tiene-quien-lo-mire.test.ts",
+      "lee": "nefan-core/test (TEST_DIR)",
+      "argumentos": [
+        "TEST_DIR"
+      ],
+      "porque": "quién importa cada módulo de qa/lib: los tests de la raíz de test/"
+    },
+    {
+      "fichero": "scene-schema.test.ts",
+      "lee": "nefan-core/data/scenes (SCENES)",
+      "argumentos": [
+        "SCENES"
+      ],
+      "porque": "toda fixture de escena pasa el zod de Format D"
+    },
+    {
+      "fichero": "session-storage.test.ts",
+      "lee": "directorios temporales de saves que crea el propio test",
+      "argumentos": [
+        "join(root, \"s1\")",
+        "join(root, \"s\")"
+      ],
+      "porque": "lo que el almacén de sesiones deja escrito en disco"
     }
   ]
 }

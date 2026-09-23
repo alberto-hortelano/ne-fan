@@ -30,9 +30,11 @@
  *  El salto es por NOMBRE de directorio, a cualquier profundidad, como el
  *  `ignore` de `arch-rules.json`. Cualquier OTRO directorio con punto
  *  (`qa/.oculto/`) se barre: «todo lo que empiece por punto» dejaba pasar un
- *  `.ts` ahí. Lo que esto deja fuera está escrito en el punto (7) de
- *  `_lo_que_esto_NO_sujeta` del padrón: un `.mjs` en esos tres directorios no
- *  lo ve ninguno de los dos candados.
+ *  `.ts` ahí. Lo que esto deja fuera —un `.mjs` en esos tres directorios no lo
+ *  ve NINGÚN candado que consuma el barrido— está medido en el punto (6) de
+ *  `_lo_que_esto_NO_sujeta` de `data/contract/recorridos-de-test.json`, y cada
+ *  padrón consumidor lo dice en el suyo y remite ahí (el de sondas, en su
+ *  punto (7)).
  *
  *  ## Symlinks: valen por lo que apuntan
  *

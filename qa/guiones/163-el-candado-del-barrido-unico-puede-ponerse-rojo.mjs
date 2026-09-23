@@ -17,25 +17,25 @@
  *
  *  ── LOS AGUJEROS TAMBIÉN SE CANDAN (molde del 148) ─────────────────────────
  *
- *  Dos tablas de agujeros, medidas en la QA de la tanda AL (2026-09-23):
+ *  Dos tablas de agujeros. La QA de la tanda AL (2026-09-23) midió 9 formas
+ *  INVISIBLES y 8 de ROJO DE REBOTE (paradas solo por un aserto cuya prosa
+ *  decía lo contrario). La corrección de H-1/H-2 enseñó al detector las 17
+ *  —alias por asignación, `globSync`, `promises.readdir` y `fs.promises`,
+ *  `opendirSync`, `require`, destructurado de un espacio, helpers `.mjs`,
+ *  `this.x`/`obj.x`, `let` reasignado, expresión con nombre, referencia sin
+ *  llamar, clave entre comillas, `as const`, `{recursive}` y `...OPCIONES`—
+ *  y subieron a SABOTAJES: cada una, sola, pone roja la TOTALIDAD y la nombra.
+ *  Lo que queda son los puntos (1)-(3) de `_lo_que_esto_NO_sujeta`:
  *
- *   · **INVISIBLES DEL TODO** (cero rojos): formas de recorrer `qa/` que el
- *     detector no ve ni como recorrido ni como lectura plana. Las más
- *     probables en un test nuevo: `globSync("qa/**\/*.mjs")` (Node ≥ 22 lo
- *     trae en `node:fs`), `fs.promises.readdir(d, {recursive: true})`, el alias
- *     por asignación (`const leer = readdirSync`) y un helper `.mjs` bajo
- *     `test/` (el censo solo mira `.ts`). Ninguna está en
- *     `_lo_que_esto_NO_sujeta` del padrón.
- *   · **ROJO DE REBOTE**: recorridos recursivos que el detector NO ve como
- *     tales (la recursión por `this.x`/`obj.x`, la función expresión con
- *     nombre propio, el `let` reasignado, `flatMap(baja)` sin llamar, la clave
- *     `"recursive"` entre comillas, `true as const`, el `{recursive}`
- *     abreviado y el `...OPCIONES`). Hoy salen rojos, pero por el aserto
- *     «LÍMITE MEDIDO (4)», cuyo `deepEqual` sobre la LISTA de lectores planos
- *     cambia con cualquier fichero nuevo que lea un directorio —mientras su
- *     texto y el punto (4) del padrón dicen «uno nuevo sin declarar pasa en
- *     verde»—. Si ese aserto pasa a contar en vez de listar, estos ocho pasan
- *     en verde; si el detector aprende a verlos, suben a SABOTAJES. En los
+ *   · **INVISIBLES DEL TODO** (cero rojos, punto 1): lo que no es una llamada
+ *     a un lector de `node:fs` — un `find` por shell, `fs["readdirSync"]` y
+ *     el lector pasado como valor a otra función.
+ *   · **ROJO POR LA TOTALIDAD DE LECTORES** (puntos 2 y 3): recorridos que el
+ *     detector NO ve como tales —recursión mutua, pila, `recursive` que llega
+ *     por parámetro, por import o por `let` reasignado— y salen como lectura
+ *     PLANA sin declarar. Los para la totalidad de lectores, que es una lista
+ *     con motivo, no la de recorridos. Si el detector aprende a verlos, suben
+ *     a SABOTAJES; si la totalidad de lectores se afloja, salen VERDES. En los
  *     dos casos esta tabla se pone roja y lo dice.
  *
  *      node qa/run.mjs --sin-navegador 163   # solo éste, sin preset ni Chromium
@@ -66,13 +66,58 @@ const PREFIJO = "zz-sabotaje-qa-704-";
  *  obsoleto», no falso verde. */
 const A_TOTALIDAD = "totalidad: cada recorrido recursivo fuera del dueño está en el padrón con su cifra exacta";
 const A_LEGALIZA = "el padrón no puede legalizar una copia del banco: ningún `recorre` nombra qa";
-const A_LIMITE_4 = "LÍMITE MEDIDO (4): los lectores de carpeta no tienen totalidad; hoy hay estos fuera del padrón";
+const A_LECTORES = "totalidad de lectores: cada lectura plana de un directorio está declarada, por su argumento";
 
 const FS = 'import { readdirSync } from "node:fs"; import { join } from "node:path";';
 /** La copia con `flatMap` que #704 retiró de tres tests. */
 const FLATMAP_VIEJO = `${FS}
 export const banco = (dir = "qa"): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? banco(join(dir, e.name)) : [e.name]);
 `;
+
+const RECURSIVO = (cuerpo) => `${FS}\n${cuerpo}\n`;
+/** [nombre, fichero, contenido]. Las 17 formas que la QA encontró abiertas y
+ *  la corrección de H-1/H-2 cerró: hoy cada una, sola, pone roja la totalidad. */
+const CERRADOS = [
+  ["el alias por ASIGNACIÓN (`const leer = readdirSync; leer(…, {recursive: true})`)", "alias-asignacion.ts", RECURSIVO('const leer = readdirSync; export const a = leer("qa", { recursive: true });')],
+  ["`globSync(\"qa/**/*.mjs\")` de `node:fs`", "globsync.ts", 'import { globSync } from "node:fs"; export const a = globSync("qa/**/*.mjs");\n'],
+  ["`import { promises } from \"node:fs\"; promises.readdir(…, {recursive: true})`", "promises-named.ts", 'import { promises } from "node:fs"; export const a = promises.readdir("qa", { recursive: true });\n'],
+  ["`fs.promises.readdir(…, {recursive: true})`", "fs-promises.ts", 'import fs from "node:fs"; export const a = fs.promises.readdir("qa", { recursive: true });\n'],
+  [
+    "`opendirSync` recursivo (otro lector de `node:fs`)",
+    "opendirsync.ts",
+    'import { opendirSync } from "node:fs"; import { join } from "node:path";\nexport function baja(d: string): string[] { const out: string[] = []; const dir = opendirSync(d); let e; while ((e = dir.readSync())) { if (e.isDirectory()) out.push(...baja(join(d, e.name))); else out.push(e.name); } dir.closeSync(); return out; }\n',
+  ],
+  [
+    "`createRequire` + `require(\"node:fs\")`",
+    "create-require.ts",
+    'import { createRequire } from "node:module"; const require = createRequire(import.meta.url); const { readdirSync } = require("node:fs"); export const a = readdirSync("qa", { recursive: true });\n',
+  ],
+  ["el destructurado de un espacio de nombres (`import * as fs; const { readdirSync } = fs`)", "destructura-espacio.ts", 'import * as fs from "node:fs"; const { readdirSync } = fs; export const a = readdirSync("qa", { recursive: true });\n'],
+  ["un helper `.mjs` bajo `test/` con la copia flatMap (el censo mira JS además de TS)", "helper.mjs", FLATMAP_VIEJO.replace(": string[]", "")],
+  ["la recursión por `this.baja(…)` en un método de clase", "clase-this.ts", RECURSIVO("export class W { baja(d: string): string[] { return readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? this.baja(join(d, e.name)) : [e.name]); } }")],
+  ["la recursión por `w.baja(…)` en un método de objeto", "metodo-objeto.ts", RECURSIVO("export const w = { baja(d: string): string[] { return readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? w.baja(join(d, e.name)) : [e.name]); } };")],
+  ["el `let` reasignado (`let baja; baja = (d) => … baja(…)`)", "let-reasignada.ts", RECURSIVO("let baja: (d: string) => string[]; baja = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? baja(join(d, e.name)) : [e.name]); export { baja };")],
+  ["la función expresión con NOMBRE PROPIO (`const w = function baja(d) { … baja(…) }`)", "function-expression.ts", RECURSIVO("export const w = function baja(d: string): string[] { return readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? baja(join(d, e.name)) : [e.name]); };")],
+  ["la referencia sin llamar (`.flatMap(baja)`)", "referencia.ts", RECURSIVO("export const baja = (d: string): string[] => readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(d, e.name)).flatMap(baja);")],
+  ["la clave entre comillas (`{ \"recursive\": true }`)", "clave-string.ts", RECURSIVO('export const a = readdirSync("qa", { "recursive": true });')],
+  ["`true as const` y el `{ recursive }` abreviado", "as-const.ts", RECURSIVO('const recursive = true; export const a = readdirSync("qa", { recursive: true as const }); export const b = readdirSync("qa", { recursive });')],
+  ["las opciones por `...OPCIONES`", "spread.ts", RECURSIVO('const OPCIONES = { recursive: true }; export const a = readdirSync("qa", { ...OPCIONES, withFileTypes: true });')],
+];
+
+/** [nombre, fichero, contenido]. Cero rojos hoy: punto (1) del padrón. */
+const INVISIBLES = [
+  ["`execSync(\"find qa -name *.mjs\")`", "child-process.ts", 'import { execSync } from "node:child_process"; export const a = execSync("find qa -name *.mjs").toString().split("\\n");\n'],
+  ["el lector con corchetes (`fs[\"readdirSync\"]`)", "corchetes.ts", 'import * as fs from "node:fs"; export const a = fs["readdirSync"]("qa", { recursive: true });\n'],
+  ["el lector pasado como VALOR a otra función", "como-valor.ts", RECURSIVO('const aplica = (f: typeof readdirSync) => f("qa", { recursive: true }); export const a = aplica(readdirSync);')],
+];
+
+/** [nombre, fichero, contenido]. Hoy rojos SOLO por `A_LECTORES`: puntos (2) y (3). */
+const DE_REBOTE = [
+  ["la recursión MUTUA", "mutua.ts", RECURSIVO("export function a(d: string): void { for (const e of readdirSync(d)) b(join(d, e)); }\nexport function b(d: string): void { a(d); }")],
+  ["el recorrido con PILA", "pila.ts", RECURSIVO('const pila = ["qa"]; while (pila.length) for (const e of readdirSync(pila.pop()!, { withFileTypes: true })) if (e.isDirectory()) pila.push(join("qa", e.name));')],
+  ["`recursive` que llega por PARÁMETRO", "parametro.ts", RECURSIVO('export const f = (o: { recursive: boolean }) => readdirSync("qa", o);')],
+  ["`recursive` en un `let` reasignado", "let-opciones.ts", RECURSIVO('let o = {}; o = { recursive: true }; export const a = readdirSync("qa", o);')],
+];
 
 /** [nombre, fichero sembrado (o null), contenido, prepara(padron) (o null), asertos que DEBEN ponerse rojos (y solo ésos)] */
 const SABOTAJES = [
@@ -131,48 +176,31 @@ export function baja(d: string, cb: (f: string) => void): void { for (const e of
     [A_TOTALIDAD],
   ],
   [
-    "se borra un lector de carpeta declarado (`un-numero-un-guion`): rojo, pero por el LÍMITE (4), no por totalidad",
+    "se borra un lector de carpeta declarado (`un-numero-un-guion`): rojo por la totalidad de LECTORES",
     null,
     "",
     (p) => {
       p.lectores_de_carpeta_de_qa = p.lectores_de_carpeta_de_qa.filter((l) => l.fichero !== "un-numero-un-guion.test.ts");
     },
-    [A_LIMITE_4],
-  ],
-];
-
-const RECURSIVO = (cuerpo) => `${FS}\n${cuerpo}\n`;
-/** [nombre, fichero, contenido]. Cero rojos hoy. */
-const INVISIBLES = [
-  ["el alias por ASIGNACIÓN (`const leer = readdirSync; leer(…, {recursive: true})`)", "alias-asignacion.ts", RECURSIVO('const leer = readdirSync; export const a = leer("qa", { recursive: true });')],
-  ["`globSync(\"qa/**/*.mjs\")` de `node:fs`", "globsync.ts", 'import { globSync } from "node:fs"; export const a = globSync("qa/**/*.mjs");\n'],
-  ["`import { promises } from \"node:fs\"; promises.readdir(…, {recursive: true})`", "promises-named.ts", 'import { promises } from "node:fs"; export const a = promises.readdir("qa", { recursive: true });\n'],
-  ["`fs.promises.readdir(…, {recursive: true})`", "fs-promises.ts", 'import fs from "node:fs"; export const a = fs.promises.readdir("qa", { recursive: true });\n'],
-  [
-    "`opendirSync` recursivo (otro lector de `node:fs`)",
-    "opendirsync.ts",
-    'import { opendirSync } from "node:fs"; import { join } from "node:path";\nexport function baja(d: string): string[] { const out: string[] = []; const dir = opendirSync(d); let e; while ((e = dir.readSync())) { if (e.isDirectory()) out.push(...baja(join(d, e.name))); else out.push(e.name); } dir.closeSync(); return out; }\n',
+    [A_LECTORES],
   ],
   [
-    "`createRequire` + `require(\"node:fs\")`",
-    "create-require.ts",
-    'import { createRequire } from "node:module"; const require = createRequire(import.meta.url); const { readdirSync } = require("node:fs"); export const a = readdirSync("qa", { recursive: true });\n',
+    "se DECLARA un argumento que el fichero no lee (lector caducado por SU carpeta, no por «alguna lectura»)",
+    null,
+    "",
+    (p) => {
+      p.lectores_de_carpeta_de_qa.find((l) => l.fichero === "un-numero-un-guion.test.ts").argumentos.push("join(repoRoot, \"qa\", \"lib\")");
+    },
+    [A_LECTORES],
   ],
-  ["`execSync(\"find qa -name *.mjs\")`", "child-process.ts", 'import { execSync } from "node:child_process"; export const a = execSync("find qa -name *.mjs").toString().split("\\n");\n'],
-  ["el destructurado de un espacio de nombres (`import * as fs; const { readdirSync } = fs`)", "destructura-espacio.ts", 'import * as fs from "node:fs"; const { readdirSync } = fs; export const a = readdirSync("qa", { recursive: true });\n'],
-  ["un helper `.mjs` bajo `test/` con la copia flatMap (el censo solo mira `.ts`)", "helper.mjs", FLATMAP_VIEJO.replace(": string[]", "")],
-];
-
-/** [nombre, fichero, contenido]. Hoy rojos SOLO por `A_LIMITE_4`. */
-const DE_REBOTE = [
-  ["la recursión por `this.baja(…)` en un método de clase", "clase-this.ts", RECURSIVO("export class W { baja(d: string): string[] { return readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? this.baja(join(d, e.name)) : [e.name]); } }")],
-  ["la recursión por `w.baja(…)` en un método de objeto", "metodo-objeto.ts", RECURSIVO("export const w = { baja(d: string): string[] { return readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? w.baja(join(d, e.name)) : [e.name]); } };")],
-  ["el `let` reasignado (`let baja; baja = (d) => … baja(…)`)", "let-reasignada.ts", RECURSIVO("let baja: (d: string) => string[]; baja = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? baja(join(d, e.name)) : [e.name]); export { baja };")],
-  ["la función expresión con NOMBRE PROPIO (`const w = function baja(d) { … baja(…) }`)", "function-expression.ts", RECURSIVO("export const w = function baja(d: string): string[] { return readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? baja(join(d, e.name)) : [e.name]); };")],
-  ["la referencia sin llamar (`.flatMap(baja)`)", "referencia.ts", RECURSIVO("export const baja = (d: string): string[] => readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(d, e.name)).flatMap(baja);")],
-  ["la clave entre comillas (`{ \"recursive\": true }`)", "clave-string.ts", RECURSIVO('export const a = readdirSync("qa", { "recursive": true });')],
-  ["`true as const` y el `{ recursive }` abreviado", "as-const.ts", RECURSIVO('const recursive = true; export const a = readdirSync("qa", { recursive: true as const }); export const b = readdirSync("qa", { recursive });')],
-  ["las opciones por `...OPCIONES`", "spread.ts", RECURSIVO('const OPCIONES = { recursive: true }; export const a = readdirSync("qa", { ...OPCIONES, withFileTypes: true });')],
+  [
+    "un `recorre` que nombra el banco en MAYÚSCULAS (`QA/guiones`)",
+    "flatmap.ts",
+    FLATMAP_VIEJO,
+    (p) => p.recorridos.push({ fichero: `${PREFIJO}flatmap.ts`, sitios: 1, recorre: "QA/guiones", porque: "sabotaje del guion 163: la mentira más barata" }),
+    [A_LEGALIZA],
+  ],
+  ...CERRADOS.map(([nombre, fichero, contenido]) => [`cerrado en H-1/H-2 · ${nombre}`, fichero, contenido, null, [A_TOTALIDAD]]),
 ];
 
 /** Corre el candado y devuelve los asertos ROJOS (solo las líneas INDENTADAS:
@@ -234,7 +262,7 @@ export default async function (ctx) {
     );
     if (base.rojos.length !== 0 || base.total <= 0) return;
 
-    const nombrados = [A_TOTALIDAD, A_LEGALIZA, A_LIMITE_4];
+    const nombrados = [A_TOTALIDAD, A_LEGALIZA, A_LECTORES];
     const ausentes = nombrados.filter((n) => !base.salida.includes(n));
     ctx.expect(
       `los ${nombrados.length} asertos que este guion nombra siguen llamándose así`,
@@ -296,9 +324,9 @@ export default async function (ctx) {
     bloque(INVISIBLES, [], "invisibles del todo", "si ahora lo caza la totalidad, súbelo a SABOTAJES y bórralo de aquí");
     bloque(
       DE_REBOTE,
-      [A_LIMITE_4],
-      "rojo de rebote",
-      "si lo caza la TOTALIDAD, el detector ya lo ve: súbelo a SABOTAJES; si sale VERDE, el LÍMITE (4) dejó de listar y estas ocho formas ya no las para nadie",
+      [A_LECTORES],
+      "rojo por la totalidad de lectores",
+      "si lo caza la TOTALIDAD de recorridos, el detector ya lo ve: súbelo a SABOTAJES y retira su punto de `_lo_que_esto_NO_sujeta`; si sale VERDE, la totalidad de lectores se aflojó y estas formas ya no las para nadie",
     );
   } finally {
     restaura();
