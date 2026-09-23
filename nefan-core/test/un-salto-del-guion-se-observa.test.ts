@@ -43,8 +43,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
 import { fuentesDelBanco } from "./banco-ficheros.js";
-import { arbolDelBanco, cuerpoPrincipal } from "./helpers-del-banco.js";
-import { saltosDelGuion, type Lector, type Salto } from "./saltos-del-guion.js";
+import { arbolDelBanco, cuerpoPrincipal, recorre } from "./helpers-del-banco.js";
+import { evidenciaDeCtx, saltosDelGuion, type Lector, type Salto } from "./saltos-del-guion.js";
 
 const core = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(core, "..");
@@ -320,6 +320,11 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
       'async function av(ctx, y) { await otra(ctx, y); }\nasync function otra(ctx, y) { ctx.sinMedirBloque("sin y"); }',
     ])
       assert.deepEqual(rojos(rama(h)), [], h);
+    // Falso rojo DECLARADO (QA de AH, H4; dirección segura): la guarda honesta
+    // que el padrón recomienda, dentro de un helper, no «afirma siempre»
+    // porque la regla del `if` pide que afirmen las dos ramas.
+    const guarda = 'async function av(ctx, y) { if (!y) { ctx.sinMedirBloque("sin y"); return; } ctx.expect("z", y.ok); }';
+    assert.equal(rojos(rama(guarda)).length, 1, "el detector ve que la rama que retorna ya declaró: quita el falso rojo de la cabecera y del OBSERVADOR del padrón");
   });
 
   it("N2: `!!true` y el `expectEspera` cuya sonda devuelve lo esperado por su forma no observan", () => {
@@ -330,6 +335,13 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
       'await ctx.expectEspera("z", false, () => false);',
       'await ctx.expectEspera("z", true, async () => { return true; });',
       'await ctx.expectEspera("z", false, function () { return !1; }, { timeout: 5 });',
+      // QA de AH, H2: el espejo de `!!true`.
+      'ctx.expect("z", !(x && false));',
+      'ctx.expect("z", !(x !== x));',
+      'await ctx.expectEspera("z", false, () => x !== x || false);',
+      // QA de AH, H3: la sonda con más de una sentencia.
+      'await ctx.expectEspera("z", true, () => { ctx.log("p"); return true; });',
+      'await ctx.expectEspera("z", true, () => { if (x) return 1; return true; });',
     ])
       assert.equal(rojos(analiza(`${pre}if (!x) { ${rama} return; }\n${DETRAS}`)).length, 1, rama);
     // Observan: la sonda que mira algo, la que falla siempre (rojo seguro) y `!!x`.
@@ -338,11 +350,14 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
       'await ctx.expectEspera("z", true, () => false);',
       'await ctx.expectEspera("z", false, () => true);',
       'await ctx.expectEspera("z", NO, () => true);',
+      'await ctx.expectEspera("z", true, () => { if (x) return true; return x.ok; });',
+      'await ctx.expectEspera("z", true, () => { if (x) return true; });',
+      'ctx.expect("z", !(x && y));',
       'ctx.expect("z", !!x);',
     ])
       assert.deepEqual(rojos(analiza(`${pre}if (!x) { ${rama} return; }\n${DETRAS}`)), [], rama);
     // Y `!!true` tampoco afirma la precondición.
-    assert.equal(rojos(analiza(`${pre}ctx.expect("pre", !!true);\nif (!x) return;\n${DETRAS}`)).length, 1);
+    for (const t of ["!!true", "!(x && false)"]) assert.equal(rojos(analiza(`${pre}ctx.expect("pre", ${t});\nif (!x) return;\n${DETRAS}`)).length, 1, t);
   });
 
   // ── Cada regla, en sintético ───────────────────────────────────────────────
@@ -479,8 +494,14 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
     // El IIFE que recibe el ctx con OTRO nombre (#716, N3): tampoco lo ve el candado…
     const iife = 'await (async (c) => { const x = await algo(); if (!x) { c.log("no"); return; } c.expect("x", x.ok); })(ctx);\nctx.expect("otra", true);';
     assert.deepEqual(analiza(iife), [], "el detector mira los IIFE: retira el punto (1)");
-    // …y las cuatro las cuenta la MEDIDA (QA de la tanda, M1: antes el cierre no contaba; #716: ni el IIFE).
-    for (const c of [cierre, anonima, iife]) assert.equal(rojos(analiza(c, { helpers: true })).length, 1, c);
+    // …ni con el ctx desestructurado en la firma (QA de AH, H1)…
+    const iifePatron = 'await (async ({ expect, log }) => { const x = await algo(); if (!x) { log("no"); return; } expect("x", x.ok); })(ctx);\nctx.expect("otra", true);';
+    assert.deepEqual(analiza(iifePatron), [], "el detector mira los IIFE: retira el punto (1)");
+    // …ni el que no nombra ningún verbo: solo lo delata la llamada que le pasa el ctx.
+    const iifeMudo = 'await (async (c) => { const x = await algo(); if (!x) { c.log("no"); return; } await lib.medir(c, x); })(ctx);\nctx.expect("otra", true);';
+    assert.deepEqual(analiza(iifeMudo), [], "el detector mira los IIFE: retira el punto (1)");
+    // …y todas las cuenta la MEDIDA (QA de la tanda, M1: antes el cierre no contaba; #716: ni el IIFE).
+    for (const c of [cierre, anonima, iife, iifePatron, iifeMudo]) assert.equal(rojos(analiza(c, { helpers: true })).length, 1, c);
     assert.equal(rojos(analiza("await bloque(ctx);\nctx.expect(\"otra\", true);", { antes: conParametro, helpers: true })).length, 1);
     const enHelpers = guiones.flatMap((g) =>
       saltosDelGuion(join(QA, g), leerDisco, { helpers: true })
@@ -554,27 +575,52 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
     const casos = [
       `${pre}const NO = false;\nif (!pre) { ctx.expect("x", NO === false); return; }\n${DETRAS}`,
       `${pre}ctx.expect("pre", typeof pre === "object" || pre == null);\nif (!pre) return;\n${DETRAS}`,
+      // QA de AH, H6: el ternario con dos ramas verdaderas y la plantilla con texto.
+      `${pre}if (!pre) { ctx.expect("x", pre ? true : true); return; }\n${DETRAS}`,
+      `${pre}if (!pre) { ctx.expect("x", \`ok\${pre}\`); return; }\n${DETRAS}`,
     ];
     for (const c of casos) assert.deepEqual(rojos(analiza(c)), [], `el detector evalúa valores: retira el punto (11)\n${c}`);
   });
 
-  it("LÍMITE MEDIDO (12): el ctx guardado en un objeto, o un parámetro de OTRO módulo que nunca llama a un verbo, no se sigue", () => {
+  it("LÍMITE MEDIDO (12): el ctx en un objeto o tras una clave calculada no se sigue, y sin ámbitos un objeto AJENO con `.expect` observa", () => {
     const objeto = 'const o = { ctx };\nconst pre = await algo();\nif (!pre) return;\no.ctx.expect("d", true);';
     assert.deepEqual(analiza(objeto), [], `el detector sigue ese alias: retira esa frase del punto (12)\n${objeto}`);
-    // El residuo de #716: `c` solo se desestructura, así que nada lo delata como ctx.
-    const lib = { "d.mjs": 'export async function afirma(c, x) { const { expect } = c; expect("pose", x > 0); }' };
-    // El helper se resuelve y no parece asertador, así que el salto que lo deja
-    // detrás no cuenta (en el lado seguro, EXCUSAR, tampoco observa).
+    // El residuo: un parámetro de OTRO módulo que no nombra ningún verbo (clave
+    // calculada), así que nada lo delata como ctx y el helper no cuenta como aserto.
+    const lib = { "d.mjs": 'export async function afirma(c, x) { const v = "expect"; c[v]("pose", x > 0); }' };
     const residuo = analiza('const pre = await algo();\nif (!pre) { ctx.log("no"); return; }\nawait afirma(ctx, pre);', { antes: 'import { afirma } from "../lib/d.mjs";', lib });
-    assert.deepEqual(residuo, [], "el detector sigue el ctx desestructurado de otro módulo: retira el residuo del punto (12)");
-    // Lo que #716 cerró: reasignado sin declarar y el parámetro renombrado a la vista, por el VERBO.
-    for (const c of [
-      'let c;\nc = ctx;\nconst pre = await algo();\nif (!pre) return;\nc.expect("d", true);',
-      'async function m(c) { c.expect("d", true); }\nconst pre = await algo();\nif (!pre) return;\nawait m(ctx);',
-      // En el MISMO módulo el parámetro se sigue aunque solo se desestructure:
-      // lo delata la llamada que le pasa el ctx.
-      'async function m(c) { const { expect } = c; expect("d", true); }\nconst pre = await algo();\nif (!pre) return;\nawait m(ctx);',
-    ])
-      assert.deepEqual(rojos(analiza(c)).map((x) => x.condicion), ["!pre"], c);
+    assert.deepEqual(residuo, [], "el detector sigue el ctx por clave calculada: retira el residuo del punto (12)");
+    // Sin ámbitos, lo que delata un ctx vale para cualquiera: un objeto ajeno con
+    // `.expect` pasa por ctx y EXCUSA la rama (QA de AH, H5)…
+    const ajeno = 'const t = { expect() {} };\nconst e = t.expect;\nconst x = await algo();\nif (!x) { e("z", x.ok); return; }\n' + DETRAS;
+    assert.deepEqual(rojos(analiza(ajeno)), [], "el detector distingue un objeto ajeno de un ctx: retira esa frase del punto (12)");
+    // …así que la cifra que importa es cuántos receptores de verbo del banco NO son `ctx`: hoy, ninguno.
+    const delatores = new Set<string>();
+    for (const f of fuentesDelBanco(QA))
+      recorre(arbolDelBanco(readFileSync(join(QA, f), "utf8")), (x) => {
+        const ev = evidenciaDeCtx(x);
+        if (ev) delatores.add("receptor" in ev ? ev.receptor : `patrón ${ev.patron.getText()} en ${f}`);
+      });
+    assert.deepEqual(
+      [...delatores],
+      ["ctx"],
+      "algo que no se llama `ctx` en qa/ se toma por ctx por su verbo: si es un ctx renombrado, añádelo aquí; si es un objeto AJENO, está excusando saltos (punto (12))",
+    );
+    // Lo que #716 y su QA cerraron: por el VERBO (llamado, leído o desestructurado,
+    // en la firma o en el cuerpo, en el guion o en qa/lib) y por la llamada que pasa el ctx.
+    const cerrados: [string, Record<string, string>?][] = [
+      ['let c;\nc = ctx;\nconst pre = await algo();\nif (!pre) return;\nc.expect("d", true);'],
+      ['async function m(c) { c.expect("d", true); }\nconst pre = await algo();\nif (!pre) return;\nawait m(ctx);'],
+      ['async function m(c) { const e = c.expect; e("d", true); }\nconst pre = await algo();\nif (!pre) return;\nawait m(ctx);'],
+      ['async function m({ expect }) { expect("d", true); }\nconst pre = await algo();\nif (!pre) return;\nawait m(ctx);'],
+      ['async function m(c) { const { expect: e } = c; e("d", true); }\nconst pre = await algo();\nif (!pre) return;\nawait m(ctx);'],
+      ['async function m({ expect: e, log }) { log("m"); e("d", true); }\nconst pre = await algo();\nif (!pre) return;\nawait m(ctx);'],
+      ['const pre = await algo();\nif (!pre) return;\nawait af(ctx);', { "e.mjs": 'export async function af({ expect }) { expect("d", true); }' }],
+      ['const pre = await algo();\nif (!pre) return;\nawait af(ctx);', { "e.mjs": 'export async function af(c) { const { expect } = c; expect("d", true); }' }],
+    ];
+    for (const [c, l] of cerrados) {
+      const r = analiza(c, l ? { antes: 'import { af } from "../lib/e.mjs";', lib: l } : {});
+      assert.deepEqual(rojos(r).map((x) => x.condicion), ["!pre"], c);
+    }
   });
 });

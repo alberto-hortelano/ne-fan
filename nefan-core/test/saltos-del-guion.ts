@@ -17,11 +17,13 @@
  *  **El `ctx` y sus alias.** Un verbo es `ctx.v(…)`, `ctx["v"](…)` o la
  *  llamada a un alias: `const c = ctx` (y `c.v(…)`), `const { v } = ctx`,
  *  `const e = ctx.v` o `ctx.v.bind(ctx)` (QA de la tanda: con cualquiera de
- *  ellos el detector veía 0 saltos). Además es un `ctx`, por fichero y sin
- *  ámbitos, el RECEPTOR de un verbo que afirma o declara (`c.expect(…)`,
- *  también tras `let c; c = ctx`) y el PARÁMETRO que recibe un `ctx` en una
- *  llamada a una función del fichero o a un IIFE (`(async (c) => …)(ctx)`,
- *  #716).
+ *  ellos el detector veía 0 saltos). Además, por fichero y sin ámbitos, lo
+ *  delata el NOMBRE de un verbo que afirma o declara —el receptor de `c.v`,
+ *  llamado o no (también tras `let c; c = ctx`), y el patrón que lo
+ *  desestructura, en el cuerpo o en la firma (`({ expect }) => …`)— y la
+ *  llamada que pasa un `ctx` al parámetro de una función del fichero o de un
+ *  IIFE (`(async (c) => …)(ctx)`, #716). Sin ámbitos, un objeto AJENO con
+ *  `.expect` también se toma por ctx, y eso EXCUSA saltos: punto (12).
  *
  *  **Aserto** (para DETECTAR un salto, en la dirección que da más saltos): un
  *  `expect`/`expectEspera`, la llamada a un ASERTADOR (una función del guion
@@ -40,12 +42,16 @@
  *  **Observador:** `throw`, `sinMedir`/`sinMedirBloque`, un `expect` que no
  *  es TAUTOLÓGICO (2.º argumento `true`, un literal verdadero, `!!true`,
  *  `x || true`, `x === x`), un `expectEspera` que no lo es (la sonda, 3.er
- *  argumento, devuelve en línea una tautología con `debeOcurrir` `true`, o una
- *  contradicción con `false`), o la llamada a un helper que AFIRMA SIEMPRE: en
+ *  argumento, escrita en línea, devuelve en TODOS sus `return` una tautología
+ *  con `debeOcurrir` `true`, o una contradicción con `false`: `!(x && false)`,
+ *  `x !== x`), o la llamada a un helper que AFIRMA SIEMPRE: en
  *  el tronco de su cuerpo —sin ramas de `if` salvo que afirmen las dos, sin
  *  bucles, `switch`, ternarios ni cortocircuitos— hay un observador antes del
  *  primer `return`. Contener un aserto (asertador) basta para DETECTAR, no
  *  para EXCUSAR (#716: el helper que afirma `true` o afirma bajo un `if`).
+ *  Falso rojo aceptado (dirección segura): la guarda honesta DENTRO de un
+ *  helper (`if (!y) { ctx.sinMedirBloque(…); return; } ctx.expect(…)`) no
+ *  afirma siempre, porque la rama que retorna no cuenta como afirmar.
  *
  *  **Observado** si:
  *   1. cada rama o bloque que retorna (la del `if`, el `case`, el `catch`)
@@ -184,22 +190,42 @@ function esTautologia(arg: ts.Expression): boolean {
   return iguales.includes(op) && condicionNormalizada(e.left) === condicionNormalizada(e.right);
 }
 
-/** Lo que siempre es falso por su forma: un literal falso o `!<tautología>`.
- *  `!!x` no lo es (el guion 14 usa `!!c1`): solo `!!true` y sus parientes. */
+/** El espejo de `esTautologia`: lo que siempre es falso por su forma. Un
+ *  literal falso, `!<tautología>`, `a && <contradicción>`, `a || b` con las
+ *  dos contradictorias, o `x !== x`. `!!x` no lo es (el guion 14 usa `!!c1`):
+ *  solo `!!true` y sus parientes. */
 function esContradiccion(arg: ts.Expression): boolean {
   const e = sinEnvoltorio(arg);
   if (esLiteralFalso(e)) return true;
-  return ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.ExclamationToken && esTautologia(e.operand);
+  if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.ExclamationToken) return esTautologia(e.operand);
+  if (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "Boolean" && e.arguments.length === 1)
+    return esContradiccion(e.arguments[0]);
+  if (!ts.isBinaryExpression(e)) return false;
+  const op = e.operatorToken.kind;
+  if (op === ts.SyntaxKind.AmpersandAmpersandToken) return esContradiccion(e.left) || esContradiccion(e.right);
+  if (op === ts.SyntaxKind.BarBarToken) return esContradiccion(e.left) && esContradiccion(e.right);
+  const distintos = [ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken];
+  return distintos.includes(op) && condicionNormalizada(e.left) === condicionNormalizada(e.right);
 }
 
-/** Lo que devuelve una sonda escrita en línea: el cuerpo de una flecha de
- *  expresión, o el de un bloque con un único `return e`. Otra cosa → null. */
-function devuelveLaSonda(arg: ts.Expression): ts.Expression | null {
+/** Lo que puede devolver una sonda escrita en línea: el cuerpo de una flecha
+ *  de expresión, o todos los `return` de un bloque que acaba en `return` y en
+ *  el que todos devuelven algo (las demás sentencias dan igual: si lanzan, la
+ *  sonda sale rota y el guion ROJO). Otra cosa → null. */
+function devuelveLaSonda(arg: ts.Expression): ts.Expression[] | null {
   const f = sinEnvoltorio(arg);
   if (!ts.isArrowFunction(f) && !ts.isFunctionExpression(f)) return null;
-  if (!ts.isBlock(f.body)) return f.body;
-  const [st] = f.body.statements;
-  return f.body.statements.length === 1 && ts.isReturnStatement(st) && st.expression ? st.expression : null;
+  if (!ts.isBlock(f.body)) return [f.body];
+  const ultima = f.body.statements.at(-1);
+  if (!ultima || !ts.isReturnStatement(ultima)) return null;
+  const out: ts.Expression[] = [];
+  let mudo = false;
+  recorreSinAnidadas(f.body, (x) => {
+    if (!ts.isReturnStatement(x)) return;
+    if (x.expression) out.push(x.expression);
+    else mudo = true;
+  });
+  return mudo ? null : out;
 }
 
 /** `expectEspera(frase, debeOcurrir, sonda, …)` que no puede ponerse rojo: la
@@ -208,10 +234,10 @@ function devuelveLaSonda(arg: ts.Expression): ts.Expression | null {
  *  no. Una polaridad que no es un literal no se evalúa: punto (11). */
 function esEsperaTautologica(n: ts.CallExpression): boolean {
   const [, debe, sonda] = n.arguments;
-  const e = debe && sonda ? devuelveLaSonda(sonda) : null;
-  if (!e) return false;
-  if (debe.kind === ts.SyntaxKind.TrueKeyword) return esTautologia(e);
-  return debe.kind === ts.SyntaxKind.FalseKeyword && esContradiccion(e);
+  const es = debe && sonda ? devuelveLaSonda(sonda) : null;
+  if (!es) return false;
+  if (debe.kind === ts.SyntaxKind.TrueKeyword) return es.every(esTautologia);
+  return debe.kind === ts.SyntaxKind.FalseKeyword && es.every(esContradiccion);
 }
 
 const lineaDe = (n: ts.Node): number => n.getSourceFile().getLineAndCharacterOfPosition(n.getStart()).line + 1;
@@ -262,17 +288,43 @@ function verboDeAcceso(m: Modulo, e: ts.Expression): string | null {
   return null;
 }
 
-/** El receptor de `x.v(…)` / `x["v"](…)` con `v` un verbo que afirma o
- *  declara: es un `ctx`, se llame como se llame (`let c; c = ctx`, `(c) => …`). */
-function receptorDeVerbo(x: ts.Node): string | null {
-  if (!ts.isCallExpression(x)) return null;
-  const c = x.expression;
-  let nombre: string;
-  if (ts.isPropertyAccessExpression(c)) nombre = c.name.text;
-  else if (ts.isElementAccessExpression(c) && ts.isStringLiteralLike(c.argumentExpression)) nombre = c.argumentExpression.text;
-  else return null;
-  if (!(AFIRMA.has(nombre) || DECLARA.has(nombre))) return null;
-  return ts.isIdentifier(c.expression) ? c.expression.text : null;
+const esVerboDeCtx = (v: string | null): boolean => v !== null && (AFIRMA.has(v) || DECLARA.has(v));
+
+/** El nombre de la propiedad que desestructura un elemento de patrón
+ *  (`{ expect }`, `{ expect: e }`, `{ "expect": e }`); null si es calculado. */
+function propiedadDe(el: ts.BindingElement): string | null {
+  const p = el.propertyName;
+  if (p === undefined) return ts.isIdentifier(el.name) ? el.name.text : null;
+  return ts.isIdentifier(p) || ts.isStringLiteralLike(p) ? p.text : null;
+}
+
+/** Lo que DELATA un `ctx` por el nombre de un verbo que afirma o declara, se
+ *  llame como se llame: el receptor de `c.v` / `c["v"]` (llamado o no: `let c;
+ *  c = ctx`, `(c) => …`, `const e = c.expect`), o un patrón que desestructura
+ *  un verbo (`const { expect } = c`, `async ({ expect }) => …`). Sin ámbitos:
+ *  un objeto AJENO con `.expect` también se toma por ctx, y eso no solo
+ *  sobrecuenta saltos, también los EXCUSA (punto (12) del padrón). */
+export type EvidenciaDeCtx = { receptor: string } | { patron: ts.ObjectBindingPattern };
+export function evidenciaDeCtx(x: ts.Node): EvidenciaDeCtx | null {
+  if (ts.isObjectBindingPattern(x)) return x.elements.some((el) => esVerboDeCtx(propiedadDe(el))) ? { patron: x } : null;
+  let nombre: string | null = null;
+  if (ts.isPropertyAccessExpression(x)) nombre = x.name.text;
+  else if (ts.isElementAccessExpression(x) && ts.isStringLiteralLike(x.argumentExpression)) nombre = x.argumentExpression.text;
+  if (!esVerboDeCtx(nombre)) return null;
+  const rec = (x as ts.PropertyAccessExpression | ts.ElementAccessExpression).expression;
+  return ts.isIdentifier(rec) ? { receptor: rec.text } : null;
+}
+
+/** Vuelca un patrón que desestructura un `ctx` en los verbos sueltos. ¿Cambió algo? */
+function vuelcaPatron(m: Modulo, pat: ts.ObjectBindingPattern): boolean {
+  let cambio = false;
+  for (const el of pat.elements) {
+    const prop = propiedadDe(el);
+    if (!ts.isIdentifier(el.name) || prop === null || m.sueltos.has(el.name.text)) continue;
+    m.sueltos.set(el.name.text, prop);
+    cambio = true;
+  }
+  return cambio;
 }
 
 /** La función a la que se llama, si está a la vista: un IIFE
@@ -283,18 +335,19 @@ function llamadaLocal(m: Modulo, x: ts.CallExpression): ts.SignatureDeclaration 
   return ts.isIdentifier(c) ? (m.fns.get(c.text) ?? null) : null;
 }
 
-/** Los alias de `ctx` y los verbos sueltos, por punto fijo: el receptor de un
- *  verbo, las declaraciones del fichero y el PARÁMETRO que recibe un `ctx` en
- *  una llamada a una función a la vista. Sin ámbitos: un `c` ajeno
- *  SOBRECUENTA. */
+/** Los alias de `ctx` y los verbos sueltos, por punto fijo: lo que delata un
+ *  verbo (`evidenciaDeCtx`), las declaraciones del fichero y el PARÁMETRO que
+ *  recibe un `ctx` en una llamada a una función a la vista. Sin ámbitos: un
+ *  `c` ajeno sobrecuenta Y excusa. */
 function aliasDeCtx(m: Modulo): void {
   const decls: ts.VariableDeclaration[] = [];
   const llamadas: ts.CallExpression[] = [];
   recorre(m.sf, (x) => {
     if (ts.isVariableDeclaration(x) && x.initializer) decls.push(x);
     if (ts.isCallExpression(x)) llamadas.push(x);
-    const r = receptorDeVerbo(x);
-    if (r) m.ctxs.add(r);
+    const ev = evidenciaDeCtx(x);
+    if (ev && "receptor" in ev) m.ctxs.add(ev.receptor);
+    else if (ev) vuelcaPatron(m, ev.patron);
   });
   for (let cambio = true; cambio; ) {
     cambio = false;
@@ -303,6 +356,7 @@ function aliasDeCtx(m: Modulo): void {
       if (!fn) continue;
       x.arguments.forEach((a, i) => {
         const p = fn.parameters[i]?.name;
+        // Un patrón en la firma (`({ expect }) => …`) ya lo delata su verbo.
         if (ts.isIdentifier(a) && m.ctxs.has(a.text) && p && ts.isIdentifier(p) && !m.ctxs.has(p.text)) {
           m.ctxs.add(p.text);
           cambio = true;
@@ -324,15 +378,8 @@ function aliasDeCtx(m: Modulo): void {
           m.sueltos.set(d.name.text, v);
           cambio = true;
         }
-      } else if (ts.isObjectBindingPattern(d.name) && ts.isIdentifier(ini) && m.ctxs.has(ini.text)) {
-        for (const el of d.name.elements) {
-          if (!ts.isIdentifier(el.name)) continue;
-          const prop = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : el.name.text;
-          if (!m.sueltos.has(el.name.text)) {
-            m.sueltos.set(el.name.text, prop);
-            cambio = true;
-          }
-        }
+      } else if (ts.isObjectBindingPattern(d.name) && ts.isIdentifier(ini) && m.ctxs.has(ini.text) && vuelcaPatron(m, d.name)) {
+        cambio = true;
       }
     }
   }
@@ -806,7 +853,8 @@ export function saltosDelGuion(ruta: string, leer: Lector, opciones: OpcionesDel
       if (x === principal || !ts.isFunctionLike(x)) return;
       const fn = x as ts.FunctionLikeDeclaration;
       if (!fn.body || !ts.isBlock(fn.body)) return;
-      if (contiene(fn, (y) => ts.isIdentifier(y) && m.ctxs.has(y.text))) out.push(...saltosDe(m, fn, nombreDe(fn)));
+      // Usa el ctx: lo nombra, o llama a un verbo suelto (`({ expect }) => …`).
+      if (contiene(fn, (y) => (ts.isIdentifier(y) && m.ctxs.has(y.text)) || verbo(m, y) !== null)) out.push(...saltosDe(m, fn, nombreDe(fn)));
     });
   }
   return out;
