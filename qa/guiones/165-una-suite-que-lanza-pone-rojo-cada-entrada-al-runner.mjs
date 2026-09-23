@@ -18,9 +18,11 @@
  *     `after` que lanza —éste no está en el issue y también era verde—, y un
  *     `describe` sin ningún `it`. Cada una corre por la línea REAL de
  *     `scripts.test` (la de `package.json`, con el glob sustituido) y tiene que
- *     salir ≠ 0 y NOMBRADA. La misma línea SIN el reporter tiene que seguir
- *     saliendo 0 en las seis: el día que Node cuente alguna, esto se pone rojo
- *     y dice cuál, que es la señal de que el reporter empieza a sobrar. Y el
+ *     salir ≠ 0 y NOMBRADA. La misma línea SIN el reporter se MIDE y se dice
+ *     con la versión de Node, sin afirmarla: Node lo arregló en v24.15.0
+ *     (24.11.1–24.14.1 salen 0, 24.15.0–24.20.0 salen 1, binarios oficiales,
+ *     2026-09-23), la máquina de desarrollo corre 24.11.1 y CI la última 24, y
+ *     afirmar «Node las deja mudas» ponía CI rojo por la versión. Y el
  *     `before` que lanza, que Node SÍ cuenta (el issue lo dice), va como
  *     control: rojo con y sin reporter.
  *
@@ -201,10 +203,12 @@ export default async function (ctx) {
       ctx.log(`  · «${suite}»: con reporter EXIT ${con.status} (fail ${con.fallos}) · sin reporter EXIT ${sin.status} (fail ${sin.fallos})`);
       if (sin.status !== 0) cuentaNode.push(`${suite} (EXIT ${sin.status})`);
     }
-    ctx.expect(
-      "sin el reporter, Node sigue dejando MUDAS las seis formas (si cuenta alguna, el reporter empieza a sobrar: revisar)",
-      cuentaNode.length === 0,
-      `Node ya cuenta: ${cuentaNode.join(" | ")}`,
+    // Un HECHO DE LA VERSIÓN, no un invariante: se nombra y no se afirma.
+    const version = spawnSync("node", ["--version"], { encoding: "utf8" }).stdout?.trim() ?? "¿?";
+    ctx.log(
+      cuentaNode.length === 0
+        ? `  · Node ${version} deja MUDAS las seis formas sin el reporter: el reporter es lo único que las pone rojas`
+        : `  ⚠ Node ${version} ya cuenta ${cuentaNode.length} de 6 sin el reporter (${cuentaNode.join(" | ")}): ahí el reporter es redundante (Node lo arregla en v24.15.0)`,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

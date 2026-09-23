@@ -9,13 +9,20 @@
  *
  * - sobre un `describe` que lanza → EXIT ≠ 0 y la suite nombrada;
  * - sobre la misma forma sin el `throw` → EXIT 0 (el reporter no inventa rojos);
- * - la línea de `test` SIN el reporter → EXIT 0. Es el hecho que justifica el
- *   reporter: el día que Node lo arregle este aserto se pone rojo y el reporter
- *   sobra.
+ * - la línea de `test` SIN el reporter: se MIDE y se nombra la versión, no se
+ *   afirma. Node lo arregló en v24.15.0 (medido el 2026-09-23 con los binarios
+ *   oficiales: 24.11.1–24.14.1 salen 0, 24.15.0–24.20.0 salen 1), y en este repo
+ *   conviven las dos: la máquina de desarrollo corre 24.11.1 y CI coge la última
+ *   24. Afirmar «Node sale 0» como invariante ponía CI rojo por la versión, no
+ *   por el código. Si sale 0 lo dice como diagnóstico (el reporter es lo único
+ *   que la pone roja); si sale ≠ 0, `skip` con motivo: en esa versión el
+ *   reporter es redundante. Los asertos duros son los de arriba, que valen en
+ *   todas las versiones.
  *
  * La tercera entrada al runner, el `corre()` de `qa/contrato-candados-en-negativo.mjs`,
  * se canda en el propio arnés: su invariante de fixture rompe un contrato leído
- * solo en el cuerpo de un `describe` y sale VERDE si el reporter falta.
+ * solo en el cuerpo de un `describe` y, en Node < 24.15, sale VERDE si el
+ * reporter falta.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -106,14 +113,15 @@ describe("una suite que falla pone rojo las entradas de npm al runner (#697)", (
     });
   });
 
-  it("sin el reporter, Node sigue saliendo con 0 (si esto se pone rojo, el reporter sobra)", () => {
+  it("sin el reporter: se mide si ESTE Node ya cuenta la suite que lanza, y se dice con su versión", (t) => {
     const linea = lineaSobre("test", LANZA);
     assert.ok(linea.includes(REPORTER));
+    const version = corre("node --version").salida.trim();
     const r = corre(linea.replace(REPORTER, ""));
-    assert.equal(
-      r.status,
-      0,
-      `node --test ya sale ≠ 0 cuando un describe lanza: retirar test/la-suite-que-falla-pone-rojo.ts\n${r.salida}`,
-    );
+    if (r.status !== 0) {
+      t.skip(`Node ${version} ya sale ${r.status} sin el reporter (lo cuenta desde v24.15.0): aquí el reporter es redundante`);
+      return;
+    }
+    t.diagnostic(`Node ${version} sale 0 sin el reporter: el reporter es lo único que pone rojo un describe que lanza`);
   });
 });

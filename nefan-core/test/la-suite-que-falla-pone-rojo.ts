@@ -2,7 +2,8 @@
  * Reporter de `node --test`: el `spec` de siempre, más una regla que el runner
  * no cumple — **una suite que falla pone rojo el código de salida** (#697).
  *
- * El hecho, medido en Node v24.11.1: si el CUERPO de un `describe` lanza (un
+ * El hecho, medido en Node v24.11.1 (y en 24.11.1–24.14.1 con los binarios
+ * oficiales; Node lo arregla en v24.15.0, que ya sale con 1): si el CUERPO de un `describe` lanza (un
  * `JSON.parse` de un contrato roto, un `readFileSync` de un fichero que falta,
  * un helper importado que valida y lanza…), la suite desaparece del resumen
  * (`ℹ tests 0 · fail 0`) y el proceso sale con **0**. Pasa igual con
@@ -25,9 +26,10 @@
  * invariante de fixture). Se pasa con `./` delante: sin él Node lo busca como
  * paquete.
  *
- * Se retira el día que Node lo arregle: el test hermano corre la línea de
- * `scripts.test` SIN este reporter sobre un `describe` que lanza y exige 0; si
- * un día sale 1, ese aserto se pone rojo y dice que esto sobra.
+ * Se retira cuando TODA máquina que corra la suite tenga Node ≥ 24.15 (hoy la
+ * de desarrollo tiene 24.11.1 y `engines` dice `>=24`; CI coge la última 24 y
+ * ahí ya es redundante, aunque inofensivo). El test hermano mide la línea de
+ * `scripts.test` SIN este reporter y dice, con la versión, si en ese Node sobra.
  */
 import { Readable } from "node:stream";
 import { spec, type TestEvent } from "node:test/reporters";

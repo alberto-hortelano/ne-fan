@@ -45,7 +45,9 @@
  *  cuente—, así que las baterías TS corren con el reporter
  *  `test/la-suite-que-falla-pone-rojo.ts` (el mismo de `npm test` y
  *  `npm run coverage`) y el veredicto mira `status`. El invariante «suite que
- *  lanza» lo canda: sin el reporter o sin mirar `status`, sale VERDE.
+ *  lanza» lo canda: sin el reporter o sin mirar `status`, sale VERDE en Node
+ *  < 24.15 (desde v24.15.0 Node ya sale con 1 él solo y el invariante sale rojo
+ *  igual: allí el reporter es redundante, no dañino).
  *
  *  Verde = todos los candados listados se ponen rojos al romperlos.
  *  Rojo   = hay un candado que no comprueba lo que dice comprobar; el nombre
