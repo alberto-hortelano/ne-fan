@@ -139,9 +139,6 @@ async function instalarElEspiaDelWire(ctx) {
   });
 }
 
-/** Lo que dice el bridge que el jugador lleva, tal cual salió del socket. */
-const delWire = async (ctx) => ctx.page.evaluate(() => window.__qaWire.ultimoOriginal);
-
 /** La barra de vida del HUD: el ancho que pinta `main.ts` (hp / máximo), el
  *  número —que es el hp a secas— y su DENOMINADOR (#527).
  *

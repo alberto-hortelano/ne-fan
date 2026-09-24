@@ -128,7 +128,7 @@ export default async function (ctx) {
 
   // ── 2. Selector de mundos ─────────────────────────────────────────────
   await abrirSelectorDeMundos(ctx);
-  const sel = await revisar("selector de mundos");
+  await revisar("selector de mundos");
   const mundos = await ctx.page.$$eval("[data-game-id]", (els) => els.map((e) => e.dataset.gameId));
   ctx.expect("el selector ofrece los mundos del juego", mundos.length >= 4, mundos.join(", "));
   ctx.log(`mundos: ${mundos.join(", ")}`);
@@ -145,7 +145,7 @@ export default async function (ctx) {
   // ── 3. Estilo y modo de gráficos ──────────────────────────────────────
   await ctx.page.click(`[data-game-id="alta_fantasia"]`);
   await ctx.page.waitForSelector("#ts-style", { timeout: 30_000 });
-  const est = await revisar("elección de estilo y gráficos");
+  await revisar("elección de estilo y gráficos");
   const estilos = await ctx.page.$$eval("#ts-style option", (os) => os.map((o) => (o.textContent ?? "").trim()));
   ctx.log(`estilos: ${estilos.join(" · ")}`);
   // Las carpetas a las que se puede subir una imagen de estilo son ROLES del

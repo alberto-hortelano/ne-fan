@@ -408,7 +408,7 @@ export default async function (ctx) {
   // hasta hoy no ejercía ningún guion.
   const idsAntes = await ctx.page.evaluate(() => window.__nefan.enemies().map((e) => e.id));
 
-  const barkeep = await ctx.waitFor(
+  await ctx.waitFor(
     "el tabernero está en escena para hablar con él",
     () => window.__nefan.npcs().find((n) => n.id === "barkeep") ?? null,
     30_000,

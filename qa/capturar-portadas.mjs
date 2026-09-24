@@ -29,12 +29,10 @@
 import { chromium } from "playwright-core";
 import { abrirNavegador } from "./lib/navegador.mjs";
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { nuevaPartida, comenzar, celdaAMundo } from "./lib/sesion.mjs";
 import { URLS, PUERTOS_TODOS } from "./lib/stack.mjs";
 
-const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
   const i = args.indexOf(name);

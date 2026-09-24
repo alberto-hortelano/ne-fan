@@ -144,7 +144,7 @@ async function main() {
     if (!(await waitPort(PORT, 60000))) throw new Error(`el preset no levantó :${PORT} en 60 s`);
   }
 
-  const browser = await abrirNavegador(chromium);
+  const browser = await abrirNavegador(chromium, { headed: HEADED });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const ctx = ctxDeSonda(page);
   const pageErrors = [];

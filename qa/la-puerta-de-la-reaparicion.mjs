@@ -120,7 +120,7 @@ if (bajoPrueba.length === 1) ok(`aridad 1 (\`length\` = ${bajoPrueba.length})`);
 else mal("aridad 1", `\`length\` = ${bajoPrueba.length}: alguien le volvió a dar parámetros obligatorios`);
 
 let espiada = 0;
-const espia = (x, z) => {
+const espia = (_x, _z) => {
   espiada++;
   return true; // grita «sólido» para que usarla se NOTE en el punto devuelto
 };

@@ -66,14 +66,11 @@
  *  Los cuatro los pone la marca del texto libre; `aisla` deja saves y motor
  *  vírgenes.
  */
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { comenzar, nuevaPartida } from "../lib/sesion.mjs";
 import { acercarse } from "../lib/combate.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
-const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const GAME_ID = "alta_fantasia";
 const TABERNERO = "barkeep";
 /** La marca que pide el turno entero (`labs/narrative/fake-ai-server.ts`). */
@@ -97,8 +94,6 @@ const SEPARACION_VIEJA_M = 1.8;
 const PASO_DE_LA_REJILLA_M = 0.25;
 const FOTO_X_M = 12;
 const FOTO_Z_M = 12;
-/** A qué distancia deja el bridge lo que el motor pone con `near_player`. */
-const HUECO_DEL_SPAWN_M = 5;
 
 const posicion = (ctx) => ctx.page.evaluate(() => ({ ...window.__nefan.state().pos }));
 const vidaDelHud = (ctx) =>
@@ -180,15 +175,6 @@ function eraLibre(foto, x, z) {
   const f = foto.celdas[fila];
   if (!f || col < 0 || col >= f.length) return null;
   return f[col] === 0;
-}
-
-function caminoLibreAntes(foto, a, b) {
-  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / PASO_DE_LA_REJILLA_M));
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    if (eraLibre(foto, a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t) !== true) return false;
-  }
-  return true;
 }
 
 /** ¿Está OCUPADO ese punto AHORA? La misma pregunta que la foto, que si no el

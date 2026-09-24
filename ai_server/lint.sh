@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# El lint de Python del repo, en UN sitio (#709): ruff sobre ai_server/ y
-# compileall sobre ai_server/ y labs/. Lo corren los dos lados con la misma
-# definición: el job `ai-server` de CI (`bash ai_server/lint.sh`) y el bucle
-# local (`npm run verify` → `npm run lint:py`). Antes solo lo corría CI, y un
-# E741 pasó tres vueltas de verificación local con el job en rojo.
+# El lint de Python del repo, en UN sitio (#709): ruff y compileall sobre
+# ai_server/ y labs/. Lo corren los dos lados con la misma definición: el job
+# `ai-server` de CI (`bash ai_server/lint.sh`) y el bucle local (`npm run
+# verify` → `npm run lint:py`). Antes solo lo corría CI, y un E741 pasó tres
+# vueltas de verificación local con el job en rojo.
 #
-# ruff NO se extiende a labs/: son benches sin lint (compileall los mantiene
-# al menos sintácticamente válidos, que es código que se retoma cada pocos
-# meses cuando avanza la tecnología de IA).
+# labs/ entra en ruff desde #718, con SUS reglas y no las de ai_server/: viven
+# en labs/ruff.toml, que dice por qué (ruff resuelve la config por fichero).
+# Hasta entonces solo pasaba compileall, y un código muerto vivía allí sin que
+# nadie lo viera.
 #
 # Nunca sale 0 sin haber corrido ruff: sin intérprete, sin ruff o con una ruff
 # de otra versión que el pin de requirements-dev.txt, falla diciendo la orden
@@ -56,7 +57,7 @@ if [ "$instalada" != "$pin" ]; then
   fallo "ruff $instalada en $py, pero el pin (el que instala CI) es $pin. Instálalo: \"$py\" -m pip install -r \"$raiz/ai_server/requirements-dev.txt\""
 fi
 
-"$py" -m ruff check ai_server
+"$py" -m ruff check ai_server labs
 "$py" -m compileall -q ai_server labs
 
 echo "lint.sh: ruff $instalada + compileall OK ($py)"

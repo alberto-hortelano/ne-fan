@@ -243,7 +243,6 @@ def render_index(run_dir: Path, entries: list[dict], layout: dict) -> None:
     rows = []
     for e in entries:
         cells_html = ""
-        tex_dir = run_dir / "textures"
         page = layout["pages"][e["page"]]
         for c in page["cells"]:
             cells_html += (
