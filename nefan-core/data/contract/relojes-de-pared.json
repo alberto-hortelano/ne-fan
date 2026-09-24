@@ -38,6 +38,16 @@
       "porque": "`t0` y `tardo` enmarcan en Node la espera de reanudar la partida hasta que los nueve tiles del anillo quedan texturados, y el resultado solo va al `ctx.log` («… ms desde el reload»). Ningún aserto lo lee: lo que se afirma es QUÉ tiles están pintados y que no se pagó nada. Es un dato de diagnóstico de cuánto tardó una recarga de página, que vive en tiempo de pared; no mide nada que corra dentro de la simulación."
     },
     {
+      "fichero": "qa/guiones/168-un-viaje-roto-para-la-espera-en-segundos.mjs",
+      "relojes": 4,
+      "porque": "Dos pares t0/Δ alrededor de `viajarPorSalidas` en Node: cuánto tarda el BANCO en saber que el viaje está roto (A, contra el techo de 10 s) y cuánto tarda el control en llegar (B, solo log). Lo medido es el defecto de #693 —una espera que quemaba el cortafuegos del tile, `MS_DEL_TILE`, que `ctx.waitFor` cuenta en pared—, así que la unidad del aserto es la del presupuesto que se paga: pared. El reloj de sim no avanza con la latencia de un servicio y volvería el aserto ciego al cuelgue que mide."
+    },
+    {
+      "fichero": "qa/guiones/170-el-viaje-roto-no-se-absorbe-ni-para-al-siguiente.mjs",
+      "relojes": 4,
+      "porque": "Dos pares t0/Δ en Node alrededor de `viajarPorSalidas` (A, el viaje roto dentro de `absorbe`; D, el mismo viaje tras cerrar el muro), afirmados contra un techo de 10 s. Como en el 168, lo que se mide es cuánto espera el BANCO frente al cortafuegos del tile, que es de pared; no mide nada que corra dentro del mundo."
+    },
+    {
       "fichero": "qa/guiones/171-el-rechazo-del-intake-llega-al-que-espera-su-respuesta.mjs",
       "relojes": 3,
       "porque": "Los tres `Date.now()` de `pregunta`: el instante antes de `preguntarPorElCable` y los milisegundos que tardó en devolver o en lanzar. Lo que se cronometra es el CABLE del banco (cuánto tarda el helper en ver el rechazo del intake), no nada del juego: el criterio de #694 es «✘ inmediato» contra un techo de pared (`MS_INMEDIATO` frente a `TECHO_MS`, que es un `setTimeout` de la página), y la simulación no corre ni cuenta aquí. La pared es la medida correcta."

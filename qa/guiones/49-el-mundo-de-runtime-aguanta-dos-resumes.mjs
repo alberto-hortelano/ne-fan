@@ -56,7 +56,7 @@ import {
   esperarTituloListo,
 } from "../lib/sesion.mjs";
 import { acercarse, herirHasta } from "../lib/combate.mjs";
-import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
+import { viajarSiSePuede } from "../lib/viaje.mjs";
 
 /** El motor falso es determinista POR TURNO de diálogo, así que hace falta
  *  empezar de cero: saves vírgenes y el contador a 0. */
@@ -114,18 +114,6 @@ async function reanudar(ctx, sessionId, etiqueta) {
   return true;
 }
 
-/** Pulsa el botón del panel «Salidas» que nombra `nombre` (el camino del
- *  jugador: un click, no una llamada a la API). */
-async function pulsarSalida(ctx, nombre) {
-  const botones = await ctx.page.$$eval("#travel-panel button.travel-exit", (bs) =>
-    bs.map((b) => b.textContent ?? ""),
-  );
-  const idx = botones.findIndex((t) => t.includes(nombre));
-  if (idx < 0) return false;
-  await ctx.page.$$eval("#travel-panel button.travel-exit", (bs, i) => bs[i].click(), idx);
-  return true;
-}
-
 /** Ida y vuelta por «Salidas», que es lo que hace RE-EMITIR el tile de
  *  partida — el estado en el que #350 se llevaba por delante los objetos de
  *  runtime.
@@ -135,38 +123,33 @@ async function pulsarSalida(ctx, nombre) {
  *  mundo que no se ha movido. Con éxito devuelve qué sobrevivió. */
 async function idaYVuelta(ctx, etiqueta) {
   const partida = await mundo(ctx);
-  if (partida.exits.length === 0 || !(await pulsarSalida(ctx, partida.exits[0].name))) {
-    return { motivo: `el panel «Salidas» no ofrecía destino (${etiqueta})` };
-  }
-  const fuera = await ctx.absorbe(
+  if (partida.exits.length === 0) return { motivo: `el panel «Salidas» no ofrecía destino (${etiqueta})` };
+  // El viaje vive en `qa/lib/viaje.mjs` (#693): un viaje ROTO es ✘ al instante
+  // con su causa; si expira o el panel no ofrece la salida, vuelve la causa y
+  // el bloque la DECLARA en su ⊘.
+  const ida = await viajarSiSePuede(
+    ctx,
+    partida.exits[0].name,
+    `el jugador llega al destino (otro tile, ${etiqueta})`,
     "si el viaje no llega, el bloque se DECLARA sin medir en el llamante: ningún verde depende " +
       "de esta espera",
-    () =>
-      ctx.waitFor(
-        `el jugador llega al destino (otro tile, ${etiqueta})`,
-        (t) => (window.__nefan.currentTile && window.__nefan.currentTile !== t ? window.__nefan.currentTile : null),
-        MS_DEL_TILE,
-        partida.tile,
-      ),
   );
-  if (!fuera) return { motivo: `el jugador no llegó al tile vecino en 180 s (${etiqueta})` };
-  const alli = await mundo(ctx);
-  const vuelta = alli.exits.find((e) => e.place_id !== partida.exits[0].place_id) ?? alli.exits[0];
-  if (!vuelta || !(await pulsarSalida(ctx, vuelta.name))) {
-    return { motivo: `el destino no ofrecía vuelta (${etiqueta})` };
-  }
-  const volvio = await ctx.absorbe(
+  if (!ida.llegada) return { motivo: `el jugador no llegó al tile vecino (${etiqueta}): ${ida.causa}` };
+  const fuera = ida.llegada;
+  const vuelta = fuera.exits.find((e) => e.place_id !== partida.exits[0].place_id) ?? fuera.exits[0];
+  if (!vuelta) return { motivo: `el destino no ofrecía vuelta (${etiqueta})` };
+  const vuelto = await viajarSiSePuede(
+    ctx,
+    vuelta.name,
+    `el jugador vuelve al tile de partida (${etiqueta})`,
     "si la vuelta no llega, el bloque se DECLARA sin medir en el llamante: mirar los objetos del " +
       "tile equivocado no es medir nada",
-    () =>
-      ctx.waitFor(
-        `el jugador vuelve al tile de partida (${etiqueta})`,
-        (t) => (window.__nefan.currentTile === t ? t : null),
-        MS_DEL_TILE,
-        partida.tile,
-      ),
   );
-  if (!volvio) return { motivo: `el jugador no volvió al tile de partida en 180 s (${etiqueta})` };
+  if (!vuelto.llegada) return { motivo: `el jugador no volvió al tile de partida (${etiqueta}): ${vuelto.causa}` };
+  const volvio = vuelto.llegada;
+  if (volvio.tile !== partida.tile) {
+    return { motivo: `la vuelta llevó a ${volvio.tile} y no al tile de partida ${partida.tile} (${etiqueta})` };
+  }
   const regreso = await mundo(ctx);
   return {
     regreso,
