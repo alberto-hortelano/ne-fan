@@ -15,16 +15,27 @@
  *  modo, y el permiso del manager tiene que seguir siendo el modo para que el
  *  fail-loud de `renderer/aspecto-del-jugador.ts` pueda dispararse. El resultado
  *  se le comunica a quien gasta: el controller del atlas PREGUNTA
- *  (`escenariosGeneran()`) y el manager de skins RECIBE su permiso
- *  (`setSkinsAllowed`). */
+ *  (`modoDeEscenarios()`) y el manager de skins RECIBE su permiso
+ *  (`setPermisoDeSkins`).
+ *
+ *  ENCIMA DEL MODO, EL ENTORNO (2026-09-24): el bridge dice en su
+ *  `bridge_hello` si la corrida es de desarrollo o de producción, y en
+ *  desarrollo ningún camino automático genera —los gates bajan `generar` a
+ *  `restaurar`—. Este módulo solo lo TRANSPORTA a `gatesDeImagen` y lo DICE:
+ *  en el rótulo del registro y en el chip, para que un «Imagen IA» que no
+ *  pinta no parezca una avería. */
 
 import type { ClientSession } from "@nefan-core/src/session/session-facets.js";
 import {
+  ENTORNO_POR_DEFECTO,
   gatesDeImagen,
+  loQuePagaImagenIA,
   modoEfectivoDePersonajes,
   normalizarModo,
+  type Entorno,
   type GatesDeImagen,
   type Modo,
+  type PermisoDeEscenarios,
 } from "@nefan-core/src/session/gates-de-imagen.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import type { CharacterSpriteManager } from "../renderer/character-sprites.js";
@@ -32,6 +43,7 @@ import type { MundoDelCliente } from "../world/mundo-del-cliente.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
 import { errors } from "./error-log.js";
 import { GraphicsModeChip, type GraphicsFacet } from "./graphics-mode.js";
+import { MOTIVO_SIN_BRIDGE, MOTIVO_SIN_GENERACION } from "./mode-labels.js";
 
 // --- Generación de imagen SIN sesión (fixtures) ---
 /** Toggle local de skins IA SIN sesión (fixtures): persistido en localStorage,
@@ -52,10 +64,11 @@ export interface DepsDeModosDeGraficos {
    *  pasa de OFF a ON, se rearma y se le re-piden los skins de todo lo vivo. */
   characterSprites: Pick<
     CharacterSpriteManager,
-    | "skinsAllowed"
+    | "permisoDeSkins"
     | "skinsSuspendidos"
     | "alSaltarElFusible"
-    | "setSkinsAllowed"
+    | "anunciar"
+    | "setPermisoDeSkins"
     | "rearmarCortacircuitos"
     | "requestSkin"
   >;
@@ -95,14 +108,27 @@ export interface ModosDeGraficos {
    *  que NO se le vuelve a pedir — pedirlo sería «ya en ese modo» y un aviso
    *  en el registro. */
   aplicarFaceta(facet: GraphicsFacet, mode: "image" | "vector"): void;
-  /** ¿Debe generarse imagen NUEVA de escenario? (atlas de superficies de la
-   *  fps; la generación MANUAL —tecla G, item del menú dev— no pasa por aquí:
-   *  es siempre permitida). */
-  escenariosGeneran(): boolean;
+  /** Qué hace el camino AUTOMÁTICO con el atlas de superficies de la fps:
+   *  `generar` (pintar lo que falte) o `restaurar` (solo lo ya pagado). La
+   *  generación MANUAL —tecla G, item del menú dev— no pasa por aquí: es
+   *  siempre permitida. */
+  modoDeEscenarios(): PermisoDeEscenarios;
+  /** El entorno que dijo el bridge en su `bridge_hello` (el techo de gasto
+   *  automático). Hasta que llega vale `ENTORNO_POR_DEFECTO`, el que no
+   *  gasta. Re-aplica los modos: si personajes pasa de restaurar a generar,
+   *  se re-piden los skins de lo vivo, como el OFF→ON del chip. */
+  aplicarEntorno(e: Entorno): void;
+  /** El entorno vigente y si ya llegó del bridge (`null` = aún no hay
+   *  `bridge_hello`), para el hook de bench. */
+  entorno(): Entorno | null;
   /** Oculta el chip mientras el título está abierto (ahí el modo se elige en
    *  el propio título). */
   ocultarChip(oculto: boolean): void;
 }
+
+/** Orden de los permisos de skins, para saber cuándo SUBE (y hay que re-pedir
+ *  lo que no se pidió con el de antes). */
+const rango = (p: "base" | "restaurar" | "generar"): number => (p === "base" ? 0 : p === "restaurar" ? 1 : 2);
 
 export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGraficos {
   /** Modo de render por faceta de la sesión activa. Ya NO está congelado: el
@@ -117,6 +143,10 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
    *    persistido en localStorage (AICHAR_KEY). */
   let scenesMode: Modo = "";
   let charactersMode: Modo = "";
+  /** El entorno del bridge; `null` hasta el `bridge_hello`. Mientras no
+   *  llega, los gates usan `ENTORNO_POR_DEFECTO`: el que no gasta. */
+  let entornoDelBridge: Entorno | null = null;
+  const entornoVigente = (): Entorno => entornoDelBridge ?? ENTORNO_POR_DEFECTO;
 
   /** Los dos gates de gasto, decididos en core con lo que este cliente sabe:
    *  los modos de la sesión y el toggle de personajes de `localStorage` (que
@@ -127,11 +157,29 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
       renderMode: scenesMode,
       characterMode: charactersMode,
       toggleLocalPersonajes: localStorage.getItem(AICHAR_KEY) === "1",
+      entorno: entornoVigente(),
     });
   }
 
-  function escenariosGeneran(): boolean {
+  function modoDeEscenarios(): PermisoDeEscenarios {
     return gates().escenarios;
+  }
+
+  /** Por qué lo que la partida PIDE en Imagen IA no se genera, o `null` si no
+   *  hay techo que decir. Sale de los MISMOS gates que deciden el POST (QA H2):
+   *  una faceta que quiere imagen y cuyo permiso no es `generar`. No vuelve a
+   *  mirar el entorno por su cuenta; solo lo usa para elegir la frase (con
+   *  bridge o sin él, QA H4). */
+  function motivoDelTecho(): string | null {
+    const g = gates();
+    const capado = (scenesMode === "image" && g.escenarios !== "generar") || g.personajes === "restaurar";
+    return capado ? fraseDelTecho() : null;
+  }
+
+  /** La frase del techo: con bridge, la de desarrollo (con la variable que lo
+   *  cambia); sin él, la que no manda a poner nada (QA H4). */
+  function fraseDelTecho(): string {
+    return entornoDelBridge === null ? MOTIVO_SIN_BRIDGE : MOTIVO_SIN_GENERACION;
   }
 
   /** La última línea «Gráficos: …» que se escribió, o `null` si la última
@@ -160,12 +208,12 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
   }
 
   function aplicar({ renderMode, characterMode }: { renderMode: string; characterMode: string }): void {
-    const prevCharOn = deps.characterSprites.skinsAllowed;
+    const prevPermiso = deps.characterSprites.permisoDeSkins;
     scenesMode = normalizarModo(renderMode);
     charactersMode = normalizarModo(characterMode);
     const effChar = modoEfectivoDePersonajes({ renderMode: scenesMode, characterMode: charactersMode });
     const g = gates();
-    deps.characterSprites.setSkinsAllowed(g.personajes);
+    deps.characterSprites.setPermisoDeSkins(g.personajes);
     // Fail-loud: la partida pide skins IA pero el backend está apagado por
     // config — sin este aviso, requestSkin haría no-op silencioso y el jugador
     // que confirmó el gasto vería y_bot sin explicación.
@@ -179,16 +227,23 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
     // cambia es lo que el jugador lee (arriba ya se le avisó).
     const charLabel = effChar !== "vector" && CONFIG.graphics.ai_skin
       ? "skins IA" : "personajes en base y_bot";
+    // El TECHO del entorno se dice en la misma línea cuando hay algo que
+    // querría generar y no puede: un «imagen IA» que no pinta sin decir por
+    // qué parece una avería (criterio 5 de la tanda AS).
+    const motivo = motivoDelTecho();
+    const techo = motivo ? ` — ${motivo}` : "";
     let rotulo: string | null = null;
     if (scenesMode === "vector") {
-      rotulo = `Gráficos: maqueta 3D (clay local, sin imagen IA nueva; ${charLabel})`;
+      rotulo = `Gráficos: maqueta 3D (clay local, sin imagen IA nueva; ${charLabel})${techo}`;
     } else if (scenesMode === "image") {
-      rotulo = `Gráficos: imagen IA (${charLabel})`;
+      rotulo = `Gráficos: imagen IA (${charLabel})${techo}`;
     }
     anotarSiCambia(rotulo);
-    // Personajes OFF→ON: los requestSkin que no-opearon con el toggle apagado
-    // no dejaron rastro — re-pedir los skins de todo lo ya spawneado.
-    if (!prevCharOn && deps.characterSprites.skinsAllowed) {
+    // Personajes a un permiso MÁS ALTO (base→restaurar, base→generar,
+    // restaurar→generar): lo que no se pidió —o se pidió solo «si está
+    // pagado»— no dejó rastro que vuelva solo. Re-pedir los skins de todo lo
+    // ya spawneado; `requestSkin` es idempotente y solo encola lo que falta.
+    if (rango(deps.characterSprites.permisoDeSkins) > rango(prevPermiso)) {
       deps.characterSprites.rearmarCortacircuitos();
       rePedirTodosLosSkins();
     }
@@ -239,10 +294,10 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
   }
 
   // Arranque sin sesión: los skins IA parten del toggle local (OFF por
-  // defecto) — el manager nace con allowed=true y sin esto una fixture con
-  // NPCs descritos encolaría skins de pago nada más cargar. Va ANTES del
-  // chip: su primer `refresh()` ya lee el permiso real.
-  deps.characterSprites.setSkinsAllowed(gates().personajes);
+  // defecto) — sin esto una fixture con NPCs descritos encolaría skins de
+  // pago nada más cargar. Va ANTES del chip: su primer `refresh()` ya lee el
+  // permiso real.
+  deps.characterSprites.setPermisoDeSkins(gates().personajes);
 
   // Chip de gráficos (UI de cliente): el MISMO modo que se elige al crear la
   // partida en el título, visible y cambiable en juego. El cambio va por
@@ -250,10 +305,18 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
   // bridge-client directo. Nace oculto: el título está abierto al arrancar.
   const chip = new GraphicsModeChip({
     getState: () => ({
-      scenesOn: gates().escenarios,
-      charsOn: deps.characterSprites.skinsAllowed && CONFIG.graphics.ai_skin,
+      // El MODO de cada faceta (lo que el panel ofrece cambiar), no el permiso:
+      // en desarrollo «Imagen IA» sigue siendo «Imagen IA» y el techo va en
+      // `sinGeneracion`, aparte, igual que la suspensión del fusible.
+      scenesOn: scenesMode === "image",
+      charsOn: deps.characterSprites.permisoDeSkins !== "base" && CONFIG.graphics.ai_skin,
+      sinGeneracion: motivoDelTecho(),
+      imagenPaga: loQuePagaImagenIA(entornoVigente()),
+      // Lo que diría el techo SI se encendiera Imagen IA: la nota del panel
+      // avisa antes de elegir, con el mismo dato que el subtexto.
+      motivoAlEncender: Object.values(loQuePagaImagenIA(entornoVigente())).every(Boolean) ? null : fraseDelTecho(),
       // El estado EFECTIVO va aparte del modo (#510): el fusible de #236 no
-      // toca `skinsAllowed` —el rearme es el OFF→ON de esta misma fila— pero
+      // toca el permiso —el rearme es el OFF→ON de esta misma fila— pero
       // sí para la generación, y el chip decía «Skins IA» mientras el registro
       // decía que estaban apagados.
       charsSuspendidos: deps.characterSprites.skinsSuspendidos,
@@ -266,11 +329,24 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
   // El fusible salta a mitad de partida sin que ningún modo se mueva, así que
   // nadie llamaría a `refresh()`: el chip se quedaría con el rótulo de antes.
   deps.characterSprites.alSaltarElFusible = () => chip.refresh();
+  // La línea de balance de los skins restaurados de la librería (desarrollo):
+  // una por tanda, al registro del jugador, como la del atlas.
+  deps.characterSprites.anunciar = (msg) => deps.log(msg);
+
+  function aplicarEntorno(e: Entorno): void {
+    if (e === entornoDelBridge) return;
+    entornoDelBridge = e;
+    // Mismos modos, otro techo: `aplicar` recalcula los gates, reescribe el
+    // rótulo si cambió y re-pide los skins si el permiso sube.
+    aplicar({ renderMode: scenesMode, characterMode: charactersMode });
+  }
 
   return {
     aplicar,
     aplicarFaceta,
-    escenariosGeneran,
+    modoDeEscenarios,
+    aplicarEntorno,
+    entorno: () => entornoDelBridge,
     ocultarChip: (oculto) => chip.setHidden(oculto),
   };
 }

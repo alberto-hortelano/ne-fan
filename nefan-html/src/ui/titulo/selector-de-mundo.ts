@@ -35,11 +35,16 @@
 import type { GameInfo, NarrativeClient, StyleInfo } from "../../net/narrative-client.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { eleccionDeEstilo } from "@nefan-core/src/session/eleccion-de-estilo.js";
-import { MODO_AL_EMPEZAR, type ModoElegido } from "@nefan-core/src/session/gates-de-imagen.js";
+import {
+  ENTORNO_POR_DEFECTO,
+  MODO_AL_EMPEZAR,
+  loQuePagaImagenIA,
+  type ModoElegido,
+} from "@nefan-core/src/session/gates-de-imagen.js";
 import { paso } from "../async-ui.js";
 import {
   CHAR_MODE_LABELS,
-  MODE_COST_LABELS,
+  costeDelModo,
   RENDER_MODE_ICONS,
   RENDER_MODE_LABELS,
 } from "../mode-labels.js";
@@ -104,7 +109,7 @@ export type LoElegidoEnElSelector = Extract<DestinoDelTitulo, { a: "selector" }>
  *  fuente: `nefan-html/test/los-ids-del-titulo-se-leen-donde-se-escriben.test.ts`.
  *
  *  No lo llama nadie más: el único consumidor es el `innerHTML` de abajo. */
-export function esqueletoDelSelector(): string {
+export function esqueletoDelSelector(paga: { escenarios: boolean; personajes: boolean }): string {
   // Botón de opción compacto (misma estética, menos padding vertical).
   const OPT = `${BTN_SECONDARY_CSS};flex:1;text-align:left;padding:7px 10px`;
   return `
@@ -125,11 +130,11 @@ export function esqueletoDelSelector(): string {
           <div id="ts-rendermode" style="display:flex;gap:6px">
             <button data-rendermode="image" style="${OPT}">
               <div style="font-size:13px">${RENDER_MODE_ICONS.image} ${RENDER_MODE_LABELS.image}</div>
-              <div style="font-size:10px;color:#888">El modelo de imagen pinta cada zona del mundo (${MODE_COST_LABELS.image})</div>
+              <div style="font-size:10px;color:#888">${paga.escenarios ? `El modelo de imagen pinta cada zona del mundo (${costeDelModo("image", true)})` : `Restaura el arte ya pagado de cada zona; lo que falte se ve en maqueta (${costeDelModo("image", false)})`}</div>
             </button>
             <button data-rendermode="vector" style="${OPT}">
               <div style="font-size:13px">${RENDER_MODE_ICONS.vector} ${RENDER_MODE_LABELS.vector}</div>
-              <div style="font-size:10px;color:#888">El mundo se ve como maqueta 3D sin texturas (render local, ${MODE_COST_LABELS.vector})</div>
+              <div style="font-size:10px;color:#888">El mundo se ve como maqueta 3D sin texturas (render local, ${costeDelModo("vector", false)})</div>
             </button>
           </div>
         </div>
@@ -138,11 +143,11 @@ export function esqueletoDelSelector(): string {
           <div id="ts-charmode" style="display:flex;gap:6px">
             <button data-charmode="image" style="${OPT}${CONFIG.graphics.ai_skin ? "" : ";opacity:.45;cursor:default"}">
               <div style="font-size:13px">${RENDER_MODE_ICONS.image} ${CHAR_MODE_LABELS.image}</div>
-              <div style="font-size:10px;color:#888">${CONFIG.graphics.ai_skin ? `Cada personaje se viste por su descripción (${MODE_COST_LABELS.image})` : "Deshabilitado — activa <code>graphics.ai_skin</code> en config.ts"}</div>
+              <div style="font-size:10px;color:#888">${CONFIG.graphics.ai_skin ? (paga.personajes ? `Cada personaje se viste por su descripción (${costeDelModo("image", true)})` : `Cada personaje recupera el skin ya pagado; sin él, maniquí (${costeDelModo("image", false)})`) : "Deshabilitado — activa <code>graphics.ai_skin</code> en config.ts"}</div>
             </button>
             <button data-charmode="vector" style="${OPT}">
               <div style="font-size:13px">${RENDER_MODE_ICONS.vector} Base y_bot</div>
-              <div style="font-size:10px;color:#888">Maniquí neutro para todos (${MODE_COST_LABELS.vector})</div>
+              <div style="font-size:10px;color:#888">Maniquí neutro para todos (${costeDelModo("vector", false)})</div>
             </button>
           </div>
         </div>
@@ -183,7 +188,9 @@ export async function pintarSelectorDeMundo(
   // cortado 17 px de sus 39—. La variable `--ts-fuera-de-la-lista` es la suma
   // de lo que NO es la lista, derivada del mismo sitio donde vive el padding
   // del overlay, así que retocar la barra de dev no vuelve a descuadrarla.
-  deps.content.innerHTML = esqueletoDelSelector();
+  // Lo que PAGARÍA elegir Imagen IA sale de los gates de core con el entorno
+  // del `bridge_hello` (QA de la tanda AS, H1): sin hello, el defecto.
+  deps.content.innerHTML = esqueletoDelSelector(loQuePagaImagenIA(deps.narrative.entorno ?? ENTORNO_POR_DEFECTO));
   const worldsEl = deps.content.querySelector("#ts-worlds") as HTMLElement;
   const styleSel = deps.content.querySelector("#ts-style") as HTMLSelectElement;
   const styleDesc = deps.content.querySelector("#ts-style-desc") as HTMLElement;

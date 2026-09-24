@@ -3,6 +3,7 @@
 
 import type {
   AddCombatantsMessage,
+  BridgeHelloMessage,
   LoadRoomMessage,
   StateUpdateMessage,
   ServerMessage,
@@ -31,6 +32,7 @@ import {
 } from "../ui/error-log.js";
 
 export type BridgeEvent =
+  | "bridge_hello"
   | "state_update"
   | "connected"
   | "disconnected"
@@ -40,6 +42,7 @@ export type BridgeEvent =
   | "exits_changed";
 
 type EventPayload = {
+  bridge_hello: BridgeHelloMessage;
   state_update: StateUpdateMessage;
   connected: undefined;
   disconnected: undefined;
@@ -200,6 +203,9 @@ export class BridgeClient {
       }
     }
     switch (msg.type) {
+      case "bridge_hello":
+        this.emit("bridge_hello", msg);
+        break;
       case "state_update":
         this.emit("state_update", msg);
         break;

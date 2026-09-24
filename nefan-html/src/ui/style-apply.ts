@@ -451,10 +451,10 @@ export class StyleApplyController {
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = (await res.json()) as SkinSpriteSheetResponse;
-            // El servicio real jamás emite un campo `error` con 200 (los
-            // fallos van por HTTPException): un 200 sin ok=true viola el
-            // contrato y se dice tal cual.
-            if (!data.ok) throw new Error("respuesta 200 sin ok=true (viola SkinSpriteSheetResponse)");
+            // El servicio real jamás emite un campo `error` con 200 (HTTPException),
+            // y este batch pide GENERAR: `sin_arte` solo es legal con `resolve_only`.
+            // Cualquiera de los dos viola el contrato y se dice tal cual.
+            if (!data.ok || "sin_arte" in data) throw new Error("respuesta 200 sin sheet (viola SkinSpriteSheetResponse)");
             const c = data.meta.skin?.cost_usd ?? 0;
             costUsd += c;
             if (data.cached) led.cached.skins++;

@@ -10,7 +10,7 @@
 import { errors } from "./error-log.js";
 import {
   CHAR_MODE_LABELS,
-  MODE_COST_LABELS,
+  costeDelModo,
   RENDER_MODE_ICONS,
   RENDER_MODE_LABELS,
 } from "./mode-labels.js";
@@ -30,6 +30,17 @@ export interface GraphicsModeState {
   charsSuspendidos: boolean;
   /** false = backend de skins apagado por config (graphics.ai_skin). */
   charsAvailable: boolean;
+  /** El TECHO del entorno: `null` = los caminos automáticos pueden generar
+   *  (producción); si no, el motivo por el que «Imagen IA» solo restaura lo
+   *  ya pagado. Va aparte del modo por lo mismo que `charsSuspendidos`: el
+   *  botón activo tiene que seguir siendo el modo REAL de la partida. */
+  sinGeneracion: string | null;
+  /** Qué PAGARÍA encender Imagen IA en cada faceta (`loQuePagaImagenIA`, core):
+   *  el subtexto de la opción y el rótulo armado salen de aquí (QA H1/H2). */
+  imagenPaga: { escenarios: boolean; personajes: boolean };
+  /** El motivo del techo si se ENCENDIERA Imagen IA (`null` = pagaría): la
+   *  nota del panel, que se lee antes de elegir. */
+  motivoAlEncender: string | null;
   hasSession: boolean;
 }
 
@@ -161,7 +172,11 @@ export class GraphicsModeChip {
     } else {
       text = `${RENDER_MODE_ICONS.image}/${RENDER_MODE_ICONS.vector} Mixto`;
     }
-    this.chip.textContent = text;
+    // EL TECHO SE VE EN EL CHIP (tanda AS, criterio 5): con «Imagen IA» en
+    // alguna faceta y la corrida en desarrollo, no se pinta nada nuevo, y el
+    // chip lo dice en su texto — el motivo entero va en el `title`.
+    const techo = st.sinGeneracion !== null && (st.scenesOn || st.charsOn);
+    this.chip.textContent = techo ? `${text} · solo lo pagado` : text;
     const sc = st.scenesOn ? "image" : "vector";
     const ch = st.charsOn ? "image" : "vector";
     // El aviso solo tiene sentido si el MODO pide skins: con personajes en
@@ -169,14 +184,17 @@ export class GraphicsModeChip {
     const suspension = st.charsOn && st.charsSuspendidos ? ` ${CHARS_SUSPENDIDOS}` : "";
     this.chip.title =
       `Gráficos de la partida — escenarios: ${RENDER_MODE_LABELS[sc]} · ` +
-      `personajes: ${CHAR_MODE_LABELS[ch]}${suspension}. Click para cambiar.`;
+      `personajes: ${CHAR_MODE_LABELS[ch]}${suspension}.` +
+      `${techo ? ` Sin generación nueva: ${st.sinGeneracion}.` : ""} Click para cambiar.`;
   }
 
   private renderPanel(st: GraphicsModeState): void {
     if (!this.isOpen) return;
-    this.note.textContent = st.hasSession
-      ? "El cambio se aplica en vivo y se guarda en la partida."
-      : "Sin partida (modo fixtures): el modo se recuerda en este navegador.";
+    this.note.textContent =
+      (st.hasSession
+        ? "El cambio se aplica en vivo y se guarda en la partida."
+        : "Sin partida (modo fixtures): el modo se recuerda en este navegador.") +
+      (st.motivoAlEncender !== null ? ` Imagen IA ${st.motivoAlEncender}.` : "");
     const suspendido = st.charsOn && st.charsSuspendidos;
     this.suspension.hidden = !suspendido;
     this.suspension.textContent = suspendido ? `Personajes ${CHARS_SUSPENDIDOS}` : "";
@@ -189,9 +207,17 @@ export class GraphicsModeChip {
         const armedNow = mode === "image" && this.armed.has(spec.facet);
         btn.classList.toggle("armed", armedNow);
         const label = btn.querySelector(".gfx-label") as HTMLElement;
+        // En desarrollo encender NO gasta (solo restaura lo pagado), y decir
+        // «Gastará créditos» sería mentir hacia el lado caro.
+        const paga = spec.facet === "scenes" ? st.imagenPaga.escenarios : st.imagenPaga.personajes;
         label.textContent = armedNow
-          ? "¿Confirmar? Gastará créditos"
+          ? paga
+            ? "¿Confirmar? Gastará créditos"
+            : "¿Confirmar? Solo lo ya pagado"
           : `${RENDER_MODE_ICONS[mode]} ${spec.labels[mode]}`;
+        const sub = btn.querySelector(".gfx-sub") as HTMLElement;
+        const extra = mode === "image" && spec.imageNote ? ` · ${spec.imageNote}` : "";
+        sub.textContent = `${costeDelModo(mode, paga)}${extra}`;
         if (mode === "image" && spec.facet === "characters") {
           btn.disabled = !st.charsAvailable;
           btn.title = st.charsAvailable ? "" : CHARS_OFF_REASON;
@@ -214,10 +240,9 @@ export class GraphicsModeChip {
       const main = document.createElement("span");
       main.className = "gfx-label";
       btn.append(main);
+      // El subtexto (coste) lo escribe `renderPanel`: depende del entorno.
       const sub = document.createElement("span");
       sub.className = "gfx-sub";
-      const extra = mode === "image" && spec.imageNote ? ` · ${spec.imageNote}` : "";
-      sub.textContent = `${MODE_COST_LABELS[mode]}${extra}`;
       btn.append(sub);
       btn.addEventListener("click", () => void this.onSelect(spec.facet, mode));
       this.buttons.set(`${spec.facet}:${mode}`, btn);

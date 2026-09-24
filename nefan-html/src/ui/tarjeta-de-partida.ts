@@ -33,7 +33,7 @@ import {
 import { BADGE_CSS, escapeAttr, escapeHtml } from "./atomos-de-html.js";
 import {
   CHAR_MODE_LABELS,
-  MODE_COST_LABELS,
+  costeDelModo,
   RENDER_MODE_ICONS,
   RENDER_MODE_LABELS,
 } from "./mode-labels.js";
@@ -68,7 +68,7 @@ const MODE_BADGE_CSS = `${BADGE_CSS};cursor:pointer;font-family:inherit`;
 /** Badge-selector del modo de una faceta del save. Click = alternar
  *  image⇄vector ANTES de cargar (onModeBadge). Saves legacy sin el campo: sin
  *  badge (no adivinar). */
-function modeBadgeHtml(s: SessionMetadata, facet: "scenes" | "characters"): string {
+function modeBadgeHtml(s: SessionMetadata, facet: "scenes" | "characters", paga: boolean): string {
   const mode = modoDelSave(s, facet);
   if (mode !== "image" && mode !== "vector") return "";
   const labels = facet === "scenes" ? RENDER_MODE_LABELS : CHAR_MODE_LABELS;
@@ -79,7 +79,7 @@ function modeBadgeHtml(s: SessionMetadata, facet: "scenes" | "characters"): stri
   const blocked = facet === "characters" && target === "image" && !CONFIG.graphics.ai_skin;
   const title = blocked
     ? "Backend de skins apagado por config: activa graphics.ai_skin en nefan-core/src/config.ts"
-    : `${facetEs}: click para cambiar a ${labels[target]} antes de cargar (${MODE_COST_LABELS[target]})`;
+    : `${facetEs}: click para cambiar a ${labels[target]} antes de cargar (${costeDelModo(target, paga)})`;
   return `<button data-mode-facet="${facet}" data-session-id="${escapeAttr(s.session_id)}"${blocked ? " disabled" : ""} title="${escapeAttr(title)}" style="${MODE_BADGE_CSS}${blocked ? ";opacity:.45;cursor:default" : ""}">${RENDER_MODE_ICONS[mode]} ${escapeHtml(labels[mode])}</button>`;
 }
 
@@ -87,12 +87,15 @@ function modeBadgeHtml(s: SessionMetadata, facet: "scenes" | "characters"): stri
  *  de «↓ hay N partidas más» del chasis cuenta para saber cuántas quedan fuera
  *  de la columna (`loQueCuentaLaBanda` en `ui/titulo/chasis.ts`). Renombrarla
  *  dejaba el aviso mudo en silencio; desde #663 lo dice el banco. */
-export function tarjetaDePartidaHtml(s: SessionMetadata): string {
+/** `paga`: qué pagaría encender Imagen IA en cada faceta
+ *  (`loQuePagaImagenIA`, core), para que el tooltip del badge no prometa gasto
+ *  en desarrollo (QA de la tanda AS, H1). */
+export function tarjetaDePartidaHtml(s: SessionMetadata, paga: { escenarios: boolean; personajes: boolean }): string {
   const summary = s.summary || "(sin narrativa todavía)";
   const updated = s.updated_at ? formatDate(s.updated_at) : "?";
   const badges = [
-    modeBadgeHtml(s, "scenes"),
-    modeBadgeHtml(s, "characters"),
+    modeBadgeHtml(s, "scenes", paga.escenarios),
+    modeBadgeHtml(s, "characters", paga.personajes),
   ]
     .filter(Boolean)
     .join(" ");

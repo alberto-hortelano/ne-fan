@@ -6,6 +6,13 @@ Los tres procesos Python, qué modelo hace qué, las hojas de sprites de persona
 > Es la misma documentación, movida. Si algo de aquí es verificable mecánicamente,
 > su sitio es `nefan-core/data/contract/arch-rules.json`, no la prosa.
 
+## Qué paga arte sin que nadie lo pida: `NEFAN_ENTORNO`
+
+Los caminos AUTOMÁTICOS del cliente (atlas del tile activo y de los vecinos, prefetch, skins de personaje) solo pagan arte nuevo con `NEFAN_ENTORNO=produccion`. Sin la variable, o con `desarrollo`, restauran lo ya pagado (`resolve_only`) y lo que falte se queda en clay o en y_bot, también con «Imagen IA» encendida; el chip y el registro lo dicen. Las vías DELIBERADAS pagan siempre: la tecla G, el menú dev, «Aplicar estilo» y subir un estilo con `/complete`.
+
+- Solo la lee el bridge (`bridge/ws-server.ts`) y se la dice al cliente en `bridge_hello`. Un valor desconocido impide arrancar. La decisión vive en `gatesDeImagen` (`src/session/gates-de-imagen.ts`). El candado es `el-entorno-se-lee-en-un-solo-sitio`.
+- `start.sh` la pasa al bridge. Con el motor falso vale `produccion` por defecto: es gratis y el banco mide lo que se paga. Los guiones que miden desarrollo declaran `export const entorno = "desarrollo"` (`qa/README.md`).
+
 ## Stack Python de IA — Endpoints (2 procesos)
 
 `ai_server/main.py` (narrative-llm :8765) y `ai_server/remote_gen_main.py`

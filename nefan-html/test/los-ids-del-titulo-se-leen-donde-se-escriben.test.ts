@@ -67,7 +67,7 @@ function idsQueEstilizaElChasis(): string[] {
 
 /** Los ids que SALEN del esqueleto del selector, tal cual los pinta. */
 function idsQuePintaElSelector(): string[] {
-  return [...new Set([...esqueletoDelSelector().matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]))].sort();
+  return [...new Set([...esqueletoDelSelector({ escenarios: true, personajes: true }).matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]))].sort();
 }
 
 test("el chasis estiliza EXACTAMENTE estos seis ids del selector", () => {
@@ -150,7 +150,7 @@ test("el chasis busca el home por un id que el home PINTA", () => {
 
 test("y cuenta las partidas por una clase que la tarjeta PINTA", () => {
   const clase = loQueCuentaLaBanda(true).replace(/^\./, "");
-  const clases = [...tarjetaDePartidaHtml(UN_SAVE).matchAll(/\bclass="([^"]+)"/g)].flatMap((m) =>
+  const clases = [...tarjetaDePartidaHtml(UN_SAVE, { escenarios: true, personajes: true }).matchAll(/\bclass="([^"]+)"/g)].flatMap((m) =>
     m[1].split(/\s+/),
   );
   assert.ok(

@@ -369,8 +369,9 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
       activarTile(key);
     } else if (planInfo) {
       // Instalado y NO activo (los vecinos del resume, el que llega por
-      // prefetch): recupera su arte ya pagado (#714). Qué puede hacer —solo
-      // restaurar, nunca pintar— lo decide core (`modoDeCorrida`).
+      // prefetch): recupera su arte ya pagado (#714). Si además puede pintar
+      // lo que falte lo decide core (`gatesDeImagen`: el modo y el entorno),
+      // con el mismo trato que el activo.
       fpsAtlas.restaurar(key);
     }
 

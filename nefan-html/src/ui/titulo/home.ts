@@ -19,6 +19,7 @@
  */
 import type { SessionMetadata } from "@nefan-core/src/narrative/types.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
+import { ENTORNO_POR_DEFECTO, loQuePagaImagenIA } from "@nefan-core/src/session/gates-de-imagen.js";
 import type { NarrativeClient } from "../../net/narrative-client.js";
 import { contarLaEspera, paso } from "../async-ui.js";
 import { errors } from "../error-log.js";
@@ -210,7 +211,7 @@ export async function pintarHome(
   } else {
     const lista = sessions;
     sessionsEl.innerHTML = lista
-      .map((s) => tarjetaDePartidaHtml(s))
+      .map((s) => tarjetaDePartidaHtml(s, loQuePagaImagenIA(deps.narrative.entorno ?? ENTORNO_POR_DEFECTO)))
       .join("");
     for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-action=resume]")) {
       btn.addEventListener("click", () => {
@@ -316,7 +317,11 @@ async function onModeBadge(
     // `BADGE_CSS` que ningún checker vería.
     const origBorde = btn.style.borderColor;
     const origColor = btn.style.color;
-    btn.textContent = "¿Confirmar? Gastará créditos";
+    // En desarrollo encender Imagen IA solo restaura lo pagado (el techo del
+    // entorno): prometer gasto sería mentir hacia el lado caro.
+    btn.textContent = loQuePagaImagenIA(deps.narrative.entorno ?? ENTORNO_POR_DEFECTO)[facet === "scenes" ? "escenarios" : "personajes"]
+      ? "¿Confirmar? Gastará créditos"
+      : "¿Confirmar? Solo lo ya pagado";
     btn.style.borderColor = "#a63";
     btn.style.color = "#da6";
     setTimeout(() => {

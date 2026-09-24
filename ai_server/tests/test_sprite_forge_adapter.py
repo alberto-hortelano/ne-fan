@@ -802,6 +802,63 @@ class AdaptadorHttpTest(unittest.TestCase):
         self._pedir()
         self.assertEqual(list(self.rg.SKINNED_SHEETS_DIR.glob("*/meta.json")), [])
 
+    # ── resolve_only: solo lo pagado (tanda AS, 2026-09-24) ────────────────
+    def test_resolve_only_sin_arte_pagado_es_SIN_ARTE_y_no_genera(self):
+        # El carril de los caminos automáticos en desarrollo: preguntar por un
+        # personaje que nadie ha pagado NO llama a /identity ni a /skins, NO
+        # apunta gasto, NO deja nada en disco y contesta un 200 que lo dice.
+        r = self._pedir(resolve_only=True)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"ok": True, "sin_arte": True})
+        self.assertNotIn("/identity", self.forge.rutas_pedidas("POST"))
+        self.assertNotIn("/skins", self.forge.rutas_pedidas("POST"))
+        self.assertEqual(list(self.rg.SKINNED_SHEETS_DIR.glob("*/meta.json")), [])
+        self.assertEqual(self.store.registros, [], "sin arte no hay nada que indexar")
+
+    def test_resolve_only_con_arte_pagado_lo_sirve_de_cache(self):
+        # Su gemelo: lo pagado SÍ vuelve, con el mismo hash y marcado de caché
+        # (si no, el carril de restauración no restauraría nada).
+        primera = self._pedir().json()
+        self.forge.llamadas.clear()
+        r = self._pedir(resolve_only=True)
+        self.assertEqual(r.status_code, 200, r.text)
+        d = r.json()
+        self.assertTrue(d["cached"])
+        self.assertEqual(d["hash"], primera["hash"])
+        self.assertNotIn("/identity", self.forge.rutas_pedidas("POST"))
+        self.assertNotIn("/skins", self.forge.rutas_pedidas("POST"))
+
+    def test_resolve_only_no_entra_en_la_clave(self):
+        # Pedir con y sin él tiene que dar la MISMA hoja: si entrara en la
+        # clave, restaurar no encontraría nunca lo que se pagó sin él.
+        pagada = self._pedir().json()
+        restaurada = self._pedir(resolve_only=True).json()
+        self.assertEqual(pagada["hash"], restaurada["hash"])
+
+    def test_resolve_only_con_el_servicio_caido_y_sin_pagar_es_sin_arte_no_503(self):
+        # Con el apunte de la base, la pregunta «¿está pagado?» tiene respuesta
+        # aunque sprite-forge esté caído: no lo está. No es un fallo del
+        # servicio y no puede fundir el fusible del cliente.
+        self._pedir()
+        self.forge.parar()
+        r = self._pedir(prompt="una arquera que nadie ha pagado", resolve_only=True)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"ok": True, "sin_arte": True})
+
+    def test_resolve_only_con_el_servicio_caido_y_SIN_apunte_es_sin_arte_no_503(self):
+        # Sin haber pedido nunca esta hoja no hay apunte de la base: la clave no
+        # se puede componer, pero la respuesta a «¿está pagado?» sigue siendo
+        # «no». Un 503 aquí contaba en el fusible del cliente (QA AS, H5).
+        self.forge.parar()
+        r = self._pedir(resolve_only=True)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"ok": True, "sin_arte": True})
+
+    def test_SIN_resolve_only_con_el_servicio_caido_y_sin_apunte_sigue_siendo_503(self):
+        # Su gemelo: pedir GENERAR con el servicio caído sí es un fallo.
+        self.forge.parar()
+        self.assertEqual(self._pedir().status_code, 503)
+
     # ── el servicio caído ──────────────────────────────────────────────────
     def test_con_el_servicio_caido_el_arte_pagado_se_sigue_sirviendo(self):
         primera = self._pedir().json()

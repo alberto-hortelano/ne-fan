@@ -59,13 +59,14 @@ const GAME_ID = "alta_fantasia";
  *  testigo de que este plazo sobra. */
 const PLAZO_MS = 10_000;
 
-/** Las dos puertas, cada una con el contador que la cuenta: el atlas por
- *  PUERTA EJERCIDA (`ejercicio`, porque con la librería caliente pintar sale a
- *  $0 y el de dinero no se movería) y los skins por gasto (el motor falso no
- *  cachea skins, así que ahí gasto y puerta son lo mismo). */
+/** Las dos puertas, las dos por PUERTA EJERCIDA (`ejercicio`): con la librería
+ *  caliente pintar sale a $0 y el contador de dinero no se movería. Los skins
+ *  se contaban por gasto porque el motor falso no los cacheaba; desde la tanda
+ *  AS los cachea (para contestar `resolve_only`) y tienen su puerta propia,
+ *  `pedir-skins`. */
 const PUERTAS = {
   atlas: { mapa: "ejercicio", clave: "pintar-superficies", rotulo: "el ATLAS de superficies" },
-  skins: { mapa: "gasto", clave: "/skin_sprite_sheet", rotulo: "los SKINS de personaje" },
+  skins: { mapa: "ejercicio", clave: "pedir-skins", rotulo: "los SKINS de personaje" },
 };
 
 async function contadores() {

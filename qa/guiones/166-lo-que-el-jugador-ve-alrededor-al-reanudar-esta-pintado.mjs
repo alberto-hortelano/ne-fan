@@ -18,10 +18,12 @@
  *       procedural; textura del falso = damero).
  *   3 · CRUZAR a pie a ese vecino ya restaurado (adversarial de C4/#390): el
  *       activo nuevo queda texturado, el de atrás sigue texturado, los nueve
- *       siguen texturados y, con Imagen IA ENCENDIDA, ningún POST del atlas
- *       desde el resume va sin `resolve_only` — ni el de la activación del
- *       vecino (su arte ya está en la caché del controller o en el mapping
- *       local; en el falso no llega a pedir nada). Si un muro no deja cruzar
+ *       siguen texturados y, con Imagen IA ENCENDIDA, cruzar no manda ningún
+ *       POST del atlas sin `resolve_only` — el vecino ya restaurado tiene su
+ *       arte en la caché del controller o en el mapping local, y no llega a
+ *       pedir nada. Del RESUME en sí (bloque 1) ya no se afirma
+ *       `resolve_only` sino que no se pague: desde la tanda AS, en producción
+ *       con Imagen IA un vecino puede pedir que se pinte lo que le falte. Si un muro no deja cruzar
  *       andando, se entra por teletransporte (mismo disparador:
  *       `activateByPosition`), y el guion lo dice.
  *   4 · El mismo resume en MAQUETA 3D: el activo restaura en maqueta desde
@@ -166,8 +168,13 @@ export default async function (ctx) {
     JSON.stringify({ tileDeEntrada, estado1 }),
   );
   ctx.expect(
-    "Imagen IA · reanudar no pidió pintar nada (ningún POST del atlas sin resolve_only) ni anotó pagos",
-    quePintan(posts1).length === 0 && (await pagosDeAtlas()) === pagos1,
+    // Desde la tanda AS, lo que un tile PUEDE pedir al reanudar lo decide la
+    // configuración de gasto (`gatesDeImagen`), no su rol: en producción —el
+    // entorno de este banco— con Imagen IA un vecino puede pedir que se pinte
+    // lo que le falte. Aquí no le falta nada (lo pintó la partida viva), así
+    // que lo que se defiende es el DINERO: ni un pago.
+    "Imagen IA · reanudar no anotó ningún pago de atlas: todo lo que el anillo necesita ya estaba pagado",
+    (await pagosDeAtlas()) === pagos1,
     JSON.stringify({ posts: posts.slice(posts1), pagosAntes: pagos1, pagosAhora: await pagosDeAtlas() }),
   );
   const hud = await lineasDeAtlasDelHud(ctx);

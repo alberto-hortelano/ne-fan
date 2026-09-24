@@ -26,7 +26,7 @@ export interface DepsDeAspectoDelJugador {
    *  empezar una sesión y encola el skin del jugador (si el toggle lo deja). */
   characterSprites: Pick<
     CharacterSpriteManager,
-    "preloadBase" | "rearmarCortacircuitos" | "skinsAllowed" | "requestSkin"
+    "preloadBase" | "rearmarCortacircuitos" | "permisoDeSkins" | "requestSkin"
   >;
   /** Solo para comprobar que un modelo alternativo tiene el set completo. */
   spriteRenderer: Pick<SpriteRenderer, "loadAnimation">;
@@ -150,7 +150,7 @@ export function crearAspectoDelJugador(deps: DepsDeAspectoDelJugador): AspectoDe
     playerSkinPrompt = skinPrompt;
     animacion.jugadorEnReposo(performance.now());
 
-    if (skinPrompt && characterSprites.skinsAllowed) {
+    if (skinPrompt && characterSprites.permisoDeSkins !== "base") {
       if (!CONFIG.graphics.ai_skin) {
         const msg = `appearance.skin_path="${skinPrompt}" requires graphics.ai_skin=true`;
         errors.push("config", msg);

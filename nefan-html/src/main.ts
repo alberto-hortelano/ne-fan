@@ -208,12 +208,10 @@ const fpsAtlasController = new FpsAtlasController(
     apply: (key, images) => fpsRenderer.applyAtlas(key, images),
     clear: (key) => fpsRenderer.clearAtlas(key),
     tilesSinAtlas: () => fpsRenderer.tilesSinAtlas(),
-    // Gate por sesión: entre el broadcast de la escena y la respuesta de
-    // start/resume, el modo de escenarios aún es el default del cliente
-    // ("image") — sin el gate, reanudar una partida VECTOR pintaba atlas de
-    // pago en esa ventana (visto en vivo 2026-08-14). Hasta aplicar los modos
-    // del save, el controller solo RESUELVE contra la librería ($0).
-    generationOn: () => session.active && graficos.escenariosGeneran(),
+    // Gate por sesión: sin él, reanudar una partida VECTOR pintaba atlas de pago entre el
+    // broadcast de la escena y la respuesta de start/resume (2026-08-14). Hasta aplicar
+    // los modos del save, el controller solo RESUELVE contra la librería ($0).
+    modoDeEscenarios: () => (session.active ? graficos.modoDeEscenarios() : "restaurar"),
     log: (msg) => log(msg),
     onGeneration: (e) => devPanel.recordGeneration(e),
   },
@@ -792,6 +790,7 @@ sharedBridge.on("exits_changed", (msg) => { if (session.esMio(msg.sessionId)) ca
 sharedBridge.on("render_mode_changed", (msg) => {
   if (session.esMio(msg.sessionId)) graficos.aplicarFaceta(msg.facet, msg.renderMode);
 });
+sharedBridge.on("bridge_hello", (msg) => graficos.aplicarEntorno(msg.entorno)); // el techo de gasto automático
 
 /** Menú dev de imágenes: cada dueño cuenta su arte pendiente —el atlas por
  *  tile, los skins por prompt— y aquí solo se concatena. Los prompts vivos
@@ -835,6 +834,7 @@ titleScreen.onVisibilityChange = (visible) => {
 // iba suelta justo por este orden. Sigue dentro de la evaluación SÍNCRONA del
 // módulo, así que `window.__nefan` está puesto antes de que nadie navegue.
 instalarNefanHook({
+  entorno: () => graficos.entorno(),
   input,
   playerPos,
   mirada,

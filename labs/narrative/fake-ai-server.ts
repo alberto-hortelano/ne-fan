@@ -186,13 +186,12 @@ const CELDAS_POR_PAGINA_DE_ATREZO = 9;
 // misma línea de la ruta, por el mismo motivo que `dePago`: la lista de rutas
 // no puede vivir en `qa/run.mjs`.
 //
-// HOY SOLO CUBRE UNA DE LAS DOS PUERTAS, y está dicho porque el día que deje de
-// valer no se va a notar (QA H8 de la tanda A): la otra puerta de gasto de una
-// partida son los SKINS, y ésos se siguen censando por dinero — lo cual hoy da
-// lo mismo porque `/skin_sprite_sheet` de este motor NO cachea y cobra siempre.
-// El día que alguien le ponga caché, el censo de skins empezará a mentir
-// exactamente como mentía el del atlas, y sin hermano que lo tape: entonces esa
-// ruta necesita su `ejercida("pedir-skins")` aquí mismo.
+// Cubre LAS DOS PUERTAS de una partida: `pintar-superficies` (el atlas) y
+// `pedir-skins` (los skins). La segunda llegó el día que este motor empezó a
+// cachear skins (tanda AS, 2026-09-24: hacía falta para servir `resolve_only`,
+// el carril de «solo lo pagado» de desarrollo), que es justo el día que el
+// censo de skins por dinero empezaba a mentir — lo avisaba este comentario
+// (QA H8 de la tanda A), y la marca vive en la línea de la ruta.
 const ejercicioPorRuta = new Map<string, number>();
 function ejercida(puerta: string): void {
   ejercicioPorRuta.set(puerta, (ejercicioPorRuta.get(puerta) ?? 0) + 1);
@@ -202,6 +201,15 @@ const ejercicioServido = () => ({
   total: [...ejercicioPorRuta.values()].reduce((a, b) => a + b, 0),
   rutas: Object.fromEntries(ejercicioPorRuta),
 });
+
+/** Los skins que este motor ya «pagó», por la MISMA identidad que su clave en
+ *  remote-gen (prompt, anim, ángulo, estilo y ref de personaje). Existe para
+ *  contestar `resolve_only` como el servidor real: lo pagado se sirve, lo que
+ *  no, `sin_arte`. Y con ello el segundo pedido de un mismo skin sale de la
+ *  caché y no cobra, igual que allí. `/dev/reset` lo vacía. */
+const skinsPagados = new Set<string>();
+const claveDeSkin = (b: SkinSpriteSheetRequest): string =>
+  JSON.stringify([b.prompt, b.anim ?? "idle", b.angle, b.style_id ?? "", b.style_role ?? ""]);
 
 let fakeDevCacheEnabled = false;
 /** Turnos de diálogo servidos (el texto los numera: se ve el ida y vuelta). */
@@ -839,6 +847,7 @@ const server = http.createServer((req, res) => {
         const antes = {
           tiles: tileByKey.size,
           surfaces: surfaceImages.size,
+          skins: skinsPagados.size,
           dialogueTurn: fakeDialogueTurn,
           apiCache: fakeDevCacheEnabled,
           gasto: gastoServido(),
@@ -847,6 +856,7 @@ const server = http.createServer((req, res) => {
         };
         tileByKey.clear();
         surfaceImages.clear();
+        skinsPagados.clear();
         gastoPorRuta.clear();
         ejercicioPorRuta.clear();
         fakeDialogueTurn = 0;
@@ -928,7 +938,6 @@ const server = http.createServer((req, res) => {
         } satisfies SpriteCatalog);
       }
       if (req.method === "POST" && ruta === "/skin_sprite_sheet") {
-        dePago("/skin_sprite_sheet"); // genera una hoja de sprites: cuesta
         const body = leerBody<SkinSpriteSheetRequest>(raw);
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         const anim = String(body.anim ?? "");
@@ -936,6 +945,18 @@ const server = http.createServer((req, res) => {
         if (!anim || !angle || !body.prompt) {
           return send(422, { detail: "fake-ai: anim/angle/prompt requeridos" });
         }
+        // `resolve_only` (el carril de desarrollo): lo pagado se sirve y lo
+        // demás es `sin_arte`, sin generar ni cobrar — como remote-gen. Y pedir
+        // SIN él es ejercer la puerta de skins, cobre o no (con la caché
+        // caliente sale $0 y el `dePago` de abajo no salta).
+        const resolveOnly = body.resolve_only === true;
+        const clave = claveDeSkin(body);
+        const pagado = skinsPagados.has(clave);
+        if (resolveOnly && !pagado) {
+          console.error(`[fake-ai] skin_sprite_sheet ${anim}/${angle} (resolve_only): sin arte`);
+          return send(200, { ok: true, sin_arte: true } satisfies SkinSpriteSheetResponse);
+        }
+        if (!resolveOnly) ejercida("pedir-skins");
         const animServida = animDelBanco(anim, angle);
         const metaPath = `${SPRITES_DIR}${SKIN_SPRITE_MODEL}/${animServida}/${angle}/meta.json`;
         if (!existsSync(metaPath)) {
@@ -950,9 +971,14 @@ const server = http.createServer((req, res) => {
         const frame_urls = Array.from({ length: meta.directions }, (_, d) =>
           Array.from({ length: meta.frame_count }, (_, f) =>
             `/cache/sprite_sheet/fake/${animServida}/${angle}/dir_${d}_frame_${String(f).padStart(3, "0")}.png`));
+        // Cuesta solo si GENERA: lo ya pagado sale de la caché a $0.
+        if (!pagado) {
+          dePago("/skin_sprite_sheet"); // genera una hoja de sprites: cuesta
+          skinsPagados.add(clave);
+        }
         console.error(
           `[fake-ai] skin_sprite_sheet ${anim}/${angle} ← "${String(body.prompt).slice(0, 40)}" ` +
-          `(sirviendo frames de ${SKIN_SPRITE_MODEL})`,
+          `(sirviendo frames de ${SKIN_SPRITE_MODEL}${pagado ? ", de la caché" : ""})`,
         );
         const heroKey = createHash("sha256")
           .update(`${body.prompt}|${angle}|${body.style_id ?? ""}`)
@@ -960,7 +986,7 @@ const server = http.createServer((req, res) => {
           .slice(0, 16);
         return send(200, {
           ok: true,
-          cached: false,
+          cached: pagado,
           // `hash` y `generation_time_ms` son del contrato y aquí no estaban:
           // el fake contestaba menos de lo que promete `SkinSpriteSheetResponse`
           // y nadie podía enterarse hasta que alguien los leyera en el cliente.

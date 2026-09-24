@@ -1,76 +1,64 @@
-/** EL TILE INSTALADO QUE NO ES EL ACTIVO RECUPERA SU ARTE YA PAGADO (#714).
+/** EN DESARROLLO, EL TILE INSTALADO RECUPERA SU ARTE YA PAGADO Y NADA MÁS
+ *  (#714, rehecho en la tanda AS).
  *
  *  Al reanudar sobre un mundo pre-generado, el save trae el anillo 3×3 y el
  *  cliente reinstala los nueve tiles, pero hasta #714 el atlas de superficies
- *  solo lo pedía el ACTIVO (`FpsAtlasController.onActiveTile`): el tile que
- *  pisa el jugador se texturaba y los ocho vecinos se quedaban en clay para
- *  siempre, con su arte pagado en la librería. Lo mismo en partida viva con el
- *  vecino que llega por prefetch, hasta que el jugador cruzaba la frontera.
+ *  solo lo pedía el ACTIVO: los ocho vecinos se quedaban en clay para siempre,
+ *  con su arte pagado en la librería. El arreglo fue un carril de
+ *  RESTAURACIÓN en `PoliticaDeAtlas` (core).
  *
- *  El arreglo es un carril de RESTAURACIÓN en `PoliticaDeAtlas` (core): todo
- *  tile instalado que no es el activo recupera lo ya pagado (memoria → mapping
- *  → librería con `resolve_only`) y NUNCA pinta, tampoco con Imagen IA
- *  encendida (`modoDeCorrida`). Este guion lo mira desde el renderer
- *  (`fps().textured`) y desde la red (el cuerpo de cada POST del atlas):
+ *  Lo que #714 cableó además —«un vecino NUNCA pinta, también con Imagen IA»—
+ *  el usuario lo sacó del código (2026-09-24): pagar arte en los caminos
+ *  automáticos es CONFIGURACIÓN del stack (`NEFAN_ENTORNO`), y el activo y el
+ *  vecino reciben el MISMO trato (`gatesDeImagen`). Este guion mide el lado de
+ *  DESARROLLO (`export const entorno`): nada automático pinta, ni el activo ni
+ *  los vecinos, y lo pagado vuelve. El lado de producción —el vecino PINTA lo
+ *  que falta— es el 180.
  *
- *   E0 · CONTROL, la librería NO tiene el arte de los vecinos: reanudar en
- *        Imagen IA textura el activo, los vecinos PREGUNTAN con `resolve_only`
- *        (nunca sin él: sin eso restaurar PINTARÍA ocho atlas por reanudar),
- *        se quedan en clay, el carril se vacía y el menú dev los sigue
- *        contando como arte pendiente (`tilesSinAtlas`), que es la verdad.
- *        Cómo se llega: el motor falso resuelve POR CELDA, y los vecinos de
- *        Miravanda comparten todas sus celdas con el tile de entrada (medido
- *        el 2026-09-23: la partida pinta el tile_0_0 y los nueve quedan con
- *        arte en la librería; el batch de estilo, detrás, pinta 0 celdas). No
- *        hay forma de tener «un vecino sin arte» sin mundo a medida, así que
- *        la respuesta a las restauraciones de E0 se contesta VACÍA
- *        (`page.route`), que es lo que devuelve la librería sin esas celdas.
- *   E1 · Con el arte en la librería (el batch de estilo garantiza el mundo
- *        entero), reanudar la MISMA partida en Imagen IA deja texturados los
- *        nueve tiles; los POST de los vecinos son todos `resolve_only`, el
- *        motor falso no anota ningún pago y el activo sigue texturado.
- *   E2 · Partida VIVA nueva sobre el mundo pre-generado: el vecino que llega
- *        por el cable (`request_tile`, sin que el jugador cruce) se textura
- *        con el jugador aún en su tile de entrada. Sin mapping local (E1 lo
- *        dejó escrito para los nueve), para que la restauración vaya por la
- *        red y se pueda afirmar su `resolve_only`.
+ *   E0 · Partida viva en Imagen IA y reanudar con la librería VACÍA: el activo
+ *        y los vecinos PREGUNTAN (hay POST) y todos con `resolve_only`; los
+ *        NUEVE se quedan en clay, el motor falso no anota ni un pago de atlas
+ *        ni una petición de pintar, y el menú dev los ofrece a los nueve como
+ *        arte pendiente, que es la verdad. Hasta la tanda AS este bloque
+ *        necesitaba vaciar la librería con `page.route`, porque la partida
+ *        viva pintaba el tile de entrada y los vecinos de Miravanda comparten
+ *        todas sus celdas con él; en desarrollo nadie pinta, y la librería está
+ *        vacía de verdad.
+ *   E1 · Con el arte en la librería —el batch de «Aplicar estilo», que es una
+ *        vía DELIBERADA y paga también en desarrollo—, reanudar la MISMA
+ *        partida deja texturados los nueve tiles; todo POST del atlas lleva
+ *        `resolve_only` y el motor falso no anota ningún pago.
  *
- *  El `layout_key` del POST identifica el tile (hash del layout + estilo); el
- *  del activo se aprende de los POST que PINTAN en la partida viva, cuando es
- *  el único tile que puede pintar.
+ *  PROBADO EN NEGATIVO (2026-09-24): con el techo quitado en `gatesDeImagen`
+ *  (`const techo = true || …`) salen ROJOS los asertos de `resolve_only` y de
+ *  «ningún pago» de E0 (el activo pinta y los vecinos preguntan pintando).
+ *  Salida en `docs/agents/2026-09-24-tanda-as-generar-arte-es-configuracion/`.
+ *  El de #714 sigue en pie: sin la llamada a `fpsAtlas.restaurar` en
+ *  `carga-de-tile.ts`, E1 sale rojo en «los NUEVE» por expiración.
  *
- *  PROBADO EN NEGATIVO (2026-09-23): con `carga-de-tile.ts` sin la rama
- *  `else` que llama a `fpsAtlas.restaurar`, E1 y E2 salen rojos por la espera
- *  del texturado, nombrando los tiles en clay. Salida en
- *  `docs/agents/2026-09-23-tanda-ai-el-resume-pinta-lo-que-instala/`.
- *
- *  CERO CRÉDITOS: motor falso (`e2e-sin-creditos`); el batch de estilo y la
- *  partida en Imagen IA pintan dameros en el falso, que los anota como ruta de
- *  pago y por eso no se declara `sinMotor`. `aisla`: el mundo lo pre-genera
- *  este guion (la librería vacía de E0 depende de ello) y la caché del falso
- *  empieza fría.
+ *  CERO CRÉDITOS: motor falso. El batch de estilo pinta dameros en el falso,
+ *  que los anota como ruta de pago, y por eso no se declara `sinMotor`.
+ *  `aisla`: el mundo lo pre-genera este guion y la librería del falso empieza
+ *  fría.
  */
-import { comenzar, esperarRegistro, nuevaPartida, pedirYEsperarTile, reanudar, regenerarMundo } from "../lib/sesion.mjs";
+import { comenzar, esperarRegistro, nuevaPartida, reanudar, regenerarMundo } from "../lib/sesion.mjs";
 import { URLS } from "../lib/stack.mjs";
 
+export const entorno = "desarrollo";
 export const aisla = ["mundo", "saves", "fake-ai"];
 
 const GAME_ID = "alta_fantasia";
 
-async function pagosDeAtlas() {
+/** Lo que el motor falso lleva anotado del ATLAS: pagos y peticiones de pintar. */
+async function atlasDelFalso() {
   const res = await fetch(`${URLS.fake_ai}/dev/counters`);
   if (!res.ok) throw new Error(`fake /dev/counters HTTP ${res.status}`);
-  const { gasto } = await res.json();
-  return gasto.rutas["/generate_surface_atlas"] ?? 0;
+  const c = await res.json();
+  return {
+    pagos: c.gasto.rutas["/generate_surface_atlas"] ?? 0,
+    pintar: c.ejercicio?.rutas?.["pintar-superficies"] ?? 0,
+  };
 }
-
-/** Qué tiles siguen en clay: lo que dice el ✘ de una espera de texturado. */
-const enClay = (ctx) =>
-  ctx.page.evaluate(() => {
-    const f = window.__nefan.fps();
-    const textured = f.ready ? f.textured : [];
-    return { activeTile: f.activeTile ?? null, enClay: window.__nefan.tiles.filter((k) => !textured.includes(k)) };
-  });
 
 const olvidarMappingLocal = (ctx) =>
   ctx.page.evaluate(() => {
@@ -79,20 +67,19 @@ const olvidarMappingLocal = (ctx) =>
     return claves.length;
   });
 
-/** Espera a que el carril de restauración se vacíe con el activo texturado:
- *  a partir de ahí el estado del renderer ya no cambia solo. */
+/** Espera a que el carril de restauración se vacíe y el activo termine: a
+ *  partir de ahí el estado del renderer ya no cambia solo. No exige que el
+ *  activo esté texturado: en desarrollo, sin arte, no lo estará. */
 const esperarQuieto = (ctx, desc) =>
   ctx.waitFor(
     desc,
     () => {
       const f = window.__nefan.fps();
       const quieto =
-        f.ready &&
-        f.activeTile &&
-        f.textured.includes(f.activeTile) &&
-        !window.__nefan.status().painting &&
-        window.__nefan.status().restaurando === 0;
-      return quieto ? { activeTile: f.activeTile, textured: f.textured, tiles: window.__nefan.tiles } : null;
+        f.ready && f.activeTile && !window.__nefan.status().painting && window.__nefan.status().restaurando === 0;
+      return quieto
+        ? { activeTile: f.activeTile, textured: f.textured, tiles: window.__nefan.tiles, surfaces: f.surfaces }
+        : null;
     },
     90_000,
   );
@@ -125,46 +112,29 @@ export default async function (ctx) {
     }
     posts.push({ layout_key: body?.layout_key ?? null, resolve_only: body?.resolve_only === true });
   });
-  /** Los POST desde `i` de un tile que no es el que tiene `claveActivo`. */
-  const deOtrosTiles = (i, claveActivo) => posts.slice(i).filter((p) => p.layout_key !== claveActivo);
+  const quePintan = (desde) => posts.slice(desde).filter((p) => !p.resolve_only);
 
   await regenerarMundo(ctx, GAME_ID);
 
-  // ── Partida viva en Imagen IA: pinta SU tile, y solo el suyo ──────────────
+  // ── Partida viva en Imagen IA, en desarrollo: nadie pinta ────────────────
+  const falso0 = await atlasDelFalso();
   const postsPartida = posts.length;
   await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
   const partida = await comenzar(ctx);
-  const viva = await esperarQuieto(ctx, "la partida viva texturó el tile de entrada");
+  const viva = await esperarQuieto(ctx, "la partida viva termina de preguntar por su arte");
   ctx.log(`partida viva: ${JSON.stringify(viva)}`);
-  const pintaron = [...new Set(posts.slice(postsPartida).filter((p) => !p.resolve_only).map((p) => p.layout_key))];
   ctx.expect(
-    "PRECONDICIÓN — en la partida viva solo pintó UN tile (el activo): de él se aprende su layout_key",
-    pintaron.length === 1,
-    JSON.stringify(pintaron),
+    "partida viva en Imagen IA · el tile de entrada PREGUNTÓ a la librería, con resolve_only: en desarrollo no pinta",
+    posts.length > postsPartida && quePintan(postsPartida).length === 0,
+    JSON.stringify(posts.slice(postsPartida)),
   );
-  const claveActivo = pintaron[0] ?? null;
 
-  // ══ E0 · reanudar con la librería SIN el arte de los vecinos ══════════════
+  // ══ E0 · reanudar con la librería VACÍA ═══════════════════════════════════
   await olvidarMappingLocal(ctx);
-  const pagos0 = await pagosDeAtlas();
   const posts0 = posts.length;
-  const libreriaSinVecinos = async (route) => {
-    let b = null;
-    try {
-      b = JSON.parse(route.request().postData() ?? "null");
-    } catch {
-      b = null; // sin cuerpo legible no es una restauración que vaciar
-    }
-    if (!b || b.layout_key === claveActivo) return route.continue();
-    return route.fulfill({
-      json: { cells: {}, pages_painted: 0, cached: true, cost_usd: 0, missing: b.cells?.length ?? 0 },
-    });
-  };
-  await ctx.page.route("**/generate_surface_atlas", libreriaSinVecinos);
   const vuelta0 = await reanudar(ctx, partida.sessionId);
   if (!vuelta0) ctx.sinMedir("no se pudo reanudar la partida (E0)");
-  const e0 = await esperarQuieto(ctx, "E0 · el resume textura el activo y el carril de restauración se vacía");
-  await ctx.page.unroute("**/generate_surface_atlas", libreriaSinVecinos);
+  const e0 = await esperarQuieto(ctx, "E0 · el resume termina: el activo y el carril de restauración");
   ctx.log(`E0 · tras reanudar: ${JSON.stringify(e0)}`);
   if (e0.tiles.length < 9) {
     ctx.sinMedir(
@@ -172,36 +142,28 @@ export default async function (ctx) {
     );
   }
   ctx.expect(
-    "E0 · el tile del jugador vuelve texturado",
-    e0.textured.includes(e0.activeTile),
+    "E0 · los tiles PREGUNTARON a la librería (un POST por tile, o más) y todos con resolve_only, también el activo",
+    posts.length - posts0 >= e0.tiles.length && quePintan(posts0).length === 0,
+    JSON.stringify(posts.slice(posts0)),
+  );
+  const falso0b = await atlasDelFalso();
+  ctx.expect(
+    "E0 · desde que empezó la partida, el motor falso no anotó ningún pago de atlas ni ninguna petición de pintar",
+    falso0b.pagos === falso0.pagos && falso0b.pintar === falso0.pintar,
+    JSON.stringify({ antes: falso0, ahora: falso0b }),
+  );
+  ctx.expect(
+    "E0 · sin arte en la librería, los NUEVE siguen en clay",
+    e0.textured.length === 0,
     JSON.stringify(e0),
   );
+  const filasDelMenu = e0.surfaces.filter((k) => !e0.textured.includes(k));
   ctx.expect(
-    "E0 · sin su arte en la librería, los vecinos siguen en clay (nada que restaurar, y el menú lo ofrece como pendiente)",
-    e0.tiles.filter((k) => k !== e0.activeTile).every((k) => !e0.textured.includes(k)),
-    JSON.stringify(e0),
-  );
-  const otros0 = deOtrosTiles(posts0, claveActivo);
-  ctx.expect(
-    "E0 · los vecinos PREGUNTARON a la librería (hay POST de tiles no activos) y todos con resolve_only: restaurar no pinta",
-    otros0.length > 0 && otros0.every((p) => p.resolve_only),
-    JSON.stringify({ claveActivo, otros: otros0 }),
-  );
-  ctx.expect(
-    "E0 · reanudar no anotó ningún pago de atlas en el motor falso",
-    (await pagosDeAtlas()) === pagos0,
-    `pagos antes ${pagos0} → ${await pagosDeAtlas()}`,
-  );
-  const filasDelMenu = await ctx.page.evaluate(() => {
-    const f = window.__nefan.fps();
-    return f.surfaces.filter((k) => !f.textured.includes(k));
-  });
-  ctx.expect(
-    "E0 · y el arte pendiente que cuenta el menú (tiles con superficies y sin atlas) son exactamente los ocho vecinos",
-    filasDelMenu.length === 8 && !filasDelMenu.includes(e0.activeTile),
+    "E0 · y el arte pendiente que cuenta el menú (tiles con superficies y sin atlas) son los nueve",
+    filasDelMenu.length === 9 && filasDelMenu.includes(e0.activeTile),
     JSON.stringify(filasDelMenu),
   );
-  await ctx.shot("e0-vecinos-sin-arte-en-la-libreria");
+  await ctx.shot("e0-en-desarrollo-nada-pinta");
 
   // ══ E1 · el batch de estilo pinta el mundo; reanudar lo trae entero ═══════
   await ctx.page.reload({ waitUntil: "domcontentloaded" });
@@ -218,9 +180,14 @@ export default async function (ctx) {
     240_000,
   );
   ctx.log(`batch de estilo (lo que tuvo que pedir): ${JSON.stringify(corrida.issued ?? corrida)}`);
+  const falsoBatch = await atlasDelFalso();
+  ctx.expect(
+    "E1 · el batch de estilo es DELIBERADO y paga también en desarrollo (el motor falso anota el atlas)",
+    falsoBatch.pagos > falso0b.pagos,
+    JSON.stringify({ antes: falso0b, ahora: falsoBatch }),
+  );
 
   await olvidarMappingLocal(ctx);
-  const pagos1 = await pagosDeAtlas();
   const posts1 = posts.length;
   const vuelta1 = await reanudar(ctx, partida.sessionId);
   if (!vuelta1) ctx.sinMedir("no se pudo reanudar la partida (E1)");
@@ -228,60 +195,23 @@ export default async function (ctx) {
     ctx,
     "E1 · con el arte en la librería, reanudar deja texturados los NUEVE tiles (ningún vecino en clay)",
   );
-  ctx.log(`E1 · tras reanudar: ${JSON.stringify(e1 ?? (await enClay(ctx)))}`);
+  ctx.log(`E1 · tras reanudar: ${JSON.stringify(e1)}`);
   const quietoE1 = await esperarQuieto(ctx, "E1 · el carril de restauración termina");
-  const otros1 = deOtrosTiles(posts1, claveActivo);
   ctx.expect(
-    "E1 · los POST de los tiles que no son el activo llevan TODOS resolve_only, también en Imagen IA",
-    otros1.length > 0 && otros1.every((p) => p.resolve_only),
-    JSON.stringify({ claveActivo, otros: otros1 }),
+    "E1 · todo POST del atlas lleva resolve_only, el del activo incluido",
+    posts.length > posts1 && quePintan(posts1).length === 0,
+    JSON.stringify(posts.slice(posts1)),
+  );
+  const falso1 = await atlasDelFalso();
+  ctx.expect(
+    "E1 · restaurar no anotó ningún pago de atlas ni ninguna petición de pintar",
+    falso1.pagos === falsoBatch.pagos && falso1.pintar === falsoBatch.pintar,
+    JSON.stringify({ antes: falsoBatch, ahora: falso1 }),
   );
   ctx.expect(
-    "E1 · restaurar los vecinos no anotó ningún pago de atlas en el motor falso",
-    (await pagosDeAtlas()) === pagos1,
-    `pagos antes ${pagos1} → ${await pagosDeAtlas()}`,
-  );
-  ctx.expect(
-    "E1 · y el tile del jugador sigue texturado (la restauración no desechó su corrida)",
+    "E1 · y el tile del jugador está texturado",
     quietoE1.textured.includes(quietoE1.activeTile),
     JSON.stringify(quietoE1),
   );
   await ctx.shot("e1-reanudada-con-los-nueve-tiles");
-
-  // ══ E2 · partida viva: el vecino que llega por el cable se textura ════════
-  await ctx.page.reload({ waitUntil: "domcontentloaded" });
-  await ctx.waitFor("el cliente vuelve a estar en pie", () => Boolean(window.__nefan));
-  await olvidarMappingLocal(ctx);
-  await nuevaPartida(ctx, { gameId: GAME_ID, charMode: "vector", renderMode: "image" });
-  await comenzar(ctx);
-  const entrada = await esperarQuieto(ctx, "E2 · la partida nueva textura su tile de entrada");
-  const [, tx, ty] = /^tile_(-?\d+)_(-?\d+)$/.exec(entrada.activeTile) ?? [];
-  if (tx === undefined) ctx.sinMedir(`el tile activo «${entrada.activeTile}» no tiene forma tile_<x>_<y>`);
-  const vecino = { tx: Number(tx) + 1, ty: Number(ty) };
-  const claveVecino = `tile_${vecino.tx}_${vecino.ty}`;
-  if (entrada.tiles.includes(claveVecino)) {
-    ctx.sinMedir(`${claveVecino} ya estaba instalado al empezar: no hay llegada que medir`);
-  }
-  const pagos2 = await pagosDeAtlas();
-  const posts2 = posts.length;
-  await pedirYEsperarTile(ctx, claveVecino, vecino.tx, vecino.ty);
-  const { ocurrio: e2Ok, ultimo: e2 } = await ctx.expectEspera(
-    `E2 · el vecino ${claveVecino} que llega en partida viva se textura SIN que el jugador cruce`,
-    true,
-    ([k, activo]) => {
-      const f = window.__nefan.fps();
-      return f.ready && f.activeTile === activo && f.textured.includes(k)
-        ? { activeTile: f.activeTile, textured: f.textured }
-        : null;
-    },
-    { ms: 90_000, arg: [claveVecino, entrada.activeTile] },
-  );
-  ctx.log(`E2 · ${JSON.stringify(e2 ?? (await enClay(ctx)))}`);
-  const otros2 = deOtrosTiles(posts2, claveActivo);
-  ctx.expect(
-    "E2 · el vecino preguntó a la librería con resolve_only y sin pagar",
-    otros2.length > 0 && otros2.every((p) => p.resolve_only) && (await pagosDeAtlas()) === pagos2,
-    JSON.stringify({ otros: otros2, pagosAntes: pagos2 }),
-  );
-  if (e2Ok) await ctx.shot("e2-vecino-texturado-sin-cruzar");
 }

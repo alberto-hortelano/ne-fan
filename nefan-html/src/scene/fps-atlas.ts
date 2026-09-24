@@ -2,7 +2,7 @@
  *
  *  Al activarse un tile en la vista fps: layout determinista de superficies →
  *  caché cliente por (layoutKey = hash del layout canónico + estilo + versión)
- *  → si render_mode escenas = imagen, POST /generate_surface_atlas (el server
+ *  → si los gates dejan generar (Imagen IA en producción), POST /generate_surface_atlas (el server
  *  resuelve por CELDA contra la librería y pinta solo lo que falta) → fetch de
  *  cada celda del asset-store → texturas al FpsRenderer. Las celdas usadas se
  *  registran en el world-state (/scene/asset_refs) para la keep-list del
@@ -19,10 +19,11 @@ import {
 } from "@nefan-core/src/scene/greybox/surfaces.js";
 import {
   PoliticaDeAtlas,
-  modoDeCorrida,
+  lineaDeBalance,
   type Desenlace,
   type Restauracion,
 } from "@nefan-core/src/scene/politica-de-atlas.js";
+import type { PermisoDeEscenarios } from "@nefan-core/src/session/gates-de-imagen.js";
 import { debugLogEnabled } from "../dev/debug-log.js";
 import { errors } from "../ui/error-log.js";
 import { cargarImagen, guardarMapping, leerMapping } from "./mapping-del-atlas.js";
@@ -53,8 +54,8 @@ export interface FpsAtlasDeps {
   clear(key: string): void;
   /** Tiles instalados sin textura (FpsRenderer.tilesSinAtlas), en su orden. */
   tilesSinAtlas(): string[];
-  /** render_mode de escenas = imagen (gasto auto permitido). */
-  generationOn(): boolean;
+  /** Qué hace un camino AUTOMÁTICO (activo o vecino): `generar` o `restaurar` (`gatesDeImagen`). */
+  modoDeEscenarios(): PermisoDeEscenarios;
   log(msg: string): void;
   onGeneration?(e: { kind: "fps_atlas"; cached: boolean }): void;
 }
@@ -139,6 +140,7 @@ export class FpsAtlasController {
    *  quien sabe si lleva `resolve_only`, y se apaga al terminar el tile. */
   private corridaQuePinta = false;
 
+
   /** Tile activo nuevo. El arte YA PAGADO se restaura SIEMPRE (también en
    *  modo vector — lo ya pintado se conserva): memoria →
    *  mapping persistido (solo asset-store) → resolve_only contra la librería
@@ -168,7 +170,7 @@ export class FpsAtlasController {
         return;
       }
       if (await this.reinstallFromStorage(key, SIEMPRE, this.deps.log)) return;
-      await this.runFor(key, modoDeCorrida({ activo: true, generacion: this.deps.generationOn() }));
+      await this.runFor(key, { resolveOnly: this.deps.modoDeEscenarios() !== "generar" });
     } finally {
       // El re-disparo es la ÚLTIMA oportunidad de ese tile: si se lo come un
       // catch mudo, el jugador se queda en clay sin que nada lo diga y el
@@ -189,12 +191,11 @@ export class FpsAtlasController {
     }
   }
 
-  /** Un tile INSTALADO que no es el activo (los vecinos que reinstala el
-   *  resume, el que llega por prefetch): recupera su arte YA PAGADO y nada más
-   *  (#714). Nunca pinta —lo decide `modoDeCorrida` en core—, nunca supera la
-   *  corrida del activo (no toca su token) y espera a que el ciclo del activo
-   *  termine. Síncrono a propósito: encola y vuelve; los fallos van al
-   *  error-log desde la bomba. */
+  /** Un tile INSTALADO que no es el activo (vecinos del resume, prefetch):
+   *  recupera su arte YA PAGADO (#714) y, si los gates dejan generar, pinta lo
+   *  que falte — el mismo trato que el activo (`gatesDeImagen`). Nunca supera
+   *  la corrida del activo (no toca su token) y espera a que termine. Síncrono:
+   *  encola y vuelve; los fallos van al error-log desde la bomba. */
   restaurar(key: string): void {
     this.politica.encolarRestauracion(key);
     this.bombearRestauraciones();
@@ -215,16 +216,13 @@ export class FpsAtlasController {
       })
       .then((d) => {
         const b = this.politica.finDeRestauracion(r, d); // balance: UNA línea de HUD por tanda
-        if (b) {
-          this.deps.log(`Atlas fps: ${b.aplicados} vecino(s) restaurado(s) de la librería ($0), ${b.sinArte} sin arte (clay)`);
-        }
+        if (b) this.deps.log(lineaDeBalance(b));
         this.bombearRestauraciones();
       });
   }
 
-  /** La escalera de siempre —memoria → mapping persistido → librería— sin
-   *  `nuevoRun`, sin `corridaQuePinta` y sin `onGeneration`: esto no es una
-   *  corrida del jugador, es arte que ya estaba pagado volviendo a su tile. */
+  /** La escalera de siempre —memoria → mapping → librería— sin `nuevoRun` ni
+   *  `corridaQuePinta`. Si pinta, lo dice (`onGeneration`, `pintado`). */
   private async ejecutarRestauracion(r: Restauracion): Promise<Desenlace> {
     const sigueMandando = () => this.politica.restauracionVigente(r);
     const aplicado = (): Desenlace => (sigueMandando() ? "aplicado" : "nada");
@@ -237,7 +235,7 @@ export class FpsAtlasController {
     if (await this.reinstallFromStorage(r.key, sigueMandando, traza)) return aplicado();
     const tile = this.deps.getTile(r.key);
     if (!tile || !sigueMandando()) return "nada";
-    const { resolveOnly } = modoDeCorrida({ activo: false, generacion: this.deps.generationOn() });
+    const resolveOnly = this.deps.modoDeEscenarios() !== "generar";
     return this.resolverYAplicar(r.key, tile, resolveOnly, sigueMandando, traza);
   }
 
@@ -388,7 +386,8 @@ export class FpsAtlasController {
         : `Atlas fps de ${key} instalado (${data.pages_painted} página(s) nuevas` +
           `${data.cached ? ", todo de la librería" : `, $${data.cost_usd}`})`,
     );
-    return "aplicado";
+    // Pintar es GASTO: el balance del carril lo cuenta aparte.
+    return data.pages_painted > 0 ? "pintado" : "aplicado";
   }
 
   /** Mapping local (`mapping-del-atlas.ts`): el resume restaura el arte
