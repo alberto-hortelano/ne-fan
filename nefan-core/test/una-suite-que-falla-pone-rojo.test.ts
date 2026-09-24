@@ -1,28 +1,24 @@
 /**
  * Una suite que falla pone rojo `npm test` y `npm run coverage` (#697).
  *
- * `node --test` v24 sale con 0 cuando el CUERPO de un `describe` lanza: la
- * suite desaparece del resumen y el build queda verde. Lo arregla el reporter
- * `la-suite-que-falla-pone-rojo.ts`; esto canda que las dos entradas de npm lo
- * llevan, corriendo su línea de comandos REAL (la de `package.json`, no una
- * copia) con el glob sustituido por una fixture:
+ * Si el CUERPO de un `describe` lanza (un `JSON.parse` de un contrato roto, un
+ * `readFileSync` de un fichero que falta, un helper que valida y lanza…), el
+ * build tiene que quedar rojo. Lo hace el propio `node --test` desde v24.15.0
+ * —antes salía con 0 y la suite desaparecía del resumen—, y por eso `engines`
+ * declara `>=24.15` (bisección con binarios oficiales, 2026-09-23 y 2026-09-24:
+ * 24.11.1 y 24.14.1 salen 0; 24.15.0 y 26.10.0 salen 1). Esto canda que las dos
+ * entradas de npm lo siguen cumpliendo, corriendo su línea de comandos REAL (la
+ * de `package.json`, no una copia) con el glob sustituido por una fixture:
  *
- * - sobre un `describe` que lanza → EXIT ≠ 0 y la suite nombrada;
- * - sobre la misma forma sin el `throw` → EXIT 0 (el reporter no inventa rojos);
- * - la línea de `test` SIN el reporter: se MIDE y se nombra la versión, no se
- *   afirma. Node lo arregló en v24.15.0 (medido el 2026-09-23 con los binarios
- *   oficiales: 24.11.1–24.14.1 salen 0, 24.15.0–24.20.0 salen 1), y en este repo
- *   conviven las dos: la máquina de desarrollo corre 24.11.1 y CI coge la última
- *   24. Afirmar «Node sale 0» como invariante ponía CI rojo por la versión, no
- *   por el código. Si sale 0 lo dice como diagnóstico (el reporter es lo único
- *   que la pone roja); si sale ≠ 0, `skip` con motivo: en esa versión el
- *   reporter es redundante. Los asertos duros son los de arriba, que valen en
- *   todas las versiones.
+ * - sobre un `describe` que lanza → EXIT ≠ 0 y la suite nombrada con `✖`;
+ * - sobre la misma forma sin el `throw` → EXIT 0 y sin avisos de Node.
  *
- * La tercera entrada al runner, el `corre()` de `qa/contrato-candados-en-negativo.mjs`,
- * se canda en el propio arnés: su invariante de fixture rompe un contrato leído
- * solo en el cuerpo de un `describe` y, en Node < 24.15, sale VERDE si el
- * reporter falta.
+ * En un Node anterior a 24.15 los dos asertos de «lanza» salen ROJOS: ese es el
+ * candado del suelo de `engines`, que npm por sí solo solo avisa.
+ *
+ * Ojo: Node cuenta la suite en el CÓDIGO DE SALIDA, no en el resumen (`ℹ fail 0`
+ * también en Node 26). Quien decida por `ℹ fail N` sigue sin verla; por eso
+ * aquí se mira `status`.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -31,13 +27,12 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PREFIJO_SUITE_ROTA } from "./la-suite-que-falla-pone-rojo.js";
 
 const CORE = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GLOB = "test/*.test.ts";
-const REPORTER = "--test-reporter=./test/la-suite-que-falla-pone-rojo.ts --test-reporter-destination=stdout";
 const LANZA = "test/fixtures/describe-que-lanza.ts";
 const PASA = "test/fixtures/describe-que-pasa.ts";
+const NOMBRE_ROTA = "✖ un describe cuyo cuerpo lanza";
 
 const scripts = (JSON.parse(readFileSync(join(CORE, "package.json"), "utf8")) as { scripts: Record<string, string> })
   .scripts;
@@ -80,48 +75,38 @@ function lineaDeCoverage(fixture: string, lcov: string): string {
   return linea.replace("coverage/lcov.info", lcov);
 }
 
-describe("una suite que falla pone rojo las entradas de npm al runner (#697)", () => {
-  it("npm test lleva el reporter", () => {
-    assert.ok(scripts.test?.includes(REPORTER), `scripts.test sin «${REPORTER}»: ${scripts.test}`);
-  });
+/** Lo que Node escribe en stderr cuando algo de la cadena (tsx, un reporter) usa
+ *  una API en retirada: el `module.register()` de tsx < 4.22 sacaba un DEP0205
+ *  por proceso en Node 26. */
+const AVISOS = /DeprecationWarning|ExperimentalWarning|MaxListenersExceededWarning/;
 
+describe("una suite que falla pone rojo las entradas de npm al runner (#697)", () => {
   it("npm test: un describe cuyo cuerpo lanza sale ≠ 0 y se nombra", () => {
     const r = corre(lineaSobre("test", LANZA));
     assert.notEqual(r.status, 0, r.salida);
-    assert.ok(r.salida.includes(`${PREFIJO_SUITE_ROTA} un describe cuyo cuerpo lanza`), r.salida);
+    assert.ok(r.salida.includes(NOMBRE_ROTA), r.salida);
   });
 
-  it("npm test: la misma forma sin el throw sale 0", () => {
+  it("npm test: la misma forma sin el throw sale 0 y sin avisos de Node", () => {
     const r = corre(lineaSobre("test", PASA));
     assert.equal(r.status, 0, r.salida);
-    assert.ok(!r.salida.includes(PREFIJO_SUITE_ROTA), r.salida);
+    assert.ok(!r.salida.includes("✖"), r.salida);
+    assert.ok(!AVISOS.test(r.salida), r.salida);
   });
 
   it("npm run coverage: un describe cuyo cuerpo lanza sale ≠ 0 y se nombra", () => {
     conLcovTemporal((lcov) => {
       const r = corre(lineaDeCoverage(LANZA, lcov));
       assert.notEqual(r.status, 0, r.salida);
-      assert.ok(r.salida.includes(`${PREFIJO_SUITE_ROTA} un describe cuyo cuerpo lanza`), r.salida);
+      assert.ok(r.salida.includes(NOMBRE_ROTA), r.salida);
     });
   });
 
-  it("npm run coverage: la misma forma sin el throw sale 0 y sin avisos de listeners", () => {
+  it("npm run coverage: la misma forma sin el throw sale 0 y sin avisos de Node", () => {
     conLcovTemporal((lcov) => {
       const r = corre(lineaDeCoverage(PASA, lcov));
       assert.equal(r.status, 0, r.salida);
-      assert.ok(!r.salida.includes("MaxListenersExceededWarning"), r.salida);
+      assert.ok(!AVISOS.test(r.salida), r.salida);
     });
-  });
-
-  it("sin el reporter: se mide si ESTE Node ya cuenta la suite que lanza, y se dice con su versión", (t) => {
-    const linea = lineaSobre("test", LANZA);
-    assert.ok(linea.includes(REPORTER));
-    const version = corre("node --version").salida.trim();
-    const r = corre(linea.replace(REPORTER, ""));
-    if (r.status !== 0) {
-      t.skip(`Node ${version} ya sale ${r.status} sin el reporter (lo cuenta desde v24.15.0): aquí el reporter es redundante`);
-      return;
-    }
-    t.diagnostic(`Node ${version} sale 0 sin el reporter: el reporter es lo único que pone rojo un describe que lanza`);
   });
 });

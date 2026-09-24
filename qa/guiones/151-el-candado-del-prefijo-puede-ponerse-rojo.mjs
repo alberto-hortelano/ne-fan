@@ -182,6 +182,11 @@ function corre() {
   // llevar paréntesis con dígitos dentro («(07 y 7 son el mismo)») y una
   // captura perezosa lo cortaba ahí y daba «renombrado» por un aserto intacto.
   const rojos = [...new Set([...salida.matchAll(/^ {2}✖ (.+) \(\d[\d.]*ms\)$/gmu)].map((m) => m[1]))];
+  // El CÓDIGO DE SALIDA también decide (#697): un `describe` cuyo cuerpo lanza
+  // sale con 1 pero no deja ningún aserto con `✖` que este regex recoja, y el
+  // resumen dice `ℹ fail 0`. Sin esto, esa batería rota se leería «verde».
+  if (r.status !== 0 && rojos.length === 0) rojos.push(`EXIT ${r.status} sin ningún aserto rojo nombrado (¿un describe que lanza?)`);
+  // `total` solo sirve para exigir que la base tenga sujeto; no decide rojos.
   const total = Number(/^ℹ tests (\d+)$/mu.exec(salida)?.[1] ?? -1);
   return { rojos, total, salida };
 }

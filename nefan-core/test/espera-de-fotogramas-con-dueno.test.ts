@@ -291,12 +291,11 @@ export function esperasPorFotogramas(texto: string, fichero: string): EsperaDeFo
 const mjsDelBanco = (): string[] => fuentesDelBanco(join(repoRoot, "qa")).map((f) => `qa/${f}`);
 
 /** EL PARSE VA FUERA DEL `describe`, Y NO ES ESTILO (#611, medido al probar el
- *  candado en negativo). Con `node --test` v24.11.1, un `describe` cuyo cuerpo
- *  LANZA se anota `✖` en el listado y sale con **`ℹ fail 0` y código de salida
- *  0**: la suite entera desaparece (`tests 0`) y `npm test` queda VERDE. O sea
- *  que el zod de este contrato —que es quien exige el número del issue y
- *  rechaza lo retirado— no podía poner rojo el build desde dentro del
- *  `describe`. Fuera, el throw es de MÓDULO y da `fail 1` con salida 1.
+ *  candado en negativo). Un `describe` cuyo cuerpo LANZA se anota `✖` en el
+ *  listado, pero la suite entera desaparece del resumen (`tests 0`, `ℹ fail 0`):
+ *  solo el código de salida la delata, y eso desde Node v24.15.0 (antes salía
+ *  con 0 y `npm test` quedaba VERDE, #697). Fuera, el throw es de MÓDULO y da
+ *  `fail 1` con salida 1: lo cuenta también quien lea el resumen.
  *  Reproducido en un fichero de tres líneas sin nada del repo. */
 const contrato = ContratoSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
 const encontradas = mjsDelBanco().flatMap((f) =>

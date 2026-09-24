@@ -5,9 +5,11 @@
   // cambia dos cosas:
   //
   // - `include`: `test/**/*.ts`.
-  // - `lib: ["ES2023"]`: los tests corren en Node ≥ 24, que tiene
-  //   `Array.prototype.findLast`, y varios lo usan. El build sigue en ES2022
-  //   (unificarlo cuando Node 24 sea el suelo declarado va al backlog).
+  // - `lib: ["ES2023"]`: los tests corren en Node ≥ 24.15 (el suelo de
+  //   `engines`), que tiene `Array.prototype.findLast`, y varios lo usan. El
+  //   build sigue en ES2022: subirlo ya no espera a ningún suelo de Node, pero
+  //   `src/` también lo importa el cliente del navegador, y es ahí donde se
+  //   decide.
   //
   // Sin `allowJs`: los `await import(join(repoRoot, "qa", "lib", …))` de los
   // tests que miran al banco tienen especificador no literal y salen `any`.
