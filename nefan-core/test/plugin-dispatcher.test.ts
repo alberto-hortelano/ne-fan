@@ -42,9 +42,9 @@ describe("dispatchPluginEvents", () => {
       { pluginId: idOf("test_counter"), type: "counter_inc", payload: {} },
     ]);
     assert.equal(result.ok, true);
-    assert.deepEqual(state.getPluginRecord(idOf("test_counter"))?.slice, { count: 1 });
+    assert.deepEqual(state.pluginDelManifest(idOf("test_counter"))?.slice, { count: 1 });
     // El listener procesó el counter_changed emitido (nivel 3, mismo tick).
-    assert.deepEqual(state.getPluginRecord(idOf("test_listener"))?.slice, {
+    assert.deepEqual(state.pluginDelManifest(idOf("test_listener"))?.slice, {
       last_seen: 1,
       times: 1,
     });
@@ -73,8 +73,8 @@ describe("dispatchPluginEvents", () => {
       { pluginId: idOf("test_listener"), type: "counter_changed", payload: { count: 9 } },
     ]);
     assert.equal(result.ok, true);
-    assert.deepEqual(state.getPluginRecord(idOf("test_counter"))?.slice, { count: 0 });
-    assert.deepEqual(state.getPluginRecord(idOf("test_listener"))?.slice, {
+    assert.deepEqual(state.pluginDelManifest(idOf("test_counter"))?.slice, { count: 0 });
+    assert.deepEqual(state.pluginDelManifest(idOf("test_listener"))?.slice, {
       last_seen: 9,
       times: 1,
     });
@@ -97,7 +97,7 @@ describe("dispatchPluginEvents", () => {
       { pluginId: "f".repeat(64), type: "counter_inc", reason: "unknown_plugin" },
     ]);
     assert.deepEqual(
-      state.getPluginRecord(idOf("test_counter"))?.slice,
+      state.pluginDelManifest(idOf("test_counter"))?.slice,
       { count: 1 },
       "el evento bueno del mismo tick se aplica igual",
     );
@@ -137,7 +137,7 @@ describe("dispatchPluginEvents", () => {
     ]);
     assert.equal(result.ok, true);
     assert.equal(state.player.gold, 35);
-    assert.deepEqual(state.getPluginRecord(idOf("gold_giver"))?.slice, { total_given: 25 });
+    assert.deepEqual(state.pluginDelManifest(idOf("gold_giver"))?.slice, { total_given: 25 });
     const fx = result.effects[0];
     assert.ok(fx.changedPaths.includes("player.gold"));
   });
@@ -152,7 +152,7 @@ describe("dispatchPluginEvents", () => {
     assert.equal(result.ok, false);
     assert.equal(result.error?.code, "dsl_error");
     assert.equal(state.player.gold, 10);
-    assert.deepEqual(state.getPluginRecord(idOf("gold_giver"))?.slice, { total_given: 0 });
+    assert.deepEqual(state.pluginDelManifest(idOf("gold_giver"))?.slice, { total_given: 0 });
   });
 
   it("ping/pong cycle hits the emit limit and aborts with a trace, state intact", () => {
@@ -166,8 +166,8 @@ describe("dispatchPluginEvents", () => {
       assert.equal(result.error.limit, MAX_EMITS_PER_TICK);
       assert.ok(result.error.trace.length > MAX_EMITS_PER_TICK);
     }
-    assert.deepEqual(state.getPluginRecord(idOf("cycle_a"))?.slice, { n: 0 });
-    assert.deepEqual(state.getPluginRecord(idOf("cycle_b"))?.slice, { n: 0 });
+    assert.deepEqual(state.pluginDelManifest(idOf("cycle_a"))?.slice, { n: 0 });
+    assert.deepEqual(state.pluginDelManifest(idOf("cycle_b"))?.slice, { n: 0 });
   });
 
   it("no events ⇒ ok with no effects", () => {
@@ -289,7 +289,7 @@ describe("#452: la forma del inventario que escribe un plugin", () => {
     assert.equal(result.error.detail, "player.inventory[0].id: Required");
     // Transaccional: ni el ítem ni el slice.
     assert.deepEqual(state.player.inventory, []);
-    assert.deepEqual(state.getPluginRecord(id)?.slice, { dados: 0 });
+    assert.deepEqual(state.pluginDelManifest(id)?.slice, { dados: 0 });
   });
 
   it("push de un ítem CON id aterriza, con lo que traiga además del id", () => {
@@ -301,7 +301,7 @@ describe("#452: la forma del inventario que escribe un plugin", () => {
     ]);
     assert.equal(result.ok, true, JSON.stringify(result.error));
     assert.deepEqual(state.player.inventory, [{ id: "nota", name: "una nota suelta" }]);
-    assert.deepEqual(state.getPluginRecord(id)?.slice, { dados: 1 });
+    assert.deepEqual(state.pluginDelManifest(id)?.slice, { dados: 1 });
     assert.ok(result.effects[0].changedPaths.includes("player.inventory"));
   });
 

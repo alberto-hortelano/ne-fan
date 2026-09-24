@@ -200,7 +200,7 @@ describe("activatePluginsForNewSession / bindPluginsForResume", () => {
     assert.equal(await s2.loadSession(s1.session_id), true);
     const active = bindPluginsForResume(s2, loadGamePluginManifests(FIXTURE_GAMES, "plugtest", pluginsHermanosDe(FIXTURE_GAMES)));
     assert.equal(active.size, 3);
-    assert.deepEqual(s2.getPluginRecord(loaded[1].id)?.slice, { count: 7 });
+    assert.deepEqual(s2.pluginDelManifest(loaded[1].id)?.slice, { count: 7 });
   });
 
   it("resume fails loud when the FS manifest changed (same name, other hash)", () => {

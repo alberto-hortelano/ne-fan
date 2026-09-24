@@ -9,6 +9,7 @@ import {
 } from "../../src/combat/criba-de-hostiles.js";
 import { activateByPosition } from "./tile.js";
 import { guardarOAvisar } from "../guardar.js";
+import { vaciarPluginsActivos } from "../plugins-activos.js";
 import {
   getEnemyStates,
   getNpcStates,
@@ -189,6 +190,11 @@ export function handleLoadRoom(
   // mundo lo tiene OTRO socket no se toca nada: una pestaña ajena no le
   // congela la partida a quien está jugando.
   if (!ctx.world.claimForFixture(ws)) return;
+  // Y por lo mismo, los sistemas del juego tampoco la miran (#368): una escena
+  // de prueba no hereda los plugins de la partida que hubiera, ni los de la
+  // sesión efímera de una pre-generación. Volver a la partida es un resume, y
+  // el resume los re-ata desde el save.
+  vaciarPluginsActivos(ctx);
   // Reset simulation for new room
   ctx.sim.reset();
   // Sin sesión (fixtures legacy), el cliente asume el catálogo ESTÁNDAR: el

@@ -111,7 +111,7 @@ export function hooksDePlugins(
     register: (raw) => pluginRegisterBody(registerRuntimePlugin(narrative, activePlugins, raw)),
     list: () =>
       [...activePlugins.entries()].map(([id, m]) =>
-        pluginListSummary(id, m, narrative.getPluginRecord(id)?.origin.author),
+        pluginListSummary(id, m, narrative.pluginDelManifest(id)?.origin.author),
       ),
     inspect: (id, view) =>
       inspectPlugin(

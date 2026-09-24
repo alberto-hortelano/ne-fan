@@ -41,7 +41,7 @@ function makeSession(gameId = "toledo_1200") {
 }
 
 function economySlice(state: NarrativeState, id: string): EconomySlice {
-  return state.getPluginRecord(id)?.slice as unknown as EconomySlice;
+  return state.pluginDelManifest(id)?.slice as unknown as EconomySlice;
 }
 
 function emittedTypes(tick: ReturnType<typeof dispatchPluginEvents>): string[] {
@@ -249,7 +249,7 @@ describe("economy plugin shipped", () => {
     assert.equal(state.player.gold, 60);
     assert.deepEqual(state.player.inventory, [{ id: "iron_sword", from: "m1" }]);
     // El slice de commerce no sabe nada del grant, ni el de economy de la compra.
-    const commerceSlice = state.getPluginRecord(commerceId)?.slice as { markets: Record<string, unknown> };
+    const commerceSlice = state.pluginDelManifest(commerceId)?.slice as { markets: Record<string, unknown> };
     assert.ok(commerceSlice.markets.m1);
     const kinds = economySlice(state, economyId).ledger.map((l) => l.kind);
     assert.deepEqual(kinds, ["grant"]);

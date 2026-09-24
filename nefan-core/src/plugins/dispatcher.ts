@@ -22,7 +22,7 @@
  *  Pasa de verdad: el `plugin_id` es el hash del manifest, así que evolucionar
  *  un plugin (§7.3) le cambia el id y deja colgando lo que el motor ya había
  *  escrito con el viejo. Antes de darlo por perdido se sigue la dirección que
- *  dejó la migración (`state.resolvePluginRecord`).
+ *  dejó la migración (`state.pluginDelSistema`).
  */
 import type { NarrativeState } from "../narrative/narrative-state.js";
 import type { ConsequenceEffect } from "../narrative/types.js";
@@ -140,7 +140,7 @@ export function dispatchPluginEvents(
 
   const sliceOf = (id: string): unknown => {
     if (workSlices.has(id)) return workSlices.get(id);
-    const record = state.getPluginRecord(id);
+    const record = state.pluginDelManifest(id);
     return record ? structuredClone(record.slice) : undefined;
   };
   const pluginSlicesView = (): Record<string, unknown> => {
@@ -158,7 +158,7 @@ export function dispatchPluginEvents(
     if (event.pluginId !== undefined) {
       // El id puede ser el de una versión anterior del mismo sistema: se sigue
       // la dirección que dejó la migración antes de declararlo desconocido.
-      const record = state.resolvePluginRecord(event.pluginId);
+      const record = state.pluginDelSistema(event.pluginId);
       const target = record ? manifests.get(record.id) : undefined;
       if (!target) {
         undelivered.push({ pluginId: event.pluginId, type: event.type, reason: "unknown_plugin" });
@@ -171,7 +171,7 @@ export function dispatchPluginEvents(
     }
 
     for (const [id, manifest] of subscribersOf(event.type)) {
-      if (!state.getPluginRecord(id)) {
+      if (!state.pluginDelManifest(id)) {
         return fail({ code: "unknown_plugin", pluginId: id });
       }
       const auth = manifestAuth(manifest);

@@ -74,7 +74,7 @@ describe("bridge dialogue_choice", () => {
     assert.deepEqual(event.consequences, consequences);
     // story_update aplicado al estado + plugin tick aplicado al slice.
     assert.ok(narrative.story_so_far.includes("El tabernero asiente."));
-    assert.deepEqual(narrative.getPluginRecord(counterId)?.slice, { count: 1 });
+    assert.deepEqual(narrative.pluginDelManifest(counterId)?.slice, { count: 1 });
     assert.ok(event.effects.some((e) => e.kind === "plugin_applied"));
   });
 
