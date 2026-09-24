@@ -17,13 +17,15 @@
  *  **El `ctx` y sus alias.** Un verbo es `ctx.v(…)`, `ctx["v"](…)` o la
  *  llamada a un alias: `const c = ctx` (y `c.v(…)`), `const { v } = ctx`,
  *  `const e = ctx.v` o `ctx.v.bind(ctx)` (QA de la tanda: con cualquiera de
- *  ellos el detector veía 0 saltos). Además, por fichero y sin ámbitos, lo
- *  delata el NOMBRE de un verbo que afirma o declara —el receptor de `c.v`,
- *  llamado o no (también tras `let c; c = ctx`), y el patrón que lo
- *  desestructura, en el cuerpo o en la firma (`({ expect }) => …`)— y la
- *  llamada que pasa un `ctx` al parámetro de una función del fichero o de un
- *  IIFE (`(async (c) => …)(ctx)`, #716). Sin ámbitos, un objeto AJENO con
- *  `.expect` también se toma por ctx, y eso EXCUSA saltos: punto (12).
+ *  ellos el detector veía 0 saltos). Además lo delata el NOMBRE de un verbo
+ *  que afirma o declara —el receptor de `c.v`, llamado o no (también tras
+ *  `let c; c = ctx`), y el patrón que lo desestructura, en el cuerpo o en la
+ *  firma (`({ expect }) => …`)— y la llamada que pasa un `ctx` al parámetro de
+ *  una función del fichero o de un IIFE (`(async (c) => …)(ctx)`, #716).
+ *  Todo va por SÍMBOLO (#720): el checker de TypeScript dice a qué declaración
+ *  apunta cada identificador, así que un `c` que sombrea es otro, y un verbo
+ *  solo delata lo que el fichero no dice qué vale (un parámetro, un `let` sin
+ *  inicializador). Un objeto ajeno que llegue por ahí aún excusa: punto (12).
  *
  *  **Aserto** (para DETECTAR un salto, en la dirección que da más saltos): un
  *  `expect`/`expectEspera`, la llamada a un ASERTADOR (una función del guion
@@ -57,12 +59,14 @@
  *   1. cada rama o bloque que retorna (la del `if`, el `case`, el `catch`)
  *      contiene un observador. Un `return` incondicional nunca lo está;
  *   2. (solo `if`) la condición —sin `await`, paréntesis, `!` ni
- *      `Boolean(…)`— es idéntica token a token al 2.º argumento (normalizado
- *      igual y no tautológico) de un `ctx.expect` que DOMINA el `if`:
+ *      `Boolean(…)`— es idéntica token a token, y con las mismas declaraciones,
+ *      al 2.º argumento (normalizado igual y no tautológico) de un
+ *      `ctx.expect` que DOMINA el `if`:
  *      sentencia hermana anterior en su bloque o en un bloque ancestro, dentro
  *      de la misma función. Nunca la frase;
  *   3. (solo `if`) todos los ÁTOMOS de la condición están observados, y hay al
- *      menos uno. Átomo: un identificador declarado en el fichero (no un
+ *      menos uno. Átomo: un identificador que apunta a una variable del fichero
+ *      —por SÍMBOLO, así que uno que sombrea a otro es otro (#720)— (no un
  *      import, no `ctx`, no un nombre de propiedad, no lo que va dentro de los
  *      argumentos de una llamada) o una llamada (`Boolean`/`Number`/`String`
  *      son transparentes). Un identificador está observado si es átomo del
@@ -80,13 +84,33 @@
  *  (`import *`, reexport, dinámico, un `.js`) NO es afirmante: el error va
  *  siempre hacia el ROJO.
  *
+ *  La RESOLUCIÓN (qué es el `ctx`, un verbo suelto, una función del fichero o
+ *  un import) vive en `ctx-del-guion.ts` (#720); aquí quedan el juicio y las
+ *  reglas, que se llaman entre sí.
+ *
  *  Lo que esto no ve está en `_lo_que_esto_NO_sujeta` del padrón, cada punto
  *  con un `it` que MIDE su cifra de hoy.
  *
  *  No es un `.test.ts` a propósito (mismo motivo que `helpers-del-banco.ts`). */
-import { dirname, resolve } from "node:path";
 import ts from "typescript";
-import { arbolDelBanco, cuerpoPrincipal, recorre, recorreSinAnidadas } from "./helpers-del-banco.js";
+import {
+  AFIRMA,
+  DECLARA,
+  esCtx,
+  funcionDe,
+  llamadaResuelta,
+  modulo,
+  simbolo,
+  simbolosLigados,
+  sinEnvoltorio,
+  variableDelFichero,
+  verbo,
+  type Lector,
+  type Modulo,
+} from "./ctx-del-guion.js";
+import { cuerpoPrincipal, recorre, recorreSinAnidadas } from "./helpers-del-banco.js";
+
+export type { Lector } from "./ctx-del-guion.js";
 
 export type FormaDeSalto = "return" | "rama-muda";
 
@@ -108,10 +132,6 @@ export interface Salto {
   funcion: string;
 }
 
-/** Lee un fichero por su ruta ABSOLUTA. Inyectable para los negativos en
- *  memoria y los unitarios sintéticos. */
-export type Lector = (ruta: string) => string;
-
 export interface OpcionesDelDetector {
   /** Analiza TAMBIÉN toda función del guion que usa el `ctx` (por parámetro
    *  o capturado de un ámbito exterior, con nombre o anónima). No es el
@@ -120,8 +140,6 @@ export interface OpcionesDelDetector {
   helpers?: boolean;
 }
 
-const AFIRMA: ReadonlySet<string> = new Set(["expect", "expectEspera"]);
-const DECLARA: ReadonlySet<string> = new Set(["sinMedir", "sinMedirBloque"]);
 const TRANSPARENTES: ReadonlySet<string> = new Set(["Boolean", "Number", "String"]);
 
 /** La condición sin espacios: la clave con la que el padrón nombra un salto.
@@ -130,15 +148,15 @@ export function condicionNormalizada(expr: ts.Expression): string {
   return expr.getText().replace(/\s+/g, "");
 }
 
-const sinEnvoltorio = (e: ts.Expression): ts.Expression => {
-  let x = e;
-  while (ts.isAwaitExpression(x) || ts.isParenthesizedExpression(x)) x = x.expression;
-  return x;
-};
-
 /** Sin `await`, paréntesis, `!` ni `Boolean(x)`: para comparar una condición
  *  con el argumento de un `expect` (regla 2). */
 function normalizaCondicion(e: ts.Expression): string {
+  return condicionNormalizada(nucleoDeCondicion(e));
+}
+
+/** Lo que queda de una condición tras quitarle lo que `normalizaCondicion`
+ *  no compara. */
+function nucleoDeCondicion(e: ts.Expression): ts.Expression {
   let x = sinEnvoltorio(e);
   for (;;) {
     if (ts.isPrefixUnaryExpression(x) && x.operator === ts.SyntaxKind.ExclamationToken) x = sinEnvoltorio(x.operand);
@@ -146,7 +164,7 @@ function normalizaCondicion(e: ts.Expression): string {
       x = sinEnvoltorio(x.arguments[0]);
     else break;
   }
-  return condicionNormalizada(x);
+  return x;
 }
 
 /** Un literal que JavaScript da por falso: el vacío de un afirmante. */
@@ -242,219 +260,15 @@ function esEsperaTautologica(n: ts.CallExpression): boolean {
 
 const lineaDe = (n: ts.Node): number => n.getSourceFile().getLineAndCharacterOfPosition(n.getStart()).line + 1;
 
-/** Los nombres que liga un patrón (`x`, `{a, b: c}`, `[d, ...e]`). */
-function nombresLigados(n: ts.BindingName): string[] {
-  if (ts.isIdentifier(n)) return [n.text];
-  const out: string[] = [];
-  for (const el of n.elements) if (!ts.isOmittedExpression(el)) out.push(...nombresLigados(el.name));
-  return out;
-}
-
-interface Modulo {
-  ruta: string;
-  sf: ts.SourceFile;
-  leer: Lector;
-  /** Funciones con nombre del fichero, a cualquier profundidad. */
-  fns: Map<string, ts.FunctionLikeDeclaration>;
-  /** `import { a as b } from "./x.mjs"` → b ↦ {ruta absoluta, "a"}. */
-  imports: Map<string, { ruta: string; nombre: string }>;
-  /** Todo lo que el fichero declara (variables, parámetros, patrones). */
-  locales: Set<string>;
-  /** `ctx` y sus alias: por declaración (`const c = ctx`), por ser receptor
-   *  de un verbo y por ser el parámetro que recibe un `ctx` (`aliasDeCtx`). */
-  ctxs: Set<string>;
-  /** Verbos sueltos: `const { expect } = ctx`, `const e = ctx.expect`. */
-  sueltos: Map<string, string>;
-}
-
 interface Veredicto {
   ok: boolean;
   porque: string;
 }
 
-/** Módulos parseados, por lector: un negativo en memoria no puede servir el
- *  árbol del fichero real ni al revés. */
-const modulosPorLector = new WeakMap<Lector, Map<string, Modulo | Error>>();
 /** Afirmantes y asertadores ya juzgados. Por nodo: cada parseo da nodos nuevos. */
 const afirmantes = new WeakMap<ts.Node, Veredicto>();
 const asertadores = new WeakMap<ts.Node, boolean>();
 const afirmanSiempre = new WeakMap<ts.Node, boolean>();
-
-/** `ctx.v` / `ctx["v"]` / `c.v` sobre un alias → `v`. */
-function verboDeAcceso(m: Modulo, e: ts.Expression): string | null {
-  if (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression) && m.ctxs.has(e.expression.text)) return e.name.text;
-  if (ts.isElementAccessExpression(e) && ts.isIdentifier(e.expression) && m.ctxs.has(e.expression.text) && ts.isStringLiteralLike(e.argumentExpression))
-    return e.argumentExpression.text;
-  return null;
-}
-
-const esVerboDeCtx = (v: string | null): boolean => v !== null && (AFIRMA.has(v) || DECLARA.has(v));
-
-/** El nombre de la propiedad que desestructura un elemento de patrón
- *  (`{ expect }`, `{ expect: e }`, `{ "expect": e }`); null si es calculado. */
-function propiedadDe(el: ts.BindingElement): string | null {
-  const p = el.propertyName;
-  if (p === undefined) return ts.isIdentifier(el.name) ? el.name.text : null;
-  return ts.isIdentifier(p) || ts.isStringLiteralLike(p) ? p.text : null;
-}
-
-/** Lo que DELATA un `ctx` por el nombre de un verbo que afirma o declara, se
- *  llame como se llame: el receptor de `c.v` / `c["v"]` (llamado o no: `let c;
- *  c = ctx`, `(c) => …`, `const e = c.expect`), o un patrón que desestructura
- *  un verbo (`const { expect } = c`, `async ({ expect }) => …`). Sin ámbitos:
- *  un objeto AJENO con `.expect` también se toma por ctx, y eso no solo
- *  sobrecuenta saltos, también los EXCUSA (punto (12) del padrón). */
-export type EvidenciaDeCtx = { receptor: string } | { patron: ts.ObjectBindingPattern };
-export function evidenciaDeCtx(x: ts.Node): EvidenciaDeCtx | null {
-  if (ts.isObjectBindingPattern(x)) return x.elements.some((el) => esVerboDeCtx(propiedadDe(el))) ? { patron: x } : null;
-  let nombre: string | null = null;
-  if (ts.isPropertyAccessExpression(x)) nombre = x.name.text;
-  else if (ts.isElementAccessExpression(x) && ts.isStringLiteralLike(x.argumentExpression)) nombre = x.argumentExpression.text;
-  if (!esVerboDeCtx(nombre)) return null;
-  const rec = (x as ts.PropertyAccessExpression | ts.ElementAccessExpression).expression;
-  return ts.isIdentifier(rec) ? { receptor: rec.text } : null;
-}
-
-/** Vuelca un patrón que desestructura un `ctx` en los verbos sueltos. ¿Cambió algo? */
-function vuelcaPatron(m: Modulo, pat: ts.ObjectBindingPattern): boolean {
-  let cambio = false;
-  for (const el of pat.elements) {
-    const prop = propiedadDe(el);
-    if (!ts.isIdentifier(el.name) || prop === null || m.sueltos.has(el.name.text)) continue;
-    m.sueltos.set(el.name.text, prop);
-    cambio = true;
-  }
-  return cambio;
-}
-
-/** La función a la que se llama, si está a la vista: un IIFE
- *  (`(async (c) => …)(ctx)`) o una función con nombre del propio fichero. */
-function llamadaLocal(m: Modulo, x: ts.CallExpression): ts.SignatureDeclaration | null {
-  const c = sinEnvoltorio(x.expression);
-  if (ts.isArrowFunction(c) || ts.isFunctionExpression(c)) return c;
-  return ts.isIdentifier(c) ? (m.fns.get(c.text) ?? null) : null;
-}
-
-/** Los alias de `ctx` y los verbos sueltos, por punto fijo: lo que delata un
- *  verbo (`evidenciaDeCtx`), las declaraciones del fichero y el PARÁMETRO que
- *  recibe un `ctx` en una llamada a una función a la vista. Sin ámbitos: un
- *  `c` ajeno sobrecuenta Y excusa. */
-function aliasDeCtx(m: Modulo): void {
-  const decls: ts.VariableDeclaration[] = [];
-  const llamadas: ts.CallExpression[] = [];
-  recorre(m.sf, (x) => {
-    if (ts.isVariableDeclaration(x) && x.initializer) decls.push(x);
-    if (ts.isCallExpression(x)) llamadas.push(x);
-    const ev = evidenciaDeCtx(x);
-    if (ev && "receptor" in ev) m.ctxs.add(ev.receptor);
-    else if (ev) vuelcaPatron(m, ev.patron);
-  });
-  for (let cambio = true; cambio; ) {
-    cambio = false;
-    for (const x of llamadas) {
-      const fn = llamadaLocal(m, x);
-      if (!fn) continue;
-      x.arguments.forEach((a, i) => {
-        const p = fn.parameters[i]?.name;
-        // Un patrón en la firma (`({ expect }) => …`) ya lo delata su verbo.
-        if (ts.isIdentifier(a) && m.ctxs.has(a.text) && p && ts.isIdentifier(p) && !m.ctxs.has(p.text)) {
-          m.ctxs.add(p.text);
-          cambio = true;
-        }
-      });
-    }
-    for (const d of decls) {
-      let ini = sinEnvoltorio(d.initializer!);
-      // `ctx.expect.bind(ctx)` es `ctx.expect`.
-      if (ts.isCallExpression(ini) && ts.isPropertyAccessExpression(ini.expression) && ini.expression.name.text === "bind")
-        ini = ini.expression.expression;
-      if (ts.isIdentifier(d.name)) {
-        if (ts.isIdentifier(ini) && m.ctxs.has(ini.text) && !m.ctxs.has(d.name.text)) {
-          m.ctxs.add(d.name.text);
-          cambio = true;
-        }
-        const v = verboDeAcceso(m, ini);
-        if (v && !m.sueltos.has(d.name.text)) {
-          m.sueltos.set(d.name.text, v);
-          cambio = true;
-        }
-      } else if (ts.isObjectBindingPattern(d.name) && ts.isIdentifier(ini) && m.ctxs.has(ini.text) && vuelcaPatron(m, d.name)) {
-        cambio = true;
-      }
-    }
-  }
-}
-
-function modulo(ruta: string, leer: Lector): Modulo | Error {
-  let cache = modulosPorLector.get(leer);
-  if (!cache) {
-    cache = new Map();
-    modulosPorLector.set(leer, cache);
-  }
-  const hecho = cache.get(ruta);
-  if (hecho) return hecho;
-  let fuente: string;
-  try {
-    fuente = leer(ruta);
-  } catch (err) {
-    // No se calla: el `Error` viaja al veredicto del helper como «no
-    // afirmante: no se pudo leer», o sea ROJO en el guion que lo importa.
-    const e = err instanceof Error ? err : new Error(String(err));
-    cache.set(ruta, e);
-    return e;
-  }
-  const sf = arbolDelBanco(fuente);
-  const m: Modulo = { ruta, sf, leer, fns: new Map(), imports: new Map(), locales: new Set(), ctxs: new Set(["ctx"]), sueltos: new Map() };
-  recorre(sf, (x) => {
-    if (ts.isFunctionDeclaration(x) && x.name) m.fns.set(x.name.text, x);
-    if (ts.isVariableDeclaration(x) || ts.isParameter(x)) {
-      for (const nombre of nombresLigados(x.name)) m.locales.add(nombre);
-      if (ts.isVariableDeclaration(x) && ts.isIdentifier(x.name) && x.initializer) {
-        const ini = x.initializer;
-        if (ts.isArrowFunction(ini) || ts.isFunctionExpression(ini)) m.fns.set(x.name.text, ini);
-      }
-    }
-  });
-  for (const st of sf.statements) {
-    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
-    const espec = st.moduleSpecifier.text;
-    const ligaduras = st.importClause?.namedBindings;
-    if (!espec.startsWith(".") || !espec.endsWith(".mjs") || !ligaduras || !ts.isNamedImports(ligaduras)) continue;
-    const destino = resolve(dirname(ruta), espec);
-    for (const el of ligaduras.elements) m.imports.set(el.name.text, { ruta: destino, nombre: (el.propertyName ?? el.name).text });
-  }
-  aliasDeCtx(m);
-  cache.set(ruta, m);
-  return m;
-}
-
-/** `ctx.<verbo>(…)` o la llamada a un alias → `<verbo>`; cualquier otra cosa → null. */
-function verbo(m: Modulo, n: ts.Node): string | null {
-  if (!ts.isCallExpression(n)) return null;
-  const c = n.expression;
-  if (ts.isIdentifier(c)) return m.sueltos.get(c.text) ?? null;
-  return verboDeAcceso(m, c);
-}
-
-type FuncionResuelta = { m: Modulo; fn: ts.FunctionLikeDeclaration } | { error: string };
-
-function funcionDe(m: Modulo, nombre: string): FuncionResuelta {
-  const local = m.fns.get(nombre);
-  if (local) return { m, fn: local };
-  const imp = m.imports.get(nombre);
-  if (!imp) return { error: `\`${nombre}\` no es una función del guion ni un import con nombre de un .mjs relativo` };
-  const otro = modulo(imp.ruta, m.leer);
-  if (otro instanceof Error) return { error: `\`${nombre}\`: no se pudo leer ${imp.ruta} (${otro.message})` };
-  const fn = otro.fns.get(imp.nombre);
-  if (!fn) return { error: `\`${nombre}\`: ${imp.ruta} no declara la función \`${imp.nombre}\` (¿reexport?)` };
-  return { m: otro, fn };
-}
-
-/** ¿Llama `n` a una función con nombre que se resuelve? */
-function llamadaResuelta(m: Modulo, n: ts.Node): FuncionResuelta | null {
-  if (!ts.isCallExpression(n) || !ts.isIdentifier(n.expression) || verbo(m, n) !== null) return null;
-  return funcionDe(m, n.expression.text);
-}
 
 /** Una función cuyo cuerpo (sin sus anidadas) contiene un aserto propio o la
  *  llamada a otro asertador. Un ciclo cuenta como no asertador. */
@@ -479,7 +293,7 @@ function esAsertoLaxo(m: Modulo, n: ts.Node): boolean {
   const f = llamadaResuelta(m, n);
   if (f && !("error" in f)) return esAsertador(f.m, f.fn);
   if (!ts.isCallExpression(n) || verbo(m, n) !== null) return false;
-  return n.arguments.some((a) => ts.isIdentifier(a) && m.ctxs.has(a.text));
+  return n.arguments.some((a) => esCtx(m, a));
 }
 
 /** Lo que observa POR SÍ MISMO, sin llamar a nadie: `throw`, un verbo que
@@ -674,7 +488,7 @@ function condicionDeExpect(m: Modulo, st: ts.Statement): ts.Expression | null {
   return arg && !esTautologia(arg) ? arg : null;
 }
 
-type Atomo = { id: string; nodo: ts.Node } | { llamada: ts.CallExpression; veredicto: Veredicto };
+type Atomo = { id: string; simbolo: ts.Symbol; nodo: ts.Node } | { llamada: ts.CallExpression; veredicto: Veredicto };
 
 function atomos(m: Modulo, cond: ts.Expression): Atomo[] {
   const out: Atomo[] = [];
@@ -697,7 +511,8 @@ function atomos(m: Modulo, cond: ts.Expression): Atomo[] {
     if (ts.isIdentifier(x)) {
       const padre = x.parent;
       if (ts.isPropertyAccessExpression(padre) && padre.name === x) return;
-      if (!m.ctxs.has(x.text) && m.locales.has(x.text)) out.push({ id: x.text, nodo: x });
+      const s = esCtx(m, x) ? undefined : variableDelFichero(m, x);
+      if (s) out.push({ id: x.text, simbolo: s, nodo: x });
       return;
     }
     ts.forEachChild(x, baja);
@@ -710,15 +525,17 @@ function atomos(m: Modulo, cond: ts.Expression): Atomo[] {
  *  observado, con su motivo, o NO observado porque su inicializador llama a un
  *  no afirmante — y entonces el motivo nombra al helper, que es lo que hay
  *  que arreglar. */
-function observadosAntes(m: Modulo, si: ts.Node, fn: ts.FunctionLikeDeclaration): Map<string, Veredicto> {
-  const vistos = new Map<string, Veredicto>();
-  const anota = (id: string, v: Veredicto): void => {
+function observadosAntes(m: Modulo, si: ts.Node, fn: ts.FunctionLikeDeclaration): Map<ts.Symbol, Veredicto> {
+  // Por SÍMBOLO (#720, punto (6)): un `x` interior que sombrea al afirmado es
+  // otro `x`, y lo que se afirmó del de fuera no dice nada de él.
+  const vistos = new Map<ts.Symbol, Veredicto>();
+  const anota = (id: ts.Symbol, v: Veredicto): void => {
     if (!vistos.get(id)?.ok) vistos.set(id, v);
   };
   for (const st of dominantes(si, fn)) {
     const cond = condicionDeExpect(m, st);
     if (cond) {
-      for (const a of atomos(m, cond)) if ("id" in a) anota(a.id, { ok: true, porque: `\`${a.id}\` afirmado en la línea ${lineaDe(st)}` });
+      for (const a of atomos(m, cond)) if ("id" in a) anota(a.simbolo, { ok: true, porque: `\`${a.id}\` afirmado en la línea ${lineaDe(st)}` });
       continue;
     }
     if (!ts.isVariableStatement(st)) continue;
@@ -735,10 +552,29 @@ function observadosAntes(m: Modulo, si: ts.Node, fn: ts.FunctionLikeDeclaration)
         const f = funcionDe(m, ini.expression.text);
         v = "error" in f ? { ok: false, porque: f.error } : afirmante(f.m, f.fn, ini.expression.text);
       }
-      if (v) for (const n of nombresLigados(d.name)) anota(n, { ok: v.ok, porque: `\`${n}\`: ${v.porque}` });
+      if (v) for (const [n, sim] of simbolosLigados(m, d.name)) anota(sim, { ok: v.ok, porque: `\`${n}\`: ${v.porque}` });
     }
   }
   return vistos;
+}
+
+/** ¿Nombran las dos expresiones las MISMAS declaraciones, en el mismo orden?
+ *  La regla 2 compara el texto; con esto, además, que el `x` del `expect` sea
+ *  el `x` del `if` y no otro que lo sombrea (#720, punto (6)). */
+function mismosSimbolos(m: Modulo, a: ts.Expression, b: ts.Expression): boolean {
+  const de = (e: ts.Expression): (ts.Symbol | undefined)[] => {
+    const out: (ts.Symbol | undefined)[] = [];
+    recorre(e, (x) => {
+      if (!ts.isIdentifier(x)) return;
+      const p = x.parent;
+      if (!(ts.isPropertyAccessExpression(p) && p.name === x)) out.push(simbolo(m, x));
+    });
+    return out;
+  };
+  // Sobre lo que compara la clave: `Boolean(x)` y `!x` son la misma condición.
+  const sa = de(nucleoDeCondicion(a));
+  const sb = de(nucleoDeCondicion(b));
+  return sa.length === sb.length && sa.every((s, i) => s === sb[i]);
 }
 
 /** Reglas 2 y 3 sobre la condición de `si`, dentro de `fn`. */
@@ -746,7 +582,7 @@ function condicionObservada(m: Modulo, si: ts.IfStatement, fn: ts.FunctionLikeDe
   const clave = normalizaCondicion(si.expression);
   for (const st of dominantes(si, fn)) {
     const cond = condicionDeExpect(m, st);
-    if (cond && normalizaCondicion(cond) === clave) return { ok: true, porque: `condición afirmada literalmente en la línea ${lineaDe(st)}` };
+    if (cond && normalizaCondicion(cond) === clave && mismosSimbolos(m, cond, si.expression)) return { ok: true, porque: `condición afirmada literalmente en la línea ${lineaDe(st)}` };
   }
   const at = atomos(m, si.expression);
   if (at.length === 0) return { ok: false, porque: "la condición no tiene ningún átomo que se pueda observar" };
@@ -757,7 +593,7 @@ function condicionObservada(m: Modulo, si: ts.IfStatement, fn: ts.FunctionLikeDe
       if (!a.veredicto.ok) return { ok: false, porque: a.veredicto.porque };
       por.push(a.veredicto.porque);
     } else {
-      const v = antes.get(a.id);
+      const v = antes.get(a.simbolo);
       if (!v?.ok) return { ok: false, porque: v?.porque ?? `\`${a.id}\` no se afirma antes ni lo inicializa algo que afirme` };
       por.push(v.porque);
     }
@@ -854,7 +690,7 @@ export function saltosDelGuion(ruta: string, leer: Lector, opciones: OpcionesDel
       const fn = x as ts.FunctionLikeDeclaration;
       if (!fn.body || !ts.isBlock(fn.body)) return;
       // Usa el ctx: lo nombra, o llama a un verbo suelto (`({ expect }) => …`).
-      if (contiene(fn, (y) => (ts.isIdentifier(y) && m.ctxs.has(y.text)) || verbo(m, y) !== null)) out.push(...saltosDe(m, fn, nombreDe(fn)));
+      if (contiene(fn, (y) => esCtx(m, y) || verbo(m, y) !== null)) out.push(...saltosDe(m, fn, nombreDe(fn)));
     });
   }
   return out;
