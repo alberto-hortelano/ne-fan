@@ -160,6 +160,14 @@
       "porque": "quién importa cada módulo de qa/lib: los tests de la raíz de test/"
     },
     {
+      "fichero": "quien-lee-el-resumen-del-runner.test.ts",
+      "lee": "nefan-core/scripts (los .ts de primer nivel)",
+      "argumentos": [
+        "join(CORE, \"scripts\")"
+      ],
+      "porque": "todo lector del resumen de node --test en scripts/ tiene que decidir también por el código de salida (#697)"
+    },
+    {
       "fichero": "scene-schema.test.ts",
       "lee": "nefan-core/data/scenes (SCENES)",
       "argumentos": [

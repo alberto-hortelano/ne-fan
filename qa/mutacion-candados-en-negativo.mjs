@@ -324,7 +324,12 @@ function corre() {
     { cwd: CORE, encoding: "utf8", timeout: 300000 });
   const salida = `${r.stdout ?? ""}${r.stderr ?? ""}`;
   const m = /^ℹ fail (\d+)$/m.exec(salida) ?? /# fail (\d+)/.exec(salida);
+  // `status` además de `ℹ fail` (#697, igual que el arnés de contrato): un
+  // `describe` cuyo cuerpo lanza sale con 1 pero deja `ℹ fail 0` —Node lo
+  // cuenta en el código de salida, no en el resumen—, así que por el contador
+  // solo, esa batería rota pasaría por sana.
   return {
+    status: r.status,
     fallos: m ? Number(m[1]) : -1,
     rotos: [...salida.matchAll(/✖ (.+?) \(/g)].map((x) => x[1]),
   };
@@ -359,8 +364,9 @@ let fallidos = [];
 try {
   process.stdout.write("Base (nada roto): ");
   const base = corre();
-  console.log(base.fallos === 0 ? "verde ✔" : `${base.fallos} fallo(s) ✖  — la batería YA está roja, arregla eso primero`);
-  if (base.fallos !== 0) { restaura(); process.exit(1); }
+  const sana = base.fallos === 0 && base.status === 0;
+  console.log(sana ? "verde ✔" : `${base.fallos} fallo(s), EXIT ${base.status} ✖  — la batería YA está roja, arregla eso primero`);
+  if (!sana) { restaura(); process.exit(1); }
   console.log();
 
   for (const [nombre, fichero, buscar, poner] of INVARIANTES) {
@@ -380,7 +386,7 @@ try {
     }
     writeFileSync(fichero, texto);
     const r = corre();
-    const rojo = r.fallos > 0;
+    const rojo = r.fallos > 0 || r.status !== 0;
     if (!rojo) fallidos.push(nombre);
     console.log(`${rojo ? "🔴 rojo " : "🟢 VERDE"}  ${nombre}`);
     if (rojo) console.log(`     lo caza: ${r.rotos.slice(0, 2).join(" | ") || "(sin nombre)"}`);

@@ -40,14 +40,11 @@
  *      node qa/contrato-candados-en-negativo.mjs python   # solo los que casen
  *
  *  «Rojo» es el CÓDIGO DE SALIDA de la batería, no solo su contador de fallos
- *  (#697): `node --test` v24 sale con 0 y `ℹ fail 0` cuando el cuerpo de un
- *  `describe` lanza —un contrato roto leído ahí tumba la suite sin que nadie la
- *  cuente—, así que las baterías TS corren con el reporter
- *  `test/la-suite-que-falla-pone-rojo.ts` (el mismo de `npm test` y
- *  `npm run coverage`) y el veredicto mira `status`. El invariante «suite que
- *  lanza» lo canda: sin el reporter o sin mirar `status`, sale VERDE en Node
- *  < 24.15 (desde v24.15.0 Node ya sale con 1 él solo y el invariante sale rojo
- *  igual: allí el reporter es redundante, no dañino).
+ *  (#697): cuando el cuerpo de un `describe` lanza —un contrato roto leído ahí
+ *  tumba la suite—, `node --test` sale con 1 (desde v24.15.0; `engines` lo
+ *  exige) pero el resumen sigue diciendo `ℹ fail 0`, así que el veredicto mira
+ *  `status`. El invariante «suite que lanza» lo canda: sin mirar `status`, o
+ *  con un Node < 24.15 (que salía con 0), sale VERDE.
  *
  *  Verde = todos los candados listados se ponen rojos al romperlos.
  *  Rojo   = hay un candado que no comprueba lo que dice comprobar; el nombre
@@ -78,8 +75,9 @@ const FIXTURE_CARRO = join(CORE, "data/contract/fixtures/reaction/valid/spawn_ob
 // Los dos del MECANISMO de #697: un contrato leído en el cuerpo de un
 // `describe`. La fixture de `ground_plan` solo la lee `loadFixtures` en el
 // cuerpo del describe de `contract-fixtures.test.ts` —ningún `it` la toca—, así
-// que es la que DISCRIMINA: rota, sin el reporter, la batería sale `ℹ fail 0`
-// y EXIT 0 (medido el 2026-09-23: 87 tests pasan a 69 y nadie lo cuenta).
+// que es la que DISCRIMINA: rota, la batería sale `ℹ fail 0` y solo el EXIT
+// la delata (medido el 2026-09-23 en Node 24.11.1: 87 tests pasan a 69 y salía
+// con 0; desde v24.15.0 sale con 1).
 // `generate_scene.json` lo leen además tres `it`: sale rojo con o sin el
 // arreglo, y está por ser el ejemplo del issue, no porque pruebe el mecanismo.
 const FIXTURE_SUELO = join(CORE, "data/contract/fixtures/ground_plan/valid/minimo.json");
@@ -409,8 +407,7 @@ function corre(bateria) {
   const [modo, cual] = [bateria.slice(0, bateria.indexOf(":")), bateria.slice(bateria.indexOf(":") + 1)];
   const r =
     modo === "ts"
-      ? spawnSync("node", ["--import", "tsx", "--test", "--test-concurrency=1",
-          "--test-reporter=./test/la-suite-que-falla-pone-rojo.ts", "--test-reporter-destination=stdout", cual],
+      ? spawnSync("node", ["--import", "tsx", "--test", "--test-concurrency=1", cual],
           { cwd: CORE, encoding: "utf8", timeout: 300000 })
       : spawnSync("python3", ["-m", "unittest", cual],
           { cwd: raiz, encoding: "utf8", timeout: 300000 });
@@ -420,7 +417,7 @@ function corre(bateria) {
     return {
       status: r.status,
       fallos: m ? Number(m[1]) : -1,
-      rotos: [...salida.matchAll(/✖ (?:suite que falla: )?(.+?) \(/g)].map((x) => x[1]),
+      rotos: [...salida.matchAll(/✖ (.+?) \(/g)].map((x) => x[1]),
     };
   }
   const m = /FAILED \(failures=(\d+)\)/.exec(salida);
@@ -484,7 +481,7 @@ try {
   for (const b of baterias) {
     const r = corre(b);
     // Sana solo si NO hay fallos Y sale con 0: una suite que lanza da
-    // `ℹ fail 0` con EXIT 1 (por el reporter), y esa base no es sana.
+    // `ℹ fail 0` con EXIT 1, y esa base no es sana.
     const sana = r.fallos === 0 && r.status === 0;
     console.log(`  ${sana ? "verde ✔" : `${r.fallos} fallo(s), EXIT ${r.status} ✖`}  ${b}`);
     if (!sana) baseMala = true;

@@ -15,8 +15,15 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          # Alineado con engines (>=24): node:sqlite del asset-store (F2).
-          node-version: 24
+          # La ÚLTIMA versión de Node, sin número (usuario, 2026-09-24: en
+          # desarrollo no se fija versión). Los demás jobs usan el mismo alias.
+          # `engines` de nefan-core declara un SUELO, >=24.15: por debajo, un
+          # `describe` que lanza sale con 0 (#697). Es documentación, no un
+          # candado: npm solo avisa y aquí nunca corre un Node viejo. Lo que sí
+          # se pone rojo en un Node < 24.15 es el MECANISMO
+          # (`test/una-suite-que-falla-pone-rojo.test.ts`), y solo en la máquina
+          # de quien lo traiga.
+          node-version: latest
           cache: npm
           cache-dependency-path: |
             nefan-core/package-lock.json
@@ -59,10 +66,8 @@ jobs:
       # coverage`, el mismo glob `test/*.test.ts`— y la segunda es la primera
       # instrumentada: 1526 tests y ~50 s de CPU repetidos literalmente en cada
       # PR. Se va `npm test`, no `coverage`, porque `crap -- --check` necesita
-      # el `coverage/lcov.info` que solo escribe el segundo; y el reporter de
-      # `coverage` (el `spec` compuesto de `test/la-suite-que-falla-pone-rojo.ts`,
-      # que además pone rojo una suite que lanza, #697) deja el mismo detalle
-      # por test en el log.
+      # el `coverage/lcov.info` que solo escribe el segundo; y el reporter
+      # `spec` de `coverage` deja el mismo detalle por test en el log.
       #
       # En LOCAL la decisión es la contraria y a propósito (usuario,
       # 2026-08-27): `verify` sigue con `npm test` para que el bucle interno
@@ -93,7 +98,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: latest
           cache: npm
           cache-dependency-path: |
             narrative-mcp/package-lock.json
@@ -117,11 +122,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          # 24 y no 22 desde el banco (#636): `npm test` ejecuta fuente de
-          # `nefan-core` por el alias, y el core declara `engines: >=24`. Correr
-          # el banco bajo otro mayor que el que usa todo el mundo en local es
-          # exactamente la divergencia que este job existe para no tener.
-          node-version: 24
+          # El mismo Node que el job `nefan-core` (#636): `npm test` ejecuta
+          # fuente de `nefan-core` por el alias, y correr el banco bajo otro
+          # mayor es exactamente la divergencia que este job existe para no tener.
+          node-version: latest
           cache: npm
           cache-dependency-path: nefan-html/package-lock.json
       # nefan-html importa tipos de nefan-core por ruta relativa — hace falta
@@ -210,7 +214,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: latest
           cache: npm
           cache-dependency-path: |
             nefan-core/package-lock.json

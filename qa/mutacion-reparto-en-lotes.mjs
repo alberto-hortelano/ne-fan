@@ -88,7 +88,10 @@ function mutacion(args, env = {}) {
     timeout: 300000,
     env: { ...process.env, ...env },
   });
-  return { ok: r.status === 0, salida: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+  // `reparto` es SOLO stdout: es lo que el verbo imprime como plan. stderr
+  // lleva los avisos de Node (una deprecación trae el PID del proceso, distinto
+  // en cada corrida) y no puede decidir si dos repartos son el mismo.
+  return { ok: r.status === 0, reparto: r.stdout ?? "", salida: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
 // ── el sandbox de artefactos ─────────────────────────────────────────────────
@@ -144,11 +147,14 @@ const VIGENTES = [
     nombre: "reparto · dos corridas del mismo plan dan EL MISMO reparto",
     porque: "sin eso no se pueden comparar dos corridas ni revisar el plan en la PR",
     mira: () => {
-      const a = mutacion(["lotes", "--todos"]).salida;
-      const b = mutacion(["lotes", "--todos"]).salida;
-      const c = mutacion(["lotes", "--ids", "hostiles apuntado blueprint-derive"]).salida;
-      const d = mutacion(["lotes", "--ids", "blueprint-derive apuntado hostiles"]).salida;
-      return a === b && c === d;
+      const corridas = [
+        mutacion(["lotes", "--todos"]),
+        mutacion(["lotes", "--todos"]),
+        mutacion(["lotes", "--ids", "hostiles apuntado blueprint-derive"]),
+        mutacion(["lotes", "--ids", "blueprint-derive apuntado hostiles"]),
+      ];
+      const [a, b, c, d] = corridas.map((r) => r.reparto);
+      return corridas.every((r) => r.ok && r.reparto.length > 0) && a === b && c === d;
     },
   },
   {
