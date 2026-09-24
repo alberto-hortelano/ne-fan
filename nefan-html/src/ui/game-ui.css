@@ -18,7 +18,7 @@
   /* ── Superficie ── */
   --nf-surface: rgba(12, 12, 16, 0.88);
   --nf-raised: rgba(255, 255, 255, 0.06);
-  --nf-border: #4a4a55;
+  --nf-border: #686877;
   /* ── Tinta ── */
   --nf-ink: #d9d9e0;
   --nf-ink-dim: #8b8b98;
@@ -198,6 +198,16 @@
 
 /* ── Barra de acciones (ataques + contextuales) ─────────────────────────── */
 #action-bar { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+/* Los botones que FLOTAN sobre el mundo, sin panel debajo (la barra de
+   ataques y «P · Sistemas»), llevan el suyo: `raised` sobre `surface`. El
+   filete y la tinta se miden contra `surface` (`ui-theme.test.ts`, #758); con
+   solo el `raised` translúcido se leían contra el suelo del tile, y subir el
+   filete a 3:1 lo HUNDÍA en un suelo de tono medio (en acuarela, filete oliva
+   y tinta oscura sobre el camino). */
+#action-bar .nf-action,
+#plugins-open {
+  background: linear-gradient(var(--nf-raised), var(--nf-raised)), var(--nf-surface);
+}
 #action-bar:empty { display: none; }
 
 /* ── Prompt contextual y confirmaciones ─────────────────────────────────── */

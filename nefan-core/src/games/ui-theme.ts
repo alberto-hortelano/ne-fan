@@ -107,7 +107,7 @@ export const UI_FONT_MONO = "'Courier New', ui-monospace, monospace";
 export const BASE_UI_THEME: UiTheme = {
   surface: "rgba(12, 12, 16, 0.88)",
   raised: "rgba(255, 255, 255, 0.06)",
-  border: "#4a4a55",
+  border: "#686877",
   ink: "#d9d9e0",
   ink_dim: "#8b8b98",
   accent: "#d8a657",

@@ -12,7 +12,7 @@
   "ui": {
     "surface": "rgba(10, 14, 18, 0.88)",
     "raised": "rgba(79, 216, 239, 0.08)",
-    "border": "#2f4650",
+    "border": "#4a6f7f",
     "ink": "#cfe3e8",
     "ink_dim": "#7d97a3",
     "accent": "#4fd8ef",

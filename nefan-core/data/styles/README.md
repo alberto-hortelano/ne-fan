@@ -130,7 +130,7 @@ dirección de arte del estilo a esos paneles.
 ```json
 "ui": {
   "surface": "rgba(28, 20, 13, 0.88)",
-  "border": "#5e4526",
+  "border": "#8d6839",
   "ink": "#e8dcc4",
   "accent": "#e0a44a",
   "font": "Georgia, 'Times New Roman', serif",
@@ -158,8 +158,11 @@ Reglas:
 - Estética **diegética sobria**: el tema cambia paleta, tipografía y forma;
   nunca el layout. El arte generado ya es denso — la interfaz no compite.
 - **Legibilidad obligatoria**: `nefan-core/test/ui-theme.test.ts` mide el
-  contraste WCAG del texto sobre su panel (≥4.5:1) y del acento (≥3:1) en
-  los cinco packs shipped. Un tema bonito que no se lee rompe el test.
+  contraste WCAG en los cinco packs shipped: `ink` e `ink_dim` sobre su
+  panel ≥4.5:1 (los dos son texto normal, 11-13 px), y `border`, `accent` y
+  `danger` ≥3:1 (componentes y titulares). El filete es la silueta del botón:
+  si no llega a 3:1, el botón no tiene borde. Un tema bonito que no se lee
+  rompe el test.
 - Un valor inválido (un hex mal escrito, un `url()` en `font`) tumba el
   manifest entero, igual que una ref rota: el estilo desaparece del selector
   con un warning.
