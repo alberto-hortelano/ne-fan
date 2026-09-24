@@ -45,9 +45,10 @@
   --nf-gap: 8px;
   --nf-pad: 10px 14px;
   --nf-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
-  /* Legibilidad SOBRE EL MUNDO: lo que se pinta sin panel debajo (el registro
-     de combate, el rótulo del muro de niebla) queda a merced de lo que haya
-     detrás — un cielo claro o la propia niebla. Un token y no un literal por
+  /* Legibilidad SOBRE EL MUNDO: lo que se pinta sin panel debajo (el rótulo
+     del muro de niebla; el registro lo llevó hasta el issue 755, hoy va en
+     subtítulos `surface`) queda a merced de lo que haya detrás — un cielo
+     claro o la propia niebla. Un token y no un literal por
      componente: es la misma necesidad, y la regla de esta hoja es que ni un
      color se escriba a mano. */
   --nf-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
@@ -91,7 +92,14 @@
 
 #ui-top-left { top: 10px; left: 12px; flex-direction: column; align-items: flex-start; }
 #ui-top-right { top: 10px; right: 12px; flex-direction: column; align-items: flex-end; }
-#ui-bottom-left { bottom: 12px; left: 12px; flex-direction: column-reverse; align-items: flex-start; max-width: 34vw; }
+/* El registro vive aquí y la barra de ataques va centrada ENCIMA: la región
+   termina antes de donde empieza la barra. Su medio ancho lo escribe
+   `ui/hud-de-combate.ts` (lo mide: depende del catálogo y de la fuente del
+   pack); sin él vale 0 y manda el 34vw de siempre. */
+#ui-bottom-left {
+  bottom: 12px; left: 12px; flex-direction: column-reverse; align-items: flex-start;
+  max-width: min(34vw, calc(50vw - 12px - var(--nf-medio-ancho-de-la-barra, 0px) - var(--nf-gap)));
+}
 #ui-bottom-right { bottom: 12px; right: 12px; flex-direction: column-reverse; align-items: flex-end; }
 #ui-bottom-center {
   bottom: 12px; left: 50%; transform: translateX(-50%);
@@ -311,12 +319,26 @@
    región mide 34vw) y entonces sí sobra alto. */
 #combat-log {
   --nf-log-interlineado: 1.5;
-  color: var(--nf-ink-dim);
   font-size: var(--nf-fs-xs);
   line-height: var(--nf-log-interlineado);
   max-height: calc(var(--nf-log-lineas) * var(--nf-log-interlineado) * 1em);
   overflow: hidden;
-  text-shadow: var(--nf-text-shadow);
+}
+/* Cada línea es un SUBTÍTULO: `ink` sobre `surface` ajustado al texto (el
+   «aparte» de issue 755). Sin fondo, el gris atenuado se perdía sobre el suelo
+   claro del tile; `ink/surface` es el par que el test de tema mide ≥ 4,5 en
+   los cinco packs. Sin líneas no hay caja: el registro vacío no tapa el mundo.
+   SIN relleno vertical ni márgenes, a propósito: el fondo ya cubre la caja de
+   línea entera, y cualquier alto extra rompería la rejilla uniforme sobre la
+   que el `max-height` de arriba corta siempre entre dos líneas (issue 506, guion
+   104), también cuando una entrada larga envuelve. */
+#combat-log > div {
+  width: fit-content;
+  max-width: 100%;
+  background: var(--nf-surface);
+  color: var(--nf-ink);
+  padding: 0 6px;
+  border-radius: var(--nf-radius);
 }
 
 /* ── Chip de gráficos ───────────────────────────────────────────────────── */
@@ -370,15 +392,36 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
   /* Sobre el corte a negro: el progreso debe verse durante la transición. */
   z-index: var(--z-loader);
-  background: color-mix(in srgb, var(--nf-fade) 82%, transparent);
+  /* El VELO. Su opacidad es `VELO_DEL_MURO` (nefan-core `ui-theme.ts`), la
+     misma con la que el test de tema compone la pila que mide; la escribe
+     `ui/theme.ts` y aquí no lleva valor por defecto a propósito: una copia
+     local volvería a ser un número que puede discrepar. Si el muro de ARRANQUE
+     sale antes de que se aplique el tema, no hay velo —detrás no hay nada que
+     velar— y el panel se lee igual. */
+  background: color-mix(in srgb, var(--nf-fade) var(--nf-velo-del-muro), transparent);
   color: var(--nf-accent);
   font-size: var(--nf-fs-md);
   text-align: center;
   padding: 24px;
   pointer-events: auto;
+}
+/* Lo que se LEE va sobre un panel `surface` (issue 748): el texto directamente
+   sobre el velo no pasaba el contraste en cuatro packs, y en `anime` «Cerrar»
+   era tinta oscura sobre `fade` oscuro, invisible. `surface` con `ink`,
+   `ink_dim`, `accent` y `danger` es la pila que mide `ui-theme.test.ts`. */
+#narrative-loader .muro-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  max-width: min(560px, 100%);
+  background: var(--nf-surface);
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  padding: 22px 28px;
+  box-shadow: var(--nf-shadow), var(--nf-glow);
 }
 #narrative-loader.visible { display: flex; }
 #narrative-loader.error { color: var(--nf-danger); }
@@ -400,7 +443,43 @@
 #narrative-loader .title { font-family: var(--nf-font-display); font-size: var(--nf-fs-lg); letter-spacing: var(--nf-tracking); }
 #narrative-loader .detail { color: var(--nf-ink-dim); max-width: 480px; line-height: 1.45; }
 #narrative-loader .elapsed { color: var(--nf-ink-dim); font-size: var(--nf-fs-sm); }
-#narrative-loader .dismiss { display: none; margin-top: 6px; }
+/* Vacío (el fallo no tiene cronómetro) sigue siendo un hijo del flex y
+   ocupaba su `gap`: el hueco antes del botón era el doble (issue 748). */
+#narrative-loader .elapsed:empty { display: none; }
+/* Los botones del muro son la acción principal, RELLENA: `accent_ink` sobre
+   `accent`, par medido ≥ 4,5 en los cinco packs. Sin margen propio: el hueco
+   es el `gap` del panel, el mismo que separa el título del detalle. */
+#narrative-loader .nf-action {
+  background: var(--nf-accent);
+  border-color: var(--nf-accent);
+  color: var(--nf-accent-ink);
+}
+/* El hover genérico de `.nf-action` pinta el texto de `accent`, que sobre
+   este fondo sería invisible. Hoy lo impiden DOS cosas, cada una sola: la
+   especificidad del id de arriba (le gana a `.nf-action:hover`) y el `color`
+   de esta regla. Sin las dos, el texto sale del color del fondo; el guion
+   195 lo mide con el puntero encima. Además da el realce: un halo de `ink`. */
+#narrative-loader .nf-action:hover:not(:disabled) {
+  border-color: var(--nf-ink);
+  color: var(--nf-accent-ink);
+  box-shadow: 0 0 0 var(--nf-hairline) var(--nf-ink);
+}
+#narrative-loader .dismiss { display: none; }
+/* JERARQUÍA cuando hay dos salidas (la oferta de entrar, issue 478): la que
+   ENTRA es la acción rellena y «Cerrar», que no hace nada, pasa a secundaria —
+   sin relleno, texto `ink` y filete `ink_dim`, pares medidos sobre la pila
+   del muro en `ui-theme.test.ts`—. `.dismiss` va detrás de los `.volver` en
+   el DOM, así que el hermano visible lo decide. Su hover no toma el
+   `accent_ink` del relleno: sobre el panel sería invisible. */
+#narrative-loader .volver:not([hidden]) ~ .dismiss {
+  background: transparent;
+  border-color: var(--nf-ink-dim);
+  color: var(--nf-ink);
+}
+#narrative-loader .volver:not([hidden]) ~ .dismiss:hover:not(:disabled) {
+  border-color: var(--nf-ink);
+  color: var(--nf-ink);
+}
 #narrative-loader.error .dismiss { display: inline-flex; }
 /* …salvo cuando no hay mundo detrás: ahí cerrar es el callejón del issue 189
    y el único botón es «Volver al título». El `hidden` lo pone main.ts; sin
@@ -411,7 +490,6 @@
 /* La salida del mundo vacío (issue 189). El `hidden` lo pone main.ts con lo
    que decide rotuloDeStatus; sin la regla explícita, `nf-action` (inline-flex)
    gana al `display:none` del atributo. */
-#narrative-loader .volver { margin-top: 6px; }
 #narrative-loader .volver[hidden] { display: none; }
 @keyframes nf-spin { to { transform: rotate(360deg); } }
 

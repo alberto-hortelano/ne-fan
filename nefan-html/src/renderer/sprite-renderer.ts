@@ -255,7 +255,7 @@ export class SpriteRenderer {
     } catch (err) {
       // A la pantalla (#306) con el titular de la familia: una hoja que no
       // llega deja al personaje en maniquí y nadie lo decía. Colapsa con el
-      // agregado de `preloadBase` —mismo titular, misma noticia—, así que diez
+      // agregado de `precargarHojasBase` —mismo titular, misma noticia—, así que diez
       // hojas caídas no son diez avisos; y como el agregado llega después, el
       // detalle que acaba leyéndose es el suyo, que trae el remedio.
       errors.push("sprite", `no se pudo cargar la hoja de personaje ${key}`, err, {
@@ -277,7 +277,7 @@ export class SpriteRenderer {
   /** Returns the sheet synchronously if already cached; null mid-load (the
    *  frame se re-renderiza al tick siguiente cuando decodifique). Si nadie
    *  llamó a `loadAnimation` aún (p. ej. un NPC narrativo dibuja durante la
-   *  ventana en que preloadBase todavía no pidió ese sheet), la ARRANCA aquí
+   *  ventana en que precargarHojasBase todavía no pidió ese sheet), la ARRANCA aquí
    *  y devuelve null — un warning, nunca un throw: una excepción en el
    *  camino de render mataría el rAF y congelaría el juego entero. */
   getCached(model: string, anim: string, angle: string): SpriteSheet | null {

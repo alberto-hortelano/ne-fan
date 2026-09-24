@@ -11,6 +11,8 @@ import {
   BASE_UI_THEME,
   UiThemeSchema,
   resolveUiTheme,
+  VELO_DEL_MURO,
+  type UiTheme,
   type UiThemeInput,
 } from "../src/games/ui-theme.js";
 
@@ -67,6 +69,16 @@ function parseColor(color: string): [number, number, number, number] {
   }
   const nums = hex.replace(/^[a-z]+\(|\)$/g, "").split(/[,\s/]+/).filter(Boolean).map(Number);
   return [nums[0], nums[1], nums[2], nums[3] === undefined ? 1 : nums[3]];
+}
+
+/** Un color del tema compuesto (con su alfa) sobre un fondo ya opaco. */
+function sobre(color: string, under: [number, number, number]): [number, number, number] {
+  const [r, g, b, a] = parseColor(color);
+  return [r * a + under[0] * (1 - a), g * a + under[1] * (1 - a), b * a + under[2] * (1 - a)];
+}
+
+function rgb(c: [number, number, number]): string {
+  return `rgb(${c.map((v) => v.toFixed(3)).join(", ")})`;
 }
 
 function contrast(fg: string, bg: string): number {
@@ -163,11 +175,58 @@ describe("temas shipped", () => {
         contrast(t.accent, t.surface) >= 3,
         `${s.style_id}: acento ${contrast(t.accent, t.surface).toFixed(2)}:1 (<3)`,
       );
+      // El título de un fallo (el muro, el aviso del chip) va en `danger`
+      // sobre un panel: hasta #748 no lo medía nadie, y en dos packs no
+      // llegaba a 3:1.
+      assert.ok(
+        contrast(t.danger, t.surface) >= 3,
+        `${s.style_id}: peligro ${contrast(t.danger, t.surface).toFixed(2)}:1 (<3)`,
+      );
       // El acento también se usa RELLENO, con su propio color de texto.
       assert.ok(
         contrast(t.accent_ink, t.accent) >= 4.5,
         `${s.style_id}: texto sobre acento ${contrast(t.accent_ink, t.accent).toFixed(2)}:1 (<4.5)`,
       );
+    }
+  });
+});
+
+/** EL MURO (#748) no se pinta sobre el mundo a secas: es el `fade` del pack al
+ *  `VELO_DEL_MURO` sobre el mundo (el gris neutro del helper), y encima el
+ *  panel `surface` con el texto. Se mide contra ESA pila, que es la que ve el
+ *  jugador. Antes el muro pintaba el texto directamente sobre el velo y nadie
+ *  medía ese par: en `anime` «Cerrar» era tinta oscura sobre `fade` oscuro,
+ *  1,03:1, invisible. */
+describe("el muro se lee (#748)", () => {
+  const styles = listStyles(REAL_STYLES);
+
+  /** El fondo opaco del panel del muro, tal como lo compone el navegador. */
+  function fondoDelMuro(t: UiTheme): [number, number, number] {
+    const [fr, fg, fb] = parseColor(t.fade);
+    const velo = sobre(`rgba(${fr}, ${fg}, ${fb}, ${VELO_DEL_MURO})`, [128, 128, 128]);
+    return sobre(t.surface, velo);
+  }
+
+  it("título, detalle y botón relleno pasan en los cinco packs", () => {
+    for (const s of styles) {
+      const t = s.ui_theme;
+      const fondo = fondoDelMuro(t);
+      const panel = rgb(fondo);
+      const boton = rgb(sobre(t.accent, fondo));
+      const pares: Array<[string, string, string, number]> = [
+        ["título de fallo (danger)", t.danger, panel, 3],
+        ["título de espera y oferta (accent)", t.accent, panel, 3],
+        ["detalle (ink_dim)", t.ink_dim, panel, 3],
+        ["silueta del botón (accent)", t.accent, panel, 3],
+        ["texto del botón (accent_ink sobre accent)", t.accent_ink, boton, 4.5],
+        // La oferta (issue 478): «Cerrar» es SECUNDARIO, sin relleno.
+        ["texto del botón secundario (ink)", t.ink, panel, 4.5],
+        ["silueta del botón secundario (ink_dim)", t.ink_dim, panel, 3],
+      ];
+      for (const [que, fg, bg, min] of pares) {
+        const c = contrast(rgb(sobre(fg, parseColor(bg).slice(0, 3) as [number, number, number])), bg);
+        assert.ok(c >= min, `${s.style_id}: ${que} ${c.toFixed(2)}:1 (<${min})`);
+      }
     }
   });
 });

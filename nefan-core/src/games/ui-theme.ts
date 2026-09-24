@@ -122,6 +122,15 @@ export const BASE_UI_THEME: UiTheme = {
   glow: false,
 };
 
+/** Opacidad del VELO del muro (`#narrative-loader`): el `fade` del pack al
+ *  82 % sobre el mundo, y encima el panel `surface` con el texto. Es fuente
+ *  única de dos cosas que tienen que coincidir: lo que pinta el cliente
+ *  (`ui/theme.ts` lo escribe en `--nf-velo-del-muro`, que `game-ui.css` lee
+ *  SIN valor por defecto) y la pila sobre la que el test de tema mide el
+ *  contraste del muro. Con dos copias, cambiar el velo dejaría al test
+ *  midiendo otro muro (#748). */
+export const VELO_DEL_MURO = 0.82;
+
 /** Funde lo declarado por el pack sobre el tema base. `font_display` sigue a
  *  `font` cuando el pack cambia la tipografía pero no declara titular. */
 export function resolveUiTheme(declared?: UiThemeInput | null): UiTheme {

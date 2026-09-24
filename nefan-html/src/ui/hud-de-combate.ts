@@ -16,6 +16,7 @@ import type { AttackSpec } from "@nefan-core/src/combat/combat-system.js";
 import { combatConfig as config } from "../config-de-combate.js";
 import type { InputProvider } from "../input/input-provider.js";
 import { ActionBar } from "./action-bar.js";
+import { EVENTO_TEMA_APLICADO } from "./theme.js";
 
 export interface DepsDelHudDeCombate {
   /** El proveedor de input, dueño de la selección: recibe el mapeo 1..N de
@@ -49,7 +50,22 @@ export interface HudDeCombate {
 
 export function crearHudDeCombate(deps: DepsDelHudDeCombate): HudDeCombate {
   /** Ataques del sistema de combate de la sesión, clicables y con su tecla. */
-  const barra = new ActionBar(document.getElementById("action-bar") as HTMLElement);
+  const elBarra = document.getElementById("action-bar") as HTMLElement;
+  const barra = new ActionBar(elBarra);
+  // El registro (`#ui-bottom-left`) no puede meterse debajo de la barra, que
+  // va centrada y ENCIMA: su ancho depende del catálogo de la sesión y de la
+  // fuente del pack, así que la hoja de estilo no lo sabe. Se le dice aquí,
+  // medido, y `game-ui.css` recorta la región con él (QA de la tanda BA,
+  // guion 196). Sin barra (vacía, `display:none`) mide 0 y no recorta nada.
+  // Se mide AL MOMENTO al repintar la barra y al cambiar el tema (la fuente
+  // cambia su ancho); el `ResizeObserver` cubre el resto (la ventana) y llega
+  // un paso tarde, que es por lo que no basta solo.
+  const uiDeJuego = document.getElementById("game-ui");
+  const medirLaBarra = (): void => {
+    uiDeJuego?.style.setProperty("--nf-medio-ancho-de-la-barra", `${elBarra.getBoundingClientRect().width / 2}px`);
+  };
+  new ResizeObserver(medirLaBarra).observe(elBarra);
+  uiDeJuego?.addEventListener(EVENTO_TEMA_APLICADO, medirLaBarra);
 
   // Espejo de `ui/modos-de-graficos.ts`: el id viene congelado en el save
   // (world.combat_system); "" (sin sesión / saves previos) = estándar. El HUD
@@ -72,6 +88,7 @@ export function crearHudDeCombate(deps: DepsDelHudDeCombate): HudDeCombate {
         invoke: () => input.selectAttack(spec.id),
       })),
     );
+    medirLaBarra();
   }
 
   function aplicarSistema(id: string): void {

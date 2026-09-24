@@ -31,7 +31,7 @@
  *  - quitando `appType: "mpa"` de nefan-html/vite.config.ts → el 404 del
  *    bloque 1-bis se pone rojo (`200 text/html` los dos), y su control —el
  *    fichero hermano que sí existe— sigue verde: el bloque distingue.
- *  - devolviendo `Promise.all` a `preloadBase` → rojo SOLO «es la PRIMERA
+ *  - devolviendo `Promise.all` a `precargarHojasBase` → rojo SOLO «es la PRIMERA
  *    entrada»: el remedio vuelve a quedar sepultado bajo diez trazas.
  *  - quitando el remedio del mensaje de main.ts → rojos «dice qué hacer», «se
  *    LEE en pantalla» y «es la PRIMERA», que es lo que cuelga de esa línea.

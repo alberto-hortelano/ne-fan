@@ -200,7 +200,7 @@ describe("motivoDeSesionParaElJugador: el cuerpo de un fallo de sesión", () => 
     "no games available in bridge — check nefan-core/data/games/",
     "games_dir_unreadable: games directory not found: /home/al/code/ne-fan/nefan-core/data/games",
     // El ÚNICO que no viene del bridge: lo lanza el cliente al no poder vestir
-    // al jugador. Copiado verbatim de lo que compone `preloadBase`
+    // al jugador. Copiado verbatim de lo que compone `precargarHojasBase`
     // (nefan-html/src/renderer/character-sprites.ts) en un clon limpio.
     `${FALLO_HOJAS_BASE}: faltan 10 de 10 hojas (idle, walk, run, quick, heavy, medium, defensive, precise, hit_react, death) — Error: HTTP 404 on /sprites/y_bot/idle/frontal_8/meta.json`,
     // El save con un record del ledger sin `data.name` (#397): el motivo trae

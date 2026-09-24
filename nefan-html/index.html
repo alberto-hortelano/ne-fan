@@ -137,6 +137,9 @@
       <div id="world-labels" aria-hidden="true"></div>
       <div id="reticle"></div>
       <div id="narrative-loader" role="status" aria-live="polite">
+        <!-- El velo (`fade`) es del contenedor; lo que se LEE va en un panel
+             `surface`, el par que mide el test de tema (#748). -->
+        <div class="muro-panel">
         <div class="spinner"></div>
         <div class="title" id="narrative-loader-title">Generando escena...</div>
         <div class="detail" id="narrative-loader-detail">El motor narrativo está construyendo el mundo. Puede tardar un momento.</div>
@@ -148,10 +151,11 @@
         <!-- La oferta del bridge que llega tarde (#478): quien arrancó sin
              servidor de partida y lo ve levantarse entra al juego por aquí, sin
              recargar la página. `volver` es el gancho de ESTILO del botón
-             secundario del muro (margen y respetar `hidden`), no su destino:
+             secundario del muro (respetar `hidden`), no su destino:
              adónde lleva lo trae la oferta, no la clase. -->
         <button class="volver nf-action" id="narrative-loader-retry" type="button" hidden>Reintentar</button>
         <button class="dismiss nf-action" id="narrative-loader-dismiss" type="button">Cerrar</button>
+        </div>
       </div>
     </div>
   </div>

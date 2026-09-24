@@ -18,17 +18,17 @@ import { CONFIG } from "@nefan-core/src/config.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
 import { AVISO_PERSONAJES, errors } from "../ui/error-log.js";
 import { BASE_ANIMS, BASE_MODEL, type CharacterSpriteManager } from "./character-sprites.js";
+import { precargarHojasBase } from "./hojas-base.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
 import type { AnimacionDeEntidades } from "./animacion-de-entidades.js";
 
 export interface DepsDeAspectoDelJugador {
-  /** El gestor de skins: precarga la base, rearma el cortacircuitos al
-   *  empezar una sesión y encola el skin del jugador (si el toggle lo deja). */
-  characterSprites: Pick<
-    CharacterSpriteManager,
-    "preloadBase" | "rearmarCortacircuitos" | "permisoDeSkins" | "requestSkin"
-  >;
-  /** Solo para comprobar que un modelo alternativo tiene el set completo. */
+  /** El gestor de skins: empieza la partida (rearma el cortacircuitos y
+   *  olvida a quién contó ya el balance) y encola el skin del jugador (si el
+   *  toggle lo deja). */
+  characterSprites: Pick<CharacterSpriteManager, "empezarPartida" | "permisoDeSkins" | "requestSkin">;
+  /** Las hojas base (`precargarHojasBase`) y comprobar que un modelo
+   *  alternativo tiene el set completo. */
   spriteRenderer: Pick<SpriteRenderer, "loadAnimation">;
   /** La máquina de estados del cuerpo del jugador: arranca en reposo al vestirlo. */
   animacion: Pick<AnimacionDeEntidades, "jugadorEnReposo">;
@@ -74,7 +74,7 @@ export function crearAspectoDelJugador(deps: DepsDeAspectoDelJugador): AspectoDe
    *  `vestir` espera esta promise; si falta un sheet, la sesión no arranca
    *  (fail-loud) y el error queda registrado. */
   const baseSheetsReady: Promise<void> = CONFIG.graphics.character_sprites
-    ? characterSprites.preloadBase().then(() => {
+    ? precargarHojasBase(spriteRenderer, worldAngle, BASE_MODEL).then(() => {
         baseSheetsLoaded = true;
       })
     : Promise.resolve();
@@ -129,8 +129,9 @@ export function crearAspectoDelJugador(deps: DepsDeAspectoDelJugador): AspectoDe
     // partida los pedirá quien los spawnee, y los que no, no se pagan. Y desde
     // #520 el que se quedó a medias —anims encoladas que el apagón SALTÓ sin
     // pedirlas— también vuelve por ahí: su petición completa lo que le falte
-    // del set automático en vez de salirse por «ya tiene estado».
-    characterSprites.rearmarCortacircuitos();
+    // del set automático en vez de salirse por «ya tiene estado». Y la línea
+    // de balance de skins vuelve a contar a todos: es de la partida (#755).
+    characterSprites.empezarPartida();
 
     let base = BASE_MODEL;
     if (modelId && modelId !== BASE_MODEL) {
