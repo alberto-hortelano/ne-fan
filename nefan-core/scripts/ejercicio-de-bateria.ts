@@ -198,6 +198,81 @@ export function fuenteConNombresReservados(fuente: string): boolean {
   return /(?:function|const|let|var|class)\s+__[A-Za-z_$]/.test(fuente);
 }
 
+// ── el rojo, con nombre ──────────────────────────────────────────────────────
+
+/** Un test que el TAP da por caído: su ruta de suites hasta él y su bloque YAML
+ *  de diagnóstico (mensaje, `location`, `stack`) tal cual lo escribió Node. */
+export interface TestCaido {
+  ruta: readonly string[];
+  diagnostico: string;
+}
+
+const SUBTEST = /^(\s*)# Subtest: (.*)$/;
+const NOT_OK = /^(\s*)not ok \d+ - (.*?)(?: # .*)?$/;
+const PROFUNDIDAD = 4;
+
+/** Cada `not ok` del TAP con su bloque de error, ESTÉ DONDE ESTÉ.
+ *
+ *  Antes el rojo imprimía `stdout.slice(-2000)`, y la batería de
+ *  `asset-store-contrato` tiene 15 tests de nivel superior: el que cayó en CI
+ *  (#751) estaba en el décimo y el corte empezaba a mitad del decimotercero, así
+ *  que el log no nombraba nada. Tampoco sirve leer `# fail N`: un `describe` cuyo
+ *  cuerpo lanza sale `not ok` con `# fail 0` en Node 26, y el formato del resumen
+ *  no está fijado (CI corre el Node más reciente, #749). Lo que no cambia es la
+ *  línea `not ok`.
+ *
+ *  Se omite el `not ok` de una suite que solo dice que un hijo cayó
+ *  (`subtestsFailed`): el hijo ya sale, con la suite en su ruta. */
+export function testsCaidosDelTap(tap: string): TestCaido[] {
+  const lineas = tap.split("\n");
+  const suites: string[] = [];
+  const out: TestCaido[] = [];
+  for (let i = 0; i < lineas.length; i++) {
+    const sub = SUBTEST.exec(lineas[i]);
+    if (sub) {
+      const nivel = Math.floor(sub[1].length / PROFUNDIDAD);
+      suites.length = nivel;
+      suites[nivel] = sub[2];
+      continue;
+    }
+    const caido = NOT_OK.exec(lineas[i]);
+    if (!caido) continue;
+    const sangria = caido[1].length;
+    const bloque: string[] = [];
+    // El bloque YAML va dos espacios más adentro, entre `---` y `...`.
+    if (lineas[i + 1]?.trim() === "---") {
+      for (let j = i + 2; j < lineas.length; j++) {
+        if (lineas[j].trim() === "..." && lineas[j].length - lineas[j].trimStart().length === sangria + 2) break;
+        bloque.push(lineas[j].slice(sangria + 2));
+      }
+    }
+    const diagnostico = bloque.join("\n");
+    if (/^failureType: 'subtestsFailed'$/m.test(diagnostico)) continue;
+    out.push({ ruta: [...suites.slice(0, Math.floor(sangria / PROFUNDIDAD)), caido[2]], diagnostico });
+  }
+  return out;
+}
+
+/** El mensaje de una batería que no pasa: QUÉ test cayó y con qué error.
+ *
+ *  Si el TAP no trae ningún `not ok` (el proceso murió antes de escribirlo, un
+ *  reporter que cambió de forma…) se DICE, con la cola del TAP detrás, en vez de
+ *  dejar al lector buscando un nombre que no está. El stderr va siempre: el log
+ *  que delató a #751 («world-state contestó HTTP 404») salió por ahí. */
+export function informeDeBateriaRota(id: string, stdout: string, stderr: string): string {
+  const caidos = testsCaidosDelTap(stdout);
+  const cabecera =
+    `la batería de "${id}" no pasa, así que su cobertura está a medias y no se puede ` +
+    `juzgar qué ejerce. Arregla primero el test que cae.\n`;
+  const cuerpo =
+    caidos.length > 0
+      ? `${caidos.length} test(s) caído(s):\n` +
+        caidos.map((c) => `✖ ${c.ruta.join(" › ")}\n${c.diagnostico.replace(/^/gm, "    ")}`).join("\n")
+      : `El proceso salió con error y su TAP no trae NINGÚN \`not ok\`: no hay test que nombrar. ` +
+        `Cola del TAP:\n${stdout.slice(-2000)}`;
+  return `${cabecera}${cuerpo}\n${stderr.length > 0 ? `stderr (cola):\n${stderr.slice(-2000)}` : "stderr vacío."}`;
+}
+
 // ── el corredor ──────────────────────────────────────────────────────────────
 
 /** Une los ficheros de cobertura que deja UNA corrida: `tsx` arranca más de un
@@ -224,6 +299,35 @@ function coberturaDe(dir: string, raiz: string): Map<string, CoberturaDeFichero>
 const cuenta = (s: CoberturaDeFichero): number =>
   s.functions.reduce((n, f) => n + (f.ranges[0]?.count ?? 0), 0);
 
+export type BateriaCorrida = { ok: true } | { ok: false; informe: string; stdout: string };
+
+/** Corre los `tests` de una batería con los `nodeArgs` dados y, si no pasa,
+ *  devuelve el informe que nombra lo que cayó.
+ *
+ *  Decide por el EXIT del proceso y NO por el `# fail N` del resumen, que no
+ *  cuenta un `describe` que lanza (medido en Node 26.10: `not ok`, `# fail 0`,
+ *  EXIT 1). Sin `NODE_TEST_CONTEXT`: si quien llama es a su vez un
+ *  `node --test` (la batería de este guion), el hijo la heredaría y reportaría
+ *  al padre por el canal serializado en vez de escribir TAP. */
+export function correrBateria(
+  id: string,
+  nodeArgs: readonly string[],
+  tests: readonly string[],
+  env: NodeJS.ProcessEnv = {},
+): Promise<BateriaCorrida> {
+  const entorno: NodeJS.ProcessEnv = { ...process.env, ...env };
+  delete entorno.NODE_TEST_CONTEXT;
+  return new Promise((cumple) => {
+    execFile(
+      process.execPath,
+      [...nodeArgs, ...tests],
+      { cwd: coreRoot, encoding: "utf8", env: entorno, timeout: 600000, maxBuffer: 64 * 1024 * 1024 },
+      (err, stdout, stderr) =>
+        cumple(err === null ? { ok: true } : { ok: false, informe: informeDeBateriaRota(id, stdout, stderr), stdout }),
+    );
+  });
+}
+
 /** Corre UNA batería con la cobertura precisa encendida y devuelve qué ejerció.
  *
  *  Con los `node_args` DEL PLAN, que son los mismos con los que `tap-runner`
@@ -236,29 +340,8 @@ async function ejercicioDeModulo(
 ): Promise<Record<string, Ejercicio>> {
   const dir = mkdtempSync(join(tmpdir(), "nefan-ejercicio-"));
   try {
-    await new Promise<void>((cumple, falla) => {
-      execFile(
-        process.execPath,
-        [...plan.node_args, ...modulo.tests],
-        {
-          cwd: coreRoot,
-          encoding: "utf8",
-          env: { ...process.env, NODE_V8_COVERAGE: dir },
-          timeout: 600000,
-          maxBuffer: 64 * 1024 * 1024,
-        },
-        (err, stdout, stderr) => {
-          if (err === null) return cumple();
-          falla(
-            new Error(
-              `la batería de "${modulo.id}" no pasa, así que su cobertura está a medias y no se puede ` +
-                `juzgar qué ejerce. Arregla \`npm test\` primero.\n` +
-                `${stdout.slice(-2000)}${stderr.slice(-2000)}`,
-            ),
-          );
-        },
-      );
-    });
+    const corrida = await correrBateria(modulo.id, plan.node_args, modulo.tests, { NODE_V8_COVERAGE: dir });
+    if (!corrida.ok) throw new Error(corrida.informe);
     const cobertura = coberturaDe(dir, coreRoot);
     const out: Record<string, Ejercicio> = {};
     for (const f of ficherosMutados(modulo)) {

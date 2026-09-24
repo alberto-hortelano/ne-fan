@@ -349,16 +349,24 @@ export default async function (ctx) {
   await ctx.shot("aro-y-barra-con-el-arma-que-dice-el-bridge");
 
   // ── 4 · Control: el bridge vuelve a su arma y el cliente vuelve con él ───
-  await ctx.page.evaluate(() => {
+  // La espera cuenta frames vistos DESPUÉS de quitar la reescritura (#746):
+  // `ultimoOriginal` ya estaba lleno desde el bloque 1, así que esperar a que
+  // existiera se cumplía al instante, y si no llegaba ningún frame nuevo el ✘
+  // caía en los aros en vez de en la falta de frames.
+  const vistosAlSoltar = await ctx.page.evaluate(() => {
     window.__qaWire.reescritos = 0;
     window.__qaWire.reescribir = null;
+    return window.__qaWire.vistos;
   });
-  await ctx.expectEspera(
-    "vuelven a llegar frames sin reescribir",
+  const frameNuevo = await ctx.expectEspera(
+    "llega un state_update DESPUÉS de quitar la reescritura",
     true,
-    () => (window.__qaWire.ultimoOriginal ? true : null),
-    { ms: 10_000 },
+    (n) => (window.__qaWire.vistos > n ? window.__qaWire.vistos : null),
+    { ms: 10_000, arg: vistosAlSoltar },
   );
+  // Sin frame nuevo, los aros de abajo solo dirían lo que pintó el último
+  // reescrito: el rojo es el de la espera, y ya está afirmado.
+  if (!frameNuevo.ocurrio) return;
   const deVuelta = await arosDeLosCinco(ctx, catalogo);
   ctx.expect(
     "al volver el arma del bridge, los cinco aros vuelven con ella (el cliente no se queda con el último)",
