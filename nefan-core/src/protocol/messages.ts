@@ -5,6 +5,7 @@ import type { UiTheme } from "../games/ui-theme.js";
 import type { Vec3, CombatEvent, EnemyPersonality } from "../types.js";
 import type { Edge } from "../world-map/types.js";
 import type { WorldScene } from "../scene/scene-normalize.js";
+import type { Entorno } from "../session/gates-de-imagen.js";
 import type {
   Consequence,
   ConsequenceEffect,
@@ -776,7 +777,23 @@ export interface ExitsChangedMessage {
   exits: SceneExit[];
 }
 
+/** El SALUDO del bridge a cada socket que se conecta, antes de cualquier
+ *  sesión: en qué ENTORNO corre (`session/gates-de-imagen.ts`, `Entorno`).
+ *
+ *  Es la única forma que tiene el cliente de saber si los caminos automáticos
+ *  pueden pagar arte: el entorno lo lee el bridge de `NEFAN_ENTORNO` al
+ *  arrancar y nadie más (candado `el-entorno-se-lee-en-un-solo-sitio`), así
+ *  que viaja por el cable. Va en el ALTA del socket y no en `session_started`
+ *  porque las fixtures del selector «Room» no tienen sesión y también piden
+ *  skins. Sin sello: no es de ninguna partida ni de ningún juego. Hasta que
+ *  llega, el cliente vale `ENTORNO_POR_DEFECTO`, que es el que no gasta. */
+export interface BridgeHelloMessage {
+  type: "bridge_hello";
+  entorno: Entorno;
+}
+
 export type ServerMessage =
+  | BridgeHelloMessage
   | StateUpdateMessage
   | PongMessage
   | SessionsListedMessage

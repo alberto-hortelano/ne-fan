@@ -24,19 +24,20 @@
  *  reanudar sobre un mundo pre-generado el jugador veía ocho vecinos en clay
  *  con su arte YA PAGADO en la librería. El carril no comparte nada con el
  *  token del activo —llamar a `nuevoRun` por vecino desecharía la corrida del
- *  jugador, que es #390 por otra puerta— y NUNCA pinta (`modoDeCorrida`).
+ *  jugador, que es #390 por otra puerta— y va de uno en uno detrás del activo.
+ *
+ *  QUÉ PUEDE PAGAR CADA CORRIDA YA NO SE DECIDE AQUÍ. Aquí vivía una regla por
+ *  ROL —«solo el activo pinta; un vecino restaura, también con Imagen IA»—, y
+ *  el usuario la sacó del código (2026-09-24): pagar o no es CONFIGURACIÓN
+ *  (el entorno) sobre el modo de la partida, y la decide `gatesDeImagen`
+ *  (`session/gates-de-imagen.ts`). El activo y el vecino reciben el MISMO
+ *  trato: en desarrollo los dos restauran; en producción con Imagen IA los
+ *  dos pintan lo que falte. Lo que este módulo sigue decidiendo es el ORDEN y
+ *  la vigencia —no pagar dos veces, no descartar en silencio, el activo
+ *  antes—, que no dependen del entorno.
  *
  *  Aquí no hay fetch, canvas ni renderer: eso lo conserva el controller del
  *  cliente, que pregunta a esta clase qué hacer y le cuenta qué pasó. */
-
-/** LA REGLA DE GASTO por rol del tile. Solo el tile ACTIVO puede pintar, y solo
- *  con la generación encendida; un tile instalado que no es el activo
- *  restaura lo ya pagado y nada más, TAMBIÉN con Imagen IA encendida (#714):
- *  pintar un vecino es gasto que la partida no pidió. Pintar un tile concreto
- *  a mano sigue siendo del menú dev / tecla G, que no pasa por aquí. */
-export function modoDeCorrida(t: { activo: boolean; generacion: boolean }): { resolveOnly: boolean } {
-  return { resolveOnly: !(t.activo && t.generacion) };
-}
 
 /** Una restauración que el controller puede ejecutar. Su IDENTIDAD es la
  *  vigencia: se crea al encolar, y solo el objeto que sigue registrado para su
@@ -45,15 +46,27 @@ export interface Restauracion {
   readonly key: string;
 }
 
-/** Qué dejó una restauración en el renderer: arte aplicado (entero o
- *  parcial), la librería sin nada para el tile, o nada (superada, sin estilo,
- *  tile sin superficies). */
-export type Desenlace = "aplicado" | "sin-arte" | "nada";
+/** Qué dejó una corrida del carril en el renderer: arte ya pagado aplicado
+ *  (entero o parcial), arte PINTADO nuevo (solo si los gates dejaban generar:
+ *  producción con Imagen IA), la librería sin nada para el tile, o nada
+ *  (superada, sin estilo, tile sin superficies). `pintado` va aparte de
+ *  `aplicado` porque es GASTO, y el balance no puede callarlo dentro de «$0». */
+export type Desenlace = "aplicado" | "pintado" | "sin-arte" | "nada";
 
 /** El balance de una tanda del carril, de vaciado a vaciado. */
 export interface BalanceDeRestauracion {
   aplicados: number;
+  pintados: number;
   sinArte: number;
+}
+
+/** La UNA línea de HUD con el balance de una tanda del carril. Los PINTADOS
+ *  van delante y aparte: son gasto, y el «$0» de los restaurados no puede
+ *  tragárselos. Vive aquí y no en el cliente porque qué se cuenta como gasto
+ *  es la decisión, y el cliente solo la pinta. */
+export function lineaDeBalance(b: BalanceDeRestauracion): string {
+  const pintados = b.pintados > 0 ? `${b.pintados} vecino(s) PINTADO(S) (gasto), ` : "";
+  return `Atlas fps: ${pintados}${b.aplicados} vecino(s) restaurado(s) de la librería ($0), ${b.sinArte} sin arte (clay)`;
 }
 
 export class PoliticaDeAtlas {
@@ -177,14 +190,15 @@ export class PoliticaDeAtlas {
     if (this.#enCurso === r) this.#enCurso = null;
     if (this.#vigenteDe.get(r.key) === r) this.#vigenteDe.delete(r.key);
     if (desenlace === "aplicado") this.#balance.aplicados++;
+    if (desenlace === "pintado") this.#balance.pintados++;
     if (desenlace === "sin-arte") this.#balance.sinArte++;
     if (this.restaurando > 0) return null;
     const b = this.#balance;
-    this.#balance = { aplicados: 0, sinArte: 0 };
-    return b.aplicados + b.sinArte > 0 ? b : null;
+    this.#balance = { aplicados: 0, pintados: 0, sinArte: 0 };
+    return b.aplicados + b.pintados + b.sinArte > 0 ? b : null;
   }
 
-  #balance: BalanceDeRestauracion = { aplicados: 0, sinArte: 0 };
+  #balance: BalanceDeRestauracion = { aplicados: 0, pintados: 0, sinArte: 0 };
 
   /** Cambio de mundo: nada de lo encolado ni de lo que va en el aire es del
    *  mundo nuevo (la clave `tile_0_0` es la misma y la escena, otra). La que

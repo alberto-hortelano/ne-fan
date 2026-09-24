@@ -30,6 +30,11 @@ export interface GraphicsModeState {
   charsSuspendidos: boolean;
   /** false = backend de skins apagado por config (graphics.ai_skin). */
   charsAvailable: boolean;
+  /** El TECHO del entorno: `null` = los caminos automáticos pueden generar
+   *  (producción); si no, el motivo por el que «Imagen IA» solo restaura lo
+   *  ya pagado. Va aparte del modo por lo mismo que `charsSuspendidos`: el
+   *  botón activo tiene que seguir siendo el modo REAL de la partida. */
+  sinGeneracion: string | null;
   hasSession: boolean;
 }
 
@@ -161,7 +166,11 @@ export class GraphicsModeChip {
     } else {
       text = `${RENDER_MODE_ICONS.image}/${RENDER_MODE_ICONS.vector} Mixto`;
     }
-    this.chip.textContent = text;
+    // EL TECHO SE VE EN EL CHIP (tanda AS, criterio 5): con «Imagen IA» en
+    // alguna faceta y la corrida en desarrollo, no se pinta nada nuevo, y el
+    // chip lo dice en su texto — el motivo entero va en el `title`.
+    const techo = st.sinGeneracion !== null && (st.scenesOn || st.charsOn);
+    this.chip.textContent = techo ? `${text} · solo lo pagado` : text;
     const sc = st.scenesOn ? "image" : "vector";
     const ch = st.charsOn ? "image" : "vector";
     // El aviso solo tiene sentido si el MODO pide skins: con personajes en
@@ -169,14 +178,17 @@ export class GraphicsModeChip {
     const suspension = st.charsOn && st.charsSuspendidos ? ` ${CHARS_SUSPENDIDOS}` : "";
     this.chip.title =
       `Gráficos de la partida — escenarios: ${RENDER_MODE_LABELS[sc]} · ` +
-      `personajes: ${CHAR_MODE_LABELS[ch]}${suspension}. Click para cambiar.`;
+      `personajes: ${CHAR_MODE_LABELS[ch]}${suspension}.` +
+      `${techo ? ` Sin generación nueva: ${st.sinGeneracion}.` : ""} Click para cambiar.`;
   }
 
   private renderPanel(st: GraphicsModeState): void {
     if (!this.isOpen) return;
-    this.note.textContent = st.hasSession
-      ? "El cambio se aplica en vivo y se guarda en la partida."
-      : "Sin partida (modo fixtures): el modo se recuerda en este navegador.";
+    this.note.textContent =
+      (st.hasSession
+        ? "El cambio se aplica en vivo y se guarda en la partida."
+        : "Sin partida (modo fixtures): el modo se recuerda en este navegador.") +
+      (st.sinGeneracion !== null ? ` Imagen IA ${st.sinGeneracion}.` : "");
     const suspendido = st.charsOn && st.charsSuspendidos;
     this.suspension.hidden = !suspendido;
     this.suspension.textContent = suspendido ? `Personajes ${CHARS_SUSPENDIDOS}` : "";
@@ -189,8 +201,12 @@ export class GraphicsModeChip {
         const armedNow = mode === "image" && this.armed.has(spec.facet);
         btn.classList.toggle("armed", armedNow);
         const label = btn.querySelector(".gfx-label") as HTMLElement;
+        // En desarrollo encender NO gasta (solo restaura lo pagado), y decir
+        // «Gastará créditos» sería mentir hacia el lado caro.
         label.textContent = armedNow
-          ? "¿Confirmar? Gastará créditos"
+          ? st.sinGeneracion !== null
+            ? "¿Confirmar? Solo lo ya pagado"
+            : "¿Confirmar? Gastará créditos"
           : `${RENDER_MODE_ICONS[mode]} ${spec.labels[mode]}`;
         if (mode === "image" && spec.facet === "characters") {
           btn.disabled = !st.charsAvailable;

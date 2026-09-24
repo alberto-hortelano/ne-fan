@@ -657,6 +657,12 @@ class SkinSpriteSheetRequest(BaseModel):
     # ref de characters/ del manifest. Sin pack o sin imagen ⇒ sin ref.
     style_id: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
     style_role: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
+    resolve_only: bool = False
+    """Solo lo YA PAGADO: si el sheet está en caché se sirve; si no, se
+    contesta `{"ok": true, "sin_arte": true}` sin llamar a `/identity` ni a
+    `/skins`. Es el carril de los caminos automáticos del cliente en
+    desarrollo (la configuración de gasto, `gatesDeImagen` en nefan-core), el
+    mismo papel que `resolve_only` en el atlas. No entra en la clave."""
 
 
 @router.post("/skin_sprite_sheet")
@@ -671,8 +677,11 @@ async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
     Body: `SkinSpriteSheetRequest` (un campo ausente o mal escrito es 422
     estructurado, no un `""` que viaja hasta el modelo).
     Returns: {ok, hash, cached, meta, frame_urls, hero_key, hero_url,
-              generation_time_ms} — el wire NO cambia: el meta es el del sheet
-    VESTIDO (keyframes reducidos + fps de perfil), no el de la base.
+              generation_time_ms} — el meta es el del sheet VESTIDO (keyframes
+    reducidos + fps de perfil), no el de la base. Con `resolve_only` y el sheet
+    sin pagar: `{ok: true, sin_arte: true}` (`SkinSpriteSheetSinArte` en el
+    contrato TS), que es una respuesta buena y no un 503: «no está pagado» no
+    es que el servicio haya fallado.
     """
     model = body.model
     anim = body.anim
@@ -749,6 +758,12 @@ async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
         # frames están en disco.
         with open(out_meta_path) as f:
             meta = json.load(f)
+    elif body.resolve_only:
+        # Solo lo pagado, y esto no lo está: no se genera nada. Va ANTES del
+        # `solo_cache` porque la pregunta tiene respuesta aunque sprite-forge
+        # esté caído (la clave salió del apunte): no está en disco.
+        logger.info(f"SpriteSkin: {triple} ← \"{prompt[:40]}\" sin arte pagado (resolve_only)")
+        return {"ok": True, "sin_arte": True}
     elif solo_cache:
         # No está en caché y no hay servicio: no hay nada que servir, y se dice
         # con la causa real en vez de con un sheet a medias.

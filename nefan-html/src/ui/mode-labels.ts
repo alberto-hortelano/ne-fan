@@ -25,3 +25,11 @@ export const MODE_COST_LABELS: Record<string, string> = {
   image: "gasta créditos",
   vector: "sin coste",
 };
+
+/** Por qué «Imagen IA» no pinta nada NUEVO: la corrida es de desarrollo (el
+ *  `bridge_hello`, `Entorno` en `session/gates-de-imagen.ts`) y ahí los caminos
+ *  automáticos solo restauran lo ya pagado. Una frase para el registro y el
+ *  chip, dicha igual en los dos, y con la salida escrita: quien quiera generar
+ *  sabe qué poner. */
+export const MOTIVO_SIN_GENERACION =
+  "entorno de desarrollo: solo se restaura lo ya pagado (NEFAN_ENTORNO=produccion para generar)";

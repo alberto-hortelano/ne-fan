@@ -103,10 +103,13 @@ function llamadasANuevaPartida(fuente: string): string[] {
   return llamadas;
 }
 
+/** Los guiones con su fuente, leídos UNA vez: los dos ejes de este fichero
+ *  (el modo y el entorno) miran la misma carpeta. */
+const guiones = readdirSync(GUIONES)
+  .filter((f) => f.endsWith(".mjs"))
+  .map((f) => ({ nombre: f, fuente: readFileSync(join(GUIONES, f), "utf8") }));
+
 describe("el banco declara con qué modo de gasto arranca cada partida (QA H2)", () => {
-  const guiones = readdirSync(GUIONES)
-    .filter((f) => f.endsWith(".mjs"))
-    .map((f) => ({ nombre: f, fuente: readFileSync(join(GUIONES, f), "utf8") }));
 
   it("hay guiones y arrancan partidas: la totalidad tiene sujeto", () => {
     // El peor verde sería un detector que no lee nada, o un directorio vacío.
@@ -208,5 +211,57 @@ describe("el banco declara con qué modo de gasto arranca cada partida (QA H2)",
       false,
       "elegir el modo de PERSONAJES no dice nada del de escenarios — era justo el descuido de los cinco",
     );
+  });
+});
+
+/** EL SEGUNDO EJE: el ENTORNO (tanda AS, 2026-09-24). El modo de escenarios
+ *  dice qué QUIERE la partida; el entorno del stack dice si los caminos
+ *  automáticos PUEDEN pagar (`gatesDeImagen`). Un guion que mide que se pinta
+ *  necesita `produccion` —el defecto del banco— y uno que mide que en
+ *  desarrollo no se paga lo declara. La declaración la lee `qa/lib/entornos.mjs`
+ *  y la ejerce el runner; aquí se comprueba, en CI y sin navegador, que toda
+ *  declaración del árbol vale algo que el runner entiende. */
+const entornos = (await import(join(core, "..", "qa", "lib", "entornos.mjs"))) as {
+  ENTORNOS: string[];
+  ENTORNO_DEL_BANCO: string;
+  entornoDelFuente(fuente: string): string;
+  entornoDeclarado(nombre: string, valor: unknown): string;
+  ordenarPorEntorno(guiones: string[], entornoDe: (g: string) => string): string[];
+};
+const { leerEntorno } = await import("../src/session/gates-de-imagen.js");
+
+describe("todo guion mide contra un entorno que existe (tanda AS)", () => {
+  it("los nombres del banco son los de core: los dos que `leerEntorno` acepta", () => {
+    assert.deepEqual([...entornos.ENTORNOS].sort(), ["desarrollo", "produccion"]);
+    for (const e of entornos.ENTORNOS) assert.equal(leerEntorno(e).ok, true, e);
+    assert.equal(entornos.ENTORNO_DEL_BANCO, "produccion", "sin declarar, el banco mide lo que medía: producción");
+  });
+
+  it("cada `export const entorno` del árbol vale uno de los dos", () => {
+    const malos = guiones
+      .map((g) => [g.nombre, entornos.entornoDelFuente(g.fuente)] as const)
+      .filter(([, e]) => !entornos.ENTORNOS.includes(e));
+    assert.deepEqual(malos, []);
+  });
+
+  it("…y al menos un guion mide cada entorno: sin eso, un grupo entero podría quedarse sin nadie", () => {
+    const declarados = new Set(guiones.map((g) => entornos.entornoDelFuente(g.fuente)));
+    assert.deepEqual([...declarados].sort(), ["desarrollo", "produccion"]);
+  });
+
+  it("el detector lee la declaración y no la prosa; el módulo valida lo que el fichero preselecciona", () => {
+    assert.equal(entornos.entornoDelFuente('export const entorno = "desarrollo";\n'), "desarrollo");
+    assert.equal(entornos.entornoDelFuente(" *  hoy `export const entorno = \"desarrollo\"` no está\n"), "produccion");
+    assert.equal(entornos.entornoDelFuente("export const aisla = [];\n"), "produccion");
+    assert.equal(entornos.entornoDeclarado("g", undefined), "produccion");
+    assert.equal(entornos.entornoDeclarado("g", "desarrollo"), "desarrollo");
+    assert.throws(() => entornos.entornoDeclarado("g", "prod"), /g: .*"prod"/);
+    assert.throws(() => entornos.entornoDeclarado("g", true), /g: /);
+  });
+
+  it("el runner agrupa por entorno SIN desordenar cada grupo (un reinicio de stack por grupo, no por guion)", () => {
+    const de: Record<string, string> = { a: "desarrollo", b: "produccion", c: "desarrollo", d: "produccion" };
+    assert.deepEqual(entornos.ordenarPorEntorno(["a", "b", "c", "d"], (g) => de[g]!), ["b", "d", "a", "c"]);
+    assert.deepEqual(entornos.ordenarPorEntorno(["d", "c", "b", "a"], (g) => de[g]!), ["d", "b", "c", "a"]);
   });
 });

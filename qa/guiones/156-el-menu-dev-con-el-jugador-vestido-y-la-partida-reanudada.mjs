@@ -38,7 +38,8 @@
  *     TODOS los tiles del save (`main.ts`: «TODOS los tiles del save se
  *     re-añaden»), y con el anillo 3×3 pre-generado son nueve. Desde #714 los
  *     que no son el activo RESTAURAN su arte ya pagado (carril de restauración
- *     de `PoliticaDeAtlas`, siempre `resolve_only`), así que al terminar ese
+ *     de `PoliticaDeAtlas`; desde la tanda AS, en producción con Imagen IA,
+ *     puede además pedir que se pinte lo que falte), así que al terminar ese
  *     carril las filas de atlas que quedan son las de los vecinos cuyo arte la
  *     librería NO tiene: arte pendiente de verdad, y el menú acierta al
  *     ofrecerlo. Cuántas son depende de la librería y del mundo, que este
@@ -48,8 +49,7 @@
  *     se exige es lo que el resume DEBE hacer, con uno o con nueve tiles: los
  *     tres skins re-pedidos hasta tener `idle`, el tile que PISA el jugador
  *     texturado otra vez, el carril de restauración vacío, ninguna fila del
- *     tile activo y ni una petición de atlas que pinte (lo ya pagado vuelve
- *     gratis). Que los vecinos con arte en la librería vuelvan texturados lo
+ *     tile activo y ni un pago de atlas nuevo (lo ya pagado vuelve gratis). Que los vecinos con arte en la librería vuelvan texturados lo
  *     mide el 160, que sí controla su mundo. Todo eso se afirma sobre la
  *     foto del MISMO tick que cumplió la espera —la que ella devuelve—, porque el estado no se queda
  *     quieto: al reanudar, los skins que acaban de llegar se RE-ARMAN un
@@ -80,6 +80,14 @@
 
 import { nuevaPartida, reanudar } from "../lib/sesion.mjs";
 import { esperarPartidaEnDisco } from "../lib/saves.mjs";
+import { URLS } from "../lib/stack.mjs";
+
+/** Los pagos de atlas que lleva anotados el motor falso (lo que habría costado). */
+async function pagosDeAtlas() {
+  const res = await fetch(`${URLS.fake_ai}/dev/counters`);
+  if (!res.ok) throw new Error(`fake /dev/counters HTTP ${res.status}`);
+  return (await res.json()).gasto.rutas["/generate_surface_atlas"] ?? 0;
+}
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -380,6 +388,7 @@ export default async function (ctx) {
   await ctx.shot("156-imagen-todo-generado");
 
   const antesDeVolver = { ...red };
+  const pagosAntesDeVolver = await pagosDeAtlas();
   const vueltaB = await reanudar(ctx, partidaB.sessionId);
   if (!vueltaB) return ctx.sinMedir("no se pudo reanudar la partida de imagen");
   await ctx.page.evaluate(instalarElModelo);
@@ -443,11 +452,18 @@ export default async function (ctx) {
       red.skins > antesDeVolver.skins,
       `skins antes ${antesDeVolver.skins} → ${red.skins}`,
     );
+    // Hasta la tanda AS esto afirmaba «ni una petición de atlas sin
+    // `resolve_only`». Qué puede PEDIR un vecino al reanudar es hoy
+    // configuración (`gatesDeImagen`): en producción —el entorno del banco—
+    // con Imagen IA puede pedir que se pinte lo que le falte. Lo que hace
+    // gratis el resume es que lo pagado no se vuelva a PAGAR, y eso se mide
+    // donde se paga.
+    const pagosTrasVolver = await pagosDeAtlas();
     ctx.expect(
-      "…y restaurar NO volvió a pintar: ni una petición de atlas sin `resolve_only`, que es lo que hace que " +
+      "…y restaurar NO volvió a pagar: el motor falso no anota ningún atlas nuevo, que es lo que hace que " +
         "reanudar sea gratis",
-      red.atlasPintando === antesDeVolver.atlasPintando,
-      `atlas pintando antes ${antesDeVolver.atlasPintando} → ${red.atlasPintando}`,
+      pagosTrasVolver === pagosAntesDeVolver,
+      `pagos de atlas antes ${pagosAntesDeVolver} → ${pagosTrasVolver} · POST pintando ${antesDeVolver.atlasPintando} → ${red.atlasPintando}`,
     );
   }
   ctx.log(`   red: ${JSON.stringify(red)}`);

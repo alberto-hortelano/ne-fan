@@ -497,6 +497,19 @@ start_bridge() {
     if on fake-ai; then
         extra_env+=("NEFAN_AI_SERVER=http://127.0.0.1:$PORT_FAKE")
     fi
+    # El ENTORNO de la corrida (¿pueden los caminos automáticos pagar arte
+    # nuevo?). Lo LEE solo el bridge (`leerEntorno`, gates-de-imagen.ts); aquí
+    # solo se le pasa. Se respeta lo que traiga quien lanza; sin nada, el
+    # defecto del bridge es `desarrollo` (no se paga), SALVO con el motor falso
+    # arriba: ahí pagar es gratis y el banco mide el comportamiento de
+    # producción, así que sin la variable vale `produccion`.
+    local entorno="${NEFAN_ENTORNO:-}"
+    if [[ -z "$entorno" ]] && on fake-ai; then
+        entorno="produccion"
+    fi
+    if [[ -n "$entorno" ]]; then
+        extra_env+=("NEFAN_ENTORNO=$entorno")
+    fi
     ( cd "$PROJECT_DIR/nefan-core" && exec env "${extra_env[@]}" \
         NEFAN_BRIDGE_PORT="$PORT_BRIDGE" NEFAN_STATE_HTTP_PORT="$PORT_STATE" \
         npx tsx bridge/ws-server.ts ) \
@@ -505,6 +518,9 @@ start_bridge() {
     track_started "$bridge_pid" "$PORT_BRIDGE" "$PORT_STATE"
     wait_for_port "$PORT_BRIDGE" 30 "bridge" "$bridge_pid" "$LOG_DIR/nefan-bridge.log" || return 1
     echo "✅ bridge :$PORT_BRIDGE (State API :$PORT_STATE)  (log: $LOG_DIR/nefan-bridge.log)"
+    echo "   entorno: ${entorno:-desarrollo} — $( [[ "${entorno:-desarrollo}" == produccion ]] \
+        && echo 'los caminos automáticos PUEDEN pagar arte nuevo' \
+        || echo 'solo se restaura lo ya pagado (NEFAN_ENTORNO=produccion para generar)')"
 }
 
 start_fake_ai() {

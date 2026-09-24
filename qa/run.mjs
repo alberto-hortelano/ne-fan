@@ -97,9 +97,12 @@ import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // El sondeo y la espera por puerto viven en UN sitio: llegó a haber cinco
 // copias con relojes ya divergidos (500 ms / 800 ms), y la que elige el
 // bloque decide si dos corridas colisionan — el criterio 3 entero.
-import { puertoOcupado, esperarPuertoArriba } from "./lib/puertos.mjs";
+import { puertoOcupado, esperarPuertoArriba, esperarPuertoLibre } from "./lib/puertos.mjs";
 import { VERDE, ROJO, SIN_MEDIR, ICONO, exitDeCorrida, veredictoDeGuion } from "./lib/veredictos.mjs";
 import { ctxDeSonda, presupuestoConducido } from "./lib/sonda.mjs";
+// El ENTORNO de cada guion (tanda AS): contra qué techo de gasto mide. Puro,
+// con su test en core (`el-banco-declara-el-modo-de-gasto.test.ts`).
+import { ENTORNO_DEL_BANCO, entornoDeclarado, entornoDelFuente, ordenarPorEntorno } from "./lib/entornos.mjs";
 // Cómo se compone la URL de la página: pura, y con su propio test en core
 // (`test/url-del-bench.test.ts`). Estaba aquí dentro como una concatenación de
 // cadenas, y ahí es donde nadie la miraba (#476).
@@ -437,7 +440,7 @@ async function hojasBaseQueFaltan() {
   );
 }
 
-async function ensureStack() {
+async function ensureStack(entorno) {
   // `vivos` y `ocupados` eran la misma lista con dos nombres, y de `vivos`
   // solo se leía `.length`.
   const ocupados = [];
@@ -475,7 +478,7 @@ async function ensureStack() {
   // Por SLUG, no por número: los números de preset se renumeran cuando muere
   // uno, y entonces esto levantaría otro stack y fallaría por timeout sin decir
   // por qué.
-  console.log("· arrancando ./start.sh --preset e2e-sin-creditos…");
+  console.log(`· arrancando ./start.sh --preset e2e-sin-creditos (entorno ${entorno})…`);
   console.log(`· disco efímero: ${TMP}`);
   const child = spawn("./start.sh", ["--preset", "e2e-sin-creditos"], {
     cwd: repoRoot,
@@ -497,6 +500,11 @@ async function ensureStack() {
       NEFAN_GAMES_DIR: TMP_GAMES,
       NEFAN_LOG_DIR: TMP_LOGS,
       NEFAN_PORT_OFFSET: String(OFFSET),
+      // El entorno del GRUPO de guiones que va a medir este stack (tanda AS).
+      // Se ESCRIBE siempre, también el de producción: si se heredara del
+      // shell de quien lanza, un `NEFAN_ENTORNO` exportado cambiaría en
+      // silencio contra qué mide todo el banco.
+      NEFAN_ENTORNO: entorno,
     },
   });
   child.stdout.on("data", (b) => process.env.QA_VERBOSE && process.stdout.write(`  | ${b}`));
@@ -504,6 +512,53 @@ async function ensureStack() {
   for (const [port, label] of PUERTOS_DEL_STACK) await esperarPuertoArriba(port, { quien: label });
   console.log("· stack listo");
   return child;
+}
+
+/** Para el stack que arrancó esta corrida y espera a que suelte sus puertos,
+ *  para levantar el del SIGUIENTE grupo de entorno (tanda AS). Mata por el
+ *  grupo de procesos del hijo, que es lo que esta corrida posee — nunca por
+ *  puerto. Lanza si un puerto no se suelta: arrancar encima daría un stack a
+ *  medias que mediría otra cosa. */
+async function pararStack(child) {
+  // Se espera a que el LAUNCHER salga, no solo a los puertos: su `trap EXIT`
+  // sigue limpiando «sus» puertos después de soltarlos, y si el stack nuevo
+  // ya los ha tomado se lo lleva por delante (medido: «el puerto del motor falso sigue ocupado
+  // tras parar su proceso — liberándolo» con el fake NUEVO dentro, y el bridge
+  // nuevo muerto con exit 143).
+  const salio = child.exitCode !== null || child.signalCode !== null
+    ? Promise.resolve()
+    : new Promise((r) => child.once("exit", r));
+  try {
+    process.kill(-child.pid, "SIGINT");
+  } catch {
+    console.log("· el stack ya no estaba");
+  }
+  let reloj;
+  const aTiempo = await Promise.race([
+    salio.then(() => true),
+    new Promise((r) => {
+      reloj = setTimeout(() => r(false), 60_000);
+    }),
+  ]);
+  clearTimeout(reloj);
+  if (!aTiempo) throw new Error("el launcher del stack del grupo anterior no salió en 60 s tras SIGINT");
+  for (const [port, label] of PUERTOS_DEL_STACK) {
+    if (!(await esperarPuertoLibre(port, { maxMs: 30_000 }))) {
+      throw new Error(`${label} (:${port}) no soltó el puerto tras parar el stack del grupo anterior`);
+    }
+  }
+}
+
+/** ¿Contra qué entorno corre el stack que sirve esta página? Lo dijo el bridge
+ *  en su `bridge_hello` y el cliente lo publica en `__nefan.entorno` (`null`
+ *  hasta que llega). Se espera por ESTADO, con un techo: sin hello no hay a
+ *  quién creer, y eso es un ⊘ con motivo, no un defecto supuesto. */
+async function entornoDeLaPagina(ctx) {
+  const r = await ctx.page
+    .waitForFunction(() => window.__nefan?.entorno ?? null, null, { timeout: 15_000 })
+    .then((h) => h.jsonValue())
+    .catch(() => null);
+  return r;
 }
 
 /** El stack que arrancó ESTA corrida (null = ya había uno). Lo guarda el
@@ -1261,6 +1316,17 @@ async function main() {
     console.error(`--orden "${ORDEN}" no existe (vale alfabetico|inverso)`);
     process.exit(2);
   }
+  // Un stack por ENTORNO (tanda AS): los de cada entorno van seguidos, y el
+  // stack se reinicia solo al cambiar de grupo. Se lee del FICHERO para no
+  // importar nada aquí; el `export` del módulo lo valida `entornoDeclarado`.
+  const entornoDelFichero = new Map(
+    guiones.map((f) => [f, entornoDelFuente(readFileSync(join(here, "guiones", f), "utf8"))]),
+  );
+  const conPagina = (f) => !DECLARA_SIN_NAVEGADOR.test(readFileSync(join(here, "guiones", f), "utf8"));
+  const ordenados = ordenarPorEntorno(guiones, (f) => entornoDelFichero.get(f));
+  guiones.splice(0, guiones.length, ...ordenados);
+  /** El entorno del primer guion que abre página: con él nace el stack. */
+  const entornoInicial = entornoDelFichero.get(guiones.find(conPagina) ?? guiones[0]);
 
   if (guiones.length === 0) {
     console.error(
@@ -1302,8 +1368,11 @@ async function main() {
   // puertos (#655). `stack = null` es el mismo valor que con un stack ajeno,
   // pero el aviso de abajo no aplica: aquí no hay stack NINGUNO, y decirle a
   // quien lee «usa SU disco» sería falso.
-  const stack = SIN_NAVEGADOR ? null : await ensureStack();
+  let stack = SIN_NAVEGADOR ? null : await ensureStack(entornoInicial);
   stackPropio = stack;
+  /** El entorno del stack PROPIO en pie (con uno ajeno no se sabe hasta
+   *  preguntarle a la página, y no se puede cambiar). */
+  let entornoDelStack = stack ? entornoInicial : null;
   // Los tmp de corridas muertas se borran AQUÍ y no en `prepararDisco()`, y el
   // orden es el arreglo entero de #283: mientras no se sepa si el stack lo
   // arrancó esta corrida, uno de esos directorios puede ser el disco que el
@@ -1382,6 +1451,7 @@ async function main() {
     // Precondición DECLARADA del guion, ejecutada antes de abrir su página.
     let exento = false;
     let sinPagina = false;
+    let entornoDelGuion = ENTORNO_DEL_BANCO;
     try {
       exento = exentoDeMotor(nombre, mod.sinMotor);
       if (exento) console.log(`    ⛨ sin motor: ${mod.sinMotor}`);
@@ -1396,6 +1466,27 @@ async function main() {
           "el fichero declara `sinNavegador` pero el módulo no lo exporta como una frase: la " +
             "preselección y la declaración tienen que decir lo mismo",
         );
+      }
+      // El entorno que declara el MÓDULO tiene que ser el que se leyó del
+      // fichero para ordenar: si no, este guion va en el grupo equivocado.
+      entornoDelGuion = entornoDeclarado(nombre, mod.entorno);
+      if (entornoDelGuion !== entornoDelFichero.get(file)) {
+        throw new Error(
+          `el módulo declara el entorno ${JSON.stringify(entornoDelGuion)} y el fichero se leyó como ` +
+            `${JSON.stringify(entornoDelFichero.get(file))}: escribe la declaración como ` +
+            "`export const entorno = \"…\";` en una línea",
+        );
+      }
+      if (entornoDelGuion !== ENTORNO_DEL_BANCO) console.log(`    ◈ entorno: ${entornoDelGuion}`);
+      // Cambio de grupo con stack PROPIO: se para y se levanta el del entorno
+      // nuevo sobre el MISMO disco efímero. Los guiones sin página no miran el
+      // stack y no fuerzan reinicios.
+      if (stack && !sinPagina && entornoDelGuion !== entornoDelStack) {
+        console.log(`· cambio de entorno: ${entornoDelStack} → ${entornoDelGuion}; reiniciando el stack…`);
+        await pararStack(stack);
+        stack = await ensureStack(entornoDelGuion);
+        stackPropio = stack;
+        entornoDelStack = entornoDelGuion;
       }
       const hechos = await aislar(nombre, mod.aisla, Boolean(stack));
       if (hechos.length) console.log(`    ⟲ aisla: ${hechos.join(" · ")}`);
@@ -1441,6 +1532,17 @@ async function main() {
       if (page) {
         await page.goto(URL_PAGINA, { waitUntil: "domcontentloaded" });
         await ctx.waitFor("window.__nefan disponible", () => Boolean(window.__nefan));
+        // ¿Mide contra el entorno que declara? Con stack propio lo garantiza el
+        // reinicio de arriba y esto lo COMPRUEBA; con uno ajeno (`--url`,
+        // `--adoptar`) es la única red: no se puede reiniciar lo que no es tuyo.
+        const delStack = await entornoDeLaPagina(ctx);
+        if (delStack !== entornoDelGuion) {
+          sinMedir =
+            delStack === null
+              ? `el bridge no dijo su entorno (sin \`bridge_hello\` en 15 s) y este guion mide contra «${entornoDelGuion}»`
+              : `el stack corre en «${delStack}» y este guion mide contra «${entornoDelGuion}»` +
+                (stack ? "" : " — el stack es ajeno (--url/--adoptar) y no se puede reiniciar");
+        }
       }
       // ── Guardarraíl de gasto (#295) ──────────────────────────────────────
       // Aquí y no en el guion: la obligación de preguntar vivía en un prólogo
@@ -1467,12 +1569,13 @@ async function main() {
       // desenlace del descuido sigue siendo el barato y no el caro: un guion sin
       // navegador que NO declare `sinMotor` no corre — ⊘ y a otra cosa. Lo que
       // no se puede es correr un cuerpo sin gatear y sin poder gatear (#655).
-      if (!exento && !page) {
+      // Con `sinMedir` ya puesto (entorno equivocado) no se pregunta nada más.
+      if (!sinMedir && !exento && !page) {
         sinMedir =
           "declara `sinNavegador` y NO declara `sinMotor`: sin página no se puede ejercer el " +
           "guardarraíl de gasto (son dos `/health` desde el cliente), así que el runner no puede " +
           "garantizar que su cuerpo no llame a un motor que cobra. Declara las dos cosas.";
-      } else if (!exento) {
+      } else if (!sinMedir && !exento) {
         const d = await diagnosticoDeCreditos(ctx);
         if (!d.ok) sinMedir = `el guardarraíl de gasto se niega: ${d.motivo}`;
         else ctx.log(`⛨ guardarraíl: ${d.motivo}`);

@@ -43,17 +43,25 @@
  *   3 · Hubo descargas `/cache/surface/` tras reanudar (sin ellas, «textured»
  *       no puede ser verdad).
  *   4 · En Imagen IA, **nada pintó al reanudar** (el contador de pago del
- *       motor falso no se mueve) y todo POST posterior al resume que PUEDE
- *       pintar (sin `resolve_only`) lleva el `layout_key` del tile activo; los
- *       del otro tile llevan TODOS `resolve_only`. El POST no lleva la clave
- *       del tile; `layout_key` = hash del layout + estilo, y lo identifica. En
- *       el falso el tile equivocado sale $0 porque sus celdas ya se pintaron en
- *       la partida; el `layout_key` y el `resolve_only` son lo que delata su
- *       POST. Desde #714 el otro tile SÍ pregunta —restaura su arte ya pagado
- *       por el carril de restauración de `PoliticaDeAtlas`, que nunca pinta—,
- *       así que «ningún POST del otro tile» dejó de ser la frase: la de ahora
- *       es «ninguno que pueda pintar», y en Imagen IA el otro tile acaba
- *       texturado (textured ∋ otro).
+ *       motor falso no se mueve) y el atlas se pide PRIMERO para el tile
+ *       activo: los POST del otro tile van todos DETRÁS. Hasta la tanda AS se
+ *       afirmaba además que los del otro tile llevaban `resolve_only`; eso lo
+ *       decide hoy la configuración de gasto (`gatesDeImagen`), y en
+ *       producción —el entorno del banco— el otro tile en Imagen IA PUEDE
+ *       pintar lo que le falte (el 180 lo mide). En Maqueta 3D sí se exige
+ *       `resolve_only` en todos, que es el modo de la partida. El POST no
+ *       lleva la clave del tile; `layout_key` = hash del layout + estilo, y lo
+ *       identifica. En el falso el tile equivocado sale $0 porque sus celdas
+ *       ya se pintaron en la partida; el `layout_key` y el ORDEN son lo que
+ *       delata su POST. En Imagen IA el otro tile acaba texturado
+ *       (textured ∋ otro).
+ *       PROBADO EN NEGATIVO el aserto del ORDEN (2026-09-24, tanda AS): con el
+ *       resume añadiendo la escena activa la ÚLTIMA (`main.ts`,
+ *       `[...resto, activa]`, o sea #390) sale ROJO en los dos bloques. LO QUE
+ *       NO VE: que el carril de los vecinos deje de ESPERAR al activo
+ *       (`siguienteRestauracion` sin mirar `#pendientes`) — en el falso el
+ *       activo termina antes de que el vecino llegue a salir y el orden sale
+ *       igual; eso lo sujeta `nefan-core/test/politica-de-atlas.test.ts`.
  *   5 · **A3, la guarda que no puede regresar** (la deduplicación por clave de
  *       `PoliticaDeAtlas`, en core desde la PR 3 de #241; entonces el Set
  *       `pendingTiles` del controller: la MISMA clave disparada dos veces antes
@@ -430,12 +438,19 @@ export default async function (ctx) {
     });
     const postsResume = atlasPosts.slice(postsAntes);
     const claveActivo = layoutKeyDe[r.estado.activeTile] ?? null;
+    // El ORDEN es #390: el tile equivocado corría primero y superaba al del
+    // jugador. Desde #714 el otro tile SÍ pregunta —por su carril, que espera
+    // a que el activo termine—, y desde la tanda AS lo que PUEDE hacer (pintar
+    // o solo restaurar) es configuración (`gatesDeImagen`), no una regla por
+    // rol: en producción con Imagen IA pinta lo que le falte, igual que el
+    // activo. Así que lo que este guion defiende ya no es «el otro solo
+    // restaura», sino que va DETRÁS del activo.
+    const idxActivo = postsResume.flatMap((b, i) => (b?.layout_key === claveActivo ? [i] : []));
+    const idxOtros = postsResume.flatMap((b, i) => (b?.layout_key !== claveActivo ? [i] : []));
     ctx.expect(
-      `${etiqueta} · todo POST del atlas tras reanudar que puede PINTAR es del tile ACTIVO; los del otro tile, ` +
-        "todos resolve_only (#714: restaura, nunca pinta)",
-      claveActivo !== null &&
-        postsResume.every((b) => b?.layout_key === claveActivo || b?.resolve_only === true) &&
-        postsResume.some((b) => b?.layout_key === claveActivo),
+      `${etiqueta} · tras reanudar el atlas se pide PRIMERO para el tile ACTIVO; los POST del otro tile van ` +
+        "todos DETRÁS (su carril espera a que el activo termine, #390/#714)",
+      claveActivo !== null && idxActivo.length > 0 && idxOtros.every((i) => i > Math.max(...idxActivo)),
       JSON.stringify({
         activo: r.estado.activeTile,
         claves: layoutKeyDe,
@@ -448,7 +463,7 @@ export default async function (ctx) {
       pagosDeAtlas(gastoDespues) === pagosDeAtlas(gastoAntes),
       JSON.stringify({ antes: gastoAntes.rutas, despues: gastoDespues.rutas }),
     );
-    return { r, quieto };
+    return { r, quieto, postsResume };
   }
 
   // ── 1 · Imagen IA: la partida pinta; reanudar no pinta y textura el ACTIVO ──
@@ -494,7 +509,12 @@ export default async function (ctx) {
     p2.fps.activeTile === p2.vecino && p2.fps.textured.includes(p2.vecino),
     JSON.stringify(p2.fps),
   );
-  await reanudarYAfirmar(p2, "Maqueta 3D", { otroSinArte: true });
+  const v2 = await reanudarYAfirmar(p2, "Maqueta 3D", { otroSinArte: true });
+  ctx.expect(
+    "Maqueta 3D · en maqueta todo POST del atlas tras reanudar lleva resolve_only: el modo de la partida no pide pintar",
+    (v2?.postsResume ?? []).length > 0 && v2.postsResume.every((b) => b?.resolve_only === true),
+    JSON.stringify((v2?.postsResume ?? []).map((b) => ({ layout_key: b?.layout_key, resolve_only: b?.resolve_only }))),
+  );
   const gasto4 = await gastoDelFake();
   ctx.expect(
     "Maqueta 3D · en todo el bloque el motor falso no anotó ningún pago de atlas",

@@ -10,7 +10,7 @@
  * No silent fallbacks: when a sheet/skin can't be loaded the API throws and
  * the ErrorLog records the cause. The caller decides whether to surface it.
  */
-import type { SkinSpriteSheetResponse } from "@nefan-core/src/contracts/remote-gen.js";
+import { esSinArte, type SkinSpriteSheetResponse } from "@nefan-core/src/contracts/remote-gen.js";
 import type { SpriteSheetMeta } from "@nefan-core/src/contracts/sprite-forge.js";
 import { AVISO_PERSONAJES, errors } from "../ui/error-log.js";
 
@@ -21,6 +21,12 @@ import { AVISO_PERSONAJES, errors } from "../ui/error-log.js";
 const BASE_HERO_MODEL = "y_bot";
 
 export const SPRITE_PENDING = Symbol("sprite-pending");
+
+/** Lo que devuelve un skin pedido con `resolveOnly` cuando NO está pagado: ni
+ *  un sheet ni un error. Es un valor propio y no `null` para que «no hay arte»
+ *  no se colapse con nada — tratarlo como fallo fundiría el fusible de skins
+ *  con cada NPC nuevo en desarrollo. */
+export const SIN_ARTE = Symbol("sin-arte");
 export type SpriteImageResult = HTMLImageElement | typeof SPRITE_PENDING;
 
 /** La forma del meta.json (base local o sheet vestido) vive en el contrato:
@@ -56,7 +62,7 @@ export class SpriteRenderer {
    *  diálogo los reuse sin generar nada. */
   private heroes = new Map<string, string>();
   private inflight = new Map<string, Promise<SpriteSheet>>();
-  private skinInflight = new Map<string, Promise<SpriteSheet>>();
+  private skinInflight = new Map<string, Promise<SpriteSheet | typeof SIN_ARTE>>();
 
   /** baseUrl = sheets estáticos locales (/sprites, Vite); aiServerUrl = base
    *  de remote-gen (/skin_sprite_sheet, proceso propio desde F4); assetsUrl = frames
@@ -96,14 +102,20 @@ export class SpriteRenderer {
 
   /** Ask ai_server to img2img each frame of a Mixamo sheet with the given
    *  character prompt and register the result under a synthetic model name.
-   *  Throws on HTTP failure or invalid response shape — no silent nulls. */
+   *  Throws on HTTP failure or invalid response shape — no silent nulls.
+   *
+   *  `resolveOnly`: solo lo YA PAGADO (el carril de los caminos automáticos en
+   *  desarrollo). Si remote-gen no lo tiene, devuelve `SIN_ARTE` y no se ha
+   *  generado nada. Sin él, `SIN_ARTE` es una violación de contrato y lanza. */
   async loadSkinnedAnimation(
     baseModel: string,
     anim: string,
     angle: string,
     skinPrompt: string,
     styleRole?: string,
-  ): Promise<SpriteSheet> {
+    opts: { resolveOnly?: boolean } = {},
+  ): Promise<SpriteSheet | typeof SIN_ARTE> {
+    const resolveOnly = opts.resolveOnly === true;
     if (!skinPrompt) {
       const msg = "loadSkinnedAnimation called with empty skinPrompt";
       errors.push("sprite", msg);
@@ -113,10 +125,13 @@ export class SpriteRenderer {
     const cacheKey = `${skinnedModel}/${anim}/${angle}`;
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
-    const pending = this.skinInflight.get(cacheKey);
+    // La petición EN VUELO es por intención: una `resolveOnly` que acaba en
+    // `SIN_ARTE` no le vale a quien pidió generar, ni al revés.
+    const vueloKey = resolveOnly ? `${cacheKey}|solo-pagado` : cacheKey;
+    const pending = this.skinInflight.get(vueloKey);
     if (pending) return pending;
 
-    const promise = (async () => {
+    const promise = (async (): Promise<SpriteSheet | typeof SIN_ARTE> => {
       try {
         const res = await fetch(`${this.aiServerUrl}/skin_sprite_sheet`, {
           method: "POST",
@@ -131,6 +146,7 @@ export class SpriteRenderer {
             // el server cae a "commoner" — TODOS los skins usaban esa ref
             // (bug latente hasta 2026-08-18).
             ...(styleRole ? { style_role: styleRole } : {}),
+            ...(resolveOnly ? { resolve_only: true } : {}),
           }),
         });
         if (!res.ok) {
@@ -146,6 +162,12 @@ export class SpriteRenderer {
         // HTTPException): un 200 sin ok=true es una violación de contrato.
         if (!data.ok) {
           throw new Error("ai_server /skin_sprite_sheet: respuesta 200 sin ok=true (viola SkinSpriteSheetResponse)");
+        }
+        if (esSinArte(data)) {
+          if (!resolveOnly) {
+            throw new Error("ai_server /skin_sprite_sheet: sin_arte a una petición que pedía generar (viola SkinSpriteSheetResponse)");
+          }
+          return SIN_ARTE;
         }
         const meta = data.meta;
         if (data.hero_url) {
@@ -169,10 +191,10 @@ export class SpriteRenderer {
         // character-sprites los registra UNA vez con contexto (y decide
         // desactivar los skins de la sesión) — loguear en ambas capas
         // duplicaba cada fallo en consola.
-        this.skinInflight.delete(cacheKey);
+        this.skinInflight.delete(vueloKey);
       }
     })();
-    this.skinInflight.set(cacheKey, promise);
+    this.skinInflight.set(vueloKey, promise);
     return promise;
   }
 

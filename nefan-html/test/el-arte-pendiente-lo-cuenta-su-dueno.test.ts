@@ -79,7 +79,7 @@ function controladorDeAtlas(tiles: string[]) {
     apply: () => {},
     clear: () => {},
     tilesSinAtlas: () => tiles,
-    generationOn: () => false,
+    modoDeEscenarios: () => "restaurar",
     log: () => {},
   };
   const ctrl = new ControladorConVueloFingido({ remote: "", assets: "", state: "" }, deps);

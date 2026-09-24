@@ -1432,6 +1432,85 @@ describe("fronteras arquitectónicas", () => {
     );
   });
 
+  it("[error] el-entorno-se-lee-en-un-solo-sitio: leer NEFAN_ENTORNO fuera del bridge salta en las cuatro formas; pasarlo y nombrarlo no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files)
+        .filter((v) => v.ruleId === "el-entorno-se-lee-en-un-solo-sitio")
+        .map((v) => `${v.path}:${v.line}`);
+
+    assert.deepEqual(
+      deLaRegla([
+        {
+          // La tentación exacta: el cliente decidiendo el techo por su cuenta.
+          path: "nefan-html/src/ui/modos-de-graficos.ts",
+          text: 'const e = process.env.NEFAN_ENTORNO ?? "desarrollo";\n',
+          imports: [],
+        },
+        {
+          path: "labs/narrative/fake-ai-server.ts",
+          text: 'const e = process.env["NEFAN_ENTORNO"];\nconst { NEFAN_ENTORNO } = process.env;\n',
+          imports: [],
+        },
+        {
+          path: "ai_server/routers/remote_generation.py",
+          text: 'ENTORNO = os.environ.get("NEFAN_ENTORNO", "desarrollo")\nE = os.getenv("NEFAN_ENTORNO")\n',
+          imports: [],
+        },
+      ]),
+      [
+        "ai_server/routers/remote_generation.py:1",
+        "ai_server/routers/remote_generation.py:2",
+        "labs/narrative/fake-ai-server.ts:1",
+        "labs/narrative/fake-ai-server.ts:2",
+        "nefan-html/src/ui/modos-de-graficos.ts:1",
+      ],
+      "cada lector que no es el bridge es una segunda configuración",
+    );
+
+    // Lo que NO es leer: el dueño, quien ESCRIBE la variable en el entorno de
+    // un hijo (el runner del banco) y la prosa que la nombra.
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-core/bridge/ws-server.ts",
+          text: "const r = leerEntorno(process.env.NEFAN_ENTORNO);\n",
+          imports: [],
+        },
+        {
+          path: "qa/run.mjs",
+          text: 'env: { ...process.env, NEFAN_ENTORNO: entorno },\n',
+          imports: [],
+        },
+        {
+          path: "nefan-html/src/ui/mode-labels.ts",
+          text: '"solo se restaura lo ya pagado (NEFAN_ENTORNO=produccion para generar)";\n',
+          imports: [],
+        },
+      ]),
+      [],
+    );
+  });
+
+  it("[error] el-cliente-no-decide-el-gasto-por-el-build: PROD y MODE saltan; DEV no", () => {
+    const deLaRegla = (files: SourceFile[]) =>
+      checkArchitecture(config, files)
+        .filter((v) => v.ruleId === "el-cliente-no-decide-el-gasto-por-el-build")
+        .map((v) => `${v.path}:${v.line}`);
+    assert.deepEqual(
+      deLaRegla([
+        {
+          path: "nefan-html/src/ui/modos-de-graficos.ts",
+          text:
+            'const techo = import.meta.env.PROD ? "produccion" : "desarrollo";\n' +
+            'if (import.meta.env.MODE === "production") generar();\n' +
+            "if (import.meta.env.DEV) instalarHook();\n",
+          imports: [],
+        },
+      ]),
+      ["nefan-html/src/ui/modos-de-graficos.ts:1", "nefan-html/src/ui/modos-de-graficos.ts:2"],
+    );
+  });
+
   it("[error] three-solo-en-fps-gl: cualquier otro importador de three salta", () => {
     const deLaRegla = (files: SourceFile[]) =>
       checkArchitecture(config, files).filter((v) => v.ruleId === "three-solo-en-fps-gl");

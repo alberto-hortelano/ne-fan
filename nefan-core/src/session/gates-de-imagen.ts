@@ -5,7 +5,9 @@
  *  de escenarios. Esa regla decidía gasto real desde cuatro sitios que la
  *  compartían por lectura (#508): el chip del cliente, el badge del save en el
  *  título, la creación de la partida en el bridge y el cambio de modo de core.
- *  Aquí vive una vez, y los cuatro la llaman.
+ *  Aquí vive una vez, y los cuatro la llaman. Y encima de los modos, el
+ *  TECHO del entorno (`Entorno`, 2026-09-24): en desarrollo ningún camino
+ *  automático paga arte nuevo, solo restaura lo pagado.
  *
  *  Módulo PURO: no lee `localStorage`, ni la config, ni el DOM. El cliente
  *  lee sus toggles y los pasa como booleanos; el bridge y core pasan lo que
@@ -89,6 +91,58 @@ export function modoEfectivoDePersonajes(f: FacetasDeModo): Modo {
   return f.characterMode || f.renderMode;
 }
 
+/** EL ENTORNO DE LA CORRIDA: si los caminos AUTOMÁTICOS pueden pagar arte
+ *  nuevo, o solo reusar lo ya pagado.
+ *
+ *  Decisión del usuario (2026-09-24): *«Los assets ya pagados o no es algo que
+ *  tenemos que sacar del código, debe ser configuración y no volver a generar
+ *  por defecto mientras estemos en desarrollo, no queremos que recargas
+ *  automáticas y pruebas gasten créditos, pero cuando estemos en prod sí.»*
+ *  Hasta ese día la regla vivía en dos literales de código: el modo con el que
+ *  nace una partida y un `activo &&` que dejaba a los vecinos sin pintar nunca
+ *  (#714). Ahora es un DATO que entra aquí, y el código solo lo aplica.
+ *
+ *  Es un TECHO de «Imagen IA», no su sustituto: el modo de la partida lo sigue
+ *  eligiendo el jugador (título, chip, save), y el entorno solo puede bajar un
+ *  `generar` a `restaurar`. Nunca sube nada: un save en maqueta sigue en
+ *  maqueta en producción.
+ *
+ *  Lo que NO toca: las vías DELIBERADAS (tecla G y menú dev, aplicar un estilo
+ *  con su cotización, subir un estilo y confirmar su `/complete`). No pasan por
+ *  estos gates; quien las pulsa ya ha elegido pagar.
+ *
+ *  UNA fuente: la variable `NEFAN_ENTORNO`, que lee SOLO el bridge al arrancar
+ *  (`leerEntorno`) y le dice al cliente con `bridge_hello`. Candado
+ *  `el-entorno-se-lee-en-un-solo-sitio` en `arch-rules.json`. */
+export type Entorno = "desarrollo" | "produccion";
+
+/** Sin tocar nada, desarrollo: lo que sale por defecto es lo que NO gasta. */
+export const ENTORNO_POR_DEFECTO: Entorno = "desarrollo";
+
+/** La variable del entorno, a un `Entorno`. Ausente o vacía ⇒ el defecto;
+ *  cualquier otra cosa que no sea uno de los dos nombres es un ERROR, no un
+ *  «desarrollo» callado: quien escribe `prod` quería producción y se
+ *  encontraría sin generar sin saber por qué. `Result` y no un `Entorno` a
+ *  secas porque «no me lo dijeron» y «me dijeron algo que no entiendo» no
+ *  pueden colapsarse. */
+export function leerEntorno(
+  raw: string | undefined,
+): { ok: true; entorno: Entorno } | { ok: false; error: string } {
+  if (raw === undefined || raw === "") return { ok: true, entorno: ENTORNO_POR_DEFECTO };
+  if (raw === "desarrollo" || raw === "produccion") return { ok: true, entorno: raw };
+  return {
+    ok: false,
+    error: `NEFAN_ENTORNO=${JSON.stringify(raw)} no es un entorno: vale "desarrollo" o "produccion" (sin poner = "desarrollo")`,
+  };
+}
+
+/** ¿Deja este entorno que un camino automático PAGUE arte nuevo? Es la mitad
+ *  del techo, escrita una vez: la usan los gates de abajo y los rótulos del
+ *  cliente que tienen que decir por qué no se genera. */
+export function entornoPermiteGenerar(e: Entorno): boolean {
+  return e === "produccion";
+}
+
 export interface EntradaDeGates extends FacetasDeModo {
   /** Toggle local de personajes SIN sesión (fixtures). Lo lee el cliente de
    *  `localStorage`; aquí solo entra su valor.
@@ -101,17 +155,28 @@ export interface EntradaDeGates extends FacetasDeModo {
    *  NPCs descritos los pediría nada más cargar, y por eso su toggle nace
    *  OFF. */
   toggleLocalPersonajes: boolean;
+  /** El entorno de la corrida (techo de gasto automático). */
+  entorno: Entorno;
 }
 
+/** Qué hace un camino automático con el arte de ESCENARIOS: pedir que se
+ *  pinte lo que falte, o solo restaurar lo ya pagado (`resolve_only`). El
+ *  arte pagado se restaura SIEMPRE, también en maqueta. */
+export type PermisoDeEscenarios = "generar" | "restaurar";
+
+/** Y con el de PERSONAJES, que tiene una tercera: `base`, ni pedir ni
+ *  restaurar — la base y_bot, como hoy en maqueta (restaurar los skins ya
+ *  pagados en maqueta es otra decisión, sin tomar). */
+export type PermisoDePersonajes = "generar" | "restaurar" | "base";
+
 export interface GatesDeImagen {
-  /** ¿Se genera imagen NUEVA de escenario? */
-  escenarios: boolean;
-  /** ¿Se generan skins IA? */
-  personajes: boolean;
+  escenarios: PermisoDeEscenarios;
+  personajes: PermisoDePersonajes;
 }
 
 /** Los dos gates de gasto. Con la faceta elegida manda la faceta (`image`
- *  gasta, `vector` no).
+ *  quiere generar, `vector` no), y el entorno pone el TECHO: en desarrollo,
+ *  todo `generar` baja a `restaurar`.
  *
  *  Sin elegir —fixtures, sin partida— los dos se separan, y a propósito: los
  *  ESCENARIOS no se generan (no hay partida a la que pedirle el tile, así que
@@ -119,8 +184,10 @@ export interface GatesDeImagen {
  *  nada: #519); los PERSONAJES caen a su toggle local, que nace OFF para que
  *  una fixture con NPCs descritos no gaste créditos sin que nadie lo pida. */
 export function gatesDeImagen(f: EntradaDeGates): GatesDeImagen {
-  const escenarios = f.renderMode === "image";
+  const techo = entornoPermiteGenerar(f.entorno);
+  const escenarios: PermisoDeEscenarios = f.renderMode === "image" && techo ? "generar" : "restaurar";
   const efectivo = modoEfectivoDePersonajes(f);
-  const personajes = efectivo ? efectivo === "image" : f.toggleLocalPersonajes;
+  const quierePersonajes = efectivo ? efectivo === "image" : f.toggleLocalPersonajes;
+  const personajes: PermisoDePersonajes = !quierePersonajes ? "base" : techo ? "generar" : "restaurar";
   return { escenarios, personajes };
 }

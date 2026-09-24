@@ -30,6 +30,14 @@ devDeps— y por eso va escrita antes que el primer test:
   `qa/`, que arranca el juego y lo mira. El criterio no es «es difícil de
   montar» sino «lo que se afirma solo es cierto en un navegador».
 
+  **Un `fetch` INYECTADO no es red**, y es la única excepción escrita a lo de
+  arriba (tanda AS, `en-desarrollo-lo-automatico-no-paga.test.ts`): cuando lo
+  que se afirma es el CUERPO que un dueño del cliente manda —el `resolve_only`
+  que sale del permiso de core—, sustituir `globalThis.fetch` por un doble que
+  apunta y contesta es una costura entre el módulo y el contrato, no una
+  conversación con un servidor. Si lo que se afirma depende de lo que el
+  servidor HACE con ese cuerpo, ya no es de aquí.
+
 ## Dos reglas de convivencia
 
 1. **El banco vive FUERA de `src/`, y no es una preferencia.** El candado

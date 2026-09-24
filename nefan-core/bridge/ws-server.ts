@@ -39,6 +39,7 @@ import {
 import { difundirSalidasDeLosTilesCargados } from "./salidas.js";
 import type { CombatConfig } from "../src/types.js";
 import type { ServerMessage } from "../src/protocol/messages.js";
+import { leerEntorno } from "../src/session/gates-de-imagen.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Resolve paths relative to project root (works from both src/ and dist/)
@@ -61,6 +62,18 @@ const SAVES_DIR = process.env.NEFAN_SAVES_DIR ?? resolve(dataDir, "..", "..", "s
  *  histórico y gana (lo usa el bench de labs/narrative documentado);
  *  @deprecated — usar NEFAN_URL_NARRATIVE_LLM (contrato F1); retirada en F5. */
 const AI_SERVER_URL = process.env.NEFAN_AI_SERVER ?? resolveServiceUrl("narrative-llm", process.env);
+/** EL ENTORNO de esta corrida: si los caminos automáticos del cliente pueden
+ *  pagar arte nuevo (`produccion`) o solo restaurar lo pagado (`desarrollo`,
+ *  el defecto). Se lee AQUÍ y en ningún otro proceso (candado
+ *  `el-entorno-se-lee-en-un-solo-sitio`), y viaja al cliente en el
+ *  `bridge_hello` de cada socket. Un valor que no se entiende PARA el
+ *  arranque: arrancar en desarrollo cuando se pidió «prod» dejaría a quien lo
+ *  pidió sin generar y sin saber por qué. */
+const ENTORNO = (() => {
+  const r = leerEntorno(process.env.NEFAN_ENTORNO);
+  if (!r.ok) throw new Error(`Bridge: ${r.error}`);
+  return r.entorno;
+})();
 
 // Load combat config
 const configPath = resolve(dataDir, "combat_config.json");
@@ -185,6 +198,12 @@ process.on("unhandledRejection", (reason) => {
 
 const wss = new WebSocketServer({ port: PORT });
 console.log(`NEFan Logic Bridge listening on ws://localhost:${PORT}`);
+console.log(
+  `Bridge: entorno ${ENTORNO} — ` +
+    (ENTORNO === "produccion"
+      ? "los caminos automáticos PUEDEN pagar arte nuevo (Imagen IA encendida)"
+      : "los caminos automáticos solo restauran lo ya pagado (NEFAN_ENTORNO=produccion para generar)"),
+);
 
 // State HTTP API: the narrative engine (Claude via narrative-mcp tools) queries
 // and mutates the authoritative NarrativeState here, instead of receiving the
@@ -300,6 +319,9 @@ createStateHttpServer({
 
 wss.on("connection", (ws: WebSocket) => {
   console.log("Bridge: client connected");
+  // Lo primero que oye cada socket, con sesión o sin ella (fixtures): el
+  // entorno de la corrida. Unicast y sin sello (`BridgeHelloMessage`).
+  ctx.send(ws, { type: "bridge_hello", entorno: ENTORNO });
 
   ws.on("message", async (raw: Buffer) => {
     // Borde fail-loud: el input del cliente (WS sin auth) NO llega crudo a los

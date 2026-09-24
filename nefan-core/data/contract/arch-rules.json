@@ -1009,6 +1009,46 @@
       "text": {
         "pattern": "^(?!\\s*(?://|\\*|/\\*))[^\\n]*\\b(?:writeFileSync|writeFile|rmSync|rmdirSync|mkdirSync|renameSync|appendFileSync|createWriteStream|unlinkSync|cpSync|copyFileSync|truncateSync|openSync|writeSync)\\b"
       }
+    },
+    {
+      "id": "el-entorno-se-lee-en-un-solo-sitio",
+      "desc": "`NEFAN_ENTORNO` (¿pueden los caminos automáticos pagar arte nuevo?) solo lo LEE el bridge, en `bridge/ws-server.ts`; el cliente lo recibe por `bridge_hello`",
+      "why": "Decisión del usuario (2026-09-24): pagar o no arte en los caminos automáticos es CONFIGURACIÓN y no código — desarrollo no genera, producción sí. Una configuración con dos lectores es dos configuraciones: el día que remote-gen, el cliente o un script leyeran la variable por su cuenta, podrían discrepar del bridge (uno con su defecto, otro con el suyo) y el techo de gasto dependería de qué proceso preguntara. Por eso hay UN lector (`leerEntorno` en `ws-server.ts`, que además LANZA ante un valor desconocido) y el resto lo recibe como DATO: el cliente por el cable (`bridge_hello`), y los gates puros de core (`gatesDeImagen`) como argumento. Lo que NO mira: `start.sh`, que no lee la variable para decidir nada del juego — solo la PASA al bridge y le pone el defecto del stack con el motor falso (gratis, así que el banco mide producción); ni `qa/run.mjs`, que la ESCRIBE en el entorno del stack de cada grupo de guiones y no la lee.",
+      "severity": "error",
+      "files": [
+        "nefan-core/src/**/*.ts",
+        "nefan-core/bridge/**/*.ts",
+        "nefan-core/services/**/*.ts",
+        "nefan-core/scripts/**/*.ts",
+        "nefan-html/src/**/*.ts",
+        "ai_server/**/*.py",
+        "narrative-mcp/**/*.ts",
+        "labs/**/*.ts",
+        "labs/**/*.mjs",
+        "qa/**/*.mjs"
+      ],
+      "text": {
+        "pattern": "process\\.env(?:\\.NEFAN_ENTORNO\\b|\\[\\s*[\"'`]NEFAN_ENTORNO)|\\{[^}\\n]*\\bNEFAN_ENTORNO\\b[^}\\n]*\\}\\s*=\\s*process\\.env|os\\.environ[^\\n]*NEFAN_ENTORNO|getenv\\([^\\n]*NEFAN_ENTORNO"
+      },
+      "exceptions": [
+        {
+          "path": "nefan-core/bridge/ws-server.ts",
+          "reason": "Es EL lector: parsea la variable al arrancar con `leerEntorno` (core) y la manda a cada socket en `bridge_hello`."
+        }
+      ]
+    },
+    {
+      "id": "el-cliente-no-decide-el-gasto-por-el-build",
+      "desc": "El cliente no lee `import.meta.env.PROD` ni `import.meta.env.MODE`: el entorno de gasto le llega del bridge",
+      "why": "La tentación obvia para «desarrollo vs producción» en un cliente Vite es el modo de build. Sería una SEGUNDA fuente del entorno (la primera es `NEFAN_ENTORNO` en el bridge) y además la equivocada: el banco corre `vite dev` y necesita medir el comportamiento de producción contra el motor falso, y el bridge no ve el modo de build del cliente. El techo de gasto lo decide `gatesDeImagen` con el entorno que trae `bridge_hello` (tanda AS, 2026-09-24). `import.meta.env.DEV` queda fuera a propósito: lo usan herramientas de desarrollo que no deciden gasto.",
+      "severity": "error",
+      "files": [
+        "nefan-html/src/**/*.ts"
+      ],
+      "text": {
+        "pattern": "import\\.meta\\.env\\.(?:PROD|MODE)\\b"
+      },
+      "exceptions": []
     }
   ]
 }

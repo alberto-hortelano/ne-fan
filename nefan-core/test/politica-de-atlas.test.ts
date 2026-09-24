@@ -5,7 +5,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { PoliticaDeAtlas, modoDeCorrida } from "../src/scene/politica-de-atlas.js";
+import { PoliticaDeAtlas, lineaDeBalance } from "../src/scene/politica-de-atlas.js";
 
 describe("PoliticaDeAtlas · pedir/terminar: la misma clave no se paga dos veces", () => {
   it("la primera petición de una clave arranca; la segunda, con la primera en curso, se encola", () => {
@@ -95,20 +95,6 @@ describe("PoliticaDeAtlas · run y token: el tile nuevo supera al run en vuelo",
     assert.equal(p.enVuelo, true, "el run nuevo sigue en vuelo");
     p.finDeRun(nuevo);
     assert.equal(p.enVuelo, false);
-  });
-});
-
-describe("modoDeCorrida · solo el tile activo puede pintar (#714)", () => {
-  it("un tile que no es el activo solo restaura, TAMBIÉN con la generación encendida", () => {
-    // El mutante que importa: un vecino que pinta con Imagen IA encendida es
-    // gasto que la partida no pidió — ocho atlas por reanudar.
-    assert.deepEqual(modoDeCorrida({ activo: false, generacion: true }), { resolveOnly: true });
-    assert.deepEqual(modoDeCorrida({ activo: false, generacion: false }), { resolveOnly: true });
-  });
-
-  it("el activo pinta solo con la generación encendida", () => {
-    assert.deepEqual(modoDeCorrida({ activo: true, generacion: true }), { resolveOnly: false });
-    assert.deepEqual(modoDeCorrida({ activo: true, generacion: false }), { resolveOnly: true });
   });
 });
 
@@ -275,10 +261,25 @@ describe("PoliticaDeAtlas · carril de restauración: los vecinos recuperan su a
     assert.equal(p.finDeRestauracion(p.siguienteRestauracion()!, "aplicado"), null, "con cola, todavía no");
     assert.equal(p.finDeRestauracion(p.siguienteRestauracion()!, "sin-arte"), null);
     assert.equal(p.finDeRestauracion(p.siguienteRestauracion()!, "aplicado"), null);
-    assert.deepEqual(p.finDeRestauracion(p.siguienteRestauracion()!, "nada"), { aplicados: 2, sinArte: 1 });
+    assert.deepEqual(p.finDeRestauracion(p.siguienteRestauracion()!, "nada"), { aplicados: 2, pintados: 0, sinArte: 1 });
     // La tanda siguiente empieza de cero.
     p.encolarRestauracion("e");
-    assert.deepEqual(p.finDeRestauracion(p.siguienteRestauracion()!, "sin-arte"), { aplicados: 0, sinArte: 1 });
+    assert.deepEqual(p.finDeRestauracion(p.siguienteRestauracion()!, "sin-arte"), { aplicados: 0, pintados: 0, sinArte: 1 });
+  });
+
+  it("un vecino que PINTÓ cuenta aparte en el balance: es gasto y no se esconde entre los «$0»", () => {
+    // Desde que pagar es configuración (2026-09-24), en producción con Imagen
+    // IA el carril de los vecinos puede pintar. El mutante que lo cuente como
+    // `aplicado` —o que no lo cuente— hace que el HUD diga «restaurados ($0)»
+    // de un tile que costó dinero.
+    const p = new PoliticaDeAtlas();
+    p.encolarRestauracion("a");
+    p.encolarRestauracion("b");
+    assert.equal(p.finDeRestauracion(p.siguienteRestauracion()!, "pintado"), null);
+    assert.deepEqual(p.finDeRestauracion(p.siguienteRestauracion()!, "aplicado"), { aplicados: 1, pintados: 1, sinArte: 0 });
+    // Y una tanda de solo pintados también da balance.
+    p.encolarRestauracion("c");
+    assert.deepEqual(p.finDeRestauracion(p.siguienteRestauracion()!, "pintado"), { aplicados: 0, pintados: 1, sinArte: 0 });
   });
 
   it("una tanda en la que no pasó nada no da balance: el HUD no dice «0 restaurados»", () => {
@@ -293,6 +294,22 @@ describe("PoliticaDeAtlas · carril de restauración: los vecinos recuperan su a
     const ra = p.siguienteRestauracion()!;
     p.encolarRestauracion("a"); // supera a la que va en el aire
     assert.equal(p.finDeRestauracion(ra, "nada"), null, "queda la re-encolada");
-    assert.deepEqual(p.finDeRestauracion(p.siguienteRestauracion()!, "aplicado"), { aplicados: 1, sinArte: 0 });
+    assert.deepEqual(p.finDeRestauracion(p.siguienteRestauracion()!, "aplicado"), { aplicados: 1, pintados: 0, sinArte: 0 });
+  });
+});
+
+describe("lineaDeBalance · el HUD no esconde el gasto dentro del «$0»", () => {
+  it("sin pintados, la línea de siempre (restaurados y sin arte)", () => {
+    assert.equal(
+      lineaDeBalance({ aplicados: 8, pintados: 0, sinArte: 0 }),
+      "Atlas fps: 8 vecino(s) restaurado(s) de la librería ($0), 0 sin arte (clay)",
+    );
+  });
+
+  it("con pintados, van DELANTE y rotulados como gasto", () => {
+    assert.equal(
+      lineaDeBalance({ aplicados: 2, pintados: 3, sinArte: 1 }),
+      "Atlas fps: 3 vecino(s) PINTADO(S) (gasto), 2 vecino(s) restaurado(s) de la librería ($0), 1 sin arte (clay)",
+    );
   });
 });

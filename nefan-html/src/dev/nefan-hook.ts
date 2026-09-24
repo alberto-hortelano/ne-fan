@@ -50,6 +50,7 @@ import type { TitleScreen } from "../ui/title-screen.js";
 import type { FpsAtlasController } from "../scene/fps-atlas.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
 import type { OpcionesDeCarga } from "../world/carga-de-tile.js";
+import type { Entorno } from "@nefan-core/src/session/gates-de-imagen.js";
 
 /** Todo lo que el hook mira. Son colaboradores del cliente, y llegan por aquí
  *  en vez de por clausura para que este fichero no pueda alcanzar nada más. */
@@ -63,6 +64,10 @@ export interface DepsDelHook {
   travelLedger: TravelLedger;
   tileLedger: TileLedger;
   characterSprites: CharacterSpriteManager;
+  /** El entorno que dijo el bridge en su `bridge_hello` (`null` = aún no ha
+   *  llegado). Lo lee el runner de QA para saber contra qué techo de gasto
+   *  mide cada guion. */
+  entorno: () => Entorno | null;
   /** El aspecto del jugador, en la interfaz ESTRECHA que el hook necesita: lo
    *  que LLEVA PUESTO, nunca lo que se le puede poner. `vestir` y `desvestir`
    *  se quedan fuera a propósito — el hook es un observable, y el día que
@@ -143,6 +148,11 @@ export function instalarNefanHook(deps: DepsDelHook): void {
     get tileEpisodios() { return deps.tileLedger.debugState(); },
     /** Libro de skins: qué personajes ha pedido la PARTIDA (y con qué rol). */
     get skins() { return deps.characterSprites.debugState(); },
+    /** El entorno de la corrida según el bridge (`desarrollo`/`produccion`), o
+     *  `null` hasta su `bridge_hello`. Y el permiso de skins que resulta —con
+     *  el modo de la partida— para quien mida el techo sin mirar la red. */
+    get entorno() { return deps.entorno(); },
+    get permisoDeSkins() { return deps.characterSprites.permisoDeSkins; },
     /** Lo que el jugador LLEVA PUESTO ahora mismo: su modelo y el prompt de su
      *  skin. Hermano declarado de `skins`, y no la misma pregunta: `skins` dice
      *  quién PIDIÓ arte, y esto dice con qué está vestido el jugador. Se separan

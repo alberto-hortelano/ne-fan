@@ -14,8 +14,10 @@ import { CONFIG } from "@nefan-core/src/config.js";
 import { HOJAS_BASE_ANIMS } from "@nefan-core/src/contracts/sprite-census.js";
 import { FALLO_HOJAS_BASE } from "@nefan-core/src/protocol/status-motivo.js";
 import { FusibleDeSkins } from "@nefan-core/src/session/fusible-de-skins.js";
+import type { PermisoDePersonajes } from "@nefan-core/src/session/gates-de-imagen.js";
 import { errors } from "../ui/error-log.js";
-import type { SpriteRenderer } from "./sprite-renderer.js";
+import { SIN_ARTE, type SpriteRenderer } from "./sprite-renderer.js";
+import { CadenaDeSkins } from "./cadena-de-skins.js";
 import { artePendienteDeSkins } from "./arte-pendiente-de-skins.js";
 import {
   avanzarAnimacion,
@@ -50,6 +52,15 @@ interface SkinState {
   failed: boolean;
   /** Anims ya encoladas (o completadas) — cada (prompt, anim) se pide una vez. */
   queued: Set<string>;
+  /** Anims que se preguntaron SOLO POR LO PAGADO y no lo estaban. No se
+   *  vuelven a preguntar mientras el permiso siga en `restaurar` (sin esto,
+   *  `modelFor` re-encolaría una por fotograma); se olvidan cuando el permiso
+   *  sube a `generar`, y entonces el re-pedido las encuentra como hueco. */
+  sinArte: Set<string>;
+  /** Pedido a mano (`force`, menú dev): el jugador eligió pagar ESTE
+   *  personaje, así que sus anims generan aunque el permiso sea `restaurar`.
+   *  Incluidas las lazy de `modelFor`: son del mismo personaje elegido. */
+  forzado: boolean;
 }
 
 export class CharacterSpriteManager {
@@ -57,10 +68,8 @@ export class CharacterSpriteManager {
    *  solo entonces sustituyen a la base (evita el parpadeo SPRITE_PENDING). */
   private readySkins = new Set<string>();
   private skins = new Map<string, SkinState>();
-  /** Cadena secuencial de generación: cada anim son varias llamadas Meshy
-   *  (una por dirección) que el ai_server ya paraleliza; encolar prompts en
-   *  paralelo desde el cliente solo acumula HTTP colgados de minutos. */
-  private chain: Promise<void> = Promise.resolve();
+  /** Cadena secuencial de generación y su balance (`cadena-de-skins.ts`). */
+  private cadena = new CadenaDeSkins();
 
   constructor(
     private sprites: SpriteRenderer,
@@ -106,18 +115,22 @@ export class CharacterSpriteManager {
    *  cuenta cada fallo y se hace lo que diga. */
   private fusible = new FusibleDeSkins();
 
-  /** Decisión de la sesión (no un fallo): el modo de render "vector" apaga
-   *  los skins IA — todos los personajes se dibujan con la base y_bot, sin
-   *  encolar ni gastar llamadas al modelo de imagen. */
-  private allowed = true;
+  /** Decisión de la sesión y del entorno (no un fallo), la de
+   *  `gatesDeImagen` en core: `base` (modo "vector": todos con la base y_bot,
+   *  sin encolar nada), `restaurar` (Imagen IA en desarrollo: se pide SOLO lo
+   *  ya pagado, con `resolve_only`) o `generar`. Nace en `generar` porque
+   *  `ui/modos-de-graficos.ts` lo fija nada más construirse, antes del primer
+   *  personaje; quien use el gestor suelto (el banco del cliente) lo ve como
+   *  siempre. */
+  private permiso: PermisoDePersonajes = "generar";
 
-  get skinsAllowed(): boolean {
-    return this.allowed;
+  get permisoDeSkins(): PermisoDePersonajes {
+    return this.permiso;
   }
 
   /** ¿El cortacircuitos tiene los skins apagados AHORA MISMO? (#510)
    *
-   *  `skinsAllowed` es el MODO que eligió la partida y el fusible no lo toca —a
+   *  `permisoDeSkins` es el MODO que eligió la partida y el fusible no lo toca —a
    *  propósito: el rearme se pide apagando y encendiendo Personajes en el chip
    *  (lo canda el guion 51), y eso deja de funcionar si el fusible mueve el
    *  modo—. Pero entonces el chip decía «Skins IA» con el registro diciendo que
@@ -133,8 +146,19 @@ export class CharacterSpriteManager {
    *  gesto del jugador. Lo cablea `ui/modos-de-graficos.ts`. */
   alSaltarElFusible: (() => void) | null = null;
 
-  setSkinsAllowed(allowed: boolean): void {
-    this.allowed = allowed;
+  setPermisoDeSkins(permiso: PermisoDePersonajes): void {
+    // Al SUBIR a generar, lo que se preguntó «solo si está pagado» y no lo
+    // estaba deja de estar vetado: vuelve a ser hueco que re-pedir.
+    if (permiso === "generar" && this.permiso !== "generar") {
+      for (const state of this.skins.values()) state.sinArte.clear();
+    }
+    this.permiso = permiso;
+  }
+
+  /** A dónde va la línea de balance de los skins restaurados (una por tanda,
+   *  como la del atlas). La cablea `ui/modos-de-graficos.ts`. */
+  set anunciar(fn: ((msg: string) => void) | null) {
+    this.cadena.anunciar = fn;
   }
 
   /** Rearma el cortacircuitos de fallos de backend: borra el flag, la cuenta
@@ -195,7 +219,11 @@ export class CharacterSpriteManager {
         const skinned = this.sprites.skinKey(BASE_MODEL, prompt);
         if (this.readySkins.has(`${skinned}/idle`)) return "listo";
         const state = this.skins.get(skinned);
-        return !state ? "sin pedir" : state.failed ? "falló" : "generándose";
+        // Sin ninguna anim en cola, nada se está generando: es un personaje
+        // al que se le preguntó por lo pagado y no lo estaba (desarrollo).
+        return !state || (!state.failed && state.queued.size === 0)
+          ? "sin pedir"
+          : state.failed ? "falló" : "generándose";
       },
     });
   }
@@ -205,13 +233,14 @@ export class CharacterSpriteManager {
    *  Idempotente por prompt (dos NPCs con la misma descripción comparten
    *  skin). No-op con ai_skin=false o prompt vacío.
    *
-   *  `force` (botón por-item del menú dev): salta el gate de sesión
-   *  (`allowed`) y el cortacircuitos, y rearma un skin marcado failed para
-   *  reintentarlo. NUNCA salta CONFIG.graphics.ai_skin — con el flag apagado
+   *  `force` (botón por-item del menú dev): salta el permiso de la sesión y
+   *  del entorno (`permiso`: genera aunque sea `base` o `restaurar`, porque
+   *  pulsarlo ES elegir pagar) y el cortacircuitos, y rearma un skin marcado
+   *  failed para reintentarlo. NUNCA salta CONFIG.graphics.ai_skin — con el flag apagado
    *  no existe backend de skins que llamar (fail-loud en el caller). */
   requestSkin(prompt: string, opts: { force?: boolean; role?: string } = {}): void {
     if (!CONFIG.graphics.ai_skin || !prompt) return;
-    if (!opts.force && (!this.allowed || this.fusible.apagado)) return;
+    if (!opts.force && (this.permiso === "base" || this.fusible.apagado)) return;
     // La identidad cliente del skin sigue siendo el prompt (skinKey): dos
     // NPCs con el mismo prompt y rol distinto compartirían la primera hoja
     // pedida — caso raro; el servidor sí cachea ambas variantes por rol.
@@ -232,6 +261,8 @@ export class CharacterSpriteManager {
           role: opts.role ?? existing.role,
           failed: false,
           queued: new Set(),
+          sinArte: new Set(),
+          forzado: true,
         };
         this.skins.set(skinnedModel, state);
         for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, state, anim);
@@ -246,13 +277,27 @@ export class CharacterSpriteManager {
       // mapa sobrevive a volver al título. Pedir lo que falta del set
       // automático NO es re-pedir en bloque: se piden las anims de un personaje
       // que ESTA partida acaba de pedir, y solo las que nadie ha encolado.
+      // `force` sobre uno vivo (el menú dev sobre un personaje que en
+      // desarrollo solo restauraba): ahora es elegido, y lo que no estaba
+      // pagado deja de estar vetado.
+      if (opts.force) {
+        existing.forzado = true;
+        existing.sinArte.clear();
+      }
       for (const anim of AUTO_SKIN_ANIMS) {
-        if (!existing.queued.has(anim)) this.enqueueAnim(skinnedModel, existing, anim);
+        if (!existing.queued.has(anim) && !existing.sinArte.has(anim)) this.enqueueAnim(skinnedModel, existing, anim);
       }
       return;
     }
     if (opts.force) this.rearmarCortacircuitos();
-    const state: SkinState = { prompt, role: opts.role, failed: false, queued: new Set() };
+    const state: SkinState = {
+      prompt,
+      role: opts.role,
+      failed: false,
+      queued: new Set(),
+      sinArte: new Set(),
+      forzado: opts.force === true,
+    };
     this.skins.set(skinnedModel, state);
     for (const anim of AUTO_SKIN_ANIMS) this.enqueueAnim(skinnedModel, state, anim);
   }
@@ -276,65 +321,83 @@ export class CharacterSpriteManager {
 
   private enqueueAnim(skinnedModel: string, state: SkinState, anim: string): void {
     state.queued.add(anim);
-    this.chain = this.chain.then(async () => {
-      if (state.failed) return;
-      if (this.fusible.apagado) {
-        // El apagón de la SESIÓN saltó esta anim ANTES de pedirla: no se pidió,
-        // así que no puede quedarse apuntada como pedida (#520). Con el apunte
-        // puesto, `queued` mentía: ni `requestSkin` ni `modelFor` volvían a
-        // encolarla nunca —los dos preguntan por él—, y al rearmar el fusible
-        // el personaje seguía en maniquí sin más salida que recargar. Olvidar
-        // no gasta: deja que la SIGUIENTE petición empiece limpia.
+    this.cadena.encolar(() => this.pedirAnim(skinnedModel, state, anim));
+  }
+
+  /** Un eslabón de la cadena: pide UNA anim de un personaje. */
+  private async pedirAnim(skinnedModel: string, state: SkinState, anim: string): Promise<void> {
+    if (state.failed) return;
+    if (this.fusible.apagado) {
+      // El apagón de la SESIÓN saltó esta anim ANTES de pedirla: no se pidió,
+      // así que no puede quedarse apuntada como pedida (#520). Con el apunte
+      // puesto, `queued` mentía: ni `requestSkin` ni `modelFor` volvían a
+      // encolarla nunca —los dos preguntan por él—, y al rearmar el fusible
+      // el personaje seguía en maniquí sin más salida que recargar. Olvidar
+      // no gasta: deja que la SIGUIENTE petición empiece limpia.
+      state.queued.delete(anim);
+      return;
+    }
+    // La intención se decide AL PEDIR y no al encolar: si el permiso bajó
+    // mientras esperaba turno, se pregunta solo por lo pagado. Un personaje
+    // elegido a mano (`forzado`) genera siempre.
+    const resolveOnly = !state.forzado && this.permiso !== "generar";
+    try {
+      const sheet = await this.sprites.loadSkinnedAnimation(
+        BASE_MODEL,
+        anim,
+        this.angle,
+        state.prompt,
+        state.role,
+        { resolveOnly },
+      );
+      if (sheet === SIN_ARTE) {
+        // No está pagado y no se generó nada: NO es un fallo (ni `failed`
+        // ni fusible). Se desapunta de `queued` para que un permiso más alto
+        // lo encuentre como hueco, y se veta mientras siga en restaurar.
         state.queued.delete(anim);
+        state.sinArte.add(anim);
+        this.cadena.sinArte();
         return;
       }
-      try {
-        const sheet = await this.sprites.loadSkinnedAnimation(
-          BASE_MODEL,
-          anim,
-          this.angle,
-          state.prompt,
-          state.role,
-        );
-        // Espera a que los PNG decodifiquen antes de marcar la anim lista:
-        // la sustitución debe ser atómica, sin frames SPRITE_PENDING.
-        await Promise.all(sheet.frames.flat().map((img) => img.decode()));
-        this.readySkins.add(`${skinnedModel}/${anim}`);
-      } catch (err) {
-        // Meshy/ai_server caído o sin API key: la entidad se queda con la base
-        // y_bot y no se reintenta (sin bucles). El fallo marca el PERSONAJE, no
-        // la sesión: los demás siguen pidiendo y recibiendo su skin.
-        state.failed = true;
-        // UNA entrada por fallo, SIEMPRE. Antes esto era un if/else cuya rama
-        // muda —un 5xx con el flag de sesión ya puesto— no escribía nada; la
-        // tapaba el corte de la cola de arriba, y quitar el flag de sesión la
-        // habría convertido en el camino normal.
-        errors.push(
-          "sprite",
-          `skin IA cancelada en "${anim}" para "${state.prompt.slice(0, 40)}" — se mantiene la base y_bot`,
-          err,
-        );
-        if (this.fusible.fallo(skinnedModel, (err as { status?: number }).status) !== "apagar") return;
-        // SIN «la sesión» (#510-p3): el fusible es de esta PESTAÑA, y se funde
-        // igual jugando una partida que mirando una fixture del selector, donde
-        // no hay ninguna sesión de la que hablar. El aviso decía «desactivados
-        // para la sesión» en los dos casos, así que en el segundo nombraba algo
-        // que el jugador no tiene delante. Lo que sí es cierto siempre es qué
-        // pasa (van con la base) y cómo se deshace (el chip de gráficos), y eso
-        // es lo que se dice. `CharacterSpriteManager` no sabe si hay partida y
-        // no tiene por qué: un texto que vale en los dos mundos no puede
-        // equivocarse en ninguno.
-        errors.push(
-          "sprite",
-          `skins IA desactivados: ${this.fusible.caidos} personajes distintos han fallado ` +
-            `con error de backend (umbral ${this.fusible.umbral}). Los personajes van con la ` +
-            `base y_bot hasta que los reactives en el chip de gráficos. ` +
-            `Último motivo: ${(err as Error).message}`,
-        );
-        // …y que el chip de gráficos deje de decir lo contrario (#510).
-        this.alSaltarElFusible?.();
-      }
-    });
+      // Espera a que los PNG decodifiquen antes de marcar la anim lista:
+      // la sustitución debe ser atómica, sin frames SPRITE_PENDING.
+      await Promise.all(sheet.frames.flat().map((img) => img.decode()));
+      this.readySkins.add(`${skinnedModel}/${anim}`);
+      if (resolveOnly) this.cadena.restaurado();
+    } catch (err) {
+      // Meshy/ai_server caído o sin API key: la entidad se queda con la base
+      // y_bot y no se reintenta (sin bucles). El fallo marca el PERSONAJE, no
+      // la sesión: los demás siguen pidiendo y recibiendo su skin.
+      state.failed = true;
+      // UNA entrada por fallo, SIEMPRE. Antes esto era un if/else cuya rama
+      // muda —un 5xx con el flag de sesión ya puesto— no escribía nada; la
+      // tapaba el corte de la cola de arriba, y quitar el flag de sesión la
+      // habría convertido en el camino normal.
+      errors.push(
+        "sprite",
+        `skin IA cancelada en "${anim}" para "${state.prompt.slice(0, 40)}" — se mantiene la base y_bot`,
+        err,
+      );
+      if (this.fusible.fallo(skinnedModel, (err as { status?: number }).status) !== "apagar") return;
+      // SIN «la sesión» (#510-p3): el fusible es de esta PESTAÑA, y se funde
+      // igual jugando una partida que mirando una fixture del selector, donde
+      // no hay ninguna sesión de la que hablar. El aviso decía «desactivados
+      // para la sesión» en los dos casos, así que en el segundo nombraba algo
+      // que el jugador no tiene delante. Lo que sí es cierto siempre es qué
+      // pasa (van con la base) y cómo se deshace (el chip de gráficos), y eso
+      // es lo que se dice. `CharacterSpriteManager` no sabe si hay partida y
+      // no tiene por qué: un texto que vale en los dos mundos no puede
+      // equivocarse en ninguno.
+      errors.push(
+        "sprite",
+        `skins IA desactivados: ${this.fusible.caidos} personajes distintos han fallado ` +
+          `con error de backend (umbral ${this.fusible.umbral}). Los personajes van con la ` +
+          `base y_bot hasta que los reactives en el chip de gráficos. ` +
+          `Último motivo: ${(err as Error).message}`,
+      );
+      // …y que el chip de gráficos deje de decir lo contrario (#510).
+      this.alSaltarElFusible?.();
+    }
   }
 
   /** Modelo a dibujar este frame para (descripción, anim): la variante
@@ -346,7 +409,7 @@ export class CharacterSpriteManager {
    *  anim fuera de AUTO_SKIN_ANIMS (un ataque, death…), aquí se encola su
    *  generación lazy — estará lista para las siguientes veces. */
   modelFor(skinPrompt: string | undefined, anim: string, baseModel: string = BASE_MODEL): string {
-    if (!this.allowed || !skinPrompt || !CONFIG.graphics.ai_skin) return baseModel;
+    if (this.permiso === "base" || !skinPrompt || !CONFIG.graphics.ai_skin) return baseModel;
     const skinned = this.sprites.skinKey(BASE_MODEL, skinPrompt);
     if (this.readySkins.has(`${skinned}/${anim}`)) return skinned;
     const state = this.skins.get(skinned);
@@ -360,6 +423,7 @@ export class CharacterSpriteManager {
       !state.failed &&
       !this.fusible.apagado &&
       !state.queued.has(anim) &&
+      !state.sinArte.has(anim) &&
       BASE_ANIM_SET.has(anim)
     ) {
       this.enqueueAnim(skinned, state, anim);

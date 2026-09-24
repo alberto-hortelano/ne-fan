@@ -104,6 +104,12 @@ export interface SkinSpriteSheetRequest {
    *  Vacío/desconocido ⇒ primera ref de characters/ del manifest. El nombre
    *  del campo es legacy (era el rol commoner/noble/warrior). */
   style_role?: string;
+  /** Solo lo YA PAGADO: si el sheet está en la caché de remote-gen se sirve, y
+   *  si no se contesta `{ok:true, sin_arte:true}` sin llamar a sprite-forge
+   *  para generar nada. Es el carril de los caminos automáticos en desarrollo
+   *  (`gatesDeImagen` → `restaurar`), el mismo papel que `resolve_only` en el
+   *  atlas. No entra en ninguna clave de caché. */
+  resolve_only?: boolean;
 }
 
 // El meta.json de un sprite sheet vive en ./sprite-forge.ts: es zod (no
@@ -111,8 +117,9 @@ export interface SkinSpriteSheetRequest {
 // servicio (test/contract-sprite-forge.test.ts), porque este espejo llegó a
 // declarar obligatorio un `generated_at` que el sheet vestido nunca llevó.
 
-export interface SkinSpriteSheetResponse {
-  ok: boolean;
+/** El sheet SERVIDO: generado ahora o sacado de la caché. */
+export interface SkinSpriteSheetServido {
+  ok: true;
   hash: string;
   /** true = el sheet salió de la caché de remote-gen sin repagar. El cliente
    *  lo usa para contabilidad VISIBLE (LED «reusado» vs «pintado» del batch
@@ -133,6 +140,26 @@ export interface SkinSpriteSheetResponse {
    *  al busto del sprite. Consultarlo NUNCA dispara una generación. */
   hero_url?: string | null;
   generation_time_ms: number;
+}
+
+/** La respuesta a una petición `resolve_only` cuyo sheet NO está pagado: no
+ *  hay arte que servir y no se ha generado nada. Es un `ok` y no un error —la
+ *  pregunta «¿está pagado?» tiene dos respuestas buenas— y es un caso APARTE
+ *  del sheet servido para que «no hay arte» no pueda colapsarse con un 503 ni
+ *  con un sheet vacío: el cliente que lo trata como fallo fundiría el fusible
+ *  de skins con cada NPC nuevo en desarrollo. Solo es legal si la petición
+ *  llevaba `resolve_only`. */
+export interface SkinSpriteSheetSinArte {
+  ok: true;
+  sin_arte: true;
+}
+
+export type SkinSpriteSheetResponse = SkinSpriteSheetServido | SkinSpriteSheetSinArte;
+
+/** ¿La respuesta trae un sheet? El discriminante es la PRESENCIA de
+ *  `sin_arte`, que el sheet servido no lleva nunca. */
+export function esSinArte(r: SkinSpriteSheetResponse): r is SkinSpriteSheetSinArte {
+  return "sin_arte" in r && r.sin_arte === true;
 }
 
 // ── Style packs de usuario ──

@@ -3,6 +3,7 @@
  * Wraps BridgeClient with typed methods around session lifecycle and dialogue
  * events, and surfaces narrative_event broadcasts as a typed callback.
  */
+import type { Entorno } from "@nefan-core/src/session/gates-de-imagen.js";
 import type { UiTheme } from "@nefan-core/src/games/ui-theme.js";
 import { BridgeClient } from "./bridge-client.js";
 import { errors } from "../ui/error-log.js";
@@ -80,11 +81,21 @@ export class NarrativeClient {
    *  aplicó» y «no ha llegado» volverían a ser el mismo verde. Va aparte de
    *  `tirados` porque el guion 29 lee `n` como «eventos». */
   private statusTirados = 0;
+  /** El entorno del `bridge_hello` (`null` hasta que llega): el título lo
+   *  mira para no prometer gasto donde solo se restaura lo pagado. */
+  private entornoDelBridge: Entorno | null = null;
+
+  get entorno(): Entorno | null {
+    return this.entornoDelBridge;
+  }
 
   constructor(
     private bridge: BridgeClient,
     private deQuienEs: DeQuienEs,
   ) {
+    this.bridge.on("bridge_hello", (msg) => {
+      this.entornoDelBridge = msg.entorno;
+    });
     this.bridge.on("narrative_event", (msg) => {
       if (!msg) return;
       // EL EMBUDO ÚNICO: todo `narrative_event` pasa por aquí, así que la
