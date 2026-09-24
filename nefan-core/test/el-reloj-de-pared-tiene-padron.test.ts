@@ -245,7 +245,8 @@ describe("el detector: lo que VE", () => {
     assert.equal(cuenta("await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));"), 0);
     assert.equal(cuenta("await ctx.page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));"), 0);
     assert.equal(cuenta("await new Promise(requestAnimationFrame);"), 0);
-    // El SEGUNDO parámetro del ejecutor (reject) no es el timestamp, y un parámetro cualquiera sigue sin resolverse.
+    // El SEGUNDO parámetro del ejecutor (reject) TAMBIÉN recibe el timestamp —rAF llama `ko(t)`—, pero el
+    // detector solo sigue el PRIMERO (el resolve): es límite, medido en el (9).
     assert.equal(cuenta("const t = await new Promise((ok, ko) => requestAnimationFrame(ko));"), 0);
     // Resolver con OTRO valor (`r(true)`) no entrega la pared: el callback no tiene parámetro.
     assert.equal(cuenta("const t = await new Promise((r) => requestAnimationFrame(() => r(true)));"), 0);
@@ -367,6 +368,10 @@ describe("LÍMITE MEDIDO: lo que el padrón NO sujeta (cada punto de `_lo_que_es
       "const o = { tick(t) {} }; requestAnimationFrame(o.tick);",
       "const tick = (t) => {}; requestAnimationFrame(tick.bind(null)); requestAnimationFrame(c ? tick : tick);",
       "const [tick] = [(t) => {}]; requestAnimationFrame(tick);",
+      "const { promise, resolve } = Promise.withResolvers(); requestAnimationFrame(resolve); const t = await promise;",
+      "const t = await new Promise((r) => (0, requestAnimationFrame)(r));",
+      "const t = await new Promise((r) => { const f = r; requestAnimationFrame(f); });",
+      "new Promise((_, rej) => requestAnimationFrame(rej)).catch((t) => t);",
     ]) {
       assert.equal(cuenta(f), 0, f);
     }
