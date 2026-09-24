@@ -94,7 +94,7 @@ export default async function (ctx) {
   await ctx.page.route("**/generate_surface_atlas", async (route) => {
     const res = await route.fetch();
     const texto = await res.text();
-    let pedido = {};
+    let pedido;
     try {
       pedido = JSON.parse(route.request().postData() ?? "{}");
     } catch {

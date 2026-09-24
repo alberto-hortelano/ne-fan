@@ -187,7 +187,7 @@ export default async function (ctx) {
   // ── Sabotaje del borde: 500 para UNA víctima, que se elige más abajo ─────
   const plan = { victimas: [], caidas: 0, servidas: 0 };
   await ctx.page.route("**/skin_sprite_sheet", async (route) => {
-    let cuerpo = {};
+    let cuerpo;
     try {
       cuerpo = JSON.parse(route.request().postData() ?? "{}");
     } catch {

@@ -183,7 +183,7 @@ export default async function (ctx) {
   const posts = [];
   ctx.page.on("request", (req) => {
     if (req.method() !== "POST" || !/\/skin_sprite_sheet(\?|$)/.test(req.url())) return;
-    let cuerpo = {};
+    let cuerpo;
     try {
       cuerpo = JSON.parse(req.postData() ?? "{}");
     } catch (err) {

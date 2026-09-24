@@ -1296,6 +1296,7 @@ async function cargarChromium() {
       `no encuentro \`playwright-core\`, que es con lo que el banco abre el navegador: corre ` +
         `\`npm ci\` en qa/. (Si lo que querías era la corrida sin navegador, es ` +
         `\`node qa/run.mjs --sin-navegador\`, y ésa no necesita qa/node_modules.) — ${err.message}`,
+      { cause: err },
     );
   }
 }
@@ -1449,9 +1450,9 @@ async function main() {
     console.log(`\n▶ ${nombre}`);
     const mod = await import(pathToFileURL(join(here, "guiones", file)).href);
     // Precondición DECLARADA del guion, ejecutada antes de abrir su página.
-    let exento = false;
-    let sinPagina = false;
-    let entornoDelGuion = ENTORNO_DEL_BANCO;
+    let exento;
+    let sinPagina;
+    let entornoDelGuion;
     try {
       exento = exentoDeMotor(nombre, mod.sinMotor);
       if (exento) console.log(`    ⛨ sin motor: ${mod.sinMotor}`);

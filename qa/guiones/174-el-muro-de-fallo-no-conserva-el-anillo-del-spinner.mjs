@@ -91,7 +91,7 @@ export default async function (ctx) {
   const inicial = await fetch(`${URLS.fake_ai}/dev/tiles`).then((r) => r.json());
   ctx.log(`conducta inicial del motor falso: ${JSON.stringify(inicial)}`);
 
-  let fin = null;
+  let fin;
   try {
     await conducta(ctx, { delay_ms: MS_DEL_TILE_LENTO });
     const pedidoPrevio = await ctx.page.evaluate(() => window.__nefan.viaje?.pedido ?? null);

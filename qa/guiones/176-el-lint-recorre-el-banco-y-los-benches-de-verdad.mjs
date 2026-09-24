@@ -23,7 +23,8 @@
  *       el rojo de `verify`».
  *   D · en CADA carpeta del banco (las del censo) la config EFECTIVA que ESLint
  *       resuelve (`--print-config`) lleva `no-unused-vars` en error con `^_`
- *       exento. Estar en la lista de A no basta: en flat config un fichero que
+ *       exento, y `no-useless-assignment` y `preserve-caught-error` en error
+ *       (#745, tanda AY). Estar en la lista de A no basta: en flat config un fichero que
  *       no casa con ningún `files` se procesa con CERO reglas y sale verde, y
  *       el 175 siembra solo en `qa/guiones/` — con `files` estrechado a esa
  *       carpeta seguía verde mientras `qa/lib/` y `qa/bajo-carga.mjs` (el
@@ -35,7 +36,8 @@
  *       decisión de #718: SUS reglas, no las de `ai_server/`).
  *
  *  LO QUE NO MIDE: que un hallazgo ponga rojo (eso es el 175 y el 162), ni
- *  `labs/**\/*.{js,mjs}`, que no los mira ningún eslint (backlog de #733).
+ *  `labs/**\/*.{js,mjs}`, que tienen su propio lint (`lint:labs`, #744) con
+ *  su censo en el árbol real en el guion 187.
  *
  *      node qa/run.mjs --sin-navegador 176
  *
@@ -131,11 +133,17 @@ export default async function (ctx) {
     const severidad = Array.isArray(regla) ? regla[0] : regla;
     const opciones = Array.isArray(regla) ? regla[1] ?? {} : {};
     const activa = (severidad === 2 || severidad === "error") && opciones.varsIgnorePattern === "^_" && opciones.argsIgnorePattern === "^_";
-    if (!activa) sinRegla.push(`${muestra} → ${JSON.stringify(regla)}`);
+    if (!activa) sinRegla.push(`${muestra} → no-unused-vars ${JSON.stringify(regla)}`);
+    for (const nombre of ["no-useless-assignment", "preserve-caught-error"]) {
+      const r = pc.rc === 0 ? JSON.parse(pc.out).rules?.[nombre] : undefined;
+      const sev = Array.isArray(r) ? r[0] : r;
+      const opcionOk = nombre !== "preserve-caught-error" || (Array.isArray(r) && r[1]?.requireCatchParameter === true);
+      if ((sev !== 2 && sev !== "error") || !opcionOk) sinRegla.push(`${muestra} → ${nombre} ${JSON.stringify(r)}`);
+    }
   }
   ctx.log(`  · carpetas del banco: ${carpetas.join(", ")}`);
   ctx.expect(
-    "en cada carpeta del banco la config EFECTIVA lleva `no-unused-vars` en error con `^_` exento (no solo «está en la lista»)",
+    "en cada carpeta del banco la config EFECTIVA lleva `no-unused-vars` (`^_` exento), `no-useless-assignment` y `preserve-caught-error` en error (no solo «está en la lista»)",
     carpetas.length >= 3 && sinRegla.length === 0,
     sinRegla.join(" · ") || carpetas.join(", "),
   );

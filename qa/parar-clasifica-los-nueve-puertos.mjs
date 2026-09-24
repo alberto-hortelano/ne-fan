@@ -454,7 +454,7 @@ async function main() {
   }
 }
 
-let code = 2;
+let code;
 try {
   code = (await main()) ?? (fallos.length ? 1 : 0);
 } catch (err) {

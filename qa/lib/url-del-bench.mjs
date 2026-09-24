@@ -21,8 +21,8 @@ export function urlDeArranque(raw) {
   let u;
   try {
     u = new URL(raw);
-  } catch {
-    throw new Error(`--url ${JSON.stringify(raw)} no es una URL: escríbela entera (http://host:puerto/…)`);
+  } catch (err) {
+    throw new Error(`--url ${JSON.stringify(raw)} no es una URL: escríbela entera (http://host:puerto/…)`, { cause: err });
   }
   // Un `new URL("host:puerto")` sin esquema NO lanza: se lee como esquema
   // `host:` con el puerto de path, y de ahí sale una URL que el navegador no

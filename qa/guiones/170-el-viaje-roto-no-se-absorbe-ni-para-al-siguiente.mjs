@@ -97,8 +97,8 @@ export default async function (ctx) {
   const inicial = await fetch(`${URLS.fake_ai}/dev/tiles`).then((r) => r.json());
 
   // ── A · Dentro de `absorbe`, un viaje ROTO no se absorbe ─────────────────
-  let a = null;
-  let msA = null;
+  let a;
+  let msA;
   try {
     await conducta(ctx, { mode: "error" });
     const t0 = Date.now();

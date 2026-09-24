@@ -73,8 +73,8 @@ export default async function (ctx) {
   ctx.log(`conducta inicial del motor falso: ${JSON.stringify(inicial)}`);
 
   // ── A · El viaje roto para en segundos y nombra la causa ────────────────
-  let roto = null;
-  let msRoto = null;
+  let roto;
+  let msRoto;
   try {
     await conducta(ctx, { mode: "error" });
     const t0 = Date.now();

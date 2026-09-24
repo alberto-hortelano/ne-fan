@@ -63,7 +63,7 @@ export default async function (ctx) {
   await ctx.waitFor("el tabernero contesta", () => window.__nefan.dialogueVisible || null, 60_000);
 
   // ── EL DISCO DEJA DE ADMITIR ESCRITURAS ─────────────────────────────────
-  let muro = null;
+  let muro;
   chmodSync(dir, 0o500);
   try {
     ctx.log(`save de ${partida.sessionId} en solo lectura (chmod 0500)`);

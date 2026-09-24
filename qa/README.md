@@ -156,13 +156,17 @@ página falsa mueve **el reloj del mundo y la posición del jugador por separado
 que ningún navegador deja hacer, así que el candado se puede probar en las dos direcciones sin
 esperar a que la máquina se ocupe.
 
-Y desde la tanda AU (#733) **todo `.mjs` del banco pasa por ESLint con UNA regla, `no-unused-vars`**
-(`^_` exento): `npm run lint` —y con él `verify` y CI— encadena `lint:qa`, que corre
+Y desde la tanda AU (#733) **todo `.mjs` del banco pasa por ESLint**: `no-unused-vars` (`^_`
+exento) y, desde la tanda AY (#745), `no-useless-assignment` (un `let x = null` que un `try` pisa
+antes de leerlo: escribe `let x;`) y `preserve-caught-error` (un `throw` en un `catch` lleva
+`{ cause }`). `npm run lint` —y con él `verify` y CI— encadena `lint:qa`, que corre
 `nefan-core/eslint.qa.config.js` desde la raíz y salta lo mismo que el barrido del banco (`.tmp/` y
 `capturas/` a cualquier profundidad; la paridad la canda `test/el-lint-del-banco-salta-lo-que-el-banco-salta.test.ts`).
 Un helper o un import que nadie usa pone el lint rojo: bórralo, o si es un aserto prometido que no se
 hace, hazlo. Lo que NO se enciende, a propósito: `no-undef` (un guion mezcla Node con cuerpos de
-`page.evaluate`). Lo miden los guiones 175 (en un espejo) y 176 (en el árbol real).
+`page.evaluate`) y `no-irregular-whitespace` (el U+200B deliberado de `qa/dos-corridas.mjs`). Lo
+miden los guiones 175 (en un espejo) y 176 (en el árbol real). Los `.js`/`.mjs` de `labs/` tienen
+su pasada hermana, `lint:labs` (#744), medida por el 186 y el 187.
 
 Y por el mismo camino —test → banco, sin navegador, en CI— corre desde la tanda A
 `test/el-banco-declara-el-modo-de-gasto.test.ts`: **todo guion que ARRANQUE una partida**

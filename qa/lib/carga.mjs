@@ -167,6 +167,7 @@ export function factorDelEntorno(env) {
     throw new Error(
       `${e.message} No es un factor de frenado (1 = sin frenar, que es el control). Se para aquí en ` +
         `vez de medir una corrida tranquila y presentarla como corrida bajo carga.`,
+      { cause: e },
     );
   }
 }

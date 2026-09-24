@@ -140,7 +140,7 @@ export default async function (ctx) {
   await ctx.page.routeWebSocket(gateway, (ws) => {
     const server = ws.connectToServer();
     ws.onMessage((m) => {
-      let tipo = "";
+      let tipo;
       try {
         tipo = JSON.parse(String(m)).type ?? "";
       } catch {

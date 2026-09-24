@@ -1,4 +1,5 @@
-/** El lint mira el banco (`qa/**\/*.mjs`) y SE PUEDE PONER ROJO (#733, tanda AU).
+/** El lint mira el banco (`qa/**\/*.mjs`) y SE PUEDE PONER ROJO (#733, tanda AU;
+ *  #745, tanda AY).
  *
  *  POR QUÉ EXISTE. `npm run lint` era `eslint src bridge services test
  *  scripts`: `qa/` no lo miraba nadie, y un import muerto vivió en
@@ -8,9 +9,9 @@
  *  prometió y no se hace (la familia de #356).
  *
  *  La tanda AU añade `lint:qa` (`nefan-core/package.json`), que corre ESLint
- *  desde la raíz con `nefan-core/eslint.qa.config.js`: UNA regla,
- *  `no-unused-vars` con `^_` exento. Este guion demuestra, cada vez que se
- *  ejecuta, lo que esa config afirma:
+ *  desde la raíz con `nefan-core/eslint.qa.config.js`: `no-unused-vars` con `^_` exento, y
+ *  desde la tanda AY (#745) `no-useless-assignment` y `preserve-caught-error`.
+ *  Este guion demuestra, cada vez que se ejecuta, lo que esa config afirma:
  *
  *   a · un import muerto sembrado en un guion pone `lint:qa` en ROJO,
  *       nombrando el fichero y la regla. Si ESLint dejara de resolver el base
@@ -27,7 +28,15 @@
  *       esto mide que ESLint aplica esos ignores como se espera;
  *   e · `npm run lint` encadena `npm run lint:qa`, y de ahí que `verify` y CI
  *       (que corren `npm run lint`) lo hereden. Es un aserto sobre el TEXTO del
- *       script: lo que ejecuta `lint:qa` lo miden a-d.
+ *       script: lo que ejecuta `lint:qa` lo miden a-d;
+ *   f · `let x = null; try { x = … }` —la escritura que nadie lee antes de que
+ *       otra la pise— pone ROJO con `no-useless-assignment`; el control, `let
+ *       x;` con la misma lectura, sale 0. Los 43 casos que había al encenderla
+ *       eran todos de esa forma, y ninguno una espera descartada;
+ *   g · un `throw new Error(…)` dentro de un `catch` sin `{ cause }` pone ROJO
+ *       con `preserve-caught-error`; y también un `catch {` SIN parámetro que
+ *       lanza (`requireCatchParameter`: sin binding no hay causa que pasar); el
+ *       control, el mismo `throw` con `{ cause: err }`, sale 0.
  *
  *  CÓMO. No escribe en el árbol de trabajo: monta un espejo en un temporal
  *  —`nefan-core/` con el `package.json` y la config REALES copiados y
@@ -36,9 +45,11 @@
  *  lleva además un fichero limpio: sin él, un `qa/` con todo ignorado haría
  *  que ESLint saliera 2 («all files are ignored») y la (d) mediría otra cosa.
  *
- *  LO QUE NO MIDE: `labs/**\/*.{js,mjs}` (14 ficheros) no los mira ningún
- *  eslint; y en `qa/` no corren `no-useless-assignment` (38 casos el
- *  2026-09-24) ni `preserve-caught-error` (3). Están en el backlog.
+ *  LO QUE NO MIDE: `labs/**\/*.{js,mjs}` —eso es `lint:labs`, con su config
+ *  hermana y sus guiones (186 el mecanismo, 187 el árbol real)—; ni el resto
+ *  de `recommended` en `qa/`: `no-undef` por lo dicho en (c), y
+ *  `no-irregular-whitespace` porque su único hallazgo es el U+200B que
+ *  `qa/dos-corridas.mjs` pone a propósito dentro de un comentario.
  *
  *      node qa/run.mjs --sin-navegador 175
  *
@@ -60,6 +71,14 @@ export const sinNavegador = "corre npm run lint:qa en subprocesos sobre un espej
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CORE = join(RAIZ, "nefan-core");
 const CONFIG = "eslint.qa.config.js";
+
+/** La asignación que nadie lee (f) y el `throw` sin causa (g), con su control. */
+const ASIGNACION_MUERTA =
+  'export function f(s) {\n  let x = null;\n  try {\n    x = JSON.parse(s);\n  } catch (err) {\n    throw new Error("no es JSON", { cause: err });\n  }\n  return x;\n}\n';
+const ASIGNACION_VIVA = ASIGNACION_MUERTA.replace("let x = null;", "let x;");
+const SIN_CAUSA = 'export function g(s) {\n  try {\n    return JSON.parse(s);\n  } catch (err) {\n    throw new Error(`no es JSON: ${err.message}`);\n  }\n}\n';
+const CON_CAUSA = SIN_CAUSA.replace("`);", "`, { cause: err });");
+const SIN_BINDING = 'export function h(s) {\n  try {\n    return JSON.parse(s);\n  } catch {\n    throw new Error("no es JSON");\n  }\n}\n';
 
 /** El mismo import muerto en todas las siembras que lo necesitan. */
 const MUERTO = 'import { readFileSync } from "node:fs";\nexport const a = 1;\n';
@@ -136,6 +155,32 @@ export default async function (ctx) {
       d.rc === 0 && !/sembrado-175/u.test(d.out),
       cola(d),
     );
+
+    // ── f · no-useless-assignment, con su control ───────────────────────────
+    const f = lintEnEspejo(temporal, "f", { "qa/lib/sembrado-175.mjs": ASIGNACION_MUERTA });
+    ctx.expect(
+      "`let x = null` que un `try` pisa antes de leerlo pone `lint:qa` en ROJO con `no-useless-assignment`, nombrando el fichero",
+      f.rc !== 0 && /sembrado-175\.mjs/u.test(f.out) && /no-useless-assignment/u.test(f.out),
+      cola(f),
+    );
+    const fc = lintEnEspejo(temporal, "f-control", { "qa/lib/sembrado-175.mjs": ASIGNACION_VIVA });
+    ctx.expect("el control, `let x;` con la misma lectura, sale 0", fc.rc === 0, cola(fc));
+
+    // ── g · preserve-caught-error, con su control ───────────────────────────
+    const g = lintEnEspejo(temporal, "g", { "qa/sembrado-175.mjs": SIN_CAUSA });
+    ctx.expect(
+      "un `throw` dentro de un `catch` sin `{ cause }` pone `lint:qa` en ROJO con `preserve-caught-error`, nombrando el fichero",
+      g.rc !== 0 && /sembrado-175\.mjs/u.test(g.out) && /preserve-caught-error/u.test(g.out),
+      cola(g),
+    );
+    const gb = lintEnEspejo(temporal, "g-sin-binding", { "qa/sembrado-175.mjs": SIN_BINDING });
+    ctx.expect(
+      "un `catch {` SIN parámetro que lanza pone `lint:qa` en ROJO con `preserve-caught-error` (`requireCatchParameter`), nombrando el fichero",
+      gb.rc !== 0 && /sembrado-175\.mjs/u.test(gb.out) && /preserve-caught-error/u.test(gb.out),
+      cola(gb),
+    );
+    const gc = lintEnEspejo(temporal, "g-control", { "qa/sembrado-175.mjs": CON_CAUSA });
+    ctx.expect("el control, el mismo `throw` con `{ cause: err }`, sale 0", gc.rc === 0, cola(gc));
   } finally {
     rmSync(temporal, { recursive: true, force: true });
   }

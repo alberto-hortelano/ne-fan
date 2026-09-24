@@ -177,7 +177,7 @@ async function bloqueLaMarcaSeVeAlMandar(ctx) {
     const send = WebSocket.prototype.send;
     window.__qa172 = { enviados: [], restaura: () => (WebSocket.prototype.send = send) };
     WebSocket.prototype.send = function (data) {
-      let type = null;
+      let type;
       try {
         type = JSON.parse(String(data)).type ?? null;
       } catch {

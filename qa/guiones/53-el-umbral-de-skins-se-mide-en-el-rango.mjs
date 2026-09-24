@@ -130,7 +130,7 @@ export default async function (ctx) {
   // registrada para los cuatro bloques, sin re-registrar nada entre recargas.
   const plan = { victimas: [], mascara: true, servidas: 0, caidas: 0, traza: [] };
   await ctx.page.route("**/skin_sprite_sheet", async (route) => {
-    let cuerpo = {};
+    let cuerpo;
     try {
       cuerpo = JSON.parse(route.request().postData() ?? "{}");
     } catch {

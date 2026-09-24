@@ -54,9 +54,9 @@ export default async function (ctx) {
   ctx.page.on("request", (r) => {
     if (r.url().includes("/skin_sprite_sheet")) {
       try {
-        peticiones.push({ t: Date.now(), body: JSON.parse(r.postData() ?? "{}") });
+        peticiones.push({ body: JSON.parse(r.postData() ?? "{}") });
       } catch {
-        peticiones.push({ t: Date.now(), body: { __sin_body: r.url() } });
+        peticiones.push({ body: { __sin_body: r.url() } });
       }
     }
   });
