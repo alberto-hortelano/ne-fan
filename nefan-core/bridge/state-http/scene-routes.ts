@@ -39,8 +39,12 @@ export function tileContextFor(
     const shared = rec.edges?.[oppositeEdge(edge)];
     for (const c of shared?.crossings ?? []) required.push({ edge, ...c });
   }
-  // Bootstrap = el mundo aún no tiene ningún tile (toda escena registrada lo es).
-  const bootstrap = Object.keys(narrative.scenes_loaded).length === 0;
+  // Bootstrap = el tile de ENTRADA, el único que lleva `player`: el (0,0)
+  // mientras la sesión no lo tenga. Hasta #578 era «el mundo aún no tiene
+  // ningún tile», y eso deja de ser verdad cuando la entrada se regenera
+  // dentro de un mundo pre-generado: el anillo ya está cargado, y el
+  // pre-flight rechazaba el `player` que el propio bridge le había pedido.
+  const bootstrap = rawTile.tx === 0 && rawTile.ty === 0 && !narrative.hasTile(0, 0);
   return { required_crossings: required, bootstrap };
 }
 

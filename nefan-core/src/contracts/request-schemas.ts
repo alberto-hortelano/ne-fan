@@ -17,9 +17,7 @@
 import { z } from "zod";
 
 import { EDGES, LINK_KINDS, PLACE_KINDS } from "../world-map/types.js";
-import type { TriggerWhen } from "../world-map/types.js";
 import type {
-  Consequence,
   FormatDScene,
   LinkSpec,
   PlaceTriggerSpec,
@@ -48,40 +46,14 @@ import {
   VocabularyEntrySchema,
 } from "../games/vocabulary.js";
 import type { VocabularySetRequest } from "./world-state.js";
+import {
+  AnchorSchema,
+  PlaceTriggerSpecSchema,
+} from "./world-map-schema.js";
 
 // ── Piezas compartidas ──
 
 const EdgeSchema = z.enum(EDGES);
-
-/** Sobre superficial de una consequence: objeto con `type` string. La forma
- *  completa la valida el consumidor (dispatchConsequences tolera y audita;
- *  el pre-flight del modelo usa ConsequenceSchema del SoT). */
-const ConsequenceEnvelope = z.custom<Consequence>(
-  (v) => !!v && typeof v === "object" && typeof (v as { type?: unknown }).type === "string",
-  { message: "consequence must be an object with a string `type`" },
-);
-
-const TriggerWhenSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("player_entered") }),
-  z.object({ type: z.literal("player_left") }),
-  z.object({ type: z.literal("player_near"), radius: z.number() }),
-  z.object({ type: z.literal("first_visit") }),
-]);
-
-const PlaceTriggerSpecSchema = z.object({
-  id: z.string().min(1),
-  when: TriggerWhenSchema,
-  // Ausente → [] (como el coerce histórico); presente pero no-array → error
-  // (antes se MACHACABA a [] en silencio).
-  consequences: z.array(ConsequenceEnvelope).default([]),
-  fired_at: z.string().optional(),
-});
-
-const AnchorSchema = z.object({
-  tx: z.number().int(),
-  ty: z.number().int(),
-  rect: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
-});
 
 // ── State API (bridge/state-http-server.ts) ──
 
@@ -280,10 +252,6 @@ assertMirror<LinkSpec, z.infer<typeof LinkSpecSchema>>();
 assertMirror<z.infer<typeof LinkSpecSchema>, LinkSpec>();
 assertMirror<MapTriggerRequest, z.infer<typeof MapTriggerRequestSchema>>();
 assertMirror<z.infer<typeof MapTriggerRequestSchema>, MapTriggerRequest>();
-assertMirror<PlaceTriggerSpec, z.infer<typeof PlaceTriggerSpecSchema>>();
-assertMirror<z.infer<typeof PlaceTriggerSpecSchema>, PlaceTriggerSpec>();
-assertMirror<TriggerWhen, z.infer<typeof TriggerWhenSchema>>();
-assertMirror<z.infer<typeof TriggerWhenSchema>, TriggerWhen>();
 assertMirror<NpcDirectiveRequest, z.infer<typeof NpcDirectiveRequestSchema>>();
 assertMirror<z.infer<typeof NpcDirectiveRequestSchema>, NpcDirectiveRequest>();
 assertMirror<NpcMoveToPlaceRequest, z.infer<typeof NpcMoveToPlaceRequestSchema>>();

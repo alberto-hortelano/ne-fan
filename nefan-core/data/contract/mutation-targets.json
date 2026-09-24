@@ -496,13 +496,16 @@
         "!src/world-map/place-target.ts"
       ],
       "tests": [
+        "test/arranque-con-la-entrada-rota.test.ts",
         "test/bootstrap-place.test.ts",
         "test/edges.test.ts",
+        "test/entrada-del-fichero.test.ts",
         "test/exits.test.ts",
         "test/game-repair.test.ts",
         "test/map-triggers.test.ts",
         "test/place-anchor.test.ts",
         "test/style-application.test.ts",
+        "test/world-map-schema.test.ts",
         "test/world-map.test.ts",
         "test/world-snapshot.test.ts"
       ],
@@ -514,6 +517,18 @@
       ],
       "break": 72,
       "porque": "El mapa multinivel: lugares, enlaces, anclas y triggers. Candidato del issue #168. `index.ts` se excluye porque es un barril que ningún test carga (sus mutantes serían NoCoverage sin significar nada), `npc-director.ts` porque tiene otra batería, y `place-target.ts` porque SALE de este módulo con #598a: sus ocho tests lo IMPORTABAN —tres de ellos directamente— y ninguno lo llamaba. Medido el 2026-09-17 contando invocaciones con `NODE_V8_COVERAGE`: `resolvePlaceTarget` sale con 0 llamadas con esta batería y con 7 con la de `npc-director`, que es su único consumidor en `src/`. La huella lo enseñaba desde hacía tres corridas y nadie podía leerlo: 35 mutantes, 35 vivos, el único fichero de 94 al 100 % de supervivientes con más de un mutante. No era deuda de test, era medida que no existía. Lo canda `npm run ejercicio`."
+    },
+    {
+      "id": "world-map-schema",
+      "mutate": [
+        "src/contracts/world-map-schema.ts"
+      ],
+      "tests": [
+        "test/contract-prompts.test.ts",
+        "test/world-map-schema.test.ts"
+      ],
+      "break": "sin medir",
+      "porque": "El world map en zod (#465, #578): el `anchor` de un lugar con las cotas de su rect (entero, dentro del tile de 128 celdas, lados de al menos una celda), el lugar, el enlace y el mapa entero con su integridad referencial. Es la ÚNICA fuente de esas reglas para las tres puertas por donde entra un anchor —`POST /map/place` (`PlaceUpsertSchema`), el pre-flight de la tool `map_upsert_place` (`narrative-mcp/validators.ts`) y el `world_map` del snapshot de mundo—, y por eso vive fuera de `request-schemas.ts`, que está en `sin_mutar` y arrastra `node:fs`. Módulo propio y no dentro de `world-map` porque su batería es otra: los dos tests que lo importan directamente, `world-map-schema.test.ts` (los negativos por las tres puertas) y `contract-prompts.test.ts` (las cotas que dice el prompt de tile son las que aplica este zod). `sin medir` hasta su primera corrida."
     },
     {
       "id": "npc-director",
@@ -530,7 +545,13 @@
         "test/vocabulary.test.ts"
       ],
       "break": 81,
-      "porque": "Quién mueve a los NPCs por el mapa entre escenas. Sale de world-map porque sus cuatro tests no son los del mapa. Los dos tests de #225 (caracterización y despacho) entran el 2026-08-23 porque el candado de imports lo obliga —los dos construyen un NpcDirector— y SÍ suben el score: medido las dos veces ese día, 80,5 % sin ellos (23 vivos) y 81,4 % con ellos (22 vivos), a cambio de 36 s → 53 s. Un mutante más muerto, así que se quedan por medir, no solo por obligación; suelo 80 → 81. CON #598a ENTRA `place-target.ts`, que estaba en `world-map` sin que nadie de aquella batería lo llamara (0 invocaciones medidas el 2026-09-17 con `NODE_V8_COVERAGE`, 7 con ésta): `npc-director.ts:14` lo importa y lo usa, así que su sitio es éste. LO QUE CUESTA, Y VA ESCRITO PORQUE NADIE LO VERÁ DE OTRA FORMA: el módulo pasa de 115 a 150 mutantes (115 + los 35 de `place-target` en la huella commiteada) y por tanto SALE del conjunto medible en local, cuyo tope es 120. El tope no se toca ni arriba ni abajo — el `_comment` de este contrato ya avisaba de que este módulo estaba a 2 del tope, y esto es justo lo que avisaba. Su siguiente medida exige corrida autorizada. El suelo 81 se queda hasta esa corrida: se midió sobre 115 mutantes y con 35 más el score de verdad será otro, así que subirlo ahora sería inventarlo."
+      "porque": "Quién mueve a los NPCs por el mapa entre escenas. Sale de world-map porque sus cuatro tests no son los del mapa. Los dos tests de #225 (caracterización y despacho) entran el 2026-08-23 porque el candado de imports lo obliga —los dos construyen un NpcDirector— y SÍ suben el score: medido las dos veces ese día, 80,5 % sin ellos (23 vivos) y 81,4 % con ellos (22 vivos), a cambio de 36 s → 53 s. Un mutante más muerto, así que se quedan por medir, no solo por obligación; suelo 80 → 81. CON #598a ENTRA `place-target.ts`, que estaba en `world-map` sin que nadie de aquella batería lo llamara (0 invocaciones medidas el 2026-09-17 con `NODE_V8_COVERAGE`, 7 con ésta): `npc-director.ts:14` lo importa y lo usa, así que su sitio es éste. LO QUE CUESTA, Y VA ESCRITO PORQUE NADIE LO VERÁ DE OTRA FORMA: el módulo pasa de 115 a 150 mutantes (115 + los 35 de `place-target` en la huella commiteada) y por tanto SALE del conjunto medible en local, cuyo tope es 120. El tope no se toca ni arriba ni abajo — el `_comment` de este contrato ya avisaba de que este módulo estaba a 2 del tope, y esto es justo lo que avisaba. Su siguiente medida exige corrida autorizada. El suelo 81 se queda hasta esa corrida: se midió sobre 115 mutantes y con 35 más el score de verdad será otro, así que subirlo ahora sería inventarlo.",
+      "excluidos": [
+        {
+          "test": "test/world-map-schema.test.ts",
+          "porque": "Solo importa el TIPO `NpcDirector` para rellenar el contexto del State API con el que prueba `POST /map/place` (las rutas de mapa no lo tocan: va como `{}`). No llama a nada de `npc-director.ts` ni de `place-target.ts`, así que no puede matar un mutante suyo."
+        }
+      ]
     },
     {
       "id": "store",
@@ -900,7 +921,13 @@
         "test/scene-validate.test.ts"
       ],
       "break": 88,
-      "porque": "El validador de JUGABILIDAD: el flood-fill sobre el grid de 128×128 que decide si un tile del motor se puede caminar de verdad, y el que dice que NO con su motivo antes de que el jugador se quede encerrado. Sale de `sin_mutar` con #339: su motivo escrito decía «hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería», y eso es lo que se hace aquí. Batería DERIVADA del árbol de imports (`testsQueImportan`), no de una lista a mano: son CUATRO tests y no cinco — `scene-fixtures.test.ts` entra porque valida cada fixture commiteada con este validador, y estar además en la batería de `contrato-escena` no exime (un test puede pagar dos módulos; un fichero mutado solo puede tener uno). AVISO que la exención dejaba escrito y sigue vigente: es el fichero que el 2026-08-21 disparó el OOM killer con `timeoutMS` en 120 s. Con los 10 s de hoy y la concurrencia acotada es medible, y va en módulo SOLO justamente por eso: si vuelve a reventar el reloj, se aísla sin arrastrar a nadie. Es el módulo más caro que estrena esta tanda — 1.002 líneas, estimadas ~660 mutantes por la mediana de la huella (0,66 mut/línea), muy por encima del `tope_local`. Suelo 88 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 91 supervivientes de 826 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número."
+      "porque": "El validador de JUGABILIDAD: el flood-fill sobre el grid de 128×128 que decide si un tile del motor se puede caminar de verdad, y el que dice que NO con su motivo antes de que el jugador se quede encerrado. Sale de `sin_mutar` con #339: su motivo escrito decía «hay tests que lo tienen por sujeto, así que es medible tal cual: lo que falta es agruparlo por batería», y eso es lo que se hace aquí. Batería DERIVADA del árbol de imports (`testsQueImportan`), no de una lista a mano: son CUATRO tests y no cinco — `scene-fixtures.test.ts` entra porque valida cada fixture commiteada con este validador, y estar además en la batería de `contrato-escena` no exime (un test puede pagar dos módulos; un fichero mutado solo puede tener uno). AVISO que la exención dejaba escrito y sigue vigente: es el fichero que el 2026-08-21 disparó el OOM killer con `timeoutMS` en 120 s. Con los 10 s de hoy y la concurrencia acotada es medible, y va en módulo SOLO justamente por eso: si vuelve a reventar el reloj, se aísla sin arrastrar a nadie. Es el módulo más caro que estrena esta tanda — 1.002 líneas, estimadas ~660 mutantes por la mediana de la huella (0,66 mut/línea), muy por encima del `tope_local`. Suelo 88 PUESTO A LA MEDIDA de la corrida 33895064567 (2026-09-04, la primera en matriz): 91 supervivientes de 826 mutantes. Nació con `break: \"sin medir\"` porque una primera medida no se puede hacer en local (`permisoLocal` rechaza el coste desconocido) y el candado de `test/mutation-config.test.ts` lo puso rojo en cuanto la huella trajo el número.",
+      "excluidos": [
+        {
+          "test": "test/fake-motor-contract.test.ts",
+          "porque": "Usa `validateScene` como JUEZ del motor falso, no como sujeto: afirma que la entrada que emite el doble en un mundo que ya existe (#578) casa las costuras de sus vecinos. Además importa `labs/narrative/fake-scenes.ts` con un salto fijo fuera del paquete, que en el sandbox de Stryker no existe: dentro de la batería dejaría el módulo entero sin informe."
+        }
+      ]
     },
     {
       "id": "tile-edges",

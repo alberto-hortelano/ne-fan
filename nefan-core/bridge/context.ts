@@ -18,7 +18,6 @@ import { loadWorldDoc } from "../src/games/loader.js";
 import {
   WORLD_SNAPSHOT_SCHEMA_VERSION,
   escenasQueSobreviven,
-  escenasSinLugarEnElMapa,
   writeWorldSnapshot,
 } from "../src/games/world-snapshot.js";
 import type { DuenoDelSim } from "../src/protocol/dueno-del-sim.js";
@@ -30,6 +29,8 @@ import { npcBehaviorRegistry } from "../src/simulation/npc-behavior-registry.js"
 import { isHostileRole } from "../src/simulation/npc-roles.js";
 import { seededRng } from "../src/rng.js";
 import { resolvePlaceTarget } from "../src/world-map/place-target.js";
+import { WorldMapManager } from "../src/world-map/world-map.js";
+import type { WorldMap } from "../src/world-map/types.js";
 import type { SimCollisionProvider } from "./sim-collision.js";
 import {
   describePluginTickError,
@@ -168,13 +169,27 @@ export interface BridgeContext {
  *  mecanismo por el que un llamante nuevo hereda en silencio la decisión
  *  equivocada; sin él, tiene que elegir.
  *
- *  YA HAY TRES LLAMANTES, y el tercero es el que la hipótesis anterior temía:
- *  la CURA del mundo pre-generado (#577, `handlers/game-repair.ts`) elige
- *  `conserva-el-mundo-en-disco`, y no es una preferencia. Con `reemplaza`, una
- *  escena cribada que la cura NO consigue arreglar desaparecería del fichero:
- *  el chip del título pasaría de «8 de 9 escenas» a «✓ generado» 8/8 y el
- *  jugador perdería el único aviso que tiene de que su mundo va a costar
- *  llamadas al motor. Con `conserva` vuelve rota y el chip sigue avisando. */
+ *  HAY CUATRO LLAMANTES, y cada uno elige por una razón:
+ *   · `generate_game` REEMPLAZA: regenerar es regenerar.
+ *   · el bootstrap vivo (`runBootstrapTile`) REEMPLAZA desde #578: solo se
+ *     llega a él sin fichero, con el fichero stale o ilegible, y en los tres
+ *     casos no había nada que conservar (`escenasQueSobreviven` devolvía `{}`).
+ *     Mientras conservaba, era el camino por el que un anillo viejo acababa
+ *     junto a un mapa recién sembrado.
+ *   · la entrada regenerada en el mapa del fichero (#578,
+ *     `runEntradaEnElMapaDelFichero`) CONSERVA: el anillo es del fichero y
+ *     tiene que volver a él, el que no pasa el validador también — roto,
+ *     para que el chip del título siga avisando.
+ *   · la CURA del mundo pre-generado (#577, `handlers/game-repair.ts`)
+ *     CONSERVA, y no es una preferencia. Con `reemplaza`, una escena cribada
+ *     que la cura NO consigue arreglar desaparecería del fichero: el chip del
+ *     título pasaría de «8 de 9 escenas» a «✓ generado» 8/8 y el jugador
+ *     perdería el único aviso que tiene de que su mundo va a costar llamadas
+ *     al motor. Con `conserva` vuelve rota y el chip sigue avisando.
+ *
+ *  Ninguno de los dos que conservan escribe un mapa distinto del que leyó:
+ *  los dos restauran el `world_map` del fichero (`restaurarMundoServible`)
+ *  antes de pedir nada al motor. */
 export type PoliticaDeSnapshot = "conserva-el-mundo-en-disco" | "reemplaza-el-mundo";
 
 /** El desenlace de un write de snapshot, DICHO (#577).
@@ -197,9 +212,8 @@ export type EscrituraDeSnapshot =
  *
  *  Con `conserva-el-mundo-en-disco` las escenas VIVAS se funden ENCIMA de las
  *  que sobrevivan del fichero (mismo world.md, mismo schema): las vivas ganan
- *  por id, así que el `tile_0_0` recién generado sustituye al injugable que
- *  mandó la sesión al bootstrap vivo y el fichero se cura solo, sin perder el
- *  anillo. Con `reemplaza-el-mundo` se escribe solo lo generado — regenerar es
+ *  por id, así que el `tile_0_0` recién generado sustituye al injugable y el
+ *  fichero se cura solo, sin perder el anillo. Con `reemplaza-el-mundo` se escribe solo lo generado — regenerar es
  *  regenerar, y resucitar una escena vieja ahí sería el bug contrario. */
 export function writeSessionSnapshot(
   ctx: BridgeContext,
@@ -221,6 +235,12 @@ export function writeSessionSnapshot(
         ? escenasQueSobreviven(ctx.gamesDir, gameId, worldDocHash)
         : {};
     const scenes = { ...conservadas, ...vivas };
+    // El mapa es el de la sesión, y con `conserva` es el MISMO que el del
+    // fichero: los dos llamantes que conservan lo restauraron de él antes de
+    // generar (#578). Hasta entonces el bootstrap vivo conservaba el anillo
+    // con un mapa recién sembrado, y aquí se avisaba de los lugares colgando;
+    // hoy esa mezcla no la produce nadie y la regla es una precondición del
+    // arranque (`planDeEntrada`).
     const mapaVivo = structuredClone(ctx.narrative.worldMap.serialize());
     writeWorldSnapshot(ctx.gamesDir, {
       schema_version: WORLD_SNAPSHOT_SCHEMA_VERSION,
@@ -238,31 +258,30 @@ export function writeSessionSnapshot(
         `${heredadas.length > 0 ? ` + ${heredadas.length} conservadas del mundo en disco` : ""}` +
         `, política ${politica})`,
     );
-    // El mapa que se escribe es el de la sesión VIVA; las conservadas traen el
-    // `place_id` de la generación ANTERIOR. Si el bootstrap sembró otros ids
-    // —con un motor real es lo normal, con el falso coinciden— esas escenas
-    // quedan apuntando a lugares que el mapa nuevo no nombra, y su panel
-    // «Salidas» saldrá vacío: el defecto de #172, que aquí llegaba SIN UN
-    // SOLO AVISO (QA de #451, H-1). Conservarlas sigue siendo mejor que
-    // tirarlas —que es el bug que esta PR arregla—, pero callarlo no: quien
-    // conoce la causa es este escritor, y es donde se dice.
-    const colgando = escenasSinLugarEnElMapa(
-      Object.fromEntries(heredadas.map((id) => [id, scenes[id]])),
-      mapaVivo,
-    );
-    if (colgando.length > 0) {
-      const lugares = [...new Set(colgando.map((c) => c.placeId))];
-      console.warn(
-        `Bridge: world snapshot de "${gameId}": ${colgando.length} escena(s) CONSERVADAS ` +
-          `apuntan a lugares que el world_map nuevo no nombra ` +
-          `(${lugares.map((l) => `"${l}"`).join(", ")}) — su panel «Salidas» saldrá vacío ` +
-          `hasta que el motor las regenere: ${colgando.map((c) => c.sceneId).join(", ")}`,
-      );
-    }
     return { escrito: true, escenas: Object.keys(scenes).length };
   } catch (err) {
     console.warn(`Bridge: world snapshot no se pudo escribir para "${gameId}":`, err);
     return { escrito: false, motivo: (err as Error).message ?? String(err) };
+  }
+}
+
+/** Mete en la sesión el mundo SERVIBLE de un fichero: su mapa y sus escenas,
+ *  registradas SIN activar ni difundir. Es el cuerpo que compartían, copiado,
+ *  el replay del snapshot y la cura de #577, y el tercero que lo necesita es
+ *  la entrada regenerada en el mapa del fichero (#578): el motor genera un
+ *  tile con las costuras de sus vecinos solo si los vecinos están cargados, y
+ *  el bridge ata el tile a su lugar solo si el lugar está en el mapa.
+ *
+ *  Copias profundas: lo que entra en la sesión se muta (save, activación,
+ *  anchors), y el llamante puede seguir necesitando lo que leyó. */
+export function restaurarMundoServible(
+  ctx: BridgeContext,
+  worldMap: WorldMap,
+  escenas: Record<string, Record<string, unknown>>,
+): void {
+  ctx.narrative.worldMap = WorldMapManager.fromSerialized(structuredClone(worldMap));
+  for (const [id, scene] of Object.entries(escenas)) {
+    ctx.narrative.recordSceneLoaded(id, structuredClone(scene), [], { activate: false });
   }
 }
 

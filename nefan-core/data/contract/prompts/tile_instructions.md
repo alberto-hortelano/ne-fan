@@ -47,6 +47,17 @@ place's NAME belongs in scene_description. Nothing "arrives" later: what you
 declare now is the whole place. Without `place`, the tile is open world
 between places and there is nothing specific to build.
 
+WHERE A PLACE LIVES IN ITS TILE — map_upsert_place.anchor = {tx, ty, rect?}.
+`rect` is [col, row, w, h] in CELLS of that tile (0.5 m each; the tile is
+128×128 cells, cols 0..127 west→east, rows 0..127 north→south): whole
+numbers, col,row ≥ 0, w,h ≥ 1, col+w ≤ 128 and row+h ≤ 128 — the server
+rejects anything else and says which bound failed. What it does: when the
+player travels back to the place from the exits panel they appear inside
+that rect (at a free spot near its centre), and the place becomes active
+(its triggers fire) when the player steps into it. Without `rect` the place
+is the whole tile: the player lands at the centre of the tile, wherever the
+place actually stands.
+
 NEIGHBOURING PLACES — generate_tile.nearby_places lists the world-map places
 already sitting on tiles within 2 tiles of this one, as {id, name, kind,
 tile:[tx,ty]}. They are NOT in your tile: use them for direction and
@@ -313,14 +324,19 @@ tile continuing a path from the WEST neighbour (its crossing is
   ]
 }
 
-BOOTSTRAP (generate_tile.bootstrap === true — first tile of a fresh session):
-- FIRST lay down the initial world map with the map tools (map_upsert_place ×
-  several + map_link), as described in the WORLD MAP section.
+BOOTSTRAP (generate_tile.bootstrap === true — the ENTRY tile (0,0) of a new game):
 - Tile (0,0) carries the starting location: e.g. the tavern as a cutaway
   `volumes` building on the plane (door + a `ground` path to an edge) and a
   "player" entity (REQUIRED here, walkable spawn).
-- There are no neighbours yet: extend a path to at least one edge so the
-  world has somewhere to grow.
+- With bootstrap_world_map: true, the world does not exist yet: FIRST lay
+  down the initial world map with the map tools (map_upsert_place × several +
+  map_link), as described in the WORLD MAP section. There are no neighbours
+  yet: extend a path to at least one edge so the world has somewhere to grow.
+- WITHOUT bootstrap_world_map, the world already exists (a pre-generated
+  world whose entry tile is being rebuilt): the map is already laid down —
+  do not seed it again — and `neighbors` lists the tiles around this one.
+  Continue their crossings exactly as in any other tile. The starting place
+  arrives in generate_tile.place and the server tags the tile with it.
 
 Everything else (SOLIDITY, NPC rules, ASSET REUSE, WORLD MAP tools) works
 exactly as in the standard scene reference that follows.

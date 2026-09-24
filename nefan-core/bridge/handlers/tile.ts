@@ -12,6 +12,7 @@ import {
   type SitioDeAparicion,
 } from "../context.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
+import { loadWorldDoc } from "../../src/games/loader.js";
 import { validateScene, type TileValidationContext } from "../../src/scene/scene-validate.js";
 import { TILE_MPC, tileKey, tileWorldRect, worldToTile, type TileCoord } from "../../src/scene/tile.js";
 import { oppositeEdge } from "../../src/world-map/edges.js";
@@ -31,12 +32,20 @@ const EDGE_ES: Record<Edge, string> = {
 
 /** Contexto de generación de un tile: vecinos existentes (bioma + cruces del
  *  borde compartido, `at` espejo sin transformación), entrada del jugador y
- *  places cercanos (anclados a tiles del vecindario). */
+ *  places cercanos (anclados a tiles del vecindario).
+ *
+ *  `placeId` dice qué lugar ES este tile cuando el bridge ya lo sabe aunque
+ *  el lugar no tenga su anchor aquí: la entrada regenerada en el mapa del
+ *  fichero (#578) es del lugar de partida, y ese lugar puede no declarar
+ *  anchor. Gana sobre el que esté anclado en estas coordenadas, porque es el
+ *  mismo que `generateTileScene` va a poner en el `place_id` del tile: el
+ *  motor tiene que construir el lugar con el que se etiqueta. */
 export function buildGenerateTileCtx(
   ctx: BridgeContext,
   tx: number,
   ty: number,
   approachEdge?: Edge,
+  placeId?: string,
 ): NonNullable<LlmContext["generate_tile"]> {
   const neighbors: NonNullable<LlmContext["generate_tile"]>["neighbors"] = {};
   for (const [edge, rec] of Object.entries(ctx.narrative.neighborsOf(tx, ty)) as Array<
@@ -58,19 +67,24 @@ export function buildGenerateTileCtx(
   const nearby: NonNullable<LlmContext["generate_tile"]>["nearby_places"] = [];
   let place: NonNullable<LlmContext["generate_tile"]>["place"];
   for (const p of Object.values(ctx.narrative.worldMap.map.places)) {
+    const comoLugar = {
+      id: p.id,
+      name: p.name,
+      kind: p.kind,
+      description: p.description,
+      attrs: p.attrs,
+    };
+    if (p.id === placeId) {
+      place = comoLugar;
+      continue;
+    }
     const realizedTile = p.realized_scene_id
       ? ctx.narrative.scenes_loaded[p.realized_scene_id]?.tile
       : undefined;
     const coord: TileCoord | undefined = p.anchor ?? realizedTile;
     if (!coord) continue;
     if (coord.tx === tx && coord.ty === ty) {
-      place ??= {
-        id: p.id,
-        name: p.name,
-        kind: p.kind,
-        description: p.description,
-        attrs: p.attrs,
-      };
+      if (placeId === undefined) place ??= comoLugar;
       continue;
     }
     if (Math.abs(coord.tx - tx) <= 2 && Math.abs(coord.ty - ty) <= 2) {
@@ -95,13 +109,24 @@ export function buildGenerateTileCtx(
  *  del jugador). "exists" si el tile ya estaba; LANZA en cualquier fallo.
  *  `opts.placeId` marca el tile como la escena realizada de ese place (viaje
  *  a un lugar anclado): recordSceneLoaded lo engancha y las salidas que salen
- *  al wire con la escena son las suyas (`wire-scene.ts` las calcula al servir). */
+ *  al wire con la escena son las suyas (`wire-scene.ts` las calcula al servir).
+ *
+ *  `opts.arranque` hace de este tile la ENTRADA de la partida dentro de un
+ *  mundo que YA existe (#578): el mapa y los vecinos están cargados, así que
+ *  el motor NO siembra nada (sin `bootstrap_world_map`) y casa las costuras
+ *  como en cualquier tile; lo que cambia es que trae al `player`
+ *  (`generate_tile.bootstrap`), recibe el documento del mundo como el
+ *  bootstrap, se valida como tile de arranque y se registra ACTIVO.
+ *
+ *  (Los `opts` ya son dos. Si llega un tercero, esto pide una unión
+ *  discriminada de «modo de tile» en vez de banderas sueltas — anotado en
+ *  #578.) */
 export async function generateTileScene(
   ctx: BridgeContext,
   tx: number,
   ty: number,
   approachEdge?: Edge,
-  opts: { placeId?: string } = {},
+  opts: { placeId?: string; arranque?: { gameId: string } } = {},
 ): Promise<{ sceneId: string; scene: Record<string, unknown> } | "exists"> {
   const key = tileKey(tx, ty);
   // El tile pudo generarse mientras esperaba en la cola.
@@ -109,7 +134,11 @@ export async function generateTileScene(
 
   const jobSession = ctx.narrative.session_id;
   const genCtx = ctx.narrative.serializeForLlm(ctx.activePlugins);
-  const tileCtx = buildGenerateTileCtx(ctx, tx, ty, approachEdge);
+  const tileCtx = buildGenerateTileCtx(ctx, tx, ty, approachEdge, opts.placeId);
+  if (opts.arranque) {
+    tileCtx.bootstrap = true;
+    genCtx.world_document = loadWorldDoc(ctx.gamesDir, opts.arranque.gameId);
+  }
   genCtx.generate_tile = tileCtx;
   attachWorldVocabulary(ctx, genCtx);
 
@@ -147,6 +176,7 @@ export async function generateTileScene(
   const check = validateScene(res.scene, {
     required_crossings: required,
     entry: tileCtx.entry as { edge: Edge; at?: number } | undefined,
+    ...(opts.arranque ? { bootstrap: true } : {}),
   });
   if (!check.ok) {
     throw new Error(`El tile (${tx}, ${ty}) no es jugable: ${check.errors.join(" · ")}`);
@@ -154,8 +184,9 @@ export async function generateTileScene(
 
   const expanded = expandScenePrimitives(res.scene);
   // Sin activar: la escena activa la decide la POSICIÓN del jugador (el
-  // prefetch no roba el tile actual).
-  ctx.narrative.recordSceneLoaded(key, expanded, [], { activate: false });
+  // prefetch no roba el tile actual). La ENTRADA sí: es donde está el jugador.
+  if (opts.arranque) ctx.narrative.recordSceneLoaded(key, expanded);
+  else ctx.narrative.recordSceneLoaded(key, expanded, [], { activate: false });
   await ctx.narrative.save();
   return { sceneId: key, scene: expanded };
 }

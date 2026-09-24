@@ -1626,7 +1626,17 @@ describe("set_render_mode (cambio de modo por faceta, ambos sentidos)", () => {
       scenes_loaded: {},
       entities: [],
       dialogue_history: [],
-      world_map: { places: [], links: [], triggers: [] },
+      // Un mapa VÁLIDO (vacío): desde #578 el save pasa `WorldMapSchema` al
+      // cargar, y lo que estos tests miden es el modo, no el mapa.
+      world_map: {
+        schema_version: 1,
+        places: {
+          world: { id: "world", kind: "world", parent_id: null, name: "Mundo", description: "", attrs: {}, triggers: [], visited: false },
+        },
+        links: [],
+        root_id: "world",
+        active_place_id: "world",
+      },
       plugins: [],
       _next_event_seq: 1,
     }) as unknown as import("../src/narrative/types.js").SessionData;

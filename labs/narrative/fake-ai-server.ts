@@ -84,6 +84,7 @@ import type { LlmContext } from "../../nefan-core/src/narrative/types.js";
 import {
   ANCHORED_PLACE_RECT,
   BOOTSTRAP_PLACE_RECT,
+  entradaEnMundoExistente,
   bootstrapTile,
   makeTile,
   type GenerateTile,
@@ -314,7 +315,20 @@ if (TILE_MODE_AL_ARRANCAR !== tileMode) {
 const conductaDeTiles = () => ({ delay_ms: tileDelayMs, mode: tileMode });
 const tileByKey = new Map<string, ReturnType<typeof makeTile>>();
 
-async function handleGenerateTile(gt: GenerateTile) {
+/** La ÚLTIMA petición de escena que recibió este motor, en lo que dice de su
+ *  forma: si pedía el tile de entrada, si pedía sembrar el mapa y con cuántos
+ *  vecinos. La lee el guion 214 (#578) para afirmar que la entrada de un mundo
+ *  pre-generado se regenera SIN sembrar y con el anillo como vecinos — el
+ *  contador de `gasto` dice cuántas llamadas, esto dice cuáles. `/dev/reset`
+ *  la vacía. */
+let ultimaPeticionDeEscena: {
+  tile: [number, number];
+  bootstrap: boolean;
+  bootstrap_world_map: boolean;
+  vecinos: string[];
+} | null = null;
+
+async function handleGenerateTile(gt: GenerateTile, { sembrarMapa }: { sembrarMapa: boolean }) {
   // El retardo se mide contra la conducta VIVA, no contra la que había al
   // entrar la petición: pedir `delay_ms: 0` suelta también el tile que ya
   // estaba durmiendo. Con un `setTimeout` de una sola pieza, un guion se
@@ -330,6 +344,11 @@ async function handleGenerateTile(gt: GenerateTile) {
   if (tileMode === "error" && !gt?.bootstrap) {
     throw new Error("fake-ai: TILE_MODE=error — el motor rechazó el tile");
   }
+  // El tile de ENTRADA de un mundo que YA existe (#578): el mapa y los vecinos
+  // están en el bridge, así que —como el motor real con el prompt de tile— no
+  // se siembra nada: se responde el pueblo de arranque, continuando los
+  // cruces que traen los vecinos (`entradaEnMundoExistente`).
+  if (gt?.bootstrap && !sembrarMapa) return entradaEnMundoExistente(gt);
   if (gt?.bootstrap) {
     // Como el motor real: sembrar el world map con las map tools. Dos places
     // y un link — el segundo NO se realiza aquí: es el destino del panel
@@ -540,6 +559,8 @@ const server = http.createServer((req, res) => {
       // deja el retardo puesto se lo lleva al siguiente, y sin esto habría que
       // adivinarlo mirando relojes.
       tilesConducta: conductaDeTiles(),
+      // La forma de la última petición de escena (#578): cuáles, no cuántas.
+      ultimaPeticionDeEscena,
     });
   }
   // Cómo se conforma el motor ante un tile (#516): mirar sin tocar. El POST
@@ -862,6 +883,7 @@ const server = http.createServer((req, res) => {
         fakeDialogueTurn = 0;
         fakeDevCacheEnabled = false;
         motorConducidoPorMarcas = false;
+        ultimaPeticionDeEscena = null;
         // La conducta ante los tiles vuelve a la del ARRANQUE, no a cero: quien
         // arrancó el proceso con `TILE_DELAY_MS` la pidió para toda la corrida,
         // y el reset entre guiones no está para desdecirle. Lo que sí deshace
@@ -1100,8 +1122,16 @@ const server = http.createServer((req, res) => {
         const body = leerBody<LlmContext>(raw);
         if (!body) return send(400, { detail: "fake-ai: body no es JSON" });
         if (body.generate_tile) {
+          ultimaPeticionDeEscena = {
+            tile: [body.generate_tile.tx, body.generate_tile.ty],
+            bootstrap: body.generate_tile.bootstrap === true,
+            bootstrap_world_map: body.bootstrap_world_map === true,
+            vecinos: Object.keys(body.generate_tile.neighbors ?? {}),
+          };
           try {
-            return send(200, await handleGenerateTile(body.generate_tile));
+            return send(200, await handleGenerateTile(body.generate_tile, {
+              sembrarMapa: body.bootstrap_world_map === true,
+            }));
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             console.error(`[fake-ai] tile falló:`, msg);

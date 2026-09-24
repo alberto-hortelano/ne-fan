@@ -13,6 +13,7 @@ import {
   WeaponVerifySchema,
   EmittedSceneSchema,
 } from '@nefan/core';
+import { AnchorSchema } from '@nefan/core/contracts/world-map-schema';
 
 /** Gate ESTRUCTURAL de una escena Format D (entities, tile/biome y las
  *  sub-partes ground/volumes). Delega en el zod SoT. Antes
@@ -21,6 +22,15 @@ import {
  *  malformadas → clamp). La jugabilidad la valida aparte /scene/validate. */
 export function validateFormatDScene(data: unknown): { ok: true } | { ok: false; error: string } {
   return validateContract(EmittedSceneSchema, data);
+}
+
+/** Pre-flight del `anchor` de `map_upsert_place` (#465) — delega en el MISMO
+ *  zod que aplica `POST /map/place` en el bridge (`AnchorSchema`), así que la
+ *  tool y la ruta no pueden discrepar: rect entero, dentro del tile (0..128)
+ *  y con lados de al menos una celda. El motor lee el campo y la cota que
+ *  falló antes de que la petición salga hacia el bridge. */
+export function validateAnchor(data: unknown): { ok: true } | { ok: false; error: string } {
+  return validateContract(AnchorSchema, data);
 }
 
 /** Pre-flight de una respuesta weapon_orient / weapon_verify — delega en el

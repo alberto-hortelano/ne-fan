@@ -18,17 +18,20 @@
  *        entrada. Se mide además QUÉ LEE EL JUGADOR en el título, porque es
  *        lo único que tiene para decidir si regenera.
  *   E3 · la ENTRADA mala Y una del anillo mala — el estado mixto, que no es
- *        ninguno de los dos del 120: el bootstrap vivo cura la entrada y
- *        CONSERVA la mala del anillo tal cual, así que la partida siguiente
- *        la vuelve a cribar.
+ *        ninguno de los dos del 120: se regenera SOLO la entrada, dentro del
+ *        mapa del fichero (#578), y la mala del anillo se CONSERVA tal cual,
+ *        así que la partida siguiente la vuelve a cribar.
  *   E4 · la MISMA partida dos y tres veces — lo que el ingeniero declara sin
  *        medir: «el tile cribado no se cura en disco». Se cuenta lo que paga
  *        el jugador en la 1.ª, la 2.ª y la 3.ª partida nueva, y lo que paga
  *        al REANUDAR (que no es lo mismo).
- *   E5 · el world_map del merge — la otra declaración sin medir: el mapa que
- *        se escribe con las ocho escenas conservadas es el de la sesión VIVA.
- *        Se mide si una escena conservada puede quedar apuntando a un lugar
- *        que ese mapa no nombra, y si alguien lo DICE.
+ *
+ *  (Aquí había un E5 —«el world_map del merge»— que medía si el bootstrap vivo
+ *  dejaba el anillo conservado apuntando a lugares que el mapa recién sembrado
+ *  no nombraba, y si alguien lo DECÍA. Con #578 ese merge ya no existe: la
+ *  entrada rota se regenera dentro del mapa del fichero. Su aserto se había
+ *  vuelto tautológico —`colgando.length === 0 || dicho.length > 0`— y se mudó,
+ *  en positivo y en negativo, al guion 214.)
  *
  *  Escrito por QA sobre `c4/el-anillo-bueno-no-se-pierde` (2026-09-14).
  *
@@ -300,13 +303,13 @@ export default async function (ctx) {
 
     await recargarAlTitulo(ctx);
     const panel = await panelDeGeneracion(ctx);
-    ctx.expect("E3 · con la entrada mala el título lo marca obsoleto", /obsoleto/.test(panel.estado), panel.estado);
+    ctx.expect("E3 · con la entrada mala el título dice que Comenzar la regenera (#578)", /la entrada se regenerará al empezar/.test(panel.estado), panel.estado);
 
     const antes = await generaciones();
     await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
     await comenzar(ctx);
     const tras = await generaciones();
-    ctx.expect("E3 · se degrada al bootstrap vivo: una sola llamada", tras === antes + 1, `/generate_scene ${antes} → ${tras}`);
+    ctx.expect("E3 · se regenera solo la entrada: una sola llamada", tras === antes + 1, `/generate_scene ${antes} → ${tras}`);
 
     const curado = leer();
     ctx.expect("E3 · el anillo NO se pierde: siguen las 9 escenas", Object.keys(curado.scenes).length === 9, JSON.stringify(Object.keys(curado.scenes)));
@@ -379,64 +382,5 @@ export default async function (ctx) {
         );
       }
     }
-  }
-
-  // ── E5 · el world_map del merge ─────────────────────────────────────────
-  {
-    // (a) Sin tocar nada: ¿el mapa que escribe el bootstrap vivo conserva los
-    //     lugares del mundo pre-generado? Con el motor FALSO es determinista;
-    //     con un motor real, el bootstrap siembra lugares nuevos.
-    const roto = JSON.parse(JSON.stringify(intacto));
-    const entradaRota = romperLaEntrada(roto);
-    if (!entradaRota) ctx.sinMedirBloque("no se puede romper la entrada para el bloque E5");
-    else {
-      escribir(roto);
-      await recargarAlTitulo(ctx);
-      await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
-      await comenzar(ctx);
-      const curado = leer();
-      const antesPlaces = Object.keys(intacto.world_map?.places ?? {}).sort();
-      const despuesPlaces = Object.keys(curado.world_map?.places ?? {}).sort();
-      ctx.log(`E5 · lugares antes ${JSON.stringify(antesPlaces)} · después ${JSON.stringify(despuesPlaces)}`);
-      ctx.expect(
-        "E5 · el mapa escrito con las 8 conservadas es el de la sesión VIVA (con el motor falso coincide; con uno real no tiene por qué)",
-        JSON.stringify(antesPlaces) === JSON.stringify(despuesPlaces),
-        `${antesPlaces.length} → ${despuesPlaces.length}`,
-      );
-    }
-
-    // (b) La consecuencia, fabricada: un anillo cuyos tiles apuntan a un lugar
-    //     que el mapa nuevo no nombra — que es lo que produce cualquier
-    //     bootstrap que siembre ids distintos. Se mide si el snapshot
-    //     resultante queda con referencias colgando y si alguien LO DICE.
-    const fantasma = JSON.parse(JSON.stringify(intacto));
-    for (const id of anillo) fantasma.scenes[id].place_id = "lugar_que_ya_no_existe";
-    romperLaEntrada(fantasma);
-    escribir(fantasma);
-    const antesLog = readFileSync(logBridge, "utf8").length;
-    await recargarAlTitulo(ctx);
-    await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
-    await comenzar(ctx);
-    const curado = leer();
-    const lugares = new Set(Object.keys(curado.world_map?.places ?? {}));
-    const colgando = Object.entries(curado.scenes)
-      .filter(([, s]) => typeof s.place_id === "string" && s.place_id && !lugares.has(s.place_id))
-      .map(([id]) => id);
-    ctx.log(`E5 · escenas conservadas cuyo place_id no está en el mapa escrito: ${JSON.stringify(colgando)}`);
-    // El tile de ENTRADA sí viaja: el defecto está acotado a lo CONSERVADO,
-    // que es lo que lo hace difícil de ver desde el tile de arranque.
-    const salidasDeLaEntrada = await ctx.nefan("exits");
-    ctx.log(`E5 · salidas desde la entrada recién generada: ${JSON.stringify((salidasDeLaEntrada ?? []).map((e) => e.place_id))}`);
-    const dicho = readFileSync(logBridge, "utf8")
-      .slice(antesLog)
-      .split("\n")
-      .filter((l) => l.includes("lugar_que_ya_no_existe"));
-    ctx.expect(
-      "E5 · una escena conservada que apunta a un lugar que el mapa no nombra se DICE (fail-loud), no se guarda en silencio",
-      colgando.length === 0 || dicho.length > 0,
-      colgando.length === 0
-        ? "no quedó ninguna colgando"
-        : `${colgando.length} escena(s) colgando y 0 líneas en el log del bridge: ${JSON.stringify(colgando)}`,
-    );
   }
 }

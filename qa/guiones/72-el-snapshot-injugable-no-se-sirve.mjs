@@ -13,10 +13,10 @@
  *      lo REPLAYEA: el contador de `/generate_scene` del fake no se mueve.
  *      Sin este control, el paso 5 no distinguiría «degradó» de «nunca replayea».
  *   3. Con el NPC en celda sólida: `list_games` lo marca `stale` — chip
- *      «Mundo ⟳», panel «obsoleto (regenera el mundo)», «Aplicar estilo»
+ *      «Mundo ⟳», panel «la entrada se regenerará al empezar» (#578), «Aplicar estilo»
  *      deshabilitado.
- *   4. «Comenzar» NO lo sirve: degrada al bootstrap vivo (una llamada más al
- *      motor), el bridge lo dice nombrando «injugable», la escena y el NPC —sin
+ *   4. «Comenzar» NO lo sirve: regenera SOLO la entrada dentro del mapa del
+ *      fichero (#578; una llamada más al motor), el bridge lo dice nombrando «injugable», la escena y el NPC —sin
  *      traza de pila detrás, que es una condición esperable (QA 2026-09-05)— y
  *      el snapshot reescrito ya no tiene al NPC en la celda sólida.
  *
@@ -143,7 +143,11 @@ export default async function (ctx) {
   await recargarAlTitulo(ctx);
   const roto = await panelDeGeneracion(ctx);
   ctx.expect("3. list_games lo marca stale: chip «Mundo ⟳» en la tarjeta", /Mundo\s*⟳/.test(roto.tarjeta), roto.tarjeta.slice(0, 120));
-  ctx.expect("3. el panel dice «obsoleto (regenera el mundo)»", roto.estado.includes("obsoleto (regenera el mundo)"), roto.estado);
+  ctx.expect(
+    "3. el panel dice que Comenzar regenera la entrada con una llamada (#578), no que haya que regenerar el mundo",
+    roto.estado.includes("la entrada se regenerará al empezar (1 llamada al motor)") && !roto.estado.includes("regenera el mundo"),
+    roto.estado,
+  );
   ctx.expect("3. «Aplicar estilo» está deshabilitado", roto.aplicarDeshabilitado === true, String(roto.aplicarDeshabilitado));
   await ctx.shot("titulo-stale-injugable");
 
@@ -151,7 +155,7 @@ export default async function (ctx) {
   await nuevaPartida(ctx, { gameId: GAME, renderMode: "image" });
   await comenzar(ctx);
   const tras3 = await generacionesServidas();
-  ctx.expect("4. Comenzar NO sirve el snapshot: degrada al bootstrap vivo (una llamada más al motor)", tras3 === tras2 + 1, `/generate_scene ${tras2} → ${tras3}`);
+  ctx.expect("4. Comenzar NO sirve el snapshot: regenera la entrada (una llamada más al motor)", tras3 === tras2 + 1, `/generate_scene ${tras2} → ${tras3}`);
 
   // El primer rechazo DESDE LA MARCA, que es el que provocó este guion. La
   // selección no puede ser por la escena ni por el NPC: son justo lo que el
@@ -175,7 +179,7 @@ export default async function (ctx) {
   const reescrito = JSON.parse(readFileSync(tileJson, "utf8"));
   const npcNuevo = reescrito.scenes[reescrito.entry_scene_id]?.entities?.find((e) => e.id === npc.id);
   ctx.expect(
-    "4. el bootstrap vivo reescribe el snapshot: el NPC ya no nace en la celda sólida",
+    "4. la entrada regenerada reescribe el snapshot: el NPC ya no nace en la celda sólida",
     Boolean(npcNuevo) && (npcNuevo.cell[0] !== solido.celda[0] || npcNuevo.cell[1] !== solido.celda[1]),
     JSON.stringify(npcNuevo?.cell ?? null),
   );

@@ -4,20 +4,27 @@
  *  primitivas, snapshot de mundo y broadcast. Corre dentro de la cola de
  *  generación (ctx.sceneGen); lo encolan start_session, el reintento de
  *  resume sin escenas y el job generate_game (que usa el núcleo sin
- *  broadcast). */
+ *  broadcast).
+ *
+ *  Y su hermano sin sembrar (#578): `runEntradaEnElMapaDelFichero` regenera
+ *  SOLO la entrada de un mundo pre-generado cuya entrada ya no pasa el
+ *  validador, dentro del mapa y con el anillo del fichero. */
 import { loadWorldDoc } from "../../src/games/loader.js";
 import { expandScenePrimitives } from "../../src/scene/scene-expand.js";
 import { motivoParaElJugador } from "../../src/protocol/status-motivo.js";
 import { validateScene } from "../../src/scene/scene-validate.js";
 import { tileKey } from "../../src/scene/tile.js";
 import { resolveBootstrapPlaceId } from "../../src/world-map/bootstrap-place.js";
+import type { PlanDeEntrada } from "../../src/world-map/entrada-del-fichero.js";
 import {
   broadcastScene,
+  restaurarMundoServible,
   sessionChangedError,
   writeSessionSnapshot,
   type BridgeContext,
 } from "../context.js";
 import type { SceneGenOutcome } from "../scene-gen-queue.js";
+import { generateTileScene } from "./tile.js";
 
 /** Núcleo del bootstrap de tile, compartido por la sesión en vivo y por
  *  generate_game: llama al motor (que siembra el world map vía map tools),
@@ -113,12 +120,14 @@ export async function runBootstrapTile(
     // motor. La escena ya está guardada (generateBootstrapTileScene) y el
     // broadcast no la toca: las salidas se calculan al servir.
     //
-    // CONSERVA lo que ya hubiera en disco (#451): aquí se llega también cuando
-    // la carga del snapshot rechazó su escena de ENTRADA, y un bootstrap vivo
-    // que escribiera su única escena a secas se llevaba por delante el anillo
-    // bueno — el mundo pre-generado entero por un tile malo. La entrada nueva
-    // gana por id y cura el fichero; el resto sigue ahí.
-    writeSessionSnapshot(ctx, sessionGameId, sceneId, "conserva-el-mundo-en-disco");
+    // REEMPLAZA (#578). Aquí solo se llega sin fichero, con el fichero stale o
+    // ilegible (`caminoDeArranque`), y en los tres casos no hay nada que
+    // conservar. Hasta #578 se llegaba también con la ENTRADA injugable y
+    // conservaba el anillo del fichero junto al mapa que este bootstrap acaba
+    // de sembrar: dos generaciones en un fichero, y los `place_id` del anillo
+    // colgando de lugares que el mapa nuevo no tenía. Ese caso tiene hoy su
+    // propio camino, `runEntradaEnElMapaDelFichero`, que no siembra.
+    writeSessionSnapshot(ctx, sessionGameId, sceneId, "reemplaza-el-mundo");
     broadcastScene(ctx, sceneId, scene, Date.now() - sceneStart, { source: "engine" });
     return { delivered: true };
   } catch (err) {
@@ -131,6 +140,68 @@ export async function runBootstrapTile(
     // de motor, no una frase (#180). La causa exacta —un place_id que falta,
     // un tile injugable, el motor mudo— sigue entera en el `console.warn` de
     // arriba, que es el log de quien desarrolla.
+    fail(motivoParaElJugador(err));
+    return { delivered: true };
+  }
+}
+
+/** La ENTRADA regenerada dentro del mapa del fichero (#578) — corre dentro de
+ *  la cola, en el sitio del bootstrap y con su mismo coste: UNA llamada al
+ *  motor.
+ *
+ *  Se llega cuando el mundo pre-generado es de hoy pero su escena de entrada
+ *  no pasa el validador de hoy (`caminoDeArranque`). En vez de sembrar un
+ *  mapa nuevo —lo que hacía el bootstrap vivo, y con él el fichero acababa
+ *  con dos generaciones mezcladas—, se restaura el mundo del fichero (mapa +
+ *  anillo servible) y se pide SOLO el tile (0,0) como un tile más: con las
+ *  costuras de sus vecinos, con el lugar de partida que decide el bridge
+ *  (`plan.placeId`) y con el `player` del arranque.
+ *
+ *  Si falla, NO se escribe nada —el fichero queda como estaba— y NO se cae al
+ *  bootstrap que siembra: eso sería volver a fabricar la mezcla en silencio.
+ *  El jugador lee el motivo y el overlay le ofrece volver al título, donde
+ *  regenerar el mundo sigue siendo un botón.
+ *
+ *  Lo que esto NO sujeta (QA de BE, H5): que el motor no SIEMBRE lugares con
+ *  las map tools durante esta llamada. Solo lo pide el prompt («do not seed it
+ *  again»); si lo hace, el lugar se escribe en el fichero. Es aditivo y no
+ *  deja nada colgando, pero el mapa deja de ser solo el del fichero. Se mira
+ *  con el motor real en el playtest de #239. */
+export async function runEntradaEnElMapaDelFichero(
+  ctx: BridgeContext,
+  sessionGameId: string,
+  plan: PlanDeEntrada,
+): Promise<SceneGenOutcome> {
+  const sceneStart = Date.now();
+  const fail = (message: string): void =>
+    ctx.broadcastNarrative({
+      type: "narrative_status",
+      phase: "error",
+      kind: "tile",
+      tile: { tx: 0, ty: 0 },
+      message,
+      elapsedMs: Date.now() - sceneStart,
+    });
+  try {
+    restaurarMundoServible(ctx, plan.worldMap, plan.anillo);
+    const hecho = await generateTileScene(ctx, 0, 0, undefined, {
+      ...(plan.placeId === null ? {} : { placeId: plan.placeId }),
+      arranque: { gameId: sessionGameId },
+    });
+    if (hecho === "exists") {
+      // Inalcanzable: el anillo no contiene la entrada (`cargarParaArrancar`
+      // la separa). Si alguien lo hiciera alcanzable, el motor no habría
+      // generado nada y escribir aquí volvería a guardar la entrada rota.
+      throw new Error(`${plan.entrySceneId} ya estaba en la sesión: no se generó ninguna entrada`);
+    }
+    // CONSERVA: el anillo del fichero vuelve a él, el que no pasa el validador
+    // también (roto, para que el chip del título siga avisando). El mapa es el
+    // del fichero, restaurado arriba: no hay nada que mezclar.
+    writeSessionSnapshot(ctx, sessionGameId, hecho.sceneId, "conserva-el-mundo-en-disco");
+    broadcastScene(ctx, hecho.sceneId, hecho.scene, Date.now() - sceneStart, { source: "engine" });
+    return { delivered: true };
+  } catch (err) {
+    console.warn("Bridge: la entrada en el mapa del fichero falló:", err);
     fail(motivoParaElJugador(err));
     return { delivered: true };
   }

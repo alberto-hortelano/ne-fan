@@ -288,9 +288,11 @@ export interface LlmContext {
    *  Sólo presente si hay plugins activos. El detalle se pide con plugin_inspect. */
   plugins?: PluginLlmView[];
   available_assets?: AssetEntry[];
-  /** Set on the first scene request of a fresh session: the narrative engine
-   *  should bootstrap the world map (3-5 places + their sites + links) via the
-   *  map tools before generating the starting scene. */
+  /** Set on the first scene request of a fresh session WITHOUT a world yet:
+   *  the narrative engine should bootstrap the world map (3-5 places + their
+   *  sites + links) via the map tools before generating the starting scene.
+   *  Never set when the entry tile is regenerated inside an existing
+   *  pre-generated world (#578): that map is already there. */
   bootstrap_world_map?: boolean;
   /** Solo en el bootstrap del job generate_game: habilita la tool
    *  vocabulary_set — el motor puede declarar el vocabulario canónico del
@@ -345,7 +347,11 @@ export interface LlmContext {
       attrs: Record<string, unknown>;
     };
     nearby_places: Array<{ id: string; name: string; kind: string; tile?: [number, number] }>;
-    /** true solo en el primer tile de una sesión nueva (lleva player + place). */
+    /** true solo en el tile de ENTRADA de una partida nueva: lleva `player`.
+     *  Con `bootstrap_world_map` el mapa está por sembrar (y el motor dice el
+     *  lugar de partida con `place_id`); SIN él, el mapa y los vecinos ya
+     *  existen —la entrada de un mundo pre-generado que se regenera, #578— y
+     *  el lugar lo pone el servidor, como en cualquier tile. */
     bootstrap?: boolean;
   };
 }

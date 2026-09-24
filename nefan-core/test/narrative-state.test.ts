@@ -415,6 +415,29 @@ describe("NarrativeState lifecycle", () => {
     await assert.rejects(() => s.loadSession("badsess"), /schema_version 99/);
   });
 
+  it("save con un world_map que no pasa su zod → lanza nombrando el campo (#578, B1)", async () => {
+    // `new WorldMapManager(data.world_map)` solo lo envuelve: sin esta puerta
+    // un anchor con el rect fuera del tile o un enlace a un lugar que no está
+    // entraban en la partida sin juicio.
+    const storage = new MemorySessionStorage();
+    const seed = new NarrativeState(storage);
+    seed.startNewSession("toledo_1200");
+    seed.worldMap.upsertPlace({ id: "aldea", kind: "settlement", parent_id: "world", name: "Aldea" });
+    const bueno = seed.toSessionData();
+    bueno.session_id = "mapabueno";
+    await storage.write("mapabueno", structuredClone(bueno));
+    assert.equal(await new NarrativeState(storage).loadSession("mapabueno"), true, "control: el mapa sano carga");
+
+    const malo = structuredClone(bueno);
+    malo.session_id = "mapamalo";
+    malo.world_map.places.aldea.anchor = { tx: 0, ty: 0, rect: [120, 0, 20, 4] };
+    await storage.write("mapamalo", malo);
+    await assert.rejects(
+      () => new NarrativeState(storage).loadSession("mapamalo"),
+      /save "mapamalo": world_map inválido: .*rect se sale del tile por el este/,
+    );
+  });
+
   it("save v5 sin campos aditivos de player → defaults (sin NaN en economy)", async () => {
     // La convención ADITIVA declarada en loadSession: un campo nuevo de
     // player sin bump de schema cae a su default en saves que no lo traen.
