@@ -28,12 +28,15 @@
  *  Lo que queda son los puntos (1)-(3) de `_lo_que_esto_NO_sujeta`:
  *
  *   · **INVISIBLES DEL TODO** (cero rojos, punto 1): lo que no es una llamada
- *     RECONOCIBLE a un lector de `node:fs` — un `find` por shell,
- *     `fs["readdirSync"]`, el lector pasado como valor a otra función, y cinco
- *     formas de llegar a `node:fs` que la QA de la vuelta 2 decidió declarar
- *     en vez de perseguir (re-export desde un helper, `import().then`,
- *     especificador en plantilla, `process.getBuiltinModule`, `import x =
- *     require`).
+ *     RECONOCIBLE POR NOMBRE a un lector de `node:fs` — un `find` por shell,
+ *     el lector pasado como valor a otra función, el re-export desde un
+ *     helper, un `require` con otro nombre, un receptor que llega de fuera, un
+ *     objeto de dependencias, un campo `this.fs` y lo que no es node:fs
+ *     (`fs-extra`, `graceful-fs`, `glob`, `tinyglobby`, `import.meta.glob`).
+ *     Las otras cinco que la QA de la vuelta 2 había declarado (corchetes,
+ *     `import().then`, especificador en plantilla, `process.getBuiltinModule`,
+ *     `import x = require`) las ve desde #727 el reconocedor que el barrido
+ *     comparte con el selector de la mutación, y subieron a SABOTAJES.
  *   · **ROJO POR LA TOTALIDAD DE LECTORES** (puntos 2 y 3): recorridos que el
  *     detector NO ve como tales —recursión mutua, pila, `recursive` que llega
  *     por parámetro, por import o por `let` reasignado— y salen como lectura
@@ -109,17 +112,35 @@ const CERRADOS = [
   ["las opciones por `...OPCIONES`", "spread.ts", RECURSIVO('const OPCIONES = { recursive: true }; export const a = readdirSync("qa", { ...OPCIONES, withFileTypes: true });')],
 ];
 
-/** [nombre, fichero, contenido]. Cero rojos hoy: punto (1) del padrón. */
-const INVISIBLES = [
-  ["`execSync(\"find qa -name *.mjs\")`", "child-process.ts", 'import { execSync } from "node:child_process"; export const a = execSync("find qa -name *.mjs").toString().split("\\n");\n'],
+/** [nombre, fichero, contenido]. Las cinco formas de LLEGAR a `node:fs` que
+ *  eran invisibles hasta #727 y que el reconocedor compartido con el selector
+ *  de la mutación (`scripts/lectores-de-fs.ts`) ya ve: hoy cada una, sola,
+ *  pone roja la totalidad. */
+const CERRADOS_727 = [
   ["el lector con corchetes (`fs[\"readdirSync\"]`)", "corchetes.ts", 'import * as fs from "node:fs"; export const a = fs["readdirSync"]("qa", { recursive: true });\n'],
-  ["el lector pasado como VALOR a otra función", "como-valor.ts", RECURSIVO('const aplica = (f: typeof readdirSync) => f("qa", { recursive: true }); export const a = aplica(readdirSync);')],
-  // QA vuelta 2 (V2-2): formas de LLEGAR a node:fs que no se persiguen.
-  ["el re-export desde un helper de test/", "reexport.ts", 'import { readdirSync } from "./zz-helper-que-reexporta.js"; export const a = readdirSync("qa", { recursive: true });\n'],
   ["`import(\"node:fs\").then(…)`", "import-then.ts", 'export const a = import("node:fs").then((fs) => fs.readdirSync("qa", { recursive: true }));\n'],
   ["el especificador en plantilla (`import(`node:fs`)`)", "plantilla.ts", "const fs = await import(`node:fs`); export const a = fs.readdirSync(\"qa\", { recursive: true });\n"],
   ["`process.getBuiltinModule(\"node:fs\")`", "builtin.ts", 'export const a = process.getBuiltinModule("node:fs").readdirSync("qa", { recursive: true });\n'],
   ["`import fs = require(\"node:fs\")`", "import-equals.ts", 'import fs = require("node:fs"); export const a = fs.readdirSync("qa", { recursive: true });\n'],
+];
+
+/** [nombre, fichero, contenido]. Cero rojos hoy: punto (1) del padrón, que es
+ *  la tabla `INVISIBLES` de `nefan-core/test/formas-de-nombrar-fs.ts`. */
+const INVISIBLES = [
+  ["`execSync(\"find qa -name *.mjs\")`", "child-process.ts", 'import { execSync } from "node:child_process"; export const a = execSync("find qa -name *.mjs").toString().split("\\n");\n'],
+  ["el lector pasado como VALOR a otra función", "como-valor.ts", RECURSIVO('const aplica = (f: typeof readdirSync) => f("qa", { recursive: true }); export const a = aplica(readdirSync);')],
+  ["el re-export desde un helper de test/", "reexport.ts", 'import { readdirSync } from "./zz-helper-que-reexporta.js"; export const a = readdirSync("qa", { recursive: true });\n'],
+  // #727: los dos que el reconocedor POR NOMBRE tampoco ve.
+  ["un `require` con otro nombre (`const pide = createRequire(…)`)", "pide.ts", 'import { createRequire } from "node:module"; const pide = createRequire(import.meta.url); export const a = pide("node:fs").readdirSync("qa", { recursive: true });\n'],
+  ["un receptor que llega de FUERA (`function lee(fs) { fs.readdirSync(…) }`)", "receptor.ts", 'export function lee(fs: typeof import("node:fs")) { return fs.readdirSync("qa", { recursive: true }); }\n'],
+  // QA de BH (H1): lo que el selector cuenta CIEGO y el barrido, que no tiene ciegos, no ve.
+  ["un objeto de dependencias (`const io = { readdirSync }`)", "io.ts", RECURSIVO('const io = { readdirSync }; export const a = io.readdirSync("qa", { recursive: true });')],
+  ["un campo (`this.fs.readdirSync`)", "campo.ts", 'import * as nodefs from "node:fs"; export class X { fs = nodefs; lee() { return this.fs.readdirSync("qa", { recursive: true }); } }\n'],
+  ["`fs-extra`", "fs-extra.ts", 'import fse from "fs-extra"; export const a = fse.readdirSync("qa", { recursive: true });\n'],
+  ["`graceful-fs`", "graceful.ts", 'import fs from "graceful-fs"; export const a = fs.readdirSync("qa", { recursive: true });\n'],
+  ["el paquete `glob`", "glob-pkg.ts", 'import { glob } from "glob"; export const a = glob("qa/**/*.mjs");\n'],
+  ["`tinyglobby`", "tinyglobby.ts", 'import { globSync } from "tinyglobby"; export const a = globSync("qa/**/*.mjs");\n'],
+  ["`import.meta.glob`", "meta-glob.ts", 'export const a = (import.meta as any).glob("../../qa/**/*.mjs");\n'],
 ];
 
 /** [nombre, fichero, contenido]. Hoy rojos SOLO por `A_LECTORES`: puntos (2) y (3). */
@@ -227,6 +248,7 @@ export function baja(d: string, cb: (f: string) => void): void { for (const e of
     [A_TOTALIDAD],
   ],
   ...CERRADOS.map(([nombre, fichero, contenido]) => [`cerrado en H-1/H-2 · ${nombre}`, fichero, contenido, null, [A_TOTALIDAD]]),
+  ...CERRADOS_727.map(([nombre, fichero, contenido]) => [`cerrado en #727 · ${nombre}`, fichero, contenido, null, [A_TOTALIDAD]]),
 ];
 
 /** Corre el candado y devuelve los asertos ROJOS (solo las líneas INDENTADAS:

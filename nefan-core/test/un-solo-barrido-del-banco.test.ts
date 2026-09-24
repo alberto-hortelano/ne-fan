@@ -37,7 +37,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, extname, join, resolve } from "node:path";
 import ts from "typescript";
 import { z } from "zod";
+import { desnuda, lectorDeFs } from "../scripts/lectores-de-fs.js";
 import { SALTOS_DEL_BANCO, fuentesDelBanco } from "./banco-ficheros.js";
+import { AJENO, FORMAS, INVISIBLES } from "./formas-de-nombrar-fs.js";
 
 const TEST = dirname(fileURLToPath(import.meta.url));
 const core = resolve(TEST, "..");
@@ -87,7 +89,6 @@ const PadronSchema = z
   .strict();
 type Padron = z.infer<typeof PadronSchema>;
 
-const MODULOS_FS = new Set(["node:fs", "fs", "node:fs/promises", "fs/promises"]);
 /** Lo que lee UN directorio: recorre si le piden `recursive` o si quien lo
  *  llama se llama a sí mismo. */
 const LECTORES = new Set(["readdirSync", "readdir", "opendirSync", "opendir"]);
@@ -95,15 +96,6 @@ const LECTORES = new Set(["readdirSync", "readdir", "opendirSync", "opendir"]);
  *  Es conservador en la dirección roja: uno legítimo se declara. */
 const GLOBS = new Set(["globSync", "glob"]);
 type Clase = "lector" | "glob";
-
-/** Quita lo que envuelve a una expresión sin cambiar su valor. */
-function desnuda(e: ts.Expression): ts.Expression {
-  let x = e;
-  while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isSatisfiesExpression(x) || ts.isAwaitExpression(x) || ts.isNonNullExpression(x)) {
-    x = x.expression;
-  }
-  return x;
-}
 
 const nombreDePropiedad = (n: ts.PropertyName | ts.BindingName | undefined): string | null =>
   n && (ts.isIdentifier(n) || ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null;
@@ -126,67 +118,19 @@ function recorridos(texto: string, kind: ts.ScriptKind = ts.ScriptKind.TS): { re
   };
   junta(sf);
 
-  // ── Nombres: qué identificador es un lector, un glob o `fs` entero ────────
-  const directos = new Map<string, Clase>();
-  const espacios = new Set<string>();
+  // ── Nombres: qué callee es un lector o un glob de node:fs ────────────────
+  // El reconocedor es el del selector de la mutación (#727): una forma que ve
+  // uno la ve el otro, y sus límites son los mismos (`lectores-de-fs.ts`).
+  const fs = lectorDeFs(sf);
+  const claseDe = (e: ts.Expression): Clase | null => {
+    const n = fs(e);
+    return n === null ? null : LECTORES.has(n) ? "lector" : GLOBS.has(n) ? "glob" : null;
+  };
   /** Objetos literales ligados a un `const` del fichero: `{...OPCIONES}`. */
   const objetos = new Map<string, ts.ObjectLiteralExpression>();
-  const esModuloFs = (e: ts.Expression | undefined): boolean => !!e && ts.isStringLiteral(e) && MODULOS_FS.has(e.text);
-  /** `import("node:fs")`, `require("node:fs")` (también el de `createRequire`). */
-  const cargaFs = (e: ts.Expression): boolean => {
-    const x = desnuda(e);
-    if (!ts.isCallExpression(x)) return false;
-    const llama = x.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(x.expression) && x.expression.text === "require");
-    return llama && esModuloFs(x.arguments[0]);
-  };
-  const esEspacio = (e: ts.Expression): boolean => {
-    const x = desnuda(e);
-    if (ts.isIdentifier(x)) return espacios.has(x.text);
-    if (ts.isPropertyAccessExpression(x)) return x.name.text === "promises" && esEspacio(x.expression);
-    return cargaFs(x);
-  };
-  const claseDe = (e: ts.Expression): Clase | "espacio" | null => {
-    const x = desnuda(e);
-    if (ts.isIdentifier(x) && directos.has(x.text)) return directos.get(x.text)!;
-    if (esEspacio(x)) return "espacio";
-    if (ts.isPropertyAccessExpression(x) && esEspacio(x.expression)) {
-      if (LECTORES.has(x.name.text)) return "lector";
-      if (GLOBS.has(x.name.text)) return "glob";
-    }
-    return null;
-  };
-  const liga = (nombre: string, importado: string): void => {
-    if (LECTORES.has(importado)) directos.set(nombre, "lector");
-    else if (GLOBS.has(importado)) directos.set(nombre, "glob");
-    else if (importado === "promises") espacios.add(nombre);
-  };
-  // Punto fijo: un alias puede colgar de otro alias.
-  for (let antes = -1; antes !== directos.size + espacios.size; ) {
-    antes = directos.size + espacios.size;
-    for (const n of todos) {
-      if (ts.isImportDeclaration(n) && esModuloFs(n.moduleSpecifier) && n.importClause) {
-        const c = n.importClause;
-        if (c.name) espacios.add(c.name.text);
-        const b = c.namedBindings;
-        if (b && ts.isNamespaceImport(b)) espacios.add(b.name.text);
-        if (b && ts.isNamedImports(b)) for (const el of b.elements) liga(el.name.text, (el.propertyName ?? el.name).text);
-      }
-      if (ts.isVariableDeclaration(n) && n.initializer) {
-        if (ts.isIdentifier(n.name) && ts.isObjectLiteralExpression(desnuda(n.initializer))) {
-          objetos.set(n.name.text, desnuda(n.initializer) as ts.ObjectLiteralExpression);
-        }
-        const clase = claseDe(n.initializer);
-        if (clase === null) continue;
-        if (ts.isIdentifier(n.name)) {
-          if (clase === "espacio") espacios.add(n.name.text);
-          else directos.set(n.name.text, clase);
-        } else if (ts.isObjectBindingPattern(n.name) && clase === "espacio") {
-          for (const el of n.name.elements) {
-            const importado = nombreDePropiedad(el.propertyName) ?? nombreDePropiedad(el.name);
-            if (importado && ts.isIdentifier(el.name)) liga(el.name.text, importado);
-          }
-        }
-      }
+  for (const n of todos) {
+    if (ts.isVariableDeclaration(n) && n.initializer && ts.isIdentifier(n.name) && ts.isObjectLiteralExpression(desnuda(n.initializer))) {
+      objetos.set(n.name.text, desnuda(n.initializer) as ts.ObjectLiteralExpression);
     }
   }
 
@@ -210,10 +154,7 @@ function recorridos(texto: string, kind: ts.ScriptKind = ts.ScriptKind.TS): { re
   };
 
   const llamadas = todos.filter(ts.isCallExpression);
-  const claseDeLlamada = (c: ts.CallExpression): Clase | null => {
-    const k = claseDe(c.expression);
-    return k === "espacio" ? null : k;
-  };
+  const claseDeLlamada = (c: ts.CallExpression): Clase | null => claseDe(c.expression);
 
   // ── Recursión: una función que lee y se nombra a sí misma ─────────────────
   const recursivos: number[] = [];
@@ -421,23 +362,9 @@ describe("un solo barrido del banco (#704): nadie más recorre qa/ de forma recu
     assert.deepEqual(recorridos(viejo).recursivos, [2]);
   });
 
-  it("ve `recursive` por cualquier camino de NOMBRE: alias de import, espacio, promesas, require, import() y asignación", () => {
-    const casos = [
-      `${FS}readdirSync(QA, { recursive: true });`,
-      `import { readdirSync as leer } from "node:fs";\nleer(QA, { recursive: true });`,
-      `import * as fs from "node:fs";\nfs.readdirSync(QA, { recursive: true });`,
-      `import fs from "node:fs";\nfs.readdirSync(QA, { recursive: true });`,
-      `import { readdir } from "node:fs/promises";\nawait readdir(QA, { recursive: true });`,
-      `import { promises } from "node:fs";\npromises.readdir(QA, { recursive: true });`,
-      `import fs from "node:fs";\nfs.promises.readdir(QA, { recursive: true });`,
-      `const { readdirSync: r } = await import("node:fs");\nr(QA, { recursive: true });`,
-      `const fs = await import("node:fs");\nfs.readdirSync(QA, { recursive: true });`,
-      `(await import("node:fs")).readdirSync(QA, { recursive: true });`,
-      `import { createRequire } from "node:module";\nconst require = createRequire(import.meta.url);\nconst { readdirSync } = require("node:fs");\nreaddirSync(QA, { recursive: true });`,
-      `import * as fs from "node:fs";\nconst { readdirSync } = fs;\nreaddirSync(QA, { recursive: true });`,
-      `${FS}const leer = readdirSync;\nconst otra = leer;\notra(QA, { recursive: true });`,
-      `${FS}readdirSync?.(QA, { recursive: true });`,
-    ];
+  it("ve `recursive` por cualquier camino de NOMBRE: la tabla que comparte con el selector de la mutación (#727)", () => {
+    const casos = FORMAS.map((f) => f("QA, { recursive: true }"));
+    assert.ok(casos.length >= 19, "la tabla trae las 14 de #704 y las 5 que #727 dejó de tener por invisibles");
     assert.deepEqual(casos.filter((c) => ve(c) !== 1), []);
   });
 
@@ -488,7 +415,7 @@ export function baja(d: string): void { const dir = opendirSync(d); let e; while
       lecturas: 0,
       planas: [{ linea: 2, argumento: "GUIONES" }],
     });
-    assert.deepEqual(recorridos(`import { readdirSync } from "./otro.js";\nreaddirSync(QA, { recursive: true });`), {
+    assert.deepEqual(recorridos(AJENO("QA, { recursive: true }")), {
       recursivos: [],
       lecturas: 0,
       planas: [],
@@ -502,18 +429,9 @@ export function baja(d: string): void { const dir = opendirSync(d); let e; while
 
   // ── LÍMITES MEDIDOS: cada punto de `_lo_que_esto_NO_sujeta` ────────────────
 
-  it("LÍMITE MEDIDO (1): lo que no es una llamada RECONOCIBLE a un lector de fs no se ve (shell, corchetes, valor, y cinco formas de llegar a node:fs)", () => {
-    const invisibles = [
-      `import { execSync } from "node:child_process";\nexecSync("find qa -name '*.mjs'");`,
-      `import * as fs from "node:fs";\nfs["readdirSync"](QA, { recursive: true });`,
-      `${FS}const aplica = (f: typeof readdirSync) => f(QA, { recursive: true });\naplica(readdirSync);`,
-      // QA vuelta 2 (V2-2): formas de LLEGAR a node:fs que no se persiguen.
-      `import { readdirSync } from "./helper-que-reexporta.js";\nreaddirSync(QA, { recursive: true });`,
-      `import("node:fs").then((fs) => fs.readdirSync(QA, { recursive: true }));`,
-      "const fs = await import(`node:fs`);\nfs.readdirSync(QA, { recursive: true });",
-      `process.getBuiltinModule("node:fs").readdirSync(QA, { recursive: true });`,
-      `import fs = require("node:fs");\nfs.readdirSync(QA, { recursive: true });`,
-    ];
+  it("LÍMITE MEDIDO (1): lo que no es una llamada RECONOCIBLE a un lector de fs no se ve (la tabla que comparte con el selector)", () => {
+    const invisibles = INVISIBLES.map((f) => f.fuente("QA, { recursive: true }"));
+    assert.equal(invisibles.length, 12, "shell, valor, re-export, require con otro nombre, receptor de fuera y las siete de H1 (QA de BH)");
     assert.deepEqual(
       invisibles.map((c) => recorridos(c)),
       invisibles.map(() => ({ recursivos: [], lecturas: 0, planas: [] })),

@@ -43,8 +43,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
 import { fuentesDelBanco } from "./banco-ficheros.js";
-import { arbolDelBanco, cuerpoPrincipal, recorre } from "./helpers-del-banco.js";
-import { evidenciaDeCtx, saltosDelGuion, type Lector, type Salto } from "./saltos-del-guion.js";
+import { arbolDelBanco, cuerpoPrincipal } from "./helpers-del-banco.js";
+import { saltosDelGuion, type Lector, type Salto } from "./saltos-del-guion.js";
 
 const core = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(core, "..");
@@ -540,11 +540,18 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
     assert.deepEqual(analiza('try {\n  ctx.expect("a", await algo());\n} catch (e) {\n  ctx.log(`no se pudo: ${e.message}`);\n}'), [], "retira el punto (5)");
   });
 
-  it("LÍMITE MEDIDO (6): la afirmación rancia y el SOMBREADO pasan por observados", () => {
+  it("LÍMITE MEDIDO (6): la afirmación rancia pasa por observada", () => {
     const s = analiza(`let x = await algo();\nctx.expect("x", Boolean(x));\nx = await otra();\nif (!x) return;\n${DETRAS}`);
     assert.deepEqual(rojos(s), [], "el detector sigue la reasignación: retira el punto (6)");
-    const sombra = analiza(`const x = 1;\nctx.expect("x", Boolean(x));\n{ const x = await algo();\n if (!x) { ctx.log("no"); return; } }\n${DETRAS}`);
-    assert.deepEqual(rojos(sombra), [], "el detector distingue ámbitos: retira el sombreado del punto (6)");
+  });
+
+  it("un `x` interior que SOMBREA al afirmado no está observado, ni por el texto ni por sus átomos (#720, era el punto (6))", () => {
+    const literal = `const x = 1;\nctx.expect("x", Boolean(x));\n{ const x = await algo();\n if (!x) { ctx.log("no"); return; } }\n${DETRAS}`;
+    const atomo = `const x = 1;\nctx.expect("x", x > 0);\n{ const x = await algo();\n if (!x) { ctx.log("no"); return; } }\n${DETRAS}`;
+    assert.deepEqual([literal, atomo].map((c) => rojos(analiza(c)).map((x) => x.condicion)), [["!x"], ["!x"]]);
+    // Y el mismo `x`, sin sombra, sigue observado por las dos reglas.
+    const mismo = (c: string): string => c.replace("{ const x = await algo();\n", "{\n");
+    assert.deepEqual([literal, atomo].map((c) => rojos(analiza(mismo(c)))), [[], []]);
   });
 
   it("LÍMITE MEDIDO (7): el átomo va por su RAÍZ, no por la propiedad", () => {
@@ -582,7 +589,36 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
     for (const c of casos) assert.deepEqual(rojos(analiza(c)), [], `el detector evalúa valores: retira el punto (11)\n${c}`);
   });
 
-  it("LÍMITE MEDIDO (12): el ctx en un objeto o tras una clave calculada no se sigue, y sin ámbitos un objeto AJENO con `.expect` observa", () => {
+  /** #720 · El ctx se identificaba por NOMBRE y por fichero, así que un objeto
+   *  AJENO con `.expect`, o un `c` que sombrea al `c` de un helper, pasaba por
+   *  ctx y EXCUSABA el salto (era la segunda mitad del punto (12), QA de AH, H5).
+   *  Ahora es por SÍMBOLO: el checker de TypeScript dice a qué declaración
+   *  apunta cada identificador. */
+  it("un objeto AJENO con `.expect` no es un ctx y no excusa un salto (#720)", () => {
+    const ajeno = 'const t = { expect() {} };\nconst e = t.expect;\nconst x = await algo();\nif (!x) { e("z", x.ok); return; }\n' + DETRAS;
+    assert.deepEqual(rojos(analiza(ajeno)).map((x) => x.condicion), ["!x"]);
+    const directo = 'const t = { expect() {} };\nconst x = await algo();\nif (!x) { t.expect("z", x.ok); return; }\n' + DETRAS;
+    assert.deepEqual(rojos(analiza(directo)).map((x) => x.condicion), ["!x"]);
+  });
+
+  it("un `c` que SOMBREA al ctx de un helper no es el ctx, y no excusa un salto (#720)", () => {
+    const sombra =
+      'async function m(c) { c.expect("d", true); }\nconst c = { expect() {} };\nconst x = await algo();\nif (!x) { c.expect("z", x.ok); return; }\nawait m(ctx);';
+    assert.deepEqual(rojos(analiza(sombra)).map((x) => x.condicion), ["!x"]);
+    // Y el de verdad sigue excusando: el mismo guion con el `c` del helper en la rama.
+    const propio = 'async function m(c) { const x = await algo(); if (!x) { c.expect("z", x.ok); return; } c.expect("d", true); }\nawait m(ctx);';
+    assert.deepEqual(rojos(analiza(propio, { helpers: true })), []);
+  });
+
+  it("LÍMITE MEDIDO (13): un átomo que no es una variable del fichero (un import, un global) se descarta sin decirlo", () => {
+    const global = `const x = await algo();\nctx.expect("x", Boolean(x));\nif (!x || !process.env.Q) return;\n${DETRAS}`;
+    assert.deepEqual(rojos(analiza(global)), [], "el detector cuenta el global como átomo sin observar: retira el punto (13)");
+    const lib = { "l.mjs": "export const listo = true;" };
+    const importado = `const x = await algo();\nctx.expect("x", Boolean(x));\nif (!x || !listo) return;\n${DETRAS}\nfunction otra() { const listo = 1; return listo; }`;
+    assert.deepEqual(rojos(analiza(importado, { antes: 'import { listo } from "../lib/l.mjs";', lib })), [], "el detector cuenta el import como átomo: retira el punto (13)");
+  });
+
+  it("LÍMITE MEDIDO (12): el ctx en un objeto o tras una clave calculada no se sigue", () => {
     const objeto = 'const o = { ctx };\nconst pre = await algo();\nif (!pre) return;\no.ctx.expect("d", true);';
     assert.deepEqual(analiza(objeto), [], `el detector sigue ese alias: retira esa frase del punto (12)\n${objeto}`);
     // El residuo: un parámetro de OTRO módulo que no nombra ningún verbo (clave
@@ -590,22 +626,13 @@ describe("un salto de un guion que nadie observa se pone rojo (#356)", () => {
     const lib = { "d.mjs": 'export async function afirma(c, x) { const v = "expect"; c[v]("pose", x > 0); }' };
     const residuo = analiza('const pre = await algo();\nif (!pre) { ctx.log("no"); return; }\nawait afirma(ctx, pre);', { antes: 'import { afirma } from "../lib/d.mjs";', lib });
     assert.deepEqual(residuo, [], "el detector sigue el ctx por clave calculada: retira el residuo del punto (12)");
-    // Sin ámbitos, lo que delata un ctx vale para cualquiera: un objeto ajeno con
-    // `.expect` pasa por ctx y EXCUSA la rama (QA de AH, H5)…
-    const ajeno = 'const t = { expect() {} };\nconst e = t.expect;\nconst x = await algo();\nif (!x) { e("z", x.ok); return; }\n' + DETRAS;
-    assert.deepEqual(rojos(analiza(ajeno)), [], "el detector distingue un objeto ajeno de un ctx: retira esa frase del punto (12)");
-    // …así que la cifra que importa es cuántos receptores de verbo del banco NO son `ctx`: hoy, ninguno.
-    const delatores = new Set<string>();
-    for (const f of fuentesDelBanco(QA))
-      recorre(arbolDelBanco(readFileSync(join(QA, f), "utf8")), (x) => {
-        const ev = evidenciaDeCtx(x);
-        if (ev) delatores.add("receptor" in ev ? ev.receptor : `patrón ${ev.patron.getText()} en ${f}`);
-      });
-    assert.deepEqual(
-      [...delatores],
-      ["ctx"],
-      "algo que no se llama `ctx` en qa/ se toma por ctx por su verbo: si es un ctx renombrado, añádelo aquí; si es un objeto AJENO, está excusando saltos (punto (12))",
-    );
+    // Lo que queda del «ajeno» tras #720: un verbo delata lo que el fichero NO
+    // dice qué es —un `let` sin inicializador, un parámetro—, lo reciba de un
+    // ctx o de un objeto ajeno. Ahí el ajeno sigue EXCUSANDO.
+    const sinValor = 'let t;\nt = { expect() {} };\nconst x = await algo();\nif (!x) { t.expect("z", x.ok); return; }\n' + DETRAS;
+    assert.deepEqual(rojos(analiza(sinValor)), [], "el detector sigue el valor de un `let`: retira esa frase del punto (12)");
+    const parametro = 'async function m(c, x) { if (!x) { c.expect("z", x.ok); return; } c.expect("d", true); }\nawait m({ expect() {} }, await algo());';
+    assert.deepEqual(rojos(analiza(parametro, { helpers: true })), [], "el detector mira qué recibe un parámetro: retira esa frase del punto (12)");
     // Lo que #716 y su QA cerraron: por el VERBO (llamado, leído o desestructurado,
     // en la firma o en el cuerpo, en el guion o en qa/lib) y por la llamada que pasa el ctx.
     const cerrados: [string, Record<string, string>?][] = [

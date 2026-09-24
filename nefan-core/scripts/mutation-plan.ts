@@ -28,6 +28,7 @@ import ts from "typescript";
 import { z } from "zod";
 
 import { baseRelativa, primeroEnDisco } from "./especificador.js";
+import { lectorDeFs } from "./lectores-de-fs.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const coreRoot = join(here, "..");
@@ -945,8 +946,12 @@ function analizaLectura(texto: string, base: string): Lectura {
   const sf = ts.createSourceFile(join(base, "x.ts"), texto, ts.ScriptTarget.ESNext, true);
   const literales: string[] = [];
   // `import { readdirSync as leerDir }` apagaba la detección entera cuando ésta
-  // iba por el NOMBRE de la llamada (QA H-2): el alias se resuelve aquí.
-  const alias = new Map<string, string>();
+  // iba por el NOMBRE de la llamada (QA H-2), y hasta #727 este fichero
+  // resolvía solo el alias de import: `const { readdirSync: r } = await
+  // import("node:fs")` y `const leer = readdirSync` no se veían, con cero
+  // ciegos. El nombre lo resuelve ahora el reconocedor que comparte con el
+  // barrido del banco; sus límites, en la cabecera de `lectores-de-fs.ts`.
+  const fs = lectorDeFs(sf);
   /** Nombre local → directorio del paquete, de `const X = …` y de los
    *  parámetros que una llamada del MISMO fichero ata a un directorio. */
   const nombresDeDirectorio = new Map<string, Set<string>>();
@@ -1052,15 +1057,9 @@ function analizaLectura(texto: string, base: string): Lectura {
     return NO_DESCUBRE;
   };
 
-  // Pasada 1 · literales, alias de import, constantes que son un directorio y
-  // la firma de cada función del fichero.
+  // Pasada 1 · literales, constantes que son un directorio y la firma de cada
+  // función del fichero.
   const pasada1 = (n: ts.Node): void => {
-    if (ts.isImportDeclaration(n)) {
-      const enlaces = n.importClause?.namedBindings;
-      if (enlaces !== undefined && ts.isNamedImports(enlaces)) {
-        for (const e of enlaces.elements) alias.set(e.name.text, (e.propertyName ?? e.name).text);
-      }
-    }
     if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
       apunta(n.name.text, resuelve(n.initializer));
     }
@@ -1122,8 +1121,16 @@ function analizaLectura(texto: string, base: string): Lectura {
   let descubrimientosCiegos = 0;
   const pasada3 = (n: ts.Node): void => {
     if (ts.isCallExpression(n) && n.arguments.length > 0) {
-      const llamado = nombreLlamado(n);
-      const nombre = llamado === undefined ? undefined : (alias.get(llamado) ?? llamado);
+      const nombre = fs(n.expression) ?? undefined;
+      // Se LLAMA como un lector pero el reconocedor no lo ata a node:fs
+      // (`io.readdirSync` de un objeto de dependencias, `this.fs.readdirSync`,
+      // `fs-extra`, el paquete `glob`, `import.meta.glob`, un `readdirSync` de
+      // `./mio`…). Hasta #727 contaba por el nombre desnudo; ahora no se sabe
+      // si lee, y eso es estar CIEGO, no ver cero (QA de BH, H1).
+      const desnudo = nombre === undefined ? nombreLlamado(n) : undefined;
+      if (desnudo !== undefined && (API_ENUMERA.has(desnudo) || (API_ABRE.has(desnudo) && aperturaDe(n.arguments[0]).tipo === "descubre"))) {
+        descubrimientosCiegos++;
+      }
       const apertura: Apertura | undefined =
         nombre !== undefined && API_ENUMERA.has(nombre)
           ? { tipo: "descubre", dirs: resuelve(n.arguments[0]) }

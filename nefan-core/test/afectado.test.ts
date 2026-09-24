@@ -54,6 +54,7 @@ import {
   patronesDelPerimetro,
   REGLA_PERIMETRO,
 } from "../scripts/mutation-plan.js";
+import { AJENO, FORMAS, INVISIBLES } from "./formas-de-nombrar-fs.js";
 
 interface Opciones {
   archRules?: EfectoArchRules;
@@ -781,7 +782,10 @@ describe("qué cuenta como LEER un dato", () => {
  *  candado caro es un candado que no se prueba. */
 describe("de qué directorio habla un descubrimiento", () => {
   const DIR = 'const DIR = fileURLToPath(new URL("../data/scenes", import.meta.url));\n';
-  const como = (cuerpo: string) => descubrimientosDe(cuerpo, "test/inventado.test.ts");
+  const tal = (fuente: string) => descubrimientosDe(fuente, "test/inventado.test.ts");
+  /** Desde #727 un lector cuenta si VIENE de node:fs, como en el barrido del
+   *  banco: los casos de aquí abajo hablan de la RUTA, así que lo importan. */
+  const como = (cuerpo: string) => tal(`import { readdirSync, readFileSync } from "node:fs";\n${cuerpo}`);
 
   it("enumerar una constante que resuelve a un directorio del paquete", () => {
     const r = como(`${DIR}readdirSync(DIR);`);
@@ -794,6 +798,41 @@ describe("de qué directorio habla un descubrimiento", () => {
     // `import { readdirSync as leerDir }` dejaba el candado entero en verde.
     const r = como(`import { readdirSync as leerDir } from "node:fs";\n${DIR}leerDir(DIR);`);
     assert.deepEqual(r.directorios, ["data/scenes"], "un alias no puede cegar al selector");
+  });
+
+  /** #727 · El selector y el barrido del banco reconocían los lectores de fs
+   *  cada uno a su manera, y el selector se quedaba CIEGO sin decirlo ante dos
+   *  formas que el barrido sí veía: cero directorios y cero ciegos. Ahora los
+   *  dos leen `scripts/lectores-de-fs.ts` y la tabla de `formas-de-nombrar-fs.ts`. */
+  describe("las formas de nombrar un lector de node:fs son las del barrido del banco (#727)", () => {
+    it("ve el destructurado de `import()` y la asignación a otro nombre (las dos que no veía)", () => {
+      const r1 = tal(`${DIR}const { readdirSync: r } = await import("node:fs");\nr(DIR);`);
+      const r2 = tal(`import { readdirSync } from "node:fs";\n${DIR}const leer = readdirSync;\nleer(DIR);`);
+      assert.deepEqual([r1, r2], [{ directorios: ["data/scenes"], ciegos: 0 }, { directorios: ["data/scenes"], ciegos: 0 }]);
+    });
+
+    it("ve TODAS las formas de la tabla compartida", () => {
+      const ciegas = FORMAS.map((f) => `${DIR}${f("DIR")}`).filter((c) => tal(c).directorios[0] !== "data/scenes");
+      assert.deepEqual(ciegas, []);
+    });
+
+    it("un `readdirSync` que no viene de node:fs no es un lector: no lee ningún directorio, y cuenta CIEGO", () => {
+      assert.deepEqual(tal(`${DIR}${AJENO("DIR")}`), { directorios: [], ciegos: 1 });
+    });
+
+    it("LÍMITE MEDIDO: las INVISIBLES de la tabla no leen ningún directorio; las que se LLAMAN como un lector cuentan CIEGAS (QA de BH, H1)", () => {
+      const medido = INVISIBLES.map((f) => tal(`${DIR}${f.fuente("DIR")}`));
+      assert.deepEqual(
+        medido,
+        INVISIBLES.map((f) => ({ directorios: [], ciegos: f.selector === "ciego" ? 1 : 0 })),
+      );
+      assert.ok(INVISIBLES.filter((f) => f.selector === "ciego").length >= 10, "la tabla trae las formas de H1");
+    });
+
+    it("una llamada con nombre de APERTURA que no es de fs cuenta ciega solo si compone el nombre", () => {
+      assert.deepEqual(tal(`${DIR}import fse from "fs-extra";\nfse.readFileSync(join(DIR, \`\${x}.json\`));`), { directorios: [], ciegos: 1 });
+      assert.deepEqual(tal(`${DIR}import fse from "fs-extra";\nfse.readFileSync(join(DIR, "a.json"));`), { directorios: [], ciegos: 0 });
+    });
   });
 
   it("abrir con el nombre compuesto habla del directorio; con el nombre escrito, no", () => {
