@@ -60,3 +60,35 @@ No se produce. Lo mecánico de esta tanda ya vive como `it` dentro de `npm test`
 ## Veredicto
 
 **Apto con reservas.** Los cinco criterios se cumplen con salida real y el negativo del 93 es rojo en `npm test` entero y no puede pasar mudo. Las reservas son dos huecos SIN DECLARAR por los que la misma regresión entra verde (H-1 `rAF(resolve)`, probado sobre el 93 real; H-2 temporizadores) — el criterio 3 exige que cada límite conocido esté escrito y medido, y estos dos son los más probables. Se cierran con dos puntos y dos `it` (o cerrando H-1 en el detector), sin tocar el diseño. H-4 es una recomendación sobre una desviación del plan, no un fallo.
+
+---
+
+# Vuelta 2 (2026-09-24) — sobre `ddce7349`, rebasada sobre `main`
+
+Solo los puntos corregidos más la pasada adversarial nueva sobre «cuenta solo si se usa el valor». Logs `v2-01…06` en el scratchpad.
+
+| Punto | Veredicto | Evidencia |
+|---|---|---|
+| H-1 cerrado: el resolver de `new Promise` pasado a rAF y `new Promise(requestAnimationFrame)` cuentan cuando el valor se usa | ✅ | Regresión `rAF(resolve)` aplicada al 93 REAL en disco (tres anclas del `it` nuevo): «todo reloj de pared … cuenta EXACTA» ✖, `fail 7` (log v2-03). Revertido. En memoria, el `it` de la línea 203 verde con las anclas a `veces === 1`. `asentarElLayout` (`lib/sesion.mjs:293`) cuenta 1 porque su promesa se DEVUELVE — sobrecuenta en la dirección segura y está declarada en el (1). |
+| H-2: límite (8) medido, 3 guiones (10, 19, 90) | ✅ | Mi cifra de 6 era de `grep`: 115 y 123 nombran `setTimeout` en un COMENTARIO y 152 dentro de un STRING. Por el árbol son 3, y el `it` lo afirma con lista, no con número. |
+| H-3: límite (9) en bloque | ✅ | Nueve grafías en un bucle con `assert.equal(cuenta(f), 0, f)` + `stringsConReloj` sobre los guiones = `[]`. |
+| H-4 aplicado | ✅ | `qa/lib` `{28, 6}` (subió 1 con `asentarElLayout`, correcto); `raf-param` fuera de guiones = `carga×2 + sesion×1` por FICHERO; resto de `qa/` solo `> 0`, con el 59/18 en prosa con fecha. |
+| Censo tras la rebase: 17 relojes en 7 guiones (entra el 166 con 2 `Date.now`) | ✅ | `it` «censo de hoy» verde; padrón con 7 entradas. |
+| Global | ✅ | `npm test` entero limpio `3358/3358` exit 0 (log v2-04); `typecheck:tests` y `lint` exit 0. |
+
+## Pasada adversarial: ¿se puede USAR el valor y contar 0?
+
+Batería de 23 formas (log v2-02). La regla aguanta en todas las formas directas: asignación, `return`, `.then`, `Promise.all`, ternario, `function` como ejecutor, parámetro con valor por defecto, `evaluate` con `return` en bloque, helper en variable (`const frame = () => new Promise(…)`) → 1; sentencia, `void`, `await page.evaluate(() => …)` tirado → 0. Sobrecuenta en la dirección segura cuando la promesa se asigna y luego se tira.
+
+Sí se puede usar el valor y contar 0, cuatro formas, **ninguna con ocupante hoy** (`withResolvers` a 0 en `qa/`):
+
+- **V-1 (menor, sin declarar):** `const { promise, resolve } = Promise.withResolvers(); requestAnimationFrame(resolve); const t = await promise;` → 0. Idioma moderno (Node 22 / Chrome 119); la desestructuración no se resuelve.
+- **V-2 (menor, sin declarar):** `(0, requestAnimationFrame)(r)` → 0 (la coma no se desenvuelve).
+- **V-3 (menor, cubierto por el (3) en espíritu, no por su texto):** el alias del resolver DENTRO del ejecutor, `new Promise((r) => { const f = r; requestAnimationFrame(f); })` con la promesa asignada → 0. El (3) habla del callback «asignado después»; aquí es `const f = r` con inicializador que no es función.
+- **V-4 (menor, y el comentario del test es FALSO):** `const t = await new Promise((_, rej) => requestAnimationFrame(rej)).catch((t) => t)` → 0. El `it` de la línea 238 afirma que el SEGUNDO parámetro «no es el timestamp»; sí lo es: rAF llama `rej(timestamp)` y la promesa rechaza CON la pared, que `.catch` lee. El aserto (0) es aceptable como límite; la frase no, porque documenta una razón inventada. Que diga «no se resuelve el reject» y entre en el (9).
+
+Qué espera el usuario: V-1, V-2 y V-4 en la prosa del (9) con sus tres líneas en el bucle del `it`, y la frase de la 238 corregida. No cambia el diseño ni la cuenta de hoy.
+
+## Veredicto de la vuelta 2
+
+**Apto.** Los cuatro hallazgos están cerrados con salida real y el negativo que los motivó (la regresión del 93 por `rAF(resolve)`) es rojo en disco y en memoria. Lo que queda (V-1…V-4) son grafías sin ocupante que van al (9) en una línea cada una; V-4 incluye una frase falsa en un comentario que conviene corregir antes de fusionar, pero no bloquea.
