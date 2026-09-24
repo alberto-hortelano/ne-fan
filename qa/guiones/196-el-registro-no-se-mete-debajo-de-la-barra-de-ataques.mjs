@@ -17,6 +17,13 @@
  *  NACIÓ ROJO (QA, 2026-09-24): es el hallazgo, medido. El día que se ajuste
  *  el ancho de la región o el fondo de la barra, se pone verde solo.
  *
+ *  Y (#758) que esos botones, y «P · Sistemas», llevan `surface` debajo: el
+ *  filete se mide contra `surface` y subirlo a 3:1 lo hundía en un suelo de
+ *  tono medio si el botón se pintaba sobre el mundo. PROBADO EN NEGATIVO
+ *  (2026-09-24): quitando la regla `#action-bar .nf-action, #plugins-open` de
+ *  `game-ui.css`, rojo en los cinco packs (los cinco botones de la barra);
+ *  quitando solo `#plugins-open` del selector, rojo «P · Sistemas».
+ *
  *  LO QUE NO MIDE: el contraste del rótulo del botón sobre la pastilla (lo
  *  mide a ojo la captura), ni otras resoluciones que la del bench (1280×800).
  *
@@ -67,6 +74,24 @@ function medirSolape() {
   };
 }
 
+/** #758: el filete (`border`) y la tinta de un botón se miden contra `surface`
+ *  en `ui-theme.test.ts`. Los botones que flotan sobre el mundo (la barra de
+ *  ataques y «P · Sistemas») solo tenían el `raised` translúcido, así que se
+ *  leían contra el suelo del tile y no contra lo medido. Cada uno tiene que
+ *  llevar `surface` como color de fondo CALCULADO. */
+function medirFondoDeLaBarra() {
+  const sonda = document.createElement("div");
+  sonda.style.background = "var(--nf-surface)";
+  document.getElementById("game-ui").append(sonda);
+  const surface = getComputedStyle(sonda).backgroundColor;
+  sonda.remove();
+  const botones = [...document.querySelectorAll("#action-bar button, #plugins-open")].filter((b) => b.getBoundingClientRect().width > 0);
+  const sinPanel = botones
+    .filter((b) => getComputedStyle(b).backgroundColor !== surface)
+    .map((b) => `${b.textContent?.trim()}: ${getComputedStyle(b).backgroundColor}`);
+  return { surface, botones: botones.length, sinPanel };
+}
+
 export default async function (ctx) {
   const temas = await packs();
   if (!Array.isArray(temas)) return ctx.sinMedir(`sin \`nefan-core/dist\` no hay packs que aplicar (cd nefan-core && npm run build): ${temas.error}`);
@@ -89,6 +114,12 @@ export default async function (ctx) {
       `${id}: ninguna línea del registro se cruza con ningún botón de la barra de ataques`,
       m.lineas > 0 && m.botones > 0 && m.solapes.length === 0,
       `registro hasta ${m.bordeDerechoDelRegistro} px · primer botón en ${m.primerBoton} px · solapes ${JSON.stringify(m.solapes)}`,
+    );
+    const f = await ctx.page.evaluate(medirFondoDeLaBarra);
+    ctx.expect(
+      `${id}: los botones que flotan sobre el mundo llevan \`surface\` debajo (el par que mide el filete, #758)`,
+      f.botones > 0 && f.sinPanel.length === 0,
+      `surface ${f.surface} · sin panel: ${JSON.stringify(f.sinPanel)}`,
     );
     if (id === "anime" || id === "acero_neon") await ctx.shot(`196-registro-y-barra-${id}`);
   }

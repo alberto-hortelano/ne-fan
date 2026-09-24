@@ -4,6 +4,7 @@
  *  cinco temas shipped — un tema bonito que no se lee es un tema roto. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { listStyles, StyleManifestSchema } from "../src/games/loader.js";
@@ -17,6 +18,20 @@ import {
 } from "../src/games/ui-theme.js";
 
 const REAL_STYLES = fileURLToPath(new URL("../data/styles", import.meta.url));
+const PLANTILLA = fileURLToPath(new URL("../data/styles/_plantilla/style.json.example", import.meta.url));
+
+/** Todo tema que un jugador puede llegar a VER, no solo los cinco shipped: el
+ *  base (fixtures, arranque sin bridge, y lo que rellena lo que un pack no
+ *  declara) y la plantilla de la que nace un pack de usuario. Hasta #758 esos
+ *  dos no los medía nadie y el filete del base daba 1,99:1. */
+function temasALeer(): Array<{ style_id: string; ui_theme: UiTheme }> {
+  const plantilla = JSON.parse(readFileSync(PLANTILLA, "utf8")) as { ui: unknown };
+  return [
+    ...listStyles(REAL_STYLES),
+    { style_id: "BASE_UI_THEME", ui_theme: BASE_UI_THEME },
+    { style_id: "_plantilla", ui_theme: resolveUiTheme(UiThemeSchema.parse(plantilla.ui)) },
+  ];
+}
 
 /** Manifest mínimo válido al que colgarle un bloque `ui`. */
 function manifestWith(ui: unknown): Record<string, unknown> {
@@ -159,18 +174,30 @@ describe("temas shipped", () => {
     }
   });
 
-  it("el texto se lee sobre su panel (WCAG AA)", () => {
-    for (const s of styles) {
+  it("el texto se lee sobre su panel (WCAG AA), también en el base y la plantilla", () => {
+    for (const s of temasALeer()) {
       const t = s.ui_theme;
       assert.ok(
         contrast(t.ink, t.surface) >= 4.5,
         `${s.style_id}: texto sobre panel ${contrast(t.ink, t.surface).toFixed(2)}:1 (<4.5)`,
       );
-      // Secundario y acento: umbral de texto grande / elemento gráfico.
+      // El secundario es TEXTO NORMAL, no grande: `ink_dim` pinta el detalle
+      // del muro (13 px), las notas y fechas del historial y del panel de
+      // gráficos (11-12 px) y las etiquetas de vida. WCAG solo da el 3:1 al
+      // texto de ≥ 24 px (o ≥ 18,66 px en negrita), y aquí no hay ninguno
+      // (#758): en `acuarela_luminosa` las notas se quedaban en 3,2:1.
       assert.ok(
-        contrast(t.ink_dim, t.surface) >= 3,
-        `${s.style_id}: texto atenuado ${contrast(t.ink_dim, t.surface).toFixed(2)}:1 (<3)`,
+        contrast(t.ink_dim, t.surface) >= 4.5,
+        `${s.style_id}: texto atenuado ${contrast(t.ink_dim, t.surface).toFixed(2)}:1 (<4.5)`,
       );
+      // El filete (`border`) es la silueta de paneles y botones `.nf-action`:
+      // componente de interfaz, 3:1 (WCAG 1.4.11). Hasta #758 no lo medía
+      // nadie y en cuatro packs daba 1,5-1,8:1: el botón no tenía borde.
+      assert.ok(
+        contrast(t.border, t.surface) >= 3,
+        `${s.style_id}: filete ${contrast(t.border, t.surface).toFixed(2)}:1 (<3)`,
+      );
+      // Acento: elemento gráfico y titulares, 3:1.
       assert.ok(
         contrast(t.accent, t.surface) >= 3,
         `${s.style_id}: acento ${contrast(t.accent, t.surface).toFixed(2)}:1 (<3)`,
@@ -198,8 +225,6 @@ describe("temas shipped", () => {
  *  medía ese par: en `anime` «Cerrar» era tinta oscura sobre `fade` oscuro,
  *  1,03:1, invisible. */
 describe("el muro se lee (#748)", () => {
-  const styles = listStyles(REAL_STYLES);
-
   /** El fondo opaco del panel del muro, tal como lo compone el navegador. */
   function fondoDelMuro(t: UiTheme): [number, number, number] {
     const [fr, fg, fb] = parseColor(t.fade);
@@ -207,8 +232,8 @@ describe("el muro se lee (#748)", () => {
     return sobre(t.surface, velo);
   }
 
-  it("título, detalle y botón relleno pasan en los cinco packs", () => {
-    for (const s of styles) {
+  it("título, detalle y botón relleno pasan en los cinco packs, el base y la plantilla", () => {
+    for (const s of temasALeer()) {
       const t = s.ui_theme;
       const fondo = fondoDelMuro(t);
       const panel = rgb(fondo);
@@ -216,7 +241,9 @@ describe("el muro se lee (#748)", () => {
       const pares: Array<[string, string, string, number]> = [
         ["título de fallo (danger)", t.danger, panel, 3],
         ["título de espera y oferta (accent)", t.accent, panel, 3],
-        ["detalle (ink_dim)", t.ink_dim, panel, 3],
+        // Texto normal de 13 px: 4,5 (#758), no el 3:1 del texto grande.
+        ["detalle (ink_dim)", t.ink_dim, panel, 4.5],
+        ["filete del panel (border)", t.border, panel, 3],
         ["silueta del botón (accent)", t.accent, panel, 3],
         ["texto del botón (accent_ink sobre accent)", t.accent_ink, boton, 4.5],
         // La oferta (issue 478): «Cerrar» es SECUNDARIO, sin relleno.
