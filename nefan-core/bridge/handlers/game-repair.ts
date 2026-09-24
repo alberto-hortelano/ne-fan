@@ -28,12 +28,12 @@ import {
   cargarConDetalle,
   escenasQueSobreviven,
 } from "../../src/games/world-snapshot.js";
-import { WorldMapManager } from "../../src/world-map/world-map.js";
 import type { WorldMap } from "../../src/world-map/types.js";
 import type { RepairGameWorldMessage } from "../../src/protocol/messages.js";
 
 import {
   generationBusyKey,
+  restaurarMundoServible,
   writeSessionSnapshot,
   type BridgeContext,
   type ClientSocket,
@@ -52,7 +52,14 @@ interface Cribada {
   ty: number;
 }
 
-/** Qué hay que curar en este juego, o el motivo por el que no se puede. */
+/** Qué hay que curar en este juego, o el motivo por el que no se puede.
+ *
+ *  PENDIENTE (anotado en #578, sin issue propio): `loQueHayQueCurar` es una
+ *  DECISIÓN pura que vive en el bridge y lee el disco dos veces
+ *  (`cargarConDetalle` + `escenasQueSobreviven`). Su sitio es junto a
+ *  `caminoDeArranque` (`src/world-map/entrada-del-fichero.ts`), partiendo de
+ *  una sola lectura como `cargarParaArrancar`. No se movió con #578 porque
+ *  la cura no regenera la entrada y el cambio no hacía falta para arreglarlo. */
 export type PlanDeCura =
   | {
       ok: true;
@@ -208,14 +215,11 @@ export async function runGameRepair(ctx: BridgeContext, gameId: string): Promise
       );
 
       // El mundo SERVIBLE entra en la sesión efímera sin activar ni difundir —
-      // mismo cuerpo que `replayWorldSnapshot`, del que aquí sobra el
+      // el cuerpo que comparte con `replayWorldSnapshot`, del que aquí sobra el
       // broadcast: no hay ningún jugador al que enseñarle una escena. Sin
       // esto, el motor generaría los tiles cribados SIN las costuras de sus
       // vecinos y el validador los rechazaría todos.
-      ctx.narrative.worldMap = WorldMapManager.fromSerialized(structuredClone(plan.worldMap));
-      for (const [id, scene] of Object.entries(plan.servibles)) {
-        ctx.narrative.recordSceneLoaded(id, structuredClone(scene), [], { activate: false });
-      }
+      restaurarMundoServible(ctx, plan.worldMap, plan.servibles);
 
       const fallos: string[] = [];
       let curadas = 0;

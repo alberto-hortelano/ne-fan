@@ -15,11 +15,12 @@
  *     y pedir la mala cuesta exactamente una. El fichero no se reescribe al
  *     cargar: sigue teniendo sus 9 escenas.
  *
- *   B · la injugable es la de ENTRADA. Se degrada al bootstrap vivo COMO
- *     HOY (decisión (i) del coordinador: aquí no se abre ningún camino nuevo
- *     de regeneración parcial), y lo ÚNICO que cambia es lo que dice el
- *     título del issue: el snapshot ya no se queda en UNA escena. La entrada
- *     se cura y las ocho buenas siguen ahí, idénticas.
+ *   B · la injugable es la de ENTRADA. En #451 se degradaba al bootstrap
+ *     vivo (decisión (i) de entonces); desde #578 se regenera SOLO la
+ *     entrada, dentro del mapa del fichero y sin sembrar (lo mide el 214).
+ *     Lo que este guion afirma no cambia: una llamada, y el snapshot ya no
+ *     se queda en UNA escena — la entrada se cura y las ocho buenas siguen
+ *     ahí, idénticas.
  *
  *  Y el RECUENTO del chip (hallazgo H-2 de la QA de esta PR): con el mundo
  *  entero servible el título no cuenta nada, y con uno cribado dice «8 de 9».
@@ -319,8 +320,8 @@ export default async function (ctx) {
   await recargarAlTitulo(ctx);
   const conEntrada = await panelDeGeneracion(ctx);
   ctx.expect(
-    "5. con la ENTRADA injugable el título sí lo marca obsoleto",
-    conEntrada.estado.includes("obsoleto (regenera el mundo)"),
+    "5. con la ENTRADA injugable el título dice que Comenzar la regenera (#578: ya no manda regenerar el mundo)",
+    conEntrada.estado.includes("la entrada se regenerará al empezar (1 llamada al motor)"),
     conEntrada.estado,
   );
 
@@ -329,7 +330,7 @@ export default async function (ctx) {
   await comenzar(ctx);
   const trasB = await generacionesServidas();
   ctx.expect(
-    "5. …y se degrada al bootstrap vivo COMO HOY: una llamada al motor, la de la entrada",
+    "5. …y se regenera solo la entrada: una llamada al motor",
     trasB === antesDeB + 1,
     `/generate_scene ${antesDeB} → ${trasB}`,
   );

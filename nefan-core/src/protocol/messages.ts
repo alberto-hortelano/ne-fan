@@ -624,6 +624,11 @@ export interface GamesListedMessage {
      *  llegue: sin este número, el título dice «generado» de un mundo del que
      *  solo queda la entrada y nada en pantalla lo delata (QA de #451, H-2). */
     escenas?: { servibles: number; total: number };
+    /** Solo con `generation` "stale" y solo cuando lo que falla es la ENTRADA
+     *  y «Comenzar» la regenera dentro del mapa del fichero con UNA llamada al
+     *  motor (#578). Sin él, el título mandaba regenerar el mundo entero
+     *  (nueve llamadas) para algo que empezar arregla (QA de BE, H1). */
+    entradaARegenerar?: true;
     /** Estilos aplicados al juego (batch de assets estilizados): "ready" =
      *  vigente, "stale" = el mundo se regeneró/editó después. */
     styles_applied: Array<{ style_id: string; status: "ready" | "stale" }>;

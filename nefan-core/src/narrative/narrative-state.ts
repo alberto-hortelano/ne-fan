@@ -30,6 +30,8 @@ import type { PluginRecord, PluginManifest, PluginOrigin } from "../plugins/type
 import { computePluginId } from "../plugins/hash.js";
 import { ExpandedSceneSchema } from "../contract/model-io/scene-schema.js";
 import { InventoryListSchema, describirInventarioInvalido } from "../contracts/request-schemas.js";
+import { WorldMapSchema } from "../contracts/world-map-schema.js";
+import { formatZodError } from "../contract/model-io/validate.js";
 import type { ZodError } from "zod";
 import { buildLlmContext } from "./serialize-llm.js";
 import { registerSceneNpcs } from "./npc-records.js";
@@ -581,6 +583,16 @@ export class NarrativeState {
             "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
         );
       }
+    }
+    // El MAPA, por el mismo zod que el snapshot de mundo (#578, B1): un anchor
+    // con el rect fuera del tile o un enlace a un lugar que no está entraban
+    // sin juicio, porque `new WorldMapManager(data.world_map)` solo lo envuelve.
+    const mapa = WorldMapSchema.safeParse(data.world_map);
+    if (!mapa.success) {
+      throw new Error(
+        `save "${sessionId}": world_map inválido: ${formatZodError(mapa.error)} — ` +
+          "pre-producción, sin migraciones (#336): bórralo o empieza partida nueva",
+      );
     }
     // Y el LEDGER: `entities[].position` es lo que el sim y la vida ambiental
     // leen sin mirar (`record.position[0]`), y lo que el checker de #382

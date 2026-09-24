@@ -27,12 +27,11 @@ import {
   type StyleManifest,
 } from "../../src/games/loader.js";
 import {
+  cargarParaArrancar,
   gameGenerationStatus,
-  loadWorldSnapshot,
   type WorldSnapshot,
 } from "../../src/games/world-snapshot.js";
 import { listStyleApplications } from "../../src/games/style-application.js";
-import { WorldMapManager } from "../../src/world-map/world-map.js";
 import { loadGamePluginManifests, pluginsHermanosDe } from "../../src/plugins/loader.js";
 import {
   activarPluginsDeSesionNueva,
@@ -45,6 +44,7 @@ import {
   createSessionNpcBehavior,
   generationBusyKey,
   npcSync,
+  restaurarMundoServible,
   type BridgeContext,
   type ClientSocket,
 } from "../context.js";
@@ -58,7 +58,8 @@ import {
   eleccionDeEstilo,
 } from "../../src/session/eleccion-de-estilo.js";
 import { validarBorrador } from "../../src/protocol/borrador-de-mundo.js";
-import { runBootstrapTile } from "./bootstrap-tile.js";
+import { runBootstrapTile, runEntradaEnElMapaDelFichero } from "./bootstrap-tile.js";
+import { caminoDeArranque } from "../../src/world-map/entrada-del-fichero.js";
 import type {
   CreateGameMessage,
   DeleteSessionMessage,
@@ -145,6 +146,7 @@ export function handleListGames(
         ...g,
         generation: mundo.estado,
         ...(mundo.escenas ? { escenas: mundo.escenas } : {}),
+        ...(mundo.entradaARegenerar ? { entradaARegenerar: true as const } : {}),
         styles_applied: worldDocHash
           ? listStyleApplications(ctx.gamesDir, g.game_id, worldDocHash)
           : [],
@@ -507,36 +509,85 @@ export async function handleStartSession(
   });
   avisarDeIlegibles(ctx, paraElCliente.ilegibles);
   avisarDeFueraDelMundo(ctx, paraElCliente.fueraDelMundo);
-  // Snapshot de mundo pre-generado (data/games/{id}/world/): replay del
-  // bootstrap por la ruta normal — el jugador entra sin esperar al motor. Un
-  // snapshot que la puerta rechaza (malformado, de otro schema o INJUGABLE
-  // para el validador de hoy, #302) se REPORTA y degrada al bootstrap vivo
-  // (nunca se sirve contenido dudoso ni se deja al jugador sin partida). Solo
-  // el mensaje, sin traza: es una condición esperable y el mensaje ya nombra
-  // fichero, escena y motivo — la traza lo tapaba (QA 2026-09-05).
-  let snapshot: WorldSnapshot | null = null;
-  try {
-    snapshot = loadWorldSnapshot(ctx.gamesDir, msg.gameId, worldDocHash);
-  } catch (err) {
-    console.error(
-      `Bridge: world snapshot rechazado en la carga para "${msg.gameId}" — ` +
-        `se degrada al bootstrap vivo: ${(err as Error).message}`,
-    );
-  }
-  if (snapshot) {
-    console.log(
-      `Bridge: world snapshot HIT para "${msg.gameId}" ` +
-        `(${Object.keys(snapshot.scenes).length} escenas, generado ${snapshot.generated_at}) ` +
-        `— bootstrap sin motor`,
-    );
-    await replayWorldSnapshot(ctx, snapshot);
-    return;
+  await arrancarElMundo(ctx, msg.gameId, worldDocHash);
+}
+
+/** El mundo de una partida NUEVA, ya con la sesión creada y el cliente
+ *  suscrito: sale de `handleStartSession` para que el handler no cargue con
+ *  los cuatro caminos de `caminoDeArranque`. */
+async function arrancarElMundo(ctx: BridgeContext, gameId: string, worldDocHash: string): Promise<void> {
+  // Snapshot de mundo pre-generado (data/games/{id}/world/). Qué se hace con
+  // él lo decide core (`caminoDeArranque`, pura); aquí solo se ejecuta:
+  //  · replay por la ruta normal — el jugador entra sin esperar al motor;
+  //  · la ENTRADA regenerada dentro del mapa del fichero cuando es la única
+  //    escena que no pasa el validador de hoy (#578) — una llamada al motor,
+  //    sin sembrar mapa;
+  //  · error, sin llamar al motor, si el fichero se contradice;
+  //  · el bootstrap vivo cuando no hay mundo que servir. Un fichero ilegible
+  //    se REPORTA antes: solo el mensaje, sin traza — es una condición
+  //    esperable y el mensaje ya nombra fichero y motivo (QA 2026-09-05).
+  const sessionGameId = gameId;
+  const arranque = caminoDeArranque(cargarParaArrancar(ctx.gamesDir, gameId, worldDocHash));
+  switch (arranque.camino) {
+    case "replay": {
+      const snapshot = arranque.snapshot;
+      console.log(
+        `Bridge: world snapshot HIT para "${gameId}" ` +
+          `(${Object.keys(snapshot.scenes).length} escenas, generado ${snapshot.generated_at}) ` +
+          `— bootstrap sin motor`,
+      );
+      await replayWorldSnapshot(ctx, snapshot);
+      return;
+    }
+    case "error": {
+      // El MOTIVO, con sus ids de escena y de lugar, es para quien depura: va
+      // al log. El jugador lee qué pasa y qué hacer (QA de BE, H2).
+      console.error(`Bridge: el mundo pre-generado de "${gameId}" no se puede arrancar: ${arranque.motivo}`);
+      ctx.broadcastNarrative({
+        type: "narrative_status",
+        phase: "error",
+        kind: "tile",
+        tile: { tx: 0, ty: 0 },
+        message:
+          "El mundo guardado está dañado: sus escenas no casan con su mapa. " +
+          "Regenera el mundo desde el título.",
+      });
+      return;
+    }
+    case "entrada-en-el-mapa-del-fichero": {
+      const plan = arranque.plan;
+      console.error(
+        `Bridge: world snapshot rechazado en la carga para "${gameId}" — se regenera SOLO la ` +
+          `entrada, dentro de su mapa (${Object.keys(plan.worldMap.places).length} lugares) y con ` +
+          `${Object.keys(plan.anillo).length} vecinos: ${arranque.motivo}`,
+      );
+      ctx.broadcastNarrative({
+        type: "narrative_status",
+        phase: "generating",
+        kind: "tile",
+        tile: { tx: 0, ty: 0 },
+        message: "Generando la entrada del mundo...",
+      });
+      ctx.sceneGen.enqueue({
+        key: "bootstrap",
+        blocking: true,
+        run: () => runEntradaEnElMapaDelFichero(ctx, sessionGameId, plan),
+      });
+      return;
+    }
+    case "sembrar":
+      if (arranque.aviso) {
+        console.error(
+          `Bridge: world snapshot rechazado en la carga para "${gameId}" — ` +
+            `se degrada al bootstrap vivo: ${arranque.aviso}`,
+        );
+      }
+      break;
   }
 
   // Generate the initial TILE (0,0) asynchronously (via the shared queue) and
   // broadcast it as a narrative_event so all subscribed clients render the
   // same world. Emit lifecycle hints so the client can show a loader.
-  const sessionGameId = msg.gameId;
   ctx.broadcastNarrative({
     type: "narrative_status",
     phase: "generating",
@@ -557,11 +608,11 @@ export async function handleStartSession(
  *  player_entered_place al instante) y difunde la de entrada; sus salidas se
  *  calculan al servir desde el world map restaurado. */
 async function replayWorldSnapshot(ctx: BridgeContext, snap: WorldSnapshot): Promise<void> {
-  ctx.narrative.worldMap = WorldMapManager.fromSerialized(structuredClone(snap.world_map));
-  for (const [id, scene] of Object.entries(snap.scenes)) {
-    if (id === snap.entry_scene_id) continue;
-    ctx.narrative.recordSceneLoaded(id, structuredClone(scene), [], { activate: false });
-  }
+  restaurarMundoServible(
+    ctx,
+    snap.world_map,
+    Object.fromEntries(Object.entries(snap.scenes).filter(([id]) => id !== snap.entry_scene_id)),
+  );
   const entryScene = structuredClone(snap.scenes[snap.entry_scene_id]);
   ctx.narrative.recordSceneLoaded(snap.entry_scene_id, entryScene);
   await ctx.narrative.save();

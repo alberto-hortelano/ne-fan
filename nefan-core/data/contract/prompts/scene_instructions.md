@@ -171,11 +171,14 @@ you call narrative_respond. Two flags can appear in world_state:
   the place the player is travelling to. A place lives INSIDE a tile, so it
   always arrives alongside `generate_tile`, never as a scene of its own.
 
-On BOOTSTRAP, add a top-level "place_id" to the scene JSON naming the map
-place the player starts in (e.g. "place_id": "robledo"). You are the only one
-who knows it — you just laid the map down in this same turn — and it is what
-ties the first scene to it: without it the travel panel has no place to show
-exits for, so the server REJECTS the response and asks you to add it.
+On BOOTSTRAP with bootstrap_world_map, add a top-level "place_id" to the
+scene JSON naming the map place the player starts in (e.g. "place_id":
+"robledo"). You are the only one who knows it — you just laid the map down in
+this same turn — and it is what ties the first scene to it: without it the
+travel panel has no place to show exits for, so the server REJECTS the
+response and asks you to add it. A bootstrap tile WITHOUT bootstrap_world_map
+lives in a map that already exists: the server knows the starting place and
+tags the scene itself.
 
 On realize_place you do NOT need it: the server knows which place it asked
 you to realize and tags the scene itself. Same for a tile that is a place —

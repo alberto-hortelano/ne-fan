@@ -263,6 +263,44 @@ export function bootstrapTile() {
   };
 }
 
+/** El tile de ENTRADA dentro de un mundo que YA existe (#578): el bridge pide
+ *  `generate_tile{0,0,bootstrap}` SIN `bootstrap_world_map` y con el anillo
+ *  del fichero como `neighbors`. Es el mismo pueblo de `bootstrapTile()` —el
+ *  que el anillo de este motor rodeó al generarse— y además CONTINÚA cada
+ *  cruce de los vecinos hasta la plaza, que es lo que el prompt de tile le
+ *  pide al motor real y lo que el validador exige en la costura. Sin esto el
+ *  tile de campo del oeste (su camino `camino_oe` sale por la fila 64 hacia
+ *  el pueblo) dejaba un camino muriendo en la costura y el bridge rechazaba
+ *  la entrada: el banco medía un motor peor que el que simula. */
+export function entradaEnMundoExistente(gt: GenerateTile) {
+  const base = bootstrapTile();
+  const ground: Record<string, unknown>[] = [...base.ground];
+  for (const [edge, n] of Object.entries(gt.neighbors ?? {}) as [Edge, Neighbor][]) {
+    for (const c of n.crossings ?? []) {
+      const w = Math.max(2, c.width ?? 2);
+      const i = ground.length;
+      if (c.type === "river" || c.type === "bridge") {
+        // El agua que llega por la costura se cruza con una pasarela: el
+        // pueblo no se parte en dos por un río que el vecino declaró.
+        const vertical = edge === "north" || edge === "south";
+        const fondo = 6;
+        const lejos = edge === "south" || edge === "east" ? 128 - fondo : 0;
+        ground.push({
+          id: `rio_costura_${i}`, kind: "deck", label: "pasarela",
+          rect: vertical ? [c.at - w / 2, lejos, w, fondo] : [lejos, c.at - w / 2, fondo, w],
+        });
+      } else {
+        ground.push({
+          id: `camino_costura_${i}`, kind: "path", label: "camino",
+          points: [edgePoint(edge, c.at), [64, 80]],
+          w,
+        });
+      }
+    }
+  }
+  return { ...base, ground };
+}
+
 /** Volúmenes del lugar anclado a un tile (generate_tile.place): una casa
  *  grande con puerta al sur y dos anexos, para que se VEA que el tile ES ese
  *  lugar y no campo abierto. */

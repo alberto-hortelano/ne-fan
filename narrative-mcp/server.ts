@@ -4,7 +4,8 @@ import { dirname, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { validateNarrativeReaction, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene } from './validators.js';
+import { TILE_CELLS } from '@nefan/core/contracts/world-map-schema';
+import { validateNarrativeReaction, validateVolumes, validateGroundFeatures, validateWeaponOrient, validateWeaponVerify, validateFormatDScene, validateAnchor } from './validators.js';
 import { ConsequenceSchema, NPC_DIRECTIVE_TYPES, PLACE_KINDS, LINK_KINDS, EDGES, type NpcDirectiveType } from '@nefan/core';
 import { WsBridge } from './ws-bridge.js';
 import { bridgeGet, bridgePost, postProgress, setActiveSession, setActivityHook, type BridgeResult } from './bridge-http-client.js';
@@ -702,11 +703,21 @@ into context:
         rect: z.array(z.number().int()).length(4).optional(),
       }).optional().describe(
         'Tile of the continuous plane where this place LIVES, optionally ' +
-        'bounded to a cell rect [col,row,w,h] inside the tile. The bridge ' +
+        'bounded to a cell rect [col,row,w,h] inside the tile: whole cells of ' +
+        `0.5 m, col,row >= 0, w,h >= 1, col+w <= ${TILE_CELLS}, row+h <= ${TILE_CELLS}. The bridge ` +
         'activates the place (and fires its triggers) when the player steps ' +
-        'into the anchor.'),
+        'into the anchor, and a player travelling back to the place appears ' +
+        'inside the rect (without rect: at the centre of the tile).'),
     },
     async ({ id, kind, parent_id, name, description, approx_position, approx_radius, attrs_json, anchor }) => {
+      // Pre-flight con el zod del bridge (una sola fuente de reglas, #465):
+      // la forma de arriba solo describe la tool al modelo.
+      if (anchor !== undefined) {
+        const check = validateAnchor(anchor);
+        if (!check.ok) {
+          return { content: [{ type: 'text', text: `anchor inválido: ${check.error}` }], isError: true };
+        }
+      }
       let attrs: Record<string, unknown> | undefined;
       if (attrs_json) {
         try {

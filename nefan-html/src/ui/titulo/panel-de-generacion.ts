@@ -85,6 +85,17 @@ export function pintarProgresoDeMundo(
   }
 }
 
+/** El rótulo de un mundo `stale`. #578: si lo único roto es la entrada,
+ *  «Comenzar» la rehace con UNA llamada al motor dentro del mismo mundo, y
+ *  mandar regenerar (nueve) sería mentir sobre el remedio. Quién está en ese
+ *  caso lo decide el bridge (`entradaARegenerar`); aquí solo se pinta. Va
+ *  fuera de `montarPanelDeGeneracion` para no sumarle rama a su CRAP. */
+function rotuloDeObsoleto(entradaARegenerar: boolean): string {
+  return entradaARegenerar
+    ? `<span style="color:#da6">⟳ la entrada se regenerará al empezar (1 llamada al motor)</span>`
+    : `<span style="color:#da6">⟳ obsoleto (regenera el mundo)</span>`;
+}
+
 /** Monta el panel dentro de `hueco` para el par (mundo, estilo) que se está
  *  mirando. Llamarlo otra vez lo reemplaza entero: es el refresco. */
 export function montarPanelDeGeneracion(
@@ -128,7 +139,7 @@ export function montarPanelDeGeneracion(
       : "";
   const CONTENT_LABEL: Record<string, string> = {
     ready: `<span style="color:#4a4">✓ generado</span>${recorte}`,
-    stale: `<span style="color:#da6">⟳ obsoleto (regenera el mundo)</span>`,
+    stale: rotuloDeObsoleto(mundo.entradaARegenerar === true),
     missing: `<span style="color:#a66">— sin generar</span>`,
   };
   const styleLabel = !estilo

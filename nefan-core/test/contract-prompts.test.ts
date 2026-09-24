@@ -15,7 +15,8 @@ import { resolve } from "node:path";
 import { NPC_ROLES } from "../src/simulation/npc-roles.js";
 import { ENTITY_FIELDS, SCENE_FIELDS, EMITTED_SCENE_FIELDS, EmittedSceneSchema, RADIO_SIMULADO_POR_KIND } from "../src/contract/model-io/scene-schema.js";
 import { celdasQueCubreRadio } from "../src/scene/terrain-collision.js";
-import { COTA_TILE, TILE_MPC } from "../src/scene/tile.js";
+import { COTA_TILE, TILE_CELLS, TILE_MPC } from "../src/scene/tile.js";
+import { AnchorSchema } from "../src/contracts/world-map-schema.js";
 
 const PROMPTS_DIR = fileURLToPath(new URL("../data/contract/prompts", import.meta.url));
 
@@ -311,4 +312,63 @@ describe("contrato narrativo — prompts compartidos", () => {
       }
     });
   }
+});
+
+/** #465: el prompt de tile documenta el `anchor.rect` de un lugar —qué es, en
+ *  qué unidades y qué produce— sin imperativo de uso: los prompts son
+ *  documentación de herramientas, no recetas. Y las cotas que dice son las
+ *  que aplica el zod, no un número escrito a mano que se quede atrás. */
+describe("contrato narrativo — el prompt de tile documenta el rect del anchor (#465)", () => {
+  const text = readFileSync(resolve(PROMPTS_DIR, "tile_instructions.md"), "utf-8");
+
+  it("nombra el canal, la forma y las unidades", () => {
+    for (const marca of ["map_upsert_place.anchor", "[col, row, w, h]", "CELLS", "0.5 m", `${TILE_CELLS}×${TILE_CELLS}`]) {
+      assert.ok(text.includes(marca), `tile_instructions.md no dice «${marca}»`);
+    }
+  });
+
+  // Cada cota se LEE del prompt y se ejerce contra el zod a los dos lados:
+  // el número que dice el texto se acepta y el de al lado se rechaza. Así un
+  // cambio en el zod (`w ≥ 0`) o en el prompt (`w,h ≥ 2`) pone esto rojo
+  // (QA de BE, H3: antes solo se ataba el borde este).
+  const rect = (r: number[]) => AnchorSchema.safeParse({ tx: 0, ty: 0, rect: r }).success;
+  const cota = (re: RegExp, que: string): number => {
+    const m = text.match(re);
+    assert.ok(m, `tile_instructions.md no dice ${que}`);
+    return Number(m[1]);
+  };
+
+  it("los bordes ESTE y SUR que declara son los que aplica AnchorSchema, justo en el borde", () => {
+    const este = cota(/col\+w ≤ (\d+)/, "la cota este (col+w ≤ N)");
+    const sur = cota(/row\+h ≤ (\d+)/, "la cota sur (row+h ≤ N)");
+    assert.equal(este, TILE_CELLS);
+    assert.equal(sur, TILE_CELLS);
+    assert.equal(rect([este - 4, 0, 4, 4]), true, "el borde este exacto que el prompt permite");
+    assert.equal(rect([este - 3, 0, 4, 4]), false, "una celda al este de lo que el prompt permite");
+    assert.equal(rect([0, sur - 4, 4, 4]), true, "el borde sur exacto que el prompt permite");
+    assert.equal(rect([0, sur - 3, 4, 4]), false, "una celda al sur de lo que el prompt permite");
+  });
+
+  it("el mínimo de col,row y de w,h que declara es el del zod", () => {
+    const origen = cota(/col,row ≥ (\d+)/, "el mínimo de col,row");
+    const lado = cota(/w,h ≥ (\d+)/, "el mínimo de w,h");
+    assert.equal(rect([origen, origen, 4, 4]), true);
+    assert.equal(rect([origen - 1, 0, 4, 4]), false, "col por debajo del mínimo del prompt");
+    assert.equal(rect([0, origen - 1, 4, 4]), false, "row por debajo del mínimo del prompt");
+    assert.equal(rect([0, 0, lado, lado]), true);
+    assert.equal(rect([0, 0, lado - 1, 4]), false, "w por debajo del mínimo del prompt");
+    assert.equal(rect([0, 0, 4, lado - 1]), false, "h por debajo del mínimo del prompt");
+  });
+
+  it("dice que son números ENTEROS, y el zod rechaza el fraccionario", () => {
+    assert.ok(/whole\s+numbers/.test(text), "tile_instructions.md no dice que el rect es de enteros");
+    assert.equal(rect([10.5, 0, 4, 4]), false);
+    assert.equal(rect([0, 0, 4, 2.5]), false);
+  });
+
+  it("el BOOTSTRAP distingue sembrar el mapa de un mundo que ya existe (#578)", () => {
+    const bootstrap = text.slice(text.indexOf("BOOTSTRAP ("));
+    assert.match(bootstrap, /With bootstrap_world_map: true/);
+    assert.match(bootstrap, /WITHOUT bootstrap_world_map, the world already exists/);
+  });
 });

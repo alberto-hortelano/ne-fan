@@ -16,7 +16,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { EmittedSceneSchema } from "../src/contract/model-io/scene-schema.js";
-import { bootstrapTile, makeTile, type GenerateTile } from "../../labs/narrative/fake-scenes.js";
+import { bootstrapTile, entradaEnMundoExistente, makeTile, type GenerateTile } from "../../labs/narrative/fake-scenes.js";
+import { validateScene } from "../src/scene/scene-validate.js";
 
 /** Vuelca los issues del zod en el mensaje: cuando esto salta, el fake ha
  *  divergido del contrato y hay que arreglar EL FAKE, no este test. */
@@ -67,5 +68,36 @@ describe("el motor falso emite lo que el contrato del rol acepta", () => {
       nearby_places: [],
     };
     conforme("makeTile(tile con place)", makeTile(gt));
+  });
+
+  it("la entrada en un mundo que ya existe (#578) pasa el contrato Y casa las costuras de sus vecinos", () => {
+    const gt: GenerateTile = {
+      tx: 0,
+      ty: 0,
+      bootstrap: true,
+      neighbors: {
+        // El `camino_oe` del tile de campo del oeste: sale por su borde este
+        // en la fila 64, que es donde el pueblo de arranque NO tiene camino.
+        west: { tile: [-1, 0], scene_id: "tile_-1_0", description: "campo", biome: "grass", crossings: [{ type: "path", at: 64, width: 2 }] },
+        east: { tile: [1, 0], scene_id: "tile_1_0", description: "campo", biome: "grass", crossings: [{ type: "path", at: 88, width: 4 }] },
+      },
+      nearby_places: [],
+    };
+    const scene = entradaEnMundoExistente(gt);
+    conforme("entradaEnMundoExistente()", scene);
+    const check = validateScene(structuredClone(scene), {
+      required_crossings: [
+        { edge: "west", type: "path", at: 64, width: 2 },
+        { edge: "east", type: "path", at: 88, width: 4 },
+      ],
+      bootstrap: true,
+    });
+    assert.ok(check.ok, check.ok ? "" : check.errors.join(" · "));
+    // Y el pueblo de arranque solo NO casa: sin esto el test no mide nada.
+    const solo = validateScene(structuredClone(bootstrapTile()), {
+      required_crossings: [{ edge: "west", type: "path", at: 64, width: 2 }],
+      bootstrap: true,
+    });
+    assert.equal(solo.ok, false, "control: el pueblo sin continuar la costura debería fallar");
   });
 });
