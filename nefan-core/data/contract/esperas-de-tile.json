@@ -101,6 +101,18 @@
       "llamada": "waitFor",
       "desc": "desc",
       "porque": "`esperarLlegada`, calcada del guion 09: ida y vuelta por «Salidas», y quien mueve al jugador es el BRIDGE generando el destino y pidiendo el spawn. Para antes si el bridge declara `viaje.error`. Nació con 240 s en `main` con #699, DESPUÉS del censo de esta tanda, así que es la prueba en vivo del primer agujero declarado: una espera nueva con literal no la ve nadie, y a esta la vio QA leyendo el diff del rebase. Presupuestaba 240 s."
+    },
+    {
+      "fichero": "qa/guiones/172-el-cable-distingue-el-rechazo-del-intake-de-lo-demas.mjs",
+      "llamada": "waitFor",
+      "desc": "\"el motor falso sirvió el bootstrap de la partida del cable suscrito\"",
+      "porque": "El `start_session` del cable suscrito hace que el BRIDGE genere el tile de arranque de la partida (bootstrap al motor falso); la espera acaba cuando el fake lo ha servido. Llevaba un literal de 20 s con nombre delator (`MS_DEL_TILE_PENDIENTE`) hasta entrar aquí (QA de #694, H3)."
+    },
+    {
+      "fichero": "qa/guiones/172-el-cable-distingue-el-rechazo-del-intake-de-lo-demas.mjs",
+      "llamada": "waitFor",
+      "desc": "\"el error de kind tile llegó a un cable abierto de la página\"",
+      "porque": "Otro cable pide el tile (1,0) con el fake en `mode:\"error\"`: el BRIDGE corre la generación del tile, falla y difunde el `narrative_status/error` de kind `tile`, que es el sujeto de la espera. Llevaba el mismo literal de 20 s (QA de #694, H3)."
     }
   ],
   "lectores": [

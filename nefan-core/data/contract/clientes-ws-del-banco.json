@@ -1,6 +1,6 @@
 {
-  "_comment": "Padrón de los clientes WebSocket PROPIOS del banco (#678, tanda AF, 2026-09-18): cada `new WebSocket(…)` bajo `qa/**/*.mjs` está aquí con CÓMO ESCUCHA lo que el bridge le conteste, o `test/el-cliente-ws-del-banco-declara-como-escucha.test.ts` se pone rojo. El motivo: el bridge rechaza un frame que no pasa el contrato por UNICAST al socket que lo mandó (`bridge/ws-server.ts`, `narrative_status` con `phase:\"error\"` y `kind:\"protocolo\"`) y `escribir` calla si ese socket ya está cerrado; así que un cliente que abre, manda y cierra en el mismo tick no pierde el color de su guion, pierde la CAUSA — el 60 salía ✘ «timeout esperando tile listo» y el 63 ⊘ «el tile no llegó al save» con el rechazo solo en el stderr del bridge. Los dos pasan desde esta tanda por `qa/lib/cable.mjs`, que deja el socket abierto y devuelve los rechazos. El detector lee el ÁRBOL, no el texto: cuenta los `NewExpression` cuyo constructor se llama `WebSocket` (identificador o propiedad: `new WebSocket(u)` y `new window.WebSocket(u)`), y para cada uno cuenta los OYENTES dentro de su función envolvente —`onmessage` y `addEventListener`/`on`/`once` con `\"message\"` literal como primer argumento—; la prosa no es nodo y se excluye sola. Cada entrada declara sus `sockets` EN ORDEN DE FUENTE, uno por `new`, con `escucha`: `una-respuesta` (espera UN frame tipado y tira lo demás), `todo` (recoge todo lo recibido y mira los errores) o `nada` (dispara y olvida, DECLARADO: no hay ninguno hoy, y el modo existe para que el siguiente que cierre sin esperar tenga que escribirlo aquí con su motivo). La cuenta es EXACTA en las dos direcciones (un socket nuevo sin declarar y una declaración sin socket son rojo), y la coherencia se MIDE: `nada` exige cero oyentes en su ámbito y los otros dos exigen al menos uno, así que declarar «espera» sobre un socket mudo es rojo. El bridge NO cambia (criterio 4 de #678, cerrado): callar ante un socket que se fue es diseño, y un dead-letter para un cliente del banco que no escucha sería lógica de producción pagando por un test mal escrito.",
-  "_lo_que_esto_NO_sujeta": "Cinco agujeros conocidos, escritos aquí para que el siguiente no los descubra, y cada uno con su aserto en el test. (1) EL CONSTRUCTOR RENOMBRADO: lo que no se ve no es «el alias» sino CUALQUIER `new` cuyo constructor no se llame `WebSocket` en el nodo — `const W = WebSocket; new W(u)`, `Reflect.construct(WebSocket, [u])` y, la que más probable es, el import renombrado (`import { WebSocket as WS } from \"ws\"`, que es la forma natural de un cliente Node nuevo como `el-npc-cruza` o `el-state-api`). Tampoco ve el código dentro de un STRING que la página acaba evaluando (`page.addScriptTag({content: \"…new WebSocket…\"})`): ahí el test lo llama «prosa» y abre un socket de verdad. Lo que SÍ se ve, porque cerrarlo salía más barato que escribirlo: los paréntesis (`new (window.WebSocket)(u)`) y el acceso por índice (`new window[\"WebSocket\"](u)`). (2) `una-respuesta` CONTRA `todo` NO SE MIDE: el detector distingue «tiene oyente» de «no lo tiene», y qué hace ese oyente con un `narrative_status/error` lo dice la declaración, no el árbol. Los QUINCE `una-respuesta` de hoy tienen el mismo agujero, y es otro que el de #678: un rechazo de intake les llega como `narrative_status/error`, su `if (m.type !== …) return` lo tira, el bridge no cierra el socket, `onclose` no dispara y el `evaluate` se cuelga hasta el presupuesto del guion — rojo, pero mudo. Va en issue propio del coordinador con esta lista; la vía es `cable.mjs` y esperar el tipo de respuesta, y cuando los quince pasen por `qa/lib` el constructor se veda en `qa/guiones/**` y este padrón se reduce a `qa/lib`. (3) UN OYENTE QUE NUNCA PUEDE DISPARAR: la forma vieja del 60 y el 63 CON una flecha colgada en `onmessage` y el `close()` en el mismo tick del `send` sale «con oyente» — el detector mide oyentes, no ticks. Lo que SÍ se mide es que lo colgado pueda escuchar (flecha, función o nombre): `= null`, `= 0`, `= ''` y `ws.onmessage = ws.onmessage` son mudos, y las dos primeras vueltas de esto —tapar `null` y luego `0`— son la razón de que la regla esté escrita en positivo. (4) EL OYENTE QUE CUELGA OTRA FUNCIÓN, y es el agujero en la dirección contraria: `const ws = new WebSocket(u); oir(ws)` es un cliente CORRECTO que sale ROJO, porque el oyente se ata al socket DENTRO de la función que lo abre. El mensaje del rojo lo dice con esas palabras y manda a traer el oyente o a pasar por `qa/lib/cable.mjs`; no se afloja el detector para taparlo, porque aflojarlo es lo que devolvería el agujero que cerró la QA de la tanda. Un socket que no se liga a un nombre (`sockets.push(new WebSocket(u))`) cae en la misma casilla y el rojo también lo dice. (5) UNA ESPERA QUE NO ESPERA: `porElCable` hace inexpresable el mal uso que midió la QA —abrir, mandar y cerrar seguidos, que perdía tres rechazos de cinco— porque abrir y cerrar son privados y la espera es un argumento obligatorio; pero quien le pase un `async () => {}` vuelve a perder el unicast, y esto no lo ve, porque el `new WebSocket` declarado es el de `cable.mjs`. Se ve en la propia llamada, que es lo que se ganó, y lo canda el guion 152. LOS ESPÍAS NO SON CLIENTES, a propósito: los diecisiete guiones que envuelven `window.WebSocket` del cliente (`const Orig = window.WebSocket; window.WebSocket = class extends Orig …`) y los seis `page.routeWebSocket` de Playwright observan o cortan el socket DEL JUEGO, no abren uno propio al bridge, y no entran; lo que ellos afirmen sobre lo que el juego recibe lo sujeta cada guion. LO QUE EL BARRIDO SALTA: este candado recorre qa/ con `fuentesDelBanco` de test/banco-ficheros.ts (#704), que no baja a node_modules/, .tmp/ ni capturas/ (`SALTOS_DEL_BANCO`). Un `.mjs` en esos directorios es invisible aquí. La copia que este test usaba antes de #704 ya saltaba capturas/ (y además todo directorio con punto): aquí el censo no baja, sube con un `qa/.oculto/`. Medido en `recorridos-de-test.json`, punto (6), con su `it` en test/un-solo-barrido-del-banco.test.ts.",
+  "_comment": "Padrón de los clientes WebSocket PROPIOS del banco (#678, tanda AF, 2026-09-18): cada `new WebSocket(…)` bajo `qa/**/*.mjs` está aquí con CÓMO ESCUCHA lo que el bridge le conteste, o `test/el-cliente-ws-del-banco-declara-como-escucha.test.ts` se pone rojo. El motivo: el bridge rechaza un frame que no pasa el contrato por UNICAST al socket que lo mandó (`bridge/ws-server.ts`, `narrative_status` con `phase:\"error\"` y `kind:\"protocolo\"`) y `escribir` calla si ese socket ya está cerrado; así que un cliente que abre, manda y cierra en el mismo tick no pierde el color de su guion, pierde la CAUSA — el 60 salía ✘ «timeout esperando tile listo» y el 63 ⊘ «el tile no llegó al save» con el rechazo solo en el stderr del bridge. Los dos pasan desde esta tanda por `qa/lib/cable.mjs`, que deja el socket abierto y devuelve los rechazos. El detector lee el ÁRBOL, no el texto: cuenta los `NewExpression` cuyo constructor se llama `WebSocket` (identificador o propiedad: `new WebSocket(u)` y `new window.WebSocket(u)`), y para cada uno cuenta los OYENTES dentro de su función envolvente —`onmessage` y `addEventListener`/`on`/`once` con `\"message\"` literal como primer argumento—; la prosa no es nodo y se excluye sola. Cada entrada declara sus `sockets` EN ORDEN DE FUENTE, uno por `new`, con `escucha`: `todo` (recoge todo lo recibido y mira los errores) o `nada` (dispara y olvida, DECLARADO: no hay ninguno hoy, y el modo existe para que el siguiente que cierre sin esperar tenga que escribirlo aquí con su motivo). Hubo un tercero, `una-respuesta` (espera UN frame tipado y tira lo demás por tipo, rechazo del intake incluido), con quince ocupantes que se colgaban mudos ante un frame rechazado; desde #694 (tanda AQ, 2026-09-23) pasan todos por `preguntarPorElCable` de `qa/lib/cable.mjs` y el modo SE RETIRÓ del zod: declararlo es rojo, no una foto a cero. La cuenta es EXACTA en las dos direcciones (un socket nuevo sin declarar y una declaración sin socket son rojo), y la coherencia se MIDE: `nada` exige cero oyentes en su ámbito y `todo` al menos uno, así que declarar «escucha» sobre un socket mudo es rojo. Y ningún guion abre su propio socket: un `new WebSocket` bajo `qa/guiones/**` es rojo aunque se declare, porque la espera de una respuesta con su rechazo ya tiene dueño en `qa/lib/cable.mjs`; el padrón se queda con `qa/lib/` y los clientes Node de la raíz de `qa/`. El bridge NO cambia (criterio 4 de #678, cerrado): callar ante un socket que se fue es diseño, y un dead-letter para un cliente del banco que no escucha sería lógica de producción pagando por un test mal escrito.",
+  "_lo_que_esto_NO_sujeta": "Cinco agujeros conocidos, escritos aquí para que el siguiente no los descubra, y cada uno con su aserto en el test. (1) EL CONSTRUCTOR RENOMBRADO: lo que no se ve no es «el alias» sino CUALQUIER `new` cuyo constructor no se llame `WebSocket` en el nodo — `const W = WebSocket; new W(u)`, `Reflect.construct(WebSocket, [u])` y, la que más probable es, el import renombrado (`import { WebSocket as WS } from \"ws\"`, que es la forma natural de un cliente Node nuevo como `el-npc-cruza` o `el-state-api`). Tampoco ve el código dentro de un STRING que la página acaba evaluando (`page.addScriptTag({content: \"…new WebSocket…\"})`): ahí el test lo llama «prosa» y abre un socket de verdad. Lo que SÍ se ve, porque cerrarlo salía más barato que escribirlo: los paréntesis (`new (window.WebSocket)(u)`) y el acceso por índice (`new window[\"WebSocket\"](u)`). (2) QUÉ HACE EL OYENTE DE UN `todo` NO SE MIDE: el detector distingue «tiene oyente» de «no lo tiene», y que ese oyente lea el `narrative_status/error` de `kind:\"protocolo\"` como desenlace lo dice la declaración, no el árbol. Era el agujero de los quince `una-respuesta` de #694 —un `if (m.type !== …) return` que tiraba el rechazo— y lo que lo cerró no fue medirlo sino quitar el modo del zod y vetar el `new WebSocket` en `qa/guiones/**`: la espera de una respuesta se escribe UNA vez en `preguntarPorElCable`, con su propio test. Lo que sigue abierto son los cinco `todo` de hoy (`cable.mjs`, `pedirYEsperarTile` de `sesion.mjs`, los dos clientes Node headless de la raíz de `qa/` y el `--diag` de `run.mjs`): un sexto en `qa/lib/` o en la raíz podría declararse `todo` con un oyente que tire el rechazo por tipo, y saldría verde. Medido en el test con un fixture («un oyente que tira el rechazo por tipo cuenta como oyente»). (3) UN OYENTE QUE NUNCA PUEDE DISPARAR: la forma vieja del 60 y el 63 CON una flecha colgada en `onmessage` y el `close()` en el mismo tick del `send` sale «con oyente» — el detector mide oyentes, no ticks. Lo que SÍ se mide es que lo colgado pueda escuchar (flecha, función o nombre): `= null`, `= 0`, `= ''` y `ws.onmessage = ws.onmessage` son mudos, y las dos primeras vueltas de esto —tapar `null` y luego `0`— son la razón de que la regla esté escrita en positivo. (4) EL OYENTE QUE CUELGA OTRA FUNCIÓN, y es el agujero en la dirección contraria: `const ws = new WebSocket(u); oir(ws)` es un cliente CORRECTO que sale ROJO, porque el oyente se ata al socket DENTRO de la función que lo abre. El mensaje del rojo lo dice con esas palabras y manda a traer el oyente o a pasar por `qa/lib/cable.mjs`; no se afloja el detector para taparlo, porque aflojarlo es lo que devolvería el agujero que cerró la QA de la tanda. Un socket que no se liga a un nombre (`sockets.push(new WebSocket(u))`) cae en la misma casilla y el rojo también lo dice. (5) UNA ESPERA QUE NO ESPERA: `porElCable` hace inexpresable el mal uso que midió la QA —abrir, mandar y cerrar seguidos, que perdía tres rechazos de cinco— porque abrir y cerrar son privados y la espera es un argumento obligatorio; pero quien le pase un `async () => {}` vuelve a perder el unicast, y esto no lo ve, porque el `new WebSocket` declarado es el de `cable.mjs`. Se ve en la propia llamada, que es lo que se ganó, y lo canda el guion 152. LOS ESPÍAS NO SON CLIENTES, a propósito: los diecisiete guiones que envuelven `window.WebSocket` del cliente (`const Orig = window.WebSocket; window.WebSocket = class extends Orig …`) y los seis `page.routeWebSocket` de Playwright observan o cortan el socket DEL JUEGO, no abren uno propio al bridge, y no entran; lo que ellos afirmen sobre lo que el juego recibe lo sujeta cada guion. LO QUE EL BARRIDO SALTA: este candado recorre qa/ con `fuentesDelBanco` de test/banco-ficheros.ts (#704), que no baja a node_modules/, .tmp/ ni capturas/ (`SALTOS_DEL_BANCO`). Un `.mjs` en esos directorios es invisible aquí. La copia que este test usaba antes de #704 ya saltaba capturas/ (y además todo directorio con punto): aquí el censo no baja, sube con un `qa/.oculto/`. Medido en `recorridos-de-test.json`, punto (6), con su `it` en test/un-solo-barrido-del-banco.test.ts.",
   "clientes": [
     {
       "fichero": "qa/el-npc-cruza-ai-server-con-role-y-description.mjs",
@@ -21,138 +21,17 @@
       ]
     },
     {
-      "fichero": "qa/guiones/106-las-cuatro-puertas-y-el-cable-de-una-partida-nueva.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "Abre partidas por el cable con `start_session` y campos variados para medir las cuatro puertas del arranque; espera el `session_started` con su `requestId` y tira lo demás. Ante un rechazo de intake se colgaría mudo hasta el presupuesto: agujero (2) del padrón, issue del coordinador."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/111-la-puerta-del-gasto-de-imagen-no-adivina.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "Reanuda por el cable (`resume_session`) para provocar la puerta del gasto de imagen sin pasar por el título; espera el `session_started` de su `requestId`. El rechazo de intake lo dejaría colgado sin causa (agujero 2); el guion mide el gasto, no el protocolo."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/113-un-char-que-nadie-declaro-no-es-suelo.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "`resume_session` sobre un save editado con un carácter de terreno que nadie declaró: lo que se afirma es el `session_started` con `ok:false` y su motivo, o sea UNA respuesta tipada. Un rechazo de intake —otro camino distinto al que mide— quedaría mudo (agujero 2)."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/126-dos-records-con-el-mismo-id-no-pintan-dos-mundos.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "Reanuda por el cable un save con dos records del mismo id y espera el `session_started` de `qa-126`; la afirmación vive en lo que el cliente pinta después, no en este socket. Rechazo de intake: colgado hasta el presupuesto, sin nombrarlo (agujero 2)."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/46-un-save-que-no-vale-no-revive-a-ciegas.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "`resumePorElCable`: manda `resume_session` de un save inválido y devuelve el `session_started` (`ok` y `error`) con el `requestId` `qa-46`, cerrando al recibirlo; `onclose` sin respuesta rechaza. El rechazo de intake no cierra el socket y por eso no dispara ese guardia (agujero 2)."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/62-un-save-con-terreno-por-chars-no-carga.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "Reanuda un save con terreno por chars, formato retirado, y afirma el `session_started` con `ok:false` y el texto del rechazo del bridge para `qa-62`. Ese `ok:false` es la respuesta tipada que espera; un frame que no pasara el intake lo dejaría esperando en silencio (agujero 2)."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/67-un-spawn-guardado-sin-nombre-no-vuelve-y-se-dice.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "Reanuda por el cable un save cuyo spawn guardado no tiene nombre y espera el `session_started` de `qa-67`; lo que se afirma después es el aviso del panel y el ledger, no el socket. Un rechazo de intake se quedaría colgado sin causa nombrada (agujero 2)."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/73-el-inventario-exige-id-en-sus-tres-puertas.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "La tercera puerta del inventario es el save: se reanuda por el cable con `resume_session` y se espera el `session_started` de `qa-73` para leer el `ok` y el motivo. Las otras dos puertas van por plugin y evento; un intake rechazado aquí quedaría mudo (agujero 2)."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/76-un-save-con-el-tile-cambiado-no-carga.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "Reanuda un save al que se le cambió el tile a mano y afirma que el bridge lo rechaza en el `session_started` de `qa-76` con `ok:false`; espera solo ese frame. El rechazo de intake es otro canal y no lo mira: colgado sin causa (agujero 2)."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/85-el-eco-del-bridge-no-vuelve-a-pedir-el-modo.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "Cambia el modo de render desde OTRO cliente (`set_render_mode` con `qa-85`) para que el eco llegue por difusión al del juego; espera el `render_mode_set` de su `requestId` y cierra. Lo que se mide es lo que el cliente del juego hace con el eco, no este socket (agujero 2 ante intake)."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/87-el-modo-vacio-de-personajes-sigue-a-los-escenarios.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "Pone facetas de render por el cable (`set_render_mode`, `qa-87`) en una función que se llama varias veces con faceta y modo distintos, y espera cada `render_mode_set`. La afirmación es la que el título ofrece después; un intake rechazado se quedaría esperando en silencio (agujero 2)."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/guiones/92-el-estilo-que-ofrece-el-titulo-es-el-que-pone-el-bridge.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "Manda un `create_game` con diecinueve caracteres directamente al bridge para afirmar que el rechazo y su texto son LOS MISMOS que enseña el título; espera el `game_created` y cierra. La URL se toma del juego en línea, sin variable; un intake rechazado quedaría mudo (agujero 2)."
-        }
-      ]
-    },
-    {
       "fichero": "qa/lib/cable.mjs",
       "sockets": [
         {
           "escucha": "todo",
-          "porque": "La puerta que nació con #678 y que la QA de la tanda estrechó a UNA sola función: `porElCable` abre, manda, corre la espera que se le pasa —obligatoria— y cierra él, apuntando cada `narrative_status/error` que el bridge le conteste por unicast, y lo ilegible como rechazo `ilegible`; `fraseDeRechazos` pone la lista dentro del ⊘ o del ✘. Abrir y cerrar son privados: por eso no se puede cerrar antes de recoger. Probado sin navegador en `test/cable-de-qa.test.ts`."
-        }
-      ]
-    },
-    {
-      "fichero": "qa/lib/saves.mjs",
-      "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "`listarPorElBridge`: pregunta `list_sessions` cuando la corrida no tiene disco propio y espera el `sessions_listed`; `onclose` sin respuesta rechaza. Es la fuente de reserva de `listarSaves`, y un rechazo de intake la dejaría colgada sin nombrarlo (agujero 2), aunque el frame es fijo y pasa el contrato."
+          "porque": "La puerta que nació con #678 y que la QA de la tanda estrechó: `porElCable` abre, manda, corre la espera que se le pasa —obligatoria— y cierra él, apuntando cada `narrative_status/error` con su `kind` y lo ilegible como rechazo `ilegible`; y desde #694 `preguntarPorElCable` es la misma puerta con la espera escrita dentro: devuelve el frame tipado de su `requestId` y LANZA en cuanto llega un rechazo `protocolo` o ilegible, si el bridge cierra sin contestar o al agotar el techo. Abrir y cerrar son privados. Probado sin navegador en `test/cable-de-qa.test.ts`."
         }
       ]
     },
     {
       "fichero": "qa/lib/sesion.mjs",
       "sockets": [
-        {
-          "escucha": "una-respuesta",
-          "porque": "`borrarSaveComoOtroCliente`: manda `delete_session` desde un socket que no es el del juego y espera el `session_deleted` entero (`deleted`, `not_found` o `failed` con motivo), con `onclose` sin respuesta rechazando. El bridge sigue siendo el único escritor del save; un intake rechazado quedaría mudo (agujero 2)."
-        },
         {
           "escucha": "todo",
           "porque": "`pedirYEsperarTile` (#656): pide un tile con `reason:\"blocking\"` y deja el socket abierto en `__qaTileSocket` recogiendo en `__qaTileRechazos` cada `narrative_status/error` y lo ilegible; el veredicto de cuatro bocas lo escribe `tile-episodio.mjs`. La tanda V reescribe su interior; este padrón solo cuenta que escucha."
@@ -163,8 +42,8 @@
       "fichero": "qa/run.mjs",
       "sockets": [
         {
-          "escucha": "una-respuesta",
-          "porque": "`medirListSessions` del `--diag`: cronometra cuánto tarda el bridge en contestar `list_sessions` con un tope de diez segundos que devuelve `null` sin decir por qué. Es diagnóstico, no aserto; el frame es fijo, y su silencio ante un rechazo es de la misma familia que el agujero 2 (anotado como backlog del plan)."
+          "escucha": "todo",
+          "porque": "`medirListSessions` del `--diag`: socket de NODE (no hay página, así que no puede ir por `cable.mjs`) que cronometra el `list_sessions` con tope de diez segundos. Desde #694 lee el rechazo como la puerta del banco: un `narrative_status/error` de `kind:\"protocolo\"` devuelve `{rechazo}` con su mensaje al momento, y el `null` queda solo para el silencio de verdad."
         }
       ]
     }

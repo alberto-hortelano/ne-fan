@@ -39,6 +39,7 @@ import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { rutaDelSave, esperarPartidaEnDisco } from "../lib/saves.mjs";
 import { acercarse } from "../lib/combate.mjs";
 import { URLS } from "../lib/stack.mjs";
+import { preguntarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -58,28 +59,11 @@ const SALIDA_PARA_EL_JUGADOR = /ya no vale para esta versión del juego.*bórral
 /** Un `resume_session` crudo por el cable del bridge, DESDE la página (la misma
  *  receta que el 46, el 62 y el 113: la URL la da el propio juego). */
 function resumePorElCable(ctx, sessionId) {
-  return ctx.page.evaluate(
-    (sid) =>
-      new Promise((res, rej) => {
-        const url = window.__nefan.servicios()["game-gateway"];
-        const ws = new WebSocket(url);
-        let contestado = false;
-        ws.onerror = () => rej(new Error(`no se pudo abrir ${url}`));
-        ws.onclose = () => {
-          if (!contestado) rej(new Error(`${url} se cerró sin contestar a resume_session`));
-        };
-        ws.onopen = () =>
-          ws.send(JSON.stringify({ type: "resume_session", sessionId: sid, requestId: "qa-126" }));
-        ws.onmessage = (ev) => {
-          const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-          if (m.type !== "session_started" || m.requestId !== "qa-126") return;
-          contestado = true;
-          ws.close();
-          res({ ok: m.ok, error: m.error ?? "" });
-        };
-      }),
-    sessionId,
-  );
+  return preguntarPorElCable(
+    ctx,
+    { type: "resume_session", sessionId, requestId: "qa-126" },
+    { respuesta: "session_started" },
+  ).then((m) => ({ ok: m.ok, error: m.error ?? "" }));
 }
 
 /** Habla con el tabernero hasta que el motor falso pone el cofre (su turno 3).

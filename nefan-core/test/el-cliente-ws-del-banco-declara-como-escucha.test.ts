@@ -29,9 +29,15 @@
  *     `= ''` y `ws.onmessage = ws.onmessage`, porque lo que se medía era «hay
  *     una asignación» y no «se cuelga algo que escucha». Tapar literales de uno
  *     en uno es la forma lenta de no cerrar nunca la familia;
- *   · su modo declarado = `una-respuesta` | `todo` | `nada`, y la coherencia se
- *     MIDE: `nada` ⇔ cero oyentes. Declarar «espera» sobre un socket mudo es
- *     rojo, y declarar `nada` sobre uno que escucha también.
+ *   · su modo declarado = `todo` | `nada`, y la coherencia se MIDE: `nada` ⇔
+ *     cero oyentes. Declarar «escucha» sobre un socket mudo es rojo, y declarar
+ *     `nada` sobre uno que escucha también;
+ *   · y ningún GUION abre su propio socket (#694): la espera «mando un frame y
+ *     espero SU respuesta» tiene dueño en `qa/lib/cable.mjs`
+ *     (`preguntarPorElCable`), que trata el rechazo del intake como desenlace.
+ *     Hubo un tercer modo, `una-respuesta`, con quince ocupantes que tiraban
+ *     ese rechazo por tipo y se colgaban mudos hasta el presupuesto; se retiró
+ *     del zod, así que declararlo es rojo en vez de una foto a cero.
  *
  *  `nada` nace con CERO ocupantes. Existe para que un «dispara y olvida» futuro
  *  tenga que escribirse con su motivo, no para bendecir ninguno de hoy: los dos
@@ -44,7 +50,7 @@
  *  Está en `_lo_que_esto_NO_sujeta` del padrón y cada agujero tiene su aserto
  *  en «el detector»: el constructor RENOMBRADO (alias, `Reflect.construct`,
  *  `import { WebSocket as WS }`) y el código dentro de un string salen cero;
- *  `una-respuesta` contra `todo` no se distingue por el árbol; un oyente
+ *  lo que hace el oyente de un `todo` con el rechazo no se mide; un oyente
  *  colgado a un socket que se cierra en el mismo tick cuenta como oyente; un
  *  cliente correcto cuyo oyente cuelga OTRA función sale rojo (y el mensaje lo
  *  dice así, en vez de afirmar que no escucha); una espera que no espera vuelve
@@ -71,7 +77,9 @@ const repoRoot = resolve(core, "..");
 const QA = join(repoRoot, "qa");
 const CONTRATO = join(core, "data", "contract", "clientes-ws-del-banco.json");
 
-const MODOS = ["una-respuesta", "todo", "nada"] as const;
+/** Los modos que se pueden declarar. `una-respuesta` ya no está (#694): no es
+ *  que tenga cero ocupantes, es que declararlo no pasa el zod. */
+const MODOS = ["todo", "nada"] as const;
 
 const PadronSchema = z
   .object({
@@ -226,11 +234,28 @@ export function socketsDe(fuente: string): SocketVisto[] {
   return out;
 }
 
-const padron: Padron = PadronSchema.parse(JSON.parse(readFileSync(CONTRATO, "utf8")));
+/** El zod se afirma en su PROPIO aserto y no al importar: si reventase aquí, un
+ *  modo retirado declarado tumbaría el fichero entero y el guion 152 no podría
+ *  exigir que se ponga rojo exactamente ese aserto y solo ése. Los demás
+ *  asertos leen el JSON tal cual, que es lo que el árbol tiene que casar. */
+const crudo: unknown = JSON.parse(readFileSync(CONTRATO, "utf8"));
+const validado = PadronSchema.safeParse(crudo);
+const padron = (validado.success ? validado.data : crudo) as Padron;
 const declarados = new Map(padron.clientes.map((c) => [c.fichero, c]));
 const fuentes = fuentesDelBanco(QA).map((f) => `qa/${f}`);
 const censo = new Map(fuentes.map((f) => [f, socketsDe(readFileSync(join(repoRoot, f), "utf8"))] as const));
 const conSocket = fuentes.filter((f) => (censo.get(f)?.length ?? 0) > 0);
+
+/** Los sockets que abre un GUION, como `fichero:línea`. PURA sobre el censo, para
+ *  poder probarla con uno inventado. Un guion no abre su propio socket (#694):
+ *  «mando un frame y espero SU respuesta» es `preguntarPorElCable`, y
+ *  «mando y espero otra consecuencia» es `porElCable`, los dos en
+ *  `qa/lib/cable.mjs`. Sin este veto, el decimosexto nacería declarado `todo`
+ *  con un oyente que tira el rechazo por tipo, y el padrón no lo distinguiría
+ *  (agujero 2). */
+export function socketsEnGuiones(c: ReadonlyMap<string, readonly SocketVisto[]>): string[] {
+  return [...c].filter(([f]) => f.startsWith("qa/guiones/")).flatMap(([f, ss]) => ss.map((s) => `${f}:${s.linea}`));
+}
 
 describe("el cliente WS del banco declara cómo escucha (#678): new WebSocket en qa/", () => {
   it("el árbol tiene sujeto: hay fuentes del banco, sockets en ellas y un padrón que los nombra", () => {
@@ -247,6 +272,26 @@ describe("el cliente WS del banco declara cómo escucha (#678): new WebSocket en
     );
   });
 
+  it("el padrón pasa su zod: cada socket declara `todo` o `nada` con su motivo, y `una-respuesta` ya no existe", () => {
+    assert.ok(
+      validado.success,
+      `data/contract/clientes-ws-del-banco.json no pasa su zod: ${validado.success ? "" : validado.error.message}\n` +
+        `Si lo que falla es un \`escucha: "una-respuesta"\`: ese modo se retiró con #694 porque tiraba el rechazo ` +
+        `del intake por tipo y colgaba el guion mudo; la espera de una respuesta es \`preguntarPorElCable\` de ` +
+        `qa/lib/cable.mjs.`,
+    );
+  });
+
+  it("ningún guion abre su propio socket: la espera de una respuesta pasa por `qa/lib/cable.mjs`", () => {
+    assert.deepEqual(
+      socketsEnGuiones(censo),
+      [],
+      "un `new WebSocket` en un guion es un cliente del bridge con su propia lectura del rechazo, que es lo que " +
+        "#694 juntó en un sitio: usa `preguntarPorElCable` (mando y espero SU respuesta) o `porElCable` (mando y " +
+        "espero otra consecuencia) de qa/lib/cable.mjs. Declararlo en el padrón no lo arregla.",
+    );
+  });
+
   it("cada socket del banco está declarado, con su cuenta EXACTA por fichero", () => {
     const mal = fuentes
       .map((f) => ({ f, hay: censo.get(f)?.length ?? 0, dice: declarados.get(f)?.sockets.length ?? 0, lineas: censo.get(f) ?? [] }))
@@ -256,13 +301,13 @@ describe("el cliente WS del banco declara cómo escucha (#678): new WebSocket en
       [],
       `Un frame que no pasa el contrato del bridge vuelve por UNICAST al socket que lo mandó, y un cliente ` +
         `que no lo escucha pierde la causa de lo que le pasa después. Cada \`new WebSocket\` de qa/ entra en ` +
-        `data/contract/clientes-ws-del-banco.json con su modo (\`una-respuesta\` | \`todo\` | \`nada\`) y su ` +
+        `data/contract/clientes-ws-del-banco.json con su modo (\`todo\` | \`nada\`) y su ` +
         `motivo — o, mejor, pasa por \`qa/lib/cable.mjs\`. Si sobra alguno, alguien borró un socket declarado: ` +
         `eso también es rojo, y a propósito.`,
     );
   });
 
-  it("la declaración es COHERENTE con el árbol: `nada` ⇔ cero oyentes, y los otros dos ⇒ al menos uno", () => {
+  it("la declaración es COHERENTE con el árbol: `nada` ⇔ cero oyentes, y `todo` ⇒ al menos uno", () => {
     const mal: string[] = [];
     for (const c of padron.clientes) {
       const vistos = censo.get(c.fichero) ?? [];
@@ -287,7 +332,7 @@ describe("el cliente WS del banco declara cómo escucha (#678): new WebSocket en
     assert.deepEqual(
       mal,
       [],
-      "declarar «espera» sobre un socket mudo es la forma de este padrón de mentir, y al revés un socket que " +
+      "declarar «escucha» sobre un socket mudo es la forma de este padrón de mentir, y al revés un socket que " +
         "escucha declarado `nada` esconde una espera sin presupuesto",
     );
   });
@@ -513,6 +558,39 @@ describe("el detector de clientes WS del banco", () => {
     // No es mudo «porque no escuche»: es que el detector no puede saberlo. El
     // rojo lo dice con esas palabras (ver el aserto de coherencia).
     assert.deepEqual(socketsDe("sockets.push(new WebSocket(u));"), [{ linea: 1, oyentes: 0, ligado: null }]);
+  });
+
+  it("el veto de guiones ve un socket en `qa/guiones/**` y solo ahí", () => {
+    // Fixture y no temporal en el árbol: un `.mjs` suelto en `guiones/` lo
+    // cogería como guion cualquier batería que arrancase a la vez (`run.mjs`).
+    const visto = (linea: number): SocketVisto => ({ linea, oyentes: 1, ligado: "ws" });
+    const censoInventado = new Map<string, SocketVisto[]>([
+      ["qa/guiones/999-un-guion-con-su-socket.mjs", [visto(12), visto(40)]],
+      ["qa/guiones/998-sin-socket.mjs", []],
+      ["qa/lib/cable.mjs", [visto(70)]],
+      ["qa/el-cliente-node.mjs", [visto(5)]],
+      // Un nombre que EMPIEZA parecido y no es la carpeta.
+      ["qa/guiones-viejos/x.mjs", [visto(1)]],
+    ]);
+    assert.deepEqual(socketsEnGuiones(censoInventado), [
+      "qa/guiones/999-un-guion-con-su-socket.mjs:12",
+      "qa/guiones/999-un-guion-con-su-socket.mjs:40",
+    ]);
+  });
+
+  it("un oyente que TIRA el rechazo por tipo cuenta como oyente: el agujero (2), medido", () => {
+    // La forma exacta de los quince `una-respuesta` de antes de #694. El árbol
+    // ve que escucha; no ve que tire el `narrative_status/error`. Si algún día
+    // lo ve, esto se pone rojo y hay que subirlo a lo que SÍ se mide.
+    const texto = [
+      "const ws = new WebSocket(u);",
+      "ws.onmessage = (ev) => {",
+      "  const m = JSON.parse(ev.data);",
+      '  if (m.type !== "session_started") return;',
+      "  res(m);",
+      "};",
+    ].join("\n");
+    assert.deepEqual(socketsDe(texto).map((s) => s.oyentes), [1]);
   });
 
   it("el barrido de fuentes ve los subdirectorios y se salta lo efímero", () => {

@@ -36,6 +36,16 @@
       "fichero": "qa/guiones/166-lo-que-el-jugador-ve-alrededor-al-reanudar-esta-pintado.mjs",
       "relojes": 2,
       "porque": "`t0` y `tardo` enmarcan en Node la espera de reanudar la partida hasta que los nueve tiles del anillo quedan texturados, y el resultado solo va al `ctx.log` («… ms desde el reload»). Ningún aserto lo lee: lo que se afirma es QUÉ tiles están pintados y que no se pagó nada. Es un dato de diagnóstico de cuánto tardó una recarga de página, que vive en tiempo de pared; no mide nada que corra dentro de la simulación."
+    },
+    {
+      "fichero": "qa/guiones/171-el-rechazo-del-intake-llega-al-que-espera-su-respuesta.mjs",
+      "relojes": 3,
+      "porque": "Los tres `Date.now()` de `pregunta`: el instante antes de `preguntarPorElCable` y los milisegundos que tardó en devolver o en lanzar. Lo que se cronometra es el CABLE del banco (cuánto tarda el helper en ver el rechazo del intake), no nada del juego: el criterio de #694 es «✘ inmediato» contra un techo de pared (`MS_INMEDIATO` frente a `TECHO_MS`, que es un `setTimeout` de la página), y la simulación no corre ni cuenta aquí. La pared es la medida correcta."
+    },
+    {
+      "fichero": "qa/guiones/172-el-cable-distingue-el-rechazo-del-intake-de-lo-demas.mjs",
+      "relojes": 3,
+      "porque": "Los tres `Date.now()` de `pregunta`, el mismo molde que el 171: cronometran cuánto tarda `preguntarPorElCable` en devolver, lanzar por rechazo o lanzar por su techo (un `setTimeout` de pared en la página). Mide el cable del banco, no el juego; el aserto distingue «lanzó por techo» de «lanzó por rechazo» comparando con ese techo de pared, así que medirlo contra el reloj de simulación lo rompería."
     }
   ]
 }

@@ -32,7 +32,7 @@
  *       errores. Y el OFF→ON re-pide los skins de lo ya en escena (POST a
  *       `/skin_sprite_sheet` del motor falso, cero créditos).
  *   2 · El eco de OTRO CLIENTE se aplica en local sin pedir nada. Un segundo
- *       socket (desde node, como `borrarSaveComoOtroCliente`) pide personajes →
+ *       socket (el de `preguntarPorElCable`, qa/lib/cable.mjs) pide personajes →
  *       maqueta; la página recibe el eco, el chip pasa a «Personajes base», y
  *       el libro sigue con UN `set_render_mode`: el que salió del chip en 1.
  *   3 · Lo mismo con la otra faceta: escenarios → maqueta desde el otro
@@ -60,6 +60,7 @@
  *  nace con los modos del título, no con los de otro guion.
  */
 import { comenzar, esperarRegistro, nuevaPartida, recargarAlTitulo } from "../lib/sesion.mjs";
+import { preguntarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
 
@@ -83,29 +84,17 @@ const chip = (ctx) =>
   });
 
 /** Pide un cambio de modo al bridge como OTRO cliente de la partida: un
- *  socket propio, desde node, contra el gateway que la página usa de verdad.
- *  Devuelve el `render_mode_set` con que contesta el bridge. Sin sleep: si el
- *  bridge cierra sin contestar, se rechaza (mismo molde que
- *  `borrarSaveComoOtroCliente`). */
+ *  socket propio de la página (no el del juego) contra el gateway que la
+ *  página usa de verdad. Devuelve el `render_mode_set` con que contesta el
+ *  bridge; un rechazo del intake o un cierre sin contestar lanzan nombrándolo
+ *  (`preguntarPorElCable`, #694). El espía de arriba no lo cuenta: lleva la
+ *  marca `__qaCable`. */
 async function otroClientePide(ctx, sessionId, facet, renderMode) {
-  const url = await ctx.page.evaluate(() => window.__nefan.servicios()["game-gateway"]);
-  return new Promise((res, rej) => {
-    const ws = new WebSocket(url);
-    let contestado = false;
-    ws.onerror = () => rej(new Error(`no se pudo abrir ${url} como segundo cliente`));
-    ws.onclose = () => {
-      if (!contestado) rej(new Error(`${url} se cerró sin contestar al set_render_mode del otro cliente`));
-    };
-    ws.onopen = () =>
-      ws.send(JSON.stringify({ type: "set_render_mode", requestId: "qa-85", sessionId, facet, renderMode }));
-    ws.onmessage = (ev) => {
-      const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-      if (m.type !== "render_mode_set" || m.requestId !== "qa-85") return;
-      contestado = true;
-      ws.close();
-      res(m);
-    };
-  });
+  return preguntarPorElCable(
+    ctx,
+    { type: "set_render_mode", requestId: "qa-85", sessionId, facet, renderMode },
+    { respuesta: "render_mode_set" },
+  );
 }
 
 /** Espera al eco número `n` de la faceta dada Y a que el socket haya enviado
@@ -139,6 +128,10 @@ export default async function (ctx) {
     const send = Original.prototype.send;
     const DE_INTERES = new Set(["set_render_mode", "render_mode_set", "render_mode_changed"]);
     Original.prototype.send = function (data) {
+      // Los sockets del banco (`qa/lib/cable.mjs`, el «otro cliente» de los
+      // bloques 2 y 3) no son el juego: su `set_render_mode` no es un pedido
+      // del chip y contarlo aquí rompería el «un solo pedido» del libro.
+      if (this.__qaCable) return send.call(this, data);
       try {
         const m = JSON.parse(String(data));
         if (m.type === "input") libro.inputs++;
@@ -153,6 +146,7 @@ export default async function (ctx) {
     const Envuelto = function (url, protocols) {
       const ws = protocols === undefined ? new Original(url) : new Original(url, protocols);
       ws.addEventListener("message", (ev) => {
+        if (ws.__qaCable) return; // del banco, no del juego (ver `send`)
         try {
           const m = JSON.parse(String(ev.data));
           if (DE_INTERES.has(m.type)) libro.recibidos.push({ ...m, inputsAlLlegar: libro.inputs });
