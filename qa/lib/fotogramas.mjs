@@ -9,11 +9,12 @@
  *  (34) que el censo de la tanda no vio porque buscaba por NOMBRE. Cincuenta y
  *  cuatro sitios de llamada, y cortafuegos de 10 s en unas y 20 s en otras.
  *  Nadie eligió ninguna de esas divergencias: se heredaron copiando al vecino.
- *  La decimoséptima estaba dentro del guion 15, escrita en línea, y es la única
- *  que NO se migró: con la espera sacada aquí el guion salía rojo 4 de 21 (y 0
- *  de 11 sin tocar), siempre en el título y sin vía causal hacia esta espera.
- *  Está apuntada en `data/contract/esperas-por-fotogramas.json` con el número y,
- *  desde #659, con su issue escrito (#673). La DECIMOCTAVA era la del guion 80,
+ *  La decimoséptima estaba dentro del guion 15, escrita en línea, y fue la
+ *  única que NO se migró aquí: con la espera sacada el guion salía rojo 4 de 21
+ *  (y 0 de 11 sin tocar), siempre en el título. Se aparcó con su issue (#673) y
+ *  la vía resultó no pasar por esta espera: era el refresco del selector que
+ *  pintaba encima del home tras la pre-generación (#731). Arreglado eso en el
+ *  título (tanda BB), la 17ª está aquí como las demás. La DECIMOCTAVA era la del guion 80,
  *  que se quedó fuera por su propia intermitencia; entra aquí con #659 cerrado,
  *  medida con el par 79→80 y con el 80 aislado, tres corridas de cada.
  *

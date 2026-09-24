@@ -108,8 +108,15 @@ export function esqueletoDelHome(): string {
   `;
 }
 
+/** `sigueDelante` es la pregunta del turno de la raíz (#731), y el home la
+ *  lleva a sus REPINTADOS propios —tras borrar una partida o cambiar el modo
+ *  de un save—, que esperan al bridge y escribían aunque el jugador ya
+ *  estuviera en el selector. El primer pintado es síncrono y no la necesita;
+ *  la reciben los que vienen detrás de un `await`, con el MISMO turno: repintar
+ *  el home no es pedir otra pantalla. */
 export async function pintarHome(
   deps: DepsDeHome,
+  sigueDelante: () => boolean,
   aviso?: string,
   tono?: "error" | "aviso",
 ): Promise<void> {
@@ -227,14 +234,25 @@ export async function pintarHome(
           // Y se ven distintos también DE UN VISTAZO: «ya no estaba» es un
           // éxito para quien pulsó Borrar, así que va en tono de aviso.
           const resultado = await deps.narrative.deleteSession(id);
+          // El jugador se fue mientras se borraba: el borrado ocurrió y la
+          // próxima visita al home ya lo lista, pero repintar aquí aplastaría
+          // la pantalla a la que se fue (#731).
+          if (!sigueDelante()) return;
           await pintarHome(
             deps,
+            sigueDelante,
             resultado === "not_found"
               ? `La partida ${id} ya no estaba en disco: no había nada que borrar.`
               : undefined,
             resultado === "not_found" ? "aviso" : undefined,
           );
         } catch (err) {
+          // Sin el home delante no hay tarjeta que marcar ni caja donde
+          // decirlo: el fallo va al registro, que es el canal que sobrevive.
+          if (!sigueDelante()) {
+            errors.push("title", `borrar la partida ${id}: sigue en disco`, err);
+            return;
+          }
           // NO se repinta la lista: la partida NO se borró y su tarjeta tiene
           // que seguir donde estaba. Repintar aquí borraría el motivo y
           // dejaría la pantalla idéntica a la de un borrado que sí ocurrió —
@@ -263,7 +281,7 @@ export async function pintarHome(
     // partida, el mismo campo lo cambia el chip de gráficos (🎨/🧱).
     for (const btn of sessionsEl.querySelectorAll<HTMLButtonElement>("button[data-mode-facet]")) {
       btn.addEventListener("click", () =>
-        paso(onModeBadge(deps, btn, lista), "title", "cambiar el modo del save"),
+        paso(onModeBadge(deps, sigueDelante, btn, lista), "title", "cambiar el modo del save"),
       );
     }
   }
@@ -294,6 +312,7 @@ const modeArmed = new Map<string, number>();
  *  repinta home re-listando del bridge: el badge refleja lo PERSISTIDO. */
 async function onModeBadge(
   deps: DepsDeHome,
+  sigueDelante: () => boolean,
   btn: HTMLButtonElement,
   sessions: SessionMetadata[],
 ): Promise<void> {
@@ -346,7 +365,9 @@ async function onModeBadge(
     // escritor de ese hueco. El aviso va DESPUÉS del repintado: `pintarHome`
     // abre con `limpiarAccion()` y borraría el que se escribiera antes.
     errors.push("title", `cambiar el modo de ${facet} de ${sessionId}`, err);
-    await pintarHome(deps);
+    // Ya en el registro: si el jugador se fue, no se repinta encima (#731).
+    if (!sigueDelante()) return;
+    await pintarHome(deps, sigueDelante);
     // La tarjeta se MARCA, igual que en el borrado fallido: el aviso vive a
     // media pantalla de la fila. Se busca el botón NUEVO — el repintado se
     // llevó el que se pulsó.
@@ -363,7 +384,10 @@ async function onModeBadge(
     );
     return;
   }
-  await pintarHome(deps);
+  // El jugador se fue mientras se guardaba el modo: el save ya lo tiene, y
+  // repintar aquí aplastaría la pantalla a la que se fue (#731).
+  if (!sigueDelante()) return;
+  await pintarHome(deps, sigueDelante);
 }
 
 /** Resalta la tarjeta de una partida que no se pudo borrar.

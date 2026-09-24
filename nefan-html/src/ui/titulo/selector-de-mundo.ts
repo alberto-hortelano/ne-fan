@@ -164,14 +164,27 @@ export function esqueletoDelSelector(paga: { escenarios: boolean; personajes: bo
 }
 
 /** Paso de selección de mundo: una tarjeta por juego (cover + descripción)
- *  y selector de estilo con el del juego preseleccionado. */
+ *  y selector de estilo con el del juego preseleccionado.
+ *
+ *  `sigueDelante` pregunta si esta pantalla sigue siendo la que el jugador
+ *  tiene pedida, y se consulta tras el `await listGames()`, antes de escribir
+ *  nada: si el jugador se ha ido en esa ventana («Volver», «Continuar», «Subir
+ *  estilo»), pintar aquí aplastaría su pantalla nueva (#731). Es un PARÁMETRO
+ *  y no un colaborador de `deps` porque es de ESTE pintado —cada navegación
+ *  trae el suyo— y la respuesta es de la raíz, que es quien sabe a dónde se ha
+ *  navegado. Obligatorio a propósito: un defecto `() => true` volvería a dejar
+ *  sin pregunta al primer llamante que se olvide. */
 export async function pintarSelectorDeMundo(
   deps: DepsDeSelectorDeMundo,
-  loElegido: LoElegidoEnElSelector = { a: "selector" },
+  loElegido: LoElegidoEnElSelector,
+  sigueDelante: () => boolean,
 ): Promise<void> {
   // listGames must succeed — there's no scripted fallback any more. If it
   // throws, the title-screen surfaces the error and stops here.
   const { games, styles } = await deps.narrative.listGames();
+  // El jugador se fue mientras llegaba el catálogo: esta pantalla ya no es la
+  // suya y no se escribe nada — ni el esqueleto, ni lo elegido a la raíz.
+  if (!sigueDelante()) return;
   if (games.length === 0) {
     throw new Error("no games available in bridge — check nefan-core/data/games/");
   }

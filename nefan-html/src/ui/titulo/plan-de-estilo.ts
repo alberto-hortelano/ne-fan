@@ -95,11 +95,16 @@ function resumirElImporte(bloques: StyleApplyBlock[]): {
 
 /** Panel de aplicación de estilo: plan con coste (SIN gastar) → checkboxes
  *  por bloque → confirmación con el importe → batch con progreso. Patrón
- *  upload→coste→complete de los estilos de usuario. */
+ *  upload→coste→complete de los estilos de usuario.
+ *
+ *  `sigueDelante` es la pregunta del turno del SELECTOR, que es la pantalla
+ *  donde vive este panel (#731): antes de la vuelta automática al selector
+ *  tras aplicar, se mira si el jugador sigue en él. */
 export async function pintarPlanDeEstilo(
   deps: DepsDePlanDeEstilo,
   gameId: string,
   styleId: string,
+  sigueDelante: () => boolean,
 ): Promise<void> {
   const { hueco, styleApply, ir } = deps;
   hueco.innerHTML = `<div style="font-size:12px;color:#da6;margin-top:6px">Calculando el coste (sin gastar)…</div>`;
@@ -204,6 +209,11 @@ export async function pintarPlanDeEstilo(
       `${result.skinsPainted} skins nuevos ($${result.costUsd.toFixed(2)})${failNote}</span>`;
     progressEl.innerHTML = comprobante;
     await new Promise((r) => setTimeout(r, 1200));
+    // Si el jugador ha salido del selector mientras se aplicaba (sus botones
+    // siguen vivos: solo se apagan los de este panel), la vuelta automática no
+    // lo arrastra de nuevo (#731). Lo pagado está hecho y los chips del
+    // selector lo dirán en su próxima visita.
+    if (!sigueDelante()) return;
     try {
       await ir({ a: "selector", preselect: gameId });
     } catch (err) {

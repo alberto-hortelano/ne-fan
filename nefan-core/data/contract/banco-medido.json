@@ -20,6 +20,10 @@
     {
       "fichero": "qa/lib/navegador.mjs",
       "porque": "Cómo abre el bench su Chrome: los flags de ANGLE/GPU medidos el 2026-08-25 y `abrirNavegador(chromium, …)`. Es la configuración del lanzador de Playwright; probarla es lanzar un Chrome, que es justo lo que el CI headless no hace. Un test que solo leyera las constantes afirmaría que una lista es la lista."
+    },
+    {
+      "fichero": "qa/lib/retener.mjs",
+      "porque": "Retiene respuestas del socket del bridge y del `fetch` DENTRO de la página para que la carrera de un pintado tardío del título se dé siempre en el mismo orden (guiones 198 y 199, #731). Todo es un init script que envuelve `WebSocket` y `fetch` del navegador y esperas de Playwright sobre sus contadores: probarlo sin navegador sería probar otro WebSocket."
     }
   ]
 }

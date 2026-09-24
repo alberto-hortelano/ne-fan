@@ -38,7 +38,12 @@ export interface DepsDeCrearMundo {
 /** Crear un mundo propio: textarea o archivo .md/.txt. El borrador se
  *  desarrolla con el motor narrativo (tarda 1-3 min) y aparece como un
  *  mundo más en el selector. */
-export function pintarCrearMundo(deps: DepsDeCrearMundo): void {
+/** `sigueDelante` es la pregunta del turno de la raíz (#731): tras crear el
+ *  mundo (1-3 min) se vuelve SOLO al selector, y esa vuelta no debe arrastrar
+ *  al jugador si ya se ha ido. Hoy no puede irse —«Volver» está apagado
+ *  mientras espera—, así que la cubre el unitario de la regla
+ *  (`test/el-turno-de-pantalla-caduca-al-navegar.test.ts`) y no un guion. */
+export function pintarCrearMundo(deps: DepsDeCrearMundo, sigueDelante: () => boolean): void {
   deps.content.style.maxWidth = "720px";
   deps.content.innerHTML = `
     <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Crear mundo</h1>
@@ -116,6 +121,9 @@ export function pintarCrearMundo(deps: DepsDeCrearMundo): void {
           statusEl.innerHTML += ` <span style="color:#a44">(pre-generación no encolada: ${escapeHtml((err as Error).message)})</span>`;
         }
       }
+      // El mundo está creado y su pre-generación encolada: si el jugador ya
+      // no está aquí, el selector lo enseñará cuando vuelva a él.
+      if (!sigueDelante()) return;
       await deps.ir({ a: "selector", preselect: created.gameId });
     } catch (err) {
       statusEl.innerHTML = `<span style="color:#a44">No se pudo crear el mundo: ${escapeHtml((err as Error).message)}</span>`;
