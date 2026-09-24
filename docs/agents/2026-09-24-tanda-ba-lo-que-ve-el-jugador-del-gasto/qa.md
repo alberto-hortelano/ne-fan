@@ -77,3 +77,23 @@ Corridas propias: `node qa/run.mjs 194 195 174 179 78 177 178 104` → **8 en ve
 ## Veredicto
 
 **Apto con reservas.** Los cinco criterios se cumplen en el flujo real y sus candados se ponen rojos. La reserva que hay que resolver ANTES de fusionar es el hallazgo 1 (dos `let x = null` que el lint de `origin/main` rechaza: la PR saldría roja en CI). Los hallazgos 2 y 3 son anteriores a la tanda y no la bloquean, pero el 2 queda medido por el 196 para que no se olvide.
+
+## Vuelta 2 (sobre `e6f4a225`, rama rebasada sobre `d5755138`)
+
+Segunda pasada corta sobre las correcciones del ingeniero. Cero créditos; no toqué código. El guion temporal de la ventana estrecha se borró tras la pasada (no se commitea).
+
+| Qué | Veredicto | Evidencia |
+|---|---|---|
+| Lint de 194/195/196 con la config de `origin/main` (`d5755138`) | ✅ | `eslint -c <config de origin/main> qa/guiones/194-* 195-* 196-* 78-*` → exit 0. `npm run lint:qa` de la rama, limpio. El hallazgo 1 queda cerrado |
+| 196 en los cinco packs (registro contra barra de ataques) | ✅ | `node qa/run.mjs 196 78 104` → 3/3 verde, capturas `qa/capturas/2026-09-24T19-12-42-060Z-1149602/`. `anime`: registro hasta 376 px, «Quick» en 384; `acero_neon`: 384 contra 392; serif: 390 contra 415/416. `solapes: []` en los cinco. El hallazgo 2 queda cerrado; el 196 pasa de rojo a verde sin tocarlo |
+| 78 con captura (jerarquía de la oferta) | ✅ | Tres asertos «BA:» verdes (Reintentar relleno; Cerrar sin relleno, `ink` y filete `ink_dim`; hover sin relleno). Captura `78-…-02-478-la-oferta-de-entrar.png`: «Reintentar» ámbar relleno arriba, «Cerrar» en filete debajo: se lee cuál entra y cuál no. El hallazgo 3 queda cerrado |
+| 104 (altura, #506) | ✅ | `maxAlto 132 = contenido 132 = caja 132`, 8 entradas, corte entre líneas también tras rebosar. La región recortada no cambia la cuenta de altura |
+| Ventana estrecha, 1024×768 | ✅ | Guion temporal, cinco packs: región 236 (`anime`) – 268 px (`serif`), `--nf-medio-ancho-de-la-barra` 224-256 px, primer botón a ≥ 20 px del borde de la región, `solapes: []`, 8 líneas en 132 px. Capturas `qa/capturas/2026-09-24T19-13-34-285Z-1152783/197-1024-anime.png` y `…-acuarela_luminosa.png`: el registro envuelve en dos líneas por entrada, sigue legible; «Salidas» (mismo `max-width`) queda en 184-212 px y su botón cabe |
+| Ventana estrecha, 800×600 (adversarial, por debajo de lo pedido) | ⚠️ anotado | Región 124 (`anime`) – 156 px; `solapes: []`, nada colapsa (ancho positivo, 8 líneas). Pero «Salidas» hereda el recorte y baja a 124 px: un destino largo envolvería. No es de esta tanda (el juego se mide a 1280) y no bloquea |
+| Texto de `mutation-targets` (`gates-de-imagen`) | ✅ | El `porque` nombra `skinPideSoloLoPagado`, la tabla de 12 filas y la medida de hoy (95 mutantes, 0 vivos, 7 s) |
+
+Cómo se recorta ahora la región: el HUD mide el ancho real de `#action-bar` al repintar la barra y al aplicar el tema (evento síncrono `nf-tema-aplicado` de `theme.ts`), lo escribe en `--nf-medio-ancho-de-la-barra`, y `#ui-bottom-left` toma `min(34vw, 50vw − 12px − medio − gap)`. Es la solución del dominio (la hoja no sabe el ancho de la barra, que depende del catálogo y de la fuente) y no hay valor mágico. Un `ResizeObserver` cubre lo demás.
+
+Lo que sigue sin probar de la vuelta 1: producción en navegador, «a medias» en flujo real, muro de arranque sin tema, `:focus-visible`.
+
+**Veredicto final: APTO.** Los tres hallazgos de la vuelta 1 están cerrados con evidencia (lint limpio con la config de main, 196 verde en los cinco packs, jerarquía medida por el 78), el tope de altura del registro no se mueve, y a 1024 px el registro y «Salidas» siguen legibles sin cruzarse con la barra.
