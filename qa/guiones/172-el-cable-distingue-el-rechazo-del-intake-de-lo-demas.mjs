@@ -52,6 +52,7 @@
  *  `aisla` deja el fake como al arrancar para el siguiente. */
 import { porElCable, preguntarPorElCable } from "../lib/cable.mjs";
 import { URLS } from "../lib/stack.mjs";
+import { MS_DEL_TILE } from "../lib/tile-episodio.mjs";
 
 export const aisla = ["saves", "mundo", "fake-ai"];
 
@@ -61,13 +62,9 @@ const GAME_ID = "alta_fantasia";
  *  con un cuelgue. */
 const TECHO_SUSCRITO_MS = 6_000;
 const MS_INMEDIATO = 2_000;
-/** Las dos esperas del bloque 1 tienen por sujeto al bridge generando (o
- *  fallando) un tile, o sea el sujeto de `MS_DEL_TILE` (#677). NO lo importan
- *  todavía: entrar en `data/contract/esperas-de-tile.json` obliga a subir la
- *  cuenta fija de `test/el-cortafuegos-del-tile-tiene-dueno.test.ts` (16 → 18),
- *  y eso lo hace el ingeniero de la tanda, no la QA. Está apuntado en `qa.md`
- *  de la tanda AQ; hasta entonces, un literal con el nombre que lo delata. */
-const MS_DEL_TILE_PENDIENTE = 20_000;
+/* Las dos esperas del bloque 1 tienen por sujeto al bridge generando (o
+ * fallando) un tile, así que presupuestan `MS_DEL_TILE` (#677) y están en
+ * `data/contract/esperas-de-tile.json` (QA de #694, H3). */
 
 /** Cómo se conforma el motor falso ante un tile (#516). Devuelve la vigente. */
 async function conductaDeTiles(ctx, cambio) {
@@ -125,7 +122,7 @@ async function bloqueUnErrorDifundidoNoCorta(ctx) {
         const escenas = (await r.json()).gasto?.rutas?.["/generate_scene"] ?? 0;
         return escenas > n ? { escenas } : null;
       },
-      MS_DEL_TILE_PENDIENTE,
+      MS_DEL_TILE,
       [URLS.fake_ai, escenasAntes],
     );
     ctx.log(`bootstrap servido: /generate_scene ${escenasAntes} → ${bootstrap.escenas}`);
@@ -143,7 +140,7 @@ async function bloqueUnErrorDifundidoNoCorta(ctx) {
             const conTile = otros.filter(([, c]) => c.rechazos.some((r) => r.kind === "tile")).map(([k]) => k);
             return conTile.length ? { conTile, abiertos: otros.length } : null;
           },
-          MS_DEL_TILE_PENDIENTE,
+          MS_DEL_TILE,
           id,
         ),
     );

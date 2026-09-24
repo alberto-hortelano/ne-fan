@@ -407,9 +407,9 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
     assert.deepEqual(sinLectura, [], `lector(es) sin ninguna comparación con ${NOMBRE}: ${sinLectura.join(" | ")}`);
   });
 
-  it("el padrón cubre los DIECISÉIS sitios del censo por árbol (no once, no quince)", () => {
-    // Catorce en el padrón + los dos que heredan el default (120, 127) = 16.
-    // La cuenta ha subido DOS veces, y las dos por la misma razón, que es la
+  it("el padrón cubre los DIECIOCHO sitios del censo por árbol (no once, no quince, no dieciséis)", () => {
+    // Dieciséis en el padrón + los dos que heredan el default (120, 127) = 18.
+    // La cuenta ha subido TRES veces, y las dos por la misma razón, que es la
     // que este `it` existe para hacer visible:
     //  · ONCE → QUINCE: el censo del issue filtraba por el LITERAL
     //    (`240_000|180_000`) sobre los guiones que él mismo nombraba, y al
@@ -420,9 +420,12 @@ describe("el cortafuegos de un tile del bridge es uno y tiene dueño (#677)", ()
     //    sea el primer agujero declarado (`_lo_que_esto_NO_sujeta[0]`)
     //    ocurriendo en vivo, a los dos días, y cazado leyendo el diff de un
     //    rebase — no por este contrato, que no detecta el SUJETO.
+    //  · DIECISÉIS → DIECIOCHO: el guion 172 (QA de #694, tanda AQ) nació con
+    //    dos esperas de tile bajo un literal de 20 s; lo vio la propia QA
+    //    leyendo su guion, no este contrato — el mismo agujero, tercera vez.
     // El número se fija para que cualquier movimiento se VEA: si una espera se
     // muda a `pedirYEsperarTile` sale de aquí y entra en (c).
-    assert.equal(contrato.esperas.length, 14, JSON.stringify(contrato.esperas.map(claveDeEntrada), null, 1));
+    assert.equal(contrato.esperas.length, 16, JSON.stringify(contrato.esperas.map(claveDeEntrada), null, 1));
   });
 
   it("el detector encuentra lo que dice encontrar (control positivo, las tres formas y las cinco clases)", () => {

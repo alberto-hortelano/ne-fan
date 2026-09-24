@@ -152,18 +152,20 @@ describe("el reloj de pared tiene padrón (#711): qa/guiones/**", () => {
     assert.deepEqual(vistos.filter((f, i) => vistos.indexOf(f) !== i), []);
   });
 
-  it("el censo de hoy: 17 relojes en 7 guiones, y ningún callback de rAF con parámetro", () => {
+  it("el censo de hoy: 23 relojes en 9 guiones, y ningún callback de rAF con parámetro", () => {
     // Medido el 2026-09-23 al nacer el padrón (15 en 6). El issue decía 5
     // guiones (07, 10, 109, 131, 133): 109 solo lo nombra en un COMENTARIO y
     // cuenta 0, y 157 y 164 nacieron después. El 166 entró el 2026-09-24 con
-    // #714 (rebase de la tanda AO), y el padrón lo cazó el mismo día. Si esta
-    // cifra cambia con el padrón al día, se actualiza aquí.
+    // #714 (rebase de la tanda AO), y el padrón lo cazó el mismo día. El 171 y
+    // el 172 (tanda AQ, #694) entraron en su rebase: cronometran el cable del
+    // banco, no el juego. Si esta cifra cambia con el padrón al día, se
+    // actualiza aquí.
     const ocupados = [...censo].filter(([, rs]) => rs.length > 0);
     assert.deepEqual(
       ocupados.map(([f]) => f.replace(/^qa\/guiones\/(\d+)-.*$/, "$1")),
-      ["07", "10", "131", "133", "157", "164", "166"],
+      ["07", "10", "131", "133", "157", "164", "166", "171", "172"],
     );
-    assert.equal(ocupados.reduce((a, [, rs]) => a + rs.length, 0), 17);
+    assert.equal(ocupados.reduce((a, [, rs]) => a + rs.length, 0), 23);
     assert.equal([...censo.values()].flat().filter((r) => r.forma === "raf-param").length, 0);
     assert.equal(cuenta(leer("qa/guiones/109-el-tile-que-tarda-y-el-que-falla-lo-dicen.mjs")), 0);
   });
