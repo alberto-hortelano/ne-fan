@@ -881,11 +881,11 @@ narrativeClient.onStatusDeLaPartida((status) => {
     return;
   }
 
-  // Core atribuye el fallo a su espera antes de pintar el aviso.
-  const terminadas = esperasQueTermina(status);
+  // Core atribuye el fallo a su espera: el viaje, solo con uno SUYO (#737).
+  const terminadas = esperasQueTermina(status, travelLedger.viajeAbierto());
   if (terminadas.saludo) hablar.yaContestaron();
   if (status.placeId && status.enqueued) travelLedger.encolado(status.placeId, status.enqueued);
-  if (terminadas.viaje) travelLedger.fallo(status.placeId, status.message ?? "sin mensaje");
+  if (terminadas.viaje) travelLedger.fallo(status.message ?? "sin mensaje");
 
   // ── Spawn PEDIDO por el bridge ────────────────────────────────────────
   // Viajar por el panel «Salidas» a un lugar que no existía lo ancla a un
@@ -974,8 +974,8 @@ narrativeClient.onFalloAjeno((fallo) => {
  *  la línea de mensajes; el cliente solo pinta. */
 function pintarFalloDelMotor(status: StatusRotulable): void {
   const rotulo = rotuloDeStatus(status, {
-    mundoVacio: !tileStore.hasGridTiles,
-    overlayAbierto: muro.visible(),
+    mundoVacio: !tileStore.hasGridTiles, overlayAbierto: muro.visible(),
+    viajeAbierto: travelLedger.viajeAbierto(),
   });
   errors.push("narrative", status.detalleTecnico ?? rotulo.detalle);
   if (rotulo.destino === "overlay") {

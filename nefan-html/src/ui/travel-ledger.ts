@@ -66,14 +66,20 @@ export class TravelLedger {
     this.cur.spawnAplicado = { x: pos.x, z: pos.z };
   }
 
-  /** Un error del motor mientras el viaje estaba en curso. Sin `placeId` en el
-   *  status (los errores de tile no lo llevan: el viaje se genera COMO tile)
-   *  se atribuye al viaje abierto — es la causa candidata y decirlo vale más
-   *  que callarlo. */
-  fallo(placeId: string | undefined, message: string): void {
+  /** El viaje se rompió. No decide nada: que el fallo es DE ESTE viaje lo dice
+   *  core (`esperasQueTermina` con `viajeAbierto()`, #737) antes de llamar
+   *  aquí. Hasta entonces lo decidía esta clase —lo que llegaba sin `placeId`
+   *  se atribuía al viaje abierto— y el error de un tile vecino rompía un
+   *  viaje que iba a llegar; en el cliente no hay harness que lo ponga rojo. */
+  fallo(message: string): void {
     if (!this.cur || this.cerrado(this.cur)) return;
-    if (placeId && placeId !== this.cur.placeId) return;
     this.cur.error = message;
+  }
+
+  /** `placeId` del viaje en curso, o `null` si no hay ninguno abierto. Es el
+   *  dato que core necesita para decidir de quién es un fallo. */
+  viajeAbierto(): string | null {
+    return this.cur && !this.cerrado(this.cur) ? this.cur.placeId : null;
   }
 
   /** Estado para el hook __nefan / guiones de QA. */

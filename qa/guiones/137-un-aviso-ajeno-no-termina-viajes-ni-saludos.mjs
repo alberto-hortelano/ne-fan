@@ -30,11 +30,11 @@ export default async function (ctx) {
     await ctx.page.evaluate(() => document.querySelector('#interact-prompt [data-action="interact"]').click());
     await ctx.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   };
-  const entregar = kind => ctx.page.evaluate(({ kind, sessionId }) => {
+  const entregar = (kind, extra = {}) => ctx.page.evaluate(({ kind, sessionId, extra }) => {
     const sock = window.__qaSockets.find(s => s.readyState === WebSocket.OPEN && typeof s.onmessage === "function");
     if (!sock) throw new Error("no hay socket del juego");
-    sock.onmessage({ data: JSON.stringify({ type: "narrative_status", phase: "error", kind, sessionId, message: "Aviso de ensayo" }) });
-  }, { kind, sessionId: partida.sessionId });
+    sock.onmessage({ data: JSON.stringify({ type: "narrative_status", phase: "error", kind, sessionId, message: "Aviso de ensayo", ...extra }) });
+  }, { kind, sessionId: partida.sessionId, extra });
   await saludar();
   await ctx.waitFor("saludo pendiente", () => window.__qaPedidos.filter(m => m.type === "interact_entity").length === 1, 5000);
   await entregar("combatientes");
@@ -49,6 +49,11 @@ export default async function (ctx) {
   await ctx.waitFor("viaje pendiente", () => window.__nefan.viaje?.pedido, 5000);
   await entregar("combatientes");
   ctx.expect("el aviso de enemigos conserva el viaje pendiente", await ctx.page.evaluate(() => window.__nefan.viaje.error === null));
+  // #737: un error de tile SIN el placeId del viaje es de otro tile, y no lo
+  // cierra; el del viaje lo marca el bridge con su placeId.
   await entregar("tile");
+  ctx.expect("un error de tile sin placeId (otro tile) conserva el viaje pendiente", await ctx.page.evaluate(() => window.__nefan.viaje.error === null));
+  const placeId = await ctx.page.evaluate(() => window.__nefan.viaje.placeId);
+  await entregar("tile", { placeId });
   ctx.expect("el fallo de viaje sí queda registrado", await ctx.page.evaluate(() => window.__nefan.viaje.error === "Aviso de ensayo"));
 }

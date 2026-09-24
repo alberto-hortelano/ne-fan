@@ -5,8 +5,9 @@
  *  Once esperas de viaje en diez guiones (08, 09, 15, 49 ×2, 60, 65, 74, 75,
  *  144, 154) tenían cada una SU predicado de llegada, y siete de ellas no
  *  miraban `window.__nefan.viaje.error`: si el bridge declaraba el viaje roto
- *  —`narrative_status` de error de un `kind` que termina el viaje
- *  (`esperasQueTermina`, `src/protocol/status-reparto.ts`)—, la espera seguía
+ *  —`narrative_status` de error de un `kind` que termina el viaje, con el
+ *  `placeId` de ESE viaje desde #737 (`esperasQueTermina`,
+ *  `src/protocol/status-reparto.ts`)—, la espera seguía
  *  hasta `MS_DEL_TILE` y salía roja por expiración, sin el nombre de la causa.
  *  Es el MUDO que #656 cerró en el camino del `request_tile`, en el camino del
  *  viaje. Las cuatro que sí lo miraban lo hacían con cuatro copias a mano del
@@ -51,9 +52,13 @@
  *  El RECHAZO de intake: si el bridge rechaza el `player_entered_place` por
  *  contrato, contesta `narrative_status {kind:"protocolo"}`, y ese `kind` NO
  *  termina el viaje (`ESPERA_POR_KIND.protocolo = null`), así que el ledger se
- *  queda abierto y esto paga `MS_DEL_TILE` entero. Arreglarlo es una decisión
- *  del núcleo —¿un rechazo de protocolo sin `placeId` termina el viaje
- *  abierto?— y no del banco; al expirar, al menos, `pasoMuerto` dice que el
+ *  queda abierto y esto paga `MS_DEL_TILE` entero. La tanda AT lo dejó FUERA
+ *  (#736, abierto como latente): el cliente no puede mandar ese frame mal
+ *  (`placeId: string` contra `z.string()`), y el jugador ya ve «Fallo interno
+ *  del juego»; solo lo fabrica un banco que mande basura a propósito. Y desde
+ *  #737 un fallo solo cierra el viaje si trae SU `placeId`
+ *  (`deQuienEsElFallo`), así que un rechazo sin él tampoco lo cerraría aunque
+ *  su `kind` terminara viajes. Al expirar, al menos, `pasoMuerto` dice que el
  *  bridge no acusó recibo, que es exactamente lo que se vería.
  *
  *  Quién presupuesta con `MS_DEL_TILE` aquí lo canda
