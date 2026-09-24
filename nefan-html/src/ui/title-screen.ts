@@ -24,6 +24,7 @@ import type { NarrativeStatusDeJuego } from "@nefan-core/src/protocol/messages.j
 import { type AvisoAlJugador, errors } from "./error-log.js";
 import { paso } from "./async-ui.js";
 import { StyleApplyController } from "./style-apply.js";
+import { crearTurnoDePantalla, type SigueDelante } from "./turno-de-pantalla.js";
 import {
   remoteGenUrl,
   assetStoreUrl,
@@ -97,6 +98,24 @@ export class TitleScreen {
    *  selector le borraba el estilo y los dos modos que acababa de elegir, que
    *  es el mismo #552 por la otra puerta. */
   private ultimaEleccion: LoElegidoEnElSelector | null = null;
+  /** LA PANTALLA QUE EL JUGADOR HA PEDIDO la última vez, con su TURNO (#731,
+   *  #673). Es la respuesta, en un solo sitio, a «¿sigue siendo esta pantalla
+   *  la que está delante?», que es lo que tiene que preguntarse todo pintado o
+   *  navegación que ocurre DESPUÉS de un `await`. La regla vive en
+   *  `ui/turno-de-pantalla.ts` (sin DOM, con su unitario); aquí solo se usa.
+   *
+   *  Sin esto, el refresco del selector que sigue a una pre-generación esperaba
+   *  a `listGames()` y escribía `content.innerHTML` sin volver a mirar: si en
+   *  esa ventana el jugador salía por «Volver», «Continuar» o «Subir estilo»,
+   *  el selector se pintaba ENCIMA de la pantalla nueva (guion 198). La misma
+   *  familia la tenían el editor tras el censo, el home tras borrar o cambiar
+   *  el modo de un save (199) y las vueltas automáticas al selector tras crear
+   *  un mundo, subir un estilo o aplicarlo.
+   *
+   *  El turno lo mueve SOLO `ir()`, que es una navegación del jugador. Un
+   *  refresco no pide pantalla —repinta la que hay— y se ata al turno de la que
+   *  encuentra con `laQueHayDelante`. */
+  private readonly pantalla = crearTurnoDePantalla<DestinoDelTitulo["a"]>("home");
 
   /** El progreso del mundo que el jugador está mirando, ya resuelto: es lo que
    *  la hoja del selector necesita para pintarlo sin conocer ni el mapa ni la
@@ -146,11 +165,16 @@ export class TitleScreen {
         errors.push("title", msg.message ?? "la pre-generación del mundo falló");
       }
       if (msg.phase === "ready" || msg.phase === "error") {
-        // Refrescar chips/botones si el selector de mundo sigue en pantalla.
+        // Refrescar chips/botones si el selector de mundo sigue en pantalla. Y
+        // «sigue» es lo que el jugador ha PEDIDO, no solo lo que hay en el DOM:
+        // con «Continuar» pulsado el selector sigue pintado mientras el editor
+        // espera al censo. El pintado se ata a este turno y se abandona si el
+        // jugador se va mientras espera a `listGames()` (#731).
         const panel = this.chasis.content.querySelector("#ts-gen");
-        if (panel && this.chasis.visible) {
+        const sigueDelante = this.pantalla.laQueHayDelante("selector");
+        if (panel && this.chasis.visible && sigueDelante) {
           paso(
-            this.pintarElSelector(this.ultimaEleccion ?? { a: "selector" }),
+            this.pintarElSelector(this.ultimaEleccion ?? { a: "selector" }, sigueDelante),
             "title",
             "refrescar el selector de mundos tras la generación",
           );
@@ -189,7 +213,9 @@ export class TitleScreen {
     });
     // Si el home no se puede pintar, show() RECHAZA (lo espera el catch de
     // main.ts): la promesa de arriba se queda pendiente y no la lee nadie.
-    await this.pintarElHome(opts.aviso);
+    // Por `ir()` y no directo: abrir el título es pedir el home, y el turno de
+    // la pantalla (`pantalla`) tiene que saberlo.
+    await this.ir({ a: "home", aviso: opts.aviso });
     return eleccion;
   }
 
@@ -252,18 +278,21 @@ export class TitleScreen {
    *  justo lo que el llamante cree estar contratando (QA-3 H6). Hoy no tiene
    *  ocupante; la palabra cuesta lo que cuesta y la deuda es de las caras. */
   private async ir(destino: DestinoDelTitulo): Promise<void> {
+    // EL TURNO SE TOMA AQUÍ, para todos los destinos: también los síncronos
+    // tienen que dejar caducado el pintado que otro tenga en vuelo.
+    const sigueDelante = this.pantalla.pedir(destino.a);
     switch (destino.a) {
       case "home":
-        return this.pintarElHome(destino.aviso, destino.tono);
+        return this.pintarElHome(sigueDelante, destino.aviso, destino.tono);
       case "selector":
-        return this.pintarElSelector(destino);
+        return this.pintarElSelector(destino, sigueDelante);
       case "crear-mundo":
-        return this.crearMundo();
+        return this.crearMundo(sigueDelante);
       case "subir-estilo":
-        pintarSubirEstilo(this.subirEstilo());
+        pintarSubirEstilo(this.subirEstilo(), sigueDelante);
         return;
       case "editor":
-        return this.editorDePersonaje(destino);
+        return this.editorDePersonaje(destino, sigueDelante);
     }
     // EL `never` ES EL CANDADO, y hay que ponerlo porque el `async` se llevó el
     // que había (TS2366): caerse por el final de una función `async` devuelve
@@ -293,8 +322,16 @@ export class TitleScreen {
    *  que ha mordido tres veces en este programa (QA-2 H2, QA-3 H6, QA-4 H2): el
    *  oyente del bridge llama a este método dentro de un `paso(...)`, así que un
    *  `throw` SÍNCRONO de este cableado saldría antes de que exista promesa y
-   *  `paso()` no podría encauzarlo. Hoy no tiene ocupante. */
-  private async pintarElSelector(loElegido: LoElegidoEnElSelector): Promise<void> {
+   *  `paso()` no podría encauzarlo. Hoy no tiene ocupante.
+   *
+   *  `sigueDelante` es la pregunta del turno (`pantalla`): la trae `ir()` cuando
+   *  el jugador navega aquí y `laQueHayDelante` cuando repinta el refresco. El
+   *  panel de coste de «Aplicar estilo» vive DENTRO del selector y hace la
+   *  misma pregunta antes de volver a él. */
+  private async pintarElSelector(
+    loElegido: LoElegidoEnElSelector,
+    sigueDelante: SigueDelante,
+  ): Promise<void> {
     return pintarSelectorDeMundo(
       {
         content: this.chasis.content,
@@ -313,6 +350,7 @@ export class TitleScreen {
                   { hueco: huecoDelPlan, styleApply: this.styleApply, ir: (d) => this.ir(d) },
                   gameId,
                   styleId,
+                  sigueDelante,
                 ),
             },
             hueco,
@@ -321,6 +359,7 @@ export class TitleScreen {
           ),
       },
       loElegido,
+      sigueDelante,
     );
   }
 
@@ -348,7 +387,11 @@ export class TitleScreen {
    *  `renderHome` era `async` y esta palabra conserva esa garantía; es la
    *  familia que ha mordido tres veces en este programa (QA-2 H2, QA-3 H6,
    *  QA-4 H2). */
-  private async pintarElHome(aviso?: string, tono?: "error" | "aviso"): Promise<void> {
+  private async pintarElHome(
+    sigueDelante: SigueDelante,
+    aviso?: string,
+    tono?: "error" | "aviso",
+  ): Promise<void> {
     return pintarHome(
       {
         content: this.chasis.content,
@@ -358,6 +401,7 @@ export class TitleScreen {
         avisos: this.avisos,
         avisarDeCorte: () => this.chasis.avisarDeCorte(),
       },
+      sigueDelante,
       aviso,
       tono,
     );
@@ -366,18 +410,24 @@ export class TitleScreen {
   /** Cablea «Crear mundo» y la pinta. Los colaboradores se construyen aquí, en
    *  el enrutador, porque son lo único que una hoja no puede saber de esta
    *  clase. */
-  private crearMundo(): void {
-    pintarCrearMundo({
-      content: this.chasis.content,
-      narrative: this.narrative,
-      ir: (destino) => this.ir(destino),
-    });
+  private crearMundo(sigueDelante: SigueDelante): void {
+    pintarCrearMundo(
+      {
+        content: this.chasis.content,
+        narrative: this.narrative,
+        ir: (destino) => this.ir(destino),
+      },
+      sigueDelante,
+    );
   }
 
   /** Cablea «Crear personaje» y la pinta. `elegir` es `this.resolve` visto
    *  desde la hoja, con su `?.` donde estaba: la promesa la arma y la resuelve
    *  esta clase (ver `show()`), no la pantalla. */
-  private editorDePersonaje(eleccion: EleccionDeMundo): Promise<void> {
+  private editorDePersonaje(
+    eleccion: EleccionDeMundo,
+    sigueDelante: SigueDelante,
+  ): Promise<void> {
     return pintarEditorDePersonaje(
       {
         content: this.chasis.content,
@@ -385,6 +435,7 @@ export class TitleScreen {
         ir: (destino) => this.ir(destino),
       },
       eleccion,
+      sigueDelante,
     );
   }
 }

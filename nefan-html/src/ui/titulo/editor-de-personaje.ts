@@ -53,9 +53,14 @@ export interface EleccionDeMundo {
   characterMode: "image" | "vector";
 }
 
+/** `sigueDelante` es la pregunta del turno de la raíz (#731): el censo se
+ *  espera con el selector todavía pintado, y si el jugador pulsa «Volver» en
+ *  esa ventana el editor ya no es su pantalla y no se escribe nada. Parámetro
+ *  y no colaborador de `deps` porque es de ESTE pintado. */
 export async function pintarEditorDePersonaje(
   deps: DepsDeEditorDePersonaje,
   eleccion: EleccionDeMundo,
+  sigueDelante: () => boolean,
 ): Promise<void> {
   const { game, styleId, renderMode, characterMode } = eleccion;
   const spritesOn = CONFIG.graphics.character_sprites;
@@ -140,6 +145,10 @@ export async function pintarEditorDePersonaje(
          Skin AI deshabilitada (activa <code>graphics.ai_skin</code> en config.ts para usarla).
        </div>`;
 
+  // El jugador se fue mientras llegaba el censo: esta pantalla ya no es la
+  // suya. Un censo que falló ya está en el registro (arriba), así que no se
+  // pierde nada que decir.
+  if (!sigueDelante()) return;
   deps.content.style.maxWidth = "720px";
   deps.content.innerHTML = `
     <h1 style="font-size:28px;color:#da6;margin-bottom:6px">Crear personaje</h1>

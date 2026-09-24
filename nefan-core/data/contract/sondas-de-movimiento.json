@@ -38,11 +38,6 @@
       "porque": "Es la DEMOSTRACIÓN del defecto y ya está escrita como `ctx.log` y no como aserto: imprime que la sonda con la que el guion 09 decía medir #616 vale `false` también emparedado, porque es un movimiento de un punto a sí mismo. Migrarla borraría justo la línea que enseña por qué existe este padrón."
     },
     {
-      "fichero": "qa/guiones/15-guardia-se-ve-y-se-comporta.mjs",
-      "consultas": 1,
-      "porque": "APLAZADA, no declarada legítima: este guion está rojo 4 de 21 por una causa ajena sin vía encontrada (#673), así que un verde tras migrarla no probaría la migración y un rojo no se podría atribuir. Se toca cuando #673 cierre y no antes; la clasificación punto/movimiento de esta sonda queda pendiente en ese issue."
-    },
-    {
       "fichero": "qa/guiones/145-la-consulta-de-punto-no-depende-de-donde-este-el-jugador.mjs",
       "consultas": 2,
       "porque": "Las dos son el CONTROL del bloque que ejerce el seam vivo: cuentan las celdas ocupadas del tile con la consulta de movimiento desde fuera y desde dentro de un sólido, y afirman que ese número CAMBIA. Sin ellas el aserto hermano —la consulta de punto cuenta lo mismo desde los dos sitios— lo cumpliría también una sonda que contestara siempre igual, y el guion dejaría de medir #644. Aquí la consulta de movimiento es el instrumento, no el error."

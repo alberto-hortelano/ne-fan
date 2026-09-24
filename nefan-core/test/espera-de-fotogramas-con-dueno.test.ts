@@ -31,8 +31,9 @@
  *  a retirar (#659, 2026-09-18); cuántas hay lo dice el contrato, que es quien
  *  no puede quedarse desfasado—: unas tienen el contador como SUJETO (afirmar
  *  que el renderer sigue pintando), otra necesita un cortafuegos mayor que el
- *  unificado, otra es una espera CONDUCIDA en segundos de mundo con otro dueño,
- *  y otra está fuera de alcance con issue vivo (#673, el guion 15).
+ *  unificado y otra es una espera CONDUCIDA en segundos de mundo con otro
+ *  dueño. La vía `issue` (fuera de alcance con issue vivo) hoy no tiene
+ *  ocupante: la del guion 15 (#673) volvió al helper en la tanda BB.
  *
  *  Y DESDE #611 LA CLASE SE DERIVA DONDE SE PUEDE, en vez de creerse: el
  *  contrato marca cada clase como `derivada` o `declarada`, y las derivadas se
@@ -485,9 +486,15 @@ describe("la espera por fotogramas del banco tiene UN dueño (#606)", () => {
       return ContratoSchema.safeParse(c).success;
     };
     assert.ok(con(() => {}));
-    const la15 = base.exentos.findIndex((e: { clase: string }) => e.clase === "issue");
-    assert.ok(la15 >= 0, "el contrato real tiene una exención por issue (la del 15, #673)");
-    assert.ok(!con((c) => { delete c.exentos[la15].issue; }), "«issue» sin número");
+    // LA EXENCIÓN POR ISSUE SE FABRICA sobre la copia: el contrato real se quedó
+    // sin ninguna cuando la del 15 (#673) volvió al helper, y un aserto que
+    // dependiera de que exista una lo pondría rojo el día que se cumple lo que
+    // este contrato quiere, que es que se vacíe.
+    const porIssue = (c: typeof base): void => {
+      c.exentos[0] = { ...c.exentos[0], clase: "issue", issue: 1 };
+    };
+    assert.ok(con(porIssue), "una exención por issue con su número es válida");
+    assert.ok(!con((c) => { porIssue(c); delete c.exentos[0].issue; }), "«issue» sin número");
     assert.ok(!con((c) => { c.exentos[0].issue = 673; }), "número con clase declarada");
     assert.ok(!con((c) => { c.exentos[0].clase = "otra"; }), "clase fuera del mapa");
     assert.ok(!con((c) => { c.clases["otra"] = "derivable"; }), "marca que no es derivada|declarada");

@@ -104,7 +104,12 @@ export interface DepsDeSubirEstilo {
 /** Subir un estilo propio: nombre + al menos una imagen por categoría; las
  *  categorías que falten se generan con IA usando las subidas como
  *  referencia — PREVIA confirmación explícita del coste. */
-export function pintarSubirEstilo(deps: DepsDeSubirEstilo): void {
+/** `sigueDelante` es la pregunta del turno de la raíz (#731): la subida y la
+ *  generación de refs vuelven SOLAS al selector al terminar, y esa vuelta no
+ *  debe arrastrar al jugador si ya se ha ido. La subida deja «Volver»
+ *  encendido (guion 199, bloque S); la generación lo apaga y la cubre el
+ *  unitario de la regla. */
+export function pintarSubirEstilo(deps: DepsDeSubirEstilo, sigueDelante: () => boolean): void {
   const { content, ir } = deps;
   content.style.maxWidth = "720px";
   const rowHtml = (): string => `
@@ -229,6 +234,8 @@ export function pintarSubirEstilo(deps: DepsDeSubirEstilo): void {
       pendingStyleId = data.style_id;
       if (data.missing.length === 0) {
         statusEl.innerHTML = `<span style="color:#4a4">Estilo ${escapeHtml(data.style_id)} completo.</span>`;
+        // Subido y completo: si el jugador se fue, lo verá en el selector.
+        if (!sigueDelante()) return;
         await ir({ a: "selector" });
         return;
       }
@@ -265,6 +272,7 @@ export function pintarSubirEstilo(deps: DepsDeSubirEstilo): void {
       if (!res.ok) throw await motivoDelRechazo(res, "generar las refs que faltan");
       const data = (await res.json()) as StyleCompleteResponse;
       statusEl.innerHTML = `<span style="color:#4a4">Generadas ${data.generated.length} imágenes ($${data.cost_usd.toFixed(2)}).</span>`;
+      if (!sigueDelante()) return;
       await ir({ a: "selector" });
     } catch (err) {
       statusEl.innerHTML = `<span style="color:#a44">Generación fallida: ${escapeHtml((err as Error).message)}</span>`;

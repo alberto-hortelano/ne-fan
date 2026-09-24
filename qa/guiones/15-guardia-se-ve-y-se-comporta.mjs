@@ -57,6 +57,7 @@ import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
 import { viajarPorSalidas } from "../lib/viaje.mjs";
 import { URLS } from "../lib/stack.mjs";
 import { cargarFixture } from "../lib/fixtures.mjs";
+import { esperaDeFotogramas } from "../lib/fotogramas.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
  *   · `mundo`   — el viaje del panel «Salidas» necesita un destino SIN
@@ -67,6 +68,11 @@ import { cargarFixture } from "../lib/fixtures.mjs";
  *   · `fake-ai` — el motor falso lleva estado de proceso (tiles servidos); en
  *                 caliente el destino podría llegar ya realizado. */
 export const aisla = ["mundo", "saves", "fake-ai"];
+
+/** Las vueltas del game loop que hacen falta para que la captura salga con lo
+ *  último que se ha puesto en el estado. Reloj "loop" y no "mundo": lo que se
+ *  espera es un REPINTADO, no que el mundo simule (#606). */
+const esperarRedibujo = esperaDeFotogramas("loop");
 
 const GAME_ID = "alta_fantasia";
 const FIXTURE = "robledo_tile";
@@ -190,15 +196,23 @@ async function situarse(ctx, id, objetivo, tolerancia = TOLERANCIA_DE_SITIO, tra
  *     prop por su cuenta y su celda de AHORA está libre. Con el tabernero de
  *     vuelta dentro del `mostrador`, la versión que preguntaba por la posición
  *     viva pasaba en VERDE mientras el aserto de la huida caía.
- *   · Y se pregunta por `probeCollide`, que es la colisión REAL del juego
- *     (terreno + plan + esquema), no por `terrain_grid`: el grid de terreno
- *     lleva los chars sólidos del tile, pero NO los `volumes` — y el
- *     `mostrador` es un volume. Preguntándole a él, el empotrado también salía
- *     verde. Un candado que no puede ponerse rojo en el caso que existe no es
- *     un candado. */
+ *   · Y se pregunta a la colisión REAL del juego (terreno + plan + esquema),
+ *     no a `terrain_grid`: el grid de terreno lleva los chars sólidos del
+ *     tile, pero NO los `volumes` — y el `mostrador` es un volume. Preguntándole
+ *     a él, el empotrado también salía verde. Un candado que no puede ponerse
+ *     rojo en el caso que existe no es un candado.
+ *   · Por el PUNTO (`probePoint`, `ocupadoEn`) y no por el movimiento
+ *     (`probeCollide`, #644): la pregunta es «¿hay algo sólido donde el motor
+ *     puso al NPC?», y no depende de dónde esté el jugador. `probeCollide` lee
+ *     la posición viva del jugador como origen y contesta `false` en cualquier
+ *     celda que él ya solape, así que este aserto dependía de que el jugador
+ *     no estuviera dentro del prop del NPC. Medido en la tanda BB: en las dos
+ *     cunas y en un sólido de cada tile las dos consultas coinciden (libre /
+ *     libre, ocupado / ocupado), así que el cambio no mueve ningún veredicto de
+ *     hoy: quita la dependencia. */
 const naceEnUnSolido = (ctx, posicion) =>
   ctx.page.evaluate(([x, z]) => {
-    const bloquea = window.__nefan.probeCollide(x, z);
+    const bloquea = window.__nefan.probePoint(x, z);
     return { en: [Math.round(x * 100) / 100, Math.round(z * 100) / 100], solido: bloquea };
   }, [posicion[0], posicion[2]]);
 
@@ -206,28 +220,28 @@ const naceEnUnSolido = (ctx, posicion) =>
  *  qué pasó, y una en la que el personaje ha quedado fuera de cuadro no enseña
  *  nada. No decide nada (los asertos van contra el estado), solo apunta.
  *
- *  Y espera a que el mundo se haya DIBUJADO ya girado, contando los frames que
- *  publica el renderer (`fps().frames`). `setYaw` es síncrono sobre el estado,
- *  pero la imagen sale por rAF —aquí pumpeado por Web Worker (`?raf=timer`)— y
- *  la captura se llevaba el fotograma anterior: con el tabernero fuera de la
+ *  Y espera a que el mundo se haya DIBUJADO ya girado: dos vueltas del game
+ *  loop (`esperarRedibujo`, reloj "loop" = lo que PINTA la página, que es lo
+ *  que la captura necesita). `setYaw` es síncrono sobre el estado, pero la
+ *  imagen sale por rAF —aquí pumpeado por Web Worker (`?raf=timer`)— y la
+ *  captura se llevaba el fotograma anterior: con el tabernero fuera de la
  *  línea de la puerta, `el-mercader-huye.png` enseñaba la fachada de la taberna
- *  y ningún mercader. No es un sleep: la condición de parada es el contador. */
+ *  y ningún mercader. No es un sleep: la condición de parada es el contador.
+ *
+ *  Era la 17ª espera por fotogramas, escrita en línea y aparcada con #673: con
+ *  ella en el helper el guion salía rojo 4 de 21 en el TÍTULO. El rojo no era
+ *  de esta espera sino del refresco del selector que pintaba encima del home
+ *  tras la pre-generación (#731, arreglado en `title-screen.ts`), y con eso
+ *  arreglado vuelve al helper. */
 async function encarar(ctx, id) {
   const m = await medir(ctx, id);
   if (!m) return m;
-  const antes = (await ctx.nefan("fps"))?.frames ?? 0;
   await ctx.nefan("setYaw", Math.atan2(m.npc.x - m.jugador.x, m.npc.z - m.jugador.z));
   await ctx.absorbe(
     `esta espera solo sirve para que la CAPTURA salga ya girada: los asertos de este guion van ` +
       `contra el estado (\`__nefan\`), nunca contra píxeles, así que sin frame se pierde una foto ` +
       `atrasada y ninguna medida`,
-    () =>
-      ctx.waitFor(
-        `el mundo se redibuja ya encarando a ${id}`,
-        (f) => ((window.__nefan.fps()?.frames ?? 0) > f + 1 ? true : null),
-        5_000,
-        antes,
-      ),
+    () => esperarRedibujo(ctx, 2),
   );
   return m;
 }
