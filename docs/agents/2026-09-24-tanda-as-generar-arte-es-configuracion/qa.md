@@ -79,3 +79,23 @@ Tras «Generar y aplicar» sobre un personaje en el menú dev, `state.forzado = 
 ## Veredicto
 
 **Apto con reservas.** Lo que pidió el usuario se cumple y está candado: sin tocar nada es desarrollo y ningún camino automático paga (atlas del activo, vecinos, skins, reanudar, fixtures), lo pagado vuelve, G y el menú dev siguen pagando, y con `NEFAN_ENTORNO=produccion` el activo y los vecinos generan; cada candado se pone rojo al quitar el techo. La reserva es lo que lee el jugador ANTES de elegir: el selector del título, el tooltip de la tarjeta y el subtexto del panel del chip siguen diciendo «gasta créditos» (H1) al lado de un botón que dice «Solo lo ya pagado», y esos rótulos no salen del dato que decide el gasto (H2). Corregir H1 (y de paso H2) antes de fusionar; H3–H7 pueden ir a issues.
+
+## Vuelta 2 — sobre `16bfbd6c` (corrige H1, H2, H4, H5, H7; H3 y H6 a issues)
+
+Segunda pasada corta, mismo worktree, cero créditos. Árbol limpio al terminar; cada sabotaje restaurado por md5.
+
+| Hallazgo | Veredicto | Evidencia |
+|---|---|---|
+| H1 · textos que prometían gasto en desarrollo | ✅ corregido | `node qa/run.mjs 181 179` → 2/2 ✔ (capturas en `qa/capturas/2026-09-24T15-55-14-102Z-640341/`). Panel del chip (captura `181-…-01`): «Imagen IA — solo lo ya pagado», «Skins IA — solo lo ya pagado · re-pide los skins…», nota con el motivo, chip «Mixto · solo lo pagado»; botón armado «¿Confirmar? Solo lo ya pagado». Selector de mundos: «Restaura el arte ya pagado de cada zona; lo que falte se ve en maqueta (solo lo ya pagado)». Tooltip del badge: «… antes de cargar (solo lo ya pagado)». Badge armado en el título (captura `181-…-02`): «¿Confirmar? Solo lo ya pagado». El ingeniero convirtió en asertos del 181 los tres textos que yo solo registraba; `MODE_COST_LABELS` ya no existe (`grep` = 0) |
+| H2 · los rótulos salían del entorno, no de los gates | ✅ corregido | Negativo repetido (`const techo = true \|\| …` en `gatesDeImagen`, `node qa/run.mjs 181 179`): ahora se ponen ROJOS también los textos, no solo el gasto — 179: chip `🎨 Imagen IA` sin «solo lo pagado», `title` sin motivo, registro `Gráficos: imagen IA (skins IA)` sin motivo; 181: nota sin motivo, botón «¿Confirmar? Gastará créditos», subtexto «gasta créditos», selector «pinta cada zona del mundo (gasta créditos)», tooltip «(gasta créditos)», badge armado «Gastará créditos». 0 en verde · 2 en rojo; corrida `…T15-55-46-414Z-641363`. Los rótulos vienen de `loQuePagaImagenIA` (core, `gates-de-imagen.ts`), que llama a los mismos `gatesDeImagen`, y de `motivoDelTecho()` (`modos-de-graficos.ts`), que lee `gates()`. Fichero restaurado, md5 OK |
+| H4 · motivo sin bridge | ✅ corregido (leído) | `MOTIVO_SIN_BRIDGE = "sin bridge no hay entorno declarado: solo se restaura lo ya pagado"` (`mode-labels.ts`), elegido por `fraseDelTecho()` cuando `entornoDelBridge === null`. No ejercido en navegador: exige un stack sin bridge |
+| H5 · `resolve_only` con sprite-forge caído y sin apunte | ✅ corregido | `NEFAN_SPEND_DIR=$(mktemp -d) python -m unittest ai_server.tests.test_sprite_forge_adapter -k resolve_only` → `Ran 6 tests · OK`. **Negativo**: quitada la rama nueva de `remote_generation.py` → `test_resolve_only_con_el_servicio_caido_y_SIN_apunte_es_sin_arte_no_503` FAIL (`503 != 200`); su gemelo sin `resolve_only` sigue exigiendo 503. Restaurado, md5 OK. Sin `NEFAN_SPEND_DIR` la suite se niega a correr (correcto: no inventa gasto) |
+| H7 · prosa | ✅ corregido | CLAUDE.md, tabla de presets: `play` «con Imagen IA solo restaura lo pagado; genera (y GASTA) con `NEFAN_ENTORNO=produccion`», `cliente-web` «solo gasta con Imagen IA y `NEFAN_ENTORNO=produccion`». `docs/arquitectura/ia-servicios.md` estrena la sección «Qué paga arte sin que nadie lo pida: `NEFAN_ENTORNO`» (línea 9, antes de los endpoints): un lector, `bridge_hello`, valor desconocido no arranca, vías deliberadas, defecto `produccion` con el falso y la declaración de los guiones. Coincide con lo medido en la vuelta 1 |
+
+Cosmético, sin abrir hallazgo: la nota del panel concatena «Imagen IA entorno de desarrollo: …» sin separador (se lee raro; captura `181-…-01`).
+
+Pendiente en issues, como acordado: H3 (balance en «anim(s)») y H6 (`forzado` extiende el pago a las anims lazy).
+
+### Veredicto final
+
+**Apto.** Los seis criterios cumplen y los cinco hallazgos corregidos están verificados en el flujo real, con sus negativos en rojo; lo que el jugador lee antes de elegir ya dice lo mismo que el chip y sale del mismo dato que decide el POST.
