@@ -80,7 +80,7 @@ export class DevStatusPanel {
   private readonly session: Required<SessionInfo> = { renderMode: "", styleId: "" };
 
   /** Último estado pintado de `setPainting` (evita repintar cada frame). */
-  private painting = false;
+  private painting = "";
 
   constructor(
     private readonly remoteUrl: string,
@@ -111,10 +111,13 @@ export class DevStatusPanel {
   /** Pintura en vuelo del ÚNICO pipeline de imagen que queda (atlas de
    *  superficies de la fps): aviso destacado mientras puede estar gastando.
    *  Se llama por frame — solo repinta en el cambio de estado. */
-  setPainting(busy: boolean): void {
-    if (busy === this.painting) return;
-    this.painting = busy;
-    if (busy) this.setGen("GENERANDO atlas de superficies del tile activo…", "working");
+  setPainting(claves: readonly string[]): void {
+    const ahora = claves.join(", ");
+    if (ahora === this.painting) return;
+    this.painting = ahora;
+    // Nombra el tile: con varias corridas a la vez, «del tile activo» mentía
+    // cuando lo que pintaba era un vecino (QA de la tanda AX, H-3).
+    if (ahora) this.setGen(`GENERANDO atlas de superficies de ${ahora}…`, "working");
     else this.renderIdle();
   }
 
