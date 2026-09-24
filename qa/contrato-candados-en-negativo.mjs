@@ -102,6 +102,9 @@ const G133 = join(raiz, "qa/guiones/133-la-parada-falsa-bajo-carga-de-verdad.mjs
 // que la QA de esta tanda las midió.
 const CONDUCEN = join(CORE, "data/contract/esperas-que-conducen.json");
 const FOTOGRAMAS = join(CORE, "data/contract/esperas-por-fotogramas.json");
+// El test que lleva el ZOD de ese contrato: la vía `issue` se sabotea en su
+// regla, porque el contrato ya no tiene ninguna exención por issue (tanda BB).
+const T_FOTOGRAMAS = join(CORE, "test/espera-de-fotogramas-con-dueno.test.ts");
 // …y los tres guiones desde los que se reproducen los dos agujeros que su QA
 // midió: la clave compartida (H-1) y la referencia que no decide una función
 // (H-2). Ésos NO se pueden sabotear desde el contrato: la mentira se escribe en
@@ -362,10 +365,19 @@ const INVARIANTES = [
   // esté ABIERTO lo pregunta a GitHub el headless
   // `qa/la-exencion-por-issue-tiene-issue-vivo.mjs`, que no puede correr aquí:
   // esto es la mitad que sí vive en `npm test`.
+  //
+  // EL ANCLA ES LA REGLA DEL ZOD, NO UNA ENTRADA DEL CONTRATO. Hasta la tanda
+  // BB se borraba el `"issue": 673` de la única exención por issue que había;
+  // #673 se cerró, esa exención se fue con él y el sabotaje se quedó sin nada
+  // que romper. Una entrada real vuelve a desaparecer cada vez que se cumple lo
+  // que el contrato quiere —vaciarse—, así que se rompe lo que no caduca: la
+  // regla «una exención por issue lleva su número». El test fabrica su propia
+  // exención por issue sobre una copia del contrato y le quita el número; con
+  // la regla anulada, esa copia pasa y el test se pone rojo.
   [
-    "esperas · una exención por issue se queda sin NÚMERO (y entonces no hay nada que caduque)",
-    FOTOGRAMAS, "ts:test/espera-de-fotogramas-con-dueno.test.ts",
-    [['      "issue": 673,\n', ""]],
+    "esperas · una exención por issue sin NÚMERO deja de rechazarse (y entonces no hay nada que caduque)",
+    T_FOTOGRAMAS, "ts:test/espera-de-fotogramas-con-dueno.test.ts",
+    [["if (e.clase === CLASE_ISSUE && e.issue === undefined) {", "if (e.clase === CLASE_ISSUE && false) {"]],
   ],
   // Los dos que la QA de la tanda AE probó a mano y pidió aquí (H-6): son un
   // `sed` cada uno y prueban lo NUEVO del hermano —la clave literal y la
@@ -432,7 +444,7 @@ function corre(bateria) {
 const filtro = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const casa = (n) => filtro.length === 0 || filtro.some((f) => n.toLowerCase().includes(f.toLowerCase()));
 
-const FICHEROS = [SCHEMA, PROMPT, SNAP, PY, TOOL, FIXTURE_CARRO, FIXTURE_SUELO, TOOL_ESCENA, PADRON_SONDAS, G91, G118, G128, G133, CONDUCEN, FOTOGRAMAS, G05, G69];
+const FICHEROS = [SCHEMA, PROMPT, SNAP, PY, TOOL, FIXTURE_CARRO, FIXTURE_SUELO, TOOL_ESCENA, PADRON_SONDAS, G91, G118, G128, G133, CONDUCEN, FOTOGRAMAS, T_FOTOGRAMAS, G05, G69];
 
 // Se niega a arrancar sobre un árbol sucio: si el fichero ya trae cambios, la
 // restauración de este guion los borraría. Es la única forma de que escribir
