@@ -15,10 +15,13 @@
  *
  *  ── LO QUE ES «LLEGADO», UNA VEZ ─────────────────────────────────────────
  *  El ledger de viaje del cliente (`nefan-html/src/ui/travel-ledger.ts`) se
- *  cierra con `spawnAplicado` o con `error`, y el bridge pide el spawn TAMBIÉN
- *  al viajar a un lugar ya realizado (`bridge/handlers/scene.ts`). Así que un
- *  viaje ha llegado cuando, sobre el ledger de ESTE viaje:
- *    · el spawn se aplicó,
+ *  cierra con `llegado` o con `error` —los dos los decide core
+ *  (`esperasQueTermina`): `llegado` es el `ready` que trae el `placeId` de
+ *  ESTE viaje (#742), no un prefetch que aterriza a la vez—, y el bridge pide
+ *  el spawn TAMBIÉN al viajar a un lugar ya realizado
+ *  (`bridge/handlers/scene.ts`). Así que un viaje ha llegado cuando, sobre el
+ *  ledger de ESTE viaje:
+ *    · el ledger dice `llegado`,
  *    · el jugador está en OTRO tile que el de partida, y
  *    · su posición cae dentro del `world_rect` de la escena activa (el
  *      `scene_init` se adelanta al `ready` que trae el spawn).
@@ -31,8 +34,10 @@
  *  muerde cuando el clic NO abre ledger (sesión inactiva, handler sin atar):
  *  ahí, sin la comparación, la espera pararía con la causa del viaje de antes;
  *  con ella, expira y `pasoMuerto` dice «el cliente no registró este viaje».
- *  El `spawnAplicado` viejo no puede dar «llegado» ni así: la sonda exige
- *  además otro tile que el de partida.
+ *  El `llegado` viejo no puede dar «llegado» ni así: la sonda exige además
+ *  otro tile que el de partida. Por lo mismo, un viaje `sin ancla` —llega sin
+ *  mover a nadie— NO lo da esta sonda por llegado: no hay tile nuevo que
+ *  afirmar, y ningún guion viaja hoy a un lugar así.
  *
  *  Por eso el clic vive aquí: quien abre el registro del ledger es él, y leer
  *  el `pedido` previo y pulsar tienen que ser el mismo paso.
@@ -57,7 +62,7 @@
  *  (`placeId: string` contra `z.string()`), y el jugador ya ve «Fallo interno
  *  del juego»; solo lo fabrica un banco que mande basura a propósito. Y desde
  *  #737 un fallo solo cierra el viaje si trae SU `placeId`
- *  (`deQuienEsElFallo`), así que un rechazo sin él tampoco lo cerraría aunque
+ *  (`deQuienEs`), así que un rechazo sin él tampoco lo cerraría aunque
  *  su `kind` terminara viajes. Al expirar, al menos, `pasoMuerto` dice que el
  *  bridge no acusó recibo, que es exactamente lo que se vería.
  *
@@ -166,15 +171,15 @@ export async function pulsarSalida(ctx, nombre) {
  *
  *  `null` mientras no hay desenlace de ESTE viaje; `{estado:"fallo"}` en cuanto
  *  el ledger nuevo trae `error`; `{estado:"llegado", …}` con la foto de lo que
- *  el jugador tiene delante al llegar. El `error` gana al spawn: un ledger no
- *  puede traer los dos (se cierra con el primero), y si algún día los trajera,
- *  decir el fallo vale más que callarlo. */
+ *  el jugador tiene delante al llegar. El `error` gana a la llegada: un ledger
+ *  no puede traer los dos (se cierra con el primero), y si algún día los
+ *  trajera, decir el fallo vale más que callarlo. */
 export function sondaDeViaje({ desde, pedidoPrevio }) {
   const hook = window.__nefan;
   const v = hook.viaje;
   if (!v || v.pedido === pedidoPrevio) return null;
   if (v.error) return { estado: "fallo", ledger: v };
-  if (!v.spawnAplicado) return null;
+  if (!v.llegado) return null;
   const tile = hook.currentTile;
   if (!tile || tile === desde) return null;
   const s = hook.scene;
@@ -209,8 +214,14 @@ export function pasoMuerto(l, desde, pedidoPrevio = null) {
   if (!l.escenaRecibida) {
     return `el bridge encoló el viaje (${l.encolado}) pero nunca difundió la escena del destino: el job murió en la cola`;
   }
+  if (!l.llegado) {
+    return (
+      `la escena ${l.escenaRecibida} llegó, pero no el ready de ESTE viaje (con su placeId): ` +
+      "el viaje sigue abierto y el jugador se quedó donde estaba"
+    );
+  }
   if (!l.spawnAplicado) {
-    return `la escena ${l.escenaRecibida} llegó, pero nadie pidió el spawn: el jugador se quedó donde estaba`;
+    return `el viaje llegó sin punto de aparición (sin ancla): nadie pidió el spawn y el jugador se quedó en ${desde}`;
   }
   return (
     `el spawn se aplicó en ${JSON.stringify(l.spawnAplicado)} y aun así el jugador no está dentro de otro ` +

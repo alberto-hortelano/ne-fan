@@ -7,7 +7,7 @@
  *  Con esto se sabe QUÉ paso está muerto: si el viaje llegó a pedirse, si el
  *  bridge lo acusó y cómo lo encoló (`duplicate` = está esperando a un job
  *  gemelo, que es donde vivía el cuelgue del issue #210), si la escena del
- *  destino se difundió y si el spawn llegó a aplicarse.
+ *  destino se difundió, si el viaje llegó y dónde se aplicó el spawn.
  *
  *  Mismo patrón que `fps().telegraphEpisode`: sobrevive al episodio, así que
  *  se puede afirmar sobre él DESPUÉS. Y lo escribe el mismo camino que hace el
@@ -23,8 +23,14 @@ export interface ViajeRegistro {
   encolado: "queued" | "duplicate" | "promoted" | null;
   /** scene_id de la escena del destino, difundida por el bridge. */
   escenaRecibida: string | null;
-  /** Punto de aparición que el cliente APLICÓ (metros mundo). */
+  /** Punto de aparición que el cliente APLICÓ (metros mundo). `null` también
+   *  en un viaje `sin ancla` que llegó: ahí nadie se mueve. */
   spawnAplicado: { x: number; z: number } | null;
+  /** Reloj de la página (ms) en que llegó el `ready` DE ESTE viaje, o `null`.
+   *  Es lo que cierra el viaje por su lado bueno (#742): hasta entonces lo
+   *  cerraba el `spawn`, y un viaje `sin ancla` —que llega sin él— se quedaba
+   *  abierto para siempre. */
+  llegado: number | null;
   /** Mensaje del `narrative_status: error` que abortó el viaje. */
   error: string | null;
 }
@@ -41,6 +47,7 @@ export class TravelLedger {
       encolado: null,
       escenaRecibida: null,
       spawnAplicado: null,
+      llegado: null,
       error: null,
     };
   }
@@ -60,10 +67,15 @@ export class TravelLedger {
     this.cur!.escenaRecibida = sceneId;
   }
 
-  /** El cliente movió al jugador al punto que pidió el bridge: el viaje llegó. */
-  spawn(pos: { x: number; z: number }): void {
+  /** El viaje LLEGÓ, con el punto donde el cliente puso al jugador o `null`
+   *  si el lugar no daba punto (`sin ancla`). No decide nada: que el `ready`
+   *  es la llegada DE ESTE viaje lo dice core (`esperasQueTermina` →
+   *  `"llegada"`, #742) antes de llamar aquí. Hasta entonces lo decidía
+   *  esta clase con el primer `spawn` que llegara, fuera de quien fuera. */
+  llegada(spawn: { x: number; z: number } | null): void {
     if (!this.cur || this.cerrado(this.cur)) return;
-    this.cur.spawnAplicado = { x: pos.x, z: pos.z };
+    this.cur.spawnAplicado = spawn ? { x: spawn.x, z: spawn.z } : null;
+    this.cur.llegado = Math.round(performance.now());
   }
 
   /** El viaje se rompió. No decide nada: que el fallo es DE ESTE viaje lo dice
@@ -90,7 +102,7 @@ export class TravelLedger {
   /** Un viaje entregado (o roto) ya no acepta escritura: lo que venga después
    *  es de otra cosa. */
   private cerrado(reg: ViajeRegistro): boolean {
-    return reg.spawnAplicado !== null || reg.error !== null;
+    return reg.llegado !== null || reg.error !== null;
   }
 
   private abierto(placeId: string): boolean {

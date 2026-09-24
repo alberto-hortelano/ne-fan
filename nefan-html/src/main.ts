@@ -10,7 +10,7 @@ import { HOJAS_ANGLE } from "@nefan-core/src/contracts/sprite-census.js";
 import { pickNearestTarget } from "@nefan-core/src/scene/aim.js";
 import { TILE_MPC } from "@nefan-core/src/scene/tile.js";
 import { motivoDeSesionParaElJugador } from "@nefan-core/src/protocol/status-motivo.js";
-import { esperasQueTermina } from "@nefan-core/src/protocol/status-reparto.js";
+import { elReadyQuitaElMuro, esperasQueTermina } from "@nefan-core/src/protocol/status-reparto.js";
 import { rotuloDeStatus, type StatusRotulable } from "@nefan-core/src/protocol/status-rotulo.js";
 import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
@@ -881,11 +881,13 @@ narrativeClient.onStatusDeLaPartida((status) => {
     return;
   }
 
-  // Core atribuye el fallo a su espera: el viaje, solo con uno SUYO (#737).
-  const terminadas = esperasQueTermina(status, travelLedger.viajeAbierto());
+  // Core decide el desenlace del viaje, solo con un status SUYO (#737, #742).
+  // `viajeAbierto` se lee ANTES de cerrarlo: el muro y el rótulo lo necesitan.
+  const viajeAbierto = travelLedger.viajeAbierto();
+  const terminadas = esperasQueTermina(status, viajeAbierto);
   if (terminadas.saludo) hablar.yaContestaron();
   if (status.placeId && status.enqueued) travelLedger.encolado(status.placeId, status.enqueued);
-  if (terminadas.viaje) travelLedger.fallo(status.message ?? "sin mensaje");
+  if (terminadas.viaje === "fallo") travelLedger.fallo(status.message ?? "sin mensaje");
 
   // ── Spawn PEDIDO por el bridge ────────────────────────────────────────
   // Viajar por el panel «Salidas» a un lugar que no existía lo ancla a un
@@ -894,8 +896,8 @@ narrativeClient.onStatusDeLaPartida((status) => {
   if (status.phase === "ready" && status.spawn) {
     playerPos.x = status.spawn.x;
     playerPos.z = status.spawn.z;
-    travelLedger.spawn(status.spawn);
   }
+  if (terminadas.viaje === "llegada") travelLedger.llegada(status.spawn ?? null);
 
   // ── Tiles del plano continuo ──────────────────────────────────────────
   // El feedback de un tile es DIRECCIONAL (el velo que decide la `Frontera`
@@ -915,17 +917,17 @@ narrativeClient.onStatusDeLaPartida((status) => {
         }
         break;
       case "ready":
-        // La escena llega por scene_init (addTile dispara el flash allí).
-        muro.ocultar();
+        // La escena llega por scene_init. El muro lo quita SU llegada o el
+        // arranque, nunca un aviso: lo decide core (#742).
+        if (elReadyQuitaElMuro(status, { viajeAbierto, muro: muro.enPantalla() })) muro.ocultar();
         break;
       case "error": {
         if (t) frontier.alError(t.tx, t.ty, performance.now()); // el reloj de `tick`
-        // Qué se lee y DÓNDE lo decide una función pura de core: con overlay
-        // abierto (bootstrap del mundo o viaje desde «Salidas») el error va
-        // AL overlay, porque si no el jugador se queda mirando un
-        // "Viajando..." que ya no va a terminar nunca; una frontera que se
-        // genera sola en segundo plano, a la línea de mensajes.
-        pintarFalloDelMotor(status);
+        // Qué se lee y DÓNDE lo decide una función pura de core: el fallo
+        // del arranque o el DEL viaje van AL overlay, porque si no el jugador
+        // se queda mirando un "Viajando..." que ya no va a terminar nunca; una
+        // frontera que se genera sola en segundo plano, a la línea de mensajes.
+        pintarFalloDelMotor(status, viajeAbierto);
         break;
       }
     }
@@ -945,7 +947,7 @@ narrativeClient.onStatusDeLaPartida((status) => {
         );
         break;
       case "error":
-        pintarFalloDelMotor(status);
+        pintarFalloDelMotor(status, viajeAbierto);
         break;
     }
     return;
@@ -953,7 +955,7 @@ narrativeClient.onStatusDeLaPartida((status) => {
 
   // Los demás fallos también se pintan, sin atribuirles esperas ajenas.
   if (status.phase === "error") {
-    pintarFalloDelMotor(status);
+    pintarFalloDelMotor(status, viajeAbierto);
   }
 });
 
@@ -963,7 +965,7 @@ narrativeClient.onStatusDeLaPartida((status) => {
 // tiene esos campos: el handler de arriba no se podría escribir con este
 // argumento.
 narrativeClient.onFalloAjeno((fallo) => {
-  pintarFalloDelMotor(fallo);
+  pintarFalloDelMotor(fallo, travelLedger.viajeAbierto());
 });
 
 /** Enseña un fallo del motor donde toque. El TÍTULO ya no se decide aquí:
@@ -971,12 +973,10 @@ narrativeClient.onFalloAjeno((fallo) => {
  *  escena» —jerga de motor— encima de un cuerpo que el bridge ya había
  *  escrito para quien juega (#180). Ahora el rótulo sale de `rotuloDeStatus`
  *  (nefan-core), que además decide si el fallo tapa la pantalla o se queda en
- *  la línea de mensajes; el cliente solo pinta. */
-function pintarFalloDelMotor(status: StatusRotulable): void {
-  const rotulo = rotuloDeStatus(status, {
-    mundoVacio: !tileStore.hasGridTiles, overlayAbierto: muro.visible(),
-    viajeAbierto: travelLedger.viajeAbierto(),
-  });
+ *  la línea de mensajes; el cliente solo pinta. `viajeAbierto`: el de ANTES
+ *  de que este fallo cerrara el ledger (#742). */
+function pintarFalloDelMotor(status: StatusRotulable, viajeAbierto: string | null): void {
+  const rotulo = rotuloDeStatus(status, { mundoVacio: !tileStore.hasGridTiles, viajeAbierto });
   errors.push("narrative", status.detalleTecnico ?? rotulo.detalle);
   if (rotulo.destino === "overlay") {
     muro.fallo(rotulo.titulo, rotulo.detalle, rotulo.salida);

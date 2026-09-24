@@ -10,6 +10,7 @@ import {
   type SalidaDeFallo,
   type SalidaDelOverlay,
 } from "@nefan-core/src/protocol/status-rotulo.js";
+import type { MuroEnPantalla } from "@nefan-core/src/protocol/status-reparto.js";
 import { errors } from "./error-log.js";
 import type { TitleScreen } from "./title-screen.js";
 import { elTituloManda } from "./titulo-manda.js";
@@ -49,7 +50,12 @@ export interface MuroDeCarga {
    *  Por eso `fallo()` no admite `"reintentar"` —su tipo lo excluye— y esta es
    *  la única puerta de esa salida. */
   ofrecer(titulo: string, detalle: string, accion: () => Promise<void>): void;
-  visible(): boolean;
+  /** QUÉ muro hay, como hecho que core sabe leer (#742): `espera` lo puso
+   *  `mostrar`, `aviso` lo pintó `fallo`/`ofrecer` (o un aviso), `nada` tras
+   *  `ocultar`. Lo apunta cada una de esas funciones y no se deduce de las
+   *  clases del DOM: «¿está visible?» confundía el «Viajando...» con un muro
+   *  de fallo, y es la pregunta que decide si un `ready` lo quita. */
+  enPantalla(): MuroEnPantalla;
   /** El motivo del último muro que ofrecía volver al título, o `null`. Se lo
    *  lleva el título en la vuelta: quien pulsa «Volver al título» acaba de
    *  leerlo, pero llegar a una pantalla que no dice nada de lo que acaba de
@@ -71,6 +77,9 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
   const loaderBack = document.getElementById("narrative-loader-back");
   const loaderRetry = document.getElementById("narrative-loader-retry");
 
+  /** Lo que devuelve `enPantalla()`. Lo escriben `mostrar`, `pintarMuro` y
+   *  `ocultar`, que son las tres únicas puertas del muro. */
+  let enPantalla: MuroEnPantalla = "nada";
   let loaderStartedAt = 0;
   let loaderTicker: ReturnType<typeof setInterval> | null = null;
   let motivoDelUltimoMuro: string | null = null;
@@ -175,6 +184,7 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     accionDeLaOferta = null;
     loaderEl.classList.remove("error");
     loaderEl.classList.add("visible");
+    enPantalla = "espera";
     if (loaderTitle) loaderTitle.textContent = titulo;
     if (loaderDetail) loaderDetail.textContent = detalle;
     loaderStartedAt = Date.now();
@@ -196,6 +206,7 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
   function ocultar(): void {
     if (!loaderEl) return;
     loaderEl.classList.remove("visible", "error");
+    enPantalla = "nada";
     if (loaderBack) loaderBack.hidden = true;
     if (loaderRetry) loaderRetry.hidden = true;
     if (loaderDismiss) loaderDismiss.hidden = false;
@@ -232,6 +243,9 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     muroPuestoPorAviso = null;
     loaderEl.classList.remove("error");
     loaderEl.classList.add("visible", "error");
+    // Todo lo que pinta con botones es un AVISO: el jugador lo cierra, y un
+    // `ready` que llegue detrás no se lo lleva sin leer (#742).
+    enPantalla = "aviso";
     // UNA OFERTA NO ES UNA ALARMA. `.error` saca los botones y de paso pinta el
     // título en `--nf-danger`, así que «El juego ya está disponible» salía en el
     // rojo de peligro: una buena noticia con cara de fallo. Lo vio QA en la
@@ -354,7 +368,7 @@ export function crearMuroDeCarga(deps: DepsDelMuroDeCarga): MuroDeCarga {
     ocultar,
     fallo,
     ofrecer,
-    visible: () => loaderEl?.classList.contains("visible") ?? false,
+    enPantalla: () => enPantalla,
     motivoDelUltimoMuro: () => motivoDelUltimoMuro,
     alCambiarElTitulo(visible) {
       // El título solo TAPA el muro (`#narrative-loader` vive dentro de

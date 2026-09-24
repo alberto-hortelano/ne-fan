@@ -211,7 +211,9 @@ describe("bridge request_tile (plano continuo)", () => {
       },
     });
     narrative.startNewSession("plugtest");
-    await runTileGeneration(ctx, 3, 0, undefined, { destino: "Molino del bench" });
+    await runTileGeneration(ctx, 3, 0, undefined, {
+      viaje: { placeId: "molino", destino: "Molino del bench", sitio: () => ({ de: "sin ancla" }) },
+    });
     const err = broadcasts.find(
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
     );

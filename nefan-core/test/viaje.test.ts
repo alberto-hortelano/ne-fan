@@ -27,6 +27,7 @@ type Ledger = {
   encolado: "queued" | "duplicate" | "promoted" | null;
   escenaRecibida: string | null;
   spawnAplicado: { x: number; z: number } | null;
+  llegado: number | null;
   error: string | null;
 };
 type Rect = { minX: number; minZ: number; maxX: number; maxZ: number };
@@ -51,12 +52,17 @@ const { sondaDeViaje, pasoMuerto, viajarPorSalidas, viajarSiSePuede, pulsarSalid
   viaje;
 
 const RECT: Rect = { minX: 32, minZ: -32, maxX: 96, maxZ: 32 };
+/** Un ledger con `spawnAplicado` LLEGÓ: el cliente escribe los dos en el
+ *  mismo paso (`TravelLedger.llegada`), así que el helper los deriva juntos
+ *  salvo que el caso diga otra cosa —la llegada `sin ancla` (llegado sin
+ *  spawn) o el spawn sin llegada, que el cliente no puede escribir—. */
 const ledger = (extra: Partial<Ledger> = {}): Ledger => ({
   placeId: "molino",
   pedido: 5000,
   encolado: "queued",
   escenaRecibida: "tile_1_0",
   spawnAplicado: null,
+  llegado: extra.spawnAplicado ? 7000 : null,
   error: null,
   ...extra,
 });
@@ -123,9 +129,12 @@ describe("sondaDeViaje · para en los dos desenlaces de ESTE viaje, y en ninguno
     });
   });
 
-  it("no para a MEDIO camino: sin spawn, en el mismo tile, sin escena o fuera del rect", () => {
+  it("no para a MEDIO camino: sin llegada, en el mismo tile, sin escena o fuera del rect", () => {
     const conSpawn = ledger({ spawnAplicado: { x: 40, z: 0 } });
-    assert.equal(sondar({ viaje: ledger(), ...enDestino }), null, "la escena llegó pero el spawn no (scene_init antes que ready)");
+    assert.equal(sondar({ viaje: ledger(), ...enDestino }), null, "la escena llegó pero el ready del viaje no (scene_init antes que ready)");
+    // #742: lo que para es la LLEGADA que decide core, no el spawn. Un spawn
+    // sin `llegado` —el de un `ready` que no era de este viaje— no para.
+    assert.equal(sondar({ viaje: ledger({ spawnAplicado: { x: 40, z: 0 }, llegado: null }), ...enDestino }), null, "spawn sin llegada");
     assert.equal(sondar({ viaje: conSpawn, ...enDestino, currentTile: "tile_0_0" }), null, "sigue en el tile de partida");
     assert.equal(sondar({ viaje: conSpawn, ...enDestino, currentTile: null }), null, "sin tile activo");
     assert.equal(sondar({ viaje: conSpawn, ...enDestino, rect: null }), null, "sin escena activa");
@@ -157,8 +166,9 @@ describe("pasoMuerto · nombra el paso del viaje que no ocurrió", () => {
     { nombre: "abortado", l: ledger({ error: "el motor rechazó el tile" }), espera: /el bridge abortó el viaje: el motor rechazó el tile/ },
     { nombre: "sin acuse ni escena", l: ledger({ encolado: null, escenaRecibida: null }), espera: /no acusó recibo.*intake/ },
     { nombre: "encolado sin escena", l: ledger({ escenaRecibida: null, encolado: "duplicate" }), espera: /encoló el viaje \(duplicate\).*murió en la cola/ },
-    { nombre: "acuse ausente pero escena", l: ledger({ encolado: null, spawnAplicado: null }), espera: /nadie pidió el spawn/ },
-    { nombre: "escena sin spawn", l: ledger(), espera: /tile_1_0 llegó, pero nadie pidió el spawn/ },
+    { nombre: "acuse ausente pero escena", l: ledger({ encolado: null, spawnAplicado: null }), espera: /no el ready de ESTE viaje/ },
+    { nombre: "escena sin la llegada del viaje", l: ledger(), espera: /tile_1_0 llegó, pero no el ready de ESTE viaje/ },
+    { nombre: "llegado sin ancla", l: ledger({ llegado: 7000 }), espera: /llegó sin punto de aparición \(sin ancla\).*tile_0_0/ },
     { nombre: "spawn y aun así fuera", l: ledger({ spawnAplicado: { x: 1, z: 2 } }), espera: /\{"x":1,"z":2\}.*tile_0_0/ },
   ];
   for (const c of casos) {

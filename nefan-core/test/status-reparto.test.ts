@@ -18,7 +18,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { repartirStatus, esperasQueTermina, deQuienEsElFallo } from "../src/protocol/status-reparto.js";
+import { repartirStatus, esperasQueTermina, deQuienEs, elReadyQuitaElMuro } from "../src/protocol/status-reparto.js";
+import type { MuroEnPantalla } from "../src/protocol/status-reparto.js";
 import type {
   NarrativeStatusDeJuego,
   NarrativeStatusDeSesion,
@@ -111,46 +112,95 @@ describe("cada fallo termina solo su espera (#593)", () => {
   it("los avisos ajenos conservan viaje y saludo pendientes", () => {
     for (const kind of ["combatientes", "plugin", "save", "restore", "action", "protocolo"] as const) {
       // Ni con el placeId del viaje: su kind no habla de llegar a ningún sitio.
-      assert.deepEqual(esperasQueTermina({ kind, phase: "error", placeId: "forja" }, "forja"), { viaje: false, saludo: false });
+      assert.deepEqual(esperasQueTermina({ kind, phase: "error", placeId: "forja" }, "forja"), { viaje: null, saludo: false });
     }
   });
   it("un viaje fallido no responde al saludo y una reacción fallida no cierra el viaje", () => {
     for (const kind of ["tile", "scene"] as const) {
-      assert.deepEqual(esperasQueTermina({ kind, phase: "error", placeId: "forja" }, "forja"), { viaje: true, saludo: false });
+      assert.deepEqual(esperasQueTermina({ kind, phase: "error", placeId: "forja" }, "forja"), { viaje: "fallo", saludo: false });
     }
-    assert.deepEqual(esperasQueTermina({ kind: "consequences", phase: "error", placeId: "forja" }, "forja"), { viaje: false, saludo: true });
+    assert.deepEqual(esperasQueTermina({ kind: "consequences", phase: "error", placeId: "forja" }, "forja"), { viaje: null, saludo: true });
   });
   it("el takeover cierra el viaje abierto aunque no lleve placeId: no habla de un lugar", () => {
-    assert.deepEqual(esperasQueTermina({ kind: "takeover", phase: "error" }, "forja"), { viaje: true, saludo: true });
+    assert.deepEqual(esperasQueTermina({ kind: "takeover", phase: "error" }, "forja"), { viaje: "fallo", saludo: true });
   });
   it("el progreso y la preparación no terminan ninguna espera", () => {
-    for (const phase of ["progress", "generating", "ready"] as const) {
+    for (const phase of ["progress", "generating"] as const) {
       for (const kind of ["tile", "scene", "consequences", "takeover"] as const) {
-        assert.deepEqual(esperasQueTermina({ kind, phase, placeId: "forja" }, "forja"), { viaje: false, saludo: false });
+        assert.deepEqual(esperasQueTermina({ kind, phase, placeId: "forja" }, "forja"), { viaje: null, saludo: false });
       }
     }
   });
 });
 
 describe("un fallo cierra el viaje solo si es SUYO (#737)", () => {
-  it("deQuienEsElFallo: sin viaje, del viaje, o ajeno — y lo que llega sin placeId es ajeno", () => {
-    assert.equal(deQuienEsElFallo({ placeId: "forja" }, null), "sin-viaje");
-    assert.equal(deQuienEsElFallo({}, null), "sin-viaje");
-    assert.equal(deQuienEsElFallo({ placeId: "forja" }, "forja"), "del-viaje");
-    assert.equal(deQuienEsElFallo({ placeId: "molino" }, "forja"), "ajeno-al-viaje");
+  it("deQuienEs: sin viaje, del viaje, o ajeno — y lo que llega sin placeId es ajeno", () => {
+    assert.equal(deQuienEs({ placeId: "forja" }, null), "sin-viaje");
+    assert.equal(deQuienEs({}, null), "sin-viaje");
+    assert.equal(deQuienEs({ placeId: "forja" }, "forja"), "del-viaje");
+    assert.equal(deQuienEs({ placeId: "molino" }, "forja"), "ajeno-al-viaje");
     // El caso que #737 describe: el error de un tile vecino no trae placeId.
-    assert.equal(deQuienEsElFallo({}, "forja"), "ajeno-al-viaje");
+    assert.equal(deQuienEs({}, "forja"), "ajeno-al-viaje");
   });
   it("con viaje abierto, un tile o una escena de OTRO lugar, o sin lugar, no lo cierran", () => {
     for (const kind of ["tile", "scene"] as const) {
-      assert.deepEqual(esperasQueTermina({ kind, phase: "error" }, "forja"), { viaje: false, saludo: false }, `${kind} sin placeId`);
-      assert.deepEqual(esperasQueTermina({ kind, phase: "error", placeId: "molino" }, "forja"), { viaje: false, saludo: false }, `${kind} ajeno`);
+      assert.deepEqual(esperasQueTermina({ kind, phase: "error" }, "forja"), { viaje: null, saludo: false }, `${kind} sin placeId`);
+      assert.deepEqual(esperasQueTermina({ kind, phase: "error", placeId: "molino" }, "forja"), { viaje: null, saludo: false }, `${kind} ajeno`);
     }
   });
   it("sin viaje abierto no hay viaje que cerrar, lleve el placeId que lleve", () => {
     for (const kind of ["tile", "scene"] as const) {
-      assert.deepEqual(esperasQueTermina({ kind, phase: "error", placeId: "forja" }, null), { viaje: false, saludo: false });
-      assert.deepEqual(esperasQueTermina({ kind, phase: "error" }, null), { viaje: false, saludo: false });
+      assert.deepEqual(esperasQueTermina({ kind, phase: "error", placeId: "forja" }, null), { viaje: null, saludo: false });
+      assert.deepEqual(esperasQueTermina({ kind, phase: "error" }, null), { viaje: null, saludo: false });
     }
+  });
+});
+
+describe("un ready cierra el viaje solo si es SUYO (#742)", () => {
+  // Hasta #742 core solo decidía el FALLO: la llegada la decidía el ledger del
+  // cliente con cualquier `spawn`, y el muro lo quitaba cualquier `ready`. Un
+  // prefetch que aterrizaba a mitad de viaje soltaba al jugador.
+  it("el ready de tile con el placeId del viaje abierto es su LLEGADA, con spawn o sin él (sin ancla)", () => {
+    assert.deepEqual(esperasQueTermina({ kind: "tile", phase: "ready", placeId: "forja" }, "forja"), { viaje: "llegada", saludo: false });
+  });
+  it("un ready ajeno —otro lugar, o sin placeId: el prefetch, el request_tile— no termina nada", () => {
+    assert.deepEqual(esperasQueTermina({ kind: "tile", phase: "ready", placeId: "molino" }, "forja"), { viaje: null, saludo: false });
+    assert.deepEqual(esperasQueTermina({ kind: "tile", phase: "ready" }, "forja"), { viaje: null, saludo: false });
+  });
+  it("sin viaje abierto no hay llegada que dar, lleve el placeId que lleve", () => {
+    assert.deepEqual(esperasQueTermina({ kind: "tile", phase: "ready", placeId: "forja" }, null), { viaje: null, saludo: false });
+    assert.deepEqual(esperasQueTermina({ kind: "tile", phase: "ready" }, null), { viaje: null, saludo: false });
+  });
+  it("el ready de un plugin no es la llegada de ningún viaje, aunque traiga el placeId", () => {
+    assert.deepEqual(esperasQueTermina({ kind: "plugin", phase: "ready", placeId: "forja" }, "forja"), { viaje: null, saludo: false });
+  });
+  it("un ready no contesta al saludo: el saludo solo lo cierra el narrative_event o su fallo", () => {
+    for (const kind of ["tile", "plugin"] as const) {
+      assert.equal(esperasQueTermina({ kind, phase: "ready", placeId: "forja" }, "forja").saludo, false, kind);
+    }
+  });
+});
+
+describe("elReadyQuitaElMuro: las 3×3 de viaje × muro (#742)", () => {
+  const delViaje = { kind: "tile", phase: "ready", placeId: "forja" } as const;
+  const ajeno = { kind: "tile", phase: "ready" } as const;
+  /** Fila: qué viaje hay y de quién es el `ready`. Columna: qué muro hay. */
+  const TABLA: Array<[string, typeof delViaje | typeof ajeno, string | null, Record<MuroEnPantalla, boolean>]> = [
+    // El del viaje quita SU espera, nunca un aviso.
+    ["del viaje", delViaje, "forja", { espera: true, aviso: false, nada: false }],
+    // El ajeno no quita el «Viajando...» ni un aviso: es el bug de #742.
+    ["ajeno", ajeno, "forja", { espera: false, aviso: false, nada: false }],
+    // Sin viaje, la espera es el arranque y el primer tile la quita; el aviso, no.
+    ["sin viaje", ajeno, null, { espera: true, aviso: false, nada: false }],
+  ];
+  for (const [fila, status, viajeAbierto, esperado] of TABLA) {
+    for (const muro of ["espera", "aviso", "nada"] as const) {
+      it(`${fila} · muro «${muro}» → ${esperado[muro] ? "lo quita" : "no lo toca"}`, () => {
+        assert.equal(elReadyQuitaElMuro(status, { viajeAbierto, muro }), esperado[muro]);
+      });
+    }
+  }
+  it("un ready de OTRO lugar con placeId tampoco quita el «Viajando...»", () => {
+    assert.equal(elReadyQuitaElMuro({ kind: "tile", phase: "ready", placeId: "molino" }, { viajeAbierto: "forja", muro: "espera" }), false);
   });
 });

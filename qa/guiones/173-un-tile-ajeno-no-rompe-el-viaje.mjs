@@ -6,7 +6,7 @@
  *  cerraba el ledger del viaje Y pintaba encima el muro «No se pudo llegar»;
  *  luego el viaje llegaba igual y el muro se iba solo. Un fallo falso a
  *  pantalla completa. Desde #737 el bridge marca con `placeId` lo que emite
- *  POR el viaje, y core (`deQuienEsElFallo`, `src/protocol/status-reparto.ts`)
+ *  POR el viaje, y core (`deQuienEs`, `src/protocol/status-reparto.ts`)
  *  decide para el ledger y para el muro a la vez que lo que no lo trae es
  *  ajeno. Un solo viaje, dos errores ajenos, y el viaje tiene que llegar:
  *
@@ -29,7 +29,7 @@
  *  segundos. Eso es el guion 168, y se corre con éste.
  *
  *  EN NEGATIVO (hecho a mano al escribirlo, cifras en `implementacion.md` de la
- *  tanda AT): con `deQuienEsElFallo` devolviendo `"del-viaje"` para todo lo
+ *  tanda AT): con `deQuienEs` (entonces `deQuienEsElFallo`) devolviendo `"del-viaje"` para todo lo
  *  que llega con un viaje abierto, A sale ROJO —ledger con `error`, muro
  *  «No se pudo llegar»— y el viaje sale `ViajeRoto`.
  *

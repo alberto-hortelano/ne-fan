@@ -162,35 +162,47 @@ export async function generateTileScene(
 
 /** Genera el tile (tx,ty) — corre DENTRO de la cola (un job a la vez). Captura
  *  sus propios errores y los difunde como narrative_status.
- *  `opts` sirve al viaje a un place anclado: `placeId` engancha el tile al
- *  lugar, `message` narra "Viajando a X..." en vez de "Explorando..." y
- *  `spawnAt` PIDE al cliente que aparezca ahí cuando el tile esté listo. Es
- *  una función porque se resuelve AL DIFUNDIR: el motor pudo afinar el anchor
- *  del lugar con un rect (`map_upsert_place.anchor`) durante la generación. */
+ *  `opts.viaje` sirve al viaje a un place anclado: su `placeId` engancha el
+ *  tile al lugar y MARCA todo lo que este tile difunde —el `ready` y el
+ *  `fail()`— como de ese viaje (#737, #742); `message` narra "Viajando a X..."
+ *  en vez de "Explorando..." y `sitio` PIDE al cliente que aparezca ahí
+ *  cuando el tile esté listo. Es una función porque se resuelve AL DIFUNDIR:
+ *  el motor pudo afinar el anchor del lugar con un rect
+ *  (`map_upsert_place.anchor`) durante la generación. */
 export async function runTileGeneration(
   ctx: BridgeContext,
   tx: number,
   ty: number,
   approachEdge?: Edge,
   opts: {
-    placeId?: string;
     message?: string;
-    /** Nombre del LUGAR al que se viaja, para el mensaje de error que lee el
-     *  jugador. Sin él, un viaje fallido le enseñaba coordenadas de tile. */
-    destino?: string;
-    /** Devuelve un sitio YA MIRADO, no un punto crudo: el tercer desenlace
-     *  («hay punto y no hay dónde ponerse») no cabe en `SitioDeAparicion`, así
-     *  que quien lo produzca tiene que resolverlo antes de volver de aquí — o
-     *  no compila (#616). */
-    spawnAt?: () => SitioDeAparicion;
+    /** Este tile ES un viaje. Sin él, el tile no habla de ningún lugar: ni su
+     *  `ready` ni su error pueden cerrar el viaje abierto de nadie. */
+    viaje?: {
+      placeId: string;
+      /** Nombre del LUGAR al que se viaja, para el mensaje de error que lee
+       *  el jugador. Sin él, un viaje fallido le enseñaba coordenadas de tile. */
+      destino: string;
+      /** Devuelve un sitio YA MIRADO, no un punto crudo: el tercer desenlace
+       *  («hay punto y no hay dónde ponerse») no cabe en `SitioDeAparicion`,
+       *  así que quien lo produzca tiene que resolverlo antes de volver de
+       *  aquí — o no compila (#616). */
+      sitio: () => SitioDeAparicion;
+    };
   } = {},
 ): Promise<SceneGenOutcome> {
   const key = tileKey(tx, ty);
   const start = Date.now();
   // Con `placeId` cuando este tile ES un viaje (#737): sin él, el cliente no
   // puede distinguir el fallo DEL destino de un tile vecino que falla a la
-  // vez, y core (`deQuienEsElFallo`) solo cierra el viaje con el que es suyo.
+  // vez, y core (`deQuienEs`) solo cierra el viaje con el que es suyo.
   // Sin viaje se queda sin él, que es lo que marca un tile como ajeno.
+  const placeId = opts.viaje?.placeId;
+  // Lo mismo para la LLEGADA (#742): las tres ramas que difunden el tile
+  // pasan por aquí, y es lo que le dice a core que ese `ready` es el del
+  // viaje y no un prefetch que aterriza a la vez. `sitio()` puede LANZAR
+  // («sin sitio»): lo recoge el `catch` de abajo y sale por `fail()`.
+  const porElViaje = () => (opts.viaje ? { placeId: opts.viaje.placeId, sitio: opts.viaje.sitio() } : undefined);
   const fail = (message: string): void =>
     ctx.broadcastNarrative({
       type: "narrative_status",
@@ -198,7 +210,7 @@ export async function runTileGeneration(
       kind: "tile",
       tile: { tx, ty },
       edge: approachEdge,
-      placeId: opts.placeId,
+      placeId,
       message,
       elapsedMs: Date.now() - start,
     });
@@ -211,7 +223,7 @@ export async function runTileGeneration(
     if (already) {
       broadcastScene(ctx, key, already.scene_data, Date.now() - start, {
         edge: approachEdge,
-        spawn: opts.spawnAt?.(),
+        viaje: porElViaje(),
         source: "cache",
       });
       return { delivered: true };
@@ -228,7 +240,7 @@ export async function runTileGeneration(
           ? `Explorando hacia el ${EDGE_ES[approachEdge]}...`
           : `Generando el tile (${tx}, ${ty})...`),
     });
-    const res = await generateTileScene(ctx, tx, ty, approachEdge, { placeId: opts.placeId });
+    const res = await generateTileScene(ctx, tx, ty, approachEdge, { placeId });
     if (res === "exists") {
       // Apareció mientras se generaba (otro camino lo registró): se difunde
       // el que hay. Volver mudo dejaba esperando a quien lo pidió.
@@ -236,14 +248,14 @@ export async function runTileGeneration(
       if (!ahora) return { delivered: false, motivo: `el tile ${key} se registró y desapareció` };
       broadcastScene(ctx, key, ahora.scene_data, Date.now() - start, {
         edge: approachEdge,
-        spawn: opts.spawnAt?.(),
+        viaje: porElViaje(),
         source: "cache",
       });
       return { delivered: true };
     }
     broadcastScene(ctx, res.sceneId, res.scene, Date.now() - start, {
       edge: approachEdge,
-      spawn: opts.spawnAt?.(),
+      viaje: porElViaje(),
       // El tile se ha generado y rasterizado AHORA (expandScenePrimitives
       // sobre el `ground` que el motor acaba de declarar).
       source: "engine",
@@ -260,7 +272,7 @@ export async function runTileGeneration(
     // por su lado.) El volcado técnico se queda en el `console.warn` de
     // arriba, que es donde sirve.
     const motivo = motivoParaElJugador(err);
-    fail(opts.destino ? `No se pudo llegar a ${opts.destino}. ${motivo}` : motivo);
+    fail(opts.viaje ? `No se pudo llegar a ${opts.viaje.destino}. ${motivo}` : motivo);
     return { delivered: true };
   }
 }

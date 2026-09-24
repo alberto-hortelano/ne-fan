@@ -111,7 +111,7 @@ describe("un enemigo inválido se cae SOLO ÉL: add_combatants", () => {
       false,
       "el frame ya no se rechaza entero: nada de `protocolo`",
     );
-    const rotulo = rotuloDeStatus(errores[0], { mundoVacio: true, overlayAbierto: true, viajeAbierto: null });
+    const rotulo = rotuloDeStatus(errores[0], { mundoVacio: true, viajeAbierto: null });
     assert.equal(rotulo.destino, "log", `el aviso tapa la pantalla: ${JSON.stringify(rotulo)}`);
     assert.equal(rotulo.detalle, errores[0].message);
 
@@ -171,7 +171,7 @@ describe("un enemigo inválido se cae SOLO ÉL: add_combatants", () => {
       "Enemigos que no entraron al mundo (3 de 3): sus datos de combate no son válidos. Consulta el registro de errores.",
     );
     assert.equal(
-      rotuloDeStatus(errores[0], { mundoVacio: true, overlayAbierto: true, viajeAbierto: null }).destino,
+      rotuloDeStatus(errores[0], { mundoVacio: true, viajeAbierto: null }).destino,
       "log",
       "tampoco aquí tapa la pantalla",
     );
@@ -226,7 +226,7 @@ describe("un enemigo inválido se cae SOLO ÉL: load_room", () => {
       "Enemigos que no entraron al mundo (1 de 3): sus datos de combate no son válidos. Consulta el registro de errores.",
     );
     assert.equal(
-      rotuloDeStatus(errores[0], { mundoVacio: true, overlayAbierto: true, viajeAbierto: null }).destino,
+      rotuloDeStatus(errores[0], { mundoVacio: true, viajeAbierto: null }).destino,
       "log",
     );
     // La sala se carga igual: el player se siembra y el cliente recibe su

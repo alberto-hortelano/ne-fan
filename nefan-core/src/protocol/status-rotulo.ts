@@ -12,8 +12,8 @@
  *  navegador y la mide la mutación.
  *
  *  No inventa nada: el status trae `kind`, `placeId` y `tile{tx,ty}`, y el
- *  contexto de pintado (¿hay mundo?, ¿hay overlay abierto?) lo pone el
- *  cliente, que es su dueño. El detalle TÉCNICO no se pierde: se queda en el
+ *  contexto (¿hay mundo?, ¿qué viaje espera?) lo pone el cliente, que es su
+ *  dueño. El detalle TÉCNICO no se pierde: se queda en el
  *  `console.warn` del bridge y en el `detail` del error-log del cliente.
  *
  *  LO QUE NO ESTÁ AQUÍ, y estuvo:
@@ -26,7 +26,7 @@
  *  Las tres son decisiones distintas sobre el mismo status y comparten UNA
  *  llamada: el rótulo mira `kind` y el contexto de pantalla, el motivo mira
  *  el TEXTO de una excepción, y el reparto mira a quién pertenece la sesión.
- *  La llamada es `deQuienEsElFallo` (reparto, #737): si el ledger del viaje y
+ *  La llamada es `deQuienEs` (reparto, #737): si el ledger del viaje y
  *  el muro tuvieran cada uno su regla de «este fallo es del viaje», uno diría
  *  «abierto» y el otro «roto», que es el bug que la trajo. Lo
  *  que las separó no fue el gusto, fue la medida: juntas eran 162 mutantes
@@ -35,19 +35,20 @@
  *  bucle barato sin tocar ningún umbral, que es lo contrario de subir el tope
  *  para que quepa lo que uno acaba de engordar. */
 import type { NarrativeStatusDeSesion } from "./messages.js";
-import { deQuienEsElFallo } from "./status-reparto.js";
+import { deQuienEs } from "./status-reparto.js";
 
 /** Lo que el cliente sabe de su propia pantalla en el momento del fallo. */
 export interface ContextoDeRotulo {
   /** El jugador todavía no tiene mundo pintado (arranque de la partida). */
   mundoVacio: boolean;
-  /** Hay un overlay de carga en pantalla — el jugador está ESPERANDO algo
-   *  que pidió (un viaje, el mundo inicial) y se le quedaría el «Viajando…»
-   *  puesto para siempre si el error no fuera ahí. */
-  overlayAbierto: boolean;
-  /** `placeId` del viaje que el jugador está esperando, o `null` (#737). Con
-   *  él, el «Viajando...» abierto deja de ser prueba de que un fallo de tile o
-   *  de escena es del viaje: el de otro tile va a la línea de mensajes. */
+  /** `placeId` del viaje que el jugador está esperando, o `null` (#737). Es
+   *  el ÚNICO hecho que decide si un fallo de tile tapa la pantalla: el del
+   *  viaje va al muro, el de otro tile a la línea de mensajes. Hasta #742 lo
+   *  decidía además un booleano leído del DOM («¿hay muro en pantalla?»), que
+   *  confundía «el jugador espera algo» con «hay un muro de fallo pintado»:
+   *  el fallo del destino tras un `ready` ajeno que ya había quitado el muro
+   *  acababa en la línea de mensajes, y el de un tile sin viaje tapaba con
+   *  «No se pudo llegar» un aviso que no era suyo. */
   viajeAbierto: string | null;
 }
 
@@ -208,16 +209,14 @@ export function rotuloDeStatus(
       if (ctx.mundoVacio) {
         return { destino: "overlay", titulo: "La partida no pudo empezar", detalle, salida };
       }
-      // Con mundo pintado, el tile puede ser un viaje (overlay abierto, el
-      // jugador esperando) o la frontera generándose sola en segundo plano.
+      // Con mundo pintado, el tile puede ser el destino del viaje (trae su
+      // `placeId`, #737) o la frontera generándose sola en segundo plano.
       // Lo segundo NO merece tapar la pantalla: su feedback es el velo del
-      // borde, y el motivo va a la línea de mensajes. Y con un viaje abierto,
-      // el overlay es el «Viajando...» de ESE viaje: el fallo de otro tile no
-      // lo sustituye, porque el viaje sigue y va a llegar (#737).
-      if (deQuienEsElFallo(status, ctx.viajeAbierto) === "ajeno-al-viaje") {
-        return { destino: "log", detalle };
-      }
-      if (ctx.overlayAbierto) {
+      // borde, y el motivo va a la línea de mensajes. Y el fallo de otro tile
+      // no sustituye el «Viajando...» de un viaje que sigue y va a llegar. El
+      // del viaje va al muro POR SER DEL VIAJE, esté o no el muro puesto
+      // (#742): quien lo pidió tiene que leerlo a pantalla completa.
+      if (deQuienEs(status, ctx.viajeAbierto) === "del-viaje") {
         return { destino: "overlay", titulo: "No se pudo llegar", detalle, salida };
       }
       return { destino: "log", detalle };
@@ -227,7 +226,7 @@ export function rotuloDeStatus(
       // fallado es llegar. Sin él es una escena que el motor preparaba por su
       // cuenta. Y si hay un viaje abierto y no es suyo, no tapa su
       // «Viajando...» (#737): mismo criterio que el tile.
-      if (deQuienEsElFallo(status, ctx.viajeAbierto) === "ajeno-al-viaje") {
+      if (deQuienEs(status, ctx.viajeAbierto) === "ajeno-al-viaje") {
         return { destino: "log", detalle };
       }
       return status.placeId

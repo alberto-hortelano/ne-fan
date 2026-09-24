@@ -68,6 +68,13 @@ describe("bridge ciclo de sesión", () => {
       .filter((m): m is NarrativeStatusMessage => m.type === "narrative_status")
       .map((m) => m.phase);
     assert.deepEqual(phases, ["generating", "ready"]);
+    // El arranque no es un viaje: su `ready` no habla de ningún lugar, aunque
+    // la escena inicial traiga el suyo. Con un `placeId` aquí, core lo leería
+    // como la llegada de un viaje que nadie pidió (#742).
+    const ready = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "ready",
+    );
+    assert.equal(ready && "placeId" in ready ? ready.placeId : undefined, undefined);
     const sceneEvent = broadcasts.find(
       (m): m is NarrativeEventMessage => m.type === "narrative_event",
     );

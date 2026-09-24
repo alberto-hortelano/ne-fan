@@ -670,7 +670,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
   });
 
   it("si el motor ancla el lugar SOBRE lo que acaba de construir, el spawn sale a la puerta (#616)", async () => {
-    // El camino del `spawnAt`: el motor afina el `anchor.rect` DURANTE la
+    // El camino del `viaje.sitio`: el motor afina el `anchor.rect` DURANTE la
     // generación (`map_upsert_place.anchor`) y lo pone encima del edificio que
     // está declarando. Es el caso que #465 convierte en rutinario el día que
     // el motor real escriba rects.
@@ -773,13 +773,159 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     assert.match(err?.message ?? "", /No se pudo llegar a La Forja/, "nombra el destino");
     assert.match(err?.message ?? "", /No hay un sitio libre donde aparecer allí/);
     assert.equal(err?.kind, "tile");
-    assert.equal(err?.placeId, "forja", "el throw de spawnAt sale por el fail() del viaje, con su id (#737)");
+    assert.equal(err?.placeId, "forja", "el throw de viaje.sitio sale por el fail() del viaje, con su id (#737)");
     assert.doesNotMatch(
       err?.message ?? "",
       /no pudo construirlo/,
       "y NO lo cuelga del motor, que construyó el tile perfectamente",
     );
     assert.equal(broadcasts.some(readyDeSesion), false, "ningún ready: nada de spawn mudo");
+  });
+
+  // ── #742: el `ready` del viaje lleva su `placeId`, rama a rama ────────────
+  //
+  // Con él core reconoce la LLEGADA del viaje abierto (`esperasQueTermina`) y
+  // un `ready` ajeno —un prefetch, un `request_tile` de un tile que ya
+  // existe— deja de quitarle el «Viajando...». Es el mismo contrato que el
+  // `fail()` de #737, en la otra punta: una rama que difunda el tile del
+  // viaje SIN la marca devuelve el muro a la expiración. Por eso un test por
+  // rama, y no uno por el camino feliz: las cuatro difunden por sitios
+  // distintos (`already`, `exists`, `engine` en `runTileGeneration`; el lugar
+  // realizado en `difundirPlaceRealizado`, con punto y `sin ancla`).
+  describe("el ready de un viaje lleva el placeId del viaje, por cualquier rama (#742)", () => {
+    /** El único `ready` de partida difundido, afirmando que es uno. */
+    function elReady(broadcasts: ServerMessage[]): NarrativeStatusDeSesion {
+      const readys = broadcasts.filter(readyDeSesion);
+      assert.equal(readys.length, 1, `un ready y solo uno: ${JSON.stringify(readys)}`);
+      return readys[0];
+    }
+
+    it("engine: el tile del destino se genera ahora", async () => {
+      const { ctx, broadcasts, narrative } = makeCtx({
+        ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) },
+      });
+      seedTravelWorld(narrative);
+      const { socket } = makeSocket();
+      await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+      await waitFor(() => broadcasts.some(readyDeSesion));
+      const ready = elReady(broadcasts);
+      assert.equal(ready.source, "engine", "la rama que se quería medir");
+      assert.equal(ready.placeId, "forja");
+    });
+
+    it("already: el anchor del lugar cae sobre un tile que ya existía (sin ser suyo)", async () => {
+      const { ctx, broadcasts, narrative, aiCalls } = makeCtx();
+      seedTravelWorld(narrative);
+      narrative.recordSceneLoaded(
+        "tile_1_0",
+        expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", ...tileScene() }),
+        [],
+        { activate: false },
+      );
+      narrative.worldMap.get("forja")!.anchor = { tx: 1, ty: 0 };
+      assert.equal(narrative.worldMap.get("forja")?.realized_scene_id, undefined, "no está realizado: va por runTileGeneration");
+      const { socket } = makeSocket();
+      await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+      await waitFor(() => broadcasts.some(readyDeSesion));
+      const ready = elReady(broadcasts);
+      assert.equal(aiCalls.scene.length, 0, "sin motor: el tile ya estaba");
+      assert.equal(
+        broadcasts.some((m) => m.type === "narrative_status" && m.kind === "tile" && m.phase === "generating"),
+        false,
+        "la rama `already` no anuncia generación",
+      );
+      assert.equal(ready.source, "cache");
+      assert.equal(ready.placeId, "forja");
+    });
+
+    it("exists: el tile aparece mientras se generaba (otro camino lo registró)", async () => {
+      const { ctx, broadcasts, narrative, aiCalls } = makeCtx();
+      seedTravelWorld(narrative);
+      narrative.recordSceneLoaded(
+        "tile_1_0",
+        expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", ...tileScene() }),
+        [],
+        { activate: false },
+      );
+      narrative.worldMap.get("forja")!.anchor = { tx: 1, ty: 0 };
+      // La carrera, sin relojes: el PRIMER `getTile` de (1,0) —el de la rama
+      // `already`— no lo ve, y `generateTileScene` sí (`hasTile`). Es el
+      // orden que produce otro camino registrando el tile entre las dos.
+      const getTile = narrative.getTile.bind(narrative);
+      let primera = true;
+      narrative.getTile = (tx, ty) => {
+        if (tx === 1 && ty === 0 && primera) {
+          primera = false;
+          return undefined;
+        }
+        return getTile(tx, ty);
+      };
+      const { socket } = makeSocket();
+      await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+      await waitFor(() => broadcasts.some(readyDeSesion));
+      const ready = elReady(broadcasts);
+      assert.equal(aiCalls.scene.length, 0, "el motor no llegó a llamarse");
+      assert.ok(
+        broadcasts.some((m) => m.type === "narrative_status" && m.kind === "tile" && m.phase === "generating"),
+        "pasó por el anuncio de generación: es la rama `exists`, no `already`",
+      );
+      assert.equal(ready.source, "cache");
+      assert.equal(ready.placeId, "forja");
+    });
+
+    it("lugar realizado con punto: el ready lleva spawn Y placeId", async () => {
+      const { ctx, broadcasts, narrative } = makeCtx();
+      seedTravelWorld(narrative);
+      narrative.recordSceneLoaded(
+        "tile_1_0",
+        expandScenePrimitives({ tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", place_id: "forja", ...tileScene() }),
+        [],
+        { activate: false },
+      );
+      narrative.worldMap.get("forja")!.anchor = { tx: 1, ty: 0 };
+      const { socket } = makeSocket();
+      await porElBorde({ type: "player_entered_place", placeId: "forja" }, socket, ctx);
+      const ready = elReady(broadcasts);
+      assert.deepEqual(ready.spawn, { x: 64, z: 0 });
+      assert.equal(ready.placeId, "forja");
+    });
+
+    it("lugar realizado SIN ancla: nadie se mueve, y el viaje llega igual — el ready lleva el placeId", async () => {
+      // Sin esto el viaje `sin ancla` no se cerraba nunca: el ledger del
+      // cliente solo se cerraba con `spawn`, y este `ready` no lo trae.
+      const { ctx, broadcasts, narrative } = makeCtx();
+      narrative.startNewSession("plugtest");
+      narrative.worldMap.upsertPlace({ id: "tavern", kind: "site", parent_id: "world", name: "La Posada" });
+      narrative.recordSceneLoaded("scene_tavern", escenaExpandidaDePrueba("scene_tavern", { place_id: "tavern" }));
+      broadcasts.length = 0;
+      const { socket } = makeSocket();
+      await porElBorde({ type: "player_entered_place", placeId: "tavern" }, socket, ctx);
+      const ready = elReady(broadcasts);
+      assert.equal(ready.spawn, undefined, "sin ancla: no se pide spawn");
+      assert.equal(ready.placeId, "tavern");
+    });
+
+    it("un request_tile NO es un viaje: su ready va sin placeId, del disco o del motor", async () => {
+      // El gemelo de todo lo de arriba: un `ready` de frontera o de prefetch
+      // con `placeId` cerraría un viaje que no es suyo en cuanto el id casara.
+      const { ctx, broadcasts, narrative } = makeCtx({
+        ai: { generateScene: async () => ({ ok: true, scene: tileScene() }) },
+      });
+      seedTravelWorld(narrative);
+      const { socket } = makeSocket();
+      // Del disco: el tile activo, re-difundido al momento.
+      await porElBorde({ type: "request_tile", tx: 0, ty: 0, reason: "prefetch" }, socket, ctx);
+      const delDisco = elReady(broadcasts);
+      assert.equal(delDisco.source, "cache");
+      assert.equal(delDisco.placeId, undefined);
+      broadcasts.length = 0;
+      // Del motor: un tile nuevo por la cola.
+      await porElBorde({ type: "request_tile", tx: 0, ty: 1, reason: "prefetch" }, socket, ctx);
+      await waitFor(() => broadcasts.some(readyDeSesion));
+      const delMotor = elReady(broadcasts);
+      assert.equal(delMotor.source, "engine");
+      assert.equal(delMotor.placeId, undefined);
+    });
   });
 });
 
