@@ -36,6 +36,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+import ts from "typescript";
 import { z } from "zod";
 import { SALTOS_DEL_BANCO, fuentesDelBanco } from "./banco-ficheros.js";
 import { relojesDe, type Reloj } from "./relojes-de-pared.js";
@@ -107,6 +108,31 @@ function desajustes(c: ReadonlyMap<string, Reloj[]>, p: Padron): string[] {
 const cuenta = (fuente: string): number => relojesDe(fuente).length;
 const formas = (fuente: string): string[] => relojesDe(fuente).map((r) => r.forma);
 
+const arbol = (fuente: string): ts.SourceFile => ts.createSourceFile("x.mjs", fuente, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const cuentaNodos = (fuente: string, pred: (n: ts.Node) => boolean): number => {
+  let n = 0;
+  const v = (x: ts.Node): void => {
+    if (pred(x)) n++;
+    ts.forEachChild(x, v);
+  };
+  v(arbol(fuente));
+  return n;
+};
+/** Solo para MEDIR el límite (8): llamadas a `setTimeout`/`setInterval` y a `….waitForTimeout`. */
+const temporizadores = (fuente: string): number =>
+  cuentaNodos(fuente, (x) => {
+    if (!ts.isCallExpression(x)) return false;
+    const e = x.expression;
+    if (ts.isIdentifier(e)) return e.text === "setTimeout" || e.text === "setInterval";
+    return ts.isPropertyAccessExpression(e) && ["setTimeout", "setInterval", "waitForTimeout"].includes(e.name.text);
+  });
+/** Solo para MEDIR el límite (9): strings y plantillas cuyo TEXTO lee la pared. */
+const stringsConReloj = (fuente: string): number =>
+  cuentaNodos(
+    fuente,
+    (x) => (ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) || ts.isTemplateHead(x) || ts.isTemplateMiddle(x) || ts.isTemplateTail(x)) && /\b(performance\.now|Date\.now)\s*\(/.test(x.text),
+  );
+
 describe("el reloj de pared tiene padrón (#711): qa/guiones/**", () => {
   it("el árbol tiene sujeto: hay guiones y el detector encuentra relojes", () => {
     // Sin esto, un detector que mirase el directorio equivocado aprobaría la
@@ -126,17 +152,18 @@ describe("el reloj de pared tiene padrón (#711): qa/guiones/**", () => {
     assert.deepEqual(vistos.filter((f, i) => vistos.indexOf(f) !== i), []);
   });
 
-  it("el censo de hoy: 15 relojes en 6 guiones, y ningún callback de rAF con parámetro", () => {
-    // Medido el 2026-09-23 al nacer el padrón. El issue decía 5 guiones (07,
-    // 10, 109, 131, 133): 109 solo lo nombra en un COMENTARIO y cuenta 0, y
-    // 157 y 164 nacieron después. Si esta cifra cambia con el padrón al día,
-    // se actualiza aquí.
+  it("el censo de hoy: 17 relojes en 7 guiones, y ningún callback de rAF con parámetro", () => {
+    // Medido el 2026-09-23 al nacer el padrón (15 en 6). El issue decía 5
+    // guiones (07, 10, 109, 131, 133): 109 solo lo nombra en un COMENTARIO y
+    // cuenta 0, y 157 y 164 nacieron después. El 166 entró el 2026-09-24 con
+    // #714 (rebase de la tanda AO), y el padrón lo cazó el mismo día. Si esta
+    // cifra cambia con el padrón al día, se actualiza aquí.
     const ocupados = [...censo].filter(([, rs]) => rs.length > 0);
     assert.deepEqual(
       ocupados.map(([f]) => f.replace(/^qa\/guiones\/(\d+)-.*$/, "$1")),
-      ["07", "10", "131", "133", "157", "164"],
+      ["07", "10", "131", "133", "157", "164", "166"],
     );
-    assert.equal(ocupados.reduce((a, [, rs]) => a + rs.length, 0), 15);
+    assert.equal(ocupados.reduce((a, [, rs]) => a + rs.length, 0), 17);
     assert.equal([...censo.values()].flat().filter((r) => r.forma === "raf-param").length, 0);
     assert.equal(cuenta(leer("qa/guiones/109-el-tile-que-tarda-y-el-que-falla-lo-dicen.mjs")), 0);
   });
@@ -173,6 +200,18 @@ describe("el negativo del 93: devolver el denominador a la pared es ROJO", () =>
     assert.equal(desajustes(conCenso(roto), padron).length, 1);
   });
 
+  it("el idioma de la casa `const t = await new Promise((r) => requestAnimationFrame(r))` también es rojo (QA de #711, H-1)", () => {
+    // La reescritura del `tick` sin parámetro: el timestamp llega por el
+    // RESOLVER de la promesa, que es parámetro del ejecutor y no del callback.
+    const roto = regresion([
+      ["const tick = () => {", "const tick = async () => {"],
+      ["const reloj = window.__nefan.reloj();", "const t = await new Promise((r) => requestAnimationFrame(r));"],
+      ["out.push([reloj.sim, p.x, p.z]);", "out.push([t / 1000, p.x, p.z]);"],
+    ]);
+    assert.deepEqual(formas(roto), ["raf-param"]);
+    assert.match(desajustes(conCenso(roto), padron).join("\n"), /93-la-velocidad.*1 relojes de pared contra 0 declarados \(\d+:raf-param\)/);
+  });
+
   it("una entrada del padrón que ya no tiene reloj es rojo (cuenta de MENOS)", () => {
     const sin157 = new Map([...censo, ["qa/guiones/157-el-tile-del-falso-llega-en-segundos.mjs", []]]);
     assert.match(desajustes(sin157, padron).join("\n"), /157-.*0 relojes de pared contra 2 declarados/);
@@ -194,6 +233,22 @@ describe("el detector: lo que VE", () => {
     assert.equal(cuenta("function tick(t) { requestAnimationFrame(tick); }\nrequestAnimationFrame(tick);"), 2);
     // Dentro de un `page.evaluate`, como en el 93.
     assert.equal(cuenta("await page.evaluate(() => new Promise((res) => { const tick = (t) => { res(t); }; requestAnimationFrame(tick); }));"), 1);
+  });
+
+  it("el RESOLVER de un `new Promise` cuenta cuando su valor se usa, y no cuando se tira", () => {
+    assert.equal(cuenta("const t = await new Promise((r) => requestAnimationFrame(r));"), 1);
+    assert.equal(cuenta("const t = await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));"), 1);
+    assert.equal(cuenta("new Promise((resolve) => requestAnimationFrame(resolve)).then((t) => t);"), 1);
+    assert.equal(cuenta("function f() { return new Promise((r) => requestAnimationFrame(r)); }"), 1);
+    assert.equal(cuenta("const t = await new Promise(requestAnimationFrame);"), 1);
+    // «Esperar dos fotogramas»: el valor se tira, también a través de `page.evaluate`.
+    assert.equal(cuenta("await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));"), 0);
+    assert.equal(cuenta("await ctx.page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));"), 0);
+    assert.equal(cuenta("await new Promise(requestAnimationFrame);"), 0);
+    // El SEGUNDO parámetro del ejecutor (reject) no es el timestamp, y un parámetro cualquiera sigue sin resolverse.
+    assert.equal(cuenta("const t = await new Promise((ok, ko) => requestAnimationFrame(ko));"), 0);
+    // Resolver con OTRO valor (`r(true)`) no entrega la pared: el callback no tiene parámetro.
+    assert.equal(cuenta("const t = await new Promise((r) => requestAnimationFrame(() => r(true)));"), 0);
   });
 
   it("`window.` / `globalThis.` / `self.` delante de la función", () => {
@@ -238,10 +293,22 @@ describe("LÍMITE MEDIDO: lo que el padrón NO sujeta (cada punto de `_lo_que_es
     return { relojes: fs.reduce((a, b) => a + b, 0), ficheros: fs.length };
   };
 
-  it("(1) qa/lib/** queda fuera: hoy 27 relojes en 6 ficheros, dos de ellos raf-param; y el resto de qa/, 59 en 18", () => {
-    assert.deepEqual(fuera((f) => f.startsWith("qa/lib/")), { relojes: 27, ficheros: 6 });
-    assert.equal(relojesDe(leer("qa/lib/carga.mjs")).filter((r) => r.forma === "raf-param").length, 2);
-    assert.deepEqual(fuera((f) => !f.startsWith("qa/lib/") && !f.startsWith("qa/guiones/")), { relojes: 59, ficheros: 18 });
+  it("(1) qa/lib/** queda fuera: hoy 28 relojes en 6 ficheros; y todo raf-param fuera de guiones vive en lib/", () => {
+    assert.deepEqual(fuera((f) => f.startsWith("qa/lib/")), { relojes: 28, ficheros: 6 });
+    // Lo que vigila la forma del 93 fuera de los guiones: los tres raf-param de
+    // hoy, en la carga sintética (arranca y reprograma su `tic`) y en
+    // `asentarElLayout`, cuya promesa se DEVUELVE (su valor sale de la función).
+    const raf = fuentes
+      .filter((f) => !f.startsWith("qa/guiones/"))
+      .flatMap((f) => relojesDe(leer(f)).filter((r) => r.forma === "raf-param").map((r) => `${f}:${r.linea}`));
+    assert.deepEqual(
+      raf.map((x) => x.replace(/:\d+$/, "")),
+      ["qa/lib/carga.mjs", "qa/lib/carga.mjs", "qa/lib/sesion.mjs"],
+    );
+    // El resto de qa/ (raíz: run.mjs, bajo-carga, baterías) no se cifra exacto
+    // —59 en 18 el 2026-09-24, 57 de ellos `Date.now` de plazo; ver el padrón—:
+    // cada script nuevo lo movería sin decisión que tomar (H-4 de la QA).
+    assert.ok(fuera((f) => !f.startsWith("qa/lib/") && !f.startsWith("qa/guiones/")).relojes > 0);
     // Y por eso la regresión del 93 MUDADA a un helper de qa/lib no la ve nadie:
     assert.ok(!censo.has("qa/lib/carga.mjs"));
   });
@@ -275,6 +342,38 @@ describe("LÍMITE MEDIDO: lo que el padrón NO sujeta (cada punto de `_lo_que_es
     const trocado = `${r.ok ? r.texto : ""}\nrequestAnimationFrame((t) => t);\n`;
     assert.deepEqual(formas(trocado), ["performance.now", "raf-param"]);
     assert.deepEqual(desajustes(new Map([...censo, [f, relojesDe(trocado)]]), padron), []);
+  });
+
+  it("(8) el TEMPORIZADOR como reloj cuenta 0: hoy 3 guiones llaman a uno", () => {
+    // `p0 = pos(); await dormir(2000); v = (pos() - p0) / 2` mide contra la
+    // pared sin leer ningún reloj (QA de #711, H-2).
+    assert.equal(cuenta("const p0 = pos(); await new Promise((r) => setTimeout(r, 2000)); const v = (pos() - p0) / 2;"), 0);
+    assert.equal(cuenta("await page.waitForTimeout(2000); setInterval(() => n++, 16);"), 0);
+    assert.equal(cuenta("let n = 0; const tick = () => { if (++n < 120) requestAnimationFrame(tick); }; requestAnimationFrame(tick);"), 0);
+    const conTemporizador = guiones
+      .filter((f) => temporizadores(leer(f)) > 0)
+      .map((f) => f.replace(/^qa\/guiones\/(\d+)-.*$/, "$1"));
+    assert.deepEqual(conTemporizador, ["10", "19", "90"]);
+  });
+
+  it("(9) otras grafías de la pared cuentan 0, y hoy no tienen ocupante", () => {
+    for (const f of [
+      'await page.evaluate("performance.now()");',
+      "await page.evaluate(`Date.now()`);",
+      'const t = new Function("return Date.now()")();',
+      'globalThis["Date"].now(); window.window.performance.now();',
+      'performance.mark("a"); performance.measure("m", "a"); performance.getEntries();',
+      'process.uptime(); console.time("x"); console.timeEnd("x"); Temporal.Now.instant();',
+      "const o = { tick(t) {} }; requestAnimationFrame(o.tick);",
+      "const tick = (t) => {}; requestAnimationFrame(tick.bind(null)); requestAnimationFrame(c ? tick : tick);",
+      "const [tick] = [(t) => {}]; requestAnimationFrame(tick);",
+    ]) {
+      assert.equal(cuenta(f), 0, f);
+    }
+    // Ocupantes de hoy de la grafía que habría que ver por otra vía: código de
+    // reloj DENTRO de un string (lo que llegaría a `evaluate` como texto).
+    const enString = guiones.filter((f) => stringsConReloj(leer(f)) > 0);
+    assert.deepEqual(enString, []);
   });
 
   it("(7) el barrido salta node_modules/, .tmp/ y capturas/ por nombre", () => {
