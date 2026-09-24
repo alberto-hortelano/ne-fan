@@ -940,6 +940,8 @@ describe("candado · quien abre un directorio del paquete se ve, y lo que no se 
       "los COMUNES ya los nombra (`DIR_PLUGINS_COMUNES` = `data/plugins`, #442), así que un plugin nuevo ahí sí selecciona las baterías que lo cargan; lo que sigue llegando por parámetro es el directorio del JUEGO. COSTE: un plugin nuevo en `data/games/{id}/plugins/` o en las fixtures de `test/fixtures/games/*/plugins/` no selecciona por sí solo a las baterías que cargan plugins de verdad (las de `state-http-*`)",
     "test/scene-fixtures.test.ts":
       "enumera `data/scenes` (que sí resuelve, y por eso TODA fixture de ahí selecciona sus dos baterías) y ADEMÁS un directorio temporal que el propio test fabrica con `mkdtempSync` para los casos de error. COSTE: ninguno sobre datos del repo — bajo un tmp no cuelga nada versionado",
+    "test/session-storage.test.ts":
+      "enumera SOLO directorios temporales que el propio test fabrica con `mkdtemp` (las `.tmp` de la escritura atómica y los ficheros de una sesión). Entra en este alcance con #430, cuando pasa a la batería de `session-storage`. COSTE: ninguno sobre datos del repo — bajo un tmp no cuelga nada versionado",
     "scripts/manifest-kinds-con-productor.ts":
       "enumera el `cacheDir` del asset-store, que está en .gitignore: no hay dato versionado debajo",
   };
