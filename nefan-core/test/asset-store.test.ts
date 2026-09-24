@@ -15,8 +15,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { once } from "node:events";
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 
 import type { AssetByHashResponse, AssetKind } from "../src/contracts/asset-store.js";
@@ -774,37 +775,44 @@ describe("prune LRU con keep-list", () => {
     });
 
     it("world-state caído → la causa dice inalcanzable, y el 503 del prune la lleva", async () => {
-      // Puerto recién liberado: nadie escucha ahí.
-      const muerto = createServer(() => {});
+      // Un world-state que cuelga cada conexión nada más aceptarla y que SIGUE
+      // escuchando hasta el final: mientras tiene el puerto, nadie más puede
+      // cogerlo. Antes se abría un puerto, se SOLTABA y se daba por hecho que
+      // ahí no escuchaba nadie; si el kernel se lo daba a `srv2` (u otra batería
+      // lo cogía), el prune se contestaba a sí mismo con un 404 y el test caía
+      // de vez en cuando en CI (#751, «world-state contestó HTTP 404»).
+      const muerto = createNetServer((socket) => socket.destroy());
       muerto.listen(0, "127.0.0.1");
       await new Promise<void>((r) => muerto.on("listening", () => r()));
       const urlMuerta = `http://127.0.0.1:${(muerto.address() as AddressInfo).port}`;
-      await new Promise<void>((r) => muerto.close(() => r()));
-
-      const r = await fetchKeepList(urlMuerta);
-      assert.ok(!r.ok && r.error.includes("inalcanzable"), JSON.stringify(r));
-
-      // Y de punta a punta: un asset-store apuntando ahí ABORTA el prune con
-      // la causa dentro del 503 — no con un "unavailable" genérico.
       const db2 = new ManifestDb(join(root, "prune503.sqlite3"));
-      const srv2 = createAssetStoreServer({
-        port: 0,
-        db: db2,
-        blobDirs: blobDirs(join(root, "prune503fs")),
-        stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
-        cacheMaxBytes: 1,
-        worldStateUrl: urlMuerta,
-      });
-      await new Promise<void>((r2) => srv2.on("listening", () => r2()));
+      let srv2: Server | undefined;
       try {
+        const r = await fetchKeepList(urlMuerta);
+        assert.ok(!r.ok && r.error.includes("inalcanzable"), JSON.stringify(r));
+
+        // Y de punta a punta: un asset-store apuntando ahí ABORTA el prune con
+        // la causa dentro del 503 — no con un "unavailable" genérico.
+        srv2 = createAssetStoreServer({
+          port: 0,
+          db: db2,
+          blobDirs: blobDirs(join(root, "prune503fs")),
+          stylesDir: fileURLToPath(new URL("../data/styles", import.meta.url)),
+          cacheMaxBytes: 1,
+          worldStateUrl: urlMuerta,
+        });
+        // `once` rechaza con el `error` del listen: si alguien lograra ponerlo
+        // en el puerto del world-state, el test cae con EADDRINUSE en vez de colgarse.
+        await once(srv2, "listening");
         const base2 = `http://127.0.0.1:${(srv2.address() as AddressInfo).port}`;
         const res = await fetch(`${base2}/cache/prune`, { method: "POST" });
         assert.equal(res.status, 503);
         const body = (await res.json()) as { error?: string };
         assert.ok(body.error?.includes("inalcanzable"), body.error);
       } finally {
-        srv2.close();
+        srv2?.close();
         db2.close();
+        await new Promise<void>((r) => muerto.close(() => r()));
       }
     });
 

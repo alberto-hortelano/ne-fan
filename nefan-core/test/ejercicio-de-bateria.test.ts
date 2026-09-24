@@ -8,19 +8,28 @@
  *  El caso que dio origen a todo, con sus números medidos el 2026-09-17:
  *  `resolvePlaceTarget` sale con 0 invocaciones con la batería de `world-map`
  *  —la que lo mutaba— y con 7 con la de `npc-director`. La forma de esas dos
- *  cargas es exactamente la de los dos primeros tests. */
+ *  cargas es exactamente la de los dos primeros tests.
+ *
+ *  La excepción es el ROJO (#751): cómo se nombra una batería que no pasa se
+ *  prueba corriendo dos fixtures DE VERDAD con los `node_args` del plan, porque
+ *  lo que se juzga es el TAP que Node escribe hoy, no uno que yo imagine. */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
+import { leerPlan } from "../scripts/mutation-plan.js";
+
 import {
   baterisAlaVez,
+  correrBateria,
   ejercicioDeFichero,
   ejercicioLegible,
   ejercido,
   esAyudanteDelTranspilador,
   fallosDelModulo,
   fuenteConNombresReservados,
+  informeDeBateriaRota,
   rutaDelScript,
+  testsCaidosDelTap,
   type CoberturaDeFichero,
   type Ejercicio,
 } from "../scripts/ejercicio-de-bateria.js";
@@ -156,5 +165,78 @@ describe("ejercicio de batería · de qué ficheros habla", () => {
     }
     assert.equal(baterisAlaVez(16), 8);
     assert.equal(baterisAlaVez(2), 1);
+  });
+});
+
+describe("ejercicio de batería · un rojo dice qué test cayó (#751)", () => {
+  // Las dos formas que el rojo de antes (`stdout.slice(-2000)`) dejaba sin
+  // nombre, corridas DE VERDAD con los `node_args` del plan: un test que cae
+  // lejos de la cola del TAP, y un `describe` que lanza (Node 26: `not ok` con
+  // `# fail 0`, así que tampoco se puede nombrar desde el resumen). El MISMO
+  // aserto sobre las dos.
+  const casos = [
+    {
+      fixture: "test/fixtures/falla-al-principio.ts",
+      nombre: "una batería con el rojo arriba › el primero cae",
+      error: "el primero cae con este mensaje",
+    },
+    {
+      fixture: "test/fixtures/describe-que-lanza.ts",
+      nombre: "un describe cuyo cuerpo lanza",
+      error: "Expected property name",
+    },
+  ];
+  for (const caso of casos) {
+    it(`nombra el test y su error: ${caso.fixture}`, async () => {
+      const r = await correrBateria("prueba", leerPlan().node_args, [caso.fixture]);
+      assert.equal(r.ok, false, "la fixture tiene que salir roja por el EXIT");
+      if (r.ok) return;
+      assert.ok(r.informe.includes(`✖ ${caso.nombre}\n`), r.informe);
+      assert.ok(r.informe.includes(caso.error), r.informe);
+    });
+  }
+
+  it("la fixture del rojo arriba reproduce #751: su `not ok` NO está en la cola de 2000", async () => {
+    // Sin esto, alguien podría acortar la fixture y el primer caso seguiría
+    // verde sin probar ya lo que tiene que probar.
+    const r = await correrBateria("prueba", leerPlan().node_args, ["test/fixtures/falla-al-principio.ts"]);
+    assert.equal(r.ok, false);
+    if (r.ok) return;
+    assert.ok(r.stdout.includes("not ok 1 - el primero cae"));
+    assert.ok(!r.stdout.slice(-2000).includes("el primero cae"), "la fixture ya no deja el rojo fuera de la cola");
+  });
+
+  it("la suite que solo dice «un hijo cayó» no se repite; el hijo lleva su ruta", () => {
+    const tap = [
+      "TAP version 13",
+      "# Subtest: fuera",
+      "    # Subtest: dentro",
+      "        # Subtest: hoja",
+      "        not ok 1 - hoja # TODO nada",
+      "          ---",
+      "          error: 'boom'",
+      "          ...",
+      "    not ok 1 - dentro",
+      "      ---",
+      "      failureType: 'subtestsFailed'",
+      "      ...",
+      "    # Subtest: hermana",
+      "    ok 2 - hermana",
+      "not ok 1 - fuera",
+      "  ---",
+      "  failureType: 'subtestsFailed'",
+      "  ...",
+      "# fail 0",
+    ].join("\n");
+    assert.deepEqual(testsCaidosDelTap(tap), [{ ruta: ["fuera", "dentro", "hoja"], diagnostico: "error: 'boom'" }]);
+  });
+
+  it("sin ningún `not ok` lo DICE y enseña la cola, en vez de callar", () => {
+    const informe = informeDeBateriaRota("x", "TAP version 13\n# fail 1\n", "");
+    assert.match(informe, /NINGÚN `not ok`/);
+    assert.match(informe, /# fail 1/);
+    assert.match(informe, /stderr vacío/);
+    // Y el stderr, cuando lo hay, viaja: ahí salió la huella de #751.
+    assert.match(informeDeBateriaRota("x", "", "world-state contestó HTTP 404"), /HTTP 404/);
   });
 });
