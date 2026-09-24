@@ -69,7 +69,7 @@ function camposRetirados() {
 async function mapa() {
   const res = await fetch(`${URLS.state_api}/map`);
   const text = await res.text();
-  let body = null;
+  let body;
   try {
     body = text ? JSON.parse(text) : null;
   } catch {

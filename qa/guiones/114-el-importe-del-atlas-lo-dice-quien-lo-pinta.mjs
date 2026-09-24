@@ -180,7 +180,7 @@ export default async function (ctx) {
       await route.fulfill({ response: res, body: texto });
       return;
     }
-    let pedido = {};
+    let pedido;
     try {
       pedido = JSON.parse(route.request().postData() ?? "{}");
     } catch {

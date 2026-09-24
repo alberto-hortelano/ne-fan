@@ -322,7 +322,7 @@ export default async function (ctx) {
   ctx.page.on("request", (r) => {
     peticiones.push(r.url());
     if (r.method() === "POST" && r.url().includes("/generate_surface_atlas")) {
-      let body = null;
+      let body;
       try {
         body = JSON.parse(r.postData() ?? "null");
       } catch {
@@ -395,7 +395,7 @@ export default async function (ctx) {
     const postsAntes = atlasPosts.length;
     const gastoAntes = await gastoDelFake();
     const vacia = async (route) => {
-      let b = null;
+      let b;
       try {
         b = JSON.parse(route.request().postData() ?? "null");
       } catch {

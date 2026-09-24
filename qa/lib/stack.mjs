@@ -41,6 +41,7 @@ function leerSnapshot() {
     throw new Error(
       `no puedo leer ${SNAPSHOT} (${err.message}). Es el snapshot de la fuente ` +
         `única de puertos: regenéralo con \`cd nefan-core && npm run dump-config\`.`,
+      { cause: err },
     );
   }
 }

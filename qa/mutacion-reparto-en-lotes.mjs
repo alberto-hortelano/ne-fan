@@ -609,7 +609,7 @@ const pendientes = [];
  *  lo corre CI: el bucle de `ABIERTOS` solo va en la corrida local completa, y
  *  un ancla que solo se mira cuando alguien paga los 16 minutos se pudre en la
  *  PR que la mueve y se descubre semanas después. */
-let anclasRotas = 0;
+let anclasRotas;
 
 /** Cómo se clasifica un hallazgo, y por qué el guion no puede salir rojo por la
  *  deuda que ya tiene dueño.

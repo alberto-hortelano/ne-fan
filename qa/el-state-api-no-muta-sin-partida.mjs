@@ -160,7 +160,7 @@ async function api(base, method, path, body, { raw = false, headers = {} } = {})
   }
   const res = await fetch(`${base}${path}`, init);
   const text = await res.text();
-  let json = null;
+  let json;
   try {
     json = JSON.parse(text);
   } catch {

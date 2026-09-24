@@ -128,7 +128,7 @@ export default async function (ctx) {
   const plan = { victimas: [], status: 500, pedidosDeSkin: 0, atlas: [] };
 
   await ctx.page.route("**/skin_sprite_sheet", async (route) => {
-    let c = {};
+    let c;
     try {
       c = JSON.parse(route.request().postData() ?? "{}");
     } catch {
@@ -150,7 +150,7 @@ export default async function (ctx) {
   });
 
   await ctx.page.route("**/generate_surface_atlas", async (route) => {
-    let b = null;
+    let b;
     try {
       b = JSON.parse(route.request().postData() ?? "null");
     } catch {

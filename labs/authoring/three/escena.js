@@ -81,7 +81,7 @@ function texTiles(base = "#7a5648") {
     }
   }, { repeat: [2, 2] });
 }
-function texStone(base = "#6f6a62") {
+function texStone() {
   return canvasTex(256, 256, (g, w, h) => {
     g.fillStyle = "#4a463f"; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 90; i++) {
@@ -500,7 +500,7 @@ function house(scene, mats, { x, z, wFront, depth, floors, stone = false, ridgeA
     }
   }
   if (chimney) {
-    const cm = addBox(g, 0.55, 1.5, 0.55, x + depth * 0.2, y0 + hWall + rh - 0.4, z - wFront * 0.25,
+    addBox(g, 0.55, 1.5, 0.55, x + depth * 0.2, y0 + hWall + rh - 0.4, z - wFront * 0.25,
       new THREE.MeshStandardMaterial({ map: mats.stone, color: "#8a857c" }));
     g.userData.chimneyTop = new THREE.Vector3(x + depth * 0.2, y0 + hWall + rh + 1.15, z - wFront * 0.25);
   }
@@ -509,7 +509,7 @@ function house(scene, mats, { x, z, wFront, depth, floors, stone = false, ridgeA
 }
 
 // ---------- barcas ----------
-function boat(scene, mats, { x, z, y = null, rotY = 0, rotZ = 0, color, name = "" }) {
+function boat(scene, mats, { x, z, y = null, rotY = 0, rotZ = 0, color }) {
   const g = new THREE.Group();
   const hullGeo = new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
   const hull = new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({ color, roughness: 0.75 }));

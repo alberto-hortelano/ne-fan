@@ -118,7 +118,7 @@ export default async function (ctx) {
     const server = ws.connectToServer();
     ws.onMessage((m) => server.send(m));
     server.onMessage((m) => {
-      let msg = null;
+      let msg;
       try {
         msg = JSON.parse(String(m));
       } catch {

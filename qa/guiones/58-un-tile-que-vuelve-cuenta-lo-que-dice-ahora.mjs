@@ -176,7 +176,7 @@ export default async function (ctx) {
   await ctx.nefan("setYaw", Math.PI / 2); // mirando al este
 
   await ctx.page.keyboard.down("w");
-  let propuesta = null;
+  let propuesta;
   try {
     propuesta = await ctx.expectEspera(
       "caminar al este PROPONE explorar la zona vecina",

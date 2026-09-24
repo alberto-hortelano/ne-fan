@@ -106,7 +106,7 @@ const mueve = (informe, fichero, de, a, n = 1) => {
 const resultados = [];
 const propiedad = (nombre, hallazgo, fn) => {
   let ok = false;
-  let detalle = "";
+  let detalle;
   try {
     ({ ok, detalle } = fn());
   } catch (err) {

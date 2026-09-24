@@ -74,7 +74,7 @@ export default async function (ctx) {
   const posts = [];
   ctx.page.on("request", (r) => {
     if (r.method() !== "POST" || !r.url().includes("/generate_surface_atlas")) return;
-    let body = null;
+    let body;
     try {
       body = JSON.parse(r.postData() ?? "null");
     } catch {
@@ -119,7 +119,7 @@ export default async function (ctx) {
   /** Solo lo que pide PINTAR cambia de materiales: una restauración pregunta
    *  por lo que hay, y cambiarle la pregunta mediría otra cosa. */
   const materialesPropios = async (route) => {
-    let b = null;
+    let b;
     try {
       b = JSON.parse(route.request().postData() ?? "null");
     } catch {

@@ -164,7 +164,7 @@ async function empujarContra(ctx, centro, sim = 12) {
   await ctx.nefan("setYaw", Math.atan2(centro.x - p0.x, centro.z - p0.z));
   const molde = paradaEnSim({ slot: "__qa91", arranque: 0.15, destino: centro });
   await limpiaLaParada(ctx, molde);
-  let arranco = false;
+  let arranco;
   const parada = await ctx.absorbe(
     `cortafuegos del empujón hacia (${centro.x.toFixed(1)}, ${centro.z.toFixed(1)}): la parada se lee ` +
       `justo después y la AFIRMA el aserto de la caja, que es donde vive la medida`,

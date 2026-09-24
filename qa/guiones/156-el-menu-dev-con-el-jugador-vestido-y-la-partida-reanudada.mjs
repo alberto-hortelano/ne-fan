@@ -218,7 +218,7 @@ export default async function (ctx) {
   // Censo de lo que SALE hacia el motor falso, desde el borde del navegador.
   const red = { atlasPintando: 0, atlasResolveOnly: 0, skinsDelJugador: 0, skins: 0 };
   await ctx.page.route("**/generate_surface_atlas", async (route) => {
-    let cuerpo = {};
+    let cuerpo;
     try {
       cuerpo = JSON.parse(route.request().postData() ?? "{}");
     } catch {
@@ -230,7 +230,7 @@ export default async function (ctx) {
     await route.continue();
   });
   await ctx.page.route("**/skin_sprite_sheet", async (route) => {
-    let cuerpo = {};
+    let cuerpo;
     try {
       cuerpo = JSON.parse(route.request().postData() ?? "{}");
     } catch {

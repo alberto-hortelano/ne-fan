@@ -170,7 +170,7 @@ export default async function (ctx) {
   // Plan de sabotaje MUTABLE: una sola ruta registrada para todo el guion.
   const plan = { victimas: [], servidas: 0, caidas: 0, mascaradas: 0 };
   await ctx.page.route("**/skin_sprite_sheet", async (route) => {
-    let cuerpo = {};
+    let cuerpo;
     try {
       cuerpo = JSON.parse(route.request().postData() ?? "{}");
     } catch {

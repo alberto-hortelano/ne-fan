@@ -117,7 +117,7 @@ export default async function (ctx) {
   const posts = [];
   ctx.page.on("request", (r) => {
     if (r.method() !== "POST" || !r.url().includes("/generate_surface_atlas")) return;
-    let body = null;
+    let body;
     try {
       body = JSON.parse(r.postData() ?? "null");
     } catch {

@@ -387,7 +387,7 @@ const limpia = () => {
   for (const f of escritos) if (existsSync(f)) rmSync(f);
 };
 
-let salida = "";
+let salida;
 try {
   for (const [clave, , , que, cuerpo] of elegidos) {
     const f = join(GUIONES, `${PREFIJO}${clave}.mjs`);

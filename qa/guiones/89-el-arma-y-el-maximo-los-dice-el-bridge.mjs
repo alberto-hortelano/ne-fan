@@ -102,7 +102,7 @@ async function instalarElEspiaDelWire(ctx) {
       });
       sock.addEventListener("message", (ev) => {
         if (!real) return;
-        let msg = null;
+        let msg;
         try {
           msg = JSON.parse(ev.data);
         } catch {

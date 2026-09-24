@@ -153,7 +153,7 @@ export default async function (ctx) {
   ctx.page.on("request", (r) => {
     const ruta = ["/generate_surface_atlas", "/skin_sprite_sheet"].find((x) => r.url().includes(x));
     if (r.method() !== "POST" || !ruta) return;
-    let body = null;
+    let body;
     try {
       body = JSON.parse(r.postData() ?? "null");
     } catch {

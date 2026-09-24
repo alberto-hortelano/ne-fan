@@ -49,9 +49,11 @@ tests y su bench de paridad, y su material generado quedó archivado en
   caché (reports, demos, galerías).
 - **runs/ gitignored** en todos los labs salvo `escenografia/`, que commitea
   sus salidas deliberadamente (son la referencia visual del veredicto).
-- Los `.ts` de los labs (`check-scene.ts`, `dump_stage.ts`,
-  `fixtures/dump_*.ts`) se ejecutan con `npx tsx` desde `nefan-core/` y
-  quedan fuera de tsc/eslint del CI; el Python pasa por `compileall labs` en
-  CI como guard de sintaxis. (Los dumps del compositor SVG — dump_blueprint,
+- Los `.ts` de los labs se ejecutan con `npx tsx` desde `nefan-core/` y los
+  comprueba `npm run typecheck:labs` (#309); los `.js`/`.mjs` pasan por
+  `npm run lint:labs` (`nefan-core/eslint.labs.config.js`, `no-unused-vars`
+  con `^_` exento, #744; lo miden los guiones 186 y 187); el Python, por ruff
+  con `labs/ruff.toml` y `compileall` (`ai_server/lint.sh`, #718). Los tres
+  corren en `npm run verify` y en CI. (Los dumps del compositor SVG — dump_blueprint,
   dump_occluders — murieron con él en agosto de 2026; los artefactos de sus
   runs históricos siguen en disco.)

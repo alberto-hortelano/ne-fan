@@ -1,4 +1,5 @@
-// El lint del banco (`qa/**/*.mjs`), con UNA regla: `no-unused-vars` (#733).
+// El lint del banco (`qa/**/*.mjs`), con TRES reglas: `no-unused-vars` (#733),
+// `no-useless-assignment` y `preserve-caught-error` (#745).
 //
 // Por qué vive aquí y no en `qa/`: bajo `qa/` solo caben las extensiones de
 // `EXTENSIONES_DEL_BANCO` (un `.js` es ejecutable y reabre #686), y la config
@@ -7,12 +8,21 @@
 // el CWD, así que `lint:qa` se lanza desde la raíz del repo:
 //   cd .. && eslint -c nefan-core/eslint.qa.config.js qa
 //
-// Por qué solo esa regla: con `recommended` (+ TS) el banco daba el
-// 2026-09-24 3314 hallazgos, 3254 de ellos `no-undef` — globals del navegador
-// y de Node, porque un guion mezcla Node con cuerpos de `page.evaluate`. Eso
-// es ruido o una lista de globals que nadie mantendría. Lo que se busca aquí
-// es el helper o el import que nadie usa: código muerto, o un aserto que se
-// prometió y no se hace (la familia de #356).
+// Por qué no `recommended`: con él (+ TS) el banco daba el 2026-09-24 3314
+// hallazgos, 3254 de ellos `no-undef` — globals del navegador y de Node,
+// porque un guion mezcla Node con cuerpos de `page.evaluate`. Eso es ruido o
+// una lista de globals que nadie mantendría. Se encienden las reglas una a
+// una, con sus hallazgos clasificados antes:
+//   · `no-unused-vars`: el helper o el import que nadie usa — código muerto,
+//     o un aserto que se prometió y no se hace (la familia de #356);
+//   · `no-useless-assignment`: una escritura que nadie lee antes de que otra
+//     la pise. Va como prevención: el valor inicial que un `try` sobrescribe
+//     antes de leerlo se escribe `let x;`;
+//   · `preserve-caught-error` (con `requireCatchParameter`): un `throw`
+//     dentro de un `catch` sin `{ cause }` pierde la causa del rojo, y un
+//     `catch {}` sin parámetro no tiene causa que pasar, así que también cuenta.
+// `no-irregular-whitespace` NO: su único hallazgo es el U+200B que
+// `qa/dos-corridas.mjs` pone a propósito para que `*/` no cierre un comentario.
 //
 // Los ignores son los MISMOS directorios que salta el barrido del banco
 // (`SALTOS_DEL_BANCO` en `test/banco-ficheros.ts`), y del mismo modo: por
@@ -26,6 +36,8 @@ export default [
     languageOptions: { ecmaVersion: "latest", sourceType: "module" },
     rules: {
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "no-useless-assignment": "error",
+      "preserve-caught-error": ["error", { requireCatchParameter: true }],
     },
   },
 ];
