@@ -138,7 +138,7 @@ describe("bridge player_entered_place + map triggers", () => {
     await porElBorde({ type: "player_entered_place", placeId: "cueva" }, socket, ctx);
 
     assert.deepEqual(
-      narrative.getPluginRecord(migrado.id)?.slice,
+      narrative.pluginDelManifest(migrado.id)?.slice,
       { visitas: 1, ecos: 0 },
       "el evento llegó al sistema vigente por la dirección que dejó la migración",
     );

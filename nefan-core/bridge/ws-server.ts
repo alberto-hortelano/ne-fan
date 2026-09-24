@@ -22,7 +22,8 @@ import { NpcDirector } from "../src/world-map/npc-director.js";
 import { createSimCollisionProvider } from "./sim-collision.js";
 import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
 import { registerRuntimePlugin } from "../src/plugins/register.js";
-import { inspectPlugin, pluginListSummary } from "../src/plugins/views.js";
+import { pluginListSummary } from "../src/plugins/views.js";
+import { inspeccionarPlugin } from "./plugins-activos.js";
 import { CONFIG } from "../src/config.js";
 import { resolveServiceUrl } from "../src/contracts/common.js";
 import { createStateHttpServer } from "./state-http-server.js";
@@ -300,20 +301,9 @@ createStateHttpServer({
     },
     list: () =>
       [...ctx.activePlugins.entries()].map(([id, m]) =>
-        pluginListSummary(id, m, narrative.getPluginRecord(id)?.origin.author),
+        pluginListSummary(id, m, narrative.pluginDelManifest(id)?.origin.author),
       ),
-    inspect: (id, view) =>
-      inspectPlugin(
-        {
-          plugins: narrative.plugins,
-          world: narrative.world,
-          player: narrative.player,
-          entities: narrative.entities,
-        },
-        ctx.activePlugins,
-        id,
-        view,
-      ),
+    inspect: (id, view) => inspeccionarPlugin(ctx, id, view),
   },
 });
 

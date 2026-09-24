@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { routeMessage } from "../bridge/router.js";
+import { inspeccionarPlugin } from "../bridge/plugins-activos.js";
 import { intakeClientMessage } from "../bridge/message-intake.js";
 import { combatRegistry } from "../src/combat/registry.js";
 import { createCombatant } from "../src/combat/combatant.js";
@@ -950,6 +951,73 @@ describe("bridge ciclo de sesión", () => {
     assert.equal(narrative.enDisco, false);
   });
 
+  /** QA de la tanda BG, hallazgo 1 (#368): borrar la partida activa es la
+   *  TERCERA forma de quedarse sin partida —la única con botón en el título—
+   *  y la misma regla vale: sin partida no hay sistemas. Ni el registry del
+   *  bridge (`plugin_list`) ni los records (`plugin_inspect`). */
+  it("borrar la partida ACTIVA se lleva sus plugins: registry y records", async () => {
+    const { ctx, narrative } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    const ids = narrative.plugins.map((p) => p.id);
+    assert.equal(ids.length, 3, "premisa: la partida tiene sus tres sistemas");
+
+    await porElBorde({ type: "delete_session", requestId: "r2", sessionId }, socket, ctx);
+    assert.equal(narrative.session_id, "", "premisa: la partida borrada era la activa");
+    assert.deepEqual([...ctx.activePlugins.keys()], [], "plugin_list: ningún sistema de un save borrado");
+    assert.deepEqual(narrative.plugins, [], "y ningún record");
+    for (const id of ids) {
+      assert.throws(() => inspeccionarPlugin(ctx, id), /plugin desconocido/);
+    }
+  });
+
+  /** La misma guarda que el takeover de la efímera: borrar OTRO save no es
+   *  quedarse sin partida, y la viva conserva sus sistemas. */
+  it("borrar un save que NO es el activo no le toca los plugins a la partida viva", async () => {
+    const { ctx, narrative } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const vieja = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, vieja);
+    await porElBorde({ type: "start_session", requestId: "r2", gameId: "plugtest" }, socket, ctx);
+    const viva = narrative.session_id;
+    assert.notEqual(viva, vieja);
+
+    await porElBorde({ type: "delete_session", requestId: "r3", sessionId: vieja }, socket, ctx);
+    const frame = sent.find((m) => m.type === "session_deleted") as Extract<ServerMessage, { type: "session_deleted" }>;
+    assert.equal(frame.outcome, "deleted", "premisa: el save viejo se borró de verdad");
+    assert.equal(narrative.session_id, viva);
+    assert.equal(ctx.activePlugins.size, 3);
+    assert.equal(narrative.plugins.length, 3);
+  });
+
+  /** QA de la tanda BG, hallazgo 2: con una fixture delante el registry está
+   *  vacío a propósito, y `plugin_inspect` de un sistema de la partida decía
+   *  «no tiene manifest disponible», que se lee como un save corrupto. Tiene
+   *  que decir lo que pasa: el mundo es una escena de prueba. */
+  it("durante una fixture, plugin_inspect de un sistema de la partida dice que el mundo es una escena de prueba", async () => {
+    const { ctx, narrative } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    const id = narrative.plugins[0].id;
+    assert.ok(inspeccionarPlugin(ctx, id), "premisa: en partida se inspecciona");
+
+    await porElBorde({ type: "load_room", roomId: "robledo_tile", enemies: [] }, socket, ctx);
+    assert.throws(
+      () => inspeccionarPlugin(ctx, id),
+      (err: Error) =>
+        /escena de prueba/.test(err.message) &&
+        /resume_session/.test(err.message) &&
+        !/no tiene manifest/.test(err.message),
+    );
+    // Un id que no es de nadie sigue siendo «desconocido», fixture o no.
+    assert.throws(() => inspeccionarPlugin(ctx, "no-es-de-nadie"), /plugin desconocido/);
+  });
+
   it("un borrado que FALLA de verdad llega con outcome failed y su motivo", async () => {
     // EACCES/EBUSY: `SessionStorage.delete` lanza y el frame tiene que llevar
     // la causa hasta el jugador. `failed` sin `error` no compila.
@@ -1368,6 +1436,28 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
 
   /** Y una pestaña AJENA no le quita el mundo a quien está jugando: antes le
    *  congelaba el jugador (su `input` dejaba de mover nada). */
+  /** #368 (F9): una escena de prueba no es la partida de nadie, tampoco para
+   *  los sistemas del juego — igual que el save deja de escuchar al sim. Lo
+   *  que se pierde no se pierde: volver a la partida es un resume, y el resume
+   *  re-ata los plugins desde el save. */
+  it("load_room con partida viva deja la fixture sin plugins, y el resume se los devuelve a la partida", async () => {
+    const { ctx } = makeCtx();
+    const { socket, sent } = makeSocket();
+    await porElBorde({ type: "start_session", requestId: "r1", gameId: "plugtest" }, socket, ctx);
+    const sessionId = (sent[0] as SessionStartedMessage).sessionId!;
+    await entrarEnLaPartida(ctx, socket, sessionId);
+    assert.equal(ctx.activePlugins.size, 3, "premisa: la partida tiene sus tres sistemas");
+
+    await porElBorde({ type: "load_room", roomId: "robledo_tile", enemies: [] }, socket, ctx);
+    assert.equal(ctx.world.kind, "fixture", "premisa: la fixture tomó el mundo");
+    assert.deepEqual([...ctx.activePlugins.keys()], [], "la fixture no ve los sistemas de la partida");
+
+    const { socket: s2, sent: sent2 } = makeSocket();
+    await porElBorde({ type: "resume_session", requestId: "r2", sessionId }, s2, ctx);
+    assert.equal((sent2[0] as SessionStartedMessage).ok, true);
+    assert.equal(ctx.activePlugins.size, 3, "reanudar devuelve los sistemas de la partida");
+  });
+
   it("un load_room ajeno no le roba el mundo a la partida viva", async () => {
     const { ctx, sim } = makeCtx();
     const { socket, sent } = makeSocket();
@@ -1378,6 +1468,9 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     await porElBorde({ type: "load_room", roomId: "robledo_tile", enemies: [] }, ajeno, ctx);
     assert.equal(sentAjeno.length, 0, "al socket ajeno no se le contesta nada");
 
+    // Tampoco le quita sus sistemas (#368): la purga de plugins cuelga de
+    // que la fixture TOME el mundo, no de que alguien lo pida.
+    assert.equal(ctx.activePlugins.size, 3, "la partida viva conserva sus plugins");
     // El jugador de verdad sigue conduciendo.
     await porElBorde(
       {

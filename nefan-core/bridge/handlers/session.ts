@@ -37,6 +37,7 @@ import { loadGamePluginManifests, pluginsHermanosDe } from "../../src/plugins/lo
 import {
   activarPluginsDeSesionNueva,
   atarPluginsDeResume,
+  sinPartidaNoHayPlugins,
   vaciarPluginsActivos,
 } from "../plugins-activos.js";
 import {
@@ -757,6 +758,9 @@ export async function handleDeleteSession(
   // para quien acaba de pulsar Borrar. Un EACCES/EBUSY LANZA desde aquí y lo
   // convierte el router en `outcome:"failed"` CON su motivo.
   const outcome = await ctx.narrative.deleteSession(msg.sessionId);
+  // Borrar la partida ACTIVA es quedarse sin partida, y sin partida no hay
+  // sistemas (#368). Borrar otro save no toca nada: la guarda es el estado.
+  sinPartidaNoHayPlugins(ctx);
   ctx.send(ws, { type: "session_deleted", requestId: msg.requestId, outcome });
 }
 

@@ -12,15 +12,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { routeMessage } from "../bridge/router.js";
-import type { NarrativeAiClient } from "../bridge/context.js";
+import { runPluginTick, type NarrativeAiClient } from "../bridge/context.js";
 import type { SceneGenOutcome } from "../bridge/scene-gen-queue.js";
 import { worldSnapshotPath, type WorldSnapshot } from "../src/games/world-snapshot.js";
 import type { LlmContext } from "../src/narrative/types.js";
+import { loadGamePluginManifests, pluginsHermanosDe } from "../src/plugins/loader.js";
+import { inspectPlugin } from "../src/plugins/views.js";
+import { activarPluginsDeSesionNueva } from "../bridge/plugins-activos.js";
 import type {
   GameGeneratedMessage,
   NarrativeStatusMessage,
 } from "../src/protocol/messages.js";
-import { FIXTURE_GAMES, makeCtx, makeSocket, waitFor } from "./helpers.js";
+import { FIXTURE_GAMES, makeCtx, makeSocket, porElBorde, waitFor } from "./helpers.js";
 
 const GAME = "plugtest";
 
@@ -43,11 +46,15 @@ function tileScene(withPlayer: boolean): Record<string, unknown> {
 
 /** Fake del motor: bootstrap siembra el world map (equivale a las map tools),
  *  generate_tile responde tiles válidos, realize_place una escena simple. */
-function motorFake(bundle: ReturnType<typeof makeCtx>, opts: { failTile?: [number, number] } = {}) {
+function motorFake(
+  bundle: ReturnType<typeof makeCtx>,
+  opts: { failTile?: [number, number]; alGenerar?: () => void } = {},
+) {
   const aiClient: NarrativeAiClient = {
     ...bundle.ctx.aiClient,
     async generateScene(llmCtx: LlmContext) {
       bundle.aiCalls.scene.push(llmCtx);
+      opts.alGenerar?.();
       if (llmCtx.bootstrap_world_map) {
         const wm = bundle.ctx.narrative.worldMap;
         const root = wm.serialize().root_id;
@@ -324,5 +331,119 @@ describe("generate_game abandonado", () => {
       1000,
     ).catch(() => assert.fail("la pre-generación abandonada no avisó: la tarjeta gira para siempre"));
     soltar();
+  });
+});
+
+/** #368 (F9): la pre-generación abre una sesión efímera CON los plugins del
+ *  juego —el motor genera con el contexto que verá en partida— y al cerrarla
+ *  soltaba la identidad pero no los plugins. El bridge se quedaba sin partida y
+ *  con los sistemas de otra en `ctx.activePlugins`, y la fixture que se
+ *  cargara después los heredaba: el dispatcher les entregaba sus eventos y
+ *  `GET /plugins` los listaba. */
+describe("la pre-generación no deja plugins colgando (#368)", () => {
+  it("una fixture cargada tras la pre-generación no ve los plugins del juego", async () => {
+    const gamesDir = tmpGamesDir();
+    try {
+      const bundle = makeCtx({ gamesDir, persistWorldSnapshots: true });
+      let activosEnLaEfimera = 0;
+      motorFake(bundle, {
+        alGenerar: () => {
+          if (bundle.aiCalls.scene.length === 1) activosEnLaEfimera = bundle.ctx.activePlugins.size;
+        },
+      });
+      const { final } = await runGenerate(bundle);
+      assert.equal(final.phase, "ready", final.message);
+      assert.equal(bundle.narrative.session_id, "", "la efímera se descartó: no hay partida");
+      assert.equal(activosEnLaEfimera, 3, "premisa: los plugins del juego llegaron a activarse");
+
+      const { socket } = makeSocket();
+      await porElBorde({ type: "load_room", roomId: "robledo_tile", enemies: [] }, socket, bundle.ctx);
+      assert.equal(bundle.ctx.world.kind, "fixture", "premisa: la fixture tomó el mundo");
+
+      assert.deepEqual([...bundle.ctx.activePlugins.keys()], [], "la fixture no hereda ningún sistema");
+      // Y lo que eso significa en el turno: un evento que el contador del
+      // juego pre-generado consumiría no le llega a nadie ni resucita nada.
+      const efectos = runPluginTick(bundle.ctx, "evt_fixture", [{ type: "counter_inc", payload: {} }]);
+      assert.deepEqual(efectos, []);
+      assert.deepEqual(bundle.narrative.plugins, [], "ningún record de la efímera en el estado");
+    } finally {
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  it("al cerrarse la sesión efímera el bridge vuelve a no tener plugins, como no tiene partida", async () => {
+    const gamesDir = tmpGamesDir();
+    try {
+      const bundle = makeCtx({ gamesDir, persistWorldSnapshots: true });
+      motorFake(bundle);
+      const { final } = await runGenerate(bundle);
+      assert.equal(final.phase, "ready", final.message);
+      assert.equal(bundle.ctx.activePlugins.size, 0);
+    } finally {
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  /** La efímera se descarta ENTERA: no solo el registry del bridge, también
+   *  los records que dejó en `narrative.plugins`. `inspectPlugin` (la tool
+   *  `plugin_inspect` del motor) lee esos records y no pide sesión, así que
+   *  sin la purga seguía encontrando el sistema de una partida que no existe. */
+  it("tras la efímera, inspectPlugin no ve sus plugins", async () => {
+    const gamesDir = tmpGamesDir();
+    try {
+      const bundle = makeCtx({ gamesDir, persistWorldSnapshots: true });
+      let idsDeLaEfimera: string[] = [];
+      motorFake(bundle, {
+        alGenerar: () => {
+          if (bundle.aiCalls.scene.length === 1) idsDeLaEfimera = bundle.narrative.plugins.map((p) => p.id);
+        },
+      });
+      const { final } = await runGenerate(bundle);
+      assert.equal(final.phase, "ready", final.message);
+      assert.equal(idsDeLaEfimera.length, 3, "premisa: la efímera activó los tres plugins del juego");
+
+      assert.deepEqual(bundle.narrative.plugins, [], "los records de la efímera se fueron con ella");
+      const fuentes = {
+        plugins: bundle.narrative.plugins,
+        world: bundle.narrative.world,
+        player: bundle.narrative.player,
+        entities: bundle.narrative.entities,
+      };
+      for (const id of idsDeLaEfimera) {
+        assert.throws(
+          () => inspectPlugin(fuentes, bundle.ctx.activePlugins, id),
+          /plugin desconocido/,
+          `plugin_inspect(${id.slice(0, 12)}…) no encuentra un sistema de la efímera`,
+        );
+      }
+    } finally {
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
+  });
+
+  it("si un takeover sustituyó la sesión, el cierre de la efímera NO le quita los plugins a la nueva", async () => {
+    const gamesDir = tmpGamesDir();
+    try {
+      const bundle = makeCtx({ gamesDir, persistWorldSnapshots: true });
+      // Otra partida entra mientras el motor contesta el bootstrap y activa SUS
+      // plugins como lo haría start_session: registry del bridge y records del
+      // estado son los vigentes cuando la efímera se cierra.
+      motorFake(bundle, {
+        alGenerar: () => {
+          if (bundle.aiCalls.scene.length !== 1) return;
+          bundle.narrative.startNewSession(GAME);
+          activarPluginsDeSesionNueva(
+            bundle.ctx,
+            loadGamePluginManifests(gamesDir, GAME, pluginsHermanosDe(gamesDir)),
+          );
+        },
+      });
+      await runGenerate(bundle);
+      assert.notEqual(bundle.narrative.session_id, "", "premisa: la sesión vigente es la del takeover");
+      assert.equal(bundle.ctx.activePlugins.size, 3, "el registry de la partida nueva sigue activo");
+      assert.equal(bundle.narrative.plugins.length, 3, "y sus records siguen en el estado");
+    } finally {
+      rmSync(gamesDir, { recursive: true, force: true });
+    }
   });
 });

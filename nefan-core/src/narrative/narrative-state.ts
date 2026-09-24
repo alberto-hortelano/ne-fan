@@ -438,7 +438,9 @@ export class NarrativeState {
    *  soltar la IDENTIDAD, que es lo que leen `handleLoadRoom` (¿hay partida?),
    *  el 409 del State API y las rutas de documento. Lanza sobre una partida
    *  que sí existe: esa se borra con `deleteSession`, y confundirlas dejaría
-   *  al bridge apuntando a la nada con el save vivo. */
+   *  al bridge apuntando a la nada con el save vivo.
+   *  Suelta la sesión por `soltarLaSesion`, la misma salida que el borrado de
+   *  la partida activa. */
   descartarProvisional(): void {
     if (this.existencia === "en_disco") {
       throw new Error(
@@ -446,8 +448,20 @@ export class NarrativeState {
           `— se borra con deleteSession, no se descarta`,
       );
     }
+    this.soltarLaSesion();
+  }
+
+  /** La ÚNICA salida a «sin partida» del estado: la usan el descarte de la
+   *  efímera y el borrado de la partida activa. Con la identidad se van los
+   *  records de sus PLUGINS (#368): sin partida no hay sistemas, y
+   *  `plugin_inspect` —que lee `plugins` sin pedir sesión— seguía encontrando
+   *  los de una partida descartada o borrada. La otra mitad, el registry del
+   *  bridge, la purga `sinPartidaNoHayPlugins` (bridge/plugins-activos.ts)
+   *  leyendo este mismo `session_id` vacío. */
+  private soltarLaSesion(): void {
     this.session_id = "";
     this.existencia = "sin_sesion";
+    this.plugins = [];
   }
 
   /** Programa un evento narrativo pendiente (consequence schedule_event).
@@ -744,10 +758,7 @@ export class NarrativeState {
    *  EACCES/EBUSY. */
   async deleteSession(sessionId: string): Promise<"deleted" | "not_found"> {
     const resultado = await this.storage.delete(sessionId);
-    if (resultado === "deleted" && sessionId === this.session_id) {
-      this.session_id = "";
-      this.existencia = "sin_sesion";
-    }
+    if (resultado === "deleted" && sessionId === this.session_id) this.soltarLaSesion();
     return resultado;
   }
 
@@ -916,23 +927,31 @@ export class NarrativeState {
 
   // ── Plugins (next.md §7) ──
 
-  getPluginRecord(id: string): PluginRecord | undefined {
+  /** El record cuyo manifest VIGENTE tiene exactamente este id — la
+   *  identidad del MANIFEST (el id es su hash). NO sigue migraciones: un id
+   *  que el sistema tuvo antes de subir de versión devuelve `undefined`. Para
+   *  «¿qué sistema fue este id?» está `pluginDelSistema`.
+   *
+   *  Los dos nombres dicen la pregunta que contestan (#368): antes eran dos
+   *  casi homónimos con la semántica opuesta, y elegir mal era un bug
+   *  silencioso. */
+  pluginDelManifest(id: string): PluginRecord | undefined {
     return this.plugins.find((p) => p.id === id);
   }
 
-  /** Como `getPluginRecord`, pero siguiendo la dirección que dejó una
-   *  migración: un id que fue de este sistema resuelve al record de ahora
-   *  (`PluginRecord.superseded_ids`).
+  /** El record del SISTEMA que tiene o tuvo este id: como `pluginDelManifest`,
+   *  pero siguiendo la dirección que dejó una migración (un id que fue de
+   *  este sistema resuelve al record de ahora, `PluginRecord.superseded_ids`).
    *
    *  Es DELIBERADO que sea otra función y no una caída dentro de
-   *  `getPluginRecord`: quien pregunta «¿existe este manifest exacto?»
+   *  `pluginDelManifest`: quien pregunta «¿existe este manifest exacto?»
    *  —`registerRuntimePlugin` para decidir si un registro es un no-op— tiene
    *  que seguir viendo que NO, o volver a mandar el manifest v1 después de
    *  migrar pasaría por idempotente en vez de por la degradación que es.
    *  Aquí se resuelve la IDENTIDAD DEL SISTEMA; allí, la del manifest. */
-  resolvePluginRecord(id: string): PluginRecord | undefined {
+  pluginDelSistema(id: string): PluginRecord | undefined {
     return (
-      this.getPluginRecord(id) ?? this.plugins.find((p) => p.superseded_ids?.includes(id))
+      this.pluginDelManifest(id) ?? this.plugins.find((p) => p.superseded_ids?.includes(id))
     );
   }
 
@@ -945,7 +964,7 @@ export class NarrativeState {
    *  records del mismo sistema, el viejo huérfano. Un plugin que evoluciona
    *  pasa por `migratePluginRecord`, no por aquí. */
   addPlugin(record: PluginRecord): void {
-    if (this.getPluginRecord(record.id)) {
+    if (this.pluginDelManifest(record.id)) {
       throw new Error(`NarrativeState.addPlugin: id duplicado ${record.id}`);
     }
     assertManifestMatchesId("addPlugin", record.id, record.manifest);
@@ -983,11 +1002,11 @@ export class NarrativeState {
       origin: PluginOrigin;
     },
   ): void {
-    const record = this.getPluginRecord(oldId);
+    const record = this.pluginDelManifest(oldId);
     if (!record) {
       throw new Error(`NarrativeState.migratePluginRecord: plugin desconocido ${oldId}`);
     }
-    if (next.id !== oldId && this.getPluginRecord(next.id)) {
+    if (next.id !== oldId && this.pluginDelManifest(next.id)) {
       throw new Error(`NarrativeState.migratePluginRecord: id destino duplicado ${next.id}`);
     }
     assertManifestMatchesId("migratePluginRecord", next.id, next.manifest);
@@ -1006,7 +1025,7 @@ export class NarrativeState {
 
   /** Sustituye el slice de un plugin tras un tick del dispatcher (F4). */
   setPluginSlice(id: string, slice: unknown): void {
-    const record = this.getPluginRecord(id);
+    const record = this.pluginDelManifest(id);
     if (!record) {
       throw new Error(`NarrativeState.setPluginSlice: plugin desconocido ${id}`);
     }

@@ -549,7 +549,7 @@ export function runPluginTick(
       kind: "plugin",
       // Al jugador, la frase; el volcado del error ya está en el log de arriba.
       message: result.error
-        ? describePluginTickError(result.error, (id) => ctx.narrative.resolvePluginRecord(id)?.name)
+        ? describePluginTickError(result.error, (id) => ctx.narrative.pluginDelSistema(id)?.name)
         : "Un sistema del juego no pudo completar el turno.",
     });
     return [];

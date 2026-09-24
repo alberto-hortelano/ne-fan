@@ -220,7 +220,7 @@ export interface PluginRecord {
    *  fuera del save y por tanto imposible de reescribir— los que el motor
    *  narrativo recuerde de un `plugin_list` de hace diez turnos. En vez de
    *  perseguir cada copia, el record guarda su propia dirección anterior y
-   *  `resolvePluginRecord` la reenvía. */
+   *  `pluginDelSistema` la reenvía. */
   superseded_ids?: string[];
 }
 

@@ -554,6 +554,14 @@ describe("NarrativeState: la partida existe cuando el jugador entra", () => {
     assert.deepEqual(await storage.list(), []);
   });
 
+  it("…y con ella se van los records de sus plugins (#368)", () => {
+    const { narrative: s } = makeNarrativeState();
+    s.startNewSession("g");
+    s.plugins.push({ id: "p1", name: "efimero", version: 1, slice: {}, origin: { author: "developer" }, activated_at: "t" } as never);
+    s.descartarProvisional();
+    assert.deepEqual(s.plugins, []);
+  });
+
   it("…y NO se puede descartar una partida que sí existe (esa se borra)", async () => {
     const { narrative: s, storage } = makeNarrativeState();
     const id = s.startNewSession("g");

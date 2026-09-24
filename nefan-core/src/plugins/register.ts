@@ -92,7 +92,7 @@ export function registerRuntimePlugin(
 
   // Mismo hash = mismo manifest: ya se validó y activó en su momento, así que
   // no se re-ejecutan projections (borrarían el slice vivo) ni fixtures.
-  const sameId = state.getPluginRecord(id);
+  const sameId = state.pluginDelManifest(id);
   if (sameId) {
     // El registry en memoria puede haberse quedado corto (un shipped se
     // rebindea del FS); asegurarlo aquí hace el no-op realmente idempotente.

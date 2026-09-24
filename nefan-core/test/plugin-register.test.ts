@@ -33,7 +33,7 @@ describe("registerRuntimePlugin", () => {
     assert.match(result.id, /^[0-9a-f]{64}$/);
     assert.equal(result.action, "created");
     assert.equal(result.fixturesPassed, 2);
-    const record = state.getPluginRecord(result.id);
+    const record = state.pluginDelManifest(result.id);
     assert.equal(record?.name, "test_counter");
     assert.deepEqual(record?.slice, { count: 0 });
     assert.equal(record?.manifest?.id, result.id, "el manifest va embebido y normalizado");
@@ -49,7 +49,7 @@ describe("registerRuntimePlugin", () => {
       inventory: { iron_sword: 2 },
     });
     const result = registerRuntimePlugin(state, active, COMMERCE_MANIFEST);
-    const slice = state.getPluginRecord(result.id)?.slice as {
+    const slice = state.pluginDelManifest(result.id)?.slice as {
       markets: Record<string, { name: string }>;
     };
     assert.deepEqual(Object.keys(slice.markets), ["blacksmith_01"]);
@@ -130,6 +130,6 @@ describe("registerRuntimePlugin", () => {
       { pluginId: id, type: "counter_inc", payload: {} },
     ]);
     assert.equal(tick2.ok, true);
-    assert.deepEqual(s2.getPluginRecord(id)?.slice, { count: 2 });
+    assert.deepEqual(s2.pluginDelManifest(id)?.slice, { count: 2 });
   });
 });

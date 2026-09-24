@@ -29,7 +29,11 @@ import {
   type StyleManifest,
 } from "../src/games/loader.js";
 import { loadGamePluginManifests, pluginsHermanosDe } from "../src/plugins/loader.js";
-import { activarPluginsDeSesionNueva, vaciarPluginsActivos } from "./plugins-activos.js";
+import {
+  activarPluginsDeSesionNueva,
+  sinPartidaNoHayPlugins,
+  vaciarPluginsActivos,
+} from "./plugins-activos.js";
 import type { BridgeContext } from "./context.js";
 
 /** Lo que el cuerpo del trabajo necesita saber del juego que se le abrió, ya
@@ -49,7 +53,9 @@ export interface MundoEfimero {
  *  antes de tocar nada (no hay sesión que soltar todavía).
  *
  *  Los plugins se activan como en un `start_session` real: el motor genera con
- *  el mismo contexto que verá en partida, y sus slices mueren con el save. */
+ *  el mismo contexto que verá en partida, y sus slices mueren con el save. Se
+ *  vacían al ENTRAR (no heredar los de la partida anterior) y al SALIR (no
+ *  dejárselos a lo que venga después, #368). */
 export async function conSesionEfimeraDeJuego<T>(
   ctx: BridgeContext,
   gameId: string,
@@ -78,7 +84,11 @@ export async function conSesionEfimeraDeJuego<T>(
     return await cuerpo({ sessionId, meta, style, worldDocHash });
   } finally {
     // Un takeover ya sustituyó la sesión y entonces la de aquí no es la
-    // vigente: se descarta solo si sigue siéndolo.
+    // vigente: se descarta solo si sigue siéndolo. Con ella se van SUS
+    // plugins (#368) —sin partida no hay sistemas, y la fixture que se cargue
+    // después no debe verlos—; tras un takeover hay sesión vigente y
+    // `sinPartidaNoHayPlugins` no toca los de la partida nueva.
     if (ctx.narrative.session_id === sessionId) ctx.narrative.descartarProvisional();
+    sinPartidaNoHayPlugins(ctx);
   }
 }
