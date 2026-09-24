@@ -8,6 +8,9 @@
     "build": "vite build",
     "lint": "eslint .",
     "test": "node --import tsx --test test/*.test.ts",
+    "precoverage": "mkdir -p coverage",
+    "coverage": "node --enable-source-maps --import tsx --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info test/*.test.ts",
+    "crap": "tsx ../nefan-core/scripts/crap-score.ts --cliente",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "format": "prettier --write src"
   },

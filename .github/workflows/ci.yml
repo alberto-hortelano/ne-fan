@@ -142,7 +142,13 @@ jobs:
       # así que un `process.env` colado en `src/` le pasaría—, y el de arriba no
       # ve `test/` en absoluto.
       - run: npm run typecheck:tests
-      - run: npm test
+      # El banco corre UNA vez, ya con cobertura (#664): `coverage` es el mismo
+      # `node --import tsx --test` de `npm test` más el reporter lcov, y el CRAP
+      # del cliente se calcula con las funciones de `nefan-core/scripts/crap-score.ts`
+      # (por eso hace falta el `npm ci` del core de arriba) contra
+      # `nefan-core/data/contract/client-crap.json`. Coste marginal medido: ~1 s.
+      - run: npm run coverage
+      - run: npm run crap -- --check
       - run: npm run build
 
   ai-server:

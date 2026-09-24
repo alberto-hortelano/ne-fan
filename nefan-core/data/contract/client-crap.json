@@ -1,0 +1,242 @@
+{
+  "$comment": "EL CRAP DEL CLIENTE (#664), con cola aparte de la del core por decisión del usuario (2026-09-24). Lo lee `nefan-core/scripts/crap-score.ts --cliente` (el `npm run crap` de nefan-html, que corre con `--check` en el job `nefan-html` de CI) y el bloque «Cliente» de `npm run deuda`. LA MEDIDA ES LA DEL CORE, NO UNA COPIA: `lineasDeCodigo`, `cuentaLineas` y `functionsOf` son las mismas funciones, así que el denominador es el de #525 (solo líneas que emiten código). LO QUE CAMBIA ES EL UNIVERSO: se mide EL ÁRBOL ENTERO de `nefan-html/src`, y todo `.ts` que ningún test carga entra con sus líneas de código a 0 hits. Motivo, medido: el 2026-09-24 sobre 7f5d5b4b los tests del cliente cargan 21 de 81 ficheros; los otros 60 son 7338 de 9533 líneas de código (77 %). Medir solo lo cargado NO es monótono —un test nuevo que solo IMPORTA un fichero invisible mete sus funciones sin cubrir y puede poner el gate rojo por añadir un test— y con el árbol entero sí lo es: cargar o cubrir solo sube los hits de una línea. Lo que el lcov del cliente trae de `../nefan-core/…` (14 ficheros: el banco los importa por ruta relativa) se DESCARTA: el core ya se mide con su propio banco. EL GATE ES POR FUNCIÓN: cada (fichero, función) en CRAP ≤ `tope`, o ≤ su cifra en `congeladas` si ya lo superaba. La clave de una anónima es `padre>(anónima)@forma[#n]`: `padre` es la función con nombre más cercana que la contiene (`<módulo>` si no hay), `forma` es la llamada de la que es argumento (`window.addEventListener(\"keyup\")`) o el tipo del nodo que la contiene, y `#n` numera, por orden de aparición, a las hermanas de la misma forma bajo el mismo padre. Hace falta TODO eso: con solo el padre, las 24 anónimas de nivel de módulo de `main.ts` eran UNA clave congelada en 1122 y un listener nuevo de complejidad 28 (CRAP 812) entraba en verde (QA de la tanda BF, H1). Medido hoy: 299 anónimas en el cliente, 0 claves compartidas, 28 llevan `#n` y ninguna de ellas está congelada. POR QUÉ 73: es el tope del core, la misma vara; una función nueva sin test con complejidad 9 ya lo pasa (9² + 9 = 90), y la de 8 cabe (72). LA FOTO: las 45 claves que el 2026-09-24 pasaban de 73 (eran 44 con la clave vieja: la anónima de `onNarrativeEvent` en `main.ts`, CRAP 342, se escondía tras la de 1122), generadas con `npm run crap -- --foto` en nefan-html (la función `fotoDeCongeladas`, no a mano), cada una redondeada HACIA ARRIBA a 0,1 — ese redondeo es el margen declarado. Las 45 están HOY a cobertura 0, así que cualquier test que las ejerza las baja. RUIDO ENTRE INVOCADORES, medido el mismo día: dos pasadas de `npm run coverage` (`node --import tsx --test`) y una de `npx tsx --test` dan la MISMA foto byte a byte, el mismo peor CRAP (2970) y la misma cobertura a 0,01 puntos (medido sobre 1880e4cf): la brecha de 36 puntos que el issue midió era de la tabla física de Node, que aquí no decide nada. SIN SUELO DE COBERTURA, a propósito: sobre el árbol entero es un 11 % y sobre lo cargado un 49 %, y un suelo puesto sobre cualquiera de los dos mediría el banco de hoy, no el cliente. Si salta el gate, la respuesta por defecto NO es tocar la foto: es un test, o partir la función. Una congelada que baja NO pone rojo: `crap` y `deuda` avisan de que sobra, y hay que bajarla aquí o volverá a crecer gratis. Renombrar una función congelada, o moverla de fichero, pone rojo `nefan-core/test/crap-del-cliente.test.ts` (la entrada ya no nombra nada) y el gate (el nombre nuevo no tiene foto). El gate lo reconoce —una congelada que ya no está con la MISMA cifra que la roja— y lo marca con «¿renombrado de …?»: ahí sí se regenera la entrada con `--foto`.",
+  "_lo_que_esto_NO_sujeta": [
+    "Las funciones CON NOMBRE homónimas del mismo fichero (dos métodos `render` de clases distintas, un `log` repetido) comparten clave y se funden por el máximo. Hoy ninguna de esas claves está congelada, así que su límite es el tope 73 y no hay agujero; lo habría si se congelara una.",
+    "Insertar una anónima de la MISMA forma y bajo el mismo padre DELANTE de una congelada corre su `#n`. Da ROJO, no verde: la congelada pierde su foto y la nueva numeración la reclama. Hoy ninguna de las 28 anónimas con `#n` está congelada.",
+    "Una congelada que BAJA solo avisa (`sobran`), no pone rojo: el trinquete no baja solo, hay que reescribir su cifra aquí.",
+    "No hay suelo de cobertura global del cliente: la cobertura puede bajar sin rojo mientras ninguna función pase de su límite.",
+    "La CALIDAD de lo que un test afirma no se mide: pasar por una línea sube su cobertura aunque el test no afirme nada. Eso es trabajo de la mutación, y el cliente no tiene medida de mutación.",
+    "El aviso del bloque «Cliente» de `deuda` cuenta las funciones CON NOMBRE a 0 % bajo el objetivo que no tienen item, pero no las anónimas en ese caso (261 el 2026-09-24): su señal ya la lleva la cobertura de su padre.",
+    "La frescura del bloque «Cliente» salta también cuando cambia un fichero que ningún test carga, aunque su medida se sintetiza del fuente y está siempre al día: es un falso «posiblemente obsoleta».",
+    "IMPORTAR un fichero sin llamar a nada ya cubre algunas líneas (las firmas de los métodos de una clase se ejecutan al evaluarla), y la síntesis a 0 hits no lo imita. Si se aprieta la foto después de un test que solo importa, la cifra incluye ese crédito, y quitar el import pondría el gate rojo sin cambiar el código."
+  ],
+  "tope": 73,
+  "objetivo": 30,
+  "congeladas": [
+    {
+      "fichero": "src/input/keyboard-input-provider.ts",
+      "funcion": "KeyboardInputProvider.constructor>(anónima)@BinaryExpression",
+      "crap": 156
+    },
+    {
+      "fichero": "src/input/keyboard-input-provider.ts",
+      "funcion": "onKeyDown",
+      "crap": 552
+    },
+    {
+      "fichero": "src/main.ts",
+      "funcion": "<módulo>>(anónima)@narrativeClient.onNarrativeEvent()",
+      "crap": 342
+    },
+    {
+      "fichero": "src/main.ts",
+      "funcion": "<módulo>>(anónima)@narrativeClient.onStatusDeLaPartida()",
+      "crap": 1122
+    },
+    {
+      "fichero": "src/main.ts",
+      "funcion": "gameLoop",
+      "crap": 1560
+    },
+    {
+      "fichero": "src/main.ts",
+      "funcion": "unIntentoDeArrancar",
+      "crap": 870
+    },
+    {
+      "fichero": "src/net/bridge-client.ts",
+      "funcion": "dispatch",
+      "crap": 110
+    },
+    {
+      "fichero": "src/net/game-client.ts",
+      "funcion": "BridgeGameClient.constructor>(anónima)@bridge.on(\"state_update\")",
+      "crap": 110
+    },
+    {
+      "fichero": "src/net/narrative-client.ts",
+      "funcion": "NarrativeClient.constructor>(anónima)@this.bridge.on(\"narrative_status\")",
+      "crap": 90
+    },
+    {
+      "fichero": "src/renderer/aspecto-del-jugador.ts",
+      "funcion": "vestir",
+      "crap": 110
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "funcion": "applyAmbienceAt",
+      "crap": 110
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "funcion": "applyAtlas",
+      "crap": 90
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "funcion": "installLights",
+      "crap": 182
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "funcion": "installTile>(anónima)@primsM.forEach()",
+      "crap": 2970
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "funcion": "primitiveGeometry",
+      "crap": 306
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "funcion": "render",
+      "crap": 182
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "funcion": "setAttackTelegraph",
+      "crap": 90
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "funcion": "updateEntity",
+      "crap": 342
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "funcion": "updateObject",
+      "crap": 210
+    },
+    {
+      "fichero": "src/renderer/fps-gl.ts",
+      "funcion": "updateTelegraph",
+      "crap": 132
+    },
+    {
+      "fichero": "src/ui/dialogue-panel.ts",
+      "funcion": "DialoguePanel.constructor>(anónima)@alPulsarTecla()",
+      "crap": 462
+    },
+    {
+      "fichero": "src/ui/eco-del-combate.ts",
+      "funcion": "procesar",
+      "crap": 240
+    },
+    {
+      "fichero": "src/ui/etiquetas-del-mundo.ts",
+      "funcion": "actualizar",
+      "crap": 156
+    },
+    {
+      "fichero": "src/ui/graphics-mode.ts",
+      "funcion": "renderChip",
+      "crap": 156
+    },
+    {
+      "fichero": "src/ui/graphics-mode.ts",
+      "funcion": "renderPanel",
+      "crap": 380
+    },
+    {
+      "fichero": "src/ui/modos-de-graficos.ts",
+      "funcion": "aplicar",
+      "crap": 90
+    },
+    {
+      "fichero": "src/ui/muro-de-carga.ts",
+      "funcion": "pintarMuro",
+      "crap": 110
+    },
+    {
+      "fichero": "src/ui/panel-de-plugins.ts",
+      "funcion": "crearPanelDePlugins>(anónima)@alPulsarTecla()",
+      "crap": 110
+    },
+    {
+      "fichero": "src/ui/panel-de-plugins.ts",
+      "funcion": "pintarValor",
+      "crap": 90
+    },
+    {
+      "fichero": "src/ui/portrait.ts",
+      "funcion": "measureBust",
+      "crap": 210
+    },
+    {
+      "fichero": "src/ui/style-apply.ts",
+      "funcion": "plan",
+      "crap": 1640
+    },
+    {
+      "fichero": "src/ui/style-apply.ts",
+      "funcion": "run",
+      "crap": 812
+    },
+    {
+      "fichero": "src/ui/theme.ts",
+      "funcion": "applyUiTheme",
+      "crap": 90
+    },
+    {
+      "fichero": "src/ui/title-screen.ts",
+      "funcion": "TitleScreen.constructor>(anónima)@this.narrative.onProgresoDeMundo()",
+      "crap": 110
+    },
+    {
+      "fichero": "src/ui/titulo/editor-de-personaje.ts",
+      "funcion": "pintarEditorDePersonaje",
+      "crap": 156
+    },
+    {
+      "fichero": "src/ui/titulo/home.ts",
+      "funcion": "onModeBadge",
+      "crap": 182
+    },
+    {
+      "fichero": "src/ui/titulo/panel-de-generacion.ts",
+      "funcion": "montarPanelDeGeneracion",
+      "crap": 380
+    },
+    {
+      "fichero": "src/ui/titulo/selector-de-mundo.ts",
+      "funcion": "pintarSelectorDeMundo",
+      "crap": 132
+    },
+    {
+      "fichero": "src/ui/titulo/subir-estilo.ts",
+      "funcion": "subirElEstilo",
+      "crap": 110
+    },
+    {
+      "fichero": "src/ui/travel-panel.ts",
+      "funcion": "setExits",
+      "crap": 90
+    },
+    {
+      "fichero": "src/ui/world-labels.ts",
+      "funcion": "sync",
+      "crap": 600
+    },
+    {
+      "fichero": "src/world/carga-de-tile.ts",
+      "funcion": "addTile",
+      "crap": 462
+    },
+    {
+      "fichero": "src/world/carga-de-tile.ts",
+      "funcion": "poblar",
+      "crap": 306
+    },
+    {
+      "fichero": "src/world/lo-que-manda-el-bridge.ts",
+      "funcion": "aplicarLoQueMandaElBridge",
+      "crap": 110
+    },
+    {
+      "fichero": "src/world/materializar-spawn.ts",
+      "funcion": "materializar",
+      "crap": 156
+    }
+  ]
+}
