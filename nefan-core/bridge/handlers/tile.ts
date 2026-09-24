@@ -187,6 +187,10 @@ export async function runTileGeneration(
 ): Promise<SceneGenOutcome> {
   const key = tileKey(tx, ty);
   const start = Date.now();
+  // Con `placeId` cuando este tile ES un viaje (#737): sin él, el cliente no
+  // puede distinguir el fallo DEL destino de un tile vecino que falla a la
+  // vez, y core (`deQuienEsElFallo`) solo cierra el viaje con el que es suyo.
+  // Sin viaje se queda sin él, que es lo que marca un tile como ajeno.
   const fail = (message: string): void =>
     ctx.broadcastNarrative({
       type: "narrative_status",
@@ -194,6 +198,7 @@ export async function runTileGeneration(
       kind: "tile",
       tile: { tx, ty },
       edge: approachEdge,
+      placeId: opts.placeId,
       message,
       elapsedMs: Date.now() - start,
     });

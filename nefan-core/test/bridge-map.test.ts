@@ -52,6 +52,9 @@ describe("bridge player_entered_place + map triggers", () => {
       (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
     );
     assert.ok(err?.message?.includes("nowhere"));
+    // Es el desenlace de ESE viaje: sin su placeId el cliente no lo cierra (#737).
+    assert.equal(err?.kind, "scene");
+    assert.equal(err?.placeId, "nowhere");
   });
 
   it("lugar realizado → re-broadcast de la escena cacheada + trigger player_entered", async () => {
@@ -455,6 +458,7 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     );
     assert.match(err?.message ?? "", /No se pudo viajar a La Forja/);
     assert.equal(err?.kind, "scene", "el loader del cliente lo muestra");
+    assert.equal(err?.placeId, "forja", "el viaje abierto se cierra por su id (#737)");
     assert.equal(aiCalls.scene.length, 0, "no se gastó una llamada al motor");
     assert.equal(narrative.worldMap.get("forja")?.anchor, undefined);
   });
@@ -524,6 +528,30 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     assert.match(err?.message ?? "", /no responde/, "y traduce el motivo");
     assert.doesNotMatch(err?.message ?? "", /fetch failed/, "sin el volcado de la excepción");
     assert.doesNotMatch(err?.message ?? "", /tile \(\d/, "sin coordenadas de tile");
+    // #737 y el regreso de #693: el fallo REAL del destino sale por el `fail()`
+    // de `runTileGeneration`, como kind "tile". Sin su placeId, el cliente lo
+    // leería como un tile ajeno y el «Viajando...» pagaría la expiración.
+    assert.equal(err?.kind, "tile");
+    assert.equal(err?.placeId, "forja", "el fallo del destino lleva el id del viaje");
+  });
+
+  it("un request_tile que falla SIN viaje no se marca: su error va sin placeId (#737)", async () => {
+    // El gemelo del de arriba: la marca es de los viajes y SOLO de ellos. Un
+    // tile de frontera o de prefetch que fallara con un placeId cerraría un
+    // viaje que no es suyo en cuanto el id casara.
+    const { ctx, broadcasts, narrative } = makeCtx({
+      ai: { generateScene: async () => ({ ok: false, error: "fetch failed" }) },
+    });
+    seedTravelWorld(narrative);
+    const { socket } = makeSocket();
+    await porElBorde({ type: "request_tile", tx: 3, ty: 0, reason: "prefetch" }, socket, ctx);
+    await waitFor(() => broadcasts.some((m) => m.type === "narrative_status" && m.phase === "error"));
+    const err = broadcasts.find(
+      (m): m is NarrativeStatusMessage => m.type === "narrative_status" && m.phase === "error",
+    );
+    assert.equal(err?.kind, "tile");
+    assert.deepEqual(err && "tile" in err ? err.tile : undefined, { tx: 3, ty: 0 });
+    assert.equal(err?.placeId, undefined, "un tile sin viaje no habla de ningún lugar");
   });
 
   it("acusa el viaje SIEMPRE, diciendo cómo lo encoló", async () => {
@@ -744,6 +772,8 @@ describe("bridge viaje a un place sin realizar (plano continuo)", () => {
     );
     assert.match(err?.message ?? "", /No se pudo llegar a La Forja/, "nombra el destino");
     assert.match(err?.message ?? "", /No hay un sitio libre donde aparecer allí/);
+    assert.equal(err?.kind, "tile");
+    assert.equal(err?.placeId, "forja", "el throw de spawnAt sale por el fail() del viaje, con su id (#737)");
     assert.doesNotMatch(
       err?.message ?? "",
       /no pudo construirlo/,

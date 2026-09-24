@@ -78,6 +78,7 @@ describe("rótulo de un fallo del motor", () => {
     const r = rotuloDeStatus(fallo({ tile: { tx: 0, ty: 0 } }), {
       mundoVacio: true,
       overlayAbierto: true,
+      viajeAbierto: null,
     });
     assert.equal(r.destino, "overlay");
     assert.equal(r.titulo, "La partida no pudo empezar");
@@ -89,6 +90,7 @@ describe("rótulo de un fallo del motor", () => {
     const r = rotuloDeStatus(fallo({ tile: { tx: 2, ty: 0 }, message: CUERPO_DE_VIAJE }), {
       mundoVacio: false,
       overlayAbierto: true,
+      viajeAbierto: null,
     });
     assert.equal(r.destino, "overlay");
     assert.deepEqual(
@@ -105,6 +107,7 @@ describe("rótulo de un fallo del motor", () => {
     const r = rotuloDeStatus(fallo({ tile: { tx: 1, ty: 0 }, message: "Error: fetch failed" }), {
       mundoVacio: false,
       overlayAbierto: false,
+      viajeAbierto: null,
     });
     assert.equal(r.destino, "log");
     assert.equal(r.detalle, "Error: fetch failed");
@@ -124,7 +127,7 @@ describe("rótulo de un fallo del motor", () => {
       for (const overlayAbierto of [true, false]) {
         const r = rotuloDeStatus(
           fallo({ kind: "combatientes", message: "Enemigos que no entraron al mundo (1 de 3): «roto_2» (x)" }),
-          { mundoVacio, overlayAbierto },
+          { mundoVacio, overlayAbierto, viajeAbierto: null },
         );
         assert.equal(r.destino, "log", `${mundoVacio}/${overlayAbierto}: ${JSON.stringify(r)}`);
         assert.equal(r.detalle, "Enemigos que no entraron al mundo (1 de 3): «roto_2» (x)");
@@ -135,7 +138,7 @@ describe("rótulo de un fallo del motor", () => {
   it("escena de un VIAJE (trae placeId): no se pudo llegar", () => {
     const r = rotuloDeStatus(
       fallo({ kind: "scene", placeId: "ermita_del_vado", message: "No se pudo viajar a Ermita del vado. El motor narrativo no responde; inténtalo de nuevo en un momento." }),
-      { mundoVacio: false, overlayAbierto: true },
+      { mundoVacio: false, overlayAbierto: true, viajeAbierto: null },
     );
     assert.equal(r.destino, "overlay");
     assert.equal(r.titulo, "No se pudo llegar");
@@ -145,6 +148,7 @@ describe("rótulo de un fallo del motor", () => {
     const r = rotuloDeStatus(fallo({ kind: "scene", placeId: undefined }), {
       mundoVacio: false,
       overlayAbierto: true,
+      viajeAbierto: null,
     });
     assert.equal(r.destino, "overlay");
     assert.equal(r.titulo, "No se pudo preparar el lugar");
@@ -158,6 +162,7 @@ describe("rótulo de un fallo del motor", () => {
     const r = rotuloDeStatus(fallo({ kind: "scene" }), {
       mundoVacio: false,
       overlayAbierto: false,
+      viajeAbierto: null,
     });
     assert.equal(r.destino, "overlay");
   });
@@ -166,6 +171,7 @@ describe("rótulo de un fallo del motor", () => {
     const r = rotuloDeStatus(fallo({ kind: "consequences", message: undefined }), {
       mundoVacio: false,
       overlayAbierto: false,
+      viajeAbierto: null,
     });
     assert.deepEqual(r, {
       destino: "overlay",
@@ -180,6 +186,7 @@ describe("rótulo de un fallo del motor", () => {
       rotuloDeStatus(fallo({ kind, message: undefined }), {
         mundoVacio: true,
         overlayAbierto: true,
+        viajeAbierto: null,
       }).detalle;
     assert.equal(cuerpo("tile"), "Algo falló generando el tile.");
     assert.equal(cuerpo("scene"), "Algo falló en el motor narrativo.");
@@ -201,7 +208,7 @@ describe("rótulo de un fallo del motor", () => {
     // `??` y `||` se confunden en este sitio exacto y la diferencia es
     // observable: con `||`, un mensaje vacío del bridge se cambiaría por el
     // texto genérico y el jugador leería una causa inventada.
-    assert.equal(rotuloDeStatus(fallo({ message: "" }), { mundoVacio: true, overlayAbierto: true }).detalle, "");
+    assert.equal(rotuloDeStatus(fallo({ message: "" }), { mundoVacio: true, overlayAbierto: true, viajeAbierto: null }).detalle, "");
   });
 
   it("rotular algo que NO es un fallo es un error de quien llama (fail-loud)", () => {
@@ -216,7 +223,7 @@ describe("rótulo de un fallo del motor", () => {
         kind: "tile",
       };
       assert.throws(
-        () => rotuloDeStatus(noEsFallo, { mundoVacio: true, overlayAbierto: true }),
+        () => rotuloDeStatus(noEsFallo, { mundoVacio: true, overlayAbierto: true, viajeAbierto: null }),
         /solo rotula fallos/,
         `phase "${phase}" debería rechazarse`,
       );
@@ -244,6 +251,7 @@ describe("un titular por hecho: ningún aviso culpa a quien no ha sido", () => {
     const r = rotuloDeStatus(fallo({ kind, message: "da igual el cuerpo" }), {
       mundoVacio: false,
       overlayAbierto: true,
+      viajeAbierto: null,
     });
     assert.equal(r.destino, "overlay", `${kind} tiene que tapar la pantalla`);
     return r.destino === "overlay" ? r.titulo : "";
@@ -290,7 +298,7 @@ describe("un titular por hecho: ningún aviso culpa a quien no ha sido", () => {
     // fila equivocada lo sacaría del examen en silencio. Aquí se confronta con
     // `rotuloDeStatus` kind a kind, con el jugador esperando.
     for (const kind of TODOS_LOS_KINDS) {
-      const r = rotuloDeStatus(fallo({ kind }), { mundoVacio: false, overlayAbierto: true });
+      const r = rotuloDeStatus(fallo({ kind }), { mundoVacio: false, overlayAbierto: true, viajeAbierto: null });
       assert.equal(r.destino, DESTINO_POR_KIND[kind], `${kind}: ${JSON.stringify(r)}`);
     }
   });
@@ -319,6 +327,7 @@ describe("un titular por hecho: ningún aviso culpa a quien no ha sido", () => {
     const conDestino = rotuloDeStatus(fallo({ kind: "scene", placeId: "plaza" }), {
       mundoVacio: false,
       overlayAbierto: true,
+      viajeAbierto: null,
     });
     assert.equal(conDestino.destino === "overlay" && conDestino.titulo, titulo("tile"));
   });
@@ -333,7 +342,7 @@ describe("un titular por hecho: ningún aviso culpa a quien no ha sido", () => {
       () =>
         rotuloDeStatus(
           { phase: "error", kind: "inventado" as NarrativeStatusDeSesion["kind"], message: "x" },
-          { mundoVacio: false, overlayAbierto: true },
+          { mundoVacio: false, overlayAbierto: true, viajeAbierto: null },
         ),
       /no sabe rotular el kind "inventado"/,
     );
@@ -349,6 +358,7 @@ describe("la salida del overlay: qué puede hacer el jugador con el muro", () =>
     const r = rotuloDeStatus(fallo({ tile: { tx: 0, ty: 0 } }), {
       mundoVacio: true,
       overlayAbierto: true,
+      viajeAbierto: null,
     });
     assert.equal(r.destino, "overlay");
     assert.equal(r.salida, "volver-al-titulo");
@@ -358,6 +368,7 @@ describe("la salida del overlay: qué puede hacer el jugador con el muro", () =>
     const r = rotuloDeStatus(fallo({ tile: { tx: 2, ty: 0 }, message: CUERPO_DE_VIAJE }), {
       mundoVacio: false,
       overlayAbierto: true,
+      viajeAbierto: null,
     });
     assert.equal(r.destino, "overlay");
     assert.equal(r.salida, "cerrar");
@@ -369,7 +380,7 @@ describe("la salida del overlay: qué puede hacer el jugador con el muro", () =>
     // salida equivocada sin que nadie se enterara.
     for (const kind of KINDS_DE_OVERLAY) {
       for (const overlayAbierto of [true, false]) {
-        const r = rotuloDeStatus(fallo({ kind, placeId: "x" }), { mundoVacio: true, overlayAbierto });
+        const r = rotuloDeStatus(fallo({ kind, placeId: "x" }), { mundoVacio: true, overlayAbierto, viajeAbierto: null });
         assert.equal(r.destino, "overlay", `${kind}/${overlayAbierto}`);
         assert.equal(r.salida, "volver-al-titulo", `${kind}/${overlayAbierto}`);
       }
@@ -430,10 +441,54 @@ describe("botonesDelMuro", () => {
 
 it("una reacción sin conexión no se presenta como respuesta rechazada (#481)", () => {
   const r = rotuloDeStatus(fallo({ kind: "consequences", causaReaccion: "conexion" }), {
-    mundoVacio: false, overlayAbierto: true,
+    mundoVacio: false, overlayAbierto: true, viajeAbierto: null,
   });
   assert.deepEqual(r, {
     destino: "overlay", titulo: "El motor narrativo no responde",
     detalle: "El motor narrativo no responde; inténtalo de nuevo en un momento.", salida: "cerrar",
+  });
+});
+
+describe("el fallo de otro sitio no tapa el «Viajando...» (#737)", () => {
+  // El contexto del bug: mundo pintado, el jugador pulsó una salida y mira el
+  // «Viajando...» (overlay abierto) con el viaje a «forja» sin cerrar.
+  const viajando = { mundoVacio: false, overlayAbierto: true, viajeAbierto: "forja" } as const;
+
+  it("un tile vecino que falla (sin placeId) va a la línea: el viaje sigue", () => {
+    const r = rotuloDeStatus(fallo({ tile: { tx: 3, ty: 0 }, message: "Error: fetch failed" }), viajando);
+    assert.deepEqual(r, { destino: "log", detalle: "Error: fetch failed" });
+  });
+
+  it("un tile o una escena de OTRO lugar tampoco lo tapan", () => {
+    for (const kind of ["tile", "scene"] as const) {
+      const r = rotuloDeStatus(fallo({ kind, placeId: "molino", message: "otro" }), viajando);
+      assert.deepEqual(r, { destino: "log", detalle: "otro" }, kind);
+    }
+  });
+
+  it("una escena sin placeId con un viaje abierto es ajena: a la línea", () => {
+    const r = rotuloDeStatus(fallo({ kind: "scene", message: "suelta" }), viajando);
+    assert.deepEqual(r, { destino: "log", detalle: "suelta" });
+  });
+
+  it("el fallo DEL destino sigue tapando: no se pudo llegar", () => {
+    // Con el placeId del viaje abierto (el orden de main.ts cierra antes el
+    // ledger, pero la decisión no puede depender de ese orden).
+    for (const kind of ["tile", "scene"] as const) {
+      const r = rotuloDeStatus(fallo({ kind, placeId: "forja", message: CUERPO_DE_VIAJE }), viajando);
+      assert.equal(r.destino, "overlay", kind);
+      if (r.destino === "overlay") assert.equal(r.titulo, "No se pudo llegar", kind);
+    }
+  });
+
+  it("el bootstrap manda sobre lo ajeno: sin mundo, un tile sin placeId sigue siendo que la partida no empezó", () => {
+    const r = rotuloDeStatus(fallo({ tile: { tx: 0, ty: 0 } }), { ...viajando, mundoVacio: true });
+    assert.equal(r.destino, "overlay");
+    if (r.destino === "overlay") assert.equal(r.titulo, "La partida no pudo empezar");
+  });
+
+  it("los kinds que no hablan de lugares no miran el viaje: el takeover tapa igual", () => {
+    const r = rotuloDeStatus(fallo({ kind: "takeover" }), viajando);
+    assert.equal(r.destino, "overlay");
   });
 });

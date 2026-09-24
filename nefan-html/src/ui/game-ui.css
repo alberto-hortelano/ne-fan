@@ -393,7 +393,10 @@
   border-radius: 50%;
   animation: nf-spin 1s linear infinite;
 }
-#narrative-loader.error .spinner { animation: none; border-top-color: currentColor; }
+/* Un anillo parado bajo el título de un fallo (o de la oferta) dice «esto aún
+   carga» cuando ya no carga nada (issue 737). Fuera en los tres muros que usan
+   `.error`: fallo in-game, oferta de reintentar y muro de arranque. */
+#narrative-loader.error .spinner { display: none; }
 #narrative-loader .title { font-family: var(--nf-font-display); font-size: var(--nf-fs-lg); letter-spacing: var(--nf-tracking); }
 #narrative-loader .detail { color: var(--nf-ink-dim); max-width: 480px; line-height: 1.45; }
 #narrative-loader .elapsed { color: var(--nf-ink-dim); font-size: var(--nf-fs-sm); }

@@ -34,6 +34,9 @@ export async function handlePlayerEnteredPlace(
       type: "narrative_status",
       phase: "error",
       kind: "scene",
+      // Es el desenlace de ESTE viaje: sin su `placeId` el cliente no lo
+      // cerraría y el «Viajando...» pagaría la expiración (#737).
+      placeId,
       message: `Lugar desconocido en el mapa: ${placeId}`,
     });
     return;
