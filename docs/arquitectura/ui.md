@@ -95,6 +95,14 @@ nada de `bottom: 120px` a ojo. El único interruptor que queda en `#game-ui` es
 - **Un aviso solo termina su propia espera** (#593): `esperasQueTermina`
   en core atribuye viaje, saludo o ambos (takeover). Un aviso de enemigos,
   plugins o guardado se pinta sin dar por contestadas peticiones ajenas. Guion 137.
+- **El viaje lo termina SU desenlace, y los dos los decide core** (#737, #742):
+  `esperasQueTermina` devuelve `"llegada"` o `"fallo"` solo para un status que
+  trae el `placeId` del viaje abierto (`deQuienEs`), y el bridge lo estampa en
+  todo lo que difunde POR el viaje —el `fail()` y el `ready`, este por el tipo
+  (`broadcastScene` con `meta.viaje`)—. Un `ready` ajeno (prefetch,
+  `request_tile`) no quita el «Viajando...», y ningún `ready` quita un muro de
+  aviso (`elReadyQuitaElMuro`, sobre `muro.enPantalla()`). El fallo del destino
+  va al muro por ser DEL viaje, no porque quede un muro puesto. Guiones 173 y 177.
 - **El chip de gráficos enseña lo que se GENERA, no lo que dice el save**
   (#510): con el cortacircuitos de #236 saltado el modo sigue siendo «imagen» y
   no sale un skin, así que el chip lo dice y el panel explica cómo rearmarlo. El

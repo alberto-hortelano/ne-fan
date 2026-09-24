@@ -40,7 +40,7 @@
  *       ni escena ni spawn. Un spawn mudo —escena nueva, `spawn: undefined`—
  *       deja al jugador en el tile viejo mirando el de otro sitio sin que nada
  *       se lo diga, que es el cuelgue del #210 con otro traje.
- *    4. EL OTRO CAMINO DEL SPAWN: el viaje que GENERA el tile (`spawnAt`), con
+ *    4. EL OTRO CAMINO DEL SPAWN: el viaje que GENERA el tile (`viaje.sitio`), con
  *       el motor afinando el `anchor.rect` sobre el edificio que acaba de
  *       declarar. Nació de **H2 de la QA de G2**: los bloques 1-3 solo montan
  *       lugares YA REALIZADOS, así que con ese segundo sitio revertido salían
@@ -330,10 +330,10 @@ console.log("\n3 · UN VIAJE SIN SITIO LO DICE, Y NO DIFUNDE UN SPAWN MUDO");
 
 // ── 4 · El OTRO camino del spawn: el viaje que GENERA el tile ────────────────
 
-console.log("\n4 · EL VIAJE QUE GENERA EL TILE TAMPOCO DEJA A NADIE DENTRO (`spawnAt`)");
+console.log("\n4 · EL VIAJE QUE GENERA EL TILE TAMPOCO DEJA A NADIE DENTRO (`viaje.sitio`)");
 {
   // H2 de la QA de G2, y es el hallazgo que obliga a este bloque: con el sitio
-  // `:181` (`spawnAt`) revertido, los bloques 1-3 seguían VERDES y la batería
+  // `:181` (`viaje.sitio`) revertido, los bloques 1-3 seguían VERDES y la batería
   // entera también — la mitad del arreglo se podía revertir sin que ningún
   // guion ejecutable dijera nada. Los bloques de arriba solo montan lugares YA
   // REALIZADOS, así que no pasan por ahí ni una vez.

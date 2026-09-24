@@ -1,13 +1,16 @@
-/** A QUIÉN LE HABLA cada `narrative_status` que difunde el bridge. Solo eso.
+/** A QUIÉN LE HABLA cada `narrative_status` que difunde el bridge, y a qué
+ *  espera del cliente pertenece (#737, #742).
  *
  *  Vive aparte desde el 2026-08-30, y la razón no es de tamaño: son DOS
  *  DECISIONES DISTINTAS sobre el mismo mensaje. Rotular contesta «qué texto ve
  *  el jugador y si tapa la pantalla»; repartir contesta «a qué canal va esto».
  *  Comparten el tipo del mensaje y una sola pregunta: de quién es un fallo
- *  cuando hay un viaje abierto (`deQuienEsElFallo`, #737), que vive aquí y el
- *  rótulo importa. Es una pregunta sobre A QUÉ espera le habla el fallo — o
+ *  cuando hay un viaje abierto (`deQuienEs`, #737), que vive aquí y el
+ *  rótulo importa. Es una pregunta sobre A QUÉ espera le habla el status — o
  *  sea de reparto — y el rótulo la necesita para no tapar un «Viajando...»
- *  con el error de otro tile.
+ *  con el error de otro tile. Desde #742 contesta también por la LLEGADA: qué
+ *  `ready` cierra el viaje y quita su muro (`esperasQueTermina`,
+ *  `elReadyQuitaElMuro`).
  *
  *  Estuvieron juntas un día, el que #313 tardó en mudar el reparto desde
  *  `session/session-facets.ts`, y el módulo lo dijo por su cuenta: el fichero
@@ -97,28 +100,31 @@ export function repartirStatus(
   return { destino: "descartado", status };
 }
 
-/** De quién es un fallo, visto desde el viaje que el cliente tiene abierto
- *  (#737). `"sin-viaje"`: no hay viaje que atribuir · `"del-viaje"`: el fallo
- *  trae el `placeId` de ESE viaje · `"ajeno-al-viaje"`: hay viaje y el fallo
- *  no es suyo — un tile vecino, un prefetch, o un status sin `placeId`.
+/** De quién es un status de tile o de escena, visto desde el viaje que el
+ *  cliente tiene abierto (#737, #742). `"sin-viaje"`: no hay viaje que
+ *  atribuir · `"del-viaje"`: el status trae el `placeId` de ESE viaje ·
+ *  `"ajeno-al-viaje"`: hay viaje y el status no es suyo — un tile vecino, un
+ *  prefetch, o un status sin `placeId`.
  *
  *  Lo que llega SIN `placeId` con un viaje abierto es ajeno, y esa es la
  *  decisión de fondo: hasta #737 se le atribuía al viaje «por ser la causa
  *  candidata», así que el error de un tile vecino rompía un viaje que iba a
- *  llegar. La regla solo aguanta si el bridge marca TODO lo que emite por el
- *  viaje — también el `fail()` de `runTileGeneration`, que es por donde sale
- *  el fallo real del destino —; un productor que se olvide la marca devuelve el
- *  viaje a la expiración, y lo sujeta `test/bridge-map.test.ts`.
+ *  llegar; y hasta #742 cualquier `ready` quitaba su «Viajando...». La regla
+ *  solo aguanta si el bridge marca TODO lo que emite por el viaje — el
+ *  `fail()` de `runTileGeneration` y también el `ready` (`meta.viaje` de
+ *  `broadcastScene`) —; un productor que se olvide la marca devuelve el viaje
+ *  a la expiración, y lo sujeta `test/bridge-map.test.ts`.
  *
- *  La consultan las DOS decisiones que un fallo toma sobre el viaje: qué
- *  espera termina (aquí abajo) y si tapa el «Viajando...» (`status-rotulo.ts`).
- *  Si cada una tuviera su regla, el ledger diría «abierto» y el muro «roto». */
-export type DuenoDelFallo = "del-viaje" | "ajeno-al-viaje" | "sin-viaje";
+ *  La consultan las decisiones que un status toma sobre el viaje: qué espera
+ *  termina y si quita el muro (aquí abajo) y si un fallo tapa el
+ *  «Viajando...» (`status-rotulo.ts`). Si cada una tuviera su regla, el ledger
+ *  diría «abierto» y el muro «roto». */
+export type DuenoDelStatus = "del-viaje" | "ajeno-al-viaje" | "sin-viaje";
 
-export function deQuienEsElFallo(
+export function deQuienEs(
   status: Pick<NarrativeStatusDeSesion, "placeId">,
   viajeAbierto: string | null,
-): DuenoDelFallo {
+): DuenoDelStatus {
   if (viajeAbierto === null) return "sin-viaje";
   return status.placeId === viajeAbierto ? "del-viaje" : "ajeno-al-viaje";
 }
@@ -131,18 +137,61 @@ const ESPERA_POR_KIND: Record<NarrativeStatusDeSesion["kind"], "viaje" | "saludo
   restore: null, save: null, plugin: null, action: null, protocolo: null, combatientes: null,
 };
 
+/** Cómo TERMINA el viaje abierto con este status (#742): llega, se rompe, o
+ *  sigue (`null`). Es UNA decisión y no dos booleanos: hasta #742 core solo
+ *  decidía el fallo, y la llegada la decidía el ledger del cliente por su
+ *  cuenta —con cualquier `spawn`, sin mirar de quién era—, así que un viaje
+ *  `sin ancla` que llegaba no se cerraba nunca. */
+export type DesenlaceDelViaje = "llegada" | "fallo" | null;
+
 /** `viajeAbierto` es el `placeId` del viaje que el cliente espera, o `null`.
  *  Obligatorio a propósito: quien lo olvide no compila, en vez de volver a
  *  atribuir al viaje lo que no es suyo (#737). Un `tile`/`scene` cierra el
- *  viaje solo si es SUYO; el takeover lo cierra siempre, porque no habla de
- *  ningún lugar: habla de quién conduce la partida. */
+ *  viaje solo si es SUYO; el takeover lo rompe siempre, porque no habla de
+ *  ningún lugar: habla de quién conduce la partida. Y el viaje LLEGA con el
+ *  `ready` de tile que trae su `placeId` — con `spawn` o sin él: el viaje
+ *  `sin ancla` también llega (#742). */
 export function esperasQueTermina(
   status: Pick<NarrativeStatusDeSesion, "kind" | "phase" | "placeId">,
   viajeAbierto: string | null,
 ): {
-  viaje: boolean; saludo: boolean;
+  viaje: DesenlaceDelViaje; saludo: boolean;
 } {
+  if (status.phase === "ready") {
+    const llega = status.kind === "tile" && deQuienEs(status, viajeAbierto) === "del-viaje";
+    return { viaje: llega ? "llegada" : null, saludo: false };
+  }
   const espera = status.phase === "error" ? ESPERA_POR_KIND[status.kind] : null;
-  const viaje = espera === "ambas" || (espera === "viaje" && deQuienEsElFallo(status, viajeAbierto) === "del-viaje");
-  return { viaje, saludo: espera === "saludo" || espera === "ambas" };
+  const rompe = espera === "ambas" || (espera === "viaje" && deQuienEs(status, viajeAbierto) === "del-viaje");
+  return { viaje: rompe ? "fallo" : null, saludo: espera === "saludo" || espera === "ambas" };
+}
+
+/** Qué hay en el muro de carga, como HECHO que el cliente declara y no como
+ *  clase del DOM: `"espera"` un muro sin botones (el «Viajando...», el
+ *  arranque) · `"aviso"` un muro que pide que el jugador lo lea (un fallo, una
+ *  oferta, un aviso) · `"nada"` sin muro. */
+export type MuroEnPantalla = "espera" | "aviso" | "nada";
+
+/** Si un `ready` quita el muro (#742). Hasta entonces lo quitaba CUALQUIER
+ *  `ready` de tile: un prefetch que aterrizaba a mitad de viaje soltaba al
+ *  jugador antes de tiempo —y el fallo del destino, detrás, iba ya a la línea
+ *  de mensajes—, y uno que llegaba detrás de «No se pudo llegar» se llevaba el
+ *  motivo antes de que nadie lo leyera.
+ *
+ *  Las tres reglas, en su orden:
+ *   1. Un `ready` no quita NUNCA un aviso: el aviso lo cierra quien lo lee.
+ *   2. Sin viaje abierto, la espera es la del arranque («Iniciando
+ *      partida...», «Generando mundo inicial...») y el primer tile la quita.
+ *   3. Con viaje, solo su LLEGADA — la misma respuesta que cierra el ledger,
+ *      no una segunda regla —.
+ *
+ *  `viajeAbierto` se lee ANTES de cerrar el ledger con este mismo status: si
+ *  no, la llegada ya lo ha puesto a `null` y la regla 2 deja pasar a todos. */
+export function elReadyQuitaElMuro(
+  status: Pick<NarrativeStatusDeSesion, "kind" | "phase" | "placeId">,
+  ctx: { viajeAbierto: string | null; muro: MuroEnPantalla },
+): boolean {
+  if (ctx.muro !== "espera") return false;
+  if (ctx.viajeAbierto === null) return true;
+  return esperasQueTermina(status, ctx.viajeAbierto).viaje === "llegada";
 }

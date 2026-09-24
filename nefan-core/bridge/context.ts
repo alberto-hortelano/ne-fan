@@ -420,8 +420,9 @@ export function sellarDuenoDelSim<T extends { type: string }>(
  *  propósito**: quien lo tenga en la mano no puede pasar por aquí sin haberlo
  *  descartado antes, y el compilador se lo dice. Esa es la mitad que el tipo
  *  garantiza; lo que el tipo NO impide es que alguien escriba `sin ancla`
- *  teniendo un `sin sitio`, o que no pase `spawn` en absoluto —los cuatro
- *  broadcasts que no son un viaje lo omiten, y es correcto—. Se dice aquí
+ *  teniendo un `sin sitio`, o que no pase `viaje` en absoluto —los
+ *  broadcasts que no son un viaje lo omiten, y es correcto; los que sí lo son
+ *  los sujeta `test/bridge-map.test.ts` rama a rama (#742)—. Se dice aquí
  *  porque la primera versión de #616 prometía «el spawn mudo es inexpresable»
  *  y QA lo desmintió en una corrida de `tsc`: borrar la guarda compilaba.
  *
@@ -443,10 +444,16 @@ export function broadcastScene(
   elapsedMs?: number,
   meta?: {
     edge?: import("../src/world-map/types.js").Edge;
-    /** Punto de aparición que se PIDE al cliente en el `ready` (viaje a un
-     *  place anclado): el cliente es dueño de su posición. Omitirlo es «esta
-     *  difusión no mueve a nadie»; pasarlo exige un sitio YA MIRADO. */
-    spawn?: SitioDeAparicion;
+    /** Esta difusión ES la llegada de un viaje por «Salidas» (#742): el
+     *  `ready` lleva su `placeId` —con él, core reconoce la llegada del viaje
+     *  abierto y un `ready` ajeno no le quita el «Viajando...»— y el punto de
+     *  aparición que se PIDE al cliente, que es dueño de su posición.
+     *
+     *  Van JUNTOS a propósito: un spawn sin `placeId` es un viaje que llega
+     *  sin que el cliente pueda saber de quién es, y así no se puede escribir.
+     *  Omitirlo es «esta difusión no es un viaje y no mueve a nadie»; pasarlo
+     *  exige un sitio YA MIRADO (`sin ancla` llega igual, sin moverse). */
+    viaje?: { placeId: string; sitio: SitioDeAparicion };
     /** De dónde sale esta escena: generada ahora, ya en sesión, o del mundo
      *  pre-generado. Viaja en el `ready` para que el cliente pueda AFIRMAR la
      *  diferencia en vez de suponerla. */
@@ -500,7 +507,8 @@ export function broadcastScene(
     // El colapso a coordenada-o-nada ocurre AQUÍ y en ningún otro sitio: el
     // wire lleva `{x,z}` opcional desde siempre y no cambia. Lo que cambia es
     // que para llegar hasta aquí hay que traer el veredicto entero.
-    spawn: meta?.spawn?.de === "punto" ? meta.spawn.spawn : undefined,
+    spawn: meta?.viaje?.sitio.de === "punto" ? meta.viaje.sitio.spawn : undefined,
+    placeId: meta?.viaje?.placeId,
     source: meta?.source,
     elapsedMs,
   });

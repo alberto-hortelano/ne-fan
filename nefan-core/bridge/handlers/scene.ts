@@ -176,7 +176,7 @@ async function difundirPlaceRealizado(
       kind: "scene",
       placeId,
       // La frase del jugador sale de la MISMA traducción que usa el viaje que
-      // aún no está realizado (abajo, por el `throw` de `spawnAt`): dos
+      // aún no está realizado (abajo, por el `throw` de `viaje.sitio`): dos
       // literales iguales en dos canales divergen, y aquí el hecho es uno.
       message: `No se pudo viajar a ${place.name}. ${motivoParaElJugador(
         new Error(FALLO_SIN_SITIO_DONDE_APARECER),
@@ -194,7 +194,9 @@ async function difundirPlaceRealizado(
   // El spawn se PIDE al cliente (dueño de la posición). `donde` entra ENTERO:
   // aquí ya está estrechado a `SitioDeAparicion` por la guarda de arriba, y
   // quitarla no compila (#616, H1 de QA).
-  broadcastScene(ctx, sceneId, scene, undefined, { spawn: donde, source: "cache" });
+  // Y con el `placeId` del viaje al lado (#742): es la LLEGADA de ESE viaje,
+  // también cuando es `sin ancla` —nadie se mueve y el viaje llega igual—.
+  broadcastScene(ctx, sceneId, scene, undefined, { viaje: { placeId, sitio: donde }, source: "cache" });
   // Los triggers se disparan AQUÍ; sin esto, el activateByPosition del
   // siguiente sim_input (el jugador acaba de aterrizar en el anchor) los
   // volvería a disparar.
@@ -253,31 +255,33 @@ async function runPlaceTravel(
     // Aquí se comprueba que HAY punto, no que esté libre: el tile todavía no
     // existe, así que preguntar por solidez ahora contestaría «libre» sobre un
     // mundo que aún no se ha construido. La solidez se mira al difundir, que
-    // es cuando el tile ya está registrado (`spawnAt`, abajo).
+    // es cuando el tile ya está registrado (`viaje.sitio`, abajo).
     if (!resolvePlaceTarget(ctx.narrative, placeId)) {
       throw new Error(`el anclaje de ${place.name} no da punto de aparición`);
     }
     return await runTileGeneration(ctx, anchor.tx, anchor.ty, undefined, {
-      placeId,
       message: `Viajando a ${place.name}...`,
-      // Lo que lee el JUGADOR si la generación falla. El motivo técnico
-      // (coordenadas del tile, "fetch failed") se queda en el log del bridge:
-      // quien viaja pulsó el nombre de un lugar, no un par de coordenadas.
-      destino: place.name,
-      // Al difundir, no ahora: si el motor afinó el anchor del lugar con un
-      // rect (`map_upsert_place.anchor`) mientras generaba, el jugador aparece
-      // EN el lugar y no en el centro del tile. Y el tile ya está registrado,
-      // así que aquí sí se puede preguntar por solidez: el centro de un
-      // edificio macizo es estado sin salida (#616), y lo que viaja es la
-      // puerta. El `throw` lo recoge el catch de `runTileGeneration`, que lo
-      // difunde con el nombre del destino delante — volver `undefined` sería
-      // un spawn mudo: escena nueva, jugador en el tile viejo y nadie avisa.
-      spawnAt: () => {
-        const donde = dondeAparecer(ctx, placeId);
-        if (donde.de === "sin sitio") {
-          throw new Error(`${FALLO_SIN_SITIO_DONDE_APARECER}: ${place.name}`);
-        }
-        return donde;
+      viaje: {
+        placeId,
+        // Lo que lee el JUGADOR si la generación falla. El motivo técnico
+        // (coordenadas del tile, "fetch failed") se queda en el log del bridge:
+        // quien viaja pulsó el nombre de un lugar, no un par de coordenadas.
+        destino: place.name,
+        // Al difundir, no ahora: si el motor afinó el anchor del lugar con un
+        // rect (`map_upsert_place.anchor`) mientras generaba, el jugador aparece
+        // EN el lugar y no en el centro del tile. Y el tile ya está registrado,
+        // así que aquí sí se puede preguntar por solidez: el centro de un
+        // edificio macizo es estado sin salida (#616), y lo que viaja es la
+        // puerta. El `throw` lo recoge el catch de `runTileGeneration`, que lo
+        // difunde con el nombre del destino delante — volver `undefined` sería
+        // un spawn mudo: escena nueva, jugador en el tile viejo y nadie avisa.
+        sitio: () => {
+          const donde = dondeAparecer(ctx, placeId);
+          if (donde.de === "sin sitio") {
+            throw new Error(`${FALLO_SIN_SITIO_DONDE_APARECER}: ${place.name}`);
+          }
+          return donde;
+        },
       },
     });
   } catch (err) {
