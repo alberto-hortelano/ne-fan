@@ -28,8 +28,8 @@
 import type { ClientSession } from "@nefan-core/src/session/session-facets.js";
 import {
   ENTORNO_POR_DEFECTO,
-  entornoPermiteGenerar,
   gatesDeImagen,
+  loQuePagaImagenIA,
   modoEfectivoDePersonajes,
   normalizarModo,
   type Entorno,
@@ -43,7 +43,7 @@ import type { MundoDelCliente } from "../world/mundo-del-cliente.js";
 import type { NarrativeClient } from "../net/narrative-client.js";
 import { errors } from "./error-log.js";
 import { GraphicsModeChip, type GraphicsFacet } from "./graphics-mode.js";
-import { MOTIVO_SIN_GENERACION } from "./mode-labels.js";
+import { MOTIVO_SIN_BRIDGE, MOTIVO_SIN_GENERACION } from "./mode-labels.js";
 
 // --- Generación de imagen SIN sesión (fixtures) ---
 /** Toggle local de skins IA SIN sesión (fixtures): persistido en localStorage,
@@ -165,6 +165,23 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
     return gates().escenarios;
   }
 
+  /** Por qué lo que la partida PIDE en Imagen IA no se genera, o `null` si no
+   *  hay techo que decir. Sale de los MISMOS gates que deciden el POST (QA H2):
+   *  una faceta que quiere imagen y cuyo permiso no es `generar`. No vuelve a
+   *  mirar el entorno por su cuenta; solo lo usa para elegir la frase (con
+   *  bridge o sin él, QA H4). */
+  function motivoDelTecho(): string | null {
+    const g = gates();
+    const capado = (scenesMode === "image" && g.escenarios !== "generar") || g.personajes === "restaurar";
+    return capado ? fraseDelTecho() : null;
+  }
+
+  /** La frase del techo: con bridge, la de desarrollo (con la variable que lo
+   *  cambia); sin él, la que no manda a poner nada (QA H4). */
+  function fraseDelTecho(): string {
+    return entornoDelBridge === null ? MOTIVO_SIN_BRIDGE : MOTIVO_SIN_GENERACION;
+  }
+
   /** La última línea «Gráficos: …» que se escribió, o `null` si la última
    *  aplicación no tenía nada que decir (sin sesión y sin modo). */
   let ultimoRotulo: string | null = null;
@@ -213,8 +230,8 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
     // El TECHO del entorno se dice en la misma línea cuando hay algo que
     // querría generar y no puede: un «imagen IA» que no pinta sin decir por
     // qué parece una avería (criterio 5 de la tanda AS).
-    const quiereGenerar = scenesMode === "image" || effChar === "image";
-    const techo = quiereGenerar && !entornoPermiteGenerar(entornoVigente()) ? ` — ${MOTIVO_SIN_GENERACION}` : "";
+    const motivo = motivoDelTecho();
+    const techo = motivo ? ` — ${motivo}` : "";
     let rotulo: string | null = null;
     if (scenesMode === "vector") {
       rotulo = `Gráficos: maqueta 3D (clay local, sin imagen IA nueva; ${charLabel})${techo}`;
@@ -293,7 +310,11 @@ export function crearModosDeGraficos(deps: DepsDeModosDeGraficos): ModosDeGrafic
       // `sinGeneracion`, aparte, igual que la suspensión del fusible.
       scenesOn: scenesMode === "image",
       charsOn: deps.characterSprites.permisoDeSkins !== "base" && CONFIG.graphics.ai_skin,
-      sinGeneracion: entornoPermiteGenerar(entornoVigente()) ? null : MOTIVO_SIN_GENERACION,
+      sinGeneracion: motivoDelTecho(),
+      imagenPaga: loQuePagaImagenIA(entornoVigente()),
+      // Lo que diría el techo SI se encendiera Imagen IA: la nota del panel
+      // avisa antes de elegir, con el mismo dato que el subtexto.
+      motivoAlEncender: Object.values(loQuePagaImagenIA(entornoVigente())).every(Boolean) ? null : fraseDelTecho(),
       // El estado EFECTIVO va aparte del modo (#510): el fusible de #236 no
       // toca el permiso —el rearme es el OFF→ON de esta misma fila— pero
       // sí para la generación, y el chip decía «Skins IA» mientras el registro

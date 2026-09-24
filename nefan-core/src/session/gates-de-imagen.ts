@@ -191,3 +191,14 @@ export function gatesDeImagen(f: EntradaDeGates): GatesDeImagen {
   const personajes: PermisoDePersonajes = !quierePersonajes ? "base" : techo ? "generar" : "restaurar";
   return { escenarios, personajes };
 }
+
+/** Qué PAGARÍA encender Imagen IA en cada faceta, en este entorno. Es la
+ *  pregunta de los rótulos de ANTES de elegir —el selector del título, el
+ *  subtexto del panel del chip, el badge de un save— y se contesta con los
+ *  MISMOS gates que deciden el POST, no volviendo a mirar el entorno: si un
+ *  día el techo cambia, el rótulo cambia con él (hallazgo H2 de la QA de la
+ *  tanda AS). */
+export function loQuePagaImagenIA(entorno: Entorno): { escenarios: boolean; personajes: boolean } {
+  const g = gatesDeImagen({ renderMode: "image", characterMode: "image", toggleLocalPersonajes: true, entorno });
+  return { escenarios: g.escenarios === "generar", personajes: g.personajes === "generar" };
+}

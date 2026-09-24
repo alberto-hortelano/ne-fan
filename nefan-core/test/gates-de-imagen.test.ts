@@ -13,6 +13,7 @@ import {
   esModo,
   gatesDeImagen,
   leerEntorno,
+  loQuePagaImagenIA,
   modoEfectivoDePersonajes,
   normalizarModo,
   MODO_AL_EMPEZAR,
@@ -214,5 +215,16 @@ describe("gatesDeImagen", () => {
     const copia = { ...entrada };
     gatesDeImagen(entrada);
     assert.deepEqual(entrada, copia);
+  });
+});
+
+/** Los rótulos de antes de elegir (QA H1/H2): salen de los gates, así que con
+ *  el techo quitado estos asertos se ponen rojos junto con los de gasto. */
+describe("loQuePagaImagenIA", () => {
+  it("en desarrollo encender Imagen IA no paga en ninguna faceta", () => {
+    assert.deepEqual(loQuePagaImagenIA("desarrollo"), { escenarios: false, personajes: false });
+  });
+  it("en producción paga en las dos", () => {
+    assert.deepEqual(loQuePagaImagenIA("produccion"), { escenarios: true, personajes: true });
   });
 });

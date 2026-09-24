@@ -735,6 +735,14 @@ async def skin_sprite_sheet_endpoint(body: SkinSpriteSheetRequest):
             raise
         apunte = _leer_bases().get(triple)
         if not apunte:
+            # Sin apunte de la base no hay clave que componer, así que nada de
+            # esta hoja se pagó nunca por aquí: con `resolve_only` la pregunta
+            # «¿está pagado?» tiene respuesta —no— y no es un fallo del
+            # servicio. Contestar 503 fundía el fusible de skins del cliente
+            # en desarrollo con sprite-forge caído (QA de la tanda AS, H5).
+            if body.resolve_only:
+                logger.info(f"SpriteSkin: {triple} sin apunte de base y sprite-forge caído: sin arte (resolve_only)")
+                return {"ok": True, "sin_arte": True}
             raise
         base_key = apunte["base_key"]
         perfil = (apunte["perfil"]["keyframes"], apunte["perfil"]["play_fps"])

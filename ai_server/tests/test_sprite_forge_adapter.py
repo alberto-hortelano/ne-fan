@@ -845,6 +845,20 @@ class AdaptadorHttpTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json(), {"ok": True, "sin_arte": True})
 
+    def test_resolve_only_con_el_servicio_caido_y_SIN_apunte_es_sin_arte_no_503(self):
+        # Sin haber pedido nunca esta hoja no hay apunte de la base: la clave no
+        # se puede componer, pero la respuesta a «¿está pagado?» sigue siendo
+        # «no». Un 503 aquí contaba en el fusible del cliente (QA AS, H5).
+        self.forge.parar()
+        r = self._pedir(resolve_only=True)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"ok": True, "sin_arte": True})
+
+    def test_SIN_resolve_only_con_el_servicio_caido_y_sin_apunte_sigue_siendo_503(self):
+        # Su gemelo: pedir GENERAR con el servicio caído sí es un fallo.
+        self.forge.parar()
+        self.assertEqual(self._pedir().status_code, 503)
+
     # ── el servicio caído ──────────────────────────────────────────────────
     def test_con_el_servicio_caido_el_arte_pagado_se_sigue_sirviendo(self):
         primera = self._pedir().json()
