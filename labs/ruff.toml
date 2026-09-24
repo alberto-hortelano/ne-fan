@@ -1,0 +1,17 @@
+# Las reglas de ruff para labs/ (#718), ESCRITAS aunque sean las de por
+# defecto: sin este fichero labs/ también recibía `E4,E7,E9,F`, pero en
+# silencio, y a los tres meses nadie sabría si era una decisión o un olvido.
+#
+# Por qué no hereda de ai_server/pyproject.toml (E,F,W,B,UP): `UP` cambia con
+# cada versión de ruff, y un bench que se retoma cada pocos meses —cuando
+# avanza la tecnología de IA— nacería rojo por modernizar sintaxis que nadie
+# ha tocado. Estas reglas son las que cazan lo que importa en un bench: código
+# muerto y nombres sin usar (F), sintaxis y sentencias rotas (E7, E9), imports
+# mal colocados (E4). E741 (nombres ambiguos) entra en E7, y es el que siembra
+# el guion 162.
+#
+# Lo lanza `ai_server/lint.sh` (`ruff check ai_server labs`): ruff resuelve la
+# config por fichero, así que ai_server/ sigue con su pyproject y labs/ con
+# este.
+[lint]
+select = ["E4", "E7", "E9", "F"]

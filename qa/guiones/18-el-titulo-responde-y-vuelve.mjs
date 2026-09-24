@@ -47,7 +47,6 @@ import {
   borrarSaveComoOtroCliente,
   comenzar,
   esperarListaDeSaves,
-  esperarTituloListo,
   nuevaPartida,
 } from "../lib/sesion.mjs";
 

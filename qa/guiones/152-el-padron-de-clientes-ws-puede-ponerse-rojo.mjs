@@ -118,7 +118,7 @@ const declara = (padron, fichero, escucha, que) => {
 const SABOTAJES = [
   [
     "un cliente nuevo con la forma vieja, SIN declarar",
-    (p) => writeFileSync(TMP, FORMA_VIEJA()),
+    (_p) => writeFileSync(TMP, FORMA_VIEJA()),
     [A_CUENTA, A_COMPLEMENTO],
   ],
   [

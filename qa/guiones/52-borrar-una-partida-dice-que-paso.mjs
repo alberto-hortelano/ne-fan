@@ -48,13 +48,6 @@ const idsEnPantalla = () =>
 /** El texto del aviso del título (`#ts-error`), vacío si no hay ninguno. */
 const avisoDelTitulo = () => document.getElementById("ts-error")?.textContent?.trim() ?? "";
 
-/** El color con el que se pinta ese aviso. No es leer píxeles: es el estilo
- *  inline que el título ESCRIBE, y es lo que distingue de un vistazo un fallo
- *  («no se pudo») de un éxito raro («ya no estaba»), que es la mitad del
- *  criterio 1b que el texto por sí solo no cubre. */
-const colorDelAviso = () =>
-  document.getElementById("ts-error")?.querySelector("span")?.style.color ?? "";
-
 /** Pulsa Borrar de una tarjeta y espera a que el título ACABE de reaccionar:
  *  o el aviso cambió, o la tarjeta desapareció. Nunca por reloj. */
 async function pulsarBorrar(ctx, id, desc) {
@@ -92,6 +85,10 @@ async function pulsarBorrar(ctx, id, desc) {
         aviso,
         tarjetas,
         sigue: tarjetas.includes(sid),
+        // El color del aviso. No es leer píxeles: es el estilo inline que el
+        // título ESCRIBE, y distingue de un vistazo un fallo («no se pudo») de
+        // un éxito raro («ya no estaba»): la mitad del criterio 1b que el
+        // texto por sí solo no cubre.
         color: el?.querySelector("span")?.style.color ?? "",
         marcada: borde(mia),
         vecinas: filas.filter((f) => f !== mia).map(borde),

@@ -171,10 +171,9 @@ jobs:
       # ruff sale de requirements-dev.txt con la versión FIJADA: la misma que
       # `ai_server/lint.sh` exige en el `.venv` local (#709).
       - run: pip install -r ai_server/requirements-dev.txt pillow httpx fastapi numpy
-      # ruff sobre ai_server + compileall sobre ai_server y labs (labs/ no
-      # tiene lint, pero compileall lo mantiene sintácticamente válido). Es
-      # el MISMO script que corre `npm run verify` en local: una definición,
-      # no dos listas de rutas.
+      # ruff + compileall sobre ai_server y labs (labs/ con sus propias reglas,
+      # en labs/ruff.toml, #718). Es el MISMO script que corre `npm run
+      # verify` en local: una definición, no dos listas de rutas.
       - run: bash ai_server/lint.sh
       # NEFAN_SPEND_DIR: el ledger de gasto (`cache/spend/events.jsonl`) es
       # dinero, y la suite le añadía 43 eventos de gasto INVENTADO por corrida

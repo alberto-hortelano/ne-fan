@@ -387,10 +387,6 @@ async function bordeDeLaE(ctx, alcance) {
   return { dentro, fuera };
 }
 
-const posicion = (ctx) => ctx.page.evaluate(() => ({ ...window.__nefan.state().pos }));
-const vida = (ctx) =>
-  ctx.page.evaluate(() => Number(document.getElementById("player-hp-text")?.textContent ?? "NaN"));
-
 /** MATA AL JUGADOR COMO MUERE DE VERDAD —el hostil que el motor suelta en el
  *  turno 2 le pega hasta tumbarle— y le devuelve a la vida con la R, que es la
  *  puerta del jugador. Nada de forzar la vida por el sim: lo que se mide es el

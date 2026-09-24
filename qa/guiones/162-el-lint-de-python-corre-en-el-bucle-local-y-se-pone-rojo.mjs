@@ -16,10 +16,13 @@
  *       instala ese fichero, la receta del `.venv` de `start.sh` lo cita, y la
  *       ruff que `lint.sh` acaba usando es la del pin (C2).
  *   3 · Con un `E741` sembrado en `ai_server/` el script sale ≠ 0 nombrándolo;
- *       con un `SyntaxError` en `labs/` también (compileall); y con un `E741`
- *       en `labs/` sale 0, porque ruff NO se amplía a `labs/` — CI no lo corre
- *       ahí y hoy daría rojo de nacimiento (C1, tal como lo reencuadró el
- *       crítico).
+ *       con un `SyntaxError` en `labs/` que solo ve el compilador, también
+ *       (compileall); y desde #718
+ *       (tanda AU) ruff mira también `labs/`, con SUS reglas (`labs/ruff.toml`,
+ *       `E4,E7,E9,F`): un `E741` o un `F841` en `labs/` lo ponen rojo, y un
+ *       aviso de `pyupgrade` —que `ai_server/` sí tiene y `labs/` a propósito
+ *       no— sale 0. Hasta la tanda AU esta siembra afirmaba lo contrario («un
+ *       E741 en `labs/` sale 0»), porque ruff no se ampliaba a `labs/`.
  *   4 · Sin ruff, con una ruff de otra versión, con `NEFAN_PYTHON` inválida,
  *       sin pin o sin intérprete, `lint.sh` FALLA EN VOZ ALTA con la orden
  *       exacta de instalación. Y NUNCA sale 0 sin haber corrido ruff: un
@@ -192,18 +195,42 @@ export default async function (ctx) {
         detalle: (r) => `rc=${r.rc}, ${/E741/u.test(r.out) ? "nombra E741" : "NO nombra E741"}`,
       },
       {
-        nombre: "un SyntaxError sembrado en labs/ pone lint.sh en ROJO (compileall)",
+        // Un error que SOLO ve compileall. Hasta #718 la siembra era `def (:`,
+        // pero desde que ruff mira labs/ ese lo caza ruff primero (`invalid-
+        // syntax`) y el script sale antes de llegar a compileall: la siembra
+        // seguía roja sin medir ya si compileall corre. Una codificación que no
+        // existe la deja pasar ruff 0.15 (medido: rc 0) y la rechaza el
+        // compilador.
+        nombre: "un SyntaxError que ruff no ve (codificación inexistente) sembrado en labs/ pone lint.sh en ROJO (compileall)",
         fichero: "labs/sembrado_por_el_guion_162.py",
-        texto: "def (:\n",
-        espera: (r) => r.rc !== 0 && /SyntaxError/u.test(r.out),
-        detalle: (r) => `rc=${r.rc}, ${/SyntaxError/u.test(r.out) ? "nombra SyntaxError" : "NO nombra SyntaxError"}`,
+        texto: "# -*- coding: noexiste -*-\nx = 1\n",
+        espera: (r) => r.rc !== 0 && /SyntaxError: unknown encoding/u.test(r.out),
+        detalle: (r) => `rc=${r.rc}, ${/SyntaxError: unknown encoding/u.test(r.out) ? "nombra el SyntaxError de compileall" : "NO nombra el SyntaxError de compileall"}`,
       },
       {
-        nombre: "un E741 sembrado en labs/ NO lo ve: ruff no se amplía a labs/ (CI tampoco; hoy nacería rojo)",
+        nombre: "un E741 sembrado en labs/ pone lint.sh en ROJO nombrándolo: ruff mira labs/ (#718)",
         fichero: "labs/sembrado_por_el_guion_162.py",
         texto: "def sembrado_por_el_guion_162():\n    l = 1\n",
-        espera: (r) => r.rc === 0 && !/E741/u.test(r.out),
-        detalle: (r) => `rc=${r.rc}, ${/E741/u.test(r.out) ? "ruff SÍ miró labs/" : "sin E741"}`,
+        espera: (r) => r.rc !== 0 && /E741/u.test(r.out),
+        detalle: (r) => `rc=${r.rc}, ${/E741/u.test(r.out) ? "nombra E741" : "NO nombra E741: ruff no miró labs/"}`,
+      },
+      {
+        nombre: "un F841 (variable asignada y nunca usada) sembrado en labs/ pone lint.sh en ROJO nombrándolo",
+        fichero: "labs/sembrado_por_el_guion_162.py",
+        texto: "def sembrado_por_el_guion_162():\n    muerta = 1\n",
+        espera: (r) => r.rc !== 0 && /F841/u.test(r.out),
+        detalle: (r) => `rc=${r.rc}, ${/F841/u.test(r.out) ? "nombra F841" : "NO nombra F841: ruff no miró labs/"}`,
+      },
+      {
+        // El control de la DECISIÓN de labs/ruff.toml: labs/ no hereda las
+        // reglas de ai_server/ (UP cambia con cada ruff, y un bench que se
+        // retoma cada pocos meses nacería rojo). Con `extend` al pyproject de
+        // ai_server/ esta siembra sale ROJA con UP032.
+        nombre: "un aviso de pyupgrade (UP032) sembrado en labs/ sale 0: labs/ tiene sus reglas, no las de ai_server/",
+        fichero: "labs/sembrado_por_el_guion_162.py",
+        texto: 'print("{}".format(1))\n',
+        espera: (r) => r.rc === 0 && !/UP032/u.test(r.out),
+        detalle: (r) => `rc=${r.rc}, ${/UP032/u.test(r.out) ? "labs/ recibió UP032 (¿hereda de ai_server/?)" : "sin UP032"}`,
       },
     ];
     for (const [i, s] of siembras.entries()) {

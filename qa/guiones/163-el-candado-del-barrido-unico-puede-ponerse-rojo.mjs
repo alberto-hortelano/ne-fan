@@ -50,7 +50,7 @@
  *  sucio o ya hay rastro de un sembrado, porque entonces no puede restaurar.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
