@@ -45,8 +45,9 @@
  *  `verify` EMPIEZA por `lint:py` y que `lint:py` es `lint.sh`, y de ahí que
  *  el rojo de `lint.sh` sea el rojo de `verify`. Tampoco prueba la rama del
  *  `.venv` del checkout principal vía `git-common-dir` (necesita un worktree
- *  real): ese camino lo ejerce el `verify` de cada tanda, cuya última línea
- *  nombra el intérprete.
+ *  real): esa, y el resto de la resolución del intérprete, la mide
+ *  `nefan-core/test/python-interprete-paridad.test.ts` contra `qa/lib/python.mjs`
+ *  con `lint.sh --interprete` (#717).
  *
  *      node qa/run.mjs --sin-navegador 162
  *
