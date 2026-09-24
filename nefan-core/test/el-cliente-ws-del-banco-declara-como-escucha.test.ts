@@ -32,9 +32,12 @@
  *   · su modo declarado = `todo` | `nada`, y la coherencia se MIDE: `nada` ⇔
  *     cero oyentes. Declarar «escucha» sobre un socket mudo es rojo, y declarar
  *     `nada` sobre uno que escucha también;
- *   · y ningún GUION abre su propio socket (#694): la espera «mando un frame y
- *     espero SU respuesta» tiene dueño en `qa/lib/cable.mjs`
- *     (`preguntarPorElCable`), que trata el rechazo del intake como desenlace.
+ *   · y nadie fuera de `qa/lib/` abre su propio socket (los guiones desde
+ *     #694, todo `qa/` desde #739): la espera «mando un frame y espero SU
+ *     respuesta» tiene dueño en `qa/lib/cable.mjs` (`preguntarPorElCable`), que
+ *     trata el rechazo del intake como desenlace, y la de Node en
+ *     `qa/lib/bridge-desde-node.mjs`; las dos leen el rechazo con `leerFrame`
+ *     (`qa/lib/rechazo-del-bridge.mjs`). El zod solo admite `qa/lib/`.
  *     Hubo un tercer modo, `una-respuesta`, con quince ocupantes que tiraban
  *     ese rechazo por tipo y se colgaban mudos hasta el presupuesto; se retiró
  *     del zod, así que declararlo es rojo en vez de una foto a cero.
@@ -81,6 +84,14 @@ const CONTRATO = join(core, "data", "contract", "clientes-ws-del-banco.json");
  *  que tenga cero ocupantes, es que declararlo no pasa el zod. */
 const MODOS = ["todo", "nada"] as const;
 
+/** Dónde puede vivir un cliente WS propio del banco: un `.mjs` DIRECTAMENTE en
+ *  `qa/lib/`, sin subcarpetas. Es la misma expresión para el zod (qué se puede
+ *  declarar) y para el veto (qué no se puede abrir), para que las dos no
+ *  discrepen: con el veto por prefijo y el zod sin barra, un socket en
+ *  `qa/lib/sub/` salía rojo solo por la cuenta, que manda a declararlo, y al
+ *  declararlo chocaba con el zod (M-3 de la QA de #739). */
+export const EN_QA_LIB = /^qa\/lib\/[\w.-]+\.mjs$/;
+
 const PadronSchema = z
   .object({
     _comment: z.string().min(1),
@@ -91,8 +102,13 @@ const PadronSchema = z
       .array(
         z
           .object({
-            /** Ruta relativa a la raíz del repo, como la escribe `git`. */
-            fichero: z.string().regex(/^qa\/[\w./-]+\.mjs$/, "una declaración nombra un `qa/**/*.mjs`"),
+            /** Ruta relativa a la raíz del repo, como la escribe `git`. SOLO
+             *  `qa/lib/` (#739): fuera de ahí un socket propio no se declara,
+             *  se veta, y el tipo lo hace inexpresable en vez de rojo por
+             *  conteo. */
+            fichero: z
+              .string()
+              .regex(EN_QA_LIB, "una declaración nombra un `qa/lib/*.mjs` (sin subcarpetas): fuera de ahí no se abre un socket propio"),
             /** Uno por `new WebSocket`, EN ORDEN DE FUENTE. La longitud es la
              *  cuenta exacta: por eso también es rojo que sobren. */
             sockets: z
@@ -246,15 +262,19 @@ const fuentes = fuentesDelBanco(QA).map((f) => `qa/${f}`);
 const censo = new Map(fuentes.map((f) => [f, socketsDe(readFileSync(join(repoRoot, f), "utf8"))] as const));
 const conSocket = fuentes.filter((f) => (censo.get(f)?.length ?? 0) > 0);
 
-/** Los sockets que abre un GUION, como `fichero:línea`. PURA sobre el censo, para
- *  poder probarla con uno inventado. Un guion no abre su propio socket (#694):
- *  «mando un frame y espero SU respuesta» es `preguntarPorElCable`, y
- *  «mando y espero otra consecuencia» es `porElCable`, los dos en
- *  `qa/lib/cable.mjs`. Sin este veto, el decimosexto nacería declarado `todo`
- *  con un oyente que tira el rechazo por tipo, y el padrón no lo distinguiría
- *  (agujero 2). */
-export function socketsEnGuiones(c: ReadonlyMap<string, readonly SocketVisto[]>): string[] {
-  return [...c].filter(([f]) => f.startsWith("qa/guiones/")).flatMap(([f, ss]) => ss.map((s) => `${f}:${s.linea}`));
+/** Los sockets que se abren FUERA de `qa/lib/`, como `fichero:línea`. PURA
+ *  sobre el censo, para poder probarla con uno inventado. Nadie fuera de
+ *  `qa/lib/` abre su propio socket: desde #694 los guiones, y desde #739 todo
+ *  `qa/` —los candados de la raíz y `run.mjs` incluidos—. Desde la página,
+ *  «mando un frame y espero SU respuesta» es `preguntarPorElCable` y «mando y
+ *  espero otra consecuencia» es `porElCable` (`qa/lib/cable.mjs`); desde Node,
+ *  `conversarConElBridge` (`qa/lib/bridge-desde-node.mjs`). Sin este veto, el
+ *  siguiente cliente nacería declarado `todo` con un oyente que tira el
+ *  rechazo por tipo en cualquier rincón de `qa/`, y el padrón no lo
+ *  distinguiría (agujero 2). Fuera es todo lo que no casa `EN_QA_LIB`:
+ *  `qa/libro/` no es `qa/lib/`, y `qa/lib/sub/` tampoco (lo mismo que el zod). */
+export function socketsFueraDeLib(c: ReadonlyMap<string, readonly SocketVisto[]>): string[] {
+  return [...c].filter(([f]) => !EN_QA_LIB.test(f)).flatMap(([f, ss]) => ss.map((s) => `${f}:${s.linea}`));
 }
 
 describe("el cliente WS del banco declara cómo escucha (#678): new WebSocket en qa/", () => {
@@ -282,13 +302,15 @@ describe("el cliente WS del banco declara cómo escucha (#678): new WebSocket en
     );
   });
 
-  it("ningún guion abre su propio socket: la espera de una respuesta pasa por `qa/lib/cable.mjs`", () => {
+  it("ningún cliente WS vive fuera de `qa/lib/`: hablar con el bridge pasa por `cable.mjs` o `bridge-desde-node.mjs`", () => {
     assert.deepEqual(
-      socketsEnGuiones(censo),
+      socketsFueraDeLib(censo),
       [],
-      "un `new WebSocket` en un guion es un cliente del bridge con su propia lectura del rechazo, que es lo que " +
-        "#694 juntó en un sitio: usa `preguntarPorElCable` (mando y espero SU respuesta) o `porElCable` (mando y " +
-        "espero otra consecuencia) de qa/lib/cable.mjs. Declararlo en el padrón no lo arregla.",
+      "un `new WebSocket` fuera de qa/lib/ es un cliente del bridge con su propia lectura del rechazo, que es lo que " +
+        "#694 y #739 juntaron: desde la página usa `preguntarPorElCable` (mando y espero SU respuesta) o `porElCable` " +
+        "(mando y espero otra consecuencia) de qa/lib/cable.mjs; desde Node, `conversarConElBridge` de " +
+        "qa/lib/bridge-desde-node.mjs. Declararlo en el padrón no lo arregla: el zod solo admite un .mjs directamente " +
+        "en qa/lib/, sin subcarpetas.",
     );
   });
 
@@ -297,7 +319,13 @@ describe("el cliente WS del banco declara cómo escucha (#678): new WebSocket en
       .map((f) => ({ f, hay: censo.get(f)?.length ?? 0, dice: declarados.get(f)?.sockets.length ?? 0, lineas: censo.get(f) ?? [] }))
       .filter((r) => r.hay !== r.dice);
     assert.deepEqual(
-      mal.map((r) => `${r.f}: ${r.hay} en el árbol (líneas ${r.lineas.map((s) => s.linea).join(", ") || "—"}) contra ${r.dice} declarados`),
+      mal.map(
+        (r) =>
+          `${r.f}: ${r.hay} en el árbol (líneas ${r.lineas.map((s) => s.linea).join(", ") || "—"}) contra ${r.dice} declarados` +
+          // Fuera de `qa/lib/` no hay declaración posible (el zod no la deja
+          // pasar): el rojo manda al veto, no al padrón (M-3 de la QA de #739).
+          (EN_QA_LIB.test(r.f) ? "" : " — está FUERA de qa/lib/*.mjs: no se declara, se mueve a una puerta de qa/lib/ (ver el veto)"),
+      ),
       [],
       `Un frame que no pasa el contrato del bridge vuelve por UNICAST al socket que lo mandó, y un cliente ` +
         `que no lo escucha pierde la causa de lo que le pasa después. Cada \`new WebSocket\` de qa/ entra en ` +
@@ -560,28 +588,56 @@ describe("el detector de clientes WS del banco", () => {
     assert.deepEqual(socketsDe("sockets.push(new WebSocket(u));"), [{ linea: 1, oyentes: 0, ligado: null }]);
   });
 
-  it("el veto de guiones ve un socket en `qa/guiones/**` y solo ahí", () => {
+  it("el veto ve un socket en cualquier sitio de `qa/` salvo `qa/lib/`: guiones, la raíz y lo que se parezca", () => {
     // Fixture y no temporal en el árbol: un `.mjs` suelto en `guiones/` lo
     // cogería como guion cualquier batería que arrancase a la vez (`run.mjs`).
+    // El de la raíz sí se sabotea sobre el árbol, en el guion 152.
     const visto = (linea: number): SocketVisto => ({ linea, oyentes: 1, ligado: "ws" });
     const censoInventado = new Map<string, SocketVisto[]>([
       ["qa/guiones/999-un-guion-con-su-socket.mjs", [visto(12), visto(40)]],
       ["qa/guiones/998-sin-socket.mjs", []],
       ["qa/lib/cable.mjs", [visto(70)]],
+      ["qa/lib/bridge-desde-node.mjs", [visto(90)]],
+      // La raíz de `qa/`: hasta #739 era territorio permitido.
       ["qa/el-cliente-node.mjs", [visto(5)]],
-      // Un nombre que EMPIEZA parecido y no es la carpeta.
+      ["qa/run.mjs", [visto(930)]],
+      // Nombres que EMPIEZAN parecido y no son la carpeta.
       ["qa/guiones-viejos/x.mjs", [visto(1)]],
+      ["qa/libro/x.mjs", [visto(3)]],
+      // Una SUBCARPETA de `qa/lib/`: el zod no la deja declarar, así que el
+      // veto tampoco la deja abrir (M-3 de la QA de #739).
+      ["qa/lib/sub/x.mjs", [visto(7)]],
     ]);
-    assert.deepEqual(socketsEnGuiones(censoInventado), [
+    assert.deepEqual(socketsFueraDeLib(censoInventado), [
       "qa/guiones/999-un-guion-con-su-socket.mjs:12",
       "qa/guiones/999-un-guion-con-su-socket.mjs:40",
+      "qa/el-cliente-node.mjs:5",
+      "qa/run.mjs:930",
+      "qa/guiones-viejos/x.mjs:1",
+      "qa/libro/x.mjs:3",
+      "qa/lib/sub/x.mjs:7",
     ]);
   });
 
-  it("un oyente que TIRA el rechazo por tipo cuenta como oyente: el agujero (2), medido", () => {
+  it("el zod no deja declarar nada fuera de `qa/lib/`: la entrada de la raíz es inexpresable, no solo roja", () => {
+    const entrada = (fichero: string) => ({
+      _comment: "x",
+      _lo_que_esto_NO_sujeta: "x",
+      clientes: [{ fichero, sockets: [{ escucha: "todo", porque: "x" }] }],
+    });
+    for (const fuera of ["qa/run.mjs", "qa/el-cliente-node.mjs", "qa/guiones/1-x.mjs", "qa/libro/x.mjs", "qa/lib/sub/x.mjs"]) {
+      assert.equal(PadronSchema.safeParse(entrada(fuera)).success, false, `el zod aceptó ${fuera}`);
+    }
+    assert.equal(PadronSchema.safeParse(entrada("qa/lib/bridge-desde-node.mjs")).success, true);
+  });
+
+  it("un oyente que TIRA el rechazo por tipo cuenta como oyente: el agujero (2), un `todo` nuevo en qa/lib/", () => {
     // La forma exacta de los quince `una-respuesta` de antes de #694. El árbol
-    // ve que escucha; no ve que tire el `narrative_status/error`. Si algún día
-    // lo ve, esto se pone rojo y hay que subirlo a lo que SÍ se mide.
+    // ve que escucha; no ve que tire el `narrative_status/error` ni que no pase
+    // por `leerFrame`. Desde #739 esto solo puede vivir en `qa/lib/` (el veto
+    // y el zod cierran el resto de `qa/`), y ahí es donde sigue abierto. Si
+    // algún día el árbol lo ve, esto se pone rojo y hay que subirlo a lo que SÍ
+    // se mide.
     const texto = [
       "const ws = new WebSocket(u);",
       "ws.onmessage = (ev) => {",

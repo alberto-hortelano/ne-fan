@@ -48,7 +48,7 @@ import { fileURLToPath } from "node:url";
 import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { rutaDelSave, esperarPartidaEnDisco } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
-import { preguntarPorElCable } from "../lib/cable.mjs";
+import { reanudarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
 
@@ -95,16 +95,6 @@ function charFueraDelAlfabeto(alfabeto) {
  *  Es el mismo texto que mide el 62, porque es el mismo desenlace. */
 const SALIDA_PARA_EL_JUGADOR = /ya no vale para esta versión del juego.*bórrala o empieza una nueva/;
 
-/** Un `resume_session` crudo por el cable del bridge, DESDE la página (misma
- *  receta que el 46 y el 62: la URL la da el propio juego con sus overrides). */
-async function resumePorElCable(ctx, sessionId) {
-  return preguntarPorElCable(
-    ctx,
-    { type: "resume_session", sessionId, requestId: "qa-113" },
-    { respuesta: "session_started" },
-  ).then((m) => ({ ok: m.ok, error: m.error ?? "" }));
-}
-
 export default async function (ctx) {
   const alfabeto = alfabetoDelGrid();
   const ajeno = charFueraDelAlfabeto(alfabeto);
@@ -143,7 +133,7 @@ export default async function (ctx) {
   const [escena] = conGrid;
 
   // ── 1. CONTROL: el save intacto CARGA ────────────────────────────────────
-  const control = await resumePorElCable(ctx, sessionId);
+  const control = await reanudarPorElCable(ctx, sessionId, "qa-113");
   ctx.expect(
     "1 · el save intacto reanuda (sin esto, el rechazo de abajo podría ser de la ruta y no del contenido)",
     control.ok === true,
@@ -160,7 +150,7 @@ export default async function (ctx) {
   const textoSaboteado = JSON.stringify(saboteado);
   writeFileSync(ruta, textoSaboteado);
 
-  const res = await resumePorElCable(ctx, sessionId);
+  const res = await reanudarPorElCable(ctx, sessionId, "qa-113");
   ctx.log(`2 · resume del save saboteado: ${JSON.stringify(res).slice(0, 300)}`);
   ctx.expect(
     "2 · el resume RECHAZA el save: un char que nadie declaró no entra al mundo como suelo",
@@ -220,7 +210,7 @@ export default async function (ctx) {
     ruta,
   );
   writeFileSync(ruta, original);
-  const res4 = await resumePorElCable(ctx, sessionId);
+  const res4 = await reanudarPorElCable(ctx, sessionId, "qa-113");
   ctx.expect(
     "4 · restaurado el grid, el mismo resume carga: el rechazo era del char, no de la partida",
     res4.ok === true,

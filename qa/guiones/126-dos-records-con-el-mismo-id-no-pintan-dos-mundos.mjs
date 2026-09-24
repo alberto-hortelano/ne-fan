@@ -39,7 +39,7 @@ import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { rutaDelSave, esperarPartidaEnDisco } from "../lib/saves.mjs";
 import { acercarse } from "../lib/combate.mjs";
 import { URLS } from "../lib/stack.mjs";
-import { preguntarPorElCable } from "../lib/cable.mjs";
+import { reanudarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -55,16 +55,6 @@ const HOSTIL = "Secuaz";
 /** Lo que el jugador tiene que leer: la salida real, no «inténtalo de nuevo».
  *  El mismo texto que miden el 62 y el 113, porque es el mismo desenlace. */
 const SALIDA_PARA_EL_JUGADOR = /ya no vale para esta versión del juego.*bórrala o empieza una nueva/;
-
-/** Un `resume_session` crudo por el cable del bridge, DESDE la página (la misma
- *  receta que el 46, el 62 y el 113: la URL la da el propio juego). */
-function resumePorElCable(ctx, sessionId) {
-  return preguntarPorElCable(
-    ctx,
-    { type: "resume_session", sessionId, requestId: "qa-126" },
-    { respuesta: "session_started" },
-  ).then((m) => ({ ok: m.ok, error: m.error ?? "" }));
-}
 
 /** Habla con el tabernero hasta que el motor falso pone el cofre (su turno 3).
  *  Es la forma de tener en el save un record de RUNTIME que duplicar: el del
@@ -134,7 +124,7 @@ export default async function (ctx) {
   const victima = runtime.find((e) => e.data?.name === COFRE) ?? runtime[0];
 
   // ── 1 · CONTROL: el save intacto REANUDA ─────────────────────────────────
-  const control = await resumePorElCable(ctx, sessionId);
+  const control = await reanudarPorElCable(ctx, sessionId, "qa-126");
   ctx.expect(
     "1 · el save intacto reanuda (sin esto, el rechazo de abajo podría ser de la ruta y no del contenido)",
     control.ok === true,
@@ -152,7 +142,7 @@ export default async function (ctx) {
   const textoSaboteado = JSON.stringify(saboteado);
   writeFileSync(ruta, textoSaboteado);
 
-  const res = await resumePorElCable(ctx, sessionId);
+  const res = await reanudarPorElCable(ctx, sessionId, "qa-126");
   ctx.log(`2 · resume del save con el id «${victima.id}» repetido: ${JSON.stringify(res).slice(0, 300)}`);
   ctx.expect(
     "2 · el resume RECHAZA el save: dos entidades con el mismo id no entran al mundo",
@@ -206,7 +196,7 @@ export default async function (ctx) {
     ruta,
   );
   writeFileSync(ruta, original);
-  const res4 = await resumePorElCable(ctx, sessionId);
+  const res4 = await reanudarPorElCable(ctx, sessionId, "qa-126");
   ctx.expect(
     "4 · quitado el duplicado, la MISMA partida carga: el rechazo era del id repetido, no de la partida",
     res4.ok === true,

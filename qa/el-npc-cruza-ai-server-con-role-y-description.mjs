@@ -86,6 +86,7 @@ import { fileURLToPath } from "node:url";
 
 import { PUERTOS, offsetActual } from "./lib/stack.mjs";
 import { interpretePython } from "./lib/python.mjs";
+import { conversarConElBridge } from "./lib/bridge-desde-node.mjs";
 import {
   duenyosDeLosPuertos,
   esperarPuertoArriba,
@@ -197,62 +198,33 @@ const corto = (x, n = 200) => JSON.stringify(x ?? null).slice(0, n);
  *  hasta la escena Y su `ready` (`broadcastScene` emite primero el
  *  `narrative_event` con `scene_loaded` y detrás el `narrative_status: ready`
  *  que dice de dónde salió la escena). Devuelve todo lo recibido más la
- *  escena servida. */
-function jugarElArranque(puertoBridge) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${puertoBridge}`);
-    const recibidos = [];
-    let escena = null;
-    let cerrado = false;
-    const fin = (fn, v) => {
-      if (cerrado) return;
-      cerrado = true;
-      clearTimeout(cortafuegos);
-      try {
-        ws.close();
-      } catch {
-        // ya cerrado por el otro lado: lo que importa es el veredicto
-      }
-      fn(v);
-    };
-    const cortafuegos = setTimeout(
-      () =>
-        fin(
-          reject,
-          new Error(
-            `el bridge no difundió scene_loaded + ready en ${ESCENA_MAX_MS / 1000} s; ` +
-              `mensajes recibidos: ${recibidos.map((m) => m.type + (m.phase ? `/${m.phase}` : "")).join(", ") || "ninguno"}`,
-          ),
-        ),
-      ESCENA_MAX_MS,
-    );
-    ws.addEventListener("error", (e) => fin(reject, new Error(`WebSocket: ${e.message ?? "error"}`)));
-    ws.addEventListener("open", () => {
-      ws.send(JSON.stringify({ type: "start_session", requestId: "qa-npc-cruza", gameId: GAME }));
-    });
-    ws.addEventListener("message", (ev) => {
-      let msg;
-      try {
-        msg = JSON.parse(String(ev.data));
-      } catch {
-        return fin(reject, new Error(`el bridge mandó algo que no es JSON: ${String(ev.data).slice(0, 200)}`));
-      }
-      recibidos.push(msg);
-      if (msg.type === "session_started" && msg.ok === false) {
-        return fin(reject, new Error(`session_started ok:false — ${msg.error}`));
-      }
-      if (msg.type === "narrative_status" && msg.phase === "error") {
-        return fin(reject, new Error(`narrative_status error — ${msg.message}`));
-      }
-      if (msg.type === "narrative_event") {
-        const efecto = (msg.effects ?? []).find((e) => e.kind === "scene_loaded");
-        if (efecto) escena = efecto.scene;
-      }
-      if (msg.type === "narrative_status" && msg.phase === "ready" && escena) {
-        return fin(resolve, { recibidos, escena });
-      }
-    });
-  });
+ *  escena servida.
+ *
+ *  El socket y la lectura del rechazo son de `qa/lib/bridge-desde-node.mjs`
+ *  (#739): cualquier `narrative_status/error` o frame ilegible corta con su
+ *  texto, y el techo lista los tipos recibidos. Lo que es de ESTE candado es el
+ *  `session_started ok:false`, que lanza desde `listo`. */
+async function jugarElArranque(puertoBridge) {
+  const escenaDe = (m) =>
+    m.type === "narrative_event" ? ((m.effects ?? []).find((e) => e.kind === "scene_loaded")?.scene ?? null) : null;
+  const { recibidos } = await conversarConElBridge(
+    `ws://127.0.0.1:${puertoBridge}`,
+    { type: "start_session", requestId: "qa-npc-cruza", gameId: GAME },
+    {
+      techoMs: ESCENA_MAX_MS,
+      listo: (msgs) => {
+        const ultimo = msgs.at(-1);
+        if (!ultimo) return false;
+        if (ultimo.type === "session_started" && ultimo.ok === false) {
+          throw new Error(`session_started ok:false — ${ultimo.error}`);
+        }
+        return ultimo.type === "narrative_status" && ultimo.phase === "ready" && msgs.some((m) => escenaDe(m));
+      },
+    },
+  );
+  // La escena es la del ÚLTIMO `scene_loaded` antes del `ready`, como antes.
+  const escena = recibidos.map(escenaDe).filter(Boolean).at(-1);
+  return { recibidos, escena };
 }
 
 async function main() {

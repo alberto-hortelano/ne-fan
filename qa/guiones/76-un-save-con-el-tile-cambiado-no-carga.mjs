@@ -34,19 +34,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { rutaDelSave, esperarPartidaEnDisco } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
-import { preguntarPorElCable } from "../lib/cable.mjs";
+import { reanudarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
-
-/** Un resume_session crudo por el cable del bridge, DESDE la página (mismo
- *  molde que el guion 46). Devuelve el `session_started`. */
-async function resumePorElCable(ctx, sessionId) {
-  return preguntarPorElCable(
-    ctx,
-    { type: "resume_session", sessionId, requestId: "qa-76" },
-    { respuesta: "session_started" },
-  ).then((m) => ({ ok: m.ok, error: m.error ?? "" }));
-}
 
 export default async function (ctx) {
   // ── 0. Una partida real, jugada por el camino del jugador ────────────────
@@ -102,7 +92,7 @@ async function cuerpo(ctx, { ruta, original, sessionId, escena, rec }) {
     delete r.tile;
   });
   writeFileSync(ruta, sinTileEnRegistro);
-  const res1 = await resumePorElCable(ctx, sessionId);
+  const res1 = await reanudarPorElCable(ctx, sessionId, "qa-76");
   ctx.expect(
     "registro sin `tile` → contesta save_invalido (no carga, no session_not_found)",
     res1.ok === false && /^save_invalido:/.test(res1.error),
@@ -121,7 +111,7 @@ async function cuerpo(ctx, { ruta, original, sessionId, escena, rec }) {
     r.tile = otro;
   });
   writeFileSync(ruta, tileCambiado);
-  const res2 = await resumePorElCable(ctx, sessionId);
+  const res2 = await reanudarPorElCable(ctx, sessionId, "qa-76");
   ctx.expect(
     "registro con `tile` distinto del de su escena → contesta save_invalido",
     res2.ok === false && /^save_invalido:/.test(res2.error),
@@ -143,7 +133,7 @@ async function cuerpo(ctx, { ruta, original, sessionId, escena, rec }) {
     delete r.scene_data.tile;
   });
   writeFileSync(ruta, escenaSinTile);
-  const res3 = await resumePorElCable(ctx, sessionId);
+  const res3 = await reanudarPorElCable(ctx, sessionId, "qa-76");
   ctx.expect(
     "escena del save sin `tile` → contesta save_invalido nombrando `tile`",
     res3.ok === false && /^save_invalido:/.test(res3.error) && /`tile`|\btile\b/.test(res3.error),
@@ -176,7 +166,7 @@ async function cuerpo(ctx, { ruta, original, sessionId, escena, rec }) {
 
   // ── 5. Restaurado el fichero, la partida REVIVE ──────────────────────────
   writeFileSync(ruta, original);
-  const res5 = await resumePorElCable(ctx, sessionId);
+  const res5 = await reanudarPorElCable(ctx, sessionId, "qa-76");
   ctx.expect(
     "restaurado el fichero, el mismo resume carga (el rechazo era por el contenido, no por la ruta)",
     res5.ok === true,

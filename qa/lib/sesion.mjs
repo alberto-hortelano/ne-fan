@@ -12,6 +12,7 @@
 import { esperarPartidaEnDisco } from "./saves.mjs";
 import { URLS } from "./stack.mjs";
 import { preguntarPorElCable } from "./cable.mjs";
+import { FUENTE_DE_LEER_FRAME } from "./rechazo-del-bridge.mjs";
 import { mensajeDeRegistroQueNuncaLlego } from "./esperas.mjs";
 import {
   MS_DEL_TILE,
@@ -624,8 +625,11 @@ export async function esperarRegistro(ctx, desc, libro, probe, maxMs = 60_000, a
  *  desenlaces hablados —fallo, rechazo, descarte— dejan el ✘ y devuelven. */
 export async function pedirYEsperarTile(ctx, key, tx, ty, { ms = MS_DEL_TILE } = {}) {
   await ctx.page.evaluate(
-    ([x, y]) =>
+    ([x, y, fuenteDeLeer]) =>
       new Promise((res, rej) => {
+        // «El bridge rechazó» se define UNA vez (`rechazo-del-bridge.mjs`) y
+        // llega aquí como TEXTO: la página no ve un `import`.
+        const leer = new Function(`return (${fuenteDeLeer})`)();
         const url = window.__nefan.servicios()["game-gateway"];
         // Un socket por petición: el de la anterior ya cumplió y dejarlo
         // abierto acumularía clientes WS en el bridge durante todo el guion.
@@ -637,28 +641,18 @@ export async function pedirYEsperarTile(ctx, key, tx, ty, { ms = MS_DEL_TILE } =
         // Lo que el bridge conteste A ESTE SOCKET. Solo puede ser unicast: este
         // socket no manda `subscribe`, así que no está en `narrativeSubscribers`
         // y no recibe difusiones.
+        // Lo ilegible sale de `leer` como rechazo `ilegible`: se APUNTA, no se
+        // descarta — es exactamente el dato que falta cuando el tile no llega.
         ws.onmessage = (ev) => {
-          try {
-            const m = JSON.parse(ev.data);
-            if (m && m.type === "narrative_status" && m.phase === "error") {
-              window.__qaTileRechazos.push({ kind: m.kind ?? null, message: m.message ?? "sin mensaje" });
-            }
-          } catch (e) {
-            // Fail-loud: lo ilegible se APUNTA como rechazo, no se descarta —
-            // un frame que no se puede leer es exactamente el dato que hace
-            // falta cuando el tile no llega.
-            window.__qaTileRechazos.push({
-              kind: "ilegible",
-              message: `${String(e)} — ${String(ev.data).slice(0, 200)}`,
-            });
-          }
+          const { rechazo } = leer(ev.data);
+          if (rechazo) window.__qaTileRechazos.push(rechazo);
         };
         ws.onopen = () => {
           ws.send(JSON.stringify({ type: "request_tile", tx: x, ty: y, reason: "blocking" }));
           res(true);
         };
       }),
-    [tx, ty],
+    [tx, ty, FUENTE_DE_LEER_FRAME],
   );
 
   // MARCA DE AGUA de los descartes (#312), no el total: el contador es de la

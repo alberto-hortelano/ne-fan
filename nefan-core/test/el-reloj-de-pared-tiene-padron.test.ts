@@ -298,8 +298,8 @@ describe("LÍMITE MEDIDO: lo que el padrón NO sujeta (cada punto de `_lo_que_es
     return { relojes: fs.reduce((a, b) => a + b, 0), ficheros: fs.length };
   };
 
-  it("(1) qa/lib/** queda fuera: hoy 28 relojes en 6 ficheros; y todo raf-param fuera de guiones vive en lib/", () => {
-    assert.deepEqual(fuera((f) => f.startsWith("qa/lib/")), { relojes: 28, ficheros: 6 });
+  it("(1) qa/lib/** queda fuera: hoy 30 relojes en 7 ficheros; y todo raf-param fuera de guiones vive en lib/", () => {
+    assert.deepEqual(fuera((f) => f.startsWith("qa/lib/")), { relojes: 30, ficheros: 7 });
     // Lo que vigila la forma del 93 fuera de los guiones: los tres raf-param de
     // hoy, en la carga sintética (arranca y reprograma su `tic`) y en
     // `asentarElLayout`, cuya promesa se DEVUELVE (su valor sale de la función).

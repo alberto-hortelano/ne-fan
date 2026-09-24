@@ -51,7 +51,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { nuevaPartida, comenzar, esperarTituloListo, esperarListaDeSaves, reanudar } from "../lib/sesion.mjs";
 import { acercarse } from "../lib/combate.mjs";
 import { esperarEnElSave, rutaDelSave } from "../lib/saves.mjs";
-import { preguntarPorElCable } from "../lib/cable.mjs";
+import { reanudarPorElCable } from "../lib/cable.mjs";
 
 /** El motor falso es determinista POR TURNO de diálogo: saves vírgenes y el
  *  contador a cero. */
@@ -87,16 +87,6 @@ function nombreEnElLedger(ruta, id, name) {
   else ent.data.name = name;
   writeFileSync(ruta, JSON.stringify(save, null, 2));
   return { id: ent.id, data: { ...ent.data } };
-}
-
-/** `resume_session` por el cable, tal cual lo manda el cliente; devuelve la
- *  respuesta `session_started` (calcado del guion 62). */
-function resumePorElCable(ctx, sessionId) {
-  return preguntarPorElCable(
-    ctx,
-    { type: "resume_session", sessionId, requestId: "qa-67" },
-    { respuesta: "session_started" },
-  ).then((m) => ({ ok: m.ok, error: m.error ?? "" }));
 }
 
 /** Al título limpio (reload) y con la lista de saves puesta. */
@@ -168,7 +158,7 @@ export default async function (ctx) {
   ctx.log(`saboteado «${roto.id}»: data sin name → ${JSON.stringify(roto.data)}`);
 
   // 1a · El cable: el save no vale, y el motivo nombra al record.
-  const res = await resumePorElCable(ctx, partida.sessionId);
+  const res = await reanudarPorElCable(ctx, partida.sessionId, "qa-67");
   ctx.log(`resume por el cable: ${JSON.stringify(res)}`);
   ctx.expect(
     "#397 · el resume de un save con un spawn sin `name` contesta save_invalido (no carga mudo)",

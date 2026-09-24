@@ -37,7 +37,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { rutaDelSave, esperarPartidaEnDisco } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
-import { preguntarPorElCable } from "../lib/cable.mjs";
+import { reanudarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
 
@@ -50,17 +50,6 @@ const ENTITY_IMPOSIBLE = {
   cell: [1, 1],
   footprint: [8, 8],
 };
-
-/** Un resume_session crudo por el cable del bridge, DESDE la página (la URL
- *  la da el propio juego, con sus overrides de query — mismo patrón que
- *  `listarPorElBridge` en qa/lib/saves.mjs). Devuelve el `session_started`. */
-async function resumePorElCable(ctx, sessionId) {
-  return preguntarPorElCable(
-    ctx,
-    { type: "resume_session", sessionId, requestId: "qa-46" },
-    { respuesta: "session_started" },
-  ).then((m) => ({ ok: m.ok, error: m.error ?? "" }));
-}
 
 export default async function (ctx) {
   // ── 0. Una partida real, jugada por el camino del jugador ────────────────
@@ -91,7 +80,7 @@ export default async function (ctx) {
   // ── 1. PROTOCOLO: entity que viola el contrato → save_invalido ───────────
   const rota = conEntityRota();
   writeFileSync(ruta, rota.json);
-  const res1 = await resumePorElCable(ctx, sessionId);
+  const res1 = await reanudarPorElCable(ctx, sessionId, "qa-46");
   ctx.expect(
     "el resume de un save con una entity ilegal contesta save_invalido (no carga, no session_not_found)",
     res1.ok === false && /^save_invalido:/.test(res1.error),
@@ -115,7 +104,7 @@ export default async function (ctx) {
 
   // …y un id que NO existe sigue por el otro canal, que es la distinción
   // que #334 vino a crear (antes ambos colapsaban en `false`).
-  const res2 = await resumePorElCable(ctx, "qa_fantasma_46");
+  const res2 = await reanudarPorElCable(ctx, "qa_fantasma_46", "qa-46");
   ctx.expect(
     "un save inexistente sigue siendo session_not_found (canal distinguible)",
     res2.ok === false && res2.error === "session_not_found",
@@ -126,7 +115,7 @@ export default async function (ctx) {
   const dataV4 = JSON.parse(original);
   dataV4.schema_version = 4;
   writeFileSync(ruta, JSON.stringify(dataV4));
-  const res3 = await resumePorElCable(ctx, sessionId);
+  const res3 = await reanudarPorElCable(ctx, sessionId, "qa-46");
   ctx.expect(
     "el resume de un save schema_version:4 contesta save_invalido nombrando la versión",
     res3.ok === false && /^save_invalido:/.test(res3.error) && /schema_version 4/.test(res3.error),
@@ -162,7 +151,7 @@ export default async function (ctx) {
   // importa si alguien añade pasos después) — y de paso canda que el fallo era
   // DEL CONTENIDO, no un resume roto para todo el mundo.
   writeFileSync(ruta, original);
-  const res4 = await resumePorElCable(ctx, sessionId);
+  const res4 = await reanudarPorElCable(ctx, sessionId, "qa-46");
   ctx.expect(
     "restaurado el fichero, el mismo resume carga (el rechazo era por el contenido, no por la ruta)",
     res4.ok === true,

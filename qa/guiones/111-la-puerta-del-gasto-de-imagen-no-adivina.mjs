@@ -44,20 +44,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { comenzar, nuevaPartida, recargarAlTitulo } from "../lib/sesion.mjs";
 import { esperarPartidaEnDisco, rutaDelSave } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
-import { preguntarPorElCable } from "../lib/cable.mjs";
+import { reanudarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
-
-/** Un `resume_session` crudo por el cable del bridge, DESDE la página (molde
- *  del guion 46). Devuelve el `session_started`. */
-async function resumePorElCable(ctx, sessionId, marca) {
-  const m = await preguntarPorElCable(
-    ctx,
-    { type: "resume_session", sessionId, requestId: marca },
-    { respuesta: "session_started" },
-  );
-  return { ok: m.ok, error: m.error ?? "" };
-}
 
 /** Lo que el navegador guarda de los modos de gráficos. */
 const clavesDeGraficos = (ctx) =>
@@ -85,7 +74,7 @@ export default async function (ctx) {
     const data = JSON.parse(original);
     data.world[campo] = "imagen"; // lo que deja un save editado a mano
     writeFileSync(ruta, JSON.stringify(data));
-    const res = await resumePorElCable(ctx, sessionId, `qa-111-${campo}`);
+    const res = await reanudarPorElCable(ctx, sessionId, `qa-111-${campo}`);
     ctx.log(`resume con world.${campo}="imagen": ${JSON.stringify(res)}`);
     ctx.expect(
       `un save con world.${campo} desconocido contesta save_invalido (no carga a ciegas)`,
@@ -125,7 +114,7 @@ export default async function (ctx) {
 
   // Y el rechazo era del CONTENIDO: restaurado el fichero, el mismo resume carga.
   writeFileSync(ruta, original);
-  const bueno = await resumePorElCable(ctx, sessionId, "qa-111-bueno");
+  const bueno = await reanudarPorElCable(ctx, sessionId, "qa-111-bueno");
   ctx.expect(
     "restaurado el modo, el mismo resume carga (se rechazaba el valor, no la ruta)",
     bueno.ok === true,

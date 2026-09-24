@@ -76,7 +76,14 @@
  *  unicast real llegue por aquí lo ejercen el 60 y el 63 con su negativo
  *  (`reason:"nope"`), medido en su cabecera. Todo cliente WS del banco está en
  *  `data/contract/clientes-ws-del-banco.json` con cómo escucha, y éste entra
- *  como `todo`. */
+ *  como `todo`.
+ *
+ *  QUÉ CUENTA COMO RECHAZO no se decide aquí (#739): lo decide `leerFrame` de
+ *  `rechazo-del-bridge.mjs`, la misma función que leen `pedirYEsperarTile` y
+ *  el cliente de Node (`bridge-desde-node.mjs`). Llega a la página como texto,
+ *  porque el oyente vive dentro de `evaluate`. Lo que sí es de aquí es la
+ *  POLÍTICA: qué rechazos paran la espera (`RECHAZOS_QUE_PARAN`). */
+import { FUENTE_DE_LEER_FRAME } from "./rechazo-del-bridge.mjs";
 
 /** Abre un socket de la página, manda `mensaje` y lo deja ABIERTO recogiendo lo
  *  que el bridge le conteste. PRIVADA: ver la cabecera.
@@ -88,8 +95,11 @@
  *  juego (un guion que levanta su propio bridge). */
 async function abrirYMandar(ctx, mensaje, respuesta = null, url = null) {
   return ctx.page.evaluate(
-    ([msg, esperada, urlPedida]) =>
+    ([msg, esperada, urlPedida, fuenteDeLeer]) =>
       new Promise((res, rej) => {
+        // «El bridge rechazó» se define UNA vez (`rechazo-del-bridge.mjs`) y
+        // llega aquí como TEXTO: la página no ve un `import`.
+        const leer = new Function(`return (${fuenteDeLeer})`)();
         const url = urlPedida ?? window.__nefan.servicios()["game-gateway"];
         const cables = (window.__qaCables ??= { n: 0, abiertos: {} });
         const id = `cable-${++cables.n}`;
@@ -107,27 +117,22 @@ async function abrirYMandar(ctx, mensaje, respuesta = null, url = null) {
         };
         // Lo que el bridge conteste A ESTE SOCKET: el unicast del intake y, si
         // el frame suscribe (start/resume_session), también las difusiones.
+        // Lo ilegible sale de `leer` como rechazo `ilegible`: se APUNTA, no se
+        // descarta.
         ws.onmessage = (ev) => {
-          try {
-            const m = JSON.parse(ev.data);
-            if (m && m.type === "narrative_status" && m.phase === "error") {
-              rechazos.push({ kind: m.kind ?? null, message: m.message ?? "sin mensaje" });
-            } else if (
-              esperada &&
-              cable.respuesta === null &&
-              m &&
-              m.type === esperada.type &&
-              m.requestId === esperada.requestId
-            ) {
-              cable.respuesta = m;
-            } else {
-              return;
-            }
-          } catch (e) {
-            // Fail-loud: lo ilegible se APUNTA como rechazo, no se descarta —
-            // un frame que no se puede leer es exactamente el dato que hace
-            // falta cuando la consecuencia no llega.
-            rechazos.push({ kind: "ilegible", message: `${String(e)} — ${String(ev.data).slice(0, 200)}` });
+          const { frame: m, rechazo } = leer(ev.data);
+          if (rechazo) {
+            rechazos.push(rechazo);
+          } else if (
+            esperada &&
+            cable.respuesta === null &&
+            m &&
+            m.type === esperada.type &&
+            m.requestId === esperada.requestId
+          ) {
+            cable.respuesta = m;
+          } else {
+            return;
           }
           cable.avisa?.();
         };
@@ -136,7 +141,7 @@ async function abrirYMandar(ctx, mensaje, respuesta = null, url = null) {
           res(id);
         };
       }),
-    [mensaje, respuesta, url],
+    [mensaje, respuesta, url, FUENTE_DE_LEER_FRAME],
   );
 }
 
@@ -301,6 +306,29 @@ export async function preguntarPorElCable(ctx, mensaje, { respuesta, techoMs = 3
   const vistos = foto.rechazos.length ? ` · de paso llegaron otros errores: ${fraseDeRechazos(foto.rechazos)}` : "";
   if (foto.motivo === "cerrado") throw new Error(`${quien}: el bridge cerró el cable sin contestar${vistos}`);
   throw new Error(`${quien}: sin respuesta ni rechazo en ${techoMs / 1000} s${vistos}`);
+}
+
+/** Un `resume_session` crudo por el cable del bridge, DESDE la página (la URL
+ *  la da el propio juego con sus overrides de query), y lo que contestó:
+ *  `{ ok, error }` del `session_started` de ese `requestId`, con `error` a ""
+ *  si no trae. Es la receta que tenían copiada ocho guiones (46, 62, 67, 73,
+ *  76, 111, 113 y 126), cada uno con su `requestId`; lanza en los mismos casos
+ *  que `preguntarPorElCable`, del que es una forma.
+ *
+ *  `requestId` es OBLIGATORIO y lo pone el guion: es por donde se casa la
+ *  respuesta y por donde se lee en el log del bridge quién la pidió. */
+export async function reanudarPorElCable(ctx, sessionId, requestId) {
+  if (typeof requestId !== "string" || requestId === "") {
+    throw new Error(
+      `reanudarPorElCable: el \`requestId\` lo pone el guion (\`"qa-46"\`…) y llegó ${JSON.stringify(requestId)}`,
+    );
+  }
+  const m = await preguntarPorElCable(
+    ctx,
+    { type: "resume_session", sessionId, requestId },
+    { respuesta: "session_started" },
+  );
+  return { ok: m.ok, error: m.error ?? "" };
 }
 
 /** Los rechazos que lleva recogidos el cable `id`, SIN cerrarlo. Es la segunda

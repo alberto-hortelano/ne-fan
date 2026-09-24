@@ -93,6 +93,7 @@ import { abrirNavegador } from "./lib/navegador.mjs";
 // El guardarraíl de gasto lo ejerce el RUNNER, no cada guion (#295): la
 // obligación de preguntar no puede vivir en un prólogo que se copia a mano.
 import { diagnosticoDeCreditos } from "./lib/sesion.mjs";
+import { RechazoDelBridge, conversarConElBridge } from "./lib/bridge-desde-node.mjs";
 import { PUERTOS, PUERTOS_BASE, URLS, offsetActual } from "./lib/stack.mjs";
 // El sondeo y la espera por puerto viven en UN sitio: llegó a haber cinco
 // copias con relojes ya divergidos (500 ms / 800 ms), y la que elige el
@@ -917,33 +918,27 @@ function exentoDeNavegador(nombre, sinNavegador) {
  *  del bridge, por su propio cable. Es lo que espera el jugador mirando el home
  *  y crece con cada save que se acumula.
  *
- *  Es un socket de NODE (el `--diag` no tiene página), así que no pasa por
- *  `qa/lib/cable.mjs`; pero lee el rechazo igual que él: un
- *  `narrative_status/error` de `kind:"protocolo"` es el intake diciendo que no
- *  entiende el frame, y se devuelve como `{ rechazo }` en vez de esperar diez
- *  segundos para decir `null` (#694). */
-function medirListSessions() {
-  return new Promise((resolve) => {
-    const ws = new WebSocket(URLS.bridge_ws);
-    const fin = (v) => { try { ws.close(); } catch { /* ya cerrado */ } resolve(v); };
-    const t = setTimeout(() => fin(null), 10_000);
-    ws.onerror = () => { clearTimeout(t); fin(null); };
-    ws.onopen = () => {
-      const t0 = Date.now();
-      ws.onmessage = (ev) => {
-        const m = JSON.parse(typeof ev.data === "string" ? ev.data : "{}");
-        if (m.type === "narrative_status" && m.phase === "error" && m.kind === "protocolo") {
-          clearTimeout(t);
-          fin({ ms: Date.now() - t0, rechazo: m.message ?? "sin mensaje" });
-          return;
-        }
-        if (m.type !== "sessions_listed" || m.requestId !== "diag") return;
-        clearTimeout(t);
-        fin({ ms: Date.now() - t0, n: m.sessions?.length ?? 0 });
-      };
-      ws.send(JSON.stringify({ type: "list_sessions", requestId: "diag" }));
-    };
-  });
+ *  Es un socket de NODE (el `--diag` no tiene página), así que va por
+ *  `qa/lib/bridge-desde-node.mjs` y lee el rechazo con la MISMA regla que la
+ *  página (`leerFrame`, #739): un `narrative_status/error` —de cualquier
+ *  `kind`— o un frame ilegible se devuelve como `{ rechazo }` al momento, en
+ *  vez de esperar diez segundos para decir `null` (#694). El `null` queda para
+ *  lo que de verdad es silencio: el techo, un bridge que no abre o que cierra
+ *  sin contestar. Cualquier otro error se relanza: no es una medida. */
+async function medirListSessions() {
+  try {
+    const { ms, recibidos } = await conversarConElBridge(
+      URLS.bridge_ws,
+      { type: "list_sessions", requestId: "diag" },
+      { listo: (m) => m.some((x) => x.type === "sessions_listed" && x.requestId === "diag"), techoMs: 10_000 },
+    );
+    const listado = recibidos.find((x) => x.type === "sessions_listed" && x.requestId === "diag");
+    return { ms, n: listado.sessions?.length ?? 0 };
+  } catch (e) {
+    if (!(e instanceof RechazoDelBridge)) throw e;
+    if (e.motivo === "rechazo") return { ms: e.ms, rechazo: e.rechazos.map((r) => `(${r.kind ?? "sin kind"}) ${r.message}`).join(" · ") };
+    return null;
+  }
 }
 
 /** Foto barata del disco, del motor falso y del bridge, para el `--diag`. */

@@ -20,7 +20,7 @@
  *  La segunda tabla son los sabotajes que el padrón **NO caza y se sabe que no
  *  caza**, medidos en la QA de la tanda AF. Verde aquí = el agujero sigue; el
  *  día que alguien lo cierre esto se pone rojo con «ya no es un agujero» y pide
- *  subirlo a la tabla de arriba. Los tres de hoy:
+ *  subirlo a la tabla de arriba. Los cuatro de hoy:
  *
  *   · **el constructor RENOMBRADO** (`const W = WebSocket; new W(u)`, y su
  *     familia: `Reflect.construct`, `import { WebSocket as WS } from "ws"`):
@@ -40,6 +40,10 @@
  *     cuelga ningún oyente EN SU MISMA FUNCIÓN» y manda a traerlo o a pasar por
  *     `cable.mjs`—, pero el rojo sigue estando. Se canda como «hoy sale rojo
  *     por coherencia».
+ *   · **un `todo` NUEVO en `qa/lib/` cuyo oyente tira el rechazo por tipo**
+ *     (agujero (2) del padrón, tal como queda tras #739): el árbol ve que
+ *     escucha y no ve que no pase por `leerFrame`. Fuera de `qa/lib/` ya no
+ *     cabe —veto y zod—; dentro, se declara y sale verde.
  *
  *  Uno de los cuatro que nació con este guion se CERRÓ el mismo día: el oyente
  *  que no se ataba al socket (`ws.onmessage = null` pasaba por oyente, y con él
@@ -51,19 +55,31 @@
  *  `preguntarPorElCable` de `qa/lib/cable.mjs`), así que los sabotajes que lo
  *  declaraban declaran ahora `todo`, y hay uno nuevo: volver a declararlo pone
  *  rojo el aserto del zod, y solo ése —el zod se afirma en su propio `it` para
- *  que esto se pueda medir—. El otro candado de #694, «ningún guion abre su
- *  propio socket», NO se sabotea aquí sobre el árbol: haría falta un `.mjs`
- *  temporal en `guiones/`, y una batería que arrancase a la vez lo cogería por
- *  guion. Lo mide el test con un censo inventado; aquí solo se exige que su
- *  aserto siga llamándose así.
+ *  que esto se pueda medir—.
+ *
+ *  ── #739 (tanda AZ, 2026-09-24) ────────────────────────────────────────────
+ *
+ *  El veto de #694 era solo de `qa/guiones/**`; ahora es de todo `qa/` salvo
+ *  `qa/lib/` —los dos candados headless de la raíz y el `--diag` de `run.mjs`
+ *  pasan por `qa/lib/bridge-desde-node.mjs`, y los tres leen el rechazo con
+ *  `leerFrame`—, y el zod del padrón solo admite `qa/lib/`. Dos sabotajes
+ *  nuevos sobre el ÁRBOL: un cliente con su oyente en la RAÍZ de `qa/` sin
+ *  declarar (rojo el veto y la cuenta, que es la que dice que sobra un socket
+ *  sin declarar), y el mismo declarado en el padrón (rojo el veto y el zod: la
+ *  cuenta ya no, porque la declaración casa con el árbol). El de la raíz SÍ se
+ *  escribe en el árbol, a diferencia de uno en `guiones/`: la batería solo
+ *  toma por guion lo que hay en `guiones/`, y el turno de candados serializa
+ *  con quien barra `qa/` a la vez. Un socket en `guiones/` sigue midiéndose
+ *  con el censo inventado del test.
  *
  *      node qa/run.mjs 152              # con el resto de la clase headless
  *      node qa/run.mjs --sin-navegador  # sin preset ni Chromium
  *
- *  AVISO: escribe en el árbol de trabajo (el padrón y un fichero temporal en
- *  `qa/lib/`). Se niega a arrancar si el padrón viene sucio, porque entonces no
- *  puede devolverlo. El temporal va en `qa/lib/` y no en `guiones/` para que
- *  una batería que arranque a la vez no lo tome por un guion.
+ *  AVISO: escribe en el árbol de trabajo (el padrón, un fichero temporal en
+ *  `qa/lib/` y otro en la raíz de `qa/`). Se niega a arrancar si el padrón
+ *  viene sucio, porque entonces no puede devolverlo. Los temporales no van en
+ *  `guiones/` para que una batería que arranque a la vez no los tome por un
+ *  guion.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -83,11 +99,15 @@ const TEST = "test/el-cliente-ws-del-banco-declara-como-escucha.test.ts";
  *  un nombre que ningún guion ni test busca. */
 const TMP = join(RAIZ, "qa/lib/zz-sabotaje-qa-678-cliente-temporal.mjs");
 const TMP_REL = relative(RAIZ, TMP).split("\\").join("/");
+/** El cliente temporal FUERA de `qa/lib/` (#739): en la raíz de `qa/`, donde
+ *  vivían los clientes Node que ahora pasan por `bridge-desde-node.mjs`. */
+const TMP_RAIZ = join(RAIZ, "qa/zz-sabotaje-qa-739-cliente-en-la-raiz.mjs");
+const TMP_RAIZ_REL = relative(RAIZ, TMP_RAIZ).split("\\").join("/");
 
 /** Los asertos del detector, por su nombre EXACTO: renombrado = «patrón
  *  obsoleto», no falso verde. */
 const A_ZOD = "el padrón pasa su zod: cada socket declara `todo` o `nada` con su motivo, y `una-respuesta` ya no existe";
-const A_VETO = "ningún guion abre su propio socket: la espera de una respuesta pasa por `qa/lib/cable.mjs`";
+const A_VETO = "ningún cliente WS vive fuera de `qa/lib/`: hablar con el bridge pasa por `cable.mjs` o `bridge-desde-node.mjs`";
 const A_CUENTA = "cada socket del banco está declarado, con su cuenta EXACTA por fichero";
 const A_COHERENCIA = "la declaración es COHERENTE con el árbol: `nada` ⇔ cero oyentes, y `todo` ⇒ al menos uno";
 const A_COMPLEMENTO = "el complemento, DERIVADO: ningún socket del banco es hoy un dispara-y-olvida";
@@ -113,6 +133,19 @@ const MOTIVO = (que) =>
 const declara = (padron, fichero, escucha, que) => {
   padron.clientes.push({ fichero, sockets: [{ escucha, porque: MOTIVO(que) }] });
 };
+
+/** Un cliente de Node CORRECTO —recoge todo y mira el error—, pero con su
+ *  propio socket en la raíz de `qa/`: la forma de antes de #739. */
+const CLIENTE_EN_LA_RAIZ = [
+  "export function pide(u) {",
+  "  return new Promise((res, rej) => {",
+  "    const ws = new WebSocket(u);",
+  "    ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === 'narrative_status' && m.phase === 'error') rej(new Error(m.message)); else res(m); };",
+  "    ws.onopen = () => ws.send('{}');",
+  "  });",
+  "}",
+  "",
+].join("\n");
 
 /** [nombre, prepara(padron) → escribe TMP si toca, asertos que DEBEN ponerse rojos (y solo ésos)] */
 const SABOTAJES = [
@@ -168,6 +201,19 @@ const SABOTAJES = [
     },
     [A_COHERENCIA, A_COMPLEMENTO],
   ],
+  [
+    "un cliente Node que escucha bien, con su socket en la RAÍZ de `qa/`, sin declarar (#739)",
+    (_p) => writeFileSync(TMP_RAIZ, CLIENTE_EN_LA_RAIZ),
+    [A_VETO, A_CUENTA],
+  ],
+  [
+    "el mismo, DECLARADO en el padrón: declararlo no lo arregla, y el zod no admite nada fuera de `qa/lib/` (#739)",
+    (p) => {
+      writeFileSync(TMP_RAIZ, CLIENTE_EN_LA_RAIZ);
+      declara(p, TMP_RAIZ_REL, "todo", "un cliente de la raíz que recoge todo y mira el error pero abre su propio socket fuera de qa/lib");
+    },
+    [A_VETO, A_ZOD],
+  ],
 ];
 
 /** [nombre, prepara(padron), asertos rojos que se ESPERAN hoy ([] = pasa verde), quién SÍ lo caza] */
@@ -211,6 +257,27 @@ const AGUJEROS = [
     [A_COHERENCIA, A_COMPLEMENTO],
     "sale ROJO sobre un cliente que sí escucha; el mensaje ya no miente (dice «EN SU MISMA FUNCIÓN» y a dónde ir), pero el rojo sigue",
   ],
+  [
+    "un `todo` NUEVO en `qa/lib/` con un oyente que TIRA el rechazo por tipo y no pasa por `leerFrame` (agujero 2, #739)",
+    (p) => {
+      writeFileSync(
+        TMP,
+        [
+          "export function espera(u) {",
+          "  return new Promise((res) => {",
+          "    const ws = new WebSocket(u);",
+          "    ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type !== 'session_started') return; res(m); };",
+          "    ws.onopen = () => ws.send('{}');",
+          "  });",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      declara(p, TMP_REL, "todo", "un cliente nuevo de qa/lib que dice recoger todo y tira el narrative_status de error por tipo");
+    },
+    [],
+    "nadie por árbol: el oyente existe y el padrón lo cree; lo que se ganó con #739 es que solo cabe en `qa/lib/` y con declaración",
+  ],
 ];
 
 /** Corre el detector y devuelve los asertos ROJOS (sin duplicados: el
@@ -233,7 +300,7 @@ function corre() {
 const mismoConjunto = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
 
 export default async function (ctx) {
-  const sucio = spawnSync("git", ["status", "--porcelain", "--", relative(RAIZ, PADRON), TMP_REL], { cwd: RAIZ, encoding: "utf8" });
+  const sucio = spawnSync("git", ["status", "--porcelain", "--", relative(RAIZ, PADRON), TMP_REL, TMP_RAIZ_REL], { cwd: RAIZ, encoding: "utf8" });
   if ((sucio.stdout ?? "").trim()) {
     ctx.expect(
       "el padrón que este guion reescribe viene limpio y el temporal no existe",
@@ -248,6 +315,7 @@ export default async function (ctx) {
   const restaura = () => {
     writeFileSync(PADRON, original);
     if (existsSync(TMP)) unlinkSync(TMP);
+    if (existsSync(TMP_RAIZ)) unlinkSync(TMP_RAIZ);
   };
   for (const [señal, codigo] of [
     ["SIGINT", 130],
@@ -316,8 +384,8 @@ export default async function (ctx) {
   }
 
   ctx.expect(
-    "el padrón vuelve byte a byte como estaba y el cliente temporal no existe",
-    readFileSync(PADRON, "utf8") === original && !existsSync(TMP),
-    `NO SE RESTAURÓ: revisa git diff ${relative(RAIZ, PADRON)} y ${TMP_REL}`,
+    "el padrón vuelve byte a byte como estaba y los clientes temporales no existen",
+    readFileSync(PADRON, "utf8") === original && !existsSync(TMP) && !existsSync(TMP_RAIZ),
+    `NO SE RESTAURÓ: revisa git diff ${relative(RAIZ, PADRON)}, ${TMP_REL} y ${TMP_RAIZ_REL}`,
   );
 }
