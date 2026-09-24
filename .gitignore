@@ -64,8 +64,9 @@ qa/capturas/
 # Disco efímero de una corrida de qa/run.mjs (saves + games de la corrida).
 qa/.tmp/
 
-# Cobertura (regenerable con `npm run coverage`)
+# Cobertura (regenerable con `npm run coverage`, en cada paquete)
 nefan-core/coverage/
+nefan-html/coverage/
 
 # Mutation testing (regenerable con `npm run mutate`)
 nefan-core/reports/

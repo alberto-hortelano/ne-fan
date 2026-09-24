@@ -31,12 +31,23 @@
  *    npm run deuda -- --top 15  # recortar las listas largas
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { checkArchitecture, reportByRule } from "../src/contract/arch/check.js";
 import { archConfig, loadArchFiles } from "./arch-collect.js";
-import { crapRows, readThresholds, type CrapRow } from "./crap-score.js";
+import {
+  MEDIDA_CLIENTE,
+  MEDIDA_CORE,
+  claveDe,
+  crapRows,
+  leerContratoCliente,
+  readThresholds,
+  veredictoCliente,
+  type CrapRow,
+  type Medicion,
+  type Medida,
+} from "./crap-score.js";
 import { costeDe, leerHuella, seleccionDesdeElTag, TAG } from "./mutacion-repo.js";
 import {
   anotacionDeFichero,
@@ -58,11 +69,6 @@ import {
   rutaInforme,
   type PlanMutacion,
 } from "./mutation-plan.js";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const coreRoot = join(here, "..");
-const LCOV = join(coreRoot, "coverage", "lcov.info");
-const MEDIDOS = ["src", "bridge", "services"];
 
 export interface Item {
   /** Dónde está el trabajo: `fichero:línea` o `fichero`. */
@@ -93,8 +99,11 @@ export interface Bloque {
  *  se genera en esta máquina y su fecha de fichero es su fecha de medida. Para
  *  la mutación ya no vale — la medida baja de un artefacto de CI y el `mtime`
  *  pasa a ser la fecha de la DESCARGA—, así que allí la frescura la decide
- *  `seleccionar()` sobre el diff desde `mutacion-ultima`. */
-export function ultimoCambio(): { posteriores: (limite: number) => string[] } {
+ *  `seleccionar()` sobre el diff desde `mutacion-ultima`.
+ *
+ *  Los árboles son los de la `Medida`: la frescura del lcov del cliente la
+ *  deciden los fuentes del cliente, no los del core. */
+export function ultimoCambio(medida: Medida = MEDIDA_CORE): { posteriores: (limite: number) => string[] } {
   const ficheros: { path: string; mtime: number }[] = [];
   const walk = (dir: string): void => {
     for (const name of readdirSync(dir)) {
@@ -105,13 +114,13 @@ export function ultimoCambio(): { posteriores: (limite: number) => string[] } {
       else if (name.endsWith(".ts")) ficheros.push({ path: full, mtime: st.mtimeMs });
     }
   };
-  for (const d of MEDIDOS) walk(join(coreRoot, d));
+  for (const d of medida.arboles) walk(join(medida.raiz, d));
   return {
     posteriores: (limite) =>
       ficheros
         .filter((f) => f.mtime > limite)
         .sort((a, b) => b.mtime - a.mtime)
-        .map((f) => f.path.slice(coreRoot.length + 1)),
+        .map((f) => f.path.slice(medida.raiz.length + 1)),
   };
 }
 
@@ -200,27 +209,126 @@ export function enColaDeCrap(filas: readonly CrapRow[], objetivo: number): CrapR
   return filas.filter((f) => f.crap > objetivo || sinCubrir(f));
 }
 
-export function bloqueCrap(cambio: ReturnType<typeof ultimoCambio>): Bloque {
-  if (!existsSync(LCOV)) {
+/** La cola del CLIENTE (#664), por TRABAJO y no por función. Su universo es
+ *  el árbol entero, con lo que ningún test carga a cobertura 0, y la regla del
+ *  core —«cobertura 0 entra siempre»— lo convertiría en ~650 items: uno por
+ *  función de cada fichero sin test, cuando el trabajo es UNO, escribir el test
+ *  de ese fichero. Así que:
+ *
+ *   · la función CUBIERTA A MEDIAS por encima del objetivo sale sola: su
+ *     trabajo es un aserto o un caso más;
+ *   · las de 0 % por encima del objetivo se agrupan en un item POR FICHERO, con
+ *     cuántas son y la peor.
+ *
+ *  Las de 0 % por debajo del objetivo no tienen item: las cuenta el aviso del
+ *  bloque (`avisosDelCliente`). Pura por lo mismo que `enColaDeCrap`. */
+export function enColaDelCliente(filas: readonly CrapRow[], objetivo: number): Item[] {
+  const items: Item[] = [];
+  const aCero = new Map<string, CrapRow[]>();
+  for (const f of filas) {
+    if (f.crap <= objetivo) continue;
+    if (f.coverage > 0) {
+      items.push({
+        donde: `${f.file}:${f.startLine}`,
+        que: `${f.name} — CRAP ${f.crap.toFixed(0)} (complejidad ${f.complexity}, cobertura ${(f.coverage * 100).toFixed(0)}%)`,
+        peso: f.crap,
+      });
+      continue;
+    }
+    aCero.set(f.file, [...(aCero.get(f.file) ?? []), f]);
+  }
+  for (const [file, fs] of aCero) {
+    const peor = fs.reduce((a, b) => (b.crap > a.crap ? b : a));
+    items.push({
+      donde: file,
+      que:
+        `${fs.length} ${fs.length === 1 ? "función" : "funciones"} a 0 % con CRAP > ${objetivo} — la peor ` +
+        `${claveDe(peor)}:${peor.startLine} (CRAP ${peor.crap.toFixed(0)}, complejidad ${peor.complexity}). ` +
+        `Ningún test las ejerce`,
+      peso: peor.crap,
+    });
+  }
+  return items.sort((a, b) => b.peso - a.peso || a.donde.localeCompare(b.donde));
+}
+
+/** Lo que la cola del cliente NO enseña como item, dicho en el aviso para que
+ *  nada desaparezca en silencio. */
+function avisosDelCliente(m: Medicion, objetivo: number): string[] {
+  const pct = m.lineasMedidas === 0 ? 0 : (m.sinCargar.lineas / m.lineasMedidas) * 100;
+  const avisos = [
+    `${m.sinCargar.ficheros} de ${m.sinCargar.deFicheros} ficheros (${m.sinCargar.lineas} de ` +
+      `${m.lineasMedidas} líneas de código, ${pct.toFixed(0)} %) no los carga ningún test`,
+  ];
+  const sueltas = m.filas.filter((f) => f.coverage === 0 && f.crap <= objetivo && !f.name.startsWith("("));
+  if (sueltas.length > 0) {
+    avisos.push(`${sueltas.length} funciones con nombre a 0 % bajo el objetivo, sin item propio`);
+  }
+  const { sobran } = veredictoCliente(m.filas, leerContratoCliente());
+  if (sobran.length > 0) {
+    avisos.push(`${sobran.length} congelada(s) de client-crap.json sobran en su cifra: aprieta la foto`);
+  }
+  return avisos;
+}
+
+/** Cómo se presenta una medida de CRAP en la cola: su título, su fuente, su
+ *  regla de items y lo que su aviso añade a la frescura. */
+export interface ReglaDeCola {
+  titulo: string;
+  tituloSinMedir: string;
+  fuente: string;
+  items: (m: Medicion) => Item[];
+  avisos: (m: Medicion) => string[];
+}
+
+export function reglaDelCore(): ReglaDeCola {
+  const { objetivo } = readThresholds().crap;
+  return {
+    titulo: `Complejidad × cobertura (CRAP > ${objetivo}, o cobertura 0)`,
+    tituloSinMedir: "Complejidad × cobertura",
+    fuente: "coverage/lcov.info + quality-thresholds.json",
+    items: (m) =>
+      enColaDeCrap(m.filas, objetivo).map((f) => ({
+        donde: `${f.file}:${f.startLine}`,
+        que: `${f.name} — CRAP ${f.crap.toFixed(0)} (complejidad ${f.complexity}, cobertura ${(f.coverage * 100).toFixed(0)}%)`,
+        peso: f.crap,
+      })),
+    avisos: () => [],
+  };
+}
+
+export function reglaDelCliente(): ReglaDeCola {
+  const { objetivo } = leerContratoCliente();
+  return {
+    titulo: `Cliente — complejidad × cobertura (CRAP > ${objetivo}; lo de 0 % agrupado por fichero)`,
+    tituloSinMedir: "Cliente — complejidad × cobertura",
+    fuente: "nefan-html/coverage/lcov.info + client-crap.json",
+    items: (m) => enColaDelCliente(m.filas, objetivo),
+    avisos: (m) => avisosDelCliente(m, objetivo),
+  };
+}
+
+/** Un bloque de complejidad × cobertura. La MISMA función para las dos
+ *  medidas: lo que cambia es de dónde sale el lcov y cómo se presenta. */
+export function bloqueCrap(
+  cambio: ReturnType<typeof ultimoCambio>,
+  medida: Medida = MEDIDA_CORE,
+  regla: ReglaDeCola = reglaDelCore(),
+): Bloque {
+  if (!existsSync(medida.lcov)) {
     return {
-      titulo: "Complejidad × cobertura",
-      fuente: "coverage/lcov.info + quality-thresholds.json",
-      aviso: "sin medir — corre `npm run coverage` (sin esto NO significa que no haya deuda)",
+      titulo: regla.tituloSinMedir,
+      fuente: regla.fuente,
+      aviso: `sin medir — corre \`${medida.comando}\` (sin esto NO significa que no haya deuda)`,
       items: [],
     };
   }
-  const { objetivo } = readThresholds().crap;
-  const { filas } = crapRows();
-  const sobre = enColaDeCrap(filas, objetivo);
+  const m = crapRows(medida);
+  const avisos = [avisoDeFrescura(`\`${medida.comando}\``, medida.lcov, cambio), ...regla.avisos(m)];
   return {
-    titulo: `Complejidad × cobertura (CRAP > ${objetivo}, o cobertura 0)`,
-    fuente: "coverage/lcov.info + quality-thresholds.json",
-    aviso: avisoDeFrescura("`npm run coverage`", LCOV, cambio),
-    items: sobre.map((f) => ({
-      donde: `${f.file}:${f.startLine}`,
-      que: `${f.name} — CRAP ${f.crap.toFixed(0)} (complejidad ${f.complexity}, cobertura ${(f.coverage * 100).toFixed(0)}%)`,
-      peso: f.crap,
-    })),
+    titulo: regla.titulo,
+    fuente: regla.fuente,
+    aviso: avisos.filter(Boolean).join(" · ") || undefined,
+    items: regla.items(m),
   };
 }
 
@@ -262,7 +370,8 @@ export interface InformeModulo {
  *  medida. */
 export function rotuloSinEjercer(sinEjercer: number | undefined, vivos: number): string {
   if (sinEjercer === undefined || sinEjercer === 0) return "";
-  if (sinEjercer >= vivos) return `, y NO LOS EJERCE NINGÚN TEST: no es deuda de test, es medida que no existe`;
+  if (sinEjercer >= vivos)
+    return `, y NO LOS EJERCE NINGÚN TEST: no es deuda de test, es medida que no existe`;
   return `, ${sinEjercer} de ellos SIN EJERCER (NoCoverage: ahí no falta un aserto, falta un test)`;
 }
 
@@ -480,8 +589,12 @@ export function cabeceraDe(bloques: readonly Bloque[]): string {
 function main(): void {
   const argv = process.argv.slice(2);
   const TOP = Number(argv[argv.indexOf("--top") + 1]) || 12;
-  const cambio = ultimoCambio();
-  const bloques = [bloqueFronteras(), bloqueCrap(cambio), bloqueMutacion()];
+  const bloques = [
+    bloqueFronteras(),
+    bloqueCrap(ultimoCambio()),
+    bloqueCrap(ultimoCambio(MEDIDA_CLIENTE), MEDIDA_CLIENTE, reglaDelCliente()),
+    bloqueMutacion(),
+  ];
 
   if (argv.includes("--json")) {
     console.log(JSON.stringify({ bloques }, null, 2));

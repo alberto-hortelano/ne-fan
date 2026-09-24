@@ -75,3 +75,32 @@ devDeps— y por eso va escrita antes que el primer test:
    suficiente para no matar a nadie. Una regla que nunca mata nada estaría de
    adorno: se re-comprueba cada vez, se MIDE en vez de suponerse, y se dice qué
    se miró.
+
+## Cómo se mide el banco (#664)
+
+`npm run coverage && npm run crap -- --check`, y es lo que corre el job
+`nefan-html` de CI (el `npm test` a secas queda para el bucle de quien
+programa). El CRAP sale de las MISMAS funciones que el del core
+(`nefan-core/scripts/crap-score.ts --cliente`), con dos diferencias:
+
+- **El universo es `src/` entero.** Lo que ningún test carga cuenta a
+  cobertura 0 —hoy son tres cuartos del cliente— en vez de desaparecer. Por
+  eso añadir un test NUNCA pone el gate rojo: solo puede subir la cobertura
+  de alguna función.
+- **El gate es por función**, contra
+  `nefan-core/data/contract/client-crap.json`: cada una en CRAP ≤ 73 (el tope
+  del core), o ≤ su foto si ya lo superaba el día que el cliente entró. Una
+  función nueva de complejidad 9 sin test ya pasa del tope, **también si es
+  anónima**: su clave es `padre>(anónima)@forma[#n]` (la llamada de la que es
+  argumento, y un ordinal entre gemelas), así que no se esconde tras la foto
+  de una hermana. Lo único que se funde son las funciones CON NOMBRE homónimas
+  del mismo fichero, y hoy ninguna de esas claves está congelada (el detalle,
+  en `_lo_que_esto_NO_sujeta` del contrato). Si una congelada baja, `crap` y
+  `npm run deuda` avisan de que su cifra sobra; se aprieta a mano. Si se
+  RENOMBRA o se mueve, el gate la marca «¿renombrado de …?» y ahí sí se
+  regenera su entrada: `npm run crap -- --foto` imprime la foto que tocaría
+  escribir hoy.
+
+Lo que el lcov trae de `../nefan-core/…` se descarta: el core ya se mide con
+su banco. Y la cola del cliente sale en `npm run deuda` (en `nefan-core`) en un
+bloque propio, con un item por FICHERO para lo que está entero a 0 %.
