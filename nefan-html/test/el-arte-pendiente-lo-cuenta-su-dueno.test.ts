@@ -52,17 +52,17 @@ async function dejarCorrerLaCola(): Promise<void> {
 
 /* ─────────────────────────── EL ATLAS ─────────────────────────── */
 
-/** `running` es un getter de la clase y lo mueve la política de core al salir
- *  un run de verdad (fetch incluido). Aquí se SUSTITUYE para poder afirmar de
- *  quién depende `inFlight` sin montar una corrida: es la decisión que tomó el
- *  coordinador de esta tanda (`inFlight` sigue leyendo `running` y no
- *  `pintando`, para que la lista sea idéntica), y sin este aserto nadie la
- *  sujeta. Cambiarlo a `pintando` pone rojo el caso de abajo, porque `pintando`
- *  exige además que la corrida pinte. */
+/** `ocupada(key)` la decide la política de core al salir una corrida o una
+ *  restauración de verdad (fetch incluido). Aquí se SUSTITUYE para poder
+ *  afirmar de quién depende `inFlight` sin montarlas. Desde la tanda AX (QA,
+ *  H-4) `inFlight` es de la FILA —solo la clave en vuelo dice «Generando…»—
+ *  y no de `running`, que deshabilitaba todos los atlas con cualquier corrida
+ *  en vuelo; tampoco de `pintando`, porque una `resolve_only` o una
+ *  restauración de ESA clave también es un POST que no se repite. */
 class ControladorConVueloFingido extends FpsAtlasController {
-  enVuelo = false;
-  override get running(): boolean {
-    return this.enVuelo;
+  enVuelo = new Set<string>();
+  override ocupada(key: string): boolean {
+    return this.enVuelo.has(key);
   }
 }
 
@@ -116,7 +116,7 @@ describe("el atlas cuenta sus tiles en clay (#492)", () => {
     assert.deepEqual(controladorDeAtlas([]).ctrl.pendientes(), []);
   });
 
-  it("inFlight sigue a `running`, no a `pintando`", () => {
+  it("inFlight es de la FILA: solo la clave ocupada dice «Generando…» (AX, H-4)", () => {
     const { ctrl } = controladorDeAtlas(["tile0_0", "tile1_0"]);
     assert.deepEqual(
       ctrl.pendientes().map((i) => i.inFlight),
@@ -124,12 +124,11 @@ describe("el atlas cuenta sus tiles en clay (#492)", () => {
       "en reposo ninguna fila dice «Generando…»",
     );
 
-    ctrl.enVuelo = true;
+    ctrl.enVuelo.add("tile1_0");
     assert.deepEqual(
       ctrl.pendientes().map((i) => i.inFlight),
-      [true, true],
-      "con una corrida en vuelo las filas de atlas lo dicen — también si es `resolve_only`, " +
-        "que es lo que hacía la lista de main.ts y lo que esta tanda conserva a propósito",
+      [false, true],
+      "con una corrida (o restauración) de tile1_0 en vuelo, solo SU fila lo dice: la otra se puede generar",
     );
   });
 

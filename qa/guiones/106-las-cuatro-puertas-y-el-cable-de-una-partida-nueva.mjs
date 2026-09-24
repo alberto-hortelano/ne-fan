@@ -109,6 +109,19 @@ function afirmarPuerta(ctx, puerta, debeAbrirse, base, etiqueta) {
  *  save que escribió el bridge y el id. */
 async function partidaCon(ctx, clicks) {
   await recargarAlTitulo(ctx);
+  // Cada caso tiene que nacer en un navegador SIN el mapping del atlas: con
+  // él, el caso que espera la puerta del atlas restaura el tile de
+  // `localStorage` a $0 —lo correcto en el juego— y no manda POST (#754).
+  // DESPUÉS del reload y no antes: la página vieja aún puede estar terminando
+  // la corrida del caso anterior (el guion avanza en cuanto se abre la
+  // puerta, no cuando el atlas acaba) y escribiría el mapping otra vez. La
+  // lectura solo ocurre tras `comenzar`, así que aquí ya no hay quien escriba.
+  const borradas = await ctx.page.evaluate(() => {
+    const claves = Object.keys(localStorage).filter((k) => k.startsWith("fps_atlas:"));
+    for (const k of claves) localStorage.removeItem(k);
+    return claves.length;
+  });
+  ctx.log(`mapping del atlas retirado tras el reload: ${borradas} clave(s) fps_atlas:*`);
   await abrirSelectorDeMundos(ctx);
   await ctx.page.click(`[data-game-id="${GAME_ID}"]`);
   for (const sel of clicks) await ctx.page.click(sel);

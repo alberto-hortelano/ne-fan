@@ -279,9 +279,9 @@ export function crearCargaDeTile(deps: DepsDeCargaDeTile): CargaDeTile {
     const key = tileKey(tile.tx, tile.ty);
     const firstTile = tileStore.entries.size === 0;
     // Primer tile = mundo nuevo (partida, resume o fixture): lo que quede en el
-    // carril de restauración del atlas es del mundo anterior, y la clave
-    // `tile_0_0` se repite con otra escena (#714).
-    if (firstTile) fpsAtlas.olvidarRestauraciones();
+    // carril de restauración del atlas, y las corridas en vuelo, es del mundo
+    // anterior, y la clave `tile_0_0` se repite con otra escena (#714, #729).
+    if (firstTile) fpsAtlas.cambioDeMundo();
 
     // Rect mundial del tile, de la geometría de core — la misma con la que el
     // bridge escribió el `world_rect` que viaja en la escena.

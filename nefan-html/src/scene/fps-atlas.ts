@@ -19,7 +19,9 @@ import {
 } from "@nefan-core/src/scene/greybox/surfaces.js";
 import {
   PoliticaDeAtlas,
+  TOPE_DE_CORRIDA_MS,
   lineaDeBalance,
+  type AlQuedarLibre,
   type Desenlace,
   type Restauracion,
 } from "@nefan-core/src/scene/politica-de-atlas.js";
@@ -27,6 +29,7 @@ import type { PermisoDeEscenarios } from "@nefan-core/src/session/gates-de-image
 import { debugLogEnabled } from "../dev/debug-log.js";
 import { errors } from "../ui/error-log.js";
 import { cargarImagen, guardarMapping, leerMapping } from "./mapping-del-atlas.js";
+import { conTope, registrarRefs, sha256Hex } from "./red-del-atlas.js";
 import type { AtlasImage } from "../renderer/fps-gl.js";
 import type { ArtePendiente } from "../renderer/types.js";
 
@@ -58,15 +61,12 @@ export interface FpsAtlasDeps {
   modoDeEscenarios(): PermisoDeEscenarios;
   log(msg: string): void;
   onGeneration?(e: { kind: "fps_atlas"; cached: boolean }): void;
-}
-
-async function sha256Hex(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  /** Solo para tests: el tope de una corrida (`TOPE_DE_CORRIDA_MS`). */
+  topeDeCorridaMs?: number;
 }
 
 /** Para el ciclo del activo, que no se pregunta si sigue mandando al
- *  reinstalar de memoria o del mapping (su token nace después, en `runFor`). */
+ *  reinstalar de memoria o del mapping (su corrida nace después, en `runFor`). */
 const SIEMPRE = (): boolean => true;
 
 /** Las líneas POR TILE de una restauración van a la traza de desarrollo, no al
@@ -79,8 +79,8 @@ const traza = (msg: string): void => {
 export class FpsAtlasController {
   private styleId = "";
   private cache = new Map<string, { layoutKey: string; images: Map<string, AtlasImage> }>();
-  /** Qué tile arranca, cuál se encola y qué run sigue mandando lo decide core
-   *  (`PoliticaDeAtlas`: no pagar dos veces, no descartar en silencio). Aquí
+  /** Qué tile arranca, cuál se encola y qué corrida sigue mandando lo decide
+   *  core (`PoliticaDeAtlas`: no pagar dos veces, no descartar en silencio). Aquí
    *  solo queda el fetch, las imágenes y el renderer. */
   private politica = new PoliticaDeAtlas();
 
@@ -105,12 +105,17 @@ export class FpsAtlasController {
     return this.politica.restaurando;
   }
 
+  /** ¿Algo en vuelo sobre ESTA clave (corrida o restauración)? Lo decide core. */
+  ocupada(key: string): boolean {
+    return this.politica.ocupada(key);
+  }
+
   /** Los tiles que aún van en clay, como arte pendiente del menú dev. Los
    *  cuenta el renderer (`tilesSinAtlas`) y los pide este controller: el que
-   *  cuenta es el que genera (#492). `inFlight` lee `running` —también durante
-   *  una corrida `resolve_only`, que no pinta—, porque es lo que el menú decía
-   *  antes de salir de la raíz y esta tanda no cambia la lista; pasarlo a
-   *  `pintando` es otra decisión y tiene su issue. */
+   *  cuenta es el que genera (#492). `inFlight` es de la FILA: solo la clave
+   *  ocupada dice «Generando…» (QA de la tanda AX, H-4) — también con una
+   *  corrida `resolve_only` o una restauración, porque un segundo POST de la
+   *  misma clave es pagar dos veces (H-1). */
   pendientes(): ArtePendiente[] {
     return this.deps.tilesSinAtlas().map((key) => ({
       kind: "fps_atlas",
@@ -118,92 +123,77 @@ export class FpsAtlasController {
       label: `Atlas fps ${key} (clay — celdas ya en la librería salen gratis)`,
       // Sin miniatura: una del canvas WebGL es otro trabajo.
       thumb: null,
-      inFlight: this.running,
+      inFlight: this.ocupada(key),
       generar: () => this.runFor(key),
     }));
   }
 
-  /** ¿La corrida en vuelo puede PINTAR, o solo restaura lo ya pagado?
-   *
-   *  `running` no distingue las dos, y desde que una partida nueva nace en
-   *  maqueta esa diferencia la ve el jugador: en maqueta el cliente SÍ pide el
-   *  atlas —con `resolve_only`, que no pinta ni cobra— y el panel de dev
-   *  anunciaba «GENERANDO atlas de superficies» igual que en Imagen IA
-   *  (hallazgo H3 de QA, tanda A). O sea, le decía que estaba gastando a quien
-   *  acababa de elegir no gastar, en la pantalla de la tanda que se llama «el
-   *  dinero no miente». */
-  get pintando(): boolean {
-    return this.politica.enVuelo && this.corridaQuePinta;
+  /** Las claves que se están PINTANDO (no las que solo restauran): el panel
+   *  dev las nombra (QA de las tandas A, H3, y AX, H-3). */
+  get clavesPintando(): string[] {
+    return this.politica.clavesPintando;
   }
-
-  /** Con qué intención salió la corrida en vuelo. Se fija en `runFor`, que es
-   *  quien sabe si lleva `resolve_only`, y se apaga al terminar el tile. */
-  private corridaQuePinta = false;
 
 
   /** Tile activo nuevo. El arte YA PAGADO se restaura SIEMPRE (también en
    *  modo vector — lo ya pintado se conserva): memoria →
    *  mapping persistido (solo asset-store) → resolve_only contra la librería
    *  ($0). Pintar celdas nuevas solo con la generación activa. Un tile activo
-   *  NUEVO supera al run en vuelo (el token de `runFor` desecha el anterior
-   *  antes de aplicar nada); la MISMA clave se deduplica y se re-dispara al
-   *  terminar. Las dos reglas y sus incidentes ($0.15×2 el 2026-08-14; el
-   *  tile del jugador descartado al reanudar, #390) viven en
-   *  `PoliticaDeAtlas`, en core. */
+   *  NUEVO nunca espera a la corrida de otro tile ni la desecha: cada una
+   *  aplica a su clave (#729); la MISMA clave se deduplica y se re-dispara al
+   *  quedar libre. Las reglas y sus incidentes ($0.15×2 el 2026-08-14; el
+   *  tile del jugador descartado al reanudar, #390; el arte del menú dev
+   *  tirado al cruzar de tile, #729) viven en `PoliticaDeAtlas`, en core. */
   async onActiveTile(key: string): Promise<void> {
     if (this.politica.pedir(key) === "encolado") return;
-    // Hasta que `runFor` diga otra cosa, esta corrida NO pinta: restaurar de
-    // memoria o del mapping persistido es $0, y el rótulo del panel no puede
-    // heredar la intención de la corrida anterior.
-    this.corridaQuePinta = false;
     try {
       if (await this.reinstallIfCached(key, SIEMPRE)) return;
-      // Sin estilo NO se resuelve nada. El estilo llega con la respuesta de
-      // start/resume, y la escena del bootstrap puede difundirse ANTES: una
-      // resolución contra style_id "" no es la partida de nadie —ni acierta
-      // en la librería ni deja arte reutilizable—. Quién re-dispara el atlas
-      // cuando el estilo llega después no está verificado (el comentario que
-      // había aquí citaba un `applySessionReady()` que no existe en el árbol);
-      // anotado como issue en la tanda de #714.
+      // Sin estilo NO se resuelve nada (style_id "" no es la partida de nadie).
+      // En partida no ocurre: el estilo llega antes que cualquier escena (#730,
+      // `nefan-core/test/el-estilo-llega-antes-que-la-escena.test.ts` y guion
+      // 183). Aquí solo llega la fixture del selector «Room» sin partida.
       if (!this.styleId) {
-        this.deps.log(`Atlas fps de ${key}: en espera del estilo de la sesión`);
+        this.deps.log(`Atlas fps de ${key}: sin estilo de sesión (fixture sin partida) — clay`);
         return;
       }
       if (await this.reinstallFromStorage(key, SIEMPRE, this.deps.log)) return;
-      await this.runFor(key, { resolveOnly: this.deps.modoDeEscenarios() !== "generar" });
+      await this.runFor(key, { resolveOnly: this.deps.modoDeEscenarios() !== "generar", origen: "activo" });
     } finally {
-      // El re-disparo es la ÚLTIMA oportunidad de ese tile: si se lo come un
-      // catch mudo, el jugador se queda en clay sin que nada lo diga y el
-      // síntoma aparece a un pipeline de distancia.
-      if (this.politica.terminar(key) === "re-disparar") {
-        void this.onActiveTile(key).catch((err) =>
-          // `scene` y no una fuente propia (tanda F, QA H-2): lo que falla es
-          // el atlas de UN TILE de esta partida, que es exactamente lo que
-          // registran los otros tres `push` de este fichero. La fuente
-          // `fps-atlas` que había aquí decía «el atlas como SERVICIO» y era su
-          // único emisor, así que la distinción no existía: se fue con ella.
-          errors.push("scene", `re-disparo del atlas de ${key}`, err),
-        );
-      }
+      this.redisparar(key, this.politica.terminar(key));
       // El activo cedió el paso: las restauraciones de los vecinos que
       // esperaban a que terminase pueden salir.
       this.bombearRestauraciones();
     }
   }
 
+  /** Lo que core devolvió al quedar libre la clave. Es la ÚLTIMA oportunidad
+   *  de ese tile: si se la come un catch mudo, se queda en clay sin que nada
+   *  lo diga. La manual pinta salvo que la corrida que esperaba ya dejara el
+   *  atlas completo en memoria (dos G seguidas no pagan dos veces). */
+  private redisparar(key: string, que: AlQuedarLibre): void {
+    if (que === "nada") return;
+    const p =
+      que === "activo"
+        ? this.onActiveTile(key)
+        : this.reinstallIfCached(key, SIEMPRE).then((hit) => (hit ? undefined : this.runFor(key)));
+    // `scene` (tanda F, QA H-2): lo que falla es el atlas de UN TILE.
+    void p.catch((err) => errors.push("scene", `re-disparo del atlas de ${key}`, err));
+  }
+
   /** Un tile INSTALADO que no es el activo (vecinos del resume, prefetch):
    *  recupera su arte YA PAGADO (#714) y, si los gates dejan generar, pinta lo
-   *  que falte — el mismo trato que el activo (`gatesDeImagen`). Nunca supera
-   *  la corrida del activo (no toca su token) y espera a que termine. Síncrono:
+   *  que falte — el mismo trato que el activo (`gatesDeImagen`). Nunca toca
+   *  la corrida del activo y espera a que termine su ciclo. Síncrono:
    *  encola y vuelve; los fallos van al error-log desde la bomba. */
   restaurar(key: string): void {
     this.politica.encolarRestauracion(key);
     this.bombearRestauraciones();
   }
 
-  /** Cambio de partida: lo encolado y lo que va en el aire es de la anterior. */
-  olvidarRestauraciones(): void {
-    this.politica.olvidarRestauraciones();
+  /** Cambio de mundo: lo encolado y lo que va en el aire —restauraciones y
+   *  corridas— es del anterior. */
+  cambioDeMundo(): void {
+    this.politica.cambioDeMundo();
   }
 
   private bombearRestauraciones(): void {
@@ -215,20 +205,21 @@ export class FpsAtlasController {
         return "nada";
       })
       .then((d) => {
-        const b = this.politica.finDeRestauracion(r, d); // balance: UNA línea de HUD por tanda
-        if (b) this.deps.log(lineaDeBalance(b));
+        const { balance, alQuedarLibre } = this.politica.finDeRestauracion(r, d);
+        if (balance) this.deps.log(lineaDeBalance(balance)); // UNA línea de HUD por tanda
+        this.redisparar(r.key, alQuedarLibre);
         this.bombearRestauraciones();
       });
   }
 
-  /** La escalera de siempre —memoria → mapping → librería— sin `nuevoRun` ni
-   *  `corridaQuePinta`. Si pinta, lo dice (`onGeneration`, `pintado`). */
+  /** La escalera de siempre —memoria → mapping → librería— sin `nuevoRun`.
+   *  Si pinta, lo dice (`onGeneration`, `pintado`). */
   private async ejecutarRestauracion(r: Restauracion): Promise<Desenlace> {
     const sigueMandando = () => this.politica.restauracionVigente(r);
     const aplicado = (): Desenlace => (sigueMandando() ? "aplicado" : "nada");
     if (await this.reinstallIfCached(r.key, sigueMandando)) return aplicado();
     if (!sigueMandando()) return "nada";
-    if (!this.styleId) {
+    if (!this.styleId) { // solo la fixture sin partida (#730)
       traza(`${r.key}: restauración sin estilo de sesión — clay`);
       return "nada";
     }
@@ -236,7 +227,7 @@ export class FpsAtlasController {
     const tile = this.deps.getTile(r.key);
     if (!tile || !sigueMandando()) return "nada";
     const resolveOnly = this.deps.modoDeEscenarios() !== "generar";
-    return this.resolverYAplicar(r.key, tile, resolveOnly, sigueMandando, traza);
+    return conTope(r.key, this.deps.topeDeCorridaMs ?? TOPE_DE_CORRIDA_MS, (signal) => this.resolverYAplicar(r.key, tile, resolveOnly, sigueMandando, traza, signal));
   }
 
   /** `sigueMandando` = false tras el `await` ⇒ no aplica, y cuenta como
@@ -251,14 +242,16 @@ export class FpsAtlasController {
     return true;
   }
 
-  /** Generación manual (tecla G / menú dev) o auto (onActiveTile). Con
-   *  `resolveOnly` NUNCA pinta: restaura lo que ya exista en la librería. */
-  async runFor(key: string, { resolveOnly = false } = {}): Promise<void> {
+  /** Generación manual (tecla G / menú dev) o auto (onActiveTile, `origen:
+   *  "activo"`). Con `resolveOnly` NUNCA pinta: restaura lo que ya exista en
+   *  la librería. Una corrida de otra clave no la desecha (#729): aplica a su
+   *  tile mientras siga instalado con el mismo layout. */
+  async runFor(
+    key: string,
+    { resolveOnly = false, origen = "manual" }: { resolveOnly?: boolean; origen?: "activo" | "manual" } = {},
+  ): Promise<void> {
     const tile = this.deps.getTile(key);
     if (!tile) return;
-    // La intención de ESTA corrida, para que el panel no anuncie pintura donde
-    // solo hay restauración (ver `pintando`).
-    this.corridaQuePinta = !resolveOnly;
     // Generación manual sin estilo: fail-loud. Pintar un atlas contra
     // `style_id` vacío gasta créditos en arte que ninguna partida volverá a
     // encontrar (la clave de caché del server lleva el estilo dentro).
@@ -270,39 +263,46 @@ export class FpsAtlasController {
       );
       return;
     }
-    const token = this.politica.nuevoRun();
+    const token = this.politica.nuevoRun(key, { pinta: !resolveOnly, origen });
+    if (token === "encolada") {
+      // Core la encoló y la lanza al quedar libre la clave; la manual lo dice.
+      if (origen === "manual") this.deps.log(`Atlas fps de ${key}: ya hay una corrida en vuelo — se pinta en cuanto acabe`);
+      return;
+    }
+    // Sin el corte global de antes de #729 la clave no basta: el tile pudo
+    // reinstalarse en vuelo con OTRA escena. La misma re-difundida sí aplica.
+    const huella = canonicalSurfaceLayoutJson(tile.layout);
+    const mismoLayout = (l: SurfaceLayout | undefined) => l === tile.layout || (!!l && canonicalSurfaceLayoutJson(l) === huella);
+    const sigueMandando = () => this.politica.vigente(key, token) && mismoLayout(this.deps.getTile(key)?.layout);
     try {
-      await this.resolverYAplicar(key, tile, resolveOnly, () => this.politica.vigente(token), this.deps.log);
+      await conTope(key, this.deps.topeDeCorridaMs ?? TOPE_DE_CORRIDA_MS, (signal) => this.resolverYAplicar(key, tile, resolveOnly, sigueMandando, this.deps.log, signal));
     } catch (err) {
       errors.push("scene", `el atlas fps de ${key} falló — se queda en clay`, err);
     } finally {
-      this.politica.finDeRun(token);
+      this.redisparar(key, this.politica.finDeRun(key, token));
     }
   }
 
   /** POST del atlas (troceado) + descargas + keep-list + aplicar + caché. No
    *  decide quién manda: se lo pregunta a `sigueMandando` antes de aplicar
-   *  (el token del activo en `runFor`; el id de la restauración en el carril
-   *  de los vecinos). Lanza si falla: el llamante tiene el canal. */
+   *  (la corrida de la clave en `runFor`; el id de la restauración en el
+   *  carril de los vecinos). Lanza si falla: el llamante tiene el canal. */
   private async resolverYAplicar(
     key: string,
     tile: { layout: SurfaceLayout; sceneDescription: string },
     resolveOnly: boolean,
     sigueMandando: () => boolean,
     anunciar: (msg: string) => void,
+    signal: AbortSignal,
   ): Promise<Desenlace> {
     const layoutKey = await this.layoutKeyFor(tile.layout);
     const cells = this.flattenCells(tile.layout);
     if (cells.length === 0) return "nada";
     if (!resolveOnly) anunciar(`Atlas fps del tile ${key}: ${cells.length} superficies…`);
-    // El server capa cells a 64 por petición: trocear y fusionar (cada
-    // celda se resuelve independiente contra la librería — mismo resultado).
-    //
-    // El acumulador NO es una `GenerateSurfaceAtlasResponse`: lo era, y eso
-    // obligaba a arrastrar campos que aquí no lee nadie (`quoted_*`, la
-    // cotización del panel de coste), sumándolos sin comprobar que fueran
-    // números — un servidor que no los mandara propagaba `NaN` en silencio.
-    // Lo que esta vista necesita de cada lote es esto y nada más.
+    // El server capa cells a 64 por petición: trocear y fusionar (cada celda
+    // se resuelve independiente contra la librería). El acumulador NO es una
+    // `GenerateSurfaceAtlasResponse`: arrastraba `quoted_*` sin comprobar que
+    // fueran números, y un servidor que no los mandara propagaba `NaN`.
     const data = {
       cells: {} as Record<string, SurfaceCellResult>,
       pages_painted: 0,
@@ -313,6 +313,7 @@ export class FpsAtlasController {
     for (let i = 0; i < cells.length; i += MAX_CELLS_PER_REQUEST) {
       const res = await fetch(`${this.urls.remote}/generate_surface_atlas`, {
         method: "POST",
+        signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cells: cells.slice(i, i + MAX_CELLS_PER_REQUEST),
@@ -331,12 +332,11 @@ export class FpsAtlasController {
       data.missing += part.missing;
     }
     if (!resolveOnly) this.deps.onGeneration?.({ kind: "fps_atlas", cached: data.cached });
-    // Keep-list ANTES del corte por token: si otro tile superó a este en
-    // vuelo, su arte (pagado o de la librería) sigue siendo de esta escena y
-    // el prune no debe podarlo. Sin esto, «último gana» convertía arte
-    // pagado en podable.
-    void this.registerRefs(key, Object.values(data.cells).map((c) => c.hash));
-    if (!sigueMandando()) return "nada"; // el tile activo cambió en vuelo
+    // Keep-list ANTES del corte de vigencia: si la corrida dejó de mandar en
+    // vuelo (cambio de mundo, tile reinstalado), su arte (pagado o de la
+    // librería) sigue siendo de esa escena y el prune no debe podarlo.
+    void registrarRefs(this.urls.state, key, Object.values(data.cells).map((c) => c.hash));
+    if (!sigueMandando()) return "nada"; // ya no manda: no toca el renderer
 
     const resolvedKeys = Object.keys(data.cells);
     if (resolvedKeys.length === 0) {
@@ -429,21 +429,5 @@ export class FpsAtlasController {
         hints: c.hints,
       })),
     );
-  }
-
-  /** Keep-list del prune: los hashes usados por la escena viva. Best-effort
-   *  (un fallo no rompe la instalación) pero con traza. */
-  private async registerRefs(sceneId: string, refs: string[]): Promise<void> {
-    if (!this.urls.state || refs.length === 0) return;
-    try {
-      const res = await fetch(`${this.urls.state}/scene/asset_refs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scene_id: sceneId, refs: [...new Set(refs)] }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (err) {
-      errors.push("scene", `asset_refs de ${sceneId} no registrados (prune podría podarlos)`, err);
-    }
   }
 }

@@ -33,8 +33,10 @@
  *  LO QUE NO MIDE: el coste de un anillo entero pintado a la vez al reanudar
  *  un mundo virgen en producción (está escrito, con su cota, en el informe de
  *  la tanda; el falso no cobra dólares); y el orden estilo-después-de-la-escena
- *  (#730), que este guion evita a propósito empezando la partida con el estilo
- *  ya en la sesión.
+ *  (#730), que es inalcanzable en partida: el bridge manda `session_started`
+ *  antes de difundir escena (candado en
+ *  `nefan-core/test/el-estilo-llega-antes-que-la-escena.test.ts`) y el cliente
+ *  fija el estilo antes del siguiente mensaje (guion 183).
  *
  *  CERO CRÉDITOS: motor falso. Pinta a propósito, así que no es `sinMotor`.
  */

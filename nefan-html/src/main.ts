@@ -563,9 +563,8 @@ function gameLoop(now: number): void {
   lastTime = now;
 
   // Aviso de pintura en vuelo del panel dev: el único pipeline que puede gastar
-  // mientras se juega es el atlas. `pintando` y no `running` porque en maqueta
-  // se pide igual con resolve_only y el rótulo gritaba «GENERANDO» (QA H3).
-  devPanel.setPainting(fpsAtlasController.pintando);
+  // mientras se juega es el atlas: las claves que PINTAN, con su nombre (QA H3; AX H-3).
+  devPanel.setPainting(fpsAtlasController.clavesPintando);
 
   // R: respawn (solo surte efecto con el player muerto).
   if (input.consumeRespawn()) handleRespawnRequest();
