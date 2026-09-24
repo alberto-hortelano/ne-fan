@@ -194,7 +194,7 @@ async def main():
 asyncio.run(main())
 `;
   // El intérprete sale de `lib/python.mjs` (NEFAN_PYTHON → `.venv` del árbol →
-  // `python3`), no de un `source .venv/bin/activate` escrito aquí: un worktree
+  // `.venv` del checkout principal → `python3`), no de un `source .venv/bin/activate` escrito aquí: un worktree
   // nace sin `.venv` —está en `.gitignore`— y ese `source` lo ponía ROJO
   // diciendo que el adaptador no sabe su clave (#494).
   const r = spawnSync(PYTHON, ["-c", py, model, anim, angle, prompt, FORGE_URL],

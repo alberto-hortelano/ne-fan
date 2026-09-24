@@ -28,6 +28,7 @@ fallo() {
 # un error, no un «prueba el siguiente») → el .venv de este árbol → el .venv
 # del checkout principal cuando esto es un worktree (git-common-dir; ninguna
 # ruta de máquina escrita aquí) → python3 del PATH (CI, tras setup-python).
+# La MISMA regla que qa/lib/python.mjs, con test de paridad (#717).
 if [ -n "${NEFAN_PYTHON+x}" ]; then
   [ -n "$NEFAN_PYTHON" ] || fallo "NEFAN_PYTHON está puesta pero vacía"
   [ -x "$NEFAN_PYTHON" ] || command -v "$NEFAN_PYTHON" >/dev/null 2>&1 \
@@ -44,6 +45,14 @@ else
     py=python3
   fi
   [ -n "$py" ] || fallo "no hay intérprete de Python: ni .venv en $raiz, ni en el checkout principal, ni python3 en el PATH. Crea uno: cd \"$raiz\" && python3 -m venv .venv && .venv/bin/pip install -r ai_server/requirements.txt -r ai_server/requirements-dev.txt"
+fi
+
+# `--interprete`: imprime el intérprete elegido y sale, sin correr ruff. Es el
+# lado bash de la paridad con `qa/lib/python.mjs` (#717): los dos comen la
+# misma tabla de casos en nefan-core/test/python-interprete-paridad.test.ts.
+if [ "${1-}" = "--interprete" ]; then
+  printf '%s\n' "$py"
+  exit 0
 fi
 
 # El binario que se comprueba es el que se ejecuta: `-m ruff`, no `ruff` del PATH.

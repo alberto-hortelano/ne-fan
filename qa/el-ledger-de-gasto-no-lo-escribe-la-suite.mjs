@@ -93,9 +93,9 @@ const LEDGER = join(RAIZ, "cache", "spend", "events.jsonl");
 const FIXTURES_FORGE = join(RAIZ, "nefan-core", "data", "contract", "fixtures", "sprite-forge");
 const ENV_SPEND_DIR = "NEFAN_SPEND_DIR";
 
-/** El intérprete: `NEFAN_PYTHON`, el `.venv` del checkout o el `python3` del
- *  sistema, en ese orden (`qa/lib/python.mjs`; un worktree desprendido lo dice
- *  con la variable). */
+/** El intérprete: `NEFAN_PYTHON`, el `.venv` del checkout, el del checkout
+ *  principal desde un worktree o el `python3` del sistema, en ese orden
+ *  (`qa/lib/python.mjs`, misma regla que `ai_server/lint.sh`). */
 const PY = interpretePython(RAIZ);
 
 const fallos = [];

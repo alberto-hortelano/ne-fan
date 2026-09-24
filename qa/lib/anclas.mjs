@@ -38,8 +38,15 @@
  *  sabotaje que los llevara escribiría otra cosa de la que dice. `split` es
  *  además la misma operación que cuenta.
  *
- *  → `{ ok: true, texto }` o `{ ok: false, indice, buscar, veces }`. */
+ *  → `{ ok: true, texto }` o `{ ok: false, indice, buscar, veces }`. Lanza con una
+ *  lista de pares vacía y con un `buscar` vacío: los dos son errores de la tabla. */
 export function aplicarPares(texto, pares) {
+  // Sin pares no hay sabotaje: devolver `ok` con el texto intacto sería dar
+  // por roto algo que nadie ha tocado. Es un error de la tabla, igual que el
+  // `buscar` vacío de abajo, y no se colapsa con «todas las anclas en su sitio».
+  if (!Array.isArray(pares) || pares.length === 0) {
+    throw new TypeError(`sin pares que aplicar (${JSON.stringify(pares)}): una entrada tiene que romper algo`);
+  }
   let actual = texto;
   for (let indice = 0; indice < pares.length; indice++) {
     const [buscar, poner] = pares[indice];

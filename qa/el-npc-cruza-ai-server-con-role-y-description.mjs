@@ -110,9 +110,9 @@ const CLAVE_FALSA = "banco-sin-creditos";
  *  bridge mudo cuelgue el CI. Medido: el viaje entero tarda ~2 s. */
 const ESCENA_MAX_MS = 90_000;
 
-/** El intérprete: `NEFAN_PYTHON` si está, el `.venv` del checkout si existe,
- *  el `python3` del sistema si no (CI). Un worktree desprendido, que no tiene
- *  `.venv`, lo dice con la variable en vez de tener una ruta ajena en el repo. */
+/** El intérprete: `NEFAN_PYTHON` si está, el `.venv` del checkout si existe, el
+ *  del checkout principal desde un worktree (#717), el `python3` del sistema si
+ *  no (CI). Sin ninguna ruta ajena escrita en el repo. */
 const PY = interpretePython(RAIZ);
 
 const fallos = [];

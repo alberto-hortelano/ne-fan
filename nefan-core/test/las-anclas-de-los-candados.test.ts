@@ -196,4 +196,11 @@ describe("aplicarPares: la sustitución que usan los seis guiones en negativo (#
   it("un `buscar` vacío es un error de la tabla, no un «aparece N veces»", () => {
     assert.throws(() => aplicarPares("abc", [["", "x"]]), /texto no vacío/);
   });
+
+  it("una lista de pares VACÍA es un error de la tabla, no un «todo en su sitio» (#723)", () => {
+    // Con `[]` el bucle no entraba y salía `{ ok: true, texto }` intacto: el
+    // guion creía haber roto algo y medía el árbol limpio. El mismo modo de
+    // fallo que el `buscar` vacío, que ya lanzaba.
+    assert.throws(() => aplicarPares("abc", []), /sin pares que aplicar/);
+  });
 });

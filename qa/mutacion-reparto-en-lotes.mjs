@@ -610,6 +610,9 @@ const pendientes = [];
  *  un ancla que solo se mira cuando alguien paga los 16 minutos se pudre en la
  *  PR que la mueve y se descubre semanas después. */
 let anclasRotas;
+/** Firmas de los checkers que salen rojos (o sin status) con el árbol limpio.
+ *  Con una sola, el bloque ABIERTO no se corre (#722). */
+let baseRota = [];
 
 /** Cómo se clasifica un hallazgo, y por qué el guion no puede salir rojo por la
  *  deuda que ya tiene dueño.
@@ -673,12 +676,27 @@ try {
     await cede();
   }
 
+  const base = {};
   if (!soloVigentes) {
     console.log("\n══ ABIERTO · se rompe a mano lo que el invariante dice defender, y se mira quién se entera\n");
-    const base = {};
     for (const n of new Set(ABIERTOS.flatMap((a) => a.checkers))) base[n] = CHECKERS[n]();
     console.log(`  (línea base con el árbol limpio: ${Object.values(base).join(" · ")})\n`);
+    // La base tiene que ser VERDE, como en los tres hermanos (#722): un checker
+    // que ya sale rojo en limpio —o que se come su timeout y da `null`— no
+    // puede «cambiar» con ningún probe, y cada probe que solo él vigila saldría
+    // como «SIN CANDADO» inventado. Se niega antes del primer probe, nombrando
+    // el checker; no hay un estado «sin medida» a medias.
+    baseRota = Object.entries(base).filter(([n, firma]) => firma !== `${n}:0`).map(([, firma]) => firma);
+    if (baseRota.length > 0) {
+      console.log(
+        `✖ LÍNEA BASE ROJA  ${baseRota.join(" · ")}\n` +
+          `     un checker ya sale rojo con el árbol limpio: ningún probe podría hacerlo cambiar, así que ` +
+          `no se mide nada. Arregla eso primero.`,
+      );
+    }
+  }
 
+  if (!soloVigentes && baseRota.length === 0) {
     for (const a of ABIERTOS) {
       const [fichero, busca, pone] = a.rompe;
       const parche = aplicarPares(fuentes.get(fichero), [[busca, pone]]);
@@ -695,6 +713,12 @@ try {
         continue;
       }
       writeFileSync(fichero, parche.texto);
+      // «Se entera» = la firma CAMBIA respecto de la base verde. Un checker que
+      // se come su `timeout` DURANTE el probe da `<n>:null`, que es un cambio,
+      // así que cuenta como «lo caza». DECISIÓN CONSCIENTE, no descuido: es lo
+      // que hace Stryker (Timeout = killed) —un sabotaje que cuelga al checker
+      // también es un sabotaje que alguien nota—, y la base ya exige `:0` en
+      // todos, así que ese `null` no puede venir de antes del probe (#722).
       const cambios = a.checkers.filter((n) => CHECKERS[n]() !== base[n]);
       restaura();
       if (clasifica(a, cambios.length > 0)) console.log(`✔ ${a.nombre}\n     lo caza: ${cambios.join(", ")}`);
@@ -722,13 +746,14 @@ console.log("\n─────────────────────�
 console.log(`Invariantes vigentes rotos          : ${vigentesRotos} de ${VIGENTES.length}`);
 console.log(`Probes con el patrón obsoleto       : ${anclasRotas} de ${ABIERTOS.length}`);
 if (!soloVigentes) {
+  console.log(`Checkers rojos en la línea base     : ${baseRota.length}`);
   console.log(`Hallazgos NUEVOS sin candado        : ${sinDeclarar}`);
   console.log(`Declaraciones de deuda que mienten  : ${declaracionesFalsas}`);
   console.log(`Deuda declarada, con dueño          : ${pendientes.length}`);
   for (const p of pendientes) console.log(`   ⏳ ${p}`);
 }
 
-const roto = vigentesRotos > 0 || anclasRotas > 0 || sinDeclarar > 0 || declaracionesFalsas > 0;
+const roto = vigentesRotos > 0 || anclasRotas > 0 || baseRota.length > 0 || sinDeclarar > 0 || declaracionesFalsas > 0;
 if (!roto) {
   console.log(
     pendientes.length === 0
@@ -740,6 +765,7 @@ if (!roto) {
   const porque = [
     vigentesRotos > 0 ? "hay una regresión en lo que ya funcionaba" : "",
     anclasRotas > 0 ? "hay probes cuyo patrón no aparece una sola vez: no prueban lo que dicen" : "",
+    baseRota.length > 0 ? `la línea base ya está roja (${baseRota.join(", ")}): arregla eso antes de medir nada aquí` : "",
     sinDeclarar > 0 ? "hay hallazgos NUEVOS sin candado y sin issue" : "",
     declaracionesFalsas > 0 ? "hay deuda declarada que ya no es cierta" : "",
   ].filter(Boolean);
