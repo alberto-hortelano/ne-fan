@@ -45,7 +45,7 @@ import { join } from "node:path";
 import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { rutaDelSave } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
-import { preguntarPorElCable } from "../lib/cable.mjs";
+import { reanudarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
 
@@ -120,17 +120,6 @@ async function api(method, path, body) {
 const plugins = async () => (await api("GET", "/plugins")).body?.plugins ?? [];
 const inventario = async () => (await api("GET", "/entity/player/inventory")).body?.inventory ?? null;
 const slice = async (id) => (await api("GET", `/plugins/${id}/inspect`)).body?.slice;
-
-/** Un resume_session crudo por el cable del bridge, DESDE la página (la URL
- *  la da el propio juego, con sus overrides de query — mismo patrón que el
- *  guion 46). Devuelve el `session_started`. */
-async function resumePorElCable(ctx, sessionId) {
-  return preguntarPorElCable(
-    ctx,
-    { type: "resume_session", sessionId, requestId: "qa-73" },
-    { respuesta: "session_started" },
-  ).then((m) => ({ ok: m.ok, error: m.error ?? "" }));
-}
 
 /** Celda del tile en la que cae una posición de mundo. */
 function celdaDe(scene, x, z) {
@@ -359,7 +348,7 @@ export default async function (ctx) {
     })();
     writeFileSync(ruta, conItemSinId);
 
-    const res1 = await resumePorElCable(ctx, sessionId);
+    const res1 = await reanudarPorElCable(ctx, sessionId, "qa-73");
     ctx.expect(
       "el resume de un save con un ítem sin id contesta save_invalido nombrando player.inventory[1].id",
       res1.ok === false && /^save_invalido:/.test(res1.error) && res1.error.includes("player.inventory[1].id: Required"),
@@ -370,7 +359,7 @@ export default async function (ctx) {
       /bórralo o empieza partida nueva/.test(res1.error),
       res1.error,
     );
-    const res2 = await resumePorElCable(ctx, "qa_fantasma_73");
+    const res2 = await reanudarPorElCable(ctx, "qa_fantasma_73", "qa-73");
     ctx.expect(
       "un save inexistente sigue siendo session_not_found (canal distinguible)",
       res2.ok === false && res2.error === "session_not_found",
@@ -411,7 +400,7 @@ export default async function (ctx) {
     }
 
     writeFileSync(ruta, original);
-    const res4 = await resumePorElCable(ctx, sessionId);
+    const res4 = await reanudarPorElCable(ctx, sessionId, "qa-73");
     ctx.expect(
       "restaurado el fichero, el mismo resume carga (el rechazo era por el ítem, no por la ruta)",
       res4.ok === true,

@@ -62,6 +62,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PUERTOS, offsetActual } from "./lib/stack.mjs";
+import { conversarConElBridge } from "./lib/bridge-desde-node.mjs";
 import { duenyosDeLosPuertos, esperarPuertoArriba, puertoOcupado, puertosLibres } from "./lib/puertos.mjs";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -169,55 +170,12 @@ async function api(base, method, path, body, { raw = false, headers = {} } = {})
   return { status: res.status, body: json };
 }
 
-/** Un socket contra el bridge que manda UN mensaje y resuelve con lo recibido
- *  cuando `listo(msgs)` lo dice (o tras `quietoMs` sin condición). */
-function porElCable(puerto, mensaje, { listo = null, quietoMs = 800, maxMs = ESCENA_MAX_MS } = {}) {
-  return new Promise((resolvePromise, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${puerto}`);
-    const recibidos = [];
-    let cerrado = false;
-    const fin = (fn, v) => {
-      if (cerrado) return;
-      cerrado = true;
-      clearTimeout(cortafuegos);
-      try {
-        ws.close();
-      } catch {
-        // ya cerrado por el otro lado
-      }
-      fn(v);
-    };
-    const cortafuegos = setTimeout(
-      () =>
-        fin(
-          reject,
-          new Error(
-            `el bridge no llegó a la condición en ${maxMs / 1000} s tras ${mensaje.type}; recibidos: ` +
-              (recibidos.map((m) => m.type + (m.phase ? `/${m.phase}` : "")).join(", ") || "ninguno"),
-          ),
-        ),
-      maxMs,
-    );
-    ws.addEventListener("error", (e) => fin(reject, new Error(`WebSocket: ${e.message ?? "error"}`)));
-    ws.addEventListener("open", () => {
-      ws.send(JSON.stringify(mensaje));
-      if (!listo) setTimeout(() => fin(resolvePromise, recibidos), quietoMs);
-    });
-    ws.addEventListener("message", (ev) => {
-      let msg;
-      try {
-        msg = JSON.parse(String(ev.data));
-      } catch {
-        return fin(reject, new Error(`el bridge mandó algo que no es JSON: ${String(ev.data).slice(0, 200)}`));
-      }
-      recibidos.push(msg);
-      if (msg.type === "narrative_status" && msg.phase === "error") {
-        return fin(reject, new Error(`narrative_status error — ${msg.message}`));
-      }
-      if (listo && listo(recibidos)) fin(resolvePromise, recibidos);
-    });
-  });
-}
+/** Un mensaje por un socket propio contra el bridge, y lo recibido. El socket
+ *  y la lectura del rechazo son de `qa/lib/bridge-desde-node.mjs` (#739):
+ *  cualquier `narrative_status/error` o frame ilegible rechaza con su texto,
+ *  también dentro de la ventana de un mensaje que no contesta nada. */
+const alBridge = (puerto, mensaje, espera) =>
+  conversarConElBridge(`ws://127.0.0.1:${puerto}`, mensaje, { techoMs: ESCENA_MAX_MS, ...espera }).then((r) => r.recibidos);
 
 const inventarioDelSave = (ruta) => JSON.parse(readFileSync(ruta, "utf8")).player?.inventory ?? null;
 const ids = (inv) => (Array.isArray(inv) ? inv.map((i) => i?.id) : inv);
@@ -317,7 +275,7 @@ async function main() {
 
     // ── 2 · provisional: start_session sin el ack del jugador ────────────
     console.log("\n  2 · provisional (#279): start_session por el cable, sin session_entered");
-    const arranque = await porElCable(
+    const arranque = await alBridge(
       puertoBridge,
       { type: "start_session", requestId: "qa-sin-partida", gameId: GAME },
       {
@@ -341,7 +299,7 @@ async function main() {
 
     // ── 3 · el jugador entra: en disco ───────────────────────────────────
     console.log("\n  3 · session_entered: la partida existe en disco y la mutación cae en el save");
-    await porElCable(puertoBridge, { type: "session_entered", sessionId: sid });
+    await alBridge(puertoBridge, { type: "session_entered", sessionId: sid }, { ventanaMs: 800 });
     for (let i = 0; i < 50 && !existsSync(rutaSave); i++) await espera(200);
     expect("3 · tras session_entered hay state.json", existsSync(rutaSave), rutaSave);
     const mutDisco = await api(S, "POST", "/entity/player/inventory", { item: { id: "qa_y" } });
@@ -380,10 +338,10 @@ async function main() {
 
     // ── 5 · el save se borró: sin sesión otra vez ────────────────────────
     console.log("\n  5 · delete_session de la partida activa: el bridge queda sin sesión y la mutadora vuelve a ser 409");
-    const borrado = await porElCable(
+    const borrado = await alBridge(
       puertoBridge,
       { type: "delete_session", requestId: "qa-sin-partida-del", sessionId: sid },
-      { listo: (msgs) => msgs.some((m) => m.type === "session_deleted"), maxMs: 15_000 },
+      { listo: (msgs) => msgs.some((m) => m.type === "session_deleted"), techoMs: 15_000 },
     );
     expect("5 · session_deleted outcome:deleted", borrado.find((m) => m.type === "session_deleted")?.outcome === "deleted", corto(borrado.at(-1)));
     const saludFin = await api(S, "GET", "/health");

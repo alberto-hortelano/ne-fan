@@ -46,8 +46,9 @@ const mod = (await import(join(repoRoot, "qa", "lib", "cable.mjs"))) as {
     mensaje: unknown,
     opciones?: { respuesta?: unknown; techoMs?: number; url?: string | null },
   ) => Promise<Record<string, unknown>>;
+  reanudarPorElCable: (ctx: Ctx, sessionId: string, requestId?: unknown) => Promise<{ ok: unknown; error: unknown }>;
 };
-const { porElCable, rechazosDelCable, porRondasHastaRechazo, fraseDeRechazos, preguntarPorElCable } = mod;
+const { porElCable, rechazosDelCable, porRondasHastaRechazo, fraseDeRechazos, preguntarPorElCable, reanudarPorElCable } = mod;
 
 describe("la puerta es UNA: lo que el módulo no deja escribir", () => {
   it("no exporta nada con lo que cerrar el cable a mano", () => {
@@ -60,6 +61,7 @@ describe("la puerta es UNA: lo que el módulo no deja escribir", () => {
       "porElCable",
       "porRondasHastaRechazo",
       "preguntarPorElCable",
+      "reanudarPorElCable",
       "rechazosDelCable",
     ]);
   });
@@ -504,5 +506,24 @@ describe("preguntarPorElCable: mando un frame y espero SU respuesta, o el rechaz
       { kind: "tile", message: "t" },
       { kind: "protocolo", message: "p" },
     ]);
+  });
+
+  it("`reanudarPorElCable` manda el `resume_session` con el `requestId` del guion y devuelve `{ok, error}` (#739)", async () => {
+    // Las ocho copias de `resumePorElCable` (46, 62, 67, 73, 76, 111, 113, 126)
+    // eran esto con su `requestId` literal.
+    SocketFalso.contesta = (m) => [{ type: "session_started", requestId: m.requestId, ok: false, error: "save_invalido: x" }];
+    assert.deepEqual(await reanudarPorElCable(ctx, "s1", "qa-46"), { ok: false, error: "save_invalido: x" });
+    assert.deepEqual(JSON.parse(soloElSocket().enviados[0]), { type: "resume_session", sessionId: "s1", requestId: "qa-46" });
+    SocketFalso.abiertos = [];
+    SocketFalso.contesta = (m) => [{ type: "session_started", requestId: m.requestId, ok: true }];
+    assert.deepEqual(await reanudarPorElCable(ctx, "s1", "qa-46"), { ok: true, error: "" }, "sin `error`, cadena vacía");
+  });
+
+  it("`reanudarPorElCable` lanza sin `requestId`, antes de abrir, y un rechazo del intake lanza como en `preguntarPorElCable`", async () => {
+    await assert.rejects(reanudarPorElCable(ctx, "s1"), /el `requestId` lo pone el guion/);
+    await assert.rejects(reanudarPorElCable(ctx, "s1", ""), /el `requestId` lo pone el guion/);
+    assert.deepEqual(SocketFalso.abiertos, []);
+    SocketFalso.contesta = () => [{ type: "narrative_status", phase: "error", kind: "protocolo", message: "no reconoce" }];
+    await assert.rejects(reanudarPorElCable(ctx, "s1", "qa-x"), /RECHAZÓ el frame \(protocolo\): no reconoce/);
   });
 });

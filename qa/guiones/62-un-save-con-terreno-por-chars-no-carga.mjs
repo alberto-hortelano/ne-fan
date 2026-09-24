@@ -44,7 +44,7 @@ import { fileURLToPath } from "node:url";
 import { nuevaPartida, comenzar, recargarAlTitulo } from "../lib/sesion.mjs";
 import { rutaDelSave, esperarPartidaEnDisco } from "../lib/saves.mjs";
 import { URLS } from "../lib/stack.mjs";
-import { preguntarPorElCable } from "../lib/cable.mjs";
+import { reanudarPorElCable } from "../lib/cable.mjs";
 
 export const aisla = ["saves"];
 
@@ -72,16 +72,6 @@ function valorViejo(campo) {
 /** Lo que el jugador tiene que leer: la salida real, no «inténtalo de nuevo»
  *  (reintentar un save roto falla siempre). */
 const SALIDA_PARA_EL_JUGADOR = /ya no vale para esta versión del juego.*bórrala o empieza una nueva/;
-
-/** Un resume_session crudo por el cable del bridge, DESDE la página (misma
- *  receta que el guion 46: la URL la da el propio juego con sus overrides). */
-async function resumePorElCable(ctx, sessionId) {
-  return preguntarPorElCable(
-    ctx,
-    { type: "resume_session", sessionId, requestId: "qa-62" },
-    { respuesta: "session_started" },
-  ).then((m) => ({ ok: m.ok, error: m.error ?? "" }));
-}
 
 export default async function (ctx) {
   const campos = camposRetirados();
@@ -119,7 +109,7 @@ export default async function (ctx) {
   for (const campo of campos) {
     const viejo = conCampoViejo(campo);
     writeFileSync(ruta, viejo);
-    const res = await resumePorElCable(ctx, sessionId);
+    const res = await reanudarPorElCable(ctx, sessionId, "qa-62");
     ctx.expect(
       `el resume de un save con ${campo} contesta save_invalido nombrando el campo (no carga mudo)`,
       res.ok === false && /^save_invalido:/.test(res.error) && res.error.includes(`campo \`${campo}\``),
@@ -174,7 +164,7 @@ export default async function (ctx) {
 
   // ── 3. El save vuelve a ser el bueno y la partida REVIVE de verdad ───────
   writeFileSync(ruta, original);
-  const res3 = await resumePorElCable(ctx, sessionId);
+  const res3 = await reanudarPorElCable(ctx, sessionId, "qa-62");
   ctx.expect(
     "restaurado el fichero, el mismo resume carga (el rechazo era por el contenido, no por la ruta)",
     res3.ok === true,
