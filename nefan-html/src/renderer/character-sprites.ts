@@ -5,16 +5,15 @@
  *
  *  Contrato con CONFIG.graphics:
  *  - character_sprites=true → el set base de y_bot es obligatorio
- *    (preloadBase lanza si falta un sheet — fail-loud).
+ *    (`precargarHojasBase`, en `hojas-base.ts`, lanza si falta un sheet).
  *  - ai_skin=true → cada descripción encola un /skin_sprite_sheet por anim
  *    en orden de prioridad; ai_server caído degrada a la base y_bot con UNA
  *    entrada en el error-log por skin, sin reintentos.
  */
 import { CONFIG } from "@nefan-core/src/config.js";
 import { HOJAS_BASE_ANIMS } from "@nefan-core/src/contracts/sprite-census.js";
-import { FALLO_HOJAS_BASE } from "@nefan-core/src/protocol/status-motivo.js";
 import { FusibleDeSkins } from "@nefan-core/src/session/fusible-de-skins.js";
-import type { PermisoDePersonajes } from "@nefan-core/src/session/gates-de-imagen.js";
+import { skinPideSoloLoPagado, type PermisoDePersonajes } from "@nefan-core/src/session/gates-de-imagen.js";
 import { errors } from "../ui/error-log.js";
 import { SIN_ARTE, type SpriteRenderer } from "./sprite-renderer.js";
 import { CadenaDeSkins } from "./cadena-de-skins.js";
@@ -40,7 +39,7 @@ export const BASE_ANIMS = HOJAS_BASE_ANIMS;
  *  ve siempre). El resto se genera LAZY la primera vez que la entidad entra
  *  en esa anim (modelFor la encola) — cada llamada Meshy cuesta dinero real
  *  y muchas anims de combate no llegan a verse nunca en un NPC pacífico. */
-const AUTO_SKIN_ANIMS = ["idle", "walk", "run"] as const;
+const AUTO_SKIN_ANIMS: readonly string[] = ["idle", "walk", "run"];
 
 interface SkinState {
   prompt: string;
@@ -58,8 +57,10 @@ interface SkinState {
    *  sube a `generar`, y entonces el re-pedido las encuentra como hueco. */
   sinArte: Set<string>;
   /** Pedido a mano (`force`, menú dev): el jugador eligió pagar ESTE
-   *  personaje, así que sus anims generan aunque el permiso sea `restaurar`.
-   *  Incluidas las lazy de `modelFor`: son del mismo personaje elegido. */
+   *  personaje, así que su set AUTOMÁTICO genera aunque el permiso sea
+   *  `restaurar`. Sus lazy de `modelFor` NO: las dispara un fotograma, no el
+   *  clic, y siguen al permiso como las de cualquiera (#756, en core:
+   *  `skinPideSoloLoPagado`). */
   forzado: boolean;
 }
 
@@ -75,39 +76,6 @@ export class CharacterSpriteManager {
     private sprites: SpriteRenderer,
     private angle: string,
   ) {}
-
-  /** Carga el set base completo de y_bot. Obligatorio antes del primer frame
-   *  cuando character_sprites=true; lanza si falta cualquier sheet.
-   *
-   *  `allSettled` y no `all`: las diez hojas se piden igual en los dos casos
-   *  —`all` no cancela nada—, pero `all` rechaza con la PRIMERA, así que el
-   *  resumen «qué hacer» (main.ts) se registraba ANTES que los nueve fallos
-   *  restantes y quedaba sepultado debajo en el panel, que va del más nuevo al
-   *  más viejo. En un clon limpio fallan las diez (#255) y esa línea es la
-   *  única accionable: se registra la última para que sea la primera que se
-   *  lee. Sigue lanzando si falta cualquiera — el fail-loud no se toca. */
-  async preloadBase(): Promise<void> {
-    const cargas = await Promise.allSettled(
-      BASE_ANIMS.map((anim) => this.sprites.loadAnimation(BASE_MODEL, anim, this.angle)),
-    );
-    const fallidas = BASE_ANIMS.filter((_, i) => cargas[i]?.status === "rejected");
-    const primera = cargas.find((c) => c.status === "rejected");
-    if (primera?.status === "rejected") {
-      // El motivo CONCRETO de la primera viaja en el mensaje: sin él, agrupar
-      // los fallos cambiaría «HTTP 404 on /sprites/y_bot/idle/…» por un
-      // recuento que no dice dónde mirar.
-      //
-      // Y el CÓDIGO va delante porque este rechazo no se queda aquí: sube por
-      // `vestir` (`aspecto-del-jugador.ts`) hasta el catch del arranque, que lo traduce con
-      // `motivoDeSesionParaElJugador`. Sin código, esa traducción no lo
-      // reconocía y le decía al jugador que el servidor había fallado y que
-      // reintentara (#255 p2, hallazgo H1 de QA).
-      throw new Error(
-        `${FALLO_HOJAS_BASE}: faltan ${fallidas.length} de ${BASE_ANIMS.length} hojas ` +
-          `(${fallidas.join(", ")}) — ${String(primera.reason)}`,
-      );
-    }
-  }
 
   /** Cortacircuitos de sesión (#236): cuántos personajes DISTINTOS con error
    *  de backend (red o 5xx) apagan los skins de la sesión, y por qué se cuentan
@@ -195,6 +163,14 @@ export class CharacterSpriteManager {
    *  Se llama al ENTRAR o REANUDAR una sesión y cuando el usuario reactiva los
    *  personajes IA desde el menú dev. Lo primero es nuevo: hasta #236 el único
    *  llamante era el OFF→ON del menú dev. */
+  /** Entrar o reanudar una partida: rearma el cortacircuitos y olvida a
+   *  quién contó ya la línea de balance (`cadena-de-skins.ts`), que es de la
+   *  partida y no de la pestaña. El rearme del menú dev NO olvida eso. */
+  empezarPartida(): void {
+    this.rearmarCortacircuitos();
+    this.cadena.olvidarContados();
+  }
+
   rearmarCortacircuitos(): void {
     this.fusible.rearmar();
     for (const [skinnedModel, state] of this.skins) {
@@ -338,9 +314,12 @@ export class CharacterSpriteManager {
       return;
     }
     // La intención se decide AL PEDIR y no al encolar: si el permiso bajó
-    // mientras esperaba turno, se pregunta solo por lo pagado. Un personaje
-    // elegido a mano (`forzado`) genera siempre.
-    const resolveOnly = !state.forzado && this.permiso !== "generar";
+    // mientras esperaba turno, se pregunta solo por lo pagado. El elegido a
+    // mano (`forzado`) paga su set automático y nada más (#756).
+    const resolveOnly = skinPideSoloLoPagado(this.permiso, {
+      elegidaAMano: state.forzado,
+      delSetAutomatico: AUTO_SKIN_ANIMS.includes(anim),
+    });
     try {
       const sheet = await this.sprites.loadSkinnedAnimation(
         BASE_MODEL,
@@ -356,14 +335,14 @@ export class CharacterSpriteManager {
         // lo encuentre como hueco, y se veta mientras siga en restaurar.
         state.queued.delete(anim);
         state.sinArte.add(anim);
-        this.cadena.sinArte();
+        this.cadena.sinArte(skinnedModel);
         return;
       }
       // Espera a que los PNG decodifiquen antes de marcar la anim lista:
       // la sustitución debe ser atómica, sin frames SPRITE_PENDING.
       await Promise.all(sheet.frames.flat().map((img) => img.decode()));
       this.readySkins.add(`${skinnedModel}/${anim}`);
-      if (resolveOnly) this.cadena.restaurado();
+      if (resolveOnly) this.cadena.restaurado(skinnedModel);
     } catch (err) {
       // Meshy/ai_server caído o sin API key: la entidad se queda con la base
       // y_bot y no se reintenta (sin bucles). El fallo marca el PERSONAJE, no

@@ -17,6 +17,8 @@ import {
   modoEfectivoDePersonajes,
   normalizarModo,
   MODO_AL_EMPEZAR,
+  skinPideSoloLoPagado,
+  type PermisoDePersonajes,
   type EntradaDeGates,
   type Entorno,
   type GatesDeImagen,
@@ -227,4 +229,29 @@ describe("loQuePagaImagenIA", () => {
   it("en producción paga en las dos", () => {
     assert.deepEqual(loQuePagaImagenIA("produccion"), { escenarios: true, personajes: true });
   });
+});
+
+/** La excepción del forzado (#756, salida b): cada fila escrita a mano. El
+ *  forzado paga su set automático y NADA MÁS; sus lazy restauran. */
+describe("skinPideSoloLoPagado", () => {
+  const tabla: Array<[PermisoDePersonajes, boolean, boolean, boolean]> = [
+    // permiso, elegida a mano, del set automático → ¿solo lo pagado?
+    ["generar", false, false, false],
+    ["generar", false, true, false],
+    ["generar", true, false, false],
+    ["generar", true, true, false],
+    ["restaurar", false, false, true],
+    ["restaurar", false, true, true],
+    ["restaurar", true, false, true], // la lazy del forzado: el caso de #756
+    ["restaurar", true, true, false], // lo que el botón enseña: se paga
+    ["base", false, false, true],
+    ["base", false, true, true],
+    ["base", true, false, true],
+    ["base", true, true, false],
+  ];
+  for (const [permiso, elegidaAMano, delSetAutomatico, esperado] of tabla) {
+    it(`${permiso} · a mano=${elegidaAMano} · set automático=${delSetAutomatico} → ${esperado}`, () => {
+      assert.equal(skinPideSoloLoPagado(permiso, { elegidaAMano, delSetAutomatico }), esperado);
+    });
+  }
 });

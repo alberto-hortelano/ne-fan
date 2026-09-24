@@ -42,6 +42,13 @@
  *  siendo el del aviso: ROJOS los tres asertos nuevos —la oferta, el chip y el
  *  título sin recargar—. Restaurado después.
  *
+ *  JERARQUÍA DE LA OFERTA (QA de la tanda BA, 2026-09-24): con dos salidas,
+ *  «Reintentar» es la acción rellena y «Cerrar» la secundaria. Probado en
+ *  negativo: sin la regla `.volver:not([hidden]) ~ .dismiss` de
+ *  `game-ui.css`, «Cerrar» sale relleno como «Reintentar» → ROJOS los dos
+ *  asertos «BA:» de «Cerrar». El contraste de sus pares sobre el muro lo
+ *  mide `nefan-core/test/ui-theme.test.ts`.
+ *
  *  Cero créditos: no hay partida, y el bridge que llega tiene el motor en un
  *  puerto muerto. No se pulsa «Comenzar»: se llega al título y se para ahí.
  */
@@ -224,6 +231,54 @@ export default async function (ctx) {
       oferta.conexion === "Bridge",
       `«${oferta.conexion}» (#ts-error=${JSON.stringify(oferta.tsError)})`,
     );
+    // JERARQUÍA (QA de la tanda BA): con dos salidas, la que ENTRA es la
+    // acción rellena y «Cerrar» la secundaria —sin relleno, texto `ink`,
+    // filete `ink_dim`—. Estilo CALCULADO frente a los tokens vigentes; el
+    // contraste de esos pares sobre la pila del muro lo mide
+    // `nefan-core/test/ui-theme.test.ts` en los cinco packs.
+    const jerarquia = await ctx.page.evaluate(() => {
+      const sonda = document.createElement("div");
+      document.getElementById("game-ui").append(sonda);
+      const token = (v) => {
+        sonda.style.color = `var(${v})`;
+        return getComputedStyle(sonda).color;
+      };
+      const r = getComputedStyle(document.getElementById("narrative-loader-retry"));
+      const c = getComputedStyle(document.getElementById("narrative-loader-dismiss"));
+      const out = {
+        reintentar: { fondo: r.backgroundColor, tinta: r.color },
+        cerrar: { fondo: c.backgroundColor, tinta: c.color, filete: c.borderTopColor },
+        accent: token("--nf-accent"),
+        accentInk: token("--nf-accent-ink"),
+        ink: token("--nf-ink"),
+        inkDim: token("--nf-ink-dim"),
+      };
+      sonda.remove();
+      return out;
+    });
+    ctx.expect(
+      "BA: «Reintentar» es la acción RELLENA (`accent_ink` sobre `accent`)",
+      jerarquia.reintentar.fondo === jerarquia.accent && jerarquia.reintentar.tinta === jerarquia.accentInk,
+      JSON.stringify(jerarquia),
+    );
+    ctx.expect(
+      "BA: …y «Cerrar» la SECUNDARIA: sin relleno, texto `ink` y filete `ink_dim`",
+      jerarquia.cerrar.fondo === "rgba(0, 0, 0, 0)" &&
+        jerarquia.cerrar.tinta === jerarquia.ink &&
+        jerarquia.cerrar.filete === jerarquia.inkDim,
+      JSON.stringify(jerarquia),
+    );
+    await ctx.page.hover("#narrative-loader-dismiss");
+    const cerrarEncima = await ctx.page.evaluate(() => {
+      const c = getComputedStyle(document.getElementById("narrative-loader-dismiss"));
+      return { fondo: c.backgroundColor, tinta: c.color };
+    });
+    ctx.expect(
+      "BA: con el puntero encima, «Cerrar» sigue sin relleno y en `ink` (no toma el `accent_ink` del relleno)",
+      cerrarEncima.fondo === "rgba(0, 0, 0, 0)" && cerrarEncima.tinta === jerarquia.ink,
+      JSON.stringify(cerrarEncima),
+    );
+    await ctx.page.mouse.move(0, 0);
     await ctx.shot("478-la-oferta-de-entrar");
 
     // ── 4 · se entra por el botón, y SIN recargar ────────────────────────

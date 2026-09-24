@@ -194,6 +194,33 @@ describe("en desarrollo, las vías DELIBERADAS siguen pagando (criterio 3)", () 
   });
 });
 
+/** #756, salida (b): el `force` paga el set automático y NADA MÁS. Sus anims
+ *  lazy las dispara un fotograma, no el clic, así que siguen al permiso. */
+describe("el forzado no abre un gasto sin techo (#756)", () => {
+  /** Los POST de la anim `quick` tras forzar y llevar al personaje a ella. */
+  async function forzarYAtacar(entorno: Entorno): Promise<{ auto: Post[]; lazy: Post[] }> {
+    const m = montar(entorno);
+    m.skins.requestSkin("un guardia tuerto", { force: true });
+    await dejarCorrer();
+    const auto = [...posts];
+    m.skins.modelFor("un guardia tuerto", "quick");
+    await dejarCorrer();
+    return { auto, lazy: posts.slice(auto.length) };
+  }
+
+  it("en desarrollo, el set automático del forzado paga y su lazy solo pregunta por lo pagado", async () => {
+    const { auto, lazy } = await forzarYAtacar("desarrollo");
+    assert.equal(auto.length, 3, JSON.stringify(auto));
+    assert.ok(auto.every((p) => !p.resolveOnly), `idle/walk/run pagan: ${JSON.stringify(auto)}`);
+    assert.deepEqual(lazy, [{ ruta: "/skin_sprite_sheet", resolveOnly: true }]);
+  });
+
+  it("…y en producción la lazy genera, como la de cualquiera", async () => {
+    const { lazy } = await forzarYAtacar("produccion");
+    assert.deepEqual(lazy, [{ ruta: "/skin_sprite_sheet", resolveOnly: false }]);
+  });
+});
+
 describe("el permiso que SUBE re-abre lo vetado (el hello de producción llega tarde)", () => {
   it("restaurar → generar: lo que no estaba pagado vuelve a ser hueco y se pide pintar", async () => {
     const m = montar("desarrollo");

@@ -185,20 +185,57 @@ export interface GatesDeImagen {
  *  una fixture con NPCs descritos no gaste créditos sin que nadie lo pida. */
 export function gatesDeImagen(f: EntradaDeGates): GatesDeImagen {
   const techo = entornoPermiteGenerar(f.entorno);
-  const escenarios: PermisoDeEscenarios = f.renderMode === "image" && techo ? "generar" : "restaurar";
   const efectivo = modoEfectivoDePersonajes(f);
   const quierePersonajes = efectivo ? efectivo === "image" : f.toggleLocalPersonajes;
-  const personajes: PermisoDePersonajes = !quierePersonajes ? "base" : techo ? "generar" : "restaurar";
-  return { escenarios, personajes };
+  return { escenarios: permisoDeEscenarios(f.renderMode, techo), personajes: permisoDePersonajes(quierePersonajes, techo) };
+}
+
+/** Las dos reglas por faceta, cada una con SOLO lo que la decide: el modo (o
+ *  el querer) y el techo del entorno. Son las que usan `gatesDeImagen` y
+ *  `loQuePagaImagenIA`, así que el rótulo y el POST no pueden discrepar. */
+function permisoDeEscenarios(renderMode: Modo, techo: boolean): PermisoDeEscenarios {
+  return renderMode === "image" && techo ? "generar" : "restaurar";
+}
+
+function permisoDePersonajes(quiere: boolean, techo: boolean): PermisoDePersonajes {
+  return !quiere ? "base" : techo ? "generar" : "restaurar";
 }
 
 /** Qué PAGARÍA encender Imagen IA en cada faceta, en este entorno. Es la
  *  pregunta de los rótulos de ANTES de elegir —el selector del título, el
- *  subtexto del panel del chip, el badge de un save— y se contesta con los
- *  MISMOS gates que deciden el POST, no volviendo a mirar el entorno: si un
- *  día el techo cambia, el rótulo cambia con él (hallazgo H2 de la QA de la
- *  tanda AS). */
+ *  subtexto del panel del chip, el badge de un save— y se contesta con las
+ *  MISMAS reglas por faceta que deciden el POST (`permisoDeEscenarios`,
+ *  `permisoDePersonajes`), no volviendo a mirar el entorno: si un día el
+ *  techo cambia, el rótulo cambia con él (hallazgo H2 de la QA de la tanda
+ *  AS). */
 export function loQuePagaImagenIA(entorno: Entorno): { escenarios: boolean; personajes: boolean } {
-  const g = gatesDeImagen({ renderMode: "image", characterMode: "image", toggleLocalPersonajes: true, entorno });
-  return { escenarios: g.escenarios === "generar", personajes: g.personajes === "generar" };
+  // Las reglas por faceta, y no `gatesDeImagen` con una entrada de mentira:
+  // esa llamada tenía que inventar un modo de personajes y un toggle local que
+  // con las dos facetas en `image` no deciden NADA (el toggle solo cuenta sin
+  // modo elegido), y la mutación lo enseñaba con dos supervivientes que ningún
+  // test podía matar porque no había conducta distinta que ver.
+  const techo = entornoPermiteGenerar(entorno);
+  return {
+    escenarios: permisoDeEscenarios("image", techo) === "generar",
+    personajes: permisoDePersonajes(true, techo) === "generar",
+  };
+}
+
+/** ¿Una anim de skin se pide SOLO POR LO PAGADO (`resolve_only`)? La
+ *  excepción deliberada al permiso de personajes, y su límite (#756).
+ *
+ *  Con `generar` nunca: lo automático ya paga. Con `restaurar` (desarrollo)
+ *  sí, salvo UN caso: el personaje ELEGIDO A MANO (el `force` del menú dev)
+ *  paga su set AUTOMÁTICO, que es lo que enseña el botón que se pulsó. Sus
+ *  anims lazy —un ataque, la muerte— las dispara un fotograma, no un clic,
+ *  así que son automáticas y vuelven a restaurar lo pagado, como las de
+ *  cualquier otro. Antes el forzado las pagaba también, mientras durase la
+ *  pestaña y sin avisar. Con `base` no llega ninguna petición (el gestor sale
+ *  antes), y se contesta lo que no gasta. */
+export function skinPideSoloLoPagado(
+  permiso: PermisoDePersonajes,
+  anim: { elegidaAMano: boolean; delSetAutomatico: boolean },
+): boolean {
+  if (permiso === "generar") return false;
+  return !(anim.elegidaAMano && anim.delSetAutomatico);
 }

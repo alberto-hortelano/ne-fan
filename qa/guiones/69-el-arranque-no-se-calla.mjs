@@ -22,7 +22,7 @@
  *      literalmente el bug: se entra al selector de mundos y se vuelve, y el
  *      aviso tiene que seguir puesto.
  *  4 · **Un aviso por fallo, y no crece.** `bridge-client` reintenta cada 5 s
- *      y `preloadBase` falla una vez por hoja: si el aviso no fuera idempotente
+ *      y `precargarHojasBase` falla una vez por hoja: si el aviso no fuera idempotente
  *      por (fuente, título), la pantalla se inundaría. Se mide con DOS muestras
  *      separadas por fotogramas, no por reloj.
  *  5 · **#246 sigue intacto**: `#game-ui` (y con él `#narrative-loader` y el
@@ -207,7 +207,7 @@ export default async function (ctx) {
     conHojasRotas.log.some((e) => /set base/.test(e.msg) && /assets-de-personaje\.md/.test(e.msg)),
     JSON.stringify(conHojasRotas.log.slice(0, 3)),
   );
-  // Diez hojas fallan, y el agregado de `preloadBase` falla detrás: si el
+  // Diez hojas fallan, y el agregado de `precargarHojasBase` falla detrás: si el
   // aviso no colapsara por (fuente, título), aquí habría once.
   const delSprite = conHojasRotas.avisos.filter((a) => a.titulo === AVISOS.personajes);
   ctx.expect(

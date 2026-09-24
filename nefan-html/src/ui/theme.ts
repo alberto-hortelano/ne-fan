@@ -9,7 +9,7 @@
  *  (barra de estado, menú de imágenes, error-log) vive fuera de ese árbol y
  *  no puede verse alterada por el tema de un pack — que puede haberlo subido
  *  un jugador. El tema base vive en game-ui.css; aquí solo se sobrescribe. */
-import { BASE_UI_THEME, type UiTheme } from "@nefan-core/src/games/ui-theme.js";
+import { BASE_UI_THEME, VELO_DEL_MURO, type UiTheme } from "@nefan-core/src/games/ui-theme.js";
 
 export type { UiTheme };
 export { BASE_UI_THEME };
@@ -32,6 +32,11 @@ const CSS_VAR: Record<keyof UiTheme, string> = {
   tracking_em: "--nf-tracking",
   glow: "--nf-glow",
 };
+
+/** Se emite en `#game-ui` al terminar de aplicar un tema, SÍNCRONO: quien
+ *  mide algo que depende de él (la barra de ataques, cuyo ancho cambia con la
+ *  fuente) lo mide ya, sin esperar al siguiente fotograma. */
+export const EVENTO_TEMA_APLICADO = "nf-tema-aplicado";
 
 let current: UiTheme = BASE_UI_THEME;
 
@@ -59,6 +64,10 @@ export function applyUiTheme(theme: UiTheme | undefined | null): void {
       el.style.setProperty(cssVar, String(value));
     }
   }
+  // No es del pack sino de la ESTRUCTURA del muro, pero su fuente es core:
+  // el test de tema mide el contraste del muro con este mismo número (#748).
+  el.style.setProperty("--nf-velo-del-muro", `${VELO_DEL_MURO * 100}%`);
+  el.dispatchEvent(new Event(EVENTO_TEMA_APLICADO));
 }
 
 /** Tema vigente. Ya no lo consume ningún renderer —el mundo no lleva texto
