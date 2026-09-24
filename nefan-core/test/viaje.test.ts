@@ -36,14 +36,19 @@ const viaje = (await import(join(repoRoot, "qa", "lib", "viaje.mjs"))) as {
   sondaDeViaje: (a: { desde: string | null; pedidoPrevio: number | null }) => Foto | null;
   pasoMuerto: (l: Ledger | null, desde: string, pedidoPrevio?: number | null) => string;
   viajarPorSalidas: (ctx: unknown, nombre: string, desc: string) => Promise<Foto>;
+  viajarSiSePuede: (ctx: unknown, nombre: string, desc: string, motivo: string) => Promise<{ llegada?: Foto; causa?: string }>;
+  pulsarSalida: (ctx: unknown, nombre: string) => Promise<boolean>;
+  quienTapaLaSalida: (bs: unknown[], i: number) => { quien: string; texto: string } | null;
   SalidaAusente: new (...a: unknown[]) => Error;
+  SalidaTapada: new (...a: unknown[]) => Error & { tapa: { quien: string; texto: string } };
   ViajeRoto: new (...a: unknown[]) => Error & { ledger: Ledger };
 };
 const esperas = (await import(join(repoRoot, "qa", "lib", "esperas.mjs"))) as {
   EsperaExpirada: new (mensaje: string, id: number, ultimo: unknown) => Error;
   esperaExpiradaEn: (err: unknown) => Error | null;
 };
-const { sondaDeViaje, pasoMuerto, viajarPorSalidas, SalidaAusente, ViajeRoto } = viaje;
+const { sondaDeViaje, pasoMuerto, viajarPorSalidas, viajarSiSePuede, pulsarSalida, quienTapaLaSalida, SalidaAusente, SalidaTapada, ViajeRoto } =
+  viaje;
 
 const RECT: Rect = { minX: 32, minZ: -32, maxX: 96, maxZ: 32 };
 const ledger = (extra: Partial<Ledger> = {}): Ledger => ({
@@ -161,23 +166,70 @@ describe("pasoMuerto · nombra el paso del viaje que no ocurrió", () => {
   }
 });
 
-/** Un `ctx` de mentira con lo que usa `viajarPorSalidas`: `page.evaluate` y
- *  `page.$$eval` contra una página de objetos, y un `waitFor` que devuelve lo
- *  que se le diga o lanza la expiración que se le diga. */
+/** Un nodo de DOM de mentira: lo justo para `quienTapaLaSalida` (padre,
+ *  `contains`, rect, texto). */
+type Nodo = {
+  id: string;
+  className: string;
+  tagName: string;
+  textContent: string;
+  parentElement: Nodo | null;
+  contains: (o: Nodo | null) => boolean;
+  scrollIntoView: () => void;
+  getBoundingClientRect: () => { left: number; top: number; width: number; height: number };
+  click?: () => void;
+};
+const nodo = (tagName: string, parentElement: Nodo | null, extra: Partial<Nodo> = {}): Nodo => ({
+  id: "",
+  className: "",
+  tagName,
+  textContent: "",
+  parentElement,
+  contains(o) {
+    for (let n = o; n; n = n.parentElement) if (n === this) return true;
+    return false;
+  },
+  scrollIntoView: () => {},
+  getBoundingClientRect: () => ({ left: 10, top: 20, width: 100, height: 30 }),
+  ...extra,
+});
+
+/** Como la ejecuta Playwright en `$$eval`: serializada, con `document` como
+ *  única cosa del mundo. Si arrastrara una referencia al módulo, aquí sería
+ *  `ReferenceError`. */
+const tapaSerializada = new Function("document", "bs", "i", `return (${String(quienTapaLaSalida)})(bs, i);`) as (
+  d: unknown,
+  bs: unknown[],
+  i: number,
+) => { quien: string; texto: string } | null;
+
+/** Un `ctx` de mentira con lo que usa `viajarPorSalidas`: `page.evaluate`,
+ *  `page.$$eval` y `page.locator(...).nth(i).click()` contra una página de
+ *  objetos, un `waitFor` que devuelve lo que se le diga o lanza la expiración
+ *  que se le diga, y un `absorbe` con el contrato del de `sonda.mjs` (solo
+ *  traga expiraciones). `tapa`: qué devuelve `elementFromPoint` en vez del
+ *  botón — el muro de fallo, su botón «Cerrar» o `null` (fuera de la ventana). */
 function ctxDeMentira(
   antes: Pagina,
   waitFor: (desc: string, fn: unknown, ms: number, arg: unknown) => Promise<unknown>,
   trasElClic: Pagina = antes,
+  tapa?: (raiz: Nodo, botones: Nodo[]) => Nodo | null,
 ) {
   const clics: string[] = [];
   let p = antes;
-  const botones = ["Molino del Robledo", "Taberna del Robledo"].map((t) => ({
-    textContent: `  ${t} `,
-    click: () => {
-      clics.push(t);
-      p = trasElClic;
-    },
-  }));
+  const raiz = nodo("DIV", null, { id: "ui" });
+  const panel = nodo("DIV", raiz, { id: "travel-panel", className: "nf-panel" });
+  const botones = ["Molino del Robledo", "Taberna del Robledo"].map((t) =>
+    nodo("BUTTON", panel, {
+      className: "travel-exit",
+      textContent: `  ${t} `,
+      click: () => {
+        clics.push(t);
+        p = trasElClic;
+      },
+    }),
+  );
+  const encima = tapa ? tapa(raiz, botones) : undefined;
   const conWindow = <T>(fn: () => T): T => {
     const g = globalThis as { window?: unknown };
     const antes = g.window;
@@ -188,15 +240,37 @@ function ctxDeMentira(
       g.window = antes;
     }
   };
+  const documento = (i: number) => ({ elementFromPoint: () => (encima === undefined ? botones[i] : encima) });
   const ctx = {
     page: {
       evaluate: async (fn: (a?: unknown) => unknown, a?: unknown) => conWindow(() => fn(a)),
-      $$eval: async (_sel: string, fn: (bs: unknown[], a?: unknown) => unknown, a?: unknown) => fn(botones, a),
+      $$eval: async (_sel: string, fn: (bs: unknown[], a?: unknown) => unknown, a?: unknown) =>
+        fn === quienTapaLaSalida ? tapaSerializada(documento(a as number), botones, a as number) : fn(botones, a),
+      locator: (_sel: string) => ({ nth: (i: number) => ({ click: async () => botones[i].click!() }) }),
     },
     waitFor,
+    absorbe: async (_motivo: string, fn: () => Promise<unknown>) => {
+      try {
+        return await fn();
+      } catch (err) {
+        if (!esperas.esperaExpiradaEn(err)) throw err;
+        return null;
+      }
+    },
   };
   return { ctx, clics };
 }
+
+/** El muro «No se pudo llegar» como lo pinta el cliente: hermano del panel,
+ *  con su título y su «Cerrar» dentro. */
+const muroDeFallo = (raiz: Nodo, tocado: "muro" | "cerrar"): Nodo => {
+  const muro = nodo("DIV", raiz, {
+    id: "narrative-loader",
+    className: "visible error",
+    textContent: "\n  No se pudo llegar a Molino del Robledo  \n  Cerrar ",
+  });
+  return tocado === "muro" ? muro : nodo("BUTTON", muro, { id: "narrative-loader-dismiss", textContent: "Cerrar" });
+};
 
 describe("viajarPorSalidas · qué lanza en cada desenlace, y a quién le deja tragárselo", () => {
   const partida: Pagina = { viaje: ledger({ pedido: 1000, spawnAplicado: { x: 0, z: 0 } }), currentTile: "tile_0_0", rect: RECT, pos: { x: 0, z: 0 } };
@@ -278,4 +352,105 @@ describe("viajarPorSalidas · qué lanza en cada desenlace, y a quién le deja t
     assert.deepEqual(clics, []);
     assert.equal(esperó, false);
   });
+});
+
+describe("pulsarSalida · pulsa como el jugador, o dice qué se lo impide (H1 de la QA de la tanda AP)", () => {
+  const partida: Pagina = { viaje: ledger({ pedido: 1000 }), currentTile: "tile_0_0", rect: RECT, pos: { x: 0, z: 0 } };
+  const nunca = async () => assert.fail("no debía esperar");
+
+  it("con el botón libre, pulsa con el puntero (`locator.nth(i).click`) el que nombra el destino", async () => {
+    const { ctx, clics } = ctxDeMentira(partida, nunca);
+    assert.equal(await pulsarSalida(ctx, "Taberna"), true);
+    assert.deepEqual(clics, ["Taberna del Robledo"]);
+  });
+
+  it("con el muro de fallo encima: `SalidaTapada` nombrando el muro y su texto, SIN pulsar", async () => {
+    const { ctx, clics } = ctxDeMentira(partida, nunca, partida, (r) => muroDeFallo(r, "muro"));
+    const err = await pulsarSalida(ctx, "Molino").then(
+      () => assert.fail("tenía que lanzar"),
+      (e: unknown) => e,
+    );
+    assert.ok(err instanceof SalidaTapada);
+    assert.equal((err as InstanceType<typeof SalidaTapada>).tapa.quien, "#narrative-loader.visible.error");
+    assert.match(String((err as Error).message), /«Molino».*TAPADO.*#narrative-loader\.visible\.error.*No se pudo llegar a Molino del Robledo Cerrar/);
+    assert.deepEqual(clics, []);
+    assert.equal(esperas.esperaExpiradaEn(err), null, "ctx.absorbe no lo traga: una salida tapada es ✘, no ⊘");
+  });
+
+  it("si lo tocado es el «Cerrar» del muro, nombra la CAPA (el muro), no el botón de dentro", async () => {
+    const { ctx } = ctxDeMentira(partida, nunca, partida, (r) => muroDeFallo(r, "cerrar"));
+    const err = (await pulsarSalida(ctx, "Molino").catch((e: unknown) => e)) as InstanceType<typeof SalidaTapada>;
+    assert.equal(err.tapa.quien, "#narrative-loader.visible.error");
+  });
+
+  it("si el centro cae fuera de la ventana (nada bajo el punto), también lo dice", async () => {
+    const { ctx, clics } = ctxDeMentira(partida, nunca, partida, () => null);
+    await assert.rejects(pulsarSalida(ctx, "Molino"), /TAPADO: bajo su centro hay nada \(el centro del botón cae fuera de la ventana\)/);
+    assert.deepEqual(clics, []);
+  });
+
+  it("un hijo del propio botón bajo el punto NO es tapa", async () => {
+    // El `elementFromPoint` de verdad devuelve el nodo más profundo: un <span>
+    // dentro del botón es el botón.
+    const { ctx, clics } = ctxDeMentira(partida, nunca, partida, (_r, bs) => nodo("SPAN", bs[0]));
+    assert.equal(await pulsarSalida(ctx, "Molino"), true);
+    assert.deepEqual(clics, ["Molino del Robledo"]);
+  });
+
+  it("dentro de `viajarPorSalidas`, la tapa sube antes de esperar nada", async () => {
+    let esperó = false;
+    const { ctx } = ctxDeMentira(
+      partida,
+      async () => {
+        esperó = true;
+        return null;
+      },
+      partida,
+      (r) => muroDeFallo(r, "muro"),
+    );
+    await assert.rejects(viajarPorSalidas(ctx, "Molino", "ida"), (e: unknown) => e instanceof SalidaTapada);
+    assert.equal(esperó, false);
+  });
+});
+
+describe("viajarSiSePuede · el ⊘ de 49 y 60 lleva la CAUSA (H7 de la QA de la tanda AP)", () => {
+  const partida: Pagina = { viaje: ledger({ pedido: 1000, spawnAplicado: { x: 0, z: 0 } }), currentTile: "tile_0_0", rect: RECT, pos: { x: 0, z: 0 } };
+  const motivo = "si el viaje no llega, el llamante declara sinMedir con la causa";
+
+  it("llegado: `{llegada}` con la foto", async () => {
+    const foto = { estado: "llegado", tile: "tile_1_0", ledger: ledger() };
+    const { ctx } = ctxDeMentira(partida, async () => foto);
+    assert.deepEqual(await viajarSiSePuede(ctx, "Molino", "ida", motivo), { llegada: foto });
+  });
+
+  it("EXPIRA: `{causa}` con el paso muerto, no un null mudo", async () => {
+    const colgado: Pagina = { ...partida, viaje: ledger({ pedido: 6000, escenaRecibida: null }) };
+    const { ctx } = ctxDeMentira(
+      partida,
+      async () => {
+        throw new esperas.EsperaExpirada("timeout esperando: ida", 9, null);
+      },
+      colgado,
+    );
+    const r = await viajarSiSePuede(ctx, "Molino", "ida", motivo);
+    assert.equal(r.llegada, undefined);
+    assert.match(r.causa ?? "", /^ida: el bridge encoló el viaje \(queued\) pero nunca difundió la escena/);
+  });
+
+  it("sin la salida: `{causa}` con lo que el panel SÍ ofrece", async () => {
+    const { ctx } = ctxDeMentira(partida, nunca);
+    const r = await viajarSiSePuede(ctx, "Ermita", "ida", motivo);
+    assert.match(r.causa ?? "", /no ofrece «Ermita».*Molino del Robledo/);
+  });
+
+  it("un viaje ROTO y una salida TAPADA suben: son ✘ con causa, no ⊘", async () => {
+    const { ctx } = ctxDeMentira(partida, async () => ({ estado: "fallo", ledger: ledger({ error: "x" }) }));
+    await assert.rejects(viajarSiSePuede(ctx, "Molino", "ida", motivo), (e: unknown) => e instanceof ViajeRoto);
+    const { ctx: tapado } = ctxDeMentira(partida, nunca, partida, (r) => muroDeFallo(r, "muro"));
+    await assert.rejects(viajarSiSePuede(tapado, "Molino", "ida", motivo), (e: unknown) => e instanceof SalidaTapada);
+  });
+
+  async function nunca(): Promise<never> {
+    assert.fail("no debía esperar");
+  }
 });

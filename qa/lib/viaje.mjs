@@ -21,14 +21,31 @@
  *    · el jugador está en OTRO tile que el de partida, y
  *    · su posición cae dentro del `world_rect` de la escena activa (el
  *      `scene_init` se adelanta al `ready` que trae el spawn).
- *  Y ha fallado cuando el ledger de este viaje trae `error`. «De ESTE viaje» es
- *  la otra mitad del defecto, que nadie veía: el ledger sobrevive al episodio,
- *  así que sin comparar `pedido` con el de antes del clic, el `error` de un
- *  viaje ANTERIOR pararía el siguiente, y su `spawnAplicado` lo daría por
- *  llegado sin haberse movido.
+ *  Y ha fallado cuando el ledger de este viaje trae `error`. «De ESTE viaje» se
+ *  decide comparando `pedido` con el de antes del clic, porque el ledger
+ *  sobrevive al episodio. Medido en la QA de la tanda AP (guion 170): el clic
+ *  abre el ledger nuevo de forma SÍNCRONA (`onTravel` → `travelLedger.pedido`)
+ *  antes del primer sondeo, así que con un clic que registra el viaje el
+ *  `error` del viaje anterior ya no está a la vista cuando la sonda mira. Solo
+ *  muerde cuando el clic NO abre ledger (sesión inactiva, handler sin atar):
+ *  ahí, sin la comparación, la espera pararía con la causa del viaje de antes;
+ *  con ella, expira y `pasoMuerto` dice «el cliente no registró este viaje».
+ *  El `spawnAplicado` viejo no puede dar «llegado» ni así: la sonda exige
+ *  además otro tile que el de partida.
  *
  *  Por eso el clic vive aquí: quien abre el registro del ledger es él, y leer
  *  el `pedido` previo y pulsar tienen que ser el mismo paso.
+ *
+ *  ── EL CLIC ES EL DEL JUGADOR ────────────────────────────────────────────
+ *  Un `element.click()` del DOM dispara el handler aunque el botón esté TAPADO,
+ *  y tras un viaje roto lo está: el muro «No se pudo llegar»
+ *  (`#narrative-loader.error`, `inset:0`, `pointer-events:auto`) cubre el panel
+ *  hasta que el jugador pulsa «Cerrar». Con ese clic el control del guion 168
+ *  viajaba sin que nadie cerrara el muro (hallazgo 1 de la QA de la tanda AP).
+ *  `pulsarSalida` mira primero qué hay bajo el centro del botón
+ *  (`quienTapaLaSalida`) y, si no es el botón, lanza `SalidaTapada` nombrando
+ *  lo que lo tapa, al instante; si está libre, pulsa con el PUNTERO
+ *  (`locator.click` de Playwright, que además vuelve a comprobar el blanco).
  *
  *  ── LO QUE ESTO NO PARA ──────────────────────────────────────────────────
  *  El RECHAZO de intake: si el bridge rechaza el `player_entered_place` por
@@ -53,6 +70,10 @@ import { esperaExpiradaEn } from "./esperas.mjs";
  *  (d) del candado del cortafuegos exige que este literal solo aparezca en
  *  este fichero o en un eximido con motivo. */
 const SELECTOR_DE_SALIDA = "#travel-panel button.travel-exit";
+/** Cuánto espera el clic de puntero a que el botón sea pulsable. Corto a
+ *  propósito: lo que tapa el botón ya lo ha descartado `quienTapaLaSalida`, y
+ *  lo que quede (una animación, un reflujo) no pasa de décimas. */
+const MS_DEL_CLIC = 5_000;
 
 /** El panel no ofrece la salida que se pidió. Clase propia para que quien lo
  *  quiera declarar `⊘` (49, 60, 65: sin salida no hay nada que medir) lo
@@ -82,14 +103,54 @@ export function botonesDeSalida(ctx) {
   return ctx.page.$$eval(SELECTOR_DE_SALIDA, (bs) => bs.map((b) => (b.textContent ?? "").trim()));
 }
 
-/** Pulsa el botón que nombra `nombre` (el camino del jugador: un clic en
- *  «Salidas», no una llamada a la API). `false` si el panel no lo ofrece: cada
- *  llamante decide si eso es rojo o `⊘`. */
+/** La salida existe pero el jugador no puede pulsarla: otro elemento cubre el
+ *  centro del botón. NO es `SalidaAusente` (quien declara `⊘` por falta de
+ *  salida no debe tragarse esto): es un estado de la pantalla que el guion no
+ *  ha resuelto como lo resolvería el jugador —cerrar el muro, el diálogo…—. */
+export class SalidaTapada extends Error {
+  constructor(nombre, tapa) {
+    super(
+      `el botón «${nombre}» del panel «Salidas» está TAPADO: bajo su centro hay ${tapa.quien}` +
+        `${tapa.texto ? ` («${tapa.texto}»)` : ""}; el jugador tendría que quitarlo antes de pulsar`,
+    );
+    this.name = "SalidaTapada";
+    this.nombre = nombre;
+    this.tapa = tapa;
+  }
+}
+
+/** Qué hay bajo el centro del botón `i` del panel, visto como lo vería el
+ *  puntero del jugador. Corre DENTRO de la página (`$$eval`), así que solo
+ *  toca el DOM. `null` si bajo el centro está el botón (o algo suyo); si no,
+ *  `{quien, texto}` de la CAPA que lo tapa —el ancestro más alto del elemento
+ *  tocado que no contiene al botón: el muro entero y no su botón «Cerrar»—,
+ *  con su texto recortado, para que el ✘ la nombre. */
+export function quienTapaLaSalida(bs, i) {
+  const b = bs[i];
+  b.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const r = b.getBoundingClientRect();
+  const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  if (el && (el === b || b.contains(el))) return null;
+  if (!el) return { quien: "nada (el centro del botón cae fuera de la ventana)", texto: "" };
+  let capa = el;
+  while (capa.parentElement && !capa.parentElement.contains(b)) capa = capa.parentElement;
+  const clases = String(capa.className ?? "").trim();
+  const quien = `${capa.id ? `#${capa.id}` : capa.tagName.toLowerCase()}${clases ? `.${clases.split(/\s+/).join(".")}` : ""}`;
+  const texto = (capa.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
+  return { quien, texto };
+}
+
+/** Pulsa el botón que nombra `nombre` como lo pulsaría el jugador: con el
+ *  puntero, y solo si el puntero llega a él. `false` si el panel no lo ofrece
+ *  (cada llamante decide si eso es rojo o `⊘`); `SalidaTapada` si otro
+ *  elemento lo cubre, sin pulsar nada. */
 export async function pulsarSalida(ctx, nombre) {
   const botones = await botonesDeSalida(ctx);
   const idx = botones.findIndex((t) => t.includes(nombre));
   if (idx < 0) return false;
-  await ctx.page.$$eval(SELECTOR_DE_SALIDA, (bs, i) => bs[i].click(), idx);
+  const tapa = await ctx.page.$$eval(SELECTOR_DE_SALIDA, quienTapaLaSalida, idx);
+  if (tapa) throw new SalidaTapada(nombre, tapa);
+  await ctx.page.locator(SELECTOR_DE_SALIDA).nth(idx).click({ timeout: MS_DEL_CLIC });
   return true;
 }
 
@@ -184,4 +245,28 @@ export async function viajarPorSalidas(ctx, nombre, desc) {
     );
   }
   return r;
+}
+
+/** El viaje de quien no tiene nada que afirmar si no llega (49 y 60): dentro de
+ *  `ctx.absorbe`, con la salida ausente o la expiración como «no se pudo
+ *  viajar», y la CAUSA de vuelta para que el `⊘` la lleve. Sin esto el `⊘`
+ *  salía con el motivo genérico del guion —en el 60, «un solo tile en el
+ *  save»— cuando lo que hubo fue un viaje colgado cuyo paso muerto nadie
+ *  imprimía (hallazgo 7 de la QA de la tanda AP). Un viaje ROTO, o una salida
+ *  TAPADA, no entran aquí: suben, porque son ✘ con causa.
+ *
+ *  `{llegada}` si llegó; `{causa}` con el mensaje de `viajarPorSalidas` si no. */
+export async function viajarSiSePuede(ctx, nombre, desc, motivo) {
+  let causa = null;
+  const llegada = await ctx.absorbe(motivo, () =>
+    viajarPorSalidas(ctx, nombre, desc).catch((err) => {
+      if (err instanceof SalidaAusente) {
+        causa = err.message;
+        return null;
+      }
+      if (esperaExpiradaEn(err)) causa = err.message;
+      throw err;
+    }),
+  );
+  return llegada ? { llegada } : { causa };
 }

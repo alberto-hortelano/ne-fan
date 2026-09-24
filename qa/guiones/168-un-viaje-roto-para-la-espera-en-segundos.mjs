@@ -12,9 +12,16 @@
  *       NOMBRA la causa: «el bridge abortó el viaje» + lo que el bridge dijo
  *       (que nombra el destino; el texto crudo del motor NO llega al cliente:
  *       el bridge lo traduce a una frase para el jugador).
- *   B · CONTROL: con el motor devuelto a su conducta, el MISMO viaje llega. Sin
- *       esto, A pasaría verde también si `viajarPorSalidas` lanzara siempre, o
- *       si el viaje no se pidiera nunca.
+ *   M · LO QUE TIENE DELANTE EL JUGADOR tras el roto: el muro «No se pudo
+ *       llegar» tapa el panel, y `pulsarSalida` se NIEGA a atravesarlo:
+ *       lanza `SalidaTapada` nombrando `#narrative-loader`, al instante y sin
+ *       pedir el viaje (el `pedido` del ledger no se mueve). Antes pulsaba con
+ *       `element.click()` y el control de abajo viajaba sin que nadie cerrara
+ *       el muro (hallazgo 1 de la QA de la tanda AP). Luego se pulsa «Cerrar»
+ *       con el puntero, como el jugador.
+ *   B · CONTROL: con el motor devuelto a su conducta y el muro cerrado, el
+ *       MISMO viaje llega. Sin esto, A pasaría verde también si
+ *       `viajarPorSalidas` lanzara siempre, o si el viaje no se pidiera nunca.
  *
  *  EN NEGATIVO (hecho a mano al escribirlo, con el tiempo en implementacion.md
  *  de la tanda AP): quitando la rama `if (v.error)` de `sondaDeViaje`, A tiene
@@ -26,7 +33,7 @@
  *  molde del guion 109) y se devuelve en `finally`.
  */
 import { nuevaPartida, comenzar, regenerarMundo } from "../lib/sesion.mjs";
-import { ViajeRoto, viajarPorSalidas } from "../lib/viaje.mjs";
+import { SalidaTapada, ViajeRoto, pulsarSalida, viajarPorSalidas } from "../lib/viaje.mjs";
 import { URLS } from "../lib/stack.mjs";
 
 /** Partida virgen y motor falso en su turno 0: este guion le CAMBIA la
@@ -97,6 +104,27 @@ export default async function (ctx) {
   );
   await ctx.shot("viaje-roto");
 
+  // ── M · El muro tapa el panel, y el clic del banco no lo atraviesa ──────
+  const pedidoAntes = await ctx.page.evaluate(() => window.__nefan.viaje?.pedido ?? null);
+  const tapado = await pulsarSalida(ctx, destino.name).then(
+    (pulsó) => ({ pulsó }),
+    (err) => ({ err }),
+  );
+  const pedidoDespues = await ctx.page.evaluate(() => window.__nefan.viaje?.pedido ?? null);
+  ctx.log(`M · pulsar con el muro abierto: ${tapado.err ? `${tapado.err.name}: ${tapado.err.message}` : `pulsó=${tapado.pulsó}`}`);
+  ctx.expect(
+    "M1 · con el muro «No se pudo llegar» abierto, pulsarSalida lanza SalidaTapada nombrando el muro (#narrative-loader)",
+    tapado.err instanceof SalidaTapada && /#narrative-loader\b/.test(tapado.err.message) && /No se pudo llegar/.test(tapado.err.message),
+    tapado.err ? `${tapado.err.name}: ${tapado.err.message}` : `pulsó=${tapado.pulsó}`,
+  );
+  ctx.expect(
+    "M2 · y no pidió ningún viaje: el `pedido` del ledger es el del viaje roto",
+    pedidoDespues === pedidoAntes,
+    `antes=${pedidoAntes} · después=${pedidoDespues}`,
+  );
+  // El camino del jugador: «Cerrar», con el puntero (falla si algo lo tapa).
+  await ctx.page.click("#narrative-loader-dismiss");
+
   // ── B · CONTROL: el mismo viaje, con el motor sano, llega ───────────────
   const t1 = Date.now();
   const control = await viajarPorSalidas(ctx, destino.name, `el viaje a «${destino.name}» con el motor sano`).then(
@@ -106,7 +134,7 @@ export default async function (ctx) {
   const msControl = Date.now() - t1;
   ctx.log(`B · desenlace en ${msControl} ms: ${control.err ? control.err.message : control.llegada.tile}`);
   ctx.expect(
-    "B · control: con el motor sano, el mismo viaje LLEGA (el verde de A no sale de no viajar nunca)",
+    "B · control: con el motor sano y el muro cerrado, el mismo viaje LLEGA (el verde de A no sale de no viajar nunca)",
     Boolean(control.llegada),
     control.err ? control.err.message : control.llegada.tile,
   );

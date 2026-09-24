@@ -143,7 +143,7 @@ import {
 import { URLS } from "../lib/stack.mjs";
 import { esperarEnElSave } from "../lib/saves.mjs";
 import { fraseDeRechazos, porElCable } from "../lib/cable.mjs";
-import { SalidaAusente, viajarPorSalidas } from "../lib/viaje.mjs";
+import { viajarSiSePuede } from "../lib/viaje.mjs";
 
 export const aisla = ["saves", "fake-ai"];
 
@@ -198,23 +198,21 @@ const esperarAtlasDe = (ctx, key) =>
     key,
   );
 
-/** Va al primer destino de «Salidas» y vuelve con el tile de llegada (o
- *  `null` si no se pudo: el llamante declara `sinMedir`). El viaje vive en
- *  `qa/lib/viaje.mjs` (#693): un `viaje.error` es ✘ al instante con su causa
- *  —`absorbe` no lo traga, solo traga la expiración—, y sin salida en el panel
- *  no hay viaje que medir. */
+/** Va al primer destino de «Salidas» y vuelve con `{tile}` de llegada, o con
+ *  `{causa}` si no se pudo: el llamante declara `sinMedir` CON esa causa. El
+ *  viaje vive en `qa/lib/viaje.mjs` (#693): un `viaje.error` es ✘ al instante
+ *  con su causa —`absorbe` no lo traga, solo traga la expiración—, y sin
+ *  salida en el panel no hay viaje que medir. */
 async function irAlVecino(ctx) {
   const exits = await ctx.page.evaluate(() => (window.__nefan.exits ?? []).map((e) => e.name));
-  if (exits.length === 0) return null;
-  const llegada = await ctx.absorbe(
-    "si el viaje no llega, el llamante declara sinMedir: ningún verde depende de esta espera",
-    () =>
-      viajarPorSalidas(ctx, exits[0], "el jugador llega al destino (otro tile)").catch((err) => {
-        if (err instanceof SalidaAusente) return null;
-        throw err;
-      }),
+  if (exits.length === 0) return { causa: "el panel «Salidas» no ofrece ningún destino" };
+  const r = await viajarSiSePuede(
+    ctx,
+    exits[0],
+    "el jugador llega al destino (otro tile)",
+    "si el viaje no llega, el llamante declara sinMedir con la causa: ningún verde depende de esta espera",
   );
-  return llegada ? llegada.tile : null;
+  return r.llegada ? { tile: r.llegada.tile } : { causa: r.causa };
 }
 
 /** Retira el mapping local del atlas (`fps_atlas:*`): el estado del jugador
@@ -358,8 +356,9 @@ export default async function (ctx) {
     const postsArranque = atlasPosts.slice(posts0);
     const gastoArranque = await gastoDelFake();
     const posts1 = atlasPosts.length;
-    const vecino = await irAlVecino(ctx);
-    if (!vecino) ctx.sinMedir("el panel «Salidas» no llevó a otro tile: con un solo tile en el save no hay carrera que medir");
+    const ida = await irAlVecino(ctx);
+    if (!ida.tile) ctx.sinMedir(`el panel «Salidas» no llevó a otro tile (${ida.causa}): con un solo tile en el save no hay carrera que medir`);
+    const vecino = ida.tile;
     // El destino llega por `scene_loaded` ANTES de que el jugador lo pise, así
     // que desde #714 lo restaura el carril de los no activos, cuyas líneas por
     // tile ya no van al HUD (H1 de su QA): al pisarlo, el activo lo reinstala

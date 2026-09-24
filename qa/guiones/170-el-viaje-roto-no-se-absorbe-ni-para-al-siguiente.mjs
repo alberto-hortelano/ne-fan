@@ -20,10 +20,13 @@
  *   C · LO QUE TIENE DELANTE EL JUGADOR tras el viaje roto: el muro de fallo
  *       («No se pudo llegar», `#narrative-loader.error`) tapa el panel
  *       «Salidas» —bajo el punto donde está el botón no hay botón, hay muro— y
- *       hay que pulsar «Cerrar» para recuperarlo. `pulsarSalida` hace un
- *       `element.click()` del DOM, que dispara el handler AUNQUE el botón esté
- *       tapado: por eso el control B del 168 llega sin cerrar nada, y por eso
- *       este guion cierra el muro por el camino del jugador antes de D.
+ *       hay que pulsar «Cerrar» para recuperarlo. Al escribir esto,
+ *       `pulsarSalida` hacía un `element.click()` del DOM, que dispara el
+ *       handler AUNQUE el botón esté tapado, y el control B del 168 llegaba sin
+ *       cerrar nada (hallazgo 1). Desde la vuelta 2 de la tanda `pulsarSalida`
+ *       mira qué hay bajo el centro del botón y lanza `SalidaTapada` si no es
+ *       él (lo mide el M del 168); este guion cierra el muro por el camino del
+ *       jugador antes de D.
  *   D · Cerrado el muro, el MISMO viaje llega con un ledger NUEVO (`pedido`
  *       distinto, sin `error`), en segundos.
  *
