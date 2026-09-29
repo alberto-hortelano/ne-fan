@@ -210,6 +210,14 @@ describe("rótulo de un fallo del motor", () => {
     // El del despertar lleva su titular delante: va a la línea de mensajes,
     // donde no hay título que lo diga (#613).
     assert.equal(cuerpo("despertar"), "Has caído: El mundo no pudo decidir dónde despiertas.");
+    assert.equal(
+      rotuloDeStatus(fallo({ kind: "despertar", message: "Estás caído: no puedes viajar.", rechazo: true }), {
+        mundoVacio: false,
+        viajeAbierto: null,
+      }).detalle,
+      "Estás caído: no puedes viajar.",
+      "un rechazo no lleva el titular dos veces",
+    );
     // Y el conjunto es TOTAL: si mañana entra un kind más, esta línea cae con
     // su nombre en vez de dejarlo sin cuerpo comprobado.
     assert.equal(TODOS_LOS_KINDS.length, 11, JSON.stringify(TODOS_LOS_KINDS));

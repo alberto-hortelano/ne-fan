@@ -146,6 +146,7 @@ export function rechazarSiEstaCaido(
     phase: "error",
     kind: "despertar",
     message: `Estás caído: no puedes ${accion} hasta que despiertes.`,
+    rechazo: true,
     ...(placeId ? { placeId } : {}),
   });
   return true;

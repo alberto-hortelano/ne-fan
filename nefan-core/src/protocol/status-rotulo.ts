@@ -170,7 +170,7 @@ const DETALLE_POR_DEFECTO: Record<NarrativeStatusDeSesion["kind"], string> = {
  *  compilando, que es lo que hace un `Pick`. */
 export type StatusRotulable = Pick<
   NarrativeStatusDeSesion,
-  "phase" | "kind" | "message" | "placeId" | "causaReaccion" | "detalleTecnico"
+  "phase" | "kind" | "message" | "placeId" | "causaReaccion" | "detalleTecnico" | "rechazo"
 >;
 
 /** Título y destino de un `narrative_status` en fase de error.
@@ -306,8 +306,9 @@ export function rotuloDeStatus(
       // que un caído no puede hacer) NO tapa la pantalla con el muro: su sitio
       // es el velo del despertar, que ya está puesto y ofrece «R · reintentar»
       // (`protocol/despertar-en-pantalla.ts`). Aquí solo va a la línea de
-      // mensajes, con el titular delante para que se lea qué ha pasado.
-      return { destino: "log", detalle: `Has caído: ${detalle}` };
+      // mensajes, con el titular delante para que se lea qué ha pasado. Un
+      // RECHAZO («Estás caído: no puedes viajar…») ya lo dice solo.
+      return { destino: "log", detalle: status.rechazo ? detalle : `Has caído: ${detalle}` };
   }
 
   // Exhaustividad: un kind nuevo sin titular propio no compila. Es el candado

@@ -19,6 +19,9 @@ import type {
   StateUpdateMessage,
 } from "../src/protocol/messages.js";
 import { entrarEnLaPartida, makeCtx, makeSocket, porElBorde, waitFor } from "./helpers.js";
+import { dispatchStateRequest } from "../bridge/state-http/dispatch.js";
+import type { StateHttpContext } from "../bridge/state-http/context.js";
+import { validarDespertarEnElBridge } from "../bridge/handlers/despertar.js";
 
 type Muerte = { muerte: Record<string, unknown> };
 type ReportPlayerDeathResult = Awaited<ReturnType<NarrativeAiClient["reportPlayerDeath"]>>;
@@ -219,6 +222,49 @@ describe("bridge: el despertar lo decide el motor (#613)", () => {
     const [aviso] = statusDespertar(b.sent.slice(antes), "error");
     assert.ok(aviso, "se contesta al que lo pidió");
     assert.match(aviso.message ?? "", /Estás caído: no puedes viajar/);
+    assert.equal((aviso as { rechazo?: true }).rechazo, true, "es un rechazo, no el estado del despertar");
     assert.equal((aviso as { placeId?: string }).placeId, "molino");
+  });
+});
+
+/** La ruta del pre-flight del motor, `POST /despertar/validar`, por el
+ *  despachador del State API (el mismo que atiende al servidor HTTP), atada al
+ *  mundo del bridge como en `bridge/arranque.ts`. Es la PRIMERA puerta: la
+ *  que deja al motor corregir antes de responder. */
+describe("State API: POST /despertar/validar", () => {
+  async function ruta(body: unknown) {
+    const b = await partidaConBandido();
+    const state = {
+      narrative: b.ctx.narrative,
+      validarDespertar: (wake: Parameters<StateHttpContext["validarDespertar"]>[0]) =>
+        validarDespertarEnElBridge(b.ctx, wake),
+    } as unknown as StateHttpContext;
+    return dispatchStateRequest(state, { method: "POST", url: "/despertar/validar", readBody: async () => body });
+  }
+
+  it("acepta un punto válido: libre, en un tile que existe y lejos de todo hostil", async () => {
+    const r = await ruta({ wake: { type: "point", x: -20, z: 20 } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { ok: true, punto: { x: -20, y: 0, z: 20 } });
+    assert.ok(!r.mutated, "validar no escribe el save");
+  });
+
+  it("rechaza un punto dentro del radio de un hostil, con el motivo para el motor", async () => {
+    const r = await ruta({ wake: { type: "point", x: 2, z: 2 } });
+    assert.equal(r.status, 200);
+    const cuerpo = r.body as { ok: boolean; motivo?: string };
+    assert.equal(cuerpo.ok, false);
+    assert.match(cuerpo.motivo ?? "", /bandido_1/);
+  });
+
+  it("un cuerpo mal formado falla ALTO (400 con el campo), no con un ok:false que parezca una respuesta", async () => {
+    for (const body of [{}, { wake: { type: "tile", tx: 0 } }, { wake: { type: "point", x: 1 } }]) {
+      const r = await ruta(body);
+      assert.equal(r.status, 400, JSON.stringify(body));
+      assert.match(JSON.stringify(r.body), /wake/, "el error nombra el campo");
+    }
+    const basura = await ruta("basura");
+    assert.equal(basura.status, 400);
+    assert.match(JSON.stringify(basura.body), /Expected object/);
   });
 });

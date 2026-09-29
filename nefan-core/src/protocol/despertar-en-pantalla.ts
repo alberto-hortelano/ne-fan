@@ -26,6 +26,23 @@ export interface UltimoStatusDelDespertar {
   message?: string;
 }
 
+/** Qué hace un `narrative_status` de kind `despertar` con el último que cuenta:
+ *  lo sustituye (`generating` o un `error` de la decisión) o no lo toca
+ *  (`null`). Un RECHAZO —el bridge diciendo que un caído no puede viajar o
+ *  hablar— no toca nada: el motor puede seguir decidiendo, y el velo que
+ *  pasaba a «fallo» con «R · reintentar» mentía (QA de BN, segunda vuelta).
+ *  Tampoco `progress`, que es un latido. */
+export function cambiaElDespertar(status: {
+  phase: string;
+  message?: string;
+  rechazo?: true;
+}): UltimoStatusDelDespertar | null {
+  if (status.rechazo) return null;
+  if (status.phase === "error") return { phase: "error", message: status.message };
+  if (status.phase === "generating") return { phase: "generating" };
+  return null;
+}
+
 export function estadoDelDespertar(
   playerHp: number,
   ultimo: UltimoStatusDelDespertar | null,

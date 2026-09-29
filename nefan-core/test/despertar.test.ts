@@ -11,7 +11,11 @@ import {
   type MundoDelDespertar,
 } from "../src/simulation/despertar.js";
 import { contextoDeLaMuerte } from "../src/narrative/contexto-de-la-muerte.js";
-import { elJugadorEsperaDespertar, estadoDelDespertar } from "../src/protocol/despertar-en-pantalla.js";
+import {
+  cambiaElDespertar,
+  elJugadorEsperaDespertar,
+  estadoDelDespertar,
+} from "../src/protocol/despertar-en-pantalla.js";
 import { DeathResolutionSchema } from "../src/contract/model-io/schemas.js";
 
 /** Un mundo de pega: el tile (0,0) de 64 m existe, hay una caja sólida de
@@ -160,6 +164,27 @@ describe("estadoDelDespertar", () => {
   it("el cliente se calla el input mientras el frame entregado diga caído", () => {
     assert.equal(elJugadorEsperaDespertar({ playerHp: 0 }), true);
     assert.equal(elJugadorEsperaDespertar({ playerHp: 1 }), false);
+  });
+});
+
+/** QA de BN, segunda vuelta: rechazar el viaje o el diálogo de un caído NO
+ *  cambia el estado del despertar. Pasaba el velo a «fallo» con «R ·
+ *  reintentar» mientras el motor seguía decidiendo. */
+describe("cambiaElDespertar", () => {
+  it("un rechazo no toca el último status: el motor sigue decidiendo", () => {
+    const rechazo = { phase: "error", message: "Estás caído: no puedes viajar hasta que despiertes.", rechazo: true as const };
+    assert.equal(cambiaElDespertar(rechazo), null);
+    // Y encadenado como lo hace el velo: decidiendo + rechazo = decidiendo.
+    const ultimo = cambiaElDespertar(rechazo) ?? cambiaElDespertar({ phase: "generating" });
+    assert.deepEqual(estadoDelDespertar(0, ultimo, true), { de: "decidiendo" });
+  });
+  it("el error de la decisión sí cuenta, con su motivo; `generating` también; un latido no", () => {
+    assert.deepEqual(cambiaElDespertar({ phase: "error", message: "el motor no responde" }), {
+      phase: "error",
+      message: "el motor no responde",
+    });
+    assert.deepEqual(cambiaElDespertar({ phase: "generating", message: "…" }), { phase: "generating" });
+    assert.equal(cambiaElDespertar({ phase: "progress" }), null);
   });
 });
 

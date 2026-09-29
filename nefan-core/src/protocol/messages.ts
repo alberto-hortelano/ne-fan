@@ -464,6 +464,11 @@ interface CuerpoDeNarrativeStatus {
   causaReaccion?: "conexion" | "respuesta";
   /** Diagnóstico completo para el registro, separado del texto de juego. */
   detalleTecnico?: string;
+  /** Solo kind `despertar` (#613): el bridge RECHAZA algo que un caído pidió
+   *  —hablar, viajar, un `respawn` que no toca— y lo dice. Es una respuesta a
+   *  esa petición, NO el estado de la decisión del motor: el velo del
+   *  despertar no cambia por él (`cambiaElDespertar`). */
+  rechazo?: true;
   elapsedMs?: number;
 }
 

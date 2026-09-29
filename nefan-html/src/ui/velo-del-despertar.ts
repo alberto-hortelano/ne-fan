@@ -9,15 +9,17 @@
  *  `narrative_status` de kind `despertar`. */
 
 import {
+  cambiaElDespertar,
   estadoDelDespertar,
   type EstadoDelDespertar,
   type UltimoStatusDelDespertar,
 } from "@nefan-core/src/protocol/despertar-en-pantalla.js";
 
 export interface VeloDelDespertar {
-  /** Un `narrative_status` de kind `despertar` de MI partida (`progress` no
-   *  cambia nada: es un latido del motor mientras decide). */
-  alStatus(status: { phase: string; message?: string }): void;
+  /** Un `narrative_status` de kind `despertar` de MI partida. Qué cuenta lo
+   *  decide core (`cambiaElDespertar`): un rechazo o un latido no cambian el
+   *  velo. */
+  alStatus(status: { phase: string; message?: string; rechazo?: true }): void;
   /** Pinta el frame y devuelve el estado, para la barra de acciones. De pie,
    *  olvida el último status: el siguiente caído empieza «decidiendo». */
   frame(playerHp: number, conMotor: boolean): EstadoDelDespertar;
@@ -34,8 +36,7 @@ export function crearVeloDelDespertar(): VeloDelDespertar {
   let actual: EstadoDelDespertar = { de: "vivo" };
   return {
     alStatus(status) {
-      if (status.phase === "error") ultimo = { phase: "error", message: status.message };
-      else if (status.phase === "generating") ultimo = { phase: "generating" };
+      ultimo = cambiaElDespertar(status) ?? ultimo;
     },
     frame(playerHp, conMotor) {
       actual = estadoDelDespertar(playerHp, ultimo, conMotor);

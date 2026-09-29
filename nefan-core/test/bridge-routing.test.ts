@@ -127,6 +127,7 @@ describe("bridge routing básico", () => {
     assert.equal(aviso.phase, "error");
     assert.equal((aviso as { kind?: string }).kind, "despertar");
     assert.match(aviso.message ?? "", /No estás caído/);
+    assert.equal((aviso as { rechazo?: true }).rechazo, true);
   });
 
   it("un handler que revienta con requestId contesta el frame de error, no el silencio", async () => {

@@ -12,7 +12,9 @@
  *  El escenario, por el camino del jugador y desde el arranque:
  *   1 · el motor tarda MUCHO en decidir; ir andando hasta el bandido y morir;
  *   2 · caído, pulsar la salida «Molino del bench»: SE RECHAZA y se dice
- *       («Estás caído»), el «Viajando...» no se queda y el tile no cambia;
+ *       («Estás caído») en la línea de mensajes, el «Viajando...» no se queda,
+ *       el tile no cambia y el velo SIGUE en «el mundo decide» (un rechazo no
+ *       es el estado del despertar);
  *   3 · con el motor pensando, recargar y reanudar desde el título (el motor
  *       ya en `tarda` corto);
  *   4 · LA MEDIDA: vuelve caído, el velo dice que el mundo decide y NO se
@@ -62,14 +64,27 @@ export default async function (ctx) {
   const pulsada = await pulsarSalida(ctx, SALIDA);
   ctx.expect(`hay salida «${SALIDA}» que pulsar (si no, este paso no mide nada)`, pulsada, String(pulsada));
   await ctx.expectEspera(
-    "caído, el viaje se rechaza y se DICE: «Estás caído», y el «Viajando...» no se queda",
+    "caído, el viaje se rechaza y se DICE en la línea de mensajes («Estás caído»), y el «Viajando...» no se queda",
     true,
     () => {
-      const texto = document.getElementById("velo-del-despertar-texto")?.textContent ?? "";
+      const linea = document.getElementById("combat-log")?.textContent ?? "";
       const muroVisible = document.getElementById("narrative-loader")?.classList.contains("visible") ?? false;
-      return /Estás caído: no puedes viajar/.test(texto) && !muroVisible ? { texto } : null;
+      return /Estás caído: no puedes viajar/.test(linea) && !muroVisible ? true : null;
     },
     { sim: 3 },
+  );
+  // El rechazo es una respuesta al viaje, NO el estado del despertar: el motor
+  // sigue decidiendo, y el velo no puede pasar a «fallo» ni ofrecer R (QA de
+  // BN, segunda vuelta).
+  await ctx.expectEspera(
+    "tras el rechazo, el velo sigue diciendo que el mundo decide, sin R que pulsar",
+    false,
+    () => {
+      const texto = document.getElementById("velo-del-despertar-texto")?.textContent ?? "";
+      const r = window.__nefan.ui.actions().prompt.some((a) => a.id === "respawn");
+      return !/decide dónde despiertas/.test(texto) || r ? { texto, r } : null;
+    },
+    { sim: 2 },
   );
   const tileDespues = await ctx.page.evaluate(() => window.__nefan.currentTile);
   ctx.expect("y el jugador sigue en el mismo tile", tileDespues === tileAntes, `${tileAntes} → ${tileDespues}`);

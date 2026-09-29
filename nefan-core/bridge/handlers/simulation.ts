@@ -338,7 +338,7 @@ export function handleLoadRoom(
 export function handleRespawn(_msg: RespawnMessage, ws: ClientSocket, ctx: BridgeContext): void {
   const rechazar = (motivo: string): void => {
     console.warn(`Bridge: respawn rechazado — ${motivo}`);
-    ctx.enviarNarrativo(ws, { type: "narrative_status", phase: "error", kind: "despertar", message: motivo });
+    ctx.enviarNarrativo(ws, { type: "narrative_status", phase: "error", kind: "despertar", message: motivo, rechazo: true });
   };
   // Reaparecer MUEVE al jugador, y con el save escuchando al sim eso acaba en
   // el `state.json`: mismo dueño que el input.
