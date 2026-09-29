@@ -10,10 +10,17 @@ import { z } from "zod";
 
 export const ZONE_SEED_MAX = 1e9;
 
-const MENSAJE = `seed es un entero de 0 a ${ZONE_SEED_MAX}, el mismo tipo en vegetation_zones y scatter_zones`;
+/** El motivo del rechazo, con el valor que llegó: el motor tiene que ver QUÉ
+ *  escribió para corregirlo sin adivinar. Sale de aquí para que el error de
+ *  las dos zonas sea el mismo texto. */
+export function motivoSeedDeZona(recibido: unknown): string {
+  return `seed es un entero de 0 a ${ZONE_SEED_MAX}, el mismo tipo en vegetation_zones y scatter_zones (tiene ${JSON.stringify(recibido)})`;
+}
 
+// El errorMap del esquema cubre también los checks (.int/.min/.max), y
+// `ctx.data` es el valor recibido: un solo mensaje para todos los rechazos.
 export const ZoneSeedSchema = z
-  .number({ invalid_type_error: MENSAJE, required_error: MENSAJE })
-  .int(MENSAJE)
-  .min(0, MENSAJE)
-  .max(ZONE_SEED_MAX, MENSAJE);
+  .number({ errorMap: (_issue, ctx) => ({ message: motivoSeedDeZona(ctx.data) }) })
+  .int()
+  .min(0)
+  .max(ZONE_SEED_MAX);

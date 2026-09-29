@@ -222,7 +222,8 @@ describe("vegetation_zones[].seed: entero, y manda sobre las posiciones", () => 
       assert.equal(p.ok, false, `seed ${JSON.stringify(seed)} no debería pasar`);
       if (!p.ok) {
         assert.match(p.error, /^vegetation_zones\[0\]\.seed: /, p.error);
-        assert.match(p.error, /entero|0 a 1e9/, `el mensaje enseña el tipo: ${p.error}`);
+        assert.match(p.error, /entero/, `el mensaje enseña el tipo: ${p.error}`);
+        assert.ok(p.error.endsWith(`(tiene ${JSON.stringify(seed)})`), `el mensaje dice QUÉ llegó: ${p.error}`);
       }
     }
   });

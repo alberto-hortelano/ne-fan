@@ -46,7 +46,7 @@
       },
       "vegetation_zones": {
         "type": "array",
-        "description": "OPTIONAL (tiles) — mass vegetation planted BY THE ENGINE as REAL tree/bush volumes (trunk collision, shade, everything a hand-placed tree volume has): [{type: Spanish plant name ('pino', 'matorral'…), area: [col,row,w,h] in cells | \"rest\" (the whole tile), density: SPECIMENS PER m² in (0, 0.08] — 0.01 open oakwood (100 stems/ha), 0.05 mature forest, 0.08 closed pinewood, seed?: integer ≥ 0 to reshuffle the same zone}] (max 8 zones). The engine plants them deterministically, keeps at least 2.58 m between trunks so the player can always walk through, and avoids paths, water, decks and building footprints automatically; your declared tree volumes act as spacing seeds. The zone spends the tile's volume budget (200 composed volumes per tile — see volumes_total/volumes_total_cap in the validator's stats): a \"rest\" zone at 0.08 asks for ~328 specimens and does NOT fit; the same density over HALF the tile does (~164), and a whole-tile forest fits at 0.04 (~164). This is the tool for forests and shrub masses; hand-place only singular specimens. For visual filler with NO collision and no budget, use scatter_zones instead."
+        "description": "OPTIONAL (tiles) — mass vegetation planted BY THE ENGINE as REAL tree/bush volumes (trunk collision, shade, everything a hand-placed tree volume has): [{type: Spanish plant name ('pino', 'matorral'…), area: [col,row,w,h] in cells | \"rest\" (the whole tile), density: SPECIMENS PER m² in (0, 0.08] — 0.01 open oakwood (100 stems/ha), 0.05 mature forest, 0.08 closed pinewood, seed?: integer 0..1000000000 to reshuffle the same zone}] (max 8 zones). The engine plants them deterministically, keeps at least 2.58 m between trunks so the player can always walk through, and avoids paths, water, decks and building footprints automatically; your declared tree volumes act as spacing seeds. The zone spends the tile's volume budget (200 composed volumes per tile — see volumes_total/volumes_total_cap in the validator's stats): a \"rest\" zone at 0.08 asks for ~328 specimens and does NOT fit; the same density over HALF the tile does (~164), and a whole-tile forest fits at 0.04 (~164). This is the tool for forests and shrub masses; hand-place only singular specimens. For visual filler with NO collision and no budget, use scatter_zones instead."
       },
       "volumes": {
         "type": "array",
@@ -61,7 +61,7 @@
       },
       "scatter_zones": {
         "type": "array",
-        "description": "OPTIONAL, requires scatter_generators — zones to populate: [{kind, shape: {type:\"rect\",x0,z0,x1,z1}|{type:\"ellipse\",cx,cz,rx,rz}|{type:\"poly\",pts}, density (elements/m², 0..1.5; total capped at 240 instances/tile), seed?: integer ≥ 0}] (cells; max 12). The engine samples deterministic positions avoiding buildings, water, decks and paths automatically."
+        "description": "OPTIONAL, requires scatter_generators — zones to populate: [{kind, shape: {type:\"rect\",x0,z0,x1,z1}|{type:\"ellipse\",cx,cz,rx,rz}|{type:\"poly\",pts}, density (elements/m², 0..1.5; total capped at 240 instances/tile), seed?: integer 0..1000000000}] (cells; max 12). The engine samples deterministic positions avoiding buildings, water, decks and paths automatically."
       },
       "entities": {
         "type": "array",

@@ -100,6 +100,7 @@ describe("scatter_zones[].seed: entero, el mismo tipo que el de vegetation_zones
       if (!r.ok) {
         assert.match(r.error, /^scatter_zones\[0\]\.seed: /, r.error);
         assert.match(r.error, /entero/, `el mensaje enseña el tipo: ${r.error}`);
+        assert.ok(r.error.endsWith(`(tiene ${JSON.stringify(seed)})`), `el mensaje dice QUÉ llegó: ${r.error}`);
       }
     }
   });
