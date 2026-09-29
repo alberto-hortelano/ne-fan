@@ -51,6 +51,27 @@ export function crearVeloDelDespertar(): VeloDelDespertar {
   };
 }
 
+/** Lo que hace la partida con un `narrative_status` de kind `despertar`: el
+ *  velo decide si cuenta (`cambiaElDespertar`), y un error —el de la decisión o
+ *  el rechazo de algo que un caído pidió— cierra la espera del viaje que lo
+ *  provocó, quita un «Viajando...» que se hubiera quedado y va a la línea de
+ *  mensajes. Fuera de `main.ts` para probarlo y no sumarle ramas. */
+export function atenderStatusDelDespertar(
+  status: { phase: string; message?: string; rechazo?: true },
+  deps: {
+    velo: Pick<VeloDelDespertar, "alStatus">;
+    cerrarViaje(motivo: string): void;
+    quitarMuroDeEspera(): void;
+    pintarFallo(): void;
+  },
+): void {
+  deps.velo.alStatus(status);
+  if (status.phase !== "error") return;
+  deps.cerrarViaje(status.message ?? "sin mensaje");
+  deps.quitarMuroDeEspera();
+  deps.pintarFallo();
+}
+
 /** La tecla que se ofrece al caído: R reintenta si el motor falló, y reaparece
  *  sin motor (fixtures); mientras el mundo decide, ninguna — no hay nada que
  *  el jugador pueda hacer para que decida antes. */

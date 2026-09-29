@@ -16,7 +16,7 @@ import { marcarTitulo } from "./ui/titulo-manda.js";
 import { TileStore } from "./world/tile-store.js";
 import { Frontera } from "@nefan-core/src/scene/frontera.js";
 import { crearFronteraEnPantalla } from "./ui/frontera-en-pantalla.js";
-import { accionDelCaido, crearVeloDelDespertar } from "./ui/velo-del-despertar.js";
+import { accionDelCaido, atenderStatusDelDespertar, crearVeloDelDespertar } from "./ui/velo-del-despertar.js";
 import { elJugadorEsperaDespertar } from "@nefan-core/src/protocol/despertar-en-pantalla.js";
 import { crearFronteraDelJugador } from "./world/frontera-del-jugador.js";
 import { aplicarLoQueMandaElBridge } from "./world/lo-que-manda-el-bridge.js";
@@ -33,7 +33,7 @@ import { BASE_MODEL, CharacterSpriteManager } from "./renderer/character-sprites
 import { crearAspectoDelJugador } from "./renderer/aspecto-del-jugador.js";
 import { AnimacionDeEntidades } from "./renderer/animacion-de-entidades.js";
 import { BridgeClient } from "./net/bridge-client.js";
-import { NarrativeClient } from "./net/narrative-client.js";
+import { NarrativeClient, type NarrativeStatusListener } from "./net/narrative-client.js";
 import { serviceUrl } from "./net/service-urls.js";
 import { TitleScreen, type TitleAction } from "./ui/title-screen.js";
 import { crearPanelDePlugins } from "./ui/panel-de-plugins.js";
@@ -76,6 +76,7 @@ import {
   type GameClient,
   type FrameResult,
 } from "./net/game-client.js";
+import { aplicarElDespertar } from "./net/frame-del-bridge.js";
 
 import { CONFIG } from "@nefan-core/src/config.js";
 /** Los números del jugador: velocidades, escala de arcade y alcance de la `E`.
@@ -342,6 +343,7 @@ const propuestaDeTileAbierta = (): boolean =>
   !dialogoAbierto() && !jugadorCaido() && session.active && tileStore.hasGridTiles && frontier.propuesta !== null;
 /** Caído (#613, QA S2 de BN): ni anda ni propone tiles — la Y de un caído GASTABA. Lo decide core. */
 const jugadorCaido = (): boolean => elJugadorEsperaDespertar({ playerHp: gameClient.jugadorEnCombate().health });
+const puedeMoverse = (): boolean => !dialogoAbierto() && !jugadorCaido();
 let input: InputProvider;
 try {
   input = inputRegistry.create(requestedInputId, { dialogoAbierto, propuestaDeTileAbierta });
@@ -590,13 +592,12 @@ function gameLoop(now: number): void {
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
   // generación de mundo: la frontera bloquea solo direccionalmente.
-  if (dialogoAbierto() || jugadorCaido()) {
+  if (!puedeMoverse()) {
     // El diálogo (y estar caído) suspende la propuesta de tile: sus teclas Y/N quedan mudas.
     // Ya no hay que decírselo al proveedor — lo DERIVA él
     // (`propuestaDeTileAbierta`, #329) de la misma guarda que hay aquí.
     fronteraEnPantalla.callarDuranteElDialogo();
-  }
-  if (!dialogoAbierto() && !jugadorCaido()) {
+  } else {
     aplicarMirada();
 
     // El PASO: las reglas (marco relativo al facing, diagonal renormalizada,
@@ -667,11 +668,7 @@ function gameLoop(now: number): void {
       });
 
   // El punto de reaparición lo decide el sim (#613); se copia antes del siguiente input.
-  if (result.reaparicion) {
-    playerPos.x = result.reaparicion.x;
-    playerPos.z = result.reaparicion.z;
-    if (result.miradaAlDespertar !== undefined) mirada.ponYaw(result.miradaAlDespertar); // QA S3 de BN
-  }
+  aplicarElDespertar(result, playerPos, (yaw) => mirada.ponYaw(yaw));
 
   // Lo que el jugador VE y LEE de lo que resolvió el sim: el aro del ataque,
   // las líneas del registro y si sigue de pie. Devuelve la animación de una vez
@@ -877,25 +874,7 @@ travelPanel.onTravel = (placeId) => {
 };
 
 narrativeClient.onStatusDeLaPartida((status) => {
-  // ── Latido de progreso del motor narrativo ────────────────────────────
-  // Un paso observable (petición recogida, tool de estado llamada): el
-  // loader deja de ser una espera muda de minutos y narra qué está pasando.
-  if (status.phase === "progress") {
-    if (status.message) muro.progreso(status.message);
-    return;
-  }
-
-  // Has caído (#613): el velo del despertar lo pinta, y un rechazo de lo que
-  // un caído no puede hacer (viajar, hablar) quita el «Viajando...» de encima.
-  if (status.kind === "despertar") {
-    veloDelDespertar.alStatus(status);
-    if (status.phase === "error") {
-      travelLedger.fallo(status.message ?? "sin mensaje");
-      if (muro.enPantalla() === "espera") muro.ocultar();
-      pintarFalloDelMotor(status, null);
-    }
-    return;
-  }
+  if (atendidoAntesQueNada(status)) return;
 
   // Core decide el desenlace del viaje, solo con un status SUYO (#737, #742).
   // `viajeAbierto` se lee ANTES de cerrarlo: el muro y el rótulo lo necesitan.
@@ -983,6 +962,24 @@ narrativeClient.onStatusDeLaPartida((status) => {
 narrativeClient.onFalloAjeno((fallo) => {
   pintarFalloDelMotor(fallo, travelLedger.viajeAbierto());
 });
+
+/** Lo que un status de la partida resuelve ANTES de mirar viajes y tiles: el
+ *  latido del motor (el loader narra qué está pasando) y el despertar (#613,
+ *  `atenderStatusDelDespertar`). Devuelve si ya está atendido. */
+function atendidoAntesQueNada(status: Parameters<NarrativeStatusListener>[0]): boolean {
+  if (status.phase === "progress") {
+    if (status.message) muro.progreso(status.message);
+    return true;
+  }
+  if (status.kind !== "despertar") return false;
+  atenderStatusDelDespertar(status, {
+    velo: veloDelDespertar,
+    cerrarViaje: (motivo) => travelLedger.fallo(motivo),
+    quitarMuroDeEspera: () => (muro.enPantalla() === "espera" ? muro.ocultar() : undefined),
+    pintarFallo: () => pintarFalloDelMotor(status, null),
+  });
+  return true;
+}
 
 /** Enseña un fallo del motor donde toque. El TÍTULO ya no se decide aquí:
  *  `main.ts` pintaba «Error al generar el mundo» y «Error al generar la

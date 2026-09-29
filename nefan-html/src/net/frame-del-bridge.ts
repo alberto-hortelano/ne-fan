@@ -57,6 +57,22 @@ export function acumularFrame(
   };
 }
 
+/** Aplica el DESPERTAR de un frame (#613): copia el punto a la posición del
+ *  jugador y, si viene, la mirada (QA S3 de BN). Devuelve si había despertar.
+ *  Fuera del game loop para que se pruebe y no le sume ramas (CRAP del
+ *  cliente). */
+export function aplicarElDespertar(
+  frame: Pick<FrameResult, "reaparicion" | "miradaAlDespertar">,
+  pos: { x: number; z: number },
+  ponYaw: (yaw: number) => void,
+): boolean {
+  if (!frame.reaparicion) return false;
+  pos.x = frame.reaparicion.x;
+  pos.z = frame.reaparicion.z;
+  if (frame.miradaAlDespertar !== undefined) ponYaw(frame.miradaAlDespertar);
+  return true;
+}
+
 /** El frame con el que se pinta ANTES del primer `state_update`: el arma y el
  *  máximo del store, que son los MISMOS con los que arranca el bridge (el
  *  mismo `createInitialState`), sin enemigos ni NPCs. La vida, la que diga
