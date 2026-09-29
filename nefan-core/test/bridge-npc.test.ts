@@ -133,6 +133,46 @@ describe("bridge vida ambiental de NPCs", () => {
     assert.equal(narrative.dialogue_history.length, dialoguesBefore, "el log ambiental no contamina el diálogo");
   });
 
+  /** #298, QA de BL H2 — decisión del usuario: «que el estado le llegue al
+   *  motor de narrativa y él decide». El que iba a un sitio y huye ABANDONA
+   *  esa meta (no vuelve solo a la pelea) y el motor se entera por los canales
+   *  que ya tiene: la línea de `ambient_events` del LlmContext y el record. */
+  it("el que huye con un goto_place lo ABANDONA, y el motor lo ve en su contexto", async () => {
+    const { ctx, narrative, socket } = await startAmbientSession();
+    const sceneId = narrative.world.active_scene_id;
+    narrative.worldMap.upsertPlace({
+      id: "plaza", kind: "site", parent_id: "world", name: "La Plaza",
+      anchor: { tx: 0, ty: 0, rect: [64, 64, 4, 4] },
+    });
+    const directiva = { type: "goto_place", target_place_id: "plaza" };
+    narrative.recordEntitySpawned(
+      "campesino_1", "npc", sceneId, [4, 0, 0],
+      { name: "Campesino", role: "peasant", directive: directiva }, "scene_init",
+    );
+    npcSync(ctx);
+    ctx.sim.addCombatant(
+      createCombatant("bandido_1", 60, "unarmed", { x: 0, y: 0, z: -1.5 }, { x: 0, y: 0, z: 1 }),
+      { aggression: 1.0, preferred_attacks: ["quick"], reaction_time: 0.1, combat_range: 4 },
+    );
+    await tickInput(ctx, socket, 100);
+
+    const npc = narrative.getEntity("campesino_1")!;
+    assert.equal(npc.data.directive, null, "la directiva que le llevaba a la pelea se retira");
+    const sg = npc.data.suspended_goal as { field: string; value: unknown; reason: string; fight_at: number[] };
+    assert.equal(sg?.field, "directive");
+    assert.deepEqual(sg.value, directiva, "con su valor, para poder re-emitirla");
+    assert.equal(sg.reason, "fled_combat");
+    assert.equal(sg.fight_at.length, 2);
+    const linea = narrative.serializeForLlm().ambient_events?.find((e) => e.includes("Campesino") && e.includes("huyó"));
+    assert.ok(linea, "la huida está en el contexto del motor");
+    assert.ok(linea.includes("ABANDONÓ") && linea.includes("goto_place") && linea.includes("La Plaza"),
+      `y dice qué abandonó y adónde iba: ${linea}`);
+
+    // El motor decide: re-emitirla limpia la marca.
+    ctx.npcDirector.setDirective("campesino_1", directiva);
+    assert.equal(narrative.getEntity("campesino_1")!.data.suspended_goal, undefined);
+  });
+
   /** EL GUARDIA DE EXCLUSIÓN. Hasta #323 nada impedía que un mismo id
    *  estuviera a la vez en `NpcBehaviorSystem` y en `combatants`, y no dolía
    *  porque nunca hubo enemigos. Con hostiles serían DOS dueños de la misma

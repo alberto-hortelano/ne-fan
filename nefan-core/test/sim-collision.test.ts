@@ -60,6 +60,35 @@ describe("createSimCollisionProvider", () => {
     // Punto en el tile (5,5), que no existe.
     assert.ok(!provider.blocksCircle(320, 320, 0.5));
   });
+
+  /** QA de BL, H1. La caché iba por `sceneId` y guardaba `[]` para un tile
+   *  todavía no generado: desde #618 `npc_arrive` pregunta por el suelo del
+   *  lugar de destino, que en el viaje narrative-paced casi nunca está
+   *  realizado, y el tile quedaba VACÍO para el sim el resto de la partida. */
+  it("un tile preguntado ANTES de generarse se ve sólido en cuanto se genera", () => {
+    const s = makeState();
+    const provider = createSimCollisionProvider(s);
+    // La herrería en el tile (1,0), que empieza en x = 32: celda [60,60] 12×12 → centro mundo (65, 1).
+    const centro = { x: 64 - 32 + 66 * 0.5, z: -32 + 66 * 0.5 };
+    assert.equal(provider.ocupado(centro.x, centro.z, 0.5), false, "sin tile no hay nada");
+    s.recordSceneLoaded("tile_1_0", expandScenePrimitives({
+      tile: { tx: 1, ty: 0 }, scene_id: "tile_1_0", scene_description: "la herrería", biome: "grass",
+      entities: [{ id: "herreria", kind: "building", name: "herrería", cell: [60, 60], footprint: [12, 12] }],
+    }));
+    assert.equal(provider.ocupado(centro.x, centro.z, 0.5), true, "el tile recién generado es sólido para el sim");
+  });
+
+  it("al cambiar de sesión, el mismo tile colisiona con la geometría de la sesión NUEVA", () => {
+    const s = makeState();
+    const provider = createSimCollisionProvider(s);
+    const agua = cellCenter(15, 10);
+    assert.equal(provider.ocupado(agua.x, agua.z, 0.5), true, "CONTROL: en esta sesión ahí hay agua");
+    s.startNewSession("otra");
+    s.recordSceneLoaded("tile_0_0", expandScenePrimitives({
+      tile: { tx: 0, ty: 0 }, scene_id: "tile_0_0", scene_description: "campo seco", biome: "grass", entities: [],
+    }));
+    assert.equal(provider.ocupado(agua.x, agua.z, 0.5), false, "el agua era de la otra sesión");
+  });
 });
 
 /** #232: el bridge NO veía los volúmenes DERIVADOS del esquema, solo los

@@ -1062,3 +1062,108 @@ describe("AmbientNpcBehavior · la huida no vuelve a la pelea (#298)", () => {
     });
   }
 });
+
+/** EL QUE IBA A UN SITIO Y HUYE (#298, QA de BL H2). Decisión del usuario:
+ *  «que el estado le llegue al motor de narrativa y él decide». Suspende la
+ *  meta que le llevaba de vuelta a la pelea (15 huidas en 180 s antes), se
+ *  queda donde paró, y la meta queda en `data.suspended_goal` para el motor. */
+describe("AmbientNpcBehavior · el que iba a un sitio y huye (#298, H2)", () => {
+  const PELEA: Vec3 = { x: 0, y: 0, z: 0 };
+  const peleaQueSigue = ctxWith({
+    combatEvents: [{ type: "attack_started", combatantId: "bandit" }],
+    combatantPositions: new Map([["bandit", PELEA]]),
+  });
+  /** La plaza a 8 m de la pelea: dentro de la percepción de cualquiera. */
+  const JUNTO = openWorld({
+    resolvePlaceTarget: (id) => (id === "plaza" ? { x: -8, z: 0 } : null),
+    getEntityPosition: (id) => (id === "amigo" ? { x: -6, y: 0, z: 0 } : null),
+  });
+
+  function huye(data: Record<string, unknown>, segundos = 180) {
+    const sys = createAmbientNpcBehavior({ rng: new SeededRng(29), world: JUNTO });
+    const rec = makeRecord("vecino", [3, 0, 0], { role: "villager", ...data });
+    sys.addNpc(rec);
+    const eventos = runTicks(sys, segundos / 0.016, 0.016, peleaQueSigue);
+    return { rec, eventos, huidas: eventos.filter((e) => e.type === "npc_fled_combat") };
+  }
+
+  it("goto_place hacia la pelea: huye UNA vez, suspende la directiva y lo dice", () => {
+    const directiva = { type: "goto_place", target_place_id: "plaza" };
+    const { rec, huidas } = huye({ directive: directiva });
+    assert.equal(huidas.length, 1, `no vuelve a la pelea: ${huidas.length} huidas en 180 s`);
+    assert.equal(rec.data.directive, null, "la directiva ya no manda");
+    assert.deepEqual(rec.data.suspended_goal, {
+      field: "directive", value: directiva, reason: "fled_combat", fight_at: [0, 0],
+    });
+    assert.deepEqual(huidas[0].suspended, rec.data.suspended_goal, "el evento lleva lo mismo que el record");
+    assert.deepEqual(huidas[0].fightAt, { x: 0, z: 0 });
+    const p = rec.position;
+    assert.ok(Math.hypot(p[0], p[2]) >= NPC_ROLE_PRESETS.villager.perception_radius, "y se queda lejos");
+  });
+
+  it("un npc_move_to_place que andaba: suspende el tránsito", () => {
+    const transito = { to: "plaza", from: "", departed_at: "2026-01-01T00:00:00.000Z" };
+    const { rec, huidas } = huye({ in_transit: transito });
+    assert.equal(huidas.length, 1);
+    assert.equal(rec.data.in_transit, null);
+    assert.deepEqual((rec.data.suspended_goal as { field: string; value: unknown }).value, transito);
+    assert.equal((rec.data.suspended_goal as { field: string }).field, "in_transit");
+  });
+
+  it("visit_npc junto a la pelea: también", () => {
+    const { rec, huidas } = huye({ directive: { type: "visit_npc", target_npc_id: "amigo" } });
+    assert.equal(huidas.length, 1);
+    assert.equal(rec.data.directive, null);
+  });
+
+  it("lo que NO le lleva de vuelta no se toca: hold, y un goto_place fuera de alcance", () => {
+    const { rec: r1 } = huye({ directive: { type: "hold" } }, 20);
+    assert.deepEqual(r1.data.directive, { type: "hold" });
+    assert.equal(r1.data.suspended_goal, undefined);
+    const { rec: r2 } = huye({ directive: { type: "goto_place", target_place_id: "lejana" } }, 20);
+    assert.deepEqual(r2.data.directive, { type: "goto_place", target_place_id: "lejana" },
+      "narrative-paced: el cuerpo no lo andaba, así que no le devuelve a nada");
+  });
+});
+
+/** LA HUIDA LLEGA A SU META aunque el paseo sea grande (QA de BL, H3). Se
+ *  cerraba a los 4 s de salir de la percepción: con `wander.radius` 15 paraba a
+ *  24 m de una meta de 31 y re-huía en 4 de 8 semillas. */
+describe("AmbientNpcBehavior · la huida llega a su meta con cualquier radio (H3)", () => {
+  const PELEA: Vec3 = { x: 0, y: 0, z: 0 };
+  const peleaQueSigue = ctxWith({
+    combatEvents: [{ type: "attack_started", combatantId: "bandit" }],
+    combatantPositions: new Map([["bandit", PELEA]]),
+  });
+
+  it("wander.radius 15, ocho semillas × 600 s: para en su meta y no vuelve a huir", () => {
+    const directive = { type: "wander", radius: 15 };
+    const params = NPC_ROLE_PRESETS.villager;
+    const meta = distanciaDeHuida(params, radioDePaseo(directive, params));
+    for (let seed = 1; seed <= 8; seed++) {
+      const sys = createAmbientNpcBehavior({ rng: new SeededRng(seed), world: openWorld() });
+      sys.addNpc(makeRecord("vecino", [3, 0, 0], { role: "villager", directive }));
+      let huidas = 0;
+      let paro: number | null = null;
+      for (let i = 0; i < 600 / 0.016; i++) {
+        const ev = sys.tick(0.016, peleaQueSigue);
+        huidas += ev.filter((e) => e.type === "npc_fled_combat").length;
+        if (paro === null && ev.some((e) => e.type === "npc_resumed")) paro = distXZ(sys.states()[0].pos, PELEA);
+      }
+      assert.ok(paro !== null && paro >= meta - 0.1, `semilla ${seed}: paró a ${paro?.toFixed(2)} m, meta ${meta} m`);
+      assert.equal(huidas, 1, `semilla ${seed}: ${huidas} huidas`);
+    }
+  });
+
+  it("y el que NO puede correr no huye para siempre: retoma la rutina", () => {
+    const sys = createAmbientNpcBehavior({
+      rng: new SeededRng(5),
+      world: openWorld({ queImpideElPaso: muroDelTile(() => true), blocksCircle: () => true }),
+    });
+    sys.addNpc(makeRecord("vecino", [10, 0, 0], { role: "villager" }));
+    // Un golpe de pelea y se acaba: 60 s después tiene que haber reanudado.
+    const eventos = [...sys.tick(0.016, peleaQueSigue), ...runTicks(sys, 60 / 0.016, 0.016, ctxWith())];
+    assert.equal(eventos.filter((e) => e.type === "npc_fled_combat").length, 1);
+    assert.equal(eventos.filter((e) => e.type === "npc_resumed").length, 1, "cercado, la huida también acaba");
+  });
+});

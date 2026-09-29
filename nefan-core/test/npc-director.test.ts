@@ -129,7 +129,8 @@ describe("NpcDirector.arriveNpc — teleport narrative-paced", () => {
     director.arriveNpc("boris");
     assert.deepEqual(s.getEntity("boris")!.position, [1, 0, 1]);
 
-    // Llegada a pie (el sim lo dejó a <3 m): la posición no se toca.
+    // Llegada a pie (el sim lo dejó DENTRO del rect, que va de 0 a 2 m): la
+    // posición no se toca.
     s.recordEntitySpawned("greta", "npc", "tile_0_0", [1.8, 0, 1.2], { name: "Greta" });
     director.moveNpcToPlace("greta", "plaza");
     director.arriveNpc("greta");
@@ -148,6 +149,49 @@ describe("NpcDirector.arriveNpc — teleport narrative-paced", () => {
  *  NPC quedaba dentro, y un NPC quieto dentro de un sólido no sale. Se mide con
  *  el proveedor de colisión de PRODUCCIÓN y una escena de tile de verdad, no
  *  con un `ocupado` escrito aquí. */
+describe("NpcDirector.arriveNpc — «llegó» es estar DENTRO del rect del lugar", () => {
+  // Hasta BL era «a ≤ 3 m del centro». Con un rect que sea la huella del lugar
+  // (BM), eso tomaba por no llegado a quien ya estaba en él, y por llegado a
+  // quien estaba a 2 m pero fuera de un rect pequeño.
+  function conLaPlaza(rect: [number, number, number, number]) {
+    const s = new NarrativeState(new MemorySessionStorage());
+    s.startNewSession("g");
+    s.worldMap.upsertPlace({ id: "plaza", kind: "site", parent_id: "world", name: "Plaza", anchor: { tx: 0, ty: 0, rect } });
+    return { s, director: new NpcDirector(s, createSimCollisionProvider(s)) };
+  }
+
+  it("dentro de un rect grande, lejos del centro, NO salta", () => {
+    // rect [40,40,48,48] → mundo de −12 a 12: centro (0,0).
+    const { s, director } = conLaPlaza([40, 40, 48, 48]);
+    s.recordEntitySpawned("boris", "npc", "tile_0_0", [10, 0, -10], { name: "Boris" });
+    director.moveNpcToPlace("boris", "plaza");
+    assert.equal(director.arriveNpc("boris").ok, true);
+    assert.deepEqual(s.getEntity("boris")!.position, [10, 0, -10], "ya estaba en la plaza, a 14 m del centro");
+  });
+
+  it("fuera de un rect pequeño, aunque a < 3 m del centro, SÍ salta", () => {
+    // rect [64,64,4,4] → mundo de 0 a 2: centro (1,1).
+    const { s, director } = conLaPlaza([64, 64, 4, 4]);
+    s.recordEntitySpawned("boris", "npc", "tile_0_0", [2.8, 0, 1], { name: "Boris" });
+    director.moveNpcToPlace("boris", "plaza");
+    director.arriveNpc("boris");
+    assert.deepEqual(s.getEntity("boris")!.position, [1, 0, 1]);
+  });
+});
+
+describe("NpcDirector — la meta que el NPC abandonó al huir (#298, H2)", () => {
+  it("re-emitirla (directiva o viaje) la da por decidida y limpia la marca", () => {
+    const { s, director } = makeSetup();
+    const npc = s.getEntity("boris")!;
+    npc.data.suspended_goal = { field: "directive", value: { type: "hold" }, reason: "fled_combat", fight_at: [0, 0] };
+    director.setDirective("boris", { type: "hold" });
+    assert.equal(npc.data.suspended_goal, undefined);
+    npc.data.suspended_goal = { field: "in_transit", value: { to: "puerto" }, reason: "fled_combat", fight_at: [0, 0] };
+    director.moveNpcToPlace("boris", "puerto");
+    assert.equal(npc.data.suspended_goal, undefined);
+  });
+});
+
 describe("NpcDirector.arriveNpc — el salto cae en sitio libre", () => {
   /** Tile (0,0) con un edificio de 6 × 6 m (12 × 12 celdas desde la esquina
    *  [60,60]) y el lugar anclado EXACTAMENTE sobre él: su centro es (1, 1). */

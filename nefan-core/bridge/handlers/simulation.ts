@@ -140,6 +140,26 @@ export async function handleInput(
   });
 }
 
+/** La línea de `ambient_events` de una huida. Si el NPC ABANDONÓ una meta al
+ *  huir (`SuspendedGoal`, #298), la línea lo dice con lo que el motor necesita
+ *  para decidir —qué dejó, por qué y dónde era la pelea— y con la tool que la
+ *  reanuda: el NPC no vuelve solo (QA de BL, H2, decisión del usuario: «que el
+ *  estado le llegue al motor de narrativa y él decide»). */
+function lineaDeHuida(ctx: BridgeContext, who: string, ev: NpcBehaviorEvent): string {
+  const donde = ev.fightAt ? ` en (${ev.fightAt.x.toFixed(1)}, ${ev.fightAt.z.toFixed(1)})` : " cercana";
+  const s = ev.suspended;
+  if (!s) return `${who} huyó de una pelea${donde}`;
+  const v = (s.value ?? {}) as Record<string, unknown>;
+  const lugar = (id: unknown) => typeof id === "string" ? `"${ctx.narrative.worldMap.get(id)?.name ?? id}"` : "?";
+  const meta = s.field === "in_transit"
+    ? `su viaje a ${lugar(v.to)} (npc_move_to_place)`
+    : v.type === "visit_npc"
+      ? `su directiva visit_npc a "${npcLabel(ctx, String(v.target_npc_id ?? ""))}"`
+      : `su directiva ${String(v.type)} a ${lugar(v.target_place_id)}`;
+  return `${who} huyó de una pelea${donde} y ABANDONÓ ${meta}: se queda donde paró ` +
+    `y no volverá solo — si debe seguir, vuelve a dársela (queda en data.suspended_goal de su entidad)`;
+}
+
 function applyNpcEvent(ctx: BridgeContext, ev: NpcBehaviorEvent): void {
   const who = npcLabel(ctx, ev.npcId);
   switch (ev.type) {
@@ -161,7 +181,7 @@ function applyNpcEvent(ctx: BridgeContext, ev: NpcBehaviorEvent): void {
       ctx.narrative.appendAmbient(`${who} fue a ver a ${npcLabel(ctx, ev.targetId ?? "")}`);
       return;
     case "npc_fled_combat":
-      ctx.narrative.appendAmbient(`${who} huyó de una pelea cercana`);
+      ctx.narrative.appendAmbient(lineaDeHuida(ctx, who, ev));
       return;
     case "npc_intervened":
       ctx.narrative.appendAmbient(`${who} intervino en una pelea cercana`);

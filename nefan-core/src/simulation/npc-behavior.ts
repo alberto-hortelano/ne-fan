@@ -68,6 +68,31 @@ export interface NpcBehaviorEvent {
   npcId: string;
   placeId?: string;
   targetId?: string;
+  /** `npc_fled_combat`: dónde era la pelea de la que huye. */
+  fightAt?: { x: number; z: number };
+  /** `npc_fled_combat`: la meta que llevaba y ABANDONA al huir, si llevaba
+   *  una (ver `SuspendedGoal`). */
+  suspended?: SuspendedGoal;
+}
+
+/** LA META QUE EL NPC ABANDONA AL HUIR (#298, QA de BL H2). Decisión del
+ *  usuario, literal: «Que decida el motor de narrativa. En general que el
+ *  estado le llegue al motor de narrativa y él decide». El que iba a un sitio
+ *  (`goto_place`, `visit_npc` o un `npc_move_to_place` que el sim ejecutaba
+ *  andando) y huye NO vuelve solo: su meta se retira del record —si no, la
+ *  re-derivaba al calmarse y volvía a la pelea (15 huidas en 180 s)— y queda
+ *  aquí, en `record.data.suspended_goal`, con el porqué. Al motor le llega por
+ *  los dos canales que ya tiene: la línea de `ambient_events` que escribe el
+ *  bridge y el propio record (`entity_get`). Si quiere que siga, la vuelve a
+ *  emitir con `npc_set_directive` / `npc_move_to_place`, que la limpian. */
+export interface SuspendedGoal {
+  /** El campo del record del que se retiró. */
+  field: "directive" | "in_transit";
+  /** Su valor tal cual estaba, para poder re-emitirlo. */
+  value: unknown;
+  reason: "fled_combat";
+  /** Dónde era la pelea, en metros. */
+  fight_at: [number, number];
 }
 
 export interface NpcTickContext {
@@ -141,7 +166,8 @@ export function radioDePaseo(
  *  ser donde se paró, y si el disco de paseo alrededor de ese punto cortaba el
  *  círculo de percepción de la pelea, el micro-wander le devolvía a verla y
  *  volvía a huir cada ~10 s. Con la meta a `percepción + margen + paseo`, el
- *  paseo entero queda fuera por geometría.
+ *  paseo entero queda fuera por geometría — porque la huida no se cierra hasta
+ *  llegar aquí (`huidaEnCurso`), salvo que no pueda correr.
  *
  *  EXPORTADA a propósito: un test que escriba la meta a mano deja de proteger
  *  nada en cuanto alguien cambia un sumando —#262 se pasó semanas leyéndose
@@ -401,10 +427,16 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       // Transición inmediata (no esperar al decide tick): los eventos de
       // combate son transitorios.
       if (rt.params.flees_from_combat && rt.mode !== "flee") {
+        const suspended = this.suspenderMeta(rt, nearest);
         rt.mode = "flee";
         rt.waypoint = null;
         rt.anim = undefined;
-        events.push({ type: "npc_fled_combat", npcId: rt.record.id });
+        events.push({
+          type: "npc_fled_combat",
+          npcId: rt.record.id,
+          fightAt: { x: nearest.x, z: nearest.z },
+          ...(suspended ? { suspended } : {}),
+        });
       } else if (rt.params.intervenes_in_combat && rt.mode !== "intervene") {
         rt.mode = "intervene";
         rt.waypoint = null;
@@ -416,7 +448,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
 
     if (rt.danger) {
       rt.dangerTimer += delta;
-      if (rt.dangerTimer >= COMBAT_CLEAR_SECONDS) {
+      if (rt.dangerTimer >= COMBAT_CLEAR_SECONDS && !this.huidaEnCurso(rt)) {
         rt.danger = null;
         rt.anim = undefined;
         if (rt.mode === "flee" || rt.mode === "intervene") {
@@ -431,6 +463,58 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
         }
       }
     }
+  }
+
+  /** ¿SIGUE CORRIENDO HACIA SU META DE HUIDA? Entonces la huida no se cierra
+   *  aunque lleve `COMBAT_CLEAR_SECONDS` sin ver la pelea. Se cerraba a los 4 s
+   *  de salir de la percepción, o sea a `percepción + 4 s × run_speed`: con un
+   *  radio de paseo grande (`wander.radius` 15) eso quedaba antes de
+   *  `distanciaDeHuida`, su paseo volvía a alcanzar la pelea y re-huía (QA de
+   *  BL, H3). Con esto la cota de `distanciaDeHuida` se cumple para CUALQUIER
+   *  radio… mientras pueda correr: el que no avanza (cercado) no huye para
+   *  siempre, porque la espera se acota al tiempo de correr la meta entera
+   *  desde la pelea, que en campo abierto siempre basta. */
+  private huidaEnCurso(rt: NpcRuntime): boolean {
+    if (rt.mode !== "flee" || !rt.danger) return false;
+    const meta = distanciaDeHuida(rt.params, radioDePaseo(readDirective(rt), rt.params));
+    const d = distXZ(rt.record.position[0], rt.record.position[2], rt.danger.x, rt.danger.z);
+    if (d >= meta) return false;
+    return rt.dangerTimer < COMBAT_CLEAR_SECONDS + meta / rt.params.run_speed;
+  }
+
+  /** Retira del record la meta que el NPC estaba EJECUTANDO con el cuerpo y
+   *  la deja en `data.suspended_goal` (ver `SuspendedGoal`). Solo la que le
+   *  llevaría de vuelta: un `in_transit` o un `goto_place` fuera de alcance
+   *  son narrative-paced (el cuerpo no los anda) y un objetivo ya alcanzado no
+   *  le mueve. `hold`, `wander` y `patrol` se quedan: son rutina alrededor de
+   *  su `home`, y el `home` ya se queda donde para. */
+  private suspenderMeta(rt: NpcRuntime, pelea: { x: number; z: number }): SuspendedGoal | null {
+    const data = rt.record.data;
+    const fight_at: [number, number] = [pelea.x, pelea.z];
+    const transitTo = readTransitTo(rt);
+    if (transitTo) {
+      if (!this.alAlcance(rt, transitTo)) return null;
+      const s: SuspendedGoal = { field: "in_transit", value: data.in_transit, reason: "fled_combat", fight_at };
+      data.in_transit = null;
+      data.suspended_goal = s;
+      return s;
+    }
+    const d = readDirective(rt);
+    const va = d?.type === "goto_place" && typeof d.target_place_id === "string" &&
+        rt.reachedGoal !== `place:${d.target_place_id}` && this.alAlcance(rt, d.target_place_id)
+      || d?.type === "visit_npc" && typeof d.target_npc_id === "string" &&
+        rt.reachedGoal !== `npc:${d.target_npc_id}`;
+    if (!va) return null;
+    const s: SuspendedGoal = { field: "directive", value: data.directive, reason: "fled_combat", fight_at };
+    data.directive = null;
+    data.suspended_goal = s;
+    return s;
+  }
+
+  /** La misma regla que `deriveGoto`: el lugar resuelve y está a ≤ `MAX_GOTO_DIST`. */
+  private alAlcance(rt: NpcRuntime, placeId: string): boolean {
+    const t = this.world.resolvePlaceTarget(placeId);
+    return !!t && distXZ(rt.record.position[0], rt.record.position[2], t.x, t.z) <= MAX_GOTO_DIST;
   }
 
   /** Decisión de baja frecuencia: re-deriva el modo desde la directiva y la

@@ -82,7 +82,12 @@ AMBIENT NPC LIFE (the game engine runs it — you set intent, never per-step
 movement): every NPC wanders near its spawn, turns to face an approaching
 player, and reacts to nearby fights by role (`role` at spawn: peasant/
 villager/merchant flee, guard runs in and threatens; context may include
-recent `ambient_events` — background colour, no reaction required).
+recent `ambient_events` — background colour, no reaction required). ONE
+exception is yours to decide: an NPC that flees while walking somewhere
+(goto_place / visit_npc / a walked npc_move_to_place) ABANDONS that goal and
+stays where it stopped — the ambient line says so, and the entity keeps it in
+`data.suspended_goal`. It will not go back on its own: re-issue it with
+npc_set_directive / npc_move_to_place if it should, or leave it.
 npc_set_directive changes the STANDING behaviour; executable directive types:
 - "wander" {radius?} — stroll around its current spot (default);
 - "patrol" — wander with double radius;
