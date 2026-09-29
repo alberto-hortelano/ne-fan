@@ -196,8 +196,18 @@ jobs:
         with:
           node-version: latest
           cache: npm
-          cache-dependency-path: nefan-core/package-lock.json
+          cache-dependency-path: |
+            nefan-core/package-lock.json
+            narrative-mcp/package-lock.json
       - run: npm ci
+      # Las baterías de world-map y world-map-schema cargan
+      # `narrative-mcp/validators.ts` (el pre-flight de `map_upsert_place`,
+      # #465), que resuelve `@nefan/core` por el symlink de narrative-mcp y
+      # el `dist/` del core. Sin estos dos pasos el dry run de Stryker cae
+      # y el lote sale sin informe: le pasó a la corrida 36064993719.
+      - run: npm ci
+        working-directory: narrative-mcp
+      - run: npm run build
 
       # El lote recibe sus ids POR LA MATRIZ y no bajando el plan: así un fallo
       # al descargar un artefacto no puede convertirse en un job que mide otra
