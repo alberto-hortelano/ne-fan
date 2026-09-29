@@ -65,13 +65,18 @@ export interface NpcWorldAdapter {
    *  ella tiene que romper `tsc` y no dejar al NPC pisando en el sitio delante
    *  del primer carro, que es lo que pasaba sin ella (57 s de 60 andando sin
    *  avanzar, `qa/el-mundo-solido-tambien-para-el-npc.mjs`). */
-  buscarRuta(desde: Punto, hasta: Punto, radius: number): Ruta;
+  buscarRuta(desde: Punto, hasta: Punto, radius: number, evitar?: ReadonlyArray<Punto>): Ruta;
+  /** QUÉ HAY en la zona del punto, como huella comparable: si cambia, el
+   *  mundo de ahí cambió. El NPC que se quedó SIN CAMINO solo lo reintenta por
+   *  su cuenta cuando esto cambia (QA de BO, H3). Obligatorio por lo mismo que
+   *  los demás: sin ella reintentaría a ciegas en bucle, o nunca. */
+  huellaDeLaZona(x: number, z: number): string;
   resolvePlaceTarget(placeId: string): { x: number; z: number } | null;
   getEntityPosition(entityId: string): Vec3 | null;
 }
 
 export interface NpcBehaviorEvent {
-  type: "npc_reached_place" | "npc_reached_npc" | "npc_fled_combat"
+  type: "npc_reached_place" | "npc_reached_npc" | "npc_fled_combat" | "npc_no_path" | "npc_path_reopened"
     | "npc_intervened" | "npc_resumed";
   npcId: string;
   placeId?: string;
@@ -79,7 +84,8 @@ export interface NpcBehaviorEvent {
   /** `npc_fled_combat`: dónde era la pelea de la que huye. */
   fightAt?: { x: number; z: number };
   /** `npc_fled_combat`: la meta que llevaba y ABANDONA al huir, si llevaba
-   *  una (ver `SuspendedGoal`). */
+   *  una; `npc_no_path`: la que deja por no tener camino; `npc_path_reopened`:
+   *  la que retoma porque el mundo de su zona cambió (ver `SuspendedGoal`). */
   suspended?: SuspendedGoal;
 }
 
@@ -203,7 +209,20 @@ const PLANES_POR_TICK = 1;
  *  que falló (sin camino, tope): el que falla vuelve a intentarlo, pero sin
  *  pagar un A* por segundo cada uno. */
 const ESPERA_TRAS_PLAN_S = 1;
-const ESPERA_TRAS_FALLO_S = 3;
+const ESPERA_TRAS_FALLO_S = 1;
+/** Planes fallidos SEGUIDOS hacia la misma meta tras los que el NPC se da por
+ *  vencido: el primero puede ser mala suerte (una caja a medio poner, el tope
+ *  con el mundo a medio cargar); el segundo, un segundo después, es que no hay
+ *  camino. Se PARA y deja la meta al motor (`SuspendedGoal` `no_path`). */
+const PLANES_FALLIDOS_PARA_RENDIRSE = 2;
+/** A cuánto de su META se da por llegado el que va a un LUGAR con ruta. No es
+ *  `GOAL_REACHED`: la meta ya es un sitio libre junto al lugar, repartido entre
+ *  los vecinos que van (`HOLGURA_ENTRE_METAS_M` cuenta con esta holgura), así
+ *  que parar 1,5 m antes volvía a juntarlos. */
+const LLEGADA_A_LA_META = WAYPOINT_REACHED;
+/** Radio alrededor del destino en el que los demás NPC cuentan para repartir
+ *  metas: los que esperan allí o van a llegar. */
+const RADIO_DE_VECINOS_M = 16;
 /** Cuánto se tiene que mover el destino crudo para que la ruta vieja no valga
  *  (visitar a alguien que anda; un lugar cuyo rect cambió). */
 const REPLAN_DESTINO_M = 2;
@@ -245,7 +264,7 @@ interface NpcRuntime {
   /** La ruta que sigue hacia su meta de `goto`/`visit`, o `null` (sin plan, o
    *  el plan falló y va con el steering directo). `i` es el punto al que va.
    *  NO se persiste: tras un resume, el NPC replanifica. */
-  ruta: { meta: Punto; puntos: ReadonlyArray<Punto>; i: number } | null;
+  ruta: { meta: Punto; puntos: ReadonlyArray<Punto>; i: number; alBorde: boolean } | null;
   /** Para qué meta (`modo|directiveKey`) y hacia qué destino crudo se buscó
    *  la última ruta, saliera bien o no. */
   rutaClave: string;
@@ -257,6 +276,13 @@ interface NpcRuntime {
   rutaRescatada: boolean;
   /** El último paso NO fue por el rumbo directo: algo cortaba el tramo. */
   desviado: boolean;
+  /** Planes fallidos seguidos hacia la meta de `rutaClave`, y por qué falló
+   *  el último (el `motivo` de la `Ruta`). */
+  rutaFallos: number;
+  rutaMotivo: string;
+  /** Se quedó SIN CAMINO y dejó su meta al motor: la huella de su zona en
+   *  ese momento, para reintentar solo si cambia. `null` si no. */
+  sinCamino: { huella: string } | null;
 }
 
 function rotate(dir: { x: number; z: number }, angle: number): { x: number; z: number } {
@@ -305,6 +331,9 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
   private warned = new Set<string>();
   /** Rutas buscadas en el tick en curso (ver `PLANES_POR_TICK`). */
   private planesEsteTick = 0;
+  /** Los eventos del tick en curso, para quien los emite desde dentro del
+   *  steering (la rendición sin camino). */
+  private eventosDelTick: NpcBehaviorEvent[] = [];
 
   constructor(deps: NpcBehaviorDeps) {
     this.rng = deps.rng;
@@ -345,6 +374,9 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       rutaEspera: 0,
       rutaRescatada: false,
       desviado: false,
+      rutaFallos: 0,
+      rutaMotivo: "",
+      sinCamino: null,
     });
   }
 
@@ -384,6 +416,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     const events: NpcBehaviorEvent[] = [];
     const hotspots = this.collectFightHotspots(ctx);
     this.planesEsteTick = 0;
+    this.eventosDelTick = events;
 
     for (const rt of this.npcs.values()) {
       this.adoptarSaltoAjeno(rt);
@@ -564,10 +597,12 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     // sin tocar la directiva: el NPC seguía caminando al destino ya cancelado en
     // vez de micro-wander. La clave cubre ambos → añadir/retirar in_transit
     // resetea la meta igual que cambiar la directiva.
+    this.reintentarSiCambioElMundo(rt, events);
     const goalKey = goalKeyOf(rt.record);
     if (goalKey !== rt.directiveKey) {
       rt.directiveKey = goalKey;
       rt.waypoint = null;
+      this.olvidarRuta(rt);
       rt.reachedGoal = null;
       rt.mode = "idle";
       rt.pauseTimer = 0;
@@ -814,9 +849,17 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     rt.rutaEspera -= delta;
     const clave = `${rt.mode}|${rt.directiveKey}`;
     if (this.tocaPlanificar(rt, destino, clave)) this.planificar(rt, destino, clave);
+    if (!rt.sinCamino && rt.rutaFallos >= PLANES_FALLIDOS_PARA_RENDIRSE) {
+      this.rendirseSinCamino(rt, rt.rutaMotivo);
+      return false;
+    }
     const ruta = rt.ruta;
     const speed = rt.params.walk_speed;
-    if (!ruta) return this.stepTowards(rt, destino.x, destino.z, speed, delta, GOAL_REACHED);
+    // Sin ruta y con un plan fallido encima: QUIETO hasta el reintento. El
+    // abanico hacia el destino crudo era el síntoma de partida —andar en el
+    // sitio contra la pared— (QA de BO, H3). Sin ruta y sin plan todavía (no
+    // le tocó presupuesto este tick), el paso directo de siempre.
+    if (!ruta) return rt.rutaFallos > 0 ? false : this.stepTowards(rt, destino.x, destino.z, speed, delta, GOAL_REACHED);
     const ultimo = ruta.puntos.length - 1;
     const px = rt.record.position[0];
     const pz = rt.record.position[2];
@@ -826,14 +869,22 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     }
     const p = ruta.puntos[ruta.i];
     rt.desviado = false;
-    const llegado = this.stepTowards(rt, p.x, p.z, speed, delta, ruta.i === ultimo ? GOAL_REACHED : WAYPOINT_REACHED);
+    const alFinal = rt.mode === "goto" ? LLEGADA_A_LA_META : GOAL_REACHED;
+    const llegado = this.stepTowards(rt, p.x, p.z, speed, delta, ruta.i === ultimo ? alFinal : WAYPOINT_REACHED);
     // Tramo cortado: se suelta la ruta y el tick siguiente busca otra.
     if (rt.desviado && rt.ruta === ruta && rt.rutaEspera <= 0) rt.ruta = null;
-    return llegado && ruta.i === ultimo;
+    if (!llegado || ruta.i !== ultimo) return false;
+    // Al BORDE del mundo generado no se ha llegado al lugar: se queda ahí y
+    // se lo dice al motor (QA de BO, H2).
+    if (ruta.alBorde) {
+      this.rendirseSinCamino(rt, "zona-sin-generar");
+      return false;
+    }
+    return true;
   }
 
   private tocaPlanificar(rt: NpcRuntime, destino: Punto, clave: string): boolean {
-    if (this.planesEsteTick >= PLANES_POR_TICK) return false;
+    if (this.planesEsteTick >= PLANES_POR_TICK || rt.sinCamino) return false;
     if (clave !== rt.rutaClave) return true;
     if (rt.rutaEspera > 0) return false;
     return !rt.ruta || distXZ(destino.x, destino.z, rt.rutaDestino.x, rt.rutaDestino.z) > REPLAN_DESTINO_M;
@@ -841,23 +892,100 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
 
   private planificar(rt: NpcRuntime, destino: Punto, clave: string): void {
     this.planesEsteTick++;
-    if (clave !== rt.rutaClave) rt.rutaRescatada = false;
+    if (clave !== rt.rutaClave) {
+      rt.rutaRescatada = false;
+      rt.rutaFallos = 0;
+    }
     rt.rutaClave = clave;
     rt.rutaDestino = { x: destino.x, z: destino.z };
     const desde = { x: rt.record.position[0], z: rt.record.position[2] };
-    const ruta = this.world.buscarRuta(desde, destino, NPC_RADIUS_M);
+    const ruta = this.world.buscarRuta(desde, destino, NPC_RADIUS_M, this.vecinosEn(rt, destino));
     if (ruta.ok) {
-      rt.ruta = { meta: ruta.meta, puntos: ruta.puntos, i: 0 };
+      rt.ruta = { meta: ruta.meta, puntos: ruta.puntos, i: 0, alBorde: ruta.alBorde };
       rt.rutaEspera = ESPERA_TRAS_PLAN_S;
+      rt.rutaFallos = 0;
       return;
     }
     rt.ruta = null;
     rt.rutaEspera = ESPERA_TRAS_FALLO_S;
+    rt.rutaFallos++;
+    rt.rutaMotivo = ruta.motivo;
     this.warnOnce(
       `${rt.record.id}:ruta:${ruta.motivo}`,
       `"${rt.record.id}" no encuentra ruta hacia (${destino.x.toFixed(1)}, ${destino.z.toFixed(1)}): ` +
-        `${ruta.motivo} (${ruta.expansiones} expansiones) — sigue con el steering directo`,
+        `${ruta.motivo} (${ruta.expansiones} expansiones) — se para y lo reintenta`,
     );
+  }
+
+  /** Dónde esperan o van a esperar los demás junto a `destino`: la meta de
+   *  quien lleva ruta y el sitio de quien está quieto. Es lo que reparte la
+   *  fachada entre vecinos (QA de BO, H1). El NPC al que se va de visita no
+   *  cuenta: a él es a quien se va. */
+  private vecinosEn(rt: NpcRuntime, destino: Punto): Punto[] {
+    const visitado = readDirective(rt)?.target_npc_id;
+    const out: Punto[] = [];
+    for (const otro of this.npcs.values()) {
+      if (otro === rt || otro.record.id === visitado) continue;
+      const p = otro.ruta ? otro.ruta.meta : otro.moving ? null : { x: otro.record.position[0], z: otro.record.position[2] };
+      if (p && distXZ(p.x, p.z, destino.x, destino.z) <= RADIO_DE_VECINOS_M) out.push(p);
+    }
+    return out;
+  }
+
+  /** H4 de la QA de BO: la ruta es de UNA meta. Si cambia —otra directiva, la
+   *  misma devuelta tras huir—, se busca otra desde donde esté. */
+  private olvidarRuta(rt: NpcRuntime): void {
+    rt.ruta = null;
+    rt.rutaClave = "";
+    rt.rutaFallos = 0;
+    rt.rutaRescatada = false;
+  }
+
+  /** SIN CAMINO: se PARA y deja la meta al motor (QA de BO, H3; decisión del
+   *  usuario: «que el estado le llegue al motor de narrativa y él decide»). El
+   *  mismo mecanismo que la huida (`SuspendedGoal`), con `reason: "no_path"`:
+   *  la meta sale del record, queda en `data.suspended_goal` y viaja en el
+   *  contexto del motor. El NPC se queda quieto (`hold` implícito) y solo lo
+   *  reintenta solo si cambia el mundo de su zona (`reintentarSiCambioElMundo`)
+   *  o si el motor le da otra meta. */
+  private rendirseSinCamino(rt: NpcRuntime, why: string): void {
+    const data = rt.record.data;
+    const x = rt.record.position[0];
+    const z = rt.record.position[2];
+    const field = readTransitTo(rt) ? "in_transit" : "directive";
+    const s: SuspendedGoal = { field, value: data[field], reason: "no_path", stuck_at: [x, z], why };
+    data[field] = null;
+    data.suspended_goal = s;
+    rt.directiveKey = goalKeyOf(rt.record);
+    rt.sinCamino = { huella: this.world.huellaDeLaZona(x, z) };
+    this.olvidarRuta(rt);
+    rt.waypoint = null;
+    rt.stuckAnchor = null;
+    rt.lastDeflection = null;
+    rt.mode = "idle";
+    rt.pauseTimer = Infinity;
+    rt.moving = false;
+    this.warnOnce(`${rt.record.id}:sin-camino:${why}`,
+      `"${rt.record.id}" no tiene camino (${why}): se queda parado y deja su meta al motor (suspended_goal no_path)`);
+    this.eventosDelTick.push({ type: "npc_no_path", npcId: rt.record.id, suspended: s });
+  }
+
+  /** El que se quedó sin camino vuelve a su meta SOLO si el mundo de su zona
+   *  cambió desde entonces (se generó un tile, el motor puso o quitó algo). Si
+   *  el motor ya decidió —otra directiva, o la misma re-emitida—, la meta
+   *  suspendida ya no está y no hay nada que reintentar. */
+  private reintentarSiCambioElMundo(rt: NpcRuntime, events: NpcBehaviorEvent[]): void {
+    if (!rt.sinCamino) return;
+    const s = rt.record.data.suspended_goal as SuspendedGoal | null | undefined;
+    if (!s || s.reason !== "no_path") {
+      rt.sinCamino = null;
+      return;
+    }
+    if (this.world.huellaDeLaZona(rt.record.position[0], rt.record.position[2]) === rt.sinCamino.huella) return;
+    rt.record.data[s.field] = s.value;
+    delete rt.record.data.suspended_goal;
+    rt.sinCamino = null;
+    events.push({ type: "npc_path_reopened", npcId: rt.record.id, suspended: s });
   }
 
   /** Avanza hacia (tx,tz) con evitación por deflexión. Devuelve true si el
@@ -1071,6 +1199,12 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
       rt.rutaEspera = 0;
       rt.stuckAnchor = null;
       rt.lastDeflection = null;
+      return;
+    }
+    // Con ruta y ya rescatada: la ruta no le lleva a ninguna parte. Andar en el
+    // sitio hasta el siguiente plan era el síntoma de partida (QA de BO, H3).
+    if ((rt.mode === "goto" || rt.mode === "visit") && rt.ruta) {
+      this.rendirseSinCamino(rt, "atasco");
       return;
     }
     rt.ruta = null;

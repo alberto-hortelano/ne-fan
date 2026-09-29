@@ -154,7 +154,13 @@ export interface SimCollisionProvider {
    *  UNA vez por plan: el A* pregunta por cientos de celdas y re-derivarlas en
    *  cada una es lo que hacía costar 172 ms un plan con 200 cajas (medido en el
    *  plan de la tanda BO) en vez de ~9. */
-  buscarRuta(desde: Punto, hasta: Punto, radius: number): Ruta;
+  buscarRuta(desde: Punto, hasta: Punto, radius: number, evitar?: ReadonlyArray<Punto>): Ruta;
+  /** QUÉ HAY en la zona del punto (los 3×3 tiles de alrededor): qué registro
+   *  de escena tiene cada tile y qué cajas de runtime caen en ellos. Es una
+   *  HUELLA, no un veredicto: si cambia, el mundo de esa zona cambió (se
+   *  generó un tile, el motor puso o quitó algo) y un NPC que se quedó sin
+   *  camino ahí vuelve a intentarlo (#618, QA de BO H3). */
+  huellaDeLaZona(x: number, z: number): string;
 }
 
 /** Collider del PLAN ya compuesto (agua∖decks del ground + huellas de los
@@ -267,6 +273,20 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
   }
   const cajasVivas = () => cajasDeRuntime(narrative.entities);
 
+  /** ¿El cuerpo toca algún tile SIN GENERAR (sin registro en la sesión)? */
+  function sinGenerar(x: number, z: number, radio: number): boolean {
+    const t0 = worldToTile(x - radio, z - radio);
+    const t1 = worldToTile(x + radio, z + radio);
+    for (let ty = t0.ty; ty <= t1.ty; ty++) {
+      for (let tx = t0.tx; tx <= t1.tx; tx++) if (!narrative.scenes_loaded[tileKey(tx, ty)]) return true;
+    }
+    return false;
+  }
+
+  /** Un número por registro de escena, para la huella de la zona. */
+  const numeroDe = new WeakMap<SceneRecord, number>();
+  let siguienteNumero = 1;
+
   const provider: SimCollisionProvider = {
     // El TILE primero y la caja después, y el orden es la regla: quien lee
     // esto para decidir si atraviesa solo puede atravesar cajas, así que un
@@ -301,9 +321,36 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
     ocupado(x, z, radius): boolean {
       return sueloCon(cajasVivas).ocupado(x, z, radius);
     },
-    buscarRuta(desde, hasta, radius): Ruta {
+    // Para PLANIFICAR, lo no generado es SÓLIDO (QA de BO, H2): el paso lo
+    // deja pisar —su tile es donde vive el NPC—, pero una ruta que lo cruza es
+    // un atajo por el vacío.
+    buscarRuta(desde, hasta, radius, evitar = []): Ruta {
       const foto = cajasVivas();
-      return rutaPorElSuelo(desde, hasta, radius, sueloCon(() => foto));
+      const suelo = sueloCon(() => foto);
+      return rutaPorElSuelo(desde, hasta, radius, {
+        ocupado: (x, z, r) => sinGenerar(x, z, r) || suelo.ocupado(x, z, r),
+        sinGenerar,
+      }, undefined, evitar);
+    },
+    huellaDeLaZona(x, z): string {
+      const t = worldToTile(x, z);
+      const partes: string[] = [];
+      for (let ty = t.ty - 1; ty <= t.ty + 1; ty++) {
+        for (let tx = t.tx - 1; tx <= t.tx + 1; tx++) {
+          const rec = narrative.scenes_loaded[tileKey(tx, ty)];
+          if (!rec) continue;
+          let n = numeroDe.get(rec);
+          if (n === undefined) numeroDe.set(rec, (n = siguienteNumero++));
+          partes.push(`${tx},${ty}#${n}`);
+        }
+      }
+      const r0 = tileWorldRect(t.tx - 1, t.ty - 1);
+      const r1 = tileWorldRect(t.tx + 1, t.ty + 1);
+      for (const c of cajasVivas()) {
+        if (c.pos.x < r0.minX || c.pos.x > r1.maxX || c.pos.z < r0.minZ || c.pos.z > r1.maxZ) continue;
+        partes.push(`${c.id}@${c.pos.x},${c.pos.z}:${c.sizeXZ.x}x${c.sizeXZ.z}`);
+      }
+      return partes.join("|");
     },
   };
   return provider;

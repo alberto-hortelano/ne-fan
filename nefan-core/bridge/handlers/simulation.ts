@@ -18,6 +18,7 @@ import {
   type ClientSocket,
 } from "../context.js";
 import type { NpcBehaviorEvent } from "../../src/simulation/npc-behavior.js";
+import type { SuspendedGoal } from "../../src/narrative/types.js";
 import type {
   InputMessage,
   AddCombatantsMessage,
@@ -149,15 +150,31 @@ function lineaDeHuida(ctx: BridgeContext, who: string, ev: NpcBehaviorEvent): st
   const donde = ev.fightAt ? ` en (${ev.fightAt.x.toFixed(1)}, ${ev.fightAt.z.toFixed(1)})` : " cercana";
   const s = ev.suspended;
   if (!s) return `${who} huyó de una pelea${donde}`;
+  const meta = laMeta(ctx, s);
+  return `${who} huyó de una pelea${donde} y ABANDONÓ ${meta}: se queda donde paró ` +
+    `y no volverá solo — si debe seguir, vuelve a dársela (queda en data.suspended_goal de su entidad)`;
+}
+
+/** Qué meta dejó o retoma el NPC, en palabras del motor. */
+function laMeta(ctx: BridgeContext, s: SuspendedGoal): string {
   const v = (s.value ?? {}) as Record<string, unknown>;
   const lugar = (id: unknown) => typeof id === "string" ? `"${ctx.narrative.worldMap.get(id)?.name ?? id}"` : "?";
-  const meta = s.field === "in_transit"
+  return s.field === "in_transit"
     ? `su viaje a ${lugar(v.to)} (npc_move_to_place)`
     : v.type === "visit_npc"
       ? `su directiva visit_npc a "${npcLabel(ctx, String(v.target_npc_id ?? ""))}"`
       : `su directiva ${String(v.type)} a ${lugar(v.target_place_id)}`;
-  return `${who} huyó de una pelea${donde} y ABANDONÓ ${meta}: se queda donde paró ` +
-    `y no volverá solo — si debe seguir, vuelve a dársela (queda en data.suspended_goal de su entidad)`;
+}
+
+/** La línea de `ambient_events` del que se queda SIN CAMINO (QA de BO, H3):
+ *  lo que dejó, por qué y dónde está, y que no seguirá solo — el estado viaja
+ *  además en `data.suspended_goal`, que es lo que no se cae de la ventana. */
+function lineaSinCamino(ctx: BridgeContext, who: string, ev: NpcBehaviorEvent): string {
+  const s = ev.suspended;
+  if (!s || s.reason !== "no_path") return `${who} no encuentra camino y se ha parado`;
+  return `${who} no encuentra camino (${s.why}) y se ha parado en (${s.stuck_at[0].toFixed(1)}, ` +
+    `${s.stuck_at[1].toFixed(1)}): ABANDONÓ ${laMeta(ctx, s)} — solo lo reintentará si cambia el mundo ` +
+    `a su alrededor; si debe seguir o hacer otra cosa, dáselo (queda en data.suspended_goal de su entidad)`;
 }
 
 function applyNpcEvent(ctx: BridgeContext, ev: NpcBehaviorEvent): void {
@@ -185,6 +202,14 @@ function applyNpcEvent(ctx: BridgeContext, ev: NpcBehaviorEvent): void {
       return;
     case "npc_intervened":
       ctx.narrative.appendAmbient(`${who} intervino en una pelea cercana`);
+      return;
+    case "npc_no_path":
+      ctx.narrative.appendAmbient(lineaSinCamino(ctx, who, ev));
+      return;
+    case "npc_path_reopened":
+      ctx.narrative.appendAmbient(ev.suspended
+        ? `${who} vuelve a por ${laMeta(ctx, ev.suspended)}: el mundo a su alrededor cambió`
+        : `${who} vuelve a por su meta: el mundo a su alrededor cambió`);
       return;
     case "npc_resumed":
       ctx.narrative.appendAmbient(`${who} retomó su rutina al calmarse la pelea`);

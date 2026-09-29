@@ -384,6 +384,38 @@ describe("createSimCollisionProvider · buscarRuta", () => {
     assert.ok(ocupados > 50 && ocupados < 950, `la muestra cruza sólido de verdad: ${ocupados} ocupados`);
   });
 
+  it("PARA PLANIFICAR, lo no generado es SÓLIDO: no rodea un río por fuera del tile (QA de BO, H2)", () => {
+    // Un río de lado a lado (fila 60, columnas 0..127) parte el tile en dos.
+    const partido = (vado: boolean) => {
+      const s = makeState();
+      const escena = s.scenes_loaded.tile_0_0.scene_data as Record<string, unknown>;
+      const t = escena.terrain as string[];
+      t[60] = vado ? "w".repeat(100) + "g".repeat(8) + "w".repeat(20) : "w".repeat(128);
+      s.recordSceneLoaded("tile_0_0", escena);
+      return createSimCollisionProvider(s);
+    };
+    const norte = { x: -28, z: -10 };
+    const sur = { x: -28, z: 10 };
+    const sinVado = partido(false);
+    assert.ok(!sinVado.ocupado(-32.3, 0, R), "CONTROL: para el PASO, el tile vecino sin generar sigue libre");
+    const r = sinVado.buscarRuta(norte, sur, R);
+    assert.equal(r.ok ? "ok" : r.motivo, "sin-camino", "sin vado no hay camino DENTRO del mundo generado");
+    const conVado = partido(true);
+    const v = conVado.buscarRuta(norte, sur, R);
+    assert.ok(v.ok, JSON.stringify(v));
+    assert.equal(v.alBorde, false);
+    const fuera = muestrear(norte, v.puntos).filter((p) => Math.abs(p.x) > 32 || Math.abs(p.z) > 32);
+    assert.deepEqual(fuera, [], "cruza por el vado, no por fuera del tile");
+  });
+
+  it("un destino en un tile SIN GENERAR: la meta se queda en el borde y lo dice (`alBorde`)", () => {
+    const provider = createSimCollisionProvider(mundo());
+    const r = provider.buscarRuta({ x: 20, z: -15 }, { x: 45, z: -15 }, R);
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.alBorde, true);
+    assert.ok(r.meta.x <= 32 - R + 1e-9 && r.meta.x > 31, `meta en el borde este: ${JSON.stringify(r.meta)}`);
+  });
+
   it("rodea la forja de RUNTIME: el trazado no toca nada que `ocupado` vea, y la recta sí", () => {
     const provider = createSimCollisionProvider(mundo());
     const desde = { x: -8, z: 0.3 };
@@ -418,7 +450,11 @@ describe("createSimCollisionProvider · buscarRuta", () => {
       let rutas = 0;
       let muestras = 0;
       const tocados: string[] = [];
-      for (let k = 0; k < 20; k++) {
+      // Hasta 20 rutas: en puerto la mitad de los pares al azar NO tienen
+      // camino dentro del mundo generado (el agua parte el tile y solo se
+      // unía por fuera, QA de BO H2), así que se sortea hasta tener 20.
+      const fuera: string[] = [];
+      for (let k = 0; k < 120 && rutas < 20; k++) {
         const desde = libreAlAzar();
         const hasta = libreAlAzar();
         const r = suelo.buscarRuta(desde, hasta, R);
@@ -426,9 +462,13 @@ describe("createSimCollisionProvider · buscarRuta", () => {
         rutas++;
         const traza = muestrear(desde, r.puntos);
         muestras += traza.length;
-        for (const p of traza) if (suelo.ocupado(p.x, p.z, R)) tocados.push(`${nombre} ${k} (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
+        for (const p of traza) {
+          if (suelo.ocupado(p.x, p.z, R)) tocados.push(`${nombre} ${k} (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
+          if (Math.abs(p.x) > 32 || Math.abs(p.z) > 32) fuera.push(`${nombre} ${k} (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
+        }
       }
-      assert.ok(rutas >= 15, `${nombre}: ${rutas} de 20 con ruta`);
+      assert.equal(rutas, 20, `${nombre}: ${rutas} rutas`);
+      assert.deepEqual(fuera, [], `${nombre}: el trazado sale del tile, al mundo sin generar`);
       assert.ok(muestras > 2000, `${nombre}: ${muestras} muestras`);
       assert.deepEqual(tocados, [], `${nombre}: trazado dentro del sólido`);
     }

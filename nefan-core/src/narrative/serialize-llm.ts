@@ -111,11 +111,11 @@ function compactEntity(e: EntityRecord): LlmContext["entities"][number] {
 function metaSuspendida(e: EntityRecord): SuspendedGoal | null {
   const g = e.data.suspended_goal;
   if (g === undefined || g === null) return null;
-  const v = g as Partial<SuspendedGoal>;
-  if ((v.field === "directive" || v.field === "in_transit") && v.reason === "fled_combat" &&
-    Array.isArray(v.fight_at) && v.fight_at.length === 2) {
-    return g as SuspendedGoal;
-  }
+  const v = g as { field?: unknown; reason?: unknown; fight_at?: unknown; stuck_at?: unknown; why?: unknown };
+  const campo = v.field === "directive" || v.field === "in_transit";
+  const par = (x: unknown) => Array.isArray(x) && x.length === 2;
+  if (campo && v.reason === "fled_combat" && par(v.fight_at)) return g as SuspendedGoal;
+  if (campo && v.reason === "no_path" && par(v.stuck_at) && typeof v.why === "string") return g as SuspendedGoal;
   console.warn(`[serialize-llm] ${e.id}: data.suspended_goal con forma inesperada — no viaja al motor: ${JSON.stringify(g)}`);
   return null;
 }

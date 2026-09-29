@@ -12,8 +12,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { MAX_EXPANSIONES, rutaPorElSuelo, type Punto } from "../src/simulation/ruta-por-el-suelo.js";
-import { sitioParaAparecer, type SueloSolido } from "../src/simulation/salida-del-solido.js";
+import { HOLGURA_ENTRE_METAS_M, MAX_EXPANSIONES, rutaPorElSuelo, type Punto, type SueloDePlan as SueloSolido } from "../src/simulation/ruta-por-el-suelo.js";
 import { cajaQueContiene, type CajaDeRuntime } from "../src/simulation/cajas-de-runtime.js";
 import { createTerrainCollider, NPC_RADIUS_M } from "../src/scene/terrain-collision.js";
 import { TILE_CELLS, TILE_MPC, tileWorldRect } from "../src/scene/tile.js";
@@ -57,21 +56,51 @@ function muestrear(desde: Punto, puntos: ReadonlyArray<Punto>, paso = 0.05): Pun
 }
 
 describe("rutaPorElSuelo", () => {
-  it("la META es un sitio libre: el centro de un macizo sale a su cara, como `sitioParaAparecer` (#646)", () => {
+  it("la META es el sitio libre del LADO DE QUIEN LLEGA: la cara de la casa que tiene delante (#646, QA de BO H1)", () => {
     const casa: CajaDeRuntime = { id: "casa", pos: { x: 10, z: 0 }, sizeXZ: { x: 7, z: 5 } };
     const suelo = deCajas(casa);
     assert.ok(suelo.ocupado(10, 0, R), "CONTROL: el centro de la casa está ocupado");
-    const r = rutaPorElSuelo({ x: -10, z: 0 }, { x: 10, z: 0 }, R, suelo);
-    assert.ok(r.ok, JSON.stringify(r));
-    assert.deepEqual(r.meta, sitioParaAparecer({ x: 10, z: 0 }, R, suelo));
-    assert.ok(!suelo.ocupado(r.meta.x, r.meta.z, R), "la meta está libre");
-    assert.deepEqual(r.puntos.at(-1), r.meta, "la ruta acaba en la meta");
-    assert.ok(Math.abs(r.meta.z) >= 2.5 + R - 1e-9, `sale por la cara corta (z): ${JSON.stringify(r.meta)}`);
+    const caras = [
+      { desde: { x: -10, z: 0 }, cara: (m: Punto) => m.x <= 10 - 3.5 - R + 1e-9 && m.x > 10 - 3.5 - R - 0.2 && Math.abs(m.z) < 1e-9 },
+      { desde: { x: 30, z: 0 }, cara: (m: Punto) => m.x >= 10 + 3.5 + R - 1e-9 && m.x < 10 + 3.5 + R + 0.2 },
+      { desde: { x: 10, z: -20 }, cara: (m: Punto) => m.z <= -2.5 - R + 1e-9 && m.z > -2.5 - R - 0.2 },
+      { desde: { x: 10, z: 20 }, cara: (m: Punto) => m.z >= 2.5 + R - 1e-9 && m.z < 2.5 + R + 0.2 },
+    ];
+    for (const { desde, cara } of caras) {
+      const r = rutaPorElSuelo(desde, { x: 10, z: 0 }, R, suelo);
+      assert.ok(r.ok, JSON.stringify(r));
+      assert.ok(!suelo.ocupado(r.meta.x, r.meta.z, R), "la meta está libre");
+      assert.ok(cara(r.meta), `desde ${JSON.stringify(desde)} la meta cae en SU cara: ${JSON.stringify(r.meta)}`);
+      assert.deepEqual(r.puntos.at(-1), r.meta, "la ruta acaba en la meta");
+    }
+  });
+
+  it("los VECINOS se reparten la fachada: la meta no pisa la de otro (QA de BO H1)", () => {
+    const casa: CajaDeRuntime = { id: "casa", pos: { x: 10, z: 0 }, sizeXZ: { x: 7, z: 5 } };
+    const suelo = deCajas(casa);
+    const metas: Punto[] = [];
+    for (let k = 0; k < 5; k++) {
+      const r = rutaPorElSuelo({ x: -10, z: 0 }, { x: 10, z: 0 }, R, suelo, undefined, metas);
+      assert.ok(r.ok, JSON.stringify(r));
+      assert.ok(!suelo.ocupado(r.meta.x, r.meta.z, R));
+      metas.push(r.meta);
+    }
+    for (let i = 0; i < metas.length; i++) {
+      for (let j = i + 1; j < metas.length; j++) {
+        const d = Math.hypot(metas[i].x - metas[j].x, metas[i].z - metas[j].z);
+        assert.ok(d >= 2 * R + HOLGURA_ENTRE_METAS_M - 1e-9, `metas ${i} y ${j} a ${d.toFixed(2)} m: ${JSON.stringify(metas)}`);
+      }
+    }
+    assert.ok(metas.every((m) => m.x < 10), `todas en la cara oeste, la de quien llega: ${JSON.stringify(metas)}`);
+    // CONTROL: sin vecinos que evitar, los cinco caerían en el MISMO punto.
+    const solo = rutaPorElSuelo({ x: -10, z: 0 }, { x: 10, z: 0 }, R, suelo);
+    assert.ok(solo.ok);
+    assert.deepEqual(solo.meta, metas[0]);
   });
 
   it("la meta sin sitio es `meta-sin-sitio`, no el centro crudo", () => {
     const enorme: CajaDeRuntime = { id: "macizo", pos: { x: 0, z: 0 }, sizeXZ: { x: 400, z: 400 } };
-    const r = rutaPorElSuelo({ x: 300, z: 0 }, { x: 0, z: 0 }, R, deCajas(enorme));
+    const r = rutaPorElSuelo({ x: 0, z: 100 }, { x: 0, z: 0 }, R, deCajas(enorme));
     assert.deepEqual(r, { ok: false, motivo: "meta-sin-sitio", expansiones: 0 });
   });
 

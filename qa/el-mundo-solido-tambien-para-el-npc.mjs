@@ -21,8 +21,8 @@
  *    3. la geometría del TILE no se atraviesa NUNCA: con un camino legal lo
  *       RODEA (sin pisar el agua ni atravesar nada), y encajonado de verdad
  *       tampoco la cruza;
- *    4. el escape del encajonado EXISTE y SE DECLARA, con NPC y caja — y
- *       solo cuando NO hay camino: con uno legal, rodear no es escapar;
+ *    4. el cercado SIN camino se PARA y deja su meta al motor
+ *       (`suspended_goal` `no_path`), sin anunciar ningún escape;
  *    5. al que le cae una caja encima no se le encierra (a nivel de consulta:
  *       alejarse del centro nunca bloquea);
  *    6. y al que le cae encima DE VERDAD, con el sim moviéndolo, se le SACA:
@@ -64,11 +64,13 @@
  *  `buscarRuta` cortado en `bridge/context.ts` (devolviendo siempre un plan
  *  fallido) este guion sale con 1 — cinco rojos, en el 2, el 3 y el 10.
  *
- *  LO QUE NO SUJETA: que el escape del 4 ACABE fuera. En el pasillo cerrado el
- *  NPC mete un paso en la muralla, la salida de BL (`salirSiEstaDentro`, en la
- *  cabeza de `move()`) lo devuelve al pasillo por la cara más cercana, y así
- *  indefinidamente: medido igual en `main` antes de BO. El 4 afirma que el
- *  escape se ABRE y se DICE, no que el cercado se resuelva.
+ *  LO QUE NO SUJETA: el escape por caja de `rumboDePaso` para el que va a un
+ *  sitio. Desde la QA de BO, el que no tiene camino no anda (se para y deja la
+ *  meta al motor), así que el 4 ya no lo ejerce; el escape sigue existiendo
+ *  para quien anda sin ruta (huir, intervenir, pasear) y lo sujetan los
+ *  unitarios de `npc-behavior.test.ts`. Tampoco sujeta que el escape ACABE
+ *  fuera: con BL, un paso dentro de la muralla lo devuelve la salida del
+ *  sólido (medido en `main` antes de BO).
  *
  *  Uso: `node qa/el-mundo-solido-tambien-para-el-npc.mjs`
  *  (exige `cd nefan-core && npm run build` antes: lee `dist/`).
@@ -159,14 +161,15 @@ function simDeLaSesion(s, meta) {
  *  se le señale, y los avisos del escape que soltó por el camino. */
 function aldeanoVaA(s, { desde, meta, segundos, caja = null }) {
   const { sys } = simDeLaSesion(s, meta);
-  sys.addNpc({
+  const registro = {
     id: "aldeano", type: "npc", scene_id: "tile_0_0",
     spawned_at: "2026-01-01T00:00:00.000Z",
     spawn_reason: "scene_init", spawn_event_id: "",
     position: [desde.x, 0, desde.z],
     data: { role: "villager", directive: { type: "goto_place", target_place_id: "plaza" } },
     asset_refs: [],
-  });
+  };
+  sys.addNpc(registro);
   const avisos = [];
   const warn = console.warn;
   console.warn = (...a) => { avisos.push(a.map(String).join(" ")); };
@@ -189,7 +192,7 @@ function aldeanoVaA(s, { desde, meta, segundos, caja = null }) {
   } finally { console.warn = warn; }
   const st = sys.states()[0];
   return {
-    xMax, penMax, avisos, ticksMoviendose, llegadaEn, ticksEnAgua,
+    xMax, penMax, avisos, ticksMoviendose, llegadaEn, ticksEnAgua, data: registro.data,
     fin: { x: st.pos.x, z: st.pos.z }, mode: st.mode, moving: st.moving,
   };
 }
@@ -243,15 +246,23 @@ const cercado = pasillo({ cerrado: true });
 ok(cercado.ticksEnAgua === 0, "cercado de verdad (tres murallas + agua): el cuerpo NO pisa el agua",
   `${cercado.ticksEnAgua} ticks sobre el agua; acabó en (${cercado.fin.x.toFixed(2)}, ${cercado.fin.z.toFixed(2)})`);
 
-console.log("\n4 · EL ESCAPE DEL ENCAJONADO EXISTE Y SE DECLARA (solo si no hay camino)");
-const escapes = cercado.avisos.filter((a) => a.includes("ATRAVIESA"));
-ok(cercado.avisos.some((a) => a.includes("no encuentra ruta")), "el cercado no tiene ruta y se dice",
-  cercado.avisos.find((a) => a.includes("no encuentra ruta"))?.slice(0, 140) ?? "sin aviso");
-ok(escapes.length > 0, "cercado de verdad (agua del tile + tres cajas): atraviesa UNA CAJA",
-  `${escapes.length} aviso(s)`);
-ok(escapes.some((a) => a.includes("aldeano")), "el aviso nombra al NPC");
-ok(escapes.some((a) => a.includes("muralla_")), "el aviso nombra la CAJA por su id",
-  escapes[0] ? escapes[0].slice(0, 120) : "sin aviso");
+console.log("\n4 · EL CERCADO SIN CAMINO: SE PARA Y DEJA LA META AL MOTOR (QA de BO, H3)");
+// Hasta la QA de BO aquí se afirmaba que el escape por caja «existe y se
+// declara», y se declaraba sin ocurrir: el NPC metía un paso en la muralla,
+// la salida de BL lo devolvía y así para siempre, andando en el sitio con la
+// mirada temblando. Decisión del usuario: «que el estado le llegue al motor de
+// narrativa y él decide». El que no tiene camino se para y suspende su meta
+// (`suspended_goal`, `reason: "no_path"`), como el que huye.
+const sinRuta = cercado.avisos.find((a) => a.includes("no encuentra ruta"));
+ok(sinRuta !== undefined, "el cercado no tiene ruta y se dice", sinRuta?.slice(0, 140) ?? "sin aviso");
+const g = cercado.data.suspended_goal;
+ok(g?.reason === "no_path" && g?.field === "directive" && g?.value?.type === "goto_place",
+  "y deja su meta al motor: `suspended_goal` con `reason: \"no_path\"` y la directiva tal cual",
+  JSON.stringify(g));
+ok(cercado.data.directive === null, "…la directiva sale del record: no la re-deriva solo", JSON.stringify(cercado.data.directive));
+ok(cercado.moving === false, "…y se queda QUIETO, sin la animación de andar", `moving=${cercado.moving}`);
+ok(cercado.avisos.filter((a) => a.includes("ATRAVIESA")).length === 0,
+  "…sin anunciar un escape que no va a ocurrir", cercado.avisos.map((a) => a.slice(0, 80)).join(" | "));
 
 // ────────────────────────────────────────────────────────────────────
 console.log("\n5 · AL QUE LE CAE UNA CAJA ENCIMA NO SE LE ENCIERRA (consulta)");
