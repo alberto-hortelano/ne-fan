@@ -291,10 +291,19 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
     // El TILE primero y la caja después, y el orden es la regla: quien lee
     // esto para decidir si atraviesa solo puede atravesar cajas, así que un
     // paso que además choca con un muro tiene que salir como "tile".
+    //
+    // Y el borde del mundo generado es TILE: el paso no entra en lo que no se
+    // ha generado. El jugador no puede cruzarlo sin aceptar «¿Explorar…?», así
+    // que un NPC que lo cruza se va a donde nadie le sigue — el tabernero que
+    // huía de una pelea acababa a 15 m dentro de la «Zona sin generar» y, desde
+    // que el que huye se queda donde paró (#298), ya no volvía nunca. SALIR sí:
+    // quien ya toca un tile sin generar (vive allí, o lo pusieron) se mueve
+    // libre, igual que la colisión del jugador retiene solo en esa dirección.
     queImpideElPaso(fromX, fromZ, toX, toZ, radius): Impedimento {
       if (solidoBloquea({ x: fromX, z: fromZ }, { x: toX, z: toZ }, radius, sueloDelTile)) {
         return { de: "tile" };
       }
+      if (sinGenerar(toX, toZ, radius) && !sinGenerar(fromX, fromZ, radius)) return { de: "tile" };
       const caja = cajaQueBloquea(
         { x: fromX, z: fromZ },
         { x: toX, z: toZ },
@@ -321,9 +330,11 @@ export function createSimCollisionProvider(narrative: NarrativeState): SimCollis
     ocupado(x, z, radius): boolean {
       return sueloCon(cajasVivas).ocupado(x, z, radius);
     },
-    // Para PLANIFICAR, lo no generado es SÓLIDO (QA de BO, H2): el paso lo
-    // deja pisar —su tile es donde vive el NPC—, pero una ruta que lo cruza es
-    // un atajo por el vacío.
+    // Para PLANIFICAR, lo no generado es SÓLIDO (QA de BO, H2): una ruta que
+    // lo cruza es un atajo por el vacío. El paso tampoco ENTRA en él (ver
+    // `queImpideElPaso`), pero `ocupado` lo sigue viendo libre: es el suelo
+    // donde puede vivir un NPC, y sacarle de ahí no es cosa de la salida del
+    // sólido.
     buscarRuta(desde, hasta, radius, evitar = []): Ruta {
       const foto = cajasVivas();
       const suelo = sueloCon(() => foto);

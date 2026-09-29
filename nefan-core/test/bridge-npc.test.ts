@@ -173,6 +173,49 @@ describe("bridge vida ambiental de NPCs", () => {
     assert.equal(narrative.getEntity("campesino_1")!.data.suspended_goal, undefined);
   });
 
+  /** Guion 119, rojo en `main` tras #775: la huida llega hasta
+   *  `distanciaDeHuida` y el que huye se queda donde paró, así que el
+   *  tabernero que huía hacia el borde del tile acababa DENTRO de la «Zona sin
+   *  generar» —x ≈ 46 con el tile acabando en 32— y el jugador no podía llegar
+   *  a hablarle. El que huye hacia el borde se queda en el mundo generado. */
+  it("el que huye hacia el borde del tile no se sale a la zona sin generar", async () => {
+    const { ctx, narrative, socket } = await startAmbientSession();
+    const sceneId = narrative.world.active_scene_id;
+    // La pelea a 10 m del borde este (x = 32) y el campesino entre ella y el
+    // borde: su huida (percepción 14 + margen + paseo 5) le lleva más allá.
+    narrative.recordEntitySpawned(
+      "campesino_1", "npc", sceneId, [26, 0, 0],
+      { name: "Campesino", role: "peasant" }, "scene_init",
+    );
+    npcSync(ctx);
+    ctx.sim.addCombatant(
+      createCombatant("bandido_1", 60, "unarmed", { x: 22, y: 0, z: -1.5 }, { x: 0, y: 0, z: 1 }),
+      { aggression: 1.0, preferred_attacks: ["quick"], reaction_time: 0.1, combat_range: 4 },
+    );
+    let maxX = -Infinity;
+    for (let i = 0; i < 20 / 0.05; i++) {
+      await porElBorde(
+        {
+          type: "input",
+          delta: 0.05,
+          inputs: {
+            playerPosition: { x: 22, y: 0, z: 0 },
+            playerForward: { x: 0, y: 0, z: -1 },
+            playerMoving: false,
+          },
+        },
+        socket,
+        ctx,
+      );
+      maxX = Math.max(maxX, narrative.getEntity("campesino_1")!.position[0]);
+    }
+    assert.ok(
+      narrative.serializeForLlm().ambient_events?.some((e) => e.includes("Campesino") && e.includes("huyó")),
+      "CONTROL: huyó de verdad",
+    );
+    assert.ok(maxX <= 32, `no cruza x = 32 en ningún tick: llegó a ${maxX.toFixed(2)}`);
+  });
+
   /** QA de BO, H3 — la misma decisión del usuario aplicada al que NO TIENE
    *  CAMINO: se para, su meta pasa a `suspended_goal` con `reason: "no_path"`
    *  y viaja al motor como estado; no la reintenta en bucle, solo si cambia el
