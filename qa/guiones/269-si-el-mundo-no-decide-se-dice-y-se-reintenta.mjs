@@ -51,13 +51,15 @@ export default async function (ctx) {
 
   // ── 3 · el fallo se dice, con tecla ───────────────────────────────────────
   const aviso = await ctx.expectEspera(
-    "el velo dice por qué no despiertas y ofrece «R · reintentar»",
+    "el velo dice por qué no despiertas —«pulsa R»— y ofrece «R · reintentar»",
     true,
     () => {
       const v = document.getElementById("velo-del-despertar");
       const texto = document.getElementById("velo-del-despertar-texto")?.textContent ?? "";
       const r = window.__nefan.ui.actions().prompt.find((a) => a.id === "respawn");
-      return v && !v.hidden && texto && !/decide dónde despiertas/.test(texto) && r?.label === "reintentar"
+      // El motivo dice lo que el caído PUEDE hacer —R— y no el consejo de un
+      // diálogo (QA S1 de BN: «prueba a decir otra cosa»).
+      return v && !v.hidden && /pulsa R/.test(texto) && !/decir otra cosa/.test(texto) && r?.label === "reintentar"
         ? { texto }
         : null;
     },

@@ -193,6 +193,10 @@ export default async function (ctx) {
   await ctx.shot("b1-mirando-al-bandido-caido");
 
   // ── 2 · CAMBIO DE TILE ─────────────────────────────────────────────────
+  // Al despertar, el Secuaz SOLTÓ al jugador y volvió a su sitio (#613, pieza
+  // B): para que siga al jugador al otro tile hay que volver a entrar en su
+  // radio (10 m) antes de cruzar, como haría quien juega.
+  await acercarse(ctx, secuaz.id, { objetivo: 6, tramos: 30 });
   const tileA = await ctx.page.evaluate(() => window.__nefan.currentTile);
   const viaje = await viajarSiSePuede(
     ctx,

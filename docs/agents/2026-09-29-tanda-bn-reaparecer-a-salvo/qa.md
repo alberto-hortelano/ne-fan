@@ -136,3 +136,35 @@ Corrida final conjunta (260–268): 5 ✔ y 4 ✘. Los rojos son 264, 266, 267 y
 ## Veredicto
 
 **No apto.** Lo que se probó en el escenario del bench funciona: el bandido de la escena, morir dos veces, el cambio de tile, la poción en la misma sesión y el botón R. El código reconstruido está íntegro. Pero el criterio central, «reapareces sin que te vuelva a enganchar», falla en el caso más propio de este juego: el hostil que el motor materializa a tu lado (H1). La curación, que ahora es la única del juego, no funciona tras reanudar (H2). Y un muerto guardado deja la partida inservible (H3). H1 necesita una decisión de diseño; H2 y H3 comparten una causa (el `maxHealth` del reseed) y un arreglo acotado.
+
+## Segunda vuelta (commit 4aa5190c, «Que decida el motor»)
+
+> La transcribe el coordinador: la QA no pudo escribir en disco al final de su turno porque el clasificador de la herramienta no daba veredicto.
+
+**Batería real** (e2e-sin-creditos, sin créditos, corrida conjunta): 240, 241, 260–269 y 93 salen **13/13 en verde**. Las medidas heredadas no se han rebajado: el 264 sigue exigiendo más de 10 m de la casa del Secuaz y 8 s sin perder vida.
+
+| Criterio | Veredicto | Evidencia |
+|---|---|---|
+| Velo al morir, el motor decide, despiertas fuera del radio de todos los hostiles | ✅ | 260, 262 y 268 |
+| H1: el hostil puesto a tu lado | ✅ | 264: más de 10 m y 8 s sin daño |
+| Modo `error`: ves el fallo y reintentas con R | ✅ | 269 |
+| Modo `tarda`: el velo se mantiene y el cliente no manda inputs | ✅ | 265 |
+| Modo `mal`: el bridge rechaza el sitio y deja reintentar | ⚠️ solo en código | el guion 277 no se llegó a escribir |
+| H2 · H3 · H6 · H8 | ✅ | 266 · 267 · 267 · 261 |
+| H4 · H5 · H7 | ✅ en unitarios y en código | sin navegador |
+| Morir o reanudar con un despertar en vuelo | ✅ | 267 |
+| Cambiar de sesión con una respuesta vieja en camino | ⚠️ solo en código | el guion 276 no se llegó a escribir |
+| Rechazos H3 durante el velo | ✅ | 267 |
+
+### Hallazgos
+- **IMPORTANTE, S1.** El mensaje de fallo del despertar es el de un diálogo: «prueba a decir otra cosa». Viene de `fallo()` en `bridge/handlers/despertar.ts`, que reutiliza `falloDeReaccionParaElJugador`. Tiene que decir «pulsa R».
+- **IMPORTANTE, S2.** El caído es un fantasma que anda. El paso del jugador en el cliente (`main.ts:596-625`) no mira si está muerto: la cámara camina y `frontera.tick` sigue. Un caído puede llegar al borde y aceptar con Y un tile nuevo, y `request_tile` no pasa por `rechazarSiEstaCaido`, así que en producción GASTA. Detectado leyendo el código, sin medir.
+- **MENOR, S3.** En el 264 despiertas mirando a una pared: conservas la orientación del cadáver.
+- **MENOR, S4.** El velo es una caja pequeña abajo, no un velo: no oscurece nada. El registro sigue diciendo «Respawned!» en inglés.
+
+### No probado
+- La vía real de narrative-mcp con `mal`, porque requiere motor real.
+- `mal`, el cambio de sesión y el `respawn` estando vivo en navegador.
+- Dos pestañas con `canDrive` en falso.
+
+**Veredicto: apto con reservas.** Hay que arreglar S2 antes del merge, porque puede gastar créditos; S1 es barato.

@@ -112,13 +112,6 @@
           <span class="nf-question" id="tile-confirm-text"></span>
           <div id="tile-confirm-actions"></div>
         </div>
-        <!-- Has caído (#613): mientras el motor decide dónde despiertas, o si
-             no pudo. Lo que dice lo deriva core (`despertar-en-pantalla.ts`);
-             la tecla (R · reintentar / reaparecer) va en la barra de abajo. -->
-        <div id="velo-del-despertar" class="nf-panel" role="status" aria-live="polite" hidden>
-          <b class="nf-question">Has caído</b>
-          <span id="velo-del-despertar-texto"></span>
-        </div>
         <div id="interact-prompt" class="nf-panel"></div>
         <div id="dialogue-panel" class="nf-panel" hidden>
           <!-- Retrato del hablante: lo rellena PortraitView con una imagen
@@ -143,6 +136,17 @@
            hereden el tema del pack igual que el panel de diálogo. -->
       <div id="world-labels" aria-hidden="true"></div>
       <div id="reticle"></div>
+      <!-- Has caído (#613): un VELO sobre la vista, que se lee como pausa
+           (QA S4 de BN), mientras el motor decide dónde despiertas o si no
+           pudo. Lo que dice lo deriva core (`despertar-en-pantalla.ts`); la
+           tecla (R · reintentar / reaparecer) va en la barra de acciones, que
+           queda por encima del velo. -->
+      <div id="velo-del-despertar" role="status" aria-live="polite" hidden>
+        <div class="velo-panel">
+          <b>Has caído</b>
+          <span id="velo-del-despertar-texto"></span>
+        </div>
+      </div>
       <div id="narrative-loader" role="status" aria-live="polite">
         <!-- El velo (`fade`) es del contenedor; lo que se LEE va en un panel
              `surface`, el par que mide el test de tema (#748). -->

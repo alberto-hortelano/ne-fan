@@ -17,6 +17,7 @@ import { TileStore } from "./world/tile-store.js";
 import { Frontera } from "@nefan-core/src/scene/frontera.js";
 import { crearFronteraEnPantalla } from "./ui/frontera-en-pantalla.js";
 import { accionDelCaido, crearVeloDelDespertar } from "./ui/velo-del-despertar.js";
+import { elJugadorEsperaDespertar } from "@nefan-core/src/protocol/despertar-en-pantalla.js";
 import { crearFronteraDelJugador } from "./world/frontera-del-jugador.js";
 import { aplicarLoQueMandaElBridge } from "./world/lo-que-manda-el-bridge.js";
 import { MundoDelCliente } from "./world/mundo-del-cliente.js";
@@ -338,7 +339,9 @@ const dialogoAbierto = (): boolean => conversacion.abierta() || plugins.abierto(
  *  `dialogoAbierto` de aquí arriba: una función que se evalúa cada vez no se
  *  puede desincronizar, porque no guarda nada. */
 const propuestaDeTileAbierta = (): boolean =>
-  !dialogoAbierto() && session.active && tileStore.hasGridTiles && frontier.propuesta !== null;
+  !dialogoAbierto() && !jugadorCaido() && session.active && tileStore.hasGridTiles && frontier.propuesta !== null;
+/** Caído (#613, QA S2 de BN): ni anda ni propone tiles — la Y de un caído GASTABA. Lo decide core. */
+const jugadorCaido = (): boolean => elJugadorEsperaDespertar({ playerHp: gameClient.jugadorEnCombate().health });
 let input: InputProvider;
 try {
   input = inputRegistry.create(requestedInputId, { dialogoAbierto, propuestaDeTileAbierta });
@@ -526,7 +529,7 @@ fpsRenderer.setCollisionCellsProvider((tileKey) => {
 
 /** R (one-shot del provider): revive al player si está muerto. DÓNDE se
  *  vuelve lo decide el sim del bridge (#613) y llega en `result.reaparicion`;
- *  el «Respawned!» lo dice el panel de combate con `player_respawned`. */
+ *  el «Despiertas.» lo dice el panel de combate con `player_respawned`. */
 function handleRespawnRequest(): void {
   const p = gameClient?.jugadorEnCombate();
   if (!p || p.health > 0) return;
@@ -587,13 +590,13 @@ function gameLoop(now: number): void {
 
   // Movement (suppressed during dialogue). El jugador NUNCA se congela por la
   // generación de mundo: la frontera bloquea solo direccionalmente.
-  if (dialogoAbierto()) {
-    // El diálogo suspende la propuesta de tile: sus teclas Y/N quedan mudas.
+  if (dialogoAbierto() || jugadorCaido()) {
+    // El diálogo (y estar caído) suspende la propuesta de tile: sus teclas Y/N quedan mudas.
     // Ya no hay que decírselo al proveedor — lo DERIVA él
     // (`propuestaDeTileAbierta`, #329) de la misma guarda que hay aquí.
     fronteraEnPantalla.callarDuranteElDialogo();
   }
-  if (!dialogoAbierto()) {
+  if (!dialogoAbierto() && !jugadorCaido()) {
     aplicarMirada();
 
     // El PASO: las reglas (marco relativo al facing, diagonal renormalizada,
@@ -667,6 +670,7 @@ function gameLoop(now: number): void {
   if (result.reaparicion) {
     playerPos.x = result.reaparicion.x;
     playerPos.z = result.reaparicion.z;
+    if (result.miradaAlDespertar !== undefined) mirada.ponYaw(result.miradaAlDespertar); // QA S3 de BN
   }
 
   // Lo que el jugador VE y LEE de lo que resolvió el sim: el aro del ataque,

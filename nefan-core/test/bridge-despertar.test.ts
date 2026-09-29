@@ -114,6 +114,7 @@ describe("bridge: el despertar lo decide el motor (#613)", () => {
 
     const frame = despertares(b.sent)[0];
     assert.deepEqual(frame.reaparicion, { x: -20, y: 0, z: 20 });
+    assert.equal(typeof frame.miradaAlDespertar, "number", "y hacia dónde mira (QA S3)");
     assert.equal(frame.playerHp, 100);
     assert.equal(frame.events[0]?.type, "player_respawned");
     const bandido = b.sim.getCombatant("bandido_1")!;
@@ -212,6 +213,18 @@ describe("bridge: el despertar lo decide el motor (#613)", () => {
     soltar[1]({ ok: true, resolucion: { wake: { type: "point", x: -20, z: 20 }, consequences: [] } });
     await waitFor(() => despertares(sent2).length > 0);
     assert.deepEqual(despertares(sent2)[0].reaparicion, { x: -20, y: 0, z: 20 }, "la nueva, sí");
+  });
+
+  it("QA S2: un caído no explora — `request_tile` se rechaza y el motor no genera nada (GASTA)", async () => {
+    const b = await partidaConBandido(() => new Promise(() => {}));
+    await morir(b);
+    const escenasAntes = b.aiCalls.scene.length;
+    const antes = b.sent.length;
+    await porElBorde({ type: "request_tile", tx: 7, ty: 7, reason: "blocking", edge: "east" }, b.socket, b.ctx);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(b.aiCalls.scene.length, escenasAntes, "no se pide escena al motor");
+    const [aviso] = statusDespertar(b.sent.slice(antes), "error");
+    assert.match(aviso?.message ?? "", /Estás caído: no puedes explorar/);
   });
 
   it("QA H3: un caído no viaja; el rechazo lleva el lugar del viaje para cerrar su espera", async () => {

@@ -86,6 +86,24 @@ export function falloDeReaccionParaElJugador(err: unknown): {
   return { causaReaccion: "respuesta", message: "El motor narrativo no pudo reaccionar a eso; prueba a decir otra cosa." };
 }
 
+/** El motivo de un despertar que falló (#613, QA S1 de BN): la misma
+ *  clasificación de causa que una reacción, pero con SU salida — el caído no
+ *  tiene «otra cosa que decir», tiene una tecla: R. Reutilizar el texto del
+ *  diálogo («prueba a decir otra cosa») le mandaba a hacer algo imposible. */
+export function falloDelDespertarParaElJugador(err: unknown): {
+  causaReaccion: "conexion" | "respuesta";
+  message: string;
+} {
+  const { causaReaccion } = falloDeReaccionParaElJugador(err);
+  return {
+    causaReaccion,
+    message:
+      causaReaccion === "conexion"
+        ? "El motor narrativo no responde; pulsa R para intentarlo otra vez."
+        : "El mundo no pudo decidir dónde despiertas; pulsa R para intentarlo otra vez.",
+  };
+}
+
 /** La extensión de los módulos de fixture del glob. En una constante para que
  *  el corte y la comprobación no puedan discrepar. */
 const EXTENSION_DE_FIXTURE = ".json";

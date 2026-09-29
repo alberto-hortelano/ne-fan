@@ -25,7 +25,7 @@ import { randomUUID } from "node:crypto";
 import { contextoDeLaMuerte, type ContextoDeLaMuerte } from "../../src/narrative/contexto-de-la-muerte.js";
 import type { LlmContext } from "../../src/narrative/types.js";
 import { dispatchConsequences } from "../../src/narrative/consequence-handler.js";
-import { falloDeReaccionParaElJugador } from "../../src/protocol/status-motivo.js";
+import { falloDelDespertarParaElJugador } from "../../src/protocol/status-motivo.js";
 import {
   MARGEN_DEL_DESPERTAR_M,
   validarDespertar,
@@ -182,7 +182,7 @@ function fallo(ctx: BridgeContext, id: string, err: unknown): void {
     type: "narrative_status",
     phase: "error",
     kind: "despertar",
-    ...falloDeReaccionParaElJugador(err),
+    ...falloDelDespertarParaElJugador(err),
     detalleTecnico: (err as Error)?.message ?? String(err),
   });
 }
@@ -255,6 +255,7 @@ export async function alLlegarElDespertar(
       enemies: getEnemyStates(ctx),
       npcs: getNpcStates(ctx),
       reaparicion: punto,
+      miradaAlDespertar: v.yaw,
     };
     ctx.enviarEstado(enVuelo.ws, frame);
   } else {

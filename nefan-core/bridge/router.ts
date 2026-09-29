@@ -129,6 +129,8 @@ async function despachar(
       await handlePlayerEnteredPlace(msg, ctx);
       break;
     case "request_tile":
+      // Pedir un tile GASTA: un caído no explora (QA S2 de BN).
+      if (rechazarSiEstaCaido(ctx, ws, "explorar")) break;
       await handleRequestTile(msg, ctx);
       break;
     case "interact_entity":

@@ -120,7 +120,7 @@ export class EcoDelCombate {
         }
       } else if (e.type === "player_respawned") {
         this.#vivo = true;
-        this.deps.log("Respawned!");
+        this.deps.log("Despiertas.");
       }
     }
     // El destello se apaga con el reloj del SIM (el `delta` del frame, topado a

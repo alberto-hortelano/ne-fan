@@ -27,10 +27,12 @@ export interface FrameResult {
   }[];
   /** Vida ambiental de NPCs del bridge (state_update.npcs). */
   npcs?: StateUpdateMessage["npcs"];
-  /** Dónde reaparece el jugador: SOLO en el frame que contesta a `respawn`
-   *  (`StateUpdateMessage.reaparicion`). Lo decide el sim del bridge (#613);
+  /** Dónde despierta el jugador: SOLO en el frame que lo levanta
+   *  (`StateUpdateMessage.reaparicion`). Lo decide el motor en partida (#613);
    *  el game loop lo copia a la posición del jugador. */
   reaparicion?: Vec3;
+  /** Y hacia dónde mira al despertar (`StateUpdateMessage.miradaAlDespertar`). */
+  miradaAlDespertar?: number;
 }
 
 /** Junta un frame recién llegado con el que nadie ha consumido aún: el estado
@@ -42,10 +44,17 @@ export function acumularFrame(
   pendiente: FrameResult | null,
   nuevo: FrameResult,
   reaparicion: Vec3 | undefined,
+  mirada?: number,
 ): FrameResult {
   const punto = reaparicion ?? pendiente?.reaparicion;
+  const yaw = mirada ?? pendiente?.miradaAlDespertar;
   const eventos = pendiente ? [...pendiente.events, ...nuevo.events] : nuevo.events;
-  return punto ? { ...nuevo, events: eventos, reaparicion: punto } : { ...nuevo, events: eventos };
+  return {
+    ...nuevo,
+    events: eventos,
+    ...(punto ? { reaparicion: punto } : {}),
+    ...(yaw !== undefined ? { miradaAlDespertar: yaw } : {}),
+  };
 }
 
 /** El frame con el que se pinta ANTES del primer `state_update`: el arma y el

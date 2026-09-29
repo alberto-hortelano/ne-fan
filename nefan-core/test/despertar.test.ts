@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 import {
   MARGEN_DEL_DESPERTAR_M,
+  haciaDondeMirar,
   validarDespertar,
   type MundoDelDespertar,
 } from "../src/simulation/despertar.js";
@@ -34,17 +35,15 @@ function mundo(over: Partial<MundoDelDespertar> = {}): MundoDelDespertar {
 
 describe("validarDespertar", () => {
   it("un punto libre, en un tile que existe y lejos de todo hostil, vale tal cual y a ras de suelo", () => {
-    assert.deepEqual(validarDespertar({ type: "point", x: -10, z: 10 }, mundo()), {
-      ok: true,
-      punto: { x: -10, y: 0, z: 10 },
-    });
+    const r = validarDespertar({ type: "point", x: -10, z: 10 }, mundo());
+    assert.ok(r.ok);
+    if (r.ok) assert.deepEqual(r.punto, { x: -10, y: 0, z: 10 });
   });
 
   it("un lugar se resuelve a su punto", () => {
-    assert.deepEqual(validarDespertar({ type: "place", place_id: "plaza" }, mundo()), {
-      ok: true,
-      punto: { x: -20, y: 0, z: -20 },
-    });
+    const r = validarDespertar({ type: "place", place_id: "plaza" }, mundo());
+    assert.ok(r.ok);
+    if (r.ok) assert.deepEqual(r.punto, { x: -20, y: 0, z: -20 });
   });
 
   it("un lugar que no da punto, o cuyo tile no existe, se rechaza con la lista de los que valen", () => {
@@ -97,6 +96,43 @@ describe("validarDespertar", () => {
       mundo({ hostiles: [{ id: "sin_radio", casa: { x: 0, z: 30 }, radio: Infinity }] }),
     );
     assert.ok(!r.ok && /∞/.test(r.motivo));
+  });
+});
+
+/** QA S3 de BN: se despertaba conservando la mirada del cadáver, de cara a una
+ *  pared. Convención de `Mirada`: `yaw = atan2(dx, dz)`; norte (−z) es π. */
+describe("haciaDondeMirar", () => {
+  const pared = (sur: boolean) => ({
+    // Pared al NORTE del origen (z < −1), y con `sur` también al sur (z > 1).
+    ocupado: (_x: number, z: number, r: number) => z - r < -1 || (sur && z + r > 1),
+  });
+  it("sin lugar, mira al rumbo más despejado: con pared al norte, no mira al norte", () => {
+    const yaw = haciaDondeMirar({ x: 0, z: 0 }, pared(false), null);
+    assert.ok(Math.cos(yaw) > -1e-9, `no mira hacia la pared del norte (dz < 0), yaw=${yaw}`);
+    // Encajonado entre dos paredes (norte y sur), mira a lo largo del pasillo.
+    const pasillo = haciaDondeMirar({ x: 0, z: 0 }, pared(true), null);
+    assert.ok(Math.abs(Math.cos(pasillo)) < 1e-9, `mira a este u oeste, yaw=${pasillo}`);
+  });
+  it("todo despejado: el primero del orden, el norte", () => {
+    assert.equal(haciaDondeMirar({ x: 0, z: 0 }, { ocupado: () => false }, null), Math.PI);
+  });
+  it("con lugar, mira al lugar aunque haya más espacio en otro rumbo", () => {
+    const yaw = haciaDondeMirar({ x: 0, z: 0 }, pared(false), { x: 10, z: 0 });
+    assert.ok(Math.abs(yaw - Math.PI / 2) < 1e-9, `mira al este, yaw=${yaw}`);
+  });
+  it("el lugar encima no cuenta: mira a lo despejado", () => {
+    const yaw = haciaDondeMirar({ x: 0, z: 0 }, pared(false), { x: 0.3, z: 0 });
+    assert.ok(Math.cos(yaw) > -1e-9, `no mira a la pared, yaw=${yaw}`);
+  });
+  it("validarDespertar devuelve esa mirada: en un lugar, hacia el lugar", () => {
+    const r = validarDespertar({ type: "place", place_id: "plaza" }, mundo({
+      suelo: { ocupado: (x, z, rr) => Math.hypot(x + 20, z + 20) < 1 + rr },
+    }));
+    assert.ok(r.ok);
+    if (r.ok) {
+      const haciaLugar = Math.atan2(-20 - r.punto.x, -20 - r.punto.z);
+      assert.ok(Math.abs(r.yaw - haciaLugar) < 1e-9, "desde la puerta, mirando al lugar");
+    }
   });
 });
 

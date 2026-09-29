@@ -379,6 +379,10 @@ export interface StateUpdateMessage {
    *  input —la posición la conduce el input, y sin esto el siguiente frame lo
    *  devolvería al cadáver—. Mismo patrón que `status.spawn` al arrancar. */
   reaparicion?: Vec3;
+  /** Y hacia dónde mira (yaw, convención de `Mirada`), solo en el frame del
+   *  despertar que decidió el motor: hacia el lugar o el espacio abierto, no
+   *  hacia la pared que tenía delante el cadáver (QA S3 de BN). */
+  miradaAlDespertar?: number;
 }
 
 export interface PongMessage {

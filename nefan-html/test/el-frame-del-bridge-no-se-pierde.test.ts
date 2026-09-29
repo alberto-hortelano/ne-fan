@@ -154,3 +154,17 @@ describe("la partida empieza con la vida del save", () => {
     assert.equal(cliente.idle().playerHp, 37, "el primer frame del bridge manda");
   });
 });
+
+/** QA S3 de BN: la mirada del despertar viaja con el punto y, como él,
+ *  sobrevive a un frame posterior que no la trae. */
+describe("la mirada del despertar llega con el punto", () => {
+  it("se entrega en el frame del despertar, aunque detrás llegue otro sin ella", () => {
+    const { cliente, llega } = bridgeDePrueba();
+    llega({ playerHp: 100, reaparicion: { x: 1, y: 0, z: 2 }, miradaAlDespertar: 1.25 });
+    llega({ playerHp: 100 });
+    const f = cliente.idle();
+    assert.equal(f.miradaAlDespertar, 1.25);
+    assert.deepEqual(f.reaparicion, { x: 1, y: 0, z: 2 });
+    assert.equal(cliente.idle().miradaAlDespertar, undefined, "el siguiente frame ya no la trae");
+  });
+});

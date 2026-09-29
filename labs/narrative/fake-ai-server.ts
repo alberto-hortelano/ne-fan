@@ -433,7 +433,7 @@ async function handleGenerateTile(gt: GenerateTile, { sembrarMapa }: { sembrarMa
  *     levantaba entre dos sondeos del banco, y los guiones que esperan a «vida
  *     0» no veían la muerte nunca;
  *   · `mal` — devuelve el sitio donde cayó, sin preguntar (el bridge lo tiene
- *     que rechazar: es la segunda puerta);
+ *     que rechazar: es la segunda puerta), tras pensar lo mismo que `normal`;
  *   · `error` — un 500;
  *   · `tarda` — espera `ms` y luego contesta como `normal`;
  *   · `punto` — prueba PRIMERO el punto `{x, z}` que le dio el guion, y si el
@@ -747,6 +747,9 @@ const server = http.createServer((req, res) => {
           return send(500, { detail: "el motor se cayó decidiendo dónde despiertas (simulado por el banco)" });
         }
         if (despertarModo === "mal") {
+          // Tarda como `normal`: contestando al instante el jugador caía y se
+          // levantaba (con la segunda puerta rota) entre dos sondeos del banco.
+          await new Promise((r) => setTimeout(r, DESPERTAR_MS_NORMAL));
           const c = muerte.cayo_en as { x: number; z: number };
           return send(200, { wake: { type: "point", x: c.x, z: c.z }, consequences: [] } satisfies ReportPlayerDeathResponse);
         }

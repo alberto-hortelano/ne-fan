@@ -56,6 +56,7 @@
   /* Bandas de z DENTRO de la UI de juego. Por encima queda solo lo de dev. */
   --z-hud: 20;
   --z-panel: 30;
+  --z-velo: 35;
   --z-prompt: 40;
   --z-dialogue: 50;
   --z-loader: 70;
@@ -239,10 +240,35 @@
 }
 #frontier-veil[hidden] { display: none; }
 
-/* Has caído (#613): el motor decide dónde despiertas. */
-#velo-del-despertar { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+/* Has caído (#613): un VELO sobre la vista, no una caja (QA S4 de BN). Oscurece
+   con la misma pila que el muro (`fade` a `VELO_DEL_MURO`, que mide el test de
+   tema) y deja por ENCIMA la barra de acciones (`--z-prompt`), que es donde va
+   «R · reintentar». No captura el ratón: detrás no hay nada que pulsar. */
+#velo-del-despertar {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-velo);
+  background: color-mix(in srgb, var(--nf-fade) var(--nf-velo-del-muro), transparent);
+  pointer-events: none;
+}
 #velo-del-despertar[hidden] { display: none; }
-#velo-del-despertar b { color: var(--nf-accent); }
+#velo-del-despertar .velo-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: min(520px, 100%);
+  background: var(--nf-surface);
+  border: var(--nf-hairline) solid var(--nf-border);
+  border-radius: var(--nf-radius);
+  padding: 20px 28px;
+  box-shadow: var(--nf-shadow), var(--nf-glow);
+  text-align: center;
+}
+#velo-del-despertar b { color: var(--nf-accent); font-size: var(--nf-fs-lg); letter-spacing: 0.06em; }
 #velo-del-despertar-texto { color: var(--nf-ink); font-style: italic; }
 
 /* ── Diálogo con retrato ────────────────────────────────────────────────── */

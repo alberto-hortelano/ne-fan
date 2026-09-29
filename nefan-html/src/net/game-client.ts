@@ -201,7 +201,7 @@ export class BridgeGameClient implements GameClient {
       // `player_respawned` no llegaba nunca al panel de combate y el botón
       // «R · reaparecer» se quedaba para siempre (QA de BK, #613). Y un
       // `died` perdido es un jugador muerto que el cliente cree vivo.
-      this.pendingFrame = acumularFrame(this.pendingFrame, frame, msg.reaparicion);
+      this.pendingFrame = acumularFrame(this.pendingFrame, frame, msg.reaparicion, msg.miradaAlDespertar);
       this.lastState = frame;
     });
 

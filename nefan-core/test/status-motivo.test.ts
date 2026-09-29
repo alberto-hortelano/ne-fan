@@ -17,6 +17,7 @@ import {
   etiquetaDeFixture,
   motivoDeFixtureParaElJugador,
   falloDeReaccionParaElJugador,
+  falloDelDespertarParaElJugador,
   motivoDeSesionParaElJugador,
   motivoParaElJugador,
 } from "../src/protocol/status-motivo.js";
@@ -26,6 +27,18 @@ const motivoDeReaccionParaElJugador = (err: unknown) => falloDeReaccionParaElJug
 it("la causa de reacción viaja junto al consejo", () => {
   assert.equal(falloDeReaccionParaElJugador("fetch failed").causaReaccion, "conexion");
   assert.equal(falloDeReaccionParaElJugador("HTTP 422").causaReaccion, "respuesta");
+});
+
+/** #613, QA S1 de BN: el despertar que falla dice qué puede hacer el caído —R—
+ *  y no el consejo de un diálogo («prueba a decir otra cosa»). */
+it("el fallo del despertar manda a pulsar R, con la misma causa que una reacción", () => {
+  for (const crudo of ["fetch failed", "HTTP 422: invalid death resolution", "HTTP 500"]) {
+    const f = falloDelDespertarParaElJugador(new Error(crudo));
+    assert.match(f.message, /pulsa R/, crudo);
+    assert.doesNotMatch(f.message, /decir otra cosa/, crudo);
+    assert.equal(f.causaReaccion, falloDeReaccionParaElJugador(new Error(crudo)).causaReaccion);
+  }
+  assert.match(falloDelDespertarParaElJugador("fetch failed").message, /no responde/);
 });
 
 describe("motivoParaElJugador: el cuerpo de un fallo de generación", () => {

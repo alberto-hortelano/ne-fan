@@ -51,12 +51,49 @@ export interface MundoDelDespertar {
   margen: number;
 }
 
-export type Despertar = { ok: true; punto: Vec3 } | { ok: false; motivo: string };
+/** `yaw`: hacia dónde mira al despertar (QA S3 de BN: conservaba la mirada
+ *  del cadáver y despertaba de cara a una pared). Convención de `Mirada`:
+ *  `yaw = atan2(dx, dz)` mira hacia (dx, dz). */
+export type Despertar = { ok: true; punto: Vec3; yaw: number } | { ok: false; motivo: string };
+
+/** Metros que se miran por cada rumbo buscando espacio abierto. */
+const HORIZONTE_M = 12;
+const PASO_DE_MIRADA_M = 0.5;
+
+/** HACIA DÓNDE MIRA quien despierta en `punto`: hacia el LUGAR en el que
+ *  despierta si lo hay (y no está encima), y si no, hacia el rumbo más
+ *  despejado de los ocho —el que más metros de suelo libre tiene delante hasta
+ *  `HORIZONTE_M`—. A igualdad, el primero en el orden norte, noreste, este…
+ *  PURO: pregunta al suelo, no mira nada más. */
+export function haciaDondeMirar(
+  punto: { x: number; z: number },
+  suelo: SueloSolido,
+  lugar: { x: number; z: number } | null,
+): number {
+  if (lugar && Math.hypot(lugar.x - punto.x, lugar.z - punto.z) > 1) {
+    return Math.atan2(lugar.x - punto.x, lugar.z - punto.z);
+  }
+  let mejor = { yaw: Math.PI, libre: -1 };
+  for (let i = 0; i < 8; i++) {
+    // Norte es −z (yaw π); se gira de 45 en 45 grados.
+    const yaw = Math.PI - (i * Math.PI) / 4;
+    const dx = Math.sin(yaw);
+    const dz = Math.cos(yaw);
+    let libre = 0;
+    for (let d = PASO_DE_MIRADA_M; d <= HORIZONTE_M; d += PASO_DE_MIRADA_M) {
+      if (suelo.ocupado(punto.x + dx * d, punto.z + dz * d, PLAYER_RADIUS_M)) break;
+      libre = d;
+    }
+    if (libre > mejor.libre) mejor = { yaw, libre };
+  }
+  return mejor.yaw;
+}
 
 const enMetros = (n: number): string => n.toFixed(2);
 
 export function validarDespertar(wake: Wake, mundo: MundoDelDespertar): Despertar {
   let candidato: { x: number; z: number };
+  let lugar: { x: number; z: number } | null = null;
   if (wake.type === "place") {
     const punto = mundo.resolverLugar(wake.place_id);
     if (!punto || !mundo.tileRealizado(punto.x, punto.z)) {
@@ -70,6 +107,7 @@ export function validarDespertar(wake: Wake, mundo: MundoDelDespertar): Desperta
       };
     }
     candidato = punto;
+    lugar = punto;
   } else {
     if (!Number.isFinite(wake.x) || !Number.isFinite(wake.z)) {
       return { ok: false, motivo: `el punto (${wake.x}, ${wake.z}) no es un número finito` };
@@ -109,5 +147,5 @@ export function validarDespertar(wake: Wake, mundo: MundoDelDespertar): Desperta
       };
     }
   }
-  return { ok: true, punto: { x: sitio.x, y: 0, z: sitio.z } };
+  return { ok: true, punto: { x: sitio.x, y: 0, z: sitio.z }, yaw: haciaDondeMirar(sitio, mundo.suelo, lugar) };
 }
