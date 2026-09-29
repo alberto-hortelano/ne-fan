@@ -427,6 +427,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
         this.decide(rt, ctx, events);
       }
       this.move(rt, ctx, delta, events);
+      this.moverStuckAt(rt);
       rt.dondeLoDeje = { x: rt.record.position[0], z: rt.record.position[2] };
     }
     return events;
@@ -520,7 +521,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
           // volvía a huir. El guardia no: vuelve a su puesto.
           if (rt.mode === "flee") rt.home = { x: px, z: pz };
           rt.mode = "idle";
-          rt.pauseTimer = 0.5 + this.rng.next() * 1.5;
+          rt.pauseTimer = this.pausaTras(rt, 0.5 + this.rng.next() * 1.5);
           rt.waypoint = null;
           events.push({ type: "npc_resumed", npcId: rt.record.id });
         }
@@ -616,7 +617,7 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     if (rt.mode === "react") {
       if (playerDist > rt.params.greet_radius + 1) {
         rt.mode = "idle";
-        rt.pauseTimer = 0.3 + this.rng.next();
+        rt.pauseTimer = this.pausaTras(rt, 0.3 + this.rng.next());
       }
       return;
     }
@@ -968,6 +969,27 @@ class AmbientNpcBehavior implements NpcBehaviorSystem {
     this.warnOnce(`${rt.record.id}:sin-camino:${why}`,
       `"${rt.record.id}" no tiene camino (${why}): se queda parado y deja su meta al motor (suspended_goal no_path)`);
     this.eventosDelTick.push({ type: "npc_no_path", npcId: rt.record.id, suspended: s });
+  }
+
+  /** LA PAUSA AL VOLVER DE UNA INTERRUPCIÓN (encarar al jugador, huir): la de
+   *  siempre, salvo para el que se quedó SIN CAMINO, que vuelve a su estado
+   *  quieto. Con la corta pasaba a `wander` al irse el jugador —el 37 % del
+   *  tiempo andando, 4,1 m, en la sonda de la QA de BO (H8)— y el `stuck_at`
+   *  que ve el motor dejaba de ser verdad. */
+  private pausaTras(rt: NpcRuntime, pausa: number): number {
+    return rt.sinCamino ? Infinity : pausa;
+  }
+
+  /** Si el que está SIN CAMINO se movió de todos modos (lo sacan de un
+   *  sólido, huye, lo teletransportan), su `stuck_at` dice dónde está AHORA:
+   *  es lo que lee el motor para decidir (QA de BO, H8). */
+  private moverStuckAt(rt: NpcRuntime): void {
+    if (!rt.sinCamino) return;
+    const s = rt.record.data.suspended_goal as SuspendedGoal | null | undefined;
+    if (s?.reason !== "no_path") return;
+    const x = rt.record.position[0];
+    const z = rt.record.position[2];
+    if (s.stuck_at[0] !== x || s.stuck_at[1] !== z) s.stuck_at = [x, z];
   }
 
   /** El que se quedó sin camino vuelve a su meta SOLO si el mundo de su zona

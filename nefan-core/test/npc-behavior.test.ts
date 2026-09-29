@@ -1415,6 +1415,36 @@ describe("AmbientNpcBehavior · busca camino (#618)", () => {
       assert.ok(!avisos.some((a) => a.includes("ATRAVIESA")), "no promete ningún escape");
     });
 
+    it("H8: si el jugador lo saluda y se va, VUELVE a quedarse quieto; no se pone a pasear", () => {
+      const { sys, rec } = unoQueNoLlega();
+      avisosDe(() => runTicks(sys, 5 / 0.016, 0.016, ctxWith()));
+      assert.equal((rec.data.suspended_goal as { reason: string }).reason, "no_path", "CONTROL: ya se rindió");
+      const aqui = [...rec.position];
+      const cerca = ctxWith({ playerPos: { x: rec.position[0] + 1.5, y: 0, z: rec.position[2] } });
+      let reacciono = false;
+      for (let i = 0; i < 5 / 0.016; i++) {
+        sys.tick(0.016, cerca);
+        if (sys.states()[0].mode === "react") reacciono = true;
+      }
+      assert.ok(reacciono, "CONTROL: encara al jugador");
+      let andando = 0;
+      for (let i = 0; i < 60 / 0.016; i++) {
+        sys.tick(0.016, ctxWith());
+        if (sys.states()[0].moving) andando++;
+      }
+      assert.equal(andando, 0, `ido el jugador, no pasea (${(andando * 0.016).toFixed(1)} s andando)`);
+      assert.deepEqual(rec.position, aqui, "sigue donde se rindió");
+      assert.deepEqual((rec.data.suspended_goal as { stuck_at: number[] }).stuck_at, [aqui[0], aqui[2]]);
+    });
+
+    it("H8: si lo mueven de todos modos, el `stuck_at` que ve el motor dice dónde está AHORA", () => {
+      const { sys, rec } = unoQueNoLlega();
+      avisosDe(() => runTicks(sys, 5 / 0.016, 0.016, ctxWith()));
+      rec.position = [3, 0, 4];
+      runTicks(sys, 1, 0.016, ctxWith());
+      assert.deepEqual((rec.data.suspended_goal as { stuck_at: number[] }).stuck_at, [3, 4]);
+    });
+
     it("el `in_transit` también se suspende por su campo", () => {
       const { sys, rec } = unoQueNoLlega({}, { role: "villager", in_transit: { to: "plaza", from: "" } });
       avisosDe(() => runTicks(sys, 5 / 0.016, 0.016, ctxWith()));

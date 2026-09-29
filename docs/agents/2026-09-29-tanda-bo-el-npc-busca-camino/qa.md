@@ -167,3 +167,77 @@ Pero el mecanismo nuevo mete dos defectos visibles que antes no existían:
 - **H2:** el NPC atraviesa la «Zona sin generar» para acortar: 45 % de las rutas en puerto.
 
 **H3** deja intacto el síntoma de partida siempre que no haya camino, ahora con un coste por reintento que nada acota. Los tres tienen guion rojo con prueba positiva y vuelven al ingeniero. H3 necesita antes una decisión de producto sobre qué hace el NPC sin camino.
+
+---
+
+## Segunda vuelta
+
+Sobre `91344538` (rebasado en `main` `bd0ab82d`), `npm run build` antes de todo lo que lee `dist/`. Los bloques de puertos los eligió `qa/run.mjs`. No he tocado procesos ajenos.
+
+### Criterios
+
+| Criterio | Veredicto | Evidencia |
+|---|---|---|
+| Tras el rebase, los guiones de la tanda | ✅ | `el-mundo-solido`: los diez bloques en verde. `--sin-navegador 250 271 273`: 3/3 en verde. `run.mjs 270 272`: 2/2 en verde (270: etapa 2 en 18,7 s y 18,6 m; 272: el tabernero cruza por el portillo y ninguna muestra sale del tile). `el-viaje-no-mete-a-nadie-dentro`: verde. Los umbrales de 271–273 son los que yo escribí: comprobado con `grep`, nadie los aflojó |
+| H1 · varios a la misma casa, en el juego real | ✅ | Guion **275** (nuevo): cuatro NPC a la huella de la casa del leñador. Llegan, el par más cercano queda a ≥ 1,9 m, ninguno dentro de un sólido y los cuatro quietos en el cable. Probado en negativo: con `vecinosEn` vacío, rojo en el 4 (qa275_a–qa275_c a 0,51 m) |
+| H2 · no sale a la «Zona sin generar» | ✅ | 272 verde en el juego real |
+| H3 · el NPC sin camino se ve quieto de verdad | ✅ | Guion **274**: en el cable, 135 `state_update` en 5 s con `moving=false` en todos, 0 cm de deriva y 0° de giro. Lo que pinta el cliente (rAF): < 1 cm. Las dos capturas separadas 1,5 s solo difieren en la silueta del NPC (6.282 px dentro de su caja): es la animación idle de respirar. No vibra ni hace el paso de andar. Probado en negativo: con `pauseTimer = 0` al rendirse (pasea en vez de quedarse), rojo en 4, 5 y 6 (42 de 138 frames andando, 1,5 m) |
+| H3 · llega al motor | ✅ con matiz | 274-2: `GET /entity/barkeep`, que es lo que lee `entity_get` del motor, trae `suspended_goal {reason:"no_path", why:"zona-sin-generar", stuck_at:[−31,1, −0,2], value:{goto_place…}}`. `serializeForLlm` la manda en las entidades y la línea en `ambient_events`: lo sujeta `bridge-npc.test.ts`, pero no lo he visto viajar en una petición real (el motor falso no guarda lo que recibe). **Matiz:** `GET /session/{id}/llm_context` está en `WorldStateApi`, pero es ruta PLANEADA y contesta 404, así que no sirve para verificarlo |
+| Reapertura por cambio del mundo, en el juego real | ✅ | 274-7: el jugador genera el tile (−1, 0) (`request_tile`, motor falso, 0 €). El tabernero recupera su `goto_place` sin que el motor diga nada, se borra el `suspended_goal` y entra andando en el tile nuevo (x = −33,1) |
+| Reapertura porque DESAPARECE una caja | ✅ en el sim / ⚠️ no existe en el juego | Sonda: patio cerrado por cuatro muros de runtime, y a los 20 s se quita el oeste. El NPC estaba quieto (0 s andando de 0 a 20 s), hace el tercer plan, recupera la meta y llega a los 31,5 s. **En producción no hay consecuencia que quite una caja**, así que esa reapertura solo la provocan una caja que aparece o un tile que se genera |
+| Resume con un NPC en `no_path` | ✅ coherente / ⚠️ H10 | 274-6: al reanudar, el tabernero **reaparece donde empezó la partida (7,75, −0,25) con la directiva vieja y sin `suspended_goal`**. El sim no guarda por sus eventos («el save llega con el siguiente save normal») y en todo ese tramo no hubo ningún guardado. Vuelve a andar hasta el borde, se rinde otra vez (el motor lo vuelve a ver) y se queda quieto (verde en el cable). La huella perdida que declaró el ingeniero se mide en la sonda: con el patio cerrado y el resume, el NPC no reintenta cuando se abre el muro |
+| Coste con 40 NPC sin camino | ✅ | Sonda en puerto y en robledo, meta en un patio cerrado. **80 planes en los primeros 30 s y 0 en los 30 siguientes** (antes: 13 planes/s sin fin). Tick medio de 0,35–0,62 ms, máximo de 12–16,7 ms y 0 ticks por encima de 16,7 ms en puerto. Una caja nueva en cualquier punto de los 3×3 tiles («un barril») cambia la huella de los 40: otra ráfaga de 80 planes, con máximo de 14,3 ms, y vuelta a 0 |
+| No rompe nada | ✅ | `npm run lint` limpio con 274 y 275. `un-salto-del-guion-se-observa`, `el-reloj-de-pared-tiene-padron`, `architecture`, `la-consulta-de-movimiento-tiene-dueno`, `candados-headless-totalidad` y `banco-ficheros`: todos verdes |
+
+### Hallazgos de la segunda vuelta
+
+**H8 · MENOR: el NPC «parado sin camino» se pone a pasear si el jugador lo saluda.**
+- `rendirseSinCamino` lo deja en `idle` con `pauseTimer = ∞` (un `hold` implícito). Pero si el jugador se acerca, `decide` lo pasa a `react`, y al irse el jugador `react` → `idle` con una pausa corta y luego `wander`.
+- Sonda: parado en (−14, 0); el jugador a 1,5 m durante 5 s y luego se va. En los 60 s siguientes anda el 37 % del tiempo y se aleja 4,1 m de donde se rindió.
+- El `stuck_at` que ve el motor deja de ser verdad, y «se queda parado» se cumple solo mientras nadie le habla.
+- **Reproducir:** meta sin camino, esperar al `no_path`, acercarse al NPC con el jugador y apartarse.
+
+**H9 · MENOR (antes de BO): un NPC en `react` no relee su directiva.** Con el jugador a su lado, el motor le da `goto_place` y no se mueve hasta que el jugador se va (`decide` sale por la rama `react` antes de leer la directiva). Lo encontré en 275: el vecino sembrado junto al jugador no se movía. Quien juega lo ve como «el motor le mandó ir y se queda mirándome». No es de esta tanda.
+
+**H10 · MENOR / INFORMATIVO: el `no_path` no sobrevive a un resume si no hubo guardado desde entonces.**
+- Es la misma política que la huida (los eventos del sim no guardan), no un defecto de BO.
+- En la práctica el NPC repite el camino y la rendición, y el motor recibe el aviso dos veces.
+- Si se guardó después del `no_path`, el NPC vuelve quieto pero sin huella: no reintenta aunque se abra el camino, hasta que el motor actúe. Es lo que declaró el ingeniero.
+
+**H5 (huecos de 1,0–1,5 m) y H6 (gancho en las esquinas):** anotados por el ingeniero; no los he vuelto a medir.
+
+### Guiones nuevos de la segunda vuelta
+
+| Guion | Tipo | Hoy | Negativo |
+|---|---|---|---|
+| `274-el-aldeano-sin-camino-se-queda-quieto-y-el-motor-lo-sabe.mjs` | juego real, espía el cable (`state_update`) y el cliente por rAF | ✔ 16/16 | con `pauseTimer = 0` al rendirse: rojo en 4, 5 y 6 |
+| `275-cuatro-vecinos-a-la-casa-del-lenador.mjs` | juego real, siembra en un clon del save | ✔ | con `vecinosEn` vacío: rojo en el 4 |
+
+Los dos sabotajes fueron en `nefan-core/src/simulation/npc-behavior.ts` (el bridge corre con `tsx` sobre el fuente) y se restauraron comprobándolos con `md5sum -c` (OK). `git status` solo lista los dos guiones nuevos y este `qa.md`.
+
+### Workarounds de la segunda vuelta
+
+- **275 siembra tres vecinos editando un CLON del save** (copias del tabernero con `spawn_reason: "narrative_request"`) y lo reanuda. El State API no tiene puerta para crear entidades. El motor llega a ese estado con `spawn_reason` y el jugador por conversación; el guion se ahorra la conversación. **Veredicto:** no afecta al usuario.
+- **275 aparta al jugador** (`setPlayerPos`) antes de dar las órdenes, por H9. **Veredicto:** es un hallazgo, no afecta a lo que se mide de BO.
+- **Cámaras de bench** (`setPlayerPos` + `setYaw`) para las capturas. **Veredicto:** no afectan al usuario. En la de 275 un cajón del tile tapa medio encuadre: se ven las cabezas y los rótulos de los cuatro repartidos por la fachada sur, pero no los cuerpos.
+- **La «sin camino» del juego real** es un lugar en un tile sin generar: es el único caso sin camino que se provoca en el tile servido sin sembrar murallas. El patio cerrado sigue medido en el sim (273, verde).
+
+### No probado
+
+- Que `suspended_goal` y `ambient_events` viajen en una petición narrativa real al motor. Lo cubre el unitario de bridge; el motor falso no guarda lo que recibe, y `/llm_context` da 404.
+- Una caja que desaparece en el juego real: no existe esa consecuencia.
+- La mutación de `busca-camino`: sigue pendiente de la corrida autorizada.
+
+### Veredicto de la segunda vuelta
+
+**APTO CON RESERVAS.** H1, H2 y H3 están resueltos y verificados en el juego real:
+- los vecinos se reparten por la fachada;
+- nadie sale al vacío;
+- el NPC sin camino se queda quieto de verdad (sin vibrar, ni en el cable ni en pantalla);
+- el motor lo ve y retoma la meta solo cuando el mundo cambia.
+
+Las reservas son menores y no bloquean:
+- **H8:** el parado se pone a pasear si el jugador lo saluda.
+- **H10:** el `no_path` se pierde si no hubo guardado.
+- **H9:** es de antes de BO.
+- **H5** y **H6:** anotados.
