@@ -1227,6 +1227,7 @@ async function unIntentoDeArrancar(aviso?: string): Promise<string | null> {
         uiTheme: res.uiTheme ?? BASE_UI_THEME,
         plugins: res.state.plugins,
       });
+      gameClient.empezarPartida(res.state.player.health); // QA H6 de BN: no 100 hasta el primer frame
       log(`Reanudada: ${res.state.session_id}`);
       // El mundo anterior ya se fue —lo vació la faceta `mundo` del
       // `session.enter` de arriba— y por eso se puede vestir al jugador aquí:

@@ -1590,6 +1590,23 @@ describe("bridge runtime ↔ sesión (persistencia)", () => {
     assert.equal(reseeded.health, 33);
     assert.deepEqual(reseeded.position, { x: -5, y: 1, z: 9 });
     assert.equal(store.state.player.hp, 33);
+    // QA H2 de BN: el MÁXIMO no es la vida guardada. Con 33 de máximo la poción
+    // no curaba nada tras reanudar herido, y el HUD decía /100 igualmente.
+    assert.equal(reseeded.maxHealth, 100, "el máximo es el del jugador, no la vida con la que vuelve");
+    assert.equal(sim.curarAlJugador(10), 10);
+    assert.equal(reseeded.health, 43);
+    sent2.length = 0;
+    await porElBorde(
+      {
+        type: "input",
+        delta: 0.016,
+        inputs: { playerPosition: reseeded.position, playerForward: { x: 0, y: 0, z: -1 }, playerMoving: false },
+      },
+      socket2,
+      ctx,
+    );
+    const frame = sent2.find((m): m is StateUpdateMessage => m.type === "state_update");
+    assert.equal(frame?.playerMaxHp, 100, "el HUD y el sim dicen el mismo máximo");
   });
 
   it("start_session resetea el runtime: no hereda el HP de la sesión anterior", async () => {

@@ -256,6 +256,7 @@ export function handleLoadRoom(
       playerWeaponId,
       { x: 0, y: 0, z: 0 },
       { x: 0, y: 0, z: -1 },
+      playerMaxHp,
     ),
   );
 

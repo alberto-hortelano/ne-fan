@@ -237,3 +237,32 @@ async function golpearHasta(ctx, id, objetivo, { sim, alcance }) {
     });
   return fin;
 }
+
+/** Se deja herir por `id` —quieto y encarado, sin devolver golpes— hasta que
+ *  la vida del HUD sea `hasta` o menos. Es la PRECONDICIÓN de quien necesita
+ *  un jugador herido (una poción que medir): herirse peleando dependía de cómo
+ *  saliera la pelea, y alguna corrida acababa a 100/100 (QA H8 de BN).
+ *
+ *  `sim` son segundos de mundo de cortafuegos. Devuelve `{hp}` o `null` si
+ *  expira: el `null` lo declara quien llama (`ctx.sinMedir`), no se traga. */
+export async function dejarseHerirHasta(ctx, id, hasta, opciones = {}) {
+  soloEstasOpciones("dejarseHerirHasta", opciones, ["sim"]);
+  const { sim = 60 } = opciones;
+  return ctx.absorbe(
+    `cortafuegos de la espera a que ${id} deje al jugador a ${hasta} PV o menos: es PRECONDICIÓN, ` +
+      "y si expira quien llama lo declara ⊘",
+    () =>
+      ctx.waitFor(
+        `${id} deja al jugador a ${hasta} PV o menos`,
+        (a) => {
+          const e = window.__nefan.enemies().find((x) => x.id === a.id);
+          const p = window.__nefan.state().pos;
+          if (e && p) window.__nefan.setYaw(Math.atan2(e.pos.x - p.x, e.pos.z - p.z));
+          const hp = Number(document.getElementById("player-hp-text")?.textContent ?? "NaN");
+          return hp <= a.hasta ? { hp } : null;
+        },
+        { sim },
+        { id, hasta },
+      ),
+  );
+}

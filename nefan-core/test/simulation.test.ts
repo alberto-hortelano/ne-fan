@@ -481,6 +481,37 @@ describe("GameSimulation.respawn", () => {
   });
 });
 
+/** QA H4 de BN: dos hostiles juntos no se pelean entre ellos. El blanco de
+ *  la IA enemiga elegía al combatiente vivo más cercano, sin bandos, así que
+ *  a 4 m se enganchaban entre sí en el primer tick; eso congelaba el punto
+ *  seguro (`algunoEnganchado`) y el superviviente iba a por el jugador ya
+ *  enganchado, desde cualquier distancia. */
+describe("GameSimulation — los hostiles no se pelean entre sí", () => {
+  it("dos hostiles a 4 m, el jugador a 30: 5 s de tick sin un golpe entre ellos, y el punto seguro avanza", () => {
+    const sim = new GameSimulation(config, new GameStore(), 42);
+    const player = createCombatant("player", 100, "short_sword", { x: 0, y: 0, z: 30 });
+    const radio: EnemyPersonality = {
+      aggression: 1, preferred_attacks: ["quick"], reaction_time: 0.1, combat_range: 4, aggro_radius: 10,
+    };
+    sim.addCombatant(player);
+    sim.addCombatant(createCombatant("b1", 60, "short_sword", { x: 0, y: 0, z: 0 }), radio);
+    sim.addCombatant(createCombatant("b2", 60, "short_sword", { x: 4, y: 0, z: 0 }), radio);
+    const eventos: CombatEvent[] = [];
+    for (let i = 0; i < 100; i++) {
+      eventos.push(...sim.tick(0.05, {
+        playerPosition: { x: 0, y: 0, z: 30 - i * 0.1 },
+        playerForward: { x: 0, y: 0, z: -1 },
+        playerMoving: true,
+      }).events);
+    }
+    assert.deepEqual(eventos.filter((e) => e.type === "attack_started" || e.type === "attack_landed"), []);
+    assert.equal(sim.getCombatant("b1")!.health, 60);
+    assert.equal(sim.getCombatant("b2")!.health, 60);
+    player.health = 0;
+    assert.deepEqual(sim.respawn().punto, { x: 0, y: 0, z: 30 - 99 * 0.1 }, "nadie enganchado: el punto sigue al jugador");
+  });
+});
+
 /** #613, pieza D: la única curación del juego. La aplica el bridge con la
  *  consequence `player_healed` del motor; aquí, la regla. */
 describe("GameSimulation.curarAlJugador", () => {

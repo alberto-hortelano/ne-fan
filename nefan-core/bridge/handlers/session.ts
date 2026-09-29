@@ -288,6 +288,10 @@ function reseedSimForSession(
       ctx.store.state.player.weapon_id,
       { x: pos[0], y: pos[1], z: pos[2] },
       { x: 0, y: 0, z: -1 },
+      // El MÁXIMO aparte de la vida (QA H2 de BN): sin él `createCombatant` lo
+      // igualaba a la vida guardada, y un jugador reanudado a 79 tenía 79 de
+      // máximo — la poción no le curaba nada y R le levantaba a 79.
+      ctx.store.state.player.max_hp,
     ),
   );
   ctx.store.dispatch("player_respawned", { hp, pos: [...pos] });

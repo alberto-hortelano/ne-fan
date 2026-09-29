@@ -1,15 +1,22 @@
 /** Headless battle simulator — runs AI vs AI fights without any frontend.
  *  Used for E2E tests and tournament mode.
  *
- *  Approach: Both fighters are registered as "enemies" with AI in the simulation.
- *  A dummy "player" is placed far away so it doesn't interfere. The game loop
- *  handles both AIs, movement, and combat resolution automatically. */
+ *  Approach: las dos IAs se conducen A MANO, con los mismos pasos que
+ *  `GameSimulation.tick` (mover, decidir, wind-up, resolver) y el mismo
+ *  sistema de combate. Hasta la tanda BN se daban de alta como «enemigos» en
+ *  el sim con un jugador de pega lejos, y se pegaban entre ellas porque la IA
+ *  elegía al combatiente vivo más cercano. Desde QA H4 el blanco de una IA
+ *  del sim es SOLO el jugador (dos hostiles del motor no se pelean), así que
+ *  un duelo IA-contra-IA ya no es algo que el sim haga: lo hace este arnés,
+ *  que es donde se mide el balance de las dificultades. */
 
-import { GameSimulation, type FrameInputs } from "../src/simulation/game-loop.js";
+import { EnemyAI } from "../src/combat/enemy-ai.js";
+import { StandardCombatSystem } from "../src/combat/standard-combat-system.js";
+import * as Combatant from "../src/combat/combatant.js";
 import { createCombatant } from "../src/combat/combatant.js";
-import { GameStore } from "../src/store/game-store.js";
+import { SeededRng } from "../src/rng.js";
 import { buildPersonality } from "../src/combat/difficulty-presets.js";
-import type { CombatConfig, EnemyPersonality } from "../src/types.js";
+import type { CombatConfig, CombatEvent, CombatantState, EnemyPersonality } from "../src/types.js";
 
 export interface FighterConfig {
   id: string;
@@ -53,14 +60,9 @@ export function runBattle(opts: BattleOptions): BattleResult {
   const maxDuration = opts.maxDuration ?? 30;
   const tickDelta = opts.tickDelta ?? 0.016;
 
-  const store = new GameStore();
-  const sim = new GameSimulation(config, store, seed);
+  const system = new StandardCombatSystem(config);
+  const rng = new SeededRng(seed);
 
-  // Dummy player far away — both real fighters are "enemies" with AI
-  const dummy = createCombatant("player", 1, "unarmed", { x: 999, y: 999, z: 999 });
-  sim.addCombatant(dummy);
-
-  // Register both fighters as enemies with AI
   const f1 = createCombatant(
     fighter1.id, fighter1.hp, fighter1.weapon,
     { ...fighter1.position }, { x: 0, y: 0, z: -1 },
@@ -72,21 +74,37 @@ export function runBattle(opts: BattleOptions): BattleResult {
 
   const p1 = buildPersonality(fighter1.difficulty, fighter1.aggressionStyle) as unknown as EnemyPersonality;
   const p2 = buildPersonality(fighter2.difficulty, fighter2.aggressionStyle) as unknown as EnemyPersonality;
+  // Mismo orden de alta y el MISMO rng para las dos, como en el sim.
+  const ais: Array<[EnemyAI, CombatantState, CombatantState]> = [
+    [new EnemyAI(f1.id, p1, system, rng), f1, f2],
+    [new EnemyAI(f2.id, p2, system, rng), f2, f1],
+  ];
+  const combatants = new Map<string, CombatantState>([[f1.id, f1], [f2.id, f2]]);
 
-  sim.addCombatant(f1, p1);
-  sim.addCombatant(f2, p2);
+  /** Un tick de duelo: los pasos 2, 3, 3b y 4 de `GameSimulation.tick`. */
+  const tickDeDuelo = (delta: number): CombatEvent[] => {
+    const eventos: CombatEvent[] = [];
+    for (const [ai, yo, otro] of ais) {
+      if (yo.health > 0) ai.updateMovement(delta, yo, otro);
+    }
+    for (const [ai, yo, otro] of ais) {
+      if (yo.health > 0) eventos.push(...ai.tick(delta, yo, otro));
+    }
+    for (const c of combatants.values()) {
+      const evs = Combatant.tick(c, delta);
+      for (const e of evs) {
+        if (e.type === "attack_impacted") system.addPendingImpact(e.combatantId as string, e.attackType as string);
+      }
+      eventos.push(...evs);
+    }
+    eventos.push(...system.resolve(delta, combatants));
+    return eventos;
+  };
 
   // Stats
   const stats: Record<string, FighterStats> = {
     [fighter1.id]: { attacksStarted: 0, attacksLanded: 0, damageDealt: 0, damageReceived: 0, finalHp: 0 },
     [fighter2.id]: { attacksStarted: 0, attacksLanded: 0, damageDealt: 0, damageReceived: 0, finalHp: 0 },
-  };
-
-  // Dummy inputs (player is far away, irrelevant)
-  const dummyInputs: FrameInputs = {
-    playerPosition: { x: 999, y: 999, z: 999 },
-    playerForward: { x: 0, y: 0, z: -1 },
-    playerMoving: false,
   };
 
   let totalTicks = 0;
@@ -96,9 +114,7 @@ export function runBattle(opts: BattleOptions): BattleResult {
     totalTicks++;
     elapsed += tickDelta;
 
-    const result = sim.tick(tickDelta, dummyInputs);
-
-    for (const e of result.events) {
+    for (const e of tickDeDuelo(tickDelta)) {
       const id = (e.combatantId ?? e.attackerId) as string;
       if (e.type === "attack_started" && stats[id]) {
         stats[id].attacksStarted++;

@@ -28,7 +28,7 @@ export class EnemyAI {
   /** A qué distancia (m) este enemigo EMPIEZA a hacer caso al jugador.
    *
    *  No existía, y hasta el 2026-08-29 nadie lo notó porque no había enemigos.
-   *  Sin él, `findNearestTarget` elige al jugador esté donde esté y
+   *  Sin él, el sim le da al jugador como blanco esté donde esté y
    *  `updateMovement` va a por él siempre: MEDIDO en el banco, un hostil a
    *  34 m mata a un jugador que no toca una tecla en 27,7 s — la distancia
    *  solo compra 12 segundos. Eso no es un enemigo, es una cuenta atrás.

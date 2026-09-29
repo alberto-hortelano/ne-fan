@@ -8,7 +8,6 @@ import { StandardCombatSystem } from "../combat/standard-combat-system.js";
 import { EnemyAI } from "../combat/enemy-ai.js";
 import { SeededRng } from "../rng.js";
 import * as Combatant from "../combat/combatant.js";
-import { distanceXZ } from "../vec3.js";
 import type { NpcBehaviorEvent, NpcBehaviorSystem } from "./npc-behavior.js";
 import { puntoDeReaparicion } from "./reaparicion.js";
 
@@ -139,13 +138,17 @@ export class GameSimulation {
       }
     }
 
+    // El blanco de toda IA enemiga es el JUGADOR (QA H4 de BN). Elegía al
+    // combatiente vivo más cercano, sin bandos: dos hostiles a menos de su
+    // radio se enganchaban entre sí en el primer tick y se mataban, y el que
+    // quedaba iba a por el jugador ya enganchado desde cualquier distancia.
+    const blanco = player && player.health > 0 ? player : undefined;
+
     // 2. Enemy movement (before attack decisions so distance is current)
     for (const [id, ai] of this.enemyAIs) {
       const enemy = this.combatants.get(id);
-      if (!enemy || enemy.health <= 0) continue;
-      const target = this.findNearestTarget(enemy);
-      if (!target) continue;
-      ai.updateMovement(delta, enemy, target);
+      if (!enemy || enemy.health <= 0 || !blanco) continue;
+      ai.updateMovement(delta, enemy, blanco);
     }
 
     // 2b. Clamp enemy positions to room bounds
@@ -162,10 +165,8 @@ export class GameSimulation {
     // 3. Enemy AI attack decisions
     for (const [id, ai] of this.enemyAIs) {
       const enemy = this.combatants.get(id);
-      if (!enemy || enemy.health <= 0) continue;
-      const target = this.findNearestTarget(enemy);
-      if (!target) continue;
-      const events = ai.tick(delta, enemy, target);
+      if (!enemy || enemy.health <= 0 || !blanco) continue;
+      const events = ai.tick(delta, enemy, blanco);
       allEvents.push(...events);
     }
 
@@ -326,18 +327,6 @@ export class GameSimulation {
       if (c && c.health > 0 && ai.enganchado) return true;
     }
     return false;
-  }
-
-  /** Find nearest alive combatant that isn't self. */
-  private findNearestTarget(self: CombatantState): CombatantState | undefined {
-    let best: CombatantState | undefined;
-    let bestDist = Infinity;
-    for (const [, c] of this.combatants) {
-      if (c.id === self.id || c.health <= 0) continue;
-      const d = distanceXZ(self.position, c.position);
-      if (d < bestDist) { bestDist = d; best = c; }
-    }
-    return best;
   }
 
   reset(): void {

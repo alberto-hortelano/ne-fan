@@ -14,7 +14,7 @@ import type { WorldScene } from "@nefan-core/src/scene/scene-normalize.js";
 import { CONFIG } from "@nefan-core/src/config.js";
 import { AVISO_PARTIDA, DETALLE_SIN_PARTIDA, errors } from "../ui/error-log.js";
 import { BridgeClient } from "./bridge-client.js";
-import { acumularFrame, type FrameResult } from "./frame-del-bridge.js";
+import { acumularFrame, frameDeArranque, type FrameResult } from "./frame-del-bridge.js";
 
 export { acumularFrame, type FrameResult };
 
@@ -39,14 +39,6 @@ export interface RoomEnemy {
   personality: EnemyPersonality;
 }
 
-/** El arma y el máximo con los que se pinta ANTES del primer `state_update`:
- *  los del store, que son los MISMOS con los que arranca el bridge (el mismo
- *  `createInitialState`). Aquí no se escribe ningún literal: el día que el
- *  jugador nazca con otra arma, nace en un sitio. */
-const jugadorDeArranque = (store: GameStore) => ({
-  playerMaxHp: store.state.player.max_hp,
-  playerWeaponId: store.state.player.weapon_id,
-});
 
 /** DE QUIÉN ES EL SIM que este cliente espera ver, y a quién decírselo (#659).
  *
@@ -97,6 +89,10 @@ export interface GameClient {
    *  `session-facets.ts` al cambiar de partida — volver al título incluido
    *  (#659); sin esto `idle()` repite el frame de la partida muerta. */
   olvidarElUltimoFrame(): void;
+  /** La vida con la que la partida EMPIEZA en el cliente, hasta el primer
+   *  frame del bridge: la del save. Sin esto, reanudar muerto pintaba 100 PV
+   *  unos frames (QA H6 de BN) — el neutro de `olvidarElUltimoFrame`. */
+  empezarPartida(vida: number): void;
   /** Cuántos `state_update` de OTRO sim se han tirado aquí. Lo lee el banco por
    *  `__nefan.estadosTirados()`, y existe por lo mismo que `descartados()` del
    *  embudo narrativo: sin contador, «no llegó» y «llegó y se descartó» son el
@@ -139,7 +135,7 @@ export class BridgeGameClient implements GameClient {
   ) {
     this.bridge = bridge;
     this.store = store;
-    this.lastState = { events: [], playerHp: 100, enemies: [], ...jugadorDeArranque(store) };
+    this.lastState = frameDeArranque(store);
 
     bridge.on("state_update", (msg) => {
       if (!msg) return;
@@ -286,19 +282,18 @@ export class BridgeGameClient implements GameClient {
     return this.tirados;
   }
 
+  /** Ver `GameClient.empezarPartida`. */
+  empezarPartida(vida: number): void {
+    this.lastState = frameDeArranque(this.store, vida);
+  }
+
   /** Ver `GameClient.olvidarElUltimoFrame`. Vuelve al neutro EXACTO del
    *  constructor —el jugador de arranque del store, sin enemigos ni NPCs— y
    *  sale del modo fixtures: quien vuelve al título no está mirando ninguna. */
   olvidarElUltimoFrame(): void {
     this.pendingFrame = null;
     this.esperandoReaparicion = false;
-    this.lastState = {
-      events: [],
-      playerHp: 100,
-      enemies: [],
-      npcs: [],
-      ...jugadorDeArranque(this.store),
-    };
+    this.lastState = frameDeArranque(this.store);
     this.enPrueba = false;
   }
 
@@ -350,7 +345,7 @@ export class ViewerGameClient implements GameClient {
 
   constructor(store: GameStore) {
     this.store = store;
-    this.frame = { events: [], playerHp: 100, enemies: [], ...jugadorDeArranque(store) };
+    this.frame = frameDeArranque(store);
   }
 
   tick(): FrameResult {
@@ -370,6 +365,7 @@ export class ViewerGameClient implements GameClient {
 
   /** No hay nada que olvidar: su frame es constante y no viene de ningún sim. */
   olvidarElUltimoFrame(): void {}
+  empezarPartida(): void {}
 
   /** Sin socket no llega nada que tirar. */
   estadosTirados(): number {

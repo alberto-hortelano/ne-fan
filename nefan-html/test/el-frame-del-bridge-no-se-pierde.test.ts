@@ -123,3 +123,20 @@ describe("reaparecer no manda la posición del cadáver", () => {
     assert.deepEqual(enviados, ["respawn", "input"]);
   });
 });
+
+/** QA H6 de BN: reanudar muerto pintaba 100 PV durante los primeros frames,
+ *  los que van del `session_started` al primer `state_update`: el cliente
+ *  repetía el neutro de `olvidarElUltimoFrame`. La partida empieza con la vida
+ *  del save. */
+describe("la partida empieza con la vida del save", () => {
+  it("empezarPartida(0): hasta el primer frame del bridge, el jugador está a 0, no a 100", () => {
+    const { cliente, llega } = bridgeDePrueba();
+    cliente.olvidarElUltimoFrame();
+    assert.equal(cliente.idle().playerHp, 100, "premisa: el neutro es el máximo");
+    cliente.empezarPartida(0);
+    assert.equal(cliente.idle().playerHp, 0);
+    assert.equal(cliente.jugadorEnCombate().health, 0, "y es lo que contesta a quién está vivo");
+    llega({ playerHp: 37 });
+    assert.equal(cliente.idle().playerHp, 37, "el primer frame del bridge manda");
+  });
+});

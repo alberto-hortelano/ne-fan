@@ -7,8 +7,9 @@
  *  nadie la producía: la única forma de recuperar vida era morir.
  *
  *  El escenario, entero por el camino del jugador y desde el arranque:
- *   1 · se mata al bandido del tile de bootstrap: la pelea deja al jugador
- *       herido, que es lo que hace falta para ver subir la barra;
+ *   1 · el jugador se deja herir por el bandido del tile de bootstrap hasta
+ *       quedar a 90 PV o menos, y después lo mata: herido es lo que hace falta
+ *       para ver subir la barra;
  *   2 · se habla con el tabernero y se le escribe la marca de la poción en el
  *       texto libre (`UNA POCION`, `labs/narrative/fake-ai-server.ts`): el
  *       motor falso contesta con un diálogo y `player_healed{10}`;
@@ -24,7 +25,7 @@
  *  Cero créditos: preset `e2e-sin-creditos`, el motor es el fake-ai-server.
  */
 import { nuevaPartida, comenzar } from "../lib/sesion.mjs";
-import { acercarse, herirHasta } from "../lib/combate.mjs";
+import { acercarse, dejarseHerirHasta, herirHasta } from "../lib/combate.mjs";
 
 /** Precondición DECLARADA (la ejecuta qa/run.mjs antes de lanzar el guion):
  *   · `saves`   — la partida tiene que arrancar en el tile de bootstrap, que
@@ -98,6 +99,10 @@ export default async function (ctx) {
     BANDIDO,
   );
   await acercarse(ctx, BANDIDO, { objetivo: 1.6, tramos: 14 });
+  // Herirse A PROPÓSITO antes de pelear (QA H8 de BN): antes la herida
+  // dependía de cómo saliera la pelea, y alguna corrida acababa a 100/100.
+  const herida = await dejarseHerirHasta(ctx, BANDIDO, 90, { sim: 60 });
+  if (!herida) ctx.sinMedir("el bandido no hirió al jugador en 60 s de mundo: no hay vida que subir");
   const caido = await herirHasta(ctx, BANDIDO, 0, { sim: 90 });
   if (caido?.jugadorMuerto) {
     ctx.sinMedir("el bandido mató al jugador: un muerto no se cura (solo R lo levanta), no hay qué medir");

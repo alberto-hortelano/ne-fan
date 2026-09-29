@@ -5,6 +5,7 @@
 
 import type { CombatEvent, Vec3 } from "@nefan-core/src/types.js";
 import type { StateUpdateMessage } from "@nefan-core/src/protocol/messages.js";
+import type { GameStore } from "@nefan-core/src/store/game-store.js";
 
 export interface FrameResult {
   events: CombatEvent[];
@@ -45,4 +46,21 @@ export function acumularFrame(
   const punto = reaparicion ?? pendiente?.reaparicion;
   const eventos = pendiente ? [...pendiente.events, ...nuevo.events] : nuevo.events;
   return punto ? { ...nuevo, events: eventos, reaparicion: punto } : { ...nuevo, events: eventos };
+}
+
+/** El frame con el que se pinta ANTES del primer `state_update`: el arma y el
+ *  máximo del store, que son los MISMOS con los que arranca el bridge (el
+ *  mismo `createInitialState`), sin enemigos ni NPCs. La vida, la que diga
+ *  quien empieza — la del save al reanudar (`empezarPartida`); sin partida, el
+ *  máximo. Aquí no se escribe ningún literal: el día que el jugador nazca con
+ *  otra arma, nace en un sitio. */
+export function frameDeArranque(store: GameStore, playerHp = store.state.player.max_hp): FrameResult {
+  return {
+    events: [],
+    playerHp,
+    playerMaxHp: store.state.player.max_hp,
+    playerWeaponId: store.state.player.weapon_id,
+    enemies: [],
+    npcs: [],
+  };
 }
