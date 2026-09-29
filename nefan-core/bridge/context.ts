@@ -645,6 +645,7 @@ export function createSessionNpcBehavior(
       queImpideElPaso: (fx, fz, tx, tz, r) => ctx.simCollision.queImpideElPaso(fx, fz, tx, tz, r),
       porDondeSalirDeAqui: (x, z, r) => ctx.simCollision.porDondeSalirDeAqui(x, z, r),
       blocksCircle: (x, z, r) => ctx.simCollision.blocksCircle(x, z, r),
+      buscarRuta: (desde, hasta, r) => ctx.simCollision.buscarRuta(desde, hasta, r),
       resolvePlaceTarget: (placeId) => resolvePlaceTarget(ctx.narrative, placeId),
       getEntityPosition: (entityId) => {
         const e = ctx.narrative.getEntity(entityId);

@@ -260,6 +260,7 @@ describe("GameSimulation", () => {
         queImpideElPaso: () => null,
         porDondeSalirDeAqui: () => null,
         blocksCircle: () => false,
+        buscarRuta: (_d, hasta) => ({ ok: true, meta: hasta, puntos: [hasta], expansiones: 0 }),
         resolvePlaceTarget: () => null,
         getEntityPosition: () => null,
       },

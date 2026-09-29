@@ -262,12 +262,21 @@ la caja (y con el orden inverso pasa lo simétrico). La salida es la penetració
 sobre la UNIÓN de las dos fuentes, no sobre cada una por su lado; queda como
 backlog.
 
-Lo que esas dos reglas NO tapan, medido: el steering sigue siendo por deflexión
-(`TODO(A*)`) y **no rodea un obstáculo centrado en su camino**, venga de donde
-venga. El mismo cajón de 6 m, misma posición, del tile o de runtime, deja al
-NPC plantado delante las dos veces; y por el pasillo de 1,0 m que deja el
-reparto de un turno (`HOLGURA_ENTRE_SPAWNS_M`) solo pasa si entra clavado en su
-eje. Eso es pathfinding y tiene su sitio, no estas reglas.
+Lo que esas dos reglas NO tapan lo tapa, desde la tanda BO (#618, pieza A), el
+**pathfinding**: el NPC con `goto`/`visit` busca camino con un A\* sobre la
+MISMA colisión que frena su paso (`buscarRuta` en `bridge/sim-collision.ts`:
+terreno, plan y cajas de runtime; algoritmo puro en
+`src/simulation/busca-camino.ts` y `ruta-por-el-suelo.ts`), con la meta en un
+sitio LIBRE del lugar (`sitioParaAparecer`). La ruta decide y el abanico de
+deflexiones queda como seguidor local entre sus puntos; el escape por caja solo
+existe cuando el plan falla (un cercado de verdad). El cajón de 6 m que antes
+dejaba al NPC pisando en el sitio se rodea igual venga del tile o de runtime
+(`qa/el-mundo-solido-tambien-para-el-npc.mjs`, bloque 10). Lo que sigue sin
+ruta: `wander` (puntos cercanos), `flee` e `intervene` (metas que se mueven cada
+tick). Y un pasillo de menos de cuerpo + media celda (el de 1,0 m que deja el
+reparto de un turno, `HOLGURA_ENTRE_SPAWNS_M`) puede no tener ningún centro de
+celda libre para el A\*, según caiga respecto a la rejilla: ahí el plan falla y
+manda el abanico como antes.
 
 **PROHIBIDO recortar una imagen generada con siluetas DECLARADAS.** Se probó y
 NO funciona: el modelo de imagen recoloca y reorienta lo declarado, la máscara

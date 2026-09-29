@@ -7,6 +7,9 @@ import { expandScenePrimitives } from "../src/scene/scene-expand.js";
 import { createSimCollisionProvider } from "../bridge/sim-collision.js";
 import { composeTilePlan } from "../src/scene/tile-plan.js";
 import { SPAWN_DE_RUNTIME } from "../src/session/mundo-persistido.js";
+import { SeededRng } from "../src/rng.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 /** Tile 0,0: rect mundo [-32,32). Celda (c,r) → mundo (-32 + (c+0.5)·0.5). */
 function cellCenter(c: number, r: number): { x: number; z: number } {
@@ -321,5 +324,113 @@ describe("createSimCollisionProvider · las cajas de los spawns de RUNTIME (#583
 
     assert.equal(provider.queImpideElPaso(5, 0, 1.9, 0, 0.5), null, "la forja de la otra partida ya no está");
     assert.deepEqual(provider.queImpideElPaso(25, 0, 21.9, 0, 0.5), { de: "caja", id: "posada" });
+  });
+});
+
+/** LA RUTA VE LO QUE VE EL PASO (#618). `buscarRuta` arma el suelo con la MISMA
+ *  cuenta que `ocupado` —terreno, plan y cajas de runtime— y no con la máscara
+ *  de `scene-validate.ts`, que no sabe de cajas de runtime: una ruta sobre ella
+ *  rodearía el granero del tile y cruzaría el del motor (#583 del revés). */
+const R = 0.5;
+/** El suelo de PRODUCCIÓN de una fixture: el proveedor del bridge sobre la
+ *  escena registrada como tile (0,0). */
+function proveedorDeFixture(nombre: string) {
+  const raw = JSON.parse(
+    readFileSync(fileURLToPath(new URL(`../data/scenes/${nombre}.json`, import.meta.url)), "utf-8"),
+  ) as Record<string, unknown>;
+  const s = new NarrativeState(new MemorySessionStorage());
+  s.startNewSession(`ruta-${nombre}`);
+  s.recordSceneLoaded("tile_0_0", expandScenePrimitives({ ...raw, scene_id: "tile_0_0" }));
+  return createSimCollisionProvider(s);
+}
+
+/** Puntos del trazado `desde → puntos…` cada `paso` metros. */
+function muestrear(desde: { x: number; z: number }, puntos: ReadonlyArray<{ x: number; z: number }>, paso = 0.05) {
+  const out: Array<{ x: number; z: number }> = [];
+  let a = desde;
+  for (const b of puntos) {
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / paso));
+    for (let k = 0; k <= n; k++) out.push({ x: a.x + ((b.x - a.x) * k) / n, z: a.z + ((b.z - a.z) * k) / n });
+    a = b;
+  }
+  return out;
+}
+
+describe("createSimCollisionProvider · buscarRuta", () => {
+  /** Agua de la fila 10 (makeState), un árbol del PLAN y una forja de RUNTIME. */
+  function mundo(): NarrativeState {
+    const s = makeState({ volumes: [{ id: "arbol_1", label: "roble viejo", type: "tree", at: [100, 100] }] });
+    s.recordEntitySpawned(
+      "forja", "building", "tile_0_0", { x: 0, y: 0, z: 0 },
+      { name: "forja del herrero", footprint: [8, 8] }, SPAWN_DE_RUNTIME, "ev_forja",
+    );
+    return s;
+  }
+
+  it("en 1.000 puntos, la meta de la ruta es el propio punto si y solo si `ocupado` dice que está libre", () => {
+    const provider = createSimCollisionProvider(mundo());
+    let ocupados = 0;
+    for (let k = 0; k < 1000; k++) {
+      // Rejilla determinista de 0,25 × 0,33 m que barre la forja de runtime y
+      // su orla (la franja donde el cuerpo roza la caja sin estar dentro).
+      const p = { x: -5 + (k % 40) * 0.25, z: -4.1 + Math.floor(k / 40) * 0.33 };
+      const r = provider.buscarRuta({ x: 25, z: -15 }, p, 0.5);
+      const libre = !provider.ocupado(p.x, p.z, 0.5);
+      if (!libre) ocupados++;
+      assert.ok(r.ok, `(${p.x}, ${p.z}): ${JSON.stringify(r)}`);
+      assert.ok(!provider.ocupado(r.meta.x, r.meta.z, 0.5), "la meta siempre libre");
+      assert.equal(r.meta.x === p.x && r.meta.z === p.z, libre, `(${p.x}, ${p.z}) libre=${libre} meta=${JSON.stringify(r.meta)}`);
+    }
+    assert.ok(ocupados > 50 && ocupados < 950, `la muestra cruza sólido de verdad: ${ocupados} ocupados`);
+  });
+
+  it("rodea la forja de RUNTIME: el trazado no toca nada que `ocupado` vea, y la recta sí", () => {
+    const provider = createSimCollisionProvider(mundo());
+    const desde = { x: -8, z: 0.3 };
+    const hasta = { x: 8, z: 0.3 };
+    const muestras = (pts: Array<{ x: number; z: number }>) => {
+      const out: Array<{ x: number; z: number }> = [];
+      for (let k = 1; k < pts.length; k++) {
+        const [a, b] = [pts[k - 1], pts[k]];
+        const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.05);
+        for (let i = 0; i <= n; i++) out.push({ x: a.x + ((b.x - a.x) * i) / n, z: a.z + ((b.z - a.z) * i) / n });
+      }
+      return out;
+    };
+    assert.ok(muestras([desde, hasta]).some((p) => provider.ocupado(p.x, p.z, 0.5)), "CONTROL: la recta cruza la forja");
+    const r = provider.buscarRuta(desde, hasta, 0.5);
+    assert.ok(r.ok);
+    assert.deepEqual(muestras([desde, ...r.puntos]).filter((p) => provider.ocupado(p.x, p.z, 0.5)), []);
+  });
+
+  it("SOLIDEZ: en las tres fixtures, el trazado alisado entre celdas no toca sólido (muestreo cada 5 cm)", () => {
+    for (const nombre of ["robledo_tile", "puerto_tile", "zorder_test"]) {
+      const suelo = proveedorDeFixture(nombre);
+      const rng = new SeededRng(646);
+      const libreAlAzar = (): { x: number; z: number } => {
+        for (;;) {
+          // Centros de celda, para que el tramo de anclaje sea de longitud 0
+          // y lo medido sea SOLO lo que la cuenta promete.
+          const p = { x: -32 + (rng.nextInt(128) + 0.5) * 0.5, z: -32 + (rng.nextInt(128) + 0.5) * 0.5 };
+          if (!suelo.ocupado(p.x, p.z, R)) return p;
+        }
+      };
+      let rutas = 0;
+      let muestras = 0;
+      const tocados: string[] = [];
+      for (let k = 0; k < 20; k++) {
+        const desde = libreAlAzar();
+        const hasta = libreAlAzar();
+        const r = suelo.buscarRuta(desde, hasta, R);
+        if (!r.ok) continue;
+        rutas++;
+        const traza = muestrear(desde, r.puntos);
+        muestras += traza.length;
+        for (const p of traza) if (suelo.ocupado(p.x, p.z, R)) tocados.push(`${nombre} ${k} (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
+      }
+      assert.ok(rutas >= 15, `${nombre}: ${rutas} de 20 con ruta`);
+      assert.ok(muestras > 2000, `${nombre}: ${muestras} muestras`);
+      assert.deepEqual(tocados, [], `${nombre}: trazado dentro del sólido`);
+    }
   });
 });
