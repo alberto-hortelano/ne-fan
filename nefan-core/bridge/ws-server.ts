@@ -1,46 +1,22 @@
-/** WebSocket bridge — runs GameSimulation + NarrativeState; los clientes
- * conectan al puerto del gateway (SERVICES["game-gateway"], CONFIG.ports.bridge).
+/** WebSocket bridge — la ENTRADA del proceso. Los clientes conectan al puerto
+ *  del gateway (SERVICES["game-gateway"], CONFIG.ports.bridge).
  *
- *  Este archivo es sólo bootstrap: construye las instancias, el BridgeContext
- *  y el wiring de transporte (WS + state HTTP API). La lógica de cada mensaje
- *  vive en bridge/handlers/* y se enruta en bridge/router.ts. */
+ *  Este archivo es sólo bootstrap, y desde #769 lo es de verdad: lee el
+ *  entorno, las rutas y los puertos, y llama a `arrancarBridge`
+ *  (`bridge/arranque.ts`). El contexto nace en `contexto-del-bridge.ts`, los
+ *  hooks de plugins del State API en `hooks-de-plugins.ts` y cada socket se
+ *  atiende en `conexion.ts`; la lógica de cada mensaje vive en
+ *  bridge/handlers/* y se enruta en bridge/router.ts. Nada de eso se queda
+ *  aquí porque este fichero no lo puede importar ningún test: importarlo es
+ *  levantar el bridge. */
 
-import { Agent, fetch as undiciFetch } from "undici";
-import { WebSocketServer, WebSocket } from "ws";
-import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { GameSimulation } from "../src/simulation/game-loop.js";
-import { loadConfig } from "../src/combat/combat-data.js";
-import { GameStore } from "../src/store/game-store.js";
-import { NarrativeState } from "../src/narrative/narrative-state.js";
-import { createWorldClaim } from "./world-claim.js";
-import { FsSessionStorage } from "../src/narrative/session-storage.js";
-import { AiClient } from "../src/narrative/ai-client.js";
-import { NpcDirector } from "../src/world-map/npc-director.js";
-import { createSimCollisionProvider } from "./sim-collision.js";
-import { MapTriggerEvaluator } from "../src/world-map/map-triggers.js";
-import { registerRuntimePlugin } from "../src/plugins/register.js";
-import { pluginListSummary } from "../src/plugins/views.js";
-import { inspeccionarPlugin } from "./plugins-activos.js";
 import { CONFIG } from "../src/config.js";
 import { resolveServiceUrl } from "../src/contracts/common.js";
-import { createStateHttpServer } from "./state-http-server.js";
-import { pluginRegisterBody } from "./state-http/context.js";
-import { routeMessage } from "./router.js";
-import { SceneGenQueue } from "./scene-gen-queue.js";
-import { intakeClientMessage } from "./message-intake.js";
-import {
-  sellarSesion,
-  sellarDuenoDelSim,
-  type BridgeContext,
-  type ClientSocket,
-} from "./context.js";
-import { difundirSalidasDeLosTilesCargados } from "./salidas.js";
-import type { CombatConfig } from "../src/types.js";
-import type { ServerMessage } from "../src/protocol/messages.js";
 import { leerEntorno } from "../src/session/gates-de-imagen.js";
+import { arrancarBridge } from "./arranque.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Resolve paths relative to project root (works from both src/ and dist/)
@@ -76,120 +52,6 @@ const ENTORNO = (() => {
   return r.entorno;
 })();
 
-// Load combat config
-const configPath = resolve(dataDir, "combat_config.json");
-const config: CombatConfig = loadConfig(JSON.parse(readFileSync(configPath, "utf-8")));
-
-const store = new GameStore();
-const sim = new GameSimulation(config, store, Date.now());
-const sessionStorage = new FsSessionStorage(SAVES_DIR);
-const narrative = new NarrativeState(sessionStorage);
-const simCollision = createSimCollisionProvider(narrative);
-// Tras `simCollision` y no antes: `npc_arrive` pregunta al suelo dónde soltar
-// al NPC (#618), con la misma colisión que el sim.
-const npcDirector = new NpcDirector(narrative, simCollision);
-
-// Players currently subscribed to narrative events (broadcast targets).
-const narrativeSubscribers = new Set<WebSocket>();
-
-/** El ÚNICO sitio que escribe en el socket. `send` no admite mensajes con
- *  sello (el tipo `SinSello` los deja fuera): los que llevan el de SESIÓN
- *  pasan por `sellarSesion` (#282) y el que lleva el de DUEÑO DEL SIM pasa por
- *  `sellarDuenoDelSim` (#659). Por eso el sellado no puede saltarse
- *  escribiendo a mano, y por eso este escritor es crudo.
- *
- *  Aquí decía «los tres que sí lo llevan» y ya eran cuatro antes de #659: el
- *  número se retira en vez de corregirse, porque un censo en un comentario
- *  envejece en la PR siguiente. Quién lleva sello lo dicen los tipos
- *  derivados de `context.ts` (`ConSelloDeSesion`, `ConDuenoDelSim`), que no se
- *  pueden quedar desfasados. */
-function escribir(ws: ClientSocket, msg: ServerMessage): void {
-  if (ws.readyState === ws.OPEN) {
-    ws.send(JSON.stringify(msg));
-  }
-}
-
-const ctx: BridgeContext = {
-  sim,
-  combatConfig: config,
-  store,
-  narrative,
-  sessionStorage,
-  aiClient: new AiClient({
-    baseUrl: AI_SERVER_URL,
-    // Sin headersTimeout/bodyTimeout: el default de undici (300 s hasta
-    // recibir cabeceras) mataba /generate_scene con "fetch failed" mientras
-    // el motor narrativo seguía escribiendo. El AbortController del cliente
-    // (llm_timeout_s + margen) es quien acota la espera.
-    //
-    // OJO: fetch y Agent deben venir del MISMO undici (el paquete npm). El
-    // fetch GLOBAL de Node usa su undici interno y rechaza un Agent ajeno al
-    // instante con "fetch failed: invalid onRequestStart method".
-    fetchImpl: undiciFetch as unknown as typeof fetch,
-    dispatcher: new Agent({ headersTimeout: 0, bodyTimeout: 0 }),
-  }),
-  mapTriggers: new MapTriggerEvaluator(narrative),
-  npcDirector,
-  simCollision,
-  gamesDir: GAMES_DIR,
-  stylesDir: STYLES_DIR,
-  persistWorldSnapshots: true,
-  activePlugins: new Map(),
-  sceneGen: new SceneGenQueue(),
-  posTracking: { cellKey: null, tileKey: null, placeId: null },
-  world: createWorldClaim(narrative, sim),
-  subscribe(ws) {
-    narrativeSubscribers.add(ws as WebSocket);
-  },
-  send(ws, msg) {
-    escribir(ws, msg);
-  },
-  // EL TRANSPORTE ESCRIBE EL SELLO, y estas dos funciones son los únicos
-  // sitios del bridge que lo hacen (#282). El mensaje tiene que decir DE
-  // QUIÉN es o el cliente no puede distinguir el tile de su partida del de la
-  // que acaba de abandonar. Se estampa aquí y no en cada emisor porque son 23
-  // llamadas y basta olvidar una para tirar un tile bueno; el tipo
-  // `SinSelloDeSesion` impide que un emisor lo escriba por su cuenta.
-  //
-  // Qué significa EXACTAMENTE, para que nadie lo lea de más: «la sesión que
-  // este bridge tiene activa en el instante de emitir». No es «la sesión que
-  // pidió el trabajo» — eso lo sujeta aparte `sessionChangedError`, que hace
-  // que un job de una sesión relevada ni siquiera llegue a difundirse.
-  broadcastNarrative(msg) {
-    const sellado = sellarSesion(msg, narrative.session_id);
-    for (const ws of narrativeSubscribers) escribir(ws, sellado);
-  },
-  enviarNarrativo(ws, msg) {
-    escribir(ws, sellarSesion(msg, narrative.session_id));
-  },
-  // EL TERCER VERBO NO SELLA, y por eso es un verbo y no una bandera (#313).
-  // Lo que viaja por aquí se direcciona por JUEGO: no hay sesión que estampar,
-  // y la que este bridge tuviera cargada al emitir no tiene nada que ver con
-  // quien pidió el trabajo. Aquí no se nombra ningún `kind`: el reparto lo hace
-  // el cliente mirando QUÉ IDENTIFICADOR trae el mensaje, y si esta función
-  // tuviera que preguntar por el kind, la excepción que #313 quitó de
-  // `repartirStatus` solo se habría mudado de sitio.
-  difundirDeJuego(msg) {
-    for (const ws of narrativeSubscribers) escribir(ws, msg);
-  },
-  // EL CUARTO VERBO, y tampoco es una bandera (#659). Lo que viaja por aquí se
-  // direcciona por DE QUIÉN ES EL SIM: no es la sesión vigente del bridge —que
-  // en el selector «Room» es la de la partida anterior, rancia— sino quién
-  // reclamó el contenido del sim, que es lo único que describe este mensaje.
-  // El sello sale de `ctx.world`, única fuente, y se estampa aquí y no en los
-  // cuatro emisores por lo mismo de siempre: basta olvidarse en uno.
-  enviarEstado(ws, msg) {
-    escribir(ws, sellarDuenoDelSim(msg, ctx.world.delSim));
-  },
-};
-
-// El jugador NO se siembra al arrancar el PROCESO. Aquí había un combatiente
-// en (0,0,0) desde el primer segundo del bridge, y con él la guarda de
-// `handleInput` («sim aún sin sembrar») no saltaba nunca: cualquier socket
-// conducía el sim antes de que hubiera partida. Quien siembra al jugador es
-// quien sabe dónde está: `reseedSimForSession` (start/resume, con la posición
-// del save) o `handleLoadRoom` (fixtures del selector «Room»).
-
 // Última red DE VERDAD, no el canal de errores: los throws de los handlers los
 // captura y contesta `routeMessage` (frame con requestId o narrative_status de
 // error), así que esto solo puede dispararse desde trabajo que no nació de un
@@ -199,158 +61,20 @@ process.on("unhandledRejection", (reason) => {
   console.error("Bridge: unhandled rejection (fuera del ciclo de mensajes):", reason);
 });
 
-const wss = new WebSocketServer({ port: PORT });
-console.log(`NEFan Logic Bridge listening on ws://localhost:${PORT}`);
+const bridge = await arrancarBridge({
+  port: PORT,
+  statePort: STATE_HTTP_PORT,
+  entorno: ENTORNO,
+  dataDir,
+  gamesDir: GAMES_DIR,
+  stylesDir: STYLES_DIR,
+  savesDir: SAVES_DIR,
+  aiServerUrl: AI_SERVER_URL,
+});
+console.log(`NEFan Logic Bridge listening on ws://localhost:${bridge.puertoWs}`);
 console.log(
   `Bridge: entorno ${ENTORNO} — ` +
     (ENTORNO === "produccion"
       ? "los caminos automáticos PUEDEN pagar arte nuevo (Imagen IA encendida)"
       : "los caminos automáticos solo restauran lo ya pagado (NEFAN_ENTORNO=produccion para generar)"),
 );
-
-// State HTTP API: the narrative engine (Claude via narrative-mcp tools) queries
-// and mutates the authoritative NarrativeState here, instead of receiving the
-// whole world in the LLM context.
-createStateHttpServer({
-  port: STATE_HTTP_PORT,
-  narrative,
-  npcDirector,
-  gamesDir: GAMES_DIR,
-  sessionStorage,
-  aiServerUrl: AI_SERVER_URL,
-  gatewayUrl: `ws://127.0.0.1:${PORT}`,
-  onMutation: async () => {
-    await narrative.save();
-  },
-  onProgress: (message) => {
-    ctx.broadcastNarrative({
-      type: "narrative_status",
-      phase: "progress",
-      kind: "scene",
-      message,
-    });
-  },
-  onMapChanged: () => difundirSalidasDeLosTilesCargados(ctx),
-  plugins: {
-    register: (raw) => {
-      const result = registerRuntimePlugin(narrative, ctx.activePlugins, raw);
-      const name = result.manifest.name;
-      const version = result.manifest.version;
-      const short = result.id.slice(0, 12);
-      // Que el motor haya EVOLUCIONADO un plugin —y sobre todo que haya tomado
-      // uno shipped— no puede ser algo que se deduzca del warning del siguiente
-      // resume: se dice aquí, cuando pasa.
-      if (result.action === "migrated" && result.fromOriginAuthor === "developer") {
-        console.warn(
-          `Bridge: el motor narrativo TOMA el plugin de disco '${name}' ` +
-            `v${result.fromVersion}→v${version} (${short}…) — el JSON de data/…/plugins/ ` +
-            `queda inerte para esta sesión: el manifest vigente vive ya en el save`,
-        );
-      } else {
-        console.log(
-          result.action === "migrated"
-            ? `Bridge: plugin '${name}' migrado v${result.fromVersion}→v${version} en runtime (${short}…)`
-            : result.action === "unchanged"
-              ? `Bridge: plugin '${name}' v${version} ya activo (${short}…) — registro idempotente`
-              : `Bridge: plugin '${name}' v${version} activado en runtime ` +
-                `(${short}…, ${result.fixturesPassed} fixtures)`,
-        );
-      }
-      // plugin_activated (§7.3 paso 5): se notifica con el status existente
-      // para no tocar los parsers de cliente. `kind: "plugin"` desde #352 —
-      // era `consequences`, o sea «el motor narrativo rechazó la reacción»
-      // para decir que un plugin se ha ACTIVADO. Este no rotula nunca (es
-      // `ready`, y `rotuloDeStatus` solo rotula fallos), así que el jugador no
-      // leía la mentira; pero el kind es el hecho, y dejarlo aquí era el
-      // décimo sitio donde `consequences` significaba «lo demás».
-      ctx.broadcastNarrative({
-        type: "narrative_status",
-        phase: "ready",
-        kind: "plugin",
-        message:
-          result.action === "migrated"
-            ? `Plugin evolucionado: ${name} v${result.fromVersion}→v${version}` +
-              (result.fromOriginAuthor === "developer" ? " (sustituye al de disco)" : "")
-            : result.action === "unchanged"
-              ? `Plugin ya activo: ${name} v${version}`
-              : `Plugin activado: ${name} (${short}…)`,
-      });
-      // …y para que llegue A LA PANTALLA, por el feed de eventos, que es el
-      // único canal de estos que el cliente pinta hoy (un narrative_status
-      // `ready` que no es de tile ni de escena lo descarta en silencio). Solo
-      // la migración: es
-      // la que cambia un sistema con el que el jugador ya estaba tratando, y
-      // si el que cambia es un plugin del juego, el cambio es IRREVERSIBLE
-      // para ese save — el JSON del disco deja de mandar.
-      if (result.action === "migrated") {
-        ctx.broadcastNarrative({
-          type: "narrative_event",
-          eventId: "plugin_register",
-          consequences: [],
-          effects: [
-            {
-              kind: "ambient_message",
-              message:
-                `⚙️ el sistema «${name}» ha cambiado de versión (v${result.fromVersion} → v${version})` +
-                (result.fromOriginAuthor === "developer"
-                  ? " — a partir de ahora manda la del motor narrativo, no la del juego"
-                  : ""),
-            },
-          ],
-        });
-      }
-      return pluginRegisterBody(result);
-    },
-    list: () =>
-      [...ctx.activePlugins.entries()].map(([id, m]) =>
-        pluginListSummary(id, m, narrative.pluginDelManifest(id)?.origin.author),
-      ),
-    inspect: (id, view) => inspeccionarPlugin(ctx, id, view),
-  },
-});
-
-wss.on("connection", (ws: WebSocket) => {
-  console.log("Bridge: client connected");
-  // Lo primero que oye cada socket, con sesión o sin ella (fixtures): el
-  // entorno de la corrida. Unicast y sin sello (`BridgeHelloMessage`).
-  ctx.send(ws, { type: "bridge_hello", entorno: ENTORNO });
-
-  ws.on("message", async (raw: Buffer) => {
-    // Borde fail-loud: el input del cliente (WS sin auth) NO llega crudo a los
-    // handlers. JSON inválido o shape no conforme al contrato → se rechaza con
-    // el error preciso, en vez de petar dentro de un handler con un TypeError.
-    const intake = intakeClientMessage(raw.toString());
-    if (!intake.ok) {
-      const preview = raw.toString().slice(0, 200);
-      console.error(`Bridge: WS frame rejected (${intake.reason}): ${intake.error} — ${preview}`);
-      // UNICAST —al socket que mandó la basura, no a todos— pero por el
-      // mismo transporte que sella: aquí el `sessionId` se escribía a mano.
-      // `protocolo` y no `scene` (#352, QA H-7): esto no es la generación de
-      // ningún sitio, es el juego mandando un frame que el bridge no puede
-      // leer. Con `scene` el jugador leía «No se pudo preparar el lugar», que
-      // nombra a otro culpable, y debajo jerga de bridge. El volcado técnico
-      // —el motivo del intake y los 200 primeros bytes— ya está entero en el
-      // `console.error` de arriba, que es donde sirve.
-      ctx.enviarNarrativo(ws, {
-        type: "narrative_status",
-        phase: "error",
-        kind: "protocolo",
-        message:
-          intake.reason === "json"
-            ? "El juego mandó al servidor algo que no es un mensaje válido."
-            : "El juego mandó un mensaje que el servidor no reconoce.",
-      });
-      return;
-    }
-    await routeMessage(intake.msg, ws, ctx);
-  });
-
-  ws.on("close", () => {
-    narrativeSubscribers.delete(ws);
-    // Quien tenía el mundo se ha ido: queda sin dueño y el save deja de
-    // escuchar al sim. Sin esto, un F5 dejaba la partida guardada oyendo a un
-    // sim que el siguiente cliente conduce sin ser el suyo.
-    ctx.world.release(ws);
-    console.log("Bridge: client disconnected");
-  });
-});

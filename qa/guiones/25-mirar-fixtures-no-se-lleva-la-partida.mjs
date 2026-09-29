@@ -48,7 +48,7 @@
  *  `nefan-core/data/scenes/` son Format D con `tile` — el candado se probó
  *  contra un mensaje que nadie mandaba ya. Ese es el modo de fallo que hay que
  *  recordar: no un bug, un CANDADO VERDE SOBRE CÓDIGO MUERTO. Y tras un F5 `simDriver` vuelve a
- *  `null` (`ws-server.ts`, `ws.on("close")`), así que el socket nuevo conduce
+ *  `null` (`bridge/conexion.ts`, `ws.on("close")`), así que el socket nuevo conduce
  *  sin haber tomado el mundo.
  *
  *  CÓMO SE ARREGLÓ: `bridge/world-claim.ts` juntó los dos hechos que estaban

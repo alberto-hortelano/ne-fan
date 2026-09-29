@@ -471,7 +471,7 @@ interface CuerpoDeNarrativeStatus {
  *
  *  Lo que el sello dice EXACTAMENTE, y hay que leerlo así o el filtro se
  *  entiende mal: «la sesión que el bridge tenía activa al emitir», no «la que
- *  pidió el trabajo» (ver `bridge/ws-server.ts`). Para lo que NO es de una
+ *  pidió el trabajo» (ver `bridge/contexto-del-bridge.ts`). Para lo que NO es de una
  *  partida, ese campo era basura: ver `NarrativeStatusDeJuego`. */
 /** QUÉ HA PASADO, no por dónde pasó. El `kind` es lo único que el jugador
  *  lee como TITULAR (`rotuloDeStatus`), así que cada valor es un hecho
@@ -514,7 +514,7 @@ export type KindDeStatusDeSesion =
 
 /** Qué FASES admite cada kind. Un `ready` es «el sitio está listo» (`tile`:
  *  desde #405 toda escena servida es un tile, así que es el único ready del
- *  mundo) o «el plugin se activó» (`plugin`, bridge/ws-server.ts). Ningún otro
+ *  mundo) o «el plugin se activó» (`plugin`, bridge/hooks-de-plugins.ts). Ningún otro
  *  hecho tiene un «listo» que contar, y hasta #405 el tipo dejaba escribir un
  *  lector de `scene`+`ready` que ningún productor alimentaba (main.ts lo tuvo,
  *  QA-F H3). Con esta unión ese lector NO COMPILA: al estrechar por `kind`, la

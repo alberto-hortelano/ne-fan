@@ -42,7 +42,7 @@
  *       se lo diga, que es el cuelgue del #210 con otro traje.
  *    5. EL NPC TAMPOCO (tanda BL, #618 / #646): `npc_arrive` teletransporta al
  *       NPC que el sim no trajo andando, y lo dejaba en el MISMO centro crudo.
- *       Con `NpcDirector` construido como en `ws-server.ts` —con el proveedor
+ *       Con `NpcDirector` construido como en `bridge/contexto-del-bridge.ts` —con el proveedor
  *       de colisión de la sesión— los 13 caen libres; y tras el salto el NPC
  *       pasea alrededor de donde llegó, no vuelve andando a donde estaba.
  *    4. EL OTRO CAMINO DEL SPAWN: el viaje que GENERA el tile (`viaje.sitio`), con
@@ -224,7 +224,7 @@ function bridgeDe(narrative, { sinSalida = false, generateScene = null } = {}) {
     simCollision: sinSalida ? { ...provider, ocupado: () => true } : provider,
     mapTriggers: new MapTriggerEvaluator(narrative),
     sceneGen: new SceneGenQueue(),
-    posTracking: { cellKey: null, tileKey: null, placeId: null },
+    posTracking: { cellKey: null, tileKey: null },
     world: createWorldClaim(narrative, sim),
     activePlugins: new Map(),
     broadcastNarrative: (m) => difundidos.push(m),
@@ -422,7 +422,7 @@ console.log("\n5 · EL NPC QUE LLEGA POR `npc_arrive` TAMPOCO CAE DENTRO (tanda 
   // declara que un NPC en tránsito llegó, y si el sim no lo trajo andando salta
   // al lugar. Saltaba al centro crudo, o sea DENTRO de los 13 edificios, y un
   // NPC quieto dentro de un sólido no sale nunca. Se construye el director
-  // COMO `ws-server.ts`, con el proveedor de colisión de la sesión.
+  // COMO `bridge/contexto-del-bridge.ts`, con el proveedor de colisión de la sesión.
   let libres = 0;
   let total5 = 0;
   for (const fixture of FIXTURES) {

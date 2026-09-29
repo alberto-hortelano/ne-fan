@@ -1,6 +1,7 @@
 /** Tests del state HTTP API (bridge/state-http-server.ts) sobre un servidor
- *  real en puerto efímero, con NarrativeState en memoria y los mismos hooks de
- *  plugins que monta ws-server.ts. */
+ *  real en puerto efímero, con NarrativeState en memoria y unos hooks de plugins
+ *  MÍNIMOS (sin avisos al jugador ni guarda de fixture): los del bridge de
+ *  verdad se miden en `bridge-hooks-de-plugins.test.ts`. */
 import { tileContextFor } from "../bridge/state-http/scene-routes.js";
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";

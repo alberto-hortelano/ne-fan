@@ -6,7 +6,7 @@
  *   - JSON inválido → `reason: "json"`.
  *   - JSON válido pero no conforme al contrato `ClientMessage` → `reason:
  *     "schema"` con el error zod formateado (ruta + motivo).
- *  ws-server.ts mapea ambos a un `narrative_status` phase "error" hacia el
+ *  `conexion.ts` mapea ambos a un `narrative_status` phase "error" hacia el
  *  cliente. */
 
 import { ClientMessageSchema } from "../src/protocol/message-schema.js";

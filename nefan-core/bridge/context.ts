@@ -1,6 +1,7 @@
 /** Shared state + helpers for the bridge message handlers.
  *
- *  `BridgeContext` encapsula todo lo que antes eran globals de ws-server.ts,
+ *  `BridgeContext` encapsula todo lo que antes eran globals de ws-server.ts
+ *  (nace en `contexto-del-bridge.ts` desde #769),
  *  de forma que cada handler sea una función (msg, ws, ctx) testeable con
  *  fakes (socket capturador, AiClient falso) sin abrir sockets reales. */
 
@@ -104,13 +105,10 @@ export interface BridgeContext {
    *  `cadena` son los lugares cuyas huellas contienen al jugador, de fuera
    *  adentro (`cadenaEnLaCelda`); ausente = todavía no se sabe (arranque,
    *  reanudar) y cuenta como vacía. Los triggers salen del cruce de la vieja
-   *  con la nueva (#465, F1). `placeId` es el campo de antes de la cadena y
-   *  ya no lo lee nadie: lo inicializa `ws-server.ts`, que reescribe la
-   *  tanda BJ, y se borra en cuanto se pueda tocar ese fichero. */
+   *  con la nueva (#465, F1). */
   posTracking: {
     cellKey: string | null;
     tileKey: string | null;
-    placeId: string | null;
     cadena?: readonly string[];
   };
   /** El dueño del mundo del sim: quién puede escribir en él y si la partida
@@ -416,12 +414,12 @@ export type SinSello = Exclude<
  *  el sello por su cuenta. Lo que NO valía era el `as ServerMessage`: ese sí
  *  deja pasar un difusor que se olvide del sello, y también está medido.
  *
- *  Existe porque hay TRES sitios que sellan —el broadcast y el unicast de
- *  `ws-server.ts` y el doble de `test/helpers.ts`— y tienen que hacerlo
- *  EXACTAMENTE igual: si el doble sellara distinto, los tests de bridge
- *  medirían un cable que no existe y el sello se podría romper en producción
- *  con todo en verde. Una función es lo que hace que «igual» no dependa de
- *  que alguien copie bien. */
+ *  Existe porque hay DOS sitios que sellan —el broadcast y el unicast de
+ *  `contexto-del-bridge.ts`— y tienen que hacerlo EXACTAMENTE igual. Hasta
+ *  #769 había un tercero, el doble de `test/helpers.ts`, y el riesgo era que
+ *  sellara distinto que producción; desde #769 el harness usa la misma
+ *  fábrica. Una función es lo que hace que «igual» no dependa de que alguien
+ *  copie bien. */
 export function sellarSesion<T extends { type: string }>(
   msg: T,
   sessionId: string,
@@ -430,10 +428,10 @@ export function sellarSesion<T extends { type: string }>(
 }
 
 /** Lo mismo para el sello de #659, y existe por la MISMA razón que el de
- *  arriba: hay DOS sitios que lo estampan —`ws-server.ts` y el doble de
- *  `test/helpers.ts`— y tienen que hacerlo exactamente igual. Si el doble
- *  sellara distinto, los tests de bridge medirían un cable que no existe y el
- *  sello se podría romper en producción con todo en verde. */
+ *  arriba: que el sello se estampe igual en todos los sitios no dependa de
+ *  que alguien copie bien. Hoy lo estampa uno solo, `enviarEstado` de
+ *  `contexto-del-bridge.ts`, que es también el que ejercen los tests de
+ *  bridge (#769: hasta entonces el harness tenía su propia copia). */
 export function sellarDuenoDelSim<T extends { type: string }>(
   msg: T,
   delSim: DuenoDelSim,

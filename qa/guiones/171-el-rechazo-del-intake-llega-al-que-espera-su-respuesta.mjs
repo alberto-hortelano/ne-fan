@@ -4,7 +4,7 @@
  *  un frame y esperaban UN tipo de respuesta tirando lo demás por tipo. Cuando
  *  el frame no pasa el contrato, el bridge lo rechaza por UNICAST como
  *  `narrative_status` con `phase:"error"` y `kind:"protocolo"`
- *  (`nefan-core/bridge/ws-server.ts`) y NO cierra el socket: el rechazo llegaba,
+ *  (`nefan-core/bridge/conexion.ts`) y NO cierra el socket: el rechazo llegaba,
  *  no era el tipo esperado, se tiraba, y el `evaluate` se colgaba hasta el
  *  presupuesto del guion — rojo, pero MUDO. Desde #694 los quince pasan por
  *  `preguntarPorElCable` (`qa/lib/cable.mjs`), que trata ese rechazo como

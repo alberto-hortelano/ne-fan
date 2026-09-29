@@ -616,7 +616,7 @@ export async function esperarRegistro(ctx, desc, libro, probe, maxMs = 60_000, a
  *
  *  **El socket se queda ABIERTO durante la espera**, y ése es el arreglo de la
  *  segunda boca: un frame que no pasa el contrato lo contesta el bridge por
- *  UNICAST al socket que lo mandó (`bridge/ws-server.ts`), y el helper viejo lo
+ *  UNICAST al socket que lo mandó (`bridge/conexion.ts`), y el helper viejo lo
  *  cerraba en el mismo tick del `send`, así que ese rechazo no lo veía nadie.
  *  Se cierra al resolverse la espera, no antes.
  *

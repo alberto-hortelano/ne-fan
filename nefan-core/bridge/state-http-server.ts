@@ -19,6 +19,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import type { NarrativeState } from "../src/narrative/narrative-state.js";
 import type { SessionStorage } from "../src/narrative/session-storage.js";
 import type { NpcDirector } from "../src/world-map/npc-director.js";
+import type { AddressInfo } from "node:net";
 import { dispatchStateRequest } from "./state-http/dispatch.js";
 import type { PluginHooks, StateHttpContext } from "./state-http/context.js";
 import type { ErrorResponse } from "../src/contracts/common.js";
@@ -43,8 +44,9 @@ export interface StateHttpServerOptions {
   /** El mapa cambió a mitad de sesión (`map_upsert_place`, `map_link`): el
    *  bridge difunde las salidas de los tiles cargados (#179). */
   onMapChanged: () => void;
-  /** Hooks de plugins (F5) — viven en ws-server porque el registry activo del
-   *  dispatcher (`activePlugins`) es estado del bridge. */
+  /** Hooks de plugins (F5) — los cablea el bridge (`hooks-de-plugins.ts`)
+   *  porque el registry activo del dispatcher (`activePlugins`) es estado del
+   *  bridge. */
   plugins: PluginHooks;
   /** A qué motor narrativo habla este bridge (`AI_SERVER_URL`). Obligatorio a
    *  propósito: es lo que publica GET /health para que el banco de pruebas
@@ -125,7 +127,8 @@ export function createStateHttpServer(opts: StateHttpServerOptions): Server {
   });
 
   server.listen(opts.port, "127.0.0.1", () => {
-    console.log(`NEFan State HTTP API listening on http://127.0.0.1:${opts.port}`);
+    // El puerto REAL: con `port: 0` (tests, `arrancarBridge`) el pedido no dice nada.
+    console.log(`NEFan State HTTP API listening on http://127.0.0.1:${(server.address() as AddressInfo).port}`);
   });
   return server;
 }

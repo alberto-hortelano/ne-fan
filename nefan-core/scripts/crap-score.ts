@@ -23,25 +23,40 @@
  *  igual de probado, 100 % por tener un `export const` arriba. Con el filtro
  *  los dos miden 100 %.
  *
- *  DOS MEDIDAS, UNA DEFINICIÓN (#664). El cliente (`nefan-html/src`) se mide
- *  con ESTAS mismas funciones —`lineasDeCodigo`, `cuentaLineas`, `functionsOf`—
- *  y no con una copia, que se desincronizaría del denominador de #525. Lo que
- *  cambia es la `Medida`: su lcov, sus árboles y su UNIVERSO. El core mide lo
- *  que un test carga (su banco lo carga casi todo); el cliente mide EL ÁRBOL
- *  ENTERO, con lo que nadie carga a cobertura 0, porque ahí lo no cargado es
- *  el 77 % y medir solo lo cargado no es monótono: un test que IMPORTA un
- *  fichero invisible metería sus funciones sin cubrir y pondría el gate rojo
- *  por añadir un test. Su gate tampoco es el del core: es por FUNCIÓN, contra
- *  `data/contract/client-crap.json` (tope + foto de lo que ya lo superaba).
+ *  TRES MEDIDAS, UNA DEFINICIÓN (#664, #769). El cliente (`nefan-html/src`) y
+ *  las herramientas (`nefan-core/scripts`) se miden con ESTAS mismas funciones
+ *  —`lineasDeCodigo`, `cuentaLineas`, `functionsOf`— y no con una copia, que se
+ *  desincronizaría del denominador de #525. Lo que cambia es la `Medida`: su
+ *  lcov, sus árboles y su UNIVERSO, y el gate que se le aplica.
+ *
+ *   · el CORE (`src/`, `bridge/`, `services/`) mide EL ÁRBOL ENTERO desde #769:
+ *     lo que ningún test carga entra a cobertura 0. Antes medía solo lo
+ *     cargado, y `bridge/ws-server.ts` —el bootstrap, que ningún test puede
+ *     importar— tenía una función de CRAP 110 que no veía nadie. Su gate es
+ *     GLOBAL: suelo de cobertura y tope sin excepciones (`quality-thresholds.json`).
+ *   · el CLIENTE mide también EL ÁRBOL ENTERO: ahí lo no cargado era el 77 % y
+ *     medir solo lo cargado no es monótono —un test que IMPORTA un fichero
+ *     invisible metería sus funciones sin cubrir y pondría el gate rojo por
+ *     añadir un test—. Su gate es por FUNCIÓN, con foto
+ *     (`data/contract/client-crap.json`).
+ *   · SCRIPTS mide LO CARGADO, por decisión del usuario (#769): con el árbol
+ *     entero daba 53 % y 13 funciones sobre el tope, casi todas `main` de CLI
+ *     que CI ejerce por subproceso y el lcov no ve. Gate por función con foto
+ *     MÁS suelo de cobertura (`data/contract/scripts-crap.json`).
+ *
+ *  Las dos medidas con foto tienen `--apretar`, el trinquete que baja: reescribe
+ *  la foto a la cifra de hoy y quita lo que ya cabe, sin añadir ni subir nada.
  *
  *  Uso:
  *    npm run coverage && npm run crap        # tabla
  *    npm run crap -- --check                 # falla si algo supera el umbral
  *    npm run crap -- --top 40                # más filas
+ *    npm run crap -- --scripts --check       # scripts/, con el mismo lcov
  *    (en nefan-html) npm run coverage && npm run crap -- --check   # el cliente
  *    (en nefan-html) npm run crap -- --foto  # la foto de congeladas, en JSON
+ *    (en nefan-html) npm run crap -- --apretar   # baja la foto a lo de hoy
  */
-import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -52,14 +67,15 @@ const coreRoot = join(here, "..");
 const htmlRoot = join(coreRoot, "..", "nefan-html");
 const THRESHOLDS = join(coreRoot, "data", "contract", "quality-thresholds.json");
 const CONTRATO_CLIENTE = join(coreRoot, "data", "contract", "client-crap.json");
+const CONTRATO_SCRIPTS = join(coreRoot, "data", "contract", "scripts-crap.json");
 
 /** Qué se mide y sobre qué. `arboles` son los prefijos (relativos a `raiz`) que
- *  son deuda de ESTE paquete: lo demás que aparezca en el lcov (dist/, otros
- *  paquetes) se descarta. `universo` decide qué pasa con lo que ningún test
- *  cargó: `lo-cargado` lo deja fuera (el core, hoy), `el-arbol` lo mete con sus
- *  líneas de código a 0 hits (el cliente). */
+ *  son deuda de ESTA medida: lo demás que aparezca en el lcov (dist/, otros
+ *  paquetes, los árboles de otra medida) se descarta. `universo` decide qué pasa
+ *  con lo que ningún test cargó: `lo-cargado` lo deja fuera (scripts),
+ *  `el-arbol` lo mete con sus líneas de código a 0 hits (el core y el cliente). */
 export interface Medida {
-  nombre: "core" | "cliente";
+  nombre: "core" | "cliente" | "scripts";
   raiz: string;
   lcov: string;
   arboles: readonly string[];
@@ -73,6 +89,23 @@ export const MEDIDA_CORE: Medida = {
   raiz: coreRoot,
   lcov: join(coreRoot, "coverage", "lcov.info"),
   arboles: ["src/", "bridge/", "services/"],
+  universo: "el-arbol",
+  comando: "npm run coverage",
+};
+
+/** Las herramientas que deciden los gates (#769). Su PROPIA medida y no un
+ *  árbol más del core: mezcladas en el mismo denominador, las 5.874 líneas de
+ *  `scripts/` al 79 % tiraban el suelo del core de 96 a 93 y cuatro `main` de
+ *  CLI pasaban del tope; y al revés, el core tapaba lo que pasara aquí. El lcov
+ *  es el del core —el banco ya carga estos ficheros y hasta #769 se
+ *  descartaban— y el universo es `lo-cargado` por decisión del usuario:
+ *  `el-arbol` daba 53 % y 13 funciones sobre el tope. Contrato en
+ *  `data/contract/scripts-crap.json`. */
+export const MEDIDA_SCRIPTS: Medida = {
+  nombre: "scripts",
+  raiz: coreRoot,
+  lcov: join(coreRoot, "coverage", "lcov.info"),
+  arboles: ["scripts/"],
   universo: "lo-cargado",
   comando: "npm run coverage",
 };
@@ -319,55 +352,85 @@ export function readThresholds(): Thresholds {
   return ThresholdsSchema.parse(JSON.parse(readFileSync(THRESHOLDS, "utf-8")));
 }
 
-/** El contrato del cliente (`data/contract/client-crap.json`). Un tope por
- *  función, el mismo que el del core, y la FOTO de las funciones que ya lo
- *  superaban el día que el cliente entró, cada una en su cifra redondeada hacia
- *  arriba a 0,1. Sin suelo de cobertura: no hay base que lo sostenga. */
-export const ContratoClienteSchema = z
-  .object({
-    $comment: z.string(),
-    _lo_que_esto_NO_sujeta: z.array(z.string()).min(1),
-    tope: z.number().positive(),
-    objetivo: z.number().positive(),
-    congeladas: z.array(
-      z
-        .object({
-          fichero: z.string().startsWith("src/"),
-          funcion: z.string().min(1),
-          crap: z.number().positive(),
-        })
-        .strict(),
-    ),
-  })
-  .strict()
-  .superRefine((c, ctx) => {
-    const vistas = new Set<string>();
-    for (const [i, g] of c.congeladas.entries()) {
-      const clave = `${g.fichero}\u0000${g.funcion}`;
-      if (vistas.has(clave)) {
+const SueloSchema = z.object({ min: z.number().min(0).max(100), nota: z.string().min(1) }).strict();
+
+/** El contrato de una medida CON FOTO (#664, #769): un tope por función —el
+ *  mismo que el del core— y la FOTO de las funciones que ya lo superaban el día
+ *  que la medida entró, cada una en su cifra redondeada hacia arriba a 0,1.
+ *
+ *  Lo comparten el cliente (`client-crap.json`, claves bajo `src/`, SIN suelo:
+ *  no hay base que lo sostenga) y `scripts/` (`scripts-crap.json`, claves bajo
+ *  `scripts/`, CON suelo de cobertura en el número del día que entró). El
+ *  prefijo va en el esquema para que una foto no pueda congelar funciones del
+ *  árbol de la otra medida: un `src/` en la de scripts no casaría con ninguna
+ *  fila y sería un permiso latente. Y el suelo es obligatorio donde se declara
+ *  y prohibido donde no: un suelo que falta no se lee como «0». */
+export function esquemaDeContratoConFoto(prefijo: string, { suelo }: { suelo: boolean }) {
+  return z
+    .object({
+      $comment: z.string(),
+      _lo_que_esto_NO_sujeta: z.array(z.string()).min(1),
+      tope: z.number().positive(),
+      objetivo: z.number().positive(),
+      suelo_cobertura: SueloSchema.optional(),
+      congeladas: z.array(
+        z
+          .object({
+            fichero: z.string().startsWith(prefijo),
+            funcion: z.string().min(1),
+            crap: z.number().positive(),
+          })
+          .strict(),
+      ),
+    })
+    .strict()
+    .superRefine((c, ctx) => {
+      if (suelo !== (c.suelo_cobertura !== undefined)) {
         ctx.addIssue({
           code: "custom",
-          path: ["congeladas", i],
-          message: `${g.fichero} · ${g.funcion} repetida`,
+          path: ["suelo_cobertura"],
+          message: suelo
+            ? "esta medida tiene suelo de cobertura y falta `suelo_cobertura`"
+            : "esta medida no tiene suelo de cobertura: sobra `suelo_cobertura`",
         });
       }
-      vistas.add(clave);
-      // Una congelada bajo el tope no es una excepción: es un permiso de
-      // recrecer hasta su cifra que el tope general no daría.
-      if (g.crap <= c.tope) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["congeladas", i, "crap"],
-          message: `${g.fichero} · ${g.funcion} congelada en ${g.crap}, que no pasa del tope ${c.tope}`,
-        });
+      const vistas = new Set<string>();
+      for (const [i, g] of c.congeladas.entries()) {
+        const clave = `${g.fichero}\u0000${g.funcion}`;
+        if (vistas.has(clave)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["congeladas", i],
+            message: `${g.fichero} · ${g.funcion} repetida`,
+          });
+        }
+        vistas.add(clave);
+        // Una congelada bajo el tope no es una excepción: es un permiso de
+        // recrecer hasta su cifra que el tope general no daría.
+        if (g.crap <= c.tope) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["congeladas", i, "crap"],
+            message: `${g.fichero} · ${g.funcion} congelada en ${g.crap}, que no pasa del tope ${c.tope}`,
+          });
+        }
       }
-    }
-  });
+    });
+}
 
-export type ContratoCliente = z.infer<typeof ContratoClienteSchema>;
+export type ContratoConFoto = z.infer<ReturnType<typeof esquemaDeContratoConFoto>>;
+/** El del cliente: el nombre de siempre, que sigue siendo lo que lee `deuda`. */
+export type ContratoCliente = ContratoConFoto;
 
-export function leerContratoCliente(ruta = CONTRATO_CLIENTE): ContratoCliente {
+export const ContratoClienteSchema = esquemaDeContratoConFoto("src/", { suelo: false });
+export const ContratoScriptsSchema = esquemaDeContratoConFoto("scripts/", { suelo: true });
+
+export function leerContratoCliente(ruta = CONTRATO_CLIENTE): ContratoConFoto {
   return ContratoClienteSchema.parse(JSON.parse(readFileSync(ruta, "utf-8")));
+}
+
+export function leerContratoScripts(ruta = CONTRATO_SCRIPTS): ContratoConFoto {
+  return ContratoScriptsSchema.parse(JSON.parse(readFileSync(ruta, "utf-8")));
 }
 
 /** Líneas medidas y cubiertas en el rango [desde, hasta]. Una línea cuenta si
@@ -594,6 +657,61 @@ export function veredictoCliente(filas: readonly CrapRow[], contrato: ContratoCl
   return { rojas, sobran };
 }
 
+/** Un cambio que `--apretar` hace en la foto: bajar una cifra o quitar una
+ *  entrada. No hay más clases, y es a propósito (ver `apretarCongeladas`). */
+export interface CambioDeFoto {
+  fichero: string;
+  funcion: string;
+  congelada: number;
+  /** La cifra nueva; ausente = la entrada se quita. */
+  nueva?: number;
+  motivo: "no-esta" | "cabe-en-el-tope" | "bajo";
+}
+
+/** EL TRINQUETE QUE BAJA (#769), PURO. Sin esto una congelada que mejora solo
+ *  avisa (`sobran`), y bajarla obliga a editar el JSON a mano: el trinquete deja
+ *  de subir pero no baja nunca.
+ *
+ *  Solo sabe hacer dos cosas, y las dos APRIETAN: bajar la cifra de una
+ *  congelada a la de hoy (hacia arriba a 0,1, como la foto) o quitarla —porque
+ *  ya cabe en el tope o porque su función no está—. NUNCA añade una clave ni
+ *  sube una cifra: recorre `contrato.congeladas`, no `filas`, así que una roja
+ *  nueva no tiene por dónde entrar. Eso es `--foto`, que se revisa a mano, y la
+ *  diferencia es todo el sentido de este verbo. */
+export function apretarCongeladas(
+  filas: readonly CrapRow[],
+  contrato: ContratoConFoto,
+): { congeladas: ContratoConFoto["congeladas"]; cambios: CambioDeFoto[] } {
+  const hoy = new Map(peoresPorClave(filas).map((p) => [`${p.fichero}\u0000${p.funcion}`, p.crap]));
+  const congeladas: ContratoConFoto["congeladas"] = [];
+  const cambios: CambioDeFoto[] = [];
+  for (const c of contrato.congeladas) {
+    const v = hoy.get(`${c.fichero}\u0000${c.funcion}`);
+    const base = { fichero: c.fichero, funcion: c.funcion, congelada: c.crap };
+    if (v === undefined) cambios.push({ ...base, motivo: "no-esta" });
+    else if (v <= contrato.tope) cambios.push({ ...base, motivo: "cabe-en-el-tope" });
+    else if (redondeaArriba(v) < c.crap) {
+      congeladas.push({ ...c, crap: redondeaArriba(v) });
+      cambios.push({ ...base, nueva: redondeaArriba(v), motivo: "bajo" });
+    } else congeladas.push(c);
+  }
+  return { congeladas, cambios };
+}
+
+/** Lo que decide `--apretar`, PURO: con rojas delante se niega, porque una
+ *  congelada «que no está» puede ser un renombrado (`renombradoDe`) y quitarla
+ *  borraría la única pista para regenerarla; sin rojas, aprieta. */
+export function planDeApretar(
+  filas: readonly CrapRow[],
+  contrato: ContratoConFoto,
+):
+  | { ok: false; rojas: VeredictoCliente["rojas"] }
+  | ({ ok: true } & ReturnType<typeof apretarCongeladas>) {
+  const { rojas } = veredictoCliente(filas, contrato);
+  if (rojas.length > 0) return { ok: false, rojas };
+  return { ok: true, ...apretarCongeladas(filas, contrato) };
+}
+
 function tabla(filas: readonly CrapRow[], top: number): void {
   console.log(`\nCRAP = complejidad² · (1−cobertura)³ + complejidad\n`);
   console.log(`${"CRAP".padStart(7)}  ${"cx".padStart(3)}  ${"cob".padStart(5)}  función`);
@@ -616,12 +734,41 @@ function medirOSalir(medida: Medida): Medicion {
   }
 }
 
+/** El gate del core, PURO: el tope sin excepciones y el suelo GLOBAL. Lo
+ *  prueba `npm test` con filas sintéticas, sin lcov (QA de #769: el guion que
+ *  lo ejercía de punta a punta necesitaba un lcov que el job de candados no
+ *  tiene, y pagarlo allí eran 3-5 min más de CI). */
+export function fallosDelCore(m: Pick<Medicion, "filas" | "cobGlobal">, umbral: Thresholds): string[] {
+  const fallos: string[] = [];
+  const peores = m.filas.filter((r) => r.crap > umbral.crap.max);
+  if (peores.length > 0) {
+    fallos.push(
+      `${peores.length} función(es) por encima del tope de CRAP (${umbral.crap.max}):\n` +
+        peores
+          .slice(0, 20)
+          .map((r) => `   ${r.crap.toFixed(1)}  ${r.name} · ${r.file}:${r.startLine}`)
+          .join("\n"),
+    );
+  }
+  if (m.cobGlobal < umbral.cobertura_lineas.min) {
+    fallos.push(
+      `la cobertura de líneas bajó a ${m.cobGlobal.toFixed(2)}% (mínimo ${umbral.cobertura_lineas.min}%)`,
+    );
+  }
+  return fallos;
+}
+
 function mainCore(check: boolean, top: number): void {
-  const { filas, cobGlobal, lineasMedidas } = medirOSalir(MEDIDA_CORE);
+  const { filas, cobGlobal, lineasMedidas, sinCargar } = medirOSalir(MEDIDA_CORE);
   tabla(filas, top);
   console.log(
-    `${filas.length} funciones medidas · cobertura ${cobGlobal.toFixed(2)}% de ${lineasMedidas} ` +
-      `líneas DE CÓDIGO · complejidad máxima ${Math.max(...filas.map((r) => r.complexity))}`,
+    `${filas.length} funciones medidas (EL ÁRBOL ENTERO de src/, bridge/ y services/) · cobertura ` +
+      `${cobGlobal.toFixed(2)}% de ${lineasMedidas} líneas DE CÓDIGO · complejidad máxima ` +
+      `${Math.max(...filas.map((r) => r.complexity))}`,
+  );
+  console.log(
+    `sin cargar: ${sinCargar.ficheros} de ${sinCargar.deFicheros} ficheros, ${sinCargar.lineas} líneas de ` +
+      `código — ningún test los carga, y cuentan a cobertura 0`,
   );
 
   const umbral = readThresholds();
@@ -639,21 +786,7 @@ function mainCore(check: boolean, top: number): void {
   );
 
   if (!check) return;
-  const fallos: string[] = [];
-  if (peores.length > 0) {
-    fallos.push(
-      `${peores.length} función(es) por encima del tope de CRAP (${umbral.crap.max}):\n` +
-        peores
-          .slice(0, 20)
-          .map((r) => `   ${r.crap.toFixed(1)}  ${r.name} · ${r.file}:${r.startLine}`)
-          .join("\n"),
-    );
-  }
-  if (cobGlobal < umbral.cobertura_lineas.min) {
-    fallos.push(
-      `la cobertura de líneas bajó a ${cobGlobal.toFixed(2)}% (mínimo ${umbral.cobertura_lineas.min}%)`,
-    );
-  }
+  const fallos = fallosDelCore({ filas, cobGlobal }, umbral);
   if (fallos.length > 0) {
     console.error(`\n✘ ${fallos.join("\n✘ ")}`);
     process.exit(1);
@@ -661,52 +794,87 @@ function mainCore(check: boolean, top: number): void {
   console.log("\n✔ dentro de los umbrales");
 }
 
-function mainCliente(check: boolean, top: number, foto: boolean): void {
-  const m = medirOSalir(MEDIDA_CLIENTE);
-  const contrato = leerContratoCliente();
-  if (foto) {
-    console.log(JSON.stringify(fotoDeCongeladas(m.filas, contrato.tope), null, 2));
-    return;
-  }
-  tabla(m.filas, top);
-  const pct = m.lineasMedidas === 0 ? 0 : (m.sinCargar.lineas / m.lineasMedidas) * 100;
-  console.log(
-    `${m.filas.length} funciones medidas (EL ÁRBOL ENTERO de nefan-html/src) · cobertura ` +
-      `${m.cobGlobal.toFixed(2)}% de ${m.lineasMedidas} líneas DE CÓDIGO`,
-  );
-  console.log(
-    `sin ejercer: ${m.sinCargar.ficheros} de ${m.sinCargar.deFicheros} ficheros, ` +
-      `${m.sinCargar.lineas} de ${m.lineasMedidas} líneas de código (${pct.toFixed(0)} %) — ningún test los carga, ` +
-      `y cuentan a cobertura 0`,
-  );
-  console.log(`descartados: ${m.descartados.length} fichero(s) del lcov de otro paquete (../nefan-core, …)`);
+/** Lo que distingue a las dos medidas con foto en la salida del CLI. */
+export interface MedidaConFoto {
+  medida: Medida;
+  ruta: string;
+  leer: () => ContratoConFoto;
+  /** Qué se está midiendo, para la línea de resumen. */
+  alcance: string;
+  /** Qué significa `sinCargar` en ESTE universo. */
+  sinCargar: string;
+  /** La orden de ESTA medida, lista para añadirle `--check`, `--foto` o
+   *  `--apretar` (QA de #769, H2): los mensajes de scripts recomendaban la
+   *  orden del cliente, que en nefan-core o sale con 2 o mide el core. */
+  orden: string;
+}
 
+export const CON_FOTO_CLIENTE: MedidaConFoto = {
+  medida: MEDIDA_CLIENTE,
+  ruta: CONTRATO_CLIENTE,
+  leer: () => leerContratoCliente(),
+  alcance: "EL ÁRBOL ENTERO de nefan-html/src",
+  sinCargar: "ningún test los carga, y cuentan a cobertura 0",
+  // Se corre desde nefan-html, que es donde `npm run crap` es el del cliente.
+  orden: "npm run crap --",
+};
+
+export const CON_FOTO_SCRIPTS: MedidaConFoto = {
+  medida: MEDIDA_SCRIPTS,
+  ruta: CONTRATO_SCRIPTS,
+  leer: () => leerContratoScripts(),
+  alcance: "LO CARGADO de nefan-core/scripts",
+  sinCargar:
+    "ningún test los carga en el proceso de la cobertura, y NO cuentan (universo lo-cargado: " +
+    "lo que CI ejerce por subproceso tampoco lo ve el lcov)",
+  orden: "npm run crap -- --scripts",
+};
+
+/** Lo que el CLI de una medida con foto imprime y decide, PURO: el resumen,
+ *  el aviso de las congeladas que sobran y los fallos del `--check`. El `main`
+ *  solo lo escribe y sale con su código, así que el veredicto se prueba sin
+ *  lcov ni subproceso. */
+export function informeConFoto(
+  cf: Pick<MedidaConFoto, "medida" | "alcance" | "sinCargar" | "ruta" | "orden">,
+  m: Medicion,
+  contrato: ContratoConFoto,
+): { resumen: string[]; aviso?: string; fallos: string[] } {
+  const pct = m.lineasMedidas === 0 ? 0 : (m.sinCargar.lineas / m.lineasMedidas) * 100;
   const v = veredictoCliente(m.filas, contrato);
-  const sobreObjetivo = m.filas.filter((r) => r.crap > contrato.objetivo);
-  console.log(
-    `\nTope por función (no empeorar): CRAP ≤ ${contrato.tope}, o ≤ su foto — ` +
-      `${contrato.congeladas.length} congeladas, ${v.rojas.length} por encima de su límite.` +
-      `\nObjetivo a medio plazo: CRAP ≤ ${contrato.objetivo} — ${sobreObjetivo.length} por encima.` +
-      `\nSin suelo de cobertura: data/contract/client-crap.json dice por qué.`,
-  );
-  if (v.sobran.length > 0) {
-    console.log(
-      `\n⚠ ${v.sobran.length} congelada(s) SOBRAN en su cifra (bajaron o ya no están): aprieta la foto ` +
-        `o volverá a crecer gratis:\n` +
+  const sobreObjetivo = m.filas.filter((r) => r.crap > contrato.objetivo).length;
+  const suelo = contrato.suelo_cobertura;
+  const margen = suelo ? m.cobGlobal - suelo.min : 0;
+  const resumen = [
+    `${m.filas.length} funciones medidas (${cf.alcance}) · cobertura ` +
+      `${m.cobGlobal.toFixed(2)}% de ${m.lineasMedidas} líneas DE CÓDIGO`,
+    `sin cargar: ${m.sinCargar.ficheros} de ${m.sinCargar.deFicheros} ficheros, ` +
+      `${m.sinCargar.lineas} líneas de código (${pct.toFixed(0)} % de las medidas) — ${cf.sinCargar}`,
+    `descartados: ${m.descartados.length} fichero(s) del lcov fuera de ${cf.medida.arboles.join(", ")}`,
+    "",
+    `Tope por función (no empeorar): CRAP ≤ ${contrato.tope}, o ≤ su foto — ` +
+      `${contrato.congeladas.length} congeladas, ${v.rojas.length} por encima de su límite.`,
+    `Objetivo a medio plazo: CRAP ≤ ${contrato.objetivo} — ${sobreObjetivo} por encima.`,
+    suelo
+      ? `Cobertura mínima: ${suelo.min}% — ahora ${m.cobGlobal.toFixed(2)}% ` +
+        `(margen ${margen.toFixed(2)} puntos ≈ ${Math.round((margen / 100) * m.lineasMedidas)} líneas).`
+      : `Sin suelo de cobertura: ${cf.ruta.split("/").pop()} dice por qué.`,
+  ];
+  const aviso =
+    v.sobran.length === 0
+      ? undefined
+      : `⚠ ${v.sobran.length} congelada(s) SOBRAN en su cifra (bajaron o ya no están): ` +
+        `\`${cf.orden} --apretar\` la baja, o volverá a crecer gratis:\n` +
         v.sobran
           .slice(0, 20)
           .map(
             (s) =>
               `   ${s.congelada} → ${s.ahora === undefined ? "no está" : s.ahora.toFixed(1)}  ${s.funcion} · ${s.fichero}`,
           )
-          .join("\n"),
-    );
-  }
-
-  if (!check) return;
+          .join("\n");
+  const fallos: string[] = [];
   if (v.rojas.length > 0) {
-    console.error(
-      `\n✘ ${v.rojas.length} función(es) del cliente por encima de su límite de CRAP:\n` +
+    fallos.push(
+      `${v.rojas.length} función(es) de ${cf.medida.nombre} por encima de su límite de CRAP:\n` +
         v.rojas
           .slice(0, 20)
           .map(
@@ -719,21 +887,129 @@ function mainCliente(check: boolean, top: number, foto: boolean): void {
           .join("\n") +
         (v.rojas.some((r) => r.renombradoDe)
           ? `\nLas marcadas con ← parecen un RENOMBRADO o un fichero movido (su congelada ya no está y ` +
-            `tenía esa misma cifra): ahí SÍ se regenera la entrada con \`npm run crap -- --foto\` y se quita la vieja.`
+            `tenía esa misma cifra): ahí SÍ se regenera la entrada con \`${cf.orden} --foto\` y se quita la vieja.`
+          : "") +
+        (cf.medida.universo === "lo-cargado"
+          ? `\n¿Fichero recién cargado? Con universo lo-cargado, un test que IMPORTA un fichero que nadie ` +
+            `cargaba mete sus funciones en la medida: una roja puede venir de añadir un test.`
           : "") +
         `\nPara lo demás, la respuesta por defecto NO es tocar la foto: es un test, o partir la función.`,
     );
+  }
+  if (suelo && m.cobGlobal < suelo.min) {
+    fallos.push(
+      `la cobertura de líneas de ${cf.medida.nombre} bajó a ${m.cobGlobal.toFixed(2)}% (mínimo ${suelo.min}%)`,
+    );
+  }
+  return { resumen, aviso, fallos };
+}
+
+/** Lo que `--apretar` dice, PURO: la negativa, «nada que apretar» o la lista
+ *  de cambios. `escribir` es si hay que reescribir el contrato. */
+export function textoDeApretar(
+  plan: ReturnType<typeof planDeApretar>,
+  congeladas: number,
+  cf: Pick<MedidaConFoto, "ruta" | "orden">,
+): { ok: boolean; escribir: boolean; texto: string } {
+  if (!plan.ok) {
+    return {
+      ok: false,
+      escribir: false,
+      texto:
+        `✘ --apretar se niega: hay ${plan.rojas.length} función(es) por encima de su límite. ` +
+        `Arregla eso primero — una congelada que «no está» puede ser un renombrado, y quitarla ahora ` +
+        `borraría la pista (\`${cf.orden} --check\` dice cuáles).`,
+    };
+  }
+  if (plan.cambios.length === 0) {
+    return { ok: true, escribir: false, texto: `✔ nada que apretar: las ${congeladas} congeladas siguen en su cifra` };
+  }
+  return {
+    ok: true,
+    escribir: true,
+    texto:
+      `✔ foto apretada (${plan.cambios.length} cambio(s)) en ${cf.ruta}:\n` +
+      plan.cambios
+        .map((c) => `   ${c.congelada} → ${c.nueva ?? "fuera"} (${c.motivo})  ${c.funcion} · ${c.fichero}`)
+        .join("\n"),
+  };
+}
+
+/** El contrato con SOLO `congeladas` cambiadas, PURO: se reescribe sobre el
+ *  JSON crudo, así que el orden de claves y el formato (el de
+ *  `JSON.stringify(…, 2)` más salto final, que es el de los dos contratos)
+ *  quedan como estaban. */
+export function reescribirCongeladas(texto: string, congeladas: ContratoConFoto["congeladas"]): string {
+  const crudo = JSON.parse(texto) as Record<string, unknown>;
+  crudo.congeladas = congeladas;
+  return JSON.stringify(crudo, null, 2) + "\n";
+}
+
+/** `--apretar` de verdad: reescribe SOLO `congeladas`, sobre el JSON crudo,
+ *  así que el orden de claves y el formato del fichero (el de
+ *  `JSON.stringify(…, 2)`) quedan como estaban. */
+function ejecutarApretar(cf: MedidaConFoto, m: Medicion, contrato: ContratoConFoto): void {
+  const plan = planDeApretar(m.filas, contrato);
+  const t = textoDeApretar(plan, contrato.congeladas.length, cf);
+  if (plan.ok && t.escribir) writeFileSync(cf.ruta, reescribirCongeladas(readFileSync(cf.ruta, "utf-8"), plan.congeladas));
+  (t.ok ? console.log : console.error)(`\n${t.texto}`);
+  if (!t.ok) process.exit(1);
+}
+
+/** El CLI de una medida con foto (cliente o scripts). Solo E/S: lo que decide
+ *  está en `informeConFoto`, `planDeApretar` y `textoDeApretar`. */
+function mainConFoto(
+  cf: MedidaConFoto,
+  o: { check: boolean; top: number; foto: boolean; apretar: boolean },
+): void {
+  const m = medirOSalir(cf.medida);
+  const contrato = cf.leer();
+  if (o.foto) {
+    console.log(JSON.stringify(fotoDeCongeladas(m.filas, contrato.tope), null, 2));
+    return;
+  }
+  tabla(m.filas, o.top);
+  const inf = informeConFoto(cf, m, contrato);
+  console.log(inf.resumen.join("\n"));
+  if (o.apretar) return ejecutarApretar(cf, m, contrato);
+  if (inf.aviso) console.log(`\n${inf.aviso}`);
+  if (!o.check) return;
+  if (inf.fallos.length > 0) {
+    console.error(`\n✘ ${inf.fallos.join("\n✘ ")}`);
     process.exit(1);
   }
   console.log("\n✔ dentro de los umbrales");
 }
 
+export type ModoDelCli =
+  | { ok: true; medida: Medida["nombre"]; check: boolean; top: number; foto: boolean; apretar: boolean }
+  | { ok: false; error: string };
+
+/** Qué pide una línea de órdenes, PURO. Existe para poder probar que cada
+ *  orden que recomienda un mensaje (`MedidaConFoto.orden`) es una orden que
+ *  este CLI entiende, y de LA MISMA medida (QA de #769, H2). */
+export function modoDelCli(argv: readonly string[]): ModoDelCli {
+  const o = {
+    check: argv.includes("--check"),
+    top: Number(argv[argv.indexOf("--top") + 1]) || 25,
+    foto: argv.includes("--foto"),
+    apretar: argv.includes("--apretar"),
+  };
+  if (argv.includes("--cliente")) return { ok: true, medida: "cliente", ...o };
+  if (argv.includes("--scripts")) return { ok: true, medida: "scripts", ...o };
+  // El core no tiene foto: su gate es un suelo GLOBAL más un tope sin excepciones.
+  if (o.foto || o.apretar) return { ok: false, error: "--foto y --apretar son de las medidas con foto: --cliente o --scripts" };
+  return { ok: true, medida: "core", ...o };
+}
+
 function main(): void {
-  const argv = process.argv.slice(2);
-  const CHECK = argv.includes("--check");
-  const TOP = Number(argv[argv.indexOf("--top") + 1]) || 25;
-  if (argv.includes("--cliente")) mainCliente(CHECK, TOP, argv.includes("--foto"));
-  else mainCore(CHECK, TOP);
+  const modo = modoDelCli(process.argv.slice(2));
+  if (!modo.ok) {
+    console.error(modo.error);
+    process.exit(2);
+  }
+  if (modo.medida === "core") mainCore(modo.check, modo.top);
+  else mainConFoto(modo.medida === "cliente" ? CON_FOTO_CLIENTE : CON_FOTO_SCRIPTS, modo);
 }
 
 if (process.argv[1]?.endsWith("crap-score.ts")) main();

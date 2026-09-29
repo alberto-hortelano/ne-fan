@@ -301,7 +301,7 @@ describe("createSimCollisionProvider · las cajas de los spawns de RUNTIME (#583
    *  «cuántas entities hay» pasaría el caso de arriba: nunca se le repite un
    *  número. Lo que sí cambia el ledger entero sin cambiar su tamaño es cargar
    *  OTRA partida (`loadSession` reemplaza `entities`, narrative-state.ts:696),
-   *  y el proveedor se construye UNA vez por proceso (`ws-server.ts:69`): con
+   *  y el proveedor se construye UNA vez por proceso (`crearContextoDelBridge`, que el bridge llama una vez al arrancar): con
    *  esa caché, la partida nueva colisionaría contra las cajas de la anterior. */
   it("al cambiar de partida, las cajas son las de la partida NUEVA aunque mida lo mismo", () => {
     const s = conLaForja();

@@ -24,7 +24,7 @@
  *       publica `__nefan.tileEpisodios`.
  *   2 · **el bridge rechaza el frame** — un `request_tile` que no pasa el
  *       contrato se contesta por UNICAST al socket que lo mandó
- *       (`bridge/ws-server.ts`, `kind:"protocolo"`). Nadie lo veía: el helper
+ *       (`bridge/conexion.ts`, `kind:"protocolo"`). Nadie lo veía: el helper
  *       viejo cerraba el socket en el mismo tick del `send`.
  *   3 · **el bridge habla y el CLIENTE lo tira** — un `narrative_status` cuyo
  *       sello no es el de la partida aplicada se descarta en el embudo de #312

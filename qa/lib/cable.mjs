@@ -2,7 +2,7 @@
  *  RECHAZO (#678).
  *
  *  El bridge contesta un frame que no pasa el contrato por UNICAST, al socket
- *  que lo mandó (`bridge/ws-server.ts`, `narrative_status` con `phase:"error"`
+ *  que lo mandó (`bridge/conexion.ts`, `narrative_status` con `phase:"error"`
  *  y `kind:"protocolo"`); y `escribir` calla si ese socket ya no está abierto.
  *  Así que el cliente del banco que abre, manda y cierra en el mismo tick —lo
  *  que hacían el 60 y el 63 con su `setTimeout(() => ws.close(), 0)`— no pierde
@@ -47,7 +47,7 @@
  *  `narrative_status/error` de otros `kind` (`tile`, `scene`…) que no son
  *  suyos. Todos se APUNTAN con su `kind`; lo que distingue «el bridge rechazó
  *  ESTE frame» es `kind:"protocolo"`, que solo sale del intake y solo por
- *  unicast (`bridge/ws-server.ts`).
+ *  unicast (`bridge/conexion.ts`).
  *
  *  ── «MANDO UN FRAME Y ESPERO SU RESPUESTA» (#694) ──────────────────────────
  *
