@@ -55,9 +55,6 @@ const estadoDe = (ctx, id) =>
     };
   }, id);
 
-const vidaJugador = (ctx) =>
-  ctx.page.evaluate(() => Number(document.getElementById("player-hp-text")?.textContent ?? "NaN"));
-
 /** Espera (en segundos de sim) a que el jugador caiga, quieto. `null` si no cae. */
 const esperarMuerte = (ctx, quien) =>
   ctx.absorbe(
