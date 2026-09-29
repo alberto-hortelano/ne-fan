@@ -5,7 +5,7 @@
  *  compactas, análisis de imagen del tile activo y vistas de plugins. La
  *  clase delega aquí desde su método público serializeForLlm(). */
 import type { NarrativeState } from "./narrative-state.js";
-import type { Consequence, EntityRecord, LlmContext } from "./types.js";
+import type { Consequence, EntityRecord, LlmContext, SuspendedGoal } from "./types.js";
 import type { PluginManifest } from "../plugins/types.js";
 import { buildPluginLlmViews } from "../plugins/views.js";
 
@@ -91,6 +91,7 @@ export function buildLlmContext(
 }
 
 function compactEntity(e: EntityRecord): LlmContext["entities"][number] {
+  const suspended = metaSuspendida(e);
   return {
     id: e.id,
     type: e.type,
@@ -98,7 +99,25 @@ function compactEntity(e: EntityRecord): LlmContext["entities"][number] {
     scene_id: e.scene_id,
     position: e.position,
     spawn_reason: e.spawn_reason,
+    ...(suspended ? { suspended_goal: suspended } : {}),
   };
+}
+
+/** La meta abandonada al huir, si la hay (#298, H2b). Viaja en la entidad y
+ *  no solo en `ambient_events`: esa ventana son las 10 últimas líneas, y con
+ *  seis NPC en una escena con pelea la línea se caía en menos de 30 s — el
+ *  motor no se enteraba nunca. Lo escribe el sim, así que un valor que no
+ *  tenga la forma es un bug suyo y se dice. */
+function metaSuspendida(e: EntityRecord): SuspendedGoal | null {
+  const g = e.data.suspended_goal;
+  if (g === undefined || g === null) return null;
+  const v = g as Partial<SuspendedGoal>;
+  if ((v.field === "directive" || v.field === "in_transit") && v.reason === "fled_combat" &&
+    Array.isArray(v.fight_at) && v.fight_at.length === 2) {
+    return g as SuspendedGoal;
+  }
+  console.warn(`[serialize-llm] ${e.id}: data.suspended_goal con forma inesperada — no viaja al motor: ${JSON.stringify(g)}`);
+  return null;
 }
 
 /** Selección acotada de entidades para el contexto: si caben todas, la lista
@@ -119,10 +138,14 @@ function boundedEntities(state: NarrativeState): EntityRecord[] {
   }
   // Si la escena activa por sí sola desborda el cap, se conservan sus más
   // recientes (las últimas spawneadas son las del hilo argumental vivo).
-  return [...picked]
-    .sort((a, b) => a - b)
-    .slice(-LLM_ENTITIES_MAX)
-    .map((i) => all[i]);
+  const dentro = [...picked].sort((a, b) => a - b).slice(-LLM_ENTITIES_MAX);
+  // La que espera una decisión del motor (`suspended_goal`, #298 H2b) viaja
+  // SIEMPRE, aunque desborde el cap: es estado pendiente, no decorado.
+  const van = new Set(dentro);
+  all.forEach((e, i) => {
+    if (!van.has(i) && e.data.suspended_goal) van.add(i);
+  });
+  return [...van].sort((a, b) => a - b).map((i) => all[i]);
 }
 
 /** Crónica acotada: por debajo del cap va entera; por encima, solo la cola

@@ -857,6 +857,36 @@ describe("NarrativeState.serializeForLlm", () => {
     assert.equal(ctx.entities_total, undefined, "sin recorte no hay entities_total");
   });
 
+  it("el NPC con una meta abandonada (suspended_goal) viaja SIEMPRE, aunque el cap lo dejara fuera (#298 H2b)", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    const meta = { field: "directive", value: { type: "goto_place", target_place_id: "plaza" }, reason: "fled_combat", fight_at: [0, 0] };
+    // El más viejo de todos, en otra escena: el cap lo tiraría el primero.
+    s.recordEntitySpawned("huido", "npc", "tile_lejano", [0, 0, 0], { name: "Huido", suspended_goal: meta });
+    for (let i = 0; i < LLM_ENTITIES_MAX + 5; i++) {
+      s.recordEntitySpawned(`otro_${i}`, "npc", `tile_${i % 7}x`, [i, 0, 0], {});
+    }
+    const ctx = s.serializeForLlm();
+    const huido = ctx.entities.find((e) => e.id === "huido");
+    assert.ok(huido, "la decisión pendiente no se cae por el recorte");
+    assert.deepEqual(huido.suspended_goal, meta);
+    assert.equal(ctx.entities.length, LLM_ENTITIES_MAX + 1, "el resto sigue al cap");
+    assert.ok(ctx.entities.every((e) => e.id === "huido" || e.suspended_goal === undefined));
+  });
+
+  it("un suspended_goal con forma rota NO viaja y se dice", () => {
+    const s = makeState();
+    s.startNewSession("g");
+    s.recordEntitySpawned("raro", "npc", "tile_lejano", [0, 0, 0], { suspended_goal: { field: "otra" } });
+    const avisos: string[] = [];
+    const warn = console.warn;
+    console.warn = (...a: unknown[]) => { avisos.push(a.map(String).join(" ")); };
+    let ctx;
+    try { ctx = s.serializeForLlm(); } finally { console.warn = warn; }
+    assert.equal(ctx.entities.find((e) => e.id === "raro")?.suspended_goal, undefined);
+    assert.ok(avisos.some((a) => a.includes("raro") && a.includes("suspended_goal")), JSON.stringify(avisos));
+  });
+
   it("cota de entities: escena activa completa + spawns recientes, entities_total avisa", () => {
     // Regresión (contexto sin cotas): TODAS las entidades del playthrough
     // viajaban en cada turno. Ahora: cap LLM_ENTITIES_MAX priorizando la

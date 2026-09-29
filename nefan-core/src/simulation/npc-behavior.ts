@@ -18,7 +18,7 @@
  */
 
 import type { Vec3, CombatEvent } from "../types.js";
-import type { EntityRecord } from "../narrative/types.js";
+import type { EntityRecord, SuspendedGoal } from "../narrative/types.js";
 import { SeededRng } from "../rng.js";
 // El radio del NPC vive junto a la colisión que lo consulta, no aquí: es el
 // cuerpo MAYOR del juego y quien decide cuánto hueco dejar tiene que poder
@@ -75,25 +75,6 @@ export interface NpcBehaviorEvent {
   suspended?: SuspendedGoal;
 }
 
-/** LA META QUE EL NPC ABANDONA AL HUIR (#298, QA de BL H2). Decisión del
- *  usuario, literal: «Que decida el motor de narrativa. En general que el
- *  estado le llegue al motor de narrativa y él decide». El que iba a un sitio
- *  (`goto_place`, `visit_npc` o un `npc_move_to_place` que el sim ejecutaba
- *  andando) y huye NO vuelve solo: su meta se retira del record —si no, la
- *  re-derivaba al calmarse y volvía a la pelea (15 huidas en 180 s)— y queda
- *  aquí, en `record.data.suspended_goal`, con el porqué. Al motor le llega por
- *  los dos canales que ya tiene: la línea de `ambient_events` que escribe el
- *  bridge y el propio record (`entity_get`). Si quiere que siga, la vuelve a
- *  emitir con `npc_set_directive` / `npc_move_to_place`, que la limpian. */
-export interface SuspendedGoal {
-  /** El campo del record del que se retiró. */
-  field: "directive" | "in_transit";
-  /** Su valor tal cual estaba, para poder re-emitirlo. */
-  value: unknown;
-  reason: "fled_combat";
-  /** Dónde era la pelea, en metros. */
-  fight_at: [number, number];
-}
 
 export interface NpcTickContext {
   playerPos: Vec3;

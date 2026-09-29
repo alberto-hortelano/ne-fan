@@ -70,3 +70,48 @@ El `hold` sale y se queda a 0,00 m del punto de salida, con el hombro contra la 
 ## Veredicto
 
 **Apto con reservas.** Lo que se pidió se cumple en todos los estados que visité: sale el quieto, el `hold`, el `react` y el llegado; también varios a la vez, tras un resume y bajo un sólido de runtime. `npc_arrive` deja libres los 13 edificios de las fixtures, el que huye sin directiva se queda donde paró y el `home` se adopta tras el salto. Todo ello se pone rojo contra el árbol de antes. Las reservas son H1, que hay que cerrar o abrir como issue antes de fusionar porque BL le abre la puerta de uso normal, y H2, que es una decisión del usuario.
+
+## Segunda vuelta (commit `16aa75fd`)
+
+Re-verificado sobre `16aa75fd` con `dist` recompilado. No he tocado el árbol. Los sabotajes los hice en una copia de `dist` en el scratchpad, y el guion 250 la leyó con `QA_250_CORE`.
+
+| Hallazgo de la 1ª vuelta | Estado | Evidencia |
+|---|---|---|
+| H1 · caché de colisión envenenada | ✅ cerrado | La caché va por registro de escena (`WeakMap<SceneRecord>`). `recordSceneLoaded` crea siempre un registro nuevo (`narrative-state.ts:~803`) y `loadSession` también, así que no queda ninguna vía de mutación en sitio que deje la caché vieja. Sonda de la 1ª vuelta: el tile preguntado antes de existir se ve OCUPADO en cuanto se realiza, y la sesión B ya no ve los edificios de la A |
+| H2 · el `goto_place` vuelve a la pelea | ✅ en conducta / ⚠️ en el canal al motor | Conducta: con `goto_place` a 2 m y a 8 m de la pelea hay **1 huida** en 180 s (antes, 15). La directiva queda en `data.suspended_goal` y `entity_get` devuelve el record entero. Canal: ver H2b |
+| H3 · la huida se corta con paseo grande | ✅ cerrado | `wander.radius` 15: 0 de 8 semillas × 600 s re-huyen, y para a 31,0 m (la meta). Con radio 25 para a 41 m. Con `patrol`, 4 de 4 semillas limpias. Con un muro en la huida, 1 huida. El encajonado en U sigue en `flee` mientras la pelea continúe a 10 m, dentro de su percepción. Es correcto, y el unitario del cercado cubre el tope |
+| BM · `npc_arrive` por rect | ✅ con una nota | Rect pequeño y NPC lejos: salta al centro libre. Barrio de 40 × 40 m con el NPC en una esquina: llega sin moverse (27,6 m del centro), que es coherente con «está en el lugar». Ver N1 |
+| H4 · el `hold` pegado a la fachada | ⏸ BO | Sin cambios, como estaba acordado |
+| No regresión | ✅ | `npm run verify` EXIT 0, **3673 de 3673**. `el-mundo-solido`: los nueve bloques en verde. `el-viaje`: en verde. Batería de navegador con `e2e-sin-creditos` (`154 50 07 68`, que arrastra 107, 150, 168 y 250): **8 de 8** en verde, 0 € |
+
+### ¿Llega el estado al motor DE VERDAD? (H2)
+
+Seguí el camino entero. `lineaDeHuida` → `appendAmbient` → `serializeForLlm().ambient_events`, que son **solo las 10 últimas líneas** (`serialize-llm.ts:67`) → `dialogue.ts:28` → ai_server `report_player_choice`, que pasa `context` como `dict` sin podar (`llm_client.py:708`) → el motor. La instrucción nueva vive en `narrative_event.md`, que es el prompt del kind `narrative_event`, el mismo por el que viaja ese contexto. La cadena existe.
+
+**H2b · importante — la línea se cae de la ventana en cuanto la escena tiene vida.** Sonda por el harness del bridge (`makeCtx` + `start_session` + `input` real, como `bridge-npc.test.ts`): un bandido y seis NPC alrededor (el campesino con `goto_place`, dos villagers, un merchant y dos guardias).
+
+- A los 5 s: la línea «ABANDONÓ…» está en las 10 del contexto.
+- A los **30 s ya no está**. Las cuatro huidas, las dos intervenciones y los seis «retomó su rutina» son 12 líneas, y empujan fuera la única que pedía decisión.
+
+La otra vía tampoco llega sola al turno: `compactEntity` (`serialize-llm.ts:92`) proyecta `id/type/name/scene_id/position/spawn_reason` y **no** `data`, así que `suspended_goal` solo lo ve el motor si llama a `entity_get` sobre ESE NPC sin que nada se lo sugiera.
+
+Como el motor solo habla cuando el jugador interactúa, lo normal es que su siguiente turno llegue después de esa ventana. Resultado: el NPC abandona su meta en silencio y el motor no se entera. El jugador ve a un personaje que dejó su recado sin que la historia lo recoja. Lo que la decisión del usuario pedía («que el estado le llegue al motor») se cumple solo en una escena con un único NPC, que es la del unitario del ingeniero. Lo que esperaba: que una meta abandonada viaje en el contexto del turno hasta que el motor decida, no que dependa de ser una de las 10 últimas líneas de ambiente.
+
+**N1 · nota, no hallazgo.** Un lugar con `anchor` sin `rect` ocupa el tile entero en `rectDelLugar`. Un NPC en tránsito a ese lugar desde cualquier punto del mismo tile «llega» sin moverse: 39,6 m del centro en la sonda. Es coherente si un lugar sin rect ES el tile. Si el motor crea puntos de interés sin rect, el NPC no se desplaza a ellos. No lo he medido con datos del motor real.
+
+### ¿Puede ponerse rojo cada aserto nuevo del guion 250?
+
+Sabotajes en una copia de `dist`, uno por vez; el control sobre la copia intacta sale verde:
+
+| Sabotaje | Resultado |
+|---|---|
+| H1: caché por `sceneId` que cachea la ausencia | ✘ «A3 · … el proveedor de la sesión ve el tile» (sesión LIBRE · verdad ocupado). **El segundo aserto A3 («el viajero … sale») sigue VERDE** |
+| H2: `suspenderMeta` devuelve `null` | ✘ los dos A1 (15 huidas; directiva intacta) |
+| H3: `huidaEnCurso` devuelve `false` | ✘ A2 (4 de 8 re-huyen) |
+| BM: volver a `dist > 3` | ningún rojo en el guion. Lo declara el ingeniero y lo sujetan los unitarios del director |
+
+**H5 · menor — el segundo aserto de A3 no puede ponerse rojo con el defecto que vigila.** Con la caché envenenada, el sim no ve el concejo y el viajero, paseando, lo ATRAVIESA hasta salir. El aserto juzga «salió» con un proveedor nuevo, pero no mira por dónde. Pasa con el defecto puesto. Para discriminar tendría que exigir que no atraviesa, por ejemplo que no aparezca el aviso `DENTRO` con el proveedor de la sesión, o que la salida sea por la cara más cercana en pocos segundos. Además, la cabecera del guion mantiene un párrafo viejo («A3 sale "cerrado" contra la base… A1 y A2 siguen abiertos también ahí»), que ya no describe el guion: hoy son asertos. Ninguno de los dos es un fallo del juego.
+
+### Veredicto de la segunda vuelta
+
+**Apto con reservas.** H1 y H3 están cerrados y demostrados en rojo, y la conducta de H2 también. Queda **H2b**: el canal al motor es la ventana de 10 líneas de ambiente, y en una escena con varios NPC la meta abandonada se cae de ella en menos de 30 s. Mientras no viaje de forma persistente en el contexto del turno, la decisión del usuario («que le llegue al motor y él decide») no se cumple en el caso normal. H5 es un arreglo de guion.

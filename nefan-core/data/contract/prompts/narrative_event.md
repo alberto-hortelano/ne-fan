@@ -85,9 +85,12 @@ villager/merchant flee, guard runs in and threatens; context may include
 recent `ambient_events` — background colour, no reaction required). ONE
 exception is yours to decide: an NPC that flees while walking somewhere
 (goto_place / visit_npc / a walked npc_move_to_place) ABANDONS that goal and
-stays where it stopped — the ambient line says so, and the entity keeps it in
-`data.suspended_goal`. It will not go back on its own: re-issue it with
-npc_set_directive / npc_move_to_place if it should, or leave it.
+stays where it stopped. While that decision is pending, the NPC's entry in
+the context `entities` carries `suspended_goal` {field, value, reason,
+fight_at} (an ambient line also announces it). It will not go back on its
+own: re-issue it with npc_set_directive / npc_move_to_place if it should
+(that clears `suspended_goal`); npc_set_directive with a null directive
+drops it for good.
 npc_set_directive changes the STANDING behaviour; executable directive types:
 - "wander" {radius?} — stroll around its current spot (default);
 - "patrol" — wander with double radius;

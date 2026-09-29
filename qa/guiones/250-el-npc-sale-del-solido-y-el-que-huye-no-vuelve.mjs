@@ -42,15 +42,20 @@
  *        colliders vacíos PARA SIEMPRE, y al realizarse el tile el sim lo veía
  *        vacío. Hoy la caché va por registro de escena y no cachea la ausencia.
  *
- *  PROBADO EN NEGATIVO contra el árbol de ANTES de BL (`d0cc2231`, `dist`
- *  compilado en un worktree aparte y pasado con `QA_250_CORE=<ruta>/nefan-core`):
- *  12 rojos — 1 (los siete `hold` siguen dentro), 2 (el `hold` no sale, y el
- *  siguiente resume lo trae dentro), 3 (ninguno de los cuatro sale), 5 (19-20
- *  huidas en 180 s sin directiva, 29-32 en 300 s con `patrol`) y A3. El 4
- *  sale verde también ahí, porque ya salía el que andaba: lo que mide es que
- *  el umbral de 3 m no deja a nadie dentro, no la tanda. A3 sale «cerrado»
- *  contra la base, que es justo lo que dice: la puerta la abre BL. A1 y A2
- *  siguen abiertos también ahí (24 huidas; 8 de 8 semillas).
+ *  PROBADO EN NEGATIVO, en dos tiempos:
+ *   - contra el árbol de ANTES de BL (`d0cc2231`, `dist` compilado en un
+ *     worktree aparte y pasado con `QA_250_CORE=<ruta>/nefan-core`): 12 rojos
+ *     en 1 (los siete `hold` siguen dentro), 2 (el `hold` no sale, y el
+ *     siguiente resume lo trae dentro), 3 (ninguno de los cuatro sale) y 5
+ *     (19-20 huidas en 180 s sin directiva, 29-32 en 300 s con `patrol`). El 4
+ *     sale verde también ahí, porque ya salía el que andaba;
+ *   - contra el árbol de BL, un arreglo saboteado por vez: la caché por
+ *     `sceneId` → los DOS asertos de A3 (el segundo solo desde que exige salir
+ *     por la cara: antes salía verde atravesando el concejo); sin suspender la
+ *     meta → los dos de A1 (15 huidas, directiva intacta); la huida cerrada a
+ *     los 4 s → A2 (4 de 8 semillas re-huyen). Volver a «a ≤ 3 m del centro»
+ *     en `npc_arrive` NO pone rojo el 4 (el viajero está a 1,4 m, dentro de
+ *     las dos reglas): eso lo sujetan los unitarios de `npc-director`.
  *
  *  Sin navegador, sin stack, sin créditos: lee `nefan-core/dist` (compila
  *  antes: `cd nefan-core && npm run build`).
@@ -308,9 +313,23 @@ export default async function (ctx) {
   // Se JUZGA con un proveedor recién hecho, no con el de la sesión: con la
   // caché envenenada, el de la sesión ve libre al que está dentro y este
   // aserto salía verde por construcción (medido saboteando la caché).
+  //
+  // Y «sale» no basta: con la caché envenenada el sim no ve el concejo y el
+  // viajero, paseando, lo ATRAVIESA hasta quedar fuera (QA de BL, H5 — el
+  // aserto salía verde con el defecto puesto). Se exige que el SIM le viera
+  // dentro (su aviso `DENTRO`, que solo sale de la consulta de la sesión) y
+  // que saliera por la cara más cercana: a lo sumo esa distancia andando, con
+  // holgura. Atravesando, tarda lo que tarde el paseo en cruzarlo.
+  avisos.length = 0;
   const r6 = correr(s6, m.createSimCollisionProvider(s6), sys6, ["viajero"], 30);
-  ctx.expect("A3 · …y el viajero que cayó en el concejo antes de que existiera, sale", r6.viajero.salio !== null && !r6.viajero.finDentro,
-    `${r6.viajero.salio?.toFixed(1) ?? "NUNCA"} s`);
+  const vioDentro = avisos.some((a) => a.includes("viajero") && a.includes("DENTRO"));
+  const pv = { x: c6.x + 64, z: c6.z };
+  const cara = Math.min(concejo.footprint[0], concejo.footprint[1]) * 0.5 / 2 + R_NPC;
+  const tope = cara / m.NPC_ROLE_PRESETS.villager.walk_speed + 2;
+  ctx.expect("A3 · …y el viajero que cayó en el concejo antes de que existiera, sale POR SU CARA, sin atravesarlo",
+    vioDentro && r6.viajero.salio !== null && r6.viajero.salio <= tope && !r6.viajero.finDentro,
+    `el sim le vio dentro: ${vioDentro} · salió en ${r6.viajero.salio?.toFixed(1) ?? "NUNCA"} s (tope ${tope.toFixed(1)} s) · ` +
+      `desde (${pv.x.toFixed(1)}, ${pv.z.toFixed(1)})`);
 
   console.warn = warn;
 }
