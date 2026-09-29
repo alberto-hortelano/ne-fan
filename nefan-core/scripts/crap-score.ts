@@ -793,6 +793,10 @@ export interface MedidaConFoto {
   alcance: string;
   /** Qué significa `sinCargar` en ESTE universo. */
   sinCargar: string;
+  /** La orden de ESTA medida, lista para añadirle `--check`, `--foto` o
+   *  `--apretar` (QA de #769, H2): los mensajes de scripts recomendaban la
+   *  orden del cliente, que en nefan-core o sale con 2 o mide el core. */
+  orden: string;
 }
 
 export const CON_FOTO_CLIENTE: MedidaConFoto = {
@@ -801,6 +805,8 @@ export const CON_FOTO_CLIENTE: MedidaConFoto = {
   leer: () => leerContratoCliente(),
   alcance: "EL ÁRBOL ENTERO de nefan-html/src",
   sinCargar: "ningún test los carga, y cuentan a cobertura 0",
+  // Se corre desde nefan-html, que es donde `npm run crap` es el del cliente.
+  orden: "npm run crap --",
 };
 
 export const CON_FOTO_SCRIPTS: MedidaConFoto = {
@@ -811,6 +817,7 @@ export const CON_FOTO_SCRIPTS: MedidaConFoto = {
   sinCargar:
     "ningún test los carga en el proceso de la cobertura, y NO cuentan (universo lo-cargado: " +
     "lo que CI ejerce por subproceso tampoco lo ve el lcov)",
+  orden: "npm run crap -- --scripts",
 };
 
 /** Lo que el CLI de una medida con foto imprime y decide, PURO: el resumen,
@@ -818,7 +825,7 @@ export const CON_FOTO_SCRIPTS: MedidaConFoto = {
  *  solo lo escribe y sale con su código, así que el veredicto se prueba sin
  *  lcov ni subproceso. */
 export function informeConFoto(
-  cf: Pick<MedidaConFoto, "medida" | "alcance" | "sinCargar" | "ruta">,
+  cf: Pick<MedidaConFoto, "medida" | "alcance" | "sinCargar" | "ruta" | "orden">,
   m: Medicion,
   contrato: ContratoConFoto,
 ): { resumen: string[]; aviso?: string; fallos: string[] } {
@@ -846,7 +853,7 @@ export function informeConFoto(
     v.sobran.length === 0
       ? undefined
       : `⚠ ${v.sobran.length} congelada(s) SOBRAN en su cifra (bajaron o ya no están): ` +
-        `\`npm run crap -- --apretar\` la baja, o volverá a crecer gratis:\n` +
+        `\`${cf.orden} --apretar\` la baja, o volverá a crecer gratis:\n` +
         v.sobran
           .slice(0, 20)
           .map(
@@ -870,7 +877,7 @@ export function informeConFoto(
           .join("\n") +
         (v.rojas.some((r) => r.renombradoDe)
           ? `\nLas marcadas con ← parecen un RENOMBRADO o un fichero movido (su congelada ya no está y ` +
-            `tenía esa misma cifra): ahí SÍ se regenera la entrada con \`npm run crap -- --foto\` y se quita la vieja.`
+            `tenía esa misma cifra): ahí SÍ se regenera la entrada con \`${cf.orden} --foto\` y se quita la vieja.`
           : "") +
         (cf.medida.universo === "lo-cargado"
           ? `\n¿Fichero recién cargado? Con universo lo-cargado, un test que IMPORTA un fichero que nadie ` +
@@ -892,7 +899,7 @@ export function informeConFoto(
 export function textoDeApretar(
   plan: ReturnType<typeof planDeApretar>,
   congeladas: number,
-  ruta: string,
+  cf: Pick<MedidaConFoto, "ruta" | "orden">,
 ): { ok: boolean; escribir: boolean; texto: string } {
   if (!plan.ok) {
     return {
@@ -901,7 +908,7 @@ export function textoDeApretar(
       texto:
         `✘ --apretar se niega: hay ${plan.rojas.length} función(es) por encima de su límite. ` +
         `Arregla eso primero — una congelada que «no está» puede ser un renombrado, y quitarla ahora ` +
-        `borraría la pista (\`npm run crap -- --check\` dice cuáles).`,
+        `borraría la pista (\`${cf.orden} --check\` dice cuáles).`,
     };
   }
   if (plan.cambios.length === 0) {
@@ -911,7 +918,7 @@ export function textoDeApretar(
     ok: true,
     escribir: true,
     texto:
-      `✔ foto apretada (${plan.cambios.length} cambio(s)) en ${ruta}:\n` +
+      `✔ foto apretada (${plan.cambios.length} cambio(s)) en ${cf.ruta}:\n` +
       plan.cambios
         .map((c) => `   ${c.congelada} → ${c.nueva ?? "fuera"} (${c.motivo})  ${c.funcion} · ${c.fichero}`)
         .join("\n"),
@@ -923,7 +930,7 @@ export function textoDeApretar(
  *  `JSON.stringify(…, 2)`) quedan como estaban. */
 function ejecutarApretar(cf: MedidaConFoto, m: Medicion, contrato: ContratoConFoto): void {
   const plan = planDeApretar(m.filas, contrato);
-  const t = textoDeApretar(plan, contrato.congeladas.length, cf.ruta);
+  const t = textoDeApretar(plan, contrato.congeladas.length, cf);
   if (plan.ok && t.escribir) {
     const crudo = JSON.parse(readFileSync(cf.ruta, "utf-8")) as Record<string, unknown>;
     crudo.congeladas = plan.congeladas;

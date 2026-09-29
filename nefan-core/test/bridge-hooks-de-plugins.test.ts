@@ -132,6 +132,32 @@ describe("hooks de plugins del bridge (#769)", () => {
     assert.throws(() => hooks.inspect(id), /escena de prueba/);
   });
 
+  it("list dice el autor del RECORD del save, y el del manifest solo si no hay record (QA #769, H4)", () => {
+    const { hooks, ctx } = conSesion();
+    const { id } = hooks.register(CONTADOR);
+    // El save manda sobre el manifest: si su record dice otro autor —lo que
+    // pasa cuando el registry trae un manifest y el save cuenta otra historia—
+    // `list` tiene que contar la del save. Con el autor del manifest siempre
+    // (pasarle `undefined`) este caso salía igual que el de abajo.
+    const record = ctx.narrative.pluginDelManifest(id);
+    assert.ok(record, "precondición: registrar escribe el record en el save");
+    record.origin = { ...record.origin, author: "narrative_engine" };
+    assert.deepEqual(
+      hooks.list().map((p) => p.origin_author),
+      ["narrative_engine"],
+    );
+    // Sin record (un manifest en el registry que el save no conoce): el del
+    // manifest, que es lo único que hay.
+    ctx.activePlugins.set("sin-record", { ...(ctx.activePlugins.get(id) ?? assert.fail("sin manifest")), id: "sin-record" });
+    assert.deepEqual(
+      hooks.list().map((p) => [p.id, p.origin_author]),
+      [
+        [id, "narrative_engine"],
+        ["sin-record", "developer"],
+      ],
+    );
+  });
+
   it("un registro que falla no difunde nada: el error vuelve al motor por el State API", () => {
     const { hooks, broadcasts } = conSesion();
     assert.throws(() => hooks.register({}), /manifest inválido/);

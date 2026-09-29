@@ -590,18 +590,41 @@ describe("el CLI de las medidas con foto decide en funciones puras (#769)", () =
     const c = conSuelo(50, [{ fichero: "scripts/a.ts", funcion: "main", crap: 200 }]);
     const inf = informeConFoto(CON_FOTO_SCRIPTS, medicion([filaDe("main", 90)], 90), c);
     assert.deepEqual(inf.fallos, []);
-    assert.match(inf.aviso ?? "", /--apretar/);
+    assert.match(inf.aviso ?? "", /`npm run crap -- --scripts --apretar` la baja/);
     assert.match(inf.aviso ?? "", /200 → 90\.0 {2}main · scripts\/a\.ts/);
+  });
+
+  it("cada medida recomienda SU orden: el cliente sin --scripts, scripts con él (QA #769, H2)", () => {
+    // Un renombrado: la congelada `vieja` ya no está y `nueva` tiene su cifra.
+    const renombrado = (cf: typeof CON_FOTO_CLIENTE) =>
+      informeConFoto(
+        cf,
+        medicion([filaDe("nueva", 110)], 90),
+        cf === CON_FOTO_SCRIPTS
+          ? conSuelo(50, [{ fichero: "scripts/a.ts", funcion: "vieja", crap: 110 }])
+          : contrato([{ fichero: "scripts/a.ts", funcion: "vieja", crap: 110 }]),
+      );
+    const s = renombrado(CON_FOTO_SCRIPTS);
+    assert.match(s.fallos[0], /`npm run crap -- --scripts --foto`/);
+    assert.match(s.aviso ?? "", /`npm run crap -- --scripts --apretar`/);
+    const c = renombrado(CON_FOTO_CLIENTE);
+    assert.match(c.fallos[0], /`npm run crap -- --foto`/);
+    assert.match(c.aviso ?? "", /`npm run crap -- --apretar`/);
+    const niegaCliente = textoDeApretar(planDeApretar([filaDe("nueva", 110)], contrato([])), 0, CON_FOTO_CLIENTE);
+    assert.match(niegaCliente.texto, /`npm run crap -- --check` dice cuáles/);
   });
 
   it("--apretar: la negativa sale con error, «nada» no escribe y un cambio sí", () => {
     const c = conSuelo(50, [{ fichero: "scripts/a.ts", funcion: "main", crap: 200 }]);
-    const niega = textoDeApretar(planDeApretar([filaDe("otra", 300)], c), 1, "x.json");
+    const niega = textoDeApretar(planDeApretar([filaDe("otra", 300)], c), 1, CON_FOTO_SCRIPTS);
     assert.deepEqual([niega.ok, niega.escribir], [false, false]);
     assert.match(niega.texto, /se niega: hay 1 función/);
-    const nada = textoDeApretar(planDeApretar([filaDe("main", 200)], c), 1, "x.json");
+    // …y manda a la orden de SU medida: en nefan-core, `npm run crap -- --check`
+    // mide el core y sale verde (QA de #769, H2).
+    assert.match(niega.texto, /`npm run crap -- --scripts --check` dice cuáles/);
+    const nada = textoDeApretar(planDeApretar([filaDe("main", 200)], c), 1, CON_FOTO_SCRIPTS);
     assert.deepEqual([nada.ok, nada.escribir, nada.texto], [true, false, "✔ nada que apretar: las 1 congeladas siguen en su cifra"]);
-    const baja = textoDeApretar(planDeApretar([filaDe("main", 150)], c), 1, "x.json");
+    const baja = textoDeApretar(planDeApretar([filaDe("main", 150)], c), 1, CON_FOTO_SCRIPTS);
     assert.deepEqual([baja.ok, baja.escribir], [true, true]);
     assert.match(baja.texto, /200 → 150 \(bajo\) {2}main · scripts\/a\.ts/);
   });

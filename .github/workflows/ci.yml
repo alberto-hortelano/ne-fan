@@ -8,6 +8,14 @@ on:
 jobs:
   nefan-core:
     runs-on: ubuntu-latest
+    # Techo del job (QA de #769, H1): sin él, un test que se cuelga —un socket
+    # esperando un frame que no llega, un servidor que nadie cierra— era un
+    # runner colgado hasta el límite de 6 h de GitHub en vez de un rojo.
+    # MEDIDO el 2026-09-29 sobre las 8 últimas corridas de CI en main
+    # (36052617930 … 36570329043): el job duró entre 4,2 y 6,9 min. 15 es algo
+    # más del doble del peor, para que la cola de un runner lento no lo corte;
+    # si el job crece, se vuelve a medir y se sube aquí con la cifra nueva.
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: nefan-core

@@ -10,6 +10,7 @@ import { Agent, fetch as undiciFetch } from "undici";
 import { WebSocketServer } from "ws";
 import { readFileSync } from "node:fs";
 import type { EventEmitter } from "node:events";
+import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
 
@@ -46,6 +47,9 @@ export interface BridgeArrancado {
   ctx: BridgeContext;
   puertoWs: number;
   puertoStateApi: number;
+  /** Los dos servidores, para que un test pueda comprobar que `cerrar()` los
+   *  cerró —y soltarlos él si no, en vez de dejar el proceso colgado—. */
+  servidores: { ws: WebSocketServer; stateApi: Server };
   /** Cierra los dos servidores y el Agent de undici. */
   cerrar(): Promise<void>;
 }
@@ -113,6 +117,11 @@ export async function arrancarBridge(cfg: ConfigDelBridge): Promise<BridgeArranc
   // del save) o `handleLoadRoom` (fixtures del selector «Room»).
 
   const wss = new WebSocketServer({ port: cfg.port });
+  // El oyente se ata ANTES de esperar a nada (QA de #769, H3): el socket que
+  // conecte en cuanto el gateway escuche —antes de que el State API esté
+  // arriba— es un socket aceptado, y sin oyente completaba el handshake y no
+  // oía nunca su `bridge_hello` ni se atendían sus frames.
+  wss.on("connection", (ws) => atenderConexion(ws, ctx, { entorno: cfg.entorno, suscriptores }));
   const puertoWs = await escuchando(wss, "el gateway WS", cfg.port);
 
   // State HTTP API: the narrative engine (Claude via narrative-mcp tools) queries
@@ -146,12 +155,11 @@ export async function arrancarBridge(cfg: ConfigDelBridge): Promise<BridgeArranc
     throw err;
   }
 
-  wss.on("connection", (ws) => atenderConexion(ws, ctx, { entorno: cfg.entorno, suscriptores }));
-
   return {
     ctx,
     puertoWs,
     puertoStateApi,
+    servidores: { ws: wss, stateApi },
     async cerrar() {
       for (const ws of wss.clients) ws.terminate();
       await Promise.all([cerrarServidor(wss), cerrarServidor(stateApi)]);
