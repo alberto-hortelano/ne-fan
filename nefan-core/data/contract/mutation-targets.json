@@ -403,7 +403,8 @@
         "src/scene/blueprint/derive.ts",
         "src/scene/blueprint/vegetation.ts",
         "src/scene/blueprint/palette.ts",
-        "src/scene/blueprint/time-of-day.ts"
+        "src/scene/blueprint/time-of-day.ts",
+        "src/scene/blueprint/zone-seed.ts"
       ],
       "tests": [
         "test/contract-prompts.test.ts",
@@ -414,7 +415,7 @@
         "test/vegetation-density.test.ts"
       ],
       "break": 59,
-      "porque": "Lo que el engine deriva del esquema cuando el motor no lo dice: la masa forestal (`vegetation.ts` declara el dial y sus topes, `derive.ts` la planta), la paleta y la hora del día. `vegetation.ts` va con `derive.ts` porque su batería es la misma y porque de sus constantes DERIVADAS sale la garantía de que un bosque siempre se puede cruzar: un mutante vivo ahí es un techo de densidad que no acota nada. tile-plan entra en la batería porque importa el schema de zonas para probar el presupuesto del plan, y contract-prompts porque ata el tipo del `seed` que dice el prompt de tile al que aplica este zod (tanda BP)."
+      "porque": "Lo que el engine deriva del esquema cuando el motor no lo dice: la masa forestal (`vegetation.ts` declara el dial y sus topes, `derive.ts` la planta), la paleta y la hora del día. `vegetation.ts` va con `derive.ts` porque su batería es la misma y porque de sus constantes DERIVADAS sale la garantía de que un bosque siempre se puede cruzar: un mutante vivo ahí es un techo de densidad que no acota nada. tile-plan entra en la batería porque importa el schema de zonas para probar el presupuesto del plan, y contract-prompts porque ata el tipo del `seed` que dice el prompt de tile al que aplica este zod (tanda BP). `zone-seed.ts` va aquí porque es la definición del `seed` de zona que comparten `vegetation_zones` y `scatter_zones`, y su batería de aceptar/rechazar es la de vegetación; el lado de scatter lo ejerce además `blueprint-scatter`."
     },
     {
       "id": "blueprint-fps-spec",

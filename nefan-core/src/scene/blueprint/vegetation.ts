@@ -35,6 +35,7 @@ import { z } from "zod";
 import { TILE_CELLS, TILE_MPC } from "../tile.js";
 import { BODY_RADIUS_M, celdasLibresParaRadio } from "../terrain-collision.js";
 import { treeTrunkRadiusCells } from "./collision.js";
+import { ZoneSeedSchema } from "./zone-seed.js";
 
 /** Escala de los ejemplares que planta el scatter (rango del sorteo). Los
  *  árboles del MOTOR pueden llegar a `TREE_MAX_S`; estos no — son masa, no
@@ -127,15 +128,9 @@ export const VegetationZoneSchema = z
     area: z.union([areaRect, z.literal("rest")]),
     /** Ejemplares por m². */
     density: z.number(),
-    /** Baraja la misma zona. Mismo tipo y rango que `scatter_zones.seed`
-     *  (`scatter.ts`): dos `seed?` hermanos en el tile con dos tipos distintos
-     *  hacían que el motor escribiera este como número y se comiera un rechazo. */
-    seed: z
-      .number({ invalid_type_error: "seed es un entero ≥ 0, como el de scatter_zones" })
-      .int("seed es un entero ≥ 0, como el de scatter_zones")
-      .min(0, "seed es un entero ≥ 0, como el de scatter_zones")
-      .max(1e9, "seed va de 0 a 1e9, como el de scatter_zones")
-      .optional(),
+    /** Baraja la misma zona. La definición es la de `scatter_zones.seed`
+     *  (`zone-seed.ts`), para que los dos `seed?` del tile no diverjan. */
+    seed: ZoneSeedSchema.optional(),
   })
   .strict()
   .superRefine((z0, ctx) => {

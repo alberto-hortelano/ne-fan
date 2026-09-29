@@ -24,6 +24,7 @@ import { volumeFootprint } from "./footprint.js";
 import type { GroundFeature } from "./ground.js";
 import type { Volume } from "./volumes.js";
 import type { SurfacePrim } from "../greybox/surfaces.js";
+import { ZoneSeedSchema } from "./zone-seed.js";
 
 /** Tope duro de instancias por tile (perf: cada instancia son 1-6 meshes).
  *  Lo recortado se reporta en counts (regla no-silent-caps). */
@@ -186,7 +187,10 @@ function validateZone(raw: unknown, generators: Record<string, GeneratorSpec>, p
     fail(path, `kind '${String(z.kind)}' sin generador en scatter_generators`);
   }
   const density = num(z.density, `${path}.density`, 0, MAX_DENSITY);
-  if (z.seed !== undefined) num(z.seed, `${path}.seed`, 0, 1e9);
+  if (z.seed !== undefined) {
+    const seed = ZoneSeedSchema.safeParse(z.seed);
+    if (!seed.success) fail(`${path}.seed`, `${seed.error.issues[0].message} (tiene ${JSON.stringify(z.seed)})`);
+  }
   const s = z.shape as Record<string, unknown>;
   if (!s || typeof s !== "object") fail(`${path}.shape`, "shape es rect|ellipse|poly");
   let shape: ScatterZone["shape"];
